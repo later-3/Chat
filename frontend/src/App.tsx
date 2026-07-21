@@ -12,6 +12,7 @@ import {
   MessageSquarePlus,
   Settings2,
   Sparkles,
+  RotateCcw,
   UserRound,
   UsersRound,
   Wrench,
@@ -123,6 +124,7 @@ function App() {
   const [activeView, setActiveView] = useState<"chat" | "workflows" | "agents" | "tools">("chat");
   const [workflowDefinitions, setWorkflowDefinitions] = useState<WorkflowDefinition[]>([]);
   const [workflowRunning, setWorkflowRunning] = useState(false);
+  const [retrySource, setRetrySource] = useState<{ runId: string; prompt: string } | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const systemDialogOpen = useUiStore((state) => state.systemDialogOpen);
   const setSystemDialogOpen = useUiStore((state) => state.setSystemDialogOpen);
@@ -188,6 +190,7 @@ function App() {
     abandon,
     stop,
     returnDispatchPrompt,
+    recoverFromError,
   } = useChatAgent({
     sessionId: activeSession?.id ?? null,
     hydratedMessages,
@@ -327,7 +330,28 @@ function App() {
     if (!draft.trim() || status !== "idle" || !activeSession) return;
     const text = draft;
     setDraft("");
-    void send(text);
+    const control = retrySource
+      ? {
+          kind: text.trim() === retrySource.prompt.trim() ? "retry" as const : "restart" as const,
+          sourceRunId: retrySource.runId,
+        }
+      : undefined;
+    setRetrySource(null);
+    void send(text, control);
+  };
+
+  const retryRun = (run: ProductRun) => {
+    if (!run.input_text || status === "running" || status === "saving") return;
+    recoverFromError();
+    setRetrySource(null);
+    void send(run.input_text, { kind: "retry", sourceRunId: run.id });
+  };
+
+  const editAndRestartRun = (run: ProductRun) => {
+    if (!run.input_text || status === "running" || status === "saving") return;
+    recoverFromError();
+    setRetrySource({ runId: run.id, prompt: run.input_text });
+    setDraft(run.input_text);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -340,6 +364,9 @@ function App() {
   const runtimeLabel = health?.runtime_mode === "model" ? health.model : "确定性启动 Agent";
   const busy = status === "running" || status === "saving";
   const latestRun = activeRuns[0] ?? null;
+  const retryableLatestRun = latestRun && ["failed", "cancelled", "interrupted", "outcome_unknown"].includes(latestRun.status)
+    ? latestRun
+    : null;
   const interactionBusy = status !== "idle" || workflowRunning;
 
   return (
@@ -425,7 +452,19 @@ function App() {
                     <p>{dispatchRecovery.message}</p>
                     {dispatchRecovery.status === "outcome_unknown" && <p>重新发送可能产生重复调用或费用，请先确认Provider侧没有留下结果。</p>}
                     <small>错误代码：{dispatchRecovery.errorCode ?? "unavailable"}</small>
-                    <button onClick={() => { const prompt = returnDispatchPrompt(); if (prompt !== null) setDraft(prompt); }} type="button">返回输入框，由我决定是否修改后重发</button>
+                    <button onClick={() => { const prompt = returnDispatchPrompt(); if (prompt !== null) { setDraft(prompt); if (retryableLatestRun) setRetrySource({ runId: retryableLatestRun.id, prompt }); } }} type="button">返回输入框，由我决定是否修改后重发</button>
+                  </div>
+                )}
+                {!dispatchRecovery && !pendingReview && retryableLatestRun?.input_text && (
+                  <div className="run-recovery" role="group" aria-label="失败Run恢复操作">
+                    <div>
+                      <strong>{runLabel(retryableLatestRun.status)}的Run可以显式处理</strong>
+                      <p>旧Run和Attempt会保留；再次执行会创建有血缘的新Run，并重新进入发送前审批。</p>
+                    </div>
+                    <div>
+                      <button onClick={() => retryRun(retryableLatestRun)} type="button"><RotateCcw size={14} />原样重试</button>
+                      <button onClick={() => editAndRestartRun(retryableLatestRun)} type="button">修改后重新运行</button>
+                    </div>
                   </div>
                 )}
                 <div ref={endRef} />
@@ -450,6 +489,7 @@ function App() {
                 ? <button aria-label="停止生成" className="send-button send-button--stop" onClick={stop} type="button"><CircleStop size={19} /></button>
                 : <button aria-label="发送" className="send-button" disabled={!draft.trim() || status !== "idle" || !activeSession} type="submit"><ArrowUp size={20} /></button>}
             </form>
+            {retrySource && <div className="retry-context"><span>正在基于失败Run重新运行；修改Prompt会记录为Restart。</span><button onClick={() => setRetrySource(null)} type="button">取消关联</button></div>}
             <p className="composer-note">Enter 发送 · 服务端历史恢复 · 每次模型调用发送前确认</p>
           </div>
         </main> : activeView === "workflows" ? (

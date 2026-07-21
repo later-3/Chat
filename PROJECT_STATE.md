@@ -8,8 +8,8 @@
 | 当前目录 | `/Users/xulater/Code/Chat` |
 | 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、双协议逐次模型审批、Product Session R0/R1文本会话底座、嵌套Workflow、受治理双Agent和pi Agent Tool纵向切片已完成 |
 | 设计状态 | 总体架构已按完整用户场景重写；Workflow、多Agent和pi Agent种子已实现，Session R2-R6仍需按专项路线和恢复保证分别交付 |
-| Session 状态 | 9个能力域、74项能力、R0-R6和Phase 0-8路线已批准；Phase 0与Phase 1文本底座完成，R2-R6仍按后续阶段交付 |
-| 数据状态 | Product Store Schema与7个Alembic迁移已建立；只包含本项目新会话、Agent Profile、Tool配置与执行记录，没有迁移旧数据库、旧历史或旧项目配置 |
+| Session 状态 | 9个能力域、74项能力、R0-R6和Phase 0-8路线已批准；Phase 0与Phase 1文本底座及显式Retry/Restart窄切片完成，R2-R6仍按后续阶段交付 |
+| 数据状态 | Product Store Schema与8个Alembic迁移已建立；只包含本项目新会话、Agent Profile、Tool配置与执行记录，没有迁移旧数据库、旧历史或旧项目配置 |
 | Git 状态 | 私有仓库`later-3/Chat`，分支`main`；按Feature节点提交并推送，私有配置和本地产物不进入Git |
 
 ## 2. 已确认的稳定事实
@@ -83,6 +83,9 @@
 - [x] 完成pi coding agent真实Tool接入：MAF `FunctionTool`与确定性Workflow启动pi官方JSONL RPC子进程；本机Provider Gateway确保每次模型请求都生成完整可编辑Draft并逐次审批，pi扩展把每个内部Tool调用转换成可编辑参数的AG-UI Interrupt。
 - [x] 完成pi Tool配置与监控入口：Provider/模型联动、工作目录根策略、7个真实内置Tool选择、Thinking/调用上限/超时/System Prompt、配置CAS Revision，以及模型/Tool/Token/成本/耗时/失败统计；重启把遗留`running`执行收敛为`interrupted`。
 - [x] pi真实浏览器Tool loop验证完成：两次真实Provider审批、一次`read`，参数从`README.md`修改为`PROJECT_STATE.md`后执行，最终Product Message为`BROWSER_PI_OK`；371px无横向溢出，全新页面控制台0错误。
+- [x] 完成失败Run的显式Retry/Restart窄切片：旧Run与Attempt不改写，新Run持久化`retry_of_run_id`和`retry/restart`语义；原样重试必须保持输入一致，修改后使用Restart，二者都重新进入逐次模型调用审批。
+- [x] 修复Provider失败后把Prompt取回输入框时回退本地历史、与已提交Product User冲突的问题；产品历史继续保留失败输入，Retry/Restart的模型上下文会排除整条重试祖先输入链，避免Provider看到重复Prompt。
+- [x] Retry和Restart浏览器真实模型交叉验证完成：审批载荷都只有1条本轮输入，分别得到`SESSION_RETRY_OK`和`SESSION_RESTART_OK`；371px无横向溢出，页面控制台0错误。
 
 ## 4. 已完成的工程与研究证据
 
@@ -98,8 +101,8 @@
 
 ### 4.2 已有验证
 
-1. 当前工作区后端56个测试通过，覆盖工程基线、JSON配置、审批合同、双协议、能力校验、精确发送、Session迁移/恢复/并发/幂等、失败/超时/取消、Product提交门、嵌套Workflow、多Agent、pi RPC/Provider Gate/Tool Gate/执行统计、原子Trace和AG-UI终态顺序。
-2. 前端16个逻辑测试、类型检查和生产构建通过；最新`npm install --package-lock-only`审计122个包，0个已知漏洞。
+1. 当前工作区后端58个测试通过，覆盖工程基线、JSON配置、审批合同、双协议、能力校验、精确发送、Session迁移/恢复/并发/幂等/Retry血缘、失败/超时/取消、Product提交门、嵌套Workflow、多Agent、pi RPC/Provider Gate/Tool Gate/执行统计、原子Trace和AG-UI终态顺序。
+2. 前端17个逻辑测试、类型检查和生产构建通过；最新`npm install --package-lock-only`审计122个包，0个已知漏洞。
 3. 浏览器完成Provider/模型联动、固定Key/类型化Value编辑、Role与内容类型同步、双视图同源、跨协议转换、修改后二次审批、放弃恢复，以及Session对话页/会话抽屉/设置弹窗窄屏回归；371px有效宽度无横向溢出。
 4. 火山方舟Responses与阿里云百炼Chat Completions各完成1次真实模型审批回合；后者核对最终Body仅含`model/messages/tools/store/stream`并返回预期文本。
 5. 清理脚本已验证可分别终止端口8030的Uvicorn和5073的Vite，清理后无监听残留。
@@ -134,7 +137,7 @@
 
 ## 5. 尚未实现的能力
 
-1. Session Phase 2-3的显式Retry/Resume、Steer、Follow-up、分支/Fork、搜索、标签、长上下文、导入导出和完整资源生命周期。
+1. Session Phase 2-3的Resume、Steer、Follow-up、分支/Fork、搜索、标签、长上下文、导入导出和完整资源生命周期；Retry/Restart已有带血缘且逐次审批的窄切片，但尚未与后续活动Job/Checkpoint Resume混称。
 2. Principal/真实身份Scope、Channel Binding、ContextPackage、Intent、Work/Plan、ExecutionDraft和持久Approval。
 3. Runtime Job/Event、活动流游标、Worker、Lease、Heartbeat和Reconciler；当前只做启动时中断收敛。
 4. 通用Tool Operation Ledger、外部副作用幂等/结果未知/对账、Workflow持久Checkpoint与跨进程HITL；当前pi专用执行记录只提供可观测终态与启动中断收敛。

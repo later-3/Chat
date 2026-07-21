@@ -136,6 +136,14 @@ button { -webkit-tap-highlight-color: transparent; }
 .dispatch-recovery small { color: #927556; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .dispatch-recovery button { margin-top: 3px; padding: 8px 11px; border: 1px solid rgba(111,76,38,.16); border-radius: 9px; color: #674725; background: #fff; cursor: pointer; }
 .dispatch-recovery--failed { border-color: rgba(176,76,66,.17); color: #8b433c; background: #fff0ed; }
+.run-recovery { margin-left: 42px; padding: 13px 14px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid rgba(78,105,89,.14); border-radius: 13px; color: #52675b; background: #f3f7f2; }
+.run-recovery strong, .run-recovery p { margin: 0; }
+.run-recovery strong { color: #3d5548; font-size: 12px; }
+.run-recovery p { margin-top: 4px; font-size: 10px; line-height: 1.5; }
+.run-recovery > div:last-child { flex: 0 0 auto; display: flex; gap: 7px; }
+.run-recovery button, .retry-context button { min-height: 31px; padding: 0 10px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid rgba(48,77,61,.13); border-radius: 9px; color: #3d5949; background: #fff; cursor: pointer; font-size: 10px; }
+.retry-context { width: min(100%, 760px); margin: 7px auto 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; color: #765c30; font-size: 10px; }
+.retry-context button { min-height: 25px; padding: 0 8px; color: #745f3d; }
 
 .composer-wrap {
   position: fixed; left: 270px; right: 0; bottom: 0; z-index: 8;

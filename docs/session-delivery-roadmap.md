@@ -16,7 +16,7 @@
 |---|---|---:|---|---|
 | Phase 0 | 冻结语义、框架边界和恢复验收合同 | 5 | P0 | 已完成 |
 | Phase 1 | 已完成文本会话可耐久保存、重开和继续 | 8 | P0-P1 | 已完成文本会话底座 |
-| Phase 2 | Run可幂等、取消、重试、Steer和排队 | 7 | P0-P2 | 未开始 |
+| Phase 2 | Run可幂等、取消、重试、Steer和排队 | 7 | P0-P2 | 进行中；P2-03的Retry/Restart窄切片完成，Resume未完成 |
 | Phase 3 | 生命周期、分支、长上下文和可移植性完整 | 7 | P1-P2 | 未开始 |
 | Phase 4 | 浏览器断线、刷新和换设备可接回活动Run | 6 | P2-P3 | 未开始 |
 | Phase 5 | API/Worker退出后可安全接管或明确收敛 | 5 | P3 | 未开始 |
@@ -187,6 +187,12 @@ MAF核心Workflow确实支持持久Checkpoint和跨进程恢复，但当前`agen
 1. 用户双击发送或浏览器重试，只产生一次Interaction和正确数量的Attempt。
 2. 用户取消当前回答、修改方向或排队下一问题，三种操作不会互相混淆。
 3. 失败后用户选择Retry时看到新Attempt及其与原失败的关系。
+
+### 6.5 当前实现进度
+
+已完成P2-03中的显式Retry/Restart窄切片：失败、取消、中断或结果未知的Run可以发起带`retry_of_run_id`的新Run；原样Retry强制输入一致，修改后的请求记录为Restart，两者都创建独立Attempt并重新进入每次模型调用审批。失败输入仍保留为Product Message，但当前重试上下文排除整条祖先输入链，避免重复Prompt。真实浏览器已分别得到`SESSION_RETRY_OK`与`SESSION_RESTART_OK`。
+
+尚未完成Checkpoint语义的Resume，也未完成P2-01、P2-02、P2-04至P2-07的完整Run控制与竞态验收，因此Phase 2不能标记完成。
 
 ## 7. Phase 3：完整Web会话、分支与长上下文
 

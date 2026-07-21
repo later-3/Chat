@@ -113,6 +113,22 @@ def _incoming_visible_messages(values: list[dict[str, Any]]) -> list[dict[str, s
     return messages
 
 
+def _retry_control(input_data: dict[str, Any]) -> tuple[str, str] | None:
+    forwarded = input_data.get("forwarded_props") or input_data.get("forwardedProps")
+    if not isinstance(forwarded, dict):
+        return None
+    control = forwarded.get("session_control") or forwarded.get("sessionControl")
+    if control is None:
+        return None
+    if not isinstance(control, dict):
+        raise ProductSessionConflict("Session控制参数格式无效")
+    kind = str(control.get("kind") or "")
+    source_run_id = str(control.get("source_run_id") or control.get("sourceRunId") or "")
+    if kind not in {"retry", "restart"} or not source_run_id:
+        raise ProductSessionConflict("Session重试必须指定retry/restart及来源Run")
+    return kind, source_run_id
+
+
 def _session_view(value: SessionRecord) -> dict[str, Any]:
     return {
         "id": value.id,
@@ -162,7 +178,11 @@ def _attempt_view(value: RunAttemptRecord) -> dict[str, Any]:
     }
 
 
-def _run_view(value: RunRecord, attempts: list[RunAttemptRecord] | None = None) -> dict[str, Any]:
+def _run_view(
+    value: RunRecord,
+    attempts: list[RunAttemptRecord] | None = None,
+    user_message: MessageRecord | None = None,
+) -> dict[str, Any]:
     return {
         "id": value.id,
         "session_id": value.session_id,
@@ -175,6 +195,9 @@ def _run_view(value: RunRecord, attempts: list[RunAttemptRecord] | None = None) 
         "model": value.model,
         "draft_id": value.draft_id,
         "approval_id": value.approval_id,
+        "retry_of_run_id": value.retry_of_run_id,
+        "retry_mode": value.retry_mode,
+        "input_text": _message_text(user_message.content) if user_message is not None else None,
         "failure_code": value.failure_code,
         "failure_message": value.failure_message,
         "started_at": _iso(value.started_at),
@@ -294,6 +317,7 @@ class ProductSessionService:
                 ).all()
             )
             run_ids = [value.id for value in values]
+            user_message_ids = [value.current_user_message_id for value in values]
             attempts = (
                 list(
                     (
@@ -307,10 +331,29 @@ class ProductSessionService:
                 if run_ids
                 else []
             )
+            user_messages = (
+                list(
+                    (
+                        await transaction.scalars(
+                            select(MessageRecord).where(MessageRecord.id.in_(user_message_ids))
+                        )
+                    ).all()
+                )
+                if user_message_ids
+                else []
+            )
         attempts_by_run: dict[str, list[RunAttemptRecord]] = {}
         for attempt in attempts:
             attempts_by_run.setdefault(attempt.run_id, []).append(attempt)
-        return [_run_view(value, attempts_by_run.get(value.id)) for value in values]
+        messages_by_id = {value.id: value for value in user_messages}
+        return [
+            _run_view(
+                value,
+                attempts_by_run.get(value.id),
+                messages_by_id.get(value.current_user_message_id),
+            )
+            for value in values
+        ]
 
     async def list_trace(self, session_id: str, run_id: str) -> list[dict[str, Any]]:
         async with self.database.sessions() as transaction:
@@ -413,6 +456,8 @@ class ProductSessionService:
         if not isinstance(raw_messages, list):
             raise SessionHistoryConflict("AG-UI messages必须是数组")
         incoming = _incoming_visible_messages(raw_messages)
+        retry_control = _retry_control(input_data)
+        excluded_retry_message_ids: set[str] = set()
         async with self.database.sessions.begin() as transaction:
             session = await self._session(transaction, session_id)
             if session.status != "active":
@@ -488,6 +533,42 @@ class ProductSessionService:
                 raise SessionHistoryConflict("新消息必须是非空User消息")
             if any(value.agui_message_id == current["id"] for value in persisted):
                 raise SessionHistoryConflict("新消息ID不能复用已有Product Message映射")
+            retry_source: RunRecord | None = None
+            retry_mode: str | None = None
+            if retry_control is not None:
+                retry_mode, source_run_id = retry_control
+                retry_source = await transaction.scalar(
+                    select(RunRecord).where(
+                        RunRecord.id == source_run_id,
+                        RunRecord.session_id == session_id,
+                    )
+                )
+                if retry_source is None:
+                    raise ProductSessionConflict("重试来源Run不存在")
+                if retry_source.status not in {
+                    "failed",
+                    "cancelled",
+                    "interrupted",
+                    "outcome_unknown",
+                }:
+                    raise ProductSessionConflict("只有失败、取消、中断或结果未知的Run可以重试")
+                source_message = await transaction.get(
+                    MessageRecord, retry_source.current_user_message_id
+                )
+                if source_message is None:
+                    raise ProductSessionConflict("重试来源输入不存在")
+                if retry_mode == "retry" and current["text"] != _message_text(source_message.content):
+                    raise ProductSessionConflict("原样重试不能修改输入；修改后请使用restart")
+                ancestor: RunRecord | None = retry_source
+                visited_run_ids: set[str] = set()
+                while ancestor is not None and ancestor.id not in visited_run_ids:
+                    visited_run_ids.add(ancestor.id)
+                    excluded_retry_message_ids.add(ancestor.current_user_message_id)
+                    ancestor = (
+                        await transaction.get(RunRecord, ancestor.retry_of_run_id)
+                        if ancestor.retry_of_run_id is not None
+                        else None
+                    )
             # Withdrawn messages remain durable audit facts but are intentionally
             # absent from the client-visible history. Ordinals therefore advance
             # over every stored message, not only the committed history prefix.
@@ -510,6 +591,8 @@ class ProductSessionService:
                     "content": current["text"],
                     "provider_id": session.model_provider_id,
                     "model": session.model,
+                    "retry_of_run_id": retry_source.id if retry_source is not None else None,
+                    "retry_mode": retry_mode,
                 }
             )
             claimed = await transaction.execute(
@@ -555,6 +638,8 @@ class ProductSessionService:
                     current_user_message_id=user_message_id,
                     model_provider_id=session.model_provider_id,
                     model=session.model,
+                    retry_of_run_id=retry_source.id if retry_source is not None else None,
+                    retry_mode=retry_mode,
                     trace_sequence=1,
                 )
             )
@@ -598,11 +683,20 @@ class ProductSessionService:
                     run_id=product_run_id,
                     sequence=1,
                     event_type="run.accepted",
-                    payload={"agui_run_id": agui_run_id, "request_hash": request_hash},
+                    payload={
+                        "agui_run_id": agui_run_id,
+                        "request_hash": request_hash,
+                        "retry_of_run_id": retry_source.id if retry_source is not None else None,
+                        "retry_mode": retry_mode,
+                    },
                 )
             )
 
-        await self.replace_input_with_product_history(input_data, session_id)
+        await self.replace_input_with_product_history(
+            input_data,
+            session_id,
+            excluded_message_ids=excluded_retry_message_ids,
+        )
         return AcceptedRun(
             session_id=session_id,
             product_run_id=product_run_id,
@@ -652,7 +746,11 @@ class ProductSessionService:
             )
 
     async def replace_input_with_product_history(
-        self, input_data: dict[str, Any], session_id: str
+        self,
+        input_data: dict[str, Any],
+        session_id: str,
+        *,
+        excluded_message_ids: set[str] | None = None,
     ) -> None:
         async with self.database.sessions() as transaction:
             values = list(
@@ -671,6 +769,7 @@ class ProductSessionService:
         input_data["messages"] = [
             {"id": value.agui_message_id, "role": value.role, "content": value.content}
             for value in values
+            if value.id not in (excluded_message_ids or set())
         ]
 
     async def mark_waiting_approval(

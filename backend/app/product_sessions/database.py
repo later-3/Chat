@@ -89,6 +89,10 @@ class RunRecord(Base):
     model: Mapped[str | None] = mapped_column(String(200), nullable=True)
     draft_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     approval_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    retry_of_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("product_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    retry_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
     failure_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     trace_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

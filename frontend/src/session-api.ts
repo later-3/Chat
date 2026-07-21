@@ -43,6 +43,9 @@ export interface ProductRun {
   assistant_message_id: string | null;
   model_provider_id: string | null;
   model: string | null;
+  retry_of_run_id: string | null;
+  retry_mode: "retry" | "restart" | null;
+  input_text: string | null;
   failure_code: string | null;
   failure_message: string | null;
   started_at: string;
@@ -57,6 +60,17 @@ export interface ProductRun {
     started_at: string;
     finished_at: string | null;
   }>;
+}
+
+export interface SessionRunControl {
+  kind: "retry" | "restart";
+  sourceRunId: string;
+}
+
+export function sessionControlForwardedProps(control: SessionRunControl): {
+  sessionControl: SessionRunControl;
+} {
+  return { sessionControl: control };
 }
 
 interface SessionListResponse {

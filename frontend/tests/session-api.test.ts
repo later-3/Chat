@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { toAguiMessages, type ProductMessage } from "../src/session-api.js";
+import {
+  sessionControlForwardedProps,
+  toAguiMessages,
+  type ProductMessage,
+} from "../src/session-api.js";
 
 
 function productMessage(
@@ -44,4 +48,12 @@ test("前端恢复投影不把Product主键冒充AG-UI message id", () => {
 
   assert.equal(value.id, "agui-1");
   assert.notEqual(value.id, "product-1");
+});
+
+
+test("失败重试控制显式携带来源Run和retry/restart语义", () => {
+  assert.deepEqual(
+    sessionControlForwardedProps({ kind: "restart", sourceRunId: "failed-run" }),
+    { sessionControl: { kind: "restart", sourceRunId: "failed-run" } },
+  );
 });

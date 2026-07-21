@@ -2,6 +2,11 @@ import { HttpAgent } from "@ag-ui/client";
 import type { Interrupt, Message } from "@ag-ui/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  sessionControlForwardedProps,
+  type SessionRunControl,
+} from "./session-api.js";
+
 const DEFAULT_AGENT_URL = "http://127.0.0.1:8030/api/agent";
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8030";
 
@@ -350,7 +355,7 @@ export function useChatAgent({
   }, [agent, inspectDispatchFailure]);
 
   const send = useCallback(
-    async (content: string) => {
+    async (content: string, control?: SessionRunControl) => {
       const text = content.trim();
       if (!text || agent.isRunning || pendingReview) return;
 
@@ -363,7 +368,9 @@ export function useChatAgent({
       setError(null);
 
       try {
-        await agent.runAgent();
+        await agent.runAgent(
+          control ? { forwardedProps: sessionControlForwardedProps(control) } : undefined,
+        );
       } catch (runError) {
         if (mounted.current) {
           setStatus("error");
@@ -489,18 +496,19 @@ export function useChatAgent({
 
   const returnDispatchPrompt = useCallback((): string | null => {
     if (!dispatchRecovery) return null;
-    const baseline = messagesBeforePendingRun.current ?? [];
-    agent.setMessages(baseline);
-    setMessages(cloneMessages(baseline));
     const prompt = dispatchRecovery.originPrompt;
-    pendingUserMessageId.current = null;
-    messagesBeforePendingRun.current = null;
     lastApprovedReview.current = null;
     setDispatchRecovery(null);
     setError(null);
     setStatus("idle");
     return prompt;
-  }, [agent, dispatchRecovery]);
+  }, [dispatchRecovery]);
+
+  const recoverFromError = useCallback(() => {
+    setDispatchRecovery(null);
+    setError(null);
+    setStatus("idle");
+  }, []);
 
   return {
     messages,
@@ -515,5 +523,6 @@ export function useChatAgent({
     abandon,
     stop,
     returnDispatchPrompt,
+    recoverFromError,
   };
 }

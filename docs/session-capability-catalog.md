@@ -316,4 +316,4 @@ Session是一个有身份、权限、版本和生命周期的产品协作空间�
 2. R0-R6是不同恢复保证，不能用“保存历史”或一个`resume`笼统替代。
 3. 精确续传第三方Token流、通用Exactly-once、隐藏推理存储、分支回滚外部副作用、多人实时编辑和自动分支合并仍是明确非目标。
 
-当前实现兑现R0与R1的文本会话基础：Product Session/Message/Interaction/Run/Attempt耐久保存、REST重开、唯一服务端历史、失败输入保留、成功终态提交门和启动中断收敛。它不兑现R2-R6；活动流重连、Worker接管、Tool副作用、Workflow Checkpoint和跨重启HITL仍必须按后续阶段分别验收。
+当前实现兑现R0与R1的文本会话基础：Product Session/Message/Interaction/Run/Attempt耐久保存、REST重开、唯一服务端历史、失败输入保留、成功终态提交门、启动中断收敛，以及保留旧事实并重新审批的显式Retry/Restart。Retry/Restart不等于Checkpoint Resume。当前仍不兑现R2-R6；活动流重连、Worker接管、Tool副作用、Workflow Checkpoint和跨重启HITL仍必须按后续阶段分别验收。
