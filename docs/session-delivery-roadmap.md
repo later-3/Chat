@@ -1,12 +1,12 @@
 # Session分阶段交付路线
 
-> 状态：`待用户审核；只拆任务与依赖，不是详细设计；未开发`
+> 状态：`路线已获用户批准；Phase 0完成，Phase 1文本会话底座完成，Phase 2-8继续交付`
 >
 > 更新日期：2026-07-21
 >
 > 前置定义：[Session能力全集与目标边界](./session-capability-catalog.md)
 >
-> 持久化子设计：[Session持久化候选设计](./session-persistence-design.md)与[审核包](./session-persistence-review.md)，当前暂停总体审核
+> 持久化实现记录：[Session持久化设计](./session-persistence-design.md)与[审核包](./session-persistence-review.md)
 
 ## 1. 路线结论
 
@@ -14,8 +14,8 @@
 
 | 阶段 | 核心结果 | 任务数 | 优先级 | 当前状态 |
 |---|---|---:|---|---|
-| Phase 0 | 冻结语义、框架边界和恢复验收合同 | 5 | P0 | 等待本次总体审核后开始 |
-| Phase 1 | 已完成文本会话可耐久保存、重开和继续 | 8 | P0-P1 | 未开始 |
+| Phase 0 | 冻结语义、框架边界和恢复验收合同 | 5 | P0 | 已完成 |
+| Phase 1 | 已完成文本会话可耐久保存、重开和继续 | 8 | P0-P1 | 已完成文本会话底座 |
 | Phase 2 | Run可幂等、取消、重试、Steer和排队 | 7 | P0-P2 | 未开始 |
 | Phase 3 | 生命周期、分支、长上下文和可移植性完整 | 7 | P1-P2 | 未开始 |
 | Phase 4 | 浏览器断线、刷新和换设备可接回活动Run | 6 | P2-P3 | 未开始 |
@@ -25,6 +25,17 @@
 | Phase 8 | 跨通道、投递、分享、治理和全链路验收 | 5 | P3 | 未开始 |
 
 这9个阶段覆盖能力全集中的全部74项。阶段只决定交付顺序；任何目标能力都没有被“以后再说”从规划中删除。
+
+### 1.1 Phase 1已交付证据
+
+1. SQLite Product Store由3个Alembic迁移建立，应用启动只对耐久数据库执行`upgrade head`；内存测试库才使用Metadata建表。
+2. Product Session、Product Message、Interaction、Product Run、Run Attempt、AG-UI ID映射和公开Trace分别建模；Product Session ID与AG-UI Thread ID同值但职责不合并。
+3. AG-UI入口校验客户端历史前缀，只接纳1条新User；随后由Product Store重新装配本轮完整消息，当前审批Workflow的确定性Executor据此生成唯一Provider请求，不再叠加浏览器或Provider历史。
+4. User/Interaction/Run/Attempt先提交；Assistant与成功Run先提交，再放行MAF/AG-UI成功终态。失败、结果未知、取消、放弃和重启中断不产生假成功。
+5. 前端提供Session列表、创建、打开、REST消息恢复、标题/归档、Provider/模型默认配置、Run状态和Attempt摘要。
+6. 自动测试覆盖迁移升降级、重启恢复、并发唯一接纳、历史防篡改、runId终态重放拒绝、双轮历史不重复和模型审批交叉路径；真实浏览器完成双轮模型、刷新恢复、Provider切换与放弃回归。
+
+当前边界仍是R0/R1：没有活动事件游标、后台Job、Worker Lease、Tool Ledger、Workflow持久Checkpoint或跨重启Approval。Phase 2-8状态不能因为Phase 1通过而提前标记完成。
 
 ## 2. 为什么这样分
 
@@ -368,11 +379,6 @@ Snapshot只保存可重放的消息、共享State和Interrupt投影，且当前�
 | Phase 7 | Workflow和审批跨重启、Worker、设备继续 | 跨通道投递与完整治理 |
 | Phase 8 | 跨通道连续协作、可靠投递、分享/删除/审计/运维闭环 | 明确非目标仍不承诺 |
 
-## 15. 本次需要用户审核的内容
+## 15. 路线审核结果
 
-本次不审核Schema、表字段、API路径、类名、队列产品、Worker中间件或部署拓扑，只审核：
-
-1. 是否同意9个阶段及其依赖顺序。
-2. 是否同意53个任务的方案级描述和目标。
-3. 是否同意每阶段完成场景与明确不保证项。
-4. 是否同意总体审核通过后先进入Phase 0，再重审D1-D6这个Phase 1持久化子设计，而不是直接开发。
+2026-07-21，用户要求按既有Session规划继续开发，确认9个阶段、53个任务、依赖顺序和每阶段明确不保证项。Phase 0和Phase 1文本底座已经落地；后续实现仍需逐阶段更新本表、测试证据和恢复保证，不能用本次批准一次性外推全部字段和技术细节。

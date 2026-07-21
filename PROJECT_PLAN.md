@@ -61,7 +61,7 @@ flowchart LR
 | 0. 产品定义与治理 | 固定独立产品身份、6个问题、完整闭环和协作规则 | `产品身份已纠正；经验约束已补充` |
 | 1. 工程与真实链路 | 建立独立前后端、MAF、AG-UI、调试和验证基线 | `真实模型门通过；2项收尾` |
 | 2. 目标架构与合同基线 | 审核目标拓扑、模块、状态、合同、恢复矩阵 | `重写完成，待用户审核` |
-| 3. 产品事实与完成历史 | 身份、Session、Message、Run/Attempt和历史恢复 | `未开始实现` |
+| 3. 产品事实与完成历史 | 身份、Session、Message、Run/Attempt和历史恢复 | `Phase 1文本底座完成；完整身份、Retry和树操作继续` |
 | 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `未开始` |
 | 5. 持久执行与活动流 | Job/Event、Worker、Lease、重连和Reconciler | `未开始` |
 | 6. Tool、Workflow与HITL恢复 | Tool Ledger、对账、Checkpoint和持久Interrupt | `未开始` |
@@ -132,13 +132,13 @@ flowchart LR
 
 主要方案任务：
 
-- [ ] 详细设计并审核 Identity与Channel Binding、Conversation、Run管理的聚合、状态机和 Repository Port。
-- [ ] 建立 Principal/Scope 基线、Product Session、Interaction 和 Message Tree。
-- [ ] 建立 Product Run、Run Attempt 和稳定错误分类；不与 Runtime Job 合并。
-- [ ] 建立输入接纳门和产品成功终态门。
-- [ ] 建立 Product Store 迁移、事务、乐观并发、备份恢复和数据保留基础。
-- [ ] 实现 REST Session/Message/Run 查询和 AG-UI 实时投影对齐。
-- [ ] 服务端唯一历史装配；防止 Product History、MAF History 和客户端消息重复。
+- [x] 审核并实现Conversation与Run管理的Phase 1聚合、状态机和Application Service；完整Identity/Channel Binding仍待后续阶段。
+- [x] 建立固定本地Scope、Product Session、Interaction和树兼容Message字段；真实Principal/Binding与分支操作尚未启用。
+- [x] 建立Product Run、Run Attempt和稳定错误分类；不与Runtime Job合并。
+- [x] 建立输入接纳门和产品成功终态门。
+- [x] 建立Product Store迁移、短事务、CAS并发和启动恢复基础；备份、保留和容量策略仍待治理阶段。
+- [x] 实现REST Session/Message/Run查询和AG-UI实时投影对齐。
+- [x] 服务端唯一历史装配；防止Product History、Provider History和客户端消息重复。
 - [ ] 实现创建、列出、打开、归档、重启恢复和失败重试。
 - [ ] 固化 MAF HistoryProvider 保存、错误和终态顺序合同测试。
 - [ ] 完成桌面、窄屏、重复提交、并发和重启端到端验证。

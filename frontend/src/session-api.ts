@@ -1,0 +1,135 @@
+import type { Message } from "@ag-ui/core";
+
+const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? "http://127.0.0.1:8030";
+
+export interface ProductSession {
+  id: string;
+  thread_id: string;
+  scope_id: string;
+  channel: string;
+  title: string;
+  status: "active" | "archived";
+  revision: number;
+  active_run_id: string | null;
+  model_provider_id: string | null;
+  model: string | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+export interface ProductMessage {
+  id: string;
+  agui_message_id: string;
+  session_id: string;
+  interaction_id: string | null;
+  run_id: string | null;
+  role: "user" | "assistant";
+  content: unknown;
+  status: string;
+  context_eligible: boolean;
+  ordinal: number;
+  revision: number;
+  created_at: string;
+}
+
+export interface ProductRun {
+  id: string;
+  session_id: string;
+  interaction_id: string;
+  agui_run_id: string;
+  status: string;
+  current_user_message_id: string;
+  assistant_message_id: string | null;
+  model_provider_id: string | null;
+  model: string | null;
+  failure_code: string | null;
+  failure_message: string | null;
+  started_at: string;
+  finished_at: string | null;
+  attempts: Array<{
+    id: string;
+    attempt_number: number;
+    runtime_kind: string;
+    status: string;
+    failure_code: string | null;
+    failure_message: string | null;
+    started_at: string;
+    finished_at: string | null;
+  }>;
+}
+
+interface SessionListResponse {
+  sessions: ProductSession[];
+}
+
+interface MessageListResponse {
+  messages: ProductMessage[];
+}
+
+interface RunListResponse {
+  runs: ProductRun[];
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, init);
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(payload?.detail ?? `请求失败：HTTP ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+export function listSessions(includeArchived = false): Promise<ProductSession[]> {
+  return request<SessionListResponse>(`/api/sessions?include_archived=${includeArchived}`).then(
+    (value) => value.sessions,
+  );
+}
+
+export function createSession(): Promise<ProductSession> {
+  return request<ProductSession>("/api/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "新会话" }),
+  });
+}
+
+export function getSession(sessionId: string): Promise<ProductSession> {
+  return request<ProductSession>(`/api/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export function getSessionMessages(sessionId: string): Promise<ProductMessage[]> {
+  return request<MessageListResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
+  ).then((value) => value.messages);
+}
+
+export function getSessionRuns(sessionId: string): Promise<ProductRun[]> {
+  return request<RunListResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/runs`).then(
+    (value) => value.runs,
+  );
+}
+
+export function updateSession(
+  sessionId: string,
+  changes: {
+    title?: string;
+    archived?: boolean;
+    model_provider_id?: string | null;
+    model?: string | null;
+  },
+): Promise<ProductSession> {
+  return request<ProductSession>(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+}
+
+export function toAguiMessages(messages: ProductMessage[]): Message[] {
+  return messages.map((message) => ({
+    id: message.agui_message_id,
+    role: message.role,
+    content: message.content,
+  })) as Message[];
+}

@@ -13,6 +13,9 @@
     "public_host": "localhost",
     "url": "http://localhost:5073"
   },
+  "product_store": {
+    "url": "sqlite+aiosqlite:///backend/.data/chat.db"
+  },
   "history": {
     "directory": ".chat-history"
   },

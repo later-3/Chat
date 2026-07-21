@@ -154,7 +154,19 @@ function revisionError(payload: RevisionResponseError, fallback: string): string
  * Product review data is fetched/changed through REST; AG-UI remains the only
  * run/interrupt stream and HttpAgent remains the message projection owner.
  */
-export function useChatAgent() {
+interface UseChatAgentOptions {
+  sessionId: string | null;
+  hydratedMessages: Message[];
+  hydrationVersion: number;
+  onSessionSettled: (hydrateMessages: boolean) => void;
+}
+
+export function useChatAgent({
+  sessionId,
+  hydratedMessages,
+  hydrationVersion,
+  onSessionSettled,
+}: UseChatAgentOptions) {
   const [agent] = useState(
     () =>
       new HttpAgent({
@@ -172,6 +184,27 @@ export function useChatAgent() {
   const pendingUserMessageId = useRef<string | null>(null);
   const messagesBeforePendingRun = useRef<Message[] | null>(null);
   const lastApprovedReview = useRef<ModelCallReviewCard | null>(null);
+  const onSessionSettledRef = useRef(onSessionSettled);
+
+  useEffect(() => {
+    onSessionSettledRef.current = onSessionSettled;
+  }, [onSessionSettled]);
+
+  useEffect(() => {
+    if (!sessionId || agent.isRunning) return;
+    agent.threadId = sessionId;
+    agent.setMessages(cloneMessages(hydratedMessages));
+    agent.setState({});
+    agent.pendingInterrupts = [];
+    setMessages(cloneMessages(hydratedMessages));
+    setPendingReview(null);
+    setDispatchRecovery(null);
+    lastApprovedReview.current = null;
+    pendingUserMessageId.current = null;
+    messagesBeforePendingRun.current = null;
+    setStatus("idle");
+    setError(null);
+  }, [agent, hydrationVersion, sessionId]);
 
   const inspectDispatchFailure = useCallback(async (message: string) => {
     const review = lastApprovedReview.current;
@@ -219,6 +252,7 @@ export function useChatAgent() {
           if (card) {
             setPendingReview(card);
             setStatus("awaiting_approval");
+            onSessionSettledRef.current(false);
             return;
           }
           setStatus("error");
@@ -231,12 +265,14 @@ export function useChatAgent() {
         setStatus("idle");
         pendingUserMessageId.current = null;
         messagesBeforePendingRun.current = null;
+        onSessionSettledRef.current(true);
       },
       onRunErrorEvent({ event }) {
         if (mounted.current) {
           setStatus("error");
           setError(event.message);
           void inspectDispatchFailure(event.message);
+          onSessionSettledRef.current(true);
         }
       },
       onRunFailed({ error: runError }) {
@@ -244,6 +280,7 @@ export function useChatAgent() {
           setStatus("error");
           setError(runError.message || "Agent连接失败");
           void inspectDispatchFailure(runError.message || "Agent连接失败");
+          onSessionSettledRef.current(true);
         }
       },
     });
@@ -408,22 +445,6 @@ export function useChatAgent() {
     return prompt;
   }, [agent, dispatchRecovery]);
 
-  const newConversation = useCallback(() => {
-    if (agent.isRunning) agent.abortRun();
-    agent.threadId = createThreadId();
-    agent.setMessages([]);
-    agent.setState({});
-    agent.pendingInterrupts = [];
-    pendingUserMessageId.current = null;
-    messagesBeforePendingRun.current = null;
-    setMessages([]);
-    setPendingReview(null);
-    setDispatchRecovery(null);
-    lastApprovedReview.current = null;
-    setStatus("idle");
-    setError(null);
-  }, [agent]);
-
   return {
     messages,
     status,
@@ -437,6 +458,5 @@ export function useChatAgent() {
     abandon,
     stop,
     returnDispatchPrompt,
-    newConversation,
   };
 }

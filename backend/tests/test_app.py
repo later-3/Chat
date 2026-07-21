@@ -29,6 +29,7 @@ def test_health_exposes_approved_architecture_without_secrets() -> None:
         "runtime_mode": "bootstrap",
         "model": None,
         "model_call_approval": "not_applicable",
+        "product_sessions": "sqlite",
     }
 
 
@@ -281,6 +282,9 @@ def test_ag_ui_endpoint_streams_a_complete_bootstrap_run() -> None:
     }
 
     with _client() as client:
+        created = client.post("/api/sessions", json={"title": "传输验证"})
+        assert created.status_code == 201
+        payload["threadId"] = created.json()["id"]
         response = client.post("/api/agent", json=payload)
 
     assert response.status_code == 200

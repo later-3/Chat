@@ -1,6 +1,6 @@
 # Session持久化审核包
 
-> 状态：`Phase 1持久化子设计审核包；暂停总体审核；未创建Schema；未实现`
+> 状态：`D1-D6已随用户开发指令获批；Phase 1文本会话底座已实现并验证`
 >
 > 更新日期：2026-07-21
 >
@@ -12,7 +12,7 @@
 
 本审核包不要求用户先掌握MAF、AG-UI、pi、nanobot或LibreChat。每项决策都说明：问题背景、为什么现在决定、参考源真正覆盖什么、全部可行选择、优缺点、当前建议、建议原因、未验证项和需要用户批准的句子。
 
-但D1-D6只解决路线Phase 1的文本会话持久化底座，不覆盖分支、活动流重连、Worker接管、Tool副作用、Workflow Checkpoint、HITL和跨通道能力。因此当前先暂停逐项批准；总体能力和阶段路线通过后，再把本审核包作为Phase 1的详细设计门重新提交。
+D1-D6只解决路线Phase 1的文本会话持久化底座，不覆盖分支、活动流重连、Worker接管、Tool副作用、Workflow Checkpoint、HITL和跨通道能力。2026-07-21用户要求按既有规划开发，视为批准本审核包当前建议；实际实现差异记录在1.2节。
 
 需要先固定4个不同事实：
 
@@ -29,12 +29,21 @@
 |---|---|---|---|---|
 | D1 | Phase 1保存哪些状态、在哪里恢复 | 一个SQLite Product DB；持久AG-UI Snapshot关闭；页面REST恢复 | 保留单一产品事实源，避开Snapshot fail-soft和双历史加载 | 高 |
 | D2 | Product与协议/Provider ID如何映射 | Product Session ID与AG-UI `threadId`同值；Run、Message和Provider ID显式映射 | Phase 1 Session映射简单，但不牺牲对象、权限和运行边界 | 中高 |
-| D3 | 谁加载模型历史 | `ProductHistoryProvider`唯一加载；`store=False`+per-service；入口校验全量历史并只传新delta | 当前版本实测无重复、可在每次服务调用后持久化 | 中高（RunContext合同待固化） |
+| D3 | 谁加载模型历史 | 唯一服务端装配器；当前审批Workflow由ProductSessionService装配，普通MAF Agent场景才使用`ProductHistoryProvider`，二者不能并用 | 已通过双轮真实模型和严格3消息合同证明无重复 | 高（Tool循环仍属后续阶段） |
 | D4 | 成功终态何时发送 | User/Run先提交；Checkpoint暂存；包装器观察并暂扣终态后，外层事务写Assistant和成功Run，再放行`RUN_FINISHED` | 可证明产品成功早于客户端成功终态，不让Checkpoint或Snapshot反向拥有产品事实 | 中高（终态门合同待固化） |
 | D5 | 同Session并发和重复请求 | 最多一个活动Product Run；重复幂等；新请求返回`SESSION_BUSY` | 最小且可解释，避免历史尾部竞争和重复外部调用 | 高 |
 | D6 | SQLite数据访问与迁移工具 | SQLAlchemy 2+Alembic+`aiosqlite` | 后续领域对象多，显式迁移与事务约束的收益大于依赖成本 | 中高 |
 
-批准D1-D6以后，才会把[候选逻辑记录](./session-persistence-design.md#10-候选逻辑记录)转为正式Schema和迁移。批准外部参考范围不等于批准这6项设计。
+### 1.2 实现后的必要适配
+
+当前真实模型路径已经先采用用户批准的“MAF原生Workflow + 确定性Executor + 每次Provider调用审批”，而不是让普通MAF Agent直接拥有自动模型/Tool循环。因此D3按相同所有权原则做了窄适配：
+
+1. `ProductSessionService.prepare_agui_run()`成为当前Workflow入口唯一服务端历史装配器；它先核对客户端前缀，再用Product Message替换运行输入。
+2. 确定性Executor从这份MAF Workflow消息编译最终Provider Body；`store=False`、无Continuation且自动Tool循环关闭，浏览器、Provider History和Snapshot不会再次加载历史。
+3. 当前每个Workflow只有1次Provider模型调用，没有合法的第二次自动模型调用，因此没有创建无生产者的per-service History Checkpoint表。
+4. 将来若某个普通MAF Agent可以直接执行Provider调用，必须按本审核包启用`ProductHistoryProvider`；若继续经过审批Workflow，则仍由Workflow入口装配，不能两者同时启用造成双历史。
+
+其余D1、D2、D4、D5、D6已转为Product Store Schema、3个Alembic迁移、Application Service、AG-UI薄终态门和前端REST恢复。批准外部参考范围仍不等于R2-R6已经实现。
 
 ## 2. 已完成的证据工作
 
@@ -416,4 +425,4 @@ MAF API与事件顺序继续以当前安装源码和实测为准；pi与nanobot�
 
 > D1、D2、D3、D5、D6批准；D4选择方案D。
 
-未收到明确批准前，下一步仍然只允许修订设计和验证证据，不创建正式Schema、迁移或持久化服务。
+批准结果与实现证据已同步到[Session持久化设计](./session-persistence-design.md)、[Session交付路线](./session-delivery-roadmap.md)和`PROJECT_STATE.md`。本文保留原决策卡作为设计依据，不代表R2-R6已经交付。

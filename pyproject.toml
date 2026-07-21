@@ -7,7 +7,11 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
   "agent-framework-ag-ui==1.0.0rc8",
   "agent-framework-openai==1.10.1",
+  "aiosqlite>=0.21,<1",
+  "alembic>=1.16,<2",
   "fastapi>=0.115,<1",
+  "greenlet>=3.2,<4",
+  "sqlalchemy>=2.0,<2.1",
   "uvicorn[standard]>=0.41,<1",
 ]
 

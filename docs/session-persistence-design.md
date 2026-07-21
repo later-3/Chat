@@ -1,12 +1,20 @@
 # Session持久化候选设计
 
-> 状态：`Phase 1持久化子设计草案；暂停总体审核；未创建Schema；未实现`
+> 状态：`Phase 1文本会话底座已实现；本文同时保留批准前设计与实现差异`
 >
 > 更新日期：2026-07-21
 >
 > 适用版本：`agent-framework-core 1.11.0`、`agent-framework-openai 1.10.1`、`agent-framework-ag-ui 1.0.0rc8`、`@ag-ui/client 0.0.57`
 
-本文把[研究与方案推导](./session-persistence-research.md)收敛成首个文本会话底座的候选子设计，但它不再承担完整Session方案的总体审核。总体目标先审核[Session能力全集](./session-capability-catalog.md)和[Session交付路线](./session-delivery-roadmap.md)；通过后，本文件的D1-D6还要结合树兼容、Run Attempt演进和后续Checkpoint关联重新审核，才允许创建迁移、Repository和正式持久化代码。
+本文把[研究与方案推导](./session-persistence-research.md)收敛成首个文本会话底座设计。2026-07-21用户要求按既有规划开发，D1-D6随之获批；Phase 1实现已经建立迁移、Application Service、MAF/AG-UI提交门和前端恢复入口。完整Session目标仍由[能力全集](./session-capability-catalog.md)和[交付路线](./session-delivery-roadmap.md)拥有。
+
+### 0.1 实现落点与设计适配
+
+1. `backend/app/product_sessions/`保存Product Store模型、事务服务和MAF AG-UI薄包装器；SQLite耐久库启动时执行Alembic迁移。
+2. 当前模型路径是审批Workflow，不是普通MAF Agent自动模型循环。历史唯一装配器因此落在`ProductSessionService.prepare_agui_run()`；确定性Executor接收装配后的Workflow消息并编译最终Provider请求。
+3. `ProductHistoryProvider`保留为“普通MAF Agent直接调用模型”时的唯一方案；与当前Workflow装配器不能同时加载。同一Provider调用仍强制`store=False`、无Continuation、无自动Tool循环。
+4. 已实现Product Session、Message、Interaction、Run、Attempt、协议ID映射和Trace；没有为尚不存在的第二次Provider调用创建provisional history checkpoint，也没有把内存Approval冒充为持久HITL。
+5. 当前兑现R0/R1文本会话恢复，不兑现活动流、Worker、Tool和Workflow/HITL恢复。
 
 ## 1. 候选结论
 

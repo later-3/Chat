@@ -35,8 +35,9 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 2. React前端通过`HttpAgent`完成了浏览器真实消息回合。
 3. 后端自动测试、前端类型检查和生产构建已建立为一键验证。
 4. 后端以私有`backend/config.json`配置火山方舟和阿里云百炼，前端按Provider联动选择模型；真实模型AG-UI文本回合已通过。
-5. 总体架构候选已按完整用户场景重建，完整Session能力全集和Phase 0-8交付路线已经形成，均等待用户审核；尚未进入领域详细设计或开发。
-6. 尚未完成模型失败路径、服务端历史恢复和产品领域数据库，也没有迁移旧数据库或历史会话。
+5. Product Session Phase 1文本底座已完成：SQLite/Alembic、Session/Message/Interaction/Run/Attempt、REST恢复、服务端唯一历史、失败收敛和成功终态门。
+6. 前端可创建、打开、重命名、归档和配置Session默认Provider/模型，并展示Run/Attempt摘要；没有迁移旧数据库或历史会话。
+7. 完整Session仍按Phase 2-8继续：活动流重连、Worker、Tool副作用、Workflow/HITL和跨入口恢复尚未完成。
 
 ## 技术方向
 
@@ -73,6 +74,13 @@ uv sync --dev
 ```
 
 `backend/config.json`是唯一后端运行配置源，包含密钥，因此已被Git忽略；不要把它的内容复制到文档、日志或提交中。
+
+耐久Product Store在后端启动时自动执行`alembic upgrade head`。需要单独检查迁移或执行回滚演练时使用：
+
+```bash
+uv run alembic check
+uv run alembic upgrade head
+```
 
 终端1，启动后端：
 
@@ -155,9 +163,9 @@ scripts/         可重复执行的工程验证
 9. [Session能力全集与目标边界](./docs/session-capability-catalog.md)：9个能力域、74项能力、R0-R6恢复层级、参考覆盖、明确非目标和最终用户场景。
 10. [Session分阶段交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务、优先级、依赖、方案、目标和各阶段完成场景。
 11. [Session持久化研究与方案推导](./docs/session-persistence-research.md)：MAF、pi、nanobot与LibreChat的逐项源码证据、适用边界、方案比较和决策推导。
-12. [Session持久化候选设计](./docs/session-persistence-design.md)：Phase 1文本持久化子设计，当前暂停总体审核。
-13. [Session持久化审核包](./docs/session-persistence-review.md)：D1-D6子设计的原因、参考覆盖、选项、优缺点和建议，待总体规划通过后重审。
+12. [Session持久化设计](./docs/session-persistence-design.md)：Phase 1文本持久化设计、代码落点与审批Workflow适配。
+13. [Session持久化审核包](./docs/session-persistence-review.md)：已批准D1-D6的原因、参考覆盖、选项、实现适配和边界。
 
 ## 下一步
 
-下一步先结合架构新手导读审核总体架构候选的8项决定，确认前端到后端对象流、Agent内部边界、入口Adapter/Ingress拓扑、10个产品与应用模块、状态所有权和关键合同；再把Session能力与路线映射到批准后的架构。审核门通过前不创建正式Schema、迁移、Worker或领域业务实现。
+下一步按已批准路线继续Workflow可视化、多Agent和pi-agent工具接入；每个Feature都复用Product Session/Run事实、逐次模型审批和MAF/AG-UI合同，并分别提交自动测试、浏览器端到端与真实模型证据。

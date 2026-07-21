@@ -23,6 +23,7 @@ from .model_providers import (
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = PROJECT_ROOT / "backend"
 DEFAULT_CONFIG_PATH = BACKEND_ROOT / "config.json"
+DEFAULT_DATABASE_URL = f"sqlite+aiosqlite:///{(BACKEND_ROOT / '.data' / 'chat.db').as_posix()}"
 
 
 class SettingsError(ValueError):
@@ -301,6 +302,7 @@ class Settings:
     model_base_url: str | None
     model_providers: tuple[ModelProviderConfig, ...] = ()
     default_model_provider: str | None = None
+    database_url: str = DEFAULT_DATABASE_URL
 
     @property
     def runtime_mode(self) -> str:
@@ -339,6 +341,7 @@ class Settings:
         if version != 1:
             raise SettingsError(f"不支持的配置版本: {version!r}")
         server = _record(payload.get("server", {}), field="server")
+        product_store = _record(payload.get("product_store", {}), field="product_store")
         catalog = _provider_catalog(payload)
         if catalog is None:
             model = "bootstrap/no-model"
@@ -366,6 +369,7 @@ class Settings:
             model_base_url=base_url,
             model_providers=providers,
             default_model_provider=default_provider_id,
+            database_url=str(product_store.get("url") or DEFAULT_DATABASE_URL),
         )
 
     @classmethod
@@ -377,4 +381,5 @@ class Settings:
             model="test/bootstrap",
             model_api_key=None,
             model_base_url=None,
+            database_url="sqlite+aiosqlite:///:memory:",
         )

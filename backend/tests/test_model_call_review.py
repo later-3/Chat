@@ -32,6 +32,7 @@ from backend.app.model_providers import (
     ParameterCapability,
 )
 from backend.app.model_call_workflow import ModelCallApprovalExecutor, normalize_agui_messages_for_provider
+from backend.app.product_sessions import ProductDatabase, ProductSessionService
 
 
 class CapturingProviderTransport:
@@ -157,6 +158,18 @@ class YieldingContext:
         self.outputs.append(value)
 
 
+class RefusingCommitSessionService(ProductSessionService):
+    async def complete_active_run(
+        self,
+        session_id: str,
+        *,
+        assistant_text: str,
+        agui_message_id: str | None,
+    ) -> dict[str, Any] | None:
+        del session_id, assistant_text, agui_message_id
+        return None
+
+
 def _model_settings() -> Settings:
     return Settings(
         host="127.0.0.1",
@@ -167,6 +180,7 @@ def _model_settings() -> Settings:
         model_base_url="https://provider.invalid/v1",
         model_providers=_provider_catalog().providers,
         default_model_provider="provider-a",
+        database_url="sqlite+aiosqlite:///:memory:",
     )
 
 
@@ -176,8 +190,6 @@ def _request(thread_id: str, run_id: str, prompt: str) -> dict[str, Any]:
         "runId": run_id,
         "state": {},
         "messages": [
-            {"id": "history-user", "role": "user", "content": "历史问题"},
-            {"id": "history-assistant", "role": "assistant", "content": "历史回答"},
             {"id": "current-user", "role": "user", "content": prompt},
         ],
         "tools": [],
@@ -215,6 +227,12 @@ def _interrupt(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _review_card(interrupt: dict[str, Any]) -> dict[str, Any]:
     return interrupt["metadata"]["agent_framework"]["data"]
+
+
+def _create_product_session(client: TestClient) -> str:
+    response = client.post("/api/sessions", json={"title": "审批测试会话"})
+    assert response.status_code == 201
+    return str(response.json()["id"])
 
 
 def _text(events: list[dict[str, Any]]) -> str:
@@ -682,9 +700,8 @@ def test_agui_revision_requires_second_approval_and_sends_exact_edited_bytes() -
         model_call_store=store,
         model_call_transport=transport,
     )
-    thread_id = "thread-integration"
-
     with TestClient(app) as client:
+        thread_id = _create_product_session(client)
         first_events = _events(client.post("/api/agent", json=_request(thread_id, "run-1", "原问题")))
         first_card = _review_card(_interrupt(first_events))
         assert transport.prepared == []
@@ -764,9 +781,8 @@ def test_abandon_creates_zero_provider_attempts_and_preserves_origin_prompt() ->
         model_call_store=store,
         model_call_transport=transport,
     )
-    thread_id = "thread-abandon"
-
     with TestClient(app) as client:
+        thread_id = _create_product_session(client)
         paused = _events(client.post("/api/agent", json=_request(thread_id, "run-abandon", "请保留这段输入")))
         card = _review_card(_interrupt(paused))
         assert card["origin_prompt"] == "请保留这段输入"
@@ -781,6 +797,9 @@ def test_abandon_creates_zero_provider_attempts_and_preserves_origin_prompt() ->
                 ),
             )
         )
+        product_messages = client.get(f"/api/sessions/{thread_id}/messages").json()["messages"]
+        product_runs = client.get(f"/api/sessions/{thread_id}/runs").json()["runs"]
+        product_session = client.get(f"/api/sessions/{thread_id}").json()
 
     assert "未向模型发送" in _text(abandoned)
     event_types = [event.get("type") for event in abandoned]
@@ -788,6 +807,64 @@ def test_abandon_creates_zero_provider_attempts_and_preserves_origin_prompt() ->
     assert transport.prepared == []
     assert store.attempts() == []
     assert store.get(card["draft_id"]).status == "abandoned"
+    assert product_messages == []
+    assert product_runs[0]["status"] == "abandoned"
+    assert product_session["active_run_id"] is None
+
+
+def test_second_model_approval_uses_product_history_exactly_once() -> None:
+    store = InMemoryModelCallReviewStore(_provider_catalog())
+    transport = CapturingProviderTransport()
+    app = create_app(
+        _model_settings(),
+        model_call_store=store,
+        model_call_transport=transport,
+    )
+
+    with TestClient(app) as client:
+        thread_id = _create_product_session(client)
+        first_events = _events(
+            client.post("/api/agent", json=_request(thread_id, "run-first", "第一轮问题"))
+        )
+        first_card = _review_card(_interrupt(first_events))
+        completed = _events(
+            client.post(
+                "/api/agent",
+                json=_resume(
+                    thread_id,
+                    "run-first-approve",
+                    first_card["approval_id"],
+                    {"decision": "approve"},
+                ),
+            )
+        )
+        assert completed[-1]["type"] == "RUN_FINISHED"
+        persisted = client.get(f"/api/sessions/{thread_id}/messages").json()["messages"]
+        incoming = [
+            {
+                "id": value["agui_message_id"],
+                "role": value["role"],
+                "content": value["content"],
+            }
+            for value in persisted
+        ]
+        incoming.append({"id": "current-user-2", "role": "user", "content": "第二轮问题"})
+        second_events = _events(
+            client.post(
+                "/api/agent",
+                json={**_request(thread_id, "run-second", "ignored"), "messages": incoming},
+            )
+        )
+        second_card = _review_card(_interrupt(second_events))
+        second_input = second_card["provider_request"]["input"]
+
+    assert [value["role"] for value in second_input] == ["user", "assistant", "user"]
+    assert [value["content"][0]["text"] for value in second_input] == [
+        "第一轮问题",
+        "修改后的模型回答",
+        "第二轮问题",
+    ]
+    assert len(second_input) == 3
 
 
 def test_provider_failure_is_the_last_agui_event() -> None:
@@ -797,9 +874,8 @@ def test_provider_failure_is_the_last_agui_event() -> None:
         model_call_store=store,
         model_call_transport=FailingProviderTransport(),
     )
-    thread_id = "thread-provider-error"
-
     with TestClient(app) as client:
+        thread_id = _create_product_session(client)
         paused = _events(client.post("/api/agent", json=_request(thread_id, "run-error", "错误顺序验证")))
         card = _review_card(_interrupt(paused))
         failed = _events(
@@ -813,11 +889,60 @@ def test_provider_failure_is_the_last_agui_event() -> None:
                 ),
             )
         )
+        product_messages = client.get(f"/api/sessions/{thread_id}/messages").json()["messages"]
+        product_runs = client.get(f"/api/sessions/{thread_id}/runs").json()["runs"]
+        product_session = client.get(f"/api/sessions/{thread_id}").json()
 
     assert failed[-1]["type"] == "RUN_ERROR"
     assert "HTTP 400" in failed[-1]["message"]
     assert not any(event["type"] == "RUN_FINISHED" for event in failed)
     assert store.attempts()[0].status == "failed"
+    assert [value["role"] for value in product_messages] == ["user"]
+    assert product_runs[0]["status"] == "failed"
+    assert [value["status"] for value in product_runs[0]["attempts"]] == ["failed"]
+    assert product_session["active_run_id"] is None
+
+
+def test_product_commit_gate_replaces_provider_success_with_run_error() -> None:
+    store = InMemoryModelCallReviewStore(_provider_catalog())
+    sessions = RefusingCommitSessionService(
+        ProductDatabase("sqlite+aiosqlite:///:memory:")
+    )
+    app = create_app(
+        _model_settings(),
+        model_call_store=store,
+        model_call_transport=CapturingProviderTransport(["未提交回答"]),
+        product_session_service=sessions,
+    )
+    with TestClient(app) as client:
+        thread_id = _create_product_session(client)
+        paused = _events(
+            client.post("/api/agent", json=_request(thread_id, "run-commit-gate", "提交门验证"))
+        )
+        card = _review_card(_interrupt(paused))
+        failed = _events(
+            client.post(
+                "/api/agent",
+                json=_resume(
+                    thread_id,
+                    "run-commit-gate-resume",
+                    card["approval_id"],
+                    {"decision": "approve"},
+                ),
+            )
+        )
+        product_messages = client.get(f"/api/sessions/{thread_id}/messages").json()["messages"]
+        product_runs = client.get(f"/api/sessions/{thread_id}/runs").json()["runs"]
+
+    assert failed[-1] == {
+        "type": "RUN_ERROR",
+        "message": "模型输出已产生，但Product Store终态提交失败。",
+        "code": "PRODUCT_COMMIT_FAILED",
+    }
+    assert not any(event["type"] == "RUN_FINISHED" for event in failed)
+    assert [value["role"] for value in product_messages] == ["user"]
+    assert product_runs[0]["status"] == "failed"
+    assert product_runs[0]["failure_code"] == "product_commit_failed"
 
 
 def test_timeout_like_failure_is_not_retried_and_is_exposed_as_outcome_unknown() -> None:
@@ -827,9 +952,8 @@ def test_timeout_like_failure_is_not_retried_and_is_exposed_as_outcome_unknown()
         model_call_store=store,
         model_call_transport=UnknownOutcomeProviderTransport(),
     )
-    thread_id = "thread-provider-timeout"
-
     with TestClient(app) as client:
+        thread_id = _create_product_session(client)
         paused = _events(client.post("/api/agent", json=_request(thread_id, "run-timeout", "超时验证")))
         card = _review_card(_interrupt(paused))
         failed = _events(
@@ -844,6 +968,9 @@ def test_timeout_like_failure_is_not_retried_and_is_exposed_as_outcome_unknown()
             )
         )
         persisted = client.get(f"/api/model-call-drafts/{card['draft_id']}")
+        product_messages = client.get(f"/api/sessions/{thread_id}/messages").json()["messages"]
+        product_runs = client.get(f"/api/sessions/{thread_id}/runs").json()["runs"]
+        product_session = client.get(f"/api/sessions/{thread_id}").json()
 
     assert failed[-1]["type"] == "RUN_ERROR"
     assert len(store.attempts()) == 1
@@ -854,6 +981,12 @@ def test_timeout_like_failure_is_not_retried_and_is_exposed_as_outcome_unknown()
         "status": "outcome_unknown",
         "error_code": "provider_timeout",
     }
+    assert [value["role"] for value in product_messages] == ["user"]
+    assert product_runs[0]["status"] == "outcome_unknown"
+    assert [value["status"] for value in product_runs[0]["attempts"]] == [
+        "outcome_unknown"
+    ]
+    assert product_session["active_run_id"] is None
 
 
 def test_cancelling_after_dispatch_claim_marks_attempt_unknown_without_retry() -> None:

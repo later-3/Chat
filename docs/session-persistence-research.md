@@ -2,11 +2,13 @@
 
 > 定位说明：本文是持久化与首个文本回合的证据底稿，不是完整Session能力全集或开发路线。总体审核请先阅读[Session能力全集](./session-capability-catalog.md)和[Session交付路线](./session-delivery-roadmap.md)。
 
-> 状态：`限定研究已完成；作为总体规划证据底稿；D1-D6暂停审核；尚未创建Schema、迁移或持久化服务`
+> 状态：`限定研究已完成；D1-D6已获批并完成Phase 1实现；正文保留实施前证据快照`
 >
 > 更新日期：2026-07-21
 >
-> 阅读顺序：先审核能力全集与交付路线；批准后，再按本文、[候选设计](./session-persistence-design.md)和[审核包](./session-persistence-review.md)重审Phase 1的D1-D6。
+> 阅读顺序：先看能力全集与交付路线，再用本文追溯为什么选择当前边界；实际代码落点和审批Workflow适配见[Session持久化设计](./session-persistence-design.md#01-实现落点与设计适配)。
+
+> 实施说明：第3节及后文中的“当前代码尚未实现”“候选”“待审核”是形成D1-D6时的历史快照，不再代表仓库现状。2026-07-21实现采用同一单一历史原则，但因真实Provider入口已是确定性审批Workflow，当前由`ProductSessionService`在Workflow入口装配Product Message；只有普通MAF Agent直接调用模型时才启用`ProductHistoryProvider`，两条路径禁止并用。
 
 ## 1. 先给结论：研究后改变了什么
 
