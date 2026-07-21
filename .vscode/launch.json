@@ -1,0 +1,54 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Chat Backend (MAF + FastAPI)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "backend.app.main:app",
+        "--host",
+        "${config:chat.backendHost}",
+        "--port",
+        "${config:chat.backendPort}",
+        "--reload"
+      ],
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "env": {
+        "CHAT_BACKEND_HOST": "${config:chat.backendHost}",
+        "CHAT_BACKEND_PORT": "${config:chat.backendPort}",
+        "CHAT_FRONTEND_PORT": "${config:chat.frontendPort}",
+        "CHAT_FRONTEND_PUBLIC_HOST": "${config:chat.frontendPublicHost}",
+        "CHAT_FRONTEND_URL": "http://${config:chat.frontendPublicHost}:${config:chat.frontendPort}",
+        "CHAT_FRONTEND_ORIGINS": "http://${config:chat.frontendPublicHost}:${config:chat.frontendPort},http://127.0.0.1:${config:chat.frontendPort}"
+      },
+      "preLaunchTask": "chat: cleanup backend",
+      "postDebugTask": "chat: cleanup backend",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Chat Frontend (React + Vite)",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/frontend",
+      "preLaunchTask": "chat: cleanup frontend",
+      "postDebugTask": "chat: cleanup frontend",
+      "command": "VITE_AG_UI_URL=http://${config:chat.backendHost}:${config:chat.backendPort}/api/agent VITE_API_BASE_URL=http://${config:chat.backendHost}:${config:chat.backendPort} /Users/xulater/.nvm/versions/node/v24.8.0/bin/node /Users/xulater/.nvm/versions/node/v24.8.0/lib/node_modules/npm/bin/npm-cli.js run dev -- --host ${config:chat.frontendBindHost} --port ${config:chat.frontendPort} --strictPort"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Chat Full Stack",
+      "configurations": [
+        "Chat Backend (MAF + FastAPI)",
+        "Chat Frontend (React + Vite)"
+      ],
+      "preLaunchTask": "chat: cleanup all",
+      "stopAll": true
+    }
+  ]
+}

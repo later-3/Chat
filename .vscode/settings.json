@@ -1,0 +1,19 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.envFile": "${workspaceFolder}/backend/.env",
+  "python.terminal.activateEnvironment": true,
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}",
+    "${workspaceFolder}/backend"
+  ],
+  "python.analysis.typeCheckingMode": "basic",
+  "chat.backendHost": "127.0.0.1",
+  "chat.backendPort": 8030,
+  "chat.frontendBindHost": "127.0.0.1",
+  "chat.frontendPublicHost": "localhost",
+  "chat.frontendPort": 5073,
+  "terminal.integrated.fontFamily": "MesloLGS NF, 'JetBrainsMono Nerd Font', 'FiraCode Nerd Font', monospace",
+  "terminal.integrated.fontSize": 14,
+  "chat.editor.fontSize": 14,
+  "chat.fontSize": 15
+}

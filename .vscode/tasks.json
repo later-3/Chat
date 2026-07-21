@@ -1,0 +1,59 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "chat: cleanup backend",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/cleanup-dev.sh",
+      "args": [
+        "backend",
+        "${config:chat.backendPort}",
+        "${config:chat.frontendPort}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "chat: cleanup frontend",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/cleanup-dev.sh",
+      "args": [
+        "frontend",
+        "${config:chat.backendPort}",
+        "${config:chat.frontendPort}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "chat: cleanup all",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/cleanup-dev.sh",
+      "args": [
+        "all",
+        "${config:chat.backendPort}",
+        "${config:chat.frontendPort}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    }
+  ]
+}

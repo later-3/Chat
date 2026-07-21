@@ -1,0 +1,30 @@
+[project]
+name = "opc-os-chat-channel"
+version = "0.1.0"
+description = "The first self-developed Chat channel in the OPC-OS Chat system."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "agent-framework-ag-ui==1.0.0rc8",
+  "agent-framework-openai==1.10.1",
+  "fastapi>=0.115,<1",
+  "python-dotenv>=1.2,<2",
+  "uvicorn[standard]>=0.41,<1",
+]
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28,<1",
+  "pytest>=9,<10",
+]
+
+[tool.uv]
+prerelease = "allow"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["."]
+testpaths = ["backend/tests"]
+filterwarnings = [
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]
