@@ -90,7 +90,7 @@ Chat是主要交互方式，但项目价值不止是消息收发。系统需要�
 | 对象 | 责任 |
 |---|---|
 | Channel | 当前交互通道及其能力、身份和协议边界 |
-| Session | 一段可恢复的会话 |
+| Session | 用户可创建、打开、归档和恢复的一段产品会话 |
 | Interaction | 用户与系统的一次完整交互 |
 | Message | 用户、Assistant、Agent或工具产生的消息 |
 | ContextPackage | 本轮纳入、排除和引用的上下文快照 |
@@ -100,13 +100,30 @@ Chat是主要交互方式，但项目价值不止是消息收发。系统需要�
 | TaskPlan | 为完成目标形成的节点、顺序和依赖 |
 | ExecutionDraft | 尚未执行、可编辑和审核的最终请求 |
 | Approval | 用户对特定版本和请求内容的批准或驳回 |
-| Run | 一次Agent、Workflow或Runtime执行生命周期 |
+| Run | 一次具体Agent、Workflow或Runtime执行生命周期 |
 | Evidence | 对结果、状态或操作的可验证证据 |
 | Delivery | 结果向用户或下游交付的状态 |
 | Memory | 经候选门确认后可跨会话使用的信息 |
 | Trace | 可观察步骤、状态变化、错误和关联关系 |
 
 这些对象是产品语言，不等同于某个MAF类、数据库表或前端组件。
+
+### 7.1 产品对象、协议对象与运行时对象的边界
+
+以下4个对象必须始终分开理解，即使第一阶段为了降低映射成本而暂时复用某些UUID值，也不能合并其职责：
+
+| 对象 | 所属层与所有者 | 责任 | 明确不是什么 |
+|---|---|---|---|
+| Product Session | 产品领域层、Product DB | 用户可创建、打开、归档和恢复的协作容器，拥有标题、产品可见消息、Interaction、Run、Trace和访问边界 | 不是MAF对象，也不是AG-UI Thread |
+| MAF AgentSession / Workflow Checkpoint | MAF运行时层 | 保存模型上下文、Context Provider状态和Workflow恢复点 | 不是Product Session、用户授权边界或产品历史数据库 |
+| AG-UI Thread | AG-UI协议层 | 用`threadId`关联前端请求、SSE事件、消息与State投影以及Hydrate | 不是用户身份、权限凭据或产品事实源 |
+| Agent Run | 产品执行层与MAF运行时 | 一次具体Agent、Workflow或Runtime执行；产品侧记录生命周期，AG-UI投影其实时事件 | 不是整段Session，也不等于一次用户Interaction |
+
+`MAF AgentSession`和`Workflow Checkpoint`不是同一个MAF类型；上表只把它们归入同一个“MAF运行时状态”层，代码和存储中仍需分别建模。
+
+`Interaction`表示一次用户与系统的完整交互；一次Interaction可以不触发Agent，也可以触发一个或多个Agent Run。第一阶段可以暂时形成1:1关系，但不能把它写成长期不变量。
+
+Product Session ID、MAF Session ID、AG-UI `threadId`和Agent `runId`都只标识各自对象，不自动构成权限。具体ID是否同值、如何映射以及何时持久化属于待审核实现决定。
 
 ## 8. 产品原则
 
@@ -159,4 +176,16 @@ Chat是主要交互方式，但项目价值不止是消息收发。系统需要�
 7. MAF运行存储拥有Agent Session、上下文和Workflow checkpoint；初始SQLite产品数据库拥有用户可见领域状态。
 8. 项目保持前后端清晰分层，产品领域模型不能由UI组件、AG-UI临时状态或MAF Session代替。
 
-第一阶段先验证单Agent文本流、thread恢复、Run状态和失败路径，不同时展开工具、多Agent和全部长期领域对象。
+### 10.1 协议、运行时与状态所有权
+
+| 边界 | 负责 | 不负责 |
+|---|---|---|
+| REST API | Session CRUD、标题、归档、历史分页、附件，以及Work、Evidence、Memory、Trace等产品资源 | 不承载Agent实时事件状态机 |
+| AG-UI over HTTP/SSE | 单次Agent Run的生命周期、流式Message、Tool Call、Interrupt/Resume和实时State投影 | 不负责用户、权限、Session CRUD、数据库Schema或产品持久化 |
+| Product DB | 用户可见且需要恢复、审核和追溯的产品事实 | 不把AG-UI Snapshot JSON或浏览器状态直接当成领域模型 |
+| MAF运行时及其Store | AgentSession、Context、Tool、Workflow和Checkpoint语义 | 不拥有标题、归档、访问控制、Work、Evidence和Memory等产品对象 |
+| 前端 | 展示和操作后端状态投影 | 不拥有权威历史、产品事实或运行终态 |
+
+架构总则：**REST管理产品资源，AG-UI管理一次Agent Run的实时交互，Product DB保存权威产品事实，MAF管理Agent运行时语义。** 物理上可以共用一个数据库，逻辑所有权不得合并；AG-UI Snapshot可以作为运行或UI投影，但不能替代Product Session与产品历史。
+
+第一阶段先验证单Agent文本流、Product Session与产品消息恢复、AG-UI Thread实时投影、Agent Run状态和失败路径；产品历史通过REST还是AG-UI Hydrate恢复、是否持久化AG-UI Snapshot，属于Session候选设计的待审核决定。MAF Workflow Checkpoint恢复不在这一切片，同时不展开工具、多Agent和全部长期领域对象。

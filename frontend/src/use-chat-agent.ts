@@ -7,9 +7,15 @@ const DEFAULT_AGENT_URL = "http://127.0.0.1:8030/api/agent";
 export type RunStatus = "idle" | "running" | "error";
 
 function createThreadId(): string {
+  // This is currently only an AG-UI correlation id. Durable Session identity
+  // and server-side recovery will replace this temporary browser-only choice.
   return crypto.randomUUID();
 }
 
+/**
+ * Projects one AG-UI HttpAgent into React without creating a second Agent store.
+ * The hook owns rendering state only; it is not a persistence boundary.
+ */
 export function useChatAgent() {
   const [agent] = useState(
     () =>
@@ -29,6 +35,8 @@ export function useChatAgent() {
     const subscription = agent.subscribe({
       onMessagesChanged({ messages: nextMessages }) {
         if (mounted.current) {
+          // HttpAgent mutates its projection as SSE events arrive. New object
+          // identities make those updates observable to React rendering.
           setMessages(nextMessages.map((message) => ({ ...message })) as Message[]);
         }
       },
@@ -97,6 +105,8 @@ export function useChatAgent() {
 
   const newConversation = useCallback(() => {
     if (agent.isRunning) agent.abortRun();
+    // This clears the current client projection only. Server-side archival and
+    // Session creation are deliberately deferred to the reviewed design.
     agent.threadId = createThreadId();
     agent.setMessages([]);
     agent.setState({});

@@ -8,9 +8,9 @@
 | 当前目录 | `/Users/xulater/Code/Chat` |
 | 项目层级 | OPC-OS Chat体系中的一个自研Chat通道 |
 | 代码状态 | 前后端最小可运行骨架已建立 |
-| Git状态 | 已初始化`main`分支；当前文件尚未提交 |
+| Git状态 | 私有GitHub仓库`later-3/Chat`的`main`已建立；Session设计、代码注释与知识索引已纳入`main` |
 | 数据状态 | 没有迁移旧数据库、历史或环境配置 |
-| 当前工作 | 验证模型失败路径并形成旧项目复用清单 |
+| 当前工作 | MAF、pi、nanobot与LibreChat研究及Session候选设计修订已完成，等待用户审核D1-D6；尚未创建Schema或实现 |
 
 ## 2. 已确认事项
 
@@ -28,6 +28,10 @@
 12. UI基础采用Tailwind CSS、Radix UI和Lucide React；Zustand只管理页面状态。
 13. 后端采用Python、MAF、FastAPI和AG-UI集成。
 14. MAF运行状态与SQLite产品领域状态分开拥有。
+15. Product Session、MAF AgentSession/Workflow Checkpoint、AG-UI Thread和Agent Run是4个不同对象；ID同值也不代表职责合并。
+16. REST管理产品资源，AG-UI只管理一次Agent Run的实时交互；Product DB是产品事实源，MAF负责运行时语义。
+17. Interaction与Agent Run不是同一个对象；一次Interaction可以触发0到多个Agent Run。
+18. 外部产品参考只保留LibreChat这1个正式主参考；Flowise和其他相似平台不进入日常必查链路，新增参考仍需用户批准。
 
 ## 3. 本轮已完成
 
@@ -55,11 +59,26 @@
 - [x] 把MAF源码、nanobot、pi和`agent_knowledge`维护责任写入协作规则。
 - [x] 完成1次真实模型AG-UI文本回合：HTTP 200、82个事件、`RUN_STARTED`到`RUN_FINISHED`。
 - [x] 验证清理脚本可以分别终止端口8030的Uvicorn和端口5073的Vite，清理后端口无监听残留。
+- [x] 把“先研究MAF，再研究pi与nanobot，最后形成候选方案并先审核后实现”的顺序写入协作规则。
+- [x] 按当前安装版本、MAF官方文档、本地源码、测试和示例完成Session能力核对。
+- [x] 完成pi与nanobot的Session存储、恢复、并发和失败语义对照研究。
+- [x] 形成[Session持久化研究与方案推导](./docs/session-persistence-research.md)，逐项公开MAF、pi、nanobot证据、限制、方案比较和推导链。
+- [x] 形成[Session持久化候选设计](./docs/session-persistence-design.md)初稿；复核后D1、D3和D4已退回修订，未实现。
+- [x] 形成[Session持久化审核包](./docs/session-persistence-review.md)，逐项补充原因、参考项目覆盖、其他选择、优缺点、建议和未验证项。
+- [x] 在项目上下文中固定四对象关系以及REST、AG-UI、Product DB和MAF的所有权边界。
+- [x] 把外部产品参考收敛为LibreChat这1个正式主参考，并统一协作规则。
+- [x] 在固定提交`8e5ef1fb31e9d63b735c089b21cbc82c50acce46`上完成LibreChat的Conversation、Message、GenerationJob、正常终态、断连、取消、流式恢复和HITL边界研究。
+- [x] 按当前安装版实测MAF `HistoryProvider`：成功提交发生在`RUN_FINISHED`前，保存异常会产生`RUN_ERROR`且不会产生`RUN_FINISHED`。
+- [x] 实测`require_per_service_call_history_persistence=True`与`store=False`的两次模型调用工具循环，确认中间历史检查点、Provider响应ID抑制和终态边界。
+- [x] 修订Session候选设计与审核包的D1、D3和D4，明确首阶段关闭durable Snapshot、REST恢复产品历史、唯一历史加载器和产品终态提交门。
+- [x] 更新`agent_knowledge/MAF/01-Session-HistoryProvider与AG-UI-Thread-Snapshot.md`，同步当前安装版本、实测证据、四对象边界、HistoryProvider与Snapshot限制。
+- [x] 在`agent_knowledge/project-studies/librechat/`建立固定提交的有界源码知识，记录Conversation/Message、Generation Job、流式恢复、失败终态、HITL、ID边界和迁移取舍。
+- [x] 完成文档交叉审计并再次运行`./scripts/verify.sh`：3个后端测试、前端类型检查和生产构建全部通过。
 
 ## 4. 当前实施决定
 
 1. 按已批准的新技术路线建立独立骨架，不直接复制旧FastAPI+Pi实现。
-2. 第一切片只做文本流式回合、服务端thread恢复、Run生命周期和失败显示。
+2. 第一切片只做文本流式回合、Product Session与消息恢复、AG-UI Thread实时投影、Agent Run生命周期和失败显示，不包含durable AG-UI Snapshot、HITL或Workflow Checkpoint恢复；这是待D1-D6审核后实施的候选边界。
 3. MAF拥有Agent运行状态，SQLite拥有产品领域状态。
 4. 第一切片不包含图片、附件、工具执行或多Agent。
 5. 旧代码只作为产品交互、领域对象和测试反例参考。
@@ -97,6 +116,14 @@
 6. 当前MAF AG-UI包仍为RC版本，升级前必须重新验证事件合同。
 7. Bootstrap Agent证明协议接通，不证明真实模型配置、质量、超时或错误映射正确。
 8. 当前thread标识由前端创建，但服务端历史恢复尚未实现，不能宣称会话连续已经完成。
+9. MAF本地参考源码提交与项目安装版本不完全一致；当前项目行为必须以`.venv`安装版本和实测为准，并在依赖升级后重跑合同测试。
+10. MAF AG-UI的Snapshot保存是fail-soft，且当前rc8的Approval Registry仍是进程内实现；Snapshot不能充当产品提交回执，也不能据此宣称HITL可以跨进程恢复。
+11. `OpenAIChatClient`默认使用Provider存储；实测`per-service history persistence + store=false`可以抑制Provider响应ID对AG-UI `threadId/runId`的替换，但正式实现仍需真实远端模型故障注入。
+12. MAF实测证明`HistoryProvider`保存失败会转为`RUN_ERROR`；但per-service保存只是模型历史检查点，Product Run成功仍需外层成功终态与最终产品提交共同确认。
+13. `@ag-ui/client 0.0.57`会发送客户端全量消息；若同时启用Product History和AG-UI Snapshot历史，会产生重复模型上下文，正式实现必须保持唯一历史加载器并校验、裁剪本轮增量。
+14. LibreChat没有独立持久化Product Agent Run，它的GenerationJob主要是可删除的运行投影；本项目只能借鉴产品事实与流式投影分离、成功终态后置等原则，不能复制其ID合并或弱取消写入语义。
+15. 真实工具故障、同Session并发、断连与取消、SQLite锁竞争、Workflow Checkpoint和rc8 Approval跨进程恢复仍未验证，不能在第一切片中承诺。
+16. 当前事件顺序、双历史和per-service工具循环证据来自一次性Spike，尚未固化为仓库回归测试；服务端可信Run Context向HistoryProvider的并发隔离也仍需专项Spike。
 
 ## 8. 下一道门
 
@@ -104,4 +131,6 @@
 
 1. 验证真实模型失败、超时和错误脱敏路径。
 2. 输出旧项目能力的复用、重写和仅参考清单。
-3. 满足后把阶段1标记为完成，进入Session与服务端历史恢复。
+3. 用户审核Session方案D1-D6：存储边界、ID映射、历史加载、提交时序、并发幂等和SQLite实现路线。
+4. 审核通过后才创建Schema、迁移、Repository、`ProductHistoryProvider`和薄AG-UI运行包装器，并补齐故障注入与恢复测试。
+5. 全部满足后把阶段1标记为完成，进入Session与服务端历史恢复实现。

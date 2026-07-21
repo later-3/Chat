@@ -24,6 +24,7 @@ terminate_pids() {
     return
   fi
 
+  # Resolve concrete PIDs before sending signals; never kill by a broad name.
   echo "$label: stopping $pids"
   for pid in $pids; do
     kill -TERM "$pid" 2>/dev/null || true
@@ -54,6 +55,7 @@ cleanup_port() {
 }
 
 cleanup_backend_processes() {
+  # The absolute project interpreter path prevents matching other OPC-OS apps.
   local pattern="$project_root/.venv/bin/python.*(debugpy|uvicorn)"
   local pids
   pids="$(pgrep -f "$pattern" 2>/dev/null | sort -u | tr '\n' ' ' || true)"
@@ -61,6 +63,7 @@ cleanup_backend_processes() {
 }
 
 cleanup_frontend_processes() {
+  # Match only Vite processes launched from this repository's frontend tree.
   local pattern="$project_root/frontend/(node_modules/.bin/)?vite"
   local pids
   pids="$(pgrep -f "$pattern" 2>/dev/null | sort -u | tr '\n' ' ' || true)"

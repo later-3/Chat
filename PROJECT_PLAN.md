@@ -61,10 +61,19 @@
 
 任务：
 
+- [x] 完成[Session持久化研究与方案推导](./docs/session-persistence-research.md)，分别给出MAF、pi、nanobot和LibreChat的证据与边界。
+- [x] 形成[Session持久化审核包](./docs/session-persistence-review.md)，补齐每项原因、参考覆盖、选项、优缺点和建议。
+- [x] 在[项目上下文](./PROJECT_CONTEXT.md#71-产品对象协议对象与运行时对象的边界)中固定Product Session、MAF Session/Checkpoint、AG-UI Thread和Agent Run的概念边界。
+- [x] 外部产品参考只保留LibreChat这1个正式主参考，移除Flowise及多套候选审核前置项。
+- [x] 仅针对Product Session、Message、Agent Run和流式恢复研究LibreChat，并回填其真正覆盖与未覆盖项。
+- [x] 按“Product DB权威、AG-UI只做协议投影”修订Session候选设计中的D1、D3和D4。
+- [x] 实测MAF `HistoryProvider`提交顺序、保存失败终态、AG-UI全历史重复风险和`per-service + store=false`工具循环。
+- [ ] 审核并批准[Session持久化候选设计](./docs/session-persistence-design.md)。
+- [ ] 审核通过后先把MAF一次性Spike固化为仓库合同测试，并完成可信Run Context的并发隔离Spike。
 - [ ] 创建、列出、打开和归档Session。
 - [ ] 发送用户消息并接收Assistant回答。
 - [ ] 服务端恢复历史，前端不承担权威历史。
-- [ ] 记录Interaction状态、耗时、模型和稳定错误码。
+- [ ] 分开记录Interaction与Agent Run状态、耗时、模型和稳定错误码。
 - [ ] 实现基础Trace和重启恢复。
 - [ ] 验证桌面与窄屏主要操作。
 

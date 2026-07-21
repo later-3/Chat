@@ -1,3 +1,5 @@
+"""Resolve immutable backend settings without exposing provider secrets."""
+
 from __future__ import annotations
 
 import os
@@ -17,6 +19,8 @@ load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 
 def _first_env(*names: str, default: str | None = None) -> str | None:
+    """Return the first non-empty environment value in precedence order."""
+
     for name in names:
         value = os.environ.get(name)
         if value:
@@ -25,6 +29,8 @@ def _first_env(*names: str, default: str | None = None) -> str | None:
 
 
 def _origins(value: str | None) -> tuple[str, ...]:
+    """Parse the CORS allow-list while keeping local development deterministic."""
+
     if not value:
         return ("http://127.0.0.1:5073", "http://localhost:5073")
     parsed = tuple(item.strip() for item in value.split(",") if item.strip())
@@ -33,6 +39,8 @@ def _origins(value: str | None) -> tuple[str, ...]:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
+    """A startup-time configuration snapshot shared by app and agent factories."""
+
     host: str
     port: int
     frontend_origins: tuple[str, ...]
@@ -42,10 +50,14 @@ class Settings:
 
     @property
     def runtime_mode(self) -> str:
+        """Select a real model only when a provider credential is available."""
+
         return "model" if self.model_api_key else "bootstrap"
 
     @classmethod
     def from_env(cls) -> "Settings":
+        """Load Chat overrides first, then fall back to the ARK provider aliases."""
+
         return cls(
             host=os.environ.get("CHAT_BACKEND_HOST", "127.0.0.1"),
             port=int(os.environ.get("CHAT_BACKEND_PORT", "8030")),
@@ -57,6 +69,8 @@ class Settings:
 
     @classmethod
     def for_test(cls) -> "Settings":
+        """Return a secret-free deterministic configuration for contract tests."""
+
         return cls(
             host="127.0.0.1",
             port=8030,

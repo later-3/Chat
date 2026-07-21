@@ -1,3 +1,5 @@
+"""FastAPI composition root for the self-developed OPC-OS Chat channel."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -11,6 +13,8 @@ from .config import Settings
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    """Create an isolated app instance suitable for production or contract tests."""
+
     resolved = settings or Settings.from_env()
     app = FastAPI(
         title="OPC-OS Chat Channel",
@@ -40,6 +44,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     agent = create_agent(resolved)
     app.state.agent = agent
+    # MAF owns the Agent-to-AG-UI event conversion. Keeping that bridge here
+    # avoids a second application-specific streaming protocol or state source.
     add_agent_framework_fastapi_endpoint(
         app,
         agent,

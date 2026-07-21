@@ -36,7 +36,7 @@
 3. 后端3个测试、前端类型检查和生产构建均通过。
 4. 已接入`backend/.env`并完成真实模型AG-UI文本回合。
 5. 尚未完成模型失败路径、服务端历史恢复和产品领域数据库。
-5. 没有迁移旧数据库、历史会话或环境配置。
+6. 没有迁移旧数据库、历史会话或环境配置。
 
 ## 技术方向
 
@@ -44,14 +44,15 @@
 
 ```text
 React 19 + TypeScript + Vite
--> @ag-ui/client / HttpAgent
--> AG-UI（HTTP + SSE）
--> FastAPI AG-UI Endpoint
--> Microsoft Agent Framework
--> Agent / Workflow / Tool / Model
+├── REST -> Product API -> Product DB
+└── @ag-ui/client / HttpAgent
+    -> AG-UI（HTTP + SSE）
+    -> FastAPI AG-UI Endpoint
+    -> Microsoft Agent Framework
+    -> Agent / Workflow / Tool / Model
 ```
 
-前端使用自研UI，基础组件采用Tailwind CSS、Radix UI和Lucide React；Zustand只管理页面状态。后端区分MAF运行存储和SQLite产品领域存储。
+Product资源走REST，单次Agent Run的实时事件走AG-UI；Product DB与MAF运行时状态分开拥有。前端使用自研UI，基础组件采用Tailwind CSS、Radix UI和Lucide React；Zustand只管理页面状态。完整边界见[项目上下文](./PROJECT_CONTEXT.md#71-产品对象协议对象与运行时对象的边界)。
 
 ## 环境要求
 
@@ -142,7 +143,10 @@ scripts/         可重复执行的工程验证
 2. [项目计划](./PROJECT_PLAN.md)：分阶段路线和完成门。
 3. [项目状态](./PROJECT_STATE.md)：当前完成项、待审核项和下一道门。
 4. [协作规则](./AGENTS.md)：开发和AI协作必须遵守的规则。
+5. [Session持久化研究与方案推导](./docs/session-persistence-research.md)：MAF、pi、nanobot与LibreChat的逐项源码证据、适用边界、方案比较和决策推导。
+6. [Session持久化候选设计](./docs/session-persistence-design.md)：建立在研究报告上的候选状态模型、生命周期和待审核决定。
+7. [Session持久化审核包](./docs/session-persistence-review.md)：每项决定的原因、参考覆盖、全部选择、优缺点和建议。
 
 ## 下一步
 
-完成真实模型失败、超时和错误脱敏验证，并形成旧项目复用清单；随后进入Session、服务端历史恢复和基础Trace。
+Session的MAF、pi、nanobot与LibreChat研究已经完成，候选设计也已按“Product DB权威、AG-UI只做实时协议投影”修订。下一步先审核D1-D6；批准后才创建Schema、迁移、服务端历史恢复、Product Agent Run和基础Trace，同时继续完成真实模型失败、超时与错误脱敏验证及旧项目复用清单。

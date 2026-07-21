@@ -1,3 +1,5 @@
+"""Create the MAF agent selected by the immutable runtime configuration."""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
@@ -25,7 +27,12 @@ BOOTSTRAP_RESPONSE = (
 
 
 class BootstrapAgent(BaseAgent):
-    """A deterministic MAF agent used before a real provider is configured."""
+    """A deterministic MAF agent that verifies the full AG-UI transport offline.
+
+    It deliberately implements the same streaming and non-streaming surface as
+    a provider-backed agent, but it owns no conversation history or product
+    state. It must therefore never be treated as proof of Session recovery.
+    """
 
     async def run(
         self,
@@ -43,6 +50,8 @@ class BootstrapAgent(BaseAgent):
         if stream:
 
             async def updates() -> AsyncIterator[AgentResponseUpdate]:
+                # A real MAF streaming update is required so the AG-UI bridge is
+                # tested instead of being bypassed by a custom HTTP response.
                 yield AgentResponseUpdate(
                     contents=[Content.from_text(BOOTSTRAP_RESPONSE)],
                     role="assistant",
@@ -60,6 +69,12 @@ class BootstrapAgent(BaseAgent):
 
 
 def create_agent(settings: Settings) -> BaseAgent:
+    """Build either the offline verifier or the provider-backed primary Agent.
+
+    Session stores and product repositories are intentionally absent here until
+    their ownership and recovery contract have passed design review.
+    """
+
     if settings.runtime_mode == "bootstrap":
         return BootstrapAgent(
             id="opc-os-chat-bootstrap",
