@@ -72,6 +72,7 @@
 - [x] 完成Provider明确失败、超时结果未知和发送后取消结果未知语义；均只创建1次Attempt且不自动重试，用户可把原Prompt取回输入框。
 - [x] 完成Product Session Phase 1文本底座：SQLite Product Store、Alembic迁移、Session/Message/Interaction/Run/Attempt/协议ID映射/Trace、REST恢复、服务端唯一历史、终态提交门和启动中断收敛。
 - [x] 完成Session前端入口：会话列表、新建/打开、刷新恢复、标题、归档、Provider/模型默认配置、Run状态与Attempt摘要；浏览器已完成双轮真实模型、刷新、配置切换和放弃交叉验证。
+- [x] 修复Web滚动所有权：App Shell不再由`body`整体滚动，桌面会话列表与右侧对话内容各自独立滚动且对话标题保持可见；窄屏会话抽屉按顶部栏以下的实际可视高度独立滚动，桌面与窄屏浏览器回归均通过。
 - [x] D3按已批准的确定性审批Workflow做窄适配：当前由ProductSessionService在Workflow入口唯一装配历史；普通MAF Agent未来才启用ProductHistoryProvider，两条路径禁止同时加载。
 - [x] 完成Workflow可视化种子：注册表描述8个异构节点和两层嵌套关系；MAF原生子Workflow通过窄`VisibleWorkflowExecutor`转发内部生命周期，AG-UI继续使用标准Step/Activity事件，前端按稳定节点ID原位投影实时进度。
 - [x] Workflow复用Product Session、Product Run/Attempt和产品提交门；成功结果进入权威消息历史，失败保留User事实且不生成假Assistant成功，刷新从脱敏Product Trace恢复最近节点终态。
