@@ -187,7 +187,7 @@ def test_file_store_survives_restart_and_reconciles_unfinished_run(tmp_path: Pat
         assert session_view["active_run_id"] is None
         with sqlite3.connect(tmp_path / "restart.db") as connection:
             assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-                "c38437c3c341",
+                "b64b0ea569a7",
             )
 
     asyncio.run(scenario())
@@ -220,6 +220,40 @@ def test_same_session_concurrent_accept_has_one_winner(tmp_path: Path) -> None:
         return results.count("accepted"), len(runs)
 
     assert asyncio.run(scenario()) == (1, 1)
+
+
+def test_concurrent_trace_writes_allocate_unique_monotonic_sequences(tmp_path: Path) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'trace-concurrency.db'}"
+
+    async def scenario() -> list[dict[str, Any]]:
+        service = ProductSessionService(ProductDatabase(database_url))
+        await service.initialize()
+        session = await service.create_session()
+        accepted = await service.prepare_agui_run(
+            _request(
+                session["id"],
+                "trace-run",
+                [{"id": "trace-user", "role": "user", "content": "并发Trace"}],
+            )
+        )
+        await asyncio.gather(
+            *(
+                service.record_trace(
+                    session["id"],
+                    accepted.product_run_id,
+                    "workflow.node",
+                    {"index": index},
+                )
+                for index in range(20)
+            )
+        )
+        traces = await service.list_trace(session["id"], accepted.product_run_id)
+        await service.database.close()
+        return traces
+
+    traces = asyncio.run(scenario())
+    assert [value["sequence"] for value in traces] == list(range(1, 22))
+    assert {value["payload"].get("index") for value in traces[1:]} == set(range(20))
 
 
 def test_alembic_initial_migration_upgrades_and_downgrades_clean_database(tmp_path: Path) -> None:

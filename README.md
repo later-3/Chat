@@ -37,7 +37,9 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 4. 后端以私有`backend/config.json`配置火山方舟和阿里云百炼，前端按Provider联动选择模型；真实模型AG-UI文本回合已通过。
 5. Product Session Phase 1文本底座已完成：SQLite/Alembic、Session/Message/Interaction/Run/Attempt、REST恢复、服务端唯一历史、失败收敛和成功终态门。
 6. 前端可创建、打开、重命名、归档和配置Session默认Provider/模型，并展示Run/Attempt摘要；没有迁移旧数据库或历史会话。
-7. 完整Session仍按Phase 2-8继续：活动流重连、Worker、Tool副作用、Workflow/HITL和跨入口恢复尚未完成。
+7. 前端可查看嵌套Workflow实时/恢复进度，并配置`planner`与`reviewer`两个Agent的名称、职责、Instructions及Provider/模型。
+8. 受治理双Agent Workflow已跑通：规划Agent、确定性交接、审校Agent共3个节点；两次真实Provider调用分别审批，第2次能查看和修改原始目标、规划结果及交接要求。
+9. 完整Session仍按Phase 2-8继续：活动流重连、Worker、Tool副作用、Workflow/HITL和跨入口恢复尚未完成。
 
 ## 技术方向
 
@@ -168,4 +170,4 @@ scripts/         可重复执行的工程验证
 
 ## 下一步
 
-下一步按已批准路线继续Workflow可视化、多Agent和pi-agent工具接入；每个Feature都复用Product Session/Run事实、逐次模型审批和MAF/AG-UI合同，并分别提交自动测试、浏览器端到端与真实模型证据。
+下一步按已批准路线继续pi-agent工具接入；它必须复用Product Session/Run事实、逐次模型审批和MAF/AG-UI合同，并提交自动测试、浏览器端到端、真实模型与工具观测证据。

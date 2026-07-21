@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from "react";
 
+import { ModelCallReview } from "./model-call-review";
 import type { ProductSession } from "./session-api";
 import {
   getLatestWorkflowTrace,
@@ -47,6 +48,16 @@ const KIND_LABELS: Record<string, string> = {
   policy: "规则",
   decision: "决策",
   output: "输出",
+  agent: "Agent",
+  handoff: "会话交接",
+};
+
+const RUNTIME_LABELS: Record<string, string> = {
+  workflow: "MAF Workflow",
+  agent: "受治理 Agent",
+  executor: "确定性 Executor",
+  tool: "Tool",
+  approval: "审批",
 };
 
 function StatusIcon({ status }: { status: WorkflowNodeStatus }) {
@@ -164,7 +175,7 @@ function WorkflowRuntime({
   onRunningChange,
   onSelectDefinition,
 }: WorkflowRuntimeProps) {
-  const { status, error, progress, runId, run } = useWorkflowAgent({
+  const { status, error, progress, runId, pendingReview, run, approve, revise, abandon } = useWorkflowAgent({
     definition,
     sessionId: session?.id ?? null,
     hydratedMessages,
@@ -181,7 +192,7 @@ function WorkflowRuntime({
       failed: values.filter((value) => value.status === "failed").length,
     };
   }, [progress]);
-  const busy = status === "running";
+  const busy = status !== "idle" && status !== "succeeded" && status !== "failed";
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -217,6 +228,8 @@ function WorkflowRuntime({
             {busy ? <LoaderCircle className="workflow-spin" size={14} /> : <Layers3 size={14} />}
             {status === "idle" && (restoredTrace.length ? "已恢复最近Trace" : "等待运行")}
             {status === "running" && "正在推进"}
+            {status === "awaiting_approval" && "等待模型调用审批"}
+            {status === "saving" && "保存请求修改"}
             {status === "succeeded" && "本次已完成"}
             {status === "failed" && "本次失败"}
           </div>
@@ -247,7 +260,7 @@ function WorkflowRuntime({
                     <div>
                       <strong>{node.label}</strong>
                       <span>{KIND_LABELS[node.kind] ?? node.kind}</span>
-                      <span>{node.runtime_type === "workflow" ? "MAF Workflow" : "确定性 Executor"}</span>
+                      <span>{RUNTIME_LABELS[node.runtime_type] ?? node.runtime_type}</span>
                     </div>
                     <p>{node.description}</p>
                     {message && <small>{message}</small>}
@@ -272,7 +285,7 @@ function WorkflowRuntime({
           </div>
           <div className="workflow-explainer">
             <GitBranch size={17} />
-            <div><strong>节点不一定是Agent</strong><p>这里同时有普通Executor和嵌套Workflow；后续多Agent会作为新的真实节点类型进入同一事件投影。</p></div>
+            <div><strong>节点不一定是Agent</strong><p>同一投影可显示普通Executor、嵌套Workflow和受治理Agent；Agent的每次真实模型调用仍单独审批。</p></div>
           </div>
         </aside>
       </section>
@@ -289,6 +302,16 @@ function WorkflowRuntime({
         </div>
         {error && <p className="workflow-error" role="alert">{error}</p>}
       </form>
+      {pendingReview && (
+        <ModelCallReview
+          busy={status === "running" || status === "saving"}
+          card={pendingReview}
+          onAbandon={() => { void abandon().then((prompt) => { if (prompt !== null) onInputChange(prompt); }); }}
+          onApprove={() => void approve()}
+          onRevise={(providerId, providerRequest) => void revise(providerId, providerRequest)}
+          requestError={error}
+        />
+      )}
     </main>
   );
 }

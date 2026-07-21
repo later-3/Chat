@@ -27,6 +27,7 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
         workflow_factory,
         sessions: ProductSessionService,
         definition: WorkflowDefinition,
+        run_ids: dict[str, str] | None = None,
     ) -> None:
         super().__init__(
             workflow_factory=workflow_factory,
@@ -35,17 +36,20 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
         )
         self._sessions = sessions
         self.definition = definition
+        self._run_ids = run_ids
 
     async def run(self, input_data: dict[str, Any]):
         thread_id = self._thread_id_from_input(input_data)
         agui_run_id = str(input_data.get("run_id") or input_data.get("runId") or "")
+        if self._run_ids is not None:
+            self._run_ids[thread_id] = agui_run_id
         try:
             accepted = await self._sessions.prepare_agui_run(input_data)
             await self._sessions.mark_running(thread_id)
             await self._sessions.record_trace(
                 thread_id,
                 accepted.product_run_id,
-                "workflow.started",
+                "workflow.resumed" if accepted.is_resume else "workflow.started",
                 {"workflow_id": self.definition.id, "version": self.definition.version},
             )
         except ProductSessionError as error:
@@ -128,6 +132,51 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
                 code="MISSING_TERMINAL_EVENT",
             )
             return
+
+        outcome = getattr(terminal, "outcome", None)
+        if getattr(outcome, "type", None) == "interrupt":
+            waiting_executor_id: str | None = None
+            for interrupt in getattr(outcome, "interrupts", ()) or ():
+                metadata = getattr(interrupt, "metadata", None)
+                if not isinstance(metadata, dict):
+                    continue
+                framework = metadata.get("agent_framework")
+                data = framework.get("data") if isinstance(framework, dict) else None
+                execution = data.get("execution_context") if isinstance(data, dict) else None
+                if isinstance(execution, dict) and isinstance(execution.get("agent_id"), str):
+                    waiting_executor_id = execution["agent_id"]
+                    break
+            if waiting_executor_id is not None:
+                waiting_payload = {
+                    "workflow_id": self.definition.id,
+                    "executor_id": waiting_executor_id,
+                    "status": "in_progress",
+                    "details": {
+                        "message": "模型请求已准备，等待用户审批后才会发送。",
+                        "wait_reason": "model_call_approval",
+                    },
+                }
+                await self._sessions.record_trace(
+                    thread_id,
+                    accepted.product_run_id,
+                    "workflow.node",
+                    waiting_payload,
+                )
+                yield ActivitySnapshotEvent(
+                    messageId=f"workflow-waiting-{waiting_executor_id}",
+                    activityType="executor",
+                    content={key: value for key, value in waiting_payload.items() if key != "workflow_id"},
+                )
+            await self._sessions.mark_waiting_approval(thread_id)
+            yield terminal
+            return
+
+        active_run = await self._sessions.active_run(thread_id)
+        if active_run is None:
+            recent_runs = await self._sessions.list_runs(thread_id)
+            if recent_runs and recent_runs[0]["status"] == "abandoned":
+                yield terminal
+                return
 
         try:
             committed = await self._sessions.complete_active_run(

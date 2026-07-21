@@ -123,8 +123,48 @@ NESTED_QUALITY_WORKFLOW = WorkflowDefinition(
     ),
 )
 
-WORKFLOW_CATALOG: tuple[WorkflowDefinition, ...] = (NESTED_QUALITY_WORKFLOW,)
+GOVERNED_AGENT_HANDOFF_WORKFLOW = WorkflowDefinition(
+    id="governed-agent-handoff",
+    name="双 Agent 会话传递",
+    version="1.0.0",
+    description="规划Agent生成草稿，确定性交接节点传递完整会话，审校Agent形成最终答复；两次模型调用分别审批。",
+    endpoint="/api/workflows/governed-agent-handoff/run",
+    nodes=(
+        WorkflowNodeDefinition(
+            id="planner",
+            label="规划 Agent",
+            description="读取Product Session完整上下文并生成方案草稿；调用前必须审批。",
+            kind="agent",
+            runtime_type="agent",
+        ),
+        WorkflowNodeDefinition(
+            id="handoff",
+            label="会话交接",
+            description="确定性地保留原始会话、规划结果和交接要求，不调用模型。",
+            kind="handoff",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="reviewer",
+            label="审校 Agent",
+            description="复核原始目标和规划结果并形成最终答复；调用前再次审批。",
+            kind="agent",
+            runtime_type="agent",
+        ),
+    ),
+    edges=(
+        WorkflowEdgeDefinition("planner", "handoff"),
+        WorkflowEdgeDefinition("handoff", "reviewer"),
+    ),
+)
+
+WORKFLOW_CATALOG: tuple[WorkflowDefinition, ...] = (
+    NESTED_QUALITY_WORKFLOW,
+    GOVERNED_AGENT_HANDOFF_WORKFLOW,
+)
 
 
-def workflow_catalog_view() -> list[dict[str, object]]:
-    return [workflow.view() for workflow in WORKFLOW_CATALOG]
+def workflow_catalog_view(
+    definitions: tuple[WorkflowDefinition, ...] = WORKFLOW_CATALOG,
+) -> list[dict[str, object]]:
+    return [workflow.view() for workflow in definitions]

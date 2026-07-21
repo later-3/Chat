@@ -93,6 +93,14 @@ export interface ModelCallReviewCard {
   provider_id: string;
   provider_protocol: "openai_responses" | "openai_chat_completions";
   status: string;
+  execution_context: {
+    workflow_id?: string;
+    agent_id?: string;
+    agent_name?: string;
+    agent_revision?: number;
+    call_position?: number;
+    total_calls?: number;
+  };
   provider_catalog: ModelProviderOption[];
   effective_context: EffectiveContextView;
   provider_request: Record<string, unknown>;
@@ -113,7 +121,7 @@ function createThreadId(): string {
   return crypto.randomUUID();
 }
 
-function reviewCardFromInterrupt(interrupt: Interrupt): ModelCallReviewCard | null {
+export function reviewCardFromInterrupt(interrupt: Interrupt): ModelCallReviewCard | null {
   const metadata = interrupt.metadata;
   if (!metadata || typeof metadata !== "object") return null;
   const framework = metadata.agent_framework;
@@ -139,7 +147,7 @@ function cloneMessages(messages: ReadonlyArray<Readonly<Message>>): Message[] {
   return messages.map((message) => ({ ...message })) as Message[];
 }
 
-function revisionError(payload: RevisionResponseError, fallback: string): string {
+export function revisionError(payload: RevisionResponseError, fallback: string): string {
   if (typeof payload.detail === "string") return payload.detail;
   if (payload.detail && typeof payload.detail === "object") {
     const issues = payload.detail.issues;

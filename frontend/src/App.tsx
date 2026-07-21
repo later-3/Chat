@@ -13,12 +13,14 @@ import {
   Settings2,
   Sparkles,
   UserRound,
+  UsersRound,
   Workflow as WorkflowIcon,
   X,
 } from "lucide-react";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { ModelCallReview } from "./model-call-review";
+import { AgentPage } from "./agent-page";
 import type { ModelProviderOption } from "./use-chat-agent";
 import {
   createSession,
@@ -116,7 +118,7 @@ function App() {
   const [settingsProvider, setSettingsProvider] = useState("");
   const [settingsModel, setSettingsModel] = useState("");
   const [settingsSaving, setSettingsSaving] = useState(false);
-  const [activeView, setActiveView] = useState<"chat" | "workflows">("chat");
+  const [activeView, setActiveView] = useState<"chat" | "workflows" | "agents">("chat");
   const [workflowDefinitions, setWorkflowDefinitions] = useState<WorkflowDefinition[]>([]);
   const [workflowRunning, setWorkflowRunning] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
@@ -349,6 +351,7 @@ function App() {
         <nav className="app-nav" aria-label="产品功能">
           <button className={activeView === "chat" ? "active" : ""} disabled={workflowRunning} onClick={() => setActiveView("chat")} type="button"><MessagesSquare size={15} />对话</button>
           <button className={activeView === "workflows" ? "active" : ""} disabled={status !== "idle"} onClick={() => setActiveView("workflows")} type="button"><WorkflowIcon size={15} />工作流</button>
+          <button className={activeView === "agents" ? "active" : ""} disabled={interactionBusy} onClick={() => setActiveView("agents")} type="button"><UsersRound size={15} />Agent</button>
         </nav>
         <div className="topbar-actions">
           <button className="icon-button labeled-on-wide" disabled={interactionBusy} onClick={() => void createNewConversation()} type="button">
@@ -446,7 +449,7 @@ function App() {
             </form>
             <p className="composer-note">Enter 发送 · 服务端历史恢复 · 每次模型调用发送前确认</p>
           </div>
-        </main> : (
+        </main> : activeView === "workflows" ? (
           <WorkflowPage
             blocked={status !== "idle"}
             definitions={workflowDefinitions}
@@ -455,6 +458,12 @@ function App() {
             onRunningChange={setWorkflowRunning}
             onSessionSettled={refreshActiveSession}
             session={activeSession}
+          />
+        ) : (
+          <AgentPage
+            blocked={interactionBusy}
+            onAgentsChanged={() => { void listWorkflows().then(setWorkflowDefinitions); }}
+            providers={providers}
           />
         )}
       </div>

@@ -621,7 +621,15 @@ export function ModelCallReview({
         <header className="review-header">
           <div className="review-heading">
             <span className="review-icon"><ShieldCheck size={20} /></span>
-            <div><p className="eyebrow">每次模型调用审批</p><h2 id="review-title">确认真正发给模型的内容</h2></div>
+            <div>
+              <p className="eyebrow">每次模型调用审批</p>
+              <h2 id="review-title">确认真正发给模型的内容</h2>
+              {card.execution_context?.agent_name && (
+                <small className="review-agent-context">
+                  {card.execution_context.agent_name} · 第 {card.execution_context.call_position ?? "—"}/{card.execution_context.total_calls ?? "—"} 次模型调用 · Agent r{card.execution_context.agent_revision ?? "—"}
+                </small>
+              )}
+            </div>
           </div>
           <div className="review-meta">
             <span>v{card.version}</span>

@@ -555,6 +555,7 @@ class ProductSessionService:
                     current_user_message_id=user_message_id,
                     model_provider_id=session.model_provider_id,
                     model=session.model,
+                    trace_sequence=1,
                 )
             )
             await transaction.flush()
@@ -861,6 +862,12 @@ class ProductSessionService:
             run = await transaction.get(RunRecord, session.active_run_id)
             if run is None or run.status not in allowed:
                 return
+            if (
+                run.status == status
+                and (draft_id is None or run.draft_id == draft_id)
+                and (approval_id is None or run.approval_id == approval_id)
+            ):
+                return
             run.status = status
             attempt = await self._current_attempt(transaction, run.id)
             if attempt is not None:
@@ -918,14 +925,20 @@ class ProductSessionService:
         self, transaction: Any, run: RunRecord, event_type: str, payload: dict[str, Any]
     ) -> None:
         sequence = await transaction.scalar(
-            select(func.max(TraceRecord.sequence)).where(TraceRecord.run_id == run.id)
+            update(RunRecord)
+            .where(RunRecord.id == run.id)
+            .values(trace_sequence=RunRecord.trace_sequence + 1)
+            .returning(RunRecord.trace_sequence)
+            .execution_options(synchronize_session=False)
         )
+        if sequence is None:
+            raise ProductSessionConflict("Product Run的Trace计数器不存在")
         transaction.add(
             TraceRecord(
                 id=_uuid(),
                 session_id=run.session_id,
                 run_id=run.id,
-                sequence=int(sequence or 0) + 1,
+                sequence=int(sequence),
                 event_type=event_type,
                 payload=payload,
             )

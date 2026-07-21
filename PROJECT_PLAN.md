@@ -185,6 +185,7 @@ flowchart LR
 主要方案任务：
 
 - [x] 建立嵌套Workflow可视化种子：MAF原生异构节点与两层子Workflow运行，标准AG-UI事件实时投影，Product Trace刷新恢复；该项不包含Checkpoint/HITL或跨进程恢复。
+- [x] 建立受治理多Agent种子：可编辑且有Revision的Agent Profile、规划与审校Agent、确定性完整会话交接、两次Provider调用逐次审批、AG-UI节点投影和Product终态提交；该项不包含动态拓扑、群聊或持久Checkpoint。
 - [ ] 详细设计 Tool执行模块的Tool Catalog、Tool Operation Ledger、幂等和能力声明。
 - [ ] 建立 MAF Function Middleware 到 Tool Gateway 的唯一执行路径。
 - [ ] 工具参数动态扩权时回到持久 Approval，而不是进程内默认批准。

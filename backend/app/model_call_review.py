@@ -660,6 +660,7 @@ class ModelCallDraft:
     binding_hash: str
     context_sources: tuple[dict[str, Any], ...]
     model_capabilities: ModelCapabilities
+    execution_context: dict[str, Any] = field(default_factory=dict)
     status: str = "pending_approval"
     previous_draft_id: str | None = None
 
@@ -677,6 +678,7 @@ class ModelCallDraft:
             "provider_id": self.provider_id,
             "provider_protocol": self.provider_protocol,
             "status": self.status,
+            "execution_context": copy.deepcopy(self.execution_context),
             "provider_catalog": copy.deepcopy(list(self.provider_catalog)),
             "effective_context": effective_context_view(
                 self.provider_request,
@@ -720,6 +722,7 @@ class InMemoryModelCallReviewStore:
         provider_request: Mapping[str, Any],
         previous_draft_id: str | None,
         previous_draft: ModelCallDraft | None = None,
+        execution_context: Mapping[str, Any] | None = None,
     ) -> ModelCallDraft:
         request_copy = copy.deepcopy(dict(provider_request))
         catalog = self._require_catalog(str(request_copy.get("model") or ""))
@@ -759,6 +762,9 @@ class InMemoryModelCallReviewStore:
             binding_hash=binding_hash,
             context_sources=context_sources,
             model_capabilities=model_option.capabilities,
+            execution_context=copy.deepcopy(
+                dict(execution_context or (previous_draft.execution_context if previous_draft else {}))
+            ),
             previous_draft_id=previous_draft_id,
         )
 
@@ -786,12 +792,16 @@ class InMemoryModelCallReviewStore:
         messages: Sequence[Mapping[str, Any]],
         model: str,
         provider_id: str | None = None,
+        instructions: str = DEFAULT_INSTRUCTIONS,
+        execution_context: Mapping[str, Any] | None = None,
+        origin_prompt: str | None = None,
     ) -> ModelCallDraft:
-        origin_prompt = ""
-        for message in reversed(messages):
-            if message.get("role") == "user":
-                origin_prompt = _message_text(message)
-                break
+        resolved_origin_prompt = origin_prompt or ""
+        if not resolved_origin_prompt:
+            for message in reversed(messages):
+                if message.get("role") == "user":
+                    resolved_origin_prompt = _message_text(message)
+                    break
         catalog = self._require_catalog(model)
         selected_provider_id = provider_id or catalog.default_provider_id
         try:
@@ -803,15 +813,17 @@ class InMemoryModelCallReviewStore:
             thread_id=thread_id,
             run_id=run_id,
             version=1,
-            origin_prompt=origin_prompt,
+            origin_prompt=resolved_origin_prompt,
             provider_id=selected_provider_id,
             provider_request=compile_provider_request(
                 model=model,
                 messages=messages,
+                instructions=instructions,
                 capabilities=model_capabilities,
                 protocol=selected_provider.protocol,
             ),
             previous_draft_id=None,
+            execution_context=execution_context,
         )
         with self._lock:
             current_id = self._current_by_thread.get(thread_id)
@@ -860,6 +872,7 @@ class InMemoryModelCallReviewStore:
                 provider_request=request_copy,
                 previous_draft_id=old.draft_id,
                 previous_draft=old,
+                execution_context=old.execution_context,
             )
             self._drafts[old.draft_id] = dataclass_replace(old, status="superseded")
             self._approval_status[old.approval_id] = "superseded"
@@ -977,6 +990,7 @@ def dataclass_replace(draft: ModelCallDraft, *, status: str) -> ModelCallDraft:
         binding_hash=draft.binding_hash,
         context_sources=draft.context_sources,
         model_capabilities=draft.model_capabilities,
+        execution_context=copy.deepcopy(draft.execution_context),
         status=status,
         previous_draft_id=draft.previous_draft_id,
     )

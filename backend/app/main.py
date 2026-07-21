@@ -10,6 +10,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 
+from .agent_profiles import (
+    AgentProfileConflict,
+    AgentProfileError,
+    AgentProfileNotFound,
+    AgentProfileService,
+)
 from .agents import create_agent
 from .config import Settings
 from .model_call_review import (
@@ -28,8 +34,10 @@ from .product_sessions.service import (
     ProductSessionNotFound,
 )
 from .workflows import (
+    GOVERNED_AGENT_HANDOFF_WORKFLOW,
     NESTED_QUALITY_WORKFLOW,
     ProductAwareWorkflow,
+    create_governed_agent_handoff_workflow,
     create_nested_quality_workflow,
     workflow_catalog_view,
 )
@@ -62,6 +70,18 @@ class UpdateSessionRequest(BaseModel):
     model: str | None = None
 
 
+class UpdateAgentProfileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int
+    name: str
+    description: str
+    instructions: str
+    provider_id: str
+    model: str
+    enabled: bool
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -76,10 +96,12 @@ def create_app(
     product_sessions = product_session_service or ProductSessionService(
         ProductDatabase(resolved.database_url)
     )
+    agent_profiles = AgentProfileService(product_sessions.database, model_catalog)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         await product_sessions.initialize()
+        await agent_profiles.initialize()
         try:
             yield
         finally:
@@ -95,6 +117,7 @@ def create_app(
     review_store = model_call_store or InMemoryModelCallReviewStore(model_catalog)
     app.state.model_call_review_store = review_store
     app.state.product_sessions = product_sessions
+    app.state.agent_profiles = agent_profiles
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(resolved.frontend_origins),
@@ -208,7 +231,39 @@ def create_app(
 
     @app.get("/api/workflows")
     async def workflows() -> dict[str, Any]:
-        return {"workflows": workflow_catalog_view()}
+        definitions = (
+            (NESTED_QUALITY_WORKFLOW, GOVERNED_AGENT_HANDOFF_WORKFLOW)
+            if model_catalog is not None
+            else (NESTED_QUALITY_WORKFLOW,)
+        )
+        return {"workflows": workflow_catalog_view(definitions)}
+
+    @app.get("/api/agents")
+    async def agents() -> dict[str, Any]:
+        return {"agents": await agent_profiles.list()}
+
+    @app.put("/api/agents/{agent_id}")
+    async def update_agent_profile(
+        agent_id: str,
+        command: UpdateAgentProfileRequest,
+    ) -> dict[str, Any]:
+        try:
+            return await agent_profiles.update(
+                agent_id,
+                expected_revision=command.expected_revision,
+                name=command.name,
+                description=command.description,
+                instructions=command.instructions,
+                provider_id=command.provider_id,
+                model=command.model,
+                enabled=command.enabled,
+            )
+        except AgentProfileNotFound as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except AgentProfileConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except AgentProfileError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.get("/api/model-call-drafts/{draft_id}")
     async def get_model_call_draft(draft_id: str) -> dict[str, Any]:
@@ -297,6 +352,34 @@ def create_app(
         allow_origins=list(resolved.frontend_origins),
         tags=["workflows"],
     )
+    if resolved.runtime_mode == "model":
+        handoff_run_ids: dict[str, str] = {}
+
+        def handoff_factory(thread_id: str):
+            return create_governed_agent_handoff_workflow(
+                thread_id=thread_id,
+                run_id=lambda: handoff_run_ids.get(thread_id, "unknown"),
+                planner=agent_profiles.runtime_snapshot("planner"),
+                reviewer=agent_profiles.runtime_snapshot("reviewer"),
+                store=review_store,
+                transport=transport,
+                sessions=product_sessions,
+            )
+
+        handoff_workflow = ProductAwareWorkflow(
+            workflow_factory=handoff_factory,
+            sessions=product_sessions,
+            definition=GOVERNED_AGENT_HANDOFF_WORKFLOW,
+            run_ids=handoff_run_ids,
+        )
+        app.state.handoff_workflow = handoff_workflow
+        add_agent_framework_fastapi_endpoint(
+            app,
+            handoff_workflow,
+            GOVERNED_AGENT_HANDOFF_WORKFLOW.endpoint,
+            allow_origins=list(resolved.frontend_origins),
+            tags=["workflows"],
+        )
     return app
 
 
