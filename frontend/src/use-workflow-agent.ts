@@ -5,8 +5,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProductTraceEvent, WorkflowDefinition } from "./workflow-api";
 import { workflowEndpointUrl } from "./workflow-api";
 import {
-  reviewCardFromInterrupt,
+  governedReviewFromInterrupt,
   revisionError,
+  type GovernedReviewCard,
   type ModelCallReviewCard,
 } from "./use-chat-agent";
 import {
@@ -57,8 +58,9 @@ export function useWorkflowAgent({
     emptyWorkflowProgress(definition),
   );
   const [runId, setRunId] = useState<string | null>(null);
-  const [pendingReview, setPendingReview] = useState<ModelCallReviewCard | null>(null);
+  const [pendingReview, setPendingReview] = useState<GovernedReviewCard | null>(null);
   const messagesBeforeRun = useRef<Message[] | null>(null);
+  const inputBeforeRun = useRef("");
   const sequence = useRef(0);
   const hydratedSessionId = useRef<string | null>(null);
   const mounted = useRef(true);
@@ -114,7 +116,7 @@ export function useWorkflowAgent({
       onRunFinishedEvent(result) {
         if (!mounted.current) return;
         if (result.outcome === "interrupt") {
-          const card = result.interrupts.map(reviewCardFromInterrupt).find(Boolean) ?? null;
+          const card = result.interrupts.map(governedReviewFromInterrupt).find(Boolean) ?? null;
           if (card) {
             setPendingReview(card);
             setStatus("awaiting_approval");
@@ -160,6 +162,7 @@ export function useWorkflowAgent({
       if (!text || !sessionId) return;
       sequence.current = 0;
       messagesBeforeRun.current = cloneMessages(agent.messages);
+      inputBeforeRun.current = text;
       setProgress(emptyWorkflowProgress(definition));
       setStatus("running");
       setError(null);
@@ -177,7 +180,7 @@ export function useWorkflowAgent({
     [agent, definition, sessionId],
   );
 
-  const approve = useCallback(async () => {
+  const approve = useCallback(async (argumentsValue?: Record<string, unknown>) => {
     if (!pendingReview || agent.isRunning) return;
     const approvalId = pendingReview.approval_id;
     setPendingReview(null);
@@ -185,7 +188,16 @@ export function useWorkflowAgent({
     setError(null);
     try {
       await agent.runAgent({
-        resume: [{ interruptId: approvalId, status: "resolved", payload: { decision: "approve" } }],
+        resume: [{
+          interruptId: approvalId,
+          status: "resolved",
+          payload: {
+            decision: "approve",
+            ...(pendingReview.review_kind === "tool_execution"
+              ? { arguments: argumentsValue ?? pendingReview.arguments }
+              : {}),
+          },
+        }],
       });
     } catch (runError) {
       if (!mounted.current) return;
@@ -200,7 +212,7 @@ export function useWorkflowAgent({
     providerId: string,
     providerRequest: Record<string, unknown>,
   ) => {
-    if (!pendingReview || agent.isRunning) return;
+    if (!pendingReview || pendingReview.review_kind === "tool_execution" || agent.isRunning) return;
     let recoverable = pendingReview;
     setStatus("saving");
     setError(null);
@@ -240,7 +252,9 @@ export function useWorkflowAgent({
 
   const abandon = useCallback(async (): Promise<string | null> => {
     if (!pendingReview || agent.isRunning) return null;
-    const prompt = pendingReview.origin_prompt;
+    const prompt = pendingReview.review_kind === "tool_execution"
+      ? inputBeforeRun.current
+      : pendingReview.origin_prompt;
     const approvalId = pendingReview.approval_id;
     setPendingReview(null);
     setStatus("running");

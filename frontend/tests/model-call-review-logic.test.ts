@@ -138,6 +138,37 @@ test("模型参数数值范围会阻止发送", () => {
   assert.match(policyIssues("provider-a", catalog, request).join("；"), /不能大于2/);
 });
 
+test("运行时草稿允许Provider扩展参数和已绑定的真实Tool", () => {
+  const request = validRequest();
+  request.tools = [{
+    type: "function",
+    name: "read",
+    description: "读取文件",
+    parameters: { type: "object", properties: { path: { type: "string" } } },
+  }];
+  request.input = [
+    ...(request.input as unknown[]),
+    { type: "function_call", call_id: "call-1", name: "read", arguments: "{\"path\":\"README.md\"}" },
+    { type: "function_call_output", call_id: "call-1", output: "README内容" },
+  ];
+  request.prompt_cache_key = "runtime-cache-key";
+  const runtimeCapabilities = { ...capabilities, allow_unknown_parameters: true };
+
+  assert.deepEqual(policyIssues("provider-a", catalog, request, {
+    capabilities: runtimeCapabilities,
+    allowedToolNames: ["read"],
+  }), []);
+
+  const issues = policyIssues("provider-a", catalog, {
+    ...request,
+    tools: [{ type: "function", name: "new_tool" }],
+  }, {
+    capabilities: runtimeCapabilities,
+    allowedToolNames: ["read"],
+  });
+  assert.match(issues.join("；"), /没有绑定当前执行器/);
+});
+
 test("同一语义对象不受key顺序影响", () => {
   assert.equal(stableStringify({ b: 2, a: { d: 4, c: 3 } }), stableStringify({ a: { c: 3, d: 4 }, b: 2 }));
 });

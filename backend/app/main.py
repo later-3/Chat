@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from agent_framework.ag_ui import add_agent_framework_fastapi_endpoint
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 
@@ -23,6 +23,7 @@ from .model_call_review import (
     InMemoryModelCallReviewStore,
     ModelCallDraftConflict,
     ModelCallDraftValidationError,
+    ProviderDispatchError,
     RoutedProviderTransport,
     provider_endpoint,
 )
@@ -33,11 +34,20 @@ from .product_sessions.service import (
     ProductSessionConflict,
     ProductSessionNotFound,
 )
+from .pi_runtime import PiRuntimeManager
+from .tool_configs import (
+    ToolConfigurationConflict,
+    ToolConfigurationError,
+    ToolConfigurationNotFound,
+    ToolConfigurationService,
+)
 from .workflows import (
     GOVERNED_AGENT_HANDOFF_WORKFLOW,
+    GOVERNED_PI_AGENT_WORKFLOW,
     NESTED_QUALITY_WORKFLOW,
     ProductAwareWorkflow,
     create_governed_agent_handoff_workflow,
+    create_governed_pi_agent_workflow,
     create_nested_quality_workflow,
     workflow_catalog_view,
 )
@@ -82,12 +92,28 @@ class UpdateAgentProfileRequest(BaseModel):
     enabled: bool
 
 
+class UpdatePiToolConfigurationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int
+    enabled: bool
+    provider_id: str
+    model: str
+    working_directory: str
+    allowed_tools: list[str]
+    thinking_level: str
+    max_model_calls: int
+    timeout_seconds: int
+    system_prompt: str
+
+
 def create_app(
     settings: Settings | None = None,
     *,
     model_call_store: InMemoryModelCallReviewStore | None = None,
     model_call_transport: ProviderTransport | None = None,
     product_session_service: ProductSessionService | None = None,
+    pi_runtime_manager: PiRuntimeManager | None = None,
 ) -> FastAPI:
     """Create an isolated app instance suitable for production or contract tests."""
 
@@ -97,14 +123,32 @@ def create_app(
         ProductDatabase(resolved.database_url)
     )
     agent_profiles = AgentProfileService(product_sessions.database, model_catalog)
+    review_store = model_call_store or InMemoryModelCallReviewStore(model_catalog)
+    tool_configurations = ToolConfigurationService(
+        product_sessions.database,
+        model_catalog,
+        resolved.pi_runtime,
+    )
+    pi_runtime = pi_runtime_manager or (
+        PiRuntimeManager(
+            runtime=resolved.pi_runtime,
+            catalog=model_catalog,
+            review_store=review_store,
+        )
+        if model_catalog is not None
+        else None
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         await product_sessions.initialize()
         await agent_profiles.initialize()
+        await tool_configurations.initialize()
         try:
             yield
         finally:
+            if pi_runtime is not None:
+                await pi_runtime.close_all()
             await product_sessions.database.close()
 
     app = FastAPI(
@@ -114,10 +158,11 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.settings = resolved
-    review_store = model_call_store or InMemoryModelCallReviewStore(model_catalog)
     app.state.model_call_review_store = review_store
     app.state.product_sessions = product_sessions
     app.state.agent_profiles = agent_profiles
+    app.state.tool_configurations = tool_configurations
+    app.state.pi_runtime = pi_runtime
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(resolved.frontend_origins),
@@ -138,6 +183,7 @@ def create_app(
             "model": resolved.model if resolved.runtime_mode == "model" else None,
             "model_call_approval": "every_call" if resolved.runtime_mode == "model" else "not_applicable",
             "product_sessions": "sqlite",
+            "pi_agent": resolved.pi_runtime.public_view(),
         }
 
     def validate_model_selection(provider_id: str | None, model: str | None) -> tuple[str | None, str | None]:
@@ -231,12 +277,61 @@ def create_app(
 
     @app.get("/api/workflows")
     async def workflows() -> dict[str, Any]:
-        definitions = (
-            (NESTED_QUALITY_WORKFLOW, GOVERNED_AGENT_HANDOFF_WORKFLOW)
-            if model_catalog is not None
-            else (NESTED_QUALITY_WORKFLOW,)
-        )
-        return {"workflows": workflow_catalog_view(definitions)}
+        definitions = [NESTED_QUALITY_WORKFLOW]
+        if model_catalog is not None:
+            definitions.append(GOVERNED_AGENT_HANDOFF_WORKFLOW)
+        if model_catalog is not None and resolved.pi_runtime.available:
+            definitions.append(GOVERNED_PI_AGENT_WORKFLOW)
+        return {"workflows": workflow_catalog_view(tuple(definitions))}
+
+    @app.get("/api/tools")
+    async def tools() -> dict[str, Any]:
+        return {"tools": await tool_configurations.list()}
+
+    @app.get("/api/tools/pi_agent/executions")
+    async def pi_tool_executions(limit: int = 20) -> dict[str, Any]:
+        return {"executions": await tool_configurations.executions(limit)}
+
+    @app.put("/api/tools/pi_agent")
+    async def update_pi_tool(command: UpdatePiToolConfigurationRequest) -> dict[str, Any]:
+        try:
+            return await tool_configurations.update(**command.model_dump())
+        except ToolConfigurationNotFound as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ToolConfigurationConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except ToolConfigurationError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    async def pi_provider_gateway(
+        request: Request,
+        authorization: str | None,
+        protocol: str,
+    ):
+        if pi_runtime is None:
+            raise HTTPException(status_code=503, detail="pi Provider审批网关不可用")
+        try:
+            return await pi_runtime.gateway_response(
+                authorization=authorization,
+                protocol=protocol,
+                body=await request.body(),
+            )
+        except ProviderDispatchError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+
+    @app.post("/api/pi-provider/v1/chat/completions", include_in_schema=False)
+    async def pi_chat_completions_gateway(
+        request: Request,
+        authorization: str | None = Header(default=None),
+    ):
+        return await pi_provider_gateway(request, authorization, "openai_chat_completions")
+
+    @app.post("/api/pi-provider/v1/responses", include_in_schema=False)
+    async def pi_responses_gateway(
+        request: Request,
+        authorization: str | None = Header(default=None),
+    ):
+        return await pi_provider_gateway(request, authorization, "openai_responses")
 
     @app.get("/api/agents")
     async def agents() -> dict[str, Any]:
@@ -380,6 +475,34 @@ def create_app(
             allow_origins=list(resolved.frontend_origins),
             tags=["workflows"],
         )
+        if resolved.pi_runtime.available and pi_runtime is not None:
+            pi_run_ids: dict[str, str] = {}
+
+            def pi_factory(thread_id: str):
+                return create_governed_pi_agent_workflow(
+                    thread_id=thread_id,
+                    run_id=lambda: pi_run_ids.get(thread_id, "unknown"),
+                    config=tool_configurations.runtime_snapshot(),
+                    manager=pi_runtime,
+                    store=review_store,
+                    sessions=product_sessions,
+                    tools=tool_configurations,
+                )
+
+            pi_workflow = ProductAwareWorkflow(
+                workflow_factory=pi_factory,
+                sessions=product_sessions,
+                definition=GOVERNED_PI_AGENT_WORKFLOW,
+                run_ids=pi_run_ids,
+            )
+            app.state.pi_workflow = pi_workflow
+            add_agent_framework_fastapi_endpoint(
+                app,
+                pi_workflow,
+                GOVERNED_PI_AGENT_WORKFLOW.endpoint,
+                allow_origins=list(resolved.frontend_origins),
+                tags=["workflows"],
+            )
     return app
 
 

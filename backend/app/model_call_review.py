@@ -133,6 +133,7 @@ def _validate_message_input(
     request_input: Any,
     *,
     capabilities: ModelCapabilities,
+    allowed_tool_names: Sequence[str] = (),
     issues: list[str],
 ) -> None:
     if isinstance(request_input, str):
@@ -146,6 +147,21 @@ def _validate_message_input(
         prefix = f"input[{message_index}]"
         if not isinstance(message, Mapping):
             issues.append(f"{prefix}必须是消息对象")
+            continue
+        item_type = message.get("type")
+        if item_type in {"function_call", "function_call_output", "reasoning"}:
+            # Responses API represents later tool-loop turns as typed input
+            # items rather than role/content messages. They remain visible and
+            # editable in Provider JSON, while Tool declarations are validated
+            # separately against the server-owned catalog.
+            if item_type == "function_call":
+                function_name = message.get("name")
+                if not isinstance(function_name, str):
+                    issues.append(f"{prefix}.name必须是字符串")
+                elif function_name not in set(allowed_tool_names):
+                    issues.append(f"{prefix}.name引用了未授权Tool: {function_name}")
+            if item_type == "function_call_output" and "output" not in message:
+                issues.append(f"{prefix}.output不能省略")
             continue
         role = message.get("role")
         if not isinstance(role, str) or role not in capabilities.roles:
@@ -187,6 +203,8 @@ def validate_provider_request(
     provider_request: Mapping[str, Any],
     capabilities: ModelCapabilities | None = None,
     protocol: str = "openai_responses",
+    *,
+    allowed_tool_names: Sequence[str] = (),
 ) -> None:
     """Validate shape and the already-approved full-context policy.
 
@@ -209,6 +227,7 @@ def validate_provider_request(
     _validate_message_input(
         provider_request.get(message_field),
         capabilities=resolved_capabilities,
+        allowed_tool_names=allowed_tool_names,
         issues=issues,
     )
     unexpected_message_field = "input" if message_field == "messages" else "messages"
@@ -219,7 +238,28 @@ def validate_provider_request(
     if tools is not None and not isinstance(tools, list):
         issues.append("tools必须是数组或省略")
     elif tools:
-        issues.append("当前没有已注册且可执行的Tool，tools必须为空")
+        allowed = set(allowed_tool_names)
+        if not allowed:
+            issues.append("当前没有已注册且可执行的Tool，tools必须为空")
+        seen: set[str] = set()
+        for index, tool in enumerate(tools):
+            if not isinstance(tool, Mapping):
+                issues.append(f"tools[{index}]必须是Tool定义对象")
+                continue
+            function = tool.get("function")
+            name = (
+                function.get("name")
+                if isinstance(function, Mapping)
+                else tool.get("name")
+            )
+            if not isinstance(name, str) or not name.strip():
+                issues.append(f"tools[{index}]缺少有效name")
+                continue
+            if allowed and name not in allowed:
+                issues.append(f"tools[{index}]声明了未注册或未授权Tool: {name}")
+            if name in seen:
+                issues.append(f"tools中存在重复Tool: {name}")
+            seen.add(name)
 
     continuation = sorted(field for field in _CONTINUATION_FIELDS if provider_request.get(field) is not None)
     if continuation:
@@ -660,6 +700,7 @@ class ModelCallDraft:
     binding_hash: str
     context_sources: tuple[dict[str, Any], ...]
     model_capabilities: ModelCapabilities
+    allowed_tool_names: tuple[str, ...] = ()
     execution_context: dict[str, Any] = field(default_factory=dict)
     status: str = "pending_approval"
     previous_draft_id: str | None = None
@@ -667,6 +708,7 @@ class ModelCallDraft:
     def review_card(self) -> dict[str, Any]:
         return {
             "message": "请审核本次模型调用",
+            "review_kind": "model_call",
             "draft_id": self.draft_id,
             "approval_id": self.approval_id,
             "thread_id": self.thread_id,
@@ -723,6 +765,8 @@ class InMemoryModelCallReviewStore:
         previous_draft_id: str | None,
         previous_draft: ModelCallDraft | None = None,
         execution_context: Mapping[str, Any] | None = None,
+        allowed_tool_names: Sequence[str] = (),
+        capabilities: ModelCapabilities | None = None,
     ) -> ModelCallDraft:
         request_copy = copy.deepcopy(dict(provider_request))
         catalog = self._require_catalog(str(request_copy.get("model") or ""))
@@ -731,7 +775,13 @@ class InMemoryModelCallReviewStore:
             model_option = catalog.require_model(provider_id, str(request_copy.get("model") or ""))
         except ModelProviderCatalogError as error:
             raise ModelCallDraftValidationError([str(error)]) from error
-        validate_provider_request(request_copy, model_option.capabilities, provider.protocol)
+        resolved_capabilities = capabilities or model_option.capabilities
+        validate_provider_request(
+            request_copy,
+            resolved_capabilities,
+            provider.protocol,
+            allowed_tool_names=allowed_tool_names,
+        )
         context_sources = (
             _reconcile_context_sources(
                 previous_draft.context_sources,
@@ -761,7 +811,8 @@ class InMemoryModelCallReviewStore:
             body_sha256=body_sha256,
             binding_hash=binding_hash,
             context_sources=context_sources,
-            model_capabilities=model_option.capabilities,
+            model_capabilities=resolved_capabilities,
+            allowed_tool_names=tuple(allowed_tool_names),
             execution_context=copy.deepcopy(
                 dict(execution_context or (previous_draft.execution_context if previous_draft else {}))
             ),
@@ -836,6 +887,79 @@ class InMemoryModelCallReviewStore:
             self._approval_status[draft.approval_id] = "pending"
         return draft
 
+    def begin_provider_request(
+        self,
+        *,
+        thread_id: str,
+        run_id: str,
+        provider_id: str,
+        provider_request: Mapping[str, Any],
+        origin_prompt: str,
+        allowed_tool_names: Sequence[str],
+        execution_context: Mapping[str, Any] | None = None,
+    ) -> ModelCallDraft:
+        """Create a draft from an already Provider-shaped runtime request.
+
+        pi owns its model loop and therefore produces the protocol body before
+        Chat can pause it. Chat still canonicalizes that body once, validates
+        every declared Tool against the execution snapshot, and forwards only
+        the bytes bound to the user's approval.
+        """
+
+        request_copy = copy.deepcopy(dict(provider_request))
+        model = str(request_copy.get("model") or "")
+        catalog = self._require_catalog(model)
+        try:
+            model_option = catalog.require_model(provider_id, model)
+        except ModelProviderCatalogError as error:
+            raise ModelCallDraftValidationError([str(error)]) from error
+        runtime_parameters = tuple(
+            ParameterCapability(
+                key=value.key,
+                label=value.label,
+                value_type=value.value_type,
+                default=value.default,
+                choices=value.choices,
+                minimum=value.minimum,
+                maximum=value.maximum,
+                child_key=value.child_key,
+                locked_value=True,
+                locked=True,
+            )
+            if value.key == "stream"
+            else value
+            for value in model_option.capabilities.parameters
+        )
+        capabilities = ModelCapabilities(
+            roles=model_option.capabilities.roles,
+            content_types_by_role=model_option.capabilities.content_types_by_role,
+            parameters=runtime_parameters,
+            token_estimator=model_option.capabilities.token_estimator,
+            allow_unknown_parameters=True,
+        )
+        draft = self._make_draft(
+            thread_id=thread_id,
+            run_id=run_id,
+            version=1,
+            origin_prompt=origin_prompt,
+            provider_id=provider_id,
+            provider_request=request_copy,
+            previous_draft_id=None,
+            execution_context=execution_context,
+            allowed_tool_names=allowed_tool_names,
+            capabilities=capabilities,
+        )
+        with self._lock:
+            current_id = self._current_by_thread.get(thread_id)
+            if current_id is not None:
+                current = self._drafts[current_id]
+                if current.status == "pending_approval":
+                    raise ModelCallDraftConflict("当前Thread已有待审批模型调用")
+            self._drafts[draft.draft_id] = draft
+            self._current_by_thread[thread_id] = draft.draft_id
+            self._approval_status[draft.approval_id] = "pending"
+        return draft
+
     def get(self, draft_id: str) -> ModelCallDraft:
         with self._lock:
             draft = self._drafts.get(draft_id)
@@ -863,6 +987,37 @@ class InMemoryModelCallReviewStore:
                 raise ModelCallDraftConflict("只有当前待审批草稿可以修改")
             if old.binding_hash != expected_hash:
                 raise ModelCallDraftConflict("草稿Hash已变化，请刷新后再修改")
+            revised_capabilities: ModelCapabilities | None = None
+            if old.model_capabilities.allow_unknown_parameters:
+                try:
+                    option = self._require_catalog(
+                        str(request_copy.get("model") or "")
+                    ).require_model(provider_id, str(request_copy.get("model") or ""))
+                except ModelProviderCatalogError as error:
+                    raise ModelCallDraftValidationError([str(error)]) from error
+                revised_capabilities = ModelCapabilities(
+                    roles=option.capabilities.roles,
+                    content_types_by_role=option.capabilities.content_types_by_role,
+                    parameters=tuple(
+                        ParameterCapability(
+                            key=value.key,
+                            label=value.label,
+                            value_type=value.value_type,
+                            default=value.default,
+                            choices=value.choices,
+                            minimum=value.minimum,
+                            maximum=value.maximum,
+                            child_key=value.child_key,
+                            locked_value=True,
+                            locked=True,
+                        )
+                        if value.key == "stream"
+                        else value
+                        for value in option.capabilities.parameters
+                    ),
+                    token_estimator=option.capabilities.token_estimator,
+                    allow_unknown_parameters=True,
+                )
             revised = self._make_draft(
                 thread_id=old.thread_id,
                 run_id=old.run_id,
@@ -873,6 +1028,8 @@ class InMemoryModelCallReviewStore:
                 previous_draft_id=old.draft_id,
                 previous_draft=old,
                 execution_context=old.execution_context,
+                allowed_tool_names=old.allowed_tool_names,
+                capabilities=revised_capabilities,
             )
             self._drafts[old.draft_id] = dataclass_replace(old, status="superseded")
             self._approval_status[old.approval_id] = "superseded"
@@ -900,7 +1057,7 @@ class InMemoryModelCallReviewStore:
             if approval_id in self._attempt_by_approval:
                 raise ModelCallDraftConflict("该审批已创建发送尝试")
             try:
-                model_option = self._require_catalog(
+                self._require_catalog(
                     str(draft.provider_request.get("model") or "")
                 ).require_model(
                     draft.provider_id,
@@ -910,8 +1067,9 @@ class InMemoryModelCallReviewStore:
                 raise ModelCallDraftConflict(str(error)) from error
             validate_provider_request(
                 draft.provider_request,
-                model_option.capabilities,
+                draft.model_capabilities,
                 draft.provider_protocol,
+                allowed_tool_names=draft.allowed_tool_names,
             )
             attempt = ModelCallAttempt(
                 attempt_id=_new_id("model_call_attempt"),
@@ -990,6 +1148,7 @@ def dataclass_replace(draft: ModelCallDraft, *, status: str) -> ModelCallDraft:
         binding_hash=draft.binding_hash,
         context_sources=draft.context_sources,
         model_capabilities=draft.model_capabilities,
+        allowed_tool_names=draft.allowed_tool_names,
         execution_context=copy.deepcopy(draft.execution_context),
         status=status,
         previous_draft_id=draft.previous_draft_id,

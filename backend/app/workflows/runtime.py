@@ -37,10 +37,12 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
         self._sessions = sessions
         self.definition = definition
         self._run_ids = run_ids
+        self._waiting_nodes: dict[str, str] = {}
 
     async def run(self, input_data: dict[str, Any]):
         thread_id = self._thread_id_from_input(input_data)
         agui_run_id = str(input_data.get("run_id") or input_data.get("runId") or "")
+        resumed_activity: ActivitySnapshotEvent | None = None
         if self._run_ids is not None:
             self._run_ids[thread_id] = agui_run_id
         try:
@@ -52,6 +54,29 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
                 "workflow.resumed" if accepted.is_resume else "workflow.started",
                 {"workflow_id": self.definition.id, "version": self.definition.version},
             )
+            resumed_node = self._waiting_nodes.pop(thread_id, None) if accepted.is_resume else None
+            if resumed_node is not None:
+                resumed_payload = {
+                    "workflow_id": self.definition.id,
+                    "executor_id": resumed_node,
+                    "status": "completed",
+                    "details": {"message": "审批决定已提交，Workflow继续推进。"},
+                }
+                await self._sessions.record_trace(
+                    thread_id,
+                    accepted.product_run_id,
+                    "workflow.node",
+                    resumed_payload,
+                )
+                resumed_activity = ActivitySnapshotEvent(
+                    messageId=f"workflow-resumed-{resumed_node}",
+                    activityType="executor",
+                    content={
+                        key: value
+                        for key, value in resumed_payload.items()
+                        if key != "workflow_id"
+                    },
+                )
         except ProductSessionError as error:
             yield RunStartedEvent(run_id=agui_run_id, thread_id=thread_id)
             yield RunErrorEvent(message=str(error), code=error.code)
@@ -62,6 +87,15 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
         terminal: RunFinishedEvent | RunErrorEvent | None = None
         try:
             async for event in super().run(input_data):
+                if isinstance(event, RunStartedEvent):
+                    # AG-UI requires RUN_STARTED to be the first event of every
+                    # HTTP run, including resume requests. Product projection
+                    # events therefore follow (never precede) the MAF prelude.
+                    yield event
+                    if resumed_activity is not None:
+                        yield resumed_activity
+                        resumed_activity = None
+                    continue
                 if isinstance(event, TextMessageStartEvent) and event.role == "assistant":
                     assistant_message_id = event.message_id
                 elif isinstance(event, TextMessageContentEvent):
@@ -113,6 +147,7 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
             return
 
         if isinstance(terminal, RunErrorEvent):
+            self._waiting_nodes.pop(thread_id, None)
             await self._sessions.fail_active_run(
                 thread_id,
                 error_code=getattr(terminal, "code", None),
@@ -143,17 +178,27 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
                 framework = metadata.get("agent_framework")
                 data = framework.get("data") if isinstance(framework, dict) else None
                 execution = data.get("execution_context") if isinstance(data, dict) else None
-                if isinstance(execution, dict) and isinstance(execution.get("agent_id"), str):
-                    waiting_executor_id = execution["agent_id"]
+                if isinstance(execution, dict):
+                    waiting_executor_id = next(
+                        (
+                            execution[key]
+                            for key in ("executor_id", "agent_id", "tool_id")
+                            if isinstance(execution.get(key), str)
+                        ),
+                        None,
+                    )
                     break
             if waiting_executor_id is not None:
+                self._waiting_nodes[thread_id] = waiting_executor_id
                 waiting_payload = {
                     "workflow_id": self.definition.id,
                     "executor_id": waiting_executor_id,
                     "status": "in_progress",
                     "details": {
-                        "message": "模型请求已准备，等待用户审批后才会发送。",
-                        "wait_reason": "model_call_approval",
+                        "message": (
+                            "请求已准备，等待用户审批后才会继续。"
+                        ),
+                        "wait_reason": "governed_approval",
                     },
                 }
                 await self._sessions.record_trace(
@@ -179,6 +224,7 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
                 return
 
         try:
+            self._waiting_nodes.pop(thread_id, None)
             committed = await self._sessions.complete_active_run(
                 thread_id,
                 assistant_text="".join(assistant_text),

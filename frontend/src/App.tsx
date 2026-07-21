@@ -14,6 +14,7 @@ import {
   Sparkles,
   UserRound,
   UsersRound,
+  Wrench,
   Workflow as WorkflowIcon,
   X,
 } from "lucide-react";
@@ -37,6 +38,7 @@ import { useChatAgent } from "./use-chat-agent";
 import { useUiStore } from "./ui-store";
 import { listWorkflows, type WorkflowDefinition } from "./workflow-api";
 import { WorkflowPage } from "./workflow-page";
+import { ToolPage } from "./tool-page";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8030";
 
@@ -118,7 +120,7 @@ function App() {
   const [settingsProvider, setSettingsProvider] = useState("");
   const [settingsModel, setSettingsModel] = useState("");
   const [settingsSaving, setSettingsSaving] = useState(false);
-  const [activeView, setActiveView] = useState<"chat" | "workflows" | "agents">("chat");
+  const [activeView, setActiveView] = useState<"chat" | "workflows" | "agents" | "tools">("chat");
   const [workflowDefinitions, setWorkflowDefinitions] = useState<WorkflowDefinition[]>([]);
   const [workflowRunning, setWorkflowRunning] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
@@ -352,6 +354,7 @@ function App() {
           <button className={activeView === "chat" ? "active" : ""} disabled={workflowRunning} onClick={() => setActiveView("chat")} type="button"><MessagesSquare size={15} />对话</button>
           <button className={activeView === "workflows" ? "active" : ""} disabled={status !== "idle"} onClick={() => setActiveView("workflows")} type="button"><WorkflowIcon size={15} />工作流</button>
           <button className={activeView === "agents" ? "active" : ""} disabled={interactionBusy} onClick={() => setActiveView("agents")} type="button"><UsersRound size={15} />Agent</button>
+          <button className={activeView === "tools" ? "active" : ""} disabled={interactionBusy} onClick={() => setActiveView("tools")} type="button"><Wrench size={15} />Tool</button>
         </nav>
         <div className="topbar-actions">
           <button className="icon-button labeled-on-wide" disabled={interactionBusy} onClick={() => void createNewConversation()} type="button">
@@ -459,10 +462,16 @@ function App() {
             onSessionSettled={refreshActiveSession}
             session={activeSession}
           />
-        ) : (
+        ) : activeView === "agents" ? (
           <AgentPage
             blocked={interactionBusy}
             onAgentsChanged={() => { void listWorkflows().then(setWorkflowDefinitions); }}
+            providers={providers}
+          />
+        ) : (
+          <ToolPage
+            blocked={interactionBusy}
+            onChanged={() => { void listWorkflows().then(setWorkflowDefinitions); }}
             providers={providers}
           />
         )}

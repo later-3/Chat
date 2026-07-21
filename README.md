@@ -39,7 +39,8 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 6. 前端可创建、打开、重命名、归档和配置Session默认Provider/模型，并展示Run/Attempt摘要；没有迁移旧数据库或历史会话。
 7. 前端可查看嵌套Workflow实时/恢复进度，并配置`planner`与`reviewer`两个Agent的名称、职责、Instructions及Provider/模型。
 8. 受治理双Agent Workflow已跑通：规划Agent、确定性交接、审校Agent共3个节点；两次真实Provider调用分别审批，第2次能查看和修改原始目标、规划结果及交接要求。
-9. 完整Session仍按Phase 2-8继续：活动流重连、Worker、Tool副作用、Workflow/HITL和跨入口恢复尚未完成。
+9. pi coding agent已作为真实MAF FunctionTool接入：使用官方JSONL RPC，每次模型请求和内部Tool调用分别审批，支持Tool配置、参数改写、Token/耗时/调用统计和启动中断收敛。
+10. 完整Session仍按Phase 2-8继续：活动流重连、Worker、Tool副作用、Workflow/HITL和跨入口恢复尚未完成。
 
 ## 技术方向
 
@@ -167,7 +168,8 @@ scripts/         可重复执行的工程验证
 11. [Session持久化研究与方案推导](./docs/session-persistence-research.md)：MAF、pi、nanobot与LibreChat的逐项源码证据、适用边界、方案比较和决策推导。
 12. [Session持久化设计](./docs/session-persistence-design.md)：Phase 1文本持久化设计、代码落点与审批Workflow适配。
 13. [Session持久化审核包](./docs/session-persistence-review.md)：已批准D1-D6的原因、参考覆盖、选项、实现适配和边界。
+14. [pi Agent Tool使用与运行手册](./docs/pi-agent-tool.md)：JSONL RPC选型、两道审批门、配置、监控、恢复语义和验证方法。
 
 ## 下一步
 
-下一步按已批准路线继续pi-agent工具接入；它必须复用Product Session/Run事实、逐次模型审批和MAF/AG-UI合同，并提交自动测试、浏览器端到端、真实模型与工具观测证据。
+下一步继续Session Phase 2-3：补齐显式Retry、生命周期和分支能力，并与模型审批、Workflow、多Agent和pi Tool执行交叉验证。

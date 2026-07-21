@@ -14,6 +14,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Float,
     Index,
     Integer,
     String,
@@ -192,6 +193,57 @@ class AgentProfileRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
+
+
+class ToolConfigurationRecord(Base):
+    """Product-owned, user-editable configuration for a registered Tool."""
+
+    __tablename__ = "tool_configurations"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    provider_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    model: Mapped[str] = mapped_column(String(200), nullable=False)
+    working_directory: Mapped[str] = mapped_column(Text, nullable=False)
+    allowed_tools: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
+    thinking_level: Mapped[str] = mapped_column(String(32), nullable=False, default="medium")
+    max_model_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=12)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=900)
+    system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+
+class ToolExecutionRecord(Base):
+    """Observable product ledger for one external Tool runtime execution."""
+
+    __tablename__ = "tool_executions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("product_sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("product_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    tool_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    config_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    model_call_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    internal_tool_call_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failure_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    metrics: Mapped[Any] = mapped_column(JSON, nullable=False, default=dict)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ProductDatabase:

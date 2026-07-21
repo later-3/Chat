@@ -158,9 +158,52 @@ GOVERNED_AGENT_HANDOFF_WORKFLOW = WorkflowDefinition(
     ),
 )
 
+GOVERNED_PI_AGENT_WORKFLOW = WorkflowDefinition(
+    id="governed-pi-agent",
+    name="pi Agent 受控工具",
+    version="1.0.0",
+    description=(
+        "通过pi官方JSONL RPC运行编码Agent；每次Provider请求和每个pi内部Tool调用"
+        "都在Chat的MAF Workflow中暂停、可编辑并重新审批。"
+    ),
+    endpoint="/api/workflows/governed-pi-agent/run",
+    nodes=(
+        WorkflowNodeDefinition(
+            id="pi_agent",
+            label="pi Agent Tool",
+            description="启动隔离的pi RPC子进程，统计模型、Token、耗时和Tool事件。",
+            kind="tool",
+            runtime_type="tool",
+        ),
+        WorkflowNodeDefinition(
+            id="pi_agent.model_gate",
+            label="Provider请求审批",
+            description="pi的每一次模型调用都显示完整请求，修改后绑定新Hash。",
+            kind="approval",
+            runtime_type="approval",
+            parent_id="pi_agent",
+            depth=1,
+        ),
+        WorkflowNodeDefinition(
+            id="pi_agent.tool_gate",
+            label="pi内部Tool审批",
+            description="只允许服务端配置中存在的Tool；参数可见、可改、可放弃。",
+            kind="approval",
+            runtime_type="approval",
+            parent_id="pi_agent",
+            depth=1,
+        ),
+    ),
+    edges=(
+        WorkflowEdgeDefinition("pi_agent", "pi_agent.model_gate"),
+        WorkflowEdgeDefinition("pi_agent", "pi_agent.tool_gate"),
+    ),
+)
+
 WORKFLOW_CATALOG: tuple[WorkflowDefinition, ...] = (
     NESTED_QUALITY_WORKFLOW,
     GOVERNED_AGENT_HANDOFF_WORKFLOW,
+    GOVERNED_PI_AGENT_WORKFLOW,
 )
 
 

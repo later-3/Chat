@@ -6,10 +6,10 @@
 |---|---|
 | 产品身份 | 独立开发、独立运行、独立运营并持续演进的完整 Chat 产品 |
 | 当前目录 | `/Users/xulater/Code/Chat` |
-| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、双协议逐次模型审批、Product Session R0/R1文本会话底座、嵌套Workflow可视化，以及受治理双Agent会话传递已完成 |
-| 设计状态 | 总体架构已按完整用户场景重写；用户已要求按既有规划继续实现Session、Workflow、多Agent和pi-agent接入，各阶段仍需按恢复保证分别验证 |
+| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、双协议逐次模型审批、Product Session R0/R1文本会话底座、嵌套Workflow、受治理双Agent和pi Agent Tool纵向切片已完成 |
+| 设计状态 | 总体架构已按完整用户场景重写；Workflow、多Agent和pi Agent种子已实现，Session R2-R6仍需按专项路线和恢复保证分别交付 |
 | Session 状态 | 9个能力域、74项能力、R0-R6和Phase 0-8路线已批准；Phase 0与Phase 1文本底座完成，R2-R6仍按后续阶段交付 |
-| 数据状态 | Product Store Schema与5个Alembic迁移已建立；只包含本项目新会话和Agent Profile，没有迁移旧数据库、旧历史或旧项目配置 |
+| 数据状态 | Product Store Schema与7个Alembic迁移已建立；只包含本项目新会话、Agent Profile、Tool配置与执行记录，没有迁移旧数据库、旧历史或旧项目配置 |
 | Git 状态 | 私有仓库`later-3/Chat`，分支`main`；按Feature节点提交并推送，私有配置和本地产物不进入Git |
 
 ## 2. 已确认的稳定事实
@@ -80,6 +80,9 @@
 - [x] 完成`planner Agent -> 确定性交接Executor -> reviewer Agent`的MAF原生Workflow；原始用户目标、规划结果和显式交接要求完整进入第2次请求，两次真实Provider调用分别产生独立Draft、Hash、Approval和Attempt。
 - [x] 多Agent已覆盖首轮放弃后修改Prompt重新运行、次轮请求修改产生v2/新Hash后继续、次轮放弃、配置并发CAS、无假Assistant成功和最终Product提交；浏览器真实模型回合得到3/3节点完成及Chat历史恢复。
 - [x] 修复真实双Agent运行暴露的Trace并发竞争：不再使用`MAX(sequence)+1`，改为Product Run内数据库原子计数器；20个并发写入与真实33条Trace均连续唯一。
+- [x] 完成pi coding agent真实Tool接入：MAF `FunctionTool`与确定性Workflow启动pi官方JSONL RPC子进程；本机Provider Gateway确保每次模型请求都生成完整可编辑Draft并逐次审批，pi扩展把每个内部Tool调用转换成可编辑参数的AG-UI Interrupt。
+- [x] 完成pi Tool配置与监控入口：Provider/模型联动、工作目录根策略、7个真实内置Tool选择、Thinking/调用上限/超时/System Prompt、配置CAS Revision，以及模型/Tool/Token/成本/耗时/失败统计；重启把遗留`running`执行收敛为`interrupted`。
+- [x] pi真实浏览器Tool loop验证完成：两次真实Provider审批、一次`read`，参数从`README.md`修改为`PROJECT_STATE.md`后执行，最终Product Message为`BROWSER_PI_OK`；371px无横向溢出，全新页面控制台0错误。
 
 ## 4. 已完成的工程与研究证据
 
@@ -95,8 +98,8 @@
 
 ### 4.2 已有验证
 
-1. 当前工作区后端51个测试通过，覆盖工程基线、JSON配置、审批合同、双协议、能力校验、精确发送、Session迁移/恢复/并发/幂等、失败/超时/取消、Product提交门、嵌套Workflow、多Agent会话传递、Agent Profile CAS、原子Trace和AG-UI终态顺序。
-2. 前端13个逻辑测试、类型检查和生产构建通过；最新`npm install --package-lock-only`审计122个包，0个已知漏洞。
+1. 当前工作区后端56个测试通过，覆盖工程基线、JSON配置、审批合同、双协议、能力校验、精确发送、Session迁移/恢复/并发/幂等、失败/超时/取消、Product提交门、嵌套Workflow、多Agent、pi RPC/Provider Gate/Tool Gate/执行统计、原子Trace和AG-UI终态顺序。
+2. 前端16个逻辑测试、类型检查和生产构建通过；最新`npm install --package-lock-only`审计122个包，0个已知漏洞。
 3. 浏览器完成Provider/模型联动、固定Key/类型化Value编辑、Role与内容类型同步、双视图同源、跨协议转换、修改后二次审批、放弃恢复，以及Session对话页/会话抽屉/设置弹窗窄屏回归；371px有效宽度无横向溢出。
 4. 火山方舟Responses与阿里云百炼Chat Completions各完成1次真实模型审批回合；后者核对最终Body仅含`model/messages/tools/store/stream`并返回预期文本。
 5. 清理脚本已验证可分别终止端口8030的Uvicorn和5073的Vite，清理后无监听残留。
@@ -134,7 +137,7 @@
 1. Session Phase 2-3的显式Retry/Resume、Steer、Follow-up、分支/Fork、搜索、标签、长上下文、导入导出和完整资源生命周期。
 2. Principal/真实身份Scope、Channel Binding、ContextPackage、Intent、Work/Plan、ExecutionDraft和持久Approval。
 3. Runtime Job/Event、活动流游标、Worker、Lease、Heartbeat和Reconciler；当前只做启动时中断收敛。
-4. Tool Ledger、幂等、对账、Workflow持久Checkpoint与跨进程HITL。
+4. 通用Tool Operation Ledger、外部副作用幂等/结果未知/对账、Workflow持久Checkpoint与跨进程HITL；当前pi专用执行记录只提供可观测终态与启动中断收敛。
 5. Memory、Evidence、Provenance、Artifact、Delivery/Outbox和完整运营Trace。
 6. Telegram等具体Channel Adapter合同，以及OPC-OS Chat Bridge的正式身份、能力、消息和回执合同。
 7. Provider结果未知后的查询对账、补偿和人工处置。
@@ -145,7 +148,7 @@
 2. AG-UI当前为RC版本，升级可能改变事件、Snapshot和Interrupt/Resume行为。
 3. AG-UI Client会发送客户端消息全集；若同时装配Product History、MAF History和Snapshot会形成重复上下文。
 4. Product Finalization Gate如何阻止过早`RUN_FINISHED`仍需安装版Spike。
-5. MAF Workflow Checkpoint与Product Run、持久Approval的跨进程薄桥已通过合同Spike，但尚未进入正式API、Repository、Worker和浏览器E2E；Tool Ledger仍未接合。
+5. MAF Workflow Checkpoint与Product Run、持久Approval的跨进程薄桥已通过合同Spike，但尚未进入正式API、Repository、Worker和浏览器E2E；pi已有窄执行记录，仍不能替代通用Tool Ledger和结果未知对账。
 6. SQLite已验证单Approval的8并发原子领取；Outbox、事件写入、Lease、多进程持续竞争和容量边界仍未压测。
 7. 外部Tool副作用没有通用Exactly-once；必须按工具定义幂等、查询、补偿和人工处置。
 8. Intent、Work、Approval、Evidence、Delivery等主要来自本项目需求，参考项目未提供可直接复制的完整状态机。
@@ -161,4 +164,4 @@
 1. Session Phase 1只证明R0/R1文本恢复；后续任务不得把它外推成活动流、Worker、Tool或Workflow/HITL恢复。
 2. Workflow可视化种子只兑现运行中投影和完成Trace恢复；后续Checkpoint/HITL不得复用这份Trace冒充运行恢复。
 3. 多Agent种子已验证MAF Agent-as-Executor合同、显式会话传递、配置Revision和逐次模型调用审批；它仍不代表任意动态Agent拓扑、持久Checkpoint或并发群聊已经完成。
-4. 下一Feature进入pi-agent工具接入前必须完成其源码集成方式验证；每次真实Provider调用仍经过逐次审批。
+4. pi Agent Tool已验证官方JSONL RPC、两道治理门和真实Tool loop；它仍不代表跨进程pi Session、持久Approval、通用副作用对账或R6恢复完成。

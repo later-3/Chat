@@ -240,13 +240,30 @@ function validateParameter(parameter: ParameterCapability, value: unknown): stri
   return issues;
 }
 
-function validateInput(input: unknown, capabilities: ModelCapabilities): string[] {
+function validateInput(
+  input: unknown,
+  capabilities: ModelCapabilities,
+  allowedToolNames: Set<string> = new Set(),
+): string[] {
   if (typeof input === "string") return input.trim() ? [] : ["input文字不能为空"];
   if (!Array.isArray(input) || input.length === 0) return ["input必须至少包含一条消息"];
   const issues: string[] = [];
   input.forEach((message, messageIndex) => {
     if (!isRecord(message)) {
       issues.push(`消息${messageIndex + 1}必须是对象`);
+      return;
+    }
+    const itemType = typeof message.type === "string" ? message.type : "";
+    if (["function_call", "function_call_output", "reasoning"].includes(itemType)) {
+      if (itemType === "function_call") {
+        const name = typeof message.name === "string" ? message.name : "";
+        if (!name || !allowedToolNames.has(name)) {
+          issues.push(`Provider上下文项${messageIndex + 1}引用了未授权Tool`);
+        }
+      }
+      if (itemType === "function_call_output" && !("output" in message)) {
+        issues.push(`Provider上下文项${messageIndex + 1}缺少output`);
+      }
       return;
     }
     const role = typeof message.role === "string" ? message.role : "";
@@ -285,14 +302,20 @@ export function policyIssues(
   providerId: string,
   catalog: ModelProviderOption[],
   request: Record<string, unknown>,
+  options?: {
+    capabilities?: ModelCapabilities;
+    allowedToolNames?: string[];
+  },
 ): string[] {
   const issues: string[] = [];
   const provider = providerFor(catalog, providerId);
   if (!provider) return ["请选择有效的Provider"];
   const model = modelFor(catalog, providerId, request.model);
   if (!model) return ["请选择当前Provider支持的模型"];
+  const capabilities = options?.capabilities ?? model.capabilities;
+  const allowedToolNames = new Set(options?.allowedToolNames ?? []);
 
-  issues.push(...validateInput(requestMessages(request), model.capabilities));
+  issues.push(...validateInput(requestMessages(request), capabilities, allowedToolNames));
   if (provider.protocol === "openai_chat_completions" && "input" in request) {
     issues.push("Chat Completions协议必须使用messages字段");
   }
@@ -302,7 +325,21 @@ export function policyIssues(
   if (request.tools !== undefined && !Array.isArray(request.tools)) {
     issues.push("tools必须是列表");
   } else if (Array.isArray(request.tools) && request.tools.length > 0) {
-    issues.push("当前没有已注册且可执行的Tool，请移除自定义Tool定义");
+    const names = request.tools.map((tool) => {
+      if (!isRecord(tool)) return "";
+      const definition = isRecord(tool.function) ? tool.function : tool;
+      return typeof definition.name === "string" ? definition.name : "";
+    });
+    if (allowedToolNames.size === 0) {
+      issues.push("当前没有已注册且可执行的Tool，请移除自定义Tool定义");
+    } else {
+      names.forEach((name, index) => {
+        if (!name || !allowedToolNames.has(name)) {
+          issues.push(`Tool ${index + 1}没有绑定当前执行器`);
+        }
+      });
+      if (new Set(names).size !== names.length) issues.push("Tool名称不能重复");
+    }
   }
   if (request.store !== false) issues.push("当前已批准策略要求store=false");
   const continuation = CONTINUATION_FIELDS.filter(
@@ -310,12 +347,12 @@ export function policyIssues(
   );
   if (continuation.length > 0) issues.push(`当前策略禁止Continuation字段：${continuation.join("、")}`);
 
-  const parameterMap = new Map(model.capabilities.parameters.map((parameter) => [parameter.key, parameter]));
+  const parameterMap = new Map(capabilities.parameters.map((parameter) => [parameter.key, parameter]));
   Object.entries(otherParameters(request)).forEach(([key, value]) => {
     if (CONTINUATION_FIELDS.includes(key)) return;
     const parameter = parameterMap.get(key);
     if (!parameter) {
-      if (!model.capabilities.allow_unknown_parameters) {
+      if (!capabilities.allow_unknown_parameters) {
         issues.push(`当前模型没有声明参数能力：${key}`);
       }
       return;

@@ -81,6 +81,7 @@ export interface ModelProviderOption {
 }
 
 export interface ModelCallReviewCard {
+  review_kind?: "model_call";
   message: string;
   draft_id: string;
   approval_id: string;
@@ -100,6 +101,11 @@ export interface ModelCallReviewCard {
     agent_revision?: number;
     call_position?: number;
     total_calls?: number;
+    executor_id?: string;
+    tool_id?: string;
+    tool_name?: string;
+    config_revision?: number;
+    allowed_tool_names?: string[];
   };
   provider_catalog: ModelProviderOption[];
   effective_context: EffectiveContextView;
@@ -110,6 +116,27 @@ export interface ModelCallReviewCard {
     error_code: string | null;
   } | null;
 }
+
+export interface ToolExecutionReviewCard {
+  review_kind: "tool_execution";
+  message: string;
+  approval_id: string;
+  tool_call_id: string;
+  tool_id: string;
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  working_directory: string;
+  risk: string;
+  config_revision: number;
+  execution_context: {
+    workflow_id: string;
+    executor_id: string;
+    tool_id: string;
+    wait_reason: string;
+  };
+}
+
+export type GovernedReviewCard = ModelCallReviewCard | ToolExecutionReviewCard;
 
 interface RevisionResponseError {
   detail?: string | { message?: string; issues?: string[] };
@@ -141,6 +168,28 @@ export function reviewCardFromInterrupt(interrupt: Interrupt): ModelCallReviewCa
     return null;
   }
   return data as ModelCallReviewCard;
+}
+
+export function governedReviewFromInterrupt(interrupt: Interrupt): GovernedReviewCard | null {
+  const metadata = interrupt.metadata;
+  if (!metadata || typeof metadata !== "object") return null;
+  const framework = metadata.agent_framework;
+  if (!framework || typeof framework !== "object") return null;
+  const data = framework.data;
+  if (!data || typeof data !== "object") return null;
+  const value = data as Partial<ToolExecutionReviewCard>;
+  if (value.review_kind === "tool_execution") {
+    if (
+      typeof value.approval_id !== "string" ||
+      typeof value.tool_call_id !== "string" ||
+      typeof value.tool_name !== "string" ||
+      !value.arguments ||
+      typeof value.arguments !== "object" ||
+      Array.isArray(value.arguments)
+    ) return null;
+    return data as ToolExecutionReviewCard;
+  }
+  return reviewCardFromInterrupt(interrupt);
 }
 
 function cloneMessages(messages: ReadonlyArray<Readonly<Message>>): Message[] {

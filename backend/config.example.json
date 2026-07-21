@@ -19,6 +19,16 @@
   "history": {
     "directory": ".chat-history"
   },
+  "pi_agent": {
+    "enabled": false,
+    "node_path": "/absolute/path/to/node-22-or-newer",
+    "cli_path": "/absolute/path/to/pi-coding-agent/dist/cli.js",
+    "allowed_working_roots": [
+      "/absolute/path/to/allowed/projects"
+    ],
+    "default_working_directory": "/absolute/path/to/allowed/projects",
+    "gateway_origin": "http://127.0.0.1:8030"
+  },
   "default_provider_id": "ark",
   "providers": [
     {

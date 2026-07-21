@@ -30,6 +30,40 @@ class SettingsError(ValueError):
     """The backend JSON configuration is missing required structure or values."""
 
 
+@dataclass(frozen=True, slots=True)
+class PiRuntimeSettings:
+    """Startup-owned safety boundary for the external pi coding runtime."""
+
+    enabled: bool = False
+    node_path: Path | None = None
+    cli_path: Path | None = None
+    allowed_working_roots: tuple[Path, ...] = ()
+    default_working_directory: Path = PROJECT_ROOT
+    gateway_origin: str = "http://127.0.0.1:8030"
+
+    @property
+    def available(self) -> bool:
+        return bool(
+            self.enabled
+            and self.node_path is not None
+            and self.node_path.is_file()
+            and self.cli_path is not None
+            and self.cli_path.is_file()
+            and self.allowed_working_roots
+        )
+
+    def public_view(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "available": self.available,
+            "integration_mode": "jsonl_rpc_subprocess",
+            "provider_gate": "every_pi_model_call",
+            "tool_gate": "every_pi_internal_tool_call",
+            "allowed_working_roots": [str(path) for path in self.allowed_working_roots],
+            "default_working_directory": str(self.default_working_directory),
+        }
+
+
 def _record(value: object, *, field: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise SettingsError(f"{field}必须是JSON对象")
@@ -280,6 +314,45 @@ def _provider_catalog(payload: dict[str, Any]) -> ModelProviderCatalog | None:
     )
 
 
+def _pi_runtime(payload: dict[str, Any], *, host: str, port: int) -> PiRuntimeSettings:
+    raw = _record(payload.get("pi_agent", {}), field="pi_agent")
+    enabled = _boolean(raw.get("enabled"), field="pi_agent.enabled", default=False)
+
+    def optional_path(key: str) -> Path | None:
+        value = str(raw.get(key) or "").strip()
+        return Path(value).expanduser().resolve() if value else None
+
+    raw_roots = raw.get("allowed_working_roots", [])
+    if not isinstance(raw_roots, list) or not all(
+        isinstance(value, str) and value.strip() for value in raw_roots
+    ):
+        raise SettingsError("pi_agent.allowed_working_roots必须是非空路径字符串数组")
+    roots = tuple(Path(value).expanduser().resolve() for value in raw_roots)
+    default_value = str(raw.get("default_working_directory") or PROJECT_ROOT).strip()
+    default_working_directory = Path(default_value).expanduser().resolve()
+    if enabled and not roots:
+        raise SettingsError("启用pi_agent时必须配置allowed_working_roots")
+    if roots and not any(
+        default_working_directory == root or default_working_directory.is_relative_to(root)
+        for root in roots
+    ):
+        raise SettingsError("pi_agent.default_working_directory不在允许的工作目录内")
+    gateway_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    gateway_origin = str(raw.get("gateway_origin") or f"http://{gateway_host}:{port}").rstrip("/")
+    if enabled and not gateway_origin.startswith(
+        ("http://127.0.0.1", "http://localhost", "http://[::1]")
+    ):
+        raise SettingsError("pi_agent.gateway_origin必须是本机HTTP地址")
+    return PiRuntimeSettings(
+        enabled=enabled,
+        node_path=optional_path("node_path"),
+        cli_path=optional_path("cli_path"),
+        allowed_working_roots=roots,
+        default_working_directory=default_working_directory,
+        gateway_origin=gateway_origin,
+    )
+
+
 def _load_payload(path: Path) -> dict[str, Any]:
     try:
         value: Any = json.loads(path.read_text(encoding="utf-8"))
@@ -303,6 +376,7 @@ class Settings:
     model_providers: tuple[ModelProviderConfig, ...] = ()
     default_model_provider: str | None = None
     database_url: str = DEFAULT_DATABASE_URL
+    pi_runtime: PiRuntimeSettings = PiRuntimeSettings()
 
     @property
     def runtime_mode(self) -> str:
@@ -360,8 +434,10 @@ class Settings:
             port = int(server.get("port", 8030))
         except (TypeError, ValueError) as error:
             raise SettingsError("server.port必须是整数") from error
+        host = str(server.get("host") or "127.0.0.1")
+        pi_runtime = _pi_runtime(payload, host=host, port=port)
         return cls(
-            host=str(server.get("host") or "127.0.0.1"),
+            host=host,
             port=port,
             frontend_origins=_origins(server.get("frontend_origins")),
             model=model,
@@ -370,6 +446,7 @@ class Settings:
             model_providers=providers,
             default_model_provider=default_provider_id,
             database_url=str(product_store.get("url") or DEFAULT_DATABASE_URL),
+            pi_runtime=pi_runtime,
         )
 
     @classmethod
@@ -382,4 +459,5 @@ class Settings:
             model_api_key=None,
             model_base_url=None,
             database_url="sqlite+aiosqlite:///:memory:",
+            pi_runtime=PiRuntimeSettings(),
         )

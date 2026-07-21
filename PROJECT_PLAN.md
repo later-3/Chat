@@ -64,7 +64,7 @@ flowchart LR
 | 3. 产品事实与完成历史 | 身份、Session、Message、Run/Attempt和历史恢复 | `Phase 1文本底座完成；完整身份、Retry和树操作继续` |
 | 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `未开始` |
 | 5. 持久执行与活动流 | Job/Event、Worker、Lease、重连和Reconciler | `未开始` |
-| 6. Tool、Workflow与HITL恢复 | Tool Ledger、对账、Checkpoint和持久Interrupt | `未开始` |
+| 6. Tool、Workflow与HITL恢复 | Tool Ledger、对账、Checkpoint和持久Interrupt | `3个纵向种子完成；通用恢复能力未开始` |
 | 7. 知识、证据、交付与运营 | Memory、Evidence、Provenance、Outbox、Trace和告警 | `未开始` |
 | 8. 外部入口连续性 | 通过具体Channel Adapter接入终端平台，并通过Bridge Adapter与OPC-OS Chat对等集成 | `未开始` |
 
@@ -186,6 +186,7 @@ flowchart LR
 
 - [x] 建立嵌套Workflow可视化种子：MAF原生异构节点与两层子Workflow运行，标准AG-UI事件实时投影，Product Trace刷新恢复；该项不包含Checkpoint/HITL或跨进程恢复。
 - [x] 建立受治理多Agent种子：可编辑且有Revision的Agent Profile、规划与审校Agent、确定性完整会话交接、两次Provider调用逐次审批、AG-UI节点投影和Product终态提交；该项不包含动态拓扑、群聊或持久Checkpoint。
+- [x] 建立pi Agent Tool种子：MAF FunctionTool封装官方JSONL RPC；每次Provider请求和内部Tool调用分别进入可编辑审批，前端可配置真实Tool并查看模型/Tool/Token/耗时统计；启动将遗留执行收敛为中断，但不冒充通用副作用对账或R6恢复。
 - [ ] 详细设计 Tool执行模块的Tool Catalog、Tool Operation Ledger、幂等和能力声明。
 - [ ] 建立 MAF Function Middleware 到 Tool Gateway 的唯一执行路径。
 - [ ] 工具参数动态扩权时回到持久 Approval，而不是进程内默认批准。

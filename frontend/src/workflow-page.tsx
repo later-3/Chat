@@ -14,6 +14,7 @@ import {
 import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import { ModelCallReview } from "./model-call-review";
+import { ToolCallReview } from "./tool-call-review";
 import type { ProductSession } from "./session-api";
 import {
   getLatestWorkflowTrace,
@@ -50,6 +51,8 @@ const KIND_LABELS: Record<string, string> = {
   output: "输出",
   agent: "Agent",
   handoff: "会话交接",
+  tool: "Tool",
+  approval: "审批门",
 };
 
 const RUNTIME_LABELS: Record<string, string> = {
@@ -302,7 +305,7 @@ function WorkflowRuntime({
         </div>
         {error && <p className="workflow-error" role="alert">{error}</p>}
       </form>
-      {pendingReview && (
+      {pendingReview && pendingReview.review_kind !== "tool_execution" && (
         <ModelCallReview
           busy={status === "running" || status === "saving"}
           card={pendingReview}
@@ -310,6 +313,15 @@ function WorkflowRuntime({
           onApprove={() => void approve()}
           onRevise={(providerId, providerRequest) => void revise(providerId, providerRequest)}
           requestError={error}
+        />
+      )}
+      {pendingReview?.review_kind === "tool_execution" && (
+        <ToolCallReview
+          busy={status === "running" || status === "saving"}
+          card={pendingReview}
+          error={error}
+          onAbandon={() => { void abandon().then((prompt) => { if (prompt !== null) onInputChange(prompt); }); }}
+          onApprove={(argumentsValue) => void approve(argumentsValue)}
         />
       )}
     </main>

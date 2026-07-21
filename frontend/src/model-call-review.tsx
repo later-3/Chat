@@ -293,6 +293,40 @@ function MessageEditor({
               token_estimate: instructionTokenEstimate,
             }
           : sources[sourceIndex];
+        const providerItemType = typeof message.type === "string" ? message.type : "";
+        if (!role && ["function_call", "function_call_output", "reasoning"].includes(providerItemType)) {
+          return <article className="structured-card" key={`message-${index}`}>
+            <header>
+              <div>
+                <span className="item-index">Provider上下文项 {index + 1}</span>
+                <small>{providerItemType} · 已显式纳入本次请求</small>
+              </div>
+              <button
+                aria-label={`删除Provider上下文项${index + 1}`}
+                className="structured-remove"
+                disabled={value.length === 1}
+                onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
+                type="button"
+              ><Trash2 size={15} /></button>
+            </header>
+            <div className="structured-object">
+              {Object.entries(message).map(([key, child]) => (
+                <div className="kv-row" key={key}>
+                  <KeyLabel name={key} />
+                  <div className="kv-value">
+                    {key === "type" || (key === "name" && providerItemType === "function_call")
+                      ? <input disabled value={String(child ?? "")} />
+                      : <FixedValueEditor
+                          fieldKey={key}
+                          onChange={(next) => onChange(value.map((current, itemIndex) => itemIndex === index ? { ...message, [key]: next } : current))}
+                          value={child}
+                        />}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </article>;
+        }
         return <article className="structured-card" key={`message-${index}`}>
           <header>
             <div>
@@ -399,35 +433,63 @@ function MessageEditor({
   );
 }
 
-function ToolEditor({ value, onChange }: { value: unknown; onChange: (value: unknown) => void }) {
+function ToolEditor({
+  value,
+  onChange,
+  registeredToolNames,
+}: {
+  value: unknown;
+  onChange: (value: unknown) => void;
+  registeredToolNames: string[];
+}) {
   const tools = Array.isArray(value) ? value : [];
   return (
     <div className="tool-selector">
       <label className="review-field review-field--wide">
-        <span>选择可用Tool</span>
+        <span>服务端已绑定Tool</span>
         <select aria-label="选择可用Tool" disabled value="">
-          <option value="">暂无已注册的可执行Tool</option>
+          <option value="">{registeredToolNames.length ? registeredToolNames.join("、") : "暂无已注册的可执行Tool"}</option>
         </select>
-        <small>Tool必须来自服务端可执行目录；不能手填名称或创建只有说明、没有执行器的Tool。</small>
+        <small>name与type绑定真实执行器，不能改名；说明、Schema等Value可修改，修改后仍会服务端校验。</small>
       </label>
       {!Array.isArray(value) && <p className="review-error">tools不是有效列表，请到Provider JSON中修正。</p>}
-      {tools.map((tool, index) => (
-        <article className="structured-card" key={`tool-${index}`}>
-          <header>
-            <div>
-              <span className="item-index">未绑定Tool {index + 1}</span>
-              <small>{isRecord(tool) && typeof tool.name === "string" ? tool.name : "名称无效"} · 当前不能发送</small>
-            </div>
-            <button
-              aria-label={`删除Tool${index + 1}`}
-              className="structured-remove"
-              onClick={() => onChange(tools.filter((_, itemIndex) => itemIndex !== index))}
-              type="button"
-            ><Trash2 size={15} /></button>
-          </header>
-          <p className="tool-unbound-note">该定义没有对应的服务端执行器，请删除后再保存。</p>
-        </article>
-      ))}
+      {tools.map((tool, index) => {
+        const record = isRecord(tool) ? tool : {};
+        const nested = isRecord(record.function) ? record.function : record;
+        const name = typeof nested.name === "string" ? nested.name : "";
+        const registered = registeredToolNames.includes(name);
+        const updateNested = (next: Record<string, unknown>) => {
+          const nextTool = isRecord(record.function) ? { ...record, function: next } : next;
+          onChange(tools.map((current, itemIndex) => itemIndex === index ? nextTool : current));
+        };
+        return (
+          <article className="structured-card" key={`tool-${index}`}>
+            <header>
+              <div>
+                <span className="item-index">{registered ? "已绑定Tool" : "未绑定Tool"} {index + 1}</span>
+                <small>{name || "名称无效"} · {registered ? "name锁定" : "当前不能发送"}</small>
+              </div>
+              <button
+                aria-label={`删除Tool${index + 1}`}
+                className="structured-remove"
+                onClick={() => onChange(tools.filter((_, itemIndex) => itemIndex !== index))}
+                type="button"
+              ><Trash2 size={15} /></button>
+            </header>
+            {registered ? (
+              <div className="structured-object">
+                <div className="kv-row"><KeyLabel name="name" /><div className="kv-value"><input disabled value={name} /></div></div>
+                {Object.entries(nested).filter(([key]) => key !== "name").map(([key, child]) => (
+                  <div className="kv-row" key={key}>
+                    <KeyLabel name={key} />
+                    <div className="kv-value"><FixedValueEditor fieldKey={key} onChange={(next) => updateNested({ ...nested, [key]: next })} value={child} /></div>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="tool-unbound-note">该定义没有对应的服务端执行器，请删除后再保存。</p>}
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -456,7 +518,12 @@ function ParameterEditor({
                 {capability
                   ? <ParameterValueEditor capability={capability} onChange={(next) => onChange({ ...value, [key]: next })} value={child} />
                   : <FixedValueEditor fieldKey={key} onChange={(next) => onChange({ ...value, [key]: next })} value={child} />}
-                {!capability && <small className="field-error">当前模型没有声明该参数能力</small>}
+                {!capability && capabilities.allow_unknown_parameters && (
+                  <small>Provider运行时参数；Key固定，Value仍可编辑并由发送前服务端校验。</small>
+                )}
+                {!capability && !capabilities.allow_unknown_parameters && (
+                  <small className="field-error">当前模型没有声明该参数能力</small>
+                )}
                 {!capability?.locked && !["store", "stream"].includes(key) && (
                   <button
                     className="structured-remove"
@@ -589,11 +656,19 @@ export function ModelCallReview({
     [workingProviderId, workingRequest],
   );
   const dirty = originalFingerprint !== currentFingerprint;
-  const localIssues = policyIssues(workingProviderId, card.provider_catalog, workingRequest);
-  const valid = !rawError && localIssues.length === 0;
   const selectedProvider = providerFor(card.provider_catalog, workingProviderId);
   const selectedModel = modelFor(card.provider_catalog, workingProviderId, workingRequest.model);
-  const selectedCapabilities = selectedModel?.capabilities ?? card.effective_context.model_capabilities;
+  const runtimeAllowsUnknown = card.effective_context.model_capabilities.allow_unknown_parameters;
+  const selectedCapabilities = selectedModel
+    ? runtimeAllowsUnknown
+      ? { ...selectedModel.capabilities, allow_unknown_parameters: true }
+      : selectedModel.capabilities
+    : card.effective_context.model_capabilities;
+  const localIssues = policyIssues(workingProviderId, card.provider_catalog, workingRequest, {
+    capabilities: selectedCapabilities,
+    allowedToolNames: card.execution_context?.allowed_tool_names ?? [],
+  });
+  const valid = !rawError && localIssues.length === 0;
   const approveReason = busy
     ? "系统正在处理当前操作"
     : dirty
@@ -714,8 +789,17 @@ export function ModelCallReview({
                 )}
               </ReviewSection>
 
-              <ReviewSection description="Tool只能从服务端已注册、可执行且通过权限检查的目录选择；当前尚未接入可用Tool。" title="Tool">
-                <ToolEditor onChange={(value) => updateRequest({ ...workingRequest, tools: value })} value={workingRequest.tools ?? []} />
+              <ReviewSection
+                description={card.execution_context?.allowed_tool_names?.length
+                  ? "Tool来自本次执行已绑定的真实能力目录；name锁定，说明与Schema可编辑但必须保持执行合同兼容。"
+                  : "Tool只能从服务端已注册、可执行且通过权限检查的目录选择；本次没有可用Tool。"}
+                title="Tool"
+              >
+                <ToolEditor
+                  onChange={(value) => updateRequest({ ...workingRequest, tools: value })}
+                  registeredToolNames={card.execution_context?.allowed_tool_names ?? []}
+                  value={workingRequest.tools ?? []}
+                />
               </ReviewSection>
 
               <ReviewSection description="固定Key不可改名；Value按布尔、数值、枚举或文字类型编辑。" title="Reasoning、输出和传输参数">

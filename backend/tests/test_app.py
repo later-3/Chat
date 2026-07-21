@@ -30,6 +30,15 @@ def test_health_exposes_approved_architecture_without_secrets() -> None:
         "model": None,
         "model_call_approval": "not_applicable",
         "product_sessions": "sqlite",
+        "pi_agent": {
+            "enabled": False,
+            "available": False,
+            "integration_mode": "jsonl_rpc_subprocess",
+            "provider_gate": "every_pi_model_call",
+            "tool_gate": "every_pi_internal_tool_call",
+            "allowed_working_roots": [],
+            "default_working_directory": str(Path(__file__).resolve().parents[2]),
+        },
     }
 
 
