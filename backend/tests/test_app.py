@@ -19,7 +19,7 @@ def test_health_exposes_approved_architecture_without_secrets() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
-        "service": "opc-os-chat-channel",
+        "service": "chat",
         "version": "0.1.0",
         "agent_framework": "microsoft-agent-framework",
         "protocol": "ag-ui",

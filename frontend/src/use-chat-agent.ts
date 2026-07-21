@@ -22,7 +22,7 @@ export function useChatAgent() {
       new HttpAgent({
         url: import.meta.env.VITE_AG_UI_URL ?? DEFAULT_AGENT_URL,
         threadId: createThreadId(),
-        description: "OPC-OS 自研 Chat 通道",
+        description: "独立 AI 协作 Chat 产品",
       }),
   );
   const [messages, setMessages] = useState<Message[]>([]);

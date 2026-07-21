@@ -1,1 +1,1 @@
-"""OPC-OS self-developed Chat channel backend."""
+"""Backend package for the independent Chat product."""

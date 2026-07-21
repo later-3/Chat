@@ -1,48 +1,60 @@
-# OPC-OS 自研 Chat 通道：项目上下文
+# Chat 项目上下文
 
 ## 1. 文档目的
 
-本文固定本项目稳定的产品定义、问题、目标、边界和核心模型。
+本文固定 Chat 的稳定产品定义、用户问题、目标、边界、产品闭环、核心对象和已经批准的技术路线。
 
-本项目是 **OPC-OS Chat 体系中的一个自研 Chat 通道**。它是独立开发和运行的项目，但不是完整的 OPC-OS Chat 上位系统。
+Chat 是一个**独立开发、独立运行、独立运营、持续演进的完整产品**。它以对话为主要入口，但自己承担用户协作、工作推进、受控执行、知识沉淀、证据追溯、结果交付和运行治理的完整责任。
 
-## 2. 系统层级
+## 2. 产品边界与外部关系
 
 ```text
-OPC-OS Chat（上位系统）
-├── 自研 Chat 通道（本项目）
-├── Telegram等其他聊天通道
-├── 其他可交互入口
-├── 通道适配与协议层
-└── 可共享的编排、执行、记忆和证据能力
+用户
+  |
+  v
+Chat 独立产品
+├── Web 交互体验
+├── 对话、上下文与意图
+├── 工作、计划与审核
+├── Agent / Workflow / Tool 执行
+├── 会话、知识、证据与Trace
+├── 结果交付与运行治理
+└── 外部集成合同
+      ├── <-> OPC-OS Chat
+      ├── <-> 其他聊天入口
+      └── <-> 模型、工具、知识源与业务系统
 ```
 
-本项目负责提供一个完整、可用、可持续演进的自研Chat体验，并通过明确边界与上位系统协作。
+OPC-OS Chat 是一个可与本项目互操作的外部系统。在特定集成拓扑中，本项目可以提供聊天通道能力，也可以消费其共享能力；这是**系统之间的合同关系**，不是本项目的产品身份或层级归属。
 
-## 3. 要解决的6个问题
+本项目不能依赖外部系统替自己承担 Product Session、Work、Run、Approval、Evidence、Delivery、Memory 或 Trace 的事实源责任。跨系统协作必须明确状态归属、版本、权限、幂等、证据和失效传播，不能形成双重事实源。
 
-1. 用户的Prompt、AI回答和关键结论被困在单次会话中。
+## 3. 要解决的 6 个问题
+
+1. 用户的 Prompt、AI 回答和关键结论被困在单次会话中。
 2. 用户说“继续”“按刚才那个来”时，系统缺乏稳定的任务上下文。
 3. 意图、计划、待办和执行结果没有统一生命周期。
-4. AI可能在用户没看清最终请求前就开始执行。
+4. AI 可能在用户没看清最终请求前就开始执行。
 5. 模型提出的任务、记忆和结论容易被错误地当成正式事实。
 6. 失败、重启、上下文变更和来源删除后，状态难以恢复与追溯。
 
 本项目要回答的核心问题是：
 
-> 如何让用户通过一个自研Chat通道，持续推进学习和工作，同时始终知道系统理解了什么、准备做什么、使用什么上下文、由谁执行，以及执行后留下了什么事实和证据。
+> 如何让用户通过 Chat 持续推进学习和工作，同时始终知道系统理解了什么、准备做什么、使用什么上下文、由谁执行，以及执行后留下了什么事实和证据。
 
 ## 4. 产品定位
 
-本项目是一个本地优先、用户可介入的AI协作Chat通道。
+Chat 是本地优先、用户可介入、可持续工作的 AI 协作产品。
 
-Chat是主要交互方式，但项目价值不止是消息收发。系统需要把自然语言输入转化为上下文、意图、计划、人/AI行动、执行请求、结果、证据、记忆和可恢复状态。
+“本地优先”是一种部署与数据控制策略，不表示能力只面向简单或短期场景。Chat 的目标能力覆盖长期会话、多事项推进、受控外部执行、断线和进程恢复、知识与证据治理，以及通过明确合同进行的跨系统协作。
+
+项目价值不止是消息收发。系统需要把自然语言输入转化为可查看的上下文、意图、计划、人/AI 行动、执行请求、运行状态、结果、证据、记忆和可恢复产品状态。
 
 ## 5. 核心目标
 
 ### 5.1 会话连续
 
-用户不需要反复复述背景；系统能从核心记忆、近期会话和当前工作状态继续推进。
+用户不需要反复复述背景；系统能从已确认记忆、相关历史和当前工作状态继续推进。
 
 ### 5.2 意图可见
 
@@ -50,84 +62,85 @@ Chat是主要交互方式，但项目价值不止是消息收发。系统需要�
 
 ### 5.3 工作可推进
 
-对话中的长期事项形成统一WorkItem，并明确区分用户检查点和AI下一责任。
+对话中的长期事项形成统一 WorkItem，并明确区分用户检查点和 AI 下一责任。
 
 ### 5.4 执行可控制
 
-用户可以在执行前检查和编辑输入、上下文、Agent或Runtime、模型、工具、权限、限制及最终请求。
+用户可以在执行前检查和编辑输入、上下文、Agent 或 Runtime、模型、工具、权限、限制及最终请求。
 
 ### 5.5 状态可恢复
 
-会话、任务、运行结果、失败和Trace在重启后仍存在；结果未知时不盲目重试。
+会话、任务、运行、工具副作用、工作流检查点、失败和 Trace 在相应恢复保证下可重新接续；结果未知时不盲目重试。
 
 ### 5.6 事实可追溯
 
-执行结果对应Evidence、Delivery、来源和Trace；原始来源删除或失效时，派生结果也要正确降级。
+执行结果对应 Evidence、Delivery、来源和 Trace；原始来源删除、失效或权限撤销时，派生结果能够正确降级。
 
 ## 6. 完整产品闭环
 
 ```text
 用户自然语言输入
--> 自动装配上下文
--> 用户查看、增删上下文
+-> 建立一次Interaction并保存输入事实
+-> 自动装配相关上下文
+-> 用户查看、增删或纠正上下文
 -> 识别一个或多个意图
 -> 必要时请求用户确认
 -> 形成工作计划和人/AI行动
--> 生成最终执行请求
--> 用户审核Agent、Runtime、工具、权限、版本与Hash
--> Agent团队或Runtime执行
--> 返回结果
--> 保存Evidence、Delivery与Trace
--> 更新任务和记忆候选
--> 用户确认长期状态
--> 下一轮继续推进
+-> 生成版本化ExecutionDraft
+-> 用户审核Agent、Runtime、工具、权限、限制与请求Hash
+-> 创建Run并由Agent、Workflow或Runtime执行
+-> 持续投影运行事件和中断点
+-> 保存结果、Evidence、Delivery与Trace
+-> 更新Work状态并提出Memory候选
+-> 用户或明确规则确认长期状态
+-> 下一次Interaction继续推进
 ```
 
-低风险、意图清楚的步骤可以自动推进；存在歧义、成本、外部副作用或不可逆影响时必须暂停并让用户确认。
+低风险、意图清楚且符合策略的步骤可以自动推进；存在歧义、成本、外部副作用、权限提升或不可逆影响时，系统必须暂停并让用户确认。
 
 ## 7. 核心领域对象
 
 | 对象 | 责任 |
 |---|---|
-| Channel | 当前交互通道及其能力、身份和协议边界 |
-| Channel Binding | 外部通道会话、来源身份与Product Session之间可撤销、可授权的映射 |
-| Session | 用户可创建、打开、归档和恢复的一段产品会话 |
-| Interaction | 用户与系统的一次完整交互 |
-| Message | 用户、Assistant、Agent或工具产生的消息 |
-| ContextPackage | 本轮纳入、排除和引用的上下文快照 |
-| Intent | 系统观察到的一个或多个用户意图 |
+| Principal | 用户、服务或外部主体的稳定身份与授权上下文 |
+| Channel | 交互入口的能力、来源身份和协议边界 |
+| Channel Binding | 外部会话、来源身份与 Product Session 之间可撤销、可授权的映射 |
+| Product Session | 用户可创建、打开、归档和恢复的协作容器 |
+| Interaction | 用户与系统的一次完整交互，可能触发零到多个 Run |
+| Message | 用户、Assistant、Agent 或工具产生的产品可见消息 |
+| ContextPackage | 本轮纳入、排除、裁剪和引用的版本化上下文快照 |
+| Intent | 系统观察到的一个或多个用户意图、依据和不确定性 |
 | WorkItem | 需要跨回合持续推进的工作或学习事项 |
-| ActionItem | 明确由用户或AI负责的下一行动 |
-| TaskPlan | 为完成目标形成的节点、顺序和依赖 |
-| ExecutionDraft | 尚未执行、可编辑和审核的最终请求 |
-| Approval | 用户对特定版本和请求内容的批准或驳回 |
-| Run | 一次具体Agent、Workflow或Runtime执行生命周期 |
-| Run Attempt | Product Run的一次实际执行尝试、Worker所有权和恢复血缘 |
-| Evidence | 对结果、状态或操作的可验证证据 |
-| Delivery | 结果向用户或下游交付的状态 |
-| Memory | 经候选门确认后可跨会话使用的信息 |
-| Trace | 可观察步骤、状态变化、错误和关联关系 |
+| ActionItem | 明确由用户或 AI 负责的下一行动 |
+| TaskPlan | 为完成目标形成的节点、顺序、依赖和检查点 |
+| ExecutionDraft | 尚未执行、可编辑和审核的版本化最终请求 |
+| Approval | 用户或策略对特定版本、请求 Hash 和权限范围的批准或驳回 |
+| Product Run | 一次具体 Agent、Workflow 或 Runtime 执行的长期产品事实 |
+| Run Attempt | Product Run 的一次实际执行尝试、Worker 所有权和恢复血缘 |
+| Tool Execution | 一次工具调用的请求、权限、幂等键、副作用和对账状态 |
+| Evidence | 对结果、状态或操作的可验证证据及其来源关系 |
+| Delivery | 结果向用户或下游交付的状态、回执和重试语义 |
+| Memory | 经候选门确认后可跨会话使用的信息及来源、版本和有效性 |
+| Trace | 可观察步骤、状态变化、错误、关联关系和审计记录 |
 
-这些对象是产品语言，不等同于某个MAF类、数据库表或前端组件。
+这些对象是产品语言，不等同于某个 MAF 类、数据库表、AG-UI 事件或前端组件。字段级 Schema 和状态机需要在对应模块详细设计中审核。
 
-### 7.1 产品对象、协议对象与运行时对象的边界
-
-以下4个对象必须始终分开理解，即使某个实施阶段为了降低映射成本而暂时复用某些UUID值，也不能合并其职责：
+### 7.1 四个必须区分的对象
 
 | 对象 | 所属层与所有者 | 责任 | 明确不是什么 |
 |---|---|---|---|
-| Product Session | 产品领域层、Product DB | 用户可创建、打开、归档和恢复的协作容器，拥有标题、产品可见消息、Interaction、Run、Trace和访问边界 | 不是MAF对象，也不是AG-UI Thread |
-| MAF AgentSession / Workflow Checkpoint | MAF运行时层 | 保存模型上下文、Context Provider状态和Workflow恢复点 | 不是Product Session、用户授权边界或产品历史数据库 |
-| AG-UI Thread | AG-UI协议层 | 用`threadId`关联前端请求、SSE事件、消息与State投影以及Hydrate | 不是用户身份、权限凭据或产品事实源 |
-| Agent Run | 产品执行层与MAF运行时 | 一次具体Agent、Workflow或Runtime执行；产品侧记录生命周期，AG-UI投影其实时事件 | 不是整段Session，也不等于一次用户Interaction |
+| Product Session | 产品领域层、Product DB | 用户可创建、打开、归档和恢复的协作容器，关联消息、Interaction、Work、Run、Evidence和访问边界 | 不是 MAF 对象，也不是 AG-UI Thread |
+| MAF AgentSession / Workflow Checkpoint | MAF 运行时层 | 保存模型上下文、Context Provider 状态和 Workflow 恢复点 | 不是产品会话、用户授权边界或产品历史数据库 |
+| AG-UI Thread | AG-UI 协议层 | 用 `threadId` 关联前端请求、实时事件、消息与 State 投影以及 Hydrate | 不是用户身份、权限凭据或产品事实源 |
+| Product Run | 产品执行层 | 一次具体 Agent、Workflow 或 Runtime 执行；产品侧记录长期生命周期，AG-UI 投影其实时事件 | 不是整段 Session，也不等于一次 Interaction |
 
-`MAF AgentSession`和`Workflow Checkpoint`不是同一个MAF类型；上表只把它们归入同一个“MAF运行时状态”层，代码和存储中仍需分别建模。
+`MAF AgentSession`和`Workflow Checkpoint`不是同一个 MAF 类型；上表只把它们归入“MAF 运行时状态”，代码和存储中仍需分别建模。
 
-`Interaction`表示一次用户与系统的完整交互；一次Interaction可以不触发Agent，也可以触发一个或多个Agent Run。早期实现可以暂时形成1:1关系，但不能把它写成长期不变量。
+`Interaction`与`Product Run`不能合并：一次 Interaction 可以不触发 Agent，也可以触发多个 Run。
 
-`Product Agent Run`与`Run Attempt / Runtime Job`也必须分开：前者长期表达一次产品执行及最终状态，后者表达第几次实际尝试、哪个Worker拥有执行权和活动流投影。Attempt或Job可以过期、接管或清理，不能因此删除长期Run事实。
+`Product Run`与`Run Attempt / Runtime Job`也不能合并：前者表达用户长期可见的一次执行及最终状态，后者表达第几次实际尝试、哪个 Worker 拥有执行权、如何续租和恢复。Attempt 或 Job 可以过期、接管或清理，不能因此删除 Product Run 事实。
 
-Product Session ID、MAF Session ID、AG-UI `threadId`和Agent `runId`都只标识各自对象，不自动构成权限。具体ID是否同值、如何映射以及何时持久化属于待审核实现决定。
+Product Session ID、MAF Session ID、AG-UI `threadId`、Product Run ID 和 Attempt ID 都只标识各自对象，不自动构成权限。映射必须可追踪、可校验且由服务端可信上下文建立。
 
 ## 8. 产品原则
 
@@ -135,63 +148,65 @@ Product Session ID、MAF Session ID、AG-UI `threadId`和Agent `runId`都只标�
 2. 默认自动推进，关键节点允许用户随时介入。
 3. 完整历史保留证据；每轮模型上下文应最小、相关、可查看。
 4. 先理解意图，再形成计划，最后准备和执行具体请求。
-5. 多Agent用于分工判断、规划、检视和执行，不用于制造内部聊天噪音。
+5. 多 Agent 用于分工判断、规划、检视和执行，不用于制造内部聊天噪音。
 6. 模型只能提出长期候选，用户或明确规则决定其是否生效。
 7. 执行前可审核，执行中可观察，执行后可验证，失败后可恢复。
-8. 不把隐藏推理当成Trace，不把`prepared`冒充成用户已收到或认可。
+8. 不把隐藏推理当成 Trace，不把`prepared`冒充成用户已收到或认可。
+9. Product DB 是产品事实权威；运行时、协议投影和浏览器缓存不能替代它。
+10. 外部集成是对等合同，不改变 Chat 的产品身份，也不产生第二个产品事实源。
 
-## 9. 项目范围
+## 9. 完整产品能力范围
 
-第一阶段聚焦：
+Chat 的目标能力至少包括：
 
-1. 单用户、自研Web Chat通道。
-2. 会话、历史和上下文恢复。
-3. MAF Agent运行和结构化结果。
-4. 意图、执行前审核和基础Trace。
-5. 项目本地持久化与重启恢复。
+1. Web Chat 交互、无障碍和响应式体验。
+2. 会话、消息、分支、搜索、归档、导入导出和生命周期管理。
+3. 上下文选择、来源展示、裁剪、版本和失效传播。
+4. 多意图识别、澄清、修正和用户确认。
+5. WorkItem、ActionItem、TaskPlan 及人/AI 责任闭环。
+6. ExecutionDraft、Approval、权限策略、版本与 Hash 绑定。
+7. Agent、Workflow、Tool 与其他 Runtime 的受控执行。
+8. 完成历史恢复、活动流重连、Worker 接管、Tool 对账、Workflow Checkpoint 与 HITL 恢复。
+9. Memory 候选、接受、纠正、删除、来源与有效性治理。
+10. Evidence、Delivery、Trace、审计、可观测性和故障处置。
+11. 模型、工具、知识源和外部业务系统集成。
+12. 与 OPC-OS Chat 或其他聊天入口的授权映射和跨系统连续性。
 
-后续逐步增加：
+上述是目标能力全集，不代表一次性交付。实现顺序、依赖和每个阶段的可承诺保证只由`PROJECT_PLAN.md`及专项路线维护，不能反向修改本节产品范围。
 
-1. TaskPlan与节点级执行。
-2. 完整人/AI待办闭环。
-3. 记忆候选和长期上下文。
-4. 受控工具与副作用确认。
-5. 多Agent编排和更多Runtime。
-6. 图片、附件、知识和跨通道协作。
+以下内容不是产品承诺：
 
-当前非目标：
+1. 展示或持久化模型隐藏推理。
+2. 对任意不可控外部副作用提供通用 Exactly-once 保证；系统提供幂等、回执、对账、补偿与人工处置语义。
+3. 未经权限和风险设计即开放任意 Shell、文件或外部系统操作。
+4. 用某个框架 Session、协议 Snapshot 或浏览器缓存替代产品领域状态。
 
-1. 多租户、计费和企业权限后台。
-2. 插件市场和完整团队空间。
-3. 未经设计即开放任意Shell、文件或外部系统操作。
-4. 一开始就拆分成多个网络微服务。
-5. 把本项目冒充为完整OPC-OS Chat上位系统。
-
-Session的完整目标、恢复层级和交付顺序由[Session能力全集](./docs/session-capability-catalog.md)与[Session交付路线](./docs/session-delivery-roadmap.md)统一维护。这里的“第一阶段聚焦”和“后续逐步增加”只描述交付顺序，不代表后续能力没有进入总体规划。
+Session 的完整目标和恢复分级由[Session 能力全集](./docs/session-capability-catalog.md)维护；交付依赖由[Session 交付路线](./docs/session-delivery-roadmap.md)维护。
 
 ## 10. 已批准技术路线
 
-2026-07-21用户批准以下技术路线：
+2026-07-21 用户批准以下技术路线：
 
-1. 后端使用Python、Microsoft Agent Framework（MAF）和FastAPI。
-2. 前后端Agent交互协议使用AG-UI，主要传输为HTTP请求和SSE事件流。
-3. 前端使用React 19、TypeScript和Vite。
-4. 前端通过`@ag-ui/client`的`HttpAgent`连接MAF AG-UI端点。
-5. UI采用自研产品组件，以Tailwind CSS、Radix UI和Lucide React为基础。
-6. Zustand只管理导航、弹窗、筛选和布局等页面状态；Agent消息和运行状态由AG-UI Client投影。
-7. MAF运行存储拥有Agent Session、上下文和Workflow checkpoint；初始SQLite产品数据库拥有用户可见领域状态。
-8. 项目保持前后端清晰分层，产品领域模型不能由UI组件、AG-UI临时状态或MAF Session代替。
+1. 后端使用 Python、Microsoft Agent Framework（MAF）和 FastAPI。
+2. 前后端 Agent 交互协议使用 AG-UI，主要传输为 HTTP 请求和 SSE 事件流。
+3. 前端使用 React 19、TypeScript 和 Vite。
+4. 前端通过`@ag-ui/client`连接 MAF AG-UI 端点。
+5. UI 采用自研产品组件，以 Tailwind CSS、Radix UI 和 Lucide React 为基础。
+6. Zustand 只管理导航、弹窗、筛选和布局等页面状态；Agent 消息和运行状态由 AG-UI Client 投影。
+7. MAF 运行状态与产品领域状态分开拥有；SQLite 是已批准的产品数据库实现起点，但不能改变逻辑状态边界，完整运行拓扑所需存储能力仍须按架构保证验证。
+8. 产品保持前后端、产品控制面、执行运行面和外部集成边界清晰；领域模型不能由 UI 组件、AG-UI 临时状态或 MAF Session 代替。
 
 ### 10.1 协议、运行时与状态所有权
 
 | 边界 | 负责 | 不负责 |
 |---|---|---|
-| REST API | Session CRUD、标题、归档、历史分页、附件，以及Work、Evidence、Memory、Trace等产品资源 | 不承载Agent实时事件状态机 |
-| AG-UI over HTTP/SSE | 单次Agent Run的生命周期、流式Message、Tool Call、Interrupt/Resume和实时State投影 | 不负责用户、权限、Session CRUD、数据库Schema或产品持久化 |
-| Product DB | 用户可见且需要恢复、审核和追溯的产品事实 | 不把AG-UI Snapshot JSON或浏览器状态直接当成领域模型 |
-| MAF运行时及其Store | AgentSession、Context、Tool、Workflow和Checkpoint语义 | 不拥有标题、归档、访问控制、Work、Evidence和Memory等产品对象 |
-| 前端 | 展示和操作后端状态投影 | 不拥有权威历史、产品事实或运行终态 |
+| REST API | Session CRUD、标题、归档、历史分页、附件，以及 Work、Evidence、Memory、Trace 等产品资源 | 不承载 Agent 实时事件状态机 |
+| AG-UI over HTTP/SSE | 单次 Agent Run 的生命周期、流式 Message、Tool Call、Interrupt/Resume 和实时 State 投影 | 不负责用户、权限、Session CRUD、数据库 Schema 或产品持久化 |
+| Product DB | 用户可见且需要恢复、审核和追溯的产品事实 | 不把 AG-UI Snapshot JSON 或浏览器状态直接当成领域模型 |
+| MAF 运行时及其 Store | AgentSession、Context、Tool、Workflow 和 Checkpoint 语义 | 不拥有标题、归档、访问控制、Work、Evidence 和 Memory 等产品对象 |
+| 前端 | 展示和操作服务端状态投影，保存短期页面交互状态 | 不拥有权威历史、产品事实、授权或运行终态 |
+| 外部集成合同 | 身份映射、能力声明、命令/事件交换、版本、幂等、权限和交付回执 | 不直接读写其他系统私有状态，不合并双方事实源 |
 
-架构总则：**REST管理产品资源，AG-UI管理一次Agent Run的实时交互，Product DB保存权威产品事实，MAF管理Agent运行时语义。** 物理上可以共用一个数据库，逻辑所有权不得合并；AG-UI Snapshot可以作为运行或UI投影，但不能替代Product Session与产品历史。
+架构总则：**REST 管理产品资源，AG-UI 管理一次 Agent Run 的实时交互，Product DB 保存权威产品事实，MAF 管理 Agent 运行时语义。** 物理存储可以复用，逻辑所有权不能合并；AG-UI Snapshot 可以作为运行或 UI 投影，但不能替代 Product Session 与产品历史。
 
-Session总体目标包括已完成会话恢复、活动流重连、Worker恢复、Tool副作用恢复、Workflow/HITL恢复和跨通道连续性。它们按[Session交付路线](./docs/session-delivery-roadmap.md)逐级实现；首个持久化子设计只能决定最早交付切片，不能改变总体目标或把AG-UI Snapshot、MAF Session和Workflow Checkpoint合并成产品事实。
+Session 目标包括完成历史恢复、活动流重连、Worker 恢复、Tool 副作用恢复、Workflow/HITL 恢复和跨入口连续性。交付路线只能决定这些保证的启用顺序，不能把 AG-UI Snapshot、MAF Session、Workflow Checkpoint 或 Product Session 合并成一个对象。

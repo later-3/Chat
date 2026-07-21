@@ -244,7 +244,7 @@ wheels = [
 ]
 
 [[package]]
-name = "opc-os-chat-channel"
+name = "later-chat"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

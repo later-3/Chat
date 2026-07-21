@@ -12,12 +12,12 @@
 
 这一轮不是在旧方案上补几张表，而是纠正了历史所有权和成功语义。当前最重要的 6 个结论是：
 
-1. **Product Session、MAF AgentSession/Workflow Checkpoint、AG-UI Thread、Product Agent Run 是 4 个不同对象。** 第一阶段可以让 Product Session ID 与 AG-UI `threadId` 同值，但职责、授权和生命周期不能合并；Product Agent Run 必须有独立身份。
+1. **Product Session、MAF AgentSession/Workflow Checkpoint、AG-UI Thread、Product Agent Run 是 4 个不同对象。** Phase 1可以让 Product Session ID 与 AG-UI `threadId` 同值，但职责、授权和生命周期不能合并；Product Agent Run 必须有独立身份。
 2. **Product DB 是产品事实源。** AG-UI Snapshot 只有 `messages/state/interrupt`，保存失败会被当前 MAF 适配器吞掉，仍可能发送 `RUN_FINISHED`，所以它不能承担 Product Message 或 Product Run 的提交。
 3. **MAF 原生 `HistoryProvider` 可以成为唯一模型历史加载器和模型可见 Checkpoint 的持久化扩展点。** 当前版本探针证明：`save_messages()` 成功返回发生在 `RUN_FINISHED` 前；它抛出异常会转成 `RUN_ERROR`，不会再发送 `RUN_FINISHED`。这只证明 Hook 顺序，不证明耐久事务；耐久性必须由 ProductHistoryProvider 的数据库实现合同保证。Checkpoint 也不是已提交的 Product Message，不能把 Product Agent Run 置为成功。
 4. **不能让 `@ag-ui/client` 的全历史和 `HistoryProvider` 同时进入模型。** 当前客户端每次默认发送自己的全部 `messages`；实测第二轮会出现 `q1,a1,q1,a1,q2`。因此需要一个很薄的服务端输入适配层：校验浏览器前缀，只把可信的新后缀交给 MAF。
 5. **显式 `store=False` 还不够。** OpenAI Client 即使不返回 `conversation_id`，仍可能返回 `response_id`，当前 AG-UI 适配器会据此改写协议 Run ID。实测必须同时启用 `require_per_service_call_history_persistence=True` 和本地 `HistoryProvider`，才会抑制这些 Provider Response ID，并在工具循环的每次模型调用间保存/重载历史。
-6. **第一阶段推荐一个 SQLite 物理部署、两个逻辑存储，不持久化 AG-UI Snapshot。** Product 表保存权威事实；接纳成功的 Product User Message 立即是 `committed/context_eligible`。HistoryProvider Checkpoint 表保存绑定 Product Run、幂等的模型调用历史：只在所属活动 Run 内供后续 Provider Call 使用，不自动成为用户可见 Product Message，也不自动进入新的 Run。页面刷新通过 REST 重建权威消息；等 Shared State、HITL 或断线续传出现明确需求，再增加独立、可重建的运行投影或 Workflow Checkpoint。
+6. **Phase 1推荐一个 SQLite 物理部署、两个逻辑存储，不持久化 AG-UI Snapshot。** Product 表保存权威事实；接纳成功的 Product User Message 立即是 `committed/context_eligible`。HistoryProvider Checkpoint 表保存绑定 Product Run、幂等的模型调用历史：只在所属活动 Run 内供后续 Provider Call 使用，不自动成为用户可见 Product Message，也不自动进入新的 Run。页面刷新通过 REST 重建权威消息；等 Shared State、HITL 或断线续传出现明确需求，再增加独立、可重建的运行投影或 Workflow Checkpoint。
 
 这些都是**候选结论**，不是已经批准的项目事实。尤其 D1、D3、D4 会决定 Schema 和运行包装器，用户批准前不得实现。
 
@@ -33,7 +33,7 @@
 4. 前端收到“成功”时，哪些事实必须已经可重启恢复？
 5. 同一 Session 并发、重试、断连和进程崩溃如何解释？
 6. MAF Session、AG-UI Thread/Snapshot 与产品对象如何映射？
-7. 第一阶段需要哪种存储，而哪些能力应推迟？
+7. Phase 1需要哪种存储，而哪些能力应推迟？
 
 ### 2.2 严格研究顺序
 
@@ -104,11 +104,11 @@ LibreChat 是当前唯一新增的正式外部项目。其未涉及的问题直�
 | **AG-UI Thread** | AG-UI 协议层 | `threadId` 关联请求、实时事件、UI State、Interrupt 和可选 Snapshot | 前后端一次或多次 Agent 交互的协议相关性 | `threadId` 不是授权令牌，Snapshot 不是产品事实源 |
 | **Product Agent Run** | 本项目产品层/Product DB | 一次被接纳的具体执行；有独立 ID、状态、输入版本、终态和错误语义 | 审核“这次执行发生了什么”，处理幂等、并发、失败和重启对账 | 不能用整个 Product Session 或临时流任务代替 |
 
-`Interaction` 是产品语义上的一次用户意图/协作回合，可以经历 0..n 个 Product Agent Run；第一阶段通常 1:1，但不能因此永久合并。`Message` 是可见记录，`Trace Event` 是可观察事实；二者都不保存隐藏推理。
+`Interaction` 是产品语义上的一次用户意图/协作回合，可以经历 0..n 个 Product Agent Run；Phase 1通常 1:1，但不能因此永久合并。`Message` 是可见记录，`Trace Event` 是可观察事实；二者都不保存隐藏推理。
 
 ### 4.2 允许同值，不允许同职责
 
-第一阶段可以采用以下映射：
+Phase 1可以采用以下映射：
 
 ```text
 Product Session.id  ──同值映射──>  AG-UI threadId
@@ -156,9 +156,9 @@ MAF、pi、nanobot和LibreChat都没有替当前产品直接提供这张权威�
 3. `to_dict()/from_dict()` 只提供序列化，不替应用提供数据库、事务、归档、列表或 Scope。
 4. 当前 AG-UI 适配器在每次请求创建新的 `AgentSession(session_id=thread_id)`；见 `.venv/.../agent_framework_ag_ui/_agent_run.py:1818-1824`。
 
-Workflow Checkpoint 的目标是恢复工作流执行位置、状态和 Interrupt，不是完整 Product Message 历史。当前第一阶段只有文本 Agent Run，没有 Workflow/HITL，不能为了“以后也许会用”先创建没有消费者的 Runtime 表。
+Workflow Checkpoint 的目标是恢复工作流执行位置、状态和 Interrupt，不是完整 Product Message 历史。目标架构已经为Workflow/HITL及其独立Store定义位置；Phase 1只有文本 Agent Run，因此不在该阶段创建尚无生产者和消费者的Checkpoint记录，具体Schema由对应交付阶段审核。
 
-**本项目含义**：第一阶段 Product DB 不能被 `AgentSession.to_dict()` 代替；第一阶段也不需要把请求级 `AgentSession` 持久化。未来真正引入 Provider State、Workflow 或 HITL 时，再为其建立独立运行时存储和引用关系。
+**本项目含义**：Phase 1 Product DB 不能被 `AgentSession.to_dict()` 代替；Phase 1也不需要把请求级 `AgentSession` 持久化。未来真正引入 Provider State、Workflow 或 HITL 时，再为其建立独立运行时存储和引用关系。
 
 ### 5.2 `HistoryProvider` 是 MAF 的原生历史扩展点
 
@@ -336,7 +336,7 @@ ProductHistoryProvider（唯一 load_messages=True；写模型可见 Checkpoint�
 6. `_agent_run.py:1619-1646` 捕获 Snapshot 保存的全部异常，只记录日志并继续。
 7. `_agent_run.py:2177-2193` 在尝试保存 Snapshot 后发送 `RUN_FINISHED`；保存失败不会自动改为 `RUN_ERROR`。
 
-**结论**：Snapshot 适合恢复 UI Message/Shared State/Interrupt 投影，但不是产品提交门。第一阶段只有文本消息时，可以完全不持久化 Snapshot，页面通过 REST 读取 Product Message 重建；未来增加 Snapshot 时也必须能从产品/运行事实重建，并允许失败后丢弃。
+**结论**：Snapshot 适合恢复 UI Message/Shared State/Interrupt 投影，但不是产品提交门。Phase 1只有文本消息时，可以完全不持久化 Snapshot，页面通过 REST 读取 Product Message 重建；未来增加 Snapshot 时也必须能从产品/运行事实重建，并允许失败后丢弃。
 
 ### 5.8 MAF 对当前方案真正提供的基线
 
@@ -346,7 +346,7 @@ ProductHistoryProvider（唯一 load_messages=True；写模型可见 Checkpoint�
 | 工具循环每次模型调用间持久化 | 是，per-service 模式 | Product Tool Execution/Evidence 仍需独立记录 |
 | Provider 历史关闭 | 是，`store=False` | 升级合同测试，避免默认值回归 |
 | AG-UI 事件转换 | 是，`AgentFrameworkAgent` | 薄输入适配和终态提交门，不另建事件协议 |
-| UI Snapshot | 是接口；内置持久实现否 | 第一阶段不持久；未来按需求实现投影 Store |
+| UI Snapshot | 是接口；内置持久实现否 | Phase 1不持久；未来按需求实现投影 Store |
 | Product Session/Message/Run | 否 | 本项目领域模型和 Repository |
 | 鉴权、幂等和同 Session 互斥 | 否 | Product Application Service + DB 约束 |
 | Workflow/HITL Checkpoint | MAF 有独立能力 | 当前未接入；到对应阶段另做设计和验证 |
@@ -383,9 +383,9 @@ pi 的新 Harness Store 与成熟 Coding Agent SessionManager 写入时机不同
 | 采用 | 完整记录与 LLM Context 投影分离 | 对应“完整历史是证据，但不应无界进入上下文” |
 | 采用 | 类型化、追加式记录和格式版本 | 为 Message、Tool、Compaction 与 Trace 演进留迁移路径 |
 | 采用 | 同 Session 只允许一个普通运行 | 保护消息和工具顺序 |
-| 改造 | `steer/followUp` | 第一阶段先返回 `SESSION_BUSY`；产品交互定义后再增加 |
+| 改造 | `steer/followUp` | Phase 1先返回 `SESSION_BUSY`；产品交互定义后再增加 |
 | 不采用 | JSONL 作为 Web Chat 权威库 | 不适合多对象查询、事务、唯一约束与未来多进程 |
-| 不采用 | 第一阶段实现分支、Label、Compaction 和 Extension Entry | 有价值但不是文本 Session 恢复前置 |
+| 不采用 | Phase 1实现分支、Label、Compaction 和 Extension Entry | 有价值但不是文本 Session 恢复前置 |
 | 不采用 | 等 Assistant 出现再首次写盘 | 与“不丢已接纳用户输入”冲突 |
 
 ## 7. nanobot：参考模型前保存、Checkpoint 和故障恢复
@@ -433,7 +433,7 @@ RESTORE -> COMPACT -> COMMAND -> BUILD -> RUN -> SAVE -> RESPOND -> DONE
 | 采用 | 同 Session 串行、跨 Session 并发 | 保护顺序且不阻塞无关会话 |
 | 采用 | 完整历史与模型 Replay 分离 | 保持合法 Tool 边界和 Token 预算 |
 | 后续采用 | 工具执行前后独立 Checkpoint/Evidence | 当前文本阶段无工具；进入工具阶段必须实现 |
-| 改造 | 内存 Pending Queue | 第一阶段先拒绝；明确产品语义后再排队 |
+| 改造 | 内存 Pending Queue | Phase 1先拒绝；明确产品语义后再排队 |
 | 不采用 | 整个 Session 重写 JSONL | 缺少 Web 产品所需多对象事务、查询和约束 |
 | 不采用 | 只依赖进程内 Lock/Cache | 无法防止多 Worker 或重启竞争 |
 
@@ -517,7 +517,7 @@ Product Conversation/Message（长期事实）
 
 第 1、4 点值得借鉴；第 2、3 点暴露了当前项目不能复制的弱点：取消终态可能先于产品部分消息保存，而且保存失败仍返回成功。
 
-当前第一阶段没有 LibreChat 的后台 Job/Redis 续传基础设施，因此不能宣称“断连后继续生成并可跨实例恢复”。第一阶段只应定义清楚：显式取消、网络断开、服务崩溃、模型失败、HITL 暂停是不同状态；未完成 Run 由启动对账标为 `interrupted` 或 `failed`，不得自动重放。
+当前Phase 1没有 LibreChat 的后台 Job/Redis 续传基础设施，因此不能宣称“断连后继续生成并可跨实例恢复”。Phase 1只应定义清楚：显式取消、网络断开、服务崩溃、模型失败、HITL 暂停是不同状态；未完成 Run 由启动对账标为 `interrupted` 或 `failed`，不得自动重放。
 
 ### 8.6 ID 复用是警示，不是模板
 
@@ -531,7 +531,7 @@ LangGraph 路径又把 `thread_id` 设为 Conversation ID；`api/server/controll
 
 这是一种工程取舍，不适合当前项目继续扩大：
 
-1. Product Session 与 AG-UI Thread 第一阶段可以同值，减少映射成本。
+1. Product Session 与 AG-UI Thread Phase 1可以同值，减少映射成本。
 2. Product Agent Run、AG-UI Run、Provider Response、Message、Runtime Job 和 Workflow Checkpoint 必须分别保存语义和映射。
 3. ID 只做定位，授权始终来自 User/Tenant Scope。
 
@@ -545,7 +545,7 @@ LangGraph 路径又把 `thread_id` 设为 Conversation ID；`api/server/controll
 | 采用 | 旧 Generation 在终态前做所有权/版本检查 | Product Run CAS/版本门 |
 | 采用 | 断连、取消、失败、崩溃和 HITL 分开 | Product Run 状态与恢复语义分开 |
 | 改造 | Mongo Conversation/Message | 改为 SQLite + Repository，不复制 Schema |
-| 改造 | Redis/In-memory Generation Job | 第一阶段没有后台 Job；Product Agent Run 长期保留 |
+| 改造 | Redis/In-memory Generation Job | Phase 1没有后台 Job；Product Agent Run 长期保留 |
 | 改造 | HITL Checkpointer | 进入 MAF Workflow/HITL 阶段再独立设计 |
 | 拒绝 | `streamId == conversationId == thread_id` 并复用 Message 为 Run ID | 四对象边界和独立映射优先 |
 | 拒绝 | Redis Chunks/Job 作为产品历史 | 它们只能是可重建运行投影 |
@@ -562,8 +562,8 @@ LangGraph 路径又把 `thread_id` 设为 Conversation ID；`api/server/controll
 | 模型前保存 User | 不替应用定义接纳事务 | Coding Agent 首回合不保证 | 明确先保存 | 部分路径异步保存失败后继续 | 本项目接纳事务必须成功后才调用 MAF |
 | 最终答案提交 | HistoryProvider 保存异常阻止正常终态 | 完整 Entry 保存 | SAVE 后才 RESPOND | 正常路径 Message 后 Final | Product Message/Run 提交后才转发 `RUN_FINISHED` |
 | 工具中间恢复 | per-service 历史可跨模型调用 | Tool Entry | 工具前后 Checkpoint | HITL Checkpoint + Job | Tool 阶段需独立 Execution/Evidence，不只靠历史 |
-| UI 刷新/续传 | 可选 Snapshot | 未涉及 Web 协议 | WebUI 有额外投影 | Redis Job/Chunks 支持重连 | 第一阶段 REST 恢复；后台续传未实现 |
-| 同 Session 并发 | 应用定义 | 拒绝普通并发，显式 steer/followUp | Lock + Queue | Generation/version 防旧写 | 第一阶段 `SESSION_BUSY` + DB 约束 |
+| UI 刷新/续传 | 可选 Snapshot | 未涉及 Web 协议 | WebUI 有额外投影 | Redis Job/Chunks 支持重连 | Phase 1 REST 恢复；后台续传未实现 |
+| 同 Session 并发 | 应用定义 | 拒绝普通并发，显式 steer/followUp | Lock + Queue | Generation/version 防旧写 | Phase 1 `SESSION_BUSY` + DB 约束 |
 | 跨进程一致性 | 取决于 Store | JSONL，不是产品事务 | 进程 Lock + 原子文件 | Mongo + Redis/CAS | SQLite 短事务起步；多 Worker 需实测 |
 
 ## 10. 从证据到候选架构的推导链
@@ -579,7 +579,7 @@ LangGraph 路径又把 `thread_id` 设为 Conversation ID；`api/server/controll
 | pi/nanobot 分离完整记录和模型 Context | 完整证据不能无界进入模型 | Context Projector 从 Product Message 生成受限、合法历史 |
 | nanobot 模型前保存 User | 已接纳输入不能随模型失败消失，而且失败不应抹掉用户已经表达的上下文事实 | 接纳短事务先写 `committed/context_eligible` User、Interaction 和 Run；当前 Run 首次加载单独排除该 User |
 | LibreChat 正常路径 Message 后 Final | 成功必须可立即刷新恢复 | 最终 Assistant 与 Run 终态提交后才转发成功 |
-| 三个项目都保护同 Session 顺序 | 不能让普通回合竞争改写历史 | 第一阶段同 Session 单活动 Run；跨 Session 并发 |
+| 三个项目都保护同 Session 顺序 | 不能让普通回合竞争改写历史 | Phase 1同 Session 单活动 Run；跨 Session 并发 |
 
 候选组件边界：
 
@@ -606,9 +606,9 @@ AG-UI request
 
 以下 6 项全部为`待审核决定`。
 
-### D1：第一阶段物理存储 Product、MAF Runtime 和 AG-UI Snapshot 的方式
+### D1：Phase 1物理存储 Product、MAF Runtime 和 AG-UI Snapshot 的方式
 
-**为什么要决定**：旧方案把 Snapshot Store 放进同一 SQLite，并试图用 Snapshot 回执证明产品提交；当前 MAF 事实已经否定这个前提。必须重新决定第一阶段到底持久化什么。
+**为什么要决定**：旧方案把 Snapshot Store 放进同一 SQLite，并试图用 Snapshot 回执证明产品提交；当前 MAF 事实已经否定这个前提。必须重新决定Phase 1到底持久化什么。
 
 **参考是否真正涉及**：
 
@@ -625,7 +625,7 @@ AG-UI request
 |---|---|---|
 | A. 一个 SQLite 物理文件；Product 事实表与模型可见 History Checkpoint 表逻辑分开；不建 Snapshot/Workflow Store | 部署简单；Product User 可立即提交并用于未来上下文；per-service 工具循环有本 Run Checkpoint；避开 Snapshot fail-soft 和双加载 | 需要定义当前 User 的 History Cutoff Revision，以及 Checkpoint 的 Run 绑定、幂等、同 Run 可见性和清理；刷新必须走 REST；暂不支持 Shared State/Interrupt Hydrate |
 | B. 在 A 上再建独立 Snapshot 投影表 | 部署仍简单；可用 MAF Hydrate | 又增加一个来源的一致性、清理和升级成本；Snapshot 仍不能决定产品成功 |
-| C. Product SQLite + 独立 Redis/DB History/Snapshot Runtime Store | 适合未来多实例、后台任务和实时续传 | 第一阶段引入外部服务与运维，明显过度 |
+| C. Product SQLite + 独立 Redis/DB History/Snapshot Runtime Store | 适合未来多实例、后台任务和实时续传 | Phase 1引入外部服务与运维，明显过度 |
 | D. 只保存 Snapshot 或让 Snapshot 反写 Product | 表面代码少 | 丢失产品对象/审计；失败会假成功；违反状态所有权，排除 |
 
 **当前建议**：A。一个 SQLite 只是物理部署选择，不表示两个逻辑 Store 合并：
@@ -635,7 +635,7 @@ AG-UI request
 3. History Checkpoint 表由 ProductHistoryProvider 使用，记录 `product_run_id`、模型调用序号、稳定消息/工具身份、同 Run 可见性和幂等信息。活动 Run 的 Checkpoint 可以进入该 Run 的下一次 Provider Call；Partial/Provisional Assistant，以及 Failed/Interrupted/历史 Run 的 Checkpoint 默认不进入新的 Run，也不是用户可见 Product Message。
 4. `product_run_id` 必须来自包装器在认证和接纳后建立的可信 Run Context；如何传给 HistoryProvider 仍需实现前 Spike，不能从客户端 `runId` 或 `AgentSession.session_id` 猜测。该并发隔离合同在正式 Schema 前验证。
 5. 外层终态事务从最终 Checkpoint/Response 物化 `committed/context_eligible` Product Assistant Message，并与 Product Run `succeeded` 原子提交。
-6. 第一阶段 `MAF AgentSession` 请求级存在，Workflow Checkpoint 和 AG-UI Snapshot 不落库。
+6. Phase 1 `MAF AgentSession` 请求级存在，Workflow Checkpoint 和 AG-UI Snapshot 不落库。
 
 未来出现 Shared State、HITL 或后台续传时，可以在同一物理 SQLite 或独立服务中增加运行投影，但逻辑表和所有权必须分开。
 
@@ -643,7 +643,7 @@ AG-UI request
 
 **信心**：高。
 
-**未验证**：可信 Product Run Context 向 HistoryProvider 的传递和并发隔离；REST 恢复到 `HttpAgent` 后的完整前端体验；未来 Shared State/HITL 是否必须在第一阶段提前保留接口。
+**未验证**：可信 Product Run Context 向 HistoryProvider 的传递和并发隔离；REST 恢复到 `HttpAgent` 后的完整前端体验；未来 Shared State/HITL 是否必须在Phase 1提前保留接口。
 
 ### D2：4 类 ID 如何映射与授权
 
@@ -662,9 +662,9 @@ AG-UI request
 
 | 选择 | 优点 | 缺点 |
 |---|---|---|
-| A. Product Session ID 与 AG-UI `threadId` 同值；Product Run、AG-UI `runId`、Provider ID、Checkpoint ID 分开 | 第一阶段少一次映射查询；概念边界仍清晰 | 团队必须持续避免把同值误当同对象 |
-| B. 所有 ID 都分开并建映射 | 边界最严格，便于未来多通道 | 第一阶段增加映射表和调试成本，没有现实收益 |
-| C. Session/Thread/Run/Message/Provider ID 全部复用 | 代码初期最少 | 幂等、授权、并发和恢复语义混乱，排除 |
+| A. Product Session ID 与 AG-UI `threadId` 同值；Product Run、AG-UI `runId`、Provider ID、Checkpoint ID 分开 | Phase 1少一次映射查询；概念边界仍清晰 | 团队必须持续避免把同值误当同对象 |
+| B. 所有 ID 都分开并建映射 | 边界最严格，便于未来多通道 | Phase 1增加映射表和调试成本，没有现实收益 |
+| C. Session/Thread/Run/Message/Provider ID 全部复用 | 代码量最少 | 幂等、授权、并发和恢复语义混乱，排除 |
 
 **当前建议**：A，并增加 6 条约束：
 
@@ -677,7 +677,7 @@ AG-UI request
 
 **信心**：高。
 
-**未验证**：可信 Run Context 向 HistoryProvider 的传递和并发隔离；多通道接入上位 OPC-OS Chat 后是否要求外部 Session ID 映射；AG-UI Client 升级后 ID 更新行为。
+**未验证**：可信 Run Context 向 HistoryProvider 的传递和并发隔离；与 OPC-OS Chat 等外部入口集成时是否要求独立外部 Session ID 映射；AG-UI Client 升级后 ID 更新行为。
 
 ### D3：模型历史由谁加载，如何避免双加载
 
@@ -698,7 +698,7 @@ AG-UI request
 |---|---|---|
 | A. ProductHistoryProvider 唯一 `load_messages=True`，输入适配器只转发可信新后缀 | MAF 原生；服务端权威；已实测工具循环和 ID 抑制 | 需要前缀校验、Context Projector、幂等 Provider 和升级测试 |
 | B. 持久 AG-UI Snapshot 唯一加载历史 | Hydrate 原生 | Snapshot 变成模型历史主源；fail-soft；与 Product Message 一致性复杂 |
-| C. 浏览器每次发送全部权威历史，不使用服务端加载 | 初期最少后端代码 | 浏览器不可成为权威；篡改、换设备、Token 和恢复问题明显 |
+| C. 浏览器每次发送全部权威历史，不使用服务端加载 | 后端代码量最少 | 浏览器不可成为权威；篡改、换设备、Token 和恢复问题明显 |
 | D. Provider 托管历史 | 本地少重放 | Provider 锁定；服务 ID 映射；仍不解决 Product History/Run |
 | E. ProductHistoryProvider + 未处理的客户端全历史 | 无额外适配代码 | 已实测重复，排除 |
 
@@ -787,7 +787,7 @@ T5 提交确认后才放行原标准 AG-UI RUN_FINISHED
 | 选择 | 优点 | 缺点 |
 |---|---|---|
 | A. 每 Session 一个活动普通 Run；第二个不同请求返回 `SESSION_BUSY` | 语义简单、可测试、不会静默排队 | 用户需要等待/取消后再发；暂不支持 steer/followUp |
-| B. 服务端持久队列 | 用户输入不被拒绝 | 必须定义顺序、取消、重启、配额和 UI；第一阶段成本高 |
+| B. 服务端持久队列 | 用户输入不被拒绝 | 必须定义顺序、取消、重启、配额和 UI；Phase 1成本高 |
 | C. 实现 steer/followUp | 交互能力强 | 需要 MAF 工具/流边界和产品语义，当前尚未定义 |
 | D. 允许并行并自动分支 | 高并发 | 产品尚无分支 UI/模型，容易错写，排除 |
 
@@ -824,10 +824,10 @@ T5 提交确认后才放行原标准 AG-UI RUN_FINISHED
 |---|---|---|
 | A. SQLAlchemy 2 + Alembic + `aiosqlite` | Repository/事务清晰；迁移成熟；未来切 PostgreSQL 成本较低；适配 FastAPI async | 新增依赖和 ORM 学习/调试成本；仍需理解 SQLite 锁 |
 | B. 标准库 `sqlite3` + 手写迁移表/SQL | 依赖少、SQL 透明 | async 线程封装、迁移、映射和样板由项目长期维护 |
-| C. 直接 PostgreSQL/Redis | 并发和多实例能力更强 | 第一阶段增加部署与运维，不符合当前单机验证范围 |
+| C. 直接 PostgreSQL/Redis | 并发和多实例能力更强 | Phase 1增加部署与运维，不符合当前单机验证范围 |
 | D. JSONL/文件 | 实现小、便于观察 | 缺少查询、唯一约束、多对象事务和未来 Worker 一致性，排除 |
 
-**当前建议**：A。使用 Repository 和短事务，不让 ORM 对象越过应用层；第一阶段单 SQLite 文件，后续根据部署数据决定是否迁移 PostgreSQL。正式 Schema 字段仍需 D1-D6 批准后设计。
+**当前建议**：A。使用 Repository 和短事务，不让 ORM 对象越过应用层；Phase 1单 SQLite 文件，后续根据部署数据决定是否迁移 PostgreSQL。正式 Schema 字段仍需 D1-D6 批准后设计。
 
 **信心**：中高。
 
@@ -835,7 +835,7 @@ T5 提交确认后才放行原标准 AG-UI RUN_FINISHED
 
 ## 12. 当前建议能解决和不能解决什么
 
-### 12.1 批准并实现 D1-D6 后，第一阶段应能解决
+### 12.1 批准并实现 D1-D6 后，Phase 1应能解决
 
 1. 服务端创建、列出、打开和归档 Product Session。
 2. 刷新/重启后从 Product DB 恢复完整可见 Message。
@@ -845,7 +845,7 @@ T5 提交确认后才放行原标准 AG-UI RUN_FINISHED
 6. 同 Session 普通 Run 串行，重复请求具有明确幂等结果。
 7. Provider ID、协议 ID、Product ID 和 Runtime ID 不再混用。
 
-### 12.2 第一阶段明确不能宣称
+### 12.2 Phase 1明确不能宣称
 
 1. 浏览器断线后后台生成继续、跨实例接管和实时流重放。
 2. MAF Workflow/HITL Checkpoint 的持久暂停/恢复。

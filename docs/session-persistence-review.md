@@ -27,8 +27,8 @@
 
 | 编号 | 决策 | 当前建议 | 主要理由 | 信心 |
 |---|---|---|---|---|
-| D1 | 第一阶段保存哪些状态、在哪里恢复 | 一个SQLite Product DB；持久AG-UI Snapshot关闭；页面REST恢复 | 保留单一产品事实源，避开Snapshot fail-soft和双历史加载 | 高 |
-| D2 | Product与协议/Provider ID如何映射 | Product Session ID与AG-UI `threadId`同值；Run、Message和Provider ID显式映射 | 第一阶段Session映射简单，但不牺牲对象、权限和运行边界 | 中高 |
+| D1 | Phase 1保存哪些状态、在哪里恢复 | 一个SQLite Product DB；持久AG-UI Snapshot关闭；页面REST恢复 | 保留单一产品事实源，避开Snapshot fail-soft和双历史加载 | 高 |
+| D2 | Product与协议/Provider ID如何映射 | Product Session ID与AG-UI `threadId`同值；Run、Message和Provider ID显式映射 | Phase 1 Session映射简单，但不牺牲对象、权限和运行边界 | 中高 |
 | D3 | 谁加载模型历史 | `ProductHistoryProvider`唯一加载；`store=False`+per-service；入口校验全量历史并只传新delta | 当前版本实测无重复、可在每次服务调用后持久化 | 中高（RunContext合同待固化） |
 | D4 | 成功终态何时发送 | User/Run先提交；Checkpoint暂存；包装器观察并暂扣终态后，外层事务写Assistant和成功Run，再放行`RUN_FINISHED` | 可证明产品成功早于客户端成功终态，不让Checkpoint或Snapshot反向拥有产品事实 | 中高（终态门合同待固化） |
 | D5 | 同Session并发和重复请求 | 最多一个活动Product Run；重复幂等；新请求返回`SESSION_BUSY` | 最小且可解释，避免历史尾部竞争和重复外部调用 | 高 |
@@ -85,13 +85,13 @@ LibreChat同时提供了反例：部分保存失败会被捕获后继续运行�
 
 LibreChat不使用MAF或AG-UI，因此不能决定HistoryProvider、Workflow Checkpoint、AG-UI Snapshot、SQLite ORM和MAF事件顺序。它未涉及的地方会在每张决策卡中明确标注，不再自动研究第二个外部项目。
 
-## 3. D1：第一阶段保存哪些状态、在哪里恢复
+## 3. D1：Phase 1保存哪些状态、在哪里恢复
 
 ### 3.1 背景与原因
 
-当前存在4类看起来都叫“会话状态”的对象：Product Session/Message、模型History、MAF AgentSession/Workflow Checkpoint、AG-UI Thread Snapshot。若第一阶段把它们都持久化，会有双加载、双写、对账和权限成本；若一个都不持久化，页面刷新和后端重启都会失忆。
+当前存在4类看起来都叫“会话状态”的对象：Product Session/Message、模型History、MAF AgentSession/Workflow Checkpoint、AG-UI Thread Snapshot。若Phase 1把它们都持久化，会有双加载、双写、对账和权限成本；若一个都不持久化，页面刷新和后端重启都会失忆。
 
-现在必须决定的不是简单的“一个库还是两个库”，而是：第一阶段哪些状态真有恢复需求，谁是事实源，页面刷新走哪条路径。
+现在必须决定的不是简单的“一个库还是两个库”，而是：Phase 1哪些状态需要兑现恢复保证，谁是事实源，页面刷新走哪条路径。
 
 ### 3.2 参考覆盖
 
@@ -106,18 +106,18 @@ LibreChat不使用MAF或AG-UI，因此不能决定HistoryProvider、Workflow Che
 
 | 方案 | 优点 | 缺点 |
 |---|---|---|
-| A. **Product DB only；Snapshot off；REST恢复** | 只有一个权威恢复源；没有Snapshot双写和fail-soft成功歧义；最少表与适配代码；刷新不触发模型 | 第一阶段没有原生AG-UI Shared State、Interrupt/HITL恢复；旧SSE不能断线续传；前端需实现REST加载到本地投影 |
+| A. **Product DB only；Snapshot off；REST恢复** | 只有一个权威恢复源；没有Snapshot双写和fail-soft成功歧义；最少表与适配代码；刷新不触发模型 | Phase 1不提供AG-UI Shared State、Interrupt/HITL恢复；旧SSE不能断线续传；前端需实现REST加载到本地投影 |
 | B. Product DB+同一SQLite中的AG-UI Snapshot投影 | 将来Hydrate、State和Interrupt容易接入；本地只需备份一个文件 | 两套Message投影要revision对账；Snapshot依旧不能参与产品成功；增加迁移和升级兼容面 |
-| C. Product DB+独立Snapshot DB/Redis | 运行投影可独立扩展、过期和替换 | 第一阶段部署、备份、跨存储一致性和故障模式明显增加；仍不能自动得到跨实例Job |
+| C. Product DB+独立Snapshot DB/Redis | 运行投影可独立扩展、过期和替换 | Phase 1部署、备份、跨存储一致性和故障模式明显增加；仍不能自动得到跨实例Job |
 | D. 以AG-UI Snapshot作为Message/Session权威源 | 表面上最少产品表；能直接重放UI | Snapshot缺少产品元数据、Trace、权限和稳定Schema；保存fail-soft；与已批准的Product DB权威规则冲突 |
 
 ### 3.4 当前建议
 
-建议A。第一阶段只做文本对话持久化，Product DB已经足以恢复Session、Message、Run和模型历史。AG-UI继续管理本次实时Run，但不保存持久Snapshot；页面刷新通过REST恢复，不发空Run。
+建议A。Phase 1交付文本对话持久化，Product DB足以兑现该阶段的Session、Message、Run和模型历史恢复。AG-UI继续管理本次实时Run，但不保存持久Snapshot；页面刷新通过REST恢复，不发空Run。
 
 同一个SQLite中可以同时保存Product Message和Run Checkpoint，但它们必须逻辑分表：新Run的默认模型历史只来自已提交且`context_eligible=true`的Product Message；Checkpoint绑定当前Product Run并标记`provisional`，只服务该活动Run的后续模型调用，历史Run Checkpoint默认不进入新Run。
 
-MAF AgentSession第一阶段仍是请求内对象；Workflow Checkpoint、Shared State和Interrupt不进入当前切片。出现真实HITL或工具恢复需求时，再对B/C做专项审核。
+MAF AgentSession在Phase 1仍是请求内对象；Workflow Checkpoint、Shared State和Interrupt不进入该切片，但已经在目标架构和对应交付阶段中定义位置，启用前另做专项审核。
 
 ### 3.5 风险与未验证项
 
@@ -129,13 +129,13 @@ MAF AgentSession第一阶段仍是请求内对象；Workflow Checkpoint、Shared
 
 请在A/B/C中选择；D不建议采用。建议批准语句：
 
-> 批准D1：第一阶段使用一个SQLite Product DB保存产品事实和逻辑隔离的Run Checkpoint；新Run历史从可进入上下文的Product Message投影，不读取历史Run Checkpoint；不启用持久AG-UI Snapshot Store，页面刷新和重启通过REST恢复；MAF Workflow Checkpoint、Shared State、Interrupt和断线续传暂不实现。
+> 批准D1：Phase 1使用一个SQLite Product DB保存产品事实和逻辑隔离的Run Checkpoint；新Run历史从可进入上下文的Product Message投影，不读取历史Run Checkpoint；不启用持久AG-UI Snapshot Store，页面刷新和重启通过REST恢复；MAF Workflow Checkpoint、Shared State、Interrupt和断线续传由对应交付阶段启用。
 
 ## 4. D2：Product与协议/Provider ID如何映射
 
 ### 4.1 背景与原因
 
-至少要处理6类身份：Product Session ID、AG-UI `threadId`、Product Agent Run ID、AG-UI `runId`、Product Message ID和AG-UI Message ID；Provider还可能返回Response/Conversation ID。若全部混成一个ID，将来一次Session包含多个Run、重试、Provider切换和权限检查都会失去边界。若第一阶段全部分开，又会增加没有产品收益的映射表和客户端同步问题。
+至少要处理6类身份：Product Session ID、AG-UI `threadId`、Product Agent Run ID、AG-UI `runId`、Product Message ID和AG-UI Message ID；Provider还可能返回Response/Conversation ID。若全部混成一个ID，一次Session包含多个Run、重试、Provider切换和权限检查都会失去边界。若Phase 1全部分开，又会增加没有产品收益的映射表和客户端同步问题。
 
 ### 4.2 参考覆盖
 
@@ -151,17 +151,17 @@ MAF AgentSession第一阶段仍是请求内对象；Workflow Checkpoint、Shared
 
 | 方案 | 优点 | 缺点 |
 |---|---|---|
-| A. **Product Session ID与`threadId`同值；Product Run与AG-UI `runId`分开映射** | 第一阶段Session路由和事件核对最简单；Run仍能支持重试、多个执行和幂等；Provider ID完全隔离 | 将来一个Product Session需要多个AG-UI Thread时要增加映射；字段命名必须防止概念合并 |
-| B. Product Session、Thread、Product Run和AG-UI Run全部独立 | 边界最纯粹；天然支持一对多Thread | 第一阶段增加映射、查询、迁移和客户端状态同步；没有当前产品需求支撑 |
+| A. **Product Session ID与`threadId`同值；Product Run与AG-UI `runId`分开映射** | Phase 1 Session路由和事件核对最简单；Run仍能支持重试、多个执行和幂等；Provider ID完全隔离 | 一个Product Session需要多个AG-UI Thread时要增加映射；字段命名必须防止概念合并 |
+| B. Product Session、Thread、Product Run和AG-UI Run全部独立 | 边界最纯粹；天然支持一对多Thread | Phase 1增加映射、查询、迁移和客户端状态同步；没有对应用户场景收益 |
 | C. Session/Thread同值，Product Run ID也直接使用AG-UI `runId` | 表更少；客户端与数据库查找直接 | 客户端相关性ID变成产品主键；重放、重试和冲突输入更难表达；协议ID格式变化影响数据模型 |
 | D. 使用Provider Conversation/Response ID作为Session或Run ID | 可利用Provider托管续接 | Provider锁定；服务ID不是授权；当前客户端可能发生Thread漂移；与`store=False`冲突 |
 | E. 浏览器随机生成Session并作为权威 | 无需先调用Session API | 服务端无法先建立Scope所有权；列表、归档、跨设备恢复和冲突处理不可靠 |
 
 ### 4.4 当前建议
 
-建议A：服务端生成Product Session UUID，同值传给AG-UI作为`threadId`；这是第一阶段的部署映射，不是对象合并。Product Agent Run使用独立服务端UUID，并分别保存请求`agui_run_id`、请求Hash和可选Provider诊断ID。
+建议A：服务端生成Product Session UUID，同值传给AG-UI作为`threadId`；这是Phase 1的部署映射，不是对象合并。Product Agent Run使用独立服务端UUID，并分别保存请求`agui_run_id`、请求Hash和可选Provider诊断ID。
 
-Product Message也使用服务端UUID，并显式保存Session内唯一的`agui_message_id`。最终Assistant持久化时复用本次流事件里的AG-UI Message ID作相关性，但客户端ID不是Product主键或授权。第一阶段若为简化让两个Message ID同值，也只能是部署选择，不能写成长期不变量。
+Product Message也使用服务端UUID，并显式保存Session内唯一的`agui_message_id`。最终Assistant持久化时复用本次流事件里的AG-UI Message ID作相关性，但客户端ID不是Product主键或授权。Phase 1若让两个Message ID同值，也只能是部署选择，不能写成长期不变量。
 
 包装器需要保证标准Run事件继续使用原请求AG-UI `runId`。即使未来MAF或Provider返回其他ID，也只能记录为映射/诊断，不能静默改写Product Session或授权Scope。
 
@@ -175,7 +175,7 @@ Product Message也使用服务端UUID，并显式保存Session内唯一的`agui_
 
 请在A/B/C中选择；D/E不建议采用。建议批准语句：
 
-> 批准D2：第一阶段由服务端生成Product Session UUID，并把同值用作AG-UI `threadId`；Product Agent Run ID、AG-UI `runId`和Provider ID分别保存；Product Message ID与Session内唯一的AG-UI Message ID显式映射；协议ID不得作为产品主键或授权，任何访问都必须结合服务端可信Scope。
+> 批准D2：Phase 1由服务端生成Product Session UUID，并把同值用作AG-UI `threadId`；Product Agent Run ID、AG-UI `runId`和Provider ID分别保存；Product Message ID与Session内唯一的AG-UI Message ID显式映射；协议ID不得作为产品主键或授权，任何访问都必须结合服务端可信Scope。
 
 ## 5. D3：谁加载模型历史，以及浏览器全量消息怎么处理
 
@@ -214,7 +214,7 @@ MAF会把`AgentSession`交给Provider，但它不包含本项目可信Product Ru
 1. `ProductHistoryProvider`是唯一`load_messages=True`的Provider。
 2. Agent显式`store=False`，不依赖当前OpenAI Client默认行为。
 3. Agent启用`require_per_service_call_history_persistence=True`。
-4. `ProductAwareAgentFrameworkAgent`核对浏览器消息与数据库前缀，只允许第一阶段的单个新User后缀。
+4. `ProductAwareAgentFrameworkAgent`核对浏览器消息与数据库前缀，只允许Phase 1合同中的单个新User后缀。
 5. 接纳事务立即把User保存为`committed + context_eligible=true`，并把该User占用的Session revision记为`history_cutoff_revision`；第一次进入MAF时只传当前User delta，Provider只加载`revision < history_cutoff_revision`的Product Message，并再次按`current_user_message_id`排除当前User。
 6. 同一活动Run的后续模型调用才额外加载**本Run**的provisional Checkpoint，并按来源ID去重；历史Run Checkpoint默认永远不进入新Run。下一轮继续使用已提交User和成功的最终Product Assistant投影；模型失败不删除或隐藏User，只有partial/provisional Assistant与失败Run Checkpoint默认不可进入上下文。
 7. 薄包装器在接纳后创建服务端RunContext，通过请求作用域`ContextVar`把可信Product Run身份交给Provider；Provider禁止用客户端`runId`、`threadId`或MAF `session_id`猜测Checkpoint归属，缺失Context直接失败。
@@ -224,7 +224,7 @@ per-service模式的价值不仅是“更频繁保存”。工具循环中可能
 ### 5.5 风险与未验证项
 
 1. 当前第一切片只有文本回合；工具调用、合成Tool Result和Middleware提前终止仍需进入工具阶段后单独验收。
-2. Context长度裁剪第一阶段可以采用保守线性后缀，但Compaction、摘要和分支选择尚未设计。
+2. Context长度裁剪在Phase 1可以采用保守线性后缀，但Compaction、摘要和分支选择尚未设计。
 3. `ProductHistoryProvider`不能把完整Product Trace、失败Message或隐藏推理无边界送入模型。
 4. RunContext的并发任务隔离、嵌套调用、异常/取消清理尚未做正式Spike和repo测试；这是实现前置验收，不是已由MAF保证的行为。
 5. 当前关键MAF探针还不是仓库回归测试；实现第一步必须固化双历史、事件顺序、per-service工具循环和Response ID合同。
@@ -262,7 +262,7 @@ per-service模式的价值不仅是“更频繁保存”。工具循环中可能
 | C. 让HistoryProvider在每次`after_run`直接写Product Message和Run成功 | 看似少一层包装；Provider错误会阻断终态 | 工具循环会多次调用；Provider不知道完整产品状态机；Checkpoint和产品事实混用；难做Interaction/Scope/CAS |
 | D. 缓冲整段响应，数据库成功后一次性发全部事件 | 最容易证明“看到的都已提交” | 失去实时Chat体验，首字延迟变成完整模型延迟 |
 | E. 先发`RUN_FINISHED`，再新增`DURABILITY_CONFIRMED` | 不拦截MAF默认事件；能表达第二种确认 | 客户端出现两个“成功”；通用AG-UI不理解；形成竞争协议语义 |
-| F. 第一阶段直接实现LibreChat式后台Generation Job和断线续传 | 可跨连接继续生成并重连 | 需要Job租约、事件传输、跨实例所有权、保留期和取消协议；范围与复杂度显著扩大，仍要产品提交门 |
+| F. Phase 1直接实现LibreChat式后台Generation Job和断线续传 | 可跨连接继续生成并重连 | 需要Job租约、事件传输、跨实例所有权、保留期和取消协议；依赖尚未满足，仍要产品提交门 |
 
 ### 6.4 当前建议
 
@@ -284,7 +284,7 @@ HistoryProvider保存抛错时，当前MAF已经会输出`RUN_ERROR`；包装器
 
 1. MAF升级可能改变HistoryProvider与AG-UI终态的顺序；依赖升级必须重跑故障注入合同。
 2. 从最终MAF响应/完成Checkpoint生成Product Assistant负载的规范化规则需要测试，不能仅依赖已发送delta拼接；实际观察到当前Run的普通`RUN_FINISHED`、确认无interrupt outcome和无pending interrupt都只是进入产品终态事务的必要条件。
-3. 客户端主动取消、ASGI断线和Provider实际取消传播需要端到端验证；第一阶段不承诺后台继续或流续传。
+3. 客户端主动取消、ASGI断线和Provider实际取消传播需要端到端验证；Phase 1不承诺后台继续或流续传。
 
 ### 6.6 需用户选择
 
@@ -315,7 +315,7 @@ HistoryProvider保存抛错时，当前MAF已经会输出`RUN_ERROR`；包装器
 |---|---|---|
 | A. **同Session一个活动Run；新请求`SESSION_BUSY`；重复请求幂等** | 最小、确定、容易测试；不会暗中改变输入顺序；跨进程可用数据库约束 | 用户必须等待或明确重试；不能连续排队多条消息 |
 | B. 后端持久FIFO队列 | 用户可连续提交；保持串行 | 需要队列状态、取消、超时、上下文revision、重启恢复和可见进度 |
-| C. 明确区分`steer`与`follow-up` | 交互能力强；可修正当前运行或排队下一条 | UI、工具循环插入点和持久语义复杂；第一阶段范围扩大 |
+| C. 明确区分`steer`与`follow-up` | 交互能力强；可修正当前运行或排队下一条 | UI、工具循环插入点和持久语义复杂；Phase 1前置依赖未满足 |
 | D. 允许并发并建立分支/revision | 支持多答案探索 | 需要树会话、分支选择、合并和独立Context，不是线性Chat最小切片 |
 | E. 只用进程内Lock | 实现快速 | 多进程、崩溃和重启后失效；不能提供幂等唯一性 |
 
@@ -340,13 +340,13 @@ HistoryProvider保存抛错时，当前MAF已经会输出`RUN_ERROR`；包装器
 
 请在A/B/C/D中选择；E不能单独采用。建议批准语句：
 
-> 批准D5：第一阶段同一Product Session最多一个活动Product Agent Run；新普通请求返回`SESSION_BUSY`，相同幂等请求不重复调用模型，Hash冲突返回`IDEMPOTENCY_CONFLICT`；不同Session仍可并发，重试必须创建关联原Run的新Run。
+> 批准D5：Phase 1同一Product Session最多一个活动Product Agent Run；新普通请求返回`SESSION_BUSY`，相同幂等请求不重复调用模型，Hash冲突返回`IDEMPOTENCY_CONFLICT`；不同Session仍可并发，重试必须创建关联原Run的新Run。
 
 ## 8. D6：SQLite使用什么数据访问和迁移工具
 
 ### 8.1 背景与原因
 
-第一版就需要Session、Message、Interaction、Agent Run、模型History/Checkpoint和Trace之间的关系、状态约束、幂等唯一性和迁移。后续还会增加Intent、WorkItem、Approval、Execution、Evidence和Memory。数据访问工具会影响事务边界、测试方式和以后迁移PostgreSQL的成本。
+目标模型需要Session、Message、Interaction、Agent Run、模型History/Checkpoint和Trace之间的关系、状态约束、幂等唯一性和迁移；其他交付阶段还会启用Intent、WorkItem、Approval、Execution、Evidence和Memory。数据访问工具会影响事务边界、测试方式和迁移PostgreSQL的成本。
 
 ### 8.2 参考覆盖
 
@@ -364,7 +364,7 @@ HistoryProvider保存抛错时，当前MAF已经会输出`RUN_ERROR`；包装器
 | 方案 | 优点 | 缺点 |
 |---|---|---|
 | A. **SQLAlchemy 2+Alembic+`aiosqlite`** | 成熟事务和迁移生态；复杂关系/约束清晰；以后迁PostgreSQL成本较低；迁移文件可逐次审核 | 新增依赖和概念；异步Session误用会增加复杂度；`aiosqlite`不提升SQLite多写者能力 |
-| B. 标准库`sqlite3`+显式SQL迁移表 | 依赖最少；SQL和事务完全透明；首版代码量可能较小 | 映射、迁移、回滚和测试基础设施都要自建；对象增长后维护成本高；异步路由需线程边界 |
+| B. 标准库`sqlite3`+显式SQL迁移表 | 依赖最少；SQL和事务完全透明；Phase 1代码量可能较小 | 映射、迁移、回滚和测试基础设施都要自建；对象增长后维护成本高；异步路由需线程边界 |
 | C. SQLModel+Alembic | 与FastAPI/Pydantic表面接近，上手简洁 | 复杂映射仍回到SQLAlchemy；容易误把API模型、ORM模型和领域对象合并；增加一层兼容面 |
 | D. 现在直接PostgreSQL | 多写者并发和生产扩展更强 | 破坏本地一键运行目标；新增服务和部署；当前负载没有证据需要它 |
 

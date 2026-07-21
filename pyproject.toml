@@ -1,7 +1,7 @@
 [project]
-name = "opc-os-chat-channel"
+name = "later-chat"
 version = "0.1.0"
-description = "The first self-developed Chat channel in the OPC-OS Chat system."
+description = "An independent AI collaboration Chat product powered by MAF and AG-UI."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [

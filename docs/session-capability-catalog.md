@@ -37,7 +37,7 @@ Session是一个有身份、权限、版本和生命周期的产品协作空间�
 3. Interaction、Agent Run、Run Attempt及其状态关联。
 4. 页面恢复、实时连接恢复、运行恢复和HITL恢复所需的关联信息。
 5. 本轮模型上下文、配置、附件、证据和外部领域对象的可追溯引用。
-6. Web通道与上位OPC-OS Chat之间的会话绑定和投影边界。
+6. Web入口与OPC-OS Chat等外部系统之间的会话绑定和投影边界。
 
 ### 2.2 Session只关联、不吞并什么
 
@@ -80,7 +80,7 @@ Session是一个有身份、权限、版本和生命周期的产品协作空间�
 | Approval / Input Request | 正在等待用户决定什么 | 解决、拒绝、取消或过期前持续存在 |
 | Context Snapshot | 当时模型真正使用了哪些上下文与配置 | 跟随Interaction/Run长期可追溯 |
 
-即使某些ID在早期实现中暂时同值，代码和文档也必须分别命名、分别授权、分别定义生命周期。
+即使某个交付阶段暂时让部分ID同值，代码和文档也必须分别命名、分别授权、分别定义生命周期。
 
 ## 4. Session恢复的完整层级
 
@@ -142,7 +142,7 @@ Session是一个有身份、权限、版本和生命周期的产品协作空间�
 | C1 | 模型前保存用户输入 | 已接纳输入不会因模型失败或进程退出而消失 | P0 | N、O |
 | C2 | Assistant临时态与最终态 | 流式草稿、部分结果、错误和已提交结果不混用 | P0 | L、O |
 | C3 | 稳定顺序、版本和提交门 | 旧Run不能覆盖新结果，客户端成功晚于产品提交 | P0 | L、O |
-| C4 | 树状Message关系 | 从第一版即能表达父子关系和活动路径，避免线性历史锁死 | P0 | P、L |
+| C4 | 树状Message关系 | 目标数据模型能表达父子关系和活动路径，避免线性历史锁死 | P0 | P、L |
 | C5 | 编辑历史用户消息 | 编辑产生新分支或新版本，不抹掉原始事实 | P2 | L |
 | C6 | 重新生成与Sibling | 同一父消息可有多个Assistant候选 | P2 | P、L |
 | C7 | 分支导航 | 用户能切换Sibling、回到任意Leaf并恢复对应上下文 | P2 | P、L |
@@ -214,7 +214,7 @@ Session是一个有身份、权限、版本和生命周期的产品协作空间�
 | H3 | 同一Product Session跨通道继续 | Web与未来其他通道可在授权后继续同一上下文 | P3 | N部分、O |
 | H4 | Outbox、投递回执与重试 | Product结果提交与通道投递分开；失败投递可安全重试 | P3 | O；N明确暴露此缺口 |
 | H5 | 通道能力投影 | 不同通道只呈现其支持的卡片、附件、审批和流式能力 | P3 | N、O |
-| H6 | 上位系统版本、权限和撤销传播 | OPC-OS Chat接入不形成第二事实源，权限变化能阻断后续操作 | P3 | O；参考未直接涉及 |
+| H6 | 外部集成版本、权限和撤销传播 | 与OPC-OS Chat等外部系统互操作时不形成第二事实源，权限变化能阻断后续操作 | P3 | O；参考未直接涉及 |
 
 ### I. 治理、可移植性与质量（7项）
 
@@ -234,8 +234,8 @@ Session是一个有身份、权限、版本和生命周期的产品协作空间�
 
 | 能力域 | MAF | pi | nanobot | LibreChat | 本项目仍需决定 |
 |---|---|---|---|---|---|
-| 产品Session身份/生命周期 | 不提供完整产品模型 | create/open/list/delete/fork，单用户CLI语义 | Session Key与基础管理 | 列表、搜索、归档、置顶、标签、临时、删除、分享 | 多对象Scope、关系库事务和上位系统绑定 |
-| 消息树与分支 | 不定义产品树 | 完整Session Tree、Leaf、fork、branch summary | 主要是线性历史 | `parentMessageId`、edit/regenerate/sibling/fork/duplicate | 从首版保持树兼容及产品交互取舍 |
+| 产品Session身份/生命周期 | 不提供完整产品模型 | create/open/list/delete/fork，单用户CLI语义 | Session Key与基础管理 | 列表、搜索、归档、置顶、标签、临时、删除、分享 | 多对象Scope、关系库事务和外部Channel Binding |
+| 消息树与分支 | 不定义产品树 | 完整Session Tree、Leaf、fork、branch summary | 主要是线性历史 | `parentMessageId`、edit/regenerate/sibling/fork/duplicate | 目标模型保持树兼容及产品交互取舍 |
 | 历史与Context | HistoryProvider、AgentSession序列化 | 完整Tree投影活动Context、Compaction | 历史裁剪、合法Tool边界、consolidation | 全历史与当前分支分离 | 唯一加载器、ContextPackage和配置快照 |
 | Run并发和控制 | Agent/Workflow运行机制，产品并发由应用定义 | 普通Prompt拒绝、steer/followUp | Session Lock、Queue、跨Session并发 | abort、steer、Generation替换保护 | Interaction/Run/Attempt长期状态和幂等 |
 | 浏览器断线续传 | AG-UI事件与可选Snapshot；Snapshot不是产品提交门 | Web场景未涉及 | 通道投影有限 | 后台Job、Chunk、重连、DB回退最完整 | AG-UI上的持久事件投影与游标合同 |
@@ -304,7 +304,7 @@ Session是一个有身份、权限、版本和生命周期的产品协作空间�
 13. Workflow执行到一半重启后，从兼容Checkpoint继续，已完成节点不重复。
 14. 等待审批或补充信息跨越重启、换设备和较长时间后仍可继续。
 15. 会话中的附件、Artifact、Evidence、Intent和WorkItem仍可定位并受权限保护。
-16. 通过Web或未来其他OPC-OS Chat通道，在授权后继续同一个Product Session。
+16. 通过Web、OPC-OS Chat或其他外部入口，在授权后继续同一个Product Session。
 17. 通道投递失败不影响已提交产品结果，并可凭Outbox安全重试。
 18. 导出、分享、过期或删除会话时，分支、附件、运行投影和权限按一致规则处理。
 

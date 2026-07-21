@@ -77,8 +77,8 @@ def create_agent(settings: Settings) -> BaseAgent:
 
     if settings.runtime_mode == "bootstrap":
         return BootstrapAgent(
-            id="opc-os-chat-bootstrap",
-            name="OPC-OS Chat Bootstrap",
+            id="chat-bootstrap",
+            name="Chat Bootstrap",
             description="Deterministic MAF agent for transport verification.",
         )
 
@@ -88,11 +88,11 @@ def create_agent(settings: Settings) -> BaseAgent:
         base_url=settings.model_base_url,
     )
     return Agent(
-        id="opc-os-chat-primary",
-        name="OPC-OS Chat",
-        description="Primary agent for the self-developed OPC-OS Chat channel.",
+        id="chat-primary",
+        name="Chat",
+        description="Primary agent for the independent Chat product.",
         instructions=(
-            "你是 Later 的 OPC-OS Chat 协作助手。"
+            "你是 Later 的 Chat 协作助手。"
             "使用中文直接回答，明确区分已知事实、候选和需要用户确认的事项。"
         ),
         client=client,

@@ -1,8 +1,8 @@
-# OPC-OS 自研 Chat 通道
+# Chat
 
-本项目实现OPC-OS Chat体系中的一个自研Chat通道。
+Chat 是一个独立开发、独立运行、独立运营并持续演进的 AI 协作产品。它以 Web 对话为主要入口，自己承担会话、上下文、工作、受控执行、恢复、知识、证据、交付和治理的完整产品责任。
 
-`OPC-OS Chat`是包含多种可交互聊天通道、适配层和共享能力的上位系统；本仓库只负责其中一个独立开发、独立运行、独立验证的Web Chat通道。
+Chat 可以通过版本化合同与 OPC-OS Chat 或其他聊天入口互操作；外部集成是对等系统关系，不改变本项目的产品身份，也不产生第二个产品事实源。
 
 ## 项目目标
 
@@ -35,7 +35,7 @@
 2. React前端通过`HttpAgent`完成了浏览器真实消息回合。
 3. 后端3个测试、前端类型检查和生产构建均通过。
 4. 已接入`backend/.env`并完成真实模型AG-UI文本回合。
-5. 总体架构候选、完整Session能力全集和Phase 0-8交付路线已经形成，正在等待用户审核；尚未进入详细设计或开发。
+5. 总体架构候选已按完整用户场景重建，完整Session能力全集和Phase 0-8交付路线已经形成，均等待用户审核；尚未进入领域详细设计或开发。
 6. 尚未完成模型失败路径、服务端历史恢复和产品领域数据库，也没有迁移旧数据库、历史会话或环境配置。
 
 ## 技术方向
@@ -52,7 +52,7 @@ React 19 + TypeScript + Vite
     -> Agent / Workflow / Tool / Model
 ```
 
-Product资源走REST，单次Agent Run的实时事件走AG-UI；Product DB与MAF运行时状态分开拥有。前端使用自研UI，基础组件采用Tailwind CSS、Radix UI和Lucide React；Zustand只管理页面状态。完整边界见[项目上下文](./PROJECT_CONTEXT.md#71-产品对象协议对象与运行时对象的边界)。
+Product资源走REST，单次Agent Run的实时事件走AG-UI；Product DB与MAF运行时状态分开拥有。前端使用自研UI，基础组件采用Tailwind CSS、Radix UI和Lucide React；Zustand只管理页面状态。完整边界见[项目上下文](./PROJECT_CONTEXT.md#71-四个必须区分的对象)。
 
 ## 环境要求
 
@@ -140,17 +140,18 @@ scripts/         可重复执行的工程验证
 ## 文档入口
 
 1. [项目上下文](./PROJECT_CONTEXT.md)：问题、定位、目标、闭环和边界。
-2. [项目计划](./PROJECT_PLAN.md)：分阶段路线和完成门。
-3. [项目状态](./PROJECT_STATE.md)：当前完成项、待审核项和下一道门。
-4. [协作规则](./AGENTS.md)：开发和AI协作必须遵守的规则。
-5. [Session能力全集与目标边界](./docs/session-capability-catalog.md)：9个能力域、74项能力、R0-R6恢复层级、参考覆盖、明确非目标和最终用户场景。
-6. [Session分阶段交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务、优先级、依赖、方案、目标和各阶段完成场景。
-7. [Session持久化研究与方案推导](./docs/session-persistence-research.md)：MAF、pi、nanobot与LibreChat的逐项源码证据、适用边界、方案比较和决策推导。
-8. [Session持久化候选设计](./docs/session-persistence-design.md)：Phase 1文本持久化子设计，当前暂停总体审核。
-9. [Session持久化审核包](./docs/session-persistence-review.md)：D1-D6子设计的原因、参考覆盖、选项、优缺点和建议，待总体规划通过后重审。
-10. [总体架构研究与证据](./docs/overall-architecture-research.md)：MAF、pi、nanobot与LibreChat的版本、研究过程、源码证据、覆盖缺口和推导链。
-11. [总体架构候选](./docs/overall-architecture-proposal.md)：领域模块化单体、8个产品模块、MAF Runtime边界、状态所有权、决策卡和用户场景。
+2. [项目经验与反例](./PROJECT_LESSONS.md)：每次项目回复前必读的错误案例和强制检查。
+3. [项目计划](./PROJECT_PLAN.md)：工作流、依赖、分阶段路线和完成门。
+4. [项目状态](./PROJECT_STATE.md)：当前完成项、待审核项和下一道门。
+5. [协作规则](./AGENTS.md)：开发和AI协作必须遵守的规则。
+6. [总体架构研究与证据](./docs/overall-architecture-research.md)：完整场景推导、MAF、pi、nanobot与LibreChat证据、覆盖缺口和方案比较。
+7. [总体架构候选](./docs/overall-architecture-proposal.md)：目标拓扑、12个产品模块、组件合同、状态所有权、场景穿透和交付依赖。
+8. [Session能力全集与目标边界](./docs/session-capability-catalog.md)：9个能力域、74项能力、R0-R6恢复层级、参考覆盖、明确非目标和最终用户场景。
+9. [Session分阶段交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务、优先级、依赖、方案、目标和各阶段完成场景。
+10. [Session持久化研究与方案推导](./docs/session-persistence-research.md)：MAF、pi、nanobot与LibreChat的逐项源码证据、适用边界、方案比较和决策推导。
+11. [Session持久化候选设计](./docs/session-persistence-design.md)：Phase 1文本持久化子设计，当前暂停总体审核。
+12. [Session持久化审核包](./docs/session-persistence-review.md)：D1-D6子设计的原因、参考覆盖、选项、优缺点和建议，待总体规划通过后重审。
 
 ## 下一步
 
-下一步先审核总体架构候选的8项决定，再确认Session的74项能力、R0-R6恢复保证，以及Phase 0-8的53个任务、依赖顺序与阶段用户场景。总体材料批准后先执行Phase 0，再重审D1-D6这个Phase 1持久化子设计；在这些审核门通过前不创建Schema、迁移或业务实现。
+下一步先审核总体架构候选的8项决定，确认目标拓扑、12个产品模块、状态所有权和关键合同；再把Session能力与路线映射到批准后的架构。审核门通过前不创建正式Schema、迁移、Worker或领域业务实现。

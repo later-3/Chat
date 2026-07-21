@@ -109,8 +109,8 @@ function App() {
         <div className="brand">
           <span className="brand-mark"><Bot size={19} /></span>
           <div>
-            <p className="brand-name">OPC-OS Chat</p>
-            <p className="brand-subtitle">自研通道</p>
+            <p className="brand-name">Chat</p>
+            <p className="brand-subtitle">AI 协作产品</p>
           </div>
         </div>
 

@@ -1,180 +1,258 @@
-# OPC-OS 自研 Chat 通道：项目计划
+# Chat 项目计划
 
 ## 1. 计划目标
 
-建立一个独立、可运行、可验证的自研Chat通道，并逐步完成从连续会话到受控Agent执行的产品闭环。
+以[完整目标架构](./docs/overall-architecture-proposal.md)为边界，按依赖顺序交付一个独立运行、持续运营的 Chat 产品：从会话连续、上下文与意图，到工作推进、受控执行、运行恢复、知识证据、可靠交付和外部集成，最终形成完整用户闭环。
 
-计划按“先冻结定义，再建立技术基线，再扩展领域能力”的顺序推进。
+阶段只决定交付顺序和阶段验收，不能重新定义产品范围。任何阶段的 Schema、API 或代码都必须能演进到目标模块、合同和状态所有权，禁止为了短期交付建立另一套临时事实模型。
 
-## 2. 阶段总览
+## 2. 计划原则
 
-| 阶段 | 目标 | 当前状态 |
+1. 先审核完整场景、目标架构和模块合同，再做领域详细设计。
+2. 先建立权威产品事实，再让 Runtime、活动流、Worker 和外部集成消费这些事实。
+3. 每个能力依次经过：研究证据 -> 方案审核 -> 详细设计 -> 实现 -> 故障验证 -> 用户场景验收。
+4. MAF API 与行为先查安装版、源码和测试；产品架构不能由 MAF 类型反推。
+5. Product Session、MAF Session/Checkpoint、AG-UI Thread、Product Run 和 Run Attempt 始终分开。
+6. 每个阶段明确“已兑现保证”和“仍未兑现保证”，不把局部测试外推为完整恢复能力。
+7. 真实模型、真实浏览器、进程故障、重复请求和外部副作用验证不能被 Mock 成功路径替代。
+
+## 3. 目标工作流拆分
+
+这 10 条工作流覆盖目标架构，项目经理可在阶段内进一步拆 Epic、Story 和验证任务。
+
+| 工作流 | 主要模块/组件 | 主要交付物 | 前置依赖 | 验收结果 |
+|---|---|---|---|---|
+| W0 产品治理与架构 | 全局 | 产品定义、经验约束、目标架构、ADR、术语和ID合同 | 无 | 4类读者能用文档继续决策、排期和开发 |
+| W1 工程与合同基础 | Bootstrap、Interfaces、测试基础 | 可运行前后端、配置、OpenAPI/AG-UI合同、错误分类、CI/本地验证 | W0技术路线 | 真实MAF回合和合同测试稳定 |
+| W2 身份与产品会话 | M1、M2、Product Store | Principal/Scope、Session、Interaction、Message Tree、生命周期和查询 | W0、W1 | 输入先持久化，历史可重开，越权被拒绝 |
+| W3 上下文与理解 | M3、M4 | ContextPackage、唯一历史装配器、多Intent、澄清和用户修正 | W2 | 用户可见并修正系统理解和上下文 |
+| W4 工作与执行治理 | M5、M6 | Work/Plan/Action、Draft、Approval、RunSpec和版本失效 | W2、W3 | 用户批准的内容与实际执行严格一致 |
+| W5 产品运行控制 | M7、Runtime Store、AG-UI协调 | Product Run/Attempt、Job、Event Cursor、Cancel/Retry/Resume、Finalization Gate | W2、W4 | 无假成功；刷新和断线能回到权威状态 |
+| W6 MAF/Workflow执行 | MAF Adapter、Worker、Scheduler/Reconciler | Agent/History、Workflow/Checkpoint、Lease、Worker接管和HITL映射 | W5 | 失联可判断，从验证过的安全点恢复 |
+| W7 Tool副作用治理 | M8 | Tool Catalog、Approval桥接、Ledger、幂等、结果未知和对账 | W4、W5、W6 | 不盲目重做外部副作用，有处置证据 |
+| W8 知识、证据与审计 | M9、M10、M12、Artifact/Index | Memory候选、Evidence、Provenance、Trace、失效传播和运营视图 | W2、W3、W5、W7 | 结果可验证，来源失效能正确降级 |
+| W9 交付与外部集成 | M11、Delivery Worker、Adapters | Outbox、Delivery/Receipt、Binding、合同版本、跨入口连续性 | W1、W2、W5、W8 | 送达可追踪，多入口不双写、不越权 |
+
+### 3.1 工作流依赖
+
+```mermaid
+flowchart LR
+    W0["W0 治理与架构"] --> W1["W1 工程与合同"]
+    W1 --> W2["W2 身份与会话"]
+    W2 --> W3["W3 上下文与理解"]
+    W3 --> W4["W4 工作与治理"]
+    W2 --> W5["W5 运行控制"]
+    W4 --> W5
+    W5 --> W6["W6 MAF/Workflow执行"]
+    W6 --> W7["W7 Tool治理"]
+    W3 --> W8["W8 知识证据审计"]
+    W5 --> W8
+    W7 --> W8
+    W1 --> W9["W9 交付与集成"]
+    W2 --> W9
+    W5 --> W9
+    W8 --> W9
+```
+
+## 4. 当前状态总览
+
+| 交付阶段 | 目标 | 当前状态 |
 |---|---|---|
-| 0. 项目定义与治理 | 固定身份、问题、目标、边界和协作规则 | `已完成` |
-| 1. 技术路线与工程初始化 | 审核前后端路线并建立独立可运行骨架 | `真实模型门通过，收尾中` |
-| 2. Session总体规划与最小纵向链路 | 先审核完整Session能力与路线，再实现会话、消息、MAF Agent、历史和基础Trace | `能力全集与路线待审核` |
-| 3. 上下文、意图与审核 | 上下文包、多意图、执行Draft和用户确认 | `未开始` |
-| 4. 工作与记忆闭环 | WorkItem、TaskPlan、人/AI行动和记忆候选 | `未开始` |
-| 5. 受控执行与多Agent | 工具权限、副作用确认、多Agent和恢复 | `未开始` |
-| 6. 上位系统集成 | 与OPC-OS Chat通道适配层和共享能力对接 | `未开始` |
+| 0. 产品定义与治理 | 固定独立产品身份、6个问题、完整闭环和协作规则 | `产品身份已纠正；经验约束已补充` |
+| 1. 工程与真实链路 | 建立独立前后端、MAF、AG-UI、调试和验证基线 | `真实模型门通过；2项收尾` |
+| 2. 目标架构与合同基线 | 审核目标拓扑、模块、状态、合同、恢复矩阵 | `重写完成，待用户审核` |
+| 3. 产品事实与完成历史 | 身份、Session、Message、Run/Attempt和历史恢复 | `未开始实现` |
+| 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `未开始` |
+| 5. 持久执行与活动流 | Job/Event、Worker、Lease、重连和Reconciler | `未开始` |
+| 6. Tool、Workflow与HITL恢复 | Tool Ledger、对账、Checkpoint和持久Interrupt | `未开始` |
+| 7. 知识、证据、交付与运营 | Memory、Evidence、Provenance、Outbox、Trace和告警 | `未开始` |
+| 8. 外部入口连续性 | 与OPC-OS Chat或其他入口完成对等集成 | `未开始` |
 
-### 2.1 Session横向交付路线
+## 5. 阶段 0：产品定义与治理
 
-Session不是只属于阶段2的一张表，而是贯穿后续产品闭环的横向能力。完整目标与任务以两份审核材料为准：
-
-1. [Session能力全集与目标边界](./docs/session-capability-catalog.md)：9个能力域、74项能力和R0-R6恢复层级。
-2. [Session分阶段交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务、依赖理由和各阶段用户场景。
-
-总体能力和路线批准前不进入详细设计；批准后先执行路线Phase 0，再重审现有D1-D6这个Phase 1持久化子设计。路线中的Phase 3-8会分别与本项目阶段3-6的上下文、工作、执行和上位系统能力协同，不能被阶段2“最小链路”替代。
-
-### 2.2 总体架构横向基线
-
-总体架构同样贯穿阶段2-6，目前有两份待审核材料：
-
-1. [总体架构研究与证据](./docs/overall-architecture-research.md)：记录版本、检索过程、参考覆盖、采用/改造/拒绝和未知项。
-2. [总体架构候选](./docs/overall-architecture-proposal.md)：提出领域模块化单体、8个产品模块、MAF Runtime边界、状态所有权、关键链路和部署演进。
-
-总体架构批准前，不批量创建正式模块目录、Schema、Repository或Worker；批准后它只成为后续详细设计的边界基线，不代表具体表、API和类已经批准。
-
-## 3. 阶段0：项目定义与治理
-
-目标：用户审核前不让旧项目假设直接进入新代码。
+目标：让所有后续设计以同一个独立 Chat 产品身份、完整场景和经验约束为前提。
 
 任务：
 
-- [x] 明确本项目是OPC-OS Chat体系中的一个自研Chat通道。
-- [x] 固定要解决的6个问题。
-- [x] 固定6个核心目标。
-- [x] 固定完整产品闭环。
+- [x] 固定要解决的 6 个问题和 6 个核心目标。
+- [x] 固定完整产品闭环和核心对象。
+- [x] 确认后端 MAF、前后端 AG-UI、React 自研 UI 技术路线。
 - [x] 建立`AGENTS.md`、`PROJECT_CONTEXT.md`、`PROJECT_PLAN.md`、`PROJECT_STATE.md`和`README.md`。
-- [x] 确认前后端Agent协议为AG-UI，不是assistant-ui。
-- [x] 审核并批准MAF、AG-UI和前端技术组合。
-- [x] 用户审核技术路线。
+- [x] 纠正产品身份：Chat 是独立完整产品，OPC-OS Chat 是外部集成关系。
+- [x] 新增`PROJECT_LESSONS.md`，记录“阶段偷换架构范围、集成角色降级产品、模块清单冒充设计、场景不穿透架构”4个反例。
+- [ ] 用户审核本轮纠正是否准确进入稳定项目文档。
 
-完成门：用户明确批准技术路线和第一阶段边界。`已通过（2026-07-21）`
+完成门：项目定义无需依赖 OPC-OS 也能完整描述用户、价值、责任和产品边界；所有项目回复前强制读取经验文档。
 
-## 4. 阶段1：技术路线与工程初始化
+## 6. 阶段 1：工程与真实链路
 
-目标：建立不依赖旧`opc-os/chat`运行环境的独立工程。
+目标：建立不依赖旧`opc-os/chat`运行环境的独立工程和可重复验证入口。
 
-任务：
+已完成：
 
-- [x] 初始化Git仓库和基础忽略规则。
-- [x] 初始化前端工程与AG-UI Client集成骨架。
-- [x] 初始化MAF后端、FastAPI AG-UI端点、配置、健康检查和Agent入口。
-- [x] 定义前后端协议和本地开发启动方式。
-- [x] 建立项目本地依赖、环境模板和测试入口。
-- [x] 建立一键验证脚本。
-- [x] 建立无密钥确定性MAF Agent并验证真实AG-UI/SSE事件流。
-- [x] 在浏览器完成1次前后端消息回合，并检查窄屏和控制台错误。
-- [x] 使用`backend/.env`配置本项目独立模型和密钥来源。
-- [x] 完成1次真实模型文本回合。
-- [ ] 明确从旧项目复用代码、重写代码和仅保留文档参考的清单。
+- [x] 初始化私有 Git 仓库、Python 3.12/uv、React 19/TypeScript/Vite。
+- [x] 建立 FastAPI、MAF Agent 和 AG-UI HTTP/SSE 端点。
+- [x] 建立无密钥 Bootstrap Agent 和真实模型配置路径。
+- [x] 建立 Tailwind CSS、Radix UI、Lucide React和局部页面状态基础。
+- [x] 建立后端测试、前端类型检查/构建和一键验证脚本。
+- [x] 完成浏览器真实回合、窄屏检查和真实模型 AG-UI 回合。
+- [x] 建立 VS Code 前后端/全栈调试与定向端口、进程清理。
 
-完成门：空数据环境中可以一键启动前后端，完成1次真实模型文本回合，并通过基础构建和测试。
+剩余：
 
-## 5. 阶段2：Session总体规划与Chat最小纵向链路
+- [ ] 建立真实模型失败、超时、错误脱敏和取消合同测试。
+- [ ] 固定旧项目“复用、重写、仅参考”的文件级清单。
 
-目标：先固定完整Session能力和交付顺序，再证明自研Chat通道可以稳定完成真实MAF会话，而不是只完成页面渲染或一组持久化表。
+完成门：空数据环境可重复启动，成功和关键失败路径均有真实链路证据；不迁移旧数据库、历史或密钥。
 
-任务：
+## 7. 阶段 2：目标架构与合同基线
 
-- [x] 完成[Session持久化研究与方案推导](./docs/session-persistence-research.md)，分别给出MAF、pi、nanobot和LibreChat的证据与边界。
-- [x] 形成[Session持久化审核包](./docs/session-persistence-review.md)，补齐每项原因、参考覆盖、选项、优缺点和建议。
-- [x] 在[项目上下文](./PROJECT_CONTEXT.md#71-产品对象协议对象与运行时对象的边界)中固定Product Session、MAF Session/Checkpoint、AG-UI Thread和Agent Run的概念边界。
-- [x] 外部产品参考只保留LibreChat这1个正式主参考，移除Flowise及多套候选审核前置项。
-- [x] 仅针对Product Session、Message、Agent Run和流式恢复研究LibreChat，并回填其真正覆盖与未覆盖项。
-- [x] 补充LibreChat Conversation生命周期、Message分支、Fork、导入导出、分享快照和页面续接研究，并同步到`agent_knowledge`。
-- [x] 按“Product DB权威、AG-UI只做协议投影”修订Session候选设计中的D1、D3和D4。
-- [x] 实测MAF `HistoryProvider`提交顺序、保存失败终态、AG-UI全历史重复风险和`per-service + store=false`工具循环。
-- [x] 形成[Session能力全集](./docs/session-capability-catalog.md)，定义9个能力域、74项能力、R0-R6恢复层级、参考覆盖和最终用户场景。
-- [x] 形成[Session交付路线](./docs/session-delivery-roadmap.md)，按依赖拆出Phase 0-8、53个方案级任务和阶段完成场景。
-- [x] 审计MAF、pi、nanobot与LibreChat对总体架构问题的覆盖，并把MAF总体位置与LibreChat Web分层补充到`agent_knowledge`。
-- [x] 形成[总体架构研究与证据](./docs/overall-architecture-research.md)，记录研究过程、证据、覆盖缺口和推导链。
-- [x] 形成[总体架构候选](./docs/overall-architecture-proposal.md)，定义架构风格、8个产品模块、MAF Runtime、状态所有权、关键链路和场景映射。
-- [ ] 用户审核并批准总体架构风格、模块边界、状态所有权、提交门、Trace策略和Worker演进方式。
-- [ ] 用户审核并批准Session能力全集、恢复分级、明确非目标、阶段顺序和任务拆分。
-- [ ] 总体规划通过后执行路线Phase 0：固化术语、MAF兼容合同、恢复验收矩阵和版本演进原则。
-- [ ] Phase 0通过后，把[Session持久化候选设计](./docs/session-persistence-design.md)与[审核包](./docs/session-persistence-review.md)作为Phase 1子设计重新审核，而不是总体方案。
-- [ ] 子设计审核通过后先把MAF一次性Spike固化为仓库合同测试，并完成可信Run Context的并发隔离Spike。
-- [ ] 创建、列出、打开和归档Session。
-- [ ] 发送用户消息并接收Assistant回答。
-- [ ] 服务端恢复历史，前端不承担权威历史。
-- [ ] 分开记录Interaction、Product Agent Run与Run Attempt的状态、耗时、模型、血缘和稳定错误码。
-- [ ] 实现基础Trace和重启恢复。
-- [ ] 验证桌面与窄屏主要操作。
-
-完成门：路线Phase 0和Phase 1通过；真实MAF Agent回合、R0/R1历史恢复、失败回合和浏览器端到端均有证据。不得把该门外推为活动流重连、Worker接管、Tool、Workflow或HITL恢复已经完成。
-
-## 6. 阶段3：上下文、意图与审核
-
-目标：让用户在执行前知道系统理解了什么、使用了什么、准备做什么。
+目标：在任何正式领域 Schema 和模块实现之前，冻结能承载完整场景的架构边界。
 
 任务：
 
-- [ ] 自动装配核心记忆、近期消息和当前工作状态。
-- [ ] 展示ContextPackage的纳入、排除和来源。
-- [ ] 支持一个或多个Intent及其不确定性。
-- [ ] 意图有歧义时主动请求确认。
-- [ ] 生成可编辑ExecutionDraft。
-- [ ] 审核绑定版本、Runtime、模型、工具、限制和请求Hash。
-- [ ] 修改目标或上下文后使旧批准失效。
+- [x] 完成 MAF、pi、nanobot 和 LibreChat 的限定源码研究与知识同步。
+- [x] 完成 Session 9 个能力域、74 项能力和 R0-R6 恢复分级。
+- [x] 完成 Session Phase 0-8 的任务与依赖路线。
+- [x] 重写[总体架构研究](./docs/overall-architecture-research.md)，公开错误修订、研究过程、证据、参考覆盖和项目推导。
+- [x] 重写[总体架构候选](./docs/overall-architecture-proposal.md)，展开目标拓扑、12个模块、合同、状态、失败恢复和7个场景。
+- [ ] 用户审核目标架构的 8 项决定。
+- [ ] 审核模块公开合同、ID链、错误分类、并发/幂等原则和四个提交门。
+- [ ] 建立 MAF/AG-UI 安装版合同测试设计和依赖升级门。
+- [ ] 把 Session R0-R6 验收矩阵映射到 M2/M3/M6/M7/M8/M11 与 Runtime 组件。
+- [ ] 为每个模块建立详细设计任务、负责人边界和验收清单；不冻结字段实现。
 
-完成门：旧版本或旧Hash无法执行；用户可修正意图与上下文；驳回不会触发Agent执行。
+完成门：架构师能继续出数据、接口、部署和安全方案；项目经理能排 W2-W9；开发能知道模块和合同；产品负责人批准场景覆盖和设计原因。
 
-## 7. 阶段4：工作与记忆闭环
+## 8. 阶段 3：产品事实与完成历史
 
-目标：让对话形成可持续推进的工作，而不是只留下回答。
+目标：建立所有后续能力共同依赖的服务端权威事实，并支持已完成和失败回合的恢复。
 
-任务：
+主要方案任务：
 
-- [ ] 建立统一WorkItem模型。
-- [ ] 建立TaskPlan、节点和依赖。
-- [ ] 区分用户ActionItem与AI ActionItem。
-- [ ] 支持候选、激活、完成和驳回状态。
-- [ ] 建立Memory候选、接受、纠正和删除流程。
-- [ ] 自动匹配既有事项并防止重复创建。
-- [ ] 让下一轮上下文读取已确认状态。
+- [ ] 详细设计并审核 M1/M2/M7/M12 的聚合、状态机和 Repository Port。
+- [ ] 建立 Principal/Scope 基线、Product Session、Interaction 和 Message Tree。
+- [ ] 建立 Product Run、Run Attempt 和稳定错误分类；不与 Runtime Job 合并。
+- [ ] 建立输入接纳门和产品成功终态门。
+- [ ] 建立 Product Store 迁移、事务、乐观并发、备份恢复和数据保留基础。
+- [ ] 实现 REST Session/Message/Run 查询和 AG-UI 实时投影对齐。
+- [ ] 服务端唯一历史装配；防止 Product History、MAF History 和客户端消息重复。
+- [ ] 实现创建、列出、打开、归档、重启恢复和失败重试。
+- [ ] 固化 MAF HistoryProvider 保存、错误和终态顺序合同测试。
+- [ ] 完成桌面、窄屏、重复提交、并发和重启端到端验证。
 
-完成门：一个真实多意图请求可以形成计划、人/AI行动和记忆候选，并在用户确认后跨重启继续推进。
+完成门：用户输入先于模型持久化；完成和失败回合可在重启后打开；Run/Attempt/Trace可解释。该门不表示活动流、Worker、Tool或Workflow恢复已经成立。
 
-## 8. 阶段5：受控执行与多Agent
+## 9. 阶段 4：上下文、意图、工作与执行门
 
-目标：在不牺牲用户控制和可恢复性的前提下执行真实任务。
+目标：用户知道系统理解了什么、使用什么、准备做什么，并能把对话转成长期工作。
 
-任务：
+主要方案任务：
 
-- [ ] 定义Agent角色、团队拓扑和收束机制。
-- [ ] 为TaskPlan节点生成独立执行请求。
-- [ ] 定义只读、可逆和高风险工具分级。
-- [ ] 高风险副作用执行前二次确认。
-- [ ] 保存Run、Evidence、Delivery和Trace关系。
-- [ ] 超时、崩溃和外部结果未知时先对账，不盲目重试。
-- [ ] 支持局部重评估和局部重跑。
+- [ ] 详细设计并审核 M3/M4/M5/M6。
+- [ ] 建立 Context Source、纳入/排除、Token 预算、版本和 Hash。
+- [ ] 实现一个或多个 Intent、依据、不确定性、澄清和用户修正。
+- [ ] 建立 WorkItem、TaskPlan、Plan Node、ActionItem、依赖和责任状态。
+- [ ] 建立 ExecutionDraft、Capability/Risk Snapshot 和 Approval。
+- [ ] 建立 Draft/Context/Plan/Policy/Capability/Request Hash 任一变化使批准失效的合同。
+- [ ] 编译不可变 RunSpec，并确保 Worker 无权自行扩大能力。
+- [ ] 建立对应前端 Context Review、Intent Review、Work Workspace 和 Execution Review。
 
-完成门：至少1个多节点真实任务可以在权限门下执行、失败恢复并产生可验证证据。
+完成门：一个多意图真实请求可形成可修改计划；高影响执行无法越过批准门；用户修改任一绑定项后旧批准不能运行。
 
-## 9. 阶段6：上位系统集成
+## 10. 阶段 5：持久执行与活动流
 
-目标：让本项目作为一个Chat通道接入OPC-OS Chat上位系统，同时保持本项目内部边界清晰。
+目标：把 HTTP/SSE 连接与执行生命周期分开，支持活动 Run 重连和 Worker 失联处置。
 
-任务：
+主要方案任务：
 
-- [ ] 定义通道身份、能力声明和消息协议。
-- [ ] 定义共享状态与通道私有状态边界。
-- [ ] 接入上位系统的适配层。
-- [ ] 验证跨通道继续同一事项时的版本、幂等和权限语义。
-- [ ] 验证来源删除、权限撤销和证据失效传播。
+- [ ] 详细设计 Runtime Job、Event Journal、Cursor、Control Inbox、Lease 和 Heartbeat。
+- [ ] 实现 Scheduler/Reconciler 和 Execution Worker 进程角色。
+- [ ] 实现 Run/Attempt/Job 显式映射、幂等领取、取消、Retry 和 Resume 决策。
+- [ ] 实现 AG-UI 活动投影与 REST 产品事实的 Projection Reconciler。
+- [ ] 浏览器断线只结束订阅，不隐式取消 Run。
+- [ ] Worker 失联后标记 Attempt lost，并按安全点生成恢复或人工处置决定。
+- [ ] 验证重复 Worker 领取、Lease 过期、API 重启、Worker 崩溃、事件重复和 Final 去重。
 
-完成门：至少2个不同通道可以在不重复执行、不形成双重事实源的前提下继续同一WorkItem。
+完成门：活动流可按游标接回；Worker 失联不会产生双执行或假成功。该门不表示任意 Tool 结果未知时可以自动恢复。
 
-## 10. 全程质量门
+## 11. 阶段 6：Tool、Workflow 与 HITL 恢复
 
-每个阶段都要满足：
+目标：外部副作用和长时 Workflow 在批准、故障和人工中断下可安全推进。
 
-1. 文档、代码和实际行为一致。
-2. 自动测试覆盖成功、失败和关键反例。
-3. 真实模型或Agent验证不能被Mock替代。
-4. 浏览器操作和响应式验证不能被API测试替代。
-5. 不提交密钥、数据库、历史、日志和构建产物。
-6. 用户价值审核不能被工程绿灯替代。
+主要方案任务：
+
+- [ ] 详细设计 M8 Tool Catalog、Tool Operation Ledger、幂等和能力声明。
+- [ ] 建立 MAF Function Middleware 到 Tool Gateway 的唯一执行路径。
+- [ ] 工具参数动态扩权时回到持久 Approval，而不是进程内默认批准。
+- [ ] 实现`result_unknown`、查询对账、补偿和人工处置。
+- [ ] 设计 Product Run/Attempt 与 Workflow Checkpoint、图版本和 Interrupt 的映射。
+- [ ] 实现持久 Approval 与 MAF/AG-UI Interrupt/Resume 双向接合。
+- [ ] 验证工具请求前失败、请求后断线、重复回调、部分成功、补偿失败和跨进程 HITL。
+
+完成门：只从验证过的安全点恢复；外部副作用结果未知时不盲目重做；不承诺通用 Exactly-once。
+
+## 12. 阶段 7：知识、证据、交付与运营
+
+目标：让结果可验证、知识受控生效、送达可追踪、故障可运营。
+
+主要方案任务：
+
+- [ ] 详细设计 M9/M10/M11/M12。
+- [ ] 建立 Memory Candidate、接受、纠正、删除、范围和有效性。
+- [ ] 建立 Evidence、Artifact、Provenance Graph、验证和失效传播。
+- [ ] 建立 Transactional Outbox、Delivery Worker、Attempt、Receipt、重试和死信。
+- [ ] 建立用户 Trace、审计策略、Correlation、运营视图、告警和人工处置。
+- [ ] 验证来源删除/权限撤销对 Evidence、Memory、Context 和 Work 的传播。
+- [ ] 验证 Run 成功但 Delivery 失败、重复投递、乱序回执和 Artifact 中断。
+
+完成门：用户能回答“结果是什么、证据是什么、是否已送达、来源是否仍有效”；运维能定位并处置积压和失败。
+
+## 13. 阶段 8：外部入口连续性
+
+目标：在不改变 Chat 产品身份和事实源责任的前提下，与 OPC-OS Chat 或其他入口对等互操作。
+
+主要方案任务：
+
+- [ ] 获取并审核外部系统的身份、能力、消息、命令、事件和回执规范。
+- [ ] 详细设计 Channel Binding、合同版本、来源 Envelope、入站幂等和撤销传播。
+- [ ] 实现 Inbound Integration Gateway 和具体 Channel Adapter。
+- [ ] 验证外部消息转为同一个 Chat Interaction，不复制第二套 Session/Work/Run 规则。
+- [ ] 验证跨入口并发、重复输入、权限撤销、来源失效和 Delivery 回执。
+- [ ] 完成兼容性、升级、审计和降级策略。
+
+完成门：至少两个入口能够授权继续同一个 WorkItem，不重复执行、不越权、不形成双重事实源；任一外部系统不可用时，Chat 自身仍可独立运行。
+
+## 14. Session 专项路线映射
+
+Session 是 W2-W9 的横向能力，仍由两份专项材料维护：
+
+1. [Session能力全集](./docs/session-capability-catalog.md)：9个能力域、74项能力、R0-R6恢复分级。
+2. [Session交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务和场景验收。
+
+| Session 路线 | 项目阶段 | 主要架构位置 |
+|---|---|---|
+| Phase 0 术语与恢复合同 | 阶段2 | W0/W1，跨全部模块 |
+| Phase 1 产品会话与历史 | 阶段3 | M1/M2/M7/M12 |
+| Phase 2 Run控制与并发 | 阶段3-5 | M2/M6/M7 |
+| Phase 3 生命周期、分支与长上下文 | 阶段3-4 | M2/M3/M5 |
+| Phase 4 活动流重连 | 阶段5 | M7/Runtime Store/AG-UI Reconciler |
+| Phase 5 Worker恢复 | 阶段5 | Scheduler/Worker/Lease/Reconciler |
+| Phase 6 Tool恢复 | 阶段6 | M8/M10 |
+| Phase 7 Workflow/HITL恢复 | 阶段6 | M6/M7/MAF Workflow |
+| Phase 8 跨入口与治理 | 阶段7-8 | M1/M9/M10/M11/M12 |
+
+专项路线不能创造与总体架构冲突的对象或事实源；D1-D6 持久化方案只是阶段3中的子设计，需在总体架构和 Phase 0 合同通过后重新审核。
+
+## 15. 全程质量门
+
+每个阶段都必须满足：
+
+1. 文档、代码、Schema、事件和实际行为一致。
+2. 自动测试覆盖成功、失败、重复、并发和关键反例。
+3. MAF/AG-UI 关键路径有安装版合同测试和升级回归。
+4. 真实模型或 Agent 验证不能被 Mock 替代。
+5. 浏览器端到端、响应式和可访问性不能被 API 测试替代。
+6. 按能力注入断线、进程退出、超时、结果未知和恢复故障。
+7. 密钥、数据库、历史、日志和构建产物不进入 Git。
+8. 阶段完成必须列出已兑现和未兑现保证；用户价值审核不能被工程绿灯替代。

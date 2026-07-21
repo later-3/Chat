@@ -1,4 +1,4 @@
-"""FastAPI composition root for the self-developed OPC-OS Chat channel."""
+"""FastAPI composition root for the independent Chat product."""
 
 from __future__ import annotations
 
@@ -17,9 +17,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     resolved = settings or Settings.from_env()
     app = FastAPI(
-        title="OPC-OS Chat Channel",
+        title="Chat",
         version="0.1.0",
-        description="Self-developed Chat channel powered by MAF and AG-UI.",
+        description="Independent AI collaboration Chat product powered by MAF and AG-UI.",
     )
     app.state.settings = resolved
     app.add_middleware(
@@ -34,7 +34,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def health() -> dict[str, Any]:
         return {
             "status": "ok",
-            "service": "opc-os-chat-channel",
+            "service": "chat",
             "version": "0.1.0",
             "agent_framework": "microsoft-agent-framework",
             "protocol": "ag-ui",
