@@ -124,6 +124,13 @@ export function getSessionRuns(sessionId: string): Promise<ProductRun[]> {
   );
 }
 
+export function cancelSessionRun(sessionId: string, aguiRunId: string): Promise<ProductRun> {
+  return request<ProductRun>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/agui-runs/${encodeURIComponent(aguiRunId)}/cancel`,
+    { method: "POST" },
+  );
+}
+
 export function updateSession(
   sessionId: string,
   changes: {

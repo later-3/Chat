@@ -486,7 +486,7 @@ function App() {
               />
               {draft && status === "idle" && <button aria-label="清空输入" className="clear-draft-button" onClick={() => setDraft("")} type="button"><X size={17} /></button>}
               {status === "running"
-                ? <button aria-label="停止生成" className="send-button send-button--stop" onClick={stop} type="button"><CircleStop size={19} /></button>
+                ? <button aria-label="停止生成" className="send-button send-button--stop" onClick={() => void stop()} type="button"><CircleStop size={19} /></button>
                 : <button aria-label="发送" className="send-button" disabled={!draft.trim() || status !== "idle" || !activeSession} type="submit"><ArrowUp size={20} /></button>}
             </form>
             {retrySource && <div className="retry-context"><span>正在基于失败Run重新运行；修改Prompt会记录为Restart。</span><button onClick={() => setRetrySource(null)} type="button">取消关联</button></div>}

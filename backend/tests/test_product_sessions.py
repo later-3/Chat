@@ -347,6 +347,77 @@ def test_retry_rejects_modified_prompt_without_creating_run(tmp_path: Path) -> N
     asyncio.run(scenario())
 
 
+def test_cancel_is_exactly_bound_and_distinguishes_before_and_after_dispatch(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'cancel.db'}"
+
+    async def scenario() -> None:
+        service = ProductSessionService(ProductDatabase(database_url))
+        await service.initialize()
+        session = await service.create_session()
+        first = await service.prepare_agui_run(
+            _request(
+                session["id"],
+                "cancel-before-dispatch",
+                [{"id": "cancel-user-1", "role": "user", "content": "发送前取消"}],
+            )
+        )
+        await service.mark_waiting_approval(session["id"])
+        cancelled = await service.cancel_protocol_run(
+            session["id"], "cancel-before-dispatch"
+        )
+        assert cancelled["id"] == first.product_run_id
+        assert cancelled["status"] == "cancelled"
+        assert cancelled["failure_code"] == "user_cancelled_before_dispatch"
+
+        history = await service.list_messages(session["id"])
+        second = await service.prepare_agui_run(
+            _request(
+                session["id"],
+                "cancel-after-dispatch",
+                [
+                    {
+                        "id": value["agui_message_id"],
+                        "role": value["role"],
+                        "content": value["content"],
+                    }
+                    for value in history
+                ]
+                + [{"id": "cancel-user-2", "role": "user", "content": "发送后取消"}],
+            )
+        )
+        await service.mark_running(session["id"])
+        stale = await service.cancel_protocol_run(
+            session["id"], "cancel-before-dispatch"
+        )
+        assert stale["status"] == "cancelled"
+        active = await service.active_run(session["id"])
+        assert active is not None
+        assert active["id"] == second.product_run_id
+
+        unknown = await service.cancel_protocol_run(
+            session["id"], "cancel-after-dispatch"
+        )
+        assert unknown["id"] == second.product_run_id
+        assert unknown["status"] == "outcome_unknown"
+        assert unknown["failure_code"] == "user_cancelled_after_dispatch"
+        assert await service.active_run(session["id"]) is None
+        repeated = await service.cancel_protocol_run(
+            session["id"], "cancel-after-dispatch"
+        )
+        assert repeated["status"] == "outcome_unknown"
+        runs = await service.list_runs(session["id"])
+        assert [value["status"] for value in runs] == ["outcome_unknown", "cancelled"]
+        assert [value["attempts"][0]["status"] for value in runs] == [
+            "outcome_unknown",
+            "cancelled",
+        ]
+        await service.database.close()
+
+    asyncio.run(scenario())
+
+
 def test_concurrent_trace_writes_allocate_unique_monotonic_sequences(tmp_path: Path) -> None:
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'trace-concurrency.db'}"
 

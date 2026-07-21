@@ -3,7 +3,9 @@ import type { Interrupt, Message } from "@ag-ui/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  cancelSessionRun,
   sessionControlForwardedProps,
+  type ProductRun,
   type SessionRunControl,
 } from "./session-api.js";
 
@@ -246,6 +248,7 @@ export function useChatAgent({
   const pendingUserMessageId = useRef<string | null>(null);
   const messagesBeforePendingRun = useRef<Message[] | null>(null);
   const lastApprovedReview = useRef<ModelCallReviewCard | null>(null);
+  const activeAguiRunId = useRef<string | null>(null);
   const onSessionSettledRef = useRef(onSessionSettled);
 
   useEffect(() => {
@@ -325,6 +328,7 @@ export function useChatAgent({
         setDispatchRecovery(null);
         lastApprovedReview.current = null;
         setStatus("idle");
+        activeAguiRunId.current = null;
         pendingUserMessageId.current = null;
         messagesBeforePendingRun.current = null;
         onSessionSettledRef.current(true);
@@ -360,6 +364,8 @@ export function useChatAgent({
       if (!text || agent.isRunning || pendingReview) return;
 
       const messageId = crypto.randomUUID();
+      const runId = crypto.randomUUID();
+      activeAguiRunId.current = runId;
       messagesBeforePendingRun.current = cloneMessages(agent.messages);
       pendingUserMessageId.current = messageId;
       agent.addMessage({ id: messageId, role: "user", content: text });
@@ -369,7 +375,10 @@ export function useChatAgent({
 
       try {
         await agent.runAgent(
-          control ? { forwardedProps: sessionControlForwardedProps(control) } : undefined,
+          {
+            runId,
+            ...(control ? { forwardedProps: sessionControlForwardedProps(control) } : {}),
+          },
         );
       } catch (runError) {
         if (mounted.current) {
@@ -384,12 +393,15 @@ export function useChatAgent({
   const approve = useCallback(async () => {
     if (!pendingReview || agent.isRunning) return;
     const approvalId = pendingReview.approval_id;
+    const resumeRunId = crypto.randomUUID();
+    activeAguiRunId.current = resumeRunId;
     lastApprovedReview.current = pendingReview;
     setPendingReview(null);
     setStatus("running");
     setError(null);
     try {
       await agent.runAgent({
+        runId: resumeRunId,
         resume: [{ interruptId: approvalId, status: "resolved", payload: { decision: "approve" } }],
       });
     } catch (runError) {
@@ -477,22 +489,40 @@ export function useChatAgent({
     }
   }, [agent, pendingReview]);
 
-  const stop = useCallback(() => {
-    agent.abortRun();
+  const stop = useCallback(async () => {
+    const aguiRunId = activeAguiRunId.current;
     const review = lastApprovedReview.current;
-    if (review) {
+    let cancelledStatus: ProductRun["status"] | null = null;
+    if (sessionId && aguiRunId) {
+      try {
+        const cancelled = await cancelSessionRun(sessionId, aguiRunId);
+        cancelledStatus = cancelled.status;
+      } catch (cancelFailure) {
+        agent.abortRun();
+        setStatus("error");
+        setError(cancelFailure instanceof Error ? cancelFailure.message : "取消Run失败");
+        onSessionSettledRef.current(true);
+        return;
+      }
+    }
+    agent.abortRun();
+    activeAguiRunId.current = null;
+    if (cancelledStatus === "outcome_unknown" || review) {
       setDispatchRecovery({
-        draftId: review.draft_id,
+        draftId: review?.draft_id ?? "",
         status: "outcome_unknown",
         errorCode: "client_cancelled_during_dispatch",
         message: "已停止等待，但请求可能已经到达Provider，系统不会自动重试。",
-        originPrompt: review.origin_prompt,
+        originPrompt: review?.origin_prompt ?? "",
       });
       setStatus("error");
+      onSessionSettledRef.current(true);
       return;
     }
     setStatus("idle");
-  }, [agent]);
+    setError(null);
+    onSessionSettledRef.current(true);
+  }, [agent, sessionId]);
 
   const returnDispatchPrompt = useCallback((): string | null => {
     if (!dispatchRecovery) return null;

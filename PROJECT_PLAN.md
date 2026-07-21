@@ -61,7 +61,7 @@ flowchart LR
 | 0. 产品定义与治理 | 固定独立产品身份、6个问题、完整闭环和协作规则 | `产品身份已纠正；经验约束已补充` |
 | 1. 工程与真实链路 | 建立独立前后端、MAF、AG-UI、调试和验证基线 | `真实模型门通过；2项收尾` |
 | 2. 目标架构与合同基线 | 审核目标拓扑、模块、状态、合同、恢复矩阵 | `重写完成，待用户审核` |
-| 3. 产品事实与完成历史 | 身份、Session、Message、Run/Attempt和历史恢复 | `Phase 1文本底座与显式Retry/Restart完成；完整身份和树操作继续` |
+| 3. 产品事实与完成历史 | 身份、Session、Message、Run/Attempt和历史恢复 | `Phase 1文本底座、显式Retry/Restart和精确取消窄切片完成；完整身份和树操作继续` |
 | 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `未开始` |
 | 5. 持久执行与活动流 | Job/Event、Worker、Lease、重连和Reconciler | `未开始` |
 | 6. Tool、Workflow与HITL恢复 | Tool Ledger、对账、Checkpoint和持久Interrupt | `3个纵向种子完成；通用恢复能力未开始` |

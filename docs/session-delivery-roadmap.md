@@ -16,7 +16,7 @@
 |---|---|---:|---|---|
 | Phase 0 | 冻结语义、框架边界和恢复验收合同 | 5 | P0 | 已完成 |
 | Phase 1 | 已完成文本会话可耐久保存、重开和继续 | 8 | P0-P1 | 已完成文本会话底座 |
-| Phase 2 | Run可幂等、取消、重试、Steer和排队 | 7 | P0-P2 | 进行中；P2-03的Retry/Restart窄切片完成，Resume未完成 |
+| Phase 2 | Run可幂等、取消、重试、Steer和排队 | 7 | P0-P2 | 进行中；Retry/Restart与精确取消窄切片完成，Resume/Steer/Follow-up未完成 |
 | Phase 3 | 生命周期、分支、长上下文和可移植性完整 | 7 | P1-P2 | 未开始 |
 | Phase 4 | 浏览器断线、刷新和换设备可接回活动Run | 6 | P2-P3 | 未开始 |
 | Phase 5 | API/Worker退出后可安全接管或明确收敛 | 5 | P3 | 未开始 |
@@ -192,7 +192,9 @@ MAF核心Workflow确实支持持久Checkpoint和跨进程恢复，但当前`agen
 
 已完成P2-03中的显式Retry/Restart窄切片：失败、取消、中断或结果未知的Run可以发起带`retry_of_run_id`的新Run；原样Retry强制输入一致，修改后的请求记录为Restart，两者都创建独立Attempt并重新进入每次模型调用审批。失败输入仍保留为Product Message，但当前重试上下文排除整条祖先输入链，避免重复Prompt。真实浏览器已分别得到`SESSION_RETRY_OK`与`SESSION_RESTART_OK`。
 
-尚未完成Checkpoint语义的Resume，也未完成P2-01、P2-02、P2-04至P2-07的完整Run控制与竞态验收，因此Phase 2不能标记完成。
+P2-02已完成一个精确取消窄切片：前端为每次AG-UI请求显式生成`runId`，Product Store通过`RunProtocolRecord`只解析该映射并校验当前活动Run。Provider发送前取消收敛为`cancelled`，已进入发送阶段则保守标记`outcome_unknown`；取消与终态竞态时幂等返回目标Run已持久终态，旧runId不会影响后续Run。真实浏览器证明发送后停止不会补写伪Assistant成功。
+
+当前没有持久Model Call Attempt和Runtime Job，因此对“是否已离开本地进程”仍采取保守结果未知，不承诺Provider侧确已停止或可对账。Checkpoint语义的Resume、P2-04 Steer、P2-05 Follow-up、完整P2-01幂等和P2-06/P2-07竞态验收仍未完成，因此Phase 2不能标记完成。
 
 ## 7. Phase 3：完整Web会话、分支与长上下文
 

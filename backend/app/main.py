@@ -257,6 +257,15 @@ def create_app(
         except ProductSessionNotFound as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.post("/api/sessions/{session_id}/agui-runs/{agui_run_id}/cancel")
+    async def cancel_session_run(session_id: str, agui_run_id: str) -> dict[str, Any]:
+        try:
+            return await product_sessions.cancel_protocol_run(session_id, agui_run_id)
+        except ProductSessionNotFound as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ProductSessionConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
     @app.get("/api/sessions/{session_id}/runs/{run_id}/trace")
     async def run_trace(session_id: str, run_id: str) -> dict[str, Any]:
         try:

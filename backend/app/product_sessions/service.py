@@ -913,6 +913,74 @@ class ProductSessionService:
             run = await transaction.get(RunRecord, session.active_run_id)
             return _run_view(run) if run is not None else None
 
+    async def cancel_protocol_run(
+        self, session_id: str, agui_run_id: str
+    ) -> dict[str, Any]:
+        """Resolve an explicit user cancel against one exact AG-UI run mapping."""
+
+        async with self.database.sessions.begin() as transaction:
+            session = await self._session(transaction, session_id)
+            protocol = await transaction.scalar(
+                select(RunProtocolRecord).where(
+                    RunProtocolRecord.session_id == session_id,
+                    RunProtocolRecord.agui_run_id == agui_run_id,
+                )
+            )
+            if protocol is None:
+                raise ProductSessionNotFound("AG-UI Run映射不存在")
+            run = await transaction.get(RunRecord, protocol.product_run_id)
+            if run is None:
+                raise ProductSessionNotFound("Product Run不存在")
+            if run.status not in ACTIVE_RUN_STATUSES:
+                # A cancellation racing the normal finalization path is
+                # idempotent: report the exact target's durable terminal fact
+                # without touching whichever Run may now be active.
+                return _run_view(run)
+            if session.active_run_id != run.id:
+                raise ProductSessionConflict("目标Run不再是当前活动Run")
+
+            previous_status = run.status
+            before_dispatch = previous_status in {"accepted", "waiting_approval"}
+            status = "cancelled" if before_dispatch else "outcome_unknown"
+            failure_code = (
+                "user_cancelled_before_dispatch"
+                if before_dispatch
+                else "user_cancelled_after_dispatch"
+            )
+            failure_message = (
+                "用户在Provider发送前取消了Run。"
+                if before_dispatch
+                else "用户停止等待，但请求可能已经到达Provider，结果需要人工确认。"
+            )
+            run.status = status
+            run.failure_code = failure_code
+            run.failure_message = failure_message
+            run.finished_at = utc_now()
+            await self._finish_attempt(
+                transaction,
+                run,
+                status=status,
+                failure_code=failure_code,
+                failure_message=failure_message,
+            )
+            interaction = await transaction.get(InteractionRecord, run.interaction_id)
+            if interaction is not None:
+                interaction.status = status
+                interaction.updated_at = utc_now()
+            session.active_run_id = None
+            session.updated_at = utc_now()
+            await self._trace(
+                transaction,
+                run,
+                f"run.{status}",
+                {
+                    "reason": failure_code,
+                    "agui_run_id": agui_run_id,
+                    "previous_status": previous_status,
+                },
+            )
+        return _run_view(run)
+
     async def reconcile_orphaned_runs(self) -> int:
         async with self.database.sessions.begin() as transaction:
             runs = list(
