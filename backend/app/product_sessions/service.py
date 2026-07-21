@@ -183,6 +183,18 @@ def _run_view(value: RunRecord, attempts: list[RunAttemptRecord] | None = None) 
     }
 
 
+def _trace_view(value: TraceRecord) -> dict[str, Any]:
+    return {
+        "id": value.id,
+        "session_id": value.session_id,
+        "run_id": value.run_id,
+        "sequence": value.sequence,
+        "event_type": value.event_type,
+        "payload": value.payload,
+        "created_at": _iso(value.created_at),
+    }
+
+
 class ProductSessionService:
     """Apply Session/Interaction/Message/Run invariants in short transactions."""
 
@@ -300,6 +312,94 @@ class ProductSessionService:
             attempts_by_run.setdefault(attempt.run_id, []).append(attempt)
         return [_run_view(value, attempts_by_run.get(value.id)) for value in values]
 
+    async def list_trace(self, session_id: str, run_id: str) -> list[dict[str, Any]]:
+        async with self.database.sessions() as transaction:
+            await self._session(transaction, session_id)
+            run = await transaction.scalar(
+                select(RunRecord).where(
+                    RunRecord.id == run_id,
+                    RunRecord.session_id == session_id,
+                )
+            )
+            if run is None:
+                raise ProductSessionNotFound("Product Run不存在")
+            values = list(
+                (
+                    await transaction.scalars(
+                        select(TraceRecord)
+                        .where(
+                            TraceRecord.session_id == session_id,
+                            TraceRecord.run_id == run_id,
+                        )
+                        .order_by(TraceRecord.sequence)
+                    )
+                ).all()
+            )
+        return [_trace_view(value) for value in values]
+
+    async def latest_workflow_trace(
+        self, session_id: str, workflow_id: str
+    ) -> list[dict[str, Any]]:
+        """Return the newest completed or failed projection for one workflow."""
+
+        async with self.database.sessions() as transaction:
+            await self._session(transaction, session_id)
+            starts = list(
+                (
+                    await transaction.scalars(
+                        select(TraceRecord)
+                        .where(
+                            TraceRecord.session_id == session_id,
+                            TraceRecord.event_type == "workflow.started",
+                        )
+                        .order_by(TraceRecord.created_at.desc())
+                    )
+                ).all()
+            )
+            latest = next(
+                (
+                    value
+                    for value in starts
+                    if isinstance(value.payload, dict)
+                    and value.payload.get("workflow_id") == workflow_id
+                ),
+                None,
+            )
+            if latest is None or latest.run_id is None:
+                return []
+            values = list(
+                (
+                    await transaction.scalars(
+                        select(TraceRecord)
+                        .where(
+                            TraceRecord.session_id == session_id,
+                            TraceRecord.run_id == latest.run_id,
+                        )
+                        .order_by(TraceRecord.sequence)
+                    )
+                ).all()
+            )
+        return [_trace_view(value) for value in values]
+
+    async def record_trace(
+        self,
+        session_id: str,
+        run_id: str,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> None:
+        async with self.database.sessions.begin() as transaction:
+            await self._session(transaction, session_id)
+            run = await transaction.scalar(
+                select(RunRecord).where(
+                    RunRecord.id == run_id,
+                    RunRecord.session_id == session_id,
+                )
+            )
+            if run is None:
+                raise ProductSessionNotFound("Product Run不存在")
+            await self._trace(transaction, run, event_type, payload)
+
     async def prepare_agui_run(self, input_data: dict[str, Any]) -> AcceptedRun:
         session_id = str(input_data.get("thread_id") or input_data.get("threadId") or "")
         agui_run_id = str(input_data.get("run_id") or input_data.get("runId") or "")
@@ -388,6 +488,14 @@ class ProductSessionService:
                 raise SessionHistoryConflict("新消息必须是非空User消息")
             if any(value.agui_message_id == current["id"] for value in persisted):
                 raise SessionHistoryConflict("新消息ID不能复用已有Product Message映射")
+            # Withdrawn messages remain durable audit facts but are intentionally
+            # absent from the client-visible history. Ordinals therefore advance
+            # over every stored message, not only the committed history prefix.
+            current_ordinal = await transaction.scalar(
+                select(func.max(MessageRecord.ordinal)).where(
+                    MessageRecord.session_id == session_id
+                )
+            )
 
             interaction_id = _uuid()
             product_run_id = _uuid()
@@ -469,7 +577,7 @@ class ProductSessionService:
                     role="user",
                     content=current["text"],
                     content_hash=_hash(current["text"]),
-                    ordinal=len(persisted) + 1,
+                    ordinal=int(current_ordinal or 0) + 1,
                     revision=next_revision,
                 )
             )

@@ -801,6 +801,30 @@ def test_abandon_creates_zero_provider_attempts_and_preserves_origin_prompt() ->
         product_runs = client.get(f"/api/sessions/{thread_id}/runs").json()["runs"]
         product_session = client.get(f"/api/sessions/{thread_id}").json()
 
+        workflow_events = _events(
+            client.post(
+                "/api/workflows/nested-quality-demo/run",
+                json={
+                    "threadId": thread_id,
+                    "runId": "workflow-after-abandon",
+                    "state": {},
+                    "messages": [
+                        {
+                            "id": "workflow-user-after-abandon",
+                            "role": "user",
+                            "content": "放弃模型审批后运行Workflow",
+                        }
+                    ],
+                    "tools": [],
+                    "context": [],
+                    "forwardedProps": {},
+                },
+            )
+        )
+        messages_after_workflow = client.get(
+            f"/api/sessions/{thread_id}/messages"
+        ).json()["messages"]
+
     assert "未向模型发送" in _text(abandoned)
     event_types = [event.get("type") for event in abandoned]
     assert event_types.index("TEXT_MESSAGE_END") < event_types.index("RUN_FINISHED")
@@ -810,6 +834,9 @@ def test_abandon_creates_zero_provider_attempts_and_preserves_origin_prompt() ->
     assert product_messages == []
     assert product_runs[0]["status"] == "abandoned"
     assert product_session["active_run_id"] is None
+    assert workflow_events[-1]["type"] == "RUN_FINISHED"
+    assert [value["role"] for value in messages_after_workflow] == ["user", "assistant"]
+    assert [value["ordinal"] for value in messages_after_workflow] == [2, 3]
 
 
 def test_second_model_approval_uses_product_history_exactly_once() -> None:

@@ -476,7 +476,6 @@ def _initial_context_sources(provider_request: Mapping[str, Any]) -> tuple[dict[
     )
     sources: list[dict[str, Any]] = []
     for index in range(len(request_input)):
-        item = request_input[index]
         instructions = index == instruction_index
         current = index == last_user_index
         sources.append(

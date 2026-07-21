@@ -8,10 +8,12 @@ import {
   CircleStop,
   Info,
   Menu,
+  MessagesSquare,
   MessageSquarePlus,
   Settings2,
   Sparkles,
   UserRound,
+  Workflow as WorkflowIcon,
   X,
 } from "lucide-react";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -31,6 +33,8 @@ import {
 } from "./session-api";
 import { useChatAgent } from "./use-chat-agent";
 import { useUiStore } from "./ui-store";
+import { listWorkflows, type WorkflowDefinition } from "./workflow-api";
+import { WorkflowPage } from "./workflow-page";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8030";
 
@@ -112,6 +116,9 @@ function App() {
   const [settingsProvider, setSettingsProvider] = useState("");
   const [settingsModel, setSettingsModel] = useState("");
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [activeView, setActiveView] = useState<"chat" | "workflows">("chat");
+  const [workflowDefinitions, setWorkflowDefinitions] = useState<WorkflowDefinition[]>([]);
+  const [workflowRunning, setWorkflowRunning] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const systemDialogOpen = useUiStore((state) => state.systemDialogOpen);
   const setSystemDialogOpen = useUiStore((state) => state.setSystemDialogOpen);
@@ -195,12 +202,14 @@ function App() {
         if (!response.ok) throw new Error("provider catalog failed");
         return response.json() as Promise<ProviderCatalogResponse>;
       }),
+      listWorkflows(),
     ])
-      .then(([healthValue, catalog]) => {
+      .then(([healthValue, catalog, workflows]) => {
         setHealth(healthValue);
         setProviders(catalog.providers);
         setDefaultProviderId(catalog.default_provider_id);
         setDefaultModel(catalog.default_model);
+        setWorkflowDefinitions(workflows);
         setHealthError(false);
       })
       .catch((fetchError: unknown) => {
@@ -236,7 +245,7 @@ function App() {
   }, [messages, status]);
 
   const createNewConversation = async () => {
-    if (status !== "idle") return;
+    if (status !== "idle" || workflowRunning) return;
     setDraft("");
     setSessionLoading(true);
     try {
@@ -250,13 +259,13 @@ function App() {
   };
 
   const openSession = (sessionId: string) => {
-    if (status !== "idle" || sessionId === activeSession?.id) return;
+    if (status !== "idle" || workflowRunning || sessionId === activeSession?.id) return;
     setDraft("");
     void hydrateSession(sessionId);
   };
 
   const openSessionSettings = () => {
-    if (!activeSession) return;
+    if (!activeSession || workflowRunning) return;
     setSettingsTitle(activeSession.title);
     setSettingsProvider(activeSession.model_provider_id ?? "");
     setSettingsModel(activeSession.model ?? "");
@@ -293,7 +302,7 @@ function App() {
   };
 
   const archiveActiveSession = async () => {
-    if (!activeSession || status !== "idle") return;
+    if (!activeSession || status !== "idle" || workflowRunning) return;
     setSettingsSaving(true);
     try {
       await updateSession(activeSession.id, { archived: true });
@@ -327,6 +336,7 @@ function App() {
   const runtimeLabel = health?.runtime_mode === "model" ? health.model : "确定性启动 Agent";
   const busy = status === "running" || status === "saving";
   const latestRun = activeRuns[0] ?? null;
+  const interactionBusy = status !== "idle" || workflowRunning;
 
   return (
     <div className="app-shell">
@@ -336,11 +346,15 @@ function App() {
           <span className="brand-mark"><Bot size={19} /></span>
           <div><p className="brand-name">Chat</p><p className="brand-subtitle">AI 协作产品</p></div>
         </div>
+        <nav className="app-nav" aria-label="产品功能">
+          <button className={activeView === "chat" ? "active" : ""} disabled={workflowRunning} onClick={() => setActiveView("chat")} type="button"><MessagesSquare size={15} />对话</button>
+          <button className={activeView === "workflows" ? "active" : ""} disabled={status !== "idle"} onClick={() => setActiveView("workflows")} type="button"><WorkflowIcon size={15} />工作流</button>
+        </nav>
         <div className="topbar-actions">
-          <button className="icon-button labeled-on-wide" disabled={status !== "idle"} onClick={() => void createNewConversation()} type="button">
+          <button className="icon-button labeled-on-wide" disabled={interactionBusy} onClick={() => void createNewConversation()} type="button">
             <MessageSquarePlus size={17} /><span>新对话</span>
           </button>
-          <button aria-label="会话设置" className="icon-button" disabled={!activeSession} onClick={openSessionSettings} type="button"><Settings2 size={18} /></button>
+          <button aria-label="会话设置" className="icon-button" disabled={!activeSession || workflowRunning} onClick={openSessionSettings} type="button"><Settings2 size={18} /></button>
           <button aria-label="查看系统信息" className="icon-button" onClick={() => setSystemDialogOpen(true)} type="button"><Info size={18} /></button>
         </div>
       </header>
@@ -350,13 +364,13 @@ function App() {
         <aside className={`session-sidebar ${sidebarOpen ? "session-sidebar--open" : ""}`} aria-label="会话列表">
           <div className="session-sidebar-heading">
             <div><span>PRODUCT SESSIONS</span><strong>会话</strong></div>
-            <button aria-label="创建会话" disabled={status !== "idle"} onClick={() => void createNewConversation()} type="button"><MessageSquarePlus size={16} /></button>
+            <button aria-label="创建会话" disabled={interactionBusy} onClick={() => void createNewConversation()} type="button"><MessageSquarePlus size={16} /></button>
           </div>
           <div className="session-list">
             {sessions.map((session) => (
               <button
                 className={`session-item ${session.id === activeSession?.id ? "session-item--active" : ""}`}
-                disabled={status !== "idle" && session.id !== activeSession?.id}
+                disabled={interactionBusy && session.id !== activeSession?.id}
                 key={session.id}
                 onClick={() => openSession(session.id)}
                 type="button"
@@ -373,7 +387,7 @@ function App() {
           </div>
         </aside>
 
-        <main className="chat-layout">
+        {activeView === "chat" ? <main className="chat-layout">
           <div className="conversation-header">
             <div><strong>{activeSession?.title ?? "正在加载会话"}</strong><span>{activeSession ? `Revision ${activeSession.revision} · ${activeSession.channel.toUpperCase()}` : "Product Store"}</span></div>
             {latestRun && <span className={`run-badge run-badge--${latestRun.status}`}>{runLabel(latestRun.status)}</span>}
@@ -432,7 +446,17 @@ function App() {
             </form>
             <p className="composer-note">Enter 发送 · 服务端历史恢复 · 每次模型调用发送前确认</p>
           </div>
-        </main>
+        </main> : (
+          <WorkflowPage
+            blocked={status !== "idle"}
+            definitions={workflowDefinitions}
+            hydratedMessages={hydratedMessages}
+            hydrationVersion={hydrationVersion}
+            onRunningChange={setWorkflowRunning}
+            onSessionSettled={refreshActiveSession}
+            session={activeSession}
+          />
+        )}
       </div>
 
       {pendingReview && (
@@ -465,7 +489,7 @@ function App() {
               <div><dt>最近Run</dt><dd>{latestRun ? `${runLabel(latestRun.status)} · ${latestRun.attempts.length}次尝试` : "尚无"}</dd></div>
             </dl>
             <div className="settings-actions">
-              <button className="archive-button" disabled={settingsSaving || status !== "idle"} onClick={() => void archiveActiveSession()} type="button"><Archive size={15} />归档会话</button>
+              <button className="archive-button" disabled={settingsSaving || interactionBusy} onClick={() => void archiveActiveSession()} type="button"><Archive size={15} />归档会话</button>
               <button className="save-settings-button" disabled={settingsSaving || !settingsTitle.trim()} onClick={() => void saveSessionSettings()} type="button">{settingsSaving ? "保存中…" : "保存设置"}</button>
             </div>
             <Dialog.Close asChild><button aria-label="关闭" className="dialog-close" type="button"><X size={18} /></button></Dialog.Close>

@@ -27,6 +27,12 @@ from .product_sessions.service import (
     ProductSessionConflict,
     ProductSessionNotFound,
 )
+from .workflows import (
+    NESTED_QUALITY_WORKFLOW,
+    ProductAwareWorkflow,
+    create_nested_quality_workflow,
+    workflow_catalog_view,
+)
 
 
 class ReviseModelCallDraftRequest(BaseModel):
@@ -182,6 +188,28 @@ def create_app(
         except ProductSessionNotFound as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/sessions/{session_id}/runs/{run_id}/trace")
+    async def run_trace(session_id: str, run_id: str) -> dict[str, Any]:
+        try:
+            return {"trace": await product_sessions.list_trace(session_id, run_id)}
+        except ProductSessionNotFound as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/sessions/{session_id}/workflows/{workflow_id}/latest-trace")
+    async def latest_workflow_trace(session_id: str, workflow_id: str) -> dict[str, Any]:
+        try:
+            return {
+                "trace": await product_sessions.latest_workflow_trace(
+                    session_id, workflow_id
+                )
+            }
+        except ProductSessionNotFound as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/api/workflows")
+    async def workflows() -> dict[str, Any]:
+        return {"workflows": workflow_catalog_view()}
+
     @app.get("/api/model-call-drafts/{draft_id}")
     async def get_model_call_draft(draft_id: str) -> dict[str, Any]:
         try:
@@ -255,6 +283,19 @@ def create_app(
         "/api/agent",
         allow_origins=list(resolved.frontend_origins),
         tags=["agent"],
+    )
+    visible_workflow = ProductAwareWorkflow(
+        workflow_factory=lambda _: create_nested_quality_workflow(),
+        sessions=product_sessions,
+        definition=NESTED_QUALITY_WORKFLOW,
+    )
+    app.state.visible_workflow = visible_workflow
+    add_agent_framework_fastapi_endpoint(
+        app,
+        visible_workflow,
+        NESTED_QUALITY_WORKFLOW.endpoint,
+        allow_origins=list(resolved.frontend_origins),
+        tags=["workflows"],
     )
     return app
 

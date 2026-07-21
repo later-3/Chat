@@ -15,7 +15,7 @@ from ag_ui.core import (
     TextMessageContentEvent,
     TextMessageStartEvent,
 )
-from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler, response_handler
+from agent_framework import Executor, WorkflowBuilder, handler, response_handler
 from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 from agent_framework_ag_ui import AgentFrameworkWorkflow
 

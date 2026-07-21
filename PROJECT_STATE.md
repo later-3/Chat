@@ -6,7 +6,7 @@
 |---|---|
 | 产品身份 | 独立开发、独立运行、独立运营并持续演进的完整 Chat 产品 |
 | 当前目录 | `/Users/xulater/Code/Chat` |
-| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、双协议逐次模型审批，以及Product Session R0/R1文本会话底座已完成 |
+| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、双协议逐次模型审批、Product Session R0/R1文本会话底座，以及嵌套Workflow实时/恢复可视化种子已完成 |
 | 设计状态 | 总体架构已按完整用户场景重写；用户已要求按既有规划继续实现Session、Workflow、多Agent和pi-agent接入，各阶段仍需按恢复保证分别验证 |
 | Session 状态 | 9个能力域、74项能力、R0-R6和Phase 0-8路线已批准；Phase 0与Phase 1文本底座完成，R2-R6仍按后续阶段交付 |
 | 数据状态 | Product Store Schema与3个Alembic迁移已建立；只包含本项目新会话，没有迁移旧数据库、旧历史或旧项目配置 |
@@ -73,6 +73,9 @@
 - [x] 完成Product Session Phase 1文本底座：SQLite Product Store、Alembic迁移、Session/Message/Interaction/Run/Attempt/协议ID映射/Trace、REST恢复、服务端唯一历史、终态提交门和启动中断收敛。
 - [x] 完成Session前端入口：会话列表、新建/打开、刷新恢复、标题、归档、Provider/模型默认配置、Run状态与Attempt摘要；浏览器已完成双轮真实模型、刷新、配置切换和放弃交叉验证。
 - [x] D3按已批准的确定性审批Workflow做窄适配：当前由ProductSessionService在Workflow入口唯一装配历史；普通MAF Agent未来才启用ProductHistoryProvider，两条路径禁止同时加载。
+- [x] 完成Workflow可视化种子：注册表描述8个异构节点和两层嵌套关系；MAF原生子Workflow通过窄`VisibleWorkflowExecutor`转发内部生命周期，AG-UI继续使用标准Step/Activity事件，前端按稳定节点ID原位投影实时进度。
+- [x] Workflow复用Product Session、Product Run/Attempt和产品提交门；成功结果进入权威消息历史，失败保留User事实且不生成假Assistant成功，刷新从脱敏Product Trace恢复最近节点终态。
+- [x] Workflow浏览器已验证实时中态、8节点成功、3层失败传播、刷新恢复、Chat历史交叉投影和371px窄屏；同时修复审批放弃留下withdrawn审计消息后，新Run按可见消息数量分配ordinal导致冲突的问题，并增加跨Feature回归用例。
 
 ## 4. 已完成的工程与研究证据
 
@@ -88,8 +91,8 @@
 
 ### 4.2 已有验证
 
-1. 当前工作区后端40个测试通过，覆盖工程基线、JSON配置、审批合同、双协议、能力校验、精确发送、Session迁移/恢复/并发/幂等、失败/超时/取消、Product提交门和AG-UI终态顺序。
-2. 前端10个逻辑测试、类型检查和生产构建通过；最新`npm install --package-lock-only`审计122个包，0个已知漏洞。
+1. 当前工作区后端44个测试通过，覆盖工程基线、JSON配置、审批合同、双协议、能力校验、精确发送、Session迁移/恢复/并发/幂等、失败/超时/取消、Product提交门、嵌套Workflow事件、Trace和AG-UI终态顺序。
+2. 前端13个逻辑测试、类型检查和生产构建通过；最新`npm install --package-lock-only`审计122个包，0个已知漏洞。
 3. 浏览器完成Provider/模型联动、固定Key/类型化Value编辑、Role与内容类型同步、双视图同源、跨协议转换、修改后二次审批、放弃恢复，以及Session对话页/会话抽屉/设置弹窗窄屏回归；371px有效宽度无横向溢出。
 4. 火山方舟Responses与阿里云百炼Chat Completions各完成1次真实模型审批回合；后者核对最终Body仅含`model/messages/tools/store/stream`并返回预期文本。
 5. 清理脚本已验证可分别终止端口8030的Uvicorn和5073的Vite，清理后无监听残留。
@@ -146,9 +149,11 @@
 10. 安全、容量、SLO、数据保留和灾难恢复的数值目标尚待产品审核。
 11. Chat原生Channel Adapter内置部署、独立Adapter进程和由OPC-OS Chat托管渠道是3种物理选择；逻辑上均必须经过Interaction Ingress，具体采用范围待架构审核和外部合同确认。
 12. 安装版`agent-framework-ag-ui==1.0.0rc8`的Workflow桥可能在关闭文本或诊断事件前产生`RUN_FINISHED`/`RUN_ERROR`；当前薄Wrapper把终态缓冲到事件流最后并有合同测试，依赖升级时必须重新验证并尽量移除兼容层。
+13. 安装版MAF原生`WorkflowExecutor`不向外层观察者展开子图内部生命周期；当前`VisibleWorkflowExecutor`只做单进程嵌套事件转发且明确拒绝子级HITL，不代表Checkpoint、跨进程或R6恢复已经实现。
 
 ## 7. 当前开发门
 
 1. Session Phase 1只证明R0/R1文本恢复；后续任务不得把它外推成活动流、Worker、Tool或Workflow/HITL恢复。
-2. 下一Feature进入Workflow可视化时，必须复用Product Session/Run/Attempt与标准MAF/AG-UI事件，不另建前端权威运行状态。
-3. 多Agent和pi-agent工具接入前分别完成MAF原生Workflow/Agent合同与pi源码集成方式验证；每次真实Provider调用仍经过逐次审批。
+2. Workflow可视化种子只兑现运行中投影和完成Trace恢复；后续Checkpoint/HITL不得复用这份Trace冒充运行恢复。
+3. 下一Feature进入多Agent前必须完成MAF Agent-as-Executor、会话传递和逐次模型调用审批合同验证；前端配置不能直接成为运行时授权。
+4. pi-agent工具接入前完成其源码集成方式验证；每次真实Provider调用仍经过逐次审批。
