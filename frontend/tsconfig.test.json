@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": ".test-dist",
+    "rootDir": ".",
+    "tsBuildInfoFile": ".test-dist/tsconfig.test.tsbuildinfo",
+    "types": ["vite/client", "node"]
+  },
+  "include": ["src/model-call-review-logic.ts", "src/use-chat-agent.ts", "tests/**/*.ts"]
+}

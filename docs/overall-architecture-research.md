@@ -1,379 +1,455 @@
-# Chat 总体架构研究与证据
+# Chat 总体架构源码研究与推导
 
-> 状态：`研究修订完成，供总体架构候选审核`
->
-> 日期：2026-07-21
->
-> 研究对象：独立运行和持续运营的完整 Chat 产品
->
-> 方案入口：[Chat 总体架构候选](./overall-architecture-proposal.md)
+> 状态：待用户审核
+> 更新日期：2026-07-21
+> 研究对象：pi、nanobot、QwenPaw、LibreChat，以及已批准的 MAF + AG-UI 技术路线
+> 目的：从参考项目的真实模块和调用关系出发，推导 Chat 的架构与模块；本文不进行 Schema 和代码详细设计。
 
-## 1. 修订说明：上一份推导哪里错了
+## 1. 研究纪律
 
-上一份研究采集到的多数源码事实仍有效，但从事实到架构的推导犯了两个错误：
+这次推导遵守 5 条限制：
 
-1. 用“当前是单用户、本地运行、只有 Hello World”决定架构应该考虑多少能力，把交付进度偷换成目标架构范围。
-2. 因为 Chat 能与 OPC-OS Chat 互操作，就把它写成从属于某个“上位系统”的通道，混淆了产品身份和外部集成角色。
+1. 参考项目事实必须能落到固定提交中的源码文件、类型或调用链。
+2. “参考项目采用了什么”和“Chat 应该怎么做”分开陈述，不能把设计建议冒充源码事实。
+3. 参考项目没有覆盖 Intent、Work、Approval、Evidence、Delivery 等问题时，明确写“未覆盖”，再由本项目需求补足。
+4. 不使用“数据平面、知识平面、控制中心”之类不能决定代码边界、状态所有权和调用合同的抽象。
+5. 目标架构按完整用户场景设计；交付阶段只能决定实现顺序，不能缩小模块责任。
 
-由此产生的“同进程执行、以后再抽 Worker”“Outcome 暂时合并”“未来才考虑可靠运行”等表述，会让关键组件只成为可选占位，而不是完整用户场景必需的系统能力。
+证据等级：
 
-本次修订保留经过版本和源码核对的证据，废止上述推导方式。新的研究顺序是：
+| 等级 | 含义 | 可用于什么 |
+|---|---|---|
+| S1 | 固定提交中的源码、类型、测试或配置 | 证明参考项目当前实现 |
+| S2 | 参考项目仓库内说明与注释 | 辅助解释意图，不能覆盖源码 |
+| P1 | Chat 已批准的产品问题、对象和技术路线 | 决定本项目必须具备的能力 |
+| D1 | 基于 S1 + P1 得出的架构决策 | 本轮待审核内容，不冒充参考项目事实 |
 
-```text
-完整用户场景
--> 用户需要的产品保证
--> 状态、故障域和一致性边界
--> 逻辑模块与进程角色
--> 用MAF/pi/nanobot/LibreChat验证边界和代价
--> 形成目标架构
--> 最后才讨论交付顺序
+## 2. 固定版本和知识记录
+
+| 项目 | 固定提交 | 本次使用范围 | 完整知识记录 |
+|---|---|---|---|
+| pi | `2b00dade7cec918aefb025c8b7a4fa304a30acdd` | Provider、通用 Agent Loop、产品 AgentSession、资源、Session 树、入口模式 | `/Users/xulater/Code/opc-os/agent_knowledge/project-studies/pi/架构与模块边界源码研究.md` |
+| nanobot | `2c789767280482f38667044f8a3be5102c71dd26` | Channel、Bus、AgentLoop、AgentRunner、Tool、Session、Memory、Gateway | `/Users/xulater/Code/opc-os/agent_knowledge/project-studies/nanobot/架构与模块边界源码研究.md` |
+| QwenPaw | `2134427584c2657bb717bb083a120f2de011d047` | Web Console、ConsoleChannel、外部Channel Adapter、统一队列、AgentRequest、Workspace/Runtime | `/Users/xulater/Code/opc-os/agent_knowledge/project-studies/qwenpaw/Web与Channel入口拓扑源码研究.md` |
+| LibreChat | `8e5ef1fb31e9d63b735c089b21cbc82c50acce46` | Web App、产品 API、Conversation/Message、活动 Generation Job、事件订阅 | `/Users/xulater/Code/opc-os/agent_knowledge/project-studies/librechat/Web-Chat整体架构与模块边界源码研究.md` |
+| MAF | 本地源码 `9c4cd...`；安装版 core `1.11.0`、openai `1.10.1`、ag-ui `1.0.0rc8` | AgentSession、History Provider、Workflow Checkpoint、AG-UI 接入约束 | `/Users/xulater/Code/opc-os/agent_knowledge` 中既有 MAF 专项记录 |
+
+源码检索没有在上述4个参考项目的固定提交中发现AG-UI依赖或协议标识。因此，它们只能为产品、入口、运行和持久化边界提供参考；不能拿它们替AG-UI的具体事件合同背书。
+
+### 2.1 MAF安装版的Agent对象事实
+
+为避免把`Agent`当成整个Chat后端，本轮又直接核对了目标项目`.venv`中的安装版源码：
+
+| 安装版事实 | 证据 | 对Chat对象边界的含义 |
+|---|---|---|
+| `Agent`构造器组合Client、Instructions、Tools、Default Options、Context Providers、Middleware、Compaction Strategy和Tokenizer | `.venv/lib/python3.12/site-packages/agent_framework/_agents.py:1686`起 | Agent是运行时组合对象，不拥有Product Session、Work、Approval、Evidence或Delivery |
+| `Agent.run()`接收Messages、`AgentSession`、本次Tools/Options/Middleware等运行输入，可流式返回`AgentResponseUpdate` | 同文件`Agent.run()`重载与实现 | Product Run必须在Agent调用之外建立，MAF响应也要经过产品Finalization |
+| `AgentSession`只保存`session_id`、可选`service_session_id`和可序列化`state`；Provider实例属于Agent | `.venv/lib/python3.12/site-packages/agent_framework/_sessions.py:913`起 | 它是轻量运行状态容器，不是用户会话、授权或产品历史 |
+| `ContextProvider.before_run/after_run`可加入消息、指令、工具和中间件；`HistoryProvider`是其历史专用子类 | 同文件`:364`与`:426`起 | ContextPackage可以投影给MAF，但Product History不能被History Provider替代 |
+| `WorkflowBuilder`接受Executor/Agent和Checkpoint Storage；Workflow是Agent外的控制图 | 安装版`_workflows/_workflow_builder.py`和当前`backend/app/model_call_workflow.py` | 审批、分支和恢复控制流可包住Agent，不能称为Agent内部字段 |
+| AG-UI包提供Agent/Workflow包装、FastAPI端点、事件转换和Thread Snapshot | 安装版`agent_framework_ag_ui`包及其`AGENTS.md` | AG-UI是Agent外的协议适配层，不拥有产品资源或授权 |
+
+这些是安装版事实。下面pi、nanobot、QwenPaw与LibreChat仍只用于补充产品协调、入口、会话和运行工程经验，不能替MAF API背书。
+
+### 2.2 当前纵向切片的点击到模型往返证据
+
+为了让目标架构不是脱离现状的方框，本轮按用户实际点击还原了当前代码链：
+
+| 当前代码事实 | 直接证据 | 能证明什么 | 不能证明什么 |
+|---|---|---|---|
+| 表单`submit`清空本地草稿并调用`send(text)` | `frontend/src/App.tsx`的`submit` | 用户动作怎样进入AG-UI Client | 输入已经服务端持久化 |
+| `send`先向`HttpAgent`加入User Message，再调用`runAgent()` | `frontend/src/use-chat-agent.ts` | 前端Message投影与运行触发 | Product Message已经建立 |
+| FastAPI通过MAF的`add_agent_framework_fastapi_endpoint`暴露`POST /api/agent` | `backend/app/main.py` | 当前AG-UI协议终点 | Identity、Ingress和领域提交门已存在 |
+| 模型模式装配`AgentFrameworkWorkflow`与`ModelCallApprovalExecutor` | `backend/app/model_call_workflow.py` | MAF原生Workflow承载Interrupt/Resume | 当前主链直接调用MAF `Agent.run()` |
+| `prepare`过滤审批协议消息，Store编译Canonical Provider Body与Hash，再`request_info`暂停 | `model_call_workflow.py`、`model_call_review.py` | 可见请求、Hash和待发bytes同源 | 草稿/Approval已持久化到Product Store |
+| 前端收到Interrupt后显示审核卡片；批准使用AG-UI Resume | `use-chat-agent.ts`、`model-call-review.tsx` | 用户点击批准如何恢复Workflow | 跨进程持久恢复已经实现 |
+| `resolve`唯一领取内存Attempt，`ExactProviderTransport`原样发送bytes | `model_call_workflow.py`、`model_call_review.py` | 纵向切片的精确发送与零重复原则 | 正式Worker Lease和Product Run状态机 |
+| `_provider_text`从Provider SSE/JSON提取文本，Workflow输出再由MAF AG-UI端点编码为SSE | `model_call_review.py`及安装版`agent_framework_ag_ui/_endpoint.py` | Provider文本怎样回到AG-UI事件 | Tool Call、结构化候选、Evidence和Finalization完整解析 |
+| `HttpAgent`订阅Message变化，`MessageBubble`渲染文本 | `use-chat-agent.ts`、`App.tsx` | AG-UI事件怎样显示到React | 刷新后的服务端历史恢复 |
+
+因此目标主链应保留已验证的`HttpAgent → AG-UI Endpoint → MAF Workflow → Model Call Gateway → Provider → AG-UI`脊柱，在其前后补齐产品接纳、Store、Tool治理、候选解析、Finalization和Delivery，而不是再建另一条并行Agent协议。
+
+## 3. pi：通用运行内核与具体产品协调分开
+
+### 3.1 源码中的模块关系
+
+```mermaid
+flowchart LR
+    Modes["Interactive / Print / RPC"]
+    SDK["createAgentSession 组合根"]
+    Product["AgentSession 产品协调"]
+    Resources["ResourceLoader / Extensions"]
+    Sessions["SessionManager JSONL 树"]
+    Agent["pi-agent-core Agent"]
+    Loop["agent-loop"]
+    AI["pi-ai Provider / Stream"]
+    Tools["Tools"]
+
+    Modes --> SDK --> Product
+    Product --> Resources
+    Product --> Sessions
+    Product --> Agent --> Loop
+    Loop --> AI
+    Loop --> Tools
+    Agent --> Product
 ```
 
-这次反例与强制检查已经写入根目录`PROJECT_LESSONS.md`。
+### 3.2 直接源码事实
 
-## 2. 研究问题
+| 事实 | S1 证据 | 对模块边界的含义 |
+|---|---|---|
+| `pi-ai`统一模型和流式合同 | `packages/ai/src/index.ts`、`types.ts` | Provider 差异没有进入产品 Session 代码 |
+| `pi-agent-core`包含`Agent`与`agent-loop` | `packages/agent/src/agent.ts`、`agent-loop.ts` | 模型/Tool迭代可以作为不拥有产品历史的运行内核 |
+| `createAgentSession`装配具体产品依赖 | `packages/coding-agent/src/core/sdk.ts` | 组合根负责创建对象，不等于业务模块 |
+| `AgentSession`连接资源、Session、事件和Agent | `packages/coding-agent/src/core/agent-session.ts` | 产品回合协调位于通用Agent内核之外 |
+| `message_end`写入`SessionManager` | `agent-session.ts`与`session-manager.ts` | 运行事件需要经过产品协调后进入产品历史 |
+| `SessionManager`是带`id/parentId`的JSONL树 | `session-manager.ts` | 完整历史、当前分支和模型活动Context是不同概念 |
+| Interactive、Print、RPC共享AgentSession | `packages/coding-agent/src/modes/index.ts` | 多入口不应各自复制业务核心 |
+| Orchestrator是experimental进程/RPC管理 | `packages/orchestrator/*` | 进程管理存在不代表已有持久Job、Lease和恢复保证 |
 
-研究不再问“现在最少要做什么”，而问完整 Chat 产品必须长期回答什么：
+### 3.3 Chat可采用的经验与限制
 
-1. Product Session、工作、知识和证据由谁长期拥有？
-2. 用户说“继续”时，如何确定继续哪个 Work、使用哪些仍有效的上下文？
-3. 多意图、澄清、计划和人/AI责任如何跨回合持续存在？
-4. 如何保证用户批准的是实际要执行的版本、能力、权限和请求内容？
-5. 浏览器连接、Product Run、Run Attempt、Runtime Job、MAF Session 和 Workflow Checkpoint如何区分？
-6. 浏览器断线、API重启、Worker失联后，活动 Run 如何重连、接管或安全终止？
-7. Tool 已可能产生外部副作用但结果未知时，如何避免盲目重试？
-8. 产品成功、证据成立和结果送达如何分别确认？
-9. 来源删除、权限撤销和版本变化如何传播到 Evidence、Memory 和 Context？
-10. Web、OPC-OS Chat 或其他入口如何共享同一产品核心而不越权、不双写事实？
-11. MAF 应承担哪一层，哪些产品责任必须由 Chat 自己拥有？
-12. 逻辑模块应该如何映射为进程角色，才能同时满足事务、故障隔离和可运营性？
+采用：
 
-## 3. 固定来源、版本和证据等级
+1. MAF运行适配器与Chat产品模块分开；产品状态不能由Agent对象拥有。
+2. Web、外部Channel和未来CLI先经过各自Adapter，再共享同一个Interaction协调流程。
+3. 完整Message历史保存在产品模块中；每次模型调用只接收已选择的ContextPackage。
+4. 资源加载、Tool注册和回合执行分开。
 
-### 3.1 固定来源
+不能由pi背书：Web产品API、浏览器断线续订、后台Job、持久Approval、Evidence、Delivery、身份授权和Tool副作用对账。
 
-| 来源 | 本地路径 | 固定版本或提交 | 用途 |
-|---|---|---|---|
-| Chat 项目 | `/Users/xulater/Code/Chat` | 当前工作树；本方案待审核 | 6 个问题、完整闭环、技术路线、Session 能力全集 |
-| MAF 安装版 | Chat 项目`.venv`与`uv.lock` | core `1.11.0`；openai `1.10.1`；ag-ui `1.0.0rc8` | 当前可运行 API 与事件合同 |
-| MAF 源码 | `/Users/xulater/Code/opc-os/agent-framework` | `9c4cd07899502157284b64a73f9a0adfb4594d96` | Agent、Session、Middleware、Tool、Workflow、AG-UI、Durable Task、Telemetry |
-| pi | `/Users/xulater/Code/opc-os/pi` | `2b00dade7cec918aefb025c8b7a4fa304a30acdd` | Agent Core、产品协调层、组合根、Session、Tool、运行模式和恢复诚实性 |
-| nanobot | `/Users/xulater/Code/opc-os/nanobot` | `2c789767280482f38667044f8a3be5102c71dd26` | Channel、MessageBus、Loop、Runner、Session、Memory、Goal、Gateway及可靠性边界 |
-| LibreChat | `/Users/xulater/Code/opc-os/LibreChat` | `8e5ef1fb31e9d63b735c089b21cbc82c50acce46` | Web Feature、产品 API、Conversation/Message、Generation Job、Event Transport和终态提交 |
+## 4. nanobot：入口、回合协调、模型循环和两类状态分开
 
-### 3.2 证据等级
+### 4.1 源码中的模块关系
 
-1. `[项目事实]`：用户已经确认并写入`PROJECT_CONTEXT.md`的产品和技术事实。
-2. `[安装版实测]`：Chat 当前依赖上实际运行或合同测试得到的行为。
-3. `[源码事实]`：固定提交中可以按路径或符号定位的实现。
-4. `[参考评价]`：基于源码结构、边界和失败行为得到的工程经验，不代表参考项目官方承诺。
-5. `[项目推导]`：由本项目完整用户场景推出的架构决定，仍需用户审核。
+```mermaid
+flowchart LR
+    Channels["ChannelManager / Channels"]
+    MsgBus["MessageBus"]
+    Turn["AgentLoop"]
+    Runner["AgentRunner"]
+    Provider["Provider"]
+    Tools["ToolRegistry / Loader"]
+    Sessions["SessionManager"]
+    Memory["MemoryStore"]
+    RuntimeBus["RuntimeEventBus"]
+    WebUI["WebSocket / Web UI"]
 
-任何参考项目都只能为其真实覆盖的范围背书。Intent、Work、ExecutionDraft、产品 Approval、Evidence、Provenance 和完整 Delivery 语义没有一个参考项目完整实现，它们主要是本项目需求推导。
-
-## 4. 研究过程与证据记录
-
-| 步骤 | 要回答的问题 | 动作与证据 | 结论或未覆盖项 |
-|---|---|---|---|
-| 1 | 产品究竟是什么 | 重新读取`AGENTS.md`、`PROJECT_LESSONS.md`、`PROJECT_CONTEXT.md`、Session全集 | Chat 是独立完整产品；外部通道是集成角色 |
-| 2 | 完整场景需要什么保证 | 把“继续、多意图、外部写入、断线、Worker失联、来源删除、跨入口”逐项拆为状态和失败 | 得到权威性、连续性、可控性、持久性、可追溯、无假成功、可替换、可运营 8 个保证 |
-| 3 | MAF 负责什么 | 核对安装版；阅读`_agents.py`、`_sessions.py`、Middleware、Workflow、AG-UI、Durable Task、Observability | MAF 是 Runtime；不拥有产品 Session、Work、Approval、Run、Evidence、Delivery |
-| 4 | 产品核心和入口如何分开 | 复核 pi 的`pi-ai`、`pi-agent-core`、`pi-coding-agent`、运行模式、组合根和 Orchestrator | 多入口共享核心；协调器必要但不能吞并领域；进程记录不能冒充可恢复计算 |
-| 5 | 状态时间尺度和长期运行如何分开 | 复核 nanobot 的 Channel -> Bus -> AgentLoop -> Runner -> Outbound，Session/Memory/Goal/Gateway | Channel、运行、Session、Memory、Delivery 要分层；轻量 Bus/Gateway 不提供 durable ack/outbox/tool exactly-once |
-| 6 | Web 产品和活动流如何分开 | 复核 LibreChat App/Route/Data Provider/Server/Agent Route/Generation Job/Event Transport/Final | 产品 Query/API 与活动运行分开；HTTP、Job、订阅是不同生命周期；正常路径先持久化消息再 Final |
-| 7 | 参考覆盖够不够 | 对 12 个研究问题建立覆盖矩阵 | 足够确定总体边界；不足以冻结多个本项目特有领域状态机 |
-| 8 | 逻辑边界如何推导 | 先按状态所有权和不变量划 12 个产品模块，再按生命周期/故障域划 API、Execution、Delivery、Reconciler | 领域模块不等于服务；执行与交付需要持久平面和进程角色 |
-| 9 | 方案是否真的覆盖场景 | 用 7 个场景逐步穿透组件、合同、状态、失败和用户结果 | 暴露了 Job、Tool Ledger、Outbox、Provenance、Run Graph和Projection Reconciler都不能省略 |
-| 10 | 当前未知是否被隐藏 | 对 MAF 版本错位、Checkpoint 接合、Store 选型、外部合同逐项列出 | 总体边界可审核；具体 API/Schema/产品选型仍需详细设计和实测 |
-
-可复用源码知识已经分别维护在：
-
-1. `/Users/xulater/Code/opc-os/agent_knowledge/MAF/02-Agent应用架构中的位置与边界.md`
-2. `/Users/xulater/Code/opc-os/agent_knowledge/project-studies/librechat/Web-Chat整体架构与模块边界源码研究.md`
-3. pi、nanobot 的既有研究入口由`AGENTS.md`限定维护，本次没有伪造未读能力。
-
-## 5. 从完整场景推导架构保证
-
-### 5.1 “继续”不是加载聊天记录
-
-仅保存 Message 不能判断：
-
-- 用户要继续哪个长期事项；
-- 当前计划到了哪里；
-- 哪些记忆已被用户接受；
-- 哪些 Evidence 仍有效；
-- 这次模型真正应该看到什么。
-
-因此必须同时存在 Product Session、Message Branch、Work/Plan、Memory、Evidence 和本轮不可变 ContextPackage。Context 只读这些模块的公开 Projection，不能成为它们的事实源。
-
-### 5.2 “执行前确认”不是 Prompt 里问一句
-
-用户真正批准的是一组稳定事实：目标、上下文版本、计划节点版本、Agent/模型/Tool能力、权限、限制、风险和规范化请求 Hash。任何绑定项变化，旧批准都必须失效。
-
-因此需要独立 ExecutionDraft、Approval 和 RunSpec，且产品 Approval 与 MAF Tool Approval/Interrupt 是双层关系：前者是长期产品事实，后者是运行时交互机制。
-
-### 5.3 “任务还在跑”不是 SSE 还连着
-
-浏览器订阅、API 请求、Product Run、Attempt、Job 和 Worker Lease 有不同生命周期。要支持刷新、网络中断和 Worker 接管，必须有：
-
-1. 长期 Product Run。
-2. 每次实际尝试的 Attempt。
-3. 持久 Job、Lease、Heartbeat 和 Control Inbox。
-4. 有限 Event Journal 和 Cursor。
-5. Reconciler 与恢复决定。
-
-这些是完整场景要求，不由部署规模决定。
-
-### 5.4 “Checkpoint 可恢复”不等于副作用可重放
-
-Workflow Checkpoint 能恢复控制流和 Executor 状态，但不能证明外部 Tool 是否已执行。工具请求发送后连接超时可能处于`result_unknown`，自动重试可能产生第二次副作用。
-
-因此 Tool Operations 必须有独立 Ledger、幂等键、外部引用、对账能力声明和人工处置路径。Checkpoint 只能帮助定位安全点，不能替代 Tool Evidence。
-
-### 5.5 “Run 成功”不等于用户已收到
-
-模型或 Workflow 完成、产品结果提交、Evidence 验证、外部 Delivery 成功是 4 个不同事实。必须分别记录，并通过 Transactional Outbox 在产品事务与外部交付之间建立可靠交接。
-
-### 5.6 “来源被删”不是删除一条消息
-
-一个来源可能被 Context、Run、Evidence、Memory 和 Work 完成结论引用。需要 Provenance Graph 和失效传播，使 Evidence 降级、Memory 进入复核、后续 Context 排除失效事实，同时保留历史 Trace。
-
-## 6. MAF：提供运行时，不提供产品架构
-
-### 6.1 源码事实
-
-| 能力 | 证据路径或符号 | 能说明什么 | 不能说明什么 |
-|---|---|---|---|
-| Agent 组合 | `python/packages/core/agent_framework/_agents.py`的`BaseAgent`、`RawAgent`、`Agent` | 模型、Tool、Context、Middleware和Telemetry的运行组合 | 产品 Session、Work、Approval、Delivery |
-| Session/History | `_sessions.py`的`ContextProvider`、`HistoryProvider`、`AgentSession` | 模型上下文和 Provider 状态 | 标题、归档、权限、Product Run |
-| Middleware | `_middleware.py`及 Tool Approval 示例 | Agent/Chat/Function 调用上的策略钩子 | 持久产品批准事实和版本失效规则 |
-| Workflow Checkpoint | `_workflows/_checkpoint.py`、`_runner.py`、`_executor.py` | 图签名、迭代、共享状态、Executor 状态和恢复 | Tool 副作用、产品终态、Delivery |
-| AG-UI | `python/packages/ag-ui/agent_framework_ag_ui/_agent.py`、`_workflow.py`、`_endpoint.py`、`_snapshots.py` | Agent/Workflow事件、FastAPI/SSE、Snapshot、resume | Product CRUD、授权、产品事实源 |
-| Durable Task | `docs/features/durable-agents/README.md`、`python/packages/durabletask/` | MAF可运行在持久 Task Hub/Worker 宿主 | 产品 Job、Outbox、Evidence 和 Tool exactly-once |
-| Observability | `observability.py` | OpenTelemetry 与敏感内容默认关闭 | 用户可见 Trace 和产品审计策略 |
-
-### 6.2 安装版实测与版本边界
-
-当前安装版本与参考源码提交不是同一发布快照。已经实测：
-
-1. `HistoryProvider`成功保存发生在 AG-UI `RUN_FINISHED`前。
-2. History 保存异常会产生`RUN_ERROR`且不产生`RUN_FINISHED`。
-3. `require_per_service_call_history_persistence=True`与`store=False`可以在两次模型调用 Tool Loop 中保存中间历史并抑制 Provider 响应 ID 混入协议 ID。
-4. AG-UI Client 发送客户端消息全集，若 Product History、AG-UI Snapshot 和 MAF History同时装配，存在双历史风险。
-
-这些事实支持“唯一历史装配器”和“产品终态提交门”，但不证明 Product DB 提交失败时当前 RC 已有可直接复用的扩展点；这仍需合同 Spike。
-
-### 6.3 对 Chat 的采用、改造和拒绝
-
-- 采用：Agent、Context/History Provider、Middleware、Tool、Workflow、Checkpoint、HITL、AG-UI和Telemetry。
-- 改造：全部封装在 Runtime Adapter；Product Approval 映射 Interrupt；Product Run 映射 MAF Session/Checkpoint；AG-UI Snapshot 只作协议投影。
-- 拒绝：Route 直连 MAF 后把框架结束当产品成功；用 MAF Session/Thread/Checkpoint保存所有产品状态。
-
-## 7. pi：共享核心、组合根与协调器风险
-
-### 7.1 实际覆盖
-
-pi 把 Provider、Agent Core、Coding Product 和运行模式分开：
-
-1. `pi-ai`统一 Provider 与协议。
-2. `pi-agent-core`拥有 Agent 状态、模型-Tool 循环、事件、steering/follow-up。
-3. `pi-coding-agent`组合 Settings、Resource、Session、Tool 和产品交互。
-4. Interactive、Print、JSON、RPC 共享同一 AgentSession，不为入口复制核心规则。
-5. 组合根负责装配；Orchestrator 重启时把遗留记录收敛为 stopped，不虚构计算仍可继续。
-
-### 7.2 给 Chat 的经验
-
-- Web、REST、AG-UI 和外部入口应共享同一 Application/Domain 核心。
-- Provider/Agent Core 与 Product Session/Work 分开。
-- 组合根集中装配配置、Repository、Runtime、Tool 和 Adapter。
-- 进程记录、Session 文件或事件存在都不等于执行可恢复，必须有安全点和恢复合同。
-
-### 7.3 不能照搬
-
-pi 的大 `AgentSession`同时协调事件、持久化、模型、资源、Tool、命令、分支、压缩和扩展，换来多模式一致，但变化原因过多。Chat 仍需要 Application Coordinator，但只能负责用例和事务；Conversation、Work、Approval、Run、Tool、Memory 和 Evidence 各自保留状态机。
-
-pi 不提供本项目所需的 Web Product API、外部 Delivery、产品 Approval 和完整 Evidence 模型，因此只为层次与协调器边界背书。
-
-## 8. nanobot：时间尺度分离与可靠性反例
-
-### 8.1 实际覆盖
-
-```text
-Channel / WebUI / API
--> MessageBus
--> AgentLoop（Session、锁、Context、Turn）
--> AgentRunner（模型与Tool循环）
--> OutboundMessage / Channel
+    Channels --> MsgBus --> Turn
+    Turn --> Sessions
+    Turn --> Memory
+    Turn --> Runner
+    Runner --> Provider
+    Runner --> Tools
+    Runner --> RuntimeBus --> WebUI
+    Turn --> MsgBus --> Channels
 ```
 
-Session、Memory、Goal/Cron/Trigger 和 Gateway 分别处理不同时间尺度。既有源码研究还表明：
+### 4.2 直接源码事实
 
-1. Session Key用于隔离和锁，不是规范身份。
-2. Session保存不等于消息送达。
-3. MessageBus没有 durable ingress/ack，Channel retry不是 Transactional Outbox。
-4. Checkpoint可以标记未知 Tool，但不保证外部副作用 exactly-once。
-5. Gateway 长驻不等于可靠任务队列、租约接管或多副本容灾。
+| 事实 | S1 证据 | 对模块边界的含义 |
+|---|---|---|
+| Gateway命令装配Bus、Session、AgentLoop、WebUI、Channel和Trigger | `nanobot/cli/commands.py` | 组合根只负责创建与启动组件 |
+| Channel通过`MessageBus`收发标准消息 | `channels/manager.py`、`bus/queue.py` | 外部入口差异可以止于Channel适配 |
+| 运行事件使用独立`RuntimeEventBus` | `bus/runtime_events.py` | 用户消息投递和运行观察不是同一条流 |
+| `AgentLoop`有RESTORE→COMPACT→COMMAND→BUILD→RUN→SAVE→RESPOND状态 | `agent/loop.py` | 一个用户回合需要应用协调器，不是直接调用模型 |
+| `AgentRunner`只负责模型与Tool迭代 | `agent/runner.py` | 产品Session、锁、保存和回复不应进入运行内核 |
+| Tool有Registry和Loader | `agent/tools/registry.py`、`loader.py` | Tool发现/调用可独立于Provider实现 |
+| Session与Memory分别持久化 | `session/manager.py`、`agent/memory.py` | 对话历史与跨会话长期记忆不能合并 |
+| Session保存采用临时文件替换 | `session/manager.py` | 它解决单文件原子替换，但没有提供Job Lease或投递保证 |
 
-### 8.2 给 Chat 的经验
+### 4.3 Chat可采用的经验与限制
 
-- Identity/Channel、Application Turn、Agent Runner 和 Delivery 分层。
-- Conversation、Work/Goal 和 Memory 属于不同时间尺度，不能合并。
-- Tool Ledger、Outbox/Receipt、Job/Lease 必须是独立组件，不能靠 Bus、Gateway 或 Checkpoint补齐。
-- 逻辑边界可以共进程，但能力和故障语义不能消失。
+采用：
 
-### 8.3 不能照搬
+1. 外部Channel只做协议、身份映射和消息标准化，进入后共享产品核心。
+2. Interaction协调器与MAF运行适配器分开；前者管产品流程，后者管模型/Tool循环。
+3. Conversation和Memory分模块，因为生命周期、采纳规则和失效方式不同。
+4. Product Message流和Runtime Event流分开保存与消费。
 
-nanobot 的轻量 MessageBus适合模块通信，但没有提供目标场景需要的可靠接纳、跨进程消费和送达保证。Chat 不应为了“解耦”建设通用总线；本地同步流程直接调用模块，需要跨事务/进程时使用用途明确的 Job 或 Outbox。
+不能由nanobot背书：它的MessageBus是进程内队列，没有durable ingress、ack和跨实例重放；Session保存不等于用户已收到结果；WebSocket chat id不等于授权；常驻Gateway不等于持久Job和Worker接管。
 
-## 9. LibreChat：Web 产品资源、活动 Job 与实时订阅分离
+## 5. LibreChat：Web产品资源、活动Generation和实时订阅分开
 
-### 9.1 实际覆盖和证据
+### 5.1 源码中的模块关系
 
-| 结论 | 证据路径 |
-|---|---|
-| App、Router、Root Shell、ChatRoute 分层 | `client/src/App.jsx`、`client/src/routes/index.tsx`、`Root.tsx`、`ChatRoute.tsx` |
-| 产品查询合同集中，React Query 管理服务端状态 | `packages/data-provider/src/api-endpoints.ts`、`data-service.ts`、`react-query/react-query-service.ts` |
-| 后端挂载 Conversation、Message、Project、File、Memory、Agent 等产品 Route | `api/server/index.js` |
-| Agent 入口先过 resume、PII、moderation、Agent/资源/Conversation访问 | `api/server/routes/agents/chat.js` |
-| HTTP 接纳、Generation Job 和 SSE 订阅是不同生命周期 | `api/server/controllers/agents/request.js`的`ResumableAgentController` |
-| Job Store/Event Transport 可用内存或 Redis 实现 | `packages/api/src/stream/interfaces/IJobStore.ts`及 InMemory/Redis 实现 |
-| 正常路径先保存 User/Assistant Message，再校验 Job 所有权并发 Final | `request.js`正常完成段 |
+```mermaid
+flowchart LR
+    Web["App / Router / Feature"]
+    Query["Data Provider / React Query"]
+    Server["Express组合根"]
+    ProductAPI["Conversation / Message / Project / File / Memory Routes"]
+    Policy["Agent Chat中间件"]
+    Controller["ResumableAgentController"]
+    Jobs["GenerationJobManager / IJobStore"]
+    Events["IEventTransport / SSE"]
+    Models["Conversation / Message Models"]
+    Agent["Agent Runtime依赖"]
 
-完整限定研究在：
+    Web --> Query --> Server
+    Server --> ProductAPI --> Models
+    Server --> Policy --> Controller
+    Controller --> Jobs
+    Controller --> Agent
+    Agent --> Events --> Web
+    Controller --> Models
+    Jobs --> Events
+```
 
-`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/librechat/Web-Chat整体架构与模块边界源码研究.md`
+### 5.2 直接源码事实
 
-### 9.2 给 Chat 的经验
+| 事实 | S1 证据 | 对模块边界的含义 |
+|---|---|---|
+| App、Root、ChatRoute和其他Feature Route分开 | `client/src/App.jsx`、`routes/*` | Chat运行视图不是整个Web应用架构 |
+| Endpoint/Type/Data Service和React Query集中 | `packages/data-provider/*` | 服务端产品事实由查询层读取，页面Store不应复制事实源 |
+| Server挂载Conversation、Message、Project、File、Memory和Agent等Route | `api/server/index.js` | 产品资源API与Agent运行入口分开 |
+| Agent Route先执行内容、权限、资源、Conversation和Endpoint中间件 | `api/server/routes/agents/chat.js` | 协议入口不能绕过应用策略 |
+| 创建Generation Job后原POST返回，SSE另行订阅 | `ResumableAgentController` | 请求接纳、后台执行、浏览器订阅是3个生命周期 |
+| `IJobStore`与`IEventTransport`各有内存和Redis实现 | `packages/api/src/stream/*` | 活动Job状态和实时事件传输是可替换基础设施 |
+| 正常完成先保存User/Assistant Message，再检查Job所有权并发Final | `controllers/agents/request.js` | 产品事实提交必须先于成功终态投影，旧执行不能抢写 |
+| Conversation/Message与活动Job/Checkpoint分开 | 数据模型、Job Store和checkpointer实现 | 产品历史、活动运行、框架恢复状态不能合成一个Session对象 |
 
-- 前端按 App Shell 和 Feature 组织，协议 Client 不是前端架构本身。
-- Product Query/REST 与 Agent实时协议分开；浏览器 Store 不拥有产品事实。
-- 接纳请求、活动执行和当前订阅分开。
-- 先提交 Product Message，再暴露成功 Final。
-- Job Store 与 Event Transport 是可替换基础设施。
+### 5.3 Chat可采用的经验与限制
 
-### 9.3 必须改造和不能照搬
+采用：
 
-LibreChat 没有独立持久 Product Run，其 Generation Job 可以过期/删除；Chat 必须增加长期 Run/Attempt 和恢复决定。技术上也不复制 MongoDB、Redis、Express、私有 SSE、历史双后端、多套前端 Store 或 ID 复用。
+1. Web按App Shell、Feature、服务端查询和页面状态组织。
+2. REST产品资源与AG-UI实时运行入口分开。
+3. Product Run、活动Attempt/Job和实时Event Journal分开建模。
+4. 成功事件只能在Product Message、Run终态和必要Evidence提交成功后发布。
+5. 使用Attempt所有权/版本检查阻止旧Worker抢写。
 
-LibreChat 没有替本项目决定 Intent、Work、Approval、Evidence、Provenance、Tool对账或 MAF Checkpoint 接合。
+改造：LibreChat的共享TypeScript包改为OpenAPI/Schema合同；Mongo/Redis/Express改为Chat已批准的FastAPI、SQLite起点和端口接口；大量全局Provider不照搬。
 
-## 10. 参考覆盖矩阵
+不能由LibreChat背书：`@librechat/agents`在该固定仓库中是外部依赖，不能据此推断其内部模块；它也没有替Chat决定Intent、Work、Approval、Evidence、Delivery、跨系统Binding和通用Tool副作用恢复。
 
-| 架构主题 | MAF | pi | nanobot | LibreChat | 本项目是否必须自建 |
+## 6. QwenPaw：Web与外部Channel先适配，再进入统一请求合同
+
+### 6.1 源码中的入口拓扑
+
+```mermaid
+flowchart LR
+    Browser["Browser"] --> ConsoleUI["Console React"]
+    ConsoleUI --> ConsoleAPI["POST /api/console/chat"]
+    ConsoleAPI --> ConsoleChannel["ConsoleChannel"]
+
+    Telegram["Telegram平台"] --> TelegramChannel["TelegramChannel"]
+    Other["其他消息平台"] --> OtherChannel["具体BaseChannel实现"]
+
+    TelegramChannel --> Queue["ChannelManager / UnifiedQueueManager"]
+    OtherChannel --> Queue
+    Queue --> Request["AgentRequest"]
+    ConsoleChannel --> Request
+    Request --> Workspace["Workspace"]
+    Workspace --> Runtime["per-request Runtime"]
+```
+
+### 6.2 直接源码事实
+
+| 事实 | S1证据 | 对Chat入口边界的含义 |
+|---|---|---|
+| Console React调用`/api/console/chat` | `console/src/pages/Chat/index.tsx` | Web只调用HTTP接口，不直接调用Workspace/Runtime |
+| Console Route把HTTP DTO转成native payload后调用`ConsoleChannel` | `app/routers/console.py:post_console_chat` | Web与核心之间也有明确协议适配边界 |
+| Telegram SDK事件先变成native payload | `app/channels/telegram/channel.py` | Telegram平台不认识内部Product Session、Interaction或Runtime |
+| ChannelManager按channel/session/priority排队 | `app/channels/manager.py`、`unified_queue_manager.py` | 外部回调不能直接并发执行产品核心 |
+| BaseChannel先做ACL，再构造`AgentRequest` | `app/channels/base.py` | sender身份、session连续性和内部请求是3个不同概念 |
+| Workspace收到统一请求后每次创建Runtime | `app/_app.py:DynamicMultiAgentRunner` | Adapter之后才进入共享执行核心 |
+
+### 6.3 Chat可采用的经验与限制
+
+采用：
+
+1. Chat Web通过Web HTTP/AG-UI Adapter转成内部`InboundInteraction`，不能直接调用产品模块。
+2. Telegram等平台必须经过具体Channel Adapter；平台Webhook、SDK和群聊语义止于Adapter。
+3. Web Adapter和外部Channel Adapter最终调用同一个`Interaction Ingress`应用合同。
+4. 出站结果经Delivery回到来源Adapter，由Adapter渲染成平台消息或Web事件。
+
+不能照搬：QwenPaw的`AgentRequest`是其运行时Schema；进程内UnifiedQueue不提供持久接纳和跨进程重放；BaseChannel在sender缺失时的ACL行为不能作为安全保证；Console和后端同进程部署不表示逻辑适配边界可以删除。
+
+## 7. 四个参考项目共同给出的结构
+
+这不是“投票”，而是把相同源码关系并排：
+
+| 重复出现的关系 | pi | nanobot | QwenPaw | LibreChat | 可得出的最小结论 |
 |---|---|---|---|---|---|
-| Agent/模型/Tool Loop | 强 | 强 | 强 | 部分 | 封装和策略需自建 |
-| Runtime Context/History | 强 | 强 | 强 | 部分 | Product Context需自建 |
-| Workflow/Checkpoint/HITL | 强 | 弱/部分 | 部分 | 部分、非MAF | Product映射和恢复门需自建 |
-| Web App Shell/Feature | 不涉及 | 不涉及Web | 部分 | 强 | 迁移到React/AG-UI |
-| Conversation/Message | 不负责 | Coding Session | Session | 强 | 产品模型需自建 |
-| Product Run vs Job | 不负责Product Run | 部分 | 部分 | Job强、长期Run缺 | 是 |
-| Intent/Clarification | 不负责 | 部分 | 弱 | 弱 | 是，参考未完整涉及 |
-| Work/Plan/Action | 不负责 | 部分 | Goal部分 | Project部分 | 是，参考未完整涉及 |
-| ExecutionDraft/Approval | Runtime机制 | Tool/Extension部分 | 权限部分 | HITL部分 | 是，参考未完整涉及 |
-| Worker/Lease/Reconcile | Durable宿主部分 | Orchestrator部分 | Gateway反例 | Job/Event部分 | 是，需组合完整语义 |
-| Tool副作用对账 | Tool机制 | Tool部分 | 未知状态反例 | 部分 | 是 |
-| Evidence/Provenance | Telemetry部分 | 输出部分 | 弱 | Message/File部分 | 是 |
-| Delivery/Outbox/Receipt | 不负责 | 不涉及 | 明确缺口 | 流/消息部分 | 是 |
-| Identity/Scope/Binding | 钩子/Scope要求 | trust部分 | 明确缺口 | Web权限部分 | 是 |
-| Trace/Audit/Operations | Telemetry | 事件 | 日志 | 部分 | 产品Trace需自建 |
+| 入口与核心分开 | 3种Mode共享AgentSession | Channel共享AgentLoop | Web/具体Channel先适配成AgentRequest | Route/Feature共享后端服务 | Web和外部平台先适配，再共享产品用例；平台不直接调用核心 |
+| 产品协调与模型循环分开 | AgentSession vs agent-loop | AgentLoop vs AgentRunner | Workspace/Runtime vs Agent | Controller/Job vs Agent依赖 | Chat需要Interaction协调模块和MAF运行适配器两个边界 |
+| 长期产品历史与活动运行分开 | SessionManager vs Agent状态 | Session vs RuntimeEvent | Chat/Session vs per-request Runtime | Conversation/Message vs Job/Event | Product Session/Message不能由MAF Session、AG-UI Thread或活动Job代替 |
+| 模型输入不是完整历史 | 当前leaf/compaction | Context build/compact | Scroll/Memory由Builder装配 | Agent构建上下文 | ContextPackage必须是一次可追踪的装配结果 |
+| 资源/Tool与Provider分开 | ResourceLoader/Tools | Tool Registry/Loader | Builder/Governance/ToolRegistry | Agent入口装配资源 | Tool发现、授权和调用治理不能散落在Provider代码中 |
+| 组合根不拥有业务状态 | createAgentSession | gateway command | FastAPI app/Workspace registry | Express server | main/app factory只负责装配依赖 |
+| 实时事件不是产品事实 | Agent events经过Session保存 | RuntimeEventBus另于MessageBus | Runtime events与Chat/Session分开 | EventTransport另于Message模型 | AG-UI事件是投影；Product DB才是长期事实源 |
 
-结论：4 个来源足以确认总体边界、常见反例和技术接合点，不足的地方恰好是 Chat 的差异化产品能力。此时增加另一个大型参考项目不会替代产品设计；如果进入具体模块状态机设计后出现明确知识缺口，应按单一主题向用户申请。
+## 8. 参考项目明确没有覆盖的Chat问题
 
-## 11. 架构选择比较
+这 7 项不能伪装成“参考项目已经证明”：
 
-### 11.1 选择 A：Web Route 直接调用 MAF
+1. 多意图识别、纠正与确认。
+2. WorkItem、ActionItem和TaskPlan的跨回合生命周期。
+3. 可编辑ExecutionDraft以及绑定版本、Hash、权限范围的Approval。
+4. Tool副作用幂等、结果未知、查询、补偿和人工对账。
+5. Evidence来源、版本、有效性和来源删除后的失效传播。
+6. Delivery回执、重试和“已生成但未送达”的区分。
+7. OPC-OS Chat等外部系统的Channel Binding、授权和双边事实归属。
 
-**优点**：实现短、依赖少、可快速验证流式回合。
+这些能力来自Chat已批准的6个问题和完整产品闭环。参考项目只能提供相邻结构：pi/nanobot提供回合和Tool边界，QwenPaw提供Web/Channel/统一请求与治理边界，LibreChat提供产品资源、Job和提交顺序；最终模块仍需由Chat自身需求决定。
 
-**缺点**：没有 Work、Approval、Run恢复、Tool对账、Evidence、Delivery 和运营所有者；Route/MAF状态会被迫成为产品事实。
+## 9. 从源码事实到Chat模块的逐项推导
 
-**参考覆盖**：MAF 示例只证明 Runtime；没有参考项目用这种结构承载完整目标场景。
+| 编号 | 源码事实 | Chat必须解决的问题 | D1模块决策 | 为什么不是其他放法 |
+|---|---|---|---|---|
+| D1 | QwenPaw的Web Route→ConsoleChannel、Telegram→TelegramChannel→Queue，二者才转统一AgentRequest | Web和外部平台必须共享Product Session规则，但wire协议、身份和回执完全不同 | 分开`Web应用`、`Web/API Adapter`、`具体Channel Adapter`和`Interaction Ingress`；Adapter之后才调用产品模块 | 把“OPC-OS Chat / 其他入口”直接连后端会跳过协议终止、身份验证、幂等和能力转换 |
+| D2 | AgentSession/AgentLoop在Runner外协调回合 | 一次输入要先保存、组上下文、识别意图、可能等待审批，再决定是否运行 | 建立`Interaction协调器` | 让MAF Agent直接处理会绕过产品提交门和审批门 |
+| D3 | Session/Message是长期事实，Job/Event是活动事实 | 完成历史、断线续订、Worker恢复需要不同生命周期 | 分开`Conversation模块`与`Run管理模块` | 一个Session表或AG-UI Snapshot无法同时表达用户历史和Worker所有权 |
+| D4 | 完整历史与活动Context分开 | 用户要知道本轮到底使用了什么上下文 | 建立`Context模块`，持久化ContextPackage | 直接把全部历史发送给模型不可审计，也不可稳定复现 |
+| D5 | nanobot Session与Memory分开 | 模型候选不能自动成为长期事实 | `Memory模块`独立于Conversation和Context | Message出现过不代表可以跨会话作为正式记忆 |
+| D6 | 参考项目没有Work/Approval，但Chat问题3、4要求它们 | 用户要看见意图、计划、责任和执行前最终请求 | 建立`Collaboration模块`，拥有Intent/Work/Plan/Draft/Approval | 把这些塞进Message JSON会失去生命周期、版本和查询能力 |
+| D7 | Job Store、Attempt所有权和事件传输分开 | Run要断线继续、重试、接管且防旧Worker抢写 | `Run管理模块`拥有Product Run、Attempt、Lease、Event Journal | MAF Checkpoint只恢复框架状态，不拥有产品终态和Worker接管 |
+| D8 | Runner/agent-loop不拥有产品状态 | MAF可升级替换，产品事实仍稳定 | 建立`MAF运行适配器` | 领域对象直接依赖MAF类会把框架版本传播到全部模块 |
+| D9 | Tool有Registry/Loader，但参考项目不保证副作用恢复 | 外部写操作必须审批、幂等、对账 | 建立`Tool执行模块` | Tool调用只留在模型消息里无法判断是否已产生外部副作用 |
+| D10 | 正常Final在Message保存后发布 | 用户看到完成时必须已有可读结果和证据 | 建立`Evidence模块`并定义Finalization Gate | Runtime返回文本不等于结果来源、附件和操作证据已持久化 |
+| D11 | Session保存不等于Channel送达 | Web断线、外部Channel失败后仍要知道交付状态 | 建立`Delivery模块` | 把“生成成功”当“用户已收到”会造成假完成 |
+| D12 | LibreChat入口有权限链；QwenPaw区分ACL sender、session_id和AgentRequest | 外部身份与Product Session绑定必须可撤销、可审计 | 建立`Identity与Channel Binding模块` | 把threadId/chatId当权限凭据会形成越权风险 |
 
-**结论**：只适合作为协议 Spike，不可作为目标架构。
+## 10. 推导后的架构分组
 
-### 11.2 选择 B：模块化产品核心，执行和交付仍绑定 API 请求
+模块按责任性质分组，不假装它们是同一种“层”：
 
-**优点**：产品领域和事务边界清楚。
+### 10.1 交互适配器与统一入站合同
 
-**缺点**：浏览器断线、API重启、Worker失联和外部送达仍无持久生命周期；完整恢复场景无法成立。
+1. Web应用：产品页面、查询缓存、AG-UI实时投影和页面局部状态。
+2. Web/API Adapter：终止REST与AG-UI协议，把Web DTO转成内部`InboundInteraction`。
+3. Channel Adapter Host：承载OPC-OS Chat Bridge、Telegram等具体Adapter及其协议端点、队列和出站渲染；平台不能直接进入产品核心。
+4. Interaction Ingress：Adapter共同调用的内部应用合同，负责可信身份上下文、幂等接纳、Session映射和per-session顺序，然后调用Interaction协调器。
 
-**参考覆盖**：pi/nanobot支持模块化核心，但 LibreChat Job/Event 和 MAF Workflow 表明活动运行需要独立状态。
+### 10.2 产品与应用模块
 
-**结论**：领域方向正确，但目标拓扑不完整。
+5. Identity与Channel Binding。
+6. Conversation。
+7. Collaboration。
+8. Context。
+9. Memory。
+10. Interaction协调器。
+11. Run管理。
+12. Tool执行。
+13. Evidence。
+14. Delivery。
 
-### 11.3 选择 C：模块化产品核心 + 持久执行平面 + 可靠交付平面
+### 10.3 运行与基础设施适配器
 
-**优点**：产品事务、活动运行、外部副作用和送达分别有所有者；覆盖完整场景；进程角色可按故障域运行。
+15. MAF运行适配器：AgentSession、History Provider、Workflow/Checkpoint和模型流式运行接合。
+16. Product Store、Runtime Store、Event Transport、Artifact Store的实现。
+17. Execution Worker、Scheduler/Reconciler、Delivery Worker等进程角色。
 
-**缺点**：需要设计 Job、Lease、Event、Outbox、Tool Ledger 和对账；测试矩阵明显增加。
+这里的编号不是目录数量，也不是要求每个模块部署成微服务。模块先代表代码依赖、状态所有权和合同边界；同一FastAPI进程可以承载多个模块，但不能因此合并它们的事实。
 
-**参考覆盖**：4 个来源分别为 Runtime、共享核心、状态分层和活动 Job 提供证据；完整组合是本项目推导。
+## 11. 关键架构选择及备选方案
 
-**结论**：推荐目标架构。
+### 11.1 Web与外部Channel怎样进入产品核心
 
-### 11.4 选择 D：每个领域模块独立微服务 + 通用事件总线
+选择：各自协议Adapter → 统一Interaction Ingress → 产品核心。
 
-**优点**：每个模块可独立部署和扩缩。
+原因：QwenPaw源码明确由Console Route/ConsoleChannel和TelegramChannel分别完成协议转换，再形成统一AgentRequest。Chat Web是本产品自带客户端；Telegram是外部平台；OPC-OS Chat是外部系统，三者不是同一种对象。
 
-**缺点**：Conversation、Approval、Run接纳和Outbox之间出现分布式一致性；大量网络合同、运维和Schema演进并没有用户场景依据。
+优点：Web仍可使用REST/AG-UI最佳体验；每个Channel独立处理平台身份、群聊、附件和回执；核心只理解稳定内部合同。
 
-**参考覆盖**：没有参考源证明 Chat 的每个领域边界需要独立服务。MAF Durable Task只说明执行宿主可分离，不说明领域微服务化。
+缺点：需要维护Web Adapter、具体Channel Adapter和内部Envelope映射。
 
-**结论**：不推荐按模块名拆服务；只按执行、交付等真实生命周期和故障域形成进程角色。
+备选1：所有入口直接调用同一个公开后端Route。wire合同看似少，但把Telegram身份和消息能力硬塞进AG-UI/REST，不采用。
 
-## 12. 目标架构推导链
+备选2：所有入口都先进入OPC-OS Chat，再由一个Bridge调用Chat。适合由OPC-OS Chat统一托管渠道的部署，但其正式合同尚未取得；保留为具体Adapter部署方式，不能写成当前已确认事实。
+
+### 11.2 Interaction协调器与Run管理是否合并
+
+选择：分开。
+
+原因：一次Interaction可以只回答、只更新Work、等待Approval，或触发多个Run；Run还能脱离原HTTP请求继续。pi/nanobot证明“回合协调器”存在，LibreChat证明“活动Job”有独立生命周期。
+
+优点：产品回合和执行恢复语义清楚；支持0..n Run；便于测试审批前绝不启动执行。
+
+缺点：多一个应用合同，需要显式传递Interaction、Draft和Run ID。
+
+备选：一个大ChatService同时处理输入和运行。代码少，但会复现pi `AgentSession`可能膨胀的协调器风险，并把后台恢复塞进请求流程，不采用。
+
+### 11.3 Conversation、Context和Memory是否合并
+
+选择：3个模块分开。
+
+原因：Conversation保存“发生了什么”；Context保存“本轮选了什么”；Memory保存“哪些信息被允许跨会话复用”。pi证明完整历史与活动分支/压缩不同，nanobot直接把Session和Memory分开。
+
+优点：能回答来源、选择和采纳问题；删除来源后可以精确失效。
+
+缺点：需要引用关系和版本管理。
+
+备选：全部存成Message。实现容易，但不能区分模型见过、用户确认和当前运行实际使用，不采用。
+
+### 11.4 Product Run、Run Attempt和MAF Checkpoint是否合并
+
+选择：分开并建立映射。
+
+原因：Product Run是用户长期可见事实；Attempt表示一次Worker执行和所有权；Checkpoint表示MAF内部恢复点。LibreChat的Message、Job、Checkpoint分离直接支持这一点。
+
+优点：Job可过期、Attempt可接管、MAF可升级而不丢Product Run。
+
+缺点：恢复逻辑必须验证三者一致性。
+
+备选：以MAF Session/Checkpoint为唯一Run记录。缺少产品授权、交付、审计和Worker所有权，不采用。
+
+### 11.5 Evidence与Delivery是否合并
+
+选择：分开。
+
+原因：Evidence回答“结果凭什么成立、外部操作发生了什么”；Delivery回答“结果是否到达某个接收方”。nanobot的Session保存与Channel投递之间没有等价保证，LibreChat也区分产品提交和实时Final。
+
+优点：可以表达“执行成功但通知失败”和“已送达但来源后来失效”。
+
+缺点：最终完成判断需要同时查看Run、Evidence和Delivery。
+
+备选：Message有一个`delivered`布尔值。无法表达多接收方、重试、回执和证据失效，不采用。
+
+## 12. 架构必须满足的场景验算
+
+| 用户场景 | 必须经过的模块 | 关键保证 |
+|---|---|---|
+| 打开旧Session继续 | Web→Web/API Adapter→Interaction Ingress→Identity→Conversation→Collaboration→Context→Memory | 恢复的是产品事实；本轮Context单独生成，不把完整历史盲送模型 |
+| 用户纠正系统理解 | Interaction协调→Collaboration→Conversation | Intent/Plan有版本和状态，纠正不会只变成一条无人消费的消息 |
+| 高风险工具执行 | Collaboration Draft/Approval→Run→Tool→Evidence | Approval绑定Draft版本和请求Hash；Tool调用有幂等与对账记录 |
+| 浏览器断线后回来 | Web→Web/API Adapter→Run→Event Journal；Conversation读取已提交消息 | HTTP、Run和订阅独立；缺失事件可重放或以产品状态Hydrate |
+| Worker崩溃恢复 | Reconciler→Run Attempt→MAF Checkpoint→Tool Ledger | 先判断副作用是否已发生，再恢复或重试；旧Attempt失去写权 |
+| 从OPC-OS Chat进入 | OPC-OS Chat→OPC-OS Bridge Adapter→Channel Adapter Host→Interaction Ingress→Identity/Binding→同一协调链→Delivery→Bridge | 外部系统不能直接调用产品模块；双方事实源、协议终止和回执明确 |
+| 从Telegram进入 | Telegram平台→Telegram Adapter→Channel队列→Interaction Ingress→同一协调链→Delivery→Telegram Adapter | Telegram SDK、sender/chat、群聊、渲染和平台回执止于Adapter |
+| 来源被删除或权限撤销 | Evidence→Memory/Context失效→Conversation提示 | 派生结论保留历史但降级有效性，后续Context不再静默使用 |
+
+任何一个场景如果只能写成“模块A调用模块B”，却说不出持久状态、失败点和用户看到什么，就不能算架构完成。
+
+## 13. 未知与审核后验证
+
+1. 安装版`agent-framework-ag-ui 1.0.0rc8`能否在MAF事件发出前后插入完整Product Finalization Gate，需要Spike。
+2. SQLite能否满足Run领取、Lease续租、Outbox/Event Journal原子写入，需要事务与并发测试。
+3. MAF History Provider、客户端消息全集和Product Context同时启用时的去重合同，需要E2E验证。
+4. Workflow Checkpoint跨进程恢复与持久Approval接合，需要安装版测试。
+5. OPC-OS Chat的正式身份、能力、消息、幂等和回执合同尚未取得。
+6. Tool的幂等查询、补偿和结果未知处理必须按具体Tool类型设计，不能通用猜测。
+7. OPC-OS Chat是否统一托管Telegram等Channel Adapter，还是Chat部署自己的具体Adapter，必须依据系统间正式合同决定；逻辑上两种部署都只能通过Interaction Ingress。
+
+## 14. 研究结论
+
+参考源码不支持“一个Chat组件直接连MAF Agent，再把AG-UI流当全部产品状态”的架构。4个项目共同证明：协议入口、产品回合协调、运行内核、长期历史、活动运行、实时事件和长期记忆具有不同责任。QwenPaw进一步证明最终聊天平台与产品核心之间需要具体Channel Adapter和统一内部请求合同。
+
+因此Chat应采用：
 
 ```text
-6个产品问题 + 完整用户场景
--> 产品事实、候选门、批准门、恢复、证据、交付和失效传播
--> Conversation/Work/Approval/Run/Tool/Evidence/Delivery不能压进一个Session或MAF
--> 按状态所有权划产品模块
--> 按同步事务、持久执行、外部交付划运行平面
--> REST负责产品资源，AG-UI负责活动Run投影
--> Product Store、Runtime Store、MAF Store、Artifact、Index逻辑分离
--> API、Execution Worker、Reconciler、Delivery Worker、Projector按生命周期和故障域运行
--> 用四个参考源验证边界、采用机制并识别不能照搬的缺口
--> 得到“模块化产品核心 + 持久执行平面 + 可靠交付平面”
+Chat Web → Web/API Adapter ──────────────────────┐
+Telegram → Telegram Adapter → Channel Queue ────┼→ Interaction Ingress
+OPC-OS Chat → OPC-OS Bridge Adapter ────────────┘
+        ↓
+Identity + Conversation + Interaction Coordinator
+        ↓
+Collaboration + Context + Memory
+        ↓（只有满足执行门时）
+Run Manager → MAF Runtime Adapter → Tool Operations
+        ↓
+Evidence → Conversation Finalization → Delivery
 ```
 
-这条推导没有使用项目年龄、当前代码量或团队规模决定目标能力。它们只会影响最终交付计划、部署配置和验证成本。
-
-## 13. 从研究到 12 个模块
-
-| 模块 | 直接来源 | 参考项目帮助 | 参考项目未提供 |
-|---|---|---|---|
-| Identity & Access | 跨入口不越权 | MAF Scope要求、nanobot身份缺口、LibreChat权限链 | Chat完整Principal/Binding/撤销模型 |
-| Conversation | 会话连续 | pi/nanobot Session、LibreChat Conversation/Message树 | 与Work/Run/Evidence完整关联 |
-| Context | “继续”与上下文透明 | MAF Provider、pi/nanobot上下文 | 产品ContextPackage审阅/失效 |
-| Intent & Understanding | 多意图和纠错 | 参考只部分涉及 | 完整候选、澄清、修正模型 |
-| Work & Planning | 跨回合推进 | pi计划/队列、nanobot Goal | Work/Plan/Action生命周期 |
-| Execution Governance | 执行前可控制 | MAF Tool Approval、LibreChat HITL部分 | Draft/Hash/版本化产品Approval |
-| Run Control & Recovery | 故障和重启可恢复 | LibreChat Job、pi恢复诚实性、MAF Checkpoint | 长期Run/Attempt/Lease/Finalization组合 |
-| Tool Operations | 副作用结果未知 | MAF Tool机制、nanobot反例 | Ledger/幂等/对账/人工处置完整语义 |
-| Knowledge & Memory | 候选不能冒充事实 | nanobot Memory、LibreChat Memory部分 | 来源有效性和用户确认门 |
-| Evidence & Provenance | 结果可验证、来源失效 | 各项目仅部分 | 完整Evidence/派生/失效图 |
-| Delivery & Integration | Run成功不等于送达 | nanobot缺口、LibreChat流/消息 | Outbox/Receipt/外部Binding完整合同 |
-| Trace & Audit | 可观察、可运营 | MAF Telemetry、pi/nanobot事件 | 用户Trace、审计、恢复处置投影 |
-
-## 14. 当前未知和后续验证
-
-1. MAF 安装版与本地源码提交不一致；具体 Runtime Adapter、Middleware和事件序列要用安装版合同测试固定。
-2. 当前 AG-UI RC 如何与持久 Workflow `checkpoint_id`、Product Approval 和跨进程 Resume 接合，尚未通过 E2E。
-3. Product Finalization Gate 如何阻止过早标准`RUN_FINISHED`，需要比较框架扩展点、Adapter包装和上游升级影响。
-4. Runtime Job/Event Store、Lease 和多 Worker 的具体存储实现尚未选型；SQLite能力必须按目标保证压测，不能凭偏好决定。
-5. Product Store 与 Artifact Store 的一致提交、孤儿回收和备份恢复点尚未详细设计。
-6. OPC-OS Chat 的正式身份、能力声明、版本、权限、命令、事件和回执合同尚未取得外部规范。
-7. Intent、Work、Approval、Tool、Evidence、Delivery 和 Trace 的字段级聚合与状态机仍需逐模块审核。
-8. 外部 Tool 没有通用 exactly-once；每个 Adapter 必须声明幂等、查询、补偿和人工处置能力。
-9. 安全、容量、SLO、数据保留和灾难恢复目标需要产品级非功能指标，当前只有架构责任，没有批准数值。
-
-这些未知不阻止审核目标边界，但禁止把候选写成已经实现或已经验证的保证。
-
-## 15. 研究结论
-
-1. Chat 必须按独立完整产品设计，OPC-OS Chat 只是一种外部集成关系。
-2. MAF 是 Agent/Workflow Runtime，不是产品应用层或事实源。
-3. 12 个产品模块来自完整场景中的状态所有权和不变量，不来自参考仓库目录。
-4. 持久 Job、Lease/Event、Tool Ledger、Outbox/Receipt 和 Provenance 都是目标场景必需能力，不是以后可能增加的占位符。
-5. 推荐目标架构是“模块化产品核心 + 持久执行平面 + 可靠交付平面”；领域模块保持代码边界，进程按生命周期和故障域拆分。
-6. MAF、pi、nanobot、LibreChat 已足以支持总体边界判断；详细领域状态机仍由本项目设计并分别审核。
+这条链是下一份架构候选的来源。每个模块的内部组成、状态所有权、合同、失败与场景映射在`overall-architecture-proposal.md`中展开。

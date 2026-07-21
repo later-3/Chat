@@ -8,5 +8,6 @@ uv run python -m compileall -q backend
 uv run pytest
 
 cd "$project_root/frontend"
+npm run test
 npm run typecheck
 npm run build

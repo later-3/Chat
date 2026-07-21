@@ -12,20 +12,35 @@ Chat 是一个**独立开发、独立运行、独立运营、持续演进的完�
 用户
   |
   v
-Chat 独立产品
-├── Web 交互体验
+Chat Web 应用
+  |
+  v
+Web/API Adapter（REST + AG-UI）
+  |
+  v
+Interaction Ingress
+  |
+  v
+Chat 独立产品核心
 ├── 对话、上下文与意图
 ├── 工作、计划与审核
 ├── Agent / Workflow / Tool 执行
 ├── 会话、知识、证据与Trace
-├── 结果交付与运行治理
-└── 外部集成合同
-      ├── <-> OPC-OS Chat
-      ├── <-> 其他聊天入口
-      └── <-> 模型、工具、知识源与业务系统
+└── 结果交付与运行治理
+
+外部终端平台（如Telegram）
+  <-> 具体Channel Adapter <-> Channel Adapter Host <-> Interaction Ingress
+
+OPC-OS Chat外部系统
+  <-> OPC-OS Bridge Adapter <-> Channel Adapter Host <-> Interaction Ingress
+
+Chat产品核心
+  <-> 模型、工具、知识源与业务系统
 ```
 
 OPC-OS Chat 是一个可与本项目互操作的外部系统。在特定集成拓扑中，本项目可以提供聊天通道能力，也可以消费其共享能力；这是**系统之间的合同关系**，不是本项目的产品身份或层级归属。
+
+Chat Web是本产品自带客户端，通过Web/API Adapter访问后端。Telegram等外部终端平台与OPC-OS Chat都不能直接调用Conversation、Run、MAF或数据库：终端平台必须经过对应Channel Adapter，OPC-OS Chat必须经过系统间Bridge Adapter；这些Adapter转换成统一内部Interaction合同后才能进入产品核心。
 
 本项目不能依赖外部系统替自己承担 Product Session、Work、Run、Approval、Evidence、Delivery、Memory 或 Trace 的事实源责任。跨系统协作必须明确状态归属、版本、权限、幂等、证据和失效传播，不能形成双重事实源。
 
@@ -154,6 +169,7 @@ Product Session ID、MAF Session ID、AG-UI `threadId`、Product Run ID 和 Atte
 8. 不把隐藏推理当成 Trace，不把`prepared`冒充成用户已收到或认可。
 9. Product DB 是产品事实权威；运行时、协议投影和浏览器缓存不能替代它。
 10. 外部集成是对等合同，不改变 Chat 的产品身份，也不产生第二个产品事实源。
+11. 发给模型的Tool定义必须来自服务端已注册的真实执行能力或Provider明确支持的原生能力；模型提出Tool Call不等于获得执行授权，未绑定执行器的Tool不得进入Provider请求。
 
 ## 9. 完整产品能力范围
 
@@ -170,7 +186,7 @@ Chat 的目标能力至少包括：
 9. Memory 候选、接受、纠正、删除、来源与有效性治理。
 10. Evidence、Delivery、Trace、审计、可观测性和故障处置。
 11. 模型、工具、知识源和外部业务系统集成。
-12. 与 OPC-OS Chat 或其他聊天入口的授权映射和跨系统连续性。
+12. 通过具体Channel Adapter接入Telegram等终端平台，并通过独立Bridge Adapter与OPC-OS Chat互操作，实现授权映射和跨入口连续性。
 
 上述是目标能力全集，不代表一次性交付。实现顺序、依赖和每个阶段的可承诺保证只由`PROJECT_PLAN.md`及专项路线维护，不能反向修改本节产品范围。
 
@@ -194,7 +210,9 @@ Session 的完整目标和恢复分级由[Session 能力全集](./docs/session-c
 5. UI 采用自研产品组件，以 Tailwind CSS、Radix UI 和 Lucide React 为基础。
 6. Zustand 只管理导航、弹窗、筛选和布局等页面状态；Agent 消息和运行状态由 AG-UI Client 投影。
 7. MAF 运行状态与产品领域状态分开拥有；SQLite 是已批准的产品数据库实现起点，但不能改变逻辑状态边界，完整运行拓扑所需存储能力仍须按架构保证验证。
-8. 产品保持前后端、产品控制面、执行运行面和外部集成边界清晰；领域模型不能由 UI 组件、AG-UI 临时状态或 MAF Session 代替。
+8. 产品保持Web与Channel入口、产品资源、Interaction协调、Run执行和外部集成边界清晰；领域模型不能由 UI 组件、AG-UI 临时状态或 MAF Session 代替。
+9. 每次Provider模型调用发送前必须暂停审批：MAF原生Workflow承载控制流，自定义确定性Executor编译并发送请求；`store=False`且不使用Continuation保证本次完整显式上下文可见，自动Tool循环关闭。Provider与模型来自服务端能力目录并联动选择；可读视图使用不可改名的Key和按值类型选择的文字、数字、布尔或枚举控件，Provider JSON只作为高级视图，两者编辑同一请求草稿。任一字段或Provider路由修改都会生成新版本、Hash和新审批，旧审批失效；放弃不产生发送Attempt，并把原输入返回输入框供继续修改或清空。
+10. 后端运行与模型配置只从私有`backend/config.json`启动快照读取；Provider按数组扩展、每个Provider维护自己的模型目录。仓库只提交脱敏的`backend/config.example.json`，密钥和Base URL不进入浏览器响应或Git。
 
 ### 10.1 协议、运行时与状态所有权
 

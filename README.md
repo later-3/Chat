@@ -2,7 +2,7 @@
 
 Chat 是一个独立开发、独立运行、独立运营并持续演进的 AI 协作产品。它以 Web 对话为主要入口，自己承担会话、上下文、工作、受控执行、恢复、知识、证据、交付和治理的完整产品责任。
 
-Chat 可以通过版本化合同与 OPC-OS Chat 或其他聊天入口互操作；外部集成是对等系统关系，不改变本项目的产品身份，也不产生第二个产品事实源。
+Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台必须经过具体Channel Adapter，OPC-OS Chat必须经过独立Bridge Adapter，再统一进入内部Interaction Ingress。外部集成不改变本项目的产品身份，也不产生第二个产品事实源。
 
 ## 项目目标
 
@@ -29,14 +29,14 @@ Chat 可以通过版本化合同与 OPC-OS Chat 或其他聊天入口互操作�
 
 ## 当前状态
 
-工程骨架已经初始化并完成无密钥纵向验证：
+工程骨架、真实模型纵向回合和逐次模型调用审批切片已经完成：
 
 1. FastAPI、MAF和AG-UI SSE端点可运行。
 2. React前端通过`HttpAgent`完成了浏览器真实消息回合。
-3. 后端3个测试、前端类型检查和生产构建均通过。
-4. 已接入`backend/.env`并完成真实模型AG-UI文本回合。
+3. 后端自动测试、前端类型检查和生产构建已建立为一键验证。
+4. 后端以私有`backend/config.json`配置火山方舟和阿里云百炼，前端按Provider联动选择模型；真实模型AG-UI文本回合已通过。
 5. 总体架构候选已按完整用户场景重建，完整Session能力全集和Phase 0-8交付路线已经形成，均等待用户审核；尚未进入领域详细设计或开发。
-6. 尚未完成模型失败路径、服务端历史恢复和产品领域数据库，也没有迁移旧数据库、历史会话或环境配置。
+6. 尚未完成模型失败路径、服务端历史恢复和产品领域数据库，也没有迁移旧数据库或历史会话。
 
 ## 技术方向
 
@@ -66,13 +66,13 @@ Product资源走REST，单次Agent Run的实时事件走AG-UI；Product DB与MAF
 初始化环境：
 
 ```bash
-cp .env.example backend/.env
+cp backend/config.example.json backend/config.json
 cp frontend/.env.example frontend/.env
 uv sync --dev
 (cd frontend && npm install)
 ```
 
-如果`backend/.env`已经存在，只补充缺失项，不要覆盖原有密钥。
+`backend/config.json`是唯一后端运行配置源，包含密钥，因此已被Git忽略；不要把它的内容复制到文档、日志或提交中。
 
 终端1，启动后端：
 
@@ -87,17 +87,22 @@ cd frontend
 npm run dev
 ```
 
-打开`http://127.0.0.1:5073`。不配置密钥时会使用确定性Bootstrap Agent，仍会走完整MAF与AG-UI事件链路。
+打开`http://127.0.0.1:5073`。没有任何配置完整且启用的Provider时，会使用确定性Bootstrap Agent，仍走完整MAF与AG-UI事件链路。
 
-要启用真实模型，在项目自己的`backend/.env`中填写：
+## 后端JSON配置
 
-```dotenv
-ARK_MODEL=your-model
-ARK_API_KEY=
-ARK_BASE_URL=https://your-openai-compatible-endpoint/v1
-```
+[配置示例](./backend/config.example.json)默认包含2个Provider：`ark`（火山方舟）和`dashscope`（阿里云百炼）。每个Provider按同一结构维护：
 
-也可以使用`CHAT_MODEL`、`CHAT_MODEL_API_KEY`和`CHAT_MODEL_BASE_URL`覆盖对应`ARK_*`值。真实密钥不得提交到Git，也不得从旧项目直接复制环境文件。
+1. `id`是稳定且唯一的内部标识，`label`是前端显示名称。
+2. `protocol`当前支持`openai_responses`和`openai_chat_completions`；前者发送`instructions + input`到`/responses`，后者发送`messages`到`/chat/completions`。只提供其他私有协议的Provider仍需新增Transport适配器，不能只加配置。
+3. `base_url`和`api_key`只留在服务端私有配置中。
+4. `default_model`必须出现在该Provider的`models`数组中。
+5. `models`中的每一项包含不可重复的`id`和用户可读的`label`。
+6. `enabled`为`false`时，该Provider不会成为运行路由，也不会出现在前端目录中。
+
+新增模型时，向对应Provider的`models`数组追加一项；需要把它设为默认模型时，同时修改`default_model`。新增Provider时，复制一个完整Provider对象，修改其`id`、显示名、地址、密钥和模型列表。修改后重启后端，前端便会按新目录联动展示；当前不调用Provider的在线模型发现接口。
+
+审批页只展示服务端确认可用的Provider及其模型，服务端在保存和发送前再次校验组合。`api_key`和`base_url`不会进入浏览器返回值。
 
 ## VS Code调试
 
@@ -144,14 +149,15 @@ scripts/         可重复执行的工程验证
 3. [项目计划](./PROJECT_PLAN.md)：工作流、依赖、分阶段路线和完成门。
 4. [项目状态](./PROJECT_STATE.md)：当前完成项、待审核项和下一道门。
 5. [协作规则](./AGENTS.md)：开发和AI协作必须遵守的规则。
-6. [总体架构研究与证据](./docs/overall-architecture-research.md)：完整场景推导、MAF、pi、nanobot与LibreChat证据、覆盖缺口和方案比较。
-7. [总体架构候选](./docs/overall-architecture-proposal.md)：目标拓扑、12个产品模块、组件合同、状态所有权、场景穿透和交付依赖。
-8. [Session能力全集与目标边界](./docs/session-capability-catalog.md)：9个能力域、74项能力、R0-R6恢复层级、参考覆盖、明确非目标和最终用户场景。
-9. [Session分阶段交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务、优先级、依赖、方案、目标和各阶段完成场景。
-10. [Session持久化研究与方案推导](./docs/session-persistence-research.md)：MAF、pi、nanobot与LibreChat的逐项源码证据、适用边界、方案比较和决策推导。
-11. [Session持久化候选设计](./docs/session-persistence-design.md)：Phase 1文本持久化子设计，当前暂停总体审核。
-12. [Session持久化审核包](./docs/session-persistence-review.md)：D1-D6子设计的原因、参考覆盖、选项、优缺点和建议，待总体规划通过后重审。
+6. [总体架构研究与证据](./docs/overall-architecture-research.md)：完整场景推导、MAF、pi、nanobot、QwenPaw与LibreChat证据、覆盖缺口和方案比较。
+7. [总体架构候选](./docs/overall-architecture-proposal.md)：由pi、nanobot、QwenPaw和LibreChat源码结构推导出的Web/Channel适配、Interaction Ingress、10个产品与应用模块、运行适配器、状态所有权、场景穿透和交付依赖。
+8. [架构新手导读](./docs/architecture-beginner-guide.md)：从用户点击“发送/批准”开始，串起前端、协议、后端数据库、Agent Session/Tool、Provider请求、响应解析、产品提交和React渲染，并对照当前代码与目标架构。
+9. [Session能力全集与目标边界](./docs/session-capability-catalog.md)：9个能力域、74项能力、R0-R6恢复层级、参考覆盖、明确非目标和最终用户场景。
+10. [Session分阶段交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务、优先级、依赖、方案、目标和各阶段完成场景。
+11. [Session持久化研究与方案推导](./docs/session-persistence-research.md)：MAF、pi、nanobot与LibreChat的逐项源码证据、适用边界、方案比较和决策推导。
+12. [Session持久化候选设计](./docs/session-persistence-design.md)：Phase 1文本持久化子设计，当前暂停总体审核。
+13. [Session持久化审核包](./docs/session-persistence-review.md)：D1-D6子设计的原因、参考覆盖、选项、优缺点和建议，待总体规划通过后重审。
 
 ## 下一步
 
-下一步先审核总体架构候选的8项决定，确认目标拓扑、12个产品模块、状态所有权和关键合同；再把Session能力与路线映射到批准后的架构。审核门通过前不创建正式Schema、迁移、Worker或领域业务实现。
+下一步先结合架构新手导读审核总体架构候选的8项决定，确认前端到后端对象流、Agent内部边界、入口Adapter/Ingress拓扑、10个产品与应用模块、状态所有权和关键合同；再把Session能力与路线映射到批准后的架构。审核门通过前不创建正式Schema、迁移、Worker或领域业务实现。

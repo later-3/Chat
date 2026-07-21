@@ -53,7 +53,7 @@ flowchart LR
 5. **浏览器断线与Worker故障分开**：前者执行仍活着，只需再订阅；后者必须判断接管、新Attempt、人工重试或结果未知。
 6. **纯模型恢复先于工具恢复**：模型重试主要损失时间和费用；工具可能产生不可逆外部副作用，必须先具备Attempt、Lease和安全点语义。
 7. **工具账本先于Workflow/HITL**：Checkpoint只能恢复控制流，不能证明外部工具是否执行；没有Tool Execution/Evidence就可能重复副作用。
-8. **Chat内部事实和恢复语义稳定后再启用跨入口连续性**：否则Web、OPC-OS Chat或其他入口会各自形成Session、重试和投递事实源。
+8. **Chat内部事实和恢复语义稳定后再启用跨入口连续性**：否则Web/API Adapter、具体Channel Adapter和OPC-OS Bridge会各自形成Session、重试和投递事实源。
 
 ### 2.3 考虑过的其他拆法
 
@@ -315,7 +315,7 @@ Snapshot只保存可重放的消息、共享State和Interrupt投影，且当前�
 
 ### 12.1 阶段目标
 
-让Chat通过对等合同与OPC-OS Chat或其他入口互操作，并补齐跨入口投递、长期领域引用、分享、删除、审计和运维闭环。外部集成不改变Chat的独立产品身份和事实源责任。
+让Chat通过具体Channel Adapter接入终端平台、通过独立Bridge Adapter与OPC-OS Chat互操作，并补齐跨入口投递、长期领域引用、分享、删除、审计和运维闭环。外部集成不改变Chat的独立产品身份和事实源责任。
 
 ### 12.2 任务
 
@@ -333,7 +333,7 @@ Snapshot只保存可重放的消息、共享State和Interrupt投影，且当前�
 
 ### 12.4 阶段完成场景
 
-1. 用户从Web开始任务，经授权后从OPC-OS Chat或其他入口继续同一Session和WorkItem。
+1. 用户从Web开始任务，经授权后通过Telegram等具体Channel Adapter，或通过OPC-OS Bridge继续同一Session和WorkItem。
 2. 入站重投不会重复执行；出站失败不影响已提交产品结果，并可凭Outbox重试。
 3. 分享、过期或删除会话时，分支、附件、运行投影、Checkpoint和权限按一致规则处理。
 4. 运维能识别卡死Run、过期Approval、投递积压和恢复失败，并进行有审计的人工处置。

@@ -16,15 +16,6 @@
       ],
       "cwd": "${workspaceFolder}",
       "python": "${workspaceFolder}/.venv/bin/python",
-      "envFile": "${workspaceFolder}/backend/.env",
-      "env": {
-        "CHAT_BACKEND_HOST": "${config:chat.backendHost}",
-        "CHAT_BACKEND_PORT": "${config:chat.backendPort}",
-        "CHAT_FRONTEND_PORT": "${config:chat.frontendPort}",
-        "CHAT_FRONTEND_PUBLIC_HOST": "${config:chat.frontendPublicHost}",
-        "CHAT_FRONTEND_URL": "http://${config:chat.frontendPublicHost}:${config:chat.frontendPort}",
-        "CHAT_FRONTEND_ORIGINS": "http://${config:chat.frontendPublicHost}:${config:chat.frontendPort},http://127.0.0.1:${config:chat.frontendPort}"
-      },
       "preLaunchTask": "chat: cleanup backend",
       "postDebugTask": "chat: cleanup backend",
       "console": "integratedTerminal",

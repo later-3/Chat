@@ -1,6 +1,8 @@
 .DS_Store
 .env
 backend/.env
+backend/config.json
+backend/config.json.tmp
 frontend/.env
 .venv/
 __pycache__/
@@ -16,3 +18,4 @@ backend/logs/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/.test-dist/

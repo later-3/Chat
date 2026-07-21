@@ -24,14 +24,14 @@
 |---|---|---|---|---|
 | W0 产品治理与架构 | 全局 | 产品定义、经验约束、目标架构、ADR、术语和ID合同 | 无 | 4类读者能用文档继续决策、排期和开发 |
 | W1 工程与合同基础 | Bootstrap、Interfaces、测试基础 | 可运行前后端、配置、OpenAPI/AG-UI合同、错误分类、CI/本地验证 | W0技术路线 | 真实MAF回合和合同测试稳定 |
-| W2 身份与产品会话 | M1、M2、Product Store | Principal/Scope、Session、Interaction、Message Tree、生命周期和查询 | W0、W1 | 输入先持久化，历史可重开，越权被拒绝 |
-| W3 上下文与理解 | M3、M4 | ContextPackage、唯一历史装配器、多Intent、澄清和用户修正 | W2 | 用户可见并修正系统理解和上下文 |
-| W4 工作与执行治理 | M5、M6 | Work/Plan/Action、Draft、Approval、RunSpec和版本失效 | W2、W3 | 用户批准的内容与实际执行严格一致 |
-| W5 产品运行控制 | M7、Runtime Store、AG-UI协调 | Product Run/Attempt、Job、Event Cursor、Cancel/Retry/Resume、Finalization Gate | W2、W4 | 无假成功；刷新和断线能回到权威状态 |
+| W2 身份与产品会话 | Identity与Channel Binding、Conversation、Product Store | Principal/Scope、Session、Interaction、Message Tree、生命周期和查询 | W0、W1 | 输入先持久化，历史可重开，越权被拒绝 |
+| W3 上下文与理解 | Context、Memory、Collaboration | ContextPackage、唯一历史装配器、受控Memory、多Intent、澄清和用户修正 | W2 | 用户可见并修正系统理解和上下文 |
+| W4 工作与执行治理 | Collaboration、Interaction协调器 | Work/Plan/Action、Draft、Approval、执行门和版本失效 | W2、W3 | 用户批准的内容与实际执行严格一致 |
+| W5 产品运行控制 | Run管理、Runtime Store、AG-UI协调 | Product Run/Attempt、Job、Event Cursor、Cancel/Retry/Resume、Finalization Gate | W2、W4 | 无假成功；刷新和断线能回到权威状态 |
 | W6 MAF/Workflow执行 | MAF Adapter、Worker、Scheduler/Reconciler | Agent/History、Workflow/Checkpoint、Lease、Worker接管和HITL映射 | W5 | 失联可判断，从验证过的安全点恢复 |
-| W7 Tool副作用治理 | M8 | Tool Catalog、Approval桥接、Ledger、幂等、结果未知和对账 | W4、W5、W6 | 不盲目重做外部副作用，有处置证据 |
-| W8 知识、证据与审计 | M9、M10、M12、Artifact/Index | Memory候选、Evidence、Provenance、Trace、失效传播和运营视图 | W2、W3、W5、W7 | 结果可验证，来源失效能正确降级 |
-| W9 交付与外部集成 | M11、Delivery Worker、Adapters | Outbox、Delivery/Receipt、Binding、合同版本、跨入口连续性 | W1、W2、W5、W8 | 送达可追踪，多入口不双写、不越权 |
+| W7 Tool副作用治理 | Tool执行 | Tool Catalog、Approval桥接、Ledger、幂等、结果未知和对账 | W4、W5、W6 | 不盲目重做外部副作用，有处置证据 |
+| W8 知识、证据与审计 | Memory、Evidence、Run Trace、Artifact/Index | Memory候选、Evidence、Provenance、Trace、失效传播和运营视图 | W2、W3、W5、W7 | 结果可验证，来源失效能正确降级 |
+| W9 交付与外部集成 | Delivery、Identity与Channel Binding、具体Channel Adapter、Channel Adapter Host、Interaction Ingress | Outbox、Delivery/Receipt、Binding、平台/Bridge合同版本、跨入口连续性 | W1、W2、W5、W8 | 平台不直连核心；送达可追踪，多入口不双写、不越权 |
 
 ### 3.1 工作流依赖
 
@@ -66,7 +66,7 @@ flowchart LR
 | 5. 持久执行与活动流 | Job/Event、Worker、Lease、重连和Reconciler | `未开始` |
 | 6. Tool、Workflow与HITL恢复 | Tool Ledger、对账、Checkpoint和持久Interrupt | `未开始` |
 | 7. 知识、证据、交付与运营 | Memory、Evidence、Provenance、Outbox、Trace和告警 | `未开始` |
-| 8. 外部入口连续性 | 与OPC-OS Chat或其他入口完成对等集成 | `未开始` |
+| 8. 外部入口连续性 | 通过具体Channel Adapter接入终端平台，并通过Bridge Adapter与OPC-OS Chat对等集成 | `未开始` |
 
 ## 5. 阶段 0：产品定义与治理
 
@@ -79,7 +79,7 @@ flowchart LR
 - [x] 确认后端 MAF、前后端 AG-UI、React 自研 UI 技术路线。
 - [x] 建立`AGENTS.md`、`PROJECT_CONTEXT.md`、`PROJECT_PLAN.md`、`PROJECT_STATE.md`和`README.md`。
 - [x] 纠正产品身份：Chat 是独立完整产品，OPC-OS Chat 是外部集成关系。
-- [x] 新增`PROJECT_LESSONS.md`，记录“阶段偷换架构范围、集成角色降级产品、模块清单冒充设计、场景不穿透架构”4个反例。
+- [x] 新增`PROJECT_LESSONS.md`，记录10个反例，并把参考可追溯性、入口拓扑、完整Payload可编辑性、对象可理解性和操作可走通性加入回复检查。
 - [ ] 用户审核本轮纠正是否准确进入稳定项目文档。
 
 完成门：项目定义无需依赖 OPC-OS 也能完整描述用户、价值、责任和产品边界；所有项目回复前强制读取经验文档。
@@ -92,15 +92,16 @@ flowchart LR
 
 - [x] 初始化私有 Git 仓库、Python 3.12/uv、React 19/TypeScript/Vite。
 - [x] 建立 FastAPI、MAF Agent 和 AG-UI HTTP/SSE 端点。
-- [x] 建立无密钥 Bootstrap Agent 和真实模型配置路径。
+- [x] 建立无密钥 Bootstrap Agent，以及支持按数组扩展Provider/模型的私有后端JSON配置路径。
 - [x] 建立 Tailwind CSS、Radix UI、Lucide React和局部页面状态基础。
 - [x] 建立后端测试、前端类型检查/构建和一键验证脚本。
 - [x] 完成浏览器真实回合、窄屏检查和真实模型 AG-UI 回合。
+- [x] 完成逐次模型调用审批纵向切片：服务端Provider/模型目录与联动选择、固定Key/类型化Value可读编辑、同源Provider JSON、完整请求编辑、版本/Hash失效、二次审批、精确发送、审批协议消息隔离、放弃恢复输入和真实Provider回合。
 - [x] 建立 VS Code 前后端/全栈调试与定向端口、进程清理。
 
 剩余：
 
-- [ ] 建立真实模型失败、超时、错误脱敏和取消合同测试。
+- [x] 建立Provider超时、发送后取消和结果未知恢复合同测试；真实双Provider成功路径已验证，故障路径不做可能产生未知计费的真实外部重放。
 - [ ] 固定旧项目“复用、重写、仅参考”的文件级清单。
 
 完成门：空数据环境可重复启动，成功和关键失败路径均有真实链路证据；不迁移旧数据库、历史或密钥。
@@ -111,15 +112,16 @@ flowchart LR
 
 任务：
 
-- [x] 完成 MAF、pi、nanobot 和 LibreChat 的限定源码研究与知识同步。
+- [x] 完成 MAF、pi、nanobot、QwenPaw 和 LibreChat 的限定源码研究与知识同步；QwenPaw专项覆盖Web/Channel/Queue/统一请求入口拓扑。
 - [x] 完成 Session 9 个能力域、74 项能力和 R0-R6 恢复分级。
 - [x] 完成 Session Phase 0-8 的任务与依赖路线。
 - [x] 重写[总体架构研究](./docs/overall-architecture-research.md)，公开错误修订、研究过程、证据、参考覆盖和项目推导。
-- [x] 重写[总体架构候选](./docs/overall-architecture-proposal.md)，展开目标拓扑、12个模块、合同、状态、失败恢复和7个场景。
-- [ ] 用户审核目标架构的 8 项决定。
+- [x] 重写[总体架构候选](./docs/overall-architecture-proposal.md)，按pi、nanobot、QwenPaw和LibreChat真实结构推导Web/Channel Adapter、Interaction Ingress、10个产品与应用模块、合同、状态、失败恢复和8个场景。
+- [x] 新增并补全[架构新手导读](./docs/architecture-beginner-guide.md)：按前端View、协议DTO、内部Envelope、产品领域对象和MAF运行对象5层展开；从“发送/批准”两个用户动作串起数据库、Session、Tool、Provider请求、响应解析、产品提交和React渲染；同时对照当前代码链与目标链。
+- [ ] 用户审核目标架构的8项决定。
 - [ ] 审核模块公开合同、ID链、错误分类、并发/幂等原则和四个提交门。
 - [ ] 建立 MAF/AG-UI 安装版合同测试设计和依赖升级门。
-- [ ] 把 Session R0-R6 验收矩阵映射到 M2/M3/M6/M7/M8/M11 与 Runtime 组件。
+- [ ] 把 Session R0-R6 验收矩阵映射到 Conversation、Context、Collaboration、Run、Tool执行、Delivery 与 MAF Runtime 组件。
 - [ ] 为每个模块建立详细设计任务、负责人边界和验收清单；不冻结字段实现。
 
 完成门：架构师能继续出数据、接口、部署和安全方案；项目经理能排 W2-W9；开发能知道模块和合同；产品负责人批准场景覆盖和设计原因。
@@ -130,7 +132,7 @@ flowchart LR
 
 主要方案任务：
 
-- [ ] 详细设计并审核 M1/M2/M7/M12 的聚合、状态机和 Repository Port。
+- [ ] 详细设计并审核 Identity与Channel Binding、Conversation、Run管理的聚合、状态机和 Repository Port。
 - [ ] 建立 Principal/Scope 基线、Product Session、Interaction 和 Message Tree。
 - [ ] 建立 Product Run、Run Attempt 和稳定错误分类；不与 Runtime Job 合并。
 - [ ] 建立输入接纳门和产品成功终态门。
@@ -149,7 +151,7 @@ flowchart LR
 
 主要方案任务：
 
-- [ ] 详细设计并审核 M3/M4/M5/M6。
+- [ ] 详细设计并审核 Context、Memory、Collaboration 与 Interaction协调器。
 - [ ] 建立 Context Source、纳入/排除、Token 预算、版本和 Hash。
 - [ ] 实现一个或多个 Intent、依据、不确定性、澄清和用户修正。
 - [ ] 建立 WorkItem、TaskPlan、Plan Node、ActionItem、依赖和责任状态。
@@ -182,7 +184,7 @@ flowchart LR
 
 主要方案任务：
 
-- [ ] 详细设计 M8 Tool Catalog、Tool Operation Ledger、幂等和能力声明。
+- [ ] 详细设计 Tool执行模块的Tool Catalog、Tool Operation Ledger、幂等和能力声明。
 - [ ] 建立 MAF Function Middleware 到 Tool Gateway 的唯一执行路径。
 - [ ] 工具参数动态扩权时回到持久 Approval，而不是进程内默认批准。
 - [ ] 实现`result_unknown`、查询对账、补偿和人工处置。
@@ -198,7 +200,7 @@ flowchart LR
 
 主要方案任务：
 
-- [ ] 详细设计 M9/M10/M11/M12。
+- [ ] 详细设计 Memory、Evidence、Delivery 和 Run Trace/运营查询。
 - [ ] 建立 Memory Candidate、接受、纠正、删除、范围和有效性。
 - [ ] 建立 Evidence、Artifact、Provenance Graph、验证和失效传播。
 - [ ] 建立 Transactional Outbox、Delivery Worker、Attempt、Receipt、重试和死信。
@@ -210,7 +212,7 @@ flowchart LR
 
 ## 13. 阶段 8：外部入口连续性
 
-目标：在不改变 Chat 产品身份和事实源责任的前提下，与 OPC-OS Chat 或其他入口对等互操作。
+目标：在不改变Chat产品身份和事实源责任的前提下，通过具体Channel Adapter接入终端平台，并通过独立Bridge Adapter与OPC-OS Chat对等互操作。
 
 主要方案任务：
 
@@ -233,14 +235,14 @@ Session 是 W2-W9 的横向能力，仍由两份专项材料维护：
 | Session 路线 | 项目阶段 | 主要架构位置 |
 |---|---|---|
 | Phase 0 术语与恢复合同 | 阶段2 | W0/W1，跨全部模块 |
-| Phase 1 产品会话与历史 | 阶段3 | M1/M2/M7/M12 |
-| Phase 2 Run控制与并发 | 阶段3-5 | M2/M6/M7 |
-| Phase 3 生命周期、分支与长上下文 | 阶段3-4 | M2/M3/M5 |
-| Phase 4 活动流重连 | 阶段5 | M7/Runtime Store/AG-UI Reconciler |
+| Phase 1 产品会话与历史 | 阶段3 | Identity、Conversation、Run Trace |
+| Phase 2 Run控制与并发 | 阶段3-5 | Conversation、Collaboration、Run管理 |
+| Phase 3 生命周期、分支与长上下文 | 阶段3-4 | Conversation、Context、Collaboration |
+| Phase 4 活动流重连 | 阶段5 | Run管理/Runtime Store/AG-UI Reconciler |
 | Phase 5 Worker恢复 | 阶段5 | Scheduler/Worker/Lease/Reconciler |
-| Phase 6 Tool恢复 | 阶段6 | M8/M10 |
-| Phase 7 Workflow/HITL恢复 | 阶段6 | M6/M7/MAF Workflow |
-| Phase 8 跨入口与治理 | 阶段7-8 | M1/M9/M10/M11/M12 |
+| Phase 6 Tool恢复 | 阶段6 | Tool执行/Evidence |
+| Phase 7 Workflow/HITL恢复 | 阶段6 | Collaboration/Run管理/MAF Workflow |
+| Phase 8 跨入口与治理 | 阶段7-8 | Identity与Channel Binding/Memory/Evidence/Delivery/Run Trace |
 
 专项路线不能创造与总体架构冲突的对象或事实源；D1-D6 持久化方案只是阶段3中的子设计，需在总体架构和 Phase 0 合同通过后重新审核。
 

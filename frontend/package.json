@@ -10,7 +10,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "test": "tsc -p tsconfig.test.json && node --test .test-dist/tests/*.test.js"
   },
   "dependencies": {
     "@ag-ui/client": "0.0.57",

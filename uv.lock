@@ -251,7 +251,6 @@ dependencies = [
     { name = "agent-framework-ag-ui" },
     { name = "agent-framework-openai" },
     { name = "fastapi" },
-    { name = "python-dotenv" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -266,7 +265,6 @@ requires-dist = [
     { name = "agent-framework-ag-ui", specifier = "==1.0.0rc8" },
     { name = "agent-framework-openai", specifier = "==1.10.1" },
     { name = "fastapi", specifier = ">=0.115,<1" },
-    { name = "python-dotenv", specifier = ">=1.2,<2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.41,<1" },
 ]
 

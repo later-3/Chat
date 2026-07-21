@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8030,
+    "frontend_origins": [
+      "http://localhost:5073",
+      "http://127.0.0.1:5073"
+    ]
+  },
+  "frontend": {
+    "port": 5073,
+    "public_host": "localhost",
+    "url": "http://localhost:5073"
+  },
+  "history": {
+    "directory": ".chat-history"
+  },
+  "default_provider_id": "ark",
+  "providers": [
+    {
+      "id": "ark",
+      "label": "火山方舟",
+      "enabled": true,
+      "protocol": "openai_responses",
+      "base_url": "https://your-ark-openai-compatible-endpoint/v1",
+      "api_key": "",
+      "default_model": "your-ark-model",
+      "models": [
+        {
+          "id": "your-ark-model",
+          "label": "Your ARK Model"
+        }
+      ],
+      "capabilities": {
+        "image_input": false,
+        "roles": ["user", "assistant", "developer", "system"],
+        "parameters": [
+          {
+            "key": "max_output_tokens",
+            "label": "最大输出Token",
+            "value_type": "integer",
+            "default": 4096,
+            "minimum": 1,
+            "maximum": 65536
+          },
+          {
+            "key": "temperature",
+            "label": "随机性",
+            "value_type": "number",
+            "default": 1,
+            "minimum": 0,
+            "maximum": 2
+          },
+          {
+            "key": "top_p",
+            "label": "采样范围",
+            "value_type": "number",
+            "default": 1,
+            "minimum": 0,
+            "maximum": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "dashscope",
+      "label": "阿里云百炼",
+      "enabled": true,
+      "protocol": "openai_chat_completions",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "api_key": "",
+      "default_model": "your-dashscope-model",
+      "models": [
+        {
+          "id": "your-dashscope-model",
+          "label": "Your DashScope Model"
+        }
+      ],
+      "capabilities": {
+        "image_input": true,
+        "roles": ["user", "assistant", "developer", "system"],
+        "parameters": [
+          {
+            "key": "max_output_tokens",
+            "label": "最大输出Token",
+            "value_type": "integer",
+            "default": 4096,
+            "minimum": 1,
+            "maximum": 65536
+          },
+          {
+            "key": "temperature",
+            "label": "随机性",
+            "value_type": "number",
+            "default": 1,
+            "minimum": 0,
+            "maximum": 2
+          },
+          {
+            "key": "top_p",
+            "label": "采样范围",
+            "value_type": "number",
+            "default": 1,
+            "minimum": 0,
+            "maximum": 1
+          }
+        ]
+      }
+    }
+  ]
+}

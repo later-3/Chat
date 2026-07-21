@@ -6,11 +6,11 @@
 |---|---|
 | 产品身份 | 独立开发、独立运行、独立运营并持续演进的完整 Chat 产品 |
 | 当前目录 | `/Users/xulater/Code/Chat` |
-| 代码状态 | 前后端工程骨架、MAF + AG-UI 纵向链路和真实模型回合已完成 |
-| 设计状态 | 总体架构已按完整用户场景重写，等待用户审核；尚未进入领域详细设计或业务开发 |
-| Session 状态 | 9个能力域、74项能力、R0-R6恢复分级和Phase 0-8路线已形成，待与新架构一起审核 |
-| 数据状态 | 没有产品Schema，没有迁移旧数据库、历史会话或旧环境配置 |
-| Git 状态 | 私有仓库`later-3/Chat`，分支`main`；最后已推送提交`acdbaef`，本轮定位、架构、计划和产品元数据修订尚未提交 |
+| 代码状态 | 前后端工程骨架、MAF + AG-UI纵向链路，以及支持Responses/Chat Completions双协议的逐次模型调用审批Feature已完成 |
+| 设计状态 | 总体架构已按完整用户场景重写；用户已要求按既有规划继续实现Session、Workflow、多Agent和pi-agent接入，各阶段仍需按恢复保证分别验证 |
+| Session 状态 | 9个能力域、74项能力、R0-R6恢复分级和Phase 0-8路线已形成，进入实现前的合同与详细设计复核 |
+| 数据状态 | 没有产品Schema，没有迁移旧数据库、历史会话或旧项目配置；当前项目本地`.env`已一次性迁移为私有JSON配置 |
+| Git 状态 | 私有仓库`later-3/Chat`，分支`main`；按Feature节点提交并推送，私有配置和本地产物不进入Git |
 
 ## 2. 已确认的稳定事实
 
@@ -19,12 +19,13 @@
 1. 项目不保留背景章节，直接围绕 6 个用户问题、6 个目标和完整闭环设计。
 2. Chat 是独立完整产品，不是 Adapter、薄通道或外部系统附属实现。
 3. OPC-OS Chat 是可对等互操作的外部系统；特定拓扑中的通道角色不改变 Chat 产品身份。
-4. Chat 自己承担 Conversation、Work、Approval、Run、Evidence、Delivery、Memory 和 Trace 的产品事实责任。
-5. Product Session、MAF AgentSession/Workflow Checkpoint、AG-UI Thread、Product Run 是不同对象；Product Run 与 Run Attempt 也不同。
-6. REST 管理产品资源，AG-UI 管理一次 Agent Run 的实时交互；Product DB 是产品事实源，MAF 负责运行时语义。
-7. Interaction 与 Product Run 不是同一对象；一次 Interaction 可以触发零到多个 Run。
-8. 模型输出只能提出 Intent、Work、Memory 和结果候选，不能自动成为长期正式事实。
-9. Session总体规划必须先覆盖完成历史、活动流、Worker、Tool、Workflow/HITL和跨入口连续性，再按依赖拆交付。
+4. Chat Web通过Web/API Adapter访问后端；Telegram等终端平台通过具体Channel Adapter、OPC-OS Chat通过Bridge Adapter进入Channel Adapter Host，再统一调用Interaction Ingress，任何外部平台都不能直接调用产品核心。
+5. Chat 自己承担 Conversation、Work、Approval、Run、Evidence、Delivery、Memory 和 Trace 的产品事实责任。
+6. Product Session、MAF AgentSession/Workflow Checkpoint、AG-UI Thread、Product Run 是不同对象；Product Run 与 Run Attempt 也不同。
+7. REST 管理产品资源，AG-UI 管理一次 Agent Run 的实时交互；Product DB 是产品事实源，MAF 负责运行时语义。
+8. Interaction 与 Product Run 不是同一对象；一次 Interaction 可以触发零到多个 Run。
+9. 模型输出只能提出 Intent、Work、Memory 和结果候选，不能自动成为长期正式事实。
+10. Session总体规划必须先覆盖完成历史、活动流、Worker、Tool、Workflow/HITL和跨入口连续性，再按依赖拆交付。
 
 ### 2.2 已批准技术路线
 
@@ -33,27 +34,42 @@
 3. 前端：React 19、TypeScript、Vite、`@ag-ui/client`和自研UI。
 4. UI基础：Tailwind CSS、Radix UI、Lucide React；Zustand只管理页面状态。
 5. MAF运行状态与产品领域状态分开拥有；SQLite是已批准的Product Store实现起点，但必须验证目标架构所需保证。
-6. 外部Web产品参考只保留LibreChat这1个正式主参考；新增参考项目仍需用户批准。
+6. 架构技术基线包括MAF、pi、nanobot和QwenPaw；外部Web产品主参考保留LibreChat。新增其他参考项目仍需用户批准。
+7. 模型调用审批采用“MAF原生Workflow + 自定义确定性Executor”：每次模型调用都审批，`store=False`展示完整显式上下文，关闭MAF自动Tool循环；Provider与模型由服务端目录约束并联动，可读视图用固定Key和类型化Value控件，Provider JSON作为同一草稿的高级视图。所有Provider Body字段可编辑；Provider路由或Body修改都会生成新版本、Hash和审批，放弃零发送并恢复原输入。
+8. 后端以私有`backend/config.json`作为唯一运行配置源；Provider按数组扩展并各自维护模型目录，当前配置包含火山方舟和阿里云百炼。仓库只提交脱敏示例，密钥和Base URL不进入浏览器响应或Git。
 
 ## 3. 本轮纠正与完成
 
 - [x] 新增[项目经验与反例](./PROJECT_LESSONS.md)，建立每次回复前强制读取规则。
-- [x] 记录4个可执行反例：交付阶段偷换目标架构、集成角色降级产品、模块清单冒充设计、场景未穿透架构。
+- [x] 记录10个可执行反例；新增对象可理解性与操作可走通性检查，要求从用户点击穿透前端、后端Store、MAF、Provider、响应解析和最终渲染。
 - [x] 纠正`AGENTS.md`和`PROJECT_CONTEXT.md`中的产品身份与外部关系。
 - [x] 删除稳定产品上下文里的“第一阶段/后续能力/非上位系统”式范围定义。
-- [x] 重写[总体架构研究](./docs/overall-architecture-research.md)，公开上一版推导错误、研究过程、证据等级、覆盖矩阵和方案比较。
+- [x] 在`agent_knowledge/project-studies`新增pi、nanobot架构与模块源码研究，补齐QwenPaw Web/Channel入口拓扑和LibreChat源码模块拓扑、责任与缺口。
+- [x] 重写[总体架构研究](./docs/overall-architecture-research.md)，按固定提交还原pi、nanobot、QwenPaw、LibreChat真实模块，再逐项执行“源码事实→Chat问题→模块决策”。
 - [x] 重写[总体架构候选](./docs/overall-architecture-proposal.md)：
-  - 目标形态改为“模块化产品核心 + 持久执行平面 + 可靠交付平面”。
-  - 定义4个有界域、12个产品模块及每个模块的内部组件、状态、合同、不变量、失败恢复和测试责任。
-  - 定义API、Execution Worker、Scheduler/Reconciler、Delivery Worker、Projector进程角色。
-  - 定义5类逻辑存储、12类关键合同、ID链、生命周期和4个提交门。
-  - 用7个用户场景逐步映射组件、合同、状态、失败和用户结果。
+  - 取消“数据/知识/执行/交付平面”等自创分类；补正为Web/API Adapter、具体Channel Adapter、Channel Adapter Host、Interaction Ingress、10个产品与应用模块、MAF与基础设施适配器。
+  - 每个模块定义参考来源、存在原因、用户价值、内部组件、状态、合同、不变量、失败和测试责任。
+  - 定义FastAPI API、Execution Worker、Scheduler/Reconciler、Delivery Worker、Projector进程角色。
+  - 定义状态所有权、ID链、事件合同、关键状态机和4个提交门。
+  - 用8个用户场景逐步映射组件、合同、状态、失败和用户结果，其中分别展开Web、OPC-OS Bridge和Telegram Adapter路径。
   - 只在文档最后给出交付阶段。
+- [x] 新增[架构新手导读](./docs/architecture-beginner-guide.md)：
+  - 区分前端交互对象、协议对象、产品领域对象和MAF/Worker运行时对象。
+  - 逐项解释前端7个区域、后端核心对象、MAF Agent 10个内部部件及Agent外的Workflow、AG-UI与产品控制。
+  - 用“整理Session计划并审核后写文档”的20步场景串起对象创建、版本、审批、执行、证据、交付和失败恢复。
+  - 补充“发送→审批→Provider→响应解析→产品提交→React渲染”的完整时序，解释Agent内外两类Session/Tool责任、5类逻辑Store及当前代码与目标架构差距。
 - [x] 重写`PROJECT_PLAN.md`，按10条工作流、依赖图和9个交付阶段映射目标架构。
 - [x] 更新README项目定位与文档入口。
 - [x] 完成所有Session专项文档中的旧产品身份和误导性阶段措辞一致性修订。
 - [x] 清理Python包、FastAPI元数据、Agent描述和Web品牌中的旧“OPC-OS附属通道”命名，统一为独立Chat产品。
 - [x] 完成全仓文档交叉审计、本地链接检查和工程验证：3个后端测试、前端类型检查与生产构建通过。
+- [x] 完成模型调用审批合同Spike：精确流式Payload、SQLite 8并发唯一领取、跨两个OS进程的AG-UI/Product Approval/MAF Checkpoint重连、返回修改后二次审批、拒绝后新Run重新发送均通过。
+- [x] 把审批合同落成可运行纵向切片：后端原生Workflow/Executor、进程内草稿与唯一Attempt、精确Provider Transport、REST修改端点，以及前端同源双视图、全字段编辑、二次审批、放弃恢复和清空输入。
+- [x] 把当前项目`backend/.env`一次性迁移为权限`0600`且被Git忽略的`backend/config.json`；后端、VS Code调试和测试不再读取`.env`。配置以`providers`数组支持火山方舟、阿里云百炼及后续Provider/模型追加，并保留旧`.env`作为未被应用读取的迁移备份。
+- [x] 修正审批页虚假Tool入口：移除`new_tool`和自由填写Tool名称；当前未接入真实Tool Catalog时只显示“暂无可用Tool”，可读视图与服务端都拒绝非空`tools`。确认发送在存在未保存修改时明确显示“请先保存修改”，保存生成新版本和新Hash后才可批准。
+- [x] 完成Provider/模型能力级编辑与深层校验：Role、内容类型、参数类型/范围、上下文来源、采用原因和透明Token估算均由当前模型能力控制。
+- [x] 完成Responses与Chat Completions双协议规范草稿：切换Provider时先转换为目标协议最终Body，保存后以新Hash审批，Transport不再改写；火山方舟和阿里云百炼均通过真实浏览器审批回合。
+- [x] 完成Provider明确失败、超时结果未知和发送后取消结果未知语义；均只创建1次Attempt且不自动重试，用户可把原Prompt取回输入框。
 
 ## 4. 已完成的工程与研究证据
 
@@ -63,16 +79,16 @@
 2. 后端当前依赖：`agent-framework-core 1.11.0`、`agent-framework-openai 1.10.1`、`agent-framework-ag-ui 1.0.0rc8`。
 3. 前端当前依赖：React 19、TypeScript 6、Vite 8、`@ag-ui/client 0.0.57`。
 4. `POST /api/agent`接收AG-UI请求并通过SSE返回运行和文本事件。
-5. 无模型密钥时使用确定性Bootstrap Agent；`backend/.env`存在有效模型配置时创建真实模型Agent。
+5. 无可用Provider时使用确定性Bootstrap Agent；`backend/config.json`中至少一个启用Provider配置完整且默认Provider可用时，创建逐次审批的真实模型Workflow。
 6. `GET /api/health`只返回安全运行信息，不输出密钥。
 7. VS Code后端`8030`、前端`5073`；调试前后定向清理对应端口和项目进程。
 
 ### 4.2 已有验证
 
-1. 后端3个测试通过：健康合同、ARK配置映射、AG-UI完整事件流。
-2. 前端类型检查和生产构建通过；最新`npm install --package-lock-only`审计122个包，0个已知漏洞。
-3. 浏览器完成真实消息回合，控制台错误为0；窄屏无横向溢出。
-4. 真实模型AG-UI文本回合：HTTP 200、82个事件、`RUN_STARTED`到`RUN_FINISHED`。
+1. 当前工作区后端31个测试通过：工程基线、JSON配置、审批合同Spike、双协议、能力校验、上下文来源、精确发送、放弃零Attempt、失败/超时/取消和AG-UI终态顺序均有覆盖。
+2. 前端8个逻辑测试、类型检查和生产构建通过；最新`npm install --package-lock-only`审计122个包，0个已知漏洞。
+3. 浏览器完成Provider/模型联动、固定Key/类型化Value编辑、Role与内容类型同步、双视图同源、跨协议转换、修改后二次审批、放弃恢复、窄屏回归；窄屏无横向溢出。
+4. 火山方舟Responses与阿里云百炼Chat Completions各完成1次真实模型审批回合；后者核对最终Body仅含`model/messages/tools/store/stream`并返回预期文本。
 5. 清理脚本已验证可分别终止端口8030的Uvicorn和5073的Vite，清理后无监听残留。
 
 ### 4.3 Session与参考项目研究
@@ -81,7 +97,27 @@
 2. 已研究pi、nanobot的Session存储、恢复、并发和失败边界。
 3. 已在固定提交`8e5ef1fb31e9d63b735c089b21cbc82c50acce46`研究LibreChat Conversation、Message树、Generation Job、活动流、失败终态、HITL和Web总体分层。
 4. 已实测MAF HistoryProvider终态顺序、保存失败、per-service持久化和双历史风险。
-5. MAF与LibreChat可复用知识已写入`/Users/xulater/Code/opc-os/agent_knowledge`对应目录。
+5. MAF、pi、nanobot、QwenPaw与LibreChat可复用知识已写入`/Users/xulater/Code/opc-os/agent_knowledge`对应目录。
+
+### 4.4 模型调用审批合同Spike
+
+1. 测试型Provider Adapter通过本地真实TCP HTTP/SSE流式请求证明：审核Hash对应的同一`bytes`缓冲区被直接发送，服务端捕获Body逐字节一致；两个用户视图从该Body投影，`store=False`且无Continuation引用。
+2. 临时SQLite合同表在8个不同PID的Worker同时竞争同一已批准请求时，只有1个成功创建`ModelCallAttempt`并消费Approval；数据库重开后重复领取仍被拒绝。
+3. 两个不同PID分别承载暂停和恢复请求；持久AG-UI Snapshot先恢复中断卡片，产品层`thread/approval -> checkpoint_id`薄桥恢复MAF Checkpoint，再由原生canonical resume完成发送；起始Executor没有重跑。
+4. “返回修改”不会发送旧Draft：旧Draft和Approval变为`superseded`，服务端创建新版Draft和新Approval，第二次批准后只发送新版。
+5. “拒绝”以已解决的产品决策结束当前Run且零Attempt；用户之后编辑并再次点击发送会创建新Product Run，再次审批后可以发送。待审批时直接塞入新消息会得到MAF `WORKFLOW_RESUME_REQUIRED`，不能绕过审批。
+6. 证据位于`backend/tests/spikes/test_model_call_approval_spike.py`。这是测试型合同和临时`spike_*`表，不是正式Product Schema、Repository、Worker或生产Provider实现。
+
+### 4.5 模型调用审批纵向切片
+
+1. `backend/app/model_call_workflow.py`使用MAF原生Workflow、`RequestInfoMixin`和自定义确定性Executor，在Provider发送前通过AG-UI Interrupt暂停；修改后再次Interrupt，批准后只发送当前Hash绑定的请求。
+2. `backend/app/model_call_review.py`维护单一请求草稿，生成Canonical JSON bytes和Body SHA-256；Provider路由与Body Hash共同生成审批Binding Hash。可读视图与Provider JSON均从该对象投影，实际Transport按已批准Provider直接发送已批准bytes，不再由Agent或Provider SDK二次装配。
+3. 服务端提供不含密钥和Base URL的Provider/模型目录；前端先选Provider，再从该Provider模型列表中选择模型。完整input、知识/历史和Tools按固定Key卡片编辑，Reasoning、输出和传输参数使用文字、数字、布尔和枚举控件；未知扩展字段仍可在Provider JSON高级视图编辑。未保存修改不能批准；`store != false`、Continuation或Provider/模型不匹配时不能保存。
+4. 放弃审批不会创建Provider Attempt，前端恢复发送前消息快照并把原用户输入放回输入框，可继续修改发送，也可用叉号清空；后端会过滤MAF `request_info`审批协议消息，放弃后再次发送不会递归夹带旧审批JSON。
+5. 浏览器已验证Provider切换后模型列表从`glm-5.2/doubao-seed-code`联动为`secondary-model/secondary-fast`，普通文字和Reasoning控件修改会同步进入Provider JSON，保存后进入v2新Hash审批；全新页面控制台错误为0，窄屏文档和审批面板均无横向溢出。
+6. 火山方舟Responses与阿里云百炼Chat Completions均通过完整真实审批回合；当前Provider/模型目录是启动时不可变配置快照，尚未实现从各Provider动态发现模型和参数能力。
+7. 当前草稿、Approval、Attempt和Workflow实例仍是单进程内存状态；进程重启、跨Worker恢复和权威Product Run/Approval事实尚未实现，不能把该切片当成正式持久执行门。
+8. `backend/config.json`是启动时只读快照，当前包含2个Provider；修改Provider或模型目录后需要重启后端，尚未实现在线重载或Provider模型自动发现。
 
 ## 5. 尚未实现的能力
 
@@ -91,8 +127,8 @@
 4. Product Run/Attempt正式状态机、Runtime Job/Event、Worker、Lease和Reconciler。
 5. Tool Ledger、幂等、对账、Workflow Checkpoint与跨进程HITL。
 6. Memory、Evidence、Provenance、Artifact、Delivery/Outbox和产品Trace。
-7. OPC-OS Chat或其他入口的正式集成合同。
-8. 真实模型失败/超时/取消/错误脱敏完整验证。
+7. Telegram等具体Channel Adapter合同，以及OPC-OS Chat Bridge的正式身份、能力、消息和回执合同。
+8. 持久模型调用审批Repository、跨进程正式恢复，以及Provider结果未知后的查询对账和人工处置。
 
 ## 6. 风险和未知
 
@@ -100,22 +136,23 @@
 2. AG-UI当前为RC版本，升级可能改变事件、Snapshot和Interrupt/Resume行为。
 3. AG-UI Client会发送客户端消息全集；若同时装配Product History、MAF History和Snapshot会形成重复上下文。
 4. Product Finalization Gate如何阻止过早`RUN_FINISHED`仍需安装版Spike。
-5. MAF Workflow Checkpoint与Product Run、持久Approval、Tool Ledger的跨进程接合尚未完成E2E。
-6. SQLite的事务、Outbox、事件写入、Lease原子领取和多Worker边界尚未压测。
+5. MAF Workflow Checkpoint与Product Run、持久Approval的跨进程薄桥已通过合同Spike，但尚未进入正式API、Repository、Worker和浏览器E2E；Tool Ledger仍未接合。
+6. SQLite已验证单Approval的8并发原子领取；Outbox、事件写入、Lease、多进程持续竞争和容量边界仍未压测。
 7. 外部Tool副作用没有通用Exactly-once；必须按工具定义幂等、查询、补偿和人工处置。
 8. Intent、Work、Approval、Evidence、Delivery等主要来自本项目需求，参考项目未提供可直接复制的完整状态机。
 9. OPC-OS Chat正式身份、权限、能力、消息和回执合同尚未取得。
 10. 安全、容量、SLO、数据保留和灾难恢复的数值目标尚待产品审核。
+11. Chat原生Channel Adapter内置部署、独立Adapter进程和由OPC-OS Chat托管渠道是3种物理选择；逻辑上均必须经过Interaction Ingress，具体采用范围待架构审核和外部合同确认。
+12. 安装版`agent-framework-ag-ui==1.0.0rc8`的Workflow桥可能在关闭文本或诊断事件前产生`RUN_FINISHED`/`RUN_ERROR`；当前薄Wrapper把终态缓冲到事件流最后并有合同测试，依赖升级时必须重新验证并尽量移除兼容层。
 
 ## 7. 当前审核门
 
 当前只审核总体产品与架构，不创建正式Schema、Repository、Worker或业务模块：
 
 1. 审核 Chat 独立完整产品定位和对等外部集成关系。
-2. 审核“模块化产品核心 + 持久执行平面 + 可靠交付平面”。
-3. 审核4个有界域、12个产品模块及其内部组成、合同和状态所有权。
+2. 审核“源码事实→Chat问题→模块决策”的推导是否成立，并结合新手导读检查用户点击能否完整走通前端、Store、MAF、Provider、响应解析和最终渲染；检查Agent内外Session/Tool责任及当前/目标差异是否清楚，是否存在无证据的自创对象或模块。
+3. 审核Chat Web、Telegram等平台和OPC-OS Chat分别经过Web/API Adapter、具体Channel Adapter和Bridge Adapter，再进入Interaction Ingress的拓扑。
 4. 审核API、Execution Worker、Scheduler/Reconciler、Delivery Worker和Projector进程角色。
-5. 审核REST/AG-UI协调、5类逻辑Store、ID链和4个提交门。
-6. 审核7个完整场景是否真正覆盖用户需要。
-7. 审核交付阶段是否只表达依赖顺序，没有缩小目标架构。
-8. 总体架构通过后，再审核Session Phase 0合同和D1-D6持久化子设计。
+5. 审核REST/AG-UI协调、状态所有权、ID链和4个提交门。
+6. 审核8个完整场景是否真正覆盖用户需要，特别是Web、Telegram和OPC-OS Chat是否经过正确Adapter边界。
+7. 审核交付阶段是否只表达依赖顺序，没有缩小目标架构；通过后再审核Session Phase 0合同和D1-D6持久化子设计。
