@@ -1,14 +1,18 @@
 # Session持久化审核包
 
-> 状态：`研究与Spike已完成；D1-D6待用户逐项批准；未创建Schema；未实现`
+> 状态：`Phase 1持久化子设计审核包；暂停总体审核；未创建Schema；未实现`
 >
 > 更新日期：2026-07-21
 >
 > 前置材料：[研究与方案推导](./session-persistence-research.md)；[候选设计](./session-persistence-design.md)
 
+> 总体审核入口：[Session能力全集](./session-capability-catalog.md)与[Session交付路线](./session-delivery-roadmap.md)
+
 ## 1. 这次需要审核什么
 
 本审核包不要求用户先掌握MAF、AG-UI、pi、nanobot或LibreChat。每项决策都说明：问题背景、为什么现在决定、参考源真正覆盖什么、全部可行选择、优缺点、当前建议、建议原因、未验证项和需要用户批准的句子。
+
+但D1-D6只解决路线Phase 1的文本会话持久化底座，不覆盖分支、活动流重连、Worker接管、Tool副作用、Workflow Checkpoint、HITL和跨通道能力。因此当前先暂停逐项批准；总体能力和阶段路线通过后，再把本审核包作为Phase 1的详细设计门重新提交。
 
 需要先固定4个不同事实：
 

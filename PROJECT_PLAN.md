@@ -12,11 +12,29 @@
 |---|---|---|
 | 0. 项目定义与治理 | 固定身份、问题、目标、边界和协作规则 | `已完成` |
 | 1. 技术路线与工程初始化 | 审核前后端路线并建立独立可运行骨架 | `真实模型门通过，收尾中` |
-| 2. Chat最小纵向链路 | 会话、消息、MAF Agent、历史和基础Trace | `未开始` |
+| 2. Session总体规划与最小纵向链路 | 先审核完整Session能力与路线，再实现会话、消息、MAF Agent、历史和基础Trace | `能力全集与路线待审核` |
 | 3. 上下文、意图与审核 | 上下文包、多意图、执行Draft和用户确认 | `未开始` |
 | 4. 工作与记忆闭环 | WorkItem、TaskPlan、人/AI行动和记忆候选 | `未开始` |
 | 5. 受控执行与多Agent | 工具权限、副作用确认、多Agent和恢复 | `未开始` |
 | 6. 上位系统集成 | 与OPC-OS Chat通道适配层和共享能力对接 | `未开始` |
+
+### 2.1 Session横向交付路线
+
+Session不是只属于阶段2的一张表，而是贯穿后续产品闭环的横向能力。完整目标与任务以两份审核材料为准：
+
+1. [Session能力全集与目标边界](./docs/session-capability-catalog.md)：9个能力域、74项能力和R0-R6恢复层级。
+2. [Session分阶段交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务、依赖理由和各阶段用户场景。
+
+总体能力和路线批准前不进入详细设计；批准后先执行路线Phase 0，再重审现有D1-D6这个Phase 1持久化子设计。路线中的Phase 3-8会分别与本项目阶段3-6的上下文、工作、执行和上位系统能力协同，不能被阶段2“最小链路”替代。
+
+### 2.2 总体架构横向基线
+
+总体架构同样贯穿阶段2-6，目前有两份待审核材料：
+
+1. [总体架构研究与证据](./docs/overall-architecture-research.md)：记录版本、检索过程、参考覆盖、采用/改造/拒绝和未知项。
+2. [总体架构候选](./docs/overall-architecture-proposal.md)：提出领域模块化单体、8个产品模块、MAF Runtime边界、状态所有权、关键链路和部署演进。
+
+总体架构批准前，不批量创建正式模块目录、Schema、Repository或Worker；批准后它只成为后续详细设计的边界基线，不代表具体表、API和类已经批准。
 
 ## 3. 阶段0：项目定义与治理
 
@@ -55,9 +73,9 @@
 
 完成门：空数据环境中可以一键启动前后端，完成1次真实模型文本回合，并通过基础构建和测试。
 
-## 5. 阶段2：Chat最小纵向链路
+## 5. 阶段2：Session总体规划与Chat最小纵向链路
 
-目标：证明自研Chat通道可以稳定完成真实MAF会话，而不是只完成页面渲染。
+目标：先固定完整Session能力和交付顺序，再证明自研Chat通道可以稳定完成真实MAF会话，而不是只完成页面渲染或一组持久化表。
 
 任务：
 
@@ -66,18 +84,27 @@
 - [x] 在[项目上下文](./PROJECT_CONTEXT.md#71-产品对象协议对象与运行时对象的边界)中固定Product Session、MAF Session/Checkpoint、AG-UI Thread和Agent Run的概念边界。
 - [x] 外部产品参考只保留LibreChat这1个正式主参考，移除Flowise及多套候选审核前置项。
 - [x] 仅针对Product Session、Message、Agent Run和流式恢复研究LibreChat，并回填其真正覆盖与未覆盖项。
+- [x] 补充LibreChat Conversation生命周期、Message分支、Fork、导入导出、分享快照和页面续接研究，并同步到`agent_knowledge`。
 - [x] 按“Product DB权威、AG-UI只做协议投影”修订Session候选设计中的D1、D3和D4。
 - [x] 实测MAF `HistoryProvider`提交顺序、保存失败终态、AG-UI全历史重复风险和`per-service + store=false`工具循环。
-- [ ] 审核并批准[Session持久化候选设计](./docs/session-persistence-design.md)。
-- [ ] 审核通过后先把MAF一次性Spike固化为仓库合同测试，并完成可信Run Context的并发隔离Spike。
+- [x] 形成[Session能力全集](./docs/session-capability-catalog.md)，定义9个能力域、74项能力、R0-R6恢复层级、参考覆盖和最终用户场景。
+- [x] 形成[Session交付路线](./docs/session-delivery-roadmap.md)，按依赖拆出Phase 0-8、53个方案级任务和阶段完成场景。
+- [x] 审计MAF、pi、nanobot与LibreChat对总体架构问题的覆盖，并把MAF总体位置与LibreChat Web分层补充到`agent_knowledge`。
+- [x] 形成[总体架构研究与证据](./docs/overall-architecture-research.md)，记录研究过程、证据、覆盖缺口和推导链。
+- [x] 形成[总体架构候选](./docs/overall-architecture-proposal.md)，定义架构风格、8个产品模块、MAF Runtime、状态所有权、关键链路和场景映射。
+- [ ] 用户审核并批准总体架构风格、模块边界、状态所有权、提交门、Trace策略和Worker演进方式。
+- [ ] 用户审核并批准Session能力全集、恢复分级、明确非目标、阶段顺序和任务拆分。
+- [ ] 总体规划通过后执行路线Phase 0：固化术语、MAF兼容合同、恢复验收矩阵和版本演进原则。
+- [ ] Phase 0通过后，把[Session持久化候选设计](./docs/session-persistence-design.md)与[审核包](./docs/session-persistence-review.md)作为Phase 1子设计重新审核，而不是总体方案。
+- [ ] 子设计审核通过后先把MAF一次性Spike固化为仓库合同测试，并完成可信Run Context的并发隔离Spike。
 - [ ] 创建、列出、打开和归档Session。
 - [ ] 发送用户消息并接收Assistant回答。
 - [ ] 服务端恢复历史，前端不承担权威历史。
-- [ ] 分开记录Interaction与Agent Run状态、耗时、模型和稳定错误码。
+- [ ] 分开记录Interaction、Product Agent Run与Run Attempt的状态、耗时、模型、血缘和稳定错误码。
 - [ ] 实现基础Trace和重启恢复。
 - [ ] 验证桌面与窄屏主要操作。
 
-完成门：真实MAF Agent回合、历史恢复、失败回合和浏览器端到端均有证据。
+完成门：路线Phase 0和Phase 1通过；真实MAF Agent回合、R0/R1历史恢复、失败回合和浏览器端到端均有证据。不得把该门外推为活动流重连、Worker接管、Tool、Workflow或HITL恢复已经完成。
 
 ## 6. 阶段3：上下文、意图与审核
 

@@ -90,6 +90,7 @@ Chat是主要交互方式，但项目价值不止是消息收发。系统需要�
 | 对象 | 责任 |
 |---|---|
 | Channel | 当前交互通道及其能力、身份和协议边界 |
+| Channel Binding | 外部通道会话、来源身份与Product Session之间可撤销、可授权的映射 |
 | Session | 用户可创建、打开、归档和恢复的一段产品会话 |
 | Interaction | 用户与系统的一次完整交互 |
 | Message | 用户、Assistant、Agent或工具产生的消息 |
@@ -101,6 +102,7 @@ Chat是主要交互方式，但项目价值不止是消息收发。系统需要�
 | ExecutionDraft | 尚未执行、可编辑和审核的最终请求 |
 | Approval | 用户对特定版本和请求内容的批准或驳回 |
 | Run | 一次具体Agent、Workflow或Runtime执行生命周期 |
+| Run Attempt | Product Run的一次实际执行尝试、Worker所有权和恢复血缘 |
 | Evidence | 对结果、状态或操作的可验证证据 |
 | Delivery | 结果向用户或下游交付的状态 |
 | Memory | 经候选门确认后可跨会话使用的信息 |
@@ -110,7 +112,7 @@ Chat是主要交互方式，但项目价值不止是消息收发。系统需要�
 
 ### 7.1 产品对象、协议对象与运行时对象的边界
 
-以下4个对象必须始终分开理解，即使第一阶段为了降低映射成本而暂时复用某些UUID值，也不能合并其职责：
+以下4个对象必须始终分开理解，即使某个实施阶段为了降低映射成本而暂时复用某些UUID值，也不能合并其职责：
 
 | 对象 | 所属层与所有者 | 责任 | 明确不是什么 |
 |---|---|---|---|
@@ -121,7 +123,9 @@ Chat是主要交互方式，但项目价值不止是消息收发。系统需要�
 
 `MAF AgentSession`和`Workflow Checkpoint`不是同一个MAF类型；上表只把它们归入同一个“MAF运行时状态”层，代码和存储中仍需分别建模。
 
-`Interaction`表示一次用户与系统的完整交互；一次Interaction可以不触发Agent，也可以触发一个或多个Agent Run。第一阶段可以暂时形成1:1关系，但不能把它写成长期不变量。
+`Interaction`表示一次用户与系统的完整交互；一次Interaction可以不触发Agent，也可以触发一个或多个Agent Run。早期实现可以暂时形成1:1关系，但不能把它写成长期不变量。
+
+`Product Agent Run`与`Run Attempt / Runtime Job`也必须分开：前者长期表达一次产品执行及最终状态，后者表达第几次实际尝试、哪个Worker拥有执行权和活动流投影。Attempt或Job可以过期、接管或清理，不能因此删除长期Run事实。
 
 Product Session ID、MAF Session ID、AG-UI `threadId`和Agent `runId`都只标识各自对象，不自动构成权限。具体ID是否同值、如何映射以及何时持久化属于待审核实现决定。
 
@@ -163,6 +167,8 @@ Product Session ID、MAF Session ID、AG-UI `threadId`和Agent `runId`都只标�
 4. 一开始就拆分成多个网络微服务。
 5. 把本项目冒充为完整OPC-OS Chat上位系统。
 
+Session的完整目标、恢复层级和交付顺序由[Session能力全集](./docs/session-capability-catalog.md)与[Session交付路线](./docs/session-delivery-roadmap.md)统一维护。这里的“第一阶段聚焦”和“后续逐步增加”只描述交付顺序，不代表后续能力没有进入总体规划。
+
 ## 10. 已批准技术路线
 
 2026-07-21用户批准以下技术路线：
@@ -188,4 +194,4 @@ Product Session ID、MAF Session ID、AG-UI `threadId`和Agent `runId`都只标�
 
 架构总则：**REST管理产品资源，AG-UI管理一次Agent Run的实时交互，Product DB保存权威产品事实，MAF管理Agent运行时语义。** 物理上可以共用一个数据库，逻辑所有权不得合并；AG-UI Snapshot可以作为运行或UI投影，但不能替代Product Session与产品历史。
 
-第一阶段先验证单Agent文本流、Product Session与产品消息恢复、AG-UI Thread实时投影、Agent Run状态和失败路径；产品历史通过REST还是AG-UI Hydrate恢复、是否持久化AG-UI Snapshot，属于Session候选设计的待审核决定。MAF Workflow Checkpoint恢复不在这一切片，同时不展开工具、多Agent和全部长期领域对象。
+Session总体目标包括已完成会话恢复、活动流重连、Worker恢复、Tool副作用恢复、Workflow/HITL恢复和跨通道连续性。它们按[Session交付路线](./docs/session-delivery-roadmap.md)逐级实现；首个持久化子设计只能决定最早交付切片，不能改变总体目标或把AG-UI Snapshot、MAF Session和Workflow Checkpoint合并成产品事实。

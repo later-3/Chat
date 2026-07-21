@@ -35,8 +35,8 @@
 2. React前端通过`HttpAgent`完成了浏览器真实消息回合。
 3. 后端3个测试、前端类型检查和生产构建均通过。
 4. 已接入`backend/.env`并完成真实模型AG-UI文本回合。
-5. 尚未完成模型失败路径、服务端历史恢复和产品领域数据库。
-6. 没有迁移旧数据库、历史会话或环境配置。
+5. 总体架构候选、完整Session能力全集和Phase 0-8交付路线已经形成，正在等待用户审核；尚未进入详细设计或开发。
+6. 尚未完成模型失败路径、服务端历史恢复和产品领域数据库，也没有迁移旧数据库、历史会话或环境配置。
 
 ## 技术方向
 
@@ -143,10 +143,14 @@ scripts/         可重复执行的工程验证
 2. [项目计划](./PROJECT_PLAN.md)：分阶段路线和完成门。
 3. [项目状态](./PROJECT_STATE.md)：当前完成项、待审核项和下一道门。
 4. [协作规则](./AGENTS.md)：开发和AI协作必须遵守的规则。
-5. [Session持久化研究与方案推导](./docs/session-persistence-research.md)：MAF、pi、nanobot与LibreChat的逐项源码证据、适用边界、方案比较和决策推导。
-6. [Session持久化候选设计](./docs/session-persistence-design.md)：建立在研究报告上的候选状态模型、生命周期和待审核决定。
-7. [Session持久化审核包](./docs/session-persistence-review.md)：每项决定的原因、参考覆盖、全部选择、优缺点和建议。
+5. [Session能力全集与目标边界](./docs/session-capability-catalog.md)：9个能力域、74项能力、R0-R6恢复层级、参考覆盖、明确非目标和最终用户场景。
+6. [Session分阶段交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务、优先级、依赖、方案、目标和各阶段完成场景。
+7. [Session持久化研究与方案推导](./docs/session-persistence-research.md)：MAF、pi、nanobot与LibreChat的逐项源码证据、适用边界、方案比较和决策推导。
+8. [Session持久化候选设计](./docs/session-persistence-design.md)：Phase 1文本持久化子设计，当前暂停总体审核。
+9. [Session持久化审核包](./docs/session-persistence-review.md)：D1-D6子设计的原因、参考覆盖、选项、优缺点和建议，待总体规划通过后重审。
+10. [总体架构研究与证据](./docs/overall-architecture-research.md)：MAF、pi、nanobot与LibreChat的版本、研究过程、源码证据、覆盖缺口和推导链。
+11. [总体架构候选](./docs/overall-architecture-proposal.md)：领域模块化单体、8个产品模块、MAF Runtime边界、状态所有权、决策卡和用户场景。
 
 ## 下一步
 
-Session的MAF、pi、nanobot与LibreChat研究已经完成，候选设计也已按“Product DB权威、AG-UI只做实时协议投影”修订。下一步先审核D1-D6；批准后才创建Schema、迁移、服务端历史恢复、Product Agent Run和基础Trace，同时继续完成真实模型失败、超时与错误脱敏验证及旧项目复用清单。
+下一步先审核总体架构候选的8项决定，再确认Session的74项能力、R0-R6恢复保证，以及Phase 0-8的53个任务、依赖顺序与阶段用户场景。总体材料批准后先执行Phase 0，再重审D1-D6这个Phase 1持久化子设计；在这些审核门通过前不创建Schema、迁移或业务实现。

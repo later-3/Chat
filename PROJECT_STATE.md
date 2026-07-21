@@ -8,9 +8,9 @@
 | 当前目录 | `/Users/xulater/Code/Chat` |
 | 项目层级 | OPC-OS Chat体系中的一个自研Chat通道 |
 | 代码状态 | 前后端最小可运行骨架已建立 |
-| Git状态 | 私有GitHub仓库`later-3/Chat`的`main`已建立；Session设计、代码注释与知识索引已纳入`main` |
+| Git状态 | 私有GitHub仓库`later-3/Chat`的`main`已建立；Session总体规划与总体架构材料随本次文档提交纳入`main`，内容仍等待用户审核 |
 | 数据状态 | 没有迁移旧数据库、历史或环境配置 |
-| 当前工作 | MAF、pi、nanobot与LibreChat研究及Session候选设计修订已完成，等待用户审核D1-D6；尚未创建Schema或实现 |
+| 当前工作 | 总体架构候选、完整Session能力全集与Phase 0-8交付路线已形成，等待用户审核；D1-D6已降级为Phase 1持久化子设计并暂停审核；尚未创建Schema或业务实现 |
 
 ## 2. 已确认事项
 
@@ -32,6 +32,8 @@
 16. REST管理产品资源，AG-UI只管理一次Agent Run的实时交互；Product DB是产品事实源，MAF负责运行时语义。
 17. Interaction与Agent Run不是同一个对象；一次Interaction可以触发0到多个Agent Run。
 18. 外部产品参考只保留LibreChat这1个正式主参考；Flowise和其他相似平台不进入日常必查链路，新增参考仍需用户批准。
+19. Session总体规划必须先于持久化详细设计：先审核完整能力、R0-R6恢复保证、阶段依赖和用户场景，再重审Phase 1的D1-D6。
+20. 总体架构当前只是待审核候选；建议采用领域模块化单体、可分离Run Executor、8个产品模块和独立MAF Runtime技术模块，但尚未成为批准事实。
 
 ## 3. 本轮已完成
 
@@ -73,19 +75,29 @@
 - [x] 修订Session候选设计与审核包的D1、D3和D4，明确首阶段关闭durable Snapshot、REST恢复产品历史、唯一历史加载器和产品终态提交门。
 - [x] 更新`agent_knowledge/MAF/01-Session-HistoryProvider与AG-UI-Thread-Snapshot.md`，同步当前安装版本、实测证据、四对象边界、HistoryProvider与Snapshot限制。
 - [x] 在`agent_knowledge/project-studies/librechat/`建立固定提交的有界源码知识，记录Conversation/Message、Generation Job、流式恢复、失败终态、HITL、ID边界和迁移取舍。
+- [x] 补充LibreChat的Conversation列表/搜索/归档/置顶/标签/临时/删除、Message树、编辑/重生成/Sibling/Fork、导入导出、分享快照和页面续接源码研究。
+- [x] 将新增LibreChat生命周期与分支知识同步到`agent_knowledge/project-studies/librechat/Conversation生命周期与分支操作源码研究.md`并更新知识入口。
+- [x] 形成[Session能力全集](./docs/session-capability-catalog.md)：9个能力域、74项能力、R0-R6恢复层级、参考覆盖、明确非目标和18个最终用户场景。
+- [x] 形成[Session交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务、优先级、依赖、方案、目标和阶段完成场景。
+- [x] 将Session持久化研究、候选设计与D1-D6审核包重新标记为Phase 1子设计证据，不再作为总体审核入口。
 - [x] 完成文档交叉审计并再次运行`./scripts/verify.sh`：3个后端测试、前端类型检查和生产构建全部通过。
+- [x] 按项目场景审计MAF、pi、nanobot和LibreChat的总体架构覆盖，确认无需新增第五个参考项目。
+- [x] 定向补充MAF Agent、Session、Middleware、Workflow、AG-UI、Durable Task和Observability的架构位置研究，并同步到`agent_knowledge/MAF/02-Agent应用架构中的位置与边界.md`。
+- [x] 定向补充LibreChat App Shell、Feature Route、Data Provider、产品Route、Agent入口、Generation Job和Event Transport研究，并同步到`agent_knowledge/project-studies/librechat/Web-Chat整体架构与模块边界源码研究.md`。
+- [x] 形成[总体架构研究与证据](./docs/overall-architecture-research.md)和[总体架构候选](./docs/overall-architecture-proposal.md)，包含过程、证据、8个决策卡和7个用户场景。
 
 ## 4. 当前实施决定
 
 1. 按已批准的新技术路线建立独立骨架，不直接复制旧FastAPI+Pi实现。
-2. 第一切片只做文本流式回合、Product Session与消息恢复、AG-UI Thread实时投影、Agent Run生命周期和失败显示，不包含durable AG-UI Snapshot、HITL或Workflow Checkpoint恢复；这是待D1-D6审核后实施的候选边界。
-3. MAF拥有Agent运行状态，SQLite拥有产品领域状态。
-4. 第一切片不包含图片、附件、工具执行或多Agent。
-5. 旧代码只作为产品交互、领域对象和测试反例参考。
+2. 当前只提交总体架构、完整Session能力与任务路线供审核，不进行详细Schema、API、类设计或业务开发。
+3. 完整目标包括已完成会话恢复、活动流重连、Worker恢复、Tool恢复、Workflow/HITL恢复和跨通道连续性；阶段拆分只决定交付顺序，不代表删去后续能力。
+4. 已批准的SQLite Product DB、MAF运行时、AG-UI投影和浏览器状态继续分开拥有；具体表模型、迁移/访问层、ID映射和Checkpoint存储由总体规划通过后的Phase 0/D1-D6详细审核决定。
+5. 旧代码只作为产品交互、领域对象和测试反例参考；MAF、pi、nanobot与LibreChat继续按各自限定范围提供证据。
+6. 总体架构当前建议领域模块化单体和可分离Run Executor；批准前不据此创建正式模块目录或重构Hello World骨架。
 
 ## 5. 当前工程事实
 
-1. 后端：Python 3.12、FastAPI、`agent-framework-ag-ui 1.0.0rc8`、`agent-framework-openai 1.10.1`。
+1. 后端：Python 3.12、FastAPI、`agent-framework-core 1.11.0`、`agent-framework-ag-ui 1.0.0rc8`、`agent-framework-openai 1.10.1`。
 2. 前端：React 19、TypeScript 6、Vite 8、`@ag-ui/client 0.0.57`。
 3. 传输：前端向`POST /api/agent`发起AG-UI请求，后端以SSE事件流返回运行与文本事件。
 4. 无`CHAT_MODEL_API_KEY`和`ARK_API_KEY`时使用确定性MAF Agent；配置任一密钥后创建真实模型Agent。
@@ -122,15 +134,22 @@
 12. MAF实测证明`HistoryProvider`保存失败会转为`RUN_ERROR`；但per-service保存只是模型历史检查点，Product Run成功仍需外层成功终态与最终产品提交共同确认。
 13. `@ag-ui/client 0.0.57`会发送客户端全量消息；若同时启用Product History和AG-UI Snapshot历史，会产生重复模型上下文，正式实现必须保持唯一历史加载器并校验、裁剪本轮增量。
 14. LibreChat没有独立持久化Product Agent Run，它的GenerationJob主要是可删除的运行投影；本项目只能借鉴产品事实与流式投影分离、成功终态后置等原则，不能复制其ID合并或弱取消写入语义。
-15. 真实工具故障、同Session并发、断连与取消、SQLite锁竞争、Workflow Checkpoint和rc8 Approval跨进程恢复仍未验证，不能在第一切片中承诺。
+15. 真实工具故障、同Session并发、断连与取消、SQLite锁竞争、Workflow Checkpoint和rc8 Approval跨进程恢复仍未验证；它们已经进入完整路线，但只有对应Phase通过后才能承诺。
 16. 当前事件顺序、双历史和per-service工具循环证据来自一次性Spike，尚未固化为仓库回归测试；服务端可信Run Context向HistoryProvider的并发隔离也仍需专项Spike。
+17. 当前安装版MAF核心Workflow支持持久Checkpoint与`checkpoint_id`恢复，但`agent-framework-ag-ui 1.0.0rc8`主要以Thread Snapshot恢复消息、State和Interrupt；Product Run到持久Workflow Checkpoint的接合尚未形成已验证合同。
+18. pi不提供活动Run跨进程续跑；nanobot主要通过显式中断收敛未知工具；LibreChat证明浏览器断连续传但未证明普通模型Worker崩溃后自动续跑。任何“自动恢复”都必须按R0-R6逐级验收。
+19. Tool外部副作用没有通用Exactly-once保证；路线目标是幂等、回执、Evidence、结果未知时对账和人工处置。
+20. 总体架构中Intent、Work、ExecutionDraft、Approval、Evidence和Delivery模块主要来自本项目产品需求，参考项目只部分覆盖；详细状态机仍需分模块审核。
+21. MAF当前安装版与本地参考源码不是严格同一发布快照；总体能力边界可信，但具体Runtime Adapter和成功终态提交门仍需安装版合同测试。
+22. 独立Worker、Job/Event Store、SQLite并发边界和未来存储产品均未选型；总体架构只预留端口和演进顺序。
 
 ## 8. 下一道门
 
-当前进入[阶段1：技术路线与工程初始化](./PROJECT_PLAN.md#4-阶段1技术路线与工程初始化)。完成门是：
+当前仍在[阶段1：技术路线与工程初始化](./PROJECT_PLAN.md#4-阶段1技术路线与工程初始化)收尾，同时进入总体架构与Session总体规划审核门：
 
-1. 验证真实模型失败、超时和错误脱敏路径。
-2. 输出旧项目能力的复用、重写和仅参考清单。
-3. 用户审核Session方案D1-D6：存储边界、ID映射、历史加载、提交时序、并发幂等和SQLite实现路线。
-4. 审核通过后才创建Schema、迁移、Repository、`ProductHistoryProvider`和薄AG-UI运行包装器，并补齐故障注入与恢复测试。
-5. 全部满足后把阶段1标记为完成，进入Session与服务端历史恢复实现。
+1. 用户先审核[总体架构候选](./docs/overall-architecture-proposal.md)的8项决定，并可通过[总体架构研究](./docs/overall-architecture-research.md)核对过程与证据。
+2. 用户再审核[Session能力全集](./docs/session-capability-catalog.md)：9个能力域、74项能力、R0-R6恢复层级、参考覆盖和明确非目标。
+3. 用户审核[Session交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务、依赖顺序、方案、目标和每阶段用户场景。
+4. 总体架构与Session总体材料通过后才执行Phase 0的术语、MAF兼容合同、恢复验收矩阵和版本演进设计。
+5. Phase 0通过后，再重审D1-D6这个Phase 1持久化子设计；未获批前不创建Schema、迁移、Repository或正式兼容层。
+6. 与审核并行但不混入本次决策的阶段1收尾仍包括：真实模型失败/超时/错误脱敏验证，以及旧项目复用、重写和仅参考清单。

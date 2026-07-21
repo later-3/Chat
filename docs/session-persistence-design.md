@@ -1,16 +1,16 @@
 # Session持久化候选设计
 
-> 状态：`待用户审核；未批准；未创建Schema；未实现`
+> 状态：`Phase 1持久化子设计草案；暂停总体审核；未创建Schema；未实现`
 >
 > 更新日期：2026-07-21
 >
 > 适用版本：`agent-framework-core 1.11.0`、`agent-framework-openai 1.10.1`、`agent-framework-ag-ui 1.0.0rc8`、`@ag-ui/client 0.0.57`
 
-本文把[研究与方案推导](./session-persistence-research.md)收敛成可实施但尚未获批的设计。它不会把逻辑记录写成已经冻结的数据库Schema；D1至D6全部通过[审核包](./session-persistence-review.md)后，才允许创建迁移、Repository和正式持久化代码。
+本文把[研究与方案推导](./session-persistence-research.md)收敛成首个文本会话底座的候选子设计，但它不再承担完整Session方案的总体审核。总体目标先审核[Session能力全集](./session-capability-catalog.md)和[Session交付路线](./session-delivery-roadmap.md)；通过后，本文件的D1-D6还要结合树兼容、Run Attempt演进和后续Checkpoint关联重新审核，才允许创建迁移、Repository和正式持久化代码。
 
 ## 1. 候选结论
 
-第一阶段建议采用以下组合：
+作为路线Phase 1的持久化子设计，当前建议采用以下组合：
 
 1. **一个Product DB是唯一产品事实源**：保存Product Session、Message、Interaction、Agent Run、运行Checkpoint和Trace；不启用持久化AG-UI Snapshot Store。
 2. **页面恢复走REST**：先从Product DB加载Session和Message，再恢复前端投影；刷新页面不通过AG-UI发起“空运行”。

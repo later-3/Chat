@@ -139,13 +139,37 @@
 7. **审核材料自包含**：不得假设用户已经掌握框架背景或参考项目实现。提交决策点前，必须先说明问题背景、当前项目事实、源码证据、各方案能解决与不能解决的内容、推导链和代价；不能只给结论或让用户自行反查“参考了什么”。
 8. **决策卡完整性**：每个待审核决定必须逐项写明决策原因、现有参考源是否真正涉及、全部可行选择、各自优缺点、当前建议、建议原因、信心与未验证项。参考源未涉及时必须明确写“未涉及”；可以提出新的开源候选，但用户批准加入前只能做相关性筛选，不得先研究后倒逼用户接受，也不得把候选写成既有证据。
 
+#### 8.1.1 Session总体规划门
+
+Session工作必须先完成总体目标，再讨论某一阶段的持久化实现：
+
+1. 先维护[Session能力全集](./docs/session-capability-catalog.md)，完整说明会话生命周期、消息与分支、上下文、Run控制、断线续传、进程恢复、Tool/Workflow/HITL恢复、跨通道、治理及明确非目标。
+2. 必须把“重新打开已完成会话、恢复失败回合、接回仍在运行的流、Worker退出恢复、Tool副作用恢复、Workflow Checkpoint恢复和HITL恢复”分开定义，不能用一个`resume`或“保存历史”笼统替代。
+3. 再维护[Session交付路线](./docs/session-delivery-roadmap.md)，按优先级和依赖拆阶段；每个任务至少说明方案级做法、目标、依赖、参考覆盖和完成后的用户场景。
+4. 阶段拆分只表达顺序，不能把未在当前阶段实现的能力从总体规划中省略，也不能假设用户已掌握未来阶段会做什么。
+5. 总体能力和路线经用户审核后，才允许进入详细设计；详细设计经审核后，才允许开发、Schema、迁移或正式兼容层。
+6. 现有Session持久化D1-D6只是Phase 1的子设计，必须在总体规划获批后结合树兼容、Run Attempt演进和后续Checkpoint关联重新审核，不能作为完整Session方案的总体入口。
+7. 任一阶段完成时必须明确“本阶段已经满足什么恢复保证、仍不保证什么”，禁止把R0历史恢复外推为活动Run、Worker、Tool或Workflow恢复。
+
+#### 8.1.2 总体架构审核门
+
+涉及总体架构、模块边界、状态所有权或部署拆分时，必须遵守：
+
+1. 先从本项目6个问题、完整产品闭环和最终用户场景推导所需保证，再检查MAF、pi、nanobot和已批准外部参考的覆盖；不得按参考仓库目录反向拼装架构。
+2. 研究过程必须记录固定版本、检索问题、源码/测试路径、得到的结论和未覆盖项；可复用的MAF与外部项目知识同步到`agent_knowledge`，不能只留在当前对话。
+3. 总体架构候选统一维护在[总体架构候选](./docs/overall-architecture-proposal.md)，证据与推导维护在[总体架构研究](./docs/overall-architecture-research.md)。两者都必须明确“待用户审核”，不能提前写成已批准事实。
+4. 模块划分必须逐项说明负责、不负责、存在原因、状态所有者、依赖方向和能够满足的用户场景；禁止用“分层解耦”一类口号代替具体边界。
+5. 参考项目只对其真实覆盖范围背书。Intent、Work、Approval、Evidence等若主要来自本项目需求，必须标记为项目推导；不得借MAF或参考项目名义包装成框架原生能力。
+6. 用户批准总体架构前，不按候选批量创建正式目录、Schema、Repository、Worker或兼容层。批准后，各模块仍须按计划进入自己的详细设计审核，不能把总体架构批准外推为全部实现细节获批。
+7. 后续详细设计如果发现参考知识不足，只能先提交新增参考项目的限定主题、预期收益、重叠和研究成本给用户决定；未批准前不得自动扩大正式参考集。
+
 ### 8.2 外部产品参考的收敛与成本控制
 
 MAF、pi和nanobot仍按前述规则作为本地技术基线。除此之外，外部Web产品参考当前只保留 **1个正式主参考**，不设置会被自动触发的条件候补，不得把多个相似平台同时加入日常必查链路：
 
 | 状态 | 项目 | 唯一参考范围 | 不参考的内容 |
 |---|---|---|---|
-| 正式外部主参考 | [LibreChat](https://github.com/danny-avila/LibreChat)，本地只读检出`/Users/xulater/Code/opc-os/LibreChat` | Web Chat产品层的Product Session、Message、Agent Run/Generation Job、服务端权威持久化、失败语义、流式续传和跨实例运行关联 | 不复制Node、MongoDB、Redis或其私有SSE实现，不把它当MAF能力来源 |
+| 正式外部主参考 | [LibreChat](https://github.com/danny-avila/LibreChat)，本地只读检出`/Users/xulater/Code/opc-os/LibreChat` | Web Chat的App Shell与Feature边界、产品查询与资源API、Product Session、Message、Agent Run/Generation Job、服务端权威持久化、失败语义、流式续传和跨实例运行关联 | 不复制Node、MongoDB、Redis、历史双后端、多套前端状态或其私有SSE实现，不把它当MAF能力来源 |
 
 以下项目不进入当前常规参考集：
 
@@ -178,7 +202,8 @@ MAF、pi和nanobot仍按前述规则作为本地技术基线。除此之外，�
 7. 不写入API Key、完整`.env`、用户私密数据、会话内容或其他不可公开信息。
 8. 每次完成涉及MAF的代码任务前，检查本次发现是否需要同步知识库；无新增长期知识时无需为了留痕制造空洞更新。
 9. 经用户批准研究的外部项目，如果形成了可复用的源码知识，也必须同步到`agent_knowledge/project-studies/<project>/`；至少记录固定提交、限定范围、核心对象、关键链路、采用/改造/拒绝项、证据路径和未验证项。不得只把结论留在当前项目设计文档或对话中。
-10. LibreChat当前知识入口为`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/librechat/Session与流式运行持久化源码研究.md`；它只代表Session与流式持久化的有界研究，不能为LibreChat未研究能力背书。
+10. LibreChat当前知识入口为`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/librechat/README.md`；其中Session/流式持久化、Conversation生命周期/分支和Web Chat总体架构是3个有界主题，不能为LibreChat未研究能力背书。
+11. MAF总体架构位置与边界维护在`/Users/xulater/Code/opc-os/agent_knowledge/MAF/02-Agent应用架构中的位置与边界.md`；必须同时保留目标项目安装版本和本地参考源码提交，不能把源码主分支能力冒充安装版保证。
 
 ## 10. 验证规则
 

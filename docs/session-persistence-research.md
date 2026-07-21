@@ -1,10 +1,12 @@
 # Session 持久化研究、证据与方案推导
 
-> 状态：`MAF -> pi/nanobot -> LibreChat 的限定研究已完成；D1-D6 候选结论待用户审核；尚未创建 Schema、迁移或持久化服务`
+> 定位说明：本文是持久化与首个文本回合的证据底稿，不是完整Session能力全集或开发路线。总体审核请先阅读[Session能力全集](./session-capability-catalog.md)和[Session交付路线](./session-delivery-roadmap.md)。
+
+> 状态：`限定研究已完成；作为总体规划证据底稿；D1-D6暂停审核；尚未创建Schema、迁移或持久化服务`
 >
 > 更新日期：2026-07-21
 >
-> 阅读顺序：先读本文理解证据和推导，再读[候选设计](./session-persistence-design.md)，最后在[审核包](./session-persistence-review.md)逐项批准或修改 D1-D6。
+> 阅读顺序：先审核能力全集与交付路线；批准后，再按本文、[候选设计](./session-persistence-design.md)和[审核包](./session-persistence-review.md)重审Phase 1的D1-D6。
 
 ## 1. 先给结论：研究后改变了什么
 
