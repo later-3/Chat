@@ -12,6 +12,12 @@ import {
 const DEFAULT_AGENT_URL = "http://127.0.0.1:8030/api/agent";
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8030";
 
+export interface ChatWorkflowDispatch {
+  endpointUrl: string;
+  workflowId: string;
+  workflowVersion: string;
+}
+
 export type RunStatus = "idle" | "running" | "awaiting_approval" | "saving" | "error";
 
 export interface DispatchRecovery {
@@ -359,7 +365,11 @@ export function useChatAgent({
   }, [agent, inspectDispatchFailure]);
 
   const send = useCallback(
-    async (content: string, control?: SessionRunControl) => {
+    async (
+      content: string,
+      control?: SessionRunControl,
+      workflow?: ChatWorkflowDispatch,
+    ) => {
       const text = content.trim();
       if (!text || agent.isRunning || pendingReview) return;
 
@@ -368,6 +378,7 @@ export function useChatAgent({
       activeAguiRunId.current = runId;
       messagesBeforePendingRun.current = cloneMessages(agent.messages);
       pendingUserMessageId.current = messageId;
+      if (workflow) agent.url = workflow.endpointUrl;
       agent.addMessage({ id: messageId, role: "user", content: text });
       setMessages(cloneMessages(agent.messages));
       setStatus("running");
@@ -377,7 +388,14 @@ export function useChatAgent({
         await agent.runAgent(
           {
             runId,
-            ...(control ? { forwardedProps: sessionControlForwardedProps(control) } : {}),
+            ...((control || workflow) ? {
+              forwardedProps: {
+                ...(control ? sessionControlForwardedProps(control) : {}),
+                ...(workflow ? {
+                  workflow: { id: workflow.workflowId, version: workflow.workflowVersion },
+                } : {}),
+              },
+            } : {}),
           },
         );
       } catch (runError) {

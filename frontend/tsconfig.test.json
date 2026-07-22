@@ -7,5 +7,5 @@
     "tsBuildInfoFile": ".test-dist/tsconfig.test.tsbuildinfo",
     "types": ["vite/client", "node"]
   },
-  "include": ["src/model-call-review-logic.ts", "src/session-api.ts", "src/use-chat-agent.ts", "src/workflow-api.ts", "src/workflow-progress.ts", "tests/**/*.ts"]
+  "include": ["src/model-call-review-logic.ts", "src/session-api.ts", "src/use-chat-agent.ts", "src/workflow-api.ts", "src/workflow-progress.ts", "src/workflow-run-projection.ts", "tests/**/*.ts"]
 }

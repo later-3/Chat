@@ -10,6 +10,15 @@ export interface WorkflowNodeProgress {
   details: Record<string, unknown> | null;
 }
 
+export interface WorkflowNodeContent {
+  actor: string | null;
+  contentType: string | null;
+  publicInput: unknown;
+  publicOutput: unknown;
+  occurredAt: string;
+  sequence: number;
+}
+
 export type WorkflowProgress = Record<string, WorkflowNodeProgress>;
 
 export interface ExecutorActivity {
@@ -37,7 +46,7 @@ export function applyExecutorActivity(
   if (
     !executorId ||
     !(executorId in progress) ||
-    !["in_progress", "completed", "failed"].includes(String(status))
+    !["in_progress", "waiting_approval", "completed", "failed", "abandoned", "skipped"].includes(String(status))
   ) {
     return progress;
   }
@@ -55,6 +64,30 @@ export function applyExecutorActivity(
       details,
     },
   };
+}
+
+export function nodeContentFromTrace(
+  definition: WorkflowDefinition,
+  trace: ProductTraceEvent[],
+): Record<string, WorkflowNodeContent | null> {
+  const result = Object.fromEntries(definition.nodes.map((node) => [node.id, null])) as Record<
+    string,
+    WorkflowNodeContent | null
+  >;
+  for (const event of trace) {
+    if (event.event_type !== "workflow.node.content") continue;
+    const executorId = event.payload.executor_id;
+    if (typeof executorId !== "string" || !(executorId in result)) continue;
+    result[executorId] = {
+      actor: typeof event.payload.actor === "string" ? event.payload.actor : null,
+      contentType: typeof event.payload.content_type === "string" ? event.payload.content_type : null,
+      publicInput: event.payload.public_input,
+      publicOutput: event.payload.public_output,
+      occurredAt: event.created_at,
+      sequence: event.sequence,
+    };
+  }
+  return result;
 }
 
 export function progressFromTrace(

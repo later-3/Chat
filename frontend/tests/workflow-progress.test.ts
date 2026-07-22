@@ -5,6 +5,7 @@ import type { ProductTraceEvent, WorkflowDefinition } from "../src/workflow-api.
 import {
   applyExecutorActivity,
   emptyWorkflowProgress,
+  nodeContentFromTrace,
   progressFromTrace,
 } from "../src/workflow-progress.js";
 
@@ -15,6 +16,7 @@ const definition: WorkflowDefinition = {
   version: "1",
   description: "test",
   endpoint: "/workflow",
+  selectable: false,
   nodes: [
     {
       id: "parent",
@@ -102,4 +104,35 @@ test("旧序号和未知节点不能覆盖当前Workflow投影", () => {
   assert.equal(stale, completed);
   assert.equal(unknown, completed);
   assert.equal(unknown["parent.child"].status, "completed");
+});
+
+test("节点公开输入输出按executor_id恢复且不混入隐藏推理", () => {
+  const contentTrace: ProductTraceEvent[] = [
+    {
+      id: "content-1",
+      session_id: "session",
+      run_id: "run",
+      sequence: 8,
+      event_type: "workflow.node.content",
+      payload: {
+        workflow_id: "nested",
+        executor_id: "parent.child",
+        actor: "接龙 Agent 甲",
+        content_type: "idiom_chain",
+        public_input: { previous_idiom: "一心一意", required_start: "意" },
+        public_output: "意气风发",
+      },
+      created_at: "2026-07-22T10:00:00Z",
+    },
+  ];
+
+  const content = nodeContentFromTrace(definition, contentTrace);
+  assert.equal(content.parent, null);
+  assert.equal(content["parent.child"]?.actor, "接龙 Agent 甲");
+  assert.deepEqual(content["parent.child"]?.publicInput, {
+    previous_idiom: "一心一意",
+    required_start: "意",
+  });
+  assert.equal(content["parent.child"]?.publicOutput, "意气风发");
+  assert.equal("hidden_reasoning" in (contentTrace[0].payload ?? {}), false);
 });

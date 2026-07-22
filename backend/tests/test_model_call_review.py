@@ -761,6 +761,10 @@ def test_agui_revision_requires_second_approval_and_sends_exact_edited_bytes() -
                 ),
             )
         )
+        completed_run = client.get(f"/api/sessions/{thread_id}/runs").json()["runs"][0]
+        completed_trace = client.get(
+            f"/api/sessions/{thread_id}/runs/{completed_run['id']}/trace"
+        ).json()["trace"]
 
     assert _text(sent_events) == "修改后的模型回答"
     assert len(transport.prepared) == 1
@@ -771,6 +775,20 @@ def test_agui_revision_requires_second_approval_and_sends_exact_edited_bytes() -
     assert prepared.provider_id == "provider-b"
     assert len(store.attempts()) == 1
     assert store.attempts()[0].status == "completed"
+    completed_stages = {
+        event["payload"].get("stage_id"): event["payload"].get("status")
+        for event in completed_trace
+        if event["event_type"] == "workflow.stage"
+    }
+    assert completed_stages["agui.ingress"] == "completed"
+    assert completed_stages["request.compile"] == "completed"
+    assert completed_stages["approval.wait"] == "completed"
+    assert completed_stages["provider.dispatch"] == "completed"
+    assert completed_stages["provider.receive"] == "completed"
+    assert completed_stages["provider.decode"] == "completed"
+    assert completed_stages["agui.project"] == "completed"
+    assert completed_stages["product.commit"] == "completed"
+    assert completed_stages["agui.terminal"] == "completed"
 
 
 def test_abandon_creates_zero_provider_attempts_and_preserves_origin_prompt() -> None:
@@ -800,6 +818,9 @@ def test_abandon_creates_zero_provider_attempts_and_preserves_origin_prompt() ->
         product_messages = client.get(f"/api/sessions/{thread_id}/messages").json()["messages"]
         product_runs = client.get(f"/api/sessions/{thread_id}/runs").json()["runs"]
         product_session = client.get(f"/api/sessions/{thread_id}").json()
+        abandoned_trace = client.get(
+            f"/api/sessions/{thread_id}/runs/{product_runs[0]['id']}/trace"
+        ).json()["trace"]
 
         workflow_events = _events(
             client.post(
@@ -834,6 +855,18 @@ def test_abandon_creates_zero_provider_attempts_and_preserves_origin_prompt() ->
     assert product_messages == []
     assert product_runs[0]["status"] == "abandoned"
     assert product_session["active_run_id"] is None
+    abandoned_stages = {
+        event["payload"].get("stage_id"): event["payload"].get("status")
+        for event in abandoned_trace
+        if event["event_type"] == "workflow.stage"
+    }
+    assert abandoned_stages["approval.wait"] == "abandoned"
+    assert abandoned_stages["provider.dispatch"] == "skipped"
+    assert abandoned_stages["provider.receive"] == "skipped"
+    assert abandoned_stages["provider.decode"] == "skipped"
+    assert abandoned_stages["agui.project"] == "skipped"
+    assert abandoned_stages["product.commit"] == "skipped"
+    assert abandoned_stages["agui.terminal"] == "completed"
     assert workflow_events[-1]["type"] == "RUN_FINISHED"
     assert [value["role"] for value in messages_after_workflow] == ["user", "assistant"]
     assert [value["ordinal"] for value in messages_after_workflow] == [2, 3]

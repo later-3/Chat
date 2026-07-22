@@ -212,9 +212,14 @@ def test_agent_profiles_are_editable_with_provider_model_validation_and_revision
         response = client.get("/api/agents")
         assert response.status_code == 200
         profiles = response.json()["agents"]
-        assert [value["id"] for value in profiles] == ["planner", "reviewer"]
+        assert {value["id"] for value in profiles} == {
+            "planner",
+            "reviewer",
+            "idiom_agent_a",
+            "idiom_agent_b",
+        }
 
-        reviewer = profiles[1]
+        reviewer = next(value for value in profiles if value["id"] == "reviewer")
         updated = client.put(
             "/api/agents/reviewer",
             json={
@@ -242,7 +247,9 @@ def test_agent_profiles_are_editable_with_provider_model_validation_and_revision
         invalid_model = client.put(
             "/api/agents/planner",
             json={
-                "expected_revision": profiles[0]["revision"],
+                "expected_revision": next(
+                    value for value in profiles if value["id"] == "planner"
+                )["revision"],
                 "name": "规划 Agent",
                 "description": "",
                 "instructions": "形成规划",
@@ -283,7 +290,7 @@ def test_agent_profile_concurrent_edits_have_one_revision_winner(tmp_path) -> No
                 return "conflict"
 
         results = await asyncio.gather(save("规划A"), save("规划B"))
-        [planner, _] = await service.list()
+        planner = next(value for value in await service.list() if value["id"] == "planner")
         await database.close()
         return results.count("updated"), planner["revision"]
 
@@ -302,8 +309,10 @@ def test_multi_agent_handoff_requires_two_approvals_and_preserves_full_context(t
     with TestClient(app) as client:
         workflows = client.get("/api/workflows").json()["workflows"]
         assert {value["id"] for value in workflows} == {
+            "chat-model-call-approval",
             "nested-quality-demo",
             "governed-agent-handoff",
+            "governed-idiom-chain",
         }
         handoff = next(value for value in workflows if value["id"] == "governed-agent-handoff")
         assert [value["runtime_type"] for value in handoff["nodes"]] == [

@@ -126,7 +126,7 @@ export function ToolCallReview({
           {(editError || error) && <p className="workflow-error" role="alert">{editError ?? error}</p>}
           <footer className="tool-review-actions">
             <button className="archive-button" disabled={busy} onClick={onAbandon} type="button">
-              <X size={15} />放弃整个pi任务
+              <X size={15} />放弃本次 pi 运行
             </button>
             <button
               className="save-settings-button"

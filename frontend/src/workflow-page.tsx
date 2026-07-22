@@ -36,10 +36,13 @@ interface WorkflowPageProps {
 }
 
 const STATUS_LABELS: Record<WorkflowNodeStatus, string> = {
-  idle: "等待",
+  idle: "未开始",
   in_progress: "运行中",
+  waiting_approval: "等待审批",
   completed: "已完成",
-  failed: "失败",
+  failed: "已失败",
+  abandoned: "已放弃",
+  skipped: "已跳过",
 };
 
 const KIND_LABELS: Record<string, string> = {
@@ -240,7 +243,7 @@ function WorkflowRuntime({
       </header>
 
       <section className="workflow-dashboard">
-        <div className="workflow-canvas">
+        <div className="workflow-run-stage">
           <div className="workflow-section-heading">
             <div><span>执行图</span><strong>{definition.nodes.length} 个节点 · {definition.edges.length} 条连接</strong></div>
             <small>节点状态来自MAF → AG-UI事件</small>

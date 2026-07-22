@@ -1,6 +1,13 @@
 const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? "http://127.0.0.1:8030";
 
-export type WorkflowNodeStatus = "idle" | "in_progress" | "completed" | "failed";
+export type WorkflowNodeStatus =
+  | "idle"
+  | "in_progress"
+  | "waiting_approval"
+  | "completed"
+  | "failed"
+  | "abandoned"
+  | "skipped";
 
 export interface WorkflowNodeDefinition {
   id: string;
@@ -23,6 +30,7 @@ export interface WorkflowDefinition {
   version: string;
   description: string;
   endpoint: string;
+  selectable: boolean;
   nodes: WorkflowNodeDefinition[];
   edges: WorkflowEdgeDefinition[];
 }
@@ -74,5 +82,8 @@ export function getLatestWorkflowTrace(
 }
 
 export function workflowEndpointUrl(endpoint: string): string {
+  if (endpoint === "/api/agent" && import.meta.env?.VITE_AG_UI_URL) {
+    return import.meta.env.VITE_AG_UI_URL;
+  }
   return `${API_BASE_URL}${endpoint}`;
 }

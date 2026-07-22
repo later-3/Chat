@@ -81,11 +81,10 @@ class AgentProfileService:
                     )
                 ).all()
             )
-            if not values:
-                provider_id = self._catalog.default_provider_id
-                model = self._catalog.default_model
-                values = [
-                    AgentProfileRecord(
+            provider_id = self._catalog.default_provider_id
+            model = self._catalog.default_model
+            defaults = (
+                AgentProfileRecord(
                         id="planner",
                         name="规划 Agent",
                         description="先理解目标、约束和现有上下文，形成可交接的方案草稿。",
@@ -95,8 +94,8 @@ class AgentProfileService:
                         ),
                         provider_id=provider_id,
                         model=model,
-                    ),
-                    AgentProfileRecord(
+                ),
+                AgentProfileRecord(
                         id="reviewer",
                         name="审校 Agent",
                         description="接收完整会话和规划结果，检查遗漏并形成最终答复。",
@@ -106,9 +105,36 @@ class AgentProfileService:
                         ),
                         provider_id=provider_id,
                         model=model,
+                ),
+                AgentProfileRecord(
+                    id="idiom_agent_a",
+                    name="接龙 Agent 甲",
+                    description="承接用户给出的四字成语，生成下一棒。",
+                    instructions=(
+                        "你是成语接龙 Agent 甲。严格遵守本轮给出的开头字，"
+                        "只回复一个常见、规范的四字成语，不要解释或添加标点。"
                     ),
-                ]
-                transaction.add_all(values)
+                    provider_id=provider_id,
+                    model=model,
+                ),
+                AgentProfileRecord(
+                    id="idiom_agent_b",
+                    name="接龙 Agent 乙",
+                    description="承接Agent甲的四字成语，生成第三棒并把回合交还用户。",
+                    instructions=(
+                        "你是成语接龙 Agent 乙。严格遵守本轮给出的开头字，"
+                        "只回复一个常见、规范的四字成语，不要解释或添加标点。"
+                    ),
+                    provider_id=provider_id,
+                    model=model,
+                ),
+            )
+            existing_ids = {value.id for value in values}
+            missing = [value for value in defaults if value.id not in existing_ids]
+            if missing:
+                transaction.add_all(missing)
+                values.extend(missing)
+            values.sort(key=lambda value: value.id)
         self._cache = {value.id: _snapshot(value) for value in values}
 
     def runtime_snapshot(self, agent_id: str) -> AgentProfileSnapshot:
@@ -144,8 +170,9 @@ class AgentProfileService:
             raise AgentProfileError("Agent名称不能为空")
         if not clean_instructions:
             raise AgentProfileError("Agent Instructions不能为空")
-        if agent_id in {"planner", "reviewer"} and not enabled:
-            raise AgentProfileError("会话传递Workflow依赖的Agent不能停用")
+        required_agents = {"planner", "reviewer", "idiom_agent_a", "idiom_agent_b"}
+        if agent_id in required_agents and not enabled:
+            raise AgentProfileError("已注册Workflow依赖的Agent不能停用")
 
         next_revision = expected_revision + 1
         next_updated_at = utc_now()

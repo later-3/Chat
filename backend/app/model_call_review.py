@@ -13,7 +13,7 @@ import copy
 import hashlib
 import json
 import threading
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
@@ -1161,15 +1161,36 @@ class PreparedProviderRequest:
     body: bytes
     body_sha256: str
     provider_request: dict[str, Any]
+    stage_reporter: Callable[[str, str, dict[str, Any]], Awaitable[None]] | None = field(
+        default=None,
+        compare=False,
+        repr=False,
+    )
 
     @classmethod
-    def from_draft(cls, draft: ModelCallDraft) -> "PreparedProviderRequest":
+    def from_draft(
+        cls,
+        draft: ModelCallDraft,
+        *,
+        stage_reporter: Callable[[str, str, dict[str, Any]], Awaitable[None]] | None = None,
+    ) -> "PreparedProviderRequest":
         return cls(
             provider_id=draft.provider_id,
             body=draft.body,
             body_sha256=draft.body_sha256,
             provider_request=copy.deepcopy(draft.provider_request),
+            stage_reporter=stage_reporter,
         )
+
+
+async def _report_provider_stage(
+    prepared: PreparedProviderRequest,
+    stage_id: str,
+    status: str,
+    **details: Any,
+) -> None:
+    if prepared.stage_reporter is not None:
+        await prepared.stage_reporter(stage_id, status, details)
 
 
 @dataclass(slots=True)
@@ -1186,8 +1207,15 @@ class ExactProviderTransport:
         if self.api_key:
             headers["authorization"] = f"Bearer {self.api_key}"
         try:
+            await _report_provider_stage(prepared, "provider.dispatch", "in_progress")
             async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False) as client:
                 async with client.stream("POST", self.endpoint, content=prepared.body, headers=headers) as response:
+                    await _report_provider_stage(
+                        prepared,
+                        "provider.dispatch",
+                        "completed",
+                        http_status=response.status_code,
+                    )
                     if response.is_error:
                         error_body = await response.aread()
                         raise ProviderDispatchError(
@@ -1196,19 +1224,78 @@ class ExactProviderTransport:
                             outcome_status="failed",
                         )
                     content_type = response.headers.get("content-type", "")
+                    await _report_provider_stage(
+                        prepared,
+                        "provider.receive",
+                        "in_progress",
+                        content_type=content_type.split(";", 1)[0],
+                    )
                     if "text/event-stream" in content_type:
+                        received = False
+                        parsing = False
                         async for line in response.aiter_lines():
                             if not line.startswith("data:"):
                                 continue
                             data = line.removeprefix("data:").strip()
                             if not data or data == "[DONE]":
                                 continue
+                            if not received:
+                                received = True
+                                await _report_provider_stage(
+                                    prepared,
+                                    "provider.receive",
+                                    "completed",
+                                    transport="sse",
+                                )
+                            if not parsing:
+                                parsing = True
+                                await _report_provider_stage(
+                                    prepared,
+                                    "provider.decode",
+                                    "in_progress",
+                                    protocol="sse-json",
+                                )
                             for text in _provider_text(json.loads(data)):
                                 yield text
+                        if not received:
+                            await _report_provider_stage(
+                                prepared,
+                                "provider.receive",
+                                "completed",
+                                transport="sse",
+                                empty=True,
+                            )
+                        await _report_provider_stage(
+                            prepared,
+                            "provider.decode",
+                            "completed",
+                            protocol="sse-json",
+                            empty=not parsing,
+                        )
                         return
-                    payload = json.loads((await response.aread()).decode("utf-8"))
+                    raw_response = await response.aread()
+                    await _report_provider_stage(
+                        prepared,
+                        "provider.receive",
+                        "completed",
+                        transport="json",
+                        response_bytes=len(raw_response),
+                    )
+                    await _report_provider_stage(
+                        prepared,
+                        "provider.decode",
+                        "in_progress",
+                        protocol="json",
+                    )
+                    payload = json.loads(raw_response.decode("utf-8"))
                     for text in _provider_text(payload):
                         yield text
+                    await _report_provider_stage(
+                        prepared,
+                        "provider.decode",
+                        "completed",
+                        protocol="json",
+                    )
         except httpx.TimeoutException as error:
             raise ProviderDispatchError(
                 _redacted_provider_error(error),

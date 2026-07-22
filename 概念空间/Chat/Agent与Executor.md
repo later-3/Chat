@@ -6,7 +6,7 @@
 |---|---|
 | 目的 | 区分可编辑Agent配置、MAF Agent运行对象、Workflow Executor和多Agent交接。 |
 | 概念状态 | 有效。 |
-| 实现状态 | 局部实现并验证：Agent Profile Revision、planner/reviewer、确定性交接和受治理Agent Executor已存在；动态拓扑和持久多Agent恢复未完成。 |
+| 实现状态 | 局部实现并验证：4个可编辑Agent Profile、规划/审校交接和三方成语接龙的受治理Agent Executor已存在；动态拓扑和持久多Agent恢复未完成。 |
 | 事实所有者 | MAF边界见[架构新手导读第7节](../../docs/architecture-beginner-guide.md#7-agent里面到底有哪些东西)，当前实现见[项目状态](../../PROJECT_STATE.md)。 |
 | 维护责任 | Agent目录、Workflow Runtime、模型调用审批和Tool治理共同维护。 |
 
@@ -54,10 +54,13 @@ Agent Profile revision
 3. Workflow图展示节点类型；只有实际调用Agent的节点才标为Agent节点。
 4. 每次Agent内部Provider调用仍生成独立ModelCallDraft并审批。
 5. Agent交接必须可查看原始目标、上游输出、来源和明确要求；用户修改后形成新版本。
+6. 多Agent游戏仍由确定性Workflow掌握轮次、校验和最终提交；Agent只负责各自需要智能生成的一棒，不能自行改变参与者顺序或跳过审批。
 
 ## 正例与反例
 
 正例：planner Agent生成规划，确定性Executor把原始用户目标、规划结果和审校要求组装后交给reviewer Agent。
+
+正例：用户给出“一心一意”，输入Executor校验后交给Agent甲；确定性交接再把“意气风发”和必须以“发”开头的规则传给Agent乙，两次Provider调用分别审批，结果Executor最后把下一棒交还用户。
 
 反例：用户修改Agent名称后，系统把正在运行的旧Run也显示成使用新配置。
 
@@ -67,7 +70,7 @@ Agent Profile revision
 
 ## 当前状态与未知
 
-当前双Agent纵向切片已验证Profile CAS Revision、不可变快照、两次逐次审批和显式交接。尚未完成动态Agent目录、并发多Agent拓扑、持久Checkpoint、多Agent活动Run恢复和细粒度Agent能力授权。
+当前两个双Agent纵向切片已验证Profile CAS Revision、不可变快照、两次逐次审批、显式交接和确定性规则校验。其中成语接龙已经覆盖连续两轮、两位Agent分别放弃、错误接龙和无假成功。尚未完成动态Agent目录、并发多Agent拓扑、持久Checkpoint、多Agent活动Run恢复和细粒度Agent能力授权。
 
 ## 来源、维护与验证
 

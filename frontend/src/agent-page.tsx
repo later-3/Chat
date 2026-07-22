@@ -16,6 +16,7 @@ interface AgentPageProps {
 }
 
 export function AgentPage({ providers, blocked, onAgentsChanged }: AgentPageProps) {
+  const requiredAgentIds = new Set(["planner", "reviewer", "idiom_agent_a", "idiom_agent_b"]);
   const [agents, setAgents] = useState<AgentProfile[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState<AgentProfile | null>(null);
@@ -89,7 +90,7 @@ export function AgentPage({ providers, blocked, onAgentsChanged }: AgentPageProp
         <div>
           <p className="eyebrow">AGENT PROFILES</p>
           <h1>Agent 配置</h1>
-          <p>这里配置长期Agent身份；每次Workflow运行会取得一个版本快照，实际模型请求仍逐次审批。</p>
+          <p>这里配置版本化 Agent 档案；每次 Workflow 运行会取得一个版本快照，实际模型请求仍逐次审批。</p>
         </div>
         <div className="agent-policy-pill"><ShieldCheck size={15} />配置不是执行授权</div>
       </header>
@@ -112,7 +113,7 @@ export function AgentPage({ providers, blocked, onAgentsChanged }: AgentPageProp
           ))}
           <div className="agent-handoff-note">
             <GitMerge size={16} />
-            <p><strong>会话传递Workflow</strong><span>planner → 确定性交接 → reviewer</span></p>
+            <p><strong>显式 Agent 交接</strong><span>规划/审校双Agent；成语接龙Agent甲/乙均由确定性节点交接。</span></p>
           </div>
         </aside>
 
@@ -121,18 +122,18 @@ export function AgentPage({ providers, blocked, onAgentsChanged }: AgentPageProp
             <>
               <div className="agent-editor-heading">
                 <div><span>稳定 Agent ID</span><code>{draft.id}</code></div>
-                <span className="agent-revision">Revision {draft.revision}</span>
+                <span className="agent-revision">Agent 版本 {draft.revision}</span>
               </div>
               <div className="agent-form-grid">
                 <label><span>显示名称</span><input disabled={saving || blocked} maxLength={120} onChange={(event) => setDraft({ ...draft, name: event.target.value })} value={draft.name} /></label>
-                <label><span>状态</span><select disabled={saving || blocked || ["planner", "reviewer"].includes(draft.id)} onChange={(event) => setDraft({ ...draft, enabled: event.target.value === "enabled" })} value={draft.enabled ? "enabled" : "disabled"}><option value="enabled">启用</option><option value="disabled">停用</option></select></label>
+                <label><span>状态</span><select disabled={saving || blocked || requiredAgentIds.has(draft.id)} onChange={(event) => setDraft({ ...draft, enabled: event.target.value === "enabled" })} value={draft.enabled ? "enabled" : "disabled"}><option value="enabled">启用</option><option value="disabled">停用</option></select></label>
                 <label className="agent-form-wide"><span>职责说明</span><textarea disabled={saving || blocked} onChange={(event) => setDraft({ ...draft, description: event.target.value })} rows={3} value={draft.description} /></label>
                 <label><span>Provider</span><select disabled={saving || blocked} onChange={(event) => { const provider = providers.find((value) => value.id === event.target.value); setDraft({ ...draft, provider_id: event.target.value, model: provider?.models[0]?.id ?? "" }); }} value={draft.provider_id}>{providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
                 <label><span>模型</span><select disabled={saving || blocked} onChange={(event) => setDraft({ ...draft, model: event.target.value })} value={draft.model}>{modelOptions.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}</select></label>
                 <label className="agent-form-wide"><span>Instructions</span><small>定义这个Agent如何理解任务与产出；本次调用还可以在发送前审批中临时修改。</small><textarea disabled={saving || blocked} onChange={(event) => setDraft({ ...draft, instructions: event.target.value })} rows={10} value={draft.instructions} /></label>
               </div>
               {error && <p className="agent-form-error" role="alert">{error}</p>}
-              {saved && <p className="agent-form-success"><Check size={14} />已保存，新Workflow将使用Revision {draft.revision}</p>}
+              {saved && <p className="agent-form-success"><Check size={14} />已保存，新 Workflow 将使用 Agent 版本 {draft.revision}</p>}
               <div className="agent-form-actions">
                 <button disabled={!dirty || saving || blocked || !draft.name.trim() || !draft.instructions.trim()} onClick={() => void save()} type="button"><Save size={15} />{saving ? "保存中…" : "保存Agent配置"}</button>
               </div>

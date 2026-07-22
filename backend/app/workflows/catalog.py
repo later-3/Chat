@@ -35,9 +35,30 @@ class WorkflowDefinition:
     endpoint: str
     nodes: tuple[WorkflowNodeDefinition, ...]
     edges: tuple[WorkflowEdgeDefinition, ...]
+    selectable: bool = False
 
     def view(self) -> dict[str, object]:
         return asdict(self)
+
+
+CHAT_MODEL_CALL_APPROVAL_WORKFLOW = WorkflowDefinition(
+    id="chat-model-call-approval",
+    name="发送前可编辑 Prompt",
+    version="1.0.0",
+    description="准备真实模型请求，等待用户逐次审批，再发送给 Provider 并提交结果。",
+    endpoint="/api/agent",
+    nodes=(
+        WorkflowNodeDefinition(
+            id="model_call_approval",
+            label="审批并发送模型请求",
+            description="编译可编辑请求、等待审批、准确发送并提交模型结果。",
+            kind="approval",
+            runtime_type="executor",
+        ),
+    ),
+    edges=(),
+    selectable=True,
+)
 
 
 NESTED_QUALITY_WORKFLOW = WorkflowDefinition(
@@ -158,6 +179,58 @@ GOVERNED_AGENT_HANDOFF_WORKFLOW = WorkflowDefinition(
     ),
 )
 
+GOVERNED_IDIOM_CHAIN_WORKFLOW = WorkflowDefinition(
+    id="governed-idiom-chain",
+    name="三方成语接龙",
+    version="1.0.0",
+    description="你先出一个四字成语，两位Agent依次接龙；两次真实模型调用分别暂停审批。",
+    endpoint="/api/workflows/governed-idiom-chain/run",
+    nodes=(
+        WorkflowNodeDefinition(
+            id="idiom_input",
+            label="接收并校验你的成语",
+            description="提取本轮四字成语，并校验是否承接上一轮末字。",
+            kind="input",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="idiom_agent_a",
+            label="接龙 Agent 甲",
+            description="根据你的成语给出下一棒；模型请求发送前单独审批。",
+            kind="agent",
+            runtime_type="agent",
+        ),
+        WorkflowNodeDefinition(
+            id="idiom_handoff",
+            label="传递下一棒",
+            description="确定性传递三方接龙状态，不调用模型。",
+            kind="handoff",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="idiom_agent_b",
+            label="接龙 Agent 乙",
+            description="承接Agent甲给出第三个成语；模型请求发送前再次审批。",
+            kind="agent",
+            runtime_type="agent",
+        ),
+        WorkflowNodeDefinition(
+            id="idiom_result",
+            label="汇总本轮并轮到你",
+            description="形成三方公开结果，并明确下一轮应使用的开头字。",
+            kind="output",
+            runtime_type="executor",
+        ),
+    ),
+    edges=(
+        WorkflowEdgeDefinition("idiom_input", "idiom_agent_a"),
+        WorkflowEdgeDefinition("idiom_agent_a", "idiom_handoff"),
+        WorkflowEdgeDefinition("idiom_handoff", "idiom_agent_b"),
+        WorkflowEdgeDefinition("idiom_agent_b", "idiom_result"),
+    ),
+    selectable=True,
+)
+
 GOVERNED_PI_AGENT_WORKFLOW = WorkflowDefinition(
     id="governed-pi-agent",
     name="pi Agent 受控工具",
@@ -201,8 +274,10 @@ GOVERNED_PI_AGENT_WORKFLOW = WorkflowDefinition(
 )
 
 WORKFLOW_CATALOG: tuple[WorkflowDefinition, ...] = (
+    CHAT_MODEL_CALL_APPROVAL_WORKFLOW,
     NESTED_QUALITY_WORKFLOW,
     GOVERNED_AGENT_HANDOFF_WORKFLOW,
+    GOVERNED_IDIOM_CHAIN_WORKFLOW,
     GOVERNED_PI_AGENT_WORKFLOW,
 )
 

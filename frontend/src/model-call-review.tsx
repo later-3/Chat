@@ -675,14 +675,14 @@ export function ModelCallReview({
       ? "内容已经修改，请先保存；保存会生成新版本和新审批Hash"
       : !valid
         ? "当前请求存在校验问题，请先修正"
-        : "当前版本已绑定审批Hash，可以确认发送";
+        : "当前版本已绑定审批 Hash，可以批准并发送此模型请求";
   const approveLabel = busy
     ? "处理中…"
     : dirty
       ? "请先保存修改"
       : !valid
         ? "请先修正内容"
-        : "确认发送";
+        : "批准并发送此模型请求";
 
   const updateRequest = (next: Record<string, unknown>) => {
     setWorkingRequest(next);
@@ -847,15 +847,15 @@ export function ModelCallReview({
           {requestError && <p className="review-error">{requestError}</p>}
           {rawError && <p className="review-error">Provider JSON格式错误：{rawError}</p>}
           {localIssues.map((issue) => <p className="review-error" key={issue}>{issue}</p>)}
-          {!requestError && valid && dirty && <p className="review-warning"><Save size={14} /> 检测到未保存修改：请先保存，系统会生成新版本和新Hash，然后才能确认发送。</p>}
-          {!requestError && valid && !dirty && <p><Check size={14} /> 当前版本已绑定审批Hash，可以确认发送。</p>}
+          {!requestError && valid && dirty && <p className="review-warning"><Save size={14} /> 检测到未保存修改：请先保存，系统会生成新版本和新 Hash，然后才能批准发送。</p>}
+          {!requestError && valid && !dirty && <p><Check size={14} /> 当前版本已绑定审批 Hash，可以批准并发送此模型请求。</p>}
         </div>
 
         <footer className="review-actions">
-          <button className="review-button review-button--abandon" disabled={busy} onClick={onAbandon} type="button">放弃并返回输入框</button>
+          <button className="review-button review-button--abandon" disabled={busy} onClick={onAbandon} type="button">放弃本次模型调用并返回输入框</button>
           <div>
             <button aria-describedby="review-action-status" className="review-button review-button--save" disabled={busy || !dirty || !valid} onClick={() => onRevise(workingProviderId, workingRequest)} title={!dirty ? "当前没有未保存修改" : !valid ? "请先修正校验问题" : "保存后生成新版本并重新审批"} type="button">
-              <Save size={16} /> 保存修改并生成新审批
+              <Save size={16} /> 保存为新版本并重新审批
             </button>
             <button aria-describedby="review-action-status" className="review-button review-button--approve" disabled={busy || dirty || !valid} onClick={onApprove} title={approveReason} type="button">
               <ShieldCheck size={16} /> {approveLabel}

@@ -42,11 +42,14 @@ from .tool_configs import (
     ToolConfigurationService,
 )
 from .workflows import (
+    CHAT_MODEL_CALL_APPROVAL_WORKFLOW,
     GOVERNED_AGENT_HANDOFF_WORKFLOW,
+    GOVERNED_IDIOM_CHAIN_WORKFLOW,
     GOVERNED_PI_AGENT_WORKFLOW,
     NESTED_QUALITY_WORKFLOW,
     ProductAwareWorkflow,
     create_governed_agent_handoff_workflow,
+    create_governed_idiom_chain_workflow,
     create_governed_pi_agent_workflow,
     create_nested_quality_workflow,
     workflow_catalog_view,
@@ -288,7 +291,13 @@ def create_app(
     async def workflows() -> dict[str, Any]:
         definitions = [NESTED_QUALITY_WORKFLOW]
         if model_catalog is not None:
-            definitions.append(GOVERNED_AGENT_HANDOFF_WORKFLOW)
+            definitions.extend(
+                (
+                    CHAT_MODEL_CALL_APPROVAL_WORKFLOW,
+                    GOVERNED_AGENT_HANDOFF_WORKFLOW,
+                    GOVERNED_IDIOM_CHAIN_WORKFLOW,
+                )
+            )
         if model_catalog is not None and resolved.pi_runtime.available:
             definitions.append(GOVERNED_PI_AGENT_WORKFLOW)
         return {"workflows": workflow_catalog_view(tuple(definitions))}
@@ -481,6 +490,33 @@ def create_app(
             app,
             handoff_workflow,
             GOVERNED_AGENT_HANDOFF_WORKFLOW.endpoint,
+            allow_origins=list(resolved.frontend_origins),
+            tags=["workflows"],
+        )
+        idiom_run_ids: dict[str, str] = {}
+
+        def idiom_factory(thread_id: str):
+            return create_governed_idiom_chain_workflow(
+                thread_id=thread_id,
+                run_id=lambda: idiom_run_ids.get(thread_id, "unknown"),
+                agent_a=agent_profiles.runtime_snapshot("idiom_agent_a"),
+                agent_b=agent_profiles.runtime_snapshot("idiom_agent_b"),
+                store=review_store,
+                transport=transport,
+                sessions=product_sessions,
+            )
+
+        idiom_workflow = ProductAwareWorkflow(
+            workflow_factory=idiom_factory,
+            sessions=product_sessions,
+            definition=GOVERNED_IDIOM_CHAIN_WORKFLOW,
+            run_ids=idiom_run_ids,
+        )
+        app.state.idiom_workflow = idiom_workflow
+        add_agent_framework_fastapi_endpoint(
+            app,
+            idiom_workflow,
+            GOVERNED_IDIOM_CHAIN_WORKFLOW.endpoint,
             allow_origins=list(resolved.frontend_origins),
             tags=["workflows"],
         )

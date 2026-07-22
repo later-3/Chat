@@ -91,6 +91,10 @@
 - [x] 完成按精确AG-UI `runId`映射的取消窄切片：Provider发送前收敛为`cancelled`，发送后保守收敛为`outcome_unknown`；取消与正常终态竞态可幂等读取目标终态，旧runId不会取消后续Run。
 - [x] 发送后取消的真实浏览器验证完成：点击停止后Run为`结果未知`，等待Provider原请求结束并刷新后仍只有User产品消息，没有伪Assistant成功；371px窄屏无溢出。
 - [x] 建立Chat概念空间：保留OPS-OS方法来源，新增目录治理、全局/Chat索引、10个高风险概念簇和结构/链接校验；概念状态与实现状态分开，Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、知识结果、界面和外部入口均有唯一语义边界。
+- [x] 完成首轮界面概念一致性修正和 Workflow Run 工作台：顶部不再把对话、Workflow、Agent、Tool误画成同级页面，统一为聊天工作区与配置中心；桌面会话侧栏可完全折叠且会话列表独立滚动，Chat Pane与右侧Workbench并行，窄屏使用覆盖式工作台；聊天发送前明确显示Workflow选择。设计者工作台可按真实代码展开为4个运行层、12个代码阶段，并明确只有`ModelCallApprovalExecutor`是MAF图节点；阶段状态由持久`workflow.stage` Trace实时投影，关闭工作台不取消运行。演示Workflow和工具Workflow仍可在配置中心目录独立运行。
+- [x] Workflow节点内容现可点击查看：同一Product Trace按稳定`executor_id`关联公开输入、公开输出、运行事实和源码入口；可读Key-Value视图不展示隐藏推理，也不拿Provider JSON冒充节点内容。发送前可选择的Workflow目录已从静态单项改为后端注册表驱动，AG-UI Client按所选Definition端点运行且Resume保持原端点。
+- [x] 完成三方成语接龙多Agent Workflow：`输入校验Executor -> 接龙Agent甲 -> 确定性交接Executor -> 接龙Agent乙 -> 结果Executor`共5个真实MAF节点；用户和两个Agent按同字四字成语规则轮流接龙，两次Provider调用分别生成Draft/Hash/Approval，Agent Profile可在配置中心查看编辑。
+- [x] 成语接龙自动化覆盖完整两次审批、连续两轮、用户接错上一轮末字、Agent输出不合规则、第一位Agent放弃零发送、第二位Agent放弃仅1次发送及无假Assistant成功；真实浏览器使用火山方舟`glm-5.2`得到“一心一意 -> 意气风发 -> 发扬光大”，5/5节点完成，两个审批载荷和节点公开内容均可查看。
 
 ## 4. 已完成的工程与研究证据
 
@@ -106,9 +110,9 @@
 
 ### 4.2 已有验证
 
-1. 当前工作区后端59个测试通过，覆盖工程基线、JSON配置、审批合同、双协议、能力校验、精确发送、Session迁移/恢复/并发/幂等/Retry血缘/精确取消、失败/超时/结果未知、Product提交门、嵌套Workflow、多Agent、pi RPC/Provider Gate/Tool Gate/执行统计、原子Trace和AG-UI终态顺序。
-2. 前端17个逻辑测试、类型检查和生产构建通过；最新`npm install --package-lock-only`审计122个包，0个已知漏洞。
-3. 浏览器完成Provider/模型联动、固定Key/类型化Value编辑、Role与内容类型同步、双视图同源、跨协议转换、修改后二次审批、放弃恢复，以及Session对话页/会话抽屉/设置弹窗窄屏回归；371px有效宽度无横向溢出。
+1. 当前工作区后端65个测试通过，覆盖工程基线、JSON配置、审批合同、双协议、能力校验、精确发送、Session迁移/恢复/并发/幂等/Retry血缘/精确取消、失败/超时/结果未知、Product提交门、嵌套Workflow、多Agent、成语接龙、pi RPC/Provider Gate/Tool Gate/执行统计、原子Trace和AG-UI终态顺序。
+2. 前端25个逻辑测试、类型检查和生产构建通过；最新`npm install --package-lock-only`审计122个包，0个已知漏洞。
+3. 浏览器完成Provider/模型联动、固定Key/类型化Value编辑、Role与内容类型同步、双视图同源、跨协议转换、修改后二次审批、放弃恢复，以及Session对话页/会话推拉侧栏/统一配置中心/Workflow Run工作台宽屏、784px与窄屏回归；窄屏无横向溢出，工作台内部可以独立滚动到第12阶段，控制台0错误。工作台真实模型验证完成1次审批后发送：26条阶段事件覆盖12个代码阶段，Provider HTTP 200，AG-UI流式输出和Product Session提交均完成；另保留放弃场景的Provider零发送证据。
 4. 火山方舟Responses与阿里云百炼Chat Completions各完成1次真实模型审批回合；后者核对最终Body仅含`model/messages/tools/store/stream`并返回预期文本。
 5. 清理脚本已验证可分别终止端口8030的Uvicorn和5073的Vite，清理后无监听残留。
 6. 概念空间结构校验通过：10个概念簇、13个目录文档和99个本地链接均可发现且无断链；`git diff --check`纳入提交前验证。
@@ -172,6 +176,6 @@
 
 1. Session Phase 1只证明R0/R1文本恢复；后续任务不得把它外推成活动流、Worker、Tool或Workflow/HITL恢复。
 2. Workflow可视化种子只兑现运行中投影和完成Trace恢复；后续Checkpoint/HITL不得复用这份Trace冒充运行恢复。
-3. 多Agent种子已验证MAF Agent-as-Executor合同、显式会话传递、配置Revision和逐次模型调用审批；它仍不代表任意动态Agent拓扑、持久Checkpoint或并发群聊已经完成。
+3. 多Agent种子已验证两套显式会话传递、4个Profile Revision、逐次模型调用审批和成语接龙确定性规则；它仍不代表任意动态Agent拓扑、持久Checkpoint或并发群聊已经完成。
 4. pi Agent Tool已验证官方JSONL RPC、两道治理门和真实Tool loop；它仍不代表跨进程pi Session、持久Approval、通用副作用对账或R6恢复完成。
 5. 概念状态“有效”只表示语义边界可正式使用；任何功能是否实现、恢复级别和验证证据仍必须回到本文件及对应源码/测试判断。
