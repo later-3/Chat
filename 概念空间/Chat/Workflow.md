@@ -6,7 +6,7 @@
 |---|---|
 | 目的 | 统一项目Workstream、可执行Workflow定义、用户选择、实际运行、节点和运行视图。 |
 | 概念状态 | 有效；用户已批准“发送前选择Workflow，发送后展示实际Run”。 |
-| 实现状态 | 局部实现并验证：聊天发送前可选择两个Workflow；MAF原生Workflow、异构节点、嵌套运行、AG-UI节点投影和节点公开内容查看已存在；持久Checkpoint/HITL恢复未完成。 |
+| 实现状态 | 局部实现并验证：聊天发送前只有“持续协作主 Workflow”可选；其20个真实MAF节点、异构分支、AG-UI节点投影和治理内容查看已存在，演示/工具Workflow仅在配置中心运行；持久Checkpoint/HITL恢复未完成。 |
 | 事实所有者 | 产品选择规则见[项目经验反例013](../../PROJECT_LESSONS.md#16-反例-013把workflow选择prompt发送和运行展示混成一个动作)，实现见[项目状态](../../PROJECT_STATE.md)。 |
 | 维护责任 | Workflow目录、Run管理、MAF Runtime和前端Workflow Run View共同维护。 |
 
@@ -79,7 +79,7 @@
 
 ## 当前状态与未知
 
-当前已验证8个异构节点、两层嵌套、实时中态、失败传播和刷新终态恢复；“发送前可编辑 Prompt”另已验证1个真实MAF Executor及其跨4个运行层的12个代码阶段；“三方成语接龙”已验证5个真实MAF节点、2个受治理Agent、两次独立审批和逐节点公开输入输出。聊天已能在这两个Workflow间显式选择。持久Definition版本仓库、活动Run重连、跨进程Checkpoint和子级HITL仍需后续交付。
+当前发送区只选择“持续协作主 Workflow v1.0.0”；它以20个真实MAF节点覆盖选择性主题摘要、意图/场景、可选规划、ExecutionDraft授权、RunSpec编译、响应、回合沉淀和产品提交。嵌套质量检查、双Agent、三方成语接龙和pi Tool仍是配置中心中的独立Definition，不会与主Workflow隐式叠加。已验证8节点两层嵌套、5节点成语接龙和20节点主链的实时投影与刷新终态；持久Definition版本仓库、活动Run重连、跨进程Checkpoint和子级HITL仍需后续交付。
 
 ## 来源、维护与验证
 

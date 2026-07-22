@@ -52,3 +52,46 @@ test("缺少真实Tool身份或参数的中断不会进入审批UI", () => {
     arguments: {},
   })), null);
 });
+
+
+test("产品Decision Point中断保留请求版本、可编辑字段和允许动作", () => {
+  const review = governedReviewFromInterrupt(interrupt({
+    review_kind: "product_decision",
+    approval_id: "decision-request-1",
+    decision_request_id: "decision-request-1",
+    decision_point_key: "intent_binding",
+    title: "确认我对本轮意图的理解",
+    reason_summary: "策略要求用户确认",
+    request_hash: "request-hash",
+    row_version: 1,
+    subject_hash: "subject-hash",
+    subject: { scenario: "clarify", goal: "继续昨天那个" },
+    facts: { intent: { confidence: 0 } },
+    policy: { final_action: "require_human", matched_rules: [], reason_codes: [] },
+    allowed_actions: ["accept", "revise", "cancel"],
+    editable_fields: [{ key: "goal", label: "本轮目标", type: "text", value: "继续昨天那个" }],
+    execution_context: {
+      workflow_id: "continuous-collaboration",
+      workflow_version: "1.0.0",
+      executor_id: "intent_binding",
+      wait_reason: "product_decision",
+    },
+  }));
+
+  assert.equal(review?.review_kind, "product_decision");
+  if (review?.review_kind !== "product_decision") assert.fail("expected product decision");
+  assert.equal(review.decision_point_key, "intent_binding");
+  assert.deepEqual(review.allowed_actions, ["accept", "revise", "cancel"]);
+  assert.equal(review.editable_fields[0]?.key, "goal");
+});
+
+
+test("缺少Decision Request身份的产品中断不会进入审批UI", () => {
+  assert.equal(governedReviewFromInterrupt(interrupt({
+    review_kind: "product_decision",
+    approval_id: "bad",
+    decision_point_key: "intent_binding",
+    allowed_actions: ["accept"],
+    editable_fields: [],
+  })), null);
+});

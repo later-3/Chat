@@ -41,7 +41,7 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 8. 受治理双Agent Workflow已跑通：规划Agent、确定性交接、审校Agent共3个节点；两次真实Provider调用分别审批，第2次能查看和修改原始目标、规划结果及交接要求。
 9. pi coding agent已作为真实MAF FunctionTool接入：使用官方JSONL RPC，每次模型请求和内部Tool调用分别审批，支持Tool配置、参数改写、Token/耗时/调用统计和启动中断收敛。
 10. 完整Session仍按Phase 2-8继续：活动流重连、Worker、Tool副作用、Workflow/HITL和跨入口恢复尚未完成。
-11. Chat概念空间已经建立：10个概念簇统一Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、上下文结果、界面和外部入口的共同语言。
+11. Chat概念空间已经建立：11个概念簇统一Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、上下文结果、界面、外部入口和人工介入策略的共同语言。
 
 ## 技术方向
 
@@ -162,7 +162,7 @@ scripts/         可重复执行的工程验证
 3. [项目计划](./PROJECT_PLAN.md)：工作流、依赖、分阶段路线和完成门。
 4. [项目状态](./PROJECT_STATE.md)：当前完成项、待审核项和下一道门。
 5. [协作规则](./AGENTS.md)：开发和AI协作必须遵守的规则。
-6. [概念空间方法来源](./概念空间.md)与[Chat概念资产索引](./概念空间/00-索引.md)：共同语言方法、10个概念簇、边界、别名、正反例和实现状态入口。
+6. [概念空间方法来源](./概念空间.md)与[Chat概念资产索引](./概念空间/00-索引.md)：共同语言方法、11个概念簇、边界、别名、正反例和实现状态入口。
 7. [总体架构研究与证据](./docs/overall-architecture-research.md)：完整场景推导、MAF、pi、nanobot、QwenPaw与LibreChat证据、覆盖缺口和方案比较。
 8. [总体架构候选](./docs/overall-architecture-proposal.md)：由pi、nanobot、QwenPaw和LibreChat源码结构推导出的Web/Channel适配、Interaction Ingress、10个产品与应用模块、运行适配器、状态所有权、场景穿透和交付依赖。
 9. [架构新手导读](./docs/architecture-beginner-guide.md)：从用户点击“发送/批准”开始，串起前端、协议、后端数据库、Agent Session/Tool、Provider请求、响应解析、产品提交和React渲染，并对照当前代码与目标架构。

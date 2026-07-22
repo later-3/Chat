@@ -14,6 +14,7 @@ import {
 import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import { ModelCallReview } from "./model-call-review";
+import { ProductDecisionReview } from "./product-decision-review";
 import { ToolCallReview } from "./tool-call-review";
 import type { ProductSession } from "./session-api";
 import {
@@ -181,7 +182,7 @@ function WorkflowRuntime({
   onRunningChange,
   onSelectDefinition,
 }: WorkflowRuntimeProps) {
-  const { status, error, progress, runId, pendingReview, run, approve, revise, abandon } = useWorkflowAgent({
+  const { status, error, progress, runId, pendingReview, run, approve, revise, abandon, decideProduct } = useWorkflowAgent({
     definition,
     sessionId: session?.id ?? null,
     hydratedMessages,
@@ -308,13 +309,22 @@ function WorkflowRuntime({
         </div>
         {error && <p className="workflow-error" role="alert">{error}</p>}
       </form>
-      {pendingReview && pendingReview.review_kind !== "tool_execution" && (
+      {pendingReview && pendingReview.review_kind !== "tool_execution" && pendingReview.review_kind !== "product_decision" && (
         <ModelCallReview
           busy={status === "running" || status === "saving"}
           card={pendingReview}
           onAbandon={() => { void abandon().then((prompt) => { if (prompt !== null) onInputChange(prompt); }); }}
           onApprove={() => void approve()}
           onRevise={(providerId, providerRequest) => void revise(providerId, providerRequest)}
+          requestError={error}
+        />
+      )}
+      {pendingReview?.review_kind === "product_decision" && (
+        <ProductDecisionReview
+          busy={status === "running" || status === "saving"}
+          card={pendingReview}
+          key={pendingReview.approval_id}
+          onDecision={(decision, changes) => void decideProduct(decision, changes)}
           requestError={error}
         />
       )}

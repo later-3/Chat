@@ -212,7 +212,7 @@ export function useWorkflowAgent({
     providerId: string,
     providerRequest: Record<string, unknown>,
   ) => {
-    if (!pendingReview || pendingReview.review_kind === "tool_execution" || agent.isRunning) return;
+    if (!pendingReview || pendingReview.review_kind === "tool_execution" || pendingReview.review_kind === "product_decision" || agent.isRunning) return;
     let recoverable = pendingReview;
     setStatus("saving");
     setError(null);
@@ -252,7 +252,7 @@ export function useWorkflowAgent({
 
   const abandon = useCallback(async (): Promise<string | null> => {
     if (!pendingReview || agent.isRunning) return null;
-    const prompt = pendingReview.review_kind === "tool_execution"
+    const prompt = pendingReview.review_kind === "tool_execution" || pendingReview.review_kind === "product_decision"
       ? inputBeforeRun.current
       : pendingReview.origin_prompt;
     const approvalId = pendingReview.approval_id;
@@ -278,5 +278,30 @@ export function useWorkflowAgent({
     }
   }, [agent, pendingReview]);
 
-  return { status, error, progress, runId, pendingReview, run, approve, revise, abandon };
+  const decideProduct = useCallback(async (
+    decision: string,
+    changes?: Record<string, unknown>,
+  ) => {
+    if (!pendingReview || pendingReview.review_kind !== "product_decision" || agent.isRunning) return;
+    const review = pendingReview;
+    setPendingReview(null);
+    setStatus("running");
+    setError(null);
+    try {
+      await agent.runAgent({
+        resume: [{
+          interruptId: review.approval_id,
+          status: "resolved",
+          payload: { decision, ...(changes ? { changes } : {}) },
+        }],
+      });
+    } catch (runError) {
+      if (!mounted.current) return;
+      setPendingReview(review);
+      setStatus("awaiting_approval");
+      setError(runError instanceof Error ? runError.message : "提交人工决定失败");
+    }
+  }, [agent, pendingReview]);
+
+  return { status, error, progress, runId, pendingReview, run, approve, revise, abandon, decideProduct };
 }

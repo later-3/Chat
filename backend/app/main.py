@@ -8,7 +8,7 @@ from typing import Any
 from agent_framework.ag_ui import add_agent_framework_fastapi_endpoint
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .agent_profiles import (
     AgentProfileConflict,
@@ -18,6 +18,7 @@ from .agent_profiles import (
 )
 from .agents import create_agent
 from .config import Settings
+from .governance import ExecutionGovernanceService, GovernanceConflict, GovernanceValidationError
 from .model_call_review import (
     ExactProviderTransport,
     InMemoryModelCallReviewStore,
@@ -43,11 +44,13 @@ from .tool_configs import (
 )
 from .workflows import (
     CHAT_MODEL_CALL_APPROVAL_WORKFLOW,
+    CONTINUOUS_COLLABORATION_WORKFLOW,
     GOVERNED_AGENT_HANDOFF_WORKFLOW,
     GOVERNED_IDIOM_CHAIN_WORKFLOW,
     GOVERNED_PI_AGENT_WORKFLOW,
     NESTED_QUALITY_WORKFLOW,
     ProductAwareWorkflow,
+    create_continuous_collaboration_workflow,
     create_governed_agent_handoff_workflow,
     create_governed_idiom_chain_workflow,
     create_governed_pi_agent_workflow,
@@ -110,6 +113,51 @@ class UpdatePiToolConfigurationRequest(BaseModel):
     system_prompt: str
 
 
+class HitlPolicyRuleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision_point_key: str
+    mode: str
+    condition: dict[str, Any] | None = None
+    on_match: str | None = None
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    reason: str = ""
+
+
+class ActivateHitlPolicyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scope_kind: str
+    scope_ref_id: str
+    scope_ref_revision: str | None = None
+    expected_active_revision_id: str | None = None
+    change_summary: str = ""
+    rules: list[HitlPolicyRuleRequest]
+
+
+class PreviewHitlPolicyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision_point_key: str
+    scopes: list[dict[str, str]]
+    facts: dict[str, Any] = Field(default_factory=dict)
+
+
+class HumanDecisionItemRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_key: str
+    decision: str
+
+
+class ResolveHumanDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_request_hash: str
+    expected_row_version: int
+    item_decisions: list[HumanDecisionItemRequest]
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -132,6 +180,7 @@ def create_app(
         model_catalog,
         resolved.pi_runtime,
     )
+    governance = ExecutionGovernanceService(product_sessions.database)
     pi_runtime = pi_runtime_manager or (
         PiRuntimeManager(
             runtime=resolved.pi_runtime,
@@ -145,6 +194,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         await product_sessions.initialize()
+        await governance.initialize()
         await agent_profiles.initialize()
         await tool_configurations.initialize()
         try:
@@ -165,6 +215,7 @@ def create_app(
     app.state.product_sessions = product_sessions
     app.state.agent_profiles = agent_profiles
     app.state.tool_configurations = tool_configurations
+    app.state.governance = governance
     app.state.pi_runtime = pi_runtime
     app.add_middleware(
         CORSMiddleware,
@@ -293,6 +344,7 @@ def create_app(
         if model_catalog is not None:
             definitions.extend(
                 (
+                    CONTINUOUS_COLLABORATION_WORKFLOW,
                     CHAT_MODEL_CALL_APPROVAL_WORKFLOW,
                     GOVERNED_AGENT_HANDOFF_WORKFLOW,
                     GOVERNED_IDIOM_CHAIN_WORKFLOW,
@@ -301,6 +353,66 @@ def create_app(
         if model_catalog is not None and resolved.pi_runtime.available:
             definitions.append(GOVERNED_PI_AGENT_WORKFLOW)
         return {"workflows": workflow_catalog_view(tuple(definitions))}
+
+    @app.get("/api/hitl/decision-points")
+    async def hitl_decision_points() -> dict[str, Any]:
+        return {"decision_points": await governance.decision_points()}
+
+    @app.get("/api/hitl/policy-sets")
+    async def hitl_policy_sets() -> dict[str, Any]:
+        return {"policy_sets": await governance.policy_sets()}
+
+    @app.post("/api/hitl/policy-sets/activate")
+    async def activate_hitl_policy(command: ActivateHitlPolicyRequest) -> dict[str, Any]:
+        try:
+            return await governance.activate_policy(
+                scope_kind=command.scope_kind,
+                scope_ref_id=command.scope_ref_id,
+                scope_ref_revision=command.scope_ref_revision,
+                rules=[value.model_dump() for value in command.rules],
+                expected_active_revision_id=command.expected_active_revision_id,
+                change_summary=command.change_summary,
+            )
+        except GovernanceConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except GovernanceValidationError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.post("/api/hitl/policy-preview")
+    async def preview_hitl_policy(command: PreviewHitlPolicyRequest) -> dict[str, Any]:
+        try:
+            return await governance.preview(
+                decision_point_key=command.decision_point_key,
+                scopes=command.scopes,
+                facts=command.facts,
+            )
+        except GovernanceValidationError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.get("/api/runs/{run_id}/governance")
+    async def run_governance(run_id: str) -> dict[str, Any]:
+        try:
+            return await governance.governance_for_run(run_id)
+        except GovernanceValidationError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.post("/api/hitl/decision-requests/{request_id}/resolve")
+    async def resolve_hitl_request(
+        request_id: str,
+        command: ResolveHumanDecisionRequest,
+    ) -> dict[str, Any]:
+        try:
+            decisions = await governance.resolve_human_request(
+                request_id=request_id,
+                expected_request_hash=command.expected_request_hash,
+                expected_row_version=command.expected_row_version,
+                decisions=[value.model_dump() for value in command.item_decisions],
+            )
+            return {"decision_request_id": request_id, "status": "decision_recorded", "decisions": decisions}
+        except GovernanceConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except GovernanceValidationError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.get("/api/tools")
     async def tools() -> dict[str, Any]:
@@ -466,6 +578,41 @@ def create_app(
         tags=["workflows"],
     )
     if resolved.runtime_mode == "model":
+        continuous_run_ids: dict[str, str] = {}
+
+        def continuous_factory(thread_id: str):
+            return create_continuous_collaboration_workflow(
+                thread_id=thread_id,
+                run_id=lambda: continuous_run_ids.get(thread_id, "unknown"),
+                profiles={
+                    key: agent_profiles.runtime_snapshot(key)
+                    for key in (
+                        "intent_router",
+                        "task_planner",
+                        "response_agent",
+                        "turn_summarizer",
+                    )
+                },
+                store=review_store,
+                transport=transport,
+                sessions=product_sessions,
+                governance=governance,
+            )
+
+        continuous_workflow = ProductAwareWorkflow(
+            workflow_factory=continuous_factory,
+            sessions=product_sessions,
+            definition=CONTINUOUS_COLLABORATION_WORKFLOW,
+            run_ids=continuous_run_ids,
+        )
+        app.state.continuous_workflow = continuous_workflow
+        add_agent_framework_fastapi_endpoint(
+            app,
+            continuous_workflow,
+            CONTINUOUS_COLLABORATION_WORKFLOW.endpoint,
+            allow_origins=list(resolved.frontend_origins),
+            tags=["workflows"],
+        )
         handoff_run_ids: dict[str, str] = {}
 
         def handoff_factory(thread_id: str):

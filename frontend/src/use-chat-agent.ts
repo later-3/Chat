@@ -149,7 +149,43 @@ export interface ToolExecutionReviewCard {
   };
 }
 
-export type GovernedReviewCard = ModelCallReviewCard | ToolExecutionReviewCard;
+export interface ProductDecisionEditableField {
+  key: string;
+  label: string;
+  type: "text" | "text_optional" | "long_text" | "boolean" | "select" | "multi_select";
+  value: unknown;
+  options?: Array<{ value: string; label: string }>;
+}
+
+export interface ProductDecisionReviewCard {
+  review_kind: "product_decision";
+  message: string;
+  approval_id: string;
+  decision_request_id: string;
+  decision_point_key: string;
+  title: string;
+  reason_summary: string;
+  request_hash: string;
+  row_version: number;
+  subject_hash: string;
+  subject: unknown;
+  facts: Record<string, unknown>;
+  policy: {
+    final_action: string;
+    matched_rules: unknown[];
+    reason_codes: string[];
+  };
+  allowed_actions: string[];
+  editable_fields: ProductDecisionEditableField[];
+  execution_context: {
+    workflow_id: string;
+    workflow_version: string;
+    executor_id: string;
+    wait_reason: "product_decision";
+  };
+}
+
+export type GovernedReviewCard = ModelCallReviewCard | ToolExecutionReviewCard | ProductDecisionReviewCard;
 
 interface RevisionResponseError {
   detail?: string | { message?: string; issues?: string[] };
@@ -191,6 +227,17 @@ export function governedReviewFromInterrupt(interrupt: Interrupt): GovernedRevie
   const data = framework.data;
   if (!data || typeof data !== "object") return null;
   const value = data as Partial<ToolExecutionReviewCard>;
+  const productDecision = data as Partial<ProductDecisionReviewCard>;
+  if (productDecision.review_kind === "product_decision") {
+    if (
+      typeof productDecision.approval_id !== "string" ||
+      typeof productDecision.decision_request_id !== "string" ||
+      typeof productDecision.decision_point_key !== "string" ||
+      !Array.isArray(productDecision.allowed_actions) ||
+      !Array.isArray(productDecision.editable_fields)
+    ) return null;
+    return data as ProductDecisionReviewCard;
+  }
   if (value.review_kind === "tool_execution") {
     if (
       typeof value.approval_id !== "string" ||
@@ -248,7 +295,7 @@ export function useChatAgent({
   const [messages, setMessages] = useState<Message[]>([]);
   const [status, setStatus] = useState<RunStatus>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [pendingReview, setPendingReview] = useState<ModelCallReviewCard | null>(null);
+  const [pendingReview, setPendingReview] = useState<GovernedReviewCard | null>(null);
   const [dispatchRecovery, setDispatchRecovery] = useState<DispatchRecovery | null>(null);
   const mounted = useRef(true);
   const pendingUserMessageId = useRef<string | null>(null);
@@ -319,7 +366,7 @@ export function useChatAgent({
       onRunFinishedEvent(result) {
         if (!mounted.current) return;
         if (result.outcome === "interrupt") {
-          const card = result.interrupts.map(reviewCardFromInterrupt).find(Boolean) ?? null;
+          const card = result.interrupts.map(governedReviewFromInterrupt).find(Boolean) ?? null;
           if (card) {
             setPendingReview(card);
             setStatus("awaiting_approval");
@@ -327,7 +374,7 @@ export function useChatAgent({
             return;
           }
           setStatus("error");
-          setError("收到无法识别的模型调用审批请求");
+          setError("收到无法识别的人工介入请求");
           return;
         }
         setPendingReview(null);
@@ -409,7 +456,7 @@ export function useChatAgent({
   );
 
   const approve = useCallback(async () => {
-    if (!pendingReview || agent.isRunning) return;
+    if (!pendingReview || agent.isRunning || pendingReview.review_kind === "product_decision" || pendingReview.review_kind === "tool_execution") return;
     const approvalId = pendingReview.approval_id;
     const resumeRunId = crypto.randomUUID();
     activeAguiRunId.current = resumeRunId;
@@ -435,6 +482,7 @@ export function useChatAgent({
   const revise = useCallback(
     async (providerId: string, providerRequest: Record<string, unknown>) => {
       if (!pendingReview || agent.isRunning) return;
+      if (pendingReview.review_kind === "product_decision" || pendingReview.review_kind === "tool_execution") return;
       let recoverableReview = pendingReview;
       setStatus("saving");
       setError(null);
@@ -481,7 +529,7 @@ export function useChatAgent({
   );
 
   const abandon = useCallback(async (): Promise<string | null> => {
-    if (!pendingReview || agent.isRunning) return null;
+    if (!pendingReview || agent.isRunning || pendingReview.review_kind === "product_decision" || pendingReview.review_kind === "tool_execution") return null;
     const prompt = pendingReview.origin_prompt;
     const approvalId = pendingReview.approval_id;
     const baseline = messagesBeforePendingRun.current ?? [];
@@ -504,6 +552,33 @@ export function useChatAgent({
         setError(runError instanceof Error ? runError.message : "放弃模型调用失败");
       }
       return null;
+    }
+  }, [agent, pendingReview]);
+
+  const decideProduct = useCallback(async (
+    decision: string,
+    changes?: Record<string, unknown>,
+  ) => {
+    if (!pendingReview || pendingReview.review_kind !== "product_decision" || agent.isRunning) return;
+    const review = pendingReview;
+    setPendingReview(null);
+    setStatus("running");
+    setError(null);
+    try {
+      await agent.runAgent({
+        runId: crypto.randomUUID(),
+        resume: [{
+          interruptId: review.approval_id,
+          status: "resolved",
+          payload: { decision, ...(changes ? { changes } : {}) },
+        }],
+      });
+    } catch (runError) {
+      if (mounted.current) {
+        setPendingReview(review);
+        setStatus("awaiting_approval");
+        setError(runError instanceof Error ? runError.message : "提交人工决定失败");
+      }
     }
   }, [agent, pendingReview]);
 
@@ -569,6 +644,7 @@ export function useChatAgent({
     approve,
     revise,
     abandon,
+    decideProduct,
     stop,
     returnDispatchPrompt,
     recoverFromError,

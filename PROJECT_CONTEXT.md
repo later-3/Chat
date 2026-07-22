@@ -102,7 +102,9 @@ Chat 是本地优先、用户可介入、可持续工作的 AI 协作产品。
 -> 必要时请求用户确认
 -> 形成工作计划和人/AI行动
 -> 生成版本化ExecutionDraft
--> 用户审核Agent、Runtime、工具、权限、限制与请求Hash
+-> HITL策略逐项判断需要人工确认、条件暂停、自动推进还是禁止
+-> 用户修订或确认需要介入的内容；自动推进也保存决定依据
+-> 编译绑定上下文、能力、策略和验证要求的不可变RunSpec
 -> 创建Run并由Agent、Workflow或Runtime执行
 -> 持续投影运行事件和中断点
 -> 保存结果、Evidence、Delivery与Trace
@@ -128,8 +130,10 @@ Chat 是本地优先、用户可介入、可持续工作的 AI 协作产品。
 | WorkItem | 需要跨回合持续推进的工作或学习事项 |
 | ActionItem | 明确由用户或 AI 负责的下一行动 |
 | TaskPlan | 为完成目标形成的节点、顺序、依赖和检查点 |
-| ExecutionDraft | 尚未执行、可编辑和审核的版本化最终请求 |
-| Approval | 用户或策略对特定版本、请求 Hash 和权限范围的批准或驳回 |
+| ExecutionDraft | 产品准备“怎样完成这项工作”的可编辑、版本化执行草稿；不是某一次Provider请求 |
+| HITL Policy | 决定某类决策点必须人工、条件暂停、自动推进或禁止的版本化策略 |
+| RunSpec | 从已接受ExecutionDraft、Context、权限和有效策略编译出的不可变执行合同 |
+| Approval | 用户或策略对特定版本、请求 Hash、权限范围和后果的授权或驳回记录 |
 | Product Run | 一次具体 Agent、Workflow 或 Runtime 执行的长期产品事实 |
 | Run Attempt | Product Run 的一次实际执行尝试、Worker 所有权和恢复血缘 |
 | Tool Execution | 一次工具调用的请求、权限、幂等键、副作用和对账状态 |
@@ -193,7 +197,7 @@ Chat 的目标能力至少包括：
 3. 上下文选择、来源展示、裁剪、版本和失效传播。
 4. 多意图识别、澄清、修正和用户确认。
 5. WorkItem、ActionItem、TaskPlan 及人/AI 责任闭环。
-6. ExecutionDraft、Approval、权限策略、版本与 Hash 绑定。
+6. ExecutionDraft、RunSpec、HITL Policy、Approval、权限策略、版本与 Hash 绑定。
 7. Agent、Workflow、Tool 与其他 Runtime 的受控执行。
 8. 完成历史恢复、活动流重连、Worker 接管、Tool 对账、Workflow Checkpoint 与 HITL 恢复。
 9. Memory 候选、接受、纠正、删除、来源与有效性治理。
@@ -224,7 +228,7 @@ Session 的完整目标和恢复分级由[Session 能力全集](./docs/session-c
 6. Zustand 只管理导航、弹窗、筛选和布局等页面状态；Agent 消息和运行状态由 AG-UI Client 投影。
 7. MAF 运行状态与产品领域状态分开拥有；SQLite 是已批准的产品数据库实现起点，但不能改变逻辑状态边界，完整运行拓扑所需存储能力仍须按架构保证验证。
 8. 产品保持Web与Channel入口、产品资源、Interaction协调、Run执行和外部集成边界清晰；领域模型不能由 UI 组件、AG-UI 临时状态或 MAF Session 代替。
-9. 每次Provider模型调用发送前必须暂停审批：MAF原生Workflow承载控制流，自定义确定性Executor编译并发送请求；`store=False`且不使用Continuation保证本次完整显式上下文可见，自动Tool循环关闭。Provider与模型来自服务端能力目录并联动选择；可读视图使用不可改名的Key和按值类型选择的文字、数字、布尔或枚举控件，Provider JSON只作为高级视图，两者编辑同一请求草稿。任一字段或Provider路由修改都会生成新版本、Hash和新审批，旧审批失效；放弃不产生发送Attempt，并把原输入返回输入框供继续修改或清空。
+9. 每次Provider模型调用都必须生成独立ModelCallDraft、Hash和授权判断：MAF原生Workflow承载控制流，自定义确定性Executor编译并发送请求；产品默认发送前暂停人工审批，HITL策略可在系统不可放宽下限内配置有界自动推进，自动决定同样留痕。`store=False`且不使用Continuation保证本次完整显式上下文可见，自动Tool循环关闭。Provider与模型来自服务端能力目录并联动选择；可读视图使用不可改名的Key和按值类型选择的文字、数字、布尔或枚举控件，Provider JSON只作为高级视图，两者编辑同一请求草稿。任一字段或Provider路由修改都会生成新版本、Hash并重新授权，旧决定失效；放弃不产生发送Attempt，并把原输入返回输入框供继续修改或清空。
 10. 后端运行与模型配置只从私有`backend/config.json`启动快照读取；Provider按数组扩展、每个Provider维护自己的模型目录。仓库只提交脱敏的`backend/config.example.json`，密钥和Base URL不进入浏览器响应或Git。
 
 ### 10.1 协议、运行时与状态所有权

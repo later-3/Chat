@@ -43,6 +43,8 @@ import { WorkflowPage } from "./workflow-page";
 import { CHAT_WORKFLOW } from "./workflow-run-projection";
 import { WorkflowRunView } from "./workflow-run-view";
 import { ToolPage } from "./tool-page";
+import { HitlPage } from "./hitl-page";
+import { ProductDecisionReview } from "./product-decision-review";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8030";
 
@@ -203,6 +205,7 @@ function App() {
     approve,
     revise,
     abandon,
+    decideProduct,
     stop,
     returnDispatchPrompt,
     recoverFromError,
@@ -409,6 +412,10 @@ function App() {
     ? latestRun
     : null;
   const interactionBusy = status !== "idle" || workflowRunning;
+  const modelCallReview = pendingReview && pendingReview.review_kind !== "product_decision" && pendingReview.review_kind !== "tool_execution"
+    ? pendingReview
+    : null;
+  const productDecisionReview = pendingReview?.review_kind === "product_decision" ? pendingReview : null;
 
   return (
     <div className="app-shell">
@@ -542,7 +549,7 @@ function App() {
                     disabled={status !== "idle" || !activeSession || sessionLoading}
                     onChange={(event) => setDraft(event.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder={pendingReview ? "请先处理本次模型调用审批…" : "输入你想继续推进的事情…"}
+                    placeholder={pendingReview ? "请先处理当前人工介入请求…" : "输入你想继续推进的事情…"}
                     rows={1}
                     value={draft}
                   />
@@ -563,7 +570,7 @@ function App() {
               latestRun={latestRun}
               onClose={() => setWorkbenchOpen(false)}
               pendingReview={pendingReview}
-              prompt={pendingReview?.origin_prompt ?? lastSubmittedPrompt ?? latestRun?.input_text ?? null}
+              prompt={modelCallReview?.origin_prompt ?? lastSubmittedPrompt ?? latestRun?.input_text ?? null}
               runStatus={status}
               workflow={status === "idle"
                 ? selectedWorkflow
@@ -573,13 +580,23 @@ function App() {
         </div>
       </div>
 
-      {pendingReview && (
+      {modelCallReview && (
         <ModelCallReview
           busy={busy}
-          card={pendingReview}
+          card={modelCallReview}
           onAbandon={() => { void abandon().then((prompt) => { if (prompt !== null) setDraft(prompt); }); }}
           onApprove={() => void approve()}
           onRevise={(providerId, providerRequest) => void revise(providerId, providerRequest)}
+          requestError={error}
+        />
+      )}
+
+      {productDecisionReview && (
+        <ProductDecisionReview
+          busy={busy}
+          card={productDecisionReview}
+          key={productDecisionReview.approval_id}
+          onDecision={(decision, changes) => void decideProduct(decision, changes)}
           requestError={error}
         />
       )}
@@ -637,6 +654,12 @@ function App() {
               blocked={interactionBusy}
               onChanged={() => { void listWorkflows().then(setWorkflowDefinitions); }}
               providers={providers}
+            />
+          ),
+          hitl: (
+            <HitlPage
+              sessionId={activeSession?.id ?? null}
+              workflowId={selectedWorkflow.id}
             />
           ),
           system: (

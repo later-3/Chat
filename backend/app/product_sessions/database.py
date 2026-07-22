@@ -89,6 +89,12 @@ class RunRecord(Base):
     model: Mapped[str | None] = mapped_column(String(200), nullable=True)
     draft_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     approval_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    execution_draft_revision_id: Mapped[str | None] = mapped_column(
+        ForeignKey("execution_draft_revisions.id", ondelete="RESTRICT"), nullable=True
+    )
+    run_spec_id: Mapped[str | None] = mapped_column(
+        ForeignKey("run_specs.id", ondelete="RESTRICT"), nullable=True
+    )
     retry_of_run_id: Mapped[str | None] = mapped_column(
         ForeignKey("product_runs.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -113,6 +119,9 @@ class RunAttemptRecord(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     failure_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    start_authorization_consumption_id: Mapped[str | None] = mapped_column(
+        ForeignKey("authorization_consumptions.id", ondelete="RESTRICT"), nullable=True
+    )
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -160,6 +169,9 @@ class MessageRecord(Base):
     context_eligible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    commit_decision_record_id: Mapped[str | None] = mapped_column(
+        ForeignKey("decision_records.id", ondelete="RESTRICT"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
@@ -245,6 +257,12 @@ class ToolExecutionRecord(Base):
     cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     failure_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    tool_call_request_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tool_call_requests.id", ondelete="RESTRICT"), nullable=True
+    )
+    authorization_consumption_id: Mapped[str | None] = mapped_column(
+        ForeignKey("authorization_consumptions.id", ondelete="RESTRICT"), nullable=True
+    )
     metrics: Mapped[Any] = mapped_column(JSON, nullable=False, default=dict)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

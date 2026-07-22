@@ -213,6 +213,10 @@ def test_agent_profiles_are_editable_with_provider_model_validation_and_revision
         assert response.status_code == 200
         profiles = response.json()["agents"]
         assert {value["id"] for value in profiles} == {
+            "intent_router",
+            "task_planner",
+            "response_agent",
+            "turn_summarizer",
             "planner",
             "reviewer",
             "idiom_agent_a",
@@ -309,6 +313,7 @@ def test_multi_agent_handoff_requires_two_approvals_and_preserves_full_context(t
     with TestClient(app) as client:
         workflows = client.get("/api/workflows").json()["workflows"]
         assert {value["id"] for value in workflows} == {
+            "continuous-collaboration",
             "chat-model-call-approval",
             "nested-quality-demo",
             "governed-agent-handoff",

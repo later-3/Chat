@@ -85,6 +85,54 @@ class AgentProfileService:
             model = self._catalog.default_model
             defaults = (
                 AgentProfileRecord(
+                        id="intent_router",
+                        name="意图与上下文 Agent",
+                        description="用最小上下文识别场景、目标、项目关联和需要补充的信息。",
+                        instructions=(
+                            "你是Chat主Workflow的意图与上下文Agent。只根据明确可见的用户输入和候选摘要判断，"
+                            "不得编造Project或任务状态。必须只输出一个JSON对象，字段为："
+                            "scenario（simple_question/continue_project/new_task/plan_request/learning/clarify之一）、"
+                            "goal、confidence（0到1）、project_hint、needs_plan、needs_clarification、"
+                            "clarification_question、context_keywords（字符串数组）、reason_summary。"
+                        ),
+                        provider_id=provider_id,
+                        model=model,
+                ),
+                AgentProfileRecord(
+                        id="task_planner",
+                        name="任务规划 Agent",
+                        description="把已确认目标和最小充分背景拆成可验证的执行步骤。",
+                        instructions=(
+                            "你是Chat主Workflow的任务规划Agent。基于已识别意图和采用的最小充分上下文，"
+                            "形成具体、可验证、不过度扩权的计划。明确步骤、依赖、完成条件、验证和需要用户决定的点。"
+                        ),
+                        provider_id=provider_id,
+                        model=model,
+                ),
+                AgentProfileRecord(
+                        id="response_agent",
+                        name="协作响应 Agent",
+                        description="根据当前场景的Execution Brief形成直接、可靠的用户答复。",
+                        instructions=(
+                            "你是Chat主Workflow的协作响应Agent。严格使用本次明确装配的背景、目标、计划和约束；"
+                            "不要假装读取了未提供的文件，不要声称未验证的动作已经完成。用中文直接给出当前场景所需答复。"
+                        ),
+                        provider_id=provider_id,
+                        model=model,
+                ),
+                AgentProfileRecord(
+                        id="turn_summarizer",
+                        name="回合主题提取 Agent",
+                        description="在回合结束后提取主题、已确认事实、开放问题和候选状态更新。",
+                        instructions=(
+                            "你是Chat回合主题提取Agent。只输出JSON，字段为topic、confirmed_facts、decisions、"
+                            "open_questions、project_hint、work_state_candidates、memory_candidates。"
+                            "无关寒暄不进入长期候选；推断内容必须标为candidate，不能冒充已接受事实。"
+                        ),
+                        provider_id=provider_id,
+                        model=model,
+                ),
+                AgentProfileRecord(
                         id="planner",
                         name="规划 Agent",
                         description="先理解目标、约束和现有上下文，形成可交接的方案草稿。",
@@ -170,7 +218,16 @@ class AgentProfileService:
             raise AgentProfileError("Agent名称不能为空")
         if not clean_instructions:
             raise AgentProfileError("Agent Instructions不能为空")
-        required_agents = {"planner", "reviewer", "idiom_agent_a", "idiom_agent_b"}
+        required_agents = {
+            "intent_router",
+            "task_planner",
+            "response_agent",
+            "turn_summarizer",
+            "planner",
+            "reviewer",
+            "idiom_agent_a",
+            "idiom_agent_b",
+        }
         if agent_id in required_agents and not enabled:
             raise AgentProfileError("已注册Workflow依赖的Agent不能停用")
 

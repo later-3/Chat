@@ -1,8 +1,8 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { Bot, Database, Settings2, SlidersHorizontal, Workflow, Wrench, X } from "lucide-react";
+import { Bot, Database, Settings2, ShieldCheck, SlidersHorizontal, Workflow, Wrench, X } from "lucide-react";
 import type { ReactNode } from "react";
 
-export type ConfigurationTab = "session" | "workflow" | "agent" | "tool" | "system";
+export type ConfigurationTab = "session" | "workflow" | "agent" | "tool" | "hitl" | "system";
 
 interface ConfigurationCenterProps {
   activeTab: ConfigurationTab;
@@ -17,6 +17,7 @@ const TABS: Array<{ id: ConfigurationTab; label: string; description: string; ic
   { id: "workflow", label: "Workflow", description: "目录与开发验证", icon: <Workflow size={16} /> },
   { id: "agent", label: "Agent", description: "版本化 Agent 档案", icon: <Bot size={16} /> },
   { id: "tool", label: "Tool", description: "能力目录与配置", icon: <Wrench size={16} /> },
+  { id: "hitl", label: "人工介入", description: "作用域与暂停策略", icon: <ShieldCheck size={16} /> },
   { id: "system", label: "系统", description: "运行时与状态边界", icon: <Database size={16} /> },
 ];
 
@@ -36,7 +37,7 @@ export function ConfigurationCenter({
             <span><Settings2 size={18} /></span>
             <div>
               <Dialog.Title>配置中心</Dialog.Title>
-              <Dialog.Description>在一个入口管理会话、Workflow、Agent、Tool 与系统信息。</Dialog.Description>
+              <Dialog.Description>在一个入口管理会话、Workflow、Agent、Tool、人工介入与系统信息。</Dialog.Description>
             </div>
             <Dialog.Close asChild><button aria-label="关闭配置中心" type="button"><X size={18} /></button></Dialog.Close>
           </header>

@@ -24,6 +24,7 @@ class WorkflowNodeDefinition:
 class WorkflowEdgeDefinition:
     source: str
     target: str
+    condition: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +58,184 @@ CHAT_MODEL_CALL_APPROVAL_WORKFLOW = WorkflowDefinition(
         ),
     ),
     edges=(),
+    selectable=False,
+)
+
+
+CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
+    id="continuous-collaboration",
+    name="持续协作主 Workflow",
+    version="1.0.0",
+    description=(
+        "以选择性上下文和意图识别为入口，按场景进入澄清、计划或直接响应，"
+        "所有模型调用受HITL治理，并在回合结束提取重点候选。"
+    ),
+    endpoint="/api/workflows/continuous-collaboration/run",
+    nodes=(
+        WorkflowNodeDefinition(
+            id="input_acceptance",
+            label="接纳本轮输入",
+            description="保存并读取本轮用户输入，不把审批协议消息混入业务上下文。",
+            kind="input",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="context_candidates",
+            label="选择候选上下文",
+            description="从历史主题摘要中确定性检索最可能相关的候选，不默认叠加完整历史。",
+            kind="context",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="context_adoption",
+            label="采用Context",
+            description="按有效HITL策略自动记录或暂停确认本轮采用的主题摘要。",
+            kind="approval",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="intent_agent",
+            label="意图与场景 Agent",
+            description="用最小候选上下文识别目标、场景、Project提示和澄清需要。",
+            kind="agent",
+            runtime_type="agent",
+        ),
+        WorkflowNodeDefinition(
+            id="intent_binding",
+            label="绑定本轮意图",
+            description="高置信且不改变活动工作的意图可自动通过；歧义时暂停。",
+            kind="approval",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="project_work_binding",
+            label="关联Project / Work",
+            description="简单问答不适用；多候选或跨敏感Scope时暂停确认。",
+            kind="approval",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="scenario_router",
+            label="场景路由",
+            description="按已识别场景进入澄清、规划或直接响应分支。",
+            kind="decision",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="clarification",
+            label="请求澄清",
+            description="无法可靠绑定目标或Project时停在可回答的澄清问题。",
+            kind="output",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="planning_agent",
+            label="任务规划 Agent",
+            description="对新任务、继续Project和明确规划请求形成步骤与验证门。",
+            kind="agent",
+            runtime_type="agent",
+        ),
+        WorkflowNodeDefinition(
+            id="plan_acceptance",
+            label="接受Plan",
+            description="按作用域策略接受、修改或本轮跳过计划。",
+            kind="approval",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="execution_draft_compiler",
+            label="编译 ExecutionDraft",
+            description="把目标、最小上下文、计划、能力和完成门编译成可审核的版本化执行草稿。",
+            kind="governance",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="execution_authorization",
+            label="授权ExecutionDraft",
+            description="Decision Record和一次性Grant绑定当前Draft Hash后才进入响应阶段。",
+            kind="approval",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="run_spec_compiler",
+            label="编译不可变 RunSpec",
+            description="只从已授权的ExecutionDraft revision编译本次运行合同，并绑定Product Run。",
+            kind="governance",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="response_agent",
+            label="协作响应 Agent",
+            description="只使用本轮明确装配的背景、目标和计划形成可提交答复。",
+            kind="agent",
+            runtime_type="agent",
+        ),
+        WorkflowNodeDefinition(
+            id="turn_summary_agent",
+            label="提取本轮重点",
+            description="提取主题、确认事实、开放问题及Work/Memory候选，不直接写长期事实。",
+            kind="agent",
+            runtime_type="agent",
+        ),
+        WorkflowNodeDefinition(
+            id="result_commit",
+            label="提交Result",
+            description="确认答复与完成声明有当前证据支持，并签发提交授权。",
+            kind="approval",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="work_state_commit",
+            label="处理Work状态候选",
+            description="无候选时明确不适用；存在候选时按策略记录决定。",
+            kind="approval",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="memory_commit",
+            label="处理Memory候选",
+            description="默认由用户确认长期Memory候选；原始会话始终保留。",
+            kind="approval",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="turn_summary_persist",
+            label="保存本轮主题摘要",
+            description="在候选处理后保存可追溯的回合派生摘要；不替代原始Message或自动写入长期Memory。",
+            kind="output",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="result_finalization",
+            label="提交本轮结果",
+            description="经过Product Finalization Gate后写入Product Message和Run终态。",
+            kind="output",
+            runtime_type="executor",
+        ),
+    ),
+    edges=(
+        WorkflowEdgeDefinition("input_acceptance", "context_candidates"),
+        WorkflowEdgeDefinition("context_candidates", "context_adoption"),
+        WorkflowEdgeDefinition("context_adoption", "intent_agent"),
+        WorkflowEdgeDefinition("intent_agent", "intent_binding"),
+        WorkflowEdgeDefinition("intent_binding", "project_work_binding"),
+        WorkflowEdgeDefinition("project_work_binding", "scenario_router"),
+        WorkflowEdgeDefinition("scenario_router", "clarification", "scenario = clarify"),
+        WorkflowEdgeDefinition("scenario_router", "planning_agent", "需要计划"),
+        WorkflowEdgeDefinition("scenario_router", "execution_draft_compiler", "直接响应"),
+        WorkflowEdgeDefinition("planning_agent", "plan_acceptance"),
+        WorkflowEdgeDefinition("plan_acceptance", "execution_draft_compiler"),
+        WorkflowEdgeDefinition("execution_draft_compiler", "execution_authorization"),
+        WorkflowEdgeDefinition("execution_authorization", "run_spec_compiler"),
+        WorkflowEdgeDefinition("run_spec_compiler", "response_agent"),
+        WorkflowEdgeDefinition("response_agent", "turn_summary_agent"),
+        WorkflowEdgeDefinition("turn_summary_agent", "result_commit"),
+        WorkflowEdgeDefinition("result_commit", "work_state_commit"),
+        WorkflowEdgeDefinition("work_state_commit", "memory_commit"),
+        WorkflowEdgeDefinition("memory_commit", "turn_summary_persist"),
+        WorkflowEdgeDefinition("clarification", "turn_summary_persist"),
+        WorkflowEdgeDefinition("turn_summary_persist", "result_finalization"),
+    ),
     selectable=True,
 )
 
@@ -228,7 +407,7 @@ GOVERNED_IDIOM_CHAIN_WORKFLOW = WorkflowDefinition(
         WorkflowEdgeDefinition("idiom_handoff", "idiom_agent_b"),
         WorkflowEdgeDefinition("idiom_agent_b", "idiom_result"),
     ),
-    selectable=True,
+    selectable=False,
 )
 
 GOVERNED_PI_AGENT_WORKFLOW = WorkflowDefinition(
@@ -274,6 +453,7 @@ GOVERNED_PI_AGENT_WORKFLOW = WorkflowDefinition(
 )
 
 WORKFLOW_CATALOG: tuple[WorkflowDefinition, ...] = (
+    CONTINUOUS_COLLABORATION_WORKFLOW,
     CHAT_MODEL_CALL_APPROVAL_WORKFLOW,
     NESTED_QUALITY_WORKFLOW,
     GOVERNED_AGENT_HANDOFF_WORKFLOW,

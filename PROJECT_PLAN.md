@@ -62,7 +62,7 @@ flowchart LR
 | 1. 工程与真实链路 | 建立独立前后端、MAF、AG-UI、调试和验证基线 | `真实模型门通过；2项收尾` |
 | 2. 目标架构与合同基线 | 审核目标拓扑、模块、状态、合同、恢复矩阵 | `重写完成，待用户审核` |
 | 3. 产品事实与完成历史 | 身份、Session、Message、Run/Attempt和历史恢复 | `Phase 1文本底座、显式Retry/Restart和精确取消窄切片完成；完整身份和树操作继续` |
-| 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `未开始` |
+| 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `执行治理与主Workflow纵向切片完成；完整领域生命周期继续` |
 | 5. 持久执行与活动流 | Job/Event、Worker、Lease、重连和Reconciler | `未开始` |
 | 6. Tool、Workflow与HITL恢复 | Tool Ledger、对账、Checkpoint和持久Interrupt | `3个纵向种子完成；通用恢复能力未开始` |
 | 7. 知识、证据、交付与运营 | Memory、Evidence、Provenance、Outbox、Trace和告警 | `未开始` |
@@ -79,8 +79,8 @@ flowchart LR
 - [x] 确认后端 MAF、前后端 AG-UI、React 自研 UI 技术路线。
 - [x] 建立`AGENTS.md`、`PROJECT_CONTEXT.md`、`PROJECT_PLAN.md`、`PROJECT_STATE.md`和`README.md`。
 - [x] 纠正产品身份：Chat 是独立完整产品，OPC-OS Chat 是外部集成关系。
-- [x] 新增`PROJECT_LESSONS.md`，记录15个反例，并把参考可追溯性、入口拓扑、完整Payload可编辑性、对象可理解性、操作可走通性和概念空间加入回复检查。
-- [x] 建立Chat概念空间：方法来源、目录治理、发现索引、10个高风险概念簇、概念/实现双状态和自动结构/链接校验。
+- [x] 新增`PROJECT_LESSONS.md`，记录18个反例，并把参考可追溯性、入口拓扑、完整Payload可编辑性、对象可理解性、操作可走通性、概念空间、Workflow审批策略、回合沉淀和可配置HITL加入回复检查。
+- [x] 建立Chat概念空间：方法来源、目录治理、发现索引、11个高风险概念簇、概念/实现双状态和自动结构/链接校验。
 - [ ] 用户审核本轮纠正是否准确进入稳定项目文档。
 
 完成门：项目定义无需依赖 OPC-OS 也能完整描述用户、价值、责任和产品边界；所有项目回复前强制读取经验文档。
@@ -154,11 +154,12 @@ flowchart LR
 
 - [ ] 详细设计并审核 Context、Memory、Collaboration 与 Interaction协调器。
 - [ ] 建立 Context Source、纳入/排除、Token 预算、版本和 Hash。
-- [ ] 实现一个或多个 Intent、依据、不确定性、澄清和用户修正。
+- [x] 实现Intent识别、依据/置信度、澄清和运行时用户修正的主Workflow纵向切片；多Intent聚合及独立Intent资源仍待详细设计。
 - [ ] 建立 WorkItem、TaskPlan、Plan Node、ActionItem、依赖和责任状态。
-- [ ] 建立 ExecutionDraft、Capability/Risk Snapshot 和 Approval。
+- [x] 按[执行治理合同](./docs/execution-governance-contract.md)建立持久ExecutionDraft、授权后编译的不可变RunSpec、HITL Policy Resolver、Decision Record、一次性Grant/Consumption和ModelCallDraft/Attempt纵向链路。
+  - [x] [正式Schema、状态机与前端HITL配置矩阵](./docs/execution-governance-detailed-design.md)的D1-D7已于2026-07-22获用户批准并完成9号迁移、后端服务、主Workflow接合和前端矩阵。
 - [ ] 建立 Draft/Context/Plan/Policy/Capability/Request Hash 任一变化使批准失效的合同。
-- [ ] 编译不可变 RunSpec，并确保 Worker 无权自行扩大能力。
+- [x] 主Workflow只允许已接受ExecutionDraft revision编译不可变RunSpec并绑定Product Run；独立Worker能力执行与跨进程恢复仍属于阶段5-6。
 - [ ] 建立对应前端 Context Review、Intent Review、Work Workspace 和 Execution Review。
 
 完成门：一个多意图真实请求可形成可修改计划；高影响执行无法越过批准门；用户修改任一绑定项后旧批准不能运行。

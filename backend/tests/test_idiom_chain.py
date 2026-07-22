@@ -115,8 +115,7 @@ def test_idiom_chain_requires_two_approvals_and_records_public_node_content(tmp_
         workflows = client.get("/api/workflows").json()["workflows"]
         selectable = [value for value in workflows if value["selectable"]]
         assert [value["id"] for value in selectable] == [
-            "chat-model-call-approval",
-            "governed-idiom-chain",
+            "continuous-collaboration",
         ]
         idiom = next(value for value in workflows if value["id"] == "governed-idiom-chain")
         assert [value["runtime_type"] for value in idiom["nodes"]] == [

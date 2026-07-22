@@ -1,0 +1,171 @@
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+
+from backend.app.config import Settings
+from backend.app.main import create_app
+
+
+def _preview(client: TestClient, decision_point_key: str, facts: dict) -> dict:
+    response = client.post(
+        "/api/hitl/policy-preview",
+        json={
+            "decision_point_key": decision_point_key,
+            "scopes": [
+                {"kind": "product_default", "ref_id": "*"},
+                {"kind": "principal", "ref_id": "local-user"},
+            ],
+            "facts": facts,
+        },
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_hitl_catalog_and_conditional_defaults_are_explainable() -> None:
+    with TestClient(create_app(Settings.for_test())) as client:
+        points = client.get("/api/hitl/decision-points")
+        policies = client.get("/api/hitl/policy-sets")
+        high_confidence = _preview(
+            client,
+            "intent_binding",
+            {"intent": {"confidence": 0.95, "changes_active_work": False, "ambiguous": False}},
+        )
+        ambiguous = _preview(
+            client,
+            "intent_binding",
+            {"intent": {"confidence": 0.40, "changes_active_work": False, "ambiguous": True}},
+        )
+        missing_fact = _preview(client, "intent_binding", {"intent": {"confidence": 0.95}})
+
+    assert points.status_code == 200
+    assert len(points.json()["decision_points"]) == 12
+    assert {value["authority"] for value in policies.json()["policy_sets"]} == {
+        "product_default",
+        "system_safety",
+    }
+    assert high_confidence["final_action"] == "auto_continue"
+    assert high_confidence["result_status"] == "resolved"
+    assert ambiguous["final_action"] == "require_human"
+    assert missing_fact["final_action"] == "require_human"
+    assert missing_fact["result_status"] == "failed_closed"
+
+
+def test_user_scope_can_skip_model_review_but_not_system_safety_floor() -> None:
+    with TestClient(create_app(Settings.for_test())) as client:
+        first = client.post(
+            "/api/hitl/policy-sets/activate",
+            json={
+                "scope_kind": "principal",
+                "scope_ref_id": "local-user",
+                "expected_active_revision_id": None,
+                "change_summary": "在我的默认范围自动发送模型请求",
+                "rules": [
+                    {
+                        "decision_point_key": "model_call_authorization",
+                        "mode": "auto_continue",
+                        "reason": "用户明确配置",
+                    },
+                    {
+                        "decision_point_key": "unknown_or_high_risk",
+                        "mode": "auto_continue",
+                        "reason": "尝试放宽系统下限",
+                    },
+                ],
+            },
+        )
+        assert first.status_code == 200, first.text
+        revision_id = first.json()["active_revision"]["id"]
+
+        model_call = _preview(client, "model_call_authorization", {"model": {"call_ordinal": 1}})
+        unknown = _preview(client, "unknown_or_high_risk", {"risk": {"outcome_unknown": True}})
+        stale = client.post(
+            "/api/hitl/policy-sets/activate",
+            json={
+                "scope_kind": "principal",
+                "scope_ref_id": "local-user",
+                "expected_active_revision_id": None,
+                "change_summary": "过期页面覆盖",
+                "rules": [{
+                    "decision_point_key": "model_call_authorization",
+                    "mode": "require_human",
+                }],
+            },
+        )
+        second = client.post(
+            "/api/hitl/policy-sets/activate",
+            json={
+                "scope_kind": "principal",
+                "scope_ref_id": "local-user",
+                "expected_active_revision_id": revision_id,
+                "change_summary": "恢复每次询问",
+                "rules": [{
+                    "decision_point_key": "model_call_authorization",
+                    "mode": "require_human",
+                }],
+            },
+        )
+
+    assert model_call["final_action"] == "auto_continue"
+    assert unknown["floor_action"] == "require_human"
+    assert unknown["final_action"] == "require_human"
+    assert stale.status_code == 409
+    assert second.status_code == 200
+    assert second.json()["active_revision"]["revision"] == 2
+
+
+def test_policy_activation_rejects_raw_or_incomplete_conditional_dsl() -> None:
+    with TestClient(create_app(Settings.for_test())) as client:
+        missing_condition = client.post(
+            "/api/hitl/policy-sets/activate",
+            json={
+                "scope_kind": "principal",
+                "scope_ref_id": "local-user",
+                "rules": [{
+                    "decision_point_key": "intent_binding",
+                    "mode": "conditional",
+                }],
+            },
+        )
+        script_like = client.post(
+            "/api/hitl/policy-sets/activate",
+            json={
+                "scope_kind": "principal",
+                "scope_ref_id": "local-user",
+                "rules": [{
+                    "decision_point_key": "intent_binding",
+                    "mode": "conditional",
+                    "condition": {"eval": ["intent.confidence", "< 0.8"]},
+                    "on_match": "require_human",
+                }],
+            },
+        )
+
+    assert missing_condition.status_code == 422
+    assert script_like.status_code == 422
+
+
+def test_inherit_rule_does_not_override_product_default() -> None:
+    with TestClient(create_app(Settings.for_test())) as client:
+        activated = client.post(
+            "/api/hitl/policy-sets/activate",
+            json={
+                "scope_kind": "principal",
+                "scope_ref_id": "local-user",
+                "expected_active_revision_id": None,
+                "rules": [{
+                    "decision_point_key": "model_call_authorization",
+                    "mode": "inherit",
+                }],
+            },
+        )
+        assert activated.status_code == 200, activated.text
+        model_call = _preview(
+            client,
+            "model_call_authorization",
+            {"model": {"call_ordinal": 1}},
+        )
+
+    assert model_call["preference_action"] == "require_human"
+    assert model_call["final_action"] == "require_human"
+    assert all(rule["mode"] != "inherit" for rule in model_call["matched_rules"])

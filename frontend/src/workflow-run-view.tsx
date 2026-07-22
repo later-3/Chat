@@ -17,15 +17,17 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import type { ProductRun } from "./session-api";
-import type { ModelCallReviewCard, RunStatus } from "./use-chat-agent";
+import type { ProductRun } from "./session-api.js";
+import type { GovernedReviewCard, ModelCallReviewCard, RunStatus } from "./use-chat-agent.js";
 import {
+  getRunGovernance,
   getRunTrace,
   type ProductTraceEvent,
+  type RunGovernanceView,
   type WorkflowDefinition,
   type WorkflowNodeStatus,
-} from "./workflow-api";
-import { nodeContentFromTrace, progressFromTrace } from "./workflow-progress";
+} from "./workflow-api.js";
+import { nodeContentFromTrace, progressFromTrace } from "./workflow-progress.js";
 import {
   CHAT_WORKFLOW,
   deriveWorkflowRunProjection,
@@ -33,12 +35,12 @@ import {
   type WorkflowStageGroup,
   type WorkflowStageProjection,
   type WorkflowStageStatus,
-} from "./workflow-run-projection";
+} from "./workflow-run-projection.js";
 
 interface WorkflowRunViewProps {
   workflow: WorkflowDefinition;
   latestRun: ProductRun | null;
-  pendingReview: ModelCallReviewCard | null;
+  pendingReview: GovernedReviewCard | null;
   prompt: string | null;
   assistantOutput: string | null;
   runStatus: RunStatus;
@@ -134,6 +136,7 @@ interface StageContent {
   input: unknown;
   output: unknown;
   facts: Record<string, unknown>;
+  governance?: unknown;
 }
 
 function publicContentForStage(
@@ -187,15 +190,50 @@ function publicContentForStage(
   }
 }
 
-function NodeDetail({ input, output, facts }: StageContent) {
+function NodeDetail({ input, output, facts, governance }: StageContent) {
   return (
     <div className="execution-node-detail">
       <section><span>公开输入</span><ReadableValue value={input} /></section>
       <section><span>公开输出</span><ReadableValue value={output} /></section>
       <section><span>运行事实</span><ReadableValue value={facts} /></section>
+      {governance !== undefined && <section><span>治理与持久化事实</span><ReadableValue value={governance} /></section>}
       <p><ShieldCheck size={14} />这里只展示可审核的公开内容和运行事实，不保存或展示模型隐藏推理。</p>
     </div>
   );
+}
+
+export function governanceForNode(
+  nodeId: string,
+  governance: RunGovernanceView | null,
+): unknown {
+  if (!governance) return undefined;
+  const evaluations = governance.policy_evaluations.filter((value) => value.workflow_node_id === nodeId);
+  const decisionKeys = new Set(evaluations.map((value) => value.decision_point_key));
+  const decisionRequests = governance.decision_requests.filter((value) => {
+    const evidence = value.visible_evidence;
+    const requestNode = typeof evidence === "object" && evidence !== null
+      && typeof (evidence as Record<string, unknown>).workflow_node_id === "string"
+      ? String((evidence as Record<string, unknown>).workflow_node_id)
+      : null;
+    if (requestNode !== null) return requestNode === nodeId;
+    return typeof value.decision_point_key === "string" && decisionKeys.has(value.decision_point_key);
+  });
+  const modelCall = governance.model_calls.find((value) => value.workflow_node_id === nodeId);
+  if (nodeId === "execution_draft_compiler") {
+    return { ExecutionDraft: governance.execution_draft };
+  }
+  if (nodeId === "run_spec_compiler") {
+    return { RunSpec: governance.run_spec };
+  }
+  if (nodeId === "turn_summary_persist") {
+    return { TurnSummary: governance.turn_summary };
+  }
+  if (evaluations.length === 0 && decisionRequests.length === 0 && !modelCall) return undefined;
+  return {
+    ...(evaluations.length > 0 ? { PolicyEvaluations: evaluations } : {}),
+    ...(decisionRequests.length > 0 ? { HumanDecisionRequests: decisionRequests } : {}),
+    ...(modelCall ? { ModelCallDraft: modelCall } : {}),
+  };
 }
 
 function StageRow({
@@ -245,10 +283,12 @@ function GenericWorkflowChain({
   workflow,
   trace,
   pendingReview,
+  governance,
 }: {
   workflow: WorkflowDefinition;
   trace: ProductTraceEvent[];
-  pendingReview: ModelCallReviewCard | null;
+  pendingReview: GovernedReviewCard | null;
+  governance: RunGovernanceView | null;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const progress = useMemo(() => progressFromTrace(workflow, trace), [trace, workflow]);
@@ -262,7 +302,9 @@ function GenericWorkflowChain({
       <div className="execution-stage-list execution-stage-list--workflow-nodes">
         {workflow.nodes.map((node, index) => {
           const nodeProgress = progress[node.id];
-          const waiting = pendingReview?.execution_context.agent_id === node.id && nodeProgress.status === "in_progress";
+          const waitingExecutor = pendingReview?.execution_context.executor_id
+            ?? (pendingReview && "agent_id" in pendingReview.execution_context ? pendingReview.execution_context.agent_id : undefined);
+          const waiting = waitingExecutor === node.id && nodeProgress.status === "in_progress";
           const status: WorkflowNodeStatus = waiting ? "waiting_approval" : nodeProgress.status;
           const content = contents[node.id];
           const expanded = expandedId === node.id;
@@ -289,7 +331,7 @@ function GenericWorkflowChain({
                     <span>executor_id: {node.id}</span>
                     {content && <time dateTime={content.occurredAt}>{formatOccurredAt(content.occurredAt)}</time>}
                   </span>
-                  <span className="execution-stage-source"><Code2 size={14} /><code>workflows/idiom_chain.py · {node.id}</code></span>
+                  <span className="execution-stage-source"><Code2 size={14} /><code>{workflow.id === "continuous-collaboration" ? "workflows/continuous_chat.py" : `workflows/${workflow.id.replaceAll("-", "_")}.py`} · {node.id}</code></span>
                 </span>
                 <span className="execution-stage-expand"><Eye size={15} />查看内容<ChevronDown size={15} /></span>
               </button>
@@ -302,6 +344,7 @@ function GenericWorkflowChain({
                     status: NODE_STATUS_LABELS[status],
                     trace_sequence: content?.sequence,
                   }}
+                  governance={governanceForNode(node.id, governance)}
                   input={content?.publicInput}
                   output={content?.publicOutput}
                 />
@@ -324,6 +367,7 @@ export function WorkflowRunView({
   onClose,
 }: WorkflowRunViewProps) {
   const [trace, setTrace] = useState<ProductTraceEvent[]>([]);
+  const [governance, setGovernance] = useState<RunGovernanceView | null>(null);
   const [traceError, setTraceError] = useState<string | null>(null);
   const [expandedStageId, setExpandedStageId] = useState<string | null>(null);
 
@@ -331,6 +375,7 @@ export function WorkflowRunView({
     let cancelled = false;
     if (!latestRun) {
       setTrace([]);
+      setGovernance(null);
       setTraceError(null);
       return undefined;
     }
@@ -344,6 +389,15 @@ export function WorkflowRunView({
         })
         .catch((error: unknown) => {
           if (!cancelled) setTraceError(error instanceof Error ? error.message : "Trace读取失败");
+        });
+      void getRunGovernance(latestRun.id)
+        .then((value) => {
+          if (!cancelled) setGovernance(value);
+        })
+        .catch(() => {
+          // Older runs may predate the governance schema. Trace remains the
+          // primary execution projection, so this optional detail fails soft.
+          if (!cancelled) setGovernance(null);
         });
     };
     load();
@@ -362,9 +416,12 @@ export function WorkflowRunView({
     () => deriveWorkflowRunProjection(runStatus, Boolean(pendingReview), latestRun, trace),
     [latestRun, pendingReview, runStatus, trace],
   );
-  const provider = pendingReview?.provider_catalog.find((value) => value.id === pendingReview.provider_id);
-  const model = typeof pendingReview?.provider_request.model === "string"
-    ? pendingReview.provider_request.model
+  const modelReview: ModelCallReviewCard | null = pendingReview && pendingReview.review_kind !== "product_decision" && pendingReview.review_kind !== "tool_execution"
+    ? pendingReview
+    : null;
+  const provider = modelReview?.provider_catalog.find((value) => value.id === modelReview.provider_id);
+  const model = typeof modelReview?.provider_request.model === "string"
+    ? modelReview.provider_request.model
     : latestRun?.model;
   const isCodeStageWorkflow = workflow.id === CHAT_WORKFLOW.id;
 
@@ -393,7 +450,7 @@ export function WorkflowRunView({
             <div><dt>Product Run</dt><dd className="mono">{latestRun?.id ?? "发送后创建"}</dd></div>
             <div><dt>AG-UI Run</dt><dd className="mono">{latestRun?.agui_run_id ?? "发送后创建"}</dd></div>
             <div><dt>模型路由</dt><dd>{provider?.label ?? latestRun?.model_provider_id ?? "审批时确认"}{model ? ` / ${model}` : ""}</dd></div>
-            <div><dt>运行结构</dt><dd>{isCodeStageWorkflow ? "4 层 · 12 阶段 · 1 个 MAF Executor" : `${workflow.nodes.length} 个 MAF 节点 · 2 次独立模型审批`}</dd></div>
+            <div><dt>运行结构</dt><dd>{isCodeStageWorkflow ? "4 层 · 12 阶段 · 1 个 MAF Executor" : `${workflow.nodes.length} 个 MAF节点 · 模型调用和产品决策分别受治理`}</dd></div>
           </dl>
         </section>
 
@@ -416,7 +473,7 @@ export function WorkflowRunView({
                   <div className="execution-stage-list">
                     {groupStages.map((stage) => (
                       <StageRow
-                        content={publicContentForStage(stage, prompt, assistantOutput, latestRun, pendingReview)}
+                        content={publicContentForStage(stage, prompt, assistantOutput, latestRun, modelReview)}
                         expanded={expandedStageId === stage.id}
                         key={stage.id}
                         number={projection.stages.findIndex((value) => value.id === stage.id) + 1}
@@ -430,14 +487,14 @@ export function WorkflowRunView({
             })}
           </section>
         ) : (
-          <GenericWorkflowChain pendingReview={pendingReview} trace={trace} workflow={workflow} />
+          <GenericWorkflowChain governance={governance} pendingReview={pendingReview} trace={trace} workflow={workflow} />
         )}
 
         <section className="run-content-card">
           <div className="workbench-section-heading"><div><ShieldCheck size={18} /><strong>本轮公开内容</strong></div><small>不展示隐藏推理</small></div>
           <div className="run-prompt-preview"><span>用户输入</span><p>{prompt || "发送消息后，这里会显示绑定到本轮 Workflow 的输入。"}</p></div>
           {pendingReview ? (
-            <div className="approval-callout"><Clock3 size={19} /><div><strong>模型请求正在等待审批</strong><p>完整可编辑请求已在审批界面打开；批准后才会发送给 Provider。</p></div></div>
+            <div className="approval-callout"><Clock3 size={19} /><div><strong>{pendingReview.review_kind === "product_decision" ? "产品决定正在等待处理" : "模型请求正在等待审批"}</strong><p>{pendingReview.review_kind === "product_decision" ? "当前Subject、有效策略和可修改字段已在人工介入界面打开。" : "完整可编辑请求已在审批界面打开；批准后才会发送给 Provider。"}</p></div></div>
           ) : (
             <p className="workbench-note">点击上方任一阶段或节点可查看它经过的公开内容。关闭工作台不会取消 Product Run。</p>
           )}

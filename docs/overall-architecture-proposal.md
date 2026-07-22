@@ -1,7 +1,7 @@
 # Chat 总体架构与模块候选
 
 > 状态：待用户审核
-> 更新日期：2026-07-21
+> 更新日期：2026-07-22
 > 决策依据：[总体架构源码研究与推导](./overall-architecture-research.md)
 > 新手阅读：[从前端对象到Agent内部](./architecture-beginner-guide.md)
 > 约束：本文定义完整产品的目标架构。实现阶段只决定顺序，不改变模块责任和最终用户场景。
@@ -24,9 +24,10 @@ Chat Web / 具体外部平台 / OPC-OS Chat
 → 建立Interaction并保存User Message
 → 装配ContextPackage
 → 更新Intent / Work / Plan，必要时形成ExecutionDraft
-→ 检查Approval和策略门
+→ 按HITL策略取得人工或自动Decision Record
+→ 编译不可变RunSpec
 → 创建Product Run与Run Attempt
-→ 每次Provider调用形成完整ModelCallDraft并逐次审批
+→ 每次Provider调用形成完整ModelCallDraft并独立授权
 → MAF执行Agent/Workflow，并通过Tool执行模块调用外部能力
 → 保存Run结果、Evidence和Assistant Message
 → 成功终态投影到AG-UI
@@ -423,24 +424,25 @@ OPC-OS Chat → Bridge Adapter → Host/Queue ──┘
 
 **用户价值**：用户能看到系统理解、计划、人/AI责任、最终执行请求和审批范围，并可修改、驳回或继续。
 
-**拥有的对象**：Intent、WorkItem、ActionItem、TaskPlan、ExecutionDraft、逐次ModelCallDraft、Approval及其版本关系。
+**拥有的对象**：Intent、WorkItem、ActionItem、TaskPlan、ExecutionDraft、RunSpec、HITL Policy、Decision Record、逐次ModelCallDraft、Approval及其版本关系。对象边界和策略顺序以[执行治理合同](./execution-governance-contract.md)为准；关系Schema、状态机、恢复接合和前端配置候选见[执行治理详细设计](./execution-governance-detailed-design.md)，后者仍待用户审核。
 
 **内部组件**：
 
 1. Intent Service：候选、依据、不确定性、确认和纠正。
 2. Work Service：长期事项、状态、责任人和下一行动。
 3. Plan Service：计划节点、依赖、检查点和变更。
-4. Draft Service：将目标、Context、Runtime、模型、Tool、权限、限制汇总成版本化ExecutionDraft；每次Provider调用再由同一治理边界生成完整、规范化、可编辑的ModelCallDraft。
-5. Approval Service：批准/驳回特定ExecutionDraft或ModelCallDraft版本、请求Hash、权限范围和有效期。
-6. Policy Gate：根据风险、成本、歧义和副作用决定自动推进或等待用户。
+4. Draft Service：将目标、背景、已接受决定、Context引用、计划、Runtime、能力、模型、限制、验证和停止条件汇总成版本化ExecutionDraft；每次Provider调用再由同一治理边界生成完整、规范化、可编辑的ModelCallDraft。
+5. HITL Policy Resolver：先计算系统安全、身份、能力和运行事实构成的不可放宽下限，再按决策实例、Run、Interaction、Product Session、Project/Work/TaskPlan、Workflow/Node、场景、资源Profile、Channel、Principal和产品默认解析用户偏好。
+6. Approval Service：保存人工请求和人工/策略Decision Record；Approval是绑定特定版本、Hash、权限范围、后果和有效期的授权子类型。
+7. RunSpec Compiler：只从已接受的ExecutionDraft、Context、能力边界和有效策略快照编译不可变RunSpec；任何语义变化都生成新版本或新Run，不能由Worker临场改写。
 
-**输入/输出合同**：`ProposeIntent`、`ConfirmIntent`、`UpdateWork`、`RevisePlan`、`PrepareExecutionDraft`、`PrepareModelCallDraft`、`ApproveDraft`、`EvaluateExecutionGate`。
+**输入/输出合同**：`ProposeIntent`、`ConfirmIntent`、`UpdateWork`、`RevisePlan`、`PrepareExecutionDraft`、`EvaluateDecisionPoint`、`RecordDecision`、`CompileRunSpec`、`PrepareModelCallDraft`、`EvaluateExecutionGate`。
 
 **依赖**：Conversation引用、ContextPackage引用和Identity；不直接启动MAF，只向Interaction协调器返回“可执行/需澄清/需审批”。
 
 **不负责**：选择模型实际上下文、领取Worker任务、执行Tool或保存运行事件。
 
-**不变量**：模型只能提出候选；Approval绑定不可变Draft版本与Hash；Draft变化后旧Approval失效；高风险执行未批准不得创建可领取Attempt；一个Product Run可以包含多次Provider调用，每份ModelCallDraft都要独立版本和逐次审批，不能复用上一次模型调用的Approval。
+**不变量**：模型只能提出候选；Decision Record绑定不可变对象版本与Hash；Draft变化后旧决定失效；RunSpec编译后不可变；高风险执行未取得有效授权不得创建可领取Attempt；一个Product Run可以包含多次Provider调用，每份ModelCallDraft都要独立版本、Hash和授权判断，不能复用上一次模型调用的决定。当前产品默认要求每次人工审批，目标策略允许在不可放宽下限内配置有界自动推进，但自动决定也必须留痕。
 
 **失败与测试**：并发修改Draft、过期Approval、权限缩小、计划节点失效、多个Intent和用户纠正必须测试。
 
@@ -657,7 +659,7 @@ OPC-OS Chat → Bridge Adapter → Host/Queue ──┘
 2. Agent Session Mapper：建立Product Run/Attempt与MAF AgentSession标识映射。
 3. History Provider Adapter：只注入已物化Context，防止客户端历史、Product History和MAF History重复。
 4. Workflow/Checkpoint Adapter：保存与恢复工作流状态和HITL中断点。
-5. Model Call Gateway：把Instructions、Materialized Context、Tool定义和模型参数编译为完整ModelCallDraft；通过逐次Approval后原样发送Canonical Body，并把Provider SSE/JSON解码为规范运行内容。
+5. Model Call Gateway：把Instructions、Materialized Context、Tool定义和模型参数编译为完整ModelCallDraft；每次调用经独立授权判断后原样发送Canonical Body，并把Provider SSE/JSON解码为规范运行内容。当前实现默认为逐次人工审批；未来策略自动决定不能绕过版本、Hash和Trace。
 6. Tool Bridge：将MAF Function Tool调用转交Tool执行模块，模型提出调用不等于已授权执行。
 7. Runtime Event Translator：将MAF事件规范化后写Run Event Journal，再由AG-UI Projector输出。
 8. Error Sanitizer：保留诊断关联，不向客户端泄露密钥或内部异常。
@@ -687,7 +689,7 @@ OPC-OS Chat → Bridge Adapter → Host/Queue ──┘
 |---|---|---|---|
 | Principal、Grant、Channel Binding | Identity模块 | RequestContext、Channel缓存 | chatId/threadId |
 | Product Session、Interaction、Message | Conversation模块 | 前端Query缓存、搜索索引 | MAF Session、AG-UI消息全集 |
-| Intent、Work、Plan、ExecutionDraft、ModelCallDraft、Approval | Collaboration模块 | 前端编辑/审批投影 | Assistant文本或某一次Run结果 |
+| Intent、Work、Plan、ExecutionDraft、RunSpec、HITL Policy、ModelCallDraft、Decision Record、Approval | Collaboration模块 | 前端编辑/审批投影 | Assistant文本或某一次Run结果 |
 | ContextPackage | Context模块 | MAF物化输入 | 全部历史拼接 |
 | Accepted Memory | Memory模块 | Context候选投影 | 模型自行声称的记忆 |
 | Product Run、Run Attempt、Model Call Attempt、Event、Trace | Run管理模块 | AG-UI事件、监控指标 | HTTP连接、MAF Checkpoint |
@@ -708,10 +710,10 @@ principal_id
   → product_session_id
     → interaction_id
       → context_package_id@version
-      → intent/work/draft/approval refs
+      → intent/work/execution_draft/run_spec/decision refs
       → product_run_id
         → attempt_id
-          → model_call_draft_id / model_call_approval_id / model_call_attempt_id
+          → model_call_draft_id / model_call_decision_id / model_call_attempt_id
           → maf_session_id / checkpoint_id
           → tool_execution_id
           → runtime_event_seq
@@ -729,7 +731,7 @@ external conversation_id → channel_binding_id → product_session_id
 ### 10.2 4个提交门
 
 1. **Interaction接纳门**：可信身份、入站幂等和User Message在后续处理前持久化。
-2. **Execution门**：ExecutionDraft版本、Hash、Context、权限、风险和Approval全部有效，才创建可领取Run Attempt；每一次Provider调用还必须为完整ModelCallDraft生成独立Hash和Approval，通过后才创建Model Call Attempt并发送精确请求Body。
+2. **Execution门**：ExecutionDraft经过有效HITL决定后编译为不可变RunSpec，且其中Context、权限、风险和策略快照全部有效，才创建可领取Run Attempt；每一次Provider调用还必须为完整ModelCallDraft生成独立Hash和授权判断，通过后才创建Model Call Attempt并发送精确请求Body。人工和策略自动决定都要记录；`deny`不能被下层偏好放宽。
 3. **Tool副作用门**：Tool请求与批准范围匹配，Ledger先记录prepared/authorized，再派发外部调用。
 4. **Finalization门**：当前Attempt仍拥有写权；必要Tool不处于unknown；Run终态、Evidence、Assistant Message和Delivery Outbox提交成功，才向AG-UI发布成功Final。
 
@@ -806,9 +808,9 @@ pending → sending → delivered
 ### 12.3 高风险外部操作先审核再执行
 
 1. Collaboration把目标、Context、Runtime、Tool、权限、限制和最终Prompt固化为ExecutionDraft。
-2. Web展示差异、成本、风险和副作用；Approval绑定Draft版本、Hash和权限范围。
-3. Execution门通过后Run模块创建Product Run与可领取Attempt。
-4. Worker领取Attempt并通过MAF运行；每次真正调用Provider前生成完整ModelCallDraft与独立Approval，通过后才创建Model Call Attempt并发送已批准Body。
+2. Web展示差异、成本、风险和副作用；HITL Policy Resolver判定必须人工或可自动推进，Decision Record绑定Draft版本、Hash和权限范围。
+3. 已接受ExecutionDraft编译成不可变RunSpec；Execution门通过后Run模块创建Product Run与可领取Attempt。
+4. Worker领取Attempt并通过MAF运行；每次真正调用Provider前生成完整ModelCallDraft并独立进行授权判断，通过后才创建Model Call Attempt并发送已授权Body。
 5. Tool Bridge请求Tool执行模块。
 6. Tool执行模块验证Approval、写Ledger和幂等键，再调用外部系统。
 7. 响应丢失时Tool进入`outcome_unknown`，Reconciler先查询外部状态，不盲重试。

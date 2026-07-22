@@ -43,10 +43,14 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
         thread_id = self._thread_id_from_input(input_data)
         agui_run_id = str(input_data.get("run_id") or input_data.get("runId") or "")
         resumed_activity: ActivitySnapshotEvent | None = None
-        if self._run_ids is not None:
-            self._run_ids[thread_id] = agui_run_id
         try:
             accepted = await self._sessions.prepare_agui_run(input_data)
+            if self._run_ids is not None:
+                # Runtime factories that persist governance facts need the
+                # authoritative Product Run id.  The AG-UI run id remains a
+                # correlation value on the Product Run, but is not a database
+                # foreign key or authorization identity.
+                self._run_ids[thread_id] = accepted.product_run_id
             await self._sessions.mark_running(thread_id)
             await self._sessions.record_trace(
                 thread_id,

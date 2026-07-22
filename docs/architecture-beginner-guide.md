@@ -64,7 +64,7 @@
 | Agent外/Chat产品 | Approval与Tool Execution Ledger | 记录获批参数、Hash、幂等键、派发、回执和结果未知 | 外部副作用必须可审核、对账和恢复 |
 | Agent外/Chat产品 | Reconciler/Compensation | 查询外部结果、决定重试、补偿或人工处理 | 超时不代表外部操作一定失败 |
 
-本项目已批准关闭不受控的自动Tool循环：每一次Provider调用都先生成ModelCallDraft并审批；模型返回Tool Call后，也必须先经过Tool执行模块，Tool结果若要再次交给模型，会生成下一份ModelCallDraft和新审批。
+本项目已批准关闭不受控的自动Tool循环：每一次Provider调用都先生成独立ModelCallDraft和授权判断；当前默认人工审批，目标策略可在不可放宽下限内有界自动推进。模型返回Tool Call后，也必须先经过Tool执行模块，Tool结果若要再次交给模型，会生成下一份ModelCallDraft和新的独立授权判断。
 
 ### 2.2 后端到底有没有数据库
 
@@ -72,7 +72,7 @@
 
 | 逻辑Store | 保存什么 | 为什么必须保存 | 起点物理实现 |
 |---|---|---|---|
-| Product Store | Principal、Product Session、Interaction、Message、Context、Work、Draft、Approval、Product Run、Tool Execution、Evidence、Memory、Delivery等产品事实 | 页面刷新、服务重启和长期审计后仍然成立 | 已批准以SQLite作为实现起点 |
+| Product Store | Principal、Product Session、Interaction、Message、Context、Work、ExecutionDraft、RunSpec、HITL Policy、Decision Record、Approval、Product Run、Tool Execution、Evidence、Memory、Delivery等产品事实 | 页面刷新、服务重启和长期审计后仍然成立 | 已批准以SQLite作为实现起点 |
 | Runtime Store / Event Journal | Runtime Job、Run Attempt所有权、Lease、Heartbeat、运行事件序号、控制请求 | HTTP断线后Run继续；Worker失联后能判断接管和重放 | 可先使用同一SQLite文件中的独立表/Repository，需并发验证 |
 | MAF History / Checkpoint Store | `AgentSession`序列化状态、History Provider数据、Workflow Checkpoint | 恢复模型上下文和MAF控制流 | 可物理共用SQLite，逻辑Schema和迁移独立 |
 | AG-UI Snapshot Store | 当前Thread的Message/State/Interrupt协议投影 | 浏览器Hydrate和活动线程恢复 | 可选投影Store；不能替Product Store |
@@ -80,7 +80,7 @@
 
 “逻辑上5个Store”不等于必须部署5个数据库服务。可以先是`1个SQLite文件 + 1个文件目录`，但每类状态必须由自己的模块和Repository读写，不能让MAF History表替代Product Message，也不能让AG-UI Snapshot替代Product Session。
 
-**当前代码事实**：正式Product Schema和上述生产Store都还没有实现。当前模型调用草稿、Approval、Attempt和Thread Workflow实例仍在单进程内存；Spike使用的SQLite临时表只证明并发合同，不是生产数据库。
+**当前代码事实**：Product Session、Message、Product Run/Attempt、配置和部分Trace已经进入SQLite Product Store；ExecutionDraft、RunSpec、HITL Policy、持久Decision Record/Approval、通用Tool Ledger、Runtime Job和MAF Checkpoint生产Store仍未实现。当前模型调用草稿、Approval、Provider Attempt和Workflow实例仍在单进程内存；Spike使用的临时表只证明并发合同，不是正式治理Schema。
 
 ### 2.3 用户点击“发送”后的目标架构全景
 
@@ -111,31 +111,36 @@ sequenceDiagram
     Ingress->>Coordinator: 6. HandleInteraction(interactionId)
     Coordinator->>Context: 7. 读取历史、Work、Memory、Evidence并生成ContextPackage
     Context->>ProductDB: 8. 保存Context版本及选择理由
-    Coordinator->>Run: 9. 创建Product Run/Attempt/Runtime Job
-    Run->>ProductDB: 10. 保存Product Run长期事实
-    Run->>RuntimeDB: 11. 发布Attempt、Job和事件起点
-    Run->>Workflow: 12. 交付已批准范围内的RunSpec
-    Workflow->>MAFStore: 13. 读取/保存AgentSession、History或Checkpoint
-    Workflow->>Review: 14. 编译ModelCallDraft和Canonical Body
-    Review->>ProductDB: 15. 保存Draft与待处理Approval
-    Review-->>Workflow: 16. 请求在当前模型调用前暂停
-    Workflow-->>AGUI: 17. AG-UI Interrupt：等待审批
-    AGUI-->>UI: 18. 显示完整模型请求
-    User->>UI: 19. 点击批准
-    UI->>AGUI: 20. AG-UI Resume(approvalId)
-    AGUI->>Workflow: 21. 恢复Workflow
-    Workflow->>Review: 22. 校验当前版本、Hash和权限
-    Review->>Run: 23. 请求原子消费Approval并领取Model Call Attempt
-    Run->>ProductDB: 24. 事务写入Approval消费与Attempt
-    Review->>Provider: 25. 发送已批准的精确Provider Body
-    Provider-->>Review: 26. SSE/JSON：文本、Tool Call或结构化内容
-    Review-->>Workflow: 27. 返回规范化模型内容
+    Coordinator->>Context: 9. 形成ExecutionDraft并解析HITL策略
+    Context->>ProductDB: 10. 保存Decision Record与不可变RunSpec
+    Coordinator->>Run: 11. 创建Product Run/Attempt/Runtime Job
+    Run->>ProductDB: 12. 保存Product Run长期事实
+    Run->>RuntimeDB: 13. 发布Attempt、Job和事件起点
+    Run->>Workflow: 14. 交付不可变RunSpec
+    Workflow->>MAFStore: 15. 读取/保存AgentSession、History或Checkpoint
+    Workflow->>Review: 16. 编译ModelCallDraft和Canonical Body
+    Review->>ProductDB: 17. 保存Draft与Policy Evaluation
+    alt 有效模式要求人工
+        Review-->>Workflow: 18. 在当前模型调用前暂停
+        Workflow-->>AGUI: 19. AG-UI Interrupt：等待决定
+        AGUI-->>UI: 20. 显示完整模型请求
+        User->>UI: 21. 点击批准
+        UI->>AGUI: 22. AG-UI Resume(decisionId)
+        AGUI->>Workflow: 23. 恢复Workflow
+    else 有效模式允许自动推进
+        Review->>ProductDB: 18. 保存有界Auto Decision
+    end
+    Workflow->>Review: 24. 校验当前版本、Hash和权限
+    Review->>Run: 25. 请求原子消费Decision并领取Model Call Attempt
+    Run->>ProductDB: 26. 事务写入Decision消费与Attempt
+    Review->>Provider: 27. 发送已授权的精确Provider Body
+    Provider-->>Review: 28. SSE/JSON：文本、Tool Call或结构化内容
+    Review-->>Workflow: 29. 返回规范化模型内容
     opt 模型提出Tool Call
-        Workflow->>Tool: 28. Tool Bridge转为Tool Execution
-        Tool->>ProductDB: 29. 权限、Ledger、幂等键和回执
-        Tool-->>Workflow: 30. 返回受控Tool Result
-        Workflow-->>AGUI: 31. 下一次模型调用再次Interrupt
-        AGUI-->>UI: 32. 显示新一份模型调用审批
+        Workflow->>Tool: 30. Tool Bridge转为Tool Execution
+        Tool->>ProductDB: 31. 权限、Ledger、幂等键和回执
+        Tool-->>Workflow: 32. 返回受控Tool Result
+        Workflow->>Review: 33. 下一次模型调用重新独立授权
     end
     Workflow->>RuntimeDB: 33. 写入带序号的Runtime Event
     Workflow->>Coordinator: 34. 交回规范化文本、Tool结果和结构化内容
@@ -164,16 +169,17 @@ sequenceDiagram
 | 5 | Conversation | 可信请求 | 原子创建Interaction和User Message | Product Store | 输入正式保存，刷新后仍存在 |
 | 6 | Interaction协调器 | interactionId | 决定要澄清、更新工作还是启动受控模型Run | 只调用模块公开合同 | 可能直接出现澄清，不一定运行模型 |
 | 7 | Context | Message、Work、Memory、Evidence引用 | 选择、裁剪并保存`ContextPackage` | Product Store读取和写入Context版本 | 用户可查看本轮采用的上下文 |
-| 8 | Collaboration/Run | Intent候选需求和Context引用 | 建立Product Run、Run Attempt与Runtime Job | Product Store + Runtime Store | Run状态变成准备中 |
-| 9 | Worker + MAF Runtime Adapter | RunSpec | 启动或恢复Workflow，映射MAF AgentSession/Checkpoint | Runtime Store + MAF Store | Run状态变成等待模型调用审批 |
-| 10 | Model Call Compiler | Materialized Context、Instructions、Tools和模型参数 | 编译规范Provider Body，生成bytes、Hash和ModelCallDraft | Product Store | 尚未向Provider发送 |
-| 11 | Approval Service/Workflow | ModelCallDraft | 保存待审批事实并通过MAF Interrupt暂停 | Product Store + MAF Checkpoint Store | AG-UI把完整审核卡片显示出来 |
+| 8 | Collaboration / HITL Policy Resolver | Intent、Plan、Context和能力边界 | 形成ExecutionDraft，解析人工或自动决定，并编译不可变RunSpec | Product Store | 必要时出现Execution Review；自动推进也显示依据 |
+| 9 | Run管理 | RunSpec | 建立Product Run、Run Attempt与Runtime Job | Product Store + Runtime Store | Run状态变成准备中 |
+| 10 | Worker + MAF Runtime Adapter | RunSpec | 启动或恢复Workflow，映射MAF AgentSession/Checkpoint | Runtime Store + MAF Store | Run状态变成运行中或等待某个决策点 |
+| 11 | Model Call Compiler | Materialized Context、Instructions、Tools和模型参数 | 编译规范Provider Body，生成bytes、Hash和ModelCallDraft | Product Store | 尚未向Provider发送 |
+| 12 | HITL Policy Resolver / Workflow | ModelCallDraft | 独立解析授权；人工模式通过Interrupt暂停，自动模式保存Decision Record后继续 | Product Store + MAF Checkpoint Store | 人工时显示审核卡片；自动时显示“按策略通过” |
 
-### 2.5 用户点击“批准”后，模型请求怎样真正发出
+### 2.5 需要人工时，用户点击“批准”后模型请求怎样真正发出
 
 1. 前端不会重新拼Provider请求，只发送`approvalId`和`approve`决定，通过AG-UI Resume恢复原Workflow。
 2. Approval Service重新检查Draft仍是当前版本、Hash没有变化、用户权限仍有效、没有其他Worker已经消费审批。
-3. Run管理创建一个Model Call Attempt并原子消费Approval，保证同一份批准不会被发送两次。
+3. Run管理创建一个Model Call Attempt并原子消费Decision Record，保证同一份批准不会被发送两次；自动模式也走同一原子消费边界。
 4. `PreparedProviderRequest`直接引用审核时生成的同一份Canonical JSON bytes。
 5. Provider Router根据服务端Provider目录选择Transport和凭据；API Key永远不进入审核草稿或浏览器。
 6. Exact Provider Transport把已批准bytes原样作为HTTP Body发送。它不能在发送前再偷偷补Prompt、历史或Tools。
@@ -300,14 +306,16 @@ App Shell负责路由、登录状态、主题、错误边界和全局查询客�
 | `WorkBoardView` | 长期事项、当前状态、责任人和下一步 | WorkItem、ActionItem |
 | `PlanView` | 步骤、依赖、检查点 | TaskPlan |
 | `ExecutionReviewView` | 最终要做什么、使用什么能力和风险 | ExecutionDraft |
+| `RunSpecView` | 已授权且本次运行不可再变的执行合同 | RunSpec |
 | `ModelCallReviewView` | 这一次真正要发给Provider的完整请求 | ModelCallDraft |
-| `ApprovalView` | 已批准、被拒绝、已失效或等待用户 | Approval |
+| `DecisionView` | 人工或策略决定、命中规则、作用域、失效原因和等待状态 | Decision Record、Approval |
 
-`ExecutionDraft`与`ModelCallDraft`不是一回事：
+`ExecutionDraft`、`RunSpec`与`ModelCallDraft`不是一回事：
 
 1. ExecutionDraft是产品层的“这项工作准备怎样执行”，可能包含多个步骤、工具和权限。
-2. ModelCallDraft是其中某一次模型调用的精确Provider请求Body。
-3. 一个Product Run可以有多次模型调用，因此可以有多份ModelCallDraft和逐次Approval。
+2. RunSpec是从已接受ExecutionDraft、Context、权限和HITL策略快照编译出的不可变执行合同。
+3. ModelCallDraft是其中某一次模型调用的精确Provider请求Body。
+4. 一个Product Run可以有多次模型调用，因此可以有多份ModelCallDraft和独立Decision Record。
 
 ### 4.5 Run Inspector
 
@@ -425,8 +433,11 @@ Context回答“这一次用了什么”，与完整Conversation和Accepted Memo
 | ActionItem | 明确由用户或AI负责的下一行动 | 进入Work生命周期后 |
 | TaskPlan | 节点、顺序、依赖和检查点 | 用户或策略接受某一版本后 |
 | ExecutionDraft | 某项实际执行的目标、上下文、Runtime、工具、权限和限制 | 仍是草稿，不等于执行 |
-| ModelCallDraft | 某一次Provider调用的完整规范请求与Hash | 仍是草稿；逐次审批后才可发送 |
-| Approval | 对特定对象版本、Hash、权限范围和有效期的决定 | 持久写入后；绑定内容变化即失效 |
+| RunSpec | 从已接受ExecutionDraft、Context、权限和策略快照编译出的不可变执行合同 | 编译并持久写入后；不能被Worker原地修改 |
+| HITL Policy | 某作用域内对决策点采用禁止、人工、条件暂停或自动推进的规则 | 规则版本生效后；仍不能放宽系统下限 |
+| Decision Record | 人或策略对特定对象版本、Hash和后果的决定 | 持久写入后；绑定内容变化即失效 |
+| ModelCallDraft | 某一次Provider调用的完整规范请求与Hash | 仍是草稿；独立授权后才可发送 |
+| Approval | Decision Record中的授权子类型 | 持久写入后；不是所有自动决定的统称 |
 
 Collaboration回答“系统理解什么、准备做什么、谁批准了什么”。它不自己调用模型或工具。
 
@@ -486,9 +497,9 @@ Run成功、Evidence有效和Delivery成功是3件不同的事。例如：报告
 ```mermaid
 flowchart TB
     subgraph ProductControl["Agent外：Chat产品控制"]
-        RunSpec["已批准RunSpec / ContextPackage"]
+        RunSpec["不可变RunSpec / ContextPackage"]
         ProductRun["Product Run / Attempt"]
-        Approval["Approval与策略门"]
+        Approval["HITL Policy / Decision Record"]
         Finalizer["Evidence / Message / Finalization"]
     end
 
@@ -602,7 +613,7 @@ AG-UI Adapter包住Agent或Workflow，把MAF的运行变化翻译成前端认识
 
 7. Context模块从昨天的Message、当前Work、已接受Memory和有效Evidence中选择内容，生成`ContextPackage v1`。
 8. Interaction协调器要调用模型识别Intent和Plan候选，因此创建或关联一个受控`Product Run`。
-9. MAF Workflow把将要发送给Provider的完整内容编译成`ModelCallDraft v1`和对应`Approval`，AG-UI发出Interrupt。
+9. MAF Workflow把将要发送给Provider的完整内容编译成`ModelCallDraft v1`并独立解析授权；当前默认形成人工`Approval`并由AG-UI发出Interrupt，策略自动模式也必须生成Decision Record。
 10. 前端展示Instructions、消息、知识、Tools、模型和参数。用户修改任何字段都会生成新版本和新Hash；旧Approval失效。
 11. 用户批准当前版本后，才创建/领取这次实际发送的Attempt。MAF Agent接收Materialized Context、`AgentSession`和运行选项，Chat Client调用模型。
 12. 模型产出的Intent、TaskPlan和WorkItem只是候选；Collaboration保存候选状态，前端让用户审核。
@@ -610,8 +621,8 @@ AG-UI Adapter包住Agent或Workflow，把MAF的运行变化翻译成前端认识
 ### 8.3 执行写文件
 
 13. 用户确认计划后，Collaboration生成“写哪些文件、使用哪个工具、允许改哪些范围”的`ExecutionDraft`。
-14. 用户批准ExecutionDraft后，Run管理创建执行用Product Run/Attempt；Worker领取Runtime Job。
-15. 如果Agent还要再次调用模型生成文档内容，会产生新的`ModelCallDraft`和新的逐次Approval，不复用上一次模型审批。
+14. HITL Policy Resolver取得当前Draft的人工或自动决定，随后编译不可变`RunSpec`；Run管理再创建执行用Product Run/Attempt，Worker领取Runtime Job。
+15. 如果Agent还要再次调用模型生成文档内容，会产生新的`ModelCallDraft`和独立授权判断，不复用上一次模型决定。
 16. Agent提出文件写入Tool Call后，MAF Tool Bridge把它交给Tool执行模块；Tool执行模块验证权限和Hash，创建`Tool Execution`与幂等键，然后才真正写文件。
 17. 文件写入结果、文件哈希和变更引用形成`Evidence`；生成的文件形成`Artifact`或外部资源引用。
 
@@ -621,7 +632,7 @@ AG-UI Adapter包住Agent或Workflow，把MAF的运行变化翻译成前端认识
 19. Delivery模块创建Web交付记录；产品提交成功后，AG-UI才允许发成功终态。
 20. 前端的`RunView`、`MessageView`和`EvidenceView`更新。用户看到的不只是“完成了”，还包括计划、实际写入、文件链接和证据。
 
-这个例子里至少有3次不同的“批准”：Intent/计划确认、ExecutionDraft执行批准、逐次ModelCallDraft Provider发送批准。详细设计可以决定它们使用同一Approval聚合还是不同子类型，但不能把语义压成一个“同意”按钮。
+这个例子里至少有3类不同决策点：Intent/计划确认、ExecutionDraft执行授权、单次ModelCallDraft发送授权。它们可以分别解析为人工或自动决定，但必须使用各自对象版本、Hash、作用域和后果，不能压成一个可无限复用的“同意”按钮。具体组成和策略优先级见[执行治理合同](./execution-governance-contract.md)。
 
 ## 9. 失败时哪些对象保证可以解释和恢复
 

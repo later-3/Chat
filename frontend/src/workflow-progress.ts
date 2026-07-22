@@ -2,7 +2,7 @@ import type {
   ProductTraceEvent,
   WorkflowDefinition,
   WorkflowNodeStatus,
-} from "./workflow-api";
+} from "./workflow-api.js";
 
 export interface WorkflowNodeProgress {
   status: WorkflowNodeStatus;
