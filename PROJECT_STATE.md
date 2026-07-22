@@ -26,6 +26,7 @@
 8. Interaction 与 Product Run 不是同一对象；一次 Interaction 可以触发零到多个 Run。
 9. 模型输出只能提出 Intent、Work、Memory 和结果候选，不能自动成为长期正式事实。
 10. Session总体规划必须先覆盖完成历史、活动流、Worker、Tool、Workflow/HITL和跨入口连续性，再按依赖拆交付。
+11. Chat概念空间已经成为共同语言入口；概念资产维护名称、边界、关系和反例，稳定产品责任、实现状态和源码行为仍由各自事实源拥有。
 
 ### 2.2 已批准技术路线
 
@@ -41,7 +42,7 @@
 ## 3. 本轮纠正与完成
 
 - [x] 新增[项目经验与反例](./PROJECT_LESSONS.md)，建立每次回复前强制读取规则。
-- [x] 记录10个可执行反例；新增对象可理解性与操作可走通性检查，要求从用户点击穿透前端、后端Store、MAF、Provider、响应解析和最终渲染。
+- [x] 记录15个可执行反例；新增对象可理解性、操作可走通性和概念空间检查，要求从用户点击穿透前端、后端Store、MAF、Provider、响应解析和最终渲染。
 - [x] 纠正`AGENTS.md`和`PROJECT_CONTEXT.md`中的产品身份与外部关系。
 - [x] 删除稳定产品上下文里的“第一阶段/后续能力/非上位系统”式范围定义。
 - [x] 在`agent_knowledge/project-studies`新增pi、nanobot架构与模块源码研究，补齐QwenPaw Web/Channel入口拓扑和LibreChat源码模块拓扑、责任与缺口。
@@ -89,6 +90,7 @@
 - [x] Retry和Restart浏览器真实模型交叉验证完成：审批载荷都只有1条本轮输入，分别得到`SESSION_RETRY_OK`和`SESSION_RESTART_OK`；371px无横向溢出，页面控制台0错误。
 - [x] 完成按精确AG-UI `runId`映射的取消窄切片：Provider发送前收敛为`cancelled`，发送后保守收敛为`outcome_unknown`；取消与正常终态竞态可幂等读取目标终态，旧runId不会取消后续Run。
 - [x] 发送后取消的真实浏览器验证完成：点击停止后Run为`结果未知`，等待Provider原请求结束并刷新后仍只有User产品消息，没有伪Assistant成功；371px窄屏无溢出。
+- [x] 建立Chat概念空间：保留OPS-OS方法来源，新增目录治理、全局/Chat索引、10个高风险概念簇和结构/链接校验；概念状态与实现状态分开，Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、知识结果、界面和外部入口均有唯一语义边界。
 
 ## 4. 已完成的工程与研究证据
 
@@ -109,6 +111,7 @@
 3. 浏览器完成Provider/模型联动、固定Key/类型化Value编辑、Role与内容类型同步、双视图同源、跨协议转换、修改后二次审批、放弃恢复，以及Session对话页/会话抽屉/设置弹窗窄屏回归；371px有效宽度无横向溢出。
 4. 火山方舟Responses与阿里云百炼Chat Completions各完成1次真实模型审批回合；后者核对最终Body仅含`model/messages/tools/store/stream`并返回预期文本。
 5. 清理脚本已验证可分别终止端口8030的Uvicorn和5073的Vite，清理后无监听残留。
+6. 概念空间结构校验通过：10个概念簇、13个目录文档和99个本地链接均可发现且无断链；`git diff --check`纳入提交前验证。
 
 ### 4.3 Session与参考项目研究
 
@@ -171,3 +174,4 @@
 2. Workflow可视化种子只兑现运行中投影和完成Trace恢复；后续Checkpoint/HITL不得复用这份Trace冒充运行恢复。
 3. 多Agent种子已验证MAF Agent-as-Executor合同、显式会话传递、配置Revision和逐次模型调用审批；它仍不代表任意动态Agent拓扑、持久Checkpoint或并发群聊已经完成。
 4. pi Agent Tool已验证官方JSONL RPC、两道治理门和真实Tool loop；它仍不代表跨进程pi Session、持久Approval、通用副作用对账或R6恢复完成。
+5. 概念状态“有效”只表示语义边界可正式使用；任何功能是否实现、恢复级别和验证证据仍必须回到本文件及对应源码/测试判断。

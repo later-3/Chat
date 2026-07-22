@@ -41,6 +41,7 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 8. 受治理双Agent Workflow已跑通：规划Agent、确定性交接、审校Agent共3个节点；两次真实Provider调用分别审批，第2次能查看和修改原始目标、规划结果及交接要求。
 9. pi coding agent已作为真实MAF FunctionTool接入：使用官方JSONL RPC，每次模型请求和内部Tool调用分别审批，支持Tool配置、参数改写、Token/耗时/调用统计和启动中断收敛。
 10. 完整Session仍按Phase 2-8继续：活动流重连、Worker、Tool副作用、Workflow/HITL和跨入口恢复尚未完成。
+11. Chat概念空间已经建立：10个概念簇统一Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、上下文结果、界面和外部入口的共同语言。
 
 ## 技术方向
 
@@ -151,6 +152,7 @@ backend/app/      FastAPI配置、MAF Agent与AG-UI端点
 backend/tests/    后端合同和事件流测试
 frontend/src/    React界面、HttpAgent投影与页面状态
 scripts/         可重复执行的工程验证
+概念空间/       Chat概念治理、索引、概念簇和结构校验
 ```
 
 ## 文档入口
@@ -160,15 +162,16 @@ scripts/         可重复执行的工程验证
 3. [项目计划](./PROJECT_PLAN.md)：工作流、依赖、分阶段路线和完成门。
 4. [项目状态](./PROJECT_STATE.md)：当前完成项、待审核项和下一道门。
 5. [协作规则](./AGENTS.md)：开发和AI协作必须遵守的规则。
-6. [总体架构研究与证据](./docs/overall-architecture-research.md)：完整场景推导、MAF、pi、nanobot、QwenPaw与LibreChat证据、覆盖缺口和方案比较。
-7. [总体架构候选](./docs/overall-architecture-proposal.md)：由pi、nanobot、QwenPaw和LibreChat源码结构推导出的Web/Channel适配、Interaction Ingress、10个产品与应用模块、运行适配器、状态所有权、场景穿透和交付依赖。
-8. [架构新手导读](./docs/architecture-beginner-guide.md)：从用户点击“发送/批准”开始，串起前端、协议、后端数据库、Agent Session/Tool、Provider请求、响应解析、产品提交和React渲染，并对照当前代码与目标架构。
-9. [Session能力全集与目标边界](./docs/session-capability-catalog.md)：9个能力域、74项能力、R0-R6恢复层级、参考覆盖、明确非目标和最终用户场景。
-10. [Session分阶段交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务、优先级、依赖、方案、目标和各阶段完成场景。
-11. [Session持久化研究与方案推导](./docs/session-persistence-research.md)：MAF、pi、nanobot与LibreChat的逐项源码证据、适用边界、方案比较和决策推导。
-12. [Session持久化设计](./docs/session-persistence-design.md)：Phase 1文本持久化设计、代码落点与审批Workflow适配。
-13. [Session持久化审核包](./docs/session-persistence-review.md)：已批准D1-D6的原因、参考覆盖、选项、实现适配和边界。
-14. [pi Agent Tool使用与运行手册](./docs/pi-agent-tool.md)：JSONL RPC选型、两道审批门、配置、监控、恢复语义和验证方法。
+6. [概念空间方法来源](./概念空间.md)与[Chat概念资产索引](./概念空间/00-索引.md)：共同语言方法、10个概念簇、边界、别名、正反例和实现状态入口。
+7. [总体架构研究与证据](./docs/overall-architecture-research.md)：完整场景推导、MAF、pi、nanobot、QwenPaw与LibreChat证据、覆盖缺口和方案比较。
+8. [总体架构候选](./docs/overall-architecture-proposal.md)：由pi、nanobot、QwenPaw和LibreChat源码结构推导出的Web/Channel适配、Interaction Ingress、10个产品与应用模块、运行适配器、状态所有权、场景穿透和交付依赖。
+9. [架构新手导读](./docs/architecture-beginner-guide.md)：从用户点击“发送/批准”开始，串起前端、协议、后端数据库、Agent Session/Tool、Provider请求、响应解析、产品提交和React渲染，并对照当前代码与目标架构。
+10. [Session能力全集与目标边界](./docs/session-capability-catalog.md)：9个能力域、74项能力、R0-R6恢复层级、参考覆盖、明确非目标和最终用户场景。
+11. [Session分阶段交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务、优先级、依赖、方案、目标和各阶段完成场景。
+12. [Session持久化研究与方案推导](./docs/session-persistence-research.md)：MAF、pi、nanobot与LibreChat的逐项源码证据、适用边界、方案比较和决策推导。
+13. [Session持久化设计](./docs/session-persistence-design.md)：Phase 1文本持久化设计、代码落点与审批Workflow适配。
+14. [Session持久化审核包](./docs/session-persistence-review.md)：已批准D1-D6的原因、参考覆盖、选项、实现适配和边界。
+15. [pi Agent Tool使用与运行手册](./docs/pi-agent-tool.md)：JSONL RPC选型、两道审批门、配置、监控、恢复语义和验证方法。
 
 ## 下一步
 
