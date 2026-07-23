@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 
 from backend.app.governance.models import GovernanceOutboxRecord
 from backend.app.harness.models import (
+    ContextPackageRecord,
     HarnessCommandRecord,
     HarnessTraceRecord,
     MemoryRevisionRecord,
@@ -713,4 +714,416 @@ async def test_e2e_long_learning_28d_keeps_40_turns_but_assembles_bounded_contex
     assert interaction_count == 40
     assert message_count == 80
     assert memory_revision_count == 1
+    await database.close()
+
+
+@pytest.mark.anyio
+async def test_e2e_three_day_learning_project_switches_preserve_focus_and_work_truth(tmp_path) -> None:
+    """A user can change focus without merging unrelated durable context.
+
+    The scenario deliberately crosses Product Sessions and reconstructs the backend
+    services from the same durable database to simulate an API-process restart:
+    learn -> delivery project -> learn -> next-day learn -> new delivery project ->
+    project overview -> learn.  Project/Work/Note/Memory remain durable, while each
+    detail ContextPackage contains only the explicitly selected Project working set.
+    """
+
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'mixed-focus.db'}"
+    clock = ScenarioClock()
+    database, sessions, harness = await open_runtime(database_url, clock)
+    runner = LongScenarioRunner(sessions, clock)
+
+    # Day 1: establish a learning track and its accepted working method.
+    learn_session, learn_run = await runner.turn(
+        day=1,
+        session="learn-day-1",
+        prompt="开始学习FastAPI依赖注入，先做一个可运行例子。",
+    )
+    learning = await harness.create_project(
+        command_id="mixed-learning-project",
+        kind="learning",
+        title="FastAPI依赖注入学习",
+        goal="能独立编写、测试并解释FastAPI依赖注入",
+        status="active",
+        session_id=learn_session,
+    )
+    dependency_unit = await harness.create_work_item(
+        command_id="mixed-learning-unit",
+        project_id=learning["id"],
+        kind="learning_unit",
+        title="依赖注入基础与可运行例子",
+        objective="运行一个带Depends的最小API并解释依赖解析过程",
+        status="ready",
+    )
+    await harness.create_plan_revision(
+        command_id="mixed-learning-plan",
+        work_item_id=dependency_unit["id"],
+        expected_work_row_version=dependency_unit["row_version"],
+        summary="先运行例子，再解释解析链，最后写测试",
+        nodes=[
+            {"key": "run", "title": "运行例子", "objective": "验证最小API"},
+            {
+                "key": "explain",
+                "title": "解释依赖链",
+                "objective": "说清Depends解析顺序",
+                "dependencies": ["run"],
+            },
+            {
+                "key": "test",
+                "title": "依赖覆盖测试",
+                "objective": "使用dependency_overrides写测试",
+                "dependencies": ["explain"],
+            },
+        ],
+        accept=True,
+    )
+    dependency_unit = (await harness.get_work_item(dependency_unit["id"]))["work_item"]
+    dependency_unit = await harness.transition_work_item(
+        work_item_id=dependency_unit["id"],
+        command_id="mixed-learning-start",
+        expected_row_version=dependency_unit["row_version"],
+        target_status="in_progress",
+        reason="用户开始运行第一个Depends示例",
+    )
+    practice = await harness.create_action_item(
+        command_id="mixed-learning-action",
+        project_id=learning["id"],
+        work_item_id=dependency_unit["id"],
+        title="运行并保存Depends最小例子",
+        assignee_kind="user",
+        status="ready",
+    )
+    learning_note = await harness.capture_note(
+        command_id="mixed-learning-note",
+        kind="learning_note",
+        title="Depends解析要点",
+        content="FastAPI先解析依赖图，再把依赖结果注入路径函数；下一步验证dependency_overrides。",
+        links=[{"resource_kind": "project", "resource_id": learning["id"]}],
+    )
+    memory_candidate = await harness.propose_memory(
+        command_id="mixed-learning-memory-candidate",
+        scope_kind="project",
+        scope_ref_id=learning["id"],
+        memory_kind="preference",
+        content="学习技术概念时先运行最小例子，再总结原理。",
+        source_refs=[{"kind": "note", "id": learning_note["id"], "revision": 1}],
+    )
+    accepted_learning_memory = (await harness.resolve_memory_candidate(
+        candidate_id=memory_candidate["id"],
+        command_id="mixed-learning-memory-accept",
+        decision="accept",
+        decision_record_id=None,
+    ))["memory"]
+    initial_learning_context = await harness.create_context_package(
+        session_id=learn_session,
+        run_id=learn_run,
+        stage="detail",
+        items=await harness.detailed_context_items(learning["id"]),
+        selected_project_id=learning["id"],
+        token_budget=1200,
+        status="adopted",
+    )
+    assert initial_learning_context["estimated_tokens"] <= 1200
+
+    # Still day 1: switch to a delivery Project. Its detail context must not inherit
+    # the learning Note or learning-scoped Memory merely because it is recent.
+    api_session, api_run = await runner.turn(
+        day=1,
+        session="bookmark-api",
+        prompt="暂停学习，推进书签API项目，先实现列表接口。",
+    )
+    bookmark = await harness.create_project(
+        command_id="mixed-bookmark-project",
+        kind="delivery",
+        title="书签API",
+        goal="交付支持查询和新增书签的HTTP API",
+        status="active",
+        session_id=api_session,
+    )
+    bookmark_list = await harness.create_work_item(
+        command_id="mixed-bookmark-list",
+        project_id=bookmark["id"],
+        kind="task",
+        title="书签列表接口",
+        objective="实现GET /bookmarks并通过接口测试",
+        status="ready",
+    )
+    bookmark_list = await harness.transition_work_item(
+        work_item_id=bookmark_list["id"],
+        command_id="mixed-bookmark-start",
+        expected_row_version=bookmark_list["row_version"],
+        target_status="in_progress",
+        reason="已确认接口范围，开始实现",
+    )
+    bookmark_note = await harness.capture_note(
+        command_id="mixed-bookmark-note",
+        kind="project_note",
+        title="书签API接口约定",
+        content="GET /bookmarks返回按created_at倒序的书签列表。",
+        links=[{"resource_kind": "project", "resource_id": bookmark["id"]}],
+    )
+    bookmark_context = await harness.create_context_package(
+        session_id=api_session,
+        run_id=api_run,
+        stage="detail",
+        items=await harness.detailed_context_items(bookmark["id"]),
+        selected_project_id=bookmark["id"],
+        token_budget=1200,
+        status="adopted",
+    )
+    bookmark_sources = {item["source_id"] for item in bookmark_context["items"] if item["adopted"]}
+    assert bookmark_sources >= {bookmark["id"], bookmark_list["id"], bookmark_note["id"]}
+    assert learning_note["id"] not in bookmark_sources
+    assert accepted_learning_memory["id"] not in bookmark_sources
+
+    # Return to learning on day 1. Stage A can see both lightweight directory
+    # entries; Stage B binds one Project and excludes the delivery working set.
+    return_session, return_run = await runner.turn(
+        day=1,
+        session="learn-day-1",
+        prompt="回到FastAPI依赖注入学习，继续刚才的最小例子。",
+    )
+    directory_items, directory_projects = await harness.directory_context_items(
+        prompt="回到FastAPI依赖注入学习，继续刚才的最小例子。",
+        summaries=[{
+            "id": "day-1-learning-summary",
+            "topic": "依赖注入学习进度",
+            "summary": {"focus": "已开始Depends最小例子，下一步验证依赖覆盖测试"},
+        }],
+    )
+    assert directory_projects[0]["id"] == learning["id"]
+    assert {value["id"] for value in directory_projects} == {learning["id"], bookmark["id"]}
+    await harness.create_context_package(
+        session_id=return_session,
+        run_id=return_run,
+        stage="directory",
+        items=directory_items,
+        token_budget=900,
+        status="candidate",
+    )
+    return_learning_context = await harness.create_context_package(
+        session_id=return_session,
+        run_id=return_run,
+        stage="detail",
+        items=await harness.detailed_context_items(learning["id"]),
+        selected_project_id=learning["id"],
+        token_budget=1200,
+        status="adopted",
+    )
+    return_sources = {
+        item["source_id"] for item in return_learning_context["items"] if item["adopted"]
+    }
+    assert return_sources >= {
+        learning["id"],
+        dependency_unit["id"],
+        practice["id"],
+        learning_note["id"],
+        accepted_learning_memory["id"],
+    }
+    assert bookmark["id"] not in return_sources
+    assert bookmark_list["id"] not in return_sources
+    assert bookmark_note["id"] not in return_sources
+
+    # Day 2: restart the API process and continue from a new Product Session.
+    await database.close()
+    database, sessions, harness = await open_runtime(database_url, clock)
+    runner.sessions = sessions
+    next_day_session, next_day_run = await runner.turn(
+        day=2,
+        session="learn-day-2",
+        prompt="继续昨天的FastAPI依赖注入学习，完成最小例子后做依赖覆盖测试。",
+        process="api-b",
+    )
+    next_day_directory, next_day_projects = await harness.directory_context_items(
+        prompt="继续昨天的FastAPI依赖注入学习，完成最小例子后做依赖覆盖测试。",
+        summaries=[{
+            "id": "day-1-learning-summary",
+            "topic": "依赖注入学习进度",
+            "summary": {"focus": "Depends最小例子进行中", "next": "dependency_overrides测试"},
+        }],
+    )
+    assert next_day_projects[0]["id"] == learning["id"]
+    await harness.create_context_package(
+        session_id=next_day_session,
+        run_id=next_day_run,
+        stage="directory",
+        items=next_day_directory,
+        token_budget=900,
+        status="candidate",
+    )
+    next_day_context = await harness.create_context_package(
+        session_id=next_day_session,
+        run_id=next_day_run,
+        stage="detail",
+        items=await harness.detailed_context_items(learning["id"]),
+        selected_project_id=learning["id"],
+        token_budget=1200,
+        status="adopted",
+    )
+    next_day_text = "\n".join(
+        item["content"] for item in next_day_context["items"] if item["adopted"]
+    )
+    assert "dependency_overrides" in next_day_text
+    assert "GET /bookmarks" not in next_day_text
+    assert "TURN_" not in next_day_text
+    practice = await harness.transition_action_item(
+        action_item_id=practice["id"],
+        command_id="mixed-learning-example-complete",
+        expected_row_version=practice["row_version"],
+        target_status="in_progress",
+        reason="开始运行Depends例子",
+    )
+    practice = await harness.transition_action_item(
+        action_item_id=practice["id"],
+        command_id="mixed-learning-example-evidence",
+        expected_row_version=practice["row_version"],
+        target_status="completed",
+        reason="最小例子已运行通过",
+        evidence=[{"kind": "exercise", "id": "fastapi-depends-example", "status": "passed"}],
+    )
+    coverage_unit = await harness.create_work_item(
+        command_id="mixed-learning-coverage-unit",
+        project_id=learning["id"],
+        kind="learning_unit",
+        title="dependency_overrides测试",
+        objective="能用依赖覆盖隔离外部服务并验证API",
+        status="ready",
+    )
+    coverage_unit = await harness.transition_work_item(
+        work_item_id=coverage_unit["id"],
+        command_id="mixed-learning-coverage-start",
+        expected_row_version=coverage_unit["row_version"],
+        target_status="in_progress",
+        reason="最小例子完成，进入测试练习",
+    )
+
+    # Day 3: a genuinely new Project must coexist without overwriting either prior focus.
+    cli_session, cli_run = await runner.turn(
+        day=3,
+        session="vocabulary-cli",
+        prompt="新开一个背单词CLI项目，先做导入词表功能。",
+        process="api-b",
+    )
+    vocabulary = await harness.create_project(
+        command_id="mixed-vocabulary-project",
+        kind="delivery",
+        title="背单词CLI",
+        goal="交付支持词表导入和每日复习的命令行工具",
+        status="active",
+        session_id=cli_session,
+    )
+    import_words = await harness.create_work_item(
+        command_id="mixed-vocabulary-import",
+        project_id=vocabulary["id"],
+        kind="task",
+        title="导入词表",
+        objective="从CSV导入单词并报告错误行",
+        status="ready",
+    )
+    import_words = await harness.transition_work_item(
+        work_item_id=import_words["id"],
+        command_id="mixed-vocabulary-start",
+        expected_row_version=import_words["row_version"],
+        target_status="in_progress",
+        reason="新Project范围已确认",
+    )
+    cli_context = await harness.create_context_package(
+        session_id=cli_session,
+        run_id=cli_run,
+        stage="detail",
+        items=await harness.detailed_context_items(vocabulary["id"]),
+        selected_project_id=vocabulary["id"],
+        token_budget=1000,
+        status="adopted",
+    )
+    cli_sources = {item["source_id"] for item in cli_context["items"] if item["adopted"]}
+    assert cli_sources >= {vocabulary["id"], import_words["id"]}
+    assert learning["id"] not in cli_sources
+    assert bookmark["id"] not in cli_sources
+
+    # "What projects do I have?" is a directory query, not a request to create
+    # another Project. It returns the three authoritative aggregates.
+    overview_session, overview_run = await runner.turn(
+        day=3,
+        session="project-overview",
+        prompt="我现在有哪些项目？只查看列表。",
+        process="api-b",
+    )
+    overview_items, overview_projects = await harness.directory_context_items(
+        prompt="我现在有哪些项目？只查看列表。",
+        summaries=[],
+    )
+    assert {value["id"] for value in overview_projects} == {
+        learning["id"], bookmark["id"], vocabulary["id"],
+    }
+    overview = await harness.create_context_package(
+        session_id=overview_session,
+        run_id=overview_run,
+        stage="directory",
+        items=overview_items,
+        token_budget=1000,
+        status="adopted",
+    )
+    assert overview["selected_project_id"] is None
+    assert {item["source_id"] for item in overview["items"] if item["adopted"]} == {
+        learning["id"], bookmark["id"], vocabulary["id"],
+    }
+
+    # The learning track remains resumable after both delivery Projects were touched.
+    final_session, final_run = await runner.turn(
+        day=3,
+        session="learn-day-2",
+        prompt="回到FastAPI学习，继续dependency_overrides测试。",
+        process="api-b",
+    )
+    final_context = await harness.create_context_package(
+        session_id=final_session,
+        run_id=final_run,
+        stage="detail",
+        items=await harness.detailed_context_items(learning["id"]),
+        selected_project_id=learning["id"],
+        token_budget=1400,
+        status="adopted",
+    )
+    final_sources = {item["source_id"] for item in final_context["items"] if item["adopted"]}
+    assert final_sources >= {
+        learning["id"], dependency_unit["id"], coverage_unit["id"],
+        learning_note["id"], accepted_learning_memory["id"],
+    }
+    assert bookmark["id"] not in final_sources
+    assert vocabulary["id"] not in final_sources
+
+    projects = await harness.list_projects(statuses=("active",))
+    assert {(value["id"], value["kind"]) for value in projects} == {
+        (learning["id"], "learning"),
+        (bookmark["id"], "delivery"),
+        (vocabulary["id"], "delivery"),
+    }
+    learning_track = next(
+        value for value in await harness.learning_tracks()
+        if value["project"]["id"] == learning["id"]
+    )
+    assert learning_track["progress"] == {"completed": 0, "total": 2}
+    assert next(
+        value for value in learning_track["units"] if value["id"] == coverage_unit["id"]
+    )["status"] == "in_progress"
+    assert (await harness.get_work_item(bookmark_list["id"]))["work_item"]["status"] == "in_progress"
+    assert (await harness.get_work_item(import_words["id"]))["work_item"]["status"] == "in_progress"
+    persisted_practice = next(
+        value for value in await harness.list_action_items(work_item_id=dependency_unit["id"])
+        if value["id"] == practice["id"]
+    )
+    assert persisted_practice["status"] == "completed"
+
+    async with database.sessions() as transaction:
+        context_count = await transaction.scalar(
+            select(func.count()).select_from(ContextPackageRecord)
+        )
+        interaction_count = await transaction.scalar(
+            select(func.count()).select_from(InteractionRecord)
+        )
+        message_count = await transaction.scalar(select(func.count()).select_from(MessageRecord))
+    assert context_count == 9
+    assert interaction_count == len(runner.turns) == 7
+    assert message_count == 14
     await database.close()

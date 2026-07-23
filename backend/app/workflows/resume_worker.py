@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import uuid4
 
 from ..governance.outbox import ClaimedOutboxEvent, OutboxDispatchError
 from ..governance.service import ExecutionGovernanceService
+from ..runtime_execution.service import RuntimeExecutionService
 
 
 logger = logging.getLogger(__name__)
-
-ResumeWorkflow = Callable[[dict[str, Any]], Awaitable[None]]
-
 
 class RuntimeResumeOutboxHandler:
     """Translate one committed Product decision into one canonical AG-UI Resume."""
@@ -23,10 +20,10 @@ class RuntimeResumeOutboxHandler:
         self,
         governance: ExecutionGovernanceService,
         *,
-        resume_workflow: ResumeWorkflow,
+        runtime: RuntimeExecutionService,
     ) -> None:
         self.governance = governance
-        self.resume_workflow = resume_workflow
+        self.runtime = runtime
 
     async def __call__(self, event: ClaimedOutboxEvent) -> None:
         if event.event_type != "runtime.resume_requested":
@@ -85,18 +82,15 @@ class RuntimeResumeOutboxHandler:
                 }
             ],
         }
-        await self.resume_workflow(input_data)
-        refreshed = await self.governance.runtime_interrupt_for_request(
-            decision_request_id=decision_request_id
+        await self.runtime.queue_checkpoint_resume(
+            product_run_id=link.product_run_id,
+            input_data=input_data,
+            request_key=f"outbox:{event.dedupe_key}",
+            checkpoint_id=link.maf_checkpoint_id,
+            requested_by="governance_outbox",
         )
-        if refreshed.status != "resumed":
-            raise OutboxDispatchError(
-                "MAF Resume没有到达可确认的终态",
-                code="runtime_resume_incomplete",
-            )
         logger.info(
-            "runtime_resume_completed request_id=%s checkpoint_id=%s attempts=%d",
+            "runtime_resume_queued request_id=%s checkpoint_id=%s",
             decision_request_id,
             link.maf_checkpoint_id,
-            refreshed.resume_attempts,
         )

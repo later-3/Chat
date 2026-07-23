@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from backend.app.product_sessions.database import Base
 from backend.app.governance import models as governance_models  # noqa: F401
 from backend.app.harness import models as harness_models  # noqa: F401
+from backend.app.runtime_execution import models as runtime_execution_models  # noqa: F401
 
 
 config = context.config

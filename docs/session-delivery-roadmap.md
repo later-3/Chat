@@ -1,8 +1,8 @@
 # Session分阶段交付路线
 
-> 状态：`路线已获用户批准；Phase 0完成，Phase 1文本会话底座完成，Phase 2-8继续交付`
+> 状态：`路线已获用户批准；Phase 0-1完成，Phase 2进行中，Phase 4-5与Phase 7安全点纵向切片完成但完整阶段验收未完成`
 >
-> 更新日期：2026-07-21
+> 更新日期：2026-07-23
 >
 > 前置定义：[Session能力全集与目标边界](./session-capability-catalog.md)
 >
@@ -18,10 +18,10 @@
 | Phase 1 | 已完成文本会话可耐久保存、重开和继续 | 8 | P0-P1 | 已完成文本会话底座 |
 | Phase 2 | Run可幂等、取消、重试、Steer和排队 | 7 | P0-P2 | 进行中；Retry/Restart与精确取消窄切片完成，Resume/Steer/Follow-up未完成 |
 | Phase 3 | 生命周期、分支、长上下文和可移植性完整 | 7 | P1-P2 | 未开始 |
-| Phase 4 | 浏览器断线、刷新和换设备可接回活动Run | 6 | P2-P3 | 未开始 |
-| Phase 5 | API/Worker退出后可安全接管或明确收敛 | 5 | P3 | 未开始 |
+| Phase 4 | 浏览器断线、刷新和换设备可接回活动Run | 6 | P2-P3 | 进行中；Job/Journal/Cursor/断线续接纵向切片完成 |
+| Phase 5 | API/Worker退出后可安全接管或明确收敛 | 5 | P3 | 进行中；Worker/Lease/Fence/Reconciler纵向切片完成 |
 | Phase 6 | 工具副作用可记录、对账和安全恢复 | 5 | P3 | 未开始 |
-| Phase 7 | Workflow与HITL可跨重启和Worker恢复 | 5 | P3 | 未开始 |
+| Phase 7 | Workflow与HITL可跨重启和Worker恢复 | 5 | P3 | 进行中；主Workflow无Tool副作用安全点纵向切片完成 |
 | Phase 8 | 跨通道、投递、分享、治理和全链路验收 | 5 | P3 | 未开始 |
 
 这9个阶段覆盖能力全集中的全部74项。阶段只决定交付顺序；任何目标能力都没有被“以后再说”从规划中删除。
@@ -35,7 +35,7 @@
 5. 前端提供Session列表、创建、打开、REST消息恢复、标题/归档、Provider/模型默认配置、Run状态和Attempt摘要。
 6. 自动测试覆盖迁移升降级、重启恢复、并发唯一接纳、历史防篡改、runId终态重放拒绝、双轮历史不重复和模型审批交叉路径；真实浏览器完成双轮模型、刷新恢复、Provider切换与放弃回归。
 
-当前边界仍是R0/R1：没有活动事件游标、后台Job、Worker Lease、Tool Ledger、Workflow持久Checkpoint或跨重启Approval。Phase 2-8状态不能因为Phase 1通过而提前标记完成。
+Phase 1本身只兑现R0/R1；后续纵向切片已经增加活动事件Cursor、Runtime Job、Worker Lease，以及主Workflow无Tool副作用安全点的Checkpoint/跨进程HITL。Tool Ledger、任意Workflow恢复、多设备和完整故障矩阵仍未完成，不能因这些切片通过而把Phase 2-8提前标记完成。
 
 ## 2. 为什么这样分
 
@@ -194,7 +194,7 @@ MAF核心Workflow确实支持持久Checkpoint和跨进程恢复，但当前`agen
 
 P2-02已完成一个精确取消窄切片：前端为每次AG-UI请求显式生成`runId`，Product Store通过`RunProtocolRecord`只解析该映射并校验当前活动Run。Provider发送前取消收敛为`cancelled`，已进入发送阶段则保守标记`outcome_unknown`；取消与终态竞态时幂等返回目标Run已持久终态，旧runId不会影响后续Run。真实浏览器证明发送后停止不会补写伪Assistant成功。
 
-当前没有持久Model Call Attempt和Runtime Job，因此对“是否已离开本地进程”仍采取保守结果未知，不承诺Provider侧确已停止或可对账。Checkpoint语义的Resume、P2-04 Steer、P2-05 Follow-up、完整P2-01幂等和P2-06/P2-07竞态验收仍未完成，因此Phase 2不能标记完成。
+当前已有持久Model Call Attempt、Runtime Job和外发状态，但Provider/Tool精确发送边界及结果查询仍未全部接入，因此外发后取消继续保守收敛为`outcome_unknown`，不承诺Provider侧确已停止或可对账。Checkpoint Resume已接入通用Worker；P2-04 Steer、P2-05 Follow-up、完整P2-01幂等和P2-06/P2-07竞态验收仍未完成，因此Phase 2不能标记完成。
 
 ## 7. Phase 3：完整Web会话、分支与长上下文
 
@@ -227,6 +227,8 @@ Phase 1的数据语义从一开始就必须树兼容，但产品分支操作不�
 
 ## 8. Phase 4：活动Run断线重连
 
+> 2026-07-23说明：Phase 4与Phase 5共享的D1-D8已获批准并完成纵向切片：Runtime Job、Event Journal、Cursor、Control Inbox、Lease、Heartbeat、通用Worker和保守Reconciler均已上线到全部AG-UI入口。真实断线与真实模型已验证；多标签页/换设备、实际保留过期和完整进程强退矩阵仍未完成，因此Phase 4不标记完成。
+
 ### 8.1 阶段目标
 
 完成R2：浏览器连接消失时，允许执行独立继续；用户刷新、断网恢复或换设备后能重新订阅同一活动Run并补齐遗漏事件。
@@ -251,6 +253,10 @@ Phase 1的数据语义从一开始就必须树兼容，但产品分支操作不�
 1. 用户关闭页面后Agent继续，重新打开可接回活动回答。
 2. 网络抖动产生重复或缺失事件时，客户端按游标补齐且不重复渲染。
 3. 另一设备打开同一Session时，可看到活动Run或从产品库读取已完成结果。
+
+### 8.5 当前实现进度
+
+P4-01至P4-04的纵向链路已经实现；P4-05已实现“终态回退Product事实”，但真实另一设备接管尚未验收。P4-06已验证HTTP订阅断开后Worker继续、Sequence/Hash去重与缺口关闭失败、真实Provider同Job回放；真实Cursor过期、多标签页和Final后立即重载仍待补齐。
 
 ## 9. Phase 5：API/Worker进程恢复
 
@@ -277,6 +283,10 @@ Phase 1的数据语义从一开始就必须树兼容，但产品分支操作不�
 1. Worker退出后，用户看到系统正在接管、已创建新Attempt或需要人工重试，而不是永久卡在running。
 2. 旧Worker恢复网络后也不能覆盖新Attempt的结果。
 3. 模型流无法原位续接时，旧部分结果和费用诊断仍保留，新Attempt血缘清晰。
+
+### 9.5 当前实现进度
+
+P5-01与P5-02纵向切片已实现：独立Worker注册与Heartbeat、Lease Epoch写Fence、周期Reconciler、双OS进程唯一领取、未外发安全重领、外发结果未知关闭失败，以及Product已提交但Runtime终帧缺失时的修复均有测试。P5-03仍仅覆盖主Workflow现有Checkpoint/RunSpec边界；P5-04没有Provider原生续流，明确使用保守人工恢复；P5-05尚缺真实API/Worker `SIGKILL`全矩阵、容量和故障风暴，因此Phase 5不标记完成。
 
 ## 10. Phase 6：工具副作用安全恢复
 
@@ -329,6 +339,10 @@ Snapshot只保存可重放的消息、共享State和Interrupt投影，且当前�
 1. Workflow完成若干节点后进程退出，新Worker从兼容Checkpoint继续，已完成工具不重复。
 2. 用户隔天、换设备或服务重启后仍能批准、拒绝或补充信息。
 3. 请求内容或权限已经变化时，旧批准自动失效并要求重新审核。
+
+### 11.5 当前实现进度
+
+P7-01至P7-04已在`continuous-collaboration v1.2.0`无外部Tool副作用的审批安全点完成纵向切片：Product绑定的MAF Checkpoint、持久Interrupt Link、版本/图签名校验、决定与Outbox同事务，以及独立Outbox/Execution Worker跨OS进程恢复均已有测试。P7-05尚缺嵌套Workflow、换设备、Checkpoint损坏/升级和已完成Tool不重做的完整矩阵；Tool副作用前置能力仍属于Phase 6，因此Phase 7不标记完成，也不外推到旧Workflow或pi Tool。
 
 ## 12. Phase 8：跨入口连续性、投递与治理闭环
 

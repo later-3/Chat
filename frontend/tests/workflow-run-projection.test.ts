@@ -27,6 +27,7 @@ function run(status: string, failureCode: string | null = null): ProductRun {
     started_at: "2026-07-22T00:00:00Z",
     finished_at: null,
     attempts: [],
+    runtime_job: null,
   };
 }
 

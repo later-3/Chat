@@ -8,8 +8,6 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any
 
-from agent_framework.ag_ui import add_agent_framework_fastapi_endpoint
-from ag_ui.core import RunErrorEvent
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
@@ -28,7 +26,6 @@ from .governance import (
     GovernanceOutboxWorker,
     GovernanceValidationError,
 )
-from .governance.outbox import OutboxDispatchError
 from .harness import HarnessService
 from .harness.api import create_harness_router
 from .harness.outbox import ProductOutboxRouter
@@ -47,6 +44,11 @@ from .product_sessions.agui import ProductAwareAgentFrameworkAgent
 from .product_sessions.service import (
     ProductSessionConflict,
     ProductSessionNotFound,
+)
+from .runtime_execution import ExecutionWorker, RuntimeExecutionService, RuntimeRunnerRegistry
+from .runtime_execution.endpoint import (
+    add_durable_agui_endpoint,
+    add_runtime_management_endpoints,
 )
 from .pi_runtime import PiRuntimeManager
 from .tool_configs import (
@@ -196,6 +198,8 @@ def create_app(
     pi_runtime_manager: PiRuntimeManager | None = None,
     start_outbox_worker: bool = True,
     outbox_worker_id: str | None = None,
+    start_execution_worker: bool = True,
+    execution_worker_id: str | None = None,
 ) -> FastAPI:
     """Create an isolated application composition root.
 
@@ -210,6 +214,7 @@ def create_app(
     # loop off also prevents a test-only StaticPool transaction from racing
     # Product finalization on that same connection.
     outbox_loop_enabled = start_outbox_worker and ":memory:" not in resolved.database_url
+    execution_loop_enabled = start_execution_worker and ":memory:" not in resolved.database_url
     model_catalog = resolved.model_catalog()
     product_sessions = product_session_service or ProductSessionService(
         ProductDatabase(resolved.database_url)
@@ -223,6 +228,15 @@ def create_app(
     )
     governance = ExecutionGovernanceService(product_sessions.database)
     harness = HarnessService(product_sessions.database)
+    runtime_execution = RuntimeExecutionService(product_sessions.database)
+    runtime_registry = RuntimeRunnerRegistry()
+    execution_worker = ExecutionWorker(
+        product_sessions.database,
+        runtime=runtime_execution,
+        registry=runtime_registry,
+        worker_id=execution_worker_id or f"api-execution-{os.getpid()}-{id(product_sessions):x}",
+        sessions=product_sessions,
+    )
     governance_outbox_worker: GovernanceOutboxWorker | None = None
     pi_runtime = pi_runtime_manager or (
         PiRuntimeManager(
@@ -241,7 +255,10 @@ def create_app(
         await harness.initialize()
         await agent_profiles.initialize()
         await tool_configurations.initialize()
+        await runtime_execution.reconcile_expired_leases()
+        await product_sessions.reconcile_terminal_runtime_jobs()
         worker_task: asyncio.Task[None] | None = None
+        execution_worker_task: asyncio.Task[None] | None = None
         if outbox_loop_enabled and governance_outbox_worker is not None:
             async def outbox_loop() -> None:
                 while True:
@@ -256,9 +273,34 @@ def create_app(
                         await asyncio.sleep(0.2)
 
             worker_task = asyncio.create_task(outbox_loop(), name="governance-outbox-worker")
+        if execution_loop_enabled:
+            await execution_worker.register()
+
+            async def execution_loop() -> None:
+                while True:
+                    try:
+                        processed = await execution_worker.run_once()
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        logger.exception("execution_worker_loop_failed")
+                        processed = False
+                    if not processed:
+                        await asyncio.sleep(0.08)
+
+            execution_worker_task = asyncio.create_task(
+                execution_loop(), name="runtime-execution-worker"
+            )
         try:
             yield
         finally:
+            if execution_worker_task is not None:
+                execution_worker_task.cancel()
+                try:
+                    await execution_worker_task
+                except asyncio.CancelledError:
+                    pass
+                await execution_worker.stop()
             if worker_task is not None:
                 worker_task.cancel()
                 try:
@@ -282,6 +324,9 @@ def create_app(
     app.state.tool_configurations = tool_configurations
     app.state.governance = governance
     app.state.harness = harness
+    app.state.runtime_execution = runtime_execution
+    app.state.runtime_registry = runtime_registry
+    app.state.execution_worker = execution_worker
     app.state.governance_outbox_worker = None
     app.state.pi_runtime = pi_runtime
     app.add_middleware(
@@ -292,6 +337,7 @@ def create_app(
         allow_headers=["*"],
     )
     app.include_router(create_harness_router(harness))
+    add_runtime_management_endpoints(app, runtime=runtime_execution)
 
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
@@ -375,14 +421,22 @@ def create_app(
     @app.get("/api/sessions/{session_id}/runs")
     async def session_runs(session_id: str) -> dict[str, Any]:
         try:
-            return {"runs": await product_sessions.list_runs(session_id)}
+            runs = await product_sessions.list_runs(session_id)
+            for run in runs:
+                run["runtime_job"] = await runtime_execution.job_for_product_run(run["id"])
+            return {"runs": runs}
         except ProductSessionNotFound as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
     @app.post("/api/sessions/{session_id}/agui-runs/{agui_run_id}/cancel")
     async def cancel_session_run(session_id: str, agui_run_id: str) -> dict[str, Any]:
         try:
-            return await product_sessions.cancel_protocol_run(session_id, agui_run_id)
+            cancelled = await product_sessions.cancel_protocol_run(session_id, agui_run_id)
+            await runtime_execution.request_cancel(
+                product_run_id=cancelled["id"],
+                request_key=f"cancel:{session_id}:{agui_run_id}",
+            )
+            return cancelled
         except ProductSessionNotFound as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ProductSessionConflict as error:
@@ -668,11 +722,15 @@ def create_app(
     app.state.agent = runner
     # MAF owns the Agent-to-AG-UI event conversion. Keeping that bridge here
     # avoids a second application-specific streaming protocol or state source.
-    add_agent_framework_fastapi_endpoint(
+    add_durable_agui_endpoint(
         app,
         runner,
         "/api/agent",
-        allow_origins=list(resolved.frontend_origins),
+        sessions=product_sessions,
+        runtime=runtime_execution,
+        registry=runtime_registry,
+        workflow_definition_id="direct-agent",
+        workflow_version="1.0.0",
         tags=["agent"],
     )
     visible_workflow = ProductAwareWorkflow(
@@ -681,11 +739,15 @@ def create_app(
         definition=NESTED_QUALITY_WORKFLOW,
     )
     app.state.visible_workflow = visible_workflow
-    add_agent_framework_fastapi_endpoint(
+    add_durable_agui_endpoint(
         app,
         visible_workflow,
         NESTED_QUALITY_WORKFLOW.endpoint,
-        allow_origins=list(resolved.frontend_origins),
+        sessions=product_sessions,
+        runtime=runtime_execution,
+        registry=runtime_registry,
+        workflow_definition_id=NESTED_QUALITY_WORKFLOW.id,
+        workflow_version=NESTED_QUALITY_WORKFLOW.version,
         tags=["workflows"],
     )
     if resolved.runtime_mode == "model":
@@ -730,31 +792,24 @@ def create_app(
             checkpoint_storage_factory=continuous_checkpoint_storage,
         )
         app.state.continuous_workflow = continuous_workflow
-        add_agent_framework_fastapi_endpoint(
+        add_durable_agui_endpoint(
             app,
             continuous_workflow,
             CONTINUOUS_COLLABORATION_WORKFLOW.endpoint,
-            allow_origins=list(resolved.frontend_origins),
+            sessions=product_sessions,
+            runtime=runtime_execution,
+            registry=runtime_registry,
+            workflow_definition_id=CONTINUOUS_COLLABORATION_WORKFLOW.id,
+            workflow_version=CONTINUOUS_COLLABORATION_WORKFLOW.version,
             tags=["workflows"],
         )
-
-        async def resume_continuous_from_outbox(input_data: dict[str, Any]) -> None:
-            run_error: RunErrorEvent | None = None
-            async for event in continuous_workflow.run(input_data):
-                if isinstance(event, RunErrorEvent):
-                    run_error = event
-            if run_error is not None:
-                raise OutboxDispatchError(
-                    run_error.message,
-                    code=getattr(run_error, "code", None) or "workflow_resume_failed",
-                )
 
         governance_outbox_worker = GovernanceOutboxWorker(
             product_sessions.database,
             worker_id=outbox_worker_id or f"api-outbox-{os.getpid()}-{id(app):x}",
             handler=ProductOutboxRouter(RuntimeResumeOutboxHandler(
                 governance,
-                resume_workflow=resume_continuous_from_outbox,
+                runtime=runtime_execution,
             )),
         )
         app.state.governance_outbox_worker = governance_outbox_worker
@@ -778,11 +833,15 @@ def create_app(
             run_ids=handoff_run_ids,
         )
         app.state.handoff_workflow = handoff_workflow
-        add_agent_framework_fastapi_endpoint(
+        add_durable_agui_endpoint(
             app,
             handoff_workflow,
             GOVERNED_AGENT_HANDOFF_WORKFLOW.endpoint,
-            allow_origins=list(resolved.frontend_origins),
+            sessions=product_sessions,
+            runtime=runtime_execution,
+            registry=runtime_registry,
+            workflow_definition_id=GOVERNED_AGENT_HANDOFF_WORKFLOW.id,
+            workflow_version=GOVERNED_AGENT_HANDOFF_WORKFLOW.version,
             tags=["workflows"],
         )
         idiom_run_ids: dict[str, str] = {}
@@ -805,11 +864,15 @@ def create_app(
             run_ids=idiom_run_ids,
         )
         app.state.idiom_workflow = idiom_workflow
-        add_agent_framework_fastapi_endpoint(
+        add_durable_agui_endpoint(
             app,
             idiom_workflow,
             GOVERNED_IDIOM_CHAIN_WORKFLOW.endpoint,
-            allow_origins=list(resolved.frontend_origins),
+            sessions=product_sessions,
+            runtime=runtime_execution,
+            registry=runtime_registry,
+            workflow_definition_id=GOVERNED_IDIOM_CHAIN_WORKFLOW.id,
+            workflow_version=GOVERNED_IDIOM_CHAIN_WORKFLOW.version,
             tags=["workflows"],
         )
         if resolved.pi_runtime.available and pi_runtime is not None:
@@ -833,11 +896,15 @@ def create_app(
                 run_ids=pi_run_ids,
             )
             app.state.pi_workflow = pi_workflow
-            add_agent_framework_fastapi_endpoint(
+            add_durable_agui_endpoint(
                 app,
                 pi_workflow,
                 GOVERNED_PI_AGENT_WORKFLOW.endpoint,
-                allow_origins=list(resolved.frontend_origins),
+                sessions=product_sessions,
+                runtime=runtime_execution,
+                registry=runtime_registry,
+                workflow_definition_id=GOVERNED_PI_AGENT_WORKFLOW.id,
+                workflow_version=GOVERNED_PI_AGENT_WORKFLOW.version,
                 tags=["workflows"],
             )
     if governance_outbox_worker is None:

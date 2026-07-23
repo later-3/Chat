@@ -60,6 +60,47 @@ export interface ProductRun {
     started_at: string;
     finished_at: string | null;
   }>;
+  runtime_job: RuntimeJob | null;
+}
+
+export interface RuntimeJob {
+  id: string;
+  product_run_id: string;
+  run_attempt_id: string;
+  endpoint_key: string;
+  workflow_definition_id: string;
+  workflow_version: string;
+  status: string;
+  recoverability: string;
+  checkpoint_id: string | null;
+  lease_owner: string | null;
+  lease_epoch: number;
+  lease_expires_at: string | null;
+  heartbeat_at: string | null;
+  last_event_sequence: number;
+  earliest_retained_sequence: number;
+  external_dispatch_state: string;
+  failure_code: string | null;
+  failure_summary: string | null;
+  cursor: string;
+}
+
+export interface RuntimeEventEnvelope {
+  id: string;
+  runtime_job_id: string;
+  run_attempt_id: string;
+  sequence: number;
+  event_type: string;
+  payload: Record<string, unknown>;
+  payload_hash: string;
+  is_terminal: boolean;
+  cursor: string;
+}
+
+interface RuntimeEventsResponse {
+  job: RuntimeJob;
+  events: RuntimeEventEnvelope[];
+  next_cursor: string;
 }
 
 export interface SessionRunControl {
@@ -88,8 +129,14 @@ interface RunListResponse {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, init);
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
-    throw new Error(payload?.detail ?? `请求失败：HTTP ${response.status}`);
+    const payload = (await response.json().catch(() => null)) as {
+      detail?: string | { code?: string; message?: string };
+    } | null;
+    const detail = payload?.detail;
+    const message = typeof detail === "string"
+      ? detail
+      : detail?.message ?? detail?.code ?? `请求失败：HTTP ${response.status}`;
+    throw new Error(`${message} (HTTP ${response.status})`);
   }
   return response.json() as Promise<T>;
 }
@@ -128,6 +175,16 @@ export function cancelSessionRun(sessionId: string, aguiRunId: string): Promise<
   return request<ProductRun>(
     `/api/sessions/${encodeURIComponent(sessionId)}/agui-runs/${encodeURIComponent(aguiRunId)}/cancel`,
     { method: "POST" },
+  );
+}
+
+export function getRuntimeEvents(
+  jobId: string,
+  cursor?: string,
+): Promise<RuntimeEventsResponse> {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "?after_sequence=0";
+  return request<RuntimeEventsResponse>(
+    `/api/runtime/jobs/${encodeURIComponent(jobId)}/events${query}`,
   );
 }
 

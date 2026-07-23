@@ -4,10 +4,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   cancelSessionRun,
+  getRuntimeEvents,
   sessionControlForwardedProps,
   type ProductRun,
+  type RuntimeJob,
   type SessionRunControl,
 } from "./session-api.js";
+import {
+  replayRuntimeEvents,
+  type RuntimeReplayState,
+} from "./runtime-event-replay.js";
 
 const DEFAULT_AGENT_URL = "http://127.0.0.1:8030/api/agent";
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8030";
@@ -19,6 +25,7 @@ export interface ChatWorkflowDispatch {
 }
 
 export type RunStatus = "idle" | "running" | "awaiting_approval" | "saving" | "error";
+export type RuntimeConnectionStatus = "idle" | "reconnecting" | "replaying" | "caught_up" | "cursor_expired";
 
 export interface DispatchRecovery {
   draftId: string;
@@ -276,6 +283,7 @@ interface UseChatAgentOptions {
   sessionId: string | null;
   hydratedMessages: Message[];
   hydrationVersion: number;
+  runtimeJob: RuntimeJob | null;
   onSessionSettled: (hydrateMessages: boolean) => void;
 }
 
@@ -283,6 +291,7 @@ export function useChatAgent({
   sessionId,
   hydratedMessages,
   hydrationVersion,
+  runtimeJob,
   onSessionSettled,
 }: UseChatAgentOptions) {
   const [agent] = useState(
@@ -296,6 +305,7 @@ export function useChatAgent({
   const [messages, setMessages] = useState<Message[]>([]);
   const [status, setStatus] = useState<RunStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<RuntimeConnectionStatus>("idle");
   const [pendingReview, setPendingReview] = useState<GovernedReviewCard | null>(null);
   const [dispatchRecovery, setDispatchRecovery] = useState<DispatchRecovery | null>(null);
   const mounted = useRef(true);
@@ -322,8 +332,107 @@ export function useChatAgent({
     pendingUserMessageId.current = null;
     messagesBeforePendingRun.current = null;
     setStatus("idle");
+    setConnectionStatus("idle");
     setError(null);
   }, [agent, hydrationVersion, sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || !runtimeJob || agent.isRunning) return;
+    if (!["queued", "leased", "running", "waiting_human", "waiting_recovery"].includes(runtimeJob.status)) {
+      return;
+    }
+    let cancelled = false;
+    const baseMessages = cloneMessages(hydratedMessages);
+    let replay: RuntimeReplayState = {
+      attemptId: runtimeJob.run_attempt_id,
+      lastSequence: 0,
+      hashes: new Map(),
+      messages: baseMessages,
+      lastTerminal: null,
+    };
+    let cursor: string | undefined;
+
+    const reconnect = async () => {
+      setStatus("running");
+      setError(null);
+      setConnectionStatus("reconnecting");
+      while (!cancelled) {
+        try {
+          const response = await getRuntimeEvents(runtimeJob.id, cursor);
+          if (cancelled) return;
+          if (response.events.length > 0) {
+            setConnectionStatus("replaying");
+            replay = replayRuntimeEvents(replay, response.events);
+            cursor = response.next_cursor;
+            window.sessionStorage.setItem(`chat.runtime.cursor.${runtimeJob.id}`, cursor);
+            agent.setMessages(cloneMessages(replay.messages));
+            setMessages(cloneMessages(replay.messages));
+          } else {
+            setConnectionStatus("caught_up");
+          }
+
+          const terminal = replay.lastTerminal;
+          if (terminal?.type === "RUN_FINISHED") {
+            const outcome = terminal.outcome;
+            if (outcome && typeof outcome === "object" && !Array.isArray(outcome)) {
+              const typedOutcome = outcome as { type?: unknown; interrupts?: unknown };
+              if (typedOutcome.type === "interrupt" && Array.isArray(typedOutcome.interrupts)) {
+                // A queued/running resume may still have the previous segment's
+                // interrupt as its latest persisted frame. Wait for the next
+                // RUN_STARTED instead of reopening an already-resolved review.
+                if (response.job.status !== "waiting_human") {
+                  await new Promise((resolve) => window.setTimeout(resolve, 180));
+                  continue;
+                }
+                const interrupts = typedOutcome.interrupts as Interrupt[];
+                agent.pendingInterrupts = structuredClone(interrupts);
+                const card = interrupts.map(governedReviewFromInterrupt).find(Boolean) ?? null;
+                if (card) {
+                  setPendingReview(card);
+                  setStatus("awaiting_approval");
+                  setConnectionStatus("caught_up");
+                  onSessionSettledRef.current(false);
+                  return;
+                }
+              }
+            }
+            if (!["succeeded", "cancelled"].includes(response.job.status)) {
+              await new Promise((resolve) => window.setTimeout(resolve, 180));
+              continue;
+            }
+            setStatus("idle");
+            setConnectionStatus("caught_up");
+            onSessionSettledRef.current(true);
+            return;
+          }
+          if (terminal?.type === "RUN_ERROR" || ["failed", "cancelled", "outcome_unknown"].includes(response.job.status)) {
+            setStatus("error");
+            setConnectionStatus("caught_up");
+            setError(String(terminal?.message ?? response.job.failure_summary ?? "Runtime Run未完成"));
+            onSessionSettledRef.current(true);
+            return;
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 180));
+        } catch (reconnectError) {
+          if (cancelled) return;
+          const message = reconnectError instanceof Error ? reconnectError.message : "Runtime重连失败";
+          if (message.includes("RUNTIME_CURSOR_EXPIRED") || message.includes("410")) {
+            setConnectionStatus("cursor_expired");
+            onSessionSettledRef.current(true);
+            return;
+          }
+          setStatus("error");
+          setConnectionStatus("idle");
+          setError(message);
+          return;
+        }
+      }
+    };
+    void reconnect();
+    return () => {
+      cancelled = true;
+    };
+  }, [agent, hydratedMessages, hydrationVersion, runtimeJob?.id, runtimeJob?.run_attempt_id, runtimeJob?.status, sessionId]);
 
   const inspectDispatchFailure = useCallback(async (message: string) => {
     const review = lastApprovedReview.current;
@@ -362,6 +471,7 @@ export function useChatAgent({
         if (mounted.current) {
           setStatus("running");
           setError(null);
+          setConnectionStatus("caught_up");
         }
       },
       onRunFinishedEvent(result) {
@@ -382,6 +492,7 @@ export function useChatAgent({
         setDispatchRecovery(null);
         lastApprovedReview.current = null;
         setStatus("idle");
+        setConnectionStatus("caught_up");
         activeAguiRunId.current = null;
         pendingUserMessageId.current = null;
         messagesBeforePendingRun.current = null;
@@ -390,6 +501,7 @@ export function useChatAgent({
       onRunErrorEvent({ event }) {
         if (mounted.current) {
           setStatus("error");
+          setConnectionStatus("reconnecting");
           setError(event.message);
           void inspectDispatchFailure(event.message);
           onSessionSettledRef.current(true);
@@ -398,6 +510,7 @@ export function useChatAgent({
       onRunFailed({ error: runError }) {
         if (mounted.current) {
           setStatus("error");
+          setConnectionStatus("reconnecting");
           setError(runError.message || "Agent连接失败");
           void inspectDispatchFailure(runError.message || "Agent连接失败");
           onSessionSettledRef.current(true);
@@ -637,6 +750,7 @@ export function useChatAgent({
   return {
     messages,
     status,
+    connectionStatus,
     error,
     pendingReview,
     dispatchRecovery,

@@ -63,7 +63,7 @@ flowchart LR
 | 2. 目标架构与合同基线 | 审核目标拓扑、模块、状态、合同、恢复矩阵 | `重写完成，待用户审核` |
 | 3. 产品事实与完成历史 | 身份、Session、Message、Run/Attempt和历史恢复 | `Phase 1文本底座、显式Retry/Restart和精确取消窄切片完成；完整身份和树操作继续` |
 | 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `Product Harness D1-D8、ExecutionDraft完整编辑、25节点主Workflow和4个前端工作区完成；独立Intent资源继续` |
-| 5. 持久执行与活动流 | Job/Event、Worker、Lease、重连和Reconciler | `Governance Outbox Worker窄切片完成；通用Job/Event与活动流未开始` |
+| 5. 持久执行与活动流 | Job/Event、Worker、Lease、重连和Reconciler | `D1-D8纵向切片完成；完整强退、多端、保留和容量矩阵继续` |
 | 6. Tool、Workflow与HITL恢复 | Tool Ledger、对账、Checkpoint和持久Interrupt | `主Workflow审批安全点跨进程恢复完成；Tool与任意Workflow恢复继续` |
 | 7. 知识、证据、交付与运营 | Memory、Evidence、Provenance、Outbox、Trace和告警 | `Note/Memory生命周期与Harness事务Outbox完成；独立Evidence、Artifact、Delivery和运营能力继续` |
 | 8. 外部入口连续性 | 通过具体Channel Adapter接入终端平台，并通过Bridge Adapter与OPC-OS Chat对等集成 | `未开始` |
@@ -173,13 +173,13 @@ flowchart LR
 
 主要方案任务：
 
-- [ ] 详细设计 Runtime Job、Event Journal、Cursor、Control Inbox、Lease 和 Heartbeat。
-- [ ] 实现 Scheduler/Reconciler 和 Execution Worker 进程角色。
-- [ ] 实现 Run/Attempt/Job 显式映射、幂等领取、取消、Retry 和 Resume 决策。
-- [ ] 实现 AG-UI 活动投影与 REST 产品事实的 Projection Reconciler。
-- [ ] 浏览器断线只结束订阅，不隐式取消 Run。
-- [ ] Worker 失联后标记 Attempt lost，并按安全点生成恢复或人工处置决定。
-- [ ] 验证重复 Worker 领取、Lease 过期、API 重启、Worker 崩溃、事件重复和 Final 去重。
+- [x] 批准并实现[活动Run重连与通用Execution Worker详细设计](./docs/runtime-execution-detailed-design.md)D1-D8及12号迁移。
+- [x] 实现周期Reconciler、通用Execution Worker及独立CLI进程角色。
+- [x] 实现Run/Attempt/Job显式映射、幂等领取、Lease Epoch Fence、精确取消和Checkpoint Resume命令；Retry/Restart仍沿用“新Run/Attempt/Job”血缘。
+- [x] 实现AG-UI公开事件Journal、签名Cursor、REST状态/回放接口、前端Sequence/Hash重放和Product终态校正。
+- [x] 浏览器断线只结束订阅，不隐式取消Run；真实Provider断线验证仍由同一Job完成。
+- [x] Worker失联按未外发安全重领、Product已终结修复或外发结果未知三类收敛，旧Epoch不能写事件或Final。
+- [ ] 补齐真实API进程强退、多标签页/换设备、Cursor实际过期、事件保留清理和Delta批量写的完整阶段验收；当前专项并发/跨OS进程/断线/真实模型纵向切片已通过。
 
 完成门：活动流可按游标接回；Worker 失联不会产生双执行或假成功。该门不表示任意 Tool 结果未知时可以自动恢复。
 

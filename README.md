@@ -44,7 +44,7 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 11. ExecutionDraft已有17部分完整可读编辑工作台；保存产生新revision与Hash，必须重新审批后才能编译不可变RunSpec。
 12. Product Harness D1-D8已经落地：Project、Work、Plan/Action、Note、Memory与两阶段Context使用服务端权威Schema、CAS、幂等命令、Trace和Outbox；前端提供Project Explorer、Work Board、Knowledge和Context Inspector。
 13. 持续协作主Workflow现有25个真实MAF节点；真实模型已验证意图、响应、回合摘要3次逐次审批，简单问答不会创建Project、Work、Note或Memory。
-14. 完整Session仍按Phase 2-8继续：活动流游标重连、通用Execution Worker、Tool副作用对账和跨入口恢复尚未完成。
+14. Runtime Job、活动流游标和通用Execution Worker纵向切片已经完成；完整Session仍按Phase 2-8继续补齐Steer/Follow-up、分支、强退/多端矩阵、Tool副作用对账和跨入口恢复。
 15. Chat概念空间已经建立：11个概念簇统一Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、上下文结果、界面、外部入口和人工介入策略的共同语言。
 
 ## 技术方向

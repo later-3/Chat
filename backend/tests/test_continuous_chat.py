@@ -14,6 +14,7 @@ from backend.app.main import create_app
 from backend.app.model_call_review import InMemoryModelCallReviewStore, PreparedProviderRequest
 from backend.app.model_providers import ModelOption, ModelProviderCatalog, ModelProviderConfig
 from backend.app.outbox_worker import run_outbox_worker
+from backend.app.execution_worker import run_execution_worker
 
 
 class SequencedTransport:
@@ -69,6 +70,7 @@ def _run_outbox_in_spawned_process(
         model_call_transport=SequencedTransport([response]),
         start_outbox_worker=False,
         outbox_worker_id="spawned-outbox-test-worker",
+        start_execution_worker=False,
     )
     processed = asyncio.run(run_outbox_worker(app, once=True))
     database_path = database_url.removeprefix("sqlite+aiosqlite:///")
@@ -109,6 +111,34 @@ def _spawn_outbox_worker(
         process.terminate()
         process.join(timeout=5)
         raise AssertionError("spawned Outbox Worker did not terminate")
+    assert process.exitcode == 0
+
+
+def _run_execution_in_spawned_process(database_url: str, response: str) -> None:
+    app = create_app(
+        _settings(database_url),
+        model_call_store=InMemoryModelCallReviewStore(_catalog()),
+        model_call_transport=SequencedTransport([response]),
+        start_outbox_worker=False,
+        start_execution_worker=False,
+        execution_worker_id="spawned-execution-test-worker",
+    )
+    processed = asyncio.run(run_execution_worker(app, once=True))
+    if processed != 1:
+        raise AssertionError(f"expected one resumed Runtime Job, got {processed}")
+
+
+def _spawn_execution_worker(database_url: str, response: str) -> None:
+    process = multiprocessing.get_context("spawn").Process(
+        target=_run_execution_in_spawned_process,
+        args=(database_url, response),
+    )
+    process.start()
+    process.join(timeout=20)
+    if process.is_alive():
+        process.terminate()
+        process.join(timeout=5)
+        raise AssertionError("spawned Execution Worker did not terminate")
     assert process.exitcode == 0
 
 
@@ -484,6 +514,7 @@ def test_outbox_worker_resumes_recorded_decision_after_api_process_restart(tmp_p
         assert recorded.status_code == 200, recorded.text
 
     _spawn_outbox_worker(database_url, intent_response)
+    _spawn_execution_worker(database_url, intent_response)
 
     inspection_app = create_app(
         settings,
@@ -677,6 +708,7 @@ def test_execution_draft_revision_reapproval_survives_api_and_worker_process_los
         assert recorded.status_code == 200, recorded.text
 
     _spawn_outbox_worker(database_url, "unused", expected_count=2)
+    _spawn_execution_worker(database_url, "unused")
 
     inspection_app = create_app(
         settings,

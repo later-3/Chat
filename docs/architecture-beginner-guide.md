@@ -1,7 +1,7 @@
 # Chat 架构新手导读：从前端对象到 Agent 内部
 
 > 状态：待用户审核
-> 更新日期：2026-07-21
+> 更新日期：2026-07-23
 > 作用：用普通语言解释[总体架构候选](./overall-architecture-proposal.md)，不单独创造另一套架构决定。
 > 边界：本文只确认对象职责和关系，不冻结字段、数据库表名、API Schema或目录实现。
 > 阅读提示：高风险名称的当前语义边界从[Chat概念资产索引](../概念空间/00-索引.md)进入；实现进度只以[PROJECT_STATE.md](../PROJECT_STATE.md)为准。本文标为“当前代码”的段落是2026-07-21写作快照，不拥有后续实现状态。
@@ -80,7 +80,7 @@
 
 “逻辑上5个Store”不等于必须部署5个数据库服务。可以先是`1个SQLite文件 + 1个文件目录`，但每类状态必须由自己的模块和Repository读写，不能让MAF History表替代Product Message，也不能让AG-UI Snapshot替代Product Session。
 
-**当前代码事实**：Product Session、Message、Product Run/Attempt、配置和部分Trace已经进入SQLite Product Store；ExecutionDraft、RunSpec、HITL Policy、持久Decision Record/Approval、通用Tool Ledger、Runtime Job和MAF Checkpoint生产Store仍未实现。当前模型调用草稿、Approval、Provider Attempt和Workflow实例仍在单进程内存；Spike使用的临时表只证明并发合同，不是正式治理Schema。
+**当前代码事实**：Product Session、Message、Product Run/Attempt、ExecutionDraft、RunSpec、HITL Policy、Decision/Grant/Consumption、Provider Attempt、Product Harness和Trace均已进入SQLite Product Store；Runtime Job/Event Journal/Control Command/Worker Heartbeat使用同库独立Runtime表。持续协作主Workflow的MAF Checkpoint与Interrupt Link已经持久化并完成跨进程安全点恢复。旧模型审批/演示Workflow仍有进程内状态，通用Tool副作用账本、独立Evidence/Artifact和Delivery Store尚未完成；具体实现进度仍只以`PROJECT_STATE.md`为准。
 
 ### 2.3 用户点击“发送”后的目标架构全景
 

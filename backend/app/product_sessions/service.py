@@ -431,17 +431,18 @@ class ProductSessionService:
         event_type: str,
         payload: dict[str, Any],
     ) -> None:
-        async with self.database.sessions.begin() as transaction:
-            await self._session(transaction, session_id)
-            run = await transaction.scalar(
-                select(RunRecord).where(
-                    RunRecord.id == run_id,
-                    RunRecord.session_id == session_id,
+        async with self.database.trace_write_lock:
+            async with self.database.sessions.begin() as transaction:
+                await self._session(transaction, session_id)
+                run = await transaction.scalar(
+                    select(RunRecord).where(
+                        RunRecord.id == run_id,
+                        RunRecord.session_id == session_id,
+                    )
                 )
-            )
-            if run is None:
-                raise ProductSessionNotFound("Product Run不存在")
-            await self._trace(transaction, run, event_type, payload)
+                if run is None:
+                    raise ProductSessionNotFound("Product Run不存在")
+                await self._trace(transaction, run, event_type, payload)
 
     async def prepare_agui_run(self, input_data: dict[str, Any]) -> AcceptedRun:
         session_id = str(input_data.get("thread_id") or input_data.get("threadId") or "")
@@ -989,6 +990,7 @@ class ProductSessionService:
             MafWorkflowCheckpointRecord,
             RuntimeInterruptLinkRecord,
         )
+        from ..runtime_execution.models import RuntimeJobRecord
 
         interrupted = 0
         async with self.database.sessions.begin() as transaction:
@@ -1000,6 +1002,35 @@ class ProductSessionService:
                 ).all()
             )
             for run in runs:
+                runtime_job = await transaction.scalar(
+                    select(RuntimeJobRecord).where(RuntimeJobRecord.product_run_id == run.id)
+                )
+                if runtime_job is not None and runtime_job.status in {
+                    "queued",
+                    "leased",
+                    "running",
+                    "waiting_human",
+                    "waiting_recovery",
+                    "cancelling",
+                }:
+                    # Execution ownership is now process-independent. The
+                    # Runtime Reconciler classifies an expired Lease; an API
+                    # restart must not destroy an otherwise recoverable Run.
+                    continue
+                if runtime_job is not None and runtime_job.status in {
+                    "failed",
+                    "cancelled",
+                    "outcome_unknown",
+                }:
+                    await self._settle_runtime_orphan(
+                        transaction,
+                        run,
+                        status=runtime_job.status,
+                        failure_code=runtime_job.failure_code or "runtime_job_terminal",
+                        failure_message=runtime_job.failure_summary or "Runtime Job已收敛为非成功终态。",
+                    )
+                    interrupted += 1
+                    continue
                 if run.status == "waiting_approval":
                     link = await transaction.scalar(
                         select(RuntimeInterruptLinkRecord).where(
@@ -1025,28 +1056,108 @@ class ProductSessionService:
                         # It remains the active Product Run and is restored only
                         # after a version-bound user decision arrives.
                         continue
-                run.status = "interrupted"
-                run.failure_code = "process_restarted"
-                run.failure_message = "后端进程重启，无法证明此前活动Run已经安全完成。"
-                run.finished_at = utc_now()
-                await self._finish_attempt(
+                await self._settle_runtime_orphan(
                     transaction,
                     run,
                     status="interrupted",
                     failure_code="process_restarted",
                     failure_message="后端进程重启，无法证明此前活动Run已经安全完成。",
                 )
-                interaction = await transaction.get(InteractionRecord, run.interaction_id)
-                if interaction is not None:
-                    interaction.status = "interrupted"
-                    interaction.updated_at = utc_now()
-                session = await transaction.get(SessionRecord, run.session_id)
-                if session is not None and session.active_run_id == run.id:
-                    session.active_run_id = None
-                    session.updated_at = utc_now()
-                await self._trace(transaction, run, "run.interrupted", {"reason": "process_restarted"})
                 interrupted += 1
         return interrupted
+
+    async def reconcile_terminal_runtime_jobs(self) -> int:
+        """Project terminal Runtime Jobs onto still-active Product Runs.
+
+        Runtime remains an execution projection.  This Product-owned method is
+        the only place where a Reconciler may close the authoritative Run.
+        """
+
+        from ..runtime_execution.models import RuntimeJobRecord
+
+        async with self.database.sessions() as transaction:
+            candidates = list(
+                (
+                    await transaction.execute(
+                        select(
+                            RunRecord.id,
+                            RuntimeJobRecord.status,
+                            RuntimeJobRecord.failure_code,
+                            RuntimeJobRecord.failure_summary,
+                        )
+                        .join(
+                            RuntimeJobRecord,
+                            RuntimeJobRecord.product_run_id == RunRecord.id,
+                        )
+                        .where(
+                            RunRecord.status.in_(ACTIVE_RUN_STATUSES),
+                            RuntimeJobRecord.status.in_({"failed", "cancelled", "outcome_unknown"}),
+                        )
+                    )
+                ).all()
+            )
+        reconciled = 0
+        for run_id, status, failure_code, failure_summary in candidates:
+            async with self.database.sessions.begin() as transaction:
+                claimed = await transaction.scalar(
+                    update(RunRecord)
+                    .where(
+                        RunRecord.id == run_id,
+                        RunRecord.status.in_(ACTIVE_RUN_STATUSES),
+                    )
+                    .values(
+                        status=status,
+                        failure_code=failure_code or "runtime_job_terminal",
+                        failure_message=failure_summary or "Runtime Job已收敛为非成功终态。",
+                        finished_at=utc_now(),
+                    )
+                    .returning(RunRecord.id)
+                    .execution_options(synchronize_session=False)
+                )
+                if claimed is None:
+                    continue
+                run = await transaction.get(RunRecord, run_id)
+                if run is None:
+                    continue
+                await self._settle_runtime_orphan(
+                    transaction,
+                    run,
+                    status=status,
+                    failure_code=failure_code or "runtime_job_terminal",
+                    failure_message=failure_summary or "Runtime Job已收敛为非成功终态。",
+                )
+                reconciled += 1
+        return reconciled
+
+    async def _settle_runtime_orphan(
+        self,
+        transaction: Any,
+        run: RunRecord,
+        *,
+        status: str,
+        failure_code: str,
+        failure_message: str,
+    ) -> None:
+        run.status = status
+        run.failure_code = failure_code
+        run.failure_message = failure_message
+        run.finished_at = utc_now()
+        await self._finish_attempt(
+            transaction,
+            run,
+            status=status,
+            failure_code=failure_code,
+            failure_message=failure_message,
+        )
+        interaction = await transaction.get(InteractionRecord, run.interaction_id)
+        if interaction is not None:
+            interaction.status = status
+            interaction.updated_at = utc_now()
+        session = await transaction.get(SessionRecord, run.session_id)
+        if session is not None and session.active_run_id == run.id:
+            session.active_run_id = None
+            session.updated_at = utc_now()
+        await self._trace(transaction, run, f"run.{status}", {"reason": failure_code})
 
     async def _transition_active(
         self,

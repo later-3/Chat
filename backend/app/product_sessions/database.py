@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,27 @@ def utc_now() -> datetime:
 
 class Base(DeclarativeBase):
     pass
+
+
+class ProductSessionFactory:
+    """Session factory with a test-only writer fence for one SQLite connection."""
+
+    def __init__(self, maker: async_sessionmaker[AsyncSession], *, serialize_writes: bool) -> None:
+        self._maker = maker
+        self._write_lock = asyncio.Lock() if serialize_writes else None
+
+    def __call__(self) -> AsyncSession:
+        return self._maker()
+
+    @asynccontextmanager
+    async def begin(self):
+        if self._write_lock is None:
+            async with self._maker.begin() as transaction:
+                yield transaction
+            return
+        async with self._write_lock:
+            async with self._maker.begin() as transaction:
+                yield transaction
 
 
 class SessionRecord(Base):
@@ -283,11 +305,20 @@ class ProductDatabase:
         self.engine: AsyncEngine = create_async_engine(url, **engine_kwargs)
         if url.startswith("sqlite"):
             event.listen(self.engine.sync_engine, "connect", self._enable_sqlite_integrity)
-        self.sessions = async_sessionmaker(
+        session_maker = async_sessionmaker(
             self.engine,
             class_=AsyncSession,
             expire_on_commit=False,
         )
+        self.sessions = ProductSessionFactory(
+            session_maker,
+            serialize_writes=self.is_memory,
+        )
+        # StaticPool test databases share one physical SQLite connection.
+        # MAF may emit stage traces from concurrent executors, so hold this
+        # narrow lock through commit instead of allowing two AsyncSessions to
+        # interleave transactions on that one connection.
+        self.trace_write_lock = asyncio.Lock()
 
     @staticmethod
     def _enable_sqlite_integrity(dbapi_connection: Any, _: Any) -> None:

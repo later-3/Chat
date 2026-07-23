@@ -6,10 +6,10 @@
 |---|---|
 | 产品身份 | 独立开发、独立运行、独立运营并持续演进的完整 Chat 产品 |
 | 当前目录 | `/Users/xulater/Code/Chat` |
-| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、Product Session R0/R1、双协议模型治理、25节点持续协作主Workflow、HITL策略矩阵、持久Checkpoint/Outbox恢复、ExecutionDraft完整编辑，以及Product Harness的Project/Work/Plan/Action/Note/Memory/Context纵向生命周期和4个前端工作区已完成 |
-| 设计状态 | 总体架构已按完整用户场景重写；Execution治理D1-D7与Product Harness D1-D8均已获用户批准并迁移；持续协作主Workflow的跨进程审批安全点恢复已落地，Session其余R2-R6继续按专项路线交付 |
-| Session 状态 | 9个能力域、74项能力、R0-R6和Phase 0-8路线已批准；Phase 0与Phase 1文本底座、显式Retry/Restart和精确取消窄切片完成，R2-R6仍按后续阶段交付 |
-| 数据状态 | Product Store Schema与11个Alembic迁移已建立；执行治理、TurnSummary、MAF Workflow Checkpoint和Product Harness均为本项目新事实，没有迁移旧数据库、旧历史或旧项目配置 |
+| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、Product Session R0/R1、双协议模型治理、25节点持续协作主Workflow、HITL策略矩阵、持久Checkpoint/Outbox恢复、ExecutionDraft完整编辑、Product Harness纵向生命周期，以及Runtime Job/Event/Cursor/通用Execution Worker纵向切片已完成 |
+| 设计状态 | 总体架构已按完整用户场景重写；Execution治理D1-D7、Product Harness D1-D8、活动Run与通用Execution Worker D1-D8均已获用户批准并迁移；Tool副作用对账和独立Evidence生命周期是下一批详细设计 |
+| Session 状态 | 9个能力域、74项能力、R0-R6和Phase 0-8路线已批准；Phase 0-1完成，Phase 2进行中，Phase 4-5完成纵向切片但尚未通过全部阶段故障矩阵 |
+| 数据状态 | Product Store Schema与12个Alembic迁移已建立；执行治理、TurnSummary、MAF Workflow Checkpoint、Product Harness和Runtime执行投影均为本项目新事实，没有迁移旧数据库、旧历史或旧项目配置 |
 | Git 状态 | 私有仓库`later-3/Chat`，分支`main`；按Feature节点提交并推送，私有配置和本地产物不进入Git |
 
 ## 2. 已确认的稳定事实
@@ -111,6 +111,9 @@
 - [x] Product Harness REST与主Workflow完成接合：阶段A读取权威Project轻量目录，阶段B只加载已绑定Project的Work/Plan/Action/Note/Accepted Memory；已批准Work/Memory候选才会经幂等产品事务提交，简单问答不会创建长期资源。
 - [x] 前端新增Project Explorer、Work Board、Knowledge和Context Inspector四个Workbench视图；项目、工作、笔记、记忆候选、上下文采用/排除及持久HITL请求均从服务端权威资源投影。
 - [x] 完成21天32轮开发与28天40轮学习长测：覆盖3个Session、Web/Telegram入口标记、API进程重开、Plan CAS、假完成拦截、Evidence、幂等、Note三版纠正、Memory拒绝后接受、来源失效和Context Token预算；本地权威事实、Trace与Outbox数量一致。
+- [x] 完成3天混合焦点长场景：7轮跨5个Product Session并重建API/数据库连接，依次学习FastAPI、切换书签API、回到学习、次日续学、第三天新建背单词CLI、查询Project并再次续学；3个Project工作集持续隔离，14条原始消息不被无脑拼入Context。
+- [x] 活动Run与通用Execution Worker D1-D8于2026-07-23获用户批准并完成12号迁移：全部AG-UI入口改为入队/Worker/Journal订阅；Runtime Job与Attempt一对一，Lease Epoch保护事件和终态，取消与Checkpoint Resume进入持久Control Command。
+- [x] 前端支持活动Job的Sequence/Hash回放、缺口关闭失败、新Segment清除旧Interrupt、Cursor过期回退Product Hydrate，并在设计者工作台展示Product Run、AG-UI Run、Attempt、Runtime Job、Worker/Lease和事件Sequence。
 
 ## 4. 已完成的工程与研究证据
 
@@ -126,13 +129,16 @@
 
 ### 4.2 已有验证
 
-1. 当前工作区后端全量测试通过，覆盖11次迁移、审批合同、双协议、Session恢复/并发/Retry/取消、治理策略、25节点主Workflow、Product Harness完整生命周期、两组多周长测、ExecutionDraft revision/CAS及跨进程重新审批、Checkpoint图与版本绑定/损坏关闭失败、跨OS进程Outbox、竞争Lease/死信、嵌套Workflow、多Agent、成语接龙、pi Tool、原子Trace和AG-UI终态顺序。
-2. 前端33个逻辑测试、类型检查和生产构建通过；覆盖ExecutionDraft 17部分固定顺序与完整CAS Payload、Harness命令ID/Context查询和持久HITL修改合同。构建仅保留单包超过500 kB的性能警告。
+1. 当前工作区后端100项全量测试通过，覆盖12次迁移、审批合同、双协议、Session恢复/并发/Retry/取消、治理策略、25节点主Workflow、Product Harness完整生命周期、三组长场景、ExecutionDraft revision/CAS、Checkpoint/Outbox跨进程恢复，以及Runtime双OS进程领取、Lease、Cursor、取消、断线、并发对账和终态修复。
+2. 前端36个逻辑测试、类型检查和生产构建通过；覆盖ExecutionDraft 17部分固定顺序与完整CAS Payload、Harness命令/Context/HITL合同，以及Runtime事件去重、缺口、Hash冲突和Checkpoint新Segment。构建仅保留单包超过500 kB的性能警告。
 3. 浏览器完成ExecutionDraft完整工作台真实回合：修改执行摘要和Scope后由revision 1生成revision 2及新Hash，重新授权后3次火山方舟`glm-5.2`调用均完成，5个Interrupt全部为resumed、22个Checkpoint可审计、Product Run成功且TurnSummary保持candidate；520px最小视口无横向溢出，控制台0错误。
 4. 火山方舟Responses与阿里云百炼Chat Completions各完成1次真实模型审批回合；后者核对最终Body仅含`model/messages/tools/store/stream`并返回预期文本。
 5. 清理脚本已验证可分别终止端口8030的Uvicorn和5073的Vite，清理后无监听残留。
 6. 概念空间结构校验通过：11个概念簇、14个目录文档和109个本地链接均可发现且无断链；`git diff --check`纳入提交前验证。
 7. 2026-07-23真实浏览器用火山方舟`glm-5.2`完成Product Harness接合后的3次逐次模型审批；25个节点完成，结果为`HARNESS_REAL_MODEL_OK`，且正式Project、Work、Note、Memory前后均为0，控制台0错误。桌面推拉侧栏和780 CSS像素窄屏抽屉均完成展开/收起验证。
+8. 2026-07-23新增3天混合焦点长场景：7轮跨5个Product Session、1次后端服务与数据库连接重建（模拟API进程重启），依次推进FastAPI学习、切换书签API、回到学习、次日续学、第三天新建背单词CLI、查询全部Project并再次续学；3个Project及其Work/Action/Note/Memory持续独立，9份ContextPackage证明Stage A只取轻量目录、Stage B只装配被选Project，14条原始消息未被无脑塞入Context。
+9. 2026-07-23完成Runtime真实Provider断线验证：审批后批准，在新Segment首个`RUN_STARTED`后主动关闭订阅；同一Runtime Job继续完成并可回放连续57条Journal事件，只有1条终态，Product Run、Runtime Job和Provider Attempt均为成功，Provider没有因重连创建第二个Attempt。
+10. Runtime专项10项测试覆盖8 Worker竞争、两个OS进程唯一领取、旧Epoch拒写、双Reconciler竞争、空闲Worker心跳、断线后台继续、Cursor回放、外发前/运行中取消、Lease过期和Product/Runtime终态修复；浏览器确认新工作台字段、Workflow节点和审批界面正常且控制台0错误，浏览器验证Run已放弃并保持零Provider发送。
 
 ### 4.3 Session与参考项目研究
 
@@ -159,14 +165,14 @@
 4. 放弃审批不会创建Provider Attempt，前端恢复发送前消息快照并把原用户输入放回输入框，可继续修改发送，也可用叉号清空；后端会过滤MAF `request_info`审批协议消息，放弃后再次发送不会递归夹带旧审批JSON。
 5. 浏览器已验证Provider切换后模型列表从`glm-5.2/doubao-seed-code`联动为`secondary-model/secondary-fast`，普通文字和Reasoning控件修改会同步进入Provider JSON，保存后进入v2新Hash审批；全新页面控制台错误为0，窄屏文档和审批面板均无横向溢出。
 6. 火山方舟Responses与阿里云百炼Chat Completions均通过完整真实审批回合；当前Provider/模型目录是启动时不可变配置快照，尚未实现从各Provider动态发现模型和参数能力。
-7. 旧模型审批Workflow仍依赖进程内草稿Store；持续协作主Workflow已把ModelCallDraft、Decision/Grant/Consumption、Provider Attempt、MAF Checkpoint和Interrupt Link持久化。前端当前在线路径仍用标准AG-UI Resume；REST决定可由独立Outbox Worker跨OS进程恢复。活动流游标重连、任意Workflow和Tool副作用恢复仍未完成，不能把该纵向保证冒充完整R5/R6。
+7. 旧模型审批Workflow仍依赖进程内草稿Store；持续协作主Workflow已把ModelCallDraft、Decision/Grant/Consumption、Provider Attempt、MAF Checkpoint和Interrupt Link持久化。全部在线AG-UI入口现由通用Runtime Job/Worker承载，主Workflow的REST决定由独立Outbox写Control Command并可由Execution Worker跨OS进程恢复；旧/嵌套Workflow和Tool副作用Checkpoint仍不能类推。
 8. `backend/config.json`是启动时只读快照，当前包含2个Provider；修改Provider或模型目录后需要重启后端，尚未实现在线重载或Provider模型自动发现。
 
 ## 5. 尚未实现的能力
 
-1. Session Phase 2-3的Resume、Steer、Follow-up、分支/Fork、搜索、标签、长上下文、导入导出和完整资源生命周期；Retry/Restart与精确取消已有窄切片，但尚未与后续活动Job/Checkpoint Resume混称。
+1. Session Phase 2-3的Steer、Follow-up、分支/Fork、搜索、标签、长上下文Compaction、附件、导入导出和完整资源生命周期；Retry/Restart、精确取消和主Workflow Checkpoint Resume已有独立语义。
 2. Principal/真实身份Scope、Channel Binding、可独立修订的Intent，以及Context Source的权限撤销和任意来源类型全图失效传播；Product Harness基线已实现，但当前仍使用固定本地Scope。
-3. Runtime Job/Event、活动流游标、通用Execution Worker、Heartbeat和Reconciler；当前Lease只用于Governance Outbox，不能代表活动Run重连。
+3. Runtime纵向切片已实现，但完整阶段验收仍缺真实API/Worker强退矩阵、多标签页/换设备、事件保留清理与真实410、Delta批量写/背压、队列容量和Lease过期风暴压测；Provider/Tool精确外发边界尚未替换当前保守标记。
 4. 通用Tool Operation Ledger、外部副作用幂等/结果未知/对账，以及旧/嵌套Workflow和pi Tool的持久Checkpoint恢复；主Workflow无外部Tool副作用审批安全点已恢复，pi专用执行记录仍只提供可观察终态与启动中断收敛。
 5. 独立Evidence聚合、Provenance Graph、Artifact、Delivery Outbox和完整运营Trace；Work当前只接受内嵌Evidence引用，尚未形成独立证据生命周期。
 6. Telegram等具体Channel Adapter合同，以及OPC-OS Chat Bridge的正式身份、能力、消息和回执合同。
@@ -177,7 +183,7 @@
 1. MAF安装版与本地参考源码不是同一发布快照；具体API、事件和异常必须以安装版合同测试为准。
 2. AG-UI当前为RC版本，升级可能改变事件、Snapshot和Interrupt/Resume行为。
 3. AG-UI Client会发送客户端消息全集；若同时装配Product History、MAF History和Snapshot会形成重复上下文。
-4. Product Finalization Gate如何阻止过早`RUN_FINISHED`仍需安装版Spike。
+4. Product Finalization Gate已阻止过早`RUN_FINISHED`，并能修复Product已提交但Runtime终帧缺失的崩溃窗口；Product与Runtime终结当前仍是有序的两个事务，依赖Reconciler收敛而非宣称单事务原子完成。
 5. MAF Workflow Checkpoint与Product Run、持久Decision的正式薄桥已进入主Workflow、治理API和独立Outbox Worker；安装版AG-UI RC8不转发`checkpoint_id`，当前隔离恢复桥依赖MAF私有Runner/编码API，升级必须跑版本锁定测试并优先移除私有接合。
 6. SQLite已验证单Approval的8并发领取、两个Outbox Worker竞争和新OS进程接管；持续高并发、长队列、Lease过期风暴、数据库故障和容量边界仍未压测。
 7. 外部Tool副作用没有通用Exactly-once；必须按工具定义幂等、查询、补偿和人工处置。
@@ -191,10 +197,10 @@
 
 ## 7. 当前开发门
 
-1. Session Phase 1只证明R0/R1文本恢复；后续任务不得把它外推成活动流、Worker、Tool或Workflow/HITL恢复。
+1. Session Phase 1证明R0/R1文本恢复，Runtime纵向切片证明活动订阅与Worker所有权的部分R2/R3；仍不得外推为完整多设备、Tool副作用或任意Workflow/HITL恢复。
 2. Workflow可视化种子只兑现运行中投影和完成Trace恢复；后续Checkpoint/HITL不得复用这份Trace冒充运行恢复。
 3. 多Agent种子已验证两套显式会话传递、4个Profile Revision、逐次模型调用审批和成语接龙确定性规则；它仍不代表任意动态Agent拓扑、持久Checkpoint或并发群聊已经完成。
 4. pi Agent Tool已验证官方JSONL RPC、两道治理门和真实Tool loop；它仍不代表跨进程pi Session、持久Approval、通用副作用对账或R6恢复完成。
 5. 概念状态“有效”只表示语义边界可正式使用；任何功能是否实现、恢复级别和验证证据仍必须回到本文件及对应源码/测试判断。
-6. 跨进程HITL只对`continuous-collaboration v1.2.0`中已建立Checkpoint/Interrupt合同且没有外部Tool副作用的安全点成立；旧Workflow、嵌套Workflow、pi Tool、活动流订阅和通用R6仍不得类推。
+6. 跨进程HITL只对`continuous-collaboration v1.2.0`中已建立Checkpoint/Interrupt合同且没有外部Tool副作用的安全点成立；活动流订阅已由通用Runtime承载，但旧/嵌套Workflow、pi Tool、Tool副作用和通用R6仍不得类推。
 7. Product Harness D1-D8已批准并实现；后续扩展仍必须保持“模型只提候选、Decision后提交、CAS/Trace/Outbox同事务”，不得把TurnSummary直接改写成长期事实。

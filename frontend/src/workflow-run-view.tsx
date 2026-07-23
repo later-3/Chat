@@ -455,6 +455,14 @@ export function WorkflowRunView({
           <dl className="run-facts">
             <div><dt>Product Run</dt><dd className="mono">{latestRun?.id ?? "发送后创建"}</dd></div>
             <div><dt>AG-UI Run</dt><dd className="mono">{latestRun?.agui_run_id ?? "发送后创建"}</dd></div>
+            <div><dt>Run Attempt</dt><dd className="mono">{latestRun?.runtime_job?.run_attempt_id ?? latestRun?.attempts[0]?.id ?? "Worker领取后创建"}</dd></div>
+            <div><dt>Runtime Job</dt><dd className="mono">{latestRun?.runtime_job?.id ?? "排队后创建"}</dd></div>
+            <div><dt>Worker / Lease</dt><dd>{latestRun?.runtime_job?.lease_owner
+              ? `${latestRun.runtime_job.lease_owner} / epoch ${latestRun.runtime_job.lease_epoch}`
+              : "尚未持有Lease"}</dd></div>
+            <div><dt>事件游标</dt><dd>{latestRun?.runtime_job
+              ? `Sequence ${latestRun.runtime_job.last_event_sequence} · ${latestRun.runtime_job.recoverability}`
+              : "尚未产生"}</dd></div>
             <div><dt>模型路由</dt><dd>{provider?.label ?? latestRun?.model_provider_id ?? "审批时确认"}{model ? ` / ${model}` : ""}</dd></div>
             <div><dt>运行结构</dt><dd>{isCodeStageWorkflow ? "4 层 · 12 阶段 · 1 个 MAF Executor" : `${workflow.nodes.length} 个 MAF节点 · 模型调用和产品决策分别受治理`}</dd></div>
           </dl>

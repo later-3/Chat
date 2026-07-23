@@ -90,6 +90,7 @@ def main() -> None:
         Settings.from_file(),
         start_outbox_worker=False,
         outbox_worker_id=worker_id,
+        start_execution_worker=False,
     )
     asyncio.run(
         run_outbox_worker(

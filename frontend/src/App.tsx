@@ -203,6 +203,7 @@ function App() {
   const {
     messages,
     status,
+    connectionStatus,
     error,
     pendingReview,
     dispatchRecovery,
@@ -219,6 +220,7 @@ function App() {
     sessionId: activeSession?.id ?? null,
     hydratedMessages,
     hydrationVersion,
+    runtimeJob: activeRuns[0]?.runtime_job ?? null,
     onSessionSettled: refreshActiveSession,
   });
 
@@ -588,7 +590,16 @@ function App() {
                 </div>
               </form>
               {retrySource && <div className="retry-context"><span>{retrySource.forceRestart ? "结果未知的旧 Run 不会原样重试；再次发送会创建 Restart。" : "正在基于失败 Run 重新执行；修改 Prompt 会记录为 Restart。"}</span><button onClick={() => setRetrySource(null)} type="button">取消关联</button></div>}
-              <p className="composer-note">Enter 发送 · Product Session 保存历史 · 每次模型调用发送前审批</p>
+              <p className="composer-note">
+                Enter 发送 · Product Session 保存历史 · 每次模型调用发送前审批
+                {connectionStatus !== "idle" && ` · ${{
+                  reconnecting: "正在接回活动Run",
+                  replaying: "正在补齐事件",
+                  caught_up: "事件已同步",
+                  cursor_expired: "游标过期，已按Product事实恢复",
+                  idle: "",
+                }[connectionStatus]}`}
+              </p>
             </div>
           </main>
 
