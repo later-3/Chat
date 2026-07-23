@@ -62,10 +62,10 @@ flowchart LR
 | 1. 工程与真实链路 | 建立独立前后端、MAF、AG-UI、调试和验证基线 | `真实模型门通过；2项收尾` |
 | 2. 目标架构与合同基线 | 审核目标拓扑、模块、状态、合同、恢复矩阵 | `重写完成，待用户审核` |
 | 3. 产品事实与完成历史 | 身份、Session、Message、Run/Attempt和历史恢复 | `Phase 1文本底座、显式Retry/Restart和精确取消窄切片完成；完整身份和树操作继续` |
-| 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `执行治理与主Workflow纵向切片完成；完整领域生命周期继续` |
-| 5. 持久执行与活动流 | Job/Event、Worker、Lease、重连和Reconciler | `未开始` |
-| 6. Tool、Workflow与HITL恢复 | Tool Ledger、对账、Checkpoint和持久Interrupt | `3个纵向种子完成；通用恢复能力未开始` |
-| 7. 知识、证据、交付与运营 | Memory、Evidence、Provenance、Outbox、Trace和告警 | `未开始` |
+| 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `Product Harness D1-D8、ExecutionDraft完整编辑、25节点主Workflow和4个前端工作区完成；独立Intent资源继续` |
+| 5. 持久执行与活动流 | Job/Event、Worker、Lease、重连和Reconciler | `Governance Outbox Worker窄切片完成；通用Job/Event与活动流未开始` |
+| 6. Tool、Workflow与HITL恢复 | Tool Ledger、对账、Checkpoint和持久Interrupt | `主Workflow审批安全点跨进程恢复完成；Tool与任意Workflow恢复继续` |
+| 7. 知识、证据、交付与运营 | Memory、Evidence、Provenance、Outbox、Trace和告警 | `Note/Memory生命周期与Harness事务Outbox完成；独立Evidence、Artifact、Delivery和运营能力继续` |
 | 8. 外部入口连续性 | 通过具体Channel Adapter接入终端平台，并通过Bridge Adapter与OPC-OS Chat对等集成 | `未开始` |
 
 ## 5. 阶段 0：产品定义与治理
@@ -79,7 +79,7 @@ flowchart LR
 - [x] 确认后端 MAF、前后端 AG-UI、React 自研 UI 技术路线。
 - [x] 建立`AGENTS.md`、`PROJECT_CONTEXT.md`、`PROJECT_PLAN.md`、`PROJECT_STATE.md`和`README.md`。
 - [x] 纠正产品身份：Chat 是独立完整产品，OPC-OS Chat 是外部集成关系。
-- [x] 新增`PROJECT_LESSONS.md`，记录18个反例，并把参考可追溯性、入口拓扑、完整Payload可编辑性、对象可理解性、操作可走通性、概念空间、Workflow审批策略、回合沉淀和可配置HITL加入回复检查。
+- [x] 新增`PROJECT_LESSONS.md`，记录21个反例，并把Product Harness事实不能从聊天摘要猜测、不得回退系统Python等检查加入回复前置门。
 - [x] 建立Chat概念空间：方法来源、目录治理、发现索引、11个高风险概念簇、概念/实现双状态和自动结构/链接校验。
 - [ ] 用户审核本轮纠正是否准确进入稳定项目文档。
 
@@ -152,15 +152,18 @@ flowchart LR
 
 主要方案任务：
 
-- [ ] 详细设计并审核 Context、Memory、Collaboration 与 Interaction协调器。
-- [ ] 建立 Context Source、纳入/排除、Token 预算、版本和 Hash。
+- [x] 审核并实现[Product Harness、Work与Memory详细设计](./docs/product-harness-detailed-design.md)D1-D8及11号领域迁移。
+- [x] 建立 Context Source、纳入/排除、Token 预算、版本和 Hash。
 - [x] 实现Intent识别、依据/置信度、澄清和运行时用户修正的主Workflow纵向切片；多Intent聚合及独立Intent资源仍待详细设计。
-- [ ] 建立 WorkItem、TaskPlan、Plan Node、ActionItem、依赖和责任状态。
+- [x] 建立 WorkItem、TaskPlan、Plan Node、ActionItem、依赖和责任状态。
 - [x] 按[执行治理合同](./docs/execution-governance-contract.md)建立持久ExecutionDraft、授权后编译的不可变RunSpec、HITL Policy Resolver、Decision Record、一次性Grant/Consumption和ModelCallDraft/Attempt纵向链路。
   - [x] [正式Schema、状态机与前端HITL配置矩阵](./docs/execution-governance-detailed-design.md)的D1-D7已于2026-07-22获用户批准并完成9号迁移、后端服务、主Workflow接合和前端矩阵。
-- [ ] 建立 Draft/Context/Plan/Policy/Capability/Request Hash 任一变化使批准失效的合同。
+- [x] 建立ExecutionDraft revision/Hash变化使旧批准失效的合同；Context/Plan/Policy/Capability其余资源的跨对象失效继续随正式领域实现补齐。
 - [x] 主Workflow只允许已接受ExecutionDraft revision编译不可变RunSpec并绑定Product Run；独立Worker能力执行与跨进程恢复仍属于阶段5-6。
-- [ ] 建立对应前端 Context Review、Intent Review、Work Workspace 和 Execution Review。
+- [x] 建立ExecutionDraft 17部分完整可读编辑工作台、CAS保存、新revision/Hash和重新审批。
+- [x] 建立对应前端 Context Inspector、Project Explorer、Work Board和Knowledge工作区。
+- [x] 完成21天32轮项目开发与28天40轮技能学习长测，覆盖跨Session/入口、API重开、CAS、幂等、假完成、来源失效、Memory拒绝/接受和Token预算。
+- [x] 完成Product Harness接合后的真实模型浏览器纵向回合：3次模型调用逐次审批、25节点完成且简单问答不创建长期资源。
 
 完成门：一个多意图真实请求可形成可修改计划；高影响执行无法越过批准门；用户修改任一绑定项后旧批准不能运行。
 
@@ -193,8 +196,8 @@ flowchart LR
 - [ ] 建立 MAF Function Middleware 到 Tool Gateway 的唯一执行路径。
 - [ ] 工具参数动态扩权时回到持久 Approval，而不是进程内默认批准。
 - [ ] 实现`result_unknown`、查询对账、补偿和人工处置。
-- [ ] 设计 Product Run/Attempt 与 Workflow Checkpoint、图版本和 Interrupt 的映射。
-- [ ] 实现持久 Approval 与 MAF/AG-UI Interrupt/Resume 双向接合。
+- [x] 为持续协作主Workflow实现Product Run/Attempt与MAF Checkpoint、Definition/version、图签名和Interrupt Link映射；其他Workflow仍需逐一定义恢复边界。
+- [x] 为持续协作主Workflow实现持久Decision与MAF/AG-UI Interrupt/Resume双向接合、Lease Outbox和独立Worker入口；活动流重连与通用Tool恢复不在该保证内。
 - [ ] 验证工具请求前失败、请求后断线、重复回调、部分成功、补偿失败和跨进程 HITL。
 
 完成门：只从验证过的安全点恢复；外部副作用结果未知时不盲目重做；不承诺通用 Exactly-once。
@@ -206,7 +209,7 @@ flowchart LR
 主要方案任务：
 
 - [ ] 详细设计 Memory、Evidence、Delivery 和 Run Trace/运营查询。
-- [ ] 建立 Memory Candidate、接受、纠正、删除、范围和有效性。
+- [x] 建立 Memory Candidate、接受、纠正、撤销/失效、范围、不可变revision和来源关联。
 - [ ] 建立 Evidence、Artifact、Provenance Graph、验证和失效传播。
 - [ ] 建立 Transactional Outbox、Delivery Worker、Attempt、Receipt、重试和死信。
 - [ ] 建立用户 Trace、审计策略、Correlation、运营视图、告警和人工处置。

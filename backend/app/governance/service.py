@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping, Sequence
@@ -34,13 +35,18 @@ from .models import (
     HitlPolicySnapshotRecord,
     HumanDecisionRequestItemRecord,
     HumanDecisionRequestRecord,
+    MafWorkflowCheckpointRecord,
     ModelCallAttemptRecord,
     ModelCallDraftRecord,
     ModelCallDraftRevisionRecord,
     PolicyEvaluationRecord,
+    RuntimeInterruptLinkRecord,
     RunSpecRecord,
     TurnSummaryRecord,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 EXECUTION_DRAFT_KEYS = (
@@ -1143,6 +1149,84 @@ class ExecutionGovernanceService:
             transaction.add(item)
         return request
 
+    async def human_decision_requests(
+        self,
+        *,
+        session_id: str | None = None,
+        status: str = "pending",
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Return a recoverable, public projection of durable HITL requests."""
+
+        query = select(HumanDecisionRequestRecord).where(
+            HumanDecisionRequestRecord.principal_id == self.principal_id,
+            HumanDecisionRequestRecord.status == status,
+        )
+        if session_id is not None:
+            query = query.where(HumanDecisionRequestRecord.session_id == session_id)
+        query = query.order_by(HumanDecisionRequestRecord.created_at.desc()).limit(
+            min(max(limit, 1), 300)
+        )
+        async with self.database.sessions() as transaction:
+            requests = (await transaction.scalars(query)).all()
+            result: list[dict[str, Any]] = []
+            for request in requests:
+                items = (await transaction.scalars(
+                    select(HumanDecisionRequestItemRecord).where(
+                        HumanDecisionRequestItemRecord.request_id == request.id
+                    ).order_by(HumanDecisionRequestItemRecord.ordinal)
+                )).all()
+                item_views: list[dict[str, Any]] = []
+                for item in items:
+                    subject = await transaction.get(DecisionSubjectRecord, item.subject_id)
+                    item_views.append({
+                        "item_key": item.item_key,
+                        "status": item.status,
+                        "allowed_actions": list(item.allowed_actions_json or []),
+                        "subject": None if subject is None else {
+                            "id": subject.id,
+                            "kind": subject.subject_kind,
+                            "resource_id": subject.resource_id,
+                            "resource_revision": subject.resource_revision,
+                            "subject_hash": subject.subject_hash,
+                            "workflow_definition_id": subject.workflow_definition_id,
+                            "workflow_version": subject.workflow_version,
+                            "node_id": subject.node_id,
+                            "decision_view": dict(subject.decision_view_json or {}),
+                        },
+                    })
+                runtime_link = await transaction.scalar(
+                    select(RuntimeInterruptLinkRecord).where(
+                        RuntimeInterruptLinkRecord.decision_request_id == request.id
+                    )
+                )
+                result.append({
+                    "id": request.id,
+                    "decision_point_key": request.decision_point_key,
+                    "session_id": request.session_id,
+                    "interaction_id": request.interaction_id,
+                    "run_id": request.run_id,
+                    "request_hash": request.request_hash,
+                    "title": request.title,
+                    "reason_summary": request.reason_summary,
+                    "visible_evidence": dict(request.visible_evidence_json or {}),
+                    "consequence": dict(request.consequence_json or {}),
+                    "status": request.status,
+                    "row_version": request.row_version,
+                    "created_at": _iso(request.created_at),
+                    "expires_at": _iso(request.expires_at),
+                    "runtime_recovery": None if runtime_link is None else {
+                        "link_id": runtime_link.id,
+                        "status": runtime_link.status,
+                        "checkpoint_id": runtime_link.maf_checkpoint_id,
+                        "workflow_name": runtime_link.maf_workflow_name,
+                        "executor_id": runtime_link.maf_executor_id,
+                        "graph_signature_hash": runtime_link.maf_graph_signature_hash,
+                    },
+                    "items": item_views,
+                })
+            return result
+
     async def resolve_human_request(
         self,
         *,
@@ -1150,6 +1234,8 @@ class ExecutionGovernanceService:
         expected_request_hash: str,
         expected_row_version: int,
         decisions: Sequence[Mapping[str, str]],
+        response_payload: Mapping[str, Any] | None = None,
+        resume_via_outbox: bool = False,
     ) -> list[dict[str, Any]]:
         async with self.database.sessions.begin() as transaction:
             request = await transaction.get(HumanDecisionRequestRecord, request_id)
@@ -1230,11 +1316,176 @@ class ExecutionGovernanceService:
                     aggregate_kind="human_decision_request",
                     aggregate_id=request.id,
                     event_type="runtime.resume_requested",
-                    payload_json={"decision_request_id": request.id, "decisions": result},
+                    payload_json={
+                        "decision_request_id": request.id,
+                        "decisions": result,
+                        "response_payload": dict(response_payload or {}),
+                        "dispatch_required": resume_via_outbox,
+                    },
                     dedupe_key=f"runtime.resume_requested:{request.id}:{request.row_version}",
                 )
             )
+        logger.info(
+            "human_decision_recorded request_id=%s item_count=%d resume_via_outbox=%s",
+            request_id,
+            len(result),
+            resume_via_outbox,
+        )
         return result
+
+    async def bind_runtime_interrupt(
+        self,
+        *,
+        decision_request_id: str,
+        product_run_id: str,
+        maf_workflow_name: str,
+        maf_graph_signature_hash: str,
+        maf_checkpoint_id: str,
+        maf_request_id: str,
+        maf_executor_id: str,
+        agui_thread_id: str,
+        agui_run_id: str,
+        agui_interrupt_id: str | None,
+    ) -> RuntimeInterruptLinkRecord:
+        """Bind one durable Product decision request to its MAF safe point.
+
+        This command is idempotent for the exact same mapping and rejects a
+        request/checkpoint that has already been associated with another run.
+        """
+
+        async with self.database.sessions.begin() as transaction:
+            request = await transaction.get(HumanDecisionRequestRecord, decision_request_id)
+            checkpoint = await transaction.get(MafWorkflowCheckpointRecord, maf_checkpoint_id)
+            run = await transaction.get(RunRecord, product_run_id)
+            if request is None or checkpoint is None or run is None:
+                raise GovernanceValidationError("Interrupt Link引用的请求、Checkpoint或Product Run不存在")
+            if request.run_id != run.id or checkpoint.product_run_id != run.id:
+                raise GovernanceConflict("Interrupt Request、Checkpoint和Product Run不属于同一运行")
+            if checkpoint.workflow_name != maf_workflow_name:
+                raise GovernanceConflict("Checkpoint Workflow名称不匹配")
+            if checkpoint.graph_signature_hash != maf_graph_signature_hash:
+                raise GovernanceConflict("Checkpoint图签名不匹配")
+            if maf_request_id not in set(checkpoint.pending_request_ids_json or ()):
+                raise GovernanceConflict("Checkpoint不包含待恢复的MAF request id")
+            existing = await transaction.scalar(
+                select(RuntimeInterruptLinkRecord).where(
+                    RuntimeInterruptLinkRecord.decision_request_id == decision_request_id
+                )
+            )
+            if existing is not None:
+                if (
+                    existing.product_run_id != run.id
+                    or existing.maf_checkpoint_id != checkpoint.checkpoint_id
+                    or existing.maf_request_id != maf_request_id
+                ):
+                    raise GovernanceConflict("Decision Request已经绑定其他Runtime Interrupt")
+                return existing
+            value = RuntimeInterruptLinkRecord(
+                id=_id(),
+                decision_request_id=request.id,
+                product_run_id=run.id,
+                run_attempt_id=checkpoint.run_attempt_id,
+                maf_workflow_name=maf_workflow_name,
+                maf_graph_signature_hash=maf_graph_signature_hash,
+                maf_checkpoint_id=checkpoint.checkpoint_id,
+                maf_request_id=maf_request_id,
+                maf_executor_id=maf_executor_id,
+                agui_thread_id=agui_thread_id,
+                agui_run_id=agui_run_id,
+                agui_interrupt_id=agui_interrupt_id,
+                status="pending",
+            )
+            transaction.add(value)
+            checkpoint.status = "linked"
+        logger.info(
+            "runtime_interrupt_bound request_id=%s run_id=%s checkpoint_id=%s maf_request_id=%s",
+            decision_request_id,
+            product_run_id,
+            maf_checkpoint_id,
+            maf_request_id,
+        )
+        return value
+
+    async def runtime_interrupt_for_request(
+        self,
+        *,
+        decision_request_id: str,
+        product_run_id: str | None = None,
+    ) -> RuntimeInterruptLinkRecord:
+        async with self.database.sessions() as transaction:
+            value = await transaction.scalar(
+                select(RuntimeInterruptLinkRecord).where(
+                    RuntimeInterruptLinkRecord.decision_request_id == decision_request_id
+                )
+            )
+        if value is None:
+            raise GovernanceValidationError("Decision Request没有可恢复的Runtime Interrupt")
+        if product_run_id is not None and value.product_run_id != product_run_id:
+            raise GovernanceConflict("Runtime Interrupt不属于当前Product Run")
+        return value
+
+    async def runtime_interrupt_for_maf_request(
+        self,
+        *,
+        maf_request_id: str,
+        product_run_id: str,
+    ) -> RuntimeInterruptLinkRecord:
+        async with self.database.sessions() as transaction:
+            value = await transaction.scalar(
+                select(RuntimeInterruptLinkRecord).where(
+                    RuntimeInterruptLinkRecord.maf_request_id == maf_request_id,
+                    RuntimeInterruptLinkRecord.product_run_id == product_run_id,
+                )
+            )
+        if value is None:
+            raise GovernanceValidationError("MAF request没有可恢复的Runtime Interrupt")
+        return value
+
+    async def mark_runtime_interrupt(
+        self,
+        *,
+        link_id: str,
+        status: str,
+        error_code: str | None = None,
+    ) -> None:
+        allowed = {
+            "pending",
+            "decision_recorded",
+            "resuming",
+            "resumed",
+            "cancelled",
+            "recovery_required",
+            "failed",
+        }
+        if status not in allowed:
+            raise GovernanceValidationError(f"未知Runtime Interrupt状态: {status}")
+        async with self.database.sessions.begin() as transaction:
+            value = await transaction.get(RuntimeInterruptLinkRecord, link_id)
+            if value is None:
+                raise GovernanceValidationError("Runtime Interrupt Link不存在")
+            value.status = status
+            value.last_error_code = error_code
+            value.updated_at = utc_now()
+            if status == "resuming":
+                value.resume_attempts += 1
+            if status == "resumed":
+                value.last_projected_at = utc_now()
+            checkpoint = await transaction.get(
+                MafWorkflowCheckpointRecord, value.maf_checkpoint_id
+            )
+            if checkpoint is not None:
+                checkpoint.status = {
+                    "resuming": "resuming",
+                    "resumed": "resumed",
+                    "recovery_required": "incompatible",
+                    "failed": "failed",
+                }.get(status, checkpoint.status)
+        logger.info(
+            "runtime_interrupt_status_changed link_id=%s status=%s error_code=%s",
+            link_id,
+            status,
+            error_code,
+        )
 
     async def resolve_single_human_request(
         self,
@@ -1260,6 +1511,47 @@ class ExecutionGovernanceService:
             decisions=[{"item_key": item_key, "decision": decision}],
         )
         return values[0]
+
+    async def resolved_human_request(self, request_id: str) -> list[dict[str, Any]]:
+        """Return the immutable decision/grant projection used by an Outbox resume."""
+
+        async with self.database.sessions() as transaction:
+            request = await transaction.get(HumanDecisionRequestRecord, request_id)
+            if request is None:
+                raise GovernanceValidationError("人工决定请求不存在")
+            if request.status != "resolved":
+                raise GovernanceConflict("人工决定尚未完整记录，不能恢复Runtime")
+            items = list(
+                (
+                    await transaction.scalars(
+                        select(HumanDecisionRequestItemRecord)
+                        .where(HumanDecisionRequestItemRecord.request_id == request.id)
+                        .order_by(HumanDecisionRequestItemRecord.ordinal)
+                    )
+                ).all()
+            )
+            result: list[dict[str, Any]] = []
+            for item in items:
+                if item.decision_record_id is None:
+                    raise GovernanceConflict("人工决定请求存在未提交的item")
+                record = await transaction.get(DecisionRecord, item.decision_record_id)
+                if record is None:
+                    raise GovernanceConflict("人工决定记录缺失")
+                grant = await transaction.scalar(
+                    select(AuthorizationGrantRecord).where(
+                        AuthorizationGrantRecord.decision_record_id == record.id
+                    )
+                )
+                result.append(
+                    {
+                        "item_key": item.item_key,
+                        "decision": record.decision_code,
+                        "decision_record_id": record.id,
+                        "authorization_grant_id": grant.id if grant else None,
+                        "binding_hash": record.bound_subject_hash,
+                    }
+                )
+        return result
 
     async def claim_grant(
         self,
@@ -1465,6 +1757,145 @@ class ExecutionGovernanceService:
             draft.row_version = (draft.row_version or 0) + 1
             draft.updated_at = utc_now()
         return draft, revision
+
+    async def execution_draft_view(self, draft_id: str) -> dict[str, Any]:
+        async with self.database.sessions() as transaction:
+            draft = await transaction.get(ExecutionDraftRecord, draft_id)
+            if draft is None or draft.current_revision_id is None:
+                raise GovernanceValidationError("ExecutionDraft不存在")
+            revision = await transaction.get(
+                ExecutionDraftRevisionRecord, draft.current_revision_id
+            )
+            if revision is None:
+                raise GovernanceConflict("ExecutionDraft当前revision引用损坏")
+        return {
+            "id": draft.id,
+            "session_id": draft.session_id,
+            "interaction_id": draft.interaction_id,
+            "workflow_definition_id": draft.workflow_definition_id,
+            "workflow_version": draft.workflow_version,
+            "status": draft.status,
+            "row_version": draft.row_version,
+            "revision_id": revision.id,
+            "revision": revision.revision,
+            "revision_status": revision.status,
+            "draft_hash": revision.draft_hash,
+            "context_hash": revision.context_hash,
+            "execution_brief": revision.execution_brief_text,
+            "payload": dict(revision.payload_json),
+        }
+
+    async def revise_execution_draft(
+        self,
+        *,
+        draft_id: str,
+        expected_revision_id: str,
+        expected_draft_hash: str,
+        expected_row_version: int,
+        payload: Mapping[str, Any],
+        execution_brief: str,
+        author_id: str,
+    ) -> dict[str, Any]:
+        value = _validate_payload(payload, EXECUTION_DRAFT_KEYS, "execution-draft-v1")
+        brief = execution_brief.strip()
+        if not brief:
+            raise GovernanceValidationError("ExecutionDraft执行摘要不能为空")
+        context_hash = str(
+            value["context_binding"].get("context_hash")
+            or _hash("context", "v1", value["context_binding"])
+        )
+        draft_hash = _hash(
+            "execution-draft",
+            "execution-draft-v1",
+            value | {"execution_brief": brief},
+        )
+        async with self.database.sessions.begin() as transaction:
+            draft = await transaction.get(ExecutionDraftRecord, draft_id)
+            if draft is None or draft.current_revision_id is None:
+                raise GovernanceValidationError("ExecutionDraft不存在")
+            current = await transaction.get(
+                ExecutionDraftRevisionRecord, draft.current_revision_id
+            )
+            if current is None:
+                raise GovernanceConflict("ExecutionDraft当前revision引用损坏")
+            if (
+                draft.row_version != expected_row_version
+                or current.id != expected_revision_id
+                or current.draft_hash != expected_draft_hash
+            ):
+                raise GovernanceConflict("ExecutionDraft已变化，请重新加载后再编辑")
+            if draft.status not in {"reviewable", "building"} or current.status != "reviewable":
+                raise GovernanceConflict("只有等待审核的ExecutionDraft可以编辑")
+            if draft_hash == current.draft_hash:
+                return {
+                    "id": draft.id,
+                    "status": draft.status,
+                    "row_version": draft.row_version,
+                    "revision_id": current.id,
+                    "revision": current.revision,
+                    "revision_status": current.status,
+                    "draft_hash": current.draft_hash,
+                    "context_hash": current.context_hash,
+                    "execution_brief": current.execution_brief_text,
+                    "payload": dict(current.payload_json),
+                }
+            old_subject = await transaction.get(DecisionSubjectRecord, current.subject_id)
+            if old_subject is None:
+                raise GovernanceConflict("ExecutionDraft Decision Subject不存在")
+            revision_no = current.revision + 1
+            subject = DecisionSubjectRecord(
+                id=_id(),
+                subject_kind="execution_draft",
+                resource_id=draft.id,
+                resource_revision=str(revision_no),
+                subject_hash=draft_hash,
+                session_id=draft.session_id,
+                interaction_id=draft.interaction_id,
+                run_id=old_subject.run_id,
+                run_attempt_id=old_subject.run_attempt_id,
+                workflow_definition_id=draft.workflow_definition_id,
+                workflow_version=draft.workflow_version,
+                node_id=old_subject.node_id,
+                decision_view_json={"execution_brief": brief, "draft_hash": draft_hash},
+            )
+            revision = ExecutionDraftRevisionRecord(
+                id=_id(),
+                draft_id=draft.id,
+                revision=revision_no,
+                previous_revision_id=current.id,
+                subject_id=subject.id,
+                schema_version="execution-draft-v1",
+                payload_json=value,
+                execution_brief_text=brief,
+                context_hash=context_hash,
+                draft_hash=draft_hash,
+                author_type="human",
+                author_id=author_id,
+                status="reviewable",
+            )
+            current.status = "superseded"
+            transaction.add(subject)
+            await transaction.flush()
+            transaction.add(revision)
+            await transaction.flush()
+            draft.current_revision_id = revision.id
+            draft.accepted_revision_id = None
+            draft.acceptance_decision_record_id = None
+            draft.status = "reviewable"
+            draft.row_version += 1
+            draft.updated_at = utc_now()
+        return {
+            "id": draft.id,
+            "status": draft.status,
+            "row_version": draft.row_version,
+            "revision_id": revision.id,
+            "revision": revision.revision,
+            "revision_status": revision.status,
+            "draft_hash": revision.draft_hash,
+            "context_hash": revision.context_hash,
+            "execution_brief": revision.execution_brief_text,
+            "payload": dict(revision.payload_json),
+        }
 
     async def compile_run_spec(
         self,
@@ -1815,6 +2246,37 @@ class ExecutionGovernanceService:
             turn_summary = await transaction.scalar(
                 select(TurnSummaryRecord).where(TurnSummaryRecord.run_id == run.id)
             )
+            interrupt_links = list(
+                (
+                    await transaction.scalars(
+                        select(RuntimeInterruptLinkRecord)
+                        .where(RuntimeInterruptLinkRecord.product_run_id == run.id)
+                        .order_by(RuntimeInterruptLinkRecord.created_at)
+                    )
+                ).all()
+            )
+            checkpoints = list(
+                (
+                    await transaction.scalars(
+                        select(MafWorkflowCheckpointRecord)
+                        .where(MafWorkflowCheckpointRecord.product_run_id == run.id)
+                        .order_by(MafWorkflowCheckpointRecord.created_at)
+                    )
+                ).all()
+            )
+            request_ids = [value.id for value in requests]
+            outbox_events = list(
+                (
+                    await transaction.scalars(
+                        select(GovernanceOutboxRecord)
+                        .where(
+                            GovernanceOutboxRecord.aggregate_kind == "human_decision_request",
+                            GovernanceOutboxRecord.aggregate_id.in_(request_ids),
+                        )
+                        .order_by(GovernanceOutboxRecord.created_at)
+                    )
+                ).all()
+            ) if request_ids else []
         revisions_by_slot: dict[str, list[ModelCallDraftRevisionRecord]] = {}
         for value in model_revisions:
             revisions_by_slot.setdefault(value.model_call_draft_id, []).append(value)
@@ -1915,6 +2377,50 @@ class ExecutionGovernanceService:
                     "created_at": _iso(value.created_at),
                 }
                 for value in requests
+            ],
+            "runtime_interrupts": [
+                {
+                    "id": value.id,
+                    "decision_request_id": value.decision_request_id,
+                    "checkpoint_id": value.maf_checkpoint_id,
+                    "maf_request_id": value.maf_request_id,
+                    "executor_id": value.maf_executor_id,
+                    "status": value.status,
+                    "resume_attempts": value.resume_attempts,
+                    "last_error_code": value.last_error_code,
+                    "created_at": _iso(value.created_at),
+                    "updated_at": _iso(value.updated_at),
+                }
+                for value in interrupt_links
+            ],
+            "workflow_checkpoints": [
+                {
+                    "checkpoint_id": value.checkpoint_id,
+                    "workflow_definition_id": value.workflow_definition_id,
+                    "workflow_version": value.workflow_version,
+                    "workflow_name": value.workflow_name,
+                    "graph_signature_hash": value.graph_signature_hash,
+                    "iteration_count": value.iteration_count,
+                    "pending_request_count": len(value.pending_request_ids_json or ()),
+                    "encoding_version": value.encoding_version,
+                    "status": value.status,
+                    "created_at": _iso(value.created_at),
+                }
+                for value in checkpoints
+            ],
+            "outbox_events": [
+                {
+                    "id": value.id,
+                    "aggregate_id": value.aggregate_id,
+                    "event_type": value.event_type,
+                    "dedupe_key": value.dedupe_key,
+                    "status": value.status,
+                    "attempt_count": value.attempt_count,
+                    "last_error_code": value.last_error_code,
+                    "available_at": _iso(value.available_at),
+                    "published_at": _iso(value.published_at),
+                }
+                for value in outbox_events
             ],
         }
 

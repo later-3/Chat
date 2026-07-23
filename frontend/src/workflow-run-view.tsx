@@ -28,6 +28,7 @@ import {
   type WorkflowNodeStatus,
 } from "./workflow-api.js";
 import { nodeContentFromTrace, progressFromTrace } from "./workflow-progress.js";
+import { WorkbenchNav, type WorkbenchView } from "./workbench-nav.js";
 import {
   CHAT_WORKFLOW,
   deriveWorkflowRunProjection,
@@ -45,6 +46,8 @@ interface WorkflowRunViewProps {
   assistantOutput: string | null;
   runStatus: RunStatus;
   onClose: () => void;
+  onViewChange: (view: WorkbenchView) => void;
+  pendingDecisionCount?: number;
 }
 
 const STAGE_STATUS_LABELS: Record<WorkflowStageStatus, string> = {
@@ -365,6 +368,8 @@ export function WorkflowRunView({
   assistantOutput,
   runStatus,
   onClose,
+  onViewChange,
+  pendingDecisionCount = 0,
 }: WorkflowRunViewProps) {
   const [trace, setTrace] = useState<ProductTraceEvent[]>([]);
   const [governance, setGovernance] = useState<RunGovernanceView | null>(null);
@@ -431,6 +436,7 @@ export function WorkflowRunView({
         <div><p className="eyebrow">DESIGNER WORKBENCH</p><strong>代码执行链</strong></div>
         <button aria-label="关闭工作台" onClick={onClose} type="button"><PanelRightClose size={20} /></button>
       </header>
+      <WorkbenchNav active="workflow" onChange={onViewChange} pendingCount={pendingDecisionCount} />
 
       <div className="workbench-body">
         <section className="run-summary-card">

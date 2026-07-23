@@ -10,11 +10,21 @@ import re
 from dataclasses import asdict, dataclass, replace
 from typing import Any, Callable, Mapping
 
-from agent_framework import Case, Default, Executor, WorkflowBuilder, WorkflowContext, handler, response_handler
+from agent_framework import (
+    Case,
+    CheckpointStorage,
+    Default,
+    Executor,
+    WorkflowBuilder,
+    WorkflowContext,
+    handler,
+    response_handler,
+)
 from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 
 from ..agent_profiles import AgentProfileSnapshot
 from ..governance.service import ExecutionGovernanceService, GovernanceConflict
+from ..harness import HarnessService
 from ..model_call_review import (
     InMemoryModelCallReviewStore,
     ModelCallDraft,
@@ -27,7 +37,7 @@ from ..product_sessions.service import ProductSessionService
 
 
 WORKFLOW_ID = "continuous-collaboration"
-WORKFLOW_VERSION = "1.0.0"
+WORKFLOW_VERSION = "1.2.0"
 JSON_FENCE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE)
 
 
@@ -35,6 +45,12 @@ JSON_FENCE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORE
 class CollaborationState:
     origin_prompt: str
     recent_turn_summaries: tuple[dict[str, Any], ...] = ()
+    project_candidates: tuple[str, ...] = ()
+    project_matches: tuple[dict[str, Any], ...] = ()
+    context_items: tuple[dict[str, Any], ...] = ()
+    directory_context_package_id: str | None = None
+    detail_context_package_id: str | None = None
+    selected_project_id: str | None = None
     intent: dict[str, Any] | None = None
     scenario: str = "clarify"
     plan: str | None = None
@@ -43,6 +59,22 @@ class CollaborationState:
     response: str | None = None
     turn_summary: dict[str, Any] | None = None
     last_model_call_revision_id: str | None = None
+    harness_decision_record_ids: tuple[str, ...] = ()
+    harness_commit_results: dict[str, Any] | None = None
+
+
+def _state_from_snapshot(value: Mapping[str, Any]) -> CollaborationState:
+    restored = dict(value)
+    for key in (
+        "recent_turn_summaries",
+        "project_candidates",
+        "project_matches",
+        "context_items",
+        "harness_decision_record_ids",
+    ):
+        if isinstance(restored.get(key), list):
+            restored[key] = tuple(restored[key])
+    return CollaborationState(**restored)
 
 
 def _message_text(message: Mapping[str, Any]) -> str:
@@ -99,6 +131,75 @@ def _hash(value: Any) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
+def _project_hint(summary: Mapping[str, Any]) -> str | None:
+    direct = summary.get("project_hint")
+    nested = summary.get("summary")
+    nested_hint = nested.get("project_hint") if isinstance(nested, Mapping) else None
+    value = direct or nested_hint
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value.strip()
+
+
+def _is_pending_clarification(summary: Mapping[str, Any]) -> bool:
+    nested = summary.get("summary")
+    return bool(isinstance(nested, Mapping) and nested.get("awaiting_user_answer") is True)
+
+
+def _is_project_catalog_query(text: str) -> bool:
+    compact = re.sub(r"[\s，,。.!！?？:：;；]", "", text).lower()
+    if not compact or "项目" not in compact:
+        return False
+    if any(value in compact for value in ("新建", "创建", "开始一个", "新增")):
+        return False
+    exact = {
+        "我有哪些项目",
+        "我有项目吗",
+        "我有什么项目",
+        "我有多少项目",
+        "有哪些项目",
+        "查看项目",
+        "查看项目列表",
+        "看看项目列表",
+        "列出项目",
+        "列出我的项目",
+        "显示项目列表",
+        "我的项目",
+        "项目列表",
+    }
+    if compact in exact:
+        return True
+    if any(value in compact for value in ("有哪些项目", "有什么项目", "多少个项目")):
+        return True
+    if "项目列表" in compact and any(
+        value in compact for value in ("查看", "看看", "列出", "显示", "想要", "想看")
+    ):
+        return True
+    return bool(
+        re.fullmatch(
+            r"(?:请|请帮我|帮我)?(?:查看|看看|列出|显示)(?:一下)?"
+            r"(?:我的|现有|当前|所有)?项目(?:列表)?",
+            compact,
+        )
+        or re.fullmatch(r"(?:我)?(?:目前|现在|当前)?有(?:哪些|什么|多少个?)项目", compact)
+    )
+
+
+def _project_catalog_intent(prompt: str) -> dict[str, Any]:
+    return {
+        "scenario": "simple_question",
+        "query_kind": "project_catalog",
+        "goal": "查看现有项目列表",
+        "confidence": 1.0,
+        "project_hint": None,
+        "needs_plan": False,
+        "needs_clarification": False,
+        "clarification_question": None,
+        "context_keywords": ["项目", "列表"],
+        "reason_summary": f"用户已明确要求查询现有项目，不涉及新建或执行：{prompt}",
+    }
+
+
 class TraceMixin:
     def _trace_init(self, *, thread_id: str, sessions: ProductSessionService) -> None:
         self._thread_id = thread_id
@@ -153,7 +254,16 @@ class IntakeExecutor(Executor, TraceMixin):
         if not prompt:
             raise ValueError("用户输入不能为空")
         summaries = await self._governance.recent_turn_summaries(self._thread_id, limit=8)
-        state = CollaborationState(origin_prompt=prompt, recent_turn_summaries=tuple(summaries))
+        project_candidates = tuple(
+            dict.fromkeys(
+                hint for value in summaries if (hint := _project_hint(value)) is not None
+            )
+        )
+        state = CollaborationState(
+            origin_prompt=prompt,
+            recent_turn_summaries=tuple(summaries),
+            project_candidates=project_candidates,
+        )
         await self._trace_content(
             executor_id=self.id,
             actor="user",
@@ -181,12 +291,21 @@ class CandidateContextExecutor(Executor, TraceMixin):
     ) -> None:
         keywords = _context_keywords(state.origin_prompt)
         scored: list[tuple[int, dict[str, Any]]] = []
+        pending = [value for value in state.recent_turn_summaries if _is_pending_clarification(value)]
         for summary in state.recent_turn_summaries:
+            if summary in pending:
+                continue
             searchable = json.dumps(summary, ensure_ascii=False).lower()
             score = sum(1 for keyword in keywords if keyword in searchable)
             if score > 0:
                 scored.append((score, summary))
-        selected = tuple(value for _, value in sorted(scored, key=lambda item: item[0], reverse=True)[:4])
+        selected_values = pending[:1]
+        selected_values.extend(
+            value
+            for _, value in sorted(scored, key=lambda item: item[0], reverse=True)
+            if value not in selected_values
+        )
+        selected = tuple(selected_values[:4])
         next_state = replace(state, recent_turn_summaries=selected)
         await self._trace_content(
             executor_id=self.id,
@@ -195,7 +314,164 @@ class CandidateContextExecutor(Executor, TraceMixin):
             public_input={"prompt": state.origin_prompt, "available_summaries": len(state.recent_turn_summaries)},
             public_output={
                 "selected": list(selected),
-                "selection_rule": "关键词命中后最多采用4条候选；最终采用仍由后续意图与HITL判断。",
+                "selection_rule": (
+                    "最近一条未回答澄清会优先带回；其余按关键词命中后最多采用4条候选。"
+                    "最终采用仍由后续意图与HITL判断。"
+                ),
+            },
+        )
+        await ctx.send_message(next_state)
+
+
+class HarnessDirectoryContextExecutor(Executor, TraceMixin):
+    """Stage A: query the authoritative lightweight resource directory."""
+
+    def __init__(
+        self,
+        *,
+        thread_id: str,
+        run_id: Callable[[], str],
+        sessions: ProductSessionService,
+        harness: HarnessService,
+    ) -> None:
+        super().__init__(id="harness_directory_context")
+        self._run_id = run_id
+        self._harness = harness
+        self._trace_init(thread_id=thread_id, sessions=sessions)
+
+    @handler(input=CollaborationState)
+    async def assemble(
+        self,
+        state: CollaborationState,
+        ctx: WorkflowContext[CollaborationState],
+    ) -> None:
+        items, projects = await self._harness.directory_context_items(
+            prompt=state.origin_prompt,
+            summaries=state.recent_turn_summaries,
+        )
+        package = await self._harness.create_context_package(
+            session_id=self._thread_id,
+            run_id=self._run_id(),
+            stage="directory",
+            items=items,
+            token_budget=1800,
+            status="candidate",
+        )
+        next_state = replace(
+            state,
+            project_matches=tuple(projects),
+            context_items=tuple(item for item in package["items"] if item["adopted"]),
+            directory_context_package_id=package["id"],
+        )
+        await self._trace_content(
+            executor_id=self.id,
+            actor="product_harness_query",
+            content_type="context_directory",
+            public_input={"prompt": state.origin_prompt, "summary_count": len(state.recent_turn_summaries)},
+            public_output={
+                "context_package_id": package["id"],
+                "project_candidates": projects,
+                "adopted_items": [item for item in package["items"] if item["adopted"]],
+                "excluded_items": [item for item in package["items"] if not item["adopted"]],
+            },
+        )
+        await ctx.send_message(next_state)
+
+
+class HarnessProjectResolverExecutor(Executor, TraceMixin):
+    """Resolve a model hint only against authoritative Project IDs."""
+
+    def __init__(self, *, thread_id: str, sessions: ProductSessionService) -> None:
+        super().__init__(id="harness_project_resolver")
+        self._trace_init(thread_id=thread_id, sessions=sessions)
+
+    @handler(input=CollaborationState)
+    async def resolve(
+        self,
+        state: CollaborationState,
+        ctx: WorkflowContext[CollaborationState],
+    ) -> None:
+        hint = str((state.intent or {}).get("project_hint") or "").strip().lower()
+        matches = [
+            value for value in state.project_matches
+            if hint and (hint in str(value.get("title") or "").lower()
+                         or str(value.get("title") or "").lower() in hint)
+        ]
+        selected = matches[0]["id"] if len(matches) == 1 else state.selected_project_id
+        next_state = replace(state, selected_project_id=selected)
+        await self._trace_content(
+            executor_id=self.id,
+            actor="product_harness_resolver",
+            content_type="project_resolution",
+            public_input={"project_hint": hint, "directory_candidates": list(state.project_matches)},
+            public_output={
+                "selected_project_id": selected,
+                "match_count": len(matches),
+                "requires_human_choice": state.scenario == "continue_project" and selected is None,
+            },
+        )
+        await ctx.send_message(next_state)
+
+
+class HarnessDetailContextExecutor(Executor, TraceMixin):
+    """Stage B: load the selected Project's bounded working set."""
+
+    def __init__(
+        self,
+        *,
+        thread_id: str,
+        run_id: Callable[[], str],
+        sessions: ProductSessionService,
+        harness: HarnessService,
+    ) -> None:
+        super().__init__(id="harness_detail_context")
+        self._run_id = run_id
+        self._harness = harness
+        self._trace_init(thread_id=thread_id, sessions=sessions)
+
+    @handler(input=CollaborationState)
+    async def assemble(
+        self,
+        state: CollaborationState,
+        ctx: WorkflowContext[CollaborationState],
+    ) -> None:
+        if state.selected_project_id is None:
+            await self._trace_content(
+                executor_id=self.id,
+                actor="product_harness_query",
+                content_type="context_detail",
+                public_input={"selected_project_id": None},
+                public_output={"status": "not_applicable", "reason": "本轮未绑定正式Project"},
+            )
+            await ctx.send_message(state)
+            return
+        items = await self._harness.detailed_context_items(state.selected_project_id)
+        package = await self._harness.create_context_package(
+            session_id=self._thread_id,
+            run_id=self._run_id(),
+            stage="detail",
+            items=items,
+            selected_project_id=state.selected_project_id,
+            token_budget=6000,
+            status="adopted",
+        )
+        adopted = tuple(item for item in package["items"] if item["adopted"])
+        next_state = replace(
+            state,
+            context_items=adopted,
+            detail_context_package_id=package["id"],
+        )
+        await self._trace_content(
+            executor_id=self.id,
+            actor="product_harness_query",
+            content_type="context_detail",
+            public_input={"selected_project_id": state.selected_project_id},
+            public_output={
+                "context_package_id": package["id"],
+                "estimated_tokens": package["estimated_tokens"],
+                "token_budget": package["token_budget"],
+                "adopted_items": list(adopted),
+                "excluded_items": [item for item in package["items"] if not item["adopted"]],
             },
         )
         await ctx.send_message(next_state)
@@ -274,16 +550,29 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
                     "title": self.spec.title,
                     "description": self.spec.description,
                     "content": content,
+                    "editable_fields": self.spec.editable_fields(state),
                 },
             )
         if not self.spec.applicable(state):
+            clarification_pending = self.spec.key == "intent_binding" and state.scenario == "clarify"
             await self._governance.record_not_applicable(
                 subject=subject,
                 decision_point_key=self.spec.key,
                 facts=facts,
-                reason_code="no_candidate_subject_this_turn",
+                reason_code=(
+                    "clarification_requires_new_user_input"
+                    if clarification_pending
+                    else "no_candidate_subject_this_turn"
+                ),
             )
-            await self._trace_decision(state, content, "not_applicable", "本轮没有需要决定的对象")
+            await self._trace_decision(
+                state,
+                content,
+                "not_applicable",
+                "需要先取得用户回答，当前意图候选不能绑定"
+                if clarification_pending
+                else "本轮没有需要决定的对象",
+            )
             await ctx.send_message(state)
             return
         scopes = [
@@ -314,7 +603,7 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
             await self._trace_decision(state, content, "denied", "HITL策略阻止继续")
             raise PermissionError(f"HITL策略阻止决策点: {self.spec.key}")
         if final_action == "auto_continue":
-            _, grant = await self._governance.record_automatic_decision(
+            record, grant = await self._governance.record_automatic_decision(
                 evaluation=evaluation,
                 subject=subject,
                 decision_code=self.spec.accept_action,
@@ -323,6 +612,11 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
             )
             if grant is not None:
                 await self._consume_grant(grant.id, subject.subject_hash)
+            if self.spec.key in {"work_state_commit", "memory_commit"}:
+                state = replace(
+                    state,
+                    harness_decision_record_ids=state.harness_decision_record_ids + (record.id,),
+                )
             await self._trace_decision(state, content, "auto_continue", "按有效策略自动通过")
             await ctx.send_message(state)
             return
@@ -357,12 +651,14 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
             "message": self.spec.description,
             "approval_id": request.id,
             "decision_request_id": request.id,
+            "decision_item_key": subject.id,
             "decision_point_key": self.spec.key,
             "title": self.spec.title,
             "reason_summary": request.reason_summary,
             "request_hash": request.request_hash,
             "row_version": request.row_version,
             "subject_hash": subject.subject_hash,
+            "subject_resource_id": subject.resource_id,
             "subject": content,
             "facts": facts,
             "policy": preview,
@@ -420,17 +716,21 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
         state_value = original_request.get("execution_context", {}).get("workflow_state")
         if not isinstance(state_value, dict):
             raise RuntimeError("产品决定请求缺少Workflow状态")
-        state_value = dict(state_value)
-        if isinstance(state_value.get("recent_turn_summaries"), list):
-            state_value["recent_turn_summaries"] = tuple(state_value["recent_turn_summaries"])
-        state = CollaborationState(**state_value)
+        state = _state_from_snapshot(state_value)
         action = str(decision.get("decision") or "")
-        resolved = await self._governance.resolve_single_human_request(
-            request_id=str(original_request["decision_request_id"]),
-            expected_request_hash=str(original_request["request_hash"]),
-            expected_row_version=int(original_request["row_version"]),
-            decision=action,
-        )
+        if decision.get("decision_recorded") is True:
+            [resolved] = await self._governance.resolved_human_request(
+                str(original_request["decision_request_id"])
+            )
+            if resolved["decision"] != action:
+                raise GovernanceConflict("Outbox决定与MAF Resume payload不一致")
+        else:
+            resolved = await self._governance.resolve_single_human_request(
+                request_id=str(original_request["decision_request_id"]),
+                expected_request_hash=str(original_request["request_hash"]),
+                expected_row_version=int(original_request["row_version"]),
+                decision=action,
+            )
         if action == "revise":
             changes = decision.get("changes")
             if not isinstance(changes, Mapping):
@@ -451,6 +751,13 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
         grant_id = resolved.get("authorization_grant_id")
         if grant_id:
             await self._consume_grant(str(grant_id), str(resolved["binding_hash"]))
+        if self.spec.key in {"work_state_commit", "memory_commit"} and resolved.get("decision_record_id"):
+            state = replace(
+                state,
+                harness_decision_record_ids=(
+                    state.harness_decision_record_ids + (str(resolved["decision_record_id"]),)
+                ),
+            )
         await self._trace_decision(state, self.spec.subject(state), "accepted", "用户接受当前版本")
         await ctx.send_message(state)
 
@@ -539,6 +846,7 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             "decision_request_id": request.id if request else None,
             "decision_request_hash": request.request_hash if request else None,
             "decision_request_row_version": request.row_version if request else None,
+            "decision_item_key": revision.subject_id if request else None,
         }
         execution_context = card.setdefault("execution_context", {})
         if isinstance(execution_context, dict):
@@ -658,14 +966,14 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
 
     @response_handler(request=dict, response=dict, workflow_output=str)
     async def resolve(self, original_request, decision, ctx) -> None:
+        # A restored MAF Checkpoint contains the exact review card, while the
+        # transport claim registry is intentionally process-local. Rehydrate
+        # it from the hash-verified card before applying the durable decision.
+        restored_draft = self._store.restore_review_card(original_request)
         state_value = original_request.get("execution_context", {}).get("workflow_state")
         if not isinstance(state_value, dict):
             raise RuntimeError("审批请求缺少Workflow状态快照")
-        summaries = state_value.get("recent_turn_summaries")
-        if isinstance(summaries, list):
-            state_value = dict(state_value)
-            state_value["recent_turn_summaries"] = tuple(summaries)
-        state = CollaborationState(**state_value)
+        state = _state_from_snapshot(state_value)
         governance_view = original_request.get("execution_context", {}).get("governance")
         if not isinstance(governance_view, dict):
             raise RuntimeError("审批请求缺少持久治理引用")
@@ -673,13 +981,19 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         request_hash = str(governance_view.get("decision_request_hash") or "")
         row_version = int(governance_view.get("decision_request_row_version") or 0)
         action = decision.get("decision")
+        pre_recorded: dict[str, Any] | None = None
+        if decision.get("decision_recorded") is True:
+            [pre_recorded] = await self._governance.resolved_human_request(request_id)
+            if pre_recorded["decision"] != action:
+                raise GovernanceConflict("Outbox决定与MAF Resume payload不一致")
         if action == "revise":
-            await self._governance.resolve_single_human_request(
-                request_id=request_id,
-                expected_request_hash=request_hash,
-                expected_row_version=row_version,
-                decision="revise",
-            )
+            if pre_recorded is None:
+                await self._governance.resolve_single_human_request(
+                    request_id=request_id,
+                    expected_request_hash=request_hash,
+                    expected_row_version=row_version,
+                    decision="revise",
+                )
             revised = self._store.successor(
                 str(original_request["draft_id"]),
                 str(decision["revision_draft_id"]),
@@ -687,19 +1001,20 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             await self._advance(revised, state, ctx)
             return
         if action == "abandon":
-            await self._governance.resolve_single_human_request(
-                request_id=request_id,
-                expected_request_hash=request_hash,
-                expected_row_version=row_version,
-                decision="abandon",
-            )
+            if pre_recorded is None:
+                await self._governance.resolve_single_human_request(
+                    request_id=request_id,
+                    expected_request_hash=request_hash,
+                    expected_row_version=row_version,
+                    decision="abandon",
+                )
             self._store.abandon(str(original_request["approval_id"]))
             await self._sessions.abandon_active_run(self._thread_id)
             await ctx.yield_output("本次主Workflow已放弃，当前模型请求没有发送。")
             return
         if action != "approve":
             raise ValueError(f"不支持的模型调用决定: {action}")
-        resolved = await self._governance.resolve_single_human_request(
+        resolved = pre_recorded or await self._governance.resolve_single_human_request(
             request_id=request_id,
             expected_request_hash=request_hash,
             expected_row_version=row_version,
@@ -721,7 +1036,7 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             idempotency_key=f"model-call:{revision.id}",
             claimed_by=f"api-pid-{os.getpid()}:{self.id}",
         )
-        draft = self._store.get(str(original_request["draft_id"]))
+        draft = restored_draft
         text = await self._dispatch(draft, revision, consumption)
         if not text:
             await ctx.yield_output("该授权已失效或已消费，没有重复发送模型请求。")
@@ -732,7 +1047,9 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         if self._result_kind == "intent":
             parsed = _json_object(text)
             allowed = {"simple_question", "continue_project", "new_task", "plan_request", "learning", "clarify"}
-            if parsed is None or parsed.get("scenario") not in allowed:
+            if _is_project_catalog_query(state.origin_prompt):
+                parsed = _project_catalog_intent(state.origin_prompt)
+            elif parsed is None or parsed.get("scenario") not in allowed:
                 parsed = {
                     "scenario": "clarify",
                     "goal": state.origin_prompt,
@@ -749,6 +1066,13 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
                 parsed["confidence"] = 0
                 parsed["scenario"] = "clarify"
                 parsed["needs_clarification"] = True
+            if parsed["scenario"] == "clarify":
+                parsed["needs_clarification"] = True
+                if not parsed.get("clarification_question"):
+                    parsed["clarification_question"] = "你希望我接下来具体推进哪件事？"
+            else:
+                parsed["needs_clarification"] = False
+                parsed["clarification_question"] = None
             next_state = replace(
                 state,
                 intent=parsed,
@@ -818,10 +1142,81 @@ class ScenarioRouterExecutor(Executor, TraceMixin):
             public_input=state.intent,
             public_output={
                 "scenario": state.scenario,
-                "branch": "clarification" if state.scenario == "clarify" else "planning" if _needs_plan(state) else "direct_response",
+                "branch": (
+                    "project_catalog"
+                    if _is_project_catalog_state(state)
+                    else "clarification"
+                    if state.scenario == "clarify"
+                    else "planning"
+                    if _needs_plan(state)
+                    else "direct_response"
+                ),
             },
         )
         await ctx.send_message(state)
+
+
+class ProjectCatalogExecutor(Executor, TraceMixin):
+    """Answer the current product-catalog query from product facts, never model guesses."""
+
+    def __init__(
+        self,
+        *,
+        thread_id: str,
+        sessions: ProductSessionService,
+        harness: HarnessService,
+    ) -> None:
+        super().__init__(id="project_catalog_query")
+        self._harness = harness
+        self._trace_init(thread_id=thread_id, sessions=sessions)
+
+    @handler(input=CollaborationState)
+    async def answer(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
+        projects = await self._harness.list_projects(
+            statuses=("proposed", "active", "paused", "completed"),
+        )
+        candidates = list(state.project_candidates)
+        if projects:
+            rendered = "\n".join(
+                f"- {value['title']}（{value['kind']} · {value['status']}）：{value['goal']}"
+                for value in projects
+            )
+            response = f"当前共有 {len(projects)} 个正式 Project：\n{rendered}"
+        elif candidates:
+            rendered = "、".join(candidates)
+            response = (
+                "当前还没有已创建的正式 Project。"
+                f"最近对话中识别到 {len(candidates)} 个 Project 候选：{rendered}。"
+                "这些只是对话摘要中的候选，还没有成为正式 Project。"
+            )
+        else:
+            response = (
+                "当前还没有已创建的正式 Project。"
+                "最近对话中也没有识别到可供确认的 Project 候选。"
+            )
+        summary = {
+            "topic": "查看现有项目列表",
+            "confirmed_facts": [f"当前正式Project数量为{len(projects)}"],
+            "decisions": [],
+            "open_questions": [],
+            "project_hint": None,
+            "work_state_candidates": [],
+            "memory_candidates": [],
+            "query_kind": "project_catalog",
+        }
+        next_state = replace(state, response=response, turn_summary=summary)
+        await self._trace_content(
+            executor_id=self.id,
+            actor="product_project_catalog",
+            content_type="project_catalog_query",
+            public_input={"query": state.origin_prompt},
+            public_output={
+                "formal_projects": projects,
+                "conversation_project_candidates": candidates,
+                "assistant_response": response,
+            },
+        )
+        await ctx.send_message(next_state)
 
 
 class ExecutionDraftCompilerExecutor(Executor, TraceMixin):
@@ -843,12 +1238,14 @@ class ExecutionDraftCompilerExecutor(Executor, TraceMixin):
         intent = state.intent or {}
         context_manifest = [
             {
-                "summary_id": value.get("id"),
-                "summary_hash": value.get("summary_hash"),
-                "topic": value.get("topic"),
-                "adoption_reason": "与本轮关键词匹配，作为候选背景提供给意图Agent。",
+                "source_kind": value.get("source_kind"),
+                "source_id": value.get("source_id"),
+                "source_revision": value.get("source_revision"),
+                "title": value.get("title"),
+                "adoption_reason": value.get("reason"),
+                "token_estimate": value.get("token_estimate"),
             }
-            for value in state.recent_turn_summaries
+            for value in state.context_items
         ]
         context_hash = _hash(context_manifest)
         brief = (
@@ -861,12 +1258,21 @@ class ExecutionDraftCompilerExecutor(Executor, TraceMixin):
         payload = {
             "identity_lineage": {"session_id": self._thread_id, "run_id": self._run_id(), "workflow_id": WORKFLOW_ID, "workflow_version": WORKFLOW_VERSION},
             "intent_goal": intent,
-            "project_work_binding": {"project_hint": intent.get("project_hint"), "status": "candidate" if intent.get("project_hint") else "not_applicable"},
+            "project_work_binding": {
+                "project_id": state.selected_project_id,
+                "project_hint": intent.get("project_hint"),
+                "status": "accepted" if state.selected_project_id else "not_applicable",
+            },
             "background": context_manifest,
             "accepted_decisions": [],
             "scope": {"included": ["answer current user request"], "excluded": ["unapproved long-term state mutation"]},
             "plan": {"text": state.plan, "mode": "explicit" if state.plan else "direct"},
-            "context_binding": {"manifest": context_manifest, "context_hash": context_hash, "excluded": "raw full history by default"},
+            "context_binding": {
+                "manifest": context_manifest,
+                "context_hash": context_hash,
+                "context_package_id": state.detail_context_package_id or state.directory_context_package_id,
+                "excluded": "raw full history by default",
+            },
             "resource_manifest": [],
             "runtime_target": {"runtime": "maf-workflow", "isolation": "in_process", "working_directory": None},
             "capability_grant": {"tools": [], "side_effects": "none", "network": "model-provider-only"},
@@ -994,9 +1400,10 @@ class ClarificationExecutor(Executor, TraceMixin):
     async def clarify(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
         intent = state.intent or {}
         question = str(intent.get("clarification_question") or "你希望我接下来具体推进哪件事？")
+        response = f"{question}\n\n请直接在下方输入框回答。"
         next_state = replace(
             state,
-            response=question,
+            response=response,
             turn_summary={
                 "topic": intent.get("goal") or state.origin_prompt[:80],
                 "confirmed_facts": [],
@@ -1005,6 +1412,11 @@ class ClarificationExecutor(Executor, TraceMixin):
                 "project_hint": intent.get("project_hint"),
                 "work_state_candidates": [],
                 "memory_candidates": [],
+                "awaiting_user_answer": True,
+                "clarification_context": {
+                    "original_user_request": state.origin_prompt,
+                    "question": question,
+                },
             },
         )
         await self._trace_content(
@@ -1012,7 +1424,70 @@ class ClarificationExecutor(Executor, TraceMixin):
             actor="deterministic_clarification",
             content_type="clarification",
             public_input=intent,
-            public_output=question,
+            public_output={
+                "question": question,
+                "answer_surface": "next_chat_input",
+                "note": "澄清是新用户输入，不使用接受/修改审批动作。",
+            },
+        )
+        await ctx.send_message(next_state)
+
+
+class HarnessCandidateCommitExecutor(Executor, TraceMixin):
+    """Commit only Work/Memory candidates that survived their decision points."""
+
+    def __init__(
+        self,
+        *,
+        thread_id: str,
+        run_id: Callable[[], str],
+        sessions: ProductSessionService,
+        harness: HarnessService,
+    ) -> None:
+        super().__init__(id="harness_candidate_commit")
+        self._run_id = run_id
+        self._harness = harness
+        self._trace_init(thread_id=thread_id, sessions=sessions)
+
+    @handler(input=CollaborationState)
+    async def commit(
+        self,
+        state: CollaborationState,
+        ctx: WorkflowContext[CollaborationState],
+    ) -> None:
+        summary = state.turn_summary or {}
+        work_candidates = list(summary.get("work_state_candidates") or [])
+        memory_candidates = list(summary.get("memory_candidates") or [])
+        if not work_candidates and not memory_candidates:
+            await self._trace_content(
+                executor_id=self.id,
+                actor="product_harness_repository",
+                content_type="harness_candidate_commit",
+                public_input={"work_count": 0, "memory_count": 0},
+                public_output={"status": "not_applicable"},
+            )
+            await ctx.send_message(state)
+            return
+        result = await self._harness.commit_turn_candidates(
+            command_id=f"turn-candidates:{self._run_id()}",
+            session_id=self._thread_id,
+            run_id=self._run_id(),
+            project_id=state.selected_project_id,
+            work_candidates=work_candidates,
+            memory_candidates=memory_candidates,
+            decision_record_ids=state.harness_decision_record_ids,
+        )
+        next_state = replace(state, harness_commit_results=result)
+        await self._trace_content(
+            executor_id=self.id,
+            actor="product_harness_repository",
+            content_type="harness_candidate_commit",
+            public_input={
+                "work_candidates": work_candidates,
+                "memory_candidates": memory_candidates,
+                "decision_record_ids": list(state.harness_decision_record_ids),
+            },
+            public_output=result,
         )
         await ctx.send_message(next_state)
 
@@ -1103,6 +1578,10 @@ def _needs_plan(state: CollaborationState) -> bool:
     return bool((state.intent or {}).get("needs_plan"))
 
 
+def _is_project_catalog_state(state: CollaborationState) -> bool:
+    return (state.intent or {}).get("query_kind") == "project_catalog"
+
+
 def _revise_context(
     state: CollaborationState,
     changes: Mapping[str, Any],
@@ -1144,11 +1623,17 @@ def _revise_project(
     changes: Mapping[str, Any],
 ) -> CollaborationState:
     current = dict(state.intent or {})
-    project_hint = changes.get("project_hint")
-    if project_hint is not None and not isinstance(project_hint, str):
-        raise ValueError("Project修改必须是文字或不关联")
-    current["project_hint"] = project_hint.strip() if isinstance(project_hint, str) else None
-    return replace(state, intent=current)
+    project_id = changes.get("project_id")
+    if project_id in {None, ""}:
+        current["project_hint"] = None
+        return replace(state, intent=current, selected_project_id=None)
+    if not isinstance(project_id, str):
+        raise ValueError("Project修改必须选择正式Project ID或不关联")
+    match = next((value for value in state.project_matches if value.get("id") == project_id), None)
+    if match is None:
+        raise ValueError("选择的Project不在本轮权威候选目录中")
+    current["project_hint"] = match.get("title")
+    return replace(state, intent=current, selected_project_id=project_id)
 
 
 def _revise_plan(
@@ -1171,6 +1656,16 @@ def _revise_result(
     if not isinstance(value, str) or not value.strip():
         raise ValueError("Result修改后不能为空")
     return replace(state, response=value.strip())
+
+
+def _revise_execution_draft(
+    state: CollaborationState,
+    changes: Mapping[str, Any],
+) -> CollaborationState:
+    revision_id = changes.get("execution_draft_revision_id")
+    if not isinstance(revision_id, str) or not revision_id:
+        raise ValueError("ExecutionDraft修改必须绑定新的revision")
+    return replace(state, execution_draft_revision_id=revision_id)
 
 
 def _revise_summary_candidates(
@@ -1197,8 +1692,12 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
             title="确认本轮采用的上下文",
             description="这些主题摘要将进入后续意图识别；完整历史仍只作为证据保留。",
             accept_action="accept",
-            applicable=lambda state: bool(state.recent_turn_summaries),
-            subject=lambda state: {"selected_summaries": list(state.recent_turn_summaries)},
+            applicable=lambda state: bool(state.recent_turn_summaries or state.project_matches),
+            subject=lambda state: {
+                "selected_summaries": list(state.recent_turn_summaries),
+                "project_directory_matches": list(state.project_matches),
+                "context_package_id": state.directory_context_package_id,
+            },
             facts=lambda state: {
                 "context": {
                     "requires_review": False,
@@ -1219,7 +1718,7 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
                     {"value": str(value.get("id")), "label": str(value.get("topic") or "未命名主题")}
                     for value in state.recent_turn_summaries
                 ],
-            }],
+            }] if state.recent_turn_summaries else [],
             revise=_revise_context,
             allow_skip=True,
         ),
@@ -1229,7 +1728,7 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
             title="确认我对本轮意图的理解",
             description="确认目标和场景，避免把简单询问误建成任务或关联到错误Project。",
             accept_action="accept",
-            applicable=lambda state: state.intent is not None,
+            applicable=lambda state: state.intent is not None and state.scenario != "clarify",
             subject=lambda state: dict(state.intent or {}),
             facts=lambda state: {
                 "intent": {
@@ -1266,18 +1765,30 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
             description="只有明确关联后，Project状态才会进入后续上下文候选。",
             accept_action="accept",
             applicable=lambda state: bool((state.intent or {}).get("project_hint")) or state.scenario == "continue_project",
-            subject=lambda state: {"project_hint": (state.intent or {}).get("project_hint"), "scenario": state.scenario},
+            subject=lambda state: {
+                "project_hint": (state.intent or {}).get("project_hint"),
+                "selected_project_id": state.selected_project_id,
+                "formal_project_candidates": list(state.project_matches),
+                "scenario": state.scenario,
+            },
             facts=lambda state: {
                 "project": {
-                    "candidate_count": 1 if (state.intent or {}).get("project_hint") else 2,
+                    "candidate_count": len(state.project_matches),
                     "cross_sensitive_scope": False,
                 }
             },
             editable_fields=lambda state: [{
-                "key": "project_hint",
+                "key": "project_id",
                 "label": "Project / Work",
-                "type": "text_optional",
-                "value": (state.intent or {}).get("project_hint") or "",
+                "type": "select",
+                "value": state.selected_project_id or "",
+                "options": [
+                    {"value": "", "label": "本轮不关联正式Project"},
+                    *[
+                        {"value": str(value["id"]), "label": f"{value['title']} · {value['status']}"}
+                        for value in state.project_matches
+                    ],
+                ],
             }],
             revise=_revise_project,
             allow_skip=True,
@@ -1307,8 +1818,13 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
                 "scenario": state.scenario,
             },
             facts=lambda state: {"execution": {"risk_level": 0, "has_side_effects": False, "goal_incomplete": False}},
-            editable_fields=lambda state: [],
-            revise=lambda state, changes: state,
+            editable_fields=lambda state: [{
+                "key": "execution_draft_revision_id",
+                "label": "ExecutionDraft完整工作台",
+                "type": "execution_draft",
+                "value": state.execution_draft_revision_id,
+            }],
+            revise=_revise_execution_draft,
             grant_kind="start_run",
         ),
         "result_commit": ProductDecisionSpec(
@@ -1360,10 +1876,15 @@ def _intent_task(state: CollaborationState) -> str:
         {
             "current_user_request": state.origin_prompt,
             "candidate_prior_turn_summaries": list(state.recent_turn_summaries),
+            "formal_project_directory_matches": list(state.project_matches),
+            "context_package_id": state.directory_context_package_id,
             "rules": [
                 "候选摘要不是已采用事实；只有与当前请求直接相关时才引用。",
+                "若候选摘要标记awaiting_user_answer=true，当前输入可能是对该开放问题的回答，必须结合两者判断。",
                 "若项目匹配不唯一或用户目标不完整，scenario必须为clarify。",
+                "‘我有哪些项目/查看项目列表’属于明确产品查询，不得改问用户是否新建；应标记query_kind=project_catalog。",
                 "简单问答不创建Project或Task。",
+                "Project目录来自Product Harness权威查询；不能把摘要候选冒充正式Project。",
                 "只输出规定JSON，不要解释。",
             ],
         },
@@ -1377,6 +1898,8 @@ def _plan_task(state: CollaborationState) -> str:
             "user_request": state.origin_prompt,
             "accepted_intent": state.intent,
             "selected_context_summaries": list(state.recent_turn_summaries),
+            "selected_project_id": state.selected_project_id,
+            "accepted_context_items": list(state.context_items),
             "request": "形成步骤、依赖、HITL检查点、验证方式和停止条件；不要执行工具。",
         },
         ensure_ascii=False,
@@ -1389,6 +1912,8 @@ def _response_task(state: CollaborationState) -> str:
             "user_request": state.origin_prompt,
             "accepted_intent": state.intent,
             "selected_context_summaries": list(state.recent_turn_summaries),
+            "selected_project_id": state.selected_project_id,
+            "accepted_context_items": list(state.context_items),
             "plan": state.plan,
             "execution_contract": {
                 "draft_revision_id": state.execution_draft_revision_id,
@@ -1428,10 +1953,19 @@ def create_continuous_collaboration_workflow(
     transport: ProviderTransport,
     sessions: ProductSessionService,
     governance: ExecutionGovernanceService,
+    harness: HarnessService | None = None,
+    checkpoint_storage: CheckpointStorage | None = None,
 ):
+    harness = harness or HarnessService(sessions.database)
     decision_specs = _decision_specs()
     intake = IntakeExecutor(thread_id=thread_id, sessions=sessions, governance=governance)
     candidates = CandidateContextExecutor(thread_id=thread_id, sessions=sessions)
+    directory_context = HarnessDirectoryContextExecutor(
+        thread_id=thread_id,
+        run_id=run_id,
+        sessions=sessions,
+        harness=harness,
+    )
     context_decision = ProductDecisionExecutor(
         node_id="context_adoption",
         spec=decision_specs["context_adoption"],
@@ -1453,6 +1987,7 @@ def create_continuous_collaboration_workflow(
         sessions=sessions,
         governance=governance,
     )
+    project_resolver = HarnessProjectResolverExecutor(thread_id=thread_id, sessions=sessions)
     project_decision = ProductDecisionExecutor(
         node_id="project_work_binding",
         spec=decision_specs["project_work_binding"],
@@ -1462,6 +1997,17 @@ def create_continuous_collaboration_workflow(
         governance=governance,
     )
     router = ScenarioRouterExecutor(thread_id=thread_id, sessions=sessions)
+    detail_context = HarnessDetailContextExecutor(
+        thread_id=thread_id,
+        run_id=run_id,
+        sessions=sessions,
+        harness=harness,
+    )
+    project_catalog = ProjectCatalogExecutor(
+        thread_id=thread_id,
+        sessions=sessions,
+        harness=harness,
+    )
     planner = GovernedSemanticAgentExecutor(
         profile=profiles["task_planner"], node_id="planning_agent", call_ordinal=2,
         thread_id=thread_id, run_id=run_id, store=store, transport=transport,
@@ -1521,6 +2067,12 @@ def create_continuous_collaboration_workflow(
         sessions=sessions,
         governance=governance,
     )
+    harness_commit = HarnessCandidateCommitExecutor(
+        thread_id=thread_id,
+        run_id=run_id,
+        sessions=sessions,
+        harness=harness,
+    )
     summarizer = GovernedSemanticAgentExecutor(
         profile=profiles["turn_summarizer"], node_id="turn_summary_agent", call_ordinal=4,
         thread_id=thread_id, run_id=run_id, store=store, transport=transport,
@@ -1540,16 +2092,21 @@ def create_continuous_collaboration_workflow(
             description="Chat主Workflow：选择性上下文、意图、场景路由、计划、响应与回合主题提取。",
             start_executor=intake,
             output_from=[finalizer],
+            checkpoint_storage=checkpoint_storage,
         )
         .add_edge(intake, candidates)
-        .add_edge(candidates, context_decision)
+        .add_edge(candidates, directory_context)
+        .add_edge(directory_context, context_decision)
         .add_edge(context_decision, intent)
         .add_edge(intent, intent_decision)
-        .add_edge(intent_decision, project_decision)
-        .add_edge(project_decision, router)
+        .add_edge(intent_decision, project_resolver)
+        .add_edge(project_resolver, project_decision)
+        .add_edge(project_decision, detail_context)
+        .add_edge(detail_context, router)
         .add_switch_case_edge_group(
             router,
             [
+                Case(condition=_is_project_catalog_state, target=project_catalog),
                 Case(condition=lambda value: value.scenario == "clarify", target=clarification),
                 Case(condition=_needs_plan, target=planner),
                 Default(target=compiler),
@@ -1562,9 +2119,11 @@ def create_continuous_collaboration_workflow(
         .add_edge(run_spec_compiler, responder)
         .add_edge(responder, summarizer)
         .add_edge(summarizer, result_decision)
+        .add_edge(project_catalog, result_decision)
         .add_edge(result_decision, work_decision)
         .add_edge(work_decision, memory_decision)
-        .add_edge(memory_decision, summary_persist)
+        .add_edge(memory_decision, harness_commit)
+        .add_edge(harness_commit, summary_persist)
         .add_edge(clarification, summary_persist)
         .add_edge(summary_persist, finalizer)
         .build()

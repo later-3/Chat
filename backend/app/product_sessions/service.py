@@ -982,6 +982,15 @@ class ProductSessionService:
         return _run_view(run)
 
     async def reconcile_orphaned_runs(self) -> int:
+        # Import locally to keep the Product Session module independent from
+        # execution-governance construction while still recognizing a durable
+        # MAF safe point during process startup.
+        from ..governance.models import (
+            MafWorkflowCheckpointRecord,
+            RuntimeInterruptLinkRecord,
+        )
+
+        interrupted = 0
         async with self.database.sessions.begin() as transaction:
             runs = list(
                 (
@@ -991,6 +1000,31 @@ class ProductSessionService:
                 ).all()
             )
             for run in runs:
+                if run.status == "waiting_approval":
+                    link = await transaction.scalar(
+                        select(RuntimeInterruptLinkRecord).where(
+                            RuntimeInterruptLinkRecord.product_run_id == run.id,
+                            RuntimeInterruptLinkRecord.status.in_(
+                                {"pending", "decision_recorded", "resuming"}
+                            ),
+                        )
+                    )
+                    checkpoint = (
+                        await transaction.get(
+                            MafWorkflowCheckpointRecord, link.maf_checkpoint_id
+                        )
+                        if link is not None
+                        else None
+                    )
+                    if (
+                        checkpoint is not None
+                        and checkpoint.product_run_id == run.id
+                        and checkpoint.status in {"linked", "resuming"}
+                    ):
+                        # A waiting approval is deliberately process-independent.
+                        # It remains the active Product Run and is restored only
+                        # after a version-bound user decision arrives.
+                        continue
                 run.status = "interrupted"
                 run.failure_code = "process_restarted"
                 run.failure_message = "后端进程重启，无法证明此前活动Run已经安全完成。"
@@ -1011,7 +1045,8 @@ class ProductSessionService:
                     session.active_run_id = None
                     session.updated_at = utc_now()
                 await self._trace(transaction, run, "run.interrupted", {"reason": "process_restarted"})
-        return len(runs)
+                interrupted += 1
+        return interrupted
 
     async def _transition_active(
         self,

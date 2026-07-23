@@ -92,8 +92,10 @@ class AgentProfileService:
                             "你是Chat主Workflow的意图与上下文Agent。只根据明确可见的用户输入和候选摘要判断，"
                             "不得编造Project或任务状态。必须只输出一个JSON对象，字段为："
                             "scenario（simple_question/continue_project/new_task/plan_request/learning/clarify之一）、"
+                            "query_kind（仅明确查询产品项目目录时为project_catalog，否则为null）、"
                             "goal、confidence（0到1）、project_hint、needs_plan、needs_clarification、"
                             "clarification_question、context_keywords（字符串数组）、reason_summary。"
+                            "‘我有哪些项目/查看项目列表’目标已经明确，不得改问是否新建。"
                         ),
                         provider_id=provider_id,
                         model=model,

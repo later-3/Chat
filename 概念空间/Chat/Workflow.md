@@ -6,7 +6,7 @@
 |---|---|
 | 目的 | 统一项目Workstream、可执行Workflow定义、用户选择、实际运行、节点和运行视图。 |
 | 概念状态 | 有效；用户已批准“发送前选择Workflow，发送后展示实际Run”。 |
-| 实现状态 | 局部实现并验证：聊天发送前只有“持续协作主 Workflow”可选；其20个真实MAF节点、异构分支、AG-UI节点投影和治理内容查看已存在，演示/工具Workflow仅在配置中心运行；持久Checkpoint/HITL恢复未完成。 |
+| 实现状态 | 局部实现并验证：持续协作主Workflow的25个MAF节点、异构分支、AG-UI投影、Product Harness接合、治理内容查看和无外部Tool副作用审批安全点的持久Checkpoint/跨进程恢复已存在；其他Definition与子级HITL尚未获得同等保证。 |
 | 事实所有者 | 产品选择规则见[项目经验反例013](../../PROJECT_LESSONS.md#16-反例-013把workflow选择prompt发送和运行展示混成一个动作)，实现见[项目状态](../../PROJECT_STATE.md)。 |
 | 维护责任 | Workflow目录、Run管理、MAF Runtime和前端Workflow Run View共同维护。 |
 
@@ -79,7 +79,9 @@
 
 ## 当前状态与未知
 
-当前发送区只选择“持续协作主 Workflow v1.0.0”；它以20个真实MAF节点覆盖选择性主题摘要、意图/场景、可选规划、ExecutionDraft授权、RunSpec编译、响应、回合沉淀和产品提交。嵌套质量检查、双Agent、三方成语接龙和pi Tool仍是配置中心中的独立Definition，不会与主Workflow隐式叠加。已验证8节点两层嵌套、5节点成语接龙和20节点主链的实时投影与刷新终态；持久Definition版本仓库、活动Run重连、跨进程Checkpoint和子级HITL仍需后续交付。
+当前发送区只选择“持续协作主 Workflow v1.2.0”；它以25个真实MAF节点覆盖选择性主题摘要、Product Harness阶段A目录、意图/场景、正式Project解析、阶段B工作集、确定性Project目录查询、可选规划、ExecutionDraft授权、RunSpec编译、响应、回合沉淀、Work/Memory候选提交和产品终态。真正的澄清问题会先作为Assistant Message提交，下一条User Message通过未解决问题摘要重新进入Intent判断，不再伪装成意图审批。嵌套质量检查、双Agent、三方成语接龙和pi Tool仍是配置中心中的独立Definition，不会与主Workflow隐式叠加。
+
+主Workflow现在把MAF Checkpoint绑定到Product Run/Attempt、Definition/version、图签名和Pending Request；决定可以经Lease Outbox由新的OS进程恢复到下一审批安全点，前置节点不重跑。这个保证只覆盖已接合的主Workflow和无外部Tool副作用阶段；持久Definition版本仓库、活动流游标重连、其他Definition、嵌套子级HITL和Tool副作用恢复仍需后续交付。
 
 ## 来源、维护与验证
 

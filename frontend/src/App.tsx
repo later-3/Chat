@@ -3,6 +3,7 @@ import {
   Archive,
   ArrowUp,
   Bot,
+  Boxes,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -45,6 +46,9 @@ import { WorkflowRunView } from "./workflow-run-view";
 import { ToolPage } from "./tool-page";
 import { HitlPage } from "./hitl-page";
 import { ProductDecisionReview } from "./product-decision-review";
+import { HarnessWorkbench } from "./harness-workbench";
+import { listDurableDecisionRequests } from "./hitl-api";
+import type { WorkbenchView } from "./workbench-nav";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8030";
 
@@ -124,6 +128,8 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth < 1180);
   const [workbenchOpen, setWorkbenchOpen] = useState(true);
+  const [workbenchView, setWorkbenchView] = useState<WorkbenchView>("workflow");
+  const [pendingDecisionCount, setPendingDecisionCount] = useState(0);
   const [configurationOpen, setConfigurationOpen] = useState(false);
   const [configurationTab, setConfigurationTab] = useState<ConfigurationTab>("session");
   const [settingsTitle, setSettingsTitle] = useState("");
@@ -275,6 +281,27 @@ function App() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, status]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeSession?.id) {
+      setPendingDecisionCount(0);
+      return undefined;
+    }
+    const load = () => {
+      void listDurableDecisionRequests(activeSession.id)
+        .then((values) => { if (!cancelled) setPendingDecisionCount(values.length); })
+        .catch(() => { if (!cancelled) setPendingDecisionCount(0); });
+    };
+    load();
+    const timer = window.setInterval(load, 1800);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [activeSession?.id]);
+
+  const openWorkbench = (view: WorkbenchView) => {
+    setWorkbenchView(view);
+    setWorkbenchOpen(true);
+  };
+
   const createNewConversation = async () => {
     if (status !== "idle" || workflowRunning) return;
     setDraft("");
@@ -364,7 +391,7 @@ function App() {
     setRetrySource(null);
     setLastSubmittedPrompt(text);
     setLastSubmittedWorkflowId(selectedWorkflow.id);
-    setWorkbenchOpen(true);
+    openWorkbench("workflow");
     void send(text, control, {
       endpointUrl: workflowEndpointUrl(selectedWorkflow.endpoint),
       workflowId: selectedWorkflow.id,
@@ -425,7 +452,7 @@ function App() {
           <span className="brand-mark"><Bot size={19} /></span>
           <div><p className="brand-name">Chat</p><p className="brand-subtitle">AI 协作产品</p></div>
         </div>
-        <button className="topbar-workflow" onClick={() => setWorkbenchOpen(true)} type="button">
+        <button className="topbar-workflow" onClick={() => openWorkbench("workflow")} type="button">
           <WorkflowIcon size={15} />
           <span><small>本轮 Workflow</small><strong>{selectedWorkflow.name}</strong></span>
           <span>v{selectedWorkflow.version}</span>
@@ -434,6 +461,7 @@ function App() {
           <button className="icon-button labeled-on-wide" disabled={interactionBusy} onClick={() => void createNewConversation()} type="button">
             <MessageSquarePlus size={17} /><span>新对话</span>
           </button>
+          <button className="icon-button labeled-on-wide" onClick={() => openWorkbench("projects")} type="button"><Boxes size={18} /><span>资源</span></button>
           <button className="icon-button labeled-on-wide" onClick={() => openConfiguration()} type="button"><Settings2 size={18} /><span>配置</span></button>
         </div>
       </header>
@@ -478,7 +506,7 @@ function App() {
               <div><strong>{activeSession?.title ?? "正在加载会话"}</strong><span>{activeSession ? `会话版本 ${activeSession.revision} · ${activeSession.channel.toUpperCase()}` : "Product Store"}</span></div>
               <div className="conversation-header-actions">
                 {latestRun && <span className={`run-badge run-badge--${latestRun.status}`}>{runLabel(latestRun.status)}</span>}
-                {!workbenchOpen && <button aria-label="打开 Workflow Run 工作台" onClick={() => setWorkbenchOpen(true)} type="button"><PanelRightOpen size={16} />工作台</button>}
+                {!workbenchOpen && <button aria-label="打开 Workflow Run 工作台" onClick={() => openWorkbench("workflow")} type="button"><PanelRightOpen size={16} />工作台</button>}
               </div>
             </div>
             <section className="conversation" aria-label="对话消息">
@@ -565,17 +593,28 @@ function App() {
           </main>
 
           {workbenchOpen && (
-            <WorkflowRunView
-              assistantOutput={latestAssistantOutput ? getMessageText(latestAssistantOutput) : null}
-              latestRun={latestRun}
-              onClose={() => setWorkbenchOpen(false)}
-              pendingReview={pendingReview}
-              prompt={modelCallReview?.origin_prompt ?? lastSubmittedPrompt ?? latestRun?.input_text ?? null}
-              runStatus={status}
-              workflow={status === "idle"
-                ? selectedWorkflow
-                : selectableWorkflows.find((value) => value.id === lastSubmittedWorkflowId) ?? selectedWorkflow}
-            />
+            workbenchView === "workflow" ? (
+              <WorkflowRunView
+                assistantOutput={latestAssistantOutput ? getMessageText(latestAssistantOutput) : null}
+                latestRun={latestRun}
+                onClose={() => setWorkbenchOpen(false)}
+                onViewChange={openWorkbench}
+                pendingDecisionCount={pendingDecisionCount}
+                pendingReview={pendingReview}
+                prompt={modelCallReview?.origin_prompt ?? lastSubmittedPrompt ?? latestRun?.input_text ?? null}
+                runStatus={status}
+                workflow={status === "idle"
+                  ? selectedWorkflow
+                  : selectableWorkflows.find((value) => value.id === lastSubmittedWorkflowId) ?? selectedWorkflow}
+              />
+            ) : activeSession ? (
+              <HarnessWorkbench
+                onClose={() => setWorkbenchOpen(false)}
+                onViewChange={openWorkbench}
+                sessionId={activeSession.id}
+                view={workbenchView}
+              />
+            ) : null
           )}
         </div>
       </div>

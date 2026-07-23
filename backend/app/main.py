@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Any
 
 from agent_framework.ag_ui import add_agent_framework_fastapi_endpoint
+from ag_ui.core import RunErrorEvent
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,7 +22,16 @@ from .agent_profiles import (
 )
 from .agents import create_agent
 from .config import Settings
-from .governance import ExecutionGovernanceService, GovernanceConflict, GovernanceValidationError
+from .governance import (
+    ExecutionGovernanceService,
+    GovernanceConflict,
+    GovernanceOutboxWorker,
+    GovernanceValidationError,
+)
+from .governance.outbox import OutboxDispatchError
+from .harness import HarnessService
+from .harness.api import create_harness_router
+from .harness.outbox import ProductOutboxRouter
 from .model_call_review import (
     ExactProviderTransport,
     InMemoryModelCallReviewStore,
@@ -50,6 +63,7 @@ from .workflows import (
     GOVERNED_PI_AGENT_WORKFLOW,
     NESTED_QUALITY_WORKFLOW,
     ProductAwareWorkflow,
+    ProductWorkflowCheckpointStorage,
     create_continuous_collaboration_workflow,
     create_governed_agent_handoff_workflow,
     create_governed_idiom_chain_workflow,
@@ -57,6 +71,10 @@ from .workflows import (
     create_nested_quality_workflow,
     workflow_catalog_view,
 )
+from .workflows.resume_worker import RuntimeResumeOutboxHandler
+
+
+logger = logging.getLogger(__name__)
 
 
 class ReviseModelCallDraftRequest(BaseModel):
@@ -156,6 +174,17 @@ class ResolveHumanDecisionRequest(BaseModel):
     expected_request_hash: str
     expected_row_version: int
     item_decisions: list[HumanDecisionItemRequest]
+    response_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReviseExecutionDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision_id: str
+    expected_draft_hash: str
+    expected_row_version: int
+    execution_brief: str
+    payload: dict[str, Any]
 
 
 def create_app(
@@ -165,10 +194,22 @@ def create_app(
     model_call_transport: ProviderTransport | None = None,
     product_session_service: ProductSessionService | None = None,
     pi_runtime_manager: PiRuntimeManager | None = None,
+    start_outbox_worker: bool = True,
+    outbox_worker_id: str | None = None,
 ) -> FastAPI:
-    """Create an isolated app instance suitable for production or contract tests."""
+    """Create an isolated application composition root.
+
+    ``start_outbox_worker`` is enabled for the single-process local profile.
+    Production may disable it and run :mod:`backend.app.outbox_worker` as an
+    independent process against the same Product Store.
+    """
 
     resolved = settings or Settings.from_file()
+    # SQLite in-memory mode uses one process-local connection and cannot
+    # provide durable or cross-process Outbox semantics. Keeping the polling
+    # loop off also prevents a test-only StaticPool transaction from racing
+    # Product finalization on that same connection.
+    outbox_loop_enabled = start_outbox_worker and ":memory:" not in resolved.database_url
     model_catalog = resolved.model_catalog()
     product_sessions = product_session_service or ProductSessionService(
         ProductDatabase(resolved.database_url)
@@ -181,6 +222,8 @@ def create_app(
         resolved.pi_runtime,
     )
     governance = ExecutionGovernanceService(product_sessions.database)
+    harness = HarnessService(product_sessions.database)
+    governance_outbox_worker: GovernanceOutboxWorker | None = None
     pi_runtime = pi_runtime_manager or (
         PiRuntimeManager(
             runtime=resolved.pi_runtime,
@@ -195,11 +238,33 @@ def create_app(
     async def lifespan(_: FastAPI):
         await product_sessions.initialize()
         await governance.initialize()
+        await harness.initialize()
         await agent_profiles.initialize()
         await tool_configurations.initialize()
+        worker_task: asyncio.Task[None] | None = None
+        if outbox_loop_enabled and governance_outbox_worker is not None:
+            async def outbox_loop() -> None:
+                while True:
+                    try:
+                        processed = await governance_outbox_worker.run_once()
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        logger.exception("governance_outbox_loop_failed")
+                        processed = False
+                    if not processed:
+                        await asyncio.sleep(0.2)
+
+            worker_task = asyncio.create_task(outbox_loop(), name="governance-outbox-worker")
         try:
             yield
         finally:
+            if worker_task is not None:
+                worker_task.cancel()
+                try:
+                    await worker_task
+                except asyncio.CancelledError:
+                    pass
             if pi_runtime is not None:
                 await pi_runtime.close_all()
             await product_sessions.database.close()
@@ -216,6 +281,8 @@ def create_app(
     app.state.agent_profiles = agent_profiles
     app.state.tool_configurations = tool_configurations
     app.state.governance = governance
+    app.state.harness = harness
+    app.state.governance_outbox_worker = None
     app.state.pi_runtime = pi_runtime
     app.add_middleware(
         CORSMiddleware,
@@ -224,6 +291,7 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.include_router(create_harness_router(harness))
 
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
@@ -362,6 +430,18 @@ def create_app(
     async def hitl_policy_sets() -> dict[str, Any]:
         return {"policy_sets": await governance.policy_sets()}
 
+    @app.get("/api/hitl/decision-requests")
+    async def hitl_decision_requests(
+        session_id: str | None = None,
+        status: str = "pending",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        return {"decision_requests": await governance.human_decision_requests(
+            session_id=session_id,
+            status=status,
+            limit=limit,
+        )}
+
     @app.post("/api/hitl/policy-sets/activate")
     async def activate_hitl_policy(command: ActivateHitlPolicyRequest) -> dict[str, Any]:
         try:
@@ -396,6 +476,35 @@ def create_app(
         except GovernanceValidationError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+    @app.get("/api/execution-drafts/{draft_id}")
+    async def get_execution_draft(draft_id: str) -> dict[str, Any]:
+        try:
+            return await governance.execution_draft_view(draft_id)
+        except GovernanceConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except GovernanceValidationError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.put("/api/execution-drafts/{draft_id}")
+    async def revise_execution_draft(
+        draft_id: str,
+        command: ReviseExecutionDraftRequest,
+    ) -> dict[str, Any]:
+        try:
+            return await governance.revise_execution_draft(
+                draft_id=draft_id,
+                expected_revision_id=command.expected_revision_id,
+                expected_draft_hash=command.expected_draft_hash,
+                expected_row_version=command.expected_row_version,
+                payload=command.payload,
+                execution_brief=command.execution_brief,
+                author_id=governance.principal_id,
+            )
+        except GovernanceConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except GovernanceValidationError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
     @app.post("/api/hitl/decision-requests/{request_id}/resolve")
     async def resolve_hitl_request(
         request_id: str,
@@ -407,6 +516,8 @@ def create_app(
                 expected_request_hash=command.expected_request_hash,
                 expected_row_version=command.expected_row_version,
                 decisions=[value.model_dump() for value in command.item_decisions],
+                response_payload=command.response_payload,
+                resume_via_outbox=True,
             )
             return {"decision_request_id": request_id, "status": "decision_recorded", "decisions": decisions}
         except GovernanceConflict as error:
@@ -580,7 +691,16 @@ def create_app(
     if resolved.runtime_mode == "model":
         continuous_run_ids: dict[str, str] = {}
 
+        def continuous_checkpoint_storage(product_run_id: str) -> ProductWorkflowCheckpointStorage:
+            return ProductWorkflowCheckpointStorage(
+                product_sessions.database,
+                product_run_id=product_run_id,
+                workflow_definition_id=CONTINUOUS_COLLABORATION_WORKFLOW.id,
+                workflow_version=CONTINUOUS_COLLABORATION_WORKFLOW.version,
+            )
+
         def continuous_factory(thread_id: str):
+            product_run_id = continuous_run_ids.get(thread_id, "unknown")
             return create_continuous_collaboration_workflow(
                 thread_id=thread_id,
                 run_id=lambda: continuous_run_ids.get(thread_id, "unknown"),
@@ -597,6 +717,8 @@ def create_app(
                 transport=transport,
                 sessions=product_sessions,
                 governance=governance,
+                harness=harness,
+                checkpoint_storage=continuous_checkpoint_storage(product_run_id),
             )
 
         continuous_workflow = ProductAwareWorkflow(
@@ -604,6 +726,8 @@ def create_app(
             sessions=product_sessions,
             definition=CONTINUOUS_COLLABORATION_WORKFLOW,
             run_ids=continuous_run_ids,
+            governance=governance,
+            checkpoint_storage_factory=continuous_checkpoint_storage,
         )
         app.state.continuous_workflow = continuous_workflow
         add_agent_framework_fastapi_endpoint(
@@ -613,6 +737,27 @@ def create_app(
             allow_origins=list(resolved.frontend_origins),
             tags=["workflows"],
         )
+
+        async def resume_continuous_from_outbox(input_data: dict[str, Any]) -> None:
+            run_error: RunErrorEvent | None = None
+            async for event in continuous_workflow.run(input_data):
+                if isinstance(event, RunErrorEvent):
+                    run_error = event
+            if run_error is not None:
+                raise OutboxDispatchError(
+                    run_error.message,
+                    code=getattr(run_error, "code", None) or "workflow_resume_failed",
+                )
+
+        governance_outbox_worker = GovernanceOutboxWorker(
+            product_sessions.database,
+            worker_id=outbox_worker_id or f"api-outbox-{os.getpid()}-{id(app):x}",
+            handler=ProductOutboxRouter(RuntimeResumeOutboxHandler(
+                governance,
+                resume_workflow=resume_continuous_from_outbox,
+            )),
+        )
+        app.state.governance_outbox_worker = governance_outbox_worker
         handoff_run_ids: dict[str, str] = {}
 
         def handoff_factory(thread_id: str):
@@ -695,7 +840,20 @@ def create_app(
                 allow_origins=list(resolved.frontend_origins),
                 tags=["workflows"],
             )
+    if governance_outbox_worker is None:
+        governance_outbox_worker = GovernanceOutboxWorker(
+            product_sessions.database,
+            worker_id=outbox_worker_id or f"api-outbox-{os.getpid()}-{id(app):x}",
+            handler=ProductOutboxRouter(None),
+        )
+        app.state.governance_outbox_worker = governance_outbox_worker
     return app
+
+
+def create_api_app() -> FastAPI:
+    """Production API factory when Outbox delivery runs in a separate process."""
+
+    return create_app(start_outbox_worker=False)
 
 
 app = create_app()

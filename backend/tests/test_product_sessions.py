@@ -187,7 +187,7 @@ def test_file_store_survives_restart_and_reconciles_unfinished_run(tmp_path: Pat
         assert session_view["active_run_id"] is None
         with sqlite3.connect(tmp_path / "restart.db") as connection:
                 assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-                    "344961dfd573",
+                    "c3f84a1d92e7",
                 )
 
     asyncio.run(scenario())
@@ -471,6 +471,12 @@ def test_alembic_initial_migration_upgrades_and_downgrades_clean_database(tmp_pa
         "run_attempts",
         "run_protocol_ids",
         "trace_events",
+        "product_projects",
+        "work_items",
+        "knowledge_notes",
+        "accepted_memories",
+        "context_packages",
+        "harness_commands",
         "alembic_version",
     } <= tables
 

@@ -12,6 +12,7 @@ from .catalog import (
     workflow_catalog_view,
 )
 from .continuous_chat import create_continuous_collaboration_workflow
+from .checkpoints import ProductWorkflowCheckpointStorage
 from .idiom_chain import create_governed_idiom_chain_workflow
 from .multi_agent import create_governed_agent_handoff_workflow
 from .nested_demo import create_nested_quality_workflow
@@ -26,6 +27,7 @@ __all__ = [
     "GOVERNED_IDIOM_CHAIN_WORKFLOW",
     "GOVERNED_PI_AGENT_WORKFLOW",
     "ProductAwareWorkflow",
+    "ProductWorkflowCheckpointStorage",
     "WORKFLOW_CATALOG",
     "WorkflowDefinition",
     "create_continuous_collaboration_workflow",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ag_ui.core import (
@@ -13,9 +14,67 @@ from ag_ui.core import (
     TextMessageStartEvent,
 )
 from agent_framework_ag_ui import AgentFrameworkWorkflow
+from agent_framework import WorkflowCheckpointException
 
+from ..governance.service import (
+    ExecutionGovernanceService,
+    GovernanceConflict,
+    GovernanceValidationError,
+)
 from ..product_sessions.service import ProductSessionError, ProductSessionService
 from .catalog import WorkflowDefinition
+from .checkpoints import CheckpointStorageFactory
+
+
+logger = logging.getLogger(__name__)
+
+
+def _resume_interrupt_id(input_data: dict[str, Any]) -> str | None:
+    resume = input_data.get("resume")
+    entries = resume if isinstance(resume, list) else [resume] if isinstance(resume, dict) else []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        value = entry.get("interruptId", entry.get("interrupt_id", entry.get("id")))
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _interrupt_contract(interrupt: Any) -> dict[str, str] | None:
+    metadata = getattr(interrupt, "metadata", None)
+    if not isinstance(metadata, dict):
+        return None
+    framework = metadata.get("agent_framework")
+    if not isinstance(framework, dict):
+        return None
+    data = framework.get("data")
+    if not isinstance(data, dict):
+        return None
+    execution = data.get("execution_context")
+    execution = execution if isinstance(execution, dict) else {}
+    governance = execution.get("governance")
+    governance = governance if isinstance(governance, dict) else {}
+    maf_request_id = str(framework.get("request_id") or getattr(interrupt, "id", "") or "")
+    decision_request_id = str(
+        data.get("decision_request_id")
+        or governance.get("decision_request_id")
+        or maf_request_id
+    )
+    executor_id = str(
+        execution.get("executor_id")
+        or execution.get("agent_id")
+        or framework.get("source_executor_id")
+        or "unknown"
+    )
+    if not maf_request_id or not decision_request_id:
+        return None
+    return {
+        "maf_request_id": maf_request_id,
+        "decision_request_id": decision_request_id,
+        "executor_id": executor_id,
+        "agui_interrupt_id": str(getattr(interrupt, "id", "") or maf_request_id),
+    }
 
 
 class ProductAwareWorkflow(AgentFrameworkWorkflow):
@@ -28,6 +87,8 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
         sessions: ProductSessionService,
         definition: WorkflowDefinition,
         run_ids: dict[str, str] | None = None,
+        governance: ExecutionGovernanceService | None = None,
+        checkpoint_storage_factory: CheckpointStorageFactory | None = None,
     ) -> None:
         super().__init__(
             workflow_factory=workflow_factory,
@@ -37,12 +98,15 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
         self._sessions = sessions
         self.definition = definition
         self._run_ids = run_ids
+        self._governance = governance
+        self._checkpoint_storage_factory = checkpoint_storage_factory
         self._waiting_nodes: dict[str, str] = {}
 
     async def run(self, input_data: dict[str, Any]):
         thread_id = self._thread_id_from_input(input_data)
         agui_run_id = str(input_data.get("run_id") or input_data.get("runId") or "")
         resumed_activity: ActivitySnapshotEvent | None = None
+        resuming_link_id: str | None = None
         try:
             accepted = await self._sessions.prepare_agui_run(input_data)
             if self._run_ids is not None:
@@ -51,6 +115,47 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
                 # correlation value on the Product Run, but is not a database
                 # foreign key or authorization identity.
                 self._run_ids[thread_id] = accepted.product_run_id
+            if accepted.is_resume and self._checkpoint_storage_factory is not None:
+                if self._governance is None:
+                    raise ProductSessionError("Checkpoint恢复缺少Execution Governance接合层")
+                maf_request_id = _resume_interrupt_id(input_data)
+                if maf_request_id is None:
+                    raise ProductSessionError("AG-UI Resume缺少interruptId")
+                link = await self._governance.runtime_interrupt_for_maf_request(
+                    maf_request_id=maf_request_id,
+                    product_run_id=accepted.product_run_id,
+                )
+                resuming_link_id = link.id
+                workflow = self._resolve_workflow(thread_id)
+                if workflow.graph_signature_hash != link.maf_graph_signature_hash:
+                    await self._governance.mark_runtime_interrupt(
+                        link_id=link.id,
+                        status="recovery_required",
+                        error_code="workflow_graph_changed",
+                    )
+                    raise ProductSessionError("Workflow图版本已变化，不能用旧Checkpoint静默恢复")
+                pending = await workflow._runner_context.get_pending_request_info_events()  # pyright: ignore[reportPrivateUsage]
+                if maf_request_id not in pending:
+                    storage = self._checkpoint_storage_factory(accepted.product_run_id)
+                    # MAF core exposes checkpoint restore through Workflow.run;
+                    # AG-UI rc8 does not forward checkpoint_id.  This isolated
+                    # bridge restores only the runner state, after which the
+                    # standard AG-UI converter validates and applies Resume.
+                    await workflow._runner.restore_from_checkpoint(  # pyright: ignore[reportPrivateUsage]
+                        link.maf_checkpoint_id,
+                        storage,
+                    )
+                    logger.info(
+                        "workflow_checkpoint_restored run_id=%s checkpoint_id=%s maf_request_id=%s",
+                        accepted.product_run_id,
+                        link.maf_checkpoint_id,
+                        maf_request_id,
+                    )
+                await self._governance.mark_runtime_interrupt(
+                    link_id=link.id,
+                    status="resuming",
+                )
+                self._waiting_nodes[thread_id] = link.maf_executor_id
             await self._sessions.mark_running(thread_id)
             await self._sessions.record_trace(
                 thread_id,
@@ -81,9 +186,34 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
                         if key != "workflow_id"
                     },
                 )
-        except ProductSessionError as error:
+        except (ProductSessionError, GovernanceConflict, GovernanceValidationError, WorkflowCheckpointException) as error:
+            if resuming_link_id is not None and self._governance is not None:
+                try:
+                    await self._governance.mark_runtime_interrupt(
+                        link_id=resuming_link_id,
+                        status="recovery_required",
+                        error_code=getattr(error, "code", None) or "checkpoint_restore_failed",
+                    )
+                except Exception:
+                    logger.exception(
+                        "runtime_interrupt_recovery_projection_failed link_id=%s",
+                        resuming_link_id,
+                    )
+            if resuming_link_id is not None:
+                try:
+                    await self._sessions.fail_active_run(
+                        thread_id,
+                        status="interrupted",
+                        error_code=getattr(error, "code", None) or "checkpoint_restore_failed",
+                        message=str(error),
+                    )
+                except Exception:
+                    logger.exception("product_run_recovery_projection_failed thread_id=%s", thread_id)
             yield RunStartedEvent(run_id=agui_run_id, thread_id=thread_id)
-            yield RunErrorEvent(message=str(error), code=error.code)
+            yield RunErrorEvent(
+                message=str(error),
+                code=getattr(error, "code", "WORKFLOW_CHECKPOINT_RESTORE_FAILED"),
+            )
             return
 
         assistant_message_id: str | None = None
@@ -139,6 +269,12 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
                     continue
                 yield event
         except Exception as error:
+            if resuming_link_id is not None and self._governance is not None:
+                await self._governance.mark_runtime_interrupt(
+                    link_id=resuming_link_id,
+                    status="failed",
+                    error_code="workflow_runtime_error",
+                )
             await self._sessions.fail_active_run(
                 thread_id,
                 error_code="workflow_runtime_error",
@@ -151,6 +287,12 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
             return
 
         if isinstance(terminal, RunErrorEvent):
+            if resuming_link_id is not None and self._governance is not None:
+                await self._governance.mark_runtime_interrupt(
+                    link_id=resuming_link_id,
+                    status="failed",
+                    error_code=getattr(terminal, "code", None) or "workflow_resume_failed",
+                )
             self._waiting_nodes.pop(thread_id, None)
             await self._sessions.fail_active_run(
                 thread_id,
@@ -175,7 +317,9 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
         outcome = getattr(terminal, "outcome", None)
         if getattr(outcome, "type", None) == "interrupt":
             waiting_executor_id: str | None = None
+            interrupt_contract: dict[str, str] | None = None
             for interrupt in getattr(outcome, "interrupts", ()) or ():
+                interrupt_contract = _interrupt_contract(interrupt)
                 metadata = getattr(interrupt, "metadata", None)
                 if not isinstance(metadata, dict):
                     continue
@@ -192,6 +336,56 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
                         None,
                     )
                     break
+            if interrupt_contract is not None:
+                waiting_executor_id = interrupt_contract["executor_id"]
+            if self._checkpoint_storage_factory is not None:
+                if self._governance is None or interrupt_contract is None:
+                    await self._sessions.fail_active_run(
+                        thread_id,
+                        status="interrupted",
+                        error_code="interrupt_contract_missing",
+                        message="Workflow暂停，但无法建立持久Interrupt合同。",
+                    )
+                    yield RunErrorEvent(
+                        message="Workflow暂停，但无法建立持久Interrupt合同。",
+                        code="INTERRUPT_CONTRACT_MISSING",
+                    )
+                    return
+                storage = self._checkpoint_storage_factory(accepted.product_run_id)
+                workflow = self._resolve_workflow(thread_id)
+                checkpoint = await storage.get_latest_pending(
+                    workflow_name=workflow.name,
+                    request_id=interrupt_contract["maf_request_id"],
+                )
+                if checkpoint is None:
+                    await self._sessions.fail_active_run(
+                        thread_id,
+                        status="interrupted",
+                        error_code="checkpoint_not_persisted",
+                        message="Workflow已暂停，但MAF Checkpoint没有持久化，不能安全恢复。",
+                    )
+                    yield RunErrorEvent(
+                        message="Workflow已暂停，但MAF Checkpoint没有持久化，不能安全恢复。",
+                        code="CHECKPOINT_NOT_PERSISTED",
+                    )
+                    return
+                await self._governance.bind_runtime_interrupt(
+                    decision_request_id=interrupt_contract["decision_request_id"],
+                    product_run_id=accepted.product_run_id,
+                    maf_workflow_name=workflow.name,
+                    maf_graph_signature_hash=workflow.graph_signature_hash,
+                    maf_checkpoint_id=checkpoint.checkpoint_id,
+                    maf_request_id=interrupt_contract["maf_request_id"],
+                    maf_executor_id=interrupt_contract["executor_id"],
+                    agui_thread_id=thread_id,
+                    agui_run_id=agui_run_id,
+                    agui_interrupt_id=interrupt_contract["agui_interrupt_id"],
+                )
+            if resuming_link_id is not None and self._governance is not None:
+                await self._governance.mark_runtime_interrupt(
+                    link_id=resuming_link_id,
+                    status="resumed",
+                )
             if waiting_executor_id is not None:
                 self._waiting_nodes[thread_id] = waiting_executor_id
                 waiting_payload = {
@@ -228,6 +422,11 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
                 return
 
         try:
+            if resuming_link_id is not None and self._governance is not None:
+                await self._governance.mark_runtime_interrupt(
+                    link_id=resuming_link_id,
+                    status="resumed",
+                )
             self._waiting_nodes.pop(thread_id, None)
             committed = await self._sessions.complete_active_run(
                 thread_id,

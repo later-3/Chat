@@ -40,8 +40,12 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 7. 前端可查看嵌套Workflow实时/恢复进度，并配置`planner`与`reviewer`两个Agent的名称、职责、Instructions及Provider/模型。
 8. 受治理双Agent Workflow已跑通：规划Agent、确定性交接、审校Agent共3个节点；两次真实Provider调用分别审批，第2次能查看和修改原始目标、规划结果及交接要求。
 9. pi coding agent已作为真实MAF FunctionTool接入：使用官方JSONL RPC，每次模型请求和内部Tool调用分别审批，支持Tool配置、参数改写、Token/耗时/调用统计和启动中断收敛。
-10. 完整Session仍按Phase 2-8继续：活动流重连、Worker、Tool副作用、Workflow/HITL和跨入口恢复尚未完成。
-11. Chat概念空间已经建立：11个概念簇统一Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、上下文结果、界面、外部入口和人工介入策略的共同语言。
+10. 持续协作主Workflow已经支持Product DB持久Checkpoint、Interrupt Link和Lease Outbox Worker；实际独立OS进程可从一次已提交决定恢复到下一审批安全点。该保证暂不外推到嵌套Workflow或外部Tool副作用。
+11. ExecutionDraft已有17部分完整可读编辑工作台；保存产生新revision与Hash，必须重新审批后才能编译不可变RunSpec。
+12. Product Harness D1-D8已经落地：Project、Work、Plan/Action、Note、Memory与两阶段Context使用服务端权威Schema、CAS、幂等命令、Trace和Outbox；前端提供Project Explorer、Work Board、Knowledge和Context Inspector。
+13. 持续协作主Workflow现有25个真实MAF节点；真实模型已验证意图、响应、回合摘要3次逐次审批，简单问答不会创建Project、Work、Note或Memory。
+14. 完整Session仍按Phase 2-8继续：活动流游标重连、通用Execution Worker、Tool副作用对账和跨入口恢复尚未完成。
+15. Chat概念空间已经建立：11个概念簇统一Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、上下文结果、界面、外部入口和人工介入策略的共同语言。
 
 ## 技术方向
 
@@ -61,8 +65,8 @@ Product资源走REST，单次Agent Run的实时事件走AG-UI；Product DB与MAF
 
 ## 环境要求
 
-1. Python `3.12.x`。
-2. [`uv`](https://docs.astral.sh/uv/)。
+1. Python `3.12.x`，由`uv`安装并放入项目专用虚拟环境；不使用系统Python。
+2. [`uv`](https://docs.astral.sh/uv/)，依赖以`uv.lock`为准。
 3. Node.js `20.19+`或`22.12+`，推荐Node.js 24。
 4. npm `>=10`。
 
@@ -73,7 +77,9 @@ Product资源走REST，单次Agent Run的实时事件走AG-UI；Product DB与MAF
 ```bash
 cp backend/config.example.json backend/config.json
 cp frontend/.env.example frontend/.env
-uv sync --dev
+uv python install 3.12
+uv venv --python 3.12 .venv
+UV_PROJECT_ENVIRONMENT=.venv uv sync --frozen --dev
 (cd frontend && npm install)
 ```
 
@@ -82,14 +88,14 @@ uv sync --dev
 耐久Product Store在后端启动时自动执行`alembic upgrade head`。需要单独检查迁移或执行回滚演练时使用：
 
 ```bash
-uv run alembic check
-uv run alembic upgrade head
+.venv/bin/python -m alembic check
+.venv/bin/python -m alembic upgrade head
 ```
 
 终端1，启动后端：
 
 ```bash
-uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8030 --reload
+.venv/bin/python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8030 --reload
 ```
 
 终端2，启动前端：
@@ -140,10 +146,11 @@ npm run dev
 
 该命令依次执行：
 
-1. Python编译检查。
-2. 后端测试。
-3. 前端TypeScript检查。
-4. 前端生产构建。
+1. 概念空间结构与链接检查。
+2. Python编译检查。
+3. 后端测试。
+4. 前端逻辑测试与TypeScript检查。
+5. 前端生产构建。
 
 ## 目录结构
 
@@ -172,7 +179,9 @@ scripts/         可重复执行的工程验证
 13. [Session持久化设计](./docs/session-persistence-design.md)：Phase 1文本持久化设计、代码落点与审批Workflow适配。
 14. [Session持久化审核包](./docs/session-persistence-review.md)：已批准D1-D6的原因、参考覆盖、选项、实现适配和边界。
 15. [pi Agent Tool使用与运行手册](./docs/pi-agent-tool.md)：JSONL RPC选型、两道审批门、配置、监控、恢复语义和验证方法。
+16. [Workflow恢复与Outbox Worker运行说明](./docs/runtime-recovery-operations.md)：单/双进程部署、日志、重试、死信和升级门。
+17. [Product Harness、Work与Memory详细设计](./docs/product-harness-detailed-design.md)：已批准D1-D8、状态机、Agent工具、两阶段Context和长跨度场景验收基线。
 
 ## 下一步
 
-下一步继续Session Phase 2-3：补齐显式Retry、生命周期和分支能力，并与模型审批、Workflow、多Agent和pi Tool执行交叉验证。
+下一步进入Session活动流游标与通用Execution Worker详细设计，并继续独立Evidence/Provenance与Tool副作用对账；不能把Governance Outbox和主Workflow安全点恢复外推为完整R5/R6。

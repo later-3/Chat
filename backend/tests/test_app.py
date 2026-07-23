@@ -42,6 +42,106 @@ def test_health_exposes_approved_architecture_without_secrets() -> None:
     }
 
 
+def test_product_harness_rest_contract_is_versioned_and_server_authoritative() -> None:
+    """Exercise the public REST surface, not only the application service."""
+
+    with _client() as client:
+        project_response = client.post(
+            "/api/harness/projects",
+            json={
+                "command_id": "api-project-create",
+                "kind": "learning",
+                "title": "学习异步编程",
+                "goal": "能够实现并验证异步任务",
+                "status": "active",
+            },
+        )
+        assert project_response.status_code == 201
+        project = project_response.json()
+        assert project["row_version"] == 1
+
+        replay = client.post(
+            "/api/harness/projects",
+            json={
+                "command_id": "api-project-create",
+                "kind": "learning",
+                "title": "学习异步编程",
+                "goal": "能够实现并验证异步任务",
+                "status": "active",
+            },
+        )
+        assert replay.status_code == 201
+        assert replay.json()["id"] == project["id"]
+
+        work_response = client.post(
+            "/api/harness/work-items",
+            json={
+                "command_id": "api-work-create",
+                "project_id": project["id"],
+                "kind": "learning_unit",
+                "title": "理解事件循环",
+                "objective": "完成一个可验证的 asyncio 练习",
+                "status": "ready",
+            },
+        )
+        assert work_response.status_code == 201
+        assert work_response.json()["project_id"] == project["id"]
+
+        note_response = client.post(
+            "/api/harness/notes",
+            json={
+                "command_id": "api-note-create",
+                "kind": "learning_note",
+                "title": "事件循环笔记",
+                "content": "事件循环负责调度可运行协程。",
+                "links": [{"resource_kind": "project", "resource_id": project["id"]}],
+            },
+        )
+        assert note_response.status_code == 201
+        assert note_response.json()["current_revision"]["revision"] == 1
+
+        candidate_response = client.post(
+            "/api/harness/memory-candidates",
+            json={
+                "command_id": "api-memory-propose",
+                "scope_kind": "project",
+                "scope_ref_id": project["id"],
+                "memory_kind": "preference",
+                "content": "学习时先看可运行示例。",
+                "source_refs": [{"kind": "note", "id": note_response.json()["id"], "revision": 1}],
+            },
+        )
+        assert candidate_response.status_code == 201
+        candidate = candidate_response.json()
+        accepted_response = client.post(
+            f"/api/harness/memory-candidates/{candidate['id']}/resolve",
+            json={"command_id": "api-memory-accept", "decision": "accept"},
+        )
+        assert accepted_response.status_code == 200
+
+        detail = client.get(f"/api/harness/projects/{project['id']}")
+        assert detail.status_code == 200
+        assert [item["title"] for item in detail.json()["work_items"]] == ["理解事件循环"]
+        assert [item["title"] for item in detail.json()["notes"]] == ["事件循环笔记"]
+        assert [item["memory_kind"] for item in detail.json()["accepted_memory"]] == ["preference"]
+
+        conflict = client.post(
+            f"/api/harness/projects/{project['id']}/transition",
+            json={
+                "command_id": "api-project-stale-transition",
+                "expected_row_version": 0,
+                "target_status": "paused",
+                "reason": "模拟过期页面",
+            },
+        )
+        assert conflict.status_code == 409
+        assert "版本冲突" in conflict.json()["detail"]
+
+        search = client.get("/api/harness/search", params={"q": "事件循环"})
+        assert search.status_code == 200
+        assert {item["kind"] for item in search.json()["resources"]} == {"work_item", "note"}
+
+
 def _write_config(path: Path, payload: dict[str, object]) -> Path:
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path

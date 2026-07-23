@@ -835,6 +835,103 @@ class InMemoryModelCallReviewStore:
             )
         return self._provider_catalog
 
+    def restore_review_card(self, card: Mapping[str, Any]) -> ModelCallDraft:
+        """Rehydrate process-local transport state from a durable MAF request card.
+
+        The card is part of the version-bound Workflow Checkpoint and every
+        send-critical byte is revalidated here.  This method does not create a
+        new revision or authorization; it only reconstructs the ephemeral
+        claim object needed after another process restores the checkpoint.
+        """
+
+        draft_id = str(card.get("draft_id") or "")
+        approval_id = str(card.get("approval_id") or "")
+        provider_id = str(card.get("provider_id") or "")
+        provider_request = card.get("provider_request")
+        if not draft_id or not approval_id or not isinstance(provider_request, Mapping):
+            raise ModelCallDraftValidationError(["Checkpoint中的ModelCall审核卡不完整"])
+        with self._lock:
+            existing = self._drafts.get(draft_id)
+            if existing is not None:
+                if existing.binding_hash != card.get("binding_hash"):
+                    raise ModelCallDraftConflict("同一ModelCall Draft ID对应了不同内容")
+                return existing
+            catalog = self._require_catalog(str(provider_request.get("model") or ""))
+            provider = catalog.require_selection(
+                provider_id,
+                str(provider_request.get("model") or ""),
+            )
+            model_option = catalog.require_model(
+                provider_id,
+                str(provider_request.get("model") or ""),
+            )
+            allowed_tool_names = tuple(
+                str(value)
+                for value in (
+                    (card.get("execution_context") or {}).get("allowed_tool_names", [])
+                    if isinstance(card.get("execution_context"), Mapping)
+                    else []
+                )
+                if isinstance(value, str)
+            )
+            request_copy = copy.deepcopy(dict(provider_request))
+            validate_provider_request(
+                request_copy,
+                model_option.capabilities,
+                provider.protocol,
+                allowed_tool_names=allowed_tool_names,
+            )
+            body = canonical_json_bytes(request_copy)
+            body_sha256 = hashlib.sha256(body).hexdigest()
+            binding_hash = hashlib.sha256(
+                canonical_json_bytes({"provider_id": provider_id, "body_sha256": body_sha256})
+            ).hexdigest()
+            if body_sha256 != card.get("body_sha256") or binding_hash != card.get("binding_hash"):
+                raise ModelCallDraftConflict("Checkpoint ModelCall请求与审核Hash不一致")
+            source_items = (
+                (card.get("effective_context") or {}).get("history_and_knowledge", [])
+                if isinstance(card.get("effective_context"), Mapping)
+                else []
+            )
+            context_sources = tuple(
+                {
+                    key: copy.deepcopy(value)
+                    for key, value in source.items()
+                    if key not in {"content", "token_estimate"}
+                }
+                for source in source_items
+                if isinstance(source, Mapping)
+            )
+            draft = ModelCallDraft(
+                draft_id=draft_id,
+                approval_id=approval_id,
+                thread_id=str(card.get("thread_id") or ""),
+                run_id=str(card.get("run_id") or ""),
+                version=int(card.get("version") or 1),
+                origin_prompt=str(card.get("origin_prompt") or ""),
+                provider_id=provider_id,
+                provider_protocol=provider.protocol,
+                provider_catalog=tuple(catalog.public_view()),
+                provider_request=request_copy,
+                body=body,
+                body_sha256=body_sha256,
+                binding_hash=binding_hash,
+                context_sources=context_sources or _initial_context_sources(request_copy),
+                model_capabilities=model_option.capabilities,
+                allowed_tool_names=allowed_tool_names,
+                execution_context=copy.deepcopy(dict(card.get("execution_context") or {})),
+                status=str(card.get("status") or "pending_approval"),
+                previous_draft_id=(
+                    str(card["previous_draft_id"])
+                    if card.get("previous_draft_id") is not None
+                    else None
+                ),
+            )
+            self._drafts[draft.draft_id] = draft
+            self._current_by_thread[draft.thread_id] = draft.draft_id
+            self._approval_status[draft.approval_id] = "pending"
+            return draft
+
     def begin(
         self,
         *,

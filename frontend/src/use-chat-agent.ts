@@ -152,7 +152,7 @@ export interface ToolExecutionReviewCard {
 export interface ProductDecisionEditableField {
   key: string;
   label: string;
-  type: "text" | "text_optional" | "long_text" | "boolean" | "select" | "multi_select";
+  type: "text" | "text_optional" | "long_text" | "boolean" | "select" | "multi_select" | "execution_draft";
   value: unknown;
   options?: Array<{ value: string; label: string }>;
 }
@@ -168,6 +168,7 @@ export interface ProductDecisionReviewCard {
   request_hash: string;
   row_version: number;
   subject_hash: string;
+  subject_resource_id?: string;
   subject: unknown;
   facts: Record<string, unknown>;
   policy: {

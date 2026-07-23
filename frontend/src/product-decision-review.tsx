@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Check, Pencil, ShieldCheck, SkipForward, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { ExecutionDraftWorkbench } from "./execution-draft-workbench";
 import type { ProductDecisionEditableField, ProductDecisionReviewCard } from "./use-chat-agent";
 
 const ACTION_LABELS: Record<string, string> = {
@@ -35,7 +36,7 @@ function ReadableValue({ value }: { value: unknown }) {
   return <span>{String(value)}</span>;
 }
 
-function FieldEditor({
+export function ProductDecisionFieldEditor({
   field,
   value,
   onChange,
@@ -79,12 +80,15 @@ export function ProductDecisionReview({ card, busy, requestError, onDecision }: 
   const [changes, setChanges] = useState<Record<string, unknown>>(initial);
   const [editing, setEditing] = useState(false);
   const acceptAction = card.allowed_actions.find((value) => ["accept", "execute", "commit"].includes(value));
+  const executionDraftEditor = card.decision_point_key === "execution_authorization"
+    && card.editable_fields.some((field) => field.type === "execution_draft")
+    && card.subject_resource_id;
 
   return (
     <Dialog.Root open>
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="product-decision-dialog" aria-describedby="product-decision-description">
+        <Dialog.Content className={`product-decision-dialog ${editing && executionDraftEditor ? "product-decision-dialog--draft" : ""}`} aria-describedby="product-decision-description">
           <header>
             <span className="product-decision-icon"><ShieldCheck size={20} /></span>
             <div><p className="eyebrow">HUMAN IN THE LOOP</p><Dialog.Title>{card.title}</Dialog.Title></div>
@@ -99,11 +103,13 @@ export function ProductDecisionReview({ card, busy, requestError, onDecision }: 
           </section>
 
           {editing ? (
-            <section className="product-decision-fields" aria-label="修改决定对象">
-              {card.editable_fields.map((field) => (
-                <label key={field.key}><span>{field.label}</span><FieldEditor field={field} onChange={(value) => setChanges((current) => ({ ...current, [field.key]: value }))} value={changes[field.key]} /></label>
-              ))}
-            </section>
+            executionDraftEditor
+              ? <ExecutionDraftWorkbench busy={busy} draftId={executionDraftEditor} onReapprove={(revisionId) => onDecision("revise", { execution_draft_revision_id: revisionId })} />
+              : <section className="product-decision-fields" aria-label="修改决定对象">
+                  {card.editable_fields.map((field) => (
+                    <label key={field.key}><span>{field.label}</span><ProductDecisionFieldEditor field={field} onChange={(value) => setChanges((current) => ({ ...current, [field.key]: value }))} value={changes[field.key]} /></label>
+                  ))}
+                </section>
           ) : (
             <section className="product-decision-subject"><span>当前准备采用的内容</span><ReadableValue value={card.subject} /></section>
           )}
@@ -118,7 +124,7 @@ export function ProductDecisionReview({ card, busy, requestError, onDecision }: 
             <div>
               {card.allowed_actions.includes("revise") && (
                 editing
-                  ? <button disabled={busy} onClick={() => onDecision("revise", changes)} type="button"><Pencil size={15} />保存修改并重新评估</button>
+                  ? !executionDraftEditor && <button disabled={busy} onClick={() => onDecision("revise", changes)} type="button"><Pencil size={15} />保存修改并重新评估</button>
                   : <button disabled={busy} onClick={() => setEditing(true)} type="button"><Pencil size={15} />修改内容</button>
               )}
               {acceptAction && <button className="decision-primary" disabled={busy} onClick={() => onDecision(acceptAction)} type="button"><Check size={16} />{ACTION_LABELS[acceptAction]}</button>}

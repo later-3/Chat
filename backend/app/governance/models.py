@@ -469,6 +469,46 @@ class RuntimeInterruptLinkRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+class MafWorkflowCheckpointRecord(Base):
+    """Opaque MAF checkpoint bound to one Product Run and workflow graph version.
+
+    The encoded payload remains owned by MAF.  Product columns exist only for
+    authorization, retention, compatibility checks and recovery lookup; they
+    must never be projected as Product Message or accepted business state.
+    """
+
+    __tablename__ = "maf_workflow_checkpoints"
+    __table_args__ = (
+        Index(
+            "ix_maf_checkpoint_run_workflow_created",
+            "product_run_id",
+            "workflow_name",
+            "created_at",
+        ),
+        Index("ix_maf_checkpoint_status_created", "status", "created_at"),
+    )
+
+    checkpoint_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    product_run_id: Mapped[str] = mapped_column(
+        ForeignKey("product_runs.id", ondelete="RESTRICT"), nullable=False
+    )
+    run_attempt_id: Mapped[str] = mapped_column(
+        ForeignKey("run_attempts.id", ondelete="RESTRICT"), nullable=False
+    )
+    workflow_definition_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    workflow_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    graph_signature_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    previous_checkpoint_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    iteration_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    pending_request_ids_json: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
+    encoded_checkpoint_json: Mapped[Any] = mapped_column(JSON, nullable=False)
+    encoding_version: Mapped[str] = mapped_column(String(40), nullable=False, default="maf-json-v1")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="available")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class GovernanceOutboxRecord(Base):
     __tablename__ = "governance_outbox"
     __table_args__ = (Index("ix_governance_outbox_status_available", "status", "available_at"),)

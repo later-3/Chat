@@ -62,6 +62,47 @@ export interface HitlPreview {
   resolver_version: string;
 }
 
+export interface DurableDecisionRequest {
+  id: string;
+  decision_point_key: string;
+  session_id: string;
+  interaction_id: string | null;
+  run_id: string | null;
+  request_hash: string;
+  title: string;
+  reason_summary: string;
+  visible_evidence: Record<string, unknown>;
+  consequence: Record<string, unknown>;
+  status: string;
+  row_version: number;
+  created_at: string | null;
+  expires_at: string | null;
+  runtime_recovery: null | {
+    link_id: string;
+    status: string;
+    checkpoint_id: string;
+    workflow_name: string;
+    executor_id: string;
+    graph_signature_hash: string;
+  };
+  items: Array<{
+    item_key: string;
+    status: string;
+    allowed_actions: string[];
+    subject: null | {
+      id: string;
+      kind: string;
+      resource_id: string;
+      resource_revision: string;
+      subject_hash: string;
+      workflow_definition_id: string | null;
+      workflow_version: string | null;
+      node_id: string | null;
+      decision_view: Record<string, unknown>;
+    };
+  }>;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, init);
   if (!response.ok) {
@@ -106,5 +147,33 @@ export function previewHitlPolicy(command: {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(command),
+  });
+}
+
+export async function listDurableDecisionRequests(
+  sessionId?: string,
+): Promise<DurableDecisionRequest[]> {
+  const parameters = new URLSearchParams({ status: "pending" });
+  if (sessionId) parameters.set("session_id", sessionId);
+  const response = await request<{ decision_requests: DurableDecisionRequest[] }>(
+    `/api/hitl/decision-requests?${parameters.toString()}`,
+  );
+  return response.decision_requests;
+}
+
+export function resolveDurableDecisionRequest(
+  value: DurableDecisionRequest,
+  decisions: Array<{ item_key: string; decision: string }>,
+  responsePayload: Record<string, unknown> = {},
+): Promise<{ decision_request_id: string; status: string }> {
+  return request<{ decision_request_id: string; status: string }>(`/api/hitl/decision-requests/${value.id}/resolve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      expected_request_hash: value.request_hash,
+      expected_row_version: value.row_version,
+      item_decisions: decisions,
+      response_payload: responsePayload,
+    }),
   });
 }

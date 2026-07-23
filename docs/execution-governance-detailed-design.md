@@ -3,7 +3,7 @@
 > 状态：**已批准；D1-D7 纵向切片已实现**（2026-07-22）
 > 日期：2026-07-22
 > 上位合同：[ExecutionDraft、RunSpec 与 HITL 治理合同](./execution-governance-contract.md)
-> 本文授权边界：D1-D7 已获用户批准；正式 Schema、应用服务、主 Workflow 接合和前端 HITL 矩阵已有纵向实现。Outbox Worker、MAF Checkpoint 接合、跨进程恢复及完整 Work/Memory 生命周期仍未交付，具体事实以 `PROJECT_STATE.md` 和测试证据为准。
+> 本文授权边界：D1-D7 已获用户批准；正式 Schema、应用服务、主 Workflow 接合、前端 HITL 矩阵、ExecutionDraft完整编辑以及主Workflow审批安全点的Outbox/Checkpoint跨进程恢复已有纵向实现。完整 Work/Memory 生命周期仍未获详细设计审核，具体事实以 `PROJECT_STATE.md` 和测试证据为准。
 
 ## 1. 结论
 
@@ -958,4 +958,4 @@ D1-D7 已于 2026-07-22 获用户批准，实施顺序固定为：
 5. 配置中心“人工介入”矩阵、运行时决定收件箱和有效策略解释器。
 6. 并发、重启、真实模型、真实Tool和多Agent E2E。
 
-本文已经成为获批的详细设计基线。已完成的纵向能力和未完成的跨进程恢复、完整领域生命周期必须分别以 `PROJECT_STATE.md`、迁移、代码、测试和真实运行证据表述，不能由设计批准外推实现状态。
+本文已经成为获批的详细设计基线。步骤1、2、主Workflow所需的步骤3、4及配置矩阵已有纵向实现；通用ToolCallRequest、运行时决定收件箱、任意Workflow/Tool恢复和完整领域生命周期仍必须以`PROJECT_STATE.md`、迁移、代码、测试和真实运行证据判断，不能由设计批准或单一路径测试外推。

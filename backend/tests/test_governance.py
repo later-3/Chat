@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi.testclient import TestClient
 
 from backend.app.config import Settings
+from backend.app.governance.models import GovernanceOutboxRecord
+from backend.app.governance.outbox import GovernanceOutboxWorker
 from backend.app.main import create_app
+from backend.app.product_sessions.database import ProductDatabase
 
 
 def _preview(client: TestClient, decision_point_key: str, facts: dict) -> dict:
@@ -169,3 +174,57 @@ def test_inherit_rule_does_not_override_product_default() -> None:
     assert model_call["preference_action"] == "require_human"
     assert model_call["final_action"] == "require_human"
     assert all(rule["mode"] != "inherit" for rule in model_call["matched_rules"])
+
+
+def test_outbox_lease_allows_only_one_worker_and_dead_letters_at_limit(tmp_path) -> None:
+    async def scenario() -> None:
+        database = ProductDatabase(f"sqlite+aiosqlite:///{tmp_path / 'outbox.db'}")
+        await database.initialize()
+        async with database.sessions.begin() as transaction:
+            transaction.add(GovernanceOutboxRecord(
+                id="event-once",
+                aggregate_kind="test",
+                aggregate_id="aggregate",
+                event_type="test.once",
+                payload_json={"value": 1},
+                dedupe_key="test.once:aggregate:1",
+            ))
+        handled: list[str] = []
+
+        async def handle(event) -> None:
+            handled.append(event.id)
+
+        first = GovernanceOutboxWorker(database, worker_id="worker-a", handler=handle)
+        second = GovernanceOutboxWorker(database, worker_id="worker-b", handler=handle)
+        assert sum(await asyncio.gather(first.run_once(), second.run_once())) == 1
+        assert handled == ["event-once"]
+
+        async with database.sessions.begin() as transaction:
+            transaction.add(GovernanceOutboxRecord(
+                id="event-dead",
+                aggregate_kind="test",
+                aggregate_id="dead",
+                event_type="test.fail",
+                payload_json={},
+                dedupe_key="test.fail:dead:1",
+            ))
+
+        async def fail(_event) -> None:
+            raise RuntimeError("injected failure")
+
+        dead_worker = GovernanceOutboxWorker(
+            database,
+            worker_id="worker-dead",
+            handler=fail,
+            max_attempts=1,
+        )
+        assert await dead_worker.run_once() is True
+        async with database.sessions() as transaction:
+            dead = await transaction.get(GovernanceOutboxRecord, "event-dead")
+            published = await transaction.get(GovernanceOutboxRecord, "event-once")
+        assert dead is not None and dead.status == "dead_letter"
+        assert dead.last_error_code == "outbox_dispatch_failed"
+        assert published is not None and published.status == "published"
+        await database.close()
+
+    asyncio.run(scenario())

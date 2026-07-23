@@ -6,9 +6,9 @@
 |---|---|
 | 状态 | 有效；2026-07-22 用户要求逐项固定。 |
 | 适用范围 | Chat 持续协作主 Workflow 中从用户目标、上下文和计划到 Agent/Runtime 执行的产品治理边界。 |
-| 实现状态 | 未实现目标能力；当前只有逐次 ModelCallDraft 审批纵向切片，仍是单进程内存状态。 |
-| 不授权内容 | 本合同不代表正式 Schema、迁移、持久 HITL、Worker 或跨进程恢复已经实现。 |
-| 详细设计 | [正式 Schema、状态机与前端 HITL 配置矩阵](./execution-governance-detailed-design.md)，D1-D7 已于 2026-07-22 获用户批准并进入实施。 |
+| 实现状态 | 局部实现并验证：正式治理Schema、ExecutionDraft/RunSpec、持久HITL、完整Draft编辑，以及持续协作主Workflow的Checkpoint/Outbox跨进程恢复已落地。 |
+| 不授权内容 | 本合同和当前纵向实现不代表通用Tool副作用、任意/嵌套Workflow、活动流重连或完整Work/Memory生命周期已经实现。 |
+| 详细设计 | [正式 Schema、状态机与前端 HITL 配置矩阵](./execution-governance-detailed-design.md)，D1-D7 已于 2026-07-22 获用户批准并按项目状态分步实施。 |
 
 ## 2. 固定关系
 
