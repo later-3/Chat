@@ -17,6 +17,7 @@ function cloneArguments(value: Record<string, unknown>): Record<string, unknown>
 }
 
 export function ToolCallReview({ card, busy, error, onApprove, onAbandon }: ToolCallReviewProps) {
+  const exactOperation = card.tool_operation;
   const [argumentsValue, setArgumentsValue] = useState(() => cloneArguments(card.arguments));
   const [complexValues, setComplexValues] = useState<Record<string, string>>({});
   const [editError, setEditError] = useState<string | null>(null);
@@ -69,8 +70,8 @@ export function ToolCallReview({ card, busy, error, onApprove, onAbandon }: Tool
               </strong>
             </div>
             <div>
-              <span>工作目录</span>
-              <code>{card.working_directory}</code>
+              <span>执行目标</span>
+              <code>{card.target ?? "Repository Snapshot"}</code>
             </div>
             <div>
               <span>Tool Call</span>
@@ -82,13 +83,50 @@ export function ToolCallReview({ card, busy, error, onApprove, onAbandon }: Tool
             </div>
           </div>
 
+          {exactOperation && (
+            <section className="tool-operation-review">
+              <div className="tool-argument-heading">
+                <div>
+                  <strong>本次精确修改</strong>
+                  <span>批准绑定下列文件、Diff与内容Hash，只写入隔离工作区。</span>
+                </div>
+                <small>不提交 · 不推送 · 不修改活动仓库</small>
+              </div>
+              <dl className="tool-operation-facts">
+                <div>
+                  <dt>文件</dt>
+                  <dd>{exactOperation.target_path}</dd>
+                </div>
+                <div>
+                  <dt>操作</dt>
+                  <dd>#{exactOperation.operation_id.slice(0, 8)}</dd>
+                </div>
+                <div>
+                  <dt>修改前</dt>
+                  <dd>{exactOperation.expected_preimage_hash.slice(0, 12)}</dd>
+                </div>
+                <div>
+                  <dt>修改后</dt>
+                  <dd>{exactOperation.expected_postimage_hash.slice(0, 12)}</dd>
+                </div>
+              </dl>
+              <pre className="tool-operation-diff">{exactOperation.diff_preview}</pre>
+            </section>
+          )}
+
           <section className="tool-argument-section">
             <div className="tool-argument-heading">
               <div>
                 <strong>即将执行的参数</strong>
-                <span>Key固定，所有Value可修改</span>
+                <span>
+                  {exactOperation ? "本次参数已与上方Diff和授权绑定" : "Key固定，所有Value可修改"}
+                </span>
               </div>
-              <small>修改只对本次Tool Call生效</small>
+              <small>
+                {exactOperation
+                  ? "如需修改，请拒绝并让Agent重新提出操作"
+                  : "修改只对本次Tool Call生效"}
+              </small>
             </div>
             <div className="tool-argument-list">
               {Object.entries(argumentsValue).map(([key, value]) => (
@@ -99,7 +137,7 @@ export function ToolCallReview({ card, busy, error, onApprove, onAbandon }: Tool
                   </span>
                   {typeof value === "boolean" ? (
                     <select
-                      disabled={busy}
+                      disabled={busy || Boolean(exactOperation)}
                       onChange={(event) =>
                         setArgumentsValue((current) => ({
                           ...current,
@@ -113,7 +151,7 @@ export function ToolCallReview({ card, busy, error, onApprove, onAbandon }: Tool
                     </select>
                   ) : typeof value === "number" ? (
                     <input
-                      disabled={busy}
+                      disabled={busy || Boolean(exactOperation)}
                       onChange={(event) =>
                         setArgumentsValue((current) => ({
                           ...current,
@@ -125,14 +163,14 @@ export function ToolCallReview({ card, busy, error, onApprove, onAbandon }: Tool
                     />
                   ) : value !== null && typeof value === "object" ? (
                     <textarea
-                      disabled={busy}
+                      disabled={busy || Boolean(exactOperation)}
                       onChange={(event) => updateComplex(key, event.target.value)}
                       rows={5}
                       value={complexValues[key] ?? JSON.stringify(value, null, 2)}
                     />
                   ) : (
                     <textarea
-                      disabled={busy}
+                      disabled={busy || Boolean(exactOperation)}
                       onChange={(event) =>
                         setArgumentsValue((current) => ({
                           ...current,

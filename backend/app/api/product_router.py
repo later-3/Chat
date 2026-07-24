@@ -14,6 +14,7 @@ from ..agent_profiles import (
     AgentProfileService,
 )
 from ..config import ModelProviderCatalog, Settings
+from ..execution_dispatch.service import ExecutionDispatchService
 from ..governance import (
     ExecutionGovernanceService,
     GovernanceConflict,
@@ -67,6 +68,7 @@ class ProductApiDependencies:
     model_catalog: ModelProviderCatalog | None
     product_sessions: ProductSessionService
     runtime_execution: RuntimeExecutionService
+    execution_dispatch: ExecutionDispatchService
     governance: ExecutionGovernanceService
     tool_configurations: ToolConfigurationService
     agent_profiles: AgentProfileService
@@ -82,6 +84,7 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
     model_catalog = dependencies.model_catalog
     product_sessions = dependencies.product_sessions
     runtime_execution = dependencies.runtime_execution
+    execution_dispatch = dependencies.execution_dispatch
     governance = dependencies.governance
     tool_configurations = dependencies.tool_configurations
     agent_profiles = dependencies.agent_profiles
@@ -190,6 +193,18 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
             await runtime_execution.request_cancel(
                 product_run_id=cancelled["id"],
                 request_key=f"cancel:{session_id}:{agui_run_id}",
+            )
+            await governance.close_open_decisions_for_terminal_run(
+                run_id=cancelled["id"],
+                reason_code=str(cancelled.get("failure_code") or "user_cancelled"),
+            )
+            review_store.abandon_pending_for_run(
+                thread_id=session_id,
+                run_id=cancelled["id"],
+            )
+            await execution_dispatch.cancel_run(
+                cancelled["id"],
+                reason_code=str(cancelled.get("failure_code") or "user_cancelled"),
             )
             return cancelled
         except ProductSessionNotFound as error:
@@ -372,6 +387,7 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
     async def pi_provider_gateway(
         request: Request,
         authorization: str | None,
+        gateway_token: str | None,
         protocol: str,
     ):
         if pi_runtime is None:
@@ -379,6 +395,7 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
         try:
             return await pi_runtime.gateway_response(
                 authorization=authorization,
+                gateway_token=gateway_token,
                 protocol=protocol,
                 body=await request.body(),
             )
@@ -389,10 +406,12 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
     async def pi_chat_completions_gateway(
         request: Request,
         authorization: str | None = Header(default=None),
+        gateway_token: str | None = Header(default=None, alias="X-Chat-Pi-Token"),
     ):
         return await pi_provider_gateway(
             request,
             authorization,
+            gateway_token,
             "openai_chat_completions",
         )
 
@@ -400,8 +419,14 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
     async def pi_responses_gateway(
         request: Request,
         authorization: str | None = Header(default=None),
+        gateway_token: str | None = Header(default=None, alias="X-Chat-Pi-Token"),
     ):
-        return await pi_provider_gateway(request, authorization, "openai_responses")
+        return await pi_provider_gateway(
+            request,
+            authorization,
+            gateway_token,
+            "openai_responses",
+        )
 
     @router.post("/api/pi-read-tools/{tool_name}", include_in_schema=False)
     async def pi_read_tool_gateway(
@@ -413,6 +438,23 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
             raise HTTPException(status_code=503, detail="pi只读Tool Gateway不可用")
         try:
             return await pi_runtime.read_tool_response(
+                authorization=authorization,
+                tool_name=tool_name,
+                body=await request.body(),
+            )
+        except PiRuntimeError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @router.post("/api/pi-workspace-tools/{tool_name}", include_in_schema=False)
+    async def pi_workspace_tool_gateway(
+        tool_name: str,
+        request: Request,
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        if pi_runtime is None:
+            raise HTTPException(status_code=503, detail="pi Workspace Tool Gateway不可用")
+        try:
+            return await pi_runtime.workspace_tool_response(
                 authorization=authorization,
                 tool_name=tool_name,
                 body=await request.body(),

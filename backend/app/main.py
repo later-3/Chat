@@ -105,6 +105,7 @@ def create_app(
                 model_catalog=components.model_catalog,
                 product_sessions=components.product_sessions,
                 runtime_execution=components.runtime_execution,
+                execution_dispatch=components.execution_dispatch,
                 governance=components.governance,
                 tool_configurations=components.tool_configurations,
                 agent_profiles=components.agent_profiles,

@@ -55,8 +55,11 @@ class ContinuousWorkflowComponents:
     execution_draft_compiler: type[Any]
     run_spec_compiler: type[Any]
     execution_route: type[Any]
+    execution_workspace_prepare: type[Any]
     pi_readonly_dispatch: type[Any]
     pi_readonly_result_assembly: type[Any]
+    pi_workspace_dispatch: type[Any]
+    pi_workspace_result_assembly: type[Any]
     clarification: type[Any]
     harness_commit: type[Any]
     summary_persist: type[Any]
@@ -254,6 +257,12 @@ def build_continuous_collaboration_workflow(
         sessions=sessions,
         dispatch=execution_dispatch,
     )
+    execution_workspace_prepare = components.execution_workspace_prepare(
+        thread_id=thread_id,
+        run_id=run_id,
+        sessions=sessions,
+        dispatch=execution_dispatch,
+    )
     pi_readonly_dispatch = components.pi_readonly_dispatch(
         thread_id=thread_id,
         run_id=run_id,
@@ -262,6 +271,19 @@ def build_continuous_collaboration_workflow(
         store=store,
     )
     pi_readonly_result_assembly = components.pi_readonly_result_assembly(
+        thread_id=thread_id,
+        run_id=run_id,
+        sessions=sessions,
+        dispatch=execution_dispatch,
+    )
+    pi_workspace_dispatch = components.pi_workspace_dispatch(
+        thread_id=thread_id,
+        run_id=run_id,
+        sessions=sessions,
+        dispatch=execution_dispatch,
+        store=store,
+    )
+    pi_workspace_result_assembly = components.pi_workspace_result_assembly(
         thread_id=thread_id,
         run_id=run_id,
         sessions=sessions,
@@ -339,7 +361,7 @@ def build_continuous_collaboration_workflow(
             description="Chat主Workflow：选择性上下文、意图、场景路由、计划、响应与回合主题提取。",
             start_executor=intake,
             output_from=[finalizer],
-            intermediate_output_from=[pi_readonly_dispatch],
+            intermediate_output_from=[pi_readonly_dispatch, pi_workspace_dispatch],
             checkpoint_storage=checkpoint_storage,
         )
         .add_edge(intake, candidates)
@@ -377,6 +399,13 @@ def build_continuous_collaboration_workflow(
                 Case(
                     condition=lambda value: (
                         isinstance(value.execution_route, Mapping)
+                        and value.execution_route.get("kind") == "pi_workspace"
+                    ),
+                    target=execution_workspace_prepare,
+                ),
+                Case(
+                    condition=lambda value: (
+                        isinstance(value.execution_route, Mapping)
                         and value.execution_route.get("kind") == "pi_readonly"
                     ),
                     target=pi_readonly_dispatch,
@@ -384,6 +413,9 @@ def build_continuous_collaboration_workflow(
                 Default(target=responder),
             ],
         )
+        .add_edge(execution_workspace_prepare, pi_workspace_dispatch)
+        .add_edge(pi_workspace_dispatch, pi_workspace_result_assembly)
+        .add_edge(pi_workspace_result_assembly, summarizer)
         .add_edge(pi_readonly_dispatch, pi_readonly_result_assembly)
         .add_edge(pi_readonly_result_assembly, summarizer)
         .add_edge(responder, summarizer)

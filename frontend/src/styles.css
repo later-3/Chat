@@ -4890,6 +4890,57 @@ button {
 .tool-argument-section {
   padding: 17px 20px 8px;
 }
+.tool-operation-review {
+  margin: 16px 20px 0;
+  padding: 16px;
+  border: 1px solid rgba(177, 93, 55, 0.2);
+  border-radius: 14px;
+  background: linear-gradient(145deg, #fffaf4, #f7fbf6);
+}
+.tool-operation-facts {
+  margin: 14px 0 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.tool-operation-facts > div {
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.75);
+}
+.tool-operation-facts dt {
+  color: #8b958f;
+  font-size: var(--font-size-caption);
+}
+.tool-operation-facts dd {
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: #385044;
+  font:
+    700 var(--font-size-supporting) / 1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-operation-diff {
+  margin: 12px 0 0;
+  max-height: 250px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid rgba(43, 66, 54, 0.1);
+  border-radius: 10px;
+  color: #2d4036;
+  background: #f4f6f2;
+  font:
+    13px / 1.65 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  white-space: pre;
+}
 .tool-argument-heading {
   display: flex;
   justify-content: space-between;
@@ -5655,6 +5706,9 @@ button {
     max-height: calc(100vh - 16px);
   }
   .tool-review-facts {
+    grid-template-columns: 1fr;
+  }
+  .tool-operation-facts {
     grid-template-columns: 1fr;
   }
   .tool-argument-row {

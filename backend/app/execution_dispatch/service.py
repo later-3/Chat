@@ -1,4 +1,4 @@
-"""Application coordinator for governed pi read-only execution.
+"""Application coordinator for governed pi read and workspace execution.
 
 The coordinator owns Product transactions and external-dispatch boundaries.
 MAF Executors consume this service but do not query tables, resolve filesystem
@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from sqlalchemy import func, select
 
+from ..execution_workspaces import ExecutionWorkspaceService, WorkspaceOwnership
 from ..governance.models import (
     DecisionSubjectRecord,
     HumanDecisionRequestRecord,
@@ -39,15 +40,19 @@ from ..readonly_tools import ReadonlyToolService
 from ..runtime_execution.models import RuntimeJobRecord
 from ..step_inputs import StepInputProjectionService
 from ..tool_configs import PI_TOOL_ID, PiToolConfigSnapshot, ToolConfigurationService
+from ..tool_execution import PreparedToolOperation, ToolOperationService
 from .contracts import ExecutionRoute, PiReadonlyResult, route_from_run_spec
 from .repository_context import RepositoryExecutionContextService
 
 logger = logging.getLogger(__name__)
 
 PI_WORKFLOW_ID = "continuous-collaboration"
-PI_WORKFLOW_VERSION = "1.6.0"
+PI_WORKFLOW_VERSION = "1.7.0"
 PI_NODE_ID = "pi_readonly_dispatch"
 PI_TOOLS = ("read", "grep", "find", "ls")
+PI_WORKSPACE_PREPARE_NODE_ID = "execution_workspace_prepare"
+PI_WORKSPACE_NODE_ID = "pi_workspace_dispatch"
+PI_WORKSPACE_TOOLS = (*PI_TOOLS, "edit")
 
 
 class ExecutionDispatchError(RuntimeError):
@@ -65,6 +70,28 @@ class PreparedPiExecution:
     route: ExecutionRoute
     step_input: dict[str, Any]
     task: str
+    mode: str = "readonly"
+    workspace_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedWorkspaceExecution:
+    """Serializable hand-off from the workspace node to the pi node."""
+
+    execution_id: str
+    workspace_id: str
+    route: ExecutionRoute
+    step_input: dict[str, Any]
+    task: str
+
+    def public_view(self) -> dict[str, Any]:
+        return {
+            "execution_id": self.execution_id,
+            "workspace_id": self.workspace_id,
+            "route": self.route.public_view(),
+            "step_input": copy.deepcopy(self.step_input),
+            "task": self.task,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +101,7 @@ class ToolAuthorization:
     decision_item_key: str
     request: HumanDecisionRequestRecord | None
     consumption_id: str | None
+    operation: PreparedToolOperation | None = None
 
     def review_card(
         self,
@@ -81,6 +109,7 @@ class ToolAuthorization:
         tool_name: str,
         arguments: Mapping[str, Any],
         fence_label: str,
+        config_revision: int,
     ) -> dict[str, Any]:
         request = self.request
         if request is None:
@@ -88,9 +117,11 @@ class ToolAuthorization:
                 "自动Tool授权没有人工审核卡",
                 code="TOOL_AUTHORIZATION_STATE_INVALID",
             )
+        operation = self.operation.public_view() if self.operation is not None else None
+        writable = operation is not None
         return {
             "review_kind": "tool_execution",
-            "message": "请审核pi只读Tool调用",
+            "message": "请审核pi工作区精确编辑" if writable else "请审核pi只读Tool调用",
             "approval_id": request.id,
             "request_id": request.id,
             "request_hash": request.request_hash,
@@ -101,11 +132,17 @@ class ToolAuthorization:
             "tool_name": tool_name,
             "arguments": dict(arguments),
             "target": fence_label,
-            "risk": "只读、无副作用；仍受Repository Snapshot围栏约束",
+            "config_revision": config_revision,
+            "risk": (
+                "只写入隔离Execution Workspace；不修改活动仓库，不提交或推送Git。"
+                if writable
+                else "只读、无副作用；仍受Repository Snapshot或Workspace围栏约束"
+            ),
+            "tool_operation": operation,
             "allowed_actions": ["approve", "deny"],
             "execution_context": {
                 "workflow_id": PI_WORKFLOW_ID,
-                "executor_id": PI_NODE_ID,
+                "executor_id": PI_WORKSPACE_NODE_ID if writable else PI_NODE_ID,
                 "tool_id": PI_TOOL_ID,
                 "wait_reason": "pi_internal_tool_approval",
             },
@@ -138,15 +175,15 @@ class PiModelCallGovernance:
 
 
 class ExecutionDispatchService:
-    """Own the SD2 dispatch use case without owning the MAF graph.
+    """Own governed pi dispatch without owning the MAF graph.
 
     This coordinator intentionally keeps route preparation, authorization and
     ToolExecution transitions behind one application boundary.  Splitting
     those public operations into independent table services would let an MAF
     executor start a process without the corresponding fence, grant or ledger.
-    Pure compilation, repository resolution and read tools are already
-    extracted; F01 will introduce a separate side-effect ledger rather than
-    growing this read-only coordinator.
+    Pure compilation, repository resolution, read tools, managed workspaces and
+    the F01 side-effect ledger remain separate collaborators so this boundary
+    coordinates one use case instead of owning their state transitions.
     """
 
     def __init__(
@@ -159,6 +196,8 @@ class ExecutionDispatchService:
         tool_configurations: ToolConfigurationService,
         manager: PiRuntimeManager | None,
         readonly_tools: ReadonlyToolService,
+        execution_workspaces: ExecutionWorkspaceService,
+        tool_operations: ToolOperationService,
     ) -> None:
         self.database = database
         self._governance = governance
@@ -167,6 +206,8 @@ class ExecutionDispatchService:
         self._tool_configurations = tool_configurations
         self._manager = manager
         self._readonly_tools = readonly_tools
+        self._execution_workspaces = execution_workspaces
+        self._tool_operations = tool_operations
 
     async def route(self, run_spec_id: str) -> ExecutionRoute:
         async with self.database.sessions() as transaction:
@@ -213,7 +254,7 @@ class ExecutionDispatchService:
                 code="repository_snapshot_stale",
             ) from error
         spec = await self._run_spec_payload(run_spec_id)
-        task = self._compile_task(spec=spec, origin_prompt=origin_prompt)
+        task = self._compile_task(spec=spec, origin_prompt=origin_prompt, mode="readonly")
         config = self._readonly_config(
             self._tool_configurations.runtime_snapshot(),
             working_directory=str(private_path),
@@ -264,6 +305,7 @@ class ExecutionDispatchService:
             config=config,
             input_hash=content_hash({"task": task, "fence": fence.public_view()}),
             capability_hash=content_hash(capability),
+            mode="readonly",
         )
         if self._manager is None:
             await self.finish_failed(
@@ -310,6 +352,182 @@ class ExecutionDispatchService:
             task=task,
         )
 
+    async def prepare_workspace(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+        run_spec_id: str,
+        origin_prompt: str,
+        context_package_id: str | None,
+        protocol_definition_id: str | None,
+        protocol_binding_id: str | None,
+    ) -> PreparedWorkspaceExecution:
+        """Create the durable ToolExecution and exact managed Git worktree."""
+
+        route = await self.route(run_spec_id)
+        if route.kind != "pi_workspace" or route.repository_fence is None:
+            raise ExecutionDispatchError(
+                "RunSpec没有选择pi隔离工作区执行",
+                code="PI_WORKSPACE_ROUTE_REQUIRED",
+            )
+        fence = route.repository_fence
+        try:
+            await self._repository_context.assert_fresh(fence)
+        except ProjectResourceConflict as error:
+            raise ExecutionDispatchError(
+                str(error),
+                code="repository_snapshot_stale",
+            ) from error
+        spec = await self._run_spec_payload(run_spec_id)
+        task = self._compile_task(
+            spec=spec,
+            origin_prompt=origin_prompt,
+            mode="workspace_edit",
+        )
+        config = self._workspace_config(
+            self._tool_configurations.runtime_snapshot(),
+            working_directory="managed-at-runtime",
+        )
+        capability = [
+            {
+                "name": name,
+                "mode": "workspace_write" if name == "edit" else "readonly",
+                "side_effects": "managed_workspace_only" if name == "edit" else "none",
+            }
+            for name in config.allowed_tools
+        ]
+        step_input = await self._step_inputs.record(
+            run_id=run_id,
+            workflow_definition_id=PI_WORKFLOW_ID,
+            workflow_version=PI_WORKFLOW_VERSION,
+            node_id=PI_WORKSPACE_PREPARE_NODE_ID,
+            input_value={
+                "task": task,
+                "origin_prompt": origin_prompt,
+                "run_spec_id": run_spec_id,
+                "repository_fence": fence.public_view(),
+                "route_reason_code": route.reason_code,
+            },
+            agent_profile_key="pi_workspace",
+            context_package_id=context_package_id,
+            protocol_definition_id=protocol_definition_id,
+            protocol_binding_id=protocol_binding_id,
+            run_spec_id=run_spec_id,
+            capability_allowlist=capability,
+            budget={
+                "max_model_calls": config.max_model_calls,
+                "timeout_seconds": config.timeout_seconds,
+            },
+            output_contract={
+                "type": "pi_workspace_result",
+                "hidden_reasoning": "excluded",
+                "side_effects": "managed_workspace_only",
+                "integration": "not_authorized",
+            },
+            stop_conditions=[
+                "repository_fence_stale",
+                "workspace_create_failed",
+                "capability_expansion_requested",
+                "provider_failure",
+                "tool_operation_outcome_unknown",
+                "timeout",
+            ],
+        )
+        execution_id = await self._create_execution(
+            session_id=session_id,
+            run_id=run_id,
+            run_spec_id=run_spec_id,
+            step_input_projection_id=str(step_input["id"]),
+            fence=fence,
+            config=config,
+            input_hash=content_hash({"task": task, "fence": fence.public_view()}),
+            capability_hash=content_hash(capability),
+            mode="workspace_edit",
+        )
+        ownership = await self._workspace_ownership(execution_id)
+        try:
+            workspace = await self._execution_workspaces.create(
+                ownership=ownership,
+                fence=fence,
+            )
+        except Exception as error:
+            await self.finish_failed(
+                execution_id,
+                failure_code=getattr(error, "code", type(error).__name__),
+                metrics={},
+            )
+            raise
+        logger.info(
+            "pi_workspace_prepared execution_id=%s workspace_id=%s snapshot_id=%s",
+            execution_id,
+            workspace["id"],
+            fence.snapshot_id,
+        )
+        return PreparedWorkspaceExecution(
+            execution_id=execution_id,
+            workspace_id=str(workspace["id"]),
+            route=route,
+            step_input=step_input,
+            task=task,
+        )
+
+    async def start_workspace_pi(
+        self,
+        prepared: PreparedWorkspaceExecution,
+    ) -> PreparedPiExecution:
+        """Start pi only after the real workspace node has committed its output."""
+
+        if self._manager is None:
+            await self.finish_failed(
+                prepared.execution_id,
+                failure_code="pi_runtime_unavailable",
+                metrics={},
+            )
+            raise ExecutionDispatchError(
+                "pi Runtime当前不可用",
+                code="pi_runtime_unavailable",
+            )
+        workspace = await self._execution_workspaces.get_for_tool_execution(prepared.execution_id)
+        if workspace is None or workspace["id"] != prepared.workspace_id or workspace["status"] != "ready":
+            raise ExecutionDispatchError(
+                "Execution Workspace不存在或尚未就绪",
+                code="PI_WORKSPACE_NOT_READY",
+            )
+        private_path = await self._execution_workspaces.private_path(prepared.workspace_id)
+        config = self._workspace_config(
+            self._tool_configurations.runtime_snapshot(),
+            working_directory=str(private_path),
+        )
+        try:
+            execution = await self._manager.start(
+                prepared.task,
+                config,
+                readonly_tools=self._readonly_tools,
+                workspace_id=prepared.workspace_id,
+                tool_execution_id=prepared.execution_id,
+                execution_workspaces=self._execution_workspaces,
+                tool_operations=self._tool_operations,
+            )
+        except Exception as error:
+            await self.finish_failed(
+                prepared.execution_id,
+                failure_code=getattr(error, "code", type(error).__name__),
+                metrics={},
+            )
+            raise
+        await self._execution_workspaces.mark_running(prepared.workspace_id)
+        await self._mark_dispatched(prepared.execution_id)
+        return PreparedPiExecution(
+            execution_id=prepared.execution_id,
+            execution=execution,
+            route=prepared.route,
+            step_input=prepared.step_input,
+            task=prepared.task,
+            mode="workspace_edit",
+            workspace_id=prepared.workspace_id,
+        )
+
     async def authorize_tool(
         self,
         *,
@@ -320,27 +538,57 @@ class ExecutionDispatchService:
         tool_name: str,
         arguments: Mapping[str, Any],
         fence: Any,
+        workspace_id: str | None = None,
     ) -> ToolAuthorization:
-        if tool_name not in PI_TOOLS:
+        allowed_tools = PI_WORKSPACE_TOOLS if workspace_id is not None else PI_TOOLS
+        if tool_name not in allowed_tools:
             raise ExecutionDispatchError(
                 "pi请求了Capability Allowlist之外的Tool",
                 code="PI_TOOL_NOT_ALLOWED",
             )
+        operation = (
+            await self._tool_operations.propose_exact_edit(
+                tool_execution_id=execution_id,
+                provider_tool_call_id=tool_call_id,
+                arguments=arguments,
+            )
+            if tool_name == "edit" and workspace_id is not None
+            else None
+        )
+        if tool_name == "edit" and operation is None:
+            raise ExecutionDispatchError(
+                "edit只能在Execution Workspace中执行",
+                code="PI_TOOL_NOT_ALLOWED",
+            )
+        node_id = PI_WORKSPACE_NODE_ID if workspace_id is not None else PI_NODE_ID
+        operation_binding = operation.public_view() if operation is not None else None
         risk = {
             "tool": {
-                "risk_level": 0,
-                "has_side_effects": False,
+                "risk_level": 2 if operation is not None else 0,
+                "has_side_effects": operation is not None,
                 "outside_capability": False,
-            }
+                "side_effect_class": ("managed_workspace_write" if operation is not None else "none"),
+            },
+            "operation": operation_binding,
         }
         request, subject = await self._governance.register_tool_call(
             run_id=run_id,
-            workflow_node_id=PI_NODE_ID,
+            workflow_node_id=node_id,
             provider_tool_call_id=tool_call_id,
             tool_id=tool_name,
-            tool_definition_revision="chat-readonly-tools-v1",
+            tool_definition_revision=(
+                "chat-exact-edit-v1" if operation is not None else "chat-readonly-tools-v1"
+            ),
             arguments=arguments,
-            target_summary=(f"Repository Snapshot {fence.snapshot_id} · {fence.relative_path}"),
+            target_summary=(
+                f"Execution Workspace {workspace_id} · {operation.target_path}"
+                if operation is not None
+                else (
+                    f"Execution Workspace {workspace_id}"
+                    if workspace_id is not None
+                    else f"Repository Snapshot {fence.snapshot_id} · {fence.relative_path}"
+                )
+            ),
             risk_snapshot=risk,
             workflow_definition_id=PI_WORKFLOW_ID,
             workflow_version=PI_WORKFLOW_VERSION,
@@ -352,29 +600,41 @@ class ExecutionDispatchService:
                 {"kind": "product_default", "ref_id": "*"},
                 {"kind": "principal", "ref_id": "local-user"},
                 {"kind": "run", "ref_id": run_id},
-                {"kind": "workflow_node", "ref_id": PI_NODE_ID},
+                {"kind": "workflow_node", "ref_id": node_id},
                 {"kind": "tool_profile", "ref_id": PI_TOOL_ID},
             ],
             facts=risk,
         )
         final_action = str(preview["final_action"])
         if final_action == "deny":
+            if operation is not None:
+                await self._tool_operations.deny(operation.operation_id)
             raise ExecutionDispatchError(
-                "HITL策略拒绝本次pi只读Tool调用",
+                "HITL策略拒绝本次pi Tool调用",
                 code="PI_TOOL_DENIED",
             )
         if final_action == "require_human":
+            if operation is not None:
+                await self._tool_operations.mark_waiting_authorization(operation.operation_id)
             human = await self._governance.create_human_request(
                 evaluation=evaluation,
                 subject=subject,
-                title="确认pi只读Tool调用",
+                title=("确认pi工作区精确编辑" if operation is not None else "确认pi只读Tool调用"),
                 reason="有效HITL策略要求本次Tool调用由用户确认。",
                 evidence={
                     "tool_name": tool_name,
                     "arguments": dict(arguments),
                     "repository_snapshot_id": fence.snapshot_id,
+                    "execution_workspace_id": workspace_id,
+                    "tool_operation": operation_binding,
                 },
-                consequence={"on_approve": "执行一次无副作用只读Tool"},
+                consequence={
+                    "on_approve": (
+                        "只在隔离Execution Workspace执行一次绑定Hash的精确编辑"
+                        if operation is not None
+                        else "执行一次无副作用只读Tool"
+                    )
+                },
                 allowed_actions=["approve", "deny"],
                 decision_point_key="tool_execution_authorization",
             )
@@ -384,6 +644,7 @@ class ExecutionDispatchService:
                 decision_item_key=subject.id,
                 request=human,
                 consumption_id=None,
+                operation=operation,
             )
         _, grant = await self._governance.record_automatic_decision(
             evaluation=evaluation,
@@ -396,6 +657,10 @@ class ExecutionDispatchService:
                 "arguments_hash": request.arguments_hash,
                 "repository_snapshot_id": fence.snapshot_id,
                 "run_spec_id": run_spec_id,
+                "execution_workspace_id": workspace_id,
+                "operation_hash": operation.operation_hash if operation else None,
+                "expected_preimage_hash": (operation.expected_preimage_hash if operation else None),
+                "expected_postimage_hash": (operation.expected_postimage_hash if operation else None),
             },
         )
         if grant is None:
@@ -415,12 +680,18 @@ class ExecutionDispatchService:
             tool_call_request_id=request.id,
             authorization_consumption_id=consumption.id,
         )
+        if operation is not None:
+            await self._tool_operations.authorize(
+                operation.operation_id,
+                consumption_id=consumption.id,
+            )
         return ToolAuthorization(
             mode="auto_continue",
             tool_call_request_id=request.id,
             decision_item_key=subject.id,
             request=None,
             consumption_id=consumption.id,
+            operation=operation,
         )
 
     async def register_pi_model_call(
@@ -571,6 +842,8 @@ class ExecutionDispatchService:
             ],
         )
         if decision == "deny":
+            if authorization.operation is not None:
+                await self._tool_operations.deny(authorization.operation.operation_id)
             return "denied"
         grant_id = str(values[0].get("authorization_grant_id") or "")
         binding_hash = str(values[0].get("binding_hash") or "")
@@ -591,6 +864,11 @@ class ExecutionDispatchService:
             tool_call_request_id=authorization.tool_call_request_id,
             authorization_consumption_id=consumption.id,
         )
+        if authorization.operation is not None:
+            await self._tool_operations.authorize(
+                authorization.operation.operation_id,
+                consumption_id=consumption.id,
+            )
         return consumption.id
 
     async def record_activity(
@@ -635,12 +913,15 @@ class ExecutionDispatchService:
         metrics: Mapping[str, Any],
         terminal_reason_code: str,
     ) -> PiReadonlyResult:
+        workspace = await self._retain_workspace(execution_id)
         result_body = {
             "execution_id": execution_id,
             "status": "succeeded",
             "final_text": text,
             "metrics": dict(metrics),
             "terminal_reason_code": terminal_reason_code,
+            "mode": "workspace_edit" if workspace is not None else "readonly",
+            "workspace": workspace,
         }
         result_hash = content_hash(result_body)
         async with self.database.sessions.begin() as transaction:
@@ -670,6 +951,12 @@ class ExecutionDispatchService:
             duration_ms=int(metrics.get("duration_ms") or 0),
             result_hash=result_hash,
             terminal_reason_code=terminal_reason_code,
+            mode="workspace_edit" if workspace is not None else "readonly",
+            workspace_id=str(workspace["id"]) if workspace is not None else None,
+            workspace_diff_hash=(
+                str(workspace["diff_hash"]) if workspace and workspace.get("diff_hash") else None
+            ),
+            changed_paths=tuple(workspace["changed_paths"]) if workspace is not None else (),
         )
 
     async def finish_failed(
@@ -679,6 +966,7 @@ class ExecutionDispatchService:
         failure_code: str,
         metrics: Mapping[str, Any],
     ) -> None:
+        await self._retain_workspace(execution_id, fail_closed=False)
         async with self.database.sessions.begin() as transaction:
             value = await transaction.get(ToolExecutionRecord, execution_id)
             if value is None:
@@ -701,6 +989,7 @@ class ExecutionDispatchService:
         *,
         metrics: Mapping[str, Any],
     ) -> None:
+        await self._retain_workspace(execution_id, fail_closed=False)
         async with self.database.sessions.begin() as transaction:
             value = await transaction.get(ToolExecutionRecord, execution_id)
             if value is None:
@@ -731,7 +1020,7 @@ class ExecutionDispatchService:
                     )
                 ).all()
             )
-        return [self._execution_view(value) for value in values]
+        return [await self._enriched_execution_view(value) for value in values]
 
     async def get(self, execution_id: str) -> dict[str, Any]:
         async with self.database.sessions() as transaction:
@@ -741,7 +1030,39 @@ class ExecutionDispatchService:
                     "ToolExecution不存在",
                     code="PI_EXECUTION_NOT_FOUND",
                 )
-            return self._execution_view(value)
+            return await self._enriched_execution_view(value)
+
+    async def _enriched_execution_view(
+        self,
+        value: ToolExecutionRecord,
+    ) -> dict[str, Any]:
+        result = self._execution_view(value)
+        result["workspace"] = await self._execution_workspaces.get_for_tool_execution(value.id)
+        result["operations"] = await self._tool_operations.list_for_tool_execution(value.id)
+        return result
+
+    async def _retain_workspace(
+        self,
+        execution_id: str,
+        *,
+        fail_closed: bool = True,
+    ) -> dict[str, Any] | None:
+        workspace = await self._execution_workspaces.get_for_tool_execution(execution_id)
+        if workspace is None:
+            return None
+        if workspace["status"] == "retained":
+            return workspace
+        try:
+            return await self._execution_workspaces.retain(str(workspace["id"]))
+        except Exception:
+            if fail_closed:
+                raise
+            logger.exception(
+                "execution_workspace_retention_failed execution_id=%s workspace_id=%s",
+                execution_id,
+                workspace["id"],
+            )
+            return await self._execution_workspaces.get_for_tool_execution(execution_id)
 
     async def _run_spec_payload(self, run_spec_id: str) -> dict[str, Any]:
         async with self.database.sessions() as transaction:
@@ -754,7 +1075,12 @@ class ExecutionDispatchService:
             return copy.deepcopy(dict(value.spec_json or {}))
 
     @staticmethod
-    def _compile_task(*, spec: Mapping[str, Any], origin_prompt: str) -> str:
+    def _compile_task(
+        *,
+        spec: Mapping[str, Any],
+        origin_prompt: str,
+        mode: str,
+    ) -> str:
         brief = dict(spec.get("execution_brief") or {})
         plan = dict(spec.get("plan") or {})
         context = dict(spec.get("context_manifest") or {})
@@ -768,6 +1094,16 @@ class ExecutionDispatchService:
             for value in context.get("items") or []
             if isinstance(value, Mapping)
         ]
+        constraints = (
+            "只在Chat创建的隔离Execution Workspace中工作；可使用read、grep、find、ls和"
+            "单文件精确edit；每次edit都要单独审批。不得修改活动仓库、执行Shell、创建或删除"
+            "文件、提交或推送Git、联网访问其他目标，也不得声称Work已经完成。"
+            if mode == "workspace_edit"
+            else (
+                "只读取已批准Repository Snapshot；仅使用read、grep、find、ls；"
+                "不得写文件、执行Shell、运行测试、提交Git、联网访问其他目标或声称完成修改。"
+            )
+        )
         return (
             "# 用户原始请求\n"
             f"{origin_prompt.strip()}\n\n"
@@ -778,8 +1114,7 @@ class ExecutionDispatchService:
             "# 已采用上下文来源\n"
             f"{context_refs}\n\n"
             "# 执行约束\n"
-            "只读取已批准Repository Snapshot；仅使用read、grep、find、ls；"
-            "不得写文件、执行Shell、运行测试、提交Git、联网访问其他目标或声称完成修改。"
+            f"{constraints}"
         )
 
     @staticmethod
@@ -807,6 +1142,33 @@ class ExecutionDispatchService:
             ),
         )
 
+    @staticmethod
+    def _workspace_config(
+        config: PiToolConfigSnapshot,
+        *,
+        working_directory: str,
+    ) -> PiToolConfigSnapshot:
+        enabled = set(config.allowed_tools)
+        if "edit" not in enabled:
+            raise ExecutionDispatchError(
+                "pi配置尚未启用SD3精确edit Tool",
+                code="PI_WORKSPACE_EDIT_DISABLED",
+            )
+        allowed = tuple(name for name in PI_WORKSPACE_TOOLS if name in enabled)
+        return replace(
+            config,
+            working_directory=working_directory,
+            allowed_tools=allowed,
+            max_model_calls=min(config.max_model_calls, 8),
+            timeout_seconds=min(config.timeout_seconds, 900),
+            system_prompt=(
+                f"{config.system_prompt.strip()}\n\n"
+                "本次处于Chat SD3隔离工作区模式。只能使用Chat注册的read、grep、find、ls、edit；"
+                "edit只能精确替换一个现有UTF-8文件中的唯一文本，并在执行前由Chat逐次治理。"
+                "不得使用Shell、创建文件、删除文件、提交、推送或修改活动仓库。"
+            ),
+        )
+
     async def _create_execution(
         self,
         *,
@@ -818,6 +1180,7 @@ class ExecutionDispatchService:
         config: PiToolConfigSnapshot,
         input_hash: str,
         capability_hash: str,
+        mode: str,
     ) -> str:
         async with self.database.sessions.begin() as transaction:
             run = await transaction.get(RunRecord, run_id)
@@ -863,7 +1226,7 @@ class ExecutionDispatchService:
                 repository_snapshot_id=fence.snapshot_id,
                 tool_id=PI_TOOL_ID,
                 execution_ordinal=ordinal,
-                mode="readonly",
+                mode=mode,
                 config_revision=config.revision,
                 status="starting",
                 input_hash=input_hash,
@@ -873,6 +1236,22 @@ class ExecutionDispatchService:
             )
             transaction.add(value)
         return value.id
+
+    async def _workspace_ownership(self, execution_id: str) -> WorkspaceOwnership:
+        async with self.database.sessions() as transaction:
+            value = await transaction.get(ToolExecutionRecord, execution_id)
+            if value is None or value.run_attempt_id is None or value.runtime_job_id is None:
+                raise ExecutionDispatchError(
+                    "Execution Workspace缺少完整运行血缘",
+                    code="PI_RUNTIME_OWNER_MISSING",
+                )
+            return WorkspaceOwnership(
+                scope_id="local-user",
+                product_run_id=value.run_id,
+                run_attempt_id=value.run_attempt_id,
+                runtime_job_id=value.runtime_job_id,
+                tool_execution_id=value.id,
+            )
 
     async def _mark_dispatched(self, execution_id: str) -> None:
         async with self.database.sessions.begin() as transaction:
@@ -901,6 +1280,68 @@ class ExecutionDispatchService:
                 )
             value.status = status
             value.row_version += 1
+
+    async def cancel_run(self, run_id: str, *, reason_code: str) -> dict[str, int]:
+        """Converge live pi and isolated-write state after Product cancellation."""
+
+        async with self.database.sessions() as transaction:
+            execution_ids = list(
+                (
+                    await transaction.scalars(
+                        select(ToolExecutionRecord.id).where(
+                            ToolExecutionRecord.run_id == run_id,
+                            ToolExecutionRecord.status.in_({"starting", "running", "waiting_human"}),
+                        )
+                    )
+                ).all()
+            )
+        closed_processes = 0
+        if self._manager is not None:
+            for execution_id in execution_ids:
+                closed_processes += await self._manager.close_for_tool_execution(execution_id)
+
+        now = utc_now()
+        async with self.database.sessions.begin() as transaction:
+            executions = list(
+                (
+                    await transaction.scalars(
+                        select(ToolExecutionRecord).where(ToolExecutionRecord.id.in_(execution_ids))
+                    )
+                ).all()
+            )
+            for execution in executions:
+                if execution.status not in {"starting", "running", "waiting_human"}:
+                    continue
+                execution.status = "cancelled"
+                execution.process_dispatch_state = "finished"
+                execution.failure_code = reason_code[:100]
+                execution.terminal_reason_code = reason_code[:100]
+                execution.finished_at = now
+                execution.row_version += 1
+
+        operations = await self._tool_operations.cancel_pending_for_run(
+            run_id,
+            reason_code=reason_code,
+        )
+        workspaces = await self._execution_workspaces.retain_for_terminal_run(run_id)
+        result = {
+            "tool_executions": len(executions),
+            "pi_processes": closed_processes,
+            "tool_operations": operations,
+            "workspaces": workspaces,
+        }
+        if any(result.values()):
+            logger.info(
+                "execution_dispatch_cancelled run_id=%s reason_code=%s "
+                "tool_executions=%d pi_processes=%d tool_operations=%d workspaces=%d",
+                run_id,
+                reason_code,
+                result["tool_executions"],
+                result["pi_processes"],
+                result["tool_operations"],
+                result["workspaces"],
+            )
+        return result
 
     @staticmethod
     def _apply_terminal(

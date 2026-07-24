@@ -8,6 +8,7 @@ Product governance and durable state remain in ``execution_dispatch``.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import secrets
@@ -20,11 +21,13 @@ from starlette.responses import Response, StreamingResponse
 
 from .config import PiRuntimeSettings
 from .execution_dispatch.contracts import RepositoryFence
+from .execution_workspaces import ExecutionWorkspaceService
 from .model_call_review import InMemoryModelCallReviewStore, ProviderDispatchError
 from .model_providers import ModelProviderCatalog, ModelProviderConfig
 from .pi_runtime import PiExecution, PiGatewayCall, PiRuntimeError
 from .readonly_tools import ReadonlyToolService
 from .tool_configs import PiToolConfigSnapshot
+from .tool_execution import ToolOperationService
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +56,10 @@ class PiRuntimeManager:
         *,
         repository_fence: RepositoryFence | None = None,
         readonly_tools: ReadonlyToolService | None = None,
+        workspace_id: str | None = None,
+        tool_execution_id: str | None = None,
+        execution_workspaces: ExecutionWorkspaceService | None = None,
+        tool_operations: ToolOperationService | None = None,
     ) -> PiExecution:
         clean_task = task.strip()
         if not clean_task:
@@ -68,6 +75,10 @@ class PiRuntimeManager:
             manager=self,
             repository_fence=repository_fence,
             readonly_tools=readonly_tools,
+            workspace_id=workspace_id,
+            tool_execution_id=tool_execution_id,
+            execution_workspaces=execution_workspaces,
+            tool_operations=tool_operations,
         )
         self._executions[token] = execution
         try:
@@ -85,13 +96,43 @@ class PiRuntimeManager:
         for execution in list(self._executions.values()):
             await execution.close()
 
-    def authenticate(self, authorization: str | None) -> PiExecution:
-        prefix = "Bearer "
-        token = authorization[len(prefix) :] if authorization and authorization.startswith(prefix) else ""
-        execution = self._executions.get(token)
-        if execution is None:
-            raise HTTPException(status_code=401, detail="pi Provider网关凭据无效")
-        return execution
+    async def close_for_tool_execution(self, tool_execution_id: str) -> int:
+        """Stop only live pi processes owned by one durable ToolExecution."""
+
+        matches = [
+            execution
+            for execution in self._executions.values()
+            if execution.tool_execution_id == tool_execution_id
+        ]
+        for execution in matches:
+            await execution.close()
+        return len(matches)
+
+    def authenticate(
+        self,
+        authorization: str | None,
+        *,
+        gateway_token: str | None = None,
+    ) -> PiExecution:
+        """Resolve one process-local credential without logging the secret."""
+
+        candidate = (gateway_token or "").strip()
+        source = "dedicated_header" if candidate else "authorization"
+        if not candidate and authorization:
+            scheme, separator, value = authorization.partition(" ")
+            if separator and scheme.lower() == "bearer":
+                candidate = value.strip()
+        for token, execution in self._executions.items():
+            if candidate and secrets.compare_digest(token, candidate):
+                return execution
+        fingerprint = hashlib.sha256(candidate.encode("utf-8")).hexdigest()[:12] if candidate else "missing"
+        logger.warning(
+            "pi_gateway_authentication_failed source=%s credential_fingerprint=%s active_executions=%d",
+            source,
+            fingerprint,
+            len(self._executions),
+        )
+        raise HTTPException(status_code=401, detail="pi Provider网关凭据无效")
 
     async def read_tool_response(
         self,
@@ -119,14 +160,44 @@ class PiRuntimeManager:
             arguments=payload["arguments"],
         )
 
+    async def workspace_tool_response(
+        self,
+        *,
+        authorization: str | None,
+        tool_name: str,
+        body: bytes,
+    ) -> dict[str, Any]:
+        execution = self.authenticate(authorization)
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError as error:
+            raise PiRuntimeError(
+                "pi Workspace Tool请求不是有效JSON",
+                code="pi_workspace_tool_request_invalid",
+            ) from error
+        if not isinstance(payload, dict) or not isinstance(payload.get("arguments"), dict):
+            raise PiRuntimeError(
+                "pi Workspace Tool请求缺少参数",
+                code="pi_workspace_tool_request_invalid",
+            )
+        return await execution.execute_workspace_tool(
+            tool_call_id=str(payload.get("tool_call_id") or ""),
+            tool_name=tool_name,
+            arguments=payload["arguments"],
+        )
+
     async def gateway_response(
         self,
         *,
         authorization: str | None,
+        gateway_token: str | None = None,
         protocol: str,
         body: bytes,
     ) -> Response:
-        execution = self.authenticate(authorization)
+        execution = self.authenticate(
+            authorization,
+            gateway_token=gateway_token,
+        )
         try:
             call = await execution.accept_provider_call(protocol, body)
             decision = await call.decision

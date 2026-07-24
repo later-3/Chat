@@ -18,9 +18,11 @@ from uuid import uuid4
 
 from .config import PiRuntimeSettings
 from .execution_dispatch.contracts import RepositoryFence
+from .execution_workspaces import ExecutionWorkspaceService
 from .model_providers import ModelProviderConfig
 from .readonly_tools import ReadonlyToolService, ReadonlyToolValidationError
 from .tool_configs import PiToolConfigSnapshot
+from .tool_execution import ToolOperationError, ToolOperationService
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +161,124 @@ export default function(pi) {
 }
 """
 
+PI_WORKSPACE_EXTENSION_SOURCE = """const Schemas = {
+  read: {
+    type: "object",
+    properties: {
+      path: { type: "string" },
+      offset: { type: "integer", minimum: 1 },
+      limit: { type: "integer", minimum: 1, maximum: 2000 }
+    },
+    required: ["path"],
+    additionalProperties: false
+  },
+  grep: {
+    type: "object",
+    properties: {
+      pattern: { type: "string" },
+      path: { type: "string" },
+      regex: { type: "boolean" },
+      limit: { type: "integer", minimum: 1, maximum: 100 }
+    },
+    required: ["pattern"],
+    additionalProperties: false
+  },
+  find: {
+    type: "object",
+    properties: {
+      pattern: { type: "string" },
+      path: { type: "string" },
+      limit: { type: "integer", minimum: 1, maximum: 500 }
+    },
+    required: ["pattern"],
+    additionalProperties: false
+  },
+  ls: {
+    type: "object",
+    properties: {
+      path: { type: "string" },
+      limit: { type: "integer", minimum: 1, maximum: 500 }
+    },
+    additionalProperties: false
+  },
+  edit: {
+    type: "object",
+    properties: {
+      path: { type: "string" },
+      old_text: { type: "string" },
+      new_text: { type: "string" }
+    },
+    required: ["path", "old_text", "new_text"],
+    additionalProperties: false
+  }
+};
+
+const Descriptions = {
+  read: "Read a bounded range of one UTF-8 text file inside the managed execution workspace.",
+  grep: "Search bounded text files inside the managed execution workspace.",
+  find: "Find bounded file paths inside the managed execution workspace.",
+  ls: "List one directory inside the managed execution workspace.",
+  edit: "Replace one exact, unique text occurrence in one existing UTF-8 file. Chat previews and authorizes the exact diff before execution."
+};
+
+export default function(pi) {
+  for (const name of ["read", "grep", "find", "ls", "edit"]) {
+    pi.registerTool({
+      name,
+      label: `Chat ${name}`,
+      description: Descriptions[name],
+      promptSnippet: Descriptions[name],
+      parameters: Schemas[name],
+      executionMode: name === "edit" ? "sequential" : "parallel",
+      async execute(toolCallId, params) {
+        const response = await fetch(`${process.env.CHAT_PI_WORKSPACE_TOOL_GATEWAY}/${name}`, {
+          method: "POST",
+          headers: {
+            "authorization": `Bearer ${process.env.CHAT_PI_WORKSPACE_TOOL_TOKEN}`,
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({ tool_call_id: toolCallId, arguments: params })
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.detail || payload?.error?.message || "Chat workspace tool failed");
+        }
+        return {
+          content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+          details: payload
+        };
+      }
+    });
+  }
+
+  pi.on("tool_call", async (event, ctx) => {
+    const edited = await ctx.ui.editor(
+      "CHAT_PI_TOOL_APPROVAL",
+      JSON.stringify({
+        tool_call_id: event.toolCallId,
+        tool_name: event.toolName,
+        arguments: event.input
+      })
+    );
+    if (edited === undefined) {
+      return { block: true, reason: "Chat user rejected the pi tool call" };
+    }
+    let decision;
+    try {
+      decision = JSON.parse(edited);
+    } catch {
+      return { block: true, reason: "Chat returned invalid tool arguments" };
+    }
+    if (!decision || typeof decision.arguments !== "object" || Array.isArray(decision.arguments)) {
+      return { block: true, reason: "Chat returned invalid tool arguments" };
+    }
+    for (const key of Object.keys(event.input)) delete event.input[key];
+    Object.assign(event.input, decision.arguments);
+    return undefined;
+  });
+}
+"""
+
 
 class PiRuntimeError(RuntimeError):
     def __init__(self, message: str, *, code: str = "pi_runtime_error") -> None:
@@ -219,6 +339,7 @@ _PI_REASONING_MAX_TOKENS = 65_536
 # Keep an explicit upper bound so malformed output still cannot grow unbounded.
 _PI_RPC_STREAM_LIMIT = 8 * 1024 * 1024
 MAX_PI_READ_TOOL_CALLS = 24
+PI_GATEWAY_TOKEN_HEADER = "X-Chat-Pi-Token"
 _SENSITIVE_ERROR_VALUE = re.compile(r"(?i)(authorization|api[_-]?key|token|secret)\s*[:=]\s*([^\s,;}]+)")
 
 
@@ -307,6 +428,10 @@ class PiExecution:
         manager: PiExecutionOwner,
         repository_fence: RepositoryFence | None = None,
         readonly_tools: ReadonlyToolService | None = None,
+        workspace_id: str | None = None,
+        tool_execution_id: str | None = None,
+        execution_workspaces: ExecutionWorkspaceService | None = None,
+        tool_operations: ToolOperationService | None = None,
     ) -> None:
         self.token = token
         self.task = task
@@ -316,6 +441,10 @@ class PiExecution:
         self.manager = manager
         self.repository_fence = repository_fence
         self.readonly_tools = readonly_tools
+        self.workspace_id = workspace_id
+        self.tool_execution_id = tool_execution_id
+        self.execution_workspaces = execution_workspaces
+        self.tool_operations = tool_operations
         self.started_at = time.monotonic()
         self.process: asyncio.subprocess.Process | None = None
         self._temp_directory: tempfile.TemporaryDirectory[str] | None = None
@@ -358,6 +487,11 @@ class PiExecution:
                     "baseUrl": gateway_base,
                     "apiKey": self.token,
                     "authHeader": True,
+                    # OpenAI-compatible SDKs may synthesize or replace their
+                    # Authorization header. Keep an independent Chat-owned
+                    # credential so local gateway authentication does not
+                    # depend on SDK header merge behavior.
+                    "headers": {PI_GATEWAY_TOKEN_HEADER: self.token},
                     "api": _pi_api(self.provider.protocol),
                     "compat": _pi_provider_compat(self.provider, self.config.model),
                     "models": [
@@ -378,11 +512,33 @@ class PiExecution:
         }
         (agent_directory / "models.json").write_text(json.dumps(models, ensure_ascii=False), encoding="utf-8")
         readonly = self.repository_fence is not None and self.readonly_tools is not None
-        extension_path = agent_directory / (
-            "chat-readonly-tools.mjs" if readonly else "chat-tool-approval.mjs"
+        workspace = all(
+            value is not None
+            for value in (
+                self.workspace_id,
+                self.tool_execution_id,
+                self.execution_workspaces,
+                self.tool_operations,
+                self.readonly_tools,
+            )
         )
+        if readonly and workspace:
+            raise PiRuntimeError(
+                "pi执行不能同时绑定只读Snapshot和可写Workspace",
+                code="pi_execution_mode_conflict",
+            )
+        extension_name = (
+            "chat-workspace-tools.mjs"
+            if workspace
+            else ("chat-readonly-tools.mjs" if readonly else "chat-tool-approval.mjs")
+        )
+        extension_path = agent_directory / extension_name
         extension_path.write_text(
-            PI_READONLY_EXTENSION_SOURCE if readonly else PI_EXTENSION_SOURCE,
+            (
+                PI_WORKSPACE_EXTENSION_SOURCE
+                if workspace
+                else (PI_READONLY_EXTENSION_SOURCE if readonly else PI_EXTENSION_SOURCE)
+            ),
             encoding="utf-8",
         )
         environment = os.environ.copy()
@@ -398,6 +554,15 @@ class PiExecution:
                 {
                     "CHAT_PI_READ_TOOL_GATEWAY": (f"{self.runtime.gateway_origin}/api/pi-read-tools"),
                     "CHAT_PI_READ_TOOL_TOKEN": self.token,
+                }
+            )
+        if workspace:
+            environment.update(
+                {
+                    "CHAT_PI_WORKSPACE_TOOL_GATEWAY": (
+                        f"{self.runtime.gateway_origin}/api/pi-workspace-tools"
+                    ),
+                    "CHAT_PI_WORKSPACE_TOOL_TOKEN": self.token,
                 }
             )
         arguments = [
@@ -426,7 +591,7 @@ class PiExecution:
             "--approve",
             "--offline",
         ]
-        if readonly:
+        if readonly or workspace:
             arguments.extend(
                 [
                     "--no-builtin-tools",
@@ -531,6 +696,50 @@ class PiExecution:
                 arguments=arguments,
             )
         except ReadonlyToolValidationError as error:
+            raise PiRuntimeError(str(error), code=error.code) from error
+
+    async def execute_workspace_tool(
+        self,
+        *,
+        tool_call_id: str,
+        tool_name: str,
+        arguments: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Consume one approved custom Tool against the managed SD3 workspace."""
+
+        if (
+            self.workspace_id is None
+            or self.tool_execution_id is None
+            or self.execution_workspaces is None
+            or self.tool_operations is None
+            or self.readonly_tools is None
+        ):
+            raise PiRuntimeError(
+                "当前pi执行没有Execution Workspace Tool Gateway",
+                code="pi_workspace_tool_gateway_unavailable",
+            )
+        approved = self._approved_tool_calls.pop(tool_call_id, None)
+        if approved is None or approved[0] != tool_name or approved[1] != dict(arguments):
+            raise PiRuntimeError(
+                "pi Workspace Tool参数未获当前调用批准",
+                code="pi_workspace_tool_not_approved",
+            )
+        try:
+            if tool_name == "edit":
+                return await self.tool_operations.execute_exact_edit(
+                    tool_execution_id=self.tool_execution_id,
+                    provider_tool_call_id=tool_call_id,
+                    arguments=arguments,
+                    worker_id=f"pi-gateway:{self.token[:12]}",
+                )
+            root = await self.execution_workspaces.private_path(self.workspace_id)
+            return await self.readonly_tools.execute_at_root(
+                root=root,
+                tool_name=tool_name,
+                arguments=arguments,
+                source_identity={"execution_workspace_id": self.workspace_id},
+            )
+        except (ReadonlyToolValidationError, ToolOperationError) as error:
             raise PiRuntimeError(str(error), code=error.code) from error
 
     def metrics(self) -> dict[str, Any]:
@@ -671,17 +880,21 @@ class PiExecution:
             except json.JSONDecodeError:
                 payload = {}
             arguments = payload.get("arguments") if isinstance(payload, dict) else {}
+            normalized_arguments = self._normalize_tool_arguments(
+                str(payload.get("tool_name") or ""),
+                arguments if isinstance(arguments, dict) else {},
+            )
             boundary = PiToolCallBoundary(
                 kind="tool_call",
                 rpc_request_id=str(event.get("id") or ""),
                 tool_call_id=str(payload.get("tool_call_id") or ""),
                 tool_name=str(payload.get("tool_name") or ""),
-                arguments=copy.deepcopy(arguments) if isinstance(arguments, dict) else {},
+                arguments=normalized_arguments,
             )
             self._validate_tool_arguments(boundary.tool_name, boundary.arguments)
             if self._internal_tool_call_count >= MAX_PI_READ_TOOL_CALLS:
                 raise PiRuntimeError(
-                    "pi只读Tool调用次数超过SD2上限",
+                    "pi内部Tool调用次数超过当前上限",
                     code="pi_read_tool_call_limit",
                 )
             self._internal_tool_call_count += 1
@@ -746,9 +959,49 @@ class PiExecution:
                 )
             )
 
+    def _normalize_tool_arguments(
+        self,
+        tool_name: str,
+        arguments: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Canonicalize SDK-emitted absolute paths into the governed root.
+
+        pi may serialize its working directory as an absolute Tool argument,
+        while Chat's public Tool contract is repository-relative. Only paths
+        contained by the exact execution root are accepted, so approval and
+        Trace records never need the machine-private workspace locator.
+        """
+
+        normalized = copy.deepcopy(dict(arguments))
+        if self.workspace_id is None and self.repository_fence is None:
+            return normalized
+        path_value = normalized.get("path")
+        if not isinstance(path_value, str) or not path_value.strip():
+            return normalized
+        candidate = Path(path_value)
+        if not candidate.is_absolute():
+            return normalized
+        root = Path(self.config.working_directory).resolve()
+        resolved = candidate.resolve()
+        if resolved != root and not resolved.is_relative_to(root):
+            raise PiRuntimeError(
+                f"pi {tool_name} Tool路径超出本次工作目录",
+                code="pi_tool_path_escape",
+            )
+        relative = resolved.relative_to(root).as_posix()
+        normalized["path"] = relative or "."
+        return normalized
+
     def _validate_tool_arguments(self, tool_name: str, arguments: Mapping[str, Any]) -> None:
         if tool_name not in self.config.allowed_tools:
             raise PiRuntimeError(f"pi请求了未授权Tool: {tool_name}", code="pi_tool_not_allowed")
+        if self.workspace_id is not None:
+            if tool_name not in {*ReadonlyToolService.allowed_tools, "edit"}:
+                raise PiRuntimeError(
+                    f"pi请求了Workspace Allowlist之外的Tool: {tool_name}",
+                    code="pi_tool_not_allowed",
+                )
+            return
         if self.repository_fence is not None:
             if tool_name not in ReadonlyToolService.allowed_tools:
                 raise PiRuntimeError(

@@ -1277,6 +1277,237 @@ class ExecutionGovernanceService:
         )
         return result
 
+    async def close_open_decisions_for_terminal_run(
+        self,
+        *,
+        run_id: str,
+        reason_code: str,
+    ) -> dict[str, int]:
+        """Close recoverable governance state after one Product Run is terminal.
+
+        Product cancellation and terminal failure revoke the authority to
+        resume a MAF checkpoint or consume a still-active grant. Immutable
+        decisions remain audit evidence; only pending requests, active grants,
+        resumable links/checkpoints and unpublished resume commands are
+        settled here.
+        """
+
+        now = utc_now()
+        cancelled = reason_code.startswith("user_cancelled")
+        request_terminal_status = "cancelled" if cancelled else "superseded"
+        link_terminal_status = "cancelled" if cancelled else "failed"
+        counts = {
+            "requests": 0,
+            "items": 0,
+            "grants": 0,
+            "interrupts": 0,
+            "checkpoints": 0,
+            "outbox_events": 0,
+            "model_calls": 0,
+            "tool_calls": 0,
+        }
+        async with self.database.sessions.begin() as transaction:
+            run = await transaction.get(RunRecord, run_id)
+            if run is None:
+                raise GovernanceValidationError("Product Run不存在")
+            if run.finished_at is None:
+                raise GovernanceConflict("活动Product Run不能关闭治理状态")
+
+            requests = list(
+                (
+                    await transaction.scalars(
+                        select(HumanDecisionRequestRecord).where(HumanDecisionRequestRecord.run_id == run_id)
+                    )
+                ).all()
+            )
+            request_ids = [value.id for value in requests]
+            for request in requests:
+                if request.status == "pending":
+                    request.status = request_terminal_status
+                    request.row_version += 1
+                    request.resolved_at = now
+                    counts["requests"] += 1
+
+            if request_ids:
+                items = list(
+                    (
+                        await transaction.scalars(
+                            select(HumanDecisionRequestItemRecord).where(
+                                HumanDecisionRequestItemRecord.request_id.in_(request_ids),
+                                HumanDecisionRequestItemRecord.status == "pending",
+                            )
+                        )
+                    ).all()
+                )
+                for item in items:
+                    item.status = request_terminal_status
+                counts["items"] = len(items)
+
+                links = list(
+                    (
+                        await transaction.scalars(
+                            select(RuntimeInterruptLinkRecord).where(
+                                RuntimeInterruptLinkRecord.decision_request_id.in_(request_ids),
+                                RuntimeInterruptLinkRecord.status.in_(
+                                    {
+                                        "pending",
+                                        "decision_recorded",
+                                        "resuming",
+                                        "recovery_required",
+                                    }
+                                ),
+                            )
+                        )
+                    ).all()
+                )
+                for link in links:
+                    link.status = link_terminal_status
+                    link.last_error_code = reason_code
+                    link.updated_at = now
+                    checkpoint = await transaction.get(
+                        MafWorkflowCheckpointRecord,
+                        link.maf_checkpoint_id,
+                    )
+                    if checkpoint is not None and checkpoint.status in {
+                        "linked",
+                        "resuming",
+                        "incompatible",
+                    }:
+                        checkpoint.status = link_terminal_status
+                        counts["checkpoints"] += 1
+                counts["interrupts"] = len(links)
+
+                outbox_events = list(
+                    (
+                        await transaction.scalars(
+                            select(GovernanceOutboxRecord).where(
+                                GovernanceOutboxRecord.aggregate_kind == "human_decision_request",
+                                GovernanceOutboxRecord.aggregate_id.in_(request_ids),
+                                GovernanceOutboxRecord.event_type == "runtime.resume_requested",
+                                GovernanceOutboxRecord.status.in_({"pending", "processing"}),
+                            )
+                        )
+                    ).all()
+                )
+                for event in outbox_events:
+                    event.status = "cancelled"
+                    event.locked_by = None
+                    event.locked_until = None
+                    event.last_error_code = reason_code
+                counts["outbox_events"] = len(outbox_events)
+
+            model_slots = list(
+                (
+                    await transaction.scalars(
+                        select(ModelCallDraftRecord).where(
+                            ModelCallDraftRecord.run_id == run_id,
+                            ModelCallDraftRecord.status.in_({"building", "reviewable"}),
+                        )
+                    )
+                ).all()
+            )
+            for slot in model_slots:
+                slot.status = "invalidated"
+                slot.row_version += 1
+                if slot.current_revision_id:
+                    revision = await transaction.get(
+                        ModelCallDraftRevisionRecord,
+                        slot.current_revision_id,
+                    )
+                    if revision is not None and revision.status == "reviewable":
+                        revision.status = "invalidated"
+            counts["model_calls"] = len(model_slots)
+
+            tool_calls = list(
+                (
+                    await transaction.scalars(
+                        select(ToolCallRequestRecord).where(
+                            ToolCallRequestRecord.run_id == run_id,
+                            ToolCallRequestRecord.status.in_({"pending", "authorized"}),
+                        )
+                    )
+                ).all()
+            )
+            for tool_call in tool_calls:
+                tool_call.status = request_terminal_status
+            counts["tool_calls"] = len(tool_calls)
+
+            subject_ids = list(
+                (
+                    await transaction.scalars(
+                        select(DecisionSubjectRecord.id).where(DecisionSubjectRecord.run_id == run_id)
+                    )
+                ).all()
+            )
+            if subject_ids:
+                grants = list(
+                    (
+                        await transaction.scalars(
+                            select(AuthorizationGrantRecord).where(
+                                AuthorizationGrantRecord.subject_id.in_(subject_ids),
+                                AuthorizationGrantRecord.status == "active",
+                            )
+                        )
+                    ).all()
+                )
+                for grant in grants:
+                    grant.status = "invalidated"
+                    grant.invalidated_at = now
+                    grant.invalidation_reason = reason_code
+                    grant.row_version += 1
+                counts["grants"] = len(grants)
+
+        if any(counts.values()):
+            logger.info(
+                "terminal_run_governance_closed run_id=%s reason_code=%s "
+                "requests=%d items=%d grants=%d interrupts=%d checkpoints=%d "
+                "outbox_events=%d model_calls=%d tool_calls=%d",
+                run_id,
+                reason_code,
+                counts["requests"],
+                counts["items"],
+                counts["grants"],
+                counts["interrupts"],
+                counts["checkpoints"],
+                counts["outbox_events"],
+                counts["model_calls"],
+                counts["tool_calls"],
+            )
+        return counts
+
+    async def reconcile_terminal_run_decisions(self) -> int:
+        """Close stale pending decisions whose Product Run already finished."""
+
+        async with self.database.sessions() as transaction:
+            rows = list(
+                (
+                    await transaction.execute(
+                        select(
+                            HumanDecisionRequestRecord.run_id,
+                            RunRecord.failure_code,
+                        )
+                        .join(
+                            RunRecord,
+                            RunRecord.id == HumanDecisionRequestRecord.run_id,
+                        )
+                        .where(
+                            HumanDecisionRequestRecord.status == "pending",
+                            HumanDecisionRequestRecord.run_id.is_not(None),
+                            RunRecord.finished_at.is_not(None),
+                        )
+                        .distinct()
+                    )
+                ).all()
+            )
+        for run_id, failure_code in rows:
+            if run_id is None:
+                continue
+            await self.close_open_decisions_for_terminal_run(
+                run_id=run_id,
+                reason_code=str(failure_code or "product_run_terminal"),
+            )
+        return len(rows)
+
     async def bind_runtime_interrupt(
         self,
         *,

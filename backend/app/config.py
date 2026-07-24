@@ -27,6 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = PROJECT_ROOT / "backend"
 DEFAULT_CONFIG_PATH = BACKEND_ROOT / "config.json"
 DEFAULT_DATABASE_URL = f"sqlite+aiosqlite:///{(BACKEND_ROOT / '.data' / 'chat.db').as_posix()}"
+DEFAULT_EXECUTION_WORKSPACE_ROOT = BACKEND_ROOT / ".data" / "execution-workspaces"
 logger = logging.getLogger(__name__)
 
 
@@ -495,6 +496,17 @@ def _workspace_roots(
     return tuple(roots)
 
 
+def _execution_workspace_root(payload: dict[str, Any]) -> Path:
+    """Resolve the private root used only for Chat-managed execution worktrees."""
+
+    raw = _record(payload.get("execution", {}), field="execution")
+    value = str(raw.get("workspace_root") or DEFAULT_EXECUTION_WORKSPACE_ROOT).strip()
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    return path.resolve()
+
+
 def _load_payload(path: Path) -> dict[str, Any]:
     try:
         value: Any = json.loads(path.read_text(encoding="utf-8"))
@@ -520,6 +532,7 @@ class Settings:
     database_url: str = DEFAULT_DATABASE_URL
     pi_runtime: PiRuntimeSettings = PiRuntimeSettings()
     workspace_roots: tuple[WorkspaceRootSettings, ...] = ()
+    execution_workspace_root: Path = DEFAULT_EXECUTION_WORKSPACE_ROOT
     observability: ObservabilitySettings = ObservabilitySettings()
 
     @property
@@ -593,6 +606,7 @@ class Settings:
             database_url=str(product_store.get("url") or DEFAULT_DATABASE_URL),
             pi_runtime=pi_runtime,
             workspace_roots=workspace_roots,
+            execution_workspace_root=_execution_workspace_root(payload),
             observability=_observability(payload),
         )
 
@@ -608,5 +622,6 @@ class Settings:
             database_url="sqlite+aiosqlite:///:memory:",
             pi_runtime=PiRuntimeSettings(),
             workspace_roots=(),
+            execution_workspace_root=DEFAULT_EXECUTION_WORKSPACE_ROOT,
             observability=ObservabilitySettings(log_level="WARNING", log_file=None),
         )

@@ -19,6 +19,7 @@ from .collaboration_protocols import CollaborationProtocolService
 from .config import ModelProviderCatalog, Settings
 from .execution_dispatch import RepositoryExecutionContextService
 from .execution_dispatch.service import ExecutionDispatchService
+from .execution_workspaces import ExecutionWorkspaceService
 from .governance import ExecutionGovernanceService, GovernanceOutboxWorker
 from .harness import HarnessService
 from .harness.outbox import ProductOutboxRouter
@@ -50,6 +51,7 @@ from .runtime_execution import (
 from .runtime_execution.endpoint import add_durable_agui_endpoint
 from .step_inputs import StepInputProjectionService
 from .tool_configs import ToolConfigurationService
+from .tool_execution import ToolOperationService
 from .workflows import (
     CONTINUOUS_COLLABORATION_WORKFLOW,
     GOVERNED_AGENT_HANDOFF_WORKFLOW,
@@ -82,6 +84,8 @@ class ApplicationComponents:
     project_resources: ProjectResourceService
     repository_freshness: RepositorySourceFreshnessGuard
     repository_execution_context: RepositoryExecutionContextService
+    execution_workspaces: ExecutionWorkspaceService
+    tool_operations: ToolOperationService
     readonly_tools: ReadonlyToolService
     execution_dispatch: ExecutionDispatchService
     collaboration_contexts: CollaborationContextService
@@ -147,6 +151,15 @@ def build_components(
         catalog=root_catalog,
     )
     readonly_tools = ReadonlyToolService(repository_execution_context)
+    execution_workspaces = ExecutionWorkspaceService(
+        product_sessions.database,
+        repository_context=repository_execution_context,
+        managed_root=settings.execution_workspace_root,
+    )
+    tool_operations = ToolOperationService(
+        product_sessions.database,
+        workspaces=execution_workspaces,
+    )
     tool_configurations = ToolConfigurationService(
         product_sessions.database,
         model_catalog,
@@ -162,6 +175,8 @@ def build_components(
         tool_configurations=tool_configurations,
         manager=pi_runtime,
         readonly_tools=readonly_tools,
+        execution_workspaces=execution_workspaces,
+        tool_operations=tool_operations,
     )
     return ApplicationComponents(
         settings=settings,
@@ -186,6 +201,8 @@ def build_components(
         project_resources=project_resources,
         repository_freshness=repository_freshness,
         repository_execution_context=repository_execution_context,
+        execution_workspaces=execution_workspaces,
+        tool_operations=tool_operations,
         readonly_tools=readonly_tools,
         execution_dispatch=execution_dispatch,
         collaboration_contexts=CollaborationContextService(
@@ -217,6 +234,8 @@ def expose_components(app: FastAPI, components: ApplicationComponents) -> None:
     app.state.project_resources = components.project_resources
     app.state.repository_freshness = components.repository_freshness
     app.state.repository_execution_context = components.repository_execution_context
+    app.state.execution_workspaces = components.execution_workspaces
+    app.state.tool_operations = components.tool_operations
     app.state.readonly_tools = components.readonly_tools
     app.state.execution_dispatch = components.execution_dispatch
     app.state.collaboration_contexts = components.collaboration_contexts

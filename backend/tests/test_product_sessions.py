@@ -189,7 +189,7 @@ def test_file_store_survives_restart_and_reconciles_unfinished_run(tmp_path: Pat
         assert session_view["active_run_id"] is None
         with sqlite3.connect(tmp_path / "restart.db") as connection:
             assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-                "e71b3c5d9a02",
+                "f01d3a7c9e25",
             )
 
     asyncio.run(scenario())

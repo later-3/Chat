@@ -121,7 +121,10 @@ class ToolConfigurationService:
                     provider_id=self.catalog.default_provider_id,
                     model=self.catalog.default_model,
                     working_directory=str(self.runtime.default_working_directory),
-                    allowed_tools=["read", "grep", "find", "ls"],
+                    # `edit` is Chat's governed exact-edit implementation, not
+                    # pi's builtin writer. Runtime mode selection still removes
+                    # it from SD2 and keeps every SD3 call behind Operation/HITL.
+                    allowed_tools=["read", "grep", "find", "ls", "edit"],
                     thinking_level="medium",
                     max_model_calls=12,
                     timeout_seconds=900,

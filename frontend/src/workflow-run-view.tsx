@@ -283,14 +283,18 @@ export function WorkflowRunView({
                   {pendingReview.review_kind === "product_decision"
                     ? "产品决定正在等待处理"
                     : pendingReview.review_kind === "tool_execution"
-                      ? "pi只读Tool调用正在等待审批"
+                      ? pendingReview.tool_operation
+                        ? "pi隔离工作区修改正在等待审批"
+                        : "pi只读Tool调用正在等待审批"
                       : "模型请求正在等待审批"}
                 </strong>
                 <p>
                   {pendingReview.review_kind === "product_decision"
                     ? "当前Subject、有效策略和可修改字段已在人工介入界面打开。"
                     : pendingReview.review_kind === "tool_execution"
-                      ? "当前Tool名称、只读参数和Repository Snapshot围栏已打开；批准后只执行这一次调用。"
+                      ? pendingReview.tool_operation
+                        ? "精确文件、Diff和内容Hash已打开；批准后只在隔离工作区执行这一次修改。"
+                        : "当前Tool名称、只读参数和Repository Snapshot围栏已打开；批准后只执行这一次调用。"
                       : "完整可编辑请求已在审批界面打开；批准后才会发送给 Provider。"}
                 </p>
               </div>

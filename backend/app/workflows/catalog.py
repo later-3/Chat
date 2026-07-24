@@ -67,7 +67,7 @@ CHAT_MODEL_CALL_APPROVAL_WORKFLOW = WorkflowDefinition(
 CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
     id="continuous-collaboration",
     name="持续协作主 Workflow",
-    version="1.6.0",
+    version="1.7.0",
     description=(
         "以选择性上下文和意图识别为入口，按场景进入澄清、计划或直接响应，"
         "所有模型调用受HITL治理，并在回合结束提取重点候选。"
@@ -244,8 +244,36 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
         WorkflowNodeDefinition(
             id="execution_route",
             label="选择执行分支",
-            description="只读取已批准RunSpec，确定进入Chat回答或pi只读执行；不再重新解释用户文本。",
+            description="只读取已批准RunSpec，确定进入Chat回答、pi只读或隔离编辑；不再重新解释用户文本。",
             kind="decision",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="execution_workspace_prepare",
+            label="准备隔离Execution Workspace",
+            description=(
+                "从已批准的干净Repository Snapshot创建受管Git worktree，"
+                "校验base revision并公开安全Workspace投影。"
+            ),
+            kind="workspace",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="pi_workspace_dispatch",
+            label="运行受治理pi隔离编辑",
+            description=(
+                "在受管worktree中启动pi；逐次审批模型请求和Tool，仅允许有界读取与绑定Hash的单文件精确edit。"
+            ),
+            kind="agent",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="pi_workspace_result_assembly",
+            label="装配pi隔离编辑结果",
+            description=(
+                "保留工作区、校验ToolExecution和Result Hash，公开变化文件但不提交、不推送、不声明Work完成。"
+            ),
+            kind="transform",
             runtime_type="executor",
         ),
         WorkflowNodeDefinition(
@@ -385,6 +413,13 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
         WorkflowEdgeDefinition("run_spec_compiler", "execution_route"),
         WorkflowEdgeDefinition(
             "execution_route",
+            "execution_workspace_prepare",
+            "RunSpec.runtime_agent = pi / workspace_edit",
+            "pi_workspace",
+            "进入受治理pi隔离编辑",
+        ),
+        WorkflowEdgeDefinition(
+            "execution_route",
             "pi_readonly_dispatch",
             "RunSpec.runtime_agent = pi / readonly",
             "pi_readonly",
@@ -397,6 +432,9 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
             "answer_only",
             "进入Chat回答Agent",
         ),
+        WorkflowEdgeDefinition("execution_workspace_prepare", "pi_workspace_dispatch"),
+        WorkflowEdgeDefinition("pi_workspace_dispatch", "pi_workspace_result_assembly"),
+        WorkflowEdgeDefinition("pi_workspace_result_assembly", "turn_summary_agent"),
         WorkflowEdgeDefinition("pi_readonly_dispatch", "pi_readonly_result_assembly"),
         WorkflowEdgeDefinition("pi_readonly_result_assembly", "turn_summary_agent"),
         WorkflowEdgeDefinition("response_agent", "turn_summary_agent"),

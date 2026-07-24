@@ -23,15 +23,15 @@ from backend.app.workflows import (
     NESTED_QUALITY_WORKFLOW,
 )
 
-# Reviewed 2026-07-25 for SD2. OpenAPI adds the read-only ToolExecution
-# projections. Product Schema binds each pi execution to Run Attempt, Runtime
-# Job, RunSpec, StepInput and Repository Snapshot. Workflow 1.6.0 adds the
-# explicit execution route, governed pi dispatch and deterministic result
-# assembly nodes; the original answer-only branch remains available.
+# Reviewed 2026-07-25 for SD3. Product Schema adds the isolated
+# ExecutionWorkspace plus field-level ToolOperation, Attempt and Reconciliation
+# ledgers. Workflow 1.7.0 adds explicit workspace preparation, governed
+# workspace pi dispatch and result assembly while preserving the SD2 read-only
+# and answer-only branches. The hidden Tool Gateway does not change OpenAPI.
 # These fingerprints intentionally make future boundary drift fail closed.
 OPENAPI_SHA256 = "2386856ed2c3b1761234b4cc7068d7773749ae3f6dc8992da936207dd0d930a0"
-PRODUCT_SCHEMA_SHA256 = "e6d75e57e471cf264cfca352ba5fd0bea74871d1b667a6559702ddc172f9cbac"
-WORKFLOW_CATALOG_SHA256 = "5cd7d4c71cbd595f129f455cda96b0fa31362871224ac3303b7c161d0d56a16b"
+PRODUCT_SCHEMA_SHA256 = "5ac7da2eb45cd042d7c955189e992a607f5c7f311b0dc5b2e43d5ce7aa9fb00f"
+WORKFLOW_CATALOG_SHA256 = "9e286acd3544d3b023f5b73c6f1bda7851d22ed38e0bab7e3beecb2d87984f65"
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 
 

@@ -39,6 +39,13 @@ class RuntimeResumeOutboxHandler:
             # must not start a second MAF continuation.
             return
         link = await self.governance.runtime_interrupt_for_request(decision_request_id=decision_request_id)
+        if link.status in {"cancelled", "failed", "closed"}:
+            logger.info(
+                "runtime_resume_skipped_terminal_interrupt request_id=%s status=%s",
+                decision_request_id,
+                link.status,
+            )
+            return
         decisions = await self.governance.resolved_human_request(decision_request_id)
         if not decisions:
             raise OutboxDispatchError("决定请求没有item", code="decision_items_missing")

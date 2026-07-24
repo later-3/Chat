@@ -148,9 +148,20 @@ export interface ToolExecutionReviewCard {
   tool_id: string;
   tool_name: string;
   arguments: Record<string, unknown>;
-  working_directory: string;
+  target?: string;
   risk: string;
   config_revision: number;
+  tool_operation?: null | {
+    operation_id: string;
+    operation_hash: string;
+    arguments_hash: string;
+    workspace_id: string;
+    target_path: string;
+    expected_preimage_hash: string;
+    expected_postimage_hash: string;
+    diff_preview: string;
+    status: string;
+  };
   execution_context: {
     workflow_id: string;
     executor_id: string;

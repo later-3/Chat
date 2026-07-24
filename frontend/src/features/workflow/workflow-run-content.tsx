@@ -220,14 +220,32 @@ export function stepInputForNode(nodeId: string, stepInputs: StepInputProjection
  * to no detail instead of inventing a Workflow state.
  */
 const PI_ACTIVITY_LABELS: Record<string, string> = {
-  process_started: "pi只读进程启动",
+  process_started: "pi进程启动",
   model_call_waiting: "模型调用等待治理",
   model_call_completed: "模型调用完成",
-  tool_requested: "只读Tool请求",
-  tool_completed: "只读Tool完成",
-  process_completed: "pi只读进程完成",
-  process_failed: "pi只读进程未完成",
+  tool_requested: "Tool请求",
+  tool_completed: "Tool完成",
+  process_completed: "pi进程完成",
+  process_failed: "pi进程未完成",
 };
+
+function piActivityLabel(stage: string, mode: string | null): string {
+  const generic = PI_ACTIVITY_LABELS[stage] ?? stage;
+  if (mode !== "readonly") return generic;
+  if (stage === "process_started") return "pi只读进程启动";
+  if (stage === "process_completed") return "pi只读进程完成";
+  if (stage === "process_failed") return "pi只读进程未完成";
+  if (stage === "tool_requested") return "只读Tool请求";
+  if (stage === "tool_completed") return "只读Tool完成";
+  return generic;
+}
+
+const PI_DISPATCH_NODES = new Set(["pi_readonly_dispatch", "pi_workspace_dispatch"]);
+const PI_RESULT_NODES = new Set([
+  "pi_readonly_dispatch",
+  "pi_workspace_dispatch",
+  "pi_workspace_result_assembly",
+]);
 
 function latestPiExecution(values: GovernedToolExecution[]): GovernedToolExecution | undefined {
   return values
@@ -253,8 +271,11 @@ export function outputForNode(
   traceOutput: unknown,
   toolExecutions: GovernedToolExecution[],
 ): unknown {
-  if (nodeId !== "pi_readonly_dispatch") return traceOutput;
   const execution = latestPiExecution(toolExecutions);
+  if (nodeId === "execution_workspace_prepare") {
+    return execution?.workspace ?? traceOutput;
+  }
+  if (!PI_RESULT_NODES.has(nodeId)) return traceOutput;
   if (!execution) return traceOutput;
   if (execution.result !== null) return execution.result;
   return {
@@ -267,7 +288,7 @@ export function outputForNode(
 function governedExecutionProjection(value: GovernedToolExecution): unknown {
   const activities = (value.metrics.activities ?? []).map((activity) => ({
     序号: activity.sequence,
-    活动: PI_ACTIVITY_LABELS[activity.stage] ?? activity.stage,
+    活动: piActivityLabel(activity.stage, value.mode),
     状态: activity.status,
     说明: activity.summary,
     ...(Object.keys(activity.details).length > 0 ? { 公开细节: activity.details } : {}),
@@ -282,17 +303,55 @@ function governedExecutionProjection(value: GovernedToolExecution): unknown {
     活动时间线: activities,
     模型与Tool统计: {
       模型调用: value.model_call_count,
-      内部只读Tool调用: value.internal_tool_call_count,
+      内部Tool调用: value.internal_tool_call_count,
       输入Token: value.tokens.input,
       输出Token: value.tokens.output,
       耗时毫秒: value.duration_ms,
       成本: value.cost,
     },
-    Repository只读围栏: {
-      Binding: value.repository_binding_id,
-      Snapshot: value.repository_snapshot_id,
-      模式: value.mode,
-    },
+    ...(value.mode === "readonly"
+      ? {
+          Repository只读围栏: {
+            Binding: value.repository_binding_id,
+            Snapshot: value.repository_snapshot_id,
+            模式: value.mode,
+          },
+        }
+      : {
+          Repository执行边界: {
+            Binding: value.repository_binding_id,
+            Snapshot: value.repository_snapshot_id,
+            模式: value.mode,
+          },
+        }),
+    ...(value.workspace
+      ? {
+          隔离工作区: {
+            Workspace: value.workspace.id,
+            状态: value.workspace.status,
+            基线版本: value.workspace.source.base_revision,
+            变更文件: value.workspace.changed_paths,
+            DiffHash: value.workspace.diff_hash,
+          },
+        }
+      : {}),
+    ...(value.operations && value.operations.length > 0
+      ? {
+          写操作: value.operations.map((operation) => ({
+            序号: operation.operation_ordinal,
+            Tool: operation.tool_name,
+            文件: operation.target_path,
+            状态: operation.status,
+            OperationHash: operation.operation_hash,
+            修改前Hash: operation.expected_preimage_hash,
+            修改后Hash: operation.expected_postimage_hash,
+            实际Hash: operation.observed_hash,
+            Diff: operation.diff_preview,
+            执行尝试: operation.attempts,
+            对账: operation.reconciliations,
+          })),
+        }
+      : {}),
   };
 }
 
@@ -300,7 +359,7 @@ export function internalActivityForNode(
   nodeId: string,
   toolExecutions: GovernedToolExecution[],
 ): unknown {
-  if (nodeId !== "pi_readonly_dispatch") return undefined;
+  if (!PI_DISPATCH_NODES.has(nodeId)) return undefined;
   const execution = latestPiExecution(toolExecutions);
   return execution ? governedExecutionProjection(execution) : undefined;
 }
@@ -318,6 +377,19 @@ function governedExecutionAudit(values: GovernedToolExecution[]): unknown {
     config_revision: value.config_revision,
     row_version: value.row_version,
     结果Hash: value.result_hash,
+    Workspace: value.workspace
+      ? {
+          id: value.workspace.id,
+          status: value.workspace.status,
+          diff_hash: value.workspace.diff_hash,
+        }
+      : null,
+    ToolOperations: (value.operations ?? []).map((operation) => ({
+      id: operation.id,
+      status: operation.status,
+      operation_hash: operation.operation_hash,
+      result_hash: operation.result_hash,
+    })),
   }));
 }
 
@@ -326,10 +398,9 @@ export function governanceForNode(
   governance: RunGovernanceView | null,
   toolExecutions: GovernedToolExecution[] = [],
 ): unknown {
-  const executionValues =
-    nodeId === "pi_readonly_dispatch"
-      ? governedExecutionAudit(toolExecutions.filter((value) => value.tool_id === "pi_agent"))
-      : undefined;
+  const executionValues = PI_DISPATCH_NODES.has(nodeId)
+    ? governedExecutionAudit(toolExecutions.filter((value) => value.tool_id === "pi_agent"))
+    : undefined;
   if (!governance) {
     return executionValues === undefined ? undefined : { ToolExecution审计索引: executionValues };
   }

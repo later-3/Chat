@@ -47,10 +47,10 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 10. 持续协作主Workflow已经支持Product DB持久Checkpoint、Interrupt Link和Lease Outbox Worker；实际独立OS进程可从一次已提交决定恢复到下一审批安全点。该保证暂不外推到嵌套Workflow或外部Tool副作用。
 11. ExecutionDraft已有17部分完整可读编辑工作台；保存产生新revision与Hash，必须重新审批后才能编译不可变RunSpec。
 12. Product Harness D1-D8已经落地：Project、Work、Plan/Action、Note、Memory与两阶段Context使用服务端权威Schema、CAS、幂等命令、Trace和Outbox；前端提供Project Explorer、Work Board、Knowledge和Context Inspector。
-13. 持续协作主Workflow v1.6.0现有34个真实MAF节点；除7套协作协议、不可变Context revision、Repository Source Freshness、TurnDigest v1、StepInputProjection和持久Intent Set外，已根据批准的RunSpec在`answer_only`与受治理pi只读执行间显式路由。真实pi Dogfood完成2次模型审批、2次Chat-owned只读Tool调用，整个Product Run没有Shell、写文件或Git操作。
+13. 持续协作主Workflow v1.7.0现有37个真实MAF节点；除7套协作协议、不可变Context revision、Repository Source Freshness、TurnDigest v1、StepInputProjection和持久Intent Set外，已根据批准的RunSpec在`answer_only`、受治理pi只读执行与隔离工作区精确编辑间显式路由。SD3已实现受管Git worktree和`ToolOperation/Attempt/Reconciliation`，只开放`read/grep/find/ls/edit`，不直接修改活动仓库，也不开放Shell、commit或push。
 14. Runtime Job、活动流游标和通用Execution Worker纵向切片已经完成；完整Session仍按Phase 2-8继续补齐Steer/Follow-up、分支、强退/多端矩阵、Tool副作用对账和跨入口恢复。
 15. Chat概念空间已经建立：14个概念簇统一Chat系统/Harness、Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、上下文结果、界面、外部入口、人工介入、连续协作和超级管理员运营看护的共同语言。
-16. Q0工程安全底座已有可运行纵向基线：Governance/Harness已按纯规则、只读查询、命令记录和事务协调继续拆分；Agent重连Hook、Workflow运行投影和对话呈现已有独立Feature边界；8个重型前端Feature按需加载，当前主入口为472.6 KiB并受自动包体门保护。统一Problem Detail、关联日志/Trace/Metrics/诊断、CI、覆盖率、迁移、Playwright/axe、故障实验室和供应链门均通过本地验证；大型Application Service、持续协作Workflow、生产Exporter/SLO和远端CI首次运行仍在后续范围。
+16. Q0工程安全底座已有可运行纵向基线：Governance/Harness已按纯规则、只读查询、命令记录和事务协调继续拆分；Agent重连Hook、Workflow运行投影和对话呈现已有独立Feature边界；8个重型前端Feature按需加载，当前主入口为473.22 KiB并受自动包体门保护。统一Problem Detail、关联日志/Trace/Metrics/诊断、CI、覆盖率、迁移、Playwright/axe、故障实验室和供应链门均通过本地验证；大型Application Service、持续协作Workflow、生产Exporter/SLO和远端CI首次运行仍在后续范围。
 17. Super Admin Operations目标已经确认：Identity负责真实Authentication Session和Role/Grant，运营模块负责Activity/Usage、可重建工作/作品投影与管理员审计；当前尚未实现真实登录、活动采集、管理API或控制台，固定`local-user`和技术耗时不能冒充该能力。
 
 ## 技术方向
@@ -250,8 +250,9 @@ scripts/         可重复执行的工程验证
 
 ## 下一步
 
-SD1与SD2只读纵向切片已经完成。下一优先产品门是F01 Tool Operation Ledger字段级详细设计审核，
-通过后才进入SD3隔离Execution Workspace与写Tool；在F02 Evidence/Artifact生命周期批准前不把
-测试通过声明为Work完成，在F05前不承诺pi跨进程续跑。
+SD1、SD2已完成；F01字段级设计和SD3隔离精确编辑工程纵向切片已经落地。本机pi Provider Gateway
+凭据冲突已经修复并有回归测试，真实pi写入仍待远端Provider网络恢复后复验。下一产品门是F02
+Evidence/Artifact/Provenance与SD4验证提交；在F02批准前不把测试通过声明为Work完成，在F05前
+不承诺pi跨进程续跑。`write/bash/commit/push`仍未开放。
 Super Admin Operations、长期`TaskPlanRevision`、独立Branch Execution和生产前端迁移继续保留在已批准
 路线中，但不能挤占本次真实Dogfood纵向闭环的依赖顺序。

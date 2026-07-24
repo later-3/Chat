@@ -1,6 +1,6 @@
 # Chat 开发 Chat：自举能力详细设计与验证计划
 
-> 状态：**D1-D9、SD1 R1-R12、SD2 R1-R12及“Chat自开发可用门v1”已获批；SD1-A/B/C/D与SD2-A/B/C/D/E已完成，下一阶段SD3等待F01字段级详细设计审核**
+> 状态：**D1-D9、SD1/SD2及“Chat自开发可用门v1”已获批并完成；F01字段级设计已批准，SD3-A至E已实现，真实pi写入回合仍待远端网络恢复后复验**
 >
 > 更新日期：2026-07-25
 >
@@ -47,10 +47,10 @@
 
 1. [当前代码事实] 主Workflow已经拥有Context、Intent、Project/Work选择、Protocol、Plan、ExecutionDraft、RunSpec、模型调用审批、结果/Work/Memory决定和TurnDigest链路，真实图位于`backend/app/workflows/continuous_chat_factory.py`。
 2. [当前代码事实] `ExecutionDraft`和`RunSpec`已经版本化、Hash绑定并接受CAS式编辑；但当前编译器把`runtime`固定为`maf-workflow`、`isolation`固定为`in_process`、`working_directory`设为空、`tools`设为空。
-3. [当前代码事实] pi已通过官方JSONL RPC、Chat Provider Gateway和pi Custom Tool Extension接入主Workflow；每次模型调用持久治理，`read/grep/find/ls`由Chat-owned只读Gateway执行。
+3. [当前代码事实] pi已通过官方JSONL RPC、Chat Provider Gateway和pi Custom Tool Extension接入主Workflow；每次模型调用持久治理，`read/grep/find/ls`由Chat-owned只读Gateway执行，隔离编辑分支额外通过Chat-owned Gateway执行精确`edit`。
 4. [当前代码事实] SD2 pi启动参数包含`--no-skills`、`--no-prompt-templates`、`--no-session`、`--no-context-files`和`--no-builtin-tools`；Repository规则来自已批准Context/StepInput，不再沿祖先目录隐式发现。
 5. [当前代码事实] Product Harness已有Project、Work、Plan、Action、Note、Memory、ContextPackage、采用记录、Command幂等和Trace；尚无Project到Git仓库的权威资源绑定对象。
-6. [当前代码事实] Product Run/Attempt、Runtime Job/Event/Cursor、Worker Lease、主Workflow安全点Checkpoint恢复已经存在；pi进程、pi Session和pi内部Tool副作用尚不能跨进程恢复。
+6. [当前代码事实] Product Run/Attempt、Runtime Job/Event/Cursor、Worker Lease、主Workflow安全点Checkpoint恢复已经存在；精确`edit`的Operation/Attempt可在启动时按文件Hash对账，但pi进程和pi Session仍不能跨进程续跑。
 7. [当前代码事实] Work和Action可以保存内嵌Evidence引用，但尚无独立Evidence、Artifact和Provenance生命周期。
 
 ### 2.2 MAF事实
@@ -135,12 +135,12 @@ Commit
 | C3 | Project到Repository的版本化绑定 | 正式Binding、不可变Snapshot、刷新和失效状态已实现 | 已具备 |
 | C4 | 最小充分Context Compiler | 目录/详情两阶段Context已采用Repository Snapshot和治理规则 | 已具备 |
 | C5 | 可编辑ExecutionDraft和不可变RunSpec | 已实现并验证 | 已具备 |
-| C6 | 运行目标与能力选择 | RunSpec可选择`answer_only`或绑定Snapshot的`pi_readonly` | 已具备（只读） |
-| C7 | 受治理编码Runtime | pi两道门和只读Tool已实现 | 已具备 |
-| C8 | 隔离Execution Workspace | 尚未建立受管worktree和基线/脏状态策略 | 缺失 |
-| C9 | 通用Tool Operation Ledger | 只有pi执行统计和专用审批，没有副作用对账 | 缺失 |
+| C6 | 运行目标与能力选择 | RunSpec可选择`answer_only`、`pi_readonly`或绑定干净Snapshot的`pi_workspace` | 已具备（精确编辑） |
+| C7 | 受治理编码Runtime | pi两道门、只读Tool和首个精确写Tool已实现 | 已具备（窄范围） |
+| C8 | 隔离Execution Workspace | 受管detached Git worktree、基线校验、保留和启动对账已实现 | 已具备 |
+| C9 | 通用Tool Operation Ledger | 精确`edit`已有Operation/Attempt/Hash对账；外部网络副作用与补偿未实现 | 局部具备 |
 | C10 | Validation/Evidence/Artifact完成门 | Validation写在Plan/Draft；独立事实生命周期未实现 | 局部具备 |
-| C11 | 运行观察、内容查看和用户纠正 | 根Workflow、路由、节点结果和pi子活动已接通；写入看护待SD3 | 局部具备 |
+| C11 | 运行观察、内容查看和用户纠正 | 根Workflow、三分支路由、Workspace、Operation、Attempt、对账和Diff可见 | 已具备（SD3范围） |
 | C12 | 断线、进程、并发和版本恢复 | 主Workflow部分具备；pi与写Tool未具备 | 局部具备 |
 
 ### 3.4 “完成”必须满足的最小证明
@@ -888,14 +888,23 @@ proposed -> prepared -> authorized -> dispatching
 
 ### SD3：Chat能在隔离区安全修改
 
-前置依赖：F01 Tool Operation Ledger详细设计和纵向门审核通过。
+前置依赖：F01 Tool Operation Ledger详细设计和纵向门审核通过（已满足）。
 
 1. Execution Workspace受管worktree。
-2. Tool Gateway覆盖pi内部read/edit/write/bash。
-3. 先开放单文件edit，再按证据逐项开放write和受限bash。
+2. Tool Gateway覆盖pi内部`read/grep/find/ls/edit`。
+3. 只开放单文件精确`edit`；`write`和受限`bash`仍需后续单独开放。
 4. 结果未知、对账、路径策略和SIGKILL故障测试。
 
 完成门：一次性仓库真实修改不重复、不越界、不污染活动目录。
+
+状态：**工程纵向切片与确定性故障矩阵已完成**。第19次迁移、受管worktree、逐Operation/Attempt/
+Reconciliation、一次性授权消费、Run取消收敛、37节点主Workflow和桌面/手机设计者投影已通过。
+真实模型Dogfood已证明从用户输入正确路由到`pi_workspace`、创建精确Snapshot工作区并到达pi
+Provider边界。首次HTTP 401已定位为Chat本机Gateway凭据与SDK `Authorization`冲突，并通过独立
+`X-Chat-Pi-Token`及回归测试修复；修复后的Ark与DashScope复验分别在远端流阶段超时或断连，
+Product Run均保守收敛为`outcome_unknown`且没有Tool Operation或源码修改。因此“真实pi提出并
+执行一次edit”仍未通过，不把远端网络失败写成SD3真实模型完成证据。完整证据见
+[F01/SD3详细设计第11节](./tool-operation-workspace-detailed-design.md#11-实施与验证结果)。
 
 ### SD4：Chat能证明改动有效
 
@@ -1112,8 +1121,8 @@ StepInput。该安全修正已于2026-07-25获用户批准。
 
 ### 12.4 检视结论
 
-阶段检视结论：**SD1与SD2通过；下一阶段SD3不得在F01字段级详细设计审核前开始，完成声明和持久
-恢复仍分别受F02和F05约束**。
+阶段检视结论：**SD1、SD2通过；SD3工程纵向切片通过，真实pi写入回合仍待远端网络恢复后复验；
+完成声明和持久恢复仍分别受F02和F05约束**。
 
 1. D1-D9已获用户审核通过。
 2. SD1的Repository Binding、不可变Snapshot、REST/UI、Context Source Freshness和真实只读
@@ -1121,8 +1130,12 @@ StepInput。该安全修正已于2026-07-25获用户批准。
    [SD1模块详细设计15.5-15.6节](./repository-resource-detailed-design.md#155-sd1已兑现保证)。
 3. [SD2详细设计](./pi-readonly-execution-detailed-design.md)已经按安装版MAF、pi源码和现有Runtime
    事实实施并完成真实Dogfood；34节点根Workflow、Chat-owned只读Tool Gateway、逐次模型治理、
-   ToolExecution结果和两层设计者视图均已验证。写能力仍必须等待F01，完成声明仍必须等待F02，
-   pi持久恢复仍必须等待F05，不得以“Chat开发Chat”为由跳过。
+   ToolExecution结果和两层设计者视图均已验证。
+4. [F01/SD3详细设计](./tool-operation-workspace-detailed-design.md)已经实现受管worktree、精确
+   `edit`副作用账本、启动对账、取消收敛和设计者视图；确定性纵向测试已通过。本机Gateway 401
+   已经修复并由回归测试固定；其后Ark与DashScope真实复验均因远端流超时或断连而未到达Tool调用，
+   且没有修改源码。网络恢复后仍须重跑真实编辑Dogfood。完成声明仍等待F02，pi持久恢复仍等待
+   F05，不得以“Chat开发Chat”为由跳过。
 
 后续每阶段继续严格执行
 “开发—测试—检视—优化—偏航审计”，并在进入下一阶段前提交已兑现/未兑现保证。

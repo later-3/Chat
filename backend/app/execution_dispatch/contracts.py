@@ -12,7 +12,7 @@ from typing import Any, Literal, Mapping
 
 from ..harness.contracts import content_hash
 
-ExecutionRouteKind = Literal["answer_only", "pi_readonly"]
+ExecutionRouteKind = Literal["answer_only", "pi_readonly", "pi_workspace"]
 PiTerminalStatus = Literal["succeeded", "failed", "cancelled"]
 
 
@@ -92,6 +92,10 @@ class PiReadonlyResult:
     duration_ms: int
     result_hash: str
     terminal_reason_code: str
+    mode: str = "readonly"
+    workspace_id: str | None = None
+    workspace_diff_hash: str | None = None
+    changed_paths: tuple[str, ...] = ()
 
     def public_view(self) -> dict[str, Any]:
         return asdict(self)
@@ -153,6 +157,17 @@ def route_from_run_spec(
             run_spec_hash=run_spec_hash,
             repository_fence=_repository_fence(runtime_agent.get("repository_fence")),
         )
+    if runtime == "pi" and mode == "workspace_edit":
+        fence = _repository_fence(runtime_agent.get("repository_fence"))
+        if not fence.head_oid or not fence.worktree_fingerprint:
+            raise ValueError("pi workspace_edit要求完整、干净且可定位的RepositoryFence")
+        return ExecutionRoute(
+            kind="pi_workspace",
+            reason_code="run_spec_selected_pi_workspace_edit",
+            run_spec_id=run_spec_id,
+            run_spec_hash=run_spec_hash,
+            repository_fence=fence,
+        )
     if runtime == "pi":
-        raise ValueError("SD2只允许pi readonly模式")
+        raise ValueError("当前只允许pi readonly或workspace_edit模式")
     raise ValueError(f"RunSpec包含不受支持的runtime: {runtime or '<empty>'}")

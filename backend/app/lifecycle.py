@@ -37,6 +37,24 @@ def create_lifespan(
         await components.tool_configurations.initialize()
         await components.runtime_execution.reconcile_expired_leases()
         await components.product_sessions.reconcile_terminal_runtime_jobs()
+        terminal_decisions_closed = await components.governance.reconcile_terminal_run_decisions()
+        workspace_reconciled = await components.execution_workspaces.reconcile_preparing()
+        operation_reconciled = await components.tool_operations.reconcile_orphans()
+        orphan_workspaces_retained = await components.execution_workspaces.reconcile_orphans()
+        if (
+            terminal_decisions_closed
+            or workspace_reconciled
+            or operation_reconciled
+            or orphan_workspaces_retained
+        ):
+            logger.info(
+                "execution_side_effect_startup_reconciled terminal_decisions=%d "
+                "workspaces=%d operations=%d orphan_workspaces=%d",
+                terminal_decisions_closed,
+                workspace_reconciled,
+                operation_reconciled,
+                orphan_workspaces_retained,
+            )
 
         outbox_task: asyncio.Task[None] | None = None
         execution_task: asyncio.Task[None] | None = None

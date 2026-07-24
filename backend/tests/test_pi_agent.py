@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.responses import StreamingResponse
 
@@ -26,11 +28,13 @@ from backend.app.pi_gateway import PiRuntimeManager
 from backend.app.pi_runtime import (
     _PI_RPC_STREAM_LIMIT,
     MAX_PI_READ_TOOL_CALLS,
+    PI_GATEWAY_TOKEN_HEADER,
     PiCompletedBoundary,
     PiExecution,
     PiGatewayCall,
     PiGatewayDecision,
     PiModelCallBoundary,
+    PiRuntimeError,
     PiToolCallBoundary,
     _pi_max_tokens,
     _pi_provider_compat,
@@ -130,6 +134,41 @@ def test_pi_gateway_projects_real_dashscope_compatibility_before_review() -> Non
     assert _pi_max_tokens(provider, "qwen3.7-plus", "medium") == 65_536
 
 
+def test_pi_gateway_accepts_dedicated_header_and_normalized_bearer(tmp_path: Path) -> None:
+    catalog = _catalog()
+    manager = PiRuntimeManager(
+        runtime=_runtime(tmp_path),
+        catalog=catalog,
+        review_store=InMemoryModelCallReviewStore(catalog),
+    )
+    provider = catalog.get("provider-a")
+    assert provider is not None
+    execution = PiExecution(
+        token="runtime-token",
+        task="检查项目",
+        config=_config(tmp_path),
+        runtime=_runtime(tmp_path),
+        provider=provider,
+        manager=manager,
+    )
+    manager._executions[execution.token] = execution
+
+    assert (
+        manager.authenticate(
+            "Bearer wrong-sdk-token",
+            gateway_token="runtime-token",
+        )
+        is execution
+    )
+    assert manager.authenticate("bearer   runtime-token") is execution
+    with pytest.raises(HTTPException, match="pi Provider网关凭据无效"):
+        manager.authenticate(
+            "Bearer runtime-token",
+            gateway_token="wrong-dedicated-token",
+        )
+    assert PI_GATEWAY_TOKEN_HEADER == "X-Chat-Pi-Token"
+
+
 def test_pi_error_boundary_preserves_sanitized_provider_failure(tmp_path: Path) -> None:
     async def scenario() -> None:
         store = InMemoryModelCallReviewStore(_catalog("openai_chat_completions"))
@@ -169,6 +208,78 @@ def test_pi_error_boundary_preserves_sanitized_provider_failure(tmp_path: Path) 
         assert boundary.text == "token=[redacted] invalid provider request"
 
     asyncio.run(scenario())
+
+
+def test_pi_workspace_normalizes_sdk_absolute_tool_paths_before_governance(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        provider = _catalog().get("provider-a")
+        assert provider is not None
+        catalog = _catalog()
+        execution = PiExecution(
+            token="runtime-token",
+            task="精确编辑README",
+            config=replace(
+                _config(tmp_path),
+                allowed_tools=("read", "grep", "find", "ls", "edit"),
+            ),
+            runtime=_runtime(tmp_path),
+            provider=provider,
+            manager=PiRuntimeManager(
+                runtime=_runtime(tmp_path),
+                catalog=catalog,
+                review_store=InMemoryModelCallReviewStore(catalog),
+            ),
+            workspace_id="workspace-1",
+        )
+
+        await execution._handle_event(
+            {
+                "type": "extension_ui_request",
+                "method": "editor",
+                "title": "CHAT_PI_TOOL_APPROVAL",
+                "id": "rpc-1",
+                "prefill": json.dumps(
+                    {
+                        "tool_call_id": "call-1",
+                        "tool_name": "read",
+                        "arguments": {"path": str(tmp_path / "README.md")},
+                    }
+                ),
+            }
+        )
+
+        boundary = await execution.next_boundary()
+        assert isinstance(boundary, PiToolCallBoundary)
+        assert boundary.arguments == {"path": "README.md"}
+
+    asyncio.run(scenario())
+
+
+def test_pi_workspace_rejects_sdk_absolute_tool_path_escape(tmp_path: Path) -> None:
+    provider = _catalog().get("provider-a")
+    assert provider is not None
+    catalog = _catalog()
+    execution = PiExecution(
+        token="runtime-token",
+        task="精确编辑README",
+        config=_config(tmp_path),
+        runtime=_runtime(tmp_path),
+        provider=provider,
+        manager=PiRuntimeManager(
+            runtime=_runtime(tmp_path),
+            catalog=catalog,
+            review_store=InMemoryModelCallReviewStore(catalog),
+        ),
+        workspace_id="workspace-1",
+    )
+
+    with pytest.raises(PiRuntimeError, match="超出本次工作目录"):
+        execution._normalize_tool_arguments(
+            "read",
+            {"path": str(tmp_path.parent / "outside.md")},
+        )
 
 
 def test_chat_completions_pi_tool_loop_is_reviewable_as_complete_provider_request() -> None:

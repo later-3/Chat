@@ -3,7 +3,7 @@
 ## 1. 当前实现
 
 Chat把pi coding agent作为同一Product Run中的受治理`ToolExecution`，由持续协作主Workflow
-v1.6.0中的确定性Executor启动。它不是第二个用户Workflow，也不是把一条Shell命令当成“Tool成功”：
+v1.7.0中的确定性Executor启动。它不是第二个用户Workflow，也不是把一条Shell命令当成“Tool成功”：
 
 ```text
 用户在主Workflow中批准pi_readonly RunSpec
@@ -55,6 +55,11 @@ pi的`before_provider_request`扩展事件不适合作为安全门。固定源�
 
 Chat改用本机Provider网关：pi模型配置只指向Chat生成的短期本地网关地址；网关收到请求后创建正常的`ModelCallDraft`，绑定Provider、协议、完整Body和Hash。只有当前Approval批准后，网关才把同一份规范请求字节转发给真实Provider。每一次后续模型调用都会重新进入该门。
 
+本机网关使用独立`X-Chat-Pi-Token`绑定当前进程内pi执行，不复用模型SDK的`Authorization`。后者
+仍属于Provider认证语义，可能由pi配置或SDK生成、合并和替换；混用会让本机网关把有效执行误判为
+401。网关保留规范化Bearer兼容路径，但独立Header一旦存在就不会降级绕过，比较采用常量时间函数，
+日志只记录脱敏指纹与活动执行数。
+
 ### 3.2 Tool Gate
 
 pi固定源码`core/agent-session.ts`和`core/extensions/runner.ts`在真实Tool执行前触发`tool_call`；
@@ -65,6 +70,10 @@ Snapshot、路径、symlink、Protected Source和结果上限，pi的cwd和内�
 Tool名称只能来自服务端目录；前端不能输入`new_tool`或改名。低风险只读Tool默认可在HITL系统下限内
 自动继续，用户仍可按作用域改成每次确认。SD2上限是6次模型调用、24次只读Tool、600秒和64KiB
 单Tool结果；拒绝或放弃不会制造Tool成功或Assistant成功。
+
+SD3在同一Gateway边界新增受管Execution Workspace中的单文件精确`edit`。每次编辑先形成不可变
+Tool Operation和bounded diff，绑定路径、参数、Workspace、Snapshot及pre/post Hash；一次性授权
+被消费后才能落盘。`write/bash/commit/push`仍不开放，活动仓库不会被直接修改。
 
 ## 4. 配置
 
@@ -130,11 +139,17 @@ Checkpoint不能重建pi RPC进程或其内存边界，所以后端重启后不�
 Repository没有Shell、文件写入或Git操作。桌面与520 CSS像素窄屏工作台均可查看节点结果和子活动，
 控制台0错误。
 
+SD3首次真实写入复验暴露的HTTP 401来自Chat本机Gateway，已通过独立Header及自动回归修复。随后
+Ark与DashScope复验均在远端响应流阶段超时或断连；Product Run保守收敛为`outcome_unknown`，没有
+创建Tool Operation，也没有修改Snapshot或活动仓库。因此这组运行只能证明安全失败边界，不能作为
+真实pi精确`edit`成功证据。
+
 ## 7. 已知边界
 
-1. SD2只允许`read/grep/find/ls`；`bash/edit/write`必须等待F01 Tool Operation Ledger、幂等、结果未知和对账设计。
+1. SD2只读模式只允许`read/grep/find/ls`；SD3隔离编辑模式额外允许受管worktree内的精确
+   `edit`。`write/bash/commit/push`仍未开放。
 2. 主Workflow审批安全点可以持久恢复，但活动pi进程及其内存Model/Tool边界不能跨进程恢复。
 3. 当前每个pi执行使用独立子进程，不提供跨Product Run共享pi Session。
 4. 真实Provider的计费和Token口径以Provider/pi事件为准；缺失字段显示0，不推测成本。
 5. 当前pi不自动加载工作目录及祖先的`AGENTS.md`/`CLAUDE.md`；主Workflow只传递批准的Harness
-   StepInput。该只读闭环仍不能替代Execution Workspace、Tool Operation Ledger和Evidence完成门。
+   StepInput。SD3的Execution Workspace与Tool Operation Ledger仍不能替代Evidence完成门。

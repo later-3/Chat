@@ -26,6 +26,9 @@
   "history": {
     "directory": ".chat-history"
   },
+  "execution": {
+    "workspace_root": "backend/.data/execution-workspaces"
+  },
   "workspace_roots": [
     {
       "key": "local-projects",

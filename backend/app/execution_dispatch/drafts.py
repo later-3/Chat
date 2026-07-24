@@ -6,7 +6,7 @@ contract.  They never infer new permissions and never inspect private paths.
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 from ..governance.catalog import (
     COMPILER_VERSION,
@@ -14,8 +14,10 @@ from ..governance.catalog import (
     RUN_SPEC_SCHEMA_VERSION,
 )
 from ..harness.contracts import content_hash
-from ..workflows.continuous_chat_contracts import CollaborationState
 from .contracts import RepositoryFence
+
+if TYPE_CHECKING:
+    from ..workflows.continuous_chat_contracts import CollaborationState
 
 PI_READONLY_TERMS = (
     "检查代码",
@@ -44,6 +46,43 @@ PI_OPT_OUT_TERMS = (
     "仅回答",
 )
 PI_READONLY_TOOLS = ("read", "grep", "find", "ls")
+PI_WORKSPACE_EDIT_TERMS = (
+    "修改代码",
+    "改代码",
+    "修复代码",
+    "实现功能",
+    "实现这个功能",
+    "修复bug",
+    "修复 bug",
+    "编辑文件",
+    "更新文件",
+    "精确修改",
+    "精确编辑",
+    "workspace_edit",
+    "隔离executionworkspace",
+    "隔离 execution workspace",
+    "使用edit",
+    "只允许edit",
+    "change the code",
+    "modify the code",
+    "edit the file",
+    "edit this file",
+    "implement the feature",
+    "fix the bug",
+)
+PI_WRITE_OPT_OUT_TERMS = (
+    "不要修改任何文件",
+    "不修改任何文件",
+    "禁止修改任何文件",
+    "不要写入",
+    "禁止写入",
+    "只读",
+    "read-only",
+    "read only",
+    "do not modify any files",
+    "do not write",
+)
+PI_WORKSPACE_TOOLS = (*PI_READONLY_TOOLS, "edit")
 
 
 def adopted_repository_source(
@@ -92,6 +131,29 @@ def recommends_pi_readonly(
     )
 
 
+def recommends_pi_workspace_edit(
+    *,
+    prompt: str,
+    selected_project_id: str | None,
+    repository_fence: RepositoryFence | None,
+    pi_available: bool,
+) -> bool:
+    """Recommend isolated editing only for an explicit code-change request."""
+
+    lowered = prompt.lower().replace(" ", "")
+    explicit_edit = any(term.replace(" ", "") in lowered for term in PI_WORKSPACE_EDIT_TERMS)
+    opted_out = any(term.replace(" ", "") in lowered for term in PI_WRITE_OPT_OUT_TERMS)
+    return bool(
+        pi_available
+        and selected_project_id
+        and repository_fence is not None
+        and repository_fence.head_oid
+        and repository_fence.worktree_fingerprint
+        and explicit_edit
+        and not opted_out
+    )
+
+
 def compile_execution_draft_v2(
     *,
     state: CollaborationState,
@@ -122,7 +184,31 @@ def compile_execution_draft_v2(
         f"{index + 1}. {value.get('goal')} → {value.get('expected_outcome')}"
         for index, value in enumerate(intent_set)
     )
-    use_pi = recommends_pi_readonly(
+    # Execution routing may use the user request plus the accepted Intent Set,
+    # but never a model-generated Plan alone: a plan is not an authority source
+    # and therefore cannot silently escalate a read-only request into a write.
+    routing_text = "\n".join(
+        [
+            state.origin_prompt,
+            *(
+                "\n".join(
+                    [
+                        str(value.get("goal") or ""),
+                        str(value.get("expected_outcome") or ""),
+                        *(str(item) for item in value.get("constraints") or ()),
+                    ]
+                )
+                for value in intent_set
+            ),
+        ]
+    )
+    use_pi_workspace = recommends_pi_workspace_edit(
+        prompt=routing_text,
+        selected_project_id=state.selected_project_id,
+        repository_fence=repository_fence,
+        pi_available=pi_available,
+    )
+    use_pi = not use_pi_workspace and recommends_pi_readonly(
         prompt=state.origin_prompt,
         selected_project_id=state.selected_project_id,
         repository_fence=repository_fence,
@@ -131,7 +217,36 @@ def compile_execution_draft_v2(
     runtime_target: dict[str, Any]
     capability_grant: dict[str, Any]
     validation_checks = ["structured intent", "scenario branch", "no false completion"]
-    if use_pi:
+    if use_pi_workspace:
+        assert repository_fence is not None
+        runtime_target = {
+            "runtime": "pi",
+            "mode": "workspace_edit",
+            "isolation": "managed_git_worktree",
+            "repository_fence": repository_fence.public_view(),
+        }
+        capability_grant = {
+            "tools": [
+                {
+                    "name": name,
+                    "mode": "workspace_write" if name == "edit" else "readonly",
+                    "side_effects": "managed_workspace_only" if name == "edit" else "none",
+                }
+                for name in PI_WORKSPACE_TOOLS
+            ],
+            "side_effects": "managed_workspace_only",
+            "network": ["model-provider", "chat-workspace-tool-gateway"],
+        }
+        validation_checks.extend(
+            [
+                "repository snapshot freshness",
+                "managed worktree base revision",
+                "exact edit operation hash and diff approval",
+                "active repository remains unchanged",
+                "workspace retained without commit or push",
+            ]
+        )
+    elif use_pi:
         assert repository_fence is not None
         runtime_target = {
             "runtime": "pi",
@@ -170,7 +285,8 @@ def compile_execution_draft_v2(
         f"场景：{state.scenario}\n"
         f"项目提示：{intent.get('project_hint') or '未关联'}\n"
         f"计划：{state.plan or '本轮不需要独立计划'}\n"
-        f"执行方式：{'pi只读检查仓库' if use_pi else 'Chat回答'}\n"
+        "执行方式："
+        f"{'pi隔离工作区精确编辑' if use_pi_workspace else ('pi只读检查仓库' if use_pi else 'Chat回答')}\n"
         "完成门：只提交当前回答或只读检查能够支持的结论；"
         "任务、项目、Memory变化保持候选，等待相应决策点。"
     )
@@ -204,7 +320,11 @@ def compile_execution_draft_v2(
         "accepted_decisions": [],
         "scope": {
             "included": ["answer current user request"],
-            "excluded": ["unapproved long-term state mutation", "repository writes"],
+            "excluded": (
+                ["unapproved long-term state mutation", "active repository writes", "commit", "push"]
+                if use_pi_workspace
+                else ["unapproved long-term state mutation", "repository writes"]
+            ),
         },
         "plan": {"text": state.plan, "mode": "explicit" if state.plan else "direct"},
         "context_binding": {
@@ -319,7 +439,7 @@ def compile_run_spec_v2(
         "runtime_agent": {
             **runtime_target,
             "agent_profiles": (
-                ["pi_readonly"]
+                ["pi_workspace" if runtime_target.get("mode") == "workspace_edit" else "pi_readonly"]
                 if runtime_target.get("runtime") == "pi"
                 else ["intent_router", "task_planner", "response_agent", "turn_summarizer"]
             ),

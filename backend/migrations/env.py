@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from backend.app.collaboration_intents import models as collaboration_intent_models  # noqa: F401
 from backend.app.collaboration_protocols import models as collaboration_protocol_models  # noqa: F401
+from backend.app.execution_workspaces import models as execution_workspace_models  # noqa: F401
 from backend.app.governance import models as governance_models  # noqa: F401
 from backend.app.harness import models as harness_models  # noqa: F401
 from backend.app.product_sessions.database import Base
@@ -19,6 +20,7 @@ from backend.app.runtime_execution import (
     models as runtime_execution_models,  # noqa: F401
 )
 from backend.app.step_inputs import models as step_input_models  # noqa: F401
+from backend.app.tool_execution import models as tool_execution_models  # noqa: F401
 
 config = context.config
 extra_arguments = context.get_x_argument(as_dictionary=True)

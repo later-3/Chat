@@ -568,6 +568,9 @@ class RuntimeExecutionService:
             )
             if job is None:
                 raise RuntimeExecutionError("Product Run没有对应Runtime Job")
+            product_run = await transaction.get(RunRecord, product_run_id)
+            if product_run is None or product_run.finished_at is not None:
+                raise RuntimeExecutionError("终态Product Run不能恢复Checkpoint")
             existing = await transaction.scalar(
                 select(RuntimeControlCommandRecord).where(
                     RuntimeControlCommandRecord.scope_id == self.scope_id,

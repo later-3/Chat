@@ -67,7 +67,7 @@ flowchart LR
 | 1. 工程与真实链路 | 建立独立前后端、MAF、AG-UI、调试和验证基线 | `真实模型门通过；2项收尾` |
 | 2. 目标架构与合同基线 | 审核目标拓扑、模块、状态、合同、恢复矩阵 | `总体架构已批准；模块详细设计按交付门继续` |
 | 3. 产品事实与完成历史 | 身份、Session、Message、Run/Attempt和历史恢复 | `Phase 1文本底座、显式Retry/Restart和精确取消窄切片完成；完整身份和树操作继续` |
-| 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `Product Harness D1-D8、ExecutionDraft完整编辑、34节点主Workflow、Intent Set/复合Plan、SD1 Repository只读纵向闭环、SD2受治理pi只读执行和4个前端工作区完成；独立分支执行与部分成功继续` |
+| 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `Product Harness D1-D8、ExecutionDraft完整编辑、37节点主Workflow、Intent Set/复合Plan、SD1 Repository只读、SD2受治理pi只读、SD3受管Workspace精确编辑和4个前端工作区完成；真实pi写入网络复验、独立分支执行与部分成功继续` |
 | 5. 持久执行与活动流 | Job/Event、Worker、Lease、重连和Reconciler | `D1-D8纵向切片完成；完整强退、多端、保留和容量矩阵继续` |
 | 6. Tool、Workflow与HITL恢复 | Tool Ledger、对账、Checkpoint和持久Interrupt | `主Workflow审批安全点跨进程恢复完成；Tool与任意Workflow恢复继续` |
 | 7. 知识、证据、交付与运营 | Memory、Evidence、Provenance、Outbox、Trace、超级管理员看护和告警 | `Note/Memory生命周期与Harness事务Outbox完成；超级管理员目标已确认，独立Evidence、Artifact、Delivery和运营能力继续` |
@@ -210,7 +210,8 @@ flowchart LR
 - [x] 建立嵌套Workflow可视化种子：MAF原生异构节点与两层子Workflow运行，标准AG-UI事件实时投影，Product Trace刷新恢复；该项不包含Checkpoint/HITL或跨进程恢复。
 - [x] 建立受治理多Agent种子：可编辑且有Revision的Agent Profile、规划与审校Agent、确定性完整会话交接、两次Provider调用逐次审批、AG-UI节点投影和Product终态提交；该项不包含动态拓扑、群聊或持久Checkpoint。
 - [x] 建立pi Agent Tool种子：MAF FunctionTool封装官方JSONL RPC；每次Provider请求和内部Tool调用分别进入可编辑审批，前端可配置真实Tool并查看模型/Tool/Token/耗时统计；启动将遗留执行收敛为中断，但不冒充通用副作用对账或R6恢复。
-- [ ] 详细设计 Tool执行模块的Tool Catalog、Tool Operation Ledger、幂等和能力声明。
+- [x] 详细设计 Tool执行模块的Tool Catalog、Tool Operation Ledger、幂等和能力声明；
+  [F01/SD3字段级设计](./docs/tool-operation-workspace-detailed-design.md)已于2026-07-25批准。
 - [ ] 建立 MAF Function Middleware 到 Tool Gateway 的唯一执行路径。
 - [ ] 工具参数动态扩权时回到持久 Approval，而不是进程内默认批准。
 - [ ] 实现`result_unknown`、查询对账、补偿和人工处置。
@@ -309,7 +310,10 @@ Session 是 W2-W9 的横向能力，仍由两份专项材料维护：
 
 ### 16.2 后续产品能力
 
-- [ ] F01 通用Tool Operation Ledger与副作用对账。
+- [ ] F01 通用Tool Operation Ledger与副作用对账（字段级设计已于2026-07-25批准；受管worktree内
+  单文件精确`edit`纵向切片已实现并通过确定性故障矩阵；本机pi Gateway凭据冲突已修复，真实pi
+  复验仍因远端Provider流超时/断连待通过；网络外部副作用、补偿和人工处置仍未完成，因此通用F01
+  不勾选完成）。
 - [ ] F02 Evidence、Artifact、Provenance与独立生命周期。
 - [ ] F03 Runtime完整故障、容量和游标矩阵。
 - [ ] F04 Session完整生命周期、树、控制与可移植性。
@@ -318,6 +322,7 @@ Session 是 W2-W9 的横向能力，仍由两份专项材料维护：
 - [ ] F07 Principal、Role/Grant、Authentication Session、Scope、Channel Binding与Delivery。
 - [ ] F08 Provider配置、运营、备份、保留与SLO。
 - [ ] F09 超级管理员身份、使用与作品运营看护。
-- [ ] F10 Chat开发Chat自举纵向闭环（SD1与SD2只读纵向切片已完成；下一阶段SD3必须先审核F01字段级Tool Operation Ledger，SD4/F02与SD5/F05仍保留各自详细设计门）。
+- [ ] F10 Chat开发Chat自举纵向闭环（SD1、SD2已完成，SD3工程纵向切片已实现且真实pi写入仍待
+  远端网络恢复后复验；SD4/F02与SD5/F05仍保留各自详细设计门）。
 
 推荐主依赖顺序是`Q01 -> Q03 -> Q04 -> Q02 -> Q05 -> F01-F03 -> F04-F06 -> F07 -> F09`；F08在Q0后可与产品能力并行，F09的身份底座随F07推进，但完整工作/作品看护依赖F02、F06和真实身份。F10是穿透既有能力的Dogfood纵向线：SD1只读资源绑定可在详细设计审核后先行，SD3写入必须等待F01，SD4完成声明必须等待F02，SD5持久恢复必须等待F05；不能为了尽快看到自举效果绕过这些门。Q06-Q07贯穿对应阶段。工程收敛不得改变现有Product Store、MAF/AG-UI合同、Workflow节点ID、审批Hash或用户可见语义。

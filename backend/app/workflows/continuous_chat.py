@@ -31,8 +31,11 @@ from ..execution_dispatch.repository_context import RepositoryExecutionContextSe
 from ..execution_dispatch.service import ExecutionDispatchService
 from ..execution_dispatch.workflow import (
     ExecutionRouteExecutor,
+    ExecutionWorkspacePrepareExecutor,
     PiReadonlyDispatchExecutor,
     PiReadonlyResultAssemblyExecutor,
+    PiWorkspaceDispatchExecutor,
+    PiWorkspaceResultAssemblyExecutor,
 )
 from ..governance.service import ExecutionGovernanceService, GovernanceConflict
 from ..harness import HarnessService
@@ -115,7 +118,7 @@ from .continuous_chat_factory import (
 logger = logging.getLogger(__name__)
 
 WORKFLOW_ID = "continuous-collaboration"
-WORKFLOW_VERSION = "1.6.0"
+WORKFLOW_VERSION = "1.7.0"
 
 
 class TraceMixin:
@@ -2716,8 +2719,11 @@ def create_continuous_collaboration_workflow(
             execution_draft_compiler=ExecutionDraftCompilerExecutor,
             run_spec_compiler=RunSpecCompilerExecutor,
             execution_route=ExecutionRouteExecutor,
+            execution_workspace_prepare=ExecutionWorkspacePrepareExecutor,
             pi_readonly_dispatch=PiReadonlyDispatchExecutor,
             pi_readonly_result_assembly=PiReadonlyResultAssemblyExecutor,
+            pi_workspace_dispatch=PiWorkspaceDispatchExecutor,
+            pi_workspace_result_assembly=PiWorkspaceResultAssemblyExecutor,
             clarification=ClarificationExecutor,
             harness_commit=HarnessCandidateCommitExecutor,
             summary_persist=TurnSummaryPersistExecutor,

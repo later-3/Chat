@@ -78,6 +78,58 @@ export interface ToolExecutionActivity {
   details: Record<string, unknown>;
 }
 
+export interface ExecutionWorkspaceProjection {
+  id: string;
+  product_run_id: string;
+  run_attempt_id: string;
+  runtime_job_id: string;
+  tool_execution_id: string;
+  repository_binding_id: string;
+  repository_snapshot_id: string;
+  workspace_kind: string;
+  source: {
+    root_key: string;
+    relative_path: string;
+    base_revision: string;
+  };
+  observed_head_oid: string | null;
+  status: string;
+  diff_hash: string | null;
+  changed_paths: string[];
+  failure_code: string | null;
+  row_version: number;
+  created_at: string;
+  ready_at: string | null;
+  retained_at: string | null;
+  finished_at: string | null;
+}
+
+export interface ToolOperationProjection {
+  id: string;
+  authorization_consumption_id: string | null;
+  provider_tool_call_id: string;
+  tool_name: string;
+  operation_ordinal: number;
+  operation_kind: string;
+  side_effect_class: string;
+  arguments: Record<string, unknown>;
+  arguments_hash: string;
+  operation_hash: string;
+  target_path: string;
+  expected_preimage_hash: string;
+  expected_postimage_hash: string;
+  diff_preview: string;
+  status: string;
+  dispatch_epoch: number;
+  observed_hash: string | null;
+  result: Record<string, unknown> | null;
+  result_hash: string | null;
+  failure_code: string | null;
+  resolution_code: string | null;
+  attempts: Array<Record<string, unknown>>;
+  reconciliations: Array<Record<string, unknown>>;
+}
+
 export interface GovernedToolExecution {
   id: string;
   session_id: string;
@@ -113,6 +165,8 @@ export interface GovernedToolExecution {
   result_hash: string | null;
   failure_code: string | null;
   terminal_reason_code: string | null;
+  workspace?: ExecutionWorkspaceProjection | null;
+  operations?: ToolOperationProjection[];
   started_at: string;
   finished_at: string | null;
   row_version: number;

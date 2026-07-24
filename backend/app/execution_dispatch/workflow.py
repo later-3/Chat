@@ -31,11 +31,12 @@ from .service import (
     ExecutionDispatchService,
     PiModelCallGovernance,
     PreparedPiExecution,
+    PreparedWorkspaceExecution,
     ToolAuthorization,
 )
 
 WORKFLOW_ID = "continuous-collaboration"
-WORKFLOW_VERSION = "1.6.0"
+WORKFLOW_VERSION = "1.7.0"
 
 
 async def _record_trace(
@@ -98,11 +99,19 @@ class ExecutionRouteExecutor(Executor):
             "decision_kind": "run_spec_runtime_route",
             "selection_mode": "first_match",
             "selected_branch": route.kind,
-            "selected_target": ("pi_readonly_dispatch" if route.kind == "pi_readonly" else "response_agent"),
+            "selected_target": (
+                "execution_workspace_prepare"
+                if route.kind == "pi_workspace"
+                else ("pi_readonly_dispatch" if route.kind == "pi_readonly" else "response_agent")
+            ),
             "selection_reason": (
-                "已批准RunSpec明确绑定pi只读Runtime和Repository Snapshot。"
-                if route.kind == "pi_readonly"
-                else "已批准RunSpec选择MAF回答分支，不启动外部执行Runtime。"
+                "已批准RunSpec明确绑定pi隔离工作区和精确编辑能力。"
+                if route.kind == "pi_workspace"
+                else (
+                    "已批准RunSpec明确绑定pi只读Runtime和Repository Snapshot。"
+                    if route.kind == "pi_readonly"
+                    else "已批准RunSpec选择MAF回答分支，不启动外部执行Runtime。"
+                )
             ),
             "facts": {
                 "run_spec_id": route.run_spec_id,
@@ -111,6 +120,20 @@ class ExecutionRouteExecutor(Executor):
                 "reason_code": route.reason_code,
             },
             "options": [
+                {
+                    "branch_id": "pi_workspace",
+                    "label": "受治理pi隔离编辑",
+                    "target": "execution_workspace_prepare",
+                    "condition": "RunSpec.runtime_agent = pi / workspace_edit",
+                    "actual": route.kind,
+                    "matched": route.kind == "pi_workspace",
+                    "selected": route.kind == "pi_workspace",
+                    "reason": (
+                        "RunSpec已选择pi隔离工作区Runtime。"
+                        if route.kind == "pi_workspace"
+                        else "RunSpec没有选择pi隔离工作区Runtime。"
+                    ),
+                },
                 {
                     "branch_id": "pi_readonly",
                     "label": "受治理pi只读执行",
@@ -136,7 +159,7 @@ class ExecutionRouteExecutor(Executor):
                     "reason": (
                         "RunSpec已选择MAF回答分支。"
                         if route.kind == "answer_only"
-                        else "RunSpec已绑定更具体的pi只读分支。"
+                        else "RunSpec已绑定更具体的pi执行分支。"
                     ),
                 },
             ],
@@ -158,6 +181,77 @@ class ExecutionRouteExecutor(Executor):
         await ctx.send_message(next_state)
 
 
+class ExecutionWorkspacePrepareExecutor(Executor):
+    """Create the exact managed worktree as a real, inspectable MAF node."""
+
+    def __init__(
+        self,
+        *,
+        thread_id: str,
+        run_id: Callable[[], str],
+        sessions: ProductSessionService,
+        dispatch: ExecutionDispatchService,
+    ) -> None:
+        super().__init__(id="execution_workspace_prepare")
+        self._thread_id = thread_id
+        self._run_id = run_id
+        self._sessions = sessions
+        self._dispatch = dispatch
+
+    @handler(input=CollaborationState)
+    async def prepare(
+        self,
+        state: CollaborationState,
+        ctx: WorkflowContext[CollaborationState],
+    ) -> None:
+        if not state.run_spec_id:
+            raise ExecutionDispatchError(
+                "Execution Workspace准备缺少RunSpec",
+                code="RUN_SPEC_REQUIRED",
+            )
+        protocol = dict(state.protocol_selection or {})
+        try:
+            prepared = await self._dispatch.prepare_workspace(
+                session_id=self._thread_id,
+                run_id=self._run_id(),
+                run_spec_id=state.run_spec_id,
+                origin_prompt=state.origin_prompt,
+                context_package_id=(state.detail_context_package_id or state.directory_context_package_id),
+                protocol_definition_id=str(protocol.get("definition_id") or "") or None,
+                protocol_binding_id=str(protocol.get("binding_id") or "") or None,
+            )
+        except Exception as error:
+            await self._sessions.fail_active_run(
+                self._thread_id,
+                error_code=getattr(error, "code", type(error).__name__),
+                message=str(error),
+            )
+            raise
+        view = prepared.public_view()
+        await _record_trace(
+            sessions=self._sessions,
+            thread_id=self._thread_id,
+            run_id=self._run_id(),
+            executor_id=self.id,
+            content_type="execution_workspace",
+            public_input={
+                "run_spec_id": state.run_spec_id,
+                "repository_snapshot_id": (
+                    prepared.route.repository_fence.snapshot_id if prepared.route.repository_fence else None
+                ),
+            },
+            public_output={
+                "workspace_id": prepared.workspace_id,
+                "tool_execution_id": prepared.execution_id,
+                "status": "ready",
+                "base_revision": (
+                    prepared.route.repository_fence.head_oid if prepared.route.repository_fence else None
+                ),
+            },
+        )
+        await ctx.send_message(replace(state, execution_workspace=view))
+
+
 class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
     """Drive one pi subprocess while MAF owns every interrupt and continuation.
 
@@ -176,13 +270,16 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         sessions: ProductSessionService,
         dispatch: ExecutionDispatchService,
         store: InMemoryModelCallReviewStore,
+        node_id: str = "pi_readonly_dispatch",
+        mode: str = "readonly",
     ) -> None:
-        super().__init__(id="pi_readonly_dispatch")
+        super().__init__(id=node_id)
         self._thread_id = thread_id
         self._run_id = run_id
         self._sessions = sessions
         self._dispatch = dispatch
         self._store = store
+        self._mode = mode
         self._prepared: PreparedPiExecution | None = None
         self._state: CollaborationState | None = None
         self._pending_model: PiModelCallBoundary | None = None
@@ -205,20 +302,40 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         protocol = dict(state.protocol_selection or {})
         self._state = state
         try:
-            self._prepared = await self._dispatch.prepare_pi(
-                session_id=self._thread_id,
-                run_id=self._run_id(),
-                run_spec_id=state.run_spec_id,
-                origin_prompt=state.origin_prompt,
-                context_package_id=(state.detail_context_package_id or state.directory_context_package_id),
-                protocol_definition_id=str(protocol.get("definition_id") or "") or None,
-                protocol_binding_id=str(protocol.get("binding_id") or "") or None,
-            )
+            if self._mode == "workspace_edit":
+                payload = state.execution_workspace
+                if not isinstance(payload, Mapping):
+                    raise ExecutionDispatchError(
+                        "pi隔离执行缺少Execution Workspace节点输出",
+                        code="PI_WORKSPACE_PREPARATION_MISSING",
+                    )
+                route = await self._dispatch.route(state.run_spec_id)
+                self._prepared = await self._dispatch.start_workspace_pi(
+                    PreparedWorkspaceExecution(
+                        execution_id=str(payload.get("execution_id") or ""),
+                        workspace_id=str(payload.get("workspace_id") or ""),
+                        route=route,
+                        step_input=dict(payload.get("step_input") or {}),
+                        task=str(payload.get("task") or ""),
+                    )
+                )
+            else:
+                self._prepared = await self._dispatch.prepare_pi(
+                    session_id=self._thread_id,
+                    run_id=self._run_id(),
+                    run_spec_id=state.run_spec_id,
+                    origin_prompt=state.origin_prompt,
+                    context_package_id=(
+                        state.detail_context_package_id or state.directory_context_package_id
+                    ),
+                    protocol_definition_id=str(protocol.get("definition_id") or "") or None,
+                    protocol_binding_id=str(protocol.get("binding_id") or "") or None,
+                )
             await self._emit(
                 ctx,
                 stage="process_started",
                 status="running",
-                summary="pi只读进程已启动",
+                summary=("pi隔离工作区进程已启动" if self._mode == "workspace_edit" else "pi只读进程已启动"),
                 details={
                     "execution_id": self._prepared.execution_id,
                     "repository_snapshot_id": (
@@ -226,6 +343,7 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
                         if self._prepared.route.repository_fence
                         else None
                     ),
+                    "workspace_id": self._prepared.workspace_id,
                 },
             )
             await self._drive(ctx)
@@ -279,6 +397,7 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
                         fence_label=(
                             f"{fence.root_key}/{fence.relative_path}" if fence else "Repository Snapshot"
                         ),
+                        config_revision=prepared.execution.config.revision,
                     ),
                     dict,
                     request_id=authorization.request.id if authorization.request else None,
@@ -299,7 +418,9 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
                     ctx,
                     stage="process_completed",
                     status="succeeded",
-                    summary="pi只读执行完成",
+                    summary=(
+                        "pi隔离工作区执行完成" if prepared.mode == "workspace_edit" else "pi只读执行完成"
+                    ),
                     details={
                         "model_call_count": boundary.metrics.get("model_call_count"),
                         "tool_call_count": boundary.metrics.get("internal_tool_call_count"),
@@ -359,13 +480,18 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
                     "workflow_version": WORKFLOW_VERSION,
                     "executor_id": self.id,
                     "tool_id": "pi_agent",
-                    "tool_name": "pi coding agent（只读）",
+                    "tool_name": (
+                        "pi coding agent（隔离工作区）"
+                        if prepared.mode == "workspace_edit"
+                        else "pi coding agent（只读）"
+                    ),
                     "config_revision": prepared.execution.config.revision,
                     "allowed_tool_names": list(prepared.execution.config.allowed_tools),
                     "call_position": prepared.execution.model_call_count,
                     "tool_execution_id": prepared.execution_id,
                     "run_spec_id": self._require_state().run_spec_id,
                     "step_input_projection_id": prepared.step_input["id"],
+                    "workspace_id": prepared.workspace_id,
                 },
             )
         card = draft.review_card()
@@ -442,6 +568,7 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
             tool_name=boundary.tool_name,
             arguments=boundary.arguments,
             fence=fence,
+            workspace_id=prepared.workspace_id,
         )
 
     @response_handler(request=dict, response=dict, workflow_output=dict)
@@ -512,7 +639,7 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
             claimed = self._store.claim(
                 approval_id=str(original_request["approval_id"]),
                 expected_hash=str(original_request["binding_hash"]),
-                owner=f"api-pid-{os.getpid()}:pi-readonly",
+                owner=f"api-pid-{os.getpid()}:{self.id}",
             )
         except ModelCallDraftConflict:
             await self._emit(
@@ -559,7 +686,7 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         claimed = self._store.claim(
             approval_id=draft.approval_id,
             expected_hash=draft.binding_hash,
-            owner=f"api-pid-{os.getpid()}:pi-readonly",
+            owner=f"api-pid-{os.getpid()}:{self.id}",
         )
         attempt_id = await self._dispatch.decide_pi_model_call(
             governance=governance,
@@ -683,7 +810,11 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
             ctx,
             stage="abandoned",
             status="abandoned",
-            summary="用户放弃本次pi只读执行",
+            summary=(
+                "用户放弃本次pi隔离工作区执行"
+                if prepared.mode == "workspace_edit"
+                else "用户放弃本次pi只读执行"
+            ),
             details={},
         )
         await self._dispatch.finish_abandoned(
@@ -746,8 +877,9 @@ class PiReadonlyResultAssemblyExecutor(Executor):
         run_id: Callable[[], str],
         sessions: ProductSessionService,
         dispatch: ExecutionDispatchService,
+        node_id: str = "pi_readonly_result_assembly",
     ) -> None:
-        super().__init__(id="pi_readonly_result_assembly")
+        super().__init__(id=node_id)
         self._thread_id = thread_id
         self._run_id = run_id
         self._sessions = sessions
@@ -784,7 +916,9 @@ class PiReadonlyResultAssemblyExecutor(Executor):
             thread_id=self._thread_id,
             run_id=self._run_id(),
             executor_id=self.id,
-            content_type="pi_readonly_result",
+            content_type=(
+                "pi_workspace_result" if result.get("mode") == "workspace_edit" else "pi_readonly_result"
+            ),
             public_input={
                 "execution_id": execution_id,
                 "result_hash": result["result_hash"],
@@ -796,3 +930,21 @@ class PiReadonlyResultAssemblyExecutor(Executor):
             },
         )
         await ctx.send_message(next_state)
+
+
+class PiWorkspaceDispatchExecutor(PiReadonlyDispatchExecutor):
+    """SD3 pi driver bound to a preceding managed-workspace node."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(
+            **kwargs,
+            node_id="pi_workspace_dispatch",
+            mode="workspace_edit",
+        )
+
+
+class PiWorkspaceResultAssemblyExecutor(PiReadonlyResultAssemblyExecutor):
+    """Deterministically assemble the retained workspace result."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs, node_id="pi_workspace_result_assembly")

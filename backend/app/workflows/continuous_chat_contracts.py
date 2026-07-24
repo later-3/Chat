@@ -40,6 +40,7 @@ class CollaborationState:
     execution_draft_revision_id: str | None = None
     run_spec_id: str | None = None
     execution_route: dict[str, Any] | None = None
+    execution_workspace: dict[str, Any] | None = None
     pi_result: dict[str, Any] | None = None
     response: str | None = None
     turn_summary: dict[str, Any] | None = None

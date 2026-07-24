@@ -6,7 +6,7 @@
 |---|---|
 | 目的 | 区分真实Tool能力、模型可见定义、模型提议、用户批准、实际副作用和执行结果。 |
 | 概念状态 | 有效。 |
-| 实现状态 | 局部实现并验证：pi Agent Tool具有Provider Gate、Tool Gate、参数编辑和执行统计；通用Catalog、Ledger、结果未知对账尚未完成。 |
+| 实现状态 | 纵向切片已实现并验证：pi Agent Tool具有Provider Gate、Tool Gate；F01已实现受管Execution Workspace、单文件精确`edit`的Operation/Attempt/对账。通用Catalog、外部副作用、补偿和人工处置仍未完成。 |
 | 事实所有者 | 产品规则见[项目上下文原则11](../../PROJECT_CONTEXT.md#8-产品原则)，实现见[pi Agent Tool手册](../../docs/pi-agent-tool.md)。 |
 | 维护责任 | Tool Catalog、Policy、Approval、Execution Gateway、Ledger和Reconciler共同维护。 |
 
@@ -29,6 +29,9 @@
 | Tool Call Proposal / 工具调用提议 | 模型根据Definition生成的结构化名称和参数 | 不是已批准或已执行事实 |
 | Tool Approval / 工具批准 | 对具体Tool、参数版本、Hash、范围和风险的决定 | 不是对该Tool未来调用的永久授权 |
 | Tool Execution / 工具执行 | 一次具体调用的长期产品事实和副作用账本 | 不是Tool Call Proposal，也不是Product Run本身 |
+| Execution Workspace / 执行工作区 | 从已批准的干净Repository Snapshot创建、归属于一次执行的隔离目录 | 不是活动仓库，也不表示改动已经合入 |
+| Tool Operation / 工具操作 | 一次精确副作用意图及其不可变参数、目标、前后Hash和审批绑定 | 不是整个pi执行，也不是一条统计记录 |
+| Tool Operation Attempt / 操作尝试 | Operation跨越外部或文件系统副作用边界的一次领取和执行尝试 | 不是安全重试许可；结果未知时必须先对账 |
 | Idempotency Key / 幂等键 | 外部系统用于识别同一次操作的稳定键 | 不能保证所有外部系统Exactly-once |
 | Tool Result / 工具结果 | 执行器返回的规范内容、错误或结果未知状态 | 不是Evidence本身；需要来源和校验 |
 | External Receipt / 外部回执 | 外部系统返回的操作ID、版本或送达证明 | 不是仅凭HTTP 200推断的成功 |
@@ -56,6 +59,10 @@ Tool Catalog + Capability + Policy
 3. MAF FunctionTool或Middleware必须把真实执行转交Chat Tool Gateway，不能绕过产品Ledger。
 4. Tool发送前失败可安全不执行；发送后断线可能Outcome Unknown，先对账再决定重试。
 5. Tool Result进入模型时只是下一份上下文内容，会触发新的模型调用审批。
+6. 写Tool只能在受管Execution Workspace执行；当前仅开放已存在UTF-8普通文件的精确
+   `edit(path, old_text, new_text)`，不开放任意`write`、Shell、commit或push。
+7. 取消Run会拒绝尚未跨越落盘边界的Operation并保留工作区；已跨越边界的结果必须按文件Hash
+   对账，不能因为Run取消而假定“未执行”。
 
 ## 正例与反例
 
@@ -69,10 +76,17 @@ Tool Catalog + Capability + Policy
 
 ## 当前状态与未知
 
-pi Tool纵向切片已验证7个真实内置Tool选择、参数改写、Provider/Tool两道审批和Token/耗时/调用统计。通用Tool Catalog/Policy、跨进程Execution Ledger、外部副作用幂等、结果未知查询、补偿和人工处置仍未完成。
+SD2已验证受治理pi只读Tool；SD3进一步实现第19次迁移、受管Git worktree、逐
+`ToolOperation/Attempt/Reconciliation`、一次性授权消费和前端Diff/Hash/尝试/对账投影。故障测试
+覆盖落盘前死亡、`os.replace`后死亡、重复回调、第三方改动、进程取消和启动对账。该纵向切片只为
+本地文件Hash可确定对账的精确`edit`背书；通用Tool Catalog/Policy、网络外部副作用幂等、补偿、
+人工处置、Evidence/Artifact以及合入活动仓库仍未完成。
 
 ## 来源、维护与验证
 
-来源：[项目经验反例011](../../PROJECT_LESSONS.md#14-反例-011允许声明系统无法执行的tool)、[pi Agent Tool手册](../../docs/pi-agent-tool.md)和[项目计划阶段6](../../PROJECT_PLAN.md#11-阶段-6toolworkflow-与-hitl-恢复)。
+来源：[项目经验反例011](../../PROJECT_LESSONS.md#14-反例-011允许声明系统无法执行的tool)、
+[pi Agent Tool手册](../../docs/pi-agent-tool.md)、
+[F01/SD3详细设计](../../docs/tool-operation-workspace-detailed-design.md)和
+[项目计划阶段6](../../PROJECT_PLAN.md#11-阶段-6toolworkflow-与-hitl-恢复)。
 
 验证覆盖不存在Tool被拒、名称/Schema绑定、参数越权、重复批准、请求前失败、请求后断线、幂等重放、外部回执、对账和Tool Result触发下一次模型审批。

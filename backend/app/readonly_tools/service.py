@@ -238,12 +238,36 @@ class ReadonlyToolService:
         tool_name: str,
         arguments: Mapping[str, Any],
     ) -> dict[str, Any]:
+        root = await self._repository_context.resolve_private_path(fence)
+        return await self.execute_at_root(
+            root=root,
+            tool_name=tool_name,
+            arguments=arguments,
+            source_identity={"repository_snapshot_id": fence.snapshot_id},
+        )
+
+    async def execute_at_root(
+        self,
+        *,
+        root: Path,
+        tool_name: str,
+        arguments: Mapping[str, Any],
+        source_identity: Mapping[str, str],
+    ) -> dict[str, Any]:
+        """Run the same bounded readers against a caller-owned safe root.
+
+        The caller remains responsible for proving how the root was created.
+        SD3 uses this entry point only after ``ExecutionWorkspaceService`` has
+        resolved a Chat-owned worktree locator; absolute paths never enter the
+        public result.
+        """
+
         if tool_name not in self.allowed_tools:
             raise ReadonlyToolValidationError(
                 "Tool不在pi只读Capability Allowlist",
                 code="READ_TOOL_NOT_ALLOWED",
             )
-        root = await self._repository_context.resolve_private_path(fence)
+        root = root.resolve(strict=True)
         if tool_name == "read":
             result = self._read(root, arguments)
         elif tool_name == "grep":
@@ -255,7 +279,7 @@ class ReadonlyToolService:
         return _bounded_result(
             {
                 "tool": tool_name,
-                "repository_snapshot_id": fence.snapshot_id,
+                **dict(source_identity),
                 "result": result,
             }
         )

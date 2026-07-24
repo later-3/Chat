@@ -229,3 +229,121 @@ test("pi节点同时投影多次模型调用、内部Tool活动和Repository围�
     },
   ]);
 });
+
+test("SD3节点展示隔离工作区、精确Diff、Attempt和对账事实", () => {
+  const execution = {
+    id: "execution-workspace",
+    session_id: "session-1",
+    run_id: "run-workspace",
+    run_attempt_id: "attempt-1",
+    runtime_job_id: "job-1",
+    run_spec_id: "spec-1",
+    step_input_projection_id: "input-1",
+    repository_binding_id: "binding-1",
+    repository_snapshot_id: "snapshot-1",
+    tool_id: "pi_agent",
+    execution_ordinal: 1,
+    mode: "workspace_edit",
+    config_revision: 3,
+    status: "succeeded",
+    process_dispatch_state: "finished",
+    last_activity_sequence: 3,
+    model_call_count: 2,
+    internal_tool_call_count: 2,
+    tokens: { input: 180, output: 52, cache_read: 0, cache_write: 0 },
+    cost: 0.02,
+    duration_ms: 2400,
+    metrics: {
+      activities: [
+        {
+          sequence: 1,
+          stage: "process_started",
+          status: "running",
+          summary: "pi隔离工作区进程已启动",
+          details: { workspace_id: "workspace-1" },
+        },
+      ],
+    },
+    result: { final_text: "已完成精确修改" },
+    result_hash: "result-hash",
+    failure_code: null,
+    terminal_reason_code: "pi_completed",
+    workspace: {
+      id: "workspace-1",
+      product_run_id: "run-workspace",
+      run_attempt_id: "attempt-1",
+      runtime_job_id: "job-1",
+      tool_execution_id: "execution-workspace",
+      repository_binding_id: "binding-1",
+      repository_snapshot_id: "snapshot-1",
+      workspace_kind: "managed_git_worktree",
+      source: {
+        root_key: "code",
+        relative_path: "Chat",
+        base_revision: "base-head",
+      },
+      observed_head_oid: "base-head",
+      status: "retained",
+      diff_hash: "diff-hash",
+      changed_paths: ["README.md"],
+      failure_code: null,
+      row_version: 4,
+      created_at: "2026-07-25T00:00:00Z",
+      ready_at: "2026-07-25T00:00:01Z",
+      retained_at: "2026-07-25T00:00:03Z",
+      finished_at: "2026-07-25T00:00:03Z",
+    },
+    operations: [
+      {
+        id: "operation-1",
+        authorization_consumption_id: "consumption-1",
+        provider_tool_call_id: "tool-call-1",
+        tool_name: "edit",
+        operation_ordinal: 1,
+        operation_kind: "exact_text_edit",
+        side_effect_class: "workspace_write",
+        arguments: {
+          path: "README.md",
+          old_text: "# Chat",
+          new_text: "# Chat Workspace",
+        },
+        arguments_hash: "arguments-hash",
+        operation_hash: "operation-hash",
+        target_path: "README.md",
+        expected_preimage_hash: "before-hash",
+        expected_postimage_hash: "after-hash",
+        diff_preview: "-# Chat\n+# Chat Workspace\n",
+        status: "succeeded",
+        dispatch_epoch: 1,
+        observed_hash: "after-hash",
+        result: { changed: true },
+        result_hash: "operation-result-hash",
+        failure_code: null,
+        resolution_code: "dispatch_confirmed",
+        attempts: [{ attempt_number: 1, status: "succeeded" }],
+        reconciliations: [],
+      },
+    ],
+    started_at: "2026-07-25T00:00:00Z",
+    finished_at: "2026-07-25T00:00:03Z",
+    row_version: 7,
+  } satisfies GovernedToolExecution;
+
+  assert.deepEqual(outputForNode("execution_workspace_prepare", undefined, [execution]), {
+    ...execution.workspace,
+  });
+  assert.deepEqual(outputForNode("pi_workspace_result_assembly", undefined, [execution]), {
+    final_text: "已完成精确修改",
+  });
+
+  const activity = internalActivityForNode("pi_workspace_dispatch", [execution]) as {
+    Repository执行边界: Record<string, unknown>;
+    隔离工作区: Record<string, unknown>;
+    写操作: Array<Record<string, unknown>>;
+  };
+  assert.equal(activity.Repository执行边界.模式, "workspace_edit");
+  assert.deepEqual(activity.隔离工作区.变更文件, ["README.md"]);
+  assert.equal(activity.写操作[0].状态, "succeeded");
+  assert.equal(activity.写操作[0].Diff, "-# Chat\n+# Chat Workspace\n");
+  assert.deepEqual(activity.写操作[0].执行尝试, [{ attempt_number: 1, status: "succeeded" }]);
+});

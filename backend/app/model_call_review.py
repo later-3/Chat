@@ -1264,6 +1264,24 @@ class InMemoryModelCallReviewStore:
             self._drafts[draft.draft_id] = dataclass_replace(draft, status="abandoned")
             return self._drafts[draft.draft_id]
 
+    def abandon_pending_for_run(self, *, thread_id: str, run_id: str) -> bool:
+        """Release an ephemeral approval only when it belongs to the cancelled Run."""
+
+        with self._lock:
+            draft_id = self._current_by_thread.get(thread_id)
+            draft = self._drafts.get(draft_id) if draft_id is not None else None
+            if (
+                draft is None
+                or draft.run_id != run_id
+                or draft.status != "pending_approval"
+                or self._approval_status.get(draft.approval_id) != "pending"
+            ):
+                return False
+            self._approval_status[draft.approval_id] = "abandoned"
+            self._drafts[draft.draft_id] = dataclass_replace(draft, status="abandoned")
+            self._current_by_thread.pop(thread_id, None)
+            return True
+
     def attempts(self) -> list[ModelCallAttempt]:
         with self._lock:
             return [copy.copy(item) for item in self._attempts.values()]

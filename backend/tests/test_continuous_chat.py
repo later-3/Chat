@@ -229,7 +229,7 @@ def _request(
         ],
         "tools": [],
         "context": [],
-        "forwardedProps": {"workflow": {"id": "continuous-collaboration", "version": "1.6.0"}},
+        "forwardedProps": {"workflow": {"id": "continuous-collaboration", "version": "1.7.0"}},
     }
 
 
@@ -323,7 +323,7 @@ def test_continuous_workflow_simple_question_uses_three_governed_model_calls(tmp
         workflows = client.get("/api/workflows").json()["workflows"]
         assert [value["id"] for value in workflows if value["selectable"]] == ["continuous-collaboration"]
         definition = next(value for value in workflows if value["id"] == "continuous-collaboration")
-        assert len(definition["nodes"]) == 34
+        assert len(definition["nodes"]) == 37
 
         session_id = client.post("/api/sessions", json={}).json()["id"]
         first = _card(
@@ -1526,6 +1526,79 @@ def test_execution_draft_revision_reapproval_survives_api_and_worker_process_los
     assert [value["status"] for value in execution_requests] == ["resolved", "pending"]
     assert governance_view["runtime_interrupts"][-2]["status"] == "resumed"
     assert governance_view["runtime_interrupts"][-1]["status"] == "pending"
+
+
+def test_cancelled_run_closes_hitl_checkpoint_before_next_run(tmp_path) -> None:
+    """A cancelled approval cannot remain selectable or resume a later Run."""
+
+    app = create_app(
+        _settings(f"sqlite+aiosqlite:///{tmp_path / 'cancel-hitl.db'}"),
+        model_call_store=InMemoryModelCallReviewStore(_catalog()),
+        model_call_transport=SequencedTransport([]),
+    )
+    with TestClient(app) as client:
+        session_id = client.post("/api/sessions", json={}).json()["id"]
+        first_card = _card(
+            _events(
+                client.post(
+                    "/api/workflows/continuous-collaboration/run",
+                    json=_request(session_id, "cancel-hitl-start", "先停在意图审批，我随后取消"),
+                )
+            )
+        )
+        [first_run] = client.get(f"/api/sessions/{session_id}/runs").json()["runs"]
+        pending_before = client.get(
+            f"/api/hitl/decision-requests?status=pending&session_id={session_id}"
+        ).json()["decision_requests"]
+        assert [value["id"] for value in pending_before] == [
+            first_card["execution_context"]["governance"]["decision_request_id"]
+        ]
+
+        cancelled = client.post(f"/api/sessions/{session_id}/agui-runs/cancel-hitl-start/cancel")
+        assert cancelled.status_code == 200, cancelled.text
+        assert cancelled.json()["status"] == "cancelled"
+        assert (
+            client.get(f"/api/hitl/decision-requests?status=pending&session_id={session_id}").json()[
+                "decision_requests"
+            ]
+            == []
+        )
+
+        first_governance = client.get(f"/api/runs/{first_run['id']}/governance").json()
+        assert first_governance["decision_requests"][-1]["status"] == "cancelled"
+        assert first_governance["runtime_interrupts"][-1]["status"] == "cancelled"
+        assert first_governance["workflow_checkpoints"][-1]["status"] == "cancelled"
+        assert first_governance["model_calls"][-1]["status"] == "invalidated"
+        assert first_governance["model_calls"][-1]["revisions"][-1]["status"] == "invalidated"
+        history = [
+            {
+                "id": value["agui_message_id"],
+                "role": value["role"],
+                "content": value["content"],
+            }
+            for value in client.get(f"/api/sessions/{session_id}/messages").json()["messages"]
+        ]
+
+        next_card = _card(
+            _events(
+                client.post(
+                    "/api/workflows/continuous-collaboration/run",
+                    json=_request(
+                        session_id,
+                        "next-run-start",
+                        "这是取消后的独立新回合",
+                        history=history,
+                    ),
+                )
+            )
+        )
+        pending_after = client.get(
+            f"/api/hitl/decision-requests?status=pending&session_id={session_id}"
+        ).json()["decision_requests"]
+
+    assert len(pending_after) == 1
+    assert pending_after[0]["run_id"] != first_run["id"]
+    assert pending_after[0]["id"] == next_card["execution_context"]["governance"]["decision_request_id"]
 
 
 def test_continuous_workflow_invalid_intent_closes_failed_to_clarification(tmp_path) -> None:

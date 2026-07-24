@@ -328,7 +328,7 @@ def _request(session_id: str, run_id: str, prompt: str) -> dict[str, Any]:
         ],
         "tools": [],
         "context": [],
-        "forwardedProps": {"workflow": {"id": "continuous-collaboration", "version": "1.6.0"}},
+        "forwardedProps": {"workflow": {"id": "continuous-collaboration", "version": "1.7.0"}},
     }
 
 
@@ -621,7 +621,7 @@ def test_continuous_workflow_runs_pi_readonly_in_one_product_run(tmp_path: Path)
     route_decision = route_trace["payload"]["public_output"]["route_decision"]
     assert route_decision["selected_branch"] == "pi_readonly"
     assert route_decision["selected_target"] == "pi_readonly_dispatch"
-    assert [value["selected"] for value in route_decision["options"]] == [True, False]
+    assert [value["selected"] for value in route_decision["options"]] == [False, True, False]
     assert project["id"] == governance["execution_draft"]["payload"]["project_work_binding"]["project_id"]
 
 
