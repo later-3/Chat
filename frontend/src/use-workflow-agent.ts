@@ -1,15 +1,14 @@
 import { HttpAgent } from "@ag-ui/client";
 import type { Message } from "@ag-ui/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-import type { ProductTraceEvent, WorkflowDefinition } from "./workflow-api";
-import { workflowEndpointUrl } from "./workflow-api";
+import { apiErrorFromResponse } from "./api-client.js";
 import {
-  governedReviewFromInterrupt,
-  revisionError,
   type GovernedReviewCard,
+  governedReviewFromInterrupt,
   type ModelCallReviewCard,
 } from "./use-chat-agent";
+import type { ProductTraceEvent, WorkflowDefinition } from "./workflow-api";
+import { workflowEndpointUrl } from "./workflow-api";
 import {
   applyExecutorActivity,
   emptyWorkflowProgress,
@@ -17,7 +16,13 @@ import {
   type WorkflowProgress,
 } from "./workflow-progress";
 
-export type WorkflowRunStatus = "idle" | "running" | "awaiting_approval" | "saving" | "succeeded" | "failed";
+export type WorkflowRunStatus =
+  | "idle"
+  | "running"
+  | "awaiting_approval"
+  | "saving"
+  | "succeeded"
+  | "failed";
 
 const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? "http://127.0.0.1:8030";
 
@@ -180,81 +185,98 @@ export function useWorkflowAgent({
     [agent, definition, sessionId],
   );
 
-  const approve = useCallback(async (argumentsValue?: Record<string, unknown>) => {
-    if (!pendingReview || agent.isRunning) return;
-    const approvalId = pendingReview.approval_id;
-    setPendingReview(null);
-    setStatus("running");
-    setError(null);
-    try {
-      await agent.runAgent({
-        resume: [{
-          interruptId: approvalId,
-          status: "resolved",
-          payload: {
-            decision: "approve",
-            ...(pendingReview.review_kind === "tool_execution"
-              ? { arguments: argumentsValue ?? pendingReview.arguments }
-              : {}),
-          },
-        }],
-      });
-    } catch (runError) {
-      if (!mounted.current) return;
-      setStatus("failed");
-      setError(runError instanceof Error ? runError.message : "Agent模型调用失败");
-      runningChangeRef.current(false);
-      settledRef.current(true);
-    }
-  }, [agent, pendingReview]);
-
-  const revise = useCallback(async (
-    providerId: string,
-    providerRequest: Record<string, unknown>,
-  ) => {
-    if (!pendingReview || pendingReview.review_kind === "tool_execution" || pendingReview.review_kind === "product_decision" || agent.isRunning) return;
-    let recoverable = pendingReview;
-    setStatus("saving");
-    setError(null);
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/model-call-drafts/${pendingReview.draft_id}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          expected_hash: pendingReview.binding_hash,
-          provider_id: providerId,
-          provider_request: providerRequest,
-        }),
-      });
-      if (!response.ok) {
-        const payload = await response.json() as { detail?: string | { message?: string; issues?: string[] } };
-        throw new Error(revisionError(payload, `保存修改失败：HTTP ${response.status}`));
-      }
-      const revised = await response.json() as ModelCallReviewCard;
-      recoverable = revised;
+  const approve = useCallback(
+    async (argumentsValue?: Record<string, unknown>) => {
+      if (!pendingReview || agent.isRunning) return;
       const approvalId = pendingReview.approval_id;
       setPendingReview(null);
       setStatus("running");
-      await agent.runAgent({
-        resume: [{
-          interruptId: approvalId,
-          status: "resolved",
-          payload: { decision: "revise", revision_draft_id: revised.draft_id },
-        }],
-      });
-    } catch (revisionFailure) {
-      if (!mounted.current) return;
-      setPendingReview(recoverable);
-      setStatus("awaiting_approval");
-      setError(revisionFailure instanceof Error ? revisionFailure.message : "保存修改失败");
-    }
-  }, [agent, pendingReview]);
+      setError(null);
+      try {
+        await agent.runAgent({
+          resume: [
+            {
+              interruptId: approvalId,
+              status: "resolved",
+              payload: {
+                decision: "approve",
+                ...(pendingReview.review_kind === "tool_execution"
+                  ? { arguments: argumentsValue ?? pendingReview.arguments }
+                  : {}),
+              },
+            },
+          ],
+        });
+      } catch (runError) {
+        if (!mounted.current) return;
+        setStatus("failed");
+        setError(runError instanceof Error ? runError.message : "Agent模型调用失败");
+        runningChangeRef.current(false);
+        settledRef.current(true);
+      }
+    },
+    [agent, pendingReview],
+  );
+
+  const revise = useCallback(
+    async (providerId: string, providerRequest: Record<string, unknown>) => {
+      if (
+        !pendingReview ||
+        pendingReview.review_kind === "tool_execution" ||
+        pendingReview.review_kind === "product_decision" ||
+        agent.isRunning
+      )
+        return;
+      let recoverable = pendingReview;
+      setStatus("saving");
+      setError(null);
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/model-call-drafts/${pendingReview.draft_id}`,
+          {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              expected_hash: pendingReview.binding_hash,
+              provider_id: providerId,
+              provider_request: providerRequest,
+            }),
+          },
+        );
+        if (!response.ok) {
+          throw await apiErrorFromResponse(response, `保存修改失败：HTTP ${response.status}`);
+        }
+        const revised = (await response.json()) as ModelCallReviewCard;
+        recoverable = revised;
+        const approvalId = pendingReview.approval_id;
+        setPendingReview(null);
+        setStatus("running");
+        await agent.runAgent({
+          resume: [
+            {
+              interruptId: approvalId,
+              status: "resolved",
+              payload: { decision: "revise", revision_draft_id: revised.draft_id },
+            },
+          ],
+        });
+      } catch (revisionFailure) {
+        if (!mounted.current) return;
+        setPendingReview(recoverable);
+        setStatus("awaiting_approval");
+        setError(revisionFailure instanceof Error ? revisionFailure.message : "保存修改失败");
+      }
+    },
+    [agent, pendingReview],
+  );
 
   const abandon = useCallback(async (): Promise<string | null> => {
     if (!pendingReview || agent.isRunning) return null;
-    const prompt = pendingReview.review_kind === "tool_execution" || pendingReview.review_kind === "product_decision"
-      ? inputBeforeRun.current
-      : pendingReview.origin_prompt;
+    const prompt =
+      pendingReview.review_kind === "tool_execution" ||
+      pendingReview.review_kind === "product_decision"
+        ? inputBeforeRun.current
+        : pendingReview.origin_prompt;
     const approvalId = pendingReview.approval_id;
     setPendingReview(null);
     setStatus("running");
@@ -278,30 +300,44 @@ export function useWorkflowAgent({
     }
   }, [agent, pendingReview]);
 
-  const decideProduct = useCallback(async (
-    decision: string,
-    changes?: Record<string, unknown>,
-  ) => {
-    if (!pendingReview || pendingReview.review_kind !== "product_decision" || agent.isRunning) return;
-    const review = pendingReview;
-    setPendingReview(null);
-    setStatus("running");
-    setError(null);
-    try {
-      await agent.runAgent({
-        resume: [{
-          interruptId: review.approval_id,
-          status: "resolved",
-          payload: { decision, ...(changes ? { changes } : {}) },
-        }],
-      });
-    } catch (runError) {
-      if (!mounted.current) return;
-      setPendingReview(review);
-      setStatus("awaiting_approval");
-      setError(runError instanceof Error ? runError.message : "提交人工决定失败");
-    }
-  }, [agent, pendingReview]);
+  const decideProduct = useCallback(
+    async (decision: string, changes?: Record<string, unknown>) => {
+      if (!pendingReview || pendingReview.review_kind !== "product_decision" || agent.isRunning)
+        return;
+      const review = pendingReview;
+      setPendingReview(null);
+      setStatus("running");
+      setError(null);
+      try {
+        await agent.runAgent({
+          resume: [
+            {
+              interruptId: review.approval_id,
+              status: "resolved",
+              payload: { decision, ...(changes ? { changes } : {}) },
+            },
+          ],
+        });
+      } catch (runError) {
+        if (!mounted.current) return;
+        setPendingReview(review);
+        setStatus("awaiting_approval");
+        setError(runError instanceof Error ? runError.message : "提交人工决定失败");
+      }
+    },
+    [agent, pendingReview],
+  );
 
-  return { status, error, progress, runId, pendingReview, run, approve, revise, abandon, decideProduct };
+  return {
+    status,
+    error,
+    progress,
+    runId,
+    pendingReview,
+    run,
+    approve,
+    revise,
+    abandon,
+    decideProduct,
+  };
 }

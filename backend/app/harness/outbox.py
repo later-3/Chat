@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import logging
 
-from ..governance.outbox import ClaimedOutboxEvent, OutboxDispatchError, OutboxEventHandler
-
+from ..governance.outbox import (
+    ClaimedOutboxEvent,
+    OutboxDispatchError,
+    OutboxEventHandler,
+)
 
 logger = logging.getLogger(__name__)
 

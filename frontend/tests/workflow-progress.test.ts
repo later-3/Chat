@@ -9,7 +9,6 @@ import {
   progressFromTrace,
 } from "../src/workflow-progress.js";
 
-
 const definition: WorkflowDefinition = {
   id: "nested",
   name: "嵌套测试",
@@ -40,7 +39,6 @@ const definition: WorkflowDefinition = {
   edges: [{ source: "parent", target: "parent.child" }],
 };
 
-
 function trace(
   sequence: number,
   executorId: string,
@@ -57,7 +55,6 @@ function trace(
   };
 }
 
-
 test("同一executor_id按事件原位更新且不重建无关节点", () => {
   const initial = emptyWorkflowProgress(definition);
   const childBefore = initial["parent.child"];
@@ -72,7 +69,6 @@ test("同一executor_id按事件原位更新且不重建无关节点", () => {
   assert.equal(Object.keys(running).length, 2);
 });
 
-
 test("刷新后用Product Trace恢复两层节点终态", () => {
   const progress = progressFromTrace(definition, [
     trace(4, "parent", "in_progress"),
@@ -86,7 +82,6 @@ test("刷新后用Product Trace恢复两层节点终态", () => {
   assert.equal(progress["parent.child"].status, "completed");
   assert.equal(progress["parent.child"].sequence, 6);
 });
-
 
 test("旧序号和未知节点不能覆盖当前Workflow投影", () => {
   const completed = progressFromTrace(definition, [trace(10, "parent.child", "completed")]);

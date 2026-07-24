@@ -2,14 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  replayRuntimeEvents,
   RuntimeReplayConflictError,
   RuntimeReplayGapError,
   type RuntimeReplayState,
+  replayRuntimeEvents,
 } from "../src/runtime-event-replay.js";
 import type { RuntimeEventEnvelope } from "../src/session-api.js";
 
-function event(sequence: number, payload: Record<string, unknown>, hash = `hash-${sequence}`): RuntimeEventEnvelope {
+function event(
+  sequence: number,
+  payload: Record<string, unknown>,
+  hash = `hash-${sequence}`,
+): RuntimeEventEnvelope {
   return {
     id: `event-${sequence}`,
     runtime_job_id: "job-1",
@@ -68,9 +72,7 @@ test("Checkpoint恢复的新RUN_STARTED会清除上一段的Interrupt终帧", ()
   ]);
   assert.equal(interrupted.lastTerminal?.type, "RUN_FINISHED");
 
-  const resumed = replayRuntimeEvents(interrupted, [
-    event(3, { type: "RUN_STARTED" }),
-  ]);
+  const resumed = replayRuntimeEvents(interrupted, [event(3, { type: "RUN_STARTED" })]);
   assert.equal(resumed.lastTerminal, null);
   assert.equal(resumed.lastSequence, 3);
 });

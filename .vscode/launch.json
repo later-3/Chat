@@ -7,7 +7,7 @@
       "request": "launch",
       "module": "uvicorn",
       "args": [
-        "backend.app.main:app",
+        "backend.app.asgi:app",
         "--host",
         "${config:chat.backendHost}",
         "--port",
@@ -28,7 +28,45 @@
       "cwd": "${workspaceFolder}/frontend",
       "preLaunchTask": "chat: cleanup frontend",
       "postDebugTask": "chat: cleanup frontend",
-      "command": "VITE_AG_UI_URL=http://${config:chat.backendHost}:${config:chat.backendPort}/api/agent VITE_API_BASE_URL=http://${config:chat.backendHost}:${config:chat.backendPort} /Users/xulater/.nvm/versions/node/v24.8.0/bin/node /Users/xulater/.nvm/versions/node/v24.8.0/lib/node_modules/npm/bin/npm-cli.js run dev -- --host ${config:chat.frontendBindHost} --port ${config:chat.frontendPort} --strictPort"
+      "command": "VITE_AG_UI_URL=http://${config:chat.backendHost}:${config:chat.backendPort}/api/agent VITE_API_BASE_URL=http://${config:chat.backendHost}:${config:chat.backendPort} npm run dev -- --host ${config:chat.frontendBindHost} --port ${config:chat.frontendPort} --strictPort"
+    },
+    {
+      "name": "Chat Backend API (External Workers)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "backend.app.main:create_api_app",
+        "--factory",
+        "--host",
+        "${config:chat.backendHost}",
+        "--port",
+        "${config:chat.backendPort}"
+      ],
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Chat Execution Worker",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "backend.app.execution_worker",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Chat Outbox Worker",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "backend.app.outbox_worker",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": false
     }
   ],
   "compounds": [
@@ -36,6 +74,17 @@
       "name": "Chat Full Stack",
       "configurations": [
         "Chat Backend (MAF + FastAPI)",
+        "Chat Frontend (React + Vite)"
+      ],
+      "preLaunchTask": "chat: cleanup all",
+      "stopAll": true
+    },
+    {
+      "name": "Chat Distributed Stack",
+      "configurations": [
+        "Chat Backend API (External Workers)",
+        "Chat Execution Worker",
+        "Chat Outbox Worker",
         "Chat Frontend (React + Vite)"
       ],
       "preLaunchTask": "chat: cleanup all",

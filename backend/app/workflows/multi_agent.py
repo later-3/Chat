@@ -5,9 +5,16 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import dataclass
+from types import UnionType
 from typing import Any, Callable
 
-from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler, response_handler
+from agent_framework import (
+    Executor,
+    WorkflowBuilder,
+    WorkflowContext,
+    handler,
+    response_handler,
+)
 from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 
 from ..agent_profiles import AgentProfileSnapshot
@@ -17,7 +24,10 @@ from ..model_call_review import (
     PreparedProviderRequest,
     ProviderDispatchError,
 )
-from ..model_call_workflow import ProviderTransport, normalize_agui_messages_for_provider
+from ..model_call_workflow import (
+    ProviderTransport,
+    normalize_agui_messages_for_provider,
+)
 from ..product_sessions.service import ProductSessionService
 
 
@@ -65,7 +75,7 @@ class GovernedAgentExecutor(Executor, RequestInfoMixin):
         return self.profile.description
 
     @property
-    def output_types(self) -> list[type[Any]]:
+    def output_types(self) -> list[type[Any] | UnionType]:
         return [str] if self.final else [AgentTurnEnvelope]
 
     async def _request_review(

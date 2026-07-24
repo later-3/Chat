@@ -11,12 +11,13 @@ import {
   RotateCcw,
   Workflow,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { ModelCallReview } from "./model-call-review";
 import { ProductDecisionReview } from "./product-decision-review";
-import { ToolCallReview } from "./tool-call-review";
 import type { ProductSession } from "./session-api";
+import { ToolCallReview } from "./tool-call-review";
+import { useWorkflowAgent } from "./use-workflow-agent";
 import {
   getLatestWorkflowTrace,
   type ProductTraceEvent,
@@ -24,7 +25,6 @@ import {
   type WorkflowNodeStatus,
 } from "./workflow-api";
 import type { WorkflowNodeProgress } from "./workflow-progress";
-import { useWorkflowAgent } from "./use-workflow-agent";
 
 interface WorkflowPageProps {
   definitions: WorkflowDefinition[];
@@ -182,7 +182,18 @@ function WorkflowRuntime({
   onRunningChange,
   onSelectDefinition,
 }: WorkflowRuntimeProps) {
-  const { status, error, progress, runId, pendingReview, run, approve, revise, abandon, decideProduct } = useWorkflowAgent({
+  const {
+    status,
+    error,
+    progress,
+    runId,
+    pendingReview,
+    run,
+    approve,
+    revise,
+    abandon,
+    decideProduct,
+  } = useWorkflowAgent({
     definition,
     sessionId: session?.id ?? null,
     hydratedMessages,
@@ -211,7 +222,9 @@ function WorkflowRuntime({
     <main className="workflow-layout">
       <header className="workflow-page-header">
         <div className="workflow-title-block">
-          <span className="workflow-title-icon"><Workflow size={21} /></span>
+          <span className="workflow-title-icon">
+            <Workflow size={21} />
+          </span>
           <div>
             <p className="eyebrow">MAF WORKFLOW · v{definition.version}</p>
             <h1>{definition.name}</h1>
@@ -227,7 +240,9 @@ function WorkflowRuntime({
               value={selectedDefinitionId}
             >
               {definitions.map((value) => (
-                <option key={value.id} value={value.id}>{value.name} · v{value.version}</option>
+                <option key={value.id} value={value.id}>
+                  {value.name} · v{value.version}
+                </option>
               ))}
             </select>
           </label>
@@ -246,10 +261,15 @@ function WorkflowRuntime({
       <section className="workflow-dashboard">
         <div className="workflow-run-stage">
           <div className="workflow-section-heading">
-            <div><span>执行图</span><strong>{definition.nodes.length} 个节点 · {definition.edges.length} 条连接</strong></div>
+            <div>
+              <span>执行图</span>
+              <strong>
+                {definition.nodes.length} 个节点 · {definition.edges.length} 条连接
+              </strong>
+            </div>
             <small>节点状态来自MAF → AG-UI事件</small>
           </div>
-          <div className="workflow-node-list" aria-label="Workflow节点进度">
+          <div className="workflow-node-list" aria-label="Workflow节点进度" role="list">
             {definition.nodes.map((node) => {
               const nodeProgress = progress[node.id];
               const message = detailMessage(nodeProgress);
@@ -257,11 +277,18 @@ function WorkflowRuntime({
                 <article
                   className={`workflow-node workflow-node--${nodeProgress.status} workflow-node--depth-${node.depth}`}
                   key={node.id}
+                  role="listitem"
                   style={{ "--workflow-depth": node.depth } as CSSProperties}
                 >
                   <div className="workflow-node-rail">
-                    <span className="workflow-node-status"><StatusIcon status={nodeProgress.status} /></span>
-                    {node.depth > 0 && <span className="workflow-node-parent"><ChevronRight size={13} /></span>}
+                    <span className="workflow-node-status">
+                      <StatusIcon status={nodeProgress.status} />
+                    </span>
+                    {node.depth > 0 && (
+                      <span className="workflow-node-parent">
+                        <ChevronRight size={13} />
+                      </span>
+                    )}
                   </div>
                   <div className="workflow-node-copy">
                     <div>
@@ -272,7 +299,9 @@ function WorkflowRuntime({
                     <p>{node.description}</p>
                     {message && <small>{message}</small>}
                   </div>
-                  <span className="workflow-node-state-label">{STATUS_LABELS[nodeProgress.status]}</span>
+                  <span className="workflow-node-state-label">
+                    {STATUS_LABELS[nodeProgress.status]}
+                  </span>
                 </article>
               );
             })}
@@ -281,44 +310,104 @@ function WorkflowRuntime({
 
         <aside className="workflow-inspector">
           <div className="workflow-metrics">
-            <div><span>{summary.completed}</span><small>已完成</small></div>
-            <div><span>{summary.running}</span><small>运行中</small></div>
-            <div><span>{summary.failed}</span><small>失败</small></div>
+            <div>
+              <span>{summary.completed}</span>
+              <small>已完成</small>
+            </div>
+            <div>
+              <span>{summary.running}</span>
+              <small>运行中</small>
+            </div>
+            <div>
+              <span>{summary.failed}</span>
+              <small>失败</small>
+            </div>
           </div>
           <div className="workflow-facts">
-            <div><span>Product Session</span><code>{session?.id ?? "—"}</code></div>
-            <div><span>AG-UI Run</span><code>{runId ?? "等待创建"}</code></div>
-            <div><span>恢复投影</span><strong>{traceLoading ? "读取中" : `${restoredTrace.length} 条Trace`}</strong></div>
+            <div>
+              <span>Product Session</span>
+              <code>{session?.id ?? "—"}</code>
+            </div>
+            <div>
+              <span>AG-UI Run</span>
+              <code>{runId ?? "等待创建"}</code>
+            </div>
+            <div>
+              <span>恢复投影</span>
+              <strong>{traceLoading ? "读取中" : `${restoredTrace.length} 条Trace`}</strong>
+            </div>
           </div>
           <div className="workflow-explainer">
             <GitBranch size={17} />
-            <div><strong>节点不一定是Agent</strong><p>同一投影可显示普通Executor、嵌套Workflow和受治理Agent；Agent的每次真实模型调用仍单独审批。</p></div>
+            <div>
+              <strong>节点不一定是Agent</strong>
+              <p>
+                同一投影可显示普通Executor、嵌套Workflow和受治理Agent；Agent的每次真实模型调用仍单独审批。
+              </p>
+            </div>
           </div>
         </aside>
       </section>
 
       <form className="workflow-launcher" onSubmit={submit}>
         <div className="workflow-scenario-buttons">
-          <button disabled={busy} onClick={() => onInputChange("检查当前交付质量")} type="button"><Check size={14} />成功场景</button>
-          <button disabled={busy} onClick={() => onInputChange("检查当前交付质量 [fail]")} type="button"><AlertTriangle size={14} />失败场景</button>
-          <button disabled={busy} onClick={() => onInputChange("")} type="button"><RotateCcw size={14} />清空</button>
+          <button disabled={busy} onClick={() => onInputChange("检查当前交付质量")} type="button">
+            <Check size={14} />
+            成功场景
+          </button>
+          <button
+            disabled={busy}
+            onClick={() => onInputChange("检查当前交付质量 [fail]")}
+            type="button"
+          >
+            <AlertTriangle size={14} />
+            失败场景
+          </button>
+          <button disabled={busy} onClick={() => onInputChange("")} type="button">
+            <RotateCcw size={14} />
+            清空
+          </button>
         </div>
         <div className="workflow-input-row">
-          <label><span>本次Workflow输入</span><input disabled={busy || blocked || !session} onChange={(event) => onInputChange(event.target.value)} value={input} /></label>
-          <button disabled={!input.trim() || busy || blocked || !session} onClick={() => void run(input)} type="button"><Play size={16} />{busy ? "运行中" : "运行Workflow"}</button>
+          <label>
+            <span>本次Workflow输入</span>
+            <input
+              disabled={busy || blocked || !session}
+              onChange={(event) => onInputChange(event.target.value)}
+              value={input}
+            />
+          </label>
+          <button
+            disabled={!input.trim() || busy || blocked || !session}
+            onClick={() => void run(input)}
+            type="button"
+          >
+            <Play size={16} />
+            {busy ? "运行中" : "运行Workflow"}
+          </button>
         </div>
-        {error && <p className="workflow-error" role="alert">{error}</p>}
+        {error && (
+          <p className="workflow-error" role="alert">
+            {error}
+          </p>
+        )}
       </form>
-      {pendingReview && pendingReview.review_kind !== "tool_execution" && pendingReview.review_kind !== "product_decision" && (
-        <ModelCallReview
-          busy={status === "running" || status === "saving"}
-          card={pendingReview}
-          onAbandon={() => { void abandon().then((prompt) => { if (prompt !== null) onInputChange(prompt); }); }}
-          onApprove={() => void approve()}
-          onRevise={(providerId, providerRequest) => void revise(providerId, providerRequest)}
-          requestError={error}
-        />
-      )}
+      {pendingReview &&
+        pendingReview.review_kind !== "tool_execution" &&
+        pendingReview.review_kind !== "product_decision" && (
+          <ModelCallReview
+            busy={status === "running" || status === "saving"}
+            card={pendingReview}
+            onAbandon={() => {
+              void abandon().then((prompt) => {
+                if (prompt !== null) onInputChange(prompt);
+              });
+            }}
+            onApprove={() => void approve()}
+            onRevise={(providerId, providerRequest) => void revise(providerId, providerRequest)}
+            requestError={error}
+          />
+        )}
       {pendingReview?.review_kind === "product_decision" && (
         <ProductDecisionReview
           busy={status === "running" || status === "saving"}
@@ -333,7 +422,11 @@ function WorkflowRuntime({
           busy={status === "running" || status === "saving"}
           card={pendingReview}
           error={error}
-          onAbandon={() => { void abandon().then((prompt) => { if (prompt !== null) onInputChange(prompt); }); }}
+          onAbandon={() => {
+            void abandon().then((prompt) => {
+              if (prompt !== null) onInputChange(prompt);
+            });
+          }}
           onApprove={(argumentsValue) => void approve(argumentsValue)}
         />
       )}

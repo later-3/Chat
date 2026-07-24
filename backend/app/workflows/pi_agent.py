@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from agent_framework import (
@@ -107,8 +107,7 @@ class GovernedPiToolExecutor(Executor, RequestInfoMixin):
         self._pi_tool = FunctionTool(
             name="pi_agent",
             description=(
-                "在配置的本地工作目录中运行pi coding agent；"
-                "每次模型请求与pi内部Tool请求都由Chat暂停审批。"
+                "在配置的本地工作目录中运行pi coding agent；每次模型请求与pi内部Tool请求都由Chat暂停审批。"
             ),
             approval_mode="always_require",
             func=self._start_pi,
@@ -143,7 +142,13 @@ class GovernedPiToolExecutor(Executor, RequestInfoMixin):
             config_revision=self._config.revision,
         )
         try:
-            self._execution = await self._pi_tool.invoke(arguments={"task": self._origin_prompt})
+            self._execution = cast(
+                PiExecution,
+                await self._pi_tool.invoke(
+                    arguments={"task": self._origin_prompt},
+                    skip_parsing=True,
+                ),
+            )
             await self._drive(ctx)
         except Exception as error:
             await self._fail(type(error).__name__)
@@ -158,7 +163,9 @@ class GovernedPiToolExecutor(Executor, RequestInfoMixin):
                 try:
                     request = json.loads(boundary.call.body)
                 except json.JSONDecodeError as error:
-                    raise PiRuntimeError("pi产生了无效Provider JSON", code="pi_provider_json_invalid") from error
+                    raise PiRuntimeError(
+                        "pi产生了无效Provider JSON", code="pi_provider_json_invalid"
+                    ) from error
                 if not isinstance(request, dict):
                     raise PiRuntimeError("pi Provider请求必须是JSON对象", code="pi_provider_json_invalid")
                 draft = self._store.begin_provider_request(
@@ -344,11 +351,8 @@ def create_governed_pi_agent_workflow(
         sessions=sessions,
         tools=tools,
     )
-    return (
-        WorkflowBuilder(
-            name="governed-pi-agent",
-            start_executor=pi_executor,
-            output_from=[pi_executor],
-        )
-        .build()
-    )
+    return WorkflowBuilder(
+        name="governed-pi-agent",
+        start_executor=pi_executor,
+        output_from=[pi_executor],
+    ).build()

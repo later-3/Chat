@@ -1,11 +1,11 @@
 """Product-owned Project, Work, Knowledge, Memory and Context contracts."""
 
-from .service import (
+from .contracts import (
     HarnessConflict,
     HarnessNotFound,
-    HarnessService,
     HarnessValidationError,
 )
+from .service import HarnessService
 
 __all__ = [
     "HarnessConflict",

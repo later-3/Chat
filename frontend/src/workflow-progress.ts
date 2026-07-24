@@ -1,8 +1,4 @@
-import type {
-  ProductTraceEvent,
-  WorkflowDefinition,
-  WorkflowNodeStatus,
-} from "./workflow-api.js";
+import type { ProductTraceEvent, WorkflowDefinition, WorkflowNodeStatus } from "./workflow-api.js";
 
 export interface WorkflowNodeProgress {
   status: WorkflowNodeStatus;
@@ -46,7 +42,9 @@ export function applyExecutorActivity(
   if (
     !executorId ||
     !(executorId in progress) ||
-    !["in_progress", "waiting_approval", "completed", "failed", "abandoned", "skipped"].includes(String(status))
+    !["in_progress", "waiting_approval", "completed", "failed", "abandoned", "skipped"].includes(
+      String(status),
+    )
   ) {
     return progress;
   }
@@ -80,7 +78,8 @@ export function nodeContentFromTrace(
     if (typeof executorId !== "string" || !(executorId in result)) continue;
     result[executorId] = {
       actor: typeof event.payload.actor === "string" ? event.payload.actor : null,
-      contentType: typeof event.payload.content_type === "string" ? event.payload.content_type : null,
+      contentType:
+        typeof event.payload.content_type === "string" ? event.payload.content_type : null,
       publicInput: event.payload.public_input,
       publicOutput: event.payload.public_output,
       occurredAt: event.created_at,

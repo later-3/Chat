@@ -21,12 +21,25 @@ from agent_framework import (
 )
 from fastapi.testclient import TestClient
 
-from backend.app.agent_profiles import AgentProfileConflict, AgentProfileService
+from backend.app.agent_profiles import (
+    INTENT_ROUTER_INSTRUCTIONS_V2,
+    LEGACY_INTENT_ROUTER_INSTRUCTIONS_V0,
+    AgentProfileConflict,
+    AgentProfileService,
+)
 from backend.app.config import Settings
 from backend.app.main import create_app
-from backend.app.model_call_review import InMemoryModelCallReviewStore, PreparedProviderRequest
-from backend.app.model_providers import ModelOption, ModelProviderCatalog, ModelProviderConfig
+from backend.app.model_call_review import (
+    InMemoryModelCallReviewStore,
+    PreparedProviderRequest,
+)
+from backend.app.model_providers import (
+    ModelOption,
+    ModelProviderCatalog,
+    ModelProviderConfig,
+)
 from backend.app.product_sessions import ProductDatabase
+from backend.app.product_sessions.database import AgentProfileRecord
 
 
 class SequencedTransport:
@@ -76,6 +89,7 @@ class CapturingAgent(BaseAgent):
         del session, kwargs
         self.seen = list(messages or [])  # type: ignore[arg-type]
         if stream:
+
             async def updates():
                 yield AgentResponseUpdate(contents=[Content.from_text(text=self.reply)])
 
@@ -178,9 +192,7 @@ def _card(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _text(events: list[dict[str, Any]]) -> str:
     return "".join(
-        str(value.get("delta") or "")
-        for value in events
-        if value["type"] == "TEXT_MESSAGE_CONTENT"
+        str(value.get("delta") or "") for value in events if value["type"] == "TEXT_MESSAGE_CONTENT"
     )
 
 
@@ -251,9 +263,9 @@ def test_agent_profiles_are_editable_with_provider_model_validation_and_revision
         invalid_model = client.put(
             "/api/agents/planner",
             json={
-                "expected_revision": next(
-                    value for value in profiles if value["id"] == "planner"
-                )["revision"],
+                "expected_revision": next(value for value in profiles if value["id"] == "planner")[
+                    "revision"
+                ],
                 "name": "规划 Agent",
                 "description": "",
                 "instructions": "形成规划",
@@ -301,6 +313,48 @@ def test_agent_profile_concurrent_edits_have_one_revision_winner(tmp_path) -> No
     assert asyncio.run(scenario()) == (1, 2)
 
 
+def test_builtin_intent_profile_upgrades_only_the_exact_legacy_seed(tmp_path) -> None:
+    async def scenario() -> tuple[dict[str, Any], dict[str, Any]]:
+        database = ProductDatabase(f"sqlite+aiosqlite:///{tmp_path / 'agent-seed-upgrade.db'}")
+        await database.initialize()
+        async with database.sessions.begin() as transaction:
+            transaction.add(
+                AgentProfileRecord(
+                    id="intent_router",
+                    name="意图与上下文 Agent",
+                    description="旧内置说明",
+                    instructions=LEGACY_INTENT_ROUTER_INSTRUCTIONS_V0,
+                    provider_id="provider-a",
+                    model="model-a",
+                    revision=1,
+                )
+            )
+        service = AgentProfileService(database, _catalog())
+        await service.initialize()
+        upgraded = next(value for value in await service.list() if value["id"] == "intent_router")
+        await service.update(
+            "intent_router",
+            expected_revision=upgraded["revision"],
+            name=upgraded["name"],
+            description=upgraded["description"],
+            instructions="用户自定义的意图说明，不应被启动同步覆盖。",
+            provider_id=upgraded["provider_id"],
+            model=upgraded["model"],
+            enabled=True,
+        )
+        restarted = AgentProfileService(database, _catalog())
+        await restarted.initialize()
+        preserved = next(value for value in await restarted.list() if value["id"] == "intent_router")
+        await database.close()
+        return upgraded, preserved
+
+    upgraded, preserved = asyncio.run(scenario())
+    assert upgraded["revision"] == 2
+    assert upgraded["instructions"] == INTENT_ROUTER_INSTRUCTIONS_V2
+    assert preserved["revision"] == 3
+    assert preserved["instructions"] == "用户自定义的意图说明，不应被启动同步覆盖。"
+
+
 def test_multi_agent_handoff_requires_two_approvals_and_preserves_full_context(tmp_path) -> None:
     catalog = _catalog()
     store = InMemoryModelCallReviewStore(catalog)
@@ -346,8 +400,7 @@ def test_multi_agent_handoff_requires_two_approvals_and_preserves_full_context(t
         planner_states = [
             value["content"]["status"]
             for value in first
-            if value["type"] == "ACTIVITY_SNAPSHOT"
-            and value["content"].get("executor_id") == "planner"
+            if value["type"] == "ACTIVITY_SNAPSHOT" and value["content"].get("executor_id") == "planner"
         ]
         assert planner_states[-1] == "in_progress"
 
@@ -369,8 +422,7 @@ def test_multi_agent_handoff_requires_two_approvals_and_preserves_full_context(t
         reviewer_states = [
             value["content"]["status"]
             for value in second
-            if value["type"] == "ACTIVITY_SNAPSHOT"
-            and value["content"].get("executor_id") == "reviewer"
+            if value["type"] == "ACTIVITY_SNAPSHOT" and value["content"].get("executor_id") == "reviewer"
         ]
         assert reviewer_states[-1] == "in_progress"
         reviewer_body = first_reviewer_card["provider_request"]
@@ -424,9 +476,7 @@ def test_multi_agent_handoff_requires_two_approvals_and_preserves_full_context(t
         )
         messages = client.get(f"/api/sessions/{session_id}/messages").json()["messages"]
         [run] = client.get(f"/api/sessions/{session_id}/runs").json()["runs"]
-        trace = client.get(
-            f"/api/sessions/{session_id}/runs/{run['id']}/trace"
-        ).json()["trace"]
+        trace = client.get(f"/api/sessions/{session_id}/runs/{run['id']}/trace").json()["trace"]
 
     assert completed[-1]["type"] == "RUN_FINISHED"
     assert _text(completed) == "最终答复：范围已确认，可以执行。"

@@ -14,7 +14,6 @@ from .config import Settings
 from .governance import GovernanceOutboxWorker
 from .main import create_app
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -81,10 +80,6 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = _parser().parse_args()
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
     worker_id = f"outbox-worker-{os.getpid()}"
     app = create_app(
         Settings.from_file(),

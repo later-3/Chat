@@ -5,11 +5,10 @@ import {
   createProject,
   createWorkItem,
   latestContextPackage,
+  listIntentSets,
+  reviseContextPackage,
 } from "../src/harness-api.js";
-import {
-  resolveDurableDecisionRequest,
-  type DurableDecisionRequest,
-} from "../src/hitl-api.js";
+import { type DurableDecisionRequest, resolveDurableDecisionRequest } from "../src/hitl-api.js";
 
 function jsonResponse(value: unknown): Response {
   return new Response(JSON.stringify(value), {
@@ -70,6 +69,84 @@ test("Context Inspector只读取服务端版本化ContextPackage", async () => {
   }
 });
 
+test("本轮信息面板从Product API读取版本化Intent Set而不是解析聊天文本", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = "";
+  globalThis.fetch = (async (input) => {
+    requestedUrl = String(input);
+    return jsonResponse([]);
+  }) as typeof fetch;
+  try {
+    assert.deepEqual(await listIntentSets("session / one"), []);
+    assert.match(requestedUrl, /\/api\/harness\/intents\?session_id=session%20%2F%20one&limit=20$/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Context修改提交不可变revision、CAS Hash与用户选择而不是覆盖旧包", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = "";
+  let captured: RequestInit | undefined;
+  globalThis.fetch = (async (input, init) => {
+    requestedUrl = String(input);
+    captured = init;
+    return jsonResponse({
+      id: "context-v2",
+      revision: 2,
+      previous_package_id: "context-v1",
+      package_hash: "hash-v2",
+      execution_invalidation: {
+        invalidated: true,
+        draft_ids: ["draft-1"],
+        decision_request_ids: ["decision-1"],
+        requires_recompile: true,
+      },
+    });
+  }) as typeof fetch;
+  try {
+    await reviseContextPackage("context / v1", {
+      expected_package_hash: "hash-v1",
+      reason: "只保留当前Project并锁定目标",
+      item_changes: [
+        { ordinal: 0, locked: true },
+        { ordinal: 1, adopted: false, reason: "与本轮无关" },
+      ],
+      added_source_refs: [
+        {
+          source_kind: "note",
+          source_id: "note-2",
+          adopted: true,
+          reason: "用户从信息面板明确选择",
+        },
+      ],
+      token_budget: 2400,
+    });
+
+    assert.match(requestedUrl, /\/api\/harness\/context-packages\/context%20%2F%20v1\/revisions$/);
+    assert.equal(captured?.method, "POST");
+    const body = JSON.parse(String(captured?.body));
+    assert.match(body.command_id, /^web:revise-context:/);
+    assert.equal(body.expected_package_hash, "hash-v1");
+    assert.equal(body.reason, "只保留当前Project并锁定目标");
+    assert.deepEqual(body.item_changes, [
+      { ordinal: 0, locked: true },
+      { ordinal: 1, adopted: false, reason: "与本轮无关" },
+    ]);
+    assert.deepEqual(body.added_source_refs, [
+      {
+        source_kind: "note",
+        source_id: "note-2",
+        adopted: true,
+        reason: "用户从信息面板明确选择",
+      },
+    ]);
+    assert.equal(body.token_budget, 2400);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("跨进程HITL修改把changes与请求版本一并提交给Outbox恢复入口", async () => {
   const originalFetch = globalThis.fetch;
   let captured: RequestInit | undefined;
@@ -96,11 +173,9 @@ test("跨进程HITL修改把changes与请求版本一并提交给Outbox恢复入
     items: [],
   };
   try {
-    await resolveDurableDecisionRequest(
-      request,
-      [{ item_key: "context", decision: "revise" }],
-      { changes: { selected_project_id: "project-2" } },
-    );
+    await resolveDurableDecisionRequest(request, [{ item_key: "context", decision: "revise" }], {
+      changes: { selected_project_id: "project-2" },
+    });
     const body = JSON.parse(String(captured?.body));
     assert.equal(body.expected_request_hash, "request-hash");
     assert.equal(body.expected_row_version, 3);

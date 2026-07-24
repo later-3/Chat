@@ -8,7 +8,13 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from .service import HarnessConflict, HarnessNotFound, HarnessService, HarnessValidationError
+from ..api import http_problem
+from .service import (
+    HarnessConflict,
+    HarnessNotFound,
+    HarnessService,
+    HarnessValidationError,
+)
 
 
 class CreateProjectRequest(BaseModel):
@@ -174,10 +180,10 @@ def create_harness_router(service: HarnessService) -> APIRouter:
 
     def translate(error: Exception) -> HTTPException:
         if isinstance(error, HarnessNotFound):
-            return HTTPException(status_code=404, detail=str(error))
+            return http_problem(status_code=404, error=error)
         if isinstance(error, HarnessConflict):
-            return HTTPException(status_code=409, detail=str(error))
-        return HTTPException(status_code=422, detail=str(error))
+            return http_problem(status_code=409, error=error)
+        return http_problem(status_code=422, error=error)
 
     @router.get("/projects")
     async def list_projects(status: str | None = None, kind: str | None = None) -> dict[str, Any]:
@@ -247,11 +253,13 @@ def create_harness_router(service: HarnessService) -> APIRouter:
         status: str | None = None,
     ) -> dict[str, Any]:
         statuses = tuple(value for value in (status or "").split(",") if value) or None
-        return {"action_items": await service.list_action_items(
-            project_id=project_id,
-            work_item_id=work_item_id,
-            statuses=statuses,
-        )}
+        return {
+            "action_items": await service.list_action_items(
+                project_id=project_id,
+                work_item_id=work_item_id,
+                statuses=statuses,
+            )
+        }
 
     @router.post("/action-items", status_code=201)
     async def create_action_item(command: CreateActionItemRequest) -> dict[str, Any]:

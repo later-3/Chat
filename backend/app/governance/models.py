@@ -42,7 +42,7 @@ class DecisionPointDefinitionRecord(Base):
 
 
 class TurnSummaryRecord(Base):
-    """Extracted per-interaction focus; evidence candidate, never accepted memory by itself."""
+    """TurnDigest v1; per-interaction focus, never accepted memory by itself."""
 
     __tablename__ = "turn_summaries"
     __table_args__ = (
@@ -57,9 +57,7 @@ class TurnSummaryRecord(Base):
     interaction_id: Mapped[str] = mapped_column(
         ForeignKey("interactions.id", ondelete="RESTRICT"), nullable=False
     )
-    run_id: Mapped[str] = mapped_column(
-        ForeignKey("product_runs.id", ondelete="RESTRICT"), nullable=False
-    )
+    run_id: Mapped[str] = mapped_column(ForeignKey("product_runs.id", ondelete="RESTRICT"), nullable=False)
     topic: Mapped[str] = mapped_column(String(240), nullable=False)
     summary_json: Mapped[Any] = mapped_column(JSON, nullable=False)
     project_hint: Mapped[str | None] = mapped_column(String(240), nullable=True)
@@ -73,9 +71,7 @@ class TurnSummaryRecord(Base):
 
 class DecisionSubjectRecord(Base):
     __tablename__ = "decision_subjects"
-    __table_args__ = (
-        UniqueConstraint("subject_kind", "resource_id", "resource_revision", "subject_hash"),
-    )
+    __table_args__ = (UniqueConstraint("subject_kind", "resource_id", "resource_revision", "subject_hash"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     subject_kind: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -103,9 +99,7 @@ class DecisionSubjectRecord(Base):
 
 class ExecutionDraftRecord(Base):
     __tablename__ = "execution_drafts"
-    __table_args__ = (
-        UniqueConstraint("interaction_id", "workflow_definition_id", "branch_key"),
-    )
+    __table_args__ = (UniqueConstraint("interaction_id", "workflow_definition_id", "branch_key"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(
@@ -241,9 +235,7 @@ class HitlPolicySnapshotRecord(Base):
 
 class RunSpecRecord(Base):
     __tablename__ = "run_specs"
-    __table_args__ = (
-        UniqueConstraint("draft_revision_id", "compiler_version", "run_spec_hash"),
-    )
+    __table_args__ = (UniqueConstraint("draft_revision_id", "compiler_version", "run_spec_hash"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     draft_revision_id: Mapped[str] = mapped_column(
@@ -537,9 +529,7 @@ class ModelCallDraftRecord(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    run_id: Mapped[str] = mapped_column(
-        ForeignKey("product_runs.id", ondelete="RESTRICT"), nullable=False
-    )
+    run_id: Mapped[str] = mapped_column(ForeignKey("product_runs.id", ondelete="RESTRICT"), nullable=False)
     run_attempt_id: Mapped[str] = mapped_column(
         ForeignKey("run_attempts.id", ondelete="RESTRICT"), nullable=False
     )
@@ -593,9 +583,7 @@ class ModelCallAttemptRecord(Base):
     authorization_consumption_id: Mapped[str] = mapped_column(
         ForeignKey("authorization_consumptions.id", ondelete="RESTRICT"), nullable=False, unique=True
     )
-    run_id: Mapped[str] = mapped_column(
-        ForeignKey("product_runs.id", ondelete="RESTRICT"), nullable=False
-    )
+    run_id: Mapped[str] = mapped_column(ForeignKey("product_runs.id", ondelete="RESTRICT"), nullable=False)
     run_attempt_id: Mapped[str] = mapped_column(
         ForeignKey("run_attempts.id", ondelete="RESTRICT"), nullable=False
     )
@@ -604,11 +592,43 @@ class ModelCallAttemptRecord(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
     provider_response_id: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(String(180), nullable=True)
     usage_json: Mapped[Any] = mapped_column(JSON, nullable=False, default=dict)
+    response_metadata_json: Mapped[Any] = mapped_column(JSON, nullable=False, default=dict)
+    output_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    output_text_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    output_disposition: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    output_disposition_reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    transport_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
     first_byte_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failure_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+class ModelCallTransportEventRecord(Base):
+    """One safe, ordered transport transition for a governed model attempt.
+
+    The event stores only allowlisted protocol metadata. Provider bodies,
+    authentication headers, raw response envelopes and hidden reasoning never
+    enter this ledger.
+    """
+
+    __tablename__ = "model_call_transport_events"
+    __table_args__ = (
+        UniqueConstraint("model_call_attempt_id", "sequence"),
+        Index("ix_model_transport_event_attempt", "model_call_attempt_id", "sequence"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    model_call_attempt_id: Mapped[str] = mapped_column(
+        ForeignKey("model_call_attempts.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    stage: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    details_json: Mapped[Any] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
 class ToolCallRequestRecord(Base):

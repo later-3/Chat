@@ -38,19 +38,23 @@ async def _runtime() -> tuple[ProductDatabase, ProductSessionService, HarnessSer
 
 async def _accepted_run(sessions: ProductSessionService, prompt: str = "测试Harness") -> tuple[str, str]:
     session = await sessions.create_session()
-    accepted = await sessions.prepare_agui_run({
-        "threadId": session["id"],
-        "runId": f"agui-{session['id']}",
-        "state": {},
-        "messages": [{
-            "id": f"message-{session['id']}",
-            "role": "user",
-            "content": prompt,
-        }],
-        "tools": [],
-        "context": [],
-        "forwardedProps": {},
-    })
+    accepted = await sessions.prepare_agui_run(
+        {
+            "threadId": session["id"],
+            "runId": f"agui-{session['id']}",
+            "state": {},
+            "messages": [
+                {
+                    "id": f"message-{session['id']}",
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            "tools": [],
+            "context": [],
+            "forwardedProps": {},
+        }
+    )
     return session["id"], accepted.product_run_id
 
 
@@ -167,7 +171,12 @@ def test_plan_action_note_and_memory_keep_independent_lifecycles() -> None:
             summary="先概念、后练习",
             nodes=[
                 {"key": "concept", "title": "理解概念", "objective": "解释事件循环"},
-                {"key": "practice", "title": "完成练习", "objective": "实现并发下载", "dependencies": ["concept"]},
+                {
+                    "key": "practice",
+                    "title": "完成练习",
+                    "objective": "实现并发下载",
+                    "dependencies": ["concept"],
+                },
             ],
             accept=True,
         )
@@ -231,12 +240,18 @@ def test_plan_action_note_and_memory_keep_independent_lifecycles() -> None:
             links=[{"resource_kind": "project", "resource_id": project["id"]}],
         )
         note = await harness.revise_note(
-            note_id=note["id"], command_id="note-v2",
-            expected_row_version=1, title="事件循环", content="第二版纠正",
+            note_id=note["id"],
+            command_id="note-v2",
+            expected_row_version=1,
+            title="事件循环",
+            content="第二版纠正",
         )
         note = await harness.revise_note(
-            note_id=note["id"], command_id="note-v3",
-            expected_row_version=2, title="事件循环", content="第三版最终理解",
+            note_id=note["id"],
+            command_id="note-v3",
+            expected_row_version=2,
+            title="事件循环",
+            content="第三版最终理解",
         )
         assert note["current_revision"]["revision"] == 3
 
@@ -249,8 +264,10 @@ def test_plan_action_note_and_memory_keep_independent_lifecycles() -> None:
             source_refs=[{"kind": "note", "id": note["id"], "revision": 3}],
         )
         await harness.resolve_memory_candidate(
-            candidate_id=rejected["id"], command_id="memory-reject",
-            decision="reject", decision_record_id=None,
+            candidate_id=rejected["id"],
+            command_id="memory-reject",
+            decision="reject",
+            decision_record_id=None,
         )
         assert (await harness.list_memory())["accepted"] == []
 
@@ -263,21 +280,29 @@ def test_plan_action_note_and_memory_keep_independent_lifecycles() -> None:
             source_refs=[{"kind": "note", "id": note["id"], "revision": 3}],
         )
         resolved = await harness.resolve_memory_candidate(
-            candidate_id=candidate["id"], command_id="memory-accept",
-            decision="accept", decision_record_id=None,
+            candidate_id=candidate["id"],
+            command_id="memory-accept",
+            decision="accept",
+            decision_record_id=None,
         )
         memory = resolved["memory"]
         memory = await harness.revise_memory(
-            memory_id=memory["id"], command_id="memory-revise",
-            expected_row_version=1, content="先看可运行例子，再解释概念",
+            memory_id=memory["id"],
+            command_id="memory-revise",
+            expected_row_version=1,
+            content="先看可运行例子，再解释概念",
             source_refs=[{"kind": "note", "id": note["id"], "revision": 3}],
-            reason="用户补充了可运行要求", decision_record_id=None,
+            reason="用户补充了可运行要求",
+            decision_record_id=None,
         )
         assert memory["current_revision"]["revision"] == 2
         superseded = await harness.transition_memory(
-            memory_id=memory["id"], command_id="memory-supersede",
-            expected_row_version=2, target_status="superseded",
-            reason="偏好已被新规则替代", decision_record_id=None,
+            memory_id=memory["id"],
+            command_id="memory-supersede",
+            expected_row_version=2,
+            target_status="superseded",
+            reason="偏好已被新规则替代",
+            decision_record_id=None,
         )
         assert superseded["status"] == "superseded"
         assert (await harness.project_context(project["id"]))["accepted_memory"] == []
@@ -291,12 +316,20 @@ def test_two_stage_context_records_adoption_exclusion_and_authoritative_sources(
         database, sessions, harness, _ = await _runtime()
         session_id, run_id = await _accepted_run(sessions, "继续贪吃蛇碰撞检测")
         project = await harness.create_project(
-            command_id="context-project", kind="delivery", title="贪吃蛇",
-            goal="交付贪吃蛇", status="active", session_id=session_id,
+            command_id="context-project",
+            kind="delivery",
+            title="贪吃蛇",
+            goal="交付贪吃蛇",
+            status="active",
+            session_id=session_id,
         )
         await harness.create_work_item(
-            command_id="context-work", project_id=project["id"], kind="task",
-            title="碰撞检测", objective="实现碰撞检测", status="ready",
+            command_id="context-work",
+            project_id=project["id"],
+            kind="task",
+            title="碰撞检测",
+            objective="实现碰撞检测",
+            status="ready",
         )
         directory_items, projects = await harness.directory_context_items(
             prompt="继续贪吃蛇碰撞检测",
@@ -304,12 +337,18 @@ def test_two_stage_context_records_adoption_exclusion_and_authoritative_sources(
         )
         assert projects[0]["id"] == project["id"]
         directory = await harness.create_context_package(
-            session_id=session_id, run_id=run_id, stage="directory",
-            items=directory_items, token_budget=1,
+            session_id=session_id,
+            run_id=run_id,
+            stage="directory",
+            items=directory_items,
+            token_budget=1,
         )
         replay = await harness.create_context_package(
-            session_id=session_id, run_id=run_id, stage="directory",
-            items=directory_items, token_budget=1,
+            session_id=session_id,
+            run_id=run_id,
+            stage="directory",
+            items=directory_items,
+            token_budget=1,
         )
         assert replay["id"] == directory["id"]
         assert directory["estimated_tokens"] <= 1
@@ -317,8 +356,13 @@ def test_two_stage_context_records_adoption_exclusion_and_authoritative_sources(
 
         detail_items = await harness.detailed_context_items(project["id"])
         detail = await harness.create_context_package(
-            session_id=session_id, run_id=run_id, stage="detail", items=detail_items,
-            selected_project_id=project["id"], token_budget=6000, status="adopted",
+            session_id=session_id,
+            run_id=run_id,
+            stage="detail",
+            items=detail_items,
+            selected_project_id=project["id"],
+            token_budget=6000,
+            status="adopted",
         )
         latest = await harness.latest_context_package(session_id)
         assert latest is not None

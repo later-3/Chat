@@ -5,7 +5,7 @@
     "${workspaceFolder}",
     "${workspaceFolder}/backend"
   ],
-  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.typeCheckingMode": "standard",
   "chat.backendHost": "127.0.0.1",
   "chat.backendPort": 8030,
   "chat.frontendBindHost": "127.0.0.1",

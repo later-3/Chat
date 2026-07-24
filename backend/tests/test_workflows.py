@@ -56,9 +56,12 @@ def test_workflow_catalog_describes_nested_heterogeneous_graph() -> None:
         "output",
     }
     assert max(node["depth"] for node in workflow["nodes"]) == 2
-    assert next(
-        node for node in workflow["nodes"] if node["id"] == "quality_gate.policy_bundle.score"
-    )["parent_id"] == "quality_gate.policy_bundle"
+    assert (
+        next(node for node in workflow["nodes"] if node["id"] == "quality_gate.policy_bundle.score")[
+            "parent_id"
+        ]
+        == "quality_gate.policy_bundle"
+    )
 
 
 def test_nested_workflow_emits_standard_agui_progress_and_persists_trace() -> None:
@@ -95,9 +98,9 @@ def test_nested_workflow_emits_standard_agui_progress_and_persists_trace() -> No
             for value in node_trace
         )
         assert all("data" not in value["payload"] for value in node_trace)
-        latest = client.get(
-            f"/api/sessions/{session_id}/workflows/nested-quality-demo/latest-trace"
-        ).json()["trace"]
+        latest = client.get(f"/api/sessions/{session_id}/workflows/nested-quality-demo/latest-trace").json()[
+            "trace"
+        ]
         assert latest == trace
 
 
@@ -125,9 +128,7 @@ def test_nested_workflow_failure_has_no_fake_success_and_keeps_user_fact() -> No
         assert run["status"] == "failed"
         assert run["assistant_message_id"] is None
         messages = client.get(f"/api/sessions/{session_id}/messages").json()["messages"]
-        assert [(message["role"], message["content"]) for message in messages] == [
-            ("user", "检查 [fail]")
-        ]
+        assert [(message["role"], message["content"]) for message in messages] == [("user", "检查 [fail]")]
         trace = client.get(f"/api/sessions/{session_id}/runs/{run['id']}/trace").json()["trace"]
         assert trace[-1]["event_type"] == "run.failed"
         assert not any(value["event_type"] == "run.succeeded" for value in trace)
@@ -142,9 +143,10 @@ def test_workflow_result_is_authoritative_history_for_next_chat_turn() -> None:
             "workflow-cross-feature",
             [{"id": "workflow-cross-user", "role": "user", "content": "跨功能检查"}],
         )
-        assert _events(client.post("/api/workflows/nested-quality-demo/run", json=first))[-1][
-            "type"
-        ] == "RUN_FINISHED"
+        assert (
+            _events(client.post("/api/workflows/nested-quality-demo/run", json=first))[-1]["type"]
+            == "RUN_FINISHED"
+        )
 
         restored = client.get(f"/api/sessions/{session_id}/messages").json()["messages"]
         next_messages = [

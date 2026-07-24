@@ -1,23 +1,32 @@
 from __future__ import annotations
 
 import asyncio
-import multiprocessing
 import json
+import multiprocessing
 import time
 from datetime import timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from ag_ui.core import RunFinishedEvent, RunStartedEvent, TextMessageContentEvent, TextMessageEndEvent, TextMessageStartEvent
-from sqlalchemy import update
+from ag_ui.core import (
+    RunFinishedEvent,
+    RunStartedEvent,
+    TextMessageContentEvent,
+    TextMessageEndEvent,
+    TextMessageStartEvent,
+)
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 
 from backend.app.config import PiRuntimeSettings, Settings
 from backend.app.main import create_app
 from backend.app.product_sessions import ProductDatabase, ProductSessionService
 from backend.app.product_sessions.database import utc_now
 from backend.app.runtime_execution.models import ExecutionWorkerRecord, RuntimeJobRecord
-from backend.app.runtime_execution.service import RuntimeExecutionService, RuntimeLeaseLost
+from backend.app.runtime_execution.service import (
+    RuntimeExecutionService,
+    RuntimeLeaseLost,
+)
 from backend.app.runtime_execution.worker import ExecutionWorker, RuntimeRunnerRegistry
 
 
@@ -463,12 +472,8 @@ def test_http_disconnect_does_not_cancel_worker_and_cursor_replays_rest(tmp_path
         deadline = time.monotonic() + 5
         job: dict[str, Any] | None = None
         while time.monotonic() < deadline:
-            product_run_id = client.get(
-                f"/api/sessions/{session_id}/runs"
-            ).json()["runs"][0]["id"]
-            job = client.get(
-                f"/api/runtime/product-runs/{product_run_id}"
-            ).json()["job"]
+            product_run_id = client.get(f"/api/sessions/{session_id}/runs").json()["runs"][0]["id"]
+            job = client.get(f"/api/runtime/product-runs/{product_run_id}").json()["job"]
             if job["status"] == "succeeded":
                 break
             time.sleep(0.03)
@@ -486,4 +491,6 @@ def test_http_disconnect_does_not_cancel_worker_and_cursor_replays_rest(tmp_path
         )
         assert payload["events"][-1]["event_type"] == "RUN_FINISHED"
         assert payload["events"][-1]["is_terminal"] is True
-        assert client.get(f"/api/sessions/{session_id}/messages").json()["messages"][-1]["role"] == "assistant"
+        assert (
+            client.get(f"/api/sessions/{session_id}/messages").json()["messages"][-1]["role"] == "assistant"
+        )

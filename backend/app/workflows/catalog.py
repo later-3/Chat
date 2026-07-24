@@ -25,6 +25,8 @@ class WorkflowEdgeDefinition:
     source: str
     target: str
     condition: str | None = None
+    branch_id: str | None = None
+    label: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,7 +67,7 @@ CHAT_MODEL_CALL_APPROVAL_WORKFLOW = WorkflowDefinition(
 CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
     id="continuous-collaboration",
     name="持续协作主 Workflow",
-    version="1.2.0",
+    version="1.4.0",
     description=(
         "以选择性上下文和意图识别为入口，按场景进入澄清、计划或直接响应，"
         "所有模型调用受HITL治理，并在回合结束提取重点候选。"
@@ -103,15 +105,29 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
         WorkflowNodeDefinition(
             id="intent_agent",
             label="意图与场景 Agent",
-            description="用最小候选上下文识别目标、场景、Project提示和澄清需要。",
+            description="用最小候选上下文识别一个或多个目标、顺序依赖、Project提示和澄清需要。",
             kind="agent",
             runtime_type="agent",
+        ),
+        WorkflowNodeDefinition(
+            id="intent_set_projection",
+            label="保存Intent Set候选",
+            description="把模型候选保存为不可变Intent revisions，并恢复或回答跨Run澄清。",
+            kind="governance",
+            runtime_type="executor",
         ),
         WorkflowNodeDefinition(
             id="intent_binding",
             label="绑定本轮意图",
             description="高置信且不改变活动工作的意图可自动通过；歧义时暂停。",
             kind="approval",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="intent_set_acceptance",
+            label="接受Intent Set revision",
+            description="把用户审核后的意图同步到新revision，并只接受当前Hash绑定的完整Intent Set。",
+            kind="governance",
             runtime_type="executor",
         ),
         WorkflowNodeDefinition(
@@ -133,6 +149,16 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
             label="装配Project工作集",
             description="阶段B按已绑定Project加载开放Work、当前Plan、Action、Note和Accepted Memory，并记录采用与排除。",
             kind="context",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="collaboration_protocol_resolver",
+            label="选择Chat Harness协作协议",
+            description=(
+                "按Work、Project、用户、系统的优先级绑定不可变协议revision，"
+                "公开本轮方法、阶段、规则和选择依据。"
+            ),
+            kind="governance",
             runtime_type="executor",
         ),
         WorkflowNodeDefinition(
@@ -253,15 +279,48 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
         WorkflowEdgeDefinition("context_candidates", "harness_directory_context"),
         WorkflowEdgeDefinition("harness_directory_context", "context_adoption"),
         WorkflowEdgeDefinition("context_adoption", "intent_agent"),
-        WorkflowEdgeDefinition("intent_agent", "intent_binding"),
-        WorkflowEdgeDefinition("intent_binding", "harness_project_resolver"),
+        WorkflowEdgeDefinition("intent_agent", "intent_set_projection"),
+        WorkflowEdgeDefinition("intent_set_projection", "intent_binding"),
+        WorkflowEdgeDefinition("intent_binding", "intent_set_acceptance"),
+        WorkflowEdgeDefinition("intent_set_acceptance", "harness_project_resolver"),
         WorkflowEdgeDefinition("harness_project_resolver", "project_work_binding"),
         WorkflowEdgeDefinition("project_work_binding", "harness_detail_context"),
-        WorkflowEdgeDefinition("harness_detail_context", "scenario_router"),
-        WorkflowEdgeDefinition("scenario_router", "project_catalog_query", "query_kind = project_catalog"),
-        WorkflowEdgeDefinition("scenario_router", "clarification", "scenario = clarify"),
-        WorkflowEdgeDefinition("scenario_router", "planning_agent", "需要计划"),
-        WorkflowEdgeDefinition("scenario_router", "execution_draft_compiler", "直接响应"),
+        WorkflowEdgeDefinition(
+            "harness_detail_context",
+            "collaboration_protocol_resolver",
+        ),
+        WorkflowEdgeDefinition(
+            "collaboration_protocol_resolver",
+            "scenario_router",
+        ),
+        WorkflowEdgeDefinition(
+            "scenario_router",
+            "project_catalog_query",
+            "intent.query_kind = project_catalog",
+            "project_catalog",
+            "查询正式Project目录",
+        ),
+        WorkflowEdgeDefinition(
+            "scenario_router",
+            "clarification",
+            "state.scenario = clarify",
+            "clarification",
+            "请求用户澄清",
+        ),
+        WorkflowEdgeDefinition(
+            "scenario_router",
+            "planning_agent",
+            "needs_plan(state) = true",
+            "planning",
+            "先形成任务计划",
+        ),
+        WorkflowEdgeDefinition(
+            "scenario_router",
+            "execution_draft_compiler",
+            "Default（前三条Case均未命中）",
+            "direct_response",
+            "直接进入执行草稿",
+        ),
         WorkflowEdgeDefinition("planning_agent", "plan_acceptance"),
         WorkflowEdgeDefinition("plan_acceptance", "execution_draft_compiler"),
         WorkflowEdgeDefinition("execution_draft_compiler", "execution_authorization"),

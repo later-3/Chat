@@ -12,7 +12,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 import threading
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -29,11 +31,14 @@ from .model_providers import (
     ModelProviderConfig,
     ParameterCapability,
 )
+from .observability.context import bind_context
+from .observability.metrics import metrics
+from .observability.tracing import tracer
 
+logger = logging.getLogger(__name__)
 
 DEFAULT_INSTRUCTIONS = (
-    "你是 Later 的 Chat 协作助手。"
-    "使用中文直接回答，明确区分已知事实、候选和需要用户确认的事项。"
+    "你是 Later 的 Chat 协作助手。使用中文直接回答，明确区分已知事实、候选和需要用户确认的事项。"
 )
 
 _CONTINUATION_FIELDS = frozenset(
@@ -61,13 +66,19 @@ def canonical_json_bytes(value: Mapping[str, Any]) -> bytes:
 class ModelCallDraftError(ValueError):
     """Base error for draft commands."""
 
+    code = "MODEL_CALL_DRAFT_INVALID"
+
 
 class ModelCallDraftConflict(ModelCallDraftError):
     """The caller acted on a stale or already-resolved draft."""
 
+    code = "MODEL_CALL_DRAFT_CONFLICT"
+
 
 class ModelCallDraftValidationError(ModelCallDraftError):
     """The edited provider request cannot pass the current send policy."""
+
+    code = "MODEL_CALL_DRAFT_VALIDATION_FAILED"
 
     def __init__(self, issues: Sequence[str]) -> None:
         self.issues = tuple(issues)
@@ -124,9 +135,7 @@ def _validate_parameter(
             return
         child_value = value[parameter.child_key]
         if child_value not in parameter.choices:
-            issues.append(
-                f"{label}.{parameter.child_key}必须是以下值之一: {', '.join(parameter.choices)}"
-            )
+            issues.append(f"{label}.{parameter.child_key}必须是以下值之一: {', '.join(parameter.choices)}")
 
 
 def _validate_message_input(
@@ -247,11 +256,7 @@ def validate_provider_request(
                 issues.append(f"tools[{index}]必须是Tool定义对象")
                 continue
             function = tool.get("function")
-            name = (
-                function.get("name")
-                if isinstance(function, Mapping)
-                else tool.get("name")
-            )
+            name = function.get("name") if isinstance(function, Mapping) else tool.get("name")
             if not isinstance(name, str) or not name.strip():
                 issues.append(f"tools[{index}]缺少有效name")
                 continue
@@ -273,11 +278,7 @@ def validate_provider_request(
     for parameter in resolved_capabilities.parameters:
         if parameter.key in provider_request:
             _validate_parameter(parameter, provider_request[parameter.key], issues=issues)
-    unknown_parameters = sorted(
-        key
-        for key in parameter_keys
-        if resolved_capabilities.parameter(key) is None
-    )
+    unknown_parameters = sorted(key for key in parameter_keys if resolved_capabilities.parameter(key) is None)
     if unknown_parameters and not resolved_capabilities.allow_unknown_parameters:
         issues.append(f"当前模型没有声明这些参数能力: {', '.join(unknown_parameters)}")
 
@@ -455,10 +456,7 @@ def _token_breakdown(provider_request: Mapping[str, Any]) -> dict[str, Any]:
         "parameters": _estimate_value_tokens(parameters),
     }
     breakdown["total"] = (
-        breakdown["instructions"]
-        + sum(breakdown["messages"])
-        + breakdown["tools"]
-        + breakdown["parameters"]
+        breakdown["instructions"] + sum(breakdown["messages"]) + breakdown["tools"] + breakdown["parameters"]
     )
     breakdown["method"] = "unicode_heuristic_v1"
     breakdown["exact"] = False
@@ -473,11 +471,7 @@ def _effective_instructions(provider_request: Mapping[str, Any]) -> str | None:
     if not isinstance(messages, list):
         return None
     system = next(
-        (
-            item
-            for item in messages
-            if isinstance(item, Mapping) and item.get("role") == "system"
-        ),
+        (item for item in messages if isinstance(item, Mapping) and item.get("role") == "system"),
         None,
     )
     return _message_text(system) if isinstance(system, Mapping) else None
@@ -511,7 +505,11 @@ def _initial_context_sources(provider_request: Mapping[str, Any]) -> tuple[dict[
         )
     instruction_index = _instruction_message_index(provider_request)
     last_user_index = max(
-        (index for index, item in enumerate(request_input) if isinstance(item, Mapping) and item.get("role") == "user"),
+        (
+            index
+            for index, item in enumerate(request_input)
+            if isinstance(item, Mapping) and item.get("role") == "user"
+        ),
         default=len(request_input) - 1,
     )
     sources: list[dict[str, Any]] = []
@@ -521,8 +519,16 @@ def _initial_context_sources(provider_request: Mapping[str, Any]) -> tuple[dict[
         sources.append(
             {
                 "input_index": index,
-                "source_type": "agent_instructions" if instructions else "current_input" if current else "conversation_history",
-                "source_label": "Agent Instructions" if instructions else "本轮用户输入" if current else "当前会话历史",
+                "source_type": "agent_instructions"
+                if instructions
+                else "current_input"
+                if current
+                else "conversation_history",
+                "source_label": "Agent Instructions"
+                if instructions
+                else "本轮用户输入"
+                if current
+                else "当前会话历史",
                 "adoption_reason": (
                     "当前Agent的行为约束；Chat Completions协议将其作为system消息发送"
                     if instructions
@@ -582,9 +588,7 @@ def _reconcile_context_sources(
         item for index, item in enumerate(previous_items) if index != previous_instruction_index
     ]
     previous_context_sources = [
-        source
-        for index, source in enumerate(previous_sources)
-        if index != previous_instruction_index
+        source for index, source in enumerate(previous_sources) if index != previous_instruction_index
     ]
     revised_context_index = 0
     sources: list[dict[str, Any]] = []
@@ -604,11 +608,9 @@ def _reconcile_context_sources(
         elif revised_context_index < len(previous_context_sources):
             source = copy.deepcopy(dict(previous_context_sources[revised_context_index]))
             source["input_index"] = index
-            source["modified_in_review"] = (
-                revised_context_index >= len(previous_context_items)
-                or _semantic_message(item)
-                != _semantic_message(previous_context_items[revised_context_index])
-            )
+            source["modified_in_review"] = revised_context_index >= len(
+                previous_context_items
+            ) or _semantic_message(item) != _semantic_message(previous_context_items[revised_context_index])
             if source["modified_in_review"]:
                 source["adoption_reason"] = (
                     f"{source.get('adoption_reason', '来自已采用上下文')}；本次发送前已由用户修改并重新审批"
@@ -649,13 +651,17 @@ def effective_context_view(
     source_items: list[dict[str, Any]] = []
     if isinstance(messages, list):
         for index, message in enumerate(messages):
-            source = copy.deepcopy(dict(context_sources[index])) if index < len(context_sources) else {
-                "input_index": index,
-                "source_type": "unknown",
-                "source_label": "未标注来源",
-                "adoption_reason": "该内容存在于当前规范Provider请求中",
-                "modified_in_review": False,
-            }
+            source = (
+                copy.deepcopy(dict(context_sources[index]))
+                if index < len(context_sources)
+                else {
+                    "input_index": index,
+                    "source_type": "unknown",
+                    "source_label": "未标注来源",
+                    "adoption_reason": "该内容存在于当前规范Provider请求中",
+                    "modified_in_review": False,
+                }
+            )
             source["content"] = copy.deepcopy(message)
             source["token_estimate"] = token_breakdown["messages"][index]
             source_items.append(source)
@@ -922,9 +928,7 @@ class InMemoryModelCallReviewStore:
                 execution_context=copy.deepcopy(dict(card.get("execution_context") or {})),
                 status=str(card.get("status") or "pending_approval"),
                 previous_draft_id=(
-                    str(card["previous_draft_id"])
-                    if card.get("previous_draft_id") is not None
-                    else None
+                    str(card["previous_draft_id"]) if card.get("previous_draft_id") is not None else None
                 ),
             )
             self._drafts[draft.draft_id] = draft
@@ -1087,9 +1091,9 @@ class InMemoryModelCallReviewStore:
             revised_capabilities: ModelCapabilities | None = None
             if old.model_capabilities.allow_unknown_parameters:
                 try:
-                    option = self._require_catalog(
-                        str(request_copy.get("model") or "")
-                    ).require_model(provider_id, str(request_copy.get("model") or ""))
+                    option = self._require_catalog(str(request_copy.get("model") or "")).require_model(
+                        provider_id, str(request_copy.get("model") or "")
+                    )
                 except ModelProviderCatalogError as error:
                     raise ModelCallDraftValidationError([str(error)]) from error
                 revised_capabilities = ModelCapabilities(
@@ -1154,9 +1158,7 @@ class InMemoryModelCallReviewStore:
             if approval_id in self._attempt_by_approval:
                 raise ModelCallDraftConflict("该审批已创建发送尝试")
             try:
-                self._require_catalog(
-                    str(draft.provider_request.get("model") or "")
-                ).require_model(
+                self._require_catalog(str(draft.provider_request.get("model") or "")).require_model(
                     draft.provider_id,
                     str(draft.provider_request.get("model") or ""),
                 )
@@ -1258,6 +1260,10 @@ class PreparedProviderRequest:
     body: bytes
     body_sha256: str
     provider_request: dict[str, Any]
+    session_id: str | None = None
+    product_run_id: str | None = None
+    workflow_id: str | None = None
+    executor_id: str | None = None
     stage_reporter: Callable[[str, str, dict[str, Any]], Awaitable[None]] | None = field(
         default=None,
         compare=False,
@@ -1276,6 +1282,13 @@ class PreparedProviderRequest:
             body=draft.body,
             body_sha256=draft.body_sha256,
             provider_request=copy.deepcopy(draft.provider_request),
+            session_id=draft.thread_id,
+            product_run_id=draft.run_id,
+            workflow_id=str(draft.execution_context.get("workflow_id") or "") or None,
+            executor_id=str(
+                draft.execution_context.get("executor_id") or draft.execution_context.get("agent_id") or ""
+            )
+            or None,
             stage_reporter=stage_reporter,
         )
 
@@ -1290,6 +1303,27 @@ async def _report_provider_stage(
         await prepared.stage_reporter(stage_id, status, details)
 
 
+def _provider_request_id(headers: httpx.Headers) -> str | None:
+    for key in ("x-request-id", "request-id", "x-ms-request-id", "x-tt-logid"):
+        value = headers.get(key)
+        if value:
+            return value[:180]
+    return None
+
+
+def _provider_envelope_metadata(payload: Mapping[str, Any]) -> tuple[str | None, dict[str, Any]]:
+    """Read only public response identity and aggregate usage from known envelopes."""
+
+    response = payload.get("response")
+    envelope = response if isinstance(response, Mapping) else payload
+    response_id = envelope.get("id")
+    usage = envelope.get("usage")
+    return (
+        str(response_id)[:180] if isinstance(response_id, str) and response_id else None,
+        dict(usage) if isinstance(usage, Mapping) else {},
+    )
+
+
 @dataclass(slots=True)
 class ExactProviderTransport:
     """Send the exact approved body and translate common response text events."""
@@ -1300,21 +1334,81 @@ class ExactProviderTransport:
     extra_headers: dict[str, str] = field(default_factory=dict)
 
     async def stream(self, prepared: PreparedProviderRequest) -> AsyncIterator[str]:
+        started = time.perf_counter()
+        metrics.increment("provider.requests")
+        span = tracer().start_span(
+            "provider.request",
+            attributes={
+                "provider.id": prepared.provider_id,
+                "provider.request.body_hash": prepared.body_sha256,
+                "gen_ai.request.model": str(prepared.provider_request.get("model") or "unknown")[:200],
+            },
+        )
+        with bind_context(
+            session_id=prepared.session_id,
+            product_run_id=prepared.product_run_id,
+            workflow_id=prepared.workflow_id,
+            executor_id=prepared.executor_id,
+        ):
+            logger.info(
+                "provider_request_started provider_id=%s model=%s body_sha256=%s",
+                prepared.provider_id,
+                str(prepared.provider_request.get("model") or "unknown")[:200],
+                prepared.body_sha256,
+            )
+            try:
+                async for text in self._stream_approved(prepared):
+                    yield text
+            except Exception as error:
+                span.set_attribute("error.type", type(error).__name__)
+                metrics.increment("provider.request.errors")
+                logger.exception(
+                    "provider_request_failed provider_id=%s error_type=%s duration_ms=%.3f",
+                    prepared.provider_id,
+                    type(error).__name__,
+                    (time.perf_counter() - started) * 1000,
+                )
+                raise
+            finally:
+                duration = time.perf_counter() - started
+                span.end()
+                metrics.observe("provider.request.duration_seconds", duration)
+                logger.info(
+                    "provider_request_finished provider_id=%s duration_ms=%.3f",
+                    prepared.provider_id,
+                    duration * 1000,
+                )
+
+    async def _stream_approved(
+        self,
+        prepared: PreparedProviderRequest,
+    ) -> AsyncIterator[str]:
         headers = {"content-type": "application/json", **self.extra_headers}
         if self.api_key:
             headers["authorization"] = f"Bearer {self.api_key}"
         try:
             await _report_provider_stage(prepared, "provider.dispatch", "in_progress")
             async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False) as client:
-                async with client.stream("POST", self.endpoint, content=prepared.body, headers=headers) as response:
+                async with client.stream(
+                    "POST", self.endpoint, content=prepared.body, headers=headers
+                ) as response:
                     await _report_provider_stage(
                         prepared,
                         "provider.dispatch",
                         "completed",
                         http_status=response.status_code,
+                        provider_request_id=_provider_request_id(response.headers),
                     )
                     if response.is_error:
                         error_body = await response.aread()
+                        await _report_provider_stage(
+                            prepared,
+                            "provider.receive",
+                            "completed",
+                            transport="error",
+                            milestone="complete",
+                            response_bytes=len(error_body),
+                        )
                         raise ProviderDispatchError(
                             _safe_provider_status_error(response.status_code, error_body),
                             error_code=f"provider_http_{response.status_code}",
@@ -1330,12 +1424,21 @@ class ExactProviderTransport:
                     if "text/event-stream" in content_type:
                         received = False
                         parsing = False
+                        response_bytes = 0
+                        provider_response_id: str | None = None
+                        usage: dict[str, Any] = {}
                         async for line in response.aiter_lines():
+                            response_bytes += len(line.encode("utf-8")) + 1
                             if not line.startswith("data:"):
                                 continue
                             data = line.removeprefix("data:").strip()
                             if not data or data == "[DONE]":
                                 continue
+                            payload = json.loads(data)
+                            event_response_id, event_usage = _provider_envelope_metadata(payload)
+                            provider_response_id = event_response_id or provider_response_id
+                            if event_usage:
+                                usage = event_usage
                             if not received:
                                 received = True
                                 await _report_provider_stage(
@@ -1343,6 +1446,7 @@ class ExactProviderTransport:
                                     "provider.receive",
                                     "completed",
                                     transport="sse",
+                                    milestone="first_byte",
                                 )
                             if not parsing:
                                 parsing = True
@@ -1352,7 +1456,7 @@ class ExactProviderTransport:
                                     "in_progress",
                                     protocol="sse-json",
                                 )
-                            for text in _provider_text(json.loads(data)):
+                            for text in _provider_text(payload):
                                 yield text
                         if not received:
                             await _report_provider_stage(
@@ -1362,12 +1466,23 @@ class ExactProviderTransport:
                                 transport="sse",
                                 empty=True,
                             )
+                        else:
+                            await _report_provider_stage(
+                                prepared,
+                                "provider.receive",
+                                "completed",
+                                transport="sse",
+                                milestone="complete",
+                                response_bytes=response_bytes,
+                            )
                         await _report_provider_stage(
                             prepared,
                             "provider.decode",
                             "completed",
                             protocol="sse-json",
                             empty=not parsing,
+                            provider_response_id=provider_response_id,
+                            usage=usage,
                         )
                         return
                     raw_response = await response.aread()
@@ -1376,6 +1491,7 @@ class ExactProviderTransport:
                         "provider.receive",
                         "completed",
                         transport="json",
+                        milestone="complete",
                         response_bytes=len(raw_response),
                     )
                     await _report_provider_stage(
@@ -1387,11 +1503,14 @@ class ExactProviderTransport:
                     payload = json.loads(raw_response.decode("utf-8"))
                     for text in _provider_text(payload):
                         yield text
+                    provider_response_id, usage = _provider_envelope_metadata(payload)
                     await _report_provider_stage(
                         prepared,
                         "provider.decode",
                         "completed",
                         protocol="json",
+                        provider_response_id=provider_response_id,
+                        usage=usage,
                     )
         except httpx.TimeoutException as error:
             raise ProviderDispatchError(

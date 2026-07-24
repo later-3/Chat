@@ -11,12 +11,17 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import select, update
 
-from ..product_sessions.database import ProductDatabase, RunAttemptRecord, RunRecord, utc_now
+from ..product_sessions.database import (
+    ProductDatabase,
+    RunAttemptRecord,
+    RunRecord,
+    affected_row_count,
+    utc_now,
+)
 from ..product_sessions.service import AcceptedRun
 from .models import RuntimeControlCommandRecord, RuntimeEventRecord, RuntimeJobRecord
-
 
 TERMINAL_JOB_STATUSES = {"succeeded", "failed", "cancelled", "outcome_unknown"}
 
@@ -52,6 +57,7 @@ class ClaimedRuntime:
     product_run_id: str
     run_attempt_id: str
     endpoint_key: str
+    workflow_definition_id: str
     input_data: dict[str, Any]
     lease_owner: str
     lease_epoch: int
@@ -139,9 +145,7 @@ class RuntimeExecutionService:
                 start_sequence = 0
             elif accepted.is_resume:
                 if job.status != "waiting_human":
-                    raise RuntimeExecutionError(
-                        f"Runtime Job状态{job.status}不允许Checkpoint恢复"
-                    )
+                    raise RuntimeExecutionError(f"Runtime Job状态{job.status}不允许Checkpoint恢复")
                 request_key = f"resume:{accepted.agui_run_id}"
                 existing = await transaction.scalar(
                     select(RuntimeControlCommandRecord).where(
@@ -212,7 +216,7 @@ class RuntimeExecutionService:
                     updated_at=now,
                 )
             )
-            if claimed.rowcount != 1:
+            if affected_row_count(claimed) != 1:
                 return None
             await transaction.refresh(candidate)
             command = await transaction.scalar(
@@ -238,6 +242,7 @@ class RuntimeExecutionService:
                 product_run_id=candidate.product_run_id,
                 run_attempt_id=candidate.run_attempt_id,
                 endpoint_key=candidate.endpoint_key,
+                workflow_definition_id=candidate.workflow_definition_id,
                 input_data=input_data,
                 lease_owner=worker_id,
                 lease_epoch=candidate.lease_epoch,
@@ -427,9 +432,7 @@ class RuntimeExecutionService:
             )
             transaction.add(record)
             completed_commands = tuple(
-                value
-                for value in (claim.command_id, *control_command_ids)
-                if value is not None
+                value for value in (claim.command_id, *control_command_ids) if value is not None
             )
             if completed_commands:
                 await transaction.execute(
@@ -573,9 +576,7 @@ class RuntimeExecutionService:
             )
             if existing is None:
                 if job.status != "waiting_human":
-                    raise RuntimeExecutionError(
-                        f"Runtime Job状态{job.status}不允许Checkpoint恢复"
-                    )
+                    raise RuntimeExecutionError(f"Runtime Job状态{job.status}不允许Checkpoint恢复")
                 existing = RuntimeControlCommandRecord(
                     id=_uuid(),
                     runtime_job_id=job.id,
@@ -618,8 +619,7 @@ class RuntimeExecutionService:
         results = [
             value
             for job_id in job_ids
-            if (value := await self._reconcile_expired_job(job_id=job_id, expired_before=now))
-            is not None
+            if (value := await self._reconcile_expired_job(job_id=job_id, expired_before=now)) is not None
         ]
         return {
             "safe_requeued": results.count("safe_requeued"),
@@ -666,8 +666,7 @@ class RuntimeExecutionService:
             if job is None:
                 return None
             product_run = await transaction.get(RunRecord, job.product_run_id)
-            product_status = product_run.status if product_run is not None else None
-            if product_status in {
+            if product_run is not None and product_run.status in {
                 "succeeded",
                 "abandoned",
                 "cancelled",
@@ -675,6 +674,7 @@ class RuntimeExecutionService:
                 "interrupted",
                 "outcome_unknown",
             }:
+                product_status = product_run.status
                 if product_status in {"succeeded", "abandoned"}:
                     self._append_system_terminal(
                         transaction,
@@ -690,9 +690,11 @@ class RuntimeExecutionService:
                     job.external_dispatch_state = "result_recorded"
                 else:
                     recovered_status = (
-                        "cancelled" if product_status == "cancelled" else
-                        "outcome_unknown" if product_status == "outcome_unknown" else
-                        "failed"
+                        "cancelled"
+                        if product_status == "cancelled"
+                        else "outcome_unknown"
+                        if product_status == "outcome_unknown"
+                        else "failed"
                     )
                     self._append_system_terminal(
                         transaction,
@@ -824,7 +826,7 @@ class RuntimeExecutionService:
                 )
                 .values(**values)
             )
-            return changed.rowcount == 1
+            return affected_row_count(changed) == 1
 
     def encode_cursor(self, job_id: str, attempt_id: str, sequence: int) -> str:
         payload = {

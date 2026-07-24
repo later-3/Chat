@@ -5,21 +5,35 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 from uuid import uuid4
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 
 from ..model_call_review import canonical_json_bytes
+from ..observability.context import bind_context
 from ..product_sessions.database import (
-    InteractionRecord,
     ProductDatabase,
     RunAttemptRecord,
     RunRecord,
     utc_now,
 )
+from .catalog import (
+    COMPILER_VERSION,
+    DECISION_POINTS,
+    EXECUTION_DRAFT_KEYS,
+    FINAL_ACTIONS,
+    GRANT_KIND_BY_POINT,
+    POLICY_MODES,
+    PRODUCT_DEFAULT_RULES,
+    RESOLVER_VERSION,
+    RUN_SPEC_KEYS,
+    SCOPE_RANK,
+    SYSTEM_FLOOR_RULES,
+)
+from .errors import GovernanceConflict, GovernanceValidationError
+from .model_call_audit import ModelCallAuditService
 from .models import (
     AuthorizationConsumptionRecord,
     AuthorizationGrantRecord,
@@ -40,207 +54,22 @@ from .models import (
     ModelCallDraftRecord,
     ModelCallDraftRevisionRecord,
     PolicyEvaluationRecord,
-    RuntimeInterruptLinkRecord,
     RunSpecRecord,
+    RuntimeInterruptLinkRecord,
     TurnSummaryRecord,
 )
-
+from .policy import (
+    condition_specificity as _condition_specificity,
+)
+from .policy import (
+    evaluate_condition as _eval_condition,
+)
+from .policy import strictest as _strictest
+from .policy import valid_condition_shape as _valid_condition_shape
+from .queries import RunGovernanceQueryService
+from .turn_digest import normalize_turn_digest
 
 logger = logging.getLogger(__name__)
-
-
-EXECUTION_DRAFT_KEYS = (
-    "identity_lineage",
-    "intent_goal",
-    "project_work_binding",
-    "background",
-    "accepted_decisions",
-    "scope",
-    "plan",
-    "context_binding",
-    "resource_manifest",
-    "runtime_target",
-    "capability_grant",
-    "model_envelope",
-    "prompt_assembly_plan",
-    "hitl_plan",
-    "validation_plan",
-    "output_commit_contract",
-    "stop_escalation",
-)
-
-RUN_SPEC_KEYS = (
-    "identity",
-    "source_binding",
-    "principal_scope",
-    "workflow_binding",
-    "execution_brief",
-    "context_manifest",
-    "plan",
-    "prompt_assembly_contract",
-    "runtime_agent",
-    "capability_envelope",
-    "model_envelope",
-    "hitl_policy_snapshot",
-    "validation_evidence",
-    "output_commit",
-    "control",
-    "correlation_idempotency",
-)
-
-POLICY_MODES = {"inherit", "deny", "require_human", "conditional", "auto_continue"}
-FINAL_ACTIONS = {"deny", "require_human", "auto_continue"}
-ACTION_RANK = {"auto_continue": 1, "require_human": 2, "deny": 3}
-RESOLVER_VERSION = "hitl-resolver-v1"
-COMPILER_VERSION = "run-spec-compiler-v1"
-
-SCOPE_RANK = {
-    "decision_instance": 1100,
-    "run": 1000,
-    "interaction": 900,
-    "product_session": 800,
-    "task_plan": 730,
-    "work_item": 720,
-    "project": 710,
-    "workflow_node": 620,
-    "workflow_version": 610,
-    "scenario": 500,
-    "agent_profile": 400,
-    "tool_profile": 400,
-    "model_profile": 400,
-    "channel": 300,
-    "principal": 200,
-    "product_default": 100,
-}
-
-
-@dataclass(frozen=True, slots=True)
-class DecisionPointSeed:
-    key: str
-    category: str
-    label: str
-    description: str
-    subject_kind: str
-    default_mode: str
-    actions: tuple[str, ...]
-
-
-DECISION_POINTS = (
-    DecisionPointSeed("intent_binding", "understanding", "理解用户意图", "确认系统对本轮目标和场景的理解。", "intent", "conditional", ("accept", "revise", "split", "cancel")),
-    DecisionPointSeed("project_work_binding", "context", "关联 Project / Work", "确认本轮属于哪个项目、工作或不关联。", "work_binding", "conditional", ("accept", "reselect", "unbound", "cancel")),
-    DecisionPointSeed("context_adoption", "context", "采用 Context", "确认哪些背景、历史、知识和资源进入本轮。", "context_package", "conditional", ("accept", "revise", "cancel")),
-    DecisionPointSeed("plan_acceptance", "planning", "接受 Plan", "确认任务拆分、顺序、负责人和验证方式。", "task_plan", "conditional", ("accept", "revise", "skip", "cancel")),
-    DecisionPointSeed("execution_authorization", "execution", "授权 ExecutionDraft", "确认准备执行的目标、范围、能力和完成门。", "execution_draft", "conditional", ("execute", "revise", "cancel")),
-    DecisionPointSeed("model_call_authorization", "model", "发送 ModelCallDraft", "确认将要发送给模型的完整请求。", "model_call_draft", "require_human", ("approve", "revise", "abandon")),
-    DecisionPointSeed("tool_execution_authorization", "tool", "执行 Tool", "确认真实工具、参数、目标和副作用。", "tool_call_request", "conditional", ("approve", "revise", "deny")),
-    DecisionPointSeed("work_state_commit", "commit", "提交 Work 状态", "确认任务或项目状态的长期变化。", "work_state_candidate", "conditional", ("commit", "revise", "reject")),
-    DecisionPointSeed("memory_commit", "commit", "提交 Memory", "确认哪些候选信息成为可复用记忆。", "memory_candidate", "require_human", ("commit", "revise", "session_only", "reject")),
-    DecisionPointSeed("result_commit", "commit", "提交 Result", "确认结果、证据和完成声明可被接受。", "result_candidate", "conditional", ("accept", "verify_more", "revise")),
-    DecisionPointSeed("runtime_recovery", "recovery", "Runtime 恢复或干预", "确认重试、Restart、新 Run、停止或人工处理。", "runtime_recovery", "require_human", ("retry", "restart", "new_run", "stop")),
-    DecisionPointSeed("unknown_or_high_risk", "safety", "未知或高风险结果", "结果未知、高风险或证据不足时关闭失败。", "risk_incident", "require_human", ("stop", "reconcile", "inspect", "next_step")),
-)
-
-PRODUCT_DEFAULTS = {seed.key: seed.default_mode for seed in DECISION_POINTS}
-PRODUCT_DEFAULT_RULES: dict[str, dict[str, Any]] = {
-    "intent_binding": {
-        "mode": "conditional",
-        "condition": {"any": [
-            {"lte": ["intent.confidence", 0.84]},
-            {"eq": ["intent.changes_active_work", True]},
-            {"eq": ["intent.ambiguous", True]},
-        ]},
-        "on_match": "require_human",
-    },
-    "project_work_binding": {
-        "mode": "conditional",
-        "condition": {"any": [
-            {"gte": ["project.candidate_count", 2]},
-            {"eq": ["project.cross_sensitive_scope", True]},
-        ]},
-        "on_match": "require_human",
-    },
-    "context_adoption": {
-        "mode": "conditional",
-        "condition": {"any": [
-            {"eq": ["context.requires_review", True]},
-            {"eq": ["context.cross_project", True]},
-            {"eq": ["context.source_invalid", True]},
-        ]},
-        "on_match": "require_human",
-    },
-    "plan_acceptance": {
-        "mode": "conditional",
-        "condition": {"any": [
-            {"gte": ["plan.risk_level", 2]},
-            {"eq": ["plan.expands_capability", True]},
-            {"eq": ["plan.boundary_unclear", True]},
-        ]},
-        "on_match": "require_human",
-    },
-    "execution_authorization": {
-        "mode": "conditional",
-        "condition": {"any": [
-            {"gte": ["execution.risk_level", 2]},
-            {"eq": ["execution.has_side_effects", True]},
-            {"eq": ["execution.goal_incomplete", True]},
-        ]},
-        "on_match": "require_human",
-    },
-    "model_call_authorization": {"mode": "require_human"},
-    "tool_execution_authorization": {
-        "mode": "conditional",
-        "condition": {"any": [
-            {"gte": ["tool.risk_level", 2]},
-            {"eq": ["tool.has_side_effects", True]},
-            {"eq": ["tool.outside_capability", True]},
-        ]},
-        "on_match": "require_human",
-    },
-    "work_state_commit": {
-        "mode": "conditional",
-        "condition": {"any": [
-            {"eq": ["work.creates_or_deletes", True]},
-            {"eq": ["work.claims_completion_without_evidence", True]},
-        ]},
-        "on_match": "require_human",
-    },
-    "memory_commit": {"mode": "require_human"},
-    "result_commit": {
-        "mode": "conditional",
-        "condition": {"any": [
-            {"eq": ["result.evidence_sufficient", False]},
-            {"eq": ["result.external_delivery", True]},
-            {"eq": ["result.changes_long_term_state", True]},
-        ]},
-        "on_match": "require_human",
-    },
-    "runtime_recovery": {"mode": "require_human"},
-    "unknown_or_high_risk": {"mode": "require_human"},
-}
-SYSTEM_FLOOR_RULES: dict[str, dict[str, Any]] = {
-    seed.key: {"mode": "auto_continue"} for seed in DECISION_POINTS
-} | {"unknown_or_high_risk": {"mode": "require_human"}}
-GRANT_KIND_BY_POINT = {
-    "execution_authorization": "start_run",
-    "model_call_authorization": "send_model_call",
-    "tool_execution_authorization": "execute_tool",
-    "work_state_commit": "commit_work_state",
-    "memory_commit": "commit_memory",
-    "result_commit": "commit_result",
-    "runtime_recovery": "perform_recovery",
-}
-
-
-class GovernanceError(ValueError):
-    pass
-
-
-class GovernanceValidationError(GovernanceError):
-    pass
-
-
-class GovernanceConflict(GovernanceError):
-    pass
 
 
 def _id() -> str:
@@ -258,96 +87,16 @@ def _canonical(value: Any) -> bytes:
 
 
 def _hash(kind: str, schema_version: str, value: Any) -> str:
-    return hashlib.sha256(
-        f"{kind}:{schema_version}\0".encode("utf-8") + _canonical(value)
-    ).hexdigest()
+    return hashlib.sha256(f"{kind}:{schema_version}\0".encode("utf-8") + _canonical(value)).hexdigest()
 
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
 
 
-def _strictest(actions: Iterable[str]) -> str:
-    values = [value for value in actions if value in FINAL_ACTIONS]
-    return max(values, key=ACTION_RANK.__getitem__) if values else "auto_continue"
-
-
-def _fact(facts: Mapping[str, Any], path: str) -> tuple[bool, Any]:
-    current: Any = facts
-    for part in path.split("."):
-        if not isinstance(current, Mapping) or part not in current:
-            return False, None
-        current = current[part]
-    return True, current
-
-
-def _eval_condition(expression: Any, facts: Mapping[str, Any]) -> tuple[bool, bool]:
-    """Return ``(matched, complete)`` for the restricted condition DSL."""
-
-    if not isinstance(expression, Mapping) or len(expression) != 1:
-        return False, False
-    operator, value = next(iter(expression.items()))
-    if operator in {"all", "any"}:
-        if not isinstance(value, list) or not value:
-            return False, False
-        results = [_eval_condition(item, facts) for item in value]
-        complete = all(item[1] for item in results)
-        matched = all(item[0] for item in results) if operator == "all" else any(item[0] for item in results)
-        return matched, complete
-    if operator == "not":
-        matched, complete = _eval_condition(value, facts)
-        return (not matched, complete)
-    if operator not in {"eq", "in", "gte", "lte", "prefix"}:
-        return False, False
-    if not isinstance(value, list) or len(value) != 2 or not isinstance(value[0], str):
-        return False, False
-    exists, actual = _fact(facts, value[0])
-    if not exists:
-        return False, False
-    expected = value[1]
-    try:
-        if operator == "eq":
-            return actual == expected, True
-        if operator == "in":
-            return actual in expected, isinstance(expected, list)
-        if operator == "gte":
-            return actual >= expected, True
-        if operator == "lte":
-            return actual <= expected, True
-        return str(actual).startswith(str(expected)), True
-    except (TypeError, ValueError):
-        return False, False
-
-
-def _condition_specificity(expression: Any) -> int:
-    if not isinstance(expression, Mapping):
-        return 0
-    return 1 + sum(_condition_specificity(value) for value in expression.values() if isinstance(value, (dict, list))) + sum(
-        _condition_specificity(item)
-        for value in expression.values()
-        if isinstance(value, list)
-        for item in value
-    )
-
-
-def _valid_condition_shape(expression: Any) -> bool:
-    if not isinstance(expression, Mapping) or len(expression) != 1:
-        return False
-    operator, value = next(iter(expression.items()))
-    if operator in {"all", "any"}:
-        return isinstance(value, list) and bool(value) and all(
-            _valid_condition_shape(item) for item in value
-        )
-    if operator == "not":
-        return _valid_condition_shape(value)
-    if operator not in {"eq", "in", "gte", "lte", "prefix"}:
-        return False
-    if not isinstance(value, list) or len(value) != 2 or not isinstance(value[0], str):
-        return False
-    return operator != "in" or isinstance(value[1], list)
-
-
-def _validate_payload(value: Mapping[str, Any], required: Sequence[str], schema_version: str) -> dict[str, Any]:
+def _validate_payload(
+    value: Mapping[str, Any], required: Sequence[str], schema_version: str
+) -> dict[str, Any]:
     missing = [key for key in required if key not in value]
     if missing:
         raise GovernanceValidationError(f"{schema_version}缺少字段: {', '.join(missing)}")
@@ -364,6 +113,8 @@ class ExecutionGovernanceService:
     def __init__(self, database: ProductDatabase, *, principal_id: str = "local-user") -> None:
         self.database = database
         self.principal_id = principal_id
+        self.run_queries = RunGovernanceQueryService(database)
+        self.model_call_audit = ModelCallAuditService(database)
 
     async def initialize(self) -> None:
         async with self.database.sessions.begin() as transaction:
@@ -450,17 +201,22 @@ class ExecutionGovernanceService:
             else:
                 current = (
                     await transaction.get(HitlPolicyRevisionRecord, policy_set.active_revision_id)
-                    if policy_set.active_revision_id else None
+                    if policy_set.active_revision_id
+                    else None
                 )
                 if current is not None and current.policy_hash == policy_hash:
                     return
-                next_revision = int(
-                    await transaction.scalar(
-                        select(func.max(HitlPolicyRevisionRecord.revision)).where(
-                            HitlPolicyRevisionRecord.policy_set_id == policy_set.id
+                next_revision = (
+                    int(
+                        await transaction.scalar(
+                            select(func.max(HitlPolicyRevisionRecord.revision)).where(
+                                HitlPolicyRevisionRecord.policy_set_id == policy_set.id
+                            )
                         )
-                    ) or 0
-                ) + 1
+                        or 0
+                    )
+                    + 1
+                )
                 if current is not None:
                     current.status = "superseded"
             revision = HitlPolicyRevisionRecord(
@@ -541,25 +297,42 @@ class ExecutionGovernanceService:
                 ).all()
             )
             revision_ids = [value.active_revision_id for value in sets if value.active_revision_id]
-            revisions = list(
-                (
-                    await transaction.scalars(
-                        select(HitlPolicyRevisionRecord).where(HitlPolicyRevisionRecord.id.in_(revision_ids))
-                    )
-                ).all()
-            ) if revision_ids else []
-            rules = list(
-                (
-                    await transaction.scalars(
-                        select(HitlPolicyRuleRecord).where(HitlPolicyRuleRecord.policy_revision_id.in_(revision_ids))
-                    )
-                ).all()
-            ) if revision_ids else []
+            revisions = (
+                list(
+                    (
+                        await transaction.scalars(
+                            select(HitlPolicyRevisionRecord).where(
+                                HitlPolicyRevisionRecord.id.in_(revision_ids)
+                            )
+                        )
+                    ).all()
+                )
+                if revision_ids
+                else []
+            )
+            rules = (
+                list(
+                    (
+                        await transaction.scalars(
+                            select(HitlPolicyRuleRecord).where(
+                                HitlPolicyRuleRecord.policy_revision_id.in_(revision_ids)
+                            )
+                        )
+                    ).all()
+                )
+                if revision_ids
+                else []
+            )
         revisions_by_id = {value.id: value for value in revisions}
         rules_by_revision: dict[str, list[HitlPolicyRuleRecord]] = {}
         for rule in rules:
             rules_by_revision.setdefault(rule.policy_revision_id, []).append(rule)
-        return [self._policy_set_view(value, revisions_by_id.get(value.active_revision_id or ""), rules_by_revision) for value in sets]
+        return [
+            self._policy_set_view(
+                value, revisions_by_id.get(value.active_revision_id or ""), rules_by_revision
+            )
+            for value in sets
+        ]
 
     @staticmethod
     def _policy_set_view(
@@ -576,7 +349,9 @@ class ExecutionGovernanceService:
             "scope_ref_revision": value.scope_ref_revision or None,
             "owner_principal_id": value.owner_principal_id or None,
             "row_version": value.row_version,
-            "active_revision": None if revision is None else {
+            "active_revision": None
+            if revision is None
+            else {
                 "id": revision.id,
                 "revision": revision.revision,
                 "policy_hash": revision.policy_hash,
@@ -639,13 +414,17 @@ class ExecutionGovernanceService:
             else:
                 if policy_set.active_revision_id != expected_active_revision_id:
                     raise GovernanceConflict("其他页面已激活新策略版本，请刷新后比较")
-                next_revision = int(
-                    await transaction.scalar(
-                        select(func.max(HitlPolicyRevisionRecord.revision)).where(
-                            HitlPolicyRevisionRecord.policy_set_id == policy_set.id
+                next_revision = (
+                    int(
+                        await transaction.scalar(
+                            select(func.max(HitlPolicyRevisionRecord.revision)).where(
+                                HitlPolicyRevisionRecord.policy_set_id == policy_set.id
+                            )
                         )
-                    ) or 0
-                ) + 1
+                        or 0
+                    )
+                    + 1
+                )
                 if policy_set.active_revision_id:
                     previous = await transaction.get(HitlPolicyRevisionRecord, policy_set.active_revision_id)
                     if previous:
@@ -687,6 +466,16 @@ class ExecutionGovernanceService:
             policy_set.active_revision_id = revision_id
             policy_set.row_version += 1
             policy_set.updated_at = now
+        logger.info(
+            "hitl_policy_activated scope_kind=%s scope_ref_id=%s "
+            "policy_set_id=%s revision_id=%s revision=%d rule_count=%d",
+            scope_kind,
+            scope_ref_id,
+            policy_set.id,
+            revision.id,
+            revision.revision,
+            len(normalized),
+        )
         values = await self.policy_sets(principal_id=owner)
         return next(value for value in values if value["id"] == policy_set.id)
 
@@ -714,14 +503,16 @@ class ExecutionGovernanceService:
             elif condition is not None or on_match is not None:
                 raise GovernanceValidationError("非conditional规则不能提供condition/on_match")
             seen.add(key)
-            normalized.append({
-                "decision_point_key": key,
-                "mode": mode,
-                "condition": condition,
-                "on_match": on_match,
-                "constraints": dict(value.get("constraints") or {}),
-                "reason": str(value.get("reason") or ""),
-            })
+            normalized.append(
+                {
+                    "decision_point_key": key,
+                    "mode": mode,
+                    "condition": condition,
+                    "on_match": on_match,
+                    "constraints": dict(value.get("constraints") or {}),
+                    "reason": str(value.get("reason") or ""),
+                }
+            )
         return normalized
 
     async def preview(
@@ -754,16 +545,20 @@ class ExecutionGovernanceService:
                 ).all()
             )
             revision_ids = [value.active_revision_id for value in sets if value.active_revision_id]
-            rules = list(
-                (
-                    await transaction.scalars(
-                        select(HitlPolicyRuleRecord).where(
-                            HitlPolicyRuleRecord.policy_revision_id.in_(revision_ids),
-                            HitlPolicyRuleRecord.decision_point_key == decision_point_key,
+            rules = (
+                list(
+                    (
+                        await transaction.scalars(
+                            select(HitlPolicyRuleRecord).where(
+                                HitlPolicyRuleRecord.policy_revision_id.in_(revision_ids),
+                                HitlPolicyRuleRecord.decision_point_key == decision_point_key,
+                            )
                         )
-                    )
-                ).all()
-            ) if revision_ids else []
+                    ).all()
+                )
+                if revision_ids
+                else []
+            )
         sets_by_revision = {value.active_revision_id: value for value in sets}
         scope_lookup = {(str(value.get("kind")), str(value.get("ref_id"))): value for value in scopes}
         scope_lookup[("product_default", "*")] = {"kind": "product_default", "ref_id": "*"}
@@ -780,8 +575,14 @@ class ExecutionGovernanceService:
                 continue
             action, complete = self._rule_action(rule, facts)
             candidates.append((policy_set, rule, action, complete))
-        floors = [value for value in candidates if value[0].authority in {"system_safety", "identity_scope", "capability"}]
-        preferences = [value for value in candidates if value[0].authority in {"product_default", "user_preference"}]
+        floors = [
+            value
+            for value in candidates
+            if value[0].authority in {"system_safety", "identity_scope", "capability"}
+        ]
+        preferences = [
+            value for value in candidates if value[0].authority in {"product_default", "user_preference"}
+        ]
         floor_action = _strictest(value[2] for value in floors)
         preference_action = self._preference_action(preferences)
         final_action = _strictest((floor_action, preference_action))
@@ -829,7 +630,7 @@ class ExecutionGovernanceService:
 
     @staticmethod
     def _preference_action(
-        candidates: Sequence[tuple[HitlPolicySetRecord, HitlPolicyRuleRecord, str, bool]]
+        candidates: Sequence[tuple[HitlPolicySetRecord, HitlPolicyRuleRecord, str, bool]],
     ) -> str:
         if not candidates:
             return "require_human"
@@ -859,7 +660,11 @@ class ExecutionGovernanceService:
         }
         active = await self.policy_sets(principal_id=owner)
         refs = [
-            {"policy_set_id": value["id"], "revision_id": value["active_revision"]["id"], "policy_hash": value["active_revision"]["policy_hash"]}
+            {
+                "policy_set_id": value["id"],
+                "revision_id": value["active_revision"]["id"],
+                "policy_hash": value["active_revision"]["policy_hash"],
+            }
             for value in active
             if value["active_revision"] is not None
         ]
@@ -869,7 +674,9 @@ class ExecutionGovernanceService:
         snapshot_hash = _hash("hitl-policy-snapshot", "v1", content)
         async with self.database.sessions.begin() as transaction:
             existing = await transaction.scalar(
-                select(HitlPolicySnapshotRecord).where(HitlPolicySnapshotRecord.snapshot_hash == snapshot_hash)
+                select(HitlPolicySnapshotRecord).where(
+                    HitlPolicySnapshotRecord.snapshot_hash == snapshot_hash
+                )
             )
             if existing is not None:
                 return existing
@@ -1062,7 +869,11 @@ class ExecutionGovernanceService:
     ) -> tuple[DecisionRecord, AuthorizationGrantRecord | None]:
         source = "policy"
         effect = "allow" if grant_kind else "none"
-        input_content = {"evaluation_id": evaluation.id, "subject_hash": subject.subject_hash, "decision_code": decision_code}
+        input_content = {
+            "evaluation_id": evaluation.id,
+            "subject_hash": subject.subject_hash,
+            "decision_code": decision_code,
+        }
         input_hash = _hash("decision-input", "v1", input_content)
         record_hash = _hash("decision-record", "v1", input_content | {"source": source, "effect": effect})
         async with self.database.sessions.begin() as transaction:
@@ -1164,67 +975,75 @@ class ExecutionGovernanceService:
         )
         if session_id is not None:
             query = query.where(HumanDecisionRequestRecord.session_id == session_id)
-        query = query.order_by(HumanDecisionRequestRecord.created_at.desc()).limit(
-            min(max(limit, 1), 300)
-        )
+        query = query.order_by(HumanDecisionRequestRecord.created_at.desc()).limit(min(max(limit, 1), 300))
         async with self.database.sessions() as transaction:
             requests = (await transaction.scalars(query)).all()
             result: list[dict[str, Any]] = []
             for request in requests:
-                items = (await transaction.scalars(
-                    select(HumanDecisionRequestItemRecord).where(
-                        HumanDecisionRequestItemRecord.request_id == request.id
-                    ).order_by(HumanDecisionRequestItemRecord.ordinal)
-                )).all()
+                items = (
+                    await transaction.scalars(
+                        select(HumanDecisionRequestItemRecord)
+                        .where(HumanDecisionRequestItemRecord.request_id == request.id)
+                        .order_by(HumanDecisionRequestItemRecord.ordinal)
+                    )
+                ).all()
                 item_views: list[dict[str, Any]] = []
                 for item in items:
                     subject = await transaction.get(DecisionSubjectRecord, item.subject_id)
-                    item_views.append({
-                        "item_key": item.item_key,
-                        "status": item.status,
-                        "allowed_actions": list(item.allowed_actions_json or []),
-                        "subject": None if subject is None else {
-                            "id": subject.id,
-                            "kind": subject.subject_kind,
-                            "resource_id": subject.resource_id,
-                            "resource_revision": subject.resource_revision,
-                            "subject_hash": subject.subject_hash,
-                            "workflow_definition_id": subject.workflow_definition_id,
-                            "workflow_version": subject.workflow_version,
-                            "node_id": subject.node_id,
-                            "decision_view": dict(subject.decision_view_json or {}),
-                        },
-                    })
+                    item_views.append(
+                        {
+                            "item_key": item.item_key,
+                            "status": item.status,
+                            "allowed_actions": list(item.allowed_actions_json or []),
+                            "subject": None
+                            if subject is None
+                            else {
+                                "id": subject.id,
+                                "kind": subject.subject_kind,
+                                "resource_id": subject.resource_id,
+                                "resource_revision": subject.resource_revision,
+                                "subject_hash": subject.subject_hash,
+                                "workflow_definition_id": subject.workflow_definition_id,
+                                "workflow_version": subject.workflow_version,
+                                "node_id": subject.node_id,
+                                "decision_view": dict(subject.decision_view_json or {}),
+                            },
+                        }
+                    )
                 runtime_link = await transaction.scalar(
                     select(RuntimeInterruptLinkRecord).where(
                         RuntimeInterruptLinkRecord.decision_request_id == request.id
                     )
                 )
-                result.append({
-                    "id": request.id,
-                    "decision_point_key": request.decision_point_key,
-                    "session_id": request.session_id,
-                    "interaction_id": request.interaction_id,
-                    "run_id": request.run_id,
-                    "request_hash": request.request_hash,
-                    "title": request.title,
-                    "reason_summary": request.reason_summary,
-                    "visible_evidence": dict(request.visible_evidence_json or {}),
-                    "consequence": dict(request.consequence_json or {}),
-                    "status": request.status,
-                    "row_version": request.row_version,
-                    "created_at": _iso(request.created_at),
-                    "expires_at": _iso(request.expires_at),
-                    "runtime_recovery": None if runtime_link is None else {
-                        "link_id": runtime_link.id,
-                        "status": runtime_link.status,
-                        "checkpoint_id": runtime_link.maf_checkpoint_id,
-                        "workflow_name": runtime_link.maf_workflow_name,
-                        "executor_id": runtime_link.maf_executor_id,
-                        "graph_signature_hash": runtime_link.maf_graph_signature_hash,
-                    },
-                    "items": item_views,
-                })
+                result.append(
+                    {
+                        "id": request.id,
+                        "decision_point_key": request.decision_point_key,
+                        "session_id": request.session_id,
+                        "interaction_id": request.interaction_id,
+                        "run_id": request.run_id,
+                        "request_hash": request.request_hash,
+                        "title": request.title,
+                        "reason_summary": request.reason_summary,
+                        "visible_evidence": dict(request.visible_evidence_json or {}),
+                        "consequence": dict(request.consequence_json or {}),
+                        "status": request.status,
+                        "row_version": request.row_version,
+                        "created_at": _iso(request.created_at),
+                        "expires_at": _iso(request.expires_at),
+                        "runtime_recovery": None
+                        if runtime_link is None
+                        else {
+                            "link_id": runtime_link.id,
+                            "status": runtime_link.status,
+                            "checkpoint_id": runtime_link.maf_checkpoint_id,
+                            "workflow_name": runtime_link.maf_workflow_name,
+                            "executor_id": runtime_link.maf_executor_id,
+                            "graph_signature_hash": runtime_link.maf_graph_signature_hash,
+                        },
+                        "items": item_views,
+                    }
+                )
             return result
 
     async def resolve_human_request(
@@ -1241,7 +1060,11 @@ class ExecutionGovernanceService:
             request = await transaction.get(HumanDecisionRequestRecord, request_id)
             if request is None:
                 raise GovernanceValidationError("人工决定请求不存在")
-            if request.status != "pending" or request.request_hash != expected_request_hash or request.row_version != expected_row_version:
+            if (
+                request.status != "pending"
+                or request.request_hash != expected_request_hash
+                or request.row_version != expected_row_version
+            ):
                 raise GovernanceConflict("决定请求已失效或已由其他入口处理")
             items = list(
                 (
@@ -1265,7 +1088,12 @@ class ExecutionGovernanceService:
                 if subject is None or evaluation is None:
                     raise GovernanceConflict("决定请求引用损坏")
                 allow = decision in {"accept", "approve", "execute", "commit", "retry", "restart", "new_run"}
-                input_content = {"request_id": request.id, "item_key": item.item_key, "decision": decision, "subject_hash": subject.subject_hash}
+                input_content = {
+                    "request_id": request.id,
+                    "item_key": item.item_key,
+                    "decision": decision,
+                    "subject_hash": subject.subject_hash,
+                }
                 record = DecisionRecord(
                     id=_id(),
                     policy_evaluation_id=evaluation.id,
@@ -1300,13 +1128,15 @@ class ExecutionGovernanceService:
                     transaction.add(grant)
                 item.status = "resolved"
                 item.decision_record_id = record.id
-                result.append({
-                    "item_key": item.item_key,
-                    "decision": decision,
-                    "decision_record_id": record.id,
-                    "authorization_grant_id": grant.id if grant else None,
-                    "binding_hash": subject.subject_hash,
-                })
+                result.append(
+                    {
+                        "item_key": item.item_key,
+                        "decision": decision,
+                        "decision_record_id": record.id,
+                        "authorization_grant_id": grant.id if grant else None,
+                        "binding_hash": subject.subject_hash,
+                    }
+                )
             request.status = "resolved"
             request.row_version += 1
             request.resolved_at = utc_now()
@@ -1470,9 +1300,7 @@ class ExecutionGovernanceService:
                 value.resume_attempts += 1
             if status == "resumed":
                 value.last_projected_at = utc_now()
-            checkpoint = await transaction.get(
-                MafWorkflowCheckpointRecord, value.maf_checkpoint_id
-            )
+            checkpoint = await transaction.get(MafWorkflowCheckpointRecord, value.maf_checkpoint_id)
             if checkpoint is not None:
                 checkpoint.status = {
                     "resuming": "resuming",
@@ -1685,8 +1513,12 @@ class ExecutionGovernanceService:
         authorization_node_id: str = "execution_authorization",
     ) -> tuple[ExecutionDraftRecord, ExecutionDraftRevisionRecord]:
         value = _validate_payload(payload, EXECUTION_DRAFT_KEYS, "execution-draft-v1")
-        context_hash = str(value["context_binding"].get("context_hash") or _hash("context", "v1", value["context_binding"]))
-        draft_hash = _hash("execution-draft", "execution-draft-v1", value | {"execution_brief": execution_brief})
+        context_hash = str(
+            value["context_binding"].get("context_hash") or _hash("context", "v1", value["context_binding"])
+        )
+        draft_hash = _hash(
+            "execution-draft", "execution-draft-v1", value | {"execution_brief": execution_brief}
+        )
         async with self.database.sessions.begin() as transaction:
             run = await transaction.get(RunRecord, run_id)
             if run is None or run.session_id != session_id:
@@ -1713,7 +1545,11 @@ class ExecutionGovernanceService:
                 await transaction.flush()
                 revision_no = 1
             else:
-                previous = await transaction.get(ExecutionDraftRevisionRecord, draft.current_revision_id) if draft.current_revision_id else None
+                previous = (
+                    await transaction.get(ExecutionDraftRevisionRecord, draft.current_revision_id)
+                    if draft.current_revision_id
+                    else None
+                )
                 revision_no = (previous.revision if previous else 0) + 1
                 if previous:
                     previous.status = "superseded"
@@ -1756,6 +1592,17 @@ class ExecutionGovernanceService:
             draft.status = "reviewable"
             draft.row_version = (draft.row_version or 0) + 1
             draft.updated_at = utc_now()
+        with bind_context(
+            session_id=session_id,
+            product_run_id=run_id,
+            workflow_id=workflow_definition_id,
+        ):
+            logger.info(
+                "execution_draft_created draft_id=%s revision_id=%s revision=%d",
+                draft.id,
+                revision.id,
+                revision.revision,
+            )
         return draft, revision
 
     async def execution_draft_view(self, draft_id: str) -> dict[str, Any]:
@@ -1763,9 +1610,7 @@ class ExecutionGovernanceService:
             draft = await transaction.get(ExecutionDraftRecord, draft_id)
             if draft is None or draft.current_revision_id is None:
                 raise GovernanceValidationError("ExecutionDraft不存在")
-            revision = await transaction.get(
-                ExecutionDraftRevisionRecord, draft.current_revision_id
-            )
+            revision = await transaction.get(ExecutionDraftRevisionRecord, draft.current_revision_id)
             if revision is None:
                 raise GovernanceConflict("ExecutionDraft当前revision引用损坏")
         return {
@@ -1801,8 +1646,7 @@ class ExecutionGovernanceService:
         if not brief:
             raise GovernanceValidationError("ExecutionDraft执行摘要不能为空")
         context_hash = str(
-            value["context_binding"].get("context_hash")
-            or _hash("context", "v1", value["context_binding"])
+            value["context_binding"].get("context_hash") or _hash("context", "v1", value["context_binding"])
         )
         draft_hash = _hash(
             "execution-draft",
@@ -1813,9 +1657,7 @@ class ExecutionGovernanceService:
             draft = await transaction.get(ExecutionDraftRecord, draft_id)
             if draft is None or draft.current_revision_id is None:
                 raise GovernanceValidationError("ExecutionDraft不存在")
-            current = await transaction.get(
-                ExecutionDraftRevisionRecord, draft.current_revision_id
-            )
+            current = await transaction.get(ExecutionDraftRevisionRecord, draft.current_revision_id)
             if current is None:
                 raise GovernanceConflict("ExecutionDraft当前revision引用损坏")
             if (
@@ -1884,6 +1726,17 @@ class ExecutionGovernanceService:
             draft.status = "reviewable"
             draft.row_version += 1
             draft.updated_at = utc_now()
+        with bind_context(
+            session_id=draft.session_id,
+            product_run_id=old_subject.run_id,
+            workflow_id=draft.workflow_definition_id,
+        ):
+            logger.info(
+                "execution_draft_revised draft_id=%s revision_id=%s revision=%d",
+                draft.id,
+                revision.id,
+                revision.revision,
+            )
         return {
             "id": draft.id,
             "status": draft.status,
@@ -1955,6 +1808,13 @@ class ExecutionGovernanceService:
             await transaction.flush()
             run.execution_draft_revision_id = revision.id
             run.run_spec_id = spec.id
+        with bind_context(session_id=run.session_id, product_run_id=run.id):
+            logger.info(
+                "run_spec_compiled run_spec_id=%s draft_revision_id=%s policy_snapshot_id=%s",
+                spec.id,
+                revision.id,
+                snapshot.id,
+            )
         return spec
 
     async def register_model_call(
@@ -1969,9 +1829,16 @@ class ExecutionGovernanceService:
         HumanDecisionRequestRecord | None,
     ]:
         run_id = str(review_card.get("run_id") or "")
-        execution_context = review_card.get("execution_context") if isinstance(review_card.get("execution_context"), Mapping) else {}
-        node_id = str(execution_context.get("executor_id") or execution_context.get("agent_id") or "model_call")
-        call_ordinal = int(execution_context.get("call_ordinal") or execution_context.get("call_position") or 1)
+        raw_execution_context = review_card.get("execution_context")
+        execution_context: Mapping[str, Any] = (
+            raw_execution_context if isinstance(raw_execution_context, Mapping) else {}
+        )
+        node_id = str(
+            execution_context.get("executor_id") or execution_context.get("agent_id") or "model_call"
+        )
+        call_ordinal = int(
+            execution_context.get("call_ordinal") or execution_context.get("call_position") or 1
+        )
         provider_request = review_card.get("provider_request")
         if not isinstance(provider_request, Mapping):
             raise GovernanceValidationError("ModelCallDraft缺少Provider请求")
@@ -1979,6 +1846,10 @@ class ExecutionGovernanceService:
         body_hash = hashlib.sha256(body).hexdigest()
         if body_hash != review_card.get("body_sha256"):
             raise GovernanceValidationError("Provider Body与审批Hash不一致")
+        raw_effective_context = review_card.get("effective_context")
+        effective_context: Mapping[str, Any] = (
+            raw_effective_context if isinstance(raw_effective_context, Mapping) else {}
+        )
         async with self.database.sessions.begin() as transaction:
             run = await transaction.get(RunRecord, run_id)
             if run is None:
@@ -2010,7 +1881,11 @@ class ExecutionGovernanceService:
                 await transaction.flush()
                 revision_no = 1
             else:
-                previous = await transaction.get(ModelCallDraftRevisionRecord, slot.current_revision_id) if slot.current_revision_id else None
+                previous = (
+                    await transaction.get(ModelCallDraftRevisionRecord, slot.current_revision_id)
+                    if slot.current_revision_id
+                    else None
+                )
                 revision_no = (previous.revision if previous else 0) + 1
                 if previous:
                     previous.status = "superseded"
@@ -2049,8 +1924,8 @@ class ExecutionGovernanceService:
                 provider_body=body,
                 provider_body_sha256=body_hash,
                 binding_hash=binding_hash,
-                effective_context_json=dict(review_card.get("effective_context") or {}),
-                context_source_annotations_json=list((review_card.get("effective_context") or {}).get("history_and_knowledge") or []),
+                effective_context_json=dict(effective_context),
+                context_source_annotations_json=list(effective_context.get("history_and_knowledge") or []),
                 adapter_version="provider-adapter-v1",
                 status="reviewable",
             )
@@ -2078,7 +1953,7 @@ class ExecutionGovernanceService:
             scopes=scopes,
             facts={
                 "model": {"call_ordinal": call_ordinal},
-                "tokens": {"estimated": (review_card.get("effective_context") or {}).get("token_estimate")},
+                "tokens": {"estimated": effective_context.get("token_estimate")},
                 "context": {"changed": revision_no > 1},
                 "subject": {"changed_since_decision": revision_no > 1},
             },
@@ -2104,6 +1979,22 @@ class ExecutionGovernanceService:
                 },
                 allowed_actions=("approve", "revise", "abandon"),
             )
+        with bind_context(
+            session_id=subject.session_id,
+            interaction_id=subject.interaction_id,
+            product_run_id=subject.run_id,
+            attempt_id=subject.run_attempt_id,
+            workflow_id=subject.workflow_definition_id,
+            execution_request_id=revision.id,
+            decision_request_id=request.id if request else None,
+        ):
+            logger.info(
+                "model_call_registered node_id=%s call_ordinal=%d revision=%d policy_action=%s",
+                node_id,
+                call_ordinal,
+                revision.revision,
+                preview["final_action"],
+            )
         return slot, revision, evaluation, preview, request
 
     async def start_model_call_attempt(
@@ -2116,18 +2007,20 @@ class ExecutionGovernanceService:
             slot = await transaction.get(ModelCallDraftRecord, revision.model_call_draft_id)
             if slot is None:
                 raise GovernanceValidationError("ModelCall slot不存在")
-            persisted_consumption = await transaction.get(
-                AuthorizationConsumptionRecord, consumption.id
-            )
+            persisted_consumption = await transaction.get(AuthorizationConsumptionRecord, consumption.id)
             if persisted_consumption is None:
                 raise GovernanceValidationError("ModelCall授权消费不存在")
-            attempt_number = int(
-                await transaction.scalar(
-                    select(func.max(ModelCallAttemptRecord.attempt_number)).where(
-                        ModelCallAttemptRecord.model_call_draft_revision_id == revision.id
+            attempt_number = (
+                int(
+                    await transaction.scalar(
+                        select(func.max(ModelCallAttemptRecord.attempt_number)).where(
+                            ModelCallAttemptRecord.model_call_draft_revision_id == revision.id
+                        )
                     )
-                ) or 0
-            ) + 1
+                    or 0
+                )
+                + 1
+            )
             value = ModelCallAttemptRecord(
                 id=_id(),
                 model_call_draft_revision_id=revision.id,
@@ -2141,6 +2034,16 @@ class ExecutionGovernanceService:
             transaction.add(value)
             persisted_consumption.status = "dispatched"
             persisted_consumption.dispatched_at = utc_now()
+        with bind_context(
+            product_run_id=value.run_id,
+            attempt_id=value.run_attempt_id,
+            execution_request_id=revision.id,
+        ):
+            logger.info(
+                "model_call_attempt_started model_call_attempt_id=%s attempt_number=%d",
+                value.id,
+                value.attempt_number,
+            )
         return value
 
     async def finish_model_call_attempt(
@@ -2149,307 +2052,57 @@ class ExecutionGovernanceService:
         attempt_id: str,
         status: str,
         failure_code: str | None = None,
+        output_text: str | None = None,
     ) -> None:
-        async with self.database.sessions.begin() as transaction:
-            attempt = await transaction.get(ModelCallAttemptRecord, attempt_id)
-            if attempt is None:
-                raise GovernanceValidationError("ModelCall Attempt不存在")
-            consumption = await transaction.get(
-                AuthorizationConsumptionRecord, attempt.authorization_consumption_id
-            )
-            attempt.status = status
-            attempt.failure_code = failure_code
-            attempt.finished_at = utc_now()
-            if consumption is not None:
-                consumption.status = status
-                consumption.error_code = failure_code
-                consumption.finished_at = utc_now()
+        await self.model_call_audit.finish_attempt(
+            attempt_id=attempt_id,
+            status=status,
+            failure_code=failure_code,
+            output_text=output_text,
+        )
+
+    async def record_model_call_transport_event(
+        self,
+        *,
+        attempt_id: str,
+        stage: str,
+        status: str,
+        details: Mapping[str, Any],
+    ) -> None:
+        await self.model_call_audit.record_transport_event(
+            attempt_id=attempt_id,
+            stage=stage,
+            status=status,
+            details=details,
+        )
+
+    async def record_model_output_disposition(
+        self,
+        *,
+        attempt_id: str,
+        disposition: str,
+        reason: str,
+    ) -> None:
+        await self.model_call_audit.record_output_disposition(
+            attempt_id=attempt_id,
+            disposition=disposition,
+            reason=reason,
+        )
 
     async def governance_for_run(self, run_id: str) -> dict[str, Any]:
-        async with self.database.sessions() as transaction:
-            run = await transaction.get(RunRecord, run_id)
-            if run is None:
-                raise GovernanceValidationError("Product Run不存在")
-            draft = await transaction.get(ExecutionDraftRevisionRecord, run.execution_draft_revision_id) if run.execution_draft_revision_id else None
-            spec = await transaction.get(RunSpecRecord, run.run_spec_id) if run.run_spec_id else None
-            requests = list(
-                (
-                    await transaction.scalars(
-                        select(HumanDecisionRequestRecord)
-                        .where(HumanDecisionRequestRecord.run_id == run.id)
-                        .order_by(HumanDecisionRequestRecord.created_at)
-                    )
-                ).all()
-            )
-            evaluations = list(
-                (
-                    await transaction.scalars(
-                        select(PolicyEvaluationRecord)
-                        .join(DecisionSubjectRecord, DecisionSubjectRecord.id == PolicyEvaluationRecord.subject_id)
-                        .where(DecisionSubjectRecord.run_id == run.id)
-                        .order_by(PolicyEvaluationRecord.evaluated_at)
-                    )
-                ).all()
-            )
-            evaluation_subject_ids = [value.subject_id for value in evaluations]
-            evaluation_definition_ids = [value.decision_point_definition_id for value in evaluations]
-            evaluation_subjects = list(
-                (
-                    await transaction.scalars(
-                        select(DecisionSubjectRecord).where(
-                            DecisionSubjectRecord.id.in_(evaluation_subject_ids)
-                        )
-                    )
-                ).all()
-            ) if evaluation_subject_ids else []
-            evaluation_definitions = list(
-                (
-                    await transaction.scalars(
-                        select(DecisionPointDefinitionRecord).where(
-                            DecisionPointDefinitionRecord.id.in_(evaluation_definition_ids)
-                        )
-                    )
-                ).all()
-            ) if evaluation_definition_ids else []
-            model_slots = list(
-                (
-                    await transaction.scalars(
-                        select(ModelCallDraftRecord)
-                        .where(ModelCallDraftRecord.run_id == run.id)
-                        .order_by(ModelCallDraftRecord.call_ordinal)
-                    )
-                ).all()
-            )
-            slot_ids = [value.id for value in model_slots]
-            model_revisions = list(
-                (
-                    await transaction.scalars(
-                        select(ModelCallDraftRevisionRecord)
-                        .where(ModelCallDraftRevisionRecord.model_call_draft_id.in_(slot_ids))
-                        .order_by(
-                            ModelCallDraftRevisionRecord.model_call_draft_id,
-                            ModelCallDraftRevisionRecord.revision,
-                        )
-                    )
-                ).all()
-            ) if slot_ids else []
-            revision_ids = [value.id for value in model_revisions]
-            model_attempts = list(
-                (
-                    await transaction.scalars(
-                        select(ModelCallAttemptRecord)
-                        .where(ModelCallAttemptRecord.model_call_draft_revision_id.in_(revision_ids))
-                        .order_by(ModelCallAttemptRecord.started_at)
-                    )
-                ).all()
-            ) if revision_ids else []
-            turn_summary = await transaction.scalar(
-                select(TurnSummaryRecord).where(TurnSummaryRecord.run_id == run.id)
-            )
-            interrupt_links = list(
-                (
-                    await transaction.scalars(
-                        select(RuntimeInterruptLinkRecord)
-                        .where(RuntimeInterruptLinkRecord.product_run_id == run.id)
-                        .order_by(RuntimeInterruptLinkRecord.created_at)
-                    )
-                ).all()
-            )
-            checkpoints = list(
-                (
-                    await transaction.scalars(
-                        select(MafWorkflowCheckpointRecord)
-                        .where(MafWorkflowCheckpointRecord.product_run_id == run.id)
-                        .order_by(MafWorkflowCheckpointRecord.created_at)
-                    )
-                ).all()
-            )
-            request_ids = [value.id for value in requests]
-            outbox_events = list(
-                (
-                    await transaction.scalars(
-                        select(GovernanceOutboxRecord)
-                        .where(
-                            GovernanceOutboxRecord.aggregate_kind == "human_decision_request",
-                            GovernanceOutboxRecord.aggregate_id.in_(request_ids),
-                        )
-                        .order_by(GovernanceOutboxRecord.created_at)
-                    )
-                ).all()
-            ) if request_ids else []
-        revisions_by_slot: dict[str, list[ModelCallDraftRevisionRecord]] = {}
-        for value in model_revisions:
-            revisions_by_slot.setdefault(value.model_call_draft_id, []).append(value)
-        attempts_by_revision: dict[str, list[ModelCallAttemptRecord]] = {}
-        for value in model_attempts:
-            attempts_by_revision.setdefault(value.model_call_draft_revision_id, []).append(value)
-        subjects_by_id = {value.id: value for value in evaluation_subjects}
-        definitions_by_id = {value.id: value for value in evaluation_definitions}
-        return {
-            "run_id": run.id,
-            "execution_draft": None if draft is None else {
-                "id": draft.draft_id,
-                "revision_id": draft.id,
-                "revision": draft.revision,
-                "status": draft.status,
-                "draft_hash": draft.draft_hash,
-                "execution_brief": draft.execution_brief_text,
-                "payload": draft.payload_json,
-            },
-            "run_spec": None if spec is None else {
-                "id": spec.id,
-                "status": spec.status,
-                "run_spec_hash": spec.run_spec_hash,
-                "compiler_version": spec.compiler_version,
-                "spec": spec.spec_json,
-            },
-            "turn_summary": None if turn_summary is None else {
-                "id": turn_summary.id,
-                "topic": turn_summary.topic,
-                "summary": turn_summary.summary_json,
-                "project_hint": turn_summary.project_hint,
-                "status": turn_summary.extraction_status,
-                "summary_hash": turn_summary.summary_hash,
-                "source_model_call_revision_id": turn_summary.source_model_call_revision_id,
-                "created_at": _iso(turn_summary.created_at),
-            },
-            "policy_evaluations": [
-                {
-                    "id": value.id,
-                    "subject_id": value.subject_id,
-                    "subject_kind": subjects_by_id[value.subject_id].subject_kind,
-                    "workflow_node_id": subjects_by_id[value.subject_id].node_id,
-                    "decision_point_key": definitions_by_id[value.decision_point_definition_id].key,
-                    "applicability_status": value.applicability_status,
-                    "floor_action": value.floor_action,
-                    "preference_action": value.preference_action,
-                    "final_action": value.final_action,
-                    "result_status": value.result_status,
-                    "reason_codes": value.reason_codes_json,
-                    "evaluated_at": _iso(value.evaluated_at),
-                }
-                for value in evaluations
-            ],
-            "model_calls": [
-                {
-                    "id": slot.id,
-                    "workflow_node_id": slot.workflow_node_id,
-                    "call_ordinal": slot.call_ordinal,
-                    "status": slot.status,
-                    "current_revision_id": slot.current_revision_id,
-                    "revisions": [
-                        {
-                            "id": revision.id,
-                            "revision": revision.revision,
-                            "status": revision.status,
-                            "provider_id": revision.provider_id,
-                            "model": revision.model,
-                            "provider_body_sha256": revision.provider_body_sha256,
-                            "binding_hash": revision.binding_hash,
-                            "attempts": [
-                                {
-                                    "id": attempt.id,
-                                    "attempt_number": attempt.attempt_number,
-                                    "status": attempt.status,
-                                    "failure_code": attempt.failure_code,
-                                    "started_at": _iso(attempt.started_at),
-                                    "finished_at": _iso(attempt.finished_at),
-                                }
-                                for attempt in attempts_by_revision.get(revision.id, [])
-                            ],
-                        }
-                        for revision in revisions_by_slot.get(slot.id, [])
-                    ],
-                }
-                for slot in model_slots
-            ],
-            "decision_requests": [
-                {
-                    "id": value.id,
-                    "decision_point_key": value.decision_point_key,
-                    "request_hash": value.request_hash,
-                    "title": value.title,
-                    "reason_summary": value.reason_summary,
-                    "visible_evidence": value.visible_evidence_json,
-                    "consequence": value.consequence_json,
-                    "status": value.status,
-                    "row_version": value.row_version,
-                    "created_at": _iso(value.created_at),
-                }
-                for value in requests
-            ],
-            "runtime_interrupts": [
-                {
-                    "id": value.id,
-                    "decision_request_id": value.decision_request_id,
-                    "checkpoint_id": value.maf_checkpoint_id,
-                    "maf_request_id": value.maf_request_id,
-                    "executor_id": value.maf_executor_id,
-                    "status": value.status,
-                    "resume_attempts": value.resume_attempts,
-                    "last_error_code": value.last_error_code,
-                    "created_at": _iso(value.created_at),
-                    "updated_at": _iso(value.updated_at),
-                }
-                for value in interrupt_links
-            ],
-            "workflow_checkpoints": [
-                {
-                    "checkpoint_id": value.checkpoint_id,
-                    "workflow_definition_id": value.workflow_definition_id,
-                    "workflow_version": value.workflow_version,
-                    "workflow_name": value.workflow_name,
-                    "graph_signature_hash": value.graph_signature_hash,
-                    "iteration_count": value.iteration_count,
-                    "pending_request_count": len(value.pending_request_ids_json or ()),
-                    "encoding_version": value.encoding_version,
-                    "status": value.status,
-                    "created_at": _iso(value.created_at),
-                }
-                for value in checkpoints
-            ],
-            "outbox_events": [
-                {
-                    "id": value.id,
-                    "aggregate_id": value.aggregate_id,
-                    "event_type": value.event_type,
-                    "dedupe_key": value.dedupe_key,
-                    "status": value.status,
-                    "attempt_count": value.attempt_count,
-                    "last_error_code": value.last_error_code,
-                    "available_at": _iso(value.available_at),
-                    "published_at": _iso(value.published_at),
-                }
-                for value in outbox_events
-            ],
-        }
+        """Return the read-only designer projection for one Product Run."""
 
-    async def recent_turn_summaries(self, session_id: str, *, limit: int = 8) -> list[dict[str, Any]]:
-        async with self.database.sessions() as transaction:
-            values = list(
-                (
-                    await transaction.scalars(
-                        select(TurnSummaryRecord)
-                        .where(TurnSummaryRecord.session_id == session_id)
-                        .order_by(TurnSummaryRecord.created_at.desc())
-                        .limit(max(1, min(limit, 20)))
-                    )
-                ).all()
-            )
-        return [
-            {
-                "id": value.id,
-                "interaction_id": value.interaction_id,
-                "run_id": value.run_id,
-                "topic": value.topic,
-                "summary": value.summary_json,
-                "project_hint": value.project_hint,
-                "status": value.extraction_status,
-                "summary_hash": value.summary_hash,
-                "created_at": _iso(value.created_at),
-            }
-            for value in values
-        ]
+        return await self.run_queries.governance_for_run(run_id)
+
+    async def recent_turn_summaries(
+        self,
+        session_id: str,
+        *,
+        limit: int = 8,
+    ) -> list[dict[str, Any]]:
+        """Return bounded summary candidates without mutating governance state."""
+
+        return await self.run_queries.recent_turn_summaries(session_id, limit=limit)
 
     async def save_turn_summary(
         self,
@@ -2458,13 +2111,21 @@ class ExecutionGovernanceService:
         run_id: str,
         summary: Mapping[str, Any],
         source_model_call_revision_id: str | None,
+        product_fact_refs: Sequence[Mapping[str, Any]] = (),
     ) -> dict[str, Any]:
-        topic = str(summary.get("topic") or "本轮对话").strip()[:240]
-        summary_hash = _hash("turn-summary", "v1", summary)
         async with self.database.sessions.begin() as transaction:
             run = await transaction.get(RunRecord, run_id)
             if run is None or run.session_id != session_id:
                 raise GovernanceValidationError("Turn Summary关联的Run不存在")
+            digest = normalize_turn_digest(
+                summary,
+                run_id=run.id,
+                user_message_id=run.current_user_message_id,
+                source_model_call_revision_id=source_model_call_revision_id,
+                product_fact_refs=product_fact_refs,
+            )
+            topic = str(digest["topic"])
+            summary_hash = _hash("turn-digest", "v1", digest)
             existing = await transaction.scalar(
                 select(TurnSummaryRecord).where(TurnSummaryRecord.interaction_id == run.interaction_id)
             )
@@ -2479,13 +2140,19 @@ class ExecutionGovernanceService:
                     interaction_id=run.interaction_id,
                     run_id=run.id,
                     topic=topic,
-                    summary_json=dict(summary),
-                    project_hint=str(summary.get("project_hint") or "").strip()[:240] or None,
+                    summary_json=digest,
+                    project_hint=str(digest.get("project_hint") or "").strip()[:240] or None,
                     extraction_status="candidate",
                     source_model_call_revision_id=source_model_call_revision_id,
                     summary_hash=summary_hash,
                 )
                 transaction.add(value)
+        with bind_context(session_id=session_id, product_run_id=run_id):
+            logger.info(
+                "turn_summary_saved summary_id=%s status=%s",
+                value.id,
+                value.extraction_status,
+            )
         return {
             "id": value.id,
             "topic": value.topic,

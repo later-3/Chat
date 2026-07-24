@@ -14,7 +14,6 @@ from .config import Settings
 from .main import create_app
 from .runtime_execution import ExecutionWorker
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -72,10 +71,6 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = _parser().parse_args()
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
     app = create_app(
         Settings.from_file(),
         start_execution_worker=False,

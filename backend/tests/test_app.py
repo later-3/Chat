@@ -135,7 +135,11 @@ def test_product_harness_rest_contract_is_versioned_and_server_authoritative() -
             },
         )
         assert conflict.status_code == 409
-        assert "版本冲突" in conflict.json()["detail"]
+        problem = conflict.json()
+        assert problem["code"] == "HARNESS_CONFLICT"
+        assert "版本冲突" in problem["message"]
+        assert problem["retryable"] is False
+        assert problem["request_id"] == conflict.headers["x-request-id"]
 
         search = client.get("/api/harness/search", params={"q": "事件循环"})
         assert search.status_code == 200
@@ -145,6 +149,62 @@ def test_product_harness_rest_contract_is_versioned_and_server_authoritative() -
 def _write_config(path: Path, payload: dict[str, object]) -> Path:
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
+
+
+def test_rest_errors_use_one_redacted_correlated_problem_contract() -> None:
+    app = create_app(Settings.for_test())
+
+    @app.get("/api/test/unhandled")
+    async def unhandled() -> None:
+        raise RuntimeError(
+            "SELECT secret FROM records; /Users/example/private/config.json sk-not-a-real-key-but-shaped"
+        )
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        missing = client.get(
+            "/api/sessions/does-not-exist",
+            headers={"X-Request-ID": "client-request-42"},
+        )
+        invalid = client.post("/api/sessions", json={"title": 17, "unexpected": True})
+        failed = client.get("/api/test/unhandled")
+
+    assert missing.status_code == 404
+    assert missing.headers["x-request-id"] == "client-request-42"
+    assert missing.json() == {
+        "code": "SESSION_NOT_FOUND",
+        "message": "Product Session不存在",
+        "request_id": "client-request-42",
+        "retryable": False,
+        "details": None,
+    }
+
+    invalid_problem = invalid.json()
+    assert invalid.status_code == 422
+    assert invalid_problem["code"] == "REQUEST_VALIDATION_FAILED"
+    assert invalid_problem["request_id"] == invalid.headers["x-request-id"]
+    assert invalid_problem["retryable"] is False
+    assert invalid_problem["details"]["issues"]
+    assert "input" not in invalid_problem["details"]["issues"][0]
+
+    failed_text = failed.text
+    assert failed.status_code == 500
+    assert failed.json()["code"] == "INTERNAL_SERVER_ERROR"
+    assert failed.json()["message"] == "服务处理请求时发生内部错误。"
+    assert failed.json()["request_id"] == failed.headers["x-request-id"]
+    assert "/Users/" not in failed_text
+    assert "SELECT secret" not in failed_text
+    assert "sk-not" not in failed_text
+
+
+def test_openapi_declares_problem_detail_for_rest_failures() -> None:
+    with _client() as client:
+        schema = client.get("/openapi.json").json()
+
+    session_route = schema["paths"]["/api/sessions/{session_id}"]["get"]
+    problem_schema = session_route["responses"]["409"]["content"]["application/json"]["schema"]
+    assert problem_schema["$ref"] == "#/components/schemas/ProblemDetail"
+    required = set(schema["components"]["schemas"]["ProblemDetail"]["required"])
+    assert required == {"code", "message", "request_id", "retryable"}
 
 
 def test_settings_loads_one_provider_from_json(tmp_path: Path) -> None:
@@ -256,6 +316,9 @@ def test_settings_uses_bootstrap_when_json_has_no_configured_provider(tmp_path: 
         tmp_path / "config.json",
         {
             "version": 1,
+            "product_store": {
+                "url": f"sqlite+aiosqlite:///{tmp_path / 'bootstrap.db'}",
+            },
             "default_provider_id": "ark",
             "providers": [
                 {
@@ -406,9 +469,5 @@ def test_ag_ui_endpoint_streams_a_complete_bootstrap_run() -> None:
     assert event_types[0] == "RUN_STARTED"
     assert "TEXT_MESSAGE_CONTENT" in event_types
     assert event_types[-1] == "RUN_FINISHED"
-    text = "".join(
-        str(event.get("delta", ""))
-        for event in events
-        if event["type"] == "TEXT_MESSAGE_CONTENT"
-    )
+    text = "".join(str(event.get("delta", "")) for event in events if event["type"] == "TEXT_MESSAGE_CONTENT")
     assert "Microsoft Agent Framework" in text

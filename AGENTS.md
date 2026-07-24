@@ -130,6 +130,21 @@
 4. 把旧项目的`.env`、数据库、历史会话、构建产物或缓存复制进本仓库。
 5. 复制旧项目的框架绑定和临时兼容代码，却没有明确复用理由与新测试证据。
 
+### 7.1 模块设计与代码质量
+
+详细执行标准见[工程编码与模块设计规范](./docs/engineering-standards.md)。以下规则属于开发强制门：
+
+1. 模块按业务能力、状态所有权、事务边界和变化原因拆分；行数只触发审查，不允许机械按行切文件。
+2. HTTP Router、AG-UI入口和React页面不拥有产品事务或权威业务状态；Application Coordinator是一个用例的唯一事务所有者。
+3. 被提取的规则、查询、投影和适配器不得擅自开启或提交调用方事务。需要参与原子提交的协作者必须显式接收现有Session/Unit of Work。
+4. 禁止Repository-per-table、Service-per-method、万能`utils/helpers`和没有真实替换/测试价值的接口；少量局部重复优于错误抽象。
+5. Python/TypeScript模块超过800行、React组件或Hook超过500行、函数超过80行时必须审查职责；可以保留，但必须在审计或代码邻近处说明不可拆的不变量和测试边界。
+6. 注释解释不变量、事务所有权、失败/恢复语义、兼容原因和安全边界，不复述语法；公开应用合同和非显然状态机使用Docstring/JSDoc。
+7. 结构化日志只放在请求/命令入口、关键状态转换、外部调用、重试/接管/对账和失败边界；携带稳定关联ID和结果，不记录密钥、完整Prompt、Provider Payload或隐藏推理。
+8. 前端按Feature与运行责任拆分；页面、Workbench和重型编辑器使用真实加载边界做生产代码分割，不为追求Chunk数量拆成微型模块。
+9. 无行为重构必须先固定不变量或指纹，并通过架构依赖、合同、状态机、生产构建和相关端到端场景证明没有改变Schema、Workflow节点、审批Hash、AG-UI事件或用户语义。
+10. 新规范必须对应已经发生的风险或明确产品保证，并尽量自动验证；不得以“产品级”为由预建尚无用途的平台层和样板代码。
+
 ## 8. 源码查询与参考项目规则
 
 开发本项目时，禁止只凭模型记忆猜测MAF API或Agent产品架构。以下本地仓库是强制参考源：
@@ -151,7 +166,18 @@
 6. 进入任一参考仓库阅读或验证前，先读取该仓库及目标子目录的`AGENTS.md`；不得修改这些仓库，除非用户明确授权对应修改。
 7. 形成重要架构结论时，应在代码、测试或文档中留下可定位的本地路径、版本或提交证据，不能只写“参考了某项目”。
 
-### 8.1 Session及其他核心能力的设计顺序
+### 8.1 Kimi Code CLI开发工具
+
+1. 用户说“使用Kimi Code CLI工具”“让Kimi看一下/实现”时，必须使用个人Skill
+   `/Users/xulater/.codex/skills/kimi-code-cli/SKILL.md`，不得重新猜测命令、权限或协议。
+2. 默认通过该Skill的只读Agent包装器让Kimi审查代码或界面；Kimi给出建议后，仍由当前开发者核对源码、修改和验证。
+3. Kimi需要亲自修改时只能使用可交互权限模式，逐项审查操作；禁止用`kimi -p`、`--prompt`、`--auto`或`--yolo`执行无人值守修改。
+4. 把Kimi接入Chat产品Runtime时使用ACP承载Session、事件和Tool权限；ACP不自动提供完整Provider Payload可见性，不能冒充现有逐次ModelCallDraft治理。
+5. 已验证版本、源码提交、调用方式和安全边界维护在
+   [Kimi Code CLI开发工具手册](./docs/kimi-code-cli-tool.md)与
+   `/Users/xulater/Code/opc-os/agent_knowledge/project-studies/kimi-code/README.md`。
+
+### 8.2 Session及其他核心能力的设计顺序
 
 设计Session持久化、上下文、记忆、工具、工作流等核心能力时，必须严格按以下顺序执行，不得并行混写结论或先用参考项目反推MAF：
 
@@ -164,7 +190,7 @@
 7. **审核材料自包含**：不得假设用户已经掌握框架背景或参考项目实现。提交决策点前，必须先说明问题背景、当前项目事实、源码证据、各方案能解决与不能解决的内容、推导链和代价；不能只给结论或让用户自行反查“参考了什么”。
 8. **决策卡完整性**：每个待审核决定必须逐项写明决策原因、现有参考源是否真正涉及、全部可行选择、各自优缺点、当前建议、建议原因、信心与未验证项。参考源未涉及时必须明确写“未涉及”；可以提出新的开源候选，但用户批准加入前只能做相关性筛选，不得先研究后倒逼用户接受，也不得把候选写成既有证据。
 
-#### 8.1.1 Session总体规划门
+#### 8.2.1 Session总体规划门
 
 Session工作必须先完成总体目标，再讨论某一阶段的持久化实现：
 
@@ -176,7 +202,7 @@ Session工作必须先完成总体目标，再讨论某一阶段的持久化实�
 6. 现有Session持久化D1-D6只是Phase 1的子设计，必须在总体规划获批后结合树兼容、Run Attempt演进和后续Checkpoint关联重新审核，不能作为完整Session方案的总体入口。
 7. 任一阶段完成时必须明确“本阶段已经满足什么恢复保证、仍不保证什么”，禁止把R0历史恢复外推为活动Run、Worker、Tool或Workflow恢复。
 
-#### 8.1.2 总体架构审核门
+#### 8.2.2 总体架构审核门
 
 涉及总体架构、模块边界、状态所有权或部署拆分时，必须遵守：
 
@@ -194,7 +220,7 @@ Session工作必须先完成总体目标，再讨论某一阶段的持久化实�
 12. 总体架构必须提供面向第一次接触项目读者的对象级导读：分别展开前端View、网络DTO、内部Envelope、产品领域对象和MAF/Worker运行对象；说明每个核心对象的创建者、所有者、存储、生命周期和可见性，并把Agent展开为内部部件及外部控制边界。模块名和箭头不能替代这份心智模型。
 13. 新手导读必须从用户一次具体点击开始，按时间顺序穿透前端函数、REST/AG-UI入口、应用协调、数据库读写、MAF Session/Workflow、Tool治理、Provider请求、响应解码、产品提交和React渲染；每一步说明输入、处理、输出、Store和用户可见变化，并分别标明当前代码事实与待审核目标架构。对象词典不能替代这条运行链。
 
-### 8.2 外部产品参考的收敛与成本控制
+### 8.3 外部产品参考的收敛与成本控制
 
 MAF、pi、nanobot和QwenPaw仍按前述规则作为本地技术与架构基线。除此之外，外部Web产品参考当前只保留 **1个正式主参考**，不设置会被自动触发的条件候补，不得把多个相似平台同时加入日常必查链路：
 
@@ -237,6 +263,7 @@ MAF、pi、nanobot和QwenPaw仍按前述规则作为本地技术与架构基线�
 11. MAF总体架构位置与边界维护在`/Users/xulater/Code/opc-os/agent_knowledge/MAF/02-Agent应用架构中的位置与边界.md`；必须同时保留目标项目安装版本和本地参考源码提交，不能把源码主分支能力冒充安装版保证。
 12. pi与nanobot的架构知识入口分别为`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/pi/README.md`和`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/nanobot/README.md`；形成Chat模块决策时必须引用其真实模块与明确缺口，不能只写项目名。
 13. QwenPaw知识入口为`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/qwenpaw/README.md`，固定源码位于`/Users/xulater/Code/reference-agent-sources/QwenPaw`；设计Web、Telegram等Channel与后端关系时必须先读取其Web/Channel入口拓扑，不能把最终聊天平台直接画到产品核心。
+14. Kimi Code CLI知识入口为`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/kimi-code/README.md`；它只为Kimi命令、权限、ACP和开发辅助边界背书，不自动进入Chat总体架构参考集。
 
 ## 10. 验证规则
 

@@ -17,15 +17,19 @@ from backend.app.model_call_review import (
     InMemoryModelCallReviewStore,
     ModelCallDraftValidationError,
 )
-from backend.app.model_providers import ModelOption, ModelProviderCatalog, ModelProviderConfig
+from backend.app.model_providers import (
+    ModelOption,
+    ModelProviderCatalog,
+    ModelProviderConfig,
+)
 from backend.app.pi_runtime import (
     PiCompletedBoundary,
     PiExecution,
     PiGatewayCall,
     PiGatewayDecision,
     PiModelCallBoundary,
-    PiToolCallBoundary,
     PiRuntimeManager,
+    PiToolCallBoundary,
 )
 from backend.app.product_sessions import ProductDatabase, ProductSessionService
 from backend.app.tool_configs import (
@@ -86,9 +90,7 @@ def _config(tmp_path: Path) -> PiToolConfigSnapshot:
 
 
 def _provider_request(*, second: bool = False) -> dict[str, Any]:
-    values: list[dict[str, Any]] = [
-        {"role": "user", "content": [{"type": "input_text", "text": "检查项目"}]}
-    ]
+    values: list[dict[str, Any]] = [{"role": "user", "content": [{"type": "input_text", "text": "检查项目"}]}]
     if second:
         values.extend(
             [
@@ -285,9 +287,7 @@ def test_tool_configuration_has_cas_path_policy_and_persisted_metrics(tmp_path: 
             )
 
         session = await sessions.create_session()
-        accepted = await sessions.prepare_agui_run(
-            _request(session["id"], "tool-ledger-run", "执行pi")
-        )
+        accepted = await sessions.prepare_agui_run(_request(session["id"], "tool-ledger-run", "执行pi"))
         execution_id = await service.start_execution(
             session_id=session["id"],
             run_id=accepted.product_run_id,
@@ -482,9 +482,7 @@ class FakePiExecution:
             "cache_write_tokens": 0,
             "cost": 0.01,
             "duration_ms": 1400,
-            "tool_calls": [
-                {"tool_call_id": "tool-call-1", "tool_name": "read", "status": "completed"}
-            ],
+            "tool_calls": [{"tool_call_id": "tool-call-1", "tool_name": "read", "status": "completed"}],
         }
 
     async def close(self) -> None:

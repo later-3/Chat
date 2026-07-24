@@ -9,22 +9,25 @@ import platform
 import socket
 import time
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import suppress
 from typing import Any, Protocol
 
 from sqlalchemy import select
 
+from ..observability.context import bind_context
+from ..observability.metrics import metrics
+from ..observability.tracing import tracer
 from ..product_sessions.database import ProductDatabase, RunRecord, utc_now
 from ..product_sessions.service import ProductSessionService
 from .models import ExecutionWorkerRecord
 from .service import ClaimedRuntime, RuntimeExecutionService, RuntimeLeaseLost
 
-
 logger = logging.getLogger(__name__)
 
 
 class RuntimeRunner(Protocol):
-    async def run(self, input_data: dict[str, Any]): ...
+    def run(self, input_data: dict[str, Any]) -> AsyncIterator[Any]: ...
 
 
 class RuntimeRunnerRegistry:
@@ -123,6 +126,38 @@ class ExecutionWorker:
         return processed
 
     async def _execute(self, claim: ClaimedRuntime) -> None:
+        started = time.perf_counter()
+        metrics.increment("runtime.jobs.claimed")
+        with bind_context(
+            worker_id=self.worker_id,
+            job_id=claim.job_id,
+            session_id=str(claim.input_data.get("thread_id") or claim.input_data.get("threadId") or "")
+            or None,
+            product_run_id=claim.product_run_id,
+            attempt_id=claim.run_attempt_id,
+            workflow_id=claim.workflow_definition_id,
+        ):
+            with tracer().start_as_current_span(
+                "runtime.job",
+                attributes={
+                    "runtime.job.id": claim.job_id,
+                    "runtime.endpoint": claim.endpoint_key,
+                    "runtime.lease.epoch": claim.lease_epoch,
+                },
+            ) as span:
+                try:
+                    await self._execute_claim(claim)
+                except Exception as error:
+                    span.set_attribute("error.type", type(error).__name__)
+                    metrics.increment("runtime.jobs.errors")
+                    raise
+                finally:
+                    metrics.observe(
+                        "runtime.job.duration_seconds",
+                        time.perf_counter() - started,
+                    )
+
+    async def _execute_claim(self, claim: ClaimedRuntime) -> None:
         heartbeat_task: asyncio.Task[None] | None = None
         terminal_seen = False
         last_control_check = 0.0
@@ -141,17 +176,12 @@ class ExecutionWorker:
                 payload = self._public_payload(event)
                 event_type = str(payload.get("type") or "")
                 monotonic_now = time.monotonic()
-                if (
-                    monotonic_now - last_control_check >= 0.1
-                    or event_type in {"RUN_FINISHED", "RUN_ERROR"}
-                ):
+                if monotonic_now - last_control_check >= 0.1 or event_type in {"RUN_FINISHED", "RUN_ERROR"}:
                     last_control_check = monotonic_now
                     cancel_command_id = await self.runtime.pending_cancel_command(claim)
                     if cancel_command_id is not None:
                         product_status = await self.runtime.product_status(claim)
-                        runtime_status = (
-                            "cancelled" if product_status == "cancelled" else "outcome_unknown"
-                        )
+                        runtime_status = "cancelled" if product_status == "cancelled" else "outcome_unknown"
                         message = (
                             "用户已取消本次Run。"
                             if runtime_status == "cancelled"
@@ -162,7 +192,9 @@ class ExecutionWorker:
                             worker_id=self.worker_id,
                             payload={
                                 "type": "RUN_ERROR",
-                                "code": "USER_CANCELLED" if runtime_status == "cancelled" else "USER_CANCELLED_OUTCOME_UNKNOWN",
+                                "code": "USER_CANCELLED"
+                                if runtime_status == "cancelled"
+                                else "USER_CANCELLED_OUTCOME_UNKNOWN",
                                 "message": message,
                             },
                             status=runtime_status,
@@ -176,9 +208,7 @@ class ExecutionWorker:
                 if event_type == "RUN_STARTED":
                     await self.runtime.mark_external_dispatch(claim, worker_id=self.worker_id)
                 interrupt = event_type == "RUN_FINISHED" and self._is_interrupt(payload)
-                is_terminal = event_type == "RUN_ERROR" or (
-                    event_type == "RUN_FINISHED" and not interrupt
-                )
+                is_terminal = event_type == "RUN_ERROR" or (event_type == "RUN_FINISHED" and not interrupt)
                 product_terminal_status: str | None = None
                 if is_terminal and event_type == "RUN_FINISHED":
                     product_terminal_status = await self._require_product_terminal(claim)
@@ -307,7 +337,5 @@ class ExecutionWorker:
         async with self.database.sessions() as transaction:
             run = await transaction.get(RunRecord, claim.product_run_id)
             if run is None or run.status not in {"succeeded", "abandoned"}:
-                raise RuntimeError(
-                    "Product Run尚未提交可公开终态，禁止发布RUN_FINISHED"
-                )
+                raise RuntimeError("Product Run尚未提交可公开终态，禁止发布RUN_FINISHED")
             return run.status

@@ -91,10 +91,12 @@ def test_user_scope_can_skip_model_review_but_not_system_safety_floor() -> None:
                 "scope_ref_id": "local-user",
                 "expected_active_revision_id": None,
                 "change_summary": "过期页面覆盖",
-                "rules": [{
-                    "decision_point_key": "model_call_authorization",
-                    "mode": "require_human",
-                }],
+                "rules": [
+                    {
+                        "decision_point_key": "model_call_authorization",
+                        "mode": "require_human",
+                    }
+                ],
             },
         )
         second = client.post(
@@ -104,10 +106,12 @@ def test_user_scope_can_skip_model_review_but_not_system_safety_floor() -> None:
                 "scope_ref_id": "local-user",
                 "expected_active_revision_id": revision_id,
                 "change_summary": "恢复每次询问",
-                "rules": [{
-                    "decision_point_key": "model_call_authorization",
-                    "mode": "require_human",
-                }],
+                "rules": [
+                    {
+                        "decision_point_key": "model_call_authorization",
+                        "mode": "require_human",
+                    }
+                ],
             },
         )
 
@@ -126,10 +130,12 @@ def test_policy_activation_rejects_raw_or_incomplete_conditional_dsl() -> None:
             json={
                 "scope_kind": "principal",
                 "scope_ref_id": "local-user",
-                "rules": [{
-                    "decision_point_key": "intent_binding",
-                    "mode": "conditional",
-                }],
+                "rules": [
+                    {
+                        "decision_point_key": "intent_binding",
+                        "mode": "conditional",
+                    }
+                ],
             },
         )
         script_like = client.post(
@@ -137,12 +143,14 @@ def test_policy_activation_rejects_raw_or_incomplete_conditional_dsl() -> None:
             json={
                 "scope_kind": "principal",
                 "scope_ref_id": "local-user",
-                "rules": [{
-                    "decision_point_key": "intent_binding",
-                    "mode": "conditional",
-                    "condition": {"eval": ["intent.confidence", "< 0.8"]},
-                    "on_match": "require_human",
-                }],
+                "rules": [
+                    {
+                        "decision_point_key": "intent_binding",
+                        "mode": "conditional",
+                        "condition": {"eval": ["intent.confidence", "< 0.8"]},
+                        "on_match": "require_human",
+                    }
+                ],
             },
         )
 
@@ -158,10 +166,12 @@ def test_inherit_rule_does_not_override_product_default() -> None:
                 "scope_kind": "principal",
                 "scope_ref_id": "local-user",
                 "expected_active_revision_id": None,
-                "rules": [{
-                    "decision_point_key": "model_call_authorization",
-                    "mode": "inherit",
-                }],
+                "rules": [
+                    {
+                        "decision_point_key": "model_call_authorization",
+                        "mode": "inherit",
+                    }
+                ],
             },
         )
         assert activated.status_code == 200, activated.text
@@ -181,14 +191,16 @@ def test_outbox_lease_allows_only_one_worker_and_dead_letters_at_limit(tmp_path)
         database = ProductDatabase(f"sqlite+aiosqlite:///{tmp_path / 'outbox.db'}")
         await database.initialize()
         async with database.sessions.begin() as transaction:
-            transaction.add(GovernanceOutboxRecord(
-                id="event-once",
-                aggregate_kind="test",
-                aggregate_id="aggregate",
-                event_type="test.once",
-                payload_json={"value": 1},
-                dedupe_key="test.once:aggregate:1",
-            ))
+            transaction.add(
+                GovernanceOutboxRecord(
+                    id="event-once",
+                    aggregate_kind="test",
+                    aggregate_id="aggregate",
+                    event_type="test.once",
+                    payload_json={"value": 1},
+                    dedupe_key="test.once:aggregate:1",
+                )
+            )
         handled: list[str] = []
 
         async def handle(event) -> None:
@@ -200,14 +212,16 @@ def test_outbox_lease_allows_only_one_worker_and_dead_letters_at_limit(tmp_path)
         assert handled == ["event-once"]
 
         async with database.sessions.begin() as transaction:
-            transaction.add(GovernanceOutboxRecord(
-                id="event-dead",
-                aggregate_kind="test",
-                aggregate_id="dead",
-                event_type="test.fail",
-                payload_json={},
-                dedupe_key="test.fail:dead:1",
-            ))
+            transaction.add(
+                GovernanceOutboxRecord(
+                    id="event-dead",
+                    aggregate_kind="test",
+                    aggregate_id="dead",
+                    event_type="test.fail",
+                    payload_json={},
+                    dedupe_key="test.fail:dead:1",
+                )
+            )
 
         async def fail(_event) -> None:
             raise RuntimeError("injected failure")

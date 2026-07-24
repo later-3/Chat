@@ -6,7 +6,7 @@ import asyncio
 import os
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Protocol, cast
 
 from ag_ui.core import (
     CustomEvent,
@@ -16,7 +16,14 @@ from ag_ui.core import (
     TextMessageContentEvent,
     TextMessageStartEvent,
 )
-from agent_framework import Executor, WorkflowBuilder, WorkflowEvent, handler, response_handler
+from agent_framework import (
+    Executor,
+    WorkflowBuilder,
+    WorkflowEvent,
+    WorkflowEventType,
+    handler,
+    response_handler,
+)
 from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 from agent_framework_ag_ui import AgentFrameworkWorkflow
 
@@ -30,7 +37,7 @@ from .product_sessions.service import ProductSessionError, ProductSessionService
 
 
 class ProviderTransport(Protocol):
-    async def stream(self, prepared: PreparedProviderRequest) -> AsyncIterator[str]: ...
+    def stream(self, prepared: PreparedProviderRequest) -> AsyncIterator[str]: ...
 
 
 def _is_model_call_review_protocol_content(value: dict[str, Any]) -> bool:
@@ -126,7 +133,17 @@ class ModelCallApprovalExecutor(Executor, RequestInfoMixin):
             )
         add_event = getattr(ctx, "add_event", None)
         if add_event is not None:
-            await add_event(WorkflowEvent("workflow_stage", data=payload, executor_id=self.id))
+            # MAF's AG-UI bridge deliberately forwards unknown Workflow event
+            # names as CustomEvent. ``workflow_stage`` is our versioned public
+            # extension, so keep the runtime value while documenting the
+            # deliberate extension at the type boundary.
+            await add_event(
+                WorkflowEvent(
+                    cast(WorkflowEventType, "workflow_stage"),
+                    data=payload,
+                    executor_id=self.id,
+                )
+            )
 
     @handler(input=list)
     async def prepare(self, message, ctx) -> None:
@@ -374,7 +391,9 @@ def create_model_call_workflow(
     class RunTrackingWorkflow(AgentFrameworkWorkflow):
         async def run(self, input_data: dict[str, Any]):
             thread_id = self._thread_id_from_input(input_data)
-            agui_run_id = str(input_data.get("run_id") or input_data.get("runId") or f"run_{uuid.uuid4().hex}")
+            agui_run_id = str(
+                input_data.get("run_id") or input_data.get("runId") or f"run_{uuid.uuid4().hex}"
+            )
             run_ids[thread_id] = agui_run_id
             if sessions is not None:
                 try:
@@ -549,6 +568,7 @@ def create_model_call_workflow(
                                     )
                                     yield terminal_event
                                     return
+                            active_before_commit: dict[str, Any] | None = None
                             try:
                                 active_before_commit = await sessions.active_run(thread_id)
                                 if active_before_commit is not None:
@@ -556,9 +576,7 @@ def create_model_call_workflow(
                                         active_before_commit["id"],
                                         "product.commit",
                                         "in_progress",
-                                        {
-                                            "code": "ProductSessionService.complete_active_run"
-                                        },
+                                        {"code": "ProductSessionService.complete_active_run"},
                                     )
                                     yield CustomEvent(
                                         name="workflow_stage",

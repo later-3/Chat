@@ -7,9 +7,8 @@ Create Date: 2026-07-23 17:00:00
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision: str = "d84f39e71b20"
 down_revision: Union[str, Sequence[str], None] = "c3f84a1d92e7"
@@ -73,7 +72,9 @@ def upgrade() -> None:
         sa.UniqueConstraint("runtime_job_id", "sequence"),
     )
     op.create_index("ix_runtime_event_records_runtime_job_id", "runtime_event_records", ["runtime_job_id"])
-    op.create_index("ix_runtime_events_attempt_sequence", "runtime_event_records", ["run_attempt_id", "sequence"])
+    op.create_index(
+        "ix_runtime_events_attempt_sequence", "runtime_event_records", ["run_attempt_id", "sequence"]
+    )
     op.create_index(
         "uq_runtime_events_terminal",
         "runtime_event_records",
@@ -106,7 +107,11 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("scope_id", "request_key"),
     )
-    op.create_index("ix_runtime_commands_job_status", "runtime_control_commands", ["runtime_job_id", "status", "created_at"])
+    op.create_index(
+        "ix_runtime_commands_job_status",
+        "runtime_control_commands",
+        ["runtime_job_id", "status", "created_at"],
+    )
 
     op.create_table(
         "execution_workers",

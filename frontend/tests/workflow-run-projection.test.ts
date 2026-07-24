@@ -3,10 +3,7 @@ import test from "node:test";
 
 import type { ProductRun } from "../src/session-api.js";
 import type { ProductTraceEvent } from "../src/workflow-api.js";
-import {
-  deriveWorkflowRunProjection,
-  WORKFLOW_STAGES,
-} from "../src/workflow-run-projection.js";
+import { deriveWorkflowRunProjection, WORKFLOW_STAGES } from "../src/workflow-run-projection.js";
 
 function run(status: string, failureCode: string | null = null): ProductRun {
   return {
@@ -31,10 +28,7 @@ function run(status: string, failureCode: string | null = null): ProductRun {
   };
 }
 
-function stageStatus(
-  projection: ReturnType<typeof deriveWorkflowRunProjection>,
-  stageId: string,
-) {
+function stageStatus(projection: ReturnType<typeof deriveWorkflowRunProjection>, stageId: string) {
   return projection.stages.find((stage) => stage.id === stageId)?.status;
 }
 
@@ -48,7 +42,11 @@ test("设计者执行链固定展示真实代码边界且只有三个阶段属�
 });
 
 test("模型请求中断后准确停在发送前审批阶段", () => {
-  const projection = deriveWorkflowRunProjection("awaiting_approval", true, run("waiting_approval"));
+  const projection = deriveWorkflowRunProjection(
+    "awaiting_approval",
+    true,
+    run("waiting_approval"),
+  );
 
   assert.equal(projection.status, "waiting_approval");
   assert.equal(stageStatus(projection, "request.compile"), "completed");
@@ -70,7 +68,11 @@ test("用户放弃后Provider和Product提交阶段明确显示已跳过", () =>
 });
 
 test("Provider结果未知不会显示为完成且产品提交保持跳过", () => {
-  const projection = deriveWorkflowRunProjection("idle", false, run("outcome_unknown", "provider_timeout"));
+  const projection = deriveWorkflowRunProjection(
+    "idle",
+    false,
+    run("outcome_unknown", "provider_timeout"),
+  );
 
   assert.equal(projection.status, "failed");
   assert.equal(projection.statusLabel, "结果未知，需要确认");
@@ -79,7 +81,11 @@ test("Provider结果未知不会显示为完成且产品提交保持跳过", () 
 });
 
 test("Product提交门失败只把提交阶段标记为失败", () => {
-  const projection = deriveWorkflowRunProjection("idle", false, run("failed", "product_commit_failed"));
+  const projection = deriveWorkflowRunProjection(
+    "idle",
+    false,
+    run("failed", "product_commit_failed"),
+  );
 
   assert.equal(stageStatus(projection, "provider.dispatch"), "completed");
   assert.equal(stageStatus(projection, "provider.decode"), "completed");

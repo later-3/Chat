@@ -13,8 +13,8 @@ from ag_ui.core import (
     TextMessageContentEvent,
     TextMessageStartEvent,
 )
-from agent_framework_ag_ui import AgentFrameworkWorkflow
 from agent_framework import WorkflowCheckpointException
+from agent_framework_ag_ui import AgentFrameworkWorkflow
 
 from ..governance.service import (
     ExecutionGovernanceService,
@@ -24,7 +24,6 @@ from ..governance.service import (
 from ..product_sessions.service import ProductSessionError, ProductSessionService
 from .catalog import WorkflowDefinition
 from .checkpoints import CheckpointStorageFactory
-
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +56,7 @@ def _interrupt_contract(interrupt: Any) -> dict[str, str] | None:
     governance = governance if isinstance(governance, dict) else {}
     maf_request_id = str(framework.get("request_id") or getattr(interrupt, "id", "") or "")
     decision_request_id = str(
-        data.get("decision_request_id")
-        or governance.get("decision_request_id")
-        or maf_request_id
+        data.get("decision_request_id") or governance.get("decision_request_id") or maf_request_id
     )
     executor_id = str(
         execution.get("executor_id")
@@ -115,6 +112,15 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
                 # correlation value on the Product Run, but is not a database
                 # foreign key or authorization identity.
                 self._run_ids[thread_id] = accepted.product_run_id
+            if not accepted.is_resume:
+                # MAF's AG-UI adapter intentionally caches one Workflow instance
+                # per thread/snapshot scope.  Our checkpoint adapter is instead
+                # bound to one immutable Product Run.  Reusing a completed
+                # turn's Workflow would therefore persist the next turn's
+                # checkpoint under the previous Product Run.  A fresh Product
+                # Run must get a fresh runtime graph; resume requests keep (or
+                # restore) the graph that owns their checkpoint.
+                self.clear_thread_workflow(thread_id)
             if accepted.is_resume and self._checkpoint_storage_factory is not None:
                 if self._governance is None:
                     raise ProductSessionError("Checkpoint恢复缺少Execution Governance接合层")
@@ -178,15 +184,16 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
                     resumed_payload,
                 )
                 resumed_activity = ActivitySnapshotEvent(
-                    messageId=f"workflow-resumed-{resumed_node}",
-                    activityType="executor",
-                    content={
-                        key: value
-                        for key, value in resumed_payload.items()
-                        if key != "workflow_id"
-                    },
+                    message_id=f"workflow-resumed-{resumed_node}",
+                    activity_type="executor",
+                    content={key: value for key, value in resumed_payload.items() if key != "workflow_id"},
                 )
-        except (ProductSessionError, GovernanceConflict, GovernanceValidationError, WorkflowCheckpointException) as error:
+        except (
+            ProductSessionError,
+            GovernanceConflict,
+            GovernanceValidationError,
+            WorkflowCheckpointException,
+        ) as error:
             if resuming_link_id is not None and self._governance is not None:
                 try:
                     await self._governance.mark_runtime_interrupt(
@@ -255,13 +262,9 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
                         trace_payload,
                     )
                     event = ActivitySnapshotEvent(
-                        messageId=event.message_id,
-                        activityType="executor",
-                        content={
-                            key: value
-                            for key, value in trace_payload.items()
-                            if key != "workflow_id"
-                        },
+                        message_id=event.message_id,
+                        activity_type="executor",
+                        content={key: value for key, value in trace_payload.items() if key != "workflow_id"},
                     )
                 if isinstance(event, (RunFinishedEvent, RunErrorEvent)):
                     if terminal is None or isinstance(event, RunErrorEvent):
@@ -393,9 +396,7 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
                     "executor_id": waiting_executor_id,
                     "status": "in_progress",
                     "details": {
-                        "message": (
-                            "请求已准备，等待用户审批后才会继续。"
-                        ),
+                        "message": ("请求已准备，等待用户审批后才会继续。"),
                         "wait_reason": "governed_approval",
                     },
                 }
@@ -406,8 +407,8 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
                     waiting_payload,
                 )
                 yield ActivitySnapshotEvent(
-                    messageId=f"workflow-waiting-{waiting_executor_id}",
-                    activityType="executor",
+                    message_id=f"workflow-waiting-{waiting_executor_id}",
+                    activity_type="executor",
                     content={key: value for key, value in waiting_payload.items() if key != "workflow_id"},
                 )
             await self._sessions.mark_waiting_approval(thread_id)

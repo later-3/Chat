@@ -9,9 +9,16 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "check": "biome check src tests e2e playwright.config.ts --diagnostic-level=error",
+    "format": "biome format --write src tests e2e playwright.config.ts",
+    "format:check": "biome format src tests e2e playwright.config.ts",
+    "lint": "biome lint src tests e2e playwright.config.ts --diagnostic-level=error",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "test": "tsc -p tsconfig.test.json && node --test .test-dist/tests/*.test.js"
+    "test": "tsc -p tsconfig.test.json && node --test .test-dist/tests/*.test.js",
+    "test:coverage": "tsc -p tsconfig.test.json && c8 --all --include='.test-dist/src/**/*.js' --check-coverage --lines=45 --branches=60 --functions=55 --statements=45 node --test .test-dist/tests/*.test.js",
+    "test:e2e": "playwright test",
+    "test:e2e:desktop": "playwright test --project=chromium"
   },
   "dependencies": {
     "@ag-ui/client": "0.0.57",
@@ -25,10 +32,14 @@
     "zustand": "5.0.14"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
+    "@biomejs/biome": "2.5.5",
+    "@playwright/test": "1.61.1",
     "@types/node": "26.1.0",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.3",
+    "c8": "12.0.0",
     "typescript": "6.0.3",
     "vite": "8.1.5"
   }

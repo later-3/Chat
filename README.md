@@ -27,13 +27,15 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 5. 状态可恢复。
 6. 事实可追溯。
 
+对用户而言，Chat不是“记住更多聊天”，而是一个持续管理和推进个人学习、工作与想法的统一入口：想法能留下，事项有状态，隔天能继续，执行可看护，结果有证据。Project、Work、Plan、Note、Memory、规则和资源共同构成Product Harness；输入区的上下文选择界面只是这些既有信息的友好投影，不复制第二套知识源。
+
 ## 当前状态
 
 工程骨架、真实模型纵向回合和逐次模型调用审批切片已经完成：
 
 1. FastAPI、MAF和AG-UI SSE端点可运行。
 2. React前端通过`HttpAgent`完成了浏览器真实消息回合。
-3. 后端自动测试、前端类型检查和生产构建已建立为一键验证。
+3. Ruff、Pyright、Biome、覆盖率、迁移升降、后端自动测试、前端类型检查和生产构建已建立为本地与CI质量门。
 4. 后端以私有`backend/config.json`配置火山方舟和阿里云百炼，前端按Provider联动选择模型；真实模型AG-UI文本回合已通过。
 5. Product Session Phase 1文本底座已完成：SQLite/Alembic、Session/Message/Interaction/Run/Attempt、REST恢复、服务端唯一历史、失败收敛和成功终态门。
 6. 前端可创建、打开、重命名、归档和配置Session默认Provider/模型，并展示Run/Attempt摘要；没有迁移旧数据库或历史会话。
@@ -43,9 +45,10 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 10. 持续协作主Workflow已经支持Product DB持久Checkpoint、Interrupt Link和Lease Outbox Worker；实际独立OS进程可从一次已提交决定恢复到下一审批安全点。该保证暂不外推到嵌套Workflow或外部Tool副作用。
 11. ExecutionDraft已有17部分完整可读编辑工作台；保存产生新revision与Hash，必须重新审批后才能编译不可变RunSpec。
 12. Product Harness D1-D8已经落地：Project、Work、Plan/Action、Note、Memory与两阶段Context使用服务端权威Schema、CAS、幂等命令、Trace和Outbox；前端提供Project Explorer、Work Board、Knowledge和Context Inspector。
-13. 持续协作主Workflow现有25个真实MAF节点；真实模型已验证意图、响应、回合摘要3次逐次审批，简单问答不会创建Project、Work、Note或Memory。
+13. 持续协作主Workflow v1.4.0现有28个真实MAF节点；7套协作协议、不可变Context revision、TurnDigest v1、StepInputProjection和持久Intent Set已经接入。真实模型已验证2个独立目标、4次逐次模型审批、组合Plan、权威Project目录事实和无长期资源写入。
 14. Runtime Job、活动流游标和通用Execution Worker纵向切片已经完成；完整Session仍按Phase 2-8继续补齐Steer/Follow-up、分支、强退/多端矩阵、Tool副作用对账和跨入口恢复。
-15. Chat概念空间已经建立：11个概念簇统一Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、上下文结果、界面、外部入口和人工介入策略的共同语言。
+15. Chat概念空间已经建立：12个概念簇统一Chat系统/Harness、Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、上下文结果、界面、外部入口和人工介入策略的共同语言。
+16. Q0工程安全底座已有可运行纵向基线：Governance/Harness已按纯规则、只读查询、命令记录和事务协调继续拆分；Agent重连Hook、Workflow运行投影和对话呈现已有独立Feature边界；8个重型前端Feature按需加载，当前主入口为453.9 KiB并受自动包体门保护。统一Problem Detail、关联日志/Trace/Metrics/诊断、CI、覆盖率、迁移、Playwright/axe、故障实验室和供应链门均通过本地验证；大型Application Service、持续协作Workflow、生产Exporter/SLO和远端CI首次运行仍在后续范围。
 
 ## 技术方向
 
@@ -80,7 +83,8 @@ cp frontend/.env.example frontend/.env
 uv python install 3.12
 uv venv --python 3.12 .venv
 UV_PROJECT_ENVIRONMENT=.venv uv sync --frozen --dev
-(cd frontend && npm install)
+(cd frontend && npm ci)
+(cd frontend && npx playwright install chromium)
 ```
 
 `backend/config.json`是唯一后端运行配置源，包含密钥，因此已被Git忽略；不要把它的内容复制到文档、日志或提交中。
@@ -95,7 +99,7 @@ UV_PROJECT_ENVIRONMENT=.venv uv sync --frozen --dev
 终端1，启动后端：
 
 ```bash
-.venv/bin/python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8030 --reload
+.venv/bin/python -m uvicorn backend.app.asgi:app --host 127.0.0.1 --port 8030 --reload
 ```
 
 终端2，启动前端：
@@ -129,6 +133,7 @@ npm run dev
 1. `Chat Backend (MAF + FastAPI)`：后端`127.0.0.1:8030`。
 2. `Chat Frontend (React + Vite)`：前端`127.0.0.1:5073`。
 3. `Chat Full Stack`：同时启动前后端。
+4. `Chat Distributed Stack`：API、Execution Worker、Outbox Worker和前端4个独立调试进程。
 
 每个配置在启动前和停止后都会调用`scripts/cleanup-dev.sh`：
 
@@ -138,26 +143,47 @@ npm run dev
 
 清理目标严格限定为端口`8030`、`5073`和当前项目路径，不使用宽泛的Python、Node或OPC-OS进程名匹配。
 
-## 一键验证
+运行诊断入口不会输出消息、Prompt、Provider Payload或Checkpoint正文：
 
 ```bash
+.venv/bin/python -m backend.app.diagnostics_cli
+.venv/bin/python -m backend.app.diagnostics_cli --run-id <product-run-id>
+```
+
+HTTP探针分别为`/api/live`（进程存活）、`/api/ready`（Product Store可用）、`/api/diagnostics/operations`（Job/Outbox/Worker积压）和`/api/diagnostics/metrics`（进程内计数与耗时）。
+
+## 一键验证
+
+快速反馈和完整验证分别使用：
+
+```bash
+./scripts/verify-fast.sh
+./scripts/verify-fault-lab.sh
 ./scripts/verify.sh
 ```
 
-该命令依次执行：
+快速门执行概念与密钥检查、格式、Lint、类型、编译、后端测试和前端逻辑测试。完整门在此基础上还执行：
 
-1. 概念空间结构与链接检查。
-2. Python编译检查。
-3. 后端测试。
-4. 前端逻辑测试与TypeScript检查。
-5. 前端生产构建。
+1. 后端分支覆盖率门和机器可读`coverage.xml`。
+2. 在临时SQLite数据库上执行Alembic`upgrade -> check -> downgrade base -> upgrade`，不接触私有Product Store。
+3. 前端生产构建、Vite manifest包体/按需Feature回归、桌面/窄屏Playwright真实浏览器回合和axe可访问性检查。
+
+故障实验室单独运行10项高风险并发、Checkpoint/HITL、Runtime Cursor和长跨度Harness场景，并把JUnit证据写入`.artifacts/fault-lab.xml`。
+
+GitHub Actions使用Python 3.12、Node 22、`uv.lock`和`package-lock.json`运行同一完整门。普通质量门不读取`backend/config.json`，也不发起真实模型调用。
+
+依赖漏洞和许可证门需要联网查询漏洞库，因此与离线可重复的功能验证分开：
+
+```bash
+./scripts/verify-supply-chain.sh
+```
 
 ## 目录结构
 
 ```text
-backend/app/      FastAPI配置、MAF Agent与AG-UI端点
+backend/app/      组合根、FastAPI边界、产品服务、MAF Workflow与运行适配
 backend/tests/    后端合同和事件流测试
-frontend/src/    React界面、HttpAgent投影与页面状态
+frontend/src/    React界面、Feature API、HttpAgent投影与页面状态
 scripts/         可重复执行的工程验证
 概念空间/       Chat概念治理、索引、概念簇和结构校验
 ```
@@ -181,7 +207,17 @@ scripts/         可重复执行的工程验证
 15. [pi Agent Tool使用与运行手册](./docs/pi-agent-tool.md)：JSONL RPC选型、两道审批门、配置、监控、恢复语义和验证方法。
 16. [Workflow恢复与Outbox Worker运行说明](./docs/runtime-recovery-operations.md)：单/双进程部署、日志、重试、死信和升级门。
 17. [Product Harness、Work与Memory详细设计](./docs/product-harness-detailed-design.md)：已批准D1-D8、状态机、Agent工具、两阶段Context和长跨度场景验收基线。
+18. [产品级工程审计](./docs/product-engineering-audit-2026-07-23.md)：代码结构、质量门、API合同、日志、调试、测试、文档和参考项目对照。
+19. [产品能力与工程质量Todo](./docs/product-engineering-backlog.md)：15项Todo的用户场景、目标、方案级做法、验证和完成门。
+20. [工程质量门与故障实验室](./docs/quality-gates.md)：快速门、完整门、覆盖率、浏览器和高风险故障矩阵。
+21. [关键依赖升级手册](./docs/dependency-upgrade-runbook.md)：MAF、AG-UI、pi和Provider脆弱接合、升级步骤与回退门。
+22. [应用组合根ADR](./docs/adr/0001-application-composition-and-process-entrypoints.md)与[可观测性ADR](./docs/adr/0002-observability-and-sensitive-data-boundary.md)：当前工程边界的原因、不变量和验证。
+23. [工程编码与模块设计规范](./docs/engineering-standards.md)：适度模块规则、事务所有权、注释/日志边界、有界Context、步骤级执行工作包、规模审查与场景驱动完成门。
+24. [Chat愿景方案与完整场景模拟验证](./docs/chat-vision-scenario-validation.md)：已获方向审核的协作协议、执行层输入、用户看护、12个端到端场景、24个异常场景和分阶段测试矩阵。
+25. [Chat系统分阶段实现基线](./docs/chat-system-implementation-roadmap.md)：Chat Harness、MAF AI Runtime、执行层、前端边界以及阶段A-F的交付与验证门。
+26. [Chat持续协作系统研究与落地推导](./docs/chat-collaboration-system-research.md)：项目/任务/学习/笔记方法，MAF与参考项目源码事实，摘要、检索、SQLite和协议落地取舍。
+27. [Kimi Code CLI开发工具手册](./docs/kimi-code-cli-tool.md)：已验证版本、个人Codex Skill、只读调用、交互式修改和未来ACP产品接入边界。
 
 ## 下一步
 
-下一步进入Session活动流游标与通用Execution Worker详细设计，并继续独立Evidence/Provenance与Tool副作用对账；不能把Governance Outbox和主Workflow安全点恢复外推为完整R5/R6。
+下一阶段继续完成多Intent的长期`TaskPlanRevision`接合、独立Branch Execution、部分成功与Evidence；工程上继续按真实事务与变化原因拆分Governance/Harness命令协调和持续协作Workflow Executor，并补齐前端流式性能与人工键盘/读屏体验。Intent Set和组合Plan已完成、自动质量绿灯、Governance Outbox、Runtime纵向切片和主Workflow安全点恢复仍不能外推为完整Tool、Evidence或通用R6恢复。

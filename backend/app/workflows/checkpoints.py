@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any
 
 from agent_framework import WorkflowCheckpoint, WorkflowCheckpointException
 from agent_framework._workflows._checkpoint_encoding import (  # pyright: ignore[reportPrivateUsage]
@@ -22,7 +21,6 @@ from sqlalchemy import select
 
 from ..governance.models import MafWorkflowCheckpointRecord
 from ..product_sessions.database import ProductDatabase, RunAttemptRecord
-
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +34,8 @@ _ALLOWED_APPLICATION_CHECKPOINT_TYPES = frozenset(
 
 class ProductCheckpointConflict(WorkflowCheckpointException):
     """The checkpoint exists but is not valid for the requested Product scope."""
+
+    code = "WORKFLOW_CHECKPOINT_CONFLICT"
 
 
 class ProductWorkflowCheckpointStorage:
@@ -54,7 +54,9 @@ class ProductWorkflowCheckpointStorage:
         self.product_run_id = product_run_id
         self.workflow_definition_id = workflow_definition_id
         self.workflow_version = workflow_version
-        self._allowed_types = frozenset(allowed_checkpoint_types or ()) | _ALLOWED_APPLICATION_CHECKPOINT_TYPES
+        self._allowed_types = (
+            frozenset(allowed_checkpoint_types or ()) | _ALLOWED_APPLICATION_CHECKPOINT_TYPES
+        )
 
     async def save(self, checkpoint: WorkflowCheckpoint) -> str:
         encoded = encode_checkpoint_value(checkpoint.to_dict())

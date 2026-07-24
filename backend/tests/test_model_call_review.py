@@ -24,14 +24,19 @@ from backend.app.model_call_review import (
     compile_provider_request,
     provider_endpoint,
 )
-from backend.app.model_providers import ModelOption, ModelProviderCatalog, ModelProviderConfig
+from backend.app.model_call_workflow import (
+    ModelCallApprovalExecutor,
+    normalize_agui_messages_for_provider,
+)
 from backend.app.model_providers import (
-    DEFAULT_MODEL_CAPABILITIES,
     CHAT_COMPLETIONS_MODEL_CAPABILITIES,
+    DEFAULT_MODEL_CAPABILITIES,
     ModelCapabilities,
+    ModelOption,
+    ModelProviderCatalog,
+    ModelProviderConfig,
     ParameterCapability,
 )
-from backend.app.model_call_workflow import ModelCallApprovalExecutor, normalize_agui_messages_for_provider
 from backend.app.product_sessions import ProductDatabase, ProductSessionService
 
 
@@ -237,9 +242,7 @@ def _create_product_session(client: TestClient) -> str:
 
 def _text(events: list[dict[str, Any]]) -> str:
     return "".join(
-        str(event.get("delta", ""))
-        for event in events
-        if event.get("type") == "TEXT_MESSAGE_CONTENT"
+        str(event.get("delta", "")) for event in events if event.get("type") == "TEXT_MESSAGE_CONTENT"
     )
 
 
@@ -421,9 +424,7 @@ def test_context_sources_and_section_token_estimates_follow_the_revised_request(
 
     edited = copy.deepcopy(first.provider_request)
     edited["input"][0]["content"][0]["text"] = "用户修改过的历史问题"
-    edited["input"].append(
-        {"role": "developer", "content": [{"type": "input_text", "text": "手动补充约束"}]}
-    )
+    edited["input"].append({"role": "developer", "content": [{"type": "input_text", "text": "手动补充约束"}]})
     revised = store.revise(
         draft_id=first.draft_id,
         expected_hash=first.binding_hash,
@@ -687,8 +688,7 @@ def test_provider_validation_error_exposes_only_bounded_structured_detail() -> N
     ).encode()
     message = _safe_provider_status_error(400, body)
     assert message == (
-        "Provider请求失败: HTTP 400: "
-        "invalid_request | validation_error | tools must be omitted when empty"
+        "Provider请求失败: HTTP 400: invalid_request | validation_error | tools must be omitted when empty"
     )
 
 
@@ -711,9 +711,7 @@ def test_agui_revision_requires_second_approval_and_sends_exact_edited_bytes() -
             {
                 "model": "provider-b-model",
                 "instructions": "所有内容均由用户审核修改",
-                "input": [
-                    {"role": "user", "content": [{"type": "input_text", "text": "最终发送内容"}]}
-                ],
+                "input": [{"role": "user", "content": [{"type": "input_text", "text": "最终发送内容"}]}],
                 "tools": [],
                 "tool_choice": "none",
                 "reasoning": {"effort": "low"},
@@ -762,9 +760,9 @@ def test_agui_revision_requires_second_approval_and_sends_exact_edited_bytes() -
             )
         )
         completed_run = client.get(f"/api/sessions/{thread_id}/runs").json()["runs"][0]
-        completed_trace = client.get(
-            f"/api/sessions/{thread_id}/runs/{completed_run['id']}/trace"
-        ).json()["trace"]
+        completed_trace = client.get(f"/api/sessions/{thread_id}/runs/{completed_run['id']}/trace").json()[
+            "trace"
+        ]
 
     assert _text(sent_events) == "修改后的模型回答"
     assert len(transport.prepared) == 1
@@ -818,9 +816,9 @@ def test_abandon_creates_zero_provider_attempts_and_preserves_origin_prompt() ->
         product_messages = client.get(f"/api/sessions/{thread_id}/messages").json()["messages"]
         product_runs = client.get(f"/api/sessions/{thread_id}/runs").json()["runs"]
         product_session = client.get(f"/api/sessions/{thread_id}").json()
-        abandoned_trace = client.get(
-            f"/api/sessions/{thread_id}/runs/{product_runs[0]['id']}/trace"
-        ).json()["trace"]
+        abandoned_trace = client.get(f"/api/sessions/{thread_id}/runs/{product_runs[0]['id']}/trace").json()[
+            "trace"
+        ]
 
         workflow_events = _events(
             client.post(
@@ -842,9 +840,7 @@ def test_abandon_creates_zero_provider_attempts_and_preserves_origin_prompt() ->
                 },
             )
         )
-        messages_after_workflow = client.get(
-            f"/api/sessions/{thread_id}/messages"
-        ).json()["messages"]
+        messages_after_workflow = client.get(f"/api/sessions/{thread_id}/messages").json()["messages"]
 
     assert "未向模型发送" in _text(abandoned)
     event_types = [event.get("type") for event in abandoned]
@@ -883,9 +879,7 @@ def test_second_model_approval_uses_product_history_exactly_once() -> None:
 
     with TestClient(app) as client:
         thread_id = _create_product_session(client)
-        first_events = _events(
-            client.post("/api/agent", json=_request(thread_id, "run-first", "第一轮问题"))
-        )
+        first_events = _events(client.post("/api/agent", json=_request(thread_id, "run-first", "第一轮问题")))
         first_card = _review_card(_interrupt(first_events))
         completed = _events(
             client.post(
@@ -965,9 +959,7 @@ def test_provider_failure_is_the_last_agui_event() -> None:
 
 def test_product_commit_gate_replaces_provider_success_with_run_error() -> None:
     store = InMemoryModelCallReviewStore(_provider_catalog())
-    sessions = RefusingCommitSessionService(
-        ProductDatabase("sqlite+aiosqlite:///:memory:")
-    )
+    sessions = RefusingCommitSessionService(ProductDatabase("sqlite+aiosqlite:///:memory:"))
     app = create_app(
         _model_settings(),
         model_call_store=store,
@@ -976,9 +968,7 @@ def test_product_commit_gate_replaces_provider_success_with_run_error() -> None:
     )
     with TestClient(app) as client:
         thread_id = _create_product_session(client)
-        paused = _events(
-            client.post("/api/agent", json=_request(thread_id, "run-commit-gate", "提交门验证"))
-        )
+        paused = _events(client.post("/api/agent", json=_request(thread_id, "run-commit-gate", "提交门验证")))
         card = _review_card(_interrupt(paused))
         failed = _events(
             client.post(
@@ -1043,9 +1033,7 @@ def test_timeout_like_failure_is_not_retried_and_is_exposed_as_outcome_unknown()
     }
     assert [value["role"] for value in product_messages] == ["user"]
     assert product_runs[0]["status"] == "outcome_unknown"
-    assert [value["status"] for value in product_runs[0]["attempts"]] == [
-        "outcome_unknown"
-    ]
+    assert [value["status"] for value in product_runs[0]["attempts"]] == ["outcome_unknown"]
     assert product_session["active_run_id"] is None
 
 

@@ -22,8 +22,8 @@ from agent_framework import (
 )
 from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 from agent_framework_ag_ui import (
-    AGUIThreadSnapshot,
     AgentFrameworkWorkflow,
+    AGUIThreadSnapshot,
     add_agent_framework_fastapi_endpoint,
 )
 from fastapi import FastAPI
@@ -279,7 +279,9 @@ class _SQLiteContractStore:
             if old is None or old["status"] != "pending_approval" or old["approval_status"] != "pending":
                 connection.rollback()
                 raise ValueError("Only the current pending draft can be revised.")
-            connection.execute("UPDATE spike_drafts SET status='superseded' WHERE draft_id=?", (old_draft_id,))
+            connection.execute(
+                "UPDATE spike_drafts SET status='superseded' WHERE draft_id=?", (old_draft_id,)
+            )
             connection.execute(
                 "UPDATE spike_approvals SET status='superseded' WHERE approval_id=?",
                 (old["approval_id"],),
@@ -401,7 +403,9 @@ class _SQLiteContractStore:
             if changed != 1:
                 connection.rollback()
                 return False
-            connection.execute("UPDATE spike_drafts SET status='dispatching' WHERE draft_id=?", (row["draft_id"],))
+            connection.execute(
+                "UPDATE spike_drafts SET status='dispatching' WHERE draft_id=?", (row["draft_id"],)
+            )
             connection.execute("UPDATE spike_runs SET status='running' WHERE run_id=?", (row["run_id"],))
             connection.execute(
                 "INSERT INTO spike_audit(thread_id, kind, value) VALUES (?, 'attempt_claimed', ?)",
@@ -445,8 +449,12 @@ class _SQLiteContractStore:
             if row is None:
                 connection.rollback()
                 raise ValueError("Approval is not pending.")
-            connection.execute("UPDATE spike_approvals SET status='rejected' WHERE approval_id=?", (approval_id,))
-            connection.execute("UPDATE spike_drafts SET status='rejected' WHERE draft_id=?", (row["draft_id"],))
+            connection.execute(
+                "UPDATE spike_approvals SET status='rejected' WHERE approval_id=?", (approval_id,)
+            )
+            connection.execute(
+                "UPDATE spike_drafts SET status='rejected' WHERE draft_id=?", (row["draft_id"],)
+            )
             connection.execute("UPDATE spike_runs SET status='rejected' WHERE run_id=?", (row["run_id"],))
             connection.execute(
                 "UPDATE spike_runtime_links SET checkpoint_id=NULL WHERE thread_id=?",
@@ -481,7 +489,9 @@ class _SQLiteContractStore:
 
     def clear_checkpoint(self, thread_id: str) -> None:
         with self._connect() as connection:
-            connection.execute("UPDATE spike_runtime_links SET checkpoint_id=NULL WHERE thread_id=?", (thread_id,))
+            connection.execute(
+                "UPDATE spike_runtime_links SET checkpoint_id=NULL WHERE thread_id=?", (thread_id,)
+            )
 
     def get(self, table: str, key_name: str, key: str) -> dict[str, Any]:
         allowed = {
@@ -591,7 +601,9 @@ class _ApprovalExecutor(Executor, RequestInfoMixin):
                 await ctx.yield_output("MODEL_SEND_SKIPPED_DUPLICATE")
                 return
             store.mark_sent(approval_id)
-            await ctx.yield_output(f"MODEL_SENT:{original_request['provider_request']['input'][-1]['content'][0]['text']}")
+            await ctx.yield_output(
+                f"MODEL_SENT:{original_request['provider_request']['input'][-1]['content'][0]['text']}"
+            )
             return
         if action == "revise":
             new_draft_id = str(decision["revision_draft_id"])
@@ -652,7 +664,11 @@ class _CheckpointReconnectWorkflow(AgentFrameworkWorkflow):
         workflow = self._resolve_workflow(thread_id, snapshot_scope)
         resume_entries = self._resume_entries(input_data)
         if resume_entries and not await self._pending_ids(workflow):
-            approval_id = str(resume_entries[0].get("interrupt_id") or resume_entries[0].get("interruptId") or resume_entries[0].get("id"))
+            approval_id = str(
+                resume_entries[0].get("interrupt_id")
+                or resume_entries[0].get("interruptId")
+                or resume_entries[0].get("id")
+            )
             checkpoint_id = self._contract_store.checkpoint_for(thread_id, approval_id)
             if checkpoint_id is None:
                 raise RuntimeError("Product runtime link has no MAF checkpoint for this approval.")
@@ -712,7 +728,9 @@ def _interrupts(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _text(events: list[dict[str, Any]]) -> str:
-    return "".join(str(event.get("delta", "")) for event in events if event.get("type") == "TEXT_MESSAGE_CONTENT")
+    return "".join(
+        str(event.get("delta", "")) for event in events if event.get("type") == "TEXT_MESSAGE_CONTENT"
+    )
 
 
 def _process_http_requests(
@@ -804,10 +822,14 @@ def test_streaming_provider_dispatches_the_exact_approved_body_bytes() -> None:
             header_bytes = await reader.readuntil(b"\r\n\r\n")
             headers = header_bytes.decode("latin-1").split("\r\n")
             content_length = int(
-                next(line.split(":", 1)[1].strip() for line in headers if line.lower().startswith("content-length:"))
+                next(
+                    line.split(":", 1)[1].strip()
+                    for line in headers
+                    if line.lower().startswith("content-length:")
+                )
             )
             captured_bodies.append(await reader.readexactly(content_length))
-            event_body = "data: {\"delta\":\"第一段\"}\n\ndata: {\"delta\":\"第二段\"}\n\n".encode()
+            event_body = 'data: {"delta":"第一段"}\n\ndata: {"delta":"第二段"}\n\n'.encode()
             writer.write(
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: text/event-stream\r\n"
@@ -1008,7 +1030,9 @@ def test_reject_ends_the_call_and_later_send_starts_a_new_run(tmp_path: Path) ->
     app = _build_spike_app(str(db_path), str(checkpoint_dir))
 
     with TestClient(app) as client:
-        paused = _decode_sse(client.post("/agent", json=_message_request(thread_id, rejected["run_id"], "开始")))
+        paused = _decode_sse(
+            client.post("/agent", json=_message_request(thread_id, rejected["run_id"], "开始"))
+        )
         assert _interrupts(paused)[0]["id"] == rejected["approval_id"]
 
         rejected_events = _decode_sse(

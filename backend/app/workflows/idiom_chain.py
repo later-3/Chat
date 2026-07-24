@@ -8,7 +8,13 @@ import re
 from dataclasses import asdict, dataclass, replace
 from typing import Any, Callable
 
-from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler, response_handler
+from agent_framework import (
+    Executor,
+    WorkflowBuilder,
+    WorkflowContext,
+    handler,
+    response_handler,
+)
 from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 
 from ..agent_profiles import AgentProfileSnapshot
@@ -18,9 +24,11 @@ from ..model_call_review import (
     PreparedProviderRequest,
     ProviderDispatchError,
 )
-from ..model_call_workflow import ProviderTransport, normalize_agui_messages_for_provider
+from ..model_call_workflow import (
+    ProviderTransport,
+    normalize_agui_messages_for_provider,
+)
 from ..product_sessions.service import ProductSessionService
-
 
 WORKFLOW_ID = "governed-idiom-chain"
 FOUR_CHINESE = re.compile(r"[\u4e00-\u9fff]{4}")

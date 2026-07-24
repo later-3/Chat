@@ -2,27 +2,28 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
-from typing import Any
+from collections.abc import Awaitable, Mapping
+from typing import Any, Literal, overload
 from uuid import uuid4
 
 from agent_framework import (
     Agent,
     AgentResponse,
     AgentResponseUpdate,
+    AgentRunInputs,
     AgentSession,
     BaseAgent,
     Content,
     Message,
+    ResponseStream,
+    SupportsAgentRun,
 )
 from agent_framework.openai import OpenAIChatClient
 
 from .config import Settings
 
-
 BOOTSTRAP_RESPONSE = (
-    "AG-UI 已连接到 Microsoft Agent Framework。"
-    "当前未配置模型密钥，因此由确定性启动 Agent 返回此消息。"
+    "AG-UI 已连接到 Microsoft Agent Framework。当前未配置模型密钥，因此由确定性启动 Agent 返回此消息。"
 )
 
 
@@ -34,22 +35,43 @@ class BootstrapAgent(BaseAgent):
     state. It must therefore never be treated as proof of Session recovery.
     """
 
-    async def run(
+    @overload
+    def run(
         self,
-        messages: Message | Sequence[Message] | None = None,
+        messages: AgentRunInputs | None = None,
+        *,
+        stream: Literal[False] = False,
+        session: AgentSession | None = None,
+        function_invocation_kwargs: Mapping[str, Any] | None = None,
+        client_kwargs: Mapping[str, Any] | None = None,
+    ) -> Awaitable[AgentResponse[Any]]: ...
+
+    @overload
+    def run(
+        self,
+        messages: AgentRunInputs | None = None,
+        *,
+        stream: Literal[True],
+        session: AgentSession | None = None,
+        function_invocation_kwargs: Mapping[str, Any] | None = None,
+        client_kwargs: Mapping[str, Any] | None = None,
+    ) -> ResponseStream[AgentResponseUpdate, AgentResponse[Any]]: ...
+
+    def run(
+        self,
+        messages: AgentRunInputs | None = None,
         *,
         stream: bool = False,
         session: AgentSession | None = None,
-        function_invocation_kwargs: dict[str, Any] | None = None,
-        client_kwargs: dict[str, Any] | None = None,
-        **_: Any,
-    ) -> AgentResponse | AsyncIterator[AgentResponseUpdate]:
+        function_invocation_kwargs: Mapping[str, Any] | None = None,
+        client_kwargs: Mapping[str, Any] | None = None,
+    ) -> Awaitable[AgentResponse[Any]] | ResponseStream[AgentResponseUpdate, AgentResponse[Any]]:
         del messages, session, function_invocation_kwargs, client_kwargs
         response_id = f"bootstrap-{uuid4()}"
         message_id = f"message-{uuid4()}"
         if stream:
 
-            async def updates() -> AsyncIterator[AgentResponseUpdate]:
+            async def updates():
                 # A real MAF streaming update is required so the AG-UI bridge is
                 # tested instead of being bypassed by a custom HTTP response.
                 yield AgentResponseUpdate(
@@ -60,15 +82,25 @@ class BootstrapAgent(BaseAgent):
                     message_id=message_id,
                 )
 
-            return updates()
-        return AgentResponse(
-            messages=[Message(role="assistant", contents=[BOOTSTRAP_RESPONSE], message_id=message_id)],
-            response_id=response_id,
-            agent_id=self.id,
-        )
+            return ResponseStream(updates(), finalizer=AgentResponse.from_updates)
+
+        async def response() -> AgentResponse[Any]:
+            return AgentResponse(
+                messages=[
+                    Message(
+                        role="assistant",
+                        contents=[BOOTSTRAP_RESPONSE],
+                        message_id=message_id,
+                    )
+                ],
+                response_id=response_id,
+                agent_id=self.id,
+            )
+
+        return response()
 
 
-def create_agent(settings: Settings) -> BaseAgent:
+def create_agent(settings: Settings) -> SupportsAgentRun:
     """Build either the offline verifier or the provider-backed primary Agent.
 
     Session stores and product repositories are intentionally absent here until
@@ -92,8 +124,7 @@ def create_agent(settings: Settings) -> BaseAgent:
         name="Chat",
         description="Primary agent for the independent Chat product.",
         instructions=(
-            "你是 Later 的 Chat 协作助手。"
-            "使用中文直接回答，明确区分已知事实、候选和需要用户确认的事项。"
+            "你是 Later 的 Chat 协作助手。使用中文直接回答，明确区分已知事实、候选和需要用户确认的事项。"
         ),
         client=client,
     )

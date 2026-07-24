@@ -13,12 +13,11 @@ from .model_providers import (
     DEFAULT_MODEL_CAPABILITIES,
     ModelCapabilities,
     ModelOption,
-    ParameterCapability,
     ModelProviderCatalog,
     ModelProviderCatalogError,
     ModelProviderConfig,
+    ParameterCapability,
 )
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = PROJECT_ROOT / "backend"
@@ -28,6 +27,19 @@ DEFAULT_DATABASE_URL = f"sqlite+aiosqlite:///{(BACKEND_ROOT / '.data' / 'chat.db
 
 class SettingsError(ValueError):
     """The backend JSON configuration is missing required structure or values."""
+
+    code = "SETTINGS_INVALID"
+
+
+@dataclass(frozen=True, slots=True)
+class ObservabilitySettings:
+    """Safe process logging and telemetry destinations."""
+
+    log_level: str = "INFO"
+    log_format: str = "console"
+    log_file: Path | None = None
+    log_max_bytes: int = 10 * 1024 * 1024
+    log_backup_count: int = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +103,40 @@ def _boolean(value: object, *, field: str, default: bool) -> bool:
     return value
 
 
+def _observability(payload: dict[str, Any]) -> ObservabilitySettings:
+    raw = _record(payload.get("observability", {}), field="observability")
+    log_level = str(raw.get("log_level") or "INFO").strip().upper()
+    if log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+        raise SettingsError("observability.log_level必须是有效日志级别")
+    log_format = str(raw.get("log_format") or "console").strip().lower()
+    if log_format not in {"console", "json"}:
+        raise SettingsError("observability.log_format必须是console或json")
+    # Runtime configuration always receives a durable log destination. Tests
+    # can still opt out explicitly by constructing ObservabilitySettings with
+    # ``log_file=None`` instead of loading the production JSON configuration.
+    raw_log_file = raw.get("log_file") or "backend/.data/logs/chat.jsonl"
+    log_file = Path(str(raw_log_file)).expanduser()
+    if not log_file.is_absolute():
+        log_file = PROJECT_ROOT / log_file
+    log_file = log_file.resolve()
+    try:
+        log_max_bytes = int(raw.get("log_max_bytes", 10 * 1024 * 1024))
+        log_backup_count = int(raw.get("log_backup_count", 5))
+    except (TypeError, ValueError) as error:
+        raise SettingsError("observability日志轮转参数必须是整数") from error
+    if log_max_bytes < 64 * 1024:
+        raise SettingsError("observability.log_max_bytes不能小于65536")
+    if not 1 <= log_backup_count <= 20:
+        raise SettingsError("observability.log_backup_count必须在1到20之间")
+    return ObservabilitySettings(
+        log_level=log_level,
+        log_format=log_format,
+        log_file=log_file,
+        log_max_bytes=log_max_bytes,
+        log_backup_count=log_backup_count,
+    )
+
+
 def _string_tuple(value: object, *, field: str, fallback: tuple[str, ...]) -> tuple[str, ...]:
     if value is None:
         return fallback
@@ -115,9 +161,7 @@ def _parameter_capabilities(
         key = str(raw.get("key") or "").strip()
         value_type = str(raw.get("value_type") or "").strip()
         if not key or value_type not in {"boolean", "integer", "number", "enum", "object_enum"}:
-            raise ModelProviderCatalogError(
-                f"{field}[{index}]必须提供key和有效value_type"
-            )
+            raise ModelProviderCatalogError(f"{field}[{index}]必须提供key和有效value_type")
         choices = _string_tuple(
             raw.get("choices"),
             field=f"{field}[{index}].choices",
@@ -167,9 +211,7 @@ def _model_capabilities(
         content_map = {role: tuple(types) for role, types in fallback.content_types_by_role}
         if raw.get("image_input") is True and "user" in roles:
             image_type = "image_url" if "text" in content_map.get("user", ()) else "input_image"
-            content_map["user"] = tuple(
-                dict.fromkeys((*content_map.get("user", ()), image_type))
-            )
+            content_map["user"] = tuple(dict.fromkeys((*content_map.get("user", ()), image_type)))
         content_types = tuple((role, content_map.get(role, ())) for role in roles)
     else:
         content_record = _record(raw_content_types, field=f"{field}.content_types_by_role")
@@ -231,9 +273,7 @@ def _model_options(
         else:
             raise ModelProviderCatalogError("模型目录项必须是字符串或{id,label}对象")
         if model_id:
-            options.append(
-                ModelOption(id=model_id, label=label or model_id, capabilities=capabilities)
-            )
+            options.append(ModelOption(id=model_id, label=label or model_id, capabilities=capabilities))
     return tuple(options)
 
 
@@ -333,15 +373,12 @@ def _pi_runtime(payload: dict[str, Any], *, host: str, port: int) -> PiRuntimeSe
     if enabled and not roots:
         raise SettingsError("启用pi_agent时必须配置allowed_working_roots")
     if roots and not any(
-        default_working_directory == root or default_working_directory.is_relative_to(root)
-        for root in roots
+        default_working_directory == root or default_working_directory.is_relative_to(root) for root in roots
     ):
         raise SettingsError("pi_agent.default_working_directory不在允许的工作目录内")
     gateway_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
     gateway_origin = str(raw.get("gateway_origin") or f"http://{gateway_host}:{port}").rstrip("/")
-    if enabled and not gateway_origin.startswith(
-        ("http://127.0.0.1", "http://localhost", "http://[::1]")
-    ):
+    if enabled and not gateway_origin.startswith(("http://127.0.0.1", "http://localhost", "http://[::1]")):
         raise SettingsError("pi_agent.gateway_origin必须是本机HTTP地址")
     return PiRuntimeSettings(
         enabled=enabled,
@@ -377,6 +414,7 @@ class Settings:
     default_model_provider: str | None = None
     database_url: str = DEFAULT_DATABASE_URL
     pi_runtime: PiRuntimeSettings = PiRuntimeSettings()
+    observability: ObservabilitySettings = ObservabilitySettings()
 
     @property
     def runtime_mode(self) -> str:
@@ -447,6 +485,7 @@ class Settings:
             default_model_provider=default_provider_id,
             database_url=str(product_store.get("url") or DEFAULT_DATABASE_URL),
             pi_runtime=pi_runtime,
+            observability=_observability(payload),
         )
 
     @classmethod
@@ -460,4 +499,5 @@ class Settings:
             model_base_url=None,
             database_url="sqlite+aiosqlite:///:memory:",
             pi_runtime=PiRuntimeSettings(),
+            observability=ObservabilitySettings(log_level="WARNING", log_file=None),
         )

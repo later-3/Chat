@@ -2,11 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  type ProductMessage,
   sessionControlForwardedProps,
   toAguiMessages,
-  type ProductMessage,
 } from "../src/session-api.js";
-
 
 function productMessage(
   ordinal: number,
@@ -29,7 +28,6 @@ function productMessage(
   };
 }
 
-
 test("Product Message恢复为AG-UI投影时保留稳定消息ID、角色和内容", () => {
   const values = toAguiMessages([
     productMessage(1, "user", "第一问"),
@@ -42,7 +40,6 @@ test("Product Message恢复为AG-UI投影时保留稳定消息ID、角色和内�
   ]);
 });
 
-
 test("前端恢复投影不把Product主键冒充AG-UI message id", () => {
   const [value] = toAguiMessages([productMessage(1, "user", "保持ID边界")]);
 
@@ -50,10 +47,8 @@ test("前端恢复投影不把Product主键冒充AG-UI message id", () => {
   assert.notEqual(value.id, "product-1");
 });
 
-
 test("失败重试控制显式携带来源Run和retry/restart语义", () => {
-  assert.deepEqual(
-    sessionControlForwardedProps({ kind: "restart", sourceRunId: "failed-run" }),
-    { sessionControl: { kind: "restart", sourceRunId: "failed-run" } },
-  );
+  assert.deepEqual(sessionControlForwardedProps({ kind: "restart", sourceRunId: "failed-run" }), {
+    sessionControl: { kind: "restart", sourceRunId: "failed-run" },
+  });
 });

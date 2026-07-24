@@ -3,19 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import os
-import re
 from dataclasses import asdict, dataclass, replace
 from typing import Any, Callable, Mapping
 
 from agent_framework import (
-    Case,
     CheckpointStorage,
-    Default,
     Executor,
-    WorkflowBuilder,
     WorkflowContext,
     handler,
     response_handler,
@@ -23,6 +18,8 @@ from agent_framework import (
 from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 
 from ..agent_profiles import AgentProfileSnapshot
+from ..collaboration_intents import CollaborationIntentService
+from ..collaboration_protocols import CollaborationProtocolService
 from ..governance.service import ExecutionGovernanceService, GovernanceConflict
 from ..harness import HarnessService
 from ..model_call_review import (
@@ -32,178 +29,74 @@ from ..model_call_review import (
     PreparedProviderRequest,
     ProviderDispatchError,
 )
-from ..model_call_workflow import ProviderTransport, normalize_agui_messages_for_provider
+from ..model_call_workflow import (
+    ProviderTransport,
+    normalize_agui_messages_for_provider,
+)
 from ..product_sessions.service import ProductSessionService
-
+from ..step_inputs import StepInputProjectionService
+from .continuous_chat_contracts import (
+    CollaborationState,
+)
+from .continuous_chat_contracts import (
+    apply_intent_set_protocol_overlay as _apply_intent_set_protocol_overlay,
+)
+from .continuous_chat_contracts import (
+    canonical_hash as _hash,
+)
+from .continuous_chat_contracts import (
+    context_keywords as _context_keywords,
+)
+from .continuous_chat_contracts import (
+    evaluate_scenario_route as _evaluate_scenario_route,
+)
+from .continuous_chat_contracts import (
+    is_pending_clarification as _is_pending_clarification,
+)
+from .continuous_chat_contracts import (
+    is_project_catalog_query as _is_project_catalog_query,
+)
+from .continuous_chat_contracts import (
+    is_project_catalog_state as _is_project_catalog_state,
+)
+from .continuous_chat_contracts import (
+    json_object as _json_object,
+)
+from .continuous_chat_contracts import (
+    message_text as _message_text,
+)
+from .continuous_chat_contracts import (
+    needs_plan as _needs_plan,
+)
+from .continuous_chat_contracts import (
+    normalize_intent_candidates as _normalize_intent_candidates,
+)
+from .continuous_chat_contracts import (
+    project_catalog_intent as _project_catalog_intent,
+)
+from .continuous_chat_contracts import (
+    project_hint as _project_hint,
+)
+from .continuous_chat_contracts import (
+    render_project_catalog_result as _render_project_catalog_result,
+)
+from .continuous_chat_contracts import (
+    state_from_snapshot as _state_from_snapshot,
+)
+from .continuous_chat_factory import (
+    ContinuousWorkflowComponents,
+    build_continuous_collaboration_workflow,
+)
 
 WORKFLOW_ID = "continuous-collaboration"
-WORKFLOW_VERSION = "1.2.0"
-JSON_FENCE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE)
-
-
-@dataclass(frozen=True, slots=True)
-class CollaborationState:
-    origin_prompt: str
-    recent_turn_summaries: tuple[dict[str, Any], ...] = ()
-    project_candidates: tuple[str, ...] = ()
-    project_matches: tuple[dict[str, Any], ...] = ()
-    context_items: tuple[dict[str, Any], ...] = ()
-    directory_context_package_id: str | None = None
-    detail_context_package_id: str | None = None
-    selected_project_id: str | None = None
-    intent: dict[str, Any] | None = None
-    scenario: str = "clarify"
-    plan: str | None = None
-    execution_draft_revision_id: str | None = None
-    run_spec_id: str | None = None
-    response: str | None = None
-    turn_summary: dict[str, Any] | None = None
-    last_model_call_revision_id: str | None = None
-    harness_decision_record_ids: tuple[str, ...] = ()
-    harness_commit_results: dict[str, Any] | None = None
-
-
-def _state_from_snapshot(value: Mapping[str, Any]) -> CollaborationState:
-    restored = dict(value)
-    for key in (
-        "recent_turn_summaries",
-        "project_candidates",
-        "project_matches",
-        "context_items",
-        "harness_decision_record_ids",
-    ):
-        if isinstance(restored.get(key), list):
-            restored[key] = tuple(restored[key])
-    return CollaborationState(**restored)
-
-
-def _message_text(message: Mapping[str, Any]) -> str:
-    content = message.get("content")
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return ""
-    return "\n".join(
-        str(part.get("text") or "")
-        for part in content
-        if isinstance(part, Mapping) and isinstance(part.get("text"), str)
-    )
-
-
-def _json_object(text: str) -> dict[str, Any] | None:
-    candidates = [text.strip()]
-    fenced = JSON_FENCE.search(text)
-    if fenced:
-        candidates.insert(0, fenced.group(1))
-    first = text.find("{")
-    last = text.rfind("}")
-    if first >= 0 and last > first:
-        candidates.append(text[first : last + 1])
-    for candidate in candidates:
-        try:
-            value = json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            return value
-    return None
-
-
-def _context_keywords(text: str) -> set[str]:
-    """Build small deterministic terms for both Latin words and CJK text.
-
-    A whitespace tokenizer turns a Chinese sentence into one giant token and
-    therefore misses obvious overlaps such as ``贪吃蛇``.  Character n-grams
-    are deliberately bounded: this is only the lightweight first-stage recall,
-    not a semantic retriever or the final context adoption decision.
-    """
-
-    lowered = text.lower()
-    keywords = set(re.findall(r"[a-z0-9_][a-z0-9_.-]{1,}", lowered))
-    for sequence in re.findall(r"[\u4e00-\u9fff]{2,}", lowered):
-        for size in range(2, min(6, len(sequence)) + 1):
-            keywords.update(sequence[index : index + size] for index in range(len(sequence) - size + 1))
-    return keywords
-
-
-def _hash(value: Any) -> str:
-    body = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(body).hexdigest()
-
-
-def _project_hint(summary: Mapping[str, Any]) -> str | None:
-    direct = summary.get("project_hint")
-    nested = summary.get("summary")
-    nested_hint = nested.get("project_hint") if isinstance(nested, Mapping) else None
-    value = direct or nested_hint
-    if not isinstance(value, str) or not value.strip():
-        return None
-    return value.strip()
-
-
-def _is_pending_clarification(summary: Mapping[str, Any]) -> bool:
-    nested = summary.get("summary")
-    return bool(isinstance(nested, Mapping) and nested.get("awaiting_user_answer") is True)
-
-
-def _is_project_catalog_query(text: str) -> bool:
-    compact = re.sub(r"[\s，,。.!！?？:：;；]", "", text).lower()
-    if not compact or "项目" not in compact:
-        return False
-    if any(value in compact for value in ("新建", "创建", "开始一个", "新增")):
-        return False
-    exact = {
-        "我有哪些项目",
-        "我有项目吗",
-        "我有什么项目",
-        "我有多少项目",
-        "有哪些项目",
-        "查看项目",
-        "查看项目列表",
-        "看看项目列表",
-        "列出项目",
-        "列出我的项目",
-        "显示项目列表",
-        "我的项目",
-        "项目列表",
-    }
-    if compact in exact:
-        return True
-    if any(value in compact for value in ("有哪些项目", "有什么项目", "多少个项目")):
-        return True
-    if "项目列表" in compact and any(
-        value in compact for value in ("查看", "看看", "列出", "显示", "想要", "想看")
-    ):
-        return True
-    return bool(
-        re.fullmatch(
-            r"(?:请|请帮我|帮我)?(?:查看|看看|列出|显示)(?:一下)?"
-            r"(?:我的|现有|当前|所有)?项目(?:列表)?",
-            compact,
-        )
-        or re.fullmatch(r"(?:我)?(?:目前|现在|当前)?有(?:哪些|什么|多少个?)项目", compact)
-    )
-
-
-def _project_catalog_intent(prompt: str) -> dict[str, Any]:
-    return {
-        "scenario": "simple_question",
-        "query_kind": "project_catalog",
-        "goal": "查看现有项目列表",
-        "confidence": 1.0,
-        "project_hint": None,
-        "needs_plan": False,
-        "needs_clarification": False,
-        "clarification_question": None,
-        "context_keywords": ["项目", "列表"],
-        "reason_summary": f"用户已明确要求查询现有项目，不涉及新建或执行：{prompt}",
-    }
+WORKFLOW_VERSION = "1.4.0"
 
 
 class TraceMixin:
     def _trace_init(self, *, thread_id: str, sessions: ProductSessionService) -> None:
         self._thread_id = thread_id
         self._sessions = sessions
+        self._step_inputs = StepInputProjectionService(sessions.database)
 
     async def _trace_content(
         self,
@@ -217,6 +110,32 @@ class TraceMixin:
         active = await self._sessions.active_run(self._thread_id)
         if active is None:
             return
+        projection: dict[str, Any] | None = None
+        if content_type not in {"intent", "plan", "response", "summary"} or actor.startswith(
+            "deterministic_"
+        ):
+            public_input_mapping = (
+                dict(public_input) if isinstance(public_input, Mapping) else {"value": public_input}
+            )
+            projection = await self._step_inputs.record(
+                run_id=str(active["id"]),
+                workflow_definition_id=WORKFLOW_ID,
+                workflow_version=WORKFLOW_VERSION,
+                node_id=executor_id,
+                input_value=public_input_mapping,
+                agent_profile_key=_optional_string(public_input_mapping.get("agent_profile_key")),
+                context_package_id=_optional_string(public_input_mapping.get("context_package_id")),
+                protocol_definition_id=_optional_string(public_input_mapping.get("protocol_definition_id")),
+                protocol_binding_id=_optional_string(public_input_mapping.get("protocol_binding_id")),
+                run_spec_id=_optional_string(public_input_mapping.get("run_spec_id")),
+                capability_allowlist=list(public_input_mapping.get("capability_allowlist") or []),
+                budget=dict(public_input_mapping.get("budget") or {}),
+                output_contract={
+                    "content_type": content_type,
+                    "public_output_kind": type(public_output).__name__,
+                },
+                stop_conditions=list(public_input_mapping.get("stop_conditions") or []),
+            )
         await self._sessions.record_trace(
             self._thread_id,
             str(active["id"]),
@@ -228,8 +147,30 @@ class TraceMixin:
                 "content_type": content_type,
                 "public_input": public_input,
                 "public_output": public_output,
+                "step_input_projection": (
+                    {
+                        "id": projection["id"],
+                        "revision": projection["projection_revision"],
+                        "hash": projection["projection_hash"],
+                    }
+                    if projection is not None
+                    else None
+                ),
             },
         )
+
+
+def _optional_string(value: Any) -> str | None:
+    normalized = str(value or "").strip()
+    return normalized or None
+
+
+@dataclass(frozen=True, slots=True)
+class ModelDispatchResult:
+    """Decoded model text plus the durable Provider-attempt identity."""
+
+    text: str
+    attempt_id: str
 
 
 class IntakeExecutor(Executor, TraceMixin):
@@ -239,10 +180,12 @@ class IntakeExecutor(Executor, TraceMixin):
         thread_id: str,
         sessions: ProductSessionService,
         governance: ExecutionGovernanceService,
+        intents: CollaborationIntentService,
     ) -> None:
         super().__init__(id="input_acceptance")
         self._trace_init(thread_id=thread_id, sessions=sessions)
         self._governance = governance
+        self._intents = intents
 
     @handler(input=list)
     async def accept(self, messages: list[Any], ctx: WorkflowContext[CollaborationState]) -> None:
@@ -254,15 +197,15 @@ class IntakeExecutor(Executor, TraceMixin):
         if not prompt:
             raise ValueError("用户输入不能为空")
         summaries = await self._governance.recent_turn_summaries(self._thread_id, limit=8)
+        pending_clarification = await self._intents.latest_open_clarification(self._thread_id)
         project_candidates = tuple(
-            dict.fromkeys(
-                hint for value in summaries if (hint := _project_hint(value)) is not None
-            )
+            dict.fromkeys(hint for value in summaries if (hint := _project_hint(value)) is not None)
         )
         state = CollaborationState(
             origin_prompt=prompt,
             recent_turn_summaries=tuple(summaries),
             project_candidates=project_candidates,
+            pending_clarification=pending_clarification,
         )
         await self._trace_content(
             executor_id=self.id,
@@ -272,6 +215,7 @@ class IntakeExecutor(Executor, TraceMixin):
             public_output={
                 "accepted": True,
                 "candidate_summary_count": len(summaries),
+                "pending_clarification": pending_clarification,
                 "note": "完整历史保留为证据；这里只把主题提取结果作为候选，不会无脑叠加历史。",
             },
         )
@@ -311,7 +255,10 @@ class CandidateContextExecutor(Executor, TraceMixin):
             executor_id=self.id,
             actor="deterministic_context_selector",
             content_type="context_candidates",
-            public_input={"prompt": state.origin_prompt, "available_summaries": len(state.recent_turn_summaries)},
+            public_input={
+                "prompt": state.origin_prompt,
+                "available_summaries": len(state.recent_turn_summaries),
+            },
             public_output={
                 "selected": list(selected),
                 "selection_rule": (
@@ -379,10 +326,17 @@ class HarnessDirectoryContextExecutor(Executor, TraceMixin):
 
 
 class HarnessProjectResolverExecutor(Executor, TraceMixin):
-    """Resolve a model hint only against authoritative Project IDs."""
+    """Resolve Project bindings and required catalog facts from Product Store."""
 
-    def __init__(self, *, thread_id: str, sessions: ProductSessionService) -> None:
+    def __init__(
+        self,
+        *,
+        thread_id: str,
+        sessions: ProductSessionService,
+        harness: HarnessService,
+    ) -> None:
         super().__init__(id="harness_project_resolver")
+        self._harness = harness
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
     @handler(input=CollaborationState)
@@ -393,12 +347,31 @@ class HarnessProjectResolverExecutor(Executor, TraceMixin):
     ) -> None:
         hint = str((state.intent or {}).get("project_hint") or "").strip().lower()
         matches = [
-            value for value in state.project_matches
-            if hint and (hint in str(value.get("title") or "").lower()
-                         or str(value.get("title") or "").lower() in hint)
+            value
+            for value in state.project_matches
+            if hint
+            and (
+                hint in str(value.get("title") or "").lower() or str(value.get("title") or "").lower() in hint
+            )
         ]
         selected = matches[0]["id"] if len(matches) == 1 else state.selected_project_id
-        next_state = replace(state, selected_project_id=selected)
+        catalog_requested = any(
+            value.get("query_kind") == "project_catalog" for value in state.intents or ((state.intent or {}),)
+        )
+        catalog_result = state.project_catalog_result
+        if catalog_requested:
+            projects = await self._harness.list_projects(
+                statuses=("proposed", "active", "paused", "completed"),
+            )
+            catalog_result = _render_project_catalog_result(
+                projects,
+                list(state.project_candidates),
+            )
+        next_state = replace(
+            state,
+            selected_project_id=selected,
+            project_catalog_result=catalog_result,
+        )
         await self._trace_content(
             executor_id=self.id,
             actor="product_harness_resolver",
@@ -408,6 +381,7 @@ class HarnessProjectResolverExecutor(Executor, TraceMixin):
                 "selected_project_id": selected,
                 "match_count": len(matches),
                 "requires_human_choice": state.scenario == "continue_project" and selected is None,
+                "project_catalog_result": catalog_result,
             },
         )
         await ctx.send_message(next_state)
@@ -477,6 +451,96 @@ class HarnessDetailContextExecutor(Executor, TraceMixin):
         await ctx.send_message(next_state)
 
 
+class CollaborationProtocolResolverExecutor(Executor, TraceMixin):
+    """Bind one immutable Chat Harness method revision to the current turn.
+
+    Resolution is deliberately deterministic and happens after intent and
+    authoritative Project binding. The selected revision and applicable rules
+    become part of the Workflow checkpoint, ExecutionDraft and public Trace;
+    later model calls cannot silently substitute a different method.
+    """
+
+    def __init__(
+        self,
+        *,
+        thread_id: str,
+        sessions: ProductSessionService,
+        collaboration_protocols: CollaborationProtocolService,
+    ) -> None:
+        super().__init__(id="collaboration_protocol_resolver")
+        self._protocols = collaboration_protocols
+        self._trace_init(thread_id=thread_id, sessions=sessions)
+
+    @handler(input=CollaborationState)
+    async def resolve(
+        self,
+        state: CollaborationState,
+        ctx: WorkflowContext[CollaborationState],
+    ) -> None:
+        intent = state.intent or {}
+        selection = await self._protocols.resolve_for_turn(
+            scenario=state.scenario,
+            project_id=state.selected_project_id,
+            query_kind=str(intent.get("query_kind") or "") or None,
+        )
+        selection = _apply_intent_set_protocol_overlay(
+            selection,
+            state.intents or (intent,),
+        )
+        next_state = replace(state, protocol_selection=selection)
+        await self._trace_content(
+            executor_id=self.id,
+            actor="chat_harness_protocol_resolver",
+            content_type="collaboration_protocol_selection",
+            public_input={
+                "scenario": state.scenario,
+                "query_kind": intent.get("query_kind"),
+                "selected_project_id": state.selected_project_id,
+                "resolution_order": ["work_item", "project", "user", "system"],
+                "protocol_definition_id": selection["definition_id"],
+                "protocol_binding_id": selection["binding_id"],
+                "protocol_key": selection["protocol_key"],
+                "protocol_name": selection["protocol_name"],
+                "protocol_revision": selection["revision"],
+                "selection_source": selection["selection_source"],
+                "selection_reason": selection["selection_reason"],
+                "phases": selection["phases"],
+                "applicable_rules": selection["applicable_rules"],
+                "budget": {"token_budget": selection["context_policy"].get("default_token_budget")},
+                "base_execution_policy": selection.get(
+                    "base_execution_policy",
+                    selection.get("execution_policy"),
+                ),
+                "effective_execution_policy": selection.get("execution_policy"),
+                "composition_overlay": selection.get("composition_overlay"),
+            },
+            public_output={
+                "protocol_key": selection["protocol_key"],
+                "protocol_name": selection["protocol_name"],
+                "revision": selection["revision"],
+                "definition_id": selection["definition_id"],
+                "binding_id": selection["binding_id"],
+                "definition_hash": selection["definition_hash"],
+                "selection_hash": selection["selection_hash"],
+                "effective_selection_hash": selection.get(
+                    "effective_selection_hash",
+                    selection["selection_hash"],
+                ),
+                "selection_source": selection["selection_source"],
+                "selection_reason": selection["selection_reason"],
+                "phases": selection["phases"],
+                "applicable_rules": selection["applicable_rules"],
+                "base_execution_policy": selection.get(
+                    "base_execution_policy",
+                    selection.get("execution_policy"),
+                ),
+                "effective_execution_policy": selection.get("execution_policy"),
+                "composition_overlay": selection.get("composition_overlay"),
+            },
+        )
+        await ctx.send_message(next_state)
+
+
 @dataclass(frozen=True, slots=True)
 class ProductDecisionSpec:
     key: str
@@ -530,9 +594,7 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
         run_context = await self._governance.run_context(self._run_id())
         subject_hash = _hash(content)
         if self.spec.key == "execution_authorization" and state.execution_draft_revision_id:
-            subject = await self._governance.execution_draft_subject(
-                state.execution_draft_revision_id
-            )
+            subject = await self._governance.execution_draft_subject(state.execution_draft_revision_id)
         else:
             subject = await self._governance.register_subject(
                 subject_kind=self.spec.subject_kind,
@@ -824,6 +886,29 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState, str],
     ) -> None:
+        if self._result_kind == "intent" and _is_project_catalog_query(state.origin_prompt):
+            intent = _project_catalog_intent(state.origin_prompt)
+            await self._trace_content(
+                executor_id=self.id,
+                actor="deterministic_intent_guard",
+                content_type="intent",
+                public_input={"origin_prompt": state.origin_prompt},
+                public_output={
+                    **intent,
+                    "execution_mode": "deterministic_guard",
+                    "model_call_count": 0,
+                    "reason": "明确的Product目录查询直接进入权威查询分支",
+                },
+            )
+            await ctx.send_message(
+                replace(
+                    state,
+                    intent=intent,
+                    intents=(intent,),
+                    scenario=str(intent["scenario"]),
+                )
+            )
+            return
         await self._advance(self._begin(state), state, ctx)
 
     async def _advance(
@@ -858,6 +943,22 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             public_input={
                 "task": self._task_builder(state),
                 "selected_turn_summaries": list(state.recent_turn_summaries),
+                "agent_profile_key": self.profile.id,
+                "context_package_id": (state.detail_context_package_id or state.directory_context_package_id),
+                "protocol_definition_id": ((state.protocol_selection or {}).get("definition_id")),
+                "protocol_binding_id": ((state.protocol_selection or {}).get("binding_id")),
+                "run_spec_id": state.run_spec_id,
+                "capability_allowlist": [],
+                "budget": {
+                    "token_budget": (
+                        (state.protocol_selection or {}).get("context_policy", {}).get("default_token_budget")
+                    ),
+                    "model_calls": 1,
+                },
+                "stop_conditions": [
+                    "模型调用必须先通过当前ModelCallDraft授权",
+                    "结构输出无效时关闭失败，不猜测状态",
+                ],
             },
             public_output={
                 "model_call_revision_id": revision.id,
@@ -893,8 +994,9 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
                 idempotency_key=f"model-call:{revision.id}",
                 claimed_by=f"api-pid-{os.getpid()}:{self.id}",
             )
-            text = await self._dispatch(draft, revision, consumption)
-            await self._deliver(text, state, revision.id, ctx)
+            dispatched = await self._dispatch(draft, revision, consumption)
+            if dispatched is not None:
+                await self._deliver(dispatched, state, revision.id, ctx)
             return
         if request is None:
             raise RuntimeError("人工模式没有创建Human Decision Request")
@@ -914,7 +1016,7 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
                 raise RuntimeError("ModelCall DecisionSubject不存在")
             return value
 
-    async def _dispatch(self, draft, revision, consumption) -> str:
+    async def _dispatch(self, draft, revision, consumption) -> ModelDispatchResult | None:
         try:
             await self._sessions.mark_running(self._thread_id)
             claimed = self._store.claim(
@@ -923,14 +1025,43 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
                 owner=f"api-pid-{os.getpid()}:{self.id}",
             )
         except ModelCallDraftConflict:
-            return ""
+            return None
         attempt = await self._governance.start_model_call_attempt(
             revision=revision,
             consumption=consumption,
         )
         chunks: list[str] = []
+        dispatch_started = False
+
+        async def report_provider_stage(
+            stage: str,
+            status: str,
+            details: dict[str, Any],
+        ) -> None:
+            nonlocal dispatch_started
+            starts_dispatch = stage == "provider.dispatch" and status == "in_progress"
+            try:
+                await self._governance.record_model_call_transport_event(
+                    attempt_id=attempt.id,
+                    stage=stage,
+                    status=status,
+                    details=details,
+                )
+            except Exception as error:
+                raise ProviderDispatchError(
+                    "模型调用审计写入失败，已停止继续处理Provider结果。",
+                    error_code="model_call_audit_failed",
+                    outcome_status="outcome_unknown" if dispatch_started else "failed",
+                ) from error
+            if starts_dispatch:
+                dispatch_started = True
+
         try:
-            async for text in self._transport.stream(PreparedProviderRequest.from_draft(claimed)):
+            prepared = PreparedProviderRequest.from_draft(
+                claimed,
+                stage_reporter=report_provider_stage,
+            )
+            async for text in self._transport.stream(prepared):
                 chunks.append(text)
         except ProviderDispatchError as error:
             self._store.mark_attempt(draft.approval_id, error.outcome_status, error_code=error.error_code)
@@ -947,7 +1078,9 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             )
             raise
         except asyncio.CancelledError:
-            self._store.mark_attempt(draft.approval_id, "outcome_unknown", error_code="provider_dispatch_cancelled")
+            self._store.mark_attempt(
+                draft.approval_id, "outcome_unknown", error_code="provider_dispatch_cancelled"
+            )
             await self._governance.finish_model_call_attempt(
                 attempt_id=attempt.id,
                 status="outcome_unknown",
@@ -961,8 +1094,16 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             )
             raise
         self._store.mark_attempt(draft.approval_id, "completed")
-        await self._governance.finish_model_call_attempt(attempt_id=attempt.id, status="completed")
-        return "".join(chunks) or "模型调用已完成，但没有返回可显示的文本。"
+        decoded_text = "".join(chunks)
+        await self._governance.finish_model_call_attempt(
+            attempt_id=attempt.id,
+            status="completed",
+            output_text=decoded_text,
+        )
+        return ModelDispatchResult(
+            text=decoded_text or "模型调用已完成，但没有返回可显示的文本。",
+            attempt_id=attempt.id,
+        )
 
     @response_handler(request=dict, response=dict, workflow_output=str)
     async def resolve(self, original_request, decision, ctx) -> None:
@@ -1037,49 +1178,65 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             claimed_by=f"api-pid-{os.getpid()}:{self.id}",
         )
         draft = restored_draft
-        text = await self._dispatch(draft, revision, consumption)
-        if not text:
+        dispatched = await self._dispatch(draft, revision, consumption)
+        if dispatched is None:
             await ctx.yield_output("该授权已失效或已消费，没有重复发送模型请求。")
             return
-        await self._deliver(text, state, revision.id, ctx)
+        await self._deliver(dispatched, state, revision.id, ctx)
 
-    async def _deliver(self, text, state, revision_id, ctx) -> None:
+    async def _deliver(
+        self,
+        dispatched: ModelDispatchResult,
+        state,
+        revision_id,
+        ctx,
+    ) -> None:
+        text = dispatched.text
+        disposition = f"accepted_as_{self._result_kind}"
+        disposition_reason = f"Provider解码文本已由{self.id}作为{self._result_kind}采用"
         if self._result_kind == "intent":
             parsed = _json_object(text)
-            allowed = {"simple_question", "continue_project", "new_task", "plan_request", "learning", "clarify"}
             if _is_project_catalog_query(state.origin_prompt):
-                parsed = _project_catalog_intent(state.origin_prompt)
-            elif parsed is None or parsed.get("scenario") not in allowed:
-                parsed = {
-                    "scenario": "clarify",
-                    "goal": state.origin_prompt,
-                    "confidence": 0,
-                    "project_hint": None,
-                    "needs_plan": False,
-                    "needs_clarification": True,
-                    "clarification_question": "我还不能可靠判断你希望继续哪件事，可以补充目标或相关项目吗？",
-                    "context_keywords": [],
-                    "reason_summary": "意图结构化输出无效，关闭失败为澄清。",
-                }
-            confidence = parsed.get("confidence")
-            if not isinstance(confidence, (int, float)) or not 0 <= float(confidence) <= 1:
-                parsed["confidence"] = 0
-                parsed["scenario"] = "clarify"
-                parsed["needs_clarification"] = True
-            if parsed["scenario"] == "clarify":
-                parsed["needs_clarification"] = True
-                if not parsed.get("clarification_question"):
-                    parsed["clarification_question"] = "你希望我接下来具体推进哪件事？"
+                candidates = (_project_catalog_intent(state.origin_prompt),)
+                disposition = "overridden_by_deterministic_guard"
+                disposition_reason = "恢复旧Checkpoint时命中明确项目清单查询，模型候选未被采用"
             else:
-                parsed["needs_clarification"] = False
-                parsed["clarification_question"] = None
+                candidates = _normalize_intent_candidates(
+                    parsed,
+                    origin_prompt=state.origin_prompt,
+                )
+            pending_id = str((state.pending_clarification or {}).get("id") or "")
+            candidates = tuple(
+                {
+                    **candidate,
+                    "answers_clarification_id": (
+                        pending_id
+                        if pending_id and candidate.get("answers_clarification_id") == pending_id
+                        else None
+                    ),
+                }
+                for candidate in candidates
+            )
+            if (
+                len(candidates) == 1
+                and candidates[0]["scenario"] == "clarify"
+                and float(candidates[0].get("confidence") or 0) == 0
+            ):
+                disposition = "rejected_invalid_output"
+                disposition_reason = "意图模型输出未通过多意图结构校验，已关闭失败为澄清"
+            primary = dict(candidates[0])
             next_state = replace(
                 state,
-                intent=parsed,
-                scenario=str(parsed["scenario"]),
+                intent=primary,
+                intents=candidates,
+                scenario=str(primary["scenario"]),
                 last_model_call_revision_id=revision_id,
             )
-            public_output: Any = parsed
+            public_output: Any = {
+                "intent_count": len(candidates),
+                "combination_policy": "single" if len(candidates) == 1 else "sequential",
+                "intents": list(candidates),
+            }
         elif self._result_kind == "plan":
             next_state = replace(state, plan=text, last_model_call_revision_id=revision_id)
             public_output = text
@@ -1087,16 +1244,20 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             next_state = replace(state, response=text, last_model_call_revision_id=revision_id)
             public_output = text
         elif self._result_kind == "summary":
-            summary = _json_object(text) or {
-                "topic": state.intent.get("goal") if state.intent else state.origin_prompt[:80],
-                "confirmed_facts": [],
-                "decisions": [],
-                "open_questions": [],
-                "project_hint": state.intent.get("project_hint") if state.intent else None,
-                "work_state_candidates": [],
-                "memory_candidates": [],
-                "extraction_warning": "模型未返回有效JSON，仅保存最小主题候选。",
-            }
+            summary = _json_object(text)
+            if summary is None:
+                summary = {
+                    "topic": state.intent.get("goal") if state.intent else state.origin_prompt[:80],
+                    "confirmed_facts": [],
+                    "decisions": [],
+                    "open_questions": [],
+                    "project_hint": state.intent.get("project_hint") if state.intent else None,
+                    "work_state_candidates": [],
+                    "memory_candidates": [],
+                    "extraction_warning": "模型未返回有效JSON，仅保存最小主题候选。",
+                }
+                disposition = "rejected_invalid_output"
+                disposition_reason = "主题摘取输出不是有效JSON，已保存确定性最小候选"
             next_state = replace(
                 state,
                 turn_summary=summary,
@@ -1112,6 +1273,11 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             }
         else:
             raise RuntimeError(f"未知语义结果类型: {self._result_kind}")
+        await self._governance.record_model_output_disposition(
+            attempt_id=dispatched.attempt_id,
+            disposition=disposition,
+            reason=disposition_reason,
+        )
         await self._trace_content(
             executor_id=self.id,
             actor=self.profile.name,
@@ -1128,6 +1294,145 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         await ctx.request_info(card, dict, request_id=str(card["approval_id"]))
 
 
+class IntentSetProjectionExecutor(Executor, TraceMixin):
+    """Persist model candidates before any product decision can accept them."""
+
+    def __init__(
+        self,
+        *,
+        thread_id: str,
+        run_id: Callable[[], str],
+        sessions: ProductSessionService,
+        intents: CollaborationIntentService,
+    ) -> None:
+        super().__init__(id="intent_set_projection")
+        self._run_id = run_id
+        self._intents = intents
+        self._trace_init(thread_id=thread_id, sessions=sessions)
+
+    @handler(input=CollaborationState)
+    async def project(
+        self,
+        state: CollaborationState,
+        ctx: WorkflowContext[CollaborationState],
+    ) -> None:
+        candidates = state.intents or ((state.intent or {}),)
+        pending_id = str((state.pending_clarification or {}).get("id") or "")
+        answers_pending = bool(
+            pending_id
+            and any(str(value.get("answers_clarification_id") or "") == pending_id for value in candidates)
+        )
+        answered = None
+        if answers_pending:
+            answered = await self._intents.answer_latest_open(
+                session_id=self._thread_id,
+                answering_run_id=self._run_id(),
+                answer_text=state.origin_prompt,
+            )
+        projected = await self._intents.record_candidate(
+            run_id=self._run_id(),
+            origin_prompt=state.origin_prompt,
+            intents=candidates,
+            source_model_call_revision_id=state.last_model_call_revision_id,
+            combination_policy="single" if len(candidates) == 1 else "sequential",
+        )
+        next_state = replace(
+            state,
+            intent_set_id=projected["id"],
+            intent_set_revision_id=projected["current_revision"]["id"],
+            intent_set_revision_hash=projected["current_revision"]["revision_hash"],
+            answered_clarification=answered,
+        )
+        await self._trace_content(
+            executor_id=self.id,
+            actor="deterministic_intent_projector",
+            content_type="intent_set",
+            public_input={
+                "candidate_count": len(candidates),
+                "pending_clarification_id": pending_id or None,
+                "answers_pending_clarification": answers_pending,
+            },
+            public_output={
+                "intent_set_id": projected["id"],
+                "revision": projected["current_revision"]["revision"],
+                "revision_hash": projected["current_revision"]["revision_hash"],
+                "combination_policy": projected["current_revision"]["combination_policy"],
+                "execution_order": projected["current_revision"]["execution_order"],
+                "status": projected["status"],
+                "answered_clarification_id": answered["id"] if answered else None,
+            },
+        )
+        await ctx.send_message(next_state)
+
+
+class IntentSetAcceptanceExecutor(Executor, TraceMixin):
+    """Reconcile a reviewed primary intent and accept the exact set revision."""
+
+    def __init__(
+        self,
+        *,
+        thread_id: str,
+        run_id: Callable[[], str],
+        sessions: ProductSessionService,
+        intents: CollaborationIntentService,
+    ) -> None:
+        super().__init__(id="intent_set_acceptance")
+        self._run_id = run_id
+        self._intents = intents
+        self._trace_init(thread_id=thread_id, sessions=sessions)
+
+    @handler(input=CollaborationState)
+    async def accept(
+        self,
+        state: CollaborationState,
+        ctx: WorkflowContext[CollaborationState],
+    ) -> None:
+        candidates = state.intents or ((state.intent or {}),)
+        projected = await self._intents.record_candidate(
+            run_id=self._run_id(),
+            origin_prompt=state.origin_prompt,
+            intents=candidates,
+            source_model_call_revision_id=state.last_model_call_revision_id,
+            author_kind="workflow_review",
+            combination_policy="single" if len(candidates) == 1 else "sequential",
+        )
+        accepted = False
+        if state.scenario != "clarify":
+            projected = await self._intents.accept_current(
+                intent_set_id=projected["id"],
+                expected_revision_hash=projected["current_revision"]["revision_hash"],
+            )
+            accepted = True
+        next_state = replace(
+            state,
+            intent_set_id=projected["id"],
+            intent_set_revision_id=projected["current_revision"]["id"],
+            intent_set_revision_hash=projected["current_revision"]["revision_hash"],
+        )
+        await self._trace_content(
+            executor_id=self.id,
+            actor="deterministic_intent_acceptance",
+            content_type="intent_set_acceptance",
+            public_input={
+                "intent_set_id": projected["id"],
+                "scenario": state.scenario,
+                "candidate_count": len(candidates),
+            },
+            public_output={
+                "accepted": accepted,
+                "status": projected["status"],
+                "revision": projected["current_revision"]["revision"],
+                "revision_hash": projected["current_revision"]["revision_hash"],
+                "note": (
+                    "澄清Intent保持candidate，等待下一条用户输入"
+                    if not accepted
+                    else "当前不可变Intent Set revision已接受"
+                ),
+            },
+        )
+        await ctx.send_message(next_state)
+
+
 class ScenarioRouterExecutor(Executor, TraceMixin):
     def __init__(self, *, thread_id: str, sessions: ProductSessionService) -> None:
         super().__init__(id="scenario_router")
@@ -1135,6 +1440,7 @@ class ScenarioRouterExecutor(Executor, TraceMixin):
 
     @handler(input=CollaborationState)
     async def route(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
+        route_decision = _evaluate_scenario_route(state)
         await self._trace_content(
             executor_id=self.id,
             actor="deterministic_scenario_router",
@@ -1142,15 +1448,8 @@ class ScenarioRouterExecutor(Executor, TraceMixin):
             public_input=state.intent,
             public_output={
                 "scenario": state.scenario,
-                "branch": (
-                    "project_catalog"
-                    if _is_project_catalog_state(state)
-                    else "clarification"
-                    if state.scenario == "clarify"
-                    else "planning"
-                    if _needs_plan(state)
-                    else "direct_response"
-                ),
+                "branch": route_decision["selected_branch"],
+                "route_decision": route_decision,
             },
         )
         await ctx.send_message(state)
@@ -1172,31 +1471,30 @@ class ProjectCatalogExecutor(Executor, TraceMixin):
 
     @handler(input=CollaborationState)
     async def answer(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
-        projects = await self._harness.list_projects(
-            statuses=("proposed", "active", "paused", "completed"),
-        )
-        candidates = list(state.project_candidates)
-        if projects:
-            rendered = "\n".join(
-                f"- {value['title']}（{value['kind']} · {value['status']}）：{value['goal']}"
-                for value in projects
+        catalog_result = state.project_catalog_result
+        if catalog_result is None:
+            projects = await self._harness.list_projects(
+                statuses=("proposed", "active", "paused", "completed"),
             )
-            response = f"当前共有 {len(projects)} 个正式 Project：\n{rendered}"
-        elif candidates:
-            rendered = "、".join(candidates)
-            response = (
-                "当前还没有已创建的正式 Project。"
-                f"最近对话中识别到 {len(candidates)} 个 Project 候选：{rendered}。"
-                "这些只是对话摘要中的候选，还没有成为正式 Project。"
+            catalog_result = _render_project_catalog_result(
+                projects,
+                list(state.project_candidates),
             )
-        else:
-            response = (
-                "当前还没有已创建的正式 Project。"
-                "最近对话中也没有识别到可供确认的 Project 候选。"
-            )
+        projects = list(catalog_result["formal_projects"])
+        response = str(catalog_result["assistant_response"])
         summary = {
             "topic": "查看现有项目列表",
-            "confirmed_facts": [f"当前正式Project数量为{len(projects)}"],
+            "confirmed_facts": [
+                {
+                    "text": f"当前正式Project数量为{len(projects)}",
+                    "source_refs": [
+                        {
+                            "kind": "product_query",
+                            "id": "project_catalog",
+                        }
+                    ],
+                }
+            ],
             "decisions": [],
             "open_questions": [],
             "project_hint": None,
@@ -1211,9 +1509,7 @@ class ProjectCatalogExecutor(Executor, TraceMixin):
             content_type="project_catalog_query",
             public_input={"query": state.origin_prompt},
             public_output={
-                "formal_projects": projects,
-                "conversation_project_candidates": candidates,
-                "assistant_response": response,
+                **catalog_result,
             },
         )
         await ctx.send_message(next_state)
@@ -1236,6 +1532,7 @@ class ExecutionDraftCompilerExecutor(Executor, TraceMixin):
     @handler(input=CollaborationState)
     async def compile(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
         intent = state.intent or {}
+        intent_set = list(state.intents or (intent,))
         context_manifest = [
             {
                 "source_kind": value.get("source_kind"),
@@ -1248,24 +1545,46 @@ class ExecutionDraftCompilerExecutor(Executor, TraceMixin):
             for value in state.context_items
         ]
         context_hash = _hash(context_manifest)
+        goals = "\n".join(
+            f"{index + 1}. {value.get('goal')} → {value.get('expected_outcome')}"
+            for index, value in enumerate(intent_set)
+        )
         brief = (
-            f"目标：{intent.get('goal') or state.origin_prompt}\n"
+            f"目标：\n{goals}\n"
             f"场景：{state.scenario}\n"
             f"项目提示：{intent.get('project_hint') or '未关联'}\n"
             f"计划：{state.plan or '本轮不需要独立计划'}\n"
             "完成门：只提交可由当前回答支持的结论；任务、项目、Memory变化保持候选，等待相应决策点。"
         )
         payload = {
-            "identity_lineage": {"session_id": self._thread_id, "run_id": self._run_id(), "workflow_id": WORKFLOW_ID, "workflow_version": WORKFLOW_VERSION},
-            "intent_goal": intent,
+            "identity_lineage": {
+                "session_id": self._thread_id,
+                "run_id": self._run_id(),
+                "workflow_id": WORKFLOW_ID,
+                "workflow_version": WORKFLOW_VERSION,
+            },
+            "intent_goal": {
+                "intent_set_id": state.intent_set_id,
+                "intent_set_revision_id": state.intent_set_revision_id,
+                "intent_set_revision_hash": state.intent_set_revision_hash,
+                "combination_policy": "single" if len(intent_set) == 1 else "sequential",
+                "intents": intent_set,
+            },
             "project_work_binding": {
                 "project_id": state.selected_project_id,
                 "project_hint": intent.get("project_hint"),
                 "status": "accepted" if state.selected_project_id else "not_applicable",
             },
+            "authoritative_product_facts": {
+                "project_catalog": state.project_catalog_result,
+            },
+            "collaboration_protocol_binding": dict(state.protocol_selection or {}),
             "background": context_manifest,
             "accepted_decisions": [],
-            "scope": {"included": ["answer current user request"], "excluded": ["unapproved long-term state mutation"]},
+            "scope": {
+                "included": ["answer current user request"],
+                "excluded": ["unapproved long-term state mutation"],
+            },
             "plan": {"text": state.plan, "mode": "explicit" if state.plan else "direct"},
             "context_binding": {
                 "manifest": context_manifest,
@@ -1273,18 +1592,60 @@ class ExecutionDraftCompilerExecutor(Executor, TraceMixin):
                 "context_package_id": state.detail_context_package_id or state.directory_context_package_id,
                 "excluded": "raw full history by default",
             },
-            "resource_manifest": [],
-            "runtime_target": {"runtime": "maf-workflow", "isolation": "in_process", "working_directory": None},
+            "resource_manifest": (
+                [
+                    {
+                        "source_kind": state.project_catalog_result["source_kind"],
+                        "source_id": state.project_catalog_result["source_id"],
+                        "query_status": state.project_catalog_result["query_status"],
+                    }
+                ]
+                if state.project_catalog_result
+                else []
+            ),
+            "runtime_target": {
+                "runtime": "maf-workflow",
+                "isolation": "in_process",
+                "working_directory": None,
+            },
             "capability_grant": {"tools": [], "side_effects": "none", "network": "model-provider-only"},
             "model_envelope": {"store": False, "continuation": False, "provider_and_model": "profile-bound"},
             "prompt_assembly_plan": {
-                "blocks": ["agent_instructions", "user_request", "intent", "accepted_context", "project_work", "plan", "constraints", "output_contract"],
+                "blocks": [
+                    "agent_instructions",
+                    "user_request",
+                    "intent",
+                    "collaboration_protocol",
+                    "accepted_context",
+                    "project_work",
+                    "plan",
+                    "constraints",
+                    "output_contract",
+                ],
                 "history_policy": "selective summaries, never implicit full history",
             },
-            "hitl_plan": {"decision_points": ["model_call_authorization", "result_commit", "memory_commit", "work_state_commit"]},
-            "validation_plan": {"checks": ["structured intent", "scenario branch", "no false completion"], "evidence": "workflow trace and provider attempts"},
-            "output_commit_contract": {"chat_result": "candidate until finalization", "work": "candidate", "memory": "candidate"},
-            "stop_escalation": {"provider_failure": "stop", "outcome_unknown": "require human", "capability_expansion": "new decision"},
+            "hitl_plan": {
+                "decision_points": [
+                    "model_call_authorization",
+                    "result_commit",
+                    "memory_commit",
+                    "work_state_commit",
+                ]
+            },
+            "validation_plan": {
+                "checks": ["structured intent", "scenario branch", "no false completion"],
+                "evidence": "workflow trace and provider attempts",
+            },
+            "output_commit_contract": {
+                "chat_result": "candidate until finalization",
+                "work": "candidate",
+                "memory": "candidate",
+            },
+            "stop_escalation": {
+                "provider_failure": "stop",
+                "outcome_unknown": "require human",
+                "capability_expansion": "new decision",
+            },
         }
         draft, revision = await self._governance.create_execution_draft(
             session_id=self._thread_id,
@@ -1330,9 +1691,7 @@ class RunSpecCompilerExecutor(Executor, TraceMixin):
     async def compile(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
         if not state.execution_draft_revision_id:
             raise GovernanceConflict("缺少已授权的ExecutionDraft revision")
-        accepted = await self._governance.accepted_execution_draft(
-            state.execution_draft_revision_id
-        )
+        accepted = await self._governance.accepted_execution_draft(state.execution_draft_revision_id)
         payload = accepted["payload"]
         context_binding = dict(payload["context_binding"])
         spec_payload = {
@@ -1343,21 +1702,37 @@ class RunSpecCompilerExecutor(Executor, TraceMixin):
                 "draft_hash": accepted["draft_hash"],
             },
             "principal_scope": {"principal_id": "local-user", "channel": "web"},
-            "workflow_binding": {"definition_id": WORKFLOW_ID, "version": WORKFLOW_VERSION, "entry": "input_acceptance"},
+            "workflow_binding": {
+                "definition_id": WORKFLOW_ID,
+                "version": WORKFLOW_VERSION,
+                "entry": "input_acceptance",
+            },
             "execution_brief": {"text": accepted["execution_brief"], "draft_hash": accepted["draft_hash"]},
             "context_manifest": {
                 "items": list(context_binding.get("manifest") or []),
                 "context_hash": context_binding.get("context_hash"),
             },
             "plan": {"text": payload["plan"].get("text"), "scenario": state.scenario},
+            "collaboration_protocol": dict(payload.get("collaboration_protocol_binding") or {}),
+            "authoritative_product_facts": dict(payload.get("authoritative_product_facts") or {}),
             "prompt_assembly_contract": payload["prompt_assembly_plan"],
-            "runtime_agent": {"runtime": "maf-workflow", "agent_profiles": ["intent_router", "task_planner", "response_agent", "turn_summarizer"]},
+            "runtime_agent": {
+                "runtime": "maf-workflow",
+                "agent_profiles": ["intent_router", "task_planner", "response_agent", "turn_summarizer"],
+            },
             "capability_envelope": payload["capability_grant"],
             "model_envelope": payload["model_envelope"],
-            "hitl_policy_snapshot": {"resolver": "hitl-resolver-v1", "binding": "compiled after Draft authorization"},
+            "hitl_policy_snapshot": {
+                "resolver": "hitl-resolver-v1",
+                "binding": "compiled after Draft authorization",
+            },
             "validation_evidence": payload["validation_plan"],
             "output_commit": payload["output_commit_contract"],
-            "control": {"cancel": True, "retry": "new authorization", "outcome_unknown": "human reconciliation"},
+            "control": {
+                "cancel": True,
+                "retry": "new authorization",
+                "outcome_unknown": "human reconciliation",
+            },
             "correlation_idempotency": {"product_run_id": self._run_id(), "agui_thread_id": self._thread_id},
         }
         spec = await self._governance.compile_run_spec(
@@ -1514,31 +1889,36 @@ class TurnSummaryPersistExecutor(Executor, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
-        summary = dict(state.turn_summary or {
-            "topic": (state.intent or {}).get("goal") or state.origin_prompt[:80],
-            "confirmed_facts": [],
-            "decisions": [],
-            "open_questions": [],
-            "project_hint": (state.intent or {}).get("project_hint"),
-            "work_state_candidates": [],
-            "memory_candidates": [],
-            "extraction_warning": "本轮未形成模型摘要，保存确定性的最小主题候选。",
-        })
+        summary = dict(
+            state.turn_summary
+            or {
+                "topic": (state.intent or {}).get("goal") or state.origin_prompt[:80],
+                "confirmed_facts": [],
+                "decisions": [],
+                "open_questions": [],
+                "project_hint": (state.intent or {}).get("project_hint"),
+                "work_state_candidates": [],
+                "memory_candidates": [],
+                "extraction_warning": "本轮未形成模型摘要，保存确定性的最小主题候选。",
+            }
+        )
         persisted = await self._governance.save_turn_summary(
             session_id=self._thread_id,
             run_id=self._run_id(),
             summary=summary,
             source_model_call_revision_id=state.last_model_call_revision_id,
+            product_fact_refs=_committed_product_fact_refs(state.harness_commit_results),
         )
-        next_state = replace(state, turn_summary=summary)
+        persisted_digest = dict(persisted["summary"])
+        next_state = replace(state, turn_summary=persisted_digest)
         await self._trace_content(
             executor_id=self.id,
             actor="turn_summary_repository",
             content_type="turn_summary_commit",
             public_input={
-                "topic": summary.get("topic"),
-                "work_state_candidates": summary.get("work_state_candidates") or [],
-                "memory_candidates": summary.get("memory_candidates") or [],
+                "topic": persisted_digest.get("topic"),
+                "work_state_candidates": persisted_digest.get("work_state_candidates") or [],
+                "memory_candidates": persisted_digest.get("memory_candidates") or [],
             },
             public_output={
                 "turn_summary_id": persisted["id"],
@@ -1548,6 +1928,31 @@ class TurnSummaryPersistExecutor(Executor, TraceMixin):
             },
         )
         await ctx.send_message(next_state)
+
+
+def _committed_product_fact_refs(
+    result: Mapping[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Project committed Harness results into TurnDigest references."""
+
+    if not result:
+        return []
+    refs: list[dict[str, Any]] = []
+    for kind, key in (
+        ("work_item", "work_items"),
+        ("accepted_memory", "accepted_memory"),
+    ):
+        for value in result.get(key) or []:
+            if not isinstance(value, Mapping) or not value.get("id"):
+                continue
+            refs.append(
+                {
+                    "kind": kind,
+                    "id": str(value["id"]),
+                    **({"revision": value["row_version"]} if value.get("row_version") is not None else {}),
+                }
+            )
+    return refs
 
 
 class FinalizeExecutor(Executor, TraceMixin):
@@ -1572,16 +1977,6 @@ class FinalizeExecutor(Executor, TraceMixin):
         await ctx.yield_output(response)
 
 
-def _needs_plan(state: CollaborationState) -> bool:
-    if state.scenario in {"new_task", "plan_request", "continue_project"}:
-        return True
-    return bool((state.intent or {}).get("needs_plan"))
-
-
-def _is_project_catalog_state(state: CollaborationState) -> bool:
-    return (state.intent or {}).get("query_kind") == "project_catalog"
-
-
 def _revise_context(
     state: CollaborationState,
     changes: Mapping[str, Any],
@@ -1604,18 +1999,52 @@ def _revise_intent(
     state: CollaborationState,
     changes: Mapping[str, Any],
 ) -> CollaborationState:
+    if "intents" in changes:
+        raw_intents = changes["intents"]
+        if not isinstance(raw_intents, list) or not 1 <= len(raw_intents) <= 4:
+            raise ValueError("Intent Set必须包含1到4个Intent")
+        if not all(isinstance(value, Mapping) for value in raw_intents):
+            raise ValueError("Intent Set中的每个Intent都必须是结构化对象")
+        revised_intents = _normalize_intent_candidates(
+            {"intents": raw_intents},
+            origin_prompt=state.origin_prompt,
+        )
+        if (
+            len(revised_intents) == 1
+            and revised_intents[0]["scenario"] == "clarify"
+            and revised_intents[0]["confidence"] == 0
+        ):
+            raise ValueError(str(revised_intents[0]["reason_summary"]))
+        primary = dict(revised_intents[0])
+        return replace(
+            state,
+            intent=primary,
+            intents=revised_intents,
+            scenario=str(primary["scenario"]),
+        )
     current = dict(state.intent or {})
     for key in ("scenario", "goal", "project_hint", "needs_plan", "clarification_question"):
         if key in changes:
             current[key] = changes[key]
     scenario = str(current.get("scenario") or "clarify")
     if scenario not in {
-        "simple_question", "continue_project", "new_task", "plan_request", "learning", "clarify"
+        "simple_question",
+        "continue_project",
+        "new_task",
+        "plan_request",
+        "learning",
+        "clarify",
     }:
         raise ValueError("意图场景无效")
     current["confidence"] = 1.0
     current["needs_clarification"] = scenario == "clarify"
-    return replace(state, intent=current, scenario=scenario)
+    remaining = state.intents[1:] if state.intents else ()
+    return replace(
+        state,
+        intent=current,
+        intents=(current, *remaining),
+        scenario=scenario,
+    )
 
 
 def _revise_project(
@@ -1701,24 +2130,33 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
             facts=lambda state: {
                 "context": {
                     "requires_review": False,
-                    "cross_project": len({
-                        str(value.get("project_hint"))
-                        for value in state.recent_turn_summaries
-                        if value.get("project_hint")
-                    }) > 1,
+                    "cross_project": len(
+                        {
+                            str(value.get("project_hint"))
+                            for value in state.recent_turn_summaries
+                            if value.get("project_hint")
+                        }
+                    )
+                    > 1,
                     "source_invalid": False,
                 }
             },
-            editable_fields=lambda state: [{
-                "key": "selected_summary_ids",
-                "label": "采用的主题摘要",
-                "type": "multi_select",
-                "value": [str(value.get("id")) for value in state.recent_turn_summaries],
-                "options": [
-                    {"value": str(value.get("id")), "label": str(value.get("topic") or "未命名主题")}
-                    for value in state.recent_turn_summaries
-                ],
-            }] if state.recent_turn_summaries else [],
+            editable_fields=lambda state: (
+                [
+                    {
+                        "key": "selected_summary_ids",
+                        "label": "采用的主题摘要",
+                        "type": "multi_select",
+                        "value": [str(value.get("id")) for value in state.recent_turn_summaries],
+                        "options": [
+                            {"value": str(value.get("id")), "label": str(value.get("topic") or "未命名主题")}
+                            for value in state.recent_turn_summaries
+                        ],
+                    }
+                ]
+                if state.recent_turn_summaries
+                else []
+            ),
             revise=_revise_context,
             allow_skip=True,
         ),
@@ -1729,7 +2167,11 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
             description="确认目标和场景，避免把简单询问误建成任务或关联到错误Project。",
             accept_action="accept",
             applicable=lambda state: state.intent is not None and state.scenario != "clarify",
-            subject=lambda state: dict(state.intent or {}),
+            subject=lambda state: {
+                "intent_set_id": state.intent_set_id,
+                "combination_policy": "single" if len(state.intents) <= 1 else "sequential",
+                "intents": list(state.intents or ((state.intent or {}),)),
+            },
             facts=lambda state: {
                 "intent": {
                     "confidence": float((state.intent or {}).get("confidence") or 0),
@@ -1739,22 +2181,11 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
             },
             editable_fields=lambda state: [
                 {
-                    "key": "scenario",
-                    "label": "场景",
-                    "type": "select",
-                    "value": state.scenario,
-                    "options": [
-                        {"value": "simple_question", "label": "简单询问"},
-                        {"value": "continue_project", "label": "继续Project"},
-                        {"value": "new_task", "label": "新任务"},
-                        {"value": "plan_request", "label": "规划请求"},
-                        {"value": "learning", "label": "学习"},
-                        {"value": "clarify", "label": "需要澄清"},
-                    ],
-                },
-                {"key": "goal", "label": "本轮目标", "type": "text", "value": (state.intent or {}).get("goal") or state.origin_prompt},
-                {"key": "project_hint", "label": "Project提示", "type": "text_optional", "value": (state.intent or {}).get("project_hint") or ""},
-                {"key": "needs_plan", "label": "需要计划", "type": "boolean", "value": bool((state.intent or {}).get("needs_plan"))},
+                    "key": "intents",
+                    "label": "本轮Intent Set",
+                    "type": "intent_set",
+                    "value": list(state.intents or ((state.intent or {}),)),
+                }
             ],
             revise=_revise_intent,
         ),
@@ -1764,7 +2195,9 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
             title="确认本轮关联的 Project / Work",
             description="只有明确关联后，Project状态才会进入后续上下文候选。",
             accept_action="accept",
-            applicable=lambda state: bool((state.intent or {}).get("project_hint")) or state.scenario == "continue_project",
+            applicable=lambda state: (
+                bool((state.intent or {}).get("project_hint")) or state.scenario == "continue_project"
+            ),
             subject=lambda state: {
                 "project_hint": (state.intent or {}).get("project_hint"),
                 "selected_project_id": state.selected_project_id,
@@ -1777,19 +2210,21 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
                     "cross_sensitive_scope": False,
                 }
             },
-            editable_fields=lambda state: [{
-                "key": "project_id",
-                "label": "Project / Work",
-                "type": "select",
-                "value": state.selected_project_id or "",
-                "options": [
-                    {"value": "", "label": "本轮不关联正式Project"},
-                    *[
-                        {"value": str(value["id"]), "label": f"{value['title']} · {value['status']}"}
-                        for value in state.project_matches
+            editable_fields=lambda state: [
+                {
+                    "key": "project_id",
+                    "label": "Project / Work",
+                    "type": "select",
+                    "value": state.selected_project_id or "",
+                    "options": [
+                        {"value": "", "label": "本轮不关联正式Project"},
+                        *[
+                            {"value": str(value["id"]), "label": f"{value['title']} · {value['status']}"}
+                            for value in state.project_matches
+                        ],
                     ],
-                ],
-            }],
+                }
+            ],
             revise=_revise_project,
             allow_skip=True,
         ),
@@ -1801,8 +2236,12 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
             accept_action="accept",
             applicable=lambda state: bool(state.plan),
             subject=lambda state: {"plan": state.plan, "scenario": state.scenario},
-            facts=lambda state: {"plan": {"risk_level": 0, "expands_capability": False, "boundary_unclear": False}},
-            editable_fields=lambda state: [{"key": "plan_text", "label": "计划", "type": "long_text", "value": state.plan or ""}],
+            facts=lambda state: {
+                "plan": {"risk_level": 0, "expands_capability": False, "boundary_unclear": False}
+            },
+            editable_fields=lambda state: [
+                {"key": "plan_text", "label": "计划", "type": "long_text", "value": state.plan or ""}
+            ],
             revise=_revise_plan,
             allow_skip=True,
         ),
@@ -1817,13 +2256,17 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
                 "execution_draft_revision_id": state.execution_draft_revision_id,
                 "scenario": state.scenario,
             },
-            facts=lambda state: {"execution": {"risk_level": 0, "has_side_effects": False, "goal_incomplete": False}},
-            editable_fields=lambda state: [{
-                "key": "execution_draft_revision_id",
-                "label": "ExecutionDraft完整工作台",
-                "type": "execution_draft",
-                "value": state.execution_draft_revision_id,
-            }],
+            facts=lambda state: {
+                "execution": {"risk_level": 0, "has_side_effects": False, "goal_incomplete": False}
+            },
+            editable_fields=lambda state: [
+                {
+                    "key": "execution_draft_revision_id",
+                    "label": "ExecutionDraft完整工作台",
+                    "type": "execution_draft",
+                    "value": state.execution_draft_revision_id,
+                }
+            ],
             revise=_revise_execution_draft,
             grant_kind="start_run",
         ),
@@ -1835,8 +2278,21 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
             accept_action="accept",
             applicable=lambda state: bool(state.response),
             subject=lambda state: {"response": state.response, "turn_summary": state.turn_summary},
-            facts=lambda state: {"result": {"evidence_sufficient": True, "external_delivery": False, "changes_long_term_state": False}},
-            editable_fields=lambda state: [{"key": "response_text", "label": "提交给会话的答复", "type": "long_text", "value": state.response or ""}],
+            facts=lambda state: {
+                "result": {
+                    "evidence_sufficient": True,
+                    "external_delivery": False,
+                    "changes_long_term_state": False,
+                }
+            },
+            editable_fields=lambda state: [
+                {
+                    "key": "response_text",
+                    "label": "提交给会话的答复",
+                    "type": "long_text",
+                    "value": state.response or "",
+                }
+            ],
             revise=_revise_result,
             grant_kind="commit_result",
         ),
@@ -1847,8 +2303,12 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
             description="候选不会自动成为任务或Project的长期状态。",
             accept_action="commit",
             applicable=lambda state: bool((state.turn_summary or {}).get("work_state_candidates")),
-            subject=lambda state: {"candidates": (state.turn_summary or {}).get("work_state_candidates") or []},
-            facts=lambda state: {"work": {"creates_or_deletes": False, "claims_completion_without_evidence": False}},
+            subject=lambda state: {
+                "candidates": (state.turn_summary or {}).get("work_state_candidates") or []
+            },
+            facts=lambda state: {
+                "work": {"creates_or_deletes": False, "claims_completion_without_evidence": False}
+            },
             editable_fields=lambda state: [],
             revise=lambda state, changes: _revise_summary_candidates(state, changes, "work_state_candidates"),
             allow_skip=True,
@@ -1862,86 +2322,15 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
             accept_action="commit",
             applicable=lambda state: bool((state.turn_summary or {}).get("memory_candidates")),
             subject=lambda state: {"candidates": (state.turn_summary or {}).get("memory_candidates") or []},
-            facts=lambda state: {"memory": {"candidate_count": len((state.turn_summary or {}).get("memory_candidates") or [])}},
+            facts=lambda state: {
+                "memory": {"candidate_count": len((state.turn_summary or {}).get("memory_candidates") or [])}
+            },
             editable_fields=lambda state: [],
             revise=lambda state, changes: _revise_summary_candidates(state, changes, "memory_candidates"),
             allow_skip=True,
             grant_kind="commit_memory",
         ),
     }
-
-
-def _intent_task(state: CollaborationState) -> str:
-    return json.dumps(
-        {
-            "current_user_request": state.origin_prompt,
-            "candidate_prior_turn_summaries": list(state.recent_turn_summaries),
-            "formal_project_directory_matches": list(state.project_matches),
-            "context_package_id": state.directory_context_package_id,
-            "rules": [
-                "候选摘要不是已采用事实；只有与当前请求直接相关时才引用。",
-                "若候选摘要标记awaiting_user_answer=true，当前输入可能是对该开放问题的回答，必须结合两者判断。",
-                "若项目匹配不唯一或用户目标不完整，scenario必须为clarify。",
-                "‘我有哪些项目/查看项目列表’属于明确产品查询，不得改问用户是否新建；应标记query_kind=project_catalog。",
-                "简单问答不创建Project或Task。",
-                "Project目录来自Product Harness权威查询；不能把摘要候选冒充正式Project。",
-                "只输出规定JSON，不要解释。",
-            ],
-        },
-        ensure_ascii=False,
-    )
-
-
-def _plan_task(state: CollaborationState) -> str:
-    return json.dumps(
-        {
-            "user_request": state.origin_prompt,
-            "accepted_intent": state.intent,
-            "selected_context_summaries": list(state.recent_turn_summaries),
-            "selected_project_id": state.selected_project_id,
-            "accepted_context_items": list(state.context_items),
-            "request": "形成步骤、依赖、HITL检查点、验证方式和停止条件；不要执行工具。",
-        },
-        ensure_ascii=False,
-    )
-
-
-def _response_task(state: CollaborationState) -> str:
-    return json.dumps(
-        {
-            "user_request": state.origin_prompt,
-            "accepted_intent": state.intent,
-            "selected_context_summaries": list(state.recent_turn_summaries),
-            "selected_project_id": state.selected_project_id,
-            "accepted_context_items": list(state.context_items),
-            "plan": state.plan,
-            "execution_contract": {
-                "draft_revision_id": state.execution_draft_revision_id,
-                "run_spec_id": state.run_spec_id,
-                "tools_allowed": [],
-            },
-            "request": "给出本轮可直接提交给用户的答复。不要声称未执行的动作已经完成。",
-        },
-        ensure_ascii=False,
-    )
-
-
-def _summary_task(state: CollaborationState) -> str:
-    return json.dumps(
-        {
-            "user_request": state.origin_prompt,
-            "intent": state.intent,
-            "assistant_response": state.response,
-            "plan": state.plan,
-            "rules": [
-                "只提取本轮重点，丢弃无关寒暄。",
-                "用户或系统明确确认的内容才进入confirmed_facts。",
-                "任务和Memory变化只进入candidate数组，不能自动提交。",
-                "只输出规定JSON。",
-            ],
-        },
-        ensure_ascii=False,
-    )
 
 
 def create_continuous_collaboration_workflow(
@@ -1954,177 +2343,46 @@ def create_continuous_collaboration_workflow(
     sessions: ProductSessionService,
     governance: ExecutionGovernanceService,
     harness: HarnessService | None = None,
+    collaboration_protocols: CollaborationProtocolService | None = None,
+    collaboration_intents: CollaborationIntentService | None = None,
     checkpoint_storage: CheckpointStorage | None = None,
 ):
-    harness = harness or HarnessService(sessions.database)
-    decision_specs = _decision_specs()
-    intake = IntakeExecutor(thread_id=thread_id, sessions=sessions, governance=governance)
-    candidates = CandidateContextExecutor(thread_id=thread_id, sessions=sessions)
-    directory_context = HarnessDirectoryContextExecutor(
+    """Compatibility entrypoint delegating graph wiring to its composition module."""
+
+    return build_continuous_collaboration_workflow(
+        components=ContinuousWorkflowComponents(
+            workflow_id=WORKFLOW_ID,
+            intake=IntakeExecutor,
+            candidates=CandidateContextExecutor,
+            directory_context=HarnessDirectoryContextExecutor,
+            decision=ProductDecisionExecutor,
+            semantic_agent=GovernedSemanticAgentExecutor,
+            intent_projection=IntentSetProjectionExecutor,
+            intent_acceptance=IntentSetAcceptanceExecutor,
+            project_resolver=HarnessProjectResolverExecutor,
+            protocol_resolver=CollaborationProtocolResolverExecutor,
+            router=ScenarioRouterExecutor,
+            detail_context=HarnessDetailContextExecutor,
+            project_catalog=ProjectCatalogExecutor,
+            execution_draft_compiler=ExecutionDraftCompilerExecutor,
+            run_spec_compiler=RunSpecCompilerExecutor,
+            clarification=ClarificationExecutor,
+            harness_commit=HarnessCandidateCommitExecutor,
+            summary_persist=TurnSummaryPersistExecutor,
+            finalizer=FinalizeExecutor,
+            decision_specs=_decision_specs,
+            is_project_catalog_state=_is_project_catalog_state,
+            needs_plan=_needs_plan,
+        ),
         thread_id=thread_id,
         run_id=run_id,
+        profiles=profiles,
+        store=store,
+        transport=transport,
         sessions=sessions,
+        governance=governance,
         harness=harness,
-    )
-    context_decision = ProductDecisionExecutor(
-        node_id="context_adoption",
-        spec=decision_specs["context_adoption"],
-        thread_id=thread_id,
-        run_id=run_id,
-        sessions=sessions,
-        governance=governance,
-    )
-    intent = GovernedSemanticAgentExecutor(
-        profile=profiles["intent_router"], node_id="intent_agent", call_ordinal=1,
-        thread_id=thread_id, run_id=run_id, store=store, transport=transport,
-        sessions=sessions, governance=governance, task_builder=_intent_task, result_kind="intent",
-    )
-    intent_decision = ProductDecisionExecutor(
-        node_id="intent_binding",
-        spec=decision_specs["intent_binding"],
-        thread_id=thread_id,
-        run_id=run_id,
-        sessions=sessions,
-        governance=governance,
-    )
-    project_resolver = HarnessProjectResolverExecutor(thread_id=thread_id, sessions=sessions)
-    project_decision = ProductDecisionExecutor(
-        node_id="project_work_binding",
-        spec=decision_specs["project_work_binding"],
-        thread_id=thread_id,
-        run_id=run_id,
-        sessions=sessions,
-        governance=governance,
-    )
-    router = ScenarioRouterExecutor(thread_id=thread_id, sessions=sessions)
-    detail_context = HarnessDetailContextExecutor(
-        thread_id=thread_id,
-        run_id=run_id,
-        sessions=sessions,
-        harness=harness,
-    )
-    project_catalog = ProjectCatalogExecutor(
-        thread_id=thread_id,
-        sessions=sessions,
-        harness=harness,
-    )
-    planner = GovernedSemanticAgentExecutor(
-        profile=profiles["task_planner"], node_id="planning_agent", call_ordinal=2,
-        thread_id=thread_id, run_id=run_id, store=store, transport=transport,
-        sessions=sessions, governance=governance, task_builder=_plan_task, result_kind="plan",
-    )
-    plan_decision = ProductDecisionExecutor(
-        node_id="plan_acceptance",
-        spec=decision_specs["plan_acceptance"],
-        thread_id=thread_id,
-        run_id=run_id,
-        sessions=sessions,
-        governance=governance,
-    )
-    compiler = ExecutionDraftCompilerExecutor(
-        thread_id=thread_id, run_id=run_id, sessions=sessions, governance=governance
-    )
-    execution_decision = ProductDecisionExecutor(
-        node_id="execution_authorization",
-        spec=decision_specs["execution_authorization"],
-        thread_id=thread_id,
-        run_id=run_id,
-        sessions=sessions,
-        governance=governance,
-    )
-    run_spec_compiler = RunSpecCompilerExecutor(
-        thread_id=thread_id,
-        run_id=run_id,
-        sessions=sessions,
-        governance=governance,
-    )
-    responder = GovernedSemanticAgentExecutor(
-        profile=profiles["response_agent"], node_id="response_agent", call_ordinal=3,
-        thread_id=thread_id, run_id=run_id, store=store, transport=transport,
-        sessions=sessions, governance=governance, task_builder=_response_task, result_kind="response",
-    )
-    result_decision = ProductDecisionExecutor(
-        node_id="result_commit",
-        spec=decision_specs["result_commit"],
-        thread_id=thread_id,
-        run_id=run_id,
-        sessions=sessions,
-        governance=governance,
-    )
-    work_decision = ProductDecisionExecutor(
-        node_id="work_state_commit",
-        spec=decision_specs["work_state_commit"],
-        thread_id=thread_id,
-        run_id=run_id,
-        sessions=sessions,
-        governance=governance,
-    )
-    memory_decision = ProductDecisionExecutor(
-        node_id="memory_commit",
-        spec=decision_specs["memory_commit"],
-        thread_id=thread_id,
-        run_id=run_id,
-        sessions=sessions,
-        governance=governance,
-    )
-    harness_commit = HarnessCandidateCommitExecutor(
-        thread_id=thread_id,
-        run_id=run_id,
-        sessions=sessions,
-        harness=harness,
-    )
-    summarizer = GovernedSemanticAgentExecutor(
-        profile=profiles["turn_summarizer"], node_id="turn_summary_agent", call_ordinal=4,
-        thread_id=thread_id, run_id=run_id, store=store, transport=transport,
-        sessions=sessions, governance=governance, task_builder=_summary_task, result_kind="summary",
-    )
-    clarification = ClarificationExecutor(thread_id=thread_id, sessions=sessions)
-    summary_persist = TurnSummaryPersistExecutor(
-        thread_id=thread_id,
-        run_id=run_id,
-        sessions=sessions,
-        governance=governance,
-    )
-    finalizer = FinalizeExecutor(thread_id=thread_id, sessions=sessions)
-    return (
-        WorkflowBuilder(
-            name=WORKFLOW_ID,
-            description="Chat主Workflow：选择性上下文、意图、场景路由、计划、响应与回合主题提取。",
-            start_executor=intake,
-            output_from=[finalizer],
-            checkpoint_storage=checkpoint_storage,
-        )
-        .add_edge(intake, candidates)
-        .add_edge(candidates, directory_context)
-        .add_edge(directory_context, context_decision)
-        .add_edge(context_decision, intent)
-        .add_edge(intent, intent_decision)
-        .add_edge(intent_decision, project_resolver)
-        .add_edge(project_resolver, project_decision)
-        .add_edge(project_decision, detail_context)
-        .add_edge(detail_context, router)
-        .add_switch_case_edge_group(
-            router,
-            [
-                Case(condition=_is_project_catalog_state, target=project_catalog),
-                Case(condition=lambda value: value.scenario == "clarify", target=clarification),
-                Case(condition=_needs_plan, target=planner),
-                Default(target=compiler),
-            ],
-        )
-        .add_edge(planner, plan_decision)
-        .add_edge(plan_decision, compiler)
-        .add_edge(compiler, execution_decision)
-        .add_edge(execution_decision, run_spec_compiler)
-        .add_edge(run_spec_compiler, responder)
-        .add_edge(responder, summarizer)
-        .add_edge(summarizer, result_decision)
-        .add_edge(project_catalog, result_decision)
-        .add_edge(result_decision, work_decision)
-        .add_edge(work_decision, memory_decision)
-        .add_edge(memory_decision, harness_commit)
-        .add_edge(harness_commit, summary_persist)
-        .add_edge(clarification, summary_persist)
-        .add_edge(summary_persist, finalizer)
-        .build()
+        collaboration_protocols=collaboration_protocols,
+        collaboration_intents=collaboration_intents,
+        checkpoint_storage=checkpoint_storage,
     )

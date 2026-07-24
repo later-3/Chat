@@ -89,44 +89,53 @@ class LongScenarioRunner:
         session_id = await self.ensure_session(session)
         number = len(self.turns) + 1
         history = await self.sessions.list_messages(session_id)
-        accepted = await self.sessions.prepare_agui_run({
-            "threadId": session_id,
-            "runId": f"long-{number}",
-            "state": {},
-            "messages": [
-                *[{
-                    "id": value["agui_message_id"],
-                    "role": value["role"],
-                    "content": value["content"],
-                } for value in history],
-                {
-                    "id": f"user-long-{number}",
-                    "role": "user",
-                    "content": prompt,
-                },
-            ],
-            "tools": [],
-            "context": [],
-            "forwardedProps": {"channel": channel, "process": process},
-        })
+        accepted = await self.sessions.prepare_agui_run(
+            {
+                "threadId": session_id,
+                "runId": f"long-{number}",
+                "state": {},
+                "messages": [
+                    *[
+                        {
+                            "id": value["agui_message_id"],
+                            "role": value["role"],
+                            "content": value["content"],
+                        }
+                        for value in history
+                    ],
+                    {
+                        "id": f"user-long-{number}",
+                        "role": "user",
+                        "content": prompt,
+                    },
+                ],
+                "tools": [],
+                "context": [],
+                "forwardedProps": {"channel": channel, "process": process},
+            }
+        )
         await self.sessions.complete_active_run(
             session_id,
             assistant_text=f"TURN_{number}_RESULT",
             agui_message_id=f"assistant-long-{number}",
         )
-        self.turns.append(ScenarioTurn(
-            number=number,
-            day=day,
-            session=session,
-            channel=channel,
-            process=process,
-            prompt=prompt,
-            product_run_id=accepted.product_run_id,
-        ))
+        self.turns.append(
+            ScenarioTurn(
+                number=number,
+                day=day,
+                session=session,
+                channel=channel,
+                process=process,
+                prompt=prompt,
+                product_run_id=accepted.product_run_id,
+            )
+        )
         return session_id, accepted.product_run_id
 
 
-async def open_runtime(database_url: str, clock: ScenarioClock) -> tuple[
+async def open_runtime(
+    database_url: str, clock: ScenarioClock
+) -> tuple[
     ProductDatabase,
     ProductSessionService,
     HarnessService,
@@ -187,8 +196,40 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
     note: dict[str, Any] | None = None
     accepted_memory: dict[str, Any] | None = None
 
-    day_by_turn = [1, 1, 1, 1, 2, 3, 3, 4, 5, 5, 5, 8, 8, 8, 8, 12,
-                   12, 12, 12, 12, 14, 14, 15, 15, 16, 16, 18, 18, 20, 20, 21, 21]
+    day_by_turn = [
+        1,
+        1,
+        1,
+        1,
+        2,
+        3,
+        3,
+        4,
+        5,
+        5,
+        5,
+        8,
+        8,
+        8,
+        8,
+        12,
+        12,
+        12,
+        12,
+        12,
+        14,
+        14,
+        15,
+        15,
+        16,
+        16,
+        18,
+        18,
+        20,
+        20,
+        21,
+        21,
+    ]
     for index, (day, prompt) in enumerate(zip(day_by_turn, DEV_PROMPTS, strict=True), start=1):
         session_alias = "dev-main" if index not in {5, 22} else ("qa" if index == 5 else "dev-mobile")
         channel = "web" if index != 22 else "telegram"
@@ -222,16 +263,28 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
         elif index == 3:
             assert project is not None
             collision = await harness.create_work_item(
-                command_id="dev-work-collision", project_id=project["id"], kind="task",
-                title="碰撞检测", objective="实现边界与自身碰撞", status="draft",
+                command_id="dev-work-collision",
+                project_id=project["id"],
+                kind="task",
+                title="碰撞检测",
+                objective="实现边界与自身碰撞",
+                status="draft",
             )
             gesture = await harness.create_work_item(
-                command_id="dev-work-gesture", project_id=project["id"], kind="task",
-                title="移动端手势", objective="实现并验证滑动控制", status="ready",
+                command_id="dev-work-gesture",
+                project_id=project["id"],
+                kind="task",
+                title="移动端手势",
+                objective="实现并验证滑动控制",
+                status="ready",
             )
             regression = await harness.create_work_item(
-                command_id="dev-work-regression", project_id=project["id"], kind="task",
-                title="回归测试", objective="运行完整游戏回归", status="ready",
+                command_id="dev-work-regression",
+                project_id=project["id"],
+                kind="task",
+                title="回归测试",
+                objective="运行完整游戏回归",
+                status="ready",
             )
             await harness.create_plan_revision(
                 command_id="dev-plan-v1",
@@ -240,7 +293,12 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
                 summary="第一版像素坐标方案",
                 nodes=[
                     {"key": "boundary", "title": "边界碰撞", "objective": "验证边界"},
-                    {"key": "self", "title": "自身碰撞", "objective": "验证蛇身", "dependencies": ["boundary"]},
+                    {
+                        "key": "self",
+                        "title": "自身碰撞",
+                        "objective": "验证蛇身",
+                        "dependencies": ["boundary"],
+                    },
                 ],
             )
         elif index == 4:
@@ -252,8 +310,18 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
                 summary="加入移动端和回归验证的已接受计划",
                 nodes=[
                     {"key": "collision", "title": "碰撞检测", "objective": "通过碰撞测试"},
-                    {"key": "gesture", "title": "移动端手势", "objective": "通过触控测试", "dependencies": ["collision"]},
-                    {"key": "regression", "title": "回归", "objective": "通过回归", "dependencies": ["gesture"]},
+                    {
+                        "key": "gesture",
+                        "title": "移动端手势",
+                        "objective": "通过触控测试",
+                        "dependencies": ["collision"],
+                    },
+                    {
+                        "key": "regression",
+                        "title": "回归",
+                        "objective": "通过回归",
+                        "dependencies": ["gesture"],
+                    },
                 ],
                 accept=True,
             )
@@ -267,15 +335,17 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
                 session_id=session_id,
                 run_id=run_id,
                 stage="directory",
-                items=[{
-                    "source_kind": "turn_summary",
-                    "source_id": "qa-gil",
-                    "source_revision": 1,
-                    "title": "Python GIL",
-                    "content": "独立知识问答，不关联贪吃蛇",
-                    "adopted": True,
-                    "reason": "本轮独立问题",
-                }],
+                items=[
+                    {
+                        "source_kind": "turn_summary",
+                        "source_id": "qa-gil",
+                        "source_revision": 1,
+                        "title": "Python GIL",
+                        "content": "独立知识问答，不关联贪吃蛇",
+                        "adopted": True,
+                        "reason": "本轮独立问题",
+                    }
+                ],
                 token_budget=200,
             )
             assert package["selected_project_id"] is None
@@ -294,35 +364,45 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
             context_text = "\n".join(item["content"] for item in package["items"])
             assert "独立知识问答" not in context_text
             assert {item["source_kind"] for item in package["items"] if item["adopted"]} >= {
-                "project", "work_item", "task_plan",
+                "project",
+                "work_item",
+                "task_plan",
             }
         elif index == 7:
             assert collision is not None
             collision = await harness.transition_work_item(
-                work_item_id=collision["id"], command_id="collision-ready",
-                expected_row_version=collision["row_version"], target_status="ready",
+                work_item_id=collision["id"],
+                command_id="collision-ready",
+                expected_row_version=collision["row_version"],
+                target_status="ready",
                 reason="计划已确认",
             )
         elif index == 8:
             assert collision is not None
             collision = await harness.transition_work_item(
-                work_item_id=collision["id"], command_id="collision-start",
-                expected_row_version=collision["row_version"], target_status="in_progress",
+                work_item_id=collision["id"],
+                command_id="collision-start",
+                expected_row_version=collision["row_version"],
+                target_status="in_progress",
                 reason="开始实现碰撞检测",
             )
         elif index == 9:
             assert collision is not None
             with pytest.raises(HarnessValidationError, match="Evidence"):
                 await harness.transition_work_item(
-                    work_item_id=collision["id"], command_id="collision-false-complete",
-                    expected_row_version=collision["row_version"], target_status="completed",
+                    work_item_id=collision["id"],
+                    command_id="collision-false-complete",
+                    expected_row_version=collision["row_version"],
+                    target_status="completed",
                     reason="Agent自然语言声称完成",
                 )
         elif index == 11:
             assert collision is not None
             collision = await harness.transition_work_item(
-                work_item_id=collision["id"], command_id="collision-blocked",
-                expected_row_version=collision["row_version"], target_status="blocked",
+                work_item_id=collision["id"],
+                command_id="collision-blocked",
+                expected_row_version=collision["row_version"],
+                target_status="blocked",
                 reason="碰撞测试失败",
                 evidence=[{"kind": "test", "id": "collision-v1", "status": "failed"}],
             )
@@ -330,19 +410,26 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
             assert collision is not None
             with pytest.raises(HarnessConflict):
                 await harness.create_plan_revision(
-                    command_id="dev-plan-stale", work_item_id=collision["id"],
+                    command_id="dev-plan-stale",
+                    work_item_id=collision["id"],
                     expected_work_row_version=collision["row_version"] - 1,
                     summary="过期页面方案",
                     nodes=[{"key": "stale", "title": "过期", "objective": "不能覆盖"}],
                     accept=True,
                 )
             await harness.create_plan_revision(
-                command_id="dev-plan-v3", work_item_id=collision["id"],
+                command_id="dev-plan-v3",
+                work_item_id=collision["id"],
                 expected_work_row_version=collision["row_version"],
                 summary="采用网格坐标并重新运行碰撞测试",
                 nodes=[
                     {"key": "grid", "title": "网格坐标", "objective": "统一位置表示"},
-                    {"key": "collision", "title": "碰撞回归", "objective": "重新测试", "dependencies": ["grid"]},
+                    {
+                        "key": "collision",
+                        "title": "碰撞回归",
+                        "objective": "重新测试",
+                        "dependencies": ["grid"],
+                    },
                 ],
                 accept=True,
             )
@@ -351,7 +438,9 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
             assert project is not None
             note = await harness.capture_note(
                 command_id="dev-note-grid",
-                kind="project_note", title="网格坐标方案", content="位置统一为整数网格坐标。",
+                kind="project_note",
+                title="网格坐标方案",
+                content="位置统一为整数网格坐标。",
                 links=[{"resource_kind": "project", "resource_id": project["id"]}],
             )
         elif index == 15:
@@ -365,7 +454,9 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
             assert note is not None
             replay = await harness.capture_note(
                 command_id="dev-note-grid",
-                kind="project_note", title="网格坐标方案", content="位置统一为整数网格坐标。",
+                kind="project_note",
+                title="网格坐标方案",
+                content="位置统一为整数网格坐标。",
                 links=[{"resource_kind": "project", "resource_id": project["id"]}],
             )
             assert replay["id"] == note["id"]
@@ -373,14 +464,18 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
             assert project is not None and note is not None
             candidate = await harness.propose_memory(
                 command_id="dev-memory-propose",
-                scope_kind="project", scope_ref_id=project["id"], memory_kind="experience_rule",
+                scope_kind="project",
+                scope_ref_id=project["id"],
+                memory_kind="experience_rule",
                 content="先运行测试，再声明完成。",
                 source_refs=[{"kind": "note", "id": note["id"], "revision": 1}],
             )
         elif index == 20:
             resolved = await harness.resolve_memory_candidate(
-                candidate_id=candidate["id"], command_id="dev-memory-accept",
-                decision="accept", decision_record_id=None,
+                candidate_id=candidate["id"],
+                command_id="dev-memory-accept",
+                decision="accept",
+                decision_record_id=None,
             )
             accepted_memory = resolved["memory"]
         elif index in {21, 22}:
@@ -391,38 +486,48 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
         elif index == 23:
             assert gesture is not None
             gesture = await harness.transition_work_item(
-                work_item_id=gesture["id"], command_id="gesture-start",
-                expected_row_version=gesture["row_version"], target_status="in_progress",
+                work_item_id=gesture["id"],
+                command_id="gesture-start",
+                expected_row_version=gesture["row_version"],
+                target_status="in_progress",
                 reason="开始移动端手势",
             )
         elif index == 24:
             assert gesture is not None
             gesture = await harness.transition_work_item(
-                work_item_id=gesture["id"], command_id="gesture-complete",
-                expected_row_version=gesture["row_version"], target_status="completed",
+                work_item_id=gesture["id"],
+                command_id="gesture-complete",
+                expected_row_version=gesture["row_version"],
+                target_status="completed",
                 reason="触控测试通过",
                 evidence=[{"kind": "test", "id": "gesture-suite", "status": "passed"}],
             )
         elif index == 25:
             assert regression is not None
             regression = await harness.transition_work_item(
-                work_item_id=regression["id"], command_id="regression-start",
-                expected_row_version=regression["row_version"], target_status="in_progress",
+                work_item_id=regression["id"],
+                command_id="regression-start",
+                expected_row_version=regression["row_version"],
+                target_status="in_progress",
                 reason="开始全量回归",
             )
         elif index == 26:
             assert regression is not None
             regression = await harness.transition_work_item(
-                work_item_id=regression["id"], command_id="regression-complete",
-                expected_row_version=regression["row_version"], target_status="completed",
+                work_item_id=regression["id"],
+                command_id="regression-complete",
+                expected_row_version=regression["row_version"],
+                target_status="completed",
                 reason="回归测试通过",
                 evidence=[{"kind": "test", "id": "game-regression", "status": "passed"}],
             )
         elif index == 27:
             assert note is not None
             note = await harness.transition_note(
-                note_id=note["id"], command_id="dev-note-archive",
-                expected_row_version=note["row_version"], target_status="archived",
+                note_id=note["id"],
+                command_id="dev-note-archive",
+                expected_row_version=note["row_version"],
+                target_status="archived",
                 reason="该方案来源已被撤回",
             )
         elif index == 28:
@@ -430,21 +535,32 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
             context = await harness.project_context(project["id"])
             assert context["accepted_memory"] == []
             memory_rows = await harness.list_memory(
-                scope_kind="project", scope_ref_id=project["id"], include_candidates=False,
+                scope_kind="project",
+                scope_ref_id=project["id"],
+                include_candidates=False,
             )
-            assert next(item for item in memory_rows["accepted"] if item["id"] == accepted_memory["id"])["status"] == "invalid"
+            assert (
+                next(item for item in memory_rows["accepted"] if item["id"] == accepted_memory["id"])[
+                    "status"
+                ]
+                == "invalid"
+            )
         elif index == 29:
             assert collision is not None
             collision = await harness.transition_work_item(
-                work_item_id=collision["id"], command_id="collision-resume",
-                expected_row_version=collision["row_version"], target_status="in_progress",
+                work_item_id=collision["id"],
+                command_id="collision-resume",
+                expected_row_version=collision["row_version"],
+                target_status="in_progress",
                 reason="网格坐标修复完成，重新测试",
             )
         elif index == 30:
             assert collision is not None
             collision = await harness.transition_work_item(
-                work_item_id=collision["id"], command_id="collision-complete",
-                expected_row_version=collision["row_version"], target_status="completed",
+                work_item_id=collision["id"],
+                command_id="collision-complete",
+                expected_row_version=collision["row_version"],
+                target_status="completed",
                 reason="碰撞测试通过",
                 evidence=[{"kind": "test", "id": "collision-v2", "status": "passed"}],
             )
@@ -455,8 +571,10 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
         elif index == 32:
             assert project is not None
             project = await harness.transition_project(
-                project_id=project["id"], command_id="dev-project-complete",
-                expected_row_version=project["row_version"], target_status="completed",
+                project_id=project["id"],
+                command_id="dev-project-complete",
+                expected_row_version=project["row_version"],
+                target_status="completed",
                 reason="3个WorkItem均有通过Evidence",
             )
 
@@ -539,73 +657,111 @@ async def test_e2e_long_learning_28d_keeps_40_turns_but_assembles_bounded_contex
         session_id, run_id = await runner.turn(day=day, session=alias, prompt=prompt)
         if index == 1:
             project = await harness.create_project(
-                command_id="learn-project", kind="learning", title="Python并发四周学习",
-                goal="能解释并实践线程、进程、协程和并发选择", status="active",
+                command_id="learn-project",
+                kind="learning",
+                title="Python并发四周学习",
+                goal="能解释并实践线程、进程、协程和并发选择",
+                status="active",
                 session_id=session_id,
             )
         elif index == 2:
             assert project is not None
-            for key, title in (("thread", "线程与GIL"), ("process", "进程池"),
-                               ("asyncio", "协程与事件循环"), ("capstone", "综合练习")):
-                units.append(await harness.create_work_item(
-                    command_id=f"learn-unit-{key}", project_id=project["id"],
-                    kind="learning_unit", title=title, objective=f"掌握{title}", status="ready",
-                ))
+            for key, title in (
+                ("thread", "线程与GIL"),
+                ("process", "进程池"),
+                ("asyncio", "协程与事件循环"),
+                ("capstone", "综合练习"),
+            ):
+                units.append(
+                    await harness.create_work_item(
+                        command_id=f"learn-unit-{key}",
+                        project_id=project["id"],
+                        kind="learning_unit",
+                        title=title,
+                        objective=f"掌握{title}",
+                        status="ready",
+                    )
+                )
         elif index == 3:
             await harness.create_plan_revision(
-                command_id="learn-plan-v1", work_item_id=units[0]["id"],
-                expected_work_row_version=1, summary="概念、示例、练习、复盘",
+                command_id="learn-plan-v1",
+                work_item_id=units[0]["id"],
+                expected_work_row_version=1,
+                summary="概念、示例、练习、复盘",
                 nodes=[
                     {"key": "concept", "title": "概念", "objective": "准确解释"},
                     {"key": "example", "title": "示例", "objective": "运行示例", "dependencies": ["concept"]},
-                    {"key": "practice", "title": "练习", "objective": "独立完成", "dependencies": ["example"]},
+                    {
+                        "key": "practice",
+                        "title": "练习",
+                        "objective": "独立完成",
+                        "dependencies": ["example"],
+                    },
                 ],
                 accept=True,
             )
             units[0] = (await harness.get_work_item(units[0]["id"]))["work_item"]
         elif index == 4:
             units[0] = await harness.transition_work_item(
-                work_item_id=units[0]["id"], command_id="thread-start",
-                expected_row_version=units[0]["row_version"], target_status="in_progress",
+                work_item_id=units[0]["id"],
+                command_id="thread-start",
+                expected_row_version=units[0]["row_version"],
+                target_status="in_progress",
                 reason="开始线程单元",
             )
         elif index == 5:
             assert project is not None
             note = await harness.capture_note(
-                command_id="gil-note-v1", kind="learning_note", title="GIL理解",
+                command_id="gil-note-v1",
+                kind="learning_note",
+                title="GIL理解",
                 content="第一版：GIL让所有Python代码只能串行。",
                 links=[{"resource_kind": "project", "resource_id": project["id"]}],
             )
         elif index == 6:
             rejected = await harness.propose_memory(
-                command_id="learn-pref-rejected", scope_kind="user", scope_ref_id=None,
-                memory_kind="preference", content="只看定义。", source_refs=[],
+                command_id="learn-pref-rejected",
+                scope_kind="user",
+                scope_ref_id=None,
+                memory_kind="preference",
+                content="只看定义。",
+                source_refs=[],
             )
         elif index == 7:
             await harness.resolve_memory_candidate(
-                candidate_id=rejected["id"], command_id="learn-pref-reject",
-                decision="reject", decision_record_id=None,
+                candidate_id=rejected["id"],
+                command_id="learn-pref-reject",
+                decision="reject",
+                decision_record_id=None,
             )
         elif index == 9:
             units[0] = await harness.transition_work_item(
-                work_item_id=units[0]["id"], command_id="thread-blocked",
-                expected_row_version=units[0]["row_version"], target_status="blocked",
+                work_item_id=units[0]["id"],
+                command_id="thread-blocked",
+                expected_row_version=units[0]["row_version"],
+                target_status="blocked",
                 reason="线程安全测验失败",
                 evidence=[{"kind": "quiz", "id": "thread-safety", "status": "failed", "score": 0.4}],
             )
         elif index == 12:
             assert project is not None
             package = await harness.create_context_package(
-                session_id=session_id, run_id=run_id, stage="detail",
+                session_id=session_id,
+                run_id=run_id,
+                stage="detail",
                 items=await harness.detailed_context_items(project["id"]),
-                selected_project_id=project["id"], token_budget=800, status="adopted",
+                selected_project_id=project["id"],
+                token_budget=800,
+                status="adopted",
             )
             assert all(item["source_kind"] != "accepted_memory" for item in package["items"])
         elif index == 13:
             assert note is not None
             note = await harness.revise_note(
-                note_id=note["id"], command_id="gil-note-v2",
-                expected_row_version=note["row_version"], title="GIL理解",
+                note_id=note["id"],
+                command_id="gil-note-v2",
+                expected_row_version=note["row_version"],
+                title="GIL理解",
                 content="第二版：GIL限制同一进程内CPython字节码的并行执行。",
             )
         elif index == 16:
@@ -617,56 +773,75 @@ async def test_e2e_long_learning_28d_keeps_40_turns_but_assembles_bounded_contex
         elif index == 18:
             assert project is not None and note is not None
             accepted_candidate = await harness.propose_memory(
-                command_id="learn-pref-accepted", scope_kind="project", scope_ref_id=project["id"],
-                memory_kind="preference", content="先看可运行例子，再解释概念。",
+                command_id="learn-pref-accepted",
+                scope_kind="project",
+                scope_ref_id=project["id"],
+                memory_kind="preference",
+                content="先看可运行例子，再解释概念。",
                 source_refs=[{"kind": "note", "id": note["id"], "revision": 2}],
             )
         elif index == 19:
             await harness.resolve_memory_candidate(
-                candidate_id=accepted_candidate["id"], command_id="learn-pref-accept",
-                decision="accept", decision_record_id=None,
+                candidate_id=accepted_candidate["id"],
+                command_id="learn-pref-accept",
+                decision="accept",
+                decision_record_id=None,
             )
         elif index == 21:
             assert note is not None
             note = await harness.revise_note(
-                note_id=note["id"], command_id="gil-note-v3",
-                expected_row_version=note["row_version"], title="GIL理解",
+                note_id=note["id"],
+                command_id="gil-note-v3",
+                expected_row_version=note["row_version"],
+                title="GIL理解",
                 content="第三版：GIL是CPython实现约束；I/O并发与多进程仍有不同适用场景。",
             )
         elif index == 29:
             units[2] = await harness.transition_work_item(
-                work_item_id=units[2]["id"], command_id="asyncio-start",
-                expected_row_version=units[2]["row_version"], target_status="in_progress",
+                work_item_id=units[2]["id"],
+                command_id="asyncio-start",
+                expected_row_version=units[2]["row_version"],
+                target_status="in_progress",
                 reason="开始事件循环练习",
             )
             units[2] = await harness.transition_work_item(
-                work_item_id=units[2]["id"], command_id="asyncio-complete",
-                expected_row_version=units[2]["row_version"], target_status="completed",
+                work_item_id=units[2]["id"],
+                command_id="asyncio-complete",
+                expected_row_version=units[2]["row_version"],
+                target_status="completed",
                 reason="事件循环练习通过",
                 evidence=[{"kind": "exercise", "id": "asyncio-loop", "status": "passed"}],
             )
         elif index == 31:
             units[3] = await harness.transition_work_item(
-                work_item_id=units[3]["id"], command_id="capstone-start",
-                expected_row_version=units[3]["row_version"], target_status="in_progress",
+                work_item_id=units[3]["id"],
+                command_id="capstone-start",
+                expected_row_version=units[3]["row_version"],
+                target_status="in_progress",
                 reason="开始综合练习",
             )
         elif index == 32:
             units[3] = await harness.transition_work_item(
-                work_item_id=units[3]["id"], command_id="capstone-blocked",
-                expected_row_version=units[3]["row_version"], target_status="blocked",
+                work_item_id=units[3]["id"],
+                command_id="capstone-blocked",
+                expected_row_version=units[3]["row_version"],
+                target_status="blocked",
                 reason="首次运行失败",
                 evidence=[{"kind": "test", "id": "capstone-v1", "status": "failed"}],
             )
         elif index == 34:
             units[3] = await harness.transition_work_item(
-                work_item_id=units[3]["id"], command_id="capstone-resume",
-                expected_row_version=units[3]["row_version"], target_status="in_progress",
+                work_item_id=units[3]["id"],
+                command_id="capstone-resume",
+                expected_row_version=units[3]["row_version"],
+                target_status="in_progress",
                 reason="修复后重测",
             )
             units[3] = await harness.transition_work_item(
-                work_item_id=units[3]["id"], command_id="capstone-complete",
-                expected_row_version=units[3]["row_version"], target_status="completed",
+                work_item_id=units[3]["id"],
+                command_id="capstone-complete",
+                expected_row_version=units[3]["row_version"],
+                target_status="completed",
                 reason="综合练习通过",
                 evidence=[{"kind": "test", "id": "capstone-v2", "status": "passed"}],
             )
@@ -676,7 +851,9 @@ async def test_e2e_long_learning_28d_keeps_40_turns_but_assembles_bounded_contex
         elif index == 37:
             assert project is not None
             memory = await harness.list_memory(
-                scope_kind="project", scope_ref_id=project["id"], include_candidates=False,
+                scope_kind="project",
+                scope_ref_id=project["id"],
+                include_candidates=False,
                 statuses=("accepted",),
             )
             assert len(memory["accepted"]) == 1
@@ -685,23 +862,30 @@ async def test_e2e_long_learning_28d_keeps_40_turns_but_assembles_bounded_contex
             assert note is not None
             async with database.sessions() as transaction:
                 revision_count = await transaction.scalar(
-                    select(func.count()).select_from(NoteRevisionRecord).where(
-                        NoteRevisionRecord.note_id == note["id"]
-                    )
+                    select(func.count())
+                    .select_from(NoteRevisionRecord)
+                    .where(NoteRevisionRecord.note_id == note["id"])
                 )
             assert revision_count == 3
         elif index == 39:
             assert project is not None
             final_context = await harness.create_context_package(
-                session_id=session_id, run_id=run_id, stage="detail",
+                session_id=session_id,
+                run_id=run_id,
+                stage="detail",
                 items=await harness.detailed_context_items(project["id"]),
-                selected_project_id=project["id"], token_budget=500, status="adopted",
+                selected_project_id=project["id"],
+                token_budget=500,
+                status="adopted",
             )
             assert final_context["estimated_tokens"] <= 500
             all_content = "\n".join(item["content"] for item in final_context["items"])
             assert "TURN_1_RESULT" not in all_content
             assert "TURN_40_RESULT" not in all_content
-            assert any(item["source_kind"] == "accepted_memory" and item["adopted"] for item in final_context["items"])
+            assert any(
+                item["source_kind"] == "accepted_memory" and item["adopted"]
+                for item in final_context["items"]
+            )
 
     assert len(runner.turns) == 40
     assert runner.turns[-1].day == 28
@@ -710,7 +894,9 @@ async def test_e2e_long_learning_28d_keeps_40_turns_but_assembles_bounded_contex
     async with database.sessions() as transaction:
         interaction_count = await transaction.scalar(select(func.count()).select_from(InteractionRecord))
         message_count = await transaction.scalar(select(func.count()).select_from(MessageRecord))
-        memory_revision_count = await transaction.scalar(select(func.count()).select_from(MemoryRevisionRecord))
+        memory_revision_count = await transaction.scalar(
+            select(func.count()).select_from(MemoryRevisionRecord)
+        )
     assert interaction_count == 40
     assert message_count == 80
     assert memory_revision_count == 1
@@ -808,12 +994,14 @@ async def test_e2e_three_day_learning_project_switches_preserve_focus_and_work_t
         content="学习技术概念时先运行最小例子，再总结原理。",
         source_refs=[{"kind": "note", "id": learning_note["id"], "revision": 1}],
     )
-    accepted_learning_memory = (await harness.resolve_memory_candidate(
-        candidate_id=memory_candidate["id"],
-        command_id="mixed-learning-memory-accept",
-        decision="accept",
-        decision_record_id=None,
-    ))["memory"]
+    accepted_learning_memory = (
+        await harness.resolve_memory_candidate(
+            candidate_id=memory_candidate["id"],
+            command_id="mixed-learning-memory-accept",
+            decision="accept",
+            decision_record_id=None,
+        )
+    )["memory"]
     initial_learning_context = await harness.create_context_package(
         session_id=learn_session,
         run_id=learn_run,
@@ -885,11 +1073,13 @@ async def test_e2e_three_day_learning_project_switches_preserve_focus_and_work_t
     )
     directory_items, directory_projects = await harness.directory_context_items(
         prompt="回到FastAPI依赖注入学习，继续刚才的最小例子。",
-        summaries=[{
-            "id": "day-1-learning-summary",
-            "topic": "依赖注入学习进度",
-            "summary": {"focus": "已开始Depends最小例子，下一步验证依赖覆盖测试"},
-        }],
+        summaries=[
+            {
+                "id": "day-1-learning-summary",
+                "topic": "依赖注入学习进度",
+                "summary": {"focus": "已开始Depends最小例子，下一步验证依赖覆盖测试"},
+            }
+        ],
     )
     assert directory_projects[0]["id"] == learning["id"]
     assert {value["id"] for value in directory_projects} == {learning["id"], bookmark["id"]}
@@ -910,9 +1100,7 @@ async def test_e2e_three_day_learning_project_switches_preserve_focus_and_work_t
         token_budget=1200,
         status="adopted",
     )
-    return_sources = {
-        item["source_id"] for item in return_learning_context["items"] if item["adopted"]
-    }
+    return_sources = {item["source_id"] for item in return_learning_context["items"] if item["adopted"]}
     assert return_sources >= {
         learning["id"],
         dependency_unit["id"],
@@ -936,11 +1124,13 @@ async def test_e2e_three_day_learning_project_switches_preserve_focus_and_work_t
     )
     next_day_directory, next_day_projects = await harness.directory_context_items(
         prompt="继续昨天的FastAPI依赖注入学习，完成最小例子后做依赖覆盖测试。",
-        summaries=[{
-            "id": "day-1-learning-summary",
-            "topic": "依赖注入学习进度",
-            "summary": {"focus": "Depends最小例子进行中", "next": "dependency_overrides测试"},
-        }],
+        summaries=[
+            {
+                "id": "day-1-learning-summary",
+                "topic": "依赖注入学习进度",
+                "summary": {"focus": "Depends最小例子进行中", "next": "dependency_overrides测试"},
+            }
+        ],
     )
     assert next_day_projects[0]["id"] == learning["id"]
     await harness.create_context_package(
@@ -960,9 +1150,7 @@ async def test_e2e_three_day_learning_project_switches_preserve_focus_and_work_t
         token_budget=1200,
         status="adopted",
     )
-    next_day_text = "\n".join(
-        item["content"] for item in next_day_context["items"] if item["adopted"]
-    )
+    next_day_text = "\n".join(item["content"] for item in next_day_context["items"] if item["adopted"])
     assert "dependency_overrides" in next_day_text
     assert "GET /bookmarks" not in next_day_text
     assert "TURN_" not in next_day_text
@@ -1054,7 +1242,9 @@ async def test_e2e_three_day_learning_project_switches_preserve_focus_and_work_t
         summaries=[],
     )
     assert {value["id"] for value in overview_projects} == {
-        learning["id"], bookmark["id"], vocabulary["id"],
+        learning["id"],
+        bookmark["id"],
+        vocabulary["id"],
     }
     overview = await harness.create_context_package(
         session_id=overview_session,
@@ -1066,7 +1256,9 @@ async def test_e2e_three_day_learning_project_switches_preserve_focus_and_work_t
     )
     assert overview["selected_project_id"] is None
     assert {item["source_id"] for item in overview["items"] if item["adopted"]} == {
-        learning["id"], bookmark["id"], vocabulary["id"],
+        learning["id"],
+        bookmark["id"],
+        vocabulary["id"],
     }
 
     # The learning track remains resumable after both delivery Projects were touched.
@@ -1087,8 +1279,11 @@ async def test_e2e_three_day_learning_project_switches_preserve_focus_and_work_t
     )
     final_sources = {item["source_id"] for item in final_context["items"] if item["adopted"]}
     assert final_sources >= {
-        learning["id"], dependency_unit["id"], coverage_unit["id"],
-        learning_note["id"], accepted_learning_memory["id"],
+        learning["id"],
+        dependency_unit["id"],
+        coverage_unit["id"],
+        learning_note["id"],
+        accepted_learning_memory["id"],
     }
     assert bookmark["id"] not in final_sources
     assert vocabulary["id"] not in final_sources
@@ -1100,28 +1295,25 @@ async def test_e2e_three_day_learning_project_switches_preserve_focus_and_work_t
         (vocabulary["id"], "delivery"),
     }
     learning_track = next(
-        value for value in await harness.learning_tracks()
-        if value["project"]["id"] == learning["id"]
+        value for value in await harness.learning_tracks() if value["project"]["id"] == learning["id"]
     )
     assert learning_track["progress"] == {"completed": 0, "total": 2}
-    assert next(
-        value for value in learning_track["units"] if value["id"] == coverage_unit["id"]
-    )["status"] == "in_progress"
+    assert (
+        next(value for value in learning_track["units"] if value["id"] == coverage_unit["id"])["status"]
+        == "in_progress"
+    )
     assert (await harness.get_work_item(bookmark_list["id"]))["work_item"]["status"] == "in_progress"
     assert (await harness.get_work_item(import_words["id"]))["work_item"]["status"] == "in_progress"
     persisted_practice = next(
-        value for value in await harness.list_action_items(work_item_id=dependency_unit["id"])
+        value
+        for value in await harness.list_action_items(work_item_id=dependency_unit["id"])
         if value["id"] == practice["id"]
     )
     assert persisted_practice["status"] == "completed"
 
     async with database.sessions() as transaction:
-        context_count = await transaction.scalar(
-            select(func.count()).select_from(ContextPackageRecord)
-        )
-        interaction_count = await transaction.scalar(
-            select(func.count()).select_from(InteractionRecord)
-        )
+        context_count = await transaction.scalar(select(func.count()).select_from(ContextPackageRecord))
+        interaction_count = await transaction.scalar(select(func.count()).select_from(InteractionRecord))
         message_count = await transaction.scalar(select(func.count()).select_from(MessageRecord))
     assert context_count == 9
     assert interaction_count == len(runner.turns) == 7

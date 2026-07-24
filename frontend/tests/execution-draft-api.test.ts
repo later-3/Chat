@@ -3,8 +3,8 @@ import test from "node:test";
 
 import {
   EXECUTION_DRAFT_SECTION_ORDER,
-  reviseExecutionDraft,
   type ExecutionDraftView,
+  reviseExecutionDraft,
 } from "../src/execution-draft-api.js";
 
 test("ExecutionDraft workbench keeps all 17 fixed sections in contract order", () => {

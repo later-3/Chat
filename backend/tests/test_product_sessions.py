@@ -132,11 +132,13 @@ def test_modified_client_history_is_rejected_without_creating_another_run() -> N
         forged.append({"id": "user-2", "role": "user", "content": "继续"})
 
         events = _events(client.post("/api/agent", json=_request(session_id, "run-2", forged)))
-        assert events[-1] == {
+        assert {key: events[-1][key] for key in ("type", "message", "code")} == {
             "type": "RUN_ERROR",
             "message": "客户端历史与Product Store不一致，请重新加载会话",
             "code": "SESSION_HISTORY_CONFLICT",
         }
+        assert events[-1]["requestId"]
+        assert events[-1]["retryable"] is False
         assert len(client.get(f"/api/sessions/{session_id}/runs").json()["runs"]) == 1
 
 
@@ -186,9 +188,9 @@ def test_file_store_survives_restart_and_reconciles_unfinished_run(tmp_path: Pat
         assert [attempt["status"] for attempt in runs[0]["attempts"]] == ["interrupted"]
         assert session_view["active_run_id"] is None
         with sqlite3.connect(tmp_path / "restart.db") as connection:
-                assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-                    "d84f39e71b20",
-                )
+            assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+                "a7b4c9d2e601",
+            )
 
     asyncio.run(scenario())
 
@@ -220,6 +222,38 @@ def test_same_session_concurrent_accept_has_one_winner(tmp_path: Path) -> None:
         return results.count("accepted"), len(runs)
 
     assert asyncio.run(scenario()) == (1, 1)
+
+
+def test_abandoning_auto_title_source_restores_visible_session_identity(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        service = ProductSessionService(
+            ProductDatabase(f"sqlite+aiosqlite:///{tmp_path / 'title-rollback.db'}")
+        )
+        await service.initialize()
+        session = await service.create_session()
+        assert session["title_origin"] == "default"
+
+        accepted = await service.prepare_agui_run(
+            _request(
+                session["id"],
+                "title-source-run",
+                [{"id": "title-source-message", "role": "user", "content": "不应残留的临时问题"}],
+            )
+        )
+        titled = await service.get_session(session["id"])
+        assert titled["title"] == "不应残留的临时问题"
+        assert titled["title_origin"] == "auto"
+        assert titled["title_source_message_id"] == accepted.user_message_id
+
+        await service.abandon_active_run(session["id"])
+        restored = await service.get_session(session["id"])
+        assert restored["title"] == "新会话"
+        assert restored["title_origin"] == "default"
+        assert restored["title_source_message_id"] is None
+        assert await service.list_messages(session["id"]) == []
+        await service.database.close()
+
+    asyncio.run(scenario())
 
 
 def test_failed_run_retry_and_edited_restart_keep_explicit_lineage(tmp_path: Path) -> None:
@@ -364,9 +398,7 @@ def test_cancel_is_exactly_bound_and_distinguishes_before_and_after_dispatch(
             )
         )
         await service.mark_waiting_approval(session["id"])
-        cancelled = await service.cancel_protocol_run(
-            session["id"], "cancel-before-dispatch"
-        )
+        cancelled = await service.cancel_protocol_run(session["id"], "cancel-before-dispatch")
         assert cancelled["id"] == first.product_run_id
         assert cancelled["status"] == "cancelled"
         assert cancelled["failure_code"] == "user_cancelled_before_dispatch"
@@ -388,24 +420,18 @@ def test_cancel_is_exactly_bound_and_distinguishes_before_and_after_dispatch(
             )
         )
         await service.mark_running(session["id"])
-        stale = await service.cancel_protocol_run(
-            session["id"], "cancel-before-dispatch"
-        )
+        stale = await service.cancel_protocol_run(session["id"], "cancel-before-dispatch")
         assert stale["status"] == "cancelled"
         active = await service.active_run(session["id"])
         assert active is not None
         assert active["id"] == second.product_run_id
 
-        unknown = await service.cancel_protocol_run(
-            session["id"], "cancel-after-dispatch"
-        )
+        unknown = await service.cancel_protocol_run(session["id"], "cancel-after-dispatch")
         assert unknown["id"] == second.product_run_id
         assert unknown["status"] == "outcome_unknown"
         assert unknown["failure_code"] == "user_cancelled_after_dispatch"
         assert await service.active_run(session["id"]) is None
-        repeated = await service.cancel_protocol_run(
-            session["id"], "cancel-after-dispatch"
-        )
+        repeated = await service.cancel_protocol_run(session["id"], "cancel-after-dispatch")
         assert repeated["status"] == "outcome_unknown"
         runs = await service.list_runs(session["id"])
         assert [value["status"] for value in runs] == ["outcome_unknown", "cancelled"]
@@ -459,10 +485,7 @@ def test_alembic_initial_migration_upgrades_and_downgrades_clean_database(tmp_pa
 
     command.upgrade(configuration, "head")
     with sqlite3.connect(database_path) as connection:
-        tables = {
-            row[0]
-            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        }
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {
         "product_sessions",
         "interactions",
@@ -477,13 +500,16 @@ def test_alembic_initial_migration_upgrades_and_downgrades_clean_database(tmp_pa
         "accepted_memories",
         "context_packages",
         "harness_commands",
+        "collaboration_protocol_definitions",
+        "collaboration_protocol_rules",
+        "collaboration_protocol_bindings",
+        "step_input_projections",
         "alembic_version",
     } <= tables
 
     command.downgrade(configuration, "base")
     with sqlite3.connect(database_path) as connection:
         tables_after = {
-            row[0]
-            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
     assert tables_after <= {"alembic_version"}

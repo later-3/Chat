@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select, update
+
 from .database import (
     InteractionRecord,
     MessageRecord,
@@ -19,9 +20,9 @@ from .database import (
     RunRecord,
     SessionRecord,
     TraceRecord,
+    affected_row_count,
     utc_now,
 )
-
 
 DEFAULT_SCOPE_ID = "local-user"
 ACTIVE_RUN_STATUSES = {"accepted", "running", "waiting_approval", "committing"}
@@ -136,6 +137,8 @@ def _session_view(value: SessionRecord) -> dict[str, Any]:
         "scope_id": value.scope_id,
         "channel": value.channel,
         "title": value.title,
+        "title_origin": value.title_origin,
+        "title_source_message_id": value.title_source_message_id,
         "status": value.status,
         "revision": value.revision,
         "active_run_id": value.active_run_id,
@@ -236,11 +239,13 @@ class ProductSessionService:
         provider_id: str | None = None,
         model: str | None = None,
     ) -> dict[str, Any]:
+        normalized_title = title.strip()[:160] or "新会话"
         record = SessionRecord(
             id=_uuid(),
             scope_id=self.scope_id,
             channel="web",
-            title=title.strip()[:160] or "新会话",
+            title=normalized_title,
+            title_origin="default" if normalized_title == "新会话" else "manual",
             model_provider_id=provider_id,
             model=model,
         )
@@ -277,6 +282,8 @@ class ProductSessionService:
                 raise SessionBusy("活动Run结束前不能归档会话")
             if title is not None:
                 value.title = title.strip()[:160] or "新会话"
+                value.title_origin = "manual"
+                value.title_source_message_id = None
             if archived is not None:
                 value.status = "archived" if archived else "active"
                 value.archived_at = utc_now() if archived else None
@@ -380,9 +387,7 @@ class ProductSessionService:
             )
         return [_trace_view(value) for value in values]
 
-    async def latest_workflow_trace(
-        self, session_id: str, workflow_id: str
-    ) -> list[dict[str, Any]]:
+    async def latest_workflow_trace(self, session_id: str, workflow_id: str) -> list[dict[str, Any]]:
         """Return the newest completed or failed projection for one workflow."""
 
         async with self.database.sessions() as transaction:
@@ -403,8 +408,7 @@ class ProductSessionService:
                 (
                     value
                     for value in starts
-                    if isinstance(value.payload, dict)
-                    and value.payload.get("workflow_id") == workflow_id
+                    if isinstance(value.payload, dict) and value.payload.get("workflow_id") == workflow_id
                 ),
                 None,
             )
@@ -553,9 +557,7 @@ class ProductSessionService:
                     "outcome_unknown",
                 }:
                     raise ProductSessionConflict("只有失败、取消、中断或结果未知的Run可以重试")
-                source_message = await transaction.get(
-                    MessageRecord, retry_source.current_user_message_id
-                )
+                source_message = await transaction.get(MessageRecord, retry_source.current_user_message_id)
                 if source_message is None:
                     raise ProductSessionConflict("重试来源输入不存在")
                 if retry_mode == "retry" and current["text"] != _message_text(source_message.content):
@@ -574,9 +576,7 @@ class ProductSessionService:
             # absent from the client-visible history. Ordinals therefore advance
             # over every stored message, not only the committed history prefix.
             current_ordinal = await transaction.scalar(
-                select(func.max(MessageRecord.ordinal)).where(
-                    MessageRecord.session_id == session_id
-                )
+                select(func.max(MessageRecord.ordinal)).where(MessageRecord.session_id == session_id)
             )
 
             interaction_id = _uuid()
@@ -596,6 +596,7 @@ class ProductSessionService:
                     "retry_mode": retry_mode,
                 }
             )
+            should_auto_title = not persisted and session.title_origin == "default"
             claimed = await transaction.execute(
                 update(SessionRecord)
                 .where(
@@ -611,12 +612,16 @@ class ProductSessionService:
                     updated_at=utc_now(),
                     title=(
                         current["text"].strip().replace("\n", " ")[:40]
-                        if not persisted and session.title == "新会话"
+                        if should_auto_title
                         else session.title
+                    ),
+                    title_origin="auto" if should_auto_title else session.title_origin,
+                    title_source_message_id=(
+                        user_message_id if should_auto_title else session.title_source_message_id
                     ),
                 )
             )
-            if claimed.rowcount != 1:
+            if affected_row_count(claimed) != 1:
                 raise SessionBusy("会话状态已变化，请重新加载后再发送")
 
             transaction.add(
@@ -814,6 +819,27 @@ class ProductSessionService:
             if message is not None:
                 message.status = "withdrawn"
                 message.context_eligible = False
+                if session.title_origin == "auto" and session.title_source_message_id == message.id:
+                    replacement = await transaction.scalar(
+                        select(MessageRecord)
+                        .where(
+                            MessageRecord.session_id == session_id,
+                            MessageRecord.role == "user",
+                            MessageRecord.status == "committed",
+                            MessageRecord.context_eligible.is_(True),
+                            MessageRecord.id != message.id,
+                        )
+                        .order_by(MessageRecord.ordinal)
+                    )
+                    if replacement is None:
+                        session.title = "新会话"
+                        session.title_origin = "default"
+                        session.title_source_message_id = None
+                    else:
+                        replacement_text = _message_text(replacement.content)
+                        session.title = replacement_text.strip().replace("\n", " ")[:40] or "新会话"
+                        session.title_origin = "auto"
+                        session.title_source_message_id = replacement.id
             session.active_run_id = None
             session.revision += 1
             session.updated_at = utc_now()
@@ -914,9 +940,7 @@ class ProductSessionService:
             run = await transaction.get(RunRecord, session.active_run_id)
             return _run_view(run) if run is not None else None
 
-    async def cancel_protocol_run(
-        self, session_id: str, agui_run_id: str
-    ) -> dict[str, Any]:
+    async def cancel_protocol_run(self, session_id: str, agui_run_id: str) -> dict[str, Any]:
         """Resolve an explicit user cancel against one exact AG-UI run mapping."""
 
         async with self.database.sessions.begin() as transaction:
@@ -944,9 +968,7 @@ class ProductSessionService:
             before_dispatch = previous_status in {"accepted", "waiting_approval"}
             status = "cancelled" if before_dispatch else "outcome_unknown"
             failure_code = (
-                "user_cancelled_before_dispatch"
-                if before_dispatch
-                else "user_cancelled_after_dispatch"
+                "user_cancelled_before_dispatch" if before_dispatch else "user_cancelled_after_dispatch"
             )
             failure_message = (
                 "用户在Provider发送前取消了Run。"
@@ -1041,9 +1063,7 @@ class ProductSessionService:
                         )
                     )
                     checkpoint = (
-                        await transaction.get(
-                            MafWorkflowCheckpointRecord, link.maf_checkpoint_id
-                        )
+                        await transaction.get(MafWorkflowCheckpointRecord, link.maf_checkpoint_id)
                         if link is not None
                         else None
                     )
@@ -1207,9 +1227,7 @@ class ProductSessionService:
             raise ProductSessionNotFound("Product Session不存在")
         return value
 
-    async def _current_attempt(
-        self, transaction: Any, run_id: str
-    ) -> RunAttemptRecord | None:
+    async def _current_attempt(self, transaction: Any, run_id: str) -> RunAttemptRecord | None:
         return await transaction.scalar(
             select(RunAttemptRecord)
             .where(RunAttemptRecord.run_id == run_id)

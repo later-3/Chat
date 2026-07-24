@@ -6,7 +6,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from alembic import command
 from alembic.config import Config
@@ -14,8 +14,8 @@ from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
-    ForeignKey,
     Float,
+    ForeignKey,
     Index,
     Integer,
     String,
@@ -23,13 +23,31 @@ from sqlalchemy import (
     UniqueConstraint,
     event,
 )
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.engine import CursorResult, Result
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.pool import StaticPool
 
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def affected_row_count(result: Result[Any]) -> int:
+    """Return the DBAPI row count for an UPDATE/DELETE result.
+
+    SQLAlchemy's async ``execute`` annotation exposes the common ``Result``
+    surface even though DML returns ``CursorResult`` at runtime. Keeping the
+    narrowing here makes optimistic-concurrency checks explicit and avoids
+    scattering unchecked casts through application services.
+    """
+
+    return cast(CursorResult[Any], result).rowcount
 
 
 class Base(DeclarativeBase):
@@ -64,6 +82,8 @@ class SessionRecord(Base):
     scope_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     channel: Mapped[str] = mapped_column(String(32), nullable=False, default="web")
     title: Mapped[str] = mapped_column(String(160), nullable=False)
+    title_origin: Mapped[str] = mapped_column(String(20), nullable=False, default="default")
+    title_source_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     active_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
@@ -341,6 +361,9 @@ class ProductDatabase:
         project_root = Path(__file__).resolve().parents[3]
         configuration = Config(str(project_root / "alembic.ini"))
         configuration.set_main_option("sqlalchemy.url", self.url)
+        # Application startup has already installed correlated JSONL handlers.
+        # Alembic's CLI logging config must not replace them in-process.
+        configuration.attributes["configure_logger"] = False
         command.upgrade(configuration, "head")
 
     async def close(self) -> None:

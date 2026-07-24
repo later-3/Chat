@@ -24,7 +24,6 @@ from .model_call_review import InMemoryModelCallReviewStore, ProviderDispatchErr
 from .model_providers import ModelProviderCatalog, ModelProviderConfig
 from .tool_configs import PiToolConfigSnapshot
 
-
 PI_EXTENSION_SOURCE = """export default function(pi) {
   pi.on("tool_call", async (event, ctx) => {
     const edited = await ctx.ui.editor(
@@ -178,7 +177,9 @@ class PiExecution:
                     "apiKey": self.token,
                     "authHeader": True,
                     "api": _pi_api(self.provider.protocol),
-                    "compat": ({"supportsStore": True} if self.provider.protocol == "openai_chat_completions" else {}),
+                    "compat": (
+                        {"supportsStore": True} if self.provider.protocol == "openai_chat_completions" else {}
+                    ),
                     "models": [
                         {
                             "id": self.config.model,
@@ -191,9 +192,7 @@ class PiExecution:
                 }
             }
         }
-        (agent_directory / "models.json").write_text(
-            json.dumps(models, ensure_ascii=False), encoding="utf-8"
-        )
+        (agent_directory / "models.json").write_text(json.dumps(models, ensure_ascii=False), encoding="utf-8")
         extension_path = agent_directory / "chat-tool-approval.mjs"
         extension_path.write_text(PI_EXTENSION_SOURCE, encoding="utf-8")
         environment = os.environ.copy()
@@ -291,9 +290,7 @@ class PiExecution:
         )
 
     async def reject_tool_call(self, boundary: PiToolCallBoundary) -> None:
-        await self._write(
-            {"type": "extension_ui_response", "id": boundary.rpc_request_id, "cancelled": True}
-        )
+        await self._write({"type": "extension_ui_response", "id": boundary.rpc_request_id, "cancelled": True})
 
     def metrics(self) -> dict[str, Any]:
         return {
@@ -401,9 +398,7 @@ class PiExecution:
         event_type = event.get("type")
         if event_type == "extension_ui_request" and event.get("method") == "editor":
             if event.get("title") != "CHAT_PI_TOOL_APPROVAL":
-                await self._write(
-                    {"type": "extension_ui_response", "id": event.get("id"), "cancelled": True}
-                )
+                await self._write({"type": "extension_ui_response", "id": event.get("id"), "cancelled": True})
                 return
             try:
                 payload = json.loads(str(event.get("prefill") or "{}"))
@@ -454,9 +449,7 @@ class PiExecution:
                     self._usage["cache_read_tokens"] += int(usage.get("cacheRead") or 0)
                     self._usage["cache_write_tokens"] += int(usage.get("cacheWrite") or 0)
                     self._usage["cost"] += float(
-                        usage.get("cost", {}).get("total", 0)
-                        if isinstance(usage.get("cost"), dict)
-                        else 0
+                        usage.get("cost", {}).get("total", 0) if isinstance(usage.get("cost"), dict) else 0
                     )
             return
         if event_type == "agent_end" and not event.get("willRetry"):
@@ -474,7 +467,11 @@ class PiExecution:
         path_value = arguments.get("path")
         if isinstance(path_value, str) and path_value.strip():
             base = Path(self.config.working_directory)
-            resolved = (base / path_value).resolve() if not Path(path_value).is_absolute() else Path(path_value).resolve()
+            resolved = (
+                (base / path_value).resolve()
+                if not Path(path_value).is_absolute()
+                else Path(path_value).resolve()
+            )
             if resolved != base and not resolved.is_relative_to(base):
                 raise PiRuntimeError("pi Tool路径超出本次工作目录", code="pi_tool_path_escape")
 

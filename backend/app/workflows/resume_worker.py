@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 from uuid import uuid4
 
 from ..governance.outbox import ClaimedOutboxEvent, OutboxDispatchError
 from ..governance.service import ExecutionGovernanceService
 from ..runtime_execution.service import RuntimeExecutionService
 
-
 logger = logging.getLogger(__name__)
+
 
 class RuntimeResumeOutboxHandler:
     """Translate one committed Product decision into one canonical AG-UI Resume."""
@@ -39,9 +38,7 @@ class RuntimeResumeOutboxHandler:
             # AG-UI call. The outbox still records/proves the transaction but
             # must not start a second MAF continuation.
             return
-        link = await self.governance.runtime_interrupt_for_request(
-            decision_request_id=decision_request_id
-        )
+        link = await self.governance.runtime_interrupt_for_request(decision_request_id=decision_request_id)
         decisions = await self.governance.resolved_human_request(decision_request_id)
         if not decisions:
             raise OutboxDispatchError("决定请求没有item", code="decision_items_missing")

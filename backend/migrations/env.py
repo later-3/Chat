@@ -9,14 +9,23 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from backend.app.product_sessions.database import Base
+from backend.app.collaboration_intents import models as collaboration_intent_models  # noqa: F401
+from backend.app.collaboration_protocols import models as collaboration_protocol_models  # noqa: F401
 from backend.app.governance import models as governance_models  # noqa: F401
 from backend.app.harness import models as harness_models  # noqa: F401
-from backend.app.runtime_execution import models as runtime_execution_models  # noqa: F401
-
+from backend.app.product_sessions.database import Base
+from backend.app.runtime_execution import (
+    models as runtime_execution_models,  # noqa: F401
+)
+from backend.app.step_inputs import models as step_input_models  # noqa: F401
 
 config = context.config
-if config.config_file_name is not None:
+extra_arguments = context.get_x_argument(as_dictionary=True)
+if database_url := extra_arguments.get("database_url"):
+    # Verification passes an isolated temporary database explicitly. Runtime
+    # startup still uses the URL from the application-owned configuration.
+    config.set_main_option("sqlalchemy.url", database_url)
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name)
 target_metadata = Base.metadata
 

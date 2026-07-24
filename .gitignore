@@ -11,8 +11,11 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .coverage
+coverage.xml
 htmlcov/
 .artifacts/
+.test-artifacts/
+.tmp-*.png
 
 backend/.data/
 backend/logs/
@@ -21,3 +24,7 @@ frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 frontend/.test-dist/
+frontend/coverage/
+
+prototypes/*/node_modules/
+prototypes/*/dist/

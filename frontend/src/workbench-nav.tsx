@@ -8,11 +8,11 @@ const ITEMS: Array<{
   shortLabel: string;
   icon: typeof Route;
 }> = [
-  { id: "workflow", label: "Workflow Run", shortLabel: "运行", icon: Route },
-  { id: "projects", label: "Project Explorer", shortLabel: "项目", icon: Boxes },
-  { id: "work", label: "Work Board", shortLabel: "工作", icon: ClipboardList },
-  { id: "knowledge", label: "Knowledge", shortLabel: "知识", icon: BookOpenText },
-  { id: "context", label: "Context Inspector", shortLabel: "上下文", icon: ScanSearch },
+  { id: "workflow", label: "查看本轮运行", shortLabel: "运行", icon: Route },
+  { id: "projects", label: "查看我的项目", shortLabel: "项目", icon: Boxes },
+  { id: "work", label: "查看正在推进的事项", shortLabel: "事项", icon: ClipboardList },
+  { id: "knowledge", label: "查看笔记与记忆", shortLabel: "知识", icon: BookOpenText },
+  { id: "context", label: "查看本轮采用的信息与规则", shortLabel: "本轮", icon: ScanSearch },
 ];
 
 export function WorkbenchNav({
@@ -40,7 +40,7 @@ export function WorkbenchNav({
           >
             <Icon size={16} />
             <span>{item.shortLabel}</span>
-            {count > 0 && <b aria-label={`${count}个待处理决定`}>{count}</b>}
+            {count > 0 && <b title={`${count}个待处理决定`}>{count}</b>}
           </button>
         );
       })}

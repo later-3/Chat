@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import timedelta
 
 from sqlalchemy import or_, select, update
 
-from ..product_sessions.database import ProductDatabase, utc_now
+from ..observability.context import bind_context
+from ..observability.metrics import metrics
+from ..observability.tracing import tracer
+from ..product_sessions.database import ProductDatabase, affected_row_count, utc_now
 from .models import GovernanceOutboxRecord
-
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +109,7 @@ class GovernanceOutboxWorker:
                     attempt_count=GovernanceOutboxRecord.attempt_count + 1,
                 )
             )
-            if claimed.rowcount != 1:
+            if affected_row_count(claimed) != 1:
                 return None
             await transaction.refresh(candidate)
             return ClaimedOutboxEvent(
@@ -123,6 +126,33 @@ class GovernanceOutboxWorker:
         event = await self.claim_one()
         if event is None:
             return False
+        started = time.perf_counter()
+        metrics.increment("outbox.events.claimed")
+        with bind_context(
+            worker_id=self.worker_id,
+            execution_request_id=event.aggregate_id,
+        ):
+            with tracer().start_as_current_span(
+                "outbox.dispatch",
+                attributes={
+                    "outbox.event.id": event.id,
+                    "outbox.event.type": event.event_type,
+                    "outbox.attempt": event.attempt_count,
+                },
+            ) as span:
+                try:
+                    return await self._dispatch_event(event)
+                except Exception as error:
+                    span.set_attribute("error.type", type(error).__name__)
+                    metrics.increment("outbox.events.errors")
+                    raise
+                finally:
+                    metrics.observe(
+                        "outbox.dispatch.duration_seconds",
+                        time.perf_counter() - started,
+                    )
+
+    async def _dispatch_event(self, event: ClaimedOutboxEvent) -> bool:
         try:
             await self.handler(event)
         except asyncio.CancelledError:
@@ -131,6 +161,7 @@ class GovernanceOutboxWorker:
         except Exception as error:
             code = str(getattr(error, "code", "outbox_dispatch_failed"))[:100]
             await self._release(event, code=code, immediate=False)
+            metrics.increment("outbox.events.failed")
             logger.exception(
                 "governance_outbox_failed event_id=%s event_type=%s attempt=%d code=%s",
                 event.id,
@@ -140,6 +171,7 @@ class GovernanceOutboxWorker:
             )
             return True
         await self._publish(event)
+        metrics.increment("outbox.events.published")
         logger.info(
             "governance_outbox_published event_id=%s event_type=%s attempt=%d",
             event.id,
@@ -171,7 +203,7 @@ class GovernanceOutboxWorker:
                     published_at=utc_now(),
                 )
             )
-            if settled.rowcount != 1:
+            if affected_row_count(settled) != 1:
                 raise OutboxDispatchError("Outbox Lease已失效", code="outbox_lease_lost")
 
     async def _release(

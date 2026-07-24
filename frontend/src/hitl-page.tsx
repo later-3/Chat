@@ -1,15 +1,23 @@
-import { Check, ChevronRight, CircleAlert, LoaderCircle, LockKeyhole, Save, ShieldCheck } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  CircleAlert,
+  LoaderCircle,
+  LockKeyhole,
+  Save,
+  ShieldCheck,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
   activateHitlPolicy,
-  loadHitlConfiguration,
-  previewHitlPolicy,
   type DecisionPointDefinition,
   type HitlMode,
   type HitlPolicyRule,
   type HitlPolicySet,
   type HitlPreview,
+  loadHitlConfiguration,
+  previewHitlPolicy,
 } from "./hitl-api";
 
 const MODE_LABELS: Record<HitlMode, string> = {
@@ -45,14 +53,30 @@ function nominalFacts(key: string): Record<string, unknown> {
   const values: Record<string, Record<string, unknown>> = {
     intent_binding: { intent: { confidence: 0.95, changes_active_work: false, ambiguous: false } },
     project_work_binding: { project: { candidate_count: 1, cross_sensitive_scope: false } },
-    context_adoption: { context: { requires_review: false, cross_project: false, source_invalid: false } },
-    plan_acceptance: { plan: { risk_level: 0, expands_capability: false, boundary_unclear: false } },
-    execution_authorization: { execution: { risk_level: 0, has_side_effects: false, goal_incomplete: false } },
+    context_adoption: {
+      context: { requires_review: false, cross_project: false, source_invalid: false },
+    },
+    plan_acceptance: {
+      plan: { risk_level: 0, expands_capability: false, boundary_unclear: false },
+    },
+    execution_authorization: {
+      execution: { risk_level: 0, has_side_effects: false, goal_incomplete: false },
+    },
     model_call_authorization: { model: { call_ordinal: 1 }, context: { changed: false } },
-    tool_execution_authorization: { tool: { risk_level: 0, has_side_effects: false, outside_capability: false } },
-    work_state_commit: { work: { creates_or_deletes: false, claims_completion_without_evidence: false } },
+    tool_execution_authorization: {
+      tool: { risk_level: 0, has_side_effects: false, outside_capability: false },
+    },
+    work_state_commit: {
+      work: { creates_or_deletes: false, claims_completion_without_evidence: false },
+    },
     memory_commit: { memory: { candidate_count: 1 } },
-    result_commit: { result: { evidence_sufficient: true, external_delivery: false, changes_long_term_state: false } },
+    result_commit: {
+      result: {
+        evidence_sufficient: true,
+        external_delivery: false,
+        changes_long_term_state: false,
+      },
+    },
     runtime_recovery: { runtime: { safe_to_retry: false } },
     unknown_or_high_risk: { risk: { outcome_unknown: true } },
   };
@@ -87,18 +111,47 @@ export function HitlPage({ sessionId, workflowId }: HitlPageProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const scopes = useMemo<ScopeOption[]>(() => [
-    { kind: "principal", refId: "local-user", label: "我的默认", description: "跨会话的个人偏好" },
-    { kind: "channel", refId: "web", label: "Web 入口", description: "只影响当前Web入口" },
-    ...(sessionId ? [{ kind: "product_session", refId: sessionId, label: "当前会话", description: "只影响当前Product Session" }] : []),
-    { kind: "workflow_version", refId: workflowId, label: "当前Workflow", description: "只影响当前Workflow版本" },
-    { kind: "product_default", refId: "*", label: "产品与系统规则", description: "只读的默认和安全下限", readOnly: true },
-  ], [sessionId, workflowId]);
+  const scopes = useMemo<ScopeOption[]>(
+    () => [
+      {
+        kind: "principal",
+        refId: "local-user",
+        label: "我的默认",
+        description: "跨会话的个人偏好",
+      },
+      { kind: "channel", refId: "web", label: "Web 入口", description: "只影响当前Web入口" },
+      ...(sessionId
+        ? [
+            {
+              kind: "product_session",
+              refId: sessionId,
+              label: "当前会话",
+              description: "只影响当前Product Session",
+            },
+          ]
+        : []),
+      {
+        kind: "workflow_version",
+        refId: workflowId,
+        label: "当前Workflow",
+        description: "只影响当前Workflow版本",
+      },
+      {
+        kind: "product_default",
+        refId: "*",
+        label: "产品与系统规则",
+        description: "只读的默认和安全下限",
+        readOnly: true,
+      },
+    ],
+    [sessionId, workflowId],
+  );
   const scope = scopes[Math.min(scopeIndex, scopes.length - 1)];
-  const userPolicy = policySets.find((value) =>
-    value.authority === "user_preference"
-      && value.scope_kind === scope.kind
-      && value.scope_ref_id === scope.refId,
+  const userPolicy = policySets.find(
+    (value) =>
+      value.authority === "user_preference" &&
+      value.scope_kind === scope.kind &&
+      value.scope_ref_id === scope.refId,
   );
   const productPolicy = policySets.find((value) => value.authority === "product_default");
   const safetyPolicy = policySets.find((value) => value.authority === "system_safety");
@@ -118,15 +171,17 @@ export function HitlPage({ sessionId, workflowId }: HitlPageProps) {
     }
   };
 
-  useEffect(() => { void reload(); }, []);
+  useEffect(() => {
+    void reload();
+  }, []);
 
   useEffect(() => {
     const next: Record<string, HitlMode> = {};
     for (const point of decisionPoints) {
       const configured = ruleFor(userPolicy, point.key);
       next[point.key] = scope.readOnly
-        ? ruleFor(productPolicy, point.key)?.mode ?? point.default_mode
-        : configured?.mode ?? "inherit";
+        ? (ruleFor(productPolicy, point.key)?.mode ?? point.default_mode)
+        : (configured?.mode ?? "inherit");
     }
     setModes(next);
   }, [decisionPoints, productPolicy, scope.kind, scope.readOnly, scope.refId, userPolicy]);
@@ -141,19 +196,29 @@ export function HitlPage({ sessionId, workflowId }: HitlPageProps) {
         ? []
         : [{ kind: scope.kind, ref_id: scope.refId }]),
     ];
-    void Promise.all(decisionPoints.map(async (point) => [
-      point.key,
-      await previewHitlPolicy({
-        decision_point_key: point.key,
-        scopes: scopeChain,
-        facts: nominalFacts(point.key),
-      }),
-    ] as const)).then((values) => {
-      if (!cancelled) setPreviews(Object.fromEntries(values));
-    }).catch((previewError: unknown) => {
-      if (!cancelled) setError(previewError instanceof Error ? previewError.message : "有效策略预览失败");
-    });
-    return () => { cancelled = true; };
+    void Promise.all(
+      decisionPoints.map(
+        async (point) =>
+          [
+            point.key,
+            await previewHitlPolicy({
+              decision_point_key: point.key,
+              scopes: scopeChain,
+              facts: nominalFacts(point.key),
+            }),
+          ] as const,
+      ),
+    )
+      .then((values) => {
+        if (!cancelled) setPreviews(Object.fromEntries(values));
+      })
+      .catch((previewError: unknown) => {
+        if (!cancelled)
+          setError(previewError instanceof Error ? previewError.message : "有效策略预览失败");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [decisionPoints, policySets, scope.kind, scope.refId]);
 
   const save = async () => {
@@ -167,8 +232,8 @@ export function HitlPage({ sessionId, workflowId }: HitlPageProps) {
         return {
           decision_point_key: point.key,
           mode,
-          condition: mode === "conditional" ? inherited?.condition ?? null : null,
-          on_match: mode === "conditional" ? inherited?.on_match ?? "require_human" : null,
+          condition: mode === "conditional" ? (inherited?.condition ?? null) : null,
+          on_match: mode === "conditional" ? (inherited?.on_match ?? "require_human") : null,
           constraints: {},
           reason: `用户在${scope.label}配置`,
         };
@@ -192,30 +257,63 @@ export function HitlPage({ sessionId, workflowId }: HitlPageProps) {
   const selectedPreview = selected ? previews[selected.key] : null;
 
   if (loading && decisionPoints.length === 0) {
-    return <div className="hitl-loading"><LoaderCircle className="workflow-spin" size={18} />正在读取人工介入策略…</div>;
+    return (
+      <div className="hitl-loading">
+        <LoaderCircle className="workflow-spin" size={18} />
+        正在读取人工介入策略…
+      </div>
+    );
   }
 
   return (
     <section className="hitl-page">
       <header className="hitl-header">
-        <div><p className="eyebrow">HUMAN IN THE LOOP</p><h2>人工介入</h2><p>每个决策点都保留；你可以决定何时暂停，自动继续也会留下Evaluation与Decision Record。</p></div>
-        <button disabled={saving || scope.readOnly} onClick={() => void save()} type="button"><Save size={15} />{saving ? "激活中…" : "保存并激活"}</button>
+        <div>
+          <p className="eyebrow">HUMAN IN THE LOOP</p>
+          <h2>人工介入</h2>
+          <p>每个决策点都保留；你可以决定何时暂停，自动继续也会留下Evaluation与Decision Record。</p>
+        </div>
+        <button disabled={saving || scope.readOnly} onClick={() => void save()} type="button">
+          <Save size={15} />
+          {saving ? "激活中…" : "保存并激活"}
+        </button>
       </header>
 
       <div className="hitl-scope-tabs" role="tablist" aria-label="人工介入策略作用域">
         {scopes.map((value, index) => (
-          <button aria-selected={index === scopeIndex} className={index === scopeIndex ? "active" : ""} key={`${value.kind}:${value.refId}`} onClick={() => setScopeIndex(index)} role="tab" type="button">
-            <strong>{value.label}{value.readOnly && <LockKeyhole size={12} />}</strong><small>{value.description}</small>
+          <button
+            aria-selected={index === scopeIndex}
+            className={index === scopeIndex ? "active" : ""}
+            key={`${value.kind}:${value.refId}`}
+            onClick={() => setScopeIndex(index)}
+            role="tab"
+            type="button"
+          >
+            <strong>
+              {value.label}
+              {value.readOnly && <LockKeyhole size={12} />}
+            </strong>
+            <small>{value.description}</small>
           </button>
         ))}
       </div>
 
-      {error && <p className="hitl-error" role="alert"><CircleAlert size={15} />{error}</p>}
+      {error && (
+        <p className="hitl-error" role="alert">
+          <CircleAlert size={15} />
+          {error}
+        </p>
+      )}
 
       <div className="hitl-workspace">
         <div className="hitl-matrix" role="table" aria-label="12项有效人工介入策略">
           <div className="hitl-matrix-head" role="row">
-            <span>决策点</span><span>本层设置</span><span>最终生效（普通低风险模拟）</span><span>来源</span><span>条件 / 重新暂停</span><span />
+            <span>决策点</span>
+            <span>本层设置</span>
+            <span>最终生效（普通低风险模拟）</span>
+            <span>来源</span>
+            <span>条件 / 重新暂停</span>
+            <span />
           </div>
           {decisionPoints.map((point) => {
             const configured = ruleFor(userPolicy, point.key);
@@ -225,40 +323,130 @@ export function HitlPage({ sessionId, workflowId }: HitlPageProps) {
             const mode = modes[point.key] ?? "inherit";
             const locked = floor?.mode === "deny" || floor?.mode === "require_human";
             return (
-              <div className={`hitl-matrix-row ${selectedKey === point.key ? "selected" : ""}`} key={point.key} role="row">
-                <button className="hitl-point-copy" onClick={() => setSelectedKey(point.key)} type="button"><strong>{point.label}</strong><small>{point.description}</small></button>
-                <label><span className="sr-only">{point.label}本层设置</span><select disabled={scope.readOnly} onChange={(event) => setModes((values) => ({ ...values, [point.key]: event.target.value as HitlMode }))} value={mode}>
-                  {Object.entries(MODE_LABELS)
-                    .filter(([value]) => value !== "conditional" || scope.readOnly || Boolean(inherited?.condition) || mode === "conditional")
-                    .map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                </select></label>
-                <span className={`hitl-effective hitl-effective--${preview?.final_action ?? "unknown"}`}>{locked && <LockKeyhole size={12} />}{ACTION_LABELS[preview?.final_action ?? ""] ?? "等待预览"}</span>
-                <span className="hitl-source">{configured ? scope.label : `继承产品默认：${MODE_LABELS[inherited?.mode ?? point.default_mode]}`}</span>
-                <span className="hitl-condition">{mode === "conditional" || inherited?.mode === "conditional" ? CONDITION_SUMMARIES[point.key] : MODE_LABELS[mode]}{preview?.result_status === "failed_closed" && <small>事实不足时会重新询问</small>}</span>
-                <button aria-label={`查看${point.label}详情`} onClick={() => setSelectedKey(point.key)} type="button"><ChevronRight size={16} /></button>
+              <div
+                className={`hitl-matrix-row ${selectedKey === point.key ? "selected" : ""}`}
+                key={point.key}
+                role="row"
+              >
+                <button
+                  className="hitl-point-copy"
+                  onClick={() => setSelectedKey(point.key)}
+                  type="button"
+                >
+                  <strong>{point.label}</strong>
+                  <small>{point.description}</small>
+                </button>
+                <label>
+                  <span className="sr-only">{point.label}本层设置</span>
+                  <select
+                    disabled={scope.readOnly}
+                    onChange={(event) =>
+                      setModes((values) => ({
+                        ...values,
+                        [point.key]: event.target.value as HitlMode,
+                      }))
+                    }
+                    value={mode}
+                  >
+                    {Object.entries(MODE_LABELS)
+                      .filter(
+                        ([value]) =>
+                          value !== "conditional" ||
+                          scope.readOnly ||
+                          Boolean(inherited?.condition) ||
+                          mode === "conditional",
+                      )
+                      .map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <span
+                  className={`hitl-effective hitl-effective--${preview?.final_action ?? "unknown"}`}
+                >
+                  {locked && <LockKeyhole size={12} />}
+                  {ACTION_LABELS[preview?.final_action ?? ""] ?? "等待预览"}
+                </span>
+                <span className="hitl-source">
+                  {configured
+                    ? scope.label
+                    : `继承产品默认：${MODE_LABELS[inherited?.mode ?? point.default_mode]}`}
+                </span>
+                <span className="hitl-condition">
+                  {mode === "conditional" || inherited?.mode === "conditional"
+                    ? CONDITION_SUMMARIES[point.key]
+                    : MODE_LABELS[mode]}
+                  {preview?.result_status === "failed_closed" && (
+                    <small>事实不足时会重新询问</small>
+                  )}
+                </span>
+                <button
+                  aria-label={`查看${point.label}详情`}
+                  onClick={() => setSelectedKey(point.key)}
+                  type="button"
+                >
+                  <ChevronRight size={16} />
+                </button>
               </div>
             );
           })}
         </div>
 
         <aside className="hitl-explainer">
-          {selected ? <>
-            <span className="hitl-explainer-icon"><ShieldCheck size={19} /></span>
-            <p className="eyebrow">有效策略解释</p>
-            <h3>{selected.label}</h3>
-            <p>{selected.description}</p>
-            <dl>
-              <div><dt>本层设置</dt><dd>{MODE_LABELS[modes[selected.key] ?? "inherit"]}</dd></div>
-              <div><dt>普通低风险模拟</dt><dd>{ACTION_LABELS[selectedPreview?.final_action ?? ""] ?? "读取中"}</dd></div>
-              <div><dt>系统下限</dt><dd>{ACTION_LABELS[selectedPreview?.floor_action ?? ""] ?? "读取中"}</dd></div>
-              <div><dt>条件</dt><dd>{CONDITION_SUMMARIES[selected.key]}</dd></div>
-              <div><dt>解析器</dt><dd className="mono">{selectedPreview?.resolver_version ?? "—"}</dd></div>
-            </dl>
-            {selectedPreview?.matched_rules.map((rule, index) => (
-              <div className="hitl-rule-source" key={`${rule.authority}:${rule.scope_kind}:${index}`}><Check size={13} /><span><strong>{rule.authority}</strong><small>{rule.scope_kind} · {MODE_LABELS[rule.mode]}</small></span></div>
-            ))}
-            <p className="hitl-explainer-note">修改当前对象、模型、Payload、Context、风险或能力范围，会生成新Subject Hash并重新评估；旧批准不会转移。</p>
-          </> : <p>选择一个决策点查看解释。</p>}
+          {selected ? (
+            <>
+              <span className="hitl-explainer-icon">
+                <ShieldCheck size={19} />
+              </span>
+              <p className="eyebrow">有效策略解释</p>
+              <h3>{selected.label}</h3>
+              <p>{selected.description}</p>
+              <dl>
+                <div>
+                  <dt>本层设置</dt>
+                  <dd>{MODE_LABELS[modes[selected.key] ?? "inherit"]}</dd>
+                </div>
+                <div>
+                  <dt>普通低风险模拟</dt>
+                  <dd>{ACTION_LABELS[selectedPreview?.final_action ?? ""] ?? "读取中"}</dd>
+                </div>
+                <div>
+                  <dt>系统下限</dt>
+                  <dd>{ACTION_LABELS[selectedPreview?.floor_action ?? ""] ?? "读取中"}</dd>
+                </div>
+                <div>
+                  <dt>条件</dt>
+                  <dd>{CONDITION_SUMMARIES[selected.key]}</dd>
+                </div>
+                <div>
+                  <dt>解析器</dt>
+                  <dd className="mono">{selectedPreview?.resolver_version ?? "—"}</dd>
+                </div>
+              </dl>
+              {selectedPreview?.matched_rules.map((rule, index) => (
+                <div
+                  className="hitl-rule-source"
+                  key={`${rule.authority}:${rule.scope_kind}:${index}`}
+                >
+                  <Check size={13} />
+                  <span>
+                    <strong>{rule.authority}</strong>
+                    <small>
+                      {rule.scope_kind} · {MODE_LABELS[rule.mode]}
+                    </small>
+                  </span>
+                </div>
+              ))}
+              <p className="hitl-explainer-note">
+                修改当前对象、模型、Payload、Context、风险或能力范围，会生成新Subject
+                Hash并重新评估；旧批准不会转移。
+              </p>
+            </>
+          ) : (
+            <p>选择一个决策点查看解释。</p>
+          )}
         </aside>
       </div>
     </section>

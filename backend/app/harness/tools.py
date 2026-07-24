@@ -6,19 +6,34 @@ from typing import Any
 
 from .service import HarnessService
 
-
 HARNESS_TOOL_CATALOG: tuple[dict[str, Any], ...] = (
     {"name": "harness.list_projects", "mode": "query", "description": "列出当前Scope内的正式Project。"},
     {"name": "harness.search_resources", "mode": "query", "description": "检索Project、Work和Note轻量目录。"},
-    {"name": "harness.get_project_context", "mode": "query", "description": "按正式Project ID读取当前工作上下文。"},
+    {
+        "name": "harness.get_project_context",
+        "mode": "query",
+        "description": "按正式Project ID读取当前工作上下文。",
+    },
     {"name": "harness.list_work", "mode": "query", "description": "列出Project或当前Scope的WorkItem。"},
     {"name": "harness.get_work_item", "mode": "query", "description": "读取WorkItem、当前Plan和ActionItem。"},
     {"name": "harness.search_notes", "mode": "query", "description": "读取正式Note当前Revision。"},
     {"name": "harness.search_memory", "mode": "query", "description": "读取仍有效的Accepted Memory。"},
     {"name": "harness.propose_project", "mode": "candidate", "description": "提出Project候选；不直接激活。"},
-    {"name": "harness.propose_work_change", "mode": "candidate", "description": "提出Work变更候选；不直接提交状态。"},
-    {"name": "harness.capture_note", "mode": "candidate", "description": "提出Note内容；提交仍受CAS和策略治理。"},
-    {"name": "harness.propose_memory", "mode": "candidate", "description": "提出长期Memory候选；不是Accepted Memory。"},
+    {
+        "name": "harness.propose_work_change",
+        "mode": "candidate",
+        "description": "提出Work变更候选；不直接提交状态。",
+    },
+    {
+        "name": "harness.capture_note",
+        "mode": "candidate",
+        "description": "提出Note内容；提交仍受CAS和策略治理。",
+    },
+    {
+        "name": "harness.propose_memory",
+        "mode": "candidate",
+        "description": "提出长期Memory候选；不是Accepted Memory。",
+    },
 )
 
 
@@ -44,10 +59,12 @@ class HarnessToolset:
         return await self.service.project_context(project_id)
 
     async def list_work(self, *, project_id: str | None = None, status: str | None = None) -> dict[str, Any]:
-        return {"work_items": await self.service.list_work(
-            project_id=project_id,
-            statuses=(status,) if status else None,
-        )}
+        return {
+            "work_items": await self.service.list_work(
+                project_id=project_id,
+                statuses=(status,) if status else None,
+            )
+        }
 
     async def get_work_item(self, *, work_item_id: str) -> dict[str, Any]:
         return await self.service.get_work_item(work_item_id)
@@ -55,7 +72,9 @@ class HarnessToolset:
     async def search_notes(self, *, project_id: str | None = None) -> dict[str, Any]:
         return {"notes": await self.service.list_notes(project_id=project_id)}
 
-    async def search_memory(self, *, scope_kind: str | None = None, scope_ref_id: str | None = None) -> dict[str, Any]:
+    async def search_memory(
+        self, *, scope_kind: str | None = None, scope_ref_id: str | None = None
+    ) -> dict[str, Any]:
         return await self.service.list_memory(
             scope_kind=scope_kind,
             scope_ref_id=scope_ref_id,

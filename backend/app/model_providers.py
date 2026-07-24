@@ -7,12 +7,13 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-
 _PROVIDER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 class ModelProviderCatalogError(ValueError):
     """Provider/model configuration or selection is invalid."""
+
+    code = "MODEL_PROVIDER_SELECTION_INVALID"
 
 
 @dataclass(frozen=True, slots=True)

@@ -18,9 +18,9 @@ from .product_sessions.database import (
     ProductDatabase,
     ToolConfigurationRecord,
     ToolExecutionRecord,
+    affected_row_count,
     utc_now,
 )
-
 
 PI_TOOL_ID = "pi_agent"
 PI_BUILTIN_TOOLS = ("read", "grep", "find", "ls", "bash", "edit", "write")
@@ -32,15 +32,15 @@ DEFAULT_PI_SYSTEM_PROMPT = (
 
 
 class ToolConfigurationError(ValueError):
-    pass
+    code = "TOOL_CONFIGURATION_INVALID"
 
 
 class ToolConfigurationConflict(ToolConfigurationError):
-    pass
+    code = "TOOL_CONFIGURATION_CONFLICT"
 
 
 class ToolConfigurationNotFound(ToolConfigurationError):
-    pass
+    code = "TOOL_CONFIGURATION_NOT_FOUND"
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,9 +139,7 @@ class ToolConfigurationService:
             values = list(
                 (
                     await transaction.scalars(
-                        select(ToolExecutionRecord).where(
-                            ToolExecutionRecord.status == "running"
-                        )
+                        select(ToolExecutionRecord).where(ToolExecutionRecord.status == "running")
                     )
                 ).all()
             )
@@ -279,7 +277,7 @@ class ToolConfigurationService:
                     updated_at=utc_now(),
                 )
             )
-            if changed.rowcount != 1:
+            if affected_row_count(changed) != 1:
                 exists = await transaction.get(ToolConfigurationRecord, PI_TOOL_ID)
                 if exists is None:
                     raise ToolConfigurationNotFound("pi Agent Tool配置不存在")

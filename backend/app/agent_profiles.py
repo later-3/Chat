@@ -3,25 +3,62 @@
 from __future__ import annotations
 
 import copy
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select, update
 
 from .model_providers import ModelProviderCatalog, ModelProviderCatalogError
-from .product_sessions.database import AgentProfileRecord, ProductDatabase, utc_now
+from .product_sessions.database import (
+    AgentProfileRecord,
+    ProductDatabase,
+    affected_row_count,
+    utc_now,
+)
+
+logger = logging.getLogger(__name__)
+
+LEGACY_INTENT_ROUTER_INSTRUCTIONS_V0 = (
+    "你是Chat主Workflow的意图与上下文Agent。只根据明确可见的用户输入和候选摘要判断，"
+    "不得编造Project或任务状态。必须只输出一个JSON对象，字段为："
+    "scenario（simple_question/continue_project/new_task/plan_request/learning/clarify之一）、"
+    "goal、confidence（0到1）、project_hint、needs_plan、needs_clarification、"
+    "clarification_question、context_keywords（字符串数组）、reason_summary。"
+)
+LEGACY_INTENT_ROUTER_INSTRUCTIONS_V1 = (
+    "你是Chat主Workflow的意图与上下文Agent。只根据明确可见的用户输入和候选摘要判断，"
+    "不得编造Project或任务状态。必须只输出一个JSON对象，字段为："
+    "scenario（simple_question/continue_project/new_task/plan_request/learning/clarify之一）、"
+    "query_kind（仅明确查询产品项目目录时为project_catalog，否则为null）、"
+    "goal、confidence（0到1）、project_hint、needs_plan、needs_clarification、"
+    "clarification_question、context_keywords（字符串数组）、reason_summary。"
+    "‘我有哪些项目/查看项目列表’目标已经明确，不得改问是否新建。"
+)
+INTENT_ROUTER_INSTRUCTIONS_V2 = (
+    "你是Chat主Workflow的意图与上下文Agent。只根据明确可见的用户输入和候选摘要判断，"
+    "不得编造Project或任务状态。必须只输出一个JSON对象，顶层字段为intents和"
+    "combination_policy。intents最多4项，每项字段为branch_key、"
+    "scenario（simple_question/continue_project/new_task/plan_request/learning/clarify之一）、"
+    "query_kind（仅明确查询产品项目目录时为project_catalog，否则为null）、"
+    "goal、expected_outcome、confidence（0到1）、project_hint、needs_plan、"
+    "needs_clarification、clarification_question、answers_clarification_id、"
+    "context_keywords、dependency_branch_keys、constraints、reason_summary。"
+    "只有一句话确有多个独立目标时才拆分，并让依赖只指向更早分支。"
+    "‘我有哪些项目/查看项目列表’目标已经明确，不得改问是否新建。"
+)
 
 
 class AgentProfileError(ValueError):
-    pass
+    code = "AGENT_PROFILE_INVALID"
 
 
 class AgentProfileNotFound(AgentProfileError):
-    pass
+    code = "AGENT_PROFILE_NOT_FOUND"
 
 
 class AgentProfileConflict(AgentProfileError):
-    pass
+    code = "AGENT_PROFILE_CONFLICT"
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,86 +112,76 @@ class AgentProfileService:
             return
         async with self._database.sessions.begin() as transaction:
             values = list(
-                (
-                    await transaction.scalars(
-                        select(AgentProfileRecord).order_by(AgentProfileRecord.id)
-                    )
-                ).all()
+                (await transaction.scalars(select(AgentProfileRecord).order_by(AgentProfileRecord.id))).all()
             )
             provider_id = self._catalog.default_provider_id
             model = self._catalog.default_model
             defaults = (
                 AgentProfileRecord(
-                        id="intent_router",
-                        name="意图与上下文 Agent",
-                        description="用最小上下文识别场景、目标、项目关联和需要补充的信息。",
-                        instructions=(
-                            "你是Chat主Workflow的意图与上下文Agent。只根据明确可见的用户输入和候选摘要判断，"
-                            "不得编造Project或任务状态。必须只输出一个JSON对象，字段为："
-                            "scenario（simple_question/continue_project/new_task/plan_request/learning/clarify之一）、"
-                            "query_kind（仅明确查询产品项目目录时为project_catalog，否则为null）、"
-                            "goal、confidence（0到1）、project_hint、needs_plan、needs_clarification、"
-                            "clarification_question、context_keywords（字符串数组）、reason_summary。"
-                            "‘我有哪些项目/查看项目列表’目标已经明确，不得改问是否新建。"
-                        ),
-                        provider_id=provider_id,
-                        model=model,
+                    id="intent_router",
+                    name="意图与上下文 Agent",
+                    description="用最小上下文识别场景、目标、项目关联和需要补充的信息。",
+                    instructions=INTENT_ROUTER_INSTRUCTIONS_V2,
+                    provider_id=provider_id,
+                    model=model,
                 ),
                 AgentProfileRecord(
-                        id="task_planner",
-                        name="任务规划 Agent",
-                        description="把已确认目标和最小充分背景拆成可验证的执行步骤。",
-                        instructions=(
-                            "你是Chat主Workflow的任务规划Agent。基于已识别意图和采用的最小充分上下文，"
-                            "形成具体、可验证、不过度扩权的计划。明确步骤、依赖、完成条件、验证和需要用户决定的点。"
-                        ),
-                        provider_id=provider_id,
-                        model=model,
+                    id="task_planner",
+                    name="任务规划 Agent",
+                    description="把已确认目标和最小充分背景拆成可验证的执行步骤。",
+                    instructions=(
+                        "你是Chat主Workflow的任务规划Agent。基于已识别意图和采用的最小充分上下文，"
+                        "形成具体、可验证、不过度扩权的计划。明确步骤、依赖、完成条件、验证和需要用户决定的点。"
+                    ),
+                    provider_id=provider_id,
+                    model=model,
                 ),
                 AgentProfileRecord(
-                        id="response_agent",
-                        name="协作响应 Agent",
-                        description="根据当前场景的Execution Brief形成直接、可靠的用户答复。",
-                        instructions=(
-                            "你是Chat主Workflow的协作响应Agent。严格使用本次明确装配的背景、目标、计划和约束；"
-                            "不要假装读取了未提供的文件，不要声称未验证的动作已经完成。用中文直接给出当前场景所需答复。"
-                        ),
-                        provider_id=provider_id,
-                        model=model,
+                    id="response_agent",
+                    name="协作响应 Agent",
+                    description="根据当前场景的Execution Brief形成直接、可靠的用户答复。",
+                    instructions=(
+                        "你是Chat主Workflow的协作响应Agent。严格使用本次明确装配的背景、目标、计划和约束；"
+                        "不要假装读取了未提供的文件，不要声称未验证的动作已经完成。用中文直接给出当前场景所需答复。"
+                    ),
+                    provider_id=provider_id,
+                    model=model,
                 ),
                 AgentProfileRecord(
-                        id="turn_summarizer",
-                        name="回合主题提取 Agent",
-                        description="在回合结束后提取主题、已确认事实、开放问题和候选状态更新。",
-                        instructions=(
-                            "你是Chat回合主题提取Agent。只输出JSON，字段为topic、confirmed_facts、decisions、"
-                            "open_questions、project_hint、work_state_candidates、memory_candidates。"
-                            "无关寒暄不进入长期候选；推断内容必须标为candidate，不能冒充已接受事实。"
-                        ),
-                        provider_id=provider_id,
-                        model=model,
+                    id="turn_summarizer",
+                    name="回合主题提取 Agent",
+                    description="在回合结束后提取主题、已确认事实、开放问题和候选状态更新。",
+                    instructions=(
+                        "你是Chat回合主题提取Agent。只输出JSON，字段为topic、confirmed_facts、decisions、"
+                        "open_questions、project_hint、work_state_candidates、memory_candidates。"
+                        "confirmed_facts每项必须包含text和source_refs；decisions每项必须绑定"
+                        "decision_record_id或product_ref。无关寒暄不进入长期候选；"
+                        "推断内容必须标为candidate，不能冒充已接受事实。"
+                    ),
+                    provider_id=provider_id,
+                    model=model,
                 ),
                 AgentProfileRecord(
-                        id="planner",
-                        name="规划 Agent",
-                        description="先理解目标、约束和现有上下文，形成可交接的方案草稿。",
-                        instructions=(
-                            "你是规划 Agent。请基于完整会话理解用户目标，给出结构清晰、"
-                            "可执行且明确约束的方案草稿，供下一位审校 Agent 复核。"
-                        ),
-                        provider_id=provider_id,
-                        model=model,
+                    id="planner",
+                    name="规划 Agent",
+                    description="先理解目标、约束和现有上下文，形成可交接的方案草稿。",
+                    instructions=(
+                        "你是规划 Agent。请基于完整会话理解用户目标，给出结构清晰、"
+                        "可执行且明确约束的方案草稿，供下一位审校 Agent 复核。"
+                    ),
+                    provider_id=provider_id,
+                    model=model,
                 ),
                 AgentProfileRecord(
-                        id="reviewer",
-                        name="审校 Agent",
-                        description="接收完整会话和规划结果，检查遗漏并形成最终答复。",
-                        instructions=(
-                            "你是审校 Agent。请查看原始会话、规划 Agent 的草稿和交接要求，"
-                            "纠正遗漏或不可靠结论，然后直接给出面向用户的最终答复。"
-                        ),
-                        provider_id=provider_id,
-                        model=model,
+                    id="reviewer",
+                    name="审校 Agent",
+                    description="接收完整会话和规划结果，检查遗漏并形成最终答复。",
+                    instructions=(
+                        "你是审校 Agent。请查看原始会话、规划 Agent 的草稿和交接要求，"
+                        "纠正遗漏或不可靠结论，然后直接给出面向用户的最终答复。"
+                    ),
+                    provider_id=provider_id,
+                    model=model,
                 ),
                 AgentProfileRecord(
                     id="idiom_agent_a",
@@ -184,8 +211,32 @@ class AgentProfileService:
             if missing:
                 transaction.add_all(missing)
                 values.extend(missing)
+            upgraded_ids: list[str] = []
+            for value in values:
+                # Built-in workflow contracts may evolve, while user-edited Agent
+                # profiles must remain untouched. Exact legacy content plus revision 1
+                # proves this row still carries the product seed rather than a user edit.
+                if (
+                    value.id == "intent_router"
+                    and value.revision == 1
+                    and value.instructions
+                    in {
+                        LEGACY_INTENT_ROUTER_INSTRUCTIONS_V0,
+                        LEGACY_INTENT_ROUTER_INSTRUCTIONS_V1,
+                    }
+                ):
+                    value.instructions = INTENT_ROUTER_INSTRUCTIONS_V2
+                    value.revision = 2
+                    value.updated_at = utc_now()
+                    upgraded_ids.append(value.id)
             values.sort(key=lambda value: value.id)
         self._cache = {value.id: _snapshot(value) for value in values}
+        if upgraded_ids:
+            logger.info(
+                "builtin_agent_profiles_upgraded count=%d agent_ids=%s",
+                len(upgraded_ids),
+                ",".join(upgraded_ids),
+            )
 
     def runtime_snapshot(self, agent_id: str) -> AgentProfileSnapshot:
         value = self._cache.get(agent_id)
@@ -253,7 +304,7 @@ class AgentProfileService:
                     updated_at=next_updated_at,
                 )
             )
-            if changed.rowcount != 1:
+            if affected_row_count(changed) != 1:
                 exists = await transaction.get(AgentProfileRecord, agent_id)
                 if exists is None:
                     raise AgentProfileNotFound(f"Agent不存在: {agent_id}")

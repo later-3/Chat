@@ -10,7 +10,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..product_sessions.database import Base, utc_now
@@ -332,11 +341,13 @@ class ContextPackageRecord(Base):
     interaction_id: Mapped[str] = mapped_column(
         ForeignKey("interactions.id", ondelete="RESTRICT"), nullable=False
     )
-    run_id: Mapped[str] = mapped_column(
-        ForeignKey("product_runs.id", ondelete="RESTRICT"), nullable=False
-    )
+    run_id: Mapped[str] = mapped_column(ForeignKey("product_runs.id", ondelete="RESTRICT"), nullable=False)
     stage: Mapped[str] = mapped_column(String(20), nullable=False)
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_package_id: Mapped[str | None] = mapped_column(
+        ForeignKey("context_packages.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     selected_project_id: Mapped[str | None] = mapped_column(
         ForeignKey("product_projects.id", ondelete="RESTRICT"), nullable=True
     )
@@ -347,6 +358,8 @@ class ContextPackageRecord(Base):
     estimated_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     package_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="candidate")
+    revision_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False, default="workflow")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
@@ -365,6 +378,8 @@ class ContextAdoptionRecord(Base):
     title: Mapped[str] = mapped_column(String(240), nullable=False)
     content_text: Mapped[str] = mapped_column(Text, nullable=False)
     adopted: Mapped[bool] = mapped_column(nullable=False)
+    locked: Mapped[bool] = mapped_column(nullable=False, default=False)
+    selection_origin: Mapped[str] = mapped_column(String(32), nullable=False, default="system")
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     token_estimate: Mapped[int] = mapped_column(Integer, nullable=False)
 

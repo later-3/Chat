@@ -1,8 +1,9 @@
-# Chat 总体架构与模块候选
+# Chat 总体架构与模块基线
 
-> 状态：待用户审核
-> 更新日期：2026-07-22
+> 状态：已批准。2026-07-24用户批准按本架构分阶段实现完整Chat系统。
+> 更新日期：2026-07-24
 > 决策依据：[总体架构源码研究与推导](./overall-architecture-research.md)
+> 愿景与协作落地依据：[Chat持续协作系统研究与落地推导](./chat-collaboration-system-research.md)
 > 新手阅读：[从前端对象到Agent内部](./architecture-beginner-guide.md)
 > 约束：本文定义完整产品的目标架构。实现阶段只决定顺序，不改变模块责任和最终用户场景。
 
@@ -975,17 +976,19 @@ backend/app/
 
 最终满足的不是9个孤立版本，而是第12节的全部用户场景和第7节全部模块责任。
 
-## 17. 本轮审核项
+## 17. 已批准的总体架构决定
 
-请审核以下8个决策，而不是字段和表结构：
+1. Chat Web、Telegram和OPC-OS Chat分别经过Web/API Adapter、具体Channel Adapter和OPC-OS
+   Bridge，再统一进入Interaction Ingress。
+2. Chat原生Channel默认采用内置Adapter Host，同时保留独立Adapter进程和OPC-OS托管渠道两种
+   部署合同。
+3. 接受10个产品与应用模块的责任划分，特别是Conversation/Context/Memory三分和
+   Interaction/Run二分。
+4. Collaboration是本项目产品需求补足，不冒充MAF或参考项目原生能力。
+5. Product Run、Run Attempt、MAF AgentSession/Checkpoint和AG-UI Thread显式分开。
+6. Tool执行、Evidence和Delivery分别拥有副作用、证明和送达状态。
+7. MAF完成后仍必须经过产品Finalization门才能发布AG-UI成功终态。
+8. 进程角色可以共置部署，但状态、合同、权限和恢复边界不得合并。
 
-1. 是否接受Chat Web、Telegram和OPC-OS Chat不是同一种入口：它们分别经过Web/API Adapter、Telegram Adapter和OPC-OS Bridge，再统一进入Interaction Ingress。
-2. 是否接受Chat原生Channel默认采用内置Adapter Host，同时保留独立Adapter进程和OPC-OS托管渠道两种部署合同。
-3. 是否接受10个产品与应用模块的责任划分，特别是Conversation/Context/Memory三分和Interaction/Run二分。
-4. 是否接受Collaboration是本项目需求补足，而非宣称来自参考项目。
-5. 是否接受Product Run、Attempt、MAF Session/Checkpoint和AG-UI Thread显式分开。
-6. 是否接受Tool执行、Evidence和Delivery分别拥有副作用、证明和送达状态。
-7. 是否接受MAF完成之后仍必须经过产品Finalization门才能发布AG-UI成功终态。
-8. 是否接受进程角色可以共置部署，但状态和合同边界不得合并。
-
-审核通过后，下一步才是按模块逐一完成状态机、Schema、API、事件和故障测试的详细设计。
+总体批准只固定模块、责任和目标保证。新增正式Schema和实现仍须遵守对应模块的详细设计、
+迁移、回滚和测试门。

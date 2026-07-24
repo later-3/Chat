@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import UnionType
 from typing import Any
 
 from agent_framework import Executor, Message, WorkflowBuilder, WorkflowContext, handler
@@ -28,7 +29,7 @@ class IntakeExecutor(Executor):
         self.delay = delay
 
     @property
-    def output_types(self) -> list[type[Any]]:
+    def output_types(self) -> list[type[Any] | UnionType]:
         return [str]
 
     @handler(input=list)
@@ -118,11 +119,15 @@ def create_nested_quality_workflow(*, step_delay: float = 0.12):
 
     rules = RulesExecutor(step_delay)
     score = ScoreExecutor(step_delay)
-    policy_workflow = WorkflowBuilder(
-        name="policy-bundle",
-        start_executor=rules,
-        output_from=[score],
-    ).add_edge(rules, score).build()
+    policy_workflow = (
+        WorkflowBuilder(
+            name="policy-bundle",
+            start_executor=rules,
+            output_from=[score],
+        )
+        .add_edge(rules, score)
+        .build()
+    )
 
     normalize = NormalizeExecutor(step_delay)
     policy_bundle = VisibleWorkflowExecutor(policy_workflow, id="policy_bundle")

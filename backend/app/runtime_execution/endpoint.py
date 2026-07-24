@@ -8,9 +8,11 @@ from collections.abc import AsyncGenerator, Sequence
 from typing import Any
 
 from agent_framework_ag_ui._types import AGUIRequest
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.params import Depends
 from fastapi.responses import StreamingResponse
 
+from ..api import current_request_id
 from ..product_sessions.service import ProductSessionError, ProductSessionService
 from .service import (
     RuntimeCursorExpired,
@@ -124,7 +126,15 @@ def _agui_error_response(input_data: dict[str, Any], *, code: str, message: str)
 
     async def error_stream() -> AsyncGenerator[bytes]:
         yield _sse({"type": "RUN_STARTED", "threadId": thread_id, "runId": run_id})
-        yield _sse({"type": "RUN_ERROR", "message": message, "code": code})
+        yield _sse(
+            {
+                "type": "RUN_ERROR",
+                "message": message,
+                "code": code,
+                "requestId": current_request_id(),
+                "retryable": False,
+            }
+        )
 
     return StreamingResponse(error_stream(), media_type="text/event-stream")
 
@@ -152,7 +162,9 @@ def add_runtime_management_endpoints(
             try:
                 decoded = runtime.decode_cursor(cursor)
             except RuntimeCursorInvalid as error:
-                raise HTTPException(status_code=400, detail={"code": error.code, "message": str(error)}) from error
+                raise HTTPException(
+                    status_code=400, detail={"code": error.code, "message": str(error)}
+                ) from error
             if decoded["runtime_job_id"] != job_id:
                 raise HTTPException(status_code=400, detail={"code": "RUNTIME_CURSOR_JOB_MISMATCH"})
             after_sequence = int(decoded["last_applied_sequence"])
@@ -163,8 +175,12 @@ def add_runtime_management_endpoints(
                 limit=limit,
             )
         except RuntimeCursorExpired as error:
-            raise HTTPException(status_code=410, detail={"code": error.code, "message": str(error)}) from error
+            raise HTTPException(
+                status_code=410, detail={"code": error.code, "message": str(error)}
+            ) from error
         except RuntimeExecutionError as error:
-            raise HTTPException(status_code=404, detail={"code": error.code, "message": str(error)}) from error
+            raise HTTPException(
+                status_code=404, detail={"code": error.code, "message": str(error)}
+            ) from error
         next_cursor = events[-1]["cursor"] if events else job["cursor"]
         return {"job": job, "events": events, "next_cursor": next_cursor}

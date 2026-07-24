@@ -41,7 +41,9 @@ export function stableStringify(value: unknown): string {
 }
 
 export function otherParameters(request: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(request).filter(([key]) => !REQUEST_CORE_FIELDS.has(key)));
+  return Object.fromEntries(
+    Object.entries(request).filter(([key]) => !REQUEST_CORE_FIELDS.has(key)),
+  );
 }
 
 export function withOtherParameters(
@@ -63,9 +65,7 @@ export function withRequestMessages(
   request: Record<string, unknown>,
   messages: unknown,
 ): Record<string, unknown> {
-  return "messages" in request
-    ? { ...request, messages }
-    : { ...request, input: messages };
+  return "messages" in request ? { ...request, messages } : { ...request, input: messages };
 }
 
 export function contextSourceIndexForMessage(
@@ -75,9 +75,9 @@ export function contextSourceIndexForMessage(
   instructionIndex: number,
 ): number {
   const sourcesAlreadyIncludeInstructions = sourceCount === messageCount;
-  return !sourcesAlreadyIncludeInstructions
-    && instructionIndex >= 0
-    && messageIndex > instructionIndex
+  return !sourcesAlreadyIncludeInstructions &&
+    instructionIndex >= 0 &&
+    messageIndex > instructionIndex
     ? messageIndex - 1
     : messageIndex;
 }
@@ -104,24 +104,33 @@ export function withRequestInstructions(
 ): Record<string, unknown> {
   if ("input" in request || "instructions" in request) return { ...request, instructions };
   const messages = Array.isArray(request.messages) ? request.messages : [];
-  const systemIndex = messages.findIndex((message) => isRecord(message) && message.role === "system");
-  if (systemIndex < 0) return { ...request, messages: [{ role: "system", content: instructions }, ...messages] };
+  const systemIndex = messages.findIndex(
+    (message) => isRecord(message) && message.role === "system",
+  );
+  if (systemIndex < 0)
+    return { ...request, messages: [{ role: "system", content: instructions }, ...messages] };
   return {
     ...request,
-    messages: messages.map((message, index) => index === systemIndex ? { ...(isRecord(message) ? message : {}), role: "system", content: instructions } : message),
+    messages: messages.map((message, index) =>
+      index === systemIndex
+        ? { ...(isRecord(message) ? message : {}), role: "system", content: instructions }
+        : message,
+    ),
   };
 }
 
 function responsesPartToChat(part: unknown): unknown {
   if (!isRecord(part)) return part;
-  if (["input_text", "output_text"].includes(String(part.type))) return { type: "text", text: part.text };
+  if (["input_text", "output_text"].includes(String(part.type)))
+    return { type: "text", text: part.text };
   if (part.type === "input_image") return { type: "image_url", image_url: { url: part.image_url } };
   return part;
 }
 
 function chatPartToResponses(part: unknown, role: string): unknown {
   if (!isRecord(part)) return part;
-  if (part.type === "text") return { type: role === "assistant" ? "output_text" : "input_text", text: part.text };
+  if (part.type === "text")
+    return { type: role === "assistant" ? "output_text" : "input_text", text: part.text };
   if (part.type === "image_url") {
     const imageUrl = isRecord(part.image_url) ? part.image_url.url : part.image_url;
     return { type: "input_image", image_url: imageUrl };
@@ -140,47 +149,66 @@ export function convertRequestForProvider(
   );
   const parameters = Object.fromEntries(
     Object.entries(otherParameters(request)).filter(
-      ([key]) => selectedModel?.capabilities.allow_unknown_parameters || supportedParameters.has(key),
+      ([key]) =>
+        selectedModel?.capabilities.allow_unknown_parameters || supportedParameters.has(key),
     ),
   );
   supportedParameters.forEach((parameter, key) => {
     if (parameter.locked) parameters[key] = parameter.default;
   });
   if (provider.protocol === "openai_chat_completions") {
-    const source = Array.isArray(request.input) ? request.input : Array.isArray(request.messages) ? request.messages : [];
+    const source = Array.isArray(request.input)
+      ? request.input
+      : Array.isArray(request.messages)
+        ? request.messages
+        : [];
     const messages = source.map((message) => {
       if (!isRecord(message)) return message;
       const content = message.content;
       if (Array.isArray(content)) {
         const parts = content.map(responsesPartToChat);
         const textOnly = parts.every((part) => isRecord(part) && part.type === "text");
-        return { ...message, content: textOnly ? parts.map((part) => String((part as Record<string, unknown>).text ?? "")).join("\n") : parts };
+        return {
+          ...message,
+          content: textOnly
+            ? parts.map((part) => String((part as Record<string, unknown>).text ?? "")).join("\n")
+            : parts,
+        };
       }
       return message;
     });
     const instructions = requestInstructions(request);
-    const withoutExistingSystem = messages.filter((message) => !isRecord(message) || message.role !== "system");
+    const withoutExistingSystem = messages.filter(
+      (message) => !isRecord(message) || message.role !== "system",
+    );
     return {
       model,
-      messages: instructions ? [{ role: "system", content: instructions }, ...withoutExistingSystem] : withoutExistingSystem,
+      messages: instructions
+        ? [{ role: "system", content: instructions }, ...withoutExistingSystem]
+        : withoutExistingSystem,
       tools: request.tools ?? [],
       ...parameters,
       store: false,
     };
   }
 
-  const source = Array.isArray(request.messages) ? request.messages : Array.isArray(request.input) ? request.input : [];
+  const source = Array.isArray(request.messages)
+    ? request.messages
+    : Array.isArray(request.input)
+      ? request.input
+      : [];
   const instructions = requestInstructions(request);
   const input = source
     .filter((message) => !isRecord(message) || message.role !== "system")
     .map((message) => {
       if (!isRecord(message)) return message;
       const role = typeof message.role === "string" ? message.role : "user";
-      const content = typeof message.content === "string"
-        ? [{ type: role === "assistant" ? "output_text" : "input_text", text: message.content }]
-        : Array.isArray(message.content)
-          ? message.content.map((part) => chatPartToResponses(part, role))
-          : [];
+      const content =
+        typeof message.content === "string"
+          ? [{ type: role === "assistant" ? "output_text" : "input_text", text: message.content }]
+          : Array.isArray(message.content)
+            ? message.content.map((part) => chatPartToResponses(part, role))
+            : [];
       return { ...message, content };
     });
   return {
@@ -214,7 +242,10 @@ function validateParameter(parameter: ParameterCapability, value: unknown): stri
   if (parameter.value_type === "boolean" && typeof value !== "boolean") {
     issues.push(`${parameter.key}必须是布尔值`);
   }
-  if (parameter.value_type === "integer" && (!Number.isInteger(value) || typeof value !== "number")) {
+  if (
+    parameter.value_type === "integer" &&
+    (!Number.isInteger(value) || typeof value !== "number")
+  ) {
     issues.push(`${parameter.key}必须是整数`);
   }
   if (parameter.value_type === "number" && (typeof value !== "number" || !Number.isFinite(value))) {
@@ -290,7 +321,10 @@ function validateInput(
           issues.push(`消息${messageIndex + 1}第${contentIndex + 1}项文字不能为空`);
         }
       }
-      if (part.type === "input_image" && (typeof part.image_url !== "string" || !part.image_url.trim())) {
+      if (
+        part.type === "input_image" &&
+        (typeof part.image_url !== "string" || !part.image_url.trim())
+      ) {
         issues.push(`消息${messageIndex + 1}第${contentIndex + 1}项图片地址不能为空`);
       }
     });
@@ -345,9 +379,12 @@ export function policyIssues(
   const continuation = CONTINUATION_FIELDS.filter(
     (field) => request[field] !== undefined && request[field] !== null,
   );
-  if (continuation.length > 0) issues.push(`当前策略禁止Continuation字段：${continuation.join("、")}`);
+  if (continuation.length > 0)
+    issues.push(`当前策略禁止Continuation字段：${continuation.join("、")}`);
 
-  const parameterMap = new Map(capabilities.parameters.map((parameter) => [parameter.key, parameter]));
+  const parameterMap = new Map(
+    capabilities.parameters.map((parameter) => [parameter.key, parameter]),
+  );
   Object.entries(otherParameters(request)).forEach(([key, value]) => {
     if (CONTINUATION_FIELDS.includes(key)) return;
     const parameter = parameterMap.get(key);
@@ -379,7 +416,8 @@ export function changeMessageRole(
   const content = Array.isArray(message.content) ? message.content : [];
   const nextContent = content.map((part) => {
     const record = isRecord(part) ? part : {};
-    const type = typeof record.type === "string" && allowed.includes(record.type) ? record.type : fallback;
+    const type =
+      typeof record.type === "string" && allowed.includes(record.type) ? record.type : fallback;
     if (type === "input_image") {
       return { type, image_url: typeof record.image_url === "string" ? record.image_url : "" };
     }

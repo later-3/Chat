@@ -58,11 +58,11 @@ flowchart LR
 
 | 交付阶段 | 目标 | 当前状态 |
 |---|---|---|
-| 0. 产品定义与治理 | 固定独立产品身份、6个问题、完整闭环和协作规则 | `产品身份、经验约束和Chat概念空间已建立` |
+| 0. 产品定义与治理 | 固定独立产品身份、6个问题、完整闭环和协作规则 | `最终愿景、概念边界和阶段A协作协议已获确认` |
 | 1. 工程与真实链路 | 建立独立前后端、MAF、AG-UI、调试和验证基线 | `真实模型门通过；2项收尾` |
 | 2. 目标架构与合同基线 | 审核目标拓扑、模块、状态、合同、恢复矩阵 | `重写完成，待用户审核` |
 | 3. 产品事实与完成历史 | 身份、Session、Message、Run/Attempt和历史恢复 | `Phase 1文本底座、显式Retry/Restart和精确取消窄切片完成；完整身份和树操作继续` |
-| 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `Product Harness D1-D8、ExecutionDraft完整编辑、25节点主Workflow和4个前端工作区完成；独立Intent资源继续` |
+| 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `Product Harness D1-D8、ExecutionDraft完整编辑、28节点主Workflow、Intent Set/复合Plan和4个前端工作区完成；独立分支执行与部分成功继续` |
 | 5. 持久执行与活动流 | Job/Event、Worker、Lease、重连和Reconciler | `D1-D8纵向切片完成；完整强退、多端、保留和容量矩阵继续` |
 | 6. Tool、Workflow与HITL恢复 | Tool Ledger、对账、Checkpoint和持久Interrupt | `主Workflow审批安全点跨进程恢复完成；Tool与任意Workflow恢复继续` |
 | 7. 知识、证据、交付与运营 | Memory、Evidence、Provenance、Outbox、Trace和告警 | `Note/Memory生命周期与Harness事务Outbox完成；独立Evidence、Artifact、Delivery和运营能力继续` |
@@ -79,9 +79,10 @@ flowchart LR
 - [x] 确认后端 MAF、前后端 AG-UI、React 自研 UI 技术路线。
 - [x] 建立`AGENTS.md`、`PROJECT_CONTEXT.md`、`PROJECT_PLAN.md`、`PROJECT_STATE.md`和`README.md`。
 - [x] 纠正产品身份：Chat 是独立完整产品，OPC-OS Chat 是外部集成关系。
-- [x] 新增`PROJECT_LESSONS.md`，记录21个反例，并把Product Harness事实不能从聊天摘要猜测、不得回退系统Python等检查加入回复前置门。
+- [x] 新增并持续维护`PROJECT_LESSONS.md`，当前记录29个反例，并把Product Harness事实不能从聊天摘要猜测、不得回退系统Python、产品级工程收敛、可持续模块质量、外部编码Agent权限、Session标题一致性、模型结果去向审计，以及协作协议/步骤输入最小化加入回复前置门。
 - [x] 建立Chat概念空间：方法来源、目录治理、发现索引、11个高风险概念簇、概念/实现双状态和自动结构/链接校验。
-- [ ] 用户审核本轮纠正是否准确进入稳定项目文档。
+- [x] 把最终产品愿景固定为“想法能留下、事项有状态、工作可继续、执行可看护、结果有证据”，并明确Product Session不是Project边界、Context面板不是第二事实源。
+- [x] 用户已确认本轮愿景与概念纠正准确进入稳定项目文档。
 
 完成门：项目定义无需依赖 OPC-OS 也能完整描述用户、价值、责任和产品边界；所有项目回复前强制读取经验文档。
 
@@ -119,7 +120,12 @@ flowchart LR
 - [x] 重写[总体架构研究](./docs/overall-architecture-research.md)，公开错误修订、研究过程、证据、参考覆盖和项目推导。
 - [x] 重写[总体架构候选](./docs/overall-architecture-proposal.md)，按pi、nanobot、QwenPaw和LibreChat真实结构推导Web/Channel Adapter、Interaction Ingress、10个产品与应用模块、合同、状态、失败恢复和8个场景。
 - [x] 新增并补全[架构新手导读](./docs/architecture-beginner-guide.md)：按前端View、协议DTO、内部Envelope、产品领域对象和MAF运行对象5层展开；从“发送/批准”两个用户动作串起数据库、Session、Tool、Provider请求、响应解析、产品提交和React渲染；同时对照当前代码链与目标链。
+- [x] 完成[Chat愿景方案与完整场景模拟验证](./docs/chat-vision-scenario-validation.md)：以12个完整场景、24个异常场景、拒绝/修改矩阵和长跨度测试计划验证项目、任务、学习、研究、周期工作、用户标准、执行层最小工作包与用户看护；其中9项方案优化仍待用户审核，不构成正式Schema授权。
+- [x] 完成[Chat持续协作系统研究与落地推导](./docs/chat-collaboration-system-research.md)：逐项核对Scrum/Kanban/PMI、学习科学、W3C PROV、Git、SQLite/FTS5、长上下文与RAG研究，并与MAF安装版、pi、nanobot、QwenPaw、LibreChat和Codex固定版本源码/文档区分证据等级。
+- [x] 把愿景场景扩展为5组逐状态桌面推演：固定前置状态、读取、模型/Tool调用、提交差异、用户可见结果、故障注入和不变量；覆盖确定性Project查询、四天混合焦点、同名消歧、pi执行恢复和多Intent并发。
 - [ ] 用户审核目标架构的8项决定。
+- [x] 用户已审核愿景场景验证推导出的协作协议、步骤投影、周期工作、验证修复与多Intent方向；各阶段仍按自己的完成门交付。
+- [x] 用户已审核协议、Context面板、TurnDigest、检索、存储、执行层边界和方法覆盖方向；阶段A已实现，阶段B-F仍按路线推进。
 - [ ] 审核模块公开合同、ID链、错误分类、并发/幂等原则和四个提交门。
 - [ ] 建立 MAF/AG-UI 安装版合同测试设计和依赖升级门。
 - [ ] 把 Session R0-R6 验收矩阵映射到 Conversation、Context、Collaboration、Run、Tool执行、Delivery 与 MAF Runtime 组件。
@@ -139,6 +145,7 @@ flowchart LR
 - [x] 建立输入接纳门和产品成功终态门。
 - [x] 建立Product Store迁移、短事务、CAS并发和启动恢复基础；备份、保留和容量策略仍待治理阶段。
 - [x] 实现REST Session/Message/Run查询和AG-UI实时投影对齐。
+- [x] Product Session自动标题记录来源Message；来源撤回时回滚，并在侧栏、聊天标题和设置中显示稳定短定位码及复制完整ID入口。
 - [x] 服务端唯一历史装配；防止Product History、Provider History和客户端消息重复。
 - [x] 实现创建、列出、打开、归档、重启恢复和失败Retry/Restart；重试保留旧Run/Attempt并建立新Run血缘，不冒充Checkpoint Resume。
 - [ ] 固化 MAF HistoryProvider 保存、错误和终态顺序合同测试。
@@ -154,7 +161,7 @@ flowchart LR
 
 - [x] 审核并实现[Product Harness、Work与Memory详细设计](./docs/product-harness-detailed-design.md)D1-D8及11号领域迁移。
 - [x] 建立 Context Source、纳入/排除、Token 预算、版本和 Hash。
-- [x] 实现Intent识别、依据/置信度、澄清和运行时用户修正的主Workflow纵向切片；多Intent聚合及独立Intent资源仍待详细设计。
+- [x] 实现Intent识别、依据/置信度、澄清、运行时用户修正、Intent Set/Intent不可变revision、跨Run Clarification和最多4个有序目标的主Workflow纵向切片。
 - [x] 建立 WorkItem、TaskPlan、Plan Node、ActionItem、依赖和责任状态。
 - [x] 按[执行治理合同](./docs/execution-governance-contract.md)建立持久ExecutionDraft、授权后编译的不可变RunSpec、HITL Policy Resolver、Decision Record、一次性Grant/Consumption和ModelCallDraft/Attempt纵向链路。
   - [x] [正式Schema、状态机与前端HITL配置矩阵](./docs/execution-governance-detailed-design.md)的D1-D7已于2026-07-22获用户批准并完成9号迁移、后端服务、主Workflow接合和前端矩阵。
@@ -163,7 +170,9 @@ flowchart LR
 - [x] 建立ExecutionDraft 17部分完整可读编辑工作台、CAS保存、新revision/Hash和重新审批。
 - [x] 建立对应前端 Context Inspector、Project Explorer、Work Board和Knowledge工作区。
 - [x] 完成21天32轮项目开发与28天40轮技能学习长测，覆盖跨Session/入口、API重开、CAS、幂等、假完成、来源失效、Memory拒绝/接受和Token预算。
-- [x] 完成Product Harness接合后的真实模型浏览器纵向回合：3次模型调用逐次审批、25节点完成且简单问答不创建长期资源。
+- [x] 完成Product Harness接合后的真实模型浏览器纵向回合：简单问答3次模型调用逐次审批；多Intent回合4次逐次审批、28节点完成、权威Project目录事实与独立文本回答均正确且不创建长期资源。
+- [ ] 把复合Plan接入既有WorkItem的长期`TaskPlanRevision`，并实现独立Branch Execution、部分成功、聚合结果与Evidence；当前Run内复合Plan不能外推为独立分支执行保证。
+- [x] 每次Provider Attempt持久记录发送、接收、首字节、解码、HTTP/Provider ID、用量、可见输出Hash与Workflow采用去向；明确Project目录查询改为0次模型调用的确定性分支。
 
 完成门：一个多意图真实请求可形成可修改计划；高影响执行无法越过批准门；用户修改任一绑定项后旧批准不能运行。
 
@@ -267,3 +276,32 @@ Session 是 W2-W9 的横向能力，仍由两份专项材料维护：
 7. 密钥、数据库、历史、日志和构建产物不进入 Git。
 8. 阶段完成必须列出已兑现和未兑现保证；用户价值审核不能被工程绿灯替代。
 9. 新增或修改高风险概念时，概念索引、唯一正文、相关UI/API命名和事实所有者必须一致，并通过概念空间校验。
+
+## 16. 产品能力与工程质量Todo
+
+2026-07-23完成[产品级工程审计](./docs/product-engineering-audit-2026-07-23.md)，并把功能缺口和工程整改统一登记在[产品能力与工程质量Todo](./docs/product-engineering-backlog.md)。详细用户场景、目标、方案级做法和验证门只在该Todo中维护，本节只维护执行状态。
+
+### 16.1 Q0工程安全底座
+
+2026-07-23用户已批准Q0实施；完成状态仍以逐项验证门为准。
+
+- [ ] Q01 自动质量门与CI（本地纵向基线通过；待提交后的远端CI首次运行与合并保护验证）。
+- [ ] Q02 后端模块与应用边界收敛（实施中：组合根、HTTP边界、Workflow Contracts/Prompt/Graph Factory、Governance Catalog/错误/Policy/Run Query与Harness合同/命令记录/Context Query已拆；Execution/ModelCall与Project/Work/Knowledge命令协调继续）。
+- [ ] Q03 API合同、错误与安全边界统一（纵向基线完成；真实Principal、公开API版本和全部响应模型继续）。
+- [ ] Q04 可观测性、日志和调试体系（纵向基线完成；生产Exporter、SLO、告警和保留继续）。
+- [ ] Q05 测试金字塔、覆盖率与故障实验室（纵向基线完成；多设备、容量、性能和完整故障矩阵继续）。
+- [ ] Q06 前端Feature架构与交互质量（实施中：统一Client、7个Feature API、Settings边界、App/审批组件、Agent重连Hook与Workflow运行投影已拆；8个生产按需Feature和包体门已建立；[视觉基线v1](./docs/ui-ux-visual-baseline.md)及4项轻量情绪层已获批准，生产界面迁移、性能与更广泛人工无障碍继续）。
+- [ ] Q07 文档、注释、ADR与依赖治理（纵向基线完成；随Q02/Q06及依赖升级持续维护）。
+
+### 16.2 后续产品能力
+
+- [ ] F01 通用Tool Operation Ledger与副作用对账。
+- [ ] F02 Evidence、Artifact、Provenance与独立生命周期。
+- [ ] F03 Runtime完整故障、容量和游标矩阵。
+- [ ] F04 Session完整生命周期、树、控制与可移植性。
+- [ ] F05 任意Workflow、嵌套Workflow和pi持久恢复。
+- [ ] F06 独立Intent、Harness交互与Context权限治理。
+- [ ] F07 Principal、Scope、Channel Binding与Delivery。
+- [ ] F08 Provider配置、运营、备份、保留与SLO。
+
+推荐依赖顺序是`Q01 -> Q03 -> Q04 -> Q02 -> Q05 -> F01-F03 -> F04-F06 -> F07-F08`；Q06-Q07贯穿对应阶段。工程收敛不得改变现有Product Store、MAF/AG-UI合同、Workflow节点ID、审批Hash或用户可见语义。

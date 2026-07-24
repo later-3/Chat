@@ -16,6 +16,13 @@
   "product_store": {
     "url": "sqlite+aiosqlite:///backend/.data/chat.db"
   },
+  "observability": {
+    "log_level": "INFO",
+    "log_format": "console",
+    "log_file": "backend/.data/logs/chat.jsonl",
+    "log_max_bytes": 10485760,
+    "log_backup_count": 5
+  },
   "history": {
     "directory": ".chat-history"
   },

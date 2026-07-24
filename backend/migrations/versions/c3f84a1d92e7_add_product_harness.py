@@ -7,9 +7,8 @@ Create Date: 2026-07-23 14:30:00
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision: str = "c3f84a1d92e7"
 down_revision: Union[str, Sequence[str], None] = "92f617c3a8d1"
@@ -34,7 +33,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_product_projects_scope_kind", "product_projects", ["scope_id", "kind", "updated_at"])
-    op.create_index("ix_product_projects_scope_status", "product_projects", ["scope_id", "status", "updated_at"])
+    op.create_index(
+        "ix_product_projects_scope_status", "product_projects", ["scope_id", "status", "updated_at"]
+    )
 
     op.create_table(
         "work_items",
@@ -150,7 +151,9 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_knowledge_notes_scope_status", "knowledge_notes", ["scope_id", "status", "updated_at"])
+    op.create_index(
+        "ix_knowledge_notes_scope_status", "knowledge_notes", ["scope_id", "status", "updated_at"]
+    )
 
     op.create_table(
         "knowledge_note_revisions",
@@ -164,7 +167,9 @@ def upgrade() -> None:
         sa.Column("created_by", sa.String(length=100), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["note_id"], ["knowledge_notes.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["previous_revision_id"], ["knowledge_note_revisions.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["previous_revision_id"], ["knowledge_note_revisions.id"], ondelete="RESTRICT"
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("note_id", "revision"),
     )
@@ -187,7 +192,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["decision_record_id"], ["decision_records.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_memory_candidates_scope_status", "memory_candidates", ["scope_id", "status", "created_at"])
+    op.create_index(
+        "ix_memory_candidates_scope_status", "memory_candidates", ["scope_id", "status", "created_at"]
+    )
 
     op.create_table(
         "accepted_memories",
@@ -203,7 +210,9 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_accepted_memories_scope_status", "accepted_memories", ["scope_id", "status", "updated_at"])
+    op.create_index(
+        "ix_accepted_memories_scope_status", "accepted_memories", ["scope_id", "status", "updated_at"]
+    )
 
     op.create_table(
         "memory_revisions",

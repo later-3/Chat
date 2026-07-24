@@ -1,7 +1,6 @@
 import type { ProductRun } from "./session-api.js";
 import type { RunStatus } from "./use-chat-agent.js";
-import type { ProductTraceEvent } from "./workflow-api.js";
-import type { WorkflowDefinition } from "./workflow-api.js";
+import type { ProductTraceEvent, WorkflowDefinition } from "./workflow-api.js";
 
 export const CHAT_WORKFLOW = {
   id: "chat-model-call-approval",
@@ -10,15 +9,17 @@ export const CHAT_WORKFLOW = {
   description: "准备真实模型请求，等待用户逐次审批，再发送给 Provider 并提交结果。",
   endpoint: "/api/agent",
   selectable: true,
-  nodes: [{
-    id: "model_call_approval",
-    label: "审批并发送模型请求",
-    description: "编译可编辑请求、等待审批、准确发送并提交模型结果。",
-    kind: "approval",
-    runtime_type: "executor",
-    parent_id: null,
-    depth: 0,
-  }],
+  nodes: [
+    {
+      id: "model_call_approval",
+      label: "审批并发送模型请求",
+      description: "编译可编辑请求、等待审批、准确发送并提交模型结果。",
+      kind: "approval",
+      runtime_type: "executor",
+      parent_id: null,
+      depth: 0,
+    },
+  ],
   edges: [],
 } as const satisfies WorkflowDefinition;
 
@@ -73,10 +74,22 @@ export const WORKFLOW_STAGE_GROUPS: Array<{
   label: string;
   description: string;
 }> = [
-  { id: "ingress", label: "01 · 请求接纳与产品事实", description: "AG-UI 入站和 Product Run 创建边界" },
+  {
+    id: "ingress",
+    label: "01 · 请求接纳与产品事实",
+    description: "AG-UI 入站和 Product Run 创建边界",
+  },
   { id: "maf", label: "02 · MAF Workflow", description: "唯一真实 Executor 及其内部代码阶段" },
-  { id: "provider", label: "03 · Provider Transport", description: "准确发送已审批 Bytes，并接收、解码响应" },
-  { id: "finalization", label: "04 · 输出投影与产品提交", description: "AG-UI 文本事件、Product Message 和最终运行状态" },
+  {
+    id: "provider",
+    label: "03 · Provider Transport",
+    description: "准确发送已审批 Bytes，并接收、解码响应",
+  },
+  {
+    id: "finalization",
+    label: "04 · 输出投影与产品提交",
+    description: "AG-UI 文本事件、Product Message 和最终运行状态",
+  },
 ];
 
 export const WORKFLOW_STAGES: WorkflowStageDefinition[] = [
@@ -215,7 +228,11 @@ function fallbackStages(
   latestRun: ProductRun | null,
 ): WorkflowStageProjection[] {
   let stages = blankStages();
-  if (pendingApproval || runStatus === "awaiting_approval" || latestRun?.status === "waiting_approval") {
+  if (
+    pendingApproval ||
+    runStatus === "awaiting_approval" ||
+    latestRun?.status === "waiting_approval"
+  ) {
     return setStatuses(stages, {
       "agui.ingress": "completed",
       "product.prepare": "completed",
@@ -244,7 +261,10 @@ function fallbackStages(
     });
     return stages;
   }
-  if (latestRun && ["failed", "cancelled", "interrupted", "outcome_unknown"].includes(latestRun.status)) {
+  if (
+    latestRun &&
+    ["failed", "cancelled", "interrupted", "outcome_unknown"].includes(latestRun.status)
+  ) {
     const commitFailed = latestRun.failure_code === "product_commit_failed";
     return setStatuses(stages, {
       "agui.ingress": "completed",
@@ -262,7 +282,8 @@ function fallbackStages(
     });
   }
   if (runStatus === "running" || runStatus === "saving") {
-    const providerStarted = latestRun?.status === "running" || latestRun?.status === "waiting_approval";
+    const providerStarted =
+      latestRun?.status === "running" || latestRun?.status === "waiting_approval";
     return setStatuses(stages, {
       "agui.ingress": "completed",
       "product.prepare": "completed",
@@ -300,14 +321,24 @@ function applyTrace(
     const event = latestByStage.get(stage.id);
     if (!event) return stage;
     const status = String(event.payload.status);
-    if (!["not_started", "in_progress", "waiting_approval", "completed", "failed", "abandoned", "skipped"].includes(status)) {
+    if (
+      ![
+        "not_started",
+        "in_progress",
+        "waiting_approval",
+        "completed",
+        "failed",
+        "abandoned",
+        "skipped",
+      ].includes(status)
+    ) {
       return stage;
     }
     const details = event.payload.details;
     return {
       ...stage,
       status: status as WorkflowStageStatus,
-      details: details && typeof details === "object" ? details as Record<string, unknown> : null,
+      details: details && typeof details === "object" ? (details as Record<string, unknown>) : null,
       occurredAt: event.created_at,
     };
   });
@@ -321,7 +352,11 @@ export function deriveWorkflowRunProjection(
 ): WorkflowRunProjection {
   let status: WorkflowRunProjection["status"] = "not_started";
   let statusLabel = "未开始";
-  if (pendingApproval || runStatus === "awaiting_approval" || (runStatus === "idle" && latestRun?.status === "waiting_approval")) {
+  if (
+    pendingApproval ||
+    runStatus === "awaiting_approval" ||
+    (runStatus === "idle" && latestRun?.status === "waiting_approval")
+  ) {
     status = "waiting_approval";
     statusLabel = "等待模型请求审批";
   } else if (runStatus === "running" || runStatus === "saving") {
@@ -333,7 +368,10 @@ export function deriveWorkflowRunProjection(
   } else if (latestRun?.status === "abandoned") {
     status = "abandoned";
     statusLabel = "已放弃";
-  } else if (latestRun && ["failed", "cancelled", "interrupted", "outcome_unknown"].includes(latestRun.status)) {
+  } else if (
+    latestRun &&
+    ["failed", "cancelled", "interrupted", "outcome_unknown"].includes(latestRun.status)
+  ) {
     status = "failed";
     statusLabel = latestRun.status === "outcome_unknown" ? "结果未知，需要确认" : "运行未完成";
   } else if (runStatus === "error") {

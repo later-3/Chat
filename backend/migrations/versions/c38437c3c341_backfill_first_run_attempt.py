@@ -5,12 +5,11 @@ Revises: 71bc91f4c96a
 Create Date: 2026-07-21
 """
 
-from typing import Sequence, Union
 import uuid
+from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision: str = "c38437c3c341"
 down_revision: Union[str, Sequence[str], None] = "71bc91f4c96a"
