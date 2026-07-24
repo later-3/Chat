@@ -67,7 +67,7 @@ CHAT_MODEL_CALL_APPROVAL_WORKFLOW = WorkflowDefinition(
 CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
     id="continuous-collaboration",
     name="持续协作主 Workflow",
-    version="1.5.0",
+    version="1.6.0",
     description=(
         "以选择性上下文和意图识别为入口，按场景进入澄清、计划或直接响应，"
         "所有模型调用受HITL治理，并在回合结束提取重点候选。"
@@ -242,6 +242,30 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
             runtime_type="executor",
         ),
         WorkflowNodeDefinition(
+            id="execution_route",
+            label="选择执行分支",
+            description="只读取已批准RunSpec，确定进入Chat回答或pi只读执行；不再重新解释用户文本。",
+            kind="decision",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="pi_readonly_dispatch",
+            label="运行受治理pi只读检查",
+            description=(
+                "在同一Product Run中启动pi子进程；逐次审批模型请求，"
+                "只允许Chat自有read、grep、find、ls，并实时公开内部活动。"
+            ),
+            kind="agent",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="pi_readonly_result_assembly",
+            label="装配pi只读结果",
+            description="校验ToolExecution终态与Result Hash后确定性装配答复，不追加一次汇总模型调用。",
+            kind="transform",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
             id="response_agent",
             label="协作响应 Agent",
             description="只使用本轮明确装配的背景、目标和计划形成可提交答复。",
@@ -358,7 +382,23 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
         WorkflowEdgeDefinition("plan_acceptance", "execution_draft_compiler"),
         WorkflowEdgeDefinition("execution_draft_compiler", "execution_authorization"),
         WorkflowEdgeDefinition("execution_authorization", "run_spec_compiler"),
-        WorkflowEdgeDefinition("run_spec_compiler", "response_agent"),
+        WorkflowEdgeDefinition("run_spec_compiler", "execution_route"),
+        WorkflowEdgeDefinition(
+            "execution_route",
+            "pi_readonly_dispatch",
+            "RunSpec.runtime_agent = pi / readonly",
+            "pi_readonly",
+            "进入受治理pi只读执行",
+        ),
+        WorkflowEdgeDefinition(
+            "execution_route",
+            "response_agent",
+            "Default（RunSpec.runtime_agent = maf-workflow / answer_only）",
+            "answer_only",
+            "进入Chat回答Agent",
+        ),
+        WorkflowEdgeDefinition("pi_readonly_dispatch", "pi_readonly_result_assembly"),
+        WorkflowEdgeDefinition("pi_readonly_result_assembly", "turn_summary_agent"),
         WorkflowEdgeDefinition("response_agent", "turn_summary_agent"),
         WorkflowEdgeDefinition("turn_summary_agent", "result_commit"),
         WorkflowEdgeDefinition("project_catalog_query", "result_commit"),

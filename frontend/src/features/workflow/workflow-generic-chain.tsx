@@ -1,8 +1,18 @@
-import { ChevronDown, Code2, Eye, LocateFixed, Minimize2, Route, Rows3 } from "lucide-react";
+import {
+  ChevronDown,
+  Code2,
+  Eye,
+  GitBranch,
+  LocateFixed,
+  Minimize2,
+  Route,
+  Rows3,
+} from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { nodeContentFromTrace, progressFromTrace } from "../../workflow-progress.js";
 import type { GovernedReviewCard } from "../chat/chat-agent-contracts.js";
 import type {
+  GovernedToolExecution,
   ProductTraceEvent,
   RunGovernanceView,
   StepInputProjection,
@@ -10,12 +20,15 @@ import type {
   WorkflowNodeStatus,
 } from "./workflow-api.js";
 import { WorkflowMindMap } from "./workflow-mind-map.js";
+import { WorkflowRouteExplanation } from "./workflow-route-explanation.js";
 import { routeDecisionsFromTrace, unselectedBranchNodeIds } from "./workflow-route-projection.js";
 import {
   formatOccurredAt,
   governanceForNode,
+  internalActivityForNode,
   NODE_STATUS_LABELS,
   NodeDetail,
+  outputForNode,
   StageIcon,
   stepInputForNode,
 } from "./workflow-run-content.js";
@@ -40,12 +53,14 @@ export function GenericWorkflowChain({
   pendingReview,
   governance,
   stepInputs,
+  toolExecutions,
 }: {
   workflow: WorkflowDefinition;
   trace: ProductTraceEvent[];
   pendingReview: GovernedReviewCard | null;
   governance: RunGovernanceView | null;
   stepInputs: StepInputProjection[];
+  toolExecutions: GovernedToolExecution[];
 }) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [showLedger, setShowLedger] = useState(false);
@@ -108,9 +123,24 @@ export function GenericWorkflowChain({
         governance={governance}
         pendingReview={pendingReview}
         stepInputs={stepInputs}
+        toolExecutions={toolExecutions}
         trace={trace}
         workflow={workflow}
       />
+      {routeDecisions.length > 1 && (
+        <section className="workflow-all-decisions" aria-label="本轮全部分支选择">
+          <header>
+            <GitBranch size={17} />
+            <span>
+              <small>ALL DECISIONS</small>
+              <strong>本轮全部选择点（{routeDecisions.length}）</strong>
+            </span>
+          </header>
+          {routeDecisions.map((decision) => (
+            <WorkflowRouteExplanation decision={decision} key={decision.nodeId} />
+          ))}
+        </section>
+      )}
       <div className="execution-ledger-heading">
         <div>
           <Rows3 size={17} />
@@ -232,9 +262,10 @@ export function GenericWorkflowChain({
                         status: branchNotSelected ? "分支未选择" : NODE_STATUS_LABELS[status],
                         trace_sequence: content?.sequence,
                       }}
-                      governance={governanceForNode(node.id, governance)}
+                      governance={governanceForNode(node.id, governance, toolExecutions)}
+                      internalActivity={internalActivityForNode(node.id, toolExecutions)}
                       input={content?.publicInput}
-                      output={content?.publicOutput}
+                      output={outputForNode(node.id, content?.publicOutput, toolExecutions)}
                       stepInput={stepInputForNode(node.id, stepInputs)}
                     />
                   )}

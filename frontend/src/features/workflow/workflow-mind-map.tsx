@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import { nodeContentFromTrace, progressFromTrace } from "../../workflow-progress.js";
 import type { GovernedReviewCard } from "../chat/chat-agent-contracts.js";
 import type {
+  GovernedToolExecution,
   ProductTraceEvent,
   RunGovernanceView,
   StepInputProjection,
@@ -29,8 +30,10 @@ import {
 import {
   formatOccurredAt,
   governanceForNode,
+  internalActivityForNode,
   NODE_STATUS_LABELS,
   NodeDetail,
+  outputForNode,
   StageIcon,
   stepInputForNode,
 } from "./workflow-run-content.js";
@@ -169,12 +172,14 @@ export function WorkflowMindMap({
   pendingReview,
   governance,
   stepInputs,
+  toolExecutions,
 }: {
   workflow: WorkflowDefinition;
   trace: ProductTraceEvent[];
   pendingReview: GovernedReviewCard | null;
   governance: RunGovernanceView | null;
   stepInputs: StepInputProjection[];
+  toolExecutions: GovernedToolExecution[];
 }) {
   const progress = useMemo(() => progressFromTrace(workflow, trace), [trace, workflow]);
   const contents = useMemo(() => nodeContentFromTrace(workflow, trace), [trace, workflow]);
@@ -431,9 +436,10 @@ export function WorkflowMindMap({
                 ? formatOccurredAt(selectedContent.occurredAt)
                 : undefined,
             }}
-            governance={governanceForNode(selectedNode.id, governance)}
+            governance={governanceForNode(selectedNode.id, governance, toolExecutions)}
+            internalActivity={internalActivityForNode(selectedNode.id, toolExecutions)}
             input={selectedContent?.publicInput}
-            output={selectedContent?.publicOutput}
+            output={outputForNode(selectedNode.id, selectedContent?.publicOutput, toolExecutions)}
             stepInput={stepInputForNode(selectedNode.id, stepInputs)}
           />
         </section>

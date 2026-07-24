@@ -52,6 +52,7 @@ class PiRuntimeSettings:
     """Startup-owned safety boundary for the external pi coding runtime."""
 
     enabled: bool = False
+    contract_version: str = "0.81.1"
     node_path: Path | None = None
     cli_path: Path | None = None
     allowed_working_roots: tuple[Path, ...] = ()
@@ -73,6 +74,7 @@ class PiRuntimeSettings:
         return {
             "enabled": self.enabled,
             "available": self.available,
+            "contract_version": self.contract_version,
             "integration_mode": "jsonl_rpc_subprocess",
             "provider_gate": "every_pi_model_call",
             "tool_gate": "every_pi_internal_tool_call",
@@ -86,6 +88,7 @@ class PiRuntimeSettings:
         return {
             "enabled": self.enabled,
             "available": self.available,
+            "contract_version": self.contract_version,
             "integration_mode": "jsonl_rpc_subprocess",
             "provider_gate": "every_pi_model_call",
             "tool_gate": "every_pi_internal_tool_call",
@@ -393,6 +396,9 @@ def _provider_catalog(payload: dict[str, Any]) -> ModelProviderCatalog | None:
 def _pi_runtime(payload: dict[str, Any], *, host: str, port: int) -> PiRuntimeSettings:
     raw = _record(payload.get("pi_agent", {}), field="pi_agent")
     enabled = _boolean(raw.get("enabled"), field="pi_agent.enabled", default=False)
+    contract_version = str(raw.get("contract_version") or "0.81.1").strip()
+    if not contract_version or len(contract_version) > 32:
+        raise SettingsError("pi_agent.contract_version必须是1到32字符的版本标识")
 
     def optional_path(key: str) -> Path | None:
         value = str(raw.get(key) or "").strip()
@@ -418,6 +424,7 @@ def _pi_runtime(payload: dict[str, Any], *, host: str, port: int) -> PiRuntimeSe
         raise SettingsError("pi_agent.gateway_origin必须是本机HTTP地址")
     return PiRuntimeSettings(
         enabled=enabled,
+        contract_version=contract_version,
         node_path=optional_path("node_path"),
         cli_path=optional_path("cli_path"),
         allowed_working_roots=roots,

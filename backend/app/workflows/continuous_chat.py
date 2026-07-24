@@ -22,6 +22,18 @@ from ..agent_profiles import AgentProfileSnapshot
 from ..collaboration_contexts import CollaborationContextService
 from ..collaboration_intents import CollaborationIntentService
 from ..collaboration_protocols import CollaborationProtocolService
+from ..execution_dispatch.drafts import (
+    adopted_repository_source,
+    compile_execution_draft_v2,
+    compile_run_spec_v2,
+)
+from ..execution_dispatch.repository_context import RepositoryExecutionContextService
+from ..execution_dispatch.service import ExecutionDispatchService
+from ..execution_dispatch.workflow import (
+    ExecutionRouteExecutor,
+    PiReadonlyDispatchExecutor,
+    PiReadonlyResultAssemblyExecutor,
+)
 from ..governance.service import ExecutionGovernanceService, GovernanceConflict
 from ..harness import HarnessService
 from ..model_call_review import (
@@ -103,7 +115,7 @@ from .continuous_chat_factory import (
 logger = logging.getLogger(__name__)
 
 WORKFLOW_ID = "continuous-collaboration"
-WORKFLOW_VERSION = "1.5.0"
+WORKFLOW_VERSION = "1.6.0"
 
 
 class TraceMixin:
@@ -1939,130 +1951,35 @@ class ExecutionDraftCompilerExecutor(Executor, TraceMixin):
         run_id: Callable[[], str],
         sessions: ProductSessionService,
         governance: ExecutionGovernanceService,
+        repository_execution_context: RepositoryExecutionContextService,
+        pi_available: bool,
     ) -> None:
         super().__init__(id="execution_draft_compiler")
         self._run_id = run_id
         self._governance = governance
+        self._repository_execution_context = repository_execution_context
+        self._pi_available = pi_available
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
     @handler(input=CollaborationState)
     async def compile(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
-        intent = state.intent or {}
-        intent_set = list(state.intents or (intent,))
-        context_manifest = [
-            {
-                "source_kind": value.get("source_kind"),
-                "source_id": value.get("source_id"),
-                "source_revision": value.get("source_revision"),
-                "title": value.get("title"),
-                "adoption_reason": value.get("reason"),
-                "token_estimate": value.get("token_estimate"),
-            }
-            for value in state.context_items
-        ]
-        context_hash = _hash(context_manifest)
-        goals = "\n".join(
-            f"{index + 1}. {value.get('goal')} → {value.get('expected_outcome')}"
-            for index, value in enumerate(intent_set)
+        repository_fence = None
+        source = adopted_repository_source(state.context_items)
+        if state.selected_project_id and source is not None:
+            repository_fence = await self._repository_execution_context.resolve_fence(
+                project_id=state.selected_project_id,
+                binding_id=source["binding_id"],
+                expected_semantic_hash=source["semantic_hash"],
+            )
+        payload, brief = compile_execution_draft_v2(
+            state=state,
+            thread_id=self._thread_id,
+            run_id=self._run_id(),
+            workflow_id=WORKFLOW_ID,
+            workflow_version=WORKFLOW_VERSION,
+            repository_fence=repository_fence,
+            pi_available=self._pi_available,
         )
-        brief = (
-            f"目标：\n{goals}\n"
-            f"场景：{state.scenario}\n"
-            f"项目提示：{intent.get('project_hint') or '未关联'}\n"
-            f"计划：{state.plan or '本轮不需要独立计划'}\n"
-            "完成门：只提交可由当前回答支持的结论；任务、项目、Memory变化保持候选，等待相应决策点。"
-        )
-        payload = {
-            "identity_lineage": {
-                "session_id": self._thread_id,
-                "run_id": self._run_id(),
-                "workflow_id": WORKFLOW_ID,
-                "workflow_version": WORKFLOW_VERSION,
-            },
-            "intent_goal": {
-                "intent_set_id": state.intent_set_id,
-                "intent_set_revision_id": state.intent_set_revision_id,
-                "intent_set_revision_hash": state.intent_set_revision_hash,
-                "combination_policy": "single" if len(intent_set) == 1 else "sequential",
-                "intents": intent_set,
-            },
-            "project_work_binding": {
-                "project_id": state.selected_project_id,
-                "project_hint": intent.get("project_hint"),
-                "status": "accepted" if state.selected_project_id else "not_applicable",
-            },
-            "authoritative_product_facts": {
-                "project_catalog": state.project_catalog_result,
-            },
-            "collaboration_protocol_binding": dict(state.protocol_selection or {}),
-            "background": context_manifest,
-            "accepted_decisions": [],
-            "scope": {
-                "included": ["answer current user request"],
-                "excluded": ["unapproved long-term state mutation"],
-            },
-            "plan": {"text": state.plan, "mode": "explicit" if state.plan else "direct"},
-            "context_binding": {
-                "manifest": context_manifest,
-                "context_hash": context_hash,
-                "context_package_id": state.detail_context_package_id or state.directory_context_package_id,
-                "excluded": "raw full history by default",
-            },
-            "resource_manifest": (
-                [
-                    {
-                        "source_kind": state.project_catalog_result["source_kind"],
-                        "source_id": state.project_catalog_result["source_id"],
-                        "query_status": state.project_catalog_result["query_status"],
-                    }
-                ]
-                if state.project_catalog_result
-                else []
-            ),
-            "runtime_target": {
-                "runtime": "maf-workflow",
-                "isolation": "in_process",
-                "working_directory": None,
-            },
-            "capability_grant": {"tools": [], "side_effects": "none", "network": "model-provider-only"},
-            "model_envelope": {"store": False, "continuation": False, "provider_and_model": "profile-bound"},
-            "prompt_assembly_plan": {
-                "blocks": [
-                    "agent_instructions",
-                    "user_request",
-                    "intent",
-                    "collaboration_protocol",
-                    "accepted_context",
-                    "project_work",
-                    "plan",
-                    "constraints",
-                    "output_contract",
-                ],
-                "history_policy": "selective summaries, never implicit full history",
-            },
-            "hitl_plan": {
-                "decision_points": [
-                    "model_call_authorization",
-                    "result_commit",
-                    "memory_commit",
-                    "work_state_commit",
-                ]
-            },
-            "validation_plan": {
-                "checks": ["structured intent", "scenario branch", "no false completion"],
-                "evidence": "workflow trace and provider attempts",
-            },
-            "output_commit_contract": {
-                "chat_result": "candidate until finalization",
-                "work": "candidate",
-                "memory": "candidate",
-            },
-            "stop_escalation": {
-                "provider_failure": "stop",
-                "outcome_unknown": "require human",
-                "capability_expansion": "new decision",
-            },
-        }
         draft, revision = await self._governance.create_execution_draft(
             session_id=self._thread_id,
             run_id=self._run_id(),
@@ -2076,7 +1993,12 @@ class ExecutionDraftCompilerExecutor(Executor, TraceMixin):
             executor_id=self.id,
             actor="execution_governance_compiler",
             content_type="execution_draft",
-            public_input={"intent": intent, "plan": state.plan, "context_manifest": context_manifest},
+            public_input={
+                "intent": state.intent,
+                "plan": state.plan,
+                "context_package_id": (state.detail_context_package_id or state.directory_context_package_id),
+                "repository_fence": repository_fence.public_view() if repository_fence else None,
+            },
             public_output={
                 "execution_brief": brief,
                 "draft_revision_id": revision.id,
@@ -2108,49 +2030,14 @@ class RunSpecCompilerExecutor(Executor, TraceMixin):
         if not state.execution_draft_revision_id:
             raise GovernanceConflict("缺少已授权的ExecutionDraft revision")
         accepted = await self._governance.accepted_execution_draft(state.execution_draft_revision_id)
-        payload = accepted["payload"]
-        context_binding = dict(payload["context_binding"])
-        spec_payload = {
-            "identity": {"schema_version": "run-spec-v1", "compiler_version": "run-spec-compiler-v1"},
-            "source_binding": {
-                "draft_id": accepted["draft_id"],
-                "draft_revision_id": accepted["revision_id"],
-                "draft_hash": accepted["draft_hash"],
-            },
-            "principal_scope": {"principal_id": "local-user", "channel": "web"},
-            "workflow_binding": {
-                "definition_id": WORKFLOW_ID,
-                "version": WORKFLOW_VERSION,
-                "entry": "input_acceptance",
-            },
-            "execution_brief": {"text": accepted["execution_brief"], "draft_hash": accepted["draft_hash"]},
-            "context_manifest": {
-                "items": list(context_binding.get("manifest") or []),
-                "context_hash": context_binding.get("context_hash"),
-            },
-            "plan": {"text": payload["plan"].get("text"), "scenario": state.scenario},
-            "collaboration_protocol": dict(payload.get("collaboration_protocol_binding") or {}),
-            "authoritative_product_facts": dict(payload.get("authoritative_product_facts") or {}),
-            "prompt_assembly_contract": payload["prompt_assembly_plan"],
-            "runtime_agent": {
-                "runtime": "maf-workflow",
-                "agent_profiles": ["intent_router", "task_planner", "response_agent", "turn_summarizer"],
-            },
-            "capability_envelope": payload["capability_grant"],
-            "model_envelope": payload["model_envelope"],
-            "hitl_policy_snapshot": {
-                "resolver": "hitl-resolver-v1",
-                "binding": "compiled after Draft authorization",
-            },
-            "validation_evidence": payload["validation_plan"],
-            "output_commit": payload["output_commit_contract"],
-            "control": {
-                "cancel": True,
-                "retry": "new authorization",
-                "outcome_unknown": "human reconciliation",
-            },
-            "correlation_idempotency": {"product_run_id": self._run_id(), "agui_thread_id": self._thread_id},
-        }
+        spec_payload = compile_run_spec_v2(
+            accepted=accepted,
+            state=state,
+            thread_id=self._thread_id,
+            run_id=self._run_id(),
+            workflow_id=WORKFLOW_ID,
+            workflow_version=WORKFLOW_VERSION,
+        )
         spec = await self._governance.compile_run_spec(
             draft_revision_id=state.execution_draft_revision_id,
             scopes=[
@@ -2803,6 +2690,9 @@ def create_continuous_collaboration_workflow(
     collaboration_intents: CollaborationIntentService | None = None,
     collaboration_contexts: CollaborationContextService | None = None,
     repository_freshness: RepositorySourceFreshnessGuard | None = None,
+    repository_execution_context: RepositoryExecutionContextService,
+    pi_available: bool,
+    execution_dispatch: ExecutionDispatchService,
     checkpoint_storage: CheckpointStorage | None = None,
 ):
     """Compatibility entrypoint delegating graph wiring to its composition module."""
@@ -2825,6 +2715,9 @@ def create_continuous_collaboration_workflow(
             project_catalog=ProjectCatalogExecutor,
             execution_draft_compiler=ExecutionDraftCompilerExecutor,
             run_spec_compiler=RunSpecCompilerExecutor,
+            execution_route=ExecutionRouteExecutor,
+            pi_readonly_dispatch=PiReadonlyDispatchExecutor,
+            pi_readonly_result_assembly=PiReadonlyResultAssemblyExecutor,
             clarification=ClarificationExecutor,
             harness_commit=HarnessCandidateCommitExecutor,
             summary_persist=TurnSummaryPersistExecutor,
@@ -2845,5 +2738,8 @@ def create_continuous_collaboration_workflow(
         collaboration_intents=collaboration_intents,
         collaboration_contexts=collaboration_contexts,
         repository_freshness=repository_freshness,
+        repository_execution_context=repository_execution_context,
+        pi_available=pi_available,
+        execution_dispatch=execution_dispatch,
         checkpoint_storage=checkpoint_storage,
     )

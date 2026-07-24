@@ -6,11 +6,11 @@
 |---|---|
 | 产品身份 | 独立开发、独立运行、独立运营并持续演进的完整 Chat 产品 |
 | 当前目录 | `/Users/xulater/Code/Chat` |
-| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、Product Session R0/R1与可见定位码、双协议模型治理和持久Provider Attempt审计、31节点持续协作主Workflow、HITL策略矩阵、持久Checkpoint/Outbox恢复、ExecutionDraft完整编辑、Product Harness纵向生命周期、协作协议/Context revision/步骤输入阶段A、Intent Set与复合Plan阶段B、SD1 Repository只读纵向闭环、Runtime Job/Event/Cursor/通用Execution Worker纵向切片，以及手机公网HTTP中转与完整响应式Web纵向链路已完成 |
-| 设计状态 | 总体架构已按完整用户场景重写并获批准；2026-07-24进一步确认Super Admin Operations是完整产品的第11个产品与应用模块，详细身份/活动/指标/隐私设计尚未开始；Execution治理D1-D7、Product Harness D1-D8、活动Run与通用Execution Worker D1-D8均已获用户批准并迁移；Chat UI/UX视觉基线v1及4项轻量情绪层已获批准，生产前端迁移尚未完成；“Chat开发Chat”D1-D9、SD1 R1-R12、SD2 R1-R12和“Chat自开发可用门v1”8阶段节奏已获批准，SD1-A/B/C/D只读纵向切片已完成，当前进入SD2实施；Tool副作用对账和独立Evidence生命周期仍须各自通过字段级详细设计审核，才可开放写能力与完成声明 |
+| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、Product Session R0/R1与可见定位码、双协议模型治理和持久Provider Attempt审计、34节点持续协作主Workflow、HITL策略矩阵、持久Checkpoint/Outbox恢复、ExecutionDraft完整编辑、Product Harness纵向生命周期、协作协议/Context revision/步骤输入阶段A、Intent Set与复合Plan阶段B、SD1 Repository只读纵向闭环、SD2受治理pi只读执行、Runtime Job/Event/Cursor/通用Execution Worker纵向切片，以及手机公网HTTP中转与完整响应式Web纵向链路已完成 |
+| 设计状态 | 总体架构已按完整用户场景重写并获批准；2026-07-24进一步确认Super Admin Operations是完整产品的第11个产品与应用模块，详细身份/活动/指标/隐私设计尚未开始；Execution治理D1-D7、Product Harness D1-D8、活动Run与通用Execution Worker D1-D8均已获用户批准并迁移；Chat UI/UX视觉基线v1及4项轻量情绪层已获批准，生产前端迁移尚未完成；“Chat开发Chat”D1-D9、SD1 R1-R12、SD2 R1-R12和“Chat自开发可用门v1”8阶段节奏已获批准，SD1-A/B/C/D与SD2-A/B/C/D/E只读纵向切片已完成；下一阶段SD3必须先通过F01 Tool Operation Ledger字段级详细设计审核，SD4/F02与SD5/F05仍保留各自审核门 |
 | Session 状态 | 9个能力域、74项能力、R0-R6和Phase 0-8路线已批准；Phase 0-1完成，Phase 2进行中，Phase 4-5完成纵向切片但尚未通过全部阶段故障矩阵 |
 | 工程质量状态 | Q0纵向基线已建立且本地完整门通过：CI/静态质量门、统一Problem Detail、请求关联、结构化日志、基础Metrics/Trace、诊断入口、分层覆盖率、Playwright/axe、故障实验室、组合根拆分和前端Feature边界均可运行；Q02已继续提取治理纯策略/Run查询、Harness命令记录/Context查询，Q06已拆出Agent重连Hook、Workflow两类运行投影并建立8个生产按需Feature；剩余大型Application Service、持续协作Workflow、性能/人工无障碍、远端CI首次运行和生产Exporter/SLO不在已完成范围 |
-| 数据状态 | Product Store Schema与17个Alembic迁移已建立；执行治理、TurnDigest、MAF Workflow Checkpoint、Product Harness、Repository Binding/Snapshot、协作协议、Context revision、StepInputProjection、Intent Set/Clarification、Runtime执行投影、Session标题来源和模型传输审计均为本项目新事实，没有迁移旧数据库、旧历史或旧项目配置 |
+| 数据状态 | Product Store Schema与18个Alembic迁移已建立；执行治理、TurnDigest、MAF Workflow Checkpoint、Product Harness、Repository Binding/Snapshot、协作协议、Context revision、StepInputProjection、Intent Set/Clarification、Runtime执行投影、受治理ToolExecution、Session标题来源和模型传输审计均为本项目新事实，没有迁移旧数据库、旧历史或旧项目配置 |
 | Git 状态 | 私有仓库`later-3/Chat`，分支`main`；按Feature节点提交并推送，私有配置和本地产物不进入Git |
 
 ## 2. 已确认的稳定事实
@@ -103,7 +103,7 @@
 - [x] 完成配置中心“人工介入”矩阵：同一作用域下显示12行本层设置、继承来源、最终动作、条件和重新暂停原因；当前支持我的默认、Web、当前Session、当前Workflow和只读系统规则，短生命周期Run/Interaction配置仍待运行工作台入口。
 - [x] “持续协作主 Workflow”成为唯一发送前可选根Workflow：v1.5.0的31个真实MAF节点覆盖输入接纳、主题摘要候选召回、Product Harness阶段A目录、两级Context revision投影、Context/Intent Set/Project/Plan决策、阶段B工作集与Repository规则采用、协作协议解析、确定性Project目录查询、ExecutionDraft、授权后RunSpec编译、协作响应、回合主题提取、Work/Memory候选治理提交和Product提交；简单问答、可回答澄清、明确Project查询护栏、多Intent组合Plan、修改意图、模型自动推进、放弃零发送、Repository Source失效零发送和跨回合开放问题/项目摘要复用均有自动化场景。
 - [x] 主Workflow工作台可点击查看同一节点的公开输入/输出、Trace事实及持久治理事实；ExecutionDraft、RunSpec、Policy Evaluation、Human Decision Request、ModelCallDraft revision/Attempt和TurnSummary均按稳定节点ID关联，不展示隐藏推理。
-- [x] 主Workflow设计者视图已补齐可解释控制流并升级为思维导图式拓扑：系统执行链明确区分前端、Product、Worker、MAF与最终呈现；真实Definition节点、选择前路径、`scenario_router`的4条MAF SwitchCase候选边和选中分支后续在同一可缩放视图中呈现。边上显示声明顺序、公开条件、实际值、选中目标和未走原因；点击任一图节点可查看同一`executor_id`的公开内容与治理事实，26节点完整台账按需展开。节点结果默认展开，实际步骤输入、公开输入、运行事实和治理事实按需展开；布局分组明确不是额外MAF节点，旧Run仍只按已保存最终分支兼容显示，不伪造逐项历史求值。
+- [x] 主Workflow设计者视图已补齐可解释控制流并升级为思维导图式拓扑：系统执行链明确区分前端、Product、Worker、MAF与最终呈现；真实Definition节点、选择前路径、`scenario_router`的4条MAF SwitchCase候选边和选中分支后续在同一可缩放视图中呈现。边上显示声明顺序、公开条件、实际值、选中目标和未走原因；点击任一图节点可查看同一`executor_id`的公开内容与治理事实，当前34节点完整台账按需展开。节点结果默认展开，实际步骤输入、公开输入、运行事实和治理事实按需展开；布局分组明确不是额外MAF节点，旧Run仍只按已保存最终分支兼容显示，不伪造逐项历史求值。
 - [x] Chat Harness阶段A已完成：7套内置协作协议以不可变Definition revision和Work→Project→User→System优先级Binding解析；ContextPackage支持采用、排除、锁定、文字修订、Token预算、revision/CAS及旧Draft授权失效；TurnDigest v1保留来源和候选而不把模型文字升级成事实；StepInputProjection为每个真实节点保存最小工作包、能力、预算、输出合同、停止条件和Hash。
 - [x] 前端完成协议配置与本轮信息渐进披露：第一层展示方法、来源、数量和预算，第二层展开阶段、规则和Context来源，第三层再展示revision/hash、实际步骤输入、Trace和治理事实；界面命令只创建服务端revision，不直接覆盖权威状态。
 - [x] 主Workflow真实浏览器回合使用火山方舟`glm-5.2`完成3次逐次模型审批：意图识别、回答和回合摘要均发送成功，主链按`ExecutionDraft -> 授权 -> RunSpec -> 响应`推进，Draft终态`accepted`、RunSpec为`bound`、3个Provider Attempt为`completed`；宽屏/窄屏无横向溢出且控制台0错误。
@@ -140,7 +140,7 @@
 - [x] 前端“本轮”工作台已区分基础协作方法与本轮有效组合策略：多目标卡片先解释为什么仍需组合Plan，方法卡展示“基础不需要规划/本轮必须形成组合计划”，展开后再看阶段和规则；可读投影直接来自`collaboration_protocol_resolver`的持久StepInputProjection，不从卡片数量猜测运行事实。
 - [x] 完成手机访问HTTP验证阶段：手机主导航可以进入对话、Workflow运行与节点内容、Harness资源和配置中心；全部前端API统一支持同源或`/chat-api`前缀，`/chat/`子路径生产构建、Manifest和图标已验证；Product Session本机草稿按会话隔离，离线可编辑但禁止发送，活动Run网络重连采用有界退避。云服务器Nginx现以Basic Auth保护`/chat/`和`/chat-api/`，反向SSH只把本地`127.0.0.1:8030`送到云端回环`127.0.0.1:4620`，本地后端与Relay由两个LaunchAgent常驻；不可变发布、配置备份、断线与后端退出自动恢复、既有服务回归和390×844真实模型回合均已验证。公网IP纯HTTP仍不能注册标准PWA Service Worker，且Basic Auth不是正式Product Identity；TLS和正式身份认证尚未实现。
 - [x] 完成[Chat开发Chat自举详细设计](./docs/chat-self-development-design.md)与第一轮自检：从19个正常、拒绝、并发、恢复和安全场景反推单一根Workflow、Repository Binding、隔离Execution Workspace、同一Product Run下的pi Tool Execution、Context/RunSpec装配、Tool Operation和Evidence提交门；定义8层测试、8个浏览器端到端场景、真实Chat仓库Dogfood、4天长场景和SD0-SD6交付节奏。设计纠正了“pi不知道AGENTS”“pi是子Product Run”“直接修改活动仓库”“Tool统计等于副作用账本”“嵌套Workflow自然恢复pi”“测试通过等于Work完成”6个错误候选；该完成项只表示设计与自检已经形成，不表示Schema、迁移或功能代码已存在。
-- [x] 2026-07-24用户批准“Chat开发Chat”D1-D9：Chat自身使用普通Project加Repository Binding；Git/文件系统拥有代码事实；主Workflow以确定性Dispatch调用同一Product Run下的pi Tool；写入默认使用受管worktree；F01前只读；pi自动加载AGENTS而Chat显式编译Harness事实；确定性Validator优先；commit/push/deploy分别授权；F05前不承诺pi持久恢复。当前批准不冻结SD1字段、迁移和API，也不提前开放写Tool。
+- [x] 2026-07-24用户批准“Chat开发Chat”D1-D9：Chat自身使用普通Project加Repository Binding；Git/文件系统拥有代码事实；主Workflow以确定性Dispatch调用同一Product Run下的pi Tool；写入默认使用受管worktree；F01前只读；Chat显式编译Harness事实；确定性Validator优先；commit/push/deploy分别授权；F05前不承诺pi持久恢复。批准时关于“pi自动加载AGENTS”的初始假设已由SD2源码核对纠正：实际执行关闭隐式Context发现，只传递已治理的Context/StepInput。当前批准不冻结后续写入字段、迁移和API，也不提前开放写Tool。
 - [x] 2026-07-24完成[SD1 Repository Binding/Snapshot模块详细设计](./docs/repository-resource-detailed-design.md)：固定Workspace Root Catalog、Binding/Snapshot Schema候选、三态状态机、只读Git Inspector、治理文档Manifest、Context Source新鲜度门、两段式事务、REST、响应式UI、日志/Trace和7层测试；自检纠正“仓库已不可用却沿用最近成功Hash”等6个错误候选。该条只表示审核材料已经形成，R1-R12批准前不创建迁移或生产代码。
 - [x] 2026-07-24用户批准SD1 R1-R12，允许按SD1-A/B/C/D实施只读Repository资源纵向闭环；该批准不因此开放pi源码读取、文件写入、worktree、commit、push、deploy或Evidence完成声明。
 - [x] 2026-07-24完成SD1-A：实现Workspace Root Catalog、路径安全、固定只读Git Inspector、
@@ -192,6 +192,17 @@
 - [x] 2026-07-25用户批准SD2 R1-R12与SD2-A至E实施，并批准
   [“Chat自开发可用门v1”8阶段节奏](./docs/chat-self-development-design.md#102-已批准的chat自开发可用门-v1交付节奏)。
   本批准不越过F01、F02、F05的字段级详细设计门，也不授权SD2写文件、执行Shell或声明Work完成。
+- [x] 2026-07-25完成SD2受治理pi只读执行：持续协作主Workflow升级为v1.6.0/34个真实MAF节点，
+  根据已批准RunSpec显式选择`pi_readonly`或`answer_only`；同一Product Run内的pi只读
+  ToolExecution绑定Run Attempt、Runtime Job、StepInput和Repository Snapshot。Chat-owned
+  `read/grep/find/ls`逐次重验路径与快照，pi禁用内置Tool、Context File发现、Session和自动重试；
+  每次模型调用继续生成持久治理记录和可编辑审批。设计者工作台可点击节点查看权威结果、模型/Tool
+  子活动、Token/耗时与审计索引，明确子活动不是伪造的MAF节点。
+- [x] SD2真实模型Dogfood使用Chat仓库完成1次成功Product Run：2次真实模型审批、2次Chat-owned
+  `read`、41,936输入Token、2,061输出Token、45,446ms，最终只读取`README.md`和
+  `PROJECT_STATE.md`；ToolExecution、Provider Attempt、Product Run与最终消息均成功，运行前后
+  未产生Shell、写文件或Git操作。真实排障同时固定DashScope的system-role/Thinking预算兼容、
+  Chat Completions的assistant tool_calls/tool消息校验，以及8MiB JSONL RPC读取上限。
 
 ## 4. 已完成的工程与研究证据
 
@@ -207,8 +218,8 @@
 
 ### 4.2 已有验证
 
-1. 当前工作区后端215项全量测试通过，总覆盖率78.87%，覆盖17次迁移、审批合同、双协议、Session恢复/并发/Retry/取消、治理策略、31节点主Workflow、协作协议/Context revision/Repository Source Freshness/StepInputProjection/TurnDigest、Intent Set/Clarification、Product Harness完整生命周期、Repository Context预算与只读写回抑制、长跨度场景、ExecutionDraft revision/CAS、Checkpoint/Outbox跨进程恢复、Provider传输审计、Runtime双OS进程领取/Lease/Cursor/取消/断线/并发对账/终态修复，以及手机云端中转的回环绑定、访问控制、流式代理和项目虚拟环境部署合同。
-2. 前端67个逻辑/合同测试、Biome、类型检查和生产构建通过；字号合同禁止低于11px的显式可见字号，覆盖率快照为行61.26%、分支71.40%、函数77.92%，覆盖统一错误、Feature API、ExecutionDraft、协议/Context/Harness/HITL、Repository来源呈现与载入、多Intent方法投影、Runtime事件、Session定位码、Workflow投影、跨部署路径、HTTP浏览器ID兼容、重连退避和本机草稿。当前生产构建主入口462.1 KiB，9个按需Feature边界保持有效。
+1. 当前工作区后端239项全量测试通过，总覆盖率79.12%，覆盖18次迁移、审批合同、双协议、Session恢复/并发/Retry/取消、治理策略、34节点主Workflow、协作协议/Context revision/Repository Source Freshness/StepInputProjection/TurnDigest、Intent Set/Clarification、Product Harness完整生命周期、Repository Context预算与只读写回抑制、SD2只读Tool路径/符号链接/Protected Source/结果预算/失败/放弃/路由、长跨度场景、ExecutionDraft revision/CAS、Checkpoint/Outbox跨进程恢复、Provider传输审计、Runtime双OS进程领取/Lease/Cursor/取消/断线/并发对账/终态修复，以及手机云端中转的回环绑定、访问控制、流式代理和项目虚拟环境部署合同。
+2. 前端68个逻辑/合同测试、Biome、类型检查和生产构建通过；字号合同禁止低于11px的显式可见字号，覆盖统一错误、Feature API、ExecutionDraft、协议/Context/Harness/HITL、Repository来源呈现与载入、多Intent方法投影、Runtime事件、Session定位码、Workflow路由/节点内部活动/权威ToolExecution结果、跨部署路径、HTTP浏览器ID兼容、重连退避和本机草稿。当前生产构建主入口473.22 KiB，按需Feature边界保持有效。
 3. 浏览器完成ExecutionDraft完整工作台真实回合：修改执行摘要和Scope后由revision 1生成revision 2及新Hash，重新授权后3次火山方舟`glm-5.2`调用均完成，5个Interrupt全部为resumed、22个Checkpoint可审计、Product Run成功且TurnSummary保持candidate；520px最小视口无横向溢出，控制台0错误。
 4. 火山方舟Responses与阿里云百炼Chat Completions各完成1次真实模型审批回合；后者核对最终Body仅含`model/messages/tools/store/stream`并返回预期文本。
 5. 清理脚本已验证可分别终止端口8030的Uvicorn和5073的Vite，清理后无监听残留。
@@ -274,13 +285,12 @@
     资源已有revision/CAS；但跨Session活动感知、完整读取版本绑定、统一冲突Diff/rebase、来源Session
     可见性、手机/桌面并发和容量矩阵尚未实现。本轮只完成产品与交付边界升格，没有创建Schema、
     迁移或代码，不能把目标已批准外推为并发能力已经可用。
-11. “Chat开发Chat”已完成SD1只读纵向闭环：用户能在Project界面管理Repository、保留不可变
+11. “Chat开发Chat”已完成SD1与SD2只读纵向闭环：用户能在Project界面管理Repository、保留不可变
     Snapshot、把有版本的代码基线/治理规则纳入可编辑Context，在Provider发送前阻断过期Source，
-    并通过真实Chat仓库、跨Product Session和真实模型Run证明仓库没有被修改。完整自举仍未形成：
-    目前没有受控Execution Workspace，也没有由持续协作主Workflow把已批准RunSpec派发给pi。
-    pi能读取工作目录及祖先的AGENTS/CLAUDE文件，但这不等于它已经获得当前Harness的Project、Work、
-    Context revision和用户批准范围。SD2 R1-R12已经批准，当前进入受治理只读执行实施。写入必须等待F01，
-    完成声明必须等待F02，pi跨进程持续恢复必须等待F05。TaskPlan PlanNode当前还是修订快照，
+    并由持续协作主Workflow把已批准RunSpec和最小StepInput派发给受治理pi只读Runtime。真实Chat
+    仓库、跨Product Session和真实模型Run均证明仓库没有被修改。完整自举仍未形成：目前没有隔离
+    Execution Workspace和写Tool。写入必须等待F01，完成声明必须等待F02，pi跨进程持续恢复必须
+    等待F05。TaskPlan PlanNode当前还是修订快照，
     实时进度权威是WorkItem/ActionItem；Plan进度投影仍归F06。
 
 ## 6. 风险和未知
@@ -307,7 +317,7 @@
 16. CI、Ruff、Pyright、Biome、分层覆盖率、Playwright/axe和故障实验室已经建立；真实多设备性能、完整容量和人工无障碍体验仍不能由这些自动门外推。
 17. HTTP边界已统一为Problem Detail、稳定错误码、请求关联和脱敏异常映射；真实Principal/Scope认证、公开API版本与全部端点的字段级响应模型仍未完成。
 18. 统一结构化日志、关联上下文、基础OpenTelemetry、Metrics、Liveness/Readiness、运行时间线与脱敏诊断入口已经建立；生产多实例Exporter、SLO、告警路由和长期保留尚未完成。
-19. Alembic Schema漂移检查和17次迁移完整升降已通过，但SQLAlchemy仍报告执行治理表之间存在不可排序的外键环；当前SQLite迁移可运行，未来SQLAlchemy升级或迁移自动生成前必须先消除或显式设计这些约束环。
+19. Alembic Schema漂移检查和18次迁移完整升降已通过，但SQLAlchemy仍报告执行治理表之间存在不可排序的外键环；当前SQLite迁移可运行，未来SQLAlchemy升级或迁移自动生成前必须先消除或显式设计这些约束环。
 20. 超级管理员能力的登录/活跃/有效协作口径、多设备与空闲语义、默认可见字段、敏感正文额外授权、隐私告知、数据保留、审计不可篡改和运营投影容量仍待详细设计；在这些决定获批前不得用登录时间差或Run耗时拼出“用户使用时长”。
 
 ## 7. 当前开发门
@@ -317,9 +327,9 @@
 3. 多Agent种子已验证两套显式会话传递、4个Profile Revision、逐次模型调用审批和成语接龙确定性规则；它仍不代表任意动态Agent拓扑、持久Checkpoint或并发群聊已经完成。
 4. pi Agent Tool已验证官方JSONL RPC、两道治理门和真实Tool loop；它仍不代表跨进程pi Session、持久Approval、通用副作用对账或R6恢复完成。
 5. 概念状态“有效”只表示语义边界可正式使用；任何功能是否实现、恢复级别和验证证据仍必须回到本文件及对应源码/测试判断。
-6. 跨进程HITL只对`continuous-collaboration v1.5.0`中已建立Checkpoint/Interrupt合同且没有外部Tool副作用的安全点成立；活动流订阅已由通用Runtime承载，但旧/嵌套Workflow、pi Tool、Tool副作用和通用R6仍不得类推。
+6. 跨进程HITL只对`continuous-collaboration v1.6.0`中已建立Checkpoint/Interrupt合同且没有活动外部进程的安全点成立；活动流订阅已由通用Runtime承载，但旧/嵌套Workflow、活动pi进程、Tool副作用和通用R6仍不得类推。SD2进程重启会把`starting/running/waiting_human`的pi执行诚实收敛为`interrupted`，不会伪恢复或自动重放。
 7. Product Harness D1-D8已批准并实现；后续扩展仍必须保持“模型只提候选、Decision后提交、CAS/Trace/Outbox同事务”，不得把TurnSummary直接改写成长期事实。
-8. “Chat开发Chat”D1-D9、SD1 R1-R12与SD2 R1-R12已经批准，SD1-A/B/C/D只读纵向切片已完成；
-   [SD2受治理pi只读执行详细设计](./docs/pi-readonly-execution-detailed-design.md)进入实施。SD2批准
-   只覆盖受治理只读执行；SD1/SD2保证不能外推为
+8. “Chat开发Chat”D1-D9、SD1 R1-R12与SD2 R1-R12已经批准，SD1-A/B/C/D与SD2-A/B/C/D/E
+   只读纵向切片已完成。[SD2受治理pi只读执行详细设计](./docs/pi-readonly-execution-detailed-design.md)
+   记录了实现与验证证据。SD2只覆盖受治理只读执行；SD1/SD2保证不能外推为
    Execution Workspace、写Tool、Evidence完成门、PlanNode实时进度或pi跨进程恢复。

@@ -67,7 +67,7 @@ flowchart LR
 | 1. 工程与真实链路 | 建立独立前后端、MAF、AG-UI、调试和验证基线 | `真实模型门通过；2项收尾` |
 | 2. 目标架构与合同基线 | 审核目标拓扑、模块、状态、合同、恢复矩阵 | `总体架构已批准；模块详细设计按交付门继续` |
 | 3. 产品事实与完成历史 | 身份、Session、Message、Run/Attempt和历史恢复 | `Phase 1文本底座、显式Retry/Restart和精确取消窄切片完成；完整身份和树操作继续` |
-| 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `Product Harness D1-D8、ExecutionDraft完整编辑、31节点主Workflow、Intent Set/复合Plan、SD1 Repository只读纵向闭环和4个前端工作区完成；独立分支执行与部分成功继续` |
+| 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `Product Harness D1-D8、ExecutionDraft完整编辑、34节点主Workflow、Intent Set/复合Plan、SD1 Repository只读纵向闭环、SD2受治理pi只读执行和4个前端工作区完成；独立分支执行与部分成功继续` |
 | 5. 持久执行与活动流 | Job/Event、Worker、Lease、重连和Reconciler | `D1-D8纵向切片完成；完整强退、多端、保留和容量矩阵继续` |
 | 6. Tool、Workflow与HITL恢复 | Tool Ledger、对账、Checkpoint和持久Interrupt | `主Workflow审批安全点跨进程恢复完成；Tool与任意Workflow恢复继续` |
 | 7. 知识、证据、交付与运营 | Memory、Evidence、Provenance、Outbox、Trace、超级管理员看护和告警 | `Note/Memory生命周期与Harness事务Outbox完成；超级管理员目标已确认，独立Evidence、Artifact、Delivery和运营能力继续` |
@@ -318,6 +318,6 @@ Session 是 W2-W9 的横向能力，仍由两份专项材料维护：
 - [ ] F07 Principal、Role/Grant、Authentication Session、Scope、Channel Binding与Delivery。
 - [ ] F08 Provider配置、运营、备份、保留与SLO。
 - [ ] F09 超级管理员身份、使用与作品运营看护。
-- [ ] F10 Chat开发Chat自举纵向闭环（SD1只读纵向切片已完成；SD2 R1-R12及“Chat自开发可用门v1”8阶段节奏已获批准，当前实施受治理pi只读执行；F01/F02/F05仍保留各自详细设计门）。
+- [ ] F10 Chat开发Chat自举纵向闭环（SD1与SD2只读纵向切片已完成；下一阶段SD3必须先审核F01字段级Tool Operation Ledger，SD4/F02与SD5/F05仍保留各自详细设计门）。
 
 推荐主依赖顺序是`Q01 -> Q03 -> Q04 -> Q02 -> Q05 -> F01-F03 -> F04-F06 -> F07 -> F09`；F08在Q0后可与产品能力并行，F09的身份底座随F07推进，但完整工作/作品看护依赖F02、F06和真实身份。F10是穿透既有能力的Dogfood纵向线：SD1只读资源绑定可在详细设计审核后先行，SD3写入必须等待F01，SD4完成声明必须等待F02，SD5持久恢复必须等待F05；不能为了尽快看到自举效果绕过这些门。Q06-Q07贯穿对应阶段。工程收敛不得改变现有Product Store、MAF/AG-UI合同、Workflow节点ID、审批Hash或用户可见语义。

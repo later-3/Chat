@@ -142,6 +142,7 @@ def _validate_message_input(
     request_input: Any,
     *,
     capabilities: ModelCapabilities,
+    protocol: str,
     allowed_tool_names: Sequence[str] = (),
     issues: list[str],
 ) -> None:
@@ -158,7 +159,11 @@ def _validate_message_input(
             issues.append(f"{prefix}必须是消息对象")
             continue
         item_type = message.get("type")
-        if item_type in {"function_call", "function_call_output", "reasoning"}:
+        if protocol == "openai_responses" and item_type in {
+            "function_call",
+            "function_call_output",
+            "reasoning",
+        }:
             # Responses API represents later tool-loop turns as typed input
             # items rather than role/content messages. They remain visible and
             # editable in Provider JSON, while Tool declarations are validated
@@ -173,6 +178,33 @@ def _validate_message_input(
                 issues.append(f"{prefix}.output不能省略")
             continue
         role = message.get("role")
+        if (
+            protocol == "openai_chat_completions"
+            and role == "assistant"
+            and isinstance(message.get("tool_calls"), list)
+            and message["tool_calls"]
+        ):
+            allowed = set(allowed_tool_names)
+            for call_index, call in enumerate(message["tool_calls"]):
+                call_prefix = f"{prefix}.tool_calls[{call_index}]"
+                function = call.get("function") if isinstance(call, Mapping) else None
+                name = function.get("name") if isinstance(function, Mapping) else None
+                if not isinstance(name, str) or not name.strip():
+                    issues.append(f"{call_prefix}.function.name不能为空")
+                elif name not in allowed:
+                    issues.append(f"{call_prefix}.function.name引用了未授权Tool: {name}")
+            content = message.get("content")
+            if content is None or content == "":
+                continue
+        if protocol == "openai_chat_completions" and role == "tool":
+            if not allowed_tool_names:
+                issues.append(f"{prefix}在没有已授权Tool时不能使用tool角色")
+            if not isinstance(message.get("tool_call_id"), str) or not message["tool_call_id"].strip():
+                issues.append(f"{prefix}.tool_call_id不能为空")
+            content = message.get("content")
+            if not isinstance(content, (str, list)) or not content:
+                issues.append(f"{prefix}.content必须是非空文字或内容列表")
+            continue
         if not isinstance(role, str) or role not in capabilities.roles:
             issues.append(f"{prefix}.role必须是以下角色之一: {', '.join(capabilities.roles)}")
             continue
@@ -236,6 +268,7 @@ def validate_provider_request(
     _validate_message_input(
         provider_request.get(message_field),
         capabilities=resolved_capabilities,
+        protocol=protocol,
         allowed_tool_names=allowed_tool_names,
         issues=issues,
     )
@@ -747,6 +780,46 @@ class ModelCallAttempt:
     error_code: str | None = None
 
 
+def _runtime_model_capabilities(
+    capabilities: ModelCapabilities,
+    *,
+    protocol: str,
+    allowed_tool_names: Sequence[str],
+) -> ModelCapabilities:
+    """Extend catalog capabilities only with protocol-required runtime roles."""
+
+    roles = list(capabilities.roles)
+    content_types = dict(capabilities.content_types_by_role)
+    if protocol == "openai_chat_completions" and allowed_tool_names:
+        if "tool" not in roles:
+            roles.append("tool")
+        content_types.setdefault("tool", ("text",))
+    runtime_parameters = tuple(
+        ParameterCapability(
+            key=value.key,
+            label=value.label,
+            value_type=value.value_type,
+            default=value.default,
+            choices=value.choices,
+            minimum=value.minimum,
+            maximum=value.maximum,
+            child_key=value.child_key,
+            locked_value=True,
+            locked=True,
+        )
+        if value.key == "stream"
+        else value
+        for value in capabilities.parameters
+    )
+    return ModelCapabilities(
+        roles=tuple(roles),
+        content_types_by_role=tuple((role, tuple(content_types.get(role, ()))) for role in roles),
+        parameters=runtime_parameters,
+        token_estimator=capabilities.token_estimator,
+        allow_unknown_parameters=True,
+    )
+
+
 class InMemoryModelCallReviewStore:
     """Process-local review state with production-equivalent invariants."""
 
@@ -881,9 +954,14 @@ class InMemoryModelCallReviewStore:
                 if isinstance(value, str)
             )
             request_copy = copy.deepcopy(dict(provider_request))
+            runtime_capabilities = _runtime_model_capabilities(
+                model_option.capabilities,
+                protocol=provider.protocol,
+                allowed_tool_names=allowed_tool_names,
+            )
             validate_provider_request(
                 request_copy,
-                model_option.capabilities,
+                runtime_capabilities,
                 provider.protocol,
                 allowed_tool_names=allowed_tool_names,
             )
@@ -923,7 +1001,7 @@ class InMemoryModelCallReviewStore:
                 body_sha256=body_sha256,
                 binding_hash=binding_hash,
                 context_sources=context_sources or _initial_context_sources(request_copy),
-                model_capabilities=model_option.capabilities,
+                model_capabilities=runtime_capabilities,
                 allowed_tool_names=allowed_tool_names,
                 execution_context=copy.deepcopy(dict(card.get("execution_context") or {})),
                 status=str(card.get("status") or "pending_approval"),
@@ -1014,29 +1092,11 @@ class InMemoryModelCallReviewStore:
             model_option = catalog.require_model(provider_id, model)
         except ModelProviderCatalogError as error:
             raise ModelCallDraftValidationError([str(error)]) from error
-        runtime_parameters = tuple(
-            ParameterCapability(
-                key=value.key,
-                label=value.label,
-                value_type=value.value_type,
-                default=value.default,
-                choices=value.choices,
-                minimum=value.minimum,
-                maximum=value.maximum,
-                child_key=value.child_key,
-                locked_value=True,
-                locked=True,
-            )
-            if value.key == "stream"
-            else value
-            for value in model_option.capabilities.parameters
-        )
-        capabilities = ModelCapabilities(
-            roles=model_option.capabilities.roles,
-            content_types_by_role=model_option.capabilities.content_types_by_role,
-            parameters=runtime_parameters,
-            token_estimator=model_option.capabilities.token_estimator,
-            allow_unknown_parameters=True,
+        provider = catalog.require_selection(provider_id, model)
+        capabilities = _runtime_model_capabilities(
+            model_option.capabilities,
+            protocol=provider.protocol,
+            allowed_tool_names=allowed_tool_names,
         )
         draft = self._make_draft(
             thread_id=thread_id,

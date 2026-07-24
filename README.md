@@ -47,7 +47,7 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 10. 持续协作主Workflow已经支持Product DB持久Checkpoint、Interrupt Link和Lease Outbox Worker；实际独立OS进程可从一次已提交决定恢复到下一审批安全点。该保证暂不外推到嵌套Workflow或外部Tool副作用。
 11. ExecutionDraft已有17部分完整可读编辑工作台；保存产生新revision与Hash，必须重新审批后才能编译不可变RunSpec。
 12. Product Harness D1-D8已经落地：Project、Work、Plan/Action、Note、Memory与两阶段Context使用服务端权威Schema、CAS、幂等命令、Trace和Outbox；前端提供Project Explorer、Work Board、Knowledge和Context Inspector。
-13. 持续协作主Workflow v1.5.0现有31个真实MAF节点；7套协作协议、不可变Context revision、Repository Source Freshness、TurnDigest v1、StepInputProjection和持久Intent Set已经接入。真实模型已验证2个独立目标、4次逐次模型审批、组合Plan、权威Project目录事实和无长期资源写入；Repository真实模型Dogfood属于下一阶段。
+13. 持续协作主Workflow v1.6.0现有34个真实MAF节点；除7套协作协议、不可变Context revision、Repository Source Freshness、TurnDigest v1、StepInputProjection和持久Intent Set外，已根据批准的RunSpec在`answer_only`与受治理pi只读执行间显式路由。真实pi Dogfood完成2次模型审批、2次Chat-owned只读Tool调用，整个Product Run没有Shell、写文件或Git操作。
 14. Runtime Job、活动流游标和通用Execution Worker纵向切片已经完成；完整Session仍按Phase 2-8继续补齐Steer/Follow-up、分支、强退/多端矩阵、Tool副作用对账和跨入口恢复。
 15. Chat概念空间已经建立：14个概念簇统一Chat系统/Harness、Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、上下文结果、界面、外部入口、人工介入、连续协作和超级管理员运营看护的共同语言。
 16. Q0工程安全底座已有可运行纵向基线：Governance/Harness已按纯规则、只读查询、命令记录和事务协调继续拆分；Agent重连Hook、Workflow运行投影和对话呈现已有独立Feature边界；8个重型前端Feature按需加载，当前主入口为472.6 KiB并受自动包体门保护。统一Problem Detail、关联日志/Trace/Metrics/诊断、CI、覆盖率、迁移、Playwright/axe、故障实验室和供应链门均通过本地验证；大型Application Service、持续协作Workflow、生产Exporter/SLO和远端CI首次运行仍在后续范围。
@@ -250,8 +250,8 @@ scripts/         可重复执行的工程验证
 
 ## 下一步
 
-当前优先产品门是完成SD1-D：使用真实Chat仓库和真实模型验证Project、进度、代码基线与规则的
-只读Dogfood，并收敛性能、日志、可访问性和已兑现/未兑现保证；在F01 Tool Operation Ledger批准前不开写Tool，
-在F02 Evidence/Artifact生命周期批准前不把测试通过声明为Work完成，在F05前不承诺pi跨进程续跑。
+SD1与SD2只读纵向切片已经完成。下一优先产品门是F01 Tool Operation Ledger字段级详细设计审核，
+通过后才进入SD3隔离Execution Workspace与写Tool；在F02 Evidence/Artifact生命周期批准前不把
+测试通过声明为Work完成，在F05前不承诺pi跨进程续跑。
 Super Admin Operations、长期`TaskPlanRevision`、独立Branch Execution和生产前端迁移继续保留在已批准
 路线中，但不能挤占本次真实Dogfood纵向闭环的依赖顺序。

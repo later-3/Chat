@@ -7,4 +7,9 @@
  */
 export { WorkflowCodeStageChain } from "./workflow-code-stage-chain.js";
 export { GenericWorkflowChain } from "./workflow-generic-chain.js";
-export { governanceForNode, stepInputForNode } from "./workflow-run-content.js";
+export {
+  governanceForNode,
+  internalActivityForNode,
+  outputForNode,
+  stepInputForNode,
+} from "./workflow-run-content.js";

@@ -1,6 +1,6 @@
 # SD2 受治理 pi 只读执行详细设计
 
-> 状态：**R1-R12已于2026-07-25获用户批准，进入分阶段实施；批准不扩大SD2只读边界**
+> 状态：**R1-R12与SD2-A/B/C/D/E已于2026-07-25完成实施和真实Dogfood；批准与完成均不扩大SD2只读边界**
 >
 > 日期：2026-07-24
 >
@@ -9,6 +9,8 @@
 > 本阶段边界：只允许读取已绑定Repository并形成分析或改动方案；不修改文件、不执行Shell、不声明Work完成
 
 ## 1. 结论先行
+
+本节保留实施前的缺口与获批推导；已完成的代码事实和验证结果以第24节为准。
 
 SD2要把当前分离的两条能力真正接起来：
 
@@ -75,7 +77,7 @@ SD2要把当前分离的两条能力真正接起来：
 
 ## 3. 源码事实与采用边界
 
-### 3.1 当前Chat事实
+### 3.1 实施前Chat事实
 
 1. 当前主图位于`backend/app/workflows/continuous_chat_factory.py`，在
    `run_spec_compiler`后无条件进入`response_agent`。
@@ -1745,3 +1747,75 @@ pi：
 3. `/Users/xulater/Code/reference-agent-sources/QwenPaw/src/qwenpaw/app/task_tracker.py`
 4. `/Users/xulater/Code/opc-os/LibreChat/packages/api/src/stream/interfaces/IJobStore.ts`
 5. `/Users/xulater/Code/opc-os/LibreChat/packages/api/src/stream/ApprovalLifecycle.ts`
+
+## 24. 实施与验证结果
+
+### 24.1 已兑现对象和链路
+
+1. 持续协作主Workflow升级为`continuous-collaboration v1.6.0`，34个真实MAF节点中新增
+   `execution_route`、`pi_readonly_dispatch`和`pi_readonly_result_assembly`；RunSpec是
+   `pi_readonly`与`answer_only`的唯一运行路由事实。
+2. `backend/app/execution_dispatch/`拥有SD2应用协调、不可变Route/Fence/Result合同、ExecutionDraft
+   与RunSpec编译、MAF RequestInfo状态机和Repository私有路径适配；Router与React不拥有事务。
+3. `ToolExecution`绑定Product Run/Attempt、Runtime Job、RunSpec、StepInput、Repository
+   Binding/Snapshot、配置revision、输入/能力Hash、终态、聚合统计和Result Hash。Bounded活动镜像只为
+   节点快速投影；完整AG-UI事件顺序仍由Runtime Journal拥有，不把Metrics冒充第二个完整事件事实源。
+4. `backend/app/readonly_tools/`只实现`read/grep/find/ls`：每次调用重新验证Repository Fence，
+   拒绝绝对路径、`..`、symlink/reparse point、`.git`与Protected Source；完整JSON结果不超过64KiB。
+5. pi使用`--no-builtin-tools --no-context-files --no-session --no-skills --no-prompt-templates
+   --offline`，只加载Chat注入的Custom Tool Extension。执行预算上限为6次模型调用、24次只读Tool、
+   600秒和64KiB单Tool结果，服务端配置只能进一步收紧。
+6. 每次pi Provider请求先经过协议感知校验、持久ModelCall治理、当前revision/Hash审批和一次性
+   Grant/Consumption，再由本机Gateway转发；Chat Completions的assistant tool calls与tool消息也
+   必须绑定已授权真实Tool。
+7. 设计者工作台直接读取权威ToolExecution Result作为节点结果；模型审批、Tool请求和进程事件在
+   “节点内部活动”中按顺序展示，并明确它们不是额外MAF节点。完整治理记录保留在折叠审计区。
+
+### 24.2 场景与故障验证
+
+| 场景 | 结果 |
+|---|---|
+| `answer_only` | 不创建pi ToolExecution，原回答分支继续 |
+| `pi_readonly` | 同一Product Run创建1个绑定Snapshot的ToolExecution |
+| 两次模型调用 | 两份ModelCallDraft、两次Decision/Grant/Attempt分别完成 |
+| Chat-owned读取 | `read/grep/find/ls`路径、结果和调用次数受硬上限约束 |
+| Protected Source | `backend/config.json`等来源以`READ_TOOL_SOURCE_PROTECTED`拒绝 |
+| Snapshot变化 | pi启动或Provider外发前以stale失败，零越界发送 |
+| 修改Provider请求 | 新revision和Hash重新审批，Gateway只转发获批Body |
+| 放弃 | pi与Product Run收敛为abandoned，不生成假Assistant成功 |
+| Provider失败 | Attempt与ToolExecution失败，Product Run无假成功 |
+| 进程重启 | `starting/running/waiting_human`收敛为interrupted，不自动重放 |
+| 桌面/手机工作台 | 节点结果、子活动、路由原因可查看；手机无页面级横向溢出 |
+
+真实Dogfood的Product Run为`58e48b4b-25fd-44b0-ac35-f099bbd8821a`：2次真实模型审批、
+2次Chat-owned `read`、41,936输入Token、2,061输出Token、45,446ms，最终只读取`README.md`和
+`PROJECT_STATE.md`。ToolExecution、Provider Attempt、Product Run与最终消息均成功；Git工作树检查
+未发现pi产生的Shell、文件写入或Git操作。
+
+真实运行先后暴露并修复3个仅Mock难以发现的兼容问题：
+
+1. DashScope Coding端点不接受`developer`角色，且Thinking预算要求更大的
+   `max_completion_tokens`；Gateway在创建可审查Draft前投影真实上游兼容能力。
+2. pi的后续Chat Completions请求包含assistant `tool_calls`、`content=null`和`tool`角色；验证器按
+   已授权Tool身份开放这些协议字段，而不是放宽未知角色。
+3. JSONL message事件会嵌入有界Tool结果，asyncio默认64KiB reader limit不足；当前使用8MiB有界
+   stream limit，同时把单Tool完整结果压在64KiB内。
+
+### 24.3 质量门与偏航结论
+
+1. 后端239项全量测试（总覆盖率79.12%）、前端68项合同测试、Ruff、Pyright、Biome、生产PWA
+   构建和18次Alembic完整升降进入提交门；OpenAPI、Product Schema和Workflow Catalog指纹按SD2
+   审查后更新。
+2. `pi_runtime.py`拆为子进程/RPC执行与`pi_gateway.py`外部传输两块；MAF Executor仍把进程内待处理
+   Model/Tool边界保留在一个状态机内，避免拆散fail-closed不变量。
+3. 浏览器以桌面和520 CSS像素窄屏验证，pi节点正文为13px、详情在视口内，控制台0错误。
+4. 偏航结论：仍只有一个用户根Workflow、一个Product Run和一个Product事实源；pi是同一Run下的
+   受治理ToolExecution。SD2没有写Tool、Shell、Evidence完成声明、自动重试或pi跨进程恢复。
+
+### 24.4 仍未兑现
+
+1. F01批准前没有Execution Workspace、`edit/write/bash`、副作用Exactly-once或结果未知对账。
+2. F02批准前没有独立Artifact/Evidence/Provenance，也不能据pi文本或测试自述完成Work。
+3. F05批准前，活动pi进程、pi Session和任意/嵌套Workflow不能跨进程继续，只能安全中断后Restart。
+4. 当前只读Tool活动查询使用Runtime Journal加ToolExecution bounded projection；独立长期Activity
+   查询、保留和容量策略仍归F03。

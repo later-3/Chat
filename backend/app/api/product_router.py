@@ -25,7 +25,8 @@ from ..model_call_review import (
     ModelCallDraftValidationError,
     ProviderDispatchError,
 )
-from ..pi_runtime import PiRuntimeManager
+from ..pi_gateway import PiRuntimeManager
+from ..pi_runtime import PiRuntimeError
 from ..product_sessions import ProductSessionService
 from ..product_sessions.service import ProductSessionConflict, ProductSessionNotFound
 from ..runtime_execution import RuntimeExecutionService
@@ -401,6 +402,23 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
         authorization: str | None = Header(default=None),
     ):
         return await pi_provider_gateway(request, authorization, "openai_responses")
+
+    @router.post("/api/pi-read-tools/{tool_name}", include_in_schema=False)
+    async def pi_read_tool_gateway(
+        tool_name: str,
+        request: Request,
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        if pi_runtime is None:
+            raise HTTPException(status_code=503, detail="pi只读Tool Gateway不可用")
+        try:
+            return await pi_runtime.read_tool_response(
+                authorization=authorization,
+                tool_name=tool_name,
+                body=await request.body(),
+            )
+        except PiRuntimeError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
     @router.get("/api/agents")
     async def agents() -> dict[str, Any]:

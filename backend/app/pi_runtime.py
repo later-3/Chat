@@ -5,26 +5,132 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import logging
 import os
-import secrets
+import re
 import tempfile
 import time
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 from uuid import uuid4
 
-import httpx
-from fastapi import HTTPException
-from starlette.responses import Response, StreamingResponse
-
 from .config import PiRuntimeSettings
-from .model_call_review import InMemoryModelCallReviewStore, ProviderDispatchError
-from .model_providers import ModelProviderCatalog, ModelProviderConfig
+from .execution_dispatch.contracts import RepositoryFence
+from .model_providers import ModelProviderConfig
+from .readonly_tools import ReadonlyToolService, ReadonlyToolValidationError
 from .tool_configs import PiToolConfigSnapshot
 
+logger = logging.getLogger(__name__)
+
 PI_EXTENSION_SOURCE = """export default function(pi) {
+  pi.on("tool_call", async (event, ctx) => {
+    const edited = await ctx.ui.editor(
+      "CHAT_PI_TOOL_APPROVAL",
+      JSON.stringify({
+        tool_call_id: event.toolCallId,
+        tool_name: event.toolName,
+        arguments: event.input
+      })
+    );
+    if (edited === undefined) {
+      return { block: true, reason: "Chat user rejected the pi tool call" };
+    }
+    let decision;
+    try {
+      decision = JSON.parse(edited);
+    } catch {
+      return { block: true, reason: "Chat returned invalid tool arguments" };
+    }
+    if (!decision || typeof decision.arguments !== "object" || Array.isArray(decision.arguments)) {
+      return { block: true, reason: "Chat returned invalid tool arguments" };
+    }
+    for (const key of Object.keys(event.input)) delete event.input[key];
+    Object.assign(event.input, decision.arguments);
+    return undefined;
+  });
+}
+"""
+
+PI_READONLY_EXTENSION_SOURCE = """const Schemas = {
+  read: {
+    type: "object",
+    properties: {
+      path: { type: "string" },
+      offset: { type: "integer", minimum: 1 },
+      limit: { type: "integer", minimum: 1, maximum: 2000 }
+    },
+    required: ["path"],
+    additionalProperties: false
+  },
+  grep: {
+    type: "object",
+    properties: {
+      pattern: { type: "string" },
+      path: { type: "string" },
+      regex: { type: "boolean" },
+      limit: { type: "integer", minimum: 1, maximum: 100 }
+    },
+    required: ["pattern"],
+    additionalProperties: false
+  },
+  find: {
+    type: "object",
+    properties: {
+      pattern: { type: "string" },
+      path: { type: "string" },
+      limit: { type: "integer", minimum: 1, maximum: 500 }
+    },
+    required: ["pattern"],
+    additionalProperties: false
+  },
+  ls: {
+    type: "object",
+    properties: {
+      path: { type: "string" },
+      limit: { type: "integer", minimum: 1, maximum: 500 }
+    },
+    additionalProperties: false
+  }
+};
+
+const Descriptions = {
+  read: "Read a bounded range of one UTF-8 text file inside the approved repository snapshot.",
+  grep: "Search bounded text files inside the approved repository snapshot.",
+  find: "Find bounded file paths inside the approved repository snapshot.",
+  ls: "List one directory inside the approved repository snapshot."
+};
+
+export default function(pi) {
+  for (const name of ["read", "grep", "find", "ls"]) {
+    pi.registerTool({
+      name,
+      label: `Chat ${name}`,
+      description: Descriptions[name],
+      promptSnippet: Descriptions[name],
+      parameters: Schemas[name],
+      async execute(toolCallId, params) {
+        const response = await fetch(`${process.env.CHAT_PI_READ_TOOL_GATEWAY}/${name}`, {
+          method: "POST",
+          headers: {
+            "authorization": `Bearer ${process.env.CHAT_PI_READ_TOOL_TOKEN}`,
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({ tool_call_id: toolCallId, arguments: params })
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.detail || payload?.error?.message || "Chat read tool failed");
+        }
+        return {
+          content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+          details: payload
+        };
+      }
+    });
+  }
+
   pi.on("tool_call", async (event, ctx) => {
     const edited = await ctx.ui.editor(
       "CHAT_PI_TOOL_APPROVAL",
@@ -75,6 +181,8 @@ class PiGatewayCall:
     received_at: float
     decision: asyncio.Future[PiGatewayDecision]
     approval_id: str | None = None
+    outcome_status: str | None = None
+    error_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,9 +205,21 @@ class PiCompletedBoundary:
     kind: Literal["completed"]
     text: str
     metrics: dict[str, Any]
+    status: Literal["succeeded", "failed", "cancelled"] = "succeeded"
+    terminal_reason_code: str = "pi_completed"
 
 
 PiBoundary = PiModelCallBoundary | PiToolCallBoundary | PiCompletedBoundary
+
+_DASHSCOPE_CODING_HOST = "coding.dashscope.aliyuncs.com"
+_PI_DEFAULT_MAX_TOKENS = 16_384
+_PI_REASONING_MAX_TOKENS = 65_536
+# One read tool result can be 128 KiB and pi's JSONL message events can embed
+# several prior results. asyncio's 64 KiB default would split a valid event.
+# Keep an explicit upper bound so malformed output still cannot grow unbounded.
+_PI_RPC_STREAM_LIMIT = 8 * 1024 * 1024
+MAX_PI_READ_TOOL_CALLS = 24
+_SENSITIVE_ERROR_VALUE = re.compile(r"(?i)(authorization|api[_-]?key|token|secret)\s*[:=]\s*([^\s,;}]+)")
 
 
 def _assistant_text(message: Mapping[str, Any]) -> str:
@@ -119,8 +239,62 @@ def _pi_api(protocol: str) -> str:
     return "openai-completions" if protocol == "openai_chat_completions" else "openai-responses"
 
 
+def _pi_provider_compat(provider: ModelProviderConfig, model: str) -> dict[str, Any]:
+    """Describe the real upstream behind Chat's local approval gateway.
+
+    pi normally derives compatibility from the URL it calls. Here that URL is
+    Chat's local gateway, so auto-detection would incorrectly treat every
+    upstream as OpenAI. Keep this projection next to gateway construction so
+    the request visible to the user is already the exact compatible request;
+    the gateway never mutates approved bytes.
+    """
+
+    if provider.protocol != "openai_chat_completions":
+        return {}
+    option = next((value for value in provider.models if value.id == model), None)
+    roles = option.capabilities.roles if option is not None else ()
+    base_url = (provider.base_url or "").lower()
+    is_dashscope_coding = _DASHSCOPE_CODING_HOST in base_url
+    return {
+        "supportsStore": True,
+        # DashScope's coding endpoint rejects the OpenAI `developer` role even
+        # when a generic DashScope catalog declares it. It accepts `system`.
+        "supportsDeveloperRole": "developer" in roles and not is_dashscope_coding,
+        "supportsReasoningEffort": is_dashscope_coding,
+        "maxTokensField": "max_completion_tokens",
+        "supportsStrictMode": False,
+    }
+
+
+def _pi_max_tokens(provider: ModelProviderConfig, model: str, thinking_level: str) -> int:
+    """Choose a truthful pi model ceiling from the configured model contract."""
+
+    option = next((value for value in provider.models if value.id == model), None)
+    configured: int | None = None
+    if option is not None:
+        parameter = option.capabilities.parameter("max_output_tokens")
+        if parameter is not None and isinstance(parameter.default, int):
+            configured = parameter.default
+    floor = _PI_REASONING_MAX_TOKENS if thinking_level != "off" else _PI_DEFAULT_MAX_TOKENS
+    return max(configured or 0, floor)
+
+
+def _safe_pi_error(value: object) -> str:
+    """Bound and redact a Provider/pi error before it enters product state."""
+
+    text = " ".join(str(value or "").split())
+    text = _SENSITIVE_ERROR_VALUE.sub(r"\1=[redacted]", text)
+    return text[:500]
+
+
+class PiExecutionOwner(Protocol):
+    """Minimal owner contract needed by one live pi subprocess."""
+
+    def unregister(self, token: str) -> None: ...
+
+
 class PiExecution:
-    """One live pi process; lifecycle is intentionally process-local until Runtime Jobs exist."""
+    """One live pi process bound to one governed execution token."""
 
     def __init__(
         self,
@@ -130,7 +304,9 @@ class PiExecution:
         config: PiToolConfigSnapshot,
         runtime: PiRuntimeSettings,
         provider: ModelProviderConfig,
-        manager: PiRuntimeManager,
+        manager: PiExecutionOwner,
+        repository_fence: RepositoryFence | None = None,
+        readonly_tools: ReadonlyToolService | None = None,
     ) -> None:
         self.token = token
         self.task = task
@@ -138,6 +314,8 @@ class PiExecution:
         self.runtime = runtime
         self.provider = provider
         self.manager = manager
+        self.repository_fence = repository_fence
+        self.readonly_tools = readonly_tools
         self.started_at = time.monotonic()
         self.process: asyncio.subprocess.Process | None = None
         self._temp_directory: tempfile.TemporaryDirectory[str] | None = None
@@ -147,10 +325,14 @@ class PiExecution:
         self._stderr_task: asyncio.Task[None] | None = None
         self._stderr: list[str] = []
         self._final_text = ""
+        self._final_stop_reason = ""
+        self._final_error_message = ""
+        self._last_provider_failure_code: str | None = None
         self._closed = False
         self._model_call_count = 0
         self._internal_tool_call_count = 0
         self._tool_events: list[dict[str, Any]] = []
+        self._approved_tool_calls: dict[str, tuple[str, dict[str, Any]]] = {}
         self._usage = {
             "input_tokens": 0,
             "output_tokens": 0,
@@ -177,24 +359,32 @@ class PiExecution:
                     "apiKey": self.token,
                     "authHeader": True,
                     "api": _pi_api(self.provider.protocol),
-                    "compat": (
-                        {"supportsStore": True} if self.provider.protocol == "openai_chat_completions" else {}
-                    ),
+                    "compat": _pi_provider_compat(self.provider, self.config.model),
                     "models": [
                         {
                             "id": self.config.model,
                             "name": self.config.model,
                             "reasoning": self.config.thinking_level != "off",
                             "contextWindow": 128000,
-                            "maxTokens": 16384,
+                            "maxTokens": _pi_max_tokens(
+                                self.provider,
+                                self.config.model,
+                                self.config.thinking_level,
+                            ),
                         }
                     ],
                 }
             }
         }
         (agent_directory / "models.json").write_text(json.dumps(models, ensure_ascii=False), encoding="utf-8")
-        extension_path = agent_directory / "chat-tool-approval.mjs"
-        extension_path.write_text(PI_EXTENSION_SOURCE, encoding="utf-8")
+        readonly = self.repository_fence is not None and self.readonly_tools is not None
+        extension_path = agent_directory / (
+            "chat-readonly-tools.mjs" if readonly else "chat-tool-approval.mjs"
+        )
+        extension_path.write_text(
+            PI_READONLY_EXTENSION_SOURCE if readonly else PI_EXTENSION_SOURCE,
+            encoding="utf-8",
+        )
         environment = os.environ.copy()
         environment.update(
             {
@@ -203,6 +393,13 @@ class PiExecution:
                 "PI_TELEMETRY": "0",
             }
         )
+        if readonly:
+            environment.update(
+                {
+                    "CHAT_PI_READ_TOOL_GATEWAY": (f"{self.runtime.gateway_origin}/api/pi-read-tools"),
+                    "CHAT_PI_READ_TOOL_TOKEN": self.token,
+                }
+            )
         arguments = [
             str(self.runtime.node_path),
             str(self.runtime.cli_path),
@@ -216,8 +413,6 @@ class PiExecution:
             self.token,
             "--thinking",
             self.config.thinking_level,
-            "--tools",
-            ",".join(self.config.allowed_tools),
             "--system-prompt",
             self.config.system_prompt,
             "--extension",
@@ -226,10 +421,21 @@ class PiExecution:
             "--no-skills",
             "--no-prompt-templates",
             "--no-themes",
+            "--no-context-files",
             "--no-session",
             "--approve",
             "--offline",
         ]
+        if readonly:
+            arguments.extend(
+                [
+                    "--no-builtin-tools",
+                    "--tools",
+                    ",".join(self.config.allowed_tools),
+                ]
+            )
+        else:
+            arguments.extend(["--tools", ",".join(self.config.allowed_tools)])
         self.process = await asyncio.create_subprocess_exec(
             *arguments,
             cwd=self.config.working_directory,
@@ -237,6 +443,7 @@ class PiExecution:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            limit=_PI_RPC_STREAM_LIMIT,
         )
         self._reader_task = asyncio.create_task(self._read_stdout())
         self._stderr_task = asyncio.create_task(self._read_stderr())
@@ -274,6 +481,11 @@ class PiExecution:
 
     async def approve_tool_call(self, boundary: PiToolCallBoundary, arguments: Mapping[str, Any]) -> None:
         self._validate_tool_arguments(boundary.tool_name, arguments)
+        approved_arguments = copy.deepcopy(dict(arguments))
+        self._approved_tool_calls[boundary.tool_call_id] = (
+            boundary.tool_name,
+            approved_arguments,
+        )
         await self._write(
             {
                 "type": "extension_ui_response",
@@ -282,7 +494,7 @@ class PiExecution:
                     {
                         "tool_call_id": boundary.tool_call_id,
                         "tool_name": boundary.tool_name,
-                        "arguments": copy.deepcopy(dict(arguments)),
+                        "arguments": approved_arguments,
                     },
                     ensure_ascii=False,
                 ),
@@ -292,6 +504,35 @@ class PiExecution:
     async def reject_tool_call(self, boundary: PiToolCallBoundary) -> None:
         await self._write({"type": "extension_ui_response", "id": boundary.rpc_request_id, "cancelled": True})
 
+    async def execute_read_tool(
+        self,
+        *,
+        tool_call_id: str,
+        tool_name: str,
+        arguments: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Consume exactly one approved custom-tool request."""
+
+        if self.repository_fence is None or self.readonly_tools is None:
+            raise PiRuntimeError(
+                "当前pi执行没有只读Tool Gateway",
+                code="pi_read_tool_gateway_unavailable",
+            )
+        approved = self._approved_tool_calls.pop(tool_call_id, None)
+        if approved is None or approved[0] != tool_name or approved[1] != dict(arguments):
+            raise PiRuntimeError(
+                "pi只读Tool参数未获当前调用批准",
+                code="pi_read_tool_not_approved",
+            )
+        try:
+            return await self.readonly_tools.execute(
+                fence=self.repository_fence,
+                tool_name=tool_name,
+                arguments=arguments,
+            )
+        except ReadonlyToolValidationError as error:
+            raise PiRuntimeError(str(error), code=error.code) from error
+
     def metrics(self) -> dict[str, Any]:
         return {
             "model_call_count": self._model_call_count,
@@ -299,9 +540,15 @@ class PiExecution:
             **self._usage,
             "duration_ms": int((time.monotonic() - self.started_at) * 1000),
             "tool_calls": copy.deepcopy(self._tool_events),
-            "pi_version": "0.81.1",
+            # This is the operator-pinned RPC contract version, not a value
+            # guessed from CLI output after the process has already started.
+            "pi_version": self.runtime.contract_version,
             "integration_mode": "jsonl_rpc_subprocess",
         }
+
+    def record_provider_outcome(self, status: str, error_code: str | None) -> None:
+        if status == "failed" and error_code:
+            self._last_provider_failure_code = error_code
 
     async def close(self) -> None:
         if self._closed:
@@ -349,6 +596,7 @@ class PiExecution:
 
     async def _read_stdout(self) -> None:
         assert self.process is not None and self.process.stdout is not None
+        last_event_type = "decode"
         try:
             while line := await self.process.stdout.readline():
                 try:
@@ -357,6 +605,7 @@ class PiExecution:
                     continue
                 if not isinstance(event, dict):
                     continue
+                last_event_type = str(event.get("type") or "unknown")
                 if event.get("type") == "response" and isinstance(event.get("id"), str):
                     waiter = self._response_waiters.pop(event["id"], None)
                     if waiter is not None and not waiter.done():
@@ -366,11 +615,26 @@ class PiExecution:
         except asyncio.CancelledError:
             raise
         except Exception as error:
+            logger.exception(
+                "pi_rpc_output_processing_failed event_type=%s error_type=%s",
+                last_event_type,
+                type(error).__name__,
+            )
+            safe_detail = _safe_pi_error(error)
             await self._boundaries.put(
                 PiCompletedBoundary(
                     kind="completed",
-                    text=f"pi RPC输出读取失败: {type(error).__name__}",
-                    metrics={**self.metrics(), "failure_code": "pi_rpc_output_failed"},
+                    text=(
+                        f"pi RPC输出读取失败: {type(error).__name__}"
+                        + (f"（{safe_detail}）" if safe_detail else "")
+                    ),
+                    metrics={
+                        **self.metrics(),
+                        "failure_code": "pi_rpc_output_failed",
+                        "failure_type": type(error).__name__,
+                    },
+                    status="failed",
+                    terminal_reason_code="pi_rpc_output_failed",
                 )
             )
         finally:
@@ -383,6 +647,8 @@ class PiExecution:
                             kind="completed",
                             text=f"pi进程异常结束: {detail[:300]}",
                             metrics={**self.metrics(), "failure_code": "pi_process_failed"},
+                            status="failed",
+                            terminal_reason_code="pi_process_failed",
                         )
                     )
 
@@ -413,6 +679,11 @@ class PiExecution:
                 arguments=copy.deepcopy(arguments) if isinstance(arguments, dict) else {},
             )
             self._validate_tool_arguments(boundary.tool_name, boundary.arguments)
+            if self._internal_tool_call_count >= MAX_PI_READ_TOOL_CALLS:
+                raise PiRuntimeError(
+                    "pi只读Tool调用次数超过SD2上限",
+                    code="pi_read_tool_call_limit",
+                )
             self._internal_tool_call_count += 1
             await self._boundaries.put(boundary)
             return
@@ -439,6 +710,8 @@ class PiExecution:
         if event_type == "message_end" and isinstance(event.get("message"), dict):
             message = event["message"]
             if message.get("role") == "assistant":
+                self._final_stop_reason = str(message.get("stopReason") or "")
+                self._final_error_message = _safe_pi_error(message.get("errorMessage"))
                 text = _assistant_text(message)
                 if text:
                     self._final_text = text
@@ -453,17 +726,36 @@ class PiExecution:
                     )
             return
         if event_type == "agent_end" and not event.get("willRetry"):
+            failure = self._final_stop_reason in {"error", "aborted"}
+            terminal_reason = self._last_provider_failure_code or (
+                f"pi_{self._final_stop_reason}" if failure else "pi_completed"
+            )
             await self._boundaries.put(
                 PiCompletedBoundary(
                     kind="completed",
-                    text=self._final_text or "pi执行完成，但没有返回可显示文本。",
+                    text=(
+                        self._final_text or self._final_error_message or "pi执行完成，但没有返回可显示文本。"
+                    ),
                     metrics=self.metrics(),
+                    status=(
+                        "cancelled"
+                        if self._final_stop_reason == "aborted"
+                        else ("failed" if failure else "succeeded")
+                    ),
+                    terminal_reason_code=terminal_reason,
                 )
             )
 
     def _validate_tool_arguments(self, tool_name: str, arguments: Mapping[str, Any]) -> None:
         if tool_name not in self.config.allowed_tools:
             raise PiRuntimeError(f"pi请求了未授权Tool: {tool_name}", code="pi_tool_not_allowed")
+        if self.repository_fence is not None:
+            if tool_name not in ReadonlyToolService.allowed_tools:
+                raise PiRuntimeError(
+                    f"pi请求了非只读Tool: {tool_name}",
+                    code="pi_tool_not_allowed",
+                )
+            return
         path_value = arguments.get("path")
         if isinstance(path_value, str) and path_value.strip():
             base = Path(self.config.working_directory)
@@ -474,189 +766,3 @@ class PiExecution:
             )
             if resolved != base and not resolved.is_relative_to(base):
                 raise PiRuntimeError("pi Tool路径超出本次工作目录", code="pi_tool_path_escape")
-
-
-class PiRuntimeManager:
-    """Own live pi processes and route their model requests through approval."""
-
-    def __init__(
-        self,
-        *,
-        runtime: PiRuntimeSettings,
-        catalog: ModelProviderCatalog,
-        review_store: InMemoryModelCallReviewStore,
-        http_client_factory: Callable[..., httpx.AsyncClient] | None = None,
-    ) -> None:
-        self.runtime = runtime
-        self.catalog = catalog
-        self.review_store = review_store
-        self._http_client_factory = http_client_factory or httpx.AsyncClient
-        self._executions: dict[str, PiExecution] = {}
-
-    async def start(self, task: str, config: PiToolConfigSnapshot) -> PiExecution:
-        clean_task = task.strip()
-        if not clean_task:
-            raise PiRuntimeError("pi任务不能为空", code="pi_task_empty")
-        provider = self.catalog.require_selection(config.provider_id, config.model)
-        token = secrets.token_urlsafe(32)
-        execution = PiExecution(
-            token=token,
-            task=clean_task,
-            config=config,
-            runtime=self.runtime,
-            provider=provider,
-            manager=self,
-        )
-        self._executions[token] = execution
-        try:
-            await execution.start()
-        except Exception:
-            self.unregister(token)
-            await execution.close()
-            raise
-        return execution
-
-    def unregister(self, token: str) -> None:
-        self._executions.pop(token, None)
-
-    async def close_all(self) -> None:
-        for execution in list(self._executions.values()):
-            await execution.close()
-
-    def authenticate(self, authorization: str | None) -> PiExecution:
-        prefix = "Bearer "
-        token = authorization[len(prefix) :] if authorization and authorization.startswith(prefix) else ""
-        execution = self._executions.get(token)
-        if execution is None:
-            raise HTTPException(status_code=401, detail="pi Provider网关凭据无效")
-        return execution
-
-    async def gateway_response(
-        self,
-        *,
-        authorization: str | None,
-        protocol: str,
-        body: bytes,
-    ) -> Response:
-        execution = self.authenticate(authorization)
-        try:
-            call = await execution.accept_provider_call(protocol, body)
-            decision = await call.decision
-        except PiRuntimeError as error:
-            return Response(
-                content=json.dumps({"error": {"message": str(error), "code": error.code}}),
-                status_code=429 if error.code == "pi_model_call_limit" else 409,
-                media_type="application/json",
-            )
-        if not decision.approved or decision.body is None:
-            return Response(
-                content=json.dumps({"error": {"message": "用户未批准本次pi模型调用"}}),
-                status_code=403,
-                media_type="application/json",
-            )
-        try:
-            approved_request = json.loads(decision.body)
-            provider = self.catalog.require_selection(
-                decision.provider_id or execution.provider.id,
-                str(approved_request.get("model") or ""),
-            )
-        except (ValueError, json.JSONDecodeError, AttributeError):
-            self._mark_gateway_attempt(call, "failed", "pi_provider_route_invalid")
-            return Response(
-                content=json.dumps(
-                    {
-                        "error": {
-                            "message": "已审批的pi Provider路由无效",
-                            "code": "pi_provider_route_invalid",
-                        }
-                    }
-                ),
-                status_code=409,
-                media_type="application/json",
-            )
-        if provider.protocol != call.protocol:
-            self._mark_gateway_attempt(call, "failed", "pi_protocol_switch_rejected")
-            return Response(
-                content=json.dumps(
-                    {
-                        "error": {
-                            "message": "pi运行中不能切换Provider协议",
-                            "code": "pi_protocol_switch_rejected",
-                        }
-                    }
-                ),
-                status_code=409,
-                media_type="application/json",
-            )
-        endpoint = self._provider_endpoint(provider)
-        headers = {"content-type": "application/json"}
-        if provider.api_key:
-            headers["authorization"] = f"Bearer {provider.api_key}"
-        client = self._http_client_factory(
-            timeout=execution.config.timeout_seconds,
-            follow_redirects=False,
-        )
-        try:
-            request = client.build_request("POST", endpoint, content=decision.body, headers=headers)
-            upstream = await client.send(request, stream=True)
-        except httpx.TimeoutException as error:
-            await client.aclose()
-            self._mark_gateway_attempt(call, "outcome_unknown", "provider_timeout")
-            raise ProviderDispatchError(
-                "pi上游Provider请求超时",
-                error_code="provider_timeout",
-                outcome_status="outcome_unknown",
-            ) from error
-        except httpx.HTTPError as error:
-            await client.aclose()
-            self._mark_gateway_attempt(call, "outcome_unknown", "provider_connection_failed")
-            raise ProviderDispatchError(
-                "pi上游Provider连接失败",
-                error_code="provider_connection_failed",
-                outcome_status="outcome_unknown",
-            ) from error
-
-        async def relay() -> AsyncIterator[bytes]:
-            try:
-                async for chunk in upstream.aiter_raw():
-                    yield chunk
-                status = "completed" if not upstream.is_error else "failed"
-                code = None if not upstream.is_error else f"provider_http_{upstream.status_code}"
-                self._mark_gateway_attempt(call, status, code)
-            except asyncio.CancelledError:
-                self._mark_gateway_attempt(call, "outcome_unknown", "provider_dispatch_cancelled")
-                raise
-            finally:
-                await upstream.aclose()
-                await client.aclose()
-
-        response_headers = {
-            key: value
-            for key, value in upstream.headers.items()
-            if key.lower() in {"content-type", "cache-control", "x-request-id"}
-        }
-        return StreamingResponse(
-            relay(),
-            status_code=upstream.status_code,
-            headers=response_headers,
-            media_type=upstream.headers.get("content-type"),
-        )
-
-    def _mark_gateway_attempt(
-        self,
-        call: PiGatewayCall,
-        status: str,
-        error_code: str | None,
-    ) -> None:
-        if call.approval_id is None:
-            return
-        try:
-            self.review_store.mark_attempt(call.approval_id, status, error_code=error_code)
-        except Exception:
-            return
-
-    @staticmethod
-    def _provider_endpoint(provider: ModelProviderConfig) -> str:
-        root = (provider.base_url or "").rstrip("/")
-        suffix = "/chat/completions" if provider.protocol == "openai_chat_completions" else "/responses"
-        return root if root.endswith(suffix) else f"{root}{suffix}"

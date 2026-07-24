@@ -279,6 +279,19 @@ class ToolExecutionRecord(Base):
     """Observable product ledger for one external Tool runtime execution."""
 
     __tablename__ = "tool_executions"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "tool_id",
+            "execution_ordinal",
+            name="uq_tool_execution_run_tool_ordinal",
+        ),
+        Index(
+            "ix_tool_execution_runtime_job_status",
+            "runtime_job_id",
+            "status",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(
@@ -287,9 +300,33 @@ class ToolExecutionRecord(Base):
     run_id: Mapped[str] = mapped_column(
         ForeignKey("product_runs.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    run_attempt_id: Mapped[str | None] = mapped_column(
+        ForeignKey("run_attempts.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    runtime_job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("runtime_jobs.id", ondelete="RESTRICT"), nullable=True
+    )
+    run_spec_id: Mapped[str | None] = mapped_column(
+        ForeignKey("run_specs.id", ondelete="RESTRICT"), nullable=True
+    )
+    step_input_projection_id: Mapped[str | None] = mapped_column(
+        ForeignKey("step_input_projections.id", ondelete="RESTRICT"), nullable=True
+    )
+    repository_binding_id: Mapped[str | None] = mapped_column(
+        ForeignKey("project_repository_bindings.id", ondelete="RESTRICT"), nullable=True
+    )
+    repository_snapshot_id: Mapped[str | None] = mapped_column(
+        ForeignKey("repository_snapshots.id", ondelete="RESTRICT"), nullable=True
+    )
     tool_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    execution_ordinal: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
     config_revision: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    capability_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_activity_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    process_dispatch_state: Mapped[str] = mapped_column(String(32), nullable=False, default="not_started")
     model_call_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     internal_tool_call_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -299,6 +336,7 @@ class ToolExecutionRecord(Base):
     cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     failure_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    terminal_reason_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     tool_call_request_id: Mapped[str | None] = mapped_column(
         ForeignKey("tool_call_requests.id", ondelete="RESTRICT"), nullable=True
     )
@@ -306,6 +344,9 @@ class ToolExecutionRecord(Base):
         ForeignKey("authorization_consumptions.id", ondelete="RESTRICT"), nullable=True
     )
     metrics: Mapped[Any] = mapped_column(JSON, nullable=False, default=dict)
+    result_json: Mapped[Any | None] = mapped_column(JSON, nullable=True)
+    result_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    row_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

@@ -21,13 +21,13 @@ from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 
 from ..model_call_review import InMemoryModelCallReviewStore, ModelCallDraftConflict
 from ..model_call_workflow import normalize_agui_messages_for_provider
+from ..pi_gateway import PiRuntimeManager
 from ..pi_runtime import (
     PiCompletedBoundary,
     PiExecution,
     PiGatewayDecision,
     PiModelCallBoundary,
     PiRuntimeError,
-    PiRuntimeManager,
     PiToolCallBoundary,
 )
 from ..product_sessions.service import ProductSessionService

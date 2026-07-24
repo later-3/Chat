@@ -22,16 +22,22 @@ from backend.app.model_providers import (
     ModelProviderCatalog,
     ModelProviderConfig,
 )
+from backend.app.pi_gateway import PiRuntimeManager
 from backend.app.pi_runtime import (
+    _PI_RPC_STREAM_LIMIT,
+    MAX_PI_READ_TOOL_CALLS,
     PiCompletedBoundary,
     PiExecution,
     PiGatewayCall,
     PiGatewayDecision,
     PiModelCallBoundary,
-    PiRuntimeManager,
     PiToolCallBoundary,
+    _pi_max_tokens,
+    _pi_provider_compat,
 )
 from backend.app.product_sessions import ProductDatabase, ProductSessionService
+from backend.app.product_sessions.database import ToolExecutionRecord
+from backend.app.readonly_tools.service import MAX_READ_BYTES
 from backend.app.tool_configs import (
     PiToolConfigSnapshot,
     ToolConfigurationConflict,
@@ -86,6 +92,143 @@ def _config(tmp_path: Path) -> PiToolConfigSnapshot:
         timeout_seconds=120,
         system_prompt="只执行已审批的编码任务。",
         revision=1,
+    )
+
+
+def test_pi_runtime_exposes_the_operator_pinned_contract_version(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+
+    assert runtime.public_view()["contract_version"] == "0.81.1"
+    assert runtime.health_view()["contract_version"] == "0.81.1"
+
+
+def test_pi_rpc_stream_limit_can_carry_the_largest_bounded_read_result() -> None:
+    # JSONL adds line metadata and escaping around the raw text result, so the
+    # subprocess reader must leave substantial headroom above the tool bound.
+    assert _PI_RPC_STREAM_LIMIT >= MAX_READ_BYTES * 4
+    assert MAX_PI_READ_TOOL_CALLS == 24
+
+
+def test_pi_gateway_projects_real_dashscope_compatibility_before_review() -> None:
+    provider = ModelProviderConfig(
+        id="dashscope",
+        label="DashScope",
+        models=(ModelOption(id="qwen3.7-plus", label="Qwen"),),
+        base_url="https://coding.dashscope.aliyuncs.com/v1",
+        api_key="test-key",
+        protocol="openai_chat_completions",
+    )
+
+    assert _pi_provider_compat(provider, "qwen3.7-plus") == {
+        "supportsStore": True,
+        "supportsDeveloperRole": False,
+        "supportsReasoningEffort": True,
+        "maxTokensField": "max_completion_tokens",
+        "supportsStrictMode": False,
+    }
+    assert _pi_max_tokens(provider, "qwen3.7-plus", "off") == 16_384
+    assert _pi_max_tokens(provider, "qwen3.7-plus", "medium") == 65_536
+
+
+def test_pi_error_boundary_preserves_sanitized_provider_failure(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        store = InMemoryModelCallReviewStore(_catalog("openai_chat_completions"))
+        manager = PiRuntimeManager(
+            runtime=_runtime(tmp_path),
+            catalog=_catalog("openai_chat_completions"),
+            review_store=store,
+        )
+        provider = _catalog("openai_chat_completions").get("provider-a")
+        assert provider is not None
+        execution = PiExecution(
+            token="runtime-token",
+            task="检查项目",
+            config=_config(tmp_path),
+            runtime=_runtime(tmp_path),
+            provider=provider,
+            manager=manager,
+        )
+        execution.record_provider_outcome("failed", "provider_http_400")
+        await execution._handle_event(
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [],
+                    "stopReason": "error",
+                    "errorMessage": "token=secret-value invalid provider request",
+                },
+            }
+        )
+        await execution._handle_event({"type": "agent_end", "willRetry": False})
+
+        boundary = await execution.next_boundary()
+        assert isinstance(boundary, PiCompletedBoundary)
+        assert boundary.status == "failed"
+        assert boundary.terminal_reason_code == "provider_http_400"
+        assert boundary.text == "token=[redacted] invalid provider request"
+
+    asyncio.run(scenario())
+
+
+def test_chat_completions_pi_tool_loop_is_reviewable_as_complete_provider_request() -> None:
+    store = InMemoryModelCallReviewStore(_catalog("openai_chat_completions"))
+    request = {
+        "model": "model-a",
+        "messages": [
+            {"role": "system", "content": "只读检查。"},
+            {"role": "user", "content": "检查README。"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call-read-1",
+                        "type": "function",
+                        "function": {
+                            "name": "read",
+                            "arguments": '{"path":"README.md"}',
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call-read-1",
+                "content": '{"lines":[{"line":1,"text":"# Chat"}]}',
+            },
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "read",
+                    "description": "读取文件",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"path": {"type": "string"}},
+                        "required": ["path"],
+                    },
+                },
+            }
+        ],
+        "store": False,
+        "stream": True,
+    }
+
+    draft = store.begin_provider_request(
+        thread_id="pi-tool-loop-thread",
+        run_id="pi-tool-loop-run",
+        provider_id="provider-a",
+        provider_request=request,
+        origin_prompt="检查README",
+        allowed_tool_names=("read",),
+    )
+
+    assert draft.provider_request == request
+    assert "tool" in draft.model_capabilities.roles
+    assert (
+        draft.review_card()["effective_context"]["messages"][2]["tool_calls"][0]["function"]["name"] == "read"
     )
 
 
@@ -319,19 +462,32 @@ def test_tool_configuration_has_cas_path_policy_and_persisted_metrics(tmp_path: 
         }
         assert execution["metrics"]["tool_calls"][0]["tool_name"] == "read"
 
-        orphan_id = await service.start_execution(
+        waiting_orphan_id = await service.start_execution(
             session_id=session["id"],
             run_id=accepted.product_run_id,
             config_revision=2,
         )
+        starting_orphan_id = await service.start_execution(
+            session_id=session["id"],
+            run_id=accepted.product_run_id,
+            config_revision=2,
+        )
+        async with database.sessions.begin() as transaction:
+            waiting_orphan = await transaction.get(ToolExecutionRecord, waiting_orphan_id)
+            starting_orphan = await transaction.get(ToolExecutionRecord, starting_orphan_id)
+            assert waiting_orphan is not None
+            assert starting_orphan is not None
+            waiting_orphan.status = "waiting_human"
+            starting_orphan.status = "starting"
         restarted = ToolConfigurationService(database, _catalog(), _runtime(tmp_path))
         await restarted.initialize()
         executions = await restarted.executions()
-        orphan = next(value for value in executions if value["id"] == orphan_id)
-        assert orphan["status"] == "interrupted"
-        assert orphan["failure_code"] == "process_restarted"
-        assert orphan["finished_at"] is not None
-        assert orphan["metrics"]["recovery"]["reason"] == "process_restarted"
+        for orphan_id in (waiting_orphan_id, starting_orphan_id):
+            orphan = next(value for value in executions if value["id"] == orphan_id)
+            assert orphan["status"] == "interrupted"
+            assert orphan["failure_code"] == "process_restarted"
+            assert orphan["finished_at"] is not None
+            assert orphan["metrics"]["recovery"]["reason"] == "process_restarted"
         assert next(value for value in executions if value["id"] == execution_id)["status"] == "succeeded"
         await database.close()
 

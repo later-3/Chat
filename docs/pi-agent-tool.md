@@ -2,26 +2,31 @@
 
 ## 1. 当前实现
 
-Chat把pi coding agent注册成一个真实的MAF `FunctionTool`，并由MAF Workflow管理一次完整执行。它不是把一条Shell命令当成“Tool成功”：
+Chat把pi coding agent作为同一Product Run中的受治理`ToolExecution`，由持续协作主Workflow
+v1.6.0中的确定性Executor启动。它不是第二个用户Workflow，也不是把一条Shell命令当成“Tool成功”：
 
 ```text
-用户启动pi Workflow
--> MAF FunctionTool启动pi JSONL RPC子进程
+用户在主Workflow中批准pi_readonly RunSpec
+-> execution_route选择pi_readonly
+-> pi_readonly_dispatch启动pi JSONL RPC子进程
 -> pi准备Provider请求
 -> Chat Provider Gate生成完整ModelCallDraft并暂停
 -> 用户查看、修改、保存新Hash并批准
 -> Chat按批准字节调用真实Provider
--> pi提出内部Tool调用
--> Chat Tool Gate展示固定Key、可编辑Value并暂停
--> 用户批准后pi执行真实Tool
+-> pi提出内部只读Tool调用
+-> Chat按HITL策略自动继续或暂停
+-> Chat-owned Tool Gateway执行read/grep/find/ls
 -> 下一次Provider请求再次审批
--> pi完成，Product Run与Tool Execution Ledger提交终态和统计
+-> pi完成，确定性Result Assembly核对Result Hash
+-> Product Run、ToolExecution与最终消息提交终态
 ```
 
 前端入口有2个：
 
-1. `工作流 -> pi Agent 受控工具`：运行任务并处理每次模型/Tool审批。
+1. 持续协作主Workflow的设计者工作台：查看执行路由、pi节点结果、模型/Tool子活动和治理事实。
 2. `Tool -> pi coding agent`：配置Provider、模型、工作目录、内部Tool、Thinking、调用上限、超时和System Prompt，并查看执行统计。
+
+旧`governed-pi-agent`只保留为不可选诊断/回归合同，不再要求用户切换根Workflow。
 
 ## 2. 为什么选择JSONL RPC
 
@@ -33,18 +38,14 @@ Chat把pi coding agent注册成一个真实的MAF `FunctionTool`，并由MAF Wor
 | 进程内TypeScript SDK | 不采用 | Python后端需要引入Node侧常驻服务和自定义RPC合同，增加第二套部署与升级边界 |
 | pi官方JSONL RPC | 采用 | `rpc-entry.ts`、`rpc-mode.ts`和`rpc-types.ts`提供长期子进程、结构化命令、事件、用量和状态，能在一个pi回合内多次暂停/继续 |
 
-当前实现通过显式Node路径启动pi的`dist/cli.js --mode rpc`，每次执行使用隔离的临时Agent目录、模型配置和治理扩展；不会读取或改写用户全局pi配置。
+当前实现通过显式Node路径启动pi的`dist/cli.js --mode rpc`，每次执行使用隔离的临时Agent目录、
+模型配置和治理扩展；不会读取或改写用户全局pi配置。SD2同时使用`--no-builtin-tools`、
+`--no-context-files`、`--no-skills`、`--no-prompt-templates`和`--no-session`：
 
-当前命令使用`--no-skills`、`--no-prompt-templates`和`--no-session`，但**没有**使用
-`--no-context-files`。根据固定提交中的`core/resource-loader.ts`，pi因此仍会从工作目录及其祖先
-加载`AGENTS.md`或`CLAUDE.md`。这项能力只解决仓库级开发规则的自动发现：
-
-1. 它不会自动读取Chat Product Store中的Project、Work、Plan、Context revision或用户批准范围。
-2. `--no-skills`和`--no-prompt-templates`不会关闭Context File加载，两者不能混为一谈。
-3. 当前持续协作主Workflow还没有把ExecutionDraft/RunSpec派发给pi，所以“pi能读AGENTS”不表示
-   “Chat已经能开发Chat”。
-4. `--no-session`使用内存Session；当前Tool Execution可以解释此前终态，但不能在进程退出后恢复
-   pi内部对话树。
+1. pi不能沿工作目录祖先隐式加载`AGENTS.md`或`CLAUDE.md`，避免越过已批准Repository Binding。
+2. Project、Work、Plan、Context revision、治理规则与用户批准范围由Chat编译为有来源的StepInput。
+3. `--no-session`仍使用内存Session；当前ToolExecution可解释此前终态，但进程退出后不能恢复pi内部
+   对话树。
 
 ## 3. 两道治理门
 
@@ -56,9 +57,14 @@ Chat改用本机Provider网关：pi模型配置只指向Chat生成的短期本�
 
 ### 3.2 Tool Gate
 
-pi固定源码`core/agent-session.ts`和`core/extensions/runner.ts`在真实Tool执行前触发`tool_call`；处理器可阻止调用，并允许修改参数。Chat为每个pi进程注入治理扩展，把调用转换成RPC编辑请求，再映射为MAF/AG-UI Interrupt。
+pi固定源码`core/agent-session.ts`和`core/extensions/runner.ts`在真实Tool执行前触发`tool_call`；
+处理器可阻止调用，并允许修改参数。Chat为每个pi进程注入Custom Tool Extension；Extension只声明
+`read/grep/find/ls`，真实读取通过短期Bearer令牌的本机Gateway回到Python后端。每次调用重新验证
+Snapshot、路径、symlink、Protected Source和结果上限，pi的cwd和内置Tool不构成授权边界。
 
-Tool名称只能来自服务端配置中的真实pi内置Tool；前端不能输入`new_tool`或改名。参数Key固定，Value可修改。放弃会结束整个pi任务，不会制造Tool成功或Assistant成功。
+Tool名称只能来自服务端目录；前端不能输入`new_tool`或改名。低风险只读Tool默认可在HITL系统下限内
+自动继续，用户仍可按作用域改成每次确认。SD2上限是6次模型调用、24次只读Tool、600秒和64KiB
+单Tool结果；拒绝或放弃不会制造Tool成功或Assistant成功。
 
 ## 4. 配置
 
@@ -68,6 +74,7 @@ Tool名称只能来自服务端配置中的真实pi内置Tool；前端不能输�
 {
   "pi_agent": {
     "enabled": true,
+    "contract_version": "0.81.1",
     "node_path": "/absolute/path/to/node-22-or-newer",
     "cli_path": "/absolute/path/to/pi-coding-agent/dist/cli.js",
     "allowed_working_roots": ["/absolute/path/to/allowed/projects"],
@@ -80,10 +87,11 @@ Tool名称只能来自服务端配置中的真实pi内置Tool；前端不能输�
 约束：
 
 1. `node_path`和`cli_path`必须是后端可执行/可读取的绝对路径。
-2. 工作目录必须存在，并位于`allowed_working_roots`之一；前端不能扩大根目录。
-3. `gateway_origin`只能是本机HTTP地址，避免把短期授权网关暴露为远程公共入口。
-4. Provider密钥仍只来自服务端Provider配置，不传给浏览器，也不写入pi临时配置。
-5. JSON运行配置是启动快照；修改后要重启后端。页面内Tool配置有独立Revision，只影响之后启动的Workflow。
+2. `contract_version`是运维固定并进入健康/统计投影的RPC合同版本；不能从失败后的CLI输出猜测。
+3. 工作目录必须存在，并位于`allowed_working_roots`之一；前端不能扩大根目录。
+4. `gateway_origin`只能是本机HTTP地址，避免把短期授权网关暴露为远程公共入口。
+5. Provider密钥仍只来自服务端Provider配置，不传给浏览器，也不写入pi临时配置。
+6. JSON运行配置是启动快照；修改后要重启后端。页面内Tool配置有独立Revision，只影响之后启动的Workflow。
 
 ## 5. 统计与恢复语义
 
@@ -95,34 +103,38 @@ Tool名称只能来自服务端配置中的真实pi内置Tool；前端不能输�
 4. Provider报告的成本（若Provider/pi事件提供）。
 5. 总耗时、Tool事件和失败代码。
 
-正常终态包括`已完成`、`失败`和`已放弃`。进程退出前未写终态的`running`记录会在下次启动收敛为`已中断 / process_restarted`，不会永久显示假运行中。
+正常终态包括`已完成`、`失败`和`已放弃`。进程退出前未写终态的
+`starting/running/waiting_human`记录会在下次启动收敛为`已中断 / process_restarted`，不会永久
+显示假运行中。
 
-当前恢复保证是R1级产品事实恢复：可以解释此前执行到过哪里、调用了多少次、为何中断；尚未持久化pi RPC进程、MAF Checkpoint或审批Interrupt，所以后端重启后不会从中间自动继续，也不会自动重做未知副作用。
+当前恢复保证是R1级产品事实恢复：可以解释此前执行到过哪里、调用了多少次、为何中断。主Workflow
+Checkpoint不能重建pi RPC进程或其内存边界，所以后端重启后不会从中间自动继续，也不会自动重做调用。
 
 ## 6. 验证
 
 自动验证：
 
 ```bash
-uv run pytest backend/tests/test_pi_agent.py -q
+.venv/bin/python -m pytest backend/tests/test_pi_agent.py backend/tests/test_continuous_pi_readonly.py -q
 (cd frontend && npm test && npm run typecheck && npm run build)
 ./scripts/verify.sh
 ```
 
-`backend/tests/test_pi_agent.py`覆盖：运行时请求草稿、真实Tool绑定、配置CAS与路径策略、精确Provider字节、两次模型审批、Tool参数改写、放弃无假成功、统计与启动中断收敛。
+自动化覆盖运行时请求草稿、真实Tool绑定、配置CAS、路径/symlink/Protected Source、64KiB结果、
+精确Provider字节、Chat Completions Tool loop、两次模型审批、放弃无假成功、统计与三种非终态启动
+中断收敛。
 
-2026-07-21的真实验证使用现有私有Provider配置完成：
-
-1. JSONL RPC无Tool回合：1次模型调用，返回指定文本。
-2. JSONL RPC Tool回合：2次模型调用、1次`read`，参数从`README.md`改为`PROJECT_STATE.md`后执行。
-3. 浏览器同一场景最终Product Message为`BROWSER_PI_OK`，监控记录模型2次、Tool 1次；371px无横向溢出，全新页面控制台0错误。
+2026-07-25的主Workflow真实Dogfood使用现有私有Provider配置完成：Product Run
+`58e48b4b-25fd-44b0-ac35-f099bbd8821a`产生2次模型审批、2次Chat-owned `read`，最终只读取
+`README.md`与`PROJECT_STATE.md`；模型/Tool/Token/耗时、Result Hash和最终消息全部提交成功，
+Repository没有Shell、文件写入或Git操作。桌面与520 CSS像素窄屏工作台均可查看节点结果和子活动，
+控制台0错误。
 
 ## 7. 已知边界
 
-1. 当前只允许`read/grep/find/ls/bash/edit/write`；高副作用Tool仍需要后续Tool Operation Ledger、幂等、结果未知和对账设计。
-2. Provider Approval和Workflow Checkpoint仍为单进程状态；刷新/进程重启后的持久HITL属于Session Phase 7，不由本功能冒充完成。
+1. SD2只允许`read/grep/find/ls`；`bash/edit/write`必须等待F01 Tool Operation Ledger、幂等、结果未知和对账设计。
+2. 主Workflow审批安全点可以持久恢复，但活动pi进程及其内存Model/Tool边界不能跨进程恢复。
 3. 当前每个pi执行使用独立子进程，不提供跨Product Run共享pi Session。
 4. 真实Provider的计费和Token口径以Provider/pi事件为准；缺失字段显示0，不推测成本。
-5. 当前pi能自动加载工作目录及祖先的`AGENTS.md`/`CLAUDE.md`，但主Workflow尚未向其传递当前
-   Harness事实、Repository Binding、Execution Workspace和不可变RunSpec；仓库规范可见与产品
-   上下文完整是两项不同保证。
+5. 当前pi不自动加载工作目录及祖先的`AGENTS.md`/`CLAUDE.md`；主Workflow只传递批准的Harness
+   StepInput。该只读闭环仍不能替代Execution Workspace、Tool Operation Ledger和Evidence完成门。

@@ -23,12 +23,14 @@ from .catalog import (
     COMPILER_VERSION,
     DECISION_POINTS,
     EXECUTION_DRAFT_KEYS,
+    EXECUTION_DRAFT_SCHEMA_VERSION,
     FINAL_ACTIONS,
     GRANT_KIND_BY_POINT,
     POLICY_MODES,
     PRODUCT_DEFAULT_RULES,
     RESOLVER_VERSION,
     RUN_SPEC_KEYS,
+    RUN_SPEC_SCHEMA_VERSION,
     SCOPE_RANK,
     SYSTEM_FLOOR_RULES,
 )
@@ -56,6 +58,7 @@ from .models import (
     PolicyEvaluationRecord,
     RunSpecRecord,
     RuntimeInterruptLinkRecord,
+    ToolCallRequestRecord,
     TurnSummaryRecord,
 )
 from .policy import (
@@ -737,6 +740,117 @@ class ExecutionGovernanceService:
             )
             transaction.add(value)
         return value
+
+    async def register_tool_call(
+        self,
+        *,
+        run_id: str,
+        workflow_node_id: str,
+        provider_tool_call_id: str,
+        tool_id: str,
+        tool_definition_revision: str,
+        arguments: Mapping[str, Any],
+        target_summary: str,
+        risk_snapshot: Mapping[str, Any],
+        workflow_definition_id: str,
+        workflow_version: str,
+    ) -> tuple[ToolCallRequestRecord, DecisionSubjectRecord]:
+        """Persist one immutable pi internal Tool request and its decision subject."""
+
+        argument_values = dict(arguments)
+        arguments_hash = _hash("tool-arguments", "v1", argument_values)
+        subject_content = {
+            "run_id": run_id,
+            "provider_tool_call_id": provider_tool_call_id,
+            "tool_id": tool_id,
+            "tool_definition_revision": tool_definition_revision,
+            "arguments_hash": arguments_hash,
+            "risk_snapshot": dict(risk_snapshot),
+        }
+        subject_hash = _hash("decision-subject", "v1", subject_content)
+        async with self.database.sessions.begin() as transaction:
+            existing = await transaction.scalar(
+                select(ToolCallRequestRecord).where(
+                    ToolCallRequestRecord.run_id == run_id,
+                    ToolCallRequestRecord.provider_tool_call_id == provider_tool_call_id,
+                )
+            )
+            if existing is not None:
+                if existing.arguments_hash != arguments_hash or existing.tool_id != tool_id:
+                    raise GovernanceConflict("相同Tool Call ID不能替换参数或Tool")
+                subject = await transaction.get(DecisionSubjectRecord, existing.subject_id)
+                if subject is None:
+                    raise GovernanceConflict("Tool Call Decision Subject引用损坏")
+                return existing, subject
+            run = await transaction.get(RunRecord, run_id)
+            attempt = await transaction.scalar(
+                select(RunAttemptRecord)
+                .where(RunAttemptRecord.run_id == run_id)
+                .order_by(RunAttemptRecord.attempt_number.desc())
+                .limit(1)
+            )
+            if run is None or attempt is None:
+                raise GovernanceValidationError("Tool Call关联的Run Attempt不存在")
+            request_id = _id()
+            subject = DecisionSubjectRecord(
+                id=_id(),
+                subject_kind="tool_call_request",
+                resource_id=request_id,
+                resource_revision=tool_definition_revision,
+                subject_hash=subject_hash,
+                session_id=run.session_id,
+                interaction_id=run.interaction_id,
+                run_id=run.id,
+                run_attempt_id=attempt.id,
+                workflow_definition_id=workflow_definition_id,
+                workflow_version=workflow_version,
+                node_id=workflow_node_id,
+                decision_view_json={
+                    "tool_id": tool_id,
+                    "arguments": argument_values,
+                    "target_summary": target_summary,
+                    "risk": dict(risk_snapshot),
+                },
+            )
+            request = ToolCallRequestRecord(
+                id=request_id,
+                run_id=run.id,
+                run_attempt_id=attempt.id,
+                workflow_node_id=workflow_node_id,
+                provider_tool_call_id=provider_tool_call_id,
+                tool_id=tool_id,
+                tool_definition_revision=tool_definition_revision,
+                arguments_json=argument_values,
+                arguments_hash=arguments_hash,
+                target_summary=target_summary,
+                risk_snapshot_json=dict(risk_snapshot),
+                subject_id=subject.id,
+                status="pending",
+            )
+            transaction.add(subject)
+            await transaction.flush()
+            transaction.add(request)
+        return request, subject
+
+    async def mark_tool_call_authorized(
+        self,
+        *,
+        tool_call_request_id: str,
+        authorization_consumption_id: str,
+    ) -> None:
+        """Bind authorization consumption before the custom tool is allowed to run."""
+
+        async with self.database.sessions.begin() as transaction:
+            request = await transaction.get(ToolCallRequestRecord, tool_call_request_id)
+            consumption = await transaction.get(
+                AuthorizationConsumptionRecord,
+                authorization_consumption_id,
+            )
+            if request is None or consumption is None:
+                raise GovernanceValidationError("Tool Call或授权消费不存在")
+            if request.status not in {"pending", "authorized"}:
+                raise GovernanceConflict("Tool Call当前状态不能授权")
+            request.status = "authorized"
 
     async def evaluate_subject(
         self,
@@ -1586,12 +1700,18 @@ class ExecutionGovernanceService:
         author_id: str = "workflow",
         authorization_node_id: str = "execution_authorization",
     ) -> tuple[ExecutionDraftRecord, ExecutionDraftRevisionRecord]:
-        value = _validate_payload(payload, EXECUTION_DRAFT_KEYS, "execution-draft-v1")
+        value = _validate_payload(
+            payload,
+            EXECUTION_DRAFT_KEYS,
+            EXECUTION_DRAFT_SCHEMA_VERSION,
+        )
         context_hash = str(
             value["context_binding"].get("context_hash") or _hash("context", "v1", value["context_binding"])
         )
         draft_hash = _hash(
-            "execution-draft", "execution-draft-v1", value | {"execution_brief": execution_brief}
+            "execution-draft",
+            EXECUTION_DRAFT_SCHEMA_VERSION,
+            value | {"execution_brief": execution_brief},
         )
         async with self.database.sessions.begin() as transaction:
             run = await transaction.get(RunRecord, run_id)
@@ -1649,7 +1769,7 @@ class ExecutionGovernanceService:
                 revision=revision_no,
                 previous_revision_id=previous.id if previous else None,
                 subject_id=subject.id,
-                schema_version="execution-draft-v1",
+                schema_version=EXECUTION_DRAFT_SCHEMA_VERSION,
                 payload_json=value,
                 execution_brief_text=execution_brief,
                 context_hash=context_hash,
@@ -1715,7 +1835,11 @@ class ExecutionGovernanceService:
         execution_brief: str,
         author_id: str,
     ) -> dict[str, Any]:
-        value = _validate_payload(payload, EXECUTION_DRAFT_KEYS, "execution-draft-v1")
+        value = _validate_payload(
+            payload,
+            EXECUTION_DRAFT_KEYS,
+            EXECUTION_DRAFT_SCHEMA_VERSION,
+        )
         brief = execution_brief.strip()
         if not brief:
             raise GovernanceValidationError("ExecutionDraft执行摘要不能为空")
@@ -1724,7 +1848,7 @@ class ExecutionGovernanceService:
         )
         draft_hash = _hash(
             "execution-draft",
-            "execution-draft-v1",
+            EXECUTION_DRAFT_SCHEMA_VERSION,
             value | {"execution_brief": brief},
         )
         async with self.database.sessions.begin() as transaction:
@@ -1780,7 +1904,7 @@ class ExecutionGovernanceService:
                 revision=revision_no,
                 previous_revision_id=current.id,
                 subject_id=subject.id,
-                schema_version="execution-draft-v1",
+                schema_version=EXECUTION_DRAFT_SCHEMA_VERSION,
                 payload_json=value,
                 execution_brief_text=brief,
                 context_hash=context_hash,
@@ -1832,9 +1956,13 @@ class ExecutionGovernanceService:
         spec_payload: Mapping[str, Any],
         run_id: str,
     ) -> RunSpecRecord:
-        value = _validate_payload(spec_payload, RUN_SPEC_KEYS, "run-spec-v1")
+        value = _validate_payload(
+            spec_payload,
+            RUN_SPEC_KEYS,
+            RUN_SPEC_SCHEMA_VERSION,
+        )
         snapshot = await self.create_policy_snapshot(scopes=scopes)
-        run_spec_hash = _hash("run-spec", "run-spec-v1", value)
+        run_spec_hash = _hash("run-spec", RUN_SPEC_SCHEMA_VERSION, value)
         async with self.database.sessions.begin() as transaction:
             revision = await transaction.get(ExecutionDraftRevisionRecord, draft_revision_id)
             run = await transaction.get(RunRecord, run_id)
@@ -1868,7 +1996,7 @@ class ExecutionGovernanceService:
                 draft_revision_id=revision.id,
                 subject_id=subject.id,
                 policy_snapshot_id=snapshot.id,
-                schema_version="run-spec-v1",
+                schema_version=RUN_SPEC_SCHEMA_VERSION,
                 compiler_version=COMPILER_VERSION,
                 spec_json=value,
                 run_spec_hash=run_spec_hash,

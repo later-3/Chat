@@ -17,6 +17,8 @@ from ..agent_profiles import AgentProfileSnapshot
 from ..collaboration_contexts import CollaborationContextService
 from ..collaboration_intents import CollaborationIntentService
 from ..collaboration_protocols import CollaborationProtocolService
+from ..execution_dispatch.repository_context import RepositoryExecutionContextService
+from ..execution_dispatch.service import ExecutionDispatchService
 from ..governance.service import ExecutionGovernanceService
 from ..harness import HarnessService
 from ..model_call_review import InMemoryModelCallReviewStore
@@ -52,6 +54,9 @@ class ContinuousWorkflowComponents:
     project_catalog: type[Any]
     execution_draft_compiler: type[Any]
     run_spec_compiler: type[Any]
+    execution_route: type[Any]
+    pi_readonly_dispatch: type[Any]
+    pi_readonly_result_assembly: type[Any]
     clarification: type[Any]
     harness_commit: type[Any]
     summary_persist: type[Any]
@@ -76,6 +81,9 @@ def build_continuous_collaboration_workflow(
     collaboration_intents: CollaborationIntentService | None = None,
     collaboration_contexts: CollaborationContextService | None = None,
     repository_freshness: RepositorySourceFreshnessGuard | None = None,
+    repository_execution_context: RepositoryExecutionContextService,
+    pi_available: bool,
+    execution_dispatch: ExecutionDispatchService,
     checkpoint_storage: CheckpointStorage | None = None,
 ):
     """Build the versioned graph without mutating product or runtime state."""
@@ -223,6 +231,8 @@ def build_continuous_collaboration_workflow(
         run_id=run_id,
         sessions=sessions,
         governance=governance,
+        repository_execution_context=repository_execution_context,
+        pi_available=pi_available,
     )
     execution_decision = components.decision(
         node_id="execution_authorization",
@@ -237,6 +247,25 @@ def build_continuous_collaboration_workflow(
         run_id=run_id,
         sessions=sessions,
         governance=governance,
+    )
+    execution_route = components.execution_route(
+        thread_id=thread_id,
+        run_id=run_id,
+        sessions=sessions,
+        dispatch=execution_dispatch,
+    )
+    pi_readonly_dispatch = components.pi_readonly_dispatch(
+        thread_id=thread_id,
+        run_id=run_id,
+        sessions=sessions,
+        dispatch=execution_dispatch,
+        store=store,
+    )
+    pi_readonly_result_assembly = components.pi_readonly_result_assembly(
+        thread_id=thread_id,
+        run_id=run_id,
+        sessions=sessions,
+        dispatch=execution_dispatch,
     )
     responder = components.semantic_agent(
         profile=profiles["response_agent"],
@@ -310,6 +339,7 @@ def build_continuous_collaboration_workflow(
             description="Chat主Workflow：选择性上下文、意图、场景路由、计划、响应与回合主题提取。",
             start_executor=intake,
             output_from=[finalizer],
+            intermediate_output_from=[pi_readonly_dispatch],
             checkpoint_storage=checkpoint_storage,
         )
         .add_edge(intake, candidates)
@@ -340,7 +370,22 @@ def build_continuous_collaboration_workflow(
         .add_edge(plan_decision, compiler)
         .add_edge(compiler, execution_decision)
         .add_edge(execution_decision, run_spec_compiler)
-        .add_edge(run_spec_compiler, responder)
+        .add_edge(run_spec_compiler, execution_route)
+        .add_switch_case_edge_group(
+            execution_route,
+            [
+                Case(
+                    condition=lambda value: (
+                        isinstance(value.execution_route, Mapping)
+                        and value.execution_route.get("kind") == "pi_readonly"
+                    ),
+                    target=pi_readonly_dispatch,
+                ),
+                Default(target=responder),
+            ],
+        )
+        .add_edge(pi_readonly_dispatch, pi_readonly_result_assembly)
+        .add_edge(pi_readonly_result_assembly, summarizer)
         .add_edge(responder, summarizer)
         .add_edge(summarizer, result_decision)
         .add_edge(project_catalog, result_decision)

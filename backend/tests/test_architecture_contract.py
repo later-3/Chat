@@ -23,14 +23,15 @@ from backend.app.workflows import (
     NESTED_QUALITY_WORKFLOW,
 )
 
-# Reviewed 2026-07-24 for SD1-C. The OpenAPI addition lets a user explicitly
-# materialize an allowlisted Repository Governance manifest entry into the
-# current Context revision. Workflow 1.5.0 adds the two Context-revision
-# projection gates and the Stage B Context adoption gate.
+# Reviewed 2026-07-25 for SD2. OpenAPI adds the read-only ToolExecution
+# projections. Product Schema binds each pi execution to Run Attempt, Runtime
+# Job, RunSpec, StepInput and Repository Snapshot. Workflow 1.6.0 adds the
+# explicit execution route, governed pi dispatch and deterministic result
+# assembly nodes; the original answer-only branch remains available.
 # These fingerprints intentionally make future boundary drift fail closed.
-OPENAPI_SHA256 = "751d078977e670ed47069be31cbdb2c327752c5fdc716a67b8675447f180b033"
-PRODUCT_SCHEMA_SHA256 = "57f85fdeab9f3999df33bb8225c88457952b0d742960884103f2be3fc9e7551b"
-WORKFLOW_CATALOG_SHA256 = "a7cc0e949f6de32348cdfba3a53218f5e726afdc68850ff8aa19d79350093615"
+OPENAPI_SHA256 = "2386856ed2c3b1761234b4cc7068d7773749ae3f6dc8992da936207dd0d930a0"
+PRODUCT_SCHEMA_SHA256 = "e6d75e57e471cf264cfca352ba5fd0bea74871d1b667a6559702ddc172f9cbac"
+WORKFLOW_CATALOG_SHA256 = "5cd7d4c71cbd595f129f455cda96b0fa31362871224ac3303b7c161d0d56a16b"
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 
 

@@ -229,7 +229,7 @@ def _request(
         ],
         "tools": [],
         "context": [],
-        "forwardedProps": {"workflow": {"id": "continuous-collaboration", "version": "1.5.0"}},
+        "forwardedProps": {"workflow": {"id": "continuous-collaboration", "version": "1.6.0"}},
     }
 
 
@@ -323,7 +323,7 @@ def test_continuous_workflow_simple_question_uses_three_governed_model_calls(tmp
         workflows = client.get("/api/workflows").json()["workflows"]
         assert [value["id"] for value in workflows if value["selectable"]] == ["continuous-collaboration"]
         definition = next(value for value in workflows if value["id"] == "continuous-collaboration")
-        assert len(definition["nodes"]) == 31
+        assert len(definition["nodes"]) == 34
 
         session_id = client.post("/api/sessions", json={}).json()["id"]
         first = _card(

@@ -33,6 +33,7 @@ import {
   getLatestWorkflowTrace,
   getRunGovernance,
   getRunStepInputs,
+  getRunToolExecutions,
   getRunTrace,
   listWorkflows,
   workflowEndpointUrl,
@@ -88,6 +89,7 @@ test("Workflow Feature API读取目录、治理和稳定Trace路径", async () =
     if (url.endsWith("/api/workflows")) return jsonResponse({ workflows: [] });
     if (url.endsWith("/governance")) return jsonResponse({ run_id: "run-1" });
     if (url.endsWith("/step-inputs")) return jsonResponse({ step_inputs: [] });
+    if (url.endsWith("/tool-executions")) return jsonResponse({ tool_executions: [] });
     return jsonResponse({ trace: [] });
   }) as typeof fetch;
   try {
@@ -95,13 +97,15 @@ test("Workflow Feature API读取目录、治理和稳定Trace路径", async () =
     assert.deepEqual(await getRunTrace("session / one", "run / one"), []);
     assert.equal((await getRunGovernance("run / one")).run_id, "run-1");
     assert.deepEqual(await getRunStepInputs("run / one"), []);
+    assert.deepEqual(await getRunToolExecutions("run / one"), []);
     assert.deepEqual(await getLatestWorkflowTrace("session / one", "workflow / one"), []);
 
     assert.match(requests[1], /session%20%2F%20one\/runs\/run%20%2F%20one\/trace$/);
     assert.match(requests[2], /runs\/run%20%2F%20one\/governance$/);
     assert.match(requests[3], /runs\/run%20%2F%20one\/step-inputs$/);
+    assert.match(requests[4], /runs\/run%20%2F%20one\/tool-executions$/);
     assert.match(
-      requests[4],
+      requests[5],
       /session%20%2F%20one\/workflows\/workflow%20%2F%20one\/latest-trace$/,
     );
     assert.equal(workflowEndpointUrl("/api/custom"), "http://127.0.0.1:8030/api/custom");

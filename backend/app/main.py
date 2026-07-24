@@ -16,13 +16,14 @@ from .composition import (
     register_runtime_surfaces,
 )
 from .config import Settings
+from .execution_dispatch.api import create_execution_dispatch_router
 from .harness.api import create_harness_router
 from .lifecycle import create_lifespan
 from .model_call_review import InMemoryModelCallReviewStore
 from .model_call_workflow import ProviderTransport
 from .observability.diagnostics import create_diagnostics_router
 from .observability.logging import configure_observability
-from .pi_runtime import PiRuntimeManager
+from .pi_gateway import PiRuntimeManager
 from .product_sessions import ProductSessionService
 from .project_resources.api import create_project_resource_router
 from .runtime_execution.endpoint import add_runtime_management_endpoints
@@ -92,6 +93,7 @@ def create_app(
     app.include_router(create_collaboration_protocol_router(components.collaboration_protocols))
     app.include_router(create_diagnostics_router(components.diagnostics))
     app.include_router(create_step_input_router(components.step_inputs))
+    app.include_router(create_execution_dispatch_router(components.execution_dispatch))
     add_runtime_management_endpoints(
         app,
         runtime=components.runtime_execution,

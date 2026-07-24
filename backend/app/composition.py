@@ -17,6 +17,8 @@ from .collaboration_contexts import CollaborationContextService
 from .collaboration_intents import CollaborationIntentService
 from .collaboration_protocols import CollaborationProtocolService
 from .config import ModelProviderCatalog, Settings
+from .execution_dispatch import RepositoryExecutionContextService
+from .execution_dispatch.service import ExecutionDispatchService
 from .governance import ExecutionGovernanceService, GovernanceOutboxWorker
 from .harness import HarnessService
 from .harness.outbox import ProductOutboxRouter
@@ -28,7 +30,7 @@ from .model_call_review import (
 )
 from .model_call_workflow import ProviderTransport, create_model_call_workflow
 from .observability.diagnostics import DiagnosticsService
-from .pi_runtime import PiRuntimeManager
+from .pi_gateway import PiRuntimeManager
 from .product_sessions import ProductDatabase, ProductSessionService
 from .product_sessions.agui import ProductAwareAgentFrameworkAgent
 from .project_resources import (
@@ -39,6 +41,7 @@ from .project_resources import (
     RepositorySourceFreshnessGuard,
     WorkspaceRootCatalog,
 )
+from .readonly_tools import ReadonlyToolService
 from .runtime_execution import (
     ExecutionWorker,
     RuntimeExecutionService,
@@ -78,6 +81,9 @@ class ApplicationComponents:
     harness: HarnessService
     project_resources: ProjectResourceService
     repository_freshness: RepositorySourceFreshnessGuard
+    repository_execution_context: RepositoryExecutionContextService
+    readonly_tools: ReadonlyToolService
+    execution_dispatch: ExecutionDispatchService
     collaboration_contexts: CollaborationContextService
     collaboration_intents: CollaborationIntentService
     collaboration_protocols: CollaborationProtocolService
@@ -136,6 +142,27 @@ def build_components(
         catalog=root_catalog,
     )
     repository_freshness = RepositorySourceFreshnessGuard(product_sessions.database)
+    repository_execution_context = RepositoryExecutionContextService(
+        product_sessions.database,
+        catalog=root_catalog,
+    )
+    readonly_tools = ReadonlyToolService(repository_execution_context)
+    tool_configurations = ToolConfigurationService(
+        product_sessions.database,
+        model_catalog,
+        settings.pi_runtime,
+    )
+    governance = ExecutionGovernanceService(product_sessions.database)
+    step_inputs = StepInputProjectionService(product_sessions.database)
+    execution_dispatch = ExecutionDispatchService(
+        product_sessions.database,
+        governance=governance,
+        repository_context=repository_execution_context,
+        step_inputs=step_inputs,
+        tool_configurations=tool_configurations,
+        manager=pi_runtime,
+        readonly_tools=readonly_tools,
+    )
     return ApplicationComponents(
         settings=settings,
         model_catalog=model_catalog,
@@ -145,12 +172,8 @@ def build_components(
             model_catalog,
         ),
         review_store=review_store,
-        tool_configurations=ToolConfigurationService(
-            product_sessions.database,
-            model_catalog,
-            settings.pi_runtime,
-        ),
-        governance=ExecutionGovernanceService(product_sessions.database),
+        tool_configurations=tool_configurations,
+        governance=governance,
         harness=HarnessService(
             product_sessions.database,
             context_contributors=(
@@ -162,6 +185,9 @@ def build_components(
         ),
         project_resources=project_resources,
         repository_freshness=repository_freshness,
+        repository_execution_context=repository_execution_context,
+        readonly_tools=readonly_tools,
+        execution_dispatch=execution_dispatch,
         collaboration_contexts=CollaborationContextService(
             product_sessions.database,
             external_source_resolver=repository_context_resolver,
@@ -169,7 +195,7 @@ def build_components(
         collaboration_intents=CollaborationIntentService(product_sessions.database),
         collaboration_protocols=CollaborationProtocolService(product_sessions.database),
         runtime_execution=runtime_execution,
-        step_inputs=StepInputProjectionService(product_sessions.database),
+        step_inputs=step_inputs,
         diagnostics=DiagnosticsService(product_sessions.database),
         runtime_registry=runtime_registry,
         execution_worker=execution_worker,
@@ -190,6 +216,9 @@ def expose_components(app: FastAPI, components: ApplicationComponents) -> None:
     app.state.harness = components.harness
     app.state.project_resources = components.project_resources
     app.state.repository_freshness = components.repository_freshness
+    app.state.repository_execution_context = components.repository_execution_context
+    app.state.readonly_tools = components.readonly_tools
+    app.state.execution_dispatch = components.execution_dispatch
     app.state.collaboration_contexts = components.collaboration_contexts
     app.state.collaboration_intents = components.collaboration_intents
     app.state.collaboration_protocols = components.collaboration_protocols
@@ -345,6 +374,9 @@ def _register_model_workflows(
             collaboration_intents=components.collaboration_intents,
             collaboration_contexts=components.collaboration_contexts,
             repository_freshness=components.repository_freshness,
+            repository_execution_context=components.repository_execution_context,
+            pi_available=components.settings.pi_runtime.available and components.pi_runtime is not None,
+            execution_dispatch=components.execution_dispatch,
             checkpoint_storage=continuous_checkpoint_storage(product_run_id),
         )
 

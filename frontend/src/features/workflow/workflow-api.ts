@@ -70,6 +70,54 @@ export interface StepInputProjection {
   created_at: string;
 }
 
+export interface ToolExecutionActivity {
+  sequence: number;
+  stage: string;
+  status: string;
+  summary: string;
+  details: Record<string, unknown>;
+}
+
+export interface GovernedToolExecution {
+  id: string;
+  session_id: string;
+  run_id: string;
+  run_attempt_id: string | null;
+  runtime_job_id: string | null;
+  run_spec_id: string | null;
+  step_input_projection_id: string | null;
+  repository_binding_id: string | null;
+  repository_snapshot_id: string | null;
+  tool_id: string;
+  execution_ordinal: number | null;
+  mode: string | null;
+  config_revision: number;
+  status: string;
+  process_dispatch_state: string;
+  last_activity_sequence: number;
+  model_call_count: number;
+  internal_tool_call_count: number;
+  tokens: {
+    input: number;
+    output: number;
+    cache_read: number;
+    cache_write: number;
+  };
+  cost: number;
+  duration_ms: number;
+  metrics: Record<string, unknown> & {
+    activities?: ToolExecutionActivity[];
+    tool_calls?: Array<Record<string, unknown>>;
+  };
+  result: Record<string, unknown> | null;
+  result_hash: string | null;
+  failure_code: string | null;
+  terminal_reason_code: string | null;
+  started_at: string;
+  finished_at: string | null;
+  row_version: number;
+}
+
 interface WorkflowListResponse {
   workflows: WorkflowDefinition[];
 }
@@ -189,6 +237,14 @@ export async function getRunStepInputs(runId: string): Promise<StepInputProjecti
       `/api/runs/${encodeURIComponent(runId)}/step-inputs`,
     )
   ).step_inputs;
+}
+
+export async function getRunToolExecutions(runId: string): Promise<GovernedToolExecution[]> {
+  return (
+    await request<{ tool_executions: GovernedToolExecution[] }>(
+      `/api/runs/${encodeURIComponent(runId)}/tool-executions`,
+    )
+  ).tool_executions;
 }
 
 export function getLatestWorkflowTrace(

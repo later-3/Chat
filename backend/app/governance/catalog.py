@@ -53,7 +53,9 @@ POLICY_MODES = {"inherit", "deny", "require_human", "conditional", "auto_continu
 FINAL_ACTIONS = {"deny", "require_human", "auto_continue"}
 ACTION_RANK = {"auto_continue": 1, "require_human": 2, "deny": 3}
 RESOLVER_VERSION = "hitl-resolver-v1"
-COMPILER_VERSION = "run-spec-compiler-v1"
+EXECUTION_DRAFT_SCHEMA_VERSION = "execution-draft-v2"
+RUN_SPEC_SCHEMA_VERSION = "run-spec-v2"
+COMPILER_VERSION = "run-spec-compiler-v2"
 
 SCOPE_RANK = {
     "decision_instance": 1100,

@@ -9,7 +9,12 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import type { WorkflowStageStatus } from "../../workflow-run-projection.js";
-import type { RunGovernanceView, StepInputProjection, WorkflowNodeStatus } from "./workflow-api.js";
+import type {
+  GovernedToolExecution,
+  RunGovernanceView,
+  StepInputProjection,
+  WorkflowNodeStatus,
+} from "./workflow-api.js";
 
 export const STAGE_STATUS_LABELS: Record<WorkflowStageStatus, string> = {
   not_started: "未开始",
@@ -35,6 +40,7 @@ export interface StageContent {
   input: unknown;
   output: unknown;
   facts: Record<string, unknown>;
+  internalActivity?: unknown;
   governance?: unknown;
   stepInput?: unknown;
 }
@@ -126,7 +132,14 @@ function DetailSection({
   );
 }
 
-export function NodeDetail({ input, output, facts, governance, stepInput }: StageContent) {
+export function NodeDetail({
+  input,
+  output,
+  facts,
+  internalActivity,
+  governance,
+  stepInput,
+}: StageContent) {
   return (
     <div className="execution-node-detail">
       <DetailSection
@@ -135,6 +148,14 @@ export function NodeDetail({ input, output, facts, governance, stepInput }: Stag
         value={output}
         primary
       />
+      {internalActivity !== undefined && (
+        <DetailSection
+          label="节点内部活动"
+          description="模型审批、只读Tool与进程事件；这些是子活动，不是额外的MAF节点"
+          value={internalActivity}
+          primary
+        />
+      )}
       {stepInput !== undefined && (
         <DetailSection
           label="实际步骤输入"
@@ -198,8 +219,120 @@ export function stepInputForNode(nodeId: string, stepInputs: StepInputProjection
  * This is a read projection only. Missing or older governance records degrade
  * to no detail instead of inventing a Workflow state.
  */
-export function governanceForNode(nodeId: string, governance: RunGovernanceView | null): unknown {
-  if (!governance) return undefined;
+const PI_ACTIVITY_LABELS: Record<string, string> = {
+  process_started: "pi只读进程启动",
+  model_call_waiting: "模型调用等待治理",
+  model_call_completed: "模型调用完成",
+  tool_requested: "只读Tool请求",
+  tool_completed: "只读Tool完成",
+  process_completed: "pi只读进程完成",
+  process_failed: "pi只读进程未完成",
+};
+
+function latestPiExecution(values: GovernedToolExecution[]): GovernedToolExecution | undefined {
+  return values
+    .filter((value) => value.tool_id === "pi_agent")
+    .sort((left, right) => {
+      const ordinalDifference =
+        (right.execution_ordinal ?? Number.NEGATIVE_INFINITY) -
+        (left.execution_ordinal ?? Number.NEGATIVE_INFINITY);
+      if (ordinalDifference !== 0) return ordinalDifference;
+      return right.started_at.localeCompare(left.started_at);
+    })[0];
+}
+
+/**
+ * Prefer the durable ToolExecution result over a sparse Workflow Trace event.
+ *
+ * The pi dispatch executor persists its public result in the ToolExecution
+ * aggregate. Treating a missing Trace payload as "no result" would hide the
+ * authoritative execution outcome from the designer.
+ */
+export function outputForNode(
+  nodeId: string,
+  traceOutput: unknown,
+  toolExecutions: GovernedToolExecution[],
+): unknown {
+  if (nodeId !== "pi_readonly_dispatch") return traceOutput;
+  const execution = latestPiExecution(toolExecutions);
+  if (!execution) return traceOutput;
+  if (execution.result !== null) return execution.result;
+  return {
+    状态: execution.status,
+    终止原因: execution.terminal_reason_code,
+    失败码: execution.failure_code,
+  };
+}
+
+function governedExecutionProjection(value: GovernedToolExecution): unknown {
+  const activities = (value.metrics.activities ?? []).map((activity) => ({
+    序号: activity.sequence,
+    活动: PI_ACTIVITY_LABELS[activity.stage] ?? activity.stage,
+    状态: activity.status,
+    说明: activity.summary,
+    ...(Object.keys(activity.details).length > 0 ? { 公开细节: activity.details } : {}),
+  }));
+  return {
+    执行概览: {
+      状态: value.status,
+      进程发送: value.process_dispatch_state,
+      终止原因: value.terminal_reason_code,
+      失败码: value.failure_code,
+    },
+    活动时间线: activities,
+    模型与Tool统计: {
+      模型调用: value.model_call_count,
+      内部只读Tool调用: value.internal_tool_call_count,
+      输入Token: value.tokens.input,
+      输出Token: value.tokens.output,
+      耗时毫秒: value.duration_ms,
+      成本: value.cost,
+    },
+    Repository只读围栏: {
+      Binding: value.repository_binding_id,
+      Snapshot: value.repository_snapshot_id,
+      模式: value.mode,
+    },
+  };
+}
+
+export function internalActivityForNode(
+  nodeId: string,
+  toolExecutions: GovernedToolExecution[],
+): unknown {
+  if (nodeId !== "pi_readonly_dispatch") return undefined;
+  const execution = latestPiExecution(toolExecutions);
+  return execution ? governedExecutionProjection(execution) : undefined;
+}
+
+function governedExecutionAudit(values: GovernedToolExecution[]): unknown {
+  if (values.length === 0) return undefined;
+  return values.map((value) => ({
+    执行标识: {
+      ToolExecution: value.id,
+      ProductRun: value.run_id,
+      RunAttempt: value.run_attempt_id,
+      RuntimeJob: value.runtime_job_id,
+      RunSpec: value.run_spec_id,
+    },
+    config_revision: value.config_revision,
+    row_version: value.row_version,
+    结果Hash: value.result_hash,
+  }));
+}
+
+export function governanceForNode(
+  nodeId: string,
+  governance: RunGovernanceView | null,
+  toolExecutions: GovernedToolExecution[] = [],
+): unknown {
+  const executionValues =
+    nodeId === "pi_readonly_dispatch"
+      ? governedExecutionAudit(toolExecutions.filter((value) => value.tool_id === "pi_agent"))
+      : undefined;
+  if (!governance) {
+    return executionValues === undefined ? undefined : { ToolExecution审计索引: executionValues };
+  }
   const evaluations = governance.policy_evaluations.filter(
     (value) => value.workflow_node_id === nodeId,
   );
@@ -217,7 +350,7 @@ export function governanceForNode(nodeId: string, governance: RunGovernanceView 
       typeof value.decision_point_key === "string" && decisionKeys.has(value.decision_point_key)
     );
   });
-  const modelCall = governance.model_calls.find((value) => value.workflow_node_id === nodeId);
+  const modelCalls = governance.model_calls.filter((value) => value.workflow_node_id === nodeId);
   if (nodeId === "execution_draft_compiler") {
     return { ExecutionDraft: governance.execution_draft };
   }
@@ -227,10 +360,19 @@ export function governanceForNode(nodeId: string, governance: RunGovernanceView 
   if (nodeId === "turn_summary_persist") {
     return { TurnSummary: governance.turn_summary };
   }
-  if (evaluations.length === 0 && decisionRequests.length === 0 && !modelCall) return undefined;
+  if (
+    evaluations.length === 0 &&
+    decisionRequests.length === 0 &&
+    modelCalls.length === 0 &&
+    executionValues === undefined
+  ) {
+    return undefined;
+  }
   return {
     ...(evaluations.length > 0 ? { PolicyEvaluations: evaluations } : {}),
     ...(decisionRequests.length > 0 ? { HumanDecisionRequests: decisionRequests } : {}),
-    ...(modelCall ? { ModelCallDraft: modelCall } : {}),
+    ...(modelCalls.length === 1 ? { ModelCallDraft: modelCalls[0] } : {}),
+    ...(modelCalls.length > 1 ? { ModelCallDrafts: modelCalls } : {}),
+    ...(executionValues !== undefined ? { ToolExecution审计索引: executionValues } : {}),
   };
 }

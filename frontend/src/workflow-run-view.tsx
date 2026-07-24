@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import {
   GenericWorkflowChain,
   governanceForNode,
+  internalActivityForNode,
+  outputForNode,
   stepInputForNode,
   WorkflowCodeStageChain,
 } from "./features/workflow/workflow-run-details.js";
@@ -12,8 +14,10 @@ import type { ProductRun } from "./session-api.js";
 import type { GovernedReviewCard, ModelCallReviewCard, RunStatus } from "./use-chat-agent.js";
 import { WorkbenchNav, type WorkbenchView } from "./workbench-nav.js";
 import {
+  type GovernedToolExecution,
   getRunGovernance,
   getRunStepInputs,
+  getRunToolExecutions,
   getRunTrace,
   type ProductTraceEvent,
   type RunGovernanceView,
@@ -34,7 +38,7 @@ interface WorkflowRunViewProps {
   pendingDecisionCount?: number;
 }
 
-export { governanceForNode, stepInputForNode };
+export { governanceForNode, internalActivityForNode, outputForNode, stepInputForNode };
 
 export function WorkflowRunView({
   workflow,
@@ -50,6 +54,7 @@ export function WorkflowRunView({
   const [trace, setTrace] = useState<ProductTraceEvent[]>([]);
   const [governance, setGovernance] = useState<RunGovernanceView | null>(null);
   const [stepInputs, setStepInputs] = useState<StepInputProjection[]>([]);
+  const [toolExecutions, setToolExecutions] = useState<GovernedToolExecution[]>([]);
   const [traceError, setTraceError] = useState<string | null>(null);
   const latestRunId = latestRun?.id ?? null;
   const latestSessionId = latestRun?.session_id ?? null;
@@ -61,6 +66,7 @@ export function WorkflowRunView({
       setTrace([]);
       setGovernance(null);
       setStepInputs([]);
+      setToolExecutions([]);
       setTraceError(null);
       return undefined;
     }
@@ -92,6 +98,15 @@ export function WorkflowRunView({
           // Runs created before StepInputProjection remain readable through
           // Product Trace without inventing a historical runtime work package.
           if (!cancelled) setStepInputs([]);
+        });
+      void getRunToolExecutions(latestRunId)
+        .then((value) => {
+          if (!cancelled) setToolExecutions(value);
+        })
+        .catch(() => {
+          // Workflows without governed external tools legitimately have no
+          // ToolExecution projection.
+          if (!cancelled) setToolExecutions([]);
         });
     };
     load();
@@ -242,6 +257,7 @@ export function WorkflowRunView({
             governance={governance}
             pendingReview={pendingReview}
             stepInputs={stepInputs}
+            toolExecutions={toolExecutions}
             trace={trace}
             workflow={workflow}
           />
@@ -266,12 +282,16 @@ export function WorkflowRunView({
                 <strong>
                   {pendingReview.review_kind === "product_decision"
                     ? "产品决定正在等待处理"
-                    : "模型请求正在等待审批"}
+                    : pendingReview.review_kind === "tool_execution"
+                      ? "pi只读Tool调用正在等待审批"
+                      : "模型请求正在等待审批"}
                 </strong>
                 <p>
                   {pendingReview.review_kind === "product_decision"
                     ? "当前Subject、有效策略和可修改字段已在人工介入界面打开。"
-                    : "完整可编辑请求已在审批界面打开；批准后才会发送给 Provider。"}
+                    : pendingReview.review_kind === "tool_execution"
+                      ? "当前Tool名称、只读参数和Repository Snapshot围栏已打开；批准后只执行这一次调用。"
+                      : "完整可编辑请求已在审批界面打开；批准后才会发送给 Provider。"}
                 </p>
               </div>
             </div>

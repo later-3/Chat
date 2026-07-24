@@ -39,6 +39,8 @@ class CollaborationState:
     plan: str | None = None
     execution_draft_revision_id: str | None = None
     run_spec_id: str | None = None
+    execution_route: dict[str, Any] | None = None
+    pi_result: dict[str, Any] | None = None
     response: str | None = None
     turn_summary: dict[str, Any] | None = None
     last_model_call_revision_id: str | None = None

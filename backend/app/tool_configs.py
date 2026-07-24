@@ -139,7 +139,9 @@ class ToolConfigurationService:
             values = list(
                 (
                     await transaction.scalars(
-                        select(ToolExecutionRecord).where(ToolExecutionRecord.status == "running")
+                        select(ToolExecutionRecord).where(
+                            ToolExecutionRecord.status.in_(("starting", "running", "waiting_human"))
+                        )
                     )
                 ).all()
             )

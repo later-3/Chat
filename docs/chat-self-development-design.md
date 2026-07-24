@@ -1,6 +1,6 @@
 # Chat 开发 Chat：自举能力详细设计与验证计划
 
-> 状态：**D1-D9与SD1 R1-R12已于2026-07-24获批；SD1-A/B/C/D已完成；SD2 R1-R12及“Chat自开发可用门v1”交付节奏已于2026-07-25获批，当前进入SD2实施**
+> 状态：**D1-D9、SD1 R1-R12、SD2 R1-R12及“Chat自开发可用门v1”已获批；SD1-A/B/C/D与SD2-A/B/C/D/E已完成，下一阶段SD3等待F01字段级详细设计审核**
 >
 > 更新日期：2026-07-25
 >
@@ -47,8 +47,8 @@
 
 1. [当前代码事实] 主Workflow已经拥有Context、Intent、Project/Work选择、Protocol、Plan、ExecutionDraft、RunSpec、模型调用审批、结果/Work/Memory决定和TurnDigest链路，真实图位于`backend/app/workflows/continuous_chat_factory.py`。
 2. [当前代码事实] `ExecutionDraft`和`RunSpec`已经版本化、Hash绑定并接受CAS式编辑；但当前编译器把`runtime`固定为`maf-workflow`、`isolation`固定为`in_process`、`working_directory`设为空、`tools`设为空。
-3. [当前代码事实] pi已通过官方JSONL RPC、Chat Provider Gateway和pi `tool_call`扩展实现逐次模型/Tool治理；当前默认Tool只有`read/grep/find/ls`。
-4. [当前代码事实] pi启动参数包含`--no-skills`、`--no-prompt-templates`和`--no-session`，但**没有**`--no-context-files`。
+3. [当前代码事实] pi已通过官方JSONL RPC、Chat Provider Gateway和pi Custom Tool Extension接入主Workflow；每次模型调用持久治理，`read/grep/find/ls`由Chat-owned只读Gateway执行。
+4. [当前代码事实] SD2 pi启动参数包含`--no-skills`、`--no-prompt-templates`、`--no-session`、`--no-context-files`和`--no-builtin-tools`；Repository规则来自已批准Context/StepInput，不再沿祖先目录隐式发现。
 5. [当前代码事实] Product Harness已有Project、Work、Plan、Action、Note、Memory、ContextPackage、采用记录、Command幂等和Trace；尚无Project到Git仓库的权威资源绑定对象。
 6. [当前代码事实] Product Run/Attempt、Runtime Job/Event/Cursor、Worker Lease、主Workflow安全点Checkpoint恢复已经存在；pi进程、pi Session和pi内部Tool副作用尚不能跨进程恢复。
 7. [当前代码事实] Work和Action可以保存内嵌Evidence引用，但尚无独立Evidence、Artifact和Provenance生命周期。
@@ -76,7 +76,7 @@ pi的`resource-loader.ts`会从临时Agent目录、当前工作目录及其祖�
 
 1. `AGENTS.md`不是当前Project、Work、Plan和用户本轮决定。
 2. 自动发现不证明文件仍有效、采用了哪个版本或用户是否看见。
-3. 当前主Workflow没有选择pi，也没有把Harness Context与RunSpec交给pi。
+3. 主Workflow v1.6.0已根据不可变RunSpec选择`pi_readonly`或`answer_only`，并把有来源的最小StepInput交给pi；仍未开放写能力。
 4. 当前`--no-session`意味着pi执行转录不会持久恢复。
 
 所以方案不重复复制整份`AGENTS.md`进ExecutionDraft，而是记录Governance Manifest的路径和Hash，并用Provider审批验证**本次真实请求**最终包含了什么。
@@ -130,17 +130,17 @@ Commit
 
 | # | 必要条件 | 当前状态 | 判定 |
 |---:|---|---|---|
-| C1 | 稳定产品目标与开发规范 | `AGENTS.md`、Context/State/Plan/Lessons存在；pi会发现AGENTS | 已具备 |
+| C1 | 稳定产品目标与开发规范 | `AGENTS.md`、Context/State/Plan/Lessons存在；Chat显式采用有Hash的治理规则 | 已具备 |
 | C2 | 权威Product Project/Work | Harness Schema和服务存在；真实实例由部署数据决定 | 局部具备 |
-| C3 | Project到Repository的版本化绑定 | 没有正式Binding、Snapshot和失效状态 | 缺失 |
-| C4 | 最小充分Context Compiler | 已有目录/详情两阶段Context、采用记录和Hash；不含仓库快照 | 局部具备 |
+| C3 | Project到Repository的版本化绑定 | 正式Binding、不可变Snapshot、刷新和失效状态已实现 | 已具备 |
+| C4 | 最小充分Context Compiler | 目录/详情两阶段Context已采用Repository Snapshot和治理规则 | 已具备 |
 | C5 | 可编辑ExecutionDraft和不可变RunSpec | 已实现并验证 | 已具备 |
-| C6 | 运行目标与能力选择 | 当前固定MAF、空工作目录和空Tool；pi单独存在 | 局部具备 |
+| C6 | 运行目标与能力选择 | RunSpec可选择`answer_only`或绑定Snapshot的`pi_readonly` | 已具备（只读） |
 | C7 | 受治理编码Runtime | pi两道门和只读Tool已实现 | 已具备 |
 | C8 | 隔离Execution Workspace | 尚未建立受管worktree和基线/脏状态策略 | 缺失 |
 | C9 | 通用Tool Operation Ledger | 只有pi执行统计和专用审批，没有副作用对账 | 缺失 |
 | C10 | Validation/Evidence/Artifact完成门 | Validation写在Plan/Draft；独立事实生命周期未实现 | 局部具备 |
-| C11 | 运行观察、内容查看和用户纠正 | Workflow/Harness/ExecutionDraft工作台已存在；执行分支未接通 | 局部具备 |
+| C11 | 运行观察、内容查看和用户纠正 | 根Workflow、路由、节点结果和pi子活动已接通；写入看护待SD3 | 局部具备 |
 | C12 | 断线、进程、并发和版本恢复 | 主Workflow部分具备；pi与写Tool未具备 | 局部具备 |
 
 ### 3.4 “完成”必须满足的最小证明
@@ -236,7 +236,9 @@ Commit
 3. 指定测试文件。
 4. 排除一份已过时的草图。
 
-系统记录选择来源、版本、锁定/排除和原因；Context变化使旧Draft与Approval失效。pi自动加载AGENTS不取消这份Product层采用记录：前者是Runtime事实，后者是用户决定和可追溯来源。
+系统记录选择来源、版本、锁定/排除和原因；Context变化使旧Draft与Approval失效。SD2关闭pi对工作目录及祖先
+`AGENTS.md`的隐式发现，只把已经进入Context/StepInput、带来源与Hash的规则交给pi；因此用户选择和实际
+Provider上下文使用同一份可审计事实。
 
 ### S06：只要方案，不允许改代码
 
@@ -400,7 +402,9 @@ flowchart TD
     C --> T["TurnDigest + Finalization"]
 ```
 
-[待审核决定] 推荐在现有主Workflow中增加真实的Execution Route、Dispatch、Validation和Result Assembly节点。用户始终只使用主Workflow；是否调用pi由已接受的Protocol、Plan和RunSpec决定。
+[已实施决定] 现有主Workflow已经增加真实的Execution Route、Dispatch和Result Assembly节点；用户始终只
+使用主Workflow，是否调用pi由已接受的Protocol、Plan和RunSpec决定。确定性Validation仍按能力分阶段补齐，
+不能用pi文本自述替代Evidence或Work完成门。
 
 ### 5.2 为什么pi是受治理Tool，而不是第二个Product Run
 
@@ -740,7 +744,7 @@ proposed -> prepared -> authorized -> dispatching
 1. 固定安装版MAF能构建新增节点和条件分支。
 2. 每个新增Executor ID、边和Workflow graph signature稳定。
 3. 原生AgentExecutor未被用于绕过Provider Gate。
-4. pi命令行没有`--no-context-files`；在临时仓库放入带唯一Marker的`AGENTS.md`，真实Provider Draft中必须出现Marker。
+4. SD2 pi命令行必须包含`--no-context-files`和`--no-builtin-tools`；祖先目录唯一Marker不得进入Provider Draft，采用的治理规则只能经版本化Context/StepInput进入。
 5. `--no-session`现状有测试；启用持久pi Session前必须先验证`--session-dir/--session-id`的创建、重开、分支和损坏行为。
 6. pi Tool名称必须来自Catalog，参数修改后重新验证路径与fingerprint。
 7. Provider Gateway转发的字节与批准revision完全一致。
@@ -846,7 +850,7 @@ proposed -> prepared -> authorized -> dispatching
 
 ## 10. 分阶段交付
 
-### SD0：详细设计与合同冻结（当前阶段）
+### SD0：详细设计与合同冻结（已完成）
 
 交付：
 
@@ -877,6 +881,10 @@ proposed -> prepared -> authorized -> dispatching
 4. Workflow节点内容、路由原因和pi子阶段在工作台可见。
 
 完成门：用户不切Workflow即可从自然语言走到真实pi只读执行；仍不修改文件。
+
+状态：**已完成**。真实Chat仓库Dogfood完成2次模型审批、2次Chat-owned `read`和确定性结果组装；
+运行前后Repository无写入、无Shell、无Git操作。实现证据与未兑现保证见
+[SD2详细设计第24节](./pi-readonly-execution-detailed-design.md#24-实施与验证结果)。
 
 ### SD3：Chat能在隔离区安全修改
 
@@ -1022,9 +1030,9 @@ build、deploy和restart是不同Operation、不同授权”的决定。当前�
 | 选项 | 优点 | 缺点 |
 |---|---|---|
 | 每轮复制所有治理文档 | 看似完整 | Token膨胀、版本重复 |
-| pi自动加载AGENTS；Chat显式编译当前事实和Manifest | 各负其责、最终Payload可审查 | 需要合同测试防止pi版本变化 |
+| 关闭pi隐式发现；Chat渐进式编译已采用规则、当前事实和Manifest | Repository边界、版本与最终Payload均可审查 | Chat必须维护来源、Hash和预算合同 |
 
-**建议**：第二种。信心：高；需安装版/运行版测试。
+**已实施决定**：第二种。信心：高；已完成安装版、合同和真实运行验证。
 
 SD2源码核对发现pi会从`cwd`继续向祖先目录发现规则，可能越过Repository Binding。SD2 R5因此
 修正**实现方式**为：关闭环境自动发现，由Chat把已Hash绑定的AGENTS/治理规则显式装入
@@ -1104,16 +1112,17 @@ StepInput。该安全修正已于2026-07-25获用户批准。
 
 ### 12.4 检视结论
 
-阶段检视结论：**SD1通过；SD2详细设计R1-R12已获批准并进入实施，但写入、完成声明和持久恢复仍
-分别受F01、F02和F05约束**。
+阶段检视结论：**SD1与SD2通过；下一阶段SD3不得在F01字段级详细设计审核前开始，完成声明和持久
+恢复仍分别受F02和F05约束**。
 
 1. D1-D9已获用户审核通过。
 2. SD1的Repository Binding、不可变Snapshot、REST/UI、Context Source Freshness和真实只读
    Dogfood已经按R1-R12完成；已兑现和未兑现保证见
    [SD1模块详细设计15.5-15.6节](./repository-resource-detailed-design.md#155-sd1已兑现保证)。
 3. [SD2详细设计](./pi-readonly-execution-detailed-design.md)已经按安装版MAF、pi源码和现有Runtime
-   事实形成，R1-R12于2026-07-25获批；SD2只能按只读边界实施。写能力仍必须等待F01，完成声明仍
-   必须等待F02，pi持久恢复仍必须等待F05，不得以“Chat开发Chat”为由跳过。
+   事实实施并完成真实Dogfood；34节点根Workflow、Chat-owned只读Tool Gateway、逐次模型治理、
+   ToolExecution结果和两层设计者视图均已验证。写能力仍必须等待F01，完成声明仍必须等待F02，
+   pi持久恢复仍必须等待F05，不得以“Chat开发Chat”为由跳过。
 
 后续每阶段继续严格执行
 “开发—测试—检视—优化—偏航审计”，并在进入下一阶段前提交已兑现/未兑现保证。
@@ -1129,9 +1138,10 @@ StepInput。该安全修正已于2026-07-25获用户批准。
 5. `backend/app/harness/models.py`
 6. `backend/app/harness/service.py`
 7. `backend/app/pi_runtime.py`
-8. `backend/app/workflows/pi_agent.py`
-9. `backend/app/tool_configs.py`
-10. `backend/app/runtime_execution/`
+8. `backend/app/pi_gateway.py`
+9. `backend/app/execution_dispatch/`
+10. `backend/app/tool_configs.py`
+11. `backend/app/runtime_execution/`
 
 ### MAF
 

@@ -2379,6 +2379,38 @@ button {
 .workflow-route-decision-list .workflow-route-decision + .workflow-route-decision {
   margin-top: 12px;
 }
+.workflow-all-decisions {
+  padding: 15px;
+  border-bottom: 1px solid rgba(43, 66, 54, 0.08);
+  background: #fffdf9;
+}
+.workflow-all-decisions > header {
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #745621;
+}
+.workflow-all-decisions > header > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.workflow-all-decisions > header small {
+  color: #987a42;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+.workflow-all-decisions > header strong {
+  font-size: 15px;
+}
+.workflow-all-decisions .workflow-route-decision {
+  margin: 0;
+}
+.workflow-all-decisions .workflow-route-decision + .workflow-route-decision {
+  margin-top: 12px;
+}
 .workflow-route-decision > header {
   min-height: 64px;
   padding: 13px 15px;
