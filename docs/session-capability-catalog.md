@@ -177,6 +177,12 @@ Session是一个有身份、权限、版本和生命周期的产品协作空间�
 | E9 | Follow-up队列 | 用户可排队后续输入，并看见、修改或取消队列 | P2 | P、N、L |
 | E10 | 进度、用量与Run Trace | 用户和运维能看到阶段、耗时、模型、稳定错误码和可见证据 | P1 | M、L、O |
 
+> 2026-07-24用户已批准的E5细化：同一Principal可以在多个Product Session中并行推进同一Harness。
+> 不同资源或同一Project下不同Work默认并行；同一资源写入必须绑定读取revision并通过CAS提交门。
+> 系统还需公开来源Product Session/Interaction/Run、过期Context和冲突Diff。该细化不等于多人同时
+> 编辑同一Product Session，也不把Project物理目录变成新的Chat部署或Harness边界。目标已批准，
+> 但跨Session活动感知和完整并发矩阵仍未实现。
+
 ### F. 实时流与客户端连续性（6项）
 
 | ID | 能力 | 目标结果 | 优先级 | 依据 |

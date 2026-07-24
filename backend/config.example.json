@@ -26,6 +26,13 @@
   "history": {
     "directory": ".chat-history"
   },
+  "workspace_roots": [
+    {
+      "key": "local-projects",
+      "label": "本地项目",
+      "path": "/absolute/path/to/allowed/projects"
+    }
+  ],
   "pi_agent": {
     "enabled": false,
     "node_path": "/absolute/path/to/node-22-or-newer",

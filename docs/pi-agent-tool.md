@@ -35,6 +35,17 @@ Chat把pi coding agent注册成一个真实的MAF `FunctionTool`，并由MAF Wor
 
 当前实现通过显式Node路径启动pi的`dist/cli.js --mode rpc`，每次执行使用隔离的临时Agent目录、模型配置和治理扩展；不会读取或改写用户全局pi配置。
 
+当前命令使用`--no-skills`、`--no-prompt-templates`和`--no-session`，但**没有**使用
+`--no-context-files`。根据固定提交中的`core/resource-loader.ts`，pi因此仍会从工作目录及其祖先
+加载`AGENTS.md`或`CLAUDE.md`。这项能力只解决仓库级开发规则的自动发现：
+
+1. 它不会自动读取Chat Product Store中的Project、Work、Plan、Context revision或用户批准范围。
+2. `--no-skills`和`--no-prompt-templates`不会关闭Context File加载，两者不能混为一谈。
+3. 当前持续协作主Workflow还没有把ExecutionDraft/RunSpec派发给pi，所以“pi能读AGENTS”不表示
+   “Chat已经能开发Chat”。
+4. `--no-session`使用内存Session；当前Tool Execution可以解释此前终态，但不能在进程退出后恢复
+   pi内部对话树。
+
 ## 3. 两道治理门
 
 ### 3.1 Provider Gate
@@ -112,3 +123,6 @@ uv run pytest backend/tests/test_pi_agent.py -q
 2. Provider Approval和Workflow Checkpoint仍为单进程状态；刷新/进程重启后的持久HITL属于Session Phase 7，不由本功能冒充完成。
 3. 当前每个pi执行使用独立子进程，不提供跨Product Run共享pi Session。
 4. 真实Provider的计费和Token口径以Provider/pi事件为准；缺失字段显示0，不推测成本。
+5. 当前pi能自动加载工作目录及祖先的`AGENTS.md`/`CLAUDE.md`，但主Workflow尚未向其传递当前
+   Harness事实、Repository Binding、Execution Workspace和不可变RunSpec；仓库规范可见与产品
+   上下文完整是两项不同保证。

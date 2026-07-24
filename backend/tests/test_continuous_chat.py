@@ -3,13 +3,17 @@ from __future__ import annotations
 import asyncio
 import json
 import multiprocessing
+import os
 import sqlite3
+import subprocess
 from collections.abc import AsyncIterator
+from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
 
-from backend.app.config import Settings
+from backend.app.config import Settings, WorkspaceRootSettings
 from backend.app.execution_worker import run_execution_worker
 from backend.app.main import create_app
 from backend.app.model_call_review import (
@@ -65,6 +69,34 @@ class SequencedTransport:
                 },
             )
         yield response
+
+
+def _git(cwd: Path, *arguments: str) -> None:
+    subprocess.run(
+        ["git", *arguments],
+        cwd=cwd,
+        check=True,
+        text=True,
+        capture_output=True,
+        env={
+            **os.environ,
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_SYSTEM": os.devnull,
+        },
+    )
+
+
+def _repository(path: Path) -> Path:
+    path.mkdir(parents=True)
+    _git(path, "init", "-q")
+    _git(path, "config", "user.name", "Chat Test")
+    _git(path, "config", "user.email", "chat-test@example.invalid")
+    _git(path, "config", "commit.gpgsign", "false")
+    (path / "README.md").write_text("# Chat\n", encoding="utf-8")
+    _git(path, "add", "README.md")
+    _git(path, "commit", "-qm", "initial")
+    return path
 
 
 def _catalog() -> ModelProviderCatalog:
@@ -197,7 +229,7 @@ def _request(
         ],
         "tools": [],
         "context": [],
-        "forwardedProps": {"workflow": {"id": "continuous-collaboration", "version": "1.4.0"}},
+        "forwardedProps": {"workflow": {"id": "continuous-collaboration", "version": "1.5.0"}},
     }
 
 
@@ -272,8 +304,8 @@ def test_continuous_workflow_simple_question_uses_three_governed_model_calls(tmp
                 "decisions": [],
                 "open_questions": [],
                 "project_hint": None,
-                "work_state_candidates": [],
-                "memory_candidates": [],
+                "work_state_candidates": [{"text": "创建幂等学习任务"}],
+                "memory_candidates": [{"text": "长期记住幂等定义"}],
             },
             ensure_ascii=False,
         ),
@@ -291,14 +323,18 @@ def test_continuous_workflow_simple_question_uses_three_governed_model_calls(tmp
         workflows = client.get("/api/workflows").json()["workflows"]
         assert [value["id"] for value in workflows if value["selectable"]] == ["continuous-collaboration"]
         definition = next(value for value in workflows if value["id"] == "continuous-collaboration")
-        assert len(definition["nodes"]) == 28
+        assert len(definition["nodes"]) == 31
 
         session_id = client.post("/api/sessions", json={}).json()["id"]
         first = _card(
             _events(
                 client.post(
                     definition["endpoint"],
-                    json=_request(session_id, "continuous-start", "什么是幂等？"),
+                    json=_request(
+                        session_id,
+                        "continuous-start",
+                        "请只读回答什么是幂等；不要创建或修改任何Project、Work或Memory。",
+                    ),
                 )
             )
         )
@@ -362,7 +398,7 @@ def test_continuous_workflow_simple_question_uses_three_governed_model_calls(tmp
     assert [attempt["output_disposition"] for attempt in attempts] == [
         "accepted_as_intent",
         "accepted_as_response",
-        "accepted_as_summary",
+        "accepted_with_writeback_filter",
     ]
     assert all(attempt["http_status"] == 200 for attempt in attempts)
     assert all(attempt["provider_request_id"] for attempt in attempts)
@@ -444,6 +480,234 @@ def test_continuous_workflow_simple_question_uses_three_governed_model_calls(tmp
         < content_sequence["run_spec_compiler"]
         < content_sequence["response_agent"]
     )
+
+
+def test_context_skip_creates_excluded_revision_and_does_not_reappear_in_model_input(
+    tmp_path,
+) -> None:
+    transport = SequencedTransport(
+        [
+            json.dumps(
+                {
+                    "scenario": "continue_project",
+                    "goal": "继续推进贪吃蛇",
+                    "confidence": 0.98,
+                    "project_hint": None,
+                    "needs_plan": False,
+                    "needs_clarification": False,
+                    "clarification_question": None,
+                    "context_keywords": ["贪吃蛇"],
+                    "reason_summary": "用户明确提到现有项目",
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+    app = create_app(
+        _settings(f"sqlite+aiosqlite:///{tmp_path / 'context-skip.db'}"),
+        model_call_store=InMemoryModelCallReviewStore(_catalog()),
+        model_call_transport=transport,
+    )
+    with TestClient(app) as client:
+        policy = client.post(
+            "/api/hitl/policy-sets/activate",
+            json={
+                "scope_kind": "principal",
+                "scope_ref_id": "local-user",
+                "rules": [
+                    {
+                        "decision_point_key": "context_adoption",
+                        "mode": "require_human",
+                        "reason": "验证目录Context跳过语义",
+                    }
+                ],
+            },
+        )
+        assert policy.status_code == 200, policy.text
+        project = client.post(
+            "/api/harness/projects",
+            json={
+                "command_id": "context-skip-project",
+                "kind": "delivery",
+                "title": "贪吃蛇",
+                "goal": "开发一个贪吃蛇游戏",
+                "status": "active",
+            },
+        )
+        assert project.status_code == 201, project.text
+        session_id = client.post("/api/sessions", json={}).json()["id"]
+        context_card = _card(
+            _events(
+                client.post(
+                    "/api/workflows/continuous-collaboration/run",
+                    json=_request(session_id, "context-skip-start", "继续推进贪吃蛇"),
+                )
+            )
+        )
+        assert context_card["decision_point_key"] == "context_adoption"
+        old_package_id = context_card["subject"]["context_package_id"]
+        assert context_card["subject"]["project_directory_matches"]
+
+        model_card = _card(
+            _events(
+                client.post(
+                    "/api/workflows/continuous-collaboration/run",
+                    json=_resume(
+                        session_id,
+                        "context-skip-resume",
+                        context_card["approval_id"],
+                        "skip",
+                    ),
+                )
+            )
+        )
+        latest = client.get(f"/api/harness/sessions/{session_id}/context/latest")
+
+    assert model_card["execution_context"]["agent_id"] == "intent_router"
+    provider_task = json.loads(model_card["provider_request"]["input"][-1]["content"][0]["text"])
+    assert provider_task["accepted_context_items"] == []
+    assert transport.prepared == []
+    assert latest.status_code == 200, latest.text
+    revised = latest.json()["context_package"]
+    assert revised["revision"] == 2
+    assert revised["previous_package_id"] == old_package_id
+    assert revised["status"] == "candidate"
+    assert all(not value["adopted"] for value in revised["items"])
+
+
+def test_repository_source_change_invalidates_old_model_approval_before_attempt(
+    tmp_path: Path,
+) -> None:
+    repository = _repository(tmp_path / "repo")
+    settings = replace(
+        _settings(f"sqlite+aiosqlite:///{tmp_path / 'stale-context.db'}"),
+        workspace_roots=(
+            WorkspaceRootSettings(
+                key="code",
+                label="Code",
+                path=tmp_path,
+            ),
+        ),
+    )
+    transport = SequencedTransport(
+        [
+            json.dumps(
+                {
+                    "scenario": "continue_project",
+                    "goal": "继续开发Chat",
+                    "confidence": 0.98,
+                    "project_hint": "Chat",
+                    "needs_plan": True,
+                    "needs_clarification": False,
+                    "clarification_question": None,
+                    "context_keywords": ["Chat"],
+                    "reason_summary": "命中正式Chat Project",
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+    app = create_app(
+        settings,
+        model_call_store=InMemoryModelCallReviewStore(_catalog()),
+        model_call_transport=transport,
+    )
+
+    with TestClient(app) as client:
+        project = client.post(
+            "/api/harness/projects",
+            json={
+                "command_id": "stale-project",
+                "kind": "delivery",
+                "title": "Chat",
+                "goal": "让Chat开发自己",
+                "status": "active",
+            },
+        ).json()
+        bound = client.post(
+            f"/api/harness/projects/{project['id']}/repositories",
+            json={
+                "command_id": "stale-bind",
+                "expected_project_row_version": project["row_version"],
+                "alias": "primary",
+                "display_name": "Chat",
+                "role": "primary",
+                "root_key": "code",
+                "relative_path": "repo",
+            },
+        ).json()
+        session_id = client.post("/api/sessions", json={}).json()["id"]
+        approval = _card(
+            _events(
+                client.post(
+                    "/api/workflows/continuous-collaboration/run",
+                    json=_request(session_id, "stale-start", "继续开发Chat"),
+                )
+            )
+        )
+        knowledge_sources = approval["effective_context"]["knowledge_sources"]
+        assert any(
+            value["source_type"] == "repository_directory"
+            and value["source_revision"] == bound["snapshot"]["semantic_hash"]
+            for value in knowledge_sources
+        )
+        provider_task = json.loads(approval["provider_request"]["input"][-1]["content"][0]["text"])
+        provider_sources = provider_task["accepted_context_items"]
+        assert [
+            (
+                value["source_kind"],
+                value["source_id"],
+                value["source_revision"],
+                value["content"],
+            )
+            for value in provider_sources
+        ] == [
+            (
+                value["source_type"],
+                value["source_id"],
+                value["source_revision"],
+                value["content"],
+            )
+            for value in knowledge_sources
+        ]
+        assert transport.prepared == []
+
+        (repository / "changed.py").write_text("print('changed')\n", encoding="utf-8")
+        refreshed = client.post(
+            f"/api/harness/repositories/{bound['binding']['id']}/refresh",
+            json={
+                "command_id": "stale-refresh",
+                "expected_binding_row_version": bound["binding"]["row_version"],
+            },
+        )
+        assert refreshed.status_code == 200
+        assert refreshed.json()["snapshot"]["semantic_hash"] != bound["snapshot"]["semantic_hash"]
+
+        _events(
+            client.post(
+                "/api/workflows/continuous-collaboration/run",
+                json=_resume(
+                    session_id,
+                    "stale-approval",
+                    approval["approval_id"],
+                    "approve",
+                ),
+            )
+        )
+        [run] = client.get(f"/api/sessions/{session_id}/runs").json()["runs"]
+        governance = client.get(f"/api/runs/{run['id']}/governance").json()
+
+    assert run["status"] == "failed"
+    assert run["failure_code"] == "context_source_stale"
+    assert transport.prepared == []
+    attempts = [
+        attempt
+        for call in governance["model_calls"]
+        for revision in call["revisions"]
+        for attempt in revision["attempts"]
+    ]
+    assert attempts == []
+    assert governance["model_calls"][0]["revisions"][0]["status"] == "invalidated"
 
 
 def test_continuous_workflow_preserves_multi_intent_set_through_plan_and_execution_draft(

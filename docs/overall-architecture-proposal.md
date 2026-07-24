@@ -12,7 +12,7 @@
 Chat不采用“前端聊天组件直接调用MAF Agent，AG-UI事件即全部产品状态”的结构。目标架构由3类明确组件组成：
 
 1. **交互适配器与统一入站合同**：Web应用、Web/API Adapter、具体Channel Adapter、Channel Adapter Host和Interaction Ingress。
-2. **产品与应用模块**：Identity与Channel Binding、Conversation、Collaboration、Context、Memory、Interaction协调器、Run管理、Tool执行、Evidence、Delivery。
+2. **产品与应用模块**：Identity与Channel Binding、Conversation、Collaboration、Context、Memory、Interaction协调器、Run管理、Tool执行、Evidence、Delivery、Super Admin Operations。
 3. **运行与基础设施适配器**：MAF运行适配器、持久化实现、事件传输、Execution Worker、Scheduler/Reconciler和Delivery Worker。
 
 核心调用链：
@@ -36,6 +36,18 @@ Chat Web / 具体外部平台 / OPC-OS Chat
 → 提出Memory候选，明确采纳后供未来Context使用
 ```
 
+独立运营查询链：
+
+```text
+超级管理员
+→ Super Admin Console
+→ Web Authentication + Super Admin Role/Grant
+→ Super Admin Operations查询
+→ 只读关联Identity活动事实、Product Harness工作事实、Evidence作品事实和Run/Delivery异常
+→ 返回带口径、来源、新鲜度和未知状态的运营投影
+→ 记录Super Admin Audit Event
+```
+
 这条链直接组合了4个参考项目的结构经验：
 
 - pi：产品AgentSession在通用Agent Loop之外协调资源和Session。
@@ -43,7 +55,7 @@ Chat Web / 具体外部平台 / OPC-OS Chat
 - QwenPaw：Web Console经Console Route/ConsoleChannel进入统一AgentRequest；Telegram等平台经具体Channel Adapter和队列进入同一Workspace/Runtime。
 - LibreChat：Web产品资源、Conversation/Message、活动Generation Job和实时订阅分开。
 
-Chat新增的Collaboration、Approval、Evidence、Delivery和外部Binding不是参考项目现成模块，而是由本项目6个用户问题补足。
+Chat新增的Collaboration、Approval、Evidence、Delivery、外部Binding和Super Admin Operations不是参考项目现成模块，而是由本项目用户问题、独立运营责任和已确认的超级管理员场景补足。
 
 本文主要回答模块责任、合同和状态所有权。第一次阅读时可先看[新手架构导读](./architecture-beginner-guide.md)：它把同一架构展开为前端View、网络DTO、产品领域对象、MAF运行对象和一次真实请求的对象流，不另行创造架构决定。
 
@@ -52,12 +64,14 @@ Chat新增的Collaboration、Approval、Evidence、Delivery和外部Binding不�
 ```mermaid
 flowchart LR
     User["用户"]
+    SuperAdmin["超级管理员"]
     Browser["Browser"]
     Telegram["Telegram等终端平台"]
     OPCOS["OPC-OS Chat外部系统"]
 
     subgraph Chat["Chat产品边界"]
         Web["Chat Web应用"]
+        AdminConsole["Super Admin Console"]
         WebAdapter["Web/API Adapter\nREST + AG-UI"]
         TelegramAdapter["具体Channel Adapter\nTelegram SDK/Webhook"]
         OPCAdapter["OPC-OS Bridge Adapter"]
@@ -71,6 +85,7 @@ flowchart LR
     Sources["文件 / 知识源"]
 
     User --> Browser --> Web --> WebAdapter
+    SuperAdmin --> AdminConsole --> WebAdapter
     User --> Telegram --> TelegramAdapter --> Host
     OPCOS <--> OPCAdapter <--> Host
     WebAdapter --> Ingress
@@ -92,17 +107,20 @@ flowchart LR
 5. Web Adapter和Channel Adapter只在转换成内部`InboundInteraction`后，才能调用Interaction Ingress。
 6. 模型Provider、Tool和知识源都是依赖，不能成为用户身份或产品授权来源。
 7. 外部系统只能通过公开Bridge合同读取或提交状态，不能直接写Chat私有表。
+8. 超级管理员控制台属于Chat产品自带Web能力，通过专用REST查询进入授权与运营模块；它不直接读数据库，也不通过AG-UI管理产品资源。
 
 ## 3. 总体模块关系
 
 ```mermaid
 flowchart TB
     Browser["Browser"]
+    SuperAdmin["超级管理员"]
     Telegram["Telegram等平台"]
     OPCOS["OPC-OS Chat"]
 
     subgraph Entry["交互适配器与统一入站合同"]
         Web["Web应用"]
+        AdminConsole["Super Admin Console"]
         REST["REST Resource Adapter"]
         AGUI["AG-UI Interaction Adapter"]
         TelegramAdapter["具体Channel Adapter"]
@@ -122,6 +140,7 @@ flowchart TB
         ToolOps["Tool执行"]
         Evidence["Evidence"]
         Delivery["Delivery"]
+        AdminOps["Super Admin Operations"]
     end
 
     subgraph Runtime["运行与基础设施适配器"]
@@ -134,6 +153,7 @@ flowchart TB
     end
 
     Browser --> Web
+    SuperAdmin --> AdminConsole --> REST
     Web --> REST
     Web --> AGUI
     Telegram --> TelegramAdapter --> ChannelHost
@@ -147,6 +167,7 @@ flowchart TB
     REST --> Memory
     REST --> Evidence
     REST --> Delivery
+    REST --> AdminOps
     Ingress --> Identity
     Ingress --> Conversation
     Ingress --> Interaction
@@ -178,6 +199,12 @@ flowchart TB
     ToolOps --> ProductStore
     Evidence --> ProductStore
     Delivery --> ProductStore
+    AdminOps --> Identity
+    AdminOps --> Collaboration
+    AdminOps --> Evidence
+    AdminOps --> Run
+    AdminOps --> Delivery
+    AdminOps --> ProductStore
     Workers --> RuntimeStore
     MAF --> MAFStore
     Evidence --> ArtifactStore
@@ -221,7 +248,7 @@ Agent具有运行时Session、History和Tool协作能力，但Product Session生
 | Execution Worker | 领取Run Attempt、执行MAF Agent/Workflow、续租、记录运行事件和安全点 | 不自行改变Approval或伪造Product Session权限 |
 | Scheduler/Reconciler | 扫描可运行、租约过期、等待恢复和结果未知的任务，决定接管/对账/人工处置 | 不盲目重放外部副作用 |
 | Delivery Worker | 从Outbox领取Delivery，调用Web/Channel适配器，记录回执和重试 | 不重新生成Run结果，不把发送失败改写成Run失败 |
-| Projector | 将Runtime Event转换成AG-UI事件和产品查询投影 | 不把投影当Product DB权威事实 |
+| Projector | 将Runtime/Product Event转换成AG-UI事件、产品查询投影和可重建运营投影 | 不把投影当Product DB权威事实，不自行解释人的使用时长 |
 
 这些是不同的运行责任，不强制部署成5个独立服务。它们可以在一个本地进程中共同运行，也可以拆成多个进程；无论如何，Run领取、事件提交和Delivery回执的合同保持不变。
 
@@ -250,6 +277,7 @@ OPC-OS Chat → Bridge Adapter → Host/Queue ──┘
 7. Worker只凭超时就重试副作用Tool；必须先查Tool Execution及外部状态。
 8. 在AG-UI发出成功终态后才保存Assistant Message或Evidence。
 9. 一个“ChatService”同时拥有所有领域状态、运行恢复和投递。
+10. 超级管理员前端或运营服务直接联表读写Product DB、复制Work/Artifact进度，或用Run耗时冒充人的使用时长。
 
 ## 6. 交互适配器
 
@@ -269,6 +297,7 @@ OPC-OS Chat → Bridge Adapter → Host/Queue ──┘
 6. Integration Settings：Channel Binding、能力、权限和回执状态。
 7. Product API Client：OpenAPI生成或Schema校验的REST客户端。
 8. AG-UI Client Adapter：`@ag-ui/client`事件消费、重连和Hydrate，不拥有产品事实。
+9. Super Admin Console：在服务端Role/Grant通过后展示用户、登录、使用、Project/Work、Artifact/Evidence、阻塞与异常，不与普通用户个人主页混用权限和查询合同。
 
 **状态所有权**：React Query缓存服务端产品资源；AG-UI Client保存当前订阅的运行投影；Zustand只保存导航、选中面板、筛选、弹窗和布局。
 
@@ -284,7 +313,7 @@ OPC-OS Chat → Bridge Adapter → Host/Queue ──┘
 
 **内部组成**：
 
-1. REST Resource Routes：Session、Message、Work、Run、Evidence、Memory、Delivery和Binding查询/命令。
+1. REST Resource Routes：Session、Message、Work、Run、Evidence、Memory、Delivery、Binding和Super Admin Operations查询/命令。
 2. AG-UI Interaction Route：接纳`RunAgentInput`，转换成`InboundInteraction`并调用Interaction Ingress。
 3. Web Authentication Adapter：把Cookie/Token解析为来源声明，交Identity模块验证。
 4. Contract Mapping：HTTP/AG-UI DTO与应用命令/查询相互转换。
@@ -366,20 +395,21 @@ OPC-OS Chat → Bridge Adapter → Host/Queue ──┘
 
 **用户价值**：确保用户从Web或外部入口回来时进入正确Session，只能看到和执行被授权的资源，并可撤销外部绑定。
 
-**拥有的对象**：Principal、Scope/Grant、Channel、Channel Binding、Binding版本和撤销状态。
+**拥有的对象**：Principal、Role、Scope/Grant、Authentication Session、Authentication Event、Channel、Channel Binding、Binding版本和撤销状态。
 
 **内部组件**：
 
 1. Principal Resolver。
-2. Scope Authorizer。
-3. Channel Registry。
-4. Binding Service。
-5. Access Audit Writer。
+2. Authentication Session Service。
+3. Role/Grant Authorizer。
+4. Channel Registry。
+5. Binding Service。
+6. Access Audit Writer。
 
 **输入/输出合同**：
 
 - 输入：认证凭据、外部主体、Channel会话、目标资源和请求能力。
-- 输出：可信`RequestContext(principal_id, scopes, channel_id, binding_id)`或拒绝原因。
+- 输出：可信`RequestContext(principal_id, role_and_grants, scopes, auth_session_id, channel_id, binding_id)`或拒绝原因。
 
 **依赖**：自己的Repository和审计端口；不依赖Conversation内部表。
 
@@ -387,9 +417,9 @@ OPC-OS Chat → Bridge Adapter → Host/Queue ──┘
 
 **不变量**：ID映射不等于授权；Binding可撤销；每次访问按当前Grant判断；服务端创建映射。
 
-**失败与测试**：凭据过期、Binding撤销、跨Session越权、重放、Channel能力降级和权限变更必须有合同测试。
+**失败与测试**：凭据过期/续期/撤销、多设备会话、Role或Grant撤销、Binding撤销、跨Session越权、重放、Channel能力降级和权限变更必须有合同测试。
 
-**技术落点与场景**：`backend/app/modules/identity/`；支撑第12.1、12.3、12.6节。
+**技术落点与场景**：`backend/app/modules/identity/`；支撑第12.1、12.3、12.6、12.8、12.9节。
 
 ### 7.2 Conversation模块
 
@@ -648,6 +678,49 @@ OPC-OS Chat → Bridge Adapter → Host/Queue ──┘
 
 **技术落点与场景**：`backend/app/modules/delivery/`、`backend/app/workers/delivery.py`与Channel适配器；支撑第12.3、12.4、12.6节。
 
+### 7.11 Super Admin Operations模块
+
+**为什么存在**：Chat是独立运营的产品，必须让超级管理员回答“谁登录了、怎样使用、工作和作品推进到哪里、哪里需要关注”。当前Chat只有固定本地Scope、Product Harness权威工作事实和Run/Provider/Tool技术耗时；旧项目只有单用户系统汇总视图。pi、nanobot、QwenPaw与LibreChat的现有正式研究没有覆盖这条完整运营链，因此本模块来自已确认的产品运营要求，不冒充参考项目原生能力。
+
+**用户价值**：超级管理员在一个受授权、可审计的看护台中，按用户和时间查看登录与活跃、有效协作、Project/Work/Plan进度、Artifact/Evidence状态、等待批准、失败、长期停滞和数据新鲜度，并能区分“无活动”“尚未实现”“数据延迟”和“未知”。
+
+**拥有的对象**：User Activity Event、Activity Window、Usage Aggregate、Operations Projection、Projection Cursor/Version和Super Admin Audit Event。它不拥有Principal、Project、Work、Plan、Artifact、Evidence、Run或Delivery权威状态。
+
+**内部组件**：
+
+1. Super Admin Authorization Guard：验证真实Principal、Authentication Session和细粒度Grant。
+2. Activity Collector/Normalizer：接收最小化的页面前台心跳和有意义产品动作，去重并按服务器时间校正。
+3. Duration Calculator：分别计算登录会话、前台活跃、有效协作和Run/Provider/Tool技术耗时。
+4. Work/Artifact Projector：消费Product Harness、Evidence、Run和Delivery事件，生成可重建跨用户读模型。
+5. Operations Query Service：按用户、时间、Project、状态、入口和关注原因查询，不直读其他模块私表。
+6. Privacy/Retention Policy：定义可见字段、正文额外授权、最小化、保留与删除/匿名化规则。
+7. Super Admin Audit Writer：记录跨用户查询、敏感正文查看、导出和治理动作的主体、理由、范围与结果。
+
+**输入/输出合同**：
+
+- `GetUserPresence`：登录会话、最近活动、前台活跃区间及置信度。
+- `GetUsageSummary`：有效协作动作和4类时间指标，返回口径版本、时区和数据新鲜度。
+- `GetUserWorkProgress`：从Product Harness投影Project、Work、Plan、阻塞和下一行动。
+- `GetArtifactProgress`：从Evidence投影Artifact revision、验证、有效性和交付状态。
+- `GetAttentionQueue`：等待批准、长期停滞、失败、结果未知、证据失效或交付失败。
+- `RecordActivity`：由受信Web/API边界和产品事件桥提交最小活动事件；客户端不能直接声明累计时长。
+
+**依赖方向**：依赖Identity公开认证/授权查询，以及Product Harness/Collaboration、Evidence、Run和Delivery公开事件或查询端口；写自己的Activity、Projection和Audit Repository。源模块不依赖运营投影，避免形成循环和第二事实源。
+
+**不负责**：认证用户、修改Project/Work/Artifact状态、把管理员推断写回业务事实、保存完整Prompt/消息/键盘轨迹、展示隐藏推理或替代开发运维Observability。
+
+**关键不变量**：
+
+1. 登录会话时长、浏览器前台活跃时长、有效协作活动和Run/Provider/Tool耗时分别命名、计算和展示。
+2. Project/Work/Artifact进度只能来自权威源模块；投影可以删除并重建，不能反向提交状态。
+3. 页面关闭、网络缺口、心跳丢失和投影延迟产生`unknown/stale`，不能被补成连续使用或完成。
+4. `Super Administrator`不是全内容读取通行证；消息/Artifact正文、导出和治理动作需要独立Grant、目的和审计。
+5. 普通用户个人主页与Super Admin Console可以复用无业务状态UI组件，但不能复用权限、查询范围或跨用户缓存。
+
+**失败恢复与测试**：覆盖普通用户越权、管理员Grant撤销、多设备/多标签、后台空闲、重复/乱序心跳、客户端时钟漂移、投影断点与重建、源事实失效、跨用户导出、审计写入失败和缓存串用户。审计记录无法写入时，敏感操作必须失败关闭；投影不可用时显示陈旧/未知，不回退直连源表。
+
+**技术落点与场景**：目标为`backend/app/modules/super_admin_operations/`、`backend/app/interfaces/http/rest/super_admin/`和`frontend/src/features/super-admin/`；支撑第12.9节。具体Schema、API、指标阈值和隐私保留规则必须经过专项详细设计审核后才能实现。
+
 ## 8. MAF运行适配器
 
 **参考来源**：pi的通用Agent Loop边界、nanobot的AgentRunner，以及MAF自身AgentSession/History Provider/Workflow Checkpoint能力。
@@ -688,7 +761,7 @@ OPC-OS Chat → Bridge Adapter → Host/Queue ──┘
 
 | 状态 | 唯一逻辑所有者 | 允许的投影/映射 | 禁止替代物 |
 |---|---|---|---|
-| Principal、Grant、Channel Binding | Identity模块 | RequestContext、Channel缓存 | chatId/threadId |
+| Principal、Role/Grant、Authentication Session、Channel Binding | Identity模块 | RequestContext、Channel缓存 | chatId/threadId、前端菜单可见性 |
 | Product Session、Interaction、Message | Conversation模块 | 前端Query缓存、搜索索引 | MAF Session、AG-UI消息全集 |
 | Intent、Work、Plan、ExecutionDraft、RunSpec、HITL Policy、ModelCallDraft、Decision Record、Approval | Collaboration模块 | 前端编辑/审批投影 | Assistant文本或某一次Run结果 |
 | ContextPackage | Context模块 | MAF物化输入 | 全部历史拼接 |
@@ -697,6 +770,8 @@ OPC-OS Chat → Bridge Adapter → Host/Queue ──┘
 | Tool Execution | Tool执行模块 | Run事件、Evidence引用 | Tool消息文本 |
 | Evidence、Source、Artifact元数据 | Evidence模块 | Message/Run证据卡片 | Assistant结论 |
 | Delivery、Outbox、Receipt | Delivery模块 | Web/Channel发送状态 | Run成功标志 |
+| User Activity Event、Activity Window、Usage Aggregate、Super Admin Audit Event | Super Admin Operations模块 | 可重建Operations Projection | 登录时间差、浏览器本地计时、Run耗时 |
+| Project/Work/Artifact跨用户运营投影 | Super Admin Operations模块（投影） | Super Admin Console查询缓存 | 另建进度事实或反向修改源模块 |
 | MAF AgentSession/Checkpoint | MAF运行适配器及其Store | Product Run映射 | Product Session |
 | 页面状态 | Web应用 | 无 | Product DB事实 |
 
@@ -708,23 +783,26 @@ OPC-OS Chat → Bridge Adapter → Host/Queue ──┘
 
 ```text
 principal_id
-  → product_session_id
-    → interaction_id
-      → context_package_id@version
-      → intent/work/execution_draft/run_spec/decision refs
-      → product_run_id
-        → attempt_id
-          → model_call_draft_id / model_call_decision_id / model_call_attempt_id
-          → maf_session_id / checkpoint_id
-          → tool_execution_id
-          → runtime_event_seq
-        → evidence_id / artifact_id
-        → message_id
-        → delivery_id / receipt_id
+  ├→ auth_session_id / role_grant_ids
+  └→ product_session_id
+      → interaction_id
+        → context_package_id@version
+        → intent/work/execution_draft/run_spec/decision refs
+        → product_run_id
+          → attempt_id
+            → model_call_draft_id / model_call_decision_id / model_call_attempt_id
+            → maf_session_id / checkpoint_id
+            → tool_execution_id
+            → runtime_event_seq
+          → evidence_id / artifact_id
+          → message_id
+          → delivery_id / receipt_id
 
 AG-UI thread_id → product_session_id
 AG-UI run_id    → product_run_id或一次受控投影映射
 external conversation_id → channel_binding_id → product_session_id
+activity_window_id → principal_id + auth_session_id + metric_definition_version
+super_admin_audit_id → admin_principal_id + target_scope + action
 ```
 
 映射可查询、可验证、可撤销；任何ID本身都不构成授权。
@@ -872,6 +950,18 @@ pending → sending → delivered
 
 用户结果：Telegram可以继续同一工作，但不能绕过Web路径中的身份、审批、持久化和恢复规则。
 
+### 12.9 超级管理员查看用户、使用和作品进度
+
+1. 超级管理员在Chat Web打开Super Admin Console；前端先通过普通认证资源取得当前Principal的功能可见性，但不把菜单可见当成授权。
+2. Console调用专用REST查询；Web Authentication Adapter验证Authentication Session，Identity返回包含细粒度Grant的可信RequestContext，Super Admin Authorization Guard再次检查查询范围。
+3. Operations Query Service读取可重建运营投影：身份与登录事实来自Identity，Activity Window来自Super Admin Operations，Project/Work/Plan来自Product Harness，Artifact/Evidence来自Evidence，等待/失败来自Run与Delivery。
+4. 响应逐项携带指标定义版本、时间窗、时区、来源更新时间、`fresh/stale/unknown`和不可用原因。登录会话、前台活跃、有效协作和机器运行耗时分开展示。
+5. React表格/详情按用户、Project、状态和关注原因筛选；点击作品时先展示元数据、revision、验证和交付状态，不默认下载正文。
+6. 查看受限Message/Artifact正文、导出跨用户数据或执行治理动作时，前端提交目的；服务端要求额外Grant，并在返回/执行前写Super Admin Audit Event。
+7. 若投影落后，页面显示最后更新时间并允许受控重建/等待；不让前端直接查询源表。若审计写入失败，敏感读取或动作失败关闭。
+
+用户结果：超级管理员能可信回答谁登录、怎样使用、工作和作品推进到哪里以及哪里需要关注，同时普通用户不可越权、运营投影不成为第二事实源、敏感访问有记录。
+
 ## 13. 前端模块与后端映射
 
 | 前端Feature | 服务端读取/命令 | 实时来源 | 页面局部状态 |
@@ -882,6 +972,7 @@ pending → sending → delivered
 | Evidence | Evidence/Artifact/Lineage REST | Evidence可用通知 | 预览、排序、验证筛选 |
 | Memory | Candidate/Accepted Memory REST | 失效通知 | 候选选择、编辑表单 |
 | Integrations | Channel/Binding/Delivery REST | Delivery状态 | 配置页导航、测试对话框 |
+| Super Admin Operations | User Presence/Usage/Work/Artifact/Attention REST | 可选投影新鲜度通知，不使用AG-UI作为资源事实 | 时间范围、筛选、列布局、详情弹窗 |
 
 建议目录：
 
@@ -894,7 +985,8 @@ frontend/src/
 │   ├── runs/
 │   ├── evidence/
 │   ├── memory/
-│   └── integrations/
+│   ├── integrations/
+│   └── super-admin/
 ├── api/                    # REST合同客户端、Query keys
 ├── agent/                  # AG-UI client、event reducer、reconnect
 ├── components/             # 无业务事实的共享组件
@@ -927,7 +1019,8 @@ backend/app/
 │   ├── run/
 │   ├── tool_execution/
 │   ├── evidence/
-│   └── delivery/
+│   ├── delivery/
+│   └── super_admin_operations/
 ├── runtime/
 │   └── maf/                       # Agent、History、Workflow、Tool Bridge
 ├── infrastructure/
@@ -959,6 +1052,7 @@ backend/app/
 | 成功终态 | 产品提交后再发AG-UI Final | LibreChat正常完成顺序 | 需要自定义Finalization Gate |
 | 交付 | Delivery独立于Run成功 | nanobot保存不等于送达 | 多状态和重试Worker |
 | 外部集成 | 具体Adapter + Channel Host + Binding + 对等合同 | QwenPaw具体Channel/队列、nanobot Channel边界、Chat产品定位 | 需要每个平台适配、能力协商和回执 |
+| 超级管理员运营看护 | 扩展Identity并新增Super Admin Operations；跨用户视图只读投影权威事实 | 已确认的独立运营场景；当前源码缺口；正式参考研究未涉及完整链路 | 需要认证、活动口径、隐私/审计、投影重建和容量设计 |
 
 ## 16. 交付阶段（只决定依赖顺序）
 
@@ -968,7 +1062,7 @@ backend/app/
 4. **Run管理与MAF适配**：实现Product Run/Attempt、Event Journal、AG-UI投影和Finalization Gate。
 5. **Tool执行治理**：实现Tool Catalog、Ledger、幂等、outcome_unknown和具体Tool对账。
 6. **Worker恢复与Workflow/HITL**：实现Lease、Reconciler、Checkpoint映射、暂停/恢复/取消和旧Attempt隔离。
-7. **Evidence、Artifact、Memory有效性与Delivery**：完成来源血缘、失效传播、Outbox、回执和多接收方投递。
+7. **Evidence、Artifact、Memory有效性、Delivery与超级管理员运营看护**：完成来源血缘、失效传播、Outbox、回执和多接收方投递；在Identity、Product Harness和Evidence事实完整后实现Activity、Operations Projection、Super Admin Audit和Console。
 8. **外部Channel互操作**：实现OPC-OS Chat合同、Binding、能力协商、Durable Ingress和跨入口连续性。
 9. **规模与运维保证**：在不改模块合同的前提下验证/替换SQLite、事件传输和进程部署，补容量、备份、SLO与灾难恢复。
 
@@ -982,13 +1076,16 @@ backend/app/
    Bridge，再统一进入Interaction Ingress。
 2. Chat原生Channel默认采用内置Adapter Host，同时保留独立Adapter进程和OPC-OS托管渠道两种
    部署合同。
-3. 接受10个产品与应用模块的责任划分，特别是Conversation/Context/Memory三分和
+3. 接受11个产品与应用模块的责任划分，特别是Conversation/Context/Memory三分和
    Interaction/Run二分。
 4. Collaboration是本项目产品需求补足，不冒充MAF或参考项目原生能力。
 5. Product Run、Run Attempt、MAF AgentSession/Checkpoint和AG-UI Thread显式分开。
 6. Tool执行、Evidence和Delivery分别拥有副作用、证明和送达状态。
 7. MAF完成后仍必须经过产品Finalization门才能发布AG-UI成功终态。
 8. 进程角色可以共置部署，但状态、合同、权限和恢复边界不得合并。
+9. 2026-07-24确认Super Admin Operations属于Chat完整产品能力：Identity拥有真实登录与授权，
+   运营模块只拥有Activity、可重建跨模块投影和管理员审计；Product Harness与Evidence继续拥有
+   Work和Artifact事实。详细Schema、API、指标、隐私和保留规则仍须专项审核。
 
 总体批准只固定模块、责任和目标保证。新增正式Schema和实现仍须遵守对应模块的详细设计、
 迁移、回滚和测试门。

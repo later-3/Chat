@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import json
 
-from .continuous_chat_contracts import CollaborationState
+from .continuous_chat_contracts import (
+    CollaborationState,
+    context_source_references,
+    summary_writeback_policy,
+)
 
 
 def intent_task(state: CollaborationState) -> str:
@@ -14,6 +18,7 @@ def intent_task(state: CollaborationState) -> str:
             "candidate_prior_turn_summaries": list(state.recent_turn_summaries),
             "formal_project_directory_matches": list(state.project_matches),
             "context_package_id": state.directory_context_package_id,
+            "accepted_context_items": list(state.context_items),
             "pending_clarification": state.pending_clarification,
             "output_contract": {
                 "intents": [
@@ -50,6 +55,7 @@ def intent_task(state: CollaborationState) -> str:
                 "一句输入确有多个独立目标时拆为最多4个intents，并给出顺序依赖；不得为凑数量强拆。",
                 "若当前输入没有回答开放澄清，而是开始了新目标，answers_clarification_id必须为null。",
                 "Project目录来自Product Harness权威查询；不能把摘要候选冒充正式Project。",
+                "Repository目录只提供当前代码基线的轻量事实，不包含未明确采用的文件正文。",
                 "只输出规定JSON，不要解释。",
             ],
         },
@@ -143,14 +149,20 @@ def summary_task(state: CollaborationState) -> str:
             "intent": state.intent,
             "assistant_response": state.response,
             "plan": state.plan,
+            "accepted_context_source_refs": context_source_references(state.context_items),
+            "writeback_policy": summary_writeback_policy(state.origin_prompt),
             "rules": [
                 "只提取本轮重点，丢弃无关寒暄。",
                 (
                     "用户或Product事实明确确认的内容才进入confirmed_facts，"
                     "每项使用{text,source_refs:[{kind,id}]}；无法给来源则不要冒充事实。"
                 ),
+                "只能引用accepted_context_source_refs中给出的来源；这里的引用不代表重新读取了来源正文。",
                 ("decisions每项使用{text,decision_record_id}或{text,product_ref}；无法绑定引用则保持为空。"),
-                "任务和Memory变化只进入candidate数组，不能自动提交。",
+                (
+                    "任务和Memory变化只进入candidate数组，不能自动提交；"
+                    "若writeback_policy禁止对应候选，则该数组必须为空。"
+                ),
                 "只输出规定JSON。",
             ],
         },

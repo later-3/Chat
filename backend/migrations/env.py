@@ -14,6 +14,7 @@ from backend.app.collaboration_protocols import models as collaboration_protocol
 from backend.app.governance import models as governance_models  # noqa: F401
 from backend.app.harness import models as harness_models  # noqa: F401
 from backend.app.product_sessions.database import Base
+from backend.app.project_resources import models as project_resource_models  # noqa: F401
 from backend.app.runtime_execution import (
     models as runtime_execution_models,  # noqa: F401
 )

@@ -111,6 +111,113 @@ def canonical_hash(value: Any) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
+def context_source_references(
+    context_items: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Project adopted Context into stable, content-free evidence references.
+
+    The response Agent needs the selected source bodies, while the turn
+    summarizer only needs to cite which immutable revisions informed the
+    completed interaction.  Keeping this projection in the contract layer
+    ensures that the Provider payload and the human review view cannot drift
+    into two different descriptions of the summarizer's effective context.
+    """
+
+    references: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in context_items:
+        if item.get("adopted", True) is not True:
+            continue
+        kind = str(item.get("source_kind") or "").strip()
+        source_id = str(item.get("source_id") or "").strip()
+        revision = item.get("source_revision")
+        revision_key = "" if revision is None else str(revision)
+        if not kind or not source_id:
+            continue
+        key = (kind, source_id, revision_key)
+        if key in seen:
+            continue
+        seen.add(key)
+        reference: dict[str, Any] = {
+            "kind": kind,
+            "id": source_id,
+        }
+        if revision is not None:
+            reference["revision"] = revision
+        for source_key, target_key in (
+            ("title", "title"),
+            ("reason", "adoption_reason"),
+            ("selection_origin", "selection_origin"),
+        ):
+            value = item.get(source_key)
+            if value not in (None, ""):
+                reference[target_key] = value
+        references.append(reference)
+    return references
+
+
+def summary_writeback_policy(origin_prompt: str) -> dict[str, Any]:
+    """Compile explicit user writeback boundaries without model inference."""
+
+    lowered = origin_prompt.lower()
+    read_only = "只读" in lowered or "read-only" in lowered or "read only" in lowered
+    clauses = [value for value in re.split(r"[。！？!?\n;；]|但是|不过|然而", lowered) if value.strip()]
+    negative_write = re.compile(
+        r"(?:不要|不得|禁止|不允许|不能|勿|无需|不需要)"
+        r".{0,16}?"
+        r"(?:创建|修改|更新|写入|保存|提交|记录|维护|关联)"
+    )
+    work_targets = ("project", "work", "task", "项目", "任务", "事项", "工作状态")
+    memory_targets = ("memory", "记忆", "长期信息", "长期状态", "偏好")
+    blocked_work = read_only
+    blocked_memory = read_only
+    for clause in clauses:
+        if negative_write.search(clause) is None:
+            continue
+        blocked_work = blocked_work or any(target in clause for target in work_targets)
+        blocked_memory = blocked_memory or any(target in clause for target in memory_targets)
+    return {
+        "read_only": read_only,
+        "allow_work_state_candidates": not blocked_work,
+        "allow_memory_candidates": not blocked_memory,
+        "source": "explicit_user_prompt",
+    }
+
+
+def apply_summary_writeback_policy(
+    summary: Mapping[str, Any],
+    *,
+    origin_prompt: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Drop model-proposed writes that contradict explicit user boundaries."""
+
+    normalized = dict(summary)
+    policy = summary_writeback_policy(origin_prompt)
+    suppressions: list[dict[str, Any]] = []
+    for field, allowed_key, category in (
+        ("work_state_candidates", "allow_work_state_candidates", "suppressed_work_state_candidate"),
+        ("memory_candidates", "allow_memory_candidates", "suppressed_memory_candidate"),
+    ):
+        candidates = normalized.get(field)
+        if policy[allowed_key] or not isinstance(candidates, list) or not candidates:
+            continue
+        suppressions.append(
+            {
+                "category": category,
+                "count": len(candidates),
+                "reason": "用户明确要求只读或禁止该类Product写回",
+            }
+        )
+        normalized[field] = []
+    if suppressions:
+        discarded = normalized.get("discarded")
+        normalized["discarded"] = [
+            *(discarded if isinstance(discarded, list) else []),
+            *suppressions,
+        ]
+    return normalized, suppressions
+
+
 def apply_intent_set_protocol_overlay(
     selection: Mapping[str, Any],
     intents: tuple[Mapping[str, Any], ...],

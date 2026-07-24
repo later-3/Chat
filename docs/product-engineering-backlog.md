@@ -1,8 +1,8 @@
 # 产品能力与工程质量Todo
 
-> 状态：`Q0工程安全底座已于2026-07-23获用户批准并进入实施；F01-F08继续按各自详细设计门推进`
+> 状态：`Q0工程安全底座已于2026-07-23获用户批准并进入实施；F01-F10继续按各自详细设计门推进`
 >
-> 更新日期：2026-07-23
+> 更新日期：2026-07-25
 >
 > 状态事实仍由[PROJECT_PLAN](../PROJECT_PLAN.md)与[PROJECT_STATE](../PROJECT_STATE.md)维护；本文只负责把每个Todo的用户场景、目标、方案级做法和验证门写完整，不替代详细设计。
 
@@ -13,7 +13,8 @@
 1. **Q0 工程安全底座**：Q01-Q05。先建立可重复质量门、清晰模块边界、错误合同、日志与测试证据，不改变现有产品语义。
 2. **Q1 执行可信闭环**：F01-F03。完成Tool副作用、Evidence和Runtime完整故障矩阵。
 3. **Q2 连续协作完整性**：F04-F06。补齐Session、任意Workflow恢复、Intent/Harness/Context治理。
-4. **Q3 多入口与运营**：F07-F08。完成身份、Channel、Delivery、Provider配置和生产运营。
+4. **Q3 多入口与运营**：F07-F09。完成身份、Channel、Delivery、Provider配置、生产运营和超级管理员看护。
+5. **纵向Dogfood交付**：F10。以“Chat开发Chat”穿透F01、F02、F05、F06与Q06；只读阶段可以先行，写入、完成声明和持久恢复分别受对应详细设计门约束。
 
 | ID | Todo | 优先级 | 当前状态 | 前置 |
 |---|---|---:|---|---|
@@ -30,8 +31,10 @@
 | F04 | Session完整生命周期、树、控制与可移植性 | P1 | 已批准目标，部分实现 | Q03-Q06、F03 |
 | F05 | 任意Workflow、嵌套Workflow和pi持久恢复 | P1 | 已批准目标，主Workflow安全点已实现 | F01、F03 |
 | F06 | 独立Intent、Harness交互与Context权限治理 | P1 | 已批准目标，部分实现 | F02、F04 |
-| F07 | Principal、Scope、Channel Binding与Delivery | P2 | 已批准目标，未实现 | F02-F06 |
+| F07 | Principal、Role/Grant、Authentication Session、Scope、Channel Binding与Delivery | P1 | 已批准目标，未实现 | F02-F06 |
 | F08 | Provider配置、运营、备份、保留与SLO | P1 | 已批准目标，部分实现 | Q01-Q05 |
+| F09 | 超级管理员身份、使用与作品运营看护 | P1 | 2026-07-24已批准目标，未实现 | F02、F06-F07、Q03-Q05 |
+| F10 | Chat开发Chat自举纵向闭环 | P0 | SD1只读纵向切片完成；SD2 R1-R12获批并进入实施 | Q02-Q06、F01-F02、F05-F06 |
 
 ## 2. Q01 自动质量门与CI
 
@@ -288,6 +291,9 @@ Tool执行拥有独立、耐久、可授权、可对账的生命周期；不宣�
 1. 用户编辑历史消息、重新生成、Fork分支后，旧消息和旧Run仍可审计。
 2. 活动Run中Steer、排队Follow-up或取消时，动作语义明确且可恢复。
 3. 用户搜索、标签、导入、导出、分享、删除或过期Session时，附件、Run、Artifact和权限一致处理。
+4. 用户同时打开多个Product Session推进不同Project、同一Project的不同Work或同一Plan；这些Session
+   共享同一Harness事实，互不串线，也不会以最后写入者静默覆盖并发修改。该场景已于2026-07-24
+   获得用户审核，仍待完整实现。
 
 ### 目标
 
@@ -295,11 +301,16 @@ Tool执行拥有独立、耐久、可授权、可对账的生命周期；不宣�
 
 ### 方案级做法
 
-实现活动Leaf和分支血缘、编辑/重新生成/Fork、Steer/Follow-up队列、搜索/标签、Compaction、附件、导入导出、分享/删除/保留策略；所有操作绑定Principal和版本。
+实现活动Leaf和分支血缘、编辑/重新生成/Fork、Steer/Follow-up队列、搜索/标签、Compaction、附件、
+导入导出、分享/删除/保留策略；所有操作绑定Principal和版本。多Product Session并发使用资源revision、
+Context读取版本、写集合、CAS和幂等命令；产品变更记录来源Session/Interaction/Run并向相关Session
+投影更新。外部Tool副作用仍交给F01 Ledger，不能用数据库CAS替代。
 
 ### 验证与完成门
 
-覆盖分支并发、旧Run晚到、活动Run切支、跨重启Steer、导出再导入、删除与来源失效、跨设备恢复和大型树性能。
+覆盖分支并发、旧Run晚到、活动Run切支、跨重启Steer、导出再导入、删除与来源失效、跨设备恢复和
+大型树性能；增加不同Project并行、同Project不同Work并行、同Plan冲突、目标已被另一Run完成、
+批准后来源变化、手机/桌面双Session和100个无冲突Run容量场景。
 
 ## 13. F05 任意Workflow、嵌套Workflow和pi持久恢复
 
@@ -328,6 +339,8 @@ Tool执行拥有独立、耐久、可授权、可对账的生命周期；不宣�
 1. “我有哪些项目”直接查询权威Harness，不再由模型猜测或错误澄清。
 2. 用户在学习、项目和简单询问间切换时，系统只装配当前目标的最小充分Context。
 3. 用户能修正Intent、关联Project、采用/排除Context；来源撤权后不会继续进入Prompt。
+4. 用户查看计划时看到的是由当前Work/Action事实推导出的真实进度，而不是把接受时仍为`pending`的
+   PlanNode快照误当成实时状态。
 
 ### 目标
 
@@ -335,13 +348,18 @@ Intent、Project/Work、Context和Memory各自拥有版本、来源和生命周�
 
 ### 方案级做法
 
-把Intent从Workflow临时候选演进为可修订资源；完善Harness目录/详情/候选提交工作台；Context Source增加权限、失效传播和Adoption撤销；Prompt Compiler只消费获准版本。
+把Intent从Workflow临时候选演进为可修订资源；完善Harness目录/详情/候选提交工作台；Context Source
+增加权限、失效传播和Adoption撤销；Prompt Compiler只消费获准版本。为TaskPlan补充明确的实时进度
+语义：优先设计由WorkItem/ActionItem派生的Plan进度投影，只有确实需要独立生命周期时才增加
+PlanNode状态转换；在合同冻结前，原始PlanNode状态只能解释为计划修订快照。
 
 ### 验证与完成门
 
-覆盖简单问答、项目目录、歧义澄清、短回答承接、跨天学习、项目切换、多Intent、用户排除Context、权限撤销和Token预算；长会话不无界拼接历史。
+覆盖简单问答、项目目录、歧义澄清、短回答承接、跨天学习、项目切换、多Intent、用户排除Context、
+权限撤销、Token预算，以及Action完成/重开/并发修改后Plan进度投影；长会话不无界拼接历史，
+任何UI或模型摘要都不能把未推进的PlanNode快照冒充当前进度。
 
-## 15. F07 Principal、Scope、Channel Binding与Delivery
+## 15. F07 Principal、Role/Grant、Authentication Session、Scope、Channel Binding与Delivery
 
 ### 用户场景
 
@@ -351,11 +369,11 @@ Intent、Project/Work、Context和Memory各自拥有版本、来源和生命周�
 
 ### 目标
 
-建立真实身份、Scope、入口Binding和可靠Delivery；外部平台只通过合同接入，不形成第二套Session/Work/Run规则。
+建立真实身份、认证会话、Role/Grant、Scope、入口Binding和可靠Delivery；外部平台只通过合同接入，不形成第二套Session/Work/Run规则。
 
 ### 方案级做法
 
-实现Principal、Membership/Scope、Channel Binding、Inbound Envelope/Idempotency、Delivery Outbox/Attempt/Receipt/Dead Letter；Telegram和OPC-OS Bridge分别使用版本化Adapter合同。
+实现Principal、Role/Grant、Authentication Session、Membership/Scope、Channel Binding、Inbound Envelope/Idempotency、Delivery Outbox/Attempt/Receipt/Dead Letter；Telegram和OPC-OS Bridge分别使用版本化Adapter合同。
 
 ### 验证与完成门
 
@@ -380,3 +398,64 @@ Intent、Project/Work、Context和Memory各自拥有版本、来源和生命周�
 ### 验证与完成门
 
 覆盖配置并发、错误回滚、运行中切换、Provider目录不可用、备份恢复演练、保留清理、磁盘/数据库故障、SLO告警和真实双Provider回归；任何日志、Trace、前端响应和Git都不含密钥。
+
+## 17. F09 超级管理员身份、使用与作品运营看护
+
+### 用户场景
+
+1. 超级管理员查看最近登录和活跃用户，知道每个用户从什么入口、何时登录、最后何时发生有效协作；登录会话、前台活跃和机器运行耗时不会混成一个数字。
+2. 超级管理员按用户查看Project、Work、Plan、Artifact和Evidence进度，能识别等待批准、长期停滞、验证失败、结果未知和交付失败。
+3. 普通用户无法调用跨用户查询；管理员查看受限正文、导出或执行治理动作时，需要额外权限、说明目的并产生不可绕过的审计。
+4. 活动心跳丢失、浏览器在后台或运营投影落后时，页面显示`unknown/stale`和最后更新时间，不猜测使用时长或完成度。
+
+### 目标
+
+建立Chat独立运营所需的超级管理员能力：Identity拥有真实认证会话和授权，Super Admin Operations拥有活动事实、可重建运营投影和管理员审计，Product Harness与Evidence继续分别拥有工作与作品事实。
+
+### 方案级做法
+
+1. 在Identity详细设计Principal、Role/Grant、Authentication Session、登录/续期/撤销/过期事件和多设备语义；`Super Administrator`不由前端菜单或配置用户名授予。
+2. 定义最小化User Activity Event、浏览器前台心跳、空闲阈值、去重与服务器时间校正；分别计算登录会话、前台活跃、有效协作和Run/Provider/Tool技术耗时。
+3. 通过公开查询或Outbox/Event消费Product Harness的Project/Work/Plan、Evidence的Artifact/Evidence、Run/Delivery的等待与失败，形成带版本、游标、新鲜度和重建能力的跨用户读模型。
+4. 建立Super Admin REST Query API与独立前端Feature；AG-UI只继续承载Agent Run实时交互，不作为管理员资源API。
+5. 建立字段级最小披露、正文/导出/治理动作的额外Grant、用途说明、保留/删除策略和Super Admin Audit Event；审计失败时敏感操作失败关闭。
+6. 先审核指标定义、Schema、API、隐私和容量，再创建迁移与代码；本Todo不授权直接实施正式表结构。
+
+### 验证与完成门
+
+1. 覆盖普通用户越权、管理员Role/Grant撤销、Authentication Session过期、多设备、多标签、后台空闲、断网、重复/乱序事件和客户端时钟偏差。
+2. 对同一用户分别验证登录会话、前台活跃、有效协作和机器耗时，数字、口径版本、时间窗、时区和未知区间可解释。
+3. 修改源Project/Work/Artifact后，运营投影可增量更新和全量重建，且永不反向修改源事实；延迟时显示`stale`。
+4. 受限内容、跨用户导出和治理动作都产生可关联审计；审计存储不可用时失败关闭。
+5. 完成门不是“出现一个管理页面”，而是超级管理员能依据权威事实回答谁登录、怎样使用、工作/作品进度和关注事项，同时普通用户、敏感内容和第二事实源边界均有自动与人工证据。
+
+## 18. F10 Chat开发Chat自举纵向闭环
+
+### 用户场景
+
+1. 用户把Chat自身作为一个普通Project持续推进，第二天或另一个Product Session只说“继续开发Chat”，系统能找回正确Work、仓库基线、规则、失败证据和下一行动。
+2. 用户从唯一主Workflow查看并修改Context、Plan、ExecutionDraft、Runtime、Tool能力和验证要求，再由pi在隔离执行工作区完成真实改动。
+3. 代码生成、测试、结果接受、合入、commit、push、部署和重启各自有明确状态与授权；失败、脏工作树、并发修改或进程崩溃不会污染当前运行环境或制造假成功。
+
+### 目标
+
+用一个可证明的纵向控制闭环验证Chat愿景：Product Harness维护当前事实，主MAF Workflow负责选择与控制，pi作为同一Product Run下的受治理执行Tool工作，确定性Validator和Evidence提交门证明结果，前端让用户观察、纠正和看护全过程。
+
+### 方案级做法
+
+1. Chat自身不使用特殊`SelfProject`，而是普通Product Project通过版本化Repository Resource Binding关联Git仓库；文件系统/Git拥有源码，Product DB只保存Binding、Snapshot、Hash和状态。
+2. 主Workflow增加Execution Route、确定性Dispatch、Validation和Result Assembly；pi不再要求用户切换第二个根Workflow，也不创建第二个用户根Product Run。
+3. 只读理解可以检查绑定仓库；任何写入默认落在绑定精确基线的受管Git worktree，验证后通过独立Integration Operation合入，不能直接修改承载当前Chat进程的活动工作树。
+4. SD1只交付只读Repository/Context纵向切片；SD2接通pi只读执行；SD3写入依赖F01；SD4完成声明依赖F02；SD5的pi/任意Workflow恢复依赖F05。
+5. SD1已经完成真实Chat仓库只读Dogfood、跨Product Session恢复、逐次模型审批、Repository运行前后
+   指纹不变和完整工程门；已兑现/未兑现保证由
+   [Repository详细设计](./repository-resource-detailed-design.md#155-sd1已兑现保证)维护。
+6. 详细场景、架构、接口、状态、测试矩阵和9项决定只在[Chat开发Chat自举详细设计](./chat-self-development-design.md)维护；SD2 R1-R12已于2026-07-25获批，只授权受治理只读执行，SD1/SD2完成都不自动授权写能力。
+
+### 验证与完成门
+
+1. 一次性Git仓库先通过路径逃逸、脏状态、真实pi read/edit/test、Tool参数修改、结果未知对账、SIGKILL、双Session冲突、移动端和密钥脱敏E2E。
+2. 再以隔离worktree对真实Chat仓库完成一个小而可逆的Dogfood功能：相关后端测试、前端类型检查/构建和浏览器E2E通过，Diff、Artifact、Evidence与Work状态均可追踪。
+3. 第一轮Dogfood不自动commit或push；用户拒绝Result Commit或Integration时，当前运行目录和长期Work状态不被修改。
+4. 跨4天、3个Product Session、2个Project和至少20轮Interaction验证Context不污染、旧Draft失效、失败后继续和周总结只来自已提交事实。
+5. 完成门是[详细设计第3.4节](./chat-self-development-design.md#34-完成必须满足的最小证明)8项同时满足，不以“能启动pi”或“一次代码生成成功”替代。

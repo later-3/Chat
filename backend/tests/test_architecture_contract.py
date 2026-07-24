@@ -23,13 +23,14 @@ from backend.app.workflows import (
     NESTED_QUALITY_WORKFLOW,
 )
 
-# Reviewed 2026-07-24 after adding immutable Collaboration Intent Set/Intent
-# revisions, cross-Run clarification contracts, and two real Intent governance
-# Workflow nodes. The API, schema, and Workflow changes are intentional.
+# Reviewed 2026-07-24 for SD1-C. The OpenAPI addition lets a user explicitly
+# materialize an allowlisted Repository Governance manifest entry into the
+# current Context revision. Workflow 1.5.0 adds the two Context-revision
+# projection gates and the Stage B Context adoption gate.
 # These fingerprints intentionally make future boundary drift fail closed.
-OPENAPI_SHA256 = "cf47064ec9f2e71ec7b965a9af652f75d5faee3362badcb378005aea3360841e"
-PRODUCT_SCHEMA_SHA256 = "613e4d2d8d7c3c4db46d512b329768c7cee3dc9980b8237d253aad8caa247c17"
-WORKFLOW_CATALOG_SHA256 = "9c814c13d878779f6ca3eaa0789e9ee8c2e5797eb7d6b5c68246fe2d061a2f6f"
+OPENAPI_SHA256 = "751d078977e670ed47069be31cbdb2c327752c5fdc716a67b8675447f180b033"
+PRODUCT_SCHEMA_SHA256 = "57f85fdeab9f3999df33bb8225c88457952b0d742960884103f2be3fc9e7551b"
+WORKFLOW_CATALOG_SHA256 = "a7cc0e949f6de32348cdfba3a53218f5e726afdc68850ff8aa19d79350093615"
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 
 
@@ -108,6 +109,9 @@ def test_domain_services_do_not_depend_on_fastapi_and_router_does_not_open_trans
         "harness/service.py",
         "harness/commands.py",
         "harness/queries.py",
+        "project_resources/service.py",
+        "project_resources/queries.py",
+        "project_resources/mutations.py",
         "product_sessions/service.py",
     ):
         source = (APP_ROOT / relative).read_text(encoding="utf-8")
@@ -115,6 +119,9 @@ def test_domain_services_do_not_depend_on_fastapi_and_router_does_not_open_trans
         assert "import fastapi" not in source
     router_source = (APP_ROOT / "api/product_router.py").read_text(encoding="utf-8")
     assert ".database.sessions.begin(" not in router_source
+    repository_router = (APP_ROOT / "project_resources/api.py").read_text(encoding="utf-8")
+    assert ".database.sessions.begin(" not in repository_router
+    assert "transaction.add(" not in repository_router
 
 
 def test_extracted_query_rule_and_command_boundaries_preserve_transaction_ownership() -> None:
@@ -123,6 +130,9 @@ def test_extracted_query_rule_and_command_boundaries_preserve_transaction_owners
         "governance/queries.py",
         "harness/contracts.py",
         "harness/queries.py",
+        "project_resources/contracts.py",
+        "project_resources/queries.py",
+        "project_resources/snapshots.py",
     )
     for relative in read_only_modules:
         source = (APP_ROOT / relative).read_text(encoding="utf-8")
@@ -136,6 +146,12 @@ def test_extracted_query_rule_and_command_boundaries_preserve_transaction_owners
     assert ".begin(" not in recorder
     assert ".commit(" not in recorder
     assert "transaction.add(" in recorder
+
+    repository_mutations = (APP_ROOT / "project_resources/mutations.py").read_text(encoding="utf-8")
+    assert ".sessions" not in repository_mutations
+    assert ".begin(" not in repository_mutations
+    assert ".commit(" not in repository_mutations
+    assert "transaction.execute(" in repository_mutations
 
     for relative in ("governance/service.py", "harness/service.py"):
         coordinator = (APP_ROOT / relative).read_text(encoding="utf-8")

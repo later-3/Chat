@@ -31,6 +31,14 @@ from .observability.diagnostics import DiagnosticsService
 from .pi_runtime import PiRuntimeManager
 from .product_sessions import ProductDatabase, ProductSessionService
 from .product_sessions.agui import ProductAwareAgentFrameworkAgent
+from .project_resources import (
+    ProjectResourceService,
+    ReadOnlyGitInspector,
+    RepositoryContextContributor,
+    RepositoryContextSourceResolver,
+    RepositorySourceFreshnessGuard,
+    WorkspaceRootCatalog,
+)
 from .runtime_execution import (
     ExecutionWorker,
     RuntimeExecutionService,
@@ -68,6 +76,8 @@ class ApplicationComponents:
     tool_configurations: ToolConfigurationService
     governance: ExecutionGovernanceService
     harness: HarnessService
+    project_resources: ProjectResourceService
+    repository_freshness: RepositorySourceFreshnessGuard
     collaboration_contexts: CollaborationContextService
     collaboration_intents: CollaborationIntentService
     collaboration_protocols: CollaborationProtocolService
@@ -115,6 +125,17 @@ def build_components(
         if model_catalog is not None
         else None
     )
+    root_catalog = WorkspaceRootCatalog(settings.workspace_roots)
+    project_resources = ProjectResourceService(
+        product_sessions.database,
+        catalog=root_catalog,
+        inspector=ReadOnlyGitInspector(),
+    )
+    repository_context_resolver = RepositoryContextSourceResolver(
+        product_sessions.database,
+        catalog=root_catalog,
+    )
+    repository_freshness = RepositorySourceFreshnessGuard(product_sessions.database)
     return ApplicationComponents(
         settings=settings,
         model_catalog=model_catalog,
@@ -130,8 +151,21 @@ def build_components(
             settings.pi_runtime,
         ),
         governance=ExecutionGovernanceService(product_sessions.database),
-        harness=HarnessService(product_sessions.database),
-        collaboration_contexts=CollaborationContextService(product_sessions.database),
+        harness=HarnessService(
+            product_sessions.database,
+            context_contributors=(
+                RepositoryContextContributor(
+                    product_sessions.database,
+                    catalog=root_catalog,
+                ),
+            ),
+        ),
+        project_resources=project_resources,
+        repository_freshness=repository_freshness,
+        collaboration_contexts=CollaborationContextService(
+            product_sessions.database,
+            external_source_resolver=repository_context_resolver,
+        ),
         collaboration_intents=CollaborationIntentService(product_sessions.database),
         collaboration_protocols=CollaborationProtocolService(product_sessions.database),
         runtime_execution=runtime_execution,
@@ -154,6 +188,8 @@ def expose_components(app: FastAPI, components: ApplicationComponents) -> None:
     app.state.tool_configurations = components.tool_configurations
     app.state.governance = components.governance
     app.state.harness = components.harness
+    app.state.project_resources = components.project_resources
+    app.state.repository_freshness = components.repository_freshness
     app.state.collaboration_contexts = components.collaboration_contexts
     app.state.collaboration_intents = components.collaboration_intents
     app.state.collaboration_protocols = components.collaboration_protocols
@@ -307,6 +343,8 @@ def _register_model_workflows(
             harness=components.harness,
             collaboration_protocols=components.collaboration_protocols,
             collaboration_intents=components.collaboration_intents,
+            collaboration_contexts=components.collaboration_contexts,
+            repository_freshness=components.repository_freshness,
             checkpoint_storage=continuous_checkpoint_storage(product_run_id),
         )
 

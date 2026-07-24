@@ -869,6 +869,135 @@ Workflow Run View应显示：
 - 并发靠revision/CAS收敛。
 - 恢复只从已证明的安全点发生。
 
+### 16.9 已批准目标：多个Product Session并行推进同一Harness
+
+> 状态：2026-07-24由用户提出并审核通过，现为稳定产品目标；本节仍是实现前场景合同，不表示
+> 跨Session活动感知、冲突Diff、完整revision绑定或容量矩阵已经实现。
+
+#### 16.9.1 用户真正需要的能力
+
+一个Chat部署不是一个Project，也不应因为用户在不同代码目录工作就启动多套彼此失忆的Chat。
+同一Principal在其获授权的Harness Scope中可以同时打开多个Product Session：
+
+1. 每个Product Session分别拥有自己的Message、Interaction、Product Run和当前ContextPackage。
+2. 所有Product Session查询和维护同一套Project、Work、Plan、Action、Note、Memory、Protocol、
+   Evidence等Harness权威事实。
+3. Project的代码仓库或物理目录只是Project资源属性，不是Chat进程、Product Session或Harness的
+   隔离边界。
+4. 两个Product Session可以推进不同事项，也可以同时推进同一Project；系统必须知道其他Session
+   已经修改了什么，不能靠模型从聊天历史猜测。
+5. 本场景讨论的是“同一用户的多个Product Session并行协作”，不是“多人同时编辑同一个Product
+   Session”；后者还需要独立的协同编辑、Presence和权限设计。
+
+#### 16.9.2 场景A：两个Session推进不同Project
+
+前置状态：
+
+- Product Session A绑定书签API Project。
+- Product Session B绑定FastAPI学习Project。
+- 两边同时创建Product Run。
+
+正确路径：
+
+1. 两个Run分别从共享Harness轻量目录识别自己的Project。
+2. Stage B只加载各自Project的详细工作集，不把另一个Project正文塞入Context。
+3. 两个Run可以并发执行和提交，因为写集合没有交集。
+4. 每次提交仍记录来源Product Session、Interaction、Product Run、操作者、时间和revision变化。
+
+用户结果：A和B互不阻塞，但主页、Project目录和协作日历能看到两条真实推进记录。
+
+#### 16.9.3 场景B：两个Session推进同一Project的不同Work
+
+前置状态：
+
+- A修改书签API的导出功能`Work-Export`。
+- B修复同一Project的登录错误`Work-Login`。
+- 两个Work拥有独立revision，Project摘要是可重建投影。
+
+正确路径：
+
+1. A和B可以并发读取相同Project背景。
+2. A只提交`Work-Export`的Patch，B只提交`Work-Login`的Patch。
+3. 两个写集合不冲突时分别提交；Project级进度由权威Work事实重新投影，不要求锁住整个Project。
+4. 每个Session显示“该Project还有1个其他活动Run”，但不因为无关更新频繁中断用户。
+
+用户结果：同一Project可被多个会话并行推进，不因粗粒度Project锁而退化成全局串行。
+
+#### 16.9.4 场景C：两个Session修改同一Plan
+
+前置状态：
+
+- A和B都基于Plan revision 4生成了ContextPackage和ExecutionDraft。
+- A先把Plan提交为revision 5。
+- B随后准备提交基于revision 4的修改。
+
+正确路径：
+
+1. A提交成功，并记录`revision 4 -> 5`及来源Session/Run。
+2. B在重要执行门或产品提交门发现读取版本已经过期。
+3. 与revision 5无冲突的确定性修改可以形成“建议rebase”的新候选，但不能静默覆盖。
+4. 同一节点、目标、依赖或完成状态冲突时暂停，展示revision Diff、来源Session、更新时间和可选动作。
+5. B已经生成的Artifact和Evidence继续保留；只有过期Product Patch被拒绝。
+6. B的旧ExecutionDraft、RunSpec和Approval按影响范围失效，重新装配后才可继续。
+
+用户结果：系统明确告诉用户“另一个会话已经推进了这里”，而不是最后写入者覆盖前一结果。
+
+#### 16.9.5 场景D：另一个Session已经完成当前目标
+
+1. A仍在执行`Work-Export`，B已经提交完成状态和测试Evidence。
+2. A在Tool外发前、恢复后或最终提交前执行新鲜度检查。
+3. 如果目标已经被满足，A停止重复副作用，展示B的结果与Evidence，并允许用户选择复用、审查或提出
+   新的差异目标。
+4. 如果A已经产生不同Artifact，保留Artifact并进入比较/合并候选；不能用旧状态再次把Work标为完成。
+
+#### 16.9.6 不采用“给整个Chat或Project加一把锁”
+
+数据库短事务仍会使用必要的底层锁，但产品并发语义不能只靠一把长时间全局锁：
+
+1. 全局锁会让不同Project、不同Work和只读查询互相阻塞。
+2. Agent或Tool可能运行数分钟，不能在外部调用期间持有数据库事务或Project锁。
+3. 浏览器断线、Worker退出或用户忘记关闭页面会留下难解释的锁所有权。
+4. 锁只能阻止同时写，不能解释旧Context、已经生成的Artifact、外部副作用或如何合并差异。
+
+已批准方案采用：
+
+```text
+短事务
++ 资源revision / expected_revision
++ Context与RunSpec绑定的读取版本
++ Product Patch写集合
++ CAS提交门
++ 幂等命令与Tool Ledger
++ 来源Trace/Outbox
++ 冲突后的rebase、重新规划或HITL
+```
+
+#### 16.9.7 用户可见交互
+
+1. Session标题区只在相关资源变化时显示“此事项已被另一个会话更新”，不把所有活动做成弹窗。
+2. Project/Work详情显示最近来源Product Session短定位码、Interaction、Run、时间和变更摘要。
+3. 点击提示可查看Diff并跳转到来源会话或对应Workflow Run。
+4. 无冲突更新可刷新Context并继续；有影响的更新提供“采用最新状态重新规划”“比较并合并”
+   “保留当前产物但不提交状态”和“停止本Run”。
+5. 用户关闭任一会话不取消其他Product Run；重新打开后从权威状态和事件游标恢复。
+
+#### 16.9.8 后续实现验收矩阵
+
+| 场景 | 必须证明 |
+|---|---|
+| 两个Session读取同一Project | 只读不互相阻塞，Context来源和revision可解释 |
+| 两个Session写不同Project | 两边并行成功，Trace和结果不串线 |
+| 同一Project写不同Work | 不使用Project全局锁，两个Work分别提交 |
+| 同一Plan写不同字段 | 只在规则可证明安全时提出rebase候选，不静默自动合并 |
+| 同一Plan写同一节点 | 一个CAS成功，另一个进入可见冲突 |
+| A完成、B仍在执行 | B不重复提交完成或盲目重做副作用 |
+| 批准后其他Session改Context来源 | 旧Draft/RunSpec/Approval按影响范围失效 |
+| Worker重启后提交旧结果 | 新鲜度和Lease双重检查拒绝旧写 |
+| 手机与桌面各开一个Session | 两端看到同一Harness revision和冲突提示 |
+| 来源Session归档或删除 | Trace仍可解释来源，权限/保留规则正确执行 |
+| 同时创建语义相同Project | 进入重复候选/用户确认，不自动产生两个正式Project |
+| 100个无冲突并发Run | 无全局锁热点、死锁、假成功或跨Session数据污染 |
+
 ## 17. 其他合理场景与异常矩阵
 
 | ID | 场景 | 正确动作 | 禁止动作 |

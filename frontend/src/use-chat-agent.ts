@@ -2,6 +2,7 @@ import { HttpAgent } from "@ag-ui/client";
 import type { Message } from "@ag-ui/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiErrorFromResponse } from "./api-client.js";
+import { createClientId } from "./client-id.js";
 import {
   type ChatWorkflowDispatch,
   type DispatchRecovery,
@@ -12,6 +13,7 @@ import {
   type RuntimeConnectionStatus,
 } from "./features/chat/chat-agent-contracts.js";
 import { useRuntimeReconnect } from "./features/chat/use-runtime-reconnect.js";
+import { AG_UI_URL, apiUrl } from "./runtime-config.js";
 import {
   cancelSessionRun,
   type ProductRun,
@@ -20,13 +22,10 @@ import {
   sessionControlForwardedProps,
 } from "./session-api.js";
 
-const DEFAULT_AGENT_URL = "http://127.0.0.1:8030/api/agent";
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:8030";
-
 function createThreadId(): string {
   // This remains an AG-UI correlation id until the reviewed Product Session
   // design supplies its server-owned identity and recovery boundary.
-  return crypto.randomUUID();
+  return createClientId();
 }
 
 function cloneMessages(messages: ReadonlyArray<Readonly<Message>>): Message[] {
@@ -78,7 +77,7 @@ export function useChatAgent({
   const [agent] = useState(
     () =>
       new HttpAgent({
-        url: import.meta.env.VITE_AG_UI_URL ?? DEFAULT_AGENT_URL,
+        url: AG_UI_URL,
         threadId: createThreadId(),
         description: "独立 AI 协作 Chat 产品",
       }),
@@ -137,9 +136,7 @@ export function useChatAgent({
     let status: DispatchRecovery["status"] = "outcome_unknown";
     let errorCode: string | null = null;
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL}/api/model-call-drafts/${review.draft_id}`,
-      );
+      const response = await fetch(apiUrl(`/api/model-call-drafts/${review.draft_id}`));
       if (response.ok) {
         const card = (await response.json()) as ModelCallReviewCard;
         status = card.attempt?.status === "failed" ? "failed" : "outcome_unknown";
@@ -227,8 +224,8 @@ export function useChatAgent({
       const text = content.trim();
       if (!text || agent.isRunning || pendingReview) return;
 
-      const messageId = crypto.randomUUID();
-      const runId = crypto.randomUUID();
+      const messageId = createClientId();
+      const runId = createClientId();
       activeAguiRunId.current = runId;
       messagesBeforePendingRun.current = cloneMessages(agent.messages);
       pendingUserMessageId.current = messageId;
@@ -273,7 +270,7 @@ export function useChatAgent({
     )
       return;
     const approvalId = pendingReview.approval_id;
-    const resumeRunId = crypto.randomUUID();
+    const resumeRunId = createClientId();
     activeAguiRunId.current = resumeRunId;
     lastApprovedReview.current = pendingReview;
     setPendingReview(null);
@@ -306,18 +303,15 @@ export function useChatAgent({
       setStatus("saving");
       setError(null);
       try {
-        const response = await fetch(
-          `${import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL}/api/model-call-drafts/${pendingReview.draft_id}`,
-          {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              expected_hash: pendingReview.binding_hash,
-              provider_id: providerId,
-              provider_request: providerRequest,
-            }),
-          },
-        );
+        const response = await fetch(apiUrl(`/api/model-call-drafts/${pendingReview.draft_id}`), {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            expected_hash: pendingReview.binding_hash,
+            provider_id: providerId,
+            provider_request: providerRequest,
+          }),
+        });
         if (!response.ok) {
           throw await apiErrorFromResponse(response, `保存修改失败：HTTP ${response.status}`);
         }
@@ -389,7 +383,7 @@ export function useChatAgent({
       setError(null);
       try {
         await agent.runAgent({
-          runId: crypto.randomUUID(),
+          runId: createClientId(),
           resume: [
             {
               interruptId: review.approval_id,

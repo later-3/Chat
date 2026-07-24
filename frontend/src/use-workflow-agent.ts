@@ -2,6 +2,8 @@ import { HttpAgent } from "@ag-ui/client";
 import type { Message } from "@ag-ui/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiErrorFromResponse } from "./api-client.js";
+import { createClientId } from "./client-id.js";
+import { apiUrl } from "./runtime-config";
 import {
   type GovernedReviewCard,
   governedReviewFromInterrupt,
@@ -23,8 +25,6 @@ export type WorkflowRunStatus =
   | "saving"
   | "succeeded"
   | "failed";
-
-const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? "http://127.0.0.1:8030";
 
 function cloneMessages(messages: ReadonlyArray<Readonly<Message>>): Message[] {
   return messages.map((message) => ({ ...message })) as Message[];
@@ -53,7 +53,7 @@ export function useWorkflowAgent({
     () =>
       new HttpAgent({
         url: workflowEndpointUrl(definition.endpoint),
-        threadId: crypto.randomUUID(),
+        threadId: createClientId(),
         description: definition.description,
       }),
   );
@@ -173,7 +173,7 @@ export function useWorkflowAgent({
       setError(null);
       runningChangeRef.current(true);
       try {
-        agent.addMessage({ id: crypto.randomUUID(), role: "user", content: text });
+        agent.addMessage({ id: createClientId(), role: "user", content: text });
         await agent.runAgent();
       } catch (runError) {
         if (!mounted.current) return;
@@ -231,18 +231,15 @@ export function useWorkflowAgent({
       setStatus("saving");
       setError(null);
       try {
-        const response = await fetch(
-          `${API_BASE_URL}/api/model-call-drafts/${pendingReview.draft_id}`,
-          {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              expected_hash: pendingReview.binding_hash,
-              provider_id: providerId,
-              provider_request: providerRequest,
-            }),
-          },
-        );
+        const response = await fetch(apiUrl(`/api/model-call-drafts/${pendingReview.draft_id}`), {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            expected_hash: pendingReview.binding_hash,
+            provider_id: providerId,
+            provider_request: providerRequest,
+          }),
+        });
         if (!response.ok) {
           throw await apiErrorFromResponse(response, `保存修改失败：HTTP ${response.status}`);
         }

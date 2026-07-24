@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
+import logging
+import re
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -23,6 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = PROJECT_ROOT / "backend"
 DEFAULT_CONFIG_PATH = BACKEND_ROOT / "config.json"
 DEFAULT_DATABASE_URL = f"sqlite+aiosqlite:///{(BACKEND_ROOT / '.data' / 'chat.db').as_posix()}"
+logger = logging.getLogger(__name__)
 
 
 class SettingsError(ValueError):
@@ -74,6 +79,37 @@ class PiRuntimeSettings:
             "allowed_working_roots": [str(path) for path in self.allowed_working_roots],
             "default_working_directory": str(self.default_working_directory),
         }
+
+    def health_view(self) -> dict[str, Any]:
+        """Return runtime readiness without exposing host filesystem paths."""
+
+        return {
+            "enabled": self.enabled,
+            "available": self.available,
+            "integration_mode": "jsonl_rpc_subprocess",
+            "provider_gate": "every_pi_model_call",
+            "tool_gate": "every_pi_internal_tool_call",
+            "allowed_working_root_count": len(self.allowed_working_roots),
+            "default_working_directory_configured": bool(self.default_working_directory),
+        }
+
+
+WORKSPACE_ROOT_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceRootSettings:
+    """Private startup declaration for one user-selectable filesystem root.
+
+    ``path`` is intentionally absent from every public projection. The
+    project-resources adapter resolves and validates it, while product records
+    retain only the stable key and an identity hash.
+    """
+
+    key: str
+    label: str
+    path: Path
+    source: str = "configured"
 
 
 def _record(value: object, *, field: str) -> dict[str, Any]:
@@ -390,6 +426,68 @@ def _pi_runtime(payload: dict[str, Any], *, host: str, port: int) -> PiRuntimeSe
     )
 
 
+def _workspace_roots(
+    payload: dict[str, Any],
+    *,
+    pi_runtime: PiRuntimeSettings,
+) -> tuple[WorkspaceRootSettings, ...]:
+    """Parse the common Root Catalog without changing the legacy pi contract."""
+
+    if "workspace_roots" not in payload:
+        if not pi_runtime.allowed_working_roots:
+            return ()
+        warnings.warn(
+            "workspace_roots未配置；本次启动只读提升pi_agent.allowed_working_roots，"
+            "请迁移到公共Workspace Root Catalog",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.warning(
+            "workspace_root_catalog_legacy_pi_roots count=%d",
+            len(pi_runtime.allowed_working_roots),
+        )
+        return tuple(
+            WorkspaceRootSettings(
+                key=f"legacy-{hashlib.sha256(str(path).encode('utf-8')).hexdigest()[:12]}",
+                label=f"兼容工作区 {index}",
+                path=path,
+                source="pi_compatibility",
+            )
+            for index, path in enumerate(pi_runtime.allowed_working_roots, start=1)
+        )
+
+    raw_roots = payload.get("workspace_roots")
+    if not isinstance(raw_roots, list):
+        raise SettingsError("workspace_roots必须是对象数组")
+    roots: list[WorkspaceRootSettings] = []
+    seen_keys: set[str] = set()
+    for index, raw_value in enumerate(raw_roots):
+        raw = _record(raw_value, field=f"workspace_roots[{index}]")
+        key = str(raw.get("key") or "").strip()
+        label = str(raw.get("label") or "").strip()
+        path_value = str(raw.get("path") or "").strip()
+        if not WORKSPACE_ROOT_KEY_PATTERN.fullmatch(key):
+            raise SettingsError(f"workspace_roots[{index}].key必须匹配[a-z][a-z0-9-]{{0,63}}")
+        if key in seen_keys:
+            raise SettingsError(f"workspace_roots存在重复key: {key}")
+        if not label or len(label) > 120:
+            raise SettingsError(f"workspace_roots[{index}].label必须为1到120个字符")
+        if not path_value:
+            raise SettingsError(f"workspace_roots[{index}].path不能为空")
+        path = Path(path_value).expanduser()
+        if not path.is_absolute():
+            raise SettingsError(f"workspace_roots[{index}].path必须是绝对路径")
+        seen_keys.add(key)
+        roots.append(
+            WorkspaceRootSettings(
+                key=key,
+                label=label,
+                path=path,
+            )
+        )
+    return tuple(roots)
+
+
 def _load_payload(path: Path) -> dict[str, Any]:
     try:
         value: Any = json.loads(path.read_text(encoding="utf-8"))
@@ -414,6 +512,7 @@ class Settings:
     default_model_provider: str | None = None
     database_url: str = DEFAULT_DATABASE_URL
     pi_runtime: PiRuntimeSettings = PiRuntimeSettings()
+    workspace_roots: tuple[WorkspaceRootSettings, ...] = ()
     observability: ObservabilitySettings = ObservabilitySettings()
 
     @property
@@ -474,6 +573,7 @@ class Settings:
             raise SettingsError("server.port必须是整数") from error
         host = str(server.get("host") or "127.0.0.1")
         pi_runtime = _pi_runtime(payload, host=host, port=port)
+        workspace_roots = _workspace_roots(payload, pi_runtime=pi_runtime)
         return cls(
             host=host,
             port=port,
@@ -485,6 +585,7 @@ class Settings:
             default_model_provider=default_provider_id,
             database_url=str(product_store.get("url") or DEFAULT_DATABASE_URL),
             pi_runtime=pi_runtime,
+            workspace_roots=workspace_roots,
             observability=_observability(payload),
         )
 
@@ -499,5 +600,6 @@ class Settings:
             model_base_url=None,
             database_url="sqlite+aiosqlite:///:memory:",
             pi_runtime=PiRuntimeSettings(),
+            workspace_roots=(),
             observability=ObservabilitySettings(log_level="WARNING", log_file=None),
         )

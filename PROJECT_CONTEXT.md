@@ -36,6 +36,11 @@ OPC-OS Chat外部系统
 
 Chat产品核心
   <-> 模型、工具、知识源与业务系统
+
+超级管理员
+  -> Super Admin Console
+  -> 受鉴权的运营查询API
+  -> 身份、使用活动、Project/Work、Artifact/Evidence和运行状态投影
 ```
 
 OPC-OS Chat 是一个可与本项目互操作的外部系统。在特定集成拓扑中，本项目可以提供聊天通道能力，也可以消费其共享能力；这是**系统之间的合同关系**，不是本项目的产品身份或层级归属。
@@ -80,7 +85,11 @@ Chat 是用户持续管理和推进自己学习、工作与想法的统一协作
 
 用户最小可感知价值是：**想法能留下，事项有状态，工作可继续，执行可看护，结果有证据。**
 
-Product Session只是服务端交互、恢复和访问控制容器，不是Project边界，也不是目标界面的主要导航单位。同一Project可以跨多个Product Session持续推进；同一Product Session也可以讨论多个事项。用户主要通过连续对话流、Conversation Day和协作日历找回历史；这些界面不改变Product Session、Message和Run的来源关系，也不把完整历史无边界装入模型Context。用户选择的上下文面板是Product Harness已有信息的友好投影，不另建第二套知识源。
+Chat自身也是这套能力必须能够承载的普通软件Project。用户应能用同一套Harness、主Workflow、受治理执行层和Evidence完成“Chat开发Chat”，并跨天继续；这不建立特殊`SelfProject`或绕过产品提交门，而是用真实Dogfood证明系统能够认识目标、准备工作、隔离执行、验证结果和持续维护状态。
+
+Product Session只是服务端交互、恢复和访问控制容器，不是Project边界，也不是目标界面的主要导航单位。同一Project可以跨多个Product Session持续推进；同一Product Session也可以讨论多个事项。同一Principal/Scope下的多个Product Session共享同一套Harness权威事实，可以并行推进不同Project、同一Project的不同Work，或在可见冲突治理下推进同一资源。Project代码仓库或物理目录只是Harness资源，不是另起Chat部署或切断用户全局知识的边界。
+
+用户主要通过连续对话流、Conversation Day和协作日历找回历史；这些界面不改变Product Session、Message和Run的来源关系，也不把完整历史无边界装入模型Context。跨Session并发不依赖跨模型或Tool调用的全局长锁：产品修改绑定读取revision、写集合、来源Session/Interaction/Run和CAS提交门；相关事实已被其他Session推进时，系统刷新无冲突Context，或向用户展示Diff并重新规划、合并、保留产物但不提交状态或停止当前Run。用户选择的上下文面板是Product Harness已有信息的友好投影，不另建第二套知识源。
 
 ### 4.2 设计者眼中的系统
 
@@ -116,6 +125,23 @@ Chat Harness不是大Prompt、MAF的Harness Agent、万能Service或前端面板
 Conversation、Work、Knowledge、Protocol、Context、Governance、Evidence和Delivery的状态所有权、
 事务边界与失败语义拆分。完整概念边界见
 [Chat系统与Chat Harness](./概念空间/Chat/Chat系统与Harness.md)。
+
+### 4.4 超级管理员眼中的产品
+
+Chat作为独立运营的产品，必须提供单独的超级管理员运营看护能力。超级管理员经过真实身份认证和
+角色授权后，可以按用户、时间和事项查看：
+
+1. 哪些用户登录过、认证会话何时开始/结束、最后一次可信活动是什么时候。
+2. 登录会话时长、浏览器前台活跃时长、有效协作活动以及Run/Provider/Tool耗时；这些指标分别
+   计算和展示，不能互相冒充。
+3. 每个用户的Project、Work、Plan和Action当前状态、最近推进、阻塞、下一行动和更新时间。
+4. Artifact/Evidence的创建、版本、验证、有效性和交付状态，以及需要人工关注的失败或长期停滞。
+5. 指标来源、数据新鲜度、缺失或未知原因；超级管理员的敏感查看和后续管理动作本身也必须留有审计。
+
+超级管理员运营看护台是权威事实的受控查询投影，不是另一套Project进度、Artifact状态或用户身份
+数据库。个人主页用于用户回顾自己的工作，Workflow Run View用于用户看护自己的执行，两者都不能
+替代超级管理员跨用户运营视角。完整概念边界见
+[超级管理员与运营看护](./概念空间/Chat/超级管理员与运营看护.md)。
 
 ## 5. 核心目标
 
@@ -172,6 +198,10 @@ Conversation、Work、Knowledge、Protocol、Context、Governance、Evidence和D
 | 对象 | 责任 |
 |---|---|
 | Principal | 用户、服务或外部主体的稳定身份与授权上下文 |
+| Role / Grant | Principal被授予的角色和权限范围；超级管理员能力必须由服务端可信授权产生 |
+| Authentication Session | 一次真实登录凭据的签发、活跃、过期、撤销和结束生命周期；不是Product Session |
+| User Activity Window | 依据前台心跳和有意义产品事件形成、带计算口径与置信度的使用活动时间段 |
+| Super Admin Audit Event | 超级管理员查询敏感元数据、查看受限内容或执行管理动作的不可抵赖审计记录 |
 | Channel | 交互入口的能力、来源身份和协议边界 |
 | Channel Binding | 外部会话、来源身份与 Product Session 之间可撤销、可授权的映射 |
 | Product Session | 用户可创建、打开、归档和恢复的协作容器 |
@@ -191,6 +221,7 @@ Conversation、Work、Knowledge、Protocol、Context、Governance、Evidence和D
 | Run Attempt | Product Run 的一次实际执行尝试、Worker 所有权和恢复血缘 |
 | Tool Execution | 一次工具调用的请求、权限、幂等键、副作用和对账状态 |
 | Evidence | 对结果、状态或操作的可验证证据及其来源关系 |
+| Artifact | 文件、代码、报告、白板或其他可保存、版本化、验证和交付的作品/产物 |
 | Delivery | 结果向用户或下游交付的状态、回执和重试语义 |
 | Memory | 经候选门确认后可跨会话使用的信息及来源、版本和有效性 |
 | Trace | 可观察步骤、状态变化、错误、关联关系和审计记录 |
@@ -244,6 +275,8 @@ Chat使用[概念资产索引](./概念空间/00-索引.md)维护人、AI、产�
 13. 用户、Chat与执行层遵守同一协作语义，但接收不同投影：用户拥有目标、选择和接受权；Chat拥有流程、治理和产品提交；执行层只拥有当前步骤所需输入和能力。
 14. 系统必须区分权威产品事实、用户决定、模型候选和外部证据。只有满足相应提交门的内容才能改变长期状态。
 15. 摘要和检索索引是可重建派生物。原始Message、已接受产品事实和来源关系不能被摘要覆盖，也不能因索引失败而丢失。
+16. 超级管理员可以运营看护全体用户和作品，但其权限必须显式授予、最小披露并全程审计；高权限不等于默认读取全部对话正文、Prompt、密钥或隐藏推理。
+17. 运营聚合和看护视图是可重建投影。登录事实由Identity拥有，Project/Work事实由Product Harness拥有，Artifact/Evidence事实由Evidence模块拥有，任何运营页面都不能成为第二写者。
 
 ## 9. 完整产品能力范围
 
@@ -261,6 +294,8 @@ Chat 的目标能力至少包括：
 10. Evidence、Delivery、Trace、审计、可观测性和故障处置。
 11. 模型、工具、知识源和外部业务系统集成。
 12. 通过具体Channel Adapter接入Telegram等终端平台，并通过独立Bridge Adapter与OPC-OS Chat互操作，实现授权映射和跨入口连续性。
+13. 真实Principal、Role/Grant和Authentication Session，以及超级管理员运营看护台：跨用户查看登录、使用时长、Project/Work/Artifact进度、阻塞、异常和数据新鲜度，并审计敏感访问。
+14. 把Chat自身作为普通软件Project进行真实Dogfood：关联版本化Repository资源，在隔离工作区由受治理执行层修改和验证，以Artifact/Evidence和用户决定完成结果与状态提交。
 
 这些能力最终至少要覆盖以下用户体验：
 
@@ -274,6 +309,8 @@ Chat 的目标能力至少包括：
 8. 把复杂工作拆成步骤交给pi等执行层，逐步授权、观察、纠正和验证。
 9. 在一句话包含多个意图时分别建立Context和结果，不互相污染，也允许部分成功。
 10. 在断线、进程退出、并发修改、Provider或Tool结果未知时恢复或请求人工处置，不制造假成功。
+11. 超级管理员能够确定谁登录、使用了多久、正在推进哪些Project/Work、产生了哪些Artifact、进度依据是什么，以及哪些用户、作品或运行需要人工关注。
+12. 用户能够让Chat持续开发Chat自身，并看见它采用的项目事实、仓库基线、执行步骤、Tool副作用、验证证据、代码合入和后续状态；当前运行环境不会被未审核改动直接污染。
 
 上述是目标能力全集，不代表一次性交付。实现顺序、依赖和每个阶段的可承诺保证只由`PROJECT_PLAN.md`及专项路线维护，不能反向修改本节产品范围。
 

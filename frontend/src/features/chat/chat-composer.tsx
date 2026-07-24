@@ -11,6 +11,7 @@ interface RetrySource {
 
 interface ChatComposerProps {
   activeSessionAvailable: boolean;
+  browserOnline: boolean;
   connectionStatus: RuntimeConnectionStatus;
   draft: string;
   onCancelRetry: () => void;
@@ -37,6 +38,7 @@ const CONNECTION_LABELS: Record<RuntimeConnectionStatus, string> = {
 
 export function ChatComposer({
   activeSessionAvailable,
+  browserOnline,
   connectionStatus,
   draft,
   onCancelRetry,
@@ -107,7 +109,9 @@ export function ChatComposer({
             <button
               aria-label="发送"
               className="send-button"
-              disabled={!draft.trim() || status !== "idle" || !activeSessionAvailable}
+              disabled={
+                !draft.trim() || status !== "idle" || !activeSessionAvailable || !browserOnline
+              }
               type="submit"
             >
               <ArrowUp size={20} />

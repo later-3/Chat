@@ -44,6 +44,32 @@ interface AddedSource {
   title: string;
 }
 
+const CONTEXT_SOURCE_LABELS: Record<string, string> = {
+  repository_directory: "仓库轻量目录",
+  repository_snapshot: "代码基线快照",
+  repository_governance: "仓库治理正文",
+  repository_governance_manifest: "可选治理文档",
+  project_directory: "Project目录",
+  project: "Project",
+  work_item: "Work",
+  task_plan: "Plan",
+  action_item: "Action",
+  note: "Note",
+  accepted_memory: "已接受Memory",
+  turn_summary: "回合重点",
+  user_override: "用户修改副本",
+};
+
+function ContextSourceMeta({ item }: { item: ContextItem }) {
+  return (
+    <small className="context-source-meta">
+      <span>{CONTEXT_SOURCE_LABELS[item.source_kind] ?? item.source_kind}</span>
+      {item.source_revision && <code>{item.source_revision.slice(0, 10)}</code>}
+      <span>{item.selection_origin === "human" ? "你选择" : "系统建议"}</span>
+    </small>
+  );
+}
+
 function ReadableValue({ value }: { value: unknown }) {
   if (value === null || value === undefined || value === "")
     return <span className="harness-empty-inline">未设置</span>;
@@ -532,6 +558,9 @@ function EditableSource({
           <span>
             <strong>{item.title}</strong>
             <small>{item.adopted ? "会进入本轮" : "本轮不采用"}</small>
+            {item.source_kind === "repository_governance_manifest" && (
+              <small>勾选后由服务端核对Snapshot并载入正文</small>
+            )}
           </span>
         </label>
         <button
@@ -653,6 +682,7 @@ export function ContextInspector({
           locked: item.locked,
           content: item.content,
           reason: item.reason,
+          materialize: item.source_kind === "repository_governance_manifest" && item.adopted,
         })),
         added_source_refs: addedSources.map((source) => ({
           source_kind: source.source_kind,
@@ -833,6 +863,7 @@ export function ContextInspector({
                       </span>
                       <small>{item.token_estimate} Tokens</small>
                     </header>
+                    <ContextSourceMeta item={item} />
                     <p>{item.reason}</p>
                     <details className="progressive-details">
                       <summary>
@@ -864,6 +895,7 @@ export function ContextInspector({
                       <strong>{item.title}</strong>
                       <small>{item.token_estimate} Tokens</small>
                     </header>
+                    <ContextSourceMeta item={item} />
                     <p>{item.reason}</p>
                   </article>
                 ))}

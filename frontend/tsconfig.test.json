@@ -7,5 +7,5 @@
     "tsBuildInfoFile": ".test-dist/tsconfig.test.tsbuildinfo",
     "types": ["vite/client", "node"]
   },
-  "include": ["src/features/harness/harness-presentation.ts", "src/features/session/session-identifier.ts", "src/model-call-review-logic.ts", "src/session-api.ts", "src/use-chat-agent.ts", "src/workflow-api.ts", "src/workflow-progress.ts", "src/workflow-run-projection.ts", "tests/**/*.ts"]
+  "include": ["src/client-id.ts", "src/features/harness/harness-presentation.ts", "src/features/session/session-identifier.ts", "src/features/chat/use-runtime-reconnect.ts", "src/model-call-review-logic.ts", "src/runtime-config.ts", "src/session-api.ts", "src/use-chat-agent.ts", "src/workflow-api.ts", "src/workflow-progress.ts", "src/workflow-run-projection.ts", "tests/**/*.ts"]
 }

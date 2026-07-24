@@ -1,7 +1,7 @@
 # Chat 总体架构源码研究与推导
 
-> 状态：待用户审核
-> 更新日期：2026-07-21
+> 状态：总体架构主体已于2026-07-24获用户批准；同日新增的超级管理员运营看护目标已确认，详细Schema、API、指标和隐私规则仍待专项设计审核
+> 更新日期：2026-07-24
 > 研究对象：pi、nanobot、QwenPaw、LibreChat，以及已批准的 MAF + AG-UI 技术路线
 > 目的：从参考项目的真实模块和调用关系出发，推导 Chat 的架构与模块；本文不进行 Schema 和代码详细设计。
 
@@ -22,7 +22,7 @@
 | S1 | 固定提交中的源码、类型、测试或配置 | 证明参考项目当前实现 |
 | S2 | 参考项目仓库内说明与注释 | 辅助解释意图，不能覆盖源码 |
 | P1 | Chat 已批准的产品问题、对象和技术路线 | 决定本项目必须具备的能力 |
-| D1 | 基于 S1 + P1 得出的架构决策 | 本轮待审核内容，不冒充参考项目事实 |
+| D1 | 基于 S1 + P1 得出的架构决策 | 本项目架构决定，不冒充参考项目事实；是否已批准以对应章节和`PROJECT_STATE.md`为准 |
 
 ## 2. 固定版本和知识记录
 
@@ -68,6 +68,26 @@
 | `HttpAgent`订阅Message变化，`MessageBubble`渲染文本 | `use-chat-agent.ts`、`App.tsx` | AG-UI事件怎样显示到React | 刷新后的服务端历史恢复 |
 
 因此目标主链应保留已验证的`HttpAgent → AG-UI Endpoint → MAF Workflow → Model Call Gateway → Provider → AG-UI`脊柱，在其前后补齐产品接纳、Store、Tool治理、候选解析、Finalization和Delivery，而不是再建另一条并行Agent协议。
+
+### 2.3 2026-07-24超级管理员运营看护补充证据
+
+本节回答“谁登录了、使用多久、工作和作品推进到哪里”是否已经被现有模块覆盖。它没有扩大正式
+外部参考集，也不拿邻近功能冒充完整运营看护。
+
+| 证据类型 | 直接事实 | 证据路径 | 结论 |
+|---|---|---|---|
+| 当前Chat源码 | `ProductSessionService`仍使用固定`local-user` Scope；没有认证会话、Role/Grant或跨用户运营API | `backend/app/product_sessions/service.py`、`PROJECT_STATE.md` | 当前无法可信回答“谁登录了” |
+| 当前Chat源码 | HTTP、Provider、Tool和Run已有技术耗时，但没有浏览器前台活跃区间或有效协作时间 | `backend/app/observability/`、Run/Provider/Tool查询 | 机器耗时不能冒充人的使用时长 |
+| 当前Chat源码 | Project、WorkItem、TaskPlan和PlanNode已有权威领域对象，学习进度可由完成/总量查询得到 | `backend/app/harness/models.py`、`backend/app/harness/queries.py` | 管理员进度必须查询或投影这些事实，不能另建进度表 |
+| 当前Chat状态 | 独立Artifact/Evidence生命周期尚未实现 | `PROJECT_STATE.md`第5节 | “作品进度”当前不能被完整、可信地计算 |
+| 旧项目相邻实现 | 旧`opc-os/chat`有System View和`/api/dashboard`，展示Session、Interaction、Active Work、Memory及单次交互技术耗时 | `/Users/xulater/Code/opc-os/chat/frontend/src/App.tsx`、`backend/ops_os/api.py` | 可参考汇总呈现，但它是单用户执行/资源视图，不支持真实登录、人的活跃时长或管理员访问审计 |
+| 当前交互原型 | 个人主页原型展示模拟Project进度和近期产出 | `prototypes/chat-uiux-v1/src/App.jsx` | 个人首页只服务当前用户，且模拟数据不能替代超级管理员跨用户视角 |
+| P1产品决定 | 用户明确确认该能力属于超级管理员且必须加入Chat | 2026-07-24用户审核 | 这是Chat自身运营需求，不需要伪装成参考项目原生模块 |
+
+本次已完成的pi、nanobot、QwenPaw与LibreChat限定研究没有覆盖“真实身份登录 + 人的使用时长 +
+跨用户Project/Work/Artifact进度 + 管理员敏感访问审计”的完整链路，结论是**未涉及**。旧项目只提供
+相邻展示证据，不能为目标身份、隐私或指标口径背书。基于现有P1要求可以完成模块归属；详细设计
+如果出现认证、隐私分析或多租户治理知识缺口，再按新增参考项目审核门申请，不在本轮自动扩充。
 
 ## 3. pi：通用运行内核与具体产品协调分开
 
@@ -282,7 +302,7 @@ flowchart LR
 
 ## 8. 参考项目明确没有覆盖的Chat问题
 
-这 7 项不能伪装成“参考项目已经证明”：
+这 8 项不能伪装成“参考项目已经证明”：
 
 1. 多意图识别、纠正与确认。
 2. WorkItem、ActionItem和TaskPlan的跨回合生命周期。
@@ -291,6 +311,7 @@ flowchart LR
 5. Evidence来源、版本、有效性和来源删除后的失效传播。
 6. Delivery回执、重试和“已生成但未送达”的区分。
 7. OPC-OS Chat等外部系统的Channel Binding、授权和双边事实归属。
+8. 超级管理员真实登录、人的使用时长、跨用户工作/作品运营看护和敏感访问审计。
 
 这些能力来自Chat已批准的6个问题和完整产品闭环。参考项目只能提供相邻结构：pi/nanobot提供回合和Tool边界，QwenPaw提供Web/Channel/统一请求与治理边界，LibreChat提供产品资源、Job和提交顺序；最终模块仍需由Chat自身需求决定。
 
@@ -310,6 +331,7 @@ flowchart LR
 | D10 | 正常Final在Message保存后发布 | 用户看到完成时必须已有可读结果和证据 | 建立`Evidence模块`并定义Finalization Gate | Runtime返回文本不等于结果来源、附件和操作证据已持久化 |
 | D11 | Session保存不等于Channel送达 | Web断线、外部Channel失败后仍要知道交付状态 | 建立`Delivery模块` | 把“生成成功”当“用户已收到”会造成假完成 |
 | D12 | LibreChat入口有权限链；QwenPaw区分ACL sender、session_id和AgentRequest | 外部身份与Product Session绑定必须可撤销、可审计 | 建立`Identity与Channel Binding模块` | 把threadId/chatId当权限凭据会形成越权风险 |
+| D13 | 当前Chat只有固定Scope和技术耗时；Product Harness已拥有Work事实，Artifact仍待实现；参考项目研究未涉及完整管理员看护 | 独立运营的Chat必须回答谁登录、真实使用情况、工作/作品进度和需要关注的异常，同时避免双重事实源和敏感内容越权 | 扩展`Identity`拥有Role/Grant与Authentication Session；新增`Super Admin Operations模块`拥有活动事件、使用聚合、跨模块可重建运营投影和管理员审计 | 塞入Observability会混淆人类使用与机器运行；塞入Harness会让身份/活动/审计依附Project；前端或管理员直读数据库会绕过授权、口径和审计 |
 
 ## 10. 推导后的架构分组
 
@@ -334,12 +356,13 @@ flowchart LR
 12. Tool执行。
 13. Evidence。
 14. Delivery。
+15. Super Admin Operations。
 
 ### 10.3 运行与基础设施适配器
 
-15. MAF运行适配器：AgentSession、History Provider、Workflow/Checkpoint和模型流式运行接合。
-16. Product Store、Runtime Store、Event Transport、Artifact Store的实现。
-17. Execution Worker、Scheduler/Reconciler、Delivery Worker等进程角色。
+16. MAF运行适配器：AgentSession、History Provider、Workflow/Checkpoint和模型流式运行接合。
+17. Product Store、Runtime Store、Event Transport、Artifact Store的实现。
+18. Execution Worker、Scheduler/Reconciler、Delivery Worker等进程角色。
 
 这里的编号不是目录数量，也不是要求每个模块部署成微服务。模块先代表代码依赖、状态所有权和合同边界；同一FastAPI进程可以承载多个模块，但不能因此合并它们的事实。
 
@@ -419,6 +442,7 @@ flowchart LR
 | 从OPC-OS Chat进入 | OPC-OS Chat→OPC-OS Bridge Adapter→Channel Adapter Host→Interaction Ingress→Identity/Binding→同一协调链→Delivery→Bridge | 外部系统不能直接调用产品模块；双方事实源、协议终止和回执明确 |
 | 从Telegram进入 | Telegram平台→Telegram Adapter→Channel队列→Interaction Ingress→同一协调链→Delivery→Telegram Adapter | Telegram SDK、sender/chat、群聊、渲染和平台回执止于Adapter |
 | 来源被删除或权限撤销 | Evidence→Memory/Context失效→Conversation提示 | 派生结论保留历史但降级有效性，后续Context不再静默使用 |
+| 超级管理员看护用户与作品 | Super Admin Console→Web/API Adapter→Identity/Role Guard→Super Admin Operations→Identity活动事实 + Harness Work事实 + Evidence Artifact事实→管理员审计 | 登录、前台活跃、有效协作和机器耗时口径分开；进度来自权威模块；投影延迟显示`stale/unknown`；普通用户不可调用，敏感内容读取另行授权并留审计 |
 
 任何一个场景如果只能写成“模块A调用模块B”，却说不出持久状态、失败点和用户看到什么，就不能算架构完成。
 
@@ -431,6 +455,9 @@ flowchart LR
 5. OPC-OS Chat的正式身份、能力、消息、幂等和回执合同尚未取得。
 6. Tool的幂等查询、补偿和结果未知处理必须按具体Tool类型设计，不能通用猜测。
 7. OPC-OS Chat是否统一托管Telegram等Channel Adapter，还是Chat部署自己的具体Adapter，必须依据系统间正式合同决定；逻辑上两种部署都只能通过Interaction Ingress。
+8. Authentication Session、多设备、前台心跳、空闲阈值和有效协作事件的产品口径尚待详细设计。
+9. 超级管理员默认可见字段、敏感正文的额外Grant、隐私告知、保留期限、导出与审计不可篡改边界尚待安全与产品审核。
+10. Project/Work/Artifact运营投影的延迟目标、重建方式和大规模查询容量尚待验证。
 
 ## 14. 研究结论
 
@@ -450,6 +477,12 @@ Collaboration + Context + Memory
 Run Manager → MAF Runtime Adapter → Tool Operations
         ↓
 Evidence → Conversation Finalization → Delivery
+
+Super Admin Console → Identity/Role Guard → Super Admin Operations
+        ↓只读关联
+Identity活动事实 + Harness Work事实 + Evidence Artifact事实 + Run/Delivery异常
+        ↓
+可重建运营投影 + Super Admin Audit
 ```
 
 这条链是下一份架构候选的来源。每个模块的内部组成、状态所有权、合同、失败与场景映射在`overall-architecture-proposal.md`中展开。

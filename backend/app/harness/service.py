@@ -80,7 +80,7 @@ from .models import (
     TaskPlanRevisionRecord,
     WorkItemRecord,
 )
-from .queries import HarnessContextQueryService
+from .queries import ContextContributor, HarnessContextQueryService
 
 
 class HarnessService:
@@ -93,6 +93,7 @@ class HarnessService:
         scope_id: str = DEFAULT_SCOPE_ID,
         principal_id: str = "local-user",
         clock: Callable[[], datetime] = utc_now,
+        context_contributors: Sequence[ContextContributor] = (),
     ) -> None:
         self.database = database
         self.scope_id = scope_id
@@ -107,6 +108,7 @@ class HarnessService:
             database,
             scope_id=scope_id,
             resources=self,
+            contributors=context_contributors,
         )
 
     async def initialize(self) -> None:
@@ -1810,6 +1812,20 @@ class HarnessService:
     async def latest_context_package(self, session_id: str) -> dict[str, Any] | None:
         return await self.context_queries.latest_context_package(session_id)
 
+    async def context_package_for_run(
+        self,
+        *,
+        run_id: str,
+        stage: str,
+    ) -> dict[str, Any] | None:
+        return await self.context_queries.context_package_for_run(
+            run_id=run_id,
+            stage=stage,
+        )
+
+    async def context_package_by_id(self, package_id: str) -> dict[str, Any] | None:
+        return await self.context_queries.context_package_by_id(package_id)
+
     async def directory_context_items(
         self,
         *,
@@ -1823,8 +1839,18 @@ class HarnessService:
             max_projects=max_projects,
         )
 
-    async def detailed_context_items(self, project_id: str) -> list[dict[str, Any]]:
-        return await self.context_queries.detailed_context_items(project_id)
+    async def detailed_context_items(
+        self,
+        project_id: str,
+        *,
+        prompt: str = "",
+        scenario: str = "",
+    ) -> list[dict[str, Any]]:
+        return await self.context_queries.detailed_context_items(
+            project_id,
+            prompt=prompt,
+            scenario=scenario,
+        )
 
     async def learning_tracks(self) -> list[dict[str, Any]]:
         return await self.context_queries.learning_tracks()

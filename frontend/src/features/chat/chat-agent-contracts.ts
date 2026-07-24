@@ -26,7 +26,7 @@ export interface EffectiveContextView {
   instructions: unknown;
   messages: unknown[];
   history_and_knowledge: ContextSourceView[];
-  knowledge_sources: unknown[];
+  knowledge_sources: KnowledgeSourceView[];
   tools: unknown[];
   model_parameters: Record<string, unknown>;
   continuation: Record<string, unknown> | null;
@@ -42,6 +42,19 @@ export interface EffectiveContextView {
   };
   model_capabilities: ModelCapabilities;
   adoption_reasons: Record<string, string>;
+}
+
+export interface KnowledgeSourceView {
+  source_type: string;
+  source_id: string;
+  source_revision: string | null;
+  source_label: string;
+  adoption_reason: string;
+  selection_origin: string;
+  modified_in_review: boolean;
+  token_estimate?: number;
+  content?: unknown;
+  content_mode?: "full" | "reference_only";
 }
 
 export interface ContextSourceView {
@@ -113,6 +126,9 @@ export interface ModelCallReviewCard {
     tool_name?: string;
     config_revision?: number;
     allowed_tool_names?: string[];
+    context_package_id?: string | null;
+    repository_source_revisions?: Array<Record<string, unknown>>;
+    context_freshness?: Record<string, unknown>;
   };
   provider_catalog: ModelProviderOption[];
   effective_context: EffectiveContextView;

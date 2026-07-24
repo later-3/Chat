@@ -30,6 +30,18 @@ ALLOWED_LICENSES = {
     "MIT OR Apache-2.0",
 }
 
+# These non-baseline licenses were reviewed for the exact packages that use
+# them. Keeping the waiver package-scoped prevents an unrelated dependency
+# from inheriting a broad license-shaped exception.
+REVIEWED_LICENSE_EXCEPTIONS = {
+    # Build-time browser compatibility data. CC-BY-4.0 permits redistribution
+    # and adaptation with attribution; the package license remains in npm's
+    # installed metadata and is re-reviewed on dependency upgrade.
+    ("caniuse-lite", "CC-BY-4.0"),
+    # Type-only development dependency dual-licensed under permissive choices.
+    ("type-fest", "(MIT OR CC0-1.0)"),
+}
+
 # AG-UI 0.0.57 packages omit the license field from their published package
 # metadata. Their pinned upstream repository is MIT licensed; keep this
 # exception narrow and re-review it on dependency upgrade.
@@ -60,7 +72,10 @@ def main() -> int:
             if name not in MISSING_METADATA_EXCEPTIONS:
                 violations.append(f"{name}: missing license metadata")
             continue
-        if license_name not in ALLOWED_LICENSES:
+        if (
+            license_name not in ALLOWED_LICENSES
+            and (name, license_name) not in REVIEWED_LICENSE_EXCEPTIONS
+        ):
             violations.append(f"{name}: unreviewed license {license_name}")
 
     if violations:

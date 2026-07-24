@@ -14,6 +14,7 @@ from typing import Any, Callable, Mapping
 from agent_framework import Case, CheckpointStorage, Default, WorkflowBuilder
 
 from ..agent_profiles import AgentProfileSnapshot
+from ..collaboration_contexts import CollaborationContextService
 from ..collaboration_intents import CollaborationIntentService
 from ..collaboration_protocols import CollaborationProtocolService
 from ..governance.service import ExecutionGovernanceService
@@ -21,6 +22,7 @@ from ..harness import HarnessService
 from ..model_call_review import InMemoryModelCallReviewStore
 from ..model_call_workflow import ProviderTransport
 from ..product_sessions.service import ProductSessionService
+from ..project_resources.context import RepositorySourceFreshnessGuard
 from .continuous_chat_contracts import CollaborationState
 from .continuous_chat_prompts import (
     intent_task,
@@ -46,6 +48,7 @@ class ContinuousWorkflowComponents:
     protocol_resolver: type[Any]
     router: type[Any]
     detail_context: type[Any]
+    context_revision: type[Any]
     project_catalog: type[Any]
     execution_draft_compiler: type[Any]
     run_spec_compiler: type[Any]
@@ -71,6 +74,8 @@ def build_continuous_collaboration_workflow(
     harness: HarnessService | None = None,
     collaboration_protocols: CollaborationProtocolService | None = None,
     collaboration_intents: CollaborationIntentService | None = None,
+    collaboration_contexts: CollaborationContextService | None = None,
+    repository_freshness: RepositorySourceFreshnessGuard | None = None,
     checkpoint_storage: CheckpointStorage | None = None,
 ):
     """Build the versioned graph without mutating product or runtime state."""
@@ -78,6 +83,7 @@ def build_continuous_collaboration_workflow(
     harness = harness or HarnessService(sessions.database)
     collaboration_protocols = collaboration_protocols or CollaborationProtocolService(sessions.database)
     collaboration_intents = collaboration_intents or CollaborationIntentService(sessions.database)
+    collaboration_contexts = collaboration_contexts or CollaborationContextService(sessions.database)
     decision_specs = components.decision_specs()
     intake = components.intake(
         thread_id=thread_id,
@@ -99,6 +105,16 @@ def build_continuous_collaboration_workflow(
         run_id=run_id,
         sessions=sessions,
         governance=governance,
+        harness=harness,
+        collaboration_contexts=collaboration_contexts,
+    )
+    directory_context_revision = components.context_revision(
+        node_id="directory_context_revision",
+        stage="directory",
+        thread_id=thread_id,
+        run_id=run_id,
+        sessions=sessions,
+        harness=harness,
     )
     intent = components.semantic_agent(
         profile=profiles["intent_router"],
@@ -112,6 +128,7 @@ def build_continuous_collaboration_workflow(
         governance=governance,
         task_builder=intent_task,
         result_kind="intent",
+        repository_freshness=repository_freshness,
     )
     intent_projection = components.intent_projection(
         thread_id=thread_id,
@@ -153,6 +170,22 @@ def build_continuous_collaboration_workflow(
         sessions=sessions,
         harness=harness,
     )
+    detail_context_decision = components.decision(
+        node_id="detail_context_adoption",
+        spec=decision_specs["detail_context_adoption"],
+        thread_id=thread_id,
+        run_id=run_id,
+        sessions=sessions,
+        governance=governance,
+    )
+    detail_context_revision = components.context_revision(
+        node_id="detail_context_revision",
+        stage="detail",
+        thread_id=thread_id,
+        run_id=run_id,
+        sessions=sessions,
+        harness=harness,
+    )
     protocol_resolver = components.protocol_resolver(
         thread_id=thread_id,
         sessions=sessions,
@@ -175,6 +208,7 @@ def build_continuous_collaboration_workflow(
         governance=governance,
         task_builder=plan_task,
         result_kind="plan",
+        repository_freshness=repository_freshness,
     )
     plan_decision = components.decision(
         node_id="plan_acceptance",
@@ -216,6 +250,7 @@ def build_continuous_collaboration_workflow(
         governance=governance,
         task_builder=response_task,
         result_kind="response",
+        repository_freshness=repository_freshness,
     )
     result_decision = components.decision(
         node_id="result_commit",
@@ -259,6 +294,7 @@ def build_continuous_collaboration_workflow(
         governance=governance,
         task_builder=summary_task,
         result_kind="summary",
+        repository_freshness=repository_freshness,
     )
     clarification = components.clarification(thread_id=thread_id, sessions=sessions)
     summary_persist = components.summary_persist(
@@ -279,14 +315,17 @@ def build_continuous_collaboration_workflow(
         .add_edge(intake, candidates)
         .add_edge(candidates, directory_context)
         .add_edge(directory_context, context_decision)
-        .add_edge(context_decision, intent)
+        .add_edge(context_decision, directory_context_revision)
+        .add_edge(directory_context_revision, intent)
         .add_edge(intent, intent_projection)
         .add_edge(intent_projection, intent_decision)
         .add_edge(intent_decision, intent_acceptance)
         .add_edge(intent_acceptance, project_resolver)
         .add_edge(project_resolver, project_decision)
         .add_edge(project_decision, detail_context)
-        .add_edge(detail_context, protocol_resolver)
+        .add_edge(detail_context, detail_context_decision)
+        .add_edge(detail_context_decision, detail_context_revision)
+        .add_edge(detail_context_revision, protocol_resolver)
         .add_edge(protocol_resolver, router)
         .add_switch_case_edge_group(
             router,

@@ -29,6 +29,15 @@ function cloneMessages(messages: ReadonlyArray<Readonly<Message>>): Message[] {
   return messages.map((message) => ({ ...message })) as Message[];
 }
 
+export function runtimeReconnectDelayMs(failureCount: number, browserOnline = true): number {
+  if (!browserOnline) return 1_000;
+  return Math.min(5_000, 400 * 2 ** Math.max(0, failureCount - 1));
+}
+
+function browserOnline(): boolean {
+  return typeof navigator === "undefined" || navigator.onLine;
+}
+
 /**
  * Reattaches React to the durable Runtime Journal without taking ownership of
  * Product Run state. Closing this effect only stops observation; the Worker
@@ -72,6 +81,7 @@ export function useRuntimeReconnect({
       lastTerminal: null,
     };
     let cursor: string | undefined;
+    let reconnectFailures = 0;
 
     const reconnect = async () => {
       onStatus("running");
@@ -81,6 +91,8 @@ export function useRuntimeReconnect({
         try {
           const response = await getRuntimeEvents(runtimeJob.id, cursor);
           if (cancelled) return;
+          reconnectFailures = 0;
+          onError(null);
           if (response.events.length > 0) {
             onConnectionStatus("replaying");
             replay = replayRuntimeEvents(replay, response.events);
@@ -147,10 +159,18 @@ export function useRuntimeReconnect({
             onSessionSettledRef.current(true);
             return;
           }
-          onStatus("error");
-          onConnectionStatus("idle");
-          onError(message);
-          return;
+          reconnectFailures += 1;
+          onConnectionStatus("reconnecting");
+          if (reconnectFailures >= 2) {
+            onError(
+              browserOnline()
+                ? "活动Run连接暂时中断，正在重试；这不会取消服务端执行。"
+                : "设备当前离线，活动Run仍由服务端继续；联网后将自动补齐事件。",
+            );
+          }
+          await new Promise((resolve) =>
+            window.setTimeout(resolve, runtimeReconnectDelayMs(reconnectFailures, browserOnline())),
+          );
         }
       }
     };

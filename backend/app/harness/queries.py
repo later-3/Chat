@@ -68,6 +68,25 @@ class HarnessResourceQueries(Protocol):
     ) -> dict[str, Any]: ...
 
 
+class ContextContributor(Protocol):
+    """Read-only extension point for bounded, attributable Context sources."""
+
+    async def directory_context_items(
+        self,
+        *,
+        prompt: str,
+        projects: Sequence[Mapping[str, Any]],
+    ) -> list[dict[str, Any]]: ...
+
+    async def detailed_context_items(
+        self,
+        *,
+        project_id: str,
+        prompt: str,
+        scenario: str,
+    ) -> list[dict[str, Any]]: ...
+
+
 class HarnessContextQueryService:
     """Assemble bounded Context views without mutating Harness resources."""
 
@@ -77,10 +96,12 @@ class HarnessContextQueryService:
         *,
         scope_id: str,
         resources: HarnessResourceQueries,
+        contributors: Sequence[ContextContributor] = (),
     ) -> None:
         self.database = database
         self.scope_id = scope_id
         self.resources = resources
+        self.contributors = tuple(contributors)
 
     async def project_context(self, project_id: str) -> dict[str, Any]:
         project = await self.resources.get_project(project_id)
@@ -165,6 +186,107 @@ class HarnessContextQueryService:
                 ],
             }
 
+    async def context_package_for_run(
+        self,
+        *,
+        run_id: str,
+        stage: str,
+    ) -> dict[str, Any] | None:
+        """Return the newest immutable revision for one Workflow Context stage."""
+
+        async with self.database.sessions() as transaction:
+            package = await transaction.scalar(
+                select(ContextPackageRecord)
+                .where(
+                    ContextPackageRecord.run_id == run_id,
+                    ContextPackageRecord.scope_id == self.scope_id,
+                    ContextPackageRecord.stage == stage,
+                    ContextPackageRecord.status != "superseded",
+                )
+                .order_by(ContextPackageRecord.revision.desc())
+                .limit(1)
+            )
+            if package is None:
+                return None
+            items = list(
+                (
+                    await transaction.scalars(
+                        select(ContextAdoptionRecord)
+                        .where(ContextAdoptionRecord.context_package_id == package.id)
+                        .order_by(ContextAdoptionRecord.ordinal)
+                    )
+                ).all()
+            )
+            return {
+                "id": package.id,
+                "run_id": package.run_id,
+                "stage": package.stage,
+                "revision": package.revision,
+                "package_hash": package.package_hash,
+                "status": package.status,
+                "items": [
+                    {
+                        "source_kind": item.source_kind,
+                        "source_id": item.source_id,
+                        "source_revision": item.source_revision,
+                        "title": item.title,
+                        "content": item.content_text,
+                        "adopted": item.adopted,
+                        "locked": item.locked,
+                        "selection_origin": item.selection_origin,
+                        "reason": item.reason,
+                        "token_estimate": item.token_estimate,
+                    }
+                    for item in items
+                ],
+            }
+
+    async def context_package_by_id(self, package_id: str) -> dict[str, Any] | None:
+        """Return one immutable ContextPackage revision, including superseded revisions.
+
+        Workflow decision retries must address the exact revision captured in
+        the checkpoint. Looking up only the newest revision would change an
+        idempotent command's request after a partial retry.
+        """
+
+        async with self.database.sessions() as transaction:
+            package = await transaction.get(ContextPackageRecord, package_id)
+            if package is None or package.scope_id != self.scope_id:
+                return None
+            items = list(
+                (
+                    await transaction.scalars(
+                        select(ContextAdoptionRecord)
+                        .where(ContextAdoptionRecord.context_package_id == package.id)
+                        .order_by(ContextAdoptionRecord.ordinal)
+                    )
+                ).all()
+            )
+            return {
+                "id": package.id,
+                "run_id": package.run_id,
+                "stage": package.stage,
+                "revision": package.revision,
+                "package_hash": package.package_hash,
+                "status": package.status,
+                "items": [
+                    {
+                        "ordinal": item.ordinal,
+                        "source_kind": item.source_kind,
+                        "source_id": item.source_id,
+                        "source_revision": item.source_revision,
+                        "title": item.title,
+                        "content": item.content_text,
+                        "adopted": item.adopted,
+                        "locked": item.locked,
+                        "selection_origin": item.selection_origin,
+                        "reason": item.reason,
+                        "token_estimate": item.token_estimate,
+                    }
+                    for item in items
+                ],
+            }
+
     async def directory_context_items(
         self,
         *,
@@ -215,6 +337,13 @@ class HarnessContextQueryService:
             }
             for value in summaries
         )
+        for contributor in self.contributors:
+            directory.extend(
+                await contributor.directory_context_items(
+                    prompt=prompt,
+                    projects=directory_projects,
+                )
+            )
         logger.info(
             "harness_directory_context_assembled projects=%d matched_projects=%d "
             "summaries=%d adopted_items=%d",
@@ -225,7 +354,13 @@ class HarnessContextQueryService:
         )
         return directory, directory_projects
 
-    async def detailed_context_items(self, project_id: str) -> list[dict[str, Any]]:
+    async def detailed_context_items(
+        self,
+        project_id: str,
+        *,
+        prompt: str = "",
+        scenario: str = "",
+    ) -> list[dict[str, Any]]:
         context = await self.project_context(project_id)
         project = context["project"]
         items: list[dict[str, Any]] = [
@@ -329,6 +464,19 @@ class HarnessContextQueryService:
                     "reason": "绑定Project作用域内仍有效的Accepted Memory",
                 }
             )
+        contributed: list[dict[str, Any]] = []
+        for contributor in self.contributors:
+            contributed.extend(
+                await contributor.detailed_context_items(
+                    project_id=project_id,
+                    prompt=prompt,
+                    scenario=scenario,
+                )
+            )
+        # Project identity remains first. Repository baseline and rules are
+        # intentionally ahead of wider Work/Note/Memory detail so token
+        # pressure cannot silently drop the exact code baseline being used.
+        items[1:1] = contributed
         with bind_context(resource_id=project_id):
             logger.info("harness_detailed_context_assembled adopted_items=%d", len(items))
         return items

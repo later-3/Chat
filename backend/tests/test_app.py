@@ -36,8 +36,8 @@ def test_health_exposes_approved_architecture_without_secrets() -> None:
             "integration_mode": "jsonl_rpc_subprocess",
             "provider_gate": "every_pi_model_call",
             "tool_gate": "every_pi_internal_tool_call",
-            "allowed_working_roots": [],
-            "default_working_directory": str(Path(__file__).resolve().parents[2]),
+            "allowed_working_root_count": 0,
+            "default_working_directory_configured": True,
         },
     }
 

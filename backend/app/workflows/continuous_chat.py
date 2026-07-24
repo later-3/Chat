@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from dataclasses import asdict, dataclass, replace
 from typing import Any, Callable, Mapping
@@ -18,6 +19,7 @@ from agent_framework import (
 from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 
 from ..agent_profiles import AgentProfileSnapshot
+from ..collaboration_contexts import CollaborationContextService
 from ..collaboration_intents import CollaborationIntentService
 from ..collaboration_protocols import CollaborationProtocolService
 from ..governance.service import ExecutionGovernanceService, GovernanceConflict
@@ -34,6 +36,10 @@ from ..model_call_workflow import (
     normalize_agui_messages_for_provider,
 )
 from ..product_sessions.service import ProductSessionService
+from ..project_resources.context import (
+    ContextSourceStale,
+    RepositorySourceFreshnessGuard,
+)
 from ..step_inputs import StepInputProjectionService
 from .continuous_chat_contracts import (
     CollaborationState,
@@ -42,10 +48,16 @@ from .continuous_chat_contracts import (
     apply_intent_set_protocol_overlay as _apply_intent_set_protocol_overlay,
 )
 from .continuous_chat_contracts import (
+    apply_summary_writeback_policy as _apply_summary_writeback_policy,
+)
+from .continuous_chat_contracts import (
     canonical_hash as _hash,
 )
 from .continuous_chat_contracts import (
     context_keywords as _context_keywords,
+)
+from .continuous_chat_contracts import (
+    context_source_references as _context_source_references,
 )
 from .continuous_chat_contracts import (
     evaluate_scenario_route as _evaluate_scenario_route,
@@ -88,8 +100,10 @@ from .continuous_chat_factory import (
     build_continuous_collaboration_workflow,
 )
 
+logger = logging.getLogger(__name__)
+
 WORKFLOW_ID = "continuous-collaboration"
-WORKFLOW_VERSION = "1.4.0"
+WORKFLOW_VERSION = "1.5.0"
 
 
 class TraceMixin:
@@ -111,9 +125,13 @@ class TraceMixin:
         if active is None:
             return
         projection: dict[str, Any] | None = None
-        if content_type not in {"intent", "plan", "response", "summary"} or actor.startswith(
-            "deterministic_"
-        ):
+        if content_type not in {
+            "intent",
+            "plan",
+            "response",
+            "summary",
+            "context_source_freshness",
+        } or actor.startswith("deterministic_"):
             public_input_mapping = (
                 dict(public_input) if isinstance(public_input, Mapping) else {"value": public_input}
             )
@@ -419,7 +437,11 @@ class HarnessDetailContextExecutor(Executor, TraceMixin):
             )
             await ctx.send_message(state)
             return
-        items = await self._harness.detailed_context_items(state.selected_project_id)
+        items = await self._harness.detailed_context_items(
+            state.selected_project_id,
+            prompt=state.origin_prompt,
+            scenario=state.scenario,
+        )
         package = await self._harness.create_context_package(
             session_id=self._thread_id,
             run_id=self._run_id(),
@@ -446,6 +468,122 @@ class HarnessDetailContextExecutor(Executor, TraceMixin):
                 "token_budget": package["token_budget"],
                 "adopted_items": list(adopted),
                 "excluded_items": [item for item in package["items"] if not item["adopted"]],
+            },
+        )
+        await ctx.send_message(next_state)
+
+
+def _state_with_context_package(
+    state: CollaborationState,
+    package: Mapping[str, Any],
+    *,
+    stage: str,
+) -> CollaborationState:
+    """Project one immutable ContextPackage revision into runtime state."""
+
+    adopted = tuple(dict(value) for value in package["items"] if value["adopted"])
+    next_state = replace(
+        state,
+        context_items=adopted,
+        directory_context_package_id=(
+            str(package["id"]) if stage == "directory" else state.directory_context_package_id
+        ),
+        detail_context_package_id=(
+            str(package["id"]) if stage == "detail" else state.detail_context_package_id
+        ),
+    )
+    if stage != "directory":
+        return next_state
+    adopted_summary_ids = {
+        str(value["source_id"]) for value in adopted if value["source_kind"] == "turn_summary"
+    }
+    adopted_project_ids = {
+        str(value["source_id"]) for value in adopted if value["source_kind"] == "project_directory"
+    }
+    return replace(
+        next_state,
+        recent_turn_summaries=tuple(
+            value
+            for value in state.recent_turn_summaries
+            if str(value.get("id") or "") in adopted_summary_ids
+        ),
+        project_matches=tuple(
+            value for value in state.project_matches if str(value.get("id") or "") in adopted_project_ids
+        ),
+    )
+
+
+class HarnessContextRevisionExecutor(Executor, TraceMixin):
+    """Project the newest user-reviewed ContextPackage revision into Workflow state."""
+
+    def __init__(
+        self,
+        *,
+        node_id: str,
+        stage: str,
+        thread_id: str,
+        run_id: Callable[[], str],
+        sessions: ProductSessionService,
+        harness: HarnessService,
+    ) -> None:
+        super().__init__(id=node_id)
+        if stage not in {"directory", "detail"}:
+            raise ValueError(f"Unsupported Context stage: {stage}")
+        self._stage = stage
+        self._run_id = run_id
+        self._harness = harness
+        self._trace_init(thread_id=thread_id, sessions=sessions)
+
+    @handler(input=CollaborationState)
+    async def project(
+        self,
+        state: CollaborationState,
+        ctx: WorkflowContext[CollaborationState],
+    ) -> None:
+        package = await self._harness.context_package_for_run(
+            run_id=self._run_id(),
+            stage=self._stage,
+        )
+        if package is None:
+            await ctx.send_message(state)
+            return
+        next_state = _state_with_context_package(
+            state,
+            package,
+            stage=self._stage,
+        )
+        adopted = next_state.context_items
+        await self._trace_content(
+            executor_id=self.id,
+            actor="product_context_projection",
+            content_type="context_revision",
+            public_input={
+                "stage": self._stage,
+                "context_package_id": package["id"],
+                "revision": package["revision"],
+            },
+            public_output={
+                "adopted_sources": [
+                    {
+                        "source_kind": value["source_kind"],
+                        "source_id": value["source_id"],
+                        "source_revision": value["source_revision"],
+                        "title": value["title"],
+                        "reason": value["reason"],
+                    }
+                    for value in adopted
+                ],
+                "excluded_sources": [
+                    {
+                        "source_kind": value["source_kind"],
+                        "source_id": value["source_id"],
+                        "source_revision": value["source_revision"],
+                        "title": value["title"],
+                        "reason": value["reason"],
+                    }
+                    for value in package["items"]
+                    if not value["adopted"]
+                ],
             },
         )
         await ctx.send_message(next_state)
@@ -569,11 +707,15 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
         run_id: Callable[[], str],
         sessions: ProductSessionService,
         governance: ExecutionGovernanceService,
+        harness: HarnessService | None = None,
+        collaboration_contexts: CollaborationContextService | None = None,
     ) -> None:
         super().__init__(id=node_id)
         self.spec = spec
         self._run_id = run_id
         self._governance = governance
+        self._harness = harness
+        self._collaboration_contexts = collaboration_contexts
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
     @handler(input=CollaborationState)
@@ -780,6 +922,7 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
             raise RuntimeError("产品决定请求缺少Workflow状态")
         state = _state_from_snapshot(state_value)
         action = str(decision.get("decision") or "")
+        context_state: CollaborationState | None = None
         if decision.get("decision_recorded") is True:
             [resolved] = await self._governance.resolved_human_request(
                 str(original_request["decision_request_id"])
@@ -793,15 +936,27 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
                 expected_row_version=int(original_request["row_version"]),
                 decision=action,
             )
+        context_state = await self._revise_directory_context_if_needed(
+            state=state,
+            action=action,
+            decision=decision,
+            request_id=str(original_request["decision_request_id"]),
+        )
         if action == "revise":
+            if context_state is not None:
+                await self._advance(context_state, ctx)
+                return
             changes = decision.get("changes")
             if not isinstance(changes, Mapping):
                 raise ValueError("修改决定必须提供结构化changes")
             await self._advance(self.spec.revise(state, changes), ctx)
             return
         if action == "skip":
-            changes: Mapping[str, Any] = {"skip": True}
             await self._trace_decision(state, self.spec.subject(state), "skipped", "用户本轮跳过")
+            if context_state is not None:
+                await ctx.send_message(context_state)
+                return
+            changes: Mapping[str, Any] = {"skip": True}
             await ctx.send_message(self.spec.revise(state, changes))
             return
         if action == "cancel":
@@ -823,6 +978,81 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
         await self._trace_decision(state, self.spec.subject(state), "accepted", "用户接受当前版本")
         await ctx.send_message(state)
 
+    async def _revise_directory_context_if_needed(
+        self,
+        *,
+        state: CollaborationState,
+        action: str,
+        decision: Mapping[str, Any],
+        request_id: str,
+    ) -> CollaborationState | None:
+        """Persist context revise/skip before the checkpoint advances.
+
+        The Workflow checkpoint contains an exact package revision. A retry
+        therefore reads that revision by id and replays one deterministic
+        command, even if the first attempt committed the new revision before
+        process loss.
+        """
+
+        if self.id != "context_adoption" or action not in {"revise", "skip"}:
+            return None
+        if self._harness is None or self._collaboration_contexts is None:
+            raise RuntimeError("Context决定缺少Harness应用协调依赖")
+        package_id = state.directory_context_package_id
+        if package_id is None:
+            raise GovernanceConflict("Context决定缺少绑定的ContextPackage")
+        package = await self._harness.context_package_by_id(package_id)
+        if package is None:
+            raise GovernanceConflict("ContextPackage已不存在，请重新准备本轮")
+        changes = decision.get("changes")
+        if action == "revise":
+            if not isinstance(changes, Mapping):
+                raise ValueError("修改决定必须提供结构化changes")
+            selected = changes.get("selected_summary_ids")
+            if not isinstance(selected, list) or not all(isinstance(value, str) for value in selected):
+                raise ValueError("Context修改必须提供selected_summary_ids")
+            selected_ids = set(selected)
+        else:
+            selected_ids = set()
+        item_changes: list[dict[str, Any]] = []
+        for item in package["items"]:
+            desired = (
+                False
+                if action == "skip"
+                else (
+                    str(item["source_id"]) in selected_ids
+                    if item["source_kind"] == "turn_summary"
+                    else bool(item["adopted"])
+                )
+            )
+            if desired == bool(item["adopted"]):
+                continue
+            item_changes.append(
+                {
+                    "ordinal": int(item["ordinal"]),
+                    "adopted": desired,
+                    "reason": (
+                        "用户在Workflow中跳过本轮目录Context"
+                        if action == "skip"
+                        else "用户在Workflow中调整采用的回合重点"
+                    ),
+                }
+            )
+        if not item_changes:
+            raise ValueError("Context没有发生变化；如无需修改请直接接受")
+        revised = await self._collaboration_contexts.revise_package(
+            package_id=package["id"],
+            command_id=f"workflow-context:{request_id}:{action}",
+            expected_package_hash=package["package_hash"],
+            reason=(
+                "用户在Workflow决定点跳过本轮目录Context"
+                if action == "skip"
+                else "用户在Workflow决定点修改本轮目录Context"
+            ),
+            item_changes=item_changes,
+        )
+        return _state_with_context_package(state, revised, stage="directory")
+
 
 class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
     """Agent-shaped semantic step with durable ModelCall governance before dispatch."""
@@ -841,6 +1071,7 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         governance: ExecutionGovernanceService,
         task_builder: Callable[[CollaborationState], str],
         result_kind: str,
+        repository_freshness: RepositorySourceFreshnessGuard | None = None,
     ) -> None:
         super().__init__(id=node_id)
         self.profile = profile
@@ -851,6 +1082,7 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         self._governance = governance
         self._task_builder = task_builder
         self._result_kind = result_kind
+        self._repository_freshness = repository_freshness
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
     @property
@@ -859,6 +1091,7 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
 
     def _begin(self, state: CollaborationState) -> ModelCallDraft:
         task = self._task_builder(state)
+        context_package_id = state.detail_context_package_id or state.directory_context_package_id
         return self._store.begin(
             thread_id=self._thread_id,
             run_id=self._run_id(),
@@ -877,6 +1110,22 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
                 "call_ordinal": self.call_ordinal,
                 "scenario": state.scenario,
                 "prompt_assembly": "selective-context-v1",
+                "context_package_id": context_package_id,
+                "repository_source_revisions": [
+                    {
+                        "source_kind": value.get("source_kind"),
+                        "source_id": value.get("source_id"),
+                        "source_revision": value.get("source_revision"),
+                        "title": value.get("title"),
+                        "adoption_reason": value.get("reason"),
+                    }
+                    for value in state.context_items
+                    if str(value.get("source_kind") or "").startswith("repository_")
+                    or (
+                        value.get("source_kind") == "user_override"
+                        and ":" in str(value.get("source_id") or "")
+                    )
+                ],
             },
         )
 
@@ -917,7 +1166,26 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState, str],
     ) -> None:
+        freshness = await self._require_fresh_context(
+            state,
+            phase="draft_prepare",
+        )
         card = draft.review_card()
+        effective_context = card.get("effective_context")
+        if isinstance(effective_context, dict):
+            sources = self._knowledge_sources(state)
+            effective_context["knowledge_sources"] = sources
+            adoption_reasons = effective_context.get("adoption_reasons")
+            if isinstance(adoption_reasons, dict):
+                adoption_reasons["history_and_knowledge"] = (
+                    "消息数组与独立Context来源都从同一Provider请求草稿派生；每个来源公开采用原因和版本"
+                )
+                adoption_reasons["knowledge_sources"] = (
+                    "本轮明确采用的Project、Repository、规则、摘要、笔记与Memory；正文已实际编入当前任务消息"
+                )
+        execution_context = card.setdefault("execution_context", {})
+        if isinstance(execution_context, dict):
+            execution_context["context_freshness"] = freshness
         slot, revision, evaluation, preview, request = await self._governance.register_model_call(
             review_card=card
         )
@@ -933,7 +1201,6 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             "decision_request_row_version": request.row_version if request else None,
             "decision_item_key": revision.subject_id if request else None,
         }
-        execution_context = card.setdefault("execution_context", {})
         if isinstance(execution_context, dict):
             execution_context["governance"] = governance_view
         await self._trace_content(
@@ -945,6 +1212,7 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
                 "selected_turn_summaries": list(state.recent_turn_summaries),
                 "agent_profile_key": self.profile.id,
                 "context_package_id": (state.detail_context_package_id or state.directory_context_package_id),
+                "context_sources": self._knowledge_sources(state),
                 "protocol_definition_id": ((state.protocol_selection or {}).get("definition_id")),
                 "protocol_binding_id": ((state.protocol_selection or {}).get("binding_id")),
                 "run_spec_id": state.run_spec_id,
@@ -986,15 +1254,14 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             )
             if grant is None:
                 raise RuntimeError("自动模型调用决定没有签发授权")
-            consumption = await self._governance.claim_grant(
+            dispatched = await self._dispatch(
+                draft,
+                revision,
                 grant_id=grant.id,
                 binding_hash=revision.binding_hash,
-                consumer_kind="model_call_attempt",
-                consumer_id=revision.id,
-                idempotency_key=f"model-call:{revision.id}",
-                claimed_by=f"api-pid-{os.getpid()}:{self.id}",
+                state=state,
+                request_id=None,
             )
-            dispatched = await self._dispatch(draft, revision, consumption)
             if dispatched is not None:
                 await self._deliver(dispatched, state, revision.id, ctx)
             return
@@ -1016,7 +1283,22 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
                 raise RuntimeError("ModelCall DecisionSubject不存在")
             return value
 
-    async def _dispatch(self, draft, revision, consumption) -> ModelDispatchResult | None:
+    async def _dispatch(
+        self,
+        draft,
+        revision,
+        *,
+        grant_id: str,
+        binding_hash: str,
+        state: CollaborationState,
+        request_id: str | None,
+    ) -> ModelDispatchResult | None:
+        await self._require_fresh_context(
+            state,
+            phase="provider_dispatch",
+            revision_id=revision.id,
+            request_id=request_id,
+        )
         try:
             await self._sessions.mark_running(self._thread_id)
             claimed = self._store.claim(
@@ -1026,6 +1308,14 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             )
         except ModelCallDraftConflict:
             return None
+        consumption = await self._governance.claim_grant(
+            grant_id=grant_id,
+            binding_hash=binding_hash,
+            consumer_kind="model_call_attempt",
+            consumer_id=revision.id,
+            idempotency_key=f"model-call:{revision.id}",
+            claimed_by=f"api-pid-{os.getpid()}:{self.id}",
+        )
         attempt = await self._governance.start_model_call_attempt(
             revision=revision,
             consumption=consumption,
@@ -1105,6 +1395,119 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             attempt_id=attempt.id,
         )
 
+    def _knowledge_sources(self, state: CollaborationState) -> list[dict[str, Any]]:
+        if self._result_kind == "summary":
+            return [
+                {
+                    "source_type": value["kind"],
+                    "source_id": value["id"],
+                    "source_revision": value.get("revision"),
+                    "source_label": value.get("title"),
+                    "adoption_reason": value.get("adoption_reason"),
+                    "selection_origin": value.get("selection_origin"),
+                    "modified_in_review": value["kind"] == "user_override",
+                    "content_mode": "reference_only",
+                }
+                for value in _context_source_references(state.context_items)
+            ]
+        return [
+            {
+                "source_type": value.get("source_kind"),
+                "source_id": value.get("source_id"),
+                "source_revision": value.get("source_revision"),
+                "source_label": value.get("title"),
+                "adoption_reason": value.get("reason"),
+                "selection_origin": value.get("selection_origin"),
+                "modified_in_review": value.get("source_kind") == "user_override",
+                "token_estimate": value.get("token_estimate"),
+                "content": value.get("content"),
+            }
+            for value in state.context_items
+            if value.get("adopted", True)
+        ]
+
+    async def _require_fresh_context(
+        self,
+        state: CollaborationState,
+        *,
+        phase: str,
+        revision_id: str | None = None,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        package_id = state.detail_context_package_id or state.directory_context_package_id
+        if self._repository_freshness is None:
+            return {
+                "fresh": True,
+                "context_package_id": package_id,
+                "sources": [],
+                "guard": "not_configured",
+            }
+        try:
+            report = await self._repository_freshness.assert_package_fresh(package_id)
+        except ContextSourceStale as error:
+            logger.warning(
+                "repository_context_gate phase=%s context_package_id=%s result=stale reason_code=%s",
+                phase,
+                package_id,
+                error.reason_code,
+            )
+            if revision_id is not None:
+                await self._governance.invalidate_model_call_source(
+                    revision_id=revision_id,
+                    request_id=request_id,
+                    reason_code=error.code.lower(),
+                )
+            await self._trace_content(
+                executor_id=self.id,
+                actor="context_source_freshness_guard",
+                content_type="context_source_freshness",
+                public_input={
+                    "phase": phase,
+                    "context_package_id": package_id,
+                },
+                public_output={
+                    "status": "stale",
+                    "error_code": error.code.lower(),
+                    "reason_code": error.reason_code,
+                    "recovery_actions": ["reprepare", "stop"],
+                },
+            )
+            await self._sessions.fail_active_run(
+                self._thread_id,
+                status="failed",
+                error_code=error.code.lower(),
+                message=("仓库上下文已变化，旧请求未发送。请按最新仓库重新准备，或停止本轮。"),
+            )
+            raise
+        logger.info(
+            "repository_context_gate phase=%s context_package_id=%s result=fresh sources=%d",
+            phase,
+            package_id,
+            len(report.get("sources") or []),
+        )
+        await self._trace_content(
+            executor_id=self.id,
+            actor="context_source_freshness_guard",
+            content_type="context_source_freshness",
+            public_input={
+                "phase": phase,
+                "context_package_id": package_id,
+            },
+            public_output={
+                "status": "fresh",
+                "source_count": len(report.get("sources") or []),
+                "source_revisions": [
+                    {
+                        "binding_id": value.get("binding_id"),
+                        "semantic_hash": value.get("semantic_hash"),
+                        "snapshot_sequence": value.get("snapshot_sequence"),
+                    }
+                    for value in report.get("sources") or []
+                ],
+            },
+        )
+        return {**report, "guard": "repository_source_freshness_v1"}
+
     @response_handler(request=dict, response=dict, workflow_output=str)
     async def resolve(self, original_request, decision, ctx) -> None:
         # A restored MAF Checkpoint contains the exact review card, while the
@@ -1155,13 +1558,6 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             return
         if action != "approve":
             raise ValueError(f"不支持的模型调用决定: {action}")
-        resolved = pre_recorded or await self._governance.resolve_single_human_request(
-            request_id=request_id,
-            expected_request_hash=request_hash,
-            expected_row_version=row_version,
-            decision="approve",
-        )
-        grant_id = str(resolved.get("authorization_grant_id") or "")
         revision_id = str(governance_view.get("model_call_revision_id") or "")
         from ..governance.models import ModelCallDraftRevisionRecord
 
@@ -1169,16 +1565,28 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             revision = await transaction.get(ModelCallDraftRevisionRecord, revision_id)
             if revision is None:
                 raise RuntimeError("持久ModelCall revision不存在")
-        consumption = await self._governance.claim_grant(
+        await self._require_fresh_context(
+            state,
+            phase="approval",
+            revision_id=revision.id,
+            request_id=request_id,
+        )
+        resolved = pre_recorded or await self._governance.resolve_single_human_request(
+            request_id=request_id,
+            expected_request_hash=request_hash,
+            expected_row_version=row_version,
+            decision="approve",
+        )
+        grant_id = str(resolved.get("authorization_grant_id") or "")
+        draft = restored_draft
+        dispatched = await self._dispatch(
+            draft,
+            revision,
             grant_id=grant_id,
             binding_hash=str(resolved["binding_hash"]),
-            consumer_kind="model_call_attempt",
-            consumer_id=revision.id,
-            idempotency_key=f"model-call:{revision.id}",
-            claimed_by=f"api-pid-{os.getpid()}:{self.id}",
+            state=state,
+            request_id=request_id,
         )
-        draft = restored_draft
-        dispatched = await self._dispatch(draft, revision, consumption)
         if dispatched is None:
             await ctx.yield_output("该授权已失效或已消费，没有重复发送模型请求。")
             return
@@ -1258,6 +1666,13 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
                 }
                 disposition = "rejected_invalid_output"
                 disposition_reason = "主题摘取输出不是有效JSON，已保存确定性最小候选"
+            summary, suppressions = _apply_summary_writeback_policy(
+                summary,
+                origin_prompt=state.origin_prompt,
+            )
+            if suppressions:
+                disposition = "accepted_with_writeback_filter"
+                disposition_reason = "模型摘要已采用，但违反用户只读边界的Work/Memory候选被确定性移除"
             next_state = replace(
                 state,
                 turn_summary=summary,
@@ -1269,6 +1684,7 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
                 "open_questions": summary.get("open_questions"),
                 "work_state_candidates": summary.get("work_state_candidates"),
                 "memory_candidates": summary.get("memory_candidates"),
+                "candidate_suppressions": suppressions,
                 "note": "Work/Memory仍是候选，不会自动成为长期事实。",
             }
         else:
@@ -2160,6 +2576,46 @@ def _decision_specs() -> dict[str, ProductDecisionSpec]:
             revise=_revise_context,
             allow_skip=True,
         ),
+        "detail_context_adoption": ProductDecisionSpec(
+            key="context_adoption",
+            subject_kind="context_package",
+            title="确认本轮采用的项目与仓库信息",
+            description=(
+                "确认将进入后续计划和响应的Project、Repository Snapshot与治理规则；"
+                "需要调整时可先在本轮协作信息中采用、排除或载入正文。"
+            ),
+            accept_action="accept",
+            applicable=lambda state: state.detail_context_package_id is not None,
+            subject=lambda state: {
+                "context_package_id": state.detail_context_package_id,
+                "sources": [
+                    {
+                        "source_kind": value.get("source_kind"),
+                        "source_id": value.get("source_id"),
+                        "source_revision": value.get("source_revision"),
+                        "title": value.get("title"),
+                        "adopted": value.get("adopted"),
+                        "reason": value.get("reason"),
+                        "token_estimate": value.get("token_estimate"),
+                    }
+                    for value in state.context_items
+                ],
+            },
+            facts=lambda state: {
+                "context": {
+                    "requires_review": False,
+                    "cross_project": False,
+                    "source_invalid": False,
+                    "repository_source_count": sum(
+                        str(value.get("source_kind") or "").startswith("repository_")
+                        for value in state.context_items
+                    ),
+                }
+            },
+            editable_fields=lambda state: [],
+            revise=lambda state, changes: state,
+            allow_skip=False,
+        ),
         "intent_binding": ProductDecisionSpec(
             key="intent_binding",
             subject_kind="intent",
@@ -2345,6 +2801,8 @@ def create_continuous_collaboration_workflow(
     harness: HarnessService | None = None,
     collaboration_protocols: CollaborationProtocolService | None = None,
     collaboration_intents: CollaborationIntentService | None = None,
+    collaboration_contexts: CollaborationContextService | None = None,
+    repository_freshness: RepositorySourceFreshnessGuard | None = None,
     checkpoint_storage: CheckpointStorage | None = None,
 ):
     """Compatibility entrypoint delegating graph wiring to its composition module."""
@@ -2363,6 +2821,7 @@ def create_continuous_collaboration_workflow(
             protocol_resolver=CollaborationProtocolResolverExecutor,
             router=ScenarioRouterExecutor,
             detail_context=HarnessDetailContextExecutor,
+            context_revision=HarnessContextRevisionExecutor,
             project_catalog=ProjectCatalogExecutor,
             execution_draft_compiler=ExecutionDraftCompilerExecutor,
             run_spec_compiler=RunSpecCompilerExecutor,
@@ -2384,5 +2843,7 @@ def create_continuous_collaboration_workflow(
         harness=harness,
         collaboration_protocols=collaboration_protocols,
         collaboration_intents=collaboration_intents,
+        collaboration_contexts=collaboration_contexts,
+        repository_freshness=repository_freshness,
         checkpoint_storage=checkpoint_storage,
     )

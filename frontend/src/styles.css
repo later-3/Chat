@@ -5,6 +5,10 @@
   --font-size-supporting: 0.8125rem;
   --font-size-body-small: 0.875rem;
   --font-size-body: 0.9375rem;
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
   color: #1f2925;
   background: #f5f6f1;
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -90,7 +94,34 @@ button {
 }
 .topbar-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
+}
+.network-indicator {
+  min-height: 32px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(39, 57, 48, 0.08);
+  border-radius: 999px;
+  color: #64766c;
+  background: rgba(255, 255, 255, 0.48);
+}
+.network-indicator > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #5aaa79;
+  box-shadow: 0 0 0 4px rgba(90, 170, 121, 0.12);
+}
+.network-indicator small {
+  font-size: var(--font-size-caption);
+  font-weight: 680;
+}
+.network-indicator--error {
+  color: #9a5548;
+  background: #fff4f1;
 }
 .topbar-workflow {
   position: absolute;
@@ -169,6 +200,82 @@ button {
   min-height: 0;
   display: flex;
   overflow: hidden;
+}
+.mobile-primary-nav {
+  display: none;
+}
+.network-banner {
+  margin: 10px 16px 0;
+  padding: 10px 13px;
+  border: 1px solid rgba(164, 102, 69, 0.16);
+  border-radius: 11px;
+  color: #7a5842;
+  background: #fff5e9;
+  font-size: var(--font-size-supporting);
+  line-height: 1.55;
+}
+.pwa-notice {
+  position: fixed;
+  z-index: 15;
+  right: max(18px, var(--safe-area-right));
+  bottom: max(18px, var(--safe-area-bottom));
+  width: min(420px, calc(100vw - 36px));
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(36, 64, 49, 0.12);
+  border-radius: 16px;
+  color: #355143;
+  background: rgba(252, 253, 249, 0.97);
+  box-shadow: 0 18px 48px rgba(31, 52, 40, 0.18);
+  backdrop-filter: blur(18px);
+  pointer-events: none;
+  animation: reveal 0.22s ease both;
+}
+.pwa-notice > span {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  color: #315b43;
+  background: #e5eee6;
+}
+.pwa-notice > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pwa-notice strong {
+  font-size: var(--font-size-body-small);
+}
+.pwa-notice small {
+  color: #75847b;
+  font-size: var(--font-size-caption);
+  line-height: 1.45;
+}
+.pwa-notice > button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 9px;
+  color: #fff;
+  background: #315b43;
+  font-size: var(--font-size-supporting);
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.pwa-notice > button:last-child {
+  width: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: #728078;
+  background: #eef2ed;
 }
 .session-sidebar {
   width: 270px;
@@ -4062,6 +4169,41 @@ button {
   border-radius: 11px;
   text-align: center;
 }
+
+.knowledge-source-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.knowledge-source-card > p {
+  color: var(--text-secondary);
+  font-size: 0.94rem;
+  line-height: 1.55;
+  margin: 10px 0;
+}
+
+.knowledge-source-card details pre {
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.context-source-meta {
+  align-items: center;
+  color: var(--text-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.context-source-meta code {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: 999px;
+  color: var(--text-primary);
+  padding: 2px 7px;
+}
 .structured-remove {
   width: 30px;
   height: 30px;
@@ -4937,9 +5079,10 @@ button {
 
 @media (max-width: 640px) {
   .topbar {
-    height: 60px;
-    flex-basis: 60px;
-    padding: 0 16px;
+    height: calc(60px + var(--safe-area-top));
+    flex-basis: calc(60px + var(--safe-area-top));
+    padding: var(--safe-area-top) max(16px, var(--safe-area-right)) 0
+      max(16px, var(--safe-area-left));
   }
   .brand-mark,
   .brand > div {
@@ -4967,15 +5110,79 @@ button {
   .topbar-actions .icon-button:first-child {
     display: none;
   }
+  .topbar-actions .icon-button {
+    display: none;
+  }
+  .network-indicator {
+    width: 32px;
+    min-height: 32px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 10px;
+  }
+  .network-indicator small {
+    display: none;
+  }
   .workspace-layout {
     min-height: 0;
   }
   .session-sidebar,
   .workspace-layout--sidebar-collapsed .session-sidebar {
-    top: 60px;
+    top: calc(60px + var(--safe-area-top));
   }
   .session-sidebar-backdrop {
-    inset: 60px 0 0;
+    inset: calc(60px + var(--safe-area-top)) 0 0;
+  }
+  .mobile-primary-nav {
+    min-height: calc(58px + var(--safe-area-bottom));
+    flex: 0 0 calc(58px + var(--safe-area-bottom));
+    padding: 5px max(8px, var(--safe-area-right)) var(--safe-area-bottom)
+      max(8px, var(--safe-area-left));
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 3px;
+    border-top: 1px solid rgba(41, 56, 49, 0.09);
+    background: rgba(250, 251, 247, 0.96);
+    backdrop-filter: blur(18px);
+  }
+  .mobile-primary-nav button {
+    min-width: 0;
+    min-height: 48px;
+    padding: 3px 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 2px;
+    border: 0;
+    border-radius: 12px;
+    color: #7a8980;
+    background: transparent;
+    font-size: var(--font-size-caption);
+    font-weight: 680;
+    cursor: pointer;
+  }
+  .mobile-primary-nav button.active {
+    color: #294c3a;
+    background: #e4eee5;
+  }
+  .mobile-primary-nav button:focus-visible {
+    outline: 2px solid #608c72;
+    outline-offset: -2px;
+  }
+  .pwa-notice {
+    top: calc(64px + var(--safe-area-top));
+    right: max(10px, var(--safe-area-right));
+    bottom: auto;
+    width: calc(100vw - 20px - var(--safe-area-left) - var(--safe-area-right));
+    grid-template-columns: 34px minmax(0, 1fr) auto auto;
+  }
+  .pwa-notice > span {
+    width: 34px;
+    height: 34px;
+  }
+  .pwa-notice > button:last-child {
+    display: grid;
   }
   .chat-layout {
     min-height: 0;
@@ -5243,7 +5450,8 @@ button {
     width: 100%;
   }
   .configuration-dialog {
-    inset: 8px;
+    inset: max(8px, var(--safe-area-top)) max(8px, var(--safe-area-right))
+      max(8px, var(--safe-area-bottom)) max(8px, var(--safe-area-left));
     border-radius: 16px;
   }
   .configuration-header {
@@ -7081,6 +7289,14 @@ button {
   flex-direction: column;
   gap: 12px;
   font-size: var(--font-size-body-small);
+}
+.context-inspector--progressive > * {
+  /*
+   * The workbench body owns scrolling. Context cards must retain their natural
+   * height; otherwise mobile flex-shrink lets the next card cover toolbar
+   * actions even though the button remains in the accessibility tree.
+   */
+  flex: 0 0 auto;
 }
 .context-inspector--progressive > .harness-toolbar {
   margin-bottom: 0;

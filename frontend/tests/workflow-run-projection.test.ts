@@ -93,6 +93,21 @@ test("Product提交门失败只把提交阶段标记为失败", () => {
   assert.equal(stageStatus(projection, "product.commit"), "failed");
 });
 
+test("仓库Context失效时明确显示Provider从未开始", () => {
+  const projection = deriveWorkflowRunProjection(
+    "idle",
+    false,
+    run("failed", "context_source_stale"),
+  );
+
+  assert.equal(stageStatus(projection, "request.compile"), "completed");
+  assert.equal(stageStatus(projection, "approval.wait"), "completed");
+  assert.equal(stageStatus(projection, "approval.claim"), "skipped");
+  assert.equal(stageStatus(projection, "provider.dispatch"), "skipped");
+  assert.equal(stageStatus(projection, "provider.receive"), "skipped");
+  assert.equal(stageStatus(projection, "product.commit"), "skipped");
+});
+
 test("持久Trace覆盖粗粒度Run推断并保留公开详情和时间", () => {
   const trace: ProductTraceEvent[] = [
     {

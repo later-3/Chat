@@ -1,6 +1,6 @@
 import { checkedJson } from "../../api-client.js";
-
-const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? "http://127.0.0.1:8030";
+import { createClientId } from "../../client-id.js";
+import { API_BASE_URL } from "../../runtime-config.js";
 
 export type ProjectKind = "delivery" | "learning" | "research" | "personal";
 export type ProjectStatus =
@@ -223,7 +223,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function commandId(kind: string): string {
-  return `web:${kind}:${crypto.randomUUID()}`;
+  return `web:${kind}:${createClientId()}`;
 }
 
 export async function listProjects(): Promise<HarnessProject[]> {
@@ -358,6 +358,7 @@ export function reviseContextPackage(
       locked?: boolean;
       content?: string;
       reason?: string;
+      materialize?: boolean;
     }>;
     added_source_refs: Array<{
       source_kind: string;

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,6 +47,18 @@ from ..product_sessions.service import DEFAULT_SCOPE_ID
 logger = logging.getLogger(__name__)
 
 
+class ExternalContextSourceResolver(Protocol):
+    """Resolve an allowlisted external source outside the product transaction."""
+
+    async def materialize(
+        self,
+        *,
+        source_kind: str,
+        source_id: str,
+        source_revision: str | None,
+    ) -> dict[str, Any]: ...
+
+
 class CollaborationContextService:
     """Own one Context revision transaction across Harness and Governance."""
 
@@ -57,11 +69,13 @@ class CollaborationContextService:
         scope_id: str = DEFAULT_SCOPE_ID,
         principal_id: str = "local-user",
         clock: Callable[[], datetime] = utc_now,
+        external_source_resolver: ExternalContextSourceResolver | None = None,
     ) -> None:
         self.database = database
         self.scope_id = scope_id
         self.principal_id = principal_id
         self._clock = clock
+        self._external_source_resolver = external_source_resolver
         self._commands = HarnessCommandRecorder(
             scope_id=scope_id,
             principal_id=principal_id,
@@ -95,6 +109,22 @@ class CollaborationContextService:
             "token_budget": token_budget,
         }
         request_hash = content_hash(request)
+        # Preserve command idempotency even when the referenced external source
+        # has changed since the first successful command. A replay returns the
+        # immutable recorded result and must not touch the filesystem again.
+        async with self.database.sessions() as transaction:
+            replay = await self._commands.existing(
+                transaction,
+                command_id,
+                request_hash,
+            )
+            if replay is not None:
+                return replay
+        materialized_items = await self._materialize_item_changes(
+            package_id=package_id,
+            expected_package_hash=expected_package_hash,
+            item_changes=item_changes,
+        )
         async with self.database.sessions.begin() as transaction:
             replay = await self._commands.existing(
                 transaction,
@@ -129,6 +159,7 @@ class CollaborationContextService:
                 old_items=old_items,
                 item_changes=item_changes,
                 added_source_refs=added_source_refs,
+                materialized_items=materialized_items,
             )
             effective_budget = token_budget if token_budget is not None else current.token_budget
             if effective_budget < 128 or effective_budget > 200_000:
@@ -262,6 +293,7 @@ class CollaborationContextService:
         old_items: Sequence[ContextAdoptionRecord],
         item_changes: Sequence[Mapping[str, Any]],
         added_source_refs: Sequence[Mapping[str, Any]],
+        materialized_items: Mapping[int, Mapping[str, Any]],
     ) -> list[dict[str, Any]]:
         by_ordinal = {value.ordinal: value for value in old_items}
         changes: dict[int, Mapping[str, Any]] = {}
@@ -278,25 +310,38 @@ class CollaborationContextService:
         result: list[dict[str, Any]] = []
         for old in old_items:
             change = changes.get(old.ordinal, {})
-            content_override = str(change["content"]).strip() if "content" in change else old.content_text
+            materialized = materialized_items.get(old.ordinal)
+            if materialized is not None:
+                content_override = str(materialized.get("content") or "").strip()
+                source_kind = str(materialized.get("source_kind") or old.source_kind)
+                title = str(materialized.get("title") or old.title)
+            else:
+                content_override = str(change["content"]).strip() if "content" in change else old.content_text
+                source_kind = old.source_kind
+                title = old.title
             if not content_override:
                 raise HarnessValidationError("Context内容不能为空")
-            overridden = content_override != old.content_text
+            overridden = materialized is None and content_override != old.content_text
             locked = bool(change.get("locked", old.locked))
             adopted = bool(change.get("adopted", old.adopted)) or locked
             result.append(
                 {
                     "ordinal": len(result),
-                    "source_kind": "user_override" if overridden else old.source_kind,
+                    "source_kind": "user_override" if overridden else source_kind,
                     "source_id": old.source_id,
                     "source_revision": old.source_revision,
-                    "title": old.title,
+                    "title": title,
                     "content": content_override,
                     "adopted": adopted,
                     "locked": locked,
                     "selection_origin": ("human" if change else old.selection_origin),
                     "reason": str(
-                        change.get("reason") or ("用户修改本轮采用内容" if overridden else old.reason)
+                        change.get("reason")
+                        or (
+                            "用户选择载入并采用仓库治理正文"
+                            if materialized is not None
+                            else ("用户修改本轮采用内容" if overridden else old.reason)
+                        )
                     )[:1000],
                     "token_estimate": max(1, len(content_override) // 3),
                 }
@@ -306,6 +351,51 @@ class CollaborationContextService:
             resolved["ordinal"] = len(result)
             result.append(resolved)
         return result
+
+    async def _materialize_item_changes(
+        self,
+        *,
+        package_id: str,
+        expected_package_hash: str,
+        item_changes: Sequence[Mapping[str, Any]],
+    ) -> dict[int, Mapping[str, Any]]:
+        requested = {
+            int(value["ordinal"])
+            for value in item_changes
+            if value.get("materialize") is True and "ordinal" in value
+        }
+        if not requested:
+            return {}
+        if self._external_source_resolver is None:
+            raise HarnessValidationError("当前没有可用的外部Context来源解析器")
+        async with self.database.sessions() as transaction:
+            package = await transaction.get(ContextPackageRecord, package_id)
+            if package is None or package.scope_id != self.scope_id:
+                raise HarnessNotFound("ContextPackage不存在")
+            if package.package_hash != expected_package_hash or package.status == "superseded":
+                raise HarnessConflict("ContextPackage已变化，请重新加载后再修改")
+            records = list(
+                (
+                    await transaction.scalars(
+                        select(ContextAdoptionRecord).where(
+                            ContextAdoptionRecord.context_package_id == package.id
+                        )
+                    )
+                ).all()
+            )
+        by_ordinal = {value.ordinal: value for value in records}
+        unknown = requested - set(by_ordinal)
+        if unknown:
+            raise HarnessValidationError(f"Context item ordinal {min(unknown)}不存在")
+        resolved: dict[int, Mapping[str, Any]] = {}
+        for ordinal in sorted(requested):
+            source = by_ordinal[ordinal]
+            resolved[ordinal] = await self._external_source_resolver.materialize(
+                source_kind=source.source_kind,
+                source_id=source.source_id,
+                source_revision=source.source_revision,
+            )
+        return resolved
 
     async def _resolve_source_ref(
         self,

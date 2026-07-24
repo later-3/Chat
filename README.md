@@ -29,6 +29,8 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 
 对用户而言，Chat不是“记住更多聊天”，而是一个持续管理和推进个人学习、工作与想法的统一入口：想法能留下，事项有状态，隔天能继续，执行可看护，结果有证据。Project、Work、Plan、Note、Memory、规则和资源共同构成Product Harness；输入区的上下文选择界面只是这些既有信息的友好投影，不复制第二套知识源。
 
+对独立运营而言，Chat还必须提供受严格授权和审计的超级管理员看护：可信回答谁登录、怎样使用、Project/Work和Artifact/Evidence推进到哪里，以及哪些用户、作品或运行需要关注。它与普通用户个人主页、Workflow执行看护和开发运维可观测性是3种不同视角。
+
 ## 当前状态
 
 工程骨架、真实模型纵向回合和逐次模型调用审批切片已经完成：
@@ -45,10 +47,11 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 10. 持续协作主Workflow已经支持Product DB持久Checkpoint、Interrupt Link和Lease Outbox Worker；实际独立OS进程可从一次已提交决定恢复到下一审批安全点。该保证暂不外推到嵌套Workflow或外部Tool副作用。
 11. ExecutionDraft已有17部分完整可读编辑工作台；保存产生新revision与Hash，必须重新审批后才能编译不可变RunSpec。
 12. Product Harness D1-D8已经落地：Project、Work、Plan/Action、Note、Memory与两阶段Context使用服务端权威Schema、CAS、幂等命令、Trace和Outbox；前端提供Project Explorer、Work Board、Knowledge和Context Inspector。
-13. 持续协作主Workflow v1.4.0现有28个真实MAF节点；7套协作协议、不可变Context revision、TurnDigest v1、StepInputProjection和持久Intent Set已经接入。真实模型已验证2个独立目标、4次逐次模型审批、组合Plan、权威Project目录事实和无长期资源写入。
+13. 持续协作主Workflow v1.5.0现有31个真实MAF节点；7套协作协议、不可变Context revision、Repository Source Freshness、TurnDigest v1、StepInputProjection和持久Intent Set已经接入。真实模型已验证2个独立目标、4次逐次模型审批、组合Plan、权威Project目录事实和无长期资源写入；Repository真实模型Dogfood属于下一阶段。
 14. Runtime Job、活动流游标和通用Execution Worker纵向切片已经完成；完整Session仍按Phase 2-8继续补齐Steer/Follow-up、分支、强退/多端矩阵、Tool副作用对账和跨入口恢复。
-15. Chat概念空间已经建立：12个概念簇统一Chat系统/Harness、Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、上下文结果、界面、外部入口和人工介入策略的共同语言。
-16. Q0工程安全底座已有可运行纵向基线：Governance/Harness已按纯规则、只读查询、命令记录和事务协调继续拆分；Agent重连Hook、Workflow运行投影和对话呈现已有独立Feature边界；8个重型前端Feature按需加载，当前主入口为453.9 KiB并受自动包体门保护。统一Problem Detail、关联日志/Trace/Metrics/诊断、CI、覆盖率、迁移、Playwright/axe、故障实验室和供应链门均通过本地验证；大型Application Service、持续协作Workflow、生产Exporter/SLO和远端CI首次运行仍在后续范围。
+15. Chat概念空间已经建立：14个概念簇统一Chat系统/Harness、Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、上下文结果、界面、外部入口、人工介入、连续协作和超级管理员运营看护的共同语言。
+16. Q0工程安全底座已有可运行纵向基线：Governance/Harness已按纯规则、只读查询、命令记录和事务协调继续拆分；Agent重连Hook、Workflow运行投影和对话呈现已有独立Feature边界；8个重型前端Feature按需加载，当前主入口为472.6 KiB并受自动包体门保护。统一Problem Detail、关联日志/Trace/Metrics/诊断、CI、覆盖率、迁移、Playwright/axe、故障实验室和供应链门均通过本地验证；大型Application Service、持续协作Workflow、生产Exporter/SLO和远端CI首次运行仍在后续范围。
+17. Super Admin Operations目标已经确认：Identity负责真实Authentication Session和Role/Grant，运营模块负责Activity/Usage、可重建工作/作品投影与管理员审计；当前尚未实现真实登录、活动采集、管理API或控制台，固定`local-user`和技术耗时不能冒充该能力。
 
 ## 技术方向
 
@@ -110,6 +113,32 @@ npm run dev
 ```
 
 打开`http://127.0.0.1:5073`。没有任何配置完整且启用的Provider时，会使用确定性Bootstrap Agent，仍走完整MAF与AG-UI事件链路。
+
+## 手机公网访问
+
+当前已建立经用户批准的公网IP + HTTP验证链路：
+
+```text
+http://121.43.113.236/chat/
+```
+
+该入口提供与桌面相同的对话、Workflow、Project/Work/Knowledge资源和配置能力，
+并继续经过原有Product Session、MAF Workflow、AG-UI、HITL和Product Store。
+访问账号为`later`，密码只保存在被Git忽略的
+`backend/.data/deployment/chat-http-access-password`。
+
+安装本地常驻后端与反向SSH、发布Web版本、验收或停止链路分别使用：
+
+```bash
+scripts/install-mobile-relay.sh
+scripts/deploy-mobile-web.sh
+scripts/verify-mobile-relay.sh
+scripts/uninstall-mobile-relay.sh
+```
+
+公网HTTP不加密聊天或口令，也不能注册标准PWA Service Worker；当前Basic Auth只是
+验证阶段的边缘访问门，不是正式Product身份系统。拓扑、安全边界、故障语义和回滚见
+[手机公网访问与云端中转运行手册](./docs/mobile-cloud-relay.md)。
 
 ## 后端JSON配置
 
@@ -195,9 +224,9 @@ scripts/         可重复执行的工程验证
 3. [项目计划](./PROJECT_PLAN.md)：工作流、依赖、分阶段路线和完成门。
 4. [项目状态](./PROJECT_STATE.md)：当前完成项、待审核项和下一道门。
 5. [协作规则](./AGENTS.md)：开发和AI协作必须遵守的规则。
-6. [概念空间方法来源](./概念空间.md)与[Chat概念资产索引](./概念空间/00-索引.md)：共同语言方法、11个概念簇、边界、别名、正反例和实现状态入口。
+6. [概念空间方法来源](./概念空间.md)与[Chat概念资产索引](./概念空间/00-索引.md)：共同语言方法、14个概念簇、边界、别名、正反例和实现状态入口。
 7. [总体架构研究与证据](./docs/overall-architecture-research.md)：完整场景推导、MAF、pi、nanobot、QwenPaw与LibreChat证据、覆盖缺口和方案比较。
-8. [总体架构候选](./docs/overall-architecture-proposal.md)：由pi、nanobot、QwenPaw和LibreChat源码结构推导出的Web/Channel适配、Interaction Ingress、10个产品与应用模块、运行适配器、状态所有权、场景穿透和交付依赖。
+8. [总体架构基线](./docs/overall-architecture-proposal.md)：由pi、nanobot、QwenPaw和LibreChat源码结构及本项目已确认运营需求推导出的Web/Channel适配、Interaction Ingress、11个产品与应用模块、运行适配器、状态所有权、场景穿透和交付依赖。
 9. [架构新手导读](./docs/architecture-beginner-guide.md)：从用户点击“发送/批准”开始，串起前端、协议、后端数据库、Agent Session/Tool、Provider请求、响应解析、产品提交和React渲染，并对照当前代码与目标架构。
 10. [Session能力全集与目标边界](./docs/session-capability-catalog.md)：9个能力域、74项能力、R0-R6恢复层级、参考覆盖、明确非目标和最终用户场景。
 11. [Session分阶段交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务、优先级、依赖、方案、目标和各阶段完成场景。
@@ -208,7 +237,7 @@ scripts/         可重复执行的工程验证
 16. [Workflow恢复与Outbox Worker运行说明](./docs/runtime-recovery-operations.md)：单/双进程部署、日志、重试、死信和升级门。
 17. [Product Harness、Work与Memory详细设计](./docs/product-harness-detailed-design.md)：已批准D1-D8、状态机、Agent工具、两阶段Context和长跨度场景验收基线。
 18. [产品级工程审计](./docs/product-engineering-audit-2026-07-23.md)：代码结构、质量门、API合同、日志、调试、测试、文档和参考项目对照。
-19. [产品能力与工程质量Todo](./docs/product-engineering-backlog.md)：15项Todo的用户场景、目标、方案级做法、验证和完成门。
+19. [产品能力与工程质量Todo](./docs/product-engineering-backlog.md)：17项Todo的用户场景、目标、方案级做法、验证和完成门。
 20. [工程质量门与故障实验室](./docs/quality-gates.md)：快速门、完整门、覆盖率、浏览器和高风险故障矩阵。
 21. [关键依赖升级手册](./docs/dependency-upgrade-runbook.md)：MAF、AG-UI、pi和Provider脆弱接合、升级步骤与回退门。
 22. [应用组合根ADR](./docs/adr/0001-application-composition-and-process-entrypoints.md)与[可观测性ADR](./docs/adr/0002-observability-and-sensitive-data-boundary.md)：当前工程边界的原因、不变量和验证。
@@ -217,7 +246,12 @@ scripts/         可重复执行的工程验证
 25. [Chat系统分阶段实现基线](./docs/chat-system-implementation-roadmap.md)：Chat Harness、MAF AI Runtime、执行层、前端边界以及阶段A-F的交付与验证门。
 26. [Chat持续协作系统研究与落地推导](./docs/chat-collaboration-system-research.md)：项目/任务/学习/笔记方法，MAF与参考项目源码事实，摘要、检索、SQLite和协议落地取舍。
 27. [Kimi Code CLI开发工具手册](./docs/kimi-code-cli-tool.md)：已验证版本、个人Codex Skill、只读调用、交互式修改和未来ACP产品接入边界。
+28. [Chat开发Chat自举详细设计](./docs/chat-self-development-design.md)：第一性原理、19个用户场景、架构/模块/接口、8层测试、8个端到端场景、SD0-SD6路线、自检修正，以及已批准的D1-D9与SD1交付状态。
 
 ## 下一步
 
-下一阶段继续完成多Intent的长期`TaskPlanRevision`接合、独立Branch Execution、部分成功与Evidence；工程上继续按真实事务与变化原因拆分Governance/Harness命令协调和持续协作Workflow Executor，并补齐前端流式性能与人工键盘/读屏体验。Intent Set和组合Plan已完成、自动质量绿灯、Governance Outbox、Runtime纵向切片和主Workflow安全点恢复仍不能外推为完整Tool、Evidence或通用R6恢复。
+当前优先产品门是完成SD1-D：使用真实Chat仓库和真实模型验证Project、进度、代码基线与规则的
+只读Dogfood，并收敛性能、日志、可访问性和已兑现/未兑现保证；在F01 Tool Operation Ledger批准前不开写Tool，
+在F02 Evidence/Artifact生命周期批准前不把测试通过声明为Work完成，在F05前不承诺pi跨进程续跑。
+Super Admin Operations、长期`TaskPlanRevision`、独立Branch Execution和生产前端迁移继续保留在已批准
+路线中，但不能挤占本次真实Dogfood纵向闭环的依赖顺序。

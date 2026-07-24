@@ -24,6 +24,7 @@ class ContextItemChange(BaseModel):
     locked: bool | None = None
     content: str | None = None
     reason: str | None = None
+    materialize: bool = False
 
 
 class AddedContextSource(BaseModel):

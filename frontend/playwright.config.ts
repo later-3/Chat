@@ -36,7 +36,7 @@ export default defineConfig({
     },
     {
       command:
-        "VITE_API_BASE_URL=http://127.0.0.1:8031 VITE_AG_UI_URL=http://127.0.0.1:8031/api/agent npm run dev -- --host 127.0.0.1 --port 5074 --strictPort",
+        "VITE_PWA_DEV=true VITE_API_BASE_URL=http://127.0.0.1:8031 VITE_AG_UI_URL=http://127.0.0.1:8031/api/agent npm run dev -- --host 127.0.0.1 --port 5074 --strictPort",
       cwd: ".",
       port: 5074,
       reuseExistingServer: !process.env.CI,

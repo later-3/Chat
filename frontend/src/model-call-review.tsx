@@ -283,6 +283,51 @@ function MessageEditor({
   );
 }
 
+function KnowledgeSourceList({
+  sources,
+}: {
+  sources: ModelCallReviewCard["effective_context"]["knowledge_sources"];
+}) {
+  return (
+    <section className="knowledge-source-list" aria-label="本次采用的独立Context来源">
+      {sources.map((source) => (
+        <article
+          className="structured-card knowledge-source-card"
+          key={`${source.source_type}:${source.source_id}:${source.source_revision ?? ""}`}
+        >
+          <header>
+            <div>
+              <span className="item-index">{source.source_label}</span>
+              <small>
+                {source.source_type} ·{" "}
+                {source.token_estimate === undefined
+                  ? "仅发送来源引用"
+                  : `约 ${source.token_estimate} Tokens`}
+              </small>
+            </div>
+            {source.source_revision && <code>{source.source_revision.slice(0, 10)}</code>}
+          </header>
+          <p>{source.adoption_reason}</p>
+          {source.content_mode === "reference_only" || source.content === undefined ? (
+            <p className="structured-empty">
+              本次只发送上面的来源标识与版本，没有重复发送来源正文。
+            </p>
+          ) : (
+            <details>
+              <summary>查看实际进入本次请求的来源文字</summary>
+              <pre>
+                {typeof source.content === "string"
+                  ? source.content
+                  : stableStringify(source.content)}
+              </pre>
+            </details>
+          )}
+        </article>
+      ))}
+    </section>
+  );
+}
+
 function ReviewSection({
   title,
   description,
@@ -523,7 +568,9 @@ export function ModelCallReview({
                   sources={card.effective_context.history_and_knowledge}
                   value={requestMessages(workingRequest) ?? []}
                 />
-                {card.effective_context.knowledge_sources.length === 0 && (
+                {card.effective_context.knowledge_sources.length > 0 ? (
+                  <KnowledgeSourceList sources={card.effective_context.knowledge_sources} />
+                ) : (
                   <p className="structured-empty">
                     本次没有独立知识库、附件或检索结果进入模型请求。
                   </p>

@@ -1,7 +1,6 @@
 import { checkedJson } from "../../api-client.js";
+import { API_BASE_URL } from "../../runtime-config.js";
 import type { ModelProviderOption } from "../../use-chat-agent";
-
-const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? "http://127.0.0.1:8030";
 
 export interface AgentProfile {
   id: string;

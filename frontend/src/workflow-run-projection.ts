@@ -266,14 +266,16 @@ function fallbackStages(
     ["failed", "cancelled", "interrupted", "outcome_unknown"].includes(latestRun.status)
   ) {
     const commitFailed = latestRun.failure_code === "product_commit_failed";
+    const contextStale = latestRun.failure_code === "context_source_stale";
     return setStatuses(stages, {
       "agui.ingress": "completed",
       "product.prepare": "completed",
       "maf.enter": "failed",
       "request.compile": "completed",
       "approval.wait": latestRun.status === "interrupted" ? "failed" : "completed",
-      "approval.claim": latestRun.status === "interrupted" ? "skipped" : "completed",
-      "provider.dispatch": commitFailed ? "completed" : "failed",
+      "approval.claim":
+        latestRun.status === "interrupted" || contextStale ? "skipped" : "completed",
+      "provider.dispatch": commitFailed ? "completed" : contextStale ? "skipped" : "failed",
       "provider.receive": commitFailed ? "completed" : "skipped",
       "provider.decode": commitFailed ? "completed" : "skipped",
       "agui.project": commitFailed ? "completed" : "skipped",

@@ -67,7 +67,7 @@ CHAT_MODEL_CALL_APPROVAL_WORKFLOW = WorkflowDefinition(
 CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
     id="continuous-collaboration",
     name="持续协作主 Workflow",
-    version="1.4.0",
+    version="1.5.0",
     description=(
         "以选择性上下文和意图识别为入口，按场景进入澄清、计划或直接响应，"
         "所有模型调用受HITL治理，并在回合结束提取重点候选。"
@@ -100,6 +100,13 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
             label="采用Context",
             description="按有效HITL策略自动记录或暂停确认本轮采用的主题摘要。",
             kind="approval",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="directory_context_revision",
+            label="投影目录Context revision",
+            description="读取当前Run最新目录Context revision，使用户排除或修改后的内容真正进入意图识别。",
+            kind="context",
             runtime_type="executor",
         ),
         WorkflowNodeDefinition(
@@ -147,7 +154,24 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
         WorkflowNodeDefinition(
             id="harness_detail_context",
             label="装配Project工作集",
-            description="阶段B按已绑定Project加载开放Work、当前Plan、Action、Note和Accepted Memory，并记录采用与排除。",
+            description=(
+                "阶段B按已绑定Project加载开放Work、当前Plan、Action、Note、Accepted Memory、"
+                "Repository Snapshot与匹配治理规则，并记录采用与排除。"
+            ),
+            kind="context",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="detail_context_adoption",
+            label="采用项目与仓库Context",
+            description="按HITL策略确认本轮真正采用的Project工作集、代码基线与治理规则。",
+            kind="approval",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="detail_context_revision",
+            label="投影详情Context revision",
+            description="读取用户审核后的最新详情Context revision，公开采用原因和Source revision。",
             kind="context",
             runtime_type="executor",
         ),
@@ -278,7 +302,8 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
         WorkflowEdgeDefinition("input_acceptance", "context_candidates"),
         WorkflowEdgeDefinition("context_candidates", "harness_directory_context"),
         WorkflowEdgeDefinition("harness_directory_context", "context_adoption"),
-        WorkflowEdgeDefinition("context_adoption", "intent_agent"),
+        WorkflowEdgeDefinition("context_adoption", "directory_context_revision"),
+        WorkflowEdgeDefinition("directory_context_revision", "intent_agent"),
         WorkflowEdgeDefinition("intent_agent", "intent_set_projection"),
         WorkflowEdgeDefinition("intent_set_projection", "intent_binding"),
         WorkflowEdgeDefinition("intent_binding", "intent_set_acceptance"),
@@ -287,6 +312,14 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
         WorkflowEdgeDefinition("project_work_binding", "harness_detail_context"),
         WorkflowEdgeDefinition(
             "harness_detail_context",
+            "detail_context_adoption",
+        ),
+        WorkflowEdgeDefinition(
+            "detail_context_adoption",
+            "detail_context_revision",
+        ),
+        WorkflowEdgeDefinition(
+            "detail_context_revision",
             "collaboration_protocol_resolver",
         ),
         WorkflowEdgeDefinition(

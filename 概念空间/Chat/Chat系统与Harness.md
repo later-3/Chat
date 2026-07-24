@@ -6,7 +6,7 @@
 |---|---|
 | 目的 | 固定完整Chat系统、Chat Harness、MAF AI Runtime、执行层和前端之间的责任边界。 |
 | 概念状态 | 有效；2026-07-24用户确认Chat系统由Chat Harness与基于MAF的AI运行能力共同构成。 |
-| 实现状态 | 局部实现并持续建设：Product Harness、持续协作Workflow、模型调用治理、运行恢复和渐进式Workbench已有纵向切片；完整Tool/Evidence、周期工作、身份/多入口和生产运营能力仍未完成。 |
+| 实现状态 | 局部实现并持续建设：Product Harness、持续协作Workflow、模型调用治理、运行恢复和渐进式Workbench已有纵向切片；多Product Session共享Harness目标已批准，但活动感知与冲突交互尚未实现；完整Tool/Evidence、周期工作、身份/多入口和生产运营能力仍未完成。 |
 | 产品责任 | [PROJECT_CONTEXT.md](../../PROJECT_CONTEXT.md) |
 | 实现事实 | [PROJECT_STATE.md](../../PROJECT_STATE.md) |
 | 维护责任 | 产品概念、总体架构、Harness应用层、MAF运行层、执行层与前端各自维护对应事实。 |
@@ -55,6 +55,8 @@ Chat Harness拥有或协调：
 4. Chat AI Runtime不拥有Product Session、Project、Work、Accepted Memory、Approval或Product Run最终成功事实。
 5. 执行层只能接收当前步骤的受控输入与能力Allowlist；不能扩大RunSpec，也不能直接提交长期产品事实。
 6. 前端不拥有权威业务状态，刷新后必须能从Product Store、Trace、Checkpoint和运行事件恢复投影。
+7. 一个Project的代码仓库或物理目录不是新的Chat部署边界；同一用户的多个Product Session共享
+   Harness，并以revision、CAS和来源Trace治理并发修改。
 
 ## 关系
 
@@ -98,6 +100,8 @@ Chat AI Runtime（MAF）
 2. 按需展开来源内容，采用、排除、锁定或直接修正要进入本轮的Context。
 3. 在有影响的节点回答澄清、修改ExecutionDraft、确认或停止；可按作用域配置哪些HITL允许跳过。
 4. 运行后查看节点真实输入、公开输出、Evidence、状态回写和下一步，不需要到多个页面拼事实。
+5. 在多个Product Session同时推进事项时，看见相关资源的其他活动Run、来源变更和冲突Diff；关闭
+   一个Session不取消其他Run，无冲突更新也不应频繁打断用户。
 
 Chat Workflow每轮必须按确定性边界先读权威目录和用户已接受事实，再让模型处理语义候选；模型、
 Agent和执行Runtime都不能绕过Harness直接提交Product事实。执行层只收到当前步骤的最小工作包、

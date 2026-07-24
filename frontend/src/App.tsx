@@ -4,6 +4,9 @@ import { AppTopbar } from "./features/chat/app-topbar";
 import { ConversationPane, runLabel } from "./features/chat/conversation-pane";
 import { getMessageText } from "./features/chat/message-bubble";
 import { listDurableDecisionRequests } from "./features/governance/hitl-api";
+import { MobileNavigation } from "./features/mobile/mobile-navigation";
+import { readSessionDraft, writeSessionDraft } from "./features/mobile/session-draft-storage";
+import { useNetworkStatus } from "./features/mobile/use-network-status";
 import {
   createSession,
   getSession,
@@ -24,12 +27,13 @@ import {
   type WorkflowDefinition,
   workflowEndpointUrl,
 } from "./features/workflow/workflow-api";
+import { PwaStatus } from "./pwa-status";
+import { apiUrl } from "./runtime-config";
 import type { ModelProviderOption } from "./use-chat-agent";
 import { useChatAgent } from "./use-chat-agent";
 import type { WorkbenchView } from "./workbench-nav";
 import { CHAT_WORKFLOW } from "./workflow-run-projection";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8030";
 const AgentPage = lazy(() =>
   import("./agent-page").then((module) => ({ default: module.AgentPage })),
 );
@@ -124,6 +128,7 @@ function App() {
     prompt: string;
     forceRestart?: boolean;
   } | null>(null);
+  const networkStatus = useNetworkStatus();
   const selectableWorkflows = useMemo(() => {
     const values = workflowDefinitions.filter((value) => value.selectable);
     return values.length > 0 ? values : [CHAT_WORKFLOW];
@@ -143,6 +148,7 @@ function App() {
         getSessionRuns(sessionId),
       ]);
       setActiveSession(session);
+      setDraft(readSessionDraft(session.id));
       setHydratedMessages(toAguiMessages(productMessages));
       setActiveRuns(runs);
       setHydrationVersion((value) => value + 1);
@@ -154,6 +160,11 @@ function App() {
       setSessionLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!activeSession?.id) return;
+    writeSessionDraft(activeSession.id, draft);
+  }, [activeSession?.id, draft]);
 
   const refreshActiveSession = useCallback(
     (hydrate = true) => {
@@ -221,16 +232,14 @@ function App() {
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
-      fetch(`${API_BASE_URL}/api/health`, { signal: controller.signal }).then((response) => {
+      fetch(apiUrl("/api/health"), { signal: controller.signal }).then((response) => {
         if (!response.ok) throw new Error("health check failed");
         return response.json() as Promise<Health>;
       }),
-      fetch(`${API_BASE_URL}/api/model-providers`, { signal: controller.signal }).then(
-        (response) => {
-          if (!response.ok) throw new Error("provider catalog failed");
-          return response.json() as Promise<ProviderCatalogResponse>;
-        },
-      ),
+      fetch(apiUrl("/api/model-providers"), { signal: controller.signal }).then((response) => {
+        if (!response.ok) throw new Error("provider catalog failed");
+        return response.json() as Promise<ProviderCatalogResponse>;
+      }),
       listWorkflows(),
     ])
       .then(([healthValue, catalog, workflows]) => {
@@ -315,7 +324,6 @@ function App() {
 
   const createNewConversation = async () => {
     if (status !== "idle" || workflowRunning) return;
-    setDraft("");
     setSessionLoading(true);
     try {
       const created = await createSession();
@@ -329,7 +337,6 @@ function App() {
 
   const openSession = (sessionId: string) => {
     if (status !== "idle" || workflowRunning || sessionId === activeSession?.id) return;
-    setDraft("");
     void hydrateSession(sessionId);
   };
 
@@ -389,7 +396,7 @@ function App() {
   };
 
   const submit = () => {
-    if (!draft.trim() || status !== "idle" || !activeSession) return;
+    if (!draft.trim() || status !== "idle" || !activeSession || networkStatus === "offline") return;
     const text = draft;
     setDraft("");
     const control = retrySource
@@ -419,7 +426,10 @@ function App() {
     setLastSubmittedWorkflowId(selectedWorkflow.id);
     void send(
       run.input_text,
-      { kind: "retry", sourceRunId: run.id },
+      {
+        kind: run.failure_code === "context_source_stale" ? "restart" : "retry",
+        sourceRunId: run.id,
+      },
       {
         endpointUrl: workflowEndpointUrl(selectedWorkflow.endpoint),
         workflowId: selectedWorkflow.id,
@@ -458,7 +468,9 @@ function App() {
   return (
     <div className="app-shell">
       <AppTopbar
+        backendReachable={!healthError}
         interactionBusy={interactionBusy}
+        networkStatus={networkStatus}
         onNewConversation={() => void createNewConversation()}
         onOpenConfiguration={() => openConfiguration()}
         onOpenProjects={() => openWorkbench("projects")}
@@ -495,6 +507,7 @@ function App() {
             draft={draft}
             error={error}
             healthError={healthError}
+            networkStatus={networkStatus}
             latestRun={latestRun}
             messages={messages}
             onCancelRetry={() => setRetrySource(null)}
@@ -575,6 +588,15 @@ function App() {
           )}
         </div>
       </div>
+      <MobileNavigation
+        activeWorkbenchView={workbenchView}
+        onOpenChat={closeWorkbench}
+        onOpenConfiguration={() => openConfiguration()}
+        onOpenResources={() => openWorkbench("projects")}
+        onOpenWorkflow={() => openWorkbench("workflow")}
+        workbenchOpen={workbenchOpen}
+      />
+      <PwaStatus />
 
       {modelCallReview && (
         <Suspense fallback={<FeatureLoading label="模型请求审批" />}>

@@ -196,6 +196,30 @@ P2-02已完成一个精确取消窄切片：前端为每次AG-UI请求显式生�
 
 当前已有持久Model Call Attempt、Runtime Job和外发状态，但Provider/Tool精确发送边界及结果查询仍未全部接入，因此外发后取消继续保守收敛为`outcome_unknown`，不承诺Provider侧确已停止或可对账。Checkpoint Resume已接入通用Worker；P2-04 Steer、P2-05 Follow-up、完整P2-01幂等和P2-06/P2-07竞态验收仍未完成，因此Phase 2不能标记完成。
 
+### 6.6 已批准补充：多Product Session共享Harness并行协作
+
+该能力不新增第二套Harness，也不为不同Project启动多套Chat。它把P2-01“跨Session并发”细化为：
+
+1. 每个Product Session保持独立Message、Interaction、Run、ContextPackage和用户可见历史。
+2. 同一Principal/Scope下的Session共享Project、Work、Plan、Note、Memory和协议等Harness事实。
+3. 不同资源写入直接并行；同一资源使用读取revision、写集合、CAS和幂等命令收敛，不持有跨模型/
+   Tool调用的长事务或全局Project锁。
+4. 每次产品修改可追溯到来源Session、Interaction、Run、操作者和时间；相关Session能收到“事实已更新”
+   的服务端投影。
+5. 过期Context在执行门和提交门重新校验；冲突时保留Artifact/Evidence，拒绝旧Product Patch，并通过
+   rebase候选、重新规划或HITL继续。
+
+计划归属：
+
+- Phase 2完成跨Session活动Run、幂等、CAS、冲突语义和来源可见性。
+- Phase 3完成Session间跳转、搜索、Diff及历史组织体验。
+- Phase 4-5完成跨标签/设备事件通知、断线与Worker重启后的新鲜度校验。
+- Phase 6完成已经外发Tool副作用的重复抑制和对账，不能用CAS冒充副作用安全。
+
+验收至少覆盖不同Project、同Project不同Work、同Plan同字段冲突、目标已被另一Run完成、批准后来源
+变化、手机/桌面并发、Worker旧结果晚到和无冲突容量压测。2026-07-24产品目标已经审核通过；详细
+Schema、迁移和实现仍须遵守对应设计与验证门，当前尚未完成。
+
 ## 7. Phase 3：完整Web会话、分支与长上下文
 
 ### 7.1 阶段目标

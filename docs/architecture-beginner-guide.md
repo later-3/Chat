@@ -1,8 +1,8 @@
 # Chat 架构新手导读：从前端对象到 Agent 内部
 
-> 状态：待用户审核
-> 更新日期：2026-07-23
-> 作用：用普通语言解释[总体架构候选](./overall-architecture-proposal.md)，不单独创造另一套架构决定。
+> 状态：目标架构解释已随总体架构获批；超级管理员对象与流程于2026-07-24补入，详细Schema/API仍待专项审核
+> 更新日期：2026-07-24
+> 作用：用普通语言解释[总体架构基线](./overall-architecture-proposal.md)，不单独创造另一套架构决定。
 > 边界：本文只确认对象职责和关系，不冻结字段、数据库表名、API Schema或目录实现。
 > 阅读提示：高风险名称的当前语义边界从[Chat概念资产索引](../概念空间/00-索引.md)进入；实现进度只以[PROJECT_STATE.md](../PROJECT_STATE.md)为准。本文标为“当前代码”的段落是2026-07-21写作快照，不拥有后续实现状态。
 
@@ -259,7 +259,7 @@ App.tsx表单submit
 
 ## 4. 前端里面有哪些模块和对象
 
-前端不是一个大`App.tsx`。目标结构中，它由7个可理解的区域组成。
+前端不是一个大`App.tsx`。目标结构中，它由8个可理解的区域组成。
 
 ### 4.1 App Shell
 
@@ -346,6 +346,19 @@ App Shell负责路由、登录状态、主题、错误边界和全局查询客�
 - `DeliveryView`：结果准备发送到哪里，目前是否送达。
 - `ReceiptView`：平台返回的消息ID、回执或失败原因。
 
+### 4.8 Super Admin Console
+
+这是只对经过服务端授权的超级管理员开放的运营看护区，不是普通用户个人主页：
+
+- `UserPresenceView`：真实Authentication Session、最近活动和入口，不拿Product Session冒充登录。
+- `UsageSummaryView`：分别显示登录会话、前台活跃、有效协作和机器运行耗时。
+- `UserWorkProgressView`：读取Product Harness的Project、Work和Plan权威进度。
+- `ArtifactProgressView`：读取Evidence的Artifact revision、验证、有效性和交付状态。
+- `AttentionQueueView`：等待批准、长期停滞、失败、结果未知、证据失效和交付失败。
+- `AdminAuditView`：管理员何时、因为什么目的查看受限内容、导出或执行治理动作。
+
+这些View只缓存Super Admin REST API返回的读模型。前端不能自行累计“使用时长”、联表计算进度或因为菜单可见就认为已经获得跨用户权限。
+
 ## 5. 从浏览器进入后端时有哪些对象
 
 ### 5.1 REST对象
@@ -393,7 +406,9 @@ Web和外部Channel终止各自协议后，先转换成内部对象：
 | 对象 | 是什么 | 谁创建/修改 | 保存多久 |
 |---|---|---|---|
 | Principal | 用户、服务或外部主体的稳定身份 | Identity模块 | 长期 |
+| Role | 一组可撤销、可版本化的Grant；Super Administrator是高影响Role | Identity/授权管理 | 到撤销或版本失效 |
 | Scope/Grant | 当前主体被允许读取或执行什么 | Identity/授权策略 | 到撤销或过期 |
+| Authentication Session | 一次登录、续期、撤销和过期的服务端身份会话 | Identity模块 | 到退出、撤销或过期 |
 | Channel | 一个入口的类型和能力 | 管理配置 | 长期配置 |
 | Channel Binding | 外部身份/会话到Product Session的授权映射 | 用户或可信绑定流程 | 到撤销 |
 | RequestContext | 某一次请求已验证的身份与权限快照 | Identity模块 | 单次请求 |
@@ -473,6 +488,18 @@ Collaboration回答“系统理解什么、准备做什么、谁批准了什么�
 | Delivery | Delivery、Delivery Attempt、Receipt、Retry Plan | 结果是否已经到达某个接收方？ |
 
 Run成功、Evidence有效和Delivery成功是3件不同的事。例如：报告已经生成且证据完整，但Telegram暂时发送失败；这时Run可以成功，Delivery仍在重试。
+
+### 6.8 Super Admin Operations
+
+| 对象 | 是什么 | 谁拥有 | 为什么不能放到别处 |
+|---|---|---|---|
+| User Activity Event | 最小化的前台心跳或有效产品动作 | Super Admin Operations | 不是开发日志，也不是完整消息正文 |
+| Activity Window | 根据心跳、空闲阈值和服务器时间推导的前台活跃区间 | Super Admin Operations | 不能用登录开始/结束时间差替代 |
+| Usage Aggregate | 按用户和时间汇总、可从事件重建的使用读模型 | Super Admin Operations | 不属于Project或Run权威状态 |
+| Operations Projection | Work、Artifact、Run和Delivery的跨用户查询投影 | Super Admin Operations只拥有投影 | 原事实仍归Product Harness、Evidence、Run和Delivery |
+| Super Admin Audit Event | 管理员敏感查询、导出和治理动作记录 | Super Admin Operations | 不是可随意删除的一般日志 |
+
+关键关系是“运营模块读取或投影别人的权威事实，但不拥有它们”。如果某个Work从`running`变成`done`，必须先由Product Harness完成合法状态转换，随后运营投影更新；管理员页面不能直接把它改成100%。
 
 ## 7. Agent里面到底有哪些东西
 
@@ -634,6 +661,18 @@ AG-UI Adapter包住Agent或Workflow，把MAF的运行变化翻译成前端认识
 
 这个例子里至少有3类不同决策点：Intent/计划确认、ExecutionDraft执行授权、单次ModelCallDraft发送授权。它们可以分别解析为人工或自动决定，但必须使用各自对象版本、Hash、作用域和后果，不能压成一个可无限复用的“同意”按钮。具体组成和策略优先级见[执行治理合同](./execution-governance-contract.md)。
 
+### 8.5 超级管理员点击“查看用户进度”时走什么流程
+
+1. Super Admin Console调用专用REST查询，不调用AG-UI，因为这次动作是在读取产品资源，不是在启动Agent Run。
+2. Web Authentication Adapter验证Authentication Session；Identity把Principal、Role/Grant和查询范围放入可信RequestContext。
+3. Super Admin Authorization Guard再次检查是否允许跨用户读取；前端传来的`super_admin=true`没有授权作用。
+4. Operations Query Service读取自己的可重建投影。投影中的登录来自Identity、Work进度来自Product Harness、作品进度来自Evidence、失败/等待来自Run与Delivery。
+5. 每个指标带时间窗、时区、定义版本、最后更新时间和`fresh/stale/unknown`；4类时间分开显示。
+6. 默认只返回必要元数据。点击受限Message/Artifact正文、导出或治理动作时，再检查额外Grant和用途，并先写Super Admin Audit Event。
+7. React只渲染查询结果和筛选状态；投影延迟时显示陈旧，不回退为浏览器直查数据库或自行猜测完成度。
+
+因此，“用户登录了8小时”不自动等于“使用了8小时”；“模型说作品完成”也不自动等于Artifact已验证。超级管理员看到的每个关键数字都必须能回到真实来源和计算口径。
+
 ## 9. 失败时哪些对象保证可以解释和恢复
 
 | 失败 | 不能怎么做 | 依靠哪些对象恢复 | 用户看到什么 |
@@ -645,6 +684,8 @@ AG-UI Adapter包住Agent或Workflow，把MAF的运行变化翻译成前端认识
 | 用户修改Context或Draft | 不能继续使用旧批准 | 版本、Hash、Approval失效关系 | 要求重新审核 |
 | Evidence来源被删除 | 不能静默继续当真 | Source Validity、Lineage、Memory失效传播 | 历史保留，但显示来源失效 |
 | Telegram发送失败 | 不能把Run改成失败 | Delivery、Delivery Attempt、Receipt | 结果已生成，交付重试或失败 |
+| 运营投影中断或落后 | 不能让前端直查源表或猜测进度 | Projection Cursor/Version、源模块事件、全量重建 | 显示最后更新时间和`stale/unknown` |
+| 管理员审计写入失败 | 不能继续敏感正文读取、导出或治理动作 | Super Admin Audit Gate | 操作失败关闭并给出可重试/联系管理员提示 |
 
 ## 10. 最容易混淆的名字
 
@@ -685,22 +726,23 @@ Accepted Memory只是Context候选来源之一，也不等于ContextPackage。
 
 | 范围 | 当前代码已有 | 仍未实现 |
 |---|---|---|
-| 前端 | `HttpAgent`、AG-UI Message投影、输入、Run状态、模型调用审批卡片和页面局部状态 | Session/Work/Run/Evidence等正式Feature和REST查询模型 |
-| Web后端 | FastAPI健康接口、AG-UI Agent/Workflow端点、模型调用草稿读取/修改REST | 完整资源API、Identity、Interaction Ingress和各领域模块 |
+| 前端 | `HttpAgent`、AG-UI Message投影、输入、Run状态、模型调用审批卡片和页面局部状态 | Super Admin Console以及尚未完成的产品Feature |
+| Web后端 | FastAPI产品资源、AG-UI Agent/Workflow端点、Product Harness与Runtime查询 | 真实Identity/Authentication Session、Super Admin Query API和活动采集 |
 | MAF | Bootstrap模式使用`BootstrapAgent`；模型模式主链使用原生Workflow/自定义Executor、Interrupt/Resume和精确Provider Transport；另有Provider Agent创建代码但不在当前模型主链 | 正式Runtime Adapter、受控Agent步骤、持久AgentSession/Checkpoint映射 |
 | 审批切片 | `ModelCallDraft`、Hash、精确Body、逐次审批规则和进程内Attempt | Product Store中的持久Approval、跨进程领取和重启恢复 |
 | 产品事实 | 只有架构和研究文档 | Product Session、Message、Work、Product Run、Evidence、Delivery等正式Schema/Repository |
 
-因此，本文解释的是**待审核目标架构**。当前纵向切片证明MAF、AG-UI和逐次模型调用审批合同可行，不能被外推为全部产品对象已经实现。
+因此，本文解释的是**已批准目标架构，但不是已完成实现清单**。当前纵向切片证明MAF、AG-UI、Product Harness、运行治理和逐次模型调用审批合同可行，不能被外推为超级管理员、完整Tool/Evidence或全部目标对象已经实现。
 
 ## 12. 对本轮架构审核的帮助
 
-读完本文后，本轮审核可以先回答5个对象级问题：
+读完本文后，后续详细设计必须继续守住6个对象级问题：
 
 1. 是否接受前端View、网络DTO、产品领域对象和MAF运行对象分开？
 2. 是否接受Product Session、AG-UI Thread、MAF AgentSession、Product Run/Attempt按各自生命周期显式映射？
 3. 是否接受Agent只负责智能运行，Product Session、Approval、Evidence和Delivery由Agent外的产品模块拥有？
 4. 是否接受ExecutionDraft与逐次ModelCallDraft分开，且一个Run可能有多份模型调用草稿和审批？
 5. 是否接受结果必须经过Evidence、Assistant Message和Delivery提交，再向前端宣布产品成功？
+6. 是否接受超级管理员身份/登录、用户活动、业务进度和管理员审计分别归属Identity、Super Admin Operations、Product Harness/Evidence和Audit，而不是做成一个直连数据库的Dashboard？
 
-这5项不是新增架构范围，而是把[总体架构候选第17节](./overall-architecture-proposal.md#17-本轮审核项)的决定翻译成对象级心智模型。通过后，才进入字段、状态机、API和Repository的模块详细设计。
+这6项不是另造架构范围，而是把[总体架构基线第17节](./overall-architecture-proposal.md#17-已批准的总体架构决定)的决定翻译成对象级心智模型。对应能力仍要分别通过字段、状态机、API和Repository的模块详细设计审核。

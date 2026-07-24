@@ -1044,7 +1044,7 @@ class ExecutionGovernanceService:
                         "items": item_views,
                     }
                 )
-            return result
+        return result
 
     async def resolve_human_request(
         self,
@@ -1379,7 +1379,81 @@ class ExecutionGovernanceService:
                         "binding_hash": record.bound_subject_hash,
                     }
                 )
-        return result
+            return result
+
+    async def invalidate_model_call_source(
+        self,
+        *,
+        revision_id: str,
+        request_id: str | None,
+        reason_code: str,
+    ) -> None:
+        """Invalidate an unsent ModelCall when its adopted source became stale.
+
+        The immutable human decision, if already recorded by an Outbox
+        process, remains audit evidence.  Only the still-active authorization
+        is invalidated; no ModelCall Attempt is created by this operation.
+        """
+
+        now = utc_now()
+        async with self.database.sessions.begin() as transaction:
+            revision = await transaction.get(ModelCallDraftRevisionRecord, revision_id)
+            if revision is None:
+                raise GovernanceValidationError("ModelCall revision不存在")
+            revision.status = "invalidated"
+            slot = await transaction.get(ModelCallDraftRecord, revision.model_call_draft_id)
+            if slot is not None:
+                slot.status = "invalidated"
+                slot.row_version += 1
+            grants = list(
+                (
+                    await transaction.scalars(
+                        select(AuthorizationGrantRecord).where(
+                            AuthorizationGrantRecord.subject_id == revision.subject_id,
+                            AuthorizationGrantRecord.status == "active",
+                        )
+                    )
+                ).all()
+            )
+            for grant in grants:
+                grant.status = "invalidated"
+                grant.invalidated_at = now
+                grant.invalidation_reason = reason_code
+                grant.row_version += 1
+            if request_id:
+                request = await transaction.get(HumanDecisionRequestRecord, request_id)
+                if request is not None and request.status == "pending":
+                    request.status = "superseded"
+                    request.row_version += 1
+                    request.resolved_at = now
+                    items = list(
+                        (
+                            await transaction.scalars(
+                                select(HumanDecisionRequestItemRecord).where(
+                                    HumanDecisionRequestItemRecord.request_id == request.id,
+                                    HumanDecisionRequestItemRecord.status == "pending",
+                                )
+                            )
+                        ).all()
+                    )
+                    for item in items:
+                        item.status = "superseded"
+                link = await transaction.scalar(
+                    select(RuntimeInterruptLinkRecord).where(
+                        RuntimeInterruptLinkRecord.decision_request_id == request_id
+                    )
+                )
+                if link is not None and link.status not in {"resumed", "closed"}:
+                    link.status = "closed"
+                    link.last_error_code = reason_code
+                    link.updated_at = now
+        logger.info(
+            "model_call_source_invalidated revision_id=%s request_id=%s reason_code=%s active_grants=%d",
+            revision_id,
+            request_id,
+            reason_code,
+            len(grants),
+        )
 
     async def claim_grant(
         self,

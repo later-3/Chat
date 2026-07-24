@@ -110,7 +110,12 @@ test("Context修改提交不可变revision、CAS Hash与用户选择而不是覆
       reason: "只保留当前Project并锁定目标",
       item_changes: [
         { ordinal: 0, locked: true },
-        { ordinal: 1, adopted: false, reason: "与本轮无关" },
+        {
+          ordinal: 1,
+          adopted: true,
+          reason: "用户明确选择仓库规则",
+          materialize: true,
+        },
       ],
       added_source_refs: [
         {
@@ -131,7 +136,12 @@ test("Context修改提交不可变revision、CAS Hash与用户选择而不是覆
     assert.equal(body.reason, "只保留当前Project并锁定目标");
     assert.deepEqual(body.item_changes, [
       { ordinal: 0, locked: true },
-      { ordinal: 1, adopted: false, reason: "与本轮无关" },
+      {
+        ordinal: 1,
+        adopted: true,
+        reason: "用户明确选择仓库规则",
+        materialize: true,
+      },
     ]);
     assert.deepEqual(body.added_source_refs, [
       {

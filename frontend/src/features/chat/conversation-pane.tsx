@@ -1,6 +1,7 @@
 import type { Message } from "@ag-ui/core";
 import { Check, Copy, PanelRightOpen, RotateCcw, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { BrowserNetworkStatus } from "../mobile/use-network-status";
 import type { ProductRun, ProductSession } from "../session/session-api";
 import { copyProductSessionId, productSessionLocator } from "../session/session-identifier";
 import type { WorkflowDefinition } from "../workflow/workflow-api";
@@ -29,6 +30,7 @@ export interface ConversationPaneProps {
   healthError: boolean;
   latestRun: ProductRun | null;
   messages: Message[];
+  networkStatus: BrowserNetworkStatus;
   onCancelRetry: () => void;
   onChangeDraft: (value: string) => void;
   onEditAndRestart: (run: ProductRun) => void;
@@ -83,6 +85,7 @@ export function ConversationPane({
   healthError,
   latestRun,
   messages,
+  networkStatus,
   onCancelRetry,
   onChangeDraft,
   onEditAndRestart,
@@ -164,6 +167,12 @@ export function ConversationPane({
         </div>
       </div>
 
+      {networkStatus === "offline" && (
+        <div className="network-banner" role="status">
+          当前设备离线。你可以保留输入，但恢复网络并由服务端接纳后才能发送或审批。
+        </div>
+      )}
+
       <section className="conversation" aria-label="对话消息">
         {sessionLoading ? (
           <div className="empty-state">
@@ -241,13 +250,23 @@ export function ConversationPane({
             {!dispatchRecovery && !pendingReview && retryableLatestRun?.input_text && (
               <section className="run-recovery" aria-label="失败Run恢复操作">
                 <div>
-                  <strong>{runLabel(retryableLatestRun.status)}的Run可以显式处理</strong>
-                  <p>旧Run和Attempt会保留；再次执行会创建有血缘的新Run，并重新进入发送前审批。</p>
+                  <strong>
+                    {retryableLatestRun.failure_code === "context_source_stale"
+                      ? "仓库上下文已变化，旧请求没有发送"
+                      : `${runLabel(retryableLatestRun.status)}的Run可以显式处理`}
+                  </strong>
+                  <p>
+                    {retryableLatestRun.failure_code === "context_source_stale"
+                      ? "系统已停止旧Run。重新准备会读取最新Snapshot、重新组装Context并生成新的发送前审批。"
+                      : "旧Run和Attempt会保留；再次执行会创建有血缘的新Run，并重新进入发送前审批。"}
+                  </p>
                 </div>
                 <div>
                   <button onClick={() => onRetry(retryableLatestRun)} type="button">
                     <RotateCcw size={14} />
-                    原样重试
+                    {retryableLatestRun.failure_code === "context_source_stale"
+                      ? "按最新仓库重新准备"
+                      : "原样重试"}
                   </button>
                   <button onClick={() => onEditAndRestart(retryableLatestRun)} type="button">
                     修改后重新运行
@@ -262,6 +281,7 @@ export function ConversationPane({
 
       <ChatComposer
         activeSessionAvailable={activeSession !== null}
+        browserOnline={networkStatus === "online"}
         connectionStatus={connectionStatus}
         draft={draft}
         onCancelRetry={onCancelRetry}

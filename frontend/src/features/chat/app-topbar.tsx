@@ -1,15 +1,19 @@
 import {
   Bot,
   Boxes,
+  CloudOff,
   Menu,
   MessageSquarePlus,
   Settings2,
   Workflow as WorkflowIcon,
 } from "lucide-react";
+import type { BrowserNetworkStatus } from "../mobile/use-network-status";
 import type { WorkflowDefinition } from "../workflow/workflow-api";
 
 interface AppTopbarProps {
+  backendReachable: boolean;
   interactionBusy: boolean;
+  networkStatus: BrowserNetworkStatus;
   onNewConversation: () => void;
   onOpenConfiguration: () => void;
   onOpenProjects: () => void;
@@ -19,7 +23,9 @@ interface AppTopbarProps {
 }
 
 export function AppTopbar({
+  backendReachable,
   interactionBusy,
+  networkStatus,
   onNewConversation,
   onOpenConfiguration,
   onOpenProjects,
@@ -27,6 +33,13 @@ export function AppTopbar({
   onOpenWorkflow,
   workflow,
 }: AppTopbarProps) {
+  const connectionLabel =
+    networkStatus === "offline"
+      ? "设备离线"
+      : backendReachable
+        ? "本地Chat已连接"
+        : "本地Chat不可达";
+
   return (
     <header className="topbar">
       <h1 className="sr-only">Chat AI 协作产品</h1>
@@ -56,6 +69,21 @@ export function AppTopbar({
         <span>v{workflow.version}</span>
       </button>
       <div className="topbar-actions">
+        <span
+          aria-label={connectionLabel}
+          className={`network-indicator ${
+            networkStatus === "offline" || !backendReachable ? "network-indicator--error" : ""
+          }`}
+          role="status"
+          title={connectionLabel}
+        >
+          {networkStatus === "offline" || !backendReachable ? (
+            <CloudOff size={15} />
+          ) : (
+            <span aria-hidden="true" />
+          )}
+          <small>{connectionLabel}</small>
+        </span>
         <button
           className="icon-button labeled-on-wide"
           disabled={interactionBusy}

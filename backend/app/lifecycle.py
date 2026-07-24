@@ -31,6 +31,7 @@ def create_lifespan(
         await components.product_sessions.initialize()
         await components.governance.initialize()
         await components.harness.initialize()
+        await components.project_resources.initialize()
         await components.collaboration_protocols.initialize()
         await components.agent_profiles.initialize()
         await components.tool_configurations.initialize()

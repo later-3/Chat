@@ -1,6 +1,5 @@
 import { checkedJson } from "../../api-client.js";
-
-const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? "http://127.0.0.1:8030";
+import { AG_UI_URL, API_BASE_URL } from "../../runtime-config.js";
 
 export type WorkflowNodeStatus =
   | "idle"
@@ -202,8 +201,6 @@ export function getLatestWorkflowTrace(
 }
 
 export function workflowEndpointUrl(endpoint: string): string {
-  if (endpoint === "/api/agent" && import.meta.env?.VITE_AG_UI_URL) {
-    return import.meta.env.VITE_AG_UI_URL;
-  }
+  if (endpoint === "/api/agent") return AG_UI_URL;
   return `${API_BASE_URL}${endpoint}`;
 }

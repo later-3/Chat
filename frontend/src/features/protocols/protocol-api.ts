@@ -1,6 +1,6 @@
 import { checkedJson } from "../../api-client.js";
-
-const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? "http://127.0.0.1:8030";
+import { createClientId } from "../../client-id.js";
+import { API_BASE_URL } from "../../runtime-config.js";
 
 export interface CollaborationProtocolRule {
   id: string;
@@ -61,7 +61,7 @@ export interface ProtocolConfiguration {
 }
 
 function commandId(kind: string): string {
-  return `web:${kind}:${crypto.randomUUID()}`;
+  return `web:${kind}:${createClientId()}`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
