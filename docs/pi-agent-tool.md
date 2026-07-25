@@ -116,8 +116,15 @@ Tool Operation和bounded diff，绑定路径、参数、Workspace、Snapshot及p
 `starting/running/waiting_human`记录会在下次启动收敛为`已中断 / process_restarted`，不会永久
 显示假运行中。
 
-当前恢复保证是R1级产品事实恢复：可以解释此前执行到过哪里、调用了多少次、为何中断。主Workflow
-Checkpoint不能重建pi RPC进程或其内存边界，所以后端重启后不会从中间自动继续，也不会自动重做调用。
+当前增加了一层有界的在线恢复：只要后端进程和pi子进程仍然存活，即使AG-UI丢失线程级Workflow
+缓存，MAF也会从持久Checkpoint重建Executor，再以`ToolExecution ID + Model/Tool Boundary ID`
+重新挂接同一个Future或RPC请求。恢复不会创建第二个pi进程、第二次Provider发送或第二次Tool副作用。
+
+这个保证不跨后端进程。Checkpoint只保存可序列化的稳定ID，不保存进程、Future或文件句柄；后端
+重启后，启动对账仍把遗留`starting/running/waiting_human`收敛为
+`已中断 / process_restarted`，不会自动重做模型调用或Tool调用。若同一进程中进程注册表意外丢失，
+恢复失败会同时把Product Run收敛为中断、把ToolExecution收敛为失败，避免出现Run已失败但
+ToolExecution仍假装等待用户的矛盾状态。
 
 ## 6. 验证
 
@@ -131,13 +138,22 @@ Checkpoint不能重建pi RPC进程或其内存边界，所以后端重启后不�
 
 自动化覆盖运行时请求草稿、真实Tool绑定、配置CAS、路径/symlink/Protected Source、64KiB结果、
 精确Provider字节、Chat Completions Tool loop、两次模型审批、放弃无假成功、统计与三种非终态启动
-中断收敛。
+中断收敛。主Workflow测试还会在模型审批、只读Tool审批、精确`edit`审批、第二次模型审批和后续
+TurnDigest审批之间强制清除AG-UI Workflow缓存，证明每个Checkpoint都能重新挂接同一个在线pi；
+另有进程注册缺失的失败关闭与双终态对账场景。
 
 2026-07-25的主Workflow真实Dogfood使用现有私有Provider配置完成：Product Run
 `58e48b4b-25fd-44b0-ac35-f099bbd8821a`产生2次模型审批、2次Chat-owned `read`，最终只读取
 `README.md`与`PROJECT_STATE.md`；模型/Tool/Token/耗时、Result Hash和最终消息全部提交成功，
 Repository没有Shell、文件写入或Git操作。桌面与520 CSS像素窄屏工作台均可查看节点结果和子活动，
 控制台0错误。
+
+同日使用Qwen完成另一轮主Workflow真实复验：Product Run
+`8b9c72ab-f7c0-49eb-8c02-6bf8fef64e77`与ToolExecution
+`85cd36e9-2303-435a-82ab-08b80bf53388`均成功；`qwen3.7-plus`经过3次逐次模型审批，实际调用
+`find`与`read(offset=1, limit=1)`，读取`README.md`第一行`# Chat`并返回
+`QWEN_PI_REAL_OK`。进程生命周期日志通过ToolExecution ID、进程ID和不可逆凭证指纹关联注册、
+网关认证及注销，不记录原始凭据。
 
 SD3首次真实写入复验暴露的HTTP 401来自Chat本机Gateway，已通过独立Header及自动回归修复。随后
 Ark与DashScope复验均在远端响应流阶段超时或断连；Product Run保守收敛为`outcome_unknown`，没有
@@ -148,7 +164,8 @@ Ark与DashScope复验均在远端响应流阶段超时或断连；Product Run保
 
 1. SD2只读模式只允许`read/grep/find/ls`；SD3隔离编辑模式额外允许受管worktree内的精确
    `edit`。`write/bash/commit/push`仍未开放。
-2. 主Workflow审批安全点可以持久恢复，但活动pi进程及其内存Model/Tool边界不能跨进程恢复。
+2. 主Workflow能在同一后端进程内从持久Checkpoint重新挂接活动pi的Model/Tool边界；活动pi进程及
+   其内存边界仍不能跨后端进程恢复。
 3. 当前每个pi执行使用独立子进程，不提供跨Product Run共享pi Session。
 4. 真实Provider的计费和Token口径以Provider/pi事件为准；缺失字段显示0，不推测成本。
 5. 当前pi不自动加载工作目录及祖先的`AGENTS.md`/`CLAUDE.md`；主Workflow只传递批准的Harness

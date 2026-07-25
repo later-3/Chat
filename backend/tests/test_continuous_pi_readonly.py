@@ -55,6 +55,8 @@ class FakeReadonlyPiExecution:
         fence: RepositoryFence,
         readonly_tools: ReadonlyToolService,
         requested_tool: str = "read",
+        tool_execution_id: str | None = None,
+        task: str = "",
     ) -> None:
         self.provider = provider
         self.config = config
@@ -62,12 +64,17 @@ class FakeReadonlyPiExecution:
         self.fence = fence
         self.readonly_tools = readonly_tools
         self.requested_tool = requested_tool
+        self.tool_execution_id = tool_execution_id
+        self.workspace_id = None
+        self.task = task
         self.model_call_count = 0
         self.step = 0
         self.calls: list[PiGatewayCall] = []
         self.tool_results: list[dict[str, Any]] = []
         self.rejected_tool_calls: list[str] = []
         self.closed = False
+        self._pending_provider_calls: dict[str, PiGatewayCall] = {}
+        self._pending_tool_boundaries: dict[str, PiToolCallBoundary] = {}
 
     def _provider_request(self, *, after_tool: bool = False) -> dict[str, Any]:
         input_items: list[dict[str, Any]] = [
@@ -143,6 +150,7 @@ class FakeReadonlyPiExecution:
 
         call.decision.add_done_callback(mark_completed)
         self.calls.append(call)
+        self._pending_provider_calls[call.id] = call
         return PiModelCallBoundary(kind="model_call", call=call)
 
     async def next_boundary(
@@ -152,13 +160,15 @@ class FakeReadonlyPiExecution:
         if self.step == 1:
             return self._model_boundary()
         if self.step == 2:
-            return PiToolCallBoundary(
+            boundary = PiToolCallBoundary(
                 kind="tool_call",
                 rpc_request_id="rpc-read-1",
                 tool_call_id="tool-read-1",
                 tool_name=self.requested_tool,
                 arguments={"path": "README.md"},
             )
+            self._pending_tool_boundaries[boundary.tool_call_id] = boundary
+            return boundary
         if self.step == 3:
             return self._model_boundary(after_tool=True)
         return PiCompletedBoundary(
@@ -178,9 +188,17 @@ class FakeReadonlyPiExecution:
             arguments=arguments,
         )
         self.tool_results.append(result)
+        self._pending_tool_boundaries.pop(boundary.tool_call_id, None)
 
     async def reject_tool_call(self, boundary: PiToolCallBoundary) -> None:
         self.rejected_tool_calls.append(boundary.tool_call_id)
+        self._pending_tool_boundaries.pop(boundary.tool_call_id, None)
+
+    def pending_provider_call(self, call_id: str) -> PiGatewayCall:
+        return self._pending_provider_calls[call_id]
+
+    def pending_tool_boundary(self, tool_call_id: str) -> PiToolCallBoundary:
+        return self._pending_tool_boundaries[tool_call_id]
 
     def metrics(self) -> dict[str, Any]:
         return {
@@ -225,6 +243,7 @@ class FakeReadonlyPiManager:
         *,
         repository_fence: RepositoryFence | None = None,
         readonly_tools: ReadonlyToolService | None = None,
+        tool_execution_id: str | None = None,
     ) -> FakeReadonlyPiExecution:
         assert task
         assert config.enabled
@@ -237,9 +256,24 @@ class FakeReadonlyPiManager:
             fence=repository_fence,
             readonly_tools=readonly_tools,
             requested_tool=self.requested_tool,
+            tool_execution_id=tool_execution_id,
+            task=task,
         )
         self.executions.append(execution)
         return execution
+
+    def live_for_tool_execution(
+        self,
+        tool_execution_id: str,
+    ) -> FakeReadonlyPiExecution | None:
+        return next(
+            (
+                execution
+                for execution in self.executions
+                if execution.tool_execution_id == tool_execution_id and not execution.closed
+            ),
+            None,
+        )
 
     async def close_all(self) -> None:
         for execution in self.executions:
@@ -521,6 +555,11 @@ def test_continuous_workflow_runs_pi_readonly_in_one_product_run(tmp_path: Path)
         ]
         assert len(transport.prepared) == 2
 
+        # Simulate AG-UI losing its cached graph while the backend process and
+        # pi subprocess remain alive. The next request must restore the MAF
+        # checkpoint and reattach by durable ToolExecution/boundary IDs.
+        app.state.continuous_workflow.clear_thread_workflow(session_id)
+
         second_pi_events = _events(
             client.post(
                 "/api/workflows/continuous-collaboration/run",
@@ -540,6 +579,8 @@ def test_continuous_workflow_runs_pi_readonly_in_one_product_run(tmp_path: Path)
             "text": "# Chat",
         }
 
+        app.state.continuous_workflow.clear_thread_workflow(session_id)
+
         summary_card = _card(
             _events(
                 client.post(
@@ -555,6 +596,7 @@ def test_continuous_workflow_runs_pi_readonly_in_one_product_run(tmp_path: Path)
         )
         assert summary_card["execution_context"]["agent_id"] == "turn_summarizer"
         assert len(transport.prepared) == 2
+        app.state.continuous_workflow.clear_thread_workflow(session_id)
 
         completed = _events(
             client.post(
@@ -625,6 +667,55 @@ def test_continuous_workflow_runs_pi_readonly_in_one_product_run(tmp_path: Path)
     assert project["id"] == governance["execution_draft"]["payload"]["project_work_binding"]["project_id"]
 
 
+def test_checkpoint_restore_fails_closed_when_live_pi_process_is_missing(
+    tmp_path: Path,
+) -> None:
+    _repository(tmp_path / "repo")
+    catalog = _catalog()
+    store = InMemoryModelCallReviewStore(catalog)
+    manager = FakeReadonlyPiManager(catalog.get("provider-a"), store)
+    app = create_app(
+        _settings(tmp_path),
+        model_call_store=store,
+        model_call_transport=SequencedTransport(_transport_responses(include_summary=False)),
+        pi_runtime_manager=manager,  # type: ignore[arg-type]
+    )
+
+    with TestClient(app) as client:
+        _create_project_and_binding(client)
+        session_id = client.post("/api/sessions", json={}).json()["id"]
+        intent = _card(
+            _events(
+                client.post(
+                    "/api/workflows/continuous-collaboration/run",
+                    json=_request(session_id, "pi-missing-start", "检查Chat代码库"),
+                )
+            )
+        )
+        first_pi = _approve_intent_and_plan(
+            client,
+            session_id=session_id,
+            intent_card=intent,
+            prefix="pi-missing",
+        )
+        manager.executions[0].closed = True
+        app.state.continuous_workflow.clear_thread_workflow(session_id)
+
+        events = _events(
+            client.post(
+                "/api/workflows/continuous-collaboration/run",
+                json=_resume(session_id, "pi-missing-resume", first_pi, "approve"),
+            )
+        )
+        [run] = client.get(f"/api/sessions/{session_id}/runs").json()["runs"]
+        [execution] = client.get(f"/api/runs/{run['id']}/tool-executions").json()["tool_executions"]
+
+    assert events[-1]["type"] == "RUN_ERROR"
+    assert run["status"] == "interrupted"
+    assert execution["status"] == "failed"
+    assert execution["failure_code"] == "PI_EXECUTION_PROCESS_NOT_LIVE"
+
+
 def test_pi_readonly_tool_policy_can_require_human_confirmation(tmp_path: Path) -> None:
     _repository(tmp_path / "repo")
     catalog = _catalog()
@@ -684,6 +775,8 @@ def test_pi_readonly_tool_policy_can_require_human_confirmation(tmp_path: Path) 
         assert tool_card["tool_name"] == "read"
         assert tool_card["arguments"] == {"path": "README.md"}
         assert waiting["status"] == "waiting_human"
+
+        app.state.continuous_workflow.clear_thread_workflow(session_id)
 
         second_pi = _card(
             _events(

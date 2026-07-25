@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections.abc import Callable, Mapping
-from dataclasses import replace
+from dataclasses import asdict, replace
 from typing import Any
 
 from agent_framework import Executor, WorkflowContext, handler, response_handler
@@ -25,7 +26,7 @@ from ..pi_runtime import (
     PiToolCallBoundary,
 )
 from ..product_sessions.service import ProductSessionService
-from ..workflows.continuous_chat_contracts import CollaborationState
+from ..workflows.continuous_chat_contracts import CollaborationState, state_from_snapshot
 from .service import (
     ExecutionDispatchError,
     ExecutionDispatchService,
@@ -37,6 +38,9 @@ from .service import (
 
 WORKFLOW_ID = "continuous-collaboration"
 WORKFLOW_VERSION = "1.7.0"
+_PI_CHECKPOINT_VERSION = 1
+
+logger = logging.getLogger(__name__)
 
 
 async def _record_trace(
@@ -280,6 +284,7 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         self._dispatch = dispatch
         self._store = store
         self._mode = mode
+        self._execution_id: str | None = None
         self._prepared: PreparedPiExecution | None = None
         self._state: CollaborationState | None = None
         self._pending_model: PiModelCallBoundary | None = None
@@ -331,6 +336,7 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
                     protocol_definition_id=str(protocol.get("definition_id") or "") or None,
                     protocol_binding_id=str(protocol.get("binding_id") or "") or None,
                 )
+            self._execution_id = self._prepared.execution_id
             await self._emit(
                 ctx,
                 stage="process_started",
@@ -446,6 +452,127 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
                 "pi返回了未知运行边界",
                 code="pi_boundary_unknown",
             )
+
+    async def on_checkpoint_save(self) -> dict[str, Any]:
+        """Persist reattachment references, never live process/Future objects."""
+
+        if self._prepared is None or self._state is None:
+            return {}
+        pending: dict[str, Any] | None = None
+        if self._pending_model is not None and self._pending_model_governance is not None:
+            pending = {
+                "kind": "model_call",
+                "call_id": self._pending_model.call.id,
+                "governance": self._pending_model_governance.checkpoint_view(),
+            }
+        elif self._pending_tool is not None and self._pending_tool_authorization is not None:
+            request = self._pending_tool_authorization.request
+            if request is None:
+                raise ExecutionDispatchError(
+                    "待人工确认的pi Tool没有持久请求",
+                    code="PI_TOOL_REQUEST_MISSING",
+                )
+            pending = {
+                "kind": "tool_call",
+                "tool_call_id": self._pending_tool.tool_call_id,
+                "authorization": {
+                    "tool_call_request_id": (self._pending_tool_authorization.tool_call_request_id),
+                    "decision_item_key": self._pending_tool_authorization.decision_item_key,
+                    "request_id": request.id,
+                    "request_hash": request.request_hash,
+                    "request_row_version": request.row_version,
+                    "operation_id": (
+                        self._pending_tool_authorization.operation.operation_id
+                        if self._pending_tool_authorization.operation
+                        else None
+                    ),
+                },
+            }
+        if pending is None:
+            # Once the pi node has crossed its last interrupt there is no live
+            # boundary to reattach. Later Workflow checkpoints must not try to
+            # resurrect the already-closed subprocess.
+            return {}
+        return {
+            "schema_version": _PI_CHECKPOINT_VERSION,
+            "execution_id": self._prepared.execution_id,
+            "mode": self._prepared.mode,
+            "step_input": self._prepared.step_input,
+            "workflow_state": asdict(self._state),
+            "pending": pending,
+        }
+
+    async def on_checkpoint_restore(self, state: dict[str, Any]) -> None:
+        """Reattach a rebuilt Executor to the exact process-local boundary."""
+
+        if not state:
+            return
+        try:
+            if state.get("schema_version") != _PI_CHECKPOINT_VERSION:
+                raise ExecutionDispatchError(
+                    "pi Executor Checkpoint版本不受支持",
+                    code="PI_CHECKPOINT_VERSION_UNSUPPORTED",
+                )
+            execution_id = str(state.get("execution_id") or "")
+            self._execution_id = execution_id or None
+            workflow_state = state.get("workflow_state")
+            if not execution_id or not isinstance(workflow_state, Mapping):
+                raise ExecutionDispatchError(
+                    "pi Executor Checkpoint缺少重连引用",
+                    code="PI_CHECKPOINT_INVALID",
+                )
+            restored_state = state_from_snapshot(workflow_state)
+            self._prepared = await self._dispatch.reattach_live_pi(
+                execution_id=execution_id,
+                run_id=self._run_id(),
+                expected_mode=str(state.get("mode") or self._mode),
+                step_input=(state["step_input"] if isinstance(state.get("step_input"), Mapping) else {}),
+            )
+            self._state = restored_state
+            pending = state.get("pending")
+            if not isinstance(pending, Mapping):
+                return
+            kind = pending.get("kind")
+            if kind == "model_call":
+                call = self._prepared.execution.pending_provider_call(str(pending.get("call_id") or ""))
+                governance = pending.get("governance")
+                if not isinstance(governance, Mapping):
+                    raise ExecutionDispatchError(
+                        "pi模型Checkpoint缺少治理引用",
+                        code="PI_MODEL_GOVERNANCE_MISSING",
+                    )
+                self._pending_model = PiModelCallBoundary(kind="model_call", call=call)
+                self._pending_model_governance = PiModelCallGovernance.from_checkpoint(governance)
+            elif kind == "tool_call":
+                tool_call_id = str(pending.get("tool_call_id") or "")
+                self._pending_tool = self._prepared.execution.pending_tool_boundary(tool_call_id)
+                authorization = pending.get("authorization")
+                if not isinstance(authorization, Mapping):
+                    raise ExecutionDispatchError(
+                        "pi Tool Checkpoint缺少授权引用",
+                        code="PI_TOOL_REQUEST_MISSING",
+                    )
+                self._pending_tool_authorization = await self._dispatch.restore_tool_authorization(
+                    authorization
+                )
+            else:
+                raise ExecutionDispatchError(
+                    "pi Executor Checkpoint包含未知待决边界",
+                    code="PI_CHECKPOINT_INVALID",
+                )
+            logger.info(
+                "pi_executor_checkpoint_restored execution_id=%s pending_kind=%s",
+                execution_id,
+                kind,
+            )
+        except Exception as error:
+            logger.warning(
+                "pi_executor_checkpoint_restore_failed execution_id=%s error_code=%s error_type=%s",
+                self._execution_id,
+                getattr(error, "code", "checkpoint_restore_failed"),
+                type(error).__name__,
+            )
+            raise
 
     async def _request_model_approval(
         self,
@@ -828,6 +955,12 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         await self._finish_active_model_attempt()
         prepared = self._prepared
         if prepared is None:
+            if self._execution_id is not None:
+                await self._dispatch.finish_failed(
+                    self._execution_id,
+                    failure_code=failure_code,
+                    metrics={},
+                )
             return
         await self._dispatch.finish_failed(
             prepared.execution_id,

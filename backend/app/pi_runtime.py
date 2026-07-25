@@ -462,6 +462,12 @@ class PiExecution:
         self._internal_tool_call_count = 0
         self._tool_events: list[dict[str, Any]] = []
         self._approved_tool_calls: dict[str, tuple[str, dict[str, Any]]] = {}
+        # MAF checkpoints may rebuild the Executor while this subprocess keeps
+        # running. Stable boundary IDs let the restored Executor reattach to
+        # the exact unresolved Future/RPC request without serializing live
+        # asyncio or process objects into the checkpoint.
+        self._pending_provider_calls: dict[str, PiGatewayCall] = {}
+        self._pending_tool_boundaries: dict[str, PiToolCallBoundary] = {}
         self._usage = {
             "input_tokens": 0,
             "output_tokens": 0,
@@ -630,8 +636,34 @@ class PiExecution:
             received_at=time.monotonic(),
             decision=asyncio.get_running_loop().create_future(),
         )
+        self._pending_provider_calls[call.id] = call
         await self._boundaries.put(PiModelCallBoundary(kind="model_call", call=call))
         return call
+
+    def pending_provider_call(self, call_id: str) -> PiGatewayCall:
+        """Return the exact unresolved Provider boundary for checkpoint restore."""
+
+        call = self._pending_provider_calls.get(call_id)
+        if call is None or call.decision.done():
+            raise PiRuntimeError(
+                "pi模型调用边界已经结束或不存在",
+                code="pi_model_boundary_not_live",
+            )
+        return call
+
+    def retire_provider_call(self, call_id: str) -> None:
+        self._pending_provider_calls.pop(call_id, None)
+
+    def pending_tool_boundary(self, tool_call_id: str) -> PiToolCallBoundary:
+        """Return the exact unresolved Tool boundary for checkpoint restore."""
+
+        boundary = self._pending_tool_boundaries.get(tool_call_id)
+        if boundary is None:
+            raise PiRuntimeError(
+                "pi Tool调用边界已经结束或不存在",
+                code="pi_tool_boundary_not_live",
+            )
+        return boundary
 
     async def next_boundary(self) -> PiBoundary:
         remaining = self.config.timeout_seconds - (time.monotonic() - self.started_at)
@@ -665,9 +697,11 @@ class PiExecution:
                 ),
             }
         )
+        self._pending_tool_boundaries.pop(boundary.tool_call_id, None)
 
     async def reject_tool_call(self, boundary: PiToolCallBoundary) -> None:
         await self._write({"type": "extension_ui_response", "id": boundary.rpc_request_id, "cancelled": True})
+        self._pending_tool_boundaries.pop(boundary.tool_call_id, None)
 
     async def execute_read_tool(
         self,
@@ -774,6 +808,11 @@ class PiExecution:
         for task in (self._reader_task, self._stderr_task):
             if task is not None and not task.done():
                 task.cancel()
+        for call in self._pending_provider_calls.values():
+            if not call.decision.done():
+                call.decision.cancel()
+        self._pending_provider_calls.clear()
+        self._pending_tool_boundaries.clear()
         self.manager.unregister(self.token)
         if self._temp_directory is not None:
             self._temp_directory.cleanup()
@@ -898,6 +937,12 @@ class PiExecution:
                     code="pi_read_tool_call_limit",
                 )
             self._internal_tool_call_count += 1
+            if boundary.tool_call_id in self._pending_tool_boundaries:
+                raise PiRuntimeError(
+                    "pi重复使用了尚未完成的Tool Call ID",
+                    code="pi_tool_boundary_duplicate",
+                )
+            self._pending_tool_boundaries[boundary.tool_call_id] = boundary
             await self._boundaries.put(boundary)
             return
         if event_type == "tool_execution_start":

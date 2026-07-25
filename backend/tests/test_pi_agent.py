@@ -638,8 +638,10 @@ def test_pi_gateway_forwards_the_exact_approved_bytes_and_marks_attempt(tmp_path
             runtime=_runtime(tmp_path),
             provider=_catalog().get("provider-a"),
             manager=manager,
+            tool_execution_id="tool-execution-1",
         )
         manager._executions[execution.token] = execution
+        assert manager.live_for_tool_execution("tool-execution-1") is execution
         incoming = json.dumps(_provider_request(), separators=(",", ":")).encode()
         dispatch = asyncio.create_task(
             manager.gateway_response(
@@ -650,6 +652,7 @@ def test_pi_gateway_forwards_the_exact_approved_bytes_and_marks_attempt(tmp_path
         )
         boundary = await execution.next_boundary()
         assert isinstance(boundary, PiModelCallBoundary)
+        assert execution.pending_provider_call(boundary.call.id) is boundary.call
         draft = store.begin_provider_request(
             thread_id="gateway-thread",
             run_id="gateway-run",
@@ -678,7 +681,10 @@ def test_pi_gateway_forwards_the_exact_approved_bytes_and_marks_attempt(tmp_path
         assert captured == [claimed.body]
         [attempt] = store.attempts()
         assert attempt.status == "completed"
+        with pytest.raises(PiRuntimeError, match="已经结束或不存在"):
+            execution.pending_provider_call(boundary.call.id)
         await execution.close()
+        assert manager.live_for_tool_execution("tool-execution-1") is None
 
     asyncio.run(scenario())
 

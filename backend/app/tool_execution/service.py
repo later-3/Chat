@@ -586,6 +586,23 @@ class ToolOperationService:
                 reconciliations=reconciliations,
             )
 
+    async def prepared(self, operation_id: str) -> PreparedToolOperation:
+        """Restore the immutable operation binding needed by a pending HITL."""
+
+        async with self.database.sessions() as transaction:
+            operation = await transaction.get(ToolOperationRecord, operation_id)
+            if operation is None:
+                raise ToolOperationError(
+                    "Tool Operation不存在",
+                    code="TOOL_OPERATION_NOT_FOUND",
+                )
+            if operation.status not in {"proposed", "waiting_authorization"}:
+                raise ToolOperationError(
+                    "Tool Operation已经不再等待本次授权",
+                    code="TOOL_OPERATION_STATE_CONFLICT",
+                )
+            return prepared_operation(operation)
+
     async def list_for_tool_execution(self, tool_execution_id: str) -> list[dict[str, Any]]:
         async with self.database.sessions() as transaction:
             values = list(

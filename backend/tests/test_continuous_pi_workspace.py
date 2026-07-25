@@ -58,6 +58,7 @@ class FakeWorkspacePiExecution:
         workspaces: ExecutionWorkspaceService,
         readonly_tools: ReadonlyToolService,
         operations: ToolOperationService,
+        task: str,
     ) -> None:
         self.provider = provider
         self.config = config
@@ -67,11 +68,14 @@ class FakeWorkspacePiExecution:
         self.workspaces = workspaces
         self.readonly_tools = readonly_tools
         self.operations = operations
+        self.task = task
         self.model_call_count = 0
         self.step = 0
         self.calls: list[PiGatewayCall] = []
         self.tool_results: list[dict[str, Any]] = []
         self.closed = False
+        self._pending_provider_calls: dict[str, PiGatewayCall] = {}
+        self._pending_tool_boundaries: dict[str, PiToolCallBoundary] = {}
 
     def _model_boundary(self, *, after_tools: bool = False) -> PiModelCallBoundary:
         self.model_call_count += 1
@@ -142,6 +146,7 @@ class FakeWorkspacePiExecution:
 
         call.decision.add_done_callback(mark_completed)
         self.calls.append(call)
+        self._pending_provider_calls[call.id] = call
         return PiModelCallBoundary(kind="model_call", call=call)
 
     async def next_boundary(
@@ -151,15 +156,17 @@ class FakeWorkspacePiExecution:
         if self.step == 1:
             return self._model_boundary()
         if self.step == 2:
-            return PiToolCallBoundary(
+            boundary = PiToolCallBoundary(
                 kind="tool_call",
                 rpc_request_id="rpc-read-workspace",
                 tool_call_id="tool-read-workspace",
                 tool_name="read",
                 arguments={"path": "README.md"},
             )
+            self._pending_tool_boundaries[boundary.tool_call_id] = boundary
+            return boundary
         if self.step == 3:
-            return PiToolCallBoundary(
+            boundary = PiToolCallBoundary(
                 kind="tool_call",
                 rpc_request_id="rpc-edit-workspace",
                 tool_call_id="tool-edit-workspace",
@@ -170,6 +177,8 @@ class FakeWorkspacePiExecution:
                     "new_text": "# Chat Workspace",
                 },
             )
+            self._pending_tool_boundaries[boundary.tool_call_id] = boundary
+            return boundary
         if self.step == 4:
             return self._model_boundary(after_tools=True)
         return PiCompletedBoundary(
@@ -199,9 +208,16 @@ class FakeWorkspacePiExecution:
                 source_identity={"execution_workspace_id": self.workspace_id},
             )
         self.tool_results.append(result)
+        self._pending_tool_boundaries.pop(boundary.tool_call_id, None)
 
     async def reject_tool_call(self, _: PiToolCallBoundary) -> None:
         return
+
+    def pending_provider_call(self, call_id: str) -> PiGatewayCall:
+        return self._pending_provider_calls[call_id]
+
+    def pending_tool_boundary(self, tool_call_id: str) -> PiToolCallBoundary:
+        return self._pending_tool_boundaries[tool_call_id]
 
     def metrics(self) -> dict[str, Any]:
         return {
@@ -265,9 +281,23 @@ class FakeWorkspacePiManager:
             workspaces=execution_workspaces,
             readonly_tools=readonly_tools,
             operations=tool_operations,
+            task=task,
         )
         self.executions.append(execution)
         return execution
+
+    def live_for_tool_execution(
+        self,
+        tool_execution_id: str,
+    ) -> FakeWorkspacePiExecution | None:
+        return next(
+            (
+                execution
+                for execution in self.executions
+                if execution.tool_execution_id == tool_execution_id and not execution.closed
+            ),
+            None,
+        )
 
     async def close_all(self) -> None:
         for execution in self.executions:
@@ -359,6 +389,7 @@ def test_continuous_workflow_governs_exact_edit_in_isolated_workspace(
             prefix="workspace",
         )
         assert first_model["execution_context"]["executor_id"] == "pi_workspace_dispatch"
+        app.state.continuous_workflow.clear_thread_workflow(session_id)
 
         edit_card = _card(
             _events(
@@ -379,6 +410,7 @@ def test_continuous_workflow_governs_exact_edit_in_isolated_workspace(
         assert operation_card["target_path"] == "README.md"
         assert "-# Chat" in operation_card["diff_preview"]
         assert "+# Chat Workspace" in operation_card["diff_preview"]
+        app.state.continuous_workflow.clear_thread_workflow(session_id)
 
         second_model = _card(
             _events(
@@ -394,6 +426,7 @@ def test_continuous_workflow_governs_exact_edit_in_isolated_workspace(
             )
         )
         assert second_model["execution_context"]["executor_id"] == "pi_workspace_dispatch"
+        app.state.continuous_workflow.clear_thread_workflow(session_id)
 
         summary_card = _card(
             _events(
@@ -408,6 +441,7 @@ def test_continuous_workflow_governs_exact_edit_in_isolated_workspace(
                 )
             )
         )
+        app.state.continuous_workflow.clear_thread_workflow(session_id)
         completed = _events(
             client.post(
                 "/api/workflows/continuous-collaboration/run",

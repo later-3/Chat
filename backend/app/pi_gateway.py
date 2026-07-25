@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import secrets
 from collections.abc import AsyncIterator, Callable
 from typing import Any
@@ -81,16 +82,39 @@ class PiRuntimeManager:
             tool_operations=tool_operations,
         )
         self._executions[token] = execution
+        logger.info(
+            "pi_runtime_registered execution_id=%s process_id=%d credential_fingerprint=%s "
+            "active_executions=%d",
+            tool_execution_id,
+            os.getpid(),
+            hashlib.sha256(token.encode("utf-8")).hexdigest()[:12],
+            len(self._executions),
+        )
         try:
             await execution.start()
         except Exception:
             self.unregister(token)
             await execution.close()
             raise
+        logger.info(
+            "pi_runtime_started execution_id=%s process_id=%d active_executions=%d",
+            tool_execution_id,
+            os.getpid(),
+            len(self._executions),
+        )
         return execution
 
     def unregister(self, token: str) -> None:
-        self._executions.pop(token, None)
+        execution = self._executions.pop(token, None)
+        logger.info(
+            "pi_runtime_unregistered execution_id=%s process_id=%d credential_fingerprint=%s "
+            "was_active=%s active_executions=%d",
+            execution.tool_execution_id if execution is not None else None,
+            os.getpid(),
+            hashlib.sha256(token.encode("utf-8")).hexdigest()[:12],
+            execution is not None,
+            len(self._executions),
+        )
 
     async def close_all(self) -> None:
         for execution in list(self._executions.values()):
@@ -108,6 +132,21 @@ class PiRuntimeManager:
             await execution.close()
         return len(matches)
 
+    def live_for_tool_execution(self, tool_execution_id: str) -> PiExecution | None:
+        """Resolve one process-local pi owner from its durable ledger ID."""
+
+        matches = [
+            execution
+            for execution in self._executions.values()
+            if execution.tool_execution_id == tool_execution_id
+        ]
+        if len(matches) > 1:
+            raise PiRuntimeError(
+                "同一ToolExecution绑定了多个pi进程",
+                code="pi_execution_owner_conflict",
+            )
+        return matches[0] if matches else None
+
     def authenticate(
         self,
         authorization: str | None,
@@ -124,11 +163,21 @@ class PiRuntimeManager:
                 candidate = value.strip()
         for token, execution in self._executions.items():
             if candidate and secrets.compare_digest(token, candidate):
+                logger.info(
+                    "pi_gateway_authenticated source=%s execution_id=%s process_id=%d "
+                    "credential_fingerprint=%s",
+                    source,
+                    execution.tool_execution_id,
+                    os.getpid(),
+                    hashlib.sha256(candidate.encode("utf-8")).hexdigest()[:12],
+                )
                 return execution
         fingerprint = hashlib.sha256(candidate.encode("utf-8")).hexdigest()[:12] if candidate else "missing"
         logger.warning(
-            "pi_gateway_authentication_failed source=%s credential_fingerprint=%s active_executions=%d",
+            "pi_gateway_authentication_failed source=%s process_id=%d "
+            "credential_fingerprint=%s active_executions=%d",
             source,
+            os.getpid(),
             fingerprint,
             len(self._executions),
         )
@@ -208,6 +257,7 @@ class PiRuntimeManager:
                 media_type="application/json",
             )
         if not decision.approved or decision.body is None:
+            execution.retire_provider_call(call.id)
             return Response(
                 content=json.dumps({"error": {"message": "用户未批准本次pi模型调用"}}),
                 status_code=403,
@@ -226,6 +276,7 @@ class PiRuntimeManager:
                 "failed",
                 "pi_provider_route_invalid",
             )
+            execution.retire_provider_call(call.id)
             return Response(
                 content=json.dumps(
                     {
@@ -245,6 +296,7 @@ class PiRuntimeManager:
                 "failed",
                 "pi_protocol_switch_rejected",
             )
+            execution.retire_provider_call(call.id)
             return Response(
                 content=json.dumps(
                     {
@@ -281,6 +333,7 @@ class PiRuntimeManager:
                 "outcome_unknown",
                 "provider_timeout",
             )
+            execution.retire_provider_call(call.id)
             raise ProviderDispatchError(
                 "pi上游Provider请求超时",
                 error_code="provider_timeout",
@@ -294,6 +347,7 @@ class PiRuntimeManager:
                 "outcome_unknown",
                 "provider_connection_failed",
             )
+            execution.retire_provider_call(call.id)
             raise ProviderDispatchError(
                 "pi上游Provider连接失败",
                 error_code="provider_connection_failed",
@@ -318,6 +372,7 @@ class PiRuntimeManager:
             finally:
                 await upstream.aclose()
                 await client.aclose()
+                execution.retire_provider_call(call.id)
 
         response_headers = {
             key: value

@@ -53,6 +53,7 @@ PI_TOOLS = ("read", "grep", "find", "ls")
 PI_WORKSPACE_PREPARE_NODE_ID = "execution_workspace_prepare"
 PI_WORKSPACE_NODE_ID = "pi_workspace_dispatch"
 PI_WORKSPACE_TOOLS = (*PI_TOOLS, "edit")
+_TERMINAL_EXECUTION_STATUSES = frozenset({"succeeded", "failed", "cancelled", "abandoned", "interrupted"})
 
 
 class ExecutionDispatchError(RuntimeError):
@@ -172,6 +173,35 @@ class PiModelCallGovernance:
             "decision_request_row_version": self.request_row_version,
             "decision_item_key": self.subject_id if self.request_id else None,
         }
+
+    def checkpoint_view(self) -> dict[str, Any]:
+        """Return the durable references required to resume one decision."""
+
+        return {
+            "revision_id": self.revision_id,
+            "subject_id": self.subject_id,
+            "evaluation_id": self.evaluation_id,
+            "final_action": self.final_action,
+            "binding_hash": self.binding_hash,
+            "request_id": self.request_id,
+            "request_hash": self.request_hash,
+            "request_row_version": self.request_row_version,
+        }
+
+    @classmethod
+    def from_checkpoint(cls, value: Mapping[str, Any]) -> PiModelCallGovernance:
+        return cls(
+            revision_id=str(value.get("revision_id") or ""),
+            subject_id=str(value.get("subject_id") or ""),
+            evaluation_id=str(value.get("evaluation_id") or ""),
+            final_action=str(value.get("final_action") or ""),
+            binding_hash=str(value.get("binding_hash") or ""),
+            request_id=str(value["request_id"]) if value.get("request_id") else None,
+            request_hash=str(value["request_hash"]) if value.get("request_hash") else None,
+            request_row_version=(
+                int(value["request_row_version"]) if value.get("request_row_version") is not None else None
+            ),
+        )
 
 
 class ExecutionDispatchService:
@@ -323,6 +353,7 @@ class ExecutionDispatchService:
                 config,
                 repository_fence=fence,
                 readonly_tools=self._readonly_tools,
+                tool_execution_id=execution_id,
             )
         except Exception as error:
             await self.finish_failed(
@@ -526,6 +557,123 @@ class ExecutionDispatchService:
             task=prepared.task,
             mode="workspace_edit",
             workspace_id=prepared.workspace_id,
+        )
+
+    async def reattach_live_pi(
+        self,
+        *,
+        execution_id: str,
+        run_id: str,
+        expected_mode: str,
+        step_input: Mapping[str, Any],
+    ) -> PreparedPiExecution:
+        """Reattach a restored MAF Executor to one still-live pi subprocess.
+
+        This is intentionally process-local. A backend restart has no live
+        subprocess registry and remains governed by the existing startup
+        reconciliation path, which marks the ToolExecution interrupted.
+        """
+
+        async with self.database.sessions() as transaction:
+            record = await transaction.get(ToolExecutionRecord, execution_id)
+        if record is None or record.run_id != run_id or record.run_spec_id is None:
+            raise ExecutionDispatchError(
+                "Checkpoint引用的pi ToolExecution不存在或不属于当前Run",
+                code="PI_EXECUTION_REATTACH_OWNER_MISMATCH",
+            )
+        if record.status not in {"running", "waiting_human"}:
+            raise ExecutionDispatchError(
+                "Checkpoint引用的pi ToolExecution已经不在可恢复状态",
+                code="PI_EXECUTION_NOT_LIVE",
+            )
+        if record.mode != expected_mode:
+            raise ExecutionDispatchError(
+                "Checkpoint中的pi模式与ToolExecution不一致",
+                code="PI_EXECUTION_REATTACH_MODE_MISMATCH",
+            )
+        if self._manager is None:
+            raise ExecutionDispatchError(
+                "pi Runtime当前不可用",
+                code="pi_runtime_unavailable",
+            )
+        execution = self._manager.live_for_tool_execution(execution_id)
+        if execution is None:
+            await self.finish_failed(
+                execution_id,
+                failure_code="PI_EXECUTION_PROCESS_NOT_LIVE",
+                metrics={},
+            )
+            raise ExecutionDispatchError(
+                "当前进程中已找不到Checkpoint对应的pi执行",
+                code="PI_EXECUTION_PROCESS_NOT_LIVE",
+            )
+        if execution.config.revision != record.config_revision:
+            raise ExecutionDispatchError(
+                "pi进程配置与持久ToolExecution不一致",
+                code="PI_EXECUTION_REATTACH_CONFIG_MISMATCH",
+            )
+        route = await self.route(record.run_spec_id)
+        expected_route = "pi_workspace" if expected_mode == "workspace_edit" else "pi_readonly"
+        if route.kind != expected_route:
+            raise ExecutionDispatchError(
+                "pi进程路由与已批准RunSpec不一致",
+                code="PI_EXECUTION_REATTACH_ROUTE_MISMATCH",
+            )
+        workspace = await self._execution_workspaces.get_for_tool_execution(execution_id)
+        workspace_id = str(workspace["id"]) if workspace is not None else None
+        if execution.workspace_id != workspace_id:
+            raise ExecutionDispatchError(
+                "pi进程绑定的Execution Workspace不一致",
+                code="PI_EXECUTION_REATTACH_WORKSPACE_MISMATCH",
+            )
+        logger.info(
+            "pi_execution_reattached execution_id=%s run_id=%s mode=%s",
+            execution_id,
+            run_id,
+            expected_mode,
+        )
+        return PreparedPiExecution(
+            execution_id=execution_id,
+            execution=execution,
+            route=route,
+            step_input=copy.deepcopy(dict(step_input)),
+            task=execution.task,
+            mode=expected_mode,
+            workspace_id=workspace_id,
+        )
+
+    async def restore_tool_authorization(
+        self,
+        value: Mapping[str, Any],
+    ) -> ToolAuthorization:
+        """Restore only immutable/durable references for a pending Tool HITL."""
+
+        request_id = str(value.get("request_id") or "")
+        async with self.database.sessions() as transaction:
+            request = await transaction.get(HumanDecisionRequestRecord, request_id)
+        if request is None:
+            raise ExecutionDispatchError(
+                "Checkpoint引用的Tool审核请求不存在",
+                code="PI_TOOL_REQUEST_MISSING",
+            )
+        if (
+            request.request_hash != str(value.get("request_hash") or "")
+            or request.row_version != int(value.get("request_row_version") or 0)
+            or request.status != "pending"
+        ):
+            raise ExecutionDispatchError(
+                "Checkpoint引用的Tool审核请求已经变化",
+                code="PI_TOOL_REQUEST_STALE",
+            )
+        operation_id = str(value.get("operation_id") or "")
+        operation = await self._tool_operations.prepared(operation_id) if operation_id else None
+        return ToolAuthorization(
+            mode="require_human",
+            tool_call_request_id=str(value.get("tool_call_request_id") or ""),
+            decision_item_key=str(value.get("decision_item_key") or ""),
+            request=request,
+            consumption_id=None,
+            operation=operation,
         )
 
     async def authorize_tool(
@@ -971,7 +1119,7 @@ class ExecutionDispatchService:
             value = await transaction.get(ToolExecutionRecord, execution_id)
             if value is None:
                 return
-            if value.status in {"succeeded", "failed", "cancelled", "abandoned"}:
+            if value.status in _TERMINAL_EXECUTION_STATUSES:
                 return
             self._apply_terminal(
                 value,
@@ -994,7 +1142,7 @@ class ExecutionDispatchService:
             value = await transaction.get(ToolExecutionRecord, execution_id)
             if value is None:
                 return
-            if value.status in {"succeeded", "failed", "cancelled", "abandoned"}:
+            if value.status in _TERMINAL_EXECUTION_STATUSES:
                 return
             self._apply_terminal(
                 value,
@@ -1273,7 +1421,7 @@ class ExecutionDispatchService:
                     "ToolExecution不存在",
                     code="PI_EXECUTION_NOT_FOUND",
                 )
-            if value.status in {"succeeded", "failed", "cancelled", "abandoned"}:
+            if value.status in _TERMINAL_EXECUTION_STATUSES:
                 raise ExecutionDispatchError(
                     "终态ToolExecution不能改变运行状态",
                     code="PI_EXECUTION_TERMINAL",
