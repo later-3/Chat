@@ -18,7 +18,6 @@ from ..product_sessions.database import ProductDatabase, RunRecord, utc_now
 from ..product_sessions.service import DEFAULT_SCOPE_ID
 from .commands import HarnessCommandRecorder
 from .contracts import (
-    ACTION_TRANSITIONS,
     MEMORY_KINDS,
     MEMORY_SCOPE_KINDS,
     MEMORY_TRANSITIONS,
@@ -28,7 +27,6 @@ from .contracts import (
     PROJECT_TRANSITIONS,
     WORK_KINDS,
     WORK_PRIORITIES,
-    WORK_TRANSITIONS,
     HarnessConflict,
     HarnessNotFound,
     HarnessValidationError,
@@ -80,6 +78,7 @@ from .models import (
     TaskPlanRevisionRecord,
     WorkItemRecord,
 )
+from .participant import HarnessTransitionParticipant
 from .queries import ContextContributor, HarnessContextQueryService
 
 
@@ -103,6 +102,12 @@ class HarnessService:
             scope_id=scope_id,
             principal_id=principal_id,
             clock=clock,
+        )
+        self.transition_participant = HarnessTransitionParticipant(
+            scope_id=scope_id,
+            principal_id=principal_id,
+            clock=clock,
+            command_recorder=self.command_recorder,
         )
         self.context_queries = HarnessContextQueryService(
             database,
@@ -416,16 +421,14 @@ class HarnessService:
         completion_waiver_reason: str | None = None,
         decision_record_id: str | None = None,
     ) -> dict[str, Any]:
-        reason = _text(reason, field="状态变更原因")
-        request = {
-            "work_item_id": work_item_id,
-            "expected_row_version": expected_row_version,
-            "target_status": target_status,
-            "reason": reason,
-            "evidence": list(evidence),
-            "completion_waiver_reason": completion_waiver_reason,
-        }
-        request_hash = _hash(request)
+        request_hash = self.transition_participant.build_work_request_hash(
+            work_item_id=work_item_id,
+            expected_row_version=expected_row_version,
+            target_status=target_status,
+            reason=reason,
+            evidence=evidence,
+            completion_waiver_reason=completion_waiver_reason,
+        )
         async with self.database.sessions.begin() as transaction:
             existing = await self._existing_command(transaction, command_id, request_hash)
             if existing is not None:
@@ -435,37 +438,17 @@ class HarnessService:
                 raise HarnessNotFound("WorkItem不存在")
             if value.row_version != expected_row_version:
                 raise HarnessConflict("WorkItem版本冲突")
-            if target_status not in WORK_TRANSITIONS.get(value.status, set()):
-                raise HarnessValidationError(f"WorkItem不能从{value.status}变为{target_status}")
-            if value.status == "completed" and target_status == "in_progress" and not reason:
-                raise HarnessValidationError("重新打开WorkItem必须提供原因")
-            if target_status == "completed" and not evidence and not (completion_waiver_reason or "").strip():
-                raise HarnessValidationError("完成WorkItem必须提供Evidence或明确豁免原因")
-            previous = value.status
-            value.status = target_status
-            value.completion_evidence_json = [dict(item) for item in evidence]
-            value.completion_waiver_reason = (completion_waiver_reason or "").strip() or None
-            value.row_version += 1
-            value.updated_at = self._clock()
-            result = _work_view(value)
-            self._record_command(
+            return await self.transition_participant.transition_work_item(
                 transaction,
+                work_item_id=work_item_id,
                 command_id=command_id,
-                command_kind="transition_work_item",
                 request_hash=request_hash,
-                result=result,
-                resource_kind="work_item",
-                resource_id=value.id,
-                event_type="harness.work.transitioned",
-                trace_payload={
-                    "from": previous,
-                    "to": target_status,
-                    "reason": reason,
-                    "evidence_count": len(evidence),
-                },
+                target_status=target_status,
+                reason=reason,
+                evidence=evidence,
+                completion_waiver_reason=completion_waiver_reason,
                 decision_record_id=decision_record_id,
             )
-            return result
 
     async def create_plan_revision(
         self,
@@ -838,17 +821,15 @@ class HarnessService:
         evidence: Sequence[Mapping[str, Any]] = (),
         dependency_override_reason: str | None = None,
         decision_record_id: str | None = None,
-    ) -> dict[str, Any]:
-        reason = _text(reason, field="状态变更原因")
-        request = {
-            "action_item_id": action_item_id,
-            "expected_row_version": expected_row_version,
-            "target_status": target_status,
-            "reason": reason,
-            "evidence": [dict(value) for value in evidence],
-            "dependency_override_reason": (dependency_override_reason or "").strip() or None,
-        }
-        request_hash = _hash(request)
+   ) -> dict[str, Any]:
+        request_hash = self.transition_participant.build_action_request_hash(
+            action_item_id=action_item_id,
+            expected_row_version=expected_row_version,
+            target_status=target_status,
+            reason=reason,
+            evidence=evidence,
+            dependency_override_reason=dependency_override_reason,
+        )
         async with self.database.sessions.begin() as transaction:
             existing = await self._existing_command(transaction, command_id, request_hash)
             if existing is not None:
@@ -858,67 +839,17 @@ class HarnessService:
                 raise HarnessNotFound("ActionItem不存在")
             if value.row_version != expected_row_version:
                 raise HarnessConflict("ActionItem版本冲突")
-            if target_status not in ACTION_TRANSITIONS.get(value.status, set()):
-                raise HarnessValidationError(f"ActionItem不能从{value.status}变为{target_status}")
-            if target_status == "completed" and not evidence:
-                raise HarnessValidationError("完成ActionItem必须提供Evidence")
-            if target_status == "ready" and value.plan_node_id:
-                node = await transaction.get(PlanNodeRecord, value.plan_node_id)
-                dependencies = list(node.dependency_keys_json or []) if node else []
-                if dependencies and node is not None:
-                    dependency_nodes = (
-                        await transaction.scalars(
-                            select(PlanNodeRecord).where(
-                                PlanNodeRecord.plan_revision_id == node.plan_revision_id,
-                                PlanNodeRecord.node_key.in_(tuple(dependencies)),
-                            )
-                        )
-                    ).all()
-                    dependency_ids = tuple(item.id for item in dependency_nodes)
-                    complete_ids: set[str] = set()
-                    if dependency_ids:
-                        complete_ids = {
-                            plan_node_id
-                            for plan_node_id in (
-                                await transaction.scalars(
-                                    select(ActionItemRecord.plan_node_id).where(
-                                        ActionItemRecord.scope_id == self.scope_id,
-                                        ActionItemRecord.plan_node_id.in_(dependency_ids),
-                                        ActionItemRecord.status == "completed",
-                                    )
-                                )
-                            ).all()
-                            if plan_node_id is not None
-                        }
-                    unresolved = [item.node_key for item in dependency_nodes if item.id not in complete_ids]
-                    if unresolved and not request["dependency_override_reason"]:
-                        raise HarnessValidationError(f"依赖未完成，不能进入ready: {sorted(unresolved)}")
-                    if unresolved and not decision_record_id:
-                        raise HarnessValidationError("依赖override必须绑定Decision Record")
-            previous = value.status
-            value.status = target_status
-            value.evidence_json = [dict(item) for item in evidence]
-            value.row_version += 1
-            value.updated_at = self._clock()
-            result = _action_view(value)
-            self._record_command(
+            return await self.transition_participant.transition_action_item(
                 transaction,
+                action_item_id=action_item_id,
                 command_id=command_id,
-                command_kind="transition_action_item",
                 request_hash=request_hash,
-                result=result,
-                resource_kind="action_item",
-                resource_id=value.id,
-                event_type="harness.action.transitioned",
-                trace_payload={
-                    "from": previous,
-                    "to": target_status,
-                    "reason": reason,
-                    "dependency_override_reason": request["dependency_override_reason"],
-                },
+                target_status=target_status,
+                reason=reason,
+                evidence=evidence,
+                dependency_override_reason=dependency_override_reason,
                 decision_record_id=decision_record_id,
             )
-            return result
 
     async def capture_note(
         self,

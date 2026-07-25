@@ -6,11 +6,11 @@
 |---|---|
 | 产品身份 | 独立开发、独立运行、独立运营并持续演进的完整 Chat 产品 |
 | 当前目录 | `/Users/xulater/Code/Chat` |
-| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、Product Session R0/R1与可见定位码、双协议模型治理和持久Provider Attempt审计、37节点持续协作主Workflow、HITL策略矩阵、持久Checkpoint/Outbox恢复、ExecutionDraft完整编辑、Product Harness纵向生命周期、协作协议/Context revision/步骤输入阶段A、Intent Set与复合Plan阶段B、SD1 Repository只读、SD2受治理pi只读、SD3受管Execution Workspace与精确`edit`副作用账本及真实Qwen隔离写入、活动pi同进程Checkpoint重挂接、Runtime Job/Event/Cursor/通用Execution Worker纵向切片，以及手机公网HTTP中转与完整响应式Web纵向链路已完成；活动pi跨进程续跑仍未完成 |
+| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、Product Session R0/R1与可见定位码、双协议模型治理和持久Provider Attempt审计、37节点持续协作主Workflow、HITL策略矩阵、持久Checkpoint/Outbox恢复、ExecutionDraft完整编辑、Product Harness纵向生命周期、协作协议/Context revision/步骤输入阶段A、Intent Set与复合Plan阶段B、SD1 Repository只读、SD2受治理pi只读、SD3受管Execution Workspace与精确`edit`副作用账本及真实Qwen隔离写入、活动pi同进程Checkpoint重挂接、Runtime Job/Event/Cursor/通用Execution Worker纵向切片、手机公网HTTP中转与完整响应式Web纵向链路，以及SD4-A Evidence/Artifact/Provenance/Validation记录层（15表Repository与HarnessTransitionParticipant）已完成；活动pi跨进程续跑仍未完成 |
 | 设计状态 | 总体架构已按完整用户场景重写并获批准；2026-07-24进一步确认Super Admin Operations是完整产品的第11个产品与应用模块，详细身份/活动/指标/隐私设计尚未开始；Execution治理D1-D7、Product Harness D1-D8、活动Run与通用Execution Worker D1-D8均已获用户批准并迁移；Chat UI/UX视觉基线v1及4项轻量情绪层已获批准，生产前端迁移尚未完成；“Chat开发Chat”D1-D9、SD1 R1-R12、SD2 R1-R12和“Chat自开发可用门v1”8阶段节奏已获批准，SD1-A/B/C/D与SD2-A/B/C/D/E只读纵向切片已完成；2026-07-25用户批准F01字段级Tool Operation Ledger并进入SD3隔离写入，SD4/F02与SD5/F05仍保留各自审核门 |
 | Session 状态 | 9个能力域、74项能力、R0-R6和Phase 0-8路线已批准；Phase 0-1完成，Phase 2进行中，Phase 4-5完成纵向切片但尚未通过全部阶段故障矩阵 |
 | 工程质量状态 | Q0纵向基线已建立且本地完整门通过：CI/静态质量门、统一Problem Detail、请求关联、结构化日志、基础Metrics/Trace、诊断入口、分层覆盖率、Playwright/axe、故障实验室、组合根拆分和前端Feature边界均可运行；Q02已继续提取治理纯策略/Run查询、Harness命令记录/Context查询，Q06已拆出Agent重连Hook、Workflow两类运行投影并建立8个生产按需Feature；剩余大型Application Service、持续协作Workflow、性能/人工无障碍、远端CI首次运行和生产Exporter/SLO不在已完成范围 |
-| 数据状态 | Product Store Schema与19个Alembic迁移已建立；执行治理、TurnDigest、MAF Workflow Checkpoint、Product Harness、Repository Binding/Snapshot、Execution Workspace/Tool Operation、协作协议、Context revision、StepInputProjection、Intent Set/Clarification、Runtime执行投影、受治理ToolExecution、Session标题来源和模型传输审计均为本项目新事实，没有迁移旧数据库、旧历史或旧项目配置 |
+| 数据状态 | Product Store Schema与20个Alembic迁移已建立；执行治理、TurnDigest、MAF Workflow Checkpoint、Product Harness、Repository Binding/Snapshot、Execution Workspace/Tool Operation、协作协议、Context revision、StepInputProjection、Intent Set/Clarification、Runtime执行投影、受治理ToolExecution、Session标题来源和模型传输审计，以及Evidence/Artifact/Provenance/Validation 15表记录层均为本项目新事实，没有迁移旧数据库、旧历史或旧项目配置 |
 | Git 状态 | 私有仓库`later-3/Chat`，分支`main`；按Feature节点提交并推送，私有配置和本地产物不进入Git |
 
 ## 2. 已确认的稳定事实
@@ -225,6 +225,17 @@
   缓存，均继续同一pi进程且不重复发送/执行；进程注册缺失时Product Run中断、ToolExecution失败，
   不再遗留`waiting_human`假状态。该修复没有越过F05：后端进程重启后仍按
   `process_restarted`中断，不自动重做Provider或Tool调用。
+- [x] 2026-07-25完成SD4-A Evidence/Artifact/Provenance/Validation记录层：新增第20次迁移
+  （15张表）、`EvidenceRepository`（调用方持有事务，不自行开启/提交）、全部状态机与
+  幂等/fence合同，以及从HarnessService提取的`HarnessTransitionParticipant`（Action完成与
+  父Work不变可同事务组合，不新增Harness状态）。Codex检视后修复3处：Observation主体
+  写入事务内存在性校验（§4.5，含artifact_revision经父ArtifactRecord验scope）、Waiver仅
+  candidate Claim可创建、Claim创建时`expected_subject_version` fail-fast校验；记录1项
+  工程决定：15表跨聚合不变量耦合，Repository保持单模块并在类Docstring注明不拆分理由。
+  验收：迁移升降/全降/重升通过；25个Evidence合同测试含20个非法迁移拒绝；15表内无跨表
+  硬FK环（仅设计内自引用supersedes链）；架构依赖与Schema指纹测试通过；全量298个后端
+  测试通过。SD4-A只做记录层：Artifact文件存储、结构化Validation执行、Result Commit Gate
+  接入Workflow和前端视图分别属于SD4-B至E，不在本次范围。
 
 ## 4. 已完成的工程与研究证据
 

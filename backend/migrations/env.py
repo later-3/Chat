@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from backend.app.collaboration_intents import models as collaboration_intent_models  # noqa: F401
 from backend.app.collaboration_protocols import models as collaboration_protocol_models  # noqa: F401
+from backend.app.evidence import models as evidence_models  # noqa: F401
 from backend.app.execution_workspaces import models as execution_workspace_models  # noqa: F401
 from backend.app.governance import models as governance_models  # noqa: F401
 from backend.app.harness import models as harness_models  # noqa: F401

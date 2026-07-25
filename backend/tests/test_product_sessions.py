@@ -8,6 +8,7 @@ from typing import Any
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from fastapi.testclient import TestClient
 
 from backend.app.config import Settings
@@ -35,6 +36,14 @@ def _request(session_id: str, run_id: str, messages: list[dict[str, Any]]) -> di
         "context": [],
         "forwardedProps": {},
     }
+
+
+def _migration_head() -> str:
+    """Return the current Alembic head so restart tests track new migrations."""
+
+    project_root = Path(__file__).resolve().parents[2]
+    configuration = Config(str(project_root / "alembic.ini"))
+    return ScriptDirectory.from_config(configuration).get_current_head()
 
 
 def test_session_crud_archive_and_configuration_are_server_authoritative() -> None:
@@ -189,7 +198,7 @@ def test_file_store_survives_restart_and_reconciles_unfinished_run(tmp_path: Pat
         assert session_view["active_run_id"] is None
         with sqlite3.connect(tmp_path / "restart.db") as connection:
             assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-                "f01d3a7c9e25",
+                _migration_head(),
             )
 
     asyncio.run(scenario())

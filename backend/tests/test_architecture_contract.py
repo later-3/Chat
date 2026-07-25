@@ -12,8 +12,18 @@ import pytest
 from sqlalchemy import inspect
 
 from backend.app.config import Settings
+from backend.app.collaboration_intents import models as _ci_models  # noqa: F401
+from backend.app.collaboration_protocols import models as _cp_models  # noqa: F401
+from backend.app.evidence import models as _ev_models  # noqa: F401
+from backend.app.execution_workspaces import models as _ew_models  # noqa: F401
+from backend.app.governance import models as _gov_models  # noqa: F401
+from backend.app.harness import models as _har_models  # noqa: F401
 from backend.app.main import create_app
 from backend.app.product_sessions import ProductDatabase, ProductSessionService
+from backend.app.project_resources import models as _pr_models  # noqa: F401
+from backend.app.runtime_execution import models as _re_models  # noqa: F401
+from backend.app.step_inputs import models as _si_models  # noqa: F401
+from backend.app.tool_execution import models as _te_models  # noqa: F401
 from backend.app.workflows import (
     CHAT_MODEL_CALL_APPROVAL_WORKFLOW,
     CONTINUOUS_COLLABORATION_WORKFLOW,
@@ -28,9 +38,16 @@ from backend.app.workflows import (
 # ledgers. Workflow 1.7.0 adds explicit workspace preparation, governed
 # workspace pi dispatch and result assembly while preserving the SD2 read-only
 # and answer-only branches. The hidden Tool Gateway does not change OpenAPI.
+# Reviewed 2026-07-25 for SD4-A. Product Schema adds the 15-table Evidence,
+# Artifact, Provenance and Validation lifecycle (F02). Model modules are
+# imported explicitly so the in-memory create_all schema is deterministic
+# regardless of test execution order.
+# Re-reviewed 2026-07-25 after Kimi audit: §4 field alignment (blob GC columns,
+# revision storage_blob_id/sha256/supersedes, observation subject/source
+# invariants, claim expected_subject_version/target_state, invalidation CHECKs).
 # These fingerprints intentionally make future boundary drift fail closed.
 OPENAPI_SHA256 = "2386856ed2c3b1761234b4cc7068d7773749ae3f6dc8992da936207dd0d930a0"
-PRODUCT_SCHEMA_SHA256 = "5ac7da2eb45cd042d7c955189e992a607f5c7f311b0dc5b2e43d5ce7aa9fb00f"
+PRODUCT_SCHEMA_SHA256 = "4603ff02cad8c259f8ec11f309e4ebc88970b24b823057a0440d4ac94e5adda2"
 WORKFLOW_CATALOG_SHA256 = "9e286acd3544d3b023f5b73c6f1bda7851d22ed38e0bab7e3beecb2d87984f65"
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 
