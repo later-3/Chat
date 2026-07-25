@@ -6,7 +6,7 @@
 |---|---|
 | 产品身份 | 独立开发、独立运行、独立运营并持续演进的完整 Chat 产品 |
 | 当前目录 | `/Users/xulater/Code/Chat` |
-| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、Product Session R0/R1与可见定位码、双协议模型治理和持久Provider Attempt审计、37节点持续协作主Workflow、HITL策略矩阵、持久Checkpoint/Outbox恢复、ExecutionDraft完整编辑、Product Harness纵向生命周期、协作协议/Context revision/步骤输入阶段A、Intent Set与复合Plan阶段B、SD1 Repository只读、SD2受治理pi只读、SD3受管Execution Workspace与精确`edit`副作用账本、活动pi同进程Checkpoint重挂接、Runtime Job/Event/Cursor/通用Execution Worker纵向切片，以及手机公网HTTP中转与完整响应式Web纵向链路已完成；活动pi跨进程续跑和SD3真实pi写入复验仍未完成 |
+| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、Product Session R0/R1与可见定位码、双协议模型治理和持久Provider Attempt审计、37节点持续协作主Workflow、HITL策略矩阵、持久Checkpoint/Outbox恢复、ExecutionDraft完整编辑、Product Harness纵向生命周期、协作协议/Context revision/步骤输入阶段A、Intent Set与复合Plan阶段B、SD1 Repository只读、SD2受治理pi只读、SD3受管Execution Workspace与精确`edit`副作用账本及真实Qwen隔离写入、活动pi同进程Checkpoint重挂接、Runtime Job/Event/Cursor/通用Execution Worker纵向切片，以及手机公网HTTP中转与完整响应式Web纵向链路已完成；活动pi跨进程续跑仍未完成 |
 | 设计状态 | 总体架构已按完整用户场景重写并获批准；2026-07-24进一步确认Super Admin Operations是完整产品的第11个产品与应用模块，详细身份/活动/指标/隐私设计尚未开始；Execution治理D1-D7、Product Harness D1-D8、活动Run与通用Execution Worker D1-D8均已获用户批准并迁移；Chat UI/UX视觉基线v1及4项轻量情绪层已获批准，生产前端迁移尚未完成；“Chat开发Chat”D1-D9、SD1 R1-R12、SD2 R1-R12和“Chat自开发可用门v1”8阶段节奏已获批准，SD1-A/B/C/D与SD2-A/B/C/D/E只读纵向切片已完成；2026-07-25用户批准F01字段级Tool Operation Ledger并进入SD3隔离写入，SD4/F02与SD5/F05仍保留各自审核门 |
 | Session 状态 | 9个能力域、74项能力、R0-R6和Phase 0-8路线已批准；Phase 0-1完成，Phase 2进行中，Phase 4-5完成纵向切片但尚未通过全部阶段故障矩阵 |
 | 工程质量状态 | Q0纵向基线已建立且本地完整门通过：CI/静态质量门、统一Problem Detail、请求关联、结构化日志、基础Metrics/Trace、诊断入口、分层覆盖率、Playwright/axe、故障实验室、组合根拆分和前端Feature边界均可运行；Q02已继续提取治理纯策略/Run查询、Harness命令记录/Context查询，Q06已拆出Agent重连Hook、Workflow两类运行投影并建立8个生产按需Feature；剩余大型Application Service、持续协作Workflow、性能/人工无障碍、远端CI首次运行和生产Exporter/SLO不在已完成范围 |
@@ -213,9 +213,11 @@
   v1.7.0/37节点主Workflow；前端可查看Workspace基线/变化、精确Diff/Hash、Attempt和对账。
   后端故障矩阵、迁移升降、前端单测/检查/构建及桌面/窄屏浏览器通过。首次HTTP 401已定位为
   Chat本机pi Gateway凭据与SDK `Authorization`冲突，并通过独立`X-Chat-Pi-Token`及回归测试修复。
-  修复后的Ark与DashScope真实复验均因远端流超时或断连而收敛为`outcome_unknown`，没有创建
-  Tool Operation或修改源码；网络恢复后仍须重跑真实`edit`，且未开放`write/bash/commit/push`
-  或Work完成。
+  修复后的Ark与DashScope首轮复验曾因远端流超时或断连而收敛为`outcome_unknown`，没有创建
+  Tool Operation或修改源码。网络恢复后使用DashScope `qwen3.7-plus`在干净的一次性Fixture上
+  完成完整Product Run：真实pi执行单文件精确`edit`，Operation/Attempt/Grant/Hash与Workspace
+  Diff一致，源仓库保持干净；因此SD3的真实隔离写入门通过。仍未开放`write/bash/commit/push`、
+  活动仓库合入、Evidence完成门或Work完成提交。
 - [x] 2026-07-25修复活动pi经过MAF Checkpoint后丢失Executor内存边界的问题：只读和隔离编辑
   启动均绑定持久`ToolExecution ID`，pi进程维护待决Model/Tool边界注册表，Executor
   `on_checkpoint_save/on_checkpoint_restore`只保存稳定ID并在同一后端进程内重挂接原Future/RPC
@@ -266,6 +268,16 @@
 21. 2026-07-24用户审核通过个人主页第一轮草图：固定Activity Rail、今日继续、年度协作日历、近期产物、灵感花园和本周轨迹的首页信息层级，以及Material 3 Expressive与克制工作区结合的视觉方向。连续对话/Workflow工作台与协作日历/对话日草图仍待分别审核，整套前端改造尚未获实现授权。
 22. 2026-07-24用户批准[Chat UI/UX视觉基线v1](./docs/ui-ux-visual-baseline.md)：当前可交互原型作为后续生产前端的渐进改造基线，不再继续寻找单一“完美参考”。优先加入基于真实Harness状态的主页问候、关键动作反馈、公开AI运行状态和可追源协作日历4项轻量情绪层；完整主题编辑、插画系统、复杂动效、游戏化和大规模品牌重塑延后。该批准是设计与实施范围授权，不表示生产界面已经完成。
 23. 2026-07-24完成[手机公网访问与云端中转运行手册](./docs/mobile-cloud-relay.md)对应的真实部署：云端`/chat/`与`/chat-api/`统一Basic Auth，本地LaunchAgent常驻后端和只绑定云端回环的反向SSH。Relay与后端分别被终止后都出现可观察短暂中断并以新PID恢复；AuditTraceAI、Mini-Claw和Nginx保持active。390×844浏览器从公网创建Product Session `PS-53F42E0E`，Intent、Response、TurnDigest三次火山方舟`glm-5.2`调用逐次审批后得到`MOBILE_RELAY_E2E_OK`，Product Run成功、Session revision为2，Project、Work和Accepted Memory均为0，控制台0错误且无横向溢出。
+24. 2026-07-25使用DashScope `qwen3.7-plus`完成SD3真实隔离写入：Product Run
+    `0872f754-2751-4e18-948b-ce2a6c152b70`、Run Attempt
+    `6311d124-1509-4c8b-88ca-e6eb63f95a3b`、Runtime Job
+    `a7a7a46c-6eb4-4c74-9a11-4ccfc1b0783e`和ToolExecution
+    `a04a1942-f9e8-46d9-9ed1-8185daa20607`均成功。pi完成4次模型调用、`read/edit/read`3次Tool
+    调用和1次已批准Operation `b5f147ac-7332-4143-9c4c-636a947ee740`；受管Workspace只修改
+    `README.md`，preimage `047cc9ac...`、postimage/observed `36d8447c...`一致，原Fixture仓库仍
+    干净。10个Decision Interrupt均只恢复1次，Memory Candidate选择`skip`，没有污染长期记忆。
+    Chat活动仓库当前含用户未跟踪文档，刷新Snapshot后系统按设计拒绝创建Workspace且未移动、删除、
+    暂存或提交该文件。本轮新鲜浏览器复验被本地URL安全策略阻断，未把它记为新增UI通过证据。
 
 ### 4.3 Session与参考项目研究
 
@@ -313,11 +325,11 @@
     资源已有revision/CAS；但跨Session活动感知、完整读取版本绑定、统一冲突Diff/rebase、来源Session
     可见性、手机/桌面并发和容量矩阵尚未实现。本轮只完成产品与交付边界升格，没有创建Schema、
     迁移或代码，不能把目标已批准外推为并发能力已经可用。
-11. “Chat开发Chat”已完成SD1、SD2和SD3工程纵向闭环：用户能在Project界面管理Repository、保留不可变
+11. “Chat开发Chat”已完成SD1、SD2和SD3纵向闭环：用户能在Project界面管理Repository、保留不可变
     Snapshot、把有版本的代码基线/治理规则纳入可编辑Context，在Provider发送前阻断过期Source，
     并由持续协作主Workflow把已批准RunSpec和最小StepInput派发给受治理pi只读或隔离编辑Runtime。
     受管worktree与精确`edit`的副作用账本、幂等和文件Hash对账已实现；本机Gateway 401已修复，
-    真实pi写入复验仍因远端Provider流超时/断连未通过。完整自举仍未形成：完成声明必须等待F02，
+    真实Qwen已在干净Fixture完成一次完整隔离写入Product Run。完整自举仍未形成：完成声明必须等待F02，
     pi跨进程持续恢复必须等待F05，活动
     仓库合入与commit/push还未开放。TaskPlan PlanNode当前还是修订快照，
     实时进度权威是WorkItem/ActionItem；Plan进度投影仍归F06。
@@ -348,6 +360,11 @@
 18. 统一结构化日志、关联上下文、基础OpenTelemetry、Metrics、Liveness/Readiness、运行时间线与脱敏诊断入口已经建立；生产多实例Exporter、SLO、告警路由和长期保留尚未完成。
 19. Alembic Schema漂移检查和19次迁移完整升降已通过，但SQLAlchemy仍报告执行治理表之间存在不可排序的外键环；当前SQLite迁移可运行，未来SQLAlchemy升级或迁移自动生成前必须先消除或显式设计这些约束环。
 20. 超级管理员能力的登录/活跃/有效协作口径、多设备与空闲语义、默认可见字段、敏感正文额外授权、隐私告知、数据保留、审计不可篡改和运营投影容量仍待详细设计；在这些决定获批前不得用登录时间差或Run耗时拼出“用户使用时长”。
+21. Product Session的模型选择当前不会覆盖主Workflow各节点绑定的版本化Agent Profile；本次真实
+    Qwen验证通过CAS临时切换Intent、Planner和Turn Summarizer Profile并在运行后恢复。运行记录能
+    证明每个节点实际使用的Provider/模型，但当前配置交互可能让用户误以为“会话模型”控制整条
+    Workflow。后续F08/Agent配置设计必须展示每个节点的有效模型来源与覆盖优先级，不能只显示一个
+    含义不完整的全局选择器。
 
 ## 7. 当前开发门
 
@@ -361,5 +378,5 @@
 8. “Chat开发Chat”D1-D9、SD1 R1-R12、SD2 R1-R12和F01/SD3字段级方案已经批准；
    SD1-A至D、SD2-A至E及SD3-A至E工程纵向切片已完成。
    [F01/SD3详细设计](./docs/tool-operation-workspace-detailed-design.md)记录已兑现、未兑现、本机
-   Gateway凭据修复和真实Provider网络失败证据边界。SD3只覆盖受管worktree内精确`edit`；不得外推为活动仓库合入、通用外部
+   Gateway凭据修复、早期网络失败和真实Qwen成功证据。SD3只覆盖受管worktree内精确`edit`；不得外推为活动仓库合入、通用外部
    Tool副作用、Evidence完成门、PlanNode实时进度或pi跨进程恢复。

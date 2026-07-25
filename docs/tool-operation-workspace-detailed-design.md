@@ -1,6 +1,6 @@
 # F01 Tool Operation Ledger 与 SD3 Execution Workspace 详细设计
 
-> 状态：**2026-07-25 已获用户批准；SD3-A至E工程纵向切片已实现，真实pi写入回合仍待远端网络恢复后复验**
+> 状态：**2026-07-25 已获用户批准；SD3-A至E工程纵向切片与真实Qwen隔离写入已通过**
 >
 > 适用范围：F01 字段级 Tool Operation Ledger，以及 SD3 首个“受管 Git
 > worktree 内单文件精确编辑”纵向切片。
@@ -352,17 +352,30 @@ SD3完成只表示“隔离区内一次受治理精确编辑可用”，不外�
 4. 确定性纵向测试证明一次完整精确编辑只发生在临时worktree，源仓库保持干净；拒绝、取消和故障
    不产生假成功。
 
-### 11.3 未兑现与真实模型证据边界
+### 11.3 真实模型证据与未兑现边界
 
 真实模型Dogfood已从自然语言正确编译`workspace_edit` RunSpec，进入`pi_workspace`分支、创建精确
 Snapshot worktree并到达pi Provider调用边界。首次出现的HTTP 401来自Chat本机pi Provider Gateway，
 不是Ark或DashScope上游；根因是SDK的`Authorization`语义与本地短期执行凭据发生冲突。实现已改为
 独立`X-Chat-Pi-Token`，保留规范化Bearer兼容路径，并以常量时间比较、脱敏失败日志和回归测试固定。
 
-修复后已分别使用Ark与DashScope重跑真实链路，但远端流在响应阶段超时或断连；对应Product Run均
-保守收敛为`outcome_unknown`，没有创建Tool Operation，也没有修改Snapshot或活动源码。因此仍未
-获得“真实pi提出并完成一次精确edit”的成功证据，网络恢复后必须重跑本节10.4的8步Dogfood。该
-远端传输失败不推翻已通过的Ledger/Workspace确定性证据，也不能被包装成SD3真实模型通过。
+修复后的Ark与DashScope首轮重跑曾在远端响应流阶段超时或断连；对应Product Run均保守收敛为
+`outcome_unknown`，没有创建Tool Operation，也没有修改Snapshot或活动源码。这些运行继续保留为
+安全失败证据。
+
+网络恢复后，DashScope `qwen3.7-plus`在干净的`SD3 Live Fixture`完成本节10.4的完整Dogfood：
+Product Run `0872f754-2751-4e18-948b-ce2a6c152b70`、Run Attempt
+`6311d124-1509-4c8b-88ca-e6eb63f95a3b`、Runtime Job
+`a7a7a46c-6eb4-4c74-9a11-4ccfc1b0783e`和ToolExecution
+`a04a1942-f9e8-46d9-9ed1-8185daa20607`均成功。pi经过4次模型调用和`read/edit/read`3次Tool
+调用，执行唯一获批Operation `b5f147ac-7332-4143-9c4c-636a947ee740`；Workspace只修改
+`README.md`，preimage `047cc9ac...`、postimage与observed `36d8447c...`一致，原Fixture仓库仍
+干净。10个Decision Interrupt均只恢复1次，Memory Candidate显式`skip`。因此SD3的“真实pi提出
+并完成一次精确edit”门已经通过。
+
+针对Chat活动仓库的当前HEAD复验还证明了另一条安全边界：刷新Snapshot时检测到用户未跟踪文件，
+Workspace创建被拒绝，系统没有移动、删除、暂存或提交该文件。该拒绝不影响干净Fixture上的SD3
+完成证据，也不能被包装为Chat活动仓库已经具备自动集成能力。
 
 本阶段仍不保证：活动仓库合入、`write/bash/commit/push/deploy`、Validation/Evidence/Artifact、
 Work完成提交、pi跨进程续跑或网络外部副作用Exactly-once。

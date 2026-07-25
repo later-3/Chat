@@ -155,10 +155,12 @@ Repository没有Shell、文件写入或Git操作。桌面与520 CSS像素窄屏�
 `QWEN_PI_REAL_OK`。进程生命周期日志通过ToolExecution ID、进程ID和不可逆凭证指纹关联注册、
 网关认证及注销，不记录原始凭据。
 
-SD3首次真实写入复验暴露的HTTP 401来自Chat本机Gateway，已通过独立Header及自动回归修复。随后
-Ark与DashScope复验均在远端响应流阶段超时或断连；Product Run保守收敛为`outcome_unknown`，没有
-创建Tool Operation，也没有修改Snapshot或活动仓库。因此这组运行只能证明安全失败边界，不能作为
-真实pi精确`edit`成功证据。
+SD3首次真实写入复验暴露的HTTP 401来自Chat本机Gateway，已通过独立Header及自动回归修复。早期
+Ark与DashScope响应流超时或断连的Product Run均保守收敛为`outcome_unknown`，没有创建Operation或
+修改仓库，保留为安全失败证据。网络恢复后，DashScope `qwen3.7-plus`在干净Fixture完成完整Product
+Run `0872f754-2751-4e18-948b-ce2a6c152b70`：pi执行唯一获批精确`edit`，Operation/Attempt、文件
+前后Hash与Workspace Diff一致，源仓库保持干净。因此SD3真实隔离写入已经通过，但不外推为活动
+仓库合入、Evidence完成门、`write/bash/commit/push`或pi跨进程恢复。
 
 ## 7. 已知边界
 

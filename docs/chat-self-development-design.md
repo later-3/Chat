@@ -1,6 +1,6 @@
 # Chat 开发 Chat：自举能力详细设计与验证计划
 
-> 状态：**D1-D9、SD1/SD2及“Chat自开发可用门v1”已获批并完成；F01字段级设计已批准，SD3-A至E已实现，真实pi写入回合仍待远端网络恢复后复验**
+> 状态：**D1-D9、SD1/SD2及“Chat自开发可用门v1”已获批并完成；F01字段级设计、SD3-A至E及真实Qwen隔离写入已通过**
 >
 > 更新日期：2026-07-25
 >
@@ -897,13 +897,12 @@ proposed -> prepared -> authorized -> dispatching
 
 完成门：一次性仓库真实修改不重复、不越界、不污染活动目录。
 
-状态：**工程纵向切片与确定性故障矩阵已完成**。第19次迁移、受管worktree、逐Operation/Attempt/
+状态：**工程纵向切片、确定性故障矩阵和真实Qwen隔离写入已完成**。第19次迁移、受管worktree、逐Operation/Attempt/
 Reconciliation、一次性授权消费、Run取消收敛、37节点主Workflow和桌面/手机设计者投影已通过。
-真实模型Dogfood已证明从用户输入正确路由到`pi_workspace`、创建精确Snapshot工作区并到达pi
-Provider边界。首次HTTP 401已定位为Chat本机Gateway凭据与SDK `Authorization`冲突，并通过独立
-`X-Chat-Pi-Token`及回归测试修复；修复后的Ark与DashScope复验分别在远端流阶段超时或断连，
-Product Run均保守收敛为`outcome_unknown`且没有Tool Operation或源码修改。因此“真实pi提出并
-执行一次edit”仍未通过，不把远端网络失败写成SD3真实模型完成证据。完整证据见
+真实模型Dogfood已证明从用户输入正确路由到`pi_workspace`并完成精确`edit`。首次HTTP 401已定位为
+Chat本机Gateway凭据与SDK `Authorization`冲突，并通过独立`X-Chat-Pi-Token`及回归测试修复；
+早期Ark与DashScope流超时继续作为安全失败证据。网络恢复后，Qwen在干净Fixture完成完整Product
+Run，唯一获批Operation、文件前后Hash、Workspace Diff与实际结果一致，源仓库保持干净。完整证据见
 [F01/SD3详细设计第11节](./tool-operation-workspace-detailed-design.md#11-实施与验证结果)。
 
 ### SD4：Chat能证明改动有效
@@ -1121,8 +1120,7 @@ StepInput。该安全修正已于2026-07-25获用户批准。
 
 ### 12.4 检视结论
 
-阶段检视结论：**SD1、SD2通过；SD3工程纵向切片通过，真实pi写入回合仍待远端网络恢复后复验；
-完成声明和持久恢复仍分别受F02和F05约束**。
+阶段检视结论：**SD1、SD2与SD3真实隔离写入通过；完成声明和持久恢复仍分别受F02和F05约束**。
 
 1. D1-D9已获用户审核通过。
 2. SD1的Repository Binding、不可变Snapshot、REST/UI、Context Source Freshness和真实只读
@@ -1133,9 +1131,9 @@ StepInput。该安全修正已于2026-07-25获用户批准。
    ToolExecution结果和两层设计者视图均已验证。
 4. [F01/SD3详细设计](./tool-operation-workspace-detailed-design.md)已经实现受管worktree、精确
    `edit`副作用账本、启动对账、取消收敛和设计者视图；确定性纵向测试已通过。本机Gateway 401
-   已经修复并由回归测试固定；其后Ark与DashScope真实复验均因远端流超时或断连而未到达Tool调用，
-   且没有修改源码。网络恢复后仍须重跑真实编辑Dogfood。完成声明仍等待F02，pi持久恢复仍等待
-   F05，不得以“Chat开发Chat”为由跳过。
+   已经修复并由回归测试固定；Qwen随后在干净Fixture完成一次完整隔离写入Product Run，且原仓库
+   保持干净。Chat活动仓库当前因用户未跟踪文件而被干净Snapshot门拒绝，未触碰该文件。完成声明
+   仍等待F02，pi持久恢复仍等待F05，不得以“Chat开发Chat”为由跳过。
 
 后续每阶段继续严格执行
 “开发—测试—检视—优化—偏航审计”，并在进入下一阶段前提交已兑现/未兑现保证。
