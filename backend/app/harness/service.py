@@ -448,6 +448,7 @@ class HarnessService:
                 evidence=evidence,
                 completion_waiver_reason=completion_waiver_reason,
                 decision_record_id=decision_record_id,
+                expected_row_version=expected_row_version,
             )
 
     async def create_plan_revision(
@@ -849,6 +850,7 @@ class HarnessService:
                 evidence=evidence,
                 dependency_override_reason=dependency_override_reason,
                 decision_record_id=decision_record_id,
+                expected_row_version=expected_row_version,
             )
 
     async def capture_note(

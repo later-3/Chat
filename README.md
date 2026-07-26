@@ -142,13 +142,13 @@ scripts/uninstall-mobile-relay.sh
 
 ## 后端JSON配置
 
-[配置示例](./backend/config.example.json)默认包含2个Provider：`ark`（火山方舟）和`dashscope`（阿里云百炼）。每个Provider按同一结构维护：
+[配置示例](./backend/config.example.json)默认包含3个Provider：`ark`（火山方舟）、`dashscope`（阿里云百炼）和`kimi-code`（Kimi Code）。每个Provider按同一结构维护：
 
 1. `id`是稳定且唯一的内部标识，`label`是前端显示名称。
 2. `protocol`当前支持`openai_responses`和`openai_chat_completions`；前者发送`instructions + input`到`/responses`，后者发送`messages`到`/chat/completions`。只提供其他私有协议的Provider仍需新增Transport适配器，不能只加配置。
 3. `base_url`和`api_key`只留在服务端私有配置中。
 4. `default_model`必须出现在该Provider的`models`数组中。
-5. `models`中的每一项包含不可重复的`id`和用户可读的`label`。
+5. `models`中的每一项包含不可重复的`id`和用户可读的`label`；可选的`context_window`、`reasoning`和`thinking_level_map`用于把真实模型能力投影给pi等Runtime。
 6. `enabled`为`false`时，该Provider不会成为运行路由，也不会出现在前端目录中。
 
 新增模型时，向对应Provider的`models`数组追加一项；需要把它设为默认模型时，同时修改`default_model`。新增Provider时，复制一个完整Provider对象，修改其`id`、显示名、地址、密钥和模型列表。修改后重启后端，前端便会按新目录联动展示；当前不调用Provider的在线模型发现接口。
@@ -233,7 +233,7 @@ scripts/         可重复执行的工程验证
 12. [Session持久化研究与方案推导](./docs/session-persistence-research.md)：MAF、pi、nanobot与LibreChat的逐项源码证据、适用边界、方案比较和决策推导。
 13. [Session持久化设计](./docs/session-persistence-design.md)：Phase 1文本持久化设计、代码落点与审批Workflow适配。
 14. [Session持久化审核包](./docs/session-persistence-review.md)：已批准D1-D6的原因、参考覆盖、选项、实现适配和边界。
-15. [pi Agent Tool使用与运行手册](./docs/pi-agent-tool.md)：JSONL RPC选型、两道审批门、配置、监控、恢复语义和验证方法。
+15. [pi Agent Tool使用与运行手册](./docs/pi-agent-tool.md)：JSONL RPC选型、两道审批门、Provider/模型切换、Kimi K3 API映射、参数、监控、恢复语义和验证方法；pi接K3与Kimi Code CLI开发工具严格分开。
 16. [Workflow恢复与Outbox Worker运行说明](./docs/runtime-recovery-operations.md)：单/双进程部署、日志、重试、死信和升级门。
 17. [Product Harness、Work与Memory详细设计](./docs/product-harness-detailed-design.md)：已批准D1-D8、状态机、Agent工具、两阶段Context和长跨度场景验收基线。
 18. [产品级工程审计](./docs/product-engineering-audit-2026-07-23.md)：代码结构、质量门、API合同、日志、调试、测试、文档和参考项目对照。
@@ -250,9 +250,9 @@ scripts/         可重复执行的工程验证
 
 ## 下一步
 
-SD1、SD2已完成；F01字段级设计和SD3隔离精确编辑工程纵向切片已经落地。本机pi Provider Gateway
-凭据冲突已经修复并有回归测试，真实pi写入仍待远端Provider网络恢复后复验。下一产品门是F02
-Evidence/Artifact/Provenance与SD4验证提交；在F02批准前不把测试通过声明为Work完成，在F05前
-不承诺pi跨进程续跑。`write/bash/commit/push`仍未开放。
+SD1、SD2、SD3以及F02的SD4-A/SD4-B已经落地；真实Qwen隔离写入、内容寻址Artifact Store和
+确定性Validation Runtime均有纵向证据。当前下一产品门是SD4-C Result Commit Coordinator；
+在完成声明门建立前仍不把测试通过声明为Work完成，在F05前不承诺pi跨进程续跑。
+`write/bash/commit/push`仍未开放；当前私有部署还需配置Artifact scope密钥才会启用真实Artifact写入。
 Super Admin Operations、长期`TaskPlanRevision`、独立Branch Execution和生产前端迁移继续保留在已批准
 路线中，但不能挤占本次真实Dogfood纵向闭环的依赖顺序。

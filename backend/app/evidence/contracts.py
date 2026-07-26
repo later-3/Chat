@@ -37,6 +37,18 @@ class ArtifactHashMismatch(EvidenceConflict):
     code = "ARTIFACT_HASH_MISMATCH"
 
 
+class ArtifactBlobMissing(EvidenceConflict):
+    code = "ARTIFACT_BLOB_MISSING"
+
+
+class ArtifactStorageConflict(EvidenceConflict):
+    code = "ARTIFACT_STORAGE_CONFLICT"
+
+
+class ArtifactStoragePathInvalid(EvidenceValidationError):
+    code = "ARTIFACT_STORAGE_PATH_INVALID"
+
+
 class ArtifactRevisionSuperseded(EvidenceConflict):
     code = "ARTIFACT_REVISION_SUPERSEDED"
 
@@ -47,6 +59,18 @@ class ArtifactApplicabilityStale(EvidenceConflict):
 
 class CompletionRequirementUnsatisfied(EvidenceValidationError):
     code = "COMPLETION_REQUIREMENT_UNSATISFIED"
+
+
+class EvidenceInvalid(EvidenceConflict):
+    """An adopted Evidence chain no longer satisfies the exact Claim."""
+
+    code = "EVIDENCE_INVALID"
+
+
+class ResultCommitDecisionInvalid(EvidenceConflict):
+    """The DecisionRecord is not bound to this Claim revision and outcome."""
+
+    code = "RESULT_COMMIT_DECISION_INVALID"
 
 
 class WaiverBlockedByFailedRequirement(EvidenceValidationError):

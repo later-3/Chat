@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,19 @@ def test_health_exposes_approved_architecture_without_secrets() -> None:
     with _client() as client:
         response = client.get("/api/health")
 
+    sandbox_requirement = (
+        "seatbelt"
+        if sys.platform == "darwin"
+        else "bwrap"
+        if sys.platform.startswith("linux")
+        else "unavailable"
+    )
+    sandbox_path = {
+        "seatbelt": Path("/usr/bin/sandbox-exec"),
+        "bwrap": Path("/usr/bin/bwrap"),
+    }.get(sandbox_requirement)
+    sandbox_available = sandbox_path is not None and sandbox_path.is_file()
+
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
@@ -33,12 +47,26 @@ def test_health_exposes_approved_architecture_without_secrets() -> None:
         "pi_agent": {
             "enabled": False,
             "available": False,
-            "contract_version": "0.81.1",
+            "contract_version": "0.82.0",
             "integration_mode": "jsonl_rpc_subprocess",
             "provider_gate": "every_pi_model_call",
             "tool_gate": "every_pi_internal_tool_call",
             "allowed_working_root_count": 0,
             "default_working_directory_configured": True,
+        },
+        "artifact_store": {
+            "available": False,
+            "storage": "content_addressed_filesystem",
+            "scope_isolation": "not_configured",
+            "orphan_grace_seconds": 86400,
+        },
+        "validation": {
+            "available": sandbox_available,
+            "python_source": "project_virtual_environment",
+            "system_python_fallback": False,
+            "network_policy": "deny",
+            "sandbox_requirement": sandbox_requirement,
+            "sandbox_available": sandbox_available,
         },
     }
 
@@ -387,6 +415,189 @@ def test_settings_rejects_unknown_json_version(tmp_path: Path) -> None:
     path = _write_config(tmp_path / "config.json", {"version": 2, "providers": []})
 
     with pytest.raises(SettingsError, match="不支持的配置版本"):
+        Settings.from_file(path)
+
+
+def test_settings_loads_artifact_and_validation_runtime_without_exposing_secret(
+    tmp_path: Path,
+) -> None:
+    project_python = Path(__file__).resolve().parents[2] / ".venv" / "bin" / "python"
+    secret = "ab" * 32
+    path = _write_config(
+        tmp_path / "config.json",
+        {
+            "version": 1,
+            "artifact_store": {
+                "root": str(tmp_path / "artifacts"),
+                "scope_key_secret_hex": secret,
+                "orphan_grace_seconds": 3600,
+            },
+            "validation": {"project_python": str(project_python)},
+            "providers": [],
+        },
+    )
+
+    settings = Settings.from_file(path)
+
+    assert settings.artifact_store.available is True
+    assert settings.artifact_store.root == (tmp_path / "artifacts").resolve()
+    assert settings.artifact_store.orphan_grace_seconds == 3600
+    assert settings.artifact_store.health_view() == {
+        "available": True,
+        "storage": "content_addressed_filesystem",
+        "scope_isolation": "hmac_sha256_128bit",
+        "orphan_grace_seconds": 3600,
+    }
+    assert secret not in json.dumps(settings.artifact_store.health_view())
+    assert settings.validation_runtime.available is True
+    assert settings.validation_runtime.project_python == project_python
+
+
+@pytest.mark.parametrize(
+    ("artifact_store", "message"),
+    [
+        ({"scope_key_secret_hex": "abcd"}, "至少64位"),
+        ({"scope_key_secret_hex": "z" * 64}, "十六进制"),
+        ({"orphan_grace_seconds": 1}, "60秒到90天"),
+    ],
+)
+def test_settings_rejects_unsafe_artifact_store_configuration(
+    tmp_path: Path,
+    artifact_store: dict[str, object],
+    message: str,
+) -> None:
+    path = _write_config(
+        tmp_path / "config.json",
+        {"version": 1, "artifact_store": artifact_store, "providers": []},
+    )
+    with pytest.raises(SettingsError, match=message):
+        Settings.from_file(path)
+
+
+def test_application_composes_configured_artifact_and_validation_runtime(tmp_path: Path) -> None:
+    project_python = Path(__file__).resolve().parents[2] / ".venv" / "bin" / "python"
+    path = _write_config(
+        tmp_path / "config.json",
+        {
+            "version": 1,
+            "product_store": {
+                "url": f"sqlite+aiosqlite:///{tmp_path / 'chat.db'}",
+            },
+            "artifact_store": {
+                "root": str(tmp_path / "artifacts"),
+                "scope_key_secret_hex": "cd" * 32,
+            },
+            "validation": {"project_python": str(project_python)},
+            "providers": [],
+        },
+    )
+    app = create_app(Settings.from_file(path))
+
+    with TestClient(app) as client:
+        health = client.get("/api/health").json()
+        assert health["artifact_store"]["available"] is True
+        assert app.state.artifact_coordinator is not None
+        assert app.state.artifact_reconciler is not None
+        assert app.state.validation_capabilities is not None
+        assert app.state.validation_compiler is not None
+        assert app.state.validation_runner is not None
+
+
+def test_settings_loads_kimi_runtime_model_metadata_without_exposing_secret(
+    tmp_path: Path,
+) -> None:
+    path = _write_config(
+        tmp_path / "config.json",
+        {
+            "version": 1,
+            "default_provider_id": "kimi-code",
+            "providers": [
+                {
+                    "id": "kimi-code",
+                    "label": "Kimi Code",
+                    "protocol": "openai_chat_completions",
+                    "base_url": "https://api.kimi.com/coding/v1",
+                    "api_key": "private-test-key",
+                    "default_model": "k3",
+                    "models": [
+                        {
+                            "id": "k3",
+                            "label": "Kimi K3",
+                            "context_window": 1_048_576,
+                            "reasoning": True,
+                            "thinking_level_map": {
+                                "off": "none",
+                                "minimal": "low",
+                                "medium": "high",
+                                "xhigh": "max",
+                            },
+                        }
+                    ],
+                    "capabilities": {
+                        "image_input": False,
+                        "roles": ["user", "assistant", "system"],
+                        "content_types_by_role": {
+                            "user": ["text"],
+                            "assistant": ["text"],
+                            "system": ["text"],
+                        },
+                    },
+                }
+            ],
+        },
+    )
+
+    settings = Settings.from_file(path)
+    catalog = settings.model_catalog()
+    assert catalog is not None
+    provider = catalog.get("kimi-code")
+    assert provider is not None
+    [model] = provider.models
+    assert model.context_window == 1_048_576
+    assert model.reasoning is True
+    assert dict(model.thinking_level_map) == {
+        "off": "none",
+        "minimal": "low",
+        "medium": "high",
+        "xhigh": "max",
+    }
+    assert model.capabilities.content_types("user") == ("text",)
+    assert "private-test-key" not in json.dumps(catalog.public_view())
+
+
+@pytest.mark.parametrize(
+    "model_changes",
+    [
+        {"context_window": 0},
+        {"context_window": True},
+        {"thinking_level_map": {"turbo": "max"}},
+        {"thinking_level_map": {"low": 1}},
+    ],
+)
+def test_settings_rejects_invalid_runtime_model_metadata(
+    tmp_path: Path,
+    model_changes: dict[str, object],
+) -> None:
+    model: dict[str, object] = {"id": "k3", "label": "Kimi K3"}
+    model.update(model_changes)
+    path = _write_config(
+        tmp_path / "config.json",
+        {
+            "version": 1,
+            "default_provider_id": "kimi-code",
+            "providers": [
+                {
+                    "id": "kimi-code",
+                    "protocol": "openai_chat_completions",
+                    "api_key": "configured",
+                    "default_model": "k3",
+                    "models": [model],
+                }
+            ],
+        },
+    )
+
+    with pytest.raises((SettingsError, ModelProviderCatalogError)):
         Settings.from_file(path)
 
 

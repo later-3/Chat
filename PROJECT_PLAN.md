@@ -84,7 +84,7 @@ flowchart LR
 - [x] 确认后端 MAF、前后端 AG-UI、React 自研 UI 技术路线。
 - [x] 建立`AGENTS.md`、`PROJECT_CONTEXT.md`、`PROJECT_PLAN.md`、`PROJECT_STATE.md`和`README.md`。
 - [x] 纠正产品身份：Chat 是独立完整产品，OPC-OS Chat 是外部集成关系。
-- [x] 新增并持续维护`PROJECT_LESSONS.md`，当前记录31个反例，并把Product Harness事实不能从聊天摘要猜测、不得回退系统Python、产品级工程收敛、可持续模块质量、外部编码Agent权限、Session标题一致性、模型结果去向审计、移动端完整产品视角，以及超级管理员运营看护加入回复前置门。
+- [x] 新增并持续维护`PROJECT_LESSONS.md`，当前记录36个反例，并把Product Harness事实不能从聊天摘要猜测、不得回退系统Python、产品级工程收敛、可持续模块质量、外部编码Agent权限、Session标题一致性、模型结果去向审计、移动端完整产品视角、超级管理员运营看护、pi安装/隔离运行身份、数据库测试独立收集和虚拟环境沙箱路径加入回复前置门。
 - [x] 建立Chat概念空间：方法来源、目录治理、发现索引、14个高风险概念簇、概念/实现双状态和自动结构/链接校验。
 - [x] 把最终产品愿景固定为“想法能留下、事项有状态、工作可继续、执行可看护、结果有证据”，并明确Product Session不是Project边界、Context面板不是第二事实源。
 - [x] 用户已确认本轮愿景与概念纠正准确进入稳定项目文档。
@@ -314,8 +314,9 @@ Session 是 W2-W9 的横向能力，仍由两份专项材料维护：
   单文件精确`edit`纵向切片已实现并通过确定性故障矩阵；本机pi Gateway凭据冲突已修复，真实pi
   已使用Qwen完成一次隔离写入Product Run；网络外部副作用、补偿和人工处置仍未完成，因此通用F01
   不勾选完成）。
-- [ ] F02 Evidence、Artifact、Provenance与独立生命周期（SD4-A记录层及第二轮语义审核已完成；
-  SD4-B Artifact Store、SD4-C Result Commit Coordinator、SD4-D失效传播和SD4-E Workflow/UI仍待交付）。
+- [ ] F02 Evidence、Artifact、Provenance与独立生命周期（SD4-A记录层和SD4-B内容寻址Artifact
+  Store/确定性Validation Runtime已完成；当前私有部署仍需配置scope密钥后才启用Artifact写入；
+  SD4-C Result Commit Coordinator、SD4-D失效传播和SD4-E Workflow/UI仍待交付）。
 - [ ] F03 Runtime完整故障、容量和游标矩阵。
 - [ ] F04 Session完整生命周期、树、控制与可移植性。
 - [ ] F05 任意Workflow、嵌套Workflow和pi持久恢复。

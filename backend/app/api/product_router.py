@@ -104,6 +104,8 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
             "model_call_approval": "every_call" if resolved.runtime_mode == "model" else "not_applicable",
             "product_sessions": "sqlite",
             "pi_agent": resolved.pi_runtime.health_view(),
+            "artifact_store": resolved.artifact_store.health_view(),
+            "validation": resolved.validation_runtime.health_view(),
         }
 
     def validate_model_selection(

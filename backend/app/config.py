@@ -6,7 +6,9 @@ import copy
 import hashlib
 import json
 import logging
+import os
 import re
+import sys
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +30,7 @@ BACKEND_ROOT = PROJECT_ROOT / "backend"
 DEFAULT_CONFIG_PATH = BACKEND_ROOT / "config.json"
 DEFAULT_DATABASE_URL = f"sqlite+aiosqlite:///{(BACKEND_ROOT / '.data' / 'chat.db').as_posix()}"
 DEFAULT_EXECUTION_WORKSPACE_ROOT = BACKEND_ROOT / ".data" / "execution-workspaces"
+DEFAULT_ARTIFACT_STORE_ROOT = BACKEND_ROOT / ".data" / "artifacts"
 logger = logging.getLogger(__name__)
 
 
@@ -49,11 +52,69 @@ class ObservabilitySettings:
 
 
 @dataclass(frozen=True, slots=True)
+class ArtifactStoreSettings:
+    """Private filesystem root and irreversible scope-key material."""
+
+    root: Path = DEFAULT_ARTIFACT_STORE_ROOT
+    scope_key_secret: bytes | None = None
+    orphan_grace_seconds: int = 24 * 60 * 60
+
+    @property
+    def available(self) -> bool:
+        return self.scope_key_secret is not None and len(self.scope_key_secret) >= 32
+
+    def health_view(self) -> dict[str, Any]:
+        return {
+            "available": self.available,
+            "storage": "content_addressed_filesystem",
+            "scope_isolation": "hmac_sha256_128bit" if self.available else "not_configured",
+            "orphan_grace_seconds": self.orphan_grace_seconds,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ValidationRuntimeSettings:
+    """Pinned project virtual-environment runtime; never falls back to PATH."""
+
+    project_python: Path = PROJECT_ROOT / ".venv" / "bin" / "python"
+
+    @property
+    def sandbox_requirement(self) -> str:
+        if sys.platform == "darwin":
+            return "seatbelt"
+        if sys.platform.startswith("linux"):
+            return "bwrap"
+        return "unavailable"
+
+    @property
+    def sandbox_available(self) -> bool:
+        executable = {
+            "seatbelt": Path("/usr/bin/sandbox-exec"),
+            "bwrap": Path("/usr/bin/bwrap"),
+        }.get(self.sandbox_requirement)
+        return executable is not None and executable.is_file() and os.access(executable, os.X_OK)
+
+    @property
+    def available(self) -> bool:
+        return self.project_python.is_file() and self.sandbox_available
+
+    def health_view(self) -> dict[str, Any]:
+        return {
+            "available": self.available,
+            "python_source": "project_virtual_environment",
+            "system_python_fallback": False,
+            "network_policy": "deny",
+            "sandbox_requirement": self.sandbox_requirement,
+            "sandbox_available": self.sandbox_available,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class PiRuntimeSettings:
     """Startup-owned safety boundary for the external pi coding runtime."""
 
     enabled: bool = False
-    contract_version: str = "0.81.1"
+    contract_version: str = "0.82.0"
     node_path: Path | None = None
     cli_path: Path | None = None
     allowed_working_roots: tuple[Path, ...] = ()
@@ -302,6 +363,9 @@ def _model_options(
             model_id = item.strip()
             label = model_id
             capabilities = provider_capabilities
+            context_window = 128_000
+            reasoning = True
+            thinking_level_map: tuple[tuple[str, str | None], ...] = ()
         elif isinstance(item, dict):
             model_id = str(item.get("id") or "").strip()
             label = str(item.get("label") or model_id).strip()
@@ -310,10 +374,45 @@ def _model_options(
                 field=f"models[{len(options)}].capabilities",
                 fallback=provider_capabilities,
             )
+            raw_context_window = item.get("context_window", 128_000)
+            if isinstance(raw_context_window, bool) or not isinstance(raw_context_window, int):
+                raise ModelProviderCatalogError(f"models[{len(options)}].context_window必须是正整数")
+            if raw_context_window <= 0:
+                raise ModelProviderCatalogError(f"models[{len(options)}].context_window必须是正整数")
+            context_window = raw_context_window
+            reasoning = _boolean(
+                item.get("reasoning"),
+                field=f"models[{len(options)}].reasoning",
+                default=True,
+            )
+            raw_thinking_map = item.get("thinking_level_map", {})
+            if not isinstance(raw_thinking_map, dict):
+                raise ModelProviderCatalogError(f"models[{len(options)}].thinking_level_map必须是JSON对象")
+            supported_levels = {"off", "minimal", "low", "medium", "high", "xhigh"}
+            unknown_levels = set(raw_thinking_map) - supported_levels
+            if unknown_levels:
+                raise ModelProviderCatalogError(f"models[{len(options)}].thinking_level_map包含未知等级")
+            thinking_items: list[tuple[str, str | None]] = []
+            for level, mapped in raw_thinking_map.items():
+                if mapped is not None and (not isinstance(mapped, str) or not mapped.strip()):
+                    raise ModelProviderCatalogError(
+                        f"models[{len(options)}].thinking_level_map.{level}必须是字符串或null"
+                    )
+                thinking_items.append((level, mapped.strip() if isinstance(mapped, str) else None))
+            thinking_level_map = tuple(thinking_items)
         else:
             raise ModelProviderCatalogError("模型目录项必须是字符串或{id,label}对象")
         if model_id:
-            options.append(ModelOption(id=model_id, label=label or model_id, capabilities=capabilities))
+            options.append(
+                ModelOption(
+                    id=model_id,
+                    label=label or model_id,
+                    capabilities=capabilities,
+                    context_window=context_window,
+                    reasoning=reasoning,
+                    thinking_level_map=thinking_level_map,
+                )
+            )
     return tuple(options)
 
 
@@ -397,7 +496,7 @@ def _provider_catalog(payload: dict[str, Any]) -> ModelProviderCatalog | None:
 def _pi_runtime(payload: dict[str, Any], *, host: str, port: int) -> PiRuntimeSettings:
     raw = _record(payload.get("pi_agent", {}), field="pi_agent")
     enabled = _boolean(raw.get("enabled"), field="pi_agent.enabled", default=False)
-    contract_version = str(raw.get("contract_version") or "0.81.1").strip()
+    contract_version = str(raw.get("contract_version") or "0.82.0").strip()
     if not contract_version or len(contract_version) > 32:
         raise SettingsError("pi_agent.contract_version必须是1到32字符的版本标识")
 
@@ -507,6 +606,42 @@ def _execution_workspace_root(payload: dict[str, Any]) -> Path:
     return path.resolve()
 
 
+def _artifact_store(payload: dict[str, Any]) -> ArtifactStoreSettings:
+    raw = _record(payload.get("artifact_store", {}), field="artifact_store")
+    root_value = str(raw.get("root") or DEFAULT_ARTIFACT_STORE_ROOT).strip()
+    root = Path(root_value).expanduser()
+    if not root.is_absolute():
+        root = PROJECT_ROOT / root
+    secret_hex = str(raw.get("scope_key_secret_hex") or "").strip()
+    secret: bytes | None = None
+    if secret_hex:
+        if len(secret_hex) < 64 or len(secret_hex) % 2 or not re.fullmatch(r"[0-9a-fA-F]+", secret_hex):
+            raise SettingsError("artifact_store.scope_key_secret_hex必须是至少64位的偶数长度十六进制")
+        secret = bytes.fromhex(secret_hex)
+    try:
+        grace = int(raw.get("orphan_grace_seconds", 24 * 60 * 60))
+    except (TypeError, ValueError) as error:
+        raise SettingsError("artifact_store.orphan_grace_seconds必须是整数") from error
+    if not 60 <= grace <= 90 * 24 * 60 * 60:
+        raise SettingsError("artifact_store.orphan_grace_seconds必须在60秒到90天之间")
+    return ArtifactStoreSettings(
+        root=root.resolve(),
+        scope_key_secret=secret,
+        orphan_grace_seconds=grace,
+    )
+
+
+def _validation_runtime(payload: dict[str, Any]) -> ValidationRuntimeSettings:
+    raw = _record(payload.get("validation", {}), field="validation")
+    value = str(raw.get("project_python") or (PROJECT_ROOT / ".venv" / "bin" / "python")).strip()
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    # Preserve the venv launcher path rather than resolving its symlink into
+    # the uv runtime, because pyvenv.cfg controls the approved dependency set.
+    return ValidationRuntimeSettings(project_python=path.absolute())
+
+
 def _load_payload(path: Path) -> dict[str, Any]:
     try:
         value: Any = json.loads(path.read_text(encoding="utf-8"))
@@ -533,6 +668,8 @@ class Settings:
     pi_runtime: PiRuntimeSettings = PiRuntimeSettings()
     workspace_roots: tuple[WorkspaceRootSettings, ...] = ()
     execution_workspace_root: Path = DEFAULT_EXECUTION_WORKSPACE_ROOT
+    artifact_store: ArtifactStoreSettings = ArtifactStoreSettings()
+    validation_runtime: ValidationRuntimeSettings = ValidationRuntimeSettings()
     observability: ObservabilitySettings = ObservabilitySettings()
 
     @property
@@ -607,6 +744,8 @@ class Settings:
             pi_runtime=pi_runtime,
             workspace_roots=workspace_roots,
             execution_workspace_root=_execution_workspace_root(payload),
+            artifact_store=_artifact_store(payload),
+            validation_runtime=_validation_runtime(payload),
             observability=_observability(payload),
         )
 
@@ -623,5 +762,7 @@ class Settings:
             pi_runtime=PiRuntimeSettings(),
             workspace_roots=(),
             execution_workspace_root=DEFAULT_EXECUTION_WORKSPACE_ROOT,
+            artifact_store=ArtifactStoreSettings(),
+            validation_runtime=ValidationRuntimeSettings(),
             observability=ObservabilitySettings(log_level="WARNING", log_file=None),
         )

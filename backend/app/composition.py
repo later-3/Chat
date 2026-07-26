@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import timedelta
 
 from fastapi import FastAPI
 
@@ -17,6 +18,15 @@ from .collaboration_contexts import CollaborationContextService
 from .collaboration_intents import CollaborationIntentService
 from .collaboration_protocols import CollaborationProtocolService
 from .config import ModelProviderCatalog, Settings
+from .evidence import (
+    ArtifactCoordinator,
+    ArtifactStore,
+    ArtifactStoreReconciler,
+    ValidationCapabilityCatalog,
+    ValidationCompiler,
+    ValidationProcessRunner,
+    default_validation_capabilities,
+)
 from .execution_dispatch import RepositoryExecutionContextService
 from .execution_dispatch.service import ExecutionDispatchService
 from .execution_workspaces import ExecutionWorkspaceService
@@ -85,6 +95,11 @@ class ApplicationComponents:
     repository_freshness: RepositorySourceFreshnessGuard
     repository_execution_context: RepositoryExecutionContextService
     execution_workspaces: ExecutionWorkspaceService
+    artifact_coordinator: ArtifactCoordinator | None
+    artifact_reconciler: ArtifactStoreReconciler | None
+    validation_capabilities: ValidationCapabilityCatalog
+    validation_compiler: ValidationCompiler | None
+    validation_runner: ValidationProcessRunner
     tool_operations: ToolOperationService
     readonly_tools: ReadonlyToolService
     execution_dispatch: ExecutionDispatchService
@@ -156,6 +171,41 @@ def build_components(
         repository_context=repository_execution_context,
         managed_root=settings.execution_workspace_root,
     )
+    artifact_store = (
+        ArtifactStore(
+            settings.artifact_store.root,
+            scope_key_secret=settings.artifact_store.scope_key_secret,
+        )
+        if settings.artifact_store.available and settings.artifact_store.scope_key_secret is not None
+        else None
+    )
+    artifact_coordinator = (
+        ArtifactCoordinator(
+            product_sessions.database,
+            store=artifact_store,
+            scope_id="local-user",
+            principal_id="local-user",
+        )
+        if artifact_store is not None
+        else None
+    )
+    artifact_reconciler = (
+        ArtifactStoreReconciler(
+            product_sessions.database,
+            store=artifact_store,
+            scope_id="local-user",
+            grace_period=timedelta(seconds=settings.artifact_store.orphan_grace_seconds),
+        )
+        if artifact_store is not None
+        else None
+    )
+    validation_capabilities = ValidationCapabilityCatalog(default_validation_capabilities())
+    validation_compiler = (
+        ValidationCompiler(project_python=settings.validation_runtime.project_python)
+        if settings.validation_runtime.available
+        else None
+    )
+    validation_runner = ValidationProcessRunner()
     tool_operations = ToolOperationService(
         product_sessions.database,
         workspaces=execution_workspaces,
@@ -202,6 +252,11 @@ def build_components(
         repository_freshness=repository_freshness,
         repository_execution_context=repository_execution_context,
         execution_workspaces=execution_workspaces,
+        artifact_coordinator=artifact_coordinator,
+        artifact_reconciler=artifact_reconciler,
+        validation_capabilities=validation_capabilities,
+        validation_compiler=validation_compiler,
+        validation_runner=validation_runner,
         tool_operations=tool_operations,
         readonly_tools=readonly_tools,
         execution_dispatch=execution_dispatch,
@@ -235,6 +290,11 @@ def expose_components(app: FastAPI, components: ApplicationComponents) -> None:
     app.state.repository_freshness = components.repository_freshness
     app.state.repository_execution_context = components.repository_execution_context
     app.state.execution_workspaces = components.execution_workspaces
+    app.state.artifact_coordinator = components.artifact_coordinator
+    app.state.artifact_reconciler = components.artifact_reconciler
+    app.state.validation_capabilities = components.validation_capabilities
+    app.state.validation_compiler = components.validation_compiler
+    app.state.validation_runner = components.validation_runner
     app.state.tool_operations = components.tool_operations
     app.state.readonly_tools = components.readonly_tools
     app.state.execution_dispatch = components.execution_dispatch

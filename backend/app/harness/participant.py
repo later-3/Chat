@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Callable, Mapping, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .commands import HarnessCommandRecorder
@@ -27,6 +27,7 @@ from .contracts import (
     work_view,
 )
 from .models import ActionItemRecord, PlanNodeRecord, WorkItemRecord
+from ..product_sessions.database import affected_row_count
 
 
 class HarnessTransitionParticipant:
@@ -63,6 +64,7 @@ class HarnessTransitionParticipant:
         evidence: Sequence[Mapping[str, Any]] = (),
         completion_waiver_reason: str | None = None,
         decision_record_id: str | None = None,
+        expected_row_version: int | None = None,
     ) -> dict[str, Any]:
         """Transition a WorkItem inside the caller's session.
 
@@ -72,6 +74,8 @@ class HarnessTransitionParticipant:
         value = await transaction.get(WorkItemRecord, work_item_id)
         if value is None or value.scope_id != self.scope_id:
             raise HarnessNotFound("WorkItem不存在")
+        if expected_row_version is not None and value.row_version != expected_row_version:
+            raise HarnessConflict("WorkItem版本冲突")
         if target_status not in WORK_TRANSITIONS.get(value.status, set()):
             raise HarnessValidationError(f"WorkItem不能从{value.status}变为{target_status}")
         if value.status == "completed" and target_status == "in_progress" and not reason:
@@ -79,11 +83,36 @@ class HarnessTransitionParticipant:
         if target_status == "completed" and not evidence and not (completion_waiver_reason or "").strip():
             raise HarnessValidationError("完成WorkItem必须提供Evidence或明确豁免原因")
         previous = value.status
-        value.status = target_status
-        value.completion_evidence_json = [dict(item) for item in evidence]
-        value.completion_waiver_reason = (completion_waiver_reason or "").strip() or None
-        value.row_version += 1
-        value.updated_at = self._clock()
+        normalized_evidence = [dict(item) for item in evidence]
+        waiver_reason = (completion_waiver_reason or "").strip() or None
+        now = self._clock()
+        if expected_row_version is None:
+            value.status = target_status
+            value.completion_evidence_json = normalized_evidence
+            value.completion_waiver_reason = waiver_reason
+            value.row_version += 1
+            value.updated_at = now
+        else:
+            changed = await transaction.execute(
+                update(WorkItemRecord)
+                .where(
+                    WorkItemRecord.id == value.id,
+                    WorkItemRecord.scope_id == self.scope_id,
+                    WorkItemRecord.status == previous,
+                    WorkItemRecord.row_version == expected_row_version,
+                )
+                .values(
+                    status=target_status,
+                    completion_evidence_json=normalized_evidence,
+                    completion_waiver_reason=waiver_reason,
+                    row_version=expected_row_version + 1,
+                    updated_at=now,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if affected_row_count(changed) != 1:
+                raise HarnessConflict("WorkItem版本冲突")
+            await transaction.refresh(value)
         result = work_view(value)
         self._recorder.record(
             transaction,
@@ -116,6 +145,7 @@ class HarnessTransitionParticipant:
         evidence: Sequence[Mapping[str, Any]] = (),
         dependency_override_reason: str | None = None,
         decision_record_id: str | None = None,
+        expected_row_version: int | None = None,
     ) -> dict[str, Any]:
         """Transition an ActionItem inside the caller's session.
 
@@ -125,6 +155,8 @@ class HarnessTransitionParticipant:
         value = await transaction.get(ActionItemRecord, action_item_id)
         if value is None or value.scope_id != self.scope_id:
             raise HarnessNotFound("ActionItem不存在")
+        if expected_row_version is not None and value.row_version != expected_row_version:
+            raise HarnessConflict("ActionItem版本冲突")
         if target_status not in ACTION_TRANSITIONS.get(value.status, set()):
             raise HarnessValidationError(f"ActionItem不能从{value.status}变为{target_status}")
         if target_status == "completed" and not evidence:
@@ -163,10 +195,33 @@ class HarnessTransitionParticipant:
                 if unresolved and not decision_record_id:
                     raise HarnessValidationError("依赖override必须绑定Decision Record")
         previous = value.status
-        value.status = target_status
-        value.evidence_json = [dict(item) for item in evidence]
-        value.row_version += 1
-        value.updated_at = self._clock()
+        normalized_evidence = [dict(item) for item in evidence]
+        now = self._clock()
+        if expected_row_version is None:
+            value.status = target_status
+            value.evidence_json = normalized_evidence
+            value.row_version += 1
+            value.updated_at = now
+        else:
+            changed = await transaction.execute(
+                update(ActionItemRecord)
+                .where(
+                    ActionItemRecord.id == value.id,
+                    ActionItemRecord.scope_id == self.scope_id,
+                    ActionItemRecord.status == previous,
+                    ActionItemRecord.row_version == expected_row_version,
+                )
+                .values(
+                    status=target_status,
+                    evidence_json=normalized_evidence,
+                    row_version=expected_row_version + 1,
+                    updated_at=now,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if affected_row_count(changed) != 1:
+                raise HarnessConflict("ActionItem版本冲突")
+            await transaction.refresh(value)
         result = action_view(value)
         self._recorder.record(
             transaction,

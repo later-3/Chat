@@ -20,11 +20,14 @@ from backend.app.model_call_review import (
     ModelCallDraftValidationError,
 )
 from backend.app.model_providers import (
+    ModelCapabilities,
     ModelOption,
     ModelProviderCatalog,
     ModelProviderConfig,
+    ParameterCapability,
+    is_kimi_code_provider,
 )
-from backend.app.pi_gateway import PiRuntimeManager
+from backend.app.pi_gateway import PiRuntimeManager, _provider_request_headers
 from backend.app.pi_runtime import (
     _PI_RPC_STREAM_LIMIT,
     MAX_PI_READ_TOOL_CALLS,
@@ -37,6 +40,7 @@ from backend.app.pi_runtime import (
     PiRuntimeError,
     PiToolCallBoundary,
     _pi_max_tokens,
+    _pi_model_projection,
     _pi_provider_compat,
 )
 from backend.app.product_sessions import ProductDatabase, ProductSessionService
@@ -102,8 +106,8 @@ def _config(tmp_path: Path) -> PiToolConfigSnapshot:
 def test_pi_runtime_exposes_the_operator_pinned_contract_version(tmp_path: Path) -> None:
     runtime = _runtime(tmp_path)
 
-    assert runtime.public_view()["contract_version"] == "0.81.1"
-    assert runtime.health_view()["contract_version"] == "0.81.1"
+    assert runtime.public_view()["contract_version"] == "0.82.0"
+    assert runtime.health_view()["contract_version"] == "0.82.0"
 
 
 def test_pi_rpc_stream_limit_can_carry_the_largest_bounded_read_result() -> None:
@@ -132,6 +136,100 @@ def test_pi_gateway_projects_real_dashscope_compatibility_before_review() -> Non
     }
     assert _pi_max_tokens(provider, "qwen3.7-plus", "off") == 16_384
     assert _pi_max_tokens(provider, "qwen3.7-plus", "medium") == 65_536
+
+
+def test_pi_gateway_projects_kimi_k3_contract_before_review() -> None:
+    capabilities = ModelCapabilities(
+        roles=("user", "assistant", "system"),
+        content_types_by_role=(
+            ("user", ("text",)),
+            ("assistant", ("text",)),
+            ("system", ("text",)),
+        ),
+        parameters=(
+            ParameterCapability(
+                key="max_completion_tokens",
+                label="最大输出Token",
+                value_type="integer",
+                default=131_072,
+            ),
+        ),
+    )
+    provider = ModelProviderConfig(
+        id="kimi-code",
+        label="Kimi Code",
+        models=(
+            ModelOption(
+                id="k3",
+                label="Kimi K3",
+                capabilities=capabilities,
+                context_window=1_048_576,
+                reasoning=True,
+                thinking_level_map=(
+                    ("off", "none"),
+                    ("minimal", "low"),
+                    ("low", "low"),
+                    ("medium", "high"),
+                    ("high", "high"),
+                    ("xhigh", "max"),
+                ),
+            ),
+        ),
+        base_url="https://api.kimi.com/coding/v1",
+        api_key="test-key",
+        protocol="openai_chat_completions",
+    )
+
+    assert _pi_provider_compat(provider, "k3") == {
+        "supportsStore": True,
+        "supportsDeveloperRole": False,
+        "supportsReasoningEffort": True,
+        "maxTokensField": "max_completion_tokens",
+        "supportsStrictMode": False,
+    }
+    assert _pi_model_projection(provider, "k3", "medium") == {
+        "id": "k3",
+        "name": "Kimi K3",
+        "reasoning": True,
+        "contextWindow": 1_048_576,
+        "maxTokens": 131_072,
+        "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "low",
+            "low": "low",
+            "medium": "high",
+            "high": "high",
+            "xhigh": "max",
+        },
+    }
+    assert _provider_request_headers(provider, pi_contract_version="0.82.0") == {
+        "content-type": "application/json",
+        "authorization": "Bearer test-key",
+        "user-agent": "Chat-Pi-Gateway/1 pi-coding-agent/0.82.0",
+    }
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://api.kimi.com/coding/v1",
+        "https://api.kimi.com/other/coding/v1",
+        "https://api.kimi.com/coding/v1?route=other",
+        "https://api.kimi.com.evil.example/coding/v1",
+    ],
+)
+def test_pi_gateway_does_not_apply_kimi_contract_to_lookalike_routes(base_url: str) -> None:
+    provider = ModelProviderConfig(
+        id="lookalike",
+        label="Lookalike",
+        models=(ModelOption(id="k3", label="K3"),),
+        base_url=base_url,
+        api_key="",
+        protocol="openai_chat_completions",
+    )
+
+    assert is_kimi_code_provider(provider) is False
+    assert "user-agent" not in _provider_request_headers(provider, pi_contract_version="0.82.0")
 
 
 def test_pi_gateway_accepts_dedicated_header_and_normalized_bearer(tmp_path: Path) -> None:

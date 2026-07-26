@@ -8,7 +8,7 @@
 | `agent-framework-openai` | 1.10.1 | Agent与OpenAI兼容Provider接合 |
 | `agent-framework-ag-ui` | 1.0.0rc8 | AG-UI SSE、Interrupt/Resume；当前不转发`checkpoint_id` |
 | `@ag-ui/client` / `@ag-ui/core` | 0.0.57 | Web事件投影、Thread/Run、Interrupt |
-| pi | 0.81.1运行时合同 | JSONL RPC、内部Tool拦截、Provider Gateway |
+| pi | 0.82.0运行时合同 | JSONL RPC、内部Tool拦截、Provider Gateway |
 | Playwright | 1.61.1 | 桌面/窄屏真实浏览器门 |
 | `c8` | 12.0.0 | Node 20/22一致的前端源码覆盖率与阈值门 |
 

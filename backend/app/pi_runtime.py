@@ -19,7 +19,7 @@ from uuid import uuid4
 from .config import PiRuntimeSettings
 from .execution_dispatch.contracts import RepositoryFence
 from .execution_workspaces import ExecutionWorkspaceService
-from .model_providers import ModelProviderConfig
+from .model_providers import ModelOption, ModelProviderConfig, is_kimi_code_provider
 from .readonly_tools import ReadonlyToolService, ReadonlyToolValidationError
 from .tool_configs import PiToolConfigSnapshot
 from .tool_execution import ToolOperationError, ToolOperationService
@@ -376,12 +376,13 @@ def _pi_provider_compat(provider: ModelProviderConfig, model: str) -> dict[str, 
     roles = option.capabilities.roles if option is not None else ()
     base_url = (provider.base_url or "").lower()
     is_dashscope_coding = _DASHSCOPE_CODING_HOST in base_url
+    is_kimi_code = is_kimi_code_provider(provider)
     return {
         "supportsStore": True,
         # DashScope's coding endpoint rejects the OpenAI `developer` role even
         # when a generic DashScope catalog declares it. It accepts `system`.
         "supportsDeveloperRole": "developer" in roles and not is_dashscope_coding,
-        "supportsReasoningEffort": is_dashscope_coding,
+        "supportsReasoningEffort": is_dashscope_coding or is_kimi_code,
         "maxTokensField": "max_completion_tokens",
         "supportsStrictMode": False,
     }
@@ -393,11 +394,35 @@ def _pi_max_tokens(provider: ModelProviderConfig, model: str, thinking_level: st
     option = next((value for value in provider.models if value.id == model), None)
     configured: int | None = None
     if option is not None:
-        parameter = option.capabilities.parameter("max_output_tokens")
-        if parameter is not None and isinstance(parameter.default, int):
-            configured = parameter.default
+        for key in ("max_output_tokens", "max_completion_tokens", "max_tokens"):
+            parameter = option.capabilities.parameter(key)
+            if parameter is not None and isinstance(parameter.default, int):
+                configured = parameter.default
+                break
     floor = _PI_REASONING_MAX_TOKENS if thinking_level != "off" else _PI_DEFAULT_MAX_TOKENS
     return max(configured or 0, floor)
+
+
+def _pi_model_projection(
+    provider: ModelProviderConfig,
+    model: str,
+    thinking_level: str,
+) -> dict[str, Any]:
+    """Project catalog metadata into pi's custom-model contract."""
+
+    option = next((value for value in provider.models if value.id == model), None)
+    if option is None:
+        option = ModelOption(id=model, label=model)
+    projection: dict[str, Any] = {
+        "id": model,
+        "name": option.label,
+        "reasoning": option.reasoning,
+        "contextWindow": option.context_window,
+        "maxTokens": _pi_max_tokens(provider, model, thinking_level),
+    }
+    if option.thinking_level_map:
+        projection["thinkingLevelMap"] = dict(option.thinking_level_map)
+    return projection
 
 
 def _safe_pi_error(value: object) -> str:
@@ -501,17 +526,11 @@ class PiExecution:
                     "api": _pi_api(self.provider.protocol),
                     "compat": _pi_provider_compat(self.provider, self.config.model),
                     "models": [
-                        {
-                            "id": self.config.model,
-                            "name": self.config.model,
-                            "reasoning": self.config.thinking_level != "off",
-                            "contextWindow": 128000,
-                            "maxTokens": _pi_max_tokens(
-                                self.provider,
-                                self.config.model,
-                                self.config.thinking_level,
-                            ),
-                        }
+                        _pi_model_projection(
+                            self.provider,
+                            self.config.model,
+                            self.config.thinking_level,
+                        )
                     ],
                 }
             }

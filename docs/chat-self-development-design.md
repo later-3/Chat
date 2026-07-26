@@ -67,7 +67,7 @@
 
 | 参考源 | 固定版本 | 真正提供的依据 | 没有提供的依据 |
 |---|---|---|---|
-| pi | `2b00dade7cec918aefb025c8b7a4fa304a30acdd`；当前接入版本0.81.1 | Provider抽象、Agent loop、Tool hooks、RPC、Session JSONL、ResourceLoader、工作目录内编码体验 | Product Project/Work、Web审批、Worker Lease、Tool副作用对账、Evidence提交门 |
+| pi | 源码研究`2b00dade7cec918aefb025c8b7a4fa304a30acdd`；当前安装/接入版本0.82.0 | Provider抽象、Agent loop、Tool hooks、RPC、Session JSONL、ResourceLoader、工作目录内编码体验 | Product Project/Work、Web审批、Worker Lease、Tool副作用对账、Evidence提交门 |
 | nanobot | `2c789767280482f38667044f8a3be5102c71dd26` | 小型Agent loop、文件与Shell工作区约束、读写根分权、Tool结果持久化卫生 | Chat Product Harness、持久HITL、通用副作用恢复 |
 | QwenPaw | `2134427584c2657bb717bb083a120f2de011d047` | Web/Channel适配、单Producer多订阅、Tool系统下限与用户规则分层、批准范围 | 跨进程Job接管、通用产品决策、Repository绑定、Evidence |
 | LibreChat | `8e5ef1fb31e9d63b735c089b21cbc82c50acce46` | Product资源API与Agent运行API分层、Job/Event恢复、成功Final晚于产品提交、HITL CAS | MAF语义、Chat Harness、Repository绑定、通用Tool exactly-once |
@@ -1120,7 +1120,7 @@ StepInput。该安全修正已于2026-07-25获用户批准。
 
 ### 12.4 检视结论
 
-阶段检视结论：**SD1、SD2与SD3真实隔离写入通过；完成声明和持久恢复仍分别受F02和F05约束**。
+阶段检视结论：**SD1、SD2、SD3和F02/SD4-B通过；完成声明门正在进入SD4-C，持久恢复仍受F05约束**。
 
 1. D1-D9已获用户审核通过。
 2. SD1的Repository Binding、不可变Snapshot、REST/UI、Context Source Freshness和真实只读
@@ -1132,8 +1132,10 @@ StepInput。该安全修正已于2026-07-25获用户批准。
 4. [F01/SD3详细设计](./tool-operation-workspace-detailed-design.md)已经实现受管worktree、精确
    `edit`副作用账本、启动对账、取消收敛和设计者视图；确定性纵向测试已通过。本机Gateway 401
    已经修复并由回归测试固定；Qwen随后在干净Fixture完成一次完整隔离写入Product Run，且原仓库
-   保持干净。Chat活动仓库当前因用户未跟踪文件而被干净Snapshot门拒绝，未触碰该文件。完成声明
-   仍等待F02，pi持久恢复仍等待F05，不得以“Chat开发Chat”为由跳过。
+   保持干净。Chat活动仓库当前因用户未跟踪文件而被干净Snapshot门拒绝，未触碰该文件。
+5. F02/SD4-A记录层和SD4-B内容寻址Artifact Store/确定性Validation Runtime已经实现；真实macOS
+   seatbelt验证证明网络和Workspace外读取被拒绝。SD4-C完成声明、SD4-D失效传播和SD4-E界面仍未
+   完成，pi持久恢复仍等待F05，不得以“Chat开发Chat”为由跳过。
 
 后续每阶段继续严格执行
 “开发—测试—检视—优化—偏航审计”，并在进入下一阶段前提交已兑现/未兑现保证。

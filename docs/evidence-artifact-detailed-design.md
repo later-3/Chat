@@ -1,7 +1,7 @@
 # F02 Evidence、Artifact、Provenance 与 SD4 验证门详细设计
 
-> 状态：**待用户审核**。本文是字段级详细设计候选；用户批准前不得创建正式
-> Schema、迁移、持久化服务或兼容层。
+> 状态：**已批准，实施中**。用户已批准本文设计；SD4-A记录层和SD4-B Artifact
+> Store/Validation Runtime已于2026-07-26实现，SD4-C至E仍按本文边界继续交付。
 >
 > 适用范围：F02 独立 Evidence、Artifact、Provenance 生命周期，以及 SD4 首个
 > “受管 Execution Workspace 内 Diff/验证/完成声明”纵向切片。

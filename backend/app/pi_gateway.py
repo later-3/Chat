@@ -24,13 +24,30 @@ from .config import PiRuntimeSettings
 from .execution_dispatch.contracts import RepositoryFence
 from .execution_workspaces import ExecutionWorkspaceService
 from .model_call_review import InMemoryModelCallReviewStore, ProviderDispatchError
-from .model_providers import ModelProviderCatalog, ModelProviderConfig
+from .model_providers import ModelProviderCatalog, ModelProviderConfig, is_kimi_code_provider
 from .pi_runtime import PiExecution, PiGatewayCall, PiRuntimeError
 from .readonly_tools import ReadonlyToolService
 from .tool_configs import PiToolConfigSnapshot
 from .tool_execution import ToolOperationService
 
 logger = logging.getLogger(__name__)
+
+
+def _provider_request_headers(
+    provider: ModelProviderConfig,
+    *,
+    pi_contract_version: str,
+) -> dict[str, str]:
+    """Build secret-bearing upstream headers without altering approved bytes."""
+
+    headers = {"content-type": "application/json"}
+    if provider.api_key:
+        headers["authorization"] = f"Bearer {provider.api_key}"
+    if is_kimi_code_provider(provider):
+        # Kimi Code asks compatible clients to preserve their true identity.
+        # This gateway is Chat operating pi, not the Kimi CLI itself.
+        headers["user-agent"] = f"Chat-Pi-Gateway/1 pi-coding-agent/{pi_contract_version}"
+    return headers
 
 
 class PiRuntimeManager:
@@ -310,9 +327,10 @@ class PiRuntimeManager:
                 media_type="application/json",
             )
         endpoint = self._provider_endpoint(provider)
-        headers = {"content-type": "application/json"}
-        if provider.api_key:
-            headers["authorization"] = f"Bearer {provider.api_key}"
+        headers = _provider_request_headers(
+            provider,
+            pi_contract_version=self.runtime.contract_version,
+        )
         client = self._http_client_factory(
             timeout=execution.config.timeout_seconds,
             follow_redirects=False,

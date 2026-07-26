@@ -35,6 +35,14 @@ def create_lifespan(
         await components.collaboration_protocols.initialize()
         await components.agent_profiles.initialize()
         await components.tool_configurations.initialize()
+        validation_capabilities_seeded = await components.validation_capabilities.seed(
+            components.product_sessions.database
+        )
+        artifact_reconcile = (
+            await components.artifact_reconciler.reconcile()
+            if components.artifact_reconciler is not None
+            else None
+        )
         await components.runtime_execution.reconcile_expired_leases()
         await components.product_sessions.reconcile_terminal_runtime_jobs()
         terminal_decisions_closed = await components.governance.reconcile_terminal_run_decisions()
@@ -46,14 +54,22 @@ def create_lifespan(
             or workspace_reconciled
             or operation_reconciled
             or orphan_workspaces_retained
+            or validation_capabilities_seeded
+            or artifact_reconcile is not None
         ):
             logger.info(
                 "execution_side_effect_startup_reconciled terminal_decisions=%d "
-                "workspaces=%d operations=%d orphan_workspaces=%d",
+                "workspaces=%d operations=%d orphan_workspaces=%d "
+                "validation_capabilities=%d artifact_staging_removed=%d "
+                "artifact_physical_orphans_removed=%d artifact_rows_deleted=%d",
                 terminal_decisions_closed,
                 workspace_reconciled,
                 operation_reconciled,
                 orphan_workspaces_retained,
+                validation_capabilities_seeded,
+                artifact_reconcile.staged_removed if artifact_reconcile is not None else 0,
+                artifact_reconcile.physical_orphans_removed if artifact_reconcile is not None else 0,
+                artifact_reconcile.rows_deleted if artifact_reconcile is not None else 0,
             )
 
         outbox_task: asyncio.Task[None] | None = None

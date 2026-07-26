@@ -6,6 +6,7 @@ import copy
 import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 _PROVIDER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
@@ -116,6 +117,9 @@ class ModelOption:
     id: str
     label: str
     capabilities: ModelCapabilities = DEFAULT_MODEL_CAPABILITIES
+    context_window: int = 128_000
+    reasoning: bool = True
+    thinking_level_map: tuple[tuple[str, str | None], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,11 +148,29 @@ class ModelProviderConfig:
                 {
                     "id": model.id,
                     "label": model.label,
+                    "context_window": model.context_window,
+                    "reasoning": model.reasoning,
+                    "thinking_level_map": dict(model.thinking_level_map),
                     "capabilities": model.capabilities.public_view(),
                 }
                 for model in self.models
             ],
         }
+
+
+def is_kimi_code_provider(provider: ModelProviderConfig) -> bool:
+    """Identify Kimi Code's official OpenAI-compatible endpoint exactly."""
+
+    if provider.protocol != "openai_chat_completions" or not provider.base_url:
+        return False
+    parsed = urlsplit(provider.base_url)
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname == "api.kimi.com"
+        and parsed.path.rstrip("/") == "/coding/v1"
+        and not parsed.query
+        and not parsed.fragment
+    )
 
 
 @dataclass(frozen=True, slots=True)

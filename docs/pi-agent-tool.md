@@ -30,7 +30,10 @@ v1.7.0中的确定性Executor启动。它不是第二个用户Workflow，也不�
 
 ## 2. 为什么选择JSONL RPC
 
-源码基线是pi固定提交`2b00dade7cec918aefb025c8b7a4fa304a30acdd`，本机真实运行版本是`@earendil-works/pi-coding-agent 0.81.1`，Node是`22.23.1`。
+源码研究基线是pi固定提交`2b00dade7cec918aefb025c8b7a4fa304a30acdd`
+（`v0.80.3-55-g2b00dade`）；本机实际执行文件是系统命令`pi`指向的同一份
+`@earendil-works/pi-coding-agent 0.82.0`，Chat使用Node `22.23.1`启动它。固定源码早于当前安装版，
+因此0.82.0行为以安装包RPC文档、Changelog、真实RPC探针和Chat运行实测为准。
 
 | 接入方式 | 结论 | 原因 |
 |---|---|---|
@@ -77,13 +80,27 @@ Tool Operation和bounded diff，绑定路径、参数、Workspace、Snapshot及p
 
 ## 4. 配置
 
+pi的配置分成3层，三层解决的问题不同：
+
+| 配置层 | 事实所有者 | 负责内容 | 生效方式 |
+|---|---|---|---|
+| pi RPC运行时 | 私有`backend/config.json` | Node/pi入口、合同版本、允许工作根目录、本机Gateway | 后端启动时读取；修改后重启 |
+| Provider与模型目录 | 私有`backend/config.json` | Provider协议/地址/密钥、可选模型和模型能力 | 后端启动时读取；修改后重启 |
+| pi Tool Profile | Product DB中的`pi_agent`配置Revision | 本次以后pi执行采用的Provider/模型、工作目录、Tool、Thinking、调用上限和总超时 | 在配置中心保存后，只影响随后创建的执行 |
+
+这3层不能互相替代：Provider目录里存在K3，不等于pi已经选中K3；页面保存Tool Profile，也不能扩大
+后端允许的工作根目录或凭空新增Provider。每个Product Run开始执行pi时会冻结Tool Profile Revision，
+运行中再次修改配置不会偷换旧Run。
+
+### 4.1 pi RPC运行时
+
 私有`backend/config.json`中的运行时配置使用以下结构；仓库中的脱敏样例位于`backend/config.example.json`：
 
 ```json
 {
   "pi_agent": {
     "enabled": true,
-    "contract_version": "0.81.1",
+    "contract_version": "0.82.0",
     "node_path": "/absolute/path/to/node-22-or-newer",
     "cli_path": "/absolute/path/to/pi-coding-agent/dist/cli.js",
     "allowed_working_roots": ["/absolute/path/to/allowed/projects"],
@@ -101,6 +118,113 @@ Tool Operation和bounded diff，绑定路径、参数、Workspace、Snapshot及p
 4. `gateway_origin`只能是本机HTTP地址，避免把短期授权网关暴露为远程公共入口。
 5. Provider密钥仍只来自服务端Provider配置，不传给浏览器，也不写入pi临时配置。
 6. JSON运行配置是启动快照；修改后要重启后端。页面内Tool配置有独立Revision，只影响之后启动的Workflow。
+
+### 4.2 Kimi K3 Provider与模型目录
+
+Kimi Code通过官方OpenAI兼容端点`https://api.kimi.com/coding/v1`和模型ID`k3`接入，pi仍然只访问
+Chat本机审批网关。Provider密钥只存在于权限`0600`的私有`backend/config.json`，仓库样例保持空值。
+这里的“Kimi Code”是API服务与Provider名称，**没有启动或嵌套Kimi Code CLI**；真正运行的编码Agent
+仍是pi，Kimi K3只承担pi背后的模型推理。
+
+当前K3模型合同如下：
+
+| 参数 | 当前值 | 作用 |
+|---|---|---|
+| Provider ID | `kimi-code` | Tool Profile和运行记录使用的稳定标识 |
+| 协议 | `openai_chat_completions` | 编译为`messages`并发送到Chat Completions端点 |
+| Model ID | `k3` | Kimi Code官方模型标识 |
+| Context Window | `1,048,576` | pi本地上下文预算上限 |
+| 内容类型 | `user/assistant/system`均为纯文本 | K3上游支持多模态，但当前pi StepInput和受治理Tool链只验证了文本，因此先声明安全子集 |
+| Reasoning | `true` | pi可以向K3投影Thinking等级 |
+| `store` | 固定`false` | Provider不得保存响应；用户审批时看到完整显式上下文 |
+| `stream` | 默认`true` | Provider流式返回，Chat继续持久记录公开事件 |
+| `max_completion_tokens` | 默认/上限`131,072` | 单次模型输出上限，不表示每次都会消耗这么多Token |
+| `reasoning_effort` | `none/low/high/max`，默认`high` | K3接受的思考强度枚举 |
+| 未声明参数 | 拒绝 | `allow_unknown_parameters=false`，避免把未经验证参数发给Provider |
+
+K3与pi Thinking等级不是同一套枚举，因此模型目录显式保存映射：`off -> none`、
+`minimal/low -> low`、`medium/high -> high`、`xhigh -> max`。同时把K3的1,048,576 Context Window和
+`max_completion_tokens`投影到pi临时`models.json`。如果省略映射，pi的`minimal`或`xhigh`可能成为
+Kimi不接受的`reasoning_effort`；如果继续写死128K，则长上下文能力在进入Provider前已经被本地错误截断。
+
+Kimi官方同时说明：K3的实际思考档是`low/high/max`；`none`会关闭Thinking，并可能把请求路由到
+K2.6。因此当前Profile固定使用`medium -> high`以确保走K3。`off`只保留为跨Provider通用pi枚举，
+不应作为K3执行配置；若用户确实要关闭Thinking，应把它理解为主动接受模型路由变化，而不是“K3无思考”。
+
+Kimi要求兼容客户端保留真实客户端身份。Chat网关发送
+`Chat-Pi-Gateway/1 pi-coding-agent/<contract-version>`，明确自己是Chat托管的pi，不伪装成Kimi CLI。
+这些行为依据[Kimi Code文档](https://www.kimi.com/code/docs/)、
+[模型说明](https://www.kimi.com/code/docs/kimi-code/models.html)和当前pi
+`openai-completions.ts`/`model-registry.ts`合同实现。
+
+### 4.3 当前生效的pi Tool Profile
+
+2026-07-26当前Product DB中生效的是Revision 6：
+
+| 参数 | 当前值 | 含义与边界 |
+|---|---|---|
+| 启用 | `true` | 允许主Workflow选择pi执行路由 |
+| Provider / Model | `kimi-code / k3` | pi所有模型请求先到Chat审批网关，再转发K3 |
+| 工作目录 | `/Users/xulater/Code/Chat` | pi进程的当前目录；不是授权边界 |
+| 后端允许根目录 | `/Users/xulater/Code` | Tool目标必须留在该根内；RunSpec和Snapshot还会继续收窄 |
+| Tool上限 | `read, grep, find, ls, edit` | `pi_readonly`只会得到前4项；`edit`只在受管Workspace和Operation审批后开放 |
+| Thinking | `medium` | 对K3映射为`reasoning_effort=high`；兼顾编码质量与耗时 |
+| 最大模型调用 | `12` | 一次pi执行的Provider总轮数上限，Tool结果后的后续调用也计数 |
+| 总超时 | `900秒` | 从pi执行启动开始计算的总时限，不是单次Provider调用的独立900秒预算 |
+| System Prompt | 受控编码Agent、只用已授权Tool、不得声称未验证结果完成 | 行为指导，不是权限授予；RunSpec、Provider Gate和Tool Gate仍是硬边界 |
+| Provider Gate | 每次模型调用 | 每份真实Provider请求都生成独立ModelCallDraft和授权决定 |
+| Tool Gate | 每次内部Tool调用 | 每次参数都重新校验；写操作还必须进入Operation Ledger |
+| pi合同版本 | `0.82.0` | 与系统`pi`命令指向的同一安装文件及当前JSONL RPC合同绑定 |
+
+这里的`allowed_tools`是能力上限，不是本轮一定可用的Tool集合。最终能力由
+`后端能力上限 ∩ Tool Profile ∩ Workflow执行路由 ∩ 已批准RunSpec`决定，因此把Profile配置为包含
+`edit`也不会让`pi_readonly`直接修改文件。
+
+### 4.4 在前端使用和切换模型
+
+正常使用路径：
+
+1. 在顶部打开`配置`，进入`Tool`，选择`pi coding agent`。
+2. Provider下拉选择`Kimi Code`；模型下拉只能从该Provider目录选择`Kimi K3`，不能自由填写名称。
+3. 按任务调整Thinking、最大模型调用次数、总超时、工作目录和允许Tool，然后保存。
+4. 保存使用CAS Revision；若其他页面已经修改配置，服务端会拒绝旧Revision，刷新后再决定，不能静默覆盖。
+5. 回到聊天，选择持续协作主Workflow并发送任务。意图和计划完成后，执行路由按RunSpec选择
+   `answer_only`、`pi_readonly`或`pi_workspace`。
+6. pi每次准备调用K3时，工作台都会出现模型调用审批；可读视图和Provider JSON来自同一Draft。
+   修改任何实际请求内容都会生成新Revision/Hash并重新审批。
+7. pi提出Tool调用时，查看Tool名称、参数、路径、风险和本轮权限；只读调用可按HITL策略自动推进，
+   精确编辑必须在受管Workspace中形成Operation并经过对应授权。
+8. 执行结束后，在Workflow运行视图或Tool执行记录中查看模型调用数、Tool调用、Token、耗时、结果Hash和失败代码。
+
+切换回其他模型时仍走同一路径。例如选择`DashScope / qwen3.7-plus`并保存后，**只有之后新建的pi执行**
+使用Qwen；已经运行或完成的Product Run继续引用自己的配置Revision。Product Session顶部的“会话模型”
+当前不会自动覆盖每个Workflow节点的Agent Profile，也不会替代这里的pi Tool模型选择。
+
+### 4.5 新增Provider/模型和安全核对
+
+新增模型时按`backend/config.example.json`的相同结构扩展私有`backend/config.json`：
+
+1. Provider声明稳定`id`、协议、官方`base_url`、服务端密钥、默认模型和模型目录。
+2. 模型声明`context_window`、是否Reasoning、pi Thinking映射，以及角色、内容类型和参数能力。
+3. 不支持图片时显式把`content_types_by_role.user`设为`["text"]`；不能只写`image_input=false`后依赖通用默认值。
+4. 重启后端，让Provider目录和pi Runtime取得同一启动快照。
+5. 在配置中心的pi Tool Profile中选择新Provider/模型并保存；不要直接改Product DB。
+6. 用下面的只读接口核对公开投影，不能打印私有配置文件：
+
+```bash
+curl -s http://127.0.0.1:8030/api/model-providers
+curl -s http://127.0.0.1:8030/api/tools
+```
+
+| 修改项 | 是否重启后端 | 是否只影响新执行 |
+|---|---:|---:|
+| Node/pi路径、合同版本、允许工作根目录、Gateway | 是 | 是 |
+| Provider地址、密钥、协议、模型和能力目录 | 是 | 是 |
+| pi Tool的Provider/模型、Thinking、Tool、超时、System Prompt | 否 | 是 |
+| 某次审批页里的Provider请求内容 | 否 | 只影响该ModelCallDraft新Revision |
+
+密钥只保存在私有配置，不进入命令示例、文档、Trace、浏览器响应或Git。若密钥曾出现在聊天、终端输出
+或其他不可控记录中，应在Provider控制台轮换，而不是依赖删除本地文字来恢复保密性。
 
 ## 5. 统计与恢复语义
 
@@ -161,6 +285,15 @@ Ark与DashScope响应流超时或断连的Product Run均保守收敛为`outcome_
 Run `0872f754-2751-4e18-948b-ce2a6c152b70`：pi执行唯一获批精确`edit`，Operation/Attempt、文件
 前后Hash与Workspace Diff一致，源仓库保持干净。因此SD3真实隔离写入已经通过，但不外推为活动
 仓库合入、Evidence完成门、`write/bash/commit/push`或pi跨进程恢复。
+
+2026-07-26使用Kimi K3完成主Workflow真实只读复验：Product Run
+`7118fe7a-992e-479f-ba18-c9ece68de108`与ToolExecution
+`50487894-ac0e-4c54-a9e5-fa315efdac39`均成功。pi通过`kimi-code/k3`完成2次逐次审批的模型调用，
+实际只执行1次`read(path=README.md, limit=20)`，记录4,385输入Token、635输出Token、3,328缓存读取
+Token和84,729ms，并正确确认项目标题为`Chat`。运行前一次旧Repository Source复验被
+`ContextSourceStale`在pi/K3发送前阻断；刷新正式Snapshot后新Run才允许继续，证明K3接入没有绕过
+Source Freshness Guard。浏览器控制层当次受本地URL策略阻断，因此这里只声明API/AG-UI纵向闭环，
+不新增视觉UI通过证据。
 
 ## 7. 已知边界
 
