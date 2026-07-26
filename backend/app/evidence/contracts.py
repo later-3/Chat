@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from typing import Any
 
 
@@ -79,6 +80,17 @@ class ValidationContractMismatch(EvidenceConflict):
 
 class ValidationCapabilityUnavailable(EvidenceValidationError):
     code = "VALIDATION_CAPABILITY_UNAVAILABLE"
+
+
+class ResultCommitGateUnavailable(EvidenceError):
+    """accepted/waived ResultCommit requires the SD4-C commit gate re-check.
+
+    Until that coordinator is delivered, the record layer must fail closed
+    instead of fabricating ``pre_commit_validity_check_passed=True`` (E02).
+    """
+
+    code = "RESULT_COMMIT_GATE_UNAVAILABLE"
+    http_status = 409
 
 
 class ValidationTimeout(EvidenceError):
@@ -252,6 +264,14 @@ APPLICABILITY_POLICIES = {"record_only", "must_match_current_target"}
 # Subject transitions a CompletionClaim can request.
 CLAIM_TARGET_TRANSITIONS = {"action_result_accepted", "work_completed"}
 
+# §4.6 subject 迁移协议：每个 (subject_kind, target_transition) 只允许一个
+# (from_state, target_state) 组合，且必须同时被 Harness 既有状态机允许。
+# from_state 以权威 Subject 当前状态为准，调用方提供的值只是乐观断言（E04）。
+CLAIM_SUBJECT_TRANSITION_RULES: dict[tuple[str, str], tuple[str, str]] = {
+    ("action_item", "action_result_accepted"): ("in_progress", "completed"),
+    ("work_item", "work_completed"): ("in_progress", "completed"),
+}
+
 # §4.15.1 allowed (relation -> (source_kinds, target_kinds)) matrix.  Anything
 # outside the matrix is rejected, including reverse writes.
 PROVENANCE_RELATION_MATRIX: dict[str, tuple[frozenset[str], frozenset[str]]] = {
@@ -293,6 +313,7 @@ def provenance_edge_allowed(source_kind: str, relation: str, target_kind: str) -
         return False
     sources, targets = matrix
     return source_kind in sources and target_kind in targets
+
 
 # Payload schema versions and validators.  Each Observation kind must match a schema
 # version that the code understands; unknown schema versions are rejected.
@@ -416,7 +437,7 @@ def validate_external_observation_payload(payload: Any) -> dict[str, Any]:
     }
 
 
-PAYLOAD_VALIDATORS: dict[str, dict[str, callable]] = {
+PAYLOAD_VALIDATORS: dict[str, dict[str, Callable[[Any], dict[str, Any]]]] = {
     "validation_result": {
         VALIDATION_RESULT_SCHEMA_VERSION: validate_validation_result_payload,
     },
@@ -452,13 +473,26 @@ def claim_hash(
     *,
     subject_kind: str,
     subject_id: str,
+    expected_subject_version: int,
+    from_state: str,
     target_transition: str,
+    target_state: str,
+    validation_contract_id: str | None,
     artifact_revision_id: str | None,
+    expected_artifact_record_version: int | None,
     repository_snapshot_id: str | None,
     applicability_policy: str,
     requirements: list[dict[str, Any]],
 ) -> str:
-    """Stable hash of a Claim's immutable content."""
+    """Stable hash of a Claim's immutable content.
+
+    Every field that can change the approval consequence must be bound here:
+    the subject and its expected version, the exact state transition, the
+    validation contract, the artifact revision and its expected record
+    version, the repository snapshot, the applicability policy and the
+    requirement set.  Excluding any of them would let a caller mutate the
+    commit precondition after approval without changing the hash (E01).
+    """
     canonical_requirements = [
         {
             "index": value["requirement_index"],
@@ -475,8 +509,13 @@ def claim_hash(
         {
             "subject_kind": subject_kind,
             "subject_id": subject_id,
+            "expected_subject_version": expected_subject_version,
+            "from_state": from_state,
             "target_transition": target_transition,
+            "target_state": target_state,
+            "validation_contract_id": validation_contract_id,
             "artifact_revision_id": artifact_revision_id,
+            "expected_artifact_record_version": expected_artifact_record_version,
             "repository_snapshot_id": repository_snapshot_id,
             "applicability_policy": applicability_policy,
             "requirements": canonical_requirements,

@@ -821,7 +821,7 @@ class HarnessService:
         evidence: Sequence[Mapping[str, Any]] = (),
         dependency_override_reason: str | None = None,
         decision_record_id: str | None = None,
-   ) -> dict[str, Any]:
+    ) -> dict[str, Any]:
         request_hash = self.transition_participant.build_action_request_hash(
             action_item_id=action_item_id,
             expected_row_version=expected_row_version,

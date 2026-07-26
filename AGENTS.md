@@ -180,6 +180,9 @@
 5. 已验证版本、源码提交、调用方式和安全边界维护在
    [Kimi Code CLI开发工具手册](./docs/kimi-code-cli-tool.md)与
    `/Users/xulater/Code/opc-os/agent_knowledge/project-studies/kimi-code/README.md`。
+6. Kimi或pi承担有界实现任务前，从[执行层经验手册](./docs/execution-layer-experience.md)按本次风险选择
+   相关经验卡；经验必须包含真实反例、期望结果和验证方法，不能只传递抽象口号，也不能把全部经验
+   无界堆入Prompt。硬不变量约束结果，命名、局部抽象和具体实现方案仍由执行层自主判断。
 
 ### 8.2 Session及其他核心能力的设计顺序
 

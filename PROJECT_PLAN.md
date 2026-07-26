@@ -314,7 +314,8 @@ Session 是 W2-W9 的横向能力，仍由两份专项材料维护：
   单文件精确`edit`纵向切片已实现并通过确定性故障矩阵；本机pi Gateway凭据冲突已修复，真实pi
   已使用Qwen完成一次隔离写入Product Run；网络外部副作用、补偿和人工处置仍未完成，因此通用F01
   不勾选完成）。
-- [ ] F02 Evidence、Artifact、Provenance与独立生命周期。
+- [ ] F02 Evidence、Artifact、Provenance与独立生命周期（SD4-A记录层及第二轮语义审核已完成；
+  SD4-B Artifact Store、SD4-C Result Commit Coordinator、SD4-D失效传播和SD4-E Workflow/UI仍待交付）。
 - [ ] F03 Runtime完整故障、容量和游标矩阵。
 - [ ] F04 Session完整生命周期、树、控制与可移植性。
 - [ ] F05 任意Workflow、嵌套Workflow和pi持久恢复。

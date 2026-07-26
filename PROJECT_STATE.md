@@ -132,7 +132,7 @@
 - [x] 愿景验证新增5组可复核逐状态桌面推演：每一步固定前置状态、读取、模型/Tool、提交差异、用户可见结果和不变量，并用“Project目录查询、四天学习/项目切换、同名Context选择、pi失败恢复、多Intent来源失效/并发”反推5项方案修正；这是待审核设计证据，不是新功能已实现声明。
 - [x] 建立生产代码分割回归门：Workflow Run、Harness、ExecutionDraft/HITL相关配置、Agent、Tool和两类审批共8个Feature按真实打开时机加载；Vite manifest验证主入口450.2 KiB、单Feature与CSS预算，原约594 kB单包警告已消除。
 - [x] 补齐关键结构化日志：HITL策略激活、ExecutionDraft/RunSpec、ModelCall注册与Attempt、TurnSummary、Harness命令暂存和两阶段Context只记录关联ID、状态与计数；不记录Prompt、知识正文、Provider Body或隐藏推理。
-- [x] 建立Kimi Code CLI个人Codex Skill与项目运行手册：本机`0.29.0`匹配Tag源码完成命令、Session、`stream-json`和ACP权限边界核验；非交互审查通过显式只读Tool Allowlist，真实回合正确读取项目文件并返回可恢复Session ID。该完成项是开发辅助工具，不表示Chat产品Kimi ACP Adapter或其内部逐次Provider Payload审批已实现。
+- [x] 建立Kimi Code CLI个人Codex Skill与项目运行手册：`0.29.0`匹配Tag源码完成命令、Session、`stream-json`和ACP权限边界核验；当前本机`0.29.1`已复验交互式有界读写和命令审批兼容，但源码差异尚未审计。非交互审查通过显式只读Tool Allowlist，真实回合正确读取项目文件并返回可恢复Session ID。该完成项是开发辅助工具，不表示Chat产品Kimi ACP Adapter或其内部逐次Provider Payload审批已实现。
 - [x] 使用Kimi Code CLI只读审查并完成首轮前端可读性与Workflow工作台交互优化：所有显式可见字号建立11px下限合同；设计者工作台按实际Workflow显示标题，当前保留26个真实节点并支持渐进式详情、收起内容和定位当前节点；371px窄屏显示“返回对话”，关闭后焦点恢复到Chat入口。既有桌面与Pixel 5共7项Playwright通过。
 - [x] 修复Session定位与全链路模型审计：侧栏、聊天标题和设置显示`PS-XXXXXXXX`并可复制完整Product Session ID；自动标题绑定来源Message并在撤回后回滚。Provider Attempt持久保存有序发送/接收/解码事件、HTTP与Provider ID、首字节、用量、脱敏元数据、可见输出文本/Hash及采用去向；节点详情可直接查看，进程JSONL日志按Session、Run、Attempt、Workflow与Executor关联，高频只读轮询降为DEBUG。
 - [x] 完成阶段B首个多Intent纵向切片：新增Intent Set/Intent不可变revision、最多4个有序目标、依赖校验、CAS接受和跨Run Clarification；主Workflow升级为v1.4.0/28节点并强制多目标进入组合Plan。多目标中的权威Project目录事实由确定性Product查询先完成，再以只读事实交给Planner/Response，不重复规划不存在的Tool调用。
@@ -236,6 +236,16 @@
   硬FK环（仅设计内自引用supersedes链）；架构依赖与Schema指纹测试通过；全量298个后端
   测试通过。SD4-A只做记录层：Artifact文件存储、结构化Validation执行、Result Commit Gate
   接入Workflow和前端视图分别属于SD4-B至E，不在本次范围。
+- [x] 2026-07-26完成SD4-A第二轮执行层修复与独立审核：先把7张带真实反例、正例和验证方法的
+  执行经验卡沉淀到`docs/execution-layer-experience.md`，再通过Kimi Code CLI `0.29.1`交互式
+  有界写入修复Claim Hash遗漏、未交付accepted/waived假成功、泛型引用悬空/跨Scope、Claim
+  状态叙述不可信和`MAX+1`竞争错误。Codex没有接受Kimi的完成自述，继续修复其遗留的SQLite
+  测试连接泄漏、1324行Repository中的跨模块Ownership职责，以及Result Commit未绑定Claim
+  Hash/版本和Decision Scope；最终形成独立`EvidenceReferenceResolver`，49个Evidence合同/
+  语义攻击测试全部通过且无线程警告。全量322个后端测试、69个前端测试、Pyright、Ruff、
+  Biome、类型检查、概念/文档/密钥校验和20次迁移升降/全降/重升均通过，后端总覆盖率
+  78.86%。该审核仍不交付SD4-B Artifact Store、SD4-C Result Commit Coordinator、SD4-D
+  Invalidation传播或SD4-E Workflow/UI闭环。
 
 ## 4. 已完成的工程与研究证据
 
@@ -251,7 +261,7 @@
 
 ### 4.2 已有验证
 
-1. 当前工作区后端273项全量测试通过，总覆盖率78.83%，覆盖19次迁移、审批合同、双协议、Session恢复/并发/Retry/取消、治理策略、37节点主Workflow、协作协议/Context revision/Repository Source Freshness/StepInputProjection/TurnDigest、Intent Set/Clarification、Product Harness完整生命周期、Repository Context预算与只读写回抑制、SD2只读Tool及SD3受管Workspace/精确`edit`的路径/符号链接/Protected Source/结果预算/失败/放弃/幂等/故障对账/路由、活动pi同进程Checkpoint重挂接与丢失进程失败关闭、长跨度场景、ExecutionDraft revision/CAS、Checkpoint/Outbox跨进程恢复、Provider传输审计、Runtime双OS进程领取/Lease/Cursor/取消/断线/并发对账/终态修复，以及手机云端中转的回环绑定、访问控制、流式代理和项目虚拟环境部署合同。
+1. 当前工作区后端322项全量测试通过，总覆盖率78.86%，覆盖20次迁移、审批合同、双协议、Session恢复/并发/Retry/取消、治理策略、37节点主Workflow、协作协议/Context revision/Repository Source Freshness/StepInputProjection/TurnDigest、Intent Set/Clarification、Product Harness完整生命周期、Repository Context预算与只读写回抑制、SD2只读Tool及SD3受管Workspace/精确`edit`的路径/符号链接/Protected Source/结果预算/失败/放弃/幂等/故障对账/路由、活动pi同进程Checkpoint重挂接与丢失进程失败关闭、长跨度场景、ExecutionDraft revision/CAS、Checkpoint/Outbox跨进程恢复、Provider传输审计、Runtime双OS进程领取/Lease/Cursor/取消/断线/并发对账/终态修复、SD4-A Evidence/Artifact/Provenance/Validation记录与语义攻击，以及手机云端中转的回环绑定、访问控制、流式代理和项目虚拟环境部署合同。
 2. 前端69个逻辑/合同测试、Biome、类型检查和生产构建通过；字号合同禁止低于11px的显式可见字号，覆盖统一错误、Feature API、ExecutionDraft、协议/Context/Harness/HITL、Repository来源呈现与载入、多Intent方法投影、Runtime事件、Session定位码、Workflow路由/节点内部活动/权威ToolExecution/Workspace/Operation结果、跨部署路径、HTTP浏览器ID兼容、重连退避和本机草稿。当前生产构建主入口473.22 KiB，按需Feature边界保持有效。
 3. 浏览器完成ExecutionDraft完整工作台真实回合：修改执行摘要和Scope后由revision 1生成revision 2及新Hash，重新授权后3次火山方舟`glm-5.2`调用均完成，5个Interrupt全部为resumed、22个Checkpoint可审计、Product Run成功且TurnSummary保持candidate；520px最小视口无横向溢出，控制台0错误。
 4. 火山方舟Responses与阿里云百炼Chat Completions各完成1次真实模型审批回合；后者核对最终Body仅含`model/messages/tools/store/stream`并返回预期文本。
@@ -262,7 +272,7 @@
    最终返回`QWEN_PI_REAL_OK`；生命周期日志可关联注册、5次Provider/Tool网关认证和终态注销，
    没有记录凭据或完整Provider Payload。
 6. 清理脚本已验证可分别终止端口8030的Uvicorn和5073的Vite，清理后无监听残留。
-7. 概念空间结构校验通过：14个概念簇、17个目录文档和137个本地链接均可发现且无断链；107份项目Markdown和288个本地链接通过治理校验，`git diff --check`纳入提交前验证。
+7. 概念空间结构校验通过：14个概念簇、17个目录文档和137个本地链接均可发现且无断链；170份项目文档和565个本地链接通过治理校验，`git diff --check`纳入提交前验证。
 8. 2026-07-23真实浏览器用火山方舟`glm-5.2`完成Product Harness接合后的3次逐次模型审批；25个节点完成，结果为`HARNESS_REAL_MODEL_OK`，且正式Project、Work、Note、Memory前后均为0，控制台0错误。桌面推拉侧栏和780 CSS像素窄屏抽屉均完成展开/收起验证。
 9. 2026-07-23新增3天混合焦点长场景：7轮跨5个Product Session、1次后端服务与数据库连接重建（模拟API进程重启），依次推进FastAPI学习、切换书签API、回到学习、次日续学、第三天新建背单词CLI、查询全部Project并再次续学；3个Project及其Work/Action/Note/Memory持续独立，9份ContextPackage证明Stage A只取轻量目录、Stage B只装配被选Project，14条原始消息未被无脑塞入Context。
 10. 2026-07-23完成Runtime真实Provider断线验证：审批后批准，在新Segment首个`RUN_STARTED`后主动关闭订阅；同一Runtime Job继续完成并可回放连续57条Journal事件，只有1条终态，Product Run、Runtime Job和Provider Attempt均为成功，Provider没有因重连创建第二个Attempt。

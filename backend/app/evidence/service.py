@@ -12,9 +12,11 @@ from datetime import datetime
 from typing import Any, Callable, Mapping, Sequence
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..harness.commands import HarnessCommandRecorder
+from ..harness.contracts import ACTION_TRANSITIONS, WORK_TRANSITIONS
 from ..harness.models import ActionItemRecord, WorkItemRecord
 from .contracts import (
     ARTIFACT_DISPOSITIONS,
@@ -23,6 +25,7 @@ from .contracts import (
     ASSESSMENT_VERDICTS,
     ASSESSOR_KINDS,
     CLAIM_SUBJECT_KINDS,
+    CLAIM_SUBJECT_TRANSITION_RULES,
     CLAIM_TARGET_TRANSITIONS,
     CLAIM_TRANSITIONS,
     INVALIDATION_KINDS,
@@ -48,7 +51,9 @@ from .contracts import (
     EvidenceConflict,
     EvidenceNotFound,
     EvidenceValidationError,
+    ResultCommitGateUnavailable,
     RuntimeLeaseFenceMismatch,
+    SubjectTransitionNotAllowed,
     WaiverBlockedByFailedRequirement,
     claim_hash,
     content_hash,
@@ -72,6 +77,7 @@ from .models import (
     ValidationContractRecord,
     ValidationRunRecord,
 )
+from .ownership import EvidenceReferenceResolver
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +120,7 @@ class EvidenceRepository:
         self.principal_id = principal_id
         self._clock = clock or _utc_now
         self._recorder = command_recorder
+        self._reference_resolver = EvidenceReferenceResolver(scope_id=scope_id)
 
     async def get_artifact_record(self, transaction: AsyncSession, artifact_id: str) -> ArtifactRecord:
         value = await transaction.get(ArtifactRecord, artifact_id)
@@ -127,7 +134,9 @@ class EvidenceRepository:
             raise EvidenceNotFound("CompletionClaim不存在")
         return value
 
-    async def get_observation(self, transaction: AsyncSession, observation_id: str) -> EvidenceObservationRecord:
+    async def get_observation(
+        self, transaction: AsyncSession, observation_id: str
+    ) -> EvidenceObservationRecord:
         value = await transaction.get(EvidenceObservationRecord, observation_id)
         if value is None or value.scope_id != self.scope_id:
             raise EvidenceNotFound("EvidenceObservation不存在")
@@ -147,7 +156,9 @@ class EvidenceRepository:
             raise EvidenceNotFound("EvidenceAssessment不存在")
         return value
 
-    async def get_validation_run(self, transaction: AsyncSession, validation_run_id: str) -> ValidationRunRecord:
+    async def get_validation_run(
+        self, transaction: AsyncSession, validation_run_id: str
+    ) -> ValidationRunRecord:
         value = await transaction.get(ValidationRunRecord, validation_run_id)
         if value is None or value.scope_id != self.scope_id:
             raise EvidenceNotFound("ValidationRun不存在")
@@ -181,14 +192,38 @@ class EvidenceRepository:
         if subject_kind == "artifact_revision":
             revision = await transaction.get(ArtifactRevisionRecord, subject_id)
             artifact = (
-                None
-                if revision is None
-                else await transaction.get(ArtifactRecord, revision.artifact_id)
+                None if revision is None else await transaction.get(ArtifactRecord, revision.artifact_id)
             )
             if revision is None or artifact is None or artifact.scope_id != self.scope_id:
                 raise EvidenceNotFound(f"subject不存在: {subject_kind}/{subject_id}")
             return revision
         raise EvidenceValidationError(f"未知subject_kind: {subject_kind}")
+
+    async def _resolve_reference(
+        self,
+        transaction: AsyncSession,
+        *,
+        kind: str,
+        reference_id: str,
+    ) -> Any:
+        """Resolve a generic reference inside the caller-owned transaction."""
+
+        return await self._reference_resolver.resolve(
+            transaction,
+            kind=kind,
+            reference_id=reference_id,
+        )
+
+    @staticmethod
+    async def _flush_or_conflict(transaction: AsyncSession, conflict_message: str) -> None:
+        """Flush pending rows, translating unique-constraint races into a stable
+        domain conflict instead of leaking a raw database error or pretending
+        success (E05).  The caller's transaction still owns rollback."""
+
+        try:
+            await transaction.flush()
+        except IntegrityError as exc:
+            raise EvidenceConflict(conflict_message) from exc
 
     async def get_current_artifact_revision(
         self,
@@ -292,6 +327,7 @@ class EvidenceRepository:
         transaction: AsyncSession,
         *,
         artifact_id: str,
+        expected_artifact_record_version: int,
         storage_blob_id: str,
         sha256: str,
         size_bytes: int,
@@ -299,6 +335,12 @@ class EvidenceRepository:
         command_id: str,
     ) -> ArtifactRevisionRecord:
         record = await self.get_artifact_record(transaction, artifact_id)
+        if record.row_version != expected_artifact_record_version:
+            # 陈旧版本稳定冲突：调用方基于旧 row_version 追加会覆盖别人的
+            # 新 Revision 前提，必须重新读取后再试（E05；本轮不做锁与自动重试）。
+            raise EvidenceConflict(
+                f"Artifact期望版本{expected_artifact_record_version}，当前为{record.row_version}"
+            )
         if record.status not in {"candidate", "accepted", "rejected", "not_adopted", "retained"}:
             raise EvidenceValidationError("Artifact状态不允许追加Revision")
         blob = await transaction.get(ArtifactBlobRecord, storage_blob_id)
@@ -348,6 +390,12 @@ class EvidenceRepository:
         record.row_version += 1
         record.updated_at = self._clock()
         transaction.add(revision)
+        # UNIQUE(artifact_id, revision_number) 与 UNIQUE(artifact_id, command_id)
+        # 是并发最后防线；冲突翻译为稳定领域冲突，完整幂等重放属 SD4-B/C
+        # Coordinator 边界，本轮 fail closed。
+        await self._flush_or_conflict(
+            transaction, "Artifact Revision序号或命令竞争冲突，请重读当前版本后重试"
+        )
         return revision
 
     async def transition_artifact_status(
@@ -367,9 +415,7 @@ class EvidenceRepository:
             raise EvidenceConflict("Artifact版本冲突")
         allowed = ARTIFACT_TRANSITIONS.get(value.status, set())
         if target_status not in allowed:
-            raise EvidenceValidationError(
-                f"Artifact不能从{value.status}变为{target_status}"
-            )
+            raise EvidenceValidationError(f"Artifact不能从{value.status}变为{target_status}")
         previous = value.status
         value.status = target_status
         value.row_version += 1
@@ -429,6 +475,20 @@ class EvidenceRepository:
         )
         if not any(source_refs):
             raise EvidenceValidationError("Observation必须至少携带一个可定位来源")
+        # 每个提供的可选来源都必须在同事务证明存在且同 scope（E03）；
+        # 硬 FK 只能证明目标行存在，不能证明它属于本 scope。
+        for ref_kind, ref_id in (
+            ("validation_run", validation_run_id),
+            ("tool_operation", tool_operation_id),
+            ("model_call_attempt", model_call_attempt_id),
+            ("repository_snapshot", repository_snapshot_id),
+            ("artifact_revision", artifact_revision_id),
+            ("product_run", product_run_id),
+            ("run_attempt", run_attempt_id),
+            ("decision_record", decision_record_id),
+        ):
+            if ref_id is not None:
+                await self._resolve_reference(transaction, kind=ref_kind, reference_id=ref_id)
         observation = EvidenceObservationRecord(
             id=_new_id(),
             scope_id=self.scope_id,
@@ -485,12 +545,57 @@ class EvidenceRepository:
         if applicability_policy == "must_match_current_target" and not repository_snapshot_id:
             raise EvidenceValidationError("must_match_current_target需要repository_snapshot_id")
         if (artifact_revision_id is None) != (expected_artifact_record_version is None):
-            raise EvidenceValidationError("artifact_revision_id与expected_artifact_record_version必须同时为空或非空")
+            raise EvidenceValidationError(
+                "artifact_revision_id与expected_artifact_record_version必须同时为空或非空"
+            )
         subject = await self._require_subject(transaction, subject_kind=subject_kind, subject_id=subject_id)
-        if isinstance(subject, (WorkItemRecord, ActionItemRecord)):
-            if subject.row_version != expected_subject_version:
+        if not isinstance(subject, (WorkItemRecord, ActionItemRecord)):
+            raise EvidenceValidationError(f"Claim subject_kind不支持: {subject_kind}")
+        if subject.row_version != expected_subject_version:
+            raise EvidenceConflict(
+                f"Claim期望subject版本{expected_subject_version}，当前为{subject.row_version}"
+            )
+        # from_state/target_state 不信任调用方叙述（E04）：from_state 必须与
+        # 权威 Subject 当前状态一致，target_state 由协议规则和 Harness 状态机
+        # 共同决定；错误组合稳定失败。
+        rule = CLAIM_SUBJECT_TRANSITION_RULES.get((subject_kind, target_transition))
+        if rule is None:
+            raise SubjectTransitionNotAllowed(f"{subject_kind}不允许target_transition: {target_transition}")
+        protocol_from, protocol_target = rule
+        actual_state = subject.status
+        if from_state != actual_state:
+            raise EvidenceConflict(f"from_state与subject当前状态不一致: 声称{from_state}，实际{actual_state}")
+        harness_transitions = (
+            ACTION_TRANSITIONS if isinstance(subject, ActionItemRecord) else WORK_TRANSITIONS
+        )
+        if actual_state != protocol_from or target_state != protocol_target:
+            raise SubjectTransitionNotAllowed(
+                f"{target_transition}只允许{protocol_from} -> {protocol_target}，"
+                f"当前{actual_state} -> {target_state}"
+            )
+        if target_state not in harness_transitions.get(actual_state, set()):
+            raise SubjectTransitionNotAllowed(f"Harness状态机不允许{actual_state} -> {target_state}")
+        if target_transition == "action_result_accepted" and applicability_policy != "record_only":
+            # §4.6：SD4 隔离执行 Action 的接受只做记录；must_match 是 SD5
+            # Integration 语义，不能提前绑定到 Action Claim。
+            raise EvidenceValidationError("action_result_accepted必须使用record_only applicability_policy")
+        # Claim 绑定的可选引用必须存在且同 scope（E03）。
+        if validation_contract_id is not None:
+            await self._resolve_reference(
+                transaction, kind="validation_contract", reference_id=validation_contract_id
+            )
+        if repository_snapshot_id is not None:
+            await self._resolve_reference(
+                transaction, kind="repository_snapshot", reference_id=repository_snapshot_id
+            )
+        if artifact_revision_id is not None:
+            revision = await self._resolve_reference(
+                transaction, kind="artifact_revision", reference_id=artifact_revision_id
+            )
+            artifact = await self.get_artifact_record(transaction, revision.artifact_id)
+            if artifact.row_version != expected_artifact_record_version:
                 raise EvidenceConflict(
-                    f"Claim期望subject版本{expected_subject_version}，当前为{subject.row_version}"
+                    f"Claim期望Artifact版本{expected_artifact_record_version}，当前为{artifact.row_version}"
                 )
 
         normalized_requirements: list[dict[str, Any]] = []
@@ -513,8 +618,13 @@ class EvidenceRepository:
         computed_claim_hash = claim_hash(
             subject_kind=subject_kind,
             subject_id=subject_id,
+            expected_subject_version=expected_subject_version,
+            from_state=from_state,
             target_transition=target_transition,
+            target_state=target_state,
+            validation_contract_id=validation_contract_id,
             artifact_revision_id=artifact_revision_id,
+            expected_artifact_record_version=expected_artifact_record_version,
             repository_snapshot_id=repository_snapshot_id,
             applicability_policy=applicability_policy,
             requirements=normalized_requirements,
@@ -589,6 +699,18 @@ class EvidenceRepository:
             # §4.8：服务端 Assessment 的 assessor_principal_id 必须留空
             if assessor_principal_id:
                 raise EvidenceValidationError("服务端Assessment不允许携带assessor_principal_id")
+        if assessor_run_id is not None:
+            await self._resolve_reference(
+                transaction,
+                kind="product_run",
+                reference_id=assessor_run_id,
+            )
+        if decision_record_id is not None:
+            await self._resolve_reference(
+                transaction,
+                kind="decision_record",
+                reference_id=decision_record_id,
+            )
         observation = await self.get_observation(transaction, observation_id)
         # get_requirement 不存在时会抛出，作为评估目标的存在性校验
         requirement = await self.get_requirement(transaction, requirement_id)
@@ -620,6 +742,9 @@ class EvidenceRepository:
             created_at=self._clock(),
         )
         transaction.add(assessment)
+        # UNIQUE(requirement_id, assessment_sequence) 兜底并发；supersedes 校验
+        # 提供 expected-version 语义，唯一冲突翻译为稳定领域冲突。
+        await self._flush_or_conflict(transaction, "Assessment序号竞争冲突，请重读当前Assessment后重试")
         return assessment
 
     async def create_adoption(
@@ -632,6 +757,11 @@ class EvidenceRepository:
         decision_record_id: str,
         command_id: str,
     ) -> ClaimEvidenceAdoptionRecord:
+        await self._resolve_reference(
+            transaction,
+            kind="decision_record",
+            reference_id=decision_record_id,
+        )
         claim = await self.get_claim(transaction, claim_id)
         if claim.status != "candidate":
             raise EvidenceConflict("只有candidate状态的Claim才能创建Adoption")
@@ -676,6 +806,11 @@ class EvidenceRepository:
         reason: str,
         command_id: str,
     ) -> RequirementWaiverRecord:
+        await self._resolve_reference(
+            transaction,
+            kind="decision_record",
+            reference_id=decision_record_id,
+        )
         # get_requirement 不存在时会抛出，作为豁免目标的存在性校验
         requirement = await self.get_requirement(transaction, requirement_id)
         claim = await self.get_claim(transaction, requirement.completion_claim_id)
@@ -708,6 +843,8 @@ class EvidenceRepository:
         transaction: AsyncSession,
         *,
         claim_id: str,
+        claim_hash: str,
+        expected_claim_row_version: int,
         commit_status: str,
         artifact_disposition: str,
         decision_record_id: str,
@@ -719,19 +856,47 @@ class EvidenceRepository:
         if artifact_disposition not in ARTIFACT_DISPOSITIONS:
             raise EvidenceValidationError(f"未知artifact_disposition: {artifact_disposition}")
         claim = await self.get_claim(transaction, claim_id)
+        if claim.claim_hash != claim_hash:
+            raise EvidenceConflict("ResultCommit绑定的claim_hash已变化")
+        if claim.row_version != expected_claim_row_version:
+            raise EvidenceConflict(
+                f"ResultCommit期望Claim版本{expected_claim_row_version}，当前为{claim.row_version}"
+            )
         if claim.status != "candidate":
             raise CompletionClaimAlreadyResolved("只有candidate状态的Claim才能提交ResultCommit")
+        await self._resolve_reference(
+            transaction,
+            kind="decision_record",
+            reference_id=decision_record_id,
+        )
 
-        # SD4-A: basic pre-commit check placeholder.  Full requirement satisfaction
-        # is implemented in SD4-C ResultCommit coordinator.  Per §4.11 the CHECK
-        # requires accepted/waived commits to have passed the validity re-check;
-        # an empty adoption set passes (全 Waiver 时为真，空集通过).
-        pre_commit_validity_check_passed = commit_status in {"accepted", "waived"}
-        target_claim_status = "committed" if commit_status in {"accepted", "waived"} else "rejected"
-        if target_claim_status not in CLAIM_TRANSITIONS[claim.status]:
-            raise EvidenceValidationError(
-                f"Claim不能从{claim.status}变为{target_claim_status}"
+        if commit_status in {"accepted", "waived"}:
+            # E02 fail closed：accepted/waived 要求 SD4-C ResultCommit Gate 的
+            # Requirement 满足性、Adoption 当前性、Observation 有效性、Artifact
+            # 版本与 Hash 复检；该 Coordinator 尚未交付，本记录层不得用
+            # commit_status 机械推断 pre_commit_validity_check_passed=True。
+            raise ResultCommitGateUnavailable(
+                "accepted/waived需要SD4-C ResultCommit Gate完成证据复检，当前阶段不可用"
             )
+
+        # rejected 路径（§9.1 step 2 的记录子集）：不做 Requirement/applicability/
+        # subject 迁移校验，不推进 Harness 主体状态；Artifact 处置与 subject 迁移
+        # 由后续 Coordinator 在同事务完成。
+        if committed_subject_state is not None:
+            raise EvidenceValidationError("rejected不推进subject，不能记录committed_subject_state")
+        if claim.artifact_revision_id is None and artifact_disposition != "none":
+            raise EvidenceValidationError("未绑定Artifact的Claim只能使用artifact_disposition=none")
+        if claim.artifact_revision_id is not None and artifact_disposition not in {
+            "rejected",
+            "none",
+        }:
+            raise EvidenceValidationError(
+                "rejected的Claim对Artifact只能使用rejected（仍是当前项）或none（已被替代）"
+            )
+
+        target_claim_status = "rejected"
+        if target_claim_status not in CLAIM_TRANSITIONS[claim.status]:
+            raise EvidenceValidationError(f"Claim不能从{claim.status}变为{target_claim_status}")
 
         commit = ResultCommitRecord(
             id=_new_id(),
@@ -739,9 +904,9 @@ class EvidenceRepository:
             completion_claim_id=claim_id,
             commit_status=commit_status,
             artifact_disposition=artifact_disposition,
-            pre_commit_validity_check_passed=pre_commit_validity_check_passed,
+            pre_commit_validity_check_passed=False,
             decision_record_id=decision_record_id,
-            committed_subject_state=committed_subject_state,
+            committed_subject_state=None,
             command_id=command_id,
             created_at=self._clock(),
         )
@@ -926,9 +1091,7 @@ class EvidenceRepository:
                 raise EvidenceConflict("同幂等键下回报内容冲突")
             return run
         if status not in VALIDATION_RUN_TRANSITIONS.get(run.status, set()):
-            raise EvidenceValidationError(
-                f"ValidationRun不能从{run.status}变为{status}"
-            )
+            raise EvidenceValidationError(f"ValidationRun不能从{run.status}变为{status}")
         now = self._clock()
         run.outcome_command_id = outcome_command_id
         run.outcome_hash = outcome_hash
@@ -984,6 +1147,22 @@ class EvidenceRepository:
             raise EvidenceValidationError(
                 f"Provenance方向矩阵不允许: {source_kind} --{relation}--> {target_kind}"
             )
+        # generic source/target 无法用单一 FK 表达，必须在写入事务内解析
+        # 存在性与 scope（§4.15 OwnershipResolver，E03）。
+        await self._resolve_reference(transaction, kind=source_kind, reference_id=source_id)
+        await self._resolve_reference(transaction, kind=target_kind, reference_id=target_id)
+        if product_run_id is not None:
+            await self._resolve_reference(
+                transaction,
+                kind="product_run",
+                reference_id=product_run_id,
+            )
+        if decision_record_id is not None:
+            await self._resolve_reference(
+                transaction,
+                kind="decision_record",
+                reference_id=decision_record_id,
+            )
         edge = ProvenanceEdgeRecord(
             id=_new_id(),
             scope_id=self.scope_id,
@@ -1028,6 +1207,15 @@ class EvidenceRepository:
             raise EvidenceValidationError("revoked事件必须绑定DecisionRecord")
         if resolution == "dismissed" and not resolution_decision_record_id:
             raise EvidenceValidationError("dismissed处置必须绑定DecisionRecord")
+        # 失效事件的来源必须是真实存在且同 scope 的对象；不能让 Trace 引用
+        # 从未存在或其他 scope 的来源（E03）。
+        await self._resolve_reference(transaction, kind=source_kind, reference_id=source_id)
+        if resolution_decision_record_id is not None:
+            await self._resolve_reference(
+                transaction,
+                kind="decision_record",
+                reference_id=resolution_decision_record_id,
+            )
         if recovers_invalidation_id is not None:
             recovered_from = await transaction.get(SourceInvalidationRecord, recovers_invalidation_id)
             if (
@@ -1037,11 +1225,10 @@ class EvidenceRepository:
                 or recovered_from.source_id != source_id
                 or recovered_from.invalidation_kind not in {"stale", "unavailable"}
             ):
-                raise EvidenceValidationError(
-                    "recovered必须指向同一来源的stale/unavailable事件"
-                )
-        # sequence 分配：锁定该来源最后一行 + UNIQUE 冲突兜底重试由调用方事务负责；
-        # uq_source_invalidation_sequence 保证并发下只有一个写入者成功。
+                raise EvidenceValidationError("recovered必须指向同一来源的stale/unavailable事件")
+        # sequence 分配：读取该来源最后一条事件 +1；UNIQUE 约束是并发最后
+        # 防线，冲突翻译为稳定领域冲突。锁定与冲突重试属后续 Coordinator
+        # 边界，本轮 fail closed，不做无锁重试。
         next_sequence = (
             await transaction.scalar(
                 select(func.coalesce(func.max(SourceInvalidationRecord.sequence), 0)).where(
@@ -1069,4 +1256,7 @@ class EvidenceRepository:
             updated_at=self._clock(),
         )
         transaction.add(event)
+        await self._flush_or_conflict(
+            transaction, "SourceInvalidation序号或命令竞争冲突，请重读来源事件后重试"
+        )
         return event

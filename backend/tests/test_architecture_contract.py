@@ -11,9 +11,9 @@ from typing import Any
 import pytest
 from sqlalchemy import inspect
 
-from backend.app.config import Settings
 from backend.app.collaboration_intents import models as _ci_models  # noqa: F401
 from backend.app.collaboration_protocols import models as _cp_models  # noqa: F401
+from backend.app.config import Settings
 from backend.app.evidence import models as _ev_models  # noqa: F401
 from backend.app.execution_workspaces import models as _ew_models  # noqa: F401
 from backend.app.governance import models as _gov_models  # noqa: F401
