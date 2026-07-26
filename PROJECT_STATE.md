@@ -6,7 +6,7 @@
 |---|---|
 | 产品身份 | 独立开发、独立运行、独立运营并持续演进的完整 Chat 产品 |
 | 当前目录 | `/Users/xulater/Code/Chat` |
-| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、Product Session R0/R1与可见定位码、双协议模型治理和持久Provider Attempt审计、37节点持续协作主Workflow、HITL策略矩阵、持久Checkpoint/Outbox恢复、ExecutionDraft完整编辑、Product Harness纵向生命周期、协作协议/Context revision/步骤输入阶段A、Intent Set与复合Plan阶段B、SD1 Repository只读、SD2受治理pi只读、SD3受管Execution Workspace与精确`edit`副作用账本及真实Qwen隔离写入、pi对Kimi K3的Context/Thinking/客户端身份适配与真实只读回合、活动pi同进程Checkpoint重挂接、Runtime Job/Event/Cursor/通用Execution Worker纵向切片、手机公网HTTP中转与完整响应式Web纵向链路、SD4-A Evidence记录层，以及SD4-B内容寻址Artifact Store和确定性Validation Runtime已完成；当前私有部署尚未配置Artifact scope密钥，SD4-C完成声明门和活动pi跨进程续跑仍未完成 |
+| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、Product Session R0/R1与可见定位码、双协议模型治理和持久Provider Attempt审计、37节点持续协作主Workflow、HITL策略矩阵、持久Checkpoint/Outbox恢复、ExecutionDraft完整编辑、Product Harness纵向生命周期、协作协议/Context revision/步骤输入阶段A、Intent Set与复合Plan阶段B、SD1 Repository只读、SD2受治理pi只读、SD3受管Execution Workspace与精确`edit`副作用账本及真实Qwen隔离写入、pi对Kimi K3的Context/Thinking/客户端身份适配与真实只读回合、活动pi同进程Checkpoint重挂接、Runtime Job/Event/Cursor/通用Execution Worker纵向切片、手机公网HTTP中转与完整响应式Web纵向链路、SD4-A Evidence记录层、SD4-B内容寻址Artifact Store和确定性Validation Runtime，以及SD4-C Result Commit Gate单事务完成门已完成；当前私有部署尚未配置Artifact scope密钥，SD4-D失效传播、SD4-E Workflow胶水/UI和活动pi跨进程续跑仍未完成 |
 | 设计状态 | 总体架构已按完整用户场景重写并获批准；2026-07-24进一步确认Super Admin Operations是完整产品的第11个产品与应用模块，详细身份/活动/指标/隐私设计尚未开始；Execution治理D1-D7、Product Harness D1-D8、活动Run与通用Execution Worker D1-D8均已获用户批准并迁移；Chat UI/UX视觉基线v1及4项轻量情绪层已获批准，生产前端迁移尚未完成；“Chat开发Chat”D1-D9、SD1 R1-R12、SD2 R1-R12和“Chat自开发可用门v1”8阶段节奏已获批准，SD1-A/B/C/D与SD2-A/B/C/D/E只读纵向切片已完成；2026-07-25用户批准F01字段级Tool Operation Ledger并进入SD3隔离写入，SD4/F02与SD5/F05仍保留各自审核门 |
 | Session 状态 | 9个能力域、74项能力、R0-R6和Phase 0-8路线已批准；Phase 0-1完成，Phase 2进行中，Phase 4-5完成纵向切片但尚未通过全部阶段故障矩阵 |
 | 工程质量状态 | Q0纵向基线已建立且本地完整门通过：CI/静态质量门、统一Problem Detail、请求关联、结构化日志、基础Metrics/Trace、诊断入口、分层覆盖率、Playwright/axe、故障实验室、组合根拆分和前端Feature边界均可运行；Q02已继续提取治理纯策略/Run查询、Harness命令记录/Context查询，Q06已拆出Agent重连Hook、Workflow两类运行投影并建立8个生产按需Feature；剩余大型Application Service、持续协作Workflow、性能/人工无障碍、远端CI首次运行和生产Exporter/SLO不在已完成范围 |
@@ -257,6 +257,27 @@
   部署健康投影会明确显示Artifact Store未配置，不会用模型Key、固定默认值或可逆scope名降级。
   全量351个后端测试、79.40%覆盖率、20次迁移升降/全降/重升、69个前端测试、生产构建和
   Playwright桌面/手机15通过3跳过均完成；SD4-C Result Commit、SD4-D失效传播与SD4-E界面未交付。
+- [x] 2026-07-26完成SD4-C Result Commit Gate：`ResultCommitCoordinator`以单个Product Store
+  事务完成设计§9.1全部11步——幂等重放、Decision effect校验（accepted/waived必须绑定allow，
+  rejected只绑定审计）、拒绝独立路径（缺失Evidence、Snapshot前进、subject CAS均不卡住拒绝，
+  矩阵17）、mandatory Requirement逐条Adoption/Waiver覆盖校验、Adoption当前性/Observation
+  validity/pending invalidation复检、Artifact版本/当前Revision/Blob available/真实Store
+  重算Hash复检（无Store对Artifact Claim fail closed）、record_only/must_match_current_target
+  适用性分支（目标前进稳定报`ArtifactApplicabilityStale`）、迁移协议复核、work_completed
+  前置（无open Action且无待合入Artifact）、participant条件UPDATE原子迁移subject并写入
+  仅含ResultCommit/Claim引用的投影Evidence（D12）、`attributed_to` ProvenanceEdge与Trace/
+  Outbox。记录层保持fail closed：accepted/waived必须携带Gate同事事务产出的`ClaimGateRecheck`
+  复检证明并由记录层结构复核（Claim身份/版本/结局/mandatory全覆盖），`pre_commit_validity_
+  check_passed`不再由commit_status机械推断（反例033）；rejected不得携带证明。Harness公开
+  迁移路径对保留投影形状无校验器即fail closed，普通用户不能伪造ResultCommit引用（矩阵19）；
+  Gate注入的链校验器强制引用只能消费一次（`expected_subject_version`绑定当前版本），重放
+  确定性失败。新增REST边界`POST /api/evidence/claims/{id}/commit`（唯一用户可达Evidence
+  写入口）与`GET /api/evidence/claims/{id}`；Observation/Assessment/Validation/Artifact均无
+  公开路由。组合根接线完成，OpenAPI指纹更新并留审阅注记；同时修复`HarnessConflict`导入
+  缺失的潜伏NameError与subject视图`kind`字段被Work/Action分类覆盖的缺陷。专项36项Gate
+  测试（含真实Store字节重算/篡改阻断、participant注入故障零部分状态与同command_id重放、
+  REST播种经独立文件库）全部通过；SD4-C不交付主Workflow自动创建Claim的胶水、SD4-D失效
+  传播与SD4-E界面/Dogfood E2E。
 
 ## 4. 已完成的工程与研究证据
 
@@ -272,7 +293,7 @@
 
 ### 4.2 已有验证
 
-1. 当前工作区后端351项全量测试通过，总覆盖率79.40%，覆盖20次迁移、审批合同、双协议、Session恢复/并发/Retry/取消、治理策略、37节点主Workflow、协作协议/Context revision/Repository Source Freshness/StepInputProjection/TurnDigest、Intent Set/Clarification、Product Harness完整生命周期、Repository Context预算与只读写回抑制、SD2只读Tool及SD3受管Workspace/精确`edit`的路径/符号链接/Protected Source/结果预算/失败/放弃/幂等/故障对账/路由、pi的K3 Context/Thinking/客户端身份投影、活动pi同进程Checkpoint重挂接与丢失进程失败关闭、长跨度场景、ExecutionDraft revision/CAS、Checkpoint/Outbox跨进程恢复、Provider传输审计、Runtime双OS进程领取/Lease/Cursor/取消/断线/并发对账/终态修复、SD4-A Evidence记录与语义攻击、SD4-B Artifact崩溃窗口/损坏/去重/GC以及Validation argv/环境/sandbox/进程终态，以及手机云端中转的回环绑定、访问控制、流式代理和项目虚拟环境部署合同。
+1. 当前工作区后端379项全量测试通过，总覆盖率79.00%，覆盖20次迁移、审批合同、双协议、Session恢复/并发/Retry/取消、治理策略、37节点主Workflow、协作协议/Context revision/Repository Source Freshness/StepInputProjection/TurnDigest、Intent Set/Clarification、Product Harness完整生命周期、Repository Context预算与只读写回抑制、SD2只读Tool及SD3受管Workspace/精确`edit`的路径/符号链接/Protected Source/结果预算/失败/放弃/幂等/故障对账/路由、pi的K3 Context/Thinking/客户端身份投影、活动pi同进程Checkpoint重挂接与丢失进程失败关闭、长跨度场景、ExecutionDraft revision/CAS、Checkpoint/Outbox跨进程恢复、Provider传输审计、Runtime双OS进程领取/Lease/Cursor/取消/断线/并发对账/终态修复、SD4-A Evidence记录与语义攻击、SD4-B Artifact崩溃窗口/损坏/去重/GC以及Validation argv/环境/sandbox/进程终态、SD4-C Result Commit单事务/拒绝独立路径/逐Requirement豁免/Evidence与Artifact复检/适用性分支/subject并发与重放保护/伪造拒绝/回滚原子性/REST边界，以及手机云端中转的回环绑定、访问控制、流式代理和项目虚拟环境部署合同。
 2. 前端69个逻辑/合同测试、Biome、类型检查和生产构建通过；字号合同禁止低于11px的显式可见字号，覆盖统一错误、Feature API、ExecutionDraft、协议/Context/Harness/HITL、Repository来源呈现与载入、多Intent方法投影、Runtime事件、Session定位码、Workflow路由/节点内部活动/权威ToolExecution/Workspace/Operation结果、跨部署路径、HTTP浏览器ID兼容、重连退避和本机草稿。当前生产构建主入口473.22 KiB，按需Feature边界保持有效。
 3. 浏览器完成ExecutionDraft完整工作台真实回合：修改执行摘要和Scope后由revision 1生成revision 2及新Hash，重新授权后3次火山方舟`glm-5.2`调用均完成，5个Interrupt全部为resumed、22个Checkpoint可审计、Product Run成功且TurnSummary保持candidate；520px最小视口无横向溢出，控制台0错误。
 4. 火山方舟Responses与阿里云百炼Chat Completions各完成1次真实模型审批回合；后者核对最终Body仅含`model/messages/tools/store/stream`并返回预期文本。
@@ -360,9 +381,10 @@
 4. 通用Tool Operation Ledger、外部副作用幂等/结果未知/对账，以及旧/嵌套Workflow和活动pi
    跨后端进程的持久恢复；主Workflow无外部Tool副作用审批安全点已跨进程恢复，活动pi现可在同一
    后端进程内从Checkpoint重挂接Model/Tool边界，进程重启仍只提供中断收敛。
-5. SD4-B已提供独立Artifact字节存储与确定性Validation Runtime，但SD4-C Result Commit、SD4-D
-   Provenance/失效传播、SD4-E用户视图、Delivery Outbox和完整运营Trace仍未完成；Work当前仍不能
-   仅凭模型自述或Validation进程退出码形成独立完成事实。
+5. SD4-C Result Commit Gate已提供单事务完成门与REST commit端点，但主Workflow尚无自动创建
+   Claim并把Validation结果接入Evidence链的胶水（属SD4-E），SD4-D Provenance查询/失效传播、
+   SD4-E用户视图、Delivery Outbox和完整运营Trace仍未完成；Work当前仍不能仅凭模型自述或
+   Validation进程退出码形成独立完成事实。
 6. Telegram等具体Channel Adapter合同，以及OPC-OS Chat Bridge的正式身份、能力、消息和回执合同。
 7. Provider结果未知后的查询对账、补偿和人工处置。
 8. 公网访问当前仍是HTTP + Basic Auth验证阶段：尚无传输加密、正式Principal/Authentication Session、多设备撤权和标准PWA安装保证；进入长期日常使用前必须迁移到HTTPS并接入正式Identity。

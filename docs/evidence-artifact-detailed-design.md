@@ -1,7 +1,9 @@
 # F02 Evidence、Artifact、Provenance 与 SD4 验证门详细设计
 
 > 状态：**已批准，实施中**。用户已批准本文设计；SD4-A记录层和SD4-B Artifact
-> Store/Validation Runtime已于2026-07-26实现，SD4-C至E仍按本文边界继续交付。
+> Store/Validation Runtime已于2026-07-26实现，SD4-C Result Commit Gate（单事务
+> 完成门、Harness引用链校验、REST commit端点）已于2026-07-26实现；主Workflow
+> 自动创建Claim的胶水划入SD4-E，SD4-D至E仍按本文边界继续交付。
 >
 > 适用范围：F02 独立 Evidence、Artifact、Provenance 生命周期，以及 SD4 首个
 > “受管 Execution Workspace 内 Diff/验证/完成声明”纵向切片。

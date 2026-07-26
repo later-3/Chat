@@ -47,11 +47,11 @@ from .contracts import (
     ArtifactHashMismatch,
     ArtifactRevisionSuperseded,
     AssessmentNotSupporting,
+    ClaimGateRecheck,
     CompletionClaimAlreadyResolved,
     EvidenceConflict,
     EvidenceNotFound,
     EvidenceValidationError,
-    ResultCommitGateUnavailable,
     RuntimeLeaseFenceMismatch,
     SubjectTransitionNotAllowed,
     WaiverBlockedByFailedRequirement,
@@ -850,7 +850,15 @@ class EvidenceRepository:
         decision_record_id: str,
         command_id: str,
         committed_subject_state: str | None = None,
+        gate_recheck: ClaimGateRecheck | None = None,
     ) -> ResultCommitRecord:
+        """Record a ResultCommit inside the caller-owned transaction.
+
+        E02 fail closed: accepted/waived commits require a ``ClaimGateRecheck``
+        produced by the SD4-C ResultCommitCoordinator inside this same
+        transaction.  The recording layer never infers
+        ``pre_commit_validity_check_passed`` from ``commit_status`` alone.
+        """
         if commit_status not in RESULT_COMMIT_STATUSES:
             raise EvidenceValidationError(f"未知commit_status: {commit_status}")
         if artifact_disposition not in ARTIFACT_DISPOSITIONS:
@@ -870,31 +878,66 @@ class EvidenceRepository:
             reference_id=decision_record_id,
         )
 
-        if commit_status in {"accepted", "waived"}:
-            # E02 fail closed：accepted/waived 要求 SD4-C ResultCommit Gate 的
-            # Requirement 满足性、Adoption 当前性、Observation 有效性、Artifact
-            # 版本与 Hash 复检；该 Coordinator 尚未交付，本记录层不得用
-            # commit_status 机械推断 pre_commit_validity_check_passed=True。
-            raise ResultCommitGateUnavailable(
-                "accepted/waived需要SD4-C ResultCommit Gate完成证据复检，当前阶段不可用"
-            )
+        if commit_status == "rejected":
+            # rejected 路径（§9.1 step 2）：不做 Requirement/applicability/subject
+            # 迁移校验，不推进 Harness 主体状态；Artifact 处置与 subject 迁移由
+            # Coordinator 在同事务完成。
+            if gate_recheck is not None:
+                raise EvidenceValidationError("rejected不能携带复检证明")
+            if committed_subject_state is not None:
+                raise EvidenceValidationError("rejected不推进subject，不能记录committed_subject_state")
+            if claim.artifact_revision_id is None and artifact_disposition != "none":
+                raise EvidenceValidationError("未绑定Artifact的Claim只能使用artifact_disposition=none")
+            if claim.artifact_revision_id is not None and artifact_disposition not in {
+                "rejected",
+                "none",
+            }:
+                raise EvidenceValidationError(
+                    "rejected的Claim对Artifact只能使用rejected（仍是当前项）或none（已被替代）"
+                )
+            target_claim_status = "rejected"
+            pre_commit_validity_check_passed = False
+        else:
+            # accepted/waived（§9.1 steps 3-10）：复检证明必须属于当前 Claim
+            # 版本、与结局一致，并覆盖全部 mandatory Requirement。
+            if gate_recheck is None:
+                raise EvidenceValidationError(
+                    "accepted/waived必须携带ResultCommitCoordinator复检证明，记录层不得机械推断成功"
+                )
+            if (
+                gate_recheck.claim_id != claim_id
+                or gate_recheck.claim_hash != claim.claim_hash
+                or gate_recheck.claim_row_version != claim.row_version
+            ):
+                raise EvidenceConflict("复检证明不属于当前Claim版本")
+            if gate_recheck.commit_status != commit_status:
+                raise EvidenceValidationError("复检证明与commit_status不一致")
+            mandatory_ids = {
+                row.id
+                for row in (
+                    await transaction.scalars(
+                        select(CompletionClaimRequirementRecord).where(
+                            CompletionClaimRequirementRecord.completion_claim_id == claim_id,
+                            CompletionClaimRequirementRecord.mandatory.is_(True),
+                        )
+                    )
+                ).all()
+            }
+            if set(gate_recheck.mandatory_requirement_ids) != mandatory_ids:
+                raise EvidenceValidationError("复检证明未覆盖该Claim全部mandatory Requirement")
+            if (claim.artifact_revision_id is None) != (gate_recheck.artifact_revision_id is None):
+                raise EvidenceValidationError("复检证明的Artifact绑定与Claim不一致")
+            if claim.artifact_revision_id is None and artifact_disposition != "none":
+                raise EvidenceValidationError("未绑定Artifact的Claim只能使用artifact_disposition=none")
+            if claim.artifact_revision_id is not None and artifact_disposition == "none":
+                raise EvidenceValidationError(
+                    "绑定当前Artifact Revision的Claim不能记录artifact_disposition=none"
+                )
+            if committed_subject_state is None:
+                raise EvidenceValidationError("accepted/waived必须记录committed_subject_state")
+            target_claim_status = "committed"
+            pre_commit_validity_check_passed = True
 
-        # rejected 路径（§9.1 step 2 的记录子集）：不做 Requirement/applicability/
-        # subject 迁移校验，不推进 Harness 主体状态；Artifact 处置与 subject 迁移
-        # 由后续 Coordinator 在同事务完成。
-        if committed_subject_state is not None:
-            raise EvidenceValidationError("rejected不推进subject，不能记录committed_subject_state")
-        if claim.artifact_revision_id is None and artifact_disposition != "none":
-            raise EvidenceValidationError("未绑定Artifact的Claim只能使用artifact_disposition=none")
-        if claim.artifact_revision_id is not None and artifact_disposition not in {
-            "rejected",
-            "none",
-        }:
-            raise EvidenceValidationError(
-                "rejected的Claim对Artifact只能使用rejected（仍是当前项）或none（已被替代）"
-            )
-
-        target_claim_status = "rejected"
         if target_claim_status not in CLAIM_TRANSITIONS[claim.status]:
             raise EvidenceValidationError(f"Claim不能从{claim.status}变为{target_claim_status}")
 
@@ -904,9 +947,9 @@ class EvidenceRepository:
             completion_claim_id=claim_id,
             commit_status=commit_status,
             artifact_disposition=artifact_disposition,
-            pre_commit_validity_check_passed=False,
+            pre_commit_validity_check_passed=pre_commit_validity_check_passed,
             decision_record_id=decision_record_id,
-            committed_subject_state=None,
+            committed_subject_state=committed_subject_state,
             command_id=command_id,
             created_at=self._clock(),
         )
@@ -915,6 +958,9 @@ class EvidenceRepository:
         claim.row_version += 1
         claim.updated_at = self._clock()
         transaction.add(commit)
+        # UNIQUE(completion_claim_id) 与 UNIQUE(scope_id, command_id) 兜底并发
+        # 双提交；在调用方事务提交前翻译为稳定领域冲突。
+        await self._flush_or_conflict(transaction, "ResultCommit并发冲突，请重读Claim后重试")
         return commit
 
     async def create_validation_capability(

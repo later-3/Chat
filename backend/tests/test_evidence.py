@@ -28,11 +28,11 @@ from backend.app.evidence.contracts import (
     ArtifactHashMismatch,
     ArtifactRevisionSuperseded,
     AssessmentNotSupporting,
+    ClaimGateRecheck,
     CompletionClaimAlreadyResolved,
     EvidenceConflict,
     EvidenceNotFound,
     EvidenceValidationError,
-    ResultCommitGateUnavailable,
     RuntimeLeaseFenceMismatch,
     SubjectTransitionNotAllowed,
     WaiverBlockedByFailedRequirement,
@@ -56,6 +56,7 @@ from backend.app.governance.models import (
 )
 from backend.app.harness import models as _har  # noqa: F401
 from backend.app.harness.commands import HarnessCommandRecorder
+from backend.app.harness.contracts import HarnessValidationError
 from backend.app.harness.models import (
     ActionItemRecord,
     TaskPlanRecord,
@@ -606,6 +607,7 @@ async def _create_result_commit(
     decision_record_id: str,
     command_id: str,
     committed_subject_state: str | None = None,
+    gate_recheck: ClaimGateRecheck | None = None,
 ) -> ResultCommitRecord:
     """Bind a test commit command to the exact Claim revision it observed."""
 
@@ -620,6 +622,7 @@ async def _create_result_commit(
         decision_record_id=decision_record_id,
         command_id=command_id,
         committed_subject_state=committed_subject_state,
+        gate_recheck=gate_recheck,
     )
 
 
@@ -1441,8 +1444,8 @@ class TestResultCommitRepository:
                     claim_id, _, _ = await _make_claim_with_requirement(
                         database, harness, repo, txn, action_id=action_id
                     )
-                    # SD4-C Gate 未交付，成功路径必须 fail closed
-                    with pytest.raises(ResultCommitGateUnavailable):
+                    # SD4-C：没有 Coordinator 复检证明，成功路径必须 fail closed
+                    with pytest.raises(EvidenceValidationError, match="复检证明"):
                         await _create_result_commit(
                             repo,
                             txn,
@@ -1452,6 +1455,31 @@ class TestResultCommitRepository:
                             decision_record_id=decision.id,
                             command_id=_new_id(),
                             committed_subject_state="completed",
+                        )
+                    # 伪造不属于当前 Claim 版本的复检证明同样被拒绝
+                    claim = await repo.get_claim(txn, claim_id)
+                    fake_recheck = ClaimGateRecheck(
+                        claim_id=claim_id,
+                        claim_hash="0" * 64,
+                        claim_row_version=claim.row_version,
+                        commit_status=commit_status,
+                        mandatory_requirement_ids=(),
+                        adoption_ids=(),
+                        waiver_ids=(),
+                        artifact_revision_id=None,
+                        artifact_record_version=None,
+                    )
+                    with pytest.raises(EvidenceConflict, match="复检证明"):
+                        await _create_result_commit(
+                            repo,
+                            txn,
+                            claim_id=claim_id,
+                            commit_status=commit_status,
+                            artifact_disposition="none",
+                            decision_record_id=decision.id,
+                            command_id=_new_id(),
+                            committed_subject_state="completed",
+                            gate_recheck=fake_recheck,
                         )
                 async with database.sessions() as txn:
                     claim = await repo.get_claim(txn, claim_id)
@@ -1900,7 +1928,7 @@ class TestHarnessTransitionParticipant:
                     request_hash="hash",
                     target_status="completed",
                     reason="完成",
-                    evidence=[{"result_commit_id": "rc1"}],
+                    evidence=[{"note": "legacy evidence"}],
                 )
             assert result["status"] == "completed"
             async with database.sessions() as txn:
@@ -1909,6 +1937,69 @@ class TestHarnessTransitionParticipant:
             assert row.status == "completed"
             # 验收：Action 完成与父 Work 不变在同一事务，父 Work 保持 ready
             assert work.status == "ready"
+
+        _run_scenario(scenario)
+
+    def test_reserved_projection_shape_fails_closed_without_gate_validator(self):
+        """SD4-C：公开 participant 未注入 Gate 校验器时，ResultCommit 引用投影被拒。"""
+
+        async def scenario():
+            database, _, harness, _ = await _runtime()
+            _, _, action_id = await _make_project_work_action(harness)
+            recorder = HarnessCommandRecorder(scope_id="local-user", principal_id="local-user", clock=utc_now)
+            participant = HarnessTransitionParticipant(
+                scope_id="local-user",
+                principal_id="local-user",
+                clock=utc_now,
+                command_recorder=recorder,
+            )
+
+            async with database.sessions.begin() as txn:
+                await participant.transition_action_item(
+                    txn,
+                    action_item_id=action_id,
+                    command_id="start-action",
+                    request_hash="hash-start",
+                    target_status="in_progress",
+                    reason="开始执行",
+                )
+                with pytest.raises(HarnessValidationError, match="只能由Result Commit Gate写入"):
+                    await participant.transition_action_item(
+                        txn,
+                        action_item_id=action_id,
+                        command_id="complete-action",
+                        request_hash="hash",
+                        target_status="completed",
+                        reason="完成",
+                        evidence=[{"result_commit_id": "rc1", "claim_id": "c1"}],
+                        expected_row_version=2,
+                    )
+                with pytest.raises(HarnessValidationError, match="唯一Evidence元素"):
+                    await participant.transition_action_item(
+                        txn,
+                        action_item_id=action_id,
+                        command_id="complete-action-mixed",
+                        request_hash="hash",
+                        target_status="completed",
+                        reason="完成",
+                        evidence=[{"result_commit_id": "rc1", "claim_id": "c1", "note": "x"}],
+                        expected_row_version=2,
+                    )
+                with pytest.raises(HarnessValidationError, match="必须携带expected_row_version"):
+                    await participant.transition_action_item(
+                        txn,
+                        action_item_id=action_id,
+                        command_id="complete-action-no-cas",
+                        request_hash="hash",
+                        target_status="completed",
+                        reason="完成",
+                        evidence=[{"result_commit_id": "rc1", "claim_id": "c1"}],
+                    )
+            async with database.sessions() as txn:
+                row = await txn.get(ActionItemRecord, action_id)
+            # 伪造投影没有推进任何状态
+            assert row.status == "in_progress"
+            assert row.evidence_json == []
 
         _run_scenario(scenario)
 

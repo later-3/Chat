@@ -46,7 +46,10 @@ from backend.app.workflows import (
 # revision storage_blob_id/sha256/supersedes, observation subject/source
 # invariants, claim expected_subject_version/target_state, invalidation CHECKs).
 # These fingerprints intentionally make future boundary drift fail closed.
-OPENAPI_SHA256 = "2386856ed2c3b1761234b4cc7068d7773749ae3f6dc8992da936207dd0d930a0"
+# Re-reviewed 2026-07-26 for SD4-C: OpenAPI adds exactly two Evidence endpoints
+# (POST /api/evidence/claims/{id}/commit, GET /api/evidence/claims/{id}); the
+# commit route is the only user-reachable Evidence mutation (§13.1).
+OPENAPI_SHA256 = "9b1325d523e25928a1cc35f84721cb5418c473514ec5b18f5efc604a296fe617"
 PRODUCT_SCHEMA_SHA256 = "4603ff02cad8c259f8ec11f309e4ebc88970b24b823057a0440d4ac94e5adda2"
 WORKFLOW_CATALOG_SHA256 = "9e286acd3544d3b023f5b73c6f1bda7851d22ed38e0bab7e3beecb2d87984f65"
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"

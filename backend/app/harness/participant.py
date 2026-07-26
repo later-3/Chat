@@ -10,15 +10,17 @@ validation and trace recording.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Awaitable, Callable, Mapping, Sequence
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..product_sessions.database import affected_row_count
 from .commands import HarnessCommandRecorder
 from .contracts import (
     ACTION_TRANSITIONS,
     WORK_TRANSITIONS,
+    HarnessConflict,
     HarnessNotFound,
     HarnessValidationError,
     action_view,
@@ -27,7 +29,20 @@ from .contracts import (
     work_view,
 )
 from .models import ActionItemRecord, PlanNodeRecord, WorkItemRecord
-from ..product_sessions.database import affected_row_count
+
+# Reserved legacy-projection shape written only by the Result Commit Gate
+# (F02 D12).  Any evidence item touching these keys is treated as a gate
+# reference and must pass the injected chain validator; without a validator
+# the write fails closed so the public completion path cannot fabricate it.
+_RESULT_COMMIT_PROJECTION_KEYS = frozenset({"result_commit_id", "claim_id"})
+
+# Signature of the validator the Result Commit Gate injects.  It runs inside
+# the caller's transaction before the subject row is mutated and raises on
+# any broken chain link.
+CompletionReferenceValidator = Callable[
+    [AsyncSession, str, str, str, int, str, str | None, Mapping[str, Any]],
+    Awaitable[None],
+]
 
 
 class HarnessTransitionParticipant:
@@ -46,11 +61,59 @@ class HarnessTransitionParticipant:
         principal_id: str,
         clock: Callable[[], datetime],
         command_recorder: HarnessCommandRecorder,
+        completion_reference_validator: CompletionReferenceValidator | None = None,
     ) -> None:
         self.scope_id = scope_id
         self.principal_id = principal_id
         self._clock = clock
         self._recorder = command_recorder
+        self._completion_reference_validator = completion_reference_validator
+
+    async def _check_completion_projection(
+        self,
+        transaction: AsyncSession,
+        *,
+        subject_kind: str,
+        subject_id: str,
+        subject_status: str,
+        subject_row_version: int,
+        target_status: str,
+        expected_row_version: int | None,
+        decision_record_id: str | None,
+        evidence: Sequence[Mapping[str, Any]],
+    ) -> None:
+        """Validate the reserved ResultCommit projection shape in Evidence.
+
+        Free-form legacy Evidence passes through unchanged.  An item carrying
+        the reserved keys must be the only element with exactly those keys and
+        must survive the gate-injected chain validator; anything else is a
+        fabrication attempt and fails closed.
+        """
+        reserved = [
+            item
+            for item in evidence
+            if isinstance(item, Mapping) and _RESULT_COMMIT_PROJECTION_KEYS & set(item)
+        ]
+        if not reserved:
+            return
+        if len(evidence) != 1 or len(reserved) != 1 or set(reserved[0]) != _RESULT_COMMIT_PROJECTION_KEYS:
+            raise HarnessValidationError(
+                "ResultCommit引用投影必须是唯一Evidence元素且仅含result_commit_id/claim_id"
+            )
+        if expected_row_version is None:
+            raise HarnessValidationError("ResultCommit引用投影必须携带expected_row_version")
+        if self._completion_reference_validator is None:
+            raise HarnessValidationError("ResultCommit引用投影只能由Result Commit Gate写入")
+        await self._completion_reference_validator(
+            transaction,
+            subject_kind,
+            subject_id,
+            subject_status,
+            subject_row_version,
+            target_status,
+            decision_record_id,
+            reserved[0],
+        )
 
     async def transition_work_item(
         self,
@@ -82,6 +145,17 @@ class HarnessTransitionParticipant:
             raise HarnessValidationError("重新打开WorkItem必须提供原因")
         if target_status == "completed" and not evidence and not (completion_waiver_reason or "").strip():
             raise HarnessValidationError("完成WorkItem必须提供Evidence或明确豁免原因")
+        await self._check_completion_projection(
+            transaction,
+            subject_kind="work_item",
+            subject_id=value.id,
+            subject_status=value.status,
+            subject_row_version=value.row_version,
+            target_status=target_status,
+            expected_row_version=expected_row_version,
+            decision_record_id=decision_record_id,
+            evidence=evidence,
+        )
         previous = value.status
         normalized_evidence = [dict(item) for item in evidence]
         waiver_reason = (completion_waiver_reason or "").strip() or None
@@ -194,6 +268,17 @@ class HarnessTransitionParticipant:
                     raise HarnessValidationError(f"依赖未完成，不能进入ready: {sorted(unresolved)}")
                 if unresolved and not decision_record_id:
                     raise HarnessValidationError("依赖override必须绑定Decision Record")
+        await self._check_completion_projection(
+            transaction,
+            subject_kind="action_item",
+            subject_id=value.id,
+            subject_status=value.status,
+            subject_row_version=value.row_version,
+            target_status=target_status,
+            expected_row_version=expected_row_version,
+            decision_record_id=decision_record_id,
+            evidence=evidence,
+        )
         previous = value.status
         normalized_evidence = [dict(item) for item in evidence]
         now = self._clock()

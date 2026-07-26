@@ -315,8 +315,9 @@ Session 是 W2-W9 的横向能力，仍由两份专项材料维护：
   已使用Qwen完成一次隔离写入Product Run；网络外部副作用、补偿和人工处置仍未完成，因此通用F01
   不勾选完成）。
 - [ ] F02 Evidence、Artifact、Provenance与独立生命周期（SD4-A记录层和SD4-B内容寻址Artifact
-  Store/确定性Validation Runtime已完成；当前私有部署仍需配置scope密钥后才启用Artifact写入；
-  SD4-C Result Commit Coordinator、SD4-D失效传播和SD4-E Workflow/UI仍待交付）。
+  Store/确定性Validation Runtime已完成；SD4-C Result Commit Gate单事务完成门与REST commit
+  端点已完成；当前私有部署仍需配置scope密钥后才启用Artifact写入；SD4-D失效传播和SD4-E
+  Workflow胶水/UI仍待交付）。
 - [ ] F03 Runtime完整故障、容量和游标矩阵。
 - [ ] F04 Session完整生命周期、树、控制与可移植性。
 - [ ] F05 任意Workflow、嵌套Workflow和pi持久恢复。

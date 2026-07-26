@@ -22,6 +22,7 @@ from .evidence import (
     ArtifactCoordinator,
     ArtifactStore,
     ArtifactStoreReconciler,
+    ResultCommitCoordinator,
     ValidationCapabilityCatalog,
     ValidationCompiler,
     ValidationProcessRunner,
@@ -97,6 +98,7 @@ class ApplicationComponents:
     execution_workspaces: ExecutionWorkspaceService
     artifact_coordinator: ArtifactCoordinator | None
     artifact_reconciler: ArtifactStoreReconciler | None
+    result_commit: ResultCommitCoordinator
     validation_capabilities: ValidationCapabilityCatalog
     validation_compiler: ValidationCompiler | None
     validation_runner: ValidationProcessRunner
@@ -206,6 +208,14 @@ def build_components(
         else None
     )
     validation_runner = ValidationProcessRunner()
+    # SD4-C：Coordinator 不依赖已配置的 Artifact Store；Store 缺失时仅对
+    # 绑定 Artifact 的 Claim fail closed，无 Artifact 的 Claim 照常可用。
+    result_commit = ResultCommitCoordinator(
+        product_sessions.database,
+        store=artifact_store,
+        scope_id="local-user",
+        principal_id="local-user",
+    )
     tool_operations = ToolOperationService(
         product_sessions.database,
         workspaces=execution_workspaces,
@@ -254,6 +264,7 @@ def build_components(
         execution_workspaces=execution_workspaces,
         artifact_coordinator=artifact_coordinator,
         artifact_reconciler=artifact_reconciler,
+        result_commit=result_commit,
         validation_capabilities=validation_capabilities,
         validation_compiler=validation_compiler,
         validation_runner=validation_runner,
@@ -292,6 +303,7 @@ def expose_components(app: FastAPI, components: ApplicationComponents) -> None:
     app.state.execution_workspaces = components.execution_workspaces
     app.state.artifact_coordinator = components.artifact_coordinator
     app.state.artifact_reconciler = components.artifact_reconciler
+    app.state.result_commit = components.result_commit
     app.state.validation_capabilities = components.validation_capabilities
     app.state.validation_compiler = components.validation_compiler
     app.state.validation_runner = components.validation_runner

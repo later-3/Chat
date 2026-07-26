@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import CorrelationMiddleware, install_error_handlers, problem_responses
+from .api.evidence_router import create_evidence_router
 from .api.product_router import ProductApiDependencies, create_product_router
 from .collaboration_contexts.api import create_collaboration_context_router
 from .collaboration_intents.api import create_collaboration_intent_router
@@ -94,6 +95,7 @@ def create_app(
     app.include_router(create_diagnostics_router(components.diagnostics))
     app.include_router(create_step_input_router(components.step_inputs))
     app.include_router(create_execution_dispatch_router(components.execution_dispatch))
+    app.include_router(create_evidence_router(components.result_commit))
     add_runtime_management_endpoints(
         app,
         runtime=components.runtime_execution,

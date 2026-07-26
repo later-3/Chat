@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -120,6 +121,27 @@ class ResultCommitGateUnavailable(EvidenceError):
 class ValidationTimeout(EvidenceError):
     code = "VALIDATION_TIMEOUT"
     http_status = 504
+
+
+@dataclass(frozen=True)
+class ClaimGateRecheck:
+    """Proof that the SD4-C Result Commit Gate re-checked a Claim.
+
+    Only ``ResultCommitCoordinator`` can produce this value, and only inside
+    the commit transaction.  The recording layer refuses accepted/waived
+    commits without it, so ``pre_commit_validity_check_passed`` can never be
+    set by mechanically flipping a boolean (E02, 反例033).
+    """
+
+    claim_id: str
+    claim_hash: str
+    claim_row_version: int
+    commit_status: str
+    mandatory_requirement_ids: tuple[str, ...]
+    adoption_ids: tuple[str, ...]
+    waiver_ids: tuple[str, ...]
+    artifact_revision_id: str | None
+    artifact_record_version: int | None
 
 
 def canonical_json(value: Any) -> str:
