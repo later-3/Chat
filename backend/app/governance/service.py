@@ -10,6 +10,7 @@ from typing import Any, Mapping, Sequence
 from uuid import uuid4
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from ..model_call_review import canonical_json_bytes
 from ..observability.context import bind_context
@@ -91,6 +92,27 @@ def _canonical(value: Any) -> bytes:
 
 def _hash(kind: str, schema_version: str, value: Any) -> str:
     return hashlib.sha256(f"{kind}:{schema_version}\0".encode("utf-8") + _canonical(value)).hexdigest()
+
+
+def run_spec_content_hash(spec_json: Mapping[str, Any]) -> str:
+    """Authoritative hash of an immutable RunSpec payload (D).
+
+    Shared by ``compile_run_spec`` and the result pipeline so a tampered or
+    drifting ``spec_json`` can never pass the pipeline's integrity check.
+    """
+
+    return _hash("run-spec", RUN_SPEC_SCHEMA_VERSION, dict(spec_json))
+
+
+def decision_subject_content_hash(subject_content: Mapping[str, Any]) -> str:
+    """Authoritative content hash of a DecisionSubject's immutable content.
+
+    Shared by ``register_subject`` and the Evidence decision-binding
+    validator so a tampered ``decision_view_json`` is detected by
+    recomputation instead of trusted blindly (第四轮复审P0-3)。
+    """
+
+    return _hash("decision-subject", "v1", dict(subject_content))
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -711,18 +733,37 @@ class ExecutionGovernanceService:
         node_id: str | None,
         decision_view: Mapping[str, Any],
     ) -> DecisionSubjectRecord:
-        subject_hash = _hash("decision-subject", "v1", subject_content)
+        subject_hash = decision_subject_content_hash(subject_content)
         async with self.database.sessions.begin() as transaction:
-            existing = await transaction.scalar(
-                select(DecisionSubjectRecord).where(
-                    DecisionSubjectRecord.subject_kind == subject_kind,
-                    DecisionSubjectRecord.resource_id == resource_id,
-                    DecisionSubjectRecord.resource_revision == resource_revision,
-                    DecisionSubjectRecord.subject_hash == subject_hash,
-                )
+            # 第六轮复审P0-2.1：先按逻辑身份定位，再决定复用或冲突——同资源
+            # revision但内容/归属/view任何一项不一致都必须冲突，不能新建第二
+            # 个Subject让旧批准漂移授权。
+            candidates = list(
+                (
+                    await transaction.scalars(
+                        select(DecisionSubjectRecord).where(
+                            DecisionSubjectRecord.subject_kind == subject_kind,
+                            DecisionSubjectRecord.resource_id == resource_id,
+                            DecisionSubjectRecord.resource_revision == resource_revision,
+                        )
+                    )
+                ).all()
             )
-            if existing is not None:
-                return existing
+            for existing in candidates:
+                if (
+                    existing.subject_hash != subject_hash
+                    or existing.session_id != session_id
+                    or existing.interaction_id != interaction_id
+                    or existing.run_id != run_id
+                    or existing.run_attempt_id != run_attempt_id
+                    or existing.workflow_definition_id != workflow_definition_id
+                    or existing.workflow_version != workflow_version
+                    or existing.node_id != node_id
+                    or existing.decision_view_json != dict(decision_view)
+                ):
+                    raise GovernanceConflict("相同Subject身份的内容或运行归属不一致，拒绝复用")
+            if candidates:
+                return candidates[0]
             value = DecisionSubjectRecord(
                 id=_id(),
                 subject_kind=subject_kind,
@@ -739,6 +780,20 @@ class ExecutionGovernanceService:
                 decision_view_json=dict(decision_view),
             )
             transaction.add(value)
+            try:
+                await transaction.flush()
+            except IntegrityError as error:
+                # 只翻译逻辑身份唯一冲突；FK/主键等其他约束错误原样抛出，
+                # 不能被误报成“同Subject并发”（第八轮复审）。
+                message = str(getattr(error, "orig", error))
+                identity_markers = (
+                    "decision_subjects.subject_kind, decision_subjects.resource_id, "
+                    "decision_subjects.resource_revision",
+                    "uq_decision_subjects_identity",
+                )
+                if not any(marker in message for marker in identity_markers):
+                    raise
+                raise GovernanceConflict("相同Subject并发注册冲突，请重读当前Subject后重试") from error
         return value
 
     async def register_tool_call(
@@ -767,7 +822,7 @@ class ExecutionGovernanceService:
             "arguments_hash": arguments_hash,
             "risk_snapshot": dict(risk_snapshot),
         }
-        subject_hash = _hash("decision-subject", "v1", subject_content)
+        subject_hash = decision_subject_content_hash(subject_content)
         async with self.database.sessions.begin() as transaction:
             existing = await transaction.scalar(
                 select(ToolCallRequestRecord).where(
@@ -875,6 +930,34 @@ class ExecutionGovernanceService:
             )
             if definition is None:
                 raise GovernanceValidationError("Decision Point不存在")
+            # 第四轮复审P1-4：同一不可变Subject在同一决策点的评估可重入复用；
+            # 崩溃在治理写入与MAF checkpoint之间不会产生重复Evaluation。第五轮
+            # 复审：复用前必须证明facts/snapshot完全一致，策略或事实漂移冲突。
+            existing = await transaction.scalar(
+                select(PolicyEvaluationRecord).where(
+                    PolicyEvaluationRecord.subject_id == subject.id,
+                    PolicyEvaluationRecord.decision_point_definition_id == definition.id,
+                )
+            )
+            if existing is not None:
+                # 第六轮复审P0-2.2：复用前必须证明持久化的评估输入与结果
+                # 完全一致；策略scope漂移或规则引用漂移（即使final_action
+                # 相同）都必须冲突，不能把旧Evaluation配给新preview。
+                if (
+                    existing.facts_hash != _hash("policy-facts", "v1", facts)
+                    or existing.policy_snapshot_id != policy_snapshot_id
+                    or existing.principal_id != self.principal_id
+                    or existing.applicability_status != "applicable"
+                    or list(existing.matched_rule_refs_json or []) != list(preview["matched_rules"])
+                    or existing.floor_action != preview["floor_action"]
+                    or existing.preference_action != preview["preference_action"]
+                    or existing.final_action != preview["final_action"]
+                    or existing.result_status != preview["result_status"]
+                    or list(existing.reason_codes_json or []) != list(preview["reason_codes"])
+                    or existing.resolver_version != RESOLVER_VERSION
+                ):
+                    raise GovernanceConflict("同一Subject的策略评估输入不一致，拒绝复用旧Evaluation")
+                return existing, preview
             value = PolicyEvaluationRecord(
                 id=_id(),
                 subject_id=subject.id,
@@ -990,7 +1073,59 @@ class ExecutionGovernanceService:
         }
         input_hash = _hash("decision-input", "v1", input_content)
         record_hash = _hash("decision-record", "v1", input_content | {"source": source, "effect": effect})
+        if evaluation.subject_id != subject.id:
+            raise GovernanceConflict("Evaluation不属于该Subject，不能记录自动决定")
         async with self.database.sessions.begin() as transaction:
+            # 第四轮复审P1-4：同一不可变Subject的同一自动决定可重入复用，
+            # 崩溃重进不会生成第二份Decision/Grant。
+            existing = await transaction.scalar(
+                select(DecisionRecord).where(
+                    DecisionRecord.subject_id == subject.id,
+                    DecisionRecord.decision_code == decision_code,
+                )
+            )
+            if existing is not None:
+                # 第五/六轮复审：完全相同输入才复用；evaluation/input/source/
+                # effect/bound hash/rule refs/record hash任一不一致必须冲突；
+                # Grant必须逐字段一致，grant_kind=None时也不默许异常旧Grant。
+                grants = list(
+                    (
+                        await transaction.scalars(
+                            select(AuthorizationGrantRecord).where(
+                                AuthorizationGrantRecord.decision_record_id == existing.id
+                            )
+                        )
+                    ).all()
+                )
+                if (
+                    existing.policy_evaluation_id != evaluation.id
+                    or existing.input_hash != input_hash
+                    or existing.record_hash != record_hash
+                    or existing.source != source
+                    or existing.authorization_effect != effect
+                    or existing.bound_subject_hash != subject.subject_hash
+                    or list(existing.policy_rule_refs_json or [])
+                    != list(evaluation.matched_rule_refs_json or [])
+                ):
+                    raise GovernanceConflict("同一Subject的自动决定输入不一致，拒绝复用旧Decision")
+                grant: AuthorizationGrantRecord | None = None
+                if grant_kind is not None:
+                    expected_constraints = dict(constraints or {})
+                    for candidate in grants:
+                        if (
+                            candidate.subject_id == subject.id
+                            and candidate.grant_kind == grant_kind
+                            and candidate.binding_hash == binding_hash
+                            and dict(candidate.constraints_json or {}) == expected_constraints
+                            and candidate.max_consumptions == 1
+                        ):
+                            grant = candidate
+                            break
+                    if grant is None:
+                        raise GovernanceConflict("同一Subject的授权Grant输入不一致，拒绝复用旧Decision")
+                elif grants:
+                    raise GovernanceConflict("无需Grant的自动决定存在遗留Grant，拒绝复用")
+                return existing, grant
             record = DecisionRecord(
                 id=_id(),
                 policy_evaluation_id=evaluation.id,
@@ -1069,6 +1204,39 @@ class ExecutionGovernanceService:
             allowed_actions_json=list(allowed_actions),
         )
         async with self.database.sessions.begin() as transaction:
+            # 第四轮复审P1-4：同一Run/决策点/不可变Subject的待决请求可重入
+            # 复用；崩溃在治理写入与MAF checkpoint之间不会产生重复审批卡。
+            existing = await transaction.scalar(
+                select(HumanDecisionRequestRecord)
+                .join(
+                    HumanDecisionRequestItemRecord,
+                    HumanDecisionRequestItemRecord.request_id == HumanDecisionRequestRecord.id,
+                )
+                .where(
+                    HumanDecisionRequestRecord.run_id == subject.run_id,
+                    HumanDecisionRequestRecord.decision_point_key == decision_point,
+                    HumanDecisionRequestRecord.status == "pending",
+                    HumanDecisionRequestItemRecord.subject_id == subject.id,
+                )
+            )
+            if existing is not None:
+                existing_item = await transaction.scalar(
+                    select(HumanDecisionRequestItemRecord).where(
+                        HumanDecisionRequestItemRecord.request_id == existing.id
+                    )
+                )
+                if (
+                    existing_item is None
+                    or existing_item.policy_evaluation_id != evaluation.id
+                    or existing.request_hash != request.request_hash
+                    or existing_item.allowed_actions_json != list(allowed_actions)
+                    or existing.title != title
+                    or existing.reason_summary != reason
+                    or existing.visible_evidence_json != dict(evidence)
+                    or existing.consequence_json != dict(consequence)
+                ):
+                    raise GovernanceConflict("同一Subject的待决请求内容不一致，拒绝复用")
+                return existing
             transaction.add(request)
             await transaction.flush()
             transaction.add(item)
@@ -2074,6 +2242,51 @@ class ExecutionGovernanceService:
         brief = execution_brief.strip()
         if not brief:
             raise GovernanceValidationError("ExecutionDraft执行摘要不能为空")
+        async with self.database.sessions.begin() as transaction:
+            draft = await transaction.get(ExecutionDraftRecord, draft_id)
+            if draft is None or draft.current_revision_id is None:
+                raise GovernanceValidationError("ExecutionDraft不存在")
+            current = await transaction.get(ExecutionDraftRevisionRecord, draft.current_revision_id)
+            if current is None:
+                raise GovernanceConflict("ExecutionDraft当前revision引用损坏")
+            # E/第四轮复审P0-2：validation_plan.contract是机器冻结合同（Plan
+            # revision + Capability编译+argv/hash绑定），其权威还派生自本轮
+            # Context/Project/Repository Fence绑定。规则：
+            # 1) 区分key存在性：absent与null不同，增删contract键必须拒绝；
+            # 2) contract非null时，context_binding/project_work_binding/
+            #    runtime_target必须逐字节一致——任何会改变subject、project、
+            #    repository fence或运行模式的修订都必须回Context/Plan重新生成Draft。
+            raw_incoming_plan = value.get("validation_plan")
+            raw_current_plan = dict(current.payload_json).get("validation_plan")
+            if raw_incoming_plan is not None and not isinstance(raw_incoming_plan, Mapping):
+                raise GovernanceValidationError("validation_plan必须是对象或null")
+            if raw_current_plan is not None and not isinstance(raw_current_plan, Mapping):
+                raise GovernanceConflict("既有Draft的validation_plan结构损坏")
+            current_plan = dict(raw_current_plan or {})
+            incoming_plan = dict(raw_incoming_plan or {})
+            current_has_contract = "contract" in current_plan
+            incoming_has_contract = "contract" in incoming_plan
+            if current_has_contract != incoming_has_contract:
+                raise GovernanceValidationError(
+                    "validation_plan.contract键不能增删；请修订Plan后重新生成ExecutionDraft"
+                )
+            current_contract = current_plan.get("contract")
+            incoming_contract = incoming_plan.get("contract")
+            if incoming_contract != current_contract:
+                raise GovernanceValidationError(
+                    "validation_plan.contract是机器冻结的Validation Contract，不能手工增删改；"
+                    "请修订Plan后重新生成ExecutionDraft"
+                )
+            if current_contract is not None:
+                current_payload = dict(current.payload_json)
+                for bound_key in ("context_binding", "project_work_binding", "runtime_target"):
+                    if not isinstance(value.get(bound_key), Mapping):
+                        raise GovernanceValidationError(f"{bound_key}必须是对象")
+                    if value.get(bound_key) != current_payload.get(bound_key):
+                        raise GovernanceValidationError(
+                            f"冻结Validation Contract仍绑定当前{bound_key}；"
+                            "修改subject/Project/Repository绑定必须回Context或Plan重新生成ExecutionDraft"
+                        )
         context_hash = str(
             value["context_binding"].get("context_hash") or _hash("context", "v1", value["context_binding"])
         )
@@ -2193,7 +2406,7 @@ class ExecutionGovernanceService:
             RUN_SPEC_SCHEMA_VERSION,
         )
         snapshot = await self.create_policy_snapshot(scopes=scopes)
-        run_spec_hash = _hash("run-spec", RUN_SPEC_SCHEMA_VERSION, value)
+        run_spec_hash = run_spec_content_hash(value)
         async with self.database.sessions.begin() as transaction:
             revision = await transaction.get(ExecutionDraftRevisionRecord, draft_revision_id)
             run = await transaction.get(RunRecord, run_id)

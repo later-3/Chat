@@ -67,7 +67,7 @@ CHAT_MODEL_CALL_APPROVAL_WORKFLOW = WorkflowDefinition(
 CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
     id="continuous-collaboration",
     name="持续协作主 Workflow",
-    version="1.7.0",
+    version="1.8.0",
     description=(
         "以选择性上下文和意图识别为入口，按场景进入澄清、计划或直接响应，"
         "所有模型调用受HITL治理，并在回合结束提取重点候选。"
@@ -277,6 +277,27 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
             runtime_type="executor",
         ),
         WorkflowNodeDefinition(
+            id="result_claim_prepare",
+            label="建立完成Claim与验证证据链",
+            description=(
+                "复检RunSpec冻结的Validation Contract，形成diff_patch Artifact、"
+                "CompletionClaim与mandatory Requirements，执行Validation并记录"
+                "Observation/Assessment；Adoption由Result Commit Gate同事务按Decision映射创建。"
+            ),
+            kind="governance",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
+            id="result_claim_decision",
+            label="决定结果Claim",
+            description=(
+                "在result_commit决策点把决定精确绑定当前Claim版本与结局；"
+                "接受时经Result Commit Gate原子完成Action，拒绝路径独立且不迁移subject。"
+            ),
+            kind="approval",
+            runtime_type="executor",
+        ),
+        WorkflowNodeDefinition(
             id="pi_readonly_dispatch",
             label="运行受治理pi只读检查",
             description=(
@@ -434,7 +455,9 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
         ),
         WorkflowEdgeDefinition("execution_workspace_prepare", "pi_workspace_dispatch"),
         WorkflowEdgeDefinition("pi_workspace_dispatch", "pi_workspace_result_assembly"),
-        WorkflowEdgeDefinition("pi_workspace_result_assembly", "turn_summary_agent"),
+        WorkflowEdgeDefinition("pi_workspace_result_assembly", "result_claim_prepare"),
+        WorkflowEdgeDefinition("result_claim_prepare", "result_claim_decision"),
+        WorkflowEdgeDefinition("result_claim_decision", "turn_summary_agent"),
         WorkflowEdgeDefinition("pi_readonly_dispatch", "pi_readonly_result_assembly"),
         WorkflowEdgeDefinition("pi_readonly_result_assembly", "turn_summary_agent"),
         WorkflowEdgeDefinition("response_agent", "turn_summary_agent"),

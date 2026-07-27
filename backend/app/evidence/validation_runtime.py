@@ -9,6 +9,7 @@ pi so a validation result cannot inherit Agent Tool permissions.
 from __future__ import annotations
 
 import asyncio
+import configparser
 import hashlib
 import json
 import os
@@ -17,6 +18,7 @@ import signal
 import sys
 import tempfile
 import time
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Mapping, Protocol, Sequence
@@ -28,6 +30,7 @@ from .contracts import (
     EvidenceConflict,
     EvidenceValidationError,
     ValidationCapabilityUnavailable,
+    ValidationOutcomeUnknownError,
     content_hash,
 )
 from .models import ValidationCapabilityRecord
@@ -35,6 +38,85 @@ from .service import EvidenceRepository
 
 _ALLOWED_PYTEST_EXTRA_ARGS = frozenset({"-x", "-q", "--tb=short"})
 _TARGET_PATTERN = re.compile(r"^[A-Za-z0-9_./-]+(?:::[A-Za-z0-9_\[\].-]+)*$")
+
+# 空配置锚点：Workspace没有受支持pytest配置时，显式拒绝向祖先目录爬取配置。
+# 只读/dev/null得到空配置；rootdir与confcutdir固定为Workspace本身（argv中的"."）。
+_EMPTY_PYTEST_CONFIG = "/dev/null"
+
+# 环境指纹与配置检测共同依赖的文件集；快照读取与工作区读取必须使用同一集合。
+VALIDATION_ENV_FILES = ("pytest.ini", "pyproject.toml", "tox.ini", "setup.cfg", "uv.lock")
+
+
+def workspace_validation_files(workspace: Path) -> dict[str, bytes | None]:
+    """Read the environment/config file set from a managed workspace."""
+
+    files: dict[str, bytes | None] = {}
+    for name in VALIDATION_ENV_FILES:
+        path = workspace / name
+        files[name] = path.read_bytes() if path.is_file() else None
+    return files
+
+
+async def snapshot_validation_files(repo_path: Path, head_oid: str) -> dict[str, bytes | None]:
+    """Read the same file set from an immutable Git commit (read-only).
+
+    Draft-time contract compilation must bind the approved Snapshot content,
+    never the mutable source worktree; ``git show <oid>:<path>`` yields exactly
+    the bytes the managed workspace will be created from.
+    """
+
+    files: dict[str, bytes | None] = {}
+    for name in VALIDATION_ENV_FILES:
+        process = await asyncio.create_subprocess_exec(
+            "git",
+            "-C",
+            str(repo_path),
+            "show",
+            f"{head_oid}:{name}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+        stdout, _stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+        files[name] = stdout if process.returncode == 0 else None
+    return files
+
+
+def _detect_pytest_config(files: Mapping[str, bytes | None]) -> str | None:
+    """Detect the pinned pytest config from the environment file set.
+
+    Mirrors pytest's own config precedence.  A candidate file that exists but
+    cannot be parsed fails closed: silently falling back to the empty config
+    would let a broken target-repo file smuggle the validation into an
+    unintended configuration (P1-5).
+    """
+
+    if files.get("pytest.ini") is not None:
+        return "pytest.ini"
+    pyproject = files.get("pyproject.toml")
+    if pyproject is not None:
+        try:
+            parsed = tomllib.loads(pyproject.decode("utf-8"))
+        except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+            raise EvidenceValidationError(
+                "Workspace的pyproject.toml无法解析，不能安全确定Validation配置"
+            ) from error
+        tool = parsed.get("tool")
+        pytest_section = tool.get("pytest") if isinstance(tool, dict) else None
+        if isinstance(pytest_section, dict) and isinstance(pytest_section.get("ini_options"), dict):
+            return "pyproject.toml"
+    for name, section in (("tox.ini", "pytest"), ("setup.cfg", "tool:pytest")):
+        content = files.get(name)
+        if content is None:
+            continue
+        parser = configparser.ConfigParser()
+        try:
+            parser.read_string(content.decode("utf-8"))
+        except (UnicodeDecodeError, configparser.Error) as error:
+            raise EvidenceValidationError(f"Workspace的{name}无法解析，不能安全确定Validation配置") from error
+        if parser.has_section(section):
+            return name
+    return None
 
 
 def _sha256_file(path: Path) -> str:
@@ -242,6 +324,28 @@ class ValidationCompiler:
         params: Mapping[str, Any],
         workspace: Path,
     ) -> CompiledValidation:
+        """Compile typed params against the current managed workspace tree."""
+
+        return self.compile_with_files(
+            definition,
+            params=params,
+            files=workspace_validation_files(workspace),
+        )
+
+    def compile_with_files(
+        self,
+        definition: ValidationCapabilityDefinition,
+        *,
+        params: Mapping[str, Any],
+        files: Mapping[str, bytes | None],
+    ) -> CompiledValidation:
+        """Compile against an explicit environment file set.
+
+        Draft-time callers pass the approved Snapshot bytes (``git show``);
+        pre-spawn callers pass the live workspace bytes.  The two must agree
+        or the frozen contract is stale and the gate fails closed.
+        """
+
         if definition.renderer_key != "pytest-targets-v1":
             raise ValidationCapabilityUnavailable("Validation renderer未注册")
         if definition.executable_policy != "project_venv_python":
@@ -251,15 +355,31 @@ class ValidationCompiler:
         if not executable.is_file() or not os.access(executable, os.X_OK):
             raise ValidationCapabilityUnavailable("项目虚拟环境Python不可用，禁止回退系统Python")
         executable_hash = _sha256_file(executable)
-        argv = (*definition.argv_prefix, *targets, *extra_args)
+        # pytest默认会向上爬取祖先目录配置：生产默认Workspace根位于Chat仓库内，
+        # 宿主pyproject.toml会污染目标仓库的验证。argv始终显式钉住配置、
+        # rootdir与confcutdir：Workspace有自己的受支持配置就使用它（相对路径），
+        # 否则用受控空配置；confcutdir固定为Workspace本身，conftest搜索不再
+        # 触碰任何祖先目录；两者都不允许Contract参数注入。
+        config_rel = _detect_pytest_config(files)
+        argv = (
+            *definition.argv_prefix,
+            "-c",
+            config_rel if config_rel is not None else _EMPTY_PYTEST_CONFIG,
+            "--rootdir",
+            ".",
+            "--confcutdir",
+            ".",
+            *targets,
+            *extra_args,
+        )
         return CompiledValidation(
             capability_key=definition.capability_key,
             capability_version=definition.capability_version,
             capability_hash=definition.capability_hash,
             executable=executable,
             resolved_executable_hash=executable_hash,
-            environment_fingerprint=self._environment_fingerprint(
-                workspace,
+            environment_fingerprint=self._environment_fingerprint_for(
+                files,
                 executable_hash=executable_hash,
             ),
             expanded_argv=argv,
@@ -295,16 +415,37 @@ class ValidationCompiler:
 
     @staticmethod
     def _environment_fingerprint(workspace: Path, *, executable_hash: str) -> str:
+        return ValidationCompiler._environment_fingerprint_for(
+            workspace_validation_files(workspace),
+            executable_hash=executable_hash,
+        )
+
+    @staticmethod
+    def _environment_fingerprint_for(
+        files: Mapping[str, bytes | None],
+        *,
+        executable_hash: str,
+    ) -> str:
+        def digest(content: bytes) -> str:
+            return hashlib.sha256(content).hexdigest()
+
         lock_hashes: dict[str, str] = {}
         for name in ("pyproject.toml", "uv.lock"):
-            path = workspace / name
-            if path.is_file():
-                lock_hashes[name] = _sha256_file(path)
+            content = files.get(name)
+            if content is not None:
+                lock_hashes[name] = digest(content)
+        config_rel = _detect_pytest_config(files)
+        config_fingerprint: dict[str, str | None] = {"path": config_rel, "sha256": None}
+        if config_rel is not None:
+            content = files[config_rel]
+            assert content is not None
+            config_fingerprint["sha256"] = digest(content)
         return content_hash(
             {
                 "executable_hash": executable_hash,
                 "locks": lock_hashes,
-                "fingerprint_version": "validation-env-v1",
+                "pytest_config": config_fingerprint,
+                "fingerprint_version": "validation-env-v2",
             }
         )
 
@@ -466,6 +607,9 @@ class ValidationProcessRunner:
                 workspace=root,
                 temporary_directory=temporary_directory,
             )
+            # B边界：create_subprocess_exec之前的任何失败都属于可证明未启动
+            # （调用方回报error）；一旦spawn成功，后续任何异常都不能断言副作用
+            # 是否发生，必须按outcome_unknown处理。
             process = await asyncio.create_subprocess_exec(
                 *command,
                 cwd=root,
@@ -474,11 +618,16 @@ class ValidationProcessRunner:
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
             )
-            status, stdout, stderr, failure_code = await self._collect(
-                process,
-                timeout_seconds=compiled.timeout_seconds,
-                output_bytes=compiled.output_bytes,
-            )
+            try:
+                status, stdout, stderr, failure_code = await self._collect(
+                    process,
+                    timeout_seconds=compiled.timeout_seconds,
+                    output_bytes=compiled.output_bytes,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                raise ValidationOutcomeUnknownError("Validation子进程已启动，但执行结果无法确认") from error
         duration_ms = int((time.monotonic() - started) * 1000)
         stdout_text = self._redact(stdout.decode("utf-8", errors="replace"), compiled.redaction_patterns)
         stderr_text = self._redact(stderr.decode("utf-8", errors="replace"), compiled.redaction_patterns)

@@ -67,7 +67,7 @@ flowchart LR
 | 1. 工程与真实链路 | 建立独立前后端、MAF、AG-UI、调试和验证基线 | `真实模型门通过；2项收尾` |
 | 2. 目标架构与合同基线 | 审核目标拓扑、模块、状态、合同、恢复矩阵 | `总体架构已批准；模块详细设计按交付门继续` |
 | 3. 产品事实与完成历史 | 身份、Session、Message、Run/Attempt和历史恢复 | `Phase 1文本底座、显式Retry/Restart和精确取消窄切片完成；完整身份和树操作继续` |
-| 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `Product Harness D1-D8、ExecutionDraft完整编辑、37节点主Workflow、Intent Set/复合Plan、SD1 Repository只读、SD2受治理pi只读、SD3受管Workspace精确编辑与真实Qwen隔离写入、4个前端工作区完成；独立分支执行与部分成功继续` |
+| 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `Product Harness D1-D8、ExecutionDraft完整编辑、39节点主Workflow、Intent Set/复合Plan、SD1 Repository只读、SD2受治理pi只读、SD3受管Workspace精确编辑与真实Qwen隔离写入、4个前端工作区完成；独立分支执行与部分成功继续` |
 | 5. 持久执行与活动流 | Job/Event、Worker、Lease、重连和Reconciler | `D1-D8纵向切片完成；完整强退、多端、保留和容量矩阵继续` |
 | 6. Tool、Workflow与HITL恢复 | Tool Ledger、对账、Checkpoint和持久Interrupt | `主Workflow审批安全点跨进程恢复完成；Tool与任意Workflow恢复继续` |
 | 7. 知识、证据、交付与运营 | Memory、Evidence、Provenance、Outbox、Trace、超级管理员看护和告警 | `Note/Memory生命周期与Harness事务Outbox完成；超级管理员目标已确认，独立Evidence、Artifact、Delivery和运营能力继续` |
@@ -315,9 +315,11 @@ Session 是 W2-W9 的横向能力，仍由两份专项材料维护：
   已使用Qwen完成一次隔离写入Product Run；网络外部副作用、补偿和人工处置仍未完成，因此通用F01
   不勾选完成）。
 - [ ] F02 Evidence、Artifact、Provenance与独立生命周期（SD4-A记录层和SD4-B内容寻址Artifact
-  Store/确定性Validation Runtime已完成；SD4-C Result Commit Gate单事务完成门与REST commit
-  端点已完成；当前私有部署仍需配置scope密钥后才启用Artifact写入；SD4-D失效传播和SD4-E
-  Workflow胶水/UI仍待交付）。
+  Store/确定性Validation Runtime已完成；SD4-C Result Commit Coordinator、REST commit端点、
+  Harness完成门与主Workflow结果证据链接线（v1.8.0/39节点、ResultPipelineCoordinator、
+  精确绑定Decision与幂等重放）已实现；2026-07-26 verify-fast/verify全量门均通过（后端461项、
+  覆盖率80.08%、21次迁移升降无漂移、前端76项与生产构建、Playwright 19通过3跳过）；当前私有部署仍需配置scope密钥
+  后才启用Artifact写入；SD4-D失效传播和SD4-E UI/Dogfood仍待交付）。
 - [ ] F03 Runtime完整故障、容量和游标矩阵。
 - [ ] F04 Session完整生命周期、树、控制与可移植性。
 - [ ] F05 任意Workflow、嵌套Workflow和pi持久恢复。

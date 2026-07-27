@@ -85,6 +85,33 @@ PI_WRITE_OPT_OUT_TERMS = (
 PI_WORKSPACE_TOOLS = (*PI_READONLY_TOOLS, "edit")
 
 
+def execution_routing_text(state: CollaborationState) -> str:
+    """Return the exact text the route recommendation derives from.
+
+    Extracted so the draft executor can make the same pi_workspace decision
+    as the pure compiler without duplicating string assembly (single source
+    of truth for route-affecting input).
+    """
+
+    intent = state.intent or {}
+    intent_set = list(state.intents or (intent,))
+    return "\n".join(
+        [
+            state.origin_prompt,
+            *(
+                "\n".join(
+                    [
+                        str(value.get("goal") or ""),
+                        str(value.get("expected_outcome") or ""),
+                        *(str(item) for item in value.get("constraints") or ()),
+                    ]
+                )
+                for value in intent_set
+            ),
+        ]
+    )
+
+
 def adopted_repository_source(
     context_items: Sequence[Mapping[str, Any]],
 ) -> dict[str, str] | None:
@@ -154,6 +181,9 @@ def recommends_pi_workspace_edit(
     )
 
 
+VALIDATION_CONTRACT_UNSET: Any = object()
+
+
 def compile_execution_draft_v2(
     *,
     state: CollaborationState,
@@ -163,8 +193,18 @@ def compile_execution_draft_v2(
     workflow_version: str,
     repository_fence: RepositoryFence | None,
     pi_available: bool,
+    validation_contract: Any = VALIDATION_CONTRACT_UNSET,
 ) -> tuple[dict[str, Any], str]:
-    """Compile an editable, public and fully versioned execution proposal."""
+    """Compile an editable, public and fully versioned execution proposal.
+
+    ``validation_contract`` is the frozen section produced by
+    ``ValidationContractPlanner`` (exact plan revision, subject Action
+    identity + revision and compiled argv/hash/capability binding), embedded
+    inside the existing ``validation_plan`` section so the 17-part draft
+    schema does not change.  For pi workspace runs the executor always passes
+    it explicitly: the frozen section, or ``None`` to record "no completion
+    subject this turn" — the pipeline fails closed if the key is absent (D).
+    """
 
     intent = state.intent or {}
     intent_set = list(state.intents or (intent,))
@@ -187,27 +227,15 @@ def compile_execution_draft_v2(
     # Execution routing may use the user request plus the accepted Intent Set,
     # but never a model-generated Plan alone: a plan is not an authority source
     # and therefore cannot silently escalate a read-only request into a write.
-    routing_text = "\n".join(
-        [
-            state.origin_prompt,
-            *(
-                "\n".join(
-                    [
-                        str(value.get("goal") or ""),
-                        str(value.get("expected_outcome") or ""),
-                        *(str(item) for item in value.get("constraints") or ()),
-                    ]
-                )
-                for value in intent_set
-            ),
-        ]
-    )
+    routing_text = execution_routing_text(state)
     use_pi_workspace = recommends_pi_workspace_edit(
         prompt=routing_text,
         selected_project_id=state.selected_project_id,
         repository_fence=repository_fence,
         pi_available=pi_available,
     )
+    if validation_contract is not VALIDATION_CONTRACT_UNSET and not use_pi_workspace:
+        raise ValueError("Validation Contract只能冻结在pi隔离编辑执行草稿中")
     use_pi = not use_pi_workspace and recommends_pi_readonly(
         prompt=state.origin_prompt,
         selected_project_id=state.selected_project_id,
@@ -378,6 +406,11 @@ def compile_execution_draft_v2(
         "validation_plan": {
             "checks": validation_checks,
             "evidence": "workflow trace, runtime journal and provider attempts",
+            **(
+                {"contract": (dict(validation_contract) if validation_contract is not None else None)}
+                if validation_contract is not VALIDATION_CONTRACT_UNSET
+                else {}
+            ),
         },
         "output_commit_contract": {
             "chat_result": "candidate until finalization",

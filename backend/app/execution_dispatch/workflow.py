@@ -37,7 +37,7 @@ from .service import (
 )
 
 WORKFLOW_ID = "continuous-collaboration"
-WORKFLOW_VERSION = "1.7.0"
+WORKFLOW_VERSION = "1.8.0"
 _PI_CHECKPOINT_VERSION = 1
 
 logger = logging.getLogger(__name__)

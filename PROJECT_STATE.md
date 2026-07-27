@@ -6,7 +6,7 @@
 |---|---|
 | 产品身份 | 独立开发、独立运行、独立运营并持续演进的完整 Chat 产品 |
 | 当前目录 | `/Users/xulater/Code/Chat` |
-| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、Product Session R0/R1与可见定位码、双协议模型治理和持久Provider Attempt审计、37节点持续协作主Workflow、HITL策略矩阵、持久Checkpoint/Outbox恢复、ExecutionDraft完整编辑、Product Harness纵向生命周期、协作协议/Context revision/步骤输入阶段A、Intent Set与复合Plan阶段B、SD1 Repository只读、SD2受治理pi只读、SD3受管Execution Workspace与精确`edit`副作用账本及真实Qwen隔离写入、pi对Kimi K3的Context/Thinking/客户端身份适配与真实只读回合、活动pi同进程Checkpoint重挂接、Runtime Job/Event/Cursor/通用Execution Worker纵向切片、手机公网HTTP中转与完整响应式Web纵向链路、SD4-A Evidence记录层、SD4-B内容寻址Artifact Store和确定性Validation Runtime，以及SD4-C Result Commit Gate单事务完成门已完成；当前私有部署尚未配置Artifact scope密钥，SD4-D失效传播、SD4-E Workflow胶水/UI和活动pi跨进程续跑仍未完成 |
+| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、Product Session R0/R1与可见定位码、双协议模型治理和持久Provider Attempt审计、39节点持续协作主Workflow、HITL策略矩阵、持久Checkpoint/Outbox恢复、ExecutionDraft完整编辑、Product Harness纵向生命周期、协作协议/Context revision/步骤输入阶段A、Intent Set与复合Plan阶段B、SD1 Repository只读、SD2受治理pi只读、SD3受管Execution Workspace与精确`edit`副作用账本及真实Qwen隔离写入、pi对Kimi K3的Context/Thinking/客户端身份适配与真实只读回合、活动pi同进程Checkpoint重挂接、Runtime Job/Event/Cursor/通用Execution Worker纵向切片、手机公网HTTP中转与完整响应式Web纵向链路、SD4-A Evidence记录层、SD4-B内容寻址Artifact Store和确定性Validation Runtime已完成并加固；SD4-C Result Commit Coordinator/Harness完成门与主Workflow结果证据链接线已实现并通过多轮定向复审与全量门（2026-07-26 verify-fast/verify均通过）；当前私有部署尚未配置Artifact scope密钥，SD4-D失效传播、SD4-E UI和活动pi跨进程续跑仍未完成 |
 | 设计状态 | 总体架构已按完整用户场景重写并获批准；2026-07-24进一步确认Super Admin Operations是完整产品的第11个产品与应用模块，详细身份/活动/指标/隐私设计尚未开始；Execution治理D1-D7、Product Harness D1-D8、活动Run与通用Execution Worker D1-D8均已获用户批准并迁移；Chat UI/UX视觉基线v1及4项轻量情绪层已获批准，生产前端迁移尚未完成；“Chat开发Chat”D1-D9、SD1 R1-R12、SD2 R1-R12和“Chat自开发可用门v1”8阶段节奏已获批准，SD1-A/B/C/D与SD2-A/B/C/D/E只读纵向切片已完成；2026-07-25用户批准F01字段级Tool Operation Ledger并进入SD3隔离写入，SD4/F02与SD5/F05仍保留各自审核门 |
 | Session 状态 | 9个能力域、74项能力、R0-R6和Phase 0-8路线已批准；Phase 0-1完成，Phase 2进行中，Phase 4-5完成纵向切片但尚未通过全部阶段故障矩阵 |
 | 工程质量状态 | Q0纵向基线已建立且本地完整门通过：CI/静态质量门、统一Problem Detail、请求关联、结构化日志、基础Metrics/Trace、诊断入口、分层覆盖率、Playwright/axe、故障实验室、组合根拆分和前端Feature边界均可运行；Q02已继续提取治理纯策略/Run查询、Harness命令记录/Context查询，Q06已拆出Agent重连Hook、Workflow两类运行投影并建立8个生产按需Feature；剩余大型Application Service、持续协作Workflow、性能/人工无障碍、远端CI首次运行和生产Exporter/SLO不在已完成范围 |
@@ -258,27 +258,75 @@
   部署健康投影会明确显示Artifact Store未配置，不会用模型Key、固定默认值或可逆scope名降级。
   全量351个后端测试、79.40%覆盖率、20次迁移升降/全降/重升、69个前端测试、生产构建和
   Playwright桌面/手机15通过3跳过均完成；SD4-C Result Commit、SD4-D失效传播与SD4-E界面未交付。
-- [x] 2026-07-26完成SD4-C Result Commit Gate：`ResultCommitCoordinator`以单个Product Store
-  事务完成设计§9.1全部11步——幂等重放、Decision effect校验（accepted/waived必须绑定allow，
-  rejected只绑定审计）、拒绝独立路径（缺失Evidence、Snapshot前进、subject CAS均不卡住拒绝，
+- [x] 2026-07-26已实现并加固SD4-C Result Commit Gate核心，但阶段验收仍缺已批准§14的主Workflow
+  接线：`ResultCommitCoordinator`以单个Product Store事务完成设计§9.1全部11步——幂等重放、
+  Decision精确绑定`result_commit/result_candidate`、当前Claim id/hash/row_version和请求的
+  commit_status/artifact_disposition（accepted/waived另要求allow，rejected同样必须精确绑定）、
+  拒绝独立路径（缺失Evidence、Snapshot前进、subject CAS均不卡住拒绝，
   矩阵17）、mandatory Requirement逐条Adoption/Waiver覆盖校验、Adoption当前性/Observation
-  validity/pending invalidation复检、Artifact版本/当前Revision/Blob available/真实Store
+  validity及Observation/RepositorySnapshot/ArtifactRevision/ArtifactBlob直接来源pending invalidation复检、
+  Artifact版本/当前Revision/Blob available/真实Store
   重算Hash复检（无Store对Artifact Claim fail closed）、record_only/must_match_current_target
   适用性分支（目标前进稳定报`ArtifactApplicabilityStale`）、迁移协议复核、work_completed
   前置（无open Action且无待合入Artifact）、participant条件UPDATE原子迁移subject并写入
   仅含ResultCommit/Claim引用的投影Evidence（D12）、`attributed_to` ProvenanceEdge与Trace/
-  Outbox。记录层保持fail closed：accepted/waived必须携带Gate同事事务产出的`ClaimGateRecheck`
-  复检证明并由记录层结构复核（Claim身份/版本/结局/mandatory全覆盖），`pre_commit_validity_
+  Outbox。记录层保持fail closed：accepted/waived必须携带Gate同事务产出的`ClaimGateRecheck`
+  收据并消费当前事务一次性opaque nonce；记录层仍把收据字段视为不可信输入，重新查询Claim身份/版本/结局、非空mandatory全集、Adoption/Waiver
+  精确解析集合、Artifact id/version和committed subject state；`pre_commit_validity_
   check_passed`不再由commit_status机械推断（反例033）；rejected不得携带证明。Harness公开
-  迁移路径对保留投影形状无校验器即fail closed，普通用户不能伪造ResultCommit引用（矩阵19）；
+  迁移路径对所有`completed`写入统一要求唯一投影、CAS和注入校验器；旧Evidence/waiver只读兼容，
+  普通用户不能再用旧格式或伪造ResultCommit引用完成主体（矩阵19）；
   Gate注入的链校验器强制引用只能消费一次（`expected_subject_version`绑定当前版本），重放
   确定性失败。新增REST边界`POST /api/evidence/claims/{id}/commit`（唯一用户可达Evidence
   写入口）与`GET /api/evidence/claims/{id}`；Observation/Assessment/Validation/Artifact均无
   公开路由。组合根接线完成，OpenAPI指纹更新并留审阅注记；同时修复`HarnessConflict`导入
-  缺失的潜伏NameError与subject视图`kind`字段被Work/Action分类覆盖的缺陷。专项36项Gate
-  测试（含真实Store字节重算/篡改阻断、participant注入故障零部分状态与同command_id重放、
-  REST播种经独立文件库）全部通过；SD4-C不交付主Workflow自动创建Claim的胶水、SD4-D失效
-  传播与SD4-E界面/Dogfood E2E。
+  缺失的潜伏NameError与subject视图`kind`字段被Work/Action分类覆盖的缺陷。专项43项Gate测试
+  覆盖真实Store字节重算/篡改阻断、participant注入故障零部分状态与同command_id重放、REST播种
+  经独立文件库，以及Decision错绑、0 mandatory、Waiver后refutes、3类直接来源失效和伪造Receipt
+  攻击。主Workflow自动创建Claim并把Validation结果接入Evidence链仍未实现；按已批准§14该项属于
+  SD4-C验收缺口，不能再以“划入SD4-E”宣称SD4-C完成。SD4-D传播与SD4-E界面/Dogfood E2E亦未完成。
+- [x] 2026-07-26完成SD4-C主Workflow接线（已批准§14的最后缺口）：持续协作主Workflow升级为
+  v1.8.0/39个真实MAF节点，在`pi_workspace_result_assembly`后新增`result_claim_prepare`与
+  `result_claim_decision`；现有节点ID、AG-UI事件与Checkpoint合同不变，图版本升级使旧Checkpoint
+  按既有签名规则失败关闭。新增`ResultPipelineCoordinator`（`backend/app/evidence/result_pipeline.py`）
+  作为结果证据用例协调器（Claim/Contract/Artifact编排与幂等，不是唯一事务所有者：
+  ResultValidationRunner拥有验证步骤事务，ResultCommitCoordinator另拥有§9.1单一原子提交事务）：从已接受Plan revision的Validation Contract经Capability Catalog编译
+  确定性规则（argv/executable/环境Hash），形成diff_patch Artifact（受管Workspace真实Diff字节）、
+  ValidationContract、绑定当前Action版本/Snapshot/Artifact Revision的CompletionClaim与非空
+  mandatory Requirements（每条合同规则一条validation_result + 每个已成功edit Operation一条
+  file_hash_match）；确定性Validation Runtime在Workspace真实执行，passed/failed才落
+  EvidenceObservation与validator Assessment（supports/refutes），timeout/error/outcome_unknown
+  不产生Observation、supports、Adoption或完成；Adoption不再由验证阶段创建，而是由Result Commit
+  Gate在result_commit事务内按Decision冻结的Adoption映射创建；
+  全部写入以`sd4:{run_id}:...`确定性command_id幂等，重放/恢复不重复任何事实。`result_claim_decision`
+  复用现有`result_commit`决策点：单个不可变DecisionSubject冻结Claim id/hash/row_version与
+  action_outcomes映射（accept/waive共享artifact感知的accepted或none处置；reject对当前Revision
+  冻结rejected、对已替代Revision冻结none），DecisionRecord创建即
+  绑定，decision_code选中结局；记录层校验映射精确对应，accept/reject/交叉结局篡改与Claim身份篡改
+  均fail closed，不再存在事后改写Subject/Decision的路径（追加审计P0已修复，双Subject/not_selected
+  方案已撤销）。提交使用人工卡冻结的claim hash/row_version，同一人工响应/Outbox重投返回同一结果；
+  已解决Claim的恢复投影保留result_commit_id。同时修复P1生产缺陷：pytest Validation在argv显式钉住
+  `-c`（Workspace内受支持配置或受控空配置）、`--rootdir`与`--confcutdir`，并把实际配置文件Hash
+  纳入环境指纹（validation-env-v2），祖先目录（含Chat宿主仓库）配置不再污染目标Workspace验证。
+  同进程并发边界：ResultValidationRunner以per-command asyncio锁串行化同一ValidationRun的执行，
+  活动重入等待并复用终态、锁空闲遗留running诚实收敛outcome_unknown；该保证只覆盖当前组合根
+  单例的同进程路径，跨进程活动执行区分与接管仍属F05未完成。
+  not_applicable只保留给：非成功workspace执行、无已批准edit/空Diff，以及Draft明确记录“本轮无完成
+  主体”（0个adopted Action）；已adopted的user/external责任Action稳定失败，不视为无主体；
+  存在adopted Action后，歧义（多个/同ID
+  revision冲突/不存在/跨scope/状态不合格）、父Work非in_progress、Action与Repository Fence不同
+  Project、缺Artifact Store/Validation Compiler/冻结合同或subject/Work/RunSpec任一篡改，全部稳定
+  失败而不是放行（四轮复审已补对应攻击测试）。git diff显式禁用仓库配置的外部diff driver与
+  textconv；ValidationRun与Observation只持久化安全相对locator。治理写入（Evaluation/Human Request/
+  自动Decision/Grant）按不可变Subject重入复用，崩溃重进不产生重复审批；DecisionSubject内容Hash
+  在提交时复算，创建后篡改view必失败。专项测试：主Workflow接线19项（accepted完整链/失败仅可拒/
+  outcome_unknown与post-spawn异常收敛/pre-spawn报error并失败/陈旧subject零半写/无合同失败/无
+  Store失败/无Compiler失败/冻结合同防Plan推进/并发Action变异/陈旧Context/RunSpec篡改/Draft篡改/
+  双Action/父Work取消/prepare重放/reject挪用adopt/错assessment/跨claim）、planner严格性8项、
+  Decision篡改与candidate下reject挪用adopt、治理重入与git diff sentinel；全量门计数见§4.2。
+  非代码Evidence模板（学习测验等）仍未实现：legacy完成写入口保持
+  关闭，非代码Work/Action尚无新完成路径。SD4-D Provenance查询/失效传播、SD4-E UI/浏览器Dogfood、
+  SD5 commit/push与pi跨进程恢复仍未完成。
 
 ## 4. 已完成的工程与研究证据
 
@@ -294,8 +342,13 @@
 
 ### 4.2 已有验证
 
-1. 当前工作区后端379项全量测试通过，总覆盖率79.00%，覆盖20次迁移、审批合同、双协议、Session恢复/并发/Retry/取消、治理策略、37节点主Workflow、协作协议/Context revision/Repository Source Freshness/StepInputProjection/TurnDigest、Intent Set/Clarification、Product Harness完整生命周期、Repository Context预算与只读写回抑制、SD2只读Tool及SD3受管Workspace/精确`edit`的路径/符号链接/Protected Source/结果预算/失败/放弃/幂等/故障对账/路由、pi的K3 Context/Thinking/客户端身份投影、活动pi同进程Checkpoint重挂接与丢失进程失败关闭、长跨度场景、ExecutionDraft revision/CAS、Checkpoint/Outbox跨进程恢复、Provider传输审计、Runtime双OS进程领取/Lease/Cursor/取消/断线/并发对账/终态修复、SD4-A Evidence记录与语义攻击、SD4-B Artifact崩溃窗口/损坏/去重/GC以及Validation argv/环境/sandbox/进程终态、SD4-C Result Commit单事务/拒绝独立路径/逐Requirement豁免/Evidence与Artifact复检/适用性分支/subject并发与重放保护/伪造拒绝/回滚原子性/REST边界，以及手机云端中转的回环绑定、访问控制、流式代理和项目虚拟环境部署合同。
-2. 前端69个逻辑/合同测试、Biome、类型检查和生产构建通过；字号合同禁止低于11px的显式可见字号，覆盖统一错误、Feature API、ExecutionDraft、协议/Context/Harness/HITL、Repository来源呈现与载入、多Intent方法投影、Runtime事件、Session定位码、Workflow路由/节点内部活动/权威ToolExecution/Workspace/Operation结果、跨部署路径、HTTP浏览器ID兼容、重连退避和本机草稿。当前生产构建主入口473.22 KiB，按需Feature边界保持有效。
+1. 2026-07-26全量门通过：`./scripts/verify-fast.sh`与`./scripts/verify.sh`均EXIT=0——后端461项全量测试通过，
+   总覆盖率80.08%（≥70%门）；21次Alembic迁移完整升降/全降/重升且自动生成无漂移（新增
+   `a1f3c7d9e521`DecisionSubject逻辑身份唯一索引）；Ruff、Pyright（0错误）、密钥/文档/概念空间
+   校验、OpenAPI与Workflow目录指纹均通过。测试覆盖20次迁移、审批合同、双协议、Session恢复/并发/Retry/取消、治理策略、39节点主Workflow、协作协议/Context revision/Repository Source Freshness/StepInputProjection/TurnDigest、Intent Set/Clarification、Product Harness完整生命周期、Repository Context预算与只读写回抑制、SD2只读Tool及SD3受管Workspace/精确`edit`的路径/符号链接/Protected Source/结果预算/失败/放弃/幂等/故障对账/路由、pi的K3 Context/Thinking/客户端身份投影、活动pi同进程Checkpoint重挂接与丢失进程失败关闭、长跨度场景、ExecutionDraft revision/CAS、Checkpoint/Outbox跨进程恢复、Provider传输审计、Runtime双OS进程领取/Lease/Cursor/取消/断线/并发对账/终态修复、SD4-A Evidence记录与语义攻击、SD4-B Artifact崩溃窗口/损坏/去重/GC以及Validation argv/环境/sandbox/进程终态、SD4-C Result Commit单事务/拒绝独立路径/逐Requirement豁免/Evidence与Artifact复检/适用性分支/subject并发与重放保护/旧Harness旁路封闭/Decision精确绑定/0 mandatory/直接来源失效/伪造Receipt/回滚原子性/REST边界、SD4-C主Workflow结果证据链接线与四轮复审攻击场景、pytest祖先配置阻断与创建即绑定不可变Decision，以及手机云端中转的回环绑定、访问控制、流式代理和项目虚拟环境部署合同。
+2. 2026-07-26前端全量门通过：76个逻辑/合同测试、Biome、类型检查、分层覆盖率门、生产构建
+   （入口462.1 KiB、9个按需Feature、2个CSS文件，预算内）与Playwright桌面+移动共22场景
+   （19通过、3按设计跳过，含真实React Workbench冻结contract 390px布局）均通过。字号合同禁止低于11px的显式可见字号，覆盖统一错误、Feature API、ExecutionDraft、协议/Context/Harness/HITL、Repository来源呈现与载入、多Intent方法投影、Runtime事件、Session定位码、Workflow路由/节点内部活动/权威ToolExecution/Workspace/Operation结果、跨部署路径、HTTP浏览器ID兼容、重连退避和本机草稿。
 3. 浏览器完成ExecutionDraft完整工作台真实回合：修改执行摘要和Scope后由revision 1生成revision 2及新Hash，重新授权后3次火山方舟`glm-5.2`调用均完成，5个Interrupt全部为resumed、22个Checkpoint可审计、Product Run成功且TurnSummary保持candidate；520px最小视口无横向溢出，控制台0错误。
 4. 火山方舟Responses与阿里云百炼Chat Completions各完成1次真实模型审批回合；后者核对最终Body仅含`model/messages/tools/store/stream`并返回预期文本。
 5. 2026-07-25使用现有私有配置完成一次主Workflow真实Qwen pi只读回合：Product Run
@@ -318,24 +371,25 @@
    不继承系统pi的Session、Tool授权或全局Provider认证。旧0.81.1自报已修正为0.82.0，并通过真实
    `get_state` JSONL RPC探针。
 7. 清理脚本已验证可分别终止端口8030的Uvicorn和5073的Vite，清理后无监听残留。
-8. 概念空间结构校验通过：14个概念簇、17个目录文档和137个本地链接均可发现且无断链；170份项目文档和565个本地链接通过治理校验，`git diff --check`纳入提交前验证。
-8. 2026-07-23真实浏览器用火山方舟`glm-5.2`完成Product Harness接合后的3次逐次模型审批；25个节点完成，结果为`HARNESS_REAL_MODEL_OK`，且正式Project、Work、Note、Memory前后均为0，控制台0错误。桌面推拉侧栏和780 CSS像素窄屏抽屉均完成展开/收起验证。
-9. 2026-07-23新增3天混合焦点长场景：7轮跨5个Product Session、1次后端服务与数据库连接重建（模拟API进程重启），依次推进FastAPI学习、切换书签API、回到学习、次日续学、第三天新建背单词CLI、查询全部Project并再次续学；3个Project及其Work/Action/Note/Memory持续独立，9份ContextPackage证明Stage A只取轻量目录、Stage B只装配被选Project，14条原始消息未被无脑塞入Context。
-10. 2026-07-23完成Runtime真实Provider断线验证：审批后批准，在新Segment首个`RUN_STARTED`后主动关闭订阅；同一Runtime Job继续完成并可回放连续57条Journal事件，只有1条终态，Product Run、Runtime Job和Provider Attempt均为成功，Provider没有因重连创建第二个Attempt。
-11. Runtime专项10项测试覆盖8 Worker竞争、两个OS进程唯一领取、旧Epoch拒写、双Reconciler竞争、空闲Worker心跳、断线后台继续、Cursor回放、外发前/运行中取消、Lease过期和Product/Runtime终态修复；浏览器确认新工作台字段、Workflow节点和审批界面正常且控制台0错误，浏览器验证Run已放弃并保持零Provider发送。
-12. 2026-07-23 本轮Q0收敛完成本地全量验证：后端114项及76.34%总覆盖率、前端42项及行57.24%/分支67.53%/函数77.31%覆盖率、12次迁移完整升降、10项故障实验、桌面与Pixel 5共5项Playwright/axe通过且1项桌面专属检查在移动项目按设计跳过；概念空间11个概念簇/109个链接、86份项目Markdown/215个本地链接、生产包体、密钥扫描、Python/npm漏洞与许可证门和`git diff --check`均通过。
-13. 2026-07-23真实浏览器完成模型审计纵向回合：Product Session `PS-CDE5083F`、Product Run `48d3f48e-906f-4852-a8f7-2102fa6a289c`经3次逐次审批得到`MODEL_AUDIT_E2E_OK`；3个真实火山方舟Attempt均保存HTTP 200、Provider请求/响应ID、首字节、Token用量、可见输出Hash和`accepted_as_intent/response/summary`去向。独立Project目录查询Run `c352573a-3d0c-43d3-a863-d7716a6fca5b`验证模型调用数为0。
-14. 2026-07-23浏览器以Product Session `PS-5FD84B57`、Product Run `27253126-38dc-4ef4-99d5-03e7e36d1179`验证可解释分支：输入“我有哪些项目？”命中`project_catalog`第1条Case，目标为`project_catalog_query`，其余3条边逐项显示未走原因，Provider模型调用数为0；桌面与窄屏无工作台横向溢出。
-15. 同一Product Run已验证思维导图式运行视图：9个选择前节点、真实`scenario_router`、4条候选边和6个选中分支后续节点来自同一Definition与Trace；点击“查询正式Project目录”后详情切换到对应`executor_id`的公开输入、输出和Sequence 35运行事实。桌面与移动Playwright共7项通过、1项桌面专属axe在移动项目按设计跳过，浏览器控制台0错误。
-16. 2026-07-24浏览器以Product Session `PS-A61F8C51`、Product Run `23de8b35-9031-46e7-887f-549b9b329548`完成阶段A真实模型纵向回合：意图、协作响应和TurnDigest三次火山方舟`glm-5.2`调用逐次暂停、逐次审批，3个Provider Attempt均HTTP 200并分别记录603、845、489 Tokens；Run完成26节点，协议为`simple-answer@r1`，正式Project、Work、Accepted Memory及Memory Candidate均为0。
-17. 同日浏览器以Product Session `PS-8EA295AE`验证“我有哪些项目？只查看正式列表，不要创建任何事项。”：否定创建约束不会再误命中创建意图，Run `ca52e679-0602-46c8-a715-a4b47792e193`由确定性护栏进入Project目录分支，模型调用数为0；工作台显示26个真实节点、4条候选边、协议选择依据和实际步骤输入。
-18. 新增长跨度协议/Context验收：Day 1先做权威Project目录查询并证明模型文字只进入未验证候选，再建立学习Project、排除Note并锁定Project；Day 2切到软件交付Project且不泄漏学习Context；Day 3重建服务后回到学习并保持协议、Context和五类步骤输入隔离。
-19. 2026-07-24浏览器以Product Session `PS-78979C26`、Product Run `87e4ec66-56ab-47b2-ae2b-184766719112`完成多Intent真实模型回合：2个独立目标依次完成权威Project空目录查询和斐波那契一句话解释；Intent、Planner、Response、TurnDigest共4次火山方舟`glm-5.2`调用逐次审批，28节点Run完成，未创建Project、Work、Task或长期Memory。工作台同时展示基础协议`直接回答@r1`与本轮`必须形成组合计划`的有效覆盖策略。
-20. 2026-07-24用户确认连续对话流、对话日、个人主页与协作日历、灵感花园4个产品概念；目标信息架构不再以Session Sidebar作为默认用户入口。Product Session继续作为服务端交互、恢复和访问控制容器，目标主页、时间导航、每日日记和灵感花园仍处于设计阶段，不能标记为已实现。
-21. 2026-07-24用户审核通过个人主页第一轮草图：固定Activity Rail、今日继续、年度协作日历、近期产物、灵感花园和本周轨迹的首页信息层级，以及Material 3 Expressive与克制工作区结合的视觉方向。连续对话/Workflow工作台与协作日历/对话日草图仍待分别审核，整套前端改造尚未获实现授权。
-22. 2026-07-24用户批准[Chat UI/UX视觉基线v1](./docs/ui-ux-visual-baseline.md)：当前可交互原型作为后续生产前端的渐进改造基线，不再继续寻找单一“完美参考”。优先加入基于真实Harness状态的主页问候、关键动作反馈、公开AI运行状态和可追源协作日历4项轻量情绪层；完整主题编辑、插画系统、复杂动效、游戏化和大规模品牌重塑延后。该批准是设计与实施范围授权，不表示生产界面已经完成。
-23. 2026-07-24完成[手机公网访问与云端中转运行手册](./docs/mobile-cloud-relay.md)对应的真实部署：云端`/chat/`与`/chat-api/`统一Basic Auth，本地LaunchAgent常驻后端和只绑定云端回环的反向SSH。Relay与后端分别被终止后都出现可观察短暂中断并以新PID恢复；AuditTraceAI、Mini-Claw和Nginx保持active。390×844浏览器从公网创建Product Session `PS-53F42E0E`，Intent、Response、TurnDigest三次火山方舟`glm-5.2`调用逐次审批后得到`MOBILE_RELAY_E2E_OK`，Product Run成功、Session revision为2，Project、Work和Accepted Memory均为0，控制台0错误且无横向溢出。
-24. 2026-07-25使用DashScope `qwen3.7-plus`完成SD3真实隔离写入：Product Run
+8. 概念空间结构校验通过：14个概念簇、17个目录文档和137个本地链接均可发现且无断链；168份项目文档和571个本地链接通过治理校验，`git diff --check`纳入提交前验证。
+  注：verify-fast当时为167份/566链接，verify与收口后为168份/571链接，差异来自同期新增的`docs/lifeos-product-method-research.md`（不属于SD4-C实现）。
+9. 2026-07-23真实浏览器用火山方舟`glm-5.2`完成Product Harness接合后的3次逐次模型审批；25个节点完成，结果为`HARNESS_REAL_MODEL_OK`，且正式Project、Work、Note、Memory前后均为0，控制台0错误。桌面推拉侧栏和780 CSS像素窄屏抽屉均完成展开/收起验证。
+10. 2026-07-23新增3天混合焦点长场景：7轮跨5个Product Session、1次后端服务与数据库连接重建（模拟API进程重启），依次推进FastAPI学习、切换书签API、回到学习、次日续学、第三天新建背单词CLI、查询全部Project并再次续学；3个Project及其Work/Action/Note/Memory持续独立，9份ContextPackage证明Stage A只取轻量目录、Stage B只装配被选Project，14条原始消息未被无脑塞入Context。
+11. 2026-07-23完成Runtime真实Provider断线验证：审批后批准，在新Segment首个`RUN_STARTED`后主动关闭订阅；同一Runtime Job继续完成并可回放连续57条Journal事件，只有1条终态，Product Run、Runtime Job和Provider Attempt均为成功，Provider没有因重连创建第二个Attempt。
+12. Runtime专项10项测试覆盖8 Worker竞争、两个OS进程唯一领取、旧Epoch拒写、双Reconciler竞争、空闲Worker心跳、断线后台继续、Cursor回放、外发前/运行中取消、Lease过期和Product/Runtime终态修复；浏览器确认新工作台字段、Workflow节点和审批界面正常且控制台0错误，浏览器验证Run已放弃并保持零Provider发送。
+13. 2026-07-23 本轮Q0收敛完成本地全量验证：后端114项及76.34%总覆盖率、前端42项及行57.24%/分支67.53%/函数77.31%覆盖率、12次迁移完整升降、10项故障实验、桌面与Pixel 5共5项Playwright/axe通过且1项桌面专属检查在移动项目按设计跳过；概念空间11个概念簇/109个链接、86份项目Markdown/215个本地链接、生产包体、密钥扫描、Python/npm漏洞与许可证门和`git diff --check`均通过。
+14. 2026-07-23真实浏览器完成模型审计纵向回合：Product Session `PS-CDE5083F`、Product Run `48d3f48e-906f-4852-a8f7-2102fa6a289c`经3次逐次审批得到`MODEL_AUDIT_E2E_OK`；3个真实火山方舟Attempt均保存HTTP 200、Provider请求/响应ID、首字节、Token用量、可见输出Hash和`accepted_as_intent/response/summary`去向。独立Project目录查询Run `c352573a-3d0c-43d3-a863-d7716a6fca5b`验证模型调用数为0。
+15. 2026-07-23浏览器以Product Session `PS-5FD84B57`、Product Run `27253126-38dc-4ef4-99d5-03e7e36d1179`验证可解释分支：输入“我有哪些项目？”命中`project_catalog`第1条Case，目标为`project_catalog_query`，其余3条边逐项显示未走原因，Provider模型调用数为0；桌面与窄屏无工作台横向溢出。
+16. 同一Product Run已验证思维导图式运行视图：9个选择前节点、真实`scenario_router`、4条候选边和6个选中分支后续节点来自同一Definition与Trace；点击“查询正式Project目录”后详情切换到对应`executor_id`的公开输入、输出和Sequence 35运行事实。桌面与移动Playwright共7项通过、1项桌面专属axe在移动项目按设计跳过，浏览器控制台0错误。
+17. 2026-07-24浏览器以Product Session `PS-A61F8C51`、Product Run `23de8b35-9031-46e7-887f-549b9b329548`完成阶段A真实模型纵向回合：意图、协作响应和TurnDigest三次火山方舟`glm-5.2`调用逐次暂停、逐次审批，3个Provider Attempt均HTTP 200并分别记录603、845、489 Tokens；Run完成26节点，协议为`simple-answer@r1`，正式Project、Work、Accepted Memory及Memory Candidate均为0。
+18. 同日浏览器以Product Session `PS-8EA295AE`验证“我有哪些项目？只查看正式列表，不要创建任何事项。”：否定创建约束不会再误命中创建意图，Run `ca52e679-0602-46c8-a715-a4b47792e193`由确定性护栏进入Project目录分支，模型调用数为0；工作台显示26个真实节点、4条候选边、协议选择依据和实际步骤输入。
+19. 新增长跨度协议/Context验收：Day 1先做权威Project目录查询并证明模型文字只进入未验证候选，再建立学习Project、排除Note并锁定Project；Day 2切到软件交付Project且不泄漏学习Context；Day 3重建服务后回到学习并保持协议、Context和五类步骤输入隔离。
+20. 2026-07-24浏览器以Product Session `PS-78979C26`、Product Run `87e4ec66-56ab-47b2-ae2b-184766719112`完成多Intent真实模型回合：2个独立目标依次完成权威Project空目录查询和斐波那契一句话解释；Intent、Planner、Response、TurnDigest共4次火山方舟`glm-5.2`调用逐次审批，28节点Run完成，未创建Project、Work、Task或长期Memory。工作台同时展示基础协议`直接回答@r1`与本轮`必须形成组合计划`的有效覆盖策略。
+21. 2026-07-24用户确认连续对话流、对话日、个人主页与协作日历、灵感花园4个产品概念；目标信息架构不再以Session Sidebar作为默认用户入口。Product Session继续作为服务端交互、恢复和访问控制容器，目标主页、时间导航、每日日记和灵感花园仍处于设计阶段，不能标记为已实现。
+22. 2026-07-24用户审核通过个人主页第一轮草图：固定Activity Rail、今日继续、年度协作日历、近期产物、灵感花园和本周轨迹的首页信息层级，以及Material 3 Expressive与克制工作区结合的视觉方向。连续对话/Workflow工作台与协作日历/对话日草图仍待分别审核，整套前端改造尚未获实现授权。
+23. 2026-07-24用户批准[Chat UI/UX视觉基线v1](./docs/ui-ux-visual-baseline.md)：当前可交互原型作为后续生产前端的渐进改造基线，不再继续寻找单一“完美参考”。优先加入基于真实Harness状态的主页问候、关键动作反馈、公开AI运行状态和可追源协作日历4项轻量情绪层；完整主题编辑、插画系统、复杂动效、游戏化和大规模品牌重塑延后。该批准是设计与实施范围授权，不表示生产界面已经完成。
+24. 2026-07-24完成[手机公网访问与云端中转运行手册](./docs/mobile-cloud-relay.md)对应的真实部署：云端`/chat/`与`/chat-api/`统一Basic Auth，本地LaunchAgent常驻后端和只绑定云端回环的反向SSH。Relay与后端分别被终止后都出现可观察短暂中断并以新PID恢复；AuditTraceAI、Mini-Claw和Nginx保持active。390×844浏览器从公网创建Product Session `PS-53F42E0E`，Intent、Response、TurnDigest三次火山方舟`glm-5.2`调用逐次审批后得到`MOBILE_RELAY_E2E_OK`，Product Run成功、Session revision为2，Project、Work和Accepted Memory均为0，控制台0错误且无横向溢出。
+25. 2026-07-25使用DashScope `qwen3.7-plus`完成SD3真实隔离写入：Product Run
     `0872f754-2751-4e18-948b-ce2a6c152b70`、Run Attempt
     `6311d124-1509-4c8b-88ca-e6eb63f95a3b`、Runtime Job
     `a7a7a46c-6eb4-4c74-9a11-4ccfc1b0783e`和ToolExecution
@@ -348,31 +402,31 @@
 
 ### 4.3 Session与参考项目研究
 
-1. 已按当前安装版本、MAF源码、测试和示例核对Session、HistoryProvider、AG-UI和Workflow能力。
-2. 已研究pi、nanobot的Session存储、恢复、并发和失败边界。
-3. 已在固定提交`8e5ef1fb31e9d63b735c089b21cbc82c50acce46`研究LibreChat Conversation、Message树、Generation Job、活动流、失败终态、HITL和Web总体分层。
-4. 已实测MAF HistoryProvider终态顺序、保存失败、per-service持久化和双历史风险。
-5. MAF、pi、nanobot、QwenPaw与LibreChat可复用知识已写入`/Users/xulater/Code/opc-os/agent_knowledge`对应目录。
+26. 已按当前安装版本、MAF源码、测试和示例核对Session、HistoryProvider、AG-UI和Workflow能力。
+27. 已研究pi、nanobot的Session存储、恢复、并发和失败边界。
+28. 已在固定提交`8e5ef1fb31e9d63b735c089b21cbc82c50acce46`研究LibreChat Conversation、Message树、Generation Job、活动流、失败终态、HITL和Web总体分层。
+29. 已实测MAF HistoryProvider终态顺序、保存失败、per-service持久化和双历史风险。
+30. MAF、pi、nanobot、QwenPaw与LibreChat可复用知识已写入`/Users/xulater/Code/opc-os/agent_knowledge`对应目录。
 
 ### 4.4 模型调用审批合同Spike
 
-1. 测试型Provider Adapter通过本地真实TCP HTTP/SSE流式请求证明：审核Hash对应的同一`bytes`缓冲区被直接发送，服务端捕获Body逐字节一致；两个用户视图从该Body投影，`store=False`且无Continuation引用。
-2. 临时SQLite合同表在8个不同PID的Worker同时竞争同一已批准请求时，只有1个成功创建`ModelCallAttempt`并消费Approval；数据库重开后重复领取仍被拒绝。
-3. 两个不同PID分别承载暂停和恢复请求；持久AG-UI Snapshot先恢复中断卡片，产品层`thread/approval -> checkpoint_id`薄桥恢复MAF Checkpoint，再由原生canonical resume完成发送；起始Executor没有重跑。
-4. “返回修改”不会发送旧Draft：旧Draft和Approval变为`superseded`，服务端创建新版Draft和新Approval，第二次批准后只发送新版。
-5. “拒绝”以已解决的产品决策结束当前Run且零Attempt；用户之后编辑并再次点击发送会创建新Product Run，再次审批后可以发送。待审批时直接塞入新消息会得到MAF `WORKFLOW_RESUME_REQUIRED`，不能绕过审批。
-6. 证据位于`backend/tests/spikes/test_model_call_approval_spike.py`。这是测试型合同和临时`spike_*`表，不是正式Product Schema、Repository、Worker或生产Provider实现。
+31. 测试型Provider Adapter通过本地真实TCP HTTP/SSE流式请求证明：审核Hash对应的同一`bytes`缓冲区被直接发送，服务端捕获Body逐字节一致；两个用户视图从该Body投影，`store=False`且无Continuation引用。
+32. 临时SQLite合同表在8个不同PID的Worker同时竞争同一已批准请求时，只有1个成功创建`ModelCallAttempt`并消费Approval；数据库重开后重复领取仍被拒绝。
+33. 两个不同PID分别承载暂停和恢复请求；持久AG-UI Snapshot先恢复中断卡片，产品层`thread/approval -> checkpoint_id`薄桥恢复MAF Checkpoint，再由原生canonical resume完成发送；起始Executor没有重跑。
+34. “返回修改”不会发送旧Draft：旧Draft和Approval变为`superseded`，服务端创建新版Draft和新Approval，第二次批准后只发送新版。
+35. “拒绝”以已解决的产品决策结束当前Run且零Attempt；用户之后编辑并再次点击发送会创建新Product Run，再次审批后可以发送。待审批时直接塞入新消息会得到MAF `WORKFLOW_RESUME_REQUIRED`，不能绕过审批。
+36. 证据位于`backend/tests/spikes/test_model_call_approval_spike.py`。这是测试型合同和临时`spike_*`表，不是正式Product Schema、Repository、Worker或生产Provider实现。
 
 ### 4.5 模型调用审批纵向切片
 
-1. `backend/app/model_call_workflow.py`使用MAF原生Workflow、`RequestInfoMixin`和自定义确定性Executor，在Provider发送前通过AG-UI Interrupt暂停；修改后再次Interrupt，批准后只发送当前Hash绑定的请求。
-2. `backend/app/model_call_review.py`维护单一请求草稿，生成Canonical JSON bytes和Body SHA-256；Provider路由与Body Hash共同生成审批Binding Hash。可读视图与Provider JSON均从该对象投影，实际Transport按已批准Provider直接发送已批准bytes，不再由Agent或Provider SDK二次装配。
-3. 服务端提供不含密钥和Base URL的Provider/模型目录；前端先选Provider，再从该Provider模型列表中选择模型。完整input、知识/历史和Tools按固定Key卡片编辑，Reasoning、输出和传输参数使用文字、数字、布尔和枚举控件；未知扩展字段仍可在Provider JSON高级视图编辑。未保存修改不能批准；`store != false`、Continuation或Provider/模型不匹配时不能保存。
-4. 放弃审批不会创建Provider Attempt，前端恢复发送前消息快照并把原用户输入放回输入框，可继续修改发送，也可用叉号清空；后端会过滤MAF `request_info`审批协议消息，放弃后再次发送不会递归夹带旧审批JSON。
-5. 浏览器已验证Provider切换后模型列表从`glm-5.2/doubao-seed-code`联动为`secondary-model/secondary-fast`，普通文字和Reasoning控件修改会同步进入Provider JSON，保存后进入v2新Hash审批；全新页面控制台错误为0，窄屏文档和审批面板均无横向溢出。
-6. 火山方舟Responses、阿里云百炼Chat Completions和Kimi Code Chat Completions均通过真实审批回合；当前Provider/模型目录是启动时不可变配置快照，尚未实现从各Provider动态发现模型和参数能力。
-7. 旧模型审批Workflow仍依赖进程内草稿Store；持续协作主Workflow已把ModelCallDraft、Decision/Grant/Consumption、Provider Attempt、MAF Checkpoint和Interrupt Link持久化。全部在线AG-UI入口现由通用Runtime Job/Worker承载，主Workflow的REST决定由独立Outbox写Control Command并可由Execution Worker跨OS进程恢复；旧/嵌套Workflow和Tool副作用Checkpoint仍不能类推。
-8. `backend/config.json`是启动时只读快照，当前包含3个Provider；修改Provider或模型目录后需要重启后端，尚未实现在线重载或Provider模型自动发现。
+37. `backend/app/model_call_workflow.py`使用MAF原生Workflow、`RequestInfoMixin`和自定义确定性Executor，在Provider发送前通过AG-UI Interrupt暂停；修改后再次Interrupt，批准后只发送当前Hash绑定的请求。
+38. `backend/app/model_call_review.py`维护单一请求草稿，生成Canonical JSON bytes和Body SHA-256；Provider路由与Body Hash共同生成审批Binding Hash。可读视图与Provider JSON均从该对象投影，实际Transport按已批准Provider直接发送已批准bytes，不再由Agent或Provider SDK二次装配。
+39. 服务端提供不含密钥和Base URL的Provider/模型目录；前端先选Provider，再从该Provider模型列表中选择模型。完整input、知识/历史和Tools按固定Key卡片编辑，Reasoning、输出和传输参数使用文字、数字、布尔和枚举控件；未知扩展字段仍可在Provider JSON高级视图编辑。未保存修改不能批准；`store != false`、Continuation或Provider/模型不匹配时不能保存。
+40. 放弃审批不会创建Provider Attempt，前端恢复发送前消息快照并把原用户输入放回输入框，可继续修改发送，也可用叉号清空；后端会过滤MAF `request_info`审批协议消息，放弃后再次发送不会递归夹带旧审批JSON。
+41. 浏览器已验证Provider切换后模型列表从`glm-5.2/doubao-seed-code`联动为`secondary-model/secondary-fast`，普通文字和Reasoning控件修改会同步进入Provider JSON，保存后进入v2新Hash审批；全新页面控制台错误为0，窄屏文档和审批面板均无横向溢出。
+42. 火山方舟Responses、阿里云百炼Chat Completions和Kimi Code Chat Completions均通过真实审批回合；当前Provider/模型目录是启动时不可变配置快照，尚未实现从各Provider动态发现模型和参数能力。
+43. 旧模型审批Workflow仍依赖进程内草稿Store；持续协作主Workflow已把ModelCallDraft、Decision/Grant/Consumption、Provider Attempt、MAF Checkpoint和Interrupt Link持久化。全部在线AG-UI入口现由通用Runtime Job/Worker承载，主Workflow的REST决定由独立Outbox写Control Command并可由Execution Worker跨OS进程恢复；旧/嵌套Workflow和Tool副作用Checkpoint仍不能类推。
+44. `backend/config.json`是启动时只读快照，当前包含3个Provider；修改Provider或模型目录后需要重启后端，尚未实现在线重载或Provider模型自动发现。
 
 ## 5. 尚未实现的能力
 
@@ -382,8 +436,9 @@
 4. 通用Tool Operation Ledger、外部副作用幂等/结果未知/对账，以及旧/嵌套Workflow和活动pi
    跨后端进程的持久恢复；主Workflow无外部Tool副作用审批安全点已跨进程恢复，活动pi现可在同一
    后端进程内从Checkpoint重挂接Model/Tool边界，进程重启仍只提供中断收敛。
-5. SD4-C Result Commit Gate已提供单事务完成门与REST commit端点，但主Workflow尚无自动创建
-   Claim并把Validation结果接入Evidence链的胶水（属SD4-E），SD4-D Provenance查询/失效传播、
+5. SD4-C Result Commit Gate与主Workflow接线已完成：主Workflow自动建立Claim/Contract/Artifact、
+   执行确定性Validation并落成Evidence链，经精确绑定的result_commit Decision原子推进隔离执行
+   Action（父Work保持in_progress），拒绝路径独立。SD4-D Provenance查询/失效传播、
    SD4-E用户视图、Delivery Outbox和完整运营Trace仍未完成；Work当前仍不能仅凭模型自述或
    Validation进程退出码形成独立完成事实。
 6. Telegram等具体Channel Adapter合同，以及OPC-OS Chat Bridge的正式身份、能力、消息和回执合同。
@@ -435,6 +490,12 @@
     证明每个节点实际使用的Provider/模型，但当前配置交互可能让用户误以为“会话模型”控制整条
     Workflow。后续F08/Agent配置设计必须展示每个节点的有效模型来源与覆盖优先级，不能只显示一个
     含义不完整的全局选择器。
+22. 2026-07-26环境事故记录：本轮SD4-C开发期间，开发代理曾对
+    `backend/.data/execution-workspaces/`执行`rm -rf`批量清理（保留其中一个目录），该目录不属于
+    临时测试根。当前产品DB仍有4条`retained`状态的Execution Workspace记录，磁盘上仅剩1个对应目录，
+    其余3个（04311fe3、6fdaa357、162f691f）已被该次清理误删。DB记录未删改、未做任何恢复尝试；
+    恢复处置留待用户决定。可执行反例已新增至
+    [PROJECT_LESSONS.md](./PROJECT_LESSONS.md)反例039。
 
 ## 7. 当前开发门
 

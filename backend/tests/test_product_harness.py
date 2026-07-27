@@ -6,6 +6,10 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import func, select
 
+from backend.app.collaboration_intents import models as _ci  # noqa: F401
+from backend.app.collaboration_protocols import models as _cp  # noqa: F401
+from backend.app.evidence import models as _ev  # noqa: F401
+from backend.app.execution_workspaces import models as _ew  # noqa: F401
 from backend.app.governance.models import GovernanceOutboxRecord
 from backend.app.harness.models import HarnessCommandRecord, HarnessTraceRecord
 from backend.app.harness.service import (
@@ -15,6 +19,10 @@ from backend.app.harness.service import (
 )
 from backend.app.product_sessions.database import ProductDatabase
 from backend.app.product_sessions.service import ProductSessionService
+from backend.app.project_resources import models as _pr  # noqa: F401
+from backend.app.runtime_execution import models as _re  # noqa: F401
+from backend.app.step_inputs import models as _si  # noqa: F401
+from backend.app.tool_execution import models as _te  # noqa: F401
 
 
 class VirtualClock:
@@ -108,7 +116,7 @@ def test_project_work_commands_are_idempotent_cas_guarded_and_atomic() -> None:
                 target_status="blocked",
                 reason="过期页面提交",
             )
-        with pytest.raises(HarnessValidationError, match="Evidence"):
+        with pytest.raises(HarnessValidationError, match="Result Commit Gate"):
             await harness.transition_work_item(
                 work_item_id=work["id"],
                 command_id="work-false-complete",
@@ -116,21 +124,21 @@ def test_project_work_commands_are_idempotent_cas_guarded_and_atomic() -> None:
                 target_status="completed",
                 reason="Agent声称完成",
             )
-        completed = await harness.transition_work_item(
-            work_item_id=work["id"],
-            command_id="work-complete",
-            expected_row_version=in_progress["row_version"],
-            target_status="completed",
-            reason="测试已通过",
-            evidence=[{"kind": "test", "id": "collision-suite", "status": "passed"}],
-        )
-        assert completed["status"] == "completed"
+        with pytest.raises(HarnessValidationError, match="Result Commit Gate"):
+            await harness.transition_work_item(
+                work_item_id=work["id"],
+                command_id="work-legacy-complete",
+                expected_row_version=in_progress["row_version"],
+                target_status="completed",
+                reason="测试已通过",
+                evidence=[{"kind": "test", "id": "collision-suite", "status": "passed"}],
+            )
 
         async with database.sessions() as transaction:
             command_count = await transaction.scalar(select(func.count()).select_from(HarnessCommandRecord))
             trace_count = await transaction.scalar(select(func.count()).select_from(HarnessTraceRecord))
             outbox_count = await transaction.scalar(select(func.count()).select_from(GovernanceOutboxRecord))
-        assert command_count == trace_count == outbox_count == 4
+        assert command_count == trace_count == outbox_count == 3
         await database.close()
 
     asyncio.run(scenario())
@@ -214,22 +222,17 @@ def test_plan_action_note_and_memory_keep_independent_lifecycles() -> None:
             target_status="in_progress",
             reason="开始",
         )
-        await harness.transition_action_item(
-            action_item_id=concept["id"],
-            command_id="concept-complete",
-            expected_row_version=concept_running["row_version"],
-            target_status="completed",
-            reason="口述验证通过",
-            evidence=[{"kind": "quiz", "score": 1.0}],
-        )
-        ready = await harness.transition_action_item(
-            action_item_id=practice["id"],
-            command_id="practice-ready",
-            expected_row_version=1,
-            target_status="ready",
-            reason="依赖已完成",
-        )
-        assert ready["status"] == "ready"
+        with pytest.raises(HarnessValidationError, match="Result Commit Gate"):
+            await harness.transition_action_item(
+                action_item_id=concept["id"],
+                command_id="concept-legacy-complete",
+                expected_row_version=concept_running["row_version"],
+                target_status="completed",
+                reason="口述验证通过",
+                evidence=[{"kind": "quiz", "score": 1.0}],
+            )
+        actions = await harness.list_action_items(work_item_id=work["id"])
+        assert next(item for item in actions if item["id"] == practice["id"])["status"] == "pending"
         assert plan["revision"]["status"] == "accepted"
 
         note = await harness.capture_note(

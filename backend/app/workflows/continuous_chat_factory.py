@@ -17,8 +17,10 @@ from ..agent_profiles import AgentProfileSnapshot
 from ..collaboration_contexts import CollaborationContextService
 from ..collaboration_intents import CollaborationIntentService
 from ..collaboration_protocols import CollaborationProtocolService
+from ..evidence.result_pipeline import ResultPipelineCoordinator
 from ..execution_dispatch.repository_context import RepositoryExecutionContextService
 from ..execution_dispatch.service import ExecutionDispatchService
+from ..execution_dispatch.validation_contracts import ValidationContractPlanner
 from ..governance.service import ExecutionGovernanceService
 from ..harness import HarnessService
 from ..model_call_review import InMemoryModelCallReviewStore
@@ -60,6 +62,8 @@ class ContinuousWorkflowComponents:
     pi_readonly_result_assembly: type[Any]
     pi_workspace_dispatch: type[Any]
     pi_workspace_result_assembly: type[Any]
+    result_claim_prepare: type[Any]
+    result_claim_decision: type[Any]
     clarification: type[Any]
     harness_commit: type[Any]
     summary_persist: type[Any]
@@ -87,6 +91,8 @@ def build_continuous_collaboration_workflow(
     repository_execution_context: RepositoryExecutionContextService,
     pi_available: bool,
     execution_dispatch: ExecutionDispatchService,
+    result_pipeline: ResultPipelineCoordinator,
+    validation_planner: ValidationContractPlanner,
     checkpoint_storage: CheckpointStorage | None = None,
 ):
     """Build the versioned graph without mutating product or runtime state."""
@@ -236,6 +242,7 @@ def build_continuous_collaboration_workflow(
         governance=governance,
         repository_execution_context=repository_execution_context,
         pi_available=pi_available,
+        validation_planner=validation_planner,
     )
     execution_decision = components.decision(
         node_id="execution_authorization",
@@ -288,6 +295,19 @@ def build_continuous_collaboration_workflow(
         run_id=run_id,
         sessions=sessions,
         dispatch=execution_dispatch,
+    )
+    result_claim_prepare = components.result_claim_prepare(
+        thread_id=thread_id,
+        run_id=run_id,
+        sessions=sessions,
+        result_pipeline=result_pipeline,
+    )
+    result_claim_decision = components.result_claim_decision(
+        thread_id=thread_id,
+        run_id=run_id,
+        sessions=sessions,
+        governance=governance,
+        result_pipeline=result_pipeline,
     )
     responder = components.semantic_agent(
         profile=profiles["response_agent"],
@@ -415,7 +435,9 @@ def build_continuous_collaboration_workflow(
         )
         .add_edge(execution_workspace_prepare, pi_workspace_dispatch)
         .add_edge(pi_workspace_dispatch, pi_workspace_result_assembly)
-        .add_edge(pi_workspace_result_assembly, summarizer)
+        .add_edge(pi_workspace_result_assembly, result_claim_prepare)
+        .add_edge(result_claim_prepare, result_claim_decision)
+        .add_edge(result_claim_decision, summarizer)
         .add_edge(pi_readonly_dispatch, pi_readonly_result_assembly)
         .add_edge(pi_readonly_result_assembly, summarizer)
         .add_edge(responder, summarizer)

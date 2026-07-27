@@ -82,23 +82,22 @@ class HarnessTransitionParticipant:
         decision_record_id: str | None,
         evidence: Sequence[Mapping[str, Any]],
     ) -> None:
-        """Validate the reserved ResultCommit projection shape in Evidence.
+        """Allow completion only through one gate-validated ResultCommit projection.
 
-        Free-form legacy Evidence passes through unchanged.  An item carrying
-        the reserved keys must be the only element with exactly those keys and
-        must survive the gate-injected chain validator; anything else is a
-        fabrication attempt and fails closed.
+        Legacy completion evidence remains readable on existing records, but
+        it is no longer an authorized write path.  Every new transition to
+        ``completed`` must carry exactly one ResultCommit/Claim reference and
+        pass the validator injected by ``ResultCommitCoordinator``.
         """
-        reserved = [
-            item
-            for item in evidence
-            if isinstance(item, Mapping) and _RESULT_COMMIT_PROJECTION_KEYS & set(item)
-        ]
-        if not reserved:
+        if target_status != "completed":
             return
-        if len(evidence) != 1 or len(reserved) != 1 or set(reserved[0]) != _RESULT_COMMIT_PROJECTION_KEYS:
+        if (
+            len(evidence) != 1
+            or not isinstance(evidence[0], Mapping)
+            or set(evidence[0]) != _RESULT_COMMIT_PROJECTION_KEYS
+        ):
             raise HarnessValidationError(
-                "ResultCommit引用投影必须是唯一Evidence元素且仅含result_commit_id/claim_id"
+                "完成状态只能由Result Commit Gate写入唯一result_commit_id/claim_id引用投影"
             )
         if expected_row_version is None:
             raise HarnessValidationError("ResultCommit引用投影必须携带expected_row_version")
@@ -112,7 +111,7 @@ class HarnessTransitionParticipant:
             subject_row_version,
             target_status,
             decision_record_id,
-            reserved[0],
+            evidence[0],
         )
 
     async def transition_work_item(
@@ -143,8 +142,10 @@ class HarnessTransitionParticipant:
             raise HarnessValidationError(f"WorkItem不能从{value.status}变为{target_status}")
         if value.status == "completed" and target_status == "in_progress" and not reason:
             raise HarnessValidationError("重新打开WorkItem必须提供原因")
-        if target_status == "completed" and not evidence and not (completion_waiver_reason or "").strip():
-            raise HarnessValidationError("完成WorkItem必须提供Evidence或明确豁免原因")
+        if target_status == "completed" and (completion_waiver_reason or "").strip():
+            raise HarnessValidationError(
+                "旧completion_waiver_reason不能继续写入完成事实，请使用Result Commit Gate"
+            )
         await self._check_completion_projection(
             transaction,
             subject_kind="work_item",

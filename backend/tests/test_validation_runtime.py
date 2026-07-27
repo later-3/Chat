@@ -123,11 +123,18 @@ def test_compiler_produces_exact_hash_bound_argv_and_rejects_schema_escape(tmp_p
         params={"targets": ["backend/tests/test_app.py::test_health"], "extra_args": ["-x", "-q"]},
         workspace=workspace,
     )
+    # Workspace没有受支持pytest配置：显式空配置+固定rootdir/confcutdir，拒绝祖先爬取。
     assert compiled.expanded_argv == (
         "-m",
         "pytest",
         "-p",
         "no:cacheprovider",
+        "-c",
+        "/dev/null",
+        "--rootdir",
+        ".",
+        "--confcutdir",
+        ".",
         "backend/tests/test_app.py::test_health",
         "-x",
         "-q",
@@ -140,10 +147,73 @@ def test_compiler_produces_exact_hash_bound_argv_and_rejects_schema_escape(tmp_p
         {"targets": ["../backend/config.json"]},
         {"targets": ["backend/tests"], "extra_args": ["--collect-only"]},
         {"targets": "backend/tests"},
+        {"targets": ["backend/tests"], "config": "pytest.ini"},
     )
     for params in invalid:
         with pytest.raises(EvidenceValidationError):
             compiler.compile(definition, params=params, workspace=workspace)
+
+
+def test_compiler_pins_workspace_pytest_config_into_argv_and_fingerprint(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    config = workspace / "pytest.ini"
+    config.write_text("[pytest]\naddopts = -q\n", encoding="utf-8")
+    definition = default_validation_capabilities(platform="darwin")[0]
+    compiler = ValidationCompiler(project_python=_project_python())
+    compiled = compiler.compile(
+        definition,
+        params={"targets": ["tests"]},
+        workspace=workspace,
+    )
+    assert compiled.expanded_argv[:6] == ("-m", "pytest", "-p", "no:cacheprovider", "-c", "pytest.ini")
+    assert "--rootdir" in compiled.expanded_argv
+    fingerprint = ValidationCompiler._environment_fingerprint(
+        workspace,
+        executable_hash=compiled.resolved_executable_hash,
+    )
+    assert fingerprint == compiled.environment_fingerprint
+    config.unlink()
+    assert (
+        ValidationCompiler._environment_fingerprint(
+            workspace,
+            executable_hash=compiled.resolved_executable_hash,
+        )
+        != fingerprint
+    )
+
+
+def test_runner_ignores_ancestor_pyproject_when_workspace_has_no_config(tmp_path: Path) -> None:
+    """父目录存在pyproject配置时，无配置的Workspace仍只运行自身tests。"""
+
+    async def scenario() -> None:
+        parent = tmp_path / "parent"
+        workspace = parent / "managed-workspaces" / "ws-target"
+        workspace.mkdir(parents=True)
+        # 祖先配置一旦被继承就必然失败：引用不存在的插件与目标外testpaths。
+        (parent / "pyproject.toml").write_text(
+            "[tool.pytest.ini_options]\n"
+            "addopts = '-p no_such_plugin_for_sd4c'\n"
+            "testpaths = ['../../Chat/backend/tests']\n",
+            encoding="utf-8",
+        )
+        tests_dir = workspace / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_workspace_only.py").write_text(
+            "def test_workspace_only():\n    assert True\n",
+            encoding="utf-8",
+        )
+        definition = default_validation_capabilities(platform="darwin")[0]
+        compiled = ValidationCompiler(project_python=_project_python()).compile(
+            definition,
+            params={"targets": ["tests"], "extra_args": ["-q"]},
+            workspace=workspace,
+        )
+        result = await ValidationProcessRunner().run(compiled, workspace=workspace)
+        assert result.status == "passed", result.stdout_tail + result.stderr_tail
+        assert "no_such_plugin_for_sd4c" not in result.stderr_tail
+
+    _run(scenario)
 
 
 def test_compiler_never_falls_back_to_system_python(tmp_path: Path) -> None:
@@ -158,9 +228,9 @@ def test_runner_fails_before_spawn_when_environment_or_sandbox_drift(tmp_path: P
         workspace = tmp_path / "workspace"
         workspace.mkdir()
         lock = workspace / "pyproject.toml"
-        lock.write_text("v1", encoding="utf-8")
+        lock.write_text("[project]\nname = 'fixture-a'\n", encoding="utf-8")
         compiled = _raw_compiled(workspace, "-c", "print('ok')")
-        lock.write_text("v2", encoding="utf-8")
+        lock.write_text("[project]\nname = 'fixture-b'\n", encoding="utf-8")
         runner = ValidationProcessRunner(sandboxes=SandboxRegistry((PassthroughSandbox(),)))
         with pytest.raises(ValidationCapabilityUnavailable):
             await runner.run(compiled, workspace=workspace)
@@ -173,6 +243,24 @@ def test_runner_fails_before_spawn_when_environment_or_sandbox_drift(tmp_path: P
             )
 
     _run(scenario)
+
+
+def test_compiler_fails_closed_on_malformed_workspace_config(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "pyproject.toml").write_text("[project\nname = 'broken'\n", encoding="utf-8")
+    definition = default_validation_capabilities(platform="darwin")[0]
+    compiler = ValidationCompiler(project_python=_project_python())
+    with pytest.raises(EvidenceValidationError, match="无法解析"):
+        compiler.compile(definition, params={"targets": ["tests"]}, workspace=workspace)
+    (workspace / "pyproject.toml").unlink()
+    (workspace / "tox.ini").write_text("[pytest\naddopts", encoding="utf-8")
+    with pytest.raises(EvidenceValidationError, match="无法解析"):
+        compiler.compile(definition, params={"targets": ["tests"]}, workspace=workspace)
+    (workspace / "tox.ini").unlink()
+    (workspace / "setup.cfg").write_text("[tool:pytest\naddopts", encoding="utf-8")
+    with pytest.raises(EvidenceValidationError, match="无法解析"):
+        compiler.compile(definition, params={"targets": ["tests"]}, workspace=workspace)
 
 
 def test_runner_bounds_output_redacts_secrets_and_classifies_process_terminal_states(

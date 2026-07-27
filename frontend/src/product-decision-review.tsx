@@ -11,6 +11,7 @@ const ACTION_LABELS: Record<string, string> = {
   commit: "提交并继续",
   skip: "本轮跳过",
   cancel: "停止当前Run",
+  reject: "拒绝结果",
 };
 
 const KEY_LABELS: Record<string, string> = {
@@ -487,6 +488,17 @@ export function ProductDecisionReview({
                     修改内容
                   </button>
                 ))}
+              {card.allowed_actions.includes("reject") && (
+                <button
+                  className="decision-cancel"
+                  disabled={busy}
+                  onClick={() => onDecision("reject")}
+                  type="button"
+                >
+                  <X size={15} />
+                  {ACTION_LABELS.reject}
+                </button>
+              )}
               {acceptAction && (
                 <button
                   className="decision-primary"

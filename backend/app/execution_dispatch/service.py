@@ -47,7 +47,7 @@ from .repository_context import RepositoryExecutionContextService
 logger = logging.getLogger(__name__)
 
 PI_WORKFLOW_ID = "continuous-collaboration"
-PI_WORKFLOW_VERSION = "1.7.0"
+PI_WORKFLOW_VERSION = "1.8.0"
 PI_NODE_ID = "pi_readonly_dispatch"
 PI_TOOLS = ("read", "grep", "find", "ls")
 PI_WORKSPACE_PREPARE_NODE_ID = "execution_workspace_prepare"

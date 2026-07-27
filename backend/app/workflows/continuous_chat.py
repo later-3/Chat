@@ -22,13 +22,22 @@ from ..agent_profiles import AgentProfileSnapshot
 from ..collaboration_contexts import CollaborationContextService
 from ..collaboration_intents import CollaborationIntentService
 from ..collaboration_protocols import CollaborationProtocolService
+from ..evidence.result_pipeline import ResultPipelineCoordinator
 from ..execution_dispatch.drafts import (
+    VALIDATION_CONTRACT_UNSET,
     adopted_repository_source,
     compile_execution_draft_v2,
     compile_run_spec_v2,
+    execution_routing_text,
+    recommends_pi_workspace_edit,
 )
 from ..execution_dispatch.repository_context import RepositoryExecutionContextService
+from ..execution_dispatch.result_gate import (
+    ResultClaimDecisionExecutor,
+    ResultClaimPrepareExecutor,
+)
 from ..execution_dispatch.service import ExecutionDispatchService
+from ..execution_dispatch.validation_contracts import ValidationContractPlanner
 from ..execution_dispatch.workflow import (
     ExecutionRouteExecutor,
     ExecutionWorkspacePrepareExecutor,
@@ -118,7 +127,7 @@ from .continuous_chat_factory import (
 logger = logging.getLogger(__name__)
 
 WORKFLOW_ID = "continuous-collaboration"
-WORKFLOW_VERSION = "1.7.0"
+WORKFLOW_VERSION = "1.8.0"
 
 
 class TraceMixin:
@@ -1956,41 +1965,77 @@ class ExecutionDraftCompilerExecutor(Executor, TraceMixin):
         governance: ExecutionGovernanceService,
         repository_execution_context: RepositoryExecutionContextService,
         pi_available: bool,
+        validation_planner: ValidationContractPlanner,
     ) -> None:
         super().__init__(id="execution_draft_compiler")
+        self._thread_id = thread_id
         self._run_id = run_id
         self._governance = governance
         self._repository_execution_context = repository_execution_context
         self._pi_available = pi_available
+        self._validation_planner = validation_planner
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
     @handler(input=CollaborationState)
     async def compile(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
-        repository_fence = None
-        source = adopted_repository_source(state.context_items)
-        if state.selected_project_id and source is not None:
-            repository_fence = await self._repository_execution_context.resolve_fence(
-                project_id=state.selected_project_id,
-                binding_id=source["binding_id"],
-                expected_semantic_hash=source["semantic_hash"],
+        try:
+            repository_fence = None
+            source = adopted_repository_source(state.context_items)
+            if state.selected_project_id and source is not None:
+                repository_fence = await self._repository_execution_context.resolve_fence(
+                    project_id=state.selected_project_id,
+                    binding_id=source["binding_id"],
+                    expected_semantic_hash=source["semantic_hash"],
+                )
+            # P0-1：pi隔离编辑的Validation Contract在授权前冻结（精确Plan
+            # revision、subject Action id/revision与compiled argv/hash/capability），
+            # RunSpec批准后不再读取“当前Plan”；无完成主体时显式记录null。
+            frozen_contract = VALIDATION_CONTRACT_UNSET
+            if repository_fence is not None and recommends_pi_workspace_edit(
+                prompt=execution_routing_text(state),
+                selected_project_id=state.selected_project_id,
+                repository_fence=repository_fence,
+                pi_available=self._pi_available,
+            ):
+                frozen_contract = await self._validation_planner.freeze(
+                    context_items=state.context_items,
+                    fence=repository_fence,
+                )
+            payload, brief = compile_execution_draft_v2(
+                state=state,
+                thread_id=self._thread_id,
+                run_id=self._run_id(),
+                workflow_id=WORKFLOW_ID,
+                workflow_version=WORKFLOW_VERSION,
+                repository_fence=repository_fence,
+                pi_available=self._pi_available,
+                validation_contract=frozen_contract,
             )
-        payload, brief = compile_execution_draft_v2(
-            state=state,
-            thread_id=self._thread_id,
-            run_id=self._run_id(),
-            workflow_id=WORKFLOW_ID,
-            workflow_version=WORKFLOW_VERSION,
-            repository_fence=repository_fence,
-            pi_available=self._pi_available,
-        )
-        draft, revision = await self._governance.create_execution_draft(
-            session_id=self._thread_id,
-            run_id=self._run_id(),
-            workflow_definition_id=WORKFLOW_ID,
-            workflow_version=WORKFLOW_VERSION,
-            payload=payload,
-            execution_brief=brief,
-        )
+            draft, revision = await self._governance.create_execution_draft(
+                session_id=self._thread_id,
+                run_id=self._run_id(),
+                workflow_definition_id=WORKFLOW_ID,
+                workflow_version=WORKFLOW_VERSION,
+                payload=payload,
+                execution_brief=brief,
+            )
+        except Exception as error:
+            # P1-5：已知domain code原样保留；未知异常统一稳定错误码与脱敏
+            # 消息，不把路径/SQL/内部异常写进Run失败记录。
+            code = getattr(error, "code", None)
+            if not isinstance(code, str) or not code:
+                code = "EXECUTION_DRAFT_COMPILE_FAILED"
+            message = (
+                str(error)
+                if code != "EXECUTION_DRAFT_COMPILE_FAILED"
+                else "执行草稿编译失败，请修正输入后重试；若持续出现请联系管理员。"
+            )
+            await self._sessions.fail_active_run(
+                self._thread_id,
+                error_code=code,
+                message=message,
+            )
+            raise
         next_state = replace(state, execution_draft_revision_id=revision.id)
         await self._trace_content(
             executor_id=self.id,
@@ -2696,6 +2741,8 @@ def create_continuous_collaboration_workflow(
     repository_execution_context: RepositoryExecutionContextService,
     pi_available: bool,
     execution_dispatch: ExecutionDispatchService,
+    result_pipeline: ResultPipelineCoordinator,
+    validation_planner: ValidationContractPlanner,
     checkpoint_storage: CheckpointStorage | None = None,
 ):
     """Compatibility entrypoint delegating graph wiring to its composition module."""
@@ -2724,6 +2771,8 @@ def create_continuous_collaboration_workflow(
             pi_readonly_result_assembly=PiReadonlyResultAssemblyExecutor,
             pi_workspace_dispatch=PiWorkspaceDispatchExecutor,
             pi_workspace_result_assembly=PiWorkspaceResultAssemblyExecutor,
+            result_claim_prepare=ResultClaimPrepareExecutor,
+            result_claim_decision=ResultClaimDecisionExecutor,
             clarification=ClarificationExecutor,
             harness_commit=HarnessCandidateCommitExecutor,
             summary_persist=TurnSummaryPersistExecutor,
@@ -2747,5 +2796,7 @@ def create_continuous_collaboration_workflow(
         repository_execution_context=repository_execution_context,
         pi_available=pi_available,
         execution_dispatch=execution_dispatch,
+        result_pipeline=result_pipeline,
+        validation_planner=validation_planner,
         checkpoint_storage=checkpoint_storage,
     )

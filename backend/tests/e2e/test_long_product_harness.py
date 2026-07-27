@@ -23,6 +23,7 @@ from backend.app.harness.models import (
     MemoryRevisionRecord,
     NoteRevisionRecord,
 )
+from backend.app.harness.participant import HarnessTransitionParticipant
 from backend.app.harness.service import (
     HarnessConflict,
     HarnessService,
@@ -47,6 +48,19 @@ class ScenarioClock:
 
     def at_day(self, day: int, *, hour: int = 9) -> None:
         self.value = self.origin + timedelta(days=day - 1, hours=hour - 9)
+
+
+async def _accept_prevalidated_result_reference(*args: Any, **kwargs: Any) -> None:
+    """Stand in for ResultCommitCoordinator in Harness-only longevity tests.
+
+    Exact chain validation and atomic subject migration are covered by
+    ``test_result_commit.py``.  These long scenarios start at the participant
+    boundary after that validation has succeeded.
+    """
+
+
+def _gate_projection(key: str) -> list[dict[str, str]]:
+    return [{"result_commit_id": f"result-{key}", "claim_id": f"claim-{key}"}]
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,7 +157,15 @@ async def open_runtime(
     database = ProductDatabase(database_url)
     sessions = ProductSessionService(database)
     await sessions.initialize()
-    return database, sessions, HarnessService(database, clock=clock)
+    harness = HarnessService(database, clock=clock)
+    harness.transition_participant = HarnessTransitionParticipant(
+        scope_id=harness.scope_id,
+        principal_id=harness.principal_id,
+        clock=clock,
+        command_recorder=harness.command_recorder,
+        completion_reference_validator=_accept_prevalidated_result_reference,
+    )
+    return database, sessions, harness
 
 
 DEV_PROMPTS = [
@@ -388,7 +410,7 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
             )
         elif index == 9:
             assert collision is not None
-            with pytest.raises(HarnessValidationError, match="Evidence"):
+            with pytest.raises(HarnessValidationError, match="Result Commit Gate"):
                 await harness.transition_work_item(
                     work_item_id=collision["id"],
                     command_id="collision-false-complete",
@@ -500,7 +522,7 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
                 expected_row_version=gesture["row_version"],
                 target_status="completed",
                 reason="触控测试通过",
-                evidence=[{"kind": "test", "id": "gesture-suite", "status": "passed"}],
+                evidence=_gate_projection("gesture-suite"),
             )
         elif index == 25:
             assert regression is not None
@@ -519,7 +541,7 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
                 expected_row_version=regression["row_version"],
                 target_status="completed",
                 reason="回归测试通过",
-                evidence=[{"kind": "test", "id": "game-regression", "status": "passed"}],
+                evidence=_gate_projection("game-regression"),
             )
         elif index == 27:
             assert note is not None
@@ -562,7 +584,7 @@ async def test_e2e_long_dev_21d_preserves_work_truth_across_32_turns_and_restart
                 expected_row_version=collision["row_version"],
                 target_status="completed",
                 reason="碰撞测试通过",
-                evidence=[{"kind": "test", "id": "collision-v2", "status": "passed"}],
+                evidence=_gate_projection("collision-v2"),
             )
         elif index == 31:
             assert project is not None
@@ -810,7 +832,7 @@ async def test_e2e_long_learning_28d_keeps_40_turns_but_assembles_bounded_contex
                 expected_row_version=units[2]["row_version"],
                 target_status="completed",
                 reason="事件循环练习通过",
-                evidence=[{"kind": "exercise", "id": "asyncio-loop", "status": "passed"}],
+                evidence=_gate_projection("asyncio-loop"),
             )
         elif index == 31:
             units[3] = await harness.transition_work_item(
@@ -843,7 +865,7 @@ async def test_e2e_long_learning_28d_keeps_40_turns_but_assembles_bounded_contex
                 expected_row_version=units[3]["row_version"],
                 target_status="completed",
                 reason="综合练习通过",
-                evidence=[{"kind": "test", "id": "capstone-v2", "status": "passed"}],
+                evidence=_gate_projection("capstone-v2"),
             )
         elif index == 36:
             tracks = await harness.learning_tracks()
@@ -1167,7 +1189,7 @@ async def test_e2e_three_day_learning_project_switches_preserve_focus_and_work_t
         expected_row_version=practice["row_version"],
         target_status="completed",
         reason="最小例子已运行通过",
-        evidence=[{"kind": "exercise", "id": "fastapi-depends-example", "status": "passed"}],
+        evidence=_gate_projection("fastapi-depends-example"),
     )
     coverage_unit = await harness.create_work_item(
         command_id="mixed-learning-coverage-unit",

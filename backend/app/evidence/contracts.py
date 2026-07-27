@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -99,6 +99,18 @@ class ValidationOutcomeUnknown(EvidenceConflict):
     code = "VALIDATION_OUTCOME_UNKNOWN"
 
 
+class ResultEvidencePrerequisiteMissing(EvidenceError):
+    """A succeeded workspace run lacks the approved completion prerequisites.
+
+    P1-4: missing Artifact Store, Validation Runtime, frozen contract or
+    retained workspace must fail the Run instead of silently skipping the
+    result gate.
+    """
+
+    code = "RESULT_EVIDENCE_PREREQUISITE_MISSING"
+    http_status = 409
+
+
 class ValidationContractMismatch(EvidenceConflict):
     code = "VALIDATION_CONTRACT_MISMATCH"
 
@@ -123,14 +135,27 @@ class ValidationTimeout(EvidenceError):
     http_status = 504
 
 
+class ValidationOutcomeUnknownError(EvidenceError):
+    """The validation child provably started but its outcome cannot be confirmed.
+
+    Raised by the process runner only after ``create_subprocess_exec``
+    succeeded; the pipeline reports ``outcome_unknown`` (never ``error`` and
+    never a silent retry) for this boundary (B/§9.4).
+    """
+
+    code = "VALIDATION_OUTCOME_UNKNOWN"
+    http_status = 409
+
+
 @dataclass(frozen=True)
 class ClaimGateRecheck:
-    """Proof that the SD4-C Result Commit Gate re-checked a Claim.
+    """Transaction-bound receipt describing the SD4-C gate re-check result.
 
-    Only ``ResultCommitCoordinator`` can produce this value, and only inside
-    the commit transaction.  The recording layer refuses accepted/waived
-    commits without it, so ``pre_commit_validity_check_passed`` can never be
-    set by mechanically flipping a boolean (E02, 反例033).
+    ``ResultCommitCoordinator`` arms the caller-owned transaction with an
+    opaque nonce and embeds it here.  The recording layer consumes that nonce
+    exactly once, then still treats every data field as untrusted and re-queries
+    the current Requirement resolutions, Artifact binding and target state
+    before setting ``pre_commit_validity_check_passed`` (E02, 反例033).
     """
 
     claim_id: str
@@ -140,8 +165,10 @@ class ClaimGateRecheck:
     mandatory_requirement_ids: tuple[str, ...]
     adoption_ids: tuple[str, ...]
     waiver_ids: tuple[str, ...]
+    artifact_record_id: str | None
     artifact_revision_id: str | None
     artifact_record_version: int | None
+    _gate_nonce: object | None = field(default=None, repr=False, compare=False)
 
 
 def canonical_json(value: Any) -> str:

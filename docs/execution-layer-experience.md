@@ -44,6 +44,18 @@
 | E06 测试要攻击语义 | 旧测试把随机UUID和占位成功当作正确行为 | 硬不变量 |
 | E07 交付声明要暴露边界 | 阶段A的记录层容易被描述成完整提交能力 | 硬不变量 |
 
+### 2.1 本次 SD4-C 剩余实现的选卡结果
+
+| 卡片 | 本次命中原因 | 约束等级 |
+|---|---|---|
+| E01 Hash覆盖业务后果 | Claim、Decision和Result Commit必须精确绑定当前版本与结局 | 硬不变量 |
+| E02 未交付能力必须关闭 | 主Workflow胶水不能用占位Validation或模型自述形成完成事实 | 硬不变量 |
+| E03 泛型引用必须解析归属 | Validation/Evidence/Artifact引用必须保持存在性与Scope | 硬不变量 |
+| E04 转换来源必须是权威状态 | 主Workflow只能从权威Work/Action状态创建Claim | 硬不变量 |
+| E06 测试要攻击语义 | 自动接线必须覆盖拒绝、陈旧版本、缺Evidence和事务回滚 | 硬不变量 |
+| E07 交付声明要暴露边界 | SD4-C完成不能外推SD4-D传播、SD4-E UI或提交推送 | 硬不变量 |
+| E08 Tool Loop异常先诊断 | pi/Kimi K3会话曾被误判为“只输出thinking、没有Tool Call”，JSONL证明已有Tool Result | 硬不变量 |
+
 ## 3. 经验卡
 
 ### E01：Hash必须绑定所有会改变批准后果的字段
@@ -350,6 +362,56 @@ SD4-A目标是记录层和Schema基础，但仓库中已经出现可直接写acc
 #### 来源与信心
 
 - 来源：Session阶段保证规则、产品Evidence规则、SD4阶段划分。
+- 信心：高。
+
+### E08：Tool Loop异常必须先最小复现和分层定位
+
+- 风险标签：`pi`、`tool-loop`、`provider-adapter`、`execution-layer`
+- 适用条件：执行Agent持续输出thinking或分析，但没有调用Tool、修改文件或明确结束。
+- 要保护的目标：恢复既定执行层能力，避免协调者误判模型行为并直接接管实现。
+- 约束等级：硬不变量。
+
+#### 真实反例
+
+SD4-C修复曾连续启动pi/Kimi K3和pi/Qwen会话。终端持续显示大量thinking token，但没有先检查
+Session事件种类和Tool Result，就把3次现象都判为“只会长篇分析”，随后由协调者自行修改生产代码。
+事后JSONL证明第1个K3会话已有58个Tool Result，第2个K3会话已有10个Tool Result，Qwen会话也有
+19个Tool Result；问题是观察方式和提前中断，不是pi或K3没有工作能力。
+
+#### 正例结果
+
+1. 在无项目AGENTS和大Prompt的临时目录，用全新Session只注册1个只读Tool，要求调用1次并返回
+   固定标记；先证明Tool Loop本身是否健康。
+2. 检查pi真实版本、CLI帮助、Tool Allowlist、Session JSONL中的事件类型与停止原因，以及Provider
+   适配的thinking/text/tool-call解析；只读取安全元数据，不输出认证和完整Provider Payload。
+3. 同一最小Prompt分别切换Kimi K3思考模式，并用已知可工作的模型做对照。对照只定位故障层，
+   正式实现仍回到用户指定的pi/Kimi K3。
+4. 恢复后使用全新Session、有限上下文、有界任务、明确Tool和完成条件；执行层负责修改与定向测试，
+   协调者只做操作审查、Diff审查和独立验证。
+
+#### 反例测试
+
+- 只给`ls`时，Agent必须生成1次Tool Call，Session中出现对应开始/结束事件并返回固定标记。
+- 若K3高思考失败而关闭思考通过，必须记录为模式兼容问题，不能归因到Tool不可用。
+- 若K3与对照模型都失败，检查Tool注册/CLI调用/pi核心；若只有K3失败，检查Kimi Provider适配。
+- 正式任务开始前再次运行仓库内只读Tool冒烟，确认AGENTS上下文不会重新触发同一故障。
+
+#### 自检问题
+
+- 当前看到的是可见thinking增量、最终文本，还是pi已经退出？
+- Tool Schema是否真的送到模型，Tool名与Allowlist是否一致？
+- Session事件中是否有`tool_call`、解析错误、长度上限、取消或停止原因？
+- 是否复用了被超长Prompt污染的旧Session？
+- 协调者是否在没有可复现故障证据时越权替执行层编码？
+
+#### 允许的自主空间
+
+可以选择CLI JSONL导出、Session日志或安装包源码作为诊断证据；不要求修改pi安装。若问题只需调整
+会话、思考模式或调用参数，应优先使用配置修复，避免在Chat任务中改动全局工具。
+
+#### 来源与信心
+
+- 来源：本次SD4-C三次TUI误判与对应Session JSONL；新的交互式K3 `read` Tool冒烟。
 - 信心：高。
 
 ## 4. 本轮 Kimi StepInput 的硬验收条件

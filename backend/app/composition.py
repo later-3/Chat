@@ -28,8 +28,10 @@ from .evidence import (
     ValidationProcessRunner,
     default_validation_capabilities,
 )
+from .evidence.result_pipeline import ResultPipelineCoordinator
 from .execution_dispatch import RepositoryExecutionContextService
 from .execution_dispatch.service import ExecutionDispatchService
+from .execution_dispatch.validation_contracts import ValidationContractPlanner
 from .execution_workspaces import ExecutionWorkspaceService
 from .governance import ExecutionGovernanceService, GovernanceOutboxWorker
 from .harness import HarnessService
@@ -99,6 +101,8 @@ class ApplicationComponents:
     artifact_coordinator: ArtifactCoordinator | None
     artifact_reconciler: ArtifactStoreReconciler | None
     result_commit: ResultCommitCoordinator
+    result_pipeline: ResultPipelineCoordinator
+    validation_contract_planner: ValidationContractPlanner
     validation_capabilities: ValidationCapabilityCatalog
     validation_compiler: ValidationCompiler | None
     validation_runner: ValidationProcessRunner
@@ -220,6 +224,28 @@ def build_components(
         product_sessions.database,
         workspaces=execution_workspaces,
     )
+    # SD4-C：主Workflow结果证据链。Store/Compiler/冻结合同缺失时管线让
+    # Product Run稳定失败（不是静默完成回答）；它复用ResultCommitCoordinator的门事务。
+    result_pipeline = ResultPipelineCoordinator(
+        product_sessions.database,
+        scope_id="local-user",
+        principal_id="local-user",
+        artifact_coordinator=artifact_coordinator,
+        validation_capabilities=validation_capabilities,
+        validation_compiler=validation_compiler,
+        validation_runner=validation_runner,
+        result_commit=result_commit,
+        workspaces=execution_workspaces,
+        tool_operations=tool_operations,
+        runtime=runtime_execution,
+    )
+    validation_contract_planner = ValidationContractPlanner(
+        product_sessions.database,
+        scope_id="local-user",
+        capabilities=validation_capabilities,
+        compiler=validation_compiler,
+        repository_execution_context=repository_execution_context,
+    )
     tool_configurations = ToolConfigurationService(
         product_sessions.database,
         model_catalog,
@@ -265,6 +291,8 @@ def build_components(
         artifact_coordinator=artifact_coordinator,
         artifact_reconciler=artifact_reconciler,
         result_commit=result_commit,
+        result_pipeline=result_pipeline,
+        validation_contract_planner=validation_contract_planner,
         validation_capabilities=validation_capabilities,
         validation_compiler=validation_compiler,
         validation_runner=validation_runner,
@@ -304,6 +332,7 @@ def expose_components(app: FastAPI, components: ApplicationComponents) -> None:
     app.state.artifact_coordinator = components.artifact_coordinator
     app.state.artifact_reconciler = components.artifact_reconciler
     app.state.result_commit = components.result_commit
+    app.state.result_pipeline = components.result_pipeline
     app.state.validation_capabilities = components.validation_capabilities
     app.state.validation_compiler = components.validation_compiler
     app.state.validation_runner = components.validation_runner
@@ -468,6 +497,8 @@ def _register_model_workflows(
             repository_execution_context=components.repository_execution_context,
             pi_available=components.settings.pi_runtime.available and components.pi_runtime is not None,
             execution_dispatch=components.execution_dispatch,
+            result_pipeline=components.result_pipeline,
+            validation_planner=components.validation_contract_planner,
             checkpoint_storage=continuous_checkpoint_storage(product_run_id),
         )
 

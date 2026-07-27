@@ -362,7 +362,7 @@ def _request(session_id: str, run_id: str, prompt: str) -> dict[str, Any]:
         ],
         "tools": [],
         "context": [],
-        "forwardedProps": {"workflow": {"id": "continuous-collaboration", "version": "1.7.0"}},
+        "forwardedProps": {"workflow": {"id": "continuous-collaboration", "version": "1.8.0"}},
     }
 
 

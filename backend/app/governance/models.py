@@ -71,7 +71,16 @@ class TurnSummaryRecord(Base):
 
 class DecisionSubjectRecord(Base):
     __tablename__ = "decision_subjects"
-    __table_args__ = (UniqueConstraint("subject_kind", "resource_id", "resource_revision", "subject_hash"),)
+    __table_args__ = (
+        UniqueConstraint("subject_kind", "resource_id", "resource_revision", "subject_hash"),
+        Index(
+            "uq_decision_subjects_identity",
+            "subject_kind",
+            "resource_id",
+            "resource_revision",
+            unique=True,
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     subject_kind: Mapped[str] = mapped_column(String(80), nullable=False)

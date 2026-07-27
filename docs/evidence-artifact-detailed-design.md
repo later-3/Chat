@@ -2,8 +2,13 @@
 
 > 状态：**已批准，实施中**。用户已批准本文设计；SD4-A记录层和SD4-B Artifact
 > Store/Validation Runtime已于2026-07-26实现，SD4-C Result Commit Gate（单事务
-> 完成门、Harness引用链校验、REST commit端点）已于2026-07-26实现；主Workflow
-> 自动创建Claim的胶水划入SD4-E，SD4-D至E仍按本文边界继续交付。
+> 完成门、Harness引用链校验、REST commit端点）核心已于2026-07-26实现并完成安全加固；
+> 本设计§14列入SD4-C的主Workflow自动创建Claim及Validation/Evidence接线已实现
+> （v1.8.0/39节点、ResultPipelineCoordinator、冻结合同复检、Decision精确绑定、
+> 定向与攻击测试通过），并于2026-07-26通过verify-fast/verify全量门
+> （后端461项、覆盖率80.08%、21次迁移升降无漂移、前端76项与生产构建、
+> Playwright 19通过3跳过），SD4-C阶段验收完成。
+> SD4-D至E仍按本文边界继续交付。
 >
 > 适用范围：F02 独立 Evidence、Artifact、Provenance 生命周期，以及 SD4 首个
 > “受管 Execution Workspace 内 Diff/验证/完成声明”纵向切片。

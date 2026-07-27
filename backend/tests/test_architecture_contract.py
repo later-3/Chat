@@ -51,7 +51,7 @@ from backend.app.workflows import (
 # commit route is the only user-reachable Evidence mutation (§13.1).
 OPENAPI_SHA256 = "9b1325d523e25928a1cc35f84721cb5418c473514ec5b18f5efc604a296fe617"
 PRODUCT_SCHEMA_SHA256 = "4603ff02cad8c259f8ec11f309e4ebc88970b24b823057a0440d4ac94e5adda2"
-WORKFLOW_CATALOG_SHA256 = "9e286acd3544d3b023f5b73c6f1bda7851d22ed38e0bab7e3beecb2d87984f65"
+WORKFLOW_CATALOG_SHA256 = "2c6ae803e2669254c352b57ef238655b92a92d47b2e190a15e5513b609e39c6e"
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 
 

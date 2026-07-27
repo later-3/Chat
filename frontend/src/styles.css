@@ -8949,3 +8949,38 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
+
+.execution-draft-frozen-contract {
+  border: 1px solid rgba(77, 134, 99, 0.28);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 6px;
+  margin-top: 10px;
+  max-width: 100%;
+  padding: 10px 12px;
+}
+.execution-draft-frozen-contract > header {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+.execution-draft-frozen-contract > p {
+  margin: 0;
+}
+.execution-draft-frozen-contract > pre {
+  background: rgba(22, 31, 27, 0.5);
+  border-radius: 6px;
+  font-size: 11px;
+  margin: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 8px;
+  white-space: pre;
+}
+.execution-draft-frozen-contract--empty {
+  font-size: 12px;
+  margin: 10px 0 0;
+  opacity: 0.85;
+}

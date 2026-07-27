@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import re
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +45,23 @@ class WorkspaceOwnership:
     run_attempt_id: str
     runtime_job_id: str
     tool_execution_id: str
+
+
+def _redact_git_stderr(text: str, cwd: Path) -> str:
+    """Redact private absolute paths and secret-shaped tokens from git stderr.
+
+    Used only for server-side diagnostics; the domain message itself stays a
+    safe classification.  Redaction always runs on the *full* text before any
+    length cap, so secrets beyond 300 characters are still stripped (第六轮1)。
+    """
+
+    redacted = text.replace(str(cwd), "<workspace>")
+    redacted = re.sub(r"(?<![\w.])(?:/[A-Za-z0-9._+~\-%]+){2,}", "<path>", redacted)
+    redacted = re.sub(
+        r"(?i)(api[_-]?key|token|authorization|password)\s*[:=]\s*\S+", r"\1=[redacted]", redacted
+    )
+    redacted = re.sub(r"sk-[A-Za-z0-9_-]{8,}", "[redacted]", redacted)
+    return redacted
 
 
 class ExecutionWorkspaceService:
@@ -393,6 +411,41 @@ class ExecutionWorkspaceService:
             )
         return resolved
 
+    async def diff_text(self, workspace_id: str, *, max_bytes: int = 512 * 1024) -> bytes:
+        """Return the unified diff of a retained workspace against its base revision.
+
+        SD4-C turns these bytes into the content-addressed diff_patch Artifact;
+        the diff never leaves the server except as stored Artifact content.
+        """
+
+        root = await self.private_path(workspace_id)
+        async with self.database.sessions() as transaction:
+            value = await transaction.get(ExecutionWorkspaceRecord, workspace_id)
+            if value is None:
+                raise ExecutionWorkspaceError(
+                    "Execution Workspace不存在",
+                    code="EXECUTION_WORKSPACE_NOT_FOUND",
+                )
+            base_revision = value.base_revision
+        # 第四轮复审P1-6：显式禁用仓库配置的external diff与textconv——绑定仓库
+        # 可能通过.gitattributes让服务端在结果组装时执行仓库配置的命令；
+        # "--"终止选项解析，base revision不被当作路径。
+        raw = await self._run_git_bytes(
+            root,
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--binary",
+            base_revision,
+            "--",
+        )
+        if len(raw) > max_bytes:
+            raise ExecutionWorkspaceError(
+                "Execution Workspace Diff超过大小上限",
+                code="EXECUTION_WORKSPACE_DIFF_TOO_LARGE",
+            )
+        return raw
+
     async def _transition(
         self,
         workspace_id: str,
@@ -469,9 +522,16 @@ class ExecutionWorkspaceService:
                 code="EXECUTION_WORKSPACE_GIT_UNAVAILABLE",
             ) from error
         if process.returncode != 0:
-            safe = " ".join(stderr.decode("utf-8", errors="replace").split())[:300]
+            # 第六轮复审P1-3：原始stderr不回显进领域消息（可能携带带空格/
+            # 引号的本机绝对路径）；只保留安全分类，原文脱敏后只进服务端日志。
+            logger.warning(
+                "execution_workspace_git_failed workspace_cwd=%s exit=%s stderr=%s",
+                "<workspace>",
+                process.returncode,
+                _redact_git_stderr(" ".join(stderr.decode("utf-8", errors="replace").split()), cwd)[:300],
+            )
             raise ExecutionWorkspaceError(
-                f"Git Workspace操作失败: {safe or 'unknown'}",
+                f"Git Workspace操作失败（退出码{process.returncode}）",
                 code="EXECUTION_WORKSPACE_GIT_FAILED",
             )
         return stdout

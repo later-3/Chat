@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from backend.app.collaboration_intents import models as _ci  # noqa: F401
 from backend.app.collaboration_protocols import models as _cp  # noqa: F401
@@ -32,6 +32,7 @@ from backend.app.evidence.contracts import (
     ArtifactApplicabilityStale,
     ArtifactHashMismatch,
     ArtifactRevisionSuperseded,
+    ClaimGateRecheck,
     CompletionClaimAlreadyResolved,
     CompletionRequirementUnsatisfied,
     EvidenceConflict,
@@ -39,17 +40,25 @@ from backend.app.evidence.contracts import (
     EvidenceNotFound,
     EvidenceValidationError,
     ResultCommitDecisionInvalid,
+    WaiverBlockedByFailedRequirement,
 )
 from backend.app.evidence.models import (
     ArtifactBlobRecord,
+    ClaimEvidenceAdoptionRecord,
     CompletionClaimRequirementRecord,
+    EvidenceAssessmentRecord,
     EvidenceObservationRecord,
     ProvenanceEdgeRecord,
+    RequirementWaiverRecord,
     ResultCommitRecord,
     SourceInvalidationRecord,
 )
 from backend.app.evidence.result_commit import ResultCommitCoordinator
-from backend.app.evidence.service import EvidenceRepository
+from backend.app.evidence.service import (
+    EvidenceRepository,
+    _issue_result_commit_gate_nonce,
+    result_commit_decision_view,
+)
 from backend.app.execution_workspaces import models as _ew  # noqa: F401
 from backend.app.governance import models as _gov  # noqa: F401
 from backend.app.governance.models import (
@@ -58,10 +67,16 @@ from backend.app.governance.models import (
     DecisionSubjectRecord,
     PolicyEvaluationRecord,
 )
+from backend.app.governance.service import decision_subject_content_hash
 from backend.app.harness import models as _har  # noqa: F401
 from backend.app.harness.commands import HarnessCommandRecorder
 from backend.app.harness.contracts import HarnessConflict, HarnessValidationError
-from backend.app.harness.models import ActionItemRecord, WorkItemRecord
+from backend.app.harness.models import (
+    ActionItemRecord,
+    TaskPlanRecord,
+    TaskPlanRevisionRecord,
+    WorkItemRecord,
+)
 from backend.app.harness.participant import HarnessTransitionParticipant
 from backend.app.harness.service import HarnessService
 from backend.app.main import create_app
@@ -163,6 +178,24 @@ async def _make_project_work_action(harness: HarnessService) -> tuple[str, str, 
         assignee_kind="agent",
         status="ready",
     )
+    # 第四轮复审P0-1：Gate要求父Work在Action完成时处于in_progress；
+    # 夹具统一先启动Work（ready -> in_progress，row_version 1 -> 2）。
+    recorder = HarnessCommandRecorder(scope_id="local-user", principal_id="local-user", clock=utc_now)
+    participant = HarnessTransitionParticipant(
+        scope_id="local-user",
+        principal_id="local-user",
+        clock=utc_now,
+        command_recorder=recorder,
+    )
+    async with harness.database.sessions.begin() as txn:
+        await participant.transition_work_item(
+            txn,
+            work_item_id=work["id"],
+            command_id=_new_id(),
+            request_hash=_hash64(),
+            target_status="in_progress",
+            reason="开始执行",
+        )
     return project["id"], work["id"], action["id"]
 
 
@@ -172,28 +205,39 @@ async def _make_decision_record(
     *,
     effect: str = "allow",
 ) -> DecisionRecord:
-    point = DecisionPointDefinitionRecord(
-        id=_new_id(),
-        key=f"result-commit-test-{_new_id()}",
-        version=1,
-        category="evidence",
-        label="t",
-        description="d",
-        subject_kind="work_item",
-        default_mode="require_approval",
-        allowed_human_actions_json=["approve", "reject"],
-        applicability_schema_json={},
-        response_schema_json={},
-        active=True,
-        definition_hash=_hash64(),
-    )
+    async with database.sessions() as txn:
+        point = await txn.scalar(
+            select(DecisionPointDefinitionRecord).where(
+                DecisionPointDefinitionRecord.key == "result_commit",
+                DecisionPointDefinitionRecord.version == 1,
+            )
+        )
+    if point is None:
+        point = DecisionPointDefinitionRecord(
+            id=_new_id(),
+            key="result_commit",
+            version=1,
+            category="evidence",
+            label="t",
+            description="d",
+            subject_kind="result_candidate",
+            default_mode="require_approval",
+            allowed_human_actions_json=["approve", "reject"],
+            applicability_schema_json={},
+            response_schema_json={},
+            active=True,
+            definition_hash=_hash64(),
+        )
+        async with database.sessions.begin() as txn:
+            txn.add(point)
     subject = DecisionSubjectRecord(
         id=_new_id(),
-        subject_kind="work_item",
+        subject_kind="result_candidate",
         resource_id=_new_id(),
         resource_revision="1",
         subject_hash=_hash64(),
         session_id=session_id,
+        decision_view_json={},
     )
     evaluation = PolicyEvaluationRecord(
         id=_new_id(),
@@ -220,18 +264,253 @@ async def _make_decision_record(
         decision_code="approve",
         authorization_effect=effect,
         reason="test",
-        bound_subject_hash=_hash64(),
+        bound_subject_hash=subject.subject_hash,
         policy_rule_refs_json=[],
         input_hash=_hash64(),
         record_hash=_hash64(),
     )
     async with database.sessions.begin() as txn:
-        txn.add(point)
-    async with database.sessions.begin() as txn:
         txn.add(subject)
     async with database.sessions.begin() as txn:
         txn.add(evaluation)
     async with database.sessions.begin() as txn:
+        txn.add(record)
+    return record
+
+
+async def _make_adoption_decision(
+    txn,
+    *,
+    base_decision_record_id: str,
+    claim_id: str,
+    requirement_id: str,
+    assessment_id: str,
+) -> DecisionRecord:
+    """Create an adoption Decision bound at creation time to the exact triple."""
+
+    claim = await txn.get(_ev.CompletionClaimRecord, claim_id)
+    original = await txn.get(DecisionRecord, base_decision_record_id)
+    assert claim is not None and original is not None
+    original_subject = await txn.get(DecisionSubjectRecord, original.subject_id)
+    assert original_subject is not None
+    point = await txn.scalar(
+        select(DecisionPointDefinitionRecord).where(
+            DecisionPointDefinitionRecord.key == "result_commit",
+            DecisionPointDefinitionRecord.version == 1,
+        )
+    )
+    assert point is not None
+    view = {
+        "claim_id": claim.id,
+        "claim_hash": claim.claim_hash,
+        "claim_row_version": claim.row_version,
+        "action_outcomes": {
+            "adopt": {
+                "commit_status": "accepted",
+                "artifact_disposition": "accepted",
+                "adoptions": {requirement_id: assessment_id},
+            }
+        },
+    }
+    subject = DecisionSubjectRecord(
+        id=_new_id(),
+        subject_kind="result_candidate",
+        resource_id=claim.id,
+        resource_revision=str(claim.row_version),
+        subject_hash=decision_subject_content_hash(view),
+        session_id=original_subject.session_id,
+        decision_view_json=view,
+    )
+    evaluation = PolicyEvaluationRecord(
+        id=_new_id(),
+        subject_id=subject.id,
+        decision_point_definition_id=point.id,
+        principal_id="local-user",
+        applicability_status="applicable",
+        facts_json={},
+        facts_hash=_hash64(),
+        matched_rule_refs_json=[],
+        floor_action="allow",
+        preference_action="allow",
+        final_action="allow",
+        result_status="allowed",
+        reason_codes_json=[],
+        resolver_version="v1",
+    )
+    record = DecisionRecord(
+        id=_new_id(),
+        policy_evaluation_id=evaluation.id,
+        subject_id=subject.id,
+        source=original.source,
+        actor_principal_id=original.actor_principal_id,
+        decision_code="adopt",
+        authorization_effect="allow",
+        reason="绑定确定性Evidence采用",
+        bound_subject_hash=subject.subject_hash,
+        policy_rule_refs_json=[],
+        input_hash=_hash64(),
+        record_hash=_hash64(),
+    )
+    txn.add(subject)
+    txn.add(evaluation)
+    await txn.flush()
+    txn.add(record)
+    await txn.flush()
+    return record
+
+
+async def _current_adoption_map(txn, claim_id: str) -> dict[str, str]:
+    """Map each adoptable mandatory Requirement to its current supports Assessment.
+
+    Mirrors the pipeline's adoption_map: waived or unsupported requirements are
+    excluded so the frozen decision view matches what the gate may adopt.
+    """
+
+    requirements = list(
+        (
+            await txn.scalars(
+                select(CompletionClaimRequirementRecord).where(
+                    CompletionClaimRequirementRecord.completion_claim_id == claim_id,
+                    CompletionClaimRequirementRecord.mandatory.is_(True),
+                )
+            )
+        ).all()
+    )
+    mapping: dict[str, str] = {}
+    for requirement in requirements:
+        waived = await txn.scalar(
+            select(RequirementWaiverRecord.id)
+            .where(RequirementWaiverRecord.requirement_id == requirement.id)
+            .limit(1)
+        )
+        if waived is not None:
+            continue
+        current = await txn.scalar(
+            select(EvidenceAssessmentRecord)
+            .where(
+                EvidenceAssessmentRecord.requirement_id == requirement.id,
+            )
+            .order_by(EvidenceAssessmentRecord.assessment_sequence.desc())
+            .limit(1)
+        )
+        if current is not None and current.verdict == "supports":
+            mapping[requirement.id] = current.id
+    return mapping
+
+
+async def _bind_decision_record(
+    database: ProductDatabase,
+    *,
+    decision_record_id: str,
+    claim_id: str,
+    commit_status: str,
+    artifact_disposition: str,
+    reject_artifact_disposition: str | None = None,
+) -> DecisionRecord:
+    """Create a fresh Decision bound at creation time to the exact outcome.
+
+    Append-only fixture mirroring the production contract: the subject view
+    freezes the Claim identity plus the action_outcomes map when the Decision
+    is created; nothing rewrites an existing subject or decision (治理§6.3)。
+    The returned record is the one the gate will accept; the input decision
+    keeps its earlier roles (e.g. Adoption authorization) untouched.
+    ``reject_artifact_disposition`` overrides the frozen reject disposition for
+    superseded-revision reject-none scenarios.
+    """
+    async with database.sessions.begin() as txn:
+        claim = await txn.get(_ev.CompletionClaimRecord, claim_id)
+        original = await txn.get(DecisionRecord, decision_record_id)
+        assert claim is not None and original is not None
+        original_subject = await txn.get(DecisionSubjectRecord, original.subject_id)
+        assert original_subject is not None
+        point = await txn.scalar(
+            select(DecisionPointDefinitionRecord).where(
+                DecisionPointDefinitionRecord.key == "result_commit",
+                DecisionPointDefinitionRecord.version == 1,
+            )
+        )
+        assert point is not None
+        has_artifact = claim.artifact_revision_id is not None
+        view = result_commit_decision_view(
+            claim_id=claim.id,
+            claim_hash=claim.claim_hash,
+            claim_row_version=claim.row_version,
+            action_outcomes={
+                "accept": {
+                    "commit_status": "accepted",
+                    "artifact_disposition": "accepted" if has_artifact else "none",
+                    "adoptions": await _current_adoption_map(txn, claim.id),
+                },
+                "waive": {
+                    "commit_status": "waived",
+                    "artifact_disposition": "accepted" if has_artifact else "none",
+                    "adoptions": await _current_adoption_map(txn, claim.id),
+                },
+                "reject": {
+                    "commit_status": "rejected",
+                    "artifact_disposition": (
+                        reject_artifact_disposition
+                        if reject_artifact_disposition is not None
+                        else ("rejected" if has_artifact else "none")
+                    ),
+                    "adoptions": {},
+                },
+            },
+        )
+        decision_code = {"accepted": "accept", "waived": "waive"}.get(commit_status, "reject")
+        subject_hash = decision_subject_content_hash(view)
+        subject = await txn.scalar(
+            select(DecisionSubjectRecord).where(
+                DecisionSubjectRecord.subject_kind == "result_candidate",
+                DecisionSubjectRecord.resource_id == claim.id,
+                DecisionSubjectRecord.resource_revision == str(claim.row_version),
+                DecisionSubjectRecord.subject_hash == subject_hash,
+            )
+        )
+        if subject is None:
+            subject = DecisionSubjectRecord(
+                id=_new_id(),
+                subject_kind="result_candidate",
+                resource_id=claim.id,
+                resource_revision=str(claim.row_version),
+                subject_hash=subject_hash,
+                session_id=original_subject.session_id,
+                decision_view_json=view,
+            )
+            txn.add(subject)
+            await txn.flush()
+        evaluation = PolicyEvaluationRecord(
+            id=_new_id(),
+            subject_id=subject.id,
+            decision_point_definition_id=point.id,
+            principal_id="local-user",
+            applicability_status="applicable",
+            facts_json={},
+            facts_hash=_hash64(),
+            matched_rule_refs_json=[],
+            floor_action="allow",
+            preference_action="allow",
+            final_action="allow",
+            result_status="allowed",
+            reason_codes_json=[],
+            resolver_version="v1",
+        )
+        record = DecisionRecord(
+            id=_new_id(),
+            policy_evaluation_id=evaluation.id,
+            subject_id=subject.id,
+            source=original.source,
+            actor_principal_id=original.actor_principal_id,
+            decision_code=decision_code,
+            authorization_effect=original.authorization_effect,
+            reason=original.reason,
+            bound_subject_hash=subject.subject_hash,
+            policy_rule_refs_json=[],
+            input_hash=_hash64(),
+            record_hash=_hash64(),
+        )
+        txn.add(evaluation)
+        await txn.flush()
         txn.add(record)
     return record
 
@@ -424,6 +703,45 @@ async def _make_claim(
     """Create a candidate Claim against an in_progress Action; versions are 2."""
 
     await _start_action(txn, action_id)
+    action = await txn.get(ActionItemRecord, action_id)
+    assert action is not None
+    work = await txn.get(WorkItemRecord, action.work_item_id)
+    assert work is not None
+    plan = TaskPlanRecord(
+        id=_new_id(),
+        scope_id="local-user",
+        project_id=work.project_id,
+        work_item_id=work.id,
+        status="accepted",
+        row_version=1,
+        created_by="local-user",
+    )
+    txn.add(plan)
+    await txn.flush()
+    revision = TaskPlanRevisionRecord(
+        id=_new_id(),
+        task_plan_id=plan.id,
+        revision=1,
+        summary="test plan",
+        validation_contract_json={},
+        status="accepted",
+        created_by="local-user",
+    )
+    txn.add(revision)
+    await txn.flush()
+    # 与生产一致：父Work的current_plan_revision必须引用Claim合同来源的
+    # accepted Plan revision（第五轮P0-2 Gate复检）。
+    plan.current_revision_id = revision.id
+    plan.row_version += 1
+    work.current_plan_revision_id = revision.id
+    contract = await repo.create_validation_contract(
+        txn,
+        plan_revision_id=revision.id,
+        contract_hash=_hash64(),
+        schema_version="validation-contract-v1",
+        rules_json=[{"kind": kind} for kind in requirement_kinds],
+        command_id=_new_id(),
+    )
     requirements = [
         {
             "requirement_kind": kind,
@@ -445,6 +763,7 @@ async def _make_claim(
         expected_artifact_record_version=expected_artifact_record_version,
         repository_snapshot_id=repository_snapshot_id,
         applicability_policy=applicability_policy,
+        validation_contract_id=contract.id,
         requirements=requirements,
         command_id=_new_id(),
     )
@@ -486,6 +805,9 @@ async def _start_work(txn, work_id: str) -> None:
         clock=utc_now,
         command_recorder=recorder,
     )
+    work = await txn.get(WorkItemRecord, work_id)
+    if work is None or work.status == "in_progress":
+        return
     await participant.transition_work_item(
         txn,
         work_item_id=work_id,
@@ -509,6 +831,8 @@ async def _make_work_claim(
 
     must_match_current_target is only legal on work_completed Claims: §4.6
     forbids it on action_result_accepted, so applicability tests live here.
+    The shared fixture may or may not have started the Work; _start_work is
+    idempotent and guarantees in_progress (row_version 2) either way.
     """
 
     await _start_work(txn, work_id)
@@ -555,10 +879,15 @@ async def _satisfy_requirement(
     subject_kind: str = "action_item",
     subject_id: str,
     run_id: str,
-    decision_record_id: str,
+    decision_record_id: str | None = None,
     kind: str = "validation_result",
 ) -> str:
-    """Create valid Observation + current supports Assessment + Adoption."""
+    """Create valid Observation + current supports Assessment.
+
+    A（二次审核）：Adoption不再由本夹具预创建；Result Commit Gate在事务内按
+    result_commit Decision冻结的Adoption映射创建。decision_record_id保留仅为
+    兼容旧调用点。
+    """
 
     payload = (
         {
@@ -589,22 +918,13 @@ async def _satisfy_requirement(
         product_run_id=run_id,
         command_id=_new_id(),
     )
-    assessment = await repo.create_assessment(
+    await repo.create_assessment(
         txn,
         observation_id=observation.id,
         requirement_id=requirement_id,
         verdict="supports",
         assessor_kind="validator",
         assessor_run_id=run_id,
-        command_id=_new_id(),
-    )
-    requirement = await repo.get_requirement(txn, requirement_id)
-    await repo.create_adoption(
-        txn,
-        claim_id=requirement.completion_claim_id,
-        requirement_id=requirement_id,
-        assessment_id=assessment.id,
-        decision_record_id=decision_record_id,
         command_id=_new_id(),
     )
     return observation.id
@@ -636,7 +956,17 @@ async def _commit(
     artifact_disposition: str,
     decision_record_id: str,
     command_id: str | None = None,
+    bind_decision: bool = True,
 ) -> dict:
+    if bind_decision:
+        bound = await _bind_decision_record(
+            database,
+            decision_record_id=decision_record_id,
+            claim_id=claim_id,
+            commit_status=commit_status,
+            artifact_disposition=artifact_disposition,
+        )
+        decision_record_id = bound.id
     async with database.sessions() as txn:
         claim = await repo.get_claim(txn, claim_id)
         claim_hash = claim.claim_hash
@@ -766,9 +1096,9 @@ class TestAcceptedCommit:
                         )
                     ).all()
                 )
-            assert claim.decision_record_id == decision.id
+            assert claim.decision_record_id == result["claim"]["decision_record_id"]
             assert len(commits) == 1
-            assert commits[0].decision_record_id == decision.id
+            assert commits[0].decision_record_id == result["claim"]["decision_record_id"]
             # subject 迁移与投影 Evidence（D12）：只携带 ResultCommit/Claim 引用
             assert action.status == "completed"
             assert action.row_version == 3
@@ -776,7 +1106,7 @@ class TestAcceptedCommit:
                 {"result_commit_id": result["result_commit_id"], "claim_id": claim_id}
             ]
             # 父 Work 不因隔离执行 Action 完成而提前完成（§4.6）
-            assert work.status == "ready"
+            assert work.status == "in_progress"
             assert len(edges) == 1
             assert edges[0].relation == "attributed_to"
             assert edges[0].target_kind == "action_item"
@@ -1189,7 +1519,7 @@ class TestDecisionAndForge:
                     reason="伪造完成",
                     evidence=forged,
                 )
-            with pytest.raises(HarnessValidationError, match="唯一Evidence元素"):
+            with pytest.raises(HarnessValidationError, match="唯一result_commit_id/claim_id"):
                 await harness.transition_action_item(
                     action_item_id=action_id,
                     command_id=_new_id(),
@@ -1198,7 +1528,7 @@ class TestDecisionAndForge:
                     reason="伪造完成",
                     evidence=[{**forged[0], "note": "extra"}],
                 )
-            with pytest.raises(HarnessValidationError, match="唯一Evidence元素"):
+            with pytest.raises(HarnessValidationError, match="唯一result_commit_id/claim_id"):
                 await harness.transition_action_item(
                     action_item_id=action_id,
                     command_id=_new_id(),
@@ -1407,11 +1737,18 @@ class TestResultCommitRest:
                         decision_record_id=decision.id,
                     )
                     claim = await repo.get_claim(txn, claim_id)
+                bound = await _bind_decision_record(
+                    database,
+                    decision_record_id=decision.id,
+                    claim_id=claim_id,
+                    commit_status="accepted",
+                    artifact_disposition="none",
+                )
                 return {
                     "claim_id": claim_id,
                     "claim_hash": claim.claim_hash,
                     "row_version": claim.row_version,
-                    "decision_record_id": decision.id,
+                    "decision_record_id": bound.id,
                 }
             finally:
                 await database.close()
@@ -1542,7 +1879,7 @@ class TestResultCommitRest:
                     product_run_id=runs["run"],
                     command_id=_new_id(),
                 )
-            with pytest.raises(CompletionRequirementUnsatisfied, match="缺少Adoption或Waiver"):
+            with pytest.raises(CompletionRequirementUnsatisfied, match="supports Assessment"):
                 await _commit(
                     coordinator,
                     repo,
@@ -1650,6 +1987,24 @@ class TestEvidenceRecheck:
                     run_id=runs["run"],
                     decision_record_id=decision.id,
                 )
+                current_supports = await repo.get_current_assessment(txn, requirement_ids[0])
+                assert current_supports is not None
+            bound = await _bind_decision_record(
+                database,
+                decision_record_id=decision.id,
+                claim_id=claim_id,
+                commit_status="accepted",
+                artifact_disposition="none",
+            )
+            async with database.sessions.begin() as txn:
+                await repo.create_adoption(
+                    txn,
+                    claim_id=claim_id,
+                    requirement_id=requirement_ids[0],
+                    assessment_id=current_supports.id,
+                    decision_record_id=bound.id,
+                    command_id=_new_id(),
+                )
                 # 重新验证产生新 Observation + 新 refutes Assessment 取代旧结论
                 observation = await repo.create_observation(
                     txn,
@@ -1680,7 +2035,9 @@ class TestEvidenceRecheck:
                     assessor_run_id=runs["run"],
                     command_id=_new_id(),
                 )
-            with pytest.raises(EvidenceConflict, match="已被更新结论取代"):
+            # 冻结映射在重验后不再包含该Requirement（当前结论已refutes），
+            # 既有Adoption与映射不一致，Gate fail closed且不沿用旧批准。
+            with pytest.raises(EvidenceConflict, match="Adoption"):
                 await _commit(
                     coordinator,
                     repo,
@@ -1688,7 +2045,8 @@ class TestEvidenceRecheck:
                     claim_id=claim_id,
                     commit_status="accepted",
                     artifact_disposition="none",
-                    decision_record_id=decision.id,
+                    decision_record_id=bound.id,
+                    bind_decision=False,
                 )
             await _assert_nothing_committed(database, repo, claim_id=claim_id, action_id=action_id)
 
@@ -2148,6 +2506,7 @@ class TestSubjectConcurrency:
                     run_id=runs["run"],
                     decision_record_id=decision.id,
                 )
+                claim_a_row = await repo.get_claim(txn, claim_a)
                 # 第二个 Claim 基于同一 subject 版本 2（需要不同 Requirement 集合
                 # 使 claim_hash 不同；subject 仍是 in_progress）
                 claim_b = await repo.create_claim(
@@ -2159,6 +2518,7 @@ class TestSubjectConcurrency:
                     expected_subject_version=2,
                     target_state="completed",
                     applicability_policy="record_only",
+                    validation_contract_id=claim_a_row.validation_contract_id,
                     requirements=[
                         {
                             "requirement_kind": "human_confirmation",
@@ -2180,12 +2540,19 @@ class TestSubjectConcurrency:
             )
             async with database.sessions() as txn:
                 claim_b_row = await repo.get_claim(txn, claim_b.id)
+            bound_b = await _bind_decision_record(
+                database,
+                decision_record_id=decision.id,
+                claim_id=claim_b.id,
+                commit_status="accepted",
+                artifact_disposition="none",
+            )
             with pytest.raises(EvidenceConflict, match="subject版本已变化"):
                 await coordinator.commit_result(
                     claim_id=claim_b.id,
                     claim_hash=claim_b_row.claim_hash,
                     expected_claim_row_version=claim_b_row.row_version,
-                    decision_record_id=decision.id,
+                    decision_record_id=bound_b.id,
                     commit_status="accepted",
                     artifact_disposition="none",
                     command_id=_new_id(),
@@ -2217,11 +2584,18 @@ class TestSubjectConcurrency:
             async with database.sessions() as txn:
                 claim = await repo.get_claim(txn, claim_id)
                 claim_hash, row_version = claim.claim_hash, claim.row_version
+            bound = await _bind_decision_record(
+                database,
+                decision_record_id=decision.id,
+                claim_id=claim_id,
+                commit_status="accepted",
+                artifact_disposition="none",
+            )
             first = await coordinator.commit_result(
                 claim_id=claim_id,
                 claim_hash=claim_hash,
                 expected_claim_row_version=row_version,
-                decision_record_id=decision.id,
+                decision_record_id=bound.id,
                 commit_status="accepted",
                 artifact_disposition="none",
                 command_id=command_id,
@@ -2230,7 +2604,7 @@ class TestSubjectConcurrency:
                 claim_id=claim_id,
                 claim_hash=claim_hash,
                 expected_claim_row_version=row_version,
-                decision_record_id=decision.id,
+                decision_record_id=bound.id,
                 commit_status="accepted",
                 artifact_disposition="none",
                 command_id=command_id,
@@ -2302,7 +2676,694 @@ class TestRejectedPath:
             assert action.row_version == 2
             assert artifact_row.status == "rejected"
             assert claim.status == "rejected"
-            assert claim.decision_record_id == decision.id
+            assert claim.decision_record_id == result["claim"]["decision_record_id"]
+
+        _run_scenario(scenario)
+
+
+class TestSecurityRegression:
+    """Attack-shaped regressions for the SD4-C completion boundary."""
+
+    def test_decision_must_bind_exact_claim_revision_and_outcome(self):
+        async def scenario():
+            database, sessions, harness, repo, coordinator, _ = await _runtime()
+            session = await sessions.create_session()
+            decision = await _make_decision_record(database, session["id"])
+            runs = await _make_run_chain(database)
+            _, _, action_id = await _make_project_work_action(harness)
+            async with database.sessions.begin() as txn:
+                claim_id, requirement_ids = await _make_claim(repo, txn, action_id=action_id)
+                await _satisfy_requirement(
+                    repo,
+                    txn,
+                    requirement_id=requirement_ids[0],
+                    subject_id=action_id,
+                    run_id=runs["run"],
+                    decision_record_id=decision.id,
+                )
+            bound = await _bind_decision_record(
+                database,
+                decision_record_id=decision.id,
+                claim_id=claim_id,
+                commit_status="accepted",
+                artifact_disposition="none",
+            )
+            # 创建时绑定accepted的Decision不能用于rejected结局（decision_code
+            # 选中的action_outcomes映射与请求不一致，fail closed）。
+            with pytest.raises(ResultCommitDecisionInvalid, match="精确绑定"):
+                await _commit(
+                    coordinator,
+                    repo,
+                    database,
+                    claim_id=claim_id,
+                    commit_status="rejected",
+                    artifact_disposition="none",
+                    decision_record_id=bound.id,
+                    bind_decision=False,
+                )
+            async with database.sessions.begin() as txn:
+                persisted = await txn.get(DecisionRecord, bound.id)
+                assert persisted is not None
+                subject = await txn.get(DecisionSubjectRecord, persisted.subject_id)
+                assert subject is not None
+                tampered = {**subject.decision_view_json, "claim_hash": _hash64()}
+                subject.decision_view_json = tampered
+                subject.subject_hash = decision_subject_content_hash(tampered)
+                persisted.bound_subject_hash = subject.subject_hash
+            # 即使攻击者同步重写subject_hash与bound_subject_hash，view中的
+            # Claim身份与当前Claim不一致仍会被拒绝（不改变历史可检测）。
+            with pytest.raises(ResultCommitDecisionInvalid, match="精确绑定"):
+                await _commit(
+                    coordinator,
+                    repo,
+                    database,
+                    claim_id=claim_id,
+                    commit_status="accepted",
+                    artifact_disposition="none",
+                    decision_record_id=bound.id,
+                    bind_decision=False,
+                )
+            # 直接篡改action_outcomes映射同样被拒绝。
+            async with database.sessions.begin() as txn:
+                persisted = await txn.get(DecisionRecord, bound.id)
+                assert persisted is not None
+                subject = await txn.get(DecisionSubjectRecord, persisted.subject_id)
+                assert subject is not None
+                flipped = {
+                    **subject.decision_view_json,
+                    "action_outcomes": {
+                        "approve": {"commit_status": "rejected", "artifact_disposition": "none"}
+                    },
+                }
+                subject.decision_view_json = flipped
+                subject.subject_hash = decision_subject_content_hash(flipped)
+                persisted.bound_subject_hash = subject.subject_hash
+            with pytest.raises(ResultCommitDecisionInvalid, match="精确绑定"):
+                await _commit(
+                    coordinator,
+                    repo,
+                    database,
+                    claim_id=claim_id,
+                    commit_status="accepted",
+                    artifact_disposition="none",
+                    decision_record_id=bound.id,
+                    bind_decision=False,
+                )
+            await _assert_nothing_committed(database, repo, claim_id=claim_id, action_id=action_id)
+
+        _run_scenario(scenario)
+
+    def test_creation_bound_decision_stays_immutable_for_accept_and_reject(self):
+        """accept/reject Decision从创建起精确绑定；提交不改写任何治理事实。"""
+
+        async def scenario():
+            database, sessions, harness, repo, coordinator, _ = await _runtime()
+            session = await sessions.create_session()
+            runs = await _make_run_chain(database)
+
+            async def bound_state(record_id: str) -> tuple:
+                async with database.sessions() as txn:
+                    record = await txn.get(DecisionRecord, record_id)
+                    assert record is not None
+                    subject = await txn.get(DecisionSubjectRecord, record.subject_id)
+                    assert subject is not None
+                    return (
+                        dict(subject.decision_view_json),
+                        subject.subject_hash,
+                        record.bound_subject_hash,
+                        record.input_hash,
+                        record.record_hash,
+                        record.decision_code,
+                        record.authorization_effect,
+                    )
+
+            # accept路径：一条真实用户Decision，创建即绑定accepted映射。
+            decision = await _make_decision_record(database, session["id"])
+            _, work_id, action_id = await _make_project_work_action(harness)
+            async with database.sessions.begin() as txn:
+                claim_id, requirement_ids = await _make_claim(repo, txn, action_id=action_id)
+                await _satisfy_requirement(
+                    repo,
+                    txn,
+                    requirement_id=requirement_ids[0],
+                    subject_id=action_id,
+                    run_id=runs["run"],
+                    decision_record_id=decision.id,
+                )
+            accepted_decision = await _bind_decision_record(
+                database,
+                decision_record_id=decision.id,
+                claim_id=claim_id,
+                commit_status="accepted",
+                artifact_disposition="none",
+            )
+            before = await bound_state(accepted_decision.id)
+            accepted_outcome = before[0]["action_outcomes"]["accept"]
+            assert accepted_outcome["commit_status"] == "accepted"
+            assert accepted_outcome["artifact_disposition"] == "none"
+            assert set(accepted_outcome["adoptions"]) == set(requirement_ids)
+            result = await _commit(
+                coordinator,
+                repo,
+                database,
+                claim_id=claim_id,
+                commit_status="accepted",
+                artifact_disposition="none",
+                decision_record_id=accepted_decision.id,
+                bind_decision=False,
+            )
+            assert result["commit_status"] == "accepted"
+            assert await bound_state(accepted_decision.id) == before
+
+            # reject路径：rejected映射在Decision创建时冻结，独立路径不迁移subject。
+            reject_base = await _make_decision_record(database, session["id"])
+            _, second_work_id, second_action_id = await _make_project_work_action(harness)
+            async with database.sessions.begin() as txn:
+                claim_b_id, claim_b_requirements = await _make_claim(repo, txn, action_id=second_action_id)
+                await _satisfy_requirement(
+                    repo,
+                    txn,
+                    requirement_id=claim_b_requirements[0],
+                    subject_id=second_action_id,
+                    run_id=runs["run"],
+                    decision_record_id=reject_base.id,
+                )
+            rejected_decision = await _bind_decision_record(
+                database,
+                decision_record_id=reject_base.id,
+                claim_id=claim_b_id,
+                commit_status="rejected",
+                artifact_disposition="none",
+            )
+            before_reject = await bound_state(rejected_decision.id)
+            rejected_outcome = before_reject[0]["action_outcomes"]["reject"]
+            assert rejected_outcome == {
+                "commit_status": "rejected",
+                "artifact_disposition": "none",
+                "adoptions": {},
+            }
+            rejected = await _commit(
+                coordinator,
+                repo,
+                database,
+                claim_id=claim_b_id,
+                commit_status="rejected",
+                artifact_disposition="none",
+                decision_record_id=rejected_decision.id,
+                bind_decision=False,
+            )
+            assert rejected["commit_status"] == "rejected"
+            assert await bound_state(rejected_decision.id) == before_reject
+            async with database.sessions() as txn:
+                second_action = await txn.get(ActionItemRecord, second_action_id)
+                work = await txn.get(WorkItemRecord, work_id)
+                second_work = await txn.get(WorkItemRecord, second_work_id)
+            assert second_action is not None and second_action.status == "in_progress"
+            assert work is not None and work.status == "in_progress"
+            assert second_work is not None and second_work.status == "in_progress"
+
+            # 交叉结局篡改：accept绑定的Decision不能提交rejected，反之亦然。
+            _, _, third_action_id = await _make_project_work_action(harness)
+            async with database.sessions.begin() as txn:
+                claim_c_id, _ = await _make_claim(repo, txn, action_id=third_action_id)
+            cross = await _bind_decision_record(
+                database,
+                decision_record_id=reject_base.id,
+                claim_id=claim_c_id,
+                commit_status="rejected",
+                artifact_disposition="none",
+            )
+            with pytest.raises(ResultCommitDecisionInvalid, match="精确绑定"):
+                await _commit(
+                    coordinator,
+                    repo,
+                    database,
+                    claim_id=claim_c_id,
+                    commit_status="accepted",
+                    artifact_disposition="none",
+                    decision_record_id=cross.id,
+                    bind_decision=False,
+                )
+            await _assert_nothing_committed(database, repo, claim_id=claim_c_id, action_id=third_action_id)
+
+        _run_scenario(scenario)
+
+    def test_decision_view_tampering_after_creation_fails_hash_recheck(self):
+        """P0-3：Decision创建后改写decision_view_json（不动Hash）必然被复算拒绝。"""
+
+        async def scenario():
+            database, sessions, harness, repo, coordinator, _ = await _runtime()
+            session = await sessions.create_session()
+            decision = await _make_decision_record(database, session["id"])
+            runs = await _make_run_chain(database)
+            _, _, action_id = await _make_project_work_action(harness)
+            async with database.sessions.begin() as txn:
+                claim_id, requirement_ids = await _make_claim(repo, txn, action_id=action_id)
+                await _satisfy_requirement(
+                    repo,
+                    txn,
+                    requirement_id=requirement_ids[0],
+                    subject_id=action_id,
+                    run_id=runs["run"],
+                    decision_record_id=decision.id,
+                )
+            bound = await _bind_decision_record(
+                database,
+                decision_record_id=decision.id,
+                claim_id=claim_id,
+                commit_status="accepted",
+                artifact_disposition="none",
+            )
+            # 攻击：直接改写不可变Subject的view（不同步修正subject_hash）。
+            async with database.sessions.begin() as txn:
+                record = await txn.get(DecisionRecord, bound.id)
+                assert record is not None
+                subject = await txn.get(DecisionSubjectRecord, record.subject_id)
+                assert subject is not None
+                tampered = dict(subject.decision_view_json)
+                tampered["claim_hash"] = _hash64()
+                subject.decision_view_json = tampered
+            with pytest.raises(ResultCommitDecisionInvalid):
+                await _commit(
+                    coordinator,
+                    repo,
+                    database,
+                    claim_id=claim_id,
+                    commit_status="accepted",
+                    artifact_disposition="none",
+                    decision_record_id=bound.id,
+                    bind_decision=False,
+                )
+            # 同样攻击直接针对Adoption创建：view篡改命中Hash复算，零写。
+            async with database.sessions.begin() as txn:
+                current = await repo.get_current_assessment(txn, requirement_ids[0])
+                assert current is not None
+                with pytest.raises(ResultCommitDecisionInvalid):
+                    await repo.create_adoption(
+                        txn,
+                        claim_id=claim_id,
+                        requirement_id=requirement_ids[0],
+                        assessment_id=current.id,
+                        decision_record_id=bound.id,
+                        command_id=_new_id(),
+                    )
+            await _assert_nothing_committed(database, repo, claim_id=claim_id, action_id=action_id)
+            async with database.sessions() as txn:
+                adoptions = await txn.scalar(
+                    select(func.count())
+                    .select_from(ClaimEvidenceAdoptionRecord)
+                    .where(ClaimEvidenceAdoptionRecord.completion_claim_id == claim_id)
+                )
+            assert adoptions == 0
+
+        _run_scenario(scenario)
+
+    def test_reject_outcome_decision_cannot_adopt_while_claim_candidate(self):
+        """P0复审：Claim仍candidate时，reject outcome的Decision命中outcome守卫而非状态守卫。"""
+
+        async def scenario():
+            database, sessions, harness, repo, coordinator, _ = await _runtime()
+            session = await sessions.create_session()
+            decision = await _make_decision_record(database, session["id"])
+            runs = await _make_run_chain(database)
+            _, _, action_id = await _make_project_work_action(harness)
+            async with database.sessions.begin() as txn:
+                claim_id, requirement_ids = await _make_claim(repo, txn, action_id=action_id)
+                await _satisfy_requirement(
+                    repo,
+                    txn,
+                    requirement_id=requirement_ids[0],
+                    subject_id=action_id,
+                    run_id=runs["run"],
+                    decision_record_id=decision.id,
+                )
+            rejected_decision = await _bind_decision_record(
+                database,
+                decision_record_id=decision.id,
+                claim_id=claim_id,
+                commit_status="rejected",
+                artifact_disposition="none",
+            )
+            async with database.sessions.begin() as txn:
+                claim = await repo.get_claim(txn, claim_id)
+                assert claim.status == "candidate"
+                current = await repo.get_current_assessment(txn, requirement_ids[0])
+                assert current is not None
+                with pytest.raises(ResultCommitDecisionInvalid):
+                    await repo.create_adoption(
+                        txn,
+                        claim_id=claim_id,
+                        requirement_id=requirement_ids[0],
+                        assessment_id=current.id,
+                        decision_record_id=rejected_decision.id,
+                        command_id=_new_id(),
+                    )
+            async with database.sessions() as txn:
+                adoptions = await txn.scalar(
+                    select(func.count())
+                    .select_from(ClaimEvidenceAdoptionRecord)
+                    .where(ClaimEvidenceAdoptionRecord.completion_claim_id == claim_id)
+                )
+                claim = await repo.get_claim(txn, claim_id)
+            assert adoptions == 0
+            assert claim.status == "candidate"
+
+        _run_scenario(scenario)
+
+    def test_cross_work_plan_revision_injection_fails_commit(self):
+        """第六轮复审P0-1：跨Work/Project的accepted Revision挂到Work指针不能通过。"""
+
+        async def scenario():
+            database, sessions, harness, repo, coordinator, _ = await _runtime()
+            session = await sessions.create_session()
+            decision = await _make_decision_record(database, session["id"])
+            runs = await _make_run_chain(database)
+            _, _, action_id = await _make_project_work_action(harness)
+            _, _, other_action_id = await _make_project_work_action(harness)
+            async with database.sessions.begin() as txn:
+                claim_id, requirement_ids = await _make_claim(repo, txn, action_id=action_id)
+                _, _ = await _make_claim(repo, txn, action_id=other_action_id)
+                await _satisfy_requirement(
+                    repo,
+                    txn,
+                    requirement_id=requirement_ids[0],
+                    subject_id=action_id,
+                    run_id=runs["run"],
+                    decision_record_id=decision.id,
+                )
+                # 攻击：把另一Work的accepted Revision挂到本Work的裸指针上。
+                action = await txn.get(ActionItemRecord, action_id)
+                assert action is not None
+                work = await txn.get(WorkItemRecord, action.work_item_id)
+                assert work is not None
+                own_revision_id = work.current_plan_revision_id
+                other_action = await txn.get(ActionItemRecord, other_action_id)
+                assert other_action is not None
+                other_work = await txn.get(WorkItemRecord, other_action.work_item_id)
+                assert other_work is not None
+                assert other_work.current_plan_revision_id != own_revision_id
+                work.current_plan_revision_id = other_work.current_plan_revision_id
+            with pytest.raises(EvidenceConflict):
+                await _commit(
+                    coordinator,
+                    repo,
+                    database,
+                    claim_id=claim_id,
+                    commit_status="accepted",
+                    artifact_disposition="none",
+                    decision_record_id=decision.id,
+                )
+            await _assert_nothing_committed(database, repo, claim_id=claim_id, action_id=action_id)
+            # 恢复后合法路径仍然可用（排除夹具自伤）。
+            async with database.sessions.begin() as txn:
+                action = await txn.get(ActionItemRecord, action_id)
+                assert action is not None
+                work = await txn.get(WorkItemRecord, action.work_item_id)
+                assert work is not None
+                work.current_plan_revision_id = own_revision_id
+            result = await _commit(
+                coordinator,
+                repo,
+                database,
+                claim_id=claim_id,
+                commit_status="accepted",
+                artifact_disposition="none",
+                decision_record_id=decision.id,
+            )
+            assert result["commit_status"] == "accepted"
+
+        _run_scenario(scenario)
+
+    def test_zero_mandatory_cannot_succeed_but_can_be_rejected(self):
+        async def scenario():
+            database, sessions, harness, repo, coordinator, _ = await _runtime()
+            session = await sessions.create_session()
+            decision = await _make_decision_record(database, session["id"])
+            _, _, action_id = await _make_project_work_action(harness)
+            async with database.sessions.begin() as txn:
+                claim_id, requirement_ids = await _make_claim(
+                    repo,
+                    txn,
+                    action_id=action_id,
+                    requirement_kinds=(),
+                )
+            assert requirement_ids == []
+            with pytest.raises(CompletionRequirementUnsatisfied, match="至少需要一条mandatory"):
+                await _commit(
+                    coordinator,
+                    repo,
+                    database,
+                    claim_id=claim_id,
+                    commit_status="accepted",
+                    artifact_disposition="none",
+                    decision_record_id=decision.id,
+                )
+            await _assert_nothing_committed(database, repo, claim_id=claim_id, action_id=action_id)
+            rejected = await _commit(
+                coordinator,
+                repo,
+                database,
+                claim_id=claim_id,
+                commit_status="rejected",
+                artifact_disposition="none",
+                decision_record_id=decision.id,
+            )
+            assert rejected["commit_status"] == "rejected"
+
+        _run_scenario(scenario)
+
+    def test_later_refuting_assessment_blocks_existing_waiver(self):
+        async def scenario():
+            database, sessions, harness, repo, coordinator, _ = await _runtime()
+            session = await sessions.create_session()
+            decision = await _make_decision_record(database, session["id"])
+            runs = await _make_run_chain(database)
+            _, _, action_id = await _make_project_work_action(harness)
+            async with database.sessions.begin() as txn:
+                claim_id, requirement_ids = await _make_claim(repo, txn, action_id=action_id)
+                await _waive_requirement(
+                    repo,
+                    txn,
+                    requirement_id=requirement_ids[0],
+                    decision_record_id=decision.id,
+                )
+                observation = await repo.create_observation(
+                    txn,
+                    kind="validation_result",
+                    schema_version="validation-result-v1",
+                    payload={
+                        "capability_key": "pytest-suite",
+                        "expanded_argv": ["python", "-m", "pytest"],
+                        "working_dir": "/workspace",
+                        "exit_code": 1,
+                        "summary": "failed after waiver",
+                        "duration_ms": 11,
+                    },
+                    subject_kind="action_item",
+                    subject_id=action_id,
+                    statement="waiver后重验失败",
+                    product_run_id=runs["run"],
+                    command_id=_new_id(),
+                )
+                await repo.create_assessment(
+                    txn,
+                    observation_id=observation.id,
+                    requirement_id=requirement_ids[0],
+                    verdict="refutes",
+                    assessor_kind="validator",
+                    assessor_run_id=runs["run"],
+                    command_id=_new_id(),
+                )
+            with pytest.raises(WaiverBlockedByFailedRequirement):
+                await _commit(
+                    coordinator,
+                    repo,
+                    database,
+                    claim_id=claim_id,
+                    commit_status="waived",
+                    artifact_disposition="none",
+                    decision_record_id=decision.id,
+                )
+            await _assert_nothing_committed(database, repo, claim_id=claim_id, action_id=action_id)
+
+        _run_scenario(scenario)
+
+    @pytest.mark.parametrize(
+        "source_kind",
+        ("repository_snapshot", "artifact_revision", "artifact_blob"),
+    )
+    def test_pending_direct_source_invalidation_blocks(self, source_kind: str):
+        async def scenario():
+            database, sessions, harness, repo, coordinator, _ = await _runtime()
+            session = await sessions.create_session()
+            decision = await _make_decision_record(database, session["id"])
+            runs = await _make_run_chain(database)
+            _, snapshot = await _make_repository_snapshot(database, harness)
+            _, _, action_id = await _make_project_work_action(harness)
+            async with database.sessions.begin() as txn:
+                blob, _, revision = await _make_artifact_with_revision(repo, txn)
+                claim_id, requirement_ids = await _make_claim(repo, txn, action_id=action_id)
+                observation = await repo.create_observation(
+                    txn,
+                    kind="validation_result",
+                    schema_version="validation-result-v1",
+                    payload={
+                        "capability_key": "pytest-suite",
+                        "expanded_argv": ["python", "-m", "pytest"],
+                        "working_dir": "/workspace",
+                        "exit_code": 0,
+                        "summary": "passed",
+                        "duration_ms": 10,
+                    },
+                    subject_kind="action_item",
+                    subject_id=action_id,
+                    statement="verified from direct sources",
+                    product_run_id=runs["run"],
+                    repository_snapshot_id=snapshot.id,
+                    artifact_revision_id=revision.id,
+                    command_id=_new_id(),
+                )
+                assessment = await repo.create_assessment(
+                    txn,
+                    observation_id=observation.id,
+                    requirement_id=requirement_ids[0],
+                    verdict="supports",
+                    assessor_kind="validator",
+                    assessor_run_id=runs["run"],
+                    command_id=_new_id(),
+                )
+            bound_invalid = await _bind_decision_record(
+                database,
+                decision_record_id=decision.id,
+                claim_id=claim_id,
+                commit_status="accepted",
+                artifact_disposition="none",
+            )
+            async with database.sessions.begin() as txn:
+                assessment_row = await txn.get(_ev.EvidenceAssessmentRecord, assessment.id)
+                assert assessment_row is not None
+                await repo.create_adoption(
+                    txn,
+                    claim_id=claim_id,
+                    requirement_id=requirement_ids[0],
+                    assessment_id=assessment.id,
+                    decision_record_id=bound_invalid.id,
+                    command_id=_new_id(),
+                )
+                source_id = {
+                    "repository_snapshot": snapshot.id,
+                    "artifact_revision": revision.id,
+                    "artifact_blob": blob.id,
+                }[source_kind]
+                txn.add(
+                    SourceInvalidationRecord(
+                        id=_new_id(),
+                        scope_id="local-user",
+                        source_kind=source_kind,
+                        source_id=source_id,
+                        sequence=1,
+                        invalidation_kind="unavailable",
+                        resolution="pending",
+                        command_id=_new_id(),
+                        created_at=utc_now(),
+                    )
+                )
+            with pytest.raises(EvidenceInvalid, match=f"{source_kind}/"):
+                await _commit(
+                    coordinator,
+                    repo,
+                    database,
+                    claim_id=claim_id,
+                    commit_status="accepted",
+                    artifact_disposition="none",
+                    decision_record_id=decision.id,
+                )
+            await _assert_nothing_committed(database, repo, claim_id=claim_id, action_id=action_id)
+
+        _run_scenario(scenario)
+
+    def test_repository_rechecks_forged_resolution_receipt(self):
+        async def scenario():
+            database, sessions, harness, repo, _, _ = await _runtime()
+            session = await sessions.create_session()
+            decision = await _make_decision_record(database, session["id"])
+            runs = await _make_run_chain(database)
+            _, _, action_id = await _make_project_work_action(harness)
+            async with database.sessions.begin() as txn:
+                claim_id, requirement_ids = await _make_claim(repo, txn, action_id=action_id)
+                await _satisfy_requirement(
+                    repo,
+                    txn,
+                    requirement_id=requirement_ids[0],
+                    subject_id=action_id,
+                    run_id=runs["run"],
+                    decision_record_id=decision.id,
+                )
+            bound_forge = await _bind_decision_record(
+                database,
+                decision_record_id=decision.id,
+                claim_id=claim_id,
+                commit_status="accepted",
+                artifact_disposition="none",
+            )
+            async with database.sessions.begin() as txn:
+                claim = await repo.get_claim(txn, claim_id)
+                current_supports = await repo.get_current_assessment(txn, requirement_ids[0])
+                assert current_supports is not None
+                adoption = await repo.create_adoption(
+                    txn,
+                    claim_id=claim_id,
+                    requirement_id=requirement_ids[0],
+                    assessment_id=current_supports.id,
+                    decision_record_id=bound_forge.id,
+                    command_id=_new_id(),
+                )
+                assert adoption is not None
+                forged = ClaimGateRecheck(
+                    claim_id=claim.id,
+                    claim_hash=claim.claim_hash,
+                    claim_row_version=claim.row_version,
+                    commit_status="accepted",
+                    mandatory_requirement_ids=tuple(requirement_ids),
+                    adoption_ids=(),
+                    waiver_ids=(),
+                    artifact_record_id=None,
+                    artifact_revision_id=None,
+                    artifact_record_version=None,
+                    _gate_nonce=_issue_result_commit_gate_nonce(txn),
+                )
+                with pytest.raises(EvidenceValidationError, match="Adoption/Waiver"):
+                    await repo.create_result_commit(
+                        txn,
+                        claim_id=claim.id,
+                        claim_hash=claim.claim_hash,
+                        expected_claim_row_version=claim.row_version,
+                        commit_status="accepted",
+                        artifact_disposition="none",
+                        decision_record_id=bound_forge.id,
+                        command_id=_new_id(),
+                        committed_subject_state="completed",
+                        gate_recheck=forged,
+                    )
+                exact_resolutions = replace(
+                    forged,
+                    adoption_ids=(adoption.id,),
+                    _gate_nonce=_issue_result_commit_gate_nonce(txn),
+                )
+                with pytest.raises(EvidenceValidationError, match="target_state"):
+                    await repo.create_result_commit(
+                        txn,
+                        claim_id=claim.id,
+                        claim_hash=claim.claim_hash,
+                        expected_claim_row_version=claim.row_version,
+                        commit_status="accepted",
+                        artifact_disposition="none",
+                        decision_record_id=bound_forge.id,
+                        command_id=_new_id(),
+                        committed_subject_state="in_progress",
+                        gate_recheck=exact_resolutions,
+                    )
+            await _assert_nothing_committed(database, repo, claim_id=claim_id, action_id=action_id)
 
         _run_scenario(scenario)
 
@@ -2398,6 +3459,82 @@ class TestRejectedPath:
 
         _run_scenario(scenario)
 
+    def test_superseded_revision_allows_rejected_none(self):
+        """§9.1 step 2b：Revision已被合法替代时 rejected + none 是合法独立路径。
+
+        这是护栏外防御测试：create_artifact_revision 会拒绝在candidate Claim存在
+        时追加（矩阵20），这里用ORM直写模拟未来合法supersede边界，验证
+        _commit_rejected对“已替代Revision + none”的处理不回写Artifact。
+        """
+
+        async def scenario():
+            database, sessions, harness, repo, coordinator, _ = await _runtime()
+            session = await sessions.create_session()
+            decision = await _make_decision_record(database, session["id"])
+            _, _, action_id = await _make_project_work_action(harness)
+            async with database.sessions.begin() as txn:
+                blob, artifact, revision = await _make_artifact_with_revision(repo, txn)
+                claim_id, _ = await _make_claim(
+                    repo,
+                    txn,
+                    action_id=action_id,
+                    artifact_revision_id=revision.id,
+                    expected_artifact_record_version=2,
+                )
+                claim = await repo.get_claim(txn, claim_id)
+                # ORM直写模拟未来合法supersede：新Revision成为当前项，
+                # Artifact row_version前进；不经过被拒的追加护栏。
+                artifact_row = await repo.get_artifact_record(txn, artifact.id)
+                replacement = _ev.ArtifactRevisionRecord(
+                    id=_new_id(),
+                    artifact_id=artifact.id,
+                    revision_number=revision.revision_number + 1,
+                    storage_blob_id=blob.id,
+                    sha256=blob.sha256,
+                    size_bytes=blob.size_bytes,
+                    excerpt=None,
+                    supersedes_revision_id=revision.id,
+                    created_by="local-user",
+                    command_id=_new_id(),
+                    created_at=utc_now(),
+                )
+                txn.add(replacement)
+                artifact_row.row_version += 1
+                claim_hash = claim.claim_hash
+                claim_row_version = claim.row_version
+            # Revision已替代后才首次创建该Claim逻辑身份的DecisionSubject，
+            # 明确冻结 reject → none。
+            bound = await _bind_decision_record(
+                database,
+                decision_record_id=decision.id,
+                claim_id=claim_id,
+                commit_status="rejected",
+                artifact_disposition="none",
+                reject_artifact_disposition="none",
+            )
+            result = await coordinator.commit_result(
+                claim_id=claim_id,
+                claim_hash=claim_hash,
+                expected_claim_row_version=claim_row_version,
+                decision_record_id=bound.id,
+                commit_status="rejected",
+                artifact_disposition="none",
+                command_id=_new_id(),
+            )
+            assert result["commit_status"] == "rejected"
+            assert result["artifact_disposition"] == "none"
+            assert result["subject"] is None
+            async with database.sessions() as txn:
+                action = await txn.get(ActionItemRecord, action_id)
+                artifact_row = await repo.get_artifact_record(txn, artifact.id)
+                current_revision = await repo.get_current_artifact_revision(txn, artifact.id)
+            assert action.status == "in_progress"
+            assert artifact_row.status == "candidate"
+            assert artifact_row.row_version == 3
+            assert current_revision is not None and current_revision.id == replacement.id
+
+        _run_scenario(scenario)
+
     def test_rejected_then_new_claim_can_commit(self):
         """S2 基础：旧 Claim 拒绝不阻断同一 subject 的新 Claim。"""
 
@@ -2420,6 +3557,7 @@ class TestRejectedPath:
             )
             # subject 未被拒绝路径推进，新 Claim 仍基于版本 2
             async with database.sessions.begin() as txn:
+                first_claim = await repo.get_claim(txn, claim_first)
                 claim_second = await repo.create_claim(
                     txn,
                     subject_kind="action_item",
@@ -2429,6 +3567,7 @@ class TestRejectedPath:
                     expected_subject_version=2,
                     target_state="completed",
                     applicability_policy="record_only",
+                    validation_contract_id=first_claim.validation_contract_id,
                     requirements=[
                         {
                             "requirement_kind": "validation_result",

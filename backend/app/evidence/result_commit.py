@@ -24,13 +24,14 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..harness.commands import HarnessCommandRecorder
-from ..harness.contracts import HarnessValidationError
+from ..harness.contracts import HarnessError, HarnessValidationError
 from ..harness.models import ActionItemRecord, WorkItemRecord
 from ..harness.participant import HarnessTransitionParticipant
+from ..harness.plans import require_current_plan_revision
 from ..product_sessions.database import ProductDatabase
 from ..project_resources.models import (
     ProjectRepositoryBindingRecord,
@@ -51,10 +52,11 @@ from .contracts import (
     EvidenceInvalid,
     EvidenceNotFound,
     EvidenceValidationError,
-    ResultCommitDecisionInvalid,
     SubjectTransitionNotAllowed,
+    WaiverBlockedByFailedRequirement,
     content_hash,
 )
+from .decision_binding import require_result_commit_decision
 from .models import (
     ArtifactBlobRecord,
     ArtifactRecord,
@@ -65,9 +67,14 @@ from .models import (
     RequirementWaiverRecord,
     ResultCommitRecord,
     SourceInvalidationRecord,
+    ValidationContractRecord,
 )
 from .ownership import EvidenceReferenceResolver
-from .service import EvidenceRepository
+from .service import (
+    EvidenceRepository,
+    _issue_result_commit_gate_nonce,
+    require_bound_result_commit_decision,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -165,10 +172,42 @@ class ResultCommitCoordinator:
                 )
             if claim.status != "candidate":
                 raise CompletionClaimAlreadyResolved("只有candidate状态的Claim才能提交ResultCommit")
+            # 第七轮复审：纯请求形状（Claim Artifact绑定 × disposition组合）先于
+            # Decision精确绑定稳定拒绝；形状错误不消耗也不依赖任何Decision。
+            if claim.artifact_revision_id is None and artifact_disposition != "none":
+                raise EvidenceValidationError("未绑定Artifact的Claim只能使用artifact_disposition=none")
+            if commit_status in {"accepted", "waived"} and claim.artifact_revision_id is not None:
+                if artifact_disposition == "none":
+                    raise EvidenceValidationError(
+                        "绑定当前Artifact Revision的Claim不能记录artifact_disposition=none"
+                    )
+            if commit_status == "rejected" and claim.artifact_revision_id is not None:
+                revision = await resolver.resolve(
+                    transaction,
+                    kind="artifact_revision",
+                    reference_id=claim.artifact_revision_id,
+                )
+                artifact = await repository.get_artifact_record(transaction, revision.artifact_id)
+                current_revision = await repository.get_current_artifact_revision(transaction, artifact.id)
+                if current_revision is not None and current_revision.id == claim.artifact_revision_id:
+                    if artifact_disposition != "rejected":
+                        raise EvidenceValidationError(
+                            "Claim绑定的Artifact Revision仍是当前项，rejected只能使用rejected"
+                        )
+                elif artifact_disposition != "none":
+                    raise EvidenceValidationError(
+                        "Claim绑定的Artifact Revision已被替代，rejected只能使用artifact_disposition=none"
+                    )
             decision = await resolver.resolve(
                 transaction, kind="decision_record", reference_id=decision_record_id
             )
-            self._require_decision_effect(decision=decision, commit_status=commit_status)
+            await require_bound_result_commit_decision(
+                transaction,
+                decision=decision,
+                claim=claim,
+                commit_status=commit_status,
+                artifact_disposition=artifact_disposition,
+            )
             if commit_status == "rejected":
                 outcome = await self._commit_rejected(
                     transaction,
@@ -217,16 +256,6 @@ class ResultCommitCoordinator:
                 artifact_disposition,
             )
             return result
-
-    @staticmethod
-    def _require_decision_effect(*, decision: Any, commit_status: str) -> None:
-        # accepted/waived advance product state and need an approving Decision;
-        # rejected advances nothing, so any in-scope Decision binds the audit.
-        effect = getattr(decision, "authorization_effect", None)
-        if commit_status in {"accepted", "waived"} and effect != "allow":
-            raise ResultCommitDecisionInvalid(
-                f"accepted/waived必须绑定授权结果为allow的Decision，当前为{effect!r}"
-            )
 
     async def claim_view(self, claim_id: str) -> dict[str, Any]:
         """Read one Claim with its Requirements, resolutions and ResultCommit."""
@@ -385,6 +414,9 @@ class ResultCommitCoordinator:
             raise EvidenceValidationError("绑定当前Artifact Revision的Claim不能记录artifact_disposition=none")
 
         # §9.1 step 4: every mandatory Requirement needs exactly one resolution.
+        # A（二次审核）：Adoption不再由验证阶段独立创建，而是由本Gate在同一
+        # 事务内按result_commit Decision冻结的Adoption映射创建；映射条目必须
+        # 精确对应该Requirement的当前supports Assessment。
         requirements = list(
             (
                 await transaction.scalars(
@@ -395,25 +427,72 @@ class ResultCommitCoordinator:
             ).all()
         )
         mandatory = [item for item in requirements if item.mandatory]
+        if not mandatory:
+            raise CompletionRequirementUnsatisfied("accepted/waived至少需要一条mandatory Requirement")
+        if claim.target_transition == "action_result_accepted" and claim.validation_contract_id is None:
+            raise CompletionRequirementUnsatisfied("action_result_accepted必须绑定validation_contract_id")
+        decision_record = await resolver.resolve(
+            transaction, kind="decision_record", reference_id=decision_record_id
+        )
+        # P0复审：共享校验器返回所选outcome；Adoption映射绑定在该outcome内，
+        # reject outcome为空，拒绝决定不能挪用映射采用证据。
+        _view, outcome = await require_result_commit_decision(
+            transaction,
+            decision=decision_record,
+            claim=claim,
+        )
+        frozen_adoptions = outcome.get("adoptions")
+        if not isinstance(frozen_adoptions, Mapping):
+            raise EvidenceConflict("result_commit Decision缺少所选outcome冻结的Adoption映射")
         adoption_by_requirement = await self._claim_adoptions(transaction, claim_id=claim.id)
         waiver_by_requirement = await self._requirement_waivers(
             transaction, requirement_ids=[item.id for item in requirements]
         )
         for requirement in mandatory:
-            has_adoption = requirement.id in adoption_by_requirement
             has_waiver = requirement.id in waiver_by_requirement
-            if has_adoption and has_waiver:
+            adoption = adoption_by_requirement.get(requirement.id)
+            if has_waiver and adoption is not None:
                 raise EvidenceConflict("同一Requirement不能同时存在Adoption与Waiver")
-            if not has_adoption and not has_waiver:
-                raise CompletionRequirementUnsatisfied(
-                    f"mandatory Requirement缺少Adoption或Waiver: {requirement.id}"
+            if has_waiver:
+                continue
+            if adoption is not None and frozen_adoptions.get(requirement.id) != adoption.assessment_id:
+                raise EvidenceConflict("既有Adoption与冻结Adoption映射不一致")
+            if adoption is None:
+                current = await repository.get_current_assessment(transaction, requirement.id)
+                if current is None or current.verdict != "supports":
+                    raise CompletionRequirementUnsatisfied(
+                        f"mandatory Requirement没有当前supports Assessment: {requirement.id}"
+                    )
+                if frozen_adoptions.get(requirement.id) != current.id:
+                    raise CompletionRequirementUnsatisfied(
+                        f"冻结Adoption映射与Requirement {requirement.id}的当前supports Assessment不一致"
+                    )
+                adoption = await repository.create_adoption(
+                    transaction,
+                    claim_id=claim.id,
+                    requirement_id=requirement.id,
+                    assessment_id=current.id,
+                    decision_record_id=decision_record_id,
+                    command_id=f"{command_id}:adoption:{requirement.id}",
                 )
+                adoption_by_requirement[requirement.id] = adoption
         if commit_status == "accepted" and any(item.id in waiver_by_requirement for item in mandatory):
             raise CompletionRequirementUnsatisfied(
                 "accepted要求全部mandatory Requirement均为Adoption，不能含Waiver"
             )
         if commit_status == "waived" and not any(item.id in waiver_by_requirement for item in mandatory):
             raise CompletionRequirementUnsatisfied("waived要求至少一条mandatory Requirement存在Waiver")
+
+        # A Waiver cannot mask evidence that became contradictory after the
+        # Waiver was recorded.  Commit always re-reads the current Assessment.
+        for requirement in mandatory:
+            if requirement.id not in waiver_by_requirement:
+                continue
+            current = await repository.get_current_assessment(transaction, requirement.id)
+            if current is not None and current.verdict == "refutes":
+                raise WaiverBlockedByFailedRequirement(
+                    f"mandatory Requirement当前Assessment为refutes，不能提交Waiver: {requirement.id}"
+                )
 
         # §9.1 step 5a: adoption chain re-check（全 Waiver 时空集自然通过）。
         for requirement in mandatory:
@@ -436,18 +515,13 @@ class ResultCommitCoordinator:
                 claim.subject_id,
             ):
                 raise EvidenceValidationError("Observation subject与Claim subject不匹配")
-            pending = await transaction.scalar(
-                select(SourceInvalidationRecord.id)
-                .where(
-                    SourceInvalidationRecord.scope_id == self.scope_id,
-                    SourceInvalidationRecord.source_kind == "evidence_observation",
-                    SourceInvalidationRecord.source_id == observation.id,
-                    SourceInvalidationRecord.resolution == "pending",
-                )
-                .limit(1)
+            pending = await self._pending_direct_source_invalidation(
+                transaction,
+                observation=observation,
             )
             if pending is not None:
-                raise EvidenceInvalid(f"采用链Observation存在pending失效事件: {observation.id}")
+                source_kind, source_id = pending
+                raise EvidenceInvalid(f"采用链直接来源存在pending失效事件: {source_kind}/{source_id}")
 
         # §9.1 step 5b: Artifact re-check cannot be skipped even for full Waiver.
         artifact: ArtifactRecord | None = None
@@ -474,10 +548,35 @@ class ResultCommitCoordinator:
                 f"协议不允许{claim.subject_kind}.{claim.target_transition}: "
                 f"{claim.from_state} -> {claim.target_state}"
             )
+        if claim.subject_kind == "action_item" and isinstance(subject, ActionItemRecord):
+            # 第四轮复审P0-1：commit前重检父Work——只有in_progress的父Work
+            # 才允许完成其Action；Work已cancelled/离开in_progress即fail closed。
+            parent_work = await transaction.get(WorkItemRecord, subject.work_item_id)
+            if subject.work_item_id and (parent_work is None or parent_work.status != "in_progress"):
+                raise EvidenceConflict("父Work当前不在in_progress，不能完成其Action")
+            # 第五轮复审P0-2：父Work必须仍引用Claim绑定的同一accepted Plan
+            # revision；第六轮复审P0-1：沿 Work -> revision -> TaskPlan 复核
+            # 权威归属链（scope/Work/Project/current/status），不接受裸指针。
+            if claim.validation_contract_id is not None and parent_work is not None:
+                contract = await transaction.get(ValidationContractRecord, claim.validation_contract_id)
+                if contract is None or contract.scope_id != self.scope_id:
+                    raise EvidenceNotFound("Claim绑定的Validation Contract不存在")
+                if parent_work.scope_id != self.scope_id:
+                    raise EvidenceNotFound("父Work不存在于当前scope")
+                try:
+                    await require_current_plan_revision(
+                        transaction,
+                        scope_id=self.scope_id,
+                        work=parent_work,
+                        plan_revision_id=contract.plan_revision_id,
+                    )
+                except HarnessError as error:
+                    raise EvidenceConflict(str(error)) from error
         if claim.subject_kind == "work_item" and claim.target_transition == "work_completed":
             await self._require_work_completion_ready(transaction, work_item_id=claim.subject_id)
 
         # §9.1 step 8: gate receipt + ResultCommit（同事务证明，记录层结构复核）。
+        gate_nonce = _issue_result_commit_gate_nonce(transaction)
         recheck = ClaimGateRecheck(
             claim_id=claim.id,
             claim_hash=claim.claim_hash,
@@ -492,8 +591,10 @@ class ResultCommitCoordinator:
             waiver_ids=tuple(
                 waiver_by_requirement[item.id].id for item in mandatory if item.id in waiver_by_requirement
             ),
+            artifact_record_id=None if artifact is None else artifact.id,
             artifact_revision_id=claim.artifact_revision_id,
             artifact_record_version=claim.expected_artifact_record_version,
+            _gate_nonce=gate_nonce,
         )
         commit = await repository.create_result_commit(
             transaction,
@@ -596,6 +697,42 @@ class ResultCommitCoordinator:
             )
         ).all()
         return {row.requirement_id: row for row in rows}
+
+    async def _pending_direct_source_invalidation(
+        self,
+        transaction: AsyncSession,
+        *,
+        observation: Any,
+    ) -> tuple[str, str] | None:
+        """Return a pending invalidation on an Observation or direct source."""
+        sources: list[tuple[str, str]] = [("evidence_observation", observation.id)]
+        if observation.repository_snapshot_id is not None:
+            sources.append(("repository_snapshot", observation.repository_snapshot_id))
+        if observation.artifact_revision_id is not None:
+            sources.append(("artifact_revision", observation.artifact_revision_id))
+            revision = await transaction.get(ArtifactRevisionRecord, observation.artifact_revision_id)
+            if revision is None:
+                raise EvidenceInvalid(f"采用链Artifact Revision不存在: {observation.artifact_revision_id}")
+            sources.append(("artifact_blob", revision.storage_blob_id))
+        pending = await transaction.execute(
+            select(SourceInvalidationRecord.source_kind, SourceInvalidationRecord.source_id)
+            .where(
+                SourceInvalidationRecord.scope_id == self.scope_id,
+                SourceInvalidationRecord.resolution == "pending",
+                or_(
+                    *(
+                        and_(
+                            SourceInvalidationRecord.source_kind == source_kind,
+                            SourceInvalidationRecord.source_id == source_id,
+                        )
+                        for source_kind, source_id in sources
+                    )
+                ),
+            )
+            .limit(1)
+        )
+        row = pending.first()
+        return None if row is None else (str(row[0]), str(row[1]))
 
     async def _recheck_artifact(
         self,

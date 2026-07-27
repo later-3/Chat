@@ -1344,3 +1344,114 @@ macOS seatbelt。uv创建的虚拟环境启动器实际指向用户目录下的�
 - 沙箱放行的是精确Python发行目录，还是为了省事开放整个用户目录？
 - executable、environment和argv Hash是否在spawn前重新计算并一致？
 - 真实OS沙箱测试是否同时覆盖允许路径、拒绝路径和拒绝网络？
+
+## 40. 反例 037：只校验新完成投影，却让旧Evidence继续写完成事实
+
+### 错误触发
+
+SD4-C为Harness完成状态增加了`result_commit_id + claim_id`保留投影校验，但实现只在Evidence
+包含保留字段时进入校验。调用方继续提交任意旧Evidence或`completion_waiver_reason`时，代码直接
+跳过Result Commit Gate，仍能把Work/Action改为`completed`；测试还把这条旧写路径当成正确行为。
+同一实现又把公开可构造的`ClaimGateRecheck`称为“只有Coordinator能创建”，记录层只比较部分字段，
+使伪造收据可以把候选Claim写成已提交事实。
+
+### 错误本质
+
+兼容读取与兼容写入是两件事。新的权威完成门上线后，旧字段可以继续展示历史记录，但不能继续成为
+授权入口。保留字段检测只能识别一种伪造形状，不能证明没有其他旁路；应用内可构造的数据对象也不是
+权限能力，任何下层记录方法都必须把它视为不可信声明并复核权威行。
+
+### 正确规则
+
+1. 所有通向`completed`的公开写路径统一fail closed：必须是唯一ResultCommit/Claim投影、携带CAS
+   版本并通过同事务链校验；旧Evidence和旧waiver只读兼容。
+2. 完成门测试必须从结果反推全部入口，至少攻击无Evidence、任意旧Evidence、旧waiver、混合投影、
+   多投影、无校验器和已消费引用，不能只测试新保留字段。
+3. Receipt、DTO和冻结dataclass都不是capability。成功写入还必须消费Coordinator在当前事务签发的
+   一次性opaque nonce；记录层随后重新查询Claim版本、mandatory集合、Adoption/Waiver解析、
+   Artifact id/version、Decision精确绑定和目标状态，不能信任调用方布尔值或ID集合。
+4. 阶段完成声明必须同时核对批准范围和主链接线；独立REST端点存在不等于“已接入主Workflow”。
+
+### 强制检查
+
+- 是否仍有任何HTTP、Application Service、Participant或测试Fixture可绕过Result Commit写`completed`？
+- “legacy兼容”是否明确限定为读取，而不是继续接受旧格式写入？
+- 下层记录方法面对人工构造的Receipt时，能否从Product Store独立重建并比较全部关键事实？
+- 项目状态中的“阶段完成”是否逐项对应批准设计的交付表，而不是只对应某个新类或端点？
+
+## 41. 反例 038：把TUI的thinking流误判为执行层没有调用Tool
+
+### 错误触发
+
+pi Agent使用Kimi K3执行有界修复时，TUI持续滚动显示thinking。协调者没有读取持久Session事件，
+就把可见thinking误判为“没有Tool Call”，中断3个仍在工作的会话并自行接管生产代码。事后JSONL
+证明第1个K3会话已有58个Tool Result，第2个K3会话已有10个Tool Result；新的交互式K3冒烟也真实
+产生`read` Tool Call和Tool Result。
+
+### 错误本质
+
+执行层是由模型、Provider适配、流事件解析、Tool注册、权限模式、Session上下文和终端调用共同组成的
+运行合同。TUI显示的是运行投影，不是Tool Ledger或终态；协调者接管还会掩盖真实进度与执行链故障，
+让后续任务继续在同一失效基础上运行。项目已经选择pi作为执行层时，协调者的责任是提供有界工作包、
+诊断和恢复Tool Loop、审查操作与独立验收，而不是在首次异常后替代执行层。
+
+### 正确规则
+
+1. 冻结并保留当前工作树，先在无项目上下文的临时目录运行最小Tool冒烟：只注册1个只读Tool，要求
+   Agent调用1次并返回固定标记；不得用复杂项目Prompt直接判断Tool Loop健康。
+2. 依次核对实际pi版本与realpath、CLI参数、已注册Tool列表、模型与思考模式、Provider流事件类型、
+   `tool_call`增量、停止原因、Session事件记录和输出解析；不得读取或打印密钥与完整Provider Payload。
+3. 使用同一Prompt对比Kimi K3的不同思考模式和一个已知可工作的Provider/模型，区分模型行为、
+   Provider适配和pi核心Tool Loop；对比模型只用于定位，正式任务仍使用用户指定的执行组合。
+4. Tool Loop恢复后用全新Session和有界步骤重新派发；pi负责读取、修改和定向测试，协调者负责操作
+   审查、Diff审查、攻击测试与全量验证。发现缺陷继续交回同一执行层修复，不能静默接管。
+5. 只有形成可复现证据，证明pi安装、Provider适配或权限链当前确实无法执行，并且修复需要超出本项目
+   授权范围时，才可暂停并向用户报告；“输出很长”“暂时没改文件”不构成接管理由。
+
+### 强制检查
+
+- Agent是否实际收到了预期Tool Schema，Session记录中是否出现`toolCall/toolResult`或明确的终止原因？
+- 最小只读Tool冒烟是否通过；如果不通过，是否已区分Kimi K3、Provider适配与pi核心问题？
+- 是否错误地把可见thinking增量当成最终回答，或把仍在运行的Agent提前判定为失败？
+- 正式任务是否使用全新Session、有限上下文、明确完成条件和必要Tool Allowlist？
+- 协调者发现质量问题后是否把修复交回pi，并保留独立测试与检视责任？
+
+## 42. 反例 039：用 `rm -rf` 批量清理被数据库引用的工作区目录
+
+### 错误触发
+
+SD4-C开发期间，为了“清理测试产生的临时工作区”，开发代理对
+`backend/.data/execution-workspaces/`执行了通配`rm -rf`（保留其中一个目录）。
+该目录是Execution Workspace服务的受管根，不是临时测试根：产品DB中每条
+retained Workspace记录的workspace_key都指向其中一个子目录。
+
+### 错误本质
+
+文件系统清理与产品事实所有权分离。shell层面的“看起来是测试残留”不等于
+可以删除：ExecutionWorkspaceRecord（尤其`retained`终态）是对该目录的权威
+引用，DB与磁盘的一致性只能由拥有该关系的Workspace服务判定，批量通配删除
+把“清理”变成了无记录的产品数据破坏。
+
+### 实际后果
+
+产品DB仍有4条`retained` Execution Workspace记录，磁盘只剩1个对应目录，
+3个被误删；删除不可由shell恢复，DB未删改、未尝试恢复，处置只能交回用户。
+
+### 正确规则
+
+1. 禁止对任何非临时测试根使用`rm -rf`、`rm -r`、通配清理或“保留一个其余全删”。
+   拿不准某个目录是不是临时测试根时，一律视为产品数据。
+2. 删除任何Workspace目录前，必须由Execution Workspace服务（而非shell）逐条校验：
+   DB记录ownership、状态已是可删除终态（非retained/非活动）、路径确在受管根内；
+   当前没有这样的服务接口时，就不删。
+3. 测试产生的目录只能创建在`tmp_path`等测试专属临时根内，并由测试框架自行回收；
+   生产/开发数据根的清理需求先写成服务级任务并交用户审核。
+4. 数据库被引用的目录绝不靠shell批量删除；需要回收磁盘时，先做DB记录盘点与
+   用户确认，再由服务执行带审计的逐条处置。
+
+### 强制检查
+
+- 本次要删除的目录是否被任何DB表（Execution Workspace、Artifact、Run数据）引用？
+- 删除操作是否经过拥有该关系的服务，并校验了终态与路径边界？
+- 测试残留是否全部落在`tmp_path`内，不需要进入开发数据根？
+- 是否把“保留一个目录”误当成安全网，实际上其余被删目录同样有权威引用？

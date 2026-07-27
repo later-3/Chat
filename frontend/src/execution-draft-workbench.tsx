@@ -1,4 +1,12 @@
-import { ChevronDown, ChevronRight, FilePenLine, Plus, Save, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FilePenLine,
+  Plus,
+  Save,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 import {
@@ -7,7 +15,8 @@ import {
   type ExecutionDraftView,
   getExecutionDraft,
   reviseExecutionDraft,
-} from "./execution-draft-api";
+} from "./execution-draft-api.js";
+import { mergeValidationPlan, splitValidationPlan } from "./execution-draft-validation-plan.js";
 
 const SECTION_COPY: Record<ExecutionDraftSectionKey, { label: string; description: string }> = {
   identity_lineage: { label: "身份与运行来源", description: "本轮会话、Run和Workflow版本的绑定。" },
@@ -169,6 +178,46 @@ function ValueEditor({
   );
 }
 
+function ValidationPlanSection({
+  value,
+  onChange,
+}: {
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  // E：机器冻结的Validation Contract只读展示；其余验证计划字段正常编辑。
+  const split = splitValidationPlan(value);
+  return (
+    <>
+      <ValueEditor
+        onChange={(next) => onChange(mergeValidationPlan(value, next))}
+        path="validation_plan"
+        value={split.editable}
+      />
+      {split.contract !== null && (
+        <section aria-label="冻结的Validation Contract" className="execution-draft-frozen-contract">
+          <header>
+            <ShieldCheck size={15} />
+            <strong>机器冻结的 Validation Contract（只读）</strong>
+          </header>
+          <p>
+            由已接受Plan revision与Capability
+            Catalog编译绑定；需要修改验证规则时，请回Plan修订后重新形成ExecutionDraft。
+          </p>
+          <pre>{JSON.stringify(split.contract, null, 2)}</pre>
+        </section>
+      )}
+      {split.hasContractKey && split.contract === null && (
+        <p className="execution-draft-frozen-contract--empty" role="note">
+          本轮未绑定完成主体：不会自动完成任何Action或Work。
+        </p>
+      )}
+    </>
+  );
+}
+
+export { ValidationPlanSection };
+
 interface ExecutionDraftWorkbenchProps {
   draftId: string;
   busy: boolean;
@@ -237,7 +286,7 @@ export function ExecutionDraftWorkbench({
           <FilePenLine size={18} />
           <span>
             <strong>ExecutionDraft完整编辑工作台</strong>
-            <small>17部分 · revision {draft.revision} · Key固定，所有Value可编辑</small>
+            <small>17部分 · revision {draft.revision} · Key固定；冻结Validation Contract只读</small>
           </span>
         </div>
         <code>{draft.draft_hash.slice(0, 12)}</code>
@@ -282,13 +331,22 @@ export function ExecutionDraftWorkbench({
               </button>
               {open && (
                 <div className="execution-draft-section-body">
-                  <ValueEditor
-                    onChange={(value) =>
-                      setPayload((current) => (current ? { ...current, [key]: value } : current))
-                    }
-                    path={key}
-                    value={payload[key]}
-                  />
+                  {key === "validation_plan" ? (
+                    <ValidationPlanSection
+                      onChange={(value) =>
+                        setPayload((current) => (current ? { ...current, [key]: value } : current))
+                      }
+                      value={payload[key]}
+                    />
+                  ) : (
+                    <ValueEditor
+                      onChange={(value) =>
+                        setPayload((current) => (current ? { ...current, [key]: value } : current))
+                      }
+                      path={key}
+                      value={payload[key]}
+                    />
+                  )}
                 </div>
               )}
             </section>
