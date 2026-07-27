@@ -11,6 +11,8 @@
 > 项目关系：本文补充[Chat持续协作系统研究](./chat-collaboration-system-research.md)中的产品方法景观；
 > Chat 当前已经批准的协议、Context 和步骤输入合同仍由
 > [Harness协议详细设计](./chat-harness-protocol-context-detailed-design.md)拥有。
+> Daniel Miessler LifeOS与Better Creating的固定版本、源码调用链、隔离运行、界面证据和口碑研究见
+> [LifeOS深层研究](./lifeos-deep-research-daniel-bettercreating.md)。
 
 ## 1. 执行摘要
 
@@ -63,9 +65,10 @@
 | Chat项目事实 | 当前仓库已经批准或实现的合同 | 用于判断能否直接接合 |
 | 候选设计 | 由研究推导、尚未获得用户审核的新增能力 | 明确标为“候选”，不得据此创建Schema或代码 |
 
-本文没有把论坛单条抱怨或营销页面口号当普遍用户事实，也没有进行这些项目的源码级审计。除当前治理规则
-已经固定的 LibreChat 外，本文项目**不进入 Chat 的正式外部架构参考集**；它们只是本次经用户授权形成的
-产品方法景观。若未来要把某个项目提升为源码级正式参考，仍需单独限定问题、版本和研究成本并由用户审核。
+本文没有把论坛单条抱怨或营销页面口号当普遍用户事实。除另行获得用户授权并已完成固定版本审计的
+[Daniel Miessler LifeOS深层研究](./lifeos-deep-research-daniel-bettercreating.md)外，其余项目没有进行源码级审计。
+除当前治理规则已经固定的LibreChat外，本文项目**不进入Chat的正式外部架构参考集**；它们只是本次经用户授权形成的
+产品方法景观。Daniel LifeOS的深层研究也只形成产品方法与机制候选，没有自动提升为正式架构基线。
 
 ## 3. “类 LifeOS”到底是什么
 
@@ -362,18 +365,21 @@ Notion模板、Tana、Capacities等系统常提供 Book、Movie、Trip、Recipe 
 ### 6.10 Daniel Miessler LifeOS：AI Harness与升级边界
 
 [Daniel Miessler LifeOS官方仓库](https://github.com/danielmiessler/LifeOS)把系统描述为从Current State走向Ideal State
-的Algorithm，并组合Context、Persistent Memory、Skills、Routing和Self-improvement。它还把用户定制与系统本体
-分离，使用Git支持升级合并和回滚。
+的Algorithm，并组合Context、Persistent Memory、Skills、Routing和Self-improvement。固定提交源码和隔离运行确认，
+它不是独立App，而是由Claude Code系统Prompt、51个Skill目录、Hook、TypeScript工具、USER/Memory文件树和Pulse本地
+Daemon组成的Harness发行版。
 
 这与Obsidian LifeOS不同，却更接近Chat希望达到的“协议由系统维护”：
 
-- 系统层拥有可升级方法和能力。
-- 用户层拥有偏好、目标和覆盖项。
-- Agent根据Context和Skill执行。
-- Git或版本历史提供变更追踪和回退。
+- 系统层拥有可升级方法和能力，用户层拥有偏好、目标和覆盖项。
+- Agent根据Context和Skill执行，Memory Reviewer能在后台从Transcript提取并写入长期Memory。
+- Algorithm/ISA把“完成”呈现为Markdown准则，Hook对部分无证据的上线、流程和视觉完成声明提供阻断。
+- Pulse把TELOS、Memory、Work和后台能力投影为本地Dashboard与API。
 
-它对Chat最强的启发是**协议打包与升级模型**，而不是复制其对象或运行架构。Chat仍必须保留自己的Product Store、
-MAF/AG-UI运行边界、HITL、Evidence、Trace、并发和恢复合同。
+深层研究也确认了边界：完整always-on行为仍是Claude-Code-first；公开Work依赖未发布`_ULWORK`；Current→Ideal百分比
+主要来自模板TBD/覆盖率；Memory高置信Proposal可直接修改身份/规则/Project；升级Migration多数仍是detect-only；公开
+仓库没有常规测试流水线。它对Chat最强的启发是**协议打包、Context/Memory自动维护、Capability Doctor和多投影**，
+而不是复制其对象或运行架构。详见[深层研究](./lifeos-deep-research-daniel-bettercreating.md)。
 
 ## 7. 为什么这些设计反复出现
 
