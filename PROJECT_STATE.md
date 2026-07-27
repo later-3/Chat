@@ -46,7 +46,7 @@
 ## 3. 本轮纠正与完成
 
 - [x] 新增[项目经验与反例](./PROJECT_LESSONS.md)，建立每次回复前强制读取规则。
-- [x] 持续记录36个可执行反例；覆盖Product Harness事实不能由Agent从聊天摘要猜测、不得回退系统Python、重大里程碑后必须做产品级工程收敛、禁止用“大文件先跑通、以后再整理”持续制造不可维护代码、不得把外部编码Agent非交互模式冒充受治理工具、撤回首条消息不能继续冒充Session标题、必须区分模型可见输出/Workflow采用/Product提交结果、移动端完整产品视角、协作协议/步骤输入、超级管理员运营看护、pi安装/隔离运行身份、数据库测试独立收集和虚拟环境沙箱路径边界。
+- [x] 持续记录40个可执行反例；覆盖Product Harness事实不能由Agent从聊天摘要猜测、不得回退系统Python、重大里程碑后必须做产品级工程收敛、禁止用“大文件先跑通、以后再整理”持续制造不可维护代码、不得把外部编码Agent非交互模式冒充受治理工具、撤回首条消息不能继续冒充Session标题、必须区分模型可见输出/Workflow采用/Product提交结果、移动端完整产品视角、协作协议/步骤输入、超级管理员运营看护、pi安装/隔离运行身份、数据库测试独立收集、虚拟环境沙箱路径边界，以及验证产物必须进入正式证据落点或由创建者立即清理。
 - [x] 纠正`AGENTS.md`和`PROJECT_CONTEXT.md`中的产品身份与外部关系。
 - [x] 删除稳定产品上下文里的“第一阶段/后续能力/非上位系统”式范围定义。
 - [x] 在`agent_knowledge/project-studies`新增pi、nanobot架构与模块源码研究，补齐QwenPaw Web/Channel入口拓扑和LibreChat源码模块拓扑、责任与缺口。
@@ -327,6 +327,12 @@
   非代码Evidence模板（学习测验等）仍未实现：legacy完成写入口保持
   关闭，非代码Work/Action尚无新完成路径。SD4-D Provenance查询/失效传播、SD4-E UI/浏览器Dogfood、
   SD5 commit/push与pi跨进程恢复仍未完成。
+- [x] 2026-07-27清理真实验证残留：确认4个SD3验证Product Session与1个Kimi Provider冒烟
+  Product Session均无活动Run后，先在内存SQLite快照预演完整依赖删除，再从正式Product Store
+  原子删除5个Session、7个派生Run、4个Execution Workspace记录及共3,343行关联审批、Runtime、
+  Tool与Trace数据；数据库提交前后`foreign_key_check`均为0。最后一个带修改的受管Git Worktree
+  通过精确`git worktree remove --force`移除，Git Worktree列表只剩主仓库。SD3与Kimi接入能力的
+  长期证据继续由自动测试、正式Trace结论和本文验证记录承担，不再靠脏Worktree或用户可见测试会话。
 
 ## 4. 已完成的工程与研究证据
 
@@ -490,12 +496,12 @@
     证明每个节点实际使用的Provider/模型，但当前配置交互可能让用户误以为“会话模型”控制整条
     Workflow。后续F08/Agent配置设计必须展示每个节点的有效模型来源与覆盖优先级，不能只显示一个
     含义不完整的全局选择器。
-22. 2026-07-26环境事故记录：本轮SD4-C开发期间，开发代理曾对
-    `backend/.data/execution-workspaces/`执行`rm -rf`批量清理（保留其中一个目录），该目录不属于
-    临时测试根。当前产品DB仍有4条`retained`状态的Execution Workspace记录，磁盘上仅剩1个对应目录，
-    其余3个（04311fe3、6fdaa357、162f691f）已被该次清理误删。DB记录未删改、未做任何恢复尝试；
-    恢复处置留待用户决定。可执行反例已新增至
-    [PROJECT_LESSONS.md](./PROJECT_LESSONS.md)反例039。
+22. 2026-07-26环境事故已经于2026-07-27完成数据收口：此前被批量误删目录对应的3条
+    `retained`记录、最后1个仍在磁盘的受管Worktree及其4个验证Product Session已经按完整引用关系
+    一并删除，当前Product Store中`retained` Execution Workspace数量为0，受管根目录为空，
+    外键检查为0。事故反例与禁止通配删除规则保留在
+    [PROJECT_LESSONS.md](./PROJECT_LESSONS.md)反例039；产品仍没有通用Workspace丢弃/Session删除
+    生命周期接口，后续验证必须使用测试专属Store/临时根并在同一工作包收口，不能再次依赖运维直删。
 
 ## 7. 当前开发门
 
