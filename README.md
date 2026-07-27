@@ -245,8 +245,9 @@ scripts/         可重复执行的工程验证
 24. [Chat愿景方案与完整场景模拟验证](./docs/chat-vision-scenario-validation.md)：已获方向审核的协作协议、执行层输入、用户看护、12个端到端场景、24个异常场景和分阶段测试矩阵。
 25. [Chat系统分阶段实现基线](./docs/chat-system-implementation-roadmap.md)：Chat Harness、MAF AI Runtime、执行层、前端边界以及阶段A-F的交付与验证门。
 26. [Chat持续协作系统研究与落地推导](./docs/chat-collaboration-system-research.md)：项目/任务/学习/笔记方法，MAF与参考项目源码事实，摘要、检索、SQLite和协议落地取舍。
-27. [Kimi Code CLI开发工具手册](./docs/kimi-code-cli-tool.md)：已验证版本、个人Codex Skill、只读调用、交互式修改和未来ACP产品接入边界。
-28. [Chat开发Chat自举详细设计](./docs/chat-self-development-design.md)：第一性原理、19个用户场景、架构/模块/接口、8层测试、8个端到端场景、SD0-SD6路线、自检修正，以及已批准的D1-D9与SD1交付状态。
+27. [类LifeOS产品方法与Chat Harness启发研究](./docs/lifeos-product-method-research.md)：Obsidian、Notion及跨平台LifeOS类产品的运行协议、设计原因、呈现、维护成本和Chat候选启发。
+28. [Kimi Code CLI开发工具手册](./docs/kimi-code-cli-tool.md)：已验证版本、个人Codex Skill、只读调用、交互式修改和未来ACP产品接入边界。
+29. [Chat开发Chat自举详细设计](./docs/chat-self-development-design.md)：第一性原理、19个用户场景、架构/模块/接口、8层测试、8个端到端场景、SD0-SD6路线、自检修正，以及已批准的D1-D9与SD1交付状态。
 
 ## 下一步
 

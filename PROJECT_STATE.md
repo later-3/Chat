@@ -129,6 +129,7 @@
 - [x] 根据Chat愿景与Codex/Claude Code限定调研扩充[工程编码与模块设计规范](./docs/engineering-standards.md)：增加产品协议/权威状态/运行投影分离、有界Context、步骤级最小执行工作包、确定性代码与Agent/Skill/Tool/Hook分工、合同失效和场景驱动设计门；没有引入多套公司规范或新平台样板。
 - [x] 完成待审核的[Chat愿景方案与完整场景模拟验证](./docs/chat-vision-scenario-validation.md)：用12个端到端场景和24个异常场景穿透项目、任务、学习、周期资讯、研究、用户标准、多Intent、pi执行、HITL看护、验证修复、并发和恢复；推导出协作协议、协议绑定、步骤输入投影、周期Schedule及验证修复合同等9项待审核决定，尚未据此创建正式Schema或代码。
 - [x] 完成Chat最终愿景与落地研究收敛：`PROJECT_CONTEXT.md`已明确用户眼中的统一持续协作入口、设计者眼中的产品事实/受治理Workflow/有界执行层，以及Product Session不等于Project、Context面板不构成第二事实源；[研究文档](./docs/chat-collaboration-system-research.md)按证据等级核对项目/流动/学习/笔记方法、MAF安装版、固定参考源码、Codex、SQLite/FTS5和摘要检索边界。
+- [x] 2026-07-27完成[类LifeOS产品方法与Chat Harness启发研究](./docs/lifeos-product-method-research.md)：按官方资料归档Obsidian LifeOS/Skill/Aino、Notion方法体系及Tana、NotePlan、RemNote等跨平台产品的运行协议、设计原因、呈现、维护与升级成本，提炼“低摩擦捕获、稳定对象、多投影、周期维护、Agent执行协议”等Chat启发；本文只形成产品方法候选和体验清单，没有扩张正式外部架构参考集，也没有授权Protocol Pack、Schedule、Schema或代码实现。
 - [x] 愿景验证新增5组可复核逐状态桌面推演：每一步固定前置状态、读取、模型/Tool、提交差异、用户可见结果和不变量，并用“Project目录查询、四天学习/项目切换、同名Context选择、pi失败恢复、多Intent来源失效/并发”反推5项方案修正；这是待审核设计证据，不是新功能已实现声明。
 - [x] 建立生产代码分割回归门：Workflow Run、Harness、ExecutionDraft/HITL相关配置、Agent、Tool和两类审批共8个Feature按真实打开时机加载；Vite manifest验证主入口450.2 KiB、单Feature与CSS预算，原约594 kB单包警告已消除。
 - [x] 补齐关键结构化日志：HITL策略激活、ExecutionDraft/RunSpec、ModelCall注册与Attempt、TurnSummary、Harness命令暂存和两阶段Context只记录关联ID、状态与计数；不记录Prompt、知识正文、Provider Body或隐藏推理。

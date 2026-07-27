@@ -4,7 +4,7 @@
 >
 > 更新日期：2026-07-23。
 >
-> 目的：回答Chat怎样把项目、任务、学习、研究、笔记、规则、上下文、Agent执行和长期恢复组合成一套可落地系统。本文拥有研究证据和方案推导；稳定产品愿景由[`PROJECT_CONTEXT.md`](../PROJECT_CONTEXT.md)拥有，完整场景由[`chat-vision-scenario-validation.md`](./chat-vision-scenario-validation.md)拥有。
+> 目的：回答Chat怎样把项目、任务、学习、研究、笔记、规则、上下文、Agent执行和长期恢复组合成一套可落地系统。本文拥有研究证据和方案推导；稳定产品愿景由[`PROJECT_CONTEXT.md`](../PROJECT_CONTEXT.md)拥有，完整场景由[`chat-vision-scenario-validation.md`](./chat-vision-scenario-validation.md)拥有。Obsidian、Notion及跨平台类LifeOS产品怎样运行、呈现和维护的补充景观，见[类LifeOS产品方法与Chat Harness启发研究](./lifeos-product-method-research.md)。
 >
 > 边界：本文没有批准新Schema、迁移、Workflow节点或前端页面。候选字段与算法只有在用户审核后才能进入模块详细设计。
 
