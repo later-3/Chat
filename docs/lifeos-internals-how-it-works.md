@@ -1,637 +1,506 @@
-# LifeOS 原理剖析:基于代码事实的从头到尾梳理
+# LifeOS 解剖手册:一次输入到底怎么走完的
 
-> 状态:**基于固定提交源码的逆向原理研究,不采信 README 宣传**
->
-> 研究日期:2026-07-27
+> 状态:**基于固定提交源码的运行机制逆向,不是产品介绍**
 >
 > 源码固定点:`danielmiessler/LifeOS@d1d6240ce884dd70f5fc8333279ee6bbc21b96b1`
 >
 > 本地只读检出:`/Users/xulater/Code/Chat/ref/LifeOS`
 >
-> 关联文档:[LifeOS 深层研究:Daniel vs Better Creating](./lifeos-deep-research-daniel-bettercreating.md)(高层产品方法对比)
->
-> 本文与上层研究的分工:上层文档回答"LifeOS 在产品命题上接近 Chat 吗、口碑如何、Chat 该采用什么";本文只回答一个问题--**它代码层面到底怎么做到的**。每一个论断都附带可定位的源码路径,凡代码未支撑的作者宣传一律标为`文档宣称`而非事实。
+> 本文回答唯一一个问题:**假设用户在 Claude Code 里敲下一行字,从这行字到模型回复、到状态落盘,中间到底发生了什么、读了哪些文件、写了哪些文件、hook 和 skill 在哪里起作用**。每一步都附代码路径。
 
-## 0. 研究方法
+## 0. 先建立最关键的一个认知
 
-1. 不读 LifeOS 自己的 `README.md`、`DOCUMENTATION/**` 作为事实来源,只把它们当作"作者宣称什么"的输入,再用固定提交里的 `.ts`/`.json`/`.md` 模板逐条验证。
-2. 仓库规模:`888 md` + `454 ts` + `144 tsx` + `38 json` + `16 sh`。Markdown 是主体,TypeScript 是"牙齿"。
-3. 本文引用的代码路径都相对于 `ref/LifeOS/`,即 `LifeOS/install/...` 指仓库内 `LifeOS/install/...`。安装后这些文件会被复制到 `~/.claude/...`,路径前缀变化但内容不变。
-4. 凡涉及"作者演示但公开版缺失"的能力,明确标为`私有模块`。
+**LifeOS 不是独立 App,它寄生在 Claude Code 上。** Claude Code 提供宿主能力:Session、Transcript、Tool 执行、Hook 事件分发、`settings.json` 权限。LifeOS 做的全部事情就是往这 5 个宿主能力里"塞料":
 
-## 1. 先给结论:LifeOS 在代码层面到底是什么
+1. 往 **Session 启动**里塞 system prompt(Constitution)+ CLAUDE.md 的 `@import`。
+2. 往 **Hook 事件**里塞 45 条 hook(读文件、算确定性逻辑、注入上下文或阻断)。
+3. 往 **Tool 执行**里塞宽权限(`settings.json` 的 `auto` 模式让模型自动读写 `~/.claude/`)。
+4. 往 **Transcript** 里塞格式约定(banner、🧠 MEMORY 行、🗣️ closer),hook 再回头解析这些格式。
+5. 往 **文件系统**里塞状态(Markdown 协议 + JSON/JSONL 状态)。
 
-LifeOS **不是一个 App**,而是一套装进 Claude Code(以及兼容 harness)的"个人运行层发行版",由 6 类东西拼成:
+所以理解 LifeOS 的唯一正确顺序是:**先看安装后 `~/.claude/` 长什么样,再看 Claude Code 的 11 类事件分别被塞了什么,最后跟着一次真实输入走完**。本文就按这个顺序写。
 
-| 组成 | 代码事实 | 数量 | 权威载体 |
+## 1. 安装后 `~/.claude/` 的完整目录结构
+
+安装(`DeployCore` + `ScaffoldUser` + `LinkUser` + `InstallSettings` + `InstallHooks`)跑完后,`~/.claude/` 长这样。每一行的"谁写/谁读"是后续理解数据流的关键。
+
+```
+~/.claude/
+├── settings.json              # InstallSettings 写入。权限模型 + hooks 注册表 + env + autoMode 规则
+│                              #   读:Claude Code 启动时(权限/hook 接线)、各 hook(读 dynamicContext 等)
+├── CLAUDE.md                  # ActivateImports 取消注释 @import 行。Claude Code 原生加载
+├── LIFEOS_SYSTEM_PROMPT.md    # Constitution。仅 lifeos launcher 通过 --append-system-prompt-file 注入
+├── package.json + node_modules/ # DeployCore 复制 + bun install。hook 脚本依赖 yaml 等包
+├── .env                       # ElevenLabs/Telegram 等 key。settings.json 的 ask 规则要求读写时确认
+│
+├── hooks/                     # InstallHooks 复制的 72 个文件
+│   ├── hooks.json             # 注册表副本(InstallHooks 合并进 settings.json 的源)
+│   ├── *.hook.ts              # 38 个 hook 入口 + 1 个 .hook.sh
+│   ├── lib/                   # 24 个共享逻辑(isa-utils、hook-io、identity、paths、transcript-evidence...)
+│   └── handlers/              # 7 个子处理(DocCrossRefIntegrity、MemoryDirIntegrity...)
+│
+├── skills/                    # DeployCore 复制的 52 个 skill
+│   ├── Research/SKILL.md      #   每个 skill 有 frontmatter(name/version/description/USE WHEN)
+│   ├── ISA/SKILL.md           #   description 里的 USE WHEN 短语被 AlgorithmNudge 建索引
+│   ├── Telos/SKILL.md         #   Workflows/ 子目录放可执行流程脚本
+│   └── ...                    #   _ALLCAPS 的 skill(_LIFEOS/_ULWORK)在 release 时被 strip,公开版没有
+│
+├── LIFEOS/                    # DeployCore 复制的运行时(install/LIFEOS/*)
+│   ├── ALGORITHM/             # Algorithm 规范
+│   │   ├── LATEST             #   内容就一行:8.4.0。system prompt 让模型先读它拿版本号
+│   │   ├── v8.4.0.md          #   Algorithm 完整规范(15 条 "run complete when")
+│   │   └── modes/             #   ideate/optimize loop 规范
+│   ├── RULES/                 # Philosophy/VerificationExpanded/SelfHealing 等扩展规则
+│   ├── TOOLS/                 # 131 个 TypeScript 工具(algorithm/Memory*/ComputeGap/Pulse...)
+│   ├── PULSE/                 # Pulse daemon 源码(见 §9)
+│   ├── DOCUMENTATION/         # 作者文档(本文不当事实来源,只当"宣称什么")
+│   ├── USER_TEMPLATES/        # ScaffoldUser 用的模板源
+│   │
+│   ├── USER/ -> ~/.config/LIFEOS/USER  # symlink!LinkUser 建的 system/user 分离
+│   │   ├── PRINCIPAL/
+│   │   │   ├── PRINCIPAL_IDENTITY.md    # 身份。@import 进 CLAUDE.md。proposal target_kind=identity
+│   │   │   ├── PRINCIPAL_MEMORY.md     # 热层记忆,always 加载。MemorySystem set-overwrite 写
+│   │   │   ├── WRITINGSTYLE.md         # proposal target_kind=style
+│   │   │   └── RESUME.md               # proposal target_kind=resume
+│   │   ├── DIGITAL_ASSISTANT/
+│   │   │   ├── DA_IDENTITY.md          # DA 身份(名字/声音/关系)
+│   │   │   └── DA_MEMORY.md            # DA 热层记忆
+│   │   ├── TELOS/
+│   │   │   ├── TELOS.md                 # 单一真相源
+│   │   │   ├── PRINCIPAL_TELOS.md       # @import。GenerateTelosSummary 生成
+│   │   │   ├── IDEAL_STATE/{HEALTH,MONEY,FREEDOM,CREATIVE,...}.md  # ComputeGap 数 TBD
+│   │   │   ├── CURRENT_STATE/{...}.md   # UpdateLifeosState 读 status:have|partial|missing
+│   │   │   ├── LIFEOS_STATE.json       # UpdateLifeosState 写。Pulse TELOS rings + statusline 读
+│   │   │   ├── HEALTH/ FINANCES/       # 真实数据(可选)
+│   │   │   └── ...
+│   │   ├── PROJECTS.md                  # @import。proposal target_kind=projects
+│   │   ├── CONTACTS.md                  # proposal target_kind=contacts
+│   │   ├── DEFINITIONS.md               # proposal target_kind=definition
+│   │   ├── CANONICAL_CONTENT.md         # proposal target_kind=canonical-content
+│   │   └── CONFIG/
+│   │       ├── OPERATIONAL_RULES.md     # @import。proposal target_kind=operational-rule
+│   │       ├── memory-review.json       # MemoryReviewer 读 confidence_threshold(默认0.70)
+│   │       └── settings.user.json       # MergeSettings 合并 system+user
+│   │
+│   └── MEMORY/                # DeployCore scaffold 的 6 个空状态目录(per-install 状态,不随 release)
+│       ├── WORK/{YYYYMMDD-HHMMSS_slug}/  # 每次任务一个目录
+│       │   └── ISA.md                    # Algorithm 的 ISA(见 §8)
+│       ├── KNOWLEDGE/
+│       │   ├── People/{slug}.md          # knowledge type,entity_type=person
+│       │   ├── Companies/{slug}.md      # entity_type=company
+│       │   ├── Research/{slug}.md       # entity_type=research
+│       │   └── Ideas/{slug}.md          # idea type
+│       ├── LEARNING/
+│       │   ├── REFLECTIONS/algorithm-reflections.jsonl  # Algorithm claim 12 反思记录
+│       │   └── (wisdom frames,LoadContext 读)
+│       ├── STATE/
+│       │   ├── work.json                # ★ ISA 注册表!ISASync 写,所有 hook 读(见 §8)
+│       │   ├── session-names.json        # PromptProcessing 写(session 名)
+│       │   ├── algorithms/{id}.json      # loop mode 状态
+│       │   ├── isa-nudge/{session_id}.json       # AlgorithmNudge 的计数状态
+│       │   ├── memory-inject/{session_id}.json   # MemoryTurnStart 的注入门控(hash+turns)
+│       │   ├── isa-render-debounce/{session_id}.json  # ISASync 记录本回合编辑了哪些 ISA
+│       │   ├── verification-gate-blocked.json    # VerificationGate 的 fingerprint 去重
+│       │   ├── capabilities.json                # Doctor 写,AlgorithmNudge 读(broken/declined/live)
+│       │   ├── skill-usewhen-index.json         # AlgorithmNudge 建的 skill USE WHEN 索引
+│       │   └── progress/{project}-progress.json  # LoadContext 读的持久项目进度
+│       ├── OBSERVABILITY/
+│       │   ├── review-state.json          # MemoryReviewFire 写的 cadence 状态
+│       │   ├── reviewer-fires.jsonl        # MemoryReviewFire 触发日志
+│       │   ├── pending-proposals.jsonl     # ★ proposal 队列!MemorySystem.add enqueue
+│       │   ├── tier-b-writes.jsonl         # Tier B 写审计
+│       │   ├── verification-gate.jsonl     # VerificationGate 决策日志
+│       │   ├── gap-history.jsonl           # ComputeGap --log 写的趋势
+│       │   └── algo-nudge-routing.jsonl    # AlgorithmNudge skill-routing 触发遥测
+│       └── SKILLS/                         # skill 运行时状态
+│
+└── projects/{session-hash}/
+    └── *.jsonl                # ★ Claude Code 原生 transcript!hook 用 TranscriptParser 解析它
+```
+
+**三个要点**:
+
+1. **`LIFEOS/USER` 是 symlink**,指向 `~/.config/LIFEOS/USER`。系统文件(release 可覆盖)和用户数据(永久保留)靠这个 symlink 分离。所有"身份/记忆/TELOS"都在 USER 下。
+2. **状态不在数据库,散落在几十个文件里**。`work.json` 是最关键的--它是 ISA 注册表,几乎所有 hook 都读它判断"当前有没有活动 run"。
+3. **`~/.claude/projects/{hash}/*.jsonl` 不是 LifeOS 建的**,是 Claude Code 原生的 transcript。LifeOS 的 hook 通过 `transcript_path` 字段拿到它,用 `TranscriptParser` 解析。这是 LifeOS "读模型做过什么"的唯一途径。
+
+## 2. 模型上下文到底由哪四层组成
+
+模型每轮收到的上下文是**四层叠加**,理解这四层就理解了"LifeOS 怎么让模型按协议行事":
+
+| 层 | 来源 | 内容 | 谁控制 |
 |---|---|---|---|
-| Constitution | `LifeOS/install/LIFEOS/LIFEOS_SYSTEM_PROMPT.md`(196 行) | 1 份 | Markdown 系统提示 |
-| Personal Context | `LifeOS/install/USER/**`(TELOS、PRINCIPAL、DIGITAL_ASSISTANT 等) | 95 个模板文件 | Markdown / JSON |
-| Algorithm / ISA | `LIFEOS/ALGORITHM/v8.4.0.md` + `TOOLS/algorithm.ts`(1826 行) + `hooks/lib/isa-template.ts` | 1 个 loop + 7 个 effort 层级 | Markdown + TS CLI |
-| Skills | `LifeOS/install/skills/*` | 52 个 skill 目录 | Markdown `SKILL.md` |
-| Hooks | `LifeOS/install/hooks/`(72 个文件)+ `hooks.json` 注册表 | 11 类事件、45 条 hook 项 | Claude Code `settings.json` + TS 脚本 |
-| Pulse | `LifeOS/install/LIFEOS/PULSE/pulse.ts`(976 行)+ 24 个模块 | 单进程 daemon,端口 31337 | Bun 进程 + 文件 + JSONL |
+| ① system prompt | `lifeos` launcher 用 `--append-system-prompt-file` 注入 `LIFEOS_SYSTEM_PROMPT.md` | Constitution:输出格式、验证、安全、5 条 CONSTITUTIONAL | 一次性,启动时固定 |
+| ② CLAUDE.md + `@import` | Claude Code 原生加载 `~/.claude/CLAUDE.md`,解析其中的 `@path` 行 | `ARCHITECTURE_SUMMARY.md` + 被 ActivateImports 取消注释的身份文件(PRINCIPAL_TELOS/PRINCIPAL_IDENTITY/DA_IDENTITY/PROJECTS/OPERATIONAL_RULES) | 启动时固定,但 `@import` 行可被 hook 改 |
+| ③ `<system-reminder>` | `LoadContext.hook.ts`(SessionStart)输出到 stdout | 关系笔记 + wisdom frames + 活动工作摘要 | 每次开 session 动态生成 |
+| ④ `additionalContext` | 各 hook 通过 `hookSpecificOutput.additionalContext` 返回 | AlgorithmNudge 建议行、MemoryTurnStart 的 `<pai-memory>` 块、各种 nudge | 每轮按事件动态注入 |
 
-一句话:**它把"作者脑内的个人 AI 运行协议"全部写成可读文件,再用 Claude Code 的 Hook 机制把这些文件变成"会被强制执行的行为",最后用一个本地 daemon 补上"终端对话之外的后台能力"**。Markdown 是身体,Hook 是神经,Pulse 是器官。
+**关键**:①② 是"静态"层,③④ 是"动态"层。LifeOS 的"产品逻辑"大部分在 ④ 里--它是唯一能在每轮运行时根据当前状态变化的层。这就是为什么 72 个 hook 文件是核心:它们决定了"这一轮模型额外看到什么"。
 
-## 2. 一句话原理:它怎么把 Markdown 协议变成运行行为
+`settings.json` 的 `postCompactRestore.fullFiles: ["USER/PROJECTS.md"]` 表示 compaction 后会把 PROJECTS.md 重新塞回(因为 compaction 会清掉 ③④)。
 
-关键洞察是这一条,理解它就理解了整个 LifeOS:
+## 3. Claude Code transcript:LifeOS 的"眼睛"
 
-> **Markdown 本身没有任何执行力。真正让协议"活起来"的是 Claude Code 的 Hook 机制:Claude Code 在 11 类事件发生时,通过 stdin 把 JSON 喂给 hook 脚本,脚本读完文件、做完确定性计算后,通过 stdout 回一个 `additionalContext` 字符串,这个字符串会被注入到模型的下一轮上下文里。模型看到它,但不知道它是谁算出来的。**
-
-这意味着 LifeOS 不需要自己写 Agent runtime,也不需要自己写模型调用循环。它只需要:
-
-1. 用 Markdown 写"应该怎样"(Constitution、Algorithm、ISA、TELOS)。
-2. 用 TypeScript 写"在什么时刻检查什么、然后注入什么提示"(72 个 hook 文件)。
-3. 用 `settings.json` 的 `permissions` 决定"模型可以自动做什么"。
-4. 用 Pulse daemon 补上"Claude Code 不在运行时也要发生的事"(cron、通知、移动入口、dashboard)。
-
-模型是执行者,hook 是规则引擎,文件是状态。这就是为什么 LifeOS 的代码 888 个 Markdown 远多于 454 个 TypeScript--因为大部分"产品逻辑"写在 Markdown 里,TypeScript 只负责"在关键时刻把对的 Markdown 读出来塞给模型"。
-
-## 3. 安装链路:7 个独立工具,不是事务
-
-### 3.1 安装不是一个确定性事务,而是一份给 AI 执行的 workflow
-
-`LifeOS/Tools/` 下有 11 个安装工具,核心是 `InstallEngine.ts`(653 行,被其他工具 import)。安装的真实步骤是:
+LifeOS 自己不记录模型做了什么,它完全靠 Claude Code 原生的 transcript。`TranscriptParser.ts` 揭示了它的格式:
 
 ```
-DetectEnv -> ScanConflicts -> DeployCore -> ScaffoldUser -> LinkUser
-         -> InstallSettings -> InstallHooks -> ActivateImports -> SeedPulse
+~/.claude/projects/{session-hash}/{uuid}.jsonl
 ```
 
-每个工具都是独立的 Bun 脚本,默认 `dry-run`,必须加 `--apply` 才写盘。**没有任何一个工具负责"整个安装的原子性"**。顺序、授权、外部依赖和 Interview 都由 AI(Claude Code 本身)编排。`LifeOS/INSTALL.md` 自己也写明"AI-native installer 实际意味着 AI 仍是安装编排器"。
+**每行一个 JSON entry**,结构:
 
-### 3.2 DeployCore:复制 911 个 skill + 532 个 runtime 文件
-
-`LifeOS/Tools/DeployCore.ts` 做四件事:
-
-1. `deploySkills`:把 `install/skills/*` 复制到 `configRoot/skills/`。
-2. `deployRuntime`:把 `install/LIFEOS/<entry>` 复制到 `configRoot/LIFEOS/`,跳过 `USER`、`MEMORY`、`node_modules`、`.git`。
-3. `scaffoldMemory`:创建 6 个空状态目录 `MEMORY/{WORK,KNOWLEDGE,LEARNING,STATE,OBSERVABILITY,SKILLS}`。注释明确:"MEMORY is NOT shipped in the payload (per-install state)"。
-4. `deployDependencies`:复制 `package.json` 到 `configRoot/` 并跑 `bun install`。
-
-关键不变量:`copyMissing` 是递归、`existsSync` 守卫的复制,**永远不会覆盖已存在的文件**(`InstallEngine.ts:copyMissing`)。所以第二次 `--apply` 复制数为 0,基础覆盖操作幂等。
-
-### 3.3 system/user 分离:symlink 把数据挪出 `~/.claude`
-
-这是设计上最有产品意识的一步。`ScaffoldUser.ts` + `LinkUser.ts` + `InstallEngine.ts:setupUserSeparation` 实现:
-
-- 系统文件住在 `<configRoot>/LIFEOS/`(即 `~/.claude/LIFEOS/`),可以被 release 覆盖。
-- 用户私人数据住在 `<configDir>/USER/`(即 `~/.config/LIFEOS/USER/`),**不在** `~/.claude` 里。
-- 通过 symlink `<configRoot>/LIFEOS/USER -> <configDir>/USER` 让两者对模型透明地连起来。
-
-`setupUserSeparation` 的 merge 是 **live-wins** 语义:现有用户文件永远胜过模板,冲突时把被替换的旧文件保存成 `<file>.replaced-<stamp>`,任何方向都不丢数据。这解决了"release 覆盖用户数据"的风险。
-
-但有一个公开 bug 验证了文档 §5.1:路径合同没有成为统一依赖。`ScaffoldUser.ts` 和 `LinkUser.ts` 开头都有这段:
-
-```ts
-// Normalize env path vars Claude Code may inject unexpanded - literal $HOME/${HOME}
-// in LIFEOS_DIR/LIFEOS_CONFIG_DIR/PROJECTS_DIR resolves to a shadow dir (#1404 / PR #1451)
-for (const k of ["LIFEOS_DIR", "LIFEOS_CONFIG_DIR", "PROJECTS_DIR"]) {
-  const v = process.env[k];
-  if (v && /^\$\{?HOME\}?(\/|$)/.test(v)) process.env[k] = v.replace(/^\$\{?HOME\}?/, process.env.HOME ?? "~");
-}
+```jsonl
+{"type":"human","message":{"content":"用户输入的文本"}}      // 真实用户消息
+{"type":"assistant","message":{"content":[{"type":"text","text":"模型回复"},{"type":"tool_use","name":"Write","input":{...}}]}}  // 模型输出(可含 tool call)
+{"type":"user","message":{"content":[{"type":"tool_result","content":"..."}]}}  // tool 结果(Claude Code 用 user 类型包装)
 ```
 
-意思是:Claude Code 的 `settings.json` 里 `env` 字段注入时不做 shell 展开,字面量 `$HOME/...` 会在磁盘上建一个叫 `$HOME` 的目录并吞掉运行状态。每个工具都要自己修一遍。这是 Issue #1584 的根因。
+`TranscriptParser.collectCurrentResponseText` 的关键逻辑:**找最后一个真实用户消息(有 text block 的 `type:human`,不是 `tool_result`),收集之后所有 assistant 文本**。这防止 Stop hook 把上一轮的陈旧行抓进来。
 
-### 3.4 InstallSettings:env 值在写入时展开
+hook 拿到 transcript 后能提取:
+- `lastMessage`:最后一条 assistant 消息(VerificationGate 用它检测 claim)。
+- `currentResponseText`:本回合所有 assistant 文本(VoiceCompletion 提取 `🗣️` 行)。
+- `responseState`:检测 `AskUserQuestion` tool_use -> `awaitingInput`(给 tab 染色)。
+- `transcript-evidence.ts`:解析 tool 事件(hadDeploy/hadCodeEdit/hadFrontendEdit/flowExercised/pixelViewed/testPassedAfterEdit),VerificationGate 用它判"本回合真的做了变更吗"。
 
-`InstallSettings.ts` 做一件 `copy-by-hand` 总做错的事:把 `settings.system.json` 的 `env` 值里的 `$HOME`/`${HOME}`/`~` 在写入时展开成真实 home。注释:
+**这就是 VerificationGate 的核心机制**:它不读模型自评的文字(模型可以说"已验证"),它读 transcript 里真实的 tool 调用序列。模型说过什么不算,做过什么才算。
 
-> The harness injects env values verbatim with NO shell expansion (LifeOS#1404/#1451) - a literal `"$HOME/..."` value creates a real `$HOME/` directory on disk that silently captures runtime state.
+## 4. 11 类 Hook 事件:分别在什么时候、读什么、写什么、返回什么
 
-merge 语义:additive,只加不存在的 top-level key 和 env key,已有的不碰。
+这是 LifeOS 的"神经"。`hooks.json` 注册了 11 类 Claude Code 事件。下表是每一类的完整接线(全部 45 条):
 
-### 3.5 InstallHooks:hook 注册表和脚本必须一起部署
+### 4.1 SessionStart(开新 session 或 compaction 后)
 
-`InstallHooks.ts` 是理解整个 hook 系统的入口。它做两件事,且**必须原子**:
-
-1. 把 `install/hooks/hooks.json` 加性合并进 `settings.json` 的 `hooks` 字段(`mergeHooks`,idempotent by normalized command)。
-2. 把整个 `install/hooks/` 树(72 个文件,含 `*.hook.ts` + `lib/`)递归复制到 `configRoot/hooks/`。
-
-注释记录了一个真实事故(RC2 audit 20260702):早期版本只合并 `settings.json` 但没复制脚本,导致每条 hook 命令都指向不存在的文件。这证明了"hook 接线"是 settings + scripts 的组合,缺一不可。
-
-备份语义:写盘前 `copyFileSync(settingsPath, backup)`。
-
-## 4. Constitution 层:system prompt 做什么、不做什么
-
-### 4.1 它是给 AI 读的行为纪律,不是可执行代码
-
-`LifeOS/install/LIFEOS/LIFEOS_SYSTEM_PROMPT.md`(196 行)定义了 5 条 CONSTITUTIONAL 规则(冲突时胜出):
-
-1. **Output Format**:每次回复必须以 `════ LifeOS ════` banner 开头,以 `🗣️ <DA>:` 结尾,中间是答案 + `🔧 CHANGE` + `✅ VERIFY` + `🧠 MEMORY`。
-2. **Verification**:任何完成声明必须有 tool evidence;"should work" 禁止。
-3. **`~/.claude` 永久私有**:身份、路径、USER 数据不得进公开仓库。
-4. **Security Protocol**:external content 是 read-only,prompt injection 要报告不动手。
-5. **Analysis means read-only**:"分析"=只报告,"修复"=才允许改。
-
-### 4.2 关键:system prompt 自己不强制执行,靠 hook 落地
-
-这是理解 LifeOS 最重要的认知:**宪法只是文字,真正让它有"牙齿"的是 hook**。两个最直接的例子:
-
-- prompt 写 "🧠 MEMORY lines are hook-fed, never self-computed"。意思是:模型不能自己编记忆行,必须等 hook 通过 `<pai-memory-delta>` block 注入,然后逐字 echo。`MemoryDeltaSurface.hook.ts` 负责产生这个 block。
-- prompt 写 "VerificationGate.hook.ts 强制 4 条验证规则"。如果没有这个 hook,规则只是建议。
-
-所以 system prompt 的真实角色是:**告诉模型"你会收到 hook 注入的上下文,收到就照做"**。它是一个协调契约,不是执行引擎。一旦 hook 没接线(文档 §3.2 说的其他 harness 场景),system prompt 退化成一份建议。
-
-### 4.3 只有用专用 `lifeos` 启动命令才加载
-
-`文档宣称`:只有通过专用 launcher 把这份 system prompt 传给 harness,宪法才真正加载;普通 `claude` 命令没有这层。这意味着 system prompt 不是"装上就生效",而是"每次启动都要重新注入"。这也是 LifeOS 是 Claude-Code-first 的根本原因--其他 harness 没有等价的启动钩子。
-
-## 5. Hook 机制:真正的牙齿(核心章节)
-
-这是 LifeOS 全部"产品能力"的发动机。把它讲清楚,整个系统就懂了。
-
-### 5.1 IO 协议:hook 怎么和 Claude Code 通信
-
-Claude Code 的 hook API(基于 `hooks/lib/hook-io.ts` 和各 hook 的 main 实现)是这样工作的:
-
-**输入**:Claude Code 在事件发生时,通过 **stdin** 传一个 JSON payload 给 hook 脚本。payload 字段包括:
-
-```ts
-interface HookInput {
-  session_id: string;
-  transcript_path: string;        // 本次会话的 transcript 文件路径
-  hook_event_name: string;        // PreToolUse / PostToolUse / Stop / ...
-  last_assistant_message?: string;
-  prompt?: string;                // UserPromptSubmit 时
-  tool_name?: string;             // PostToolUse 时
-  tool_input?: Record<string, unknown>;
-  stop_hook_active?: boolean;     // loop-breaker
-  effort?: { level?: string };
-}
-```
-
-**输出**:hook 脚本处理后,通过 **stdout** 输出一个 JSON。有三种返回形态:
-
-1. **建议(注入上下文)**:`{ hookSpecificOutput: { hookEventName, additionalContext: "🧭 ALGO-NUDGE: ..." } }`。这个字符串会被注入模型下一轮上下文。模型可以采纳也可以忽略。
-2. **强制阻断**:`{ decision: "block", reason: "..." }`。Claude Code 会把 reason 返回给模型,模型必须重新处理。这是真正的"门"。
-3. **放行/同步**:`{ continue: true }` 或什么都不输出。不阻断,也不注入。
-
-**超时与失败语义**:`readHookInput` 有 2000ms 超时;几乎所有 hook 都包裹在 `try/catch` 里,**任何错误都 `process.exit(0)`**--即 fail-open。只有少数高影响门(VerificationGate、StopGates)用 `decision:block` 主动阻断。
-
-这就是 deep research 文档说的"大多数 Nudge 是建议性 additional context;Hook 异常普遍 fail-open"的代码根源。
-
-### 5.2 三种门形态:建议 / 强制 / 同步 / 触发
-
-| 形态 | 返回 | 代表 hook | 模型能否忽略 |
+| hook | 读 | 写 | 返回 |
 |---|---|---|---|
-| 建议 | `additionalContext` | AlgorithmNudge、LoadContext、DriftReminder | 能 |
-| 强制门 | `decision:"block"` | VerificationGate、StopGates | 不能(必须重做) |
-| 同步 | `continue:true` | ISASync、EventLogger | 无所谓(只是副作用) |
-| 触发 | spawn detached | MemoryReviewFire、ISASync(转 COMPLETE 时) | 后台进程,异步 |
+| `HookHealer` | settings.json | 自愈 hook 注册 | 无(detached,10s) |
+| `KittyEnvPersist` | tab 状态 | tab 颜色 | 副作用 |
+| `LoadContext` | MEMORY/RELATIONSHIP + MEMORY/LEARNING + MEMORY/WORK + settings.json | recordSessionStart | **`<system-reminder>` 注入**③ |
+| `FreshnessCache` | 文件 freshness | 缓存 | 无(detached) |
+| `MergeSettings` | settings.system.json + settings.user.json | settings.json 合并 | 无(detached,15s) |
 
-### 5.3 逐个拆解 5 个关键 hook
+### 4.2 UserPromptSubmit(用户每次发消息)
 
-#### 5.3.1 AlgorithmNudge.hook.ts:确定性建议层(550 行)
+| hook | 读 | 写 | 返回 |
+|---|---|---|---|
+| `PromptProcessing` | stdin prompt + session_names.json | session-names.json + tab | 副作用(用 Haiku 推理起 session 名,**不注入模型**) |
+| `SatisfactionCapture` | stdin | 满意度采样 | 副作用(detached,20s) |
+| `ReminderRouter` | 提醒配置 | 路由提醒 | additionalContext(detached,5s) |
+| `MemoryTurnStart` | PRINCIPAL_MEMORY.md + DA_MEMORY.md 的 hash | memory-inject/{sid}.json | **`<pai-memory>` 块(有 hash 门控)+ `<pai-memory-delta>` 行**④ |
+| `AlgorithmNudge`(UserPromptSubmit 分支) | skill-usewhen-index.json + work.json | isa-nudge/{sid}.json | **skill-routing 建议 + depth directive**④ |
 
-这是理解"hook 不是 AI"的最好例子。它**不调用任何模型**,只读文件 + 正则匹配 + 计数 + cooldown,然后注入一行建议文本。
+**MemoryTurnStart 的 hash 门控**(关键省 token 设计):`<pai-memory>` 块约 1.5K tokens,每轮注入会重复几十次。所以它只在三种情况注入:session 首 prompt、memory 文件内容变了(SHA256 hash 变)、或距上次注入已 20 轮(`REFRESH_TURNS`)。`🧠` delta 行每轮都注入。
 
-**注册的事件**:`UserPromptSubmit`、`PostToolUse`、`PostToolUseFailure`。
+### 4.3 PreToolUse(模型要调 tool 前)
 
-**状态**:`MEMORY/STATE/isa-nudge/{session_id}.json`,记录每个 session 的 tool call 计数和上次 nudge 时间。
-
-**两个 scope**:
-- ALWAYS-ON(任何 session):skill-routing、depth-directive、late-ISA、capability。
-- RUN-SCOPED(活动 Algorithm run):probe-fail、principal、agent-return、claim-close、stale-isa、spend。
-
-**三个阈值**(代码里是常量):
-
-```ts
-const STALE_ISA_THRESHOLD = 15;   // 15 次 tool call 没编辑 ISA
-const LATE_ISA_THRESHOLD = 25;    // 25 次 tool call 没注册 run
-const SPEND_THRESHOLD = 75;        // 75 次 tool call 且 claims 开放
-```
-
-这就是 deep research 文档说的"15/25/75 阈值"的精确来源。
-
-**skill-routing 的真实机制**:它扫每个 `skills/*/SKILL.md` frontmatter 里的 `USE WHEN` 短语,建索引(`MEMORY/STATE/skill-usewhen-index.json`)。用户发 prompt 时,用确定性短语匹配(多词 ≥7 字符子串匹配,单词 ≥6 字符词边界匹配),如果匹配到 ≤3 个 skill,就注入一行:"This prompt matches USE WHEN of: X - if the work lands there, invoke the skill rather than handrolling."
-
-**capability nudge 的安全设计**:命令失败时,如果 `Doctor` 标记该 capability 为 `broken`,注入修复命令。但**修复命令是 compile-time 常量**(`CAP_FIX`),不从磁盘 manifest 读。注释解释原因:
-
-> Forge audit 2026-07-12: the manifest is a file, this text lands in the model's context, so a poisoned manifest must be able to flip a *state* at most - never inject prose the model might run.
-
-这是一个真实的安全意识:hook 注入模型的文本,绝对不能来自可能被污染的运行时文件。
-
-**subagent 区分**:用 `transcript_path` 区分主会话和 subagent。UserPromptSubmit 永远只对主会话触发,记录 `primaryTranscript`。tool 事件如果 `transcript_path` 不匹配,说明是 subagent,静默跳过(防止 nudge 泄漏到 delegation fan-out)。
-
-**输出示例**:`🧭 ALGO-NUDGE: 25+ tool calls and no ISA registered. Still trivial, or does done need writing down?`
-
-#### 5.3.2 VerificationGate.hook.ts:真正的强制门(420 行)
-
-这是 LifeOS 唯一真正能"block"模型的 hook,理解它就理解了"Verification is the climbing mechanism"怎么落地。
-
-**论点**(代码注释原文):"THE MESSAGE IS A CLAIM; THE TRANSCRIPT IS THE EVIDENCE."
-
-它**不读模型自评的 prose**(旧 SuccessClaimGate 因此死掉),只读 transcript 里的真实 tool calls。
-
-**触发**:`Stop`。
-
-**5 个条件全满足才 block**(any failure ⇒ PASS,default pass):
-
-1. 非 stop-hook recovery pass(loop guard,`stop_hook_active` 短路)。
-2. 一个 verification/behavior claim 存活所有 guard(negation、question、intent/future、conditional、quote、narration 都被剔除)。
-3. **ACT-THEN-CLAIM**:transcript 显示本回合真的做了该类型的变更工作(杀掉整个 narration/status/analysis 误报家族)。
-4. type-scoped required evidence 在 transcript 里缺失或 stale。
-5. 无 confounder:本回合无 sub-agent,且这个 claim 没被 block 过(fingerprint dedupe)。
-
-**5 种 claim 类型 + 牙齿**:
-
-| 类型 | 含义 | 牙齿 |
+| matcher | hook | 作用 |
 |---|---|---|
-| T1 | web-deploy("site is live") | BLOCK |
-| T2 | interactive-flow("login works") | BLOCK |
-| T3 | visual-appearance("logo renders right") | BLOCK |
-| T4 | code-logic("tests pass") | LOG-ONLY |
-| T5 | factual | NEVER blocks |
+| `Bash` | `ContextReduction.hook.sh` | 上下文缩减 |
+| `Skill` | HTTP -> `localhost:31337/hooks/skill-guard` | Pulse 校验 skill(Pulse 必须在跑) |
+| `Agent` | HTTP -> `agent-guard` + `AgentInvocation.hook.ts` | Pulse 校验 + 记录 agent 调用 |
+| `AskUserQuestion` | `TabState.hook.ts` | tab 状态 |
+| `Bash\|Write\|Edit\|MultiEdit` | `PreToolGuard.hook.ts` | 路径守卫(防写到禁区) |
 
-**block 后的反馈**:返回一个超长的 reason,告诉模型具体缺什么 evidence,以及"重新措辞过不了这个 gate,只有真去验证或诚实降级才能过"。例如 T2:
+### 4.4 PostToolUse(tool 执行完)
 
-> FLOW VERIFICATION GAP [VerificationGate/T2]. You claimed: "...". The transcript shows the flow was never exercised... Do ONE, then restate: (a) drive the real flow... or (b) downgrade honestly ("deployed, flow NOT exercised", ISC [DEFERRED-VERIFY]). This gate reads the transcript, not your wording - only verifying or downgrading passes it.
-
-**honest downgrade 逃生口**:如果消息含 `DEFERRED-VERIFY`、`not verified`、`haven't yet looked` 等诚实降级措辞,直接 pass。这鼓励模型承认没验证,而不是假装验证了。
-
-**fail-OPEN**:`try/catch` 包裹,任何错误 pass。env kill switch:`VERIFGATE_OFF=1` 全关,`VERIFGATE_T1=0` 单关。
-
-这就是 deep research 文档说的"3 类可见完成声明提供阻断:网页已上线、交互流程可用、视觉正确;代码逻辑默认只记日志"的精确代码实现。
-
-#### 5.3.3 ISASync.hook.ts:ISA -> work.json 同步(170 行)
-
-**触发**:`PostToolUse` on `Write`/`Edit`/`MultiEdit`/`Read` 作用于 `MEMORY/WORK/*/ISA.md`。
-
-**做的事**:
-1. 解析 ISA.md frontmatter(`parseFrontmatter`)。
-2. `syncToWorkJson`:把 frontmatter + criteria checkbox 同步到 `MEMORY/STATE/work.json` 注册表。这是 Pulse dashboard 读的数据源。
-3. 检测 phase 变化(`OBSERVE`/`THINK`/`PLAN`/`BUILD`/`EXECUTE`/`VERIFY`/`LEARN`/`COMPLETE`),更新终端 tab 颜色。
-4. **转 `COMPLETE` 时 spawn `ISARender.ts`**(detached)生成 HTML mirror。注释解释为什么不在每次 phase 变化时渲染:"lots of phase changes as it's being written; we don't want to be constantly remaking the HTML file."
-5. `Read` 只 bump heartbeat(`bumpLastToolActivityBySlug`),不写回文件。这是 "Resume After Complete" 机制:读一个 complete 的 ISA 算心跳。
-
-**输出**:`{ continue: true }`(不阻断,纯副作用)。
-
-这就是 "ISASync mirrors every ISA write to work.json -> Pulse; that write IS the telemetry" 的代码实现。LifeOS 的可观测性不是单独的 ceremony,而是"ISA 每次被编辑,同步就发生"。
-
-#### 5.3.4 MemoryReviewFire.hook.ts:记忆触发器(180 行)
-
-**触发**:`Stop`(每个 primary session)。
-
-**做的事**:维护 `review-state.json`:
-
-```ts
-state.turn_count_since_last_review += 1;
-state.last_message_at = now;
-const due = state.turn_count_since_last_review >= config.turn_threshold
-          && minutesSince(state.last_review_at, nowMs) >= config.min_minutes_between;
-```
-
-默认 `turn_threshold=8`,`min_minutes_between=30`(可配)。满足时 spawn `MemoryReviewer.ts review --turns N`(detached)。
-
-**billing guard**:spawn 前删除 `ANTHROPIC_API_KEY`、`ANTHROPIC_AUTH_TOKEN`、`CLAUDECODE` 环境变量。注释解释:防止 Claude Agent SDK 和 `claude` CLI 用 API key 计费而不是 OAuth,这是"early-2026 invoice ($XXX Sonnet + $YY WebSearch)"的根因。
-
-**subagent 跳过**:检查 `CLAUDE_CODE_SUBAGENT_NAME` 等环境变量。
-
-这就是 deep research 文档说的"Memory Review cadence:8 turns + 30 min"的精确实现。
-
-#### 5.3.5 LoadContext.hook.ts / PromptProcessing.hook.ts:上下文注入(未细读,但机制清楚)
-
-`SessionStart` 事件触发 `LoadContext.hook.ts`(16KB),负责把动态上下文(关系上下文、learning readback、active work summary)注入。`UserPromptSubmit` 触发 `PromptProcessing.hook.ts`(55KB,最大的 hook),做 prompt 预处理。
-
-`settings.json` 的 `dynamicContext` 字段控制:
-
-```json
-"dynamicContext": {
-  "relationshipContext": true,
-  "learningReadback": true,
-  "activeWorkSummary": true
-}
-```
-
-`postCompactRestore.fullFiles: ["USER/PROJECTS.md"]` 表示 compaction 后重新注入 PROJECTS.md。`contextDisplay.compactionThreshold: 83` 表示 83% 时 autocompact(buffer 16.5%)。
-
-## 6. Algorithm/ISA:理想状态怎么驱动执行
-
-### 6.1 ISA = "完成"的可勾选合同
-
-ISA(Ideal State Artifact)是 Algorithm 的核心数据结构。`hooks/lib/isa-template.ts` 定义模板,`skills/ISA/Examples/canonical-isa.md` 是完整示例。结构:
-
-**frontmatter**:`task`、`slug`、`project`、`effort`、`effort_source`、`phase`、`progress`(如 `22/38`)、`mode`、`started`、`updated`。
-
-**sections**:`Problem`、`Vision`、`Out of Scope`、`Principles`、`Constraints`、`Goal`、`Criteria`(ISC,带 `- [x]`/`- [ ]` checkbox + probe 说明)。
-
-每个 ISC 是一个独立可验证的 claim,格式:
-
-```markdown
-- [x] ISC-5: A roaster can submit a new listing with origin, process, harvest date... (probe: form submission test).
-- [ ] ISC-7: Quality lead can approve or reject a pending listing in ≤ 10 minutes per lot (probe: ops-tool timing telemetry, p95 ≤ 600s).
-```
-
-**关键设计**:ISC 不是任务清单,而是"完成的可证伪声明"。每个 claim 必须命名能 falsify 它的 probe。`- [x]` 表示通过。ISASync 读 checkbox 同步到 `work.json`,CheckpointPerISC 可以在显式 git allowlist 里对新通过的 ISC 自动 commit。
-
-### 6.2 effort 层级 = 花费预算,不是难度预测
-
-`isa-template.ts` 定义 7 个 effort 层级,每个对应 ISC 最小数量和 appetite:
-
-| effort | ISC 最小 | appetite budget | circuit breaker |
-|---|---|---|---|
-| TRIVIAL | 2 | <10s | 1 session |
-| QUICK | 4 | <1min | 1 session |
-| STANDARD | 8 | <2min | 1 session |
-| EXTENDED | 16 | <8min | 2 sessions |
-| ADVANCED | 24 | <16min | 3 sessions |
-| DEEP | 40 | <32min | 3 sessions |
-| COMPREHENSIVE | 64 | <120m | 5 sessions |
-| LOOP | 16 | unbounded | max iterations |
-
-但 `v8.4.0.md` 明确说:"There is no effort tier to declare, no predicted execution class, and no model-routing rubric"。意思是:effort 不是"先选 tier 再执行",而是"从工作本身发现该花多少"。tier 只是 ISA 模板的默认 ISC 数量和 budget 提示,模型可以自由调整。
-
-### 6.3 algorithm.ts:4 种 mode 怎么跑 ISA
-
-`TOOLS/algorithm.ts`(1826 行)是 Algorithm 的 CLI。4 种 mode:
-
-- **loop**:`claude -p`(SDK)自主迭代,跑到所有 ISC 通过或 maxIterations。无人介入。状态存 `MEMORY/STATE/algorithms/`。
-- **interactive**:启动完整 `claude` 交互会话,ISA context 作为初始 prompt。HITL。
-- **ideate**:演化式 ideation,带 `--preset`/`--focus`/`--param` 控制创造力 vs 聚焦。
-- **optimize**:自主 hill-climbing,针对可测指标跑"modify -> measure -> keep/discard"实验循环。
-
-`algorithm new -t <title> -e <effort>` 创建 ISA。`curateTitle` 会去掉填充词("okay"、"hey"、"let's")和脏话,截断到 80 字符。
-
-**loop mode 的真实形态**:它就是"反复调 `claude -p` 直到 ISA 全勾"。`resolveClaudeBin` 从 `Inference.ts` 拿绝对 claude 路径(注释:"ENOENT-safe under launchd/cron, PR #1460")。每次迭代后 sync criteria status from ISA checkboxes。voice notification 在关键时刻触发。
-
-### 6.4 Resume:编辑一个 complete 的 ISA 自动 rewind
-
-`v8.4.0.md` 写明:"an ISA body edit on a `phase: complete` task rewinds to `learn`, `iteration+1` (hook-owned; `frozen: true` bypasses)"。
-
-这是 `ISASync.hook.ts` 的 `syncToWorkJson` 内部实现的(通过 `bumpLastToolActivityBySlug` + auto-rewind)。意思:你重新打开一个已完成的任务并改了 ISA,系统自动把它从 `complete` 倒回 `learn` 阶段,iteration+1,可以继续跑。`frozen: true` frontmatter 可绕过。
-
-## 7. Memory:自动记忆怎么写、为什么危险
-
-这是 deep research 文档标为 "Critical" 的部分,代码完全验证了。
-
-### 7.1 4 种类型 + 3 个 tier
-
-`TOOLS/MemoryTypes.ts` 定义冻结的类型注册表:
-
-| 类型 | 存储 | load_timing | tier | write_mode |
+| matcher | hook | 读 | 写 | 返回 |
 |---|---|---|---|---|
-| memory | `PRINCIPAL_MEMORY.md` / `DA_MEMORY.md` | always(每次加载) | A | **set-overwrite**(替换整个文件) |
-| idea | `KNOWLEDGE/Ideas/<slug>.md` | on-relevance | B | append |
-| knowledge | `KNOWLEDGE/{People,Companies,Research}/<slug>.md` | on-relevance | B | append |
-| proposal | `pending-proposals.jsonl`(队列) | surface-only | C | queue |
+| `Agent` | `AgentInvocation` | - | agent 调用记录 | 副作用 |
+| `WebFetch`/`WebSearch` | `Safety` | URL/查询 | 安全日志 | 安全检查(timeout 5s) |
+| `Write`/`Edit`/`MultiEdit` | `ISASync` | **MEMORY/WORK/*/ISA.md 的 frontmatter** | **work.json + phase tab** | `continue:true` |
+| `Write`/`Edit`/`MultiEdit` | `CheckpointPerISC` | ISA checkbox | **git commit**(显式 allowlist,默认空) | `continue:true`(timeout 30s) |
+| `AskUserQuestion` | `TabState` | tab | tab | - |
+| (所有) | `EventLogger` | stdin | OBSERVABILITY 事件日志 | `async:true`(不阻塞) |
 
-**关键风险点 1**:`memory` 的 write_mode 是 `set-overwrite`,不是 append。注释明确:"REPLACES the entire file... This is the forgetting path - eviction is omission, supersession is rewrite."。这意味着 curation reviewer 可以完全重写 `PRINCIPAL_MEMORY.md`,删掉旧条目。
+**ISASync 的触发条件**:文件路径必须含 `MEMORY/WORK/` 且以 `ISA.md`(或 legacy `PRD.md`)结尾。它读 frontmatter,调 `syncToWorkJson` 更新 `work.json` 的 `sessions[slug]`。这是"ISA 编辑 -> Pulse 可见"的桥。
 
-proposal 有 8 种 `target_kind`,映射到具体文件(封闭 allowlist,默认 deny):
+### 4.5 PostToolUseFailure(tool 失败)
 
-| target_kind | 目标文件 |
-|---|---|
-| identity | `PRINCIPAL_IDENTITY.md` 或 `DA_IDENTITY.md` |
-| style | `WRITINGSTYLE.md` |
-| definition | `DEFINITIONS.md` |
-| canonical-content | `CANONICAL_CONTENT.md` |
-| resume | `RESUME.md` |
-| operational-rule | `CONFIG/OPERATIONAL_RULES.md` |
-| projects | `PROJECTS.md` |
-| contacts | `CONTACTS.md` |
-
-### 7.2 MemoryReviewer:confidence ≥ 0.70 自动改身份
-
-`TOOLS/MemoryReviewer.ts`(768 行)是后台进程,被 `MemoryReviewFire.hook.ts` spawn。它读 transcript,用模型推理提取 typed items,然后 dispatch。
-
-**confidence 梯度**(代码注释原文):
-
-```
-- 0.90+ - principal explicitly stated the rule/definition/preference verbatim... Will auto-apply.
-- 0.70-0.89 - Strong inference from multiple consistent signals. Will auto-apply.
-- <0.70 - Low confidence triggers Telegram surfacing for principal approval
-```
-
-**自动 apply 的代码路径**(`dispatchItems`,行 445-479):
-
-```ts
-// ISC-68 / ISC-157: direct-apply branch for high-confidence proposals.
-if (item.type === "proposal" && typeof item.confidence === "number" && item.confidence >= threshold) {
-  const applied = applyProposalEdit(item.target_file, item.edit);
-  // status -> "auto-applied"
-}
-```
-
-`threshold` 默认 0.70,从 `USER/CONFIG/memory-review.json` 的 `confidence_threshold` 读。
-
-**这意味着什么**:模型(同一个推理调用)给出置信度,达到 0.70 就直接编辑用户的身份文件、写作风格、定义、操作规则、项目、联系人。置信度由同一推理产生,不是用户批准,不是外部证据。proposal 同时 enqueue(供 Telegram 审批),但**写入已经发生了**。
-
-这就是 deep research 文档说的"模型提取结果不是候选事实,而可能直接成为长期事实;置信度由同一推理调用产生;身份、规则、项目和联系人不应因为模型给出 0.70 就自动改变"的精确代码根源。
-
-### 7.3 召回:BM25-lite,不是向量库
-
-`TOOLS/MemoryRetriever.ts` 用本地 BM25-lite,不用向量数据库。CLI 默认 Top 3、约 500 token 预算。最新函数提供 Top-K、阈值、摘录长度和类型过滤。
-
-`memory` 类型 always 加载(进每个 prompt),`idea`/`knowledge` on-relevance 召回,`proposal` surface-only(供应用/审批表面读取)。
-
-### 7.4 写入工程质量:比"append Markdown"成熟
-
-`MemoryWriter.ts`(701 行)实现锁文件、临时文件、`fsync + rename`、快照和 JSONL 审计。比简单 append 成熟。但路径仍大量基于 `homedir()/.claude`(`MemoryTypes.ts` 顶部 `const CLAUDE_ROOT = pathResolve(homedir(), ".claude")`),与可配置 harness 根冲突--这是 deep research 文档 §5.1 说的"自定义配置根下 MemoryWriter 寻找 `$HOME/.claude` 而失败"的代码根源。
-
-## 8. TELOS / Gap:为什么百分比是模板完整度
-
-deep research 文档说"Gap 引擎不强,Pulse 显示 38% 理想状态实为模板完整度投影",代码逐字验证。
-
-### 8.1 ComputeGap:自己承认 v1 只数 TBD
-
-`TOOLS/ComputeGap.ts` 注释原文:
-
-```ts
-// v1: simple markdown parsing. Future: pass through Haiku for semantic extraction.
-// For now, surface what's TBD vs. populated so the first real run produces signal.
-const tbdCount = (ideal.match(/\bTBD\b/g) || []).length;
-```
-
-它做的事:读 `IDEAL_STATE/<dim>.md`,数 `TBD` 标记数量。如果 TBD>0,报 "warning: complete interview to enable gap computation"。没有真实健康/财务数据提取。
-
-维度分两类:
-- **metric**(可计算):`health`、`money`、`freedom`。
-- **narrative**(只 surfacing 为 reminder):`relationships`、`creative`、`rhythms`。
-
-### 8.2 UpdateLifeosState:fallback 算法就是 "100 - TBD × 10"
-
-`TOOLS/UpdateLifeosState.ts` 两条路径:
-
-1. **主路径**(真实覆盖率):`CURRENT_STATE/<dim>.md` 有 `status: have|partial|missing` 行时,`pct = (have + 0.5*partial) / total × 100`。
-2. **fallback**(模板填写度):否则读 `IDEAL_STATE/<dim>.md`,用 `pct = max(0, min(100, 100 - tbd_count * 10))`。
-
-**算给你看**:全新模板每个维度有 5 个 TBD。`100 - 5×10 = 50`。所以全新安装的 health/money/freedom/creative/relationships/rhythms 都显示 50%。7 个维度平均 ≈ 50%,但 Pulse 页面按权重算出来约 38%--这就是文档说的"Pulse 显示 38% 理想状态,实际是模板完整度投影"。
-
-注释自己也承认:"The fallback measures whether the principal has articulated what 'good' looks like; the primary path measures whether reality matches it."
-
-写入 `LIFEOS_STATE.json`,给 statusline 和 Pulse TELOS dashboard rings 用。
-
-**结论**:Current -> Ideal 作为目标框架很强;当前公开版的定量 Gap 引擎不强,不能当作真实人生测量。
-
-## 9. Pulse:单进程 daemon 做什么
-
-`LifeOS/install/LIFEOS/PULSE/pulse.ts`(976 行)是后台 daemon,默认端口 31337。
-
-### 9.1 一个进程管所有后台
-
-注释原文:"Single process managing all LifeOS daemon functionality... One process. One port. One launchd plist. One log file."
-
-条件加载 25 个模块(`let xxxModule` 声明):voice(ElevenLabs TTS)、observability(data APIs + Next.js dashboard)、wiki、telegram、siri、imessage、assistant、performance、syslog、work(GitHub Issue polling)、localIntelligence、telos、tabFreshness、hypotheses、memory、conduit、menubar、books、amber、projects、assets、usage、bunker、content、doctor。
-
-还有一个 `hooks` 模块(`startHooks`),它就是 `hooks.json` 里 `type:"http"` 那两条 hook 的 HTTP 服务端:`http://localhost:31337/hooks/skill-guard` 和 `agent-guard`。所以 hook 不只是本地脚本,有一部分需要 Pulse 在跑。
-
-### 9.2 billing guard:防止 API key 计费
-
-`pulse.ts` 开头有一段 defense-in-depth:
-
-```ts
-// BILLING GUARD: Strip ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN from the daemon environment
-// AFTER .env load. Prevents the Claude Agent SDK and `claude` CLI from billing
-// either key instead of CLAUDE_CODE_OAUTH_TOKEN - both outrank OAuth in
-// Anthropic's auth precedence chain. root cause of an early-2026 invoice.
-delete process.env.ANTHROPIC_API_KEY
-delete process.env.ANTHROPIC_AUTH_TOKEN
-```
-
-每个下游模块也独立删除(belt-and-suspenders)。`Inference.ts:116-117` 是同一逻辑的源头。
-
-### 9.3 文档自己承认的边界
-
-`Pulse/pulse.ts` 注释不回避:"没有队列、没有 AI triage、没有 Channel abstraction;只是运行 Job 并路由输出"。它更接近本地 Daemon 和文件投影层,不是可恢复的分布式执行平台。
-
-### 9.4 Work 链路的公开缺口
-
-`TOOLS/WorkSweep.ts` 把 TELOS Goal 与 GitHub Issue 匹配、创建提醒和检查,最后调用 `RegenerateTasklist.ts`。但 `RegenerateTasklist.ts` 在 `skills/_ULWORK/Tools/` 下,这是**私有 skill**--release tooling 会 strip 所有 `_ALLCAPS` skill(`InstallEngine.ts:detectDevTree` 就是靠 `skills/_LIFEOS` 存在判断"这是作者源码树")。
-
-所以作者演示的完整 Work 闭环,公开用户拿不到。`SECURITY.md` 也写明仓库是从私有源码树生成的 public mirror,私有区会在发布时删除。
-
-## 10. 权限模型:危险模式是必要代价
-
-### 10.1 settings.system.json 的 auto 模式
-
-`LifeOS/install/settings.system.json`(418 行)是权限核心。关键字段:
-
-```json
-"defaultMode": "auto",
-"skipDangerousModePermissionPrompt": true,
-"skipAutoPermissionPrompt": true,
-"autoMemoryEnabled": false
-```
-
-`defaultMode: "auto"` + 两个 skip = **危险模式,绕过所有权限提示**。`autoMemoryEnabled: false` 禁用 Claude Code 自己的 auto memory(用 LifeOS 自己的 Memory 系统)。
-
-### 10.2 极宽的 allow
-
-`permissions.allow` 允许:
-- `Write(~/.claude/**)` 和 `Edit(~/.claude/**)`:写改整个 AI 基础设施目录。
-- `Write(~/Projects/**)` 和 `Edit(~/Projects/**)`:写改所有项目。
-- `Bash(git push:*)`、`Bash(git add:*)`、`Bash(git commit:*)`、`Bash(git rm:*)`、`Bash(curl:*)`、`Bash(ssh:*)`、`Bash(scp:*)`、`Bash(rsync:*)`、`Bash(gh:*)`、`Bash(wrangler:*)`、`Bash(osascript *)`:高权限命令。
-- 一堆 `Agent(...)` subagent 类型。
-- `mcp__claude_ai_Gmail__*`、`mcp__claude_ai_Google_Calendar__*` 等 MCP。
-
-### 10.3 deny 和 ask 的边界
-
-`permissions.deny` 禁:rm -rf /、curl|sh、git push --force main、chmod -R 777、`Edit(/etc/**, /System/**, /usr/**)`、`Read(~/.ssh/id_*, ~/.aws/credentials, ~/.gnupg/private*)`。
-
-`permissions.ask`:.env 文件读写要问。
-
-### 10.4 autoMode.allow:用自然语言给危险操作开绿灯
-
-最值得注意的是 `autoMode.allow` 数组,用自然语言写明:
-
-> "PRE-AUTHORIZED: Edit/Write/MultiEdit to ~/.claude/settings.json, ~/.claude/CLAUDE.md, ~/.claude/LIFEOS_SYSTEM_PROMPT.md, ~/.claude/hooks/**, ~/.claude/skills/** at the principal's request is ALWAYS authorized. The principal maintains this LifeOS system as its sole operator - config edits requested in conversation are normal maintenance, not adversarial self-modification. Skip the Self-Modification soft-block..."
-
-> "Routine LifeOS maintenance - editing settings.json, CLAUDE.md, system prompt, hooks, skills, ISAs, knowledge files - is always trusted when the principal asks for it in the conversation."
-
-这是给 Claude Code 的 auto-mode 决策器看的自然语言规则:让模型在 auto 模式下自己判断"这是用户要求的正常维护,不是对抗性自修改,放行"。
-
-### 10.5 为什么这是必要代价
-
-LifeOS 的整个设计前提是"hook 自动注入上下文 + 模型自动维护文件系统"。如果每次 Write/Edit 都要人工确认,72 个 hook 产生的自动写入(ISA 同步、Memory reviewer、状态更新)会被打断,hook 系统就失效。
-
-所以"危险模式"不是疏忽,是架构必然:**要让 hook 真正有牙齿,就必须让模型能自动写文件**。代价是:安全最终依赖高权限 Coding Agent、Prompt/Hook 规则和路径匹配。这是 deep research 文档 §5.4 "安全意识很强,权限面也很大"的代码根源。
-
-## 11. 作者标榜的概念 vs 代码事实对照表
-
-| 作者标榜 | 代码事实 | 证据路径 |
+| hook | 读 | 返回 |
 |---|---|---|
-| "AI-native installer" | 7 个独立 dry-run 工具,AI 编排顺序,不是事务 | `Tools/*.ts` |
-| "Harness agnostic" | 完整能力偏 Claude Code;其他 harness 只加载 `AGENTS.md` | `LIFEOS_SYSTEM_PROMPT.md`、`INSTALL.md` |
-| "Algorithm 强制执行" | Algorithm v8.4.0 是 Markdown;强制靠 VerificationGate hook 的 `decision:block` | `ALGORITHM/v8.4.0.md`、`hooks/VerificationGate.hook.ts` |
-| "Memory 自动维护" | MemoryReviewer 后台跑,confidence≥0.70 自动改身份文件 | `TOOLS/MemoryReviewer.ts:445-479` |
-| "Current -> Ideal 定量 Gap" | v1 只数 TBD,fallback = `100 - TBD×10` | `TOOLS/ComputeGap.ts`、`UpdateLifeosState.ts` |
-| "Pulse dashboard 实时" | 单进程 daemon 读文件投影,不是实时数据库 | `PULSE/pulse.ts` |
-| "完整 Work 系统" | 公开版缺 `_ULWORK`、`_LIFEOS` 私有 skill | `SECURITY.md`、`InstallEngine.ts:detectDevTree` |
-| "安全第一" | auto 模式 + 极宽 allow + 自然语言开绿灯 | `settings.system.json` |
-| "可测试" | 无 `.test.ts`,`bun test` 返回 No tests found;只有内置 smoke check | 仓库无标准测试文件 |
-| "升级可靠" | `LifeosUpgrade.ts` 7 个 migration 全 detect-only 或 not implemented | `TOOLS/LifeosUpgrade.ts` |
+| `EventLogger` | stdin | 事件日志 |
+| `AlgorithmNudge` | work.json(活动 phase)+ capabilities.json | **probe-fail nudge**(execute/verify phase 时)或 **capability nudge**(Doctor 标 broken 时) |
 
-## 12. 真实能力边界:公开版能做什么、不能做什么
+### 4.6 Stop(模型结束回复)
 
-### 12.1 公开版真实能做的
+| hook | 读 | 写 | 返回 |
+|---|---|---|---|
+| `LastResponseCache` | transcript | 缓存最后回复 | 副作用 |
+| `TabState` | tab | tab | - |
+| `VoiceCompletion` | transcript(🗣️ 行) | 语音通知(curl 31337/notify) | 副作用 |
+| `ISARenderOnStop` | isa-render-debounce/{sid}.json | ISA.html(若本回合编辑过) | 副作用 |
+| `StopGates` | - | - | 可能 block |
+| `VerificationGate` | **transcript 的 tool 事件 + last_assistant_message** | **verification-gate-blocked.json + .jsonl** | **`decision:block`(T1/T2/T3)** 或 pass |
+| `MemoryReviewFire` | review-state.json + memory-review.json | review-state.json + reviewer-fires.jsonl | **spawn MemoryReviewer.ts detached** |
 
-1. **装进 Claude Code,获得 always-on 行为**:11 类 hook 事件、45 条 hook 项确实接线(装好后),能注入上下文、强制验证门、自动同步 ISA。
-2. **跑 Algorithm/ISA**:创建 ISA、跑 loop/interactive mode、Resume after complete、HTML mirror。
-3. **自动 Memory**:4 种类型,后台 reviewer,confidence 阈值,Telegram 审批 surface。
-4. **Pulse 后台**:cron、voice、Telegram、iMessage、observability dashboard、work polling(部分)。
-5. **TELOS 框架**:Interview 生成 Current/Ideal,ComputeGap 报告(浅),UpdateLifeosState 出百分比(模板完整度)。
-6. **52 个 skill**:研究、写作、网页、知识、Interview、TELOS 等。
+### 4.7 其他事件
 
-### 12.2 公开版真实不能做的
+- **SessionEnd**:`WorkCompletionLearning`、`SessionCleanup`、`UpdateCounts`、`MemoryHealthGate`、`DocIntegrity`、`IntegrityCheck`--全是清理和健康检查。
+- **TaskCreated**:`TaskGovernance`。
+- **ConfigChange**:`EventLogger`。
+- **PermissionRequest**:`Safety` 检查 Write/Edit/Bash 和 mcp。
 
-1. **自定义配置根不端到端成立**:Memory/Pulse 仍硬编码 `$HOME/.claude`(`MemoryTypes.ts` 顶部、`pulse.ts` 顶部)。Issue #1584 未解决。
-2. **可靠自动升级**:`LifeosUpgrade.ts` 7 个 migration 全 detect-only 或 `apply not implemented`,`--from-fresh-install` 明确未实现。
-3. **常规测试体系**:无 `.test.ts`/`.spec.ts`,`bun test` 返回 No tests found。GitHub Actions 只有 Claude Code 响应,没有 build/test/typecheck 门。
-4. **完整 Work 闭环**:`_ULWORK`、`_LIFEOS` 私有 skill 在 release 时被 strip。作者演示的完整能力与公开用户拿到的不是同一套。
-5. **非技术用户适配**:Discussion #922 记录艺术用户花 3 小时手工装 Node/CLI/zsh/unzip/Bun/PATH。
-6. **真实人生测量**:Gap 引擎 v1 只数 TBD,百分比是模板完整度,不是健康/财务/关系真实改善。
+## 5. 一次完整输入的端到端追踪
 
-## 13. 给 Chat 的工程启发(简版,详细采用/改造见上层研究文档)
+把上面拼起来。假设用户已安装 LifeOS,在终端开了一个新 `claude` session,输入:`帮我研究一下 BM25 检索的优化方法,然后写个最小实现`。
 
-从代码事实出发,以下 3 点是 LifeOS 真正用代码证明可行、且 Chat 应该吸收的工程模式(不是产品概念):
+### 步骤 1:SessionStart(Claude Code 启动)
 
-1. **确定性 hook 注入 > 巨型 system prompt**。LifeOS 用 72 个确定性脚本(<20ms、不调模型、永远 exit 0)在关键时刻注入一行建议,比一个 196 行的 system prompt 有效得多。Chat 的协议执行不应全压进 system prompt,而应拆成"在什么事件、检查什么、注入什么"的确定性规则。但必须区分建议(exit 0)和强制门(decision:block),且高影响门必须 fail-closed 而非 fail-open。
+1. `lifeos` launcher 用 `--append-system-prompt-file` 把 `LIFEOS_SYSTEM_PROMPT.md` 注入为 system prompt(层①)。
+2. Claude Code 原生加载 `CLAUDE.md`,解析 `@import`,把 `ARCHITECTURE_SUMMARY.md` 和被 ActivateImports 取消注释的身份文件塞进上下文(层②)。
+3. Claude Code 触发 `SessionStart` 事件,5 个 hook 跑:
+   - `HookHealer` 自愈(detached)。
+   - `KittyEnvPersist` 设 tab。
+   - **`LoadContext`** 读 `MEMORY/RELATIONSHIP/{月}/{日}.md`(今天+昨天)、`MEMORY/LEARNING` 的 wisdom frames、`MEMORY/WORK/` 最近 48h 的目录(读每个 ISA.md frontmatter 的 status/title)、`MEMORY/STATE/progress/*.json`。组装成 `<system-reminder>` 输出到 stdout(层③)。
+   - `FreshnessCache`、`MergeSettings`(detached)。
 
-2. **ISA = 可勾选的可证伪合同**。把"完成"写成带 probe 的 ISC checkbox,而不是模糊的 Task 描述。ISASync 读 checkbox 同步状态,CheckpointPerISC 自动 commit。这让"进度"和"证据"绑定,而不是分离。Chat 的 Work/Plan/Step 应该学习这种"每个 acceptance criterion 命名它的 falsifier"的设计,但权威状态必须在 Product DB,不能是 Markdown checkbox。
+**此刻模型上下文** = ① Constitution + ② CLAUDE.md @import + ③ LoadContext 的 system-reminder。还没有用户输入。
 
-3. **写入分级 + 召回合同**。MemoryTypes 的 tier(A/B/C)+ write_mode(set-overwrite/append/queue)+ load_timing(always/on-relevance/surface-only)是很好的写入治理模型。但 LifeOS 的反例也在这里:confidence≥0.70 自动改身份是 Critical 风险,Discussion #884 的 28 Writer / 2 Reader 审计证明"写入成功不等于未来能召回"。Chat 任何自动写入都必须先生成候选,按影响进 HITL,且每种写入必须有对应的召回/消费合同与端到端测试。
+### 步骤 2:UserPromptSubmit(用户敲下那行字)
 
-## 14. 证据索引(本文引用的代码路径)
+Claude Code 把 prompt 通过 stdin 传给 4 个 hook(并行):
 
-固定提交:`d1d6240ce884dd70f5fc8333279ee6bbc21b96b1`。所有路径相对于 `ref/LifeOS/`。
+1. `PromptProcessing`:用 Haiku 推理起个 session 名(如"BM25 优化研究"),写 `session-names.json`,设 tab。**不注入模型上下文**。
+2. `SatisfactionCapture`:采样满意度(detached)。
+3. `ReminderRouter`:检查有没有到期的提醒要注入(detached)。
+4. **`MemoryTurnStart`**:算 `PRINCIPAL_MEMORY.md` + `DA_MEMORY.md` 的 SHA256。这是 session 首 prompt,hash 状态为空 -> 注入 `<pai-memory>` 块(热层记忆)。再调 `MemoryDeltaSurface` 注入 `<pai-memory-delta>` 行(本回合没有新 delta,空)。输出到 stdout(层④的一部分)。
+5. **`AlgorithmNudge`**(UserPromptSubmit 分支):prompt 含 "研究" -> 匹配 `skills/Research/SKILL.md` 的 USE WHEN "research,do research,deep investigation"。但这个 session 还没注册 Algorithm run(`work.json` 里没有匹配 sessionUUID 的记录),所以走 ALWAYS-ON 分支:注入 skill-routing 建议 `🧭 ALGO-NUDGE: This prompt matches USE WHEN of: Research - if the work lands there, invoke the skill rather than handrolling.`。同时检测 depth directive("研究一下"不算),不触发。
 
-| 主题 | 路径 | 关键行/事实 |
+**此刻模型上下文** = ① + ② + ③ + ④(skill-routing 建议 + `<pai-memory>` 块)。
+
+### 步骤 3:模型决策与 Tool 调用
+
+模型看到上下文,决定:这是个研究任务,Research skill 匹配。模型调 `Skill("Research", ...)`。
+
+Claude Code 触发 `PreToolUse` matcher=`Skill`:
+- HTTP hook -> `localhost:31337/hooks/skill-guard`(Pulse 校验 skill 是否存在/允许)。**如果 Pulse 没跑,这条 hook 失败,fail-open 放行**。
+- `AgentInvocation` 记录。
+
+模型执行 Research skill(内部可能 spawn 多个 Agent 做 web 搜索)。每个 Agent 调用触发 `PreToolUse` matcher=`Agent` -> `agent-guard` + `AgentInvocation`。每个 WebFetch/WebSearch 触发 `PostToolUse` -> `Safety` 检查 URL。
+
+### 步骤 4:模型决定跑 Algorithm(写 ISA)
+
+模型按 Constitution 的 "First action for such work: Read ALGORITHM/LATEST" 读 `LIFEOS/ALGORITHM/LATEST`(内容 `8.4.0`),再读 `v8.4.0.md`。然后调 `algorithm new -t "BM25 优化研究" -e standard` 创建 ISA。
+
+`algorithm.ts` 的 `curateTitle` 去掉填充词,生成 slug,`generateISATemplate` 写 `MEMORY/WORK/{YYYYMMDD-HHMMSS_slug}/ISA.md`,frontmatter 含 `phase:observe`、`progress:0/8`、`mode:interactive`。
+
+模型接着 Write 这个 ISA.md。Claude Code 触发 `PostToolUse` matcher=`Write`,路径含 `MEMORY/WORK/` 且以 `ISA.md` 结尾:
+- **`ISASync`**:读 frontmatter,调 `syncToWorkJson(fm, isaPath, content, sessionId)` 把 `sessions[slug] = {phase, sessionUUID, progress, currentMode:'algorithm', ...}` 写进 `work.json`。phase 从空变成 `OBSERVE`,调 `setPhaseTab` 给 tab 染色。
+- **`CheckpointPerISC`**:默认 git allowlist 为空,不 commit。
+
+**此刻 `work.json` 有了这个 run 的记录**。后续所有 hook 都能通过 `sessionUUID` 判断"这是活动 Algorithm run"。
+
+### 步骤 5:模型执行(写代码、跑测试)
+
+模型 Write 一个 `bm25.ts`。Claude Code 触发 `PostToolUse` matcher=`Write`,但路径不含 `MEMORY/WORK/ISA.md`,所以 ISASync 不触发,只有 `EventLogger` 记一笔(async)。
+
+模型 Bash 跑 `bun test`。`PreToolUse` matcher=`Bash` -> `ContextReduction`。测试失败 -> `PostToolUseFailure`:
+- `AlgorithmNudge`:active phase 是 `execute` -> 注入 `🧭 ALGO-NUDGE: That failure - was it a claim probe? If so: claim wrong or code wrong? A wrong claim means update the ISA`。
+
+模型修复,Edit ISA.md 勾掉一个 ISC(`- [ ]` -> `- [x]`):
+- `ISASync` 同步 work.json,`progress` 更新。
+- `CheckpointPerISC`:如果该 ISC 在 git allowlist,自动 commit。
+- `AlgorithmNudge` claim-close 分支:检测到 `Edit` 的 old_string/new_string 里 `[x]` 数量增加 -> 注入 `🧭 ALGO-NUDGE: A claim just closed. Did closing it reveal a neighbor...`。
+
+### 步骤 6:Stop(模型回复完成)
+
+模型输出最终回复,带 banner `════ LifeOS ════`、`🔧 CHANGE`、`✅ VERIFY`、`🧠 MEMORY:`(逐字 echo hook 注入的 delta 行)、`🗣️ <DA>:` closer。
+
+Claude Code 触发 `Stop`,6 个 hook 跑:
+
+1. `LastResponseCache`:缓存回复。
+2. `TabState`:tab 状态。
+3. `VoiceCompletion`:从 transcript 提取 `🗣️` 行,curl `localhost:31337/notify` 发语音。
+4. `ISARenderOnStop`:检查 `isa-render-debounce/{sid}.json`,本回合编辑过 ISA -> spawn `ISARender.ts` 生成 `ISA.html`。
+5. **`VerificationGate`**:这是关键门。
+   - 读 `last_assistant_message`(模型的 ✅ VERIFY 部分)。
+   - `classifyClaim` 检测有没有 T1/T2/T3/T4 claim。假设模型写了 "tests pass" -> T4(log-only,不 block)。假设没写 "site is live" -> 无 T1。
+   - 如果模型写了 "the implementation works" 且 transcript 里没 `testPassedAfterEdit` -> 可能 T4,只记日志。
+   - 假设模型写了 "deployed to production" 但 transcript 没 `probedAfterDeploy` -> **T1,`decision:block`**。Claude Code 把 block reason 返回模型,模型必须重新处理(去验证或诚实降级)。
+6. **`MemoryReviewFire`**:`review-state.json` 的 `turn_count_since_last_review += 1`。如果 >=8 且距上次 review >=30min -> spawn `MemoryReviewer.ts review --turns N`(detached,删 API key)。
+
+### 步骤 7:MemoryReviewer 后台跑(detached)
+
+`MemoryReviewer.ts` 读最近 N 轮 transcript,用模型推理提取 typed items(memory/idea/knowledge/proposal)。然后 `dispatchItems`:
+
+- 对每个 item,`MemorySystem.add(item)`:
+  - `resolveStoragePath` 算目标文件。
+  - `getTier(path)` 分类器验证(MutationTier)。若 tier 不匹配 -> `ETIER_MISMATCH` 拒绝。
+  - memory -> `addMemoryItem`(set-overwrite,替换整个 `PRINCIPAL_MEMORY.md`)。
+  - idea/knowledge -> `addNoteTypeItem`(append 到对应 .md)。
+  - proposal -> `enqueueProposal`(写 `pending-proposals.jsonl`)。若 `confidence >= 0.70`(从 `memory-review.json` 读)-> **`applyProposalEdit(target_file, edit)` 直接编辑 Tier C 文件**(身份/风格/规则/项目/联系人),标 `auto-applied`。
+
+**这就是"自动记忆"的完整路径**:Stop 触发 -> 后台 reviewer 读 transcript -> 模型推理提取 -> dispatch -> 写文件。全程用户看不见,直到下一轮 `MemoryTurnStart` 的 hash 变了才重新注入。
+
+## 6. Skill 到底怎么被触发和执行
+
+这是文档没讲清的另一个点。Skill 有两种触发路径:
+
+### 6.1 被动触发:AlgorithmNudge skill-routing(建议)
+
+`AlgorithmNudge.hook.ts` 的 `buildIndex()` 扫每个 `skills/*/SKILL.md` frontmatter 的 `description` 字段,提取 `USE WHEN ...` 后面的短语,建 `skill-usewhen-index.json`。用户发 prompt 时,`matchSkills` 用确定性短语匹配(多词≥7字符子串,单词≥6字符词边界,有 ROUTE_STOPWORDS 过滤通用词),匹配到 ≤3 个 skill 就注入一行建议。
+
+**这只是建议**。模型可以采纳(调 `Skill` tool)也可以忽略。`Research/SKILL.md` 的 `description` 里 USE WHEN 列了 "research,do research,deep investigation,find information..." 等几十个短语。
+
+### 6.2 主动触发:模型调 `Skill` tool
+
+模型决定后调 `Skill("Research", ...)`。Claude Code 的 `Skill` tool 加载 `~/.claude/skills/Research/SKILL.md`,把它作为 subagent 上下文。skill 里的 `MANDATORY TRIGGER`、"send voice notification curl" 等都是给 subagent 读的指令。
+
+**skill 的真实形态**:它就是一个 Markdown 文件,告诉 subagent "你该怎么做这类任务"。没有可执行代码(除非 skill 自带 `Workflows/*.mjs` 或 `Tools/*.ts`)。skill 的"执行"就是模型读了 SKILL.md 后按它的指示工作。
+
+### 6.3 自定义覆盖
+
+`Research/SKILL.md` 写明:执行前检查 `~/.claude/LIFEOS/USER/CUSTOMIZATIONS/SKILLS/Research/`,有 PREFERENCES.md 就加载覆盖。这是用户不改系统 skill 也能定制的机制。
+
+## 7. 状态文件完整清单(谁写谁读)
+
+这是理解"系统状态散在哪"的速查表:
+
+| 文件 | 格式 | 写入者 | 读取者 | 含义 |
+|---|---|---|---|---|
+| `settings.json` | JSON | InstallSettings/InstallHooks/MergeSettings | Claude Code + 所有 hook | 权限 + hook 注册 + env + autoMode |
+| `work.json` | JSON | ISASync(`syncToWorkJson`) | AlgorithmNudge/LoadContext/Pulse | ★ ISA 注册表(活动 run) |
+| `session-names.json` | JSON | PromptProcessing | LoadContext | session UUID -> 可读名 |
+| `review-state.json` | JSON | MemoryReviewFire | MemoryReviewFire/statusline | 记忆 cadence(turn 计数) |
+| `isa-nudge/{sid}.json` | JSON | AlgorithmNudge | AlgorithmNudge | 每 session 的 tool call 计数 + nudge 时间 |
+| `memory-inject/{sid}.json` | JSON | MemoryTurnStart | MemoryTurnStart | 注入门控(hash + turns) |
+| `verification-gate-blocked.json` | JSON array | VerificationGate | VerificationGate | block 过的 claim fingerprint |
+| `capabilities.json` | JSON | Doctor | AlgorithmNudge | capability 状态(broken/declined/live) |
+| `skill-usewhen-index.json` | JSON | AlgorithmNudge(--rebuild-index) | AlgorithmNudge | skill USE WHEN 短语索引 |
+| `LIFEOS_STATE.json` | JSON | UpdateLifeosState | Pulse TELOS rings + statusline | 维度百分比 |
+| `pending-proposals.jsonl` | JSONL | MemorySystem.add(proposal) | Telegram surfacer | 待审批提案队列 |
+| `*.jsonl`(OBSERVABILITY) | JSONL | 各 hook append | 调试/Pulse | 事件日志(reviewer-fires/verification-gate/algo-nudge-routing/gap-history) |
+| `algorithm-reflections.jsonl` | JSONL | Algorithm claim 12 | Learning readback | run 反思 |
+| `projects/{hash}/*.jsonl` | JSONL | **Claude Code 原生** | TranscriptParser | ★ transcript(模型做过什么) |
+
+**关键认知**:LifeOS 没有数据库。所有"运行状态"都是文件。`work.json` 是最重要的--它替代了"数据库里的 session 表"。ISASync 每次编辑 ISA 就更新它,所有 hook 读它判断"现在有没有活动 run"。
+
+## 8. ISA 的完整生命周期
+
+ISA 是 Algorithm 的核心数据结构。从创建到结束:
+
+### 8.1 创建
+
+`algorithm new -t <title> -e <effort>`:
+1. `curateTitle` 清洗标题(去填充词/脏话,截断 80 字符)。
+2. `generateISAFilename` -> `ISA-{YYYYMMDD}-{slug}.md`(项目侧)或 `MEMORY/WORK/{YYYYMMDD-HHMMSS_slug}/ISA.md`(任务侧)。
+3. `generateISATemplate` 写 frontmatter(`task/slug/project/effort/phase:observe/progress:0/N/mode/started/updated`)+ sections(Problem/Vision/Out of Scope/Principles/Constraints/Goal/Criteria)。
+4. ISC 数量按 effort 层级:TRIVIAL=2,STANDARD=8,COMPREHENSIVE=64...
+
+### 8.2 执行中
+
+模型编辑 ISA.md(勾 ISC、改 phase)。每次 Edit/Write 触发 `ISASync`:
+- `parseFrontmatter` 读 frontmatter。
+- `syncToWorkJson` 更新 `work.json[sessions[slug]]`(phase/sessionUUID/progress/currentMode)。
+- phase 变化(`OBSERVE`->`THINK`->`PLAN`->`BUILD`->`EXECUTE`->`VERIFY`->`LEARN`->`COMPLETE`)-> `setPhaseTab` 给 tab 染色。
+- 转到 `COMPLETE` -> spawn `ISARender.ts` 生成 HTML mirror。
+
+### 8.3 完成
+
+phase=`COMPLETE`。`ISARenderOnStop` 在 Stop 时若本回合编辑过 ISA 且 `ISA.html` 不存在/过时,生成 HTML。
+
+### 8.4 Resume(关键设计)
+
+编辑一个 `phase:complete` 的 ISA.md(用户重新打开旧任务)触发 `ISASync`。`bumpLastToolActivityBySlug` 检测到 complete 的 ISA 被编辑 -> `syncToWorkJson` 内部 auto-rewind:phase 倒回 `learn`,`iteration+1`。注释:"an ISA body edit on a complete task rewinds to learn"。`frozen:true` frontmatter 可绕过。
+
+这就是 deep research 文档说的"~27% of runs iterate"的机制--旧 ISA 被重新打开就自动复活。
+
+### 8.5 loop mode 的自主迭代
+
+`algorithm -m loop -p <ISA>`:
+1. 读 ISA frontmatter(maxIterations/iteration/failing_criteria)。
+2. 反复调 `claude -p`(SDK)让模型工作一轮。
+3. 每轮后 `syncCriteriaStatus` 从 ISA checkbox 同步 ISC 状态到 `MEMORY/STATE/algorithms/{id}.json`。
+4. 跑到所有 ISC 通过或 maxIterations。
+5. voice notification 在关键节点 curl `localhost:31337/notify`。
+
+## 9. Pulse 在整个体系里的位置
+
+`pulse.ts`(976 行)是单进程 Bun daemon,端口 31337。它不是必需的(LifeOS 在终端对话里能跑),但补上"Claude Code 不在运行时也要发生的事":
+
+| 模块 | 作用 | 和 hook 的关系 |
 |---|---|---|
-| 安装引擎 | `LifeOS/Tools/InstallEngine.ts`(653 行) | `copyMissing`、`setupUserSeparation`、`mergeHooks`、`activateImports` |
-| 核心部署 | `LifeOS/Tools/DeployCore.ts`(217 行) | `deploySkills`/`deployRuntime`/`scaffoldMemory`/`deployDependencies` |
-| Hook 合并 | `LifeOS/Tools/InstallHooks.ts`(108 行) | RC2 audit:settings+scripts 必须原子 |
-| Settings 安装 | `LifeOS/Tools/InstallSettings.ts`(115 行) | env 值写入时展开(#1404/#1451) |
-| User 分离 | `LifeOS/Tools/ScaffoldUser.ts` + `LinkUser.ts` | `~/.config/LIFEOS/USER` + symlink |
-| Constitution | `LifeOS/install/LIFEOS/LIFEOS_SYSTEM_PROMPT.md`(196 行) | 5 条 CONSTITUTIONAL |
-| Hook 注册表 | `LifeOS/install/hooks/hooks.json` | 11 类事件、45 条 hook 项 |
-| Hook IO 协议 | `LifeOS/install/hooks/lib/hook-io.ts` | stdin JSON + `additionalContext` |
-| 算法 nudge | `LifeOS/install/hooks/AlgorithmNudge.hook.ts`(550 行) | 15/25/75 阈值、skill-routing、capability nudge |
-| 验证门 | `LifeOS/install/hooks/VerificationGate.hook.ts`(420 行) | T1-T5、`decision:block`、ACT-THEN-CLAIM |
-| ISA 同步 | `LifeOS/install/hooks/ISASync.hook.ts`(170 行) | frontmatter -> work.json、phase tab、HTML mirror |
-| 记忆触发 | `LifeOS/install/hooks/MemoryReviewFire.hook.ts`(180 行) | 8 turns + 30 min、billing guard |
-| ISA 模板 | `LifeOS/install/hooks/lib/isa-template.ts` | 7 effort 层级、ISC 最小数量、appetite |
-| Algorithm CLI | `LifeOS/install/LIFEOS/TOOLS/algorithm.ts`(1826 行) | loop/interactive/ideate/optimize、`claude -p` SDK |
-| Algorithm 规范 | `LifeOS/install/LIFEOS/ALGORITHM/v8.4.0.md` | 15 条 "run complete when"、Events ask the rest |
-| ISA 示例 | `LifeOS/install/skills/ISA/Examples/canonical-isa.md` | 完整 frontmatter + ISC checkbox |
-| 记忆类型 | `LifeOS/install/LIFEOS/TOOLS/MemoryTypes.ts`(531 行) | 4 类型、3 tier、set-overwrite、8 proposal kind |
-| 记忆评审 | `LifeOS/install/LIFEOS/TOOLS/MemoryReviewer.ts`(768 行) | confidence≥0.70 `applyProposalEdit` |
-| Gap 引擎 | `LifeOS/install/LIFEOS/TOOLS/ComputeGap.ts`(228 行) | v1 只数 TBD |
-| 状态百分比 | `LifeOS/install/LIFEOS/TOOLS/UpdateLifeosState.ts`(151 行) | fallback = `100 - TBD×10` |
-| Pulse daemon | `LifeOS/install/LIFEOS/PULSE/pulse.ts`(976 行) | 24 模块、billing guard、port 31337 |
-| 权限模型 | `LifeOS/install/settings.system.json`(418 行) | auto 模式、极宽 allow、autoMode 自然语言规则 |
+| `hooks`(startHooks) | 提供 `http://localhost:31337/hooks/skill-guard` 和 `agent-guard` | PreToolUse 的 Skill/Agent matcher 的 HTTP hook 目标 |
+| `voice` | ElevenLabs TTS | VoiceCompletion hook curl `/notify` |
+| `observability` | Next.js 静态 dashboard + JSON API | 读 `work.json`/`review-state.json` 等文件投影 |
+| `telegram`/`imessage` | 移动入口 + claude-agent-sdk | proposal 审批 surface |
+| `work` | GitHub Issue 轮询 | WorkSweep 把 TELOS Goal 匹配 Issue(私有 `_ULWORK` skill) |
+| `telos` | TELOS 投影 | 读 `LIFEOS_STATE.json` |
+| `memory` | memory 状态 | 读 `review-state.json`/`pending-proposals.jsonl` |
+| `doctor` | capability 检查 | 写 `capabilities.json` |
+| cron 调度 | heartbeat loop | 跑 scheduled jobs |
 
-## 15. 最终判断
+**关键**:Pulse 不持有权威状态,只读文件投影。`pulse.ts` 注释自己写明:"没有队列、没有 AI triage、没有 Channel abstraction;只是运行 Job 并路由输出"。如果 Pulse 没跑,HTTP hook fail-open,skill-guard/agent-guard 失效但对话继续。
 
-LifeOS 在代码层面真正证明了一件事:**把"个人 AI 运行协议"从脑子里的笔记,变成一套会被强制执行的运行行为,是可行的**。它用 Markdown 写协议,用 Claude Code Hook 做神经,用 TypeScript 确定性脚本做规则引擎,用 Pulse daemon 做后台器官,用 `settings.json` 的 auto 模式给模型自动写文件的权限。这条路径不是空想,454 个 TypeScript 和 72 个 hook 文件是真的在跑。
+## 10. 这套设计为什么"能跑",以及它的代价
 
-它也用代码证明了三个反面:
+### 10.1 为什么能跑
 
-1. **用文件、hook 和 prompt 承载全部产品语义,会产生接线、路径、版本和 Producer/Consumer 漂移**。`$HOME/.claude` 硬编码、RC2 audit、Issue #1584/#1596 都是证据。
-2. **自动记忆如果没有候选、授权和 Evidence,会把"维护"变成高风险长期写入**。`MemoryReviewer.ts:445-479` 的 `applyProposalEdit` 就是身份文件被模型置信度自动改写的代码路径。
-3. **作者自己的私有系统、公开发行和文档如果边界不清,用户会把愿景误认为已交付能力**。`_ULWORK`/`_LIFEOS` 私有 skill 在 release 时 strip,`SECURITY.md` 自己写明仓库是 public mirror。
+1. **Claude Code 提供了完整的 hook 事件系统**:11 类事件覆盖了 session 生命周期的每个节点。LifeOS 只要在每个事件挂确定性脚本,就能在不改 Claude Code 一行代码的情况下"注入行为"。
+2. **Markdown + JSON + JSONL 是可读可 Git 的**:用户能看懂、能改、能回滚。模型也能读写(它是天然擅长处理文本的)。
+3. **`settings.json` 的 auto 模式让模型自动写文件**:没有这个,72 个 hook 的自动写入(ISA 同步、memory、状态)全会被权限提示打断。
+4. **确定性 hook 不调模型**:`AlgorithmNudge` 等纯文件+正则+计数,<20ms,不花钱,不依赖模型。只有 `PromptProcessing`(起 session 名)、`MemoryReviewer`(提取记忆)调 Haiku。
+5. **transcript 是现成的证据源**:Claude Code 原生记 JSONL,LifeOS 用 `TranscriptParser` 解析,就能"读模型做过什么"做验证门。
 
-所以对 Chat 最有价值的认知不是"复刻 LifeOS",而是:**它的工程模式(确定性 hook 注入、ISA 可证伪合同、写入分级治理)值得吸收;它的架构代价(文件状态源、fail-open hook、auto 权限面、置信度自动写身份)必须用 Product DB、候选/HITL/Evidence/Trace 和 fail-closed 高影响门来替代**。
+### 10.2 代价(全部有代码证据)
+
+1. **状态散落在几十个文件里,没有事务**。`work.json` 写失败不会回滚 ISA.md 的编辑;`MemorySystem.add` 的 set-overwrite 和 ISA edit 是两次独立文件操作。半提交风险真实存在。
+2. **路径合同没有成为统一依赖**。`MemoryTypes.ts` 顶部硬编码 `homedir()/.claude`,`pulse.ts` 顶部硬编码 `join(HOME,".claude","LIFEOS")`。自定义 `CLAUDE_CONFIG_DIR` 时 Memory/Pulse 仍读 `$HOME/.claude`。每个工具开头都要自己修 `$HOME` 字面量(Issue #1404/#1451/#1584)。
+3. **hook 普遍 fail-open**。`AlgorithmNudge` 的 `try/catch` 返回 null,`VerificationGate` 的 `try/catch` pass,`MemoryReviewFire` 的错误 exit 0。只有 VerificationGate/StopGates 主动 block。高影响操作(自动改身份)没有 fail-closed 保护。
+4. **置信度自动写身份**。`MemoryReviewer.ts:445-479` 的 `applyProposalEdit`,confidence≥0.70 直接编辑身份文件。置信度由同一推理调用产生,不是用户批准。
+5. **auto 权限面极大**。`Write/Edit(~/.claude/**)` + `Bash(git push/curl/ssh)` + autoMode 自然语言开绿灯("Skip Self-Modification soft-block")。安全依赖高权限 Agent + Prompt 规则。
+6. **公开版与作者私有版不一致**。`_ULWORK`/`_LIFEOS` 私有 skill 在 release 时 strip(`InstallEngine.ts:detectDevTree` 靠 `skills/_LIFEOS` 存在判断源码树)。Work 闭环公开用户拿不到完整版。
+7. **没有常规测试体系**。无 `.test.ts`,`bun test` 返回 No tests found。只有内置 smoke check。
+
+## 11. 给 Chat 的工程启发(基于代码事实,不是概念)
+
+从"它怎么跑的"出发,Chat 应该吸收 3 个工程模式,避免 6 个代价:
+
+**吸收**:
+1. **确定性 hook 注入 > 巨型 system prompt**:在事件发生时用确定性脚本(<20ms、不调模型)注入一行建议,比一个 196 行 prompt 有效。但必须区分建议(exit 0)和强制门(block),高影响门 fail-closed。
+2. **ISA 可证伪合同**:把"完成"写成带 probe 的 ISC checkbox,状态和证据绑定。但权威状态必须在 Product DB,不能是 Markdown checkbox。
+3. **写入分级 + 召回合同**:MemoryTypes 的 tier(A/B/C)+ write_mode(set/append/queue)+ load_timing(always/on-relevance/surface)是好模型。但每种写入必须有召回/消费合同(防 Discussion #884 的 28 Writer/2 Reader)。
+
+**避免**:
+1. 状态散落文件无事务 -> 用 Product DB + Outbox。
+2. 路径硬编码 -> 配置根作为统一依赖。
+3. hook fail-open -> 高影响门 fail-closed。
+4. 置信度自动写身份 -> 先生成候选,HITL 批准。
+5. auto 权限面 -> 按风险分级授权。
+6. 公开/私有不一致 -> Declared/Registered/Observed 三方 Doctor。
+
+## 12. 证据索引
+
+固定提交 `d1d6240`。路径相对 `ref/LifeOS/`。
+
+| 机制 | 代码路径 | 关键事实 |
+|---|---|---|
+| 目录结构 | `Tools/DeployCore.ts`、`Tools/ScaffoldUser.ts`、`Tools/LinkUser.ts` | USER symlink 到 ~/.config/LIFEOS/USER |
+| 四层上下文 | `LIFEOS_SYSTEM_PROMPT.md`、`CLAUDE.template.md`、`hooks/LoadContext.hook.ts`、`hooks.json` | ①system ②@import ③system-reminder ④additionalContext |
+| transcript 解析 | `LIFEOS/TOOLS/TranscriptParser.ts`(418 行) | JSONL,collectCurrentResponseText 找最后真实 user |
+| hook IO 协议 | `hooks/lib/hook-io.ts` | stdin JSON + stdout `hookSpecificOutput.additionalContext` |
+| SessionStart 注入 | `hooks/LoadContext.hook.ts`(477 行) | 读 RELATIONSHIP/LEARNING/WORK 组装 system-reminder |
+| UserPromptSubmit 记忆 | `hooks/MemoryTurnStart.hook.ts` | hash 门控(REFRESH_TURNS=20)防重复注入 |
+| UserPromptSubmit 命名 | `hooks/PromptProcessing.hook.ts`(1119 行) | 只做 tab title + session name,Haiku 推理,**不注入模型** |
+| skill-routing | `hooks/AlgorithmNudge.hook.ts:matchSkills/buildIndex` | 扫 SKILL.md USE WHEN,确定性短语匹配 |
+| 验证门 | `hooks/VerificationGate.hook.ts`(420 行) | 读 transcript tool 事件,T1-T3 `decision:block` |
+| ISA 同步 | `hooks/ISASync.hook.ts` + `hooks/lib/isa-utils.ts:syncToWorkJson` | frontmatter -> work.json,phase 变化染色 |
+| work.json 结构 | `hooks/lib/isa-utils.ts`(1458 行) | `sessions[slug]={phase,sessionUUID,progress,currentMode}` |
+| Memory 写入分级 | `LIFEOS/TOOLS/MemorySystem.ts:add`(行 488-560) | `getTier` 验证,ETIER_MISMATCH 拒绝 |
+| Memory 自动 apply | `LIFEOS/TOOLS/MemoryReviewer.ts:dispatchItems`(行 417-479) | confidence≥threshold -> `applyProposalEdit` |
+| Memory 触发 | `hooks/MemoryReviewFire.hook.ts` | 8 turns + 30min,spawn detached |
+| Gap 引擎 | `LIFEOS/TOOLS/ComputeGap.ts` | `// v1: only count TBD` |
+| 状态百分比 | `LIFEOS/TOOLS/UpdateLifeosState.ts` | fallback = `100 - TBD×10` |
+| Algorithm CLI | `LIFEOS/TOOLS/algorithm.ts`(1826 行) | loop/interactive/ideate/optimize,`claude -p` SDK |
+| Algorithm 规范 | `LIFEOS/ALGORITHM/v8.4.0.md` | 15 条 "run complete when" |
+| ISA 模板 | `hooks/lib/isa-template.ts` | 7 effort 层级,ISC 最小数量 |
+| Pulse daemon | `LIFEOS/PULSE/pulse.ts`(976 行) | 25 模块,端口 31337,billing guard |
+| 权限模型 | `install/settings.system.json` | auto 模式 + autoMode 自然语言开绿灯 |
+
+## 13. 最终判断
+
+LifeOS 在代码层面真正跑通了一件事:**用 Claude Code 的 hook 事件系统 + 文件系统状态 + auto 权限,把一套 Markdown 协议变成会被强制执行的行为**。它不需要自己写 Agent runtime、模型调用循环或数据库--Claude Code 全提供了,LifeOS 只负责"在什么事件、读什么文件、算什么、注入什么或阻断什么"。
+
+它的"产品能力"几乎全在 ④ 层(additionalContext)和几个 `decision:block` 门里。system prompt 和 CLAUDE.md 是"告诉模型规矩",真正执行规矩的是 hook。状态散落在 `work.json` + 几十个 json/jsonl 里,没有事务,靠"每次编辑就同步"维持一致性。
+
+对 Chat 最有价值的认知:**这套"确定性 hook 注入 + 文件状态 + auto 权限"的工程模式是可行的、在跑的、有 454 个 TypeScript 支撑的**。但它的每一个代价(文件无事务、路径硬编码、fail-open、置信度自动写身份、auto 权限面、公开/私有不一致)都必须用 Product DB、统一配置、fail-closed、候选/HITL、分级授权和三方 Doctor 来替代。Chat 不是复刻 LifeOS,而是用它的工程模式 + Chat 的权威边界,做出 LifeOS 证明可行但没做到的可信闭环。
