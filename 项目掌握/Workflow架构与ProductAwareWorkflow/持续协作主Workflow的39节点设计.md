@@ -59,84 +59,86 @@ WorkflowBuilder(
 
 这是本 Workflow 最重要的设计判断——节点数量多，但类不膨胀：
 
-1. **`ProductDecisionExecutor` × 9 个节点**：`context_adoption`、`intent_binding`、`project_work_binding`、`detail_context_adoption`、`plan_acceptance`、`execution_authorization`、`result_commit`、`work_state_commit`、`memory_commit` 共用同一个类，行为差异全部由数据（`ProductDecisionSpec`）表达：主体投影、适用条件、治理事实、可编辑字段、revise 函数、是否可跳过、Grant 类型。
-2. **`GovernedSemanticAgentExecutor` × 4 个节点**：`intent_agent`(ordinal=1)、`planning_agent`(2)、`response_agent`(3)、`turn_summary_agent`(4) 共用同一个类，差异只有 Agent Profile、任务构造器和 `result_kind`。
-3. **`HarnessContextRevisionExecutor` × 2 个节点**：`directory_context_revision` 与 `detail_context_revision` 用 `stage="directory"/"detail"` 参数区分。
+1. **[`ProductDecisionExecutor`](../../backend/app/workflows/continuous_chat.py#L722) × 9 个节点**：`context_adoption`、`intent_binding`、`project_work_binding`、`detail_context_adoption`、`plan_acceptance`、`execution_authorization`、`result_commit`、`work_state_commit`、`memory_commit` 共用同一个类，行为差异全部由数据（[`ProductDecisionSpec`](../../backend/app/workflows/continuous_chat.py#L707)，9 份规格集中在 [`_decision_specs()`](../../backend/app/workflows/continuous_chat.py#L2467)）表达：主体投影、适用条件、治理事实、可编辑字段、revise 函数、是否可跳过、Grant 类型。
+2. **[`GovernedSemanticAgentExecutor`](../../backend/app/workflows/continuous_chat.py#L1081) × 4 个节点**：`intent_agent`(ordinal=1)、`planning_agent`(2)、`response_agent`(3)、`turn_summary_agent`(4) 共用同一个类，差异只有 Agent Profile、任务构造器和 `result_kind`。
+3. **[`HarnessContextRevisionExecutor`](../../backend/app/workflows/continuous_chat.py#L540) × 2 个节点**：`directory_context_revision` 与 `detail_context_revision` 用 `stage="directory"/"detail"` 参数区分。
 
-另有 `TraceMixin` 被所有自有 Executor 混入：每个节点都把公开输入/输出写成 `workflow.node.content` Trace，并按需生成 `StepInputProjection`（最小工作包、能力、预算、输出合同、停止条件、Hash）——设计者工作台点击节点看到的内容就来自这里。
+另有 [`TraceMixin`](../../backend/app/workflows/continuous_chat.py#L133) 被所有自有 Executor 混入：每个节点都把公开输入/输出写成 `workflow.node.content` Trace，并按需生成 `StepInputProjection`（最小工作包、能力、预算、输出合同、停止条件、Hash）——设计者工作台点击节点看到的内容就来自这里。
 
 ### 4. 39 个节点逐一说明
 
 贯穿全图的消息是 `CollaborationState`（frozen dataclass），每个节点用 `replace()` 产生新状态传给下一个节点，从不原地修改。
 
+> 下表 Executor 列可点击跳转源码。行号锚点基于 2026-07-28 提交 `9ba63e1`；后续代码变动行号会漂移，届时按类名搜索定位。
+
 #### 4.1 入口与目录上下文（节点 1-5）
 
 | # | 节点 | Executor | 做了什么 |
 |---|------|----------|---------|
-| 1 | `input_acceptance` | `IntakeExecutor` | `normalize_agui_messages_for_provider()` 过滤审批协议消息，取最后一条用户消息为 prompt；读最近 8 条 TurnSummary、最新未回答澄清、从摘要提取 Project 提示；构造初始 `CollaborationState` |
-| 2 | `context_candidates` | `CandidateContextExecutor` | 确定性检索：对摘要按 prompt 关键词命中计分，未回答澄清强制优先带回，最多选 4 条。**不默认叠加完整历史** |
-| 3 | `harness_directory_context` | `HarnessDirectoryContextExecutor` | 阶段 A：读正式 Project 轻量目录，生成候选 `ContextPackage`（token 预算 1800）。Project 事实来自权威 Harness，不从聊天摘要猜 |
-| 4 | `context_adoption` | `ProductDecisionExecutor` | HITL：确认本轮采用的主题摘要。可编辑字段是 `selected_summary_ids` 多选；`_revise_context()` 按选中 ID 过滤摘要，skip 则清空；允许跳过 |
-| 5 | `directory_context_revision` | `HarnessContextRevisionExecutor(stage="directory")` | 读当前 Run 最新目录 Context revision 投影回状态——保证用户在决策卡上排除/修改的内容**真正进入**后续意图识别，旧来源不会被装回 |
+| 1 | `input_acceptance` | [`IntakeExecutor`](../../backend/app/workflows/continuous_chat.py#L218) | `normalize_agui_messages_for_provider()` 过滤审批协议消息，取最后一条用户消息为 prompt；读最近 8 条 TurnSummary、最新未回答澄清、从摘要提取 Project 提示；构造初始 `CollaborationState` |
+| 2 | `context_candidates` | [`CandidateContextExecutor`](../../backend/app/workflows/continuous_chat.py#L267) | 确定性检索：对摘要按 prompt 关键词命中计分，未回答澄清强制优先带回，最多选 4 条。**不默认叠加完整历史** |
+| 3 | `harness_directory_context` | [`HarnessDirectoryContextExecutor`](../../backend/app/workflows/continuous_chat.py#L315) | 阶段 A：读正式 Project 轻量目录，生成候选 `ContextPackage`（token 预算 1800）。Project 事实来自权威 Harness，不从聊天摘要猜 |
+| 4 | `context_adoption` | [`ProductDecisionExecutor`](../../backend/app/workflows/continuous_chat.py#L722) | HITL：确认本轮采用的主题摘要。可编辑字段是 `selected_summary_ids` 多选；[`_revise_context()`](../../backend/app/workflows/continuous_chat.py#L2331) 按选中 ID 过滤摘要，skip 则清空；允许跳过 |
+| 5 | `directory_context_revision` | [`HarnessContextRevisionExecutor(stage="directory")`](../../backend/app/workflows/continuous_chat.py#L540) | 读当前 Run 最新目录 Context revision 投影回状态——保证用户在决策卡上排除/修改的内容**真正进入**后续意图识别，旧来源不会被装回 |
 
 #### 4.2 意图识别与 Project 绑定（节点 6-15）
 
 | # | 节点 | Executor | 做了什么 |
 |---|------|----------|---------|
-| 6 | `intent_agent` | `GovernedSemanticAgentExecutor`(intent_router, 第1次调用) | 识别 1-4 个目标、顺序依赖、Project 提示和澄清需要。**确定性护栏**：`_is_project_catalog_query()` 命中"我有哪些项目"类输入时直接构造意图，0 次模型调用 |
-| 7 | `intent_set_projection` | `IntentSetProjectionExecutor` | 把模型候选保存为不可变 Intent revision（Intent Set），并恢复/回答跨 Run 澄清 |
-| 8 | `intent_binding` | `ProductDecisionExecutor` | HITL：确认意图理解。`clarify` 场景不适用（不会造出无法回答的审批卡）；可整体编辑 Intent Set；`_revise_intent()` 校验 1-4 个 Intent、场景白名单，手工修改后 `confidence=1.0` |
-| 9 | `intent_set_acceptance` | `IntentSetAcceptanceExecutor` | 把审核后意图同步为新 revision，只接受当前 Hash 绑定的完整 Intent Set；clarify 场景保持 candidate |
-| 10 | `harness_project_resolver` | `HarnessProjectResolverExecutor` | 把意图中的 Project 提示解析到权威目录已有 ID；**只有唯一匹配才绑定**，零匹配或多匹配交给下一个决策点 |
-| 11 | `project_work_binding` | `ProductDecisionExecutor` | HITL：确认关联的 Project/Work。选项只来自 `state.project_matches` 权威候选，`_revise_project()` 拒绝目录外 ID；可选择"本轮不关联"；简单问答不适用 |
-| 12 | `harness_detail_context` | `HarnessDetailContextExecutor` | 阶段 B：按已绑定 Project 装配开放 Work、当前 Plan、Action、Note、Accepted Memory、Repository Snapshot 和匹配治理规则（token 预算 6000），逐项记录采用与排除 |
-| 13 | `detail_context_adoption` | `ProductDecisionExecutor` | HITL：确认项目与仓库 Context。主体逐项公开 source_kind/revision/adopted/reason/token_estimate；本卡不提供行内编辑（调整走 Context 面板生成新 revision），不允许跳过 |
-| 14 | `detail_context_revision` | `HarnessContextRevisionExecutor(stage="detail")` | 同节点 5，投影用户审核后的最新详情 Context revision |
-| 15 | `collaboration_protocol_resolver` | `CollaborationProtocolResolverExecutor` | 按 Work → Project → 用户 → 系统优先级绑定不可变协作协议 revision；多 Intent 时用可审计 `composition_overlay` 公开本轮实际启用的组合 Plan 策略 |
+| 6 | `intent_agent` | [`GovernedSemanticAgentExecutor`](../../backend/app/workflows/continuous_chat.py#L1081)(intent_router, 第1次调用) | 识别 1-4 个目标、顺序依赖、Project 提示和澄清需要。**确定性护栏**：`_is_project_catalog_query()` 命中"我有哪些项目"类输入时直接构造意图，0 次模型调用 |
+| 7 | `intent_set_projection` | [`IntentSetProjectionExecutor`](../../backend/app/workflows/continuous_chat.py#L1737) | 把模型候选保存为不可变 Intent revision（Intent Set），并恢复/回答跨 Run 澄清 |
+| 8 | `intent_binding` | [`ProductDecisionExecutor`](../../backend/app/workflows/continuous_chat.py#L722) | HITL：确认意图理解。`clarify` 场景不适用（不会造出无法回答的审批卡）；可整体编辑 Intent Set；[`_revise_intent()`](../../backend/app/workflows/continuous_chat.py#L2349) 校验 1-4 个 Intent、场景白名单，手工修改后 `confidence=1.0` |
+| 9 | `intent_set_acceptance` | [`IntentSetAcceptanceExecutor`](../../backend/app/workflows/continuous_chat.py#L1808) | 把审核后意图同步为新 revision，只接受当前 Hash 绑定的完整 Intent Set；clarify 场景保持 candidate |
+| 10 | `harness_project_resolver` | [`HarnessProjectResolverExecutor`](../../backend/app/workflows/continuous_chat.py#L370) | 把意图中的 Project 提示解析到权威目录已有 ID；**只有唯一匹配才绑定**，零匹配或多匹配交给下一个决策点 |
+| 11 | `project_work_binding` | [`ProductDecisionExecutor`](../../backend/app/workflows/continuous_chat.py#L722) | HITL：确认关联的 Project/Work。选项只来自 `state.project_matches` 权威候选，[`_revise_project()`](../../backend/app/workflows/continuous_chat.py#L2401) 拒绝目录外 ID；可选择"本轮不关联"；简单问答不适用 |
+| 12 | `harness_detail_context` | [`HarnessDetailContextExecutor`](../../backend/app/workflows/continuous_chat.py#L432) | 阶段 B：按已绑定 Project 装配开放 Work、当前 Plan、Action、Note、Accepted Memory、Repository Snapshot 和匹配治理规则（token 预算 6000），逐项记录采用与排除 |
+| 13 | `detail_context_adoption` | [`ProductDecisionExecutor`](../../backend/app/workflows/continuous_chat.py#L722) | HITL：确认项目与仓库 Context。主体逐项公开 source_kind/revision/adopted/reason/token_estimate；本卡不提供行内编辑（调整走 Context 面板生成新 revision），不允许跳过 |
+| 14 | `detail_context_revision` | [`HarnessContextRevisionExecutor(stage="detail")`](../../backend/app/workflows/continuous_chat.py#L540) | 同节点 5，投影用户审核后的最新详情 Context revision |
+| 15 | `collaboration_protocol_resolver` | [`CollaborationProtocolResolverExecutor`](../../backend/app/workflows/continuous_chat.py#L616) | 按 Work → Project → 用户 → 系统优先级绑定不可变协作协议 revision；多 Intent 时用可审计 `composition_overlay` 公开本轮实际启用的组合 Plan 策略 |
 
 #### 4.3 场景路由与两个短分支（节点 16-18）
 
 | # | 节点 | Executor | 做了什么 |
 |---|------|----------|---------|
-| 16 | `scenario_router` | `ScenarioRouterExecutor` | 纯投影：调用合同层 `_evaluate_scenario_route()` 记录路由决定并原样转发状态；真正的分支由 MAF SwitchCase 边完成（见 §5） |
-| 17 | `project_catalog_query` | `ProjectCatalogExecutor` | 确定性产品目录查询：从 Harness 权威事实回答项目列表；目录为空时明确说"没有正式项目"并展示对话候选，**绝不让模型编造**。之后直接接 `result_commit`（节点 34） |
-| 18 | `clarification` | `ClarificationExecutor` | 把澄清问题作为本轮 response 提交（提示"请直接在下方输入框回答"），标记 `awaiting_user_answer: True`；之后**跳过整条结果审批链**，直接接 `turn_summary_persist`（节点 38），下一轮 Intake 会把开放问题带回 |
+| 16 | `scenario_router` | [`ScenarioRouterExecutor`](../../backend/app/workflows/continuous_chat.py#L1876) | 纯投影：调用合同层 `_evaluate_scenario_route()` 记录路由决定并原样转发状态；真正的分支由 MAF SwitchCase 边完成（见 §5） |
+| 17 | `project_catalog_query` | [`ProjectCatalogExecutor`](../../backend/app/workflows/continuous_chat.py#L1898) | 确定性产品目录查询：从 Harness 权威事实回答项目列表；目录为空时明确说"没有正式项目"并展示对话候选，**绝不让模型编造**。之后直接接 `result_commit`（节点 34） |
+| 18 | `clarification` | [`ClarificationExecutor`](../../backend/app/workflows/continuous_chat.py#L2120) | 把澄清问题作为本轮 response 提交（提示"请直接在下方输入框回答"），标记 `awaiting_user_answer: True`；之后**跳过整条结果审批链**，直接接 `turn_summary_persist`（节点 38），下一轮 Intake 会把开放问题带回 |
 
 #### 4.4 计划与执行合同（节点 19-24）
 
 | # | 节点 | Executor | 做了什么 |
 |---|------|----------|---------|
-| 19 | `planning_agent` | `GovernedSemanticAgentExecutor`(task_planner, 第2次调用) | 对新任务、继续 Project、明确规划请求和多 Intent 组合形成步骤与验证门 |
-| 20 | `plan_acceptance` | `ProductDecisionExecutor` | HITL：接受/修改/本轮跳过计划。`_revise_plan()`：skip 清空 plan，修改必须非空 |
-| 21 | `execution_draft_compiler` | `ExecutionDraftCompilerExecutor` | 把目标、最小上下文、计划、能力和完成门编译成版本化 `ExecutionDraft`（`compile_execution_draft_v2`）；同时施加 Repository Fence 并**冻结 Validation Contract**（P0-1，防止授权后 Plan 推进偷换验证规则）；失败用稳定错误码脱敏（P1-5） |
-| 22 | `execution_authorization` | `ProductDecisionExecutor` | HITL：授权执行合同。`accept_action="execute"`、`grant_kind="start_run"`——批准产生一次性 Grant，**绑定当前 Draft revision Hash**；编辑走 ExecutionDraft 完整工作台，`_revise_execution_draft()` 只接受新 revision ID（新 Hash 必须重新审批） |
-| 23 | `run_spec_compiler` | `RunSpecCompilerExecutor` | 只从已授权的 ExecutionDraft revision 编译**不可变 RunSpec**（`compile_run_spec_v2`）并绑定 Product Run；这是执行阶段的唯一合同来源 |
-| 24 | `execution_route` | `ExecutionRouteExecutor` | 只读已批准 RunSpec 决定 `pi_workspace` / `pi_readonly` / `answer_only`，**不再重新解释用户文本**；分支同样由 SwitchCase 边完成 |
+| 19 | `planning_agent` | [`GovernedSemanticAgentExecutor`](../../backend/app/workflows/continuous_chat.py#L1081)(task_planner, 第2次调用) | 对新任务、继续 Project、明确规划请求和多 Intent 组合形成步骤与验证门 |
+| 20 | `plan_acceptance` | [`ProductDecisionExecutor`](../../backend/app/workflows/continuous_chat.py#L722) | HITL：接受/修改/本轮跳过计划。[`_revise_plan()`](../../backend/app/workflows/continuous_chat.py#L2419)：skip 清空 plan，修改必须非空 |
+| 21 | `execution_draft_compiler` | [`ExecutionDraftCompilerExecutor`](../../backend/app/workflows/continuous_chat.py#L1958) | 把目标、最小上下文、计划、能力和完成门编译成版本化 `ExecutionDraft`（`compile_execution_draft_v2`）；同时施加 Repository Fence 并**冻结 Validation Contract**（P0-1，防止授权后 Plan 推进偷换验证规则）；失败用稳定错误码脱敏（P1-5） |
+| 22 | `execution_authorization` | [`ProductDecisionExecutor`](../../backend/app/workflows/continuous_chat.py#L722) | HITL：授权执行合同。`accept_action="execute"`、`grant_kind="start_run"`——批准产生一次性 Grant，**绑定当前 Draft revision Hash**；编辑走 ExecutionDraft 完整工作台，[`_revise_execution_draft()`](../../backend/app/workflows/continuous_chat.py#L2441) 只接受新 revision ID（新 Hash 必须重新审批） |
+| 23 | `run_spec_compiler` | [`RunSpecCompilerExecutor`](../../backend/app/workflows/continuous_chat.py#L2060) | 只从已授权的 ExecutionDraft revision 编译**不可变 RunSpec**（`compile_run_spec_v2`）并绑定 Product Run；这是执行阶段的唯一合同来源 |
+| 24 | `execution_route` | [`ExecutionRouteExecutor`](../../backend/app/execution_dispatch/workflow.py#L72) | 只读已批准 RunSpec 决定 `pi_workspace` / `pi_readonly` / `answer_only`，**不再重新解释用户文本**；分支同样由 SwitchCase 边完成 |
 
 #### 4.5 pi 执行分支（节点 25-31，SD2/SD3/SD4-C）
 
 | # | 节点 | Executor | 做了什么 |
 |---|------|----------|---------|
-| 25 | `execution_workspace_prepare` | `ExecutionWorkspacePrepareExecutor` | 从已批准的干净 Repository Snapshot 创建受管 detached Git worktree，校验 base revision，公开安全 Workspace 投影（不泄露绝对路径） |
-| 26 | `pi_workspace_dispatch` | `PiWorkspaceDispatchExecutor` | 在受管 worktree 启动受治理 pi 隔离编辑：每次模型请求逐次审批，Tool 只允许有界读取和绑定 Hash 的单文件精确 `edit`；每个副作用记入 ToolOperation/Attempt 账本。子活动经 `intermediate_output_from` 流式外发到工作台 |
-| 27 | `pi_workspace_result_assembly` | `PiWorkspaceResultAssemblyExecutor` | 保留工作区，校验 ToolExecution 与 Result Hash，公开变化文件；**不提交、不推送、不声明 Work 完成** |
-| 28 | `result_claim_prepare` | `ResultClaimPrepareExecutor` | 经 `ResultPipelineCoordinator` 建立证据链：diff_patch Artifact（真实 Diff 字节）、冻结的 ValidationContract、绑定 Action 版本/Snapshot/Artifact Revision 的 CompletionClaim 与非空 mandatory Requirements；确定性 Validation 在 Workspace 真实执行。全部写入用 `sd4:{run_id}:...` 幂等 command_id |
-| 29 | `result_claim_decision` | `ResultClaimDecisionExecutor` | HITL：决定结果 Claim（accept/waive/reject）。复用 `result_commit` 决策点，不可变 DecisionSubject 冻结 Claim id/hash/row_version，创建即绑定，篡改必失败 |
-| 30 | `pi_readonly_dispatch` | `PiReadonlyDispatchExecutor` | 受治理 pi 只读检查：Chat-owned `read/grep/find/ls` 逐次重验路径与快照；pi 禁用内置 Tool、Context 文件发现、Session 和自动重试 |
-| 31 | `pi_readonly_result_assembly` | `PiReadonlyResultAssemblyExecutor` | 装配只读结果，校验后写回状态，交给回合摘要 |
+| 25 | `execution_workspace_prepare` | [`ExecutionWorkspacePrepareExecutor`](../../backend/app/execution_dispatch/workflow.py#L188) | 从已批准的干净 Repository Snapshot 创建受管 detached Git worktree，校验 base revision，公开安全 Workspace 投影（不泄露绝对路径） |
+| 26 | `pi_workspace_dispatch` | [`PiWorkspaceDispatchExecutor`](../../backend/app/execution_dispatch/workflow.py#L1068) | 在受管 worktree 启动受治理 pi 隔离编辑：每次模型请求逐次审批，Tool 只允许有界读取和绑定 Hash 的单文件精确 `edit`；每个副作用记入 ToolOperation/Attempt 账本。子活动经 `intermediate_output_from` 流式外发到工作台 |
+| 27 | `pi_workspace_result_assembly` | [`PiWorkspaceResultAssemblyExecutor`](../../backend/app/execution_dispatch/workflow.py#L1079) | 保留工作区，校验 ToolExecution 与 Result Hash，公开变化文件；**不提交、不推送、不声明 Work 完成** |
+| 28 | `result_claim_prepare` | [`ResultClaimPrepareExecutor`](../../backend/app/execution_dispatch/result_gate.py#L117) | 经 `ResultPipelineCoordinator` 建立证据链：diff_patch Artifact（真实 Diff 字节）、冻结的 ValidationContract、绑定 Action 版本/Snapshot/Artifact Revision 的 CompletionClaim 与非空 mandatory Requirements；确定性 Validation 在 Workspace 真实执行。全部写入用 `sd4:{run_id}:...` 幂等 command_id |
+| 29 | `result_claim_decision` | [`ResultClaimDecisionExecutor`](../../backend/app/execution_dispatch/result_gate.py#L184) | HITL：决定结果 Claim（accept/waive/reject）。复用 `result_commit` 决策点，不可变 DecisionSubject 冻结 Claim id/hash/row_version，创建即绑定，篡改必失败 |
+| 30 | `pi_readonly_dispatch` | [`PiReadonlyDispatchExecutor`](../../backend/app/execution_dispatch/workflow.py#L259) | 受治理 pi 只读检查：Chat-owned `read/grep/find/ls` 逐次重验路径与快照；pi 禁用内置 Tool、Context 文件发现、Session 和自动重试 |
+| 31 | `pi_readonly_result_assembly` | [`PiReadonlyResultAssemblyExecutor`](../../backend/app/execution_dispatch/workflow.py#L1003) | 装配只读结果，校验后写回状态，交给回合摘要 |
 
 #### 4.6 响应与回合收尾（节点 32-39）
 
 | # | 节点 | Executor | 做了什么 |
 |---|------|----------|---------|
-| 32 | `response_agent` | `GovernedSemanticAgentExecutor`(response_agent, 第3次调用) | `answer_only` 分支的协作响应：用已采用 Context、意图和计划生成答复候选 |
-| 33 | `turn_summary_agent` | `GovernedSemanticAgentExecutor`(turn_summarizer, 第4次调用) | 提取本轮主题、开放问题、Work 状态候选和 Memory 候选；只读回合经 `_apply_summary_writeback_policy()` 过滤写回候选（去向记为 `accepted_with_writeback_filter`），三条执行分支在此汇合 |
-| 34 | `result_commit` | `ProductDecisionExecutor` | HITL：确认提交给会话的答复（长文本可编辑），`grant_kind="commit_result"`。`project_catalog_query` 分支也汇入这里 |
-| 35 | `work_state_commit` | `ProductDecisionExecutor` | HITL：Work 状态候选决定，`grant_kind="commit_work_state"`，可跳过；候选不会自动变成长期状态 |
-| 36 | `memory_commit` | `ProductDecisionExecutor` | HITL：长期 Memory 候选决定，`grant_kind="commit_memory"`，可跳过；只有明确接受的候选进长期 Memory |
-| 37 | `harness_candidate_commit` | `HarnessCandidateCommitExecutor` | 把已批准候选经 `commit_turn_candidates()` 幂等提交到 Product Harness：command_id 为 `turn-candidates:{run_id}`，绑定各 Decision Record ID，重放不重复 |
-| 38 | `turn_summary_persist` | `TurnSummaryPersistExecutor` | `save_turn_summary()` 保存回合主题摘要（下一轮候选召回的来源），并附上已提交产品事实引用；`clarification` 分支直接汇入这里 |
-| 39 | `result_finalization` | `FinalizeExecutor` | 以 `product_finalization_gate` 身份记录 result_candidate Trace，`ctx.yield_output(response)` 产出最终答复。外层 ProductAwareWorkflow 在此提交 Product Message 终态，防止过早 `RUN_FINISHED` |
+| 32 | `response_agent` | [`GovernedSemanticAgentExecutor`](../../backend/app/workflows/continuous_chat.py#L1081)(response_agent, 第3次调用) | `answer_only` 分支的协作响应：用已采用 Context、意图和计划生成答复候选 |
+| 33 | `turn_summary_agent` | [`GovernedSemanticAgentExecutor`](../../backend/app/workflows/continuous_chat.py#L1081)(turn_summarizer, 第4次调用) | 提取本轮主题、开放问题、Work 状态候选和 Memory 候选；只读回合经 `_apply_summary_writeback_policy()` 过滤写回候选（去向记为 `accepted_with_writeback_filter`），三条执行分支在此汇合 |
+| 34 | `result_commit` | [`ProductDecisionExecutor`](../../backend/app/workflows/continuous_chat.py#L722) | HITL：确认提交给会话的答复（长文本可编辑，[`_revise_result()`](../../backend/app/workflows/continuous_chat.py#L2431)），`grant_kind="commit_result"`。`project_catalog_query` 分支也汇入这里 |
+| 35 | `work_state_commit` | [`ProductDecisionExecutor`](../../backend/app/workflows/continuous_chat.py#L722) | HITL：Work 状态候选决定，`grant_kind="commit_work_state"`，可跳过；候选不会自动变成长期状态 |
+| 36 | `memory_commit` | [`ProductDecisionExecutor`](../../backend/app/workflows/continuous_chat.py#L722) | HITL：长期 Memory 候选决定，`grant_kind="commit_memory"`，可跳过（[`_revise_summary_candidates()`](../../backend/app/workflows/continuous_chat.py#L2451)）；只有明确接受的候选进长期 Memory |
+| 37 | `harness_candidate_commit` | [`HarnessCandidateCommitExecutor`](../../backend/app/workflows/continuous_chat.py#L2162) | 把已批准候选经 `commit_turn_candidates()` 幂等提交到 Product Harness：command_id 为 `turn-candidates:{run_id}`，绑定各 Decision Record ID，重放不重复 |
+| 38 | `turn_summary_persist` | [`TurnSummaryPersistExecutor`](../../backend/app/workflows/continuous_chat.py#L2221) | `save_turn_summary()` 保存回合主题摘要（下一轮候选召回的来源），并附上已提交产品事实引用；`clarification` 分支直接汇入这里 |
+| 39 | `result_finalization` | [`FinalizeExecutor`](../../backend/app/workflows/continuous_chat.py#L2309) | 以 `product_finalization_gate` 身份记录 result_candidate Trace，`ctx.yield_output(response)` 产出最终答复。外层 ProductAwareWorkflow 在此提交 Product Message 终态，防止过早 `RUN_FINISHED` |
 
 ### 5. 两个分支点的真实条件
 
@@ -242,4 +244,145 @@ ModelCallDraft 准备、审批和 Provider Dispatch 前都会执行 `RepositoryS
 
 ## 补充记录
 
-（后续对话中的补充、修正或新发现，按日期追加）
+### 2026-07-28：HITL 分布与分阶段流程图
+
+用户追问：39 个节点加了 HITL 没有？流程、输入、输出怎么表达？
+
+**HITL 分布总账**：39 节点分 3 类治理强度，不是每个节点都有决策卡。
+
+| 类型 | 数量 | 节点 | HITL 形式 |
+|---|---|---|---|
+| 🛑 审批节点（kind=approval） | 10 | 4 context_adoption、8 intent_binding、11 project_work_binding、13 detail_context_adoption、20 plan_acceptance、22 execution_authorization、29 result_claim_decision、34 result_commit、35 work_state_commit、36 memory_commit | `ctx.request_info()` 暂停出决策卡；策略矩阵可 deny / 有界自动推进 / 等人；批准绑定当前 Hash + 一次性 Grant |
+| 🤖 Agent 节点 | 6 | 6 / 19 / 32 / 33（4 次语义模型调用）+ 26 pi_workspace_dispatch、30 pi_readonly_dispatch | 节点不出决策卡，但每一次 Provider 请求生成可编辑 ModelCallDraft 逐次审批；pi 内部每次模型请求和每个 Tool 调用（含 `edit`）也逐次审批 |
+| ⚙️ 确定性节点 | 23 | 其余全部 | 无 HITL、不暂停；靠不可变 revision、幂等 command_id 和 fail-closed 保安全 |
+
+注意："有 HITL"≠"一定暂停"——auto_continue 也持久留痕并消费 Grant。§4 表中 10 个 approval 节点里有 9 个共用 `ProductDecisionExecutor`，第 10 个 `result_claim_decision` 是独立类但复用 `result_commit` 决策点。
+
+**总览图**（6 阶段 + 2 分支点）：
+
+```mermaid
+flowchart LR
+    S1["阶段① 输入与目录上下文 1-5"] --> S2["阶段② 意图与Project绑定 6-15"]
+    S2 --> R1{"16 场景路由"}
+    R1 -->|目录查询| P17["17 确定性目录查询 0次模型"]
+    R1 -->|clarify| P18["18 请求澄清"]
+    R1 -->|needs_plan| S4["19-20 规划与Plan审批"]
+    R1 -->|Default 直答| S4b["21-24 执行合同"]
+    S4 --> S4b
+    S4b --> R2{"24 执行路由"}
+    R2 -->|pi_workspace| S5a["25-29 pi隔离编辑+证据链"]
+    R2 -->|pi_readonly| S5b["30-31 pi只读"]
+    R2 -->|answer_only| S5c["32 协作响应"]
+    S5a --> S6["33-37 摘要与三级提交"]
+    S5b --> S6
+    S5c --> S6
+    P17 --> S6
+    S6 --> S7["38-39 持久化与终结"]
+    P18 -.跳过结果审批链.-> S7
+```
+
+**阶段①（1-5）** 输入：AG-UI 消息列表 → 输出：带已采用目录 Context 的 CollaborationState
+
+```mermaid
+flowchart TB
+    IN[/"AG-UI messages"/] --> N1["1 input_acceptance ⚙️ 过滤审批协议消息，读8条摘要+未回答澄清"]
+    N1 --> N2["2 context_candidates ⚙️ 关键词打分，≤4条候选"]
+    N2 --> N3["3 harness_directory_context ⚙️ 阶段A目录 ContextPackage 1800t"]
+    N3 --> N4["4 context_adoption 🛑 多选采用摘要/skip"]
+    N4 --> N5["5 directory_context_revision ⚙️ 投影修改后revision"]
+    N5 --> OUT[/"state+已采用目录Context"/]
+    style N4 fill:#ffe0e0,stroke:#c00
+```
+
+**阶段②（6-15）** 输入：目录 Context → 输出：意图+Project 绑定+阶段 B 工作集+协议
+
+```mermaid
+flowchart TB
+    N6["6 intent_agent 🤖调用1 护栏可0调用"] --> N7["7 intent_set_projection ⚙️ 不可变revision"]
+    N7 --> N8["8 intent_binding 🛑 clarify不出卡"]
+    N8 --> N9["9 intent_set_acceptance ⚙️ 只接受当前Hash"]
+    N9 --> N10["10 harness_project_resolver ⚙️ 唯一匹配才绑定"]
+    N10 --> N11["11 project_work_binding 🛑 权威候选/不关联"]
+    N11 --> N12["12 harness_detail_context ⚙️ 阶段B工作集 6000t"]
+    N12 --> N13["13 detail_context_adoption 🛑 不可跳过"]
+    N13 --> N14["14 detail_context_revision ⚙️"]
+    N14 --> N15["15 collaboration_protocol_resolver ⚙️ Work→Project→用户→系统"]
+    style N8 fill:#ffe0e0,stroke:#c00
+    style N11 fill:#ffe0e0,stroke:#c00
+    style N13 fill:#ffe0e0,stroke:#c00
+    style N6 fill:#e0ecff,stroke:#06c
+```
+
+**阶段③（16-24）** 输入：意图/Context/协议 → 输出：不可变 RunSpec+执行路由
+
+```mermaid
+flowchart TB
+    N16{"16 scenario_router ⚙️ SwitchCase按声明顺序"}
+    N16 -->|"①目录查询"| N17["17 project_catalog_query ⚙️ →34"]
+    N16 -->|"②clarify"| N18["18 clarification ⚙️ →38"]
+    N16 -->|"③needs_plan"| N19["19 planning_agent 🤖调用2"]
+    N16 -->|"④Default"| N21
+    N19 --> N20["20 plan_acceptance 🛑"]
+    N20 --> N21["21 execution_draft_compiler ⚙️ Fence+冻结Validation Contract"]
+    N21 --> N22["22 execution_authorization 🛑 grant=start_run 绑Hash"]
+    N22 --> N23["23 run_spec_compiler ⚙️ 不可变RunSpec"]
+    N23 --> N24{"24 execution_route ⚙️ 只读RunSpec"}
+    style N20 fill:#ffe0e0,stroke:#c00
+    style N22 fill:#ffe0e0,stroke:#c00
+    style N19 fill:#e0ecff,stroke:#06c
+```
+
+**阶段④（25-32）** 输入：RunSpec → 输出：response/执行结果+证据链
+
+```mermaid
+flowchart TB
+    N24{"24 execution_route"}
+    N24 -->|pi_workspace| N25["25 workspace_prepare ⚙️ 受管worktree"]
+    N25 --> N26["26 pi_workspace_dispatch 🤖 内部逐次模型+Tool审批"]
+    N26 --> N27["27 result_assembly ⚙️ 校验Hash 不commit"]
+    N27 --> N28["28 result_claim_prepare ⚙️ Artifact+Contract+Claim+真实验证"]
+    N28 --> N29["29 result_claim_decision 🛑 accept/waive/reject"]
+    N24 -->|pi_readonly| N30["30 pi_readonly_dispatch 🤖"]
+    N30 --> N31["31 readonly_assembly ⚙️"]
+    N24 -->|answer_only| N32["32 response_agent 🤖调用3"]
+    N29 --> J(("→33"))
+    N31 --> J
+    N32 --> J
+    style N29 fill:#ffe0e0,stroke:#c00
+    style N26 fill:#e0ecff,stroke:#06c
+    style N30 fill:#e0ecff,stroke:#06c
+    style N32 fill:#e0ecff,stroke:#06c
+```
+
+**阶段⑤⑥（33-39）** 输入：response/执行结果 → 输出：yield_output(答复)+已提交产品事实+下轮候选摘要
+
+```mermaid
+flowchart TB
+    N33["33 turn_summary_agent 🤖调用4 只读回合过滤写回"]
+    N33 --> N34["34 result_commit 🛑 grant=commit_result 17号汇入"]
+    N34 --> N35["35 work_state_commit 🛑 可跳过"]
+    N35 --> N36["36 memory_commit 🛑 可跳过"]
+    N36 --> N37["37 harness_candidate_commit ⚙️ 幂等 turn-candidates:run_id"]
+    N37 --> N38["38 turn_summary_persist ⚙️ 18号汇入"]
+    N38 --> N39["39 result_finalization ⚙️ yield_output"]
+    style N34 fill:#ffe0e0,stroke:#c00
+    style N35 fill:#ffe0e0,stroke:#c00
+    style N36 fill:#ffe0e0,stroke:#c00
+    style N33 fill:#e0ecff,stroke:#06c
+```
+
+数据流本质：全图只传一个不可变 `CollaborationState`，每个节点 `replace()` 出新状态；HITL 修改从不改旧对象，都是生成新 revision（新 Hash）再重审。
+
+### 2026-07-28：澄清——HITL 就是单独的审批节点，默认全部暂停
+
+用户对"两个层面""有 HITL 不一定停"的表述提出质疑，澄清如下（修正上一条补充记录中容易误读的措辞）：
+
+1. **HITL 是单独算的节点**：39 节点中 10 个是专职 HITL 审批节点，唯一职责就是暂停出决策卡；其余 29 个干活节点不问人。不存在"每个节点都藏 HITL"。
+2. **默认就是停**：每个决策点出厂默认 require_human。"不停"只有一种来源——用户在 HITL 配置中心亲手把该点设为 auto_continue，且系统下限点（发送 ModelCallDraft、提交 Memory、Runtime 恢复等）不允许设自动。auto 通过时同样留决策记录并消费 Grant。
+3. **"两个层面"的准确说法**：全系统 12 个决策点分两类承载方式——8 个决策点每轮固定发生一次，画成图上 10 个固定审批节点；另 4 个决策点（发送模型请求、执行 Tool、Runtime 恢复、高风险结果）发生次数运行时才确定（pi 一次任务可能内部发数十次请求），无法预画成固定节点，只能按事件逐次审批。是同一套 HITL 策略系统管两类承载，不是两套 HITL。
+
+### 2026-07-28：为 39 节点补充源码跳转链接
+
+应用户要求，在 §3/§4 中为每个 Executor 类和 revise 函数增加可点击源码链接（相对路径 + 行号锚点）。行号基于提交 `9ba63e1`（2026-07-28）；后续代码变动导致行号漂移时，按类名/函数名搜索定位。本次修改只增加链接，未改动任何说明文字。
+
+
