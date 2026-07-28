@@ -256,6 +256,13 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
     async def hitl_decision_points() -> dict[str, Any]:
         return {"decision_points": await governance.decision_points()}
 
+    @router.get("/api/hitl/workflows/{workflow_id}/decision-points")
+    async def hitl_workflow_decision_points(workflow_id: str) -> dict[str, Any]:
+        keys = governance.workflow_decision_point_keys(workflow_id)
+        all_points = await governance.decision_points()
+        filtered = [point for point in all_points if point["key"] in keys]
+        return {"workflow_id": workflow_id, "decision_points": filtered}
+
     @router.get("/api/hitl/policy-sets")
     async def hitl_policy_sets() -> dict[str, Any]:
         return {"policy_sets": await governance.policy_sets()}

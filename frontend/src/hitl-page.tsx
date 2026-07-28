@@ -17,8 +17,10 @@ import {
   type HitlPolicySet,
   type HitlPreview,
   loadHitlConfiguration,
+  loadWorkflowHitlDecisionPoints,
   previewHitlPolicy,
 } from "./hitl-api";
+import { type WorkflowDefinition, listWorkflows } from "./features/workflow/workflow-api.js";
 
 const MODE_LABELS: Record<HitlMode, string> = {
   inherit: "沿用更上层",
@@ -110,6 +112,8 @@ export function HitlPage({ sessionId, workflowId }: HitlPageProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [workflows, setWorkflows] = useState<WorkflowDefinition[]>([]);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState(workflowId);
 
   const scopes = useMemo<ScopeOption[]>(
     () => [
@@ -132,8 +136,8 @@ export function HitlPage({ sessionId, workflowId }: HitlPageProps) {
         : []),
       {
         kind: "workflow_version",
-        refId: workflowId,
-        label: "当前Workflow",
+        refId: selectedWorkflowId,
+        label: "Workflow",
         description: "只影响当前Workflow版本",
       },
       {
@@ -144,7 +148,7 @@ export function HitlPage({ sessionId, workflowId }: HitlPageProps) {
         readOnly: true,
       },
     ],
-    [sessionId, workflowId],
+    [sessionId, selectedWorkflowId],
   );
   const scope = scopes[Math.min(scopeIndex, scopes.length - 1)];
   const userPolicy = policySets.find(
@@ -160,10 +164,15 @@ export function HitlPage({ sessionId, workflowId }: HitlPageProps) {
     setLoading(true);
     setError(null);
     try {
-      const value = await loadHitlConfiguration();
-      setDecisionPoints(value.decisionPoints);
-      setPolicySets(value.policySets);
-      setSelectedKey((current) => current ?? value.decisionPoints[0]?.key ?? null);
+      const [config, workflowPoints, workflowList] = await Promise.all([
+        loadHitlConfiguration(),
+        loadWorkflowHitlDecisionPoints(selectedWorkflowId),
+        listWorkflows(),
+      ]);
+      setPolicySets(config.policySets);
+      setDecisionPoints(workflowPoints);
+      setWorkflows(workflowList);
+      setSelectedKey((current) => current ?? workflowPoints[0]?.key ?? null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "读取人工介入配置失败");
     } finally {
@@ -173,7 +182,7 @@ export function HitlPage({ sessionId, workflowId }: HitlPageProps) {
 
   useEffect(() => {
     void reload();
-  }, []);
+  }, [selectedWorkflowId]);
 
   useEffect(() => {
     const next: Record<string, HitlMode> = {};
@@ -296,6 +305,19 @@ export function HitlPage({ sessionId, workflowId }: HitlPageProps) {
             <small>{value.description}</small>
           </button>
         ))}
+        {scope.kind === "workflow_version" && (
+          <select
+            className="hitl-workflow-select"
+            onChange={(event) => setSelectedWorkflowId(event.target.value)}
+            value={selectedWorkflowId}
+          >
+            {workflows.map((workflow) => (
+              <option key={workflow.id} value={workflow.id}>
+                {workflow.name} · v{workflow.version}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {error && (

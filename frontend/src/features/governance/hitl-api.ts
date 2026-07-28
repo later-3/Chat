@@ -119,6 +119,16 @@ export async function loadHitlConfiguration(): Promise<{
   return { decisionPoints: definitions.decision_points, policySets: policies.policy_sets };
 }
 
+export async function loadWorkflowHitlDecisionPoints(
+  workflowId: string,
+): Promise<DecisionPointDefinition[]> {
+  const response = await request<{
+    workflow_id: string;
+    decision_points: DecisionPointDefinition[];
+  }>(`/api/hitl/workflows/${workflowId}/decision-points`);
+  return response.decision_points;
+}
+
 export function activateHitlPolicy(command: {
   scope_kind: string;
   scope_ref_id: string;

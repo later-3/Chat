@@ -306,6 +306,37 @@ class ExecutionGovernanceService:
             for value in values
         ]
 
+    def workflow_decision_point_keys(self, workflow_id: str) -> list[str]:
+        """Return decision point keys that are actually used by the given workflow.
+
+        The mapping is derived from the workflow's approval nodes whose IDs
+        match a governance decision point key. Workflows without explicit
+        approval nodes return an empty list.
+        """
+        from ..workflows.catalog import (
+            CHAT_MODEL_CALL_APPROVAL_WORKFLOW,
+            CONTINUOUS_COLLABORATION_WORKFLOW,
+            GOVERNED_AGENT_HANDOFF_WORKFLOW,
+            GOVERNED_IDIOM_CHAIN_WORKFLOW,
+            GOVERNED_PI_AGENT_WORKFLOW,
+            NESTED_QUALITY_WORKFLOW,
+        )
+
+        workflow_map = {
+            CHAT_MODEL_CALL_APPROVAL_WORKFLOW.id: CHAT_MODEL_CALL_APPROVAL_WORKFLOW,
+            CONTINUOUS_COLLABORATION_WORKFLOW.id: CONTINUOUS_COLLABORATION_WORKFLOW,
+            GOVERNED_AGENT_HANDOFF_WORKFLOW.id: GOVERNED_AGENT_HANDOFF_WORKFLOW,
+            GOVERNED_IDIOM_CHAIN_WORKFLOW.id: GOVERNED_IDIOM_CHAIN_WORKFLOW,
+            GOVERNED_PI_AGENT_WORKFLOW.id: GOVERNED_PI_AGENT_WORKFLOW,
+            NESTED_QUALITY_WORKFLOW.id: NESTED_QUALITY_WORKFLOW,
+        }
+        workflow = workflow_map.get(workflow_id)
+        if workflow is None:
+            return []
+        known_keys = {seed.key for seed in DECISION_POINTS}
+        approval_node_ids = {node.id for node in workflow.nodes if node.kind == "approval"}
+        return sorted(approval_node_ids & known_keys)
+
     async def policy_sets(self, *, principal_id: str | None = None) -> list[dict[str, Any]]:
         owner = principal_id or self.principal_id
         async with self.database.sessions() as transaction:
