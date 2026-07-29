@@ -48,7 +48,7 @@
 1. [当前代码事实] 主Workflow已经拥有Context、Intent、Project/Work选择、Protocol、Plan、ExecutionDraft、RunSpec、模型调用审批、结果/Work/Memory决定和TurnDigest链路，真实图位于`backend/app/workflows/continuous_chat_factory.py`。
 2. [当前代码事实] `ExecutionDraft`和`RunSpec`已经版本化、Hash绑定并接受CAS式编辑；但当前编译器把`runtime`固定为`maf-workflow`、`isolation`固定为`in_process`、`working_directory`设为空、`tools`设为空。
 3. [当前代码事实] pi已通过官方JSONL RPC、Chat Provider Gateway和pi Custom Tool Extension接入主Workflow；每次模型调用持久治理，`read/grep/find/ls`由Chat-owned只读Gateway执行，隔离编辑分支额外通过Chat-owned Gateway执行精确`edit`。
-4. [当前代码事实] SD2 pi启动参数包含`--no-skills`、`--no-prompt-templates`、`--no-session`、`--no-context-files`和`--no-builtin-tools`；Repository规则来自已批准Context/StepInput，不再沿祖先目录隐式发现。
+4. [当前代码事实] pi启动参数包含`--no-skills`、`--no-prompt-templates`、`--no-context-files`和`--no-builtin-tools`；每个ToolExecution新建专属pi Session并在终态冻结，只作转录证据，不被下一次执行加载。Repository规则来自已批准Context/StepInput，不再沿祖先目录隐式发现。
 5. [当前代码事实] Product Harness已有Project、Work、Plan、Action、Note、Memory、ContextPackage、采用记录、Command幂等和Trace；尚无Project到Git仓库的权威资源绑定对象。
 6. [当前代码事实] Product Run/Attempt、Runtime Job/Event/Cursor、Worker Lease、主Workflow安全点Checkpoint恢复已经存在；精确`edit`的Operation/Attempt可在启动时按文件Hash对账，但pi进程和pi Session仍不能跨进程续跑。
 7. [当前代码事实] Work和Action可以保存内嵌Evidence引用，但尚无独立Evidence、Artifact和Provenance生命周期。
@@ -67,7 +67,7 @@
 
 | 参考源 | 固定版本 | 真正提供的依据 | 没有提供的依据 |
 |---|---|---|---|
-| pi | 源码研究`2b00dade7cec918aefb025c8b7a4fa304a30acdd`；当前安装/接入版本0.82.0 | Provider抽象、Agent loop、Tool hooks、RPC、Session JSONL、ResourceLoader、工作目录内编码体验 | Product Project/Work、Web审批、Worker Lease、Tool副作用对账、Evidence提交门 |
+| pi | 源码与接入`f14519551682cd0fddac2e4b4e8b1f333667e94c`；0.82.1 | Provider抽象、Agent loop、Tool hooks、RPC、Session JSONL、ResourceLoader、工作目录内编码体验 | Product Project/Work、Web审批、Worker Lease、Tool副作用对账、Evidence提交门 |
 | nanobot | `2c789767280482f38667044f8a3be5102c71dd26` | 小型Agent loop、文件与Shell工作区约束、读写根分权、Tool结果持久化卫生 | Chat Product Harness、持久HITL、通用副作用恢复 |
 | QwenPaw | `2134427584c2657bb717bb083a120f2de011d047` | Web/Channel适配、单Producer多订阅、Tool系统下限与用户规则分层、批准范围 | 跨进程Job接管、通用产品决策、Repository绑定、Evidence |
 | LibreChat | `8e5ef1fb31e9d63b735c089b21cbc82c50acce46` | Product资源API与Agent运行API分层、Job/Event恢复、成功Final晚于产品提交、HITL CAS | MAF语义、Chat Harness、Repository绑定、通用Tool exactly-once |
@@ -77,7 +77,7 @@ pi的`resource-loader.ts`会从临时Agent目录、当前工作目录及其祖�
 1. `AGENTS.md`不是当前Project、Work、Plan和用户本轮决定。
 2. 自动发现不证明文件仍有效、采用了哪个版本或用户是否看见。
 3. 主Workflow v1.6.0已根据不可变RunSpec选择`pi_readonly`或`answer_only`，并把有来源的最小StepInput交给pi；仍未开放写能力。
-4. 当前`--no-session`意味着pi执行转录不会持久恢复。
+4. 当前每次执行保留只读pi转录，但不提供活动进程、Tool副作用或Workflow的跨进程恢复。
 
 所以方案不重复复制整份`AGENTS.md`进ExecutionDraft，而是记录Governance Manifest的路径和Hash，并用Provider审批验证**本次真实请求**最终包含了什么。
 
@@ -325,7 +325,7 @@ Session A修改Workflow视图，Session B修改Harness项目页：
 
 ### S14：pi进程或Workflow恢复
 
-当前pi使用`--no-session`，所以现状只能记录中断，不能从pi内部状态继续。目标恢复必须区分：
+当前pi Session文件是只读转录证据，仍不能从已退出的pi进程内部状态继续。目标恢复必须区分：
 
 1. 主Workflow Checkpoint恢复。
 2. pi Session/Transcript恢复。
@@ -745,7 +745,7 @@ proposed -> prepared -> authorized -> dispatching
 2. 每个新增Executor ID、边和Workflow graph signature稳定。
 3. 原生AgentExecutor未被用于绕过Provider Gate。
 4. SD2 pi命令行必须包含`--no-context-files`和`--no-builtin-tools`；祖先目录唯一Marker不得进入Provider Draft，采用的治理规则只能经版本化Context/StepInput进入。
-5. `--no-session`现状有测试；启用持久pi Session前必须先验证`--session-dir/--session-id`的创建、重开、分支和损坏行为。
+5. 专属pi Session的排他创建、ToolExecution映射和终态冻结有测试；恢复、重开、Fork和损坏恢复仍未获本期实现授权。
 6. pi Tool名称必须来自Catalog，参数修改后重新验证路径与fingerprint。
 7. Provider Gateway转发的字节与批准revision完全一致。
 8. MAF主Checkpoint、pi Session和Tool Operation分别损坏时返回不同错误。

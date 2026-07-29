@@ -7,6 +7,10 @@
 > 上游决定：`Chat开发Chat` D1-D9与SD1 R1-R12已批准，SD1-A/B/C/D已完成
 >
 > 本阶段边界：只允许读取已绑定Repository并形成分析或改动方案；不修改文件、不执行Shell、不声明Work完成
+>
+> 2026-07-28补充：本文中的`--no-session`是SD2实施时的历史基线；当前已由
+> [Chat托管pi Session与源码运行时设计](./pi-session-retention-and-source-runtime.md)替代为“每次新建、
+> 终态只读、不自动续跑”。该变化只增加执行转录证据，不扩大SD2权限或跨进程恢复保证。
 
 ## 1. 结论先行
 

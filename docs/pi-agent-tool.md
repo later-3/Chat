@@ -3,7 +3,7 @@
 ## 1. 当前实现
 
 Chat把pi coding agent作为同一Product Run中的受治理`ToolExecution`，由持续协作主Workflow
-v1.7.0中的确定性Executor启动。它不是第二个用户Workflow，也不是把一条Shell命令当成“Tool成功”：
+v1.8.0中的确定性Executor启动。它不是第二个用户Workflow，也不是把一条Shell命令当成“Tool成功”：
 
 ```text
 用户在主Workflow中批准pi_readonly RunSpec
@@ -30,10 +30,11 @@ v1.7.0中的确定性Executor启动。它不是第二个用户Workflow，也不�
 
 ## 2. 为什么选择JSONL RPC
 
-源码研究基线是pi固定提交`2b00dade7cec918aefb025c8b7a4fa304a30acdd`
-（`v0.80.3-55-g2b00dade`）；本机实际执行文件是系统命令`pi`指向的同一份
-`@earendil-works/pi-coding-agent 0.82.0`，Chat使用Node `22.23.1`启动它。固定源码早于当前安装版，
-因此0.82.0行为以安装包RPC文档、Changelog、真实RPC探针和Chat运行实测为准。
+源码检出与运行基线统一为pi自定义分支提交`10e99ae9914cd34f622633fac42f9a90714e9cf4`、
+`@earendil-works/pi-coding-agent 0.82.1`；Chat私有配置直接指向该源码树编译出的
+`packages/coding-agent/dist/cli.js`。Node使用`--enable-source-maps`启动，因此可附加调试器进入
+TypeScript源码；该提交基于官方`fdbedcad8aeb7c1e2ebd3b85f16e60e5fab0b2c3`，当前只新增独立
+pi工作区的VS Code调试配置，没有修改`packages/**`运行时代码。全局安装包不再是Chat的运行入口。
 
 | 接入方式 | 结论 | 原因 |
 |---|---|---|
@@ -43,12 +44,13 @@ v1.7.0中的确定性Executor启动。它不是第二个用户Workflow，也不�
 
 当前实现通过显式Node路径启动pi的`dist/cli.js --mode rpc`，每次执行使用隔离的临时Agent目录、
 模型配置和治理扩展；不会读取或改写用户全局pi配置。SD2同时使用`--no-builtin-tools`、
-`--no-context-files`、`--no-skills`、`--no-prompt-templates`和`--no-session`：
+`--no-context-files`、`--no-skills`和`--no-prompt-templates`：
 
 1. pi不能沿工作目录祖先隐式加载`AGENTS.md`或`CLAUDE.md`，避免越过已批准Repository Binding。
 2. Project、Work、Plan、Context revision、治理规则与用户批准范围由Chat编译为有来源的StepInput。
-3. `--no-session`仍使用内存Session；当前ToolExecution可解释此前终态，但进程退出后不能恢复pi内部
-   对话树。
+3. 每个ToolExecution显式创建新的`chat-*` pi Session，保存在`~/.pi/agent/chat-sessions/`；终态
+   冻结为只读，可由pi-web查看和导出。
+4. 新执行从不选择或加载旧pi Session；保留转录不等于跨进程续跑、Workflow恢复或第二事实源。
 
 ## 3. 两道治理门
 
@@ -92,7 +94,28 @@ pi的配置分成3层，三层解决的问题不同：
 后端允许的工作根目录或凭空新增Provider。每个Product Run开始执行pi时会冻结Tool Profile Revision，
 运行中再次修改配置不会偷换旧Run。
 
-### 4.1 pi RPC运行时
+### 4.1 配置与运行文件路径速查
+
+当前开发机上的实际路径如下。这里特意把“Chat调用的pi”和“个人终端里直接运行的pi”分开，避免改了
+文件却没有影响目标运行环境：
+
+| 文件或目录 | 当前路径 | 用途与修改方式 |
+|---|---|---|
+| Chat私有启动配置 | `/Users/xulater/Code/Chat/backend/config.json` | **Chat调用pi时真正读取的主配置文件**；`pi_agent`保存Node、源码、Session和调试路径，`providers`保存Provider、模型与密钥。权限为`0600`且被Git忽略，修改后必须重启后端。 |
+| 脱敏配置样例 | `/Users/xulater/Code/Chat/backend/config.example.json` | 只用于查看字段结构和提交安全默认值；不含真实密钥，也不会覆盖私有配置。 |
+| pi Tool Profile持久化 | `/Users/xulater/Code/Chat/backend/.data/chat.db`中的`tool_configurations`表、`id='pi_agent'`记录 | 保存前端配置中心里的Provider、模型、工作目录、Tool、Thinking和调用上限。应通过`配置 -> Tool -> pi coding agent`修改，不直接编辑SQLite。 |
+| pi源码根目录 | `/Users/xulater/Code/opc-os/pi` | 自有pi分支的源码、构建和VS Code断点归属。 |
+| Chat实际启动的pi入口 | `/Users/xulater/Code/opc-os/pi/packages/coding-agent/dist/cli.js` | 源码编译产物；由`backend/config.json`的`pi_agent.cli_path`固定，不能手改`dist`代替修改TypeScript源码。 |
+| Chat专属pi Session | `/Users/xulater/.pi/agent/chat-sessions/` | 每次ToolExecution生成一个`chat-*` JSONL转录；供pi-web只读查看，不是配置文件。 |
+| 单次执行临时Agent目录 | `${TMPDIR}/chat-pi-*/`，其中包含`models.json`和Chat治理扩展 | 后端启动pi子进程前动态生成，并通过`PI_CODING_AGENT_DIR`传给该进程；包含本轮本机Gateway投影和短期令牌，执行结束自动删除，不能作为人工配置入口。 |
+| 个人终端pi配置 | `/Users/xulater/.pi/agent/settings.json`、`models.json`、`auth.json` | 只服务于个人直接运行的pi。Chat子进程使用隔离的临时`PI_CODING_AGENT_DIR`，不会读取或改写这3个个人文件。 |
+| 项目级pi配置候选 | `/Users/xulater/Code/Chat/.pi/settings.json` | 当前不存在，也不是Chat产品的配置入口；不要为了配置Chat调用的pi而新建它。 |
+
+按修改目的选择入口：新增Provider或换密钥，修改`backend/config.json`；调整以后新建pi执行的模型、Tool和
+预算，在前端保存pi Tool Profile；调试或替换pi源码，修改pi仓库源码并重新构建；不要修改临时
+`chat-pi-*`目录、Session JSONL或直接改Product DB。
+
+### 4.2 pi RPC运行时
 
 私有`backend/config.json`中的运行时配置使用以下结构；仓库中的脱敏样例位于`backend/config.example.json`：
 
@@ -100,9 +123,13 @@ pi的配置分成3层，三层解决的问题不同：
 {
   "pi_agent": {
     "enabled": true,
-    "contract_version": "0.82.0",
+    "contract_version": "0.82.1",
     "node_path": "/absolute/path/to/node-22-or-newer",
-    "cli_path": "/absolute/path/to/pi-coding-agent/dist/cli.js",
+    "cli_path": "/absolute/path/to/pi/packages/coding-agent/dist/cli.js",
+    "source_root": "/absolute/path/to/pi",
+    "session_directory": "~/.pi/agent/chat-sessions",
+    "node_debug_port": null,
+    "node_debug_break": false,
     "allowed_working_roots": ["/absolute/path/to/allowed/projects"],
     "default_working_directory": "/absolute/path/to/allowed/projects",
     "gateway_origin": "http://127.0.0.1:8030"
@@ -118,11 +145,55 @@ pi的配置分成3层，三层解决的问题不同：
 4. `gateway_origin`只能是本机HTTP地址，避免把短期授权网关暴露为远程公共入口。
 5. Provider密钥仍只来自服务端Provider配置，不传给浏览器，也不写入pi临时配置。
 6. JSON运行配置是启动快照；修改后要重启后端。页面内Tool配置有独立Revision，只影响之后启动的Workflow。
+7. `source_root`启用时，源码包版本必须与`contract_version`一致，且`cli_path`必须位于源码树内。
+8. 调试时把`node_debug_port`设为`9230`；需要在第一行暂停则同时设`node_debug_break=true`。固定端口
+   调试模式一次只允许1个活动pi执行。
 
-### 4.2 Kimi K3 Provider与模型目录
+### 4.3 源码构建与断点调试
+
+源码调试采用两个独立VS Code窗口，不能在Chat工作区用跨仓`outFiles`代替pi源码窗口：
+
+1. 在`/Users/xulater/Code/opc-os/pi`打开第一个VS Code窗口，先在需要的位置设置TypeScript断点，
+   然后选择`Attach to Chat pi Runtime (9230)`。pi窗口会先执行自己的`npm run build:offline`，再等待
+   最多300秒；Source Map、构建与断点均由pi仓库拥有。
+2. 在`/Users/xulater/Code/Chat`打开第二个VS Code窗口，选择
+   `Chat Full Stack (pi External Debug)`。Chat窗口只启动前后端并把私有`backend/config.json`中的
+   两个调试字段临时设为`9230/true`，不编译pi，也不Attach外部源码。
+3. 从Chat发起一条实际走`pi_readonly`或`pi_workspace`的执行。新pi子进程使用
+   `--inspect-brk=127.0.0.1:9230`，在用户代码前暂停；pi窗口Attach后可按F5继续，随后命中已经设置的
+   TypeScript断点。没有进入pi执行分支时，不会出现Inspector进程。
+4. pi窗口的`outFiles`和Source Map根都使用自己的`${workspaceFolder}/packages/**`，不会依赖Chat窗口
+   临时打开外部文件。
+5. 停止Chat的外部调试组合后，后端`postDebugTask`自动恢复`node_debug_port=null`和
+   `node_debug_break=false`；若调试器异常退出，可在Chat窗口手工运行`chat: disable pi source debug`。
+6. 普通`Chat Full Stack`仍使用最近一次编译的同一pi源码产物，但会显式关闭Inspector，不负责重新
+   编译pi，也不承诺命中pi断点。
+
+`scripts/build-local-pi.sh`仍是Chat集成验证和单一分发脚本的底层入口：脚本优先按上游流程水合模型
+目录；网络不可用时，只接受本机**同版本**0.82.1数据作为回退，然后执行上游`build:offline`。日常
+源码断点调试则由pi仓库自己的VS Code Task负责。
+
+这一双窗口入口允许以后修改自己的pi源码，同时保持pi仓库是独立代码库：先在pi内构建/测试，再由Chat的
+Provider Gate、Tool Gate和端到端合同验证集成行为，不能用Chat测试替代pi自身测试。
+
+本地开发使用“同一构建、三个隔离运行环境”。执行下面的命令会先编译源码，再让全局终端pi、
+Chat和pi-web的4个SDK包都解析到同一源码树；它不会合并个人pi与Chat的配置、Session或权限：
+
+```bash
+./scripts/configure-local-pi-stack.sh link
+./scripts/configure-local-pi-stack.sh restore
+```
+
+`link`不会把绝对`file:`路径写进pi-web的`package.json`或lockfile；pi-web重新安装npm依赖后再次运行
+即可。切换完成后应重启pi-web服务，使Next.js进程加载新的SDK；有活动pi-web AgentSession时先等待
+其结束，避免把一次个人交互中断。
+
+### 4.4 Kimi K3 Provider与模型目录
 
 Kimi Code通过官方OpenAI兼容端点`https://api.kimi.com/coding/v1`和模型ID`k3`接入，pi仍然只访问
 Chat本机审批网关。Provider密钥只存在于权限`0600`的私有`backend/config.json`，仓库样例保持空值。
+当前私有目录提供`kimi-code`和`kimi6603`两条配置相同、凭据独立的Kimi Code路由；`kimi6603`是用户
+用于识别第二把Key的稳定Provider ID和显示名，不表示不同模型或不同协议。
 这里的“Kimi Code”是API服务与Provider名称，**没有启动或嵌套Kimi Code CLI**；真正运行的编码Agent
 仍是pi，Kimi K3只承担pi背后的模型推理。
 
@@ -130,7 +201,7 @@ Chat本机审批网关。Provider密钥只存在于权限`0600`的私有`backend
 
 | 参数 | 当前值 | 作用 |
 |---|---|---|
-| Provider ID | `kimi-code` | Tool Profile和运行记录使用的稳定标识 |
+| Provider ID | `kimi-code`或`kimi6603` | Tool Profile和运行记录使用的稳定标识；两者凭据独立 |
 | 协议 | `openai_chat_completions` | 编译为`messages`并发送到Chat Completions端点 |
 | Model ID | `k3` | Kimi Code官方模型标识 |
 | Context Window | `1,048,576` | pi本地上下文预算上限 |
@@ -157,7 +228,7 @@ Kimi要求兼容客户端保留真实客户端身份。Chat网关发送
 [模型说明](https://www.kimi.com/code/docs/kimi-code/models.html)和当前pi
 `openai-completions.ts`/`model-registry.ts`合同实现。
 
-### 4.3 当前生效的pi Tool Profile
+### 4.5 当前生效的pi Tool Profile
 
 2026-07-26当前Product DB中生效的是Revision 6：
 
@@ -174,18 +245,19 @@ Kimi要求兼容客户端保留真实客户端身份。Chat网关发送
 | System Prompt | 受控编码Agent、只用已授权Tool、不得声称未验证结果完成 | 行为指导，不是权限授予；RunSpec、Provider Gate和Tool Gate仍是硬边界 |
 | Provider Gate | 每次模型调用 | 每份真实Provider请求都生成独立ModelCallDraft和授权决定 |
 | Tool Gate | 每次内部Tool调用 | 每次参数都重新校验；写操作还必须进入Operation Ledger |
-| pi合同版本 | `0.82.0` | 与系统`pi`命令指向的同一安装文件及当前JSONL RPC合同绑定 |
+| pi合同版本 | `0.82.1` | 与本地源码提交及其`dist/cli.js`构建产物绑定 |
 
 这里的`allowed_tools`是能力上限，不是本轮一定可用的Tool集合。最终能力由
 `后端能力上限 ∩ Tool Profile ∩ Workflow执行路由 ∩ 已批准RunSpec`决定，因此把Profile配置为包含
 `edit`也不会让`pi_readonly`直接修改文件。
 
-### 4.4 在前端使用和切换模型
+### 4.6 在前端使用和切换模型
 
 正常使用路径：
 
 1. 在顶部打开`配置`，进入`Tool`，选择`pi coding agent`。
-2. Provider下拉选择`Kimi Code`；模型下拉只能从该Provider目录选择`Kimi K3`，不能自由填写名称。
+2. Provider下拉按所需凭据选择`Kimi Code`或`kimi6603`；模型下拉只能从对应Provider目录选择
+   `Kimi K3`，不能自由填写名称。
 3. 按任务调整Thinking、最大模型调用次数、总超时、工作目录和允许Tool，然后保存。
 4. 保存使用CAS Revision；若其他页面已经修改配置，服务端会拒绝旧Revision，刷新后再决定，不能静默覆盖。
 5. 回到聊天，选择持续协作主Workflow并发送任务。意图和计划完成后，执行路由按RunSpec选择
@@ -194,13 +266,16 @@ Kimi要求兼容客户端保留真实客户端身份。Chat网关发送
    修改任何实际请求内容都会生成新Revision/Hash并重新审批。
 7. pi提出Tool调用时，查看Tool名称、参数、路径、风险和本轮权限；只读调用可按HITL策略自动推进，
    精确编辑必须在受管Workspace中形成Operation并经过对应授权。
-8. 执行结束后，在Workflow运行视图或Tool执行记录中查看模型调用数、Tool调用、Token、耗时、结果Hash和失败代码。
+8. 执行结束后，在Workflow运行视图或Tool执行记录中查看模型调用数、Tool调用、Token、耗时、结果Hash和失败代码；
+   `metrics.pi_session.id`关联对应`chat-*`转录。
+9. 打开pi-web可在Session列表看到`CHAT · 只读`标识，查看pi收到的Prompt、回复和Tool消息或导出；
+   不能继续、Fork、重命名或删除该证据。
 
 切换回其他模型时仍走同一路径。例如选择`DashScope / qwen3.7-plus`并保存后，**只有之后新建的pi执行**
 使用Qwen；已经运行或完成的Product Run继续引用自己的配置Revision。Product Session顶部的“会话模型”
 当前不会自动覆盖每个Workflow节点的Agent Profile，也不会替代这里的pi Tool模型选择。
 
-### 4.5 新增Provider/模型和安全核对
+### 4.7 新增Provider/模型和安全核对
 
 新增模型时按`backend/config.example.json`的相同结构扩展私有`backend/config.json`：
 

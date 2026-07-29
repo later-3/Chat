@@ -41,3 +41,29 @@
 3. 首轮窄屏复查发现Flex子项会压缩执行链并裁掉后半段；已给3类工作台卡片增加`flex: 0 0 auto`，复查可独立滚动到第12阶段。
 
 final result: passed
+
+---
+
+# Home Design QA
+
+状态：**通过（2026-07-28）**
+
+## 对照材料
+
+- 视觉基线：[prototypes/chat-uiux-v1/qa-home.png](./prototypes/chat-uiux-v1/qa-home.png)，1707 × 960。
+- 生产桌面截图：[design-qa-home-desktop.png](./design-qa-home-desktop.png)，1707 × 960。
+- 生产手机截图：[design-qa-home-mobile.png](./design-qa-home-mobile.png)，390 CSS px 响应式视口。
+
+## 结论
+
+1. 生产实现保留了已批准基线的固定 Activity Rail、问候 Hero、今日轨道、双列继续卡、年度日历、下半区集合卡和低饱和 Material 3 Expressive 视觉层级。
+2. 参考图中的示例 Project、假进度百分比和随机日历信号已替换为 Product DB、Harness、Governance 与 Evidence 的真实只读投影；因此内容密度和日历颜色分布允许不同。
+3. 桌面 1707 × 960 同尺寸对照未发现裁切、错位、异常边距、边框或圆角问题。390 CSS px 手机视口无横向溢出，底部 5 项主导航可见。
+4. 已在应用内浏览器验证：主页默认打开；Project/Work/Note 搜索返回真实资源；“继续”将事项标题带入 Chat 输入框但不自动发送；日历日期可切换；浏览器控制台无 error/warning。
+5. 完整 Conversation Day、Artifact 在线预览和 Idea→Work 治理仍是明确标注的功能桩，没有用示例内容冒充实现。
+
+## 有意差异
+
+- 顶栏沿用生产环境现有连接状态、新对话、资源和配置入口，没有复制原型中的个人头像与示例 Workflow 状态。
+- 继续卡不显示未经权威模型支持的百分比，只展示真实状态、归属 Project 和更新时间。
+- 当前 Artifact 和 Idea 数据为空时展示真实空态；不会为视觉丰满度生成假产物或假灵感。
