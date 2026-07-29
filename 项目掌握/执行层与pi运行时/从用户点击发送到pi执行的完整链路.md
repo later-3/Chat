@@ -3,15 +3,15 @@
 **归档日期**：2026-07-28
 **分类**：执行层与pi运行时
 **关联源码**：
-- `frontend/src/features/chat/chat-composer.tsx`
-- `frontend/src/App.tsx`
-- `frontend/src/use-chat-agent.ts`
-- `backend/app/runtime_execution/endpoint.py`
-- `backend/app/runtime_execution/worker.py`
-- `backend/app/workflows/runtime.py`
-- `backend/app/workflows/pi_agent.py`
-- `backend/app/pi_gateway.py`
-- `backend/app/pi_runtime.py`
+- [frontend/src/features/chat/chat-composer.tsx](../../frontend/src/features/chat/chat-composer.tsx)
+- [frontend/src/App.tsx](../../frontend/src/App.tsx)
+- [frontend/src/use-chat-agent.ts](../../frontend/src/use-chat-agent.ts)
+- [backend/app/runtime_execution/endpoint.py](../../backend/app/runtime_execution/endpoint.py)
+- [backend/app/runtime_execution/worker.py](../../backend/app/runtime_execution/worker.py)
+- [backend/app/workflows/runtime.py](../../backend/app/workflows/runtime.py)
+- [backend/app/workflows/pi_agent.py](../../backend/app/workflows/pi_agent.py)
+- [backend/app/pi_gateway.py](../../backend/app/pi_gateway.py)
+- [backend/app/pi_runtime.py](../../backend/app/pi_runtime.py)
 
 ## 问题
 
@@ -23,7 +23,7 @@
 
 ### 第 1 层：前端 Composer 表单提交
 
-**文件**：`frontend/src/features/chat/chat-composer.tsx` L59
+**文件**：[chat-composer.tsx#L59](../../frontend/src/features/chat/chat-composer.tsx#L59)
 
 用户在 `<textarea>` 输入内容，点击发送按钮（或按 Enter）。表单触发 `onSubmit`：
 
@@ -31,7 +31,7 @@
 <form className="composer-stack" onSubmit={onSubmit}>
 ```
 
-Enter 键触发（`conversation-pane.tsx` L289-293）：
+Enter 键触发（[conversation-pane.tsx#L289](../../frontend/src/features/chat/conversation-pane.tsx#L289)）：
 ```tsx
 onKeyDown={(event) => {
   if (event.key === "Enter" && !event.shiftKey) {
@@ -43,7 +43,7 @@ onKeyDown={(event) => {
 
 ### 第 2 层：App.tsx 的 submit 函数
 
-**文件**：`frontend/src/App.tsx` L398-420
+**文件**：[App.tsx#L436](../../frontend/src/App.tsx#L436)（`const submit`）
 
 `onSubmit` 指向 `submit`：
 
@@ -66,7 +66,7 @@ const submit = () => {
 
 ### 第 3 层：useChatAgent 的 send 函数 — AG-UI HttpAgent
 
-**文件**：`frontend/src/use-chat-agent.ts` L222-262
+**文件**：[use-chat-agent.ts#L239](../../frontend/src/use-chat-agent.ts#L239)（`const send = useCallback`）
 
 ```tsx
 const send = useCallback(async (content, control?, workflow?) => {
@@ -100,7 +100,7 @@ const send = useCallback(async (content, control?, workflow?) => {
 
 ### 第 4 层：后端 AG-UI 端点接收
 
-**文件**：`backend/app/runtime_execution/endpoint.py` L32-120
+**文件**：[endpoint.py#L32](../../backend/app/runtime_execution/endpoint.py#L32)（`add_durable_agui_endpoint`）、[#L52](../../backend/app/runtime_execution/endpoint.py#L52)（`durable_agent_endpoint`）
 
 `add_durable_agui_endpoint` 在应用启动时为每个 Workflow 注册了一个 POST 端点：
 
@@ -138,7 +138,7 @@ async def durable_agent_endpoint(request_body: AGUIRequest) -> StreamingResponse
 
 ### 第 5 层：Execution Worker 领取 Job 并执行
 
-**文件**：`backend/app/runtime_execution/worker.py` L111-200
+**文件**：[worker.py#L111](../../backend/app/runtime_execution/worker.py#L111)（`run_once`）、[#L160](../../backend/app/runtime_execution/worker.py#L160)（`_execute_claim`）
 
 后台 Worker 循环领取 Job：
 
@@ -159,7 +159,7 @@ async def _execute_claim(self, claim: ClaimedRuntime) -> None:
 
 ### 第 6 层：ProductAwareWorkflow.run() — 启动 MAF Workflow
 
-**文件**：`backend/app/workflows/runtime.py` L102-150
+**文件**：[runtime.py#L77](../../backend/app/workflows/runtime.py#L77)（`ProductAwareWorkflow`）、[#L111](../../backend/app/workflows/runtime.py#L111)（`run()`）
 
 ```python
 async def run(self, input_data: dict[str, Any]):
@@ -176,7 +176,7 @@ async def run(self, input_data: dict[str, Any]):
 
 ### 第 7 层：GovernedPiToolExecutor.start() — MAF Workflow 入口
 
-**文件**：`backend/app/workflows/pi_agent.py` L130-155
+**文件**：[pi_agent.py#L130](../../backend/app/workflows/pi_agent.py#L130)（`start` handler）
 
 pi Workflow 只有一个 Executor：`GovernedPiToolExecutor`。
 
@@ -199,7 +199,7 @@ async def start(self, messages, ctx):
 
 ### 第 8 层：PiRuntimeManager.start() — 注册并启动 pi 进程
 
-**文件**：`backend/app/pi_gateway.py` L70-122
+**文件**：[pi_gateway.py#L70](../../backend/app/pi_gateway.py#L70)（`PiRuntimeManager.start`）
 
 ```python
 async def start(self, task, config, ...) -> PiExecution:
@@ -215,7 +215,7 @@ async def start(self, task, config, ...) -> PiExecution:
 
 ### 第 9 层：PiExecution.start() — 真正启动 pi 子进程
 
-**文件**：`backend/app/pi_runtime.py` L508-641
+**文件**：[pi_runtime.py#L508](../../backend/app/pi_runtime.py#L508)（`PiExecution.start`，子进程启动在 [#L629](../../backend/app/pi_runtime.py#L629)）
 
 ```python
 async def start(self) -> None:
@@ -279,22 +279,24 @@ pi 子进程启动，通过 JSONL-RPC 接收任务
 
 | 文件 | 职责 |
 |------|------|
-| `frontend/src/features/chat/chat-composer.tsx` | Composer UI 组件 |
-| `frontend/src/App.tsx` | submit 编排，选择 Workflow 和端点 |
-| `frontend/src/use-chat-agent.ts` | AG-UI HttpAgent，send/approve/revise |
-| `frontend/src/runtime-config.ts` | AG_UI_URL 解析 |
-| `frontend/src/features/workflow/workflow-api.ts` | workflowEndpointUrl 构造 |
-| `backend/app/runtime_execution/endpoint.py` | AG-UI 端点注册，SSE 流 |
-| `backend/app/runtime_execution/worker.py` | Execution Worker，Job 领取和执行 |
-| `backend/app/runtime_execution/service.py` | Runtime Job 队列、Lease、事件日志 |
-| `backend/app/product_sessions/service.py` | prepare_agui_run，Product Run 创建 |
-| `backend/app/workflows/runtime.py` | ProductAwareWorkflow，MAF Workflow 包装 |
-| `backend/app/workflows/pi_agent.py` | GovernedPiToolExecutor，MAF Workflow 定义 |
-| `backend/app/workflows/catalog.py` | Workflow 定义注册（endpoint、节点） |
-| `backend/app/composition.py` | 应用组装，注册 pi Workflow 端点 |
-| `backend/app/pi_gateway.py` | PiRuntimeManager，进程管理 + Provider 网关 |
-| `backend/app/pi_runtime.py` | PiExecution，子进程启动和 JSONL-RPC 通信 |
+| [chat-composer.tsx](../../frontend/src/features/chat/chat-composer.tsx) | Composer UI 组件 |
+| [App.tsx](../../frontend/src/App.tsx) | submit 编排，选择 Workflow 和端点 |
+| [use-chat-agent.ts](../../frontend/src/use-chat-agent.ts) | AG-UI HttpAgent，send/approve/revise |
+| [runtime-config.ts](../../frontend/src/runtime-config.ts) | AG_UI_URL 解析 |
+| [workflow-api.ts](../../frontend/src/features/workflow/workflow-api.ts) | workflowEndpointUrl 构造 |
+| [runtime_execution/endpoint.py](../../backend/app/runtime_execution/endpoint.py) | AG-UI 端点注册，SSE 流 |
+| [runtime_execution/worker.py](../../backend/app/runtime_execution/worker.py) | Execution Worker，Job 领取和执行 |
+| [runtime_execution/service.py](../../backend/app/runtime_execution/service.py) | Runtime Job 队列、Lease、事件日志 |
+| [product_sessions/service.py](../../backend/app/product_sessions/service.py) | prepare_agui_run，Product Run 创建 |
+| [workflows/runtime.py](../../backend/app/workflows/runtime.py) | ProductAwareWorkflow，MAF Workflow 包装 |
+| [workflows/pi_agent.py](../../backend/app/workflows/pi_agent.py) | GovernedPiToolExecutor，MAF Workflow 定义 |
+| [workflows/catalog.py](../../backend/app/workflows/catalog.py) | Workflow 定义注册（endpoint、节点） |
+| [composition.py](../../backend/app/composition.py) | 应用组装，注册 pi Workflow 端点 |
+| [pi_gateway.py](../../backend/app/pi_gateway.py) | PiRuntimeManager，进程管理 + Provider 网关 |
+| [pi_runtime.py](../../backend/app/pi_runtime.py) | PiExecution，子进程启动和 JSONL-RPC 通信 |
 
 ## 补充记录
 
-（暂无）
+### 2026-07-28：刷新代码路径为可点击链接并校正行号
+
+把全部文件引用改为相对路径链接（`../../frontend/...`、`../../backend/...`），IDE 中可直接点击跳转。逐项 grep 实测后校正了 2 处漂移：`App.tsx` 的 `submit` 现在在 L436（原文 L398-420），`use-chat-agent.ts` 的 `send` 现在在 L239（原文 L222-262）；其余锚点仍准确。行号基于 2026-07-28 工作区，后续漂移时按符号名搜索定位。未改动任何说明文字。
