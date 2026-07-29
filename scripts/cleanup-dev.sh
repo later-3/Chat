@@ -52,6 +52,32 @@ cleanup_port() {
   local pids
   pids="$(lsof -nP -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u | tr '\n' ' ' || true)"
   terminate_pids "port $port" "$pids"
+
+  # Verify the port is actually released; SIGTERM/SIGKILL returns before the
+  # kernel reclaims the socket, causing "Address already in use" on immediate
+  # restart (2026-07-29).
+  for _ in {1..20}; do
+    if ! lsof -nP -tiTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+      return
+    fi
+    sleep 0.1
+  done
+
+  # Still occupied — force-kill any remaining holder.
+  pids="$(lsof -nP -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u | tr '\n' ' ' || true)"
+  if [[ -n "${pids//[[:space:]]/}" ]]; then
+    echo "port $port: still occupied by$pids after grace period, force killing" >&2
+    for pid in $pids; do
+      kill -KILL "$pid" 2>/dev/null || true
+    done
+    for _ in {1..20}; do
+      if ! lsof -nP -tiTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+        return
+      fi
+      sleep 0.1
+    done
+    echo "port $port: FAILED to release" >&2
+  fi
 }
 
 # Keep only PIDs that belong to this checkout: the command line references the
@@ -107,6 +133,12 @@ cleanup_frontend_processes() {
   terminate_pids "Chat frontend processes" "$pids"
 }
 
+cleanup_pi_processes() {
+  # pi is spawned as: node .../dist/cli.js --mode rpc --provider chat-governed ...
+  # The "--provider chat-governed" flag is unique to Chat-launched pi instances.
+  cleanup_pattern "Chat pi subprocesses" "cli\.js --mode rpc --provider chat-governed"
+}
+
 validate_port "$backend_port"
 validate_port "$frontend_port"
 
@@ -114,6 +146,7 @@ case "$target" in
   backend)
     cleanup_port "$backend_port"
     cleanup_backend_processes
+    cleanup_pi_processes
     ;;
   frontend)
     cleanup_port "$frontend_port"
@@ -129,6 +162,7 @@ case "$target" in
     cleanup_port "$backend_port"
     cleanup_port "$frontend_port"
     cleanup_backend_processes
+    cleanup_pi_processes
     cleanup_execution_worker_processes
     cleanup_outbox_worker_processes
     cleanup_frontend_processes

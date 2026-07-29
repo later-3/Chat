@@ -1,4 +1,5 @@
 import { checkedJson } from "../../api-client.js";
+import { authenticatedFetch } from "../../authentication-recovery.js";
 import { createClientId } from "../../client-id.js";
 import { API_BASE_URL } from "../../runtime-config.js";
 
@@ -219,7 +220,10 @@ export interface ProjectContext {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  return checkedJson<T>(await fetch(`${API_BASE_URL}${path}`, init), "Product Harness请求失败");
+  return checkedJson<T>(
+    await authenticatedFetch(`${API_BASE_URL}${path}`, init),
+    "Product Harness请求失败",
+  );
 }
 
 function commandId(kind: string): string {

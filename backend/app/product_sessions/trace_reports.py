@@ -17,6 +17,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
+from ..continuous_workflow_learning import CONTINUOUS_NODE_LEARNING_STAGE_LABELS
 from .database import RunAttemptRecord, RunRecord, ToolExecutionRecord, TraceRecord
 
 REPORT_SCHEMA_VERSION = 1
@@ -29,84 +30,9 @@ TERMINAL_RUN_STATUSES = {
     "outcome_unknown",
 }
 
-# 这组阶段只负责“教学投影”，节点本身及边仍以同版本Workflow Definition为准。
-# 集合必须覆盖continuous-collaboration v1.8.0的39个节点，测试会阻止静默漂移。
-CONTINUOUS_NODE_PHASES: dict[str, str] = {
-    **dict.fromkeys(
-        (
-            "input_acceptance",
-            "context_candidates",
-            "harness_directory_context",
-            "context_adoption",
-            "directory_context_revision",
-        ),
-        "阶段1：输入与目录上下文",
-    ),
-    **dict.fromkeys(
-        (
-            "intent_agent",
-            "intent_set_projection",
-            "intent_binding",
-            "intent_set_acceptance",
-            "harness_project_resolver",
-            "project_work_binding",
-            "harness_detail_context",
-            "detail_context_adoption",
-            "detail_context_revision",
-            "collaboration_protocol_resolver",
-        ),
-        "阶段2：意图、Project与协作协议",
-    ),
-    **dict.fromkeys(
-        (
-            "scenario_router",
-            "project_catalog_query",
-            "clarification",
-            "planning_agent",
-            "plan_acceptance",
-        ),
-        "阶段3：场景路由与计划",
-    ),
-    **dict.fromkeys(
-        (
-            "execution_draft_compiler",
-            "execution_authorization",
-            "run_spec_compiler",
-            "execution_route",
-        ),
-        "阶段4：执行合同与运行路由",
-    ),
-    **dict.fromkeys(
-        (
-            "execution_workspace_prepare",
-            "pi_workspace_dispatch",
-            "pi_workspace_result_assembly",
-            "result_claim_prepare",
-            "result_claim_decision",
-            "pi_readonly_dispatch",
-            "pi_readonly_result_assembly",
-        ),
-        "阶段5：pi执行、工作区与证据",
-    ),
-    **dict.fromkeys(
-        (
-            "response_agent",
-            "turn_summary_agent",
-            "result_commit",
-            "work_state_commit",
-            "memory_commit",
-        ),
-        "阶段6：答复与提交决定",
-    ),
-    **dict.fromkeys(
-        (
-            "harness_candidate_commit",
-            "turn_summary_persist",
-            "result_finalization",
-        ),
-        "阶段7：产品事实提交与本轮收口",
-    ),
-}
+# 保留旧常量名作为报告生成器内部兼容别名；唯一正文已移到轻量、无运行依赖的
+# ``continuous_workflow_learning.py``，文档校验和Trace不得再各维护一套阶段名称。
+CONTINUOUS_NODE_PHASES = CONTINUOUS_NODE_LEARNING_STAGE_LABELS
 
 EMPTY_REASON_LABELS = {
     "not_applicable": "本轮不适用",

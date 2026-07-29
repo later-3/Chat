@@ -77,7 +77,7 @@ async def _record_trace(
 
 
 class ExecutionRouteExecutor(Executor):
-    """节点24 ``execution_route``：从不可变RunSpec选择唯一执行分支。
+    """学习阶段S4、节点24：从不可变RunSpec选择唯一执行分支。
 
     可选``pi_workspace``、``pi_readonly``、``answer_only``。选择原因和每条未选原因都
     显式写入``route_decision``，人读Trace不需要让模型事后解释。
@@ -198,7 +198,7 @@ class ExecutionRouteExecutor(Executor):
 
 
 class ExecutionWorkspacePrepareExecutor(Executor):
-    """节点25 ``execution_workspace_prepare``：创建受管隔离Git worktree。
+    """学习阶段S5、节点25：创建受管隔离Git worktree。
 
     只在pi编辑分支适用。校验已批准Repository Snapshot/base revision后创建Workspace；
     失败会关闭Product Run，绝不退回真实仓库直接修改。
@@ -274,7 +274,7 @@ class ExecutionWorkspacePrepareExecutor(Executor):
 
 
 class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
-    """节点26/30：驱动一个pi子进程，同时由MAF掌握每次interrupt与继续。
+    """学习阶段S5、节点26/30：驱动pi子进程并由MAF掌握interrupt与继续。
 
     ``pi_workspace_dispatch``用于隔离编辑，``pi_readonly_dispatch``用于只读检查。进程
     内pending model/tool引用构成fail-closed状态机：Resume只能对应精确边界。类较长
@@ -1022,7 +1022,7 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
 
 
 class PiReadonlyResultAssemblyExecutor(Executor):
-    """节点27/31：校验ToolExecution终态与Result Hash后确定性装配pi结果。
+    """学习阶段S5、节点27/31：校验ToolExecution终态与Result Hash后装配结果。
 
     隔离编辑版还保留Workspace、Diff和变化文件；只读版只装配答复。两者都不追加一次
     “总结模型调用”，也不在此声明Work完成。
@@ -1092,7 +1092,7 @@ class PiReadonlyResultAssemblyExecutor(Executor):
 
 
 class PiWorkspaceDispatchExecutor(PiReadonlyDispatchExecutor):
-    """节点26 ``pi_workspace_dispatch``：节点30状态机的隔离编辑配置版本。"""
+    """学习阶段S5、节点26：节点30驱动状态机的隔离编辑配置版本。"""
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(
@@ -1103,7 +1103,7 @@ class PiWorkspaceDispatchExecutor(PiReadonlyDispatchExecutor):
 
 
 class PiWorkspaceResultAssemblyExecutor(PiReadonlyResultAssemblyExecutor):
-    """节点27 ``pi_workspace_result_assembly``：装配隔离编辑结果并进入Claim准备。"""
+    """学习阶段S5、节点27：装配隔离编辑结果并进入Claim准备。"""
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs, node_id="pi_workspace_result_assembly")

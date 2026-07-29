@@ -256,7 +256,7 @@ class ModelDispatchResult:
 
 
 class IntakeExecutor(Executor, TraceMixin):
-    """节点1 ``input_acceptance``：接纳本轮输入并建立Workflow初始状态。
+    """学习阶段S1、节点1 ``input_acceptance``：接纳本轮输入并建立Workflow初始状态。
 
     输入是AG-UI消息数组；输出是``CollaborationState``。这里取最后一条User文本作为
     ``origin_prompt``，召回近期TurnSummary和待回答澄清。完整消息历史仍由Product
@@ -313,7 +313,7 @@ class IntakeExecutor(Executor, TraceMixin):
 
 
 class CandidateContextExecutor(Executor, TraceMixin):
-    """节点2 ``context_candidates``：确定性召回最多4条主题候选。
+    """学习阶段S1、节点2 ``context_candidates``：确定性召回最多4条主题候选。
 
     不调用模型。按Prompt与近期TurnSummary的关键词交集排序；待回答澄清优先。
     这里仅产生候选，是否采用仍由节点4的Context决定点控制。
@@ -368,7 +368,7 @@ class CandidateContextExecutor(Executor, TraceMixin):
 
 
 class HarnessDirectoryContextExecutor(Executor, TraceMixin):
-    """节点3 ``harness_directory_context``：从Product Harness读取正式目录Context。
+    """学习阶段S1、节点3 ``harness_directory_context``：从Product Harness读取正式目录Context。
 
     输入是Prompt与节点2选中的摘要；输出是候选ContextPackage、正式Project候选和
     排除项。这里读取权威Product Store，不从聊天摘要猜Project是否存在。
@@ -393,7 +393,7 @@ class HarnessDirectoryContextExecutor(Executor, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
-        """执行节点3：建立directory阶段ContextPackage，并把候选送到节点4审核。
+        """执行节点3：建立Context装配的directory步骤ContextPackage，并送节点4审核。
 
         ``recent_turn_summaries``只是内存中的候选摘要；这里把它们与权威Project目录转换成
         带来源、版本、采用原因和Token估算的Context Item。随后先落库再进入HITL，使用户决定、
@@ -433,7 +433,7 @@ class HarnessDirectoryContextExecutor(Executor, TraceMixin):
 
 
 class HarnessProjectResolverExecutor(Executor, TraceMixin):
-    """节点10 ``harness_project_resolver``：把已接受意图解析到正式Project。
+    """学习阶段S2、节点10 ``harness_project_resolver``：把已接受意图解析到正式Project。
 
     只有唯一名称匹配才自动绑定；零匹配和多匹配都保留为空并交给节点11。若本轮是
     Project目录查询，也在这里读取正式列表，避免后续模型编造目录事实。
@@ -533,7 +533,7 @@ class HarnessProjectResolverExecutor(Executor, TraceMixin):
 
 
 class HarnessDetailContextExecutor(Executor, TraceMixin):
-    """节点12 ``harness_detail_context``：装配已绑定Project的有界工作集。
+    """学习阶段S2、节点12 ``harness_detail_context``：装配已绑定Project的有界工作集。
 
     未绑定Project时明确记录``not_applicable``；已绑定时加载开放Work、Plan、Action、
     Note、Accepted Memory、Repository Snapshot和治理规则，并受Token Budget限制。
@@ -558,7 +558,7 @@ class HarnessDetailContextExecutor(Executor, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
-        """执行节点12：创建detail阶段ContextPackage；为空的原因也写入Trace。"""
+        """执行节点12：创建Context装配的detail步骤ContextPackage；空值原因也写入Trace。"""
         if state.selected_project_id is None:
             await self._trace_content(
                 executor_id=self.id,
@@ -646,7 +646,7 @@ def _state_with_context_package(
 
 
 class HarnessContextRevisionExecutor(Executor, TraceMixin):
-    """节点5/14：把用户审核后的最新ContextPackage revision投影进Workflow。
+    """学习阶段S1/S2、节点5/14：把最新ContextPackage revision投影进Workflow。
 
     ``directory_context_revision``处理目录候选，``detail_context_revision``处理Project
     详情。该节点确保用户排除的Context不会继续残留在旧内存状态中。
@@ -727,7 +727,7 @@ class HarnessContextRevisionExecutor(Executor, TraceMixin):
 
 
 class CollaborationProtocolResolverExecutor(Executor, TraceMixin):
-    """节点15 ``collaboration_protocol_resolver``：绑定本轮不可变协作协议revision。
+    """学习阶段S2、节点15：绑定本轮不可变协作协议revision。
 
     解析在Intent和正式Project绑定后确定性执行，优先级为Work -> Project -> User ->
     System。选中的方法、阶段、规则、预算和原因进入Checkpoint、ExecutionDraft和Trace，
@@ -839,7 +839,7 @@ class ProductDecisionSpec:
 
 
 class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
-    """通用产品决定节点：持久化Policy评估，必要时interrupt等待用户。
+    """学习阶段S1/S2/S3/S4/S6共用：持久化Policy评估，必要时interrupt。
 
     每次决定绑定当前Subject Hash和版本：不适用会写明原因，自动通过会记录Decision
     与一次性Grant，需要人工时创建HumanDecisionRequest并停在可恢复Checkpoint。
@@ -1205,7 +1205,7 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
 
 
 class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
-    """节点6/19/32/33共用的受治理语义Agent执行器。
+    """学习阶段S2/S3/S6、节点6/19/32/33共用的受治理语义Agent执行器。
 
     分别承担意图识别、计划、答复和TurnSummary。每次调用都先持久化ModelCallDraft与
     Policy评估；只有版本绑定的批准或有效自动策略才能消费Grant并发送Provider。
@@ -1897,7 +1897,7 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
 
 
 class IntentSetProjectionExecutor(Executor, TraceMixin):
-    """节点7 ``intent_set_projection``：先持久化Intent候选，再允许产品决定接受。
+    """学习阶段S2、节点7：先持久化Intent候选，再允许产品决定接受。
 
     它把模型候选拆成不可变Intent Set/Intent revisions，并处理跨Run澄清关联；这样
     节点8审核的是可定位版本，而不是进程内一段随时会变的字典。
@@ -1973,7 +1973,7 @@ class IntentSetProjectionExecutor(Executor, TraceMixin):
 
 
 class IntentSetAcceptanceExecutor(Executor, TraceMixin):
-    """节点9 ``intent_set_acceptance``：接受用户审核后精确Hash绑定的Intent Set。
+    """学习阶段S2、节点9：接受用户审核后精确Hash绑定的Intent Set。
 
     如果节点8修改了主Intent，先生成新revision，再只接受该revision；旧批准不能漂移
     到新内容。输出同步回Workflow State，供Project解析和后续路由读取。
@@ -2046,7 +2046,7 @@ class IntentSetAcceptanceExecutor(Executor, TraceMixin):
 
 
 class ScenarioRouterExecutor(Executor, TraceMixin):
-    """节点16 ``scenario_router``：在4条候选边中确定性选择一条。
+    """学习阶段S3、节点16：在4条候选边中确定性选择一条。
 
     不调用模型，只读取已接受Intent状态，在Project目录查询、澄清、规划、默认直接执行
     中按声明顺序首个命中。选中依据及每条未选原因都会写入Trace供双报告还原。
@@ -2075,7 +2075,7 @@ class ScenarioRouterExecutor(Executor, TraceMixin):
 
 
 class ProjectCatalogExecutor(Executor, TraceMixin):
-    """节点17 ``project_catalog_query``：只用Product事实回答正式Project目录查询。
+    """学习阶段S3、节点17：只用Product事实回答正式Project目录查询。
 
     该分支为0次模型调用；正式目录为空时明确返回空，并把聊天摘要中的Project提示标为
     候选而不是正式事实。
@@ -2140,7 +2140,7 @@ class ProjectCatalogExecutor(Executor, TraceMixin):
 
 
 class ExecutionDraftCompilerExecutor(Executor, TraceMixin):
-    """节点21 ``execution_draft_compiler``：编译可编辑、可审核的ExecutionDraft。
+    """学习阶段S4、节点21：编译可编辑、可审核的ExecutionDraft。
 
     这里解析Repository围栏并在授权前冻结pi编辑的Validation Contract，避免RunSpec在
     之后重新读取“当前计划”。输出是带revision和Hash的候选Draft；节点22授权前不能执行。
@@ -2272,7 +2272,7 @@ class ExecutionDraftCompilerExecutor(Executor, TraceMixin):
 
 
 class RunSpecCompilerExecutor(Executor, TraceMixin):
-    """节点23 ``run_spec_compiler``：只从已授权Draft编译不可变RunSpec。
+    """学习阶段S4、节点23：只从已授权Draft编译不可变RunSpec。
 
     RunSpec冻结本轮Runtime、能力、预算、Repository Snapshot和验证合同，并绑定Product
     Run。节点24只读RunSpec路由，不再重新解释用户原文。
@@ -2337,7 +2337,7 @@ class RunSpecCompilerExecutor(Executor, TraceMixin):
 
 
 class ClarificationExecutor(Executor, TraceMixin):
-    """节点18 ``clarification``：提交澄清问题并回到聊天输入。
+    """学习阶段S3、节点18：提交澄清问题并回到聊天输入。
 
     澄清答案是下一条新的User Message，不是accept/revise审批。本节点写Assistant问题，
     把TurnSummary标为``awaiting_user_answer``并正常收口；下一轮节点6/7再关联答案。
@@ -2386,7 +2386,7 @@ class ClarificationExecutor(Executor, TraceMixin):
 
 
 class HarnessCandidateCommitExecutor(Executor, TraceMixin):
-    """节点37 ``harness_candidate_commit``：只提交已通过决定点的Work/Memory候选。
+    """学习阶段S7、节点37：只提交已通过决定点的Work/Memory候选。
 
     以Decision Record作为授权事实，通过幂等命令和CAS写Harness；未批准、被跳过或为空的
     候选不会写入长期状态。提交结果与原因进入Trace和TurnSummary引用。
@@ -2453,7 +2453,7 @@ class HarnessCandidateCommitExecutor(Executor, TraceMixin):
 
 
 class TurnSummaryPersistExecutor(Executor, TraceMixin):
-    """节点38 ``turn_summary_persist``：在候选决定结束后保存本轮派生摘要。
+    """学习阶段S7、节点38：在候选决定结束后保存本轮派生摘要。
 
     TurnSummary用于后续有界召回，不能替代原始Message，也不是Accepted Memory。保存时
     关联模型Attempt、来源Context、已提交Product事实和未解决澄清。
@@ -2568,7 +2568,7 @@ def _committed_product_fact_refs(
 
 
 class FinalizeExecutor(Executor, TraceMixin):
-    """节点39 ``result_finalization``：Product Message最终提交门。
+    """学习阶段S7、节点39：把答复交给图外Product Message最终提交门。
 
     这里把response产出为AG-UI文本；``ProductAwareWorkflow``随后才把它提交为权威
     Assistant Message并关闭Run。此前若失败/放弃，本节点不会被走到，因此半状态不能

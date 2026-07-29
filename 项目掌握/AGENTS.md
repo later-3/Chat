@@ -103,7 +103,8 @@
 2. **查重**：检查是否已有同类问题；已有文档必须先读取。
 3. **补前提**：如果用户卡在某个术语，先补其来源和具体样本，再继续解释下游节点。
 4. **核代码**：以当前源码、测试和Schema为准；明确区分当前实现与目标设计。
-5. **归档**：创建新文档，或只在已有文档的“补充记录”追加修正。
+5. **归档**：创建新文档；补充新发现时可追加记录，发现与当前代码冲突的旧事实时必须直接改正正文，
+   不能让读者先读一遍错误说法再去文末找纠正。
 6. **可验证**：提供断点/查询/Trace路径和掌握验收题。
 7. **更新索引**：新增文档或改变掌握状态时，同步更新 `INDEX.md`。
 
@@ -111,9 +112,28 @@
 
 1. 不得把多个不相关问题合并到一个文档。
 2. 不得在回答后忘记归档。
-3. 不得修改已有文档的原始回答内容，只能追加补充记录。
+3. 不得为了保留写作历史而保留已经被代码推翻的口径；Git历史负责保存旧版本，当前正文只表达当前代码事实。
 4. 不得用字段名的英文拆词或同义改写冒充第一性原理解释。
 5. 不得只给调用链而不说明每一步拿到的具体对象和为什么需要它。
 6. 不得把模型候选、运行时状态、协议投影或前端状态写成Product Store权威事实。
 7. 不得让用户通过输出密钥、完整Prompt、Provider Payload或私密正文来完成调试实验。
 8. 不得用一个详细案例、一个Workflow或一组数据库表冒充整个Chat的覆盖范围。
+
+## 7. Workflow口径的唯一来源
+
+持续协作主Workflow的教学分组由
+`backend/app/continuous_workflow_learning.py::CONTINUOUS_WORKFLOW_LEARNING_STAGES`唯一拥有。所有教材、
+Trace人读标签和代码注释统一使用`S1`到`S7`，并由`backend/tests/test_continuous_workflow_learning_comments.py`
+与`scripts/check-project-mastery.py`反向核对真实Workflow Definition。
+
+必须同时区分5种数量：
+
+1. 项目交付阶段：`PROJECT_PLAN.md`中的阶段0到8，共9个。
+2. 主Workflow学习阶段：S1到S7，共7个。
+3. Context装配步骤：`directory/detail`共2步；历史材料中的“阶段A/B”只能作为旧别名出现。
+4. 单模型审批Workflow的代码阶段：仅`chat-model-call-approval`使用，共12个。
+5. 主Workflow可达路径：按两个Switch分支形成8种典型路径，不是8个阶段。
+
+文档不得自行重新发明阶段名、节点范围或数量。主Workflow版本、节点和边来自
+`backend/app/workflows/catalog.py`；学习阶段来自上述唯一模块；实际接线来自
+`backend/app/workflows/continuous_chat_factory.py`。

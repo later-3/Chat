@@ -1,4 +1,5 @@
 import { checkedJson } from "../../api-client.js";
+import { authenticatedFetch } from "../../authentication-recovery.js";
 import { API_BASE_URL } from "../../runtime-config.js";
 
 export interface PiRuntimeView {
@@ -50,7 +51,7 @@ export interface ToolExecutionSummary {
 
 export async function listTools(): Promise<PiToolConfiguration[]> {
   return checkedJson<{ tools: PiToolConfiguration[] }>(
-    await fetch(`${API_BASE_URL}/api/tools`),
+    await authenticatedFetch(`${API_BASE_URL}/api/tools`),
     "加载Tool配置失败",
   ).then((payload) => payload.tools);
 }
@@ -63,7 +64,7 @@ export async function updatePiTool(
     expected_revision: number;
   },
 ): Promise<PiToolConfiguration> {
-  const response = await fetch(`${API_BASE_URL}/api/tools/pi_agent`, {
+  const response = await authenticatedFetch(`${API_BASE_URL}/api/tools/pi_agent`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(value),
@@ -72,7 +73,9 @@ export async function updatePiTool(
 }
 
 export async function listPiExecutions(): Promise<ToolExecutionSummary[]> {
-  const response = await fetch(`${API_BASE_URL}/api/tools/pi_agent/executions?limit=20`);
+  const response = await authenticatedFetch(
+    `${API_BASE_URL}/api/tools/pi_agent/executions?limit=20`,
+  );
   return checkedJson<{ executions: ToolExecutionSummary[] }>(response, "加载pi执行统计失败").then(
     (payload) => payload.executions,
   );

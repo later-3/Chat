@@ -52,10 +52,12 @@ from backend.app.workflows import (
 # Re-reviewed 2026-07-28 for deterministic dual Run Trace reports: OpenAPI adds
 # exactly one read-only trace-reports endpoint; Product Schema adds only the
 # run_trace_reports materialized-projection table. trace_events and domain
-# ledgers remain authoritative and the Workflow catalog is unchanged.
+# ledgers remain authoritative. Re-reviewed 2026-07-29 after replacing the
+# catalog's historical Stage A/B copy with explicit directory/detail terms;
+# the Workflow ID/version/node/edge topology is unchanged.
 OPENAPI_SHA256 = "5f42ca97d66281ba49e2c4b4a5e2bac06c382632718e08b108d1d8925ceba0a6"
 PRODUCT_SCHEMA_SHA256 = "f151dc80ad56b9cb29913267f53e17822a63640811856ecae3a1637da62d0e29"
-WORKFLOW_CATALOG_SHA256 = "2c6ae803e2669254c352b57ef238655b92a92d47b2e190a15e5513b609e39c6e"
+WORKFLOW_CATALOG_SHA256 = "01fe3f41be2ea1b0b68c573b56cb67d43835102b90af146b94c870a6e11c0661"
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 
 

@@ -5,6 +5,7 @@ import { VitePWA } from "vite-plugin-pwa";
 
 const rawWebBase = process.env.VITE_WEB_BASE_PATH?.trim() || "/";
 const webBase = `/${rawWebBase.replace(/^\/+|\/+$/g, "")}${rawWebBase === "/" ? "" : "/"}`;
+const escapedWebBase = webBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export default defineConfig({
   base: webBase,
@@ -61,8 +62,15 @@ export default defineConfig({
         clientsClaim: false,
         skipWaiting: false,
         globPatterns: ["**/*.{js,css,html,svg,png,ico,woff2}"],
+        // This page must always reach the network so a browser-managed Basic
+        // Auth challenge can be shown after the cached PWA shell sees a 401.
+        globIgnores: ["auth-refresh.html"],
         navigateFallback: `${webBase}index.html`,
-        navigateFallbackDenylist: [/^\/api(?:\/|$)/, /^\/chat-api(?:\/|$)/],
+        navigateFallbackDenylist: [
+          /^\/api(?:\/|$)/,
+          /^\/chat-api(?:\/|$)/,
+          new RegExp(`^${escapedWebBase}auth-refresh\\.html$`),
+        ],
       },
       devOptions: {
         enabled: process.env.VITE_PWA_DEV === "true",
@@ -82,6 +90,12 @@ export default defineConfig({
         manualChunks(id) {
           if (id.endsWith("/features/home/activity-rail.css")) {
             return "activity-rail";
+          }
+          if (id.endsWith("/authentication-required.css")) {
+            return "authentication-required";
+          }
+          if (id.endsWith("/features/session/session-sidebar.css")) {
+            return "session-sidebar";
           }
         },
       },

@@ -1,7 +1,7 @@
 # Chat系统总地图与学习方法
 
-**归档日期**：2026-07-29  
-**分类**：00-从这里开始  
+**归档日期**：2026-07-29
+**分类**：00-从这里开始
 **关联源码**：
 
 - [前端发送编排](../../frontend/src/App.tsx)
@@ -25,13 +25,14 @@
 产品提交和页面恢复。** 每个专题都重复同一套6步：讲清问题、看具体对象、追代码、下断点、查存储、
 自己复述。
 
-## 1. 先把4张容易混淆的图分开
+## 1. 先把5张容易混淆的图分开
 
-它们回答的是4个不同问题，不能互相代替：
+它们回答的是5个不同问题，不能互相代替：
 
 | 图 | 回答什么 | 例子 |
 |---|---|---|
 | 产品架构图 | 谁负责什么、事实归谁 | Conversation拥有消息；Context拥有本轮上下文；MAF不拥有Project |
+| 对象生命周期图 | 一个对象谁创建、保存、修改和消费 | ExecutionDraft从候选revision变成已授权RunSpec |
 | Workflow运行图 | 一次Run先做什么、后做什么、在哪里分支 | `input_acceptance -> context_candidates -> ...` |
 | 代码地图 | 上述责任落在哪些目录、类和函数 | `product_sessions/`、`HarnessService`、`ProductAwareWorkflow` |
 | 交付计划 | 哪些能力先开发、哪些以后开发 | `PROJECT_PLAN.md`阶段0-8 |
@@ -103,15 +104,19 @@ Job、Lease和Epoch解决Worker领取与失联；事件Journal让浏览器断线
 
 ## 4. 39个节点该怎样学
 
-39个节点不是39个互不相关的概念。它们是同一条闭环中的检查站，可以先按7段理解：
+39个节点不是39个互不相关的概念。当前唯一学习分组来自代码
+`CONTINUOUS_WORKFLOW_LEARNING_STAGES`：
 
-1. 输入与轻量Context：这句话是什么、可能和哪些旧事有关。
-2. Intent与Project/Work绑定：用户到底想做什么、关联哪个正式事项。
-3. Context详情与协作协议：这次采用哪些事实和做事方法。
-4. Plan、ExecutionDraft与RunSpec：准备怎样做，用户批准的边界是什么。
-5. 执行路由：直接回答、pi只读或隔离工作区编辑。
-6. 结果与Evidence：产物是否经过验证，是否足以支持完成声明。
-7. 回合沉淀与终态：保存回答、摘要、Work/Memory候选和可恢复终态。
+1. **S1 输入接纳与目录级上下文（节点1–5）**：输入、摘要候选和directory Context。
+2. **S2 意图、Project绑定与详情上下文（节点6–15）**：Intent Set、权威绑定、detail Context和协议。
+3. **S3 场景路由与可选规划（节点16–20）**：目录查询、澄清、规划或直接形成执行合同。
+4. **S4 执行草稿、授权与运行路由（节点21–24）**：Draft、Hash、Grant、RunSpec和三路执行。
+5. **S5 pi执行、Workspace与Evidence（节点25–31）**：只读/隔离编辑、Artifact、Validation和Claim。
+6. **S6 响应、摘要与提交决定（节点32–36）**：Response、Summary与Result/Work/Memory分别决定。
+7. **S7 产品事实写入与本轮终态（节点37–39）**：幂等提交、TurnSummary和最终化。
+
+它们不是`PROJECT_PLAN`的阶段0–8，不是Context的`directory/detail`两步，也不是单模型审批Workflow的
+12个代码阶段。
 
 学习时不要一次背39个节点。每次只追一条路径，并问5个固定问题：
 
@@ -143,14 +148,14 @@ Job、Lease和Epoch解决Worker领取与失联；事件Journal让浏览器断线
 | 顺序 | 主题 | 完成标志 | 当前入口 |
 |---:|---|---|---|
 | 1 | 系统总地图 | 能区分架构、Workflow、代码和计划 | 本文 |
-| 2 | 一次消息的外层链路 | 能从React追到ProductAwareWorkflow | [从用户点击发送到pi执行](../执行层与pi运行时/从用户点击发送到pi执行的完整链路.md) |
-| 3 | Product Session与数据库 | 能解释消息为何不是MAF保存 | [前端会话面板的数据来源](../Session与状态持久化/前端会话面板的数据来源与保存形式.md) |
-| 4 | Context与回合沉淀 | 能区分Message、TurnSummary、ContextPackage、Memory | [recent_turn_summaries与ContextPackage](../Context与回合沉淀/recent_turn_summaries与ContextPackage为什么存在.md) |
-| 5 | 主Workflow | 能画出一条实际分支，不背完整清单 | [39节点设计](../Workflow架构与ProductAwareWorkflow/持续协作主Workflow的39节点设计.md) |
-| 6 | HITL与模型调用治理 | 能解释Draft、Hash、Decision、Grant、Attempt | 待补专题与实验 |
-| 7 | pi与Tool副作用 | 能追到子进程、Gateway、ToolOperation和对账 | [pi启动位置](../执行层与pi运行时/pi子进程在哪里启动.md) |
-| 8 | Evidence与完成门 | 能解释“测试通过”为何不自动等于Work完成 | 待补专题与实验 |
-| 9 | Runtime恢复 | 能区分Retry、Restart、Resume、重连和Worker接管 | 待补专题与实验 |
+| 2 | 七层架构与11模块 | 能说清各层/模块的状态所有权 | [总体架构链路](../架构与模块/Chat总体架构与一次点击的七层链路.md)、[11模块](../架构与模块/11个产品模块的职责与代码落点.md) |
+| 3 | 核心对象 | 能回答谁创建、保存、修改、消费 | [核心对象词典](../架构与模块/核心对象词典-谁创建谁保存谁消费.md) |
+| 4 | 一次消息的外层链路 | 能从React追到ProductAwareWorkflow | [从用户点击发送到pi执行](../执行层与pi运行时/从用户点击发送到pi执行的完整链路.md) |
+| 5 | Product Session与数据库 | 能解释消息为何不是MAF保存 | [前端会话面板的数据来源](../Session与状态持久化/前端会话面板的数据来源与保存形式.md) |
+| 6 | Context与回合沉淀 | 能区分Message、TurnSummary、ContextPackage、Memory | [Context专题](../Context与回合沉淀/recent_turn_summaries与ContextPackage为什么存在.md) |
+| 7 | 主Workflow S1–S7 | 能画出8种路径并逐阶段定位代码 | [39节点设计](../Workflow架构与ProductAwareWorkflow/持续协作主Workflow的39节点设计.md) |
+| 8 | pi、Tool与Evidence | 能追到子进程、Operation、Artifact、Claim和对账 | [S5教材](../Workflow架构与ProductAwareWorkflow/学习阶段S5-pi执行Workspace与Evidence.md) |
+| 9 | Runtime恢复与Trace | 能区分Resume、重连、接管和最终化 | [Trace专题](../Trace与可观测性/每轮双Trace如何保存、分析与可视化.md) |
 | 10 | 安全改一个功能 | 能写影响分析、测试并通过质量门 | 待补综合实验 |
 
 ## 7. 第一个实际练习
@@ -180,6 +185,7 @@ Identity、多端并发完整矩阵、通用外部Tool副作用对账、任意Wo
 | [PROJECT_CONTEXT.md](../../PROJECT_CONTEXT.md) | 稳定产品问题、目标、对象和边界 |
 | [PROJECT_STATE.md](../../PROJECT_STATE.md) | 当前已经实现与尚未实现的事实 |
 | [continuous_chat_factory.py](../../backend/app/workflows/continuous_chat_factory.py) | 39节点图如何接线 |
+| [continuous_workflow_learning.py](../../backend/app/continuous_workflow_learning.py) | S1–S7唯一学习分组 |
 | [continuous_chat.py](../../backend/app/workflows/continuous_chat.py) | 节点实际行为 |
 | [continuous_chat_contracts.py](../../backend/app/workflows/continuous_chat_contracts.py) | 节点间传递的运行时状态合同 |
 | [runtime.py](../../backend/app/workflows/runtime.py) | MAF运行与Product Run生命周期接合 |

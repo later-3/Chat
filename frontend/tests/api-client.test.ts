@@ -43,3 +43,17 @@ test("迁移期间仍能读取旧detail错误而不让调用方解析中文结�
   assert.equal(error.retryable, true);
   assert.equal(error.recoveryAction, "retry");
 });
+
+test("401统一映射为重新认证而不是普通重试", async () => {
+  const response = new Response("Unauthorized", {
+    status: 401,
+    headers: { "www-authenticate": 'Basic realm="Chat private workspace"' },
+  });
+
+  const error = await apiErrorFromResponse(response);
+
+  assert.equal(error.status, 401);
+  assert.equal(error.code, "HTTP_401");
+  assert.equal(error.recoveryAction, "authenticate");
+  assert.equal(error.retryable, false);
+});

@@ -6,7 +6,7 @@
 |---|---|
 | 目的 | 统一项目Workstream、可执行Workflow定义、用户选择、实际运行、节点和运行视图。 |
 | 概念状态 | 有效；用户已批准“发送前选择Workflow，发送后展示实际Run”。 |
-| 实现状态 | 局部实现并验证：持续协作主Workflow v1.4.0的28个MAF节点、Intent Set/复合Plan、异构分支、AG-UI投影、Product Harness协议/Context/步骤输入接合、治理内容查看和无外部Tool副作用审批安全点的持久Checkpoint/跨进程恢复已存在；其他Definition与子级HITL尚未获得同等保证。 |
+| 实现状态 | 局部实现并验证：持续协作主Workflow当前为v1.8.0，含39个MAF节点和43条静态边；Intent Set/复合Plan、两级Context、3路执行、pi只读/隔离编辑、Result Claim、AG-UI投影、Product Harness接合和主Workflow安全点Checkpoint/跨进程恢复纵向链已存在。其他Definition、全部子级HITL和完整故障矩阵尚未获得同等保证。 |
 | 事实所有者 | 产品选择规则见[项目经验反例013](../../PROJECT_LESSONS.md#16-反例-013把workflow选择prompt发送和运行展示混成一个动作)，实现见[项目状态](../../PROJECT_STATE.md)。 |
 | 维护责任 | Workflow目录、Run管理、MAF Runtime和前端Workflow Run View共同维护。 |
 
@@ -81,7 +81,12 @@
 
 ## 当前状态与未知
 
-当前发送区只选择“持续协作主 Workflow v1.4.0”；它以28个真实MAF节点覆盖选择性主题摘要、Product Harness阶段A目录、Intent Set/场景、正式Project解析、阶段B工作集、协作协议解析、确定性Project目录查询、单目标可选规划或多目标强制组合Plan、ExecutionDraft授权、RunSpec编译、响应、回合沉淀、Work/Memory候选提交和产品终态。真正的澄清问题会先作为Assistant Message提交，下一条User Message通过未解决问题摘要重新进入Intent判断，不再伪装成意图审批。嵌套质量检查、双Agent、三方成语接龙和pi Tool仍是配置中心中的独立Definition，不会与主Workflow隐式叠加。
+当前发送区只选择“持续协作主 Workflow v1.8.0”；它以39个真实MAF节点、43条静态边覆盖选择性摘要、
+directory/detail两步Context、Intent Set、Project/Work绑定、协作协议、4路场景选择、可选Plan、
+ExecutionDraft授权、不可变RunSpec、answer/pi只读/pi隔离编辑、Result Claim、Result/Work/Memory分别决定、
+回合沉淀和产品终态。真正的澄清问题会先作为Assistant Message提交，下一条User Message通过未解决问题
+摘要重新进入Intent判断。其余5个Definition是配置中心/测试/演示用的独立辅助Workflow，不会与主图隐式
+叠加，也不是当前普通发送区的可选根流程。
 
 多目标不会修改基础协作协议Definition。Workflow保留原协议revision/Hash，再以带Hash的
 `composition_overlay`形成本轮有效执行策略，例如把`planner=disabled`覆盖为
@@ -89,7 +94,11 @@
 其一。多Intent中的权威Product查询先由确定性Executor完成，再把结果作为事实交给Planner和Response，
 避免模型规划系统没有提供的Tool。
 
-设计者运行视图现在先展示完整系统执行链，再把真实MAF Definition与本轮Trace组合成可缩放的思维导图：选择前真实路径、`scenario_router`、4条候选边及选中分支后续在同一拓扑中呈现；候选边同时显示声明顺序、公开条件、实际值和未走原因。点击图上节点先显示节点结果，再按需展开实际步骤输入、公开输入、运行事实与治理事实，26节点完整台账降为按需展开的第二层。布局阶段明确标注不是额外MAF节点。旧Run若只保存最终`branch`，视图仍标为兼容投影，不把当前代码推断冒充历史Trace事实。
+设计者运行视图现在先展示完整系统执行链，再把真实MAF Definition与本轮Trace组合成可缩放拓扑：
+`scenario_router`的4条候选边、`execution_route`的3条候选边、选中路径和未走原因来自同一Definition/Trace
+事实。点击图上节点按需展开步骤输入、公开输入、运行事实与治理事实；39节点完整台账是审计层。
+S1–S7只是代码拥有的学习分组，不是额外MAF节点。旧Run若只保存较少分支事实，视图必须标为兼容投影，
+不能用当前代码反推并冒充历史Trace。
 
 主Workflow现在把MAF Checkpoint绑定到Product Run/Attempt、Definition/version、图签名和Pending Request；决定可以经Lease Outbox由新的OS进程恢复到下一审批安全点，前置节点不重跑。活动Run已经具有持久Runtime Job、公开事件Journal、签名Cursor回放和Execution Worker纵向切片，但完整多设备、事件保留、背压和容量矩阵仍未验收。Checkpoint保证只覆盖已接合的主Workflow和无外部Tool副作用阶段；持久Definition版本仓库、其他Definition、嵌套子级HITL和Tool副作用恢复仍需后续交付。
 

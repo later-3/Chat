@@ -1,4 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { authenticatedFetch, subscribeAuthenticationRequired } from "./authentication-recovery";
+import { AuthenticationRequired } from "./authentication-required";
 import { ConfigurationCenter, type ConfigurationTab } from "./configuration-center";
 import { AppTopbar } from "./features/chat/app-topbar";
 import { ConversationPane, runLabel } from "./features/chat/conversation-pane";
@@ -106,6 +108,7 @@ function App() {
   const [draft, setDraft] = useState("");
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState(false);
+  const [authenticationRequired, setAuthenticationRequired] = useState(false);
   const [providers, setProviders] = useState<ModelProviderOption[]>([]);
   const [defaultProviderId, setDefaultProviderId] = useState<string | null>(null);
   const [defaultModel, setDefaultModel] = useState<string | null>(null);
@@ -150,6 +153,8 @@ function App() {
   useEffect(() => {
     window.sessionStorage.setItem("chat.primary-view.v1", primaryView);
   }, [primaryView]);
+
+  useEffect(() => subscribeAuthenticationRequired(() => setAuthenticationRequired(true)), []);
 
   useEffect(() => {
     const focusHomeSearch = (event: KeyboardEvent) => {
@@ -257,14 +262,16 @@ function App() {
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
-      fetch(apiUrl("/api/health"), { signal: controller.signal }).then((response) => {
+      authenticatedFetch(apiUrl("/api/health"), { signal: controller.signal }).then((response) => {
         if (!response.ok) throw new Error("health check failed");
         return response.json() as Promise<Health>;
       }),
-      fetch(apiUrl("/api/model-providers"), { signal: controller.signal }).then((response) => {
-        if (!response.ok) throw new Error("provider catalog failed");
-        return response.json() as Promise<ProviderCatalogResponse>;
-      }),
+      authenticatedFetch(apiUrl("/api/model-providers"), { signal: controller.signal }).then(
+        (response) => {
+          if (!response.ok) throw new Error("provider catalog failed");
+          return response.json() as Promise<ProviderCatalogResponse>;
+        },
+      ),
       listWorkflows(),
     ])
       .then(([healthValue, catalog, workflows]) => {
@@ -671,6 +678,7 @@ function App() {
         workbenchOpen={workbenchOpen}
       />
       <PwaStatus />
+      {authenticationRequired && <AuthenticationRequired />}
 
       {modelCallReview && (
         <Suspense fallback={<FeatureLoading label="模型请求审批" />}>

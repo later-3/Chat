@@ -7,6 +7,7 @@ local_port="${CHAT_LOCAL_PORT:-8030}"
 remote_port="${CHAT_RELAY_PORT:-4620}"
 public_url="${CHAT_PUBLIC_URL:-http://$cloud_host/chat/}"
 public_api_url="${CHAT_PUBLIC_API_URL:-http://$cloud_host/chat-api}"
+auth_reentry_url="${CHAT_AUTH_REENTRY_URL:-http://$cloud_host/chat/auth-refresh.html}"
 state_dir="$project_root/backend/.data/deployment"
 password_file="$state_dir/chat-http-access-password"
 user_id="$(id -u)"
@@ -44,6 +45,13 @@ if [[ "$status_without_credentials" != "401" ]]; then
   echo "expected unauthenticated public request to return 401, got $status_without_credentials" >&2
   exit 4
 fi
+auth_status_without_credentials="$(
+  /usr/bin/curl --silent --output /dev/null --write-out '%{http_code}' "$auth_reentry_url"
+)"
+if [[ "$auth_status_without_credentials" != "401" ]]; then
+  echo "expected unauthenticated auth re-entry to return 401, got $auth_status_without_credentials" >&2
+  exit 4
+fi
 
 /usr/bin/curl --fail --silent --show-error \
   --user "later:$(<"$password_file")" \
@@ -51,5 +59,16 @@ fi
 /usr/bin/curl --fail --silent --show-error \
   --user "later:$(<"$password_file")" \
   "${public_api_url%/}/api/ready" >/dev/null
+auth_reentry_headers="$(
+  /usr/bin/curl --fail --silent --show-error \
+    --dump-header - \
+    --output /dev/null \
+    --user "later:$(<"$password_file")" \
+    "$auth_reentry_url"
+)"
+if ! /usr/bin/grep -qi '^Cache-Control: no-store' <<<"$auth_reentry_headers"; then
+  echo "auth re-entry must be served with Cache-Control: no-store" >&2
+  exit 4
+fi
 
 echo "Mobile relay verification passed."

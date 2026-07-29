@@ -1,6 +1,7 @@
 import { Bot, Check, ChevronLeft, ChevronRight, MessageSquarePlus } from "lucide-react";
 import type { ProductSession } from "./session-api";
 import { productSessionLocator } from "./session-identifier";
+import "./session-sidebar.css";
 
 interface SessionSidebarProps {
   activeSessionId: string | null;

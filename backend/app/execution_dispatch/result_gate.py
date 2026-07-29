@@ -100,7 +100,7 @@ async def _record_trace(
 
 
 class ResultClaimPrepareExecutor(Executor):
-    """节点28：确定性建立Claim及Evidence链；任何歧义都fail closed。"""
+    """学习阶段S5、节点28：确定性建立Claim及Evidence链；歧义时fail closed。"""
 
     def __init__(
         self,
@@ -168,7 +168,7 @@ class ResultClaimPrepareExecutor(Executor):
 
 
 class ResultClaimDecisionExecutor(Executor, RequestInfoMixin):
-    """节点29：把result_commit决定绑定到精确Claim版本并运行提交Gate。"""
+    """学习阶段S5、节点29：把result_commit决定绑定到精确Claim并运行提交Gate。"""
 
     def __init__(
         self,

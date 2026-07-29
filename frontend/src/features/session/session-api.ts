@@ -1,6 +1,7 @@
 import type { Message } from "@ag-ui/core";
 
 import { checkedJson } from "../../api-client.js";
+import { authenticatedFetch } from "../../authentication-recovery.js";
 import { API_BASE_URL } from "../../runtime-config.js";
 
 export interface ProductSession {
@@ -130,7 +131,7 @@ interface RunListResponse {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  return checkedJson<T>(await fetch(`${API_BASE_URL}${path}`, init));
+  return checkedJson<T>(await authenticatedFetch(`${API_BASE_URL}${path}`, init));
 }
 
 export function listSessions(includeArchived = false): Promise<ProductSession[]> {

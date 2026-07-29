@@ -103,7 +103,9 @@ class ProductDecisionExecutor(Executor, ...):         # Chat 实现
 
 2. **每个决策点可暂停**：`ProductDecisionExecutor` 根据 HITL 策略决定 `deny` / `auto_continue` / `waiting_human`。默认是人工审批。
 
-3. **状态是不可变快照的传递**：`CollaborationState` 是 frozen dataclass，每个节点用 `replace(state, ...)` 产生新快照。MAF Checkpoint 保存的就是这个快照。
+3. **状态以受控消息传递**：`CollaborationState` 是 frozen dataclass，字段不能直接重新赋值；Executor通常通过
+   `replace(state, ...)`或受控结果对象产生下一状态。冻结是浅层防误改，不表示嵌套`dict/list`天然不可变；
+   MAF Checkpoint保存的是可恢复运行状态，也不等同于Product Store权威事实。
 
 4. **模型调用有完整的治理链**：`GovernedSemanticAgentExecutor` → `ModelCallDraft` → Policy Evaluation → Human Decision Request → Grant → Attempt → Provider Dispatch。每一步都有持久记录。
 
@@ -111,70 +113,26 @@ class ProductDecisionExecutor(Executor, ...):         # Chat 实现
 
 ---
 
-## 7. 节点分组与职责
+## 7. 节点学习分组与职责
 
-39 个节点按职责分为 7 个阶段：
+当前主Workflow为`continuous-collaboration` v1.8.0：39个节点、43条静态边。为了阅读代码，
+`backend/app/continuous_workflow_learning.py`把39个节点唯一映射为S1–S7。这个分组不参与MAF执行：
 
-### 阶段 A: 输入接纳与上下文召回（节点 1-5）
-
-| 节点 ID | 类名 | 职责 |
+| 学习阶段 | 节点范围 | 核心责任 |
 |---|---|---|
-| `input_acceptance` | `IntakeExecutor` | 保存原始 prompt，召回最近 TurnSummary |
-| `context_candidates` | `CandidateContextExecutor` | 确定性关键词召回（最多 4 条） |
-| `harness_directory_context` | `HarnessDirectoryContextExecutor` | 阶段 A：查询 Project 轻量目录 |
-| `context_adoption` | `ProductDecisionExecutor` | HITL：确认采用的上下文 |
-| `directory_context_revision` | `HarnessContextRevisionExecutor` | 投影已确认的 ContextPackage revision |
+| S1 输入接纳与目录级上下文 | 1–5 | 输入证据、TurnSummary候选、directory Context和采用revision |
+| S2 意图、Project绑定与详情上下文 | 6–15 | Intent Set、权威Project/Work绑定、detail Context和协议revision |
+| S3 场景路由与可选规划 | 16–20 | 目录查询/澄清/规划/直接执行选择与Plan决定 |
+| S4 执行草稿、授权与运行路由 | 21–24 | ExecutionDraft、授权Hash、不可变RunSpec和三路执行选择 |
+| S5 pi执行、Workspace与Evidence | 25–31 | pi只读/隔离编辑、Artifact、Validation和Completion Claim |
+| S6 响应、摘要与提交决定 | 32–36 | Response、TurnSummary以及Result/Work/Memory分别决定 |
+| S7 产品事实写入与本轮终态 | 37–39 | 幂等候选提交、TurnSummary持久化和图内最终输出 |
 
-### 阶段 B: 意图识别与路由（节点 6-16）
+节点的唯一完整清单、8条可达路径和每阶段专题见
+`项目掌握/Workflow架构与ProductAwareWorkflow/持续协作主Workflow的39节点设计.md`。
 
-| 节点 ID | 类名 | 职责 |
-|---|---|---|
-| `intent_agent` | `GovernedSemanticAgentExecutor` | 模型调用 #1：识别意图 |
-| `intent_set_projection` | `IntentSetProjectionExecutor` | 持久化意图候选 |
-| `intent_binding` | `ProductDecisionExecutor` | HITL：确认意图绑定 |
-| `intent_set_acceptance` | `IntentSetAcceptanceExecutor` | 接受不可变 Intent Set revision |
-| `harness_project_resolver` | `HarnessProjectResolverExecutor` | 解析 Project 绑定 |
-| `project_work_binding` | `ProductDecisionExecutor` | HITL：确认 Project/Work 关联 |
-| `harness_detail_context` | `HarnessDetailContextExecutor` | 阶段 B：加载已绑定 Project 的完整工作集 |
-| `detail_context_adoption` | `ProductDecisionExecutor` | HITL：确认 Project/Repository 上下文 |
-| `detail_context_revision` | `HarnessContextRevisionExecutor` | 投影阶段 B 的 ContextPackage revision |
-| `collaboration_protocol_resolver` | `CollaborationProtocolResolverExecutor` | 绑定协作协议 revision |
-| `scenario_router` | `ScenarioRouterExecutor` | 确定性路由：catalog / clarify / plan / run |
-
-### 阶段 C: 规划与执行合同（节点 17-20）
-
-| 节点 ID | 类名 | 职责 |
-|---|---|---|
-| `execution_draft_compiler` | `ExecutionDraftCompilerExecutor` | 编译 ExecutionDraft |
-| `execution_authorization` | `ProductDecisionExecutor` | HITL：授权执行合同 |
-| `run_spec_compiler` | `RunSpecCompilerExecutor` | 编译不可变 RunSpec |
-| `execution_route` | `ExecutionRouteExecutor` | 路由：pi_workspace / pi_readonly / responder |
-
-### 阶段 D: 执行与结果（节点 21-28）
-
-| 节点 ID | 类名 | 职责 |
-|---|---|---|
-| `response_agent` | `GovernedSemanticAgentExecutor` | 模型调用 #3：生成回复 |
-| `result_commit` | `ProductDecisionExecutor` | HITL：确认结果 |
-| `work_state_commit` | `ProductDecisionExecutor` | HITL：确认 Work 状态候选 |
-| `memory_commit` | `ProductDecisionExecutor` | HITL：确认 Memory 候选 |
-| `harness_candidate_commit` | `HarnessCandidateCommitExecutor` | 提交 Work/Memory 候选到 Product DB |
-| `turn_summary_agent` | `GovernedSemanticAgentExecutor` | 模型调用 #4：提取回合摘要 |
-| `turn_summary_persist` | `TurnSummaryPersistExecutor` | 持久化 TurnSummary |
-| `result_finalization` | `FinalizeExecutor` | 产品提交门 → AG-UI 输出 |
-
-### 分支节点（不在主链上）
-
-| 节点 ID | 类名 | 职责 |
-|---|---|---|
-| `project_catalog_query` | `ProjectCatalogExecutor` | 确定性回答"我有哪些项目" |
-| `clarification` | `ClarificationExecutor` | 发出澄清问题，等待下一轮 |
-| `planning_agent` | `GovernedSemanticAgentExecutor` | 模型调用 #2：生成计划（仅 needs_plan 时） |
-| `plan_acceptance` | `ProductDecisionExecutor` | HITL：确认计划 |
-| `pi_readonly_dispatch` | `PiReadonlyDispatchExecutor` | pi 只读执行 |
-| `pi_workspace_dispatch` | `PiWorkspaceDispatchExecutor` | pi 隔离写入 |
-| `result_claim_prepare` | `ResultClaimPrepareExecutor` | Evidence 提交准备 |
-| `result_claim_decision` | `ResultClaimDecisionExecutor` | Evidence 提交决策 |
+不要再用“阶段A–D”描述整张图。旧材料中的A/B只表示Context装配的`directory/detail`两步；项目交付
+阶段0–8、单模型审批Workflow的12个代码阶段和S1–S7也分别是不同维度。
 
 ---
 

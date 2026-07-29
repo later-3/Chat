@@ -387,19 +387,19 @@ def build_continuous_collaboration_workflow(
             intermediate_output_from=[pi_readonly_dispatch, pi_workspace_dispatch],
             checkpoint_storage=checkpoint_storage,
         )
-        # 阶段1（节点1-5）：输入 -> 摘要候选 -> 正式目录 -> Context采用 -> 最新revision。
+        # 学习阶段S1（节点1-5）：输入 -> 摘要候选 -> 正式目录 -> Context采用 -> 最新revision。
         .add_edge(intake, candidates)
         .add_edge(candidates, directory_context)
         .add_edge(directory_context, context_decision)
         .add_edge(context_decision, directory_context_revision)
-        # 阶段2前半（节点6-11）：意图模型调用#1 -> 候选落库 -> 接受 -> Project绑定。
+        # 学习阶段S2前半（节点6-11）：意图模型调用#1 -> 候选落库 -> 接受 -> Project绑定。
         .add_edge(directory_context_revision, intent)
         .add_edge(intent, intent_projection)
         .add_edge(intent_projection, intent_decision)
         .add_edge(intent_decision, intent_acceptance)
         .add_edge(intent_acceptance, project_resolver)
         .add_edge(project_resolver, project_decision)
-        # 阶段2后半（节点12-15）：只有Project绑定确认后，才加载详情Context并选择协议。
+        # 学习阶段S2后半（节点12-15）：只有Project绑定确认后，才加载详情Context并选择协议。
         .add_edge(project_decision, detail_context)
         .add_edge(detail_context, detail_context_decision)
         .add_edge(detail_context_decision, detail_context_revision)
@@ -416,7 +416,7 @@ def build_continuous_collaboration_workflow(
         )
         .add_edge(planner, plan_decision)
         .add_edge(plan_decision, compiler)
-        # 阶段3/4（节点16-24）：场景分支/计划 -> Draft -> 授权 -> RunSpec -> 执行路由。
+        # 学习阶段S3/S4（节点16-24）：场景分支/计划 -> Draft -> 授权 -> RunSpec -> 执行路由。
         .add_edge(compiler, execution_decision)
         .add_edge(execution_decision, run_spec_compiler)
         .add_edge(run_spec_compiler, execution_route)
@@ -440,7 +440,7 @@ def build_continuous_collaboration_workflow(
                 Default(target=responder),
             ],
         )
-        # 阶段5（节点25-31）：pi隔离编辑/只读分支、结果装配和Completion Claim。
+        # 学习阶段S5（节点25-31）：pi隔离编辑/只读分支、结果装配和Completion Claim。
         .add_edge(execution_workspace_prepare, pi_workspace_dispatch)
         .add_edge(pi_workspace_dispatch, pi_workspace_result_assembly)
         .add_edge(pi_workspace_result_assembly, result_claim_prepare)
@@ -449,7 +449,7 @@ def build_continuous_collaboration_workflow(
         .add_edge(pi_readonly_dispatch, pi_readonly_result_assembly)
         .add_edge(pi_readonly_result_assembly, summarizer)
         .add_edge(responder, summarizer)
-        # 阶段6/7（节点32-39）：所有分支汇入答复/摘要，再依次处理Result、Work、Memory，
+        # 学习阶段S6/S7（节点32-39）：所有分支汇入答复/摘要，再依次处理Result、Work、Memory，
         # 最后提交Harness候选、保存TurnSummary并经过Product Message最终门。
         .add_edge(summarizer, result_decision)
         .add_edge(project_catalog, result_decision)

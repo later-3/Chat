@@ -1,4 +1,5 @@
 import { checkedJson } from "../../api-client.js";
+import { authenticatedFetch } from "../../authentication-recovery.js";
 import { API_BASE_URL } from "../../runtime-config.js";
 
 export const EXECUTION_DRAFT_SECTION_ORDER = [
@@ -45,7 +46,9 @@ async function checkedExecutionDraft(response: Response): Promise<ExecutionDraft
 }
 
 export async function getExecutionDraft(draftId: string): Promise<ExecutionDraftView> {
-  return checkedExecutionDraft(await fetch(`${API_BASE_URL}/api/execution-drafts/${draftId}`));
+  return checkedExecutionDraft(
+    await authenticatedFetch(`${API_BASE_URL}/api/execution-drafts/${draftId}`),
+  );
 }
 
 export async function reviseExecutionDraft(
@@ -54,7 +57,7 @@ export async function reviseExecutionDraft(
   payload: Record<ExecutionDraftSectionKey, unknown>,
 ): Promise<ExecutionDraftView> {
   return checkedExecutionDraft(
-    await fetch(`${API_BASE_URL}/api/execution-drafts/${draft.id}`, {
+    await authenticatedFetch(`${API_BASE_URL}/api/execution-drafts/${draft.id}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({

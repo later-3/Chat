@@ -1,4 +1,5 @@
 import { checkedJson } from "../../api-client.js";
+import { authenticatedFetch } from "../../authentication-recovery.js";
 import { API_BASE_URL } from "../../runtime-config.js";
 
 export type HitlMode = "inherit" | "deny" | "require_human" | "conditional" | "auto_continue";
@@ -105,7 +106,7 @@ export interface DurableDecisionRequest {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  return checkedJson<T>(await fetch(`${API_BASE_URL}${path}`, init));
+  return checkedJson<T>(await authenticatedFetch(`${API_BASE_URL}${path}`, init));
 }
 
 export async function loadHitlConfiguration(): Promise<{

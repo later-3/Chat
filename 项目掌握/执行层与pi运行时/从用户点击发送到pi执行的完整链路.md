@@ -1,302 +1,208 @@
-# 从用户点击发送到 pi 执行的完整链路
+# 从用户点击发送到pi执行的完整链路
 
-**归档日期**：2026-07-28
+**归档日期**：2026-07-29
 **分类**：执行层与pi运行时
-**关联源码**：
-- [frontend/src/features/chat/chat-composer.tsx](../../frontend/src/features/chat/chat-composer.tsx)
-- [frontend/src/App.tsx](../../frontend/src/App.tsx)
-- [frontend/src/use-chat-agent.ts](../../frontend/src/use-chat-agent.ts)
-- [backend/app/runtime_execution/endpoint.py](../../backend/app/runtime_execution/endpoint.py)
-- [backend/app/runtime_execution/worker.py](../../backend/app/runtime_execution/worker.py)
-- [backend/app/workflows/runtime.py](../../backend/app/workflows/runtime.py)
-- [backend/app/workflows/pi_agent.py](../../backend/app/workflows/pi_agent.py)
-- [backend/app/pi_gateway.py](../../backend/app/pi_gateway.py)
-- [backend/app/pi_runtime.py](../../backend/app/pi_runtime.py)
+**当前主入口**：`continuous-collaboration` v1.8.0
 
-## 问题
+## 1. 一个具体场景
 
-当用户在 Composer 输入内容并点击发送，完整的工作流是怎样的？基于代码事实分析，从前端到后端，把从用户点击发送到最终交给 pi 的完整链路梳理出来。
+你在Chat网页输入：
 
-## 回答
+> 找出项目掌握文档中的旧Workflow口径，先给我执行草稿，批准后在隔离Workspace修改并运行检查。
 
-完整链路共 9 层，从前端表单提交到 pi 子进程启动：
+当前普通发送区不会让你选择`governed-pi-agent`辅助Definition。它只选择可发送的主Workflow
+`continuous-collaboration`。主图先完成S1–S3理解，再在S4把已授权RunSpec路由到`pi_workspace`，S5的
+`PiWorkspaceDispatchExecutor`才启动pi。
 
-### 第 1 层：前端 Composer 表单提交
+## 2. 全链一句话
 
-**文件**：[chat-composer.tsx#L59](../../frontend/src/features/chat/chat-composer.tsx#L59)
+```text
+React提交
+-> AG-UI POST主Workflow端点
+-> Product Run + Runtime Job
+-> Execution Worker领取
+-> ProductAwareWorkflow启动39节点MAF图
+-> S1–S3理解和规划
+-> S4 ExecutionDraft审批/RunSpec/执行路由
+-> S5 pi dispatch
+-> PiRuntimeManager
+-> PiExecution启动Node子进程
+-> JSONL-RPC + Provider/Tool治理
+-> Evidence/S6/S7提交
+-> Event Journal/SSE
+-> React渲染
+```
 
-用户在 `<textarea>` 输入内容，点击发送按钮（或按 Enter）。表单触发 `onSubmit`：
+## 3. 先认识6个“运行”
+
+| 名称 | 人话解释 |
+|---|---|
+| 浏览器发送动作 | 一次UI事件，不是产品运行事实 |
+| AG-UI HTTP/SSE | 一次请求与实时订阅，断线不应取消业务运行 |
+| Product Run | 这次发送的长期业务状态 |
+| Runtime Job/Lease | Worker可领取、续租和接管的执行任务 |
+| MAF Workflow Run | 39节点图的一次运行语义 |
+| pi Execution | S5内部按RunSpec启动的一次编码Agent子活动 |
+
+它们的ID需要显式关联，不能因为都叫`run`就合成一个对象。
+
+## 4. 12步真实时间线
+
+| # | 代码入口 | 拿到什么 | 做什么 | 输出/可见变化 |
+|---:|---|---|---|---|
+| 1 | `App.tsx::submit` | 输入框text、当前Session、主Workflow Definition | 清空草稿，打开Workflow工作台，调用`send` | 页面进入running |
+| 2 | `use-chat-agent.ts::send` | text、workflow id/version/endpoint | 给`HttpAgent`加User Message并调用`runAgent` | 发AG-UI JSON |
+| 3 | `runtime_execution/endpoint.py::durable_agent_endpoint` | `AGUIRequest` | `prepare_agui_run`接纳Product Run，再入队Runtime Job | 立即建立SSE，不在HTTP进程跑图 |
+| 4 | `runtime_execution/worker.py::run_once/_execute_claim` | 可领取Job | 领取Lease，从Registry取对应Runner | 事件写Journal |
+| 5 | `workflows/runtime.py::ProductAwareWorkflow.run` | Product Run关联和AG-UI input | 建立图外产品生命周期，启动MAF图 | Checkpoint/Trace开始 |
+| 6 | S1–S3主Workflow节点 | Message、Context、Intent、Plan | 形成已接受目标和可选Plan | UI可能出现Context/Intent/Plan卡 |
+| 7 | `ExecutionDraftCompilerExecutor` | 目标、Context、Plan、能力、验证 | 编译可编辑Draft | UI显示执行合同 |
+| 8 | `execution_authorization`→`RunSpecCompilerExecutor` | 当前Draft revision/hash和决定 | 消费一次性Grant，编译不可变RunSpec | 获准执行版本确定 |
+| 9 | `ExecutionRouteExecutor` | RunSpec | 选择`answer_only/pi_readonly/pi_workspace` | 只有后两者进入pi |
+| 10 | `PiReadonlyDispatchExecutor`或`PiWorkspaceDispatchExecutor` | RunSpec、Snapshot、Tool配置 | 调用`PiRuntimeManager.start` | 创建ToolExecution/pi execution |
+| 11 | `PiExecution.start` | 已治理任务和安全运行快照 | `asyncio.create_subprocess_exec`启动Node+pi CLI RPC模式 | pi进程出现，stdin/stdout传JSONL |
+| 12 | Provider/Tool Gate→S5–S7 | pi请求、Tool结果、Evidence、候选 | 逐次审批/执行/对账，最终幂等提交产品事实 | Journal→SSE→React终态 |
+
+## 5. 前端到底发送了什么
+
+`App.tsx::submit`使用当前`selectedWorkflow`。当前目录只有主Workflow是`selectable=True`，因此普通用户链是：
 
 ```tsx
-<form className="composer-stack" onSubmit={onSubmit}>
+void send(text, control, {
+  endpointUrl: workflowEndpointUrl(selectedWorkflow.endpoint),
+  workflowId: selectedWorkflow.id,
+  workflowVersion: selectedWorkflow.version,
+});
 ```
 
-Enter 键触发（[conversation-pane.tsx#L289](../../frontend/src/features/chat/conversation-pane.tsx#L289)）：
-```tsx
-onKeyDown={(event) => {
-  if (event.key === "Enter" && !event.shiftKey) {
-    event.preventDefault();
-    onSubmit();
-  }
-}}
+`use-chat-agent.ts::send`把这些信息放进AG-UI运行请求。浏览器提交的是协议DTO和选择，不拥有Product Run、
+Approval或RunSpec；后端会重新校验Definition和访问范围。
+
+## 6. 为什么HTTP端点不直接执行39节点
+
+```mermaid
+sequenceDiagram
+    participant UI as React/AG-UI Client
+    participant API as FastAPI端点
+    participant DB as Product/Runtime Store
+    participant WK as Execution Worker
+    participant WF as ProductAwareWorkflow
+    UI->>API: POST AGUIRequest
+    API->>DB: 创建/复用Product Run和Runtime Job
+    API-->>UI: SSE订阅
+    WK->>DB: claim Job + Lease
+    WK->>WF: run(input)
+    WF->>DB: Journal/Checkpoint/Product事实
+    DB-->>API: after_cursor事件
+    API-->>UI: SSE事件
 ```
 
-### 第 2 层：App.tsx 的 submit 函数
+模型/Tool可能运行几分钟。若HTTP进程直接拥有执行，浏览器断线或API重启就会让运行真相消失。Job、Lease、
+Journal把“接纳”“执行”“订阅”分开，允许重连和Worker接管。
 
-**文件**：[App.tsx#L436](../../frontend/src/App.tsx#L436)（`const submit`）
+## 7. 主Workflow怎样决定使用pi
 
-`onSubmit` 指向 `submit`：
+节点24只读取已授权RunSpec：
 
-```tsx
-const submit = () => {
-  if (!draft.trim() || status !== "idle" || !activeSession || networkStatus === "offline") return;
-  const text = draft;
-  setDraft("");
-  // ...处理 retry 逻辑...
-  openWorkbench("workflow");  // 打开右侧工作台
-  void send(text, control, {
-    endpointUrl: workflowEndpointUrl(selectedWorkflow.endpoint),
-    workflowId: selectedWorkflow.id,
-    workflowVersion: selectedWorkflow.version,
-  });
-};
+```mermaid
+flowchart LR
+    D["ExecutionDraft"] --> A{"节点22授权当前Hash"}
+    A --> R["节点23不可变RunSpec"]
+    R --> K{"节点24 execution_kind"}
+    K -- answer_only --> AN["节点32 response_agent"]
+    K -- pi_readonly --> PR["节点30 pi只读dispatch"]
+    K -- pi_workspace --> PW["节点25准备Workspace→节点26 pi写入dispatch"]
 ```
 
-关键点：根据用户选择的 **Workflow** 决定发送到哪个后端端点。如果选的是 `governed-pi-agent`，endpoint 就是 `/api/workflows/governed-pi-agent/run`。
+路由不再重读用户原话，也不能把只读授权升级成可写。`governed-pi-agent`仍存在于6个Workflow目录中，
+用于独立配置/测试/演示3节点pi图；它不是当前普通发送链的选择入口。
 
-### 第 3 层：useChatAgent 的 send 函数 — AG-UI HttpAgent
+## 8. pi子进程怎样启动
 
-**文件**：[use-chat-agent.ts#L239](../../frontend/src/use-chat-agent.ts#L239)（`const send = useCallback`）
-
-```tsx
-const send = useCallback(async (content, control?, workflow?) => {
-  const text = content.trim();
-  if (!text || agent.isRunning || pendingReview) return;
-
-  const messageId = createClientId();
-  const runId = createClientId();
-  
-  if (workflow) agent.url = workflow.endpointUrl;  // 动态切换 AG-UI 端点
-  agent.addMessage({ id: messageId, role: "user", content: text });
-  setMessages(cloneMessages(agent.messages));
-  setStatus("running");
-
-  await agent.runAgent({
-    runId,
-    forwardedProps: {
-      ...(control ? sessionControlForwardedProps(control) : {}),
-      ...(workflow ? {
-        workflow: { id: workflow.workflowId, version: workflow.workflowVersion },
-      } : {}),
-    },
-  });
-}, [agent, pendingReview]);
+```text
+PiReadonlyDispatchExecutor / PiWorkspaceDispatchExecutor
+-> PiRuntimeManager.start(task, config, tool_execution_id, ...)
+-> 创建PiExecution并登记到_executions
+-> PiExecution.start()
+-> asyncio.create_subprocess_exec(
+     node,
+     --enable-source-maps,
+     pi dist/cli.js,
+     --mode rpc,
+     --provider chat-governed,
+     ...
+   )
 ```
 
-关键事实：
-- `agent` 是 `@ag-ui/client` 的 `HttpAgent` 实例
-- `agent.url` 被设置为选中 Workflow 的后端端点
-- `agent.runAgent()` 向该端点发送 HTTP POST，body 是 AG-UI 协议格式的 JSON
+真实参数还包含受控Session、扩展、离线和禁用自动发现等设置。不要把完整参数、System Prompt、环境变量或
+Provider凭据复制到文档/Trace。
 
-### 第 4 层：后端 AG-UI 端点接收
+## 9. JSONL-RPC不等于授权
 
-**文件**：[endpoint.py#L32](../../backend/app/runtime_execution/endpoint.py#L32)（`add_durable_agui_endpoint`）、[#L52](../../backend/app/runtime_execution/endpoint.py#L52)（`durable_agent_endpoint`）
+pi通过stdin/stdout提出：
 
-`add_durable_agui_endpoint` 在应用启动时为每个 Workflow 注册了一个 POST 端点：
+- 一次Provider请求；
+- 一次`read/grep/find/ls/edit`请求；
+- 最终结果或错误事件。
 
-```python
-@app.post(path)
-async def durable_agent_endpoint(request_body: AGUIRequest) -> StreamingResponse:
-    input_data = request_body.model_dump(mode="json", exclude_none=True)
-    
-    # 1. 创建 Product Run（产品领域事实）
-    accepted = await sessions.prepare_agui_run(input_data)
-    
-    # 2. 入队到 Runtime Job 队列
-    enqueued = await runtime.enqueue(
-        accepted=accepted,
-        endpoint_key=endpoint_key,
-        workflow_definition_id=workflow_definition_id,
-        workflow_version=workflow_version,
-        input_data=input_data,
-    )
-    
-    # 3. 返回 SSE 流，轮询事件给前端
-    async def event_stream():
-        while True:
-            events, job = await runtime.events_after(...)
-            for event in events:
-                yield _sse(payload, sequence=sequence)
-    
-    return StreamingResponse(event_stream(), ...)
-```
+Chat收到请求后仍要创建ModelCallDraft、Decision/Grant/Attempt或ToolExecution/Operation。RPC消息只表示
+“pi想做”，不是“已经获准做”。真正的Provider传输和Tool副作用由Chat Gate控制。
 
-关键事实：
-- `sessions.prepare_agui_run()` — 在 Product DB 创建 Run 记录
-- `runtime.enqueue()` — 创建 Runtime Job，写入队列等待 Worker 领取
-- 端点本身**不执行** Workflow，只返回 SSE 流
+## 10. 可写与只读路径的差异
 
-### 第 5 层：Execution Worker 领取 Job 并执行
+| 项目 | `pi_readonly` | `pi_workspace` |
+|---|---|---|
+| Workspace | 绑定Snapshot只读视图 | 受管detached Git worktree |
+| Tool | read/grep/find/ls | 有界读取+绑定Hash的精确edit |
+| 节点 | 30–31 | 25–29 |
+| Evidence | 只读结果/Trace | diff Artifact、Validation、Completion Claim |
+| 是否提交Git | 否 | 仍不自动commit/push |
 
-**文件**：[worker.py#L111](../../backend/app/runtime_execution/worker.py#L111)（`run_once`）、[#L160](../../backend/app/runtime_execution/worker.py#L160)（`_execute_claim`）
+## 11. 失败和恢复
 
-后台 Worker 循环领取 Job：
+- 浏览器断线：Product Run/Worker继续；重连用Cursor补事件。
+- API进程重启：Job和Journal仍在Store，执行不由SSE连接拥有。
+- Worker失去Lease：旧Worker不能写终态；Reconciler决定接管。
+- pi启动失败：ToolExecution失败关闭，不能返回假成功。
+- Tool请求已派发但响应丢失：进入`outcome_unknown`并先对账，不能盲重试。
+- 等待审批：Decision持久化，MAF Checkpoint保存图位置。
 
-```python
-async def run_once(self) -> bool:
-    claim = await self.runtime.claim_one(worker_id=self.worker_id, lease_seconds=self.lease_seconds)
-    if claim is None:
-        return False
-    await self._execute(claim)
-    return True
+## 12. 推荐断点
 
-async def _execute_claim(self, claim: ClaimedRuntime) -> None:
-    runner = self.registry.require(claim.endpoint_key)  # 从注册表找到 Runner
-    async for event in runner.run(claim.input_data):
-        # 写入事件到 journal，供 SSE 流读取
-        await self.runtime.append_event(claim, payload)
-```
+1. `frontend/src/App.tsx::submit`：`selectedWorkflow.id/version`。
+2. `backend/app/runtime_execution/endpoint.py::durable_agent_endpoint`：`accepted.product_run_id`。
+3. `backend/app/runtime_execution/worker.py::_execute_claim`：Job/Lease/endpoint key。
+4. `backend/app/workflows/runtime.py::ProductAwareWorkflow.run`：Product Run与MAF映射。
+5. `backend/app/execution_dispatch/workflow.py::ExecutionRouteExecutor.handler`：RunSpec execution kind。
+6. `backend/app/pi_gateway.py::PiRuntimeManager.start`：安全task/config和ToolExecution ID。
+7. `backend/app/pi_runtime.py::PiExecution.start`：参数只核对非敏感开关。
+8. Provider/Tool Gate：Decision、Grant、Attempt/Operation关联。
 
-### 第 6 层：ProductAwareWorkflow.run() — 启动 MAF Workflow
+## 13. 亲手验证
 
-**文件**：[runtime.py#L77](../../backend/app/workflows/runtime.py#L77)（`ProductAwareWorkflow`）、[#L111](../../backend/app/workflows/runtime.py#L111)（`run()`）
+1. 用`answer_only`任务证明不会创建pi子进程。
+2. 用只读任务证明走节点30–31，Tool列表无edit。
+3. 用可写任务证明先经过节点22授权，再创建隔离Workspace和pi进程。
+4. 中断浏览器SSE再重连，确认同一Product Run继续而非新建重复Run。
+5. 从一个ToolOperation ID反查pi execution、Product Run、RunSpec和Decision Hash。
 
-```python
-async def run(self, input_data: dict[str, Any]):
-    thread_id = self._thread_id_from_input(input_data)
-    accepted = await self._sessions.prepare_agui_run(input_data)
-    
-    if self._run_ids is not None:
-        self._run_ids[thread_id] = accepted.product_run_id  # 绑定 Product Run ID
-    
-    # 调用 MAF Workflow.run()，产生 AG-UI 事件
-    async for event in super().run(input_data):
-        yield event
-```
+## 14. 掌握验收
 
-### 第 7 层：GovernedPiToolExecutor.start() — MAF Workflow 入口
-
-**文件**：[pi_agent.py#L130](../../backend/app/workflows/pi_agent.py#L130)（`start` handler）
-
-pi Workflow 只有一个 Executor：`GovernedPiToolExecutor`。
-
-```python
-@handler(input=list)
-async def start(self, messages, ctx):
-    normalized = normalize_agui_messages_for_provider(messages)
-    self._origin_prompt = _latest_user_text(normalized)  # 提取最新用户消息
-    
-    active_run = await self._sessions.active_run(self._thread_id)
-    self._execution_id = await self._tools.start_execution(...)
-    
-    # 关键：调用 pi_tool.invoke() 启动 pi
-    self._execution = await self._pi_tool.invoke(
-        arguments={"task": self._origin_prompt},
-        skip_parsing=True,
-    )
-    await self._drive(ctx)  # 进入边界驱动循环
-```
-
-### 第 8 层：PiRuntimeManager.start() — 注册并启动 pi 进程
-
-**文件**：[pi_gateway.py#L70](../../backend/app/pi_gateway.py#L70)（`PiRuntimeManager.start`）
-
-```python
-async def start(self, task, config, ...) -> PiExecution:
-    provider = self.catalog.require_selection(config.provider_id, config.model)
-    token = secrets.token_urlsafe(32)  # 生成认证 token
-    
-    execution = PiExecution(token=token, task=clean_task, config=config, ...)
-    self._executions[token] = execution  # 注册到进程管理器
-    
-    await execution.start()  # 启动子进程
-    return execution
-```
-
-### 第 9 层：PiExecution.start() — 真正启动 pi 子进程
-
-**文件**：[pi_runtime.py#L508](../../backend/app/pi_runtime.py#L508)（`PiExecution.start`，子进程启动在 [#L629](../../backend/app/pi_runtime.py#L629)）
-
-```python
-async def start(self) -> None:
-    # 1. 准备临时目录，写入 models.json 和扩展脚本
-    self._temp_directory = tempfile.TemporaryDirectory(prefix="chat-pi-")
-    
-    # 2. 启动子进程
-    self.process = await asyncio.create_subprocess_exec(
-        str(self.runtime.node_path),      # Node.js
-        str(self.runtime.cli_path),       # pi CLI
-        "--mode", "rpc",
-        "--provider", "chat-governed",
-        "--model", self.config.model,
-        ...
-    )
-    
-    # 3. 启动读取任务
-    self._reader_task = asyncio.create_task(self._read_stdout())
-    self._stderr_task = asyncio.create_task(self._read_stderr())
-    
-    # 4. 发送初始 RPC 命令
-    await self._command("set_auto_retry", {"enabled": False})
-    await self._command("prompt", {"message": self.task})  # 把用户任务发给 pi
-```
-
-### 完整调用链总结
-
-```
-用户点击发送
-    ↓
-[前端] ChatComposer form onSubmit
-    ↓
-[前端] App.tsx submit()
-    ↓
-[前端] useChatAgent.send() → agent.runAgent()
-    ↓ HTTP POST to /api/workflows/governed-pi-agent/run
-[后端] durable_agent_endpoint() — AG-UI 端点
-    ↓
-[后端] sessions.prepare_agui_run() — 创建 Product Run
-    ↓
-[后端] runtime.enqueue() — 创建 Runtime Job
-    ↓
-[后端] ExecutionWorker.run_once() — Worker 领取 Job
-    ↓
-[后端] ProductAwareWorkflow.run() — 启动 MAF Workflow
-    ↓
-[后端] GovernedPiToolExecutor.start() — MAF Executor 入口
-    ↓
-[后端] _pi_tool.invoke() → _start_pi() → manager.start()
-    ↓
-[后端] PiRuntimeManager.start() — 注册 PiExecution
-    ↓
-[后端] PiExecution.start()
-    ↓
-[后端] asyncio.create_subprocess_exec(node, pi-cli, --mode rpc, ...)
-    ↓
-pi 子进程启动，通过 JSONL-RPC 接收任务
-```
+1. 为什么当前普通链不从`governed-pi-agent`端点开始？
+2. Product Run、Runtime Job、MAF Run和pi Execution各是谁？
+3. HTTP端点为什么只接纳和订阅，不跑完整Workflow？
+4. 节点24为什么只能读RunSpec？
+5. pi提出Tool请求后，Chat还要做哪几层治理？
 
 ## 关键文件
 
 | 文件 | 职责 |
-|------|------|
-| [chat-composer.tsx](../../frontend/src/features/chat/chat-composer.tsx) | Composer UI 组件 |
-| [App.tsx](../../frontend/src/App.tsx) | submit 编排，选择 Workflow 和端点 |
-| [use-chat-agent.ts](../../frontend/src/use-chat-agent.ts) | AG-UI HttpAgent，send/approve/revise |
-| [runtime-config.ts](../../frontend/src/runtime-config.ts) | AG_UI_URL 解析 |
-| [workflow-api.ts](../../frontend/src/features/workflow/workflow-api.ts) | workflowEndpointUrl 构造 |
-| [runtime_execution/endpoint.py](../../backend/app/runtime_execution/endpoint.py) | AG-UI 端点注册，SSE 流 |
-| [runtime_execution/worker.py](../../backend/app/runtime_execution/worker.py) | Execution Worker，Job 领取和执行 |
-| [runtime_execution/service.py](../../backend/app/runtime_execution/service.py) | Runtime Job 队列、Lease、事件日志 |
-| [product_sessions/service.py](../../backend/app/product_sessions/service.py) | prepare_agui_run，Product Run 创建 |
-| [workflows/runtime.py](../../backend/app/workflows/runtime.py) | ProductAwareWorkflow，MAF Workflow 包装 |
-| [workflows/pi_agent.py](../../backend/app/workflows/pi_agent.py) | GovernedPiToolExecutor，MAF Workflow 定义 |
-| [workflows/catalog.py](../../backend/app/workflows/catalog.py) | Workflow 定义注册（endpoint、节点） |
-| [composition.py](../../backend/app/composition.py) | 应用组装，注册 pi Workflow 端点 |
-| [pi_gateway.py](../../backend/app/pi_gateway.py) | PiRuntimeManager，进程管理 + Provider 网关 |
-| [pi_runtime.py](../../backend/app/pi_runtime.py) | PiExecution，子进程启动和 JSONL-RPC 通信 |
-
-## 补充记录
-
-### 2026-07-28：刷新代码路径为可点击链接并校正行号
-
-把全部文件引用改为相对路径链接（`../../frontend/...`、`../../backend/...`），IDE 中可直接点击跳转。逐项 grep 实测后校正了 2 处漂移：`App.tsx` 的 `submit` 现在在 L436（原文 L398-420），`use-chat-agent.ts` 的 `send` 现在在 L239（原文 L222-262）；其余锚点仍准确。行号基于 2026-07-28 工作区，后续漂移时按符号名搜索定位。未改动任何说明文字。
+|---|---|
+| `frontend/src/App.tsx` | Composer提交和主Workflow选择 |
+| `frontend/src/use-chat-agent.ts` | AG-UI HttpAgent消息与运行 |
+| `backend/app/runtime_execution/endpoint.py` | Product Run接纳、Job入队、SSE Cursor订阅 |
+| `backend/app/runtime_execution/worker.py` | Job领取、Lease和Runner执行 |
+| `backend/app/workflows/runtime.py` | ProductAwareWorkflow与图外产品生命周期 |
+| `backend/app/execution_dispatch/workflow.py` | S4执行路由与S5 pi dispatch |
+| `backend/app/pi_gateway.py` | PiRuntimeManager |
+| `backend/app/pi_runtime.py` | PiExecution子进程和JSONL-RPC |

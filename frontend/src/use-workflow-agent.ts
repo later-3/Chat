@@ -18,6 +18,7 @@ import { HttpAgent } from "@ag-ui/client";
 import type { Message } from "@ag-ui/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiErrorFromResponse } from "./api-client.js";
+import { authenticatedFetch } from "./authentication-recovery.js";
 import { createClientId } from "./client-id.js";
 import { apiUrl } from "./runtime-config";
 import {
@@ -74,6 +75,7 @@ export function useWorkflowAgent({
         url: workflowEndpointUrl(definition.endpoint),
         threadId: createClientId(),
         description: definition.description,
+        fetch: authenticatedFetch,
       }),
   );
   const [status, setStatus] = useState<WorkflowRunStatus>("idle");
@@ -253,15 +255,18 @@ export function useWorkflowAgent({
       setStatus("saving");
       setError(null);
       try {
-        const response = await fetch(apiUrl(`/api/model-call-drafts/${pendingReview.draft_id}`), {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            expected_hash: pendingReview.binding_hash,
-            provider_id: providerId,
-            provider_request: providerRequest,
-          }),
-        });
+        const response = await authenticatedFetch(
+          apiUrl(`/api/model-call-drafts/${pendingReview.draft_id}`),
+          {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              expected_hash: pendingReview.binding_hash,
+              provider_id: providerId,
+              provider_request: providerRequest,
+            }),
+          },
+        );
         if (!response.ok) {
           throw await apiErrorFromResponse(response, `保存修改失败：HTTP ${response.status}`);
         }

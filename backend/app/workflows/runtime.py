@@ -112,8 +112,9 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
     async def run(self, input_data: dict[str, Any]):
         """驱动一轮AG-UI Run，并把MAF事件投影为Product事实。
 
-        阶段1准备/恢复Product Run与Checkpoint；阶段2流式处理MAF事件、节点Trace和候选文本；
-        阶段3处理中断/失败/成功终态。成功提交Message时，ProductSessionService在同一事务
+        ``run()``内部步骤R1准备/恢复Product Run与Checkpoint；R2流式处理MAF事件、节点Trace
+        和候选文本；R3处理中断/失败/成功终态。这里的R1-R3不是主Workflow学习阶段S1-S7。
+        成功提交Message时，ProductSessionService在同一事务
         物化机器版和人读版双Trace；等待审批时Run保持活动且不提前生成终态报告。
         """
         thread_id = self._thread_id_from_input(input_data)

@@ -1,99 +1,108 @@
 # 项目掌握 — 全局索引
 
-这里不是另一份架构设计或项目状态，而是Later掌握Chat源码的**可执行学习入口**。项目事实仍以
-`PROJECT_CONTEXT.md`、`PROJECT_STATE.md`、源码和测试为准。
+这里是Later掌握Chat源码的学习入口，不是新的事实源。稳定产品定义看`PROJECT_CONTEXT.md`，当前完成状态看
+`PROJECT_STATE.md`，项目路线看`PROJECT_PLAN.md`，具体行为最终以源码和测试为准。
 
-## 从这里开始
+## 推荐学习顺序
 
-| 文档 | 先解决什么 | 掌握级别 |
-|---|---|---|
-| [Chat全盘掌握范围与覆盖审计](./00-从这里开始/全盘掌握范围与覆盖审计.md) | 用11目标模块、27学习单元和当前全仓实现账证明没有只讲阶段A | 全局总账 |
-| [Chat系统总地图与学习方法](./00-从这里开始/Chat系统总地图与学习方法.md) | 区分产品架构、Workflow、代码地图和交付计划；建立一条消息的总链 | L1入口 |
-| [recent_turn_summaries与ContextPackage为什么存在](./Context与回合沉淀/recent_turn_summaries与ContextPackage为什么存在.md) | 用一个具体回合讲清摘要候选、Context Item、版本、Hash与持久化原因 | L1-L2专题 |
-| [第1课：从点击发送到ContextPackage](./调试实战/第1课-从点击发送到ContextPackage.md) | 用断点、只读SQL和Trace亲眼验证前端到节点3 | L2实验 |
+1. [全盘掌握范围与覆盖审计](./00-从这里开始/全盘掌握范围与覆盖审计.md)：先知道“全盘”包含什么。
+2. [Chat系统总地图与学习方法](./00-从这里开始/Chat系统总地图与学习方法.md)：建立一次点击的全链心智模型。
+3. [Chat总体架构与一次点击的七层链路](./架构与模块/Chat总体架构与一次点击的七层链路.md)：区分UI、协议、应用、领域、Runtime、Store和观测。
+4. [核心对象词典](./架构与模块/核心对象词典-谁创建谁保存谁消费.md)：先认清对象和所有者。
+5. [11个产品模块](./架构与模块/11个产品模块的职责与代码落点.md)：理解完整目标架构与当前落点。
+6. [持续协作主Workflow总览](./Workflow架构与ProductAwareWorkflow/持续协作主Workflow的39节点设计.md)：再读39节点和8条路径。
+7. 按S1–S7逐阶段读代码，最后做[第1课调试实验](./调试实战/第1课-从点击发送到ContextPackage.md)。
 
-先读“全盘掌握范围”，确认完整边界；再完成总地图、Context样本和第1课。之后按M00-M26逐单元推进，
-不要从项目阶段清单开始背系统。
+不要从“阶段A”“节点3”开始背。先知道对象为什么存在，再看它在节点里怎样创建、保存和消费。
 
 ## 掌握标准
 
-每个主题都按3级验收：
+1. **L1能讲懂**：用自己的话解释对象、边界和设计原因。
+2. **L2能定位**：给一个Product Run ID，能在UI、源码、Product Store、Checkpoint和Trace找到同一事实。
+3. **L3能安全修改**：能预测Schema、版本/Hash、恢复、协议和测试影响，并用质量门验证。
 
-1. **L1能讲懂**：用自己的话解释对象、相邻概念和设计原因。
-2. **L2能定位**：给一个Product Run ID，能在界面、源码、Product Store和Trace找到对应事实。
-3. **L3能安全修改**：能预测版本/Hash/恢复/测试影响，完成修改并用质量门验证。
+“读过文档”“知道文件名”“背出节点顺序”都不算掌握。
 
-“读过文档”“知道文件名”或“背出节点顺序”都不算掌握。
+## 口径总账
 
-## 全项目学习覆盖
+| 名称 | 当前数量 | 来源 |
+|---|---:|---|
+| 项目交付阶段 | 9个（0–8） | `PROJECT_PLAN.md` |
+| 主Workflow学习阶段 | 7个（S1–S7） | `backend/app/continuous_workflow_learning.py` |
+| 主Workflow节点/边 | 39/43 | `backend/app/workflows/catalog.py` |
+| 典型主Workflow路径 | 8条 | `continuous_chat_factory.py`两个Switch |
+| Context装配步骤 | 2个（directory/detail） | Context Executor |
+| 单模型审批代码阶段 | 12个 | 仅`chat-model-call-approval` |
+| 已注册Workflow | 6个 | `WORKFLOW_CATALOG` |
+| 目标产品模块 | 11个 | 已批准总体架构 |
+| 学习单元 | 27个（M00–M26） | `coverage-manifest.json` |
 
-完整覆盖不再由一张容易漏项的手写概览表承担：
+运行`.venv/bin/python scripts/check-project-mastery.py`会用代码反向核对这些事实。
 
-1. 人读总账见[Chat全盘掌握范围与覆盖审计](./00-从这里开始/全盘掌握范围与覆盖审计.md)。
-2. 机器映射见[`coverage-manifest.json`](./coverage-manifest.json)。
-3. 运行`.venv/bin/python scripts/check-project-mastery.py`检查目标模块、源码面、Workflow和节点是否漏项。
+## 00—从这里开始
 
-当前是27个学习单元（M00-M26）。后续Agent必须优先补其中明确标为“待补”的单元，并按
-[本目录协作规则](./AGENTS.md)提供具体对象、断点、查询和掌握验收，不能继续只追加节点摘要。
+| 文档 | 解决的问题 |
+|---|---|
+| [全盘掌握范围与覆盖审计](./00-从这里开始/全盘掌握范围与覆盖审计.md) | 11模块、27学习单元、源码面、未实现能力有没有漏 |
+| [Chat系统总地图与学习方法](./00-从这里开始/Chat系统总地图与学习方法.md) | 产品架构、Workflow、代码地图、项目计划怎样区分 |
 
-## 分类目录
+## 架构与模块
 
-### 00-从这里开始
+| 文档 | 解决的问题 |
+|---|---|
+| [Chat总体架构与一次点击的七层链路](./架构与模块/Chat总体架构与一次点击的七层链路.md) | 一次点击怎样跨越7层，每层拥有何种责任 |
+| [11个产品模块的职责与代码落点](./架构与模块/11个产品模块的职责与代码落点.md) | 完整产品模块、状态所有者、当前实现/未实现边界 |
+| [核心对象词典](./架构与模块/核心对象词典-谁创建谁保存谁消费.md) | View、DTO、Envelope、领域对象、Runtime对象的生命周期 |
+| [进程、协议与Store为什么必须分开](./架构与模块/进程协议与Store为什么必须分开.md) | FastAPI/Worker/pi/浏览器怎样通信，各类状态存在哪里 |
 
-本分类建立全局心智模型、学习顺序和掌握标准。
+## Workflow架构与ProductAwareWorkflow
 
-| 文档 | 问题摘要 | 归档日期 |
-|---|---|---|
-| [Chat全盘掌握范围与覆盖审计](./00-从这里开始/全盘掌握范围与覆盖审计.md) | 用目标能力账、当前实现账、学习单元账和缺口账定义全盘范围 | 2026-07-29 |
-| [Chat系统总地图与学习方法](./00-从这里开始/Chat系统总地图与学习方法.md) | 以一条Product Run为标本掌握产品、运行时、协议、存储和代码 | 2026-07-29 |
+| 文档 | 解决的问题 |
+|---|---|
+| [持续协作主Workflow的39节点设计](./Workflow架构与ProductAwareWorkflow/持续协作主Workflow的39节点设计.md) | v1.8.0、39节点、43边、7学习阶段、8路径与HITL总账 |
+| [S1：输入接纳与目录级上下文](./Workflow架构与ProductAwareWorkflow/学习阶段S1-输入接纳与目录级上下文.md) | Message、TurnSummary候选和directory Context怎样形成 |
+| [S2：意图、Project绑定与详情上下文](./Workflow架构与ProductAwareWorkflow/学习阶段S2-意图Project绑定与详情上下文.md) | Intent Set、权威绑定、detail Context和协议怎样形成 |
+| [S3：场景路由与可选规划](./Workflow架构与ProductAwareWorkflow/学习阶段S3-场景路由与可选规划.md) | 4路场景Switch、澄清和Plan治理 |
+| [S4：执行草稿、授权与运行路由](./Workflow架构与ProductAwareWorkflow/学习阶段S4-执行草稿授权与运行路由.md) | ExecutionDraft、Hash、Grant、RunSpec和3路执行Switch |
+| [S5：pi执行、Workspace与Evidence](./Workflow架构与ProductAwareWorkflow/学习阶段S5-pi执行Workspace与Evidence.md) | pi只读/隔离编辑、Tool账本、Artifact和Claim |
+| [S6：响应、摘要与提交决定](./Workflow架构与ProductAwareWorkflow/学习阶段S6-响应摘要与提交决定.md) | Result、Work、Memory为何分别决定 |
+| [S7：产品事实写入与本轮终态](./Workflow架构与ProductAwareWorkflow/学习阶段S7-产品事实写入与本轮终态.md) | 幂等提交、TurnSummary、Finalization与双Trace |
+| [ProductAwareWorkflow与全部Workflow](./Workflow架构与ProductAwareWorkflow/ProductAwareWorkflow设计与全部Workflow的关系.md) | 图外Product Run生命周期、6个Workflow和辅助图边界 |
 
-### Context与回合沉淀
+## Context与回合沉淀
 
-本分类解释完整Message、派生摘要、本轮Context、长期Memory和回合写回之间的边界。
+| 文档 | 解决的问题 |
+|---|---|
+| [recent_turn_summaries与ContextPackage为什么存在](./Context与回合沉淀/recent_turn_summaries与ContextPackage为什么存在.md) | 从第一性原理理解摘要、Context Item、revision、Hash和持久化 |
 
-| 文档 | 问题摘要 | 归档日期 |
-|---|---|---|
-| [recent_turn_summaries与ContextPackage为什么存在](./Context与回合沉淀/recent_turn_summaries与ContextPackage为什么存在.md) | 从第一性原理解释节点1-5的候选、持久化、revision与恢复 | 2026-07-29 |
+## Session与状态持久化
 
-### 调试实战
+| 文档 | 解决的问题 |
+|---|---|
+| [前端会话面板的数据来源与保存形式](./Session与状态持久化/前端会话面板的数据来源与保存形式.md) | Product Session/Message与MAF Session/Checkpoint为什么分开 |
 
-本分类不重复概念说明，而是让用户通过断点、数据库和Trace验证一条实际链路。
+## 执行层与pi运行时
 
-| 文档 | 实验目标 | 归档日期 |
-|---|---|---|
-| [第1课：从点击发送到ContextPackage](./调试实战/第1课-从点击发送到ContextPackage.md) | 命中8组关键断点，核对TurnSummary和ContextPackage的运行/持久状态 | 2026-07-29 |
-| [Chat与pi的两种调试模式](./调试实战/Chat与pi的两种调试模式.md) | 分别运行“只调试Chat但正常使用pi”和“双窗口联合调试Chat+pi”，验证Inspector与产品审批的边界 | 2026-07-29 |
+| 文档 | 解决的问题 |
+|---|---|
+| [从用户点击发送到pi执行的完整链路](./执行层与pi运行时/从用户点击发送到pi执行的完整链路.md) | 主Workflow怎样从S4路由到S5并启动pi |
+| [pi子进程在哪里启动](./执行层与pi运行时/pi子进程在哪里启动.md) | `PiRuntimeManager`、`PiExecution`和Node子进程入口 |
 
-### 执行层与pi运行时
+## Trace与可观测性
 
-本分类覆盖 pi 编码 Agent 的启动、通信、治理和运行时管理相关问题。
+| 文档 | 解决的问题 |
+|---|---|
+| [每轮双Trace如何保存、分析与可视化](./Trace与可观测性/每轮双Trace如何保存、分析与可视化.md) | Product过程事实、machine/human报告、Runtime日志怎样区分 |
 
-| 文档 | 问题摘要 | 归档日期 |
-|------|----------|----------|
-| [pi子进程在哪里启动](./执行层与pi运行时/pi子进程在哪里启动.md) | 找到调用执行层的地方，即 pi 子进程的启动入口和调用链 | 2026-07-28 |
-| [从用户点击发送到pi执行的完整链路](./执行层与pi运行时/从用户点击发送到pi执行的完整链路.md) | 前端点击发送到最终交给 pi 的完整前后端链路梳理 | 2026-07-28 |
+## 调试实战
 
-### Workflow架构与ProductAwareWorkflow
+| 文档 | 实验目标 |
+|---|---|
+| [第1课：从点击发送到ContextPackage](./调试实战/第1课-从点击发送到ContextPackage.md) | 用断点、只读SQL和Trace亲眼验证S1节点1–5 |
+| [Chat与pi的两种调试模式](./调试实战/Chat与pi的两种调试模式.md) | 只调Chat仍使用pi，以及双窗口联合调试pi源码 |
 
-本分类覆盖 ProductAwareWorkflow 设计、Workflow 定义注册、前端设计者视图和 MAF 节点执行链相关问题。
+## 机器覆盖与补文档顺序
 
-| 文档 | 问题摘要 | 归档日期 |
-|------|----------|----------|
-| [ProductAwareWorkflow设计与全部Workflow的关系](./Workflow架构与ProductAwareWorkflow/ProductAwareWorkflow设计与全部Workflow的关系.md) | 展开 ProductAwareWorkflow.run() 设计，澄清 39 节点持续协作 Workflow、设计者视图和系统执行链的关系 | 2026-07-28 |
-| [持续协作主Workflow的39节点设计](./Workflow架构与ProductAwareWorkflow/持续协作主Workflow的39节点设计.md) | continuous-collaboration v1.8.0 的整体设计、39 个节点逐一说明和代码组织方式 | 2026-07-28 |
-
-### Session与状态持久化
-
-本分类覆盖 Product Session、消息、Run 等产品事实的存储形式，以及它们与 MAF 运行时状态（Checkpoint）的边界问题。
-
-| 文档 | 问题摘要 | 归档日期 |
-|------|----------|----------|
-| [前端会话面板的数据来源与保存形式](./Session与状态持久化/前端会话面板的数据来源与保存形式.md) | 前端面板展示的会话是否由 MAF 保存、以什么形式保存；Product Session 表结构与 MAF Checkpoint 的分离 | 2026-07-28 |
-
-### Trace与可观测性
-
-本分类区分Product过程事实、终态双报告、Runtime诊断时间线和进程JSONL日志。
-
-| 文档 | 问题摘要 | 归档日期 |
-|------|----------|----------|
-| [每轮双Trace如何保存、分析与可视化](./Trace与可观测性/每轮双Trace如何保存、分析与可视化.md) | 每轮机器版/人读版Trace的生成方式、数据库位置、空值原因、分析顺序和前端可视化 | 2026-07-28 |
+`coverage-manifest.json`维护M00–M26、11模块、后端/前端源码面、6个Workflow、39节点、S1–S7、
+进程角色、协议边界、状态位置和质量/部署面。标记“待补L1/L2”的学习单元仍是后续教材缺口；本轮先把
+全局架构、对象模型和主Workflow全阶段的骨架补齐，没有把“有映射”冒充“已经精通”。

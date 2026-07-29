@@ -32,6 +32,10 @@ http://121.43.113.236/chat/
    不能作为已兑现能力；当前可使用完整响应式 Web。
 5. 进入长期日常使用前仍应迁移到 HTTPS，并实现正式 Product Identity。
 
+Basic Auth没有产品级登录会话。浏览器保存的边缘凭据被清理或失效后，已加载或已缓存的
+PWA/Web App Shell仍可能显示，但REST和AG-UI请求会统一收到带`WWW-Authenticate`的`401`。
+前端会把它显示为“登录状态已失效”，而不是普通断网或后端故障。
+
 ## 3. 运行拓扑
 
 ```mermaid
@@ -55,6 +59,9 @@ flowchart LR
 4. Nginx 完成 Basic Auth 后会清空上游 `Authorization`，边缘口令不会被
    FastAPI 当作产品授权凭证。
 5. AG-UI SSE 关闭 Nginx 响应缓冲，读写超时为 21 分钟。
+6. `/chat/auth-refresh.html`使用相同Basic Auth保护并返回`Cache-Control: no-store`；
+   它被明确排除在PWA预缓存和Navigation Fallback之外，确保顶层文档导航可以重新触发
+   浏览器认证挑战。认证成功后只返回`/chat/`，不会自动重放Provider、Tool或写请求。
 
 ## 4. 为什么当前只运行两个本地守护进程
 
@@ -125,6 +132,7 @@ scripts/verify-mobile-relay.sh
 2. 本地和云端回环 readiness 都成功。
 3. 公网未提供口令时返回 `401`。
 4. 提供口令后 `/chat/` 和 `/chat-api/api/ready` 都成功。
+5. `/chat/auth-refresh.html`未提供口令时返回`401`，认证后返回`Cache-Control: no-store`。
 
 ### 5.4 停止本地常驻链路
 
@@ -163,6 +171,7 @@ scripts/verify-mobile-relay.sh
 | 本地 Mac 关机或断网 | 云端静态页可打开，API 不可用；前端禁止离线发送 | Mac 和网络恢复后 Relay 自动重连 |
 | Web 新版本失败 | Nginx 不应切换到未通过语法检查的配置 | 使用 `/var/backups/chat/<release>/` 和前一不可变 Release 回滚 |
 | Provider 失败或结果未知 | 继续使用现有 Product Run/Attempt 失败语义 | 不因 Relay 重连自动重发 Provider 请求 |
+| Basic Auth凭据失效 | 已加载/PWA缓存界面显示“登录状态已失效”，REST/AG-UI停止在401 | 用户点击“重新登录”，经不缓存的顶层文档完成认证后返回Chat；不自动重放任何执行 |
 
 Relay 重连只能恢复传输，不会把 Provider 调用、Tool 副作用或 Product 提交冒充
 Exactly-once。实际恢复仍以 Product Run、Runtime Job、Checkpoint 和 Provider Attempt
@@ -182,3 +191,40 @@ Exactly-once。实际恢复仍以 Product Run、Runtime Job、Checkpoint 和 Pro
    Memory 均保持 0。
 8. 原临时`/chat-pwa-http-test/`入口已退役并跳转到正式`/chat/`；旧静态目录、
    Snippet和站点配置保留在云端时间戳备份中。
+
+## 8. 2026-07-29 认证恢复发布证据
+
+1. 本地后端和反向SSH LaunchAgent恢复运行，本地与云端回环Readiness均成功；公网认证后的
+   `/chat-api/api/ready`返回`200`。
+2. 不可变Web Release `20260729T014603Z`已切换到`/opt/chat/current`；同ID云端备份存在，
+   `nginx -t`通过。
+3. 未认证的`/chat/`与`/chat/auth-refresh.html`均返回`401`；认证后的重新登录入口返回`200`
+   且带`Cache-Control: no-store`。
+4. 已部署Service Worker包含认证入口Navigation denylist，预缓存清单不包含
+   `auth-refresh.html`。
+5. 390×844公网Chromium完成认证后打开主页、进入对话，页面宽度与滚动宽度均为390，控制台
+   0错误且没有误显示认证失效卡片。
+6. 前端82项、部署合同5项和认证/冷启动/会话侧栏定向Playwright 5通过1跳过；同步会话侧栏
+   CSS拆为3.5 KiB独立Chunk后，主CSS为149.3 KiB，重新通过150 KiB包体门。
+7. 扩大执行的混合Playwright为17通过、4跳过、3失败；失败项是既有Repository测试数据与手机
+   隐藏说明文案断言，不属于认证恢复或会话侧栏样式路径。本次没有把该混合集误记为全量通过。
+8. 物理手机上“清除已缓存Basic Auth凭据 -> 点击重新登录 -> 浏览器重新挑战”的人工验收仍待执行；
+   自动化已分别证明应用内401恢复、文档级认证入口、PWA缓存排除和公网移动布局。
+
+## 9. 2026-07-29 反向SSH中转恢复事件
+
+1. 用户访问`pi.ai4child.asia`时看到Cloudflare 504；直接访问边缘入口看到401。401只表示Basic Auth
+   挑战仍可达，504表示认证后的上游中转超时。
+2. 故障时本地pi-web `127.0.0.1:30141/api/health`与Chat
+   `127.0.0.1:8030/api/ready`均返回200，云端Nginx、Cloudflare和新建SSH连接正常；故障边界在
+   反向SSH。
+3. 两个Relay LaunchAgent曾退出255；旧云端`sshd`会话仍占用`33041/4620`并留下
+   `CLOSE-WAIT`连接，导致launchd重试的新进程持续收到`remote port forwarding failed`。
+4. pi-web在诊断期间由launchd成功建立新会话；Chat只终止`4620`当前精确确认的失效`sshd: root`
+   会话，再重启`com.later.chat.cloud-relay`。没有批量终止SSH，没有重启本地产品服务，也没有重放
+   Provider、Tool或产品写请求。
+5. 恢复后pi-web和Chat本地健康、两个云端回环端口、pi-web认证前401/认证后Nginx与公网200、
+   Chat完整Relay脚本均通过。390×844公网Chromium打开pi-web返回200，标题为`Chat - Pi Web`，
+   无504/401错误页、无横向溢出且控制台0错误。
+6. 当前运行已恢复，但“LaunchAgent已加载”和“远端端口仍监听”不能作为健康证据；长期仍需实现
+   服务端半开SSH会话回收、运行态/PID检查和端到端健康驱动的精确自愈。

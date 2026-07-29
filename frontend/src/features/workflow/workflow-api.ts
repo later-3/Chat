@@ -1,4 +1,5 @@
 import { checkedJson } from "../../api-client.js";
+import { authenticatedFetch } from "../../authentication-recovery.js";
 import { AG_UI_URL, API_BASE_URL } from "../../runtime-config.js";
 
 export type WorkflowNodeStatus =
@@ -333,7 +334,7 @@ export interface RunGovernanceView {
 }
 
 async function request<T>(path: string): Promise<T> {
-  return checkedJson<T>(await fetch(`${API_BASE_URL}${path}`));
+  return checkedJson<T>(await authenticatedFetch(`${API_BASE_URL}${path}`));
 }
 
 export function listWorkflows(): Promise<WorkflowDefinition[]> {

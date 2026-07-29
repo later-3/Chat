@@ -91,7 +91,10 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
         WorkflowNodeDefinition(
             id="harness_directory_context",
             label="读取Product Harness目录",
-            description="阶段A读取正式Project轻量目录并保存候选ContextPackage，不从聊天摘要猜Project事实。",
+            description=(
+                "在Context装配的directory步骤读取正式Project轻量目录并保存候选ContextPackage，"
+                "不从聊天摘要猜Project事实。"
+            ),
             kind="context",
             runtime_type="executor",
         ),
@@ -155,7 +158,7 @@ CONTINUOUS_COLLABORATION_WORKFLOW = WorkflowDefinition(
             id="harness_detail_context",
             label="装配Project工作集",
             description=(
-                "阶段B按已绑定Project加载开放Work、当前Plan、Action、Note、Accepted Memory、"
+                "在Context装配的detail步骤按已绑定Project加载开放Work、当前Plan、Action、Note、Accepted Memory、"
                 "Repository Snapshot与匹配治理规则，并记录采用与排除。"
             ),
             kind="context",

@@ -1,8 +1,10 @@
-# 持续协作工作流 · 阶段 A 逐节点解析
+# 持续协作工作流 · 学习阶段S1逐节点解析（历史文件名stage-a）
 
 ## 阶段总览
 
-阶段 A 的职责是**输入接纳与上下文召回**：把用户的原始输入转化为有界的上下文候选，交给后续意图识别节点。
+学习阶段S1的职责是**输入接纳与目录级上下文**：把用户的原始输入转化为有界的上下文候选，交给
+学习阶段S2的意图识别节点。旧版本文档曾把Context的`directory/detail`两个装配步骤称为“阶段A/B”；
+当前统一口径只使用S1–S7，文件名保留`stage-a`仅为避免旧链接失效。
 
 ```
 用户输入 (AG-UI 消息数组)
@@ -50,7 +52,7 @@
 └──────────────────────────────────────────────────────────────┘
     │
     ▼
-  进入阶段 B (意图识别)
+  进入学习阶段S2（意图识别）
 ```
 
 ---
@@ -253,7 +255,7 @@ async def accept(self, messages: list[Any], ctx: WorkflowContext[CollaborationSt
 1. **从 Product Store 读取，不从聊天猜**：Project 是否存在、状态如何，只从权威 Product DB 查询。模型不能编造 Project 事实。
 2. **ContextPackage 是不可变的**：一旦创建，内容不能修改。用户修改会创建新 revision。
 3. **Token 预算硬截断**：`create_context_package` 在持久化时就截断超预算的 item，不是模型看到后再截。
-4. **stage="directory"**：这是阶段 A 的目录级上下文，与阶段 B 的 `stage="detail"` 分开。
+4. **stage="directory"**：这是学习阶段S1的目录级Context步骤，与学习阶段S2中的`stage="detail"`步骤分开。
 
 ### 设计原因
 
@@ -442,7 +444,7 @@ cancel → 停止 Run
 
 ---
 
-## 阶段 A 总结
+## 学习阶段S1总结
 
 ### 数据流
 
@@ -467,10 +469,10 @@ origin_prompt + ≤4条TurnSummary（澄清优先 + 关键词排序）
 context_items/recent_turn_summaries/project_matches 投影为最新revision的采用集合
     │
     ▼
-进入阶段 B（意图识别）
+进入学习阶段S2（意图识别）
 ```
 
-### 阶段 A 的保证
+### 学习阶段S1的保证
 
 1. **用户输入不丢失**：`origin_prompt` 原样传递，不被截断或改写。
 2. **上下文是有界的**：最多 4 条 TurnSummary + Token 预算 1800，不会无界增长。
@@ -479,9 +481,9 @@ context_items/recent_turn_summaries/project_matches 投影为最新revision的�
 5. **状态可恢复**：ContextPackage 持久化在 Product Store，Checkpoint 恢复时从 revision 读取。
 6. **排除是彻底的**：用户排除的内容从运行状态中完全移除，不会残留在后续节点的输入中。
 
-### 阶段 A 不保证的
+### 学习阶段S1不保证的
 
-1. **不识别意图**：意图识别在阶段 B 的节点 6。
-2. **不绑定 Project**：节点 3 只是查询匹配的 Project 候选，正式绑定在阶段 B 的节点 10-11。
-3. **不加载 Project 详情**：阶段 A 只加载轻量目录，详情在阶段 B 的节点 12。
-4. **不发送模型请求**：阶段 A 全部是确定性逻辑，零 Provider 成本。
+1. **不识别意图**：意图识别在学习阶段S2的节点6。
+2. **不绑定 Project**：节点3只是查询匹配的Project候选，正式绑定在学习阶段S2的节点10–11。
+3. **不加载 Project 详情**：学习阶段S1只加载轻量目录，详情在学习阶段S2的节点12。
+4. **不发送模型请求**：学习阶段S1全部是确定性逻辑，零Provider成本。

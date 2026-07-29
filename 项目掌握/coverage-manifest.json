@@ -1,8 +1,8 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "snapshot_date": "2026-07-29",
   "learning_units": [
-    {"id": "M00", "title": "产品问题、目标架构、当前实现与未实现边界", "mastery": "L1入口", "docs": ["项目掌握/00-从这里开始/Chat系统总地图与学习方法.md"]},
+    {"id": "M00", "title": "产品问题、目标架构、当前实现与未实现边界", "mastery": "L1入口", "docs": ["项目掌握/00-从这里开始/Chat系统总地图与学习方法.md", "项目掌握/架构与模块/Chat总体架构与一次点击的七层链路.md", "项目掌握/架构与模块/11个产品模块的职责与代码落点.md", "项目掌握/架构与模块/核心对象词典-谁创建谁保存谁消费.md", "项目掌握/架构与模块/进程协议与Store为什么必须分开.md"]},
     {"id": "M01", "title": "配置、组合根、应用工厂与生命周期", "mastery": "待补L1/L2", "docs": ["docs/adr/0001-application-composition-and-process-entrypoints.md"]},
     {"id": "M02", "title": "React App Shell、Home、移动端、PWA与页面状态", "mastery": "待补L1/L2", "docs": ["docs/ui-ux-visual-baseline.md"]},
     {"id": "M03", "title": "REST适配、DTO、RequestContext、错误与安全边界", "mastery": "待补L1/L2", "docs": ["docs/adr/0002-observability-and-sensitive-data-boundary.md"]},
@@ -13,7 +13,7 @@
     {"id": "M08", "title": "Intent Set、Clarification、协作协议与StepInput", "mastery": "待补L1/L2", "docs": ["docs/intent-and-planning-detailed-design.md", "docs/chat-harness-protocol-context-detailed-design.md"]},
     {"id": "M09", "title": "ExecutionDraft、RunSpec、HITL Policy、Decision、Grant与Approval", "mastery": "待补L1/L2", "docs": ["docs/execution-governance-detailed-design.md"]},
     {"id": "M10", "title": "Agent Profile、Provider、ModelCallDraft、Attempt与精确请求", "mastery": "待补L1/L2", "docs": ["docs/execution-governance-contract.md"]},
-    {"id": "M11", "title": "Interaction协调与持续协作主Workflow的39节点完整闭环", "mastery": "L1，待逐路径L2", "docs": ["项目掌握/Workflow架构与ProductAwareWorkflow/持续协作主Workflow的39节点设计.md"]},
+    {"id": "M11", "title": "Interaction协调与持续协作主Workflow的39节点完整闭环", "mastery": "L1完整，待逐路径L2", "docs": ["项目掌握/Workflow架构与ProductAwareWorkflow/持续协作主Workflow的39节点设计.md", "项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S1-输入接纳与目录级上下文.md", "项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S2-意图Project绑定与详情上下文.md", "项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S3-场景路由与可选规划.md", "项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S4-执行草稿授权与运行路由.md", "项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S5-pi执行Workspace与Evidence.md", "项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S6-响应摘要与提交决定.md", "项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S7-产品事实写入与本轮终态.md"]},
     {"id": "M12", "title": "MAF运行适配、Workflow目录、Checkpoint与5个辅助Workflow", "mastery": "L1，待L2", "docs": ["项目掌握/Workflow架构与ProductAwareWorkflow/ProductAwareWorkflow设计与全部Workflow的关系.md", "docs/maf-position-and-workflow-overview.md"]},
     {"id": "M13", "title": "Product Run/Attempt、Runtime Job、Worker、Lease、Cursor与恢复动作", "mastery": "待补L1/L2", "docs": ["docs/runtime-execution-detailed-design.md", "docs/runtime-recovery-operations.md"]},
     {"id": "M14", "title": "Repository Binding、Snapshot、Context新鲜度与Git事实边界", "mastery": "待补L1/L2", "docs": ["docs/repository-resource-detailed-design.md"]},
@@ -53,6 +53,7 @@
     {"path": "backend/app/collaboration_protocols", "units": ["M08"]},
     {"path": "backend/app/composition.py", "units": ["M01", "M12"]},
     {"path": "backend/app/config.py", "units": ["M01", "M10", "M21"]},
+    {"path": "backend/app/continuous_workflow_learning.py", "units": ["M11", "M18"]},
     {"path": "backend/app/diagnostics_cli.py", "units": ["M18", "M21"]},
     {"path": "backend/app/e2e.py", "units": ["M20"]},
     {"path": "backend/app/evidence", "units": ["M17"]},
@@ -98,6 +99,9 @@
   ],
   "frontend_root_surfaces": [
     {"path": "frontend/src/App.tsx", "units": ["M02", "M04"]},
+    {"path": "frontend/src/authentication-recovery.ts", "units": ["M02", "M03", "M22"]},
+    {"path": "frontend/src/authentication-required.css", "units": ["M02", "M22"]},
+    {"path": "frontend/src/authentication-required.tsx", "units": ["M02", "M22"]},
     {"path": "frontend/src/agent-api.ts", "units": ["M10"]},
     {"path": "frontend/src/agent-page.tsx", "units": ["M10"]},
     {"path": "frontend/src/api-client.ts", "units": ["M03"]},
@@ -140,6 +144,15 @@
     {"id": "governed-agent-handoff", "units": ["M10", "M12"]},
     {"id": "governed-idiom-chain", "units": ["M10", "M12"]},
     {"id": "governed-pi-agent", "units": ["M12", "M15"]}
+  ],
+  "continuous_workflow_learning_stages": [
+    {"id": "S1", "name": "输入接纳与目录级上下文", "nodes": ["input_acceptance", "context_candidates", "harness_directory_context", "context_adoption", "directory_context_revision"], "doc": "项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S1-输入接纳与目录级上下文.md", "units": ["M05", "M07", "M11"]},
+    {"id": "S2", "name": "意图、Project绑定与详情上下文", "nodes": ["intent_agent", "intent_set_projection", "intent_binding", "intent_set_acceptance", "harness_project_resolver", "project_work_binding", "harness_detail_context", "detail_context_adoption", "detail_context_revision", "collaboration_protocol_resolver"], "doc": "项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S2-意图Project绑定与详情上下文.md", "units": ["M06", "M07", "M08", "M09", "M10", "M11", "M14"]},
+    {"id": "S3", "name": "场景路由与可选规划", "nodes": ["scenario_router", "project_catalog_query", "clarification", "planning_agent", "plan_acceptance"], "doc": "项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S3-场景路由与可选规划.md", "units": ["M06", "M08", "M09", "M10", "M11"]},
+    {"id": "S4", "name": "执行草稿、授权与运行路由", "nodes": ["execution_draft_compiler", "execution_authorization", "run_spec_compiler", "execution_route"], "doc": "项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S4-执行草稿授权与运行路由.md", "units": ["M09", "M11", "M15", "M16"]},
+    {"id": "S5", "name": "pi执行、Workspace与Evidence", "nodes": ["execution_workspace_prepare", "pi_workspace_dispatch", "pi_workspace_result_assembly", "result_claim_prepare", "result_claim_decision", "pi_readonly_dispatch", "pi_readonly_result_assembly"], "doc": "项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S5-pi执行Workspace与Evidence.md", "units": ["M09", "M14", "M15", "M16", "M17", "M18"]},
+    {"id": "S6", "name": "响应、摘要与提交决定", "nodes": ["response_agent", "turn_summary_agent", "result_commit", "work_state_commit", "memory_commit"], "doc": "项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S6-响应摘要与提交决定.md", "units": ["M06", "M07", "M09", "M10", "M11", "M17"]},
+    {"id": "S7", "name": "产品事实写入与本轮终态", "nodes": ["harness_candidate_commit", "turn_summary_persist", "result_finalization"], "doc": "项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S7-产品事实写入与本轮终态.md", "units": ["M05", "M06", "M07", "M11", "M13", "M18", "M19"]}
   ],
   "continuous_workflow_nodes": [
     {"id": "input_acceptance", "units": ["M05", "M07"]},

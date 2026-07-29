@@ -46,7 +46,7 @@
 ## 3. 本轮纠正与完成
 
 - [x] 新增[项目经验与反例](./PROJECT_LESSONS.md)，建立每次回复前强制读取规则。
-- [x] 持续记录44个可执行反例；覆盖Product Harness事实不能由Agent从聊天摘要猜测、不得回退系统Python、重大里程碑后必须做产品级工程收敛、禁止用“大文件先跑通、以后再整理”持续制造不可维护代码、不得把外部编码Agent非交互模式冒充受治理工具、撤回首条消息不能继续冒充Session标题、必须区分模型可见输出/Workflow采用/Product提交结果、移动端完整产品视角、协作协议/步骤输入、超级管理员运营看护、pi安装/隔离运行身份、数据库测试独立收集、虚拟环境沙箱路径边界、验证产物收口、同步App Shell样式所有权、Workflow代码可学习性与确定性双Trace，以及跨仓源码调试所有权。
+- [x] 持续记录47个可执行反例；覆盖Product Harness事实不能由Agent从聊天摘要猜测、不得回退系统Python、重大里程碑后必须做产品级工程收敛、禁止用“大文件先跑通、以后再整理”持续制造不可维护代码、不得把外部编码Agent非交互模式冒充受治理工具、撤回首条消息不能继续冒充Session标题、必须区分模型可见输出/Workflow采用/Product提交结果、移动端完整产品视角、协作协议/步骤输入、超级管理员运营看护、pi安装/隔离运行身份、数据库测试独立收集、虚拟环境沙箱路径边界、验证产物收口、同步App Shell样式所有权、Workflow代码可学习性与确定性双Trace、跨仓源码调试所有权、PWA认证失效不能只显示401、LaunchAgent已加载/远端端口监听不能冒充反向SSH端到端健康，以及学习文档的阶段/节点/版本必须由代码事实生成口径。
 - [x] 纠正`AGENTS.md`和`PROJECT_CONTEXT.md`中的产品身份与外部关系。
 - [x] 删除稳定产品上下文里的“第一阶段/后续能力/非上位系统”式范围定义。
 - [x] 在`agent_knowledge/project-studies`新增pi、nanobot架构与模块源码研究，补齐QwenPaw Web/Channel入口拓扑和LibreChat源码模块拓扑、责任与缺口。
@@ -134,12 +134,14 @@
 - [x] 建立生产代码分割回归门：Workflow Run、Harness、ExecutionDraft/HITL相关配置、Agent、Tool和两类审批共8个Feature按真实打开时机加载；Vite manifest验证主入口450.2 KiB、单Feature与CSS预算，原约594 kB单包警告已消除。
 - [x] 补齐关键结构化日志：HITL策略激活、ExecutionDraft/RunSpec、ModelCall注册与Attempt、TurnSummary、Harness命令暂存和两阶段Context只记录关联ID、状态与计数；不记录Prompt、知识正文、Provider Body或隐藏推理。
 - [x] 建立Kimi Code CLI个人Codex Skill与项目运行手册：`0.29.0`匹配Tag源码完成命令、Session、`stream-json`和ACP权限边界核验；当前本机`0.29.1`已复验交互式有界读写和命令审批兼容，但源码差异尚未审计。非交互审查通过显式只读Tool Allowlist，真实回合正确读取项目文件并返回可恢复Session ID。该完成项是开发辅助工具，不表示Chat产品Kimi ACP Adapter或其内部逐次Provider Payload审批已实现。
-- [x] 使用Kimi Code CLI只读审查并完成首轮前端可读性与Workflow工作台交互优化：所有显式可见字号建立11px下限合同；设计者工作台按实际Workflow显示标题，当前保留26个真实节点并支持渐进式详情、收起内容和定位当前节点；371px窄屏显示“返回对话”，关闭后焦点恢复到Chat入口。既有桌面与Pixel 5共7项Playwright通过。
+- [x] 使用Kimi Code CLI只读审查并完成首轮前端可读性与Workflow工作台交互优化：所有显式可见字号建立11px下限合同；该次快照的设计者工作台保留26个真实节点并支持渐进式详情、收起内容和定位当前节点（主Workflow后续已演进到当前39节点）；371px窄屏显示“返回对话”，关闭后焦点恢复到Chat入口。既有桌面与Pixel 5共7项Playwright通过。
 - [x] 修复Session定位与全链路模型审计：侧栏、聊天标题和设置显示`PS-XXXXXXXX`并可复制完整Product Session ID；自动标题绑定来源Message并在撤回后回滚。Provider Attempt持久保存有序发送/接收/解码事件、HTTP与Provider ID、首字节、用量、脱敏元数据、可见输出文本/Hash及采用去向；节点详情可直接查看，进程JSONL日志按Session、Run、Attempt、Workflow与Executor关联，高频只读轮询降为DEBUG。
 - [x] 完成阶段B首个多Intent纵向切片：新增Intent Set/Intent不可变revision、最多4个有序目标、依赖校验、CAS接受和跨Run Clarification；主Workflow升级为v1.4.0/28节点并强制多目标进入组合Plan。多目标中的权威Project目录事实由确定性Product查询先完成，再以只读事实交给Planner/Response，不重复规划不存在的Tool调用。
 - [x] 修复多Intent运行中的3个集成缺陷：内置Agent Profile旧revision精确迁移到新结构且不覆盖用户编辑；新Product Run清除线程级MAF Workflow缓存，避免错误复用旧Checkpoint；Project目录终结分支只在单Intent时生效，多Intent继续进入规划。协作协议保留基础Definition/Hash，同时用可审计`composition_overlay`公开本轮实际启用的Planner策略。
 - [x] 前端“本轮”工作台已区分基础协作方法与本轮有效组合策略：多目标卡片先解释为什么仍需组合Plan，方法卡展示“基础不需要规划/本轮必须形成组合计划”，展开后再看阶段和规则；可读投影直接来自`collaboration_protocol_resolver`的持久StepInputProjection，不从卡片数量猜测运行事实。
 - [x] 完成手机访问HTTP验证阶段：手机主导航可以进入对话、Workflow运行与节点内容、Harness资源和配置中心；全部前端API统一支持同源或`/chat-api`前缀，`/chat/`子路径生产构建、Manifest和图标已验证；Product Session本机草稿按会话隔离，离线可编辑但禁止发送，活动Run网络重连采用有界退避。云服务器Nginx现以Basic Auth保护`/chat/`和`/chat-api/`，反向SSH只把本地`127.0.0.1:8030`送到云端回环`127.0.0.1:4620`，本地后端与Relay由两个LaunchAgent常驻；不可变发布、配置备份、断线与后端退出自动恢复、既有服务回归和390×844真实模型回合均已验证。公网IP纯HTTP仍不能注册标准PWA Service Worker，且Basic Auth不是正式Product Identity；TLS和正式身份认证尚未实现。
+- [x] 2026-07-29修复并发布PWA/Web App Shell在Basic Auth凭据失效后只显示401的问题：20个REST/AG-UI请求点统一经过认证感知Fetch，401显示不可忽略的“重新登录”卡片；`/chat/auth-refresh.html`使用同一Realm、`no-store`并明确排除PWA Precache与Navigation Fallback，顶层文档认证成功后返回Chat，且不自动重放Provider、Tool或写请求。前端82项、部署合同5项、Biome、类型检查、`/chat/`生产PWA构建及认证/冷启动/会话侧栏桌面手机定向Playwright 5通过1跳过；会话侧栏样式按同步组件所有权拆为3.5 KiB独立Chunk，主CSS从152.7 KiB降至149.3 KiB并重新通过150 KiB包体门。两个LaunchAgent已恢复，云端不可变Release `20260729T014603Z`、Nginx配置与时间戳备份完成；公网未认证入口为401，认证后Chat与API为200，认证入口带`Cache-Control: no-store`，已部署Service Worker含认证入口Navigation denylist且未预缓存该文档。390×844公网浏览器确认移动导航和Chat可用、无横向溢出、控制台0错误。扩大执行的混合Playwright另有17通过、4跳过和3个既有Repository数据/手机隐藏文案用例失败，未把它们误记为全量绿灯；本次仍未在物理手机上人工清除Basic Auth凭据验证浏览器原生挑战。
+- [x] 2026-07-29处置pi-web与Chat公网中转故障：用户截图中的401证明Basic Auth边缘仍可达，Cloudflare 504则来自认证后的上游超时。诊断确认本地pi-web `30141`和Chat `8030`均返回200，云端Nginx/Cloudflare及新SSH连接正常；两条Relay曾退出255，旧云端`sshd`会话仍占用`33041/4620`并产生`CLOSE-WAIT`，使新反向转发持续失败。pi-web由launchd自动重建为新会话后恢复；Chat只对`4620`当前精确所有者执行TERM并重启`com.later.chat.cloud-relay`，未批量终止SSH、未重启本地产品服务、未触碰Product Store，也未重放Run/Provider/Tool。恢复后pi-web与Chat本地健康、两个云端回环、pi-web认证前401/认证后Nginx与公网200、Chat完整Relay验收均通过；390×844公网Chromium打开`pi.ai4child.asia`返回200、标题`Chat - Pi Web`、无504/401错误页、无横向溢出且控制台0错误。长期的服务端半开SSH会话自动回收与监控误判修复尚未实现，仍保留复发风险。
 - [x] 完成[Chat开发Chat自举详细设计](./docs/chat-self-development-design.md)与第一轮自检：从19个正常、拒绝、并发、恢复和安全场景反推单一根Workflow、Repository Binding、隔离Execution Workspace、同一Product Run下的pi Tool Execution、Context/RunSpec装配、Tool Operation和Evidence提交门；定义8层测试、8个浏览器端到端场景、真实Chat仓库Dogfood、4天长场景和SD0-SD6交付节奏。设计纠正了“pi不知道AGENTS”“pi是子Product Run”“直接修改活动仓库”“Tool统计等于副作用账本”“嵌套Workflow自然恢复pi”“测试通过等于Work完成”6个错误候选；该完成项只表示设计与自检已经形成，不表示Schema、迁移或功能代码已存在。
 - [x] 2026-07-24用户批准“Chat开发Chat”D1-D9：Chat自身使用普通Project加Repository Binding；Git/文件系统拥有代码事实；主Workflow以确定性Dispatch调用同一Product Run下的pi Tool；写入默认使用受管worktree；F01前只读；Chat显式编译Harness事实；确定性Validator优先；commit/push/deploy分别授权；F05前不承诺pi持久恢复。批准时关于“pi自动加载AGENTS”的初始假设已由SD2源码核对纠正：实际执行关闭隐式Context发现，只传递已治理的Context/StepInput。当前批准不冻结后续写入字段、迁移和API，也不提前开放写Tool。
 - [x] 2026-07-24完成[SD1 Repository Binding/Snapshot模块详细设计](./docs/repository-resource-detailed-design.md)：固定Workspace Root Catalog、Binding/Snapshot Schema候选、三态状态机、只读Git Inspector、治理文档Manifest、Context Source新鲜度门、两段式事务、REST、响应式UI、日志/Trace和7层测试；自检纠正“仓库已不可用却沿用最近成功Hash”等6个错误候选。该条只表示审核材料已经形成，R1-R12批准前不创建迁移或生产代码。
@@ -341,7 +343,7 @@
 - [x] 新增[MAF定位与工作流概览](./docs/maf-position-and-workflow-overview.md)：明确MAF是Workflow
   运行时引擎而非产品框架，逐项列出MAF提供与不提供的能力对照表、Chat自建的全部产品模块位置，
   以及39节点分组与关键机制（模型调用治理链、HITL决策点、产品提交门）。
-- [x] 新增[阶段A逐节点解析](./docs/workflow-stage-a-analysis.md)：5个节点（input_acceptance、
+- [x] 新增[学习阶段S1逐节点解析（历史文件名stage-a）](./docs/workflow-stage-a-analysis.md)：5个节点（input_acceptance、
   context_candidates、harness_directory_context、context_adoption、directory_context_revision）
   的输入/执行步骤/输出/不变量/设计原因完整展开，含数据流图和阶段保证/不保证清单。
 - [x] 2026-07-29建立面向小白的[项目掌握知识库入口](./项目掌握/INDEX.md)：不再把阶段或节点清单
@@ -354,13 +356,24 @@
   首个L2实验，不表示其余Intent/HITL/Runtime/Evidence专题已经完成。
 - [x] 2026-07-29根据用户“必须全盘覆盖、不能只讲阶段A”的复核，新增
   [Chat全盘掌握范围与覆盖审计](./项目掌握/00-从这里开始/全盘掌握范围与覆盖审计.md)与机器清单：
-  27个学习单元同时覆盖待审核目标架构11个模块、当前36个后端顶层源码面、13个前端Feature、
-  35个前端根源码面、6个Workflow、主Workflow全部39节点、10个当前/目标运行角色、9个协议边界、
+  27个学习单元同时覆盖已批准目标架构11个模块、当前37个后端顶层源码面、13个前端Feature、
+  38个前端根源码面、6个Workflow、主Workflow S1-S7和全部39节点、10个当前/目标运行角色、9个协议边界、
   10个状态位置，以及测试、
   部署与非功能保证；Identity、Delivery、Super Admin和其他未实现目标保留为显式缺口。
   `check-project-mastery.py`已接入`verify-fast.sh`并通过。该完成项表示“覆盖总账和防漂移硬门已建立”，
   不表示27个单元的L1/L2/L3材料或全部代码学习注释已经完成；当前文档检查另识别出pi跨仓调试文档
   7条越界链接和`ref/LifeOS`既有7条坏链，均未由本项制造或静默计为通过。
+- [x] 2026-07-29按用户要求完成项目掌握第二轮全盘教材与口径收敛：新增4篇架构/模块教材和
+  S1-S7七篇主Workflow逐阶段教材，重写39节点总览、Session、双Trace、pi启动和点击到pi完整链；
+  每篇包含具体场景、基础概念、对象样本、Mermaid图、生命周期/失败恢复、源码链、实验和掌握验收。
+  `continuous_workflow_learning.py`成为唯一学习阶段事实，39节点按5/10/5/4/7/5/3完整映射；
+  27个Executor类及图接线补中文S阶段注释，Human Trace复用同一映射。`check-project-mastery.py`
+  现在反向校验v1.8.0、39节点、43边、S1-S7、七篇文档元数据和旧口径禁用模式；当前覆盖为
+  27学习单元、11目标模块、37后端顶层源码面、13前端Feature、38前端根源码面和6个Workflow。
+  定向Ruff/3项阶段与目录合同、项目掌握检查、概念空间、前端82项测试/类型/格式及`git diff --check`
+  通过；全仓文档检查仅剩`ref/LifeOS`既有7条坏链，项目掌握新增/既有文档0条断链。后端全量快照
+  为470通过/2失败，其中本轮目录文案指纹已复核更新且定向重测通过；剩余1项是并行认证恢复改动使
+  `App.tsx`为806行、超过既有800行审查门，本轮未擅自重构该用户改动。
 - [x] 每个终态Product Run在同一数据库事务物化`diagnostic`和`human`两份确定性Trace报告：
   前者保留Product Trace事件、Sequence、Attempt、ToolExecution与关联ID，后者保存实际节点路径、
   路由/决定原因、空值稳定代码和未经过节点并生成Markdown；不调用Agent/LLM、不含隐藏推理，

@@ -1,4 +1,5 @@
 import { checkedJson } from "../../api-client.js";
+import { authenticatedFetch } from "../../authentication-recovery.js";
 import { API_BASE_URL } from "../../runtime-config.js";
 import type { ModelProviderOption } from "../../use-chat-agent";
 
@@ -28,20 +29,23 @@ export interface UpdateAgentProfile {
 }
 
 export async function listAgents(): Promise<AgentProfile[]> {
-  return checkedJson<AgentListResponse>(await fetch(`${API_BASE_URL}/api/agents`)).then(
-    (value) => value.agents,
-  );
+  return checkedJson<AgentListResponse>(
+    await authenticatedFetch(`${API_BASE_URL}/api/agents`),
+  ).then((value) => value.agents);
 }
 
 export async function updateAgent(
   agentId: string,
   command: UpdateAgentProfile,
 ): Promise<AgentProfile> {
-  const response = await fetch(`${API_BASE_URL}/api/agents/${encodeURIComponent(agentId)}`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(command),
-  });
+  const response = await authenticatedFetch(
+    `${API_BASE_URL}/api/agents/${encodeURIComponent(agentId)}`,
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(command),
+    },
+  );
   return checkedJson<AgentProfile>(response);
 }
 

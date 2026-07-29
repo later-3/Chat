@@ -34,16 +34,30 @@ def test_reverse_relay_never_opens_the_cloud_port_publicly() -> None:
 def test_nginx_protects_static_and_api_paths_and_preserves_streaming() -> None:
     snippet = _read("deploy/nginx/chat-locations.conf")
 
-    assert snippet.count('auth_basic "Chat private workspace";') == 3
-    assert snippet.count("auth_basic_user_file /etc/nginx/chat.htpasswd;") == 3
+    assert snippet.count('auth_basic "Chat private workspace";') == 4
+    assert snippet.count("auth_basic_user_file /etc/nginx/chat.htpasswd;") == 4
     assert "location ^~ /chat/" in snippet
     assert "location ^~ /chat-api/" in snippet
     assert "location ^~ /chat-pwa-http-test/" in snippet
+    assert "location = /chat/auth-refresh.html" in snippet
+    assert "alias /opt/chat/current/web/auth-refresh.html;" in snippet
+    assert 'add_header Cache-Control "no-store" always;' in snippet
     assert "return 308 /chat/;" in snippet
     assert "proxy_pass http://127.0.0.1:4620/;" in snippet
     assert "proxy_buffering off;" in snippet
     assert "proxy_read_timeout 1260s;" in snippet
     assert 'proxy_set_header Authorization "";' in snippet
+
+
+def test_pwa_authentication_reentry_is_never_precached() -> None:
+    vite_config = _read("frontend/vite.config.ts")
+    reentry_page = _read("frontend/public/auth-refresh.html")
+
+    assert 'globIgnores: ["auth-refresh.html"]' in vite_config
+    assert "auth-refresh\\\\.html$" in vite_config
+    assert 'http-equiv="refresh"' in reentry_page
+    assert 'content="no-store"' in reentry_page
+    assert "401" not in reentry_page
 
 
 def test_operational_scripts_do_not_use_system_python_or_expose_secrets() -> None:
@@ -59,6 +73,8 @@ def test_operational_scripts_do_not_use_system_python_or_expose_secrets() -> Non
     assert "openssl passwd -apr1 -stdin" in deployer
     assert "chat-http-access-password" in deployer
     assert '--user "later:$(<"$password_file")"' in verifier
+    assert "CHAT_AUTH_REENTRY_URL" in verifier
+    assert "Cache-Control: no-store" in verifier
     assert 'echo "$password' not in deployer
     assert "install -o root -g www-data -m 0640" in remote_installer
     assert 'find "$release_dir" -type d -exec chmod 0755 {} +' in remote_installer

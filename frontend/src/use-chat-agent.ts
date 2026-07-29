@@ -18,6 +18,7 @@ import { HttpAgent } from "@ag-ui/client";
 import type { Message } from "@ag-ui/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiErrorFromResponse } from "./api-client.js";
+import { authenticatedFetch } from "./authentication-recovery.js";
 import { createClientId } from "./client-id.js";
 import {
   type ChatWorkflowDispatch,
@@ -96,6 +97,7 @@ export function useChatAgent({
         url: AG_UI_URL,
         threadId: createThreadId(),
         description: "独立 AI 协作 Chat 产品",
+        fetch: authenticatedFetch,
       }),
   );
   const [messages, setMessages] = useState<Message[]>([]);
@@ -152,7 +154,9 @@ export function useChatAgent({
     let status: DispatchRecovery["status"] = "outcome_unknown";
     let errorCode: string | null = null;
     try {
-      const response = await fetch(apiUrl(`/api/model-call-drafts/${review.draft_id}`));
+      const response = await authenticatedFetch(
+        apiUrl(`/api/model-call-drafts/${review.draft_id}`),
+      );
       if (response.ok) {
         const card = (await response.json()) as ModelCallReviewCard;
         status = card.attempt?.status === "failed" ? "failed" : "outcome_unknown";
@@ -322,15 +326,18 @@ export function useChatAgent({
       setStatus("saving");
       setError(null);
       try {
-        const response = await fetch(apiUrl(`/api/model-call-drafts/${pendingReview.draft_id}`), {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            expected_hash: pendingReview.binding_hash,
-            provider_id: providerId,
-            provider_request: providerRequest,
-          }),
-        });
+        const response = await authenticatedFetch(
+          apiUrl(`/api/model-call-drafts/${pendingReview.draft_id}`),
+          {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              expected_hash: pendingReview.binding_hash,
+              provider_id: providerId,
+              provider_request: providerRequest,
+            }),
+          },
+        );
         if (!response.ok) {
           throw await apiErrorFromResponse(response, `保存修改失败：HTTP ${response.status}`);
         }

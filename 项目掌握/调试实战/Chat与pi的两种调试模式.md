@@ -1,7 +1,7 @@
 # Chat与pi的两种调试模式
 
-**归档日期**：2026-07-29  
-**分类**：调试实战  
+**归档日期**：2026-07-29
+**分类**：调试实战
 **关联源码**：
 
 - [Chat的VS Code启动配置](../../.vscode/launch.json)
@@ -10,10 +10,10 @@
 - [pi运行配置解析](../../backend/app/config.py)
 - [PiRuntimeManager.start](../../backend/app/pi_gateway.py)
 - [PiExecution.start](../../backend/app/pi_runtime.py)
-- [pi仓库的VS Code启动配置](../../../opc-os/pi/.vscode/launch.json)
-- [pi仓库的VS Code构建任务](../../../opc-os/pi/.vscode/tasks.json)
-- [pi RPC入口](../../../opc-os/pi/packages/coding-agent/src/main.ts)
-- [pi RPC命令循环](../../../opc-os/pi/packages/coding-agent/src/modes/rpc/rpc-mode.ts)
+- pi仓库的VS Code启动配置：`/Users/xulater/Code/opc-os/pi/.vscode/launch.json`
+- pi仓库的VS Code构建任务：`/Users/xulater/Code/opc-os/pi/.vscode/tasks.json`
+- pi RPC入口：`/Users/xulater/Code/opc-os/pi/packages/coding-agent/src/main.ts`
+- pi RPC命令循环：`/Users/xulater/Code/opc-os/pi/packages/coding-agent/src/modes/rpc/rpc-mode.ts`
 
 ## 问题
 
@@ -358,9 +358,9 @@ Chat准备执行
 | [backend/app/config.py](../../backend/app/config.py) | 启动时解析pi运行快照和调试端口 |
 | [backend/app/pi_gateway.py](../../backend/app/pi_gateway.py) | 创建并登记单次pi执行，限制固定调试端口并发 |
 | [backend/app/pi_runtime.py](../../backend/app/pi_runtime.py) | 组装Node参数、启动pi、处理JSONL-RPC和治理边界 |
-| [pi `.vscode/launch.json`](../../../opc-os/pi/.vscode/launch.json) | 构建后附加Chat创建的9230 Inspector进程 |
-| [pi `main.ts`](../../../opc-os/pi/packages/coding-agent/src/main.ts) | 根据`--mode rpc`进入RPC运行模式 |
-| [pi `rpc-mode.ts`](../../../opc-os/pi/packages/coding-agent/src/modes/rpc/rpc-mode.ts) | 接收Chat JSONL命令并驱动pi AgentSession |
+| `/Users/xulater/Code/opc-os/pi/.vscode/launch.json` | 构建后附加Chat创建的9230 Inspector进程 |
+| `/Users/xulater/Code/opc-os/pi/packages/coding-agent/src/main.ts` | 根据`--mode rpc`进入RPC运行模式 |
+| `/Users/xulater/Code/opc-os/pi/packages/coding-agent/src/modes/rpc/rpc-mode.ts` | 接收Chat JSONL命令并驱动pi AgentSession |
 
 ## 补充记录
 

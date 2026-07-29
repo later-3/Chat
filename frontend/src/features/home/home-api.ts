@@ -1,4 +1,5 @@
 import { checkedJson } from "../../api-client.js";
+import { authenticatedFetch } from "../../authentication-recovery.js";
 import { API_BASE_URL } from "../../runtime-config.js";
 
 export interface HomeTodaySummary {
@@ -81,7 +82,7 @@ export async function getHomeOverview(
     utc_offset_minutes: String(utcOffsetMinutes),
   });
   return checkedJson<HomeOverview>(
-    await fetch(`${API_BASE_URL}/api/home/overview?${query.toString()}`, { signal }),
+    await authenticatedFetch(`${API_BASE_URL}/api/home/overview?${query.toString()}`, { signal }),
     "加载主页失败",
   );
 }
@@ -92,7 +93,9 @@ export async function searchHomeResources(
 ): Promise<HomeSearchResult[]> {
   const params = new URLSearchParams({ q: query, limit: "8" });
   const response = await checkedJson<{ resources: HomeSearchResult[] }>(
-    await fetch(`${API_BASE_URL}/api/harness/search?${params.toString()}`, { signal }),
+    await authenticatedFetch(`${API_BASE_URL}/api/harness/search?${params.toString()}`, {
+      signal,
+    }),
     "搜索项目、事项和知识失败",
   );
   return response.resources;
