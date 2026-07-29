@@ -2,6 +2,52 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "chat: enable external pi source debug",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "${workspaceFolder}/scripts/configure-pi-debug.py",
+        "enable",
+        "--port",
+        "${config:chat.piDebugPort}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "chat: disable pi source debug",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "${workspaceFolder}/scripts/configure-pi-debug.py",
+        "disable"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "chat: prepare normal full stack",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "chat: cleanup all",
+        "chat: disable pi source debug"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "chat: prepare external pi source debug backend",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "chat: cleanup backend",
+        "chat: enable external pi source debug"
+      ],
+      "problemMatcher": []
+    },
+    {
       "label": "chat: cleanup backend",
       "type": "shell",
       "command": "${workspaceFolder}/scripts/cleanup-dev.sh",
@@ -25,6 +71,42 @@
       "command": "${workspaceFolder}/scripts/cleanup-dev.sh",
       "args": [
         "frontend",
+        "${config:chat.backendPort}",
+        "${config:chat.frontendPort}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "chat: cleanup execution worker",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/cleanup-dev.sh",
+      "args": [
+        "execution-worker",
+        "${config:chat.backendPort}",
+        "${config:chat.frontendPort}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "chat: cleanup outbox worker",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/cleanup-dev.sh",
+      "args": [
+        "outbox-worker",
         "${config:chat.backendPort}",
         "${config:chat.frontendPort}"
       ],

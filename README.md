@@ -47,7 +47,7 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 10. 持续协作主Workflow已经支持Product DB持久Checkpoint、Interrupt Link和Lease Outbox Worker；实际独立OS进程可从一次已提交决定恢复到下一审批安全点。该保证暂不外推到嵌套Workflow或外部Tool副作用。
 11. ExecutionDraft已有17部分完整可读编辑工作台；保存产生新revision与Hash，必须重新审批后才能编译不可变RunSpec。
 12. Product Harness D1-D8已经落地：Project、Work、Plan/Action、Note、Memory与两阶段Context使用服务端权威Schema、CAS、幂等命令、Trace和Outbox；前端提供Project Explorer、Work Board、Knowledge和Context Inspector。
-13. 持续协作主Workflow v1.7.0现有37个真实MAF节点；除7套协作协议、不可变Context revision、Repository Source Freshness、TurnDigest v1、StepInputProjection和持久Intent Set外，已根据批准的RunSpec在`answer_only`、受治理pi只读执行与隔离工作区精确编辑间显式路由。SD3已实现受管Git worktree和`ToolOperation/Attempt/Reconciliation`，只开放`read/grep/find/ls/edit`，不直接修改活动仓库，也不开放Shell、commit或push。
+13. 持续协作主Workflow v1.8.0现有39个真实MAF节点；除7套协作协议、不可变Context revision、Repository Source Freshness、TurnDigest v1、StepInputProjection和持久Intent Set外，已根据批准的RunSpec在`answer_only`、受治理pi只读执行与隔离工作区精确编辑间显式路由，并接入Result Claim准备与提交决定。SD3已实现受管Git worktree和`ToolOperation/Attempt/Reconciliation`，只开放`read/grep/find/ls/edit`，不直接修改活动仓库，也不开放Shell、commit或push。
 14. Runtime Job、活动流游标和通用Execution Worker纵向切片已经完成；完整Session仍按Phase 2-8继续补齐Steer/Follow-up、分支、强退/多端矩阵、Tool副作用对账和跨入口恢复。
 15. Chat概念空间已经建立：14个概念簇统一Chat系统/Harness、Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、上下文结果、界面、外部入口、人工介入、连续协作和超级管理员运营看护的共同语言。
 16. Q0工程安全底座已有可运行纵向基线：Governance/Harness已按纯规则、只读查询、命令记录和事务协调继续拆分；Agent重连Hook、Workflow运行投影和对话呈现已有独立Feature边界；8个重型前端Feature按需加载，当前主入口为473.22 KiB并受自动包体门保护。统一Problem Detail、关联日志/Trace/Metrics/诊断、CI、覆盖率、迁移、Playwright/axe、故障实验室和供应链门均通过本地验证；大型Application Service、持续协作Workflow、生产Exporter/SLO和远端CI首次运行仍在后续范围。
@@ -215,9 +215,14 @@ backend/tests/    后端合同和事件流测试
 frontend/src/    React界面、Feature API、HttpAgent投影与页面状态
 scripts/         可重复执行的工程验证
 概念空间/       Chat概念治理、索引、概念簇和结构校验
+项目掌握/       面向Later的总地图、专题、调试实验和掌握验收
 ```
 
 ## 文档入口
+
+如果目标是从小白开始掌握当前设计、源码、数据库和调试路径，先进入
+[项目掌握知识库](./项目掌握/INDEX.md)。它以一条真实Product Run为主线，按“具体场景 -> 对象样本 ->
+代码链 -> 断点/SQL/Trace -> 掌握验收”组织；下面的治理、设计和状态文档继续作为权威事实来源。
 
 1. [项目上下文](./PROJECT_CONTEXT.md)：问题、定位、目标、闭环和边界。
 2. [项目经验与反例](./PROJECT_LESSONS.md)：每次项目回复前必读的错误案例和强制检查。
@@ -251,9 +256,8 @@ scripts/         可重复执行的工程验证
 
 ## 下一步
 
-SD1、SD2、SD3以及F02的SD4-A/SD4-B已经落地；真实Qwen隔离写入、内容寻址Artifact Store和
-确定性Validation Runtime均有纵向证据。当前下一产品门是SD4-C Result Commit Coordinator；
-在完成声明门建立前仍不把测试通过声明为Work完成，在F05前不承诺pi跨进程续跑。
-`write/bash/commit/push`仍未开放；当前私有部署还需配置Artifact scope密钥才会启用真实Artifact写入。
-Super Admin Operations、长期`TaskPlanRevision`、独立Branch Execution和生产前端迁移继续保留在已批准
-路线中，但不能挤占本次真实Dogfood纵向闭环的依赖顺序。
+SD1、SD2、SD3以及F02的SD4-A/SD4-B/SD4-C已经落地；真实Qwen隔离写入、内容寻址Artifact Store、
+确定性Validation Runtime和主Workflow Result Commit链均有纵向证据。当前F02仍需完成SD4-D失效传播
+与SD4-E完整Evidence UI/Dogfood；在F05前不承诺pi跨进程续跑。`write/bash/commit/push`仍未开放；
+当前私有部署还需配置Artifact scope密钥才会启用真实Artifact写入。Super Admin Operations、长期
+`TaskPlanRevision`、独立Branch Execution和完整Conversation Day继续保留在已批准路线中。

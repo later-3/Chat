@@ -46,9 +46,13 @@
   ],
   "pi_agent": {
     "enabled": false,
-    "contract_version": "0.82.0",
+    "contract_version": "0.82.1",
     "node_path": "/absolute/path/to/node-22-or-newer",
-    "cli_path": "/absolute/path/to/pi-coding-agent/dist/cli.js",
+    "cli_path": "/absolute/path/to/pi/packages/coding-agent/dist/cli.js",
+    "source_root": "/absolute/path/to/pi",
+    "session_directory": "~/.pi/agent/chat-sessions",
+    "node_debug_port": null,
+    "node_debug_break": false,
     "allowed_working_roots": [
       "/absolute/path/to/allowed/projects"
     ],

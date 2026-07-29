@@ -11,6 +11,7 @@
   "chat.frontendBindHost": "127.0.0.1",
   "chat.frontendPublicHost": "localhost",
   "chat.frontendPort": 5073,
+  "chat.piDebugPort": 9230,
   "terminal.integrated.fontFamily": "MesloLGS NF, 'JetBrainsMono Nerd Font', 'FiraCode Nerd Font', monospace",
   "terminal.integrated.fontSize": 14,
   "chat.editor.fontSize": 14,

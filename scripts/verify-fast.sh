@@ -6,6 +6,7 @@ python="$project_root/.venv/bin/python"
 
 cd "$project_root"
 "$python" "$project_root/概念空间/验证概念空间.py"
+"$python" "$project_root/scripts/check-project-mastery.py"
 "$python" "$project_root/scripts/check-project-docs.py"
 "$python" "$project_root/scripts/check-tracked-secrets.py"
 git diff --check

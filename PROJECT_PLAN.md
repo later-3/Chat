@@ -84,7 +84,7 @@ flowchart LR
 - [x] 确认后端 MAF、前后端 AG-UI、React 自研 UI 技术路线。
 - [x] 建立`AGENTS.md`、`PROJECT_CONTEXT.md`、`PROJECT_PLAN.md`、`PROJECT_STATE.md`和`README.md`。
 - [x] 纠正产品身份：Chat 是独立完整产品，OPC-OS Chat 是外部集成关系。
-- [x] 新增并持续维护`PROJECT_LESSONS.md`，当前记录41个反例，并把Product Harness事实不能从聊天摘要猜测、不得回退系统Python、产品级工程收敛、可持续模块质量、外部编码Agent权限、Session标题一致性、模型结果去向审计、移动端完整产品视角、超级管理员运营看护、pi安装/隔离运行身份、数据库测试独立收集、虚拟环境沙箱路径和验证产物收口加入回复前置门。
+- [x] 新增并持续维护`PROJECT_LESSONS.md`，当前记录44个反例，并把Product Harness事实不能从聊天摘要猜测、不得回退系统Python、产品级工程收敛、可持续模块质量、外部编码Agent权限、Session标题一致性、模型结果去向审计、移动端完整产品视角、超级管理员运营看护、pi安装/隔离运行身份、数据库测试独立收集、虚拟环境沙箱路径、验证产物收口、懒加载样式所有权、Workflow代码可学习性、确定性双Trace和跨仓源码调试所有权加入回复前置门。
 - [x] 建立Chat概念空间：方法来源、目录治理、发现索引、14个高风险概念簇、概念/实现双状态和自动结构/链接校验。
 - [x] 把最终产品愿景固定为“想法能留下、事项有状态、工作可继续、执行可看护、结果有证据”，并明确Product Session不是Project边界、Context面板不是第二事实源。
 - [x] 用户已确认本轮愿景与概念纠正准确进入稳定项目文档。

@@ -54,12 +54,49 @@ cleanup_port() {
   terminate_pids "port $port" "$pids"
 }
 
-cleanup_backend_processes() {
-  # The absolute project interpreter path prevents matching other OPC-OS apps.
-  local pattern="$project_root/.venv/bin/python.*(debugpy|uvicorn)"
+# Keep only PIDs that belong to this checkout: the command line references the
+# project root, or the process cwd is inside it. This scopes module-name
+# patterns so they can never kill an identically-named app from another repo.
+filter_project_pids() {
+  local pids="$1"
+  local kept=""
+  local pid cmd cwd
+  for pid in $pids; do
+    cmd="$(ps -o command= -p "$pid" 2>/dev/null || true)"
+    [[ -z "$cmd" ]] && continue
+    cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n1 || true)"
+    if [[ "$cmd" == *"$project_root"* || "$cwd" == "$project_root" || "$cwd" == "$project_root"/* ]]; then
+      kept="$kept $pid"
+    fi
+  done
+  echo "$kept"
+}
+
+cleanup_pattern() {
+  local label="$1"
+  local pattern="$2"
   local pids
   pids="$(pgrep -f "$pattern" 2>/dev/null | sort -u | tr '\n' ' ' || true)"
-  terminate_pids "Chat backend processes" "$pids"
+  pids="$(filter_project_pids "$pids")"
+  terminate_pids "$label" "$pids"
+}
+
+cleanup_backend_processes() {
+  # Match the app module, not the interpreter path: instances started with a
+  # relative `.venv/bin/python` or on a non-default port escaped the previous
+  # absolute-path pattern and kept stealing shared-queue work from the
+  # debugged instance (2026-07-28). Killing the uvicorn supervisor also stops
+  # its --reload children; any orphan still holding the port is caught by
+  # cleanup_port.
+  cleanup_pattern "Chat backend processes" "uvicorn backend\.app\.(asgi:app|main:create_api_app)"
+}
+
+cleanup_execution_worker_processes() {
+  cleanup_pattern "Chat execution worker" "backend\.app\.execution_worker"
+}
+
+cleanup_outbox_worker_processes() {
+  cleanup_pattern "Chat outbox worker" "backend\.app\.outbox_worker"
 }
 
 cleanup_frontend_processes() {
@@ -82,14 +119,22 @@ case "$target" in
     cleanup_port "$frontend_port"
     cleanup_frontend_processes
     ;;
+  execution-worker)
+    cleanup_execution_worker_processes
+    ;;
+  outbox-worker)
+    cleanup_outbox_worker_processes
+    ;;
   all)
     cleanup_port "$backend_port"
     cleanup_port "$frontend_port"
     cleanup_backend_processes
+    cleanup_execution_worker_processes
+    cleanup_outbox_worker_processes
     cleanup_frontend_processes
     ;;
   *)
-    echo "Usage: $0 [backend|frontend|all] [backend-port] [frontend-port]" >&2
+    echo "Usage: $0 [backend|frontend|execution-worker|outbox-worker|all] [backend-port] [frontend-port]" >&2
     exit 2
     ;;
 esac
