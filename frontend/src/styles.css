@@ -195,11 +195,18 @@ button {
   font-size: 13px;
 }
 
-.workspace-layout {
+.workspace-layout,
+.primary-shell {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   overflow: hidden;
+}
+.primary-shell > .home-view,
+.primary-shell > .feature-error-boundary {
+  flex: 1;
+  min-width: 0;
 }
 .mobile-primary-nav {
   display: none;
@@ -1390,6 +1397,191 @@ button {
   background: #f9ece9;
   font-size: 12px;
   line-height: 1.55;
+}
+
+.trace-report-card {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface-elevated) 94%, var(--accent-soft));
+}
+
+.trace-report-heading {
+  align-items: flex-start;
+}
+
+.trace-report-heading small {
+  max-width: 280px;
+  text-align: right;
+}
+
+.trace-report-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trace-report-summary > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--surface-elevated);
+}
+
+.trace-report-summary span,
+.trace-report-path small {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.trace-report-summary strong {
+  overflow-wrap: anywhere;
+}
+
+.trace-report-path,
+.trace-report-path ol,
+.trace-report-path li > div {
+  display: grid;
+  gap: 12px;
+}
+
+.trace-report-subheading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trace-report-path ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trace-report-path li {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.trace-report-ordinal {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-weight: 700;
+}
+
+.trace-report-path strong code {
+  margin-left: 6px;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 500;
+}
+
+.trace-report-path p,
+.trace-report-path dl,
+.trace-report-details ul {
+  margin: 0;
+}
+
+.trace-report-path details,
+.trace-report-details {
+  padding: 11px 13px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+
+.trace-report-path summary,
+.trace-report-details summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-weight: 650;
+}
+
+.trace-report-path details p {
+  margin-top: 10px;
+}
+
+.trace-report-path dl {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.trace-report-path dl > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.trace-report-path dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+}
+
+.trace-report-details ul {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0 0 20px;
+}
+
+.trace-report-details li {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+}
+
+.trace-report-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.trace-report-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 11px;
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  cursor: pointer;
+}
+
+.trace-report-actions span {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+@media (max-width: 760px) {
+  .trace-report-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .trace-report-heading small {
+    max-width: none;
+    text-align: left;
+  }
+
+  .trace-report-actions span {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 .execution-group {
   padding: 18px;
@@ -5222,7 +5414,7 @@ button {
     padding: 5px max(8px, var(--safe-area-right)) var(--safe-area-bottom)
       max(8px, var(--safe-area-left));
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 3px;
     border-top: 1px solid rgba(41, 56, 49, 0.09);
     background: rgba(250, 251, 247, 0.96);

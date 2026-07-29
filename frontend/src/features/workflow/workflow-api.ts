@@ -49,6 +49,67 @@ export interface ProductTraceEvent {
   created_at: string;
 }
 
+export interface RunTraceReport {
+  id: string;
+  session_id: string;
+  run_id: string;
+  report_kind: "diagnostic" | "human";
+  schema_version: number;
+  workflow_definition_id: string | null;
+  workflow_version: string | null;
+  source_first_sequence: number;
+  source_last_sequence: number;
+  source_event_count: number;
+  content_hash: string;
+  content: Record<string, unknown> & {
+    generation?: {
+      mode?: string;
+      model_called?: boolean;
+      hidden_reasoning_included?: boolean;
+    };
+    source?: {
+      complete?: boolean;
+      completeness_reason?: string;
+    };
+    summary?: {
+      result?: string;
+      visited_node_count?: number;
+      tool_execution_count?: number;
+      empty_field_count?: number;
+    };
+    actual_path?: Array<{
+      ordinal: number;
+      node_id: string;
+      label: string;
+      phase: string;
+      purpose: string;
+      status: string;
+      path_reason: string;
+      path_reason_source: string;
+      input_summary: string;
+      output_summary: string;
+    }>;
+    route_decisions?: Array<Record<string, unknown>>;
+    product_decisions?: Array<Record<string, unknown>>;
+    empty_fields?: Array<{
+      node_id: string;
+      field: string;
+      code: string;
+      reason: string;
+    }>;
+    unvisited_nodes?: Array<{
+      node_id: string;
+      label: string;
+      phase: string;
+      code: string;
+      reason: string;
+    }>;
+  };
+  text: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface StepInputProjection {
   id: string;
   run_id: string;
@@ -180,6 +241,10 @@ interface TraceResponse {
   trace: ProductTraceEvent[];
 }
 
+interface TraceReportsResponse {
+  reports: RunTraceReport[];
+}
+
 export interface RunGovernanceView {
   run_id: string;
   execution_draft: null | {
@@ -279,6 +344,12 @@ export function getRunTrace(sessionId: string, runId: string): Promise<ProductTr
   return request<TraceResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/trace`,
   ).then((value) => value.trace);
+}
+
+export function getRunTraceReports(sessionId: string, runId: string): Promise<RunTraceReport[]> {
+  return request<TraceReportsResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/trace-reports`,
+  ).then((value) => value.reports);
 }
 
 export function getRunGovernance(runId: string): Promise<RunGovernanceView> {

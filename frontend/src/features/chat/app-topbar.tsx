@@ -2,8 +2,10 @@ import {
   Bot,
   Boxes,
   CloudOff,
+  Command,
   Menu,
   MessageSquarePlus,
+  Search,
   Settings2,
   Workflow as WorkflowIcon,
 } from "lucide-react";
@@ -12,6 +14,8 @@ import type { WorkflowDefinition } from "../workflow/workflow-api";
 
 interface AppTopbarProps {
   backendReachable: boolean;
+  homeActive: boolean;
+  homeSearchQuery: string;
   interactionBusy: boolean;
   networkStatus: BrowserNetworkStatus;
   onNewConversation: () => void;
@@ -19,11 +23,14 @@ interface AppTopbarProps {
   onOpenProjects: () => void;
   onOpenSidebar: () => void;
   onOpenWorkflow: () => void;
+  onHomeSearchChange: (value: string) => void;
   workflow: WorkflowDefinition;
 }
 
 export function AppTopbar({
   backendReachable,
+  homeActive,
+  homeSearchQuery,
   interactionBusy,
   networkStatus,
   onNewConversation,
@@ -31,6 +38,7 @@ export function AppTopbar({
   onOpenProjects,
   onOpenSidebar,
   onOpenWorkflow,
+  onHomeSearchChange,
   workflow,
 }: AppTopbarProps) {
   const connectionLabel =
@@ -60,14 +68,30 @@ export function AppTopbar({
           <p className="brand-subtitle">AI 协作产品</p>
         </div>
       </div>
-      <button className="topbar-workflow" onClick={onOpenWorkflow} type="button">
-        <WorkflowIcon size={15} />
-        <span>
-          <small>本轮 Workflow</small>
-          <strong>{workflow.name}</strong>
-        </span>
-        <span>v{workflow.version}</span>
-      </button>
+      {homeActive ? (
+        <label className="home-topbar-search">
+          <Search size={18} />
+          <input
+            aria-label="搜索项目、事项和知识"
+            id="home-global-search"
+            onChange={(event) => onHomeSearchChange(event.target.value)}
+            placeholder="搜索项目、事项和知识…"
+            value={homeSearchQuery}
+          />
+          <kbd>
+            <Command size={12} /> K
+          </kbd>
+        </label>
+      ) : (
+        <button className="topbar-workflow" onClick={onOpenWorkflow} type="button">
+          <WorkflowIcon size={15} />
+          <span>
+            <small>本轮 Workflow</small>
+            <strong>{workflow.name}</strong>
+          </span>
+          <span>v{workflow.version}</span>
+        </button>
+      )}
       <div className="topbar-actions">
         <span
           aria-label={connectionLabel}

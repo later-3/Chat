@@ -1,3 +1,19 @@
+/**
+ * Frontend driver for the default Chat agent (single AG-UI thread).
+ *
+ * This is the React entry of the full send chain: a user types a prompt and
+ * hits send -> run() appends the message and calls HttpAgent.runAgent() ->
+ * AG-UI POST to the backend endpoint -> durable Runtime Job ->
+ * ProductAwareWorkflow/Agent -> 39-node continuous-collaboration Workflow ->
+ * GovernedSemanticAgentExecutor builds a ModelCallDraft, interrupts for review,
+ * and (after approve/revise) sends the approved bytes to the Provider.
+ *
+ * Interrupts are converted to review cards (model-call / product-decision /
+ * tool-execution) via governedReviewFromInterrupt. Draft edits go through REST
+ * (/api/model-call-drafts/:id) so the editable request and the sent bytes stay
+ * one source. Stop/cancel calls the Product Session cancel endpoint; a dispatch
+ * that may have reached the Provider surfaces as outcome_unknown, never retry.
+ */
 import { HttpAgent } from "@ag-ui/client";
 import type { Message } from "@ag-ui/core";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -219,6 +235,7 @@ export function useChatAgent({
     };
   }, [agent, inspectDispatchFailure]);
 
+  /** Send a prompt: append a user message and start one AG-UI run. */
   const send = useCallback(
     async (content: string, control?: SessionRunControl, workflow?: ChatWorkflowDispatch) => {
       const text = content.trim();
@@ -261,6 +278,7 @@ export function useChatAgent({
     [agent, pendingReview],
   );
 
+  /** Approve the pending model-call draft as-is and resume the Workflow. */
   const approve = useCallback(async () => {
     if (
       !pendingReview ||
@@ -291,6 +309,7 @@ export function useChatAgent({
     }
   }, [agent, inspectDispatchFailure, pendingReview]);
 
+  /** Edit the provider request via REST, then resume with the new revision. */
   const revise = useCallback(
     async (providerId: string, providerRequest: Record<string, unknown>) => {
       if (!pendingReview || agent.isRunning) return;
@@ -340,6 +359,7 @@ export function useChatAgent({
     [agent, pendingReview],
   );
 
+  /** Abandon the pending model call: no Provider send, restore the prompt. */
   const abandon = useCallback(async (): Promise<string | null> => {
     if (
       !pendingReview ||
@@ -373,6 +393,7 @@ export function useChatAgent({
     }
   }, [agent, pendingReview]);
 
+  /** Submit a product-decision (accept/revise/skip/cancel) for a HITL interrupt. */
   const decideProduct = useCallback(
     async (decision: string, changes?: Record<string, unknown>) => {
       if (!pendingReview || pendingReview.review_kind !== "product_decision" || agent.isRunning)
@@ -403,6 +424,7 @@ export function useChatAgent({
     [agent, pendingReview],
   );
 
+  /** Cancel the active AG-UI run via the Product Session; never auto-retry. */
   const stop = useCallback(async () => {
     const aguiRunId = activeAguiRunId.current;
     const review = lastApprovedReview.current;

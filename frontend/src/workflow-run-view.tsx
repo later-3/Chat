@@ -10,6 +10,7 @@ import {
   WorkflowCodeStageChain,
 } from "./features/workflow/workflow-run-details.js";
 import { WorkflowSystemJourney } from "./features/workflow/workflow-system-journey.js";
+import { WorkflowTraceReports } from "./features/workflow/workflow-trace-reports.js";
 import type { ProductRun } from "./session-api.js";
 import type { GovernedReviewCard, ModelCallReviewCard, RunStatus } from "./use-chat-agent.js";
 import { WorkbenchNav, type WorkbenchView } from "./workbench-nav.js";
@@ -19,8 +20,10 @@ import {
   getRunStepInputs,
   getRunToolExecutions,
   getRunTrace,
+  getRunTraceReports,
   type ProductTraceEvent,
   type RunGovernanceView,
+  type RunTraceReport,
   type StepInputProjection,
   type WorkflowDefinition,
 } from "./workflow-api.js";
@@ -55,6 +58,7 @@ export function WorkflowRunView({
   const [governance, setGovernance] = useState<RunGovernanceView | null>(null);
   const [stepInputs, setStepInputs] = useState<StepInputProjection[]>([]);
   const [toolExecutions, setToolExecutions] = useState<GovernedToolExecution[]>([]);
+  const [traceReports, setTraceReports] = useState<RunTraceReport[]>([]);
   const [traceError, setTraceError] = useState<string | null>(null);
   const latestRunId = latestRun?.id ?? null;
   const latestSessionId = latestRun?.session_id ?? null;
@@ -67,6 +71,7 @@ export function WorkflowRunView({
       setGovernance(null);
       setStepInputs([]);
       setToolExecutions([]);
+      setTraceReports([]);
       setTraceError(null);
       return undefined;
     }
@@ -107,6 +112,14 @@ export function WorkflowRunView({
           // Workflows without governed external tools legitimately have no
           // ToolExecution projection.
           if (!cancelled) setToolExecutions([]);
+        });
+      void getRunTraceReports(latestSessionId, latestRunId)
+        .then((value) => {
+          if (!cancelled) setTraceReports(value);
+        })
+        .catch(() => {
+          // 活动Run尚未生成终态报告；实时节点仍由Product Trace展示。
+          if (!cancelled) setTraceReports([]);
         });
     };
     load();
@@ -262,6 +275,21 @@ export function WorkflowRunView({
             workflow={workflow}
           />
         )}
+
+        <WorkflowTraceReports
+          reports={traceReports}
+          terminal={Boolean(
+            latestRunStatus &&
+              [
+                "succeeded",
+                "failed",
+                "abandoned",
+                "cancelled",
+                "interrupted",
+                "outcome_unknown",
+              ].includes(latestRunStatus),
+          )}
+        />
 
         <section className="run-content-card">
           <div className="workbench-section-heading">

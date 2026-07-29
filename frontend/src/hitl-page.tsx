@@ -8,7 +8,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-
+import { listWorkflows, type WorkflowDefinition } from "./features/workflow/workflow-api.js";
 import {
   activateHitlPolicy,
   type DecisionPointDefinition,
@@ -20,7 +20,6 @@ import {
   loadWorkflowHitlDecisionPoints,
   previewHitlPolicy,
 } from "./hitl-api";
-import { type WorkflowDefinition, listWorkflows } from "./features/workflow/workflow-api.js";
 
 const MODE_LABELS: Record<HitlMode, string> = {
   inherit: "沿用更上层",

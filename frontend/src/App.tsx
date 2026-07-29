@@ -4,6 +4,8 @@ import { AppTopbar } from "./features/chat/app-topbar";
 import { ConversationPane, runLabel } from "./features/chat/conversation-pane";
 import { getMessageText } from "./features/chat/message-bubble";
 import { listDurableDecisionRequests } from "./features/governance/hitl-api";
+import { ActivityRail, type PrimaryView } from "./features/home/activity-rail";
+import type { HomeContinueItem } from "./features/home/home-api";
 import { MobileNavigation } from "./features/mobile/mobile-navigation";
 import { readSessionDraft, writeSessionDraft } from "./features/mobile/session-draft-storage";
 import { useNetworkStatus } from "./features/mobile/use-network-status";
@@ -36,6 +38,9 @@ import { CHAT_WORKFLOW } from "./workflow-run-projection";
 
 const AgentPage = lazy(() =>
   import("./agent-page").then((module) => ({ default: module.AgentPage })),
+);
+const HomeView = lazy(() =>
+  import("./features/home/home-view").then((module) => ({ default: module.HomeView })),
 );
 const HarnessWorkbench = lazy(() =>
   import("./harness-workbench").then((module) => ({ default: module.HarnessWorkbench })),
@@ -94,6 +99,10 @@ function FeatureLoading({ label }: { label: string }) {
 }
 
 function App() {
+  const [primaryView, setPrimaryView] = useState<PrimaryView>(() =>
+    window.sessionStorage.getItem("chat.primary-view.v1") === "chat" ? "chat" : "home",
+  );
+  const [homeSearchQuery, setHomeSearchQuery] = useState("");
   const [draft, setDraft] = useState("");
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState(false);
@@ -137,6 +146,22 @@ function App() {
     selectableWorkflows.find((value) => value.id === selectedWorkflowId) ??
     selectableWorkflows[0] ??
     CHAT_WORKFLOW;
+
+  useEffect(() => {
+    window.sessionStorage.setItem("chat.primary-view.v1", primaryView);
+  }, [primaryView]);
+
+  useEffect(() => {
+    const focusHomeSearch = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPrimaryView("home");
+        window.requestAnimationFrame(() => document.getElementById("home-global-search")?.focus());
+      }
+    };
+    window.addEventListener("keydown", focusHomeSearch);
+    return () => window.removeEventListener("keydown", focusHomeSearch);
+  }, []);
 
   const hydrateSession = useCallback(async (sessionId: string) => {
     setSessionLoading(true);
@@ -308,11 +333,13 @@ function App() {
   }, [activeSession?.id]);
 
   const openWorkbench = (view: WorkbenchView) => {
+    setPrimaryView("chat");
     setWorkbenchView(view);
     setWorkbenchOpen(true);
   };
 
   const closeWorkbench = () => {
+    setPrimaryView("chat");
     setWorkbenchOpen(false);
     // The conversation trigger is mounted by the state change above. Restoring
     // focus makes closing the full-width mobile Workbench an explicit return
@@ -325,6 +352,7 @@ function App() {
   const createNewConversation = async () => {
     if (status !== "idle" || workflowRunning) return;
     setSessionLoading(true);
+    setPrimaryView("chat");
     try {
       const created = await createSession();
       setSessions((values) => [created, ...values]);
@@ -337,7 +365,17 @@ function App() {
 
   const openSession = (sessionId: string) => {
     if (status !== "idle" || workflowRunning || sessionId === activeSession?.id) return;
+    setPrimaryView("chat");
     void hydrateSession(sessionId);
+  };
+
+  const continueFromHome = (item: HomeContinueItem) => {
+    setDraft(`继续「${item.title}」：`);
+    setPrimaryView("chat");
+    setWorkbenchOpen(false);
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="发送消息"]')?.focus();
+    });
   };
 
   const openConfiguration = (tab: ConfigurationTab = "session") => {
@@ -469,131 +507,167 @@ function App() {
     <div className="app-shell">
       <AppTopbar
         backendReachable={!healthError}
+        homeActive={primaryView === "home"}
+        homeSearchQuery={homeSearchQuery}
         interactionBusy={interactionBusy}
         networkStatus={networkStatus}
         onNewConversation={() => void createNewConversation()}
         onOpenConfiguration={() => openConfiguration()}
         onOpenProjects={() => openWorkbench("projects")}
-        onOpenSidebar={() => setSidebarOpen(true)}
+        onOpenSidebar={() => {
+          setPrimaryView("chat");
+          setSidebarOpen(true);
+        }}
         onOpenWorkflow={() => openWorkbench("workflow")}
+        onHomeSearchChange={setHomeSearchQuery}
         workflow={selectedWorkflow}
       />
 
-      <div
-        className={`workspace-layout ${sidebarCollapsed ? "workspace-layout--sidebar-collapsed" : ""}`}
-      >
-        <SessionSidebar
-          activeSessionId={activeSession?.id ?? null}
-          healthError={healthError}
-          interactionBusy={interactionBusy}
-          onCloseMobile={() => setSidebarOpen(false)}
-          onCollapse={() => setSidebarCollapsed(true)}
-          onCreate={() => void createNewConversation()}
-          onExpand={() => setSidebarCollapsed(false)}
-          onOpen={openSession}
-          sessions={sessions}
-          sidebarCollapsed={sidebarCollapsed}
-          sidebarOpen={sidebarOpen}
+      <div className="primary-shell">
+        <ActivityRail
+          activeView={primaryView}
+          onOpenApprovals={() => openConfiguration("hitl")}
+          onOpenChat={() => {
+            setPrimaryView("chat");
+            setWorkbenchOpen(false);
+          }}
+          onOpenGarden={() => openWorkbench("knowledge")}
+          onOpenHome={() => setPrimaryView("home")}
+          onOpenWorkflow={() => openWorkbench("workflow")}
+          pendingDecisionCount={pendingDecisionCount}
         />
+        {primaryView === "home" ? (
+          <FeatureErrorBoundary featureName="主页" resetKey="home">
+            <Suspense fallback={<FeatureLoading label="主页" />}>
+              <HomeView
+                onContinue={continueFromHome}
+                onOpenArtifacts={() => openWorkbench("workflow")}
+                onOpenGarden={() => openWorkbench("knowledge")}
+                onOpenProjects={() => openWorkbench("projects")}
+                searchQuery={homeSearchQuery}
+              />
+            </Suspense>
+          </FeatureErrorBoundary>
+        ) : (
+          <div
+            className={`workspace-layout ${sidebarCollapsed ? "workspace-layout--sidebar-collapsed" : ""}`}
+          >
+            <SessionSidebar
+              activeSessionId={activeSession?.id ?? null}
+              healthError={healthError}
+              interactionBusy={interactionBusy}
+              onCloseMobile={() => setSidebarOpen(false)}
+              onCollapse={() => setSidebarCollapsed(true)}
+              onCreate={() => void createNewConversation()}
+              onExpand={() => setSidebarCollapsed(false)}
+              onOpen={openSession}
+              sessions={sessions}
+              sidebarCollapsed={sidebarCollapsed}
+              sidebarOpen={sidebarOpen}
+            />
 
-        <div
-          className={`collaboration-surface ${workbenchOpen ? "collaboration-surface--workbench" : ""}`}
-        >
-          <ConversationPane
-            activeSession={activeSession}
-            busy={busy}
-            connectionStatus={connectionStatus}
-            dispatchRecovery={dispatchRecovery}
-            draft={draft}
-            error={error}
-            healthError={healthError}
-            networkStatus={networkStatus}
-            latestRun={latestRun}
-            messages={messages}
-            onCancelRetry={() => setRetrySource(null)}
-            onChangeDraft={setDraft}
-            onEditAndRestart={editAndRestartRun}
-            onOpenWorkbench={() => openWorkbench("workflow")}
-            onRetry={retryRun}
-            onReturnDispatchPrompt={() => {
-              const prompt = returnDispatchPrompt();
-              if (prompt !== null) {
-                setDraft(prompt);
-                if (latestRun)
-                  setRetrySource({
-                    runId: latestRun.id,
-                    prompt,
-                    forceRestart: dispatchRecovery?.status === "outcome_unknown",
-                  });
-              }
-            }}
-            onStop={() => void stop()}
-            onSubmit={submit}
-            onWorkflowChange={setSelectedWorkflowId}
-            pendingReview={pendingReview}
-            retrySource={retrySource}
-            retryableLatestRun={retryableLatestRun}
-            runtimeLabel={health ? runtimeLabel : null}
-            runtimeMode={health?.runtime_mode ?? null}
-            selectableWorkflows={selectableWorkflows}
-            selectedWorkflow={selectedWorkflow}
-            sessionError={sessionError}
-            sessionLoading={sessionLoading}
-            status={status}
-            workbenchOpen={workbenchOpen}
-          />
-
-          {workbenchOpen && (
-            <FeatureErrorBoundary
-              featureName="右侧工作台"
-              onClose={closeWorkbench}
-              resetKey={`${activeSession?.id ?? "none"}:${workbenchView}`}
+            <div
+              className={`collaboration-surface ${workbenchOpen ? "collaboration-surface--workbench" : ""}`}
             >
-              <Suspense fallback={<FeatureLoading label="工作台" />}>
-                {workbenchView === "workflow" ? (
-                  <WorkflowRunView
-                    assistantOutput={
-                      latestAssistantOutput ? getMessageText(latestAssistantOutput) : null
-                    }
-                    latestRun={latestRun}
-                    onClose={closeWorkbench}
-                    onViewChange={openWorkbench}
-                    pendingDecisionCount={pendingDecisionCount}
-                    pendingReview={pendingReview}
-                    prompt={
-                      modelCallReview?.origin_prompt ??
-                      lastSubmittedPrompt ??
-                      latestRun?.input_text ??
-                      null
-                    }
-                    runStatus={status}
-                    workflow={
-                      status === "idle"
-                        ? selectedWorkflow
-                        : (selectableWorkflows.find(
-                            (value) => value.id === lastSubmittedWorkflowId,
-                          ) ?? selectedWorkflow)
-                    }
-                  />
-                ) : activeSession ? (
-                  <HarnessWorkbench
-                    onClose={closeWorkbench}
-                    onViewChange={openWorkbench}
-                    sessionId={activeSession.id}
-                    view={workbenchView}
-                  />
-                ) : null}
-              </Suspense>
-            </FeatureErrorBoundary>
-          )}
-        </div>
+              <ConversationPane
+                activeSession={activeSession}
+                busy={busy}
+                connectionStatus={connectionStatus}
+                dispatchRecovery={dispatchRecovery}
+                draft={draft}
+                error={error}
+                healthError={healthError}
+                networkStatus={networkStatus}
+                latestRun={latestRun}
+                messages={messages}
+                onCancelRetry={() => setRetrySource(null)}
+                onChangeDraft={setDraft}
+                onEditAndRestart={editAndRestartRun}
+                onOpenWorkbench={() => openWorkbench("workflow")}
+                onRetry={retryRun}
+                onReturnDispatchPrompt={() => {
+                  const prompt = returnDispatchPrompt();
+                  if (prompt !== null) {
+                    setDraft(prompt);
+                    if (latestRun)
+                      setRetrySource({
+                        runId: latestRun.id,
+                        prompt,
+                        forceRestart: dispatchRecovery?.status === "outcome_unknown",
+                      });
+                  }
+                }}
+                onStop={() => void stop()}
+                onSubmit={submit}
+                onWorkflowChange={setSelectedWorkflowId}
+                pendingReview={pendingReview}
+                retrySource={retrySource}
+                retryableLatestRun={retryableLatestRun}
+                runtimeLabel={health ? runtimeLabel : null}
+                runtimeMode={health?.runtime_mode ?? null}
+                selectableWorkflows={selectableWorkflows}
+                selectedWorkflow={selectedWorkflow}
+                sessionError={sessionError}
+                sessionLoading={sessionLoading}
+                status={status}
+                workbenchOpen={workbenchOpen}
+              />
+
+              {workbenchOpen && (
+                <FeatureErrorBoundary
+                  featureName="右侧工作台"
+                  onClose={closeWorkbench}
+                  resetKey={`${activeSession?.id ?? "none"}:${workbenchView}`}
+                >
+                  <Suspense fallback={<FeatureLoading label="工作台" />}>
+                    {workbenchView === "workflow" ? (
+                      <WorkflowRunView
+                        assistantOutput={
+                          latestAssistantOutput ? getMessageText(latestAssistantOutput) : null
+                        }
+                        latestRun={latestRun}
+                        onClose={closeWorkbench}
+                        onViewChange={openWorkbench}
+                        pendingDecisionCount={pendingDecisionCount}
+                        pendingReview={pendingReview}
+                        prompt={
+                          modelCallReview?.origin_prompt ??
+                          lastSubmittedPrompt ??
+                          latestRun?.input_text ??
+                          null
+                        }
+                        runStatus={status}
+                        workflow={
+                          status === "idle"
+                            ? selectedWorkflow
+                            : (selectableWorkflows.find(
+                                (value) => value.id === lastSubmittedWorkflowId,
+                              ) ?? selectedWorkflow)
+                        }
+                      />
+                    ) : activeSession ? (
+                      <HarnessWorkbench
+                        onClose={closeWorkbench}
+                        onViewChange={openWorkbench}
+                        sessionId={activeSession.id}
+                        view={workbenchView}
+                      />
+                    ) : null}
+                  </Suspense>
+                </FeatureErrorBoundary>
+              )}
+            </div>
+          </div>
+        )}
       </div>
       <MobileNavigation
         activeWorkbenchView={workbenchView}
+        onOpenHome={() => setPrimaryView("home")}
         onOpenChat={closeWorkbench}
         onOpenConfiguration={() => openConfiguration()}
         onOpenResources={() => openWorkbench("projects")}
         onOpenWorkflow={() => openWorkbench("workflow")}
+        primaryView={primaryView}
         workbenchOpen={workbenchOpen}
       />
       <PwaStatus />

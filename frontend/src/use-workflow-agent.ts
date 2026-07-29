@@ -1,3 +1,19 @@
+/**
+ * Frontend driver for a user-selected Workflow (incl. the continuous-collaboration
+ * main Workflow).
+ *
+ * Chain owned by this hook:
+ *   chat input -> run() appends a user message and calls HttpAgent.runAgent()
+ *     -> POST to the Workflow's AG-UI endpoint (see workflow-api.ts)
+ *     -> backend durable endpoint enqueues a Runtime Job and streams SSE back
+ *   ActivitySnapshot events -> progress projection (workflow-progress.ts)
+ *   RunFinished(interrupt) -> governedReviewFromInterrupt -> pendingReview
+ *   approve()/revise()/abandon()/decideProduct() -> runAgent({resume:[...]})
+ *
+ * HttpAgent is the single owner of the message projection; product review
+ * data (draft edits, product facts) is fetched/changed through REST. This hook
+ * never holds authoritative state -- it only projects AG-UI + REST onto React.
+ */
 import { HttpAgent } from "@ag-ui/client";
 import type { Message } from "@ag-ui/core";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -49,6 +65,9 @@ export function useWorkflowAgent({
   onSessionSettled,
   onRunningChange,
 }: UseWorkflowAgentOptions) {
+  // One HttpAgent per selected Workflow definition. The threadId is the
+  // server-owned Product Session id once a session is open; before that it is
+  // an ephemeral client id (see createThreadId in use-chat-agent).
   const [agent] = useState(
     () =>
       new HttpAgent({
@@ -161,6 +180,7 @@ export function useWorkflowAgent({
     };
   }, [agent]);
 
+  /** Append the user prompt and start one AG-UI run on the selected Workflow. */
   const run = useCallback(
     async (input: string) => {
       const text = input.trim();
@@ -185,6 +205,7 @@ export function useWorkflowAgent({
     [agent, definition, sessionId],
   );
 
+  /** Resume after a model-call approval: send 'approve' and keep dispatching. */
   const approve = useCallback(
     async (argumentsValue?: Record<string, unknown>) => {
       if (!pendingReview || agent.isRunning) return;
@@ -218,6 +239,7 @@ export function useWorkflowAgent({
     [agent, pendingReview],
   );
 
+  /** Revise a model-call draft: PUT a new revision via REST, then resume with it. */
   const revise = useCallback(
     async (providerId: string, providerRequest: Record<string, unknown>) => {
       if (
@@ -267,6 +289,7 @@ export function useWorkflowAgent({
     [agent, pendingReview],
   );
 
+  /** Abandon the pending model call: zero Provider sends, restore the prompt. */
   const abandon = useCallback(async (): Promise<string | null> => {
     if (!pendingReview || agent.isRunning) return null;
     const prompt =
@@ -297,6 +320,7 @@ export function useWorkflowAgent({
     }
   }, [agent, pendingReview]);
 
+  /** Submit a product-decision (accept/revise/skip/cancel) for a HITL interrupt. */
   const decideProduct = useCallback(
     async (decision: string, changes?: Record<string, unknown>) => {
       if (!pendingReview || pendingReview.review_kind !== "product_decision" || agent.isRunning)

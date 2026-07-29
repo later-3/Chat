@@ -1,29 +1,46 @@
-import { Boxes, MessageCircle, Settings2, Workflow } from "lucide-react";
+import { Boxes, Home, MessageCircle, Settings2, Workflow } from "lucide-react";
 import type { WorkbenchView } from "../../workbench-nav";
+import type { PrimaryView } from "../home/activity-rail";
 
 interface MobileNavigationProps {
   activeWorkbenchView: WorkbenchView;
+  primaryView: PrimaryView;
   workbenchOpen: boolean;
   onOpenChat: () => void;
   onOpenConfiguration: () => void;
   onOpenResources: () => void;
+  onOpenHome: () => void;
   onOpenWorkflow: () => void;
 }
 
 export function MobileNavigation({
   activeWorkbenchView,
+  primaryView,
   workbenchOpen,
   onOpenChat,
   onOpenConfiguration,
   onOpenResources,
+  onOpenHome,
   onOpenWorkflow,
 }: MobileNavigationProps) {
-  const chatActive = !workbenchOpen;
-  const workflowActive = workbenchOpen && activeWorkbenchView === "workflow";
-  const resourcesActive = workbenchOpen && activeWorkbenchView !== "workflow";
+  const homeActive = primaryView === "home";
+  const chatActive = primaryView === "chat" && !workbenchOpen;
+  const workflowActive =
+    primaryView === "chat" && workbenchOpen && activeWorkbenchView === "workflow";
+  const resourcesActive =
+    primaryView === "chat" && workbenchOpen && activeWorkbenchView !== "workflow";
 
   return (
     <nav aria-label="手机主导航" className="mobile-primary-nav">
+      <button
+        aria-current={homeActive ? "page" : undefined}
+        className={homeActive ? "active" : ""}
+        onClick={onOpenHome}
+        type="button"
+      >
+        <Home size={20} />
+        <span>主页</span>
+      </button>
       <button
         aria-current={chatActive ? "page" : undefined}
         className={chatActive ? "active" : ""}
