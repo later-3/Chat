@@ -1,9 +1,53 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, testInfo) => {
   await page.goto("/");
+  await expect(page.getByRole("heading", { name: /早上好，Later/ })).toBeVisible({
+    timeout: 15_000,
+  });
+  if (testInfo.project.name === "mobile-chromium") {
+    await page.getByRole("navigation", { name: "手机主导航" }).getByText("对话").click();
+  } else {
+    await page.getByRole("navigation", { name: "主导航" }).getByText("对话").click();
+  }
   await expect(page.getByLabel("发送消息")).toBeEnabled({ timeout: 15_000 });
+});
+
+test("主页默认展示真实继续事项、协作日历和明确的能力桩", async ({ page }, testInfo) => {
+  if (testInfo.project.name === "mobile-chromium") {
+    await page.getByRole("navigation", { name: "手机主导航" }).getByText("主页").click();
+  } else {
+    await page.getByRole("navigation", { name: "主导航" }).getByText("主页").click();
+  }
+
+  await expect(page.getByRole("heading", { name: "年度协作日历" })).toBeVisible();
+  await expect(
+    page.getByText("颜色只表示这一天发生了什么层级的真实活动，不是效率评分。"),
+  ).toBeVisible();
+  await expect(page.getByText("完整协作日接入中")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "最近产物" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "灵感花园" })).toBeVisible();
+});
+
+test("对话页刷新后仍加载桌面活动导航样式", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium", "桌面活动导航回归");
+
+  // beforeEach 已从主页进入对话并写入 sessionStorage；整页刷新会直接恢复对话视图，
+  // 因而能够发现 ActivityRail 错误依赖懒加载 HomeView 样式的回归。
+  await page.reload();
+  await expect(page.getByLabel("发送消息")).toBeEnabled({ timeout: 15_000 });
+
+  const activityRail = page.getByRole("navigation", { name: "主导航" });
+  await expect(activityRail).toBeVisible();
+  await expect(activityRail).toHaveCSS("flex-direction", "column");
+  await expect(activityRail).toHaveCSS("width", "78px");
+  await expect(activityRail.getByRole("button", { name: "对话" })).toHaveCSS("width", "58px");
+
+  const hasHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(hasHorizontalOverflow).toBe(false);
 });
 
 test("用户能创建会话并完成确定性AG-UI回合", async ({ page }, testInfo) => {
