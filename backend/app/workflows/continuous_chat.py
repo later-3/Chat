@@ -172,6 +172,8 @@ class TraceMixin:
     """
 
     def _trace_init(self, *, thread_id: str, sessions: ProductSessionService) -> None:
+        """绑定Product Session定位与ProductSessionService，并构造StepInput投影服务。"""
+
         self._thread_id = thread_id
         self._sessions = sessions
         self._step_inputs = StepInputProjectionService(sessions.database)
@@ -185,6 +187,13 @@ class TraceMixin:
         actor: str,
         content_type: str,
     ) -> None:
+        """写入一个节点的公开输入/输出Trace，并按需持久化StepInputProjection。
+
+        语义类内容（intent/plan/response/summary）只有确定性actor才额外记录StepInput投影——
+        模型语义的步骤输入已由ModelCallDraft链承担，避免双写。无活动Run时跳过（如图外诊断
+        调用），不伪造归属。工作台节点详情与终态双报告都以这里的事实为源。
+        """
+
         active = await self._sessions.active_run(self._thread_id)
         if active is None:
             return
@@ -243,6 +252,7 @@ class TraceMixin:
 
 
 def _optional_string(value: Any) -> str | None:
+    """把任意值收敛为去空白字符串；空串与非字符串归一为None，供可选引用字段使用。"""
     normalized = str(value or "").strip()
     return normalized or None
 
@@ -271,6 +281,8 @@ class IntakeExecutor(Executor, TraceMixin):
         governance: ExecutionGovernanceService,
         intents: CollaborationIntentService,
     ) -> None:
+        """节点1 input_acceptance：注入会话/治理/意图服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="input_acceptance")
         self._trace_init(thread_id=thread_id, sessions=sessions)
         self._governance = governance
@@ -320,6 +332,8 @@ class CandidateContextExecutor(Executor, TraceMixin):
     """
 
     def __init__(self, *, thread_id: str, sessions: ProductSessionService) -> None:
+        """节点2 context_candidates：注入摘要召回依赖并固定executor_id；执行见@handler。"""
+
         super().__init__(id="context_candidates")
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
@@ -382,6 +396,8 @@ class HarnessDirectoryContextExecutor(Executor, TraceMixin):
         sessions: ProductSessionService,
         harness: HarnessService,
     ) -> None:
+        """节点3 harness_directory_context：注入Harness服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="harness_directory_context")
         self._run_id = run_id
         self._harness = harness
@@ -446,6 +462,8 @@ class HarnessProjectResolverExecutor(Executor, TraceMixin):
         sessions: ProductSessionService,
         harness: HarnessService,
     ) -> None:
+        """节点10 harness_project_resolver：注入Harness服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="harness_project_resolver")
         self._harness = harness
         self._trace_init(thread_id=thread_id, sessions=sessions)
@@ -547,6 +565,8 @@ class HarnessDetailContextExecutor(Executor, TraceMixin):
         sessions: ProductSessionService,
         harness: HarnessService,
     ) -> None:
+        """节点12 harness_detail_context：注入Harness服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="harness_detail_context")
         self._run_id = run_id
         self._harness = harness
@@ -662,6 +682,8 @@ class HarnessContextRevisionExecutor(Executor, TraceMixin):
         sessions: ProductSessionService,
         harness: HarnessService,
     ) -> None:
+        """Context revision节点（5 directory / 14 detail）：节点号由``stage``参数决定；非法stage立即失败。"""
+
         super().__init__(id=node_id)
         if stage not in {"directory", "detail"}:
             raise ValueError(f"Unsupported Context stage: {stage}")
@@ -741,6 +763,8 @@ class CollaborationProtocolResolverExecutor(Executor, TraceMixin):
         sessions: ProductSessionService,
         collaboration_protocols: CollaborationProtocolService,
     ) -> None:
+        """节点15 collaboration_protocol_resolver：注入协议服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="collaboration_protocol_resolver")
         self._protocols = collaboration_protocols
         self._trace_init(thread_id=thread_id, sessions=sessions)
@@ -857,6 +881,8 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
         harness: HarnessService | None = None,
         collaboration_contexts: CollaborationContextService | None = None,
     ) -> None:
+        """通用决定点执行器：节点身份与行为差异全部由注入的``ProductDecisionSpec``决定（见``_decision_specs``）。"""
+
         super().__init__(id=node_id)
         self.spec = spec
         self._run_id = run_id
@@ -1030,6 +1056,8 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
         await ctx.request_info(card, dict, request_id=request.id)
 
     async def _consume_grant(self, grant_id: str, binding_hash: str) -> None:
+        """原子消费一次性Grant：幂等键绑定Run/节点/BindingHash，重复Resume或并发领取不会二次消费。"""
+
         consumption = await self._governance.claim_grant(
             grant_id=grant_id,
             binding_hash=binding_hash,
@@ -1051,6 +1079,8 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
         status: str,
         reason: str,
     ) -> None:
+        """把决定结果（not_applicable/auto/human/skipped/deny）及原因写入Product Trace，供双报告还原。"""
+
         await self._trace_content(
             executor_id=self.id,
             actor="execution_governance",
@@ -1136,12 +1166,10 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
         decision: Mapping[str, Any],
         request_id: str,
     ) -> CollaborationState | None:
-        """Persist context revise/skip before the checkpoint advances.
+        """在Checkpoint前进前先持久化Context修改/跳过（仅context_adoption节点）。
 
-        The Workflow checkpoint contains an exact package revision. A retry
-        therefore reads that revision by id and replays one deterministic
-        command, even if the first attempt committed the new revision before
-        process loss.
+        Checkpoint包含精确的package revision；重试按ID读该revision并重放同一确定性命令——
+        即使首次尝试在进程丢失前已提交新revision，也不会双写。其他节点或其他动作直接返回None。
         """
 
         if self.id != "context_adoption" or action not in {"revise", "skip"}:
@@ -1228,6 +1256,8 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         result_kind: str,
         repository_freshness: RepositorySourceFreshnessGuard | None = None,
     ) -> None:
+        """受治理语义Agent执行器：4个模型节点（6意图/19规划/32答复/33摘要）复用本类，差异由``result_kind``与``task_builder``决定。"""
+
         super().__init__(id=node_id)
         self.profile = profile
         self.call_ordinal = call_ordinal
@@ -1242,6 +1272,8 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
 
     @property
     def description(self) -> str:
+        """MAF要求的节点描述；直接取自版本化Agent Profile快照，保证与审批/审计同源。"""
+
         return self.profile.description
 
     def _begin(self, state: CollaborationState) -> ModelCallDraft:
@@ -1445,6 +1477,8 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         await self._request_review_with_state(card, state, ctx)
 
     async def _subject(self, subject_id: str):
+        """按ID读取持久ModelCall DecisionSubject；恢复路径不容忍悬空引用，缺失即失败。"""
+
         from ..governance.models import DecisionSubjectRecord
 
         async with self._governance.database.sessions() as transaction:
@@ -1571,6 +1605,12 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         )
 
     def _knowledge_sources(self, state: CollaborationState) -> list[dict[str, Any]]:
+        """把本轮采用Context投影为Provider请求的知识来源字段。
+
+        摘要任务只给来源引用（``reference_only``，不回放正文）；其他任务给采用项正文与Token
+        估算。这是“每轮最小充分上下文”的物化点，审批视图与真实请求共用同一份投影。
+        """
+
         if self._result_kind == "summary":
             return [
                 {
@@ -1609,6 +1649,12 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         revision_id: str | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any]:
+        """Repository来源新鲜度门：草稿准备、审批与Provider发送前复核ContextPackage引用的Snapshot。
+
+        过期时让旧授权失效、把当前Run失败关闭为``context_source_stale``并提示“按最新仓库重新
+        准备”，Provider Attempt保持0；未配置Repository Guard时直通（如纯聊天Session）。
+        """
+
         package_id = state.detail_context_package_id or state.directory_context_package_id
         if self._repository_freshness is None:
             return {
@@ -1775,15 +1821,12 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         revision_id,
         ctx,
     ) -> None:
-        """Adopt the decoded text as a *candidate* and advance the Workflow.
+        """把Provider解码文本采纳为**候选**并推进Workflow——模型文字此时还不是产品事实。
 
-        Model text is never a product fact yet. Intent output is parsed into an
-        Intent Set (invalid JSON closes as a clarification), plan/response are
-        stored verbatim, and the summary is parsed + filtered by the writeback
-        policy so Work/Memory candidates that violate the read-only boundary are
-        removed before they ever reach a decision point. The disposition
-        (accepted / overridden / rejected_invalid_output) is persisted on the
-        Attempt so the audit trail shows exactly how the bytes were used.
+        意图输出解析为Intent Set（非法JSON关闭失败为澄清）；plan/response原文存放；摘要先解析
+        再经写回策略过滤，违反用户只读边界的Work/Memory候选在到达决定点前就被确定性移除。
+        采用去向（accepted/overridden/rejected_invalid_output）持久化在Attempt上，审计链能
+        精确说明这些字节后来被怎样使用。
         """
         text = dispatched.text
         disposition = f"accepted_as_{self._result_kind}"
@@ -1890,6 +1933,11 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         await ctx.send_message(next_state)
 
     async def _request_review_with_state(self, card, state, ctx) -> None:
+        """发起MAF request_info中断：把CollaborationState快照夹带进审批卡。
+
+        跨进程恢复时凭这份快照精确重建运行态，而不是从数据库反猜节点现场。
+        """
+
         execution_context = card.setdefault("execution_context", {})
         if isinstance(execution_context, dict):
             execution_context["workflow_state"] = asdict(state)
@@ -1911,6 +1959,8 @@ class IntentSetProjectionExecutor(Executor, TraceMixin):
         sessions: ProductSessionService,
         intents: CollaborationIntentService,
     ) -> None:
+        """节点7 intent_set_projection：注入Intent服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="intent_set_projection")
         self._run_id = run_id
         self._intents = intents
@@ -1987,6 +2037,8 @@ class IntentSetAcceptanceExecutor(Executor, TraceMixin):
         sessions: ProductSessionService,
         intents: CollaborationIntentService,
     ) -> None:
+        """节点9 intent_set_acceptance：注入Intent服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="intent_set_acceptance")
         self._run_id = run_id
         self._intents = intents
@@ -2053,6 +2105,8 @@ class ScenarioRouterExecutor(Executor, TraceMixin):
     """
 
     def __init__(self, *, thread_id: str, sessions: ProductSessionService) -> None:
+        """节点16 scenario_router：注入会话服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="scenario_router")
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
@@ -2088,6 +2142,8 @@ class ProjectCatalogExecutor(Executor, TraceMixin):
         sessions: ProductSessionService,
         harness: HarnessService,
     ) -> None:
+        """节点17 project_catalog_query：注入Harness服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="project_catalog_query")
         self._harness = harness
         self._trace_init(thread_id=thread_id, sessions=sessions)
@@ -2158,6 +2214,8 @@ class ExecutionDraftCompilerExecutor(Executor, TraceMixin):
         pi_available: bool,
         validation_planner: ValidationContractPlanner,
     ) -> None:
+        """节点21 execution_draft_compiler：注入执行调度服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="execution_draft_compiler")
         self._thread_id = thread_id
         self._run_id = run_id
@@ -2286,6 +2344,8 @@ class RunSpecCompilerExecutor(Executor, TraceMixin):
         sessions: ProductSessionService,
         governance: ExecutionGovernanceService,
     ) -> None:
+        """节点23 run_spec_compiler：注入执行调度服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="run_spec_compiler")
         self._run_id = run_id
         self._governance = governance
@@ -2344,6 +2404,8 @@ class ClarificationExecutor(Executor, TraceMixin):
     """
 
     def __init__(self, *, thread_id: str, sessions: ProductSessionService) -> None:
+        """节点18 clarification：注入会话服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="clarification")
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
@@ -2400,6 +2462,8 @@ class HarnessCandidateCommitExecutor(Executor, TraceMixin):
         sessions: ProductSessionService,
         harness: HarnessService,
     ) -> None:
+        """节点37 harness_candidate_commit：注入Harness服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="harness_candidate_commit")
         self._run_id = run_id
         self._harness = harness
@@ -2467,6 +2531,8 @@ class TurnSummaryPersistExecutor(Executor, TraceMixin):
         sessions: ProductSessionService,
         governance: ExecutionGovernanceService,
     ) -> None:
+        """节点38 turn_summary_persist：注入会话服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="turn_summary_persist")
         self._run_id = run_id
         self._governance = governance
@@ -2576,6 +2642,8 @@ class FinalizeExecutor(Executor, TraceMixin):
     """
 
     def __init__(self, *, thread_id: str, sessions: ProductSessionService) -> None:
+        """节点39 result_finalization：注入会话服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="result_finalization")
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
@@ -2626,6 +2694,12 @@ def _revise_context(
     state: CollaborationState,
     changes: Mapping[str, Any],
 ) -> CollaborationState:
+    """处理context_adoption决定卡（S1节点4）的用户修改，只改运行态投影。
+
+    ``skip``清空本轮摘要采用；否则必须提供``selected_summary_ids``。权威持久化由后续
+    revision节点写新ContextPackage完成，这里不产生新事实。
+    """
+
     if changes.get("skip"):
         return replace(state, recent_turn_summaries=())
     selected = changes.get("selected_summary_ids")
@@ -2644,6 +2718,13 @@ def _revise_intent(
     state: CollaborationState,
     changes: Mapping[str, Any],
 ) -> CollaborationState:
+    """处理intent_binding决定卡（S2节点8）的用户修改。
+
+    整体替换``intents``时重新过``normalize_intent_candidates``同一纯边界（1-4个），
+    失败关闭的澄清结果直接报错拒绝；单字段修改时重算scenario合法性、confidence与
+    needs_clarification。修改只作用于运行态，新Intent revision由投影节点落库。
+    """
+
     if "intents" in changes:
         raw_intents = changes["intents"]
         if not isinstance(raw_intents, list) or not 1 <= len(raw_intents) <= 4:
@@ -2696,6 +2777,7 @@ def _revise_project(
     state: CollaborationState,
     changes: Mapping[str, Any],
 ) -> CollaborationState:
+    """处理project_work_binding决定卡（S2节点11）的修改：更新意图绑定与selected_project_id。"""
     current = dict(state.intent or {})
     project_id = changes.get("project_id")
     if project_id in {None, ""}:
@@ -2714,6 +2796,7 @@ def _revise_plan(
     state: CollaborationState,
     changes: Mapping[str, Any],
 ) -> CollaborationState:
+    """处理plan_acceptance决定卡（S3节点20）的修改：用用户改写后的文本替换运行态Plan候选。"""
     if changes.get("skip"):
         return replace(state, plan=None)
     value = changes.get("plan_text")
@@ -2726,6 +2809,7 @@ def _revise_result(
     state: CollaborationState,
     changes: Mapping[str, Any],
 ) -> CollaborationState:
+    """处理result_commit决定卡（S6节点34）的修改：用用户改写后的文本替换本轮response候选。"""
     value = changes.get("response_text")
     if not isinstance(value, str) or not value.strip():
         raise ValueError("Result修改后不能为空")
@@ -2736,6 +2820,10 @@ def _revise_execution_draft(
     state: CollaborationState,
     changes: Mapping[str, Any],
 ) -> CollaborationState:
+    """处理execution_authorization决定卡（S4节点22）的修改：把授权目标切到新Draft revision。
+
+    revision变化意味着旧授权立即失效；这里只更新运行态引用，版本化与Hash由治理服务拥有。
+    """
     revision_id = changes.get("execution_draft_revision_id")
     if not isinstance(revision_id, str) or not revision_id:
         raise ValueError("ExecutionDraft修改必须绑定新的revision")
@@ -2747,6 +2835,7 @@ def _revise_summary_candidates(
     changes: Mapping[str, Any],
     key: str,
 ) -> CollaborationState:
+    """处理摘要候选决定卡（S6）的修改：按字段名合并用户编辑后的候选列表到运行态摘要。"""
     summary = dict(state.turn_summary or {})
     if changes.get("skip"):
         summary[key] = []
@@ -2759,6 +2848,12 @@ def _revise_summary_candidates(
 
 
 def _decision_specs() -> dict[str, ProductDecisionSpec]:
+    """登记主Workflow全部HITL决定点规格：Subject内容、适用性、事实、可编辑字段与修改处理器。
+
+    ``ProductDecisionExecutor``是通用执行器，节点差异全部来自这张表；调试某个决定卡时
+    先在这里定位它的key，再看对应``_revise_*``如何处理用户修改。
+    """
+
     return {
         "context_adoption": ProductDecisionSpec(
             key="context_adoption",
@@ -3039,7 +3134,11 @@ def create_continuous_collaboration_workflow(
     validation_planner: ValidationContractPlanner,
     checkpoint_storage: CheckpointStorage | None = None,
 ):
-    """Compatibility entrypoint delegating graph wiring to its composition module."""
+    """装配39节点主Workflow的兼容入口：把图连接委托给``continuous_chat_factory``。
+
+    这里只按依赖注入组装行为组件（Executor、决定点规格与协作对象）；节点ID、边顺序和
+    图签名由factory唯一拥有，使组件构造与Checkpoint图签名解耦。
+    """
 
     return build_continuous_collaboration_workflow(
         components=ContinuousWorkflowComponents(

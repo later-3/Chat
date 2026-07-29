@@ -7,6 +7,7 @@ ref/
 backend/.env
 backend/config.json
 backend/config.json.tmp
+backend/backups/
 frontend/.env
 .venv/
 .venv-*/

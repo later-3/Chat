@@ -1,4 +1,9 @@
-"""Generic leased Execution Worker for registered MAF AG-UI runners."""
+"""通用Lease型Execution Worker：认领注册过的MAF AG-UI Runner并围栏式写入（链路“Worker领取”段）。
+
+HTTP端点只负责接纳并入队（``runtime_execution/endpoint.py``）；本模块在独立循环里
+逐个领取Runtime Job、续租、执行Runner并写事件Journal。Lease Epoch保证旧Worker失去
+所有权后不能再写事件或终态——对应阶段5活动流与Worker恢复边界。
+"""
 
 from __future__ import annotations
 
@@ -27,22 +32,35 @@ logger = logging.getLogger(__name__)
 
 
 class RuntimeRunner(Protocol):
-    def run(self, input_data: dict[str, Any]) -> AsyncIterator[Any]: ...
+    """Worker可调用的运行器协议：输入AG-UI请求数据，产出异步事件流（如ProductAwareWorkflow）。"""
+
+    def run(self, input_data: dict[str, Any]) -> AsyncIterator[Any]:
+        """执行一轮AG-UI Run并异步产出事件；由Worker在Lease保护下驱动到终态。"""
+        ...
 
 
 class RuntimeRunnerRegistry:
-    """Composition-root registry; durable Jobs store only versioned keys."""
+    """组合根处的Runner注册表；持久化Job只保存版本化endpoint key。
+
+    进程重启后Worker按key找回Runner实现；同一key注册不同实例直接失败，防止双实现漂移。
+    """
 
     def __init__(self) -> None:
+        """初始化空注册表；Runner只在组合根注册，运行期不允许替换。"""
+
         self._runners: dict[str, RuntimeRunner] = {}
 
     def register(self, endpoint_key: str, runner: RuntimeRunner) -> None:
+        """按endpoint key注册Runner；同key重复注册不同实例立即失败，防止双实现漂移。"""
+
         existing = self._runners.get(endpoint_key)
         if existing is not None and existing is not runner:
             raise ValueError(f"Runtime endpoint重复注册: {endpoint_key}")
         self._runners[endpoint_key] = runner
 
     def require(self, endpoint_key: str) -> RuntimeRunner:
+        """按Job中的key取出Runner；未注册即失败，Worker不猜测默认实现。"""
+
         try:
             return self._runners[endpoint_key]
         except KeyError as error:
@@ -50,11 +68,17 @@ class RuntimeRunnerRegistry:
 
     @property
     def capabilities(self) -> tuple[str, ...]:
+        """返回已注册endpoint key集合，供健康投影展示Worker可执行能力。"""
+
         return tuple(sorted(self._runners))
 
 
 class ExecutionWorker:
-    """Claim one Job at a time and fence every durable write by Lease Epoch."""
+    """一次只领一个Job的通用执行Worker；所有持久写入按Lease Epoch围栏。
+
+    失联或崩溃时Lease过期，Reconciler按“未外发安全重领/已终结修复/结果未知”三类收敛；
+    旧Epoch即使恢复也不能再写事件或终态。
+    """
 
     def __init__(
         self,
@@ -66,6 +90,8 @@ class ExecutionWorker:
         lease_seconds: int = 30,
         sessions: ProductSessionService | None = None,
     ) -> None:
+        """注入数据库、领取服务、Runner注册表与Worker身份；lease过短无法安全续租，直接拒绝。"""
+
         if lease_seconds < 3:
             raise ValueError("Execution Worker lease_seconds必须至少为3")
         self.database = database
@@ -78,6 +104,8 @@ class ExecutionWorker:
         self._next_maintenance_at = 0.0
 
     async def register(self) -> None:
+        """启动时登记Worker身份（boot_id/host/pid），供Reconciler区分新旧实例。"""
+
         async with self.database.sessions.begin() as transaction:
             record = await transaction.get(ExecutionWorkerRecord, self.worker_id)
             values = {
@@ -101,6 +129,8 @@ class ExecutionWorker:
                     setattr(record, key, value)
 
     async def stop(self) -> None:
+        """把本boot实例标记为stopped；不强制中断正在执行的Job，由Lease过期兜底。"""
+
         async with self.database.sessions.begin() as transaction:
             record = await transaction.get(ExecutionWorkerRecord, self.worker_id)
             if record is not None and record.boot_id == self.boot_id:
@@ -109,6 +139,8 @@ class ExecutionWorker:
                 record.stopped_at = utc_now()
 
     async def run_once(self) -> bool:
+        """执行一轮：先维护（Lease对账/心跳）再原子领取1个Job并执行；空闲返回False。"""
+
         await self._maintain_runtime()
         claim = await self.runtime.claim_one(
             worker_id=self.worker_id,
@@ -120,12 +152,16 @@ class ExecutionWorker:
         return True
 
     async def drain(self, *, limit: int = 100) -> int:
+        """连续领取直到队列空或达到上限；用于独立Worker进程与测试排水。"""
+
         processed = 0
         while processed < limit and await self.run_once():
             processed += 1
         return processed
 
     async def _execute(self, claim: ClaimedRuntime) -> None:
+        """驱动一个已领取Job到收敛：绑定日志关联ID与指标，异常按Lease围栏落终态。"""
+
         started = time.perf_counter()
         metrics.increment("runtime.jobs.claimed")
         with bind_context(
@@ -158,6 +194,12 @@ class ExecutionWorker:
                     )
 
     async def _execute_claim(self, claim: ClaimedRuntime) -> None:
+        """Job主循环：启动心跳，逐事件写Journal，处理取消命令/中断/终态门。
+
+        取消命令按“产品已取消/结果未知”两类收敛且不自动重试；HITL中断伪装成的
+        RUN_FINISHED不算终态；真正终态前先过``_require_product_terminal``提交门。
+        """
+
         heartbeat_task: asyncio.Task[None] | None = None
         terminal_seen = False
         last_control_check = 0.0
@@ -277,6 +319,7 @@ class ExecutionWorker:
                     await heartbeat_task
 
     async def _heartbeat_loop(self, claim: ClaimedRuntime) -> None:
+        """执行期间周期续租与心跳；续租失败说明Lease已丢，触发本地收敛而不是继续写。"""
         interval = max(1.0, self.lease_seconds / 3)
         while True:
             await asyncio.sleep(interval)
@@ -290,6 +333,8 @@ class ExecutionWorker:
             await self._maintain_runtime()
 
     async def _maintain_runtime(self) -> None:
+        """领取间隙的周期维护：对账过期Lease、把Runtime终态投影到Product Run、更新心跳。"""
+
         now = time.monotonic()
         if now < self._next_maintenance_at:
             return
@@ -318,6 +363,8 @@ class ExecutionWorker:
 
     @staticmethod
     def _public_payload(event: Any) -> dict[str, Any]:
+        """把Runner事件规范化为可公开Journal载荷；缺AG-UI type的事件直接拒绝。"""
+
         if hasattr(event, "model_dump"):
             value = event.model_dump(mode="json", by_alias=True, exclude_none=True)
         elif isinstance(event, dict):
@@ -330,10 +377,17 @@ class ExecutionWorker:
 
     @staticmethod
     def _is_interrupt(payload: dict[str, Any]) -> bool:
+        """识别“RUN_FINISHED外壳里的HITL中断”：中断是暂停等决定，不是运行终态。"""
+
         outcome = payload.get("outcome")
         return isinstance(outcome, dict) and outcome.get("type") == "interrupt"
 
     async def _require_product_terminal(self, claim: ClaimedRuntime) -> str:
+        """Finalization门核验：发布成功终态前，Product Run必须已进入产品终态。
+
+        MAF/Runner报完成不等于产品成功；产品事务未提交时这里失败关闭而不是补发成功。
+        """
+
         async with self.database.sessions() as transaction:
             run = await transaction.get(RunRecord, claim.product_run_id)
             if run is None or run.status not in {"succeeded", "abandoned"}:

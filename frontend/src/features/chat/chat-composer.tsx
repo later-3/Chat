@@ -57,6 +57,7 @@ export function ChatComposer({
   return (
     <div className="composer-wrap">
       <form className="composer-stack" onSubmit={onSubmit}>
+        {/* 发送前的Workflow显式选择：选择随本次发送固化，运行中锁定不可切换。 */}
         <div className="workflow-selection-bar">
           <label>
             <WorkflowIcon size={14} />
@@ -121,6 +122,7 @@ export function ChatComposer({
       </form>
       {retrySource && (
         <div className="retry-context">
+          {/* Retry/Restart语义提示：结果未知的旧Run不会原样重试，修改Prompt记为Restart。 */}
           <span>
             {retrySource.forceRestart
               ? "结果未知的旧 Run 不会原样重试；再次发送会创建 Restart。"

@@ -17,6 +17,7 @@ EXECUTOR_FILES = (
     ROOT / "backend/app/execution_dispatch/workflow.py",
     ROOT / "backend/app/execution_dispatch/result_gate.py",
 )
+CONTRACT_FILE = ROOT / "backend/app/workflows/continuous_chat_contracts.py"
 
 
 def _has_chinese(value: str | None) -> bool:
@@ -68,4 +69,23 @@ def test_continuous_executor_classes_and_handlers_keep_chinese_responsibility_co
                 )
                 if is_handler and not _has_chinese(ast.get_docstring(member)):
                     missing.append(f"{source.name}:{node.name}.{member.name}")
+    assert missing == []
+
+
+def test_continuous_pure_contracts_keep_chinese_docstrings() -> None:
+    """确定性护栏所在的纯合同模块：模块docstring与全部顶层函数必须保留中文说明。
+
+    调试“不调模型也能判断”的逻辑时一定会单步进入这个文件；它的注释缺失曾使
+    目录查询、意图规范化与场景路由求值无法就地理解。
+    """
+
+    tree = ast.parse(CONTRACT_FILE.read_text(encoding="utf-8"))
+    missing: list[str] = []
+    if not _has_chinese(ast.get_docstring(tree)):
+        missing.append(f"{CONTRACT_FILE.name}:模块docstring")
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not _has_chinese(
+            ast.get_docstring(node)
+        ):
+            missing.append(f"{CONTRACT_FILE.name}:{node.name}")
     assert missing == []

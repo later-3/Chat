@@ -1,3 +1,4 @@
+/** 后端统一Problem Detail合同：稳定code、脱敏message、请求关联ID与可恢复标记。 */
 export interface ApiProblem {
   code: string;
   message: string;
@@ -27,6 +28,7 @@ function isApiProblem(value: unknown): value is ApiProblem {
   );
 }
 
+/** 状态码到恢复动作的映射：401/403重新认证、409刷新、410过期、422审查输入。 */
 function recoveryAction(problem: ApiProblem, status: number): ApiRecoveryAction {
   if (status === 401 || status === 403) return "authenticate";
   if (status === 409) return "refresh";
@@ -36,6 +38,7 @@ function recoveryAction(problem: ApiProblem, status: number): ApiRecoveryAction 
   return "contact_support";
 }
 
+/** 携带Problem Detail的API错误；UI按recoveryAction呈现恢复入口，而不是裸状态码。 */
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -56,6 +59,7 @@ export class ApiError extends Error {
   }
 }
 
+/** 旧格式错误响应的兼容投影：统一收敛为Problem Detail，新代码不再产生该格式。 */
 function legacyProblem(payload: unknown, response: Response, fallback: string): ApiProblem {
   const detail =
     payload && typeof payload === "object"

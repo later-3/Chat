@@ -76,36 +76,48 @@ class HomeProjectionService:
                 )
             ).all()
             project_rows = (
-                await transaction.execute(
-                    select(ProductProjectRecord).where(
-                        ProductProjectRecord.scope_id == self.scope_id,
-                        ProductProjectRecord.status.in_({"proposed", "active", "paused"}),
+                (
+                    await transaction.execute(
+                        select(ProductProjectRecord).where(
+                            ProductProjectRecord.scope_id == self.scope_id,
+                            ProductProjectRecord.status.in_({"proposed", "active", "paused"}),
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             idea_rows = (
-                await transaction.execute(
-                    select(NoteRecord)
-                    .where(
-                        NoteRecord.scope_id == self.scope_id,
-                        NoteRecord.kind == "idea",
-                        NoteRecord.status.in_({"draft", "active"}),
+                (
+                    await transaction.execute(
+                        select(NoteRecord)
+                        .where(
+                            NoteRecord.scope_id == self.scope_id,
+                            NoteRecord.kind == "idea",
+                            NoteRecord.status.in_({"draft", "active"}),
+                        )
+                        .order_by(NoteRecord.updated_at.desc())
+                        .limit(3)
                     )
-                    .order_by(NoteRecord.updated_at.desc())
-                    .limit(3)
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             artifact_rows = (
-                await transaction.execute(
-                    select(ArtifactRecord)
-                    .where(
-                        ArtifactRecord.scope_id == self.scope_id,
-                        ArtifactRecord.status.not_in({"discarded", "rejected", "not_adopted"}),
+                (
+                    await transaction.execute(
+                        select(ArtifactRecord)
+                        .where(
+                            ArtifactRecord.scope_id == self.scope_id,
+                            ArtifactRecord.status.not_in({"discarded", "rejected", "not_adopted"}),
+                        )
+                        .order_by(ArtifactRecord.updated_at.desc())
+                        .limit(3)
                     )
-                    .order_by(ArtifactRecord.updated_at.desc())
-                    .limit(3)
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             interaction_rows = (
                 await transaction.execute(
                     select(
@@ -124,14 +136,18 @@ class HomeProjectionService:
                 )
             ).all()
             trace_rows = (
-                await transaction.execute(
-                    select(HarnessTraceRecord).where(
-                        HarnessTraceRecord.scope_id == self.scope_id,
-                        HarnessTraceRecord.created_at >= year_start,
-                        HarnessTraceRecord.created_at < year_end,
+                (
+                    await transaction.execute(
+                        select(HarnessTraceRecord).where(
+                            HarnessTraceRecord.scope_id == self.scope_id,
+                            HarnessTraceRecord.created_at >= year_start,
+                            HarnessTraceRecord.created_at < year_end,
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             calendar_ideas = (
                 await transaction.execute(
                     select(NoteRecord.id, NoteRecord.created_at).where(

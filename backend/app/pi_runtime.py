@@ -400,9 +400,14 @@ def _pi_provider_compat(provider: ModelProviderConfig, model: str) -> dict[str, 
         # DashScope's coding endpoint rejects the OpenAI `developer` role even
         # when a generic DashScope catalog declares it. It accepts `system`.
         "supportsDeveloperRole": "developer" in roles and not is_dashscope_coding,
-        "supportsReasoningEffort": is_dashscope_coding or is_kimi_code,
+        # DashScope Coding Plan exposes hybrid thinking with Qwen's
+        # `enable_thinking` switch. Kimi K3 uses OpenAI-style
+        # `reasoning_effort`; conflating the two produces a valid-looking but
+        # upstream-incompatible approved request.
+        "supportsReasoningEffort": is_kimi_code,
         "maxTokensField": "max_completion_tokens",
         "supportsStrictMode": False,
+        **({"thinkingFormat": "qwen"} if is_dashscope_coding else {}),
     }
 
 

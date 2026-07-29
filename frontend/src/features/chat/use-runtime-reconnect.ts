@@ -1,3 +1,9 @@
+/**
+ * 活动Run重连Hook：把React重新挂到持久Runtime Journal上，不接管Product Run状态。
+ *
+ * 关闭本Hook只停止观察；Worker继续执行直到持久终态或显式取消命令。重放按游标进行，
+ * Sequence/Hash校验缺口；Cursor过期（410）回退到Product水合而不是伪造连续。
+ */
 import type { HttpAgent } from "@ag-ui/client";
 import type { Interrupt, Message } from "@ag-ui/core";
 import { useEffect, useRef } from "react";
@@ -29,6 +35,7 @@ function cloneMessages(messages: ReadonlyArray<Readonly<Message>>): Message[] {
   return messages.map((message) => ({ ...message })) as Message[];
 }
 
+/** 重连退避：离线固定1秒，在线指数退避封顶5秒；不会取消服务端执行。 */
 export function runtimeReconnectDelayMs(failureCount: number, browserOnline = true): number {
   if (!browserOnline) return 1_000;
   return Math.min(5_000, 400 * 2 ** Math.max(0, failureCount - 1));
@@ -39,9 +46,8 @@ function browserOnline(): boolean {
 }
 
 /**
- * Reattaches React to the durable Runtime Journal without taking ownership of
- * Product Run state. Closing this effect only stops observation; the Worker
- * keeps running until a persisted terminal event or explicit cancel command.
+ * 把React重新挂到持久Runtime Journal，但不拥有Product Run状态。
+ * 关闭本effect只停止观察；Worker继续运行直到持久终态或显式取消命令。
  */
 export function useRuntimeReconnect({
   agent,
@@ -110,8 +116,7 @@ export function useRuntimeReconnect({
             if (outcome && typeof outcome === "object" && !Array.isArray(outcome)) {
               const typedOutcome = outcome as { type?: unknown; interrupts?: unknown };
               if (typedOutcome.type === "interrupt" && Array.isArray(typedOutcome.interrupts)) {
-                // A resumed Job may briefly replay the previous segment's
-                // terminal interrupt. Only waiting_human is allowed to reopen it.
+                // 恢复的Job可能短暂重放上一段的终态中断；只有waiting_human允许重新打开审批卡。
                 if (response.job.status !== "waiting_human") {
                   await new Promise((resolve) => window.setTimeout(resolve, 180));
                   continue;
@@ -154,6 +159,7 @@ export function useRuntimeReconnect({
           if (cancelled) return;
           const message =
             reconnectError instanceof Error ? reconnectError.message : "Runtime重连失败";
+          // Cursor被清理（410）：停止重放，回退到Product水合重建权威状态。
           if (message.includes("RUNTIME_CURSOR_EXPIRED") || message.includes("410")) {
             onConnectionStatus("cursor_expired");
             onSessionSettledRef.current(true);

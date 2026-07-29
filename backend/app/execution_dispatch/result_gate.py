@@ -110,6 +110,8 @@ class ResultClaimPrepareExecutor(Executor):
         sessions: ProductSessionService,
         result_pipeline: ResultPipelineCoordinator,
     ) -> None:
+        """节点28 result_claim_prepare：注入结果流水线协调器并固定executor_id；执行见@handler。"""
+
         super().__init__(id="result_claim_prepare")
         self._thread_id = thread_id
         self._run_id = run_id
@@ -179,6 +181,8 @@ class ResultClaimDecisionExecutor(Executor, RequestInfoMixin):
         governance: ExecutionGovernanceService,
         result_pipeline: ResultPipelineCoordinator,
     ) -> None:
+        """节点29 result_claim_decision：注入治理与Result Commit协调器并固定executor_id；执行见@handler。"""
+
         super().__init__(id="result_claim_decision")
         self._thread_id = thread_id
         self._run_id = run_id
@@ -541,6 +545,8 @@ class ResultClaimDecisionExecutor(Executor, RequestInfoMixin):
         artifact_disposition: str,
         outcome: str,
     ) -> CollaborationState:
+        """按冻结Decision执行Result Commit：复检收据与当前Claim状态后，单事务推进完成主体。"""
+
         result = await self._pipeline.commit(
             claim_id=str(frozen["claim_id"]),
             claim_hash=str(frozen["claim_hash"]),
@@ -572,6 +578,8 @@ class ResultClaimDecisionExecutor(Executor, RequestInfoMixin):
         return replace(state, result_claim=claim_state)
 
     async def _consume_grant(self, grant_id: str, binding_hash: str) -> None:
+        """原子消费result_commit一次性Grant；重放/并发由幂等键与BindingHash阻断。"""
+
         await self._governance.claim_grant(
             grant_id=grant_id,
             binding_hash=binding_hash,
@@ -586,6 +594,8 @@ class ResultClaimDecisionExecutor(Executor, RequestInfoMixin):
         public_input: Mapping[str, Any],
         public_output: Mapping[str, Any],
     ) -> None:
+        """写Result Gate节点的公开输入/输出Trace，供工作台与双报告还原提交门现场。"""
+
         await _record_trace(
             sessions=self._sessions,
             thread_id=self._thread_id,
@@ -598,4 +608,6 @@ class ResultClaimDecisionExecutor(Executor, RequestInfoMixin):
 
 
 def _state_mapping(state: CollaborationState) -> dict[str, Any]:
+    """把运行态CollaborationState转成dict，供冻结Decision Subject与哈希绑定使用。"""
+
     return asdict(state)

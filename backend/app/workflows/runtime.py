@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 def _resume_interrupt_id(input_data: dict[str, Any]) -> str | None:
+    """从AG-UI resume载荷中提取interruptId；兼容单对象/列表与camel/snake键名，取不到返回None。"""
     resume = input_data.get("resume")
     entries = resume if isinstance(resume, list) else [resume] if isinstance(resume, dict) else []
     for entry in entries:
@@ -46,6 +47,11 @@ def _resume_interrupt_id(input_data: dict[str, Any]) -> str | None:
 
 
 def _interrupt_contract(interrupt: Any) -> dict[str, str] | None:
+    """把MAF interrupt对象投影为前端审批合同字段（request/decision/executor ID）。
+
+    从``metadata.agent_framework``逐层取数，缺少关键ID时返回None，由调用方降级处理；
+    该投影是HITL审批卡与持久Decision之间唯一的ID桥。
+    """
     metadata = getattr(interrupt, "metadata", None)
     if not isinstance(metadata, dict):
         return None
@@ -97,6 +103,8 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
         governance: ExecutionGovernanceService | None = None,
         checkpoint_storage_factory: CheckpointStorageFactory | None = None,
     ) -> None:
+        """注入Product会话服务与Workflow定义；``run_ids``用于恢复路径绑定既有Run。"""
+
         super().__init__(
             workflow_factory=workflow_factory,
             name=definition.name,

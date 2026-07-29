@@ -1,18 +1,13 @@
 /**
- * Frontend driver for the default Chat agent (single AG-UI thread).
+ * 默认Chat Agent的前端驱动（单AG-UI Thread）——发送链的React入口。
  *
- * This is the React entry of the full send chain: a user types a prompt and
- * hits send -> run() appends the message and calls HttpAgent.runAgent() ->
- * AG-UI POST to the backend endpoint -> durable Runtime Job ->
- * ProductAwareWorkflow/Agent -> 39-node continuous-collaboration Workflow ->
- * GovernedSemanticAgentExecutor builds a ModelCallDraft, interrupts for review,
- * and (after approve/revise) sends the approved bytes to the Provider.
+ * 链路：用户点击发送 -> send()追加消息并调HttpAgent.runAgent() -> AG-UI POST
+ * -> 后端接纳为持久Runtime Job -> ProductAwareWorkflow -> 39节点主Workflow
+ * -> GovernedSemanticAgentExecutor构造ModelCallDraft、中断等审批、批准后发送精确字节。
  *
- * Interrupts are converted to review cards (model-call / product-decision /
- * tool-execution) via governedReviewFromInterrupt. Draft edits go through REST
- * (/api/model-call-drafts/:id) so the editable request and the sent bytes stay
- * one source. Stop/cancel calls the Product Session cancel endpoint; a dispatch
- * that may have reached the Provider surfaces as outcome_unknown, never retry.
+ * 中断经governedReviewFromInterrupt转成三类审批卡（模型调用/产品决定/Tool执行）；
+ * 修改走REST（/api/model-call-drafts/:id），保证可编辑请求与发送字节同源。
+ * 停止走Product Session取消端点；可能已到达Provider的派发只呈现outcome_unknown，绝不自动重试。
  */
 import { HttpAgent } from "@ag-ui/client";
 import type { Message } from "@ag-ui/core";
@@ -40,12 +35,12 @@ import {
 } from "./session-api.js";
 
 function createThreadId(): string {
-  // This remains an AG-UI correlation id until the reviewed Product Session
-  // design supplies its server-owned identity and recovery boundary.
+  // 这只是AG-UI关联ID；服务端Product Session身份与恢复边界由后端拥有。
   return createClientId();
 }
 
 function cloneMessages(messages: ReadonlyArray<Readonly<Message>>): Message[] {
+  // 每次投影都复制一份，防止AG-UI内部数组被React引用后意外共享突变。
   return messages.map((message) => ({ ...message })) as Message[];
 }
 
@@ -72,9 +67,8 @@ export {
 } from "./features/chat/chat-agent-contracts.js";
 
 /**
- * Projects one AG-UI HttpAgent into React without creating a second Agent store.
- * Product review data is fetched/changed through REST; AG-UI remains the only
- * run/interrupt stream and HttpAgent remains the message projection owner.
+ * 把一个AG-UI HttpAgent投影进React，不创建第二个Agent Store。
+ * 产品审批数据走REST读取/修改；AG-UI仍是唯一的Run/Interrupt流，HttpAgent仍是消息投影所有者。
  */
 interface UseChatAgentOptions {
   sessionId: string | null;
@@ -117,6 +111,7 @@ export function useChatAgent({
     onSessionSettledRef.current = onSessionSettled;
   }, [onSessionSettled]);
 
+  // 会话切换/刷新后的水合：用服务端权威历史重置Agent与本地状态；运行中不打断。
   useEffect(() => {
     if (!sessionId || agent.isRunning) return;
     agent.threadId = sessionId;
@@ -148,6 +143,7 @@ export function useChatAgent({
     onSessionSettled,
   });
 
+  // 派发失败后的结果探查：读Draft的Attempt状态，只区分failed/outcome_unknown，绝不重试。
   const inspectDispatchFailure = useCallback(async (message: string) => {
     const review = lastApprovedReview.current;
     if (!review) return;
@@ -175,6 +171,7 @@ export function useChatAgent({
     });
   }, []);
 
+  // 订阅AG-UI事件：消息增量、Run开始/结束/错误；interrupt在此转成审批卡。
   useEffect(() => {
     mounted.current = true;
     const subscription = agent.subscribe({
@@ -239,7 +236,7 @@ export function useChatAgent({
     };
   }, [agent, inspectDispatchFailure]);
 
-  /** Send a prompt: append a user message and start one AG-UI run. */
+  /** 发送Prompt：追加User消息并启动一次AG-UI Run；Workflow选择与控制字段随forwardedProps固化。 */
   const send = useCallback(
     async (content: string, control?: SessionRunControl, workflow?: ChatWorkflowDispatch) => {
       const text = content.trim();
@@ -282,7 +279,7 @@ export function useChatAgent({
     [agent, pendingReview],
   );
 
-  /** Approve the pending model-call draft as-is and resume the Workflow. */
+  /** 原样批准当前模型调用草稿并Resume；发送的字节就是审批时看到的字节。 */
   const approve = useCallback(async () => {
     if (
       !pendingReview ||
@@ -313,7 +310,7 @@ export function useChatAgent({
     }
   }, [agent, inspectDispatchFailure, pendingReview]);
 
-  /** Edit the provider request via REST, then resume with the new revision. */
+  /** 先经REST保存修改（新revision+新Hash），再带新revision Resume；失败时恢复审批卡。 */
   const revise = useCallback(
     async (providerId: string, providerRequest: Record<string, unknown>) => {
       if (!pendingReview || agent.isRunning) return;
@@ -366,7 +363,7 @@ export function useChatAgent({
     [agent, pendingReview],
   );
 
-  /** Abandon the pending model call: no Provider send, restore the prompt. */
+  /** 放弃当前模型调用：零Provider发送，恢复原Prompt与发送前消息快照。 */
   const abandon = useCallback(async (): Promise<string | null> => {
     if (
       !pendingReview ||
@@ -400,7 +397,7 @@ export function useChatAgent({
     }
   }, [agent, pendingReview]);
 
-  /** Submit a product-decision (accept/revise/skip/cancel) for a HITL interrupt. */
+  /** 提交产品决定（accept/revise/skip/cancel）并Resume；失败时恢复审批卡不丢现场。 */
   const decideProduct = useCallback(
     async (decision: string, changes?: Record<string, unknown>) => {
       if (!pendingReview || pendingReview.review_kind !== "product_decision" || agent.isRunning)
@@ -431,7 +428,7 @@ export function useChatAgent({
     [agent, pendingReview],
   );
 
-  /** Cancel the active AG-UI run via the Product Session; never auto-retry. */
+  /** 经Product Session取消活动AG-UI Run；可能已到达Provider时只呈现outcome_unknown。 */
   const stop = useCallback(async () => {
     const aguiRunId = activeAguiRunId.current;
     const review = lastApprovedReview.current;
@@ -467,6 +464,7 @@ export function useChatAgent({
     onSessionSettledRef.current(true);
   }, [agent, sessionId]);
 
+  // 结果未知恢复：把原Prompt取回输入框，清除恢复现场，等待用户决定下一步。
   const returnDispatchPrompt = useCallback((): string | null => {
     if (!dispatchRecovery) return null;
     const prompt = dispatchRecovery.originPrompt;

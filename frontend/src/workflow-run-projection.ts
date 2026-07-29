@@ -2,6 +2,7 @@ import type { ProductRun } from "./session-api.js";
 import type { RunStatus } from "./use-chat-agent.js";
 import type { ProductTraceEvent, WorkflowDefinition } from "./workflow-api.js";
 
+/** 旧单模型审批Workflow的前端常量定义；主Workflow为continuous-collaboration v1.8.0。 */
 export const CHAT_WORKFLOW = {
   id: "chat-model-call-approval",
   name: "发送前可编辑 Prompt",
@@ -32,6 +33,7 @@ export type WorkflowStageStatus =
   | "abandoned"
   | "skipped";
 
+/** 运行视图的阶段分组（前端展示层）：ingress/MAF/Provider/终态四段。 */
 export type WorkflowStageGroup = "ingress" | "maf" | "provider" | "finalization";
 
 export interface WorkflowStageDefinition {
@@ -346,6 +348,7 @@ function applyTrace(
   });
 }
 
+/** 把Product Trace事件投影为运行视图阶段状态；Trace是唯一事实源，前端不猜路径。 */
 export function deriveWorkflowRunProjection(
   runStatus: RunStatus,
   pendingApproval: boolean,

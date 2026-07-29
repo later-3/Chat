@@ -91,6 +91,8 @@ class ExecutionRouteExecutor(Executor):
         sessions: ProductSessionService,
         dispatch: ExecutionDispatchService,
     ) -> None:
+        """节点24 execution_route：注入执行调度服务并固定executor_id；3路执行Switch的判定见@handler。"""
+
         super().__init__(id="execution_route")
         self._thread_id = thread_id
         self._run_id = run_id
@@ -212,6 +214,8 @@ class ExecutionWorkspacePrepareExecutor(Executor):
         sessions: ProductSessionService,
         dispatch: ExecutionDispatchService,
     ) -> None:
+        """节点25 execution_workspace_prepare：注入Workspace服务并固定executor_id；执行见@handler。"""
+
         super().__init__(id="execution_workspace_prepare")
         self._thread_id = thread_id
         self._run_id = run_id
@@ -292,6 +296,11 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         node_id: str = "pi_readonly_dispatch",
         mode: str = "readonly",
     ) -> None:
+        """pi dispatch节点（26 pi_workspace / 30 pi_readonly）：同一类按``mode``区分两种执行形态。
+
+        进程内维护pi Model/Tool待决边界注册表；持久归属是ToolExecution ID，不是内存对象。
+        """
+
         super().__init__(id=node_id)
         self._thread_id = thread_id
         self._run_id = run_id
@@ -474,7 +483,7 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
             )
 
     async def on_checkpoint_save(self) -> dict[str, Any]:
-        """Persist reattachment references, never live process/Future objects."""
+        """Checkpoint只保存可重挂接的稳定引用（ToolExecution ID与待决边界），绝不保存进程对象。"""
 
         if self._prepared is None or self._state is None:
             return {}
@@ -523,7 +532,7 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         }
 
     async def on_checkpoint_restore(self, state: dict[str, Any]) -> None:
-        """Reattach a rebuilt Executor to the exact process-local boundary."""
+        """把重建的Executor重挂接到原进程内的Future/RPC边界；注册表缺失时失败关闭而不是伪恢复。"""
 
         if not state:
             return
@@ -601,6 +610,8 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         *,
         draft: ModelCallDraft | None = None,
     ) -> None:
+        """为pi的一次模型边界生成可编辑Draft并发起审批中断；批准前pi的该次模型调用不发送。"""
+
         prepared = self._require_prepared()
         if draft is None:
             try:
@@ -699,6 +710,8 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         self,
         boundary: PiToolCallBoundary,
     ) -> ToolAuthorization:
+        """把pi的一次Tool边界转为Chat治理授权：逐次重验路径、快照与Tool Gate范围。"""
+
         prepared = self._require_prepared()
         state = self._require_state()
         fence = prepared.route.repository_fence
@@ -741,6 +754,8 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         decision: dict[str, Any],
         ctx: WorkflowContext[CollaborationState, dict[str, Any]],
     ) -> None:
+        """模型审批决定恢复后：批准则消费Grant并放行该边界，放弃/拒绝则收敛该边界不发送。"""
+
         boundary = self._pending_model
         governance = self._pending_model_governance
         prepared = self._require_prepared()
@@ -830,6 +845,8 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         draft: ModelCallDraft,
         governance: PiModelCallGovernance,
     ) -> None:
+        """批准一个pi模型边界：进程内Claim保证单Owner，重复Resume不会重发同一边界。"""
+
         prepared = self._require_prepared()
         claimed = self._store.claim(
             approval_id=draft.approval_id,
@@ -859,6 +876,8 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         self._pending_model_governance = None
 
     async def _finish_active_model_attempt(self) -> None:
+        """关闭活动模型Attempt：无明确结局时诚实记为``outcome_unknown``，不猜成功或失败。"""
+
         active = self._active_model_attempt
         if active is None:
             return
@@ -879,6 +898,8 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         decision: dict[str, Any],
         ctx: WorkflowContext[CollaborationState, dict[str, Any]],
     ) -> None:
+        """Tool审批决定恢复后：按授权执行该Tool边界并回传结果；未授权不执行。"""
+
         boundary = self._pending_tool
         authorization = self._pending_tool_authorization
         prepared = self._require_prepared()
@@ -923,6 +944,8 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         summary: str,
         details: Mapping[str, Any],
     ) -> None:
+        """把pi子活动事件发为中间输出，经Runtime Event Translator进入Journal供工作台投影。"""
+
         prepared = self._prepared
         sequence = (
             await self._dispatch.record_activity(
@@ -953,6 +976,8 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         self,
         ctx: WorkflowContext[CollaborationState, dict[str, Any]],
     ) -> None:
+        """用户放弃本次pi执行：关闭活动Attempt、收敛ToolExecution为abandoned并通知下游。"""
+
         prepared = self._require_prepared()
         await self._emit(
             ctx,
@@ -973,6 +998,8 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         await self._sessions.abandon_active_run(self._thread_id)
 
     async def _fail(self, failure_code: str) -> None:
+        """失败收敛：关闭活动Attempt并把ToolExecution/Run标为失败；不遗留waiting_human假状态。"""
+
         await self._finish_active_model_attempt()
         prepared = self._prepared
         if prepared is None:
@@ -991,7 +1018,7 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         )
 
     async def _terminate_failure(self, error: Exception) -> None:
-        """Persist one stable failure across every MAF Executor entry point."""
+        """所有MAF入口共享的失败出口：先关闭Product Run域失败，再让协议层投影，防止顺序颠倒。"""
 
         failure_code = getattr(error, "code", type(error).__name__)
         await self._fail(failure_code)
@@ -1005,6 +1032,8 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         )
 
     def _require_prepared(self) -> PreparedPiExecution:
+        """取已准备的pi执行上下文；未准备即失败关闭（恢复顺序错误的唯一防线）。"""
+
         if self._prepared is None:
             raise ExecutionDispatchError(
                 "pi执行尚未准备",
@@ -1013,6 +1042,8 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         return self._prepared
 
     def _require_state(self) -> CollaborationState:
+        """取当前Workflow运行态；缺失即失败关闭，不用空状态继续执行。"""
+
         if self._state is None:
             raise ExecutionDispatchError(
                 "pi执行缺少Workflow状态",
@@ -1037,6 +1068,8 @@ class PiReadonlyResultAssemblyExecutor(Executor):
         dispatch: ExecutionDispatchService,
         node_id: str = "pi_readonly_result_assembly",
     ) -> None:
+        """pi结果装配节点（27 workspace / 31 readonly）：按``node_id``区分；执行见@handler。"""
+
         super().__init__(id=node_id)
         self._thread_id = thread_id
         self._run_id = run_id
@@ -1095,6 +1128,8 @@ class PiWorkspaceDispatchExecutor(PiReadonlyDispatchExecutor):
     """学习阶段S5、节点26：节点30驱动状态机的隔离编辑配置版本。"""
 
     def __init__(self, **kwargs: Any) -> None:
+        """以``node_id=pi_workspace_dispatch``+``mode=workspace_edit``复用父类状态机。"""
+
         super().__init__(
             **kwargs,
             node_id="pi_workspace_dispatch",
@@ -1106,4 +1141,6 @@ class PiWorkspaceResultAssemblyExecutor(PiReadonlyResultAssemblyExecutor):
     """学习阶段S5、节点27：装配隔离编辑结果并进入Claim准备。"""
 
     def __init__(self, **kwargs: Any) -> None:
+        """以``node_id=pi_workspace_result_assembly``复用父类装配逻辑。"""
+
         super().__init__(**kwargs, node_id="pi_workspace_result_assembly")

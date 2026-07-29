@@ -39,31 +39,45 @@ ACTIVE_RUN_STATUSES = {"accepted", "running", "waiting_approval", "committing"}
 
 
 class ProductSessionError(ValueError):
+    """Product Session应用层错误基类；``code``是返回前端的稳定错误码。"""
+
     code = "SESSION_INVALID"
 
 
 class ProductSessionNotFound(ProductSessionError):
+    """目标Product Session不存在（或不在当前可信Scope内）。"""
+
     code = "SESSION_NOT_FOUND"
 
 
 class ProductSessionConflict(ProductSessionError):
+    """会话状态与请求冲突的基类（归档、竞态、映射损坏等）。"""
+
     code = "SESSION_CONFLICT"
 
 
 class IdempotencyConflict(ProductSessionConflict):
+    """相同AG-UI runId携带了不同请求内容：拒绝而不是覆盖，保证重连幂等。"""
+
     code = "IDEMPOTENCY_CONFLICT"
 
 
 class SessionBusy(ProductSessionConflict):
+    """该Product Session已有活动Run；一个会话同一时刻只允许1个活动Run。"""
+
     code = "SESSION_BUSY"
 
 
 class SessionHistoryConflict(ProductSessionConflict):
+    """客户端消息与服务端权威历史不一致：防止AG-UI消息全集与Product历史双写。"""
+
     code = "SESSION_HISTORY_CONFLICT"
 
 
 @dataclass(frozen=True, slots=True)
 class AcceptedRun:
+    """接纳门通过后的返回值：Product/AG-UI两侧ID与运行配置，供Worker领取执行。"""
+
     session_id: str
     product_run_id: str
     interaction_id: str
@@ -75,22 +89,28 @@ class AcceptedRun:
 
 
 def _uuid() -> str:
+    """生成产品对象ID；ID本身不构成授权，只标识对象。"""
+
     return str(uuid.uuid4())
 
 
 def _canonical(value: Any) -> str:
+    """把值序列化为规范化JSON文本（键排序、紧凑分隔），供内容Hash使用。"""
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _hash(value: Any) -> str:
+    """对值生成规范化SHA-256；消息内容与请求体的比对、幂等判定都依赖它。"""
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
 
 
 def _iso(value: datetime | None) -> str | None:
+    """时间转ISO字符串；None安全，供REST视图投影使用。"""
     return value.isoformat() if value is not None else None
 
 
 def _message_text(content: Any) -> str:
+    """从AG-UI消息content提取纯文本；片段数组拼接text，非文本返回空串。"""
     if isinstance(content, str):
         return content
     if not isinstance(content, list):
@@ -106,6 +126,8 @@ def _message_text(content: Any) -> str:
 
 
 def _incoming_visible_messages(values: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """从AG-UI请求中筛出User/Assistant可见消息；过滤request_info等审批协议消息。"""
+
     messages: list[dict[str, str]] = []
     for value in values:
         role = value.get("role")
@@ -125,6 +147,8 @@ def _incoming_visible_messages(values: list[dict[str, Any]]) -> list[dict[str, s
 
 
 def _retry_control(input_data: dict[str, Any]) -> tuple[str, str] | None:
+    """解析Retry/Restart控制字段；返回(语义, 血缘Run ID)或None（普通新Run）。"""
+
     forwarded = input_data.get("forwarded_props") or input_data.get("forwardedProps")
     if not isinstance(forwarded, dict):
         return None
@@ -141,6 +165,8 @@ def _retry_control(input_data: dict[str, Any]) -> tuple[str, str] | None:
 
 
 def _session_view(value: SessionRecord) -> dict[str, Any]:
+    """Product Session的REST投影：含短定位码与标题来源，不含内部敏感字段。"""
+
     return {
         "id": value.id,
         "thread_id": value.id,
@@ -161,6 +187,8 @@ def _session_view(value: SessionRecord) -> dict[str, Any]:
 
 
 def _message_view(value: MessageRecord) -> dict[str, Any]:
+    """Message的REST投影：角色、内容、状态与关联ID；withdrawn消息由查询层过滤。"""
+
     return {
         "id": value.id,
         "agui_message_id": value.agui_message_id,
@@ -179,6 +207,8 @@ def _message_view(value: MessageRecord) -> dict[str, Any]:
 
 
 def _attempt_view(value: RunAttemptRecord) -> dict[str, Any]:
+    """Run Attempt的REST投影：第几次尝试、状态、Worker所有权与恢复血缘。"""
+
     return {
         "id": value.id,
         "attempt_number": value.attempt_number,
@@ -196,6 +226,8 @@ def _run_view(
     attempts: list[RunAttemptRecord] | None = None,
     user_message: MessageRecord | None = None,
 ) -> dict[str, Any]:
+    """Product Run的REST投影：状态、模型配置、Attempt摘要与来源User Message片段。"""
+
     return {
         "id": value.id,
         "session_id": value.session_id,
@@ -220,6 +252,8 @@ def _run_view(
 
 
 def _trace_view(value: TraceRecord) -> dict[str, Any]:
+    """Trace的REST投影：事件类型、关联ID与公开载荷；不输出隐藏推理或密钥。"""
+
     return {
         "id": value.id,
         "session_id": value.session_id,
@@ -257,6 +291,8 @@ class ProductSessionService:
     """在短事务内执行Session/Interaction/Message/Run不变量和终态报告物化。"""
 
     def __init__(self, database: ProductDatabase, *, scope_id: str = DEFAULT_SCOPE_ID) -> None:
+        """绑定Product Store与当前Scope；正式Identity落地前固定为本地单Scope。"""
+
         self.database = database
         self.scope_id = scope_id
         # Definition只用于解释同版本Trace，不参与Workflow执行或产品状态转换。
@@ -289,6 +325,8 @@ class ProductSessionService:
         self._trace_workflow_definitions = configured
 
     async def initialize(self) -> None:
+        """启动初始化：建库、收敛上次进程遗留的活动Run、回填终态双Trace报告。"""
+
         await self.database.initialize()
         await self.reconcile_orphaned_runs()
         await self.backfill_terminal_trace_reports()
@@ -300,6 +338,8 @@ class ProductSessionService:
         provider_id: str | None = None,
         model: str | None = None,
     ) -> dict[str, Any]:
+        """创建Product Session：标题来源区分default/manual；会话模型只是默认值，不覆盖Workflow节点Profile。"""
+
         normalized_title = title.strip()[:160] or "新会话"
         record = SessionRecord(
             id=_uuid(),
@@ -315,6 +355,8 @@ class ProductSessionService:
         return _session_view(record)
 
     async def list_sessions(self, *, include_archived: bool = False) -> list[dict[str, Any]]:
+        """列出当前Scope的会话；归档默认隐藏，归档不等于删除。"""
+
         async with self.database.sessions() as transaction:
             query = select(SessionRecord).where(SessionRecord.scope_id == self.scope_id)
             if not include_archived:
@@ -323,6 +365,8 @@ class ProductSessionService:
         return [_session_view(value) for value in values]
 
     async def get_session(self, session_id: str) -> dict[str, Any]:
+        """读取单个会话投影；越Scope访问与不存在一样返回NotFound，不泄露存在性。"""
+
         async with self.database.sessions() as transaction:
             value = await self._session(transaction, session_id)
             return _session_view(value)
@@ -337,6 +381,7 @@ class ProductSessionService:
         model: str | None = None,
         update_model: bool = False,
     ) -> dict[str, Any]:
+        """更新标题/模型默认或执行归档：手工标题不被自动标题回滚；归档拒绝新Run。"""
         async with self.database.sessions.begin() as transaction:
             value = await self._session(transaction, session_id)
             if value.active_run_id is not None and archived:
@@ -356,6 +401,8 @@ class ProductSessionService:
         return _session_view(value)
 
     async def list_messages(self, session_id: str) -> list[dict[str, Any]]:
+        """按ordinal返回committed可见历史；withdrawn与审批协议消息不进入该投影。"""
+
         async with self.database.sessions() as transaction:
             await self._session(transaction, session_id)
             values = list(
@@ -373,6 +420,8 @@ class ProductSessionService:
         return [_message_view(value) for value in values]
 
     async def list_runs(self, session_id: str) -> list[dict[str, Any]]:
+        """列出会话的Product Run及Attempt摘要；运行事实的唯一产品投影。"""
+
         async with self.database.sessions() as transaction:
             await self._session(transaction, session_id)
             values = list(
@@ -424,6 +473,8 @@ class ProductSessionService:
         ]
 
     async def list_trace(self, session_id: str, run_id: str) -> list[dict[str, Any]]:
+        """按sequence返回一个Run的Product Trace事件；节点详情的数据源。"""
+
         async with self.database.sessions() as transaction:
             await self._session(transaction, session_id)
             run = await transaction.scalar(
@@ -556,7 +607,7 @@ class ProductSessionService:
         return len(missing)
 
     async def latest_workflow_trace(self, session_id: str, workflow_id: str) -> list[dict[str, Any]]:
-        """Return the newest completed or failed projection for one workflow."""
+        """返回某Workflow最近一次已结束Run的Trace投影，供工作台刷新后恢复节点终态。"""
 
         async with self.database.sessions() as transaction:
             await self._session(transaction, session_id)
@@ -603,6 +654,8 @@ class ProductSessionService:
         event_type: str,
         payload: dict[str, Any],
     ) -> None:
+        """追加一条Product Trace：Run内数据库原子计数器分配sequence，并发写入连续唯一。"""
+
         async with self.database.trace_write_lock:
             async with self.database.sessions.begin() as transaction:
                 await self._session(transaction, session_id)
@@ -617,6 +670,13 @@ class ProductSessionService:
                 await self._trace(transaction, run, event_type, payload)
 
     async def prepare_agui_run(self, input_data: dict[str, Any]) -> AcceptedRun:
+        """AG-UI接纳门：先校验与幂等，再把Interaction/User Message/Product Run/Runtime Job同事务落库。
+
+        依次经过：threadId/runId必填 -> resume分流 -> 相同runId幂等回放（内容漂移则冲突）->
+        归档会话拒绝 -> 单活动Run互斥 -> 客户端历史前缀+恰好1条新User消息校验。任一道失败
+        都不产生部分状态；通过后Worker才允许领取执行。对应架构“Interaction接纳门”。
+        """
+
         session_id = str(input_data.get("thread_id") or input_data.get("threadId") or "")
         agui_run_id = str(input_data.get("run_id") or input_data.get("runId") or "")
         if not session_id or not agui_run_id:
@@ -883,6 +943,8 @@ class ProductSessionService:
         )
 
     async def _resume_run(self, session_id: str, agui_run_id: str) -> AcceptedRun:
+        """恢复门：只允许接回本会话的活动Run；新旧AG-UI runId与Product Run的绑定冲突即拒绝。"""
+
         async with self.database.sessions.begin() as transaction:
             session = await self._session(transaction, session_id)
             if session.active_run_id is None:
@@ -926,6 +988,11 @@ class ProductSessionService:
         *,
         excluded_message_ids: set[str] | None = None,
     ) -> None:
+        """用Product Store权威历史原位替换AG-UI输入中的客户端消息全集（Retry时排除祖先链）。
+
+        AG-UI Client总是携带浏览器消息；服务端只信自己的committed历史，防止双写与伪造前缀。
+        """
+
         async with self.database.sessions() as transaction:
             values = list(
                 (
@@ -953,6 +1020,8 @@ class ProductSessionService:
         draft_id: str | None = None,
         approval_id: str | None = None,
     ) -> None:
+        """把活动Run转为waiting_approval并绑定当前Draft/Approval；旧状态非法时静默忽略。"""
+
         await self._transition_active(
             session_id,
             allowed=ACTIVE_RUN_STATUSES,
@@ -962,6 +1031,8 @@ class ProductSessionService:
         )
 
     async def mark_running(self, session_id: str) -> None:
+        """把活动Run标记为running；仅从accepted/waiting_approval/running合法转换。"""
+
         await self._transition_active(
             session_id,
             allowed={"accepted", "waiting_approval", "running"},
@@ -1107,6 +1178,7 @@ class ProductSessionService:
         return _message_view(message)
 
     async def active_run(self, session_id: str) -> dict[str, Any] | None:
+        """取会话当前活动Run投影；无活动Run返回None，Trace写入据此决定归属。"""
         async with self.database.sessions() as transaction:
             session = await self._session(transaction, session_id)
             if session.active_run_id is None:
@@ -1180,9 +1252,14 @@ class ProductSessionService:
         return _run_view(run)
 
     async def reconcile_orphaned_runs(self) -> int:
-        # Import locally to keep the Product Session module independent from
-        # execution-governance construction while still recognizing a durable
-        # MAF safe point during process startup.
+        """启动收敛：把进程丢失遗留的活动Run标为interrupted；有持久Checkpoint安全点的除外。
+
+        本方法只负责“不再有人拥有”的Run；Checkpoint/Interrupt能否跨进程接回由治理桥判断，
+        互不冒充。返回收敛数量。
+        """
+
+        # 局部导入：让Product Session模块在识别持久MAF安全点的同时，不反向依赖
+        # 执行治理的构造链。
         from ..governance.models import (
             MafWorkflowCheckpointRecord,
             RuntimeInterruptLinkRecord,
@@ -1262,10 +1339,9 @@ class ProductSessionService:
         return interrupted
 
     async def reconcile_terminal_runtime_jobs(self) -> int:
-        """Project terminal Runtime Jobs onto still-active Product Runs.
+        """把已进入终态的Runtime Job投影到仍活动的Product Run上。
 
-        Runtime remains an execution projection.  This Product-owned method is
-        the only place where a Reconciler may close the authoritative Run.
+        Runtime只是执行投影；本Product侧方法是Reconciler唯一允许关闭权威Run的位置。
         """
 
         from ..runtime_execution.models import RuntimeJobRecord
@@ -1333,6 +1409,8 @@ class ProductSessionService:
         failure_code: str,
         failure_message: str,
     ) -> None:
+        """把孤儿Run/Attempt/Interaction统一收敛为指定终态；调用方持有事务。"""
+
         run.status = status
         run.failure_code = failure_code
         run.failure_message = failure_message
@@ -1460,6 +1538,8 @@ class ProductSessionService:
         draft_id: str | None = None,
         approval_id: str | None = None,
     ) -> None:
+        """活动Run状态机唯一入口：不在allowed集合内的转换静默忽略，不产生半状态。"""
+
         async with self.database.sessions.begin() as transaction:
             session = await self._session(transaction, session_id)
             if session.active_run_id is None:
@@ -1489,6 +1569,8 @@ class ProductSessionService:
             await self._trace(transaction, run, f"run.{status}", {})
 
     async def _session(self, transaction: Any, session_id: str) -> SessionRecord:
+        """在当前Scope内取会话记录；调用方持有事务，本方法不自行开启或提交。"""
+
         value = await transaction.scalar(
             select(SessionRecord).where(
                 SessionRecord.id == session_id,
@@ -1500,6 +1582,8 @@ class ProductSessionService:
         return value
 
     async def _current_attempt(self, transaction: Any, run_id: str) -> RunAttemptRecord | None:
+        """取Run的最新Attempt（按attempt_number）；恢复与终态写入都以它为所有权对象。"""
+
         return await transaction.scalar(
             select(RunAttemptRecord)
             .where(RunAttemptRecord.run_id == run_id)
@@ -1516,6 +1600,8 @@ class ProductSessionService:
         failure_code: str | None = None,
         failure_message: str | None = None,
     ) -> None:
+        """关闭当前Attempt：状态、失败码与完成时间；无Attempt时跳过（旧数据兼容）。"""
+
         attempt = await self._current_attempt(transaction, run.id)
         if attempt is None:
             return
@@ -1527,6 +1613,8 @@ class ProductSessionService:
     async def _trace(
         self, transaction: Any, run: RunRecord, event_type: str, payload: dict[str, Any]
     ) -> None:
+        """同事务写入Trace：用Run行上的原子计数器分配sequence，并发下连续唯一（不用MAX+1）。"""
+
         sequence = await transaction.scalar(
             update(RunRecord)
             .where(RunRecord.id == run.id)

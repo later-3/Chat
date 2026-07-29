@@ -1,8 +1,8 @@
-"""Stable state and deterministic parsing helpers for the collaboration Workflow.
+"""持续协作主Workflow的纯状态与确定性解析合同（服务S1-S3与S6的判定逻辑）。
 
-This module deliberately has no MAF, database, or HTTP dependency.  A persisted
-Workflow snapshot can therefore be decoded and contract-tested without
-constructing the runtime graph.
+本模块刻意不依赖MAF、数据库或HTTP：持久化Workflow快照可以在不构造运行时图的情况下
+被解码和合同测试。39节点中所有“不调模型也能判断”的规则都收在这里——目录查询护栏、
+意图规范化、场景路由求值、摘要写回边界、协议覆盖——Executor只负责编排，规则独立单测。
 """
 
 from __future__ import annotations
@@ -63,7 +63,11 @@ class CollaborationState:
 
 
 def state_from_snapshot(value: Mapping[str, Any]) -> CollaborationState:
-    """Decode the tuple-bearing state from a JSON-compatible checkpoint."""
+    """把Checkpoint中的JSON快照还原为带tuple字段的``CollaborationState``。
+
+    MAF Checkpoint只保存JSON兼容结构；跨进程HITL恢复时必须在这里把list还原为tuple，
+    否则下游``replace(state, ...)``与哈希比较会出现类型漂移。服务全部39节点的恢复路径。
+    """
 
     restored = dict(value)
     for key in (
@@ -80,6 +84,8 @@ def state_from_snapshot(value: Mapping[str, Any]) -> CollaborationState:
 
 
 def message_text(message: Mapping[str, Any]) -> str:
+    """从AG-UI消息中提取纯文本；content为片段数组时拼接text片段，非文本内容返回空串。"""
+
     content = message.get("content")
     if isinstance(content, str):
         return content
@@ -93,6 +99,12 @@ def message_text(message: Mapping[str, Any]) -> str:
 
 
 def json_object(text: str) -> dict[str, Any] | None:
+    """从模型可见输出中尽力解析一个JSON对象：整串、```json围栏、首尾花括号截取。
+
+    只接受对象（dict）；全部候选解析失败返回None，由调用方决定降级或失败关闭。
+    服务意图、规划、摘要等所有结构化模型输出节点（S2/S3/S6）。
+    """
+
     candidates = [text.strip()]
     fenced = JSON_FENCE.search(text)
     if fenced:
@@ -112,7 +124,10 @@ def json_object(text: str) -> dict[str, Any] | None:
 
 
 def context_keywords(text: str) -> set[str]:
-    """Build bounded Latin and CJK terms for the lightweight recall stage."""
+    """为S1轻量召回构造有界关键词集合：拉丁词 + 2-6字CJK滑窗。
+
+    只用于TurnSummary候选召回的相关性打分，不进入Provider请求正文。
+    """
 
     lowered = text.lower()
     keywords = set(re.findall(r"[a-z0-9_][a-z0-9_.-]{1,}", lowered))
@@ -123,6 +138,11 @@ def context_keywords(text: str) -> set[str]:
 
 
 def canonical_hash(value: Any) -> str:
+    """对任意JSON兼容对象生成规范化SHA-256：键排序、紧凑分隔、保留中文。
+
+    Decision Subject、协议覆盖等授权绑定都用它，防止“同义不同序”绕过Hash失效。
+    """
+
     body = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(body).hexdigest()
 
@@ -130,13 +150,11 @@ def canonical_hash(value: Any) -> str:
 def context_source_references(
     context_items: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Project adopted Context into stable, content-free evidence references.
+    """把已采用Context投影为稳定、无正文的来源引用（服务S6摘要节点）。
 
-    The response Agent needs the selected source bodies, while the turn
-    summarizer only needs to cite which immutable revisions informed the
-    completed interaction.  Keeping this projection in the contract layer
-    ensures that the Provider payload and the human review view cannot drift
-    into two different descriptions of the summarizer's effective context.
+    响应Agent需要来源正文，回合摘要只需要引用“哪些不可变revision参与了本轮”。该投影
+    放在合同层，保证Provider载荷与人工审核视图看到的是同一份摘要上下文描述，不会各自
+    拼装而漂移。
     """
 
     references: list[dict[str, Any]] = []
@@ -173,7 +191,11 @@ def context_source_references(
 
 
 def summary_writeback_policy(origin_prompt: str) -> dict[str, Any]:
-    """Compile explicit user writeback boundaries without model inference."""
+    """不调模型，直接从用户原话编译写回边界：“只读”“不要创建/修改/记录”等。
+
+    按分句扫描否定写入意图，分别决定是否允许Work状态候选与Memory候选；S6/S7据此拦截
+    模型提出的越界写回，防止一句“只读”请求仍产生长期状态修改。
+    """
 
     lowered = origin_prompt.lower()
     read_only = "只读" in lowered or "read-only" in lowered or "read only" in lowered
@@ -205,7 +227,11 @@ def apply_summary_writeback_policy(
     *,
     origin_prompt: str,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Drop model-proposed writes that contradict explicit user boundaries."""
+    """把``summary_writeback_policy``应用到模型回合摘要：丢弃越界候选并留痕。
+
+    被压制的候选不静默消失，而是记入``discarded``，供Trace解释“模型提了但没有进入提交门”
+    的原因。下游是S6决定节点与S7候选提交。
+    """
 
     normalized = dict(summary)
     policy = summary_writeback_policy(origin_prompt)
@@ -238,18 +264,13 @@ def apply_intent_set_protocol_overlay(
     selection: Mapping[str, Any],
     intents: tuple[Mapping[str, Any], ...],
 ) -> dict[str, Any]:
-    """Compile one immutable protocol selection into the effective turn policy.
+    """把一份持久协议选择编译为本轮有效策略（服务S2协议解析节点）。
 
-    A persisted Collaboration Protocol is selected from the primary Intent and
-    keeps its original ``definition_hash`` and ``selection_hash``.  When one
-    user input contains multiple Intents, the Workflow itself requires a
-    composition plan even if the primary protocol normally disables planning.
-    This deterministic overlay records that runtime requirement without
-    pretending that a new persisted protocol revision was selected.
-
-    The overlay is deliberately narrow: it only enables the existing planner
-    role.  It does not merge heterogeneous protocol rules or grant additional
-    tools, writeback permissions, or side effects.
+    基础协议的``definition_hash``/``selection_hash``保持不变；当一句话含多个Intent时，
+    即使基础协议通常免规划，本轮也必须形成组合计划——覆盖层只记录这一运行时要求，不伪装
+    成选择了新的持久协议revision。覆盖是刻意收窄的：只打开既有planner角色，不合并异构
+    协议规则，不授予额外Tool、写回权限或副作用。``effective_selection_hash``由源Hash与
+    覆盖内容重算，保证审批绑定的是本轮真实生效的策略。
     """
 
     effective = dict(selection)
@@ -293,6 +314,8 @@ def apply_intent_set_protocol_overlay(
 
 
 def project_hint(summary: Mapping[str, Any]) -> str | None:
+    """从TurnSummary提取Project提示；兼容旧版嵌套结构，空白值统一归一为None。"""
+
     direct = summary.get("project_hint")
     nested = summary.get("summary")
     nested_hint = nested.get("project_hint") if isinstance(nested, Mapping) else None
@@ -303,17 +326,25 @@ def project_hint(summary: Mapping[str, Any]) -> str | None:
 
 
 def is_pending_clarification(summary: Mapping[str, Any]) -> bool:
+    """判断一条历史TurnSummary是否留有未回答澄清；S1据此把开放问题带回下一轮。"""
+
     nested = summary.get("summary")
     return bool(isinstance(nested, Mapping) and nested.get("awaiting_user_answer") is True)
 
 
 def is_project_catalog_query(text: str) -> bool:
+    """确定性护栏：判断用户原话是否为“明确的正式Project目录查询”（S2意图节点短路用）。
+
+    设计取向是宁缺勿滥：只命中枚举句式与全匹配正则；漏网的同义表达交给模型意图合同的
+    ``query_kind``兜底，两条路最终进入同一条0模型目录分支。匹配前先做否定消解——
+    “只查看，不要创建任何事项”中的“创建”不能被误判成创建意图（有专项测试）。
+    """
+
     compact = re.sub(r"[\s，,。.!！?？:：;；]", "", text).lower()
     if not compact or "项目" not in compact:
         return False
-    # A safety instruction such as “只查看，不要创建任何事项” reinforces a
-    # read-only catalog query.  It must not be mistaken for a positive creation
-    # request merely because the verb “创建” appears in the sentence.
+    # “只查看，不要创建任何事项”这类安全指令强化只读目录查询；不能只因句中出现
+    # “创建”动词就误判成创建请求。
     creation_scan = re.sub(
         r"(?:不要|不需要|无需|不用|不能|不得|禁止|别|不)"
         r"(?:再|自动)?(?:新建|创建|新增|开始一个)"
@@ -361,6 +392,8 @@ def is_project_catalog_query(text: str) -> bool:
 
 
 def project_catalog_intent(prompt: str) -> dict[str, Any]:
+    """为目录查询构造确定性Intent：confidence=1.0、无需计划、只读约束，供S2直接落库。"""
+
     return {
         "branch_key": "intent_1",
         "scenario": "simple_question",
@@ -384,7 +417,11 @@ def render_project_catalog_result(
     projects: Sequence[Mapping[str, Any]],
     candidates: Sequence[str],
 ) -> dict[str, Any]:
-    """Render one authoritative Product Harness query for model and UI reuse."""
+    """渲染一次权威Project目录查询结果，供模型与UI复用同一份描述（服务S3节点17）。
+
+    三种情况诚实区分：有正式Project逐条列出；正式目录为空但对话中有候选时明确“这些只是
+    候选，还不是正式Project”；两者皆空则直接说空。候选与事实的边界写进答复本身。
+    """
 
     normalized_projects = [dict(value) for value in projects]
     if normalized_projects:
@@ -418,10 +455,10 @@ def normalize_intent_candidates(
     *,
     origin_prompt: str,
 ) -> tuple[dict[str, Any], ...]:
-    """Normalize new multi-intent and legacy single-intent model contracts.
+    """规范化模型意图输出：兼容多Intent新合同与单Intent旧合同，失败关闭为1条澄清候选。
 
-    This pure boundary fails closed to one clarification candidate. It never
-    invents project bindings or silently drops an invalid extra branch.
+    该纯边界不发明Project绑定、不静默丢弃非法分支；任何结构、置信度或依赖非法都返回
+    confidence=0的澄清候选，由S3澄清分支向用户索取新信息。服务S2意图投影节点。
     """
 
     raw_values: list[Mapping[str, Any]]
@@ -498,6 +535,8 @@ def normalize_intent_candidates(
 
 
 def _invalid_intent(origin_prompt: str, reason: str) -> dict[str, Any]:
+    """构造“失败关闭”的澄清候选：模型输出不可用时不猜意图，把问题交回用户。"""
+
     return {
         "branch_key": "intent_1",
         "scenario": "clarify",
@@ -518,13 +557,19 @@ def _invalid_intent(origin_prompt: str, reason: str) -> dict[str, Any]:
 
 
 def _string_values(value: Any) -> list[str]:
+    """把任意输入收敛为非空字符串列表；非法项丢弃，用于keywords/constraints字段。"""
+
     if not isinstance(value, list):
         return []
     return [str(item).strip() for item in value if isinstance(item, str) and item.strip()]
 
 
 def needs_plan(state: CollaborationState) -> bool:
-    """Return the exact planning predicate used by the MAF switch-case graph."""
+    """MAF SwitchCase共用的规划判定谓词（S3 scenario_router第3条候选边）。
+
+    多Intent、new_task/plan_request/continue_project场景，或单Intent自报needs_plan时
+    为True。谓词只在这里定义一次，图工厂直接引用，避免路由条件两处漂移。
+    """
 
     if len(state.intents) > 1:
         return True
@@ -534,24 +579,20 @@ def needs_plan(state: CollaborationState) -> bool:
 
 
 def is_project_catalog_state(state: CollaborationState) -> bool:
-    """Return whether the single-intent authoritative catalog branch must win.
+    """判断目录分支是否必须胜出（S3 scenario_router第1条候选边的安全条件）。
 
-    The catalog Executor intentionally completes the whole Product Run without
-    a model call.  It is therefore only a valid terminal branch when the
-    Intent Set contains that one goal; otherwise it would silently discard the
-    remaining goals before the planning/response path can compose them.
+    目录Executor会0模型调用地完成整个Run；只有Intent Set至多1个目标且query_kind为
+    project_catalog时才是合法终态分支，否则会在规划/响应组合之前静默丢弃其余目标。
     """
 
     return len(state.intents) <= 1 and (state.intent or {}).get("query_kind") == "project_catalog"
 
 
 def evaluate_scenario_route(state: CollaborationState) -> dict[str, Any]:
-    """Explain the public facts behind the MAF switch-case selection.
+    """计算4条候选边的公开求值事实（服务S3 scenario_router的Trace与人读报告）。
 
-    MAF evaluates the cases in declaration order and dispatches only the first
-    match.  Persisting the evaluated public facts alongside the selected target
-    lets the designer UI explain both the chosen edge and the alternatives
-    without reconstructing hidden model reasoning or guessing from node status.
+    MAF按声明顺序只派发首个命中分支；把各边条件、实际值、选中目标与未走原因随Trace
+    持久化，设计者界面才能同时解释选中边和备选边，而不是从节点状态倒推或编造隐藏推理。
     """
 
     intent = state.intent or {}

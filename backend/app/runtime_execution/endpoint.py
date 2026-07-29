@@ -29,6 +29,7 @@ from .worker import RuntimeRunner, RuntimeRunnerRegistry
 
 
 def _sse(payload: dict[str, Any], *, sequence: int | None = None) -> bytes:
+    """把事件编码为一帧SSE字节；携带Journal序号时写入id行，供前端游标去重与缺口检测。"""
     prefix = f"id: {sequence}\n" if sequence is not None else ""
     data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     return f"{prefix}data: {data}\n\n".encode("utf-8")
@@ -131,6 +132,7 @@ def add_durable_agui_endpoint(
 
 
 def _agui_error_response(input_data: dict[str, Any], *, code: str, message: str) -> StreamingResponse:
+    """把接纳阶段错误转成SSE错误帧流；此时Job尚未建立，错误无法走Journal只能直接下流。"""
     thread_id = str(input_data.get("thread_id") or input_data.get("threadId") or "")
     run_id = str(input_data.get("run_id") or input_data.get("runId") or "")
 
@@ -154,6 +156,8 @@ def add_runtime_management_endpoints(
     *,
     runtime: RuntimeExecutionService,
 ) -> None:
+    """注册Runtime管理端点：按Product Run查Runtime Job、按游标回放事件Journal（调试与重连用）。"""
+
     @app.get("/api/runtime/product-runs/{product_run_id}")
     async def runtime_job_for_run(product_run_id: str) -> dict[str, Any]:
         job = await runtime.job_for_product_run(product_run_id)

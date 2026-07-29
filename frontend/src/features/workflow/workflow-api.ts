@@ -333,6 +333,7 @@ export interface RunGovernanceView {
   decision_requests: Array<Record<string, unknown>>;
 }
 
+/** 统一REST入口：认证感知Fetch + Problem Detail校验，所有Trace查询都经过这里。 */
 async function request<T>(path: string): Promise<T> {
   return checkedJson<T>(await authenticatedFetch(`${API_BASE_URL}${path}`));
 }
@@ -341,22 +342,26 @@ export function listWorkflows(): Promise<WorkflowDefinition[]> {
   return request<WorkflowListResponse>("/api/workflows").then((value) => value.workflows);
 }
 
+/** 读取一个Run的Product Trace事件流；工作台节点详情的数据源。 */
 export function getRunTrace(sessionId: string, runId: string): Promise<ProductTraceEvent[]> {
   return request<TraceResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/trace`,
   ).then((value) => value.trace);
 }
 
+/** 读取终态双Trace报告（机器版+人读版）；工作台可视化与Markdown/JSON下载用。 */
 export function getRunTraceReports(sessionId: string, runId: string): Promise<RunTraceReport[]> {
   return request<TraceReportsResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/trace-reports`,
   ).then((value) => value.reports);
 }
 
+/** 读取一个Run的治理视图（Decision/Draft/Attempt等），按runId关联到节点详情。 */
 export function getRunGovernance(runId: string): Promise<RunGovernanceView> {
   return request<RunGovernanceView>(`/api/runs/${encodeURIComponent(runId)}/governance`);
 }
 
+/** 读取一个Run的StepInputProjection（每个节点的最小工作包与Hash）。 */
 export async function getRunStepInputs(runId: string): Promise<StepInputProjection[]> {
   return (
     await request<{ step_inputs: StepInputProjection[] }>(
@@ -365,6 +370,7 @@ export async function getRunStepInputs(runId: string): Promise<StepInputProjecti
   ).step_inputs;
 }
 
+/** 读取一个Run的受治理ToolExecution（pi模型/Tool边界的权威账本）。 */
 export async function getRunToolExecutions(runId: string): Promise<GovernedToolExecution[]> {
   return (
     await request<{ tool_executions: GovernedToolExecution[] }>(
@@ -373,6 +379,7 @@ export async function getRunToolExecutions(runId: string): Promise<GovernedToolE
   ).tool_executions;
 }
 
+/** 刷新恢复：取某Workflow最近一次已结束Run的Trace，供工作台重建节点终态。 */
 export function getLatestWorkflowTrace(
   sessionId: string,
   workflowId: string,

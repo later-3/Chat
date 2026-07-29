@@ -214,9 +214,10 @@ def test_pi_gateway_projects_real_dashscope_compatibility_before_review() -> Non
     assert _pi_provider_compat(provider, "qwen3.7-plus") == {
         "supportsStore": True,
         "supportsDeveloperRole": False,
-        "supportsReasoningEffort": True,
+        "supportsReasoningEffort": False,
         "maxTokensField": "max_completion_tokens",
         "supportsStrictMode": False,
+        "thinkingFormat": "qwen",
     }
     assert _pi_max_tokens(provider, "qwen3.7-plus", "off") == 16_384
     assert _pi_max_tokens(provider, "qwen3.7-plus", "medium") == 65_536
@@ -250,7 +251,7 @@ def test_pi_gateway_projects_kimi_k3_contract_before_review() -> None:
                 context_window=1_048_576,
                 reasoning=True,
                 thinking_level_map=(
-                    ("off", "none"),
+                    ("off", None),
                     ("minimal", "low"),
                     ("low", "low"),
                     ("medium", "high"),
@@ -278,7 +279,7 @@ def test_pi_gateway_projects_kimi_k3_contract_before_review() -> None:
         "contextWindow": 1_048_576,
         "maxTokens": 131_072,
         "thinkingLevelMap": {
-            "off": "none",
+            "off": None,
             "minimal": "low",
             "low": "low",
             "medium": "high",
