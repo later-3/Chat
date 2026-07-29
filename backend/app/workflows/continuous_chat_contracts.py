@@ -18,12 +18,24 @@ JSON_FENCE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORE
 
 @dataclass(frozen=True, slots=True)
 class CollaborationState:
+    """一次Run中在MAF Workflow节点之间传递的有界工作台，不是产品数据库。
+
+    这里只携带下一个节点需要的引用和已选投影。ContextPackage、Intent Set等耐久产品对象
+    存在Product Store；本状态保存其ID，使恢复后的Workflow能重新读取权威revision，而不是
+    信任旧进程内存。
+    """
+
     origin_prompt: str
+    # 入口最多读取8条已持久化TurnDigest，确定性选择器再收窄为4条。这个tuple只是运行时投影；
+    # 来源事实仍保存在turn_summaries表。
     recent_turn_summaries: tuple[dict[str, Any], ...] = ()
     project_candidates: tuple[str, ...] = ()
     project_matches: tuple[dict[str, Any], ...] = ()
     project_catalog_result: dict[str, Any] | None = None
+    # 从当前持久ContextPackage投影出的已采用项。用户修改时不原地改这个tuple，而是先写新
+    # ContextPackage revision，再由后续节点把新revision投影回来。
     context_items: tuple[dict[str, Any], ...] = ()
+    # 目录Context和详情Context是两个产品对象；运行态只留ID，防止MAF Checkpoint变成第二Context事实源。
     directory_context_package_id: str | None = None
     detail_context_package_id: str | None = None
     selected_project_id: str | None = None

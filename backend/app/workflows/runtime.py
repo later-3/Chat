@@ -1,4 +1,9 @@
-"""Product finalization gate for MAF Workflows exposed over AG-UI."""
+"""AG-UI与MAF Workflow之间的Product Run生命周期和最终提交门。
+
+Execution Worker调用这里，不是HTTP请求直接执行。它准备/恢复Product Run与Attempt，
+将MAF节点活动投影为Product Trace，处理中断与Checkpoint，成功时提交Assistant Message，
+失败时关闭Run。Product DB是权威事实源，MAF仍拥有图与运行时状态。
+"""
 
 from __future__ import annotations
 
@@ -75,7 +80,12 @@ def _interrupt_contract(interrupt: Any) -> dict[str, str] | None:
 
 
 class ProductAwareWorkflow(AgentFrameworkWorkflow):
-    """Persist Workflow progress while MAF remains the runtime authority."""
+    """持久化Workflow的产品侧进度，同时保留MAF为运行时权威。
+
+    它拥有一轮Product侧生命周期：准备Run/Attempt、恢复MAF Checkpoint、记录节点Trace、
+    执行提交/失败门。MAF拥有图执行、事件转换和Checkpoint；AG-UI ``runId``只用于关联，
+    不能作为数据库主键或授权身份。
+    """
 
     def __init__(
         self,
@@ -100,6 +110,12 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
         self._waiting_nodes: dict[str, str] = {}
 
     async def run(self, input_data: dict[str, Any]):
+        """驱动一轮AG-UI Run，并把MAF事件投影为Product事实。
+
+        阶段1准备/恢复Product Run与Checkpoint；阶段2流式处理MAF事件、节点Trace和候选文本；
+        阶段3处理中断/失败/成功终态。成功提交Message时，ProductSessionService在同一事务
+        物化机器版和人读版双Trace；等待审批时Run保持活动且不提前生成终态报告。
+        """
         thread_id = self._thread_id_from_input(input_data)
         agui_run_id = str(input_data.get("run_id") or input_data.get("runId") or "")
         resumed_activity: ActivitySnapshotEvent | None = None

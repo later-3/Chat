@@ -1,4 +1,38 @@
-"""The selectable Chat Workflow: intent, routing, planning, response and turn focus."""
+"""持续协作主Workflow行为实现（v1.8.0，共39个真实MAF节点）。
+
+本Workflow把“用户输入 -> 上下文 -> 意图 -> 执行合同 -> Agent/Tool执行 -> 证据
+-> Product Message提交”串成一轮闭环。模型输出始终先是候选，只有对应提交门通过后
+才可能成为Product事实。
+
+从浏览器到终态的外层链路::
+
+    React useChatAgent/useWorkflowAgent
+      -> AG-UI POST + SSE
+    runtime_execution/endpoint.py
+      -> 创建Runtime Job；HTTP只订阅持久化事件Journal
+    Execution Worker -> ProductAwareWorkflow.run()
+      -> 准备Product Run/Attempt；恢复时加载MAF Checkpoint
+    continuous_chat_factory.py
+      -> 按本文件Executor行为连接39个节点
+    FinalizeExecutor -> Product Finalization Gate
+      -> 写Product Message和Run终态
+      -> 同一终态事务生成机器版/人读版双Trace
+
+39个节点按7个学习阶段理解：
+
+1. 节点1-5：输入与目录上下文。
+2. 节点6-15：Intent Set、Project绑定、详情Context和协作协议。
+3. 节点16-20：目录查询/澄清/规划/直接执行的场景路由。
+4. 节点21-24：ExecutionDraft、授权、不可变RunSpec与Runtime路由。
+5. 节点25-31：pi只读/隔离执行、工作区、结果装配与Completion Claim。
+6. 节点32-36：答复、回合摘要及Result/Work/Memory决定。
+7. 节点37-39：提交已批准候选、保存TurnSummary、最终提交Assistant Message。
+
+每次模型调用都经过``GovernedSemanticAgentExecutor``：先构造ModelCallDraft，再做
+Policy评估和人工/自动决定，消费一次性Grant后才发送Provider；Provider返回也只先
+成为候选。图连接单独放在``continuous_chat_factory``，因为节点ID、边顺序和图签名
+会直接约束MAF Checkpoint能否恢复。
+"""
 
 from __future__ import annotations
 
@@ -131,6 +165,12 @@ WORKFLOW_VERSION = "1.8.0"
 
 
 class TraceMixin:
+    """所有节点共用的Product Trace和StepInput写入能力。
+
+    节点公开输入/输出写到活动Product Run；MAF事件存储不拥有产品Trace。只记录稳定、
+    可展示、已脱敏字段，不记录密钥或模型隐藏推理。终态双报告正是从这些公开事实生成。
+    """
+
     def _trace_init(self, *, thread_id: str, sessions: ProductSessionService) -> None:
         self._thread_id = thread_id
         self._sessions = sessions
@@ -209,13 +249,20 @@ def _optional_string(value: Any) -> str | None:
 
 @dataclass(frozen=True, slots=True)
 class ModelDispatchResult:
-    """Decoded model text plus the durable Provider-attempt identity."""
+    """一次已治理Provider调用的解码文本及其持久化Attempt身份。"""
 
     text: str
     attempt_id: str
 
 
 class IntakeExecutor(Executor, TraceMixin):
+    """节点1 ``input_acceptance``：接纳本轮输入并建立Workflow初始状态。
+
+    输入是AG-UI消息数组；输出是``CollaborationState``。这里取最后一条User文本作为
+    ``origin_prompt``，召回近期TurnSummary和待回答澄清。完整消息历史仍由Product
+    Session保存，Workflow只携带有界候选，避免每轮无界重放全部历史。
+    """
+
     def __init__(
         self,
         *,
@@ -231,6 +278,7 @@ class IntakeExecutor(Executor, TraceMixin):
 
     @handler(input=list)
     async def accept(self, messages: list[Any], ctx: WorkflowContext[CollaborationState]) -> None:
+        """执行节点1：规范化输入、恢复澄清关联并把初始状态发送给节点2。"""
         normalized = normalize_agui_messages_for_provider(messages)
         user_messages = [value for value in normalized if value.get("role") == "user"]
         if not user_messages:
@@ -265,6 +313,12 @@ class IntakeExecutor(Executor, TraceMixin):
 
 
 class CandidateContextExecutor(Executor, TraceMixin):
+    """节点2 ``context_candidates``：确定性召回最多4条主题候选。
+
+    不调用模型。按Prompt与近期TurnSummary的关键词交集排序；待回答澄清优先。
+    这里仅产生候选，是否采用仍由节点4的Context决定点控制。
+    """
+
     def __init__(self, *, thread_id: str, sessions: ProductSessionService) -> None:
         super().__init__(id="context_candidates")
         self._trace_init(thread_id=thread_id, sessions=sessions)
@@ -275,6 +329,7 @@ class CandidateContextExecutor(Executor, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
+        """执行节点2：计算候选得分、记录选择规则并进入正式目录Context装配。"""
         keywords = _context_keywords(state.origin_prompt)
         scored: list[tuple[int, dict[str, Any]]] = []
         pending = [value for value in state.recent_turn_summaries if _is_pending_clarification(value)]
@@ -313,7 +368,11 @@ class CandidateContextExecutor(Executor, TraceMixin):
 
 
 class HarnessDirectoryContextExecutor(Executor, TraceMixin):
-    """Stage A: query the authoritative lightweight resource directory."""
+    """节点3 ``harness_directory_context``：从Product Harness读取正式目录Context。
+
+    输入是Prompt与节点2选中的摘要；输出是候选ContextPackage、正式Project候选和
+    排除项。这里读取权威Product Store，不从聊天摘要猜Project是否存在。
+    """
 
     def __init__(
         self,
@@ -334,6 +393,12 @@ class HarnessDirectoryContextExecutor(Executor, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
+        """执行节点3：建立directory阶段ContextPackage，并把候选送到节点4审核。
+
+        ``recent_turn_summaries``只是内存中的候选摘要；这里把它们与权威Project目录转换成
+        带来源、版本、采用原因和Token估算的Context Item。随后先落库再进入HITL，使用户决定、
+        审批Hash和Checkpoint恢复都绑定同一份可追溯Context，而不是绑定会丢失的Python变量。
+        """
         items, projects = await self._harness.directory_context_items(
             prompt=state.origin_prompt,
             summaries=state.recent_turn_summaries,
@@ -368,7 +433,11 @@ class HarnessDirectoryContextExecutor(Executor, TraceMixin):
 
 
 class HarnessProjectResolverExecutor(Executor, TraceMixin):
-    """Resolve Project bindings and required catalog facts from Product Store."""
+    """节点10 ``harness_project_resolver``：把已接受意图解析到正式Project。
+
+    只有唯一名称匹配才自动绑定；零匹配和多匹配都保留为空并交给节点11。若本轮是
+    Project目录查询，也在这里读取正式列表，避免后续模型编造目录事实。
+    """
 
     def __init__(
         self,
@@ -387,6 +456,7 @@ class HarnessProjectResolverExecutor(Executor, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
+        """执行节点10：匹配Project提示、记录匹配数和需要人工选择的原因。"""
         hint = str((state.intent or {}).get("project_hint") or "").strip().lower()
         matches = [
             value
@@ -397,6 +467,16 @@ class HarnessProjectResolverExecutor(Executor, TraceMixin):
             )
         ]
         selected = matches[0]["id"] if len(matches) == 1 else state.selected_project_id
+        if len(matches) == 1:
+            project_selection_reason = "Project提示唯一匹配正式目录，确定性绑定该Project。"
+        elif state.selected_project_id:
+            project_selection_reason = "沿用上游已经版本化确认的Project绑定。"
+        elif not hint:
+            project_selection_reason = "已接受Intent没有提供Project提示，本轮不猜测Project。"
+        elif not matches:
+            project_selection_reason = "Project提示在正式目录中零匹配，保持为空等待用户选择或澄清。"
+        else:
+            project_selection_reason = "Project提示命中多个正式Project，不能擅自选择。"
         catalog_requested = any(
             value.get("query_kind") == "project_catalog" for value in state.intents or ((state.intent or {}),)
         )
@@ -423,14 +503,41 @@ class HarnessProjectResolverExecutor(Executor, TraceMixin):
                 "selected_project_id": selected,
                 "match_count": len(matches),
                 "requires_human_choice": state.scenario == "continue_project" and selected is None,
+                "selection_reason": project_selection_reason,
                 "project_catalog_result": catalog_result,
+                "empty_reasons": {
+                    **(
+                        {
+                            "selected_project_id": {
+                                "code": "not_produced",
+                                "reason": project_selection_reason,
+                            }
+                        }
+                        if selected is None
+                        else {}
+                    ),
+                    **(
+                        {
+                            "project_catalog_result": {
+                                "code": "not_applicable",
+                                "reason": "本轮Intent不是Project目录查询，没有读取目录结果正文。",
+                            }
+                        }
+                        if catalog_result is None
+                        else {}
+                    ),
+                },
             },
         )
         await ctx.send_message(next_state)
 
 
 class HarnessDetailContextExecutor(Executor, TraceMixin):
-    """Stage B: load the selected Project's bounded working set."""
+    """节点12 ``harness_detail_context``：装配已绑定Project的有界工作集。
+
+    未绑定Project时明确记录``not_applicable``；已绑定时加载开放Work、Plan、Action、
+    Note、Accepted Memory、Repository Snapshot和治理规则，并受Token Budget限制。
+    """
 
     def __init__(
         self,
@@ -451,6 +558,7 @@ class HarnessDetailContextExecutor(Executor, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
+        """执行节点12：创建detail阶段ContextPackage；为空的原因也写入Trace。"""
         if state.selected_project_id is None:
             await self._trace_content(
                 executor_id=self.id,
@@ -503,7 +611,7 @@ def _state_with_context_package(
     *,
     stage: str,
 ) -> CollaborationState:
-    """Project one immutable ContextPackage revision into runtime state."""
+    """把一个不可变ContextPackage revision投影回运行状态，不重新做召回。"""
 
     adopted = tuple(dict(value) for value in package["items"] if value["adopted"])
     next_state = replace(
@@ -538,7 +646,11 @@ def _state_with_context_package(
 
 
 class HarnessContextRevisionExecutor(Executor, TraceMixin):
-    """Project the newest user-reviewed ContextPackage revision into Workflow state."""
+    """节点5/14：把用户审核后的最新ContextPackage revision投影进Workflow。
+
+    ``directory_context_revision``处理目录候选，``detail_context_revision``处理Project
+    详情。该节点确保用户排除的Context不会继续残留在旧内存状态中。
+    """
 
     def __init__(
         self,
@@ -564,6 +676,7 @@ class HarnessContextRevisionExecutor(Executor, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
+        """执行节点5/14：读取当前Run同阶段最新revision，并公开采用/排除来源。"""
         package = await self._harness.context_package_for_run(
             run_id=self._run_id(),
             stage=self._stage,
@@ -614,12 +727,11 @@ class HarnessContextRevisionExecutor(Executor, TraceMixin):
 
 
 class CollaborationProtocolResolverExecutor(Executor, TraceMixin):
-    """Bind one immutable Chat Harness method revision to the current turn.
+    """节点15 ``collaboration_protocol_resolver``：绑定本轮不可变协作协议revision。
 
-    Resolution is deliberately deterministic and happens after intent and
-    authoritative Project binding. The selected revision and applicable rules
-    become part of the Workflow checkpoint, ExecutionDraft and public Trace;
-    later model calls cannot silently substitute a different method.
+    解析在Intent和正式Project绑定后确定性执行，优先级为Work -> Project -> User ->
+    System。选中的方法、阶段、规则、预算和原因进入Checkpoint、ExecutionDraft和Trace，
+    后续模型不能静默换成另一套方法。
     """
 
     def __init__(
@@ -639,6 +751,7 @@ class CollaborationProtocolResolverExecutor(Executor, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
+        """执行节点15：解析基础协议、叠加多Intent约束并固化有效选择Hash。"""
         intent = state.intent or {}
         selection = await self._protocols.resolve_for_turn(
             scenario=state.scenario,
@@ -705,6 +818,12 @@ class CollaborationProtocolResolverExecutor(Executor, TraceMixin):
 
 @dataclass(frozen=True, slots=True)
 class ProductDecisionSpec:
+    """一个HITL产品决定点的声明式规格。
+
+    节点4/8/11/13/20/22/34/35/36共用同一Executor和持久化interrupt机制，仅通过本
+    Spec定义适用条件、Subject、公开事实、可编辑字段、修改函数和是否允许跳过。
+    """
+
     key: str
     subject_kind: str
     title: str
@@ -720,7 +839,11 @@ class ProductDecisionSpec:
 
 
 class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
-    """Persist and, when policy requires it, interrupt at one product decision point."""
+    """通用产品决定节点：持久化Policy评估，必要时interrupt等待用户。
+
+    每次决定绑定当前Subject Hash和版本：不适用会写明原因，自动通过会记录Decision
+    与一次性Grant，需要人工时创建HumanDecisionRequest并停在可恢复Checkpoint。
+    """
 
     def __init__(
         self,
@@ -748,6 +871,7 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState, str],
     ) -> None:
+        """节点入口：把当前CollaborationState送入统一的适用性与Policy判断。"""
         await self._advance(state, ctx)
 
     async def _advance(
@@ -755,6 +879,7 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState, str],
     ) -> None:
+        """登记Subject并在不适用、拒绝、自动继续、等待人工四条路径中收敛。"""
         content = self.spec.subject(state)
         facts = dict(self.spec.facts(state))
         run_context = await self._governance.run_context(self._run_id())
@@ -941,6 +1066,7 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
 
     @response_handler(request=dict, response=dict, workflow_output=str)
     async def resolve(self, original_request, decision, ctx) -> None:
+        """恢复入口：校验版本绑定的用户决定，处理修改/跳过/取消/接受后继续。"""
         state_value = original_request.get("execution_context", {}).get("workflow_state")
         if not isinstance(state_value, dict):
             raise RuntimeError("产品决定请求缺少Workflow状态")
@@ -1079,7 +1205,12 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
 
 
 class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
-    """Agent-shaped semantic step with durable ModelCall governance before dispatch."""
+    """节点6/19/32/33共用的受治理语义Agent执行器。
+
+    分别承担意图识别、计划、答复和TurnSummary。每次调用都先持久化ModelCallDraft与
+    Policy评估；只有版本绑定的批准或有效自动策略才能消费Grant并发送Provider。
+    返回文本只成为对应候选，不能直接写Product长期事实。
+    """
 
     def __init__(
         self,
@@ -1114,6 +1245,11 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         return self.profile.description
 
     def _begin(self, state: CollaborationState) -> ModelCallDraft:
+        """按本节点任务构造第1版ModelCallDraft；此时还没有发送Provider。
+
+        task_builder分别编译意图/计划/答复/摘要请求。``store=False``只显式装配本轮
+        采用的上下文，不把完整历史交给Provider托管。
+        """
         task = self._task_builder(state)
         context_package_id = state.detail_context_package_id or state.directory_context_package_id
         return self._store.begin(
@@ -1159,6 +1295,11 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState, str],
     ) -> None:
+        """Agent节点入口：先尝试确定性短路，否则建立Draft并进入治理流程。
+
+        明确的“列出项目”在意图节点直接形成目录Intent，因而是0模型调用；其他请求才
+        进入ModelCallDraft -> Policy -> 审批/自动继续 -> Provider。
+        """
         if self._result_kind == "intent" and _is_project_catalog_query(state.origin_prompt):
             intent = _project_catalog_intent(state.origin_prompt)
             await self._trace_content(
@@ -1190,6 +1331,11 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState, str],
     ) -> None:
+        """模型调用治理分叉：登记Policy后拒绝、自动继续或等待人工。
+
+        先检查Repository新鲜度并持久化评估；deny关闭，auto_continue消费Grant并发送，
+        其余创建HumanDecisionRequest和MAF interrupt。审核卡携带状态快照供恢复。
+        """
         freshness = await self._require_fresh_context(
             state,
             phase="draft_prepare",
@@ -1317,6 +1463,11 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         state: CollaborationState,
         request_id: str | None,
     ) -> ModelDispatchResult | None:
+        """把已批准的精确字节发送Provider并记录一次ModelCall Attempt。
+
+        发送前再次检查Repository围栏；进程内Claim保证单Owner，重复Resume不会重发。
+        取消时若无法证明Provider未收到请求，收敛为``outcome_unknown``而不是自动重试。
+        """
         await self._require_fresh_context(
             state,
             phase="provider_dispatch",
@@ -1534,6 +1685,7 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
 
     @response_handler(request=dict, response=dict, workflow_output=str)
     async def resolve(self, original_request, decision, ctx) -> None:
+        """模型审批恢复入口：接受、修改重审或放弃，并只恢复对应Draft。"""
         # A restored MAF Checkpoint contains the exact review card, while the
         # transport claim registry is intentionally process-local. Rehydrate
         # it from the hash-verified card before applying the durable decision.
@@ -1623,6 +1775,16 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         revision_id,
         ctx,
     ) -> None:
+        """Adopt the decoded text as a *candidate* and advance the Workflow.
+
+        Model text is never a product fact yet. Intent output is parsed into an
+        Intent Set (invalid JSON closes as a clarification), plan/response are
+        stored verbatim, and the summary is parsed + filtered by the writeback
+        policy so Work/Memory candidates that violate the read-only boundary are
+        removed before they ever reach a decision point. The disposition
+        (accepted / overridden / rejected_invalid_output) is persisted on the
+        Attempt so the audit trail shows exactly how the bytes were used.
+        """
         text = dispatched.text
         disposition = f"accepted_as_{self._result_kind}"
         disposition_reason = f"Provider解码文本已由{self.id}作为{self._result_kind}采用"
@@ -1735,7 +1897,11 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
 
 
 class IntentSetProjectionExecutor(Executor, TraceMixin):
-    """Persist model candidates before any product decision can accept them."""
+    """节点7 ``intent_set_projection``：先持久化Intent候选，再允许产品决定接受。
+
+    它把模型候选拆成不可变Intent Set/Intent revisions，并处理跨Run澄清关联；这样
+    节点8审核的是可定位版本，而不是进程内一段随时会变的字典。
+    """
 
     def __init__(
         self,
@@ -1756,6 +1922,7 @@ class IntentSetProjectionExecutor(Executor, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
+        """执行节点7：创建Intent Set候选revision，并把澄清状态持久化后交给节点8。"""
         candidates = state.intents or ((state.intent or {}),)
         pending_id = str((state.pending_clarification or {}).get("id") or "")
         answers_pending = bool(
@@ -1806,7 +1973,11 @@ class IntentSetProjectionExecutor(Executor, TraceMixin):
 
 
 class IntentSetAcceptanceExecutor(Executor, TraceMixin):
-    """Reconcile a reviewed primary intent and accept the exact set revision."""
+    """节点9 ``intent_set_acceptance``：接受用户审核后精确Hash绑定的Intent Set。
+
+    如果节点8修改了主Intent，先生成新revision，再只接受该revision；旧批准不能漂移
+    到新内容。输出同步回Workflow State，供Project解析和后续路由读取。
+    """
 
     def __init__(
         self,
@@ -1827,6 +1998,7 @@ class IntentSetAcceptanceExecutor(Executor, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
+        """执行节点9：校验当前Set Hash，接受精确revision并投影回运行状态。"""
         candidates = state.intents or ((state.intent or {}),)
         projected = await self._intents.record_candidate(
             run_id=self._run_id(),
@@ -1874,12 +2046,19 @@ class IntentSetAcceptanceExecutor(Executor, TraceMixin):
 
 
 class ScenarioRouterExecutor(Executor, TraceMixin):
+    """节点16 ``scenario_router``：在4条候选边中确定性选择一条。
+
+    不调用模型，只读取已接受Intent状态，在Project目录查询、澄清、规划、默认直接执行
+    中按声明顺序首个命中。选中依据及每条未选原因都会写入Trace供双报告还原。
+    """
+
     def __init__(self, *, thread_id: str, sessions: ProductSessionService) -> None:
         super().__init__(id="scenario_router")
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
     @handler(input=CollaborationState)
     async def route(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
+        """执行节点16：计算首个命中分支，并把选中/未选原因完整写入Trace。"""
         route_decision = _evaluate_scenario_route(state)
         await self._trace_content(
             executor_id=self.id,
@@ -1896,7 +2075,11 @@ class ScenarioRouterExecutor(Executor, TraceMixin):
 
 
 class ProjectCatalogExecutor(Executor, TraceMixin):
-    """Answer the current product-catalog query from product facts, never model guesses."""
+    """节点17 ``project_catalog_query``：只用Product事实回答正式Project目录查询。
+
+    该分支为0次模型调用；正式目录为空时明确返回空，并把聊天摘要中的Project提示标为
+    候选而不是正式事实。
+    """
 
     def __init__(
         self,
@@ -1911,6 +2094,7 @@ class ProjectCatalogExecutor(Executor, TraceMixin):
 
     @handler(input=CollaborationState)
     async def answer(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
+        """执行节点17：确定性渲染正式Project目录结果，不进入Provider。"""
         catalog_result = state.project_catalog_result
         if catalog_result is None:
             projects = await self._harness.list_projects(
@@ -1956,6 +2140,13 @@ class ProjectCatalogExecutor(Executor, TraceMixin):
 
 
 class ExecutionDraftCompilerExecutor(Executor, TraceMixin):
+    """节点21 ``execution_draft_compiler``：编译可编辑、可审核的ExecutionDraft。
+
+    这里解析Repository围栏并在授权前冻结pi编辑的Validation Contract，避免RunSpec在
+    之后重新读取“当前计划”。输出是带revision和Hash的候选Draft；节点22授权前不能执行。
+    编译失败会用稳定脱敏错误码关闭Run，不产生半份执行合同。
+    """
+
     def __init__(
         self,
         *,
@@ -1978,6 +2169,7 @@ class ExecutionDraftCompilerExecutor(Executor, TraceMixin):
 
     @handler(input=CollaborationState)
     async def compile(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
+        """执行节点21：冻结Repository/Validation输入并保存ExecutionDraft revision。"""
         try:
             repository_fence = None
             source = adopted_repository_source(state.context_items)
@@ -2052,13 +2244,39 @@ class ExecutionDraftCompilerExecutor(Executor, TraceMixin):
                 "draft_revision_id": revision.id,
                 "draft_hash": revision.draft_hash,
                 "status": revision.status,
+                "empty_reasons": {
+                    **(
+                        {
+                            "public_input.plan": {
+                                "code": "not_applicable",
+                                "reason": "场景路由没有要求规划，本轮按已接受Intent和协议直接编译Draft。",
+                            }
+                        }
+                        if state.plan is None
+                        else {}
+                    ),
+                    **(
+                        {
+                            "public_input.repository_fence": {
+                                "code": "not_applicable",
+                                "reason": "本轮没有采用可执行Repository来源，不建立仓库围栏。",
+                            }
+                        }
+                        if repository_fence is None
+                        else {}
+                    ),
+                },
             },
         )
         await ctx.send_message(next_state)
 
 
 class RunSpecCompilerExecutor(Executor, TraceMixin):
-    """Compile the immutable RunSpec only after the Draft revision is accepted."""
+    """节点23 ``run_spec_compiler``：只从已授权Draft编译不可变RunSpec。
+
+    RunSpec冻结本轮Runtime、能力、预算、Repository Snapshot和验证合同，并绑定Product
+    Run。节点24只读RunSpec路由，不再重新解释用户原文。
+    """
 
     def __init__(
         self,
@@ -2075,6 +2293,7 @@ class RunSpecCompilerExecutor(Executor, TraceMixin):
 
     @handler(input=CollaborationState)
     async def compile(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
+        """执行节点23：从已授权Draft构造RunSpec，绑定当前Product Run并进入节点24。"""
         if not state.execution_draft_revision_id:
             raise GovernanceConflict("缺少已授权的ExecutionDraft revision")
         accepted = await self._governance.accepted_execution_draft(state.execution_draft_revision_id)
@@ -2118,12 +2337,19 @@ class RunSpecCompilerExecutor(Executor, TraceMixin):
 
 
 class ClarificationExecutor(Executor, TraceMixin):
+    """节点18 ``clarification``：提交澄清问题并回到聊天输入。
+
+    澄清答案是下一条新的User Message，不是accept/revise审批。本节点写Assistant问题，
+    把TurnSummary标为``awaiting_user_answer``并正常收口；下一轮节点6/7再关联答案。
+    """
+
     def __init__(self, *, thread_id: str, sessions: ProductSessionService) -> None:
         super().__init__(id="clarification")
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
     @handler(input=CollaborationState)
     async def clarify(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
+        """执行节点18：形成澄清问题与最小TurnSummary，下一轮再接收用户答案。"""
         intent = state.intent or {}
         question = str(intent.get("clarification_question") or "你希望我接下来具体推进哪件事？")
         response = f"{question}\n\n请直接在下方输入框回答。"
@@ -2160,7 +2386,11 @@ class ClarificationExecutor(Executor, TraceMixin):
 
 
 class HarnessCandidateCommitExecutor(Executor, TraceMixin):
-    """Commit only Work/Memory candidates that survived their decision points."""
+    """节点37 ``harness_candidate_commit``：只提交已通过决定点的Work/Memory候选。
+
+    以Decision Record作为授权事实，通过幂等命令和CAS写Harness；未批准、被跳过或为空的
+    候选不会写入长期状态。提交结果与原因进入Trace和TurnSummary引用。
+    """
 
     def __init__(
         self,
@@ -2181,6 +2411,7 @@ class HarnessCandidateCommitExecutor(Executor, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
+        """执行节点37：为空时记录不适用；有候选时按Decision IDs幂等提交。"""
         summary = state.turn_summary or {}
         work_candidates = list(summary.get("work_state_candidates") or [])
         memory_candidates = list(summary.get("memory_candidates") or [])
@@ -2190,7 +2421,10 @@ class HarnessCandidateCommitExecutor(Executor, TraceMixin):
                 actor="product_harness_repository",
                 content_type="harness_candidate_commit",
                 public_input={"work_count": 0, "memory_count": 0},
-                public_output={"status": "not_applicable"},
+                public_output={
+                    "status": "not_applicable",
+                    "reason": "本轮TurnSummary没有提出Work或Memory候选，无长期事实需要提交。",
+                },
             )
             await ctx.send_message(state)
             return
@@ -2219,7 +2453,11 @@ class HarnessCandidateCommitExecutor(Executor, TraceMixin):
 
 
 class TurnSummaryPersistExecutor(Executor, TraceMixin):
-    """Persist the final turn focus after Work/Memory candidate decisions."""
+    """节点38 ``turn_summary_persist``：在候选决定结束后保存本轮派生摘要。
+
+    TurnSummary用于后续有界召回，不能替代原始Message，也不是Accepted Memory。保存时
+    关联模型Attempt、来源Context、已提交Product事实和未解决澄清。
+    """
 
     def __init__(
         self,
@@ -2240,6 +2478,7 @@ class TurnSummaryPersistExecutor(Executor, TraceMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
+        """执行节点38：保存可追溯摘要及来源引用，然后把状态送到最终提交门。"""
         summary = dict(
             state.turn_summary
             or {
@@ -2276,6 +2515,28 @@ class TurnSummaryPersistExecutor(Executor, TraceMixin):
                 "summary_hash": persisted["summary_hash"],
                 "status": persisted["status"],
                 "note": "摘要是可追溯的回合派生候选；不替代原始Message，也不自动成为Work或Accepted Memory。",
+                "empty_reasons": {
+                    **(
+                        {
+                            "public_input.work_state_candidates": {
+                                "code": "not_applicable",
+                                "reason": "本轮没有Work状态候选，节点35及37不会写Work事实。",
+                            }
+                        }
+                        if not persisted_digest.get("work_state_candidates")
+                        else {}
+                    ),
+                    **(
+                        {
+                            "public_input.memory_candidates": {
+                                "code": "not_applicable",
+                                "reason": "本轮没有长期Memory候选，节点36及37不会写Accepted Memory。",
+                            }
+                        }
+                        if not persisted_digest.get("memory_candidates")
+                        else {}
+                    ),
+                },
             },
         )
         await ctx.send_message(next_state)
@@ -2284,7 +2545,7 @@ class TurnSummaryPersistExecutor(Executor, TraceMixin):
 def _committed_product_fact_refs(
     result: Mapping[str, Any] | None,
 ) -> list[dict[str, Any]]:
-    """Project committed Harness results into TurnDigest references."""
+    """把已提交Harness结果投影为TurnSummary可追溯引用，不复制事实正文。"""
 
     if not result:
         return []
@@ -2307,12 +2568,20 @@ def _committed_product_fact_refs(
 
 
 class FinalizeExecutor(Executor, TraceMixin):
+    """节点39 ``result_finalization``：Product Message最终提交门。
+
+    这里把response产出为AG-UI文本；``ProductAwareWorkflow``随后才把它提交为权威
+    Assistant Message并关闭Run。此前若失败/放弃，本节点不会被走到，因此半状态不能
+    冒充成功。终态事务随后物化机器版和人读版双Trace。
+    """
+
     def __init__(self, *, thread_id: str, sessions: ProductSessionService) -> None:
         super().__init__(id="result_finalization")
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
     @handler
     async def finalize(self, state: CollaborationState, ctx: WorkflowContext[None, str]) -> None:
+        """执行节点39：公开最终候选，并把文本交给ProductAwareWorkflow提交。"""
         response = state.response or "本轮没有形成可提交的答复。"
         await self._trace_content(
             executor_id=self.id,
@@ -2323,7 +2592,32 @@ class FinalizeExecutor(Executor, TraceMixin):
                 "run_spec_id": state.run_spec_id,
                 "turn_summary": state.turn_summary,
             },
-            public_output={"assistant_response": response, "commit": "Product Message"},
+            public_output={
+                "assistant_response": response,
+                "commit": "Product Message",
+                "empty_reasons": {
+                    **(
+                        {
+                            "public_input.execution_draft_revision_id": {
+                                "code": "not_applicable",
+                                "reason": "本轮走Project目录或澄清分支，没有编译ExecutionDraft。",
+                            }
+                        }
+                        if state.execution_draft_revision_id is None
+                        else {}
+                    ),
+                    **(
+                        {
+                            "public_input.run_spec_id": {
+                                "code": "not_applicable",
+                                "reason": "本轮没有进入执行合同分支，因此没有RunSpec。",
+                            }
+                        }
+                        if state.run_spec_id is None
+                        else {}
+                    ),
+                },
+            },
         )
         await ctx.yield_output(response)
 

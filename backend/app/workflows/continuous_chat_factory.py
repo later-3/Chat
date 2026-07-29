@@ -1,9 +1,9 @@
-"""Composition-only graph factory for the continuous collaboration Workflow.
+"""持续协作主Workflow的图装配文件：只创建节点并连接边，不实现领域行为。
 
-The concrete Executors remain in ``continuous_chat`` while they are split in
-small, behavior-preserving slices. Keeping graph wiring here makes node IDs,
-edge order and checkpoint compatibility reviewable without mixing them with
-Executor behavior.
+阅读顺序：先看本文件知道39个节点如何连接，再到``continuous_chat.py``、
+``execution_dispatch/workflow.py``和``execution_dispatch/result_gate.py``看节点行为。
+把图连接单独保存，是因为节点ID、边顺序和图签名直接决定旧MAF Checkpoint能否恢复；
+业务服务不能在这里偷偷改Product状态。
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ from .continuous_chat_prompts import (
 
 @dataclass(frozen=True, slots=True)
 class ContinuousWorkflowComponents:
-    """Executor constructors and predicates owned by the behavior module."""
+    """由行为模块提供的Executor构造器和分支谓词集合，避免工厂反向实现行为。"""
 
     workflow_id: str
     intake: type[Any]
@@ -95,7 +95,7 @@ def build_continuous_collaboration_workflow(
     validation_planner: ValidationContractPlanner,
     checkpoint_storage: CheckpointStorage | None = None,
 ):
-    """Build the versioned graph without mutating product or runtime state."""
+    """构造同版本39节点图；本函数本身不修改Product或Runtime状态。"""
 
     harness = harness or HarnessService(sessions.database)
     collaboration_protocols = collaboration_protocols or CollaborationProtocolService(sessions.database)
@@ -375,25 +375,31 @@ def build_continuous_collaboration_workflow(
         governance=governance,
     )
     finalizer = components.finalizer(thread_id=thread_id, sessions=sessions)
+    # --- 图连接：以下边顺序就是运行定义 --------------------------------------
+    # 修改节点或边会改变图签名，旧Checkpoint不能静默恢复；变更时必须升级Workflow版本。
     return (
         WorkflowBuilder(
             name=components.workflow_id,
             description="Chat主Workflow：选择性上下文、意图、场景路由、计划、响应与回合主题提取。",
             start_executor=intake,
             output_from=[finalizer],
+            # pi dispatch作为中间输出源，确保内部Tool活动能实时投影到AG-UI事件Journal。
             intermediate_output_from=[pi_readonly_dispatch, pi_workspace_dispatch],
             checkpoint_storage=checkpoint_storage,
         )
+        # 阶段1（节点1-5）：输入 -> 摘要候选 -> 正式目录 -> Context采用 -> 最新revision。
         .add_edge(intake, candidates)
         .add_edge(candidates, directory_context)
         .add_edge(directory_context, context_decision)
         .add_edge(context_decision, directory_context_revision)
+        # 阶段2前半（节点6-11）：意图模型调用#1 -> 候选落库 -> 接受 -> Project绑定。
         .add_edge(directory_context_revision, intent)
         .add_edge(intent, intent_projection)
         .add_edge(intent_projection, intent_decision)
         .add_edge(intent_decision, intent_acceptance)
         .add_edge(intent_acceptance, project_resolver)
         .add_edge(project_resolver, project_decision)
+        # 阶段2后半（节点12-15）：只有Project绑定确认后，才加载详情Context并选择协议。
         .add_edge(project_decision, detail_context)
         .add_edge(detail_context, detail_context_decision)
         .add_edge(detail_context_decision, detail_context_revision)
@@ -410,6 +416,7 @@ def build_continuous_collaboration_workflow(
         )
         .add_edge(planner, plan_decision)
         .add_edge(plan_decision, compiler)
+        # 阶段3/4（节点16-24）：场景分支/计划 -> Draft -> 授权 -> RunSpec -> 执行路由。
         .add_edge(compiler, execution_decision)
         .add_edge(execution_decision, run_spec_compiler)
         .add_edge(run_spec_compiler, execution_route)
@@ -433,6 +440,7 @@ def build_continuous_collaboration_workflow(
                 Default(target=responder),
             ],
         )
+        # 阶段5（节点25-31）：pi隔离编辑/只读分支、结果装配和Completion Claim。
         .add_edge(execution_workspace_prepare, pi_workspace_dispatch)
         .add_edge(pi_workspace_dispatch, pi_workspace_result_assembly)
         .add_edge(pi_workspace_result_assembly, result_claim_prepare)
@@ -441,6 +449,8 @@ def build_continuous_collaboration_workflow(
         .add_edge(pi_readonly_dispatch, pi_readonly_result_assembly)
         .add_edge(pi_readonly_result_assembly, summarizer)
         .add_edge(responder, summarizer)
+        # 阶段6/7（节点32-39）：所有分支汇入答复/摘要，再依次处理Result、Work、Memory，
+        # 最后提交Harness候选、保存TurnSummary并经过Product Message最终门。
         .add_edge(summarizer, result_decision)
         .add_edge(project_catalog, result_decision)
         .add_edge(result_decision, work_decision)
