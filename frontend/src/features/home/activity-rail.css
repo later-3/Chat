@@ -1,0 +1,90 @@
+.activity-rail {
+  width: 78px;
+  flex: 0 0 78px;
+  min-height: 0;
+  padding: 16px 9px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border-right: 1px solid rgba(39, 70, 57, 0.12);
+  background: #eff2eb;
+}
+
+.activity-rail__main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.activity-rail__button {
+  width: 58px;
+  min-height: 58px;
+  padding: 6px 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+  border: 0;
+  border-radius: 19px;
+  color: #64796e;
+  background: transparent;
+  cursor: pointer;
+  transition: 160ms ease;
+}
+
+.activity-rail__button:hover {
+  color: #20342d;
+  background: rgba(255, 255, 255, 0.76);
+  transform: translateY(-1px);
+}
+
+.activity-rail__button.is-active {
+  color: #075c55;
+  background: #d8efe9;
+  box-shadow: inset 0 0 0 1px rgba(20, 125, 114, 0.08);
+}
+
+.activity-rail__button.is-active::before {
+  width: 4px;
+  height: 24px;
+  position: absolute;
+  left: -9px;
+  top: 17px;
+  content: "";
+  border-radius: 0 5px 5px 0;
+  background: #147d72;
+}
+
+.activity-rail__button span {
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.activity-rail__button em {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  border-radius: 99px;
+  color: white;
+  background: #e56e4d;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.activity-rail__button--quiet {
+  color: #147d72;
+}
+
+@media (max-width: 640px) {
+  .activity-rail {
+    display: none;
+  }
+}
