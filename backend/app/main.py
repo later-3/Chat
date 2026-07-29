@@ -19,6 +19,7 @@ from .composition import (
 from .config import Settings
 from .execution_dispatch.api import create_execution_dispatch_router
 from .harness.api import create_harness_router
+from .home.api import create_home_router
 from .lifecycle import create_lifespan
 from .model_call_review import InMemoryModelCallReviewStore
 from .model_call_workflow import ProviderTransport
@@ -88,6 +89,7 @@ def create_app(
     app.add_middleware(CorrelationMiddleware)
 
     app.include_router(create_harness_router(components.harness))
+    app.include_router(create_home_router(components.home))
     app.include_router(create_project_resource_router(components.project_resources))
     app.include_router(create_collaboration_context_router(components.collaboration_contexts))
     app.include_router(create_collaboration_intent_router(components.collaboration_intents))

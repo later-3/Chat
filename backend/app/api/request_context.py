@@ -25,7 +25,7 @@ _HIGH_FREQUENCY_READ_PATHS = {
 }
 _HIGH_FREQUENCY_READ_PATTERNS = (
     re.compile(r"^/api/runs/[^/]+/governance$"),
-    re.compile(r"^/api/sessions/[^/]+/runs/[^/]+/trace$"),
+    re.compile(r"^/api/sessions/[^/]+/runs/[^/]+/(?:trace|trace-reports)$"),
     re.compile(r"^/api/runtime/product-runs/[^/]+$"),
 )
 

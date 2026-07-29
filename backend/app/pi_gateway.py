@@ -76,12 +76,19 @@ class PiRuntimeManager:
         readonly_tools: ReadonlyToolService | None = None,
         workspace_id: str | None = None,
         tool_execution_id: str | None = None,
+        product_session_id: str | None = None,
+        product_run_id: str | None = None,
         execution_workspaces: ExecutionWorkspaceService | None = None,
         tool_operations: ToolOperationService | None = None,
     ) -> PiExecution:
         clean_task = task.strip()
         if not clean_task:
             raise PiRuntimeError("pi任务不能为空", code="pi_task_empty")
+        if self.runtime.node_debug_port is not None and self._executions:
+            raise PiRuntimeError(
+                "pi源码调试端口已被另一个活动执行占用",
+                code="pi_debugger_busy",
+            )
         provider = self.catalog.require_selection(config.provider_id, config.model)
         token = secrets.token_urlsafe(32)
         execution = PiExecution(
@@ -95,6 +102,8 @@ class PiRuntimeManager:
             readonly_tools=readonly_tools,
             workspace_id=workspace_id,
             tool_execution_id=tool_execution_id,
+            product_session_id=product_session_id,
+            product_run_id=product_run_id,
             execution_workspaces=execution_workspaces,
             tool_operations=tool_operations,
         )
@@ -109,10 +118,18 @@ class PiRuntimeManager:
         )
         try:
             await execution.start()
-        except Exception:
+        except Exception as error:
             self.unregister(token)
             await execution.close()
-            raise
+            metrics = execution.metrics()
+            if isinstance(error, PiRuntimeError):
+                error.metrics = metrics
+                raise
+            raise PiRuntimeError(
+                "pi进程启动失败",
+                code=getattr(error, "code", type(error).__name__),
+                metrics=metrics,
+            ) from error
         logger.info(
             "pi_runtime_started execution_id=%s process_id=%d active_executions=%d",
             tool_execution_id,
@@ -137,17 +154,14 @@ class PiRuntimeManager:
         for execution in list(self._executions.values()):
             await execution.close()
 
-    async def close_for_tool_execution(self, tool_execution_id: str) -> int:
-        """Stop only live pi processes owned by one durable ToolExecution."""
+    async def close_for_tool_execution(self, tool_execution_id: str) -> dict[str, Any] | None:
+        """关闭唯一活动进程，并返回冻结Session后的最终安全指标。"""
 
-        matches = [
-            execution
-            for execution in self._executions.values()
-            if execution.tool_execution_id == tool_execution_id
-        ]
-        for execution in matches:
-            await execution.close()
-        return len(matches)
+        execution = self.live_for_tool_execution(tool_execution_id)
+        if execution is None:
+            return None
+        await execution.close()
+        return execution.metrics()
 
     def live_for_tool_execution(self, tool_execution_id: str) -> PiExecution | None:
         """Resolve one process-local pi owner from its durable ledger ID."""

@@ -36,6 +36,7 @@ from .execution_workspaces import ExecutionWorkspaceService
 from .governance import ExecutionGovernanceService, GovernanceOutboxWorker
 from .harness import HarnessService
 from .harness.outbox import ProductOutboxRouter
+from .home import HomeProjectionService
 from .model_call_review import (
     ExactProviderTransport,
     InMemoryModelCallReviewStore,
@@ -71,6 +72,7 @@ from .workflows import (
     GOVERNED_IDIOM_CHAIN_WORKFLOW,
     GOVERNED_PI_AGENT_WORKFLOW,
     NESTED_QUALITY_WORKFLOW,
+    WORKFLOW_CATALOG,
     ProductAwareWorkflow,
     ProductWorkflowCheckpointStorage,
     create_continuous_collaboration_workflow,
@@ -94,6 +96,7 @@ class ApplicationComponents:
     tool_configurations: ToolConfigurationService
     governance: ExecutionGovernanceService
     harness: HarnessService
+    home: HomeProjectionService
     project_resources: ProjectResourceService
     repository_freshness: RepositorySourceFreshnessGuard
     repository_execution_context: RepositoryExecutionContextService
@@ -137,6 +140,8 @@ def build_components(
     product_sessions = product_session_service or ProductSessionService(
         ProductDatabase(settings.database_url)
     )
+    # 双Trace报告只用同版本Definition解释节点标签和固定边；它不参与执行路由。
+    product_sessions.configure_trace_workflows(WORKFLOW_CATALOG)
     review_store = model_call_store or InMemoryModelCallReviewStore(model_catalog)
     runtime_execution = RuntimeExecutionService(product_sessions.database)
     runtime_registry = RuntimeRunnerRegistry()
@@ -284,6 +289,7 @@ def build_components(
                 ),
             ),
         ),
+        home=HomeProjectionService(product_sessions.database),
         project_resources=project_resources,
         repository_freshness=repository_freshness,
         repository_execution_context=repository_execution_context,
@@ -325,6 +331,7 @@ def expose_components(app: FastAPI, components: ApplicationComponents) -> None:
     app.state.tool_configurations = components.tool_configurations
     app.state.governance = components.governance
     app.state.harness = components.harness
+    app.state.home = components.home
     app.state.project_resources = components.project_resources
     app.state.repository_freshness = components.repository_freshness
     app.state.repository_execution_context = components.repository_execution_context
@@ -454,6 +461,15 @@ def _register_model_workflows(
     components: ApplicationComponents,
     transport: ProviderTransport,
 ) -> None:
+    """Wire the continuous-collaboration Workflow to its AG-UI endpoint.
+
+    This is where the backend chain is assembled: a per-thread factory builds a
+    fresh 39-node graph bound to one immutable Product Run (so a completed turn's
+    graph is never reused for the next turn), ProductAwareWorkflow adds the
+    product gate, and ``add_durable_agui_endpoint`` mounts the SSE entry the
+    frontend HttpAgent POSTs to. Governance, Harness, protocols, intents,
+    repository freshness, pi dispatch and the result pipeline are injected here.
+    """
     product_sessions = components.product_sessions
     runtime_execution = components.runtime_execution
     runtime_registry = components.runtime_registry

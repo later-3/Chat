@@ -1026,6 +1026,14 @@ class InMemoryModelCallReviewStore:
         execution_context: Mapping[str, Any] | None = None,
         origin_prompt: str | None = None,
     ) -> ModelCallDraft:
+        """Create the first revision of one model call's editable request.
+
+        The entry of the governed send chain: a node calls ``begin`` to produce
+        a ``ModelCallDraft`` (v1) from its task + explicit context. The provider/
+        model are constrained by the server catalog, the body is compiled to the
+        target protocol, and the binding hash is recorded. Nothing is sent yet;
+        the draft waits for a Policy decision and (by default) human approval.
+        """
         resolved_origin_prompt = origin_prompt or ""
         if not resolved_origin_prompt:
             for message in reversed(messages):
@@ -1200,6 +1208,13 @@ class InMemoryModelCallReviewStore:
             return revised
 
     def successor(self, old_draft_id: str, new_draft_id: str) -> ModelCallDraft:
+        """Return the v(n+1) draft produced by an approved 'revise' decision.
+
+        A user edit goes through the REST draft endpoint (which creates a new
+        revision + hash server-side); on resume the Workflow hands both ids here
+        so we can prove the new draft is the genuine successor of the one that
+        interrupted. This keeps the approval chain unbroken across revisions.
+        """
         with self._lock:
             draft = self.get(new_draft_id)
             if draft.previous_draft_id != old_draft_id or draft.status != "pending_approval":
@@ -1207,6 +1222,13 @@ class InMemoryModelCallReviewStore:
             return draft
 
     def claim(self, *, approval_id: str, expected_hash: str, owner: str) -> ModelCallDraft:
+        """Single-owner claim: take the approved bytes exactly once for dispatch.
+
+        Guards the send: the approval must be pending, the binding hash must
+        match the approved bytes, no Attempt may exist yet, and the request is
+        re-validated against the live provider/model capabilities. A duplicate
+        resume (e.g. replayed AG-UI resume) raises instead of sending twice.
+        """
         with self._lock:
             if self._approval_status.get(approval_id) != "pending":
                 raise ModelCallDraftConflict("审批已失效或已消费")
@@ -1254,6 +1276,12 @@ class InMemoryModelCallReviewStore:
             self._drafts[draft.draft_id] = dataclass_replace(draft, status=status)
 
     def abandon(self, approval_id: str) -> ModelCallDraft:
+        """Mark a pending approval abandoned: zero Provider Attempts, no send.
+
+        Used by the 'abandon' decision so the original prompt can return to the
+        chat input. Only pending approvals can be abandoned; an already-consumed
+        approval means bytes already left, so it cannot be abandoned.
+        """
         with self._lock:
             if self._approval_status.get(approval_id) != "pending":
                 raise ModelCallDraftConflict("只有待审批调用可以放弃")
@@ -1355,6 +1383,14 @@ class PreparedProviderRequest:
         *,
         stage_reporter: Callable[[str, str, dict[str, Any]], Awaitable[None]] | None = None,
     ) -> "PreparedProviderRequest":
+        """Freeze an approved draft into immutable sendable bytes.
+
+        This is the last transformation before bytes hit the Provider: the
+        ``body`` and ``body_sha256`` come straight from the reviewed/edited
+        ``ModelCallDraft`` so the audited hash equals the approved hash equals
+        the on-the-wire bytes. No field is rewritten here -- a different
+        provider/model/route would have produced a new revision and re-approval.
+        """
         return cls(
             provider_id=draft.provider_id,
             body=draft.body,
@@ -1412,6 +1448,14 @@ class ExactProviderTransport:
     extra_headers: dict[str, str] = field(default_factory=dict)
 
     async def stream(self, prepared: PreparedProviderRequest) -> AsyncIterator[str]:
+        """Send the exact approved body and yield decoded text deltas.
+
+        The final hop to the LLM. ``content=prepared.body`` is sent byte-for-byte
+        (no rewrite), the dispatch stage is reported for the Provider Attempt
+        audit, and streaming text is yielded back to ``_dispatch``. Errors raise
+        ``ProviderDispatchError`` so the caller converges to ``failed`` or
+        ``outcome_unknown`` without retrying a possibly-sent request.
+        """
         started = time.perf_counter()
         metrics.increment("provider.requests")
         span = tracer().start_span(
@@ -1617,6 +1661,11 @@ class RoutedProviderTransport:
     transports: Mapping[str, ExactProviderTransport]
 
     async def stream(self, prepared: PreparedProviderRequest) -> AsyncIterator[str]:
+        """Dispatch to the transport matching the approved ``provider_id``.
+
+        Credentials never reach the editable draft; they live only on the
+        ``ExactProviderTransport`` selected here by the server-owned provider id.
+        """
         transport = self.transports.get(prepared.provider_id)
         if transport is None:
             raise ProviderDispatchError(f"Provider路由不存在: {prepared.provider_id}")

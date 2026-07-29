@@ -31,6 +31,7 @@ DEFAULT_CONFIG_PATH = BACKEND_ROOT / "config.json"
 DEFAULT_DATABASE_URL = f"sqlite+aiosqlite:///{(BACKEND_ROOT / '.data' / 'chat.db').as_posix()}"
 DEFAULT_EXECUTION_WORKSPACE_ROOT = BACKEND_ROOT / ".data" / "execution-workspaces"
 DEFAULT_ARTIFACT_STORE_ROOT = BACKEND_ROOT / ".data" / "artifacts"
+DEFAULT_PI_SESSION_DIRECTORY = Path.home() / ".pi" / "agent" / "chat-sessions"
 logger = logging.getLogger(__name__)
 
 
@@ -114,9 +115,13 @@ class PiRuntimeSettings:
     """Startup-owned safety boundary for the external pi coding runtime."""
 
     enabled: bool = False
-    contract_version: str = "0.82.0"
+    contract_version: str = "0.82.1"
     node_path: Path | None = None
     cli_path: Path | None = None
+    source_root: Path | None = None
+    session_directory: Path = DEFAULT_PI_SESSION_DIRECTORY
+    node_debug_port: int | None = None
+    node_debug_break: bool = False
     allowed_working_roots: tuple[Path, ...] = ()
     default_working_directory: Path = PROJECT_ROOT
     gateway_origin: str = "http://127.0.0.1:8030"
@@ -137,7 +142,11 @@ class PiRuntimeSettings:
             "enabled": self.enabled,
             "available": self.available,
             "contract_version": self.contract_version,
+            "runtime_source": "source_build" if self.source_root is not None else "installed_package",
             "integration_mode": "jsonl_rpc_subprocess",
+            "session_retention": "dedicated_per_tool_execution",
+            "session_auto_resume": False,
+            "debugger_enabled": self.node_debug_port is not None,
             "provider_gate": "every_pi_model_call",
             "tool_gate": "every_pi_internal_tool_call",
             "allowed_working_roots": [str(path) for path in self.allowed_working_roots],
@@ -151,7 +160,11 @@ class PiRuntimeSettings:
             "enabled": self.enabled,
             "available": self.available,
             "contract_version": self.contract_version,
+            "runtime_source": "source_build" if self.source_root is not None else "installed_package",
             "integration_mode": "jsonl_rpc_subprocess",
+            "session_retention": "dedicated_per_tool_execution",
+            "session_auto_resume": False,
+            "debugger_enabled": self.node_debug_port is not None,
             "provider_gate": "every_pi_model_call",
             "tool_gate": "every_pi_internal_tool_call",
             "allowed_working_root_count": len(self.allowed_working_roots),
@@ -496,13 +509,43 @@ def _provider_catalog(payload: dict[str, Any]) -> ModelProviderCatalog | None:
 def _pi_runtime(payload: dict[str, Any], *, host: str, port: int) -> PiRuntimeSettings:
     raw = _record(payload.get("pi_agent", {}), field="pi_agent")
     enabled = _boolean(raw.get("enabled"), field="pi_agent.enabled", default=False)
-    contract_version = str(raw.get("contract_version") or "0.82.0").strip()
+    contract_version = str(raw.get("contract_version") or "0.82.1").strip()
     if not contract_version or len(contract_version) > 32:
         raise SettingsError("pi_agent.contract_version必须是1到32字符的版本标识")
 
     def optional_path(key: str) -> Path | None:
         value = str(raw.get(key) or "").strip()
         return Path(value).expanduser().resolve() if value else None
+
+    node_path = optional_path("node_path")
+    cli_path = optional_path("cli_path")
+    source_root = optional_path("source_root")
+    session_value = str(raw.get("session_directory") or DEFAULT_PI_SESSION_DIRECTORY).strip()
+    session_directory = Path(session_value).expanduser().resolve()
+    raw_debug_port = raw.get("node_debug_port")
+    try:
+        node_debug_port = int(raw_debug_port) if raw_debug_port is not None else None
+    except (TypeError, ValueError) as error:
+        raise SettingsError("pi_agent.node_debug_port必须是整数") from error
+    if node_debug_port is not None and not 1 <= node_debug_port <= 65535:
+        raise SettingsError("pi_agent.node_debug_port必须在1到65535之间")
+    node_debug_break = _boolean(
+        raw.get("node_debug_break"),
+        field="pi_agent.node_debug_break",
+        default=False,
+    )
+    if node_debug_break and node_debug_port is None:
+        raise SettingsError("pi_agent.node_debug_break需要同时配置node_debug_port")
+    if source_root is not None:
+        if cli_path is None or (cli_path != source_root and not cli_path.is_relative_to(source_root)):
+            raise SettingsError("pi_agent.cli_path必须位于source_root内")
+        package_json = source_root / "packages" / "coding-agent" / "package.json"
+        try:
+            package_version = str(json.loads(package_json.read_text(encoding="utf-8"))["version"])
+        except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
+            raise SettingsError("pi_agent.source_root不是可识别的pi源码目录") from error
+        if package_version != contract_version:
+            raise SettingsError("pi_agent.contract_version与本地pi源码版本不一致")
 
     raw_roots = raw.get("allowed_working_roots", [])
     if not isinstance(raw_roots, list) or not all(
@@ -525,8 +568,12 @@ def _pi_runtime(payload: dict[str, Any], *, host: str, port: int) -> PiRuntimeSe
     return PiRuntimeSettings(
         enabled=enabled,
         contract_version=contract_version,
-        node_path=optional_path("node_path"),
-        cli_path=optional_path("cli_path"),
+        node_path=node_path,
+        cli_path=cli_path,
+        source_root=source_root,
+        session_directory=session_directory,
+        node_debug_port=node_debug_port,
+        node_debug_break=node_debug_break,
         allowed_working_roots=roots,
         default_working_directory=default_working_directory,
         gateway_origin=gateway_origin,

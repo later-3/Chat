@@ -221,6 +221,15 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
         except ProductSessionNotFound as error:
             raise http_problem(status_code=404, error=error) from error
 
+    @router.get("/api/sessions/{session_id}/runs/{run_id}/trace-reports")
+    async def run_trace_reports(session_id: str, run_id: str) -> dict[str, Any]:
+        """返回同一Product Trace确定性生成的机器版与人读版报告。"""
+
+        try:
+            return {"reports": await product_sessions.list_trace_reports(session_id, run_id)}
+        except ProductSessionNotFound as error:
+            raise http_problem(status_code=404, error=error) from error
+
     @router.get("/api/sessions/{session_id}/workflows/{workflow_id}/latest-trace")
     async def latest_workflow_trace(
         session_id: str,

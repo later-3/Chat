@@ -1,4 +1,9 @@
-"""Governed pi JSONL-RPC subprocess and exact-byte Provider gateway."""
+"""持续协作节点26/30使用的受治理pi JSONL-RPC子进程与精确字节Provider网关。
+
+一个``PiExecution``只对应一次Chat ToolExecution。pi在专属目录写入全新的JSONL Session，
+用于查看本次任务的Prompt、模型消息和Tool事件；进程退出后冻结为只读证据，下一次执行
+不会加载它。跨轮权威历史仍分别保存在Chat Product Store、执行账本和MAF Checkpoint。
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,12 @@ from .config import PiRuntimeSettings
 from .execution_dispatch.contracts import RepositoryFence
 from .execution_workspaces import ExecutionWorkspaceService
 from .model_providers import ModelOption, ModelProviderConfig, is_kimi_code_provider
+from .pi_sessions import (
+    ChatPiSession,
+    ChatPiSessionError,
+    pending_pi_session_view,
+    prepare_chat_pi_session,
+)
 from .readonly_tools import ReadonlyToolService, ReadonlyToolValidationError
 from .tool_configs import PiToolConfigSnapshot
 from .tool_execution import ToolOperationError, ToolOperationService
@@ -281,8 +292,15 @@ export default function(pi) {
 
 
 class PiRuntimeError(RuntimeError):
-    def __init__(self, message: str, *, code: str = "pi_runtime_error") -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "pi_runtime_error",
+        metrics: Mapping[str, Any] | None = None,
+    ) -> None:
         self.code = code
+        self.metrics = dict(metrics or {})
         super().__init__(message)
 
 
@@ -434,13 +452,18 @@ def _safe_pi_error(value: object) -> str:
 
 
 class PiExecutionOwner(Protocol):
-    """Minimal owner contract needed by one live pi subprocess."""
+    """一个活动pi子进程需要的最小Owner合同，用Token注销进程。"""
 
     def unregister(self, token: str) -> None: ...
 
 
 class PiExecution:
-    """One live pi process bound to one governed execution token."""
+    """绑定一个受治理Token和ToolExecution的一次性活动pi进程。
+
+    生命周期：``start``创建临时配置和RPC进程；``next_boundary``向MAF暴露模型/Tool边界；
+    Chat批准后再写回pi；``close``回收进程与临时目录。它不是Product Session，也不是
+    MAF AgentSession，不能承担跨轮恢复。
+    """
 
     def __init__(
         self,
@@ -455,6 +478,8 @@ class PiExecution:
         readonly_tools: ReadonlyToolService | None = None,
         workspace_id: str | None = None,
         tool_execution_id: str | None = None,
+        product_session_id: str | None = None,
+        product_run_id: str | None = None,
         execution_workspaces: ExecutionWorkspaceService | None = None,
         tool_operations: ToolOperationService | None = None,
     ) -> None:
@@ -468,6 +493,8 @@ class PiExecution:
         self.readonly_tools = readonly_tools
         self.workspace_id = workspace_id
         self.tool_execution_id = tool_execution_id
+        self.product_session_id = product_session_id
+        self.product_run_id = product_run_id
         self.execution_workspaces = execution_workspaces
         self.tool_operations = tool_operations
         self.started_at = time.monotonic()
@@ -483,6 +510,9 @@ class PiExecution:
         self._final_error_message = ""
         self._last_provider_failure_code: str | None = None
         self._closed = False
+        self._pi_session: ChatPiSession | None = None
+        self._pi_session_freeze_error = False
+        self._pi_session_error_code: str | None = None
         self._model_call_count = 0
         self._internal_tool_call_count = 0
         self._tool_events: list[dict[str, Any]] = []
@@ -506,8 +536,22 @@ class PiExecution:
         return self._model_call_count
 
     async def start(self) -> None:
+        """创建新pi Session和临时配置，再启动禁用重试及未治理扩展的RPC。"""
         if not self.runtime.available or self.runtime.node_path is None or self.runtime.cli_path is None:
+            self._pi_session_error_code = "pi_runtime_unavailable"
             raise PiRuntimeError("pi RPC运行时不可用", code="pi_runtime_unavailable")
+        session_execution_id = self.tool_execution_id or f"runtime-{uuid4()}"
+        try:
+            self._pi_session = prepare_chat_pi_session(
+                directory=self.runtime.session_directory,
+                working_directory=self.config.working_directory,
+                tool_execution_id=session_execution_id,
+                product_session_id=self.product_session_id,
+                product_run_id=self.product_run_id,
+            )
+        except ChatPiSessionError as error:
+            self._pi_session_error_code = error.code
+            raise PiRuntimeError(str(error), code=error.code) from error
         self._temp_directory = tempfile.TemporaryDirectory(prefix="chat-pi-")
         agent_directory = Path(self._temp_directory.name)
         gateway_base = f"{self.runtime.gateway_origin}/api/pi-provider/v1"
@@ -590,32 +634,48 @@ class PiExecution:
                     "CHAT_PI_WORKSPACE_TOOL_TOKEN": self.token,
                 }
             )
+        assert self._pi_session is not None
         arguments = [
             str(self.runtime.node_path),
-            str(self.runtime.cli_path),
-            "--mode",
-            "rpc",
-            "--provider",
-            "chat-governed",
-            "--model",
-            self.config.model,
-            "--api-key",
-            self.token,
-            "--thinking",
-            self.config.thinking_level,
-            "--system-prompt",
-            self.config.system_prompt,
-            "--extension",
-            str(extension_path),
-            "--no-extensions",
-            "--no-skills",
-            "--no-prompt-templates",
-            "--no-themes",
-            "--no-context-files",
-            "--no-session",
-            "--approve",
-            "--offline",
+            "--enable-source-maps",
         ]
+        if self.runtime.node_debug_port is not None:
+            debug_flag = "--inspect-brk" if self.runtime.node_debug_break else "--inspect"
+            arguments.append(f"{debug_flag}=127.0.0.1:{self.runtime.node_debug_port}")
+        arguments.extend(
+            [
+                str(self.runtime.cli_path),
+                "--mode",
+                "rpc",
+                "--provider",
+                "chat-governed",
+                "--model",
+                self.config.model,
+                "--api-key",
+                self.token,
+                "--thinking",
+                self.config.thinking_level,
+                "--system-prompt",
+                self.config.system_prompt,
+                "--extension",
+                str(extension_path),
+                "--no-extensions",
+                "--no-skills",
+                "--no-prompt-templates",
+                "--no-themes",
+                "--no-context-files",
+                # 关键Session边界：显式文件是本次ToolExecution的新转录证据；既不查找
+                # 历史Session，也不把它用作下一轮Chat上下文。
+                "--session",
+                str(self._pi_session.path),
+                "--session-dir",
+                str(self.runtime.session_directory),
+                "--name",
+                self._pi_session.name,
+                "--approve",
+                "--offline",
+            ]
+        )
         if readonly or workspace:
             arguments.extend(
                 [
@@ -641,6 +701,7 @@ class PiExecution:
         await self._command("prompt", {"message": self.task})
 
     async def accept_provider_call(self, protocol: str, body: bytes) -> PiGatewayCall:
+        """接收pi准备发送的精确Provider字节，挂起为MAF可治理的模型边界。"""
         if self._closed:
             raise PiRuntimeError("pi执行已经结束", code="pi_execution_closed")
         if protocol != self.provider.protocol:
@@ -685,6 +746,7 @@ class PiExecution:
         return boundary
 
     async def next_boundary(self) -> PiBoundary:
+        """在总时限内返回下一个模型/Tool/完成边界；超时先关闭进程再失败。"""
         remaining = self.config.timeout_seconds - (time.monotonic() - self.started_at)
         if remaining <= 0:
             await self.close()
@@ -796,7 +858,7 @@ class PiExecution:
             raise PiRuntimeError(str(error), code=error.code) from error
 
     def metrics(self) -> dict[str, Any]:
-        return {
+        metrics = {
             "model_call_count": self._model_call_count,
             "internal_tool_call_count": self._internal_tool_call_count,
             **self._usage,
@@ -807,6 +869,22 @@ class PiExecution:
             "pi_version": self.runtime.contract_version,
             "integration_mode": "jsonl_rpc_subprocess",
         }
+        if self._pi_session is not None:
+            metrics["pi_session"] = {
+                **self._pi_session.public_view(),
+                "freeze_error": self._pi_session_freeze_error,
+            }
+        elif self.tool_execution_id is not None:
+            metrics["pi_session"] = {
+                **pending_pi_session_view(
+                    tool_execution_id=self.tool_execution_id,
+                    product_session_id=self.product_session_id,
+                    product_run_id=self.product_run_id,
+                ),
+                "state": "not_created",
+                "error_code": self._pi_session_error_code,
+            }
+        return metrics
 
     def record_provider_outcome(self, status: str, error_code: str | None) -> None:
         if status == "failed" and error_code:
@@ -833,6 +911,16 @@ class PiExecution:
         self._pending_provider_calls.clear()
         self._pending_tool_boundaries.clear()
         self.manager.unregister(self.token)
+        if self._pi_session is not None:
+            try:
+                self._pi_session.freeze()
+            except ChatPiSessionError:
+                self._pi_session_freeze_error = True
+                logger.exception(
+                    "pi_session_freeze_failed execution_id=%s session_id=%s",
+                    self.tool_execution_id,
+                    self._pi_session.id,
+                )
         if self._temp_directory is not None:
             self._temp_directory.cleanup()
             self._temp_directory = None
