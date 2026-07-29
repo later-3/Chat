@@ -263,6 +263,8 @@ class FakeWorkspacePiManager:
         readonly_tools: ReadonlyToolService | None = None,
         workspace_id: str | None = None,
         tool_execution_id: str | None = None,
+        product_session_id: str | None = None,
+        product_run_id: str | None = None,
         execution_workspaces: ExecutionWorkspaceService | None = None,
         tool_operations: ToolOperationService | None = None,
     ) -> FakeWorkspacePiExecution:
@@ -270,6 +272,7 @@ class FakeWorkspacePiManager:
         assert repository_fence is None
         assert readonly_tools is not None
         assert workspace_id and tool_execution_id
+        assert product_session_id and product_run_id
         assert execution_workspaces is not None and tool_operations is not None
         assert config.allowed_tools == ("read", "grep", "find", "ls", "edit")
         execution = FakeWorkspacePiExecution(

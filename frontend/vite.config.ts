@@ -77,6 +77,15 @@ export default defineConfig({
     // reviewed by bytes and entrypoint relationships, not by Vite's warning text.
     manifest: true,
     chunkSizeWarningLimit: 500,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.endsWith("/features/home/activity-rail.css")) {
+            return "activity-rail";
+          }
+        },
+      },
+    },
   },
   server: {
     host: "127.0.0.1",

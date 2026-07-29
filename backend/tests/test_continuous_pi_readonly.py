@@ -244,11 +244,14 @@ class FakeReadonlyPiManager:
         repository_fence: RepositoryFence | None = None,
         readonly_tools: ReadonlyToolService | None = None,
         tool_execution_id: str | None = None,
+        product_session_id: str | None = None,
+        product_run_id: str | None = None,
     ) -> FakeReadonlyPiExecution:
         assert task
         assert config.enabled
         assert repository_fence is not None
         assert readonly_tools is not None
+        assert product_session_id and product_run_id
         execution = FakeReadonlyPiExecution(
             provider=self.provider,
             config=config,
@@ -345,6 +348,7 @@ def _settings(tmp_path: Path) -> Settings:
             enabled=True,
             node_path=node,
             cli_path=cli,
+            session_directory=tmp_path / "chat-pi-sessions",
             allowed_working_roots=(tmp_path,),
             default_working_directory=tmp_path,
             gateway_origin="http://127.0.0.1:8030",

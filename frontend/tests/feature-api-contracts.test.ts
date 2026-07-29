@@ -17,6 +17,7 @@ import {
   proposeMemory,
   resolveMemoryCandidate,
 } from "../src/features/harness/harness-api.js";
+import { getHomeOverview, searchHomeResources } from "../src/features/home/home-api.js";
 import {
   loadProtocolConfiguration,
   saveProtocolBinding,
@@ -35,6 +36,7 @@ import {
   getRunStepInputs,
   getRunToolExecutions,
   getRunTrace,
+  getRunTraceReports,
   listWorkflows,
   workflowEndpointUrl,
 } from "../src/features/workflow/workflow-api.js";
@@ -45,6 +47,40 @@ function jsonResponse(value: unknown): Response {
     headers: { "content-type": "application/json" },
   });
 }
+
+test("Home Feature API按本地日期读取真实投影并复用Harness搜索", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = (async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.includes("/api/home/overview")) {
+      return jsonResponse({ year: 2026, today: "2026-07-28", calendar_days: [] });
+    }
+    return jsonResponse({
+      resources: [
+        {
+          kind: "project",
+          id: "project-1",
+          title: "Chat",
+          summary: "持续协作",
+          status: "active",
+          revision: 1,
+        },
+      ],
+    });
+  }) as typeof fetch;
+  try {
+    const overview = await getHomeOverview(2026, 480);
+    const results = await searchHomeResources("Chat / 主页");
+    assert.equal(overview.today, "2026-07-28");
+    assert.equal(results[0].id, "project-1");
+    assert.match(requests[0], /year=2026&utc_offset_minutes=480$/);
+    assert.match(requests[1], /q=Chat(?:\+|%20)%2F(?:\+|%20)%E4%B8%BB%E9%A1%B5&limit=8$/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("Session Feature API固定编码资源ID、控制方法和事件游标", async () => {
   const originalFetch = globalThis.fetch;
@@ -90,22 +126,25 @@ test("Workflow Feature API读取目录、治理和稳定Trace路径", async () =
     if (url.endsWith("/governance")) return jsonResponse({ run_id: "run-1" });
     if (url.endsWith("/step-inputs")) return jsonResponse({ step_inputs: [] });
     if (url.endsWith("/tool-executions")) return jsonResponse({ tool_executions: [] });
+    if (url.endsWith("/trace-reports")) return jsonResponse({ reports: [] });
     return jsonResponse({ trace: [] });
   }) as typeof fetch;
   try {
     assert.deepEqual(await listWorkflows(), []);
     assert.deepEqual(await getRunTrace("session / one", "run / one"), []);
+    assert.deepEqual(await getRunTraceReports("session / one", "run / one"), []);
     assert.equal((await getRunGovernance("run / one")).run_id, "run-1");
     assert.deepEqual(await getRunStepInputs("run / one"), []);
     assert.deepEqual(await getRunToolExecutions("run / one"), []);
     assert.deepEqual(await getLatestWorkflowTrace("session / one", "workflow / one"), []);
 
     assert.match(requests[1], /session%20%2F%20one\/runs\/run%20%2F%20one\/trace$/);
-    assert.match(requests[2], /runs\/run%20%2F%20one\/governance$/);
-    assert.match(requests[3], /runs\/run%20%2F%20one\/step-inputs$/);
-    assert.match(requests[4], /runs\/run%20%2F%20one\/tool-executions$/);
+    assert.match(requests[2], /session%20%2F%20one\/runs\/run%20%2F%20one\/trace-reports$/);
+    assert.match(requests[3], /runs\/run%20%2F%20one\/governance$/);
+    assert.match(requests[4], /runs\/run%20%2F%20one\/step-inputs$/);
+    assert.match(requests[5], /runs\/run%20%2F%20one\/tool-executions$/);
     assert.match(
-      requests[5],
+      requests[6],
       /session%20%2F%20one\/workflows\/workflow%20%2F%20one\/latest-trace$/,
     );
     assert.equal(workflowEndpointUrl("/api/custom"), "http://127.0.0.1:8030/api/custom");

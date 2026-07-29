@@ -47,8 +47,12 @@ def test_health_exposes_approved_architecture_without_secrets() -> None:
         "pi_agent": {
             "enabled": False,
             "available": False,
-            "contract_version": "0.82.0",
+            "contract_version": "0.82.1",
+            "runtime_source": "installed_package",
             "integration_mode": "jsonl_rpc_subprocess",
+            "session_retention": "dedicated_per_tool_execution",
+            "session_auto_resume": False,
+            "debugger_enabled": False,
             "provider_gate": "every_pi_model_call",
             "tool_gate": "every_pi_internal_tool_call",
             "allowed_working_root_count": 0,

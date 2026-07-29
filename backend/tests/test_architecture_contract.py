@@ -49,8 +49,12 @@ from backend.app.workflows import (
 # Re-reviewed 2026-07-26 for SD4-C: OpenAPI adds exactly two Evidence endpoints
 # (POST /api/evidence/claims/{id}/commit, GET /api/evidence/claims/{id}); the
 # commit route is the only user-reachable Evidence mutation (§13.1).
-OPENAPI_SHA256 = "9b1325d523e25928a1cc35f84721cb5418c473514ec5b18f5efc604a296fe617"
-PRODUCT_SCHEMA_SHA256 = "4603ff02cad8c259f8ec11f309e4ebc88970b24b823057a0440d4ac94e5adda2"
+# Re-reviewed 2026-07-28 for deterministic dual Run Trace reports: OpenAPI adds
+# exactly one read-only trace-reports endpoint; Product Schema adds only the
+# run_trace_reports materialized-projection table. trace_events and domain
+# ledgers remain authoritative and the Workflow catalog is unchanged.
+OPENAPI_SHA256 = "5f42ca97d66281ba49e2c4b4a5e2bac06c382632718e08b108d1d8925ceba0a6"
+PRODUCT_SCHEMA_SHA256 = "f151dc80ad56b9cb29913267f53e17822a63640811856ecae3a1637da62d0e29"
 WORKFLOW_CATALOG_SHA256 = "2c6ae803e2669254c352b57ef238655b92a92d47b2e190a15e5513b609e39c6e"
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 

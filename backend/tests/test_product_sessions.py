@@ -15,6 +15,7 @@ from backend.app.config import Settings
 from backend.app.main import create_app
 from backend.app.product_sessions import ProductDatabase, ProductSessionService
 from backend.app.product_sessions.service import ProductSessionConflict, SessionBusy
+from backend.app.workflows.catalog import CONTINUOUS_COLLABORATION_WORKFLOW
 
 
 def _events(response) -> list[dict[str, Any]]:
@@ -117,6 +118,29 @@ def test_two_turns_restore_only_product_messages_without_duplicate_history() -> 
         runs = client.get(f"/api/sessions/{session_id}/runs").json()["runs"]
         assert len(runs) == 2
         assert [attempt["status"] for attempt in runs[0]["attempts"]] == ["succeeded"]
+
+
+def test_terminal_run_exposes_two_deterministic_trace_reports_over_rest() -> None:
+    with TestClient(create_app(Settings.for_test())) as client:
+        session_id = client.post("/api/sessions", json={}).json()["id"]
+        events = _events(
+            client.post(
+                "/api/agent",
+                json=_request(
+                    session_id,
+                    "trace-report-api-run",
+                    [{"id": "trace-report-api-user", "role": "user", "content": "生成双Trace"}],
+                ),
+            )
+        )
+        assert events[-1]["type"] == "RUN_FINISHED"
+        run = client.get(f"/api/sessions/{session_id}/runs").json()["runs"][0]
+        response = client.get(f"/api/sessions/{session_id}/runs/{run['id']}/trace-reports")
+        assert response.status_code == 200
+        reports = response.json()["reports"]
+        assert [value["report_kind"] for value in reports] == ["diagnostic", "human"]
+        assert all(value["content"]["generation"]["model_called"] is False for value in reports)
+        assert reports[1]["text"].startswith("# 本轮协作流程报告")
 
 
 def test_modified_client_history_is_rejected_without_creating_another_run() -> None:
@@ -487,6 +511,128 @@ def test_concurrent_trace_writes_allocate_unique_monotonic_sequences(tmp_path: P
     assert {value["payload"].get("index") for value in traces[1:]} == set(range(20))
 
 
+def test_terminal_run_materializes_deterministic_machine_and_human_trace_reports(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        service = ProductSessionService(ProductDatabase(f"sqlite+aiosqlite:///{tmp_path / 'dual-trace.db'}"))
+        service.configure_trace_workflows((CONTINUOUS_COLLABORATION_WORKFLOW,))
+        await service.initialize()
+        session = await service.create_session()
+        accepted = await service.prepare_agui_run(
+            _request(
+                session["id"],
+                "dual-trace-run",
+                [{"id": "dual-trace-user", "role": "user", "content": "解释这一轮流程"}],
+            )
+        )
+        await service.record_trace(
+            session["id"],
+            accepted.product_run_id,
+            "workflow.started",
+            {"workflow_id": "continuous-collaboration", "version": "1.8.0"},
+        )
+        await service.record_trace(
+            session["id"],
+            accepted.product_run_id,
+            "workflow.node.content",
+            {
+                "workflow_id": "continuous-collaboration",
+                "executor_id": "scenario_router",
+                "actor": "deterministic_router",
+                "content_type": "scenario_route",
+                "public_input": {"scenario": "answer"},
+                "public_output": {
+                    "route_decision": {
+                        "selected_branch": "direct_response",
+                        "selected_target": "execution_draft_compiler",
+                        "selection_reason": "已接受意图不需要澄清或计划。",
+                        "options": [
+                            {
+                                "branch_id": "clarification",
+                                "target": "clarification",
+                                "selected": False,
+                                "reason": "当前意图已经明确。",
+                            },
+                            {
+                                "branch_id": "direct_response",
+                                "target": "execution_draft_compiler",
+                                "selected": True,
+                                "reason": "直接进入执行草稿。",
+                            },
+                        ],
+                    }
+                },
+            },
+        )
+        await service.record_trace(
+            session["id"],
+            accepted.product_run_id,
+            "workflow.node.content",
+            {
+                "workflow_id": "continuous-collaboration",
+                "executor_id": "execution_draft_compiler",
+                "actor": "execution_governance_compiler",
+                "content_type": "execution_draft",
+                "public_input": {"plan": None},
+                "public_output": {
+                    "status": "prepared",
+                    "draft_revision_id": "draft-1",
+                    "empty_reasons": {
+                        "public_input.plan": {
+                            "code": "not_applicable",
+                            "reason": "场景路由没有要求规划，直接编译Draft。",
+                        }
+                    },
+                },
+            },
+        )
+        await service.complete_active_run(
+            session["id"],
+            assistant_text="已完成",
+            agui_message_id="dual-trace-assistant",
+        )
+
+        reports = await service.list_trace_reports(session["id"], accepted.product_run_id)
+        assert [value["report_kind"] for value in reports] == ["diagnostic", "human"]
+        diagnostic = reports[0]["content"]
+        human = reports[1]["content"]
+        assert diagnostic["generation"] == {
+            "mode": "deterministic_projection",
+            "model_called": False,
+            "hidden_reasoning_included": False,
+            "authoritative_source": "product_store",
+        }
+        assert diagnostic["source"]["terminal_event"] == "run.succeeded"
+        assert human["workflow"]["definition_match"] is True
+        assert [value["node_id"] for value in human["actual_path"]] == [
+            "scenario_router",
+            "execution_draft_compiler",
+        ]
+        assert human["actual_path"][1]["path_reason"] == "已接受意图不需要澄清或计划。"
+        assert any(
+            value["node_id"] == "clarification"
+            and value["code"] == "not_selected"
+            and value["reason"].endswith("当前意图已经明确。")
+            for value in human["unvisited_nodes"]
+        )
+        assert any(
+            value["field"] == "public_input.plan"
+            and value["code"] == "not_applicable"
+            and value["reason"] == "场景路由没有要求规划，直接编译Draft。"
+            for value in human["empty_fields"]
+        )
+        assert "未调用Agent/LLM" in reports[1]["text"]
+
+        # 重建相同事实不会新增第3份报告，内容Hash也保持稳定。
+        first_hashes = {value["report_kind"]: value["content_hash"] for value in reports}
+        rebuilt = await service.list_trace_reports(session["id"], accepted.product_run_id)
+        assert {value["report_kind"]: value["content_hash"] for value in rebuilt} == first_hashes
+        await service.database.close()
+
+    asyncio.run(scenario())
+
+
 def test_alembic_initial_migration_upgrades_and_downgrades_clean_database(tmp_path: Path) -> None:
     database_path = tmp_path / "migration.db"
     configuration = Config("alembic.ini")
@@ -503,6 +649,7 @@ def test_alembic_initial_migration_upgrades_and_downgrades_clean_database(tmp_pa
         "run_attempts",
         "run_protocol_ids",
         "trace_events",
+        "run_trace_reports",
         "product_projects",
         "work_items",
         "knowledge_notes",

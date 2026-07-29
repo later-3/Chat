@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import stat
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.responses import StreamingResponse
 
-from backend.app.config import PiRuntimeSettings, Settings
+from backend.app.config import PiRuntimeSettings, Settings, SettingsError, _pi_runtime
 from backend.app.main import create_app
 from backend.app.model_call_review import (
     InMemoryModelCallReviewStore,
@@ -42,6 +43,11 @@ from backend.app.pi_runtime import (
     _pi_max_tokens,
     _pi_model_projection,
     _pi_provider_compat,
+)
+from backend.app.pi_sessions import (
+    pending_pi_session_view,
+    prepare_chat_pi_session,
+    session_id_for_tool_execution,
 )
 from backend.app.product_sessions import ProductDatabase, ProductSessionService
 from backend.app.product_sessions.database import ToolExecutionRecord
@@ -82,6 +88,7 @@ def _runtime(tmp_path: Path) -> PiRuntimeSettings:
         enabled=True,
         node_path=node,
         cli_path=cli,
+        session_directory=tmp_path / "chat-pi-sessions",
         allowed_working_roots=(tmp_path,),
         default_working_directory=tmp_path,
         gateway_origin="http://127.0.0.1:8030",
@@ -106,8 +113,85 @@ def _config(tmp_path: Path) -> PiToolConfigSnapshot:
 def test_pi_runtime_exposes_the_operator_pinned_contract_version(tmp_path: Path) -> None:
     runtime = _runtime(tmp_path)
 
-    assert runtime.public_view()["contract_version"] == "0.82.0"
-    assert runtime.health_view()["contract_version"] == "0.82.0"
+    assert runtime.public_view()["contract_version"] == "0.82.1"
+    assert runtime.health_view()["contract_version"] == "0.82.1"
+    assert runtime.public_view()["session_auto_resume"] is False
+
+
+def test_chat_pi_session_is_new_mapped_and_frozen_without_exposing_path(tmp_path: Path) -> None:
+    session = prepare_chat_pi_session(
+        directory=tmp_path / "chat-sessions",
+        working_directory=str(tmp_path),
+        tool_execution_id="tool-execution-1",
+        product_session_id="product-session-1",
+        product_run_id="product-run-1",
+    )
+
+    header = json.loads(session.path.read_text(encoding="utf-8").splitlines()[0])
+    assert header == {
+        "type": "session",
+        "version": 3,
+        "id": "chat-tool-execution-1",
+        "timestamp": header["timestamp"],
+        "cwd": str(tmp_path),
+    }
+    assert session.name.startswith("Chat托管")
+    assert session.public_view()["read_only"] is False
+    assert "path" not in session.public_view()
+
+    session.freeze()
+    view = session.public_view()
+    assert view["state"] == "frozen"
+    assert view["read_only"] is True
+    assert view["auto_resume"] is False
+    assert len(view["content_sha256"]) == 64
+    assert stat.S_IMODE(session.path.stat().st_mode) == 0o400
+
+
+def test_chat_pi_session_mapping_exists_before_process_start() -> None:
+    view = pending_pi_session_view(
+        tool_execution_id="tool-execution-1",
+        product_session_id="product-session-1",
+        product_run_id="product-run-1",
+    )
+
+    assert view["id"] == session_id_for_tool_execution("tool-execution-1")
+    assert view["state"] == "pending_creation"
+    assert view["fork_enabled"] is False
+
+
+def test_pi_source_runtime_requires_matching_source_version(tmp_path: Path) -> None:
+    source_root = tmp_path / "pi"
+    package_root = source_root / "packages" / "coding-agent"
+    package_root.mkdir(parents=True)
+    (package_root / "package.json").write_text('{"version":"0.82.1"}', encoding="utf-8")
+    node = tmp_path / "node"
+    cli = package_root / "dist" / "cli.js"
+    cli.parent.mkdir()
+    node.touch()
+    cli.touch()
+    payload = {
+        "pi_agent": {
+            "enabled": True,
+            "contract_version": "0.82.1",
+            "node_path": str(node),
+            "cli_path": str(cli),
+            "source_root": str(source_root),
+            "session_directory": str(tmp_path / "sessions"),
+            "node_debug_port": 9230,
+            "node_debug_break": True,
+            "allowed_working_roots": [str(tmp_path)],
+            "default_working_directory": str(tmp_path),
+        }
+    }
+
+    runtime = _pi_runtime(payload, host="127.0.0.1", port=8030)
+    assert runtime.public_view()["runtime_source"] == "source_build"
+    assert runtime.public_view()["debugger_enabled"] is True
+
+    payload["pi_agent"]["contract_version"] = "0.82.0"
+    with pytest.raises(SettingsError, match="源码版本不一致"):
+        _pi_runtime(payload, host="127.0.0.1", port=8030)
 
 
 def test_pi_rpc_stream_limit_can_carry_the_largest_bounded_read_result() -> None:
