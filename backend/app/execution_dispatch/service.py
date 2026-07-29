@@ -1,8 +1,8 @@
-"""Application coordinator for governed pi read and workspace execution.
+"""持续协作节点24-31背后的pi只读/隔离编辑应用协调器。
 
-The coordinator owns Product transactions and external-dispatch boundaries.
-MAF Executors consume this service but do not query tables, resolve filesystem
-paths, or invent permissions themselves.
+本服务拥有Product事务和外部dispatch边界：从RunSpec编译路由，准备StepInput与
+ToolExecution，创建/恢复Workspace，登记pi内部每次模型调用与Tool授权，记录活动、
+成功/失败/取消。MAF Executor只编排，不直接查表、解析文件路径或发明权限。
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from ..harness.contracts import content_hash
 from ..observability.context import bind_context
 from ..pi_gateway import PiRuntimeManager
 from ..pi_runtime import PiExecution
+from ..pi_sessions import pending_pi_session_view
 from ..product_sessions.database import (
     ProductDatabase,
     RunAttemptRecord,
@@ -205,15 +206,11 @@ class PiModelCallGovernance:
 
 
 class ExecutionDispatchService:
-    """Own governed pi dispatch without owning the MAF graph.
+    """拥有受治理pi dispatch用例，但不拥有MAF图。
 
-    This coordinator intentionally keeps route preparation, authorization and
-    ToolExecution transitions behind one application boundary.  Splitting
-    those public operations into independent table services would let an MAF
-    executor start a process without the corresponding fence, grant or ledger.
-    Pure compilation, repository resolution, read tools, managed workspaces and
-    the F01 side-effect ledger remain separate collaborators so this boundary
-    coordinates one use case instead of owning their state transitions.
+    路由准备、授权与ToolExecution转换必须在同一应用边界内，否则Executor可能绕过
+    Repository围栏、Grant或账本启动进程。纯编译、仓库解析、只读Tool、Workspace和
+    副作用账本仍是独立协作者。
     """
 
     def __init__(
@@ -240,6 +237,7 @@ class ExecutionDispatchService:
         self._tool_operations = tool_operations
 
     async def route(self, run_spec_id: str) -> ExecutionRoute:
+        """节点24使用：只从已绑定RunSpec编译执行路由，不重新读取Prompt。"""
         async with self.database.sessions() as transaction:
             spec = await transaction.get(RunSpecRecord, run_spec_id)
             if spec is None or spec.status != "bound" or spec.bound_run_id is None:
@@ -265,6 +263,7 @@ class ExecutionDispatchService:
         protocol_definition_id: str | None,
         protocol_binding_id: str | None,
     ) -> PreparedPiExecution:
+        """节点30使用：校验pi只读路由与Repository围栏，创建账本并启动临时子进程。"""
         route = await self.route(run_spec_id)
         if route.kind != "pi_readonly" or route.repository_fence is None:
             raise ExecutionDispatchError(
@@ -354,12 +353,14 @@ class ExecutionDispatchService:
                 repository_fence=fence,
                 readonly_tools=self._readonly_tools,
                 tool_execution_id=execution_id,
+                product_session_id=session_id,
+                product_run_id=run_id,
             )
         except Exception as error:
             await self.finish_failed(
                 execution_id,
                 failure_code=getattr(error, "code", type(error).__name__),
-                metrics={},
+                metrics=getattr(error, "metrics", {}),
             )
             raise
         await self._mark_dispatched(execution_id)
@@ -506,6 +507,9 @@ class ExecutionDispatchService:
     async def start_workspace_pi(
         self,
         prepared: PreparedWorkspaceExecution,
+        *,
+        product_session_id: str,
+        product_run_id: str,
     ) -> PreparedPiExecution:
         """Start pi only after the real workspace node has committed its output."""
 
@@ -537,6 +541,8 @@ class ExecutionDispatchService:
                 readonly_tools=self._readonly_tools,
                 workspace_id=prepared.workspace_id,
                 tool_execution_id=prepared.execution_id,
+                product_session_id=product_session_id,
+                product_run_id=product_run_id,
                 execution_workspaces=self._execution_workspaces,
                 tool_operations=self._tool_operations,
             )
@@ -544,7 +550,7 @@ class ExecutionDispatchService:
             await self.finish_failed(
                 prepared.execution_id,
                 failure_code=getattr(error, "code", type(error).__name__),
-                metrics={},
+                metrics=getattr(error, "metrics", {}),
             )
             raise
         await self._execution_workspaces.mark_running(prepared.workspace_id)
@@ -1362,8 +1368,9 @@ class ExecutionDispatchService:
                 )
                 + 1
             )
+            execution_id = str(uuid4())
             value = ToolExecutionRecord(
-                id=str(uuid4()),
+                id=execution_id,
                 session_id=session_id,
                 run_id=run_id,
                 run_attempt_id=attempt.id,
@@ -1380,7 +1387,13 @@ class ExecutionDispatchService:
                 input_hash=input_hash,
                 capability_hash=capability_hash,
                 process_dispatch_state="not_started",
-                metrics={},
+                metrics={
+                    "pi_session": pending_pi_session_view(
+                        tool_execution_id=execution_id,
+                        product_session_id=session_id,
+                        product_run_id=run_id,
+                    )
+                },
             )
             transaction.add(value)
         return value.id
@@ -1444,11 +1457,14 @@ class ExecutionDispatchService:
                 ).all()
             )
         closed_processes = 0
+        terminal_metrics: dict[str, dict[str, Any]] = {}
         if self._manager is not None:
             for execution_id in execution_ids:
-                closed_processes += await self._manager.close_for_tool_execution(execution_id)
+                metrics = await self._manager.close_for_tool_execution(execution_id)
+                if metrics is not None:
+                    closed_processes += 1
+                    terminal_metrics[execution_id] = metrics
 
-        now = utc_now()
         async with self.database.sessions.begin() as transaction:
             executions = list(
                 (
@@ -1460,12 +1476,16 @@ class ExecutionDispatchService:
             for execution in executions:
                 if execution.status not in {"starting", "running", "waiting_human"}:
                     continue
-                execution.status = "cancelled"
-                execution.process_dispatch_state = "finished"
-                execution.failure_code = reason_code[:100]
-                execution.terminal_reason_code = reason_code[:100]
-                execution.finished_at = now
-                execution.row_version += 1
+                metrics = terminal_metrics.get(execution.id, {})
+                self._apply_terminal(
+                    execution,
+                    status="cancelled",
+                    result=None,
+                    result_hash=None,
+                    terminal_reason_code=reason_code[:100],
+                    metrics=metrics,
+                    failure_code=reason_code[:100],
+                )
 
         operations = await self._tool_operations.cancel_pending_for_run(
             run_id,

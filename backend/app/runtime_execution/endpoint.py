@@ -1,4 +1,9 @@
-"""FastAPI admission and cursor subscription endpoints for durable AG-UI runs."""
+"""持续协作最外层入口：接纳AG-UI请求、创建Runtime Job并按游标订阅事件。
+
+本文件不执行Workflow。POST只做Product Run接纳和Runtime Job入队；Execution Worker可在
+另一进程调用``ProductAwareWorkflow.run``。SSE断开不会取消Run，浏览器可带Cursor重连
+并从持久化Journal续传。这样HTTP连接、用户取消和执行所有权是3个不同概念。
+"""
 
 from __future__ import annotations
 
@@ -43,13 +48,18 @@ def add_durable_agui_endpoint(
     dependencies: Sequence[Depends] | None = None,
     poll_interval_seconds: float = 0.08,
 ) -> None:
-    """Register one AG-UI runner without tying execution to the HTTP stream."""
+    """注册一个耐久AG-UI入口，但不把执行生命周期绑定到HTTP流。"""
 
     endpoint_key = path
     registry.register(endpoint_key, runner)
 
     @app.post(path, tags=tags or ["AG-UI"], dependencies=dependencies, response_model=None)  # type: ignore[arg-type]
     async def durable_agent_endpoint(request_body: AGUIRequest) -> StreamingResponse:
+        """前端入口：接纳一轮AG-UI Run，不在HTTP处理器内直接跑Workflow。
+
+        链路为React POST -> prepare_agui_run -> Runtime Job/游标 -> Worker执行 -> Journal
+        -> 本处理器按Sequence回放SSE。仅测试用内存SQLite为确定性而同步跑一次Worker。
+        """
         input_data = request_body.model_dump(mode="json", exclude_none=True)
         try:
             accepted = await sessions.prepare_agui_run(input_data)

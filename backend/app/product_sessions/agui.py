@@ -18,13 +18,27 @@ from .service import ProductSessionError, ProductSessionService
 
 
 class ProductAwareAgentFrameworkAgent(AgentFrameworkAgent):
-    """Persist Product facts while leaving event conversion to MAF."""
+    """Persist Product facts while leaving event conversion to MAF.
+
+    The single-agent (non-workflow) AG-UI entry uses this thinner gate: MAF's
+    ``AgentFrameworkAgent`` converts AG-UI events; this subclass persists the
+    Product Run/Attempt lifecycle and runs the same terminal commit/fail gate
+    as ``ProductAwareWorkflow`` so no fake Assistant success can survive a
+    Product Store failure. The Workflow path is the default; this remains for
+    the bootstrap/demo agents.
+    """
 
     def __init__(self, agent: SupportsAgentRun, *, sessions: ProductSessionService) -> None:
         super().__init__(agent=agent)
         self._sessions = sessions
 
     async def run(self, input_data: dict[str, Any]):
+        """Drive one AG-UI run for the single-agent path.
+
+        Mirrors ``ProductAwareWorkflow.run`` stages: prepare -> stream MAF
+        events (capturing assistant text) -> terminal gate (interrupt waits,
+        error fails closed, success commits the Assistant Message).
+        """
         thread_id = self._thread_id(input_data)
         run_id = self._run_id(input_data)
         try:

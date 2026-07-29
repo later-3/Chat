@@ -1,30 +1,14 @@
-"""SD4-C result evidence gate Executors for the pi workspace branch.
+"""持续协作节点28-29：把pi隔离编辑结果转成可审核Claim与证据链。
 
-Two bounded MAF nodes inserted between ``pi_workspace_result_assembly`` and
-``turn_summary_agent``:
+节点28 ``result_claim_prepare``重新校验RunSpec冻结的Validation Contract与Action/Work
+主体，建立Diff Artifact、CompletionClaim、Requirements、Observation和Assessment。
+只有“不适用”条件明确成立才允许空Claim；歧义、缺前置或验证失败一律关闭Run。
 
-1. ``result_claim_prepare`` (deterministic): delegates to
-   ``ResultPipelineCoordinator`` — re-verifies the RunSpec-frozen Validation
-   Contract and subject Action/Work binding, forms the diff_patch Artifact
-   and CompletionClaim, runs deterministic Validation and records
-   Observation/Assessment.  ``not_applicable`` only when this is not a
-   succeeded workspace execution, produced no approved change, or the Draft
-   explicitly recorded "no completion subject"; ambiguity or missing
-   prerequisites fail the Run closed.
-2. ``result_claim_decision`` (HITL at the existing ``result_commit`` decision
-   point): one immutable DecisionSubject freezes the Claim identity, the
-   per-action outcome map (accept/waive share the artifact-aware accepted
-   disposition — accepted with an Artifact, none without; reject uses
-   rejected for a still-current Revision, none for a superseded one) and the
-   Adoption map (requirement_id -> current supports assessment_id).  The
-   DecisionRecord is bound at creation (append-only, 治理§6.3)；accept
-   commits through the §9.1 gate — which creates the mapped Adoptions in the
-   same transaction — while reject takes the independent rejected path
-   without migrating the subject.
+节点29 ``result_claim_decision``在``result_commit``决定点把Claim版本、各动作结局和
+requirement -> assessment Adoption映射冻结到DecisionSubject。接受时通过Result Commit
+Gate在同一事务提交；拒绝走独立路径，不把旧Subject迁移到新Claim。
 
-Neither node owns a product transaction: preparation and commit transactions
-belong to the application coordinators; this module only orchestrates MAF
-interrupts and state passing.
+两个MAF节点都不拥有产品事务；事务属于应用Coordinator，本文件只编排状态与interrupt。
 """
 
 from __future__ import annotations
@@ -98,6 +82,7 @@ async def _record_trace(
     public_input: Mapping[str, Any],
     public_output: Mapping[str, Any],
 ) -> None:
+    """记录Claim节点公开输入/输出，供终态双Trace解释完成声明为何成立或为空。"""
     await sessions.record_trace(
         thread_id,
         run_id,
@@ -115,7 +100,7 @@ async def _record_trace(
 
 
 class ResultClaimPrepareExecutor(Executor):
-    """Deterministically build the Claim and its Evidence chain, or fail closed."""
+    """节点28：确定性建立Claim及Evidence链；任何歧义都fail closed。"""
 
     def __init__(
         self,
@@ -137,6 +122,7 @@ class ResultClaimPrepareExecutor(Executor):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
+        """执行节点28：运行证据管线并把Claim版本、验证结论和失败原因写Trace。"""
         try:
             workspace = dict(state.execution_workspace or {})
             execution_id = str(workspace.get("execution_id") or "")
@@ -182,7 +168,7 @@ class ResultClaimPrepareExecutor(Executor):
 
 
 class ResultClaimDecisionExecutor(Executor, RequestInfoMixin):
-    """Bind the result_commit Decision to the exact Claim and run the §9.1 gate."""
+    """节点29：把result_commit决定绑定到精确Claim版本并运行提交Gate。"""
 
     def __init__(
         self,
@@ -206,6 +192,7 @@ class ResultClaimDecisionExecutor(Executor, RequestInfoMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState, str],
     ) -> None:
+        """执行节点29入口：登记Claim Subject，评估Policy并自动继续或等待人工。"""
         try:
             await self._decide(state, ctx)
         except PermissionError:
@@ -227,7 +214,7 @@ class ResultClaimDecisionExecutor(Executor, RequestInfoMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState, str],
     ) -> None:
-        """Register/evaluate the result_commit decision and interrupt when needed.
+        """登记/评估result_commit决定，按Policy自动继续或发出interrupt。
 
         规模说明（>80行审查）：本方法把“重放短路 -> 冻结视图 -> 策略评估 ->
         自动/人工分支 -> 卡片签发”作为一条HITL状态机路径保持在一起；拆开会让

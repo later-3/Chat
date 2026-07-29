@@ -234,6 +234,43 @@ class TraceRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+class RunTraceReportRecord(Base):
+    """由Product Trace确定性生成的Run级报告投影。
+
+    ``trace_events``仍是权威的逐事件事实；本表只把同一组事实物化成两种读取方式：
+    ``diagnostic``供定位和程序分析，``human``供用户学习本轮流程。报告不得反向驱动
+    Workflow，也不得保存模型隐藏推理。
+    """
+
+    __tablename__ = "run_trace_reports"
+    __table_args__ = (
+        UniqueConstraint("run_id", "report_kind", name="uq_run_trace_report_kind"),
+        Index("ix_run_trace_reports_session_run", "session_id", "run_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("product_sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("product_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    report_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    workflow_definition_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    workflow_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_first_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_last_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_event_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    content_json: Mapped[Any] = mapped_column(JSON, nullable=False)
+    content_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+
 class AgentProfileRecord(Base):
     """Product-owned editable configuration for one runtime Agent identity."""
 

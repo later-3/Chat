@@ -1597,6 +1597,12 @@ class HarnessService:
         token_budget: int = 6000,
         status: str = "candidate",
     ) -> dict[str, Any]:
+        """持久化一份不可变、受Token预算约束的候选Context清单。
+
+        同一事务写Header以及全部采用/排除Item。保留排除项是有意设计：审计和用户修订不仅要解释
+        模型能看到什么，还要解释系统考虑过但排除了什么。重放绑定``command_id``和规范请求Hash，
+        防止恢复时为同一确定性装配命令创建内容不同的ContextPackage。
+        """
         if stage not in {"directory", "detail"}:
             raise HarnessValidationError("ContextPackage stage无效")
         async with self.database.sessions.begin() as transaction:

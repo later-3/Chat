@@ -327,6 +327,13 @@ class MemorySourceLinkRecord(Base):
 
 
 class ContextPackageRecord(Base):
+    """为一个Run的一个阶段准备的精确Context清单Header。
+
+    Item正文和采用决定保存在ContextAdoptionRecord。版本Header与Item分开后，Approval可以
+    绑定稳定package hash，用户修改也能创建新revision而不改写历史。它不是完整对话，也不是
+    MAF Checkpoint。
+    """
+
     __tablename__ = "context_packages"
     __table_args__ = (
         UniqueConstraint("run_id", "stage", "revision"),

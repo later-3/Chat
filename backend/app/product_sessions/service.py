@@ -1,10 +1,17 @@
-"""Application service for authoritative Product Session and Run facts."""
+"""持续协作外层生命周期的权威Product Session/Message/Run应用服务。
+
+AG-UI入口先用``prepare_agui_run``创建Interaction、Product Run、Run Attempt和User
+Message；Workflow运行期间用``record_trace``追加单调Sequence事件；成功、失败、取消、
+放弃或重启收敛时，由本服务更新权威终态。每个终态事务同时物化机器版与人读版双Trace，
+报告是可重建投影，``trace_events``及各领域表仍是事实源。
+"""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import uuid
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -18,11 +25,14 @@ from .database import (
     RunAttemptRecord,
     RunProtocolRecord,
     RunRecord,
+    RunTraceReportRecord,
     SessionRecord,
+    ToolExecutionRecord,
     TraceRecord,
     affected_row_count,
     utc_now,
 )
+from .trace_reports import TERMINAL_RUN_STATUSES, build_run_trace_reports, content_hash
 
 DEFAULT_SCOPE_ID = "local-user"
 ACTIVE_RUN_STATUSES = {"accepted", "running", "waiting_approval", "committing"}
@@ -221,16 +231,67 @@ def _trace_view(value: TraceRecord) -> dict[str, Any]:
     }
 
 
+def _trace_report_view(value: RunTraceReportRecord) -> dict[str, Any]:
+    """把双Trace报告行投影为稳定REST结构。"""
+
+    return {
+        "id": value.id,
+        "session_id": value.session_id,
+        "run_id": value.run_id,
+        "report_kind": value.report_kind,
+        "schema_version": value.schema_version,
+        "workflow_definition_id": value.workflow_definition_id,
+        "workflow_version": value.workflow_version,
+        "source_first_sequence": value.source_first_sequence,
+        "source_last_sequence": value.source_last_sequence,
+        "source_event_count": value.source_event_count,
+        "content_hash": value.content_hash,
+        "content": value.content_json,
+        "text": value.content_text,
+        "created_at": _iso(value.created_at),
+        "updated_at": _iso(value.updated_at),
+    }
+
+
 class ProductSessionService:
-    """Apply Session/Interaction/Message/Run invariants in short transactions."""
+    """在短事务内执行Session/Interaction/Message/Run不变量和终态报告物化。"""
 
     def __init__(self, database: ProductDatabase, *, scope_id: str = DEFAULT_SCOPE_ID) -> None:
         self.database = database
         self.scope_id = scope_id
+        # Definition只用于解释同版本Trace，不参与Workflow执行或产品状态转换。
+        # 由composition在运行前注入，避免Product Session反向依赖Workflow包。
+        self._trace_workflow_definitions: dict[str, dict[str, Any]] = {}
+
+    def configure_trace_workflows(self, definitions: Iterable[Any]) -> None:
+        """注册可用于人读报告的Workflow Definition快照。
+
+        只有Trace中的``workflow_id + version``与这里完全一致时，报告才会使用
+        节点说明和固定边解释路径；版本不匹配时宁可标记历史信息缺失，也不拿
+        当前代码倒推旧Run。
+        """
+
+        configured: dict[str, dict[str, Any]] = {}
+        for definition in definitions:
+            if isinstance(definition, Mapping):
+                view = dict(definition)
+            else:
+                projector = getattr(definition, "view", None)
+                if not callable(projector):
+                    continue
+                projected = projector()
+                if not isinstance(projected, Mapping):
+                    continue
+                view = dict(projected)
+            workflow_id = str(view.get("id") or "").strip()
+            if workflow_id:
+                configured[workflow_id] = view
+        self._trace_workflow_definitions = configured
 
     async def initialize(self) -> None:
         await self.database.initialize()
         await self.reconcile_orphaned_runs()
+        await self.backfill_terminal_trace_reports()
 
     async def create_session(
         self,
@@ -386,6 +447,113 @@ class ProductSessionService:
                 ).all()
             )
         return [_trace_view(value) for value in values]
+
+    async def list_trace_reports(self, session_id: str, run_id: str) -> list[dict[str, Any]]:
+        """读取一轮终态Run的机器版和人读版Trace报告。
+
+        正常路径在Run终态事务内已经物化。这里保留一次确定性自修复：迁移前的旧Run、
+        或极端情况下缺失/落后的报告，会先用现有Product Trace重建再返回。活动Run尚未
+        “走完”，因此明确返回空列表，前端继续读取实时Trace即可。
+        """
+
+        async with self.database.sessions() as transaction:
+            await self._session(transaction, session_id)
+            run = await transaction.scalar(
+                select(RunRecord).where(
+                    RunRecord.id == run_id,
+                    RunRecord.session_id == session_id,
+                )
+            )
+            if run is None:
+                raise ProductSessionNotFound("Product Run不存在")
+            if run.status not in TERMINAL_RUN_STATUSES:
+                return []
+            reports = list(
+                (
+                    await transaction.scalars(
+                        select(RunTraceReportRecord)
+                        .where(RunTraceReportRecord.run_id == run_id)
+                        .order_by(RunTraceReportRecord.report_kind)
+                    )
+                ).all()
+            )
+            latest_trace_sequence = int(
+                await transaction.scalar(
+                    select(func.max(TraceRecord.sequence)).where(TraceRecord.run_id == run_id)
+                )
+                or 0
+            )
+            definition_upgrade_available = any(
+                isinstance(value.content_json, Mapping)
+                and isinstance(value.content_json.get("workflow"), Mapping)
+                and value.content_json["workflow"].get("definition_match") is not True
+                and (
+                    registered := self._trace_workflow_definitions.get(
+                        str(value.content_json["workflow"].get("id") or "")
+                    )
+                )
+                is not None
+                and registered.get("version") == value.content_json["workflow"].get("version")
+                for value in reports
+            )
+            needs_rebuild = (
+                len(reports) != 2
+                or any(value.source_last_sequence != latest_trace_sequence for value in reports)
+                or definition_upgrade_available
+            )
+        if needs_rebuild:
+            async with self.database.sessions.begin() as transaction:
+                run = await transaction.scalar(
+                    select(RunRecord).where(
+                        RunRecord.id == run_id,
+                        RunRecord.session_id == session_id,
+                    )
+                )
+                if run is None:
+                    raise ProductSessionNotFound("Product Run不存在")
+                await self._materialize_trace_reports(transaction, run)
+            async with self.database.sessions() as transaction:
+                reports = list(
+                    (
+                        await transaction.scalars(
+                            select(RunTraceReportRecord)
+                            .where(RunTraceReportRecord.run_id == run_id)
+                            .order_by(RunTraceReportRecord.report_kind)
+                        )
+                    ).all()
+                )
+        return [_trace_report_view(value) for value in reports]
+
+    async def backfill_terminal_trace_reports(self) -> int:
+        """为迁移前的终态Run补齐双报告，不改变任何权威Run/Trace事实。"""
+
+        async with self.database.sessions() as transaction:
+            terminal_run_ids = list(
+                (
+                    await transaction.scalars(
+                        select(RunRecord.id).where(RunRecord.status.in_(TERMINAL_RUN_STATUSES))
+                    )
+                ).all()
+            )
+            report_count_rows = (
+                (
+                    await transaction.execute(
+                        select(RunTraceReportRecord.run_id, func.count(RunTraceReportRecord.id))
+                        .where(RunTraceReportRecord.run_id.in_(terminal_run_ids))
+                        .group_by(RunTraceReportRecord.run_id)
+                    )
+                ).all()
+                if terminal_run_ids
+                else []
+            )
+            report_counts: dict[str, int] = {str(row[0]): int(row[1]) for row in report_count_rows}
+        missing = [run_id for run_id in terminal_run_ids if int(report_counts.get(run_id, 0)) != 2]
+        for run_id in missing:
+            async with self.database.sessions.begin() as transaction:
+                run = await transaction.get(RunRecord, run_id)
+                if run is not None and run.status in TERMINAL_RUN_STATUSES:
+                    await self._materialize_trace_reports(transaction, run)
+        return len(missing)
 
     async def latest_workflow_trace(self, session_id: str, workflow_id: str) -> list[dict[str, Any]]:
         """Return the newest completed or failed projection for one workflow."""
@@ -801,6 +969,7 @@ class ProductSessionService:
         )
 
     async def abandon_active_run(self, session_id: str) -> None:
+        """用户在治理点放弃：撤回本轮User消息、关闭Run并原子生成双Trace。"""
         async with self.database.sessions.begin() as transaction:
             session = await self._session(transaction, session_id)
             if session.active_run_id is None:
@@ -844,6 +1013,7 @@ class ProductSessionService:
             session.revision += 1
             session.updated_at = utc_now()
             await self._trace(transaction, run, "run.abandoned", {})
+            await self._materialize_trace_reports(transaction, run)
 
     async def fail_active_run(
         self,
@@ -853,6 +1023,7 @@ class ProductSessionService:
         error_code: str | None = None,
         message: str | None = None,
     ) -> None:
+        """把活动Run收敛为非成功终态，并在同一事务保存失败原因与双Trace。"""
         if status not in {"failed", "outcome_unknown", "cancelled", "interrupted"}:
             raise ValueError(f"Unsupported terminal status: {status}")
         async with self.database.sessions.begin() as transaction:
@@ -885,6 +1056,7 @@ class ProductSessionService:
                 f"run.{status}",
                 {"error_code": error_code, "message": message},
             )
+            await self._materialize_trace_reports(transaction, run)
 
     async def complete_active_run(
         self,
@@ -893,6 +1065,7 @@ class ProductSessionService:
         assistant_text: str,
         agui_message_id: str | None,
     ) -> dict[str, Any] | None:
+        """最终提交门：写Assistant Message、关闭Run并在同一事务生成双Trace。"""
         async with self.database.sessions.begin() as transaction:
             session = await self._session(transaction, session_id)
             if session.active_run_id is None:
@@ -930,6 +1103,7 @@ class ProductSessionService:
             session.revision += 1
             session.updated_at = utc_now()
             await self._trace(transaction, run, "run.succeeded", {"assistant_message_id": message.id})
+            await self._materialize_trace_reports(transaction, run)
         return _message_view(message)
 
     async def active_run(self, session_id: str) -> dict[str, Any] | None:
@@ -941,7 +1115,7 @@ class ProductSessionService:
             return _run_view(run) if run is not None else None
 
     async def cancel_protocol_run(self, session_id: str, agui_run_id: str) -> dict[str, Any]:
-        """Resolve an explicit user cancel against one exact AG-UI run mapping."""
+        """把用户取消绑定到精确AG-UI Run；发送后取消收敛为outcome_unknown。"""
 
         async with self.database.sessions.begin() as transaction:
             session = await self._session(transaction, session_id)
@@ -1002,6 +1176,7 @@ class ProductSessionService:
                     "previous_status": previous_status,
                 },
             )
+            await self._materialize_trace_reports(transaction, run)
         return _run_view(run)
 
     async def reconcile_orphaned_runs(self) -> int:
@@ -1178,6 +1353,103 @@ class ProductSessionService:
             session.active_run_id = None
             session.updated_at = utc_now()
         await self._trace(transaction, run, f"run.{status}", {"reason": failure_code})
+        await self._materialize_trace_reports(transaction, run)
+
+    async def _materialize_trace_reports(self, transaction: Any, run: RunRecord) -> None:
+        """在Run终态事务内物化两份报告，确保终态和报告一起提交。
+
+        该方法只读同一Product Store事务里已经存在的事实。重复调用按
+        ``(run_id, report_kind)``更新同一行，既可在终态路径使用，也可给旧Run重建。
+        """
+
+        if run.status not in TERMINAL_RUN_STATUSES:
+            return
+        # ``_trace``刚把终态事件加入当前Unit of Work；先flush，随后查询才能把它
+        # 纳入报告的Source Sequence范围，但事务尚未提交，外部读者看不到半份报告。
+        await transaction.flush()
+        attempts = list(
+            (
+                await transaction.scalars(
+                    select(RunAttemptRecord)
+                    .where(RunAttemptRecord.run_id == run.id)
+                    .order_by(RunAttemptRecord.attempt_number)
+                )
+            ).all()
+        )
+        events = list(
+            (
+                await transaction.scalars(
+                    select(TraceRecord).where(TraceRecord.run_id == run.id).order_by(TraceRecord.sequence)
+                )
+            ).all()
+        )
+        tools = list(
+            (
+                await transaction.scalars(
+                    select(ToolExecutionRecord)
+                    .where(ToolExecutionRecord.run_id == run.id)
+                    .order_by(ToolExecutionRecord.started_at)
+                )
+            ).all()
+        )
+        workflow_id: str | None = None
+        for event in events:
+            payload = event.payload if isinstance(event.payload, Mapping) else {}
+            value = payload.get("workflow_id") or payload.get("workflow_definition_id")
+            if value:
+                workflow_id = str(value)
+                break
+        definition = self._trace_workflow_definitions.get(workflow_id or "")
+        built = build_run_trace_reports(
+            run=run,
+            attempts=attempts,
+            events=events,
+            tools=tools,
+            workflow_definition=definition,
+        )
+        first_sequence = events[0].sequence if events else 0
+        last_sequence = events[-1].sequence if events else 0
+        now = utc_now()
+        for report_kind, (content, text) in built.items():
+            workflow_value = content.get("workflow")
+            workflow: Mapping[str, Any] = workflow_value if isinstance(workflow_value, Mapping) else {}
+            existing = await transaction.scalar(
+                select(RunTraceReportRecord).where(
+                    RunTraceReportRecord.run_id == run.id,
+                    RunTraceReportRecord.report_kind == report_kind,
+                )
+            )
+            if existing is None:
+                transaction.add(
+                    RunTraceReportRecord(
+                        id=_uuid(),
+                        session_id=run.session_id,
+                        run_id=run.id,
+                        report_kind=report_kind,
+                        schema_version=int(content["schema_version"]),
+                        workflow_definition_id=(str(workflow.get("id")) if workflow.get("id") else None),
+                        workflow_version=(str(workflow.get("version")) if workflow.get("version") else None),
+                        source_first_sequence=first_sequence,
+                        source_last_sequence=last_sequence,
+                        source_event_count=len(events),
+                        content_hash=content_hash(content),
+                        content_json=content,
+                        content_text=text,
+                        created_at=run.finished_at or now,
+                        updated_at=now,
+                    )
+                )
+                continue
+            existing.schema_version = int(content["schema_version"])
+            existing.workflow_definition_id = str(workflow.get("id")) if workflow.get("id") else None
+            existing.workflow_version = str(workflow.get("version")) if workflow.get("version") else None
+            existing.source_first_sequence = first_sequence
+            existing.source_last_sequence = last_sequence
+            existing.source_event_count = len(events)
+            existing.content_hash = content_hash(content)
+            existing.content_json = content
+            existing.content_text = text
+            existing.updated_at = now
 
     async def _transition_active(
         self,

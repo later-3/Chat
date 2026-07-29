@@ -1,4 +1,9 @@
-"""Application service for immutable collaboration methods and CAS bindings."""
+"""持续协作节点15背后的不可变协作协议与CAS绑定服务。
+
+内置协议按revision发布；相同revision内容Hash变化会拒绝启动。节点15调用
+``resolve_for_turn``，按Work -> Project -> User -> System解析唯一绑定，并返回选择原因、
+适用规则、上下文/HITL/执行/验证/写回策略；后续Draft与Trace固定引用该revision。
+"""
 
 from __future__ import annotations
 
@@ -47,7 +52,7 @@ PROJECT_KIND_TO_SCENARIO = {
 
 
 class CollaborationProtocolService:
-    """Own protocol catalog synchronization, binding commands and deterministic resolution."""
+    """拥有协议目录同步、绑定命令和确定性解析，不拥有Workflow运行状态。"""
 
     def __init__(
         self,
@@ -68,7 +73,7 @@ class CollaborationProtocolService:
         )
 
     async def initialize(self) -> None:
-        """Synchronize reviewed built-ins without mutating published revisions."""
+        """同步已审核内置协议；已发布revision只校验Hash，绝不原地改写。"""
 
         created_definitions = 0
         created_bindings = 0
@@ -426,7 +431,7 @@ class CollaborationProtocolService:
         user_ref_id: str | None = None,
         query_kind: str | None = None,
     ) -> dict[str, Any]:
-        """Resolve Work→Project→User→System without a model call."""
+        """节点15使用：不调用模型，按Work→Project→User→System解析协议。"""
 
         async with self.database.sessions() as transaction:
             scenario_kind = await self._scenario_kind(

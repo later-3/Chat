@@ -1,4 +1,13 @@
-"""Application service for revisioned Intent Sets and clarification answers."""
+"""持续协作节点7-9背后的Intent Set应用服务。
+
+节点7调用``record_candidate``把模型候选变成不可变Intent/Intent Set revisions；节点8
+审核的是这些版本化Subject；节点9调用``accept_current``只接受当前Hash。澄清分支跨Run
+时，节点1读取``latest_open_clarification``，节点7用``answer_latest_open``把下一条正常
+User Message精确绑定为答案。
+
+服务拥有Intent聚合事务，但不决定Workflow走哪条边；节点16只读取已接受的投影。模型
+候选、用户修改、接受状态和澄清答案分开保存，防止“模型说了”被当成“用户已接受”。
+"""
 
 from __future__ import annotations
 
@@ -45,7 +54,7 @@ MAX_INTENTS_PER_TURN = 4
 
 
 class CollaborationIntentService:
-    """Own Intent aggregate transactions and cross-Run clarification recovery."""
+    """拥有Intent聚合事务、版本冲突检查和跨Run澄清恢复。"""
 
     def __init__(
         self,
@@ -70,7 +79,11 @@ class CollaborationIntentService:
         author_kind: str = "agent",
         combination_policy: str | None = None,
     ) -> dict[str, Any]:
-        """Persist one idempotent candidate snapshot for a Product Run."""
+        """节点7/9使用：为一个Product Run幂等保存候选Set快照。
+
+        每个分支按``branch_key``维护revision；语义Hash未变则复用，发生变化才新建revision
+        并supersede旧候选。Set revision同时冻结执行顺序、组合策略和源Prompt Hash。
+        """
 
         prompt = normalized_text(origin_prompt, field="origin_prompt", max_length=20_000)
         normalized = self._normalize_intents(intents)
@@ -264,7 +277,10 @@ class CollaborationIntentService:
         intent_set_id: str,
         expected_revision_hash: str,
     ) -> dict[str, Any]:
-        """Accept exactly the current immutable aggregate revision."""
+        """节点9使用：只接受expected Hash对应的当前不可变聚合revision。
+
+        Hash不一致说明节点8审核后内容又变了，必须重新审核；不能把旧接受外推到新内容。
+        """
 
         async with self.database.sessions.begin() as transaction:
             root = await transaction.get(CollaborationIntentSetRecord, intent_set_id)
@@ -315,7 +331,10 @@ class CollaborationIntentService:
         changes: Mapping[str, Any],
         reason: str,
     ) -> dict[str, Any]:
-        """Create a human-authored Intent revision and a new set snapshot."""
+        """用户修改Intent时创建human revision与新的Set快照。
+
+        一旦RunSpec已绑定便拒绝追溯修改，因为执行合同不能继续引用已被改写的Intent。
+        """
 
         revision_reason = normalized_text(reason, field="修改原因", max_length=1000)
         async with self.database.sessions.begin() as transaction:
@@ -453,6 +472,7 @@ class CollaborationIntentService:
         return result
 
     async def get_for_run(self, run_id: str) -> dict[str, Any] | None:
+        """按Product Run读取Intent聚合；不存在返回None，不制造空聚合。"""
         async with self.database.sessions() as transaction:
             root = await transaction.scalar(
                 select(CollaborationIntentSetRecord).where(
@@ -463,6 +483,7 @@ class CollaborationIntentService:
             return await self._view(transaction, root) if root is not None else None
 
     async def list_for_session(self, session_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
+        """按时间倒序列出Session的Intent Sets，供审计与恢复视图读取。"""
         async with self.database.sessions() as transaction:
             values = list(
                 (
@@ -480,6 +501,7 @@ class CollaborationIntentService:
             return [await self._view(transaction, value) for value in values]
 
     async def latest_open_clarification(self, session_id: str) -> dict[str, Any] | None:
+        """节点1使用：读取最近一个仍开放的澄清请求，作为本轮有界候选。"""
         async with self.database.sessions() as transaction:
             value = await transaction.scalar(
                 select(ClarificationRequestRecord)
@@ -500,7 +522,10 @@ class CollaborationIntentService:
         answering_run_id: str,
         answer_text: str,
     ) -> dict[str, Any] | None:
-        """Bind normal Chat input to the latest open clarification exactly once."""
+        """节点7使用：把正常Chat输入精确一次绑定到最近开放的澄清请求。
+
+        相同答案Hash重复到达时复用既有Answer，避免断线重放生成两份答案。
+        """
 
         answer = normalized_text(answer_text, field="澄清回答", max_length=20_000)
         answer_hash = content_hash({"answer": answer})
@@ -565,6 +590,7 @@ class CollaborationIntentService:
         revisions: Sequence[CollaborationIntentRevisionRecord],
         now: datetime,
     ) -> None:
+        """同步开放澄清：新revision需要则创建，已不再活跃则标记superseded。"""
         active_revision_ids = {value.id for value in revisions if value.needs_clarification}
         open_values = list(
             (
@@ -610,6 +636,7 @@ class CollaborationIntentService:
         self,
         values: Sequence[Mapping[str, Any]],
     ) -> list[dict[str, Any]]:
+        """校验单轮Intent数量、branch_key唯一性及依赖必须指向更早分支。"""
         if not values:
             raise HarnessValidationError("Intent Set至少包含一个Intent")
         if len(values) > MAX_INTENTS_PER_TURN:
@@ -628,6 +655,7 @@ class CollaborationIntentService:
         return normalized
 
     def _normalize_intent(self, raw: Mapping[str, Any], *, ordinal: int) -> dict[str, Any]:
+        """把单个候选规范为稳定语义字段，并为澄清场景补默认问题。"""
         scenario = str(raw.get("scenario") or "clarify")
         if scenario not in SUPPORTED_SCENARIOS:
             raise HarnessValidationError(f"Intent场景无效：{scenario}")
@@ -737,6 +765,7 @@ class CollaborationIntentService:
         return revisions
 
     async def _view(self, transaction, root: CollaborationIntentSetRecord) -> dict[str, Any]:
+        """在同一事务组装聚合公开投影，保证Set与各Intent revision相互一致。"""
         current = await transaction.get(
             CollaborationIntentSetRevisionRecord,
             root.current_revision_id,

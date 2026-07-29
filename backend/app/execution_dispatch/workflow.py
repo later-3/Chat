@@ -1,4 +1,10 @@
-"""MAF Executors for immutable routing, pi dispatch and result assembly."""
+"""持续协作节点24-27与30-31：RunSpec路由、pi执行和结果装配。
+
+节点23先冻结RunSpec，本文件只能读取该合同，不能重新解释用户Prompt。pi以
+JSONL-RPC子进程运行；MAF仍拥有interrupt/resume，Chat仍拥有模型和Tool治理、
+ToolExecution账本及Product Trace。pi为每个ToolExecution保存一份新的只读转录，但下次
+执行不加载旧pi Session；恢复和审计的权威事实仍保存在Chat Product Store。
+"""
 
 from __future__ import annotations
 
@@ -53,6 +59,7 @@ async def _record_trace(
     public_input: Mapping[str, Any],
     public_output: Mapping[str, Any],
 ) -> None:
+    """把外部执行节点的公开输入/输出写入同一Product Run Trace。"""
     await sessions.record_trace(
         thread_id,
         run_id,
@@ -70,7 +77,11 @@ async def _record_trace(
 
 
 class ExecutionRouteExecutor(Executor):
-    """Project the immutable RunSpec into one explicit branch."""
+    """节点24 ``execution_route``：从不可变RunSpec选择唯一执行分支。
+
+    可选``pi_workspace``、``pi_readonly``、``answer_only``。选择原因和每条未选原因都
+    显式写入``route_decision``，人读Trace不需要让模型事后解释。
+    """
 
     def __init__(
         self,
@@ -92,6 +103,7 @@ class ExecutionRouteExecutor(Executor):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
+        """执行节点24：读取RunSpec路由结果，记录首个命中分支并推进MAF Switch。"""
         if not state.run_spec_id:
             raise ExecutionDispatchError(
                 "执行路由缺少RunSpec",
@@ -186,7 +198,11 @@ class ExecutionRouteExecutor(Executor):
 
 
 class ExecutionWorkspacePrepareExecutor(Executor):
-    """Create the exact managed worktree as a real, inspectable MAF node."""
+    """节点25 ``execution_workspace_prepare``：创建受管隔离Git worktree。
+
+    只在pi编辑分支适用。校验已批准Repository Snapshot/base revision后创建Workspace；
+    失败会关闭Product Run，绝不退回真实仓库直接修改。
+    """
 
     def __init__(
         self,
@@ -208,6 +224,7 @@ class ExecutionWorkspacePrepareExecutor(Executor):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
+        """执行节点25：准备Workspace并把安全投影交给pi编辑节点。"""
         if not state.run_spec_id:
             raise ExecutionDispatchError(
                 "Execution Workspace准备缺少RunSpec",
@@ -257,13 +274,11 @@ class ExecutionWorkspacePrepareExecutor(Executor):
 
 
 class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
-    """Drive one pi subprocess while MAF owns every interrupt and continuation.
+    """节点26/30：驱动一个pi子进程，同时由MAF掌握每次interrupt与继续。
 
-    The process-local boundary references below form one fail-closed state
-    machine: a model/tool response may resume only the exact pending pi
-    boundary.  Keeping its handlers together is deliberate even though the
-    class crosses the normal size-review threshold; persistence, policy and
-    filesystem work remain delegated to application services.
+    ``pi_workspace_dispatch``用于隔离编辑，``pi_readonly_dispatch``用于只读检查。进程
+    内pending model/tool引用构成fail-closed状态机：Resume只能对应精确边界。类较长
+    是为了把同一边界机放在一起；持久化、Policy和文件操作仍委托给应用服务。
     """
 
     def __init__(
@@ -299,6 +314,7 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState, dict[str, Any]],
     ) -> None:
+        """执行节点26/30入口：校验RunSpec，启动全新pi Session并驱动首个边界。"""
         if not state.run_spec_id:
             raise ExecutionDispatchError(
                 "pi执行缺少RunSpec",
@@ -322,7 +338,9 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
                         route=route,
                         step_input=dict(payload.get("step_input") or {}),
                         task=str(payload.get("task") or ""),
-                    )
+                    ),
+                    product_session_id=self._thread_id,
+                    product_run_id=self._run_id(),
                 )
             else:
                 self._prepared = await self._dispatch.prepare_pi(
@@ -361,6 +379,7 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         self,
         ctx: WorkflowContext[CollaborationState, dict[str, Any]],
     ) -> None:
+        """循环读取pi边界：模型请求、Tool请求或完成；每个边界分别治理。"""
         prepared = self._require_prepared()
         while True:
             boundary = await prepared.execution.next_boundary()
@@ -411,10 +430,11 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
                 return
             if isinstance(boundary, PiCompletedBoundary):
                 if boundary.status != "succeeded":
+                    await prepared.execution.close()
                     await self._dispatch.finish_failed(
                         prepared.execution_id,
                         failure_code=boundary.terminal_reason_code,
-                        metrics=boundary.metrics,
+                        metrics=prepared.execution.metrics(),
                     )
                     raise PiRuntimeError(
                         boundary.text,
@@ -433,13 +453,13 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
                         "terminal_reason_code": boundary.terminal_reason_code,
                     },
                 )
+                await prepared.execution.close()
                 result = await self._dispatch.finish_success(
                     prepared.execution_id,
                     text=boundary.text,
-                    metrics=boundary.metrics,
+                    metrics=prepared.execution.metrics(),
                     terminal_reason_code=boundary.terminal_reason_code,
                 )
-                await prepared.execution.close()
                 state = self._require_state()
                 await ctx.send_message(
                     replace(
@@ -705,6 +725,7 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
         decision: dict[str, Any],
         ctx,
     ) -> None:
+        """恢复pi边界：只接受与当前pending model/tool ID和Hash匹配的决定。"""
         try:
             if original_request.get("review_kind") == "tool_execution":
                 await self._resolve_tool(decision, ctx)
@@ -944,11 +965,11 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
             ),
             details={},
         )
+        await prepared.execution.close()
         await self._dispatch.finish_abandoned(
             prepared.execution_id,
             metrics=prepared.execution.metrics(),
         )
-        await prepared.execution.close()
         await self._sessions.abandon_active_run(self._thread_id)
 
     async def _fail(self, failure_code: str) -> None:
@@ -962,12 +983,12 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
                     metrics={},
                 )
             return
+        await prepared.execution.close()
         await self._dispatch.finish_failed(
             prepared.execution_id,
             failure_code=failure_code,
             metrics=prepared.execution.metrics(),
         )
-        await prepared.execution.close()
 
     async def _terminate_failure(self, error: Exception) -> None:
         """Persist one stable failure across every MAF Executor entry point."""
@@ -1001,7 +1022,11 @@ class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
 
 
 class PiReadonlyResultAssemblyExecutor(Executor):
-    """Assemble the committed pi result without another model call."""
+    """节点27/31：校验ToolExecution终态与Result Hash后确定性装配pi结果。
+
+    隔离编辑版还保留Workspace、Diff和变化文件；只读版只装配答复。两者都不追加一次
+    “总结模型调用”，也不在此声明Work完成。
+    """
 
     def __init__(
         self,
@@ -1024,6 +1049,7 @@ class PiReadonlyResultAssemblyExecutor(Executor):
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
+        """执行节点27/31：验证持久化结果，并把候选送入证据链或摘要阶段。"""
         result = dict(state.pi_result or {})
         execution_id = str(result.get("execution_id") or "")
         if not execution_id or result.get("status") != "succeeded":
@@ -1066,7 +1092,7 @@ class PiReadonlyResultAssemblyExecutor(Executor):
 
 
 class PiWorkspaceDispatchExecutor(PiReadonlyDispatchExecutor):
-    """SD3 pi driver bound to a preceding managed-workspace node."""
+    """节点26 ``pi_workspace_dispatch``：节点30状态机的隔离编辑配置版本。"""
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(
@@ -1077,7 +1103,7 @@ class PiWorkspaceDispatchExecutor(PiReadonlyDispatchExecutor):
 
 
 class PiWorkspaceResultAssemblyExecutor(PiReadonlyResultAssemblyExecutor):
-    """Deterministically assemble the retained workspace result."""
+    """节点27 ``pi_workspace_result_assembly``：装配隔离编辑结果并进入Claim准备。"""
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs, node_id="pi_workspace_result_assembly")

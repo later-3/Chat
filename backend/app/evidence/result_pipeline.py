@@ -1,11 +1,8 @@
-"""SD4-C result evidence pipeline: consume the approved Validation Contract.
+"""持续协作节点28背后的结果证据管线：消费已批准且冻结的Validation Contract。
 
-This coordinator turns one *succeeded* governed pi workspace execution into a
-CompletionClaim backed by deterministic Evidence.  The contract it validates
-against is **never re-read from the live plan**: the ExecutionDraft/RunSpec
-froze the exact TaskPlan revision, subject Action identity + revision and the
-compiled argv/hash/capability binding before execution authorization (P0-1,
-``ValidationContractPlanner``).  ``prepare`` only:
+本Coordinator把一次成功的pi隔离编辑转成由确定性Evidence支持的CompletionClaim。
+它不会重新读取实时Plan：ExecutionDraft/RunSpec在授权前已经冻结TaskPlan revision、
+Action身份/revision及compiled argv/hash/capability。``prepare``的线性链路：
 
 ```text
 approved RunSpec.validation_evidence.contract (frozen)
@@ -17,24 +14,14 @@ approved RunSpec.validation_evidence.contract (frozen)
 -> ResultCommitCoordinator (Gate同事务按Decision映射创建Adoption并原子推进Action)
 ```
 
-Failure boundary (P1-4): a succeeded workspace run with approved edits is
-*never* silently "not applicable" when completion prerequisites are missing —
-no Artifact Store, no Validation Runtime, no frozen contract or any drift
-raises a stable domain error and fails the Run instead of bypassing the gate.
-``not_applicable`` remains only for runs that are not workspace executions or
-produced no approved change (nothing to complete).
+失败边界：成功且含已批准编辑的Workspace不能因前置缺失而静默``not_applicable``。
+Artifact Store、Validation Runtime、冻结合同缺失或漂移都用稳定领域错误关闭Run；只有
+不是Workspace执行、没有已批准变化或Draft明确没有完成主体时才允许不适用。
 
-Every step is keyed by deterministic ``sd4:{run_id}:...`` command ids, so a
-checkpoint resume or retried executor never duplicates a Contract, Artifact,
-Claim, ValidationRun, Observation or Assessment; Adoptions are only created
-by the Result Commit Gate inside its transaction (``:adoption:`` command ids
-make that path replay-safe as well).  Artifact bytes use
-the ArtifactStore staging/publish protocol (filesystem cannot join a DB
-transaction); a committed *candidate* Artifact surviving a later Claim failure
-is an honest, retry-safe state per §9.1.  The Result Commit itself is
-delegated to ``ResultCommitCoordinator``, the single owner of the §9.1 gate
-transaction; validation execution and Evidence recording live in the
-``ResultValidationRunner`` collaborator (result_validation.py).
+每一步使用``sd4:{run_id}:...``确定性command id，Checkpoint恢复不会重复创建Contract、
+Artifact、Claim或验证事实。Adoption只由Result Commit Gate在其事务内创建；Artifact字节
+使用staging/publish协议，因为文件系统不能加入数据库事务。最终提交事务唯一Owner是
+``ResultCommitCoordinator``，验证执行与Evidence记录由``ResultValidationRunner``负责。
 """
 
 from __future__ import annotations
@@ -98,7 +85,7 @@ def _utc_now() -> datetime:
 
 
 class ResultPipelineCoordinator:
-    """Own the deterministic result-evidence use cases for one Product Run."""
+    """拥有一个Product Run的确定性结果证据用例，不拥有MAF节点状态。"""
 
     def __init__(
         self,
@@ -152,12 +139,10 @@ class ResultPipelineCoordinator:
         run_id: str,
         tool_execution_id: str,
     ) -> dict[str, Any]:
-        """Build Claim + contract + artifact + Evidence for one pi workspace run.
+        """节点28使用：为一次pi Workspace执行建立Claim、合同、Artifact和Evidence。
 
-        ``{"status": "not_applicable"}`` only when this is not a succeeded
-        workspace execution, produced no approved change, or the approved
-        Draft explicitly recorded "no completion subject this turn"; every
-        other missing prerequisite raises a stable domain error (fail closed).
+        仅当不是成功Workspace执行、没有已批准变化或Draft明确“本轮无完成主体”时返回
+        ``not_applicable``；其他前置缺失都抛稳定领域错误并fail closed。
 
         规模说明（>80行审查）：本函数是§14结果证据链的唯一编排入口，
         “执行事实读取 -> 冻结合同复检 -> Artifact -> Claim事务 -> 验证执行”

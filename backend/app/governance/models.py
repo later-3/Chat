@@ -42,7 +42,11 @@ class DecisionPointDefinitionRecord(Base):
 
 
 class TurnSummaryRecord(Base):
-    """TurnDigest v1; per-interaction focus, never accepted memory by itself."""
+    """一次Interaction的可检索索引卡，以TurnDigest v1持久化。
+
+    原始Product Message仍是证据；本行只帮助后续Run召回有界的主题、事实和开放问题候选。
+    它既不是ContextPackage也不是Accepted Memory，不能单独修改Work状态。
+    """
 
     __tablename__ = "turn_summaries"
     __table_args__ = (

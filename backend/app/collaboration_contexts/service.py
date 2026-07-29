@@ -1,4 +1,9 @@
-"""Atomic user revision of selected context and dependent authorization state."""
+"""持续协作节点4/13的Context修改应用服务。
+
+用户在Context采用决定中排除、替换或新增来源时，本服务原子创建新的不可变
+ContextPackage revision，并使依赖旧Context的Draft、Grant或恢复链接失效。若RunSpec
+已经绑定，说明执行合同已开始，禁止追溯改写；用户必须基于新Context重新运行。
+"""
 
 from __future__ import annotations
 
@@ -48,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 
 class ExternalContextSourceResolver(Protocol):
-    """Resolve an allowlisted external source outside the product transaction."""
+    """在Product事务外解析允许的外部来源，返回可校验revision与安全投影。"""
 
     async def materialize(
         self,
@@ -60,7 +65,7 @@ class ExternalContextSourceResolver(Protocol):
 
 
 class CollaborationContextService:
-    """Own one Context revision transaction across Harness and Governance."""
+    """拥有一次Context revision跨Harness与Governance的原子事务。"""
 
     def __init__(
         self,
@@ -93,10 +98,10 @@ class CollaborationContextService:
         added_source_refs: Sequence[Mapping[str, Any]] = (),
         token_budget: int | None = None,
     ) -> dict[str, Any]:
-        """Create a new immutable revision and invalidate stale authorization.
+        """创建新不可变revision，并使依赖旧Hash的授权失效。
 
-        The currently sent/finished execution cannot be retroactively changed.
-        If a RunSpec has already been bound, the command fails closed.
+        已发送或已完成的执行不能被追溯改变；RunSpec一旦绑定便fail closed。command_id
+        与request_hash保证重放幂等，外部来源不会在重复请求时再次读取。
         """
 
         revision_reason = normalized_text(reason, field="修改原因", max_length=1000)
