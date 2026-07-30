@@ -441,6 +441,7 @@ function App() {
   };
 
   const submit = () => {
+    debugger; // DEBUG-BREAKPOINT: BP-27
     if (!draft.trim() || status !== "idle" || !activeSession || networkStatus === "offline") return;
     const text = draft;
     setDraft("");

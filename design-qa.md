@@ -5,7 +5,7 @@
 - 用户参考截图：`/var/folders/19/jm_fm6vd35x97z1p1rv_3g240000gn/T/codex-clipboard-e1eb6c2a-e550-43e1-ac47-66dadac23753.png`
 - 最终实现截图：`/Users/xulater/Code/Chat/workflow-workbench-implementation-final.png`
 - 同屏比较：`/Users/xulater/Code/Chat/workflow-workbench-before-after.png`
-- 页面：`http://127.0.0.1:5073/`
+- 页面：`http://127.0.0.1:15073/`
 - 参考截图是旧版“已放弃”投影，最终截图是真实模型成功Run；本次比较目标是信息结构、密度、字号和可读性，不把两个不同运行状态做像素级克隆。
 
 ## 视觉与概念检查

@@ -677,6 +677,7 @@ class ProductSessionService:
         都不产生部分状态；通过后Worker才允许领取执行。对应架构“Interaction接纳门”。
         """
 
+        breakpoint()  # DEBUG-BREAKPOINT: BP-04
         session_id = str(input_data.get("thread_id") or input_data.get("threadId") or "")
         agui_run_id = str(input_data.get("run_id") or input_data.get("runId") or "")
         if not session_id or not agui_run_id:
@@ -945,6 +946,7 @@ class ProductSessionService:
     async def _resume_run(self, session_id: str, agui_run_id: str) -> AcceptedRun:
         """恢复门：只允许接回本会话的活动Run；新旧AG-UI runId与Product Run的绑定冲突即拒绝。"""
 
+        breakpoint()  # DEBUG-BREAKPOINT: BP-05
         async with self.database.sessions.begin() as transaction:
             session = await self._session(transaction, session_id)
             if session.active_run_id is None:
@@ -1137,6 +1139,7 @@ class ProductSessionService:
         agui_message_id: str | None,
     ) -> dict[str, Any] | None:
         """最终提交门：写Assistant Message、关闭Run并在同一事务生成双Trace。"""
+        breakpoint()  # DEBUG-BREAKPOINT: BP-06
         async with self.database.sessions.begin() as transaction:
             session = await self._session(transaction, session_id)
             if session.active_run_id is None:

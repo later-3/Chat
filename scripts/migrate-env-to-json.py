@@ -98,7 +98,7 @@ def main() -> None:
         item.strip()
         for item in values.get(
             "CHAT_FRONTEND_ORIGINS",
-            "http://localhost:5073,http://127.0.0.1:5073",
+            "http://localhost:15073,http://127.0.0.1:15073",
         ).split(",")
         if item.strip()
     ]
@@ -106,13 +106,13 @@ def main() -> None:
         "version": 1,
         "server": {
             "host": values.get("CHAT_BACKEND_HOST", "127.0.0.1"),
-            "port": _integer(values, "CHAT_BACKEND_PORT", 8030),
+            "port": _integer(values, "CHAT_BACKEND_PORT", 18030),
             "frontend_origins": origins,
         },
         "frontend": {
-            "port": _integer(values, "CHAT_FRONTEND_PORT", 5073),
+            "port": _integer(values, "CHAT_FRONTEND_PORT", 15073),
             "public_host": values.get("CHAT_FRONTEND_PUBLIC_HOST", "localhost"),
-            "url": values.get("CHAT_FRONTEND_URL", "http://localhost:5073"),
+            "url": values.get("CHAT_FRONTEND_URL", "http://localhost:15073"),
         },
         "history": {
             "directory": values.get("CHAT_HISTORY_DIR", ".chat-history"),

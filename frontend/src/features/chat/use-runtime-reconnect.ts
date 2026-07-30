@@ -90,6 +90,7 @@ export function useRuntimeReconnect({
     let reconnectFailures = 0;
 
     const reconnect = async () => {
+      debugger; // DEBUG-BREAKPOINT: BP-30
       onStatus("running");
       onError(null);
       onConnectionStatus("reconnecting");

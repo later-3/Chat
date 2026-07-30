@@ -5,7 +5,7 @@
 本地单进程默认继续使用：
 
 ```bash
-.venv/bin/python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8030
+.venv/bin/python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 18030
 ```
 
 这个入口在API进程内启动一个Outbox循环，适合本地开发，不要求额外进程。
@@ -13,7 +13,7 @@
 生产拆分形态使用两个进程：
 
 ```bash
-.venv/bin/python -m uvicorn backend.app.main:create_api_app --factory --host 127.0.0.1 --port 8030
+.venv/bin/python -m uvicorn backend.app.main:create_api_app --factory --host 127.0.0.1 --port 18030
 .venv/bin/python -m backend.app.outbox_worker
 ```
 

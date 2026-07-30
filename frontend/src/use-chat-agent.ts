@@ -186,6 +186,7 @@ export function useChatAgent({
         }
       },
       onRunFinishedEvent(result) {
+        debugger; // DEBUG-BREAKPOINT: BP-29
         if (!mounted.current) return;
         if (result.outcome === "interrupt") {
           const card = result.interrupts.map(governedReviewFromInterrupt).find(Boolean) ?? null;
@@ -239,6 +240,7 @@ export function useChatAgent({
   /** 发送Prompt：追加User消息并启动一次AG-UI Run；Workflow选择与控制字段随forwardedProps固化。 */
   const send = useCallback(
     async (content: string, control?: SessionRunControl, workflow?: ChatWorkflowDispatch) => {
+      debugger; // DEBUG-BREAKPOINT: BP-28
       const text = content.trim();
       if (!text || agent.isRunning || pendingReview) return;
 

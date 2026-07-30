@@ -160,8 +160,8 @@ Source Map和断点附加。
 
 1. 用VS Code打开`/Users/xulater/Code/Chat`。
 2. 在“运行和调试”中选择`Chat Full Stack`。
-3. 按F5，等待后端8030和前端5073启动。
-4. 用Chrome打开`http://127.0.0.1:5073`。
+3. 按F5，等待后端18030和前端15073启动。
+4. 用Chrome打开`http://127.0.0.1:15073`。
 
 这个组合会启动：
 
@@ -190,7 +190,7 @@ Execution Worker和Outbox Worker分成多个进程，断点归属更复杂。
 后端启动后执行安全查询：
 
 ```bash
-curl -s http://127.0.0.1:8030/api/health \
+curl -s http://127.0.0.1:18030/api/health \
   | jq '.pi_agent | {enabled, available, runtime_source, debugger_enabled}'
 ```
 
@@ -241,7 +241,7 @@ Chat窗口同时保留第7.2节的Python断点。这样可以观察一条边界�
 Chat后端启动后再次查询：
 
 ```bash
-curl -s http://127.0.0.1:8030/api/health \
+curl -s http://127.0.0.1:18030/api/health \
   | jq '.pi_agent | {enabled, available, runtime_source, debugger_enabled}'
 ```
 

@@ -1,6 +1,7 @@
 # Chat系统总地图与学习方法
 
 **归档日期**：2026-07-29
+**更新日期**：2026-07-30
 **分类**：00-从这里开始
 **关联源码**：
 
@@ -24,6 +25,9 @@
 点击发送开始，依次观察浏览器、HTTP、Product Store、Runtime Job、MAF Workflow、Provider/pi、
 产品提交和页面恢复。** 每个专题都重复同一套6步：讲清问题、看具体对象、追代码、下断点、查存储、
 自己复述。
+
+本文从“系统地图”开始，但不再默认读者已经懂前后端。如果你还不能解释Node/Vite、Python/Uvicorn、进程/端口和
+HTTP/JSON/SSE，先完成[从C++到Chat：前后端怎样跑起来](./从C++到Chat前后端怎样跑起来.md)的30分钟实验。
 
 ## 1. 先把5张容易混淆的图分开
 
@@ -74,7 +78,12 @@ sequenceDiagram
 这条链中最重要的判断是：**界面、MAF和模型都不是最终事实源。** 它们分别负责操作、运行和生成；
 需要跨刷新、跨进程、跨天可信存在的产品事实由Product Store保存。
 
-## 3. Chat里同时存在5种“状态容器”
+## 3. 一次当前主Workflow中必须先分清的5种“状态容器”
+
+这里的5种是为了第一次跟踪当前主Workflow而选出的最小学习集，不是Chat全部状态位置的数量。它们分别回答：产品长期承认什么、当前图内传递什么、图暂停在哪里、Worker/前端如何续接，
+以及页面当前投影什么。Tool Ledger、Artifact Store、Git Workspace、pi Session和Provider外部状态会在相应执行场景再加入。
+
+若要看全部故障现场，使用[进程、协议与Store为什么必须分开](../架构与模块/进程协议与Store为什么必须分开.md)的10个状态位置清单；若要看核心持久化责任，使用[七层架构中的5类逻辑Store](../架构与模块/Chat总体架构与一次点击的七层链路.md#93-5类核心状态位置)。
 
 ### 3.1 Product Store：产品账本
 
@@ -147,20 +156,21 @@ Job、Lease和Epoch解决Worker领取与失联；事件Journal让浏览器断线
 
 | 顺序 | 主题 | 完成标志 | 当前入口 |
 |---:|---|---|---|
-| 1 | 系统总地图 | 能区分架构、Workflow、代码和计划 | 本文 |
-| 2 | 七层架构与11模块 | 能说清各层/模块的状态所有权 | [总体架构链路](../架构与模块/Chat总体架构与一次点击的七层链路.md)、[11模块](../架构与模块/11个产品模块的职责与代码落点.md) |
-| 3 | 核心对象 | 能回答谁创建、保存、修改、消费 | [核心对象词典](../架构与模块/核心对象词典-谁创建谁保存谁消费.md) |
-| 4 | 一次消息的外层链路 | 能从React追到ProductAwareWorkflow | [从用户点击发送到pi执行](../执行层与pi运行时/从用户点击发送到pi执行的完整链路.md) |
-| 5 | Product Session与数据库 | 能解释消息为何不是MAF保存 | [前端会话面板的数据来源](../Session与状态持久化/前端会话面板的数据来源与保存形式.md) |
-| 6 | Context与回合沉淀 | 能区分Message、TurnSummary、ContextPackage、Memory | [Context专题](../Context与回合沉淀/recent_turn_summaries与ContextPackage为什么存在.md) |
-| 7 | 主Workflow S1–S7 | 能画出8种路径并逐阶段定位代码 | [39节点设计](../Workflow架构与ProductAwareWorkflow/持续协作主Workflow的39节点设计.md) |
-| 8 | pi、Tool与Evidence | 能追到子进程、Operation、Artifact、Claim和对账 | [S5教材](../Workflow架构与ProductAwareWorkflow/学习阶段S5-pi执行Workspace与Evidence.md) |
-| 9 | Runtime恢复与Trace | 能区分Resume、重连、接管和最终化 | [Trace专题](../Trace与可观测性/每轮双Trace如何保存、分析与可视化.md) |
-| 10 | 安全改一个功能 | 能写影响分析、测试并通过质量门 | 待补综合实验 |
+| 1 | 前后端运行基础 | 能从源码说到进程、端口、请求与页面重绘 | [从C++到Chat](./从C++到Chat前后端怎样跑起来.md) |
+| 2 | 系统总地图 | 能区分架构、Workflow、代码和计划 | 本文 |
+| 3 | 七层架构与11模块 | 能说清各层/模块的状态所有权 | [总体架构链路](../架构与模块/Chat总体架构与一次点击的七层链路.md)、[11模块](../架构与模块/11个产品模块的职责与代码落点.md) |
+| 4 | 核心对象 | 能回答谁创建、保存、修改、消费 | [核心对象词典](../架构与模块/核心对象词典-谁创建谁保存谁消费.md) |
+| 5 | 一次消息的外层链路 | 能从React追到ProductAwareWorkflow | [从用户点击发送到pi执行](../执行层与pi运行时/从用户点击发送到pi执行的完整链路.md) |
+| 6 | Product Session与数据库 | 能解释消息为何不是MAF保存 | [前端会话面板的数据来源](../Session与状态持久化/前端会话面板的数据来源与保存形式.md) |
+| 7 | Context与回合沉淀 | 能区分Message、TurnSummary、ContextPackage、Memory | [Context专题](../Context与回合沉淀/recent_turn_summaries与ContextPackage为什么存在.md) |
+| 8 | 主Workflow S1–S7 | 能画出8种路径并逐阶段定位代码 | [39节点设计](../Workflow架构与ProductAwareWorkflow/持续协作主Workflow的39节点设计.md) |
+| 9 | pi、Tool与Evidence | 能追到子进程、Operation、Artifact、Claim和对账 | [S5教材](../Workflow架构与ProductAwareWorkflow/学习阶段S5-pi执行Workspace与Evidence.md) |
+| 10 | Runtime恢复与Trace | 能区分Resume、重连、接管和最终化 | [Trace专题](../Trace与可观测性/每轮双Trace如何保存、分析与可视化.md) |
+| 11 | 安全改一个功能 | 能写影响分析、测试并通过质量门 | 待补综合实验 |
 
 ## 7. 第一个实际练习
 
-不要继续读更多架构文档。直接做[第1课：从点击发送到ContextPackage](../调试实战/第1课-从点击发送到ContextPackage.md)：
+完成前后端运行基础和本文总地图后，直接做[第1课：从点击发送到ContextPackage](../调试实战/第1课-从点击发送到ContextPackage.md)：
 
 1. 用VS Code启动`Chat Full Stack`。
 2. 在8个符号上设置断点。
@@ -182,6 +192,7 @@ Identity、多端并发完整矩阵、通用外部Tool副作用对账、任意Wo
 
 | 文件 | 职责 |
 |---|---|
+| [从C++到Chat：前后端怎样跑起来](./从C++到Chat前后端怎样跑起来.md) | 本文之前的运行时、进程、网络和启动前置课 |
 | [PROJECT_CONTEXT.md](../../PROJECT_CONTEXT.md) | 稳定产品问题、目标、对象和边界 |
 | [PROJECT_STATE.md](../../PROJECT_STATE.md) | 当前已经实现与尚未实现的事实 |
 | [continuous_chat_factory.py](../../backend/app/workflows/continuous_chat_factory.py) | 39节点图如何接线 |
@@ -193,4 +204,4 @@ Identity、多端并发完整矩阵、通用外部Tool副作用对账、任意Wo
 
 ## 补充记录
 
-（暂无）
+- 2026-07-30：明确“5种状态容器”是当前主Workflow的最小学习集，不是全系统状态位置总数；补充与5类核心逻辑Store及10个故障现场的导航。

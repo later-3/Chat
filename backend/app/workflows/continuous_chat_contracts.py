@@ -340,6 +340,7 @@ def is_project_catalog_query(text: str) -> bool:
     “只查看，不要创建任何事项”中的“创建”不能被误判成创建意图（有专项测试）。
     """
 
+    breakpoint()  # DEBUG-BREAKPOINT: BP-21
     compact = re.sub(r"[\s，,。.!！?？:：;；]", "", text).lower()
     if not compact or "项目" not in compact:
         return False

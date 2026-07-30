@@ -1,9 +1,9 @@
 # Chat 总体架构源码研究与推导
 
 > 状态：总体架构主体已于2026-07-24获用户批准；同日新增的超级管理员运营看护目标已确认，详细Schema、API、指标和隐私规则仍待专项设计审核
-> 更新日期：2026-07-24
+> 更新日期：2026-07-30
 > 研究对象：pi、nanobot、QwenPaw、LibreChat，以及已批准的 MAF + AG-UI 技术路线
-> 目的：从参考项目的真实模块和调用关系出发，推导 Chat 的架构与模块；本文不进行 Schema 和代码详细设计。
+> 目的：从Chat完整用户场景、失败风险和产品保证出发推导架构与模块，再用参考项目的真实模块和调用关系校准技术落点；本文不进行 Schema 和代码详细设计。
 
 ## 1. 研究纪律
 
@@ -315,7 +315,56 @@ flowchart LR
 
 这些能力来自Chat已批准的6个问题和完整产品闭环。参考项目只能提供相邻结构：pi/nanobot提供回合和Tool边界，QwenPaw提供Web/Channel/统一请求与治理边界，LibreChat提供产品资源、Job和提交顺序；最终模块仍需由Chat自身需求决定。
 
-## 9. 从源码事实到Chat模块的逐项推导
+## 9. 从产品场景到Chat模块的完整推导
+
+本节修正一个容易造成误解的叙述顺序：模块不是从pi、nanobot、QwenPaw、LibreChat或MAF的目录名反推出来的。
+正确顺序是：
+
+```text
+Chat完整用户场景
+→ 失败、越权和假成功风险
+→ 必须守住的产品保证
+→ 必须持久化的对象/政策及其独立生命周期
+→ 候选责任
+→ 根据状态、事务、权限、恢复和变化原因做合并/拆分
+→ 最终产品模块
+→ 用MAF与参考项目源码校准技术落点和已知风险
+```
+
+### 9.1 产品场景→风险→保证→候选责任
+
+| 场景 | 失败/安全风险 | 目标保证 | 被逼出的候选责任 |
+|---|---|---|---|
+| 打开旧会话并继续 | 前端缓存、MAF历史或一段Prompt冒充产品事实 | Product Session/Interaction/Message长期恢复；本轮Context另行选择 | Conversation、Context、Memory |
+| 纠正误解的目标/计划 | 纠正只是新Message，旧候选仍被执行 | Intent/Work/Plan有revision、acceptance和精确变更 | Intent/Work/Plan、Interaction协调 |
+| 审核后执行高风险动作 | 模型自述“已批准”、审批后请求偷变 | Approval绑定Draft revision/Hash，Grant只能编译精确RunSpec | Execution Governance、Tool Execution |
+| 浏览器断线后继续同一Run | HTTP断开就取消，或重连后重复运行 | Product Run/Attempt、Job/Lease与Event/Cursor脱离请求存活 | Run Management |
+| Worker在Tool后崩溃 | 重试重复副作用，停止又可能漏提交 | Run所有权和Tool副作用账本分开，`outcome_unknown`必须对账 | Run Management、Tool Execution、Evidence |
+| 从OPC-OS Chat进入 | 外部thread/sender被当授权或Product Session | 协议在Adapter终止，可信Principal/Binding后才进统一Ingress | Identity、Channel Binding、Interaction协调 |
+| 来源删除/权限撤销 | 过期来源仍支撑Context、Memory或完成声称 | Context记录本轮采用；Memory记录接受；Evidence记录来源与有效性 | Context、Memory、Evidence |
+| 从Telegram收发结果 | 平台SDK污染核心，生成成功冒充外部送达 | 入站Adapter/Binding与产品核心分开；Delivery/Attempt/Receipt独立 | Channel Binding、Interaction协调、Delivery |
+| 超级管理员查看使用与作品 | 技术耗时冒充用户活动，投影反向成业务事实，敏感内容越权 | 可信身份授权、口径分离、可重建投影、新鲜度/未知状态、访问审计 | Identity、Admin Operations |
+
+这一轮得到13个候选责任：Identity、Channel Binding、Conversation、Interaction协调、Intent/Work/Plan、
+Execution Governance、Context、Memory、Run Management、Tool Execution、Evidence、Delivery和Admin Operations。
+
+### 9.2 13个候选如何形成11个当前顶层模块
+
+| 决定 | 结果 | 当前证据 | 需重审的信号 |
+|---|---|---|---|
+| 合并Identity与Channel Binding的顶层产品责任，内部对象仍分开 | `Identity与Channel Binding` | 共同完成外部发送者→可信Principal→可访问产品对象的信任边界 | Binding出现独立管理员、合规、迁移或多租户生命周期 |
+| 合并Intent/Work/Plan与Execution Governance的顶层产品责任，代码子边界仍分开 | `Collaboration` | 共同定义人/AI的可修正目标、已接受候选与已授权动作 | Work或执行治理出现独立安全主体、事务、恢复或发布节奏 |
+
+`13 - 2 = 11`是当前批准粒度的可重算结果，不是永久不变的数量指标。UI、Adapter、MAF、Worker和Store属于交互/运行/基础设施边界，
+不因为很重要就自动成为产品事实模块。Trace目前是跨模块合同，Project/Work属于Collaboration内部能力，Artifact是Evidence内部对象且内容位于Artifact Store；
+它们若出现独立权威状态、安全主体、事务、恢复和变化节奏，可在后续详细设计中升格，但不能删除原产品保证。
+
+这是基于当前已批准场景与设计做的可审核重建；不宣称当初已经存在同样格式的历史算稿。
+
+### 9.3 参考源码对产品推导的校准
+
+下表的参考源不是产品模块的“发明者”；它们用于检查技术落点是否已在真实系统中暴露过对应的生命周期、入口或恢复问题，
+并标记参考项目没有覆盖的Chat独有产品责任。
 
 | 编号 | 源码事实 | Chat必须解决的问题 | D1模块决策 | 为什么不是其他放法 |
 |---|---|---|---|---|

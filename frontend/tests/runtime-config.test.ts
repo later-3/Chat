@@ -16,5 +16,5 @@ test("deployment may provide an IP-safe reverse proxy prefix", () => {
 });
 
 test("Node contract tests retain an explicit loopback fallback", () => {
-  assert.equal(resolveRuntimeBaseUrl(), "http://127.0.0.1:8030");
+  assert.equal(resolveRuntimeBaseUrl(), "http://127.0.0.1:18030");
 });

@@ -103,7 +103,8 @@
         "Chat Frontend (React + Vite)"
       ],
       "preLaunchTask": "chat: prepare normal full stack",
-      "stopAll": true
+      "stopAll": true,
+      "postDebugTask": "chat: cleanup all"
     },
     {
       "name": "Chat Full Stack (pi External Debug)",
@@ -111,7 +112,8 @@
         "Chat Backend (pi External Source Debug)",
         "Chat Frontend (React + Vite)"
       ],
-      "stopAll": true
+      "stopAll": true,
+      "postDebugTask": "chat: cleanup all"
     },
     {
       "name": "Chat Distributed Stack",
@@ -122,7 +124,8 @@
         "Chat Frontend (React + Vite)"
       ],
       "preLaunchTask": "chat: prepare normal full stack",
-      "stopAll": true
+      "stopAll": true,
+      "postDebugTask": "chat: cleanup all"
     }
   ]
 }

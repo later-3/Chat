@@ -2,8 +2,8 @@
 set -euo pipefail
 
 target="${1:-all}"
-backend_port="${2:-8030}"
-frontend_port="${3:-5073}"
+backend_port="${2:-18030}"
+frontend_port="${3:-15073}"
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 validate_port() {

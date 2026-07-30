@@ -2,16 +2,16 @@
   "version": 1,
   "server": {
     "host": "127.0.0.1",
-    "port": 8030,
+    "port": 18030,
     "frontend_origins": [
-      "http://localhost:5073",
-      "http://127.0.0.1:5073"
+      "http://localhost:15073",
+      "http://127.0.0.1:15073"
     ]
   },
   "frontend": {
-    "port": 5073,
+    "port": 15073,
     "public_host": "localhost",
-    "url": "http://localhost:5073"
+    "url": "http://localhost:15073"
   },
   "product_store": {
     "url": "sqlite+aiosqlite:///backend/.data/chat.db"
@@ -57,7 +57,7 @@
       "/absolute/path/to/allowed/projects"
     ],
     "default_working_directory": "/absolute/path/to/allowed/projects",
-    "gateway_origin": "http://127.0.0.1:8030"
+    "gateway_origin": "http://127.0.0.1:18030"
   },
   "default_provider_id": "ark",
   "providers": [

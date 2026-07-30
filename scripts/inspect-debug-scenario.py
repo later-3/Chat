@@ -115,7 +115,7 @@ def main() -> None:
     parser.add_argument("--scenario", required=True, help="场景ID，例如SC01")
     parser.add_argument("--session-id", required=True, help="Product Session ID")
     parser.add_argument("--run-id", required=True, help="Product Run ID")
-    parser.add_argument("--base-url", default="http://127.0.0.1:8030")
+    parser.add_argument("--base-url", default="http://127.0.0.1:18030")
     parser.add_argument("--json", action="store_true", help="输出JSON而不是人读摘要")
     args = parser.parse_args()
     try:

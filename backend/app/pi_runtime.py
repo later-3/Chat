@@ -542,6 +542,7 @@ class PiExecution:
 
     async def start(self) -> None:
         """创建新pi Session和临时配置，再启动禁用重试及未治理扩展的RPC。"""
+        breakpoint()  # DEBUG-BREAKPOINT: BP-25
         if not self.runtime.available or self.runtime.node_path is None or self.runtime.cli_path is None:
             self._pi_session_error_code = "pi_runtime_unavailable"
             raise PiRuntimeError("pi RPC运行时不可用", code="pi_runtime_unavailable")
@@ -707,6 +708,7 @@ class PiExecution:
 
     async def accept_provider_call(self, protocol: str, body: bytes) -> PiGatewayCall:
         """接收pi准备发送的精确Provider字节，挂起为MAF可治理的模型边界。"""
+        breakpoint()  # DEBUG-BREAKPOINT: BP-26
         if self._closed:
             raise PiRuntimeError("pi执行已经结束", code="pi_execution_closed")
         if protocol != self.provider.protocol:

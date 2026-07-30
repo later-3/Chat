@@ -43,7 +43,7 @@ flowchart LR
     Phone["手机浏览器<br/>/chat/ + /chat-api/"] -->|"HTTP + Basic Auth"| Nginx["云服务器 Nginx"]
     Nginx -->|"静态文件"| Web["/opt/chat/current/web"]
     Nginx -->|"仅云端回环<br/>127.0.0.1:4620"| SSHD["sshd Reverse Forward"]
-    SSHD -->|"反向 SSH"| Backend["本地 Mac<br/>127.0.0.1:8030"]
+    SSHD -->|"反向 SSH"| Backend["本地 Mac<br/>127.0.0.1:18030"]
     Backend --> Product["Product Store"]
     Backend --> MAF["MAF Workflow + Checkpoint"]
     Backend --> Worker["内嵌 Execution/Outbox Worker"]
@@ -52,7 +52,7 @@ flowchart LR
 
 关键安全边界：
 
-1. 本地 Uvicorn 只监听 `127.0.0.1:8030`。
+1. 本地 Uvicorn 只监听 `127.0.0.1:18030`。
 2. 反向端口显式绑定云服务器 `127.0.0.1:4620`；服务器
    `GatewayPorts no`，公网不能直连该端口。
 3. Nginx 同时保护 `/chat/` 和 `/chat-api/`。
@@ -158,7 +158,7 @@ backend/.data/logs/mobile-relay/cloud-relay.stderr.log
 ```bash
 launchctl print "gui/$(id -u)/com.later.chat.backend"
 launchctl print "gui/$(id -u)/com.later.chat.cloud-relay"
-curl -fsS http://127.0.0.1:8030/api/ready
+curl -fsS http://127.0.0.1:18030/api/ready
 scripts/verify-mobile-relay.sh
 ```
 
@@ -216,7 +216,7 @@ Exactly-once。实际恢复仍以 Product Run、Runtime Job、Checkpoint 和 Pro
 1. 用户访问`pi.ai4child.asia`时看到Cloudflare 504；直接访问边缘入口看到401。401只表示Basic Auth
    挑战仍可达，504表示认证后的上游中转超时。
 2. 故障时本地pi-web `127.0.0.1:30141/api/health`与Chat
-   `127.0.0.1:8030/api/ready`均返回200，云端Nginx、Cloudflare和新建SSH连接正常；故障边界在
+   `127.0.0.1:18030/api/ready`均返回200，云端Nginx、Cloudflare和新建SSH连接正常；故障边界在
    反向SSH。
 3. 两个Relay LaunchAgent曾退出255；旧云端`sshd`会话仍占用`33041/4620`并留下
    `CLOSE-WAIT`连接，导致launchd重试的新进程持续收到`remote port forwarding failed`。

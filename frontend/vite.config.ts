@@ -103,11 +103,11 @@ export default defineConfig({
   },
   server: {
     host: "127.0.0.1",
-    port: 5073,
+    port: 15073,
     strictPort: true,
     proxy: {
       "/api": {
-        target: process.env.VITE_DEV_API_PROXY || "http://127.0.0.1:8030",
+        target: process.env.VITE_DEV_API_PROXY || "http://127.0.0.1:18030",
         changeOrigin: true,
       },
     },

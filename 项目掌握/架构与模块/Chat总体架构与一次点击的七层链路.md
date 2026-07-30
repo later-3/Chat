@@ -28,6 +28,9 @@ Chat在概念上为什么这样设计？“层、模块、进程、协议、Stor
 4. 理论边界怎样由当前技术选型和源码落实。
 5. 一条真实数据为什么会先后变成View状态、网络DTO、产品事实、MAF状态和Runtime事件。
 
+本文不再把“前后端已经会跑”当作隐含前提。如果你还不能从C++的“源码→可执行文件→进程”类比到
+Chat的“TSX→Vite/Node→浏览器”和“Python模块→CPython/Uvicorn→FastAPI”，先读[从C++到Chat：前后端怎样跑起来](../00-从这里开始/从C++到Chat前后端怎样跑起来.md)。那篇课负责“程序如何活起来”；本文负责“为什么要这样分”。
+
 本文统一使用3种事实标记：
 
 | 标记 | 准确含义 |
@@ -247,6 +250,16 @@ flowchart TB
 
 ### 5.2 为什么需要这7条边界
 
+分层时不先设定“必须有7层”，而是沿一次请求连续检查4个分界信号：
+
+1. **责任所有者变了吗**：例如React只投影，Application Coordinator拥有用例事务，Product Module拥有长期事实。
+2. **信任和确定性变了吗**：网络DTO是不可信输入，模型输出是候选，产品提交是确定性事实，Tool是真实副作用。
+3. **失败与存活时间变了吗**：HTTP可在毫秒级断开，Run可跨请求，Workflow可暂停，Tool副作用甚至可在Chat超时后继续存在。
+4. **可控范围变了吗**：Chat可控自己的Product/Runtime状态，但不能原子控制Provider、Git、文件系统或外部平台。
+
+一个边界只有在“删掉它会让两类责任争抢事实、权限、事务或恢复解释权”时才保留。用这个方法得到下面7条边界；它是教学和依赖视图，
+不是要求代码必须出现`layer1`...`layer7`目录。
+
 | 层 | 它隔开的变化或失败 | 如果删掉这条边界 |
 |---|---|---|
 | L1体验 | 页面交互变化 vs 产品事实变化 | React本地状态会冒充正式Run、Work或审批 |
@@ -464,7 +477,111 @@ flowchart LR
 状态：多个模型Provider、Git/文件、pi集成为**当前已实现/局部实现**；通用外部业务集成、正式Channel和
 Delivery为**目标已批准，尚未实现**。
 
-## 7. 11个产品模块怎样放进七层
+## 7. 11个产品模块不是列出来的：从0推导全过程
+
+先说一个必须客观的事实：**11不是数学上唯一正确的模块数，也不是从MAF或某个参考项目复制来的。**
+它是当前已批准总体架构在“产品能力与状态所有权”这个粒度上的基线。未来详细设计可以证明某个内部能力
+应升格为独立模块，或两个模块已真正共享状态、事务与恢复语义；但不能为了凑数量合并，也不能让产品责任消失。
+
+下面的过程是基于已批准用户场景、当前架构、研究证据和已有源码做的**可审核重建**。它用于让你重新算出当前结论，
+不伪装成当初每次讨论的逐字历史。
+
+### 7.1 先定义：什么才算一个“产品模块”
+
+当一组能力同时出现下面信号时，才值得成为独立产品模块：
+
+1. 它拥有一类长期有意义的产品事实或确定性政策，不只是临时函数。
+2. 这些对象有自己的生命周期、权限、版本或状态机。
+3. 它们有自己的事务、并发、失败恢复或对账边界。
+4. 这类需求会因为同一组产品原因一起变化。
+5. 若放进相邻模块，会造成第二事实源、错误授权、不可恢复或无法独立验证。
+
+反过来，React页面、AG-UI协议、MAF Runtime、SQLite和Worker都很重要，但它们分别是交互面、协议、运行时、存储实现和进程角色，
+不因此自动成为“产品模块”。
+
+### 7.2 第1步：从9类完整用户场景出发
+
+第2节的6个问题是核心协作闭环的抽象问题，但它们还不是可执行验收场景。Chat又是独立、可多入口、需持续运营的完整产品，所以还要加入身份/外部集成和超级管理员运营保证。
+两类起点组合后，才展开成9类端到端场景：
+
+| 起点 | 展开成的验收场景 | 为什么需要从抽象问题展开 |
+|---|---|---|
+| 6个核心产品问题 | 重开会话、纠正意图、高风险审批、断线续接、Worker/Tool崩溃、来源失效 | 同一个问题会在正常、失败和恢复分支中要求不同对象，不能只写“应可恢复” |
+| 独立产品身份与外部集成责任 | 从OPC-OS Chat进入、从Telegram收发 | 必须验证协议终止、身份Binding、事实源和Delivery回执，不能只说“支持多Channel” |
+| 独立运营责任 | 超级管理员看护用户、使用、工作、作品和异常 | 必须验证授权、指标口径、投影新鲜度和敏感访问审计，不能用技术监控替代 |
+
+因此“6个问题”和“9类场景”不是数量不一致，而是**问题空间→可验收场景**的展开：一个场景可同时验证多个问题，一个问题也需要多个正常/失败场景才能证明。
+
+总体架构中已批准的9类目标场景是起点，而不是先写模块名再找场景解释：
+
+| # | 用户真正想完成的事 | 若只有“聊天页+一个Agent”的失败 | 必须产生的产品保证 |
+|---:|---|---|---|
+| 1 | 重新打开旧会话并继续 | 只能恢复一段Prompt或前端缓存 | 长期会话、消息、交互和当前工作可分别恢复 |
+| 2 | 纠正系统误解的意图或计划 | “纠正”只变成另一条无人消费的Message | Intent、Plan和执行候选有版本、状态和修正入口 |
+| 3 | 审核后才允许高风险外部操作 | 模型文本中一句“已同意”就可能越权 | 审批绑定精确Draft、revision、Hash和可消费Grant |
+| 4 | 浏览器断线后回来继续看同一次运行 | HTTP断开即丢失进度或重新执行 | Run、Attempt、Job、Lease、Event和Cursor有独立耐久生命周期 |
+| 5 | Worker在Tool后崩溃仍不重复副作用 | 超时被误解为“什么都没发生” | 每次Tool/Operation有授权、幂等键、回执、`outcome_unknown`和对账 |
+| 6 | 从OPC-OS Chat进入同一工作 | 外部Thread ID被当成身份或产品会话 | 外部协议在Adapter终止，可信Principal、Binding和Product Session明确映射 |
+| 7 | 来源被删除或权限被撤销 | 旧结论和长期记忆仍被静默使用 | Context记录本轮采用；Memory记录明确接受；来源失效可传播 |
+| 8 | 从Telegram收发同一工作结果 | 平台SDK深入核心，生成成功被误当成送达成功 | 入站Adapter与统一Ingress分开；产品完成与多接收方Delivery/Receipt分开 |
+| 9 | 超级管理员受审计地查看用户、使用、工作和作品 | 把机器耗时当用户时长，或管理页直读私表 | 信身份授权、活动口径、可重建运营投影、数据新鲜度和管理员访问审计 |
+
+这9行还没有得出11个模块；它们只是确定“系统不能丢掉哪些保证”。
+
+### 7.3 第2步：从失败与保证反推独立责任
+
+对每条保证继续问5个问题：“要保存什么？谁可以改？何时开始/结束？失败后谁恢复？和相邻责任合并会丢掉什么？”
+会先得到下面13个**候选责任**，而不是直接得到11个最终模块：
+
+| 候选 | 从哪类风险被逼出来 | 必须拥有的事实/政策 | 不独立处理的后果 |
+|---|---|---|---|
+| C1 Identity | 伪造用户、跨用户越权 | Principal、Authentication Session、Role/Grant | 外部ID或Product Session ID会被当授权 |
+| C2 Channel Binding | 外部入口与内部对象错绑 | channel identity、binding revision、撤销与能力约束 | Telegram/OPC-OS协议细节会污染产品核心 |
+| C3 Conversation | 刷新、重启、分支后历史丢失 | Product Session、Interaction、Message、branch/archive | 前端缓存或MAF历史会变成产品事实源 |
+| C4 Interaction协调 | 一条输入被重放、乱序或在多模块半提交 | 入站幂等、per-session顺序、用例步骤与事务协调 | Router、Workflow和Repository会各自提交一部分 |
+| C5 Intent/Work/Plan | 模型每轮重解目标，用户无法纠正 | Intent、Project/Work、Plan、revision、acceptance | 目标只存在Message JSON中，没有可查状态 |
+| C6 Execution Governance | 候选直接变成执行或高风险操作 | Draft、Decision、Grant、Approval Hash、RunSpec | Prompt中的“请先问我”会被当安全边界 |
+| C7 Context | 无边界历史污染模型，或本轮来源无法复现 | ContextPackage、Item、source revision、预算、采用理由 | 无法说清“这轮究竟用了什么” |
+| C8 Memory | 模型说过的内容被自动当成长期真相 | Accepted Memory、revision、provenance、invalidation | Message出现过就会等于可跨会话复用 |
+| C9 Run Management | HTTP断开、Worker崩溃或重试后运行真相丢失 | Product Run、Attempt、Job、Lease、Event、Cursor、恢复动作 | AG-UI连接或MAF Checkpoint会被误当产品终态 |
+| C10 Tool Execution | 外部副作用重复、越权或结果未知 | Tool Definition、ToolExecution、Operation、幂等与回执 | 模型的Tool Call消息无法证明真实操作结果 |
+| C11 Evidence | 模型声称完成，但没有产物、验证或来源 | Artifact元数据、Validation、Evidence、Claim、Provenance | Tool成功或Assistant文本会被当成产品完成 |
+| C12 Delivery | 产品已完成，但外部接收方未收到 | Delivery、Outbox、Attempt、Receipt、retry schedule | 生成成功、SSE显示成功和多Channel送达会被混为一个布尔值 |
+| C13 Admin Operations | 运营口径失真、敏感数据越权、管理投影反向成真 | Activity、Usage Aggregate、Operations Projection、Admin Audit | 技术Observability或直读业务库会冒充独立运营保证 |
+
+### 7.4 第3步：先拆出13个候选，再做2次有边界的合并
+
+候选责任不等于最终顶层模块。要两两检查：是否共享主要事实所有者、信任/事务边界、失败恢复和变化原因。当前基线做了2次合并：
+
+| 合并前 | 合并后 | 当前为什么合并 | 什么时候应重新审查拆分 |
+|---|---|---|---|
+| C1 Identity + C2 Channel Binding | Identity与Channel Binding | 当前都围绕“一个外部发送者如何变成可信Principal，并可访问哪个产品对象”；撤销Binding与授权校验同属信任入口。内部仍保留Identity与Binding子能力 | 出现多租户身份联邦、大量Channel独立运营、Binding有自己的管理员/合规/迁移生命周期 |
+| C5 Intent/Work/Plan + C6 Execution Governance | Collaboration | 它们共同定义“用户和AI正在试图完成什么，哪个候选被接受，哪个精确动作可以发生”；Draft到RunSpec是工作协作合同的确定性门。代码上已保留`collaboration_*`、`harness`和`governance`子边界 | Work成为独立协作产品面，或执行治理出现独立安全管理员、策略发布、事务与审计生命周期 |
+
+因此：
+
+```text
+13个候选责任
+- 1次Identity / Channel Binding顶层合并
+- 1次Collaboration / Execution Governance顶层合并
+= 11个当前产品模块
+```
+
+这不表示合并后可以把子边界写成一个大Service。“同属一个顶层产品模块”与“代码必须放在一个目录/事务”是两件事。
+
+### 7.5 第4步：为什么其他重要东西没有单独算进11个
+
+| 看起来也像模块的东西 | 当前归类 | 不单独算产品模块的原因 | 可能升格的条件 |
+|---|---|---|---|
+| Chat Web / React UI | L1交互与投影 | 展示多个模块的事实，但不拥有它们 | 不应因界面变复杂就变成事实源 |
+| REST / AG-UI / Channel Adapter | L2协议与转换 | 终止wire协议并转为内部合同，不拥有Product终态 | 作为适配器子系统可独立部署，仍不因此成为产品事实模块 |
+| MAF Agent / Workflow | L5智能控制运行时 | 负责语义和图调度，Product Run、权限和Evidence仍由Chat拥有 | 不升格为产品事实源；通过适配器可替换 |
+| Product/Runtime/Artifact Store | 基础设施与逻辑Store | 它们回答“状态存在哪里”，不回答“哪类产品能力拥有状态” | 可独立部署，但仍是多模块共用的持久化合同 |
+| Trace / Observability | 跨模块可观察合同 | 技术Trace、Product Trace、Evidence审计和运营指标的所有者不同；粗暴合成一个模块会重新混淆口径 | 若出现独立的访问控制、保留、查询、导出和对账生命周期，再审查顶层升格 |
+| Project / Work | 当前属Collaboration内部能力，代码由`harness/`承载一部分 | 当前与Intent、Plan、RunSpec共同表达可修正的协作工作 | 若独立协作、权限、工作流、查询和事务边界成熟，可升格 |
+| Artifact | 当前是Evidence模块内部对象；Blob位于Artifact Store | 当前主要价值是支撑Validation、Evidence和Claim | 若变成独立编辑、版本、分享和权限产品面，再拆分 |
+
+### 7.6 第5步：11个最终模块放进七层
 
 层是横向依赖边界；模块是纵向产品能力。一个模块通常横跨L2–L6，所以不能要求“每层恰好一个模块”。
 
@@ -504,6 +621,23 @@ flowchart LR
 当前源码没有机械创建11个空的`modules/*`目录，这是有意的。架构模块表达责任和状态所有权；当前代码按已批准的
 纵向切片逐步形成`product_sessions`、`harness`、`governance`、`runtime_execution`等真实边界。只有当事务、
 依赖和变化原因证明需要重组时，才应该重构目录，不能为了“图和文件夹一一对应”制造空壳。
+
+### 7.7 以后遇到新需求，怎样判断是否优化模块
+
+不要先问“新建哪个目录”，而要用这条决策链重算：
+
+```text
+新用户场景
+→ 新失败或安全风险
+→ 必须新增的产品保证
+→ 新对象/政策与生命周期
+→ 状态、事务、权限、恢复和变化原因
+→ 现有模块能否在不扭曲边界的情况下承担
+→ 保留内部能力 / 升格为顶层模块 / 调整现有边界
+```
+
+有5个客观升格信号：独立权威对象、独立状态机、独立安全主体，独立失败/恢复时间线，以及与宿主模块显著不同的变化节奏。
+只因为文件变多、名字很重要或希望画图对称，都不是拆模块的证据。
 
 每个模块的更细对象、合同、失败和代码落点见[11个产品模块的职责与代码落点](./11个产品模块的职责与代码落点.md)。
 
@@ -597,6 +731,18 @@ flowchart LR
 
 ### 9.3 5类核心状态位置
 
+这5类也不是从数据库产品名倒推出来的，而是由状态需要跨越的5种不同失败边界推导出来：
+
+| 需要跨越的失败/时间边界 | 对状态的要求 | 因此形成 |
+|---|---|---|
+| 用户刷新、换设备、服务重启、长期审计 | 保存产品承认的长期事实 | Product Store |
+| HTTP/SSE断线、Worker崩溃、Lease过期、运行接管 | 保存活动任务的所有权、事件和回放位置 | Runtime Store / Event Journal |
+| Agent/Workflow暂停、HITL与安全恢复点 | 保存MAF能解释的History、Checkpoint和控制位置 | MAF History / Checkpoint |
+| 大文件、内容去重、复检和损坏/孤儿对账 | 保存不适合放进业务行的不可变内容 | Artifact Store |
+| 页面重绘、局部操作和短暂网络抖动 | 仅保留可丢失、可重建的交互投影 | 浏览器状态 |
+
+“5类逻辑Store”不等于“5个物理数据库”。当前Product、Runtime和一部分MAF表可以物理共用SQLite，但它们的解释者、写入合同、保留时间和恢复语义仍然不同。
+
 | 状态位置 | 保存什么 | 谁写/解释 | 当前恢复用途 | 不能替代 |
 |---|---|---|---|---|
 | Product Store | Session、Message、Intent、Work、Run、Decision、Tool账本、Evidence | 产品/应用模块 | 刷新、重启、审计和后续回合 | MAF控制流位置 |
@@ -606,6 +752,21 @@ flowchart LR
 | 浏览器状态 | 草稿、布局、订阅投影、Cursor | React / HttpAgent | 即时交互和重连 | 任何权威产品事实 |
 
 更细解释见[进程、协议与Store为什么必须分开](./进程协议与Store为什么必须分开.md)。
+
+### 9.4 本文其他核心结论的“从哪里来”审计
+
+| 架构结论 | 它不是从哪里来 | 实际推导/证据入口 | 是设计还是代码事实 |
+|---|---|---|---|
+| Chat完整产品闭环 | 不是因为选了MAF | 第2节6个原始产品问题→可恢复、可修正、可授权、可验证的保证 | 已批准产品/架构基线；实现完整度另看PROJECT_STATE |
+| 7层 | 不是传统三层架构机械扩展 | 第5.2节的责任所有者、信任/确定性、失败时间线和外部可控性4轴 | 已批准架构的教学/依赖视图 |
+| 4类容易混淆的会话/运行对象 | 不是4个同义ID | 第3.3节按所有者、生命周期、基数和授权责任分开 | 架构硬边界；当前部分ID同值只是实现简化 |
+| 11个产品模块 | 不是从参考项目目录复制 | 第7节9类用户场景→13个候选责任→2次有边界合并 | 已批准顶层粒度；不是永久数量目标 |
+| React / REST / AG-UI / MAF / Worker / pi等技术分工 | 不是因为技术流行 | 第8.1节“每项技术替哪条产品保证工作”，再由安装版源码/实测校准 | 已批准技术路线 + 当前代码事实 |
+| 当前API / Worker / pi进程拓扑 | 不是架构图凭空设计 | 第9.1–9.2节直接对应`asgi.py`、`composition.py`、`lifecycle.py`、Runtime Worker和pi子进程 | 当前代码事实；部署可选项另标注 |
+| 5类逻辑Store | 不是当前有5个数据库产品 | 第9.3节按需跨越的用户/服务/Worker/Workflow/Artifact/页面失败时间线推导 | 逻辑状态边界；当前多类可物理共用SQLite |
+| S1–S7与39节点/43边 | 不是系统理论分成7阶段 | S1–S7是`continuous_workflow_learning.py`对当前`continuous-collaboration@1.8.0`图的学习分组；39/43由Catalog/Graph Factory生成校验 | 当前代码快照和教学分组，不是顶层架构常数 |
+
+这张表是完整性索引，不重复各节内容。它的用法是：看到一个数字或架构名词时，先找到它的推导轴和事实状态，再进入下文追真实数据和代码。
 
 ## 10. 一条真实数据怎样在边界间变形
 
@@ -866,20 +1027,22 @@ flowchart LR
 
 ## 15. 掌握验收：能回答这些才算具备进入SC01和开发的前提
 
-1. 为什么七层、11模块和S1–S7不能互相替代？各自回答什么问题？
-2. 为什么AG-UI `threadId`暂时等于Product Session ID，也不能作为授权或把两个对象合并？
-3. 一条输入为什么要同时产生Product Run、Run Attempt和Runtime Job？浏览器断线影响哪一个？
-4. 为什么`CollaborationState`中已经有Intent和Context，仍要把Intent Set和ContextPackage写入Product Store？
-5. MAF成功、Tool成功、Validation通过、Evidence有效、Product Run成功分别是谁决定的？
-6. REST、AG-UI、Runtime Journal和MAF Checkpoint各解决什么问题？
-7. 若增加“把结果发送到Telegram”，应该新增/使用哪些Adapter、Identity Binding和Delivery对象，为什么不能在
+1. 不背模块名，能否从“重开会话、纠正意图、高风险执行、断线恢复、多Channel、来源失效、管理员看护”重新推导出13个候选责任和2次合并？
+2. 为什么七层、11模块和S1–S7不能互相替代？各自回答什么问题？
+3. 为什么AG-UI `threadId`暂时等于Product Session ID，也不能作为授权或把两个对象合并？
+4. 一条输入为什么要同时产生Product Run、Run Attempt和Runtime Job？浏览器断线影响哪一个？
+5. 为什么`CollaborationState`中已经有Intent和Context，仍要把Intent Set和ContextPackage写入Product Store？
+6. MAF成功、Tool成功、Validation通过、Evidence有效、Product Run成功分别是谁决定的？
+7. REST、AG-UI、Runtime Journal和MAF Checkpoint各解决什么问题？
+8. 若增加“把结果发送到Telegram”，应该新增/使用哪些Adapter、Identity Binding和Delivery对象，为什么不能在
    Workflow末尾直接调用Telegram SDK？
-8. 若修改一个Workflow节点，怎样判断是否必须升级Definition版本并补Checkpoint/场景测试？
-9. 当前哪些模块只是目标、哪些已有纵向实现？举出至少3个不能冒充“已经完成”的缺口。
-10. 给你一个Product Run ID，你能否沿Product Store → Runtime Job → MAF Trace → Tool/Evidence → Assistant Message
+9. 若修改一个Workflow节点，怎样判断是否必须升级Definition版本并补Checkpoint/场景测试？
+10. 当前哪些模块只是目标、哪些已有纵向实现？举出至少3个不能冒充“已经完成”的缺口。
+11. 给你一个Product Run ID，你能否沿Product Store → Runtime Job → MAF Trace → Tool/Evidence → Assistant Message
     解释同一轮，而不把ID和Store混在一起？
+12. 给出一个新需求时，能否按“场景→风险→保证→对象→所有权”判断它应进现有模块、成为子能力还是升格为新模块？
 
-如果这10题能用自己的话讲清楚，你就已经具备阅读SC01的架构基础；SC01接下来训练的是L2“能定位真实值”，
+如果这12题能用自己的话讲清楚，你就已经具备阅读SC01的架构基础；SC01接下来训练的是L2“能定位真实值”，
 而不是重新背一遍术语。
 
 ## 关键文件
@@ -902,3 +1065,4 @@ flowchart LR
 - 2026-07-30：按“小白必须先拥有完整开发心智模型”的要求重写；新增6个产品问题推导、7层与11模块及
   S1–S7的维度区分、逐层理论→技术→源码→状态映射、组合根/进程/Store图、SC01真实对象与数据变形、
   当前/目标差异、开发定位方法和架构巡游实验。
+- 2026-07-30：补齐“9类用户场景→13个候选责任→2次有边界合并→11个产品模块”的可审核推导；说明未单列UI、MAF、Store、Trace、Project/Work和Artifact的原因，并补充5类逻辑Store的失败边界来源与未来模块优化判定法。

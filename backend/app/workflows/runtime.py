@@ -125,6 +125,7 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
         成功提交Message时，ProductSessionService在同一事务
         物化机器版和人读版双Trace；等待审批时Run保持活动且不提前生成终态报告。
         """
+        breakpoint()  # DEBUG-BREAKPOINT: BP-07
         thread_id = self._thread_id_from_input(input_data)
         agui_run_id = str(input_data.get("run_id") or input_data.get("runId") or "")
         resumed_activity: ActivitySnapshotEvent | None = None

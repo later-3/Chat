@@ -3,7 +3,7 @@ set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cloud_host="${CHAT_CLOUD_HOST:-121.43.113.236}"
-local_port="${CHAT_LOCAL_PORT:-8030}"
+local_port="${CHAT_LOCAL_PORT:-18030}"
 remote_port="${CHAT_RELAY_PORT:-4620}"
 user_name="$(id -un)"
 user_id="$(id -u)"

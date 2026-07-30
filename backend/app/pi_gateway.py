@@ -81,6 +81,7 @@ class PiRuntimeManager:
         execution_workspaces: ExecutionWorkspaceService | None = None,
         tool_operations: ToolOperationService | None = None,
     ) -> PiExecution:
+        breakpoint()  # DEBUG-BREAKPOINT: BP-24
         clean_task = task.strip()
         if not clean_task:
             raise PiRuntimeError("pi任务不能为空", code="pi_task_empty")

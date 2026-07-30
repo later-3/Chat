@@ -61,6 +61,7 @@ def add_durable_agui_endpoint(
         链路为React POST -> prepare_agui_run -> Runtime Job/游标 -> Worker执行 -> Journal
         -> 本处理器按Sequence回放SSE。仅测试用内存SQLite为确定性而同步跑一次Worker。
         """
+        breakpoint()  # DEBUG-BREAKPOINT: BP-01
         input_data = request_body.model_dump(mode="json", exclude_none=True)
         try:
             accepted = await sessions.prepare_agui_run(input_data)

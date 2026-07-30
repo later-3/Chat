@@ -102,7 +102,7 @@ UV_PROJECT_ENVIRONMENT=.venv uv sync --frozen --dev
 终端1，启动后端：
 
 ```bash
-.venv/bin/python -m uvicorn backend.app.asgi:app --host 127.0.0.1 --port 8030 --reload
+.venv/bin/python -m uvicorn backend.app.asgi:app --host 127.0.0.1 --port 18030 --reload
 ```
 
 终端2，启动前端：
@@ -112,7 +112,7 @@ cd frontend
 npm run dev
 ```
 
-打开`http://127.0.0.1:5073`。没有任何配置完整且启用的Provider时，会使用确定性Bootstrap Agent，仍走完整MAF与AG-UI事件链路。
+打开`http://127.0.0.1:15073`。没有任何配置完整且启用的Provider时，会使用确定性Bootstrap Agent，仍走完整MAF与AG-UI事件链路。
 
 ## 手机公网访问
 
@@ -159,8 +159,8 @@ scripts/uninstall-mobile-relay.sh
 
 打开项目目录后，可以直接选择：
 
-1. `Chat Backend (MAF + FastAPI)`：后端`127.0.0.1:8030`。
-2. `Chat Frontend (React + Vite)`：前端`127.0.0.1:5073`。
+1. `Chat Backend (MAF + FastAPI)`：后端`127.0.0.1:18030`。
+2. `Chat Frontend (React + Vite)`：前端`127.0.0.1:15073`。
 3. `Chat Full Stack`：同时启动前后端。
 4. `Chat Distributed Stack`：API、Execution Worker、Outbox Worker和前端4个独立调试进程。
 
@@ -170,7 +170,7 @@ scripts/uninstall-mobile-relay.sh
 2. 清理命令行中明确属于当前项目的遗留Uvicorn、debugpy或Vite进程。
 3. 先发送`TERM`，最多等待1秒，仅对仍存活的已解析PID发送`KILL`。
 
-清理目标严格限定为端口`8030`、`5073`和当前项目路径，不使用宽泛的Python、Node或OPC-OS进程名匹配。
+清理目标严格限定为端口`18030`、`15073`和当前项目路径，不使用宽泛的Python、Node或OPC-OS进程名匹配。
 
 运行诊断入口不会输出消息、Prompt、Provider Payload或Checkpoint正文：
 
@@ -223,6 +223,7 @@ scripts/         可重复执行的工程验证
 如果目标是从小白开始掌握当前设计、源码、数据库和调试路径，先进入
 [项目掌握知识库](./项目掌握/INDEX.md)。它以一条真实Product Run为主线，按“具体场景 -> 对象样本 ->
 代码链 -> 断点/SQL/Trace -> 掌握验收”组织；下面的治理、设计和状态文档继续作为权威事实来源。
+只有少量C/C++基础时，第一篇读[从C++到Chat：前后端怎样跑起来](./项目掌握/00-从这里开始/从C++到Chat前后端怎样跑起来.md)：它把TypeScript/React、Python/FastAPI、进程、端口、HTTP/JSON/SSE和当前启动配置落到真实文件与30分钟实验。
 
 1. [项目上下文](./PROJECT_CONTEXT.md)：问题、定位、目标、闭环和边界。
 2. [项目经验与反例](./PROJECT_LESSONS.md)：每次项目回复前必读的错误案例和强制检查。
@@ -231,7 +232,7 @@ scripts/         可重复执行的工程验证
 5. [协作规则](./AGENTS.md)：开发和AI协作必须遵守的规则。
 6. [概念空间方法来源](./概念空间.md)与[Chat概念资产索引](./概念空间/00-索引.md)：共同语言方法、14个概念簇、边界、别名、正反例和实现状态入口。
 7. [总体架构研究与证据](./docs/overall-architecture-research.md)：完整场景推导、MAF、pi、nanobot、QwenPaw与LibreChat证据、覆盖缺口和方案比较。
-8. [总体架构基线](./docs/overall-architecture-proposal.md)：由pi、nanobot、QwenPaw和LibreChat源码结构及本项目已确认运营需求推导出的Web/Channel适配、Interaction Ingress、11个产品与应用模块、运行适配器、状态所有权、场景穿透和交付依赖。
+8. [总体架构基线](./docs/overall-architecture-proposal.md)：先由本项目9类完整用户场景、失败/安全风险和产品保证推导Web/Channel适配、Interaction Ingress与11个产品模块，再用MAF、pi、nanobot、QwenPaw和LibreChat源码校准运行适配、状态所有权、恢复和工程取舍。
 9. [架构新手导读](./docs/architecture-beginner-guide.md)：从用户点击“发送/批准”开始，串起前端、协议、后端数据库、Agent Session/Tool、Provider请求、响应解析、产品提交和React渲染，并对照当前代码与目标架构。
 10. [Session能力全集与目标边界](./docs/session-capability-catalog.md)：9个能力域、74项能力、R0-R6恢复层级、参考覆盖、明确非目标和最终用户场景。
 11. [Session分阶段交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务、优先级、依赖、方案、目标和各阶段完成场景。

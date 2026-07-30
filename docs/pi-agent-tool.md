@@ -132,7 +132,7 @@ pi的配置分成3层，三层解决的问题不同：
     "node_debug_break": false,
     "allowed_working_roots": ["/absolute/path/to/allowed/projects"],
     "default_working_directory": "/absolute/path/to/allowed/projects",
-    "gateway_origin": "http://127.0.0.1:8030"
+    "gateway_origin": "http://127.0.0.1:18030"
   }
 }
 ```
@@ -287,8 +287,8 @@ Kimi要求兼容客户端保留真实客户端身份。Chat网关发送
 6. 用下面的只读接口核对公开投影，不能打印私有配置文件：
 
 ```bash
-curl -s http://127.0.0.1:8030/api/model-providers
-curl -s http://127.0.0.1:8030/api/tools
+curl -s http://127.0.0.1:18030/api/model-providers
+curl -s http://127.0.0.1:18030/api/tools
 ```
 
 | 修改项 | 是否重启后端 | 是否只影响新执行 |

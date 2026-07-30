@@ -167,6 +167,7 @@ def recommends_pi_workspace_edit(
 ) -> bool:
     """Recommend isolated editing only for an explicit code-change request."""
 
+    breakpoint()  # DEBUG-BREAKPOINT: BP-23
     lowered = prompt.lower().replace(" ", "")
     explicit_edit = any(term.replace(" ", "") in lowered for term in PI_WORKSPACE_EDIT_TERMS)
     opted_out = any(term.replace(" ", "") in lowered for term in PI_WRITE_OPT_OUT_TERMS)

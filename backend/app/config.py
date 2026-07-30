@@ -124,7 +124,7 @@ class PiRuntimeSettings:
     node_debug_break: bool = False
     allowed_working_roots: tuple[Path, ...] = ()
     default_working_directory: Path = PROJECT_ROOT
-    gateway_origin: str = "http://127.0.0.1:8030"
+    gateway_origin: str = "http://127.0.0.1:18030"
 
     @property
     def available(self) -> bool:
@@ -197,7 +197,7 @@ def _record(value: object, *, field: str) -> dict[str, Any]:
 
 
 def _origins(value: object) -> tuple[str, ...]:
-    defaults = ("http://127.0.0.1:5073", "http://localhost:5073")
+    defaults = ("http://127.0.0.1:15073", "http://localhost:15073")
     if value is None:
         return defaults
     if isinstance(value, str):
@@ -772,7 +772,7 @@ class Settings:
             providers = catalog.providers
             default_provider_id = catalog.default_provider_id
         try:
-            port = int(server.get("port", 8030))
+            port = int(server.get("port", 18030))
         except (TypeError, ValueError) as error:
             raise SettingsError("server.port必须是整数") from error
         host = str(server.get("host") or "127.0.0.1")
@@ -800,7 +800,7 @@ class Settings:
     def for_test(cls) -> "Settings":
         return cls(
             host="127.0.0.1",
-            port=8030,
+            port=18030,
             frontend_origins=("http://testserver",),
             model="test/bootstrap",
             model_api_key=None,

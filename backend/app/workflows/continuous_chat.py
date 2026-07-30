@@ -194,6 +194,7 @@ class TraceMixin:
         调用），不伪造归属。工作台节点详情与终态双报告都以这里的事实为源。
         """
 
+        breakpoint()  # DEBUG-BREAKPOINT: BP-08
         active = await self._sessions.active_run(self._thread_id)
         if active is None:
             return
@@ -291,6 +292,7 @@ class IntakeExecutor(Executor, TraceMixin):
     @handler(input=list)
     async def accept(self, messages: list[Any], ctx: WorkflowContext[CollaborationState]) -> None:
         """执行节点1：规范化输入、恢复澄清关联并把初始状态发送给节点2。"""
+        breakpoint()  # DEBUG-BREAKPOINT: BP-09
         normalized = normalize_agui_messages_for_provider(messages)
         user_messages = [value for value in normalized if value.get("role") == "user"]
         if not user_messages:
@@ -344,6 +346,7 @@ class CandidateContextExecutor(Executor, TraceMixin):
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
         """执行节点2：计算候选得分、记录选择规则并进入正式目录Context装配。"""
+        breakpoint()  # DEBUG-BREAKPOINT: BP-10
         keywords = _context_keywords(state.origin_prompt)
         scored: list[tuple[int, dict[str, Any]]] = []
         pending = [value for value in state.recent_turn_summaries if _is_pending_clarification(value)]
@@ -415,6 +418,7 @@ class HarnessDirectoryContextExecutor(Executor, TraceMixin):
         带来源、版本、采用原因和Token估算的Context Item。随后先落库再进入HITL，使用户决定、
         审批Hash和Checkpoint恢复都绑定同一份可追溯Context，而不是绑定会丢失的Python变量。
         """
+        breakpoint()  # DEBUG-BREAKPOINT: BP-11
         items, projects = await self._harness.directory_context_items(
             prompt=state.origin_prompt,
             summaries=state.recent_turn_summaries,
@@ -906,6 +910,7 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
         ctx: WorkflowContext[CollaborationState, str],
     ) -> None:
         """登记Subject并在不适用、拒绝、自动继续、等待人工四条路径中收敛。"""
+        breakpoint()  # DEBUG-BREAKPOINT: BP-12
         content = self.spec.subject(state)
         facts = dict(self.spec.facts(state))
         run_context = await self._governance.run_context(self._run_id())
@@ -1332,6 +1337,7 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         明确的“列出项目”在意图节点直接形成目录Intent，因而是0模型调用；其他请求才
         进入ModelCallDraft -> Policy -> 审批/自动继续 -> Provider。
         """
+        breakpoint()  # DEBUG-BREAKPOINT: BP-13
         if self._result_kind == "intent" and _is_project_catalog_query(state.origin_prompt):
             intent = _project_catalog_intent(state.origin_prompt)
             await self._trace_content(
@@ -1368,6 +1374,7 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         先检查Repository新鲜度并持久化评估；deny关闭，auto_continue消费Grant并发送，
         其余创建HumanDecisionRequest和MAF interrupt。审核卡携带状态快照供恢复。
         """
+        breakpoint()  # DEBUG-BREAKPOINT: BP-14
         freshness = await self._require_fresh_context(
             state,
             phase="draft_prepare",
@@ -1828,6 +1835,7 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         采用去向（accepted/overridden/rejected_invalid_output）持久化在Attempt上，审计链能
         精确说明这些字节后来被怎样使用。
         """
+        breakpoint()  # DEBUG-BREAKPOINT: BP-15
         text = dispatched.text
         disposition = f"accepted_as_{self._result_kind}"
         disposition_reason = f"Provider解码文本已由{self.id}作为{self._result_kind}采用"
@@ -2113,6 +2121,7 @@ class ScenarioRouterExecutor(Executor, TraceMixin):
     @handler(input=CollaborationState)
     async def route(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
         """执行节点16：计算首个命中分支，并把选中/未选原因完整写入Trace。"""
+        breakpoint()  # DEBUG-BREAKPOINT: BP-16
         route_decision = _evaluate_scenario_route(state)
         await self._trace_content(
             executor_id=self.id,
@@ -2151,6 +2160,7 @@ class ProjectCatalogExecutor(Executor, TraceMixin):
     @handler(input=CollaborationState)
     async def answer(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
         """执行节点17：确定性渲染正式Project目录结果，不进入Provider。"""
+        breakpoint()  # DEBUG-BREAKPOINT: BP-17
         catalog_result = state.project_catalog_result
         if catalog_result is None:
             projects = await self._harness.list_projects(
@@ -2545,6 +2555,7 @@ class TurnSummaryPersistExecutor(Executor, TraceMixin):
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
         """执行节点38：保存可追溯摘要及来源引用，然后把状态送到最终提交门。"""
+        breakpoint()  # DEBUG-BREAKPOINT: BP-18
         summary = dict(
             state.turn_summary
             or {
@@ -2650,6 +2661,7 @@ class FinalizeExecutor(Executor, TraceMixin):
     @handler
     async def finalize(self, state: CollaborationState, ctx: WorkflowContext[None, str]) -> None:
         """执行节点39：公开最终候选，并把文本交给ProductAwareWorkflow提交。"""
+        breakpoint()  # DEBUG-BREAKPOINT: BP-19
         response = state.response or "本轮没有形成可提交的答复。"
         await self._trace_content(
             executor_id=self.id,

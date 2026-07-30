@@ -1,11 +1,13 @@
 # Chat 总体架构与模块基线
 
 > 状态：已批准。2026-07-24用户批准按本架构分阶段实现完整Chat系统。
-> 更新日期：2026-07-24
+> 更新日期：2026-07-30
 > 决策依据：[总体架构源码研究与推导](./overall-architecture-research.md)
 > 愿景与协作落地依据：[Chat持续协作系统研究与落地推导](./chat-collaboration-system-research.md)
 > 新手阅读：[从前端对象到Agent内部](./architecture-beginner-guide.md)
 > 约束：本文定义完整产品的目标架构。实现阶段只决定顺序，不改变模块责任和最终用户场景。
+
+> 模块数量说明：本文的11个产品模块是当前已批准粒度下的责任基线，不是不可变的数量目标。它们的完整来源是“9类完整用户场景→失败/越权/假成功风险→产品保证→13个候选责任→2次有边界的顶层合并→11个模块”，详见[总体架构研究第9节](./overall-architecture-research.md#9-从产品场景到chat模块的完整推导)。后续若优化模块，必须以独立状态、事务、权限、恢复或变化原因为证据，且不能删除原有产品保证。
 
 ## 1. 架构结论
 
@@ -56,6 +58,7 @@ Chat Web / 具体外部平台 / OPC-OS Chat
 - LibreChat：Web产品资源、Conversation/Message、活动Generation Job和实时订阅分开。
 
 Chat新增的Collaboration、Approval、Evidence、Delivery、外部Binding和Super Admin Operations不是参考项目现成模块，而是由本项目用户问题、独立运营责任和已确认的超级管理员场景补足。
+参考项目用于校准对象生命周期、入口拓扑、运行恢复和工程取舍；它们不能替代前述产品场景推导，也不为未真实覆盖的Intent、Work、Approval、Evidence或Admin Operations背书。
 
 本文主要回答模块责任、合同和状态所有权。第一次阅读时可先看[新手架构导读](./architecture-beginner-guide.md)：它把同一架构展开为前端View、网络DTO、产品领域对象、MAF运行对象和一次真实请求的对象流，不另行创造架构决定。
 

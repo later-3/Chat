@@ -147,7 +147,7 @@ test("Workflow Feature API读取目录、治理和稳定Trace路径", async () =
       requests[6],
       /session%20%2F%20one\/workflows\/workflow%20%2F%20one\/latest-trace$/,
     );
-    assert.equal(workflowEndpointUrl("/api/custom"), "http://127.0.0.1:8030/api/custom");
+    assert.equal(workflowEndpointUrl("/api/custom"), "http://127.0.0.1:18030/api/custom");
   } finally {
     globalThis.fetch = originalFetch;
   }

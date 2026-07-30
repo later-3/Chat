@@ -1603,6 +1603,7 @@ class HarnessService:
         模型能看到什么，还要解释系统考虑过但排除了什么。重放绑定``command_id``和规范请求Hash，
         防止恢复时为同一确定性装配命令创建内容不同的ContextPackage。
         """
+        breakpoint()  # DEBUG-BREAKPOINT: BP-20
         if stage not in {"directory", "detail"}:
             raise HarnessValidationError("ContextPackage stage无效")
         async with self.database.sessions.begin() as transaction:

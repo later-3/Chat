@@ -139,9 +139,9 @@
 - [x] 完成阶段B首个多Intent纵向切片：新增Intent Set/Intent不可变revision、最多4个有序目标、依赖校验、CAS接受和跨Run Clarification；主Workflow升级为v1.4.0/28节点并强制多目标进入组合Plan。多目标中的权威Project目录事实由确定性Product查询先完成，再以只读事实交给Planner/Response，不重复规划不存在的Tool调用。
 - [x] 修复多Intent运行中的3个集成缺陷：内置Agent Profile旧revision精确迁移到新结构且不覆盖用户编辑；新Product Run清除线程级MAF Workflow缓存，避免错误复用旧Checkpoint；Project目录终结分支只在单Intent时生效，多Intent继续进入规划。协作协议保留基础Definition/Hash，同时用可审计`composition_overlay`公开本轮实际启用的Planner策略。
 - [x] 前端“本轮”工作台已区分基础协作方法与本轮有效组合策略：多目标卡片先解释为什么仍需组合Plan，方法卡展示“基础不需要规划/本轮必须形成组合计划”，展开后再看阶段和规则；可读投影直接来自`collaboration_protocol_resolver`的持久StepInputProjection，不从卡片数量猜测运行事实。
-- [x] 完成手机访问HTTP验证阶段：手机主导航可以进入对话、Workflow运行与节点内容、Harness资源和配置中心；全部前端API统一支持同源或`/chat-api`前缀，`/chat/`子路径生产构建、Manifest和图标已验证；Product Session本机草稿按会话隔离，离线可编辑但禁止发送，活动Run网络重连采用有界退避。云服务器Nginx现以Basic Auth保护`/chat/`和`/chat-api/`，反向SSH只把本地`127.0.0.1:8030`送到云端回环`127.0.0.1:4620`，本地后端与Relay由两个LaunchAgent常驻；不可变发布、配置备份、断线与后端退出自动恢复、既有服务回归和390×844真实模型回合均已验证。公网IP纯HTTP仍不能注册标准PWA Service Worker，且Basic Auth不是正式Product Identity；TLS和正式身份认证尚未实现。
+- [x] 完成手机访问HTTP验证阶段：手机主导航可以进入对话、Workflow运行与节点内容、Harness资源和配置中心；全部前端API统一支持同源或`/chat-api`前缀，`/chat/`子路径生产构建、Manifest和图标已验证；Product Session本机草稿按会话隔离，离线可编辑但禁止发送，活动Run网络重连采用有界退避。云服务器Nginx现以Basic Auth保护`/chat/`和`/chat-api/`，反向SSH只把本地`127.0.0.1:18030`送到云端回环`127.0.0.1:4620`，本地后端与Relay由两个LaunchAgent常驻；不可变发布、配置备份、断线与后端退出自动恢复、既有服务回归和390×844真实模型回合均已验证。公网IP纯HTTP仍不能注册标准PWA Service Worker，且Basic Auth不是正式Product Identity；TLS和正式身份认证尚未实现。
 - [x] 2026-07-29修复并发布PWA/Web App Shell在Basic Auth凭据失效后只显示401的问题：20个REST/AG-UI请求点统一经过认证感知Fetch，401显示不可忽略的“重新登录”卡片；`/chat/auth-refresh.html`使用同一Realm、`no-store`并明确排除PWA Precache与Navigation Fallback，顶层文档认证成功后返回Chat，且不自动重放Provider、Tool或写请求。前端82项、部署合同5项、Biome、类型检查、`/chat/`生产PWA构建及认证/冷启动/会话侧栏桌面手机定向Playwright 5通过1跳过；会话侧栏样式按同步组件所有权拆为3.5 KiB独立Chunk，主CSS从152.7 KiB降至149.3 KiB并重新通过150 KiB包体门。两个LaunchAgent已恢复，云端不可变Release `20260729T014603Z`、Nginx配置与时间戳备份完成；公网未认证入口为401，认证后Chat与API为200，认证入口带`Cache-Control: no-store`，已部署Service Worker含认证入口Navigation denylist且未预缓存该文档。390×844公网浏览器确认移动导航和Chat可用、无横向溢出、控制台0错误。扩大执行的混合Playwright另有17通过、4跳过和3个既有Repository数据/手机隐藏文案用例失败，未把它们误记为全量绿灯；本次仍未在物理手机上人工清除Basic Auth凭据验证浏览器原生挑战。
-- [x] 2026-07-29处置pi-web与Chat公网中转故障：用户截图中的401证明Basic Auth边缘仍可达，Cloudflare 504则来自认证后的上游超时。诊断确认本地pi-web `30141`和Chat `8030`均返回200，云端Nginx/Cloudflare及新SSH连接正常；两条Relay曾退出255，旧云端`sshd`会话仍占用`33041/4620`并产生`CLOSE-WAIT`，使新反向转发持续失败。pi-web由launchd自动重建为新会话后恢复；Chat只对`4620`当前精确所有者执行TERM并重启`com.later.chat.cloud-relay`，未批量终止SSH、未重启本地产品服务、未触碰Product Store，也未重放Run/Provider/Tool。恢复后pi-web与Chat本地健康、两个云端回环、pi-web认证前401/认证后Nginx与公网200、Chat完整Relay验收均通过；390×844公网Chromium打开`pi.ai4child.asia`返回200、标题`Chat - Pi Web`、无504/401错误页、无横向溢出且控制台0错误。长期的服务端半开SSH会话自动回收与监控误判修复尚未实现，仍保留复发风险。
+- [x] 2026-07-29处置pi-web与Chat公网中转故障：用户截图中的401证明Basic Auth边缘仍可达，Cloudflare 504则来自认证后的上游超时。诊断确认本地pi-web `30141`和Chat `18030`均返回200，云端Nginx/Cloudflare及新SSH连接正常；两条Relay曾退出255，旧云端`sshd`会话仍占用`33041/4620`并产生`CLOSE-WAIT`，使新反向转发持续失败。pi-web由launchd自动重建为新会话后恢复；Chat只对`4620`当前精确所有者执行TERM并重启`com.later.chat.cloud-relay`，未批量终止SSH、未重启本地产品服务、未触碰Product Store，也未重放Run/Provider/Tool。恢复后pi-web与Chat本地健康、两个云端回环、pi-web认证前401/认证后Nginx与公网200、Chat完整Relay验收均通过；390×844公网Chromium打开`pi.ai4child.asia`返回200、标题`Chat - Pi Web`、无504/401错误页、无横向溢出且控制台0错误。长期的服务端半开SSH会话自动回收与监控误判修复尚未实现，仍保留复发风险。
 - [x] 完成[Chat开发Chat自举详细设计](./docs/chat-self-development-design.md)与第一轮自检：从19个正常、拒绝、并发、恢复和安全场景反推单一根Workflow、Repository Binding、隔离Execution Workspace、同一Product Run下的pi Tool Execution、Context/RunSpec装配、Tool Operation和Evidence提交门；定义8层测试、8个浏览器端到端场景、真实Chat仓库Dogfood、4天长场景和SD0-SD6交付节奏。设计纠正了“pi不知道AGENTS”“pi是子Product Run”“直接修改活动仓库”“Tool统计等于副作用账本”“嵌套Workflow自然恢复pi”“测试通过等于Work完成”6个错误候选；该完成项只表示设计与自检已经形成，不表示Schema、迁移或功能代码已存在。
 - [x] 2026-07-24用户批准“Chat开发Chat”D1-D9：Chat自身使用普通Project加Repository Binding；Git/文件系统拥有代码事实；主Workflow以确定性Dispatch调用同一Product Run下的pi Tool；写入默认使用受管worktree；F01前只读；Chat显式编译Harness事实；确定性Validator优先；commit/push/deploy分别授权；F05前不承诺pi持久恢复。批准时关于“pi自动加载AGENTS”的初始假设已由SD2源码核对纠正：实际执行关闭隐式Context发现，只传递已治理的Context/StepInput。当前批准不冻结后续写入字段、迁移和API，也不提前开放写Tool。
 - [x] 2026-07-24完成[SD1 Repository Binding/Snapshot模块详细设计](./docs/repository-resource-detailed-design.md)：固定Workspace Root Catalog、Binding/Snapshot Schema候选、三态状态机、只读Git Inspector、治理文档Manifest、Context Source新鲜度门、两段式事务、REST、响应式UI、日志/Trace和7层测试；自检纠正“仓库已不可用却沿用最近成功Hash”等6个错误候选。该条只表示审核材料已经形成，R1-R12批准前不创建迁移或生产代码。
@@ -401,7 +401,7 @@
 4. `POST /api/agent`接收AG-UI请求并通过SSE返回运行和文本事件。
 5. 无可用Provider时使用确定性Bootstrap Agent；`backend/config.json`中至少一个启用Provider配置完整且默认Provider可用时，创建逐次审批的真实模型Workflow。
 6. `GET /api/health`只返回安全运行信息，不输出密钥。
-7. VS Code后端`8030`、前端`5073`；调试前后定向清理对应端口和项目进程。
+7. VS Code后端`18030`、前端`15073`；调试前后定向清理对应端口和项目进程。
 
 ### 4.2 已有验证
 
@@ -457,7 +457,7 @@
    `a5c6d71`。pi通过`npm run check`及离线源码构建；pi-web在源码pi重新链接后通过TypeScript、
    ESLint及149项Node测试，LaunchAgent重启后Sessions API正常、活动执行为0。该共享只统一代码
    身份，3个消费者的进程、配置、Session和权限继续隔离。
-7. 清理脚本已验证可分别终止端口8030的Uvicorn和5073的Vite，清理后无监听残留。
+7. 清理脚本已验证可分别终止端口18030的Uvicorn和15073的Vite，清理后无监听残留。
 8. 概念空间结构校验通过：14个概念簇、17个目录文档和137个本地链接均可发现且无断链；168份项目文档和571个本地链接通过治理校验，`git diff --check`纳入提交前验证。
   注：verify-fast当时为167份/566链接，verify与收口后为168份/571链接，差异来自同期新增的`docs/lifeos-product-method-research.md`（不属于SD4-C实现）。
 9. 2026-07-23真实浏览器用火山方舟`glm-5.2`完成Product Harness接合后的3次逐次模型审批；25个节点完成，结果为`HARNESS_REAL_MODEL_OK`，且正式Project、Work、Note、Memory前后均为0，控制台0错误。桌面推拉侧栏和780 CSS像素窄屏抽屉均完成展开/收起验证。
@@ -490,7 +490,7 @@
 26. 2026-07-28终态双Trace与完整中文链路注释完成定向和全量验证：后端468项测试全通过；
     Ruff与Pyright 0错误；22次Alembic迁移完整升级、Schema漂移、全降和重升通过（保留既有治理
     外键环Warning）；前端77项逻辑/合同测试、Biome和生产构建通过；`git diff --check`通过。
-    项目文档检查仅剩`ref/LifeOS`既有7条失效链接，与本轮新增文档无关。本机8030/5073在验证时
+    项目文档检查仅剩`ref/LifeOS`既有7条失效链接，与本轮新增文档无关。本机18030/15073在验证时
     没有响应，因此本轮没有把未执行的真实浏览器截图或E2E记为通过证据。
 
 ### 4.3 Session与参考项目研究

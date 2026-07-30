@@ -139,6 +139,7 @@ def route_from_run_spec(
     mode fail closed instead of silently falling back to another Agent.
     """
 
+    breakpoint()  # DEBUG-BREAKPOINT: BP-22
     runtime_agent = _mapping(spec.get("runtime_agent"), field="runtime_agent")
     runtime = str(runtime_agent.get("runtime") or "")
     mode = str(runtime_agent.get("mode") or "")

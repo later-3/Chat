@@ -141,6 +141,7 @@ class ExecutionWorker:
     async def run_once(self) -> bool:
         """执行一轮：先维护（Lease对账/心跳）再原子领取1个Job并执行；空闲返回False。"""
 
+        breakpoint()  # DEBUG-BREAKPOINT: BP-02
         await self._maintain_runtime()
         claim = await self.runtime.claim_one(
             worker_id=self.worker_id,
@@ -200,6 +201,7 @@ class ExecutionWorker:
         RUN_FINISHED不算终态；真正终态前先过``_require_product_terminal``提交门。
         """
 
+        breakpoint()  # DEBUG-BREAKPOINT: BP-03
         heartbeat_task: asyncio.Task[None] | None = None
         terminal_seen = False
         last_control_check = 0.0

@@ -47,11 +47,11 @@ Chat Full Stack
 
 它会启动：
 
-- FastAPI/MAF后端：`127.0.0.1:8030`
-- React/Vite前端：`127.0.0.1:5073`
+- FastAPI/MAF后端：`127.0.0.1:18030`
+- React/Vite前端：`127.0.0.1:15073`
 - 当前`asgi`入口内嵌的Execution Worker
 
-打开`http://127.0.0.1:5073`，进入一个已有完成回合的Product Session，并选择
+打开`http://127.0.0.1:15073`，进入一个已有完成回合的Product Session，并选择
 `continuous-collaboration v1.8.0`。
 
 ## 3. 设置8组断点
