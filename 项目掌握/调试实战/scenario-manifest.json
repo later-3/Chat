@@ -1,0 +1,216 @@
+{
+  "schema_version": 1,
+  "snapshot_date": "2026-07-30",
+  "oracle_levels": {
+    "exact": "由确定性代码、状态机、版本/Hash、数据库约束或测试精确断言",
+    "semantic": "模型自然语言允许变化，但结构、来源、采用去向和产品不变量必须满足",
+    "observe": "耗时、Token、Provider ID等只记录实际值，不预先承诺固定数字",
+    "gap": "目标场景尚未实现，只验证系统不会假装已经支持"
+  },
+  "scenarios": [
+    {
+      "id": "SC01",
+      "title": "确定性查询正式Project目录",
+      "status": "current",
+      "manual": true,
+      "oracle": "exact",
+      "doc": "项目掌握/调试实战/场景/SC01-确定性查询正式Project目录.md",
+      "tests": [
+        "backend/tests/test_continuous_chat.py::test_explicit_project_catalog_query_cannot_be_rewritten_as_create_or_clarify"
+      ],
+      "required_nodes": ["input_acceptance", "context_candidates", "harness_directory_context", "context_adoption", "directory_context_revision", "intent_agent", "intent_set_projection", "intent_binding", "intent_set_acceptance", "harness_project_resolver", "project_work_binding", "harness_detail_context", "detail_context_adoption", "detail_context_revision", "collaboration_protocol_resolver", "scenario_router", "project_catalog_query", "result_commit", "work_state_commit", "memory_commit", "harness_candidate_commit", "turn_summary_persist", "result_finalization"],
+      "forbidden_nodes": ["clarification", "planning_agent", "plan_acceptance", "execution_draft_compiler", "execution_authorization", "run_spec_compiler", "execution_route", "execution_workspace_prepare", "pi_workspace_dispatch", "pi_workspace_result_assembly", "result_claim_prepare", "result_claim_decision", "pi_readonly_dispatch", "pi_readonly_result_assembly", "response_agent", "turn_summary_agent"]
+    },
+    {
+      "id": "SC02",
+      "title": "普通问答与三次模型调用治理",
+      "status": "current",
+      "manual": true,
+      "oracle": "semantic",
+      "doc": "项目掌握/调试实战/场景/SC02-普通问答与三次模型调用治理.md",
+      "tests": [
+        "backend/tests/test_continuous_chat.py::test_continuous_workflow_simple_question_uses_three_governed_model_calls"
+      ],
+      "required_nodes": ["input_acceptance", "context_candidates", "harness_directory_context", "context_adoption", "directory_context_revision", "intent_agent", "intent_set_projection", "intent_binding", "intent_set_acceptance", "harness_project_resolver", "project_work_binding", "harness_detail_context", "detail_context_adoption", "detail_context_revision", "collaboration_protocol_resolver", "scenario_router", "execution_draft_compiler", "execution_authorization", "run_spec_compiler", "execution_route", "response_agent", "turn_summary_agent", "result_commit", "work_state_commit", "memory_commit", "harness_candidate_commit", "turn_summary_persist", "result_finalization"],
+      "forbidden_nodes": ["project_catalog_query", "clarification", "planning_agent", "plan_acceptance", "execution_workspace_prepare", "pi_workspace_dispatch", "pi_workspace_result_assembly", "result_claim_prepare", "result_claim_decision", "pi_readonly_dispatch", "pi_readonly_result_assembly"]
+    },
+    {
+      "id": "SC03",
+      "title": "歧义请求转成可回答澄清并跨回合接回",
+      "status": "current",
+      "manual": true,
+      "oracle": "semantic",
+      "doc": "项目掌握/调试实战/场景/SC03-歧义请求与跨回合澄清.md",
+      "tests": [
+        "backend/tests/test_continuous_chat.py::test_continuous_workflow_invalid_intent_closes_failed_to_clarification",
+        "backend/tests/test_continuous_chat.py::test_clarification_answer_reuses_open_question_even_when_answer_has_no_keyword_overlap"
+      ],
+      "required_nodes": ["input_acceptance", "intent_agent", "intent_set_projection", "intent_binding", "scenario_router", "clarification", "turn_summary_persist", "result_finalization"],
+      "forbidden_nodes": ["project_catalog_query", "planning_agent", "execution_draft_compiler", "execution_workspace_prepare", "pi_workspace_dispatch", "pi_readonly_dispatch", "response_agent"]
+    },
+    {
+      "id": "SC04",
+      "title": "多Intent形成组合Plan且不污染权威事实",
+      "status": "current",
+      "manual": true,
+      "oracle": "semantic",
+      "doc": "项目掌握/调试实战/场景/SC04-多Intent与组合Plan.md",
+      "tests": [
+        "backend/tests/test_continuous_chat.py::test_continuous_workflow_preserves_multi_intent_set_through_plan_and_execution_draft",
+        "backend/tests/test_continuous_chat.py::test_multi_intent_plan_and_response_receive_the_completed_project_catalog_fact"
+      ],
+      "required_nodes": ["intent_agent", "intent_set_projection", "intent_set_acceptance", "scenario_router", "planning_agent", "plan_acceptance", "execution_draft_compiler", "execution_authorization", "run_spec_compiler", "execution_route", "response_agent", "turn_summary_agent", "result_finalization"],
+      "forbidden_nodes": ["clarification", "execution_workspace_prepare", "pi_workspace_dispatch", "pi_readonly_dispatch"]
+    },
+    {
+      "id": "SC05",
+      "title": "修改Context产生新revision并使旧选择失效",
+      "status": "current",
+      "manual": true,
+      "oracle": "exact",
+      "doc": "项目掌握/调试实战/场景/SC05-修改Context与revision失效.md",
+      "tests": [
+        "backend/tests/test_continuous_chat.py::test_context_skip_creates_excluded_revision_and_does_not_reappear_in_model_input"
+      ],
+      "required_nodes": ["harness_directory_context", "context_adoption", "directory_context_revision", "intent_agent"],
+      "forbidden_nodes": []
+    },
+    {
+      "id": "SC06",
+      "title": "Repository来源变化在Provider发送前失败关闭",
+      "status": "current",
+      "manual": true,
+      "oracle": "exact",
+      "doc": "项目掌握/调试实战/场景/SC06-Repository来源失效零发送.md",
+      "tests": [
+        "backend/tests/test_continuous_chat.py::test_repository_source_change_invalidates_old_model_approval_before_attempt",
+        "backend/tests/test_continuous_pi_readonly.py::test_repository_change_stops_pi_before_process_dispatch"
+      ],
+      "required_nodes": ["harness_detail_context", "detail_context_adoption", "detail_context_revision"],
+      "forbidden_nodes": []
+    },
+    {
+      "id": "SC07",
+      "title": "编辑ModelCallDraft后重新审批且只发送新版本",
+      "status": "current",
+      "manual": true,
+      "oracle": "exact",
+      "doc": "项目掌握/调试实战/场景/SC07-编辑模型请求与重新审批.md",
+      "tests": [
+        "backend/tests/test_model_call_review.py::test_agui_revision_requires_second_approval_and_sends_exact_edited_bytes",
+        "backend/tests/test_continuous_chat.py::test_execution_draft_full_edit_creates_new_revision_and_requires_reapproval"
+      ],
+      "required_nodes": ["intent_agent"],
+      "forbidden_nodes": []
+    },
+    {
+      "id": "SC08",
+      "title": "放弃首次模型调用时零Provider发送",
+      "status": "current",
+      "manual": true,
+      "oracle": "exact",
+      "doc": "项目掌握/调试实战/场景/SC08-放弃模型调用零发送.md",
+      "tests": [
+        "backend/tests/test_continuous_chat.py::test_continuous_workflow_abandon_before_intent_dispatch_sends_nothing",
+        "backend/tests/test_model_call_review.py::test_abandon_creates_zero_provider_attempts_and_preserves_origin_prompt"
+      ],
+      "required_nodes": ["input_acceptance", "intent_agent"],
+      "forbidden_nodes": ["scenario_router", "response_agent", "turn_summary_agent", "result_finalization"]
+    },
+    {
+      "id": "SC09",
+      "title": "受治理pi只读检查",
+      "status": "current",
+      "manual": true,
+      "oracle": "semantic",
+      "doc": "项目掌握/调试实战/场景/SC09-受治理pi只读检查.md",
+      "tests": [
+        "backend/tests/test_continuous_pi_readonly.py::test_continuous_workflow_runs_pi_readonly_in_one_product_run"
+      ],
+      "required_nodes": ["planning_agent", "execution_draft_compiler", "run_spec_compiler", "execution_route", "pi_readonly_dispatch", "pi_readonly_result_assembly", "turn_summary_agent", "result_finalization"],
+      "forbidden_nodes": ["execution_workspace_prepare", "pi_workspace_dispatch", "pi_workspace_result_assembly", "result_claim_prepare", "result_claim_decision", "response_agent"]
+    },
+    {
+      "id": "SC10",
+      "title": "隔离精确edit通过Validation与Result Commit",
+      "status": "conditional",
+      "manual": true,
+      "oracle": "exact",
+      "doc": "项目掌握/调试实战/场景/SC10-隔离精确编辑与Evidence提交.md",
+      "tests": [
+        "backend/tests/test_continuous_pi_workspace.py::test_continuous_workflow_governs_exact_edit_in_isolated_workspace",
+        "backend/tests/test_result_pipeline.py::test_result_commit_gate_completes_action_after_accepted_validation"
+      ],
+      "required_nodes": ["planning_agent", "execution_draft_compiler", "run_spec_compiler", "execution_route", "execution_workspace_prepare", "pi_workspace_dispatch", "pi_workspace_result_assembly", "result_claim_prepare", "result_claim_decision", "turn_summary_agent", "result_finalization"],
+      "forbidden_nodes": ["pi_readonly_dispatch", "pi_readonly_result_assembly", "response_agent"]
+    },
+    {
+      "id": "SC11",
+      "title": "Validation失败或结果未知时不产生假完成",
+      "status": "current",
+      "manual": false,
+      "oracle": "exact",
+      "doc": "项目掌握/调试实战/场景/SC11-Validation失败与结果未知.md",
+      "tests": [
+        "backend/tests/test_result_pipeline.py::test_failed_validation_only_allows_reject_and_never_completes",
+        "backend/tests/test_result_pipeline.py::test_unknown_validation_outcome_produces_no_supports_or_completion"
+      ],
+      "required_nodes": ["result_claim_prepare", "result_claim_decision"],
+      "forbidden_nodes": []
+    },
+    {
+      "id": "SC12",
+      "title": "浏览器断线后Worker继续并按Cursor接回",
+      "status": "current",
+      "manual": true,
+      "oracle": "exact",
+      "doc": "项目掌握/调试实战/场景/SC12-断线后Worker继续与Cursor接回.md",
+      "tests": [
+        "backend/tests/test_runtime_execution.py::test_http_disconnect_does_not_cancel_worker_and_cursor_replays_rest"
+      ],
+      "required_nodes": [],
+      "forbidden_nodes": []
+    },
+    {
+      "id": "SC13",
+      "title": "取消在外发前后收敛成不同终态",
+      "status": "current",
+      "manual": true,
+      "oracle": "exact",
+      "doc": "项目掌握/调试实战/场景/SC13-取消与结果未知.md",
+      "tests": [
+        "backend/tests/test_product_sessions.py::test_cancel_is_exactly_bound_and_distinguishes_before_and_after_dispatch"
+      ],
+      "required_nodes": [],
+      "forbidden_nodes": []
+    },
+    {
+      "id": "SC14",
+      "title": "失败后的Retry与修改后的Restart保持血缘",
+      "status": "current",
+      "manual": true,
+      "oracle": "exact",
+      "doc": "项目掌握/调试实战/场景/SC14-Retry与Restart血缘.md",
+      "tests": [
+        "backend/tests/test_product_sessions.py::test_failed_run_retry_and_edited_restart_keep_explicit_lineage",
+        "backend/tests/test_product_sessions.py::test_retry_rejects_modified_prompt_without_creating_run"
+      ],
+      "required_nodes": [],
+      "forbidden_nodes": []
+    },
+    {
+      "id": "SC15",
+      "title": "HITL决定跨API和Worker进程恢复",
+      "status": "current",
+      "manual": false,
+      "oracle": "exact",
+      "doc": "项目掌握/调试实战/场景/SC15-跨进程HITL恢复.md",
+      "tests": [
+        "backend/tests/test_continuous_chat.py::test_continuous_workflow_restores_each_hitl_checkpoint_in_a_new_process",
+        "backend/tests/test_continuous_chat.py::test_outbox_worker_resumes_recorded_decision_after_api_process_restart"
+      ],
+      "required_nodes": ["intent_agent", "execution_authorization", "response_agent", "turn_summary_agent"],
+      "forbidden_nodes": []
+    }
+  ]
+}
