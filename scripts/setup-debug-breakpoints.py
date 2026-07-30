@@ -30,6 +30,8 @@ CONFIG_PATH = ROOT / "scripts" / "debug-breakpoints.json"
 
 PYTHON_MARKER = "# DEBUG-BREAKPOINT:"
 TS_MARKER = "// DEBUG-BREAKPOINT:"
+# 清理时匹配所有 DEBUG-BREAKPOINT 开头的标记（含 NOTE）
+CLEAN_PATTERN = "DEBUG-BREAKPOINT"
 
 
 def load_config() -> dict:
@@ -124,11 +126,45 @@ def find_typescript_insert_line(
 
 
 def is_already_injected(lines: list[str], marker: str, bp_id: str) -> bool:
-    """检查断点是否已注入（幂等性）。"""
+    """检查断点是否已注入（幂等性）。只匹配断点行，不匹配注释行。"""
     for line in lines:
         if marker in line and bp_id in line:
             return True
     return False
+
+
+def build_note_lines(bp_config: dict, indent_str: str, language: str) -> list[str]:
+    """生成断点触发时机注释行。
+
+    格式（Python）：
+        # DEBUG-BREAKPOINT-NOTE: BP-XX
+        # DEBUG-BREAKPOINT-NOTE: 触发: <第一句>。
+        # DEBUG-BREAKPOINT-NOTE: 触发: <第二句>。
+        # DEBUG-BREAKPOINT-NOTE: 频率: <frequency>
+
+    所有注释行都带 DEBUG-BREAKPOINT-NOTE 标记，清理时一并删除。
+    """
+    comment = "#" if language == "python" else "//"
+    note_marker = "DEBUG-BREAKPOINT-NOTE"
+    bp_id = bp_config["id"]
+    trigger = bp_config.get("trigger_timing", "")
+    frequency = bp_config.get("frequency", "")
+
+    lines: list[str] = []
+    # 标题行
+    lines.append(f"{indent_str}{comment} {note_marker}: {bp_id}\n")
+
+    # 触发时机：按中文句号分割，每句一行
+    if trigger:
+        sentences = [s.strip() for s in trigger.split("。") if s.strip()]
+        for s in sentences:
+            lines.append(f"{indent_str}{comment} {note_marker}: 触发: {s}。\n")
+
+    # 频率
+    if frequency:
+        lines.append(f"{indent_str}{comment} {note_marker}: 频率: {frequency}\n")
+
+    return lines
 
 
 def inject_breakpoint(file_path: Path, bp_config: dict) -> tuple[bool, str]:
@@ -165,13 +201,18 @@ def inject_breakpoint(file_path: Path, bp_config: dict) -> tuple[bool, str]:
     indent = len(target_line) - len(target_line.lstrip())
     indent_str = " " * indent
 
+    # 生成触发时机注释行
+    note_lines = build_note_lines(bp_config, indent_str, language)
+
     if language == "python":
         bp_line = f"{indent_str}breakpoint()  {marker} {bp_id}\n"
     else:
         bp_line = f"{indent_str}debugger; {marker} {bp_id}\n"
 
-    # 插入到函数体首行之前
-    lines.insert(insert_line - 1, bp_line)
+    # 插入注释行和断点行到函数体首行之前
+    new_lines = note_lines + [bp_line]
+    for offset, line in enumerate(new_lines):
+        lines.insert(insert_line - 1 + offset, line)
     file_path.write_text("".join(lines), encoding="utf-8")
     class_name = bp_config.get("class")
     symbol_display = f"{class_name}.{bp_config['symbol']}" if class_name else bp_config["symbol"]
@@ -179,7 +220,10 @@ def inject_breakpoint(file_path: Path, bp_config: dict) -> tuple[bool, str]:
 
 
 def clean_file(file_path: Path) -> int:
-    """清理文件中的所有断点行。返回清理的断点数。"""
+    """清理文件中的所有断点行和注释行。返回清理的行数。
+
+    匹配所有包含 DEBUG-BREAKPOINT 的行（含 DEBUG-BREAKPOINT: 和 DEBUG-BREAKPOINT-NOTE:）。
+    """
     if not file_path.exists():
         return 0
 
@@ -187,7 +231,7 @@ def clean_file(file_path: Path) -> int:
     original_count = len(lines)
     cleaned_lines = [
         line for line in lines
-        if PYTHON_MARKER not in line and TS_MARKER not in line
+        if CLEAN_PATTERN not in line
     ]
     removed = original_count - len(cleaned_lines)
     if removed > 0:

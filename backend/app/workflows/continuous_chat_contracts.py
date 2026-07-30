@@ -340,6 +340,10 @@ def is_project_catalog_query(text: str) -> bool:
     “只查看，不要创建任何事项”中的“创建”不能被误判成创建意图（有专项测试）。
     """
 
+    # DEBUG-BREAKPOINT-NOTE: BP-21
+    # DEBUG-BREAKPOINT-NOTE: 触发: 判断用户输入是否是项目目录查询时触发。
+    # DEBUG-BREAKPOINT-NOTE: 触发: 由ScenarioRouterExecutor.route（BP-16）调用，作为路由判断的契约函数之一。
+    # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次（路由判断时）
     breakpoint()  # DEBUG-BREAKPOINT: BP-21
     compact = re.sub(r"[\s，,。.!！?？:：;；]", "", text).lower()
     if not compact or "项目" not in compact:

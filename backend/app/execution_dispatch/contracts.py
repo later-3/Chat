@@ -139,6 +139,11 @@ def route_from_run_spec(
     mode fail closed instead of silently falling back to another Agent.
     """
 
+    # DEBUG-BREAKPOINT-NOTE: BP-22
+    # DEBUG-BREAKPOINT-NOTE: 触发: 从RunSpec路由时触发。
+    # DEBUG-BREAKPOINT-NOTE: 触发: 执行分发层根据RunSpec决定使用哪种执行路径（MAF直接执行、pi工作区编辑等）。
+    # DEBUG-BREAKPOINT-NOTE: 触发: 在Workflow启动前的执行分发阶段。
+    # DEBUG-BREAKPOINT-NOTE: 频率: 每个Run分发时触发1次
     breakpoint()  # DEBUG-BREAKPOINT: BP-22
     runtime_agent = _mapping(spec.get("runtime_agent"), field="runtime_agent")
     runtime = str(runtime_agent.get("runtime") or "")

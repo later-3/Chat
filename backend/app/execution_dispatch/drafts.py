@@ -167,6 +167,11 @@ def recommends_pi_workspace_edit(
 ) -> bool:
     """Recommend isolated editing only for an explicit code-change request."""
 
+    # DEBUG-BREAKPOINT-NOTE: BP-23
+    # DEBUG-BREAKPOINT-NOTE: 触发: 判断是否推荐使用pi工作区编辑时触发。
+    # DEBUG-BREAKPOINT-NOTE: 触发: 由执行分发层调用，作为route_from_run_spec（BP-22）的辅助判断。
+    # DEBUG-BREAKPOINT-NOTE: 触发: 仅在RunSpec涉及工作区编辑类操作时才有意义。
+    # DEBUG-BREAKPOINT-NOTE: 频率: 每个Run分发时触发1次（条件性）
     breakpoint()  # DEBUG-BREAKPOINT: BP-23
     lowered = prompt.lower().replace(" ", "")
     explicit_edit = any(term.replace(" ", "") in lowered for term in PI_WORKSPACE_EDIT_TERMS)

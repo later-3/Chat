@@ -1603,6 +1603,11 @@ class HarnessService:
         模型能看到什么，还要解释系统考虑过但排除了什么。重放绑定``command_id``和规范请求Hash，
         防止恢复时为同一确定性装配命令创建内容不同的ContextPackage。
         """
+        # DEBUG-BREAKPOINT-NOTE: BP-20
+        # DEBUG-BREAKPOINT-NOTE: 触发: 创建上下文包时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 由HarnessDirectoryContextExecutor.assemble（BP-11）调用。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 将候选上下文、目录信息、Harness配置打包成ContextPackage，供后续模型调用使用。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-20
         if stage not in {"directory", "detail"}:
             raise HarnessValidationError("ContextPackage stage无效")

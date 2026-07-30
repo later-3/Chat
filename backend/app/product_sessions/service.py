@@ -677,6 +677,11 @@ class ProductSessionService:
         都不产生部分状态；通过后Worker才允许领取执行。对应架构“Interaction接纳门”。
         """
 
+        # DEBUG-BREAKPOINT-NOTE: BP-04
+        # DEBUG-BREAKPOINT-NOTE: 触发: 后端收到AG-UI请求后，准备创建Product Run时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 此方法创建Message/Interaction/Run/Attempt等Product事实，确保输入先于执行落库。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 是产品层接纳用户输入的门控。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-04
         session_id = str(input_data.get("thread_id") or input_data.get("threadId") or "")
         agui_run_id = str(input_data.get("run_id") or input_data.get("runId") or "")
@@ -946,6 +951,11 @@ class ProductSessionService:
     async def _resume_run(self, session_id: str, agui_run_id: str) -> AcceptedRun:
         """恢复门：只允许接回本会话的活动Run；新旧AG-UI runId与Product Run的绑定冲突即拒绝。"""
 
+        # DEBUG-BREAKPOINT-NOTE: BP-05
+        # DEBUG-BREAKPOINT-NOTE: 触发: 恢复一个已有的Run时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 场景：断线重连、中断后续传、或前端重新订阅已有Run。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 不是每次发新消息都会触发——只在resume语义时命中。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 仅在恢复已有Run时触发（条件性）
         breakpoint()  # DEBUG-BREAKPOINT: BP-05
         async with self.database.sessions.begin() as transaction:
             session = await self._session(transaction, session_id)
@@ -1139,6 +1149,11 @@ class ProductSessionService:
         agui_message_id: str | None,
     ) -> dict[str, Any] | None:
         """最终提交门：写Assistant Message、关闭Run并在同一事务生成双Trace。"""
+        # DEBUG-BREAKPOINT-NOTE: BP-06
+        # DEBUG-BREAKPOINT-NOTE: 触发: Product Run完成时触发（正常结束或失败）。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 在事务内完成Run状态、消息和Trace的物化。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 这是产品层的最终提交门——Workflow执行完毕后，结果通过此方法写入权威事实。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每个Run结束触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-06
         async with self.database.sessions.begin() as transaction:
             session = await self._session(transaction, session_id)

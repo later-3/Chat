@@ -141,6 +141,13 @@ class ExecutionWorker:
     async def run_once(self) -> bool:
         """执行一轮：先维护（Lease对账/心跳）再原子领取1个Job并执行；空闲返回False。"""
 
+        # DEBUG-BREAKPOINT-NOTE: BP-02
+        # DEBUG-BREAKPOINT-NOTE: 触发: Worker主循环每轮执行时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 先做Lease对账/心跳维护，再尝试原子领取1个Job。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 注意：即使没有待处理Job也会触发（空闲时claim返回None后直接返回False）。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 在Chat Full Stack配置下Worker内嵌启动，后台循环会定期调用此方法，因此断点会频繁命中。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 如果只想在有Job时暂停，请改用BP-03。
+        # DEBUG-BREAKPOINT-NOTE: 频率: Worker循环每轮1次，空闲时也触发（频繁）
         breakpoint()  # DEBUG-BREAKPOINT: BP-02
         await self._maintain_runtime()
         claim = await self.runtime.claim_one(
@@ -201,6 +208,11 @@ class ExecutionWorker:
         RUN_FINISHED不算终态；真正终态前先过``_require_product_terminal``提交门。
         """
 
+        # DEBUG-BREAKPOINT-NOTE: BP-03
+        # DEBUG-BREAKPOINT-NOTE: 触发: Worker成功领取到一个Job并开始执行时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 这是Job主循环入口：启动心跳、逐事件写Journal、处理取消/中断/终态门。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 只有当队列中有pending Job且被当前Worker领取时才触发。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每个待处理Job触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-03
         heartbeat_task: asyncio.Task[None] | None = None
         terminal_seen = False

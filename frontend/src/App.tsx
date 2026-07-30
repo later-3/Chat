@@ -441,6 +441,11 @@ function App() {
   };
 
   const submit = () => {
+    // DEBUG-BREAKPOINT-NOTE: BP-27
+    // DEBUG-BREAKPOINT-NOTE: 触发: 用户点击发送按钮时触发（前端）。
+    // DEBUG-BREAKPOINT-NOTE: 触发: 这是用户操作的直接入口——从UI组件捕获输入，传递给useChatAgent.send（BP-28）。
+    // DEBUG-BREAKPOINT-NOTE: 触发: 需要浏览器DevTools打开才能命中debugger语句。
+    // DEBUG-BREAKPOINT-NOTE: 频率: 用户每次点击发送触发1次
     debugger; // DEBUG-BREAKPOINT: BP-27
     if (!draft.trim() || status !== "idle" || !activeSession || networkStatus === "offline") return;
     const text = draft;

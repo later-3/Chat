@@ -542,6 +542,11 @@ class PiExecution:
 
     async def start(self) -> None:
         """创建新pi Session和临时配置，再启动禁用重试及未治理扩展的RPC。"""
+        # DEBUG-BREAKPOINT-NOTE: BP-25
+        # DEBUG-BREAKPOINT-NOTE: 触发: pi执行实例启动时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 每次pi agent工具调用时创建新的PiExecution实例并启动。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 在pi子进程上建立会话、准备工具环境。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每次pi工具调用触发1次（仅pi启用时）
         breakpoint()  # DEBUG-BREAKPOINT: BP-25
         if not self.runtime.available or self.runtime.node_path is None or self.runtime.cli_path is None:
             self._pi_session_error_code = "pi_runtime_unavailable"
@@ -708,6 +713,11 @@ class PiExecution:
 
     async def accept_provider_call(self, protocol: str, body: bytes) -> PiGatewayCall:
         """接收pi准备发送的精确Provider字节，挂起为MAF可治理的模型边界。"""
+        # DEBUG-BREAKPOINT-NOTE: BP-26
+        # DEBUG-BREAKPOINT-NOTE: 触发: pi接受Provider调用时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: pi agent内部调用模型时，通过此方法接收Provider请求。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 这是pi侧的模型调用入口——对应Chat侧的GovernedSemanticAgentExecutor，但在pi子进程内执行。
+        # DEBUG-BREAKPOINT-NOTE: 频率: pi agent每次内部模型调用触发1次（仅pi启用时）
         breakpoint()  # DEBUG-BREAKPOINT: BP-26
         if self._closed:
             raise PiRuntimeError("pi执行已经结束", code="pi_execution_closed")

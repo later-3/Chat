@@ -1,7 +1,8 @@
-"""Dependency composition for the Chat application.
+"""Chat 后端的依赖装配中心（Composition Root）。
 
-This module constructs adapters and application services. HTTP routes and
-product rules consume these objects but never construct or replace them.
+它集中回答“每个应用服务依赖谁、共用哪一个数据库、外部适配器怎样注入”。
+Router 和产品规则只使用这些对象，不在请求途中临时创建或替换它们，因此
+状态所有权、测试替身和进程生命周期都能被追踪。
 """
 
 from __future__ import annotations
@@ -86,7 +87,11 @@ from .workflows.resume_worker import RuntimeResumeOutboxHandler
 
 @dataclass(slots=True)
 class ApplicationComponents:
-    """Process-local adapters and services assembled for one FastAPI app."""
+    """一个 FastAPI 进程持有的服务与适配器清单。
+
+    字段属于“可调用的模块对象”，不是一份业务数据，也不是数据库记录。
+    它让 main.py、lifespan 和测试显式取得同一批依赖。
+    """
 
     settings: Settings
     model_catalog: ModelProviderCatalog | None
@@ -134,7 +139,11 @@ def build_components(
     pi_runtime_manager: PiRuntimeManager | None = None,
     execution_worker_id: str | None = None,
 ) -> ApplicationComponents:
-    """Construct the process-local object graph without starting it."""
+    """创建进程内对象图，但不启动数据库初始化、监听端口或后台循环。
+
+    这里允许对象多，是因为它是唯一装配点；若产品事务或流程判断出现在这里，
+    就越过了边界，应移到对应 Application Service/Coordinator。
+    """
 
     model_catalog = settings.model_catalog()
     product_sessions = product_session_service or ProductSessionService(
@@ -322,7 +331,10 @@ def build_components(
 
 
 def expose_components(app: FastAPI, components: ApplicationComponents) -> None:
-    """Publish compatibility handles used by tests and process adapters."""
+    """把已装配对象暴露到 ``app.state``，供测试和进程适配层定位。
+
+    ``app.state`` 只是进程内引用，不是产品事实源，也不能代替数据库持久化。
+    """
 
     app.state.settings = components.settings
     app.state.model_call_review_store = components.review_store
@@ -364,7 +376,11 @@ def register_runtime_surfaces(
     *,
     outbox_worker_id: str | None,
 ) -> None:
-    """Register AG-UI surfaces and bind the matching runtime runners."""
+    """注册 AG-UI URL，并把每个 URL 绑定到对应 Agent/Workflow Runner。
+
+    REST Router 管产品资源；这里的 AG-UI Surface 管一次 Agent Run 的实时
+    事件流。二者最终仍通过产品服务与数据库关联，不能各自形成事实源。
+    """
 
     resolved = components.settings
     model_catalog = components.model_catalog

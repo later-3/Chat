@@ -1,4 +1,8 @@
-"""Application process lifecycle and embedded worker ownership."""
+"""后端进程生命周期，以及内嵌 Worker 的启停所有权。
+
+FastAPI 在开始服务前进入 lifespan，在进程退出时离开 lifespan。这样数据库
+初始化、启动对账和后台循环不会散落在 Router 中，也不会随每次请求重复执行。
+"""
 
 from __future__ import annotations
 
@@ -20,7 +24,12 @@ def create_lifespan(
     start_outbox_worker: bool,
     start_execution_worker: bool,
 ):
-    """Build the lifespan for either an embedded or external-worker profile."""
+    """为“内嵌 Worker”或“外置 Worker”部署方式创建同一套生命周期。
+
+    ``yield`` 之前是启动阶段，``yield`` 期间 Uvicorn 可以分发请求，
+    ``finally`` 是关停阶段。内存数据库不启动后台轮询，因为它不能被另一个
+    进程可靠共享。
+    """
 
     durable_store = ":memory:" not in components.settings.database_url
     outbox_loop_enabled = start_outbox_worker and durable_store
@@ -28,6 +37,7 @@ def create_lifespan(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        # 1. 建立Schema/种子数据，并在对外服务前修复可安全自动修复的中断状态。
         await components.product_sessions.initialize()
         await components.governance.initialize()
         await components.harness.initialize()
@@ -75,6 +85,7 @@ def create_lifespan(
         outbox_task: asyncio.Task[None] | None = None
         execution_task: asyncio.Task[None] | None = None
         outbox_worker = components.governance_outbox_worker
+        # 2. 本地单进程模式可内嵌轮询；生产可用 create_api_app 把它们拆出去。
         if outbox_loop_enabled and outbox_worker is not None:
 
             async def outbox_loop() -> None:
@@ -115,8 +126,10 @@ def create_lifespan(
             )
 
         try:
+            # 3. 控制权交回 FastAPI/Uvicorn；从此刻起请求才进入各个 Router。
             yield
         finally:
+            # 4. 先停止后台任务和外部 Runtime，再关闭共享数据库连接。
             if execution_task is not None:
                 execution_task.cancel()
                 try:

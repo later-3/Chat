@@ -61,6 +61,11 @@ def add_durable_agui_endpoint(
         链路为React POST -> prepare_agui_run -> Runtime Job/游标 -> Worker执行 -> Journal
         -> 本处理器按Sequence回放SSE。仅测试用内存SQLite为确定性而同步跑一次Worker。
         """
+        # DEBUG-BREAKPOINT-NOTE: BP-01
+        # DEBUG-BREAKPOINT-NOTE: 触发: 前端发送AG-UI请求到达后端/api/agent端点时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 用户点击发送按钮→前端AG-UI Client发起HTTP流式请求→命中此函数。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 这是后端处理用户消息的第一个入口。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-01
         input_data = request_body.model_dump(mode="json", exclude_none=True)
         try:

@@ -1,4 +1,8 @@
-"""FastAPI application factory for the independent Chat product."""
+"""FastAPI 应用工厂：把已经实现的后端模块组装成一个可运行的 Web 应用。
+
+本文件只负责进程级接线：创建对象、安装中间件、挂载路由与 AG-UI 入口。
+具体产品规则由 Application Service/Coordinator 持有，不能堆进这个入口。
+"""
 
 from __future__ import annotations
 
@@ -44,13 +48,15 @@ def create_app(
     start_execution_worker: bool = True,
     execution_worker_id: str | None = None,
 ) -> FastAPI:
-    """Compose one isolated API and runtime process.
+    """组装一个相互隔离的 API/Runtime 进程。
 
-    The factory wires adapters only. Product rules remain in application
-    services, HTTP translation remains in routers, and worker start/stop
-    ownership remains in the lifespan module.
+    调用链是 ``asgi.py -> create_app -> build_components -> FastAPI``。
+    本函数只接线：产品规则留在应用服务，HTTP 翻译留在 Router，Worker 的
+    启停留在 lifespan。测试可注入 Store、Transport 或 Service，避免连接
+    真实外部系统。
     """
 
+    # 1. 把配置变成依赖对象图；此时只“造对象”，还没有开始接收请求。
     resolved = settings or Settings.from_file()
     configure_observability(resolved.observability)
     components = build_components(
@@ -61,6 +67,7 @@ def create_app(
         pi_runtime_manager=pi_runtime_manager,
         execution_worker_id=execution_worker_id,
     )
+    # 2. FastAPI 是 ASGI 应用对象；lifespan 管理数据库初始化和后台任务。
     app = FastAPI(
         title="Chat",
         version="0.1.0",
@@ -72,6 +79,7 @@ def create_app(
         ),
         responses=problem_responses(),
     )
+    # 3. 中间件包住所有请求；Router 把 URL 翻译为应用服务调用。
     install_error_handlers(app)
     expose_components(app, components)
     app.add_middleware(
@@ -127,7 +135,11 @@ def create_app(
 
 
 def create_api_app() -> FastAPI:
-    """Production API factory when Outbox delivery runs separately."""
+    """创建只承载 API 的进程；Outbox 与执行 Worker 由其他进程负责。
+
+    这体现了“代码模块”和“部署进程”是两回事：同一套应用服务既可以在本地
+    单进程运行，也可以把后台执行拆到独立 Worker，而不改变 HTTP 合同。
+    """
 
     return create_app(
         start_outbox_worker=False,

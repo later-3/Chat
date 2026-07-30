@@ -194,6 +194,10 @@ class TraceMixin:
         调用），不伪造归属。工作台节点详情与终态双报告都以这里的事实为源。
         """
 
+        # DEBUG-BREAKPOINT-NOTE: BP-08
+        # DEBUG-BREAKPOINT-NOTE: 触发: Executor产生需要Trace的内容时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 多个Executor继承TraceMixin，每次写入Trace记录（输入、输出、状态变更）时都会调用此方法。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每个Executor的每次Trace写入（频繁）
         breakpoint()  # DEBUG-BREAKPOINT: BP-08
         active = await self._sessions.active_run(self._thread_id)
         if active is None:
@@ -292,6 +296,11 @@ class IntakeExecutor(Executor, TraceMixin):
     @handler(input=list)
     async def accept(self, messages: list[Any], ctx: WorkflowContext[CollaborationState]) -> None:
         """执行节点1：规范化输入、恢复澄清关联并把初始状态发送给节点2。"""
+        # DEBUG-BREAKPOINT-NOTE: BP-09
+        # DEBUG-BREAKPOINT-NOTE: 触发: Workflow的第一个业务节点触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 接收用户输入，将Prompt规范为origin_prompt并构建初始CollaborationState。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 这是Workflow内业务逻辑的起点。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-09
         normalized = normalize_agui_messages_for_provider(messages)
         user_messages = [value for value in normalized if value.get("role") == "user"]
@@ -346,6 +355,11 @@ class CandidateContextExecutor(Executor, TraceMixin):
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
         """执行节点2：计算候选得分、记录选择规则并进入正式目录Context装配。"""
+        # DEBUG-BREAKPOINT-NOTE: BP-10
+        # DEBUG-BREAKPOINT-NOTE: 触发: 从历史记录中筛选候选上下文时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: IntakeExecutor之后、HarnessDirectoryContextExecutor之前。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 根据用户输入从历史中检索相关候选。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-10
         keywords = _context_keywords(state.origin_prompt)
         scored: list[tuple[int, dict[str, Any]]] = []
@@ -418,6 +432,11 @@ class HarnessDirectoryContextExecutor(Executor, TraceMixin):
         带来源、版本、采用原因和Token估算的Context Item。随后先落库再进入HITL，使用户决定、
         审批Hash和Checkpoint恢复都绑定同一份可追溯Context，而不是绑定会丢失的Python变量。
         """
+        # DEBUG-BREAKPOINT-NOTE: BP-11
+        # DEBUG-BREAKPOINT-NOTE: 触发: 组装目录上下文包时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 候选上下文之后，调用HarnessService.create_context_package（BP-20）组装最终上下文。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 将候选、目录、Harness信息打包成ContextPackage。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-11
         items, projects = await self._harness.directory_context_items(
             prompt=state.origin_prompt,
@@ -910,6 +929,10 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
         ctx: WorkflowContext[CollaborationState, str],
     ) -> None:
         """登记Subject并在不适用、拒绝、自动继续、等待人工四条路径中收敛。"""
+        # DEBUG-BREAKPOINT-NOTE: BP-12
+        # DEBUG-BREAKPOINT-NOTE: 触发: 产品决策节点推进时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 模型调用完成后，在产品层做决策（是否继续、是否需要工具、是否结束回合等）。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每次模型调用后的决策步骤（条件性）
         breakpoint()  # DEBUG-BREAKPOINT: BP-12
         content = self.spec.subject(state)
         facts = dict(self.spec.facts(state))
@@ -1337,6 +1360,11 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         明确的“列出项目”在意图节点直接形成目录Intent，因而是0模型调用；其他请求才
         进入ModelCallDraft -> Policy -> 审批/自动继续 -> Provider。
         """
+        # DEBUG-BREAKPOINT-NOTE: BP-13
+        # DEBUG-BREAKPOINT-NOTE: 触发: 准备模型调用时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 构造ModelCallDraft（包含Provider请求候选），进入ModelCallDraft→Policy→审批/自动继续→Provider流程。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 这是用户在前端看到的'模型调用审批'的起点——Draft在此构造，然后等待审批。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每次模型调用触发1次（含意图识别、计划、答复等多个子步骤）
         breakpoint()  # DEBUG-BREAKPOINT: BP-13
         if self._result_kind == "intent" and _is_project_catalog_query(state.origin_prompt):
             intent = _project_catalog_intent(state.origin_prompt)
@@ -1374,6 +1402,12 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         先检查Repository新鲜度并持久化评估；deny关闭，auto_continue消费Grant并发送，
         其余创建HumanDecisionRequest和MAF interrupt。审核卡携带状态快照供恢复。
         """
+        # DEBUG-BREAKPOINT-NOTE: BP-14
+        # DEBUG-BREAKPOINT-NOTE: 触发: 推进模型调用流程时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: ModelCallDraft审批通过后，发送Provider请求。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 这里是从'等待审批'到'实际调用模型'的转换点。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 如果审批未通过则不会到达此处。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每次审批通过的模型调用触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-14
         freshness = await self._require_fresh_context(
             state,
@@ -1835,6 +1869,11 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         采用去向（accepted/overridden/rejected_invalid_output）持久化在Attempt上，审计链能
         精确说明这些字节后来被怎样使用。
         """
+        # DEBUG-BREAKPOINT-NOTE: BP-15
+        # DEBUG-BREAKPOINT-NOTE: 触发: 交付模型调用结果时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: Provider返回结果后，将结果交付给产品层（写Trace、更新状态、准备下一步）。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 这是模型调用的收尾步骤。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每次成功的模型调用触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-15
         text = dispatched.text
         disposition = f"accepted_as_{self._result_kind}"
@@ -2121,6 +2160,11 @@ class ScenarioRouterExecutor(Executor, TraceMixin):
     @handler(input=CollaborationState)
     async def route(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
         """执行节点16：计算首个命中分支，并把选中/未选原因完整写入Trace。"""
+        # DEBUG-BREAKPOINT-NOTE: BP-16
+        # DEBUG-BREAKPOINT-NOTE: 触发: 场景路由判断时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 根据Intent和当前状态决定走哪个分支（普通对话、项目目录查询、pi工作区编辑等）。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 调用is_project_catalog_query（BP-21）等契约函数做判断。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次（路由判断）
         breakpoint()  # DEBUG-BREAKPOINT: BP-16
         route_decision = _evaluate_scenario_route(state)
         await self._trace_content(
@@ -2160,6 +2204,11 @@ class ProjectCatalogExecutor(Executor, TraceMixin):
     @handler(input=CollaborationState)
     async def answer(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
         """执行节点17：确定性渲染正式Project目录结果，不进入Provider。"""
+        # DEBUG-BREAKPOINT-NOTE: BP-17
+        # DEBUG-BREAKPOINT-NOTE: 触发: 项目目录查询响应时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 仅当ScenarioRouterExecutor路由到项目目录查询分支时才命中。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 生成目录查询的响应与摘要。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 仅在项目目录查询时触发（条件性）
         breakpoint()  # DEBUG-BREAKPOINT: BP-17
         catalog_result = state.project_catalog_result
         if catalog_result is None:
@@ -2555,6 +2604,11 @@ class TurnSummaryPersistExecutor(Executor, TraceMixin):
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
         """执行节点38：保存可追溯摘要及来源引用，然后把状态送到最终提交门。"""
+        # DEBUG-BREAKPOINT-NOTE: BP-18
+        # DEBUG-BREAKPOINT-NOTE: 触发: 持久化回合摘要时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 每个对话回合结束时，将TurnSummary写入Product DB。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 在FinalizeExecutor之前执行。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每个对话回合结束触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-18
         summary = dict(
             state.turn_summary
@@ -2661,6 +2715,11 @@ class FinalizeExecutor(Executor, TraceMixin):
     @handler
     async def finalize(self, state: CollaborationState, ctx: WorkflowContext[None, str]) -> None:
         """执行节点39：公开最终候选，并把文本交给ProductAwareWorkflow提交。"""
+        # DEBUG-BREAKPOINT-NOTE: BP-19
+        # DEBUG-BREAKPOINT-NOTE: 触发: Workflow最终化时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 所有业务节点执行完毕后，做最终化处理（清理、状态收敛、准备提交）。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 之后Workflow返回，控制权回到ProductAwareWorkflow.run的完成门。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每个Run结束触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-19
         response = state.response or "本轮没有形成可提交的答复。"
         await self._trace_content(

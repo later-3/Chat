@@ -81,6 +81,12 @@ class PiRuntimeManager:
         execution_workspaces: ExecutionWorkspaceService | None = None,
         tool_operations: ToolOperationService | None = None,
     ) -> PiExecution:
+        # DEBUG-BREAKPOINT-NOTE: BP-24
+        # DEBUG-BREAKPOINT-NOTE: 触发: pi运行时管理器启动时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 仅在config.json中启用了pi_agent时才命中。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 启动pi子进程并建立JSONL RPC通道。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 通常在应用启动时调用一次。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 应用启动时触发1次（仅pi启用时）
         breakpoint()  # DEBUG-BREAKPOINT: BP-24
         clean_task = task.strip()
         if not clean_task:

@@ -125,6 +125,11 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
         成功提交Message时，ProductSessionService在同一事务
         物化机器版和人读版双Trace；等待审批时Run保持活动且不提前生成终态报告。
         """
+        # DEBUG-BREAKPOINT-NOTE: BP-07
+        # DEBUG-BREAKPOINT-NOTE: 触发: MAF Workflow开始执行时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: ProductAwareWorkflow包装MAF执行流程，将Product Run生命周期与MAF图解耦，最后调用完成门。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 这是Workflow层的入口——prepare_agui_run之后、各Executor之前。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每个Run触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-07
         thread_id = self._thread_id_from_input(input_data)
         agui_run_id = str(input_data.get("run_id") or input_data.get("runId") or "")

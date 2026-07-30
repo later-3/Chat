@@ -186,6 +186,12 @@ export function useChatAgent({
         }
       },
       onRunFinishedEvent(result) {
+        // DEBUG-BREAKPOINT-NOTE: BP-29
+        // DEBUG-BREAKPOINT-NOTE: 触发: AG-UI流式返回RunFinished事件时触发。
+        // DEBUG-BREAKPOINT-NOTE: 触发: 后端Run完成后，前端收到结束事件回调。
+        // DEBUG-BREAKPOINT-NOTE: 触发: 更新前端状态、清理订阅、触发UI刷新。
+        // DEBUG-BREAKPOINT-NOTE: 触发: 需要浏览器DevTools打开才能命中debugger语句。
+        // DEBUG-BREAKPOINT-NOTE: 频率: 每个Run完成事件触发1次
         debugger; // DEBUG-BREAKPOINT: BP-29
         if (!mounted.current) return;
         if (result.outcome === "interrupt") {
@@ -240,6 +246,11 @@ export function useChatAgent({
   /** 发送Prompt：追加User消息并启动一次AG-UI Run；Workflow选择与控制字段随forwardedProps固化。 */
   const send = useCallback(
     async (content: string, control?: SessionRunControl, workflow?: ChatWorkflowDispatch) => {
+      // DEBUG-BREAKPOINT-NOTE: BP-28
+      // DEBUG-BREAKPOINT-NOTE: 触发: 前端发送AG-UI请求时触发。
+      // DEBUG-BREAKPOINT-NOTE: 触发: App.submit（BP-27）之后，此方法实际构造AG-UI Client请求并发起流式订阅。
+      // DEBUG-BREAKPOINT-NOTE: 触发: 需要浏览器DevTools打开才能命中debugger语句。
+      // DEBUG-BREAKPOINT-NOTE: 频率: 用户每次发送消息触发1次
       debugger; // DEBUG-BREAKPOINT: BP-28
       const text = content.trim();
       if (!text || agent.isRunning || pendingReview) return;
