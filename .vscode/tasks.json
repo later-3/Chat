@@ -136,6 +136,58 @@
         "reveal": "always",
         "panel": "shared"
       }
+    },
+    {
+      "label": "chat: inject debug breakpoints",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "${workspaceFolder}/scripts/setup-debug-breakpoints.py"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "chat: clean debug breakpoints",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "${workspaceFolder}/scripts/setup-debug-breakpoints.py",
+        "--clean"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "chat: prepare full stack with breakpoints",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "chat: cleanup all",
+        "chat: disable pi source debug",
+        "chat: inject debug breakpoints"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "chat: cleanup full stack with breakpoints",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "chat: cleanup all",
+        "chat: clean debug breakpoints"
+      ],
+      "problemMatcher": []
     }
   ]
 }

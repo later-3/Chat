@@ -117,18 +117,29 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
         self._checkpoint_storage_factory = checkpoint_storage_factory
         self._waiting_nodes: dict[str, str] = {}
 
+    # BP-07 触发：MAF Workflow执行入口。Worker按endpoint_key从Registry取到Runner后调用。
+    # 用Product Run生命周期包住MAF执行流程。
+    # 跨边界：Worker->MAF节点边界。
+    # 对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#8
     async def run(self, input_data: dict[str, Any]):
         """驱动一轮AG-UI Run，并把MAF事件投影为Product事实。
+
+        MAF Workflow执行入口。Worker按endpoint_key从Registry取到Runner后调用。
+        用Product Run生命周期包住MAF执行流程。
 
         ``run()``内部步骤R1准备/恢复Product Run与Checkpoint；R2流式处理MAF事件、节点Trace
         和候选文本；R3处理中断/失败/成功终态。这里的R1-R3不是主Workflow学习阶段S1-S7。
         成功提交Message时，ProductSessionService在同一事务
         物化机器版和人读版双Trace；等待审批时Run保持活动且不提前生成终态报告。
+
+        跨边界：Worker->MAF节点边界。
+        对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#8
         """
         # DEBUG-BREAKPOINT-NOTE: BP-07
-        # DEBUG-BREAKPOINT-NOTE: 触发: MAF Workflow开始执行时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: ProductAwareWorkflow包装MAF执行流程，将Product Run生命周期与MAF图解耦，最后调用完成门。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 这是Workflow层的入口——prepare_agui_run之后、各Executor之前。
+        # DEBUG-BREAKPOINT-NOTE: 触发: MAF Workflow执行入口。
+        # DEBUG-BREAKPOINT-NOTE: 触发: Worker按endpoint_key从Registry取到Runner后调用此方法。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 它用Product Run生命周期包住MAF执行流程，开始时调用BP-04幂等复核，结束时调用BP-06完成门。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：从断点停住到知道来路和下一跳#8（Worker->MAF节点边界）。
         # DEBUG-BREAKPOINT-NOTE: 频率: 每个Run触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-07
         thread_id = self._thread_id_from_input(input_data)

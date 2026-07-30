@@ -6,6 +6,15 @@
 **输入族**：需要实际查看已绑定Repository内容，但明确禁止修改  
 **自动证据**：`backend/tests/test_continuous_pi_readonly.py::test_continuous_workflow_runs_pi_readonly_in_one_product_run`
 
+**教材成熟度**：L2；有当前Workflow 1.8.0、真实pi子进程和真实只读Tool的同一Run证据，并有受控恢复合同。
+
+## 0. 本场景在公共主干哪里分叉
+
+共用理解、Plan和授权链到节点24，Chat只依据已批准RunSpec选择`pi_readonly`，再走节点30–31。此后跨到Node
+pi子进程，所以Python Call Stack不会包含pi内部栈；用同一Product Run下的ToolExecution ID、pi Session ID和
+JSONL-RPC request ID接回。pi负责Agent/Tool循环，MAF负责节点调度，Chat负责Provider/Tool Gateway、Snapshot
+围栏、最小权限和结果提交。
+
 ## 1. 示例输入和前置状态
 
 `请用工具实际读取README第一行并告诉我标题；只读，不要修改文件。`
@@ -89,9 +98,58 @@ PiReadonlyResultAssemblyExecutor
 - 通过：同一Product Run、受限Tool、真实读取证据、0文件写入、每次模型边界独立治理。
 - 失败：pi继承全局Session/认证；允许RunSpec外Tool；只凭模型声称“已读取”；读取后改变仓库。
 
+## 8. 当前真实Run的跨进程实值
+
+2026-07-29当前版本运行不是Fake pi Fixture：
+
+| 对象 | 实际值 |
+|---|---|
+| Product Run | `4818dd72-af27-45a1-88bc-c3ff6dff5c3b`，`succeeded` |
+| 输入 | 实际读取Chat仓库`backend`目录，不允许按文档猜 |
+| Workflow | `continuous-collaboration 1.8.0`，路由`pi_readonly` |
+| ToolExecution | `1fc8a011-8ac0-4f02-8af9-9409516c9cbf` |
+| mode/process | `readonly` / `finished` |
+| Repository Snapshot | `8601c70a-d2e8-4f1b-a589-ed18ee010bdc` |
+| pi内部 | 4次模型调用、3次内部Tool调用，耗时54806ms |
+| 整个Product Run | 7个ModelCallDraft、173条Trace Event |
+| Hash前缀 | input `f5459fe8ff92`、capability `fe804808c7f5`、result `b0249d15e47a` |
+
+这些计数是observe级实测，不是下次运行必须相同的合同；固定不变量是同一Run、只读Profile、Snapshot绑定、
+每次模型边界治理和0写操作。
+
+```mermaid
+sequenceDiagram
+  participant WF as Python/MAF Workflow
+  participant PG as Chat pi Gateway
+  participant PI as Node pi子进程
+  participant TG as Chat只读Tool Gateway
+  WF->>PG: ToolExecution + RunSpec + Snapshot
+  PG->>PI: JSONL-RPC prompt
+  PI->>PG: provider_call
+  PG-->>PI: 经ModelCall治理的结果
+  PI->>TG: ls/read/grep/find
+  TG-->>PI: Snapshot内受限结果
+  PI-->>WF: final result + metrics/hash
+```
+
+## 9. 断点导航与安全修改
+
+| 断点 | 进程 | 进入前 | 看什么 | 下一跳 |
+|---|---|---|---|---|
+| `ExecutionRouteExecutor` | Python Worker | RunSpec已批准 | 3路Case actual | pi readonly dispatch |
+| `PiReadonlyDispatchExecutor` | Python Worker | ToolExecution将创建 | run/job/spec/snapshot id | PiRuntimeManager |
+| `PiRuntimeManager.start` | Python | 安全会话已准备 | argv、RPC id；不看凭据 | Node pi |
+| `PiExecution.accept_provider_call` | Python Gateway | pi请求模型 | call ordinal/capability | ModelCall审批 |
+| `ReadonlyToolService` | Python Gateway | pi请求Tool | name/path/snapshot | 返回受限结果 |
+| `PiReadonlyResultAssemblyExecutor` | Python Worker | pi终态 | result hash/counts | Summary |
+
+源码：[`execution_dispatch/workflow.py`](../../../backend/app/execution_dispatch/workflow.py)、
+[`pi_gateway.py`](../../../backend/app/pi_gateway.py)、[`readonly_tools/service.py`](../../../backend/app/readonly_tools/service.py)。
+新增只读Tool时必须先定义路径规范化、结果上限、敏感文件拒绝、Snapshot新鲜度和Operation/Trace投影，不要只把名字
+加进allowlist。
+
 ## 掌握验收
 
 1. pi Session、ToolExecution、Product Run分别保存什么？
 2. 为什么只读Tool也要绑定Snapshot？
 3. pi内部模型调用为什么不能一次性放行整轮？
-

@@ -5,7 +5,10 @@
 或 debugger;（TypeScript）语句，带唯一标记注释。提供 --clean 选项恢复源码。
 
 使用：
-    python scripts/setup-debug-breakpoints.py           # 注入断点
+    python scripts/setup-debug-breakpoints.py --profile core  # 清理旧组合，只注入小白公共主干
+    python scripts/setup-debug-breakpoints.py --profile sc01  # 清理旧组合，只注入SC01组合
+    python scripts/setup-debug-breakpoints.py --profile sc02  # 清理旧组合，只注入SC02三次模型治理组合
+    python scripts/setup-debug-breakpoints.py           # 兼容旧行为：注入全部断点
     python scripts/setup-debug-breakpoints.py --clean    # 清理全部断点
     python scripts/setup-debug-breakpoints.py --list     # 列出所有断点配置
     python scripts/setup-debug-breakpoints.py --status   # 查看注入状态
@@ -239,14 +242,47 @@ def clean_file(file_path: Path) -> int:
     return removed
 
 
-def cmd_inject(config: dict) -> int:
-    """注入所有断点。"""
-    breakpoints = config["breakpoints"]
+def _profile_breakpoints(config: dict, profile: str) -> list[dict]:
+    """按配置顺序返回profile包含的断点；未知profile/ID立即失败。"""
+
+    profiles = config.get("profiles", {})
+    if profile not in profiles:
+        available = ", ".join(sorted(profiles)) or "<无>"
+        raise ValueError(f"未知断点组合: {profile}；可用组合: {available}")
+    selected_ids = list(profiles[profile])
+    if len(selected_ids) != len(set(selected_ids)):
+        raise ValueError(f"断点组合包含重复ID: {profile}")
+    by_id = {bp["id"]: bp for bp in config["breakpoints"]}
+    unknown = [bp_id for bp_id in selected_ids if bp_id not in by_id]
+    if unknown:
+        raise ValueError(f"断点组合引用未知ID: {profile}: {', '.join(unknown)}")
+    return [by_id[bp_id] for bp_id in selected_ids]
+
+
+def _clean_configured_files(config: dict) -> int:
+    """删除所有已配置文件中的旧注入标记，供profile切换。"""
+
+    files = sorted({ROOT / bp["file"] for bp in config["breakpoints"]})
+    return sum(clean_file(file_path) for file_path in files)
+
+
+def cmd_inject(config: dict, *, profile: str | None = None) -> int:
+    """注入全部断点，或先清理再只注入指定组合。"""
+
+    breakpoints = (
+        _profile_breakpoints(config, profile)
+        if profile is not None
+        else config["breakpoints"]
+    )
+    if profile is not None:
+        removed = _clean_configured_files(config)
+        print(f"已切换到断点组合 {profile}：先清理 {removed} 行旧注入。")
     success_count = 0
     skip_count = 0
     fail_count = 0
 
-    print(f"开始注入 {len(breakpoints)} 个断点...\n")
+    label = f"组合 {profile}" if profile is not None else "全部"
+    print(f"开始注入 {label} {len(breakpoints)} 个断点...\n")
     for bp in breakpoints:
         file_path = ROOT / bp["file"]
         ok, msg = inject_breakpoint(file_path, bp)
@@ -294,6 +330,12 @@ def cmd_clean(config: dict) -> int:
 
 def cmd_list(config: dict) -> int:
     """列出所有断点配置及触发时机。"""
+    profiles = config.get("profiles", {})
+    if profiles:
+        print("可用断点组合:")
+        for name, bp_ids in sorted(profiles.items()):
+            print(f"  {name}: {', '.join(bp_ids)}")
+        print()
     breakpoints = config["breakpoints"]
     print(f"共 {len(breakpoints)} 个断点:\n")
     for bp in breakpoints:
@@ -351,6 +393,11 @@ def main() -> int:
     group.add_argument("--clean", action="store_true", help="清理所有断点，恢复源码")
     group.add_argument("--list", action="store_true", help="列出所有断点配置")
     group.add_argument("--status", action="store_true", help="查看注入状态")
+    group.add_argument(
+        "--profile",
+        metavar="NAME",
+        help="先清理旧组合，再只注入指定断点组合（core/sc01/model/pi/recovery/hot）",
+    )
 
     args = parser.parse_args()
 
@@ -369,7 +416,11 @@ def main() -> int:
         return cmd_list(config)
     if args.status:
         return cmd_status(config)
-    return cmd_inject(config)
+    try:
+        return cmd_inject(config, profile=args.profile)
+    except ValueError as exc:
+        print(f"错误: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

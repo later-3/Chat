@@ -540,12 +540,24 @@ class PiExecution:
     def model_call_count(self) -> int:
         return self._model_call_count
 
+    # BP-25 触发：pi执行实例启动。每次pi agent工具调用时创建新的PiExecution实例并启动。
+    # 在pi子进程上建立会话、准备工具环境。
+    # 跨边界：PiRuntimeManager->pi子进程会话与RPC通道的启动点。
+    # 对应文档：项目掌握/执行层与pi运行时/从用户点击发送到pi执行的完整链路.md
     async def start(self) -> None:
-        """创建新pi Session和临时配置，再启动禁用重试及未治理扩展的RPC。"""
+        """pi执行实例启动。每次pi agent工具调用时创建新的PiExecution实例并启动。
+
+        在pi子进程上建立会话、准备工具环境。创建新pi Session和临时配置，再启动禁用重试及
+        未治理扩展的RPC。
+
+        跨边界：PiRuntimeManager->pi子进程会话与RPC通道的启动点。
+        对应文档：项目掌握/执行层与pi运行时/从用户点击发送到pi执行的完整链路.md
+        """
         # DEBUG-BREAKPOINT-NOTE: BP-25
-        # DEBUG-BREAKPOINT-NOTE: 触发: pi执行实例启动时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: pi执行实例启动。
         # DEBUG-BREAKPOINT-NOTE: 触发: 每次pi agent工具调用时创建新的PiExecution实例并启动。
         # DEBUG-BREAKPOINT-NOTE: 触发: 在pi子进程上建立会话、准备工具环境。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：从用户点击发送到pi执行的完整链路。
         # DEBUG-BREAKPOINT-NOTE: 频率: 每次pi工具调用触发1次（仅pi启用时）
         breakpoint()  # DEBUG-BREAKPOINT: BP-25
         if not self.runtime.available or self.runtime.node_path is None or self.runtime.cli_path is None:
@@ -711,13 +723,25 @@ class PiExecution:
         await self._command("set_auto_retry", {"enabled": False})
         await self._command("prompt", {"message": self.task})
 
+    # BP-26 触发：pi接受Provider调用请求。pi agent内部调用模型时，通过此方法接收请求。
+    # 这是pi侧的模型调用入口，对应Chat侧的GovernedSemanticAgentExecutor.prepare，但在pi子进程内执行。
+    # 跨边界：pi子进程->Chat治理网关（模型调用边界）的入口。
+    # 对应文档：项目掌握/执行层与pi运行时/从用户点击发送到pi执行的完整链路.md
     async def accept_provider_call(self, protocol: str, body: bytes) -> PiGatewayCall:
-        """接收pi准备发送的精确Provider字节，挂起为MAF可治理的模型边界。"""
+        """pi接受Provider调用请求。pi agent内部调用模型时，通过此方法接收请求。
+
+        这是pi侧的模型调用入口，对应Chat侧的GovernedSemanticAgentExecutor.prepare，但在pi子进程内执行。
+        接收pi准备发送的精确Provider字节，挂起为MAF可治理的模型边界。
+
+        跨边界：pi子进程->Chat治理网关（模型调用边界）的入口。
+        对应文档：项目掌握/执行层与pi运行时/从用户点击发送到pi执行的完整链路.md
+        """
         # DEBUG-BREAKPOINT-NOTE: BP-26
-        # DEBUG-BREAKPOINT-NOTE: 触发: pi接受Provider调用时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: pi agent内部调用模型时，通过此方法接收Provider请求。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 这是pi侧的模型调用入口——对应Chat侧的GovernedSemanticAgentExecutor，但在pi子进程内执行。
-        # DEBUG-BREAKPOINT-NOTE: 频率: pi agent每次内部模型调用触发1次（仅pi启用时）
+        # DEBUG-BREAKPOINT-NOTE: 触发: pi接受Provider调用请求。
+        # DEBUG-BREAKPOINT-NOTE: 触发: pi agent内部调用模型时，通过此方法接收请求。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 这是pi侧的模型调用入口，对应Chat侧的BP-13，但在pi子进程内执行。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：从用户点击发送到pi执行的完整链路。
+        # DEBUG-BREAKPOINT-NOTE: 频率: pi每次内部模型调用触发1次（仅pi启用时）
         breakpoint()  # DEBUG-BREAKPOINT: BP-26
         if self._closed:
             raise PiRuntimeError("pi执行已经结束", code="pi_execution_closed")

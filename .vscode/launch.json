@@ -126,6 +126,16 @@
       "preLaunchTask": "chat: prepare normal full stack",
       "stopAll": true,
       "postDebugTask": "chat: cleanup all"
+    },
+    {
+      "name": "Chat Full Stack (with Breakpoints)",
+      "configurations": [
+        "Chat Backend (MAF + FastAPI)",
+        "Chat Frontend (React + Vite)"
+      ],
+      "preLaunchTask": "chat: prepare full stack with breakpoints",
+      "stopAll": true,
+      "postDebugTask": "chat: cleanup full stack with breakpoints"
     }
   ]
 }

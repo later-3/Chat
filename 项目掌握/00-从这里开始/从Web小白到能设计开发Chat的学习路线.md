@@ -78,10 +78,13 @@ MAF Workflow、Worker、pi、Tool、Evidence和恢复；能判断架构是否合
 **当前入口**：
 
 - [Uvicorn、FastAPI与Chat后端基础](./Uvicorn-FastAPI与Chat后端基础.md)。
-- React/TypeScript前端基础专题：**待补L1/L2**。
+- [配置怎样变成整个后端对象图](./配置怎样变成整个后端对象图.md)：Settings、组合根和Lifespan。
+- [TypeScript、React与Chat前端基础](./TypeScript-React与Chat前端基础.md)：语言、组件、Props/State/Hook、组件树和重绘。
+- [Vite、浏览器API与Chat网络调试基础](./Vite-浏览器API与Chat网络调试基础.md)：Vite、DOM/Event、Fetch/Abort、Storage、AG-UI流和DevTools。
+- [Home、App Shell与Workbench怎样协作](../前端交互/Home-AppShell与Workbench怎样协作.md)：Feature和浏览器/后端状态边界。
 
 **过关**：能把`GET /api/live`从原始HTTP请求追到FastAPI路由函数，再追到JSON返回；
-能把React一次点击追到State更新和页面重绘（前端专题完成后）。
+能把React一次点击从表单事件追到`App.submit`、`useChatAgent.send`、HTTP/AG-UI事件、State更新和页面重绘。
 
 ### B2：一条Chat消息的纵向产品链
 
@@ -120,6 +123,9 @@ Runtime Job、Worker、MAF节点、Journal和页面找到同一轮的对应证�
 - [Chat总体架构与一次点击的七层链路](../架构与模块/Chat总体架构与一次点击的七层链路.md)。
 - [11个产品模块的职责与代码落点](../架构与模块/11个产品模块的职责与代码落点.md)。
 - [核心对象词典](../架构与模块/核心对象词典-谁创建谁保存谁消费.md)。
+- [Project、Work、Plan、Action、Note与Memory为什么分开](../Product%20Harness与协作对象/Project-Work-Plan-Action-Note与Memory为什么分开.md)。
+- [Intent到Plan](../协作理解与执行治理/Intent-澄清-协议-StepInput与Plan怎样连接.md)和
+  [ExecutionDraft到RunSpec](../协作理解与执行治理/ExecutionDraft-RunSpec-HITL-Decision与Grant怎样连接.md)。
 
 **过关**：面对“给Session加标签”或“把结果发到Telegram”，能先说出事实应归哪个模块、
 不能放在哪里、会穿过哪些合同，而不是第一反应就在`App.tsx`或大Service中加代码。
@@ -137,7 +143,13 @@ Runtime Job、Worker、MAF节点、Journal和页面找到同一轮的对应证�
 5. Execution Workspace、Operation Ledger、Artifact、Validation、Evidence、Claim和Result Commit。
 6. 断线、进程退出、超时、结果未知、幂等、对账和人工处置。
 
-**当前入口**：39节点总览、S1–S7七篇专题、执行层与pi运行时专题、SC08–SC15。
+**当前入口**：
+
+- 39节点总览和S1–S7七篇专题。
+- [Agent、ModelCall、Workflow与Checkpoint](../Agent与MAF运行时/Agent-ModelCall-Workflow与Checkpoint怎样分工.md)。
+- [Run、Worker、Cursor、Tool与Workspace](../运行执行与证据/Run-Worker-Cursor-Tool与Workspace怎样恢复.md)。
+- [Artifact、Evidence、Validation、Claim与Result Commit](../运行执行与证据/Artifact-Evidence-Validation-Claim与ResultCommit怎样证明完成.md)。
+- 执行层与pi运行时专题，以及SC08–SC15。
 
 **过关**：能在运行前预测一个pi隔离编辑场景会创建哪些Run/Job/Tool/Operation/
 Artifact/Evidence对象；能解释为什么“pi说完成”、“Tool返回0”和“Work已完成”是3个不同事实。
@@ -153,6 +165,11 @@ Artifact/Evidence对象；能解释为什么“pi说完成”、“Tool返回0�
 3. 写“改动影响矩阵”：Schema、Workflow Definition、Approval Hash、AG-UI事件、恢复、Trace、安全和UI。
 4. 按风险选择单元、合同、状态机、数据库、故障、真模型和浏览器测试。
 5. 用无行为重构规则治理大文件，不用机械分层和空接口制造假整洁。
+
+**当前入口**：
+
+- [SQLite、Alembic、事务、CAS、幂等与Outbox](../工程基础/SQLite-Alembic-事务-CAS幂等与Outbox怎样配合.md)。
+- [测试金字塔、质量门与安全修改](../工程基础/测试金字塔-质量门与安全修改怎样配合.md)。
 
 **过关**：
 
@@ -199,11 +216,11 @@ flowchart LR
 | 能力级 | 当前状态 | 不能冒充的完成 |
 |---|---|---|
 | B0 运行基础 | 已有L1/L2入口 | 不表示已懂React/FastAPI框架内部 |
-| B1 框架基础 | Uvicorn/FastAPI本轮补齐；React专题待补 | 不表示已能改产品状态 |
-| B2 纵向产品链 | 总地图、对象词典、SC已有一部分L1/L2 | 不表示27个学习单元都完成 |
-| B3 架构与模块 | 7层与11模块已有L1，还需继续用功能练习验证 | 不表示当前目录已经完美 |
-| B4 执行与恢复 | S1–S7、pi和SC08–SC15有一部分材料 | 不表示通用Tool对账或跨进程pi恢复已实现 |
-| B5 安全改动 | 工程规范和质量门已有；面向你的综合修改实验待补 | 不以自动门存在冒充你已能独立开发 |
+| B1 框架基础 | Uvicorn/FastAPI、配置/组合根、React/TypeScript/Vite/浏览器API、App Shell已有L1/L2入口 | 不表示已能改产品状态 |
+| B2 纵向产品链 | 总地图、对象词典、公共调用栈和15张SC均有可执行入口 | 不表示每张SC都是L2真实Run |
+| B3 架构与模块 | 7层、11模块、Harness/Intent/执行治理专题已有L1/L2入口 | 不表示当前目录已经完美 |
+| B4 执行与恢复 | Agent/MAF、Run/Worker/Tool、Evidence专题和SC08–SC15已补 | 通用Tool对账、任意Workflow/活动pi跨进程恢复仍未实现 |
+| B5 安全改动 | Store/事务/Outbox和测试质量专题已补L1/L2/L3训练入口 | 仍需你亲手完成纵向功能和故障实验才算个人过关 |
 
 ## 6. 建议的实际学习节奏
 
@@ -211,11 +228,12 @@ flowchart LR
 
 1. 先完成B0的12道验收题。
 2. 再学Uvicorn/FastAPI，亲手追`/api/live`、`/api/sessions`和`/api/agent`3种请求。
-3. 补React/TypeScript基础后，追一次“点击→Hook→HTTP→State→重绘”。
+3. 学完React/TypeScript和Vite/浏览器API两课，亲手追一次“点击→Hook→HTTP→State→重绘”。
 4. 用SC01建立第一条完整Product Run数据链。
 5. 回到7层、11模块和对象词典，此时它们应该是对真实经验的压缩，而不是待背的名词。
-6. 按S1–S7和SC02–SC15继续到执行、Evidence和恢复。
-7. 最后用1个低风险纵向功能与1个故障实验做B5验收。
+6. 依次读Harness、Intent/治理、Agent/MAF、Run/Worker和Evidence专题，再用SC02掌握三次模型治理。
+7. 按SC03–SC15的`教材成熟度`复跑；L1+场景先按受控数据验证，不能自称看过真实Run。
+8. 最后用1个低风险纵向功能与1个故障实验做B5验收。
 
 ## 关键文件
 
@@ -229,3 +247,4 @@ flowchart LR
 ## 补充记录
 
 - 2026-07-30：根据“不只启动系统，而要从Web零基础到掌握执行层并能审架构”的要求，建立B0–B5能力路线。
+- 2026-07-30：补齐配置、App Shell、Harness、Intent、执行治理、Agent、执行Runtime、Evidence、Store和测试共10个横向专题，并将15张SC的真实、受控和缺口证据接入路线。

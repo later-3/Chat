@@ -138,16 +138,33 @@ class ExecutionWorker:
                 record.heartbeat_at = utc_now()
                 record.stopped_at = utc_now()
 
+    # BP-02 触发：Worker轮询热点。应用Lifespan启动的后台asyncio任务反复调用此方法，
+    # 与用户是否发消息无关。应用一启动就开始轮询：没有Job时claim返回None，sleep 0.08秒
+    # 后再调；有Job时进入_execute_claim。调试刚启动就会频繁命中，即使还没发消息。
+    # 跨边界：HTTP接纳->Worker（Runtime Job队列）的下一段栈。
+    # 对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#6
     async def run_once(self) -> bool:
-        """执行一轮：先维护（Lease对账/心跳）再原子领取1个Job并执行；空闲返回False。"""
+        """Worker轮询热点。由应用Lifespan启动的后台asyncio任务反复调用，与用户是否发消息无关。
 
+        应用一启动就开始轮询：没有Job时claim返回None，sleep 0.08秒后再调；
+        有Job时进入_execute_claim。所以调试刚启动就会频繁命中，即使还没发消息。
+        初学者应跳过此断点，改用BP-03 _execute_claim（只在真正领取到Job时才触发）。
+
+        跨边界：HTTP接纳->Worker（Runtime Job队列）的下一段栈。
+        对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#6
+
+        Returns:
+            True: 处理了一个Job；
+            False: 空闲（队列无Job）。
+        """
         # DEBUG-BREAKPOINT-NOTE: BP-02
-        # DEBUG-BREAKPOINT-NOTE: 触发: Worker主循环每轮执行时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 先做Lease对账/心跳维护，再尝试原子领取1个Job。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 注意：即使没有待处理Job也会触发（空闲时claim返回None后直接返回False）。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 在Chat Full Stack配置下Worker内嵌启动，后台循环会定期调用此方法，因此断点会频繁命中。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 如果只想在有Job时暂停，请改用BP-03。
-        # DEBUG-BREAKPOINT-NOTE: 频率: Worker循环每轮1次，空闲时也触发（频繁）
+        # DEBUG-BREAKPOINT-NOTE: 触发: Worker轮询热点。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 此函数由应用Lifespan启动的后台asyncio任务反复调用，与用户是否发消息无关。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 应用一启动就开始轮询：没有Job时claim返回None，await asyncio.sleep(0.08)后再调；有Job时进入_execute_claim。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 所以调试刚启动就会频繁命中，即使你还没发消息。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 初学者应跳过此断点，改用BP-03 _execute_claim。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：从断点停住到知道来路和下一跳#6（标注'初学者不要下此热点断点'）。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 应用启动后持续触发，约每0.08秒1次（频繁）
         breakpoint()  # DEBUG-BREAKPOINT: BP-02
         await self._maintain_runtime()
         claim = await self.runtime.claim_one(
@@ -201,17 +218,29 @@ class ExecutionWorker:
                         time.perf_counter() - started,
                     )
 
+    # BP-03 触发：Worker领取到Job后的执行主循环入口。持有Lease、逐事件写Journal、
+    # 处理取消/中断/终态门。只有Runtime Job队列里有pending Job且被当前Worker领取时才命中。
+    # 跨边界：HTTP接纳->Worker（数据库队列）的下一段栈。
+    # 对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#7
     async def _execute_claim(self, claim: ClaimedRuntime) -> None:
         """Job主循环：启动心跳，逐事件写Journal，处理取消命令/中断/终态门。
 
+        Worker领取到Job后的执行主循环入口。持有Lease、逐事件写Journal、处理取消/中断/终态门。
+        只有Runtime Job队列里有pending Job且被当前Worker领取时才命中；空闲Worker不会进入此方法。
+
         取消命令按“产品已取消/结果未知”两类收敛且不自动重试；HITL中断伪装成的
         RUN_FINISHED不算终态；真正终态前先过``_require_product_terminal``提交门。
+
+        跨边界：HTTP接纳->Worker（数据库队列）的下一段栈。
+        对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#7
         """
 
         # DEBUG-BREAKPOINT-NOTE: BP-03
-        # DEBUG-BREAKPOINT-NOTE: 触发: Worker成功领取到一个Job并开始执行时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 这是Job主循环入口：启动心跳、逐事件写Journal、处理取消/中断/终态门。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 只有当队列中有pending Job且被当前Worker领取时才触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: Worker领取到Job后的执行主循环入口。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 此函数持有Lease、逐事件写Journal、处理取消/中断/终态门。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 只有Runtime Job队列里有pending Job且被当前Worker领取时才命中。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 这是HTTP接纳->Worker跨数据库边界的下一段栈。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：从断点停住到知道来路和下一跳#7。
         # DEBUG-BREAKPOINT-NOTE: 频率: 每个待处理Job触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-03
         heartbeat_task: asyncio.Task[None] | None = None

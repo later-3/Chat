@@ -147,6 +147,10 @@ flowchart LR
 
 ## 5. 前端Feature地图：页面是投影和操作入口
 
+第一次读下面这些文件前，先用[TypeScript、React与Chat前端基础](./TypeScript-React与Chat前端基础.md)补组件、
+Props/State/Hook，再用[Vite、浏览器API与Chat网络调试基础](./Vite-浏览器API与Chat网络调试基础.md)补模块加载、
+DOM/Event、Fetch/Storage、AG-UI流和DevTools；本节只负责文件责任地图，不重复两门基础课。
+
 | 物理目录/文件 | 主要责任 | 对应后端/协议 | 它不拥有 |
 |---|---|---|---|
 | [`main.tsx`](../../frontend/src/main.tsx) | 把React App挂到`index.html#root` | Vite/浏览器 | 任何Product事实 |

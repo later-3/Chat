@@ -1,6 +1,6 @@
 {
-  "schema_version": 2,
-  "description": "调试实战文档中描述的断点符号清单。由 setup-debug-breakpoints.py 读取，在源码函数体首行注入 breakpoint()/debugger; 语句。运行 python scripts/setup-debug-breakpoints.py 注入，加 --clean 恢复。trigger_timing 字段说明每个断点的触发时机和条件。",
+  "schema_version": 4,
+  "description": "调试断点清单。由 setup-debug-breakpoints.py 读取，在源码函数体首行注入 breakpoint()/debugger; 语句。运行 python scripts/setup-debug-breakpoints.py 注入，加 --clean 恢复。trigger_timing 字段对齐项目掌握文档的术语和概念。",
   "markers": {
     "python": "# DEBUG-BREAKPOINT:",
     "typescript": "// DEBUG-BREAKPOINT:"
@@ -14,7 +14,7 @@
       "class": null,
       "line_hint": 58,
       "doc_source": "第1课#3, 第2课#5, 场景实验室#4",
-      "trigger_timing": "前端发送AG-UI请求到达后端/api/agent端点时触发。用户点击发送按钮→前端AG-UI Client发起HTTP流式请求→命中此函数。这是后端处理用户消息的第一个入口。",
+      "trigger_timing": "HTTP接纳入口。前端AG-UI Client经HTTP POST到达此端点。此函数完成3件事：调用prepare_agui_run建Product事实、调用enqueue建Runtime Job、开启SSE订阅Journal。这是浏览器->FastAPI跨边界的第一段栈。对应文档：从断点停住到知道来路和下一跳#3。",
       "frequency": "每条用户消息触发1次"
     },
     {
@@ -25,8 +25,8 @@
       "class": "ExecutionWorker",
       "line_hint": 141,
       "doc_source": "第2课#8",
-      "trigger_timing": "Worker主循环每轮执行时触发。先做Lease对账/心跳维护，再尝试原子领取1个Job。注意：即使没有待处理Job也会触发（空闲时claim返回None后直接返回False）。在Chat Full Stack配置下Worker内嵌启动，后台循环会定期调用此方法，因此断点会频繁命中。如果只想在有Job时暂停，请改用BP-03。",
-      "frequency": "Worker循环每轮1次，空闲时也触发（频繁）"
+      "trigger_timing": "Worker轮询热点。此函数由应用Lifespan启动的后台asyncio任务反复调用，与用户是否发消息无关。应用一启动就开始轮询：没有Job时claim返回None，await asyncio.sleep(0.08)后再调；有Job时进入_execute_claim。所以调试刚启动就会频繁命中，即使你还没发消息。初学者应跳过此断点，改用BP-03 _execute_claim。对应文档：从断点停住到知道来路和下一跳#6（标注'初学者不要下此热点断点'）。",
+      "frequency": "应用启动后持续触发，约每0.08秒1次（频繁）"
     },
     {
       "id": "BP-03",
@@ -36,7 +36,7 @@
       "class": "ExecutionWorker",
       "line_hint": 196,
       "doc_source": "第1课#5, 第2课#9, 场景实验室#5",
-      "trigger_timing": "Worker成功领取到一个Job并开始执行时触发。这是Job主循环入口：启动心跳、逐事件写Journal、处理取消/中断/终态门。只有当队列中有pending Job且被当前Worker领取时才触发。",
+      "trigger_timing": "Worker领取到Job后的执行主循环入口。此函数持有Lease、逐事件写Journal、处理取消/中断/终态门。只有Runtime Job队列里有pending Job且被当前Worker领取时才命中。这是HTTP接纳->Worker跨数据库边界的下一段栈。对应文档：从断点停住到知道来路和下一跳#7。",
       "frequency": "每个待处理Job触发1次"
     },
     {
@@ -47,8 +47,8 @@
       "class": "ProductSessionService",
       "line_hint": 672,
       "doc_source": "第1课#4, 第2课#6, 第3课#第2层, 场景实验室#4",
-      "trigger_timing": "后端收到AG-UI请求后，准备创建Product Run时触发。此方法创建Message/Interaction/Run/Attempt等Product事实，确保输入先于执行落库。是产品层接纳用户输入的门控。",
-      "frequency": "每条用户消息触发1次"
+      "trigger_timing": "Product Run的创建与幂等复核入口。第1次由BP-01 durable_agent_endpoint调用：校验并创建Message/Interaction/Run/Attempt等Product事实。第2次由BP-07 ProductAwareWorkflow.run调用：按相同AG-UI runId与请求Hash幂等复用原Run，不是重复创建。对应文档：从断点停住到知道来路和下一跳#4a和#4b。",
+      "frequency": "新Run触发2次：接纳创建1次+Worker复核1次"
     },
     {
       "id": "BP-05",
@@ -58,8 +58,8 @@
       "class": "ProductSessionService",
       "line_hint": 945,
       "doc_source": "第2课#7",
-      "trigger_timing": "恢复一个已有的Run时触发。场景：断线重连、中断后续传、或前端重新订阅已有Run。不是每次发新消息都会触发——只在resume语义时命中。",
-      "frequency": "仅在恢复已有Run时触发（条件性）"
+      "trigger_timing": "AG-UI请求携带Resume/interrupt语义并接回活动Product Run时触发。普通SSE断线、Cursor回放或前端重新订阅Journal不经过此方法。不能把传输重连与Workflow Resume混用。对应文档：Run-Worker-Cursor-Tool与Workspace怎样恢复。",
+      "frequency": "仅AG-UI/Product Run恢复语义触发（条件性）"
     },
     {
       "id": "BP-06",
@@ -69,8 +69,8 @@
       "class": "ProductSessionService",
       "line_hint": 1132,
       "doc_source": "第2课#11, 场景实验室#8",
-      "trigger_timing": "Product Run完成时触发（正常结束或失败）。在事务内完成Run状态、消息和Trace的物化。这是产品层的最终提交门——Workflow执行完毕后，结果通过此方法写入权威事实。",
-      "frequency": "每个Run结束触发1次"
+      "trigger_timing": "Product Run成功路径的最终提交门。在数据库事务内写Assistant Message、成功终态、释放Session、写双Trace。失败/放弃有各自的收敛方法，不走此处。对应文档：从断点停住到知道来路和下一跳#10（MAF->Product提交边界）。",
+      "frequency": "每个成功Run触发1次"
     },
     {
       "id": "BP-07",
@@ -80,7 +80,7 @@
       "class": "ProductAwareWorkflow",
       "line_hint": 120,
       "doc_source": "第1课#6, 第2课#10, 第3课#第4层, 场景实验室#6",
-      "trigger_timing": "MAF Workflow开始执行时触发。ProductAwareWorkflow包装MAF执行流程，将Product Run生命周期与MAF图解耦，最后调用完成门。这是Workflow层的入口——prepare_agui_run之后、各Executor之前。",
+      "trigger_timing": "MAF Workflow执行入口。Worker按endpoint_key从Registry取到Runner后调用此方法。它用Product Run生命周期包住MAF执行流程，开始时调用BP-04幂等复核，结束时调用BP-06完成门。对应文档：从断点停住到知道来路和下一跳#8（Worker->MAF节点边界）。",
       "frequency": "每个Run触发1次"
     },
     {
@@ -91,8 +91,8 @@
       "class": "TraceMixin",
       "line_hint": 181,
       "doc_source": "第2课#2节",
-      "trigger_timing": "Executor产生需要Trace的内容时触发。多个Executor继承TraceMixin，每次写入Trace记录（输入、输出、状态变更）时都会调用此方法。",
-      "frequency": "每个Executor的每次Trace写入（频繁）"
+      "trigger_timing": "Trace写入热点。多个Executor继承TraceMixin，每次写入Trace记录时都调用此方法。Trace是可审计的执行日志，记录每一步的输入、输出和状态变更。对应文档：每轮双Trace如何保存、分析与可视化。此断点频繁触发，初学者按需启用。",
+      "frequency": "每次Trace写入触发1次（频繁）"
     },
     {
       "id": "BP-09",
@@ -102,7 +102,7 @@
       "class": "IntakeExecutor",
       "line_hint": 292,
       "doc_source": "第1课#7, 第2课#12, 第3课#第5层①",
-      "trigger_timing": "Workflow的第一个业务节点触发。接收用户输入，将Prompt规范为origin_prompt并构建初始CollaborationState。这是Workflow内业务逻辑的起点。",
+      "trigger_timing": "Workflow第一个业务节点（S1输入接纳）。接收用户输入，把Prompt规范化为origin_prompt并构建初始CollaborationState。对应文档：学习阶段S1-输入接纳与目录级上下文。",
       "frequency": "每条用户消息触发1次"
     },
     {
@@ -113,7 +113,7 @@
       "class": "CandidateContextExecutor",
       "line_hint": 341,
       "doc_source": "第1课#7",
-      "trigger_timing": "从历史记录中筛选候选上下文时触发。IntakeExecutor之后、HarnessDirectoryContextExecutor之前。根据用户输入从历史中检索相关候选。",
+      "trigger_timing": "S1阶段的候选上下文筛选。根据用户输入从历史对话中检索相关候选。在BP-09之后、BP-11之前。对应文档：学习阶段S1-输入接纳与目录级上下文。",
       "frequency": "每条用户消息触发1次"
     },
     {
@@ -124,7 +124,7 @@
       "class": "HarnessDirectoryContextExecutor",
       "line_hint": 407,
       "doc_source": "第1课#8, 第2课#13",
-      "trigger_timing": "组装目录上下文包时触发。候选上下文之后，调用HarnessService.create_context_package（BP-20）组装最终上下文。将候选、目录、Harness信息打包成ContextPackage。",
+      "trigger_timing": "S1阶段的目录上下文组装。把候选上下文、目录信息、Harness配置打包成ContextPackage，供后续模型调用使用。会调用BP-20。对应文档：学习阶段S1-输入接纳与目录级上下文。",
       "frequency": "每条用户消息触发1次"
     },
     {
@@ -135,8 +135,8 @@
       "class": "ProductDecisionExecutor",
       "line_hint": 903,
       "doc_source": "第2课#17",
-      "trigger_timing": "产品决策节点推进时触发。模型调用完成后，在产品层做决策（是否继续、是否需要工具、是否结束回合等）。",
-      "frequency": "每次模型调用后的决策步骤（条件性）"
+      "trigger_timing": "产品决策节点（S6提交决定）。共用于S1/S2/S3/S4/S6多个决定点；每次进入时登记Subject并走不适用、拒绝、自动继续或等待人工。不是只在模型调用之后执行。对应文档：学习阶段S6-响应摘要与提交决定。",
+      "frequency": "每个决策点触发1次，单Run可命中多次"
     },
     {
       "id": "BP-13",
@@ -146,8 +146,8 @@
       "class": "GovernedSemanticAgentExecutor",
       "line_hint": 1325,
       "doc_source": "第2课#14, 第3课#第5层①",
-      "trigger_timing": "准备模型调用时触发。构造ModelCallDraft（包含Provider请求候选），进入ModelCallDraft→Policy→审批/自动继续→Provider流程。这是用户在前端看到的'模型调用审批'的起点——Draft在此构造，然后等待审批。",
-      "frequency": "每次模型调用触发1次（含意图识别、计划、答复等多个子步骤）"
+      "trigger_timing": "语义Agent Executor入口（S2/S3/S4）。先检查确定性短路（如目录查询，命中BP-21则不调用模型）；其他路径才构造ModelCallDraft并进入Policy/审批/Provider治理。用户在前端看到的'模型调用审批'起点就在这里。对应文档：学习阶段S2-意图Project绑定与详情上下文。",
+      "frequency": "每次语义Agent节点调用1次；不等于每次都调用Provider"
     },
     {
       "id": "BP-14",
@@ -157,8 +157,8 @@
       "class": "GovernedSemanticAgentExecutor",
       "line_hint": 1360,
       "doc_source": "第2课#15, 第3课#第5层②",
-      "trigger_timing": "推进模型调用流程时触发。ModelCallDraft审批通过后，发送Provider请求。这里是从'等待审批'到'实际调用模型'的转换点。如果审批未通过则不会到达此处。",
-      "frequency": "每次审批通过的模型调用触发1次"
+      "trigger_timing": "ModelCallDraft治理推进。Draft建立后立即进入：检查Context新鲜度、登记治理对象、评估Policy，然后分deny、auto_continue或MAF人工中断。修订后的新Draft也会再次进入；人工批准后的resolve可直接dispatch。对应文档：ExecutionDraft-RunSpec-HITL-Decision与Grant怎样连接。",
+      "frequency": "每个ModelCallDraft revision推进时触发1次"
     },
     {
       "id": "BP-15",
@@ -168,7 +168,7 @@
       "class": "GovernedSemanticAgentExecutor",
       "line_hint": 1817,
       "doc_source": "第2课#16, 第3课#第5层②",
-      "trigger_timing": "交付模型调用结果时触发。Provider返回结果后，将结果交付给产品层（写Trace、更新状态、准备下一步）。这是模型调用的收尾步骤。",
+      "trigger_timing": "Provider返回结果的交付点。模型返回结果后，把结果交给产品层：写Trace、更新状态、准备下一步。这是模型调用的收尾步骤。对应文档：每轮双Trace如何保存、分析与可视化。",
       "frequency": "每次成功的模型调用触发1次"
     },
     {
@@ -179,8 +179,8 @@
       "class": "ScenarioRouterExecutor",
       "line_hint": 2114,
       "doc_source": "第2课#18, 第3课#第5层③",
-      "trigger_timing": "场景路由判断时触发。根据Intent和当前状态决定走哪个分支（普通对话、项目目录查询、pi工作区编辑等）。调用is_project_catalog_query（BP-21）等契约函数做判断。",
-      "frequency": "每条用户消息触发1次（路由判断）"
+      "trigger_timing": "S3场景路由。根据已接受的Intent/Intent Set和当前状态，调用_evaluate_scenario_route选择目录查询、澄清、规划或默认路径。不直接调用BP-21的原始文本护栏。对应文档：学习阶段S3-场景路由与可选规划。",
+      "frequency": "每条用户消息触发1次"
     },
     {
       "id": "BP-17",
@@ -190,7 +190,7 @@
       "class": "ProjectCatalogExecutor",
       "line_hint": 2152,
       "doc_source": "第2课#19, 第3课#第5层③",
-      "trigger_timing": "项目目录查询响应时触发。仅当ScenarioRouterExecutor路由到项目目录查询分支时才命中。生成目录查询的响应与摘要。",
+      "trigger_timing": "项目目录查询响应。仅当BP-16路由到目录查询分支时才命中。生成目录查询的响应与摘要。对应文档：场景SC01-确定性查询正式Project目录。",
       "frequency": "仅在项目目录查询时触发（条件性）"
     },
     {
@@ -201,7 +201,7 @@
       "class": "TurnSummaryPersistExecutor",
       "line_hint": 2542,
       "doc_source": "第2课#20",
-      "trigger_timing": "持久化回合摘要时触发。每个对话回合结束时，将TurnSummary写入Product DB。在FinalizeExecutor之前执行。",
+      "trigger_timing": "S6回合摘要持久化。每个对话回合结束时，将TurnSummary写入Product DB。在BP-19 FinalizeExecutor之前执行。对应文档：学习阶段S6-响应摘要与提交决定。",
       "frequency": "每个对话回合结束触发1次"
     },
     {
@@ -212,7 +212,7 @@
       "class": "FinalizeExecutor",
       "line_hint": 2651,
       "doc_source": "第2课#21",
-      "trigger_timing": "Workflow最终化时触发。所有业务节点执行完毕后，做最终化处理（清理、状态收敛、准备提交）。之后Workflow返回，控制权回到ProductAwareWorkflow.run的完成门。",
+      "trigger_timing": "S7 Workflow最终化。所有业务节点执行完毕后，做收尾处理（清理、状态收敛、准备提交）。之后Workflow返回，控制权回到BP-06完成门。对应文档：学习阶段S7-产品事实写入与本轮终态。",
       "frequency": "每个Run结束触发1次"
     },
     {
@@ -223,7 +223,7 @@
       "class": "HarnessService",
       "line_hint": 1587,
       "doc_source": "第1课#8",
-      "trigger_timing": "创建上下文包时触发。由HarnessDirectoryContextExecutor.assemble（BP-11）调用。将候选上下文、目录信息、Harness配置打包成ContextPackage，供后续模型调用使用。",
+      "trigger_timing": "创建ContextPackage。由BP-11 HarnessDirectoryContextExecutor.assemble调用。把候选上下文、目录信息、Harness配置打包成ContextPackage，供后续模型调用使用。对应文档：recent_turn_summaries与ContextPackage为什么存在。",
       "frequency": "每条用户消息触发1次"
     },
     {
@@ -234,8 +234,8 @@
       "class": null,
       "line_hint": 335,
       "doc_source": "第3课#第5层①",
-      "trigger_timing": "判断用户输入是否是项目目录查询时触发。由ScenarioRouterExecutor.route（BP-16）调用，作为路由判断的契约函数之一。",
-      "frequency": "每条用户消息触发1次（路由判断时）"
+      "trigger_timing": "确定性Project目录护栏。由BP-13 GovernedSemanticAgentExecutor.prepare在intent节点调用。命中时直接产出目录Intent并保持0模型调用；ScenarioRouter稍后只读取已接受状态。对应文档：场景SC01-确定性查询正式Project目录。",
+      "frequency": "每次进入intent_agent确定性护栏时触发1次"
     },
     {
       "id": "BP-22",
@@ -245,7 +245,7 @@
       "class": null,
       "line_hint": 129,
       "doc_source": "第3课#第5层④",
-      "trigger_timing": "从RunSpec路由时触发。执行分发层根据RunSpec决定使用哪种执行路径（MAF直接执行、pi工作区编辑等）。在Workflow启动前的执行分发阶段。",
+      "trigger_timing": "S4执行路由分发。Execution Dispatch服务根据已批准RunSpec生成执行路由：MAF直接执行、pi工作区编辑等。属于Workflow节点21-24形成RunSpec后的分发逻辑，不是Workflow启动前。对应文档：学习阶段S4-执行草稿授权与运行路由。",
       "frequency": "每个Run分发时触发1次"
     },
     {
@@ -256,7 +256,7 @@
       "class": null,
       "line_hint": 161,
       "doc_source": "第3课#第5层④",
-      "trigger_timing": "判断是否推荐使用pi工作区编辑时触发。由执行分发层调用，作为route_from_run_spec（BP-22）的辅助判断。仅在RunSpec涉及工作区编辑类操作时才有意义。",
+      "trigger_timing": "判断是否推荐使用pi工作区编辑。作为BP-22 route_from_run_spec的辅助判断。仅在RunSpec涉及工作区编辑类操作时才有意义。对应文档：学习阶段S4-执行草稿授权与运行路由。",
       "frequency": "每个Run分发时触发1次（条件性）"
     },
     {
@@ -267,8 +267,8 @@
       "class": "PiRuntimeManager",
       "line_hint": 70,
       "doc_source": "Chat与pi调试#7.2",
-      "trigger_timing": "pi运行时管理器启动时触发。仅在config.json中启用了pi_agent时才命中。启动pi子进程并建立JSONL RPC通道。通常在应用启动时调用一次。",
-      "frequency": "应用启动时触发1次（仅pi启用时）"
+      "trigger_timing": "每次Chat准备执行一个pi任务时触发。创建本轮PiExecution，然后由PiExecution.start启动Node子进程并建立JSONL-RPC通道。仅配置并实际路由到pi时才命中，不是应用启动钩子。对应文档：pi子进程在哪里启动。",
+      "frequency": "每次pi执行触发1次（仅pi启用时）"
     },
     {
       "id": "BP-25",
@@ -278,7 +278,7 @@
       "class": "PiExecution",
       "line_hint": 543,
       "doc_source": "Chat与pi调试#7.2",
-      "trigger_timing": "pi执行实例启动时触发。每次pi agent工具调用时创建新的PiExecution实例并启动。在pi子进程上建立会话、准备工具环境。",
+      "trigger_timing": "pi执行实例启动。每次pi agent工具调用时创建新的PiExecution实例并启动。在pi子进程上建立会话、准备工具环境。对应文档：从用户点击发送到pi执行的完整链路。",
       "frequency": "每次pi工具调用触发1次（仅pi启用时）"
     },
     {
@@ -289,8 +289,8 @@
       "class": "PiExecution",
       "line_hint": 708,
       "doc_source": "Chat与pi调试#7.2, 8.2",
-      "trigger_timing": "pi接受Provider调用时触发。pi agent内部调用模型时，通过此方法接收Provider请求。这是pi侧的模型调用入口——对应Chat侧的GovernedSemanticAgentExecutor，但在pi子进程内执行。",
-      "frequency": "pi agent每次内部模型调用触发1次（仅pi启用时）"
+      "trigger_timing": "pi接受Provider调用请求。pi agent内部调用模型时，通过此方法接收请求。这是pi侧的模型调用入口，对应Chat侧的BP-13，但在pi子进程内执行。对应文档：从用户点击发送到pi执行的完整链路。",
+      "frequency": "pi每次内部模型调用触发1次（仅pi启用时）"
     },
     {
       "id": "BP-27",
@@ -300,7 +300,7 @@
       "class": null,
       "line_hint": 443,
       "doc_source": "第1课#1, 第2课#1, 场景实验室#1",
-      "trigger_timing": "用户点击发送按钮时触发（前端）。这是用户操作的直接入口——从UI组件捕获输入，传递给useChatAgent.send（BP-28）。需要浏览器DevTools打开才能命中debugger语句。",
+      "trigger_timing": "浏览器栈入口。用户点击发送按钮时触发。从UI组件捕获输入（draft/status/activeSession/selectedWorkflow），传递给BP-28 useChatAgent.send。需要浏览器DevTools打开才能命中debugger语句。对应文档：从断点停住到知道来路和下一跳#1。",
       "frequency": "用户每次点击发送触发1次"
     },
     {
@@ -311,7 +311,7 @@
       "class": null,
       "line_hint": 240,
       "doc_source": "第1课#2, 第2课#2, 场景实验室#2",
-      "trigger_timing": "前端发送AG-UI请求时触发。App.submit（BP-27）之后，此方法实际构造AG-UI Client请求并发起流式订阅。需要浏览器DevTools打开才能命中debugger语句。",
+      "trigger_timing": "AG-UI Client调用构造。BP-27 submit之后，此方法构造RunAgentInput所需参数、本地User消息，调用agent.runAgent发起HTTP流式订阅。这是浏览器->FastAPI跨边界前的最后一段JS栈。需要浏览器DevTools打开才能命中debugger语句。对应文档：从断点停住到知道来路和下一跳#2。",
       "frequency": "用户每次发送消息触发1次"
     },
     {
@@ -322,7 +322,7 @@
       "class": null,
       "line_hint": 188,
       "doc_source": "第2课#3",
-      "trigger_timing": "AG-UI流式返回RunFinished事件时触发。后端Run完成后，前端收到结束事件回调。更新前端状态、清理订阅、触发UI刷新。需要浏览器DevTools打开才能命中debugger语句。",
+      "trigger_timing": "RunFinished事件回程。后端Run完成后，前端AG-UI Client收到RunFinished事件回调。更新React状态、清理订阅、触发UI刷新。这是Worker->浏览器跨边界后的第一段JS栈。需要浏览器DevTools打开才能命中debugger语句。对应文档：从断点停住到知道来路和下一跳#11。",
       "frequency": "每个Run完成事件触发1次"
     },
     {
@@ -333,7 +333,7 @@
       "class": null,
       "line_hint": 92,
       "doc_source": "第2课#4",
-      "trigger_timing": "AG-UI连接断开后尝试重连时触发。场景：网络中断、后端重启、--reload导致连接断开。前端自动尝试重新订阅Run。需要浏览器DevTools打开才能命中debugger语句。",
+      "trigger_timing": "AG-UI连接断开后重连。场景：网络中断、后端重启、--reload导致连接断开。前端用Runtime Job ID + event cursor重新订阅Run。对应文档：Run-Worker-Cursor-Tool与Workspace怎样恢复（Cursor重放）。需要浏览器DevTools打开才能命中debugger语句。",
       "frequency": "仅在连接断开时触发（条件性）"
     }
   ]

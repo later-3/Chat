@@ -1584,6 +1584,11 @@ class HarnessService:
 
         return await self.context_queries.project_context(project_id)
 
+    # BP-20 触发：创建ContextPackage。由HarnessDirectoryContextExecutor.assemble调用，
+    # 把候选上下文、目录信息、Harness配置打包成不可变、受Token预算约束的候选Context清单，
+    # 供后续模型调用使用。
+    # 跨边界：Harness领域查询->ContextPackage持久化（写库）的下一段栈。
+    # 对应文档：项目掌握/Context与回合沉淀/recent_turn_summaries与ContextPackage为什么存在.md
     async def create_context_package(
         self,
         *,
@@ -1597,16 +1602,21 @@ class HarnessService:
         token_budget: int = 6000,
         status: str = "candidate",
     ) -> dict[str, Any]:
-        """持久化一份不可变、受Token预算约束的候选Context清单。
+        """创建ContextPackage。由HarnessDirectoryContextExecutor.assemble调用，把候选上下文、
+        目录信息、Harness配置打包成不可变、受Token预算约束的候选Context清单，供后续模型调用使用。
 
         同一事务写Header以及全部采用/排除Item。保留排除项是有意设计：审计和用户修订不仅要解释
         模型能看到什么，还要解释系统考虑过但排除了什么。重放绑定``command_id``和规范请求Hash，
         防止恢复时为同一确定性装配命令创建内容不同的ContextPackage。
+
+        跨边界：Harness领域查询->ContextPackage持久化（写库）的下一段栈。
+        对应文档：项目掌握/Context与回合沉淀/recent_turn_summaries与ContextPackage为什么存在.md
         """
         # DEBUG-BREAKPOINT-NOTE: BP-20
-        # DEBUG-BREAKPOINT-NOTE: 触发: 创建上下文包时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 由HarnessDirectoryContextExecutor.assemble（BP-11）调用。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 将候选上下文、目录信息、Harness配置打包成ContextPackage，供后续模型调用使用。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 创建ContextPackage。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 由BP-11 HarnessDirectoryContextExecutor.assemble调用。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 把候选上下文、目录信息、Harness配置打包成ContextPackage，供后续模型调用使用。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：recent_turn_summaries与ContextPackage为什么存在。
         # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-20
         if stage not in {"directory", "detail"}:

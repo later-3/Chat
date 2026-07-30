@@ -158,6 +158,10 @@ def recommends_pi_readonly(
     )
 
 
+# BP-23 触发：判断是否推荐使用pi工作区编辑。作为route_from_run_spec的辅助判断。
+# 仅在RunSpec涉及工作区编辑类操作时才有意义。
+# 跨边界：RunSpec草稿->pi工作区编辑路由的辅助判定。
+# 对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S4-执行草稿授权与运行路由.md
 def recommends_pi_workspace_edit(
     *,
     prompt: str,
@@ -165,12 +169,20 @@ def recommends_pi_workspace_edit(
     repository_fence: RepositoryFence | None,
     pi_available: bool,
 ) -> bool:
-    """Recommend isolated editing only for an explicit code-change request."""
+    """判断是否推荐使用pi工作区编辑。作为route_from_run_spec的辅助判断。
+
+    仅在RunSpec涉及工作区编辑类操作时才有意义。Recommend isolated editing only for
+    an explicit code-change request.
+
+    跨边界：RunSpec草稿->pi工作区编辑路由的辅助判定。
+    对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S4-执行草稿授权与运行路由.md
+    """
 
     # DEBUG-BREAKPOINT-NOTE: BP-23
-    # DEBUG-BREAKPOINT-NOTE: 触发: 判断是否推荐使用pi工作区编辑时触发。
-    # DEBUG-BREAKPOINT-NOTE: 触发: 由执行分发层调用，作为route_from_run_spec（BP-22）的辅助判断。
+    # DEBUG-BREAKPOINT-NOTE: 触发: 判断是否推荐使用pi工作区编辑。
+    # DEBUG-BREAKPOINT-NOTE: 触发: 作为BP-22 route_from_run_spec的辅助判断。
     # DEBUG-BREAKPOINT-NOTE: 触发: 仅在RunSpec涉及工作区编辑类操作时才有意义。
+    # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：学习阶段S4-执行草稿授权与运行路由。
     # DEBUG-BREAKPOINT-NOTE: 频率: 每个Run分发时触发1次（条件性）
     breakpoint()  # DEBUG-BREAKPOINT: BP-23
     lowered = prompt.lower().replace(" ", "")

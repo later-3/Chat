@@ -126,23 +126,33 @@ def _repository_fence(value: Any) -> RepositoryFence:
     )
 
 
+# BP-22 触发：S4执行路由分发。Execution Dispatch服务根据已批准RunSpec生成执行路由：
+# MAF直接执行、pi工作区编辑等。属于Workflow节点21-24形成RunSpec后的分发逻辑，不是Workflow启动前。
+# 跨边界：已批准RunSpec->具体执行Runtime（MAF/pi）的路由判定。
+# 对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S4-执行草稿授权与运行路由.md
 def route_from_run_spec(
     *,
     run_spec_id: str,
     run_spec_hash: str,
     spec: Mapping[str, Any],
 ) -> ExecutionRoute:
-    """Resolve the execution branch without inspecting the user's raw message.
+    """S4执行路由分发。Execution Dispatch服务根据已批准RunSpec生成执行路由：
+    MAF直接执行、pi工作区编辑等。
 
-    Routing after approval must not reinterpret text: a human-approved RunSpec
-    is the sole authority.  Unknown runtimes, missing fences and any writable pi
-    mode fail closed instead of silently falling back to another Agent.
+    属于Workflow节点21-24形成RunSpec后的分发逻辑，不是Workflow启动前。Routing after
+    approval must not reinterpret text: a human-approved RunSpec is the sole authority.
+    Unknown runtimes, missing fences and any writable pi mode fail closed instead of
+    silently falling back to another Agent.
+
+    跨边界：已批准RunSpec->具体执行Runtime（MAF/pi）的路由判定。
+    对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S4-执行草稿授权与运行路由.md
     """
 
     # DEBUG-BREAKPOINT-NOTE: BP-22
-    # DEBUG-BREAKPOINT-NOTE: 触发: 从RunSpec路由时触发。
-    # DEBUG-BREAKPOINT-NOTE: 触发: 执行分发层根据RunSpec决定使用哪种执行路径（MAF直接执行、pi工作区编辑等）。
-    # DEBUG-BREAKPOINT-NOTE: 触发: 在Workflow启动前的执行分发阶段。
+    # DEBUG-BREAKPOINT-NOTE: 触发: S4执行路由分发。
+    # DEBUG-BREAKPOINT-NOTE: 触发: Execution Dispatch服务根据已批准RunSpec生成执行路由：MAF直接执行、pi工作区编辑等。
+    # DEBUG-BREAKPOINT-NOTE: 触发: 属于Workflow节点21-24形成RunSpec后的分发逻辑，不是Workflow启动前。
+    # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：学习阶段S4-执行草稿授权与运行路由。
     # DEBUG-BREAKPOINT-NOTE: 频率: 每个Run分发时触发1次
     breakpoint()  # DEBUG-BREAKPOINT: BP-22
     runtime_agent = _mapping(spec.get("runtime_agent"), field="runtime_agent")

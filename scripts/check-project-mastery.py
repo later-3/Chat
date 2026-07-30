@@ -8,11 +8,15 @@ import re
 import sys
 from pathlib import Path
 from typing import Any, Never
+from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "项目掌握" / "coverage-manifest.json"
 SCENARIO_MANIFEST = ROOT / "项目掌握" / "调试实战" / "scenario-manifest.json"
 MASTERY_ROOT = ROOT / "项目掌握"
+MASTERY_INDEX = MASTERY_ROOT / "INDEX.md"
+MASTERY_RULES = MASTERY_ROOT / "AGENTS.md"
+ROOT_README = ROOT / "README.md"
 PROPOSAL = ROOT / "docs" / "overall-architecture-proposal.md"
 MAIN_WORKFLOW_DOC = MASTERY_ROOT / "Workflow架构与ProductAwareWorkflow" / "持续协作主Workflow的39节点设计.md"
 
@@ -59,6 +63,57 @@ def _target_module_names() -> set[str]:
     return names
 
 
+def _check_learning_route() -> int:
+    """Require one sequential INDEX route that directly reaches every learner document."""
+
+    index_text = MASTERY_INDEX.read_text(encoding="utf-8")
+    start_marker = "<!-- project-mastery-route:start -->"
+    end_marker = "<!-- project-mastery-route:end -->"
+    if index_text.count(start_marker) != 1 or index_text.count(end_marker) != 1:
+        _fail("项目掌握INDEX必须包含唯一的完整学习路线起止标记")
+    route_text = index_text.split(start_marker, 1)[1].split(end_marker, 1)[0]
+
+    lesson_numbers = re.findall(r"^\|\s*(\d{2})\s*\|", route_text, flags=re.MULTILINE)
+    markdown_targets = re.findall(r"\[[^\]]+\]\(([^)#]+\.md)(?:#[^)]*)?\)", route_text)
+    if len(lesson_numbers) != len(markdown_targets):
+        _fail(
+            "完整学习路线必须每个连续课号恰好对应1个Markdown文档；"
+            f"课号={len(lesson_numbers)}；文档链接={len(markdown_targets)}"
+        )
+    expected_numbers = [f"{index:02d}" for index in range(1, len(lesson_numbers) + 1)]
+    if lesson_numbers != expected_numbers:
+        _fail(f"完整学习路线课号不连续；实际={lesson_numbers}；预期={expected_numbers}")
+
+    route_paths: list[Path] = []
+    for raw_target in markdown_targets:
+        target = unquote(raw_target)
+        path = (MASTERY_INDEX.parent / target).resolve()
+        try:
+            path.relative_to(MASTERY_ROOT)
+        except ValueError:
+            _fail(f"完整学习路线只能直接编排项目掌握文档：{raw_target}")
+        if not path.exists():
+            _fail(f"完整学习路线链接不存在：{raw_target}")
+        route_paths.append(path)
+
+    duplicates = sorted(
+        path.relative_to(ROOT).as_posix() for path in set(route_paths) if route_paths.count(path) > 1
+    )
+    if duplicates:
+        _fail(f"完整学习路线重复编排文档：{duplicates}")
+
+    learner_documents = set(MASTERY_ROOT.rglob("*.md")) - {MASTERY_INDEX, MASTERY_RULES}
+    route_documents = set(route_paths)
+    missing = sorted(path.relative_to(ROOT).as_posix() for path in learner_documents - route_documents)
+    stale = sorted(path.relative_to(ROOT).as_posix() for path in route_documents - learner_documents)
+    if missing or stale:
+        _fail(f"完整学习路线覆盖漂移；未排课={missing}；无效排课={stale}")
+
+    if "./项目掌握/INDEX.md" not in ROOT_README.read_text(encoding="utf-8"):
+        _fail("根README没有链接到项目掌握唯一课程入口")
+    return len(route_paths)
+
+
 def _check_debug_scenarios(*, workflow_nodes: set[str]) -> int:
     """Keep executable scenario docs, pytest evidence and node oracles connected."""
 
@@ -79,6 +134,23 @@ def _check_debug_scenarios(*, workflow_nodes: set[str]) -> int:
         scenario_id = str(scenario["id"])
         status = str(scenario["status"])
         oracle = str(scenario["oracle"])
+        maturity = str(scenario.get("maturity") or "").strip()
+        evidence_kind = str(scenario.get("evidence_kind") or "").strip()
+        if not maturity:
+            _fail(f"调试场景{scenario_id}缺少教材成熟度")
+        if not evidence_kind:
+            _fail(f"调试场景{scenario_id}缺少证据类型")
+        for run_key in ("current_run_id", "current_gap_run_id"):
+            run_id = scenario.get(run_key)
+            if (
+                run_id is not None
+                and re.fullmatch(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    str(run_id),
+                )
+                is None
+            ):
+                _fail(f"调试场景{scenario_id}的{run_key}不是UUID：{run_id}")
         if status not in allowed_statuses:
             _fail(f"调试场景{scenario_id}使用未知状态：{status}")
         if oracle not in allowed_oracles:
@@ -86,9 +158,12 @@ def _check_debug_scenarios(*, workflow_nodes: set[str]) -> int:
         document = ROOT / str(scenario["doc"])
         if not document.exists():
             _fail(f"调试场景{scenario_id}文档不存在：{scenario['doc']}")
-        metadata = metadata_pattern.search(document.read_text(encoding="utf-8"))
+        document_text = document.read_text(encoding="utf-8")
+        metadata = metadata_pattern.search(document_text)
         if metadata is None:
             _fail(f"调试场景{scenario_id}文档缺少机器元数据")
+        if "**教材成熟度**" not in document_text:
+            _fail(f"调试场景{scenario_id}文档缺少人读教材成熟度")
         if metadata.groupdict() != {"id": scenario_id, "status": status, "oracle": oracle}:
             _fail(
                 f"调试场景{scenario_id}文档元数据漂移；"
@@ -97,12 +172,16 @@ def _check_debug_scenarios(*, workflow_nodes: set[str]) -> int:
             )
         required_nodes = set(map(str, scenario.get("required_nodes", [])))
         forbidden_nodes = set(map(str, scenario.get("forbidden_nodes", [])))
-        unknown_nodes = (required_nodes | forbidden_nodes) - workflow_nodes
+        conditional_nodes = set(map(str, scenario.get("conditional_nodes", [])))
+        unknown_nodes = (required_nodes | forbidden_nodes | conditional_nodes) - workflow_nodes
         if unknown_nodes:
             _fail(f"调试场景{scenario_id}引用未知Workflow节点：{sorted(unknown_nodes)}")
         overlap = required_nodes & forbidden_nodes
         if overlap:
             _fail(f"调试场景{scenario_id}同时要求并禁止节点：{sorted(overlap)}")
+        conditional_overlap = conditional_nodes & (required_nodes | forbidden_nodes)
+        if conditional_overlap:
+            _fail(f"调试场景{scenario_id}条件节点不能同时是必经或禁止节点：{sorted(conditional_overlap)}")
         tests = scenario.get("tests", [])
         if status in {"current", "conditional"} and not tests:
             _fail(f"调试场景{scenario_id}没有绑定自动证据")
@@ -124,6 +203,7 @@ def _check_debug_scenarios(*, workflow_nodes: set[str]) -> int:
 
 def main() -> None:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    lesson_count = _check_learning_route()
     units = {str(value["id"]) for value in manifest["learning_units"]}
     if len(units) != len(manifest["learning_units"]):
         _fail("learning_units存在重复ID")
@@ -267,6 +347,7 @@ def main() -> None:
 
     print(
         "项目掌握覆盖校验通过："
+        f"{lesson_count}篇连续课程文档，"
         f"{len(units)}个学习单元，"
         f"{len(manifest['target_modules'])}个目标模块，"
         f"{len(manifest['backend_surfaces'])}个后端顶层源码面，"

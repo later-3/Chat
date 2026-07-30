@@ -669,19 +669,29 @@ class ProductSessionService:
                     raise ProductSessionNotFound("Product Run不存在")
                 await self._trace(transaction, run, event_type, payload)
 
+    # BP-04 触发：Product Run的创建与幂等复核入口。第1次由durable_agent_endpoint调用：
+    # 创建Message/Interaction/Run/Attempt。第2次由ProductAwareWorkflow.run调用：幂等复用原Run。
+    # 对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#4a和#4b
     async def prepare_agui_run(self, input_data: dict[str, Any]) -> AcceptedRun:
         """AG-UI接纳门：先校验与幂等，再把Interaction/User Message/Product Run/Runtime Job同事务落库。
+
+        Product Run的创建与幂等复核入口。第1次由durable_agent_endpoint调用：创建
+        Message/Interaction/Run/Attempt。第2次由ProductAwareWorkflow.run调用：幂等复用原Run。
+        两次调用都经过相同的校验链，确保幂等性不变。
 
         依次经过：threadId/runId必填 -> resume分流 -> 相同runId幂等回放（内容漂移则冲突）->
         归档会话拒绝 -> 单活动Run互斥 -> 客户端历史前缀+恰好1条新User消息校验。任一道失败
         都不产生部分状态；通过后Worker才允许领取执行。对应架构“Interaction接纳门”。
+
+        对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#4a和#4b
         """
 
         # DEBUG-BREAKPOINT-NOTE: BP-04
-        # DEBUG-BREAKPOINT-NOTE: 触发: 后端收到AG-UI请求后，准备创建Product Run时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 此方法创建Message/Interaction/Run/Attempt等Product事实，确保输入先于执行落库。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 是产品层接纳用户输入的门控。
-        # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次
+        # DEBUG-BREAKPOINT-NOTE: 触发: Product Run的创建与幂等复核入口。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 第1次由BP-01 durable_agent_endpoint调用：校验并创建Message/Interaction/Run/Attempt等Product事实。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 第2次由BP-07 ProductAwareWorkflow.run调用：按相同AG-UI runId与请求Hash幂等复用原Run，不是重复创建。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：从断点停住到知道来路和下一跳#4a和#4b。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 新Run触发2次：接纳创建1次+Worker复核1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-04
         session_id = str(input_data.get("thread_id") or input_data.get("threadId") or "")
         agui_run_id = str(input_data.get("run_id") or input_data.get("runId") or "")
@@ -948,14 +958,26 @@ class ProductSessionService:
             is_resume=False,
         )
 
+    # BP-05 触发：AG-UI请求携带Resume/interrupt语义并接回活动Product Run时触发。
+    # 普通SSE断线、Cursor回放不经过此方法。
+    # 对应文档：项目掌握/运行执行与证据/Run-Worker-Cursor-Tool与Workspace怎样恢复.md
     async def _resume_run(self, session_id: str, agui_run_id: str) -> AcceptedRun:
-        """恢复门：只允许接回本会话的活动Run；新旧AG-UI runId与Product Run的绑定冲突即拒绝。"""
+        """恢复门：只允许接回本会话的活动Run；新旧AG-UI runId与Product Run的绑定冲突即拒绝。
+
+        AG-UI请求携带Resume/interrupt语义并接回活动Product Run时触发。普通SSE断线、
+        Cursor回放不经过此方法——那些只重放Journal事件，不经过Product Run状态机。
+
+        只允许接回本会话的活动Run；新旧AG-UI runId与Product Run的绑定冲突即拒绝。
+
+        对应文档：项目掌握/运行执行与证据/Run-Worker-Cursor-Tool与Workspace怎样恢复.md
+        """
 
         # DEBUG-BREAKPOINT-NOTE: BP-05
-        # DEBUG-BREAKPOINT-NOTE: 触发: 恢复一个已有的Run时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 场景：断线重连、中断后续传、或前端重新订阅已有Run。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 不是每次发新消息都会触发——只在resume语义时命中。
-        # DEBUG-BREAKPOINT-NOTE: 频率: 仅在恢复已有Run时触发（条件性）
+        # DEBUG-BREAKPOINT-NOTE: 触发: AG-UI请求携带Resume/interrupt语义并接回活动Product Run时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 普通SSE断线、Cursor回放或前端重新订阅Journal不经过此方法。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 不能把传输重连与Workflow Resume混用。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：Run-Worker-Cursor-Tool与Workspace怎样恢复。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 仅AG-UI/Product Run恢复语义触发（条件性）
         breakpoint()  # DEBUG-BREAKPOINT: BP-05
         async with self.database.sessions.begin() as transaction:
             session = await self._session(transaction, session_id)
@@ -1141,6 +1163,10 @@ class ProductSessionService:
             )
             await self._materialize_trace_reports(transaction, run)
 
+    # BP-06 触发：Product Run成功路径的最终提交门。在数据库事务内写Assistant Message、
+    # 成功终态、释放Session、写双Trace。失败/放弃不走此处。
+    # 跨边界：MAF->Product提交边界。
+    # 对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#10
     async def complete_active_run(
         self,
         session_id: str,
@@ -1148,12 +1174,21 @@ class ProductSessionService:
         assistant_text: str,
         agui_message_id: str | None,
     ) -> dict[str, Any] | None:
-        """最终提交门：写Assistant Message、关闭Run并在同一事务生成双Trace。"""
+        """最终提交门：写Assistant Message、关闭Run并在同一事务生成双Trace。
+
+        Product Run成功路径的最终提交门。在数据库事务内写Assistant Message、成功终态、
+        释放Session、写双Trace。失败/放弃不走此处，分别由fail_active_run和abandon_active_run
+        收敛。
+
+        跨边界：MAF->Product提交边界。
+        对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#10
+        """
         # DEBUG-BREAKPOINT-NOTE: BP-06
-        # DEBUG-BREAKPOINT-NOTE: 触发: Product Run完成时触发（正常结束或失败）。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 在事务内完成Run状态、消息和Trace的物化。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 这是产品层的最终提交门——Workflow执行完毕后，结果通过此方法写入权威事实。
-        # DEBUG-BREAKPOINT-NOTE: 频率: 每个Run结束触发1次
+        # DEBUG-BREAKPOINT-NOTE: 触发: Product Run成功路径的最终提交门。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 在数据库事务内写Assistant Message、成功终态、释放Session、写双Trace。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 失败/放弃有各自的收敛方法，不走此处。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：从断点停住到知道来路和下一跳#10（MAF->Product提交边界）。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每个成功Run触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-06
         async with self.database.sessions.begin() as transaction:
             session = await self._session(transaction, session_id)

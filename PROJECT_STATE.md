@@ -46,7 +46,7 @@
 ## 3. 本轮纠正与完成
 
 - [x] 新增[项目经验与反例](./PROJECT_LESSONS.md)，建立每次回复前强制读取规则。
-- [x] 持续记录49个可执行反例；覆盖Product Harness事实不能由Agent从聊天摘要猜测、不得回退系统Python、重大里程碑后必须做产品级工程收敛、禁止用“大文件先跑通、以后再整理”持续制造不可维护代码、不得把外部编码Agent非交互模式冒充受治理工具、撤回首条消息不能继续冒充Session标题、必须区分模型可见输出/Workflow采用/Product提交结果、移动端完整产品视角、协作协议/步骤输入、超级管理员运营看护、pi安装/隔离运行身份、数据库测试独立收集、虚拟环境沙箱路径边界、验证产物收口、同步App Shell样式所有权、Workflow代码可学习性与确定性双Trace、跨仓源码调试所有权、PWA认证失效不能只显示401、LaunchAgent已加载/远端端口监听不能冒充反向SSH端到端健康、学习文档代码事实口径，以及调试实战必须有场景预言机。
+- [x] 持续记录54个可执行反例；覆盖Product Harness事实不能由Agent从聊天摘要猜测、不得回退系统Python、重大里程碑后必须做产品级工程收敛、禁止用“大文件先跑通、以后再整理”持续制造不可维护代码、不得把外部编码Agent非交互模式冒充受治理工具、撤回首条消息不能继续冒充Session标题、必须区分模型可见输出/Workflow采用/Product提交结果、移动端完整产品视角、协作协议/步骤输入、超级管理员运营看护、pi安装/隔离运行身份、数据库测试独立收集、虚拟环境沙箱路径边界、验证产物收口、同步App Shell样式所有权、Workflow代码可学习性与确定性双Trace、跨仓源码调试所有权、PWA认证失效不能只显示401、LaunchAgent已加载/远端端口监听不能冒充反向SSH端到端健康、学习文档代码事实口径、调试实战场景预言机、Web小白基础培训、断点调用栈/数据血缘、增量场景不能覆盖未完成培训账，以及分类索引不能冒充完整学习路线。
 - [x] 纠正`AGENTS.md`和`PROJECT_CONTEXT.md`中的产品身份与外部关系。
 - [x] 删除稳定产品上下文里的“第一阶段/后续能力/非上位系统”式范围定义。
 - [x] 在`agent_knowledge/project-studies`新增pi、nanobot架构与模块源码研究，补齐QwenPaw Web/Channel入口拓扑和LibreChat源码模块拓扑、责任与缺口。
@@ -385,6 +385,43 @@
   Context/Provider正文。15场景绑定的24个自动用例、检查器2项单测、Ruff和项目掌握校验通过；该CLI对
   2026-07-29真实目录Run复核为23个实际节点、16个未访问节点、0个模型Attempt，纠正第3课原手写的
   “28/11”错误。全仓文档检查仍只剩`ref/LifeOS`原有7条坏链，本轮项目掌握文档0条新增断链。
+- [x] 2026-07-30根据用户“断点停住后仍不知道怎么来的、下一跳去哪和实际数据怎样变化”的复核，新增
+  [断点来路与下一跳](./项目掌握/调试实战/从断点停住到知道来路和下一跳.md)、
+  [一句Prompt的数据血缘](./项目掌握/调试实战/一句Prompt如何逐层变成Chat对象.md)和
+  [15场景教材深度审计](./项目掌握/调试实战/15个场景教材深度审计与升级顺序.md)：明确一次发送由浏览器、
+  HTTP接纳、Worker和浏览器回程4段调用栈组成，统一记录调用者/当前值/新增字段/Store/下一跳/调试按键，
+  并在当时如实标记SC01为L2实值教材、SC02-SC15主要仍为L1/L1+合同卡（SC02已由下条工作升级）。14张场景卡已增加公共主干分叉和
+  MAF/AG-UI/pi原生能力与Chat产品治理边界。代码级断点工具当时新增`core/sc01/model/pi/recovery/hot`6个
+  组合；修正11处配置与中文源码注释，包括BP-04普通Run命中2次、Cursor Replay不走BP-05、BP-14发生在
+  人工批准前和BP-24按pi执行而非应用启动触发。该项当时没有编造SC02-SC15的真实Run实值；后续工作已补SC02、
+  SC08和SC09的当前真实Run，SC03第一轮与SC06失败链补了局部L2，SC12仍保留为真实Runtime组件的受控L1+证据。
+  断点组合2项测试与SC01/SC02/SC12三个代表场景测试共5项通过，
+  Ruff、项目掌握机器覆盖和`git diff --check`通过；全仓文档检查只剩`ref/LifeOS`既有7条坏链。
+- [x] 2026-07-30继续完成此前未结培训账并升级SC02：新增
+  [TypeScript、React与Chat前端基础](./项目掌握/00-从这里开始/TypeScript-React与Chat前端基础.md)和
+  [Vite、浏览器API与Chat网络调试基础](./项目掌握/00-从这里开始/Vite-浏览器API与Chat网络调试基础.md)，
+  用C++参照解释TypeScript/TSX、Props/State/Hook、组件树、Vite转换/代理、DOM/Event、Fetch/Abort、
+  Storage、PWA、AG-UI流和DevTools，并对应当前源码与可动手实验。SC02使用Workflow 1.8.0真实Run
+  `f411f7b4-6533-4ea8-8f69-5a5a8f9fca68`升级为L2：同一轮28个实际节点、3次独立ModelCall、5次HITL、
+  两级Context、ExecutionDraft/RunSpec、0 Tool/Workspace和4条人工提交Accepted Memory均完成Store/Trace对账；
+  文档如实标出“answer_only不等于零长期写入”和推断型Memory默认策略风险。断点工具新增20点`sc02`
+  专属组合，外层学习路线、索引、覆盖审计、机器清单和场景成熟度同步更新。
+- [x] 2026-07-30完成项目掌握剩余教材的横向补齐和SC03-SC15升级：新增配置/组合根、Home/App Shell、
+  Product Harness六对象、Intent/Clarification/Protocol/StepInput、ExecutionDraft/RunSpec/HITL、Agent/ModelCall/MAF、
+  Run/Worker/Cursor/Tool/Workspace、Artifact/Evidence/Result Commit、SQLite/Alembic/事务/Outbox和测试质量门共10篇
+  小白专题。13张场景卡逐篇增加教材成熟度、具体JSON/表数据、Mermaid图、断点调用者/观察值/下一跳、源码链接、
+  框架与Chat边界和安全修改入口；SC08、SC09补为当前1.8.0 L2真实Run，SC03第一轮与SC06失败链补局部L2，
+  其余如实保持L1+。真实Workspace Run `82478d84-41cd-4066-ab3a-a6420d19115a`显示0 Artifact、0 Validation、
+  0 Claim、0 Result Commit却Product Run succeeded，已作为SC10产品表达/完整链缺口保留，未用受控测试冒充L2。
+  `coverage-manifest.json`与`scenario-manifest.json`同步更新，检查器新增每场景成熟度、证据类型和Run UUID门。
+  项目掌握覆盖校验、断点/场景工具4项测试、场景清单绑定24项自动证据、Ruff和`git diff --check`均通过；
+  文档链接检查无本轮新增坏链，只保留`ref/LifeOS`既有7条失效链接。由于工作树当前主动注入教学`breakpoint()`，
+  场景测试使用标准`PYTHONBREAKPOINT=0`关闭PDB后执行，未删除或覆盖另一项调试改动。
+- [x] 2026-07-30完成项目掌握唯一入口与逐篇学习路线审计：根`README.md`只把课程读者引到
+  `项目掌握/INDEX.md`，INDEX按前置关系建立01-60连续课号，直接覆盖本目录全部60篇学习者Markdown；
+  15张SC和断点配置不再只靠目录概括。`check-project-mastery.py`新增反向枚举，排除INDEX自身和AI维护规则后，
+  强制每篇教材恰好排课1次、课号连续、链接存在，并确认根README仍可达；当前校验为60篇课程、27学习单元、
+  11模块、6个Workflow、39节点和15场景全部通过。分类索引继续用于掌握后的查询，不冒充第一次学习顺序。
 - [x] 每个终态Product Run在同一数据库事务物化`diagnostic`和`human`两份确定性Trace报告：
   前者保留Product Trace事件、Sequence、Attempt、ToolExecution与关联ID，后者保存实际节点路径、
   路由/决定原因、空值稳定代码和未经过节点并生成Markdown；不调用Agent/LLM、不含隐藏推理，

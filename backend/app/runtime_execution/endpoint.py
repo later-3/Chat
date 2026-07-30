@@ -54,17 +54,30 @@ def add_durable_agui_endpoint(
     endpoint_key = path
     registry.register(endpoint_key, runner)
 
+    # BP-01 触发：HTTP接纳入口。前端AG-UI Client经HTTP POST到达此端点。完成3件事：
+    # 调用prepare_agui_run建Product事实、调用enqueue建Runtime Job、开启SSE订阅Journal。
+    # 跨边界：浏览器->FastAPI的第一段栈。
+    # 对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#3
     @app.post(path, tags=tags or ["AG-UI"], dependencies=dependencies, response_model=None)  # type: ignore[arg-type]
     async def durable_agent_endpoint(request_body: AGUIRequest) -> StreamingResponse:
         """前端入口：接纳一轮AG-UI Run，不在HTTP处理器内直接跑Workflow。
 
+        HTTP接纳入口。前端AG-UI Client经HTTP POST到达此端点。完成3件事：
+        调用prepare_agui_run建Product事实、调用enqueue建Runtime Job、开启SSE订阅Journal。
+        HTTP处理器不执行Workflow，仅测试用内存SQLite为确定性而同步跑一次Worker。
+
         链路为React POST -> prepare_agui_run -> Runtime Job/游标 -> Worker执行 -> Journal
-        -> 本处理器按Sequence回放SSE。仅测试用内存SQLite为确定性而同步跑一次Worker。
+        -> 本处理器按Sequence回放SSE。
+
+        跨边界：浏览器->FastAPI的第一段栈。
+        对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#3
         """
         # DEBUG-BREAKPOINT-NOTE: BP-01
-        # DEBUG-BREAKPOINT-NOTE: 触发: 前端发送AG-UI请求到达后端/api/agent端点时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 用户点击发送按钮→前端AG-UI Client发起HTTP流式请求→命中此函数。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 这是后端处理用户消息的第一个入口。
+        # DEBUG-BREAKPOINT-NOTE: 触发: HTTP接纳入口。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 前端AG-UI Client经HTTP POST到达此端点。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 此函数完成3件事：调用prepare_agui_run建Product事实、调用enqueue建Runtime Job、开启SSE订阅Journal。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 这是浏览器->FastAPI跨边界的第一段栈。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：从断点停住到知道来路和下一跳#3。
         # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-01
         input_data = request_body.model_dump(mode="json", exclude_none=True)

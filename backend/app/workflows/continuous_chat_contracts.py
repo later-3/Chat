@@ -332,18 +332,28 @@ def is_pending_clarification(summary: Mapping[str, Any]) -> bool:
     return bool(isinstance(nested, Mapping) and nested.get("awaiting_user_answer") is True)
 
 
+# BP-21 触发：确定性Project目录护栏。由GovernedSemanticAgentExecutor.prepare在intent节点调用。
+# 命中时直接产出目录Intent并保持0模型调用；ScenarioRouter稍后只读取已接受状态。
+# 跨边界：用户原话->确定性Intent判定（不经过模型）的入口。
+# 对应文档：项目掌握/调试实战/场景/SC01-确定性查询正式Project目录.md
 def is_project_catalog_query(text: str) -> bool:
-    """确定性护栏：判断用户原话是否为“明确的正式Project目录查询”（S2意图节点短路用）。
+    """确定性Project目录护栏。由GovernedSemanticAgentExecutor.prepare在intent节点调用。
 
+    命中时直接产出目录Intent并保持0模型调用；ScenarioRouter稍后只读取已接受状态。
     设计取向是宁缺勿滥：只命中枚举句式与全匹配正则；漏网的同义表达交给模型意图合同的
-    ``query_kind``兜底，两条路最终进入同一条0模型目录分支。匹配前先做否定消解——
+    ``query_kind``兜底，两条路最终进入同一条0模型目录分支。匹配前先做否定消解--
     “只查看，不要创建任何事项”中的“创建”不能被误判成创建意图（有专项测试）。
+
+    跨边界：用户原话->确定性Intent判定（不经过模型）的入口。
+    对应文档：项目掌握/调试实战/场景/SC01-确定性查询正式Project目录.md
     """
 
     # DEBUG-BREAKPOINT-NOTE: BP-21
-    # DEBUG-BREAKPOINT-NOTE: 触发: 判断用户输入是否是项目目录查询时触发。
-    # DEBUG-BREAKPOINT-NOTE: 触发: 由ScenarioRouterExecutor.route（BP-16）调用，作为路由判断的契约函数之一。
-    # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次（路由判断时）
+    # DEBUG-BREAKPOINT-NOTE: 触发: 确定性Project目录护栏。
+    # DEBUG-BREAKPOINT-NOTE: 触发: 由BP-13 GovernedSemanticAgentExecutor.prepare在intent节点调用。
+    # DEBUG-BREAKPOINT-NOTE: 触发: 命中时直接产出目录Intent并保持0模型调用；ScenarioRouter稍后只读取已接受状态。
+    # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：场景SC01-确定性查询正式Project目录。
+    # DEBUG-BREAKPOINT-NOTE: 频率: 每次进入intent_agent确定性护栏时触发1次
     breakpoint()  # DEBUG-BREAKPOINT: BP-21
     compact = re.sub(r"[\s，,。.!！?？:：;；]", "", text).lower()
     if not compact or "项目" not in compact:

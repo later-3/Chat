@@ -67,6 +67,11 @@ class PiRuntimeManager:
         self._http_client_factory = http_client_factory or httpx.AsyncClient
         self._executions: dict[str, PiExecution] = {}
 
+    # BP-24 触发：每次Chat准备执行一个pi任务时触发。创建本轮PiExecution，然后由
+    # PiExecution.start启动Node子进程并建立JSONL-RPC通道。仅配置并实际路由到pi时才命中，
+    # 不是应用启动钩子。
+    # 跨边界：Chat主进程->pi子进程（Node）执行实例的创建点。
+    # 对应文档：项目掌握/执行层与pi运行时/pi子进程在哪里启动.md
     async def start(
         self,
         task: str,
@@ -81,12 +86,21 @@ class PiRuntimeManager:
         execution_workspaces: ExecutionWorkspaceService | None = None,
         tool_operations: ToolOperationService | None = None,
     ) -> PiExecution:
+        """每次Chat准备执行一个pi任务时触发。创建本轮PiExecution，然后由PiExecution.start
+        启动Node子进程并建立JSONL-RPC通道。
+
+        仅配置并实际路由到pi时才命中，不是应用启动钩子。Manager在此方法中生成执行Token、
+        注册PiExecution到活动表，并解析Provider选择，之后由PiExecution.start真正拉起子进程。
+
+        跨边界：Chat主进程->pi子进程（Node）执行实例的创建点。
+        对应文档：项目掌握/执行层与pi运行时/pi子进程在哪里启动.md
+        """
         # DEBUG-BREAKPOINT-NOTE: BP-24
-        # DEBUG-BREAKPOINT-NOTE: 触发: pi运行时管理器启动时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 仅在config.json中启用了pi_agent时才命中。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 启动pi子进程并建立JSONL RPC通道。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 通常在应用启动时调用一次。
-        # DEBUG-BREAKPOINT-NOTE: 频率: 应用启动时触发1次（仅pi启用时）
+        # DEBUG-BREAKPOINT-NOTE: 触发: 每次Chat准备执行一个pi任务时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 创建本轮PiExecution，然后由PiExecution.start启动Node子进程并建立JSONL-RPC通道。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 仅配置并实际路由到pi时才命中，不是应用启动钩子。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：pi子进程在哪里启动。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每次pi执行触发1次（仅pi启用时）
         breakpoint()  # DEBUG-BREAKPOINT: BP-24
         clean_task = task.strip()
         if not clean_task:

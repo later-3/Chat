@@ -6,6 +6,14 @@
 **目标**：在发送模型请求前排除或修改一个Context来源，证明系统创建新revision而不是原地改内存  
 **自动证据**：`backend/tests/test_continuous_chat.py::test_context_skip_creates_excluded_revision_and_does_not_reappear_in_model_input`
 
+**教材成熟度**：L1+；受控测试给出两个revision与Provider输入精确断言，尚缺同版本人工修改Context的真实Run。
+
+## 0. 本场景在公共主干哪里分叉
+
+公共链到节点3已经有ContextPackage revision 1；分叉发生在节点4的Context采用决定，用户修改后Chat创建revision 2，
+节点5必须从Product Store重读最新版再进入节点6。MAF提供HITL暂停/恢复能力，但不可变revision、package hash、
+来源采用记录和旧版失效是Chat产品规则。断点要同时记`package_id/revision/hash/previous_package_id`，不能只看正文。
+
 ## 1. 前置状态
 
 使用已有TurnSummary或已绑定Project/Repository的Product Session，使Context卡片至少有1个可排除来源。
@@ -71,9 +79,45 @@ FROM context_adoption_records WHERE context_package_id='<revision 2 id>' ORDER B
 - 通过：旧revision保留、新Hash、被排除来源不进入后续模型、旧授权失效。
 - 失败：只改前端勾选；数据库仍只有一版；旧Hash继续可批准；来源在节点5后重新出现。
 
+## 8. 受控Fixture的逐步实值
+
+该测试先创建正式Project `贪吃蛇`，输入`继续推进贪吃蛇`，并强制`context_adoption=require_human`：
+
+| 时点 | 实际断言 |
+|---|---|
+| revision 1 | 审批卡`subject.context_package_id=<old_package_id>`，存在Project目录匹配 |
+| 用户动作 | `decision=skip` |
+| revision 2 | `revision=2`、`previous_package_id=<old_package_id>`、`status=candidate` |
+| Item | revision 2所有`adopted=false` |
+| Intent Provider task | `accepted_context_items=[]` |
+| Provider外发 | `transport.prepared=[]`，停在下一张模型审批卡前仍为0 |
+
+```mermaid
+flowchart LR
+  C1["Context r1: 采用Project来源"] --> D["用户skip"]
+  D --> C2["Context r2: adopted=false"]
+  C2 --> R["节点5重读r2"]
+  R --> M["Intent Draft accepted_context_items=[]"]
+```
+
+这解释了“前端取消勾选”之后后端真正发生的事：不是改一个React数组，而是产生可追溯新revision。
+
+## 9. 断点导航与修改影响
+
+| 断点 | 谁调来 | 看什么 | 下一跳 |
+|---|---|---|---|
+| `HarnessDirectoryContextExecutor` | Context候选节点 | package id/revision/hash/items | `context_adoption` |
+| `ProductDecisionExecutor` | MAF HITL恢复 | action=`skip`、subject hash | 修订服务 |
+| `CollaborationContextService.revise_package` | Decision执行 | previous id、adopted records | 新revision入库 |
+| `HarnessContextRevisionExecutor` | 修订后 | 从Store查到的current revision | Intent Agent |
+| `GovernedSemanticAgentExecutor.prepare` | 新Context投影 | provider task的accepted items | 模型审批 |
+
+源码入口：[`collaboration_contexts/service.py`](../../../backend/app/collaboration_contexts/service.py)、
+[`continuous_chat.py`](../../../backend/app/workflows/continuous_chat.py)。若新增Context来源类型，必须同时定义稳定
+`source_id/source_revision`、预算、脱敏、采用记录、新鲜度解析器和旧Approval失效测试。
+
 ## 掌握验收
 
 1. 节点5为什么必须重新读Product Store？
 2. `adopted=false`为什么仍要保留Item？
 3. 哪些下游授权应该因Context hash变化失效？
-

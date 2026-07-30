@@ -178,6 +178,9 @@ class TraceMixin:
         self._sessions = sessions
         self._step_inputs = StepInputProjectionService(sessions.database)
 
+    # BP-08 触发：Trace写入热点。多个Executor继承TraceMixin，每次写入Trace记录时都调用。
+    # 频繁触发，初学者按需启用。
+    # 对应文档：项目掌握/Trace与可观测性/每轮双Trace如何保存、分析与可视化.md
     async def _trace_content(
         self,
         *,
@@ -189,15 +192,23 @@ class TraceMixin:
     ) -> None:
         """写入一个节点的公开输入/输出Trace，并按需持久化StepInputProjection。
 
-        语义类内容（intent/plan/response/summary）只有确定性actor才额外记录StepInput投影——
+        Trace写入热点。多个Executor继承TraceMixin，每次写入Trace记录时都调用。
+        频繁触发，初学者按需启用。
+
+        语义类内容（intent/plan/response/summary）只有确定性actor才额外记录StepInput投影--
         模型语义的步骤输入已由ModelCallDraft链承担，避免双写。无活动Run时跳过（如图外诊断
         调用），不伪造归属。工作台节点详情与终态双报告都以这里的事实为源。
+
+        对应文档：项目掌握/Trace与可观测性/每轮双Trace如何保存、分析与可视化.md
         """
 
         # DEBUG-BREAKPOINT-NOTE: BP-08
-        # DEBUG-BREAKPOINT-NOTE: 触发: Executor产生需要Trace的内容时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 多个Executor继承TraceMixin，每次写入Trace记录（输入、输出、状态变更）时都会调用此方法。
-        # DEBUG-BREAKPOINT-NOTE: 频率: 每个Executor的每次Trace写入（频繁）
+        # DEBUG-BREAKPOINT-NOTE: 触发: Trace写入热点。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 多个Executor继承TraceMixin，每次写入Trace记录时都调用此方法。
+        # DEBUG-BREAKPOINT-NOTE: 触发: Trace是可审计的执行日志，记录每一步的输入、输出和状态变更。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：每轮双Trace如何保存、分析与可视化。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 此断点频繁触发，初学者按需启用。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每次Trace写入触发1次（频繁）
         breakpoint()  # DEBUG-BREAKPOINT: BP-08
         active = await self._sessions.active_run(self._thread_id)
         if active is None:
@@ -294,12 +305,26 @@ class IntakeExecutor(Executor, TraceMixin):
         self._intents = intents
 
     @handler(input=list)
+    # BP-09 触发：Workflow第一个业务节点（S1输入接纳）。用户在AG-UI发送消息后，
+    # HTTP接纳层创建Runtime Job，Worker领取后启动主Workflow，第一个命中的业务节点就是这里。
+    # 接收用户输入，把Prompt规范化为origin_prompt并构建初始CollaborationState。
+    # 跨边界：HTTP接纳->Runtime Job->Worker->_execute_claim->Workflow的首个业务栈帧。
+    # 对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S1-输入接纳与目录级上下文.md
     async def accept(self, messages: list[Any], ctx: WorkflowContext[CollaborationState]) -> None:
-        """执行节点1：规范化输入、恢复澄清关联并把初始状态发送给节点2。"""
+        """S1输入接纳节点。用户在AG-UI发送消息后，HTTP接纳层创建Runtime Job，Worker领取后
+        启动主Workflow，第一个命中的业务节点就是这里。
+
+        接收AG-UI传来的messages列表，规范化为Provider可用格式，提取最后一条用户消息作为
+        origin_prompt，拉取最近8轮TurnSummary和未关闭澄清，构建初始CollaborationState
+        并发送给下一节点（CandidateContextExecutor）。
+
+        跨边界：HTTP接纳->Runtime Job->Worker->_execute_claim->Workflow的首个业务栈帧。
+        对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S1-输入接纳与目录级上下文.md
+        """
         # DEBUG-BREAKPOINT-NOTE: BP-09
-        # DEBUG-BREAKPOINT-NOTE: 触发: Workflow的第一个业务节点触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 接收用户输入，将Prompt规范为origin_prompt并构建初始CollaborationState。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 这是Workflow内业务逻辑的起点。
+        # DEBUG-BREAKPOINT-NOTE: 触发: Workflow第一个业务节点（S1输入接纳）。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 接收用户输入，把Prompt规范化为origin_prompt并构建初始CollaborationState。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：学习阶段S1-输入接纳与目录级上下文。
         # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-09
         normalized = normalize_agui_messages_for_provider(messages)
@@ -349,16 +374,30 @@ class CandidateContextExecutor(Executor, TraceMixin):
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
     @handler(input=CollaborationState)
+    # BP-10 触发：S1阶段的候选上下文筛选。在IntakeExecutor.accept之后、
+    # HarnessDirectoryContextExecutor.assemble之前。根据用户输入关键词从历史TurnSummary中
+    # 检索相关候选，优先带回未关闭澄清。
+    # 跨边界：Workflow内部节点2，承接IntakeExecutor输出的CollaborationState。
+    # 对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S1-输入接纳与目录级上下文.md
     async def select_candidates(
         self,
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
-        """执行节点2：计算候选得分、记录选择规则并进入正式目录Context装配。"""
+        """S1候选上下文筛选节点。在IntakeExecutor之后、HarnessDirectoryContextExecutor之前执行。
+
+        根据origin_prompt提取关键词，对recent_turn_summaries做关键词命中打分；
+        未关闭的澄清会优先保留，其余按命中分数降序最多取4条候选。结果写入Trace后
+        将精简后的CollaborationState发送给HarnessDirectoryContextExecutor。
+
+        跨边界：Workflow内部节点2，承接IntakeExecutor输出的CollaborationState。
+        对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S1-输入接纳与目录级上下文.md
+        """
         # DEBUG-BREAKPOINT-NOTE: BP-10
-        # DEBUG-BREAKPOINT-NOTE: 触发: 从历史记录中筛选候选上下文时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: IntakeExecutor之后、HarnessDirectoryContextExecutor之前。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 根据用户输入从历史中检索相关候选。
+        # DEBUG-BREAKPOINT-NOTE: 触发: S1阶段的候选上下文筛选。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 根据用户输入从历史对话中检索相关候选。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 在BP-09之后、BP-11之前。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：学习阶段S1-输入接纳与目录级上下文。
         # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-10
         keywords = _context_keywords(state.origin_prompt)
@@ -421,21 +460,32 @@ class HarnessDirectoryContextExecutor(Executor, TraceMixin):
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
     @handler(input=CollaborationState)
+    # BP-11 触发：S1阶段的目录上下文组装。在CandidateContextExecutor之后执行。
+    # 把候选上下文、目录信息和Harness配置打包成ContextPackage，会调用
+    # HarnessService.create_context_package先落库再进入HITL。
+    # 跨边界：Workflow内部节点3，承接CandidateContextExecutor的候选摘要，调用HarnessService。
+    # 对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S1-输入接纳与目录级上下文.md
     async def assemble(
         self,
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
-        """执行节点3：建立Context装配的directory步骤ContextPackage，并送节点4审核。
+        """S1目录上下文组装节点。在CandidateContextExecutor之后执行，把候选摘要与权威Project
+        目录转换成ContextPackage。
 
-        ``recent_turn_summaries``只是内存中的候选摘要；这里把它们与权威Project目录转换成
-        带来源、版本、采用原因和Token估算的Context Item。随后先落库再进入HITL，使用户决定、
-        审批Hash和Checkpoint恢复都绑定同一份可追溯Context，而不是绑定会丢失的Python变量。
+        调用HarnessService.directory_context_items生成带来源、版本、采用原因和Token估算的
+        Context Item，再经create_context_package先落库为candidate状态，使审批Hash和
+        Checkpoint恢复绑定同一份可追溯Context，而非会丢失的Python变量。采用后的Item
+        写入CollaborationState发送给下一节点审核。
+
+        跨边界：Workflow内部节点3，承接CandidateContextExecutor的候选摘要，调用HarnessService。
+        对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S1-输入接纳与目录级上下文.md
         """
         # DEBUG-BREAKPOINT-NOTE: BP-11
-        # DEBUG-BREAKPOINT-NOTE: 触发: 组装目录上下文包时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 候选上下文之后，调用HarnessService.create_context_package（BP-20）组装最终上下文。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 将候选、目录、Harness信息打包成ContextPackage。
+        # DEBUG-BREAKPOINT-NOTE: 触发: S1阶段的目录上下文组装。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 把候选上下文、目录信息、Harness配置打包成ContextPackage，供后续模型调用使用。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 会调用BP-20。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：学习阶段S1-输入接纳与目录级上下文。
         # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-11
         items, projects = await self._harness.directory_context_items(
@@ -923,16 +973,31 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
         """节点入口：把当前CollaborationState送入统一的适用性与Policy判断。"""
         await self._advance(state, ctx)
 
+    # BP-12 触发：产品决策节点（S6提交决定）。共用于S1/S2/S3/S4/S6多个决定点，
+    # 不是只在模型调用之后执行。每次进入时登记Subject并走不适用、拒绝、自动继续或等待人工。
+    # 跨边界：Workflow内部决策门，承接各语义Agent Executor或前置决策节点的CollaborationState。
+    # 对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S6-响应摘要与提交决定.md
     async def _advance(
         self,
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState, str],
     ) -> None:
-        """登记Subject并在不适用、拒绝、自动继续、等待人工四条路径中收敛。"""
+        """产品决策推进。共用于S1/S2/S3/S4/S6多个决定点，不是只在模型调用之后执行。
+
+        每次进入时先用spec.subject生成决策内容并登记Subject（execution_authorization
+        分支复用已有Draft Revision）。随后检查适用性：不适用则record_not_applicable并
+        放行；适用则评估Policy，在deny（关闭）、auto_continue（消费Grant直接放行）、
+        等待人工（创建HumanDecisionRequest并触发MAF interrupt）四条路径中收敛。
+
+        跨边界：Workflow内部决策门，承接各语义Agent Executor或前置决策节点的CollaborationState。
+        对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S6-响应摘要与提交决定.md
+        """
         # DEBUG-BREAKPOINT-NOTE: BP-12
-        # DEBUG-BREAKPOINT-NOTE: 触发: 产品决策节点推进时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 模型调用完成后，在产品层做决策（是否继续、是否需要工具、是否结束回合等）。
-        # DEBUG-BREAKPOINT-NOTE: 频率: 每次模型调用后的决策步骤（条件性）
+        # DEBUG-BREAKPOINT-NOTE: 触发: 产品决策节点（S6提交决定）。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 共用于S1/S2/S3/S4/S6多个决定点；每次进入时登记Subject并走不适用、拒绝、自动继续或等待人工。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 不是只在模型调用之后执行。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：学习阶段S6-响应摘要与提交决定。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每个决策点触发1次，单Run可命中多次
         breakpoint()  # DEBUG-BREAKPOINT: BP-12
         content = self.spec.subject(state)
         facts = dict(self.spec.facts(state))
@@ -1350,21 +1415,31 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         )
 
     @handler(input=CollaborationState)
+    # BP-13 触发：语义Agent Executor入口（S2/S3/S4）。先检查确定性短路
+    # （如目录查询命中is_project_catalog_query则不调用模型直接形成Intent）；其他路径才
+    # 构造ModelCallDraft并进入Policy/审批/Provider治理。用户在前端看到的'模型调用审批'起点就在这里。
+    # 跨边界：Workflow内部语义节点入口，承接ScenarioRouter或前置决策节点的CollaborationState。
+    # 对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S2-意图Project绑定与详情上下文.md
     async def prepare(
         self,
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState, str],
     ) -> None:
-        """Agent节点入口：先尝试确定性短路，否则建立Draft并进入治理流程。
+        """语义Agent Executor入口（S2/S3/S4）。先检查确定性短路，否则建立Draft并进入治理流程。
 
-        明确的“列出项目”在意图节点直接形成目录Intent，因而是0模型调用；其他请求才
-        进入ModelCallDraft -> Policy -> 审批/自动继续 -> Provider。
+        明确的“列出项目”在意图节点直接形成目录Intent（0模型调用），不经Provider；
+        其他请求才构造ModelCallDraft，经_begin建立后交给_advance进入Policy评估、
+        审批或自动继续，最终到Provider。用户在前端看到的“模型调用审批”起点就在这里。
+
+        跨边界：Workflow内部语义节点入口，承接ScenarioRouter或前置决策节点的CollaborationState。
+        对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S2-意图Project绑定与详情上下文.md
         """
         # DEBUG-BREAKPOINT-NOTE: BP-13
-        # DEBUG-BREAKPOINT-NOTE: 触发: 准备模型调用时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 构造ModelCallDraft（包含Provider请求候选），进入ModelCallDraft→Policy→审批/自动继续→Provider流程。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 这是用户在前端看到的'模型调用审批'的起点——Draft在此构造，然后等待审批。
-        # DEBUG-BREAKPOINT-NOTE: 频率: 每次模型调用触发1次（含意图识别、计划、答复等多个子步骤）
+        # DEBUG-BREAKPOINT-NOTE: 触发: 语义Agent Executor入口（S2/S3/S4）。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 先检查确定性短路（如目录查询，命中BP-21则不调用模型）；其他路径才构造ModelCallDraft并进入Policy/审批/Provider治理。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 用户在前端看到的'模型调用审批'起点就在这里。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：学习阶段S2-意图Project绑定与详情上下文。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每次语义Agent节点调用1次；不等于每次都调用Provider
         breakpoint()  # DEBUG-BREAKPOINT: BP-13
         if self._result_kind == "intent" and _is_project_catalog_query(state.origin_prompt):
             intent = _project_catalog_intent(state.origin_prompt)
@@ -1391,23 +1466,34 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             return
         await self._advance(self._begin(state), state, ctx)
 
+    # BP-14 触发：ModelCallDraft治理推进。Draft建立后立即进入：检查Context新鲜度、
+    # 登记治理对象、评估Policy，然后分deny、auto_continue或MAF人工中断。
+    # 修订后的新Draft也会再次进入；人工批准后的resolve可直接dispatch。
+    # 跨边界：Workflow内部治理分叉，承接prepare或修订路径的ModelCallDraft。
+    # 对应文档：项目掌握/协作理解与执行治理/ExecutionDraft-RunSpec-HITL-Decision与Grant怎样连接.md
     async def _advance(
         self,
         draft: ModelCallDraft,
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState, str],
     ) -> None:
-        """模型调用治理分叉：登记Policy后拒绝、自动继续或等待人工。
+        """ModelCallDraft治理推进。Draft建立后立即进入：检查Context新鲜度、登记治理对象、
+        评估Policy，然后分deny、auto_continue或MAF人工中断。
 
-        先检查Repository新鲜度并持久化评估；deny关闭，auto_continue消费Grant并发送，
-        其余创建HumanDecisionRequest和MAF interrupt。审核卡携带状态快照供恢复。
+        先调用_require_fresh_context检查Repository新鲜度并持久化评估结果；deny则关闭本轮，
+        auto_continue消费已有Grant直接dispatch，其余创建HumanDecisionRequest并触发MAF
+        interrupt等待人工。审核卡携带状态快照供Checkpoint恢复；修订后的新Draft也会再次
+        进入此方法；人工批准后的resolve可直接dispatch到Provider。
+
+        跨边界：Workflow内部治理分叉，承接prepare或修订路径的ModelCallDraft。
+        对应文档：项目掌握/协作理解与执行治理/ExecutionDraft-RunSpec-HITL-Decision与Grant怎样连接.md
         """
         # DEBUG-BREAKPOINT-NOTE: BP-14
-        # DEBUG-BREAKPOINT-NOTE: 触发: 推进模型调用流程时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: ModelCallDraft审批通过后，发送Provider请求。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 这里是从'等待审批'到'实际调用模型'的转换点。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 如果审批未通过则不会到达此处。
-        # DEBUG-BREAKPOINT-NOTE: 频率: 每次审批通过的模型调用触发1次
+        # DEBUG-BREAKPOINT-NOTE: 触发: ModelCallDraft治理推进。
+        # DEBUG-BREAKPOINT-NOTE: 触发: Draft建立后立即进入：检查Context新鲜度、登记治理对象、评估Policy，然后分deny、auto_continue或MAF人工中断。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 修订后的新Draft也会再次进入；人工批准后的resolve可直接dispatch。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：ExecutionDraft-RunSpec-HITL-Decision与Grant怎样连接。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每个ModelCallDraft revision推进时触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-14
         freshness = await self._require_fresh_context(
             state,
@@ -1855,6 +1941,10 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
             return
         await self._deliver(dispatched, state, revision.id, ctx)
 
+    # BP-15 触发：Provider返回结果的交付点。模型返回结果后，把结果交给产品层：
+    # 写Trace、更新状态、准备下一步。
+    # 跨边界：Provider->Workflow的交付栈帧，承接_advance或resolve dispatch后的ModelDispatchResult。
+    # 对应文档：项目掌握/Trace与可观测性/每轮双Trace如何保存、分析与可视化.md
     async def _deliver(
         self,
         dispatched: ModelDispatchResult,
@@ -1862,17 +1952,21 @@ class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
         revision_id,
         ctx,
     ) -> None:
-        """把Provider解码文本采纳为**候选**并推进Workflow——模型文字此时还不是产品事实。
+        """Provider返回结果的交付点。模型返回结果后，把结果交给产品层：写Trace、更新状态、准备下一步。
 
         意图输出解析为Intent Set（非法JSON关闭失败为澄清）；plan/response原文存放；摘要先解析
         再经写回策略过滤，违反用户只读边界的Work/Memory候选在到达决定点前就被确定性移除。
         采用去向（accepted/overridden/rejected_invalid_output）持久化在Attempt上，审计链能
-        精确说明这些字节后来被怎样使用。
+        精确说明这些字节后来被怎样使用。模型文字此时还不是产品事实，只作为候选推进到下游决策门。
+
+        跨边界：Provider->Workflow的交付栈帧，承接_advance或resolve dispatch后的ModelDispatchResult。
+        对应文档：项目掌握/Trace与可观测性/每轮双Trace如何保存、分析与可视化.md
         """
         # DEBUG-BREAKPOINT-NOTE: BP-15
-        # DEBUG-BREAKPOINT-NOTE: 触发: 交付模型调用结果时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: Provider返回结果后，将结果交付给产品层（写Trace、更新状态、准备下一步）。
+        # DEBUG-BREAKPOINT-NOTE: 触发: Provider返回结果的交付点。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 模型返回结果后，把结果交给产品层：写Trace、更新状态、准备下一步。
         # DEBUG-BREAKPOINT-NOTE: 触发: 这是模型调用的收尾步骤。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：每轮双Trace如何保存、分析与可视化。
         # DEBUG-BREAKPOINT-NOTE: 频率: 每次成功的模型调用触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-15
         text = dispatched.text
@@ -2158,13 +2252,26 @@ class ScenarioRouterExecutor(Executor, TraceMixin):
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
     @handler(input=CollaborationState)
+    # BP-16 触发：S3场景路由。根据已接受的Intent/Intent Set和当前状态，
+    # 调用_evaluate_scenario_route选择目录查询、澄清、规划或默认路径。
+    # 跨边界：Workflow内部路由节点，承接IntentSetAcceptanceExecutor的CollaborationState。
+    # 对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S3-场景路由与可选规划.md
     async def route(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
-        """执行节点16：计算首个命中分支，并把选中/未选原因完整写入Trace。"""
+        """S3场景路由节点。根据已接受的Intent/Intent Set和当前状态选择执行分支。
+
+        调用_evaluate_scenario_route评估命中条件，在目录查询、澄清、规划或默认路径中
+        选择首个命中分支，并把选中/未选原因完整写入Trace。路由结果写入state.scenario
+        后发送给下一节点（ProjectCatalogExecutor或ClarificationExecutor等）。
+
+        跨边界：Workflow内部路由节点，承接IntentSetAcceptanceExecutor的CollaborationState。
+        对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S3-场景路由与可选规划.md
+        """
         # DEBUG-BREAKPOINT-NOTE: BP-16
-        # DEBUG-BREAKPOINT-NOTE: 触发: 场景路由判断时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 根据Intent和当前状态决定走哪个分支（普通对话、项目目录查询、pi工作区编辑等）。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 调用is_project_catalog_query（BP-21）等契约函数做判断。
-        # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次（路由判断）
+        # DEBUG-BREAKPOINT-NOTE: 触发: S3场景路由。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 根据已接受的Intent/Intent Set和当前状态，调用_evaluate_scenario_route选择目录查询、澄清、规划或默认路径。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 不直接调用BP-21的原始文本护栏。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：学习阶段S3-场景路由与可选规划。
+        # DEBUG-BREAKPOINT-NOTE: 频率: 每条用户消息触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-16
         route_decision = _evaluate_scenario_route(state)
         await self._trace_content(
@@ -2202,12 +2309,25 @@ class ProjectCatalogExecutor(Executor, TraceMixin):
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
     @handler(input=CollaborationState)
+    # BP-17 触发：项目目录查询响应。仅当ScenarioRouterExecutor路由到目录查询分支时才命中。
+    # 0次模型调用，直接从Product DB查询并渲染正式Project目录。
+    # 跨边界：Workflow内部目录分支，承接ScenarioRouterExecutor路由结果，调用HarnessService.list_projects。
+    # 对应文档：项目掌握/调试实战/场景/SC01-确定性查询正式Project目录.md
     async def answer(self, state: CollaborationState, ctx: WorkflowContext[CollaborationState]) -> None:
-        """执行节点17：确定性渲染正式Project目录结果，不进入Provider。"""
+        """项目目录查询响应节点。仅当ScenarioRouterExecutor路由到目录查询分支时才命中。
+
+        0次模型调用：直接调用HarnessService.list_projects查询正式Project，渲染为目录结果
+        和助手回复文本，写入TurnSummary后发送给下游。正式目录为空时明确返回空，并把
+        聊天摘要中的Project提示标为候选而非正式事实。
+
+        跨边界：Workflow内部目录分支，承接ScenarioRouterExecutor路由结果，调用HarnessService.list_projects。
+        对应文档：项目掌握/调试实战/场景/SC01-确定性查询正式Project目录.md
+        """
         # DEBUG-BREAKPOINT-NOTE: BP-17
-        # DEBUG-BREAKPOINT-NOTE: 触发: 项目目录查询响应时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 仅当ScenarioRouterExecutor路由到项目目录查询分支时才命中。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 项目目录查询响应。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 仅当BP-16路由到目录查询分支时才命中。
         # DEBUG-BREAKPOINT-NOTE: 触发: 生成目录查询的响应与摘要。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：场景SC01-确定性查询正式Project目录。
         # DEBUG-BREAKPOINT-NOTE: 频率: 仅在项目目录查询时触发（条件性）
         breakpoint()  # DEBUG-BREAKPOINT: BP-17
         catalog_result = state.project_catalog_result
@@ -2598,16 +2718,29 @@ class TurnSummaryPersistExecutor(Executor, TraceMixin):
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
     @handler(input=CollaborationState)
+    # BP-18 触发：S6回合摘要持久化。每个对话回合结束时执行，在FinalizeExecutor之前。
+    # 将TurnSummary写入Product DB，绑定source_model_call_revision_id和product_fact_refs。
+    # 跨边界：Workflow内部持久化节点，调用ProductSessionService.save_turn_summary写入Product DB。
+    # 对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S6-响应摘要与提交决定.md
     async def persist(
         self,
         state: CollaborationState,
         ctx: WorkflowContext[CollaborationState],
     ) -> None:
-        """执行节点38：保存可追溯摘要及来源引用，然后把状态送到最终提交门。"""
+        """S6回合摘要持久化节点。每个对话回合结束时执行，在FinalizeExecutor之前。
+
+        将TurnSummary（若无则用确定性最小主题候选）写入Product DB，绑定source_model_call_revision_id
+        和本轮已提交的product_fact_refs，使摘要可追溯到模型调用和产品事实来源。持久化后
+        把状态发送给FinalizeExecutor做最终收尾。
+
+        跨边界：Workflow内部持久化节点，调用ProductSessionService.save_turn_summary写入Product DB。
+        对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S6-响应摘要与提交决定.md
+        """
         # DEBUG-BREAKPOINT-NOTE: BP-18
-        # DEBUG-BREAKPOINT-NOTE: 触发: 持久化回合摘要时触发。
+        # DEBUG-BREAKPOINT-NOTE: 触发: S6回合摘要持久化。
         # DEBUG-BREAKPOINT-NOTE: 触发: 每个对话回合结束时，将TurnSummary写入Product DB。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 在FinalizeExecutor之前执行。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 在BP-19 FinalizeExecutor之前执行。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：学习阶段S6-响应摘要与提交决定。
         # DEBUG-BREAKPOINT-NOTE: 频率: 每个对话回合结束触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-18
         summary = dict(
@@ -2713,12 +2846,26 @@ class FinalizeExecutor(Executor, TraceMixin):
         self._trace_init(thread_id=thread_id, sessions=sessions)
 
     @handler
+    # BP-19 触发：S7 Workflow最终化。所有业务节点执行完毕后做收尾处理
+    # （清理、状态收敛、准备提交）。之后Workflow返回，控制权回到complete_active_run完成门。
+    # 跨边界：Workflow末尾节点，把最终候选文本经ctx返回给ProductAwareWorkflow调用方。
+    # 对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S7-产品事实写入与本轮终态.md
     async def finalize(self, state: CollaborationState, ctx: WorkflowContext[None, str]) -> None:
-        """执行节点39：公开最终候选，并把文本交给ProductAwareWorkflow提交。"""
+        """S7 Workflow最终化节点。所有业务节点执行完毕后做收尾处理。
+
+        公开最终候选回复文本（response或默认提示），把本轮execution_draft_revision_id、
+        run_spec_id和turn_summary作为公开输入写入Trace，并把文本经ctx返回给
+        ProductAwareWorkflow。之后Workflow返回，控制权回到complete_active_run完成门，
+        由完成门负责把结果提交给Product Session和AG-UI。
+
+        跨边界：Workflow末尾节点，把最终候选文本经ctx返回给ProductAwareWorkflow调用方。
+        对应文档：项目掌握/Workflow架构与ProductAwareWorkflow/学习阶段S7-产品事实写入与本轮终态.md
+        """
         # DEBUG-BREAKPOINT-NOTE: BP-19
-        # DEBUG-BREAKPOINT-NOTE: 触发: Workflow最终化时触发。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 所有业务节点执行完毕后，做最终化处理（清理、状态收敛、准备提交）。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 之后Workflow返回，控制权回到ProductAwareWorkflow.run的完成门。
+        # DEBUG-BREAKPOINT-NOTE: 触发: S7 Workflow最终化。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 所有业务节点执行完毕后，做收尾处理（清理、状态收敛、准备提交）。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 之后Workflow返回，控制权回到BP-06完成门。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：学习阶段S7-产品事实写入与本轮终态。
         # DEBUG-BREAKPOINT-NOTE: 频率: 每个Run结束触发1次
         breakpoint()  # DEBUG-BREAKPOINT: BP-19
         response = state.response or "本轮没有形成可提交的答复。"

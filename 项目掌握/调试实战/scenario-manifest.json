@@ -1,11 +1,17 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "snapshot_date": "2026-07-30",
   "oracle_levels": {
     "exact": "由确定性代码、状态机、版本/Hash、数据库约束或测试精确断言",
     "semantic": "模型自然语言允许变化，但结构、来源、采用去向和产品不变量必须满足",
     "observe": "耗时、Token、Provider ID等只记录实际值，不预先承诺固定数字",
     "gap": "目标场景尚未实现，只验证系统不会假装已经支持"
+  },
+  "maturity_levels": {
+    "L1+": "场景合同、具体受控数据、图、断点、Store和修改入口完整，但缺当前版本人工真实Run",
+    "L2": "在L1+基础上，有当前版本同一真实Run或真实外部进程链可复核",
+    "L2+": "在L2基础上，进一步给出安全修改入口、回归影响和更完整开发验收",
+    "qualified": "带first-turn、failure-path或real-gap等限定词时，只对限定证据范围成立"
   },
   "scenarios": [
     {
@@ -14,6 +20,9 @@
       "status": "current",
       "manual": true,
       "oracle": "exact",
+      "maturity": "L2+",
+      "evidence_kind": "current-real-deterministic-run-and-exact-contract",
+      "current_run_id": "c8f26dd0-4a6d-4d97-957f-30b419fa7541",
       "doc": "项目掌握/调试实战/场景/SC01-确定性查询正式Project目录.md",
       "tests": [
         "backend/tests/test_continuous_chat.py::test_explicit_project_catalog_query_cannot_be_rewritten_as_create_or_clarify"
@@ -27,11 +36,15 @@
       "status": "current",
       "manual": true,
       "oracle": "semantic",
+      "maturity": "L2",
+      "evidence_kind": "current-real-three-model-call-run-and-controlled-contract",
+      "current_run_id": "f411f7b4-6533-4ea8-8f69-5a5a8f9fca68",
       "doc": "项目掌握/调试实战/场景/SC02-普通问答与三次模型调用治理.md",
       "tests": [
         "backend/tests/test_continuous_chat.py::test_continuous_workflow_simple_question_uses_three_governed_model_calls"
       ],
-      "required_nodes": ["input_acceptance", "context_candidates", "harness_directory_context", "context_adoption", "directory_context_revision", "intent_agent", "intent_set_projection", "intent_binding", "intent_set_acceptance", "harness_project_resolver", "project_work_binding", "harness_detail_context", "detail_context_adoption", "detail_context_revision", "collaboration_protocol_resolver", "scenario_router", "execution_draft_compiler", "execution_authorization", "run_spec_compiler", "execution_route", "response_agent", "turn_summary_agent", "result_commit", "work_state_commit", "memory_commit", "harness_candidate_commit", "turn_summary_persist", "result_finalization"],
+      "required_nodes": ["input_acceptance", "context_candidates", "harness_directory_context", "context_adoption", "directory_context_revision", "intent_agent", "intent_set_projection", "intent_binding", "intent_set_acceptance", "harness_project_resolver", "project_work_binding", "harness_detail_context", "detail_context_adoption", "collaboration_protocol_resolver", "scenario_router", "execution_draft_compiler", "execution_authorization", "run_spec_compiler", "execution_route", "response_agent", "turn_summary_agent", "result_commit", "work_state_commit", "memory_commit", "harness_candidate_commit", "turn_summary_persist", "result_finalization"],
+      "conditional_nodes": ["detail_context_revision"],
       "forbidden_nodes": ["project_catalog_query", "clarification", "planning_agent", "plan_acceptance", "execution_workspace_prepare", "pi_workspace_dispatch", "pi_workspace_result_assembly", "result_claim_prepare", "result_claim_decision", "pi_readonly_dispatch", "pi_readonly_result_assembly"]
     },
     {
@@ -40,6 +53,9 @@
       "status": "current",
       "manual": true,
       "oracle": "semantic",
+      "maturity": "L2-first-turn-plus-L1-cross-turn",
+      "evidence_kind": "current-real-run-first-turn-and-controlled-cross-turn",
+      "current_run_id": "d2495ac1-a36f-4e48-877d-e885de77034c",
       "doc": "项目掌握/调试实战/场景/SC03-歧义请求与跨回合澄清.md",
       "tests": [
         "backend/tests/test_continuous_chat.py::test_continuous_workflow_invalid_intent_closes_failed_to_clarification",
@@ -54,6 +70,8 @@
       "status": "current",
       "manual": true,
       "oracle": "semantic",
+      "maturity": "L1+",
+      "evidence_kind": "controlled-integration-fixture",
       "doc": "项目掌握/调试实战/场景/SC04-多Intent与组合Plan.md",
       "tests": [
         "backend/tests/test_continuous_chat.py::test_continuous_workflow_preserves_multi_intent_set_through_plan_and_execution_draft",
@@ -68,6 +86,8 @@
       "status": "current",
       "manual": true,
       "oracle": "exact",
+      "maturity": "L1+",
+      "evidence_kind": "controlled-integration-fixture",
       "doc": "项目掌握/调试实战/场景/SC05-修改Context与revision失效.md",
       "tests": [
         "backend/tests/test_continuous_chat.py::test_context_skip_creates_excluded_revision_and_does_not_reappear_in_model_input"
@@ -81,6 +101,9 @@
       "status": "current",
       "manual": true,
       "oracle": "exact",
+      "maturity": "L2-failure-path",
+      "evidence_kind": "current-real-failure-run-and-controlled-zero-new-dispatch",
+      "current_run_id": "d1132391-822a-4529-af57-98bf300677a4",
       "doc": "项目掌握/调试实战/场景/SC06-Repository来源失效零发送.md",
       "tests": [
         "backend/tests/test_continuous_chat.py::test_repository_source_change_invalidates_old_model_approval_before_attempt",
@@ -95,6 +118,8 @@
       "status": "current",
       "manual": true,
       "oracle": "exact",
+      "maturity": "L1+",
+      "evidence_kind": "controlled-byte-exact-fixture",
       "doc": "项目掌握/调试实战/场景/SC07-编辑模型请求与重新审批.md",
       "tests": [
         "backend/tests/test_model_call_review.py::test_agui_revision_requires_second_approval_and_sends_exact_edited_bytes",
@@ -109,6 +134,9 @@
       "status": "current",
       "manual": true,
       "oracle": "exact",
+      "maturity": "L2",
+      "evidence_kind": "current-real-abandon-run-and-controlled-zero-send",
+      "current_run_id": "a7262b15-0d0c-48bc-9e31-9e575d6f1fc6",
       "doc": "项目掌握/调试实战/场景/SC08-放弃模型调用零发送.md",
       "tests": [
         "backend/tests/test_continuous_chat.py::test_continuous_workflow_abandon_before_intent_dispatch_sends_nothing",
@@ -123,6 +151,9 @@
       "status": "current",
       "manual": true,
       "oracle": "semantic",
+      "maturity": "L2",
+      "evidence_kind": "current-real-pi-process-and-tool-run",
+      "current_run_id": "4818dd72-af27-45a1-88bc-c3ff6dff5c3b",
       "doc": "项目掌握/调试实战/场景/SC09-受治理pi只读检查.md",
       "tests": [
         "backend/tests/test_continuous_pi_readonly.py::test_continuous_workflow_runs_pi_readonly_in_one_product_run"
@@ -136,6 +167,9 @@
       "status": "conditional",
       "manual": true,
       "oracle": "exact",
+      "maturity": "L1+with-real-gap-sample",
+      "evidence_kind": "controlled-complete-contract-and-current-real-incomplete-chain",
+      "current_gap_run_id": "82478d84-41cd-4066-ab3a-a6420d19115a",
       "doc": "项目掌握/调试实战/场景/SC10-隔离精确编辑与Evidence提交.md",
       "tests": [
         "backend/tests/test_continuous_pi_workspace.py::test_continuous_workflow_governs_exact_edit_in_isolated_workspace",
@@ -150,6 +184,8 @@
       "status": "current",
       "manual": false,
       "oracle": "exact",
+      "maturity": "L1+",
+      "evidence_kind": "controlled-fault-injection",
       "doc": "项目掌握/调试实战/场景/SC11-Validation失败与结果未知.md",
       "tests": [
         "backend/tests/test_result_pipeline.py::test_failed_validation_only_allows_reject_and_never_completes",
@@ -164,6 +200,8 @@
       "status": "current",
       "manual": true,
       "oracle": "exact",
+      "maturity": "L1+",
+      "evidence_kind": "real-runtime-components-with-controlled-disconnect",
       "doc": "项目掌握/调试实战/场景/SC12-断线后Worker继续与Cursor接回.md",
       "tests": [
         "backend/tests/test_runtime_execution.py::test_http_disconnect_does_not_cancel_worker_and_cursor_replays_rest"
@@ -177,6 +215,8 @@
       "status": "current",
       "manual": true,
       "oracle": "exact",
+      "maturity": "L1+",
+      "evidence_kind": "controlled-product-state-machine",
       "doc": "项目掌握/调试实战/场景/SC13-取消与结果未知.md",
       "tests": [
         "backend/tests/test_product_sessions.py::test_cancel_is_exactly_bound_and_distinguishes_before_and_after_dispatch"
@@ -190,6 +230,8 @@
       "status": "current",
       "manual": true,
       "oracle": "exact",
+      "maturity": "L1+",
+      "evidence_kind": "controlled-product-lineage",
       "doc": "项目掌握/调试实战/场景/SC14-Retry与Restart血缘.md",
       "tests": [
         "backend/tests/test_product_sessions.py::test_failed_run_retry_and_edited_restart_keep_explicit_lineage",
@@ -204,6 +246,8 @@
       "status": "current",
       "manual": false,
       "oracle": "exact",
+      "maturity": "L1+",
+      "evidence_kind": "controlled-multiprocess-sqlite-and-workers",
       "doc": "项目掌握/调试实战/场景/SC15-跨进程HITL恢复.md",
       "tests": [
         "backend/tests/test_continuous_chat.py::test_continuous_workflow_restores_each_hitl_checkpoint_in_a_new_process",

@@ -89,14 +89,19 @@ export function useRuntimeReconnect({
     let cursor: string | undefined;
     let reconnectFailures = 0;
 
+    // BP-30 触发：AG-UI连接断开后重连。场景：网络中断、后端重启、--reload导致连接断开。
+    // 前端用Runtime Job ID + event cursor重新订阅Run，按游标重放Journal事件。
+    // 对应文档：项目掌握/运行执行与证据/Run-Worker-Cursor-Tool与Workspace怎样恢复.md（Cursor重放）
     const reconnect = async () => {
       // DEBUG-BREAKPOINT-NOTE: BP-30
-      // DEBUG-BREAKPOINT-NOTE: 触发: AG-UI连接断开后尝试重连时触发。
+      // DEBUG-BREAKPOINT-NOTE: 触发: AG-UI连接断开后重连。
       // DEBUG-BREAKPOINT-NOTE: 触发: 场景：网络中断、后端重启、--reload导致连接断开。
-      // DEBUG-BREAKPOINT-NOTE: 触发: 前端自动尝试重新订阅Run。
+      // DEBUG-BREAKPOINT-NOTE: 触发: 前端用Runtime Job ID + event cursor重新订阅Run。
+      // DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：Run-Worker-Cursor-Tool与Workspace怎样恢复（Cursor重放）。
       // DEBUG-BREAKPOINT-NOTE: 触发: 需要浏览器DevTools打开才能命中debugger语句。
       // DEBUG-BREAKPOINT-NOTE: 频率: 仅在连接断开时触发（条件性）
       debugger; // DEBUG-BREAKPOINT: BP-30
+      // 重连入口：用Runtime Job ID + cursor重新订阅，不接管Product Run状态。
       onStatus("running");
       onError(null);
       onConnectionStatus("reconnecting");

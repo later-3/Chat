@@ -185,14 +185,21 @@ export function useChatAgent({
           setConnectionStatus("caught_up");
         }
       },
+      // BP-29 触发：RunFinished事件回程。后端Run完成后，前端AG-UI Client收到
+      // RunFinished事件回调。更新React状态、清理订阅、触发UI刷新。
+      // 跨边界：Worker->浏览器跨边界后的第一段JS栈。
+      // 对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#11
       onRunFinishedEvent(result) {
         // DEBUG-BREAKPOINT-NOTE: BP-29
-        // DEBUG-BREAKPOINT-NOTE: 触发: AG-UI流式返回RunFinished事件时触发。
-        // DEBUG-BREAKPOINT-NOTE: 触发: 后端Run完成后，前端收到结束事件回调。
-        // DEBUG-BREAKPOINT-NOTE: 触发: 更新前端状态、清理订阅、触发UI刷新。
+        // DEBUG-BREAKPOINT-NOTE: 触发: RunFinished事件回程。
+        // DEBUG-BREAKPOINT-NOTE: 触发: 后端Run完成后，前端AG-UI Client收到RunFinished事件回调。
+        // DEBUG-BREAKPOINT-NOTE: 触发: 更新React状态、清理订阅、触发UI刷新。
+        // DEBUG-BREAKPOINT-NOTE: 触发: 这是Worker->浏览器跨边界后的第一段JS栈。
         // DEBUG-BREAKPOINT-NOTE: 触发: 需要浏览器DevTools打开才能命中debugger语句。
+        // DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：从断点停住到知道来路和下一跳#11。
         // DEBUG-BREAKPOINT-NOTE: 频率: 每个Run完成事件触发1次
         debugger; // DEBUG-BREAKPOINT: BP-29
+        // 回程第一段JS栈：区分interrupt与正常结束，更新状态并触发UI刷新。
         if (!mounted.current) return;
         if (result.outcome === "interrupt") {
           const card = result.interrupts.map(governedReviewFromInterrupt).find(Boolean) ?? null;
@@ -243,15 +250,22 @@ export function useChatAgent({
     };
   }, [agent, inspectDispatchFailure]);
 
+  // BP-28 触发：AG-UI Client调用构造。submit之后，此方法构造RunAgentInput所需参数、
+  // 本地User消息，调用agent.runAgent发起HTTP流式订阅。
+  // 跨边界：浏览器->FastAPI跨边界前的最后一段JS栈。
+  // 对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#2
   /** 发送Prompt：追加User消息并启动一次AG-UI Run；Workflow选择与控制字段随forwardedProps固化。 */
   const send = useCallback(
     async (content: string, control?: SessionRunControl, workflow?: ChatWorkflowDispatch) => {
       // DEBUG-BREAKPOINT-NOTE: BP-28
-      // DEBUG-BREAKPOINT-NOTE: 触发: 前端发送AG-UI请求时触发。
-      // DEBUG-BREAKPOINT-NOTE: 触发: App.submit（BP-27）之后，此方法实际构造AG-UI Client请求并发起流式订阅。
+      // DEBUG-BREAKPOINT-NOTE: 触发: AG-UI Client调用构造。
+      // DEBUG-BREAKPOINT-NOTE: 触发: BP-27 submit之后，此方法构造RunAgentInput所需参数、本地User消息，调用agent.runAgent发起HTTP流式订阅。
+      // DEBUG-BREAKPOINT-NOTE: 触发: 这是浏览器->FastAPI跨边界前的最后一段JS栈。
       // DEBUG-BREAKPOINT-NOTE: 触发: 需要浏览器DevTools打开才能命中debugger语句。
+      // DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：从断点停住到知道来路和下一跳#2。
       // DEBUG-BREAKPOINT-NOTE: 频率: 用户每次发送消息触发1次
       debugger; // DEBUG-BREAKPOINT: BP-28
+      // 跨边界前最后一段JS栈：构造RunAgentInput、追加本地User消息后调agent.runAgent。
       const text = content.trim();
       if (!text || agent.isRunning || pendingReview) return;
 

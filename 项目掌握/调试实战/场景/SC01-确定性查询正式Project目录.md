@@ -6,6 +6,8 @@
 **输入族**：只查看正式Project目录，不创建、不修改、不执行  
 **自动证据**：[`test_explicit_project_catalog_query_cannot_be_rewritten_as_create_or_clarify`](../../../backend/tests/test_continuous_chat.py#L1745)
 
+**教材成熟度**：L2+——当前Workflow 1.8.0同一真实Run、确定性0模型合同、逐节点数据和L3修改入口。
+
 **实测样本**：Product Run `c8f26dd0-4a6d-4d97-957f-30b419fa7541`，2026-07-29，`continuous-collaboration@1.8.0`
 **阅读目标**：不搜索函数名，直接下断点，并解释React、AG-UI、FastAPI、Runtime Worker、MAF Workflow、
 Product Harness、Product Store和Trace之间怎样传递这一条真实数据。

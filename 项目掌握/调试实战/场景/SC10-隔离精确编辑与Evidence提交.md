@@ -6,6 +6,14 @@
 **目标**：在受管Git worktree修改1个已存在文件，经确定性Validation、Evidence与Result Commit推进Action  
 **自动证据**：`test_continuous_workflow_governs_exact_edit_in_isolated_workspace`、`test_result_commit_gate_completes_action_after_accepted_validation`
 
+**教材成熟度**：L1+完整合同＋真实缺口样本；完整Evidence提交由受控测试证明，当前真实Run尚不能证明整条链。
+
+## 0. 本场景在公共主干哪里分叉
+
+节点24选择`isolated_edit`后进入25–29：Workspace准备、pi精确编辑、Artifact、Validation和Evidence Claim。
+MAF只调度这些节点，pi只执行获准Tool；受管worktree、preimage/postimage hash、Validation Contract、Claim、
+Evidence和Result Commit都是Chat的产品治理。手动条件不满足时以自动故障隔离证据为准，不能读取私有配置绕过。
+
 ## 1. 当前可运行边界
 
 手动运行需要：Project/Work/Action/Plan、干净Repository Snapshot、可用pi Profile、Artifact Store scope密钥、
@@ -94,10 +102,62 @@ SELECT commit_status, artifact_disposition, pre_commit_validity_check_passed,
 - 通过：活动仓库不变，Workspace有精确diff，Evidence链完整，Action完成而Work不假完成。
 - 失败：无Operation却生成Claim；Validation未知仍supports；提交时不复核Artifact字节；自动commit/push。
 
+## 8. 受控成功数据与真实运行缺口必须分栏
+
+受控精确编辑Fixture的具体事实：源仓库`README.md`初始标题`# Chat`，获准Operation只把它改为
+`# Chat Workspace`；隔离Workspace的`changed_paths=["README.md"]`，Operation的
+`expected_postimage_hash == observed_hash`，源仓库HEAD和正文保持不变，且没有commit/push。
+
+Result Commit Fixture进一步断言：
+
+| 表/对象 | 数量/状态 |
+|---|---|
+| Validation Contract / Run | 各1 |
+| Completion Claim / Result Commit | 各1 |
+| Observation / Assessment / Adoption | 各2，覆盖`validation_result`与`file_hash_match` |
+| Action | `completed` |
+| 父Work | `in_progress` |
+
+但当前真实Run `82478d84-41cd-4066-ab3a-a6420d19115a`请求“创建hello.txt”，并不符合“只编辑已存在文件”的
+当前合同。它记录了1个`succeeded workspace_edit` ToolExecution和1个`retained` Workspace，却有：
+
+```text
+changed_paths = []
+Artifact = 0
+Validation Run = 0
+Completion Claim = 0
+Result Commit = 0
+Product Run status = succeeded
+```
+
+这条真实记录只证明pi/Workspace运输链曾运行，**不能证明SC10达成**；还暴露“Product Run成功”和“产品工作完成”
+在UI/终态表达上仍需优化。不得把它删掉或解释成成功证据。
+
+```mermaid
+flowchart TD
+  T["受控README精确edit"] --> V["Validation通过"] --> C["Claim accepted"] --> RC["Action completed"]
+  R["真实create hello.txt"] --> WS["Workspace retained / changed_paths空"] --> GAP["无Artifact/Claim/Commit：缺口"]
+```
+
+## 9. 断点导航与开发入口
+
+| 断点 | 观察 | 通过下一跳 | 失败/缺口下一跳 |
+|---|---|---|---|
+| `ExecutionWorkspacePrepareExecutor` | base snapshot/workspace root | pi workspace | snapshot unsafe |
+| `PiWorkspaceDispatchExecutor` | exact edit card/preimage hash | Operation approval | deny unsupported write |
+| `PiWorkspaceResultAssemblyExecutor` | changed paths/diff hash | Result Pipeline | no-change/unknown |
+| `ResultPipelineCoordinator.prepare` | artifact/contract/requirements | Claim card | failed closed |
+| `ResultCommitCoordinator.commit` | current claim/decision/artifact bytes | Action CAS completed | reject/conflict |
+
+源码：[`execution_dispatch/workflow.py`](../../../backend/app/execution_dispatch/workflow.py)、
+[`execution_workspaces/service.py`](../../../backend/app/execution_workspaces/service.py)、
+[`evidence/result_pipeline.py`](../../../backend/app/evidence/result_pipeline.py)、
+[`evidence/result_commit.py`](../../../backend/app/evidence/result_commit.py)。支持“创建新文件”前必须新增正式合同、
+precondition、路径与空文件语义、Artifact/Validation测试；不能把现有`edit`偷偷扩成任意write。
+
 ## 掌握验收
 
 1. 为什么pi执行成功还不能直接把Action置completed？
 2. Claim hash和row_version分别防什么？
 3. 为什么父Work保持in_progress？
 4. Artifact Store未配置时为什么必须失败关闭？
-
