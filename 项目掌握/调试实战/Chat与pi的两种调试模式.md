@@ -15,6 +15,10 @@
 - pi RPC入口：`/Users/xulater/Code/opc-os/pi/packages/coding-agent/src/main.ts`
 - pi RPC命令循环：`/Users/xulater/Code/opc-os/pi/packages/coding-agent/src/modes/rpc/rpc-mode.ts`
 
+> **定位**：本篇只解释“调试器怎样跨Chat/pi两个仓库”。pi只读请求应该怎样响应、经过哪些节点和数据，
+> 由[SC09](./场景/SC09-受治理pi只读检查.md)拥有；隔离编辑与Evidence由
+> [SC10](./场景/SC10-隔离精确编辑与Evidence提交.md)拥有。
+
 ## 问题
 
 日常开发需要两种调试能力：

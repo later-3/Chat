@@ -13,6 +13,10 @@
 - [主Workflow节点1-3](../../backend/app/workflows/continuous_chat.py)
 - [HarnessService.create_context_package](../../backend/app/harness/service.py)
 
+> **定位**：这是S1节点1–5的局部对象实验，不再承担“端到端场景大全”。想用自己的Prompt判断完整系统反应，
+> 先看[场景实验室](./00-场景实验室使用方法.md)；修改Context的完整预言机看
+> [SC05](./场景/SC05-修改Context与revision失效.md)。
+
 ## 问题
 
 怎样不靠阅读抽象说明，亲手观察一条消息从前端点击发送，经过Product Run和MAF Workflow，最终把

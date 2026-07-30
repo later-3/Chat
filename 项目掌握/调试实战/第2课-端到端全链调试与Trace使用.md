@@ -10,15 +10,19 @@
 - [continuous_chat.py（39节点）](../../backend/app/workflows/continuous_chat.py)、[continuous_chat_contracts.py（确定性规则）](../../backend/app/workflows/continuous_chat_contracts.py)
 - [trace_reports.py（双Trace）](../../backend/app/product_sessions/trace_reports.py)
 
+> **定位**：本课现在只拥有“公共断点与Trace工具”责任。下面Pass A/B仍可作为快速练习，但它们不能代表
+> 各种Prompt的完整预期。15个独立输入族、必经/未走节点、数据变化和测试证据统一由
+> [场景实验室](./00-场景实验室使用方法.md)及各SC场景卡拥有。
+
 ## 问题
 
-[第1课](./第1课-从点击发送到ContextPackage.md)只追到节点3。本课回答：怎样用两次调试走完
-**整条端到端链路**（前端→接纳→Worker→S1-S7→图外提交→SSE回流），每个断点观察什么；
+[第1课](./第1课-从点击发送到ContextPackage.md)只追到节点3。本课回答：怎样用两次快速练习熟悉
+**公共端到端边界**（前端→接纳→Worker→S1-S7→图外提交→SSE回流），每个断点观察什么；
 以及调试结束后怎样用Trace（工作台节点详情+双Trace报告）复核你刚才单步看到的一切。
 
 ## 回答
 
-不要试图一次调试39个节点。用**两条路径分两次**走，第一次看骨架，第二次看治理：
+不要试图一次调试39个节点。先用**两条路径分两次**熟悉工具，第一次看骨架，第二次看治理；真正验收时再进入对应SC场景卡：
 
 | 调试轮次 | 输入 | 经过的分支 | 学到什么 |
 |---|---|---|---|

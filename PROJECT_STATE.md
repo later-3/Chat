@@ -46,7 +46,7 @@
 ## 3. 本轮纠正与完成
 
 - [x] 新增[项目经验与反例](./PROJECT_LESSONS.md)，建立每次回复前强制读取规则。
-- [x] 持续记录47个可执行反例；覆盖Product Harness事实不能由Agent从聊天摘要猜测、不得回退系统Python、重大里程碑后必须做产品级工程收敛、禁止用“大文件先跑通、以后再整理”持续制造不可维护代码、不得把外部编码Agent非交互模式冒充受治理工具、撤回首条消息不能继续冒充Session标题、必须区分模型可见输出/Workflow采用/Product提交结果、移动端完整产品视角、协作协议/步骤输入、超级管理员运营看护、pi安装/隔离运行身份、数据库测试独立收集、虚拟环境沙箱路径边界、验证产物收口、同步App Shell样式所有权、Workflow代码可学习性与确定性双Trace、跨仓源码调试所有权、PWA认证失效不能只显示401、LaunchAgent已加载/远端端口监听不能冒充反向SSH端到端健康，以及学习文档的阶段/节点/版本必须由代码事实生成口径。
+- [x] 持续记录49个可执行反例；覆盖Product Harness事实不能由Agent从聊天摘要猜测、不得回退系统Python、重大里程碑后必须做产品级工程收敛、禁止用“大文件先跑通、以后再整理”持续制造不可维护代码、不得把外部编码Agent非交互模式冒充受治理工具、撤回首条消息不能继续冒充Session标题、必须区分模型可见输出/Workflow采用/Product提交结果、移动端完整产品视角、协作协议/步骤输入、超级管理员运营看护、pi安装/隔离运行身份、数据库测试独立收集、虚拟环境沙箱路径边界、验证产物收口、同步App Shell样式所有权、Workflow代码可学习性与确定性双Trace、跨仓源码调试所有权、PWA认证失效不能只显示401、LaunchAgent已加载/远端端口监听不能冒充反向SSH端到端健康、学习文档代码事实口径，以及调试实战必须有场景预言机。
 - [x] 纠正`AGENTS.md`和`PROJECT_CONTEXT.md`中的产品身份与外部关系。
 - [x] 删除稳定产品上下文里的“第一阶段/后续能力/非上位系统”式范围定义。
 - [x] 在`agent_knowledge/project-studies`新增pi、nanobot架构与模块源码研究，补齐QwenPaw Web/Channel入口拓扑和LibreChat源码模块拓扑、责任与缺口。
@@ -374,6 +374,17 @@
   通过；全仓文档检查仅剩`ref/LifeOS`既有7条坏链，项目掌握新增/既有文档0条断链。后端全量快照
   为470通过/2失败，其中本轮目录文案指纹已复核更新且定向重测通过；剩余1项是并行认证恢复改动使
   `App.tsx`为806行、超过既有800行审查门，本轮未擅自重构该用户改动。
+- [x] 2026-07-30根据用户对“调试实战必须能用自己的Prompt验证”的纠正，新增反例049和
+  [场景实验室](./项目掌握/调试实战/00-场景实验室使用方法.md)：把确定性查询、普通问答、澄清、
+  多Intent、Context revision/来源失效、模型请求修改/放弃、pi只读、隔离精确编辑与Evidence、
+  Validation失败/未知、断线、取消、Retry/Restart和跨进程HITL恢复拆成SC01-SC15共15张独立场景卡。
+  每张卡声明可自由替换的输入族、`exact/semantic/observe/gap`预言机、逐节点或边界数据账、源码/Store/
+  Trace、设计取舍、通过/失败和清理边界，并绑定当前pytest函数；`scenario-manifest.json`与
+  `check-project-mastery.py`现在检查场景ID、文档元数据、测试函数及必经/禁止节点。
+  新增只读`inspect-debug-scenario.py`可按Product Session/Run ID对比human Trace节点且不输出Prompt/
+  Context/Provider正文。15场景绑定的24个自动用例、检查器2项单测、Ruff和项目掌握校验通过；该CLI对
+  2026-07-29真实目录Run复核为23个实际节点、16个未访问节点、0个模型Attempt，纠正第3课原手写的
+  “28/11”错误。全仓文档检查仍只剩`ref/LifeOS`原有7条坏链，本轮项目掌握文档0条新增断链。
 - [x] 每个终态Product Run在同一数据库事务物化`diagnostic`和`human`两份确定性Trace报告：
   前者保留Product Trace事件、Sequence、Attempt、ToolExecution与关联ID，后者保存实际节点路径、
   路由/决定原因、空值稳定代码和未经过节点并生成Markdown；不调用Agent/LLM、不含隐藏推理，

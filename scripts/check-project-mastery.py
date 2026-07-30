@@ -7,16 +7,17 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Never
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "项目掌握" / "coverage-manifest.json"
+SCENARIO_MANIFEST = ROOT / "项目掌握" / "调试实战" / "scenario-manifest.json"
 MASTERY_ROOT = ROOT / "项目掌握"
 PROPOSAL = ROOT / "docs" / "overall-architecture-proposal.md"
 MAIN_WORKFLOW_DOC = MASTERY_ROOT / "Workflow架构与ProductAwareWorkflow" / "持续协作主Workflow的39节点设计.md"
 
 
-def _fail(message: str) -> None:
+def _fail(message: str) -> Never:
     raise SystemExit(f"ERROR: {message}")
 
 
@@ -56,6 +57,69 @@ def _target_module_names() -> set[str]:
     for heading in re.findall(r"^### 7\.\d+ (.+)$", section, flags=re.MULTILINE):
         names.add(heading.removesuffix("模块").strip())
     return names
+
+
+def _check_debug_scenarios(*, workflow_nodes: set[str]) -> int:
+    """Keep executable scenario docs, pytest evidence and node oracles connected."""
+
+    manifest = json.loads(SCENARIO_MANIFEST.read_text(encoding="utf-8"))
+    scenarios = manifest.get("scenarios")
+    if not isinstance(scenarios, list) or not scenarios:
+        _fail("调试场景清单必须包含非空scenarios")
+    scenario_ids = [str(value.get("id")) for value in scenarios]
+    if len(scenario_ids) != len(set(scenario_ids)):
+        _fail("调试场景清单存在重复ID")
+    metadata_pattern = re.compile(
+        r"<!-- debug-scenario: id=(?P<id>SC\d+); status=(?P<status>[^;]+); "
+        r"oracle=(?P<oracle>[^ ]+) -->"
+    )
+    allowed_statuses = {"current", "conditional", "target_gap"}
+    allowed_oracles = set(manifest.get("oracle_levels", {}))
+    for scenario in scenarios:
+        scenario_id = str(scenario["id"])
+        status = str(scenario["status"])
+        oracle = str(scenario["oracle"])
+        if status not in allowed_statuses:
+            _fail(f"调试场景{scenario_id}使用未知状态：{status}")
+        if oracle not in allowed_oracles:
+            _fail(f"调试场景{scenario_id}使用未知预言机等级：{oracle}")
+        document = ROOT / str(scenario["doc"])
+        if not document.exists():
+            _fail(f"调试场景{scenario_id}文档不存在：{scenario['doc']}")
+        metadata = metadata_pattern.search(document.read_text(encoding="utf-8"))
+        if metadata is None:
+            _fail(f"调试场景{scenario_id}文档缺少机器元数据")
+        if metadata.groupdict() != {"id": scenario_id, "status": status, "oracle": oracle}:
+            _fail(
+                f"调试场景{scenario_id}文档元数据漂移；"
+                f"文档={metadata.groupdict()}；清单={{'id': '{scenario_id}', 'status': '{status}', "
+                f"'oracle': '{oracle}'}}"
+            )
+        required_nodes = set(map(str, scenario.get("required_nodes", [])))
+        forbidden_nodes = set(map(str, scenario.get("forbidden_nodes", [])))
+        unknown_nodes = (required_nodes | forbidden_nodes) - workflow_nodes
+        if unknown_nodes:
+            _fail(f"调试场景{scenario_id}引用未知Workflow节点：{sorted(unknown_nodes)}")
+        overlap = required_nodes & forbidden_nodes
+        if overlap:
+            _fail(f"调试场景{scenario_id}同时要求并禁止节点：{sorted(overlap)}")
+        tests = scenario.get("tests", [])
+        if status in {"current", "conditional"} and not tests:
+            _fail(f"调试场景{scenario_id}没有绑定自动证据")
+        for test_reference in tests:
+            test_path_text, separator, test_name = str(test_reference).partition("::")
+            if not separator or not test_name.startswith("test_"):
+                _fail(f"调试场景{scenario_id}测试引用格式无效：{test_reference}")
+            test_path = ROOT / test_path_text
+            if not test_path.exists():
+                _fail(f"调试场景{scenario_id}测试文件不存在：{test_path_text}")
+            test_text = test_path.read_text(encoding="utf-8")
+            if (
+                re.search(rf"^(?:async\s+)?def\s+{re.escape(test_name)}\s*\(", test_text, re.MULTILINE)
+                is None
+            ):
+                _fail(f"调试场景{scenario_id}测试函数不存在：{test_reference}")
+    return len(scenarios)
 
 
 def main() -> None:
@@ -136,6 +200,9 @@ def main() -> None:
         {value.id for value in CONTINUOUS_COLLABORATION_WORKFLOW.nodes},
         {str(value["id"]) for value in manifest["continuous_workflow_nodes"]},
     )
+    scenario_count = _check_debug_scenarios(
+        workflow_nodes={value.id for value in CONTINUOUS_COLLABORATION_WORKFLOW.nodes}
+    )
 
     code_stages = list(CONTINUOUS_WORKFLOW_LEARNING_STAGES)
     manifest_stages = manifest["continuous_workflow_learning_stages"]
@@ -210,7 +277,8 @@ def main() -> None:
         f"{len(manifest['continuous_workflow_nodes'])}个主Workflow节点，"
         f"{len(manifest['runtime_roles'])}个运行/部署角色，"
         f"{len(manifest['protocol_boundaries'])}个协议边界，"
-        f"{len(manifest['state_locations'])}个状态位置。"
+        f"{len(manifest['state_locations'])}个状态位置，"
+        f"{scenario_count}个可执行调试场景。"
     )
 
 
