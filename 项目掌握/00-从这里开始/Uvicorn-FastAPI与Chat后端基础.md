@@ -98,6 +98,68 @@ async def ready():
 
 C++可以粗略类比为`co_await`和事件循环，但Python `asyncio`的调度和对象模型与C++协程并不相同。
 
+### 1.4 `yield`是什么
+
+`yield`在Chat后端出现在两个完全不同的场景，必须先分开：
+
+#### 场景A：异步上下文管理器中的`yield`（Lifespan）
+
+```python
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app):
+    # ---- startup：yield之前 ----
+    await database.initialize()
+    await worker.start()
+
+    yield  # <-- 暂停在这里，把控制权交回给FastAPI/Uvicorn
+
+    # ---- shutdown：yield之后 ----
+    await worker.stop()
+    await database.close()
+```
+
+这里的`yield`不是"产出数据"，而是**分界点**：
+
+- `yield`之前的代码在应用开始接收请求**之前**运行（startup）。
+- `yield`本身表示"现在把控制权交回给框架，框架开始处理请求"。
+- `yield`之后的代码在进程关闭时运行（shutdown）。
+
+C++可以粗略类比为：你有一个`init()`和一个`cleanup()`，`yield`是中间那段"服务中"的时间。`@asynccontextmanager`把这个函数变成一个可以`async with`使用的对象——FastAPI在启动时`async with lifespan`进入，关闭时退出。
+
+**Chat真实例子**：[`create_lifespan`](../../backend/app/lifecycle.py#L21)中，`yield`之前做数据库迁移、对账和启动Worker；`yield`期间Uvicorn正常处理HTTP请求；进程收到SIGTERM后执行`yield`之后的代码，先停Worker再断数据库。
+
+#### 场景B：异步生成器中的`yield`（SSE事件流）
+
+```python
+async def event_stream():
+    sequence = 0
+    while True:
+        events = await get_new_events(after=sequence)
+        for event in events:
+            yield sse_encode(event)  # <-- 产出一帧SSE字节，暂停
+            sequence += 1
+        if not events:
+            await asyncio.sleep(0.08)
+```
+
+这里的`yield`是**产出值并暂停**：每次`yield`把一帧SSE字节交给`StreamingResponse`，
+`StreamingResponse`把它写入HTTP响应socket，然后函数在`yield`处恢复，继续等下一批事件。
+
+C++可以粗略类比为：一个回调函数每次被调用时往输出buffer写一帧，然后return；但Python生成器不需要每次重新进入，它在`yield`处挂起和恢复。
+
+**Chat真实例子**：[`event_stream`](../../backend/app/runtime_execution/endpoint.py#L85)用`yield _sse(event)`逐帧产出SSE字节。每帧包含一个JSON事件（如`RUN_STARTED`、`TEXT_MESSAGE_CONTENT`、`RUN_FINISHED`），Uvicorn把每帧写入同一HTTP响应，直到流结束或客户端断开。
+
+#### 两种`yield`的对比
+
+| 维度 | Lifespan中的`yield` | 生成器中的`yield` |
+|---|---|---|
+| 作用 | 分界点：startup和shutdown的分隔 | 产出值：每次产出一帧数据 |
+| 执行几次 | 整个进程生命周期只经过1次 | 循环中可能执行成百上千次 |
+| 交出控制权给谁 | 框架（FastAPI/Uvicorn） | 调用方（StreamingResponse） |
+| Chat出现位置 | `lifecycle.py::lifespan` | `endpoint.py::event_stream` |
+
 ## 2. Uvicorn命令逐字展开
 
 ```bash
@@ -163,16 +225,65 @@ Chat的[`CorrelationMiddleware.__call__`](../../backend/app/api/request_context.
 ASGI参数的实现。它在`scope`中读method/path，包装`send`加入`X-Request-ID`，然后调用
 `await self.app(scope, receive, send_with_request_id)`把请求继续向内传。
 
-所以Middleware很像一圈又一圈的函数包装：
+用一次`GET /api/live`走一遍这3个参数：
+
+```python
+# ① Uvicorn解码HTTP后，构造scope字典，调用app：
+scope = {
+    "type": "http",           # 这是一个HTTP请求（不是lifespan或websocket）
+    "method": "GET",
+    "path": "/api/live",
+    "query_string": b"",      # 没有?参数
+    "headers": [
+        (b"host", b"127.0.0.1:18030"),
+        (b"user-agent", b"curl/8.0"),
+        (b"accept", b"*/*"),
+    ],
+    "client": ("127.0.0.1", 54321),  # 客户端IP和端口
+}
+
+# ② receive是异步函数，调用时返回客户端发来的下一个事件：
+event = await receive()
+# 对于简单GET请求，通常直接返回 {"type": "http.request", "body": b"", "more_body": False}
+# 对于POST，body会是JSON字节：{"type": "http.request", "body": b'{"title":"..."}', ...}
+
+# ③ send也是异步函数，应用调用它把响应事件发回Uvicorn：
+await send({"type": "http.response.start", "status": 200, "headers": [
+    (b"content-type", b"application/json"),
+    (b"x-request-id", b"a1b2c3d4-..."),  # CorrelationMiddleware插入的
+]})
+await send({"type": "http.response.body", "body": b'{"status":"live"}'})
+# Uvicorn收到这两个事件后，序列化HTTP响应并写入socket
+```
+
+所以Middleware很像一圈又一圈的函数包装。用一次真实请求走一遍：
 
 ```text
-Uvicorn
-→ CorrelationMiddleware进入
-→ CORS/Starlette/FastAPI路由
-→ 真实endpoint函数
-→ FastAPI/Starlette序列化响应
-→ CorrelationMiddleware把request ID加入response header
-→ Uvicorn写回socket
+浏览器发送 GET /api/sessions?include_archived=false
+
+① Uvicorn收到TCP字节，解码为HTTP，构造ASGI scope字典：
+   scope = {"type": "http", "method": "GET", "path": "/api/sessions",
+            "query_string": b"include_archived=false", "headers": [...]}
+
+② CorrelationMiddleware.__call__(scope, receive, send) 被调用：
+   - 从scope读method="GET"、path="/api/sessions"
+   - 生成request_id="a1b2c3d4-..."
+   - 把send包装成send_with_request_id（在response header里插入X-Request-ID）
+   - 调用 await self.app(scope, receive, send_with_request_id)  ← 向内层传递
+
+③ FastAPI路由匹配到 list_sessions 函数：
+   - 把query_string解析为 include_archived=False（Python bool）
+   - 调用 await product_sessions.list_sessions(include_archived=False)
+
+④ ProductSessionService查数据库，返回Session列表
+
+⑤ FastAPI把返回的dict序列化为JSON字节
+
+⑥ 响应向外层回传：
+   - send_with_request_id 在http.response.start消息中插入 X-Request-ID: a1b2c3d4-...
+   - Uvicorn把HTTP 200响应写回TCP socket
+
+⑦ 浏览器收到响应，React解析JSON并渲染Session列表
 ```
 
 ASGI还承载`lifespan`和WebSocket等scope。Chat当前Agent主交互是HTTP POST + SSE，不是WebSocket。
@@ -193,6 +304,32 @@ create_app
 ├─ include_router：注册Product REST路由
 ├─ register_runtime_surfaces：注册AG-UI端点与Runner
 └─ return app
+```
+
+用一次真实启动走一遍：
+
+```text
+你敲下: python -m uvicorn backend.app.asgi:app --port 18030
+
+① CPython启动，加载uvicorn模块
+② Uvicorn按"backend.app.asgi:app"规则，import backend.app.asgi
+③ asgi.py顶层执行：from .main import create_app; app = create_app()
+④ create_app()内部：
+   a. Settings.from_env() 读取环境变量和config.json → 得到database_url、log_level等
+   b. build_components(settings) → new出ProductDatabase、各Service、Worker
+   c. FastAPI(lifespan=create_lifespan(components)) → 创建Web应用对象
+   d. install_error_handlers(app) → 注册异常→HTTP映射
+   e. add_middleware(CorrelationMiddleware) → 注册中间件
+   f. include_router(product_router) → 注册/api/sessions等路由
+   g. register_runtime_surfaces(app) → 注册AG-UI端点
+   h. return app  ← 此时app对象存在，但数据库还没连、Worker还没启
+⑤ Uvicorn拿到app，bind(127.0.0.1, 18030)，listen()
+⑥ Uvicorn发lifespan.startup → 进入create_lifespan的yield之前：
+   a. product_sessions.initialize() → 建表/迁移
+   b. governance.initialize() → 初始化治理规则
+   c. 对账过期Lease、终态Run
+   d. asyncio.create_task(execution_loop) → 启动内嵌Worker轮询
+⑦ yield → Uvicorn开始accept请求 → 现在curl /api/live才会返回200
 ```
 
 ### 4.1 为什么不在一个`main.py`里全做完
@@ -305,6 +442,31 @@ FastAPI看到[`create_session(command: CreateSessionRequest)`](../../backend/app
 
 如果body额外带`{"admin": true}`，当前DTO应拒绝，而不是静默忽略一个可能被误以为已生效的字段。
 
+用一次真实POST走一遍Pydantic解析过程：
+
+```text
+浏览器发送:
+POST /api/sessions
+Content-Type: application/json
+Body: {"title": "学习FastAPI", "model_provider_id": null, "model": null}
+
+① Uvicorn解码HTTP，receive()返回body字节
+② FastAPI看到函数签名 create_session(command: CreateSessionRequest)
+③ Pydantic拿到JSON字节，开始解析：
+   - "title": "学习FastAPI" → str ✓
+   - "model_provider_id": null → Optional[str] = None ✓
+   - "model": null → Optional[str] = None ✓
+   - extra="forbid"检查：没有多余字段 ✓
+④ 生成DTO对象：command = CreateSessionRequest(title="学习FastAPI", model_provider_id=None, model=None)
+⑤ 路由函数拿到command，调用 product_sessions.create_session(command)
+
+如果body是 {"title": "学习FastAPI", "admin": true}：
+→ Pydantic发现"admin"不在DTO定义中
+→ 抛出RequestValidationError
+→ install_error_handlers把它映射为HTTP 422 Problem Detail
+→ 前端收到 {"code":"VALIDATION_ERROR","message":"...","request_id":"..."}
+```
+
 DTO不等于数据库行：`CreateSessionRequest`只是协议输入，Product Session ID、revision、时间和状态由
 `ProductSessionService`在产品用例中创建和保存。
 
@@ -322,6 +484,40 @@ Chat的[`CorrelationMiddleware`](../../backend/app/api/request_context.py#L69)�
 
 Middleware不应成为Product Session、Approval或Run的事实所有者：HTTP request ID是传输关联字段，
 不是用户身份、Product Session ID或授权凭据。
+
+用一次真实请求走一遍Middleware做了什么：
+
+```text
+浏览器发送: POST /api/runtime/agui  （发送一条用户消息）
+
+① CorrelationMiddleware.__call__(scope, receive, send) 被调用
+② 读scope["method"] = "POST", scope["path"] = "/api/runtime/agui"
+③ 检查请求header中有没有X-Request-ID：
+   - 有且合法 → 复用（上游网关已经生成过）
+   - 没有 → 生成新的 uuid4，如 "f47ac10b-58cc-..."
+④ 设置ContextVar: _request_id.set("f47ac10b-58cc-...")
+   → 后续任何代码调用 current_request_id() 都能拿到这个ID
+⑤ 记录开始时间: started = time.perf_counter()
+⑥ 包装send函数：
+   async def send_with_request_id(message):
+       if message["type"] == "http.response.start":
+           # 在响应header中插入 X-Request-ID: f47ac10b-...
+           headers.append((b"x-request-id", b"f47ac10b-..."))
+       await send(message)  # 调用原始send
+⑦ 调用 await self.app(scope, receive, send_with_request_id)  ← 向内层传递
+⑧ 内层处理完毕，响应回传：
+   - send_with_request_id被调用，插入header
+   - Uvicorn写入socket
+⑨ 回到CorrelationMiddleware：
+   - 计算耗时: elapsed = time.perf_counter() - started = 0.234秒
+   - 记录日志: "POST /api/runtime/agui 200 234ms request_id=f47ac10b-..."
+   - 更新Metrics: http_requests_total{method="POST",path="/api/runtime/agui",status="200"}
+```
+
+如果不在Middleware做，而是每个Router自己做：
+- 每个路由函数都要写一遍“读header、生成ID、记日志、算耗时、更新Metrics”
+- 漏掉一个路由就没有request ID
+- SSE流结束时无法正确记录耗时（因为StreamingResponse对象创建时流还没发完）
 
 ## 7. Lifespan是什么：进程资源的开机和关机顺序
 
@@ -342,6 +538,51 @@ yield之后（shutdown）
 ├─ 取消Worker Task并等待收敛
 ├─ 关闭pi执行
 └─ 关闭数据库连接
+```
+
+用一次真实启动和关闭走一遍：
+
+```text
+你敲下 python -m uvicorn backend.app.asgi:app --port 18030
+
+━━━ yield之前（startup）━━━
+1. product_sessions.initialize()
+   → 执行SQL: CREATE TABLE IF NOT EXISTS product_sessions (...)
+   → 执行SQL: CREATE TABLE IF NOT EXISTS product_runs (...)
+   → 数据库现在有了正确的表结构
+
+2. governance.initialize()
+   → 加载治理规则到内存
+
+3. 对账：扫描status=running但实际已无Worker的Run
+   → 把它们标记为outcome_unknown
+   → 防止"假运行中"状态
+
+4. asyncio.create_task(execution_loop)
+   → 在事件循环中创建一个后台Task
+   → execution_loop开始 while True: run_once(); sleep(0.08)
+   → Worker现在每80ms检查一次有没有新Job
+
+━━━ yield ━━━
+5. yield  ← 控制权交回Uvicorn
+   → Uvicorn开始accept()请求
+   → 现在 curl http://127.0.0.1:18030/api/live 才会返回200
+   → 用户发送消息 → POST /api/runtime/agui → Worker领Job → 模型执行 → SSE输出
+
+━━━ yield之后（shutdown）━━━
+你按 Ctrl+C
+
+6. Uvicorn发lifespan.shutdown信号
+7. execution_task.cancel()
+   → execution_loop的while True被CancelledInterrupt打破
+   → Worker停止领取新Job
+8. await execution_task  ← 等当前正在执行的run_once()完成
+   → 保证不会把执行到一半的Job丢掉
+9. await pi_execution.shutdown()
+   → 关闭pi执行资源
+10. await database.close()
+    → 关闭数据库连接
+    → 进程退出
 ```
 
 这里`asyncio.create_task()`创建的是**同一Python进程事件循环中的异步Task**，不是新OS进程。
@@ -427,6 +668,30 @@ FastAPI并不会自动理解Chat领域错误。[`install_error_handlers`](../../
 为什么不直接`return str(error)`？内部异常可能含绝对路径、SQL、Provider内容或不稳定文案；
 前端也无法靠它稳定判断重试、刷新还是请用户处置。
 
+用一次真实错误走一遍：
+
+```text
+浏览器请求: GET /api/sessions/nonexistent-session-id/runs
+
+① FastAPI匹配到路由函数，调用 product_sessions.get_runs(session_id="nonexistent-...")
+② ProductSessionService查数据库，找不到Session
+③ 抛出 ResourceNotFoundError("Session not found")  ← Python异常，含内部信息
+④ install_error_handlers捕获，映射为：
+   HTTP 404
+   Content-Type: application/json
+   Body: {
+     "code": "RESOURCE_NOT_FOUND",
+     "message": "请求的资源不存在。",
+     "request_id": "a1b2c3d4-...",
+     "retryable": false,
+     "details": null
+   }
+⑤ 浏览器收到404，React显示"资源不存在"提示
+
+注意：原始异常中的内部路径、SQL查询、数据库表名都不会穿过HTTP边界。
+前端只看到稳定的code+message+request_id，可以用request_id找运维查日志。
+```
+
 ## 9. CORS是浏览器边界，不是产品权限
 
 [`create_app`](../../backend/app/main.py#L85)注册`CORSMiddleware`，允许配置中的前端Origin直接18030。
@@ -460,26 +725,84 @@ CORS主要防止某个其他网站的JavaScript随意读取Chat API响应。但�
 3. Runtime Service创建Job、Cursor和初始Journal事件。
 4. Worker在同一或独立Python进程领取Job，再跑MAF Runner。
 5. endpoint返回`StreamingResponse(event_stream(), media_type="text/event-stream")`。
-6. `event_stream`是异步生成器：按sequence读Journal，每出现一个新事件就`yield`一帧字节。
+6. `event_stream`是异步生成器：按sequence读Journal，每出现一个新事件就`yield`一帧字节（参见1.4节生成器中的`yield`）。
 7. Uvicorn把每帧继续写入同一HTTP响应，直到`RUN_FINISHED/RUN_ERROR`或客户端断开。
 
-这里HTTP连接只是“当前订阅窗口”。Product Run和Runtime Job已经在Product Store中有独立生命周期，
+这里HTTP连接只是"当前订阅窗口"。Product Run和Runtime Job已经在Product Store中有独立生命周期，
 所以浏览器断掉SSE不应该默认取消已领取的Job。
+
+用一次真实用户消息走一遍：
+
+```text
+用户在Chat输入框发送 "帮我创建一个学习计划" 并回车
+
+① 前端AG-UI Client构造POST请求：
+   POST /api/runtime/agui
+   Body: {"type":"RUN_STARTED", "threadId":"t-001", "runId":"r-100",
+          "messages":[{"role":"user","content":"帮我创建一个学习计划"}]}
+
+② FastAPI/Pydantic把JSON解析为AGUIRequest对象
+
+③ sessions.prepare_agui_run(input_data)：
+   - 在Product Store写入User Message、Interaction
+   - 创建Product Run（status=accepted）和Attempt
+   - 返回accepted字典（含product_run_id, session_id等）
+
+④ runtime.enqueue(accepted, ...)：
+   - 在Runtime Job表创建一条Job（status=queued）
+   - 分配Cursor（start_sequence=0）
+   - 写入Journal初始事件（RUN_ACCEPTED）
+   - 返回enqueued字典（含job_id, start_sequence）
+
+⑤ endpoint返回 StreamingResponse(event_stream(), media_type="text/event-stream")
+   HTTP响应头发出：200 OK, Content-Type: text/event-stream
+
+⑥ 与此同时，Execution Worker（同进程或独立进程）领到Job：
+   - 调用MAF Runner，模型开始生成
+   - 每产生一个事件就写入Journal表
+
+⑦ event_stream生成器开始循环（yield的生成器用法）：
+   第1轮：读到Journal中RUN_ACCEPTED事件
+   → yield b'id: 1\ndata: {"type":"RUN_ACCEPTED",...}\n\n'
+   → Uvicorn写入socket → 浏览器收到第1帧
+
+   第2轮：模型开始输出文字，读到TEXT_MESSAGE_START
+   → yield b'id: 2\ndata: {"type":"TEXT_MESSAGE_START",...}\n\n'
+
+   第3轮：读到TEXT_MESSAGE_CONTENT（"学习"）
+   → yield b'id: 3\ndata: {"type":"TEXT_MESSAGE_CONTENT","delta":"学习"}\n\n'
+
+   第4轮：读到TEXT_MESSAGE_CONTENT（"计划"）
+   → yield b'id: 4\ndata: {"type":"TEXT_MESSAGE_CONTENT","delta":"计划"}\n\n'
+
+   ... 更多帧 ...
+
+   第N轮：读到RUN_FINISHED
+   → yield b'id: N\ndata: {"type":"RUN_FINISHED"}\n\n'
+   → event_stream函数return → StreamingResponse结束
+
+⑧ 浏览器AG-UI Client逐帧解析SSE，React实时渲染文字
+
+如果此时浏览器断网：
+- SSE连接断开，但Worker继续执行，事件继续写入Journal
+- 用户重连时带Cursor（last sequence），event_stream从断点后续传
+- 这就是"HTTP连接只是订阅窗口"的含义
+```
 
 ## 11. 一次真实HTTP请求穿过了哪些对象
 
-以`GET /api/sessions?include_archived=false`为例：
+以`GET /api/sessions?include_archived=false`为例。下面同时给出每一层你**实际会看到的Python对象**：
 
-| 时间 | 所在边界 | 当前形态 | 谁创建/解释 | 下一步 |
-|---:|---|---|---|---|
-| 1 | 网卡/socket | HTTP请求字节 | 浏览器创建，Uvicorn解码 | ASGI scope |
-| 2 | ASGI | `scope={type,http; method,GET; path,/api/sessions; ...}` | Uvicorn | Middleware |
-| 3 | 传输观测 | request ID、method、path、start time | CorrelationMiddleware | FastAPI Router |
-| 4 | FastAPI | `include_archived=False` Python bool | FastAPI根据函数签名解析 | Router函数 |
-| 5 | 应用查询 | `list_sessions(include_archived=False)` | ProductSessionService | Product Store |
-| 6 | 产品投影 | Session列表，含稳定ID/revision/status | Product Store + Service | Router |
-| 7 | FastAPI/Starlette | Python dict→JSON bytes、status/header | Framework | Uvicorn |
-| 8 | socket | HTTP 200 response bytes | Uvicorn | 浏览器/React |
+| 时间 | 所在边界 | 当前形态 | 具体例子 | 谁创建/解释 | 下一步 |
+|---:|---|---|---|---|---|
+| 1 | 网卡/socket | HTTP请求字节 | `b"GET /api/sessions?include_archived=false HTTP/1.1\r\nHost: 127.0.0.1:18030\r\n..."` | 浏览器创建，Uvicorn解码 | ASGI scope |
+| 2 | ASGI | scope字典 | `{"type":"http","method":"GET","path":"/api/sessions","query_string":b"include_archived=false","headers":[(b"host",b"127.0.0.1:18030"),...]}` | Uvicorn构造 | Middleware |
+| 3 | 传输观测 | ContextVar + scope.state | request_id=`"a1b2c3d4-..."`, started=`time.perf_counter()`=123456.789 | CorrelationMiddleware设置 | FastAPI Router |
+| 4 | FastAPI | Python函数参数 | `include_archived=False`（str `"false"` → bool `False`） | FastAPI根据`list_sessions(include_archived: bool = False)`签名解析 | Router函数体 |
+| 5 | 应用查询 | Service方法调用 | `await product_sessions.list_sessions(include_archived=False)` | ProductSessionService | SQLAlchemy → Product Store |
+| 6 | 产品投影 | Python list of dict | `[{"session_id":"s-001","revision":3,"status":"active","title":"学习FastAPI"}, ...]` | Product Store查询结果，Service做稳定投影 | 返回给Router |
+| 7 | FastAPI/Starlette | HTTP响应字节 | `b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Request-ID: a1b2c3d4\r\n\r\n{\"sessions\":[...]}"` | FastAPI dict→JSON序列化，CorrelationMiddleware加header | Uvicorn写socket |
+| 8 | socket | TCP字节流 | 同上字节写入TCP | Uvicorn | 浏览器/React解析JSON |
 
 这些对象不能因为都含`session`/`status`字段就共用同一类。网络字节是外部输入，ASGI scope是运输对象，
 Query Parameter是协议值，Product Session投影是产品读模型。
@@ -601,3 +924,4 @@ curl -i 'http://127.0.0.1:18030/api/sessions?include_archived=false'
 
 - 2026-07-30：按当前安装版本与Chat源码建立首版；不把通用FastAPI教程与当前项目行为混合。
 - 2026-07-31：补充第7.1节（从Python进程启动看Lifespan为什么必须存在）和第7.2节（Lifespan与`run_once`"轮询"的关系），回应"方法名叫`run_once`为什么注释说轮询"的困惑；同步刷新`worker.py::run_once`的docstring与块注释，修正"sleep 0.08秒"归属（外层`execution_loop`，非方法内部）。
+- 2026-07-31：新增第1.4节（`yield`是什么），区分Lifespan上下文管理器中的`yield`（分界点）和SSE生成器中的`yield`（产出值）；为第3节ASGI、第4节create_app、第5.3节Pydantic DTO、第6节Middleware、第7节Lifespan、第8节错误处理、第10.2节AG-UI SSE和第11节请求链路补充具体例子，使每层流程都能对照实际对象走一遍。
