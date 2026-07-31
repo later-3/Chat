@@ -38,14 +38,14 @@ flowchart LR
     F --> S --> A --> U --> C
 ```
 
-| 名称 | 一句人话 | C++参照 | Chat里的位置 | 它不是 |
-|---|---|---|---|---|
-| Uvicorn | 打开18030端口、收HTTP、再把请求交给Python Web应用的服务器 | 像含`socket/bind/listen/accept`与事件循环的网络主程序 | `.venv/bin/python -m uvicorn ...` | 不拥有Session、Run或产品事务 |
-| ASGI | Uvicorn调用Web应用的标准异步函数合同 | 像稳定回调接口/ABI | `app(scope, receive, send)` | 不是进程、HTTP路由或数据库 |
-| Starlette | FastAPI下面的ASGI Web工具箱 | 像实现网络回调、中间件和Response的基础库 | FastAPI的底层依赖 | 不是Chat产品模块 |
-| FastAPI | 把URL/HTTP方法、Python函数、DTO校验和OpenAPI连起来 | 像类型化路由表和请求调度器 | [`create_app`](../../backend/app/main.py#L39) | 不是真正的网络监听进程，也不自动等于业务架构 |
-| Pydantic | 把JSON检查并转成带类型的Python对象 | 像“网络解码 + struct字段校验” | [`CreateSessionRequest`](../../backend/app/api/contracts.py#L25) | 不是数据库行或领域对象 |
-| Chat Application Service | 真正决定产品状态怎样查询/变化的用例逻辑 | 像持有事务和状态机的业务服务 | `product_sessions/`、`harness/`、`governance/`等 | 不应被写在FastAPI Router里 |
+| 名称                       | 一句人话                                   | C++参照                                    | Chat里的位置                                                         | 它不是                    |
+| ------------------------ | -------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------- | ---------------------- |
+| Uvicorn                  | 打开18030端口、收HTTP、再把请求交给Python Web应用的服务器 | 像含`socket/bind/listen/accept`与事件循环的网络主程序 | `.venv/bin/python -m uvicorn ...`                                | 不拥有Session、Run或产品事务    |
+| ASGI                     | Uvicorn调用Web应用的标准异步函数合同                | 像稳定回调接口/ABI                              | `app(scope, receive, send)`                                      | 不是进程、HTTP路由或数据库        |
+| Starlette                | FastAPI下面的ASGI Web工具箱                  | 像实现网络回调、中间件和Response的基础库                 | FastAPI的底层依赖                                                     | 不是Chat产品模块             |
+| FastAPI                  | 把URL/HTTP方法、Python函数、DTO校验和OpenAPI连起来  | 像类型化路由表和请求调度器                            | [`create_app`](../../backend/app/main.py#L39)                    | 不是真正的网络监听进程，也不自动等于业务架构 |
+| Pydantic                 | 把JSON检查并转成带类型的Python对象                 | 像“网络解码 + struct字段校验”                     | [`CreateSessionRequest`](../../backend/app/api/contracts.py#L25) | 不是数据库行或领域对象            |
+| Chat Application Service | 真正决定产品状态怎样查询/变化的用例逻辑                   | 像持有事务和状态机的业务服务                           | `product_sessions/`、`harness/`、`governance/`等                    | 不应被写在FastAPI Router里   |
 
 最重要的结论是：**Uvicorn负责“收到网络请求”，FastAPI负责“找到哪个协议函数”，
 Chat应用服务负责“产品事实发生什么”。**
@@ -354,6 +354,55 @@ yield之后（shutdown）
 3. 关闭顺序要保证不在数据库先断开后还让Worker写终态。
 4. 单进程与分布式部署需要复用同一组Service，但选择不同的启动所有权。
 
+### 7.1 从Python进程启动看Lifespan为什么必须存在
+
+第7节给了Lifespan的三段结构，但没说它为什么必须存在。从`python -m uvicorn backend.app.asgi:app --port 18030`敲下去那一刻追起：
+
+1. **CPython启动**：OS fork出Python进程，加载解释器本身。
+2. **`-m uvicorn`**：CPython按模块规则运行`uvicorn`包入口。
+3. **Uvicorn做OS层网络事**：`socket()`→`bind(127.0.0.1,18030)`→`listen()`，拿到监听socket。纯OS系统调用，和Python对象无关。
+4. **Uvicorn要应用对象**：按`module:attribute`规则`import backend.app.asgi`，触发`asgi.py`顶层`app = create_app()`。
+5. **`create_app()`只装配对象**：new出`ProductDatabase`、`ExecutionWorker`、各Service并接起来，但**不连数据库、不跑迁移、不启Worker**。
+
+到第5步结束，FastAPI对象已存在，但进程还不能接请求：数据库没连、Schema没迁移、过期Lease没对账、Worker没启。需要一段"准备工作"。
+
+这段准备工作放哪都有问题：
+
+| 候选位置 | 问题 |
+|---|---|
+| `import`顶层 | 测试、CLI、文档生成都会import，不该偷偷连真实库 |
+| `create_app()`里 | 构造对象和启动资源是两个变化原因，混在一起 |
+| Router第一次被请求时 | 启动失败要等第一个请求才发现，健康检查失效；每个请求都要检查初始化状态 |
+| Uvicorn启动前手动调函数 | 关闭顺序没保障：SIGTERM时谁先停Worker再断数据库？ |
+
+ASGI协议为此规定了`lifespan`这种`scope["type"]`：Uvicorn在`bind/listen`完成后、`accept`请求前发`lifespan.startup`；SIGTERM/SIGINT时发`lifespan.shutdown`。FastAPI/Starlette把它包装成Python异步上下文管理器（`@asynccontextmanager` + `yield`），就是第7节那张三段图。
+
+四个硬约束逼出了这个设计：
+
+1. **import必须无副作用**：测试和工具任意import都不该连真实库或启后台任务。
+2. **启动失败必须可观测**：迁移失败时`/api/ready`要返回503，不能"端口在但状态没准备好"。Lifespan startup抛异常→Uvicorn不进入接请求模式。
+3. **关闭必须有顺序**：Worker先停→等Job收敛→再断数据库。Lifespan `finally`块保证这个顺序，否则Worker会在数据库断开后还试图写终态。
+4. **单进程与分布式复用同一套Service**：[`lifecycle.py:36`](../../backend/app/lifecycle.py#L36)用`durable_store`判断——内存SQLite不启后台Task（用`endpoint.py`同步直驱），durable store才启`execution_loop`。同一组Service对象，不同的Lifespan启动所有权。
+
+### 7.2 Lifespan和`run_once`"轮询"的关系
+
+`ExecutionWorker.run_once`的"轮询"就是Lifespan的产物，理解这一点能消除"方法名叫`run_once`为什么注释说轮询"的困惑：
+
+- Lifespan startup阶段，[`lifecycle.py:123-126`](../../backend/app/lifecycle.py#L123-L126)用`asyncio.create_task(execution_loop())`创建一个**同进程事件循环里的异步Task**（不是新OS进程）。
+- `execution_loop`函数体是`while True: run_once(); if not processed: await asyncio.sleep(0.08)`。
+- `yield`期间，这个Task和HTTP请求处理协程共享同一事件循环，并行跑。
+- Lifespan shutdown时`execution_task.cancel()`，`while True`被打破。
+
+所以`run_once`是**单次粒度**（一次claim+execute），方法名描述单次；Lifespan启动的`execution_loop`把它拼成**持续轮询**，注释描述整体行为。两者不矛盾。`sleep(0.08)`在外层`execution_loop`里，不在`run_once`内部。
+
+调用`run_once`的三个位置：
+
+| 调用方 | 位置 | 行为 |
+|---|---|---|
+| 进程内Lifespan后台Task | [`lifecycle.py::execution_loop`](../../backend/app/lifecycle.py#L111-L121) | `while True`+`sleep(0.08)`，最常见 |
+| 独立Worker进程入口 | [`execution_worker.py`](../../backend/app/execution_worker.py#L43-L58) | `while not signal.is_set()`+`wait_for(signal.wait(), timeout)` |
+| 内存SQLite单进程直驱 | [`endpoint.py`](../../backend/app/runtime_execution/endpoint.py#L93-L97) | 仅调一次，不循环 |
+
 ## 8. 错误是怎样变成稳定HTTP响应的
 
 FastAPI并不会自动理解Chat领域错误。[`install_error_handlers`](../../backend/app/api/errors.py#L226)
@@ -551,3 +600,4 @@ curl -i 'http://127.0.0.1:18030/api/sessions?include_archived=false'
 ## 补充记录
 
 - 2026-07-30：按当前安装版本与Chat源码建立首版；不把通用FastAPI教程与当前项目行为混合。
+- 2026-07-31：补充第7.1节（从Python进程启动看Lifespan为什么必须存在）和第7.2节（Lifespan与`run_once`"轮询"的关系），回应"方法名叫`run_once`为什么注释说轮询"的困惑；同步刷新`worker.py::run_once`的docstring与块注释，修正"sleep 0.08秒"归属（外层`execution_loop`，非方法内部）。

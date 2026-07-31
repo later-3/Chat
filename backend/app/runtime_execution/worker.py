@@ -138,29 +138,42 @@ class ExecutionWorker:
                 record.heartbeat_at = utc_now()
                 record.stopped_at = utc_now()
 
-    # BP-02 触发：Worker轮询热点。应用Lifespan启动的后台asyncio任务反复调用此方法，
-    # 与用户是否发消息无关。应用一启动就开始轮询：没有Job时claim返回None，sleep 0.08秒
-    # 后再调；有Job时进入_execute_claim。调试刚启动就会频繁命中，即使还没发消息。
+    # BP-02 触发：Worker轮询热点。应用Lifespan启动的后台asyncio任务（lifecycle.py::
+    # execution_loop）以 while True + asyncio.sleep(0.08) 反复调用本方法，与用户是否
+    # 发消息无关。本方法自身不循环、不sleep：没有Job时claim返回None→返回False，外层
+    # 随后sleep 0.08秒再调；有Job时进入_execute。调试刚启动就会频繁命中，即使还没发消息。
     # 跨边界：HTTP接纳->Worker（Runtime Job队列）的下一段栈。
     # 对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#6
     async def run_once(self) -> bool:
-        """Worker轮询热点。由应用Lifespan启动的后台asyncio任务反复调用，与用户是否发消息无关。
+        """Worker一轮领取与执行；自身不循环，“轮询”由外层Lifespan后台Task反复调用形成。
 
-        应用一启动就开始轮询：没有Job时claim返回None，sleep 0.08秒后再调；
-        有Job时进入_execute_claim。所以调试刚启动就会频繁命中，即使还没发消息。
-        初学者应跳过此断点，改用BP-03 _execute_claim（只在真正领取到Job时才触发）。
+        常见困惑（已解答）：方法名叫 run_once（“只跑一次”），为什么注释说“轮询热点”？
+        - run_once 描述单次粒度：本方法只做 claim_one → 有Job则_execute、无Job返回False
+          一轮动作，自身没有 while、没有 sleep。
+        - “轮询”来自调用方：lifecycle.py::execution_loop 与 execution_worker.py 的
+          主循环以 while True + asyncio.sleep(0.08) 反复调用本方法，所以应用一启动
+          就开始命中，与用户是否发消息无关。
+        - 所以“名字像只跑一次”和“注释称为轮询热点”不矛盾：单次粒度由方法定义，
+          持续轮询行为由外层调用形成。注释里“sleep 0.08秒后再调”指的是外层循环
+          在本方法返回False后的行为，不是本方法内部sleep。
 
         跨边界：HTTP接纳->Worker（Runtime Job队列）的下一段栈。
-        对应文档：项目掌握/调试实战/从断点停住到知道来路和下一跳.md#6
+        调用方：
+          - backend/app/lifecycle.py::execution_loop（进程内Lifespan后台Task，最常见）
+          - backend/app/execution_worker.py（独立Worker进程入口主循环）
+          - backend/app/runtime_execution/endpoint.py（内存SQLite单进程直驱，仅调一次）
+        对应文档：
+          - 项目掌握/00-从这里开始/Uvicorn-FastAPI与Chat后端基础.md#7（Lifespan是什么）
+          - 项目掌握/调试实战/从断点停住到知道来路和下一跳.md#6（BP-02热点说明）
 
         Returns:
             True: 处理了一个Job；
-            False: 空闲（队列无Job）。
+            False: 空闲（队列无Job），调用方据此决定是否sleep。
         """
         # DEBUG-BREAKPOINT-NOTE: BP-02
         # DEBUG-BREAKPOINT-NOTE: 触发: Worker轮询热点。
         # DEBUG-BREAKPOINT-NOTE: 触发: 此函数由应用Lifespan启动的后台asyncio任务反复调用，与用户是否发消息无关。
-        # DEBUG-BREAKPOINT-NOTE: 触发: 应用一启动就开始轮询：没有Job时claim返回None，await asyncio.sleep(0.08)后再调；有Job时进入_execute_claim。
+        # DEBUG-BREAKPOINT-NOTE: 触发: 应用一启动就开始轮询：没有Job时claim返回None，外层execution_loop sleep 0.08秒后再调；有Job时进入_execute。
         # DEBUG-BREAKPOINT-NOTE: 触发: 所以调试刚启动就会频繁命中，即使你还没发消息。
         # DEBUG-BREAKPOINT-NOTE: 触发: 初学者应跳过此断点，改用BP-03 _execute_claim。
         # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：从断点停住到知道来路和下一跳#6（标注'初学者不要下此热点断点'）。

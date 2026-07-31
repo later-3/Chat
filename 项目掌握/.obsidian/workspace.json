@@ -41,12 +41,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "00-从这里开始/从C++到Chat前后端怎样跑起来.md",
+                "file": "00-从这里开始/Uvicorn-FastAPI与Chat后端基础.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "从C++到Chat前后端怎样跑起来"
+              "title": "Uvicorn-FastAPI与Chat后端基础"
             }
           }
         ],
@@ -82,7 +82,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "",
+                "query": "Lifespan",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -103,11 +103,13 @@
               "title": "Bookmarks"
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "horizontal",
-    "width": 300
+    "width": 293.50271224975586,
+    "collapsed": true
   },
   "right": {
     "id": "df5a9fb1978eacec",
@@ -123,7 +125,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "00-从这里开始/从C++到Chat前后端怎样跑起来.md",
+                "file": "00-从这里开始/Uvicorn-FastAPI与Chat后端基础.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -133,7 +135,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for 从C++到Chat前后端怎样跑起来"
+              "title": "Backlinks for Uvicorn-FastAPI与Chat后端基础"
             }
           },
           {
@@ -142,12 +144,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "00-从这里开始/从C++到Chat前后端怎样跑起来.md",
+                "file": "00-从这里开始/Uvicorn-FastAPI与Chat后端基础.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from 从C++到Chat前后端怎样跑起来"
+              "title": "Outgoing links from Uvicorn-FastAPI与Chat后端基础"
             }
           },
           {
@@ -185,13 +187,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "00-从这里开始/从C++到Chat前后端怎样跑起来.md",
+                "file": "00-从这里开始/Uvicorn-FastAPI与Chat后端基础.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of 从C++到Chat前后端怎样跑起来"
+              "title": "Outline of Uvicorn-FastAPI与Chat后端基础"
             }
           }
         ]
@@ -214,10 +216,11 @@
   },
   "active": "27662ad622a8ebfe",
   "lastOpenFiles": [
+    "00-从这里开始/从Web小白到能设计开发Chat的学习路线.md",
+    "00-从这里开始/Uvicorn-FastAPI与Chat后端基础.md",
+    "00-从这里开始/从C++到Chat前后端怎样跑起来.md",
     "架构与模块/APP-PROJECTION怎样把同一Project呈现到Web与Obsidian.md",
     "架构与模块/14个状态所有者与3个应用组件的职责与代码落点.md",
-    "00-从这里开始/从Web小白到能设计开发Chat的学习路线.md",
-    "INDEX.md",
-    "00-从这里开始/从C++到Chat前后端怎样跑起来.md"
+    "INDEX.md"
   ]
 }
