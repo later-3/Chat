@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..api import http_problem
+from ..api import CommandId, http_problem
 from .service import (
     HarnessConflict,
     HarnessNotFound,
@@ -19,7 +19,7 @@ from .service import (
 
 class CreateProjectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command_id: str
+    command_id: CommandId
     kind: str
     title: str
     goal: str
@@ -30,7 +30,7 @@ class CreateProjectRequest(BaseModel):
 
 class TransitionProjectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command_id: str
+    command_id: CommandId
     expected_row_version: int
     target_status: str
     reason: str
@@ -39,7 +39,7 @@ class TransitionProjectRequest(BaseModel):
 
 class CreateWorkItemRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command_id: str
+    command_id: CommandId
     kind: str
     title: str
     objective: str
@@ -52,7 +52,7 @@ class CreateWorkItemRequest(BaseModel):
 
 class TransitionWorkItemRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command_id: str
+    command_id: CommandId
     expected_row_version: int
     target_status: str
     reason: str
@@ -63,7 +63,7 @@ class TransitionWorkItemRequest(BaseModel):
 
 class CreateActionItemRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command_id: str
+    command_id: CommandId
     title: str
     assignee_kind: str
     project_id: str | None = None
@@ -76,7 +76,7 @@ class CreateActionItemRequest(BaseModel):
 
 class TransitionActionItemRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command_id: str
+    command_id: CommandId
     expected_row_version: int
     target_status: str
     reason: str
@@ -98,7 +98,7 @@ class PlanNodeRequest(BaseModel):
 
 class CreatePlanRevisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command_id: str
+    command_id: CommandId
     expected_work_row_version: int
     summary: str
     nodes: list[PlanNodeRequest]
@@ -109,7 +109,7 @@ class CreatePlanRevisionRequest(BaseModel):
 
 class CaptureNoteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command_id: str
+    command_id: CommandId
     kind: str
     title: str
     content: str
@@ -121,7 +121,7 @@ class CaptureNoteRequest(BaseModel):
 
 class ReviseNoteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command_id: str
+    command_id: CommandId
     expected_row_version: int
     title: str
     content: str
@@ -131,7 +131,7 @@ class ReviseNoteRequest(BaseModel):
 
 class TransitionNoteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command_id: str
+    command_id: CommandId
     expected_row_version: int
     target_status: str
     reason: str
@@ -140,7 +140,7 @@ class TransitionNoteRequest(BaseModel):
 
 class ProposeMemoryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command_id: str
+    command_id: CommandId
     scope_kind: str
     scope_ref_id: str | None = None
     memory_kind: str
@@ -151,14 +151,14 @@ class ProposeMemoryRequest(BaseModel):
 
 class ResolveMemoryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command_id: str
+    command_id: CommandId
     decision: str
     decision_record_id: str | None = None
 
 
 class ReviseMemoryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command_id: str
+    command_id: CommandId
     expected_row_version: int
     content: str
     source_refs: list[dict[str, Any]] = Field(default_factory=list)
@@ -168,7 +168,7 @@ class ReviseMemoryRequest(BaseModel):
 
 class TransitionMemoryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command_id: str
+    command_id: CommandId
     expected_row_version: int
     target_status: str
     reason: str

@@ -12,12 +12,12 @@ import json
 from collections.abc import AsyncGenerator, Sequence
 from typing import Any
 
-from agent_framework_ag_ui._types import AGUIRequest
-from fastapi import FastAPI, HTTPException, Query
+from agent_framework_ag_ui import AGUIRequest
+from fastapi import FastAPI, Query
 from fastapi.params import Depends
 from fastapi.responses import StreamingResponse
 
-from ..api import current_request_id
+from ..api import current_request_id, http_problem
 from ..product_sessions.service import ProductSessionError, ProductSessionService
 from .service import (
     RuntimeCursorExpired,
@@ -181,7 +181,12 @@ def add_runtime_management_endpoints(
     async def runtime_job_for_run(product_run_id: str) -> dict[str, Any]:
         job = await runtime.job_for_product_run(product_run_id)
         if job is None:
-            raise HTTPException(status_code=404, detail="Product Run没有Runtime Job")
+            raise http_problem(
+                status_code=404,
+                code="RUNTIME_JOB_NOT_FOUND",
+                message="Product Run没有Runtime Job",
+                details={"resource_kind": "runtime_job", "resource_id": product_run_id},
+            )
         return {"job": job}
 
     @app.get("/api/runtime/jobs/{job_id}/events")
@@ -195,11 +200,14 @@ def add_runtime_management_endpoints(
             try:
                 decoded = runtime.decode_cursor(cursor)
             except RuntimeCursorInvalid as error:
-                raise HTTPException(
-                    status_code=400, detail={"code": error.code, "message": str(error)}
-                ) from error
+                raise http_problem(status_code=400, error=error) from error
             if decoded["runtime_job_id"] != job_id:
-                raise HTTPException(status_code=400, detail={"code": "RUNTIME_CURSOR_JOB_MISMATCH"})
+                raise http_problem(
+                    status_code=400,
+                    code="RUNTIME_CURSOR_JOB_MISMATCH",
+                    message="Runtime Cursor不属于当前Job。",
+                    details={"resource_kind": "runtime_job", "resource_id": job_id},
+                )
             after_sequence = int(decoded["last_applied_sequence"])
         try:
             events, job = await runtime.events_after(
@@ -208,12 +216,8 @@ def add_runtime_management_endpoints(
                 limit=limit,
             )
         except RuntimeCursorExpired as error:
-            raise HTTPException(
-                status_code=410, detail={"code": error.code, "message": str(error)}
-            ) from error
+            raise http_problem(status_code=410, error=error) from error
         except RuntimeExecutionError as error:
-            raise HTTPException(
-                status_code=404, detail={"code": error.code, "message": str(error)}
-            ) from error
+            raise http_problem(status_code=404, error=error) from error
         next_cursor = events[-1]["cursor"] if events else job["cursor"]
         return {"job": job, "events": events, "next_cursor": next_cursor}

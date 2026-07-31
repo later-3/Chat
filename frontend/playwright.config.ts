@@ -28,7 +28,8 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: ".venv/bin/python -m uvicorn backend.app.e2e:app --host 127.0.0.1 --port 8031",
+      command:
+        "PYTHONBREAKPOINT=0 .venv/bin/python -m uvicorn backend.app.e2e:app --host 127.0.0.1 --port 8031",
       cwd: "..",
       port: 8031,
       reuseExistingServer: !process.env.CI,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, Request
 
 from ..agent_profiles import (
     AgentProfileConflict,
@@ -117,9 +117,18 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
                 return None, None
             return model_catalog.default_provider_id, model_catalog.default_model
         if provider_id is None or model is None:
-            raise HTTPException(status_code=422, detail="Provider和模型必须同时提供")
+            raise http_problem(
+                status_code=422,
+                code="MODEL_PROVIDER_SELECTION_INVALID",
+                message="Provider和模型必须同时提供",
+                details={"field": "model_provider_id|model"},
+            )
         if model_catalog is None:
-            raise HTTPException(status_code=422, detail="当前没有可配置的模型Provider")
+            raise http_problem(
+                status_code=422,
+                code="MODEL_PROVIDER_UNAVAILABLE",
+                message="当前没有可配置的模型Provider",
+            )
         try:
             model_catalog.require_selection(provider_id, model)
         except ValueError as error:
@@ -409,7 +418,11 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
         protocol: str,
     ):
         if pi_runtime is None:
-            raise HTTPException(status_code=503, detail="pi Provider审批网关不可用")
+            raise http_problem(
+                status_code=503,
+                code="PI_PROVIDER_GATEWAY_UNAVAILABLE",
+                message="pi Provider审批网关不可用",
+            )
         try:
             return await pi_runtime.gateway_response(
                 authorization=authorization,
@@ -453,7 +466,11 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
         authorization: str | None = Header(default=None),
     ) -> dict[str, Any]:
         if pi_runtime is None:
-            raise HTTPException(status_code=503, detail="pi只读Tool Gateway不可用")
+            raise http_problem(
+                status_code=503,
+                code="PI_READ_TOOL_GATEWAY_UNAVAILABLE",
+                message="pi只读Tool Gateway不可用",
+            )
         try:
             return await pi_runtime.read_tool_response(
                 authorization=authorization,
@@ -461,7 +478,7 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
                 body=await request.body(),
             )
         except PiRuntimeError as error:
-            raise HTTPException(status_code=409, detail=str(error)) from error
+            raise http_problem(status_code=409, error=error) from error
 
     @router.post("/api/pi-workspace-tools/{tool_name}", include_in_schema=False)
     async def pi_workspace_tool_gateway(
@@ -470,7 +487,11 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
         authorization: str | None = Header(default=None),
     ) -> dict[str, Any]:
         if pi_runtime is None:
-            raise HTTPException(status_code=503, detail="pi Workspace Tool Gateway不可用")
+            raise http_problem(
+                status_code=503,
+                code="PI_WORKSPACE_TOOL_GATEWAY_UNAVAILABLE",
+                message="pi Workspace Tool Gateway不可用",
+            )
         try:
             return await pi_runtime.workspace_tool_response(
                 authorization=authorization,
@@ -478,7 +499,7 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
                 body=await request.body(),
             )
         except PiRuntimeError as error:
-            raise HTTPException(status_code=409, detail=str(error)) from error
+            raise http_problem(status_code=409, error=error) from error
 
     @router.get("/api/agents")
     async def agents() -> dict[str, Any]:
@@ -512,7 +533,12 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
         try:
             return review_store.review_card(draft_id)
         except LookupError as error:
-            raise HTTPException(status_code=404, detail="模型调用草稿不存在") from error
+            raise http_problem(
+                status_code=404,
+                code="MODEL_CALL_DRAFT_NOT_FOUND",
+                message="模型调用草稿不存在",
+                details={"resource_kind": "model_call_draft", "resource_id": draft_id},
+            ) from error
 
     @router.get("/api/model-providers")
     async def model_providers() -> dict[str, Any]:
@@ -541,16 +567,20 @@ def create_product_router(dependencies: ProductApiDependencies) -> APIRouter:
                 provider_request=command.provider_request,
             )
         except LookupError as error:
-            raise HTTPException(status_code=404, detail="模型调用草稿不存在") from error
+            raise http_problem(
+                status_code=404,
+                code="MODEL_CALL_DRAFT_NOT_FOUND",
+                message="模型调用草稿不存在",
+                details={"resource_kind": "model_call_draft", "resource_id": draft_id},
+            ) from error
         except ModelCallDraftConflict as error:
             raise http_problem(status_code=409, error=error) from error
         except ModelCallDraftValidationError as error:
-            raise HTTPException(
+            raise http_problem(
                 status_code=422,
-                detail={
-                    "message": "模型调用请求未通过校验",
-                    "issues": list(error.issues),
-                },
+                error=error,
+                message="模型调用请求未通过校验",
+                details={"issues": list(error.issues)},
             ) from error
         return revised.review_card()
 

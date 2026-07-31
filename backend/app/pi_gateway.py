@@ -17,9 +17,9 @@ from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import httpx
-from fastapi import HTTPException
 from starlette.responses import Response, StreamingResponse
 
+from .api import http_problem
 from .config import PiRuntimeSettings
 from .execution_dispatch.contracts import RepositoryFence
 from .execution_workspaces import ExecutionWorkspaceService
@@ -233,7 +233,12 @@ class PiRuntimeManager:
             fingerprint,
             len(self._executions),
         )
-        raise HTTPException(status_code=401, detail="pi Provider网关凭据无效")
+        raise http_problem(
+            status_code=401,
+            code="PI_GATEWAY_AUTHENTICATION_REQUIRED",
+            message="pi Provider网关凭据无效",
+            headers={"WWW-Authenticate": 'Bearer realm="Chat pi gateway"'},
+        )
 
     async def read_tool_response(
         self,

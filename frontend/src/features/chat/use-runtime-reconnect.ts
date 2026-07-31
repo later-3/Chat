@@ -100,6 +100,7 @@ export function useRuntimeReconnect({
       // DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：Run-Worker-Cursor-Tool与Workspace怎样恢复（Cursor重放）。
       // DEBUG-BREAKPOINT-NOTE: 触发: 需要浏览器DevTools打开才能命中debugger语句。
       // DEBUG-BREAKPOINT-NOTE: 频率: 仅在连接断开时触发（条件性）
+      // biome-ignore lint/suspicious/noDebugger: 显式教学断点，由注入工具统一清理。 DEBUG-BREAKPOINT-NOTE: BP-30
       debugger; // DEBUG-BREAKPOINT: BP-30
       // 重连入口：用Runtime Job ID + cursor重新订阅，不接管Product Run状态。
       onStatus("running");

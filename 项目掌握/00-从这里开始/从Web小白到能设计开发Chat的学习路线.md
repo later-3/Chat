@@ -113,7 +113,7 @@ Runtime Job、Worker、MAF节点、Journal和页面找到同一轮的对应证�
 **学习内容**：
 
 1. 6个产品问题、9类用户场景和它们要保护的不变量。
-2. 7层是责任/信任/失败边界，11模块是产品能力/状态所有权。
+2. 7层是责任/信任/失败边界；14个状态所有者、3个应用组件和3类运行时职责是目标系统责任与所有权。
 3. Product Store、Runtime Store、MAF Checkpoint、Artifact Store和浏览器投影。
 4. Router、Application Coordinator、Domain Rule、Query Service、Adapter为什么分开。
 5. 大文件的审查信号、合理拆分缝和不能破坏的事务/恢复不变量。
@@ -121,7 +121,7 @@ Runtime Job、Worker、MAF节点、Journal和页面找到同一轮的对应证�
 **当前入口**：
 
 - [Chat总体架构与一次点击的七层链路](../架构与模块/Chat总体架构与一次点击的七层链路.md)。
-- [11个产品模块的职责与代码落点](../架构与模块/11个产品模块的职责与代码落点.md)。
+- [14个状态所有者与3个应用组件的职责与代码落点](../架构与模块/14个状态所有者与3个应用组件的职责与代码落点.md)。
 - [核心对象词典](../架构与模块/核心对象词典-谁创建谁保存谁消费.md)。
 - [Project、Work、Plan、Action、Note与Memory为什么分开](../Product%20Harness与协作对象/Project-Work-Plan-Action-Note与Memory为什么分开.md)。
 - [Intent到Plan](../协作理解与执行治理/Intent-澄清-协议-StepInput与Plan怎样连接.md)和
@@ -218,7 +218,7 @@ flowchart LR
 | B0 运行基础 | 已有L1/L2入口 | 不表示已懂React/FastAPI框架内部 |
 | B1 框架基础 | Uvicorn/FastAPI、配置/组合根、React/TypeScript/Vite/浏览器API、App Shell已有L1/L2入口 | 不表示已能改产品状态 |
 | B2 纵向产品链 | 总地图、对象词典、公共调用栈和15张SC均有可执行入口 | 不表示每张SC都是L2真实Run |
-| B3 架构与模块 | 7层、11模块、Harness/Intent/执行治理专题已有L1/L2入口 | 不表示当前目录已经完美 |
+| B3 架构与模块 | 7层、14+3+3责任、Harness/Intent/执行治理专题已有L1/L2入口 | 不表示当前目录已经按目标物理重构 |
 | B4 执行与恢复 | Agent/MAF、Run/Worker/Tool、Evidence专题和SC08–SC15已补 | 通用Tool对账、任意Workflow/活动pi跨进程恢复仍未实现 |
 | B5 安全改动 | Store/事务/Outbox和测试质量专题已补L1/L2/L3训练入口 | 仍需你亲手完成纵向功能和故障实验才算个人过关 |
 
@@ -230,7 +230,7 @@ flowchart LR
 2. 再学Uvicorn/FastAPI，亲手追`/api/live`、`/api/sessions`和`/api/agent`3种请求。
 3. 学完React/TypeScript和Vite/浏览器API两课，亲手追一次“点击→Hook→HTTP→State→重绘”。
 4. 用SC01建立第一条完整Product Run数据链。
-5. 回到7层、11模块和对象词典，此时它们应该是对真实经验的压缩，而不是待背的名词。
+5. 回到7层、14+3+3责任和对象词典，此时它们应该是对真实经验的压缩，而不是待背的名词。
 6. 依次读Harness、Intent/治理、Agent/MAF、Run/Worker和Evidence专题，再用SC02掌握三次模型治理。
 7. 按SC03–SC15的`教材成熟度`复跑；L1+场景先按受控数据验证，不能自称看过真实Run。
 8. 最后用1个低风险纵向功能与1个故障实验做B5验收。
@@ -242,7 +242,7 @@ flowchart LR
 | [项目掌握索引](../INDEX.md) | 按当前前置关系给出真正阅读顺序 |
 | [全盘掌握范围与覆盖审计](./全盘掌握范围与覆盖审计.md) | 防止课程只覆盖一条Workflow或一部分代码 |
 | [工程编码与模块设计规范](../../docs/engineering-standards.md) | 模块、事务、注释、规模审查和测试硬门 |
-| [`coverage-manifest.json`](../coverage-manifest.json) | 27个学习单元、源码面和缺口的机器总账 |
+| [`coverage-manifest.json`](../coverage-manifest.json) | 28个学习单元、源码面和缺口的机器总账 |
 
 ## 补充记录
 

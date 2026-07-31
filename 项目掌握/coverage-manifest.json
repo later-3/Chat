@@ -1,8 +1,8 @@
 {
-  "schema_version": 2,
-  "snapshot_date": "2026-07-30",
+  "schema_version": 3,
+  "snapshot_date": "2026-07-31",
   "learning_units": [
-    {"id": "M00", "title": "产品问题、目标架构、当前实现与未实现边界", "mastery": "L1入口", "docs": ["项目掌握/00-从这里开始/Chat系统总地图与学习方法.md", "项目掌握/架构与模块/Chat总体架构与一次点击的七层链路.md", "项目掌握/架构与模块/11个产品模块的职责与代码落点.md", "项目掌握/架构与模块/核心对象词典-谁创建谁保存谁消费.md", "项目掌握/架构与模块/进程协议与Store为什么必须分开.md"]},
+    {"id": "M00", "title": "产品问题、目标架构、当前实现与未实现边界", "mastery": "L1入口", "docs": ["项目掌握/00-从这里开始/Chat系统总地图与学习方法.md", "项目掌握/架构与模块/Chat总体架构与一次点击的七层链路.md", "项目掌握/架构与模块/14个状态所有者与3个应用组件的职责与代码落点.md", "项目掌握/架构与模块/核心对象词典-谁创建谁保存谁消费.md", "项目掌握/架构与模块/进程协议与Store为什么必须分开.md"]},
     {"id": "M01", "title": "配置、组合根、应用工厂与生命周期", "mastery": "L1专题＋L2启动观察入口；私有配置值始终不进入教材", "docs": ["项目掌握/00-从这里开始/从C++到Chat前后端怎样跑起来.md", "项目掌握/00-从这里开始/Uvicorn-FastAPI与Chat后端基础.md", "项目掌握/00-从这里开始/配置怎样变成整个后端对象图.md", "项目掌握/00-从这里开始/Chat源码目录文件职责与模块流程地图.md", "docs/adr/0001-application-composition-and-process-entrypoints.md"]},
     {"id": "M02", "title": "React App Shell、Home、移动端、PWA与页面状态", "mastery": "React/TypeScript/Vite/浏览器API与App Shell/Workbench已有L1/L2入口；未实现Home目标仍标缺口", "docs": ["项目掌握/00-从这里开始/TypeScript-React与Chat前端基础.md", "项目掌握/00-从这里开始/Vite-浏览器API与Chat网络调试基础.md", "项目掌握/前端交互/Home-AppShell与Workbench怎样协作.md", "docs/ui-ux-visual-baseline.md"]},
     {"id": "M03", "title": "REST适配、DTO、RequestContext、错误与安全边界", "mastery": "FastAPI/REST基础已有L1/L2入口；完整安全与身份仍待补", "docs": ["项目掌握/00-从这里开始/Uvicorn-FastAPI与Chat后端基础.md", "项目掌握/00-从这里开始/Chat源码目录文件职责与模块流程地图.md", "docs/adr/0002-observability-and-sensitive-data-boundary.md"]},
@@ -28,20 +28,34 @@
     {"id": "M23", "title": "Delivery、Channel Adapter、OPC-OS Bridge与跨入口连续性", "mastery": "目标已定义，当前未实现", "docs": ["docs/overall-architecture-proposal.md"]},
     {"id": "M24", "title": "Super Admin Operations、活动口径、运营投影与审计", "mastery": "目标已定义，当前未实现", "docs": ["概念空间/Chat/超级管理员与运营看护.md"]},
     {"id": "M25", "title": "连续对话流、Conversation Day、Home、协作日历与Idea Garden", "mastery": "Home/App Shell已有L1专题；Conversation Day、日历连续性和Idea Garden仍是目标缺口", "docs": ["项目掌握/前端交互/Home-AppShell与Workbench怎样协作.md", "概念空间/Chat/连续协作与时间导航.md"]},
-    {"id": "M26", "title": "容量、性能、SLO、备份、保留、灾难恢复与正式安全", "mastery": "目标待详细设计", "docs": ["docs/product-engineering-backlog.md"]}
+    {"id": "M26", "title": "容量、性能、SLO、备份、保留、灾难恢复与正式安全", "mastery": "目标待详细设计", "docs": ["docs/product-engineering-backlog.md"]},
+    {"id": "M27", "title": "APP-PROJECTION、Personal Workspace、Project Dossier与Obsidian只读呈现", "mastery": "L1专题＋L2合同、桌面和移动浏览器入口；Identity裁剪、双向写回和大规模投影仍是缺口", "docs": ["项目掌握/架构与模块/APP-PROJECTION怎样把同一Project呈现到Web与Obsidian.md", "docs/projection-contract-dossier-queue-obsidian-readonly-detailed-design.md"]}
   ],
   "target_modules": [
     {"name": "Identity与Channel Binding", "units": ["M22"]},
     {"name": "Conversation", "units": ["M05"]},
-    {"name": "Collaboration", "units": ["M06", "M08", "M09", "M10"]},
+    {"name": "Work", "units": ["M06"]},
+    {"name": "Knowledge", "units": ["M06", "M14"]},
+    {"name": "Protocol", "units": ["M08"]},
+    {"name": "Collaboration Governance", "units": ["M08", "M09", "M10"]},
     {"name": "Context", "units": ["M07", "M14"]},
     {"name": "Memory", "units": ["M06", "M07"]},
-    {"name": "Interaction协调器", "units": ["M11"]},
     {"name": "Run管理", "units": ["M13", "M18"]},
     {"name": "Tool执行", "units": ["M15", "M16"]},
     {"name": "Evidence", "units": ["M17"]},
+    {"name": "Schedule", "units": ["M06", "M21", "M25"]},
     {"name": "Delivery", "units": ["M23"]},
     {"name": "Super Admin Operations", "units": ["M24"]}
+  ],
+  "application_components": [
+    {"name": "APP-INGRESS：Interaction Ingress", "units": ["M03", "M04", "M22", "M23"]},
+    {"name": "APP-INTERACTION：Interaction Coordinator", "units": ["M11"]},
+    {"name": "APP-PROJECTION：Projection Query & Command Gateway", "units": ["M02", "M06", "M23", "M25", "M27"]}
+  ],
+  "runtime_responsibilities": [
+    {"name": "RT-MAF：MAF Runtime Adapter", "units": ["M10", "M12"]},
+    {"name": "RT-EXECUTION：Execution Runtime", "units": ["M13", "M15", "M16", "M17", "M21"]},
+    {"name": "RT-PLATFORM：Platform Operations", "units": ["M19", "M20", "M21", "M26"]}
   ],
   "backend_surfaces": [
     {"path": "backend/app/agent_profiles.py", "units": ["M10"]},
@@ -61,7 +75,7 @@
     {"path": "backend/app/execution_worker.py", "units": ["M13", "M21"]},
     {"path": "backend/app/execution_workspaces", "units": ["M16"]},
     {"path": "backend/app/governance", "units": ["M07", "M09", "M10", "M12", "M19"]},
-    {"path": "backend/app/harness", "units": ["M06", "M07", "M19"]},
+    {"path": "backend/app/harness", "units": ["M06", "M07", "M19", "M27"]},
     {"path": "backend/app/home", "units": ["M02", "M25"]},
     {"path": "backend/app/lifecycle.py", "units": ["M01", "M13", "M19", "M21"]},
     {"path": "backend/app/main.py", "units": ["M01", "M03", "M21"]},
@@ -74,8 +88,10 @@
     {"path": "backend/app/pi_runtime.py", "units": ["M15"]},
     {"path": "backend/app/pi_sessions.py", "units": ["M15", "M19"]},
     {"path": "backend/app/product_sessions", "units": ["M04", "M05", "M13", "M18", "M19"]},
+    {"path": "backend/app/projections", "units": ["M03", "M06", "M27"]},
     {"path": "backend/app/project_resources", "units": ["M14"]},
     {"path": "backend/app/readonly_tools", "units": ["M15", "M16"]},
+    {"path": "backend/app/runtime_adapters", "units": ["M12", "M20"]},
     {"path": "backend/app/runtime_execution", "units": ["M04", "M13", "M18"]},
     {"path": "backend/app/step_inputs", "units": ["M08"]},
     {"path": "backend/app/tool_configs.py", "units": ["M10", "M15", "M16"]},
@@ -91,14 +107,18 @@
     {"path": "frontend/src/features/mobile", "units": ["M02", "M04", "M21"]},
     {"path": "frontend/src/features/model-call-review", "units": ["M10"]},
     {"path": "frontend/src/features/protocols", "units": ["M08"]},
+    {"path": "frontend/src/features/projections", "units": ["M03", "M27"]},
+    {"path": "frontend/src/features/projects", "units": ["M02", "M06", "M27"]},
     {"path": "frontend/src/features/session", "units": ["M05"]},
     {"path": "frontend/src/features/settings", "units": ["M01", "M10", "M15"]},
     {"path": "frontend/src/features/shared", "units": ["M02", "M03"]},
     {"path": "frontend/src/features/tools", "units": ["M15", "M16"]},
-    {"path": "frontend/src/features/workflow", "units": ["M11", "M12", "M13", "M18"]}
+    {"path": "frontend/src/features/workflow", "units": ["M11", "M12", "M13", "M18"]},
+    {"path": "frontend/src/features/workspace", "units": ["M02", "M06", "M27"]}
   ],
   "frontend_root_surfaces": [
     {"path": "frontend/src/App.tsx", "units": ["M02", "M04"]},
+    {"path": "frontend/src/app-contracts.ts", "units": ["M01", "M03", "M10"]},
     {"path": "frontend/src/authentication-recovery.ts", "units": ["M02", "M03", "M22"]},
     {"path": "frontend/src/authentication-required.css", "units": ["M02", "M22"]},
     {"path": "frontend/src/authentication-required.tsx", "units": ["M02", "M22"]},
@@ -114,6 +134,7 @@
     {"path": "frontend/src/harness-workbench.tsx", "units": ["M06", "M07", "M14"]},
     {"path": "frontend/src/hitl-api.ts", "units": ["M09"]},
     {"path": "frontend/src/hitl-page.tsx", "units": ["M09", "M10", "M16", "M17"]},
+    {"path": "frontend/src/lazy-features.ts", "units": ["M02", "M27"]},
     {"path": "frontend/src/main.tsx", "units": ["M01", "M02"]},
     {"path": "frontend/src/model-call-review-logic.ts", "units": ["M10"]},
     {"path": "frontend/src/model-call-review.tsx", "units": ["M10"]},
@@ -208,7 +229,7 @@
     {"id": "super_admin_projection", "status": "target", "units": ["M24"]}
   ],
   "protocol_boundaries": [
-    {"id": "rest", "status": "current", "units": ["M03", "M05", "M06", "M13", "M17"]},
+    {"id": "rest", "status": "current", "units": ["M03", "M05", "M06", "M13", "M17", "M27"]},
     {"id": "ag_ui_sse", "status": "current", "units": ["M04", "M11", "M13"]},
     {"id": "provider_api", "status": "current", "units": ["M10"]},
     {"id": "pi_jsonl_rpc", "status": "current", "units": ["M15"]},
@@ -216,6 +237,7 @@
     {"id": "sqlalchemy_alembic", "status": "current", "units": ["M19"]},
     {"id": "git_filesystem", "status": "current", "units": ["M14", "M16", "M17"]},
     {"id": "nginx_reverse_ssh", "status": "current", "units": ["M21"]},
+    {"id": "obsidian_projection_files", "status": "current", "units": ["M27"]},
     {"id": "external_channel_delivery", "status": "target", "units": ["M22", "M23"]}
   ],
   "state_locations": [
@@ -226,14 +248,15 @@
     {"id": "execution_workspace_git", "status": "current", "units": ["M14", "M16", "M17"]},
     {"id": "pi_session_jsonl", "status": "current", "units": ["M15", "M19"]},
     {"id": "process_logs_metrics", "status": "current", "units": ["M18", "M21"]},
-    {"id": "browser_projection_drafts", "status": "current", "units": ["M02", "M04", "M05"]},
+    {"id": "browser_projection_drafts", "status": "current", "units": ["M02", "M04", "M05", "M27"]},
+    {"id": "derived_projection_envelope_export", "status": "derived", "units": ["M27"]},
     {"id": "provider_external_state", "status": "external", "units": ["M10", "M18"]},
     {"id": "outbound_delivery_state", "status": "target", "units": ["M23"]}
   ],
   "quality_and_delivery_surfaces": [
-    {"path": "backend/tests", "units": ["M20"]},
-    {"path": "frontend/tests", "units": ["M20"]},
-    {"path": "frontend/e2e", "units": ["M20"]},
+    {"path": "backend/tests", "units": ["M20", "M27"]},
+    {"path": "frontend/tests", "units": ["M20", "M27"]},
+    {"path": "frontend/e2e", "units": ["M20", "M27"]},
     {"path": "backend/migrations/versions", "units": ["M19", "M20"]},
     {"path": "scripts", "units": ["M20", "M21"]},
     {"path": ".github/workflows/quality.yml", "units": ["M20"]},

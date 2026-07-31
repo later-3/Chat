@@ -210,6 +210,10 @@ def inject_breakpoint(file_path: Path, bp_config: dict) -> tuple[bool, str]:
     if language == "python":
         bp_line = f"{indent_str}breakpoint()  {marker} {bp_id}\n"
     else:
+        note_lines.append(
+            f"{indent_str}// biome-ignore lint/suspicious/noDebugger: "
+            f"显式教学断点，由注入工具统一清理。 {note_marker}: {bp_id}\n"
+        )
         bp_line = f"{indent_str}debugger; {marker} {bp_id}\n"
 
     # 插入注释行和断点行到函数体首行之前

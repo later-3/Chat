@@ -26,6 +26,7 @@ interface HomeViewProps {
   onContinue: (item: HomeContinueItem) => void;
   onOpenArtifacts: () => void;
   onOpenGarden: () => void;
+  onOpenProject: (projectId: string) => void;
   onOpenProjects: () => void;
   searchQuery: string;
 }
@@ -55,6 +56,7 @@ export function HomeView({
   onContinue,
   onOpenArtifacts,
   onOpenGarden,
+  onOpenProject,
   onOpenProjects,
   searchQuery,
 }: HomeViewProps) {
@@ -137,6 +139,7 @@ export function HomeView({
           loading={searching}
           onOpen={(result) => {
             if (result.kind === "note") onOpenGarden();
+            else if (result.kind === "project") onOpenProject(result.id);
             else onOpenProjects();
           }}
           query={searchQuery}
@@ -346,7 +349,7 @@ function CalendarCard({
   const cells = useMemo(() => calendarCells(year, days), [days, year]);
   return (
     <section className="home-activity-card">
-      <header className="home-section-heading">
+      <header className="home-section-heading home-section-heading--calendar">
         <span className="home-section-icon home-section-icon--teal">
           <CalendarDays size={20} />
         </span>

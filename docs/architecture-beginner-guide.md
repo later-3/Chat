@@ -202,41 +202,55 @@ sequenceDiagram
 
 流式文本可以在运行中作为“正在生成”的临时投影显示，但`RUN_FINISHED(succeeded)`必须晚于产品提交门。若Provider返回Tool Call，Tool Bridge不会直接执行Python函数，而是先建立Tool Execution并经过权限、Approval、Ledger和幂等检查。
 
-### 2.7 当前代码实际已经跑通的链路
+### 2.7 当前代码实际已经跑通的发送链
 
-当前纵向切片比目标架构短，真实调用顺序如下：
+2026-07-30的真实主链已经不再是早期内存Spike：
 
 ```text
-App.tsx表单submit
+App.tsx submit
 → useChatAgent.send()
-→ @ag-ui/client HttpAgent.addMessage() + runAgent()
-→ POST /api/agent
-→ MAF add_agent_framework_fastapi_endpoint
-→ AgentFrameworkWorkflow / ModelCallApprovalExecutor.prepare()
-→ 过滤审批协议消息并编译Provider请求
-→ InMemoryModelCallReviewStore生成Draft、bytes和Hash
-→ MAF request_info产生Interrupt
-→ AG-UI SSE返回审批卡片
-→ useChatAgent订阅到Interrupt并渲染ModelCallReview
-→ 用户点击批准，HttpAgent.runAgent(resume)
-→ ModelCallApprovalExecutor.resolve()
-→ 内存中唯一领取ModelCallAttempt
-→ RoutedProviderTransport选择Provider
-→ ExactProviderTransport原样发送已批准bytes
-→ _provider_text()解析Provider SSE/JSON中的文本
-→ ctx.yield_output()生成MAF Workflow输出
-→ MAF AG-UI适配器编码为Text Message SSE事件
-→ HttpAgent更新messages
-→ React MessageBubble渲染Assistant文本
+→ AG-UI HttpAgent POST持续协作Workflow端点
+→ Product Session输入接纳与Product Run/Attempt
+→ Runtime Job/Event Journal + Execution Worker
+→ continuous-collaboration v1.8.0（39个MAF节点）
+→ Context/Intent/Plan/ExecutionDraft/RunSpec
+→ 持久ModelCallDraft + Policy/Decision/Grant
+→ MAF request_info / AG-UI Interrupt
+→ React ModelCallReview批准或修改
+→ Governance Outbox + Worker恢复Checkpoint
+→ 唯一ModelCallAttempt原样发送已批准Provider bytes
+→ Provider SSE/JSON解码、受治理pi/Tool按分支执行
+→ Validation/Evidence/Result Commit Gate
+→ Product Message与Run终态提交
+→ AG-UI Final + React Message/Workflow投影
 ```
 
-这里必须明确3个现状：
+这里必须明确4个现状：
 
-1. **模型模式当前走MAF Workflow + 自定义Executor，不是直接调用MAF `Agent`对象。** Bootstrap模式才使用`BootstrapAgent`；目标MAF Runtime Adapter以后可以组合Agent步骤，但每次Provider发送仍要经过受控Model Call Gateway。
-2. **当前没有正式产品数据库。** `InMemoryModelCallReviewStore`、Workflow Thread实例和前端messages都在内存；重启不会恢复Product Session、草稿和运行。
-3. **当前Response Decoder只完成可显示文本提取。** 它能解析Responses风格SSE、简单delta、Chat Completions choice和非流式output文本；Tool Call、Usage、结构化Intent/Plan、Evidence和产品提交门尚未形成完整链路。
+1. 模型主链使用MAF Workflow和确定性Executor；Bootstrap模式才使用`BootstrapAgent`。每次Provider发送仍经过受控Model Call Gateway。
+2. Product Session、Message、Run/Attempt、Governance、Harness、Runtime Event、MAF Checkpoint、Evidence和Artifact元数据均已进入SQLite；浏览器只保存草稿和页面投影。
+3. 主Workflow的无外部Tool副作用审批安全点可跨进程恢复；旧/嵌套Workflow、活动pi和通用外部副作用不能类推。
+4. Result Commit Gate已存在，但完整Provenance失效传播、Delivery、正式Identity和完整Evidence UI仍缺。
 
-目标架构不是推翻这条链，而是在它前面补`Identity → Conversation → Context → Collaboration → Run`，在运行中补`Product/Runtime/MAF Store与Tool Ledger`，在返回后补`候选解析 → Evidence → Finalization → Delivery`。
+### 2.8 用户点击“我的工作台”和“下载Obsidian”时走什么
+
+这条链不启动模型，也不走AG-UI：
+
+| 步骤 | 当前函数/边界 | 输入 | 处理与输出 | Store | 用户可见变化 |
+|---|---|---|---|---|---|
+| 1 | `ActivityRail` / `App.tsx` | 点击“工作台” | `primaryView=workspace` | 浏览器Session Storage，只是导航状态 | 进入一级个人工作台 |
+| 2 | `WorkspaceView` | `domain=all/life/work/learning/research` | 调`getWorkspaceProjection` | 无权威写入 | 显示加载态 |
+| 3 | Projection REST | `GET /api/projections/workspace` | 校验筛选并调用Composer | 无写事务 | 失败显示错误，不假装空列表 |
+| 4 | `HarnessProjectionQueryService` | 固定本地Scope | 在一个Owner读事务读取Project、Work、Plan、Action、Note、Memory和revision | Product Store只读 | 暂无变化 |
+| 5 | `ProjectionService` | Owner snapshot | 组合Project卡、状态计数、3类责任和unknown区块，计算语义revision | 不建Projection事实表 | 卡片及来源时间出现 |
+| 6 | `WorkspaceView` | `personal-workspace.v1` | 按搜索词渲染；不解析聊天猜Project | 浏览器页面状态 | 可看到生活/工作/学习/研究 |
+| 7 | `ProjectDossier` | 点击携稳定Project ID的卡片 | `GET .../dossier`，读取同一源事实 | Product Store只读 | 看目标、Work/Plan、责任、知识、部分Evidence与缺口 |
+| 8 | Obsidian Adapter | 点击预览/下载 | 只接受Dossier v1，验证稳定ID、路径和大小，生成确定性Tree/ZIP | 内存派生，不写服务器目录 | 预览目录或下载ZIP |
+| 9 | 用户的Obsidian | 解压并打开 | Markdown frontmatter保留ID/source revision/read_only | 用户本地文件，只是展示副本 | 用目录/Markdown查看同一Project |
+
+当前`local-user`来自过渡Scope，不是真实Principal。Identity上线后第4步由服务端`AccessContext`选择Scope；
+浏览器不会获得传入任意Scope的权力。Obsidian中编辑文件目前不会执行第10步写回；未来必须先形成Diff、
+ChangeProposal、CAS/HITL和Owner命令。
 
 ## 3. 同一份信息为什么会变成不同对象
 
@@ -402,7 +416,7 @@ Web和外部Channel终止各自协议后，先转换成内部对象：
 ## 6. 后端产品模块里面有哪些对象
 
 本节从对象视角展开已批准模块，不负责重复拥有“为什么是这些模块”的推导。阅读对象清单前，先用
-[从0推导11个产品模块](../项目掌握/架构与模块/Chat总体架构与一次点击的七层链路.md#7-11个产品模块不是列出来的从0推导全过程)完成“9类用户场景→13个候选责任→2次合并→11个顶层模块”的演算；
+[从历史11模块演进到正式14+3+3责任](../项目掌握/架构与模块/14个状态所有者与3个应用组件的职责与代码落点.md#3-从历史11模块演进到当前14个状态所有者)说明旧基线、Schedule补位、Collaboration拆分及Interaction/Projection应用边界；
 否则下面的对象仍然容易被读成一份需要背诵的名词清单。
 
 ### 6.1 Identity与Channel Binding
@@ -730,13 +744,15 @@ Accepted Memory只是Context候选来源之一，也不等于ContextPackage。
 
 | 范围 | 当前代码已有 | 仍未实现 |
 |---|---|---|
-| 前端 | `HttpAgent`、AG-UI Message投影、输入、Run状态、模型调用审批卡片和页面局部状态 | Super Admin Console以及尚未完成的产品Feature |
-| Web后端 | FastAPI产品资源、AG-UI Agent/Workflow端点、Product Harness与Runtime查询 | 真实Identity/Authentication Session、Super Admin Query API和活动采集 |
-| MAF | Bootstrap模式使用`BootstrapAgent`；模型模式主链使用原生Workflow/自定义Executor、Interrupt/Resume和精确Provider Transport；另有Provider Agent创建代码但不在当前模型主链 | 正式Runtime Adapter、受控Agent步骤、持久AgentSession/Checkpoint映射 |
-| 审批切片 | `ModelCallDraft`、Hash、精确Body、逐次审批规则和进程内Attempt | Product Store中的持久Approval、跨进程领取和重启恢复 |
-| 产品事实 | 只有架构和研究文档 | Product Session、Message、Work、Product Run、Evidence、Delivery等正式Schema/Repository |
+| 前端 | `HttpAgent`、Message/Run/审批投影、Home、Personal Workspace、Project Dossier、Harness工作区和Obsidian下载 | Super Admin Console、双向Obsidian、完整Evidence/Calendar/Delivery视图 |
+| Web后端 | FastAPI资源/Projection REST、AG-UI Workflow端点、Product Harness、Runtime和确定性Obsidian Adapter | 真实Identity/Auth Session、Projection Cursor/Sync、Super Admin API与活动采集 |
+| MAF | Bootstrap Agent；主链39节点Workflow、自定义Executor、持久Interrupt/Checkpoint和精确Provider Transport | 任意Workflow/活动pi/外部Tool副作用的通用跨进程恢复 |
+| 审批切片 | 持久ModelCallDraft/Hash/Decision/Grant/Attempt、Outbox与主Workflow跨进程恢复 | 所有旧Workflow统一迁移和完整Tool对账 |
+| 产品事实 | Product Session/Message、Work/Plan/Action、Note/Memory、Run、治理、Runtime、Evidence/Artifact等22次迁移 | Identity、Schedule、Delivery、Super Admin Operations及若干完整生命周期 |
+| Projection | `personal-workspace.v1`、`project-dossier.v1`、source revision、ETag与只读Obsidian Tree/ZIP | 多用户字段过滤、增量Cursor、双向ChangeSet/Sync Attempt和大规模缓存 |
 
-因此，本文解释的是**已批准目标架构，但不是已完成实现清单**。当前纵向切片证明MAF、AG-UI、Product Harness、运行治理和逐次模型调用审批合同可行，不能被外推为超级管理员、完整Tool/Evidence或全部目标对象已经实现。
+因此，本文同时说明已批准目标架构和截至2026-07-30的实现快照；精确状态仍由`PROJECT_STATE.md`拥有。
+当前纵向切片不能被外推为正式Identity、双向文件同步、超级管理员、完整Tool/Evidence或全部目标对象已完成。
 
 ## 12. 对本轮架构审核的帮助
 
@@ -749,4 +765,4 @@ Accepted Memory只是Context候选来源之一，也不等于ContextPackage。
 5. 是否接受结果必须经过Evidence、Assistant Message和Delivery提交，再向前端宣布产品成功？
 6. 是否接受超级管理员身份/登录、用户活动、业务进度和管理员审计分别归属Identity、Super Admin Operations、Product Harness/Evidence和Audit，而不是做成一个直连数据库的Dashboard？
 
-这6项不是另造架构范围，而是把[总体架构基线第17节](./overall-architecture-proposal.md#17-已批准的总体架构决定)的决定翻译成对象级心智模型。对应能力仍要分别通过字段、状态机、API和Repository的模块详细设计审核。
+这6项不是另造架构范围，而是把[总体架构基线第18节](./overall-architecture-proposal.md#18-已批准的总体架构决定)的决定翻译成对象级心智模型。对应能力仍要分别通过字段、状态机、API和Repository的模块详细设计审核。

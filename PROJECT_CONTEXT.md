@@ -123,7 +123,9 @@ Reconciler属于完整Chat系统的执行层，但必须处在独立权限、恢
 
 Chat Harness不是大Prompt、MAF的Harness Agent、万能Service或前端面板。它在内部继续按
 Conversation、Work、Knowledge、Protocol、Context、Governance、Evidence和Delivery的状态所有权、
-事务边界与失败语义拆分。完整概念边界见
+事务边界与失败语义拆分；Schedule独立拥有业务时间，Memory、Run、Tool、Identity与Admin继续拥有
+各自事实。2026-07-30批准的正式目标架构共14个逻辑状态所有者、3个应用组件和3类运行责任；
+Projection只组合Read Model与候选写回，不成为第15个事实模块。完整边界见
 [Chat系统与Chat Harness](./概念空间/Chat/Chat系统与Harness.md)。
 
 ### 4.4 超级管理员眼中的产品
@@ -210,9 +212,12 @@ Chat作为独立运营的产品，必须提供单独的超级管理员运营看�
 | ContextPackage | 本轮纳入、排除、裁剪和引用的版本化上下文快照 |
 | Intent | 系统观察到的一个用户目标、依据、不确定性、约束和期望结果 |
 | Intent Set | 一次Interaction中按顺序组织的Intent revision、依赖、组合策略和精确版本接受状态 |
+| Project | 组织长期目标、范围、状态、Work、知识、协议、资源和结果的稳定事项容器；不是Product Session或物理目录 |
 | WorkItem | 需要跨回合持续推进的工作或学习事项 |
 | ActionItem | 明确由用户或 AI 负责的下一行动 |
 | TaskPlan | 为完成目标形成的节点、顺序、依赖和检查点 |
+| Note / Note Revision | 用户或系统保存的来源化知识、决定、研究记录、规则或Idea及其不可变修订；不是Accepted Memory |
+| Collaboration Protocol / Binding | 一类工作怎样理解、推进、验证和回写的版本化方法，以及它与用户、Project、Work或场景的作用域绑定 |
 | ExecutionDraft | 产品准备“怎样完成这项工作”的可编辑、版本化执行草稿；不是某一次Provider请求 |
 | HITL Policy | 决定某类决策点必须人工、条件暂停、自动推进或禁止的版本化策略 |
 | RunSpec | 从已接受ExecutionDraft、Context、权限和有效策略编译出的不可变执行合同 |
@@ -222,6 +227,7 @@ Chat作为独立运营的产品，必须提供单独的超级管理员运营看�
 | Tool Execution | 一次工具调用的请求、权限、幂等键、副作用和对账状态 |
 | Evidence | 对结果、状态或操作的可验证证据及其来源关系 |
 | Artifact | 文件、代码、报告、白板或其他可保存、版本化、验证和交付的作品/产物 |
+| Schedule / Schedule Revision | 周期工作、复习、提醒或维护的业务时间、时区、重复规则、例外、暂停和漏跑策略；不是Scheduler进程或Worker心跳 |
 | Delivery | 结果向用户或下游交付的状态、回执和重试语义 |
 | Memory | 经候选门确认后可跨会话使用的信息及来源、版本和有效性 |
 | Trace | 可观察步骤、状态变化、错误、关联关系和审计记录 |
@@ -277,6 +283,7 @@ Chat使用[概念资产索引](./概念空间/00-索引.md)维护人、AI、产�
 15. 摘要和检索索引是可重建派生物。原始Message、已接受产品事实和来源关系不能被摘要覆盖，也不能因索引失败而丢失。
 16. 超级管理员可以运营看护全体用户和作品，但其权限必须显式授予、最小披露并全程审计；高权限不等于默认读取全部对话正文、Prompt、密钥或隐藏推理。
 17. 运营聚合和看护视图是可重建投影。登录事实由Identity拥有，Project/Work事实由Product Harness拥有，Artifact/Evidence事实由Evidence模块拥有，任何运营页面都不能成为第二写者。
+18. Web、Obsidian、文件目录、移动端和第三方前端可以用不同方式呈现同一组权威事实；稳定Read Model、来源revision、新鲜度和权限由服务端合同提供，外部编辑只能形成候选差异并经过CAS、HITL、Validation和Evidence写回，不能让投影成为第二事实源。
 
 ## 9. 完整产品能力范围
 
@@ -296,6 +303,7 @@ Chat 的目标能力至少包括：
 12. 通过具体Channel Adapter接入Telegram等终端平台，并通过独立Bridge Adapter与OPC-OS Chat互操作，实现授权映射和跨入口连续性。
 13. 真实Principal、Role/Grant和Authentication Session，以及超级管理员运营看护台：跨用户查看登录、使用时长、Project/Work/Artifact进度、阻塞、异常和数据新鲜度，并审计敏感访问。
 14. 把Chat自身作为普通软件Project进行真实Dogfood：关联版本化Repository资源，在隔离工作区由受治理执行层修改和验证，以Artifact/Evidence和用户决定完成结果与状态提交。
+15. 为Web、Obsidian、文件目录和未来第三方前端提供稳定、受权限控制、可版本化的查询与投影合同；不同界面共享同一Product Store事实，受控编辑经候选、冲突检查和产品提交门写回。
 
 这些能力最终至少要覆盖以下用户体验：
 
@@ -311,6 +319,7 @@ Chat 的目标能力至少包括：
 10. 在断线、进程退出、并发修改、Provider或Tool结果未知时恢复或请求人工处置，不制造假成功。
 11. 超级管理员能够确定谁登录、使用了多久、正在推进哪些Project/Work、产生了哪些Artifact、进度依据是什么，以及哪些用户、作品或运行需要人工关注。
 12. 用户能够让Chat持续开发Chat自身，并看见它采用的项目事实、仓库基线、执行步骤、Tool副作用、验证证据、代码合入和后续状态；当前运行环境不会被未审核改动直接污染。
+13. 用户能够在Web查看Project Dossier、看板、Calendar和学习队列，也能在Obsidian或第三方前端以目录/Markdown等方式阅读同一事实；任一界面的修改都不会静默覆盖较新的revision或绕过用户决定与Evidence。
 
 上述是目标能力全集，不代表一次性交付。实现顺序、依赖和每个阶段的可承诺保证只由`PROJECT_PLAN.md`及专项路线维护，不能反向修改本节产品范围。
 

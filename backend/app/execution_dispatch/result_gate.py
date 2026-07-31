@@ -20,7 +20,6 @@ from dataclasses import asdict, replace
 from typing import Any
 
 from agent_framework import Executor, WorkflowContext, handler, response_handler
-from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 
 from ..evidence.result_pipeline import ResultPipelineCoordinator
 from ..evidence.service import result_commit_decision_view
@@ -169,7 +168,7 @@ class ResultClaimPrepareExecutor(Executor):
         await ctx.send_message(next_state)
 
 
-class ResultClaimDecisionExecutor(Executor, RequestInfoMixin):
+class ResultClaimDecisionExecutor(Executor):
     """学习阶段S5、节点29：把result_commit决定绑定到精确Claim并运行提交Gate。"""
 
     def __init__(

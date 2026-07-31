@@ -50,7 +50,6 @@ from agent_framework import (
     handler,
     response_handler,
 )
-from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 
 from ..agent_profiles import AgentProfileSnapshot
 from ..collaboration_contexts import CollaborationContextService
@@ -935,7 +934,7 @@ class ProductDecisionSpec:
     grant_kind: str | None = None
 
 
-class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
+class ProductDecisionExecutor(Executor, TraceMixin):
     """学习阶段S1/S2/S3/S4/S6共用：持久化Policy评估，必要时interrupt。
 
     每次决定绑定当前Subject Hash和版本：不适用会写明原因，自动通过会记录Decision
@@ -1325,7 +1324,7 @@ class ProductDecisionExecutor(Executor, RequestInfoMixin, TraceMixin):
         return _state_with_context_package(state, revised, stage="directory")
 
 
-class GovernedSemanticAgentExecutor(Executor, RequestInfoMixin, TraceMixin):
+class GovernedSemanticAgentExecutor(Executor, TraceMixin):
     """学习阶段S2/S3/S6、节点6/19/32/33共用的受治理语义Agent执行器。
 
     分别承担意图识别、计划、答复和TurnSummary。每次调用都先持久化ModelCallDraft与

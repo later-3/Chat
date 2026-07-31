@@ -15,7 +15,6 @@ from agent_framework import (
     handler,
     response_handler,
 )
-from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 
 from ..agent_profiles import AgentProfileSnapshot
 from ..model_call_review import (
@@ -167,7 +166,7 @@ class IdiomInputExecutor(Executor, IdiomTraceMixin):
         await ctx.send_message(state)
 
 
-class IdiomAgentExecutor(Executor, RequestInfoMixin, IdiomTraceMixin):
+class IdiomAgentExecutor(Executor, IdiomTraceMixin):
     def __init__(
         self,
         *,

@@ -36,9 +36,9 @@ flowchart LR
 本地调试可以把API与Worker嵌在同一个OS进程中，部署也可以拆开。逻辑角色保持分开，才能解释：API
 断开是否取消Run、Worker崩溃谁接管、Outbox是否重复投递、pi进程是否仍存在。
 
-## 3. 9个协议边界
+## 3. 10个协议边界
 
-“9个”是当前源码和运行方式的边界清单，不是目标架构必须永久保持的数量。推导方法是：沿一次运行找出每一次“进程、信任级别、状态所有者或外部系统发生变化”的跨越；
+“10个”是当前源码和运行方式的边界清单，不是目标架构必须永久保持的数量。推导方法是：沿一次运行找出每一次“进程、信任级别、状态所有者或外部系统发生变化”的跨越；
 跨越处必须有可版本化输入/输出、身份、幂等、超时和错误语义，所以形成一个协议边界。新增Telegram、OPC-OS Bridge或其他外部系统时，数量会变，但判定法不变。
 
 | 协议 | 两端 | 失败时首先看什么 |
@@ -51,18 +51,19 @@ flowchart LR
 | Tool Gateway HTTP | pi ↔ Chat Tool治理边界 | Tool proposal、Approval、Operation/Attempt |
 | SQLAlchemy/Alembic | 应用服务 ↔ 关系数据库 | 事务、CAS、Schema revision |
 | Git/文件系统 | Workspace服务 ↔ Repository/Artifact | Snapshot、文件Hash、Diff、对账 |
+| Obsidian Projection文件 | APP-PROJECTION ↔ Obsidian/Vault浏览器 | projection revision、tree hash、manifest、`read_only` |
 | Nginx/反向SSH | 远端浏览器 ↔ 本地Chat | 认证、Relay进程、端到端健康 |
 
 未来外部Channel与Delivery还会增加平台协议，但必须先转换成可信Interaction/Delivery合同，不能直连数据库。
 
-## 4. 10个状态位置
+## 4. 11个状态位置
 
-这里的“10个状态位置”是为崩溃调试准备的**细粒度状态现场清单**，不是另一套产品模块，也不与总体架构的“5类核心逻辑Store”竞争：
+这里的“11个状态位置”是为崩溃调试准备的**细粒度状态现场清单**，不是另一套产品模块，也不与总体架构的“5类核心逻辑Store”竞争：
 
 | 两种视图 | 回答什么 | 例子 |
 |---|---|---|
 | 5类核心逻辑Store | Chat内部哪类状态按何种恢复语义保存 | Product、Runtime、MAF、Artifact、Browser |
-| 10个状态位置 | 一次真实故障时可能要去哪些Chat内部或外部现场查真相 | 除上述内部Store，还有Git Workspace、pi Session、进程日志、Provider外部状态和Delivery现场 |
+| 11个状态位置 | 一次真实故障时可能要去哪些Chat内部或外部现场查真相 | 除上述内部Store，还有Git Workspace、pi Session、进程日志、可重建Projection、Provider外部状态和Delivery现场 |
 
 列出一个状态位置的标准是：它能在其他组件不知情时独立保留或丢失真实状态，而且故障恢复时必须单独询问它。因此Provider外部状态也要进调试清单，
 即使它根本不在Chat的数据库中。
@@ -77,6 +78,7 @@ flowchart LR
 | pi Session JSONL | 单次pi执行转录 | 不自动成为下一次Chat Context |
 | 进程日志/Metrics | 诊断、耗时、关联ID | 不作为业务事实源 |
 | 浏览器草稿/页面状态 | 未提交输入、当前Tab、布局 | 不保存权威历史 |
+| Projection Envelope/Markdown/ZIP | 从Owner快照即时派生的角色视图和稳定文件树 | 不恢复Product事实，也不接受直接写回 |
 | Provider外部状态 | 远端请求和计费事实 | Chat超时不能抹掉它 |
 | Delivery状态（目标） | Attempt、Receipt、失败与重试 | 不改变生成结果是否正确 |
 
@@ -113,13 +115,13 @@ flowchart LR
 
 ## 掌握验收
 
-1. 能否用“跨进程/信任/所有者/外部系统”重新找到当前9个协议边界？
+1. 能否用“跨进程/信任/所有者/外部系统”重新找到当前10个协议边界？
 2. 同一个SQLite文件里为什么仍然可以有多个逻辑Store？
-3. 为什么5类核心逻辑Store和10个故障状态位置不矛盾？
+3. 为什么5类核心逻辑Store和11个故障状态位置不矛盾？
 4. SSE断线、Worker崩溃、Provider超时分别影响哪些状态？
 5. 为什么Checkpoint存在仍不能自动重做Tool副作用？
 
 ## 补充记录
 
 - 2026-07-29：补齐进程、协议和Store的基础架构导读。
-- 2026-07-30：补齐9个协议边界的跨边界推导法，并明确“5类核心逻辑Store”与“10个故障状态位置”是两种粒度。
+- 2026-07-30：补齐跨边界推导法；APP-PROJECTION落地后增加Obsidian文件协议与可重建Projection现场，并明确“5类核心逻辑Store”与“11个故障状态位置”是两种粒度。

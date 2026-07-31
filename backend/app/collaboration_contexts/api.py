@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..api import http_problem
+from ..api import CommandId, http_problem
 from ..harness.contracts import (
     HarnessConflict,
     HarnessNotFound,
@@ -40,7 +40,7 @@ class AddedContextSource(BaseModel):
 class ReviseContextPackageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    command_id: str
+    command_id: CommandId
     expected_package_hash: str
     reason: str
     item_changes: list[ContextItemChange] = Field(default_factory=list)

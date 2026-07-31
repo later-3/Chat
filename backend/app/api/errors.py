@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette import status
 
+from .error_registry import RecoveryAction, public_error_spec
 from .request_context import current_request_id
 
 logger = logging.getLogger(__name__)
@@ -50,14 +51,6 @@ _SERVER_MESSAGE = {
     status.HTTP_503_SERVICE_UNAVAILABLE: "服务暂时不可用，请稍后重试。",
     status.HTTP_504_GATEWAY_TIMEOUT: "等待上游服务响应超时。",
 }
-_DETAIL_KEYS = {
-    "actual_revision",
-    "expected_revision",
-    "field",
-    "issues",
-    "next_cursor",
-    "resource_id",
-}
 
 
 class ProblemDetail(BaseModel):
@@ -69,6 +62,7 @@ class ProblemDetail(BaseModel):
     message: str
     request_id: str
     retryable: bool
+    recovery_action: RecoveryAction
     details: dict[str, Any] | None = None
 
 
@@ -158,10 +152,11 @@ def _safe_detail(value: Any) -> Any:
     return _redact(str(value))
 
 
-def _details(detail: Any) -> dict[str, Any] | None:
+def _details(detail: Any, *, code: str, status_code: int) -> dict[str, Any] | None:
     if not isinstance(detail, Mapping):
         return None
-    result = {str(key): _safe_detail(value) for key, value in detail.items() if key in _DETAIL_KEYS}
+    allowed_keys = public_error_spec(code, status_code).public_detail_keys
+    result = {str(key): _safe_detail(value) for key, value in detail.items() if key in allowed_keys}
     return result or None
 
 
@@ -194,7 +189,7 @@ def _retryable(
 ) -> bool:
     if "OUTCOME_UNKNOWN" in code or getattr(cause, "outcome_status", None) == "outcome_unknown":
         return False
-    return status_code in {429, 502, 503, 504}
+    return public_error_spec(code, status_code).retryable
 
 
 def _response(
@@ -204,6 +199,7 @@ def _response(
     message: str,
     request_id: str,
     retryable: bool,
+    recovery_action: RecoveryAction | None = None,
     details: dict[str, Any] | None = None,
     headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
@@ -212,6 +208,7 @@ def _response(
         message=message,
         request_id=request_id,
         retryable=retryable,
+        recovery_action=recovery_action or public_error_spec(code, status_code).recovery_action,
         details=details,
     )
     response_headers = dict(headers or {})
@@ -241,7 +238,8 @@ def install_error_handlers(app: FastAPI) -> None:
             message=_message(error.detail, error.status_code),
             request_id=request_id,
             retryable=_retryable(error.status_code, code, cause=cause),
-            details=_details(error.detail),
+            recovery_action=public_error_spec(code, error.status_code).recovery_action,
+            details=_details(error.detail, code=code, status_code=error.status_code),
             headers=error.headers,
         )
 
@@ -264,6 +262,7 @@ def install_error_handlers(app: FastAPI) -> None:
             message="请求内容未通过校验。",
             request_id=getattr(request.state, "request_id", None) or current_request_id(),
             retryable=False,
+            recovery_action=RecoveryAction.REVIEW,
             details={"issues": issues},
         )
 
@@ -283,4 +282,5 @@ def install_error_handlers(app: FastAPI) -> None:
             message=_SERVER_MESSAGE[500],
             request_id=request_id,
             retryable=False,
+            recovery_action=RecoveryAction.CONTACT_SUPPORT,
         )

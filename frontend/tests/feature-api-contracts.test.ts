@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-
+import { modelCallDispatchRecovery } from "../src/features/chat/chat-agent-client.js";
 import {
   activateHitlPolicy,
   listDurableDecisionRequests,
@@ -18,6 +18,12 @@ import {
   resolveMemoryCandidate,
 } from "../src/features/harness/harness-api.js";
 import { getHomeOverview, searchHomeResources } from "../src/features/home/home-api.js";
+import {
+  getObsidianProjectArchive,
+  getObsidianProjectTree,
+  getProjectDossier,
+  getWorkspaceProjection,
+} from "../src/features/projections/projection-api.js";
 import {
   loadProtocolConfiguration,
   saveProtocolBinding,
@@ -274,6 +280,79 @@ test("Harness Feature API通过权威资源合同查询和维护知识", async (
     assert.match(String(requests[5].init?.body), /web:capture-note:/);
     assert.match(String(requests[6].init?.body), /web:propose-memory:/);
     assert.match(String(requests[7].init?.body), /web:memory-accept:/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Projection Feature API编码Project ID并保留Obsidian来源头", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = (async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/obsidian.zip")) {
+      return new Response(new Uint8Array([80, 75]), {
+        status: 200,
+        headers: {
+          "content-disposition": 'attachment; filename="chat-project-project-one.zip"',
+          "content-type": "application/zip",
+          "x-obsidian-tree-hash": "tree-42",
+          "x-projection-revision": "projection-42",
+        },
+      });
+    }
+    if (url.endsWith("/obsidian/tree")) {
+      return jsonResponse({ project_id: "project / one", files: [], read_only: true });
+    }
+    return jsonResponse({
+      view_type: url.includes("/dossier") ? "project_dossier" : "personal_workspace",
+      data: { projects: [] },
+    });
+  }) as typeof fetch;
+  try {
+    assert.equal((await getWorkspaceProjection("learning")).view_type, "personal_workspace");
+    assert.equal((await getProjectDossier("project / one")).view_type, "project_dossier");
+    assert.equal((await getObsidianProjectTree("project / one")).read_only, true);
+    const archive = await getObsidianProjectArchive("project / one");
+
+    assert.match(requests[0], /\/api\/projections\/workspace\?domain=learning$/);
+    assert.match(requests[1], /\/projects\/project%20%2F%20one\/dossier$/);
+    assert.match(requests[2], /\/projects\/project%20%2F%20one\/obsidian\/tree$/);
+    assert.match(requests[3], /\/projects\/project%20%2F%20one\/obsidian\.zip$/);
+    assert.equal(archive.filename, "chat-project-project-one.zip");
+    assert.equal(archive.projectionRevision, "projection-42");
+    assert.equal(archive.treeHash, "tree-42");
+    assert.equal(archive.blob.type, "application/zip");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("模型派发失败只读取耐久Attempt并区分failed和outcome_unknown", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    jsonResponse({
+      attempt: { status: "failed", error_code: "provider_rejected" },
+    })) as typeof fetch;
+  try {
+    const failed = await modelCallDispatchRecovery(
+      { draft_id: "draft / one", origin_prompt: "原始问题" },
+      "派发失败",
+    );
+    assert.equal(failed.status, "failed");
+    assert.equal(failed.errorCode, "provider_rejected");
+    assert.equal(failed.originPrompt, "原始问题");
+
+    globalThis.fetch = (async () => {
+      throw new TypeError("network unavailable");
+    }) as typeof fetch;
+    const unknown = await modelCallDispatchRecovery(
+      { draft_id: "draft-2", origin_prompt: "再试一次" },
+      "网络中断",
+    );
+    assert.equal(unknown.status, "outcome_unknown");
+    assert.equal(unknown.errorCode, null);
   } finally {
     globalThis.fetch = originalFetch;
   }

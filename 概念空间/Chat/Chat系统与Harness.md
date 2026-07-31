@@ -6,7 +6,7 @@
 |---|---|
 | 目的 | 固定完整Chat系统、Chat Harness、MAF AI Runtime、执行层和前端之间的责任边界。 |
 | 概念状态 | 有效；2026-07-24用户确认Chat系统由Chat Harness与基于MAF的AI运行能力共同构成。 |
-| 实现状态 | 局部实现并持续建设：Product Harness、持续协作Workflow、模型调用治理、运行恢复和渐进式Workbench已有纵向切片；多Product Session共享Harness目标已批准，但活动感知与冲突交互尚未实现；完整Tool/Evidence、周期工作、身份/多入口和生产运营能力仍未完成。 |
+| 实现状态 | 局部实现并持续建设：Product Harness、持续协作Workflow、模型调用治理、运行恢复和渐进式Workbench已有纵向切片；目标边界已正式细化为14个状态所有者、3个应用组件和3类运行时职责，但Schedule、Projection、多入口、完整Tool/Evidence和生产运营仍未完成。 |
 | 产品责任 | [PROJECT_CONTEXT.md](../../PROJECT_CONTEXT.md) |
 | 实现事实 | [PROJECT_STATE.md](../../PROJECT_STATE.md) |
 | 维护责任 | 产品概念、总体架构、Harness应用层、MAF运行层、执行层与前端各自维护对应事实。 |
@@ -46,6 +46,11 @@ Chat Harness拥有或协调：
 5. ExecutionDraft、RunSpec、HITL、Approval和产品提交门。
 6. Evidence、Artifact、Trace、Delivery及失效传播。
 7. 用户、Workflow Agent和执行层所需的不同公开投影。
+
+总体架构把这些责任进一步固定为14个逻辑状态所有者（Identity、Conversation、Work、Knowledge、
+Protocol、Governance、Context、Memory、Run、Tool、Evidence、Schedule、Delivery、Admin）、3个应用组件
+（Ingress、Interaction、Projection）和3类运行时职责（MAF、Execution、Platform）。这是目标责任边界，
+不表示对应Schema、物理目录或实现已完成。
 
 ## 边界与不是什么
 
@@ -136,8 +141,9 @@ Agent和执行Runtime都不能绕过Harness直接提交Product事实。执行层
 4. 渐进式Harness Workbench、Workflow思维导图、节点公开内容、HITL矩阵和配置中心入口。
 
 仍未完成的目标能力以[项目状态](../../PROJECT_STATE.md#5-尚未实现的能力)为准，重点包括通用Tool
-副作用对账、独立Evidence/Artifact/Delivery生命周期、周期Schedule、完整多Intent、身份/多入口、
-完整Session恢复矩阵以及生产SLO/备份/容量与告警。
+副作用对账、独立Evidence/Artifact/Delivery生命周期、Schedule详细合同与Trigger Worker、
+Projection Contract与Obsidian Adapter、完整多Intent、身份/多入口、完整Session恢复矩阵以及生产
+SLO/备份/容量与告警。
 
 尚需通过真实用户体验继续验证：信息层级是否足够清楚、默认展开量是否合适、普通用户与设计者视图
 是否应进一步分离，以及不同作用域的协议和HITL配置是否容易理解。

@@ -24,7 +24,6 @@ from agent_framework import (
     handler,
     response_handler,
 )
-from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 from agent_framework_ag_ui import AgentFrameworkWorkflow
 
 from .model_call_review import (
@@ -43,7 +42,7 @@ class ProviderTransport(Protocol):
 def _is_model_call_review_protocol_content(value: dict[str, Any]) -> bool:
     """Exclude MAF review protocol events from the next model context.
 
-    AG-UI projects ``RequestInfoMixin.request_info`` as assistant function-call
+    AG-UI projects MAF ``request_info`` events as assistant function-call
     messages.  Those messages are transport/control artifacts containing the
     review card itself, not conversation history or tool evidence intended for
     the model.  Keeping them would recursively embed prior review JSON in the
@@ -82,7 +81,7 @@ def normalize_agui_messages_for_provider(message: list[Any]) -> list[dict[str, A
     return messages
 
 
-class ModelCallApprovalExecutor(Executor, RequestInfoMixin):
+class ModelCallApprovalExecutor(Executor):
     """Prepare, review and dispatch one exact provider request."""
 
     def __init__(

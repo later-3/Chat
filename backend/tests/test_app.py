@@ -208,6 +208,7 @@ def test_rest_errors_use_one_redacted_correlated_problem_contract() -> None:
         "message": "Product Session不存在",
         "request_id": "client-request-42",
         "retryable": False,
+        "recovery_action": "go_back",
         "details": None,
     }
 
@@ -216,6 +217,7 @@ def test_rest_errors_use_one_redacted_correlated_problem_contract() -> None:
     assert invalid_problem["code"] == "REQUEST_VALIDATION_FAILED"
     assert invalid_problem["request_id"] == invalid.headers["x-request-id"]
     assert invalid_problem["retryable"] is False
+    assert invalid_problem["recovery_action"] == "review"
     assert invalid_problem["details"]["issues"]
     assert "input" not in invalid_problem["details"]["issues"][0]
 
@@ -237,7 +239,7 @@ def test_openapi_declares_problem_detail_for_rest_failures() -> None:
     problem_schema = session_route["responses"]["409"]["content"]["application/json"]["schema"]
     assert problem_schema["$ref"] == "#/components/schemas/ProblemDetail"
     required = set(schema["components"]["schemas"]["ProblemDetail"]["required"])
-    assert required == {"code", "message", "request_id", "retryable"}
+    assert required == {"code", "message", "request_id", "retryable", "recovery_action"}
 
 
 def test_settings_loads_one_provider_from_json(tmp_path: Path) -> None:

@@ -16,7 +16,6 @@ from dataclasses import asdict, replace
 from typing import Any
 
 from agent_framework import Executor, WorkflowContext, handler, response_handler
-from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 
 from ..model_call_review import (
     InMemoryModelCallReviewStore,
@@ -277,7 +276,7 @@ class ExecutionWorkspacePrepareExecutor(Executor):
         await ctx.send_message(replace(state, execution_workspace=view))
 
 
-class PiReadonlyDispatchExecutor(Executor, RequestInfoMixin):
+class PiReadonlyDispatchExecutor(Executor):
     """学习阶段S5、节点26/30：驱动pi子进程并由MAF掌握interrupt与继续。
 
     ``pi_workspace_dispatch``用于隔离编辑，``pi_readonly_dispatch``用于只读检查。进程

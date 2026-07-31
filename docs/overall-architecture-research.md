@@ -348,16 +348,17 @@ Chat完整用户场景
 这一轮得到13个候选责任：Identity、Channel Binding、Conversation、Interaction协调、Intent/Work/Plan、
 Execution Governance、Context、Memory、Run Management、Tool Execution、Evidence、Delivery和Admin Operations。
 
-### 9.2 13个候选如何形成11个当前顶层模块
+### 9.2 13个候选如何形成2026-07-24的11模块历史基线
 
 | 决定 | 结果 | 当前证据 | 需重审的信号 |
 |---|---|---|---|
 | 合并Identity与Channel Binding的顶层产品责任，内部对象仍分开 | `Identity与Channel Binding` | 共同完成外部发送者→可信Principal→可访问产品对象的信任边界 | Binding出现独立管理员、合规、迁移或多租户生命周期 |
 | 合并Intent/Work/Plan与Execution Governance的顶层产品责任，代码子边界仍分开 | `Collaboration` | 共同定义人/AI的可修正目标、已接受候选与已授权动作 | Work或执行治理出现独立安全主体、事务、恢复或发布节奏 |
 
-`13 - 2 = 11`是当前批准粒度的可重算结果，不是永久不变的数量指标。UI、Adapter、MAF、Worker和Store属于交互/运行/基础设施边界，
-不因为很重要就自动成为产品事实模块。Trace目前是跨模块合同，Project/Work属于Collaboration内部能力，Artifact是Evidence内部对象且内容位于Artifact Store；
-它们若出现独立权威状态、安全主体、事务、恢复和变化节奏，可在后续详细设计中升格，但不能删除原产品保证。
+`13 - 2 = 11`解释的是2026-07-24已批准粒度，不是当前最终数量。UI、Adapter、MAF、Worker和Store属于交互/运行/基础设施边界，
+不因为很重要就自动成为产品事实模块。后续场景穿透发现：Project/Work、Note/Knowledge、Protocol与Intent/Approval已经形成不同状态机、
+事务和变化原因；周期工作也缺少业务时间所有者。因此2026-07-30重新计算并批准D1-D3：旧Collaboration拆为Work、Knowledge、Protocol、
+Governance，新增Schedule；Interaction Coordinator归入应用组件而非状态所有者，形成14个逻辑状态所有者、3个应用组件和3类运行责任。
 
 这是基于当前已批准场景与设计做的可审核重建；不宣称当初已经存在同样格式的历史算稿。
 
@@ -381,6 +382,10 @@ Execution Governance、Context、Memory、Run Management、Tool Execution、Evid
 | D11 | Session保存不等于Channel送达 | Web断线、外部Channel失败后仍要知道交付状态 | 建立`Delivery模块` | 把“生成成功”当“用户已收到”会造成假完成 |
 | D12 | LibreChat入口有权限链；QwenPaw区分ACL sender、session_id和AgentRequest | 外部身份与Product Session绑定必须可撤销、可审计 | 建立`Identity与Channel Binding模块` | 把threadId/chatId当权限凭据会形成越权风险 |
 | D13 | 当前Chat只有固定Scope和技术耗时；Product Harness已拥有Work事实，Artifact仍待实现；参考项目研究未涉及完整管理员看护 | 独立运营的Chat必须回答谁登录、真实使用情况、工作/作品进度和需要关注的异常，同时避免双重事实源和敏感内容越权 | 扩展`Identity`拥有Role/Grant与Authentication Session；新增`Super Admin Operations模块`拥有活动事件、使用聚合、跨模块可重建运营投影和管理员审计 | 塞入Observability会混淆人类使用与机器运行；塞入Harness会让身份/活动/审计依附Project；前端或管理员直读数据库会绕过授权、口径和审计 |
+| D14 | 周期学习、提醒与简报在MAF/pi/LibreChat/QwenPaw中没有完整业务状态所有者；nanobot只有相邻cron/reminder形态 | 业务时间、时区、Recurrence、Occurrence、暂停和Misfire必须可版本化、可恢复、可解释 | 独立`Schedule模块`；Trigger Worker只消费到期事实 | 放入Work会膨胀其生命周期；放入Delivery会混淆产生工作与送达结果；放入Reconciler会混淆业务时间与运行恢复 |
+| D15 | 研究时Web只可读部分资源，Obsidian/第三方前端没有稳定Read Model、revision、新鲜度和受治理写回；2026-07-30后只读v1已补齐 | 同一权威事实必须支持多呈现而不形成第二事实源 | 新增`APP-PROJECTION`，各前端只做Presentation Adapter | 各前端直连内部表会造成口径漂移；独立Projection领域库会成为第二事实源 |
+| D16 | 已落地Harness中Work、Note、Protocol与Governance有独立revision、事务和失败语义 | 后续开发必须能从能力稳定定位状态所有者和详细设计工作包 | 将旧Collaboration拆为Work、Knowledge、Protocol、Governance四个逻辑所有者 | 保持一个大模块会继续形成万能Harness Service；按当前目录反推又会把物理共置误当逻辑所有权 |
+| D17 | PROJECT_PLAN、A-F、Q、F、SD、Session Phase并行排序 | 项目必须唯一回答当前下一工作包，并能机器检查依赖和遗漏 | W0-W10唯一顶层坐标，`Wn-xx`为工作包，其余编号只做专项映射 | 删除历史编号会破坏证据引用；保留多条全局顺序会继续漂移 |
 
 ## 10. 推导后的架构分组
 
@@ -393,25 +398,19 @@ Execution Governance、Context、Memory、Run Management、Tool Execution、Evid
 3. Channel Adapter Host：承载OPC-OS Chat Bridge、Telegram等具体Adapter及其协议端点、队列和出站渲染；平台不能直接进入产品核心。
 4. Interaction Ingress：Adapter共同调用的内部应用合同，负责可信身份上下文、幂等接纳、Session映射和per-session顺序，然后调用Interaction协调器。
 
-### 10.2 产品与应用模块
+### 10.2 产品状态所有者与应用组件
 
-5. Identity与Channel Binding。
-6. Conversation。
-7. Collaboration。
-8. Context。
-9. Memory。
-10. Interaction协调器。
-11. Run管理。
-12. Tool执行。
-13. Evidence。
-14. Delivery。
-15. Super Admin Operations。
+14个逻辑状态所有者：Identity、Conversation、Work、Knowledge、Protocol、Collaboration Governance、
+Context、Memory、Run、Tool、Evidence、Schedule、Delivery和Super Admin Operations。
+
+3个应用组件：Interaction Ingress、Interaction Coordinator和Projection Query & Command Gateway。
+它们协调用例、协议接纳和多前端投影，不拥有14个模块的领域事实。
 
 ### 10.3 运行与基础设施适配器
 
-16. MAF运行适配器：AgentSession、History Provider、Workflow/Checkpoint和模型流式运行接合。
-17. Product Store、Runtime Store、Event Transport、Artifact Store的实现。
-18. Execution Worker、Scheduler/Reconciler、Delivery Worker等进程角色。
+1. RT-MAF：AgentSession、History Provider、Workflow/Checkpoint和模型流式运行接合。
+2. RT-EXECUTION：Execution Worker、Schedule Trigger Worker、Runtime Reconciler、Delivery Worker、pi与Validator。
+3. RT-PLATFORM：Product/Runtime/MAF/Artifact Store实现、配置、安全、Observability、备份、容量和SLO。
 
 这里的编号不是目录数量，也不是要求每个模块部署成微服务。模块先代表代码依赖、状态所有权和合同边界；同一FastAPI进程可以承载多个模块，但不能因此合并它们的事实。
 
@@ -483,30 +482,35 @@ Execution Governance、Context、Memory、Run Management、Tool Execution、Evid
 
 | 用户场景 | 必须经过的模块 | 关键保证 |
 |---|---|---|
-| 打开旧Session继续 | Web→Web/API Adapter→Interaction Ingress→Identity→Conversation→Collaboration→Context→Memory | 恢复的是产品事实；本轮Context单独生成，不把完整历史盲送模型 |
-| 用户纠正系统理解 | Interaction协调→Collaboration→Conversation | Intent/Plan有版本和状态，纠正不会只变成一条无人消费的消息 |
-| 高风险工具执行 | Collaboration Draft/Approval→Run→Tool→Evidence | Approval绑定Draft版本和请求Hash；Tool调用有幂等与对账记录 |
+| 打开旧Session继续 | Web→Web/API Adapter→Interaction Ingress→Identity→Conversation→APP-INTERACTION→Work/Governance→Context→Memory | 恢复的是产品事实；本轮Context单独生成，不把完整历史盲送模型 |
+| 用户纠正系统理解 | APP-INTERACTION→Collaboration Governance/Work→Conversation | Intent/Plan有版本和状态，纠正不会只变成一条无人消费的消息 |
+| 高风险工具执行 | Governance Draft/Approval→Run→Tool→Evidence | Approval绑定Draft版本和请求Hash；Tool调用有幂等与对账记录 |
 | 浏览器断线后回来 | Web→Web/API Adapter→Run→Event Journal；Conversation读取已提交消息 | HTTP、Run和订阅独立；缺失事件可重放或以产品状态Hydrate |
 | Worker崩溃恢复 | Reconciler→Run Attempt→MAF Checkpoint→Tool Ledger | 先判断副作用是否已发生，再恢复或重试；旧Attempt失去写权 |
 | 从OPC-OS Chat进入 | OPC-OS Chat→OPC-OS Bridge Adapter→Channel Adapter Host→Interaction Ingress→Identity/Binding→同一协调链→Delivery→Bridge | 外部系统不能直接调用产品模块；双方事实源、协议终止和回执明确 |
 | 从Telegram进入 | Telegram平台→Telegram Adapter→Channel队列→Interaction Ingress→同一协调链→Delivery→Telegram Adapter | Telegram SDK、sender/chat、群聊、渲染和平台回执止于Adapter |
 | 来源被删除或权限撤销 | Evidence→Memory/Context失效→Conversation提示 | 派生结论保留历史但降级有效性，后续Context不再静默使用 |
 | 超级管理员看护用户与作品 | Super Admin Console→Web/API Adapter→Identity/Role Guard→Super Admin Operations→Identity活动事实 + Harness Work事实 + Evidence Artifact事实→管理员审计 | 登录、前台活跃、有效协作和机器耗时口径分开；进度来自权威模块；投影延迟显示`stale/unknown`；普通用户不可调用，敏感内容读取另行授权并留审计 |
+| 每天学习英语并按计划复习 | Work/Knowledge/Protocol→Schedule→Trigger Worker→Interaction Coordinator→Governance/Run→Evidence→Delivery | Schedule到期建立新运行血缘；掌握必须有Evidence；漏跑和送达失败不复用或重做旧Run |
+| 同一Project在Web与Obsidian呈现 | Work/Knowledge/Evidence公开Query/Event→APP-PROJECTION→Web/Obsidian Adapter；编辑反向形成ChangeSet→CAS/HITL/Validation→源模块 | 多前端共享ID/revision和事实；Projection不成为第二写者；过期编辑显示Diff而不静默覆盖 |
 
 任何一个场景如果只能写成“模块A调用模块B”，却说不出持久状态、失败点和用户看到什么，就不能算架构完成。
 
 ## 13. 未知与审核后验证
 
-1. 安装版`agent-framework-ag-ui 1.0.0rc8`能否在MAF事件发出前后插入完整Product Finalization Gate，需要Spike。
-2. SQLite能否满足Run领取、Lease续租、Outbox/Event Journal原子写入，需要事务与并发测试。
-3. MAF History Provider、客户端消息全集和Product Context同时启用时的去重合同，需要E2E验证。
-4. Workflow Checkpoint跨进程恢复与持久Approval接合，需要安装版测试。
+本节保留研究时提出的验证题，并同步截至2026-07-30的结果，避免把历史未知继续写成当前事实。
+
+1. Product Finalization Gate已通过纵向实现和故障测试；AG-UI RC升级仍须重跑W1-01锁定合同。
+2. SQLite已验证Run领取、Lease Fence、Outbox竞争和Event Journal纵向并发；容量/风暴压测仍缺。
+3. 当前由服务端唯一历史装配器避免Product History、客户端全集与MAF History重复；普通Agent启用History Provider前仍需E2E。
+4. 主Workflow无活动外部Tool副作用的审批安全点已完成Checkpoint/持久Decision跨进程恢复；任意Workflow和Tool恢复仍缺。
 5. OPC-OS Chat的正式身份、能力、消息、幂等和回执合同尚未取得。
 6. Tool的幂等查询、补偿和结果未知处理必须按具体Tool类型设计，不能通用猜测。
 7. OPC-OS Chat是否统一托管Telegram等Channel Adapter，还是Chat部署自己的具体Adapter，必须依据系统间正式合同决定；逻辑上两种部署都只能通过Interaction Ingress。
-8. Authentication Session、多设备、前台心跳、空闲阈值和有效协作事件的产品口径尚待详细设计。
+8. Authentication Session、Cookie/CSRF、固定Scope迁移和4类时间分离已在W2-01详细设计固定；具体时长配置、实现与真实多设备验证仍缺。
 9. 超级管理员默认可见字段、敏感正文的额外Grant、隐私告知、保留期限、导出与审计不可篡改边界尚待安全与产品审核。
 10. Project/Work/Artifact运营投影的延迟目标、重建方式和大规模查询容量尚待验证。
+11. Personal Workspace、Project Dossier与确定性Obsidian只读Tree/ZIP已实现；多用户过滤、Cursor、Sync Attempt、双向ChangeSet和大规模Vault仍待验证。
 
 ## 14. 研究结论
 
@@ -521,17 +525,23 @@ OPC-OS Chat → OPC-OS Bridge Adapter ────────────┘
         ↓
 Identity + Conversation + Interaction Coordinator
         ↓
-Collaboration + Context + Memory
+Work + Knowledge + Protocol + Context + Memory + Governance
         ↓（只有满足执行门时）
 Run Manager → MAF Runtime Adapter → Tool Operations
         ↓
 Evidence → Conversation Finalization → Delivery
 
+Schedule → Trigger Worker → Interaction Coordinator（每次Occurrence建立独立血缘）
+
+14个状态所有者 → APP-PROJECTION → Web / Obsidian / Third-party Adapter
+
 Super Admin Console → Identity/Role Guard → Super Admin Operations
         ↓只读关联
-Identity活动事实 + Harness Work事实 + Evidence Artifact事实 + Run/Delivery异常
+Identity活动事实 + Work事实 + Evidence Artifact事实 + Run/Delivery异常
         ↓
 可重建运营投影 + Super Admin Audit
 ```
 
-这条链是下一份架构候选的来源。每个模块的内部组成、状态所有权、合同、失败与场景映射在`overall-architecture-proposal.md`中展开。
+这条链已于2026-07-30随D1-D4获用户批准。每个模块的内部组成、状态所有权、合同、失败与场景映射在
+`overall-architecture-proposal.md`中展开；同日W1-01、W2-01、W4-01、W4-03详细设计获批，W4-03
+固定Scope只读切片已经实现。其余字段级Schema、物理目录和完整实现仍按对应工作包实施。

@@ -24,7 +24,7 @@ Chat在概念上为什么这样设计？“层、模块、进程、协议、Stor
 
 1. Chat作为完整产品究竟解决什么问题。
 2. 为什么要划出7层边界，每层保护什么产品保证。
-3. 11个产品模块怎样分工，它们为何不等于7层。
+3. 14个状态所有者、3个应用组件和3类运行时职责怎样分工，它们为何不等于7层。
 4. 理论边界怎样由当前技术选型和源码落实。
 5. 一条真实数据为什么会先后变成View状态、网络DTO、产品事实、MAF状态和Runtime事件。
 
@@ -81,7 +81,7 @@ Chat的“TSX→Vite/Node→浏览器”和“Python模块→CPython/Uvicorn→F
 |---:|---|---|---|
 | 1 | Prompt和答案困在一次会话 | 刷新、换设备或重启后事实断裂 | Product Session、Message、Interaction和长期Product Store独立存在 |
 | 2 | 用户说“继续”时缺少稳定上下文 | 全塞历史会污染当前任务；少塞又丢关键事实 | Context按来源、revision、预算和采用理由装配，完整历史只作证据源 |
-| 3 | Intent、Plan、Work和结果没有生命周期 | 模型每轮重新解释，无法修正、版本化或恢复 | Collaboration模块保存候选、接受状态、版本、Hash和关系 |
+| 3 | Intent、Plan、Work和结果没有生命周期 | 模型每轮重新解释，无法修正、版本化或恢复 | Work保存长期推进结构；Governance保存候选、接受状态、版本、Hash和执行授权 |
 | 4 | AI可能在用户看见前就执行 | Prompt里一句“先问我”无法成为安全边界 | ExecutionDraft → Decision/Grant → RunSpec → Tool Operation形成硬门 |
 | 5 | 模型候选容易被当成正式事实 | 幻觉可能直接修改Work、Memory或完成状态 | 模型只产候选；确定性代码负责校验、授权和Product提交 |
 | 6 | 失败、重启或外部超时后难以判断发生了什么 | 重试可能重复副作用，也可能产生假成功 | Product Run/Attempt、Runtime Job/Lease、Checkpoint、账本、Evidence和Trace分开 |
@@ -104,12 +104,14 @@ flowchart LR
 
 ## 3. 先把7个容易混淆的维度拆开
 
-### 3.1 “7层”“11模块”“S1–S7”不是同一套分类
+### 3.1 “7层”“14+3+3责任”“S1–S7”不是同一套分类
 
 | 维度 | 当前数量 | 它回答的问题 | 例子 |
 |---|---:|---|---|
 | 架构层 | 7层 | 一次请求跨越哪些责任和依赖边界 | React视图、协议、应用、产品事实、MAF、执行Runtime、外部能力 |
-| 产品模块 | 11个 | 哪类产品能力和权威状态由谁长期拥有 | Conversation、Context、Run管理、Evidence |
+| 逻辑状态所有者 | 14个 | 哪类产品事实由谁长期拥有和解释 | Conversation、Work、Schedule、Run、Evidence |
+| 应用组件 | 3个 | 一次请求怎样入站、跨所有者协调和生成多前端投影 | Ingress、Interaction、Projection |
+| 运行与基础设施职责 | 3类 | 已批准工作怎样在框架、执行层和平台上运行/恢复 | MAF、Execution、Platform |
 | 主Workflow学习阶段 | S1–S7，共7组 | 如何理解39个MAF节点的职责区 | S1输入与目录Context、S4授权与RunSpec |
 | MAF节点与边 | 39节点、43边 | 当前`continuous-collaboration@1.8.0`实际怎样调度 | `input_acceptance`、`scenario_router`、`result_finalization` |
 | 部署进程 | 按运行配置变化 | 哪段代码在哪个OS进程存活和失败 | 浏览器、API进程、Worker进程、pi子进程 |
@@ -122,12 +124,16 @@ flowchart LR
 flowchart TB
     SYS["完整Chat产品"]
     SYS --> L["7层：依赖边界视角"]
-    SYS --> M["11模块：产品能力与状态所有权视角"]
+    SYS --> M["14个状态所有者：产品事实视角"]
+    SYS --> A["3个应用组件：用例协调与投影视角"]
+    SYS --> R["3类运行职责：执行与平台视角"]
     SYS --> P["多个进程与Store：运行部署视角"]
     L5["第5层：MAF运行时"] --> WF["主Workflow：39节点 / 43边"]
     WF --> S["S1–S7：只用于学习这39个节点"]
     L --> L5
-    M -. "多个模块共同参与" .-> WF
+    M -. "多个所有者共同参与" .-> WF
+    A -. "协调公开合同" .-> WF
+    R -. "承载与恢复" .-> WF
     P -. "承载与恢复" .-> WF
 ```
 
@@ -183,7 +189,7 @@ flowchart LR
     subgraph CHAT["独立Chat产品"]
         Adapters["Web/API Adapter\nChannel Adapter / Bridge"]
         Ingress["Interaction Ingress"]
-        Core["11个产品与应用模块"]
+        Core["14个状态所有者 + 3个应用组件"]
         MAF["MAF运行适配器"]
         Runtime["Worker / pi / Tool Gateway / Validator"]
         Stores["Product / Runtime / Checkpoint / Artifact Stores"]
@@ -477,11 +483,12 @@ flowchart LR
 状态：多个模型Provider、Git/文件、pi集成为**当前已实现/局部实现**；通用外部业务集成、正式Channel和
 Delivery为**目标已批准，尚未实现**。
 
-## 7. 11个产品模块不是列出来的：从0推导全过程
+## 7. 从历史11模块到正式14+3+3责任：从0推导全过程
 
 先说一个必须客观的事实：**11不是数学上唯一正确的模块数，也不是从MAF或某个参考项目复制来的。**
-它是当前已批准总体架构在“产品能力与状态所有权”这个粒度上的基线。未来详细设计可以证明某个内部能力
-应升格为独立模块，或两个模块已真正共享状态、事务与恢复语义；但不能为了凑数量合并，也不能让产品责任消失。
+它是2026-07-24获批的历史基线。2026-07-30基于16类场景、23项目标能力和D1-D4审核，正式架构已演进为
+14个逻辑状态所有者、3个应用组件和3类运行时职责。历史推导保留，是为了让你看懂边界为什么改变，
+不能再把11当成当前模块清单。
 
 下面的过程是基于已批准用户场景、当前架构、研究证据和已有源码做的**可审核重建**。它用于让你重新算出当前结论，
 不伪装成当初每次讨论的逐字历史。
@@ -499,7 +506,7 @@ Delivery为**目标已批准，尚未实现**。
 反过来，React页面、AG-UI协议、MAF Runtime、SQLite和Worker都很重要，但它们分别是交互面、协议、运行时、存储实现和进程角色，
 不因此自动成为“产品模块”。
 
-### 7.2 第1步：从9类完整用户场景出发
+### 7.2 第1步：历史基线先从9类完整用户场景出发
 
 第2节的6个问题是核心协作闭环的抽象问题，但它们还不是可执行验收场景。Chat又是独立、可多入口、需持续运营的完整产品，所以还要加入身份/外部集成和超级管理员运营保证。
 两类起点组合后，才展开成9类端到端场景：
@@ -512,7 +519,7 @@ Delivery为**目标已批准，尚未实现**。
 
 因此“6个问题”和“9类场景”不是数量不一致，而是**问题空间→可验收场景**的展开：一个场景可同时验证多个问题，一个问题也需要多个正常/失败场景才能证明。
 
-总体架构中已批准的9类目标场景是起点，而不是先写模块名再找场景解释：
+历史基线中的9类目标场景是起点，而不是先写模块名再找场景解释：
 
 | # | 用户真正想完成的事 | 若只有“聊天页+一个Agent”的失败 | 必须产生的产品保证 |
 |---:|---|---|---|
@@ -526,9 +533,10 @@ Delivery为**目标已批准，尚未实现**。
 | 8 | 从Telegram收发同一工作结果 | 平台SDK深入核心，生成成功被误当成送达成功 | 入站Adapter与统一Ingress分开；产品完成与多接收方Delivery/Receipt分开 |
 | 9 | 超级管理员受审计地查看用户、使用、工作和作品 | 把机器耗时当用户时长，或管理页直读私表 | 信身份授权、活动口径、可重建运营投影、数据新鲜度和管理员访问审计 |
 
-这9行还没有得出11个模块；它们只是确定“系统不能丢掉哪些保证”。
+这9行还没有得出历史11模块；它们只是确定“系统不能丢掉哪些保证”。当前能力地图进一步扩展为16类
+场景，新增了Project Dossier、多前端同源投影、学习积累、周期触发、知识/协议沉淀和开发缺口治理等穿透。
 
-### 7.3 第2步：从失败与保证反推独立责任
+### 7.3 第2步：历史基线从失败与保证反推独立责任
 
 对每条保证继续问5个问题：“要保存什么？谁可以改？何时开始/结束？失败后谁恢复？和相邻责任合并会丢掉什么？”
 会先得到下面13个**候选责任**，而不是直接得到11个最终模块：
@@ -549,7 +557,7 @@ Delivery为**目标已批准，尚未实现**。
 | C12 Delivery | 产品已完成，但外部接收方未收到 | Delivery、Outbox、Attempt、Receipt、retry schedule | 生成成功、SSE显示成功和多Channel送达会被混为一个布尔值 |
 | C13 Admin Operations | 运营口径失真、敏感数据越权、管理投影反向成真 | Activity、Usage Aggregate、Operations Projection、Admin Audit | 技术Observability或直读业务库会冒充独立运营保证 |
 
-### 7.4 第3步：先拆出13个候选，再做2次有边界的合并
+### 7.4 第3步：13个候选怎样形成历史11模块
 
 候选责任不等于最终顶层模块。要两两检查：是否共享主要事实所有者、信任/事务边界、失败恢复和变化原因。当前基线做了2次合并：
 
@@ -564,12 +572,12 @@ Delivery为**目标已批准，尚未实现**。
 13个候选责任
 - 1次Identity / Channel Binding顶层合并
 - 1次Collaboration / Execution Governance顶层合并
-= 11个当前产品模块
+= 11个历史产品模块
 ```
 
 这不表示合并后可以把子边界写成一个大Service。“同属一个顶层产品模块”与“代码必须放在一个目录/事务”是两件事。
 
-### 7.5 第4步：为什么其他重要东西没有单独算进11个
+### 7.5 第4步：新场景为什么要求继续演进
 
 | 看起来也像模块的东西 | 当前归类 | 不单独算产品模块的原因 | 可能升格的条件 |
 |---|---|---|---|
@@ -578,49 +586,39 @@ Delivery为**目标已批准，尚未实现**。
 | MAF Agent / Workflow | L5智能控制运行时 | 负责语义和图调度，Product Run、权限和Evidence仍由Chat拥有 | 不升格为产品事实源；通过适配器可替换 |
 | Product/Runtime/Artifact Store | 基础设施与逻辑Store | 它们回答“状态存在哪里”，不回答“哪类产品能力拥有状态” | 可独立部署，但仍是多模块共用的持久化合同 |
 | Trace / Observability | 跨模块可观察合同 | 技术Trace、Product Trace、Evidence审计和运营指标的所有者不同；粗暴合成一个模块会重新混淆口径 | 若出现独立的访问控制、保留、查询、导出和对账生命周期，再审查顶层升格 |
-| Project / Work | 当前属Collaboration内部能力，代码由`harness/`承载一部分 | 当前与Intent、Plan、RunSpec共同表达可修正的协作工作 | 若独立协作、权限、工作流、查询和事务边界成熟，可升格 |
+| Project / Work | 当前正式归入Work状态所有者，代码由`harness/`承载一部分 | 长期工作结构与Intent候选、执行授权拥有不同生命周期和变化原因 | 已通过D3升格；详细公开合同仍待W4-01 |
 | Artifact | 当前是Evidence模块内部对象；Blob位于Artifact Store | 当前主要价值是支撑Validation、Evidence和Claim | 若变成独立编辑、版本、分享和权限产品面，再拆分 |
 
-### 7.6 第5步：11个最终模块放进七层
+### 7.6 第5步：D1-D3怎样得到正式14+3+3责任
 
-层是横向依赖边界；模块是纵向产品能力。一个模块通常横跨L2–L6，所以不能要求“每层恰好一个模块”。
+层是横向依赖边界；状态所有者是纵向产品事实；应用组件负责跨所有者用例；运行职责承载执行与恢复。
 
-```mermaid
-flowchart LR
-    I["Identity与Channel Binding"] --> C["Conversation"]
-    C --> IC["Interaction协调器"]
-    IC --> CO["Collaboration"]
-    IC --> CX["Context"]
-    CX --> M["Memory"]
-    IC --> R["Run管理"]
-    R --> T["Tool执行"]
-    R --> E["Evidence"]
-    T --> E
-    R --> D["Delivery"]
-    I --> D
-    SA["Super Admin Operations"] -. "授权只读投影与访问审计" .-> I
-    SA -.-> R
-    SA -.-> E
-    SA -.-> D
+```text
+11个历史模块
+- Interaction协调器（改为APP-INTERACTION）
++ Collaboration拆分带来的3个净新增所有者
++ Schedule独立所有者
+= 14个状态所有者
+
+应用层明确APP-INGRESS、APP-INTERACTION、APP-PROJECTION
+运行层归并RT-MAF、RT-EXECUTION、RT-PLATFORM
 ```
 
-| # | 模块 | 主要层 | 拥有的产品责任 | 当前代码落点与真实状态 |
-|---:|---|---|---|---|
-| 1 | Identity与Channel Binding | L2–L4 | Principal、认证会话、Role/Grant、Channel Binding | **目标已批准，尚未实现**；当前固定`local-user`和边缘Basic Auth不能替代 |
-| 2 | Conversation | L1–L4 | Product Session、Interaction、Message、分支/归档 | `product_sessions/`、前端`features/session/`；**当前局部实现** |
-| 3 | Collaboration | L1、L3–L5 | Intent、Plan、Draft、RunSpec、Decision/Grant | `collaboration_intents/`、`collaboration_protocols/`、`governance/`；**当前局部实现** |
-| 4 | Context | L3–L5 | ContextPackage、来源、采用、revision、预算 | `harness/`、`collaboration_contexts/`、`step_inputs/`；**当前局部实现** |
-| 5 | Memory | L3–L5 | 摘要候选、Accepted Memory、来源与失效 | `harness/`和TurnSummary链；**当前局部实现**，完整来源失效传播未完成 |
-| 6 | Interaction协调器 | L2–L5 | 统一接纳、幂等、用例编排、并发策略 | 当前由`prepare_agui_run`、`ProductAwareWorkflow`等纵向承载；统一多Channel Ingress未实现 |
-| 7 | Run管理 | L1、L3–L6 | Product Run、Attempt、Runtime关联、取消/Retry/Restart | `product_sessions/`、`runtime_execution/`；**当前局部实现**，完整强退/多设备矩阵仍缺 |
-| 8 | Tool执行 | L3–L7 | Tool配置、Execution、Operation、副作用状态 | `tool_execution/`、`execution_dispatch/`、`pi_runtime.py`；pi纵向已实现，通用Tool仍局部 |
-| 9 | Evidence | L1、L3–L7 | Artifact、Validation、Evidence、Claim、结果提交 | `evidence/`；后端主链已实现，完整用户视图和部分通用模板未完成 |
-| 10 | Delivery | L2–L4、L6–L7 | 出站任务、Outbox、Attempt、Receipt、重试 | **目标已批准，尚未实现**；AG-UI当场回流不等于可靠Delivery |
-| 11 | Super Admin Operations | L1–L4 | 用户活动、使用聚合、运营投影、管理员访问审计 | **目标已批准，尚未实现**；诊断API和个人Home不能替代 |
+14个所有者是：Identity、Conversation、Work、Knowledge、Protocol、Collaboration Governance、Context、
+Memory、Run、Tool、Evidence、Schedule、Delivery、Super Admin Operations。
 
-当前源码没有机械创建11个空的`modules/*`目录，这是有意的。架构模块表达责任和状态所有权；当前代码按已批准的
-纵向切片逐步形成`product_sessions`、`harness`、`governance`、`runtime_execution`等真实边界。只有当事务、
-依赖和变化原因证明需要重组时，才应该重构目录，不能为了“图和文件夹一一对应”制造空壳。
+这次演进解决4个旧缺口：
+
+1. Interaction不再冒充领域事实所有者。
+2. Project/Work、知识内容、协作方法和执行授权不再挤在一个Collaboration模块。
+3. 周期工作有Schedule定义、Trigger和Misfire的明确所有者。
+4. Web、Obsidian和第三方前端通过Projection合同共享同一权威事实。
+
+每项职责、对象、边界和当前代码成熟度见
+[14个状态所有者与3个应用组件的职责与代码落点](./14个状态所有者与3个应用组件的职责与代码落点.md)。
+
+当前源码没有机械创建14个同名`modules/*`目录。本次批准也没有授权目录重构、Schema或迁移；只有详细设计
+证明事务、依赖和变化原因后，才允许改变物理落点。
 
 ### 7.7 以后遇到新需求，怎样判断是否优化模块
 
@@ -639,7 +637,7 @@ flowchart LR
 有5个客观升格信号：独立权威对象、独立状态机、独立安全主体，独立失败/恢复时间线，以及与宿主模块显著不同的变化节奏。
 只因为文件变多、名字很重要或希望画图对称，都不是拆模块的证据。
 
-每个模块的更细对象、合同、失败和代码落点见[11个产品模块的职责与代码落点](./11个产品模块的职责与代码落点.md)。
+每项责任的更细对象、合同、失败和代码落点见[14个状态所有者与3个应用组件的职责与代码落点](./14个状态所有者与3个应用组件的职责与代码落点.md)。
 
 ## 8. 理论怎样通过技术选型落地
 
@@ -760,7 +758,7 @@ flowchart LR
 | Chat完整产品闭环 | 不是因为选了MAF | 第2节6个原始产品问题→可恢复、可修正、可授权、可验证的保证 | 已批准产品/架构基线；实现完整度另看PROJECT_STATE |
 | 7层 | 不是传统三层架构机械扩展 | 第5.2节的责任所有者、信任/确定性、失败时间线和外部可控性4轴 | 已批准架构的教学/依赖视图 |
 | 4类容易混淆的会话/运行对象 | 不是4个同义ID | 第3.3节按所有者、生命周期、基数和授权责任分开 | 架构硬边界；当前部分ID同值只是实现简化 |
-| 11个产品模块 | 不是从参考项目目录复制 | 第7节9类用户场景→13个候选责任→2次有边界合并 | 已批准顶层粒度；不是永久数量目标 |
+| 14+3+3责任 | 不是从参考项目目录复制 | 第7节历史9类场景→11模块，再由16类场景/23项能力和D1-D3演进 | 已批准目标责任；详细合同与实现另设审核门 |
 | React / REST / AG-UI / MAF / Worker / pi等技术分工 | 不是因为技术流行 | 第8.1节“每项技术替哪条产品保证工作”，再由安装版源码/实测校准 | 已批准技术路线 + 当前代码事实 |
 | 当前API / Worker / pi进程拓扑 | 不是架构图凭空设计 | 第9.1–9.2节直接对应`asgi.py`、`composition.py`、`lifecycle.py`、Runtime Worker和pi子进程 | 当前代码事实；部署可选项另标注 |
 | 5类逻辑Store | 不是当前有5个数据库产品 | 第9.3节按需跨越的用户/服务/Worker/Workflow/Artifact/页面失败时间线推导 | 逻辑状态边界；当前多类可物理共用SQLite |
@@ -1027,8 +1025,8 @@ flowchart LR
 
 ## 15. 掌握验收：能回答这些才算具备进入SC01和开发的前提
 
-1. 不背模块名，能否从“重开会话、纠正意图、高风险执行、断线恢复、多Channel、来源失效、管理员看护”重新推导出13个候选责任和2次合并？
-2. 为什么七层、11模块和S1–S7不能互相替代？各自回答什么问题？
+1. 能否解释历史9类场景怎样得到11模块，以及Schedule、多前端投影、Project/Knowledge/Protocol场景为何推动它演进为14+3+3？
+2. 为什么七层、14+3+3责任和S1–S7不能互相替代？各自回答什么问题？
 3. 为什么AG-UI `threadId`暂时等于Product Session ID，也不能作为授权或把两个对象合并？
 4. 一条输入为什么要同时产生Product Run、Run Attempt和Runtime Job？浏览器断线影响哪一个？
 5. 为什么`CollaborationState`中已经有Intent和Context，仍要把Intent Set和ContextPackage写入Product Store？
@@ -1037,7 +1035,7 @@ flowchart LR
 8. 若增加“把结果发送到Telegram”，应该新增/使用哪些Adapter、Identity Binding和Delivery对象，为什么不能在
    Workflow末尾直接调用Telegram SDK？
 9. 若修改一个Workflow节点，怎样判断是否必须升级Definition版本并补Checkpoint/场景测试？
-10. 当前哪些模块只是目标、哪些已有纵向实现？举出至少3个不能冒充“已经完成”的缺口。
+10. 当前哪些责任只是目标、哪些已有纵向实现？举出至少3个不能冒充“已经完成”的缺口。
 11. 给你一个Product Run ID，你能否沿Product Store → Runtime Job → MAF Trace → Tool/Evidence → Assistant Message
     解释同一轮，而不把ID和Store混在一起？
 12. 给出一个新需求时，能否按“场景→风险→保证→对象→所有权”判断它应进现有模块、成为子能力还是升格为新模块？
@@ -1053,7 +1051,7 @@ flowchart LR
 | [PROJECT_STATE.md](../../PROJECT_STATE.md) | 当前已实现、未实现、风险和真实验证事实 |
 | [总体架构基线](../../docs/overall-architecture-proposal.md) | 已批准的完整目标模块、合同、场景和状态所有权 |
 | [架构新手导读](../../docs/architecture-beginner-guide.md) | 更细的目标对象和一次点击说明；读当前实现时以本文和PROJECT_STATE为准 |
-| [11个产品模块](./11个产品模块的职责与代码落点.md) | 每个模块的职责、对象和代码成熟度 |
+| [14个状态所有者与3个应用组件](./14个状态所有者与3个应用组件的职责与代码落点.md) | 正式14+3+3责任、历史演进、对象和代码成熟度 |
 | [核心对象词典](./核心对象词典-谁创建谁保存谁消费.md) | View、DTO、Envelope、领域对象和Runtime对象生命周期 |
 | [进程、协议与Store](./进程协议与Store为什么必须分开.md) | 运行部署、通信和状态位置专题 |
 | [主Workflow工厂](../../backend/app/workflows/continuous_chat_factory.py) | 当前39节点、43边和Switch的接线事实 |
@@ -1062,7 +1060,8 @@ flowchart LR
 ## 补充记录
 
 - 2026-07-29：建立七层架构总地图初稿。
-- 2026-07-30：按“小白必须先拥有完整开发心智模型”的要求重写；新增6个产品问题推导、7层与11模块及
+- 2026-07-30：按“小白必须先拥有完整开发心智模型”的要求重写；新增6个产品问题推导、7层与历史11模块及
   S1–S7的维度区分、逐层理论→技术→源码→状态映射、组合根/进程/Store图、SC01真实对象与数据变形、
   当前/目标差异、开发定位方法和架构巡游实验。
 - 2026-07-30：补齐“9类用户场景→13个候选责任→2次有边界合并→11个产品模块”的可审核推导；说明未单列UI、MAF、Store、Trace、Project/Work和Artifact的原因，并补充5类逻辑Store的失败边界来源与未来模块优化判定法。
+- 2026-07-30：用户批准D1-D4后，将历史11模块演进为14个逻辑状态所有者、3个应用组件和3类运行时职责；补入Schedule、Projection及Work/Knowledge/Protocol/Governance边界，不授权代码或Schema。

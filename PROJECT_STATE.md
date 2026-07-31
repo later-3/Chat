@@ -6,11 +6,11 @@
 |---|---|
 | 产品身份 | 独立开发、独立运行、独立运营并持续演进的完整 Chat 产品 |
 | 当前目录 | `/Users/xulater/Code/Chat` |
-| 代码状态 | 前后端骨架、MAF + AG-UI纵向链路、Product Session R0/R1与可见定位码、双协议模型治理和持久Provider Attempt审计、39节点持续协作主Workflow及全节点中文学习注释、终态机器版/人读版双Trace、HITL策略矩阵、持久Checkpoint/Outbox恢复、ExecutionDraft完整编辑、Product Harness纵向生命周期、协作协议/Context revision/步骤输入阶段A、Intent Set与复合Plan阶段B、SD1 Repository只读、SD2受治理pi只读、SD3受管Execution Workspace与精确`edit`副作用账本及真实Qwen隔离写入、pi对Kimi K3的Context/Thinking/客户端身份适配与真实只读回合、活动pi同进程Checkpoint重挂接、Runtime Job/Event/Cursor/通用Execution Worker纵向切片、手机公网HTTP中转与完整响应式Web纵向链路、生产Home只读投影与桌面/手机主页壳、SD4-A Evidence记录层、SD4-B内容寻址Artifact Store和确定性Validation Runtime已完成并加固；SD4-C Result Commit Coordinator/Harness完成门与主Workflow结果证据链接线已实现并通过多轮定向复审与全量门（2026-07-26 verify-fast/verify均通过）；当前私有部署尚未配置Artifact scope密钥，完整Conversation Day、Artifact预览、Idea升级治理、SD4-D失效传播、SD4-E完整Evidence UI和活动pi跨进程续跑仍未完成 |
-| 设计状态 | 总体架构已按完整用户场景重写并获批准；2026-07-24进一步确认Super Admin Operations是完整产品的第11个产品与应用模块，详细身份/活动/指标/隐私设计尚未开始；Execution治理D1-D7、Product Harness D1-D8、活动Run与通用Execution Worker D1-D8均已获用户批准并迁移；Chat UI/UX视觉基线v1及4项轻量情绪层已获批准，2026-07-28生产主页v0已按该基线落地并通过桌面/手机Design QA，完整Conversation Day和重型Evidence/Idea治理仍待后端能力；“Chat开发Chat”D1-D9、SD1 R1-R12、SD2 R1-R12和“Chat自开发可用门v1”8阶段节奏已获批准，SD1-A/B/C/D与SD2-A/B/C/D/E只读纵向切片已完成；2026-07-25用户批准F01字段级Tool Operation Ledger并进入SD3隔离写入，SD4/F02与SD5/F05仍保留各自审核门 |
+| 代码状态 | W1-01合同基础已完成：全部REST写命令共享`CommandId`语法，Problem Detail公开稳定恢复动作，20个模块/组件公开合同状态可机器检查，MAF私有接合集中并受安装版升级门约束。APP-PROJECTION固定Scope只读纵向切片继续提供Personal Workspace、Project Dossier与Obsidian Tree/ZIP且没有新增Schema。Identity、Obsidian双向写回、Schedule、Delivery、完整Evidence UI和活动pi跨进程续跑仍未完成 |
+| 设计状态 | 总体架构D1-D4及14个状态所有者/3个应用组件/3类运行责任已批准；W1-01模块公开合同基础于2026-07-31完成。W2-01 Identity/HTTPS迁移、W4-01 Work/Knowledge/Protocol/Governance边界和W4-03 Projection/Obsidian详细设计已批准，其中W4-03只读切片已实现；其余Schema、迁移、物理边界演进和完整实现仍按工作包完成门推进，不能因设计或基础门完成而宣称领域能力完成 |
 | Session 状态 | 9个能力域、74项能力、R0-R6和Phase 0-8路线已批准；Phase 0-1完成，Phase 2进行中，Phase 4-5完成纵向切片但尚未通过全部阶段故障矩阵 |
-| 工程质量状态 | Q0纵向基线已建立且本地完整门通过：CI/静态质量门、统一Problem Detail、请求关联、结构化日志、基础Metrics/Trace、诊断入口、分层覆盖率、Playwright/axe、故障实验室、组合根拆分和前端Feature边界均可运行；Q02已继续提取治理纯策略/Run查询、Harness命令记录/Context查询，Q06已拆出Agent重连Hook、Workflow两类运行投影并建立8个生产按需Feature；剩余大型Application Service、持续协作Workflow、性能/人工无障碍、远端CI首次运行和生产Exporter/SLO不在已完成范围 |
-| 数据状态 | Product Store Schema与22个Alembic迁移已建立；执行治理、TurnDigest、MAF Workflow Checkpoint、Product Harness、Repository Binding/Snapshot、Execution Workspace/Tool Operation、协作协议、Context revision、StepInputProjection、Intent Set/Clarification、Runtime执行投影、受治理ToolExecution、Session标题来源、模型传输审计、Run双Trace报告，以及Evidence/Artifact/Provenance/Validation 15表记录层均为本项目新事实，没有迁移旧数据库、旧历史或旧项目配置 |
+| 工程质量状态 | Q0纵向基线已建立；W1-01新增错误/ID/升级合同、架构扩散门和启动兼容检查，Projection继续具备类型化DTO、revision/ETag、路径/大小安全门和确定性ZIP，`App.tsx`保持799行及真实lazy边界。全量门为后端497项/80.52%、前端87项/行62.68%与分支74.17%、22次迁移往返、桌面与Pixel 5浏览器26通过/4按设计跳过。剩余大型Application Service、持续协作Workflow、人工无障碍、性能容量、远端CI首次运行和生产Exporter/SLO仍未完成 |
+| 数据状态 | Product Store Schema与22个Alembic迁移已建立；本轮Projection即时读取Owner公开快照并可完全重建，没有新增Projection表或迁移，也没有迁移旧数据库、旧历史或旧项目配置 |
 | Git 状态 | 私有仓库`later-3/Chat`，分支`main`；按Feature节点提交并推送，私有配置和本地产物不进入Git |
 
 ## 2. 已确认的稳定事实
@@ -31,6 +31,9 @@
 12. ExecutionDraft、RunSpec和HITL治理合同已经冻结并完成可运行纵向切片：ExecutionDraft是可编辑产品执行草稿，当前revision接受后才允许编译不可变RunSpec；ModelCallDraft仍是Run内某一次Provider调用。HITL Resolver按系统不可放宽下限与用户偏好两阶段解析，人工和自动推进都持久留痕。
 13. Execution治理详细设计D1-D7已于2026-07-22获用户批准并实施；12个Decision Point、持久Policy revision/CAS、Evaluation/Request/Decision、一次性Grant/Consumption、ExecutionDraft/RunSpec、ModelCallDraft/Attempt和治理查询均已落地。10号迁移新增Product绑定的MAF Checkpoint；Governance Outbox、Interrupt Link与独立Worker已能恢复持续协作主Workflow的无外部Tool副作用审批安全点。
 14. 超级管理员运营看护已进入稳定产品范围：Identity拥有Principal、Role/Grant和Authentication Session；Super Admin Operations拥有User Activity、Usage Aggregate、可重建跨模块运营投影和Super Admin Audit；Product Harness与Evidence继续分别拥有Work和Artifact事实。该项是目标边界，不表示代码、Schema或控制台已经实现。
+15. 2026-07-30批准正式目标责任模型：14个逻辑状态所有者是Identity、Conversation、Work、Knowledge、Protocol、Collaboration Governance、Context、Memory、Run、Tool、Evidence、Schedule、Delivery和Super Admin Operations；3个应用组件是Interaction Ingress、Interaction Coordinator和Projection Query & Command Gateway；3类运行责任是MAF Runtime、Execution Runtime和Platform Operations。当前代码物理共置不改变逻辑所有权，Projection不是第15个事实模块。
+16. 2026-07-30批准W1-01、W2-01、W4-01、W4-03四份详细设计。APP-PROJECTION首个实现只读取固定`local-user` Scope：同一Product Store事实可投影为Web Personal Workspace、Project Dossier和稳定ID的Obsidian Markdown/ZIP；它不拥有Project/Work事实、不写服务器Vault，也不支持双向编辑。
+17. 2026-07-31完成W1-01基础实现：模块Manifest新增公开合同完成度和设计入口；REST Problem Detail新增服务端权威`recovery_action`，401/403/冲突/过期/重试/结果未知不再由前端解析中文；全部公开写命令使用共同`CommandId`语法。可替代的MAF/AG-UI私有导入已移除，剩余3类私有接合只允许集中在`runtime_adapters/maf_compat.py`，并由3个锁定安装版本、固定MAF源码提交、Checkpoint/HITL/恢复和版本漂移测试保护。
 
 ### 2.2 已批准技术路线
 
@@ -46,18 +49,33 @@
 ## 3. 本轮纠正与完成
 
 - [x] 新增[项目经验与反例](./PROJECT_LESSONS.md)，建立每次回复前强制读取规则。
-- [x] 持续记录54个可执行反例；覆盖Product Harness事实不能由Agent从聊天摘要猜测、不得回退系统Python、重大里程碑后必须做产品级工程收敛、禁止用“大文件先跑通、以后再整理”持续制造不可维护代码、不得把外部编码Agent非交互模式冒充受治理工具、撤回首条消息不能继续冒充Session标题、必须区分模型可见输出/Workflow采用/Product提交结果、移动端完整产品视角、协作协议/步骤输入、超级管理员运营看护、pi安装/隔离运行身份、数据库测试独立收集、虚拟环境沙箱路径边界、验证产物收口、同步App Shell样式所有权、Workflow代码可学习性与确定性双Trace、跨仓源码调试所有权、PWA认证失效不能只显示401、LaunchAgent已加载/远端端口监听不能冒充反向SSH端到端健康、学习文档代码事实口径、调试实战场景预言机、Web小白基础培训、断点调用栈/数据血缘、增量场景不能覆盖未完成培训账，以及分类索引不能冒充完整学习路线。
+- [x] 持续记录57个可执行反例；最新反例057固定：总账、页面草图或目录样例不能替代“领域事实→角色视图→Presentation Adapter→可验证文件物化”，Projection必须显示来源revision及空/未知/禁止/错误差异。
 - [x] 纠正`AGENTS.md`和`PROJECT_CONTEXT.md`中的产品身份与外部关系。
 - [x] 删除稳定产品上下文里的“第一阶段/后续能力/非上位系统”式范围定义。
 - [x] 在`agent_knowledge/project-studies`新增pi、nanobot架构与模块源码研究，补齐QwenPaw Web/Channel入口拓扑和LibreChat源码模块拓扑、责任与缺口。
 - [x] 重写[总体架构研究](./docs/overall-architecture-research.md)，按固定提交还原pi、nanobot、QwenPaw、LibreChat真实模块，再逐项执行“源码事实→Chat问题→模块决策”。
 - [x] 重写并批准[总体架构基线](./docs/overall-architecture-proposal.md)：
-  - 取消“数据/知识/执行/交付平面”等自创分类；补正为Web/API Adapter、具体Channel Adapter、Channel Adapter Host、Interaction Ingress、11个产品与应用模块、MAF与基础设施适配器。
+  - 取消“数据/知识/执行/交付平面”等自创分类；2026-07-24先补正为11模块历史基线，2026-07-30再正式演进为14个逻辑状态所有者、3个应用组件和3类运行责任。
   - 每个模块定义参考来源、存在原因、用户价值、内部组件、状态、合同、不变量、失败和测试责任。
-  - 定义FastAPI API、Execution Worker、Scheduler/Reconciler、Delivery Worker、Projector进程角色。
+  - 定义FastAPI API、Execution Worker、Schedule Trigger Worker、Runtime Reconciler、Delivery Worker和Projection应用边界；业务Schedule与运行恢复严格分开。
   - 定义状态所有权、ID链、事件合同、关键状态机和4个提交门。
-  - 用9个用户场景逐步映射组件、合同、状态、失败和用户结果，其中分别展开Web、OPC-OS Bridge、Telegram Adapter和Super Admin Operations路径。
+  - 用11条详细时间线与16类场景穿透矩阵映射前端/入口、应用组件、状态所有者、运行职责、合同、失败恢复和用户结果，其中分别展开Web、Obsidian、OPC-OS Bridge、Telegram Adapter、Schedule和Super Admin Operations路径。
   - 只在文档最后给出交付阶段。
+- [x] 2026-07-30批准并同步能力开发地图D1-D4：Schedule独立于Work/Delivery/Runtime Reconciler；APP-PROJECTION为Web、Obsidian和第三方前端提供同源Read Model与候选写回；旧Collaboration逻辑拆为Work/Knowledge/Protocol/Governance；W0-W10成为唯一顶层交付坐标。Manifest已升级为`approved`，W0-01/W0-02完成。
+- [x] 2026-07-30进一步批准并建立4份当前详细设计：
+  [模块公开合同/错误/ID/升级门](./docs/module-public-contract-error-id-upgrade-detailed-design.md)、
+  [Identity/HTTPS/Auth Session/Scope迁移](./docs/identity-https-auth-session-scope-migration-detailed-design.md)、
+  [Work/Knowledge/Protocol/Governance边界](./docs/work-knowledge-protocol-governance-boundary-detailed-design.md)和
+  [Projection/Project Dossier/Obsidian](./docs/projection-contract-dossier-queue-obsidian-readonly-detailed-design.md)。
+- [x] 实现APP-PROJECTION固定Scope只读纵向切片：`/api/projections/workspace`、Project Dossier、
+  Obsidian Tree/ZIP均带稳定schema/revision/ETag；Web新增一级个人工作台、4个生活领域、准确Project ID跳转、
+  3类责任显示、独立Action、100项上限partial提示、旧Project/Repository管理入口与ZIP下载。后端5项Projection
+  专项、497项全量及80.52%覆盖率，前端87项及行62.68%覆盖率，22次迁移往返、生产包体门和桌面/Pixel 5
+  浏览器26通过/4按设计跳过；文档检查只保留`ref/LifeOS`外部快照既有7条坏链，没有新增本轮断链。
+- [x] 完成W1-01合同基础实现：新增错误族/恢复动作、外部ID、MAF兼容Adapter与升级门；移除生产代码散落的裸`HTTPException`和8处重复私有`RequestInfoMixin`继承；架构测试禁止私有依赖、裸错误和Command ID合同重新漂移。安装版为core 1.11.0、AG-UI 1.0.0rc8、OpenAI 1.10.1，参考MAF提交`9c4cd07899502157284b64a73f9a0adfb4594d96`。
+- [x] 收口本地质量夹具：`debug-breakpoints.json`补回与教材/测试一致的7组断点Profile；浏览器E2E入口
+  不再把残缺`.git`目录当有效仓库，并在每次专用服务启动时清理自身临时SQLite/WAL/SHM，避免历史测试
+  Session/Project污染下一轮。该清理只作用于E2E专用临时路径，不触碰正式Product Store或用户仓库。
 - [x] 新增[架构新手导读](./docs/architecture-beginner-guide.md)：
   - 区分前端交互对象、协议对象、产品领域对象和MAF/Worker运行时对象。
   - 逐项解释前端8个区域、后端核心对象、MAF Agent 10个内部部件及Agent外的Workflow、AG-UI与产品控制。
@@ -356,19 +374,19 @@
   首个L2实验，不表示其余Intent/HITL/Runtime/Evidence专题已经完成。
 - [x] 2026-07-29根据用户“必须全盘覆盖、不能只讲阶段A”的复核，新增
   [Chat全盘掌握范围与覆盖审计](./项目掌握/00-从这里开始/全盘掌握范围与覆盖审计.md)与机器清单：
-  27个学习单元同时覆盖已批准目标架构11个模块、当前37个后端顶层源码面、13个前端Feature、
-  38个前端根源码面、6个Workflow、主Workflow S1-S7和全部39节点、10个当前/目标运行角色、9个协议边界、
-  10个状态位置，以及测试、
+  28个学习单元同时覆盖已批准目标架构14个逻辑状态所有者、3个应用组件、3类运行时职责、当前38个后端顶层源码面、16个前端Feature、
+  40个前端根源码面、6个Workflow、主Workflow S1-S7和全部39节点、10个当前/目标运行角色、10个协议边界、
+  11个状态位置，以及测试、
   部署与非功能保证；Identity、Delivery、Super Admin和其他未实现目标保留为显式缺口。
   `check-project-mastery.py`已接入`verify-fast.sh`并通过。该完成项表示“覆盖总账和防漂移硬门已建立”，
-  不表示27个单元的L1/L2/L3材料或全部代码学习注释已经完成；当前文档检查另识别出pi跨仓调试文档
+  不表示28个单元的L1/L2/L3材料或全部代码学习注释已经完成；当前文档检查另识别出pi跨仓调试文档
   7条越界链接和`ref/LifeOS`既有7条坏链，均未由本项制造或静默计为通过。
 - [x] 2026-07-29按用户要求完成项目掌握第二轮全盘教材与口径收敛：新增4篇架构/模块教材和
   S1-S7七篇主Workflow逐阶段教材，重写39节点总览、Session、双Trace、pi启动和点击到pi完整链；
   每篇包含具体场景、基础概念、对象样本、Mermaid图、生命周期/失败恢复、源码链、实验和掌握验收。
   `continuous_workflow_learning.py`成为唯一学习阶段事实，39节点按5/10/5/4/7/5/3完整映射；
   27个Executor类及图接线补中文S阶段注释，Human Trace复用同一映射。`check-project-mastery.py`
-  现在反向校验v1.8.0、39节点、43边、S1-S7、七篇文档元数据和旧口径禁用模式；当前覆盖为
+  现在反向校验v1.8.0、39节点、43边、S1-S7、七篇文档元数据和旧口径禁用模式；该轮当时覆盖为
   27学习单元、11目标模块、37后端顶层源码面、13前端Feature、38前端根源码面和6个Workflow。
   定向Ruff/3项阶段与目录合同、项目掌握检查、概念空间、前端82项测试/类型/格式及`git diff --check`
   通过；全仓文档检查仅剩`ref/LifeOS`既有7条坏链，项目掌握新增/既有文档0条断链。后端全量快照
@@ -418,10 +436,10 @@
   文档链接检查无本轮新增坏链，只保留`ref/LifeOS`既有7条失效链接。由于工作树当前主动注入教学`breakpoint()`，
   场景测试使用标准`PYTHONBREAKPOINT=0`关闭PDB后执行，未删除或覆盖另一项调试改动。
 - [x] 2026-07-30完成项目掌握唯一入口与逐篇学习路线审计：根`README.md`只把课程读者引到
-  `项目掌握/INDEX.md`，INDEX按前置关系建立01-60连续课号，直接覆盖本目录全部60篇学习者Markdown；
+  `项目掌握/INDEX.md`，INDEX按前置关系建立01-61连续课号，直接覆盖本目录全部61篇学习者Markdown；
   15张SC和断点配置不再只靠目录概括。`check-project-mastery.py`新增反向枚举，排除INDEX自身和AI维护规则后，
-  强制每篇教材恰好排课1次、课号连续、链接存在，并确认根README仍可达；当前校验为60篇课程、27学习单元、
-  11模块、6个Workflow、39节点和15场景全部通过。分类索引继续用于掌握后的查询，不冒充第一次学习顺序。
+  强制每篇教材恰好排课1次、课号连续、链接存在，并确认根README仍可达；当前校验为61篇课程、28学习单元、
+  14个状态所有者、3个应用组件、3类运行时职责、6个Workflow、39节点和15场景全部通过。分类索引继续用于掌握后的查询，不冒充第一次学习顺序。
 - [x] 每个终态Product Run在同一数据库事务物化`diagnostic`和`human`两份确定性Trace报告：
   前者保留Product Trace事件、Sequence、Attempt、ToolExecution与关联ID，后者保存实际节点路径、
   路由/决定原因、空值稳定代码和未经过节点并生成Markdown；不调用Agent/LLM、不含隐藏推理，
@@ -588,6 +606,10 @@
     pi跨进程持续恢复必须等待F05，活动
     仓库合入与commit/push还未开放。TaskPlan PlanNode当前还是修订快照，
     实时进度权威是WorkItem/ActionItem；Plan进度投影仍归F06。
+12. 业务Schedule的状态所有者已经确定为MOD-SCHEDULE，但Recurrence/Trigger/Misfire详细合同、Schema
+    和Worker尚未实现。APP-PROJECTION的稳定Envelope、Personal Workspace、Project Dossier及只读
+    Obsidian Tree/ZIP及100项上限的显式partial状态已实现；真实Identity过滤、稳定分页Cursor/Sync Attempt、
+    双向写回、冲突体验、大规模缓存及完整Evidence/Artifact/Schedule/Delivery区块尚未实现。
 
 ## 6. 风险和未知
 
@@ -595,7 +617,7 @@
 2. AG-UI当前为RC版本，升级可能改变事件、Snapshot和Interrupt/Resume行为。
 3. AG-UI Client会发送客户端消息全集；若同时装配Product History、MAF History和Snapshot会形成重复上下文。
 4. Product Finalization Gate已阻止过早`RUN_FINISHED`，并能修复Product已提交但Runtime终帧缺失的崩溃窗口；Product与Runtime终结当前仍是有序的两个事务，依赖Reconciler收敛而非宣称单事务原子完成。
-5. MAF Workflow Checkpoint与Product Run、持久Decision的正式薄桥已进入主Workflow、治理API和独立Outbox Worker；安装版AG-UI RC8不转发`checkpoint_id`，当前隔离恢复桥依赖MAF私有Runner/编码API，升级必须跑版本锁定测试并优先移除私有接合。
+5. MAF Workflow Checkpoint与Product Run、持久Decision的正式薄桥已进入主Workflow、治理API和独立Outbox Worker；安装版AG-UI RC8仍不转发`checkpoint_id`。W1-01已把Checkpoint编码、MAF类型判断和隔离恢复桥集中到唯一Runtime Adapter，并用启动/CI版本门失败关闭；未来升级仍必须优先验证并在公开API可用时删除私有接合。
 6. SQLite已验证单Approval的8并发领取、两个Outbox Worker竞争和新OS进程接管；持续高并发、长队列、Lease过期风暴、数据库故障和容量边界仍未压测。
 7. 外部Tool副作用没有通用Exactly-once；必须按工具定义幂等、查询、补偿和人工处置。
 8. Intent、Work、Approval、Evidence、Delivery等主要来自本项目需求，参考项目未提供可直接复制的完整状态机。
@@ -611,7 +633,7 @@
     规模审查线；本轮新增的来源投影和写回策略已放在纯Contracts/Prompts而非继续内联，但Application
     Service、Workflow协调器和审批编辑器仍必须在后续能力叠加前按事务、状态所有权和变化原因继续拆分。
 16. CI、Ruff、Pyright、Biome、分层覆盖率、Playwright/axe和故障实验室已经建立；真实多设备性能、完整容量和人工无障碍体验仍不能由这些自动门外推。
-17. HTTP边界已统一为Problem Detail、稳定错误码、请求关联和脱敏异常映射；真实Principal/Scope认证、公开API版本与全部端点的字段级响应模型仍未完成。
+17. HTTP边界已统一为Problem Detail、稳定错误码、请求关联、服务端恢复动作和脱敏异常映射；架构测试禁止Router重新产生裸`HTTPException`。真实Principal/Scope认证、公开API版本与各Owner全部字段级响应模型仍未完成，继续分别属于W2-W10，而不是由W1-01假装一次性实现全部领域合同。
 18. 统一结构化日志、关联上下文、基础OpenTelemetry、Metrics、Liveness/Readiness、运行时间线与脱敏诊断入口已经建立；生产多实例Exporter、SLO、告警路由和长期保留尚未完成。
 19. Alembic Schema漂移检查和19次迁移完整升降已通过，但SQLAlchemy仍报告执行治理表之间存在不可排序的外键环；当前SQLite迁移可运行，未来SQLAlchemy升级或迁移自动生成前必须先消除或显式设计这些约束环。
 20. 超级管理员能力的登录/活跃/有效协作口径、多设备与空闲语义、默认可见字段、敏感正文额外授权、隐私告知、数据保留、审计不可篡改和运营投影容量仍待详细设计；在这些决定获批前不得用登录时间差或Run耗时拼出“用户使用时长”。
@@ -626,6 +648,12 @@
     外键检查为0。事故反例与禁止通配删除规则保留在
     [PROJECT_LESSONS.md](./PROJECT_LESSONS.md)反例039；产品仍没有通用Workspace丢弃/Session删除
     生命周期接口，后续验证必须使用测试专属Store/临时根并在同一工作包收口，不能再次依赖运维直删。
+23. 2026-07-30已批准[目标能力、架构责任与开发地图](./docs/product-capability-architecture-map.md)
+    和机器清单：16个异质场景映射23项能力、20个逻辑责任和19个工作包，检查器验证唯一责任、引用、
+    依赖无环、主序完整与证据入口。D1-D4已关闭原Schedule归属、多前端Projection、Collaboration/Harness
+    目标边界和全局排序缺口；W1-01基础实现已完成，W2-01、W4-01、W4-03详细设计已建立，W4-03只读切片已实现。
+    剩余实现与验证差距仍按Manifest显式保留，不能把“架构已定位/设计已批准”写成“能力已完成”。
+    `项目掌握/coverage-manifest.json`继续只证明课程覆盖，不能替代产品能力覆盖。
 
 ## 7. 当前开发门
 
@@ -641,3 +669,6 @@
    [F01/SD3详细设计](./docs/tool-operation-workspace-detailed-design.md)记录已兑现、未兑现、本机
    Gateway凭据修复、早期网络失败和真实Qwen成功证据。SD3只覆盖受管worktree内精确`edit`；不得外推为活动仓库合入、通用外部
    Tool副作用、Evidence完成门、PlanNode实时进度或pi跨进程恢复。
+9. 目标架构D1-D4以及W1-01、W2-01、W4-01、W4-03详细设计已经批准；W1-01基础门与W4-03固定Scope
+   只读切片已完成代码落地。不得把基础合同误报成14个领域模块完成，也不得批量创建14个目录、Schema、
+   Repository或Worker；当前`harness/`物理共置仍不等于边界迁移完成，其余工作包必须满足自己的迁移、回滚和测试门。

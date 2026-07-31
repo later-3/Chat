@@ -17,7 +17,6 @@ from agent_framework import (
     handler,
     response_handler,
 )
-from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 
 from ..model_call_review import InMemoryModelCallReviewStore, ModelCallDraftConflict
 from ..model_call_workflow import normalize_agui_messages_for_provider
@@ -77,7 +76,7 @@ def _tool_review_card(
     }
 
 
-class GovernedPiToolExecutor(Executor, RequestInfoMixin):
+class GovernedPiToolExecutor(Executor):
     """Run one pi RPC process and pause at every external boundary."""
 
     def __init__(

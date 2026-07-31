@@ -43,7 +43,12 @@ def create_collaboration_intent_router(service: CollaborationIntentService) -> A
         limit: int = Query(default=20, ge=1, le=100),
     ) -> Any:
         if bool(session_id) == bool(run_id):
-            raise HTTPException(status_code=422, detail="必须且只能提供session_id或run_id")
+            raise http_problem(
+                status_code=422,
+                code="INTENT_FILTER_VALIDATION_FAILED",
+                message="必须且只能提供session_id或run_id",
+                details={"field": "session_id|run_id"},
+            )
         try:
             if run_id:
                 return await service.get_for_run(run_id)

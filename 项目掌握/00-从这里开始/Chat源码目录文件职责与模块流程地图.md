@@ -48,7 +48,7 @@
 | HTTP/AG-UI Adapter | 解析DTO、调用应用合同、返回HTTP/SSE | `api/*_router.py`、`runtime_execution/endpoint.py` | 不直接编排数据库事务 |
 | Application Coordinator | 拥有一个用例顺序、唯一事务和失败语义 | 多个`service.py`、`result_commit.py` | 不依赖React或FastAPI Request |
 | Domain Contract/Rule | 状态机、Hash、类型和确定性规则 | `contracts.py`、`models.py`、`policy.py` | 不隐式读写数据库 |
-| Query/Projection | 只读权威事实，生成稳定投影 | `queries.py`、`home/service.py` | 不在查询中产生副作用 |
+| Query/Projection | 只读权威事实，生成稳定投影 | `queries.py`、`home/service.py`、`projections/service.py` | 不在查询中产生副作用 |
 | Runtime/External Adapter | 把MAF、pi、Provider、Git、文件或子进程接入Chat合同 | `pi_runtime.py`、`git_inspector.py` | 外部返回不能直接写成产品完成事实 |
 | React Page/Container | 组装Feature、布局和短期页面状态 | `App.tsx`、`home-view.tsx` | 不保存权威Product状态 |
 | React Hook | 复用有生命周期的前端协调逻辑 | `use-chat-agent.ts` | 不把协议、恢复、表单与页面全部塞在一个Hook |
@@ -143,6 +143,7 @@ flowchart LR
 | [`evidence/`](../../backend/app/evidence) | Evidence Application/Domain/Artifact Adapter | 结果为什么可信以及能否提交 | Artifact/Validation/Observation/Assessment/Claim/Result Commit | 篡改、来源失效、事务原子性、故障窗口 |
 | [`step_inputs/`](../../backend/app/step_inputs) | Step Projection | 每个Agent/执行步骤只得到最小必要输入 | StepInputProjection | 范围、来源、能力、预算 |
 | [`home/`](../../backend/app/home) | Read-only Product Projection | Home与时间导航的权威投影 | 今日继续、日历、资源搜索 | 空态、只读、不建第二事实源 |
+| [`projections/`](../../backend/app/projections) | APP-PROJECTION Application/Adapter | 多角色、多前端共享同一Project事实 | Envelope、Workspace、Dossier、Obsidian Tree/ZIP | 来源revision、未知态、只读、可重建、路径与大小门 |
 | [`observability/`](../../backend/app/observability) | Cross-cutting Diagnostics | 请求/运行可定位，且不泄密 | 日志、Metric、Trace、Readiness、Timeline | 脱敏、关联ID、诊断合同 |
 
 ## 5. 前端Feature地图：页面是投影和操作入口
@@ -165,6 +166,9 @@ DOM/Event、Fetch/Storage、AG-UI流和DevTools；本节只负责文件责任地
 | [`features/tools/`](../../frontend/src/features/tools) | Tool Profile与运行概要投影 | Tool Configuration/Execution REST | Tool执行授权与副作用事实 |
 | [`features/protocols/`](../../frontend/src/features/protocols) | 协作方法Definition/Binding投影 | Collaboration Protocol REST | 当前Run已生效的revision推断权 |
 | [`features/home/`](../../frontend/src/features/home) | Home、Activity Rail、日历和资源入口 | Home只读投影 | 独立日历/项目事实 |
+| [`features/projections/`](../../frontend/src/features/projections) | Projection类型化客户端合同 | APP-PROJECTION REST/ZIP | Product事实、服务器Vault写入 |
+| [`features/workspace/`](../../frontend/src/features/workspace) | 生活/工作/学习/研究Personal Workspace | Workspace Envelope | Project/Work权威状态 |
+| [`features/projects/`](../../frontend/src/features/projects) | Project Dossier、角色责任和Obsidian预览/下载 | Dossier/Tree/ZIP | 直接编辑Owner表或把Markdown当事实源 |
 | [`features/mobile/`](../../frontend/src/features/mobile) | 移动导航、网络状态和Session草稿 | 同一REST/AG-UI合同 | 移动专用第二事实源 |
 | [`features/settings/`](../../frontend/src/features/settings) | Session与System配置显示 | Settings/health/Product REST | 后端密钥和完整配置 |
 | [`features/shared/`](../../frontend/src/features/shared) | 真正跨Feature的UI边界 | 例如Feature Error Boundary | 不变成万能`utils` |
@@ -178,31 +182,30 @@ DOM/Event、Fetch/Storage、AG-UI流和DevTools；本节只负责文件责任地
 
 | 文件 | 行数 | 当前职责审查 | 候选切缝（不是已批准重构） | 必须保护 |
 |---|---:|---|---|---|
-| [`workflows/continuous_chat.py`](../../backend/app/workflows/continuous_chat.py) | 3266 | 39节点的大部分Executor行为仍集中 | 按真实能力簇拆Context/Intent-Plan/Dispatch/Result Commit执行器；不仅为S1–S7教学编号拆 | 39节点ID/43边、Checkpoint合同、Reason Code、事件顺序 |
+| [`workflows/continuous_chat.py`](../../backend/app/workflows/continuous_chat.py) | 3413 | 39节点的大部分Executor行为仍集中 | 按真实能力簇拆Context/Intent-Plan/Dispatch/Result Commit执行器；不仅为S1–S7教学编号拆 | 39节点ID/43边、Checkpoint合同、Reason Code、事件顺序 |
 | [`governance/service.py`](../../backend/app/governance/service.py) | 2840 | Policy/Decision/Grant/Model Attempt等多用例协调 | 按事务与状态机分为Decision/Grant、ModelCall、Run终态协调器 | 一次性Grant、Binding Hash、Outbox/Trace原子性、恢复幂等 |
-| [`harness/service.py`](../../backend/app/harness/service.py) | 1993 | Project/Work/Plan/Action/Note/Memory命令与跨对象事务 | 先判断哪些用例是独立聚合事务，再提取命令协调器；不Repository-per-table | CAS、长场景、Outbox/Trace同事务、Result Commit旁路封闭 |
+| [`harness/service.py`](../../backend/app/harness/service.py) | 2003 | Project/Work/Plan/Action/Note/Memory命令与跨对象事务 | 先判断哪些用例是独立聚合事务，再提取命令协调器；不Repository-per-table | CAS、长场景、Outbox/Trace同事务、Result Commit旁路封闭 |
 | [`model_call_review.py`](../../backend/app/model_call_review.py) | 1749 | Draft规范化、Provider转换/验证/传输 | 按Canonical Draft/Protocol Compiler/Transport适配的真实变化原因拆 | 审批字节=Hash=实际发送Body、双协议指纹 |
-| [`product_sessions/service.py`](../../backend/app/product_sessions/service.py) | 1654 | Session/Message/Run/Attempt/Trace多类Conversation用例 | 查询投影已可提取；命令拆分要保持输入接纳和终态原子性 | 服务端唯一历史、ordinal、Retry血缘、无假Assistant成功 |
+| [`product_sessions/service.py`](../../backend/app/product_sessions/service.py) | 1689 | Session/Message/Run/Attempt/Trace多类Conversation用例 | 查询投影已可提取；命令拆分要保持输入接纳和终态原子性 | 服务端唯一历史、ordinal、Retry血缘、无假Assistant成功 |
 | [`execution_dispatch/service.py`](../../backend/app/execution_dispatch/service.py) | 1581 | Draft/Spec/授权/路由/执行准备 | 按Draft生命周、RunSpec编译、Dispatch协调等独立用例审查 | revision/hash失效、不可变RunSpec、业务路由 |
 | [`evidence/service.py`](../../backend/app/evidence/service.py) | 1513 | 15表Evidence记录层的跨聚合不变量 | **当前已有邻近Docstring记录不拆原因**；需先证明不变量能独立再拆 | Claim Hash、跨Scope引用、sequence并发、事务原子性 |
-| [`pi_runtime.py`](../../backend/app/pi_runtime.py) | 1190 | 子进程/RPC/对话边界/运行终态 | 按Process Transport、活动Execution Registry、事件归约审查 | 进程所有权、超时/取消/结果未知、Checkpoint窄重挂接 |
+| [`pi_runtime.py`](../../backend/app/pi_runtime.py) | 1214 | 子进程/RPC/对话边界/运行终态 | 按Process Transport、活动Execution Registry、事件归约审查 | 进程所有权、超时/取消/结果未知、Checkpoint窄重挂接 |
 | [`execution_dispatch/workflow.py`](../../backend/app/execution_dispatch/workflow.py) | 1146 | MAF执行草稿/授权/RunSpec节点 | 按Executor与纯转换规则拆，但保持节点合同 | MAF节点ID、Interrupt、Approval Hash、输入/输出类型 |
 | [`evidence/result_commit.py`](../../backend/app/evidence/result_commit.py) | 967 | Result Commit单事务完整门 | 大但可能必须共同演进；只提取纯校验规则，不切开唯一提交事务 | 已批准§11步顺序、一次性Receipt、完成门fail closed |
 | [`runtime_execution/service.py`](../../backend/app/runtime_execution/service.py) | 904 | Job/Event/Cursor/Lease/终态收敛 | 可按命令与只读投影拆；已有Worker边界 | sequence/hash、epoch fence、Product/Runtime终态两事务对账 |
 | [`collaboration_intents/service.py`](../../backend/app/collaboration_intents/service.py) | 891 | Intent Set/Clarification/Plan输入用例 | 分开纯Intent规则、查询投影和命令协调候选 | revision/CAS、最多4目标、跨Run Clarification |
 | [`config.py`](../../backend/app/config.py) | 815 | 多类运行配置解析与验证 | 可按Provider、Runtime/Storage和Frontend/Server配置分簇，但启动快照仍统一 | 私密脱敏、启动时不可变快照、Provider目录交叉校验 |
 
-### 6.2 2026-07-30前端超线快照（7个）
+### 6.2 2026-07-30前端超线快照（6个）
 
 | 文件 | 行数 | 当前风险/候选切缝 | 必须保护 |
 |---|---:|---|---|
 | [`features/harness/context-inspector.tsx`](../../frontend/src/features/harness/context-inspector.tsx) | 955 | 加载/编辑状态、来源投影和多种操作界面混在一文件；候选拆纯投影、来源列表和命令表单 | revision/hash、采用/排除语义、移动交互 |
-| [`App.tsx`](../../frontend/src/App.tsx) | 812 | App Shell仍协调Session/发送/Workbench/多Feature；当前静态对照已超出架构测试`<800`指纹 | Feature懒加载、发送语义、焦点/窄屏、不回流Product事实 |
+| [`App.tsx`](../../frontend/src/App.tsx) | 799 | App Shell仍协调Session/发送/Workbench/多Feature；已回到架构测试`<800`指纹内但仍越过React组件500行审查线 | Feature懒加载、发送语义、焦点/窄屏、不回流Product事实 |
 | [`model-call-review.tsx`](../../frontend/src/model-call-review.tsx) | 703 | 容器仍持有草稿编辑/保存/审批与视图组装；字段编辑器已拆出 | 可读视图=JSON=Hash=发送Body，未保存不得批准 |
 | [`harness-workbench.tsx`](../../frontend/src/harness-workbench.tsx) | 594 | 多Harness资源面板与选择协调；候选将资源命令表单按Feature内边界拆 | 同一权威投影、导航不复制事实 |
-| [`features/home/home-view.tsx`](../../frontend/src/features/home/home-view.tsx) | 541 | Home多投影组合；当前可先审计纯卡片与页面协调分界 | 真实空态、Activity Rail同步样式所有权、无假进度 |
+| [`features/home/home-view.tsx`](../../frontend/src/features/home/home-view.tsx) | 544 | Home多投影组合；当前可先审计纯卡片与页面协调分界 | 真实空态、Activity Rail同步样式所有权、无假进度 |
 | [`product-decision-review.tsx`](../../frontend/src/product-decision-review.tsx) | 519 | 多类Product Decision卡与提交状态；候选拆纯卡片/决策控件 | request hash/row version、决策与后果文案 |
-| [`use-chat-agent.ts`](../../frontend/src/use-chat-agent.ts) | 514 | send/approve/revise/abandon/product decision/cancel等生命周期操作集中；重连已拆，可再审计Interrupt动作协调 | `@ag-ui/client`唯一Agent投影、Resume精确Interrupt、取消/恢复语义 |
 
 **当前不在这一轮盲拆这些文件。** 工作树中`App.tsx`、`use-chat-agent.ts`、Runtime endpoint/Worker等存在其他未收口改动；
 要重构必须先得到干净行为指纹、确认事务/状态所有者，然后跑合同、状态机、生产构建和相关E2E。
@@ -297,9 +300,9 @@ Telegram Channel Adapter。它还需要Channel Binding、Outbox、Attempt、Rece
 |---|---|
 | [工程编码与模块设计规范](../../docs/engineering-standards.md) | 规模线、事务所有权、注释和重构验证的权威规则 |
 | [应用组合根ADR](../../docs/adr/0001-application-composition-and-process-entrypoints.md) | `main/composition/lifecycle/asgi`分开的已接受决策 |
-| [`coverage-manifest.json`](../coverage-manifest.json) | 全部后端/前端源码面与27学习单元的机器映射 |
+| [`coverage-manifest.json`](../coverage-manifest.json) | 全部后端/前端源码面与28学习单元的机器映射 |
 | [`test_architecture_contract.py`](../../backend/tests/test_architecture_contract.py) | 依赖、事务边界、Schema/OpenAPI指纹与部分前端规模合同 |
 
 ## 补充记录
 
-- 2026-07-30：使用当前工作树`wc -l`快照列出13个后端与7个前端超线文件；行数只是审查信号，候选切缝仍待逐个设计与回归验证。
+- 2026-07-30：使用当前工作树`wc -l`快照列出13个后端与6个前端超线文件；Project Dossier按“页面协调/纯展示”真实边界拆为367行与227行，Projection Composer再把Personal Workspace纯规则拆到84行模块并降至761行；行数只是审查信号，其他候选切缝仍待逐个设计与回归验证。

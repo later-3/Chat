@@ -1,4 +1,4 @@
-import { Boxes, Home, MessageCircle, Settings2, Workflow } from "lucide-react";
+import { Home, LayoutDashboard, MessageCircle, Settings2, Workflow } from "lucide-react";
 import type { WorkbenchView } from "../../workbench-nav";
 import type { PrimaryView } from "../home/activity-rail";
 
@@ -8,7 +8,7 @@ interface MobileNavigationProps {
   workbenchOpen: boolean;
   onOpenChat: () => void;
   onOpenConfiguration: () => void;
-  onOpenResources: () => void;
+  onOpenWorkspace: () => void;
   onOpenHome: () => void;
   onOpenWorkflow: () => void;
 }
@@ -19,7 +19,7 @@ export function MobileNavigation({
   workbenchOpen,
   onOpenChat,
   onOpenConfiguration,
-  onOpenResources,
+  onOpenWorkspace,
   onOpenHome,
   onOpenWorkflow,
 }: MobileNavigationProps) {
@@ -27,8 +27,7 @@ export function MobileNavigation({
   const chatActive = primaryView === "chat" && !workbenchOpen;
   const workflowActive =
     primaryView === "chat" && workbenchOpen && activeWorkbenchView === "workflow";
-  const resourcesActive =
-    primaryView === "chat" && workbenchOpen && activeWorkbenchView !== "workflow";
+  const workspaceActive = primaryView === "workspace";
 
   return (
     <nav aria-label="手机主导航" className="mobile-primary-nav">
@@ -60,13 +59,13 @@ export function MobileNavigation({
         <span>运行</span>
       </button>
       <button
-        aria-current={resourcesActive ? "page" : undefined}
-        className={resourcesActive ? "active" : ""}
-        onClick={onOpenResources}
+        aria-current={workspaceActive ? "page" : undefined}
+        className={workspaceActive ? "active" : ""}
+        onClick={onOpenWorkspace}
         type="button"
       >
-        <Boxes size={20} />
-        <span>资源</span>
+        <LayoutDashboard size={20} />
+        <span>工作台</span>
       </button>
       <button onClick={onOpenConfiguration} type="button">
         <Settings2 size={20} />

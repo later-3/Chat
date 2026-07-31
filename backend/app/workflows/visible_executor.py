@@ -20,7 +20,8 @@ from agent_framework import (
     WorkflowMessage,
     handler,
 )
-from agent_framework._workflows._typing_utils import is_instance_of
+
+from ..runtime_adapters import maf_is_instance
 
 
 class VisibleWorkflowExecutor(Executor):
@@ -39,7 +40,7 @@ class VisibleWorkflowExecutor(Executor):
         return list(self.workflow.output_types)
 
     def can_handle(self, message: WorkflowMessage) -> bool:
-        return any(is_instance_of(message.data, input_type) for input_type in self.workflow.input_types)
+        return any(maf_is_instance(message.data, input_type) for input_type in self.workflow.input_types)
 
     @handler
     async def process(self, input_data: object, ctx: WorkflowContext[Any]) -> None:

@@ -1,7 +1,7 @@
-import { Home, MessageCircle, ShieldCheck, Sprout, Workflow } from "lucide-react";
+import { Home, LayoutDashboard, MessageCircle, ShieldCheck, Sprout, Workflow } from "lucide-react";
 import "./activity-rail.css";
 
-export type PrimaryView = "home" | "chat";
+export type PrimaryView = "home" | "workspace" | "chat";
 
 interface ActivityRailProps {
   activeView: PrimaryView;
@@ -10,6 +10,7 @@ interface ActivityRailProps {
   onOpenChat: () => void;
   onOpenGarden: () => void;
   onOpenHome: () => void;
+  onOpenWorkspace: () => void;
   onOpenWorkflow: () => void;
 }
 
@@ -20,6 +21,7 @@ export function ActivityRail({
   onOpenChat,
   onOpenGarden,
   onOpenHome,
+  onOpenWorkspace,
   onOpenWorkflow,
 }: ActivityRailProps) {
   return (
@@ -35,6 +37,17 @@ export function ActivityRail({
         >
           <Home size={20} />
           <span>主页</span>
+        </button>
+        <button
+          aria-current={activeView === "workspace" ? "page" : undefined}
+          className={
+            activeView === "workspace" ? "activity-rail__button is-active" : "activity-rail__button"
+          }
+          onClick={onOpenWorkspace}
+          type="button"
+        >
+          <LayoutDashboard size={20} />
+          <span>工作台</span>
         </button>
         <button
           aria-current={activeView === "chat" ? "page" : undefined}

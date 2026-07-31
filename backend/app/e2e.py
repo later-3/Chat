@@ -5,6 +5,7 @@ never reads the developer's private configuration or real repositories.
 """
 
 import os
+import shutil
 import subprocess
 import tempfile
 from dataclasses import replace
@@ -18,9 +19,6 @@ def _prepare_repository_workspace() -> Path:
     root = Path(tempfile.gettempdir()) / "chat-product-e2e-workspaces"
     repository = root / "chat-e2e-repository"
     repository.mkdir(parents=True, exist_ok=True)
-    if (repository / ".git").is_dir():
-        return root
-
     environment = {
         **os.environ,
         "GIT_TERMINAL_PROMPT": "0",
@@ -28,8 +26,8 @@ def _prepare_repository_workspace() -> Path:
         "GIT_CONFIG_SYSTEM": os.devnull,
     }
 
-    def git(*arguments: str) -> None:
-        subprocess.run(
+    def git(*arguments: str) -> str:
+        result = subprocess.run(
             ["git", *arguments],
             cwd=repository,
             check=True,
@@ -38,6 +36,18 @@ def _prepare_repository_workspace() -> Path:
             timeout=10,
             env=environment,
         )
+        return result.stdout.strip()
+
+    if (repository / ".git").is_dir():
+        try:
+            if git("rev-parse", "--is-inside-work-tree") == "true":
+                return root
+        except subprocess.CalledProcessError:
+            pass
+        # This exact path is owned by the E2E fixture. A partial ``.git`` must
+        # not be accepted as evidence or leak a prior failed run into the next.
+        shutil.rmtree(repository)
+        repository.mkdir(parents=True)
 
     git("init", "-q")
     git("config", "user.name", "Chat Browser E2E")
@@ -53,12 +63,15 @@ def _prepare_repository_workspace() -> Path:
 
 
 _WORKSPACE_ROOT = _prepare_repository_workspace()
+_DATABASE_PATH = Path(tempfile.gettempdir()) / "chat-product-e2e.db"
+for suffix in ("", "-shm", "-wal"):
+    _DATABASE_PATH.with_name(f"{_DATABASE_PATH.name}{suffix}").unlink(missing_ok=True)
 
 app = create_app(
     replace(
         Settings.for_test(),
         frontend_origins=("http://127.0.0.1:5074",),
-        database_url="sqlite+aiosqlite:////tmp/chat-product-e2e.db",
+        database_url=f"sqlite+aiosqlite:///{_DATABASE_PATH}",
         workspace_roots=(
             WorkspaceRootSettings(
                 key="e2e-code",

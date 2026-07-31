@@ -1,4 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import type { Health, ProviderCatalogResponse } from "./app-contracts";
 import { authenticatedFetch, subscribeAuthenticationRequired } from "./authentication-recovery";
 import { AuthenticationRequired } from "./authentication-required";
 import { ConfigurationCenter, type ConfigurationTab } from "./configuration-center";
@@ -6,7 +7,7 @@ import { AppTopbar } from "./features/chat/app-topbar";
 import { ConversationPane, runLabel } from "./features/chat/conversation-pane";
 import { getMessageText } from "./features/chat/message-bubble";
 import { listDurableDecisionRequests } from "./features/governance/hitl-api";
-import { ActivityRail, type PrimaryView } from "./features/home/activity-rail";
+import { ActivityRail } from "./features/home/activity-rail";
 import type { HomeContinueItem } from "./features/home/home-api";
 import { MobileNavigation } from "./features/mobile/mobile-navigation";
 import { readSessionDraft, writeSessionDraft } from "./features/mobile/session-draft-storage";
@@ -26,11 +27,26 @@ import { SessionSidebar } from "./features/session/session-sidebar";
 import { SessionSettingsPanel } from "./features/settings/session-settings-panel";
 import { SystemInfoPanel } from "./features/settings/system-info-panel";
 import { FeatureErrorBoundary } from "./features/shared/feature-error-boundary";
+import { FeatureLoading } from "./features/shared/feature-loading";
 import {
   listWorkflows,
   type WorkflowDefinition,
   workflowEndpointUrl,
 } from "./features/workflow/workflow-api";
+import { usePrimaryNavigation } from "./features/workspace/use-primary-navigation";
+import {
+  AgentPage,
+  HarnessWorkbench,
+  HitlPage,
+  HomeView,
+  ModelCallReview,
+  ProductDecisionReview,
+  ProtocolPage,
+  ToolPage,
+  WorkflowPage,
+  WorkflowRunView,
+  WorkspaceView,
+} from "./lazy-features";
 import { PwaStatus } from "./pwa-status";
 import { apiUrl } from "./runtime-config";
 import type { ModelProviderOption } from "./use-chat-agent";
@@ -38,73 +54,15 @@ import { useChatAgent } from "./use-chat-agent";
 import type { WorkbenchView } from "./workbench-nav";
 import { CHAT_WORKFLOW } from "./workflow-run-projection";
 
-const AgentPage = lazy(() =>
-  import("./agent-page").then((module) => ({ default: module.AgentPage })),
-);
-const HomeView = lazy(() =>
-  import("./features/home/home-view").then((module) => ({ default: module.HomeView })),
-);
-const HarnessWorkbench = lazy(() =>
-  import("./harness-workbench").then((module) => ({ default: module.HarnessWorkbench })),
-);
-const HitlPage = lazy(() => import("./hitl-page").then((module) => ({ default: module.HitlPage })));
-const ProtocolPage = lazy(() =>
-  import("./features/protocols/protocol-page").then((module) => ({
-    default: module.ProtocolPage,
-  })),
-);
-const ModelCallReview = lazy(() =>
-  import("./model-call-review").then((module) => ({ default: module.ModelCallReview })),
-);
-const ProductDecisionReview = lazy(() =>
-  import("./product-decision-review").then((module) => ({
-    default: module.ProductDecisionReview,
-  })),
-);
-const ToolPage = lazy(() => import("./tool-page").then((module) => ({ default: module.ToolPage })));
-const WorkflowPage = lazy(() =>
-  import("./workflow-page").then((module) => ({ default: module.WorkflowPage })),
-);
-const WorkflowRunView = lazy(() =>
-  import("./workflow-run-view").then((module) => ({ default: module.WorkflowRunView })),
-);
-
-interface Health {
-  status: string;
-  service: string;
-  version: string;
-  agent_framework: string;
-  protocol: string;
-  runtime_mode: "bootstrap" | "model";
-  model: string | null;
-  model_call_approval: "every_call" | "not_applicable";
-  product_sessions: "sqlite";
-}
-
-interface ProviderCatalogResponse {
-  default_provider_id: string | null;
-  default_model: string | null;
-  providers: ModelProviderOption[];
-}
-
-function FeatureLoading({ label }: { label: string }) {
-  return (
-    <div className="feature-loading" role="status">
-      <span className="thinking" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </span>
-      <span>正在加载{label}</span>
-    </div>
-  );
-}
-
-function App() {
-  const [primaryView, setPrimaryView] = useState<PrimaryView>(() =>
-    window.sessionStorage.getItem("chat.primary-view.v1") === "chat" ? "chat" : "home",
-  );
-  const [homeSearchQuery, setHomeSearchQuery] = useState("");
+export default function App() {
+  const {
+    homeSearchQuery,
+    primaryView,
+    setHomeSearchQuery,
+    setPrimaryView,
+    setWorkspaceProjectId,
+    workspaceProjectId,
+  } = usePrimaryNavigation();
   const [draft, setDraft] = useState("");
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState(false);
@@ -150,23 +108,7 @@ function App() {
     selectableWorkflows[0] ??
     CHAT_WORKFLOW;
 
-  useEffect(() => {
-    window.sessionStorage.setItem("chat.primary-view.v1", primaryView);
-  }, [primaryView]);
-
   useEffect(() => subscribeAuthenticationRequired(() => setAuthenticationRequired(true)), []);
-
-  useEffect(() => {
-    const focusHomeSearch = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setPrimaryView("home");
-        window.requestAnimationFrame(() => document.getElementById("home-global-search")?.focus());
-      }
-    };
-    window.addEventListener("keydown", focusHomeSearch);
-    return () => window.removeEventListener("keydown", focusHomeSearch);
-  }, []);
 
   const hydrateSession = useCallback(async (sessionId: string) => {
     setSessionLoading(true);
@@ -377,7 +319,16 @@ function App() {
   };
 
   const continueFromHome = (item: HomeContinueItem) => {
-    setDraft(`继续「${item.title}」：`);
+    setDraft(`继续「${item.title}」（${item.resource_kind} ID: ${item.id}）：`);
+    setPrimaryView("chat");
+    setWorkbenchOpen(false);
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="发送消息"]')?.focus();
+    });
+  };
+
+  const continueProject = (title: string, projectId: string) => {
+    setDraft(`继续Project「${title}」（Project ID: ${projectId}）：`);
     setPrimaryView("chat");
     setWorkbenchOpen(false);
     window.requestAnimationFrame(() => {
@@ -452,6 +403,7 @@ function App() {
     // DEBUG-BREAKPOINT-NOTE: 触发: 需要浏览器DevTools打开才能命中debugger语句。
     // DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：从断点停住到知道来路和下一跳#1。
     // DEBUG-BREAKPOINT-NOTE: 频率: 用户每次点击发送触发1次
+    // biome-ignore lint/suspicious/noDebugger: 显式教学断点，由注入工具统一清理。 DEBUG-BREAKPOINT-NOTE: BP-27
     debugger; // DEBUG-BREAKPOINT: BP-27
     // 浏览器栈入口：用户点击发送，此处是JS侧第一个有状态判断的调用点。
     if (!draft.trim() || status !== "idle" || !activeSession || networkStatus === "offline") return;
@@ -527,13 +479,16 @@ function App() {
     <div className="app-shell">
       <AppTopbar
         backendReachable={!healthError}
-        homeActive={primaryView === "home"}
+        homeActive={primaryView !== "chat"}
         homeSearchQuery={homeSearchQuery}
         interactionBusy={interactionBusy}
         networkStatus={networkStatus}
         onNewConversation={() => void createNewConversation()}
         onOpenConfiguration={() => openConfiguration()}
-        onOpenProjects={() => openWorkbench("projects")}
+        onOpenProjects={() => {
+          setWorkspaceProjectId(null);
+          setPrimaryView("workspace");
+        }}
         onOpenSidebar={() => {
           setPrimaryView("chat");
           setSidebarOpen(true);
@@ -553,6 +508,7 @@ function App() {
           }}
           onOpenGarden={() => openWorkbench("knowledge")}
           onOpenHome={() => setPrimaryView("home")}
+          onOpenWorkspace={() => setPrimaryView("workspace")}
           onOpenWorkflow={() => openWorkbench("workflow")}
           pendingDecisionCount={pendingDecisionCount}
         />
@@ -563,8 +519,31 @@ function App() {
                 onContinue={continueFromHome}
                 onOpenArtifacts={() => openWorkbench("workflow")}
                 onOpenGarden={() => openWorkbench("knowledge")}
-                onOpenProjects={() => openWorkbench("projects")}
+                onOpenProject={(projectId) => {
+                  setWorkspaceProjectId(projectId);
+                  setPrimaryView("workspace");
+                }}
+                onOpenProjects={() => {
+                  setWorkspaceProjectId(null);
+                  setPrimaryView("workspace");
+                }}
                 searchQuery={homeSearchQuery}
+              />
+            </Suspense>
+          </FeatureErrorBoundary>
+        ) : primaryView === "workspace" ? (
+          <FeatureErrorBoundary
+            featureName="我的工作台"
+            resetKey={`workspace:${workspaceProjectId ?? "index"}`}
+          >
+            <Suspense fallback={<FeatureLoading label="个人工作台" />}>
+              <WorkspaceView
+                onContinueProject={continueProject}
+                onCreateProject={() => openWorkbench("projects")}
+                onManageProjects={() => openWorkbench("projects")}
+                onSelectProject={setWorkspaceProjectId}
+                searchQuery={homeSearchQuery}
+                selectedProjectId={workspaceProjectId}
               />
             </Suspense>
           </FeatureErrorBoundary>
@@ -685,7 +664,10 @@ function App() {
         onOpenHome={() => setPrimaryView("home")}
         onOpenChat={closeWorkbench}
         onOpenConfiguration={() => openConfiguration()}
-        onOpenResources={() => openWorkbench("projects")}
+        onOpenWorkspace={() => {
+          setWorkspaceProjectId(null);
+          setPrimaryView("workspace");
+        }}
         onOpenWorkflow={() => openWorkbench("workflow")}
         primaryView={primaryView}
         workbenchOpen={workbenchOpen}
@@ -815,5 +797,3 @@ function App() {
     </div>
   );
 }
-
-export default App;

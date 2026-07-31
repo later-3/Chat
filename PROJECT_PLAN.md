@@ -2,7 +2,7 @@
 
 ## 1. 计划目标
 
-以[完整目标架构](./docs/overall-architecture-proposal.md)为边界，按依赖顺序交付一个独立运行、持续运营的 Chat 产品：从会话连续、上下文与意图，到工作推进、受控执行、运行恢复、知识证据、可靠交付、超级管理员运营看护和外部集成，最终形成完整用户闭环。
+以[完整目标架构](./docs/overall-architecture-proposal.md)为边界，并通过[目标能力、架构责任与开发地图](./docs/product-capability-architecture-map.md)把场景、能力、模块、差距、工作包和验收证据双向关联，按依赖顺序交付一个独立运行、持续运营的 Chat 产品：从会话连续、上下文与意图，到工作推进、受控执行、运行恢复、知识证据、可靠交付、超级管理员运营看护和外部集成，最终形成完整用户闭环。
 
 阶段只决定交付顺序和阶段验收，不能重新定义产品范围。任何阶段的 Schema、API 或代码都必须能演进到目标模块、合同和状态所有权，禁止为了短期交付建立另一套临时事实模型。
 
@@ -20,17 +20,25 @@
 
 这 11 条工作流覆盖目标架构，项目经理可在阶段内进一步拆 Epic、Story 和验证任务。
 
+W0-W10是唯一顶层工作流坐标。第一版`Wn-xx`工作包、依赖和主顺序维护在
+[目标能力开发地图](./docs/product-capability-architecture-map.md#11-第一版开发工作包)及其机器Manifest；
+Q/F/SD/Session编号继续表达专项或历史完成门，不另行决定全局优先级。W0-01机器基线已经完成，
+W0-02（审核D1-D4并同步正式架构）也已完成；W1-01、W2-01、W4-01、W4-03详细设计已于
+2026-07-30获连续授权。W1-01的错误/ID/模块合同状态与MAF升级基础门于2026-07-31完成；W4-03已
+先落地不依赖新Schema的固定Scope只读切片。W2-01、W4-01与完整W4-03仍按主依赖序关闭，不能把
+基础门、设计或局部实现外推为对应领域能力完成。
+
 | 工作流 | 主要模块/组件 | 主要交付物 | 前置依赖 | 验收结果 |
 |---|---|---|---|---|
 | W0 产品治理与架构 | 全局 | 产品定义、经验约束、目标架构、ADR、术语和ID合同 | 无 | 4类读者能用文档继续决策、排期和开发 |
 | W1 工程与合同基础 | Bootstrap、Interfaces、测试基础 | 可运行前后端、配置、OpenAPI/AG-UI合同、错误分类、CI/本地验证 | W0技术路线 | 真实MAF回合和合同测试稳定 |
 | W2 身份与产品会话 | Identity与Channel Binding、Conversation、Product Store | Principal、Role/Grant、Authentication Session、Scope、Product Session、Interaction、Message Tree、生命周期和查询 | W0、W1 | 输入先持久化，历史可重开，越权被拒绝 |
-| W3 上下文与理解 | Context、Memory、Collaboration | ContextPackage、唯一历史装配器、受控Memory、多Intent、澄清和用户修正 | W2 | 用户可见并修正系统理解和上下文 |
-| W4 工作与执行治理 | Collaboration、Interaction协调器 | Work/Plan/Action、Draft、Approval、执行门和版本失效 | W2、W3 | 用户批准的内容与实际执行严格一致 |
+| W3 上下文与理解 | Context、Memory、Governance、Conversation（读取Knowledge公开合同） | ContextPackage、唯一历史装配器、受控Memory、多Intent、澄清和连续理解 | W2；W3-01另依赖W4-01边界 | 用户可见并修正系统理解和上下文 |
+| W4 工作与执行治理 | Work、Knowledge、Protocol、Governance、Schedule、APP-PROJECTION、APP-INTERACTION | Work/Plan/Action、协议、Draft/Approval、周期触发、稳定Read Model与版本失效 | W2；具体工作包另有W3/W5/W8依赖 | 用户批准的内容与实际执行严格一致；Web/Obsidian不形成第二事实源 |
 | W5 产品运行控制 | Run管理、Runtime Store、AG-UI协调 | Product Run/Attempt、Job、Event Cursor、Cancel/Retry/Resume、Finalization Gate | W2、W4 | 无假成功；刷新和断线能回到权威状态 |
-| W6 MAF/Workflow执行 | MAF Adapter、Worker、Scheduler/Reconciler | Agent/History、Workflow/Checkpoint、Lease、Worker接管和HITL映射 | W5 | 失联可判断，从验证过的安全点恢复 |
+| W6 MAF/Workflow执行 | MAF Adapter、Execution Worker、Runtime Reconciler | Agent/History、Workflow/Checkpoint、Lease、Worker接管和HITL映射 | W5 | 失联可判断，从验证过的安全点恢复；不拥有业务Schedule |
 | W7 Tool副作用治理 | Tool执行 | Tool Catalog、Approval桥接、Ledger、幂等、结果未知和对账 | W4、W5、W6 | 不盲目重做外部副作用，有处置证据 |
-| W8 知识、证据与审计 | Memory、Evidence、Run Trace、Artifact/Index | Memory候选、Evidence、Provenance、Trace、失效传播和运营视图 | W2、W3、W5、W7 | 结果可验证，来源失效能正确降级 |
+| W8 证据、Artifact与全链验收 | Evidence、Run Trace、Artifact/Index | Evidence、Provenance、Trace、失效传播、完成模板和Dogfood验收 | W2、W3、W5、W7 | 结果可验证，来源失效能正确降级，真实项目能走完全链 |
 | W9 交付与外部集成 | Delivery、Identity与Channel Binding、具体Channel Adapter、Channel Adapter Host、Interaction Ingress | Outbox、Delivery/Receipt、Binding、平台/Bridge合同版本、跨入口连续性 | W1、W2、W5、W8 | 平台不直连核心；送达可追踪，多入口不双写、不越权 |
 | W10 超级管理员运营看护 | Identity、Super Admin Operations、Product Harness、Evidence、Super Admin Console | Authentication Session、Role/Grant、Activity/Usage、Work/Artifact运营投影、管理员审计 | W2、W4、W5、W8 | 可信回答谁登录、怎样使用、工作/作品进度与异常；普通用户不可越权，投影不双写 |
 
@@ -41,7 +49,7 @@ flowchart LR
     W0["W0 治理与架构"] --> W1["W1 工程与合同"]
     W1 --> W2["W2 身份与会话"]
     W2 --> W3["W3 上下文与理解"]
-    W3 --> W4["W4 工作与治理"]
+    W2 --> W4["W4 工作与治理"]
     W2 --> W5["W5 运行控制"]
     W4 --> W5
     W5 --> W6["W6 MAF/Workflow执行"]
@@ -65,9 +73,9 @@ flowchart LR
 |---|---|---|
 | 0. 产品定义与治理 | 固定独立产品身份、6个问题、完整闭环和协作规则 | `最终愿景、概念边界和阶段A协作协议已获确认` |
 | 1. 工程与真实链路 | 建立独立前后端、MAF、AG-UI、调试和验证基线 | `真实模型门通过；2项收尾` |
-| 2. 目标架构与合同基线 | 审核目标拓扑、模块、状态、合同、恢复矩阵 | `总体架构已批准；模块详细设计按交付门继续` |
+| 2. 目标架构与合同基线 | 审核目标拓扑、模块、状态、合同、恢复矩阵 | `总体架构及4个当前详细设计门已批准；其余模块按工作包继续` |
 | 3. 产品事实与完成历史 | 身份、Session、Message、Run/Attempt和历史恢复 | `Phase 1文本底座、显式Retry/Restart和精确取消窄切片完成；完整身份和树操作继续` |
-| 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `Product Harness D1-D8、ExecutionDraft完整编辑、39节点主Workflow、Intent Set/复合Plan、SD1 Repository只读、SD2受治理pi只读、SD3受管Workspace精确编辑与真实Qwen隔离写入、4个前端工作区完成；独立分支执行与部分成功继续` |
+| 4. 上下文、意图、工作与执行门 | Context、Intent、Work、Draft、Approval | `Product Harness与执行治理纵向链完成；新增个人工作台、Project Dossier和Obsidian只读导出；Identity、写回、Schedule及完整Evidence继续` |
 | 5. 持久执行与活动流 | Job/Event、Worker、Lease、重连和Reconciler | `D1-D8纵向切片完成；完整强退、多端、保留和容量矩阵继续` |
 | 6. Tool、Workflow与HITL恢复 | Tool Ledger、对账、Checkpoint和持久Interrupt | `主Workflow审批安全点跨进程恢复完成；Tool与任意Workflow恢复继续` |
 | 7. 知识、证据、交付与运营 | Memory、Evidence、Provenance、Outbox、Trace、超级管理员看护和告警 | `Note/Memory生命周期与Harness事务Outbox完成；超级管理员目标已确认，独立Evidence、Artifact、Delivery和运营能力继续` |
@@ -84,13 +92,13 @@ flowchart LR
 - [x] 确认后端 MAF、前后端 AG-UI、React 自研 UI 技术路线。
 - [x] 建立`AGENTS.md`、`PROJECT_CONTEXT.md`、`PROJECT_PLAN.md`、`PROJECT_STATE.md`和`README.md`。
 - [x] 纠正产品身份：Chat 是独立完整产品，OPC-OS Chat 是外部集成关系。
-- [x] 新增并持续维护`PROJECT_LESSONS.md`，当前记录54个反例，并把Product Harness事实不能从聊天摘要猜测、不得回退系统Python、产品级工程收敛、可持续模块质量、模型结果去向审计、移动端完整产品视角、超级管理员运营看护、pi安装/隔离运行身份、验证产物收口、Workflow代码可学习性、确定性双Trace、跨仓源码调试所有权、PWA认证失效恢复、反向SSH端到端健康判定、学习文档代码事实口径、场景预言机、Web小白运行/框架培训、断点调用栈/数据血缘、增量培训不能覆盖旧待办，以及分类索引不能冒充完整学习路线加入回复前置门。
+- [x] 新增并持续维护`PROJECT_LESSONS.md`，当前记录57个反例；最新反例固定“Projection必须同时给出领域事实、角色视图、呈现Adapter和可验证文件物化，不能用总账或页面草图替代具体落地”。
 - [x] 建立Chat概念空间：方法来源、目录治理、发现索引、14个高风险概念簇、概念/实现双状态和自动结构/链接校验。
 - [x] 把最终产品愿景固定为“想法能留下、事项有状态、工作可继续、执行可看护、结果有证据”，并明确Product Session不是Project边界、Context面板不是第二事实源。
 - [x] 用户已确认本轮愿景与概念纠正准确进入稳定项目文档。
 - [x] 用户已确认“谁登录、怎样使用、工作和作品进度”属于超级管理员目标能力；个人主页、执行看护和技术可观测性不能替代。
 - [x] 建立面向只会少量C++读者的完整项目掌握课程：Web/前后端基础、10个横向对象专题、S1-S7、15个可执行场景、
-  真实/受控/缺口证据分级和机器防漂移检查；根README只进入项目掌握INDEX，INDEX以60个连续课号覆盖
+  真实/受控/缺口证据分级和机器防漂移检查；根README只进入项目掌握INDEX，INDEX以61个连续课号覆盖
   全部学习者文档，新增/重名/漏排由检查器失败关闭；文档完成不冒充用户个人已经达到L2/L3。
 
 完成门：项目定义无需依赖 OPC-OS 也能完整描述用户、价值、责任和产品边界；所有项目回复前强制读取经验文档。
@@ -128,7 +136,7 @@ flowchart LR
 - [x] 完成 Session 9 个能力域、74 项能力和 R0-R6 恢复分级。
 - [x] 完成 Session Phase 0-8 的任务与依赖路线。
 - [x] 重写[总体架构研究](./docs/overall-architecture-research.md)，公开错误修订、研究过程、证据、参考覆盖和项目推导。
-- [x] 重写并批准[总体架构基线](./docs/overall-architecture-proposal.md)，按pi、nanobot、QwenPaw和LibreChat真实结构推导Web/Channel Adapter、Interaction Ingress、11个产品与应用模块、合同、状态、失败恢复和9个场景；第11个Super Admin Operations来自已确认的本项目运营需求，参考项目研究明确未涉及完整链路。
+- [x] 重写并批准[总体架构基线](./docs/overall-architecture-proposal.md)：2026-07-24先形成11模块历史基线；2026-07-30再由16类场景与23项目标能力正式演进为14个逻辑状态所有者、3个应用组件和3类运行责任。Super Admin、Schedule、Projection及Work/Knowledge/Protocol/Governance拆分均来自本项目需求，参考项目只为真实覆盖范围背书。
 - [x] 新增并补全[架构新手导读](./docs/architecture-beginner-guide.md)：按前端View、协议DTO、内部Envelope、产品领域对象和MAF运行对象5层展开；从“发送/批准”两个用户动作串起数据库、Session、Tool、Provider请求、响应解析、产品提交和React渲染；同时对照当前代码链与目标链。
 - [x] 完成[Chat愿景方案与完整场景模拟验证](./docs/chat-vision-scenario-validation.md)：以12个完整场景、24个异常场景、拒绝/修改矩阵和长跨度测试计划验证项目、任务、学习、研究、周期工作、用户标准、执行层最小工作包与用户看护；其中9项方案优化仍待用户审核，不构成正式Schema授权。
 - [x] 完成[Chat持续协作系统研究与落地推导](./docs/chat-collaboration-system-research.md)：逐项核对Scrum/Kanban/PMI、学习科学、W3C PROV、Git、SQLite/FTS5、长上下文与RAG研究，并与MAF安装版、pi、nanobot、QwenPaw、LibreChat和Codex固定版本源码/文档区分证据等级。
@@ -136,12 +144,17 @@ flowchart LR
 - [x] 用户审核目标架构决定；2026-07-24进一步确认Super Admin Operations属于完整产品目标。
 - [x] 用户已审核愿景场景验证推导出的协作协议、步骤投影、周期工作、验证修复与多Intent方向；各阶段仍按自己的完成门交付。
 - [x] 用户已审核协议、Context面板、TurnDigest、检索、存储、执行层边界和方法覆盖方向；阶段A已实现，阶段B-F仍按路线推进。
-- [ ] 审核模块公开合同、ID链、错误分类、并发/幂等原则和四个提交门。
-- [ ] 建立 MAF/AG-UI 安装版合同测试设计和依赖升级门。
-- [ ] 把 Session R0-R6 验收矩阵映射到 Conversation、Context、Collaboration、Run、Tool执行、Delivery 与 MAF Runtime 组件。
-- [ ] 为每个模块建立详细设计任务、负责人边界和验收清单；不冻结字段实现。
+- [x] 建立并批准“产品保证/场景 → 目标能力 → 模块/组件 → 对象/合同/投影 → 当前证据/差距 → 开发工作包 → 验收证据”基线：16类场景、23项目标能力、20个模块/应用/运行责任、19个工作包和机器检查已形成；Manifest只保存稳定ID、短状态和权威链接，不复制各事实源全文。
+- [x] 2026-07-30用户批准[能力开发地图D1-D4](./docs/product-capability-architecture-map.md#16-已批准的4项决定)：Schedule独立所有者、Projection应用边界、14个逻辑状态所有者和W0-W10唯一顶层排序。W0-02完成；本批准不授权正式Schema、迁移、物理目录重构或产品代码。
+- [x] 完成[W1-01模块公开合同、ID链、错误分类、并发/幂等原则和四个提交门](./docs/module-public-contract-error-id-upgrade-detailed-design.md)：20个模块/组件的公开合同状态进入机器Manifest，REST写命令共享`CommandId`语法，Problem Detail公开稳定恢复动作，架构测试禁止裸错误重新扩散。字段级Owner DTO和公开`/v1`继续随对应模块工作包完成。
+- [x] 完成MAF/AG-UI安装版升级门：移除可替代私有导入，把剩余Checkpoint/类型/RC8恢复桥集中到单一Runtime Adapter；启动与CI锁定3个安装版本并验证Checkpoint、HITL pending、恢复、类型白名单和版本漂移失败关闭。
+- [ ] 把 Session R0-R6 验收矩阵映射到 Conversation、Context、Work、Collaboration Governance、Run、Tool执行、Delivery 与 MAF Runtime 组件。
+- [x] 通过能力Manifest为每个模块建立详细设计工作包、唯一责任和验收入口；当前进一步批准
+  [W2-01 Identity](./docs/identity-https-auth-session-scope-migration-detailed-design.md)、
+  [W4-01领域边界](./docs/work-knowledge-protocol-governance-boundary-detailed-design.md)和
+  [W4-03 Projection](./docs/projection-contract-dossier-queue-obsidian-readonly-detailed-design.md)。
 
-完成门：架构师能继续出数据、接口、部署和安全方案；项目经理能排 W2-W10；开发能知道模块和合同；产品负责人批准场景覆盖和设计原因。
+完成门：架构师能继续出数据、接口、部署和安全方案；项目经理能排 W2-W10；开发能知道模块和合同；产品负责人批准场景覆盖和设计原因；任一目标能力都能定位到责任模块、未完成工作包和验收证据，任一实现资产也能反查它兑现的产品保证。
 
 ## 8. 阶段 3：产品事实与完成历史
 
@@ -181,6 +194,11 @@ flowchart LR
 - [x] 主Workflow只允许已接受ExecutionDraft revision编译不可变RunSpec并绑定Product Run；独立Worker能力执行与跨进程恢复仍属于阶段5-6。
 - [x] 建立ExecutionDraft 17部分完整可读编辑工作台、CAS保存、新revision/Hash和重新审批。
 - [x] 建立对应前端 Context Inspector、Project Explorer、Work Board和Knowledge工作区。
+- [x] 批准并实现[APP-PROJECTION固定Scope只读纵向切片](./docs/projection-contract-dossier-queue-obsidian-readonly-detailed-design.md)：
+  Personal Workspace支持生活/工作/学习/研究筛选，Project Dossier显示Work/Plan、3类责任、知识与
+  部分Evidence，独立Action不再丢失，100项上限显式标为partial；Obsidian Tree/ZIP使用稳定ID和确定性文件，
+  新工作台保留旧Project/Repository管理入口。Identity、稳定分页Cursor、双向写回、Schedule、Delivery与
+  完整Evidence仍按各自工作包推进。
 - [x] 完成21天32轮项目开发与28天40轮技能学习长测，覆盖跨Session/入口、API重开、CAS、幂等、假完成、来源失效、Memory拒绝/接受和Token预算。
 - [x] 完成Product Harness接合后的真实模型浏览器纵向回合：简单问答3次模型调用逐次审批；多Intent回合4次逐次审批、28节点完成、权威Project目录事实与独立文本回答均正确且不创建长期资源。
 - [ ] 把复合Plan接入既有WorkItem的长期`TaskPlanRevision`，并实现独立Branch Execution、部分成功、聚合结果与Evidence；当前Run内复合Plan不能外推为独立分支执行保证。
@@ -271,12 +289,12 @@ Session 是 W2-W9 的横向能力，仍由两份专项材料维护：
 |---|---|---|
 | Phase 0 术语与恢复合同 | 阶段2 | W0/W1，跨全部模块 |
 | Phase 1 产品会话与历史 | 阶段3 | Identity、Conversation、Run Trace |
-| Phase 2 Run控制与并发 | 阶段3-5 | Conversation、Collaboration、Run管理 |
-| Phase 3 生命周期、分支与长上下文 | 阶段3-4 | Conversation、Context、Collaboration |
+| Phase 2 Run控制与并发 | 阶段3-5 | Conversation、Work、Collaboration Governance、Run管理 |
+| Phase 3 生命周期、分支与长上下文 | 阶段3-4 | Conversation、Context、Work、Governance |
 | Phase 4 活动流重连 | 阶段5 | Run管理/Runtime Store/AG-UI Reconciler |
-| Phase 5 Worker恢复 | 阶段5 | Scheduler/Worker/Lease/Reconciler |
+| Phase 5 Worker恢复 | 阶段5 | Execution Worker/Lease/Runtime Reconciler；不等于Schedule Trigger |
 | Phase 6 Tool恢复 | 阶段6 | Tool执行/Evidence |
-| Phase 7 Workflow/HITL恢复 | 阶段6 | Collaboration/Run管理/MAF Workflow |
+| Phase 7 Workflow/HITL恢复 | 阶段6 | Governance/Run管理/MAF Workflow |
 | Phase 8 跨入口与治理 | 阶段7-8 | Identity与Channel Binding/Memory/Evidence/Delivery/Run Trace |
 
 专项路线不能创造与总体架构冲突的对象或事实源；D1-D6 持久化方案只是阶段3中的子设计，需在总体架构和 Phase 0 合同通过后重新审核。
@@ -308,7 +326,7 @@ Session 是 W2-W9 的横向能力，仍由两份专项材料维护：
 - [ ] Q03 API合同、错误与安全边界统一（纵向基线完成；真实Principal、公开API版本和全部响应模型继续）。
 - [ ] Q04 可观测性、日志和调试体系（纵向基线完成；生产Exporter、SLO、告警和保留继续）。
 - [ ] Q05 测试金字塔、覆盖率与故障实验室（纵向基线完成；多设备、容量、性能和完整故障矩阵继续）。
-- [ ] Q06 前端Feature架构与交互质量（实施中：统一Client、7个Feature API、Settings边界、App/审批组件、Agent重连Hook与Workflow运行投影已拆；8个生产按需Feature和包体门已建立；[视觉基线v1](./docs/ui-ux-visual-baseline.md)及4项轻量情绪层已获批准，生产界面迁移、性能与更广泛人工无障碍继续）。
+- [ ] Q06 前端Feature架构与交互质量（实施中：统一Client、类型化Feature API、Settings边界、App/审批组件、Agent重连Hook与Workflow运行投影已拆；11个生产按需Feature和包体门已建立；[视觉基线v1](./docs/ui-ux-visual-baseline.md)及4项轻量情绪层已获批准，生产界面迁移、性能与更广泛人工无障碍继续）。
 - [ ] Q07 文档、注释、ADR与依赖治理（纵向基线完成；随Q02/Q06及依赖升级持续维护）。
 
 ### 16.2 后续产品能力
@@ -333,4 +351,7 @@ Session 是 W2-W9 的横向能力，仍由两份专项材料维护：
 - [ ] F10 Chat开发Chat自举纵向闭环（SD1、SD2与SD3真实Qwen隔离写入已完成；SD4/F02与
   SD5/F05仍保留各自详细设计门）。
 
-推荐主依赖顺序是`Q01 -> Q03 -> Q04 -> Q02 -> Q05 -> F01-F03 -> F04-F06 -> F07 -> F09`；F08在Q0后可与产品能力并行，F09的身份底座随F07推进，但完整工作/作品看护依赖F02、F06和真实身份。F10是穿透既有能力的Dogfood纵向线：SD1只读资源绑定可在详细设计审核后先行，SD3写入必须等待F01，SD4完成声明必须等待F02，SD5持久恢复必须等待F05；不能为了尽快看到自举效果绕过这些门。Q06-Q07贯穿对应阶段。工程收敛不得改变现有Product Store、MAF/AG-UI合同、Workflow节点ID、审批Hash或用户可见语义。
+D4批准后，本节Q/F编号只保留专项完成状态，不再拥有全局优先级。唯一主依赖序由
+[能力开发地图第12节](./docs/product-capability-architecture-map.md#12-唯一主顺序)及Manifest维护；F10继续作为
+Dogfood横向验收线，不能绕过F01/F02/F05等详细设计和完成门。工程收敛不得改变现有Product Store、
+MAF/AG-UI合同、Workflow节点ID、审批Hash或用户可见语义。

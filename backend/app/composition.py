@@ -37,6 +37,7 @@ from .execution_workspaces import ExecutionWorkspaceService
 from .governance import ExecutionGovernanceService, GovernanceOutboxWorker
 from .harness import HarnessService
 from .harness.outbox import ProductOutboxRouter
+from .harness.projection_queries import HarnessProjectionQueryService
 from .home import HomeProjectionService
 from .model_call_review import (
     ExactProviderTransport,
@@ -57,6 +58,7 @@ from .project_resources import (
     RepositorySourceFreshnessGuard,
     WorkspaceRootCatalog,
 )
+from .projections import ProjectionService
 from .readonly_tools import ReadonlyToolService
 from .runtime_execution import (
     ExecutionWorker,
@@ -102,6 +104,7 @@ class ApplicationComponents:
     governance: ExecutionGovernanceService
     harness: HarnessService
     home: HomeProjectionService
+    projections: ProjectionService
     project_resources: ProjectResourceService
     repository_freshness: RepositorySourceFreshnessGuard
     repository_execution_context: RepositoryExecutionContextService
@@ -278,6 +281,21 @@ def build_components(
         execution_workspaces=execution_workspaces,
         tool_operations=tool_operations,
     )
+    harness = HarnessService(
+        product_sessions.database,
+        context_contributors=(
+            RepositoryContextContributor(
+                product_sessions.database,
+                catalog=root_catalog,
+            ),
+        ),
+    )
+    collaboration_protocols = CollaborationProtocolService(product_sessions.database)
+    projections = ProjectionService(
+        HarnessProjectionQueryService(product_sessions.database),
+        protocols=collaboration_protocols,
+        project_resources=project_resources,
+    )
     return ApplicationComponents(
         settings=settings,
         model_catalog=model_catalog,
@@ -289,16 +307,9 @@ def build_components(
         review_store=review_store,
         tool_configurations=tool_configurations,
         governance=governance,
-        harness=HarnessService(
-            product_sessions.database,
-            context_contributors=(
-                RepositoryContextContributor(
-                    product_sessions.database,
-                    catalog=root_catalog,
-                ),
-            ),
-        ),
+        harness=harness,
         home=HomeProjectionService(product_sessions.database),
+        projections=projections,
         project_resources=project_resources,
         repository_freshness=repository_freshness,
         repository_execution_context=repository_execution_context,
@@ -319,7 +330,7 @@ def build_components(
             external_source_resolver=repository_context_resolver,
         ),
         collaboration_intents=CollaborationIntentService(product_sessions.database),
-        collaboration_protocols=CollaborationProtocolService(product_sessions.database),
+        collaboration_protocols=collaboration_protocols,
         runtime_execution=runtime_execution,
         step_inputs=step_inputs,
         diagnostics=DiagnosticsService(product_sessions.database),
@@ -344,6 +355,7 @@ def expose_components(app: FastAPI, components: ApplicationComponents) -> None:
     app.state.governance = components.governance
     app.state.harness = components.harness
     app.state.home = components.home
+    app.state.projections = components.projections
     app.state.project_resources = components.project_resources
     app.state.repository_freshness = components.repository_freshness
     app.state.repository_execution_context = components.repository_execution_context

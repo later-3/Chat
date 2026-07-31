@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..api import http_problem
+from ..api import CommandId, http_problem
 from .contracts import (
     ProtocolConflict,
     ProtocolNotFound,
@@ -19,7 +19,7 @@ from .service import CollaborationProtocolService
 class UpsertProtocolBindingRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    command_id: str
+    command_id: CommandId
     scope_kind: str
     scope_ref_id: str
     scenario_kind: str

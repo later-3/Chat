@@ -55,7 +55,14 @@ from backend.app.workflows import (
 # ledgers remain authoritative. Re-reviewed 2026-07-29 after replacing the
 # catalog's historical Stage A/B copy with explicit directory/detail terms;
 # the Workflow ID/version/node/edge topology is unchanged.
-OPENAPI_SHA256 = "5f42ca97d66281ba49e2c4b4a5e2bac06c382632718e08b108d1d8925ceba0a6"
+# Re-reviewed 2026-07-30 for APP-PROJECTION read-only v1: OpenAPI adds exactly
+# four read-only Workspace/Dossier/Obsidian endpoints and their explicit DTOs.
+# Product Schema and Workflow topology are unchanged; projections remain
+# rebuildable and the ZIP route never accepts a server filesystem path.
+# Re-reviewed 2026-07-31 for W1-01: every REST error now exposes the explicit
+# recovery_action enum, and shared CommandId constraints appear in OpenAPI.
+# Product Schema and Workflow topology remain unchanged.
+OPENAPI_SHA256 = "30265fd2c72be2c983340b141636ce1e49747852f0fb61e1f5764f78976b6503"
 PRODUCT_SCHEMA_SHA256 = "f151dc80ad56b9cb29913267f53e17822a63640811856ecae3a1637da62d0e29"
 WORKFLOW_CATALOG_SHA256 = "01fe3f41be2ea1b0b68c573b56cb67d43835102b90af146b94c870a6e11c0661"
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
@@ -149,6 +156,32 @@ def test_domain_services_do_not_depend_on_fastapi_and_router_does_not_open_trans
     repository_router = (APP_ROOT / "project_resources/api.py").read_text(encoding="utf-8")
     assert ".database.sessions.begin(" not in repository_router
     assert "transaction.add(" not in repository_router
+    projection_router = (APP_ROOT / "projections/api.py").read_text(encoding="utf-8")
+    assert ".database.sessions" not in projection_router
+    assert "transaction.add(" not in projection_router
+
+
+def test_private_runtime_joins_and_http_errors_stay_inside_their_adapters() -> None:
+    private_runtime_boundary = APP_ROOT / "runtime_adapters/maf_compat.py"
+    error_boundary = APP_ROOT / "api/errors.py"
+    private_imports: list[str] = []
+    raw_http_errors: list[str] = []
+    for path in APP_ROOT.rglob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        if path != private_runtime_boundary and (
+            "agent_framework._" in source or "agent_framework_ag_ui._" in source
+        ):
+            private_imports.append(str(path.relative_to(APP_ROOT)))
+        if path != error_boundary and "HTTPException(" in source:
+            raw_http_errors.append(str(path.relative_to(APP_ROOT)))
+
+    assert private_imports == []
+    assert raw_http_errors == []
+    assert "RequestInfoMixin" not in "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in APP_ROOT.rglob("*.py")
+        if path != private_runtime_boundary
+    )
 
 
 def test_extracted_query_rule_and_command_boundaries_preserve_transaction_ownership() -> None:
@@ -156,7 +189,11 @@ def test_extracted_query_rule_and_command_boundaries_preserve_transaction_owners
         "governance/policy.py",
         "governance/queries.py",
         "harness/contracts.py",
+        "harness/projection_queries.py",
         "harness/queries.py",
+        "projections/contracts.py",
+        "projections/obsidian.py",
+        "projections/service.py",
         "project_resources/contracts.py",
         "project_resources/queries.py",
         "project_resources/snapshots.py",
@@ -188,10 +225,12 @@ def test_extracted_query_rule_and_command_boundaries_preserve_transaction_owners
 def test_targeted_frontend_coordinators_stay_within_reviewed_boundaries() -> None:
     frontend = APP_ROOT.parents[1] / "frontend" / "src"
     app_source = (frontend / "App.tsx").read_text(encoding="utf-8")
+    lazy_features = (frontend / "lazy-features.ts").read_text(encoding="utf-8")
     agent_hook = (frontend / "use-chat-agent.ts").read_text(encoding="utf-8")
     workflow_view = (frontend / "workflow-run-view.tsx").read_text(encoding="utf-8")
 
-    assert "lazy(() =>" in app_source
+    assert "lazy(() =>" not in app_source
+    assert lazy_features.count("lazy(() =>") >= 8
     assert len(app_source.splitlines()) < 800
     assert "getRuntimeEvents" not in agent_hook
     assert "replayRuntimeEvents" not in agent_hook

@@ -31,6 +31,12 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 
 对独立运营而言，Chat还必须提供受严格授权和审计的超级管理员看护：可信回答谁登录、怎样使用、Project/Work和Artifact/Evidence推进到哪里，以及哪些用户、作品或运行需要关注。它与普通用户个人主页、Workflow执行看护和开发运维可观测性是3种不同视角。
 
+完整目标不只由场景清单维护。[目标能力、架构责任与开发地图](./docs/product-capability-architecture-map.md)
+把16类场景、23项目标能力、责任模块、当前差距、19个开发工作包和验收证据连接起来；
+[机器Manifest](./docs/product-capability-manifest.json)及检查器负责发现能力无所有者、缺口无工作包、
+依赖顺序漂移和证据链接失效。Web、Obsidian和第三方前端属于同一权威事实的不同投影，不各自维护
+Project/Work/Memory状态。
+
 ## 当前状态
 
 工程骨架、真实模型纵向回合和逐次模型调用审批切片已经完成：
@@ -50,8 +56,11 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 13. 持续协作主Workflow v1.8.0现有39个真实MAF节点；除7套协作协议、不可变Context revision、Repository Source Freshness、TurnDigest v1、StepInputProjection和持久Intent Set外，已根据批准的RunSpec在`answer_only`、受治理pi只读执行与隔离工作区精确编辑间显式路由，并接入Result Claim准备与提交决定。SD3已实现受管Git worktree和`ToolOperation/Attempt/Reconciliation`，只开放`read/grep/find/ls/edit`，不直接修改活动仓库，也不开放Shell、commit或push。
 14. Runtime Job、活动流游标和通用Execution Worker纵向切片已经完成；完整Session仍按Phase 2-8继续补齐Steer/Follow-up、分支、强退/多端矩阵、Tool副作用对账和跨入口恢复。
 15. Chat概念空间已经建立：14个概念簇统一Chat系统/Harness、Session、Workflow、Agent/Executor、恢复动作、模型审批、Tool、上下文结果、界面、外部入口、人工介入、连续协作和超级管理员运营看护的共同语言。
-16. Q0工程安全底座已有可运行纵向基线：Governance/Harness已按纯规则、只读查询、命令记录和事务协调继续拆分；Agent重连Hook、Workflow运行投影和对话呈现已有独立Feature边界；8个重型前端Feature按需加载，当前主入口为473.22 KiB并受自动包体门保护。统一Problem Detail、关联日志/Trace/Metrics/诊断、CI、覆盖率、迁移、Playwright/axe、故障实验室和供应链门均通过本地验证；大型Application Service、持续协作Workflow、生产Exporter/SLO和远端CI首次运行仍在后续范围。
+16. Q0工程安全底座已有可运行纵向基线：Governance/Harness已按纯规则、只读查询、命令记录和事务协调继续拆分；Agent重连Hook、Workflow运行投影和对话呈现已有独立Feature边界；11个重型前端Feature按需加载，当前主入口为470.9 KiB并受自动包体门保护。统一Problem Detail、关联日志/Trace/Metrics/诊断、CI、覆盖率、迁移、Playwright/axe、故障实验室和供应链门均通过本地验证；大型Application Service、持续协作Workflow、生产Exporter/SLO和远端CI首次运行仍在后续范围。
 17. Super Admin Operations目标已经确认：Identity负责真实Authentication Session和Role/Grant，运营模块负责Activity/Usage、可重建工作/作品投影与管理员审计；当前尚未实现真实登录、活动采集、管理API或控制台，固定`local-user`和技术耗时不能冒充该能力。
+18. APP-PROJECTION首个只读切片已落地：一级“我的工作台”按生活、工作、学习、研究显示正式Project，
+    Project Dossier显示Work/Plan、用户/Agent/外部责任、Note与部分Evidence，并可下载稳定ID目录的
+    确定性Obsidian ZIP。当前仍是固定`local-user` Scope，不支持Markdown写回、Schedule或完整Artifact视图。
 
 ## 技术方向
 
@@ -113,6 +122,27 @@ npm run dev
 ```
 
 打开`http://127.0.0.1:15073`。没有任何配置完整且启用的Provider时，会使用确定性Bootstrap Agent，仍走完整MAF与AG-UI事件链路。
+
+## 个人工作台与Obsidian
+
+启动前后端后，从左侧一级导航进入“我的工作台”：
+
+1. `全部/生活/工作/学习/研究`只是在同一Project模型上的筛选。
+2. 点击Project卡打开Dossier；“继续推进”会把稳定Project ID带回对话，不只依赖标题。
+3. “预览目录”查看将生成的Markdown文件，“下载Obsidian快照”获得确定性ZIP；解压后可作为Vault
+   打开或合并到现有Vault。
+
+对应只读API：
+
+```text
+GET /api/projections/workspace?domain=all
+GET /api/projections/projects/{project_id}/dossier
+GET /api/projections/projects/{project_id}/obsidian/tree
+GET /api/projections/projects/{project_id}/obsidian.zip
+```
+
+导出目录只使用稳定对象ID，文件frontmatter携带源revision和`read_only: true`。服务器不接受本地输出
+路径，也不会写入你的Vault；在Obsidian中修改文件目前不会回写Product Store。
 
 ## 手机公网访问
 
@@ -210,7 +240,7 @@ GitHub Actions使用Python 3.12、Node 22、`uv.lock`和`package-lock.json`运�
 ## 目录结构
 
 ```text
-backend/app/      组合根、FastAPI边界、产品服务、MAF Workflow与运行适配
+backend/app/      组合根、FastAPI边界、产品服务、Projection、MAF Workflow与运行适配
 backend/tests/    后端合同和事件流测试
 frontend/src/    React界面、Feature API、HttpAgent投影与页面状态
 scripts/         可重复执行的工程验证
@@ -221,8 +251,8 @@ scripts/         可重复执行的工程验证
 ## 文档入口
 
 如果目标是从小白开始掌握当前设计、源码、数据库和调试路径，唯一课程入口是
-[项目掌握：60课完整路线](./项目掌握/INDEX.md)。不要从文件树或某张场景卡随机开始：该入口已把
-`项目掌握/`下全部60篇学习文档按前置关系连续编号，覆盖Web基础、React/TypeScript/Vite、
+[项目掌握：61课完整路线](./项目掌握/INDEX.md)。不要从文件树或某张场景卡随机开始：该入口已把
+`项目掌握/`下全部61篇学习文档按前置关系连续编号，覆盖Web基础、React/TypeScript/Vite、
 Uvicorn/FastAPI、架构与对象、MAF Workflow、执行/Evidence、调试工具和SC01–SC15。
 每课仍按“具体场景 -> 对象样本 -> 代码链 -> 断点/SQL/Trace -> 掌握验收”完成；下面的治理、设计和
 状态文档是权威事实来源和深入参考，不与课程入口竞争。
@@ -234,7 +264,7 @@ Uvicorn/FastAPI、架构与对象、MAF Workflow、执行/Evidence、调试工�
 5. [协作规则](./AGENTS.md)：开发和AI协作必须遵守的规则。
 6. [概念空间方法来源](./概念空间.md)与[Chat概念资产索引](./概念空间/00-索引.md)：共同语言方法、14个概念簇、边界、别名、正反例和实现状态入口。
 7. [总体架构研究与证据](./docs/overall-architecture-research.md)：完整场景推导、MAF、pi、nanobot、QwenPaw与LibreChat证据、覆盖缺口和方案比较。
-8. [总体架构基线](./docs/overall-architecture-proposal.md)：先由本项目9类完整用户场景、失败/安全风险和产品保证推导Web/Channel适配、Interaction Ingress与11个产品模块，再用MAF、pi、nanobot、QwenPaw和LibreChat源码校准运行适配、状态所有权、恢复和工程取舍。
+8. [总体架构基线](./docs/overall-architecture-proposal.md)：由16类完整场景与23项目标能力推导14个逻辑状态所有者、3个应用组件和3类运行时职责，再用MAF、pi、nanobot、QwenPaw和LibreChat源码校准运行适配、状态所有权、恢复和工程取舍；2026-07-24的11模块模型保留为历史推导，不再是当前模块清单。
 9. [架构新手导读](./docs/architecture-beginner-guide.md)：从用户点击“发送/批准”开始，串起前端、协议、后端数据库、Agent Session/Tool、Provider请求、响应解析、产品提交和React渲染，并对照当前代码与目标架构。
 10. [Session能力全集与目标边界](./docs/session-capability-catalog.md)：9个能力域、74项能力、R0-R6恢复层级、参考覆盖、明确非目标和最终用户场景。
 11. [Session分阶段交付路线](./docs/session-delivery-roadmap.md)：Phase 0-8、53个任务、优先级、依赖、方案、目标和各阶段完成场景。
@@ -256,11 +286,14 @@ Uvicorn/FastAPI、架构与对象、MAF Workflow、执行/Evidence、调试工�
 27. [类LifeOS产品方法与Chat Harness启发研究](./docs/lifeos-product-method-research.md)：Obsidian、Notion及跨平台LifeOS类产品的运行协议、设计原因、呈现、维护成本和Chat候选启发。
 28. [Kimi Code CLI开发工具手册](./docs/kimi-code-cli-tool.md)：已验证版本、个人Codex Skill、只读调用、交互式修改和未来ACP产品接入边界。
 29. [Chat开发Chat自举详细设计](./docs/chat-self-development-design.md)：第一性原理、19个用户场景、架构/模块/接口、8层测试、8个端到端场景、SD0-SD6路线、自检修正，以及已批准的D1-D9与SD1交付状态。
+30. [模块公开合同、错误、ID与升级门](./docs/module-public-contract-error-id-upgrade-detailed-design.md)：4层合同、ID链、Problem Detail、幂等/CAS、4个提交门和MAF/AG-UI升级门。
+31. [Identity、HTTPS与固定Scope迁移](./docs/identity-https-auth-session-scope-migration-detailed-design.md)：Principal、Role/Grant、Auth Session、安全Cookie/CSRF和`local-user`迁移设计；当前尚未实现。
+32. [Work/Knowledge/Protocol/Governance边界](./docs/work-knowledge-protocol-governance-boundary-detailed-design.md)：4个状态所有者、事务、公开Port和自然语言ChangeProposal。
+33. [Projection、个人工作台与Obsidian](./docs/projection-contract-dossier-queue-obsidian-readonly-detailed-design.md)：角色/场景矩阵、Envelope、Dossier、稳定文件树、当前实现和剩余缺口。
 
 ## 下一步
 
-SD1、SD2、SD3以及F02的SD4-A/SD4-B/SD4-C已经落地；真实Qwen隔离写入、内容寻址Artifact Store、
-确定性Validation Runtime和主Workflow Result Commit链均有纵向证据。当前F02仍需完成SD4-D失效传播
-与SD4-E完整Evidence UI/Dogfood；在F05前不承诺pi跨进程续跑。`write/bash/commit/push`仍未开放；
-当前私有部署还需配置Artifact scope密钥才会启用真实Artifact写入。Super Admin Operations、长期
-`TaskPlanRevision`、独立Branch Execution和完整Conversation Day继续保留在已批准路线中。
+W1-01合同/错误/ID/升级基础门已完成。按唯一主序继续关闭3个`in_progress`工作包：先完成W2-01正式Identity/HTTPS，
+再完成W4-01物理边界/自然语言ChangeSet，最后把W4-03从固定Scope只读切片扩展到权限过滤、Cursor、
+双向Obsidian冲突写回和完整Evidence/Schedule/Delivery区块。`write/bash/commit/push`仍未开放，活动pi
+跨进程续跑、Super Admin Operations和完整Conversation Day继续保留在批准路线中。

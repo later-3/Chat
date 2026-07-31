@@ -56,11 +56,18 @@ def _check_exact(label: str, actual: set[str], expected: set[str]) -> None:
 
 def _target_module_names() -> set[str]:
     text = PROPOSAL.read_text(encoding="utf-8")
-    section = text.split("## 7. 产品与应用模块", 1)[1].split("## 8. MAF运行适配器", 1)[0]
+    section = text.split("## 7. 14个逻辑状态所有者", 1)[1].split(
+        "## 8. 3个应用协调与投影组件", 1
+    )[0]
     names = set()
     for heading in re.findall(r"^### 7\.\d+ (.+)$", section, flags=re.MULTILINE):
         names.add(heading.removesuffix("模块").strip())
     return names
+
+
+def _numbered_heading_names(text: str, start: str, end: str, number: int) -> set[str]:
+    section = text.split(start, 1)[1].split(end, 1)[0]
+    return set(re.findall(rf"^### {number}\.\d+ (.+)$", section, flags=re.MULTILINE))
 
 
 def _check_learning_route() -> int:
@@ -210,6 +217,8 @@ def main() -> None:
 
     for section_name in (
         "target_modules",
+        "application_components",
+        "runtime_responsibilities",
         "backend_surfaces",
         "frontend_feature_surfaces",
         "frontend_root_surfaces",
@@ -237,9 +246,30 @@ def main() -> None:
                 _fail(f"学习单元{unit['id']}引用不存在文档：{relative}")
 
     _check_exact(
-        "11个目标产品模块",
+        "14个逻辑状态所有者",
         _target_module_names(),
         {str(value["name"]) for value in manifest["target_modules"]},
+    )
+    proposal_text = PROPOSAL.read_text(encoding="utf-8")
+    _check_exact(
+        "3个应用组件",
+        _numbered_heading_names(
+            proposal_text,
+            "## 8. 3个应用协调与投影组件",
+            "## 9. 3类运行与基础设施责任",
+            8,
+        ),
+        {str(value["name"]) for value in manifest["application_components"]},
+    )
+    _check_exact(
+        "3类运行时职责",
+        _numbered_heading_names(
+            proposal_text,
+            "## 9. 3类运行与基础设施责任",
+            "## 10. 状态所有权",
+            9,
+        ),
+        {str(value["name"]) for value in manifest["runtime_responsibilities"]},
     )
     _check_exact(
         "后端顶层源码面",
@@ -349,7 +379,9 @@ def main() -> None:
         "项目掌握覆盖校验通过："
         f"{lesson_count}篇连续课程文档，"
         f"{len(units)}个学习单元，"
-        f"{len(manifest['target_modules'])}个目标模块，"
+        f"{len(manifest['target_modules'])}个状态所有者，"
+        f"{len(manifest['application_components'])}个应用组件，"
+        f"{len(manifest['runtime_responsibilities'])}类运行时职责，"
         f"{len(manifest['backend_surfaces'])}个后端顶层源码面，"
         f"{len(manifest['frontend_feature_surfaces'])}个前端Feature面，"
         f"{len(manifest['frontend_root_surfaces'])}个前端根源码面，"

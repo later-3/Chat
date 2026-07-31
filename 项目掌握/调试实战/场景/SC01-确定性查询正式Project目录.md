@@ -122,7 +122,7 @@ flowchart LR
 - [七层架构总地图](../../架构与模块/Chat总体架构与一次点击的七层链路.md#3-七层架构)；
 - [REST、AG-UI、Product DB、MAF所有权边界](../../../PROJECT_CONTEXT.md#101-协议运行时与状态所有权)；
 - [Product Session、AG-UI Thread、MAF状态、Product Run四对象边界](../../../PROJECT_CONTEXT.md#71-四个必须区分的对象)；
-- [总体架构的ID链与4个提交门](../../../docs/overall-architecture-proposal.md#102-4个提交门)。
+- [总体架构的ID链与4个提交门](../../../docs/overall-architecture-proposal.md#112-4个提交门)。
 
 ## 2. 为什么正好分成S1–S7，而不是把39个节点平铺
 
@@ -131,10 +131,10 @@ flowchart LR
 | S1 输入接纳与目录Context | 必须先保留原话；只带回轻量、可审核、有来源的Context，不能把完整历史塞给模型 | [Product Harness两阶段Context](../../../docs/product-harness-detailed-design.md#7-两阶段上下文) | [阶段定义](../../../backend/app/continuous_workflow_learning.py#L40)，[MAF接线](../../../backend/app/workflows/continuous_chat_factory.py#L390) | 经过5节点；创建1个directory ContextPackage，139 Tokens |
 | S2 Intent、绑定与详情Context | “用户说了什么”不能直接等于“系统要做什么”；Intent要版本化，Project必须来自权威目录；只有绑定后才加载详情 | [核心领域对象](../../../PROJECT_CONTEXT.md#7-核心领域对象)，[目录先于详情](../../../docs/product-harness-detailed-design.md#L242) | [阶段定义](../../../backend/app/continuous_workflow_learning.py#L54)，[接线](../../../backend/app/workflows/continuous_chat_factory.py#L395) | 经过10节点；确定性Intent；不绑定某一个Project；detail Context不适用 |
 | S3 路由与可选Plan | 下游不能重新猜意图；目录查询、澄清、规划和默认执行必须按公开规则唯一选择 | [`simple-answer`与权威查询优先](../../../docs/chat-harness-protocol-context-detailed-design.md#L90) | [阶段定义](../../../backend/app/continuous_workflow_learning.py#L73)，[4路Switch](../../../backend/app/workflows/continuous_chat_factory.py#L408) | 走`project_catalog`第1条Case；节点17形成答复和摘要 |
-| S4 Draft、授权与RunSpec | 真正执行前，用户要看见“做什么、用什么、影响什么”；内容变化后旧授权失效 | [Execution提交门](../../../docs/overall-architecture-proposal.md#L810) | [阶段定义](../../../backend/app/continuous_workflow_learning.py#L87)，[接线](../../../backend/app/workflows/continuous_chat_factory.py#L419) | 全跳过；查询不是执行，所以Draft=0、RunSpec=0 |
-| S5 pi、Workspace与Evidence | Tool/文件副作用不能由模型文本代表；写入要隔离、记账、验证并形成Claim/Evidence | [Tool副作用门](../../../docs/overall-architecture-proposal.md#L813) | [阶段定义](../../../backend/app/continuous_workflow_learning.py#L100)，[接线](../../../backend/app/workflows/continuous_chat_factory.py#L443) | 全跳过；ToolExecution=0 |
+| S4 Draft、授权与RunSpec | 真正执行前，用户要看见“做什么、用什么、影响什么”；内容变化后旧授权失效 | [Execution提交门](../../../docs/overall-architecture-proposal.md#112-4个提交门) | [阶段定义](../../../backend/app/continuous_workflow_learning.py#L87)，[接线](../../../backend/app/workflows/continuous_chat_factory.py#L419) | 全跳过；查询不是执行，所以Draft=0、RunSpec=0 |
+| S5 pi、Workspace与Evidence | Tool/文件副作用不能由模型文本代表；写入要隔离、记账、验证并形成Claim/Evidence | [Tool副作用门](../../../docs/overall-architecture-proposal.md#112-4个提交门) | [阶段定义](../../../backend/app/continuous_workflow_learning.py#L100)，[接线](../../../backend/app/workflows/continuous_chat_factory.py#L443) | 全跳过；ToolExecution=0 |
 | S6 响应、摘要与提交决定 | 一个答复可以显示，不代表Work或长期Memory也应改变；3类后果必须分别决定 | [模型候选不自动成为事实](../../../PROJECT_CONTEXT.md#8-产品原则) | [阶段定义](../../../backend/app/continuous_workflow_learning.py#L116)，[汇流接线](../../../backend/app/workflows/continuous_chat_factory.py#L452) | 跳过两个模型节点；经过Result/Work/Memory三个决定点 |
-| S7 产品事实与终态 | 只提交获准候选；摘要不能替代原始Message；Assistant Message落库后才允许成功终态 | [Finalization门](../../../docs/overall-architecture-proposal.md#L815) | [阶段定义](../../../backend/app/continuous_workflow_learning.py#L130)，[图内终点](../../../backend/app/workflows/continuous_chat_factory.py#L458)，[图外事务门](../../../backend/app/product_sessions/service.py#L1132) | 经过3节点；保存1条TurnSummary、1条Assistant Message、2份Trace报告 |
+| S7 产品事实与终态 | 只提交获准候选；摘要不能替代原始Message；Assistant Message落库后才允许成功终态 | [Finalization门](../../../docs/overall-architecture-proposal.md#112-4个提交门) | [阶段定义](../../../backend/app/continuous_workflow_learning.py#L130)，[图内终点](../../../backend/app/workflows/continuous_chat_factory.py#L458)，[图外事务门](../../../backend/app/product_sessions/service.py#L1132) | 经过3节点；保存1条TurnSummary、1条Assistant Message、2份Trace报告 |
 
 为什么不切成更多或更少：
 

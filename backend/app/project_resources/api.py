@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..api import http_problem
+from ..api import CommandId, http_problem
 from ..harness.contracts import HarnessError
 from .contracts import (
     ProjectResourceConflict,
@@ -21,7 +21,7 @@ from .service import ProjectResourceService
 class BindRepositoryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    command_id: str = Field(min_length=1, max_length=160)
+    command_id: CommandId
     expected_project_row_version: int = Field(ge=1)
     alias: str = Field(pattern=r"^[a-z][a-z0-9-]{0,63}$")
     display_name: str = Field(min_length=1, max_length=120)
@@ -34,7 +34,7 @@ class BindRepositoryRequest(BaseModel):
 class RefreshRepositoryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    command_id: str = Field(min_length=1, max_length=160)
+    command_id: CommandId
     expected_binding_row_version: int = Field(ge=1)
     decision_record_id: str | None = None
 
@@ -42,7 +42,7 @@ class RefreshRepositoryRequest(BaseModel):
 class RebindRepositoryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    command_id: str = Field(min_length=1, max_length=160)
+    command_id: CommandId
     expected_project_row_version: int = Field(ge=1)
     expected_binding_row_version: int = Field(ge=1)
     display_name: str = Field(min_length=1, max_length=120)
@@ -55,7 +55,7 @@ class RebindRepositoryRequest(BaseModel):
 class DetachRepositoryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    command_id: str = Field(min_length=1, max_length=160)
+    command_id: CommandId
     expected_project_row_version: int = Field(ge=1)
     expected_binding_row_version: int = Field(ge=1)
     decision_record_id: str | None = None

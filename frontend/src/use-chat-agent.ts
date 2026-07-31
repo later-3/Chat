@@ -9,12 +9,16 @@
  * 修改走REST（/api/model-call-drafts/:id），保证可编辑请求与发送字节同源。
  * 停止走Product Session取消端点；可能已到达Provider的派发只呈现outcome_unknown，绝不自动重试。
  */
-import { HttpAgent } from "@ag-ui/client";
 import type { Message } from "@ag-ui/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiErrorFromResponse } from "./api-client.js";
 import { authenticatedFetch } from "./authentication-recovery.js";
 import { createClientId } from "./client-id.js";
+import {
+  cloneAgentMessages,
+  createChatHttpAgent,
+  modelCallDispatchRecovery,
+} from "./features/chat/chat-agent-client.js";
 import {
   type ChatWorkflowDispatch,
   type DispatchRecovery,
@@ -25,7 +29,7 @@ import {
   type RuntimeConnectionStatus,
 } from "./features/chat/chat-agent-contracts.js";
 import { useRuntimeReconnect } from "./features/chat/use-runtime-reconnect.js";
-import { AG_UI_URL, apiUrl } from "./runtime-config.js";
+import { apiUrl } from "./runtime-config.js";
 import {
   cancelSessionRun,
   type ProductRun,
@@ -33,16 +37,6 @@ import {
   type SessionRunControl,
   sessionControlForwardedProps,
 } from "./session-api.js";
-
-function createThreadId(): string {
-  // 这只是AG-UI关联ID；服务端Product Session身份与恢复边界由后端拥有。
-  return createClientId();
-}
-
-function cloneMessages(messages: ReadonlyArray<Readonly<Message>>): Message[] {
-  // 每次投影都复制一份，防止AG-UI内部数组被React引用后意外共享突变。
-  return messages.map((message) => ({ ...message })) as Message[];
-}
 
 export type {
   ChatWorkflowDispatch,
@@ -85,15 +79,7 @@ export function useChatAgent({
   runtimeJob,
   onSessionSettled,
 }: UseChatAgentOptions) {
-  const [agent] = useState(
-    () =>
-      new HttpAgent({
-        url: AG_UI_URL,
-        threadId: createThreadId(),
-        description: "独立 AI 协作 Chat 产品",
-        fetch: authenticatedFetch,
-      }),
-  );
+  const [agent] = useState(createChatHttpAgent);
   const [messages, setMessages] = useState<Message[]>([]);
   const [status, setStatus] = useState<RunStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -115,10 +101,10 @@ export function useChatAgent({
   useEffect(() => {
     if (!sessionId || agent.isRunning) return;
     agent.threadId = sessionId;
-    agent.setMessages(cloneMessages(hydratedMessages));
+    agent.setMessages(cloneAgentMessages(hydratedMessages));
     agent.setState({});
     agent.pendingInterrupts = [];
-    setMessages(cloneMessages(hydratedMessages));
+    setMessages(cloneAgentMessages(hydratedMessages));
     setPendingReview(null);
     setDispatchRecovery(null);
     lastApprovedReview.current = null;
@@ -147,28 +133,9 @@ export function useChatAgent({
   const inspectDispatchFailure = useCallback(async (message: string) => {
     const review = lastApprovedReview.current;
     if (!review) return;
-    let status: DispatchRecovery["status"] = "outcome_unknown";
-    let errorCode: string | null = null;
-    try {
-      const response = await authenticatedFetch(
-        apiUrl(`/api/model-call-drafts/${review.draft_id}`),
-      );
-      if (response.ok) {
-        const card = (await response.json()) as ModelCallReviewCard;
-        status = card.attempt?.status === "failed" ? "failed" : "outcome_unknown";
-        errorCode = card.attempt?.error_code ?? null;
-      }
-    } catch {
-      status = "outcome_unknown";
-    }
+    const recovery = await modelCallDispatchRecovery(review, message);
     if (!mounted.current) return;
-    setDispatchRecovery({
-      draftId: review.draft_id,
-      status,
-      errorCode,
-      message,
-      originPrompt: review.origin_prompt,
-    });
+    setDispatchRecovery(recovery);
   }, []);
 
   // 订阅AG-UI事件：消息增量、Run开始/结束/错误；interrupt在此转成审批卡。
@@ -176,7 +143,7 @@ export function useChatAgent({
     mounted.current = true;
     const subscription = agent.subscribe({
       onMessagesChanged({ messages: nextMessages }) {
-        if (mounted.current) setMessages(cloneMessages(nextMessages));
+        if (mounted.current) setMessages(cloneAgentMessages(nextMessages));
       },
       onRunStartedEvent() {
         if (mounted.current) {
@@ -198,6 +165,7 @@ export function useChatAgent({
         // DEBUG-BREAKPOINT-NOTE: 触发: 需要浏览器DevTools打开才能命中debugger语句。
         // DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：从断点停住到知道来路和下一跳#11。
         // DEBUG-BREAKPOINT-NOTE: 频率: 每个Run完成事件触发1次
+        // biome-ignore lint/suspicious/noDebugger: 显式教学断点，由注入工具统一清理。 DEBUG-BREAKPOINT-NOTE: BP-29
         debugger; // DEBUG-BREAKPOINT: BP-29
         // 回程第一段JS栈：区分interrupt与正常结束，更新状态并触发UI刷新。
         if (!mounted.current) return;
@@ -264,6 +232,7 @@ export function useChatAgent({
       // DEBUG-BREAKPOINT-NOTE: 触发: 需要浏览器DevTools打开才能命中debugger语句。
       // DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：从断点停住到知道来路和下一跳#2。
       // DEBUG-BREAKPOINT-NOTE: 频率: 用户每次发送消息触发1次
+      // biome-ignore lint/suspicious/noDebugger: 显式教学断点，由注入工具统一清理。 DEBUG-BREAKPOINT-NOTE: BP-28
       debugger; // DEBUG-BREAKPOINT: BP-28
       // 跨边界前最后一段JS栈：构造RunAgentInput、追加本地User消息后调agent.runAgent。
       const text = content.trim();
@@ -272,11 +241,11 @@ export function useChatAgent({
       const messageId = createClientId();
       const runId = createClientId();
       activeAguiRunId.current = runId;
-      messagesBeforePendingRun.current = cloneMessages(agent.messages);
+      messagesBeforePendingRun.current = cloneAgentMessages(agent.messages);
       pendingUserMessageId.current = messageId;
       if (workflow) agent.url = workflow.endpointUrl;
       agent.addMessage({ id: messageId, role: "user", content: text });
-      setMessages(cloneMessages(agent.messages));
+      setMessages(cloneAgentMessages(agent.messages));
       setStatus("running");
       setError(null);
 
@@ -410,7 +379,7 @@ export function useChatAgent({
         resume: [{ interruptId: approvalId, status: "resolved", payload: { decision: "abandon" } }],
       });
       agent.setMessages(baseline);
-      setMessages(cloneMessages(baseline));
+      setMessages(cloneAgentMessages(baseline));
       pendingUserMessageId.current = null;
       messagesBeforePendingRun.current = null;
       if (mounted.current) setStatus("idle");

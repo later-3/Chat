@@ -27,6 +27,7 @@ from ..governance.service import (
     GovernanceValidationError,
 )
 from ..product_sessions.service import ProductSessionError, ProductSessionService
+from ..runtime_adapters import pending_request_ids, restore_workflow_checkpoint
 from .catalog import WorkflowDefinition
 from .checkpoints import CheckpointStorageFactory
 
@@ -182,16 +183,17 @@ class ProductAwareWorkflow(AgentFrameworkWorkflow):
                         error_code="workflow_graph_changed",
                     )
                     raise ProductSessionError("Workflow图版本已变化，不能用旧Checkpoint静默恢复")
-                pending = await workflow._runner_context.get_pending_request_info_events()  # pyright: ignore[reportPrivateUsage]
+                pending = await pending_request_ids(workflow)
                 if maf_request_id not in pending:
                     storage = self._checkpoint_storage_factory(accepted.product_run_id)
                     # MAF core exposes checkpoint restore through Workflow.run;
                     # AG-UI rc8 does not forward checkpoint_id.  This isolated
                     # bridge restores only the runner state, after which the
                     # standard AG-UI converter validates and applies Resume.
-                    await workflow._runner.restore_from_checkpoint(  # pyright: ignore[reportPrivateUsage]
-                        link.maf_checkpoint_id,
-                        storage,
+                    await restore_workflow_checkpoint(
+                        workflow,
+                        checkpoint_id=link.maf_checkpoint_id,
+                        checkpoint_storage=storage,
                     )
                     logger.info(
                         "workflow_checkpoint_restored run_id=%s checkpoint_id=%s maf_request_id=%s",

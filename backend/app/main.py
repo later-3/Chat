@@ -32,6 +32,8 @@ from .observability.logging import configure_observability
 from .pi_gateway import PiRuntimeManager
 from .product_sessions import ProductSessionService
 from .project_resources.api import create_project_resource_router
+from .projections.api import create_projection_router
+from .runtime_adapters import assert_runtime_compatibility
 from .runtime_execution.endpoint import add_runtime_management_endpoints
 from .step_inputs.api import create_step_input_router
 
@@ -58,6 +60,7 @@ def create_app(
 
     # 1. 把配置变成依赖对象图；此时只“造对象”，还没有开始接收请求。
     resolved = settings or Settings.from_file()
+    assert_runtime_compatibility()
     configure_observability(resolved.observability)
     components = build_components(
         resolved,
@@ -92,12 +95,17 @@ def create_app(
             "X-Request-ID",
             "X-Runtime-Cursor",
             "X-Runtime-Job-Id",
+            "ETag",
+            "X-Projection-Revision",
+            "X-Projection-Schema-Version",
+            "X-Obsidian-Tree-Hash",
         ],
     )
     app.add_middleware(CorrelationMiddleware)
 
     app.include_router(create_harness_router(components.harness))
     app.include_router(create_home_router(components.home))
+    app.include_router(create_projection_router(components.projections))
     app.include_router(create_project_resource_router(components.project_resources))
     app.include_router(create_collaboration_context_router(components.collaboration_contexts))
     app.include_router(create_collaboration_intent_router(components.collaboration_intents))

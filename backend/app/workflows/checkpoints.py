@@ -2,9 +2,8 @@
 
 MAF owns the checkpoint payload and restore algorithm.  This adapter adds the
 Product Run/Attempt and workflow-version binding required to authorize a
-cross-process restore.  The only private MAF dependency is the same restricted
-JSON encoder used by ``FileCheckpointStorage``; compatibility is locked by
-tests against the installed framework version.
+cross-process restore.  Private MAF access is concentrated in
+``runtime_adapters.maf_compat`` and locked by upgrade tests.
 """
 
 from __future__ import annotations
@@ -13,14 +12,11 @@ import logging
 from collections.abc import Callable
 
 from agent_framework import WorkflowCheckpoint, WorkflowCheckpointException
-from agent_framework._workflows._checkpoint_encoding import (  # pyright: ignore[reportPrivateUsage]
-    decode_checkpoint_value,
-    encode_checkpoint_value,
-)
 from sqlalchemy import select
 
 from ..governance.models import MafWorkflowCheckpointRecord
 from ..product_sessions.database import ProductDatabase, RunAttemptRecord
+from ..runtime_adapters import decode_checkpoint_payload, encode_checkpoint_payload
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +55,7 @@ class ProductWorkflowCheckpointStorage:
         )
 
     async def save(self, checkpoint: WorkflowCheckpoint) -> str:
-        encoded = encode_checkpoint_value(checkpoint.to_dict())
+        encoded = encode_checkpoint_payload(checkpoint.to_dict())
         pending_request_ids = sorted(str(value) for value in checkpoint.pending_request_info_events)
         async with self.database.sessions.begin() as transaction:
             existing = await transaction.get(MafWorkflowCheckpointRecord, checkpoint.checkpoint_id)
@@ -113,7 +109,7 @@ class ProductWorkflowCheckpointStorage:
         if record.status not in {"available", "linked", "resuming", "resumed"}:
             raise ProductCheckpointConflict(f"Checkpoint状态不允许恢复: {record.status}")
         try:
-            decoded = decode_checkpoint_value(
+            decoded = decode_checkpoint_payload(
                 record.encoded_checkpoint_json,
                 allowed_types=self._allowed_types,
             )

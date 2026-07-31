@@ -17,12 +17,13 @@ from ..evidence.contracts import EvidenceError
 from ..evidence.result_commit import ResultCommitCoordinator
 from ..harness.contracts import HarnessError
 from .errors import http_problem, problem_responses
+from .identifiers import CommandId
 
 
 class CommitResultRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    command_id: str = Field(min_length=1, max_length=160)
+    command_id: CommandId
     claim_hash: str = Field(min_length=64, max_length=64)
     expected_claim_row_version: int = Field(ge=1)
     decision_record_id: str = Field(min_length=1, max_length=36)

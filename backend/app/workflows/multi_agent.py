@@ -15,7 +15,6 @@ from agent_framework import (
     handler,
     response_handler,
 )
-from agent_framework._workflows._request_info_mixin import RequestInfoMixin
 
 from ..agent_profiles import AgentProfileSnapshot
 from ..model_call_review import (
@@ -45,7 +44,7 @@ class AgentTurnRequest:
     origin_prompt: str
 
 
-class GovernedAgentExecutor(Executor, RequestInfoMixin):
+class GovernedAgentExecutor(Executor):
     """Agent-shaped node whose exact provider call must be approved first."""
 
     def __init__(

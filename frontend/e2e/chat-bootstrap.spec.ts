@@ -166,16 +166,13 @@ test("主工作区没有严重自动可访问性问题", async ({ page }, testIn
   expect(results.violations).toEqual([]);
 });
 
-test("手机主导航可以进入完整工作区并明确返回对话", async ({ page }, testInfo) => {
+test("手机主导航可以进入个人工作台并明确返回对话", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile-chromium", "仅验证手机信息架构");
 
   const mobileNav = page.getByRole("navigation", { name: "手机主导航" });
   await expect(mobileNav).toBeVisible();
-  await mobileNav.getByRole("button", { name: "资源" }).click();
-  await expect(page.getByRole("complementary", { name: "我的项目 工作台" })).toBeVisible();
-
-  await page.getByRole("navigation", { name: "工作台视图" }).getByText("知识").click();
-  await expect(page.getByRole("complementary", { name: "笔记与记忆 工作台" })).toBeVisible();
+  await mobileNav.getByRole("button", { name: "工作台" }).click();
+  await expect(page.getByRole("heading", { name: "我的工作台" })).toBeVisible();
 
   await mobileNav.getByRole("button", { name: "对话" }).click();
   await expect(page.getByRole("main")).toBeVisible();
@@ -220,11 +217,7 @@ test("Project可以只读连接Repository并在桌面和手机管理生命周期
 
   await page.reload();
   await expect(page.getByLabel("发送消息")).toBeEnabled({ timeout: 15_000 });
-  if (testInfo.project.name === "mobile-chromium") {
-    await page.getByRole("navigation", { name: "手机主导航" }).getByText("资源").click();
-  } else {
-    await page.getByRole("button", { name: "资源", exact: true }).click();
-  }
+  await openProjectManagement(page, testInfo.project.name);
 
   const workbench = page.getByRole("complementary", { name: "我的项目 工作台" });
   await expect(workbench).toBeVisible();
@@ -389,11 +382,7 @@ test("Repository来源在本轮Context中公开版本、采用原因并可按需
 
   await page.reload();
   await expect(page.getByLabel("发送消息")).toBeEnabled({ timeout: 15_000 });
-  if (testInfo.project.name === "mobile-chromium") {
-    await page.getByRole("navigation", { name: "手机主导航" }).getByText("资源").click();
-  } else {
-    await page.getByRole("button", { name: "资源", exact: true }).click();
-  }
+  await openProjectManagement(page, testInfo.project.name);
   const workbench = page.getByRole("complementary", { name: "我的项目 工作台" });
   await expect(workbench).toBeVisible();
   await workbench
@@ -439,6 +428,15 @@ test("断网时保留界面但禁止制造已发送假象", async ({ context, pa
   await page.reload();
   await expect(page.getByLabel("发送消息")).toHaveValue("离线时保留的草稿");
 });
+
+async function openProjectManagement(page: import("@playwright/test").Page, projectName: string) {
+  const navigation = page.getByRole("navigation", {
+    name: projectName === "mobile-chromium" ? "手机主导航" : "主导航",
+  });
+  await navigation.getByRole("button", { name: "工作台" }).click();
+  await expect(page.getByRole("heading", { name: "我的工作台" })).toBeVisible();
+  await page.getByRole("button", { name: "管理Project与资源" }).click();
+}
 
 test("localhost开发入口注册PWA壳", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium", "只执行一次PWA注册合同");

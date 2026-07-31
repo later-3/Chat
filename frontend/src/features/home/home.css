@@ -815,7 +815,7 @@ button.home-heat-cell[aria-pressed="true"] {
   .home-collection-card {
     padding: 15px;
   }
-  .home-section-heading p {
+  .home-section-heading:not(.home-section-heading--calendar) p {
     display: none;
   }
   .home-calendar-detail {

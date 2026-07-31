@@ -1,19 +1,39 @@
-/** 后端统一Problem Detail合同：稳定code、脱敏message、请求关联ID与可恢复标记。 */
-export interface ApiProblem {
-  code: string;
-  message: string;
-  request_id: string;
-  retryable: boolean;
-  details: Record<string, unknown> | null;
-}
-
 export type ApiRecoveryAction =
   | "refresh"
   | "retry"
   | "review"
   | "expired"
   | "authenticate"
+  | "forbidden"
+  | "go_back"
+  | "reconcile"
   | "contact_support";
+
+const RECOVERY_ACTIONS = new Set<ApiRecoveryAction>([
+  "refresh",
+  "retry",
+  "review",
+  "expired",
+  "authenticate",
+  "forbidden",
+  "go_back",
+  "reconcile",
+  "contact_support",
+]);
+
+function isRecoveryAction(value: unknown): value is ApiRecoveryAction {
+  return typeof value === "string" && RECOVERY_ACTIONS.has(value as ApiRecoveryAction);
+}
+
+/** 后端统一Problem Detail合同：稳定code、脱敏message、请求关联ID与可恢复标记。 */
+export interface ApiProblem {
+  code: string;
+  message: string;
+  request_id: string;
+  retryable: boolean;
+  recovery_action?: ApiRecoveryAction;
+  details: Record<string, unknown> | null;
+}
 
 function isApiProblem(value: unknown): value is ApiProblem {
   if (!value || typeof value !== "object") return false;
@@ -23,14 +43,17 @@ function isApiProblem(value: unknown): value is ApiProblem {
     typeof candidate.message === "string" &&
     typeof candidate.request_id === "string" &&
     typeof candidate.retryable === "boolean" &&
+    (candidate.recovery_action === undefined || isRecoveryAction(candidate.recovery_action)) &&
     (candidate.details === null ||
       (typeof candidate.details === "object" && !Array.isArray(candidate.details)))
   );
 }
 
-/** 状态码到恢复动作的映射：401/403重新认证、409刷新、410过期、422审查输入。 */
+/** 状态码到恢复动作的映射：401认证、403拒绝、409刷新、410过期、422审查输入。 */
 function recoveryAction(problem: ApiProblem, status: number): ApiRecoveryAction {
-  if (status === 401 || status === 403) return "authenticate";
+  if (isRecoveryAction(problem.recovery_action)) return problem.recovery_action;
+  if (status === 401) return "authenticate";
+  if (status === 403) return "forbidden";
   if (status === 409) return "refresh";
   if (status === 410) return "expired";
   if (status === 422) return "review";
@@ -77,6 +100,7 @@ function legacyProblem(payload: unknown, response: Response, fallback: string): 
     message,
     request_id: response.headers.get("x-request-id") ?? "unknown",
     retryable: [429, 502, 503, 504].includes(response.status),
+    recovery_action: undefined,
     details: null,
   };
 }

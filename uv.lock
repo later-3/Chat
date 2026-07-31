@@ -397,6 +397,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "agent-framework-ag-ui" },
+    { name = "agent-framework-core" },
     { name = "agent-framework-openai" },
     { name = "aiosqlite" },
     { name = "alembic" },
@@ -421,6 +422,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "agent-framework-ag-ui", specifier = "==1.0.0rc8" },
+    { name = "agent-framework-core", specifier = "==1.11.0" },
     { name = "agent-framework-openai", specifier = "==1.10.1" },
     { name = "aiosqlite", specifier = ">=0.21,<1" },
     { name = "alembic", specifier = ">=1.16,<2" },
