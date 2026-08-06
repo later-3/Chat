@@ -1,36 +1,46 @@
-# 工具临时目录与外部参考检出
-.pi/
-ref/
-
-.DS_Store
-.env
-backend/.env
-backend/config.json
-backend/config.json.tmp
-backend/backups/
-frontend/.env
-.venv/
-.venv-*/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.ruff_cache/
+# dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
 .coverage
 coverage.xml
 htmlcov/
+.turbo/
+.vite/
+
+# local runtime state
+.data/
 .artifacts/
 .test-artifacts/
-.tmp-*.png
+.pi/
+.workflow/
+.vercel/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
 
-backend/.data/
-backend/logs/
+# local configuration and credentials
+.env
+.env.*
+!.env.example
+*.local
 
-frontend/node_modules/
-frontend/dist/
-frontend/dev-dist/
-frontend/.vite/
-frontend/.test-dist/
-frontend/coverage/
+# tooling
+.DS_Store
+.idea/
+.vscode/
+.pnpm-store/
+playwright-report/
+test-results/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.tsbuildinfo
 
-prototypes/*/node_modules/
-prototypes/*/dist/
+# temporary files
+.tmp-*
+tmp/
+temp/
