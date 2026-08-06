@@ -3,6 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // 首屏渲染前恢复手动主题偏好，避免明暗闪烁；见 design-guidelines.md 2.5
+      try {
+        var t = localStorage.getItem("chat-theme");
+        if (t === "light" || t === "dark") {
+          document.documentElement.dataset.theme = t;
+        }
+      } catch {}
+    </script>
     <title>Chat</title>
   </head>
   <body>

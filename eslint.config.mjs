@@ -2,7 +2,14 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["**/node_modules/**", "**/dist/**", "**/.vite/**", "**/coverage/**"],
+    ignores: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.vite/**",
+      "**/coverage/**",
+      // 与.gitignore对齐：本地测试产物不参与lint
+      "**/.test-artifacts/**",
+    ],
   },
   ...tseslint.configs.recommended,
   {

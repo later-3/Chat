@@ -1,0 +1,35 @@
+export type Theme = "light" | "dark";
+
+const THEME_STORAGE_KEY = "chat-theme";
+
+/** 读取用户手动保存的主题偏好；未保存或非法值返回null。 */
+export function readStoredTheme(storage: Pick<Storage, "getItem">): Theme | null {
+  const value = storage.getItem(THEME_STORAGE_KEY);
+  return value === "light" || value === "dark" ? value : null;
+}
+
+/** 当前生效主题：手动偏好优先，否则跟随系统。 */
+export function resolveTheme(storage: Pick<Storage, "getItem">): Theme {
+  const stored = readStoredTheme(storage);
+  if (stored) {
+    return stored;
+  }
+  if (typeof window.matchMedia !== "function") {
+    return "light";
+  }
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+/** 应用主题到根元素并保存手动偏好。 */
+export function applyTheme(
+  theme: Theme,
+  root: Pick<HTMLElement, "dataset">,
+  storage: Pick<Storage, "setItem">,
+): void {
+  root.dataset.theme = theme;
+  storage.setItem(THEME_STORAGE_KEY, theme);
+}
+
+export function nextTheme(theme: Theme): Theme {
+  return theme === "light" ? "dark" : "light";
+}
