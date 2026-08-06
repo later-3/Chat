@@ -1,92 +1,74 @@
+import { EventSchemas, EventType, type AGUIEvent } from "@ag-ui/core";
 import { z } from "zod";
 import { productRunIdSchema, productSessionIdSchema, runAttemptIdSchema } from "./ids.js";
 
 /**
- * AG-UI兼容事件Payload（P0结构子集）。
+ * AG-UI兼容事件Payload。
  *
- * 与技术合同§7.3对齐：这里定义的是Chat Realtime Feed采用的AG-UI兼容语义
- * 的最小结构子集，用于固定Envelope形状和依赖方向。P1实现Runtime Journal与
- * pi事件归一化时将引入`@ag-ui/core`并把此联合类型与官方Schema对齐测试。
+ * 运行时校验直接使用官方`@ag-ui/core`的Zod Schema（版本证据清单固定版本），
+ * 保证字段级兼容：例如`timestamp`为可选epoch毫秒数字，`RUN_STARTED`/
+ * `RUN_FINISHED`携带必需的`threadId`与`runId`。
  *
- * 不变量：
- * - AG-UI事件只投影运行进度；Product Run终态只由服务端产品提交产生。
- * - Product资源变化通过`CUSTOM`事件发出失效提示，完整数据仍由Query读取。
+ * ID映射（不变量）：
+ * - Payload的`threadId`映射Product Session ID，`runId`映射Product Run ID。
+ * - Envelope上的`productSessionId`/`productRunId`是品牌类型权威身份；
+ *   Runtime Adapter（P1）负责断言两者一致，不引入第二套身份。
+ *
+ * 采用范围（技术合同§7.3）：
+ * - 采用：Run、Step、文本消息流、Tool Call/Result投影、Activity进度、
+ *   State/Message Snapshot、Interrupt相关与CUSTOM扩展事件。
+ * - 排除：`REASONING_*`/`THINKING_*`（隐藏推理不进入Trace与事件流）和
+ *   `RAW`（原始Provider事件透传不属于公开投影）。
  */
-const aguiBase = {
-  /** AG-UI事件类型名，例如`RUN_STARTED`。 */
-  type: z.string().min(1),
-  /** 透传字段，与AG-UI `rawEvent`对应；不保存模型隐藏推理。 */
-  timestamp: z.string().min(1).optional(),
-};
-
-export const runStartedPayloadSchema = z.object({
-  ...aguiBase,
-  type: z.literal("RUN_STARTED"),
-});
-
-export const runFinishedPayloadSchema = z.object({
-  ...aguiBase,
-  type: z.literal("RUN_FINISHED"),
-});
-
-export const runErrorPayloadSchema = z.object({
-  ...aguiBase,
-  type: z.literal("RUN_ERROR"),
-  message: z.string().min(1),
-  code: z.string().min(1).optional(),
-});
-
-export const stepStartedPayloadSchema = z.object({
-  ...aguiBase,
-  type: z.literal("STEP_STARTED"),
-  stepName: z.string().min(1),
-});
-
-export const stepFinishedPayloadSchema = z.object({
-  ...aguiBase,
-  type: z.literal("STEP_FINISHED"),
-  stepName: z.string().min(1),
-});
-
-export const textMessageStartPayloadSchema = z.object({
-  ...aguiBase,
-  type: z.literal("TEXT_MESSAGE_START"),
-  messageId: z.string().min(1),
-  role: z.literal("assistant"),
-});
-
-export const textMessageContentPayloadSchema = z.object({
-  ...aguiBase,
-  type: z.literal("TEXT_MESSAGE_CONTENT"),
-  messageId: z.string().min(1),
-  delta: z.string(),
-});
-
-export const textMessageEndPayloadSchema = z.object({
-  ...aguiBase,
-  type: z.literal("TEXT_MESSAGE_END"),
-  messageId: z.string().min(1),
-});
-
-/** Product资源失效提示等Chat自有扩展事件。 */
-export const customPayloadSchema = z.object({
-  ...aguiBase,
-  type: z.literal("CUSTOM"),
-  name: z.string().min(1),
-  value: z.unknown(),
-});
-
-export const agUiCompatibleEventSchema = z.discriminatedUnion("type", [
-  runStartedPayloadSchema,
-  runFinishedPayloadSchema,
-  runErrorPayloadSchema,
-  stepStartedPayloadSchema,
-  stepFinishedPayloadSchema,
-  textMessageStartPayloadSchema,
-  textMessageContentPayloadSchema,
-  textMessageEndPayloadSchema,
-  customPayloadSchema,
+const excludedEventTypes: ReadonlySet<string> = new Set<string>([
+  EventType.THINKING_START,
+  EventType.THINKING_END,
+  EventType.THINKING_TEXT_MESSAGE_START,
+  EventType.THINKING_TEXT_MESSAGE_CONTENT,
+  EventType.THINKING_TEXT_MESSAGE_END,
+  EventType.REASONING_START,
+  EventType.REASONING_MESSAGE_START,
+  EventType.REASONING_MESSAGE_CONTENT,
+  EventType.REASONING_MESSAGE_END,
+  EventType.REASONING_MESSAGE_CHUNK,
+  EventType.REASONING_END,
+  EventType.REASONING_ENCRYPTED_VALUE,
+  EventType.RAW,
 ]);
+
+export const adoptedEventTypes: readonly EventType[] = Object.values(EventType).filter(
+  (type) => !excludedEventTypes.has(type),
+);
+
+const adoptedTypeSet: ReadonlySet<string> = new Set<string>(adoptedEventTypes);
+
+type ExcludedEventType =
+  | EventType.THINKING_START
+  | EventType.THINKING_END
+  | EventType.THINKING_TEXT_MESSAGE_START
+  | EventType.THINKING_TEXT_MESSAGE_CONTENT
+  | EventType.THINKING_TEXT_MESSAGE_END
+  | EventType.REASONING_START
+  | EventType.REASONING_MESSAGE_START
+  | EventType.REASONING_MESSAGE_CONTENT
+  | EventType.REASONING_MESSAGE_END
+  | EventType.REASONING_MESSAGE_CHUNK
+  | EventType.REASONING_END
+  | EventType.REASONING_ENCRYPTED_VALUE
+  | EventType.RAW;
+
+export type AgUiCompatibleEvent = Exclude<AGUIEvent, { type: ExcludedEventType }>;
+
+/**
+ * 已采用AG-UI事件的运行时合同：官方Schema校验 + 采用范围过滤。
+ * 官方事件Schema为passthrough，允许Adapter附加投影字段。
+ */
+export const agUiCompatibleEventSchema = z.custom<AgUiCompatibleEvent>((value) => {
+  if (typeof value !== "object" || value === null) return false;
+  const type = (value as { type?: unknown }).type;
+  if (typeof type !== "string" || !adoptedTypeSet.has(type)) return false;
+  return EventSchemas.safeParse(value).success;
+}, "expected an adopted AG-UI event matching the official @ag-ui/core schema");
 
 /**
  * Chat Realtime Feed的公开事件Envelope。
@@ -95,8 +77,8 @@ export const agUiCompatibleEventSchema = z.discriminatedUnion("type", [
  * - `sequence`在单个Product Run中严格递增。
  * - 相同`eventId`重放必须内容一致。
  * - 浏览器发现缺口或同序号不同内容时停止应用Delta并重新Hydrate。
- * - Envelope只携带浏览器允许知道的身份；不含Workflow Run ID、
- *   Hook Token、Checkpoint ID或pi Session ID。
+ * - Envelope只携带浏览器允许知道的身份；strict模式拒绝Workflow Run ID、
+ *   Hook Token、Checkpoint ID或pi Session ID混入公开事件。
  */
 export const chatEventEnvelopeSchema = z
   .object({
@@ -109,8 +91,6 @@ export const chatEventEnvelopeSchema = z
     attemptId: runAttemptIdSchema.optional(),
     payload: agUiCompatibleEventSchema,
   })
-  // strict：拒绝Workflow Run ID、Hook Token等运行时私有身份混入公开Envelope。
   .strict();
 
-export type AgUiCompatibleEvent = z.infer<typeof agUiCompatibleEventSchema>;
 export type ChatEventEnvelope = z.infer<typeof chatEventEnvelopeSchema>;

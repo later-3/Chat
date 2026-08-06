@@ -5,13 +5,10 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
     }
   },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -19,7 +16,8 @@
   },
   "dependencies": {
     "@chat/application": "workspace:*",
-    "@chat/contracts": "workspace:*"
+    "@chat/contracts": "workspace:*",
+    "workflow": "4.8.0"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

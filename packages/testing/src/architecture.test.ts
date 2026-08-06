@@ -20,17 +20,21 @@ const rules: Record<
   string,
   { external: readonly string[]; internal: readonly string[]; forbidden?: readonly RegExp[] }
 > = {
-  "packages/contracts": { external: ["zod"], internal: [] },
+  "packages/contracts": { external: ["zod", "@ag-ui/core"], internal: [] },
   "packages/domain": { external: [], internal: [] },
   "packages/application": { external: [], internal: ["@chat/contracts", "@chat/domain"] },
   "packages/realtime": { external: [], internal: ["@chat/contracts"] },
   "packages/workflows": {
-    external: [],
+    external: ["workflow"],
     internal: ["@chat/contracts", "@chat/application"],
-    forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/, /^@ag-ui\//, /^pi-/],
+    forbidden: [/^react/, /^hono$/, /^@hono\//, /^@ag-ui\//, /^pi-/, /^@earendil-works\//],
   },
   "packages/pi-runtime": {
-    external: [],
+    external: [
+      "@earendil-works/pi-agent-core",
+      "@earendil-works/pi-ai",
+      "@earendil-works/pi-coding-agent",
+    ],
     internal: ["@chat/contracts"],
     forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/],
   },
