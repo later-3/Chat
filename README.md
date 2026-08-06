@@ -33,7 +33,9 @@ Product Session、Product Run、Workflow Run、Workflow Checkpoint、pi Runtime 
 
 ## 当前仓库状态
 
-当前分支是全新工程基线，只保存已经确认的产品边界、技术合同和实施计划。生产代码、Schema、迁移和依赖将在第一个实现工作包中按合同创建。
+P0工程与合同骨架已经完成并合并。仓库现在包含pnpm TypeScript Workspace、共享合同、React/Hono空应用、架构依赖测试、CI和版本证据；业务Schema、Product Store、Workflow/pi Adapter与第一条纵向链尚未实现。
+
+当前工作包是P1第一条Chat纵向链。进入编码前，先关闭pi冻结源码工件、P1 Product Store证明级别和测试运行合同三个入口决定。
 
 ## 文档入口
 

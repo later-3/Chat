@@ -13,6 +13,8 @@
 
 目标：建立可运行的TypeScript Workspace和依赖方向。
 
+状态：已完成并通过PR #1合并，合并提交`f1274c769bf97dca8834a5d42ff57d1883f01b02`。
+
 - 创建`apps/web`、`apps/api`和核心`packages/*`。
 - 配置pnpm Workspace、TypeScript strict、Lint、Format、Vitest和CI。
 - 建立共享ID、Problem Detail、Command、Query和Chat Event类型。
@@ -24,14 +26,33 @@
 
 目标：从用户发送一条消息到pi回答并恢复正式消息。
 
-- React提交Command。
-- Hono校验并创建Product Session、Interaction、Message和Product Run。
-- Vercel Workflow启动单次Run。
-- Workflow调用pi Agent Node，不开放外部副作用Tool。
-- Product Commit保存Assistant Message和Run终态。
-- Runtime Journal通过SSE/AG-UI兼容事件投影进度。
+入口决定，全部关闭后才能进入实现：
 
-完成门：刷新后从Product Store恢复历史；SSE断开不取消Run；重连不重复模型调用。
+1. pi工件：选择从冻结提交`10e99ae`生成可验证工件，或走合同变更更新冻结提交；只比较`0.82.1`版本号不成立。
+2. Product Store证明级别：决定P1使用可替换的内存Reference Adapter，还是同时冻结具体数据库与迁移工具；必须明确是否保证服务进程重启恢复。
+3. 测试运行合同：CI使用真实Workflow与真实pi Adapter、确定性Fake Model计数；私有Provider凭据只用于明确的补充Smoke，不进入仓库或默认CI。
+
+实现范围：
+
+1. Contracts：建立Send Message Command、Session/Message/Run Query、SSE Cursor和对应Problem Detail合同。
+2. Domain/Application：建立最小Product Session、Interaction、Message、Product Run及Send Message Coordinator；写命令支持`commandId`幂等和`expectedRevision`。
+3. Product Store：通过Port保存权威产品事实、Run映射和提交所需引用；具体Adapter遵守入口决定，不让Router或Workflow Step拥有事务。
+4. Workflow/pi：一个Product Run只启动一个Workflow Run；Workflow调用一个无Tool能力的pi Agent Node，pi私有身份不出后端。
+5. Product Commit：pi结果只是候选；校验后由Application提交Assistant Message和Product Run终态。
+6. Realtime：Runtime Journal分配有序sequence/cursor，Hono只暴露一条SSE Feed并把pi事件归一为已采用的AG-UI事件。
+7. Web：React提交Command、投影活动事件，并通过Query恢复正式Message和Run；浏览器缓存不推断成功。
+
+完成门：
+
+1. 同一`commandId`重复提交只创建一个Product Run、一个Workflow Run映射和一次pi/Model调用。
+2. 浏览器刷新后正式历史来自Product Store Query，不来自TanStack Query、AG-UI Reducer或本地缓存。
+3. SSE断开不取消Run；Cursor重连按序重放，不重复Workflow或pi/Model调用。
+4. `RUN_FINISHED`和pi成功只结束Agent运行段；Product Run只在Product Commit通过后显示成功。
+5. 公开响应和事件不泄漏Workflow Run ID、Hook Token、Checkpoint ID或pi Runtime Session ID。
+6. 校验、Workflow、pi或Product Commit失败都不产生假Assistant Message或假成功。
+7. 合同、状态机、幂等、真实Workflow/pi Adapter、SSE恢复和Playwright场景在CI通过。
+
+P1不保证：服务进程退出后的持久恢复（除非入口决定选择真实持久Store）、HITL、外部副作用Tool、Worker接管、Checkpoint恢复、完整Workflow编辑器、Memory和业务项目管理。
 
 ### P2 HITL纵向链
 
@@ -109,4 +130,6 @@
 
 ## 3. 当前工作包
 
-当前只执行P0。P0完成并审核前，不提前建立业务Schema、Workflow编辑器、Memory或外部Tool。
+P0已完成。当前只制定并执行P1第一条Chat纵向链。
+
+P1入口决定关闭前，只允许做证据核验、合同细化和无偏向的Spike；不安装Workflow/pi运行时依赖，不创建会反向冻结未决Store或pi工件方案的业务Schema。P1完成并审核前，不提前实现HITL、外部Tool、Workflow编辑器、Memory、语音、日历或Canvas。

@@ -8,9 +8,9 @@ Chat 是独立开发、独立运行、独立运营并持续演进的完整产品
 
 ## 2. 当前阶段
 
-前端、后端、实时交互、Workflow 与 Agent Runtime 技术基线已经冻结。仓库已重置为全新基线，当前没有生产代码、Schema、迁移或运行配置。
+前端、后端、实时交互、Workflow 与 Agent Runtime 技术基线已经冻结。P0工程与合同骨架已经合并：仓库已有TypeScript Workspace、共享合同、React/Hono空应用、架构测试、CI和版本证据，但仍没有业务Schema、Product Store、Workflow Definition或pi Adapter实现。
 
-唯一下一工作包是：建立 TypeScript Workspace、共享合同包、React Web App、Hono API App，以及第一条不含外部副作用的端到端纵向链。
+唯一下一工作包是P1第一条Chat纵向链。P1编码前必须先关闭pi冻结源码的可验证工件方案、P1 Product Store证明级别和测试运行合同三个入口决定。
 
 当前事实以[PROJECT_STATE.md](./PROJECT_STATE.md)为准，技术边界以[技术合同](./docs/architecture/technology-contract.md)为准。
 

@@ -6,9 +6,9 @@
 
 1. 产品定义和完整目标范围已固定。
 2. 前端、后端、实时交互、Workflow和Agent Runtime技术选型已批准并写入合同。
-3. 仓库已重置为全新基线；当前没有生产代码、依赖锁、Schema或迁移。
+3. P0工程与合同骨架已完成并合并；仓库已有Workspace、共享合同、Web/API空应用、测试、CI和依赖锁，但没有业务Schema、Product Store、Workflow或pi Adapter实现。
 4. 当前分支为`codex/chat-workflow-foundation`。
-5. 唯一下一工作包是P0工程与合同骨架。
+5. 唯一下一工作包是P1第一条Chat纵向链；3个入口决定尚未关闭。
 
 ## 2. 新 Session 读取顺序
 
@@ -34,15 +34,13 @@ pi-agent-core + pi-ai + pi-coding-agent
 
 ## 4. 唯一下一工作包
 
-P0必须交付：
+P1必须先关闭：
 
-1. pnpm Workspace与TypeScript strict配置。
-2. `apps/web`和`apps/api`最小可运行入口。
-3. `packages/contracts/domain/application/realtime/workflows/pi-runtime/testing`边界。
-4. Product ID、Command、Problem Detail和Chat Event Envelope的第一版Schema。
-5. 架构依赖测试、单元测试、构建和CI。
+1. 冻结pi源码`10e99ae`的可验证工件方案。
+2. P1 Product Store使用内存Reference Adapter还是冻结真实数据库，以及对应保证范围。
+3. 真实Workflow/pi Adapter与确定性Fake Model的CI合同，及私有Provider Smoke边界。
 
-P0不创建业务数据库Schema，不实现真实Workflow或pi调用。
+入口决定关闭后，P1交付Send Message Command、最小产品对象与Coordinator、一个Workflow/pi节点、Product Commit、Runtime Journal/SSE和React恢复链。完成门是重复命令不重复调用、刷新从Product Store恢复、SSE重连不重复调用、私有Runtime ID不泄漏、失败不产生假消息或假成功。
 
 ## 5. 禁止事项
 
@@ -50,14 +48,15 @@ P0不创建业务数据库Schema，不实现真实Workflow或pi调用。
 2. 不让浏览器直接连接Vercel Workflow或pi。
 3. 不并行建立多套实时事件协议。
 4. 不把Workflow Run、Checkpoint或pi Session当成Product Session/Product Run。
-5. 不在P0顺手实现Memory、Workflow编辑器、外部Tool、语音、日历或Canvas。
+5. 不在P1顺手实现HITL、Memory、Workflow编辑器、外部Tool、语音、日历或Canvas。
 6. 不读取、输出或提交私有配置、数据库和运行数据。
+7. P1入口决定关闭前，不安装Workflow/pi运行时依赖，不创建会冻结未决方案的业务Schema。
 
 ## 6. 可复制续接指令
 
 ```text
 继续Chat项目。按AGENTS.md顺序读取治理文件，再读取
 docs/project-session-handoff.md、docs/architecture/technology-contract.md和
-docs/architecture/system-boundaries.md。当前是全新TypeScript基线，唯一下一工作包是P0工程与合同骨架。
-不要引入合同之外的实现或方案，不要提前做业务Schema、Workflow实现、Memory或外部Tool。
+docs/architecture/system-boundaries.md。P0已经完成并合并，唯一下一工作包是P1第一条Chat纵向链。
+先关闭pi工件、Product Store证明级别和测试运行合同3个入口决定；不要提前实现HITL、外部Tool、Memory或Workflow编辑器。
 ```
