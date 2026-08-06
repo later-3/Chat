@@ -16,8 +16,7 @@
   },
   "dependencies": {
     "@chat/application": "workspace:*",
-    "@chat/contracts": "workspace:*",
-    "workflow": "4.8.0"
+    "@chat/contracts": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

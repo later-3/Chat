@@ -16,15 +16,11 @@
 
 ## 2. 已锁定依赖
 
-冻结技术栈的核心运行时依赖使用精确版本固定（无caret），升级必须走合同测试门。
+P0只安装实际使用的依赖；未实现的Workflow/pi运行时依赖不在P0锁文件（见§4的版本记录）。
 
 | 依赖 | 版本 | 许可证 | 用途 | 所在边界 | 退出/替换方式 |
 |---|---|---|---|---|---|
-| @ag-ui/core | 0.0.57 | Apache-2.0 | Agent事件官方Zod Schema；`agUiCompatibleEventSchema`直接委托官方`EventSchemas`校验 | packages/contracts | 冻结技术栈；升级前必须重跑事件合同测试（AG-UI事件、Interrupt、序列化） |
-| workflow（Vercel Workflow） | 4.8.0 | MIT | 耐久Step、Hook、Checkpoint（P1起实现） | packages/workflows | 冻结技术栈；升级前重跑Hook/Checkpoint/重放合同测试 |
-| @earendil-works/pi-agent-core | 0.82.1 | MIT | Agent loop与事件（P1起实现） | packages/pi-runtime | 固定源码`/Users/xulater/Code/opc-os/pi`提交`10e99ae9914cd34f622633fac42f9a90714e9cf4`（该提交即0.82.1）；升级前重跑pi事件归一化合同测试 |
-| @earendil-works/pi-ai | 0.82.1 | MIT | Model与Provider抽象（P1起实现） | packages/pi-runtime | 同上 |
-| @earendil-works/pi-coding-agent | 0.82.1 | MIT | 受治理编码执行能力（P5起实现） | packages/pi-runtime | 同上 |
+| @ag-ui/core | 0.0.57 | MIT | Agent事件官方Zod Schema；`agUiCompatibleEventSchema`直接委托官方`EventSchemas`校验 | packages/contracts | 冻结技术栈；升级前必须重跑事件合同测试（AG-UI事件、Interrupt、序列化）。注意：其package.json未填写license字段，许可证以其仓库LICENSE文件（MIT）为准 |
 | react / react-dom | 19.2.8 | MIT | Web交互面 | apps/web | 冻结技术栈；替换需重新批准前端选型 |
 | vite | 8.2.0 | MIT | Web构建与dev server | apps/web | 同上 |
 | @vitejs/plugin-react | 6.0.5 | MIT | React编译 | apps/web构建期 | 随Vite升级门处理 |
@@ -49,7 +45,46 @@
 - `pnpm build`仍对每个包执行tsc/vite构建，作为编译与产出验证门。
 - API生产启动当前为`tsx src/index.ts`；生产打包方式属于未决定的部署拓扑，不提前冻结。
 
-## 4. 合同要求但P0尚未引入
+## 4. 已冻结选型、P0记录版本但不安装的运行时依赖
+
+以下属于P1+才使用的平台运行时。P0只记录可验证的版本证据，**不安装**，
+避免未使用代码进入生产依赖面与审计面。
+
+### 4.1 Vercel Workflow
+
+| 项 | 值 |
+|---|---|
+| npm包 | `workflow@4.8.0` |
+| 许可证 | Apache-2.0 |
+| 源码仓库 | `github.com/vercel/workflow` |
+| 源码提交 | `328653a7a265d62777e8bc3956ffd60650d8a356`（tag `workflow@4.8.0`，经GitHub API核验） |
+| 引入时机 | P1第一条纵向链，进入`packages/workflows`依赖 |
+| 升级门 | 重跑Hook、Checkpoint、重放合同测试 |
+
+### 4.2 pi（Agent Runtime）
+
+冻结合同钉住源码提交`10e99ae9914cd34f622633fac42f9a90714e9cf4`，该提交的
+`packages/{agent,ai,coding-agent}/package.json`均为`@earendil-works/*@0.82.1`（MIT）。
+
+但已核验：**npm上的`@earendil-works/pi-agent-core@0.82.1`发布自`b4f293684bba718d59cc1157679bcf6157b3a7f5`，
+与冻结提交`10e99ae`存在75个文件差异，不能视为同一工件。**
+
+因此P1引入pi前必须先决定工件方案，候选：
+
+1. 从冻结提交`10e99ae`自行构建并以可验证方式发布（如workspace file:/link:协议或私有registry），保留构建与哈希证据。
+2. 重新评估并将冻结提交更新到与npm发布一致的提交，走合同变更流程。
+
+该决定属于合同变更，不在P0范围。记录：
+
+| 项 | 值 |
+|---|---|
+| 冻结源码 | `/Users/xulater/Code/opc-os/pi`@`10e99ae9914cd34f622633fac42f9a90714e9cf4` |
+| 冻结提交处版本 | `@earendil-works/pi-agent-core`/`pi-ai`/`pi-coding-agent` 0.82.1（MIT） |
+| npm同版本号工件 | 发布自`b4f293684bba718d59cc1157679bcf6157b3a7f5`，与冻结提交差75个文件；`engines: node>=22.19.0` |
+| 引入时机 | P1，且仅在工件方案决定之后 |
+| 升级门 | 重跑pi事件归一化、Tool与恢复合同测试 |
+
+### 4.3 其他待引入
 
 | 依赖 | 引入时机 | 版本来源 |
 |---|---|---|
@@ -57,10 +92,11 @@
 
 ## 5. 已验证的P0完成门
 
-1. 干净检出可启动：`/tmp/chat-clean`无dist副本，`pnpm install`后：
+1. 干净检出可启动：无dist副本`pnpm install`后：
    - `apps/api` `pnpm dev`与`pnpm start`均启动，`/api/healthz`返回合同形状；
    - `apps/web` `pnpm dev`启动，Vite直接转换`@chat/contracts`源码。
 2. 构建通过：`pnpm build`（全部包tsc/vite构建成功）。
 3. 测试通过：24个测试（合同Schema与AG-UI官方对齐、Domain状态机、API路由、Web渲染、架构依赖方向）。
 4. 合同包被Web/API共同使用：`serviceStatusSchema`、`problemDetailSchema`两端共享。
 5. 依赖方向由`packages/testing`架构测试固定，CI执行。
+6. `pnpm audit --prod`无已知漏洞（生产依赖仅保留实际使用项）。

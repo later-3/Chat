@@ -25,18 +25,22 @@ const rules: Record<
   "packages/application": { external: [], internal: ["@chat/contracts", "@chat/domain"] },
   "packages/realtime": { external: [], internal: ["@chat/contracts"] },
   "packages/workflows": {
-    external: ["workflow"],
+    external: [],
     internal: ["@chat/contracts", "@chat/application"],
-    forbidden: [/^react/, /^hono$/, /^@hono\//, /^@ag-ui\//, /^pi-/, /^@earendil-works\//],
+    forbidden: [
+      /^react/,
+      /^hono$/,
+      /^@hono\//,
+      /^workflow$/,
+      /^@ag-ui\//,
+      /^pi-/,
+      /^@earendil-works\//,
+    ],
   },
   "packages/pi-runtime": {
-    external: [
-      "@earendil-works/pi-agent-core",
-      "@earendil-works/pi-ai",
-      "@earendil-works/pi-coding-agent",
-    ],
+    external: [],
     internal: ["@chat/contracts"],
-    forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/],
+    forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@earendil-works\//],
   },
   "apps/web": {
     external: ["react", "react-dom", "@tanstack/react-query"],
