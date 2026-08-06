@@ -29,16 +29,15 @@
 
 ## 3. 当前阶段
 
-当前状态为 `工程骨架和真实模型纵向回合已完成，阶段1收尾中`：
+当前状态为 `TypeScript全栈与pi-agent目标方向已冻结，pi + pi-web双轨完整掌握材料及Workflow/HITL/Checkpoint源码事实研究已完成；Chat承载方案D1—D8待用户审核，现有MAF实现作为迁移参照保留`：
 
 1. 产品问题、独立产品身份、核心目标和完整闭环已经形成审核基线。
-2. 后端Agent框架确认为 Microsoft Agent Framework（MAF）。
-3. 前后端Agent交互协议确认为 AG-UI。
-4. 前端确认为React 19、TypeScript、Vite、AG-UI Client、自研UI、Tailwind CSS、Radix UI、Lucide React和仅管理页面状态的Zustand。
-5. MAF运行状态和产品领域状态分开持久化；浏览器只保存交互投影。
-6. 2026-07-21用户已批准上述技术路线；独立Git、前端、后端、依赖、测试和浏览器验证入口已经建立。
-7. 无密钥时的确定性Bootstrap Agent只用于验证MAF与AG-UI链路；2026-07-21已经使用项目独立配置完成1次真实模型AG-UI回合。
-8. 项目运行与模型配置由用户维护在`backend/config.json`，该文件不得被读取到输出、文档或Git；仓库只提交脱敏的`backend/config.example.json`。`backend/.env`仅保留为本次迁移备份，应用不得继续读取；仍不得迁移旧数据库或历史会话。
+2. 2026-08-05用户批准目标系统改为TypeScript全栈，并以`pi-agent-core`作为Agent核心基座。
+3. 具体前端框架、HTTP服务框架、实时协议、Workflow/HITL/Checkpoint实现、Store与部署拓扑仍待研究和用户审核；2026-08-06用户已明确从pi源码事实进入Chat架构方案审核，当前审核材料是[pi承载Chat Workflow/HITL/Checkpoint架构候选](./docs/pi-workflow-hitl-checkpoint-architecture.md)D1—D8，不进入实现。
+4. 现有Python、FastAPI、MAF、AG-UI和React/Vite代码已经形成大量产品语义与故障验证，冻结为迁移行为参照；不得把“目标替换”误写成可以无证据删除现有实现。
+5. 产品领域状态继续与任何pi Session、Agent消息、运行事件或前端状态分开拥有；浏览器只保存交互投影。
+6. [pi技术基线研究与重建决策计划](./docs/pi-native-replatform-plan.md)中的RP-01.0与RP-01.1已纳入`pi + pi-web`完整掌握成果；原RP-01.2—RP-01.6不再作为逐卡停顿顺序。上一轮越过源码事实研究的D1—D8已撤回；`native/partial/design-only/missing`证据矩阵完成后，2026-08-06已按用户要求重新从源码事实与pi设计哲学推导4种总体路线和新D1—D8。用户批准新D1—D8前不新增目标依赖、Schema、迁移或生产目录，也不提前进入Memory接入或实现。
+7. 现有运行配置继续由用户维护在`backend/config.json`，该文件不得被读取到输出、文档或Git；目标TypeScript配置合同尚未批准，迁移前不得复制真实密钥或Base URL。
 
 当前事实以 [PROJECT_STATE.md](./PROJECT_STATE.md) 为准。
 
@@ -51,6 +50,7 @@
 | `PROJECT_CONTEXT.md` | 稳定的产品定义、问题、目标、边界和核心模型 |
 | `PROJECT_PLAN.md` | 分阶段路线、验收门与计划状态 |
 | `PROJECT_STATE.md` | 当前时点已经确认、完成、阻塞和待审核的事实 |
+| `docs/project-session-handoff.md` | 一般项目跨Session续接入口、当前审核门与新Session启动协议 |
 | `概念空间/00-索引.md` | Chat共同语言、概念边界、别名和反例的发现入口 |
 | `README.md` | 项目入口、简要定位和使用导航 |
 
@@ -67,6 +67,14 @@
 5. `PROJECT_PLAN.md`。
 6. 从`概念空间/00-索引.md`按需读取与当前任务直接相关的概念簇；没有高风险概念时不通读全部资产。
 7. 与当前任务直接相关的设计、研究和源码。
+
+当用户说“继续Chat项目”“继续当前计划”“现在到哪了”或在新Session中要求恢复本项目时，完成上述读取后必须进入
+[Chat项目跨Session续接入口](./docs/project-session-handoff.md)，以其中记录的当前审核门和唯一下一步为准。
+不得仅凭旧聊天摘要推断项目阶段，也不得越过尚未获得用户批准的审核门。
+
+当用户说“继续工作台参考界面”“继续前端交互设计”或“继续90%的Chat系统交互设计”时，完成上述读取后必须先进入
+[Chat 90%交互设计跨Session续接入口](./docs/chat-interaction-design-handoff.md)，从其中记录的第一个未完成模块继续。
+不得依赖旧聊天恢复任务，不得重做已批准模块，也不得在一个AI开发协作Session中无边界追加后续模块。
 
 即使只是回答问题、上下文中似乎已经包含这些内容，也不能跳过。上下文压缩、任务切换或用户纠正后必须重新读取。用户指出会重复伤害项目的错误时，应先把它转化为`PROJECT_LESSONS.md`中的可执行反例和检查项，再继续方案工作。
 
@@ -95,10 +103,10 @@
 
 1. 前端负责交互和后端状态投影，不拥有权威业务状态。
 2. 后端应用层负责流程编排、权限门、状态转换和失败语义。
-3. MAF负责Agent、Session、Context、Tool、Workflow和Human-in-the-loop等运行时语义；产品领域对象不能被压缩成框架Session或一段Prompt。
-4. AG-UI是Agent执行事件、流式消息、工具调用、共享状态与interrupt/resume的前后端协议边界；不得另建一套与其竞争的核心Agent事件协议。
-5. 必须遵守[项目上下文中的四对象边界](./PROJECT_CONTEXT.md#71-四个必须区分的对象)：Product Session、MAF AgentSession/Workflow Checkpoint、AG-UI Thread和Agent Run不得混用；即使ID暂时同值，也不能合并职责或用作授权。
-6. REST管理产品资源，AG-UI管理一次Agent Run的实时交互，Product DB保存权威产品事实，MAF管理Agent运行时语义；AG-UI Snapshot和浏览器状态都不能成为产品事实源。
+3. `pi-agent-core`负责目标系统中的Agent loop、模型、Tool、Session和运行事件能力；它不自动拥有Product Session、Project/Work、Approval、Accepted Memory、Evidence或产品完成事实。
+4. 目标前后端实时协议尚未冻结。AG-UI是现有实现的行为基线；选择保留、适配或替换它时，必须证明流式消息、Tool事件、中断/恢复、游标重连和前端投影没有退化，且不得形成两套竞争协议。
+5. 必须区分Product Session、pi Runtime Session、前端实时Thread/Connection、Workflow Checkpoint、Product Run和Run Attempt；即使ID暂时同值，也不能合并职责或用作授权。
+6. 产品资源、实时Run交互、Product DB、pi运行状态和浏览器投影必须保持不同所有权；具体REST/协议/Store实现待总体架构审核，任何Runtime Snapshot都不能成为产品事实源。
 7. Chat通过明确合同与OPC-OS Chat或其他外部系统互操作；集成不能形成双重事实源，也不能让外部系统身份反向缩小本项目的产品责任。
 8. Runtime、模型、工具、记忆和存储必须可替换，不能散落在UI或路由代码中。
 9. 外部调用必须有超时、结构校验、错误脱敏、幂等或明确的重复执行语义。
@@ -108,7 +116,7 @@
 
 ## 7. 代码与目录规则
 
-当前目录职责：
+当前MAF实现目录职责；目标TypeScript目录必须等技术基线与总体架构获批后再定义：
 
 | 目录 | 职责 |
 |---|---|
@@ -122,7 +130,7 @@
 1. 前端交互层。
 2. HTTP或流式协议层。
 3. 产品应用与领域层。
-4. MAF Agent和工作流层。
+4. Agent Runtime和Workflow层。
 5. 存储与外部Runtime适配层。
 6. 测试、文档和运行配置。
 
@@ -151,21 +159,21 @@
 
 ## 8. 源码查询与参考项目规则
 
-开发本项目时，禁止只凭模型记忆猜测MAF API或Agent产品架构。以下本地仓库是强制参考源：
+开发本项目时，禁止只凭模型记忆猜测pi API、现有MAF行为或Agent产品架构。以下本地仓库是强制参考源：
 
 | 参考源 | 路径 | 主要用途 |
 |---|---|---|
-| Microsoft Agent Framework源码 | `/Users/xulater/Code/opc-os/agent-framework` | 查询MAF Agent、Session、Context、Workflow、Tool、Provider、AG-UI和存储的真实API、实现与测试 |
+| Microsoft Agent Framework源码 | `/Users/xulater/Code/opc-os/agent-framework` | 解释现有实现、固定迁移行为预言机以及核对MAF时期的Session、Workflow、HITL、Checkpoint和AG-UI语义；不再决定目标Runtime |
 | nanobot | `/Users/xulater/Code/opc-os/nanobot` | 参考小型Agent loop、Provider、Channel、MessageBus、Session、Memory、Tool和长期运行边界 |
-| pi | `/Users/xulater/Code/opc-os/pi` | 参考成熟编码Agent的模型抽象、工具循环、事件流、会话、扩展机制、交互体验与工程质量规则 |
+| pi | `/Users/xulater/Code/opc-os/pi` | 目标Agent核心基座；研究模型抽象、Agent loop、Tool、事件、Session、Harness、Server、扩展、编码执行和工程规则 |
 | QwenPaw | `/Users/xulater/Code/reference-agent-sources/QwenPaw` | 参考Web Console、外部消息Channel Adapter、统一队列、Workspace/Runtime、多Agent、治理和插件的真实入口拓扑 |
 
 执行规则：
 
-1. 涉及MAF API、行为、生命周期或兼容性时，先查询本地MAF源码、类型、测试和示例，不得靠包名或历史记忆猜接口。
-2. 当前项目实际运行版本以`uv.lock`和`.venv`为准；本地MAF源码可能领先或落后。结论必须同时记录“安装版本”和“参考源码提交”，存在差异时以当前安装版本的实测行为决定本项目代码。
-3. MAF查询优先级是：匹配版本的源码与测试 > 官方文档 > `agent_knowledge`笔记 > 模型记忆。
-4. 设计或修改Agent loop、Provider、Channel、Session、Memory、Tool、事件流、扩展点、进程管理和长期运行能力时，必须检索nanobot、pi与QwenPaw中对应实现，说明可借鉴原则、适用条件和不采用部分；入口拓扑必须检查QwenPaw的Web Console与具体Channel链路。
+1. 涉及目标Agent Runtime时，先查询固定提交的pi源码、类型、测试、示例和本地实跑，不得靠README、Stars或模型记忆猜接口。
+2. pi结论必须记录目标提交、包版本、工作树状态和验证命令；本地源码、发布包和`pi-web`依赖版本不一致时分别记录，不能互相背书。
+3. pi查询优先级是：固定提交源码与测试 > 对应版本官方文档 > `agent_knowledge`笔记 > 模型记忆。涉及现有MAF迁移语义时仍以当前安装版合同测试和现有实跑为准。
+4. 设计Agent loop、Provider、Channel、Session、Memory、Tool、事件流、扩展点、进程管理和长期运行能力时，先研究pi；只有pi未覆盖的明确问题才按本计划读取nanobot、QwenPaw、LibreChat或申请新增候选，不能再次泛读全部参考集。
 5. 参考不等于复制。不得机械照搬目录、状态模型或临时兼容代码；必须结合本项目6个问题、产品闭环和MAF/AG-UI边界做取舍。
 6. 进入任一参考仓库阅读或验证前，先读取该仓库及目标子目录的`AGENTS.md`；不得修改这些仓库，除非用户明确授权对应修改。
 7. 形成重要架构结论时，应在代码、测试或文档中留下可定位的本地路径、版本或提交证据，不能只写“参考了某项目”。
@@ -186,14 +194,15 @@
 
 ### 8.2 Session及其他核心能力的设计顺序
 
-设计Session持久化、上下文、记忆、工具、工作流等核心能力时，必须严格按以下顺序执行，不得并行混写结论或先用参考项目反推MAF：
+设计Session持久化、上下文、记忆、工具、工作流等核心能力时，必须严格按以下顺序执行：
 
-1. **先研究MAF**：阅读当前安装版本、MAF官方文档、本地源码、类型、测试和示例，先单独形成“MAF原生推荐什么、已经支持什么、不负责什么、版本限制是什么”的事实结论。
-2. **再研究pi、nanobot与QwenPaw**：在MAF结论固定后，按问题读取对应源码、测试和文档；Session/Runner重点检查pi与nanobot，Web/Channel/Workspace入口重点检查QwenPaw，分别提炼状态所有权、数据结构、写入时机、恢复方式、失败处理和设计代价。
-3. **最后形成项目方案**：把MAF能力作为技术基线，把pi、nanobot与QwenPaw作为产品和工程参考，再结合本项目产品问题形成候选设计；必须列出采用、改造、不采用及原因。
+1. **先研究pi**：按[pi技术基线研究与重建决策计划](./docs/pi-native-replatform-plan.md)固定提交，分别核对`pi-ai`、`pi-agent-core`、`pi-coding-agent`、`pi-server`和`pi-web`，形成“原生提供、需要封装、明确缺失、版本风险”的事实结论。
+2. **再对照现有Chat行为**：把当前Python/MAF实现、数据库、合同测试、浏览器场景和故障语义作为迁移预言机，判断目标方案是否保留产品保证；MAF只为现有行为背书，不再决定目标模块。
+3. **有缺口才读取其他参考**：只针对pi未覆盖的Session恢复、Web/Channel、Workflow/HITL、Worker或产品持久化问题有界读取nanobot、QwenPaw、LibreChat；新增Mastra等候选必须先把限定问题、收益和研究成本提交用户审核。
+4. **最后形成项目方案**：结合Chat的6个问题、完整闭环、产品不变量和pi事实形成候选设计，逐项列出采用、改造、补建、不采用及原因。
 4. **先审核、后实现**：候选设计必须明确标记为“待用户审核”。用户批准前，不得创建正式Schema、迁移、持久化服务或兼容层，也不得把候选对象写成已经冻结的项目事实。
-5. **证据分层**：设计文档必须分别标记MAF文档事实、MAF源码或测试事实、参考项目事实、本项目推断和待审核决定，避免把不同证据等级混为一体。
-6. **知识同步**：研究中发现可复用的MAF使用知识时，同步检查`agent_knowledge`；只有经过版本核对和源码或运行验证的内容才可写入。
+5. **证据分层**：设计文档必须分别标记pi源码/测试/实跑事实、现有Chat/MAF行为事实、其他参考项目事实、本项目推断和待审核决定。
+6. **知识同步**：研究中形成可复用的pi知识时同步检查并更新`agent_knowledge/project-studies/pi/`；只有经过版本核对和源码或运行验证的内容才可写入。
 7. **审核材料自包含**：不得假设用户已经掌握框架背景或参考项目实现。提交决策点前，必须先说明问题背景、当前项目事实、源码证据、各方案能解决与不能解决的内容、推导链和代价；不能只给结论或让用户自行反查“参考了什么”。
 8. **决策卡完整性**：每个待审核决定必须逐项写明决策原因、现有参考源是否真正涉及、全部可行选择、各自优缺点、当前建议、建议原因、信心与未验证项。参考源未涉及时必须明确写“未涉及”；可以提出新的开源候选，但用户批准加入前只能做相关性筛选，不得先研究后倒逼用户接受，也不得把候选写成既有证据。
 
@@ -213,23 +222,23 @@ Session工作必须先完成总体目标，再讨论某一阶段的持久化实�
 
 涉及总体架构、模块边界、状态所有权或部署拆分时，必须遵守：
 
-1. 先从本项目6个问题、完整产品闭环和完整用户场景推导目标保证，再检查MAF、pi、nanobot、QwenPaw和已批准外部参考的覆盖；不得按参考仓库目录反向拼装架构。
-2. 研究过程必须记录固定版本、检索问题、源码/测试路径、得到的结论和未覆盖项；可复用的MAF与外部项目知识同步到`agent_knowledge`，不能只留在当前对话。
+1. 先从本项目6个问题、完整产品闭环和完整用户场景推导目标保证，再检查pi、现有MAF行为预言机及按缺口批准的参考覆盖；不得按pi仓库目录反向拼装架构。
+2. 研究过程必须记录固定版本、检索问题、源码/测试路径、运行证据、得到的结论和未覆盖项；可复用的pi与外部项目知识同步到`agent_knowledge`，不能只留在当前对话。
 3. 总体架构候选统一维护在[总体架构候选](./docs/overall-architecture-proposal.md)，证据与推导维护在[总体架构研究](./docs/overall-architecture-research.md)。两者都必须明确“待用户审核”，不能提前写成已批准事实。
 4. 模块划分必须逐项说明用户价值、负责与不负责、内部组件、状态所有者、入站与出站合同、依赖方向、不变量、失败恢复、技术落点、测试要求和能够满足的用户场景；禁止用模块名清单或“分层解耦”一类口号代替设计。
-5. 参考项目只对其真实覆盖范围背书。Intent、Work、Approval、Evidence等若主要来自本项目需求，必须标记为项目推导；不得借MAF或参考项目名义包装成框架原生能力。
+5. 参考项目只对其真实覆盖范围背书。Intent、Work、Approval、Evidence等若主要来自本项目需求，必须标记为项目推导；不得借pi或参考项目名义包装成框架原生能力。
 6. 用户批准总体架构前，不按候选批量创建正式目录、Schema、Repository、Worker或兼容层。批准后，各模块仍须按计划进入自己的详细设计审核，不能把总体架构批准外推为全部实现细节获批。
 7. 后续详细设计如果发现参考知识不足，只能先提交新增参考项目的限定主题、预期收益、重叠和研究成本给用户决定；未批准前不得自动扩大正式参考集。
 8. 总体架构必须先完整定义目标系统，再在文档最后拆交付阶段。交付阶段只决定启用顺序和验收范围，不得以“初期、第一版、早期、当前规模”为理由删减目标模块、场景或质量保证。
 9. 产品身份与外部集成角色必须分开。本项目始终按独立完整Chat产品设计；OPC-OS Chat只作为外部集成关系，不得画成决定本项目边界的上位层级。
 10. 每个核心场景必须穿透到前端组件、后端模块、运行时、合同、权威状态、失败分支、恢复路径和用户可见结果。场景不能只写概念性流程。
 11. 总体架构提交审核前，必须按`PROJECT_LESSONS.md`的4类读者标准自检：架构师能继续出方案，项目经理能排计划，开发能实施，产品负责人能审查依据与场景覆盖。
-12. 总体架构必须提供面向第一次接触项目读者的对象级导读：分别展开前端View、网络DTO、内部Envelope、产品领域对象和MAF/Worker运行对象；说明每个核心对象的创建者、所有者、存储、生命周期和可见性，并把Agent展开为内部部件及外部控制边界。模块名和箭头不能替代这份心智模型。
-13. 新手导读必须从用户一次具体点击开始，按时间顺序穿透前端函数、REST/AG-UI入口、应用协调、数据库读写、MAF Session/Workflow、Tool治理、Provider请求、响应解码、产品提交和React渲染；每一步说明输入、处理、输出、Store和用户可见变化，并分别标明当前代码事实与待审核目标架构。对象词典不能替代这条运行链。
+12. 总体架构必须提供面向第一次接触项目读者的对象级导读：分别展开前端View、网络DTO、内部Envelope、产品领域对象和pi/Worker运行对象；说明每个核心对象的创建者、所有者、存储、生命周期和可见性，并把Agent展开为内部部件及外部控制边界。模块名和箭头不能替代这份心智模型。
+13. 新手导读必须从用户一次具体点击开始，按时间顺序穿透前端函数、目标网络入口、应用协调、数据库读写、pi Runtime/Workflow、Tool治理、Provider请求、响应解码、产品提交和前端渲染；每一步说明输入、处理、输出、Store和用户可见变化，并分别标明当前MAF代码事实与待审核目标架构。对象词典不能替代这条运行链。
 
 ### 8.3 外部产品参考的收敛与成本控制
 
-MAF、pi、nanobot和QwenPaw仍按前述规则作为本地技术与架构基线。除此之外，外部Web产品参考当前只保留 **1个正式主参考**，不设置会被自动触发的条件候补，不得把多个相似平台同时加入日常必查链路：
+pi是目标技术基线；MAF是现有行为参照，nanobot和QwenPaw只按明确缺口读取。除此之外，外部Web产品参考当前只保留 **1个正式主参考**，不设置会被自动触发的条件候补，不得把多个相似平台同时加入日常必查链路：
 
 | 状态 | 项目 | 唯一参考范围 | 不参考的内容 |
 |---|---|---|---|
@@ -268,9 +277,11 @@ MAF、pi、nanobot和QwenPaw仍按前述规则作为本地技术与架构基线�
 9. 经用户批准研究的外部项目，如果形成了可复用的源码知识，也必须同步到`agent_knowledge/project-studies/<project>/`；至少记录固定提交、限定范围、核心对象、关键链路、采用/改造/拒绝项、证据路径和未验证项。不得只把结论留在当前项目设计文档或对话中。
 10. LibreChat当前知识入口为`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/librechat/README.md`；其中Session/流式持久化、Conversation生命周期/分支和Web Chat总体架构是3个有界主题，不能为LibreChat未研究能力背书。
 11. MAF总体架构位置与边界维护在`/Users/xulater/Code/opc-os/agent_knowledge/MAF/02-Agent应用架构中的位置与边界.md`；必须同时保留目标项目安装版本和本地参考源码提交，不能把源码主分支能力冒充安装版保证。
-12. pi与nanobot的架构知识入口分别为`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/pi/README.md`和`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/nanobot/README.md`；形成Chat模块决策时必须引用其真实模块与明确缺口，不能只写项目名。
+12. `pi + pi-web`当前完整知识入口为`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/pi-agent/README.md`，`project-studies/pi/README.md`只保留为兼容路由；nanobot入口为`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/nanobot/README.md`。形成Chat模块决策时必须引用真实模块、固定版本与明确缺口，不能只写项目名。
 13. QwenPaw知识入口为`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/qwenpaw/README.md`，固定源码位于`/Users/xulater/Code/reference-agent-sources/QwenPaw`；设计Web、Telegram等Channel与后端关系时必须先读取其Web/Channel入口拓扑，不能把最终聊天平台直接画到产品核心。
 14. Kimi Code CLI知识入口为`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/kimi-code/README.md`；它只为Kimi命令、权限、ACP和开发辅助边界背书，不自动进入Chat总体架构参考集。
+15. TencentDB Agent Memory知识入口为`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/tencentdb-agent-memory/README.md`。用户询问该项目怎样采集会话、使用JSON/Markdown/数据库保存、维护L0-L3/Skill、治理Asset/ACL/Binding、编译Loadout或对Chat有什么启发时，先按该README的问题路由读取既有固定提交研究；研究已于2026-08-01收口，默认只读复用，不重跑实验、不自动升级为Chat正式参考或采用决定。
+16. MemOS与memmy-agent总入口为`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/Agent-Memory-MemOS-memmy-agent-总入口.md`，跨项目结论在`MemOS与memmy-agent-对Chat的S7迁移结论.md`。MemOS固定提交`027dc89`，覆盖Local v2的Agent Hook->Episode->L1->L2/L3/Skill->召回链；memmy-agent固定提交`211d521`，覆盖Agent Hook->公共HTTP->SQLite事务->Worker->L2/L3/Skill/Trial->召回链。用户询问会话后管理、经验记忆分层、原始观察与派生资产分离、同步最小提交+异步语义深化、Recall血缘、EpisodeProjection或Chat经验学习环怎样设计时，先按总入口的问题路由读取既有固定提交研究；两项目研究已于2026-08-01收口，默认只读复用，不重跑实验、不自动升级为Chat正式参考或采用决定。Chat候选吸收链、建议采用/改造/拒绝项和已知缺口在总入口第3-7节；任何Chat实现仍须回到Chat的`AGENTS.md`、`PROJECT_CONTEXT.md`、`PROJECT_STATE.md`、`PROJECT_PLAN.md`和相应工作包详细设计门。
 
 ## 10. 验证规则
 

@@ -37,7 +37,18 @@ Chat Web通过自己的REST/AG-UI Adapter访问后端；Telegram等终端平台�
 依赖顺序漂移和证据链接失效。Web、Obsidian和第三方前端属于同一权威事实的不同投影，不各自维护
 Project/Work/Memory状态。
 
+当前“确认Chat目标系统90%交互设计”的跨Session工作从
+[交互设计续接入口](./docs/chat-interaction-design-handoff.md)继续。该入口记录28个模块的完成状态、下一模块、
+固定事实提取与原型方法，以及换Session或换AI时可直接使用的续接指令。
+
+一般项目续接统一从[项目跨Session续接入口](./docs/project-session-handoff.md)开始。它记录当前审核门、唯一下一步、
+禁止提前开展的事项和可直接复制到新Session的启动指令；完整事实仍由`PROJECT_STATE.md`拥有。
+
 ## 当前状态
+
+2026-08-05用户已冻结新的目标方向：Chat改为TypeScript全栈并以`pi-agent-core`作为Agent核心基座。
+当前`pi + pi-web`双轨完整掌握材料及pi对Workflow/HITL/Checkpoint的源码事实研究已经完成；2026-08-06用户已明确进入Chat承载方案审核。当前审核材料比较4种总体路线并提交新D1—D8；具体前端框架、HTTP服务、实时协议、持久Store和部署仍未批准，D1—D8获批后才进入Memory接入设计。[RP-01计划](./docs/pi-native-replatform-plan.md)保留研究史和证据边界，[pi技术基线](./docs/research/pi-native-technical-baseline.md)保留Chat侧迁移预言机。下面列出的Python/MAF能力是当前可运行实现和
+迁移预言机，不再代表目标技术路线；替代链验证前不删除。
 
 工程骨架、真实模型纵向回合和逐次模型调用审批切片已经完成：
 
@@ -64,7 +75,17 @@ Project/Work/Memory状态。
 
 ## 技术方向
 
-已批准的技术路线：
+当前已批准的目标方向：
+
+```text
+TypeScript Web前端（框架待审核）
+    -> TypeScript Chat产品后端（HTTP/实时协议待审核）
+    -> Chat产品协调、治理与事实提交
+    -> pi-agent-core / pi-ai
+    -> pi-coding-agent / Tool / Provider
+```
+
+现有可运行实现：
 
 ```text
 React 19 + TypeScript + Vite
@@ -76,7 +97,9 @@ React 19 + TypeScript + Vite
     -> Agent / Workflow / Tool / Model
 ```
 
-Product资源走REST，单次Agent Run的实时事件走AG-UI；Product DB与MAF运行时状态分开拥有。前端使用自研UI，基础组件采用Tailwind CSS、Radix UI和Lucide React；Zustand只管理页面状态。完整边界见[项目上下文](./PROJECT_CONTEXT.md#71-四个必须区分的对象)。
+现有实现中Product资源走REST，单次Agent Run的实时事件走AG-UI；Product DB与MAF运行时状态分开拥有。
+这些合同继续作为迁移行为基线，但目标系统是否保留AG-UI、React/Vite和当前Store实现仍待审核。完整边界见
+[项目上下文](./PROJECT_CONTEXT.md#71-四个必须区分的对象)。
 
 ## 环境要求
 

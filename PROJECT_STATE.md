@@ -6,12 +6,14 @@
 |---|---|
 | 产品身份 | 独立开发、独立运行、独立运营并持续演进的完整 Chat 产品 |
 | 当前目录 | `/Users/xulater/Code/Chat` |
+| 目标技术方向 | 2026-08-05用户已冻结TypeScript全栈与`pi-agent-core`核心基座，并已审核通过`pi + pi-web`双轨完整掌握材料；Workflow/HITL/Checkpoint源码事实研究已完成，2026-08-06用户已明确进入Chat架构方案审核 |
 | 代码状态 | W1-01合同基础已完成：全部REST写命令共享`CommandId`语法，Problem Detail公开稳定恢复动作，20个模块/组件公开合同状态可机器检查，MAF私有接合集中并受安装版升级门约束。APP-PROJECTION固定Scope只读纵向切片继续提供Personal Workspace、Project Dossier与Obsidian Tree/ZIP且没有新增Schema。Identity、Obsidian双向写回、Schedule、Delivery、完整Evidence UI和活动pi跨进程续跑仍未完成 |
-| 设计状态 | 总体架构D1-D4及14个状态所有者/3个应用组件/3类运行责任已批准；W1-01模块公开合同基础于2026-07-31完成。W2-01 Identity/HTTPS迁移、W4-01 Work/Knowledge/Protocol/Governance边界和W4-03 Projection/Obsidian详细设计已批准，其中W4-03只读切片已实现；其余Schema、迁移、物理边界演进和完整实现仍按工作包完成门推进，不能因设计或基础门完成而宣称领域能力完成 |
+| 设计状态 | 已批准的产品问题、14个逻辑状态所有者和产品不变量继续作为输入；原总体架构中的MAF/AG-UI技术映射已被目标方向替代。基于源码事实重建的4种总体路线与新D1—D8已形成，当前待用户审核；其中新增`MOD-WORKFLOW`仍只是候选，Memory接入设计尚未开始 |
 | Session 状态 | 9个能力域、74项能力、R0-R6和Phase 0-8路线已批准；Phase 0-1完成，Phase 2进行中，Phase 4-5完成纵向切片但尚未通过全部阶段故障矩阵 |
 | 工程质量状态 | Q0纵向基线已建立；W1-01新增错误/ID/升级合同、架构扩散门和启动兼容检查，Projection继续具备类型化DTO、revision/ETag、路径/大小安全门和确定性ZIP，`App.tsx`保持799行及真实lazy边界。全量门为后端497项/80.52%、前端87项/行62.68%与分支74.17%、22次迁移往返、桌面与Pixel 5浏览器26通过/4按设计跳过。剩余大型Application Service、持续协作Workflow、人工无障碍、性能容量、远端CI首次运行和生产Exporter/SLO仍未完成 |
 | 数据状态 | Product Store Schema与22个Alembic迁移已建立；本轮Projection即时读取Owner公开快照并可完全重建，没有新增Projection表或迁移，也没有迁移旧数据库、旧历史或旧项目配置 |
 | Git 状态 | 私有仓库`later-3/Chat`，分支`main`；按Feature节点提交并推送，私有配置和本地产物不进入Git |
+| 跨Session续接 | 一般项目续接统一从[项目跨Session续接入口](./docs/project-session-handoff.md)恢复；默认停在Workflow/HITL/Checkpoint架构候选D1—D8审核门，不能自动进入Memory或实现 |
 
 ## 2. 已确认的稳定事实
 
@@ -22,8 +24,8 @@
 3. OPC-OS Chat 是可对等互操作的外部系统；特定拓扑中的通道角色不改变 Chat 产品身份。
 4. Chat Web通过Web/API Adapter访问后端；Telegram等终端平台通过具体Channel Adapter、OPC-OS Chat通过Bridge Adapter进入Channel Adapter Host，再统一调用Interaction Ingress，任何外部平台都不能直接调用产品核心。
 5. Chat 自己承担 Conversation、Work、Approval、Run、Evidence、Delivery、Memory 和 Trace 的产品事实责任。
-6. Product Session、MAF AgentSession/Workflow Checkpoint、AG-UI Thread、Product Run 是不同对象；Product Run 与 Run Attempt 也不同。
-7. REST 管理产品资源，AG-UI 管理一次 Agent Run 的实时交互；Product DB 是产品事实源，MAF 负责运行时语义。
+6. Product Session、pi Runtime Session、前端实时Thread/Connection、Workflow Checkpoint、Product Run和Run Attempt是不同对象；当前实现中的MAF AgentSession与AG-UI Thread继续作为历史映射事实保留。
+7. Product DB始终是产品事实源；产品资源、实时Agent Run、Runtime Session和浏览器投影必须分开拥有。当前REST/AG-UI/MAF分工只作为现有实现与迁移预言机，目标协议和运行拓扑待审核。
 8. Interaction 与 Product Run 不是同一对象；一次 Interaction 可以触发零到多个 Run。
 9. 模型输出只能提出 Intent、Work、Memory 和结果候选，不能自动成为长期正式事实。
 10. Session总体规划必须先覆盖完成历史、活动流、Worker、Tool、Workflow/HITL和跨入口连续性，再按依赖拆交付。
@@ -31,25 +33,146 @@
 12. ExecutionDraft、RunSpec和HITL治理合同已经冻结并完成可运行纵向切片：ExecutionDraft是可编辑产品执行草稿，当前revision接受后才允许编译不可变RunSpec；ModelCallDraft仍是Run内某一次Provider调用。HITL Resolver按系统不可放宽下限与用户偏好两阶段解析，人工和自动推进都持久留痕。
 13. Execution治理详细设计D1-D7已于2026-07-22获用户批准并实施；12个Decision Point、持久Policy revision/CAS、Evaluation/Request/Decision、一次性Grant/Consumption、ExecutionDraft/RunSpec、ModelCallDraft/Attempt和治理查询均已落地。10号迁移新增Product绑定的MAF Checkpoint；Governance Outbox、Interrupt Link与独立Worker已能恢复持续协作主Workflow的无外部Tool副作用审批安全点。
 14. 超级管理员运营看护已进入稳定产品范围：Identity拥有Principal、Role/Grant和Authentication Session；Super Admin Operations拥有User Activity、Usage Aggregate、可重建跨模块运营投影和Super Admin Audit；Product Harness与Evidence继续分别拥有Work和Artifact事实。该项是目标边界，不表示代码、Schema或控制台已经实现。
-15. 2026-07-30批准正式目标责任模型：14个逻辑状态所有者是Identity、Conversation、Work、Knowledge、Protocol、Collaboration Governance、Context、Memory、Run、Tool、Evidence、Schedule、Delivery和Super Admin Operations；3个应用组件是Interaction Ingress、Interaction Coordinator和Projection Query & Command Gateway；3类运行责任是MAF Runtime、Execution Runtime和Platform Operations。当前代码物理共置不改变逻辑所有权，Projection不是第15个事实模块。
+15. 2026-07-30批准的14个逻辑状态所有者和3个应用组件继续作为产品架构输入；当时的3类运行责任包含MAF Runtime，已因2026-08-05技术方向变更进入重新审核。当前代码物理共置不改变逻辑所有权，Projection不是第15个事实模块。
 16. 2026-07-30批准W1-01、W2-01、W4-01、W4-03四份详细设计。APP-PROJECTION首个实现只读取固定`local-user` Scope：同一Product Store事实可投影为Web Personal Workspace、Project Dossier和稳定ID的Obsidian Markdown/ZIP；它不拥有Project/Work事实、不写服务器Vault，也不支持双向编辑。
-17. 2026-07-31完成W1-01基础实现：模块Manifest新增公开合同完成度和设计入口；REST Problem Detail新增服务端权威`recovery_action`，401/403/冲突/过期/重试/结果未知不再由前端解析中文；全部公开写命令使用共同`CommandId`语法。可替代的MAF/AG-UI私有导入已移除，剩余3类私有接合只允许集中在`runtime_adapters/maf_compat.py`，并由3个锁定安装版本、固定MAF源码提交、Checkpoint/HITL/恢复和版本漂移测试保护。
+17. 2026-07-31完成的W1-01模块合同、Problem Detail、`CommandId`和MAF/AG-UI兼容门仍是现有实现事实；其中产品错误与ID合同可作为迁移候选，`maf_compat.py`和MAF版本门只作为行为预言机，不进入目标pi Runtime。
 
-### 2.2 已批准技术路线
+### 2.2 已批准目标方向与待决项
 
-1. 后端：Python、Microsoft Agent Framework（MAF）、FastAPI。
-2. 前后端 Agent 协议：AG-UI over HTTP/SSE，不是 assistant-ui。
-3. 前端：React 19、TypeScript、Vite、`@ag-ui/client`和自研UI。
-4. UI基础：Tailwind CSS、Radix UI、Lucide React；Zustand只管理页面状态。
-5. MAF运行状态与产品领域状态分开拥有；SQLite是已批准的Product Store实现起点，但必须验证目标架构所需保证。
-6. 架构技术基线包括MAF、pi、nanobot和QwenPaw；外部Web产品主参考保留LibreChat。新增其他参考项目仍需用户批准。
-7. 模型调用治理采用“MAF原生Workflow + 自定义确定性Executor”：每次调用都生成持久ModelCallDraft revision、Policy Evaluation和一次性授权；产品默认仍是人工审批，也可在系统下限内按作用域配置有界自动推进。`store=False`展示完整显式上下文，关闭MAF自动Tool循环；Provider与模型由服务端目录约束，Readable/Provider JSON同源，任何Body或路由变化都生成新版本、Hash并重新评估，放弃零发送并恢复原输入。持续协作主Workflow的Interrupt已通过Product绑定Checkpoint和Outbox支持跨进程恢复；该保证不外推旧Workflow、嵌套Workflow和Tool副作用。
-8. 后端以私有`backend/config.json`作为唯一运行配置源；Provider按数组扩展并各自维护模型目录，当前私有配置包含火山方舟、阿里云百炼，以及`kimi-code`、`kimi6603`两条凭据独立的Kimi Code路由。仓库只提交脱敏示例，密钥和Base URL不进入浏览器响应或Git。
+1. 目标系统采用TypeScript全栈，`pi-agent-core`是Agent核心基座，`pi-ai`和`pi-coding-agent`纳入同一技术体系。
+2. 前端仍是独立Web产品交互面，不直接拥有pi运行状态；具体框架待RP-01研究后审核，现有React/Vite与pi-web均只是候选输入。
+3. 现有Python/FastAPI/MAF/AG-UI系统冻结为迁移参考和行为预言机，不再作为目标架构继续扩张，也不在替代链通过前删除。
+4. Product Store和产品对象不迁入pi Session；Runtime、模型、工具、Memory和存储继续通过明确边界保持可替换。
+5. 目标实时协议、HTTP框架、持久Workflow/HITL/Checkpoint、Store和部署拓扑尚未批准；研究不得把候选写成完成事实。
+6. 当前逐次ModelCallDraft、Hash、零发送拒绝、HITL安全点恢复和Tool结果未知等保证必须进入迁移预言机；目标实现可以不同，但不能无证据降级。
+7. 私有`backend/config.json`继续只服务现有实现；目标TypeScript配置合同未批准，真实密钥和Base URL不得复制进源码、文档、Trace、浏览器响应或Git。
+8. Memory先前基于Python/FastAPI/MAF权重得到的memmy-agent选择已进入重审；当前必须先审核Chat的Workflow/HITL/Checkpoint架构D1—D8，Memory继续排在其后。
+9. 用户已修订原RP-01逐批停顿方式：RP-01.0和RP-01.1保留为当前完整掌握的已完成子集，原RP-01.2—RP-01.6不再作为当前逐卡停顿顺序。`pi + pi-web`研究与课程已完成，但Later个人掌握仍待Teach-back、源码定位和实践确认。
 
 ## 3. 本轮纠正与完成
 
+- [x] 2026-08-05用户审核通过`pi + pi-web`双轨完整掌握材料，并授权启动“pi如何承载Chat Workflow/HITL/Checkpoint”架构设计工作包。该批准结束技术基座材料审核门，但不由AI代签Later个人Teach-back、源码定位和实践掌握，也不授权目标依赖、生产目录、Schema、迁移或产品重建；Memory仍排在本架构候选获批之后。
+- [x] 同日曾在[Workflow/HITL/Checkpoint架构文件](./docs/pi-workflow-hitl-checkpoint-architecture.md)形成第一版D1—D8；用户指出它越过“先研究pi支持”的任务层级后，该版本和审核请求均已撤回，不构成当前决定或实现授权。当前文件内容已于2026-08-06基于完成后的源码事实重建。
+- [x] 用户随后指出上述交付把“研究pi对Workflow/HITL/Checkpoint的支持”偷换成“审核Chat架构候选”。第一版D1—D8审核请求撤回后，项目先回到固定pi提交，以`native/partial/design-only/missing`逐项核对Workflow、HITL和Checkpoint。
+- [x] 同日完成重写后的[pi原生支持研究](./docs/research/pi-workflow-hitl-checkpoint-research.md)：Workflow 12项、HITL 16项、Checkpoint/恢复20项均按`native/partial/design-only/missing`分类；确认当前无Workflow图引擎、在线Tool/UI HITL不跨进程、Session重开不等于活动Run恢复，future durable harness尚未实现；4组定向离线测试共102项通过。当日停在研究充分性审核，2026-08-06用户已明确推进到下一架构门。
+- [x] 2026-08-06用户明确以“已经研究pi源码和设计哲学”为前提，要求进入pi承载Chat场景的架构方案审核；源码研究不再是当前停点。已重建[Workflow/HITL/Checkpoint架构候选](./docs/pi-workflow-hitl-checkpoint-architecture.md)，对比pi Session中心、future durable harness中心、Chat Kernel + pi Adapter、外部引擎 + pi Activity共4条路线，并形成新的D1—D8。
+- [ ] 当前待用户审核新D1—D8：建议Chat拥有最小耐久Workflow Kernel、pi通过统一Runtime Port承担通用Agent与Coding Agent执行、Workflow Definition新增独立逻辑Owner、Agent Step按风险切耐久边界、Tool统一经过Ledger Port、HITL采用Decision+Outbox、Checkpoint采用Journal+引用快照；这些均未获批准、未实现。
+- [x] 2026-08-05用户冻结新的目标技术方向：Chat前后端统一采用TypeScript，`pi-agent-core`作为Agent核心基座，
+  `pi-ai`与`pi-coding-agent`纳入同一技术体系；具体前端框架、HTTP服务、实时协议、持久Workflow/HITL/
+  Checkpoint、Store和部署拓扑继续逐项审核。现有Python/FastAPI/MAF/AG-UI实现保留为行为预言机，
+  不再作为目标架构扩张，也不在替代链验证前删除。用户同日批准
+  [pi技术基线研究与重建决策计划](./docs/pi-native-replatform-plan.md)；RP-01.0已完成固定版本、Package地图、
+  6条行为预言机和缺口清单，并于2026-08-05获用户批准，见[技术基线研究](./docs/research/pi-native-technical-baseline.md)。
+  本批没有产品代码重建、依赖安装、Schema、迁移、部署或真实付费模型调用。
+- [x] 同日完成RP-01.1整体心智模型并提交用户审核：固定`pi@10e99ae`的Package关系、Agent/AgentHarness/
+  Coding Agent三种组合边界、无Tool与有Tool调用链、两套Session实现、RPC/Server状态寿命和10类pi不拥有的
+  Chat产品事实；3条定向Agent Loop测试通过，并把0.82.1知识同步到`agent_knowledge/project-studies/pi/`。
+  该研究后续已纳入`pi + pi-web`双轨完整掌握材料并获用户通过；原RP-01.2逐卡顺序已被取消。
+- [x] 同日根据用户修订把窄化RP-01研究扩展为`pi + pi-web`一次性双轨完整掌握：固定pi
+  `10e99ae`/0.82.1与pi-web `82cb76a`/App 0.8.6/Pi SDK 0.83.0两条版本线，完成36个能力域、21个pi
+  模块、14组接口合同、AI快速恢复手册、Later M00—M13课程与pi命令/pi-web浏览器双链反向抽查。
+  pi Agent Core测试240项通过，Coding Agent定向244项通过，TUI定向测试与类型检查通过，
+  pi-web TypeScript/ESLint通过且343/343项Node测试通过；两源码仓验证后仍clean，研究结构校验0错误。
+  该材料后续已获用户审核通过，但不自动声称Later已完成个人掌握；随后误入的Workflow架构D1—D8审核已撤回，Memory和产品代码仍未开始。
+- [x] 同日建立[项目跨Session续接入口](./docs/project-session-handoff.md)，把必读顺序、当前审核门、固定研究版本、
+  唯一后续顺序、禁止事项和可复制的新Session指令统一指向权威状态文件；交互设计继续使用自己的专项续接入口，
+  两类任务不再依赖旧聊天或互相覆盖停点。
+- [x] 同日确认技术方向变化会改变Memory集成评分：此前`memmy-agent`82分的结论包含15%“当前Python/
+  FastAPI/MAF服务边界匹配度”，因此保留为历史选择证据但不再作为最终集成决定。RP-01完成后必须在
+  TypeScript/pi前提下重新评分MemOS、memmy-agent与TencentDB Agent Memory，再由用户审核。
 - [x] 新增[项目经验与反例](./PROJECT_LESSONS.md)，建立每次回复前强制读取规则。
-- [x] 持续记录57个可执行反例；最新反例057固定：总账、页面草图或目录样例不能替代“领域事实→角色视图→Presentation Adapter→可验证文件物化”，Projection必须显示来源revision及空/未知/禁止/错误差异。
+- [x] 持续记录78个可执行反例；反例077固定“一次性吃透技术基座必须先建全量覆盖账”，反例078固定“研究pi支持不能偷换成Chat架构决策卡”。
+- [x] 2026-08-01完成固定提交`f3df79326dfd763f45199c441e2129d780467949`的TencentDB Agent
+  Memory源码掌握批次：S0-S6与S8完成、S7按用户要求跳过；34个模块、27个对象、12个接口和10个
+  场景共83项全部完成源码主链追踪，其中52项另有构建、测试或隔离运行证据，31项如实保持源码证据。
+  5个无密钥案例实际跑通L1提取/写入、Metadata装配、Skill版本、Proxy注入和Knowledge同资产串行队列；
+  缺陷总账记录31项问题，分类为15个Bug、5个设计代价、4个产品对象缺失、4个安全边界和3个运维缺口。
+  结论包括：`work_task`只是可召回MemoryRecord而非权威Task/Work，L1可在JSONL与向量写入都失败时
+  仍返回成功计数，若干失败路径仍推进Cursor/生成标记，ACL/身份传播和多Store一致性存在实质缺口。
+  研究入口为`/Users/xulater/Code/opc-os/agent_knowledge/project-studies/tencentdb-agent-memory/用户学习/S6-完整架构心智模型/06-源码级完全掌握总账.md`；
+  本批次不把该项目升级为Chat正式参考集，也不包含采用决定、Schema或产品代码修改。
+- [x] 2026-08-01按用户后续授权完成TencentDB Agent Memory S6.4真实Session全链实验：在固定提交的
+  隔离副本中处理一个14回合、28消息、1,522个工具活动事件的真实Codex Session脱敏投影，形成315条
+  Trace；L0七波完整写入且全量重放新增0，L1实际保存13条工作记忆，L2/L3各完成2次增量维护，
+  Skill实际跑通Buffer→Archive→Worker→Candidate和永久失败DLQ，Metadata形成自动Chat Memory、
+  Session来源Task和3项Agent Loadout，SQLite FTS召回8条，Proxy实际装入6,306字符System与629字符
+  User上下文并验证Cache命中和Hook fail-open，脚本继续回合又新增2条L0/2条L1并再次召回。真实本地
+  Qwen 7B输出4条有意义记忆但因顶层数组合同错误被Parser降级成`success=true/extracted=0`；真实
+  28消息还复现JSONL降级L1只保留最新20条、最早8条丢失且其后2条仅作背景的问题，缺陷总账因此增至
+  32项（16 Bug）。最终报告为
+  `/Users/xulater/Code/opc-os/agent_knowledge/project-studies/tencentdb-agent-memory/用户学习/S6-完整架构心智模型/07-真实Session全链Trace与处理机制报告.md`；
+  Chat差异与启发仅是非约束性研究结论，不执行S7、不批准Schema、迁移、Worker或产品代码。
+- [x] 2026-08-01用户确认TencentDB Agent Memory研究正式收口，不再继续实验或扩大研究；后续Chat讨论只从
+  `/Users/xulater/Code/opc-os/agent_knowledge/project-studies/tencentdb-agent-memory/README.md`按问题读取既有报告、
+  代码事实和运行证据。重新运行实验、研究新提交或把启发转为Chat正式设计，均需要新的明确任务与审核。
+- [x] 2026-08-01完成MemOS固定提交`027dc8975836c066a7d1dd80c78c3da5c0fa084e`与memmy-agent
+  固定提交`211d521b310fc23c63dd3d9ca848941173981c5e`的会话后管理研究修订：MemOS复用Local v2
+  1225项全量绿灯并新增1/1自包含定向E2E，memmy复用416项Memory绿灯、29/29真实HTTP/SQLite
+  断言并新增1/1自包含演化测试；两份最终证据都在同一命令内绑定commit/clean、git archive、依赖
+  安装、native rebuild、定向测试和结束clean。两轮独立复核的18项初审问题全部关闭，最终均为
+  P1/P2/P3=0，研究校验均为0 error/0 warning。新增待审核的
+  [会话后管理对比与超越Agent Memory候选](./docs/research/agent-memory-management-comparison.md)：保留
+  Chat的Project/Work/Plan/Evidence权威事实环，把Episode、L2/L3/Skill改造为派生理解和受治理的
+  Experience/Knowledge/Protocol候选，并补Recall Ledger及逻辑Job/不可变Attempt；该候选尚未获得用户
+  批准，不授权Schema、迁移或代码实现。Chat本轮定向测试1项通过，另外3项被现有显式`breakpoint()`
+  中断，未计为绿灯，也未为本研究修改断点。
+- [x] 2026-08-01用户进一步纠正上述研究完成标准：最终目标不是停在架构、优缺点和Chat启发，而是
+  逐入口明确两项目工作时需要什么输入、怎样同步/异步处理、产生哪些立即响应、观察事实、派生资产、
+  处理状态和下一轮注入，再由这些I/O保证推导可实施方案。S6.1证据和18项复核结论继续有效；S6.2新增
+  MemOS、memmy-agent各自的`05-输入处理输出运行合同.md`及待审核的
+  [Chat会话后管理I/O与落地合同](./docs/research/agent-memory-io-implementation-contract.md)。MemOS合同覆盖Local v2
+  及Python主线，memmy合同严格区分公共HTTP和内部Service；S6.2独立复核共16项问题实例全部关闭，两项目
+  最终均为P1/P2/P3=0，claims与研究校验均为0 error/0 warning。S6/S7材料当前等待用户审核；尚未批准
+  对象命名、Schema、迁移、Worker、UI或产品代码。
+- [x] 2026-08-01按用户授权完成Agent Memory研究收口：新增跨仓总入口
+  `/Users/xulater/Code/opc-os/agent_knowledge/project-studies/Agent-Memory-MemOS-memmy-agent-总入口.md`，
+  用`MemOS/Memory OS/memoryOS/memmy-agent/Memory Agent/Agent Memory`别名统一路由固定提交、S6 I/O合同、
+  源码与实跑证据、Chat对比和未知项；生成
+  `/Users/xulater/Code/opc-os/agent_knowledge/project-studies/diagram/agent-memory-runtime-and-chat-decisions.svg`与@2x PNG，
+  并收口为7项采用、8项改造后采用、8项拒绝建议。该收口没有改变S6/S7待审核、Teach-back未认证、
+  S8延期和“未授权Schema/迁移/Worker/UI/产品代码”的边界；本研究到此停止，不自动进入实现。
+- [x] 2026-08-05曾在Python/FastAPI/MAF前提下从Chat的历史会话导入、实时回合接入、按Project召回、
+  任务后经验深化、来源血缘、幂等恢复、治理和可替换性需求完成
+  [Agent Memory历史选型](./docs/research/agent-memory-selection-decision.md)：选择固定提交
+  `211d521b310fc23c63dd3d9ca848941173981c5e`的`memmy-agent`作为有界派生Memory
+  Sidecar/API基座；MemOS保留为Episode/L2/L3/Skill/Trial算法参考，TencentDB Agent Memory保留为
+  Asset/Binding/Loadout与失败反例参考。选型总分为memmy-agent 82、MemOS 64、TencentDB Agent Memory 49；
+  三者都没有可直接使用的通用历史导入器，也都未满足Chat完整Identity/Scope、删除传播和Accepted Memory治理。
+  该决定没有批准正式依赖、共享数据库、Schema、Worker、部署拓扑或把派生资产升级为Product事实；同日
+  TypeScript/pi方向冻结后，最终选型已重新打开，旧分数只保留为历史证据。
+- [x] 2026-08-01用户同意把“参考吸收”升级为基于事实的UX体验走查，并确认7个A档深拆、
+  10个B档专项和8个C档视觉/概念的目标投入结构。新增
+  [UI/UX参考产品事实走查计划](./docs/ui-ux-reference-fact-walkthrough-plan.md)：从16类场景归并6个
+  UX场景组，建立证据标签、9类高风险状态、降级门和15条Chat自主设计链。用户看过GitHub Actions
+  的真实运行列表、失败Run和日志效果后，明确认为这种开发者流水线形式不适合Chat并要求移除；
+  该候选及3条A-GA流程已退出活动清单，稳定编号只留作拒绝记录且不复用。当前活动清单为24个候选、
+  28条待走查流程，A档为6个候选加1个空位；不自动用Vercel、Sentry或其他产品补位，Workflow Run View
+  仍是必须自主设计和重新筛选视觉方向的Chat呈现面。用户随后确认保留Super Productivity，并完成首轮
+  匿名桌面Web与第一方视觉/公开反馈事实卡：A-SP-01为O局部，A-SP-02与A-SP-03为D/S，当前28条活动
+  流程为0条O完整、1条O局部、27条无O证据；用户已批准Today行动序列、Work原位层级与专注计时3组
+  采用/改造/拒绝决定，证据等级和实现状态不因此提高，详细决定只由走查计划维护。
+- [x] 2026-08-01用户确认把“Chat目标系统90%交互设计获批”作为UI/UX横向线的完成目标，并要求每段工作
+  明确推进的用户场景和交互单元，在阶段性效果、设计原因、取舍和未实现边界呈现后由用户拍板。新增
+  [Chat交互设计覆盖台账与阶段审核门](./docs/chat-interaction-design-coverage-ledger.md)；已从完整场景、自主设计链
+  和呈现面反向清单形成86个Interaction Unit候选（P0 42、P1 37、P2 7）；当前`IU-104`、`IU-105`
+  已获设计批准，其余84个仍为`inventory_candidate`。用户随后纠正推进节奏：该总账只作后台防漏，不要求先批量审核或冻结；一次只做
+  1个模块或紧密功能闭环，选1个主参考且只在必要时补1个辅助参考，形成1—3张草图或轻量HTML和1个风险态后
+  由用户拍板。2026-08-01进一步形成[Chat 90%交互设计模块总表](./docs/chat-interaction-design-module-map.md)：
+  28个可独立拍板模块已于2026-08-01获用户批准，86个Interaction Unit逐一且只映射1次；总表批准只锁定工作目录，
+  单个模块仍需另行审核。用户把每批做1个还是2—3个的决定权交给设计执行者：默认单模块，
+  两个新模块只有共享紧密用户旅程、参考事实和视觉上下文、不含高风险控制语义且仍可独立拍板时才合批；三个模块
+  只用于已批准模块的组合一致性走查。候选发现广度已
+  足以停止泛调研，但28条活动流程仍为0条O完整、1条O局部、27条无O证据，后续只按当前模块补必要事实。
+  第一批单独推进`MD-01 快速捕获与Idea去向`，主参考Routine `A-RT-01`，既有Super Productivity
+  `A-SP-01`仅作辅助事实；MD-02与MD-03未展开。2026-08-01已完成Routine的0条O、9组D、3组S
+  事实提取和[MD-01设计档案](./docs/ui-ux-modules/md-01-quick-capture-and-idea-destination.md)，并完成桌面/手机
+  可操作Web原型、保存成功、Garden待整理、正式Idea、两种撤销、离线失败和390px短视口验证，最终独立审计
+  无未解决P0、P1或P2。用户看过效果后明确认可当前模块，D1—D4及`IU-104`、`IU-105`已获设计批准；后端候选、幂等、
+  回链与升级合同仍待实现。用户发现根`index.html`仍是Vite开发入口、通过`file://`打开为空白后，交付已改为
+  同次生产构建生成的自包含单文件，Vite源码入口独立为`vite-entry.html`；Standalone合同1/1、Sites 4/4、
+  HTTP首屏/保存交互和浏览器0错误通过；用户随后通过精确本地文件打开并提供可见截图，完成`file://`人工复核。
+  当前1/28个模块完成、27个待完成，下一模块为MD-02但尚未启动；跨Session任务状态、固定方法、交付门和续接指令
+  已归档到[交互设计续接入口](./docs/chat-interaction-design-handoff.md)，后续不依赖本次聊天历史。
 - [x] 纠正`AGENTS.md`和`PROJECT_CONTEXT.md`中的产品身份与外部关系。
 - [x] 删除稳定产品上下文里的“第一阶段/后续能力/非上位系统”式范围定义。
 - [x] 在`agent_knowledge/project-studies`新增pi、nanobot架构与模块源码研究，补齐QwenPaw Web/Channel入口拓扑和LibreChat源码模块拓扑、责任与缺口。
@@ -436,9 +559,9 @@
   文档链接检查无本轮新增坏链，只保留`ref/LifeOS`既有7条失效链接。由于工作树当前主动注入教学`breakpoint()`，
   场景测试使用标准`PYTHONBREAKPOINT=0`关闭PDB后执行，未删除或覆盖另一项调试改动。
 - [x] 2026-07-30完成项目掌握唯一入口与逐篇学习路线审计：根`README.md`只把课程读者引到
-  `项目掌握/INDEX.md`，INDEX按前置关系建立01-61连续课号，直接覆盖本目录全部61篇学习者Markdown；
+  `项目掌握/INDEX.md`，INDEX按前置关系建立01-67连续课号，直接覆盖本目录全部67篇学习者Markdown；
   15张SC和断点配置不再只靠目录概括。`check-project-mastery.py`新增反向枚举，排除INDEX自身和AI维护规则后，
-  强制每篇教材恰好排课1次、课号连续、链接存在，并确认根README仍可达；当前校验为61篇课程、28学习单元、
+  强制每篇教材恰好排课1次、课号连续、链接存在，并确认根README仍可达；当前校验为67篇课程、28学习单元、
   14个状态所有者、3个应用组件、3类运行时职责、6个Workflow、39节点和15场景全部通过。分类索引继续用于掌握后的查询，不冒充第一次学习顺序。
 - [x] 每个终态Product Run在同一数据库事务物化`diagnostic`和`human`两份确定性Trace报告：
   前者保留Product Trace事件、Sequence、Attempt、ToolExecution与关联ID，后者保存实际节点路径、
@@ -500,18 +623,19 @@
    `~/.pi/agent/chat-sessions/`，终态只读且在ToolExecution metrics保存映射/Hash；pi-web可分类查看和
    导出，但API拒绝继续、Fork、重命名和删除。下一次Chat执行不加载旧pi Session，本项不冒充活动
    进程、Tool副作用或Workflow跨进程恢复。
-   同日进一步建立本地pi单一分发：全局`pi`、Chat `cli_path`和pi-web的`pi-coding-agent`、
-   `pi-agent-core`、`pi-ai`、`pi-tui`均解析到`/Users/xulater/Code/opc-os/pi`同一0.82.1源码构建；
-   `scripts/configure-local-pi-stack.sh`提供版本/路径校验、失败回退和原npm安装恢复。pi与pi-web的
+   2026-07-28曾建立本地pi单一分发：当时全局`pi`、Chat `cli_path`和pi-web的4个pi Package均解析到
+   `/Users/xulater/Code/opc-os/pi`同一0.82.1源码构建；`scripts/configure-local-pi-stack.sh`保留版本/路径校验、
+   失败回退和原npm安装恢复。2026-08-05的RP-01.0复核确认该状态已经漂移：全局`pi`仍链接本地0.82.1，
+   但pi-web当前实际加载普通`node_modules`中的0.83.0，脚本的版本相等前置条件不再成立。本批没有强行重链。
+   pi与pi-web的
    `origin`已分别切到`later-3/pi`、`later-3/pi-web`，官方仓库保留为`upstream`；两仓本地`main`
    均跟踪Fork的`origin/main`，两者只镜像`upstream/main`且`remote.pushDefault=origin`，Fork主线已
    无强推快进到相同官方提交，Later改动只保存在
    `codex/later-custom`。pi官方基线为`fdbedcad`，自定义分支为`10e99ae`；当前Later提交只包含
    独立pi窗口的VS Code构建/Attach配置，没有修改`packages/**`运行时代码。pi-web
-   官方基线为`894babf`，原PWA、移动云中继和Later集成3个提交已重放到该基线，自定义分支头为
-   `a5c6d71`。pi通过`npm run check`及离线源码构建；pi-web在源码pi重新链接后通过TypeScript、
-   ESLint及149项Node测试，LaunchAgent重启后Sessions API正常、活动执行为0。该共享只统一代码
-   身份，3个消费者的进程、配置、Session和权限继续隔离。
+   当前上游基线为`dfab585`（v0.8.6），自定义分支头为`82cb76a`且比Later远端领先1个本地提交；相对上游
+   有36个Later提交、177个文件差异。pi本地构建与pi-web 0.83.0 SDK导入烟测通过，pi-web health为200；
+   Chat 18030/15073本批未运行。3个消费者的进程、配置、Session和权限继续隔离。
 7. 清理脚本已验证可分别终止端口18030的Uvicorn和15073的Vite，清理后无监听残留。
 8. 概念空间结构校验通过：14个概念簇、17个目录文档和137个本地链接均可发现且无断链；168份项目文档和571个本地链接通过治理校验，`git diff --check`纳入提交前验证。
   注：verify-fast当时为167份/566链接，verify与收口后为168份/571链接，差异来自同期新增的`docs/lifeos-product-method-research.md`（不属于SD4-C实现）。

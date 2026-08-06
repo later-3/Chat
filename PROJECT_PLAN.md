@@ -2,7 +2,7 @@
 
 ## 1. 计划目标
 
-以[完整目标架构](./docs/overall-architecture-proposal.md)为边界，并通过[目标能力、架构责任与开发地图](./docs/product-capability-architecture-map.md)把场景、能力、模块、差距、工作包和验收证据双向关联，按依赖顺序交付一个独立运行、持续运营的 Chat 产品：从会话连续、上下文与意图，到工作推进、受控执行、运行恢复、知识证据、可靠交付、超级管理员运营看护和外部集成，最终形成完整用户闭环。
+以`PROJECT_CONTEXT.md`中的完整产品范围为边界，先完成TypeScript/pi目标技术基线与总体架构重审，再通过目标能力、架构责任与开发地图把场景、能力、模块、差距、工作包和验收证据双向关联，按依赖顺序交付一个独立运行、持续运营的Chat产品。现有[总体架构](./docs/overall-architecture-proposal.md)中的产品问题、状态所有权和不变量继续作为输入，MAF/AG-UI技术映射已进入修订，不能继续当作目标实现前提。
 
 阶段只决定交付顺序和阶段验收，不能重新定义产品范围。任何阶段的 Schema、API 或代码都必须能演进到目标模块、合同和状态所有权，禁止为了短期交付建立另一套临时事实模型。
 
@@ -11,10 +11,32 @@
 1. 先审核完整场景、目标架构和模块合同，再做领域详细设计。
 2. 先建立权威产品事实，再让 Runtime、活动流、Worker 和外部集成消费这些事实。
 3. 每个能力依次经过：研究证据 -> 方案审核 -> 详细设计 -> 实现 -> 故障验证 -> 用户场景验收。
-4. MAF API 与行为先查安装版、源码和测试；产品架构不能由 MAF 类型反推。
-5. Product Session、MAF Session/Checkpoint、AG-UI Thread、Product Run 和 Run Attempt 始终分开。
+4. 目标Runtime API与行为先查固定提交的pi源码、测试和实跑；当前MAF实现只作为迁移预言机，产品架构不能由任何框架类型反推。
+5. Product Session、pi Runtime Session、前端实时Thread/Connection、Workflow Checkpoint、Product Run和Run Attempt始终分开。
 6. 每个阶段明确“已兑现保证”和“仍未兑现保证”，不把局部测试外推为完整恢复能力。
 7. 真实模型、真实浏览器、进程故障、重复请求和外部副作用验证不能被 Mock 成功路径替代。
+
+### 2.1 当前最高优先级重构闸门
+
+2026-08-05用户已冻结“TypeScript全栈 + `pi-agent-core`核心基座”的目标方向。同日用户进一步修订研究方式：不再按RP-01.2—RP-01.6逐卡停顿，而是一次性完成`pi + pi-web`当前版本的AI工作区与Later用户学习双轨掌握。
+
+当前材料已经用户审核通过：36个能力域、21个pi模块、14组跨边界接口合同、M00—M13课程和2条反向端到端链已落盘；pi Agent Core 240项、Coding Agent定向244项和pi-web 343项测试通过。该批准结束技术基座材料审核门，但不代表Later个人掌握已被AI代签。pi对Workflow/HITL/Checkpoint的源码事实研究已经完成；2026-08-06用户已明确进入Chat架构方案审核，基于事实重建的新D1—D8当前待审核。
+
+当前唯一顺序是：
+
+```text
+pi对Workflow/HITL/Checkpoint的原生支持研究（已完成）
+-> Chat如何利用/补足这些能力的架构取舍（新D1—D8已形成，当前待审核）
+-> Memory在TypeScript/pi与Workflow边界下重新选型与接入设计
+-> BMAD项目管理方法研究与取舍
+-> 总体架构修订与审核
+-> 重建/迁移详细计划
+-> 纵向实现
+```
+
+新Session统一从[项目跨Session续接入口](./docs/project-session-handoff.md)恢复这一审核门与顺序；Workflow架构候选没有明确获得用户批准前，不得把Memory或实现误写成“已经开始的工作包”。
+
+现有W0-W10继续保存完整产品工作包和历史完成证据，但其技术依赖、Runtime映射和未完成实现顺序须等总体架构重审后重新基线化。在此之前只允许维护现有证据和处理用户明确授权的必要问题，不继续扩张MAF目标能力。
 
 ## 3. 目标工作流拆分
 
@@ -36,7 +58,7 @@ W0-02（审核D1-D4并同步正式架构）也已完成；W1-01、W2-01、W4-01�
 | W3 上下文与理解 | Context、Memory、Governance、Conversation（读取Knowledge公开合同） | ContextPackage、唯一历史装配器、受控Memory、多Intent、澄清和连续理解 | W2；W3-01另依赖W4-01边界 | 用户可见并修正系统理解和上下文 |
 | W4 工作与执行治理 | Work、Knowledge、Protocol、Governance、Schedule、APP-PROJECTION、APP-INTERACTION | Work/Plan/Action、协议、Draft/Approval、周期触发、稳定Read Model与版本失效 | W2；具体工作包另有W3/W5/W8依赖 | 用户批准的内容与实际执行严格一致；Web/Obsidian不形成第二事实源 |
 | W5 产品运行控制 | Run管理、Runtime Store、AG-UI协调 | Product Run/Attempt、Job、Event Cursor、Cancel/Retry/Resume、Finalization Gate | W2、W4 | 无假成功；刷新和断线能回到权威状态 |
-| W6 MAF/Workflow执行 | MAF Adapter、Execution Worker、Runtime Reconciler | Agent/History、Workflow/Checkpoint、Lease、Worker接管和HITL映射 | W5 | 失联可判断，从验证过的安全点恢复；不拥有业务Schedule |
+| W6 Agent Runtime/Workflow执行 | pi Runtime Adapter、Execution Worker、Runtime Reconciler | Agent/Session、Workflow/Checkpoint、Lease、Worker接管和HITL映射 | W5；目标技术映射待RP-01 | 失联可判断，从验证过的安全点恢复；不拥有业务Schedule |
 | W7 Tool副作用治理 | Tool执行 | Tool Catalog、Approval桥接、Ledger、幂等、结果未知和对账 | W4、W5、W6 | 不盲目重做外部副作用，有处置证据 |
 | W8 证据、Artifact与全链验收 | Evidence、Run Trace、Artifact/Index | Evidence、Provenance、Trace、失效传播、完成模板和Dogfood验收 | W2、W3、W5、W7 | 结果可验证，来源失效能正确降级，真实项目能走完全链 |
 | W9 交付与外部集成 | Delivery、Identity与Channel Binding、具体Channel Adapter、Channel Adapter Host、Interaction Ingress | Outbox、Delivery/Receipt、Binding、平台/Bridge合同版本、跨入口连续性 | W1、W2、W5、W8 | 平台不直连核心；送达可追踪，多入口不双写、不越权 |
@@ -52,7 +74,7 @@ flowchart LR
     W2 --> W4["W4 工作与治理"]
     W2 --> W5["W5 运行控制"]
     W4 --> W5
-    W5 --> W6["W6 MAF/Workflow执行"]
+    W5 --> W6["W6 Agent Runtime/Workflow执行"]
     W6 --> W7["W7 Tool治理"]
     W3 --> W8["W8 知识证据审计"]
     W5 --> W8
@@ -71,6 +93,7 @@ flowchart LR
 
 | 交付阶段 | 目标 | 当前状态 |
 |---|---|---|
+| R. pi原生重构基线 | 冻结pi事实、行为预言机、可行性实验和架构决策输入 | `pi + pi-web双轨完整掌握材料与Workflow/HITL/Checkpoint支持矩阵已完成；Chat承载方案新D1—D8待用户审核，尚未开始代码重建` |
 | 0. 产品定义与治理 | 固定独立产品身份、6个问题、完整闭环和协作规则 | `最终愿景、概念边界和阶段A协作协议已获确认` |
 | 1. 工程与真实链路 | 建立独立前后端、MAF、AG-UI、调试和验证基线 | `真实模型门通过；2项收尾` |
 | 2. 目标架构与合同基线 | 审核目标拓扑、模块、状态、合同、恢复矩阵 | `总体架构及4个当前详细设计门已批准；其余模块按工作包继续` |
@@ -89,16 +112,26 @@ flowchart LR
 
 - [x] 固定要解决的 6 个问题和 6 个核心目标。
 - [x] 固定完整产品闭环和核心对象。
-- [x] 确认后端 MAF、前后端 AG-UI、React 自研 UI 技术路线。
+- [x] 2026-07-21确认Python/MAF、AG-UI和React自研UI历史实现路线，并形成可运行纵向证据。
+- [x] 2026-08-05冻结TypeScript全栈与`pi-agent-core`目标方向；历史路线降级为迁移预言机。
+- [x] 用户审核并批准[RP-01 pi技术基线研究与重建决策计划](./docs/pi-native-replatform-plan.md)的7批顺序、逐批审核门、实验权限和后续Memory/BMAD/架构顺序。
+- [x] 2026-08-05用户审核并批准[RP-01.0基线与验收预言机](./docs/research/pi-native-technical-baseline.md)：固定版本、Package地图、6条预言机和8项缺口；批准只解除RP-01.1研究门，不授权产品代码重建。
+- [x] 2026-08-05完成并提交RP-01.1整体心智模型：对象词典、2条源码调用链、Package关系图、“pi明确不拥有”清单和0.82.1知识同步；后续已纳入`pi + pi-web`双轨完整掌握材料并获用户审核，原RP-01.2逐卡顺序不再执行。
+- [x] 2026-08-05用户审核通过`pi + pi-web`双轨完整掌握材料并启动Workflow/HITL/Checkpoint目标架构工作包；原RP-01.2—RP-01.6不再恢复为逐卡停顿，Memory仍在本工作包之后。
+- [x] 2026-08-05曾在[Workflow/HITL/Checkpoint架构文件](./docs/pi-workflow-hitl-checkpoint-architecture.md)形成第一版D1—D8；用户指出它越过“先研究pi支持”的任务层级，该版本和审核请求均已撤回。当前文件内容已于2026-08-06基于完成后的源码事实重建，不能把两版混为一轮审核。
+- [x] 用户指出上述交付层级错误：任务是研究pi支持，不是审核Chat架构。D1—D8审核已撤回，当前先建立Workflow、HITL、Checkpoint各自的`native/partial/design-only/missing`矩阵、源码/测试证据和进程退出语义。
+- [x] 2026-08-05完成重写后的[pi原生支持研究](./docs/research/pi-workflow-hitl-checkpoint-research.md)：固定pi 0.82.1与pi-web 0.83.0两条版本线，分别列出Workflow 12项、HITL 16项、Checkpoint/恢复20项支持状态，补齐durable harness设计/实现分界、进程退出矩阵及`44+23+22+13=102`项定向离线测试；当日停在研究充分性审核，2026-08-06用户已明确推进到下一架构门。
+- [x] 2026-08-06用户明确从已完成源码研究进入Chat架构方案审核；重新形成[Workflow/HITL/Checkpoint架构候选](./docs/pi-workflow-hitl-checkpoint-architecture.md)，比较4条总体路线并提交新D1—D8。它不是此前越过研究门的旧草稿，也不构成实现授权。
+- [ ] 审核新D1—D8；获批前不进入Memory、总体架构同步、Schema、迁移、依赖或实现。
 - [x] 建立`AGENTS.md`、`PROJECT_CONTEXT.md`、`PROJECT_PLAN.md`、`PROJECT_STATE.md`和`README.md`。
 - [x] 纠正产品身份：Chat 是独立完整产品，OPC-OS Chat 是外部集成关系。
-- [x] 新增并持续维护`PROJECT_LESSONS.md`，当前记录57个反例；最新反例固定“Projection必须同时给出领域事实、角色视图、呈现Adapter和可验证文件物化，不能用总账或页面草图替代具体落地”。
+- [x] 新增并持续维护`PROJECT_LESSONS.md`，当前记录78个反例；反例078固定“研究pi支持必须先交付native/partial/design-only/missing证据矩阵，不能偷换成Chat架构决策卡”。
 - [x] 建立Chat概念空间：方法来源、目录治理、发现索引、14个高风险概念簇、概念/实现双状态和自动结构/链接校验。
 - [x] 把最终产品愿景固定为“想法能留下、事项有状态、工作可继续、执行可看护、结果有证据”，并明确Product Session不是Project边界、Context面板不是第二事实源。
 - [x] 用户已确认本轮愿景与概念纠正准确进入稳定项目文档。
 - [x] 用户已确认“谁登录、怎样使用、工作和作品进度”属于超级管理员目标能力；个人主页、执行看护和技术可观测性不能替代。
 - [x] 建立面向只会少量C++读者的完整项目掌握课程：Web/前后端基础、10个横向对象专题、S1-S7、15个可执行场景、
-  真实/受控/缺口证据分级和机器防漂移检查；根README只进入项目掌握INDEX，INDEX以61个连续课号覆盖
+  真实/受控/缺口证据分级和机器防漂移检查；根README只进入项目掌握INDEX，INDEX以67个连续课号覆盖
   全部学习者文档，新增/重名/漏排由检查器失败关闭；文档完成不冒充用户个人已经达到L2/L3。
 
 完成门：项目定义无需依赖 OPC-OS 也能完整描述用户、价值、责任和产品边界；所有项目回复前强制读取经验文档。
@@ -248,6 +281,10 @@ flowchart LR
 
 主要方案任务：
 
+- [x] 在历史Python/FastAPI/MAF前提下完成一次Agent Memory选型：`memmy-agent`曾作为有界派生Memory
+  Sidecar/API基座，MemOS与TencentDB Agent Memory分别作为算法和治理参考；该结果保留为历史证据。
+- [ ] RP-01完成后按TypeScript/pi目标边界重新评分MemOS、memmy-agent与TencentDB Agent Memory，形成新的
+  采用范围、主/影Adapter、退出条件和用户审核决定；旧82/64/49分不能直接作为最终结论。
 - [ ] 详细设计 Memory、Evidence、Delivery、Run Trace和Super Admin Operations；超级管理员Schema/API/指标/隐私必须单独审核。
 - [x] 建立 Memory Candidate、接受、纠正、撤销/失效、范围、不可变revision和来源关联。
 - [ ] 建立 Evidence、Artifact、Provenance Graph、验证和失效传播。
@@ -350,6 +387,53 @@ Session 是 W2-W9 的横向能力，仍由两份专项材料维护：
 - [ ] F09 超级管理员身份、使用与作品运营看护。
 - [ ] F10 Chat开发Chat自举纵向闭环（SD1、SD2与SD3真实Qwen隔离写入已完成；SD4/F02与
   SD5/F05仍保留各自详细设计门）。
+
+### 16.3 UI/UX参考事实走查与界面确认横向线
+
+该横向线只负责研究、模式选择、组合原型和用户体验验收，不改变W0-W10的开发优先级，也不把体验
+候选自动升级为正式架构参考。详细范围、当前28条活动流程和证据卡见
+[UI/UX参考产品事实走查计划](./docs/ui-ux-reference-fact-walkthrough-plan.md)。
+
+- [x] 用户确认研究方法与目标投入结构：7个A档深拆、10个B档专项、8个C档视觉/概念；截图不再冒充
+  交互事实，实机、官方说明、截图、用户报告和Chat推断分开。2026-08-01用户看过真实效果后移除
+  GitHub Actions，当前A档为6个候选加1个空位；不自动补位。
+- [x] 2026-08-01用户确认保留Super Productivity作为A档自主管理参考，并批准其Today行动序列、Work
+  原位层级与专注计时3组采用/改造/拒绝决定；这不表示整套视觉、日期语义或Work Log模型获批，也不
+  提高当前0条O完整、1条O局部、27条无O证据的事实等级。
+- [x] 用户确认UI/UX横向线以“Chat目标系统90%交互设计获批”为完成目标；参考研究、交互设计、实际效果、
+  用户批准和代码实现分轴记录。建立[Chat交互设计覆盖台账与阶段审核门](./docs/chat-interaction-design-coverage-ledger.md)，
+  以86项候选在后台防漏，并以“一次一个模块、1个主参考且必要时最多1个辅助参考、1—3个画面或轻量HTML、
+  2—4个决定”的小循环推进；30%/60%/90%只承担自然节点的系统一致性复查。
+- [ ] 用户审核当前24个活动候选、28条具体流程、6个UX场景组、首个试走查顺序和15条Chat自主设计链。
+- [x] Super Productivity首轮3张事实卡和Chat模式取舍已经用户审核；A-SP-01为O局部，A-SP-02与
+  A-SP-03为D/S。跨Project、返回上下文和暂停恢复的O证据缺口继续如实保留，不阻塞进入Routine。
+- [x] 从完整场景、15条自主设计链和呈现面反向清单形成86个`IU-xxx`候选：P0 42、P1 37、P2 7；
+  已防止按页面、设备、按钮或状态刷数。MD-01批准后`IU-104`、`IU-105`为`approved`，其余84个仍为`inventory_candidate`。
+- [x] 2026-08-01用户纠正推进节奏：86项候选只作后台防漏，不要求先批量审核或冻结分母；每个模块批准后
+  增量校对，到一个UX场景组基本成形或30%系统走查等自然节点再冻结revision，冻结前仍不报告90%百分比。
+- [x] 2026-08-01用户确认[Chat 90%交互设计模块总表](./docs/chat-interaction-design-module-map.md)中的28个设计确认模块；
+  该总表把86个Interaction Unit逐一映射且只分配1次，并显式保留Personal Home、Personal Workspace、
+  Project Dossier、日历与Workflow Run View等锚点。确认总表只锁定逐轮工作目录，不批准模块内交互。
+- [x] 用户把每批做1个还是2—3个模块的决定权交给设计执行者；默认单模块。两个新模块只有共享紧密用户旅程、
+  参考事实与视觉上下文，不涉及高影响审批/恢复/Evidence/Delivery/Identity/Admin等风险语义，且仍能分别
+  展示与拍板时才合批；三个模块只用于已批准模块的组合一致性走查。批次开始前公开原因和边界。
+- [x] 第一批单独推进`MD-01 快速捕获与Idea去向`，只研究Routine `A-RT-01`，并对照既有Super Productivity
+  `A-SP-01`事实；形成
+  1个轻量HTML或2—3张关键草图、1个保存失败/离线状态和2—4个决定后立即提交用户拍板。
+- [x] 2026-08-01用户审核并批准MD-01的入口形态、默认落点、分类时机、反馈与撤销4项决定；`IU-104`、
+  `IU-105`进入设计批准记录。该批准不把Routine证据升级为O，也不把后端候选、幂等、回链、升级与离线恢复记为已实现。
+- [x] 建立[交互设计跨Session续接入口](./docs/chat-interaction-design-handoff.md)：记录1/28完成、27个待完成、
+  MD-01批准决定与实现边界、剩余模块、固定小循环、Token控制、原型交付门和可直接复制的续接指令。
+- [ ] 在新的Session按续接入口启动`MD-02 Personal Home、注意力与继续工作`；本次归档不提前研究或制作MD-02效果。
+- [ ] Routine `A-RT-02`日历协商与`A-RT-03`日终结转留待各自模块；其余A/B/C候选也只在对应模块需要时进入。
+  不可访问、付费或无法安全触发的单条流程按证据门降级；任何替换必须回答同一个研究问题并重新经过用户审核。
+- [ ] 只按A档暴露的明确缺口完成B档10条专项流程，并建立C档视觉/概念板。
+- [ ] 按6个UX场景组逐项审核采用、改造、拒绝或待验证的模式，不以整个产品为采用单位。
+- [ ] Personal Home、Personal Workspace、Project Dossier、Workflow Run View等锚点各自先逐模块确认，
+  到自然组合点再覆盖完整呈现面、桌面/手机和跨场景入口/返回。
+- [ ] 只有具备入口/退出、权威状态映射、适用状态、桌面/手机行为、真实反馈和用户旅程验收，并由用户
+  明确批准的Interaction Unit才计入90%分子；合同完整且获批的待实现壳可以计入设计确认，但不能计入
+  代码实现完成。全部P0旅程仍须100%获批。
 
 D4批准后，本节Q/F编号只保留专项完成状态，不再拥有全局优先级。唯一主依赖序由
 [能力开发地图第12节](./docs/product-capability-architecture-map.md#12-唯一主顺序)及Manifest维护；F10继续作为

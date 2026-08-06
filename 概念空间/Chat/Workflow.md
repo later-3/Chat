@@ -7,8 +7,9 @@
 | 目的 | 统一项目Workstream、可执行Workflow定义、用户选择、实际运行、节点和运行视图。 |
 | 概念状态 | 有效；用户已批准“发送前选择Workflow，发送后展示实际Run”。 |
 | 实现状态 | 局部实现并验证：持续协作主Workflow当前为v1.8.0，含39个MAF节点和43条静态边；Intent Set/复合Plan、两级Context、3路执行、pi只读/隔离编辑、Result Claim、AG-UI投影、Product Harness接合和主Workflow安全点Checkpoint/跨进程恢复纵向链已存在。其他Definition、全部子级HITL和完整故障矩阵尚未获得同等保证。 |
+| 目标方向 | 2026-08-05已冻结pi-agent核心基座；现有MAF Workflow是迁移行为预言机，目标Workflow/HITL/Checkpoint实现待RP-01研究和用户审核。 |
 | 事实所有者 | 产品选择规则见[项目经验反例013](../../PROJECT_LESSONS.md#16-反例-013把workflow选择prompt发送和运行展示混成一个动作)，实现见[项目状态](../../PROJECT_STATE.md)。 |
-| 维护责任 | Workflow目录、Run管理、MAF Runtime和前端Workflow Run View共同维护。 |
+| 维护责任 | Workflow目录、Run管理、目标pi Runtime与前端Workflow Run View共同维护；当前MAF Runtime保留预言机。 |
 
 ## 一句话理解
 
@@ -16,13 +17,13 @@
 
 ## 为什么需要
 
-“工作流”既被用来描述项目交付工作包，也被用来描述MAF执行图；同时又容易把Workflow选择器、Run和右侧可视化页面混成一个对象。这样会造成系统静默换流程、节点状态无法追溯，或把项目计划节点误当运行节点。
+“工作流”既被用来描述项目交付工作包，也被用来描述Runtime执行图；同时又容易把Workflow选择器、Run和右侧可视化页面混成一个对象。这样会造成系统静默换流程、节点状态无法追溯，或把项目计划节点误当运行节点。
 
 ## 定义与边界
 
 | 概念 | 定义 | 不是什么 |
 |---|---|---|
-| Project Workstream / 项目工作流 | `PROJECT_PLAN`中的W0-W9交付工作包 | 不是可以被MAF执行的图；文档中优先称“交付Workstream” |
+| Project Workstream / 项目工作流 | `PROJECT_PLAN`中的W0-W10交付工作包 | 不是可以被Agent Runtime直接执行的图；文档中优先称“交付Workstream” |
 | Workflow Definition / 工作流定义 | 具有稳定ID、版本、节点、边和输入输出合同的可执行图 | 不是当前Run状态或UI页面 |
 | Workflow Selection / 工作流选择 | 用户在发送Prompt前为本次请求明确选定的Definition ID和版本 | 不是Agent建议或页面默认值 |
 | Workflow Recommendation / 工作流推荐 | Agent未来根据意图提出的候选及原因 | 不是选择，更不是执行授权 |

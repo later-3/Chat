@@ -178,7 +178,7 @@ class ExecutionWorker:
         # DEBUG-BREAKPOINT-NOTE: 触发: 初学者应跳过此断点，改用BP-03 _execute_claim。
         # DEBUG-BREAKPOINT-NOTE: 触发: 对应文档：从断点停住到知道来路和下一跳#6（标注'初学者不要下此热点断点'）。
         # DEBUG-BREAKPOINT-NOTE: 频率: 应用启动后持续触发，约每0.08秒1次（频繁）
-        breakpoint()  # DEBUG-BREAKPOINT: BP-02
+        # breakpoint()  # DEBUG-BREAKPOINT: BP-02
         await self._maintain_runtime()
         claim = await self.runtime.claim_one(
             worker_id=self.worker_id,

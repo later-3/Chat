@@ -45,7 +45,7 @@ Chat产品核心
 
 OPC-OS Chat 是一个可与本项目互操作的外部系统。在特定集成拓扑中，本项目可以提供聊天通道能力，也可以消费其共享能力；这是**系统之间的合同关系**，不是本项目的产品身份或层级归属。
 
-Chat Web是本产品自带客户端，通过Web/API Adapter访问后端。Telegram等外部终端平台与OPC-OS Chat都不能直接调用Conversation、Run、MAF或数据库：终端平台必须经过对应Channel Adapter，OPC-OS Chat必须经过系统间Bridge Adapter；这些Adapter转换成统一内部Interaction合同后才能进入产品核心。
+Chat Web是本产品自带客户端，通过Web/API Adapter访问后端。Telegram等外部终端平台与OPC-OS Chat都不能直接调用Conversation、Run、Agent Runtime或数据库：终端平台必须经过对应Channel Adapter，OPC-OS Chat必须经过系统间Bridge Adapter；这些Adapter转换成统一内部Interaction合同后才能进入产品核心。
 
 本项目不能依赖外部系统替自己承担 Product Session、Work、Run、Approval、Evidence、Delivery、Memory 或 Trace 的事实源责任。跨系统协作必须明确状态归属、版本、权限、幂等、证据和失效传播，不能形成双重事实源。
 
@@ -111,17 +111,18 @@ Chat 是一个以自然语言为入口、以产品事实为底座、以受治理
 
 系统允许项目、任务、学习、研究、笔记和周期工作采用不同的协作方法，但这些方法都复用同一组核心产品对象和提交规则，不为每个场景复制一套事实模型。
 
-### 4.3 Chat Harness与MAF运行能力
+### 4.3 Chat Harness与pi运行能力
 
 完整Chat系统由两类核心能力共同构成：
 
 1. **Chat Harness**拥有产品语义、权威事实、协作协议、Context选择、执行治理、结果沉淀和三方投影。
-2. **Chat AI Runtime**以MAF为运行基线，负责Agent、Workflow、Executor、模型、Tool和Checkpoint语义。
+2. **Chat AI Runtime**以TypeScript与`pi-agent-core`为目标运行基线，负责Agent loop、模型、Tool、
+   Session与运行事件；Workflow、HITL和Checkpoint中pi未原生覆盖的责任由后续技术基线研究与总体架构明确。
 
 前端是两类能力的共同交互面，不是第三个事实源。Execution Worker、Tool Gateway、pi、Validator和
 Reconciler属于完整Chat系统的执行层，但必须处在独立权限、恢复和副作用边界内。
 
-Chat Harness不是大Prompt、MAF的Harness Agent、万能Service或前端面板。它在内部继续按
+Chat Harness不是大Prompt、pi Agent对象、万能Service或前端面板。它在内部继续按
 Conversation、Work、Knowledge、Protocol、Context、Governance、Evidence和Delivery的状态所有权、
 事务边界与失败语义拆分；Schedule独立拥有业务时间，Memory、Run、Tool、Identity与Admin继续拥有
 各自事实。2026-07-30批准的正式目标架构共14个逻辑状态所有者、3个应用组件和3类运行责任；
@@ -232,24 +233,24 @@ Chat作为独立运营的产品，必须提供单独的超级管理员运营看�
 | Memory | 经候选门确认后可跨会话使用的信息及来源、版本和有效性 |
 | Trace | 可观察步骤、状态变化、错误、关联关系和审计记录 |
 
-这些对象是产品语言，不等同于某个 MAF 类、数据库表、AG-UI 事件或前端组件。字段级 Schema 和状态机需要在对应模块详细设计中审核。
+这些对象是产品语言，不等同于某个pi/MAF类、数据库表、实时协议事件或前端组件。字段级Schema和状态机需要在对应模块详细设计中审核。
 
 ### 7.1 四个必须区分的对象
 
 | 对象 | 所属层与所有者 | 责任 | 明确不是什么 |
 |---|---|---|---|
 | Product Session | 产品领域层、Product DB | 用户可创建、打开、归档和恢复的协作容器，关联消息、Interaction、Work、Run、Evidence和访问边界 | 不是 MAF 对象，也不是 AG-UI Thread |
-| MAF AgentSession / Workflow Checkpoint | MAF 运行时层 | 保存模型上下文、Context Provider 状态和 Workflow 恢复点 | 不是产品会话、用户授权边界或产品历史数据库 |
-| AG-UI Thread | AG-UI 协议层 | 用 `threadId` 关联前端请求、实时事件、消息与 State 投影以及 Hydrate | 不是用户身份、权限凭据或产品事实源 |
-| Product Run | 产品执行层 | 一次具体 Agent、Workflow 或 Runtime 执行；产品侧记录长期生命周期，AG-UI 投影其实时事件 | 不是整段 Session，也不等于一次 Interaction |
+| Runtime Session / Workflow Checkpoint | pi与目标Workflow运行时层 | 保存Agent上下文、运行时消息或Workflow恢复点；具体对象和Store待审核 | 不是产品会话、用户授权边界或产品历史数据库 |
+| Realtime Thread / Connection | 前后端实时协议层 | 关联前端请求、实时事件、消息与运行投影；具体协议和标识待审核 | 不是用户身份、权限凭据或产品事实源 |
+| Product Run | 产品执行层 | 一次具体Agent、Workflow或Runtime执行；产品侧记录长期生命周期，实时协议只投影其事件 | 不是整段Session，也不等于一次Interaction |
 
-`MAF AgentSession`和`Workflow Checkpoint`不是同一个 MAF 类型；上表只把它们归入“MAF 运行时状态”，代码和存储中仍需分别建模。
+Runtime Session和Workflow Checkpoint必须分别建模。当前实现使用MAF AgentSession、MAF Workflow Checkpoint和AG-UI Thread；它们继续作为迁移映射事实，但不决定目标pi系统的类型名称或协议。
 
 `Interaction`与`Product Run`不能合并：一次 Interaction 可以不触发 Agent，也可以触发多个 Run。
 
 `Product Run`与`Run Attempt / Runtime Job`也不能合并：前者表达用户长期可见的一次执行及最终状态，后者表达第几次实际尝试、哪个 Worker 拥有执行权、如何续租和恢复。Attempt 或 Job 可以过期、接管或清理，不能因此删除 Product Run 事实。
 
-Product Session ID、MAF Session ID、AG-UI `threadId`、Product Run ID 和 Attempt ID 都只标识各自对象，不自动构成权限。映射必须可追踪、可校验且由服务端可信上下文建立。
+Product Session ID、pi Runtime Session ID、Realtime Thread/Connection ID、Workflow Checkpoint ID、Product Run ID和Attempt ID都只标识各自对象，不自动构成权限。映射必须可追踪、可校验且由服务端可信上下文建立。
 
 ### 7.2 Chat概念空间
 
@@ -260,7 +261,7 @@ Chat使用[概念资产索引](./概念空间/00-索引.md)维护人、AI、产�
 1. 本文拥有稳定产品定义、核心对象和责任。
 2. 概念资产拥有术语边界、相邻概念关系、别名和反例；与本文冲突时必须修正概念正文。
 3. `PROJECT_STATE.md`拥有当前实现、验证、缺口和风险。
-4. MAF、AG-UI、Provider、源码和测试拥有各自技术行为事实。
+4. pi、当前MAF/AG-UI实现、Provider、源码和测试拥有各自技术行为事实。
 
 概念状态使用“候选、有效、修订中、已停用”；实现状态使用“未实现、局部实现、已实现、已验证”及说明。两者不能互相替代。`Session`、`Run`、`Workflow`、`Agent`、`Context`、`Tool`、`Approval`和`Canvas`在存在多种含义时必须使用限定名。
 
@@ -332,9 +333,27 @@ Chat 的目标能力至少包括：
 
 Session 的完整目标和恢复分级由[Session 能力全集](./docs/session-capability-catalog.md)维护；交付依赖由[Session 交付路线](./docs/session-delivery-roadmap.md)维护。
 
-## 10. 已批准技术路线
+## 10. 技术路线
 
-2026-07-21 用户批准以下技术路线：
+### 10.1 2026-08-05当前批准目标
+
+用户已经冻结以下方向：
+
+1. 目标系统采用TypeScript全栈；前端与后端围绕同一组版本化产品合同建设。
+2. `pi-agent-core`是目标Agent核心基座；`pi-ai`提供模型与Provider抽象，`pi-coding-agent`继续作为编码执行能力的重要来源。
+3. 前端不直接成为pi运行时的一部分。具体TypeScript前端框架尚待研究与审核；现有React/Vite实现和`pi-web`都作为交互、连接与代码参考输入。
+4. Chat继续独立拥有Identity、Conversation、Project/Work/Plan/Action、Approval、Accepted Memory、Run、Evidence、Artifact、Delivery和Trace等产品事实；pi Session、消息或事件不能替代这些对象。
+5. 现有Python/FastAPI/MAF/AG-UI实现停止作为目标架构继续扩张，保留为已验证产品语义、失败语义、测试和迁移验收基线。在替代链路通过审核与验证前，不删除现有代码或数据结构。
+6. 采用“重建目标纵向链，而非逐行翻译Python”的迁移原则；哪些前端组件、Schema、合同和测试复用，必须由研究与迁移计划逐项决定。
+7. HTTP服务框架、前端框架、前后端实时协议、持久Workflow/HITL/Checkpoint实现、Product Store实现和部署拓扑尚未冻结，必须先完成[pi技术基线研究与重建决策计划](./docs/pi-native-replatform-plan.md)并经用户逐项审核。
+8. Memory必须通过Chat拥有的边界接入；因运行时从Python/MAF转向TypeScript/pi，2026-08-05早先完成的Memory评分需要在新技术前提下重新审核，不能直接外推为最终集成决定。
+9. BMAD只作为项目管理方法研究输入；它的Agent人物、Runtime、Session、Memory和目录结构不自动进入Chat目标架构。
+
+上述批准只冻结方向，不等于批准新目录、依赖、Schema、迁移、部署或删除旧实现。第一份待审核工作包只研究pi技术基线，不进入产品代码重建。
+
+### 10.2 2026-07-21历史实现路线
+
+以下路线已经形成当前可运行实现和验证证据，但已被10.1中的目标方向替代，不再作为未来架构约束：
 
 1. 后端使用 Python、Microsoft Agent Framework（MAF）和 FastAPI。
 2. 前后端 Agent 交互协议使用 AG-UI，主要传输为 HTTP 请求和 SSE 事件流。
@@ -347,7 +366,7 @@ Session 的完整目标和恢复分级由[Session 能力全集](./docs/session-c
 9. 每次Provider模型调用都必须生成独立ModelCallDraft、Hash和授权判断：MAF原生Workflow承载控制流，自定义确定性Executor编译并发送请求；产品默认发送前暂停人工审批，HITL策略可在系统不可放宽下限内配置有界自动推进，自动决定同样留痕。`store=False`且不使用Continuation保证本次完整显式上下文可见，自动Tool循环关闭。Provider与模型来自服务端能力目录并联动选择；可读视图使用不可改名的Key和按值类型选择的文字、数字、布尔或枚举控件，Provider JSON只作为高级视图，两者编辑同一请求草稿。任一字段或Provider路由修改都会生成新版本、Hash并重新授权，旧决定失效；放弃不产生发送Attempt，并把原输入返回输入框供继续修改或清空。
 10. 后端运行与模型配置只从私有`backend/config.json`启动快照读取；Provider按数组扩展、每个Provider维护自己的模型目录。仓库只提交脱敏的`backend/config.example.json`，密钥和Base URL不进入浏览器响应或Git。
 
-### 10.1 协议、运行时与状态所有权
+### 10.3 现有实现的协议、运行时与状态所有权
 
 | 边界 | 负责 | 不负责 |
 |---|---|---|
@@ -358,6 +377,6 @@ Session 的完整目标和恢复分级由[Session 能力全集](./docs/session-c
 | 前端 | 展示和操作服务端状态投影，保存短期页面交互状态 | 不拥有权威历史、产品事实、授权或运行终态 |
 | 外部集成合同 | 身份映射、能力声明、命令/事件交换、版本、幂等、权限和交付回执 | 不直接读写其他系统私有状态，不合并双方事实源 |
 
-架构总则：**REST 管理产品资源，AG-UI 管理一次 Agent Run 的实时交互，Product DB 保存权威产品事实，MAF 管理 Agent 运行时语义。** 物理存储可以复用，逻辑所有权不能合并；AG-UI Snapshot 可以作为运行或 UI 投影，但不能替代 Product Session 与产品历史。
+现有实现总则：**REST 管理产品资源，AG-UI 管理一次 Agent Run 的实时交互，Product DB 保存权威产品事实，MAF 管理 Agent 运行时语义。** 这组事实继续作为迁移行为基线，但不预先决定目标TypeScript/pi系统必须沿用同一协议或物理实现。无论目标协议怎样选择，物理存储可以复用，逻辑所有权不能合并；协议Snapshot和浏览器状态都不能替代Product Session与产品历史。
 
 Session 目标包括完成历史恢复、活动流重连、Worker 恢复、Tool 副作用恢复、Workflow/HITL 恢复和跨入口连续性。交付路线只能决定这些保证的启用顺序，不能把 AG-UI Snapshot、MAF Session、Workflow Checkpoint 或 Product Session 合并成一个对象。

@@ -4,16 +4,16 @@
 
 | 项目 | 内容 |
 |---|---|
-| 目的 | 固定完整Chat系统、Chat Harness、MAF AI Runtime、执行层和前端之间的责任边界。 |
-| 概念状态 | 有效；2026-07-24用户确认Chat系统由Chat Harness与基于MAF的AI运行能力共同构成。 |
-| 实现状态 | 局部实现并持续建设：Product Harness、持续协作Workflow、模型调用治理、运行恢复和渐进式Workbench已有纵向切片；目标边界已正式细化为14个状态所有者、3个应用组件和3类运行时职责，但Schedule、Projection、多入口、完整Tool/Evidence和生产运营仍未完成。 |
+| 目的 | 固定完整Chat系统、Chat Harness、Chat AI Runtime、执行层和前端之间的责任边界。 |
+| 概念状态 | 有效；2026-08-05用户进一步冻结TypeScript全栈与pi-agent目标Runtime，Harness与Runtime分离原则不变。 |
+| 实现状态 | 当前Python/MAF实现已有Product Harness、持续协作Workflow、模型调用治理、运行恢复和渐进式Workbench纵向切片；目标pi技术映射和总体架构待重新审核。 |
 | 产品责任 | [PROJECT_CONTEXT.md](../../PROJECT_CONTEXT.md) |
 | 实现事实 | [PROJECT_STATE.md](../../PROJECT_STATE.md) |
-| 维护责任 | 产品概念、总体架构、Harness应用层、MAF运行层、执行层与前端各自维护对应事实。 |
+| 维护责任 | 产品概念、总体架构、Harness应用层、pi运行层、执行层与前端各自维护对应事实；MAF实现只维护迁移预言机。 |
 
 ## 一句话理解
 
-**Chat系统是完整协作产品；Chat Harness保存并约束“用户在做什么、采用什么信息与规则、什么可以执行和回写”，MAF AI Runtime负责受控智能运行，执行层负责有权限边界的真实动作。**
+**Chat系统是完整协作产品；Chat Harness保存并约束“用户在做什么、采用什么信息与规则、什么可以执行和回写”，pi AI Runtime负责受控智能运行，执行层负责有权限边界的真实动作。**
 
 ## 为什么需要
 
@@ -33,8 +33,8 @@ Chat Harness把成熟的项目、任务、学习、研究和周期工作方法�
 |---|---|
 | Chat系统 | 完整产品边界，包括用户交互、产品事实、协作方法、Agent与Workflow运行、执行、证据、交付、恢复和可观察性。 |
 | Chat Harness | 产品语义与协作控制系统，把自然语言落到可维护、可审核、可执行和可恢复的产品对象与规则。 |
-| Chat AI Runtime | 基于MAF组织Agent、Workflow、Executor、Checkpoint、模型与Tool调用的智能运行能力。 |
-| 执行层 | 具有独立权限、副作用、恢复和证据边界的Worker、Tool Gateway、pi等外部Runtime、Validator与Reconciler。 |
+| Chat AI Runtime | 目标上以`pi-agent-core`组织Agent loop、模型、Tool、Session与事件；持久Workflow/HITL/Checkpoint由后续架构补齐。 |
+| 执行层 | 具有独立权限、副作用、恢复和证据边界的Worker、Tool Gateway、pi-coding-agent、Validator与Reconciler。 |
 | 前端交互面 | Harness与Runtime的可读投影及命令入口，不是新的事实源。 |
 
 Chat Harness拥有或协调：
@@ -49,13 +49,13 @@ Chat Harness拥有或协调：
 
 总体架构把这些责任进一步固定为14个逻辑状态所有者（Identity、Conversation、Work、Knowledge、
 Protocol、Governance、Context、Memory、Run、Tool、Evidence、Schedule、Delivery、Admin）、3个应用组件
-（Ingress、Interaction、Projection）和3类运行时职责（MAF、Execution、Platform）。这是目标责任边界，
-不表示对应Schema、物理目录或实现已完成。
+（Ingress、Interaction、Projection）。原3类运行责任中的MAF Runtime已进入pi目标映射重审；这不改变
+逻辑状态所有权，也不表示对应Schema、物理目录或实现已完成。
 
 ## 边界与不是什么
 
-1. Chat系统不是聊天页面、单个MAF Agent、一次Prompt调用，也不是外部系统的附属通道。
-2. Chat Harness不是大Prompt、System Instructions、MAF AgentSession、万能Service或数据库大表。
+1. Chat系统不是聊天页面、单个pi/MAF Agent、一次Prompt调用，也不是外部系统的附属通道。
+2. Chat Harness不是大Prompt、System Instructions、pi Runtime Session、万能Service或数据库大表。
 3. Project、Context或Memory面板只是Harness权威事实的可读投影和命令入口。
 4. Chat AI Runtime不拥有Product Session、Project、Work、Accepted Memory、Approval或Product Run最终成功事实。
 5. 执行层只能接收当前步骤的受控输入与能力Allowlist；不能扩大RunSpec，也不能直接提交长期产品事实。
@@ -72,12 +72,12 @@ Chat Harness
   ├─ 权威事实、协议、Context、治理、结果和提交门
   └─ 为每一步编译最小充分输入
        ↕ revision与hash绑定
-Chat AI Runtime（MAF）
+Chat AI Runtime（目标：pi-agent-core）
   ├─ Agent / Workflow / Executor / Model / Tool
   └─ 公开结果、候选Product Patch和Evidence
        ↕ 受控执行合同
 执行层
-  └─ Worker / Tool Gateway / pi / Validator / Reconciler
+  └─ Worker / Tool Gateway / pi-coding-agent / Validator / Reconciler
 ```
 
 一次协作回合的核心对象链是：
@@ -90,7 +90,7 @@ Chat AI Runtime（MAF）
 -> ExecutionDraft revision
 -> 用户或策略决定
 -> 不可变RunSpec
--> MAF Workflow步骤与StepInputProjection
+-> Workflow步骤、pi Agent回合与StepInputProjection
 -> 模型/Tool/执行层Attempt
 -> 候选结果、Evidence与验证
 -> Product提交
@@ -122,7 +122,7 @@ Agent和执行Runtime都不能绕过Harness直接提交Product事实。执行层
 
 反例：把全部项目规则写进System Prompt，或把一个Session的所有消息无边界加入每轮上下文。
 
-反例：MAF Workflow跑完就把Project标记为完成；Workflow输出只是候选，完成还需要Evidence与
+反例：Runtime Workflow或pi Agent回合结束就把Project标记为完成；运行输出只是候选，完成还需要Evidence与
 产品状态转换。
 
 反例：前端勾选Context后直接修改旧记录；正确做法是提交不可变Context revision并使旧授权失效。
@@ -133,7 +133,7 @@ Agent和执行Runtime都不能绕过Harness直接提交Product事实。执行层
 
 ## 当前状态与未知
 
-已实现并验证的关键纵向能力包括：
+当前MAF实现已验证的关键纵向能力包括；这些是迁移预言机，不代表目标pi系统已经具备：
 
 1. Product Session、Message、Run/Attempt、Harness Project/Work/Plan/Action/Note/Memory与两阶段Context。
 2. 持续协作MAF Workflow、逐次模型调用审批、ExecutionDraft/RunSpec和Checkpoint/Outbox恢复切片。
@@ -154,7 +154,7 @@ SLO/备份/容量与告警。
 2. 当前实现事实和未完成能力：[PROJECT_STATE.md](../../PROJECT_STATE.md)。
 3. 分阶段交付与质量门：[PROJECT_PLAN.md](../../PROJECT_PLAN.md)。
 4. 协议、Context与步骤输入Schema：[Chat Harness协议、Context与步骤输入详细设计](../../docs/chat-harness-protocol-context-detailed-design.md)。
-5. MAF事实与参考项目规则遵循仓库根[AGENTS.md](../../AGENTS.md)中的固定源码与版本证据顺序。
+5. pi目标事实、当前MAF行为预言机与参考项目规则遵循仓库根[AGENTS.md](../../AGENTS.md)中的固定源码与版本证据顺序。
 
 ## 维护与重入
 
