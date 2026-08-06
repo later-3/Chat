@@ -1,0 +1,76 @@
+/* 设计Token：取值以 docs/product/design-guidelines.md 为准。
+   组件只允许引用语义Token，禁止写死色值。 */
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f5f4;
+  --bg-tertiary: #ebebe9;
+  --surface-raised: #ffffff;
+  --text-primary: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --text-tertiary: #75757a;
+  --separator: rgba(29, 29, 31, 0.1);
+  --accent: #1d1d1f;
+  --accent-text: #ffffff;
+  --status-success: #248a3d;
+  --status-warning: #a85b00;
+  --status-danger: #c22f3d;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-control: 10px;
+  --radius-panel: 14px;
+  --radius-message: 18px;
+  --font-caption: 13px;
+  --font-body: 15px;
+  --font-title: 17px;
+  --font-page: 20px;
+  --font-display: 28px;
+  --font-slide: 30px;
+  --font-hero: 40px;
+  --radius-round: 999px;
+  --rail-width: 88px;
+  --session-rail-width: 264px;
+  --topbar-height: 48px;
+  --mobile-nav-height: 64px;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg-primary: #000000;
+  --bg-secondary: #161617;
+  --bg-tertiary: #242426;
+  --surface-raised: #2c2c2e;
+  --text-primary: #f5f5f7;
+  --text-secondary: #98989f;
+  --text-tertiary: #8e8e93;
+  --separator: rgba(245, 245, 247, 0.14);
+  --accent: #ffffff;
+  --accent-text: #000000;
+  --status-success: #30d158;
+  --status-warning: #ff9f0a;
+  --status-danger: #ff453a;
+  color-scheme: dark;
+}
+
+/* 未手动选择时跟随系统 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg-primary: #000000;
+    --bg-secondary: #161617;
+    --bg-tertiary: #242426;
+    --surface-raised: #2c2c2e;
+    --text-primary: #f5f5f7;
+    --text-secondary: #98989f;
+    --text-tertiary: #8e8e93;
+    --separator: rgba(245, 245, 247, 0.14);
+    --accent: #ffffff;
+    --accent-text: #000000;
+    --status-success: #30d158;
+    --status-warning: #ff9f0a;
+    --status-danger: #ff453a;
+    color-scheme: dark;
+  }
+}

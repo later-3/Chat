@@ -8,7 +8,7 @@
 2. 前端、后端、实时交互、Workflow和Agent Runtime技术选型已批准并写入合同。
 3. P0工程与合同骨架已完成并合并；仓库已有Workspace、共享合同、Web/API空应用、测试、CI和依赖锁，但没有业务Schema、Product Store、Workflow或pi Adapter实现。
 4. 当前分支为`codex/chat-workflow-foundation`。
-5. P1现在表示“第一次可用的Chat闭环”阶段目标，已拆成8个独立任务；唯一下一任务是P1.1响应式Chat外壳。
+5. P1现在表示“第一次可用的Chat闭环”阶段目标，已拆成8个独立任务；当前先审核P1.1响应式Chat与工作流界面任务书。
 
 ## 2. 新 Session 读取顺序
 
@@ -40,7 +40,7 @@ P1的用户目标是：安装并打开Chat，发送一条消息，看见后台�
 
 按顺序交付：
 
-1. P1.1：响应式Chat外壳。
+1. P1.1：响应式Chat与工作流界面；纯前端，同时建立对话区和工作流运行区，当前[任务书](./tasks/p1.1-responsive-chat-workflow-shell.md)待审核。
 2. P1.2：可安装PWA与离线边界。
 3. P1.3：消息由服务端保存并可读回。
 4. P1.4：后台Workflow能独立跑通。
@@ -67,6 +67,6 @@ P1的用户目标是：安装并打开Chat，发送一条消息，看见后台�
 继续Chat项目。按AGENTS.md顺序读取治理文件，再读取
 docs/project-session-handoff.md、docs/architecture/technology-contract.md和
 docs/architecture/system-boundaries.md。P0已经完成并合并。P1是第一次可用Chat闭环，
-已拆成8个独立任务；唯一下一任务是P1.1响应式Chat外壳。一次只做一个P1.x，
+已拆成8个独立任务；当前先审核P1.1响应式Chat与工作流界面任务书。一次只做一个P1.x，
 不要提前实现后续Workflow、pi、HITL、外部Tool、Memory或Workflow编辑器。
 ```
