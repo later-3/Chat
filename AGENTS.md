@@ -10,7 +10,7 @@ Chat 是独立开发、独立运行、独立运营并持续演进的完整产品
 
 前端、后端、实时交互、Workflow 与 Agent Runtime 技术基线已经冻结。P0工程与合同骨架已经合并：仓库已有TypeScript Workspace、共享合同、React/Hono空应用、架构测试、CI和版本证据，但仍没有业务Schema、Product Store、Workflow Definition或pi Adapter实现。
 
-唯一下一工作包是P1第一条Chat纵向链。P1编码前必须先关闭pi冻结源码的可验证工件方案、P1 Product Store证明级别和测试运行合同三个入口决定。
+当前阶段是P1第一次可用的Chat闭环，但P1不是一次开发任务。它已经拆成8个独立、顺序交付的任务；唯一下一任务是P1.1响应式Chat外壳，随后立即交付P1.2可安装PWA与离线边界。存储、Workflow和pi的技术决定分别在真正需要它们的P1.3、P1.4和P1.7中关闭，不得阻塞或污染前面的任务。
 
 当前事实以[PROJECT_STATE.md](./PROJECT_STATE.md)为准，技术边界以[技术合同](./docs/architecture/technology-contract.md)为准。
 
@@ -18,10 +18,12 @@ Chat 是独立开发、独立运行、独立运营并持续演进的完整产品
 
 1. `AGENTS.md`
 2. `PROJECT_LESSONS.md`
-3. `PROJECT_CONTEXT.md`
-4. `PROJECT_STATE.md`
-5. `PROJECT_PLAN.md`
-6. 与任务直接相关的 `docs/`
+3. `docs/product/concept-space.md`
+4. `PROJECT_CONTEXT.md`
+5. `PROJECT_STATE.md`
+6. `PROJECT_PLAN.md`
+7. `docs/product/flywheel.md`
+8. 与任务直接相关的 `docs/`
 
 新 Session 或用户说“继续 Chat 项目”时，再读取`docs/project-session-handoff.md`。
 

@@ -35,14 +35,16 @@ Product Session、Product Run、Workflow Run、Workflow Checkpoint、pi Runtime 
 
 P0工程与合同骨架已经完成并合并。仓库现在包含pnpm TypeScript Workspace、共享合同、React/Hono空应用、架构依赖测试、CI和版本证据；业务Schema、Product Store、Workflow/pi Adapter与第一条纵向链尚未实现。
 
-当前工作包是P1第一条Chat纵向链。进入编码前，先关闭pi冻结源码工件、P1 Product Store证明级别和测试运行合同三个入口决定。
+当前阶段是P1第一次可用的Chat闭环：可安装PWA、发送一条消息、看见后台进度、得到正式回复，并在页面刷新或短暂断线后恢复。P1已拆成8个独立任务；下一任务是P1.1响应式Chat外壳，随后是P1.2可安装PWA与离线边界。
 
 ## 文档入口
 
-1. [项目上下文](./PROJECT_CONTEXT.md)
-2. [当前状态](./PROJECT_STATE.md)
-3. [实施计划](./PROJECT_PLAN.md)
-4. [前后端技术选型与实施合同](./docs/architecture/technology-contract.md)
-5. [状态与运行时边界](./docs/architecture/system-boundaries.md)
-6. [工程规范](./docs/engineering-standards.md)
-7. [跨 Session 续接入口](./docs/project-session-handoff.md)
+1. [Chat概念空间](./docs/product/concept-space.md)
+2. [项目上下文](./PROJECT_CONTEXT.md)
+3. [当前状态](./PROJECT_STATE.md)
+4. [实施计划](./PROJECT_PLAN.md)
+5. [Chat项目飞轮](./docs/product/flywheel.md)
+6. [前后端技术选型与实施合同](./docs/architecture/technology-contract.md)
+7. [状态与运行时边界](./docs/architecture/system-boundaries.md)
+8. [工程规范](./docs/engineering-standards.md)
+9. [跨 Session 续接入口](./docs/project-session-handoff.md)

@@ -1,135 +1,187 @@
 # Chat 项目计划
 
-## 1. 实施原则
+## 1. 整体目标
 
-1. 先固定边界，再实现最小纵向链，再逐步增加节点类型和产品能力。
-2. 每个阶段同时验证正常、重复、断线、进程退出和权限失败。
-3. Product Store、Workflow Store、Runtime Journal和浏览器投影分别验收。
-4. 每个阶段明确已经保证什么、仍不保证什么。
+让用户在手机或电脑上打开一个可安装的 Chat，把一句想法交给系统后，能够：
 
-## 2. 交付路线
+1. 保留自己的原始表达。
+2. 看见系统已经接到、正在处理还是遇到问题。
+3. 在重要动作前查看并修改系统准备做的事。
+4. 刷新、断线或稍后回来时继续原来的工作。
+5. 得到有来源、有结果、有状态的正式交付，而不只是模型说“完成了”。
+6. 让这次工作中有复用价值的知识、方法和反馈帮助下一次工作。
 
-### P0 工程与合同骨架
+## 2. 用户场景与阶段对应
 
-目标：建立可运行的TypeScript Workspace和依赖方向。
+| 用户场景 | 用户看到的结果 | 交付阶段 |
+|---|---|---|
+| 我用手机或电脑打开 Chat | 页面适配屏幕，可以安装到桌面；离线时仍能打开外壳和编辑草稿 | P1 |
+| 我发送一条消息 | 消息被服务端接收，网页显示后台工作状态，最后出现正式回复 | P1 |
+| 页面刷新或网络短暂中断 | 已提交消息从服务端恢复，正在运行的进度可以重新接上 | P1 |
+| 系统准备执行重要动作 | 我能看懂、修改、同意或拒绝，旧决定和重复点击不会误执行 | P2 |
+| 服务或Worker退出 | 工作不会因为某个进程退出就丢失，可以从耐久状态继续 | P3 |
+| 我跨天推进一件长期事项 | Chat能恢复Project、Work、计划和本轮真正需要的上下文 | P4 |
+| 系统调用真实工具并交付文件或结果 | 副作用不重复，结果有证据，未知结果会进入对账或人工处理 | P5 |
+| 我查看或组合工作流程 | 可以理解运行路径，安全发布新版本，历史运行不被新定义污染 | P6 |
+| 我使用文件、语音、日历、通知或Canvas | 不同媒介进入同一个受治理的工作闭环 | P7 |
+| 产品对外运营 | 身份、权限、外部入口、审计、备份和运营看护完整 | P8 |
+
+阶段编号表示产品能力逐步完整，不代表一次开发任务。
+
+## 3. 开发任务怎样控制大小
+
+1. 一个开发任务对应一个独立、可合并的PR。
+2. 一个任务只证明一个主要结果；正常流程和它直接相关的失败或恢复一起验收。
+3. 默认按单人`0.5～2`个开发日拆分，这只是拆分尺度，不是工期承诺；预计超过2日就继续拆。
+4. 一次最多引入一个新的运行时依赖家族；无关的依赖升级单独处理。
+5. 技术决定放到真正需要它的子任务中，不再用几个抽象“入口决定”阻塞整个阶段。
+6. 每个任务都写清楚：用户场景、交付结果、不做什么、完成门和当前保证边界。
+
+## 4. P0：工程与合同骨架
 
 状态：已完成并通过PR #1合并，合并提交`f1274c769bf97dca8834a5d42ff57d1883f01b02`。
 
-- 创建`apps/web`、`apps/api`和核心`packages/*`。
-- 配置pnpm Workspace、TypeScript strict、Lint、Format、Vitest和CI。
-- 建立共享ID、Problem Detail、Command、Query和Chat Event类型。
-- 建立架构依赖测试，禁止Adapter反向污染Domain。
+已交付pnpm TypeScript Workspace、共享合同、React/Hono空应用、架构依赖测试、CI和版本证据。P0只证明工程骨架可运行，不代表已经有Chat业务能力。
 
-完成门：空应用可启动、构建、测试；合同包能被Web/API共同使用。
+## 5. P1：第一次可用的Chat闭环
 
-### P1 第一条Chat纵向链
+### 5.1 阶段目标
 
-目标：从用户发送一条消息到pi回答并恢复正式消息。
+用户可以安装并打开 Chat，发送一条消息，看见后台处理进度，得到一条正式回复；刷新页面或短暂断线后，仍能从服务端恢复已提交内容和当前状态。
 
-入口决定，全部关闭后才能进入实现：
+P1是一个阶段目标，拆成下面8个独立开发任务，不作为一个大PR交付。
 
-1. pi工件：选择从冻结提交`10e99ae`生成可验证工件，或走合同变更更新冻结提交；只比较`0.82.1`版本号不成立。
-2. Product Store证明级别：决定P1使用可替换的内存Reference Adapter，还是同时冻结具体数据库与迁移工具；必须明确是否保证服务进程重启恢复。
-3. 测试运行合同：CI使用真实Workflow与真实pi Adapter、确定性Fake Model计数；私有Provider凭据只用于明确的补充Smoke，不进入仓库或默认CI。
+### P1.1 响应式Chat外壳
 
-实现范围：
+**用户场景**：我第一次用手机或电脑打开 Chat，希望输入区、消息区和运行状态区都能正常使用。
 
-1. Contracts：建立Send Message Command、Session/Message/Run Query、SSE Cursor和对应Problem Detail合同。
-2. Domain/Application：建立最小Product Session、Interaction、Message、Product Run及Send Message Coordinator；写命令支持`commandId`幂等和`expectedRevision`。
-3. Product Store：通过Port保存权威产品事实、Run映射和提交所需引用；具体Adapter遵守入口决定，不让Router或Workflow Step拥有事务。
-4. Workflow/pi：一个Product Run只启动一个Workflow Run；Workflow调用一个无Tool能力的pi Agent Node，pi私有身份不出后端。
-5. Product Commit：pi结果只是候选；校验后由Application提交Assistant Message和Product Run终态。
-6. Realtime：Runtime Journal分配有序sequence/cursor，Hono只暴露一条SSE Feed并把pi事件归一为已采用的AG-UI事件。
-7. Web：React提交Command、投影活动事件，并通过Query恢复正式Message和Run；浏览器缓存不推断成功。
+**交付结果**：建立响应式页面骨架、基础导航、输入区以及空态、加载态和错误态。
 
-完成门：
+**本任务不做**：不接后端、不运行Workflow、不生成AI回复、不做离线缓存。
 
-1. 同一`commandId`重复提交只创建一个Product Run、一个Workflow Run映射和一次pi/Model调用。
-2. 浏览器刷新后正式历史来自Product Store Query，不来自TanStack Query、AG-UI Reducer或本地缓存。
-3. SSE断开不取消Run；Cursor重连按序重放，不重复Workflow或pi/Model调用。
-4. `RUN_FINISHED`和pi成功只结束Agent运行段；Product Run只在Product Commit通过后显示成功。
-5. 公开响应和事件不泄漏Workflow Run ID、Hook Token、Checkpoint ID或pi Runtime Session ID。
-6. 校验、Workflow、pi或Product Commit失败都不产生假Assistant Message或假成功。
-7. 合同、状态机、幂等、真实Workflow/pi Adapter、SSE恢复和Playwright场景在CI通过。
+**完成门**：桌面与窄屏浏览器都可操作；键盘焦点、可访问名称和基本页面测试通过。
 
-P1不保证：服务进程退出后的持久恢复（除非入口决定选择真实持久Store）、HITL、外部副作用Tool、Worker接管、Checkpoint恢复、完整Workflow编辑器、Memory和业务项目管理。
+### P1.2 可安装PWA与离线边界
 
-### P2 HITL纵向链
+**用户场景**：我希望把 Chat 安装到桌面或手机；断网时还能打开页面并继续编辑未发送草稿。
 
-目标：Workflow能够安全等待并恢复一个人工决定。
+**交付结果**：加入Manifest、图标、Service Worker和离线外壳；草稿按本地页面保存。
 
-- 建立Approval Request和Decision状态机。
-- Workflow Hook Token只保存在后端映射。
-- 前端渲染AG-UI Interrupt并通过Command提交决定。
-- 校验Principal、revision、Hash、过期和幂等。
-- 决定提交后恢复Hook。
+**本任务不做**：不缓存正式审批，不假装离线发送成功，不做推送通知和后台同步。
 
-完成门：重复决定只生效一次；旧页面和越权决定失败；进程退出后仍可恢复。
+**完成门**：应用可安装；离线可打开外壳和编辑草稿；离线发送被明确阻止或提示失败，不出现假成功。
 
-### P3 Checkpoint、Worker与事件恢复
+### P1.3 消息由服务端保存并可读回
 
-目标：证明Durability而不是只保存消息。
+**用户场景**：我发送一条消息后刷新网页，希望消息仍从服务端出现，而不是只留在当前页面内存里。
 
-- Product Run与Workflow Run映射。
-- Chat Runtime Journal的sequence、cursor和保留策略。
-- Worker接管与Attempt血缘。
-- Checkpoint恢复、取消、Retry、Restart和Outcome Unknown。
+**交付结果**：实现最小Session、Message和Run规则，提供发送命令与查询接口，并用可替换的Reference Store保存本阶段事实。
 
-完成门：活动流可接回；Checkpoint不重跑已确认副作用；未知结果不盲重试。
+**本任务不做**：不启动Workflow、不生成Assistant回复、不承诺API进程退出后的恢复。
 
-### P4 产品工作与上下文
+**完成门**：发送后可查询；浏览器刷新后重新读取；相同`commandId`重复发送不产生第二条消息或第二次运行。
 
-目标：让对话持续推进Project和Work。
+### P1.4 后台Workflow能独立跑通
 
-- Project、Work、Action、Plan和Context Package。
-- Workflow Definition目录、选择和版本绑定。
-- Context召回、采用、排除和预算。
-- 模型候选、用户决定和产品提交分离。
+**用户场景**：消息提交后，系统能启动一次真正的后台流程，而不是在HTTP请求里假装做完。
 
-完成门：跨Session继续同一Work；上下文变化使旧授权失效。
+**交付结果**：用确定性步骤跑通一次Vercel Workflow，把Product Run与后台运行私下关联；流程产生一条固定回答候选，并通过Application提交为正式消息。
+
+**本任务开始前要说清楚**：本地和CI运行真实的Vercel Workflow接入，流程内容使用无私有凭据的确定性步骤，避免把Mock调用误当成真实接入已经可运行。
+
+**本任务不做**：不接pi、不调用模型、不做SSE实时推送。
+
+**完成门**：一次Product Run只启动一次后台流程；重复命令不重复启动；只有固定候选提交成功后才产生Assistant Message和Product Run成功，Workflow或产品提交失败都不产生假回复。
+
+### P1.5 网页显示后台状态
+
+**用户场景**：我发送消息后，希望页面明确显示“已接收、处理中、已回复或失败”。
+
+**交付结果**：Web通过服务端Query显示运行状态、刷新状态和可执行错误提示。
+
+**本任务不做**：暂不追求逐字输出和断线事件重放；可以先用受控刷新读取状态。
+
+**完成门**：正常、失败、页面刷新三种场景的状态都来自服务端；浏览器不从超时或本地缓存猜测成功。
+
+### P1.6 实时进度与断线续接
+
+**用户场景**：后台工作有进展时页面自动更新；网络短暂断开后，不会重新执行工作，也不会从头重复显示全部进度。
+
+**交付结果**：加入Chat自己的有序事件记录、SSE和Cursor续接，Web使用同一条公开事件流更新活动投影。
+
+**本任务不做**：不暴露Vercel Workflow或pi的内部身份，不建立第二条Agent专用前端通道。
+
+**完成门**：SSE断开不取消工作；使用Cursor重连后按序续接；重连不重复启动Workflow。
+
+### P1.7 接入一次无工具的Agent回答
+
+**用户场景**：后台流程能够让Agent根据用户消息生成一条回答候选。
+
+**交付结果**：在Workflow中接入一个无Tool能力的pi Agent节点，并把可见事件转换成Chat采用的AG-UI兼容事件。
+
+**本任务开始前要说清楚**：本地开发和CI实际使用同一份经过确认的pi代码；测试使用可控模型，私有Provider凭据不进入仓库或默认CI。这是本任务的技术验收项，不再阻塞P1.1～P1.6。
+
+**本任务不做**：不开放编码Tool、不执行外部副作用、不把Agent说“完成了”当成产品成功。
+
+**完成门**：一次Run只调用一次pi/模型；公开事件不泄漏pi会话或Provider内部身份；失败不会生成正式回复。
+
+### P1.8 整条链验收与失败加固
+
+**用户场景**：我希望整条链在重复提交、页面刷新、网络断线和内部失败时都不会重复执行、丢消息或显示假成功。
+
+**交付结果**：完成发送、Workflow、Agent候选、正式提交、Query恢复、SSE续接和浏览器投影的整条场景测试，并补齐发现的直接失败边界。
+
+**本任务不做**：不加入HITL、外部Tool、Memory、Workflow编辑器、语音、日历或Canvas。
+
+**完成门**：发送、处理中、正式回复、刷新恢复、SSE重连和重复提交全链通过；Workflow或Agent成功但产品提交失败时不显示假消息或假成功；公开响应不泄漏内部Runtime身份。
+
+### 5.2 P1完成后已经保证什么
+
+1. 一个可安装、响应式的PWA入口。
+2. 一条消息能够触发后台Workflow和无Tool Agent回答。
+3. 用户能看见服务端状态与实时进度。
+4. 页面刷新和SSE短暂断线不会重复执行，也不会丢失本进程生命周期内的正式内容。
+5. 正式回复只由产品提交产生，内部Runtime身份不会泄漏给浏览器。
+
+### 5.3 P1仍不保证什么
+
+1. API服务进程退出后的产品数据恢复。
+2. Workflow Worker退出后的完整Checkpoint恢复。
+3. 人工审批、外部副作用Tool、结果未知对账。
+4. 长期Project/Work、Memory、文件、语音、日历、Canvas和推送通知。
+
+这些能力分别由后续阶段交付，不能在P1任务中顺手扩张。
+
+## 6. 后续阶段目标
+
+### P2 人工决定
+
+系统在重要动作前暂停，让用户查看、修改、同意或拒绝；重复、过期、旧版本和越权决定安全失败。
+
+### P3 耐久恢复
+
+选择并实现持久Product Store，补齐Checkpoint、Worker接管、Attempt血缘、取消、重试、重启和结果未知处置，证明服务或Worker退出后仍可恢复。
+
+### P4 长期工作与上下文
+
+交付Project、Work、Action、Plan、Context Package和Workflow版本选择，使用户能够跨Session继续同一件事。
 
 ### P5 Tool、Artifact与Evidence
 
-目标：安全执行真实动作并证明结果。
-
-- Tool Catalog与Capability。
-- Tool Execution Ledger、幂等、结果未知和对账。
-- Artifact、Evidence、Validation和完成提交门。
-
-完成门：模型自述不能完成Work；外部副作用不重复；结果可验证。
+受治理地执行真实动作，保存产物和证据；外部副作用具有幂等、查询、对账和人工处理边界。
 
 ### P6 Workflow工厂与可视化
 
-目标：用户能够查看、启停和组合Workflow节点。
+交付稳定节点、组合结构、定义版本、发布校验和真实运行视图；图只投影运行事实。
 
-- 稳定节点类型与端口合同。
-- Sequence、Branch、Parallel、Loop和Agent Node。
-- Workflow Definition版本、校验和发布。
-- Run View投影真实路径、暂停、输入输出和证据。
+### P7 多媒介与PWA增强
 
-完成门：定义变更不污染历史Run；图只是投影，不成为运行事实源。
+在P1已有PWA基础上增加推送通知、允许缓存的只读内容和跨设备恢复，并逐步加入文件、语音、日历、提醒和Canvas。
 
-### P7 PWA、文件、语音、日历与Canvas
+### P8 身份、外部入口与运营
 
-目标：扩展完整用户交互面。
+补齐身份、权限、外部Channel、运营后台、访问审计、备份、保留、SLO、告警和灾难恢复。
 
-- PWA离线外壳、后台通知和跨设备恢复。
-- 文件与对象存储、Markdown/HTML预览。
-- 语音媒体通道与转写事件。
-- 日历、提醒和周期Workflow。
-- 持久Canvas Artifact与受控Agent修改。
+## 7. 当前唯一下一任务
 
-### P8 Identity、外部入口与运营
-
-目标：满足独立产品的安全、集成和运营责任。
-
-- Principal、Role/Grant和Authentication Session。
-- 外部Channel Adapter与Delivery回执。
-- Super Admin Console、活动口径和访问审计。
-- 备份、保留、SLO、告警和灾难恢复。
-
-## 3. 当前工作包
-
-P0已完成。当前只制定并执行P1第一条Chat纵向链。
-
-P1入口决定关闭前，只允许做证据核验、合同细化和无偏向的Spike；不安装Workflow/pi运行时依赖，不创建会反向冻结未决Store或pi工件方案的业务Schema。P1完成并审核前，不提前实现HITL、外部Tool、Workflow编辑器、Memory、语音、日历或Canvas。
+下一开发任务是 **P1.1 响应式Chat外壳**。它完成并审核后再进入P1.2；不并行预建后续Workflow、pi、Memory或工具平台。
