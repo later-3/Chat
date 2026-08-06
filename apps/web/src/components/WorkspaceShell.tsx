@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
+import { useDrafts } from "../drafts/use-drafts.js";
 import type { Theme } from "../theme.js";
 import type { ChatMessage, ModelOption } from "../viewmodel/chat-view-model.js";
 import {
@@ -281,6 +282,9 @@ function ChatPane({
   messages,
   models,
   modelId,
+  connection,
+  draft,
+  onDraftChange,
   onModelChange,
   onSend,
   onFocusWork,
@@ -290,19 +294,22 @@ function ChatPane({
   messages: readonly ChatMessage[];
   models: readonly ModelOption[];
   modelId: string;
+  connection: ConnectionState;
+  draft: string;
+  onDraftChange: (text: string) => void;
   onModelChange: (modelId: string) => void;
   onSend: (text: string) => void;
   onFocusWork: () => void;
   onHide: () => void;
 }) {
-  const [draft, setDraft] = useState("");
-  const canSend = draft.trim().length > 0;
+  // 发送守卫：按钮与 Enter 共用。只有确认连接后才允许产生本地预览；
+  // 连接中与离线都不得先显示成功结果，离线草稿保留在本设备。
+  const canSend = connection === "online" && draft.trim().length > 0;
 
   function send() {
-    const text = draft.trim();
-    if (!text) return;
-    onSend(text);
-    setDraft("");
+    if (!canSend) return;
+    onSend(draft.trim());
+    onDraftChange("");
   }
 
   return (
@@ -353,7 +360,7 @@ function ChatPane({
               placeholder="继续这个会话…"
               rows={1}
               value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+              onChange={(event) => onDraftChange(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
@@ -365,6 +372,13 @@ function ChatPane({
               发送
             </button>
           </div>
+          {connection !== "online" && (
+            <p className="composer-offline-note" role="status">
+              {connection === "offline"
+                ? "当前离线，草稿已保存在此设备，联网后请手动发送。"
+                : "正在连接 Chat 服务，连接成功后才能发送。"}
+            </p>
+          )}
         </div>
       </div>
     </section>
@@ -723,6 +737,8 @@ export function WorkspaceShell({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const sessionGridRef = useRef<HTMLDivElement>(null);
+  // 草稿按会话隔离保存在浏览器本地（可丢弃页面状态，不是正式消息）。
+  const { drafts, setDraft } = useDrafts(window.localStorage);
 
   if (detachedSession && detachedPanel) {
     return (
@@ -937,6 +953,9 @@ export function WorkspaceShell({
                   messages={messagesBySession[activeSession.id]}
                   models={models}
                   modelId={modelId}
+                  connection={connection}
+                  draft={drafts[activeSession.id]}
+                  onDraftChange={(text) => setDraft(activeSession.id, text)}
                   onModelChange={onModelChange}
                   onSend={(text) => onSend(activeSession.id, text)}
                   onFocusWork={focusCurrentWork}

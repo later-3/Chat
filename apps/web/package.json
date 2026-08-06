@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e:pwa": "playwright test",
+    "icons:generate": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "@chat/contracts": "workspace:*",
@@ -16,6 +18,7 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
@@ -23,6 +26,8 @@
     "jsdom": "^30.0.1",
     "typescript": "^5.9.3",
     "vite": "^8.2.0",
-    "vitest": "^4.1.10"
+    "vite-plugin-pwa": "1.3.0",
+    "vitest": "^4.1.10",
+    "workbox-window": "7.4.1"
   }
 }

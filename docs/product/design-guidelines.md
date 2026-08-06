@@ -78,7 +78,7 @@ Chat 的品牌色就是黑白本身：
 ## 3. 排版
 
 1. 字体栈：`-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", "Segoe UI", sans-serif`。不引入 Web 字体依赖。
-2. 字号梯度（v1）：13（辅助）/ 15（正文）/ 17（标题）/ 20（页面标题），行高约 1.4–1.5。
+2. 字号梯度（v1）：13（辅助）/ 15（正文）/ 17（标题）/ 20（页面标题），行高约 1.4–1.5。手机输入框字号 16（`--font-input-mobile`，P1.2 新增），避免 iOS 聚焦输入框时自动放大页面。
 3. 字重只用 400 / 600 两档；强调靠字号与字重，不靠斜体或颜色。
 4. 数字与状态对齐场景使用 `font-variant-numeric: tabular-nums`。
 

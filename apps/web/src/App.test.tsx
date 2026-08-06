@@ -19,6 +19,19 @@ function stubHealthzOk() {
   );
 }
 
+function stubHealthzFail() {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      throw new Error("network down");
+    }),
+  );
+}
+
+function stubBrowserOnline(online: boolean) {
+  vi.spyOn(Navigator.prototype, "onLine", "get").mockReturnValue(online);
+}
+
 function openOkrSession() {
   const globalNavigation = screen.getByRole("navigation", { name: "全局导航" });
   fireEvent.click(within(globalNavigation).getByRole("button", { name: "会话" }));
@@ -87,10 +100,11 @@ describe("P1.1 平铺工作空间", () => {
     expect(screen.getByText("4 / 6 个步骤已结束 · 本地示例数据")).toBeTruthy();
   });
 
-  it("本地发送即时上屏并明确标记未发送", () => {
+  it("本地发送即时上屏并明确标记未发送", async () => {
     stubHealthzOk();
     renderApp();
     openOkrSession();
+    await screen.findByText("已连接");
     const input = screen.getByLabelText("消息输入框");
     fireEvent.change(input, { target: { value: "把失败原因再简化成一句话" } });
     fireEvent.click(screen.getByLabelText("发送"));
@@ -99,10 +113,11 @@ describe("P1.1 平铺工作空间", () => {
     expect(input).toHaveProperty("value", "");
   });
 
-  it("支持Enter发送、Shift+Enter换行和IME保护", () => {
+  it("支持Enter发送、Shift+Enter换行和IME保护", async () => {
     stubHealthzOk();
     renderApp();
     openOkrSession();
+    await screen.findByText("已连接");
     const input = screen.getByLabelText("消息输入框");
     const messageCount = screen.getAllByRole("listitem").length;
     fireEvent.change(input, { target: { value: "第一条消息" } });
@@ -194,5 +209,127 @@ describe("P1.1 平铺工作空间", () => {
     );
     expect(screen.getByRole("button", { name: "切换到工作空间 1 OKR整理" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "切换到工作空间 2 周会PPT" })).toBeTruthy();
+  });
+});
+
+describe("P1.2 草稿与离线发送边界", () => {
+  it("刷新等价重挂载后草稿恢复", async () => {
+    stubHealthzOk();
+    renderApp();
+    openOkrSession();
+    fireEvent.change(screen.getByLabelText("消息输入框"), {
+      target: { value: "刷新前留下的草稿" },
+    });
+    expect(window.localStorage.getItem("chat:draft:v1:okr")).toContain("刷新前留下的草稿");
+
+    cleanup();
+    renderApp();
+    openOkrSession();
+    await waitFor(() =>
+      expect(screen.getByLabelText("消息输入框")).toHaveProperty("value", "刷新前留下的草稿"),
+    );
+  });
+
+  it("不同会话只能看到自己的草稿，切换不串写", () => {
+    stubHealthzOk();
+    renderApp();
+    openOkrSession();
+    fireEvent.change(screen.getByLabelText("消息输入框"), {
+      target: { value: "OKR 会话的草稿" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "打开会话 准备产品周会 PPT" }));
+    expect(screen.getByLabelText("消息输入框")).toHaveProperty("value", "");
+    fireEvent.change(screen.getByLabelText("消息输入框"), {
+      target: { value: "PPT 会话的草稿" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "切换到工作空间 1 OKR整理" }));
+    expect(screen.getByLabelText("消息输入框")).toHaveProperty("value", "OKR 会话的草稿");
+    fireEvent.click(screen.getByRole("button", { name: "切换到工作空间 2 周会PPT" }));
+    expect(screen.getByLabelText("消息输入框")).toHaveProperty("value", "PPT 会话的草稿");
+  });
+
+  it("离线时按钮与Enter都不能发送，草稿保留且不新增消息", async () => {
+    stubBrowserOnline(false);
+    stubHealthzFail();
+    renderApp();
+    openOkrSession();
+    await screen.findByText("未连接");
+    expect(screen.getByText("当前离线，草稿已保存在此设备，联网后请手动发送。")).toBeTruthy();
+
+    const messageCount = screen.getAllByRole("listitem").length;
+    const input = screen.getByLabelText("消息输入框");
+    fireEvent.change(input, { target: { value: "离线时写下的内容" } });
+    expect(screen.getByLabelText("发送")).toHaveProperty("disabled", true);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getAllByRole("listitem")).toHaveLength(messageCount);
+    expect(input).toHaveProperty("value", "离线时写下的内容");
+    expect(window.localStorage.getItem("chat:draft:v1:okr")).toContain("离线时写下的内容");
+  });
+
+  it("连接中也不能先产生成功结果", async () => {
+    // fetch 永不 resolve，状态停在连接中
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+    renderApp();
+    openOkrSession();
+    await screen.findByText("正在连接 Chat 服务，连接成功后才能发送。");
+    const messageCount = screen.getAllByRole("listitem").length;
+    const input = screen.getByLabelText("消息输入框");
+    fireEvent.change(input, { target: { value: "连接中输入的内容" } });
+    expect(screen.getByLabelText("发送")).toHaveProperty("disabled", true);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getAllByRole("listitem")).toHaveLength(messageCount);
+  });
+
+  it("恢复联网后草稿仍在，不会自动发送", async () => {
+    stubBrowserOnline(false);
+    stubHealthzFail();
+    renderApp();
+    openOkrSession();
+    window.dispatchEvent(new Event("offline"));
+    await screen.findByText("未连接");
+    fireEvent.change(screen.getByLabelText("消息输入框"), {
+      target: { value: "断网期间的草稿" },
+    });
+    const messageCount = screen.getAllByRole("listitem").length;
+
+    // 恢复网络：健康检查转成功并派发 online 事件
+    stubHealthzOk();
+    vi.spyOn(Navigator.prototype, "onLine", "get").mockReturnValue(true);
+    window.dispatchEvent(new Event("online"));
+    await screen.findByText("已连接");
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(messageCount);
+    expect(screen.getByLabelText("消息输入框")).toHaveProperty("value", "断网期间的草稿");
+    expect(screen.getByLabelText("发送")).toHaveProperty("disabled", false);
+  });
+
+  it("在线发送成功后只清理当前会话草稿", async () => {
+    stubHealthzOk();
+    renderApp();
+    openOkrSession();
+    fireEvent.change(screen.getByLabelText("消息输入框"), {
+      target: { value: "OKR 待发送" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "打开会话 准备产品周会 PPT" }));
+    fireEvent.change(screen.getByLabelText("消息输入框"), {
+      target: { value: "PPT 草稿保留" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "切换到工作空间 1 OKR整理" }));
+    await screen.findByText("已连接");
+    fireEvent.click(screen.getByLabelText("发送"));
+
+    expect(screen.getByText("OKR 待发送")).toBeTruthy();
+    expect(window.localStorage.getItem("chat:draft:v1:okr")).toBeNull();
+    expect(window.localStorage.getItem("chat:draft:v1:ppt")).toContain("PPT 草稿保留");
+    expect(screen.getByLabelText("消息输入框")).toHaveProperty("value", "");
+  });
+
+  it("没有等待激活的新版本时不显示更新提示，也不会强制刷新", () => {
+    stubHealthzOk();
+    renderApp();
+    expect(document.querySelector(".pwa-update-banner")).toBeNull();
   });
 });

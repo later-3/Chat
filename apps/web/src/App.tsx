@@ -1,8 +1,10 @@
 import { serviceStatusSchema } from "@chat/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { PwaUpdatePrompt } from "./components/PwaUpdatePrompt.js";
 import { WorkspaceShell, type ConnectionState } from "./components/WorkspaceShell.js";
 import { applyTheme, nextTheme, resolveTheme, type Theme } from "./theme.js";
+import { useOnlineState } from "./use-online-state.js";
 import {
   MODEL_FIXTURES,
   persistModelId,
@@ -32,17 +34,22 @@ const INITIAL_MESSAGES = Object.fromEntries(
  * 本地消息与模型选择不代表正式事实（见P1.3/P1.5/P1.7）。
  */
 export function App() {
+  const browserOnline = useOnlineState();
   const status = useQuery({ queryKey: ["service-status"], queryFn: fetchServiceStatus });
   const [theme, setTheme] = useState<Theme>(() => resolveTheme(window.localStorage));
   const [modelId, setModelId] = useState(() => readStoredModelId(window.localStorage));
   const [messagesBySession, setMessagesBySession] =
     useState<Readonly<Record<SessionId, readonly ChatMessage[]>>>(INITIAL_MESSAGES);
 
-  const connection: ConnectionState = status.isPending
-    ? "connecting"
-    : status.isError
-      ? "offline"
-      : "online";
+  // 浏览器离线时直接判为未连接；在线时以 /api/healthz 投影为准。
+  // Service Worker 不缓存 /api，健康检查失败永远来自真实网络。
+  const connection: ConnectionState = !browserOnline
+    ? "offline"
+    : status.isPending
+      ? "connecting"
+      : status.isError
+        ? "offline"
+        : "online";
 
   function handleToggleTheme() {
     const next = nextTheme(theme);
@@ -63,15 +70,18 @@ export function App() {
   }
 
   return (
-    <WorkspaceShell
-      connection={connection}
-      theme={theme}
-      onToggleTheme={handleToggleTheme}
-      models={MODEL_FIXTURES}
-      modelId={modelId}
-      onModelChange={handleModelChange}
-      messagesBySession={messagesBySession}
-      onSend={handleSend}
-    />
+    <>
+      <WorkspaceShell
+        connection={connection}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
+        models={MODEL_FIXTURES}
+        modelId={modelId}
+        onModelChange={handleModelChange}
+        messagesBySession={messagesBySession}
+        onSend={handleSend}
+      />
+      <PwaUpdatePrompt />
+    </>
   );
 }

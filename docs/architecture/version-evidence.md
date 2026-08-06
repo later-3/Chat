@@ -34,6 +34,9 @@ P0只安装实际使用的依赖；未实现的Workflow/pi运行时依赖不在P
 | eslint / typescript-eslint | 10.8.0 / 8.66.0 | MIT | Lint | 根（dev） | typescript-eslint暂不支持TS 7，故TS固定5.9 |
 | prettier | 3.9.6 | MIT | 格式化（不格式化Markdown治理文档） | 根（dev） | — |
 | tsx | 4.23.8 | MIT | API dev/start的TS执行 | apps/api（dev） | 生产打包方式随部署拓扑（未决定项）再定 |
+| vite-plugin-pwa | 1.3.0 | MIT | P1.2：从实际dist生成Manifest、预缓存清单与Service Worker | apps/web构建期（dev only） | 构建期插件，不进运行时bundle；退出方式：移除插件与注册组件即回到纯静态站点。peer range含Vite 8，Node要求>=16，低于仓库基线 |
+| workbox-window | 7.4.1 | MIT | P1.2：浏览器侧SW注册与“用户确认后更新”流程 | apps/web运行时（小体积） | 随vite-plugin-pwa一起退出；Workbox由Google维护，generateSW产物不缓存/api与写请求 |
+| @playwright/test | 1.62.1 | Apache-2.0 | P1.2：真实Chromium验证SW离线外壳、草稿与手机布局 | apps/web（dev） | 仅测试边界，替换不影响产品代码 |
 | @types/node / @types/react / @types/react-dom | 26.1.2 / 19.2.18 / 19.2.4 | MIT | 类型 | dev | — |
 
 ## 3. 内部包消费方式（源码导出）
@@ -88,7 +91,7 @@ P0只安装实际使用的依赖；未实现的Workflow/pi运行时依赖不在P
 
 | 依赖 | 引入时机 | 版本来源 |
 |---|---|---|
-| Playwright | P1端到端恢复场景 | 引入时固定 |
+| Playwright | P1.2已引入为`@playwright/test` 1.62.1（Apache-2.0，apps/web dev边界） | npm锁文件 |
 
 ## 5. 已验证的P0完成门
 
@@ -100,3 +103,11 @@ P0只安装实际使用的依赖；未实现的Workflow/pi运行时依赖不在P
 4. 合同包被Web/API共同使用：`serviceStatusSchema`、`problemDetailSchema`两端共享。
 5. 依赖方向由`packages/testing`架构测试固定，CI执行。
 6. `pnpm audit --prod`无已知漏洞（生产依赖仅保留实际使用项）。
+
+## 6. P1.2已验证的PWA完成门
+
+1. 生产构建产物包含`manifest.webmanifest`、`sw.js`、预缓存清单（11项，不含任何`/api`）、192/512/maskable图标与带Hash的JS/CSS。
+2. Service Worker导航回退白名单排除`/api`（`denylist:[/^\/api\//]`）；不配置任何API runtime cache与Background Sync。
+3. 真实Chromium（生产构建+vite preview+真实API）验证：SW激活控制页面、离线重开外壳、草稿跨刷新恢复、离线发送被阻止、恢复联网不自动发送、离线`/api/healthz`真实失败。
+4. 320/375/390/430px竖屏与844×390横屏无页面级横向滚动；手机触控目标≥44px。
+5. `pnpm audit --prod`通过（vite-plugin-pwa/workbox/playwright均为dev依赖，不进生产依赖面）。

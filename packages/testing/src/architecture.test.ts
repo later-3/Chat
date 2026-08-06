@@ -64,6 +64,10 @@ const devOnlyExternal = [
   "@testing-library/react",
   "@testing-library/dom",
   "jsdom",
+  // P1.2：PWA构建插件与真实浏览器E2E
+  "vite-plugin-pwa",
+  "workbox-window",
+  "@playwright/test",
 ];
 
 const importPattern = /(?:import|export)[^'"]*from\s+["']([^"']+)["']|import\s+["']([^"']+)["']/g;
@@ -100,11 +104,16 @@ describe("架构依赖方向", () => {
 
       const violations: string[] = [];
       for (const file of files) {
-        const isDevFile = /\.test\.tsx?$/.test(file) || /(^|\/)vite\.config\.ts$/.test(file);
+        const isDevFile =
+          /\.(test|spec)\.tsx?$/.test(file) ||
+          /(^|\/)vite\.config\.ts$/.test(file) ||
+          /(^|\/)playwright\.config\.ts$/.test(file);
         const source = readFileSync(file, "utf8");
         for (const match of source.matchAll(importPattern)) {
           const specifier = match[1] ?? match[2] ?? "";
           if (specifier.startsWith(".") || specifier.startsWith("node:")) continue;
+          // 构建插件生成的虚拟模块（如virtual:pwa-register）由对应插件依赖钉住
+          if (specifier.startsWith("virtual:")) continue;
           const name = packageName(specifier);
           const rel = relative(repoRoot, file);
 
