@@ -15,9 +15,9 @@
 | Workflow | Vercel Workflow |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent` |
 | 前端服务端状态 | TanStack Query；浏览器仅持有投影与草稿 |
-| 代码状态 | P0已完成并合并：pnpm Workspace、合同包、Web/API空应用、架构依赖测试、CI与版本证据 |
+| 代码状态 | P0已合并；P1.1响应式Chat工作空间已在PR #2实现，待审核合并 |
 | 当前阶段 | P1第一次可用的Chat闭环，已拆为8个独立任务 |
-| 当前任务 | P1.1响应式Chat与工作流界面；实施中，首版范围经用户调整为会话区+模型选择+本地发送+双主题，工作流运行区延后 |
+| 当前任务 | P1.1响应式Chat工作空间；实现已完成，PR #2待审核 |
 
 ## 2. 已冻结决定
 
@@ -54,7 +54,7 @@
 - 没有pi Adapter实现。
 - 没有Runtime Journal、SSE Cursor重放或pi到AG-UI的运行时适配实现；P0只固定官方事件Schema与Envelope。
 - 没有HITL、Checkpoint或重连的可运行证明。
-- 现有Web仍是空应用，还没有响应式Chat与工作流界面、Manifest、Service Worker或离线草稿边界。
+- P1.1 Web已经有响应式Chat工作空间，但会话、消息、运行和产物仍是本地fixture；还没有Manifest、Service Worker或离线草稿边界。
 
 文档批准不等于软件已经实现；P0骨架也不等于纵向链已经打通。
 
@@ -71,7 +71,7 @@
 
 | 任务 | 结果 | 状态 |
 |---|---|---|
-| P1.1 | 响应式Chat与工作流界面 | 实施中（首版不含工作流区） |
+| P1.1 | 响应式Chat工作空间 | 实现完成，PR #2待审核 |
 | P1.2 | 可安装PWA与离线边界 | 待开始 |
 | P1.3 | 消息由服务端保存并可读回 | 待开始 |
 | P1.4 | 后台Workflow能独立跑通 | 待开始 |

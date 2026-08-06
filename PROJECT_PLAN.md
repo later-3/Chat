@@ -184,4 +184,4 @@ P1是一个阶段目标，拆成下面8个独立开发任务，不作为一个�
 
 ## 7. 当前唯一下一任务
 
-当前先审核[P1.1任务书](./docs/tasks/p1.1-responsive-chat-workflow-shell.md)。审核通过后的下一开发任务是 **P1.1 响应式Chat与工作流界面**；它完成后再进入P1.2，不并行预建后续Workflow、pi、Memory或工具平台。
+当前先审核PR #2中的 **P1.1 响应式Chat工作空间**。合并后的下一开发任务是 **P1.2 可安装PWA与离线边界**；不并行预建后续Workflow、pi、Memory或工具平台。

@@ -1,9 +1,7 @@
 import { serviceStatusSchema } from "@chat/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { AppHeader, type ConnectionState } from "./components/AppHeader.js";
-import { ChatPanel } from "./components/ChatPanel.js";
-import { ModelSelector } from "./components/ModelSelector.js";
+import { WorkspaceShell, type ConnectionState } from "./components/WorkspaceShell.js";
 import { applyTheme, nextTheme, resolveTheme, type Theme } from "./theme.js";
 import {
   MODEL_FIXTURES,
@@ -11,6 +9,7 @@ import {
   readStoredModelId,
   type ChatMessage,
 } from "./viewmodel/chat-view-model.js";
+import { SESSION_FIXTURES, type SessionId } from "./viewmodel/workspace-view-model.js";
 
 async function fetchServiceStatus() {
   const res = await fetch("/api/healthz");
@@ -21,18 +20,23 @@ async function fetchServiceStatus() {
 }
 
 function createLocalMessage(text: string): ChatMessage {
-  return { id: crypto.randomUUID(), role: "user", text };
+  return { id: crypto.randomUUID(), role: "user", text, localOnly: true };
 }
 
+const INITIAL_MESSAGES = Object.fromEntries(
+  SESSION_FIXTURES.map((session) => [session.id, session.messages]),
+) as Record<SessionId, readonly ChatMessage[]>;
+
 /**
- * P1.1外壳：只投影服务端连接状态，不持有权威事实。
- * 消息与模型选择均为浏览器本地草稿/偏好，不代表正式事实（见P1.3/P1.7）。
+ * P1.1工作空间：只投影服务端连接状态，其余会话、运行和产物均为本地界面fixture。
+ * 本地消息与模型选择不代表正式事实（见P1.3/P1.5/P1.7）。
  */
 export function App() {
   const status = useQuery({ queryKey: ["service-status"], queryFn: fetchServiceStatus });
   const [theme, setTheme] = useState<Theme>(() => resolveTheme(window.localStorage));
   const [modelId, setModelId] = useState(() => readStoredModelId(window.localStorage));
-  const [messages, setMessages] = useState<readonly ChatMessage[]>([]);
+  const [messagesBySession, setMessagesBySession] =
+    useState<Readonly<Record<SessionId, readonly ChatMessage[]>>>(INITIAL_MESSAGES);
 
   const connection: ConnectionState = status.isPending
     ? "connecting"
@@ -51,21 +55,23 @@ export function App() {
     setModelId(nextModelId);
   }
 
-  function handleSend(text: string) {
-    setMessages((current) => [...current, createLocalMessage(text)]);
+  function handleSend(sessionId: SessionId, text: string) {
+    setMessagesBySession((current) => ({
+      ...current,
+      [sessionId]: [...current[sessionId], createLocalMessage(text)],
+    }));
   }
 
   return (
-    <div className="app-shell">
-      <AppHeader
-        theme={theme}
-        onToggleTheme={handleToggleTheme}
-        connection={connection}
-        modelControl={
-          <ModelSelector models={MODEL_FIXTURES} value={modelId} onChange={handleModelChange} />
-        }
-      />
-      <ChatPanel messages={messages} onSend={handleSend} />
-    </div>
+    <WorkspaceShell
+      connection={connection}
+      theme={theme}
+      onToggleTheme={handleToggleTheme}
+      models={MODEL_FIXTURES}
+      modelId={modelId}
+      onModelChange={handleModelChange}
+      messagesBySession={messagesBySession}
+      onSend={handleSend}
+    />
   );
 }

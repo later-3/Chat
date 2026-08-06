@@ -5,8 +5,9 @@
  */
 export interface ChatMessage {
   id: string;
-  role: "user";
+  role: "user" | "assistant";
   text: string;
+  localOnly?: boolean;
 }
 
 export interface ModelOption {
