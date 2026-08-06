@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  dev-smoke:
+    # 完成门：干净检出、不构建dist时，Web/API dev均可启动。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: api dev starts without build
+        run: |
+          (cd apps/api && PORT=3210 pnpm dev &)
+          for i in $(seq 1 30); do
+            sleep 1
+            if curl -fsS localhost:3210/api/healthz; then exit 0; fi
+          done
+          exit 1
+
+      - name: web dev starts without build
+        run: |
+          (cd apps/web && pnpm dev --port 5299 --strictPort &)
+          for i in $(seq 1 30); do
+            sleep 1
+            if curl -fsS localhost:5299/ | grep -q "<title>Chat</title>"; then break; fi
+            if [ "$i" = "30" ]; then exit 1; fi
+          done
+          curl -fsS "localhost:5299/src/App.tsx" | grep -q "packages/contracts/src/index.ts"

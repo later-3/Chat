@@ -15,9 +15,9 @@
 | Workflow | Vercel Workflow |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent` |
 | 前端服务端状态 | TanStack Query；浏览器仅持有投影与草稿 |
-| 代码状态 | 全新基线；尚未创建生产代码、Schema、迁移或依赖锁 |
-| 当前工作包 | 技术合同、系统边界、工程规范和项目入口已经建立 |
-| 唯一下一步 | 建立TypeScript Workspace并交付第一条无外部副作用的纵向链 |
+| 代码状态 | P0骨架已交付（待审核）：pnpm Workspace、合同包、Web/API空应用、架构依赖测试与CI |
+| 当前工作包 | P0已实现并通过本地完成门，PR审核中 |
+| 唯一下一步 | 审核合并P0后，交付第一条无外部副作用的端到端纵向链（P1） |
 
 ## 2. 已冻结决定
 
@@ -47,14 +47,13 @@
 
 ## 4. 当前没有的能力
 
-- 没有可运行Web或API。
-- 没有数据库Schema或迁移。
+- 没有业务Schema、Product Store实现或迁移。
 - 没有Workflow Definition实现。
 - 没有pi Adapter实现。
-- 没有AG-UI事件适配实现。
+- 没有AG-UI事件适配实现（P0仅固定Envelope结构子集）。
 - 没有HITL、Checkpoint或重连的可运行证明。
 
-文档批准不等于软件已经实现。
+文档批准不等于软件已经实现；P0骨架也不等于纵向链已经打通。
 
 ## 5. 当前禁止事项
 
