@@ -219,6 +219,8 @@ describe("runPiPlanner（真实pi Agent loop + faux流）", () => {
     expect(result.providerMeta).toEqual({
       httpStatus: 201,
       providerRequestId: "dashscope-req-123",
+      providerStopReason: "stop",
+      toolCallCount: 1,
     });
     expect(captured?.model).toMatchObject({
       id: "qwen3.7-plus",
@@ -237,10 +239,35 @@ describe("runPiPlanner（真实pi Agent loop + faux流）", () => {
     expect(captured?.options).toMatchObject({
       apiKey: "test-key",
       maxTokens: B2_PLANNER_TOKEN_BUDGET,
+      temperature: 0,
       timeoutMs: 10_000,
       maxRetries: 0,
       maxRetryDelayMs: 0,
       cacheRetention: "none",
+    });
+  });
+
+  it("响应头没有请求ID时使用Provider响应ID作为真实关联证据", async () => {
+    const faux = fauxProvider({ provider: "bailian" });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("submit_plan_candidate", validPlanParams)], {
+        responseId: "chatcmpl-response-123",
+      }),
+    ]);
+    const streamFn: StreamFn = async (model, context, options) => {
+      await options?.onResponse?.({ status: 200, headers: {} }, model);
+      const fauxOptions = { ...options };
+      delete fauxOptions.onResponse;
+      return faux.provider.streamSimple(model, context, fauxOptions);
+    };
+
+    const result = await runPiPlanner({ config, planningInput, streamFnOverride: streamFn });
+    expect(result.kind).toBe("candidate");
+    expect(result.providerMeta).toEqual({
+      httpStatus: 200,
+      providerRequestId: "chatcmpl-response-123",
+      providerStopReason: "stop",
+      toolCallCount: 1,
     });
   });
 

@@ -302,6 +302,17 @@ describe("traceEventSchema：任意内容通道被关闭", () => {
 
   it("Provider事件只接受白名单字段", () => {
     const fixture = fixtureOf(TRACE_EVENT_NAMES.providerRequestCompleted);
+    expect(
+      traceEventSchema.safeParse({
+        ...fixture,
+        providerStopReason: "toolUse",
+        toolCallCount: 1,
+      }).success,
+    ).toBe(true);
+    expect(
+      traceEventSchema.safeParse({ ...fixture, providerStopReason: "unknown", toolCallCount: -1 })
+        .success,
+    ).toBe(false);
     for (const key of ["messages", "tools", "systemPrompt", "responseText", "apiKey"]) {
       expect(traceEventSchema.safeParse({ ...fixture, [key]: CONTENT_MARKER }).success, key).toBe(
         false,

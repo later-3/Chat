@@ -1,4 +1,5 @@
 import {
+  WORKFLOW_DEFINITION_ID,
   WORKFLOW_DEFINITION_VERSION,
   workflowResumeResponseSchema,
   workflowReconcileResponseSchema,
@@ -140,7 +141,7 @@ async function dispatchStart(
     productRunId: entry.productRunId,
     attemptId: attemptId as never,
     workflowDefinitionVersion: WORKFLOW_DEFINITION_VERSION,
-    workflowDefinitionId: "wfd_planning_execution" as never,
+    workflowDefinitionId: WORKFLOW_DEFINITION_ID as never,
   });
   const result = await postToWorkflowRuntime(options, "/internal/workflow/v1/start", {
     schemaVersion: "chat-workflow-dispatch.v1",

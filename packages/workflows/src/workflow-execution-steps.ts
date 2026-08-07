@@ -12,6 +12,7 @@ import {
   emitPiNodeTrace,
   emitProviderTrace,
   PiStepFailure,
+  providerResultTraceDetails,
   runStep,
   wrapApiError,
 } from "./workflow-step-support.js";
@@ -167,6 +168,7 @@ export async function runPiExecutorStep(input: {
             ...(result.providerMeta.providerRequestId !== undefined
               ? { providerRequestId: result.providerMeta.providerRequestId }
               : {}),
+            ...providerResultTraceDetails(result.providerMeta),
           });
           emitPiNodeTrace(scoped, "pi.node.failed", "executor", {
             durationMs: result.durationMs,
@@ -180,6 +182,7 @@ export async function runPiExecutorStep(input: {
           httpStatus: evidence.httpStatus,
           providerRequestId: evidence.providerRequestId,
           tokenUsage: evidence.tokenUsage,
+          ...providerResultTraceDetails(result.providerMeta),
         });
         emitPiNodeTrace(scoped, "pi.node.completed", "executor", {
           durationMs: result.durationMs,
@@ -214,6 +217,7 @@ export async function runPiExecutorStep(input: {
         ...(result.providerMeta.providerRequestId !== undefined
           ? { providerRequestId: result.providerMeta.providerRequestId }
           : {}),
+        ...providerResultTraceDetails(result.providerMeta),
         ...(result.providerCallCount === 0 ? { preRequest: true } : {}),
       });
       emitPiNodeTrace(scoped, "pi.node.failed", "executor", {
