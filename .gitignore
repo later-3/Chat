@@ -30,7 +30,9 @@ htmlcov/
 # tooling
 .DS_Store
 .idea/
-.vscode/
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
 .pnpm-store/
 playwright-report/
 test-results/

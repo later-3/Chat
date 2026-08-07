@@ -24,6 +24,13 @@ export const commandIdSchema = prefixedId("cmd");
 export const workflowDefinitionIdSchema = prefixedId("wfd");
 export const projectIdSchema = prefixedId("prj");
 
+/**
+ * 服务端请求ID。客户端可提议复用，但必须通过本Schema才被信任；
+ * 否则服务端生成新的req_*并在响应头返回最终生效ID。
+ */
+export const requestIdSchema = prefixedId("req");
+export type RequestId = z.infer<typeof requestIdSchema>;
+
 export type ProductSessionId = z.infer<typeof productSessionIdSchema>;
 export type InteractionId = z.infer<typeof interactionIdSchema>;
 export type MessageId = z.infer<typeof messageIdSchema>;
