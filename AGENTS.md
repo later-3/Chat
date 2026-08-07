@@ -10,7 +10,7 @@ Chat 是独立开发、独立运行、独立运营并持续演进的完整产品
 
 前端、后端、实时交互、Workflow 与 Agent Runtime 技术基线已经冻结。P0工程与合同骨架已经合并：仓库已有TypeScript Workspace、共享合同、React/Hono空应用、架构测试、CI和版本证据，但仍没有业务Schema、Product Store、Workflow Definition或pi Adapter实现。
 
-当前阶段是P1第一次可用的Chat闭环，但P1不是一次开发任务。它已经拆成8个独立、顺序交付的任务；当前[P1.1任务书](./docs/tasks/p1.1-responsive-chat-workflow-shell.md)已经进入PR #2审核。P1.1是纯前端“响应式Chat工作空间”，建立今日入口、会话列表、持续对话和工作窗口，并用本地fixture展示工作流、PPT、代码和白板，不新增后端；合并后进入P1.2可安装PWA与离线边界。存储、Workflow和pi的技术决定分别在真正需要它们的P1.3、P1.4和P1.7中关闭，不得阻塞或污染前面的任务。
+当前阶段是P1第一次可用的Chat闭环，但P1不是一次开发任务。它已经拆成8个独立、顺序交付的任务；P1.1“响应式Chat工作空间”已通过PR #2合并，当前[P1.2可安装PWA、离线草稿与移动端发布](./docs/tasks/p1.2-installable-pwa-offline-boundary.md)已实现并进入PR #3审核，待实机验收与发布批准后合并。P1.2只增加Manifest、Service Worker、离线外壳、按会话保存的本地草稿、离线发送失败语义和手机布局修正；不新增业务后端。存储、Workflow和pi的技术决定分别在真正需要它们的P1.3、P1.4和P1.7中关闭，不得阻塞或污染前面的任务。
 
 当前事实以[PROJECT_STATE.md](./PROJECT_STATE.md)为准，技术边界以[技术合同](./docs/architecture/technology-contract.md)为准。
 

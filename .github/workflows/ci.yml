@@ -24,6 +24,30 @@ jobs:
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm audit --prod
+
+  pwa-e2e:
+    # P1.2完成门：从生产构建启动vite preview，用真实Chromium验证Service Worker离线场景
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @chat/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @chat/web test:e2e:pwa
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
 
   dev-smoke:
     # 完成门：干净检出、不构建dist时，Web/API dev均可启动。

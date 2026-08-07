@@ -12,6 +12,15 @@ body,
   height: 100%;
 }
 
+/* 动态视口：软键盘弹出与地址栏收起时跟随真实可视高度，100% 作为旧浏览器回退 */
+@supports (height: 100dvh) {
+  html,
+  body,
+  #root {
+    height: 100dvh;
+  }
+}
+
 body {
   overflow: hidden;
   background: var(--bg-primary);
@@ -783,6 +792,60 @@ a {
   opacity: 0.35;
 }
 
+.composer-offline-note {
+  padding: var(--space-1) var(--space-2) 0;
+  color: var(--text-tertiary);
+  font-size: var(--font-caption);
+}
+
+/* PWA 更新提示：固定在底部导航之上，不遮挡输入区 */
+.pwa-update-banner {
+  position: fixed;
+  right: var(--space-3);
+  bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom) + var(--space-2));
+  z-index: 60;
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+}
+
+.pwa-update-confirm,
+.pwa-update-dismiss {
+  min-height: 44px;
+  border-radius: var(--radius-control);
+  padding: 0 var(--space-3);
+  font-size: var(--font-caption);
+}
+
+.pwa-update-confirm {
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.pwa-update-dismiss {
+  color: var(--text-secondary);
+}
+
+.pwa-update-dismiss:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+@media (min-width: 761px) {
+  .pwa-update-banner {
+    right: var(--space-4);
+    bottom: var(--space-4);
+  }
+}
+
 .splitter {
   position: relative;
   z-index: 4;
@@ -1198,7 +1261,7 @@ a {
   .workspace-app.sessions-closed,
   .workspace-app.global-closed.sessions-closed {
     display: grid;
-    height: calc(100% - var(--mobile-nav-height));
+    height: calc(100% - var(--mobile-nav-height) - env(safe-area-inset-bottom));
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -1209,7 +1272,7 @@ a {
   .session-rail {
     position: fixed;
     top: 0;
-    bottom: var(--mobile-nav-height);
+    bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom));
     left: 0;
     z-index: 40;
     width: min(320px, 88vw);
@@ -1233,8 +1296,9 @@ a {
   }
 
   .workspace-bar {
-    min-height: var(--topbar-height);
-    padding: 0 var(--space-2);
+    min-height: calc(var(--topbar-height) + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) calc(var(--space-2) + env(safe-area-inset-right)) 0
+      calc(var(--space-2) + env(safe-area-inset-left));
   }
 
   .rail-controls,
@@ -1277,7 +1341,7 @@ a {
   }
 
   .mobile-pane-tabs button {
-    min-height: 40px;
+    min-height: 44px;
     border-radius: var(--radius-control);
     color: var(--text-secondary);
     font-size: var(--font-caption);
@@ -1331,6 +1395,11 @@ a {
     padding: var(--space-2) var(--space-3) var(--space-3);
   }
 
+  /* 手机输入字号不低于 16px，避免 iOS 聚焦时自动放大页面 */
+  .composer-input {
+    font-size: var(--font-input-mobile);
+  }
+
   .graph-stage {
     margin: 0;
   }
@@ -1364,10 +1433,12 @@ a {
     left: 0;
     z-index: 50;
     display: grid;
-    height: var(--mobile-nav-height);
+    /* 底部导航高度包含 Home Indicator 安全区 */
+    height: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom));
     grid-template-columns: repeat(3, 1fr);
     gap: var(--space-1);
-    padding: 6px var(--space-2);
+    padding: 6px calc(var(--space-2) + env(safe-area-inset-right))
+      calc(6px + env(safe-area-inset-bottom)) calc(var(--space-2) + env(safe-area-inset-left));
     border-top: 1px solid var(--separator);
     background: var(--bg-primary);
   }
