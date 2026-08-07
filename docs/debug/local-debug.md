@@ -32,6 +32,9 @@ chat-debug:preclean（清理上次Chat调试进程并校验端口）
 
 - 进程登记：被调试进程通过`node --import scripts/debug/register-process.mjs`
   把`role/pid/port`写入`.data/debug/pids.json`；Web由`start-web.mjs`登记进程组。
+  登记是安全前置条件：登记失败时进程终止启动，不产生无法清理的未登记服务。
+- Compound统一门：`chat-debug:preclean`同时挂在Compound上（先于所有子会话执行）
+  和Workflow子配置上（保留单独启动能力），消除旧Workflow被`wait-workflow`误判的竞态。
 - 清理语义：`preclean`/`stop`只终止pids.json中有记录、且通过身份复核
   （命令片段+启动时间容差）的进程；SIGTERM后有限等待，仍存活且身份一致才SIGKILL。
 - 端口被未知应用占用时：启动失败并报告端口、PID与命令行，**不会**终止未知进程；
@@ -49,6 +52,10 @@ pnpm debug:stop       # 停止本轮调试进程
 ```
 
 ## 3. Trace 查询
+
+Request ID规则：API不信任客户端`x-request-id`，只有通过受限Schema（`req_`前缀）
+的传入ID才被复用，否则生成新的服务端ID；响应头始终返回最终生效ID。
+Trace写入失败不影响业务响应，但会计入内部故障计数并输出不含事件内容的稳定错误日志。
 
 Trace按任务书§7.2写入`<仓库根>/.data/traces/chat-trace-YYYY-MM-DD.jsonl`
 （一行一个JSON对象，UTC日期切分；`.data/`不进入Git）。

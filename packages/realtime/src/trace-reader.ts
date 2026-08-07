@@ -71,9 +71,13 @@ export function readTraceEvents(query: TraceQuery): TraceEvent[] {
         );
       }
       const event = result.data;
-      if (query.productRunId !== undefined && event.productRunId !== query.productRunId) return;
-      if (query.requestId !== undefined && event.requestId !== query.requestId) return;
-      if (query.commandId !== undefined && event.commandId !== query.commandId) return;
+      // 关联字段按事件族必填/可选分布，用in窄化后过滤
+      const productRunId = "productRunId" in event ? event.productRunId : undefined;
+      const requestId = "requestId" in event ? event.requestId : undefined;
+      const commandId = "commandId" in event ? event.commandId : undefined;
+      if (query.productRunId !== undefined && productRunId !== query.productRunId) return;
+      if (query.requestId !== undefined && requestId !== query.requestId) return;
+      if (query.commandId !== undefined && commandId !== query.commandId) return;
       collected.push({ event, fileIndex, lineIndex: index });
     });
   });

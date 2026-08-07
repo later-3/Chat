@@ -246,6 +246,90 @@ describe("preclean", () => {
     expect(() => process.kill(blocker.pid ?? 0, 0)).not.toThrow();
   }, 15_000);
 
+  it("已登记的旧Workflow被preclean清理，端口随后不再Ready（Compound统一preclean门场景）", async () => {
+    const debugDir = tempDebugDir();
+    const child = spawn("node", [join(scriptsDir, "workflow-stub.mjs")], {
+      env: { ...process.env, WORKFLOW_PORT: "44112" },
+      stdio: "ignore",
+    });
+    cleanup.push(() => {
+      try {
+        process.kill(child.pid ?? 0, "SIGKILL");
+      } catch {
+        // 已退出
+      }
+    });
+    // 等待旧Workflow Ready
+    const deadline = Date.now() + 8000;
+    for (;;) {
+      try {
+        await fetch("http://127.0.0.1:44112/healthz", { signal: AbortSignal.timeout(500) });
+        break;
+      } catch {
+        if (Date.now() >= deadline) throw new Error("旧Workflow未在8s内就绪");
+        await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+      }
+    }
+    // 模拟上一轮会话的登记记录
+    writePidsFile(debugDir, [
+      {
+        role: "workflow",
+        pid: child.pid,
+        port: 44112,
+        killScope: "process",
+        startedAt: new Date().toISOString(),
+        commandFragments: ["workflow-stub.mjs"],
+      },
+    ]);
+
+    // Compound统一preclean门：先清理旧进程，wait-workflow才可能通过
+    const preclean = runScript("preclean.mjs", [], makeEnv(debugDir));
+    expect(preclean.status).toBe(0);
+    await new Promise<void>((resolveExit, rejectExit) => {
+      const timer = setTimeout(() => rejectExit(new Error("旧Workflow未被终止")), 3000);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        resolveExit();
+      });
+    });
+    // 旧Workflow不再Ready：wait-workflow在新实例启动前不会误判成功
+    const wait = runScript(
+      "wait-ready.mjs",
+      ["workflow", "http://127.0.0.1:44112/healthz", "600"],
+      makeEnv(debugDir),
+    );
+    expect(wait.status).toBe(1);
+  });
+
+  it("进程登记失败时服务终止启动（不产生无法清理的未登记服务）", () => {
+    // CHAT_DEBUG_DIR指向一个普通文件：登记写盘必然失败
+    const blocker = join(tempDebugDir(), "not-a-dir");
+    writeFileSync(blocker, "occupied", "utf8");
+    const result = spawnSync(
+      "node",
+      [
+        "--import",
+        join(scriptsDir, "register-process.mjs"),
+        "-e",
+        "console.log('SERVICE_STARTED')",
+      ],
+      {
+        env: {
+          ...process.env,
+          CHAT_REPO_ROOT: repoRoot,
+          CHAT_DEBUG_ROLE: "api",
+          CHAT_DEBUG_PORT: "43111",
+          CHAT_DEBUG_DIR: blocker,
+        },
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("进程登记失败");
+    expect(result.stdout).not.toContain("SERVICE_STARTED");
+  });
+
   it("pids.json损坏时保留现场并继续按空记录执行，端口检查仍生效", async () => {
     const debugDir = tempDebugDir();
     mkdirSync(debugDir, { recursive: true });

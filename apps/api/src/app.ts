@@ -1,7 +1,9 @@
 import {
   TRACE_EVENT_NAMES,
   problemDetailSchema,
+  requestIdSchema,
   type ProblemDetail,
+  type RequestId,
   type ServiceStatus,
   type TraceEventInput,
 } from "@chat/contracts";
@@ -18,21 +20,19 @@ import { randomUUID } from "node:crypto";
  *
  * Trace（任务书§7.3）：每个请求产生http.command.received与
  * http.command.completed/rejected事件。只记录HTTP方法与路由模板，
- * 不记录请求Body、Query或可能携带用户内容的原始URL；Trace失败不影响请求处理。
+ * 不记录请求Body、Query或可能携带用户内容的原始URL。
+ *
+ * Request ID：不信任客户端传入值；只有通过受限Schema（req_前缀）的ID才复用，
+ * 否则生成新的服务端ID，响应头始终返回最终生效ID。
+ *
+ * Trace失败可观测：写入失败不影响业务响应，但递增内部故障计数并输出
+ * 不含事件内容的稳定错误日志，不允许整段时间线悄悄消失。
  */
-type ApiVariables = { requestId: string };
+type ApiVariables = { requestId: RequestId };
 
 export interface ApiAppOptions {
   /** 默认使用@chat/realtime JSONL Sink（CHAT_TRACE_DIR或仓库.data/traces）；测试可注入临时目录。 */
   traceSink?: TraceSink | null;
-}
-
-function safeEmit(sink: TraceSink, build: () => TraceEventInput): void {
-  try {
-    sink.emit(build());
-  } catch (error) {
-    console.error("[trace] 写入失败（请求继续）:", error instanceof Error ? error.message : error);
-  }
 }
 
 type HttpMethod = Extract<TraceEventInput, { eventName: "http.command.received" }>["httpMethod"];
@@ -52,12 +52,29 @@ function toHttpMethod(method: string): HttpMethod | null {
   }
 }
 
+function newRequestId(): RequestId {
+  return requestIdSchema.parse(`req_${randomUUID().replaceAll("-", "")}`);
+}
+
 export function createApiApp(options: ApiAppOptions = {}) {
   const traceSink = options.traceSink === undefined ? createTraceSink() : options.traceSink;
   const app = new Hono<{ Variables: ApiVariables }>();
 
+  let traceEmitFailures = 0;
+  const safeEmit = (build: () => TraceEventInput): void => {
+    if (!traceSink) return;
+    try {
+      traceSink.emit(build());
+    } catch {
+      traceEmitFailures += 1;
+      console.error(`[trace] emit_failed code=trace.emit_failed total=${traceEmitFailures}`);
+    }
+  };
+
   app.use("*", async (c, next) => {
-    const requestId = c.req.header("x-request-id") ?? `req_${randomUUID()}`;
+    const incoming = c.req.header("x-request-id");
+    const parsed = incoming !== undefined ? requestIdSchema.safeParse(incoming) : null;
+    const requestId = parsed?.success === true ? parsed.data : newRequestId();
     c.set("requestId", requestId);
     await next();
     c.header("x-request-id", requestId);
@@ -71,9 +88,9 @@ export function createApiApp(options: ApiAppOptions = {}) {
     }
     const startedAt = performance.now();
     const requestId = c.get("requestId");
-    const spanId = `span_${randomUUID()}`;
-    const base = { traceId: requestId, spanId, requestId };
-    safeEmit(traceSink, () => ({
+    const spanId = `span_${randomUUID().replaceAll("-", "")}`;
+    const base = { traceId: requestId as string, spanId, requestId };
+    safeEmit(() => ({
       ...base,
       level: "info",
       eventName: TRACE_EVENT_NAMES.httpCommandReceived,
@@ -85,19 +102,31 @@ export function createApiApp(options: ApiAppOptions = {}) {
     const succeeded = status < 400;
     // 404来自未匹配路由，此时routePath可能回退为原始路径（含用户内容），一律省略模板
     const routeTemplate = status === 404 ? undefined : c.req.routePath;
-    safeEmit(traceSink, () => ({
-      ...base,
-      level: succeeded ? "info" : "warn",
-      eventName: succeeded
-        ? TRACE_EVENT_NAMES.httpCommandCompleted
-        : TRACE_EVENT_NAMES.httpCommandRejected,
-      outcome: succeeded ? "success" : "failure",
-      durationMs: Math.round(performance.now() - startedAt),
-      httpMethod,
-      statusCode: status,
-      ...(routeTemplate !== undefined ? { routeTemplate } : {}),
-      ...(succeeded ? {} : { errorCode: status >= 500 ? "http_5xx" : "http_4xx" }),
-    }));
+    const durationMs = Math.round(performance.now() - startedAt);
+    if (succeeded) {
+      safeEmit(() => ({
+        ...base,
+        level: "info",
+        eventName: TRACE_EVENT_NAMES.httpCommandCompleted,
+        outcome: "success",
+        durationMs,
+        httpMethod,
+        statusCode: status,
+        ...(routeTemplate !== undefined ? { routeTemplate } : {}),
+      }));
+    } else {
+      safeEmit(() => ({
+        ...base,
+        level: "warn",
+        eventName: TRACE_EVENT_NAMES.httpCommandRejected,
+        outcome: "rejected",
+        durationMs,
+        httpMethod,
+        statusCode: status,
+        ...(routeTemplate !== undefined ? { routeTemplate } : {}),
+        errorCode: status >= 500 ? "http_5xx" : "http_4xx",
+      }));
+    }
   });
 
   app.get("/api/healthz", (c) => {
@@ -124,7 +153,10 @@ export function createApiApp(options: ApiAppOptions = {}) {
     return c.json(problemDetailSchema.parse(problem), 404);
   });
 
-  return app;
+  return Object.assign(app, {
+    /** Trace写入失败次数（内部可观测性；测试与运维探针使用）。 */
+    getTraceEmitFailures: () => traceEmitFailures,
+  });
 }
 
 export type ApiApp = ReturnType<typeof createApiApp>;

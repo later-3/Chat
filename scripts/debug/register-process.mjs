@@ -22,16 +22,19 @@ if (role) {
   };
   try {
     recordPidEntry(entry);
-    process.on("exit", () => {
-      try {
-        removePidEntry(role, process.pid);
-      } catch {
-        // 退出阶段尽力清理
-      }
-    });
   } catch (error) {
+    // 登记是调试清理的安全前置条件：失败关闭并终止启动，
+    // 不允许出现无法被preclean/stop识别的未登记服务。
     console.error(
-      `[debug] 进程登记失败（调试清理可能失效）: ${error instanceof Error ? error.message : error}`,
+      `[debug] 进程登记失败，终止启动（防止产生无法清理的调试进程）: ${error instanceof Error ? error.message : error}`,
     );
+    process.exit(1);
   }
+  process.on("exit", () => {
+    try {
+      removePidEntry(role, process.pid);
+    } catch {
+      // 退出阶段尽力清理
+    }
+  });
 }

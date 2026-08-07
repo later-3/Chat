@@ -5,6 +5,7 @@ import {
   interactionIdSchema,
   productRunIdSchema,
   productSessionIdSchema,
+  requestIdSchema,
   runAttemptIdSchema,
   workflowDefinitionIdSchema,
 } from "./ids.js";
@@ -20,6 +21,16 @@ import {
  * - 合同是以eventName为判别字段的严格联合：未声明字段（含body/content/
  *   message/prompt/payload等任意正文入口）在根部与嵌套层都失败关闭，
  *   不存在Record<string, unknown>形式的内容通道。
+ *
+ * 关联与统计保证（回放可信的前提）：
+ * - Product Run事件必须有productRunId；
+ * - Workflow/Provider/pi/执行/Product Commit事件必须有productRunId + attemptId；
+ * - Workflow事件必须绑定workflowDefinitionVersion；
+ * - Provider/pi事件必须绑定promptTemplateVersion + modelConfigVersion；
+ * - Provider completed/failed必须有durationMs；started/completed必须有输入manifest Hash，
+ *   failed只在预请求失败（provider.pre_request.*错误族）时允许缺失manifest；
+ * - outcome按事件名固定：started/received/waiting=unknown，
+ *   completed/committed/validated及事实断言类=success，rejected=rejected，failed=failure。
  */
 
 export const TRACE_SCHEMA_VERSION = 1;
@@ -76,7 +87,7 @@ export const TRACE_EVENT_NAMES = {
 
 /* ---------- 受限基础Schema ---------- */
 
-/** Trace内部关联ID（traceId/spanId/requestId/eventId及后端私有引用）。 */
+/** Trace内部关联ID（traceId/spanId及后端私有引用）。 */
 const traceIdLikeSchema = z.string().regex(/^[a-z][a-z0-9]*_[A-Za-z0-9-]{1,80}$/);
 
 /** 版本证据标识（Workflow Definition、Prompt模板、模型配置版本）。 */
@@ -90,6 +101,9 @@ export const stableErrorCodeSchema = z
   .string()
   .regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/)
   .max(64);
+
+/** 预请求失败错误族：Provider请求尚未形成输入manifest时的失败。 */
+export const PROVIDER_PRE_REQUEST_ERROR_PREFIX = "provider.pre_request.";
 
 /** 仓库相对路径（安全Stack Frame用）：不允许绝对路径、`..`、反斜杠与空白。 */
 const repoRelativePathSchema = z
@@ -123,25 +137,53 @@ export const traceErrorSchema = z
 
 export type TraceError = z.infer<typeof traceErrorSchema>;
 
-/** 产品对象引用：Trace关联产品事实的唯一方式，不复制正文。 */
-export const traceObjectTypeSchema = z.enum([
-  "message",
-  "plan",
-  "decision",
-  "execution_contract",
-  "execution_candidate",
-  "context_package",
-  "artifact",
-]);
+/* ---------- 对象引用：事件专属、类型固定、回放所需revision/Hash强制 ---------- */
 
-export const traceObjectRefSchema = z
-  .object({
-    objectType: traceObjectTypeSchema,
-    objectId: traceIdLikeSchema,
-    revision: z.number().int().positive().max(1_000_000).optional(),
-    sha256: sha256Schema.optional(),
-  })
-  .strict();
+const objectIdSchema = traceIdLikeSchema;
+const revisionSchema = z.number().int().positive().max(1_000_000);
+
+/** 版本化对象（plan/decision）：必须携带revision + sha256，回放才能定位版本并校验完整性。 */
+function versionedObjectRef<Type extends string>(objectType: Type) {
+  return z
+    .object({
+      objectType: z.literal(objectType),
+      objectId: objectIdSchema,
+      revision: revisionSchema,
+      sha256: sha256Schema,
+    })
+    .strict();
+}
+
+/** 不可变对象：至少携带sha256。 */
+function immutableObjectRef<Type extends string>(objectType: Type) {
+  return z
+    .object({
+      objectType: z.literal(objectType),
+      objectId: objectIdSchema,
+      revision: revisionSchema.optional(),
+      sha256: sha256Schema,
+    })
+    .strict();
+}
+
+export const messageRefSchema = immutableObjectRef("message");
+export const planRefSchema = versionedObjectRef("plan");
+export const decisionRefSchema = versionedObjectRef("decision");
+export const executionContractRefSchema = immutableObjectRef("execution_contract");
+export const executionCandidateRefSchema = immutableObjectRef("execution_candidate");
+export const contextPackageRefSchema = immutableObjectRef("context_package");
+export const artifactRefSchema = immutableObjectRef("artifact");
+
+/** 通用对象引用：类型判别联合，每种类型的revision/Hash语义固定。 */
+export const traceObjectRefSchema = z.discriminatedUnion("objectType", [
+  messageRefSchema,
+  planRefSchema,
+  decisionRefSchema,
+  executionContractRefSchema,
+  executionCandidateRefSchema,
+  contextPackageRefSchema,
+  artifactRefSchema,
+]);
 
 export type TraceObjectRef = z.infer<typeof traceObjectRefSchema>;
 
@@ -187,7 +229,7 @@ const providerModelSchema = z.literal("qwen3.7-plus");
 const endpointHostSchema = z
   .string()
   .regex(
-    /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/,
+    /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9][a-z0-9-]{0,61}[a-z0-9])*$/,
     "endpointHost必须是合法主机名",
   );
 
@@ -201,7 +243,33 @@ const tokenUsageSchema = z
   })
   .strict();
 
-/* ---------- 公共字段（每个事件严格持有自己需要的字段） ---------- */
+/* ---------- 事件族关联字段（回放强制的最小关联） ---------- */
+
+/** Product Run事件族。 */
+const runScopedFields = {
+  productRunId: productRunIdSchema,
+  attemptId: runAttemptIdSchema,
+};
+
+/** Workflow事件族：Run + Attempt + Definition版本。 */
+const workflowScopedFields = {
+  ...runScopedFields,
+  workflowDefinitionVersion: versionSchema,
+};
+
+/** 模型事件族（Provider/pi）：Run + Attempt + Prompt模板 + 模型配置版本。 */
+const modelScopedFields = {
+  ...runScopedFields,
+  promptTemplateVersion: versionSchema,
+  modelConfigVersion: versionSchema,
+};
+
+const sessionFields = {
+  productSessionId: productSessionIdSchema.optional(),
+  interactionId: interactionIdSchema.optional(),
+};
+
+/* ---------- 公共字段（只保留真正适用于所有事件的字段） ---------- */
 
 const traceCommonFields = {
   schemaVersion: z.literal(TRACE_SCHEMA_VERSION),
@@ -211,27 +279,23 @@ const traceCommonFields = {
   traceId: traceIdLikeSchema,
   spanId: traceIdLikeSchema,
   parentSpanId: traceIdLikeSchema.optional(),
-  requestId: traceIdLikeSchema.optional(),
-  productSessionId: productSessionIdSchema.optional(),
-  interactionId: interactionIdSchema.optional(),
-  productRunId: productRunIdSchema.optional(),
-  attemptId: runAttemptIdSchema.optional(),
-  commandId: commandIdSchema.optional(),
-  workflowDefinitionVersion: versionSchema.optional(),
-  promptTemplateVersion: versionSchema.optional(),
-  modelConfigVersion: versionSchema.optional(),
-  durationMs: z.number().nonnegative().max(3_600_000).optional(),
-  outcome: traceOutcomeSchema,
 };
 
-function defineTraceEvent<Name extends string, Fields extends Record<string, z.ZodTypeAny>>(
-  eventName: Name,
-  fields: Fields,
-) {
+const durationMsOptional = { durationMs: z.number().nonnegative().max(3_600_000).optional() };
+const durationMsRequired = { durationMs: z.number().nonnegative().max(3_600_000) };
+
+function defineTraceEvent<
+  Name extends string,
+  Result extends TraceOutcome,
+  Fields extends Record<string, z.ZodTypeAny>,
+>(eventName: Name, outcome: Result, fields: Fields) {
+  // durationMs由各事件在fields中显式声明一次（durationMsOptional/Required），
+  // 避免公共可选字段与事件必填覆盖时的泛型spread推导陷阱。
   return z
     .object({
       ...traceCommonFields,
       eventName: z.literal(eventName),
+      outcome: z.literal(outcome),
       ...fields,
     })
     .strict();
@@ -241,173 +305,299 @@ const refs = z.array(traceObjectRefSchema).max(8);
 
 /* ---------- 事件定义 ---------- */
 
-// HTTP：不记录请求Body、Query正文或可能携带用户内容的原始URL。
-const httpCommandReceivedSchema = defineTraceEvent(TRACE_EVENT_NAMES.httpCommandReceived, {
-  httpMethod: httpMethodSchema,
-});
+// HTTP：不记录请求Body、Query正文或可能携带用户内容的原始URL；requestId必填。
+const httpCommandReceivedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.httpCommandReceived,
+  "unknown",
+  {
+    requestId: requestIdSchema,
+    httpMethod: httpMethodSchema,
+    ...sessionFields,
+    ...durationMsOptional,
+  },
+);
 
-const httpCommandAcceptedSchema = defineTraceEvent(TRACE_EVENT_NAMES.httpCommandAccepted, {
-  httpMethod: httpMethodSchema,
-  routeTemplate: routeTemplateSchema,
-  statusCode: httpStatusCodeSchema,
-});
+const httpCommandAcceptedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.httpCommandAccepted,
+  "success",
+  {
+    requestId: requestIdSchema,
+    httpMethod: httpMethodSchema,
+    routeTemplate: routeTemplateSchema,
+    statusCode: httpStatusCodeSchema,
+    ...sessionFields,
+    productRunId: productRunIdSchema.optional(),
+    commandId: commandIdSchema.optional(),
+    ...durationMsOptional,
+  },
+);
 
-const httpCommandRejectedSchema = defineTraceEvent(TRACE_EVENT_NAMES.httpCommandRejected, {
-  httpMethod: httpMethodSchema,
-  statusCode: httpStatusCodeSchema,
-  routeTemplate: routeTemplateSchema.optional(),
-  errorCode: stableErrorCodeSchema.optional(),
-});
+const httpCommandRejectedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.httpCommandRejected,
+  "rejected",
+  {
+    requestId: requestIdSchema,
+    httpMethod: httpMethodSchema,
+    statusCode: httpStatusCodeSchema,
+    routeTemplate: routeTemplateSchema.optional(),
+    errorCode: stableErrorCodeSchema.optional(),
+    ...sessionFields,
+    productRunId: productRunIdSchema.optional(),
+    commandId: commandIdSchema.optional(),
+    ...durationMsOptional,
+  },
+);
 
-const httpCommandCompletedSchema = defineTraceEvent(TRACE_EVENT_NAMES.httpCommandCompleted, {
-  httpMethod: httpMethodSchema,
-  statusCode: httpStatusCodeSchema,
-  routeTemplate: routeTemplateSchema.optional(),
-});
+const httpCommandCompletedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.httpCommandCompleted,
+  "success",
+  {
+    requestId: requestIdSchema,
+    httpMethod: httpMethodSchema,
+    statusCode: httpStatusCodeSchema,
+    routeTemplate: routeTemplateSchema.optional(),
+    ...sessionFields,
+    productRunId: productRunIdSchema.optional(),
+    commandId: commandIdSchema.optional(),
+    ...durationMsOptional,
+  },
+);
 
-// 产品事务。
+// 产品事务：创建Run的事务尚无productRunId，故可选。
+const transactionFields = {
+  transactionType: transactionTypeSchema,
+  ...sessionFields,
+  commandId: commandIdSchema.optional(),
+  productRunId: productRunIdSchema.optional(),
+};
+
 const productTransactionStartedSchema = defineTraceEvent(
   TRACE_EVENT_NAMES.productTransactionStarted,
-  {
-    transactionType: transactionTypeSchema,
-    inputRefs: refs.optional(),
-  },
+  "unknown",
+  { ...transactionFields, inputRefs: refs.optional(), ...durationMsOptional },
 );
 
 const productTransactionCommittedSchema = defineTraceEvent(
   TRACE_EVENT_NAMES.productTransactionCommitted,
+  "success",
   {
-    transactionType: transactionTypeSchema,
+    ...transactionFields,
     inputRefs: refs.optional(),
     outputRefs: refs.optional(),
+    ...durationMsOptional,
   },
 );
 
 const productTransactionFailedSchema = defineTraceEvent(
   TRACE_EVENT_NAMES.productTransactionFailed,
+  "failure",
   {
-    transactionType: transactionTypeSchema,
+    ...transactionFields,
     error: traceErrorSchema,
     inputRefs: refs.optional(),
+    ...durationMsOptional,
   },
 );
 
-// Product Run状态转换。
-const productRunCreatedSchema = defineTraceEvent(TRACE_EVENT_NAMES.productRunCreated, {
+// Product Run事件族：必须有productRunId。
+const productRunCreatedSchema = defineTraceEvent(TRACE_EVENT_NAMES.productRunCreated, "success", {
+  productRunId: productRunIdSchema,
+  ...sessionFields,
   runStatus: runStatusSchema,
   phase: runPhaseSchema,
   revision: z.number().int().nonnegative().max(1_000_000),
+  ...durationMsOptional,
 });
 
-const productRunTransitionedSchema = defineTraceEvent(TRACE_EVENT_NAMES.productRunTransitioned, {
-  fromStatus: runStatusSchema,
-  toStatus: runStatusSchema,
-  fromPhase: runPhaseSchema.optional(),
-  toPhase: runPhaseSchema.optional(),
-  revision: z.number().int().nonnegative().max(1_000_000),
-});
+const productRunTransitionedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.productRunTransitioned,
+  "success",
+  {
+    productRunId: productRunIdSchema,
+    ...sessionFields,
+    fromStatus: runStatusSchema,
+    toStatus: runStatusSchema,
+    fromPhase: runPhaseSchema.optional(),
+    toPhase: runPhaseSchema.optional(),
+    revision: z.number().int().nonnegative().max(1_000_000),
+    ...durationMsOptional,
+  },
+);
 
-// Workflow：runMappingRef为后端私有映射引用，不是Hook Token。
-const workflowStartRequestedSchema = defineTraceEvent(TRACE_EVENT_NAMES.workflowStartRequested, {
-  workflowDefinitionId: workflowDefinitionIdSchema,
-});
+// Workflow事件族：Run + Attempt + Definition版本；runMappingRef为后端私有映射引用，不是Hook Token。
+const workflowStartRequestedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.workflowStartRequested,
+  "unknown",
+  {
+    ...workflowScopedFields,
+    workflowDefinitionId: workflowDefinitionIdSchema,
+    ...durationMsOptional,
+  },
+);
 
-const workflowStartStartedSchema = defineTraceEvent(TRACE_EVENT_NAMES.workflowStartStarted, {
-  workflowDefinitionId: workflowDefinitionIdSchema,
-  runMappingRef: traceIdLikeSchema,
-});
+const workflowStartStartedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.workflowStartStarted,
+  "unknown",
+  {
+    ...workflowScopedFields,
+    workflowDefinitionId: workflowDefinitionIdSchema,
+    runMappingRef: traceIdLikeSchema,
+    ...durationMsOptional,
+  },
+);
 
-const workflowStartFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.workflowStartFailed, {
-  workflowDefinitionId: workflowDefinitionIdSchema,
-  error: traceErrorSchema,
-});
+const workflowStartFailedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.workflowStartFailed,
+  "failure",
+  {
+    ...workflowScopedFields,
+    workflowDefinitionId: workflowDefinitionIdSchema,
+    error: traceErrorSchema,
+    ...durationMsOptional,
+  },
+);
 
-const workflowStepStartedSchema = defineTraceEvent(TRACE_EVENT_NAMES.workflowStepStarted, {
+const workflowStepStartedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.workflowStepStarted,
+  "unknown",
+  {
+    ...workflowScopedFields,
+    stepKey: stepKeySchema,
+    stepAttempt: stepAttemptSchema,
+    replay: z.boolean(),
+    ...durationMsOptional,
+  },
+);
+
+const workflowStepCompletedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.workflowStepCompleted,
+  "success",
+  {
+    ...workflowScopedFields,
+    stepKey: stepKeySchema,
+    stepAttempt: stepAttemptSchema,
+    replay: z.boolean(),
+    outputRefs: refs.optional(),
+    ...durationMsOptional,
+  },
+);
+
+const workflowStepFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.workflowStepFailed, "failure", {
+  ...workflowScopedFields,
   stepKey: stepKeySchema,
   stepAttempt: stepAttemptSchema,
   replay: z.boolean(),
-});
-
-const workflowStepCompletedSchema = defineTraceEvent(TRACE_EVENT_NAMES.workflowStepCompleted, {
-  stepKey: stepKeySchema,
-  stepAttempt: stepAttemptSchema,
-  replay: z.boolean(),
-  outputRefs: refs.optional(),
-});
-
-const workflowStepFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.workflowStepFailed, {
-  stepKey: stepKeySchema,
-  stepAttempt: stepAttemptSchema,
-  replay: z.boolean(),
   error: traceErrorSchema,
+  ...durationMsOptional,
 });
 
-const workflowStepReplayedSchema = defineTraceEvent(TRACE_EVENT_NAMES.workflowStepReplayed, {
-  stepKey: stepKeySchema,
-  stepAttempt: stepAttemptSchema,
-});
+const workflowStepReplayedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.workflowStepReplayed,
+  "success",
+  {
+    ...workflowScopedFields,
+    stepKey: stepKeySchema,
+    stepAttempt: stepAttemptSchema,
+    ...durationMsOptional,
+  },
+);
 
-// Plan候选。
-const planCandidateReceivedSchema = defineTraceEvent(TRACE_EVENT_NAMES.planCandidateReceived, {
-  candidateSha256: sha256Schema,
-});
+// Plan候选：Run + Attempt（候选来自pi规划Attempt）。
+const planCandidateReceivedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.planCandidateReceived,
+  "unknown",
+  { ...runScopedFields, candidateSha256: sha256Schema, ...durationMsOptional },
+);
 
-const planCandidateRejectedSchema = defineTraceEvent(TRACE_EVENT_NAMES.planCandidateRejected, {
-  candidateSha256: sha256Schema,
-  error: traceErrorSchema,
-});
+const planCandidateRejectedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.planCandidateRejected,
+  "rejected",
+  {
+    ...runScopedFields,
+    candidateSha256: sha256Schema,
+    error: traceErrorSchema,
+    ...durationMsOptional,
+  },
+);
 
-const planCandidatePublishedSchema = defineTraceEvent(TRACE_EVENT_NAMES.planCandidatePublished, {
-  planRef: traceObjectRefSchema,
-});
+const planCandidatePublishedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.planCandidatePublished,
+  "success",
+  { ...runScopedFields, planRef: planRefSchema, ...durationMsOptional },
+);
 
-// Approval与Decision。
-const approvalCreatedSchema = defineTraceEvent(TRACE_EVENT_NAMES.approvalCreated, {
+// Approval与Decision：Run + Attempt（审批等待发生在同一Run Attempt内）。
+const approvalCreatedSchema = defineTraceEvent(TRACE_EVENT_NAMES.approvalCreated, "success", {
+  ...runScopedFields,
   approvalRequestId: approvalRequestIdSchema,
-  planRef: traceObjectRefSchema,
+  planRef: planRefSchema,
+  ...durationMsOptional,
 });
 
 const decisionKindSchema = z.enum(["approve", "reject", "request_revision"]);
 
-const decisionCommittedSchema = defineTraceEvent(TRACE_EVENT_NAMES.decisionCommitted, {
+const decisionCommittedSchema = defineTraceEvent(TRACE_EVENT_NAMES.decisionCommitted, "success", {
+  ...runScopedFields,
+  commandId: commandIdSchema,
   decisionKind: decisionKindSchema,
-  decisionRef: traceObjectRefSchema,
-  planRef: traceObjectRefSchema,
+  decisionRef: decisionRefSchema,
+  planRef: planRefSchema,
+  ...durationMsOptional,
 });
 
-const decisionRejectedSchema = defineTraceEvent(TRACE_EVENT_NAMES.decisionRejected, {
+const decisionRejectedSchema = defineTraceEvent(TRACE_EVENT_NAMES.decisionRejected, "rejected", {
+  ...runScopedFields,
+  commandId: commandIdSchema,
   decisionKind: decisionKindSchema,
   error: traceErrorSchema,
-  planRef: traceObjectRefSchema.optional(),
+  planRef: planRefSchema.optional(),
+  ...durationMsOptional,
 });
 
 // Workflow Hook等待与恢复：不记录Hook Token。
-const workflowHookWaitingSchema = defineTraceEvent(TRACE_EVENT_NAMES.workflowHookWaiting, {
-  waitReason: z.enum(["plan_approval"]),
-});
+const workflowHookWaitingSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.workflowHookWaiting,
+  "unknown",
+  {
+    ...workflowScopedFields,
+    waitReason: z.enum(["plan_approval"]),
+    ...durationMsOptional,
+  },
+);
 
 const workflowHookResumeDispatchedSchema = defineTraceEvent(
   TRACE_EVENT_NAMES.workflowHookResumeDispatched,
+  "success",
   {
+    ...workflowScopedFields,
     resumeAttempt: stepAttemptSchema,
-    decisionRef: traceObjectRefSchema.optional(),
+    decisionRef: decisionRefSchema.optional(),
+    ...durationMsOptional,
   },
 );
 
-const workflowHookResumedSchema = defineTraceEvent(TRACE_EVENT_NAMES.workflowHookResumed, {
-  resumeAttempt: stepAttemptSchema,
-});
+const workflowHookResumedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.workflowHookResumed,
+  "success",
+  {
+    ...workflowScopedFields,
+    resumeAttempt: stepAttemptSchema,
+    ...durationMsOptional,
+  },
+);
 
 const workflowHookResumeFailedSchema = defineTraceEvent(
   TRACE_EVENT_NAMES.workflowHookResumeFailed,
+  "failure",
   {
+    ...workflowScopedFields,
     resumeAttempt: stepAttemptSchema,
     error: traceErrorSchema,
+    ...durationMsOptional,
   },
 );
 
-// Provider：只保存Provider、模型、Endpoint host、请求ID、状态、耗时与Usage；
-// 不记录Prompt、消息数组、工具Payload、原始响应或隐藏推理。
+// Provider：Run + Attempt + Prompt模板 + 模型配置版本；只保存白名单字段。
 const providerSharedFields = {
   provider: providerNameSchema,
   model: providerModelSchema,
@@ -415,83 +605,141 @@ const providerSharedFields = {
   operation: z.enum(["chat_completion"]),
 };
 
-const providerRequestStartedSchema = defineTraceEvent(TRACE_EVENT_NAMES.providerRequestStarted, {
-  ...providerSharedFields,
-  inputManifestSha256: sha256Schema.optional(),
-});
+const providerRequestStartedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.providerRequestStarted,
+  "unknown",
+  {
+    ...modelScopedFields,
+    ...providerSharedFields,
+    inputManifestSha256: sha256Schema,
+    ...durationMsOptional,
+  },
+);
 
 const providerRequestCompletedSchema = defineTraceEvent(
   TRACE_EVENT_NAMES.providerRequestCompleted,
+  "success",
   {
+    ...modelScopedFields,
     ...providerSharedFields,
     httpStatus: httpStatusCodeSchema,
     providerRequestId: providerRequestIdSchema,
     tokenUsage: tokenUsageSchema,
-    inputManifestSha256: sha256Schema.optional(),
+    inputManifestSha256: sha256Schema,
+    ...durationMsRequired,
   },
 );
 
-const providerRequestFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.providerRequestFailed, {
-  ...providerSharedFields,
-  error: traceErrorSchema,
-  httpStatus: httpStatusCodeSchema.optional(),
-  providerRequestId: providerRequestIdSchema.optional(),
-});
+const providerRequestFailedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.providerRequestFailed,
+  "failure",
+  {
+    ...modelScopedFields,
+    ...providerSharedFields,
+    error: traceErrorSchema,
+    httpStatus: httpStatusCodeSchema.optional(),
+    providerRequestId: providerRequestIdSchema.optional(),
+    inputManifestSha256: sha256Schema.optional(),
+    ...durationMsRequired,
+  },
+).refine(
+  (event) =>
+    event.inputManifestSha256 !== undefined ||
+    event.error.code.startsWith(PROVIDER_PRE_REQUEST_ERROR_PREFIX),
+  {
+    message:
+      "Provider失败事件缺少inputManifestSha256时，错误码必须属于provider.pre_request.*预请求失败族",
+  },
+);
 
-// pi节点。
+// pi节点：Run + Attempt + Prompt模板 + 模型配置版本。
 const piNodeKindSchema = z.enum(["planner", "executor"]);
 
-const piNodeStartedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piNodeStarted, {
+const piNodeStartedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piNodeStarted, "unknown", {
+  ...modelScopedFields,
   nodeKind: piNodeKindSchema,
+  ...durationMsOptional,
 });
 
-const piNodeCompletedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piNodeCompleted, {
+const piNodeCompletedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piNodeCompleted, "success", {
+  ...modelScopedFields,
   nodeKind: piNodeKindSchema,
-  candidateRef: traceObjectRefSchema.optional(),
+  candidateRef: executionCandidateRefSchema.optional(),
+  ...durationMsOptional,
 });
 
-const piNodeFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piNodeFailed, {
+const piNodeFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piNodeFailed, "failure", {
+  ...modelScopedFields,
   nodeKind: piNodeKindSchema,
   error: traceErrorSchema,
+  ...durationMsOptional,
 });
 
-// 执行验证。
-const executionValidatedSchema = defineTraceEvent(TRACE_EVENT_NAMES.executionValidated, {
-  candidateRef: traceObjectRefSchema,
+// 执行验证：Run + Attempt。
+const executionValidatedSchema = defineTraceEvent(TRACE_EVENT_NAMES.executionValidated, "success", {
+  ...runScopedFields,
+  candidateRef: executionCandidateRefSchema,
+  ...durationMsOptional,
 });
 
-const executionRejectedSchema = defineTraceEvent(TRACE_EVENT_NAMES.executionRejected, {
-  candidateRef: traceObjectRefSchema,
+const executionRejectedSchema = defineTraceEvent(TRACE_EVENT_NAMES.executionRejected, "rejected", {
+  ...runScopedFields,
+  candidateRef: executionCandidateRefSchema,
   error: traceErrorSchema,
+  ...durationMsOptional,
 });
 
-// Product Commit。
-const productCommitStartedSchema = defineTraceEvent(TRACE_EVENT_NAMES.productCommitStarted, {
-  outputRefs: refs,
-});
+// Product Commit：Run + Attempt。
+const productCommitStartedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.productCommitStarted,
+  "unknown",
+  {
+    ...runScopedFields,
+    outputRefs: refs,
+    ...durationMsOptional,
+  },
+);
 
-const productCommitCommittedSchema = defineTraceEvent(TRACE_EVENT_NAMES.productCommitCommitted, {
-  outputRefs: refs,
-});
+const productCommitCommittedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.productCommitCommitted,
+  "success",
+  { ...runScopedFields, outputRefs: refs, ...durationMsOptional },
+);
 
-const productCommitFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.productCommitFailed, {
-  error: traceErrorSchema,
-  outputRefs: refs.optional(),
-});
+const productCommitFailedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.productCommitFailed,
+  "failure",
+  {
+    ...runScopedFields,
+    error: traceErrorSchema,
+    outputRefs: refs.optional(),
+    ...durationMsOptional,
+  },
+);
 
 // 本地调试生命周期。
 const debugRoleSchema = z.enum(["api", "web", "workflow"]);
 const debugPortSchema = z.number().int().min(1).max(65535);
 
-const serviceDebugStartedSchema = defineTraceEvent(TRACE_EVENT_NAMES.serviceDebugStarted, {
-  role: debugRoleSchema,
-  port: debugPortSchema,
-});
+const serviceDebugStartedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.serviceDebugStarted,
+  "unknown",
+  {
+    role: debugRoleSchema,
+    port: debugPortSchema,
+    ...durationMsOptional,
+  },
+);
 
-const serviceDebugStoppedSchema = defineTraceEvent(TRACE_EVENT_NAMES.serviceDebugStopped, {
-  role: debugRoleSchema,
-  port: debugPortSchema,
-});
+const serviceDebugStoppedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.serviceDebugStopped,
+  "success",
+  {
+    role: debugRoleSchema,
+    port: debugPortSchema,
+    ...durationMsOptional,
+  },
+);
 
 /** Trace事件严格联合：以eventName判别，未声明字段在根部与嵌套层均失败关闭。 */
 export const traceEventSchema = z.discriminatedUnion("eventName", [

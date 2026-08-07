@@ -61,6 +61,7 @@
     {
       "name": "Chat：完整后端闭环",
       "configurations": ["Chat：Workflow 运行时", "Chat：API", "Chat：Web 浏览器"],
+      "preLaunchTask": "chat-debug:preclean",
       "stopAll": true
     }
   ]

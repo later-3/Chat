@@ -4,6 +4,8 @@ import { join } from "node:path";
 import {
   traceEventSchema,
   productRunIdSchema,
+  requestIdSchema,
+  runAttemptIdSchema,
   type TraceEvent,
   type TraceEventInput,
 } from "@chat/contracts";
@@ -18,6 +20,8 @@ const SHA256_A = "a".repeat(64);
 const RUN_A = productRunIdSchema.parse("run_abc123");
 const RUN_B = productRunIdSchema.parse("run_other99");
 const RUN_CLI = productRunIdSchema.parse("run_cli123");
+const REQ_T1 = requestIdSchema.parse("req_t1");
+const ATT_A = runAttemptIdSchema.parse("att_abc123");
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "chat-trace-"));
@@ -51,7 +55,7 @@ const httpReceivedInput: TraceEventInput = {
   eventName: "http.command.received",
   traceId: "trace_t1",
   spanId: "span_t1",
-  requestId: "req_t1",
+  requestId: REQ_T1,
   outcome: "unknown",
   httpMethod: "POST",
 };
@@ -62,6 +66,9 @@ const providerCompletedInput: TraceEventInput = {
   traceId: "trace_t2",
   spanId: "span_t2",
   productRunId: RUN_A,
+  attemptId: ATT_A,
+  promptTemplateVersion: "planner-1.0.0",
+  modelConfigVersion: "bailian-qwen-1.0.0",
   outcome: "success",
   provider: "bailian",
   model: "qwen3.7-plus",
@@ -144,9 +151,11 @@ describe("readTraceEvents", () => {
 
   it("按productRunId过滤并按时间排序", () => {
     const dir = tempDir();
-    emitAt(dir, 2000, { ...httpReceivedInput, traceId: "t_a1", productRunId: RUN_A });
-    emitAt(dir, 3000, { ...httpReceivedInput, traceId: "t_b1", productRunId: RUN_B });
+    // http.command.received尚无Run关联；用Provider事件验证按Run过滤
+    emitAt(dir, 2000, { ...providerCompletedInput, traceId: "t_a1" });
+    emitAt(dir, 3000, { ...httpReceivedInput, traceId: "t_b1" });
     emitAt(dir, 1000, { ...providerCompletedInput, traceId: "t_a2" });
+    emitAt(dir, 500, { ...providerCompletedInput, traceId: "t_c1", productRunId: RUN_B });
     const runA = readTraceEvents({ dir, productRunId: "run_abc123" });
     expect(runA.map((event) => event.traceId)).toEqual(["t_a2", "t_a1"]);
   });
@@ -195,7 +204,7 @@ describe("runTraceCli", () => {
   it("stdout仅输出合同事件，不包含正文标记", () => {
     const dir = tempDir();
     const sink = createTraceSink({ dir });
-    sink.emit({ ...httpReceivedInput, productRunId: RUN_CLI });
+    sink.emit({ ...providerCompletedInput, productRunId: RUN_CLI });
     const written: string[] = [];
     const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
       written.push(String(chunk));
@@ -210,7 +219,7 @@ describe("runTraceCli", () => {
       stderrSpy.mockRestore();
     }
     const output = written.join("");
-    expect(output).toContain("http.command.received");
+    expect(output).toContain("provider.request.completed");
     expect(output).not.toContain(CONTENT_MARKER);
     for (const line of output.split("\n").filter((line) => line.trim() !== "")) {
       expect(() => traceEventSchema.parse(JSON.parse(line))).not.toThrow();

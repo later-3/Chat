@@ -1,98 +1,248 @@
 import { describe, expect, it } from "vitest";
 import {
+  PROVIDER_PRE_REQUEST_ERROR_PREFIX,
   TRACE_EVENT_NAMES,
+  decisionRefSchema,
+  planRefSchema,
   sha256Schema,
   traceEventSchema,
   traceObjectRefSchema,
 } from "./trace.js";
+import { validTraceFixtures } from "./trace.fixtures.js";
 
 const SHA256_A = "a".repeat(64);
-const SHA256_B = "b".repeat(64);
-
 /** 合成泄漏标记：证明正文根本无法进入Trace，而不是写入后被脱敏。 */
 const CONTENT_MARKER = "TRACE_CONTENT_MUST_NEVER_BE_WRITTEN";
 
-function commonFields(eventName: string) {
-  return {
-    schemaVersion: 1,
-    eventId: "evt_test-1",
-    timestamp: new Date().toISOString(),
-    level: "info",
-    eventName,
-    traceId: "trace_test-1",
-    spanId: "span_test-1",
-    outcome: "unknown",
-  };
+function fixtureOf(eventName: string): Record<string, unknown> {
+  const found = validTraceFixtures.find((fixture) => fixture["eventName"] === eventName);
+  if (!found) throw new Error(`缺少Fixture: ${eventName}`);
+  return found;
 }
 
-const validHttpCompleted = {
-  ...commonFields(TRACE_EVENT_NAMES.httpCommandCompleted),
-  outcome: "success",
-  requestId: "req_test-1",
-  httpMethod: "GET",
-  routeTemplate: "/api/healthz",
-  statusCode: 200,
-  durationMs: 3,
-};
-
-const validProviderCompleted = {
-  ...commonFields(TRACE_EVENT_NAMES.providerRequestCompleted),
-  outcome: "success",
-  productRunId: "run_abc123",
-  provider: "bailian",
-  model: "qwen3.7-plus",
-  endpointHost: "dashscope.aliyuncs.com",
-  operation: "chat_completion",
-  httpStatus: 200,
-  providerRequestId: "req-0a1b2c",
-  tokenUsage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
-  inputManifestSha256: SHA256_A,
-  durationMs: 1234,
-};
-
-const validProductRunTransitioned = {
-  ...commonFields(TRACE_EVENT_NAMES.productRunTransitioned),
-  outcome: "success",
-  productRunId: "run_abc123",
-  fromStatus: "planning",
-  toStatus: "awaiting_decision",
-  fromPhase: "plan",
-  toPhase: "approval",
-  revision: 2,
-};
-
-const validDecisionCommitted = {
-  ...commonFields(TRACE_EVENT_NAMES.decisionCommitted),
-  outcome: "success",
-  productRunId: "run_abc123",
-  commandId: "cmd_abc123",
-  decisionKind: "approve",
-  decisionRef: { objectType: "decision", objectId: "dec_1", revision: 1, sha256: SHA256_B },
-  planRef: { objectType: "plan", objectId: "plan_1", revision: 2, sha256: SHA256_A },
-};
-
-describe("traceEventSchema：每种正式事件的合法形状通过", () => {
-  it.each([
-    ["http.command.completed", validHttpCompleted],
-    ["provider.request.completed", validProviderCompleted],
-    ["product_run.transitioned", validProductRunTransitioned],
-    ["decision.committed", validDecisionCommitted],
-  ])("%s", (_label, event) => {
-    const result = traceEventSchema.safeParse(event);
-    expect(result.success, JSON.stringify(result.success ? {} : result.error.issues)).toBe(true);
+describe("traceEventSchema：39种正式事件的合法Fixture全部通过", () => {
+  it("Fixture覆盖任务书§7.3全部事件名", () => {
+    const covered = new Set(validTraceFixtures.map((fixture) => fixture["eventName"]));
+    for (const name of Object.values(TRACE_EVENT_NAMES)) {
+      expect(covered.has(name), `${name} 缺少合法Fixture`).toBe(true);
+    }
   });
 
-  it("任务书§7.3每个事件名都有对应的严格Schema", () => {
-    for (const name of Object.values(TRACE_EVENT_NAMES)) {
-      const parsed = traceEventSchema.safeParse(commonFields(name));
-      // 公共字段可能不满足事件专属必填字段，但判别必须命中（不得出现No matching discriminator）
-      if (!parsed.success) {
-        const discriminatorMiss = parsed.error.issues.some(
-          (issue) => issue.code === "invalid_union",
-        );
-        expect(discriminatorMiss, `${name} 缺少严格Schema`).toBe(false);
+  it.each(validTraceFixtures.map((fixture) => [fixture["eventName"] as string, fixture]))(
+    "%s",
+    (_name, fixture) => {
+      const result = traceEventSchema.safeParse(fixture);
+      expect(result.success, JSON.stringify(result.success ? {} : result.error.issues)).toBe(true);
+    },
+  );
+});
+
+describe("traceEventSchema：outcome按事件名固定", () => {
+  it.each([
+    [TRACE_EVENT_NAMES.httpCommandReceived, "success"],
+    [TRACE_EVENT_NAMES.providerRequestStarted, "success"],
+    [TRACE_EVENT_NAMES.workflowHookWaiting, "failure"],
+    [TRACE_EVENT_NAMES.httpCommandCompleted, "failure"],
+    [TRACE_EVENT_NAMES.productCommitCommitted, "unknown"],
+    [TRACE_EVENT_NAMES.executionValidated, "unknown"],
+    [TRACE_EVENT_NAMES.httpCommandRejected, "failure"],
+    [TRACE_EVENT_NAMES.executionRejected, "failure"],
+    [TRACE_EVENT_NAMES.providerRequestFailed, "unknown"],
+  ])("%s 不接受 outcome=%s", (eventName, wrongOutcome) => {
+    const tampered = { ...fixtureOf(eventName), outcome: wrongOutcome };
+    expect(traceEventSchema.safeParse(tampered).success).toBe(false);
+  });
+});
+
+describe("traceEventSchema：事件族关联字段强制", () => {
+  it("Product Run事件缺productRunId被拒绝", () => {
+    for (const name of [
+      TRACE_EVENT_NAMES.productRunCreated,
+      TRACE_EVENT_NAMES.productRunTransitioned,
+    ]) {
+      const tampered = { ...fixtureOf(name) };
+      delete tampered["productRunId"];
+      expect(traceEventSchema.safeParse(tampered).success, name).toBe(false);
+    }
+  });
+
+  it("Workflow/Provider/pi/执行/Commit事件缺productRunId或attemptId被拒绝", () => {
+    for (const name of [
+      TRACE_EVENT_NAMES.workflowStepStarted,
+      TRACE_EVENT_NAMES.workflowHookWaiting,
+      TRACE_EVENT_NAMES.providerRequestStarted,
+      TRACE_EVENT_NAMES.piNodeStarted,
+      TRACE_EVENT_NAMES.executionValidated,
+      TRACE_EVENT_NAMES.productCommitStarted,
+    ]) {
+      for (const key of ["productRunId", "attemptId"]) {
+        const tampered = { ...fixtureOf(name) };
+        delete tampered[key];
+        expect(traceEventSchema.safeParse(tampered).success, `${name}缺${key}`).toBe(false);
       }
     }
+  });
+
+  it("Workflow事件缺workflowDefinitionVersion被拒绝", () => {
+    const tampered = { ...fixtureOf(TRACE_EVENT_NAMES.workflowStepCompleted) };
+    delete tampered["workflowDefinitionVersion"];
+    expect(traceEventSchema.safeParse(tampered).success).toBe(false);
+  });
+
+  it("Provider/pi事件缺promptTemplateVersion或modelConfigVersion被拒绝", () => {
+    for (const name of [
+      TRACE_EVENT_NAMES.providerRequestCompleted,
+      TRACE_EVENT_NAMES.piNodeCompleted,
+    ]) {
+      for (const key of ["promptTemplateVersion", "modelConfigVersion"]) {
+        const tampered = { ...fixtureOf(name) };
+        delete tampered[key];
+        expect(traceEventSchema.safeParse(tampered).success, `${name}缺${key}`).toBe(false);
+      }
+    }
+  });
+
+  it("Provider completed/failed缺durationMs被拒绝", () => {
+    for (const name of [
+      TRACE_EVENT_NAMES.providerRequestCompleted,
+      TRACE_EVENT_NAMES.providerRequestFailed,
+    ]) {
+      const tampered = { ...fixtureOf(name) };
+      delete tampered["durationMs"];
+      expect(traceEventSchema.safeParse(tampered).success, name).toBe(false);
+    }
+  });
+
+  it("Provider started/completed缺inputManifestSha256被拒绝", () => {
+    for (const name of [
+      TRACE_EVENT_NAMES.providerRequestStarted,
+      TRACE_EVENT_NAMES.providerRequestCompleted,
+    ]) {
+      const tampered = { ...fixtureOf(name) };
+      delete tampered["inputManifestSha256"];
+      expect(traceEventSchema.safeParse(tampered).success, name).toBe(false);
+    }
+  });
+
+  it("Provider failed缺manifest仅允许预请求失败族", () => {
+    // 选择带manifest的fixture并删除，保留非预请求错误码 → 拒绝
+    const withManifest = validTraceFixtures.find(
+      (item) =>
+        item["eventName"] === TRACE_EVENT_NAMES.providerRequestFailed &&
+        item["inputManifestSha256"] !== undefined,
+    );
+    if (!withManifest) throw new Error("缺少带manifest的failed fixture");
+    const tampered = { ...withManifest };
+    delete tampered["inputManifestSha256"];
+    expect(traceEventSchema.safeParse(tampered).success).toBe(false);
+    // 预请求失败族允许无manifest
+    const preRequest = validTraceFixtures.find(
+      (item) =>
+        item["eventName"] === TRACE_EVENT_NAMES.providerRequestFailed &&
+        item["inputManifestSha256"] === undefined,
+    );
+    expect(preRequest).toBeDefined();
+    expect(
+      (preRequest?.["error"] as { code: string }).code.startsWith(
+        PROVIDER_PRE_REQUEST_ERROR_PREFIX,
+      ),
+    ).toBe(true);
+    expect(traceEventSchema.safeParse(preRequest).success).toBe(true);
+  });
+});
+
+describe("traceEventSchema：对象引用语义", () => {
+  it("planRef只能是plan且必须携带revision+sha256", () => {
+    const fixture = fixtureOf(TRACE_EVENT_NAMES.planCandidatePublished);
+    expect(
+      traceEventSchema.safeParse({
+        ...fixture,
+        planRef: { objectType: "message", objectId: "msg_1", sha256: SHA256_A },
+      }).success,
+    ).toBe(false);
+    expect(
+      traceEventSchema.safeParse({
+        ...fixture,
+        planRef: { objectType: "plan", objectId: "plan_1", sha256: SHA256_A },
+      }).success,
+    ).toBe(false);
+    expect(
+      traceEventSchema.safeParse({
+        ...fixture,
+        planRef: { objectType: "plan", objectId: "plan_1", revision: 1 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("decisionRef只能是decision且必须携带revision+sha256", () => {
+    const fixture = fixtureOf(TRACE_EVENT_NAMES.decisionCommitted);
+    expect(
+      traceEventSchema.safeParse({
+        ...fixture,
+        decisionRef: { objectType: "artifact", objectId: "art_1", sha256: SHA256_A },
+      }).success,
+    ).toBe(false);
+    expect(
+      traceEventSchema.safeParse({
+        ...fixture,
+        decisionRef: { objectType: "decision", objectId: "dec_1", revision: 1 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("executionCandidateRef必须携带sha256", () => {
+    const fixture = fixtureOf(TRACE_EVENT_NAMES.executionValidated);
+    expect(
+      traceEventSchema.safeParse({
+        ...fixture,
+        candidateRef: { objectType: "execution_candidate", objectId: "exc_1" },
+      }).success,
+    ).toBe(false);
+    expect(
+      traceEventSchema.safeParse({
+        ...fixture,
+        candidateRef: { objectType: "execution_candidate", objectId: "exc_1", sha256: "XYZ" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("approval.created不接受错误对象类型的planRef", () => {
+    const fixture = fixtureOf(TRACE_EVENT_NAMES.approvalCreated);
+    expect(
+      traceEventSchema.safeParse({
+        ...fixture,
+        planRef: { objectType: "decision", objectId: "dec_1", revision: 1, sha256: SHA256_A },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("ref Schema独立测试：类型字面量与必填Hash", () => {
+    expect(
+      planRefSchema.safeParse({
+        objectType: "plan",
+        objectId: "plan_1",
+        revision: 1,
+        sha256: SHA256_A,
+      }).success,
+    ).toBe(true);
+    expect(
+      decisionRefSchema.safeParse({
+        objectType: "plan",
+        objectId: "plan_1",
+        revision: 1,
+        sha256: SHA256_A,
+      }).success,
+    ).toBe(false);
+    expect(
+      traceObjectRefSchema.safeParse({
+        objectType: "artifact",
+        objectId: "art_1",
+        sha256: SHA256_A,
+      }).success,
+    ).toBe(true);
+    expect(
+      traceObjectRefSchema.safeParse({ objectType: "artifact", objectId: "art_1" }).success,
+    ).toBe(false);
   });
 });
 
@@ -112,13 +262,13 @@ describe("traceEventSchema：任意内容通道被关闭", () => {
   ];
 
   it.each(contentKeys)("根部出现%s时Schema拒绝", (key) => {
-    const event = { ...validHttpCompleted, [key]: CONTENT_MARKER };
+    const event = { ...fixtureOf(TRACE_EVENT_NAMES.httpCommandCompleted), [key]: CONTENT_MARKER };
     expect(traceEventSchema.safeParse(event).success).toBe(false);
   });
 
   it.each(contentKeys)("嵌套对象出现%s时Schema拒绝", (key) => {
     const event = {
-      ...validProviderCompleted,
+      ...fixtureOf(TRACE_EVENT_NAMES.providerRequestCompleted),
       tokenUsage: { promptTokens: 1, completionTokens: 2, totalTokens: 3, [key]: CONTENT_MARKER },
     };
     expect(traceEventSchema.safeParse(event).success).toBe(false);
@@ -126,12 +276,7 @@ describe("traceEventSchema：任意内容通道被关闭", () => {
 
   it("error对象不允许携带原始message", () => {
     const event = {
-      ...commonFields(TRACE_EVENT_NAMES.providerRequestFailed),
-      outcome: "failure",
-      provider: "bailian",
-      model: "qwen3.7-plus",
-      endpointHost: "dashscope.aliyuncs.com",
-      operation: "chat_completion",
+      ...fixtureOf(TRACE_EVENT_NAMES.providerRequestFailed),
       error: { code: "provider.timeout", type: "TimeoutError", message: CONTENT_MARKER },
     };
     expect(traceEventSchema.safeParse(event).success).toBe(false);
@@ -139,47 +284,44 @@ describe("traceEventSchema：任意内容通道被关闭", () => {
 
   it("旧版任意attributes事件被判别联合拒绝", () => {
     const legacy = {
-      ...commonFields(TRACE_EVENT_NAMES.httpCommandCompleted),
-      outcome: "success",
+      ...fixtureOf(TRACE_EVENT_NAMES.httpCommandCompleted),
       attributes: { "http.method": "GET", body: CONTENT_MARKER },
     };
     expect(traceEventSchema.safeParse(legacy).success).toBe(false);
   });
 
   it("HTTP事件不记录请求Body、Query和原始URL", () => {
+    const fixture = fixtureOf(TRACE_EVENT_NAMES.httpCommandCompleted);
     for (const key of ["rawUrl", "url", "query", "requestBody", "body"]) {
-      expect(traceEventSchema.safeParse({ ...validHttpCompleted, [key]: "x" }).success).toBe(false);
+      expect(traceEventSchema.safeParse({ ...fixture, [key]: "x" }).success).toBe(false);
     }
-    // 路由模板不允许query分隔符与点分文件路径
-    expect(
-      traceEventSchema.safeParse({ ...validHttpCompleted, routeTemplate: "/api/x?y=1" }).success,
-    ).toBe(false);
+    expect(traceEventSchema.safeParse({ ...fixture, routeTemplate: "/api/x?y=1" }).success).toBe(
+      false,
+    );
   });
 
   it("Provider事件只接受白名单字段", () => {
+    const fixture = fixtureOf(TRACE_EVENT_NAMES.providerRequestCompleted);
     for (const key of ["messages", "tools", "systemPrompt", "responseText", "apiKey"]) {
-      expect(
-        traceEventSchema.safeParse({ ...validProviderCompleted, [key]: CONTENT_MARKER }).success,
-        key,
-      ).toBe(false);
+      expect(traceEventSchema.safeParse({ ...fixture, [key]: CONTENT_MARKER }).success, key).toBe(
+        false,
+      );
     }
-    // 模型与Provider被冻结为字面量
-    expect(traceEventSchema.safeParse({ ...validProviderCompleted, model: "gpt-4o" }).success).toBe(
-      false,
-    );
-    expect(
-      traceEventSchema.safeParse({ ...validProviderCompleted, provider: "openai" }).success,
-    ).toBe(false);
+    expect(traceEventSchema.safeParse({ ...fixture, model: "gpt-4o" }).success).toBe(false);
+    expect(traceEventSchema.safeParse({ ...fixture, provider: "openai" }).success).toBe(false);
   });
 
   it("合成正文标记无法通过任何字段形状写入", () => {
     const attempts: unknown[] = [
-      { ...validHttpCompleted, routeTemplate: CONTENT_MARKER },
-      { ...validHttpCompleted, httpMethod: CONTENT_MARKER },
-      { ...validProviderCompleted, endpointHost: CONTENT_MARKER },
-      { ...validProviderCompleted, providerRequestId: CONTENT_MARKER },
-      { ...validProductRunTransitioned, fromStatus: CONTENT_MARKER },
-      { ...validDecisionCommitted, decisionKind: CONTENT_MARKER },
+      { ...fixtureOf(TRACE_EVENT_NAMES.httpCommandCompleted), routeTemplate: CONTENT_MARKER },
+      { ...fixtureOf(TRACE_EVENT_NAMES.httpCommandCompleted), httpMethod: CONTENT_MARKER },
+      { ...fixtureOf(TRACE_EVENT_NAMES.providerRequestCompleted), endpointHost: CONTENT_MARKER },
+      {
+        ...fixtureOf(TRACE_EVENT_NAMES.providerRequestCompleted),
+        providerRequestId: CONTENT_MARKER,
+      },
+      { ...fixtureOf(TRACE_EVENT_NAMES.productRunTransitioned), fromStatus: CONTENT_MARKER },
+      { ...fixtureOf(TRACE_EVENT_NAMES.decisionCommitted), decisionKind: CONTENT_MARKER },
     ];
     for (const attempt of attempts) {
       expect(traceEventSchema.safeParse(attempt).success).toBe(false);
@@ -192,23 +334,5 @@ describe("受限基础Schema", () => {
     expect(sha256Schema.safeParse(SHA256_A).success).toBe(true);
     expect(sha256Schema.safeParse("A".repeat(64)).success).toBe(false);
     expect(sha256Schema.safeParse("abc").success).toBe(false);
-  });
-
-  it("对象引用严格且不允许多余字段", () => {
-    expect(
-      traceObjectRefSchema.safeParse({
-        objectType: "plan",
-        objectId: "plan_1",
-        revision: 1,
-        sha256: SHA256_A,
-      }).success,
-    ).toBe(true);
-    expect(
-      traceObjectRefSchema.safeParse({ objectType: "plan", objectId: "plan_1", text: "正文" })
-        .success,
-    ).toBe(false);
-    expect(
-      traceObjectRefSchema.safeParse({ objectType: "workflow_run", objectId: "wr_1" }).success,
-    ).toBe(false);
   });
 });
