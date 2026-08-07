@@ -13,6 +13,7 @@
   "dependencies": {
     "@chat/application": "workspace:*",
     "@chat/contracts": "workspace:*",
+    "@chat/realtime": "workspace:*",
     "@hono/node-server": "^2.1.0",
     "hono": "^4.13.0"
   },

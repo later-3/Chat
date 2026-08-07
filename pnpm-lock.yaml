@@ -29,6 +29,9 @@ importers:
       '@chat/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@chat/realtime':
+        specifier: workspace:*
+        version: link:../../packages/realtime
       '@hono/node-server':
         specifier: ^2.1.0
         version: 2.1.0(hono@4.13.0)
@@ -158,6 +161,9 @@ importers:
         specifier: workspace:*
         version: link:../contracts
     devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

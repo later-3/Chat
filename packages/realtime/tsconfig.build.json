@@ -5,8 +5,6 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"],
-    // 与tsconfig.json相同的并行期临时措施，见tsconfig.json的TODO(B6)。
-    "typeRoots": ["../../apps/api/node_modules/@types"]
+    "types": ["node"]
   }
 }

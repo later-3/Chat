@@ -50,7 +50,7 @@ const rules: Record<
   },
   "apps/api": {
     external: ["hono", "@hono/node-server", "zod"],
-    internal: ["@chat/contracts", "@chat/application"],
+    internal: ["@chat/contracts", "@chat/application", "@chat/realtime"],
     forbidden: [/^react/, /^workflow$/, /^pi-/],
   },
 };

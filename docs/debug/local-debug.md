@@ -71,10 +71,8 @@ pnpm debug:trace --command cmd_xxx    # 按命令
 
 - API已产生`http.command.received/completed/rejected`事件；`/api/healthz`与
   `/api/readyz`就绪探针可用（B2/B4起`readyz`将检查Product Store与Workflow依赖）。
-- `apps/api/src/trace/jsonl-sink.ts`是并行期的本地实现（与`@chat/realtime`的Sink语义一致）；
-  按PR #4复审要求，PR #3合并、锁文件解冻后必须删除该文件并切换为`@chat/realtime`的
-  `createTraceSink`唯一实现，同时把`packages/realtime`的临时`typeRoots`改为正式
-  `@types/node` devDependency；在此之前PR #4保持Draft。
+- API使用`@chat/realtime`提供的唯一Trace Sink（`createTraceSink`）；
+  `packages/realtime`声明自己的`@types/node`类型依赖，不存在跨包typeRoots引用。
 - Provider、Workflow、Hook、pi与Product Commit事件在B4/B5/B7接入，
   事件名已在`packages/contracts/src/trace.ts`按任务书§7.3冻结。
 

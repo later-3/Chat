@@ -1,10 +1,10 @@
 import { problemDetailSchema, serviceStatusSchema, traceEventSchema } from "@chat/contracts";
+import { createTraceSink } from "@chat/realtime";
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createApiApp } from "./app.js";
-import { createJsonlTraceSink } from "./trace/jsonl-sink.js";
 
 describe("chat api skeleton", () => {
   // 骨架测试不产生Trace文件；Trace行为由独立describe用临时目录验证。
@@ -49,7 +49,7 @@ describe("chat api trace", () => {
 
   it("请求产生received/completed结构化Trace，可按requestId关联", async () => {
     const dir = mkdtempSync(join(tmpdir(), "chat-api-trace-"));
-    const app = createApiApp({ traceSink: createJsonlTraceSink({ dir }) });
+    const app = createApiApp({ traceSink: createTraceSink({ dir }) });
     const res = await app.request("/api/healthz", {
       headers: { "x-request-id": "req_trace-1" },
     });
@@ -73,7 +73,7 @@ describe("chat api trace", () => {
 
   it("4xx响应记录为rejected并携带稳定错误码，不记录原始路径", async () => {
     const dir = mkdtempSync(join(tmpdir(), "chat-api-trace-"));
-    const app = createApiApp({ traceSink: createJsonlTraceSink({ dir }) });
+    const app = createApiApp({ traceSink: createTraceSink({ dir }) });
     const res = await app.request("/api/nope-with-user-content", {
       headers: { "x-request-id": "req_trace-2" },
     });

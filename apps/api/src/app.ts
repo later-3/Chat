@@ -5,9 +5,9 @@ import {
   type ServiceStatus,
   type TraceEventInput,
 } from "@chat/contracts";
+import { createTraceSink, type TraceSink } from "@chat/realtime";
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
-import { createJsonlTraceSink, type TraceEventSink } from "./trace/jsonl-sink.js";
 
 /**
  * Hono API Adapter。
@@ -23,13 +23,13 @@ import { createJsonlTraceSink, type TraceEventSink } from "./trace/jsonl-sink.js
 type ApiVariables = { requestId: string };
 
 export interface ApiAppOptions {
-  /** 默认使用本地JSONL Sink（CHAT_TRACE_DIR或仓库.data/traces）；测试可注入临时目录。 */
-  traceSink?: TraceEventSink | null;
+  /** 默认使用@chat/realtime JSONL Sink（CHAT_TRACE_DIR或仓库.data/traces）；测试可注入临时目录。 */
+  traceSink?: TraceSink | null;
 }
 
-function safeEmit(sink: TraceEventSink, build: () => TraceEventInput): void {
+function safeEmit(sink: TraceSink, build: () => TraceEventInput): void {
   try {
-    sink(build());
+    sink.emit(build());
   } catch (error) {
     console.error("[trace] 写入失败（请求继续）:", error instanceof Error ? error.message : error);
   }
@@ -53,7 +53,7 @@ function toHttpMethod(method: string): HttpMethod | null {
 }
 
 export function createApiApp(options: ApiAppOptions = {}) {
-  const traceSink = options.traceSink === undefined ? createJsonlTraceSink() : options.traceSink;
+  const traceSink = options.traceSink === undefined ? createTraceSink() : options.traceSink;
   const app = new Hono<{ Variables: ApiVariables }>();
 
   app.use("*", async (c, next) => {
