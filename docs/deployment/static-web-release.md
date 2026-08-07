@@ -31,14 +31,15 @@ pnpm test
 pnpm --filter @chat/web test:e2e:pwa
 pnpm audit --prod
 
-# 打包（产物与校验文件放仓库外，不进入 Git）
+# 打包（产物与校验文件一律放仓库外的独立产物目录，不进入 Git）
 GIT_SHA=$(git rev-parse HEAD)
-STAGE=$(mktemp -d)/chat-web-$GIT_SHA
-mkdir -p "$STAGE"
-cp -R apps/web/dist "$STAGE/dist"
-echo "$GIT_SHA" > "$STAGE/GIT_SHA"
-tar -C "$STAGE" -czf "chat-web-$GIT_SHA.tar.gz" dist GIT_SHA
-shasum -a 256 "chat-web-$GIT_SHA.tar.gz" > "chat-web-$GIT_SHA.tar.gz.sha256"
+ARTIFACT_DIR=$(mktemp -d)/chat-web-$GIT_SHA
+mkdir -p "$ARTIFACT_DIR"
+cp -R apps/web/dist "$ARTIFACT_DIR/dist"
+echo "$GIT_SHA" > "$ARTIFACT_DIR/GIT_SHA"
+tar -C "$ARTIFACT_DIR" -czf "$ARTIFACT_DIR/chat-web-$GIT_SHA.tar.gz" dist GIT_SHA
+shasum -a 256 "$ARTIFACT_DIR/chat-web-$GIT_SHA.tar.gz" > "$ARTIFACT_DIR/chat-web-$GIT_SHA.tar.gz.sha256"
+echo "产物目录：$ARTIFACT_DIR"
 ```
 
 ## 3. 服务器硬要求
@@ -94,9 +95,25 @@ server {
         add_header Cache-Control "public, max-age=31536000, immutable" always;
     }
 
-    # SPA 导航回退；/api 不进入静态站点
+    # SPA 导航回退
     location / {
         try_files $uri $uri/ /index.html;
+    }
+
+    # /api 永不进入静态 fallback：try_files 最后一项是内部重定向，
+    # 没有独立 location 时，不存在的 /api/** 会被回退成 HTML 外壳（假在线）。
+    # 拓扑A：API 已部署到本机上游时，使用代理（上游地址来自私有部署配置）：
+    # location /api/ {
+    #     proxy_pass http://127.0.0.1:3000;
+    #     proxy_set_header Host $host;
+    #     proxy_set_header X-Forwarded-Proto $scheme;
+    # }
+    # 拓扑B：当前阶段静态站点未同机部署 API 时，必须明确失败：
+    location = /api {
+        return 503;
+    }
+    location /api/ {
+        return 503;
     }
 }
 
@@ -115,7 +132,7 @@ server {
 1. `curl -sI https://<origin>/`：200，`Cache-Control: no-cache`。
 2. `curl -sI https://<origin>/sw.js` 与 `/manifest.webmanifest`：200、正确 MIME、`no-cache`。
 3. `curl -sI https://<origin>/assets/<hashed>.js`：`immutable` 长期缓存。
-4. `cat https://<origin>/GIT_SHA`（如选择公开）或解压目录内 `GIT_SHA`：与批准的提交一致。
+4. `curl -fsS https://<origin>/GIT_SHA`（如选择公开该文件）或查看解压目录内 `GIT_SHA`：与批准的提交一致。
 5. 浏览器在线打开一次 → 断网重新打开：外壳渲染、显示“未连接”，草稿仍在。
 6. 确认同服务器 `pi-web` 仍可访问，未被 Chat 的静态根或 Service Worker 覆盖。
 

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { App } from "./App.js";
+import { App, HEALTH_REFETCH_INTERVAL_MS } from "./App.js";
 
 function renderApp() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -58,6 +58,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -325,6 +326,29 @@ describe("P1.2 草稿与离线发送边界", () => {
     expect(window.localStorage.getItem("chat:draft:v1:okr")).toBeNull();
     expect(window.localStorage.getItem("chat:draft:v1:ppt")).toContain("PPT 草稿保留");
     expect(screen.getByLabelText("消息输入框")).toHaveProperty("value", "");
+  });
+
+  it("API 中途宕机后收敛为未连接并阻止发送（浏览器仍在线）", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    stubHealthzOk();
+    renderApp();
+    openOkrSession();
+    await screen.findByText("已连接");
+    fireEvent.change(screen.getByLabelText("消息输入框"), {
+      target: { value: "宕机前输入的内容" },
+    });
+    expect(screen.getByLabelText("发送")).toHaveProperty("disabled", false);
+
+    // 服务中途宕机，浏览器网络仍然在线：有限频率轮询后必须转为未连接
+    stubHealthzFail();
+    await vi.advanceTimersByTimeAsync(HEALTH_REFETCH_INTERVAL_MS + 1000);
+    await screen.findByText("未连接");
+    expect(screen.getByLabelText("发送")).toHaveProperty("disabled", true);
+    expect(screen.getByText("当前离线，草稿已保存在此设备，联网后请手动发送。")).toBeTruthy();
+    const messageCount = screen.getAllByRole("listitem").length;
+    fireEvent.keyDown(screen.getByLabelText("消息输入框"), { key: "Enter" });
+    expect(screen.getAllByRole("listitem")).toHaveLength(messageCount);
+    expect(screen.getByLabelText("消息输入框")).toHaveProperty("value", "宕机前输入的内容");
   });
 
   it("没有等待激活的新版本时不显示更新提示，也不会强制刷新", () => {

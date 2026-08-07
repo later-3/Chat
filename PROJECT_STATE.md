@@ -1,6 +1,6 @@
 # Chat 项目状态
 
-> 更新日期：2026-08-06
+> 更新日期：2026-08-07
 
 ## 1. 当前结论
 
@@ -15,9 +15,9 @@
 | Workflow | Vercel Workflow |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent` |
 | 前端服务端状态 | TanStack Query；浏览器仅持有投影与草稿 |
-| 代码状态 | P0已合并；P1.1响应式Chat工作空间已在PR #2实现，待审核合并 |
+| 代码状态 | P0已合并；P1.1响应式Chat工作空间已通过PR #2合并（`0b24b9f`）；P1.2已实现，PR #3审核中 |
 | 当前阶段 | P1第一次可用的Chat闭环，已拆为8个独立任务 |
-| 当前任务 | P1.1响应式Chat工作空间；实现已完成，PR #2待审核 |
+| 当前任务 | P1.2可安装PWA、离线草稿与移动端发布；实现与自动门已通过，待实机验收与生产发布批准后合并 |
 
 ## 2. 已冻结决定
 
@@ -31,6 +31,7 @@
 8. HITL先提交产品Decision，再恢复Workflow Hook。
 9. 文件、语音、Canvas和通知使用各自适合的传输，不塞进Agent事件流。
 10. 前端只投影服务端状态，PWA缓存不成为第二事实源。
+11. P1.2 Web静态产物在开发机或CI构建后上传到现有弱服务器；服务器不得安装依赖或编译，发布使用可回滚的原子切换。
 
 ## 3. 当前未决定
 
@@ -39,7 +40,7 @@
 1. Product Store的具体数据库与迁移工具。
 2. Identity Provider与认证部署方式。
 3. 对象存储、向量检索和Memory实现。
-4. 单机、私有云或Vercel等具体部署拓扑。
+4. API、Workflow、Product Store等后端的具体部署拓扑；P1.2只确定Web静态产物部署到现有服务器，具体Origin、路径和私有连接参数仍由部署环境提供。
 5. UI组件库、视觉系统和Canvas协作引擎。
 6. 语音媒体服务、日历Provider与通知Provider。
 7. 本地、CI和未来部署怎样稳定使用同一份经过确认的pi代码；这个决定只在P1.7接入Agent前关闭，不阻塞前面的PWA、消息和Workflow任务。
@@ -54,7 +55,7 @@
 - 没有pi Adapter实现。
 - 没有Runtime Journal、SSE Cursor重放或pi到AG-UI的运行时适配实现；P0只固定官方事件Schema与Envelope。
 - 没有HITL、Checkpoint或重连的可运行证明。
-- P1.1 Web已经有响应式Chat工作空间，但会话、消息、运行和产物仍是本地fixture；还没有Manifest、Service Worker或离线草稿边界。
+- P1.1 Web已经有响应式Chat工作空间，但会话、消息、运行和产物仍是本地fixture；P1.2已实现Manifest、Service Worker、离线草稿边界与静态发布文档并通过自动门，但尚未完成实机验收与生产发布证明。
 
 文档批准不等于软件已经实现；P0骨架也不等于纵向链已经打通。
 
@@ -71,8 +72,8 @@
 
 | 任务 | 结果 | 状态 |
 |---|---|---|
-| P1.1 | 响应式Chat工作空间 | 实现完成，PR #2待审核 |
-| P1.2 | 可安装PWA与离线边界 | 待开始 |
+| P1.1 | 响应式Chat工作空间 | 已完成，PR #2合并于`0b24b9f` |
+| P1.2 | 可安装PWA与离线边界 | 已实现，PR #3审核中（自动门通过；待实机验收与发布批准） |
 | P1.3 | 消息由服务端保存并可读回 | 待开始 |
 | P1.4 | 后台Workflow能独立跑通 | 待开始 |
 | P1.5 | 网页显示后台状态 | 待开始 |
@@ -80,4 +81,4 @@
 | P1.7 | 接入一次无工具的Agent回答 | 待开始 |
 | P1.8 | 整条链验收与失败加固 | 待开始 |
 
-每个任务的用户场景、范围和完成门以[项目计划](./PROJECT_PLAN.md)为准；当前详细执行边界见[P1.1任务书](./docs/tasks/p1.1-responsive-chat-workflow-shell.md)。
+每个任务的用户场景、范围和完成门以[项目计划](./PROJECT_PLAN.md)为准；当前详细执行边界见[P1.2任务书](./docs/tasks/p1.2-installable-pwa-offline-boundary.md)。

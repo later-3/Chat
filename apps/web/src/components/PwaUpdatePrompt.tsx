@@ -9,7 +9,15 @@ export function PwaUpdatePrompt() {
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
-  } = useRegisterSW();
+  } = useRegisterSW({
+    onRegisterError(error) {
+      // 注册失败只记录脱敏诊断信息（错误类型），不输出堆栈、URL或请求细节；外壳保持可用。
+      console.warn(
+        "[pwa] Service Worker 注册失败：",
+        error instanceof Error ? error.name : "unknown",
+      );
+    },
+  });
 
   if (!needRefresh) return null;
 
