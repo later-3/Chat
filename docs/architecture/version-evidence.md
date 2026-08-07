@@ -116,6 +116,7 @@ B2 M2首次引入Workflow与pi运行时。依赖证据如下；升级前必须�
 | `@workflow/builders` | 4.1.6（dev） | Apache-2.0 | 预构建workflow/step bundle（SWC转换） | packages/workflows构建期脚本 | 无 | 仅开发期；产物gitignored |
 | `@earendil-works/pi-ai` | 0.82.1 | MIT | Model/Provider抽象与OpenAI兼容流 | packages/pi-runtime | 无统一模型流抽象 | 冻结pi选型；升级门为pi事件/Tool合同测试 |
 | `@earendil-works/pi-agent-core` | 0.82.1 | MIT | Agent loop与结构化工具 | packages/pi-runtime | 无Agent循环/工具治理 | 同上 |
+| `undici` | 7.29.0（根override只覆盖`>=7 <7.29`） | MIT | Workflow World的传递HTTP客户端；修复7.28.0安全公告 | `@workflow/world-local`/`world-vercel`传递边界 | Workflow SDK直接依赖，不能用Node内建fetch替换其内部实现 | Workflow上游依赖升级到安全版本后移除override并重跑全门 |
 
 ### 7.1 pi工件与冻结源码的关系（重要）
 
