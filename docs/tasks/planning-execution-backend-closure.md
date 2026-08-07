@@ -138,6 +138,8 @@ pi.execute候选
 8. Product Run与Workflow/Hook的后端私有映射。
 9. Transactional Outbox及派发状态。
 
+Product Store必须保存Trace所引用的对象及其全部revision（Plan各revision、Decision、Execution Candidate等），不能只保留不可追溯的最新值；否则历史回放无法精确重建。
+
 文件顶层必须包含`schemaVersion`和`storeRevision`，启动读取和每次提交都使用Zod校验。
 
 ### 6.2 写入规则
@@ -165,6 +167,26 @@ JSON Store必须实现明确Port，后续更换数据库时不改变Domain、App
 
 ## 7. Trace与日志方案
 
+### 7.0 Trace的职责与数据来源分工
+
+Trace不是会话副本，也不只是零散代码日志。它负责记录一次工作经过了哪些系统边界、状态如何变化、调用关系是什么、哪里失败、耗时和统计数据是多少。完整历史回放由以下数据组合完成：
+
+| 数据来源 | 保存内容 |
+|---|---|
+| Product Store | 用户消息、Assistant消息、Plan各revision、Decision、Execution Candidate、正式结果、Artifact等正文和产品事实 |
+| Trace | 时间线、调用关系、状态转换、步骤、Attempt、耗时、重试、错误、对象引用、Hash和统计 |
+| Workflow Store | Workflow运行状态、Checkpoint、Hook等待与恢复状态 |
+| 版本证据 | Git SHA、Workflow Definition版本、Prompt模板版本、模型配置版本 |
+| Replay Assembler | 按Trace引用读取对应产品对象和运行版本，组装完整回放视图（B7实现） |
+
+必须遵守：
+
+1. 用户正文、Plan正文、模型候选正文、Prompt、Provider请求和响应正文只保存一次，不复制到Trace。
+2. Trace通过`对象ID + revision + sha256`引用这些内容。
+3. Trace必须足以还原系统路径，但不能成为第二份产品事实源。
+4. 永远不保存模型隐藏推理。
+5. “历史回放”和“重新执行”分开：历史回放读取当时保存的对象和Trace，可以精确重建；真实模型重新执行不保证生成相同文本，必须创建新的Run Attempt，不能覆盖原运行。
+
 ### 7.1 目标
 
 对任意`productRunId`，开发者必须能够重建：
@@ -185,7 +207,7 @@ HTTP命令
 
 不能依靠散落的`console.log`猜测发生了什么。
 
-### 7.2 Trace事件格式
+### 7.2 Trace事件格式与合同
 
 Trace使用一行一个JSON对象的JSONL文件：
 
@@ -193,10 +215,13 @@ Trace使用一行一个JSON对象的JSONL文件：
 .data/traces/chat-trace-YYYY-MM-DD.jsonl
 ```
 
-公共字段至少包含：
+Trace事件合同是以`eventName`为判别字段的严格联合（`z.discriminatedUnion` + 每层`.strict()`），不存在`attributes`/`metadata`/`details`等任意`Record<string, unknown>`内容通道；未声明字段在根部与任何嵌套层都失败关闭，不做“写入后脱敏”。合同实现与事件清单见`packages/contracts/src/trace.ts`。
+
+公共关联字段：
 
 ```text
 schemaVersion
+eventId
 timestamp
 level
 eventName
@@ -210,12 +235,29 @@ productRunId?
 attemptId?
 commandId?
 workflowDefinitionVersion?
-planRevision?
+promptTemplateVersion?
+modelConfigVersion?
 durationMs?
 outcome
-errorCode?
-attributes
 ```
+
+对象引用使用严格结构：
+
+```text
+{ objectType: message|plan|decision|execution_contract|execution_candidate|context_package|artifact,
+  objectId, revision?, sha256? }
+```
+
+事件专属字段约束：
+
+1. HTTP事件只记录method、route template、status code；不记录请求Body、Query正文或可能携带用户内容的原始URL。
+2. 产品事务与状态转换记录事务类型、原/目标状态、phase/revision和输入输出对象引用。
+3. Workflow事件记录稳定step key、step attempt、是否replay、Definition版本和后端私有映射引用；不记录Hook Token。
+4. Provider事件只记录Provider（`bailian`）、模型（`qwen3.7-plus`）、Endpoint host、百炼请求ID、HTTP状态、耗时和Token Usage，以及context/input manifest的引用或SHA-256；不记录API Key、Authorization Header、Cookie、Prompt、消息数组、工具Payload、原始响应或隐藏推理。
+5. 错误信息只记录稳定`errorCode`、错误类型名、`stackFingerprint`和必要的仓库相对安全Stack Frame；不保存可能含用户正文或Provider响应的原始`Error.message`。
+6. 所有字符串字段受限：ID使用项目ID Schema，状态/Provider/模型使用枚举或受限Schema，Hash固定SHA-256，自由字符串有明确长度与语义边界。
+
+用户消息和模型候选属于Product Store内容。Trace只保存对象引用、长度、Hash和可观察结果，不复制完整正文。
 
 ### 7.3 必须记录的边界
 
@@ -232,9 +274,7 @@ attributes
 11. `execution.validated/rejected`。
 12. `product_commit.started/committed/failed`。
 
-Provider Trace可记录Provider、模型、Endpoint host、响应状态、百炼请求ID、耗时和Token Usage；不得记录API Key、Authorization Header、Cookie、完整Prompt、完整响应、完整Provider Payload或隐藏推理。
-
-用户消息和模型候选属于Product Store内容。Trace只保存对象引用、长度、Hash和可观察结果，不复制完整正文。
+Provider Trace可记录Provider、模型、Endpoint host、响应状态、百炼请求ID、耗时和Token Usage；不得记录API Key、Authorization Header、Cookie、完整Prompt、完整响应、完整Provider Payload或隐藏推理（由严格合同结构性排除，而非黑名单过滤）。
 
 ### 7.4 Trace调试入口
 
@@ -244,7 +284,30 @@ Provider Trace可记录Provider、模型、Endpoint host、响应状态、百炼
 pnpm debug:trace --run run_xxx
 ```
 
-输出默认脱敏。Trace读取失败不能修改原始JSONL文件。
+输出只含严格合同校验通过的事件。Trace读取失败不能修改原始JSONL文件。
+
+### 7.5 历史回放设计（B7实现）
+
+“历史回放”和“重新执行”分开：回放读取当时保存的对象与Trace精确重建；重新执行真实模型必须创建新的Run Attempt，不覆盖原运行。
+
+B7实现`RunReplayAssembler`，按`productRunId`完成：
+
+```text
+读取Trace
+-> 按引用加载Message/Plan/Decision/Execution Candidate等产品事实
+-> 校验revision与SHA-256
+-> 加载Workflow、Prompt模板、模型配置和代码版本证据
+-> 生成RunReplayView
+```
+
+Replay结果必须标出：引用对象缺失、revision不存在、Hash不一致、Trace事件缺口、Workflow或版本证据不可读取。
+
+两个不同入口：
+
+1. `pnpm debug:trace --run ...`：只看脱敏系统时间线（B1已提供）。
+2. `pnpm debug:replay --run ...`：在本地授权环境组合Product Store和Trace查看完整历史（B7提供）。
+
+导出到PR、CI附件或截图的证据默认不包含正文；完整正文只能在本地回放视图按需读取。
 
 ## 8. VS Code固定端口调试
 
@@ -458,7 +521,7 @@ POST /api/runs/:productRunId/decisions
 
 **主要结果**：使用真实Hono、真实Workflow、真实pi和真实百炼`qwen3.7-plus`完成Plan v1 -> 修改 -> Plan v2 -> 批准 -> 执行 -> 正式结果。
 
-范围：真实E2E、失败注入、Trace证据、JSON重启读取、合同冻结和前端阶段交接清单。
+范围：真实E2E、失败注入、Trace证据、JSON重启读取、RunReplayAssembler（§7.5）、合同冻结和前端阶段交接清单。
 
 完成门：第15节全部通过，才能开始Plan/Decision/执行进度的前端适配。
 

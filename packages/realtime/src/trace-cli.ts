@@ -19,7 +19,7 @@ interface CliArgs {
 
 const USAGE = `用法: pnpm debug:trace --run <productRunId> [--dir <traceDir>]
        pnpm debug:trace --request <requestId> | --command <commandId>
-输出: stdout为脱敏后的JSONL事件（按时间排序），stderr为摘要。`;
+输出: stdout为严格合同校验后的JSONL事件（按时间排序，不含正文与密钥），stderr为摘要。`;
 
 export function parseTraceCliArgs(argv: string[]): CliArgs {
   const args: CliArgs = { help: false };
@@ -93,7 +93,7 @@ export function runTraceCli(argv: string[]): number {
     } else {
       const first = events[0]?.timestamp ?? "";
       const last = events[events.length - 1]?.timestamp ?? "";
-      console.error(`trace: ${events.length} 个事件，${first} .. ${last}（输出已脱敏）`);
+      console.error(`trace: ${events.length} 个事件，${first} .. ${last}（严格合同校验通过）`);
     }
     return 0;
   } catch (error) {

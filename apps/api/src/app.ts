@@ -3,6 +3,7 @@ import {
   problemDetailSchema,
   type ProblemDetail,
   type ServiceStatus,
+  type TraceEventInput,
 } from "@chat/contracts";
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
@@ -16,7 +17,8 @@ import { createJsonlTraceSink, type TraceEventSink } from "./trace/jsonl-sink.js
  * 恢复Workflow Hook或调用pi。
  *
  * Trace（任务书§7.3）：每个请求产生http.command.received与
- * http.command.completed/rejected事件；Trace失败不影响请求处理。
+ * http.command.completed/rejected事件。只记录HTTP方法与路由模板，
+ * 不记录请求Body、Query或可能携带用户内容的原始URL；Trace失败不影响请求处理。
  */
 type ApiVariables = { requestId: string };
 
@@ -25,11 +27,28 @@ export interface ApiAppOptions {
   traceSink?: TraceEventSink | null;
 }
 
-function safeEmit(sink: TraceEventSink, emit: () => Parameters<TraceEventSink>[0]): void {
+function safeEmit(sink: TraceEventSink, build: () => TraceEventInput): void {
   try {
-    sink(emit());
+    sink(build());
   } catch (error) {
     console.error("[trace] 写入失败（请求继续）:", error instanceof Error ? error.message : error);
+  }
+}
+
+type HttpMethod = Extract<TraceEventInput, { eventName: "http.command.received" }>["httpMethod"];
+
+function toHttpMethod(method: string): HttpMethod | null {
+  switch (method) {
+    case "GET":
+    case "POST":
+    case "PUT":
+    case "PATCH":
+    case "DELETE":
+    case "HEAD":
+    case "OPTIONS":
+      return method;
+    default:
+      return null;
   }
 }
 
@@ -45,7 +64,8 @@ export function createApiApp(options: ApiAppOptions = {}) {
   });
 
   app.use("*", async (c, next) => {
-    if (!traceSink) {
+    const httpMethod = toHttpMethod(c.req.method);
+    if (!traceSink || httpMethod === null) {
       await next();
       return;
     }
@@ -58,11 +78,13 @@ export function createApiApp(options: ApiAppOptions = {}) {
       level: "info",
       eventName: TRACE_EVENT_NAMES.httpCommandReceived,
       outcome: "unknown",
-      attributes: { "http.method": c.req.method, "http.path": c.req.path },
+      httpMethod,
     }));
     await next();
     const status = c.res.status;
     const succeeded = status < 400;
+    // 404来自未匹配路由，此时routePath可能回退为原始路径（含用户内容），一律省略模板
+    const routeTemplate = status === 404 ? undefined : c.req.routePath;
     safeEmit(traceSink, () => ({
       ...base,
       level: succeeded ? "info" : "warn",
@@ -71,12 +93,10 @@ export function createApiApp(options: ApiAppOptions = {}) {
         : TRACE_EVENT_NAMES.httpCommandRejected,
       outcome: succeeded ? "success" : "failure",
       durationMs: Math.round(performance.now() - startedAt),
-      ...(succeeded ? {} : { errorCode: `http_${status}` }),
-      attributes: {
-        "http.method": c.req.method,
-        "http.path": c.req.path,
-        "http.status": status,
-      },
+      httpMethod,
+      statusCode: status,
+      ...(routeTemplate !== undefined ? { routeTemplate } : {}),
+      ...(succeeded ? {} : { errorCode: status >= 500 ? "http_5xx" : "http_4xx" }),
     }));
   });
 

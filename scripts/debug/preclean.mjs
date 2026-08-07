@@ -27,7 +27,8 @@ if (occupied.length > 0 && entries.length > 0) {
 if (occupied.length > 0) {
   console.error("[preclean] 失败：以下冻结端口被未记录的进程占用，已拒绝清理（不杀未知进程）：");
   for (const item of occupied) {
-    console.error(`  端口 ${item.port} pid=${item.pid} 命令: ${item.command}`);
+    // 只报告端口/PID/安全进程名；完整argv可能含其他应用秘密，绝不输出
+    console.error(`  端口 ${item.port} pid=${item.pid} 进程: ${item.processName}`);
   }
   console.error("[preclean] 请手动释放端口或联系维护者确认后重试。");
   process.exit(1);

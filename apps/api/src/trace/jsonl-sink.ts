@@ -1,8 +1,8 @@
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import {
   TRACE_SCHEMA_VERSION,
-  redactAttributes,
   traceEventSchema,
   type TraceEvent,
   type TraceEventInput,
@@ -11,12 +11,12 @@ import {
 /**
  * API本地JSONL Trace Sink。
  *
- * TODO(B6)：并行期不允许改动pnpm-lock.yaml，apps/api暂时无法声明对
- * @chat/realtime的依赖（架构测试已放行该方向）。PR #3合并后应把本文件
- * 替换为@chat/realtime的createTraceSink，保持单一实现。
+ * 合并阻断项（PR #4复审）：API最终只使用@chat/realtime提供的唯一Trace Sink。
+ * 当前受P1.2 PR #3锁文件并行约束，apps/api不能新增对@chat/realtime的依赖；
+ * PR #3合并后必须删除本文件并切换，PR #4在此之前保持Draft。
  *
- * 写入语义与@chat/realtime的Sink一致：内存校验+脱敏后追加单行，
- * 校验失败抛错，不产生半行写入。
+ * 写入语义与@chat/realtime的Sink一致：严格判别联合校验后追加单行，
+ * 校验失败抛错，不产生半行写入；合同本身不存在任意内容通道。
  */
 
 /** Sink函数签名与@chat/realtime的TraceSink.emit对齐。 */
@@ -44,9 +44,9 @@ export function createJsonlTraceSink(options: { dir?: string } = {}): TraceEvent
   return (input) => {
     const event = traceEventSchema.parse({
       schemaVersion: TRACE_SCHEMA_VERSION,
+      eventId: `evt_${randomUUID()}`,
       timestamp: new Date().toISOString(),
       ...input,
-      attributes: redactAttributes(input.attributes ?? {}),
     });
     const file = join(dir, `chat-trace-${event.timestamp.slice(0, 10)}.jsonl`);
     appendFileSync(file, `${JSON.stringify(event)}\n`, "utf8");

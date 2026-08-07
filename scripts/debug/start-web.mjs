@@ -30,7 +30,8 @@ if (existing !== null) {
   const occupied = checkPorts([port]);
   console.error(
     `[start-web] 失败：端口 ${port} 已被占用：`,
-    occupied.map((item) => `pid=${item.pid} ${item.command}`).join("; ") || `pid=${existing}`,
+    occupied.map((item) => `pid=${item.pid} 进程=${item.processName}`).join("; ") ||
+      `pid=${existing}`,
   );
   console.error("[start-web] 请先运行 chat-debug:preclean 或手动释放端口。");
   process.exit(1);

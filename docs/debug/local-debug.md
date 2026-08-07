@@ -59,18 +59,27 @@ pnpm debug:trace --request req_xxx    # 按请求
 pnpm debug:trace --command cmd_xxx    # 按命令
 ```
 
-- 输出：stdout为脱敏后的JSONL事件（按timestamp+文件+行号稳定排序），stderr为摘要。
-- 退出码：0成功（含0条）、2用法错误、3读取或Schema校验失败。
-- 读取失败关闭：损坏行报告文件与行号，**绝不修改原始JSONL**。
-- 脱敏：写入侧与读取侧双重执行；API Key、Authorization、Cookie、各类Token、
-  Prompt、完整Payload与隐藏推理键替换为`[redacted]`，超长字符串截断；
-  `tokenUsage`等用量字段允许保留。
+- 输出：stdout为严格合同校验通过的JSONL事件（按timestamp+文件+行号稳定排序），stderr为摘要。
+- 退出码：0成功（含0条）、2用法错误、3读取或校验失败。
+- 读取失败关闭：损坏行或不符合严格合同的事件（含旧版任意`attributes`事件）报告文件与行号，**绝不修改原始JSONL**。
+- 内容边界：Trace合同是以`eventName`判别的严格联合，不存在任意`attributes`内容通道；
+  HTTP只记method/route template/status，Provider只记模型、请求ID、耗时与Usage等白名单字段，
+  正文、密钥、Prompt与Provider Payload在结构上无法写入（不是写入后脱敏）。
+  完整历史回放（组合Product Store正文）属B7的`pnpm debug:replay`，见任务书§7.5。
 
 ## 4. B1 范围说明
 
 - API已产生`http.command.received/completed/rejected`事件；`/api/healthz`与
   `/api/readyz`就绪探针可用（B2/B4起`readyz`将检查Product Store与Workflow依赖）。
-- `apps/api/src/trace/jsonl-sink.ts`是并行期的本地实现；PR #3合并后
-  （锁文件解冻）切换为`@chat/realtime`的`createTraceSink`（代码内TODO(B6)）。
+- `apps/api/src/trace/jsonl-sink.ts`是并行期的本地实现（与`@chat/realtime`的Sink语义一致）；
+  按PR #4复审要求，PR #3合并、锁文件解冻后必须删除该文件并切换为`@chat/realtime`的
+  `createTraceSink`唯一实现，同时把`packages/realtime`的临时`typeRoots`改为正式
+  `@types/node` devDependency；在此之前PR #4保持Draft。
 - Provider、Workflow、Hook、pi与Product Commit事件在B4/B5/B7接入，
   事件名已在`packages/contracts/src/trace.ts`按任务书§7.3冻结。
+
+## 5. 端口冲突报告的安全边界
+
+- 进程身份复核在内部使用完整命令行片段（防止PID复用误杀），但不输出到报告或Trace。
+- 面向用户的端口冲突报告只包含：端口、PID、可执行文件basename（如`node`）。
+- 未知进程的完整argv可能含其他应用的Token、密码或私有路径，绝不输出。

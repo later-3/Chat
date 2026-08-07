@@ -62,18 +62,31 @@ describe("chat api trace", () => {
     expect(completed?.traceId).toBe("req_trace-1");
     expect(completed?.spanId).toBe(received?.spanId);
     expect(typeof completed?.durationMs).toBe("number");
+    // 只记录方法与路由模板，不记录Body/Query/原始URL
+    if (completed?.eventName === "http.command.completed") {
+      expect(completed.httpMethod).toBe("GET");
+      expect(completed.routeTemplate).toBe("/api/healthz");
+      expect(completed.statusCode).toBe(200);
+    }
+    expect(JSON.stringify(events)).not.toContain('"body"');
   });
 
-  it("4xx响应记录为rejected并携带http错误码", async () => {
+  it("4xx响应记录为rejected并携带稳定错误码，不记录原始路径", async () => {
     const dir = mkdtempSync(join(tmpdir(), "chat-api-trace-"));
     const app = createApiApp({ traceSink: createJsonlTraceSink({ dir }) });
-    const res = await app.request("/api/nope", {
+    const res = await app.request("/api/nope-with-user-content", {
       headers: { "x-request-id": "req_trace-2" },
     });
     expect(res.status).toBe(404);
     const events = readTraceEventsFromDir(dir).filter((event) => event.requestId === "req_trace-2");
     const rejected = events.find((event) => event.eventName === "http.command.rejected");
     expect(rejected?.outcome).toBe("failure");
-    expect(rejected?.errorCode).toBe("http_404");
+    if (rejected?.eventName === "http.command.rejected") {
+      expect(rejected.errorCode).toBe("http_4xx");
+      expect(rejected.statusCode).toBe(404);
+      // 未匹配路由不记录可能携带用户内容的原始路径
+      expect(rejected.routeTemplate).toBeUndefined();
+    }
+    expect(JSON.stringify(events)).not.toContain("nope-with-user-content");
   });
 });

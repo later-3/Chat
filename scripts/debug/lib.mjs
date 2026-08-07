@@ -140,7 +140,7 @@ export function isEffectivelyAlive(pid) {
   return isAlive(pid) && !isZombie(pid);
 }
 
-/** 返回 { startedAtMs, command }；进程不存在返回null。 */
+/** 返回 { startedAtMs, command }；仅供内部身份复核，不得输出到报告或Trace。 */
 export function describeProcess(pid) {
   try {
     const lstart = execFileSync("ps", ["-p", String(pid), "-o", "lstart="], {
@@ -152,6 +152,22 @@ export function describeProcess(pid) {
     return { startedAtMs: Date.parse(lstart), command };
   } catch {
     return null;
+  }
+}
+
+/**
+ * 面向用户报告的安全进程名：仅可执行文件basename。
+ * 完整argv可能包含其他应用的Token、密码或私有路径，绝不输出。
+ */
+export function safeProcessName(pid) {
+  try {
+    const comm = execFileSync("ps", ["-p", String(pid), "-o", "comm="], {
+      encoding: "utf8",
+    }).trim();
+    const basename = comm.split("/").pop() ?? comm;
+    return basename || "unknown";
+  } catch {
+    return "unknown";
   }
 }
 
@@ -261,14 +277,13 @@ export function terminateRecorded(entries, options) {
   return results;
 }
 
-/** 检查端口占用，返回 [{ port, pid, command }]。 */
+/** 检查端口占用，返回 [{ port, pid, processName }]（只含安全进程名，不含argv）。 */
 export function checkPorts(ports = frozenPortList()) {
   const occupied = [];
   for (const port of ports) {
     const pid = findListenerPid(port);
     if (pid === null) continue;
-    const description = describeProcess(pid);
-    occupied.push({ port, pid, command: description?.command ?? "(无法读取命令行)" });
+    occupied.push({ port, pid, processName: safeProcessName(pid) });
   }
   return occupied;
 }

@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { redactAttributes, traceEventSchema, type TraceEvent } from "@chat/contracts";
+import { traceEventSchema, type TraceEvent } from "@chat/contracts";
 import { TRACE_FILE_PATTERN, resolveTraceDir } from "./trace-paths.js";
 
 /**
@@ -8,8 +8,9 @@ import { TRACE_FILE_PATTERN, resolveTraceDir } from "./trace-paths.js";
  *
  * 只读语义：
  * - 只打开文件读取，绝不修改、重排或清理原始JSONL；
- * - 任一行JSON解析失败或Schema校验失败即失败关闭并报告文件与行号；
- * - 输出前再次脱敏（写入侧已脱敏，这里作为读取侧防线）。
+ * - 任一行JSON解析失败或严格联合校验失败（包括旧版任意attributes事件）
+ *   即失败关闭并报告文件与行号；
+ * - Trace本身不含正文与密钥，输出即为合同事件本身。
  */
 export interface TraceQuery {
   dir?: string;
@@ -66,7 +67,7 @@ export function readTraceEvents(query: TraceQuery): TraceEvent[] {
         throw new TraceReadError(
           name,
           index + 1,
-          `Trace事件Schema校验失败：${result.error.issues[0]?.message ?? "unknown"}`,
+          `Trace事件严格合同校验失败：${result.error.issues[0]?.message ?? "unknown"}`,
         );
       }
       const event = result.data;
@@ -84,8 +85,5 @@ export function readTraceEvents(query: TraceQuery): TraceEvent[] {
     return a.lineIndex - b.lineIndex;
   });
 
-  return collected.map(({ event }) => ({
-    ...event,
-    attributes: redactAttributes(event.attributes),
-  }));
+  return collected.map(({ event }) => event);
 }

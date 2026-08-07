@@ -17,8 +17,9 @@ for (const result of results) {
 
 const occupied = checkPorts();
 for (const item of occupied) {
+  // 只报告端口/PID/安全进程名，不输出完整argv
   console.warn(
-    `[stop] 警告：端口 ${item.port} 仍被 pid=${item.pid} 占用（${item.command}），非本轮记录进程，未处理。`,
+    `[stop] 警告：端口 ${item.port} 仍被 pid=${item.pid}（${item.processName}）占用，非本轮记录进程，未处理。`,
   );
 }
 

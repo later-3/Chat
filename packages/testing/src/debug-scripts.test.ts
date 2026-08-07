@@ -200,6 +200,52 @@ describe("preclean", () => {
     });
   });
 
+  it("携带秘密参数的未知占用进程：拒绝启动、不杀进程、不泄漏argv", async () => {
+    const debugDir = tempDebugDir();
+    const SECRET = "TRACE_SECRET_ARG_NEVER_SHOWN_9f8e7d";
+    // 无关应用：命令行携带合成秘密参数（模拟其他应用把Token放在argv中）
+    const blocker = spawn(
+      "node",
+      [
+        "-e",
+        "require('node:http').createServer((q,r)=>r.end('x')).listen(44112,'127.0.0.1')",
+        SECRET,
+      ],
+      { stdio: "ignore" },
+    );
+    cleanup.push(() => {
+      try {
+        process.kill(blocker.pid ?? 0, "SIGKILL");
+      } catch {
+        // 已退出
+      }
+    });
+    // 等待监听生效
+    const deadline = Date.now() + 8000;
+    for (;;) {
+      try {
+        await fetch("http://127.0.0.1:44112/", { signal: AbortSignal.timeout(500) });
+        break;
+      } catch {
+        if (Date.now() >= deadline) throw new Error("占用进程未在8s内开始监听");
+        await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+      }
+    }
+
+    const result = runScript("preclean.mjs", [], makeEnv(debugDir));
+    // 拒绝启动
+    expect(result.status).toBe(1);
+    // 报告端口、PID与安全进程名
+    expect(result.stderr).toContain("44112");
+    expect(result.stderr).toContain(`pid=${blocker.pid}`);
+    expect(result.stderr).toContain("node");
+    // 不泄漏完整argv中的秘密参数
+    expect(result.stdout).not.toContain(SECRET);
+    expect(result.stderr).not.toContain(SECRET);
+    // 不杀该进程
+    expect(() => process.kill(blocker.pid ?? 0, 0)).not.toThrow();
+  }, 15_000);
+
   it("pids.json损坏时保留现场并继续按空记录执行，端口检查仍生效", async () => {
     const debugDir = tempDebugDir();
     mkdirSync(debugDir, { recursive: true });
