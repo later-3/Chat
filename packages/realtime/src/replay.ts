@@ -1,0 +1,769 @@
+import { readFileSync } from "node:fs";
+import {
+  productSnapshotSchema,
+  runtimeVersionEvidenceSchema,
+  type Artifact,
+  type Decision,
+  type ExecutionCandidate,
+  type ExecutionContract,
+  type Message,
+  type PlanRevision,
+  type ProductSnapshot,
+  type RevisionInput,
+  type TraceEvent,
+  type TraceObjectRef,
+  type ValidationResult,
+  type RuntimeVersionEvidence,
+} from "@chat/contracts";
+import { computePlanSha256 } from "@chat/application";
+import { hashCanonical } from "@chat/domain";
+import { readTraceEvents } from "./trace-reader.js";
+
+/**
+ * 历史回放只读取已保存证据，不读取当前git HEAD，也不重新执行Workflow或模型。
+ * Product Store完整性检查是必需Port，由组合根注入唯一的Store完整性实现。
+ */
+
+export type SnapshotIntegrityCheck = (snapshot: ProductSnapshot) => void;
+
+export interface ReplayContentAccess {
+  readonly mode: "authorized";
+  readonly principalId: string;
+  readonly purpose: string;
+}
+
+export interface ReplayAssemblerDeps {
+  readonly snapshotIntegrityCheck: SnapshotIntegrityCheck;
+  readonly authorizeContentAccess?: (access: ReplayContentAccess) => boolean;
+}
+
+export type HistoricalVersionEvidence = RuntimeVersionEvidence;
+
+export interface ReplayObjectCheck {
+  readonly ref: TraceObjectRef;
+  readonly status:
+    "ok" | "missing" | "wrong_run" | "revision_mismatch" | "hash_mismatch" | "unsupported_type";
+  readonly detail?: string;
+}
+
+export interface ReplayTimelineEntry {
+  readonly timestamp: string;
+  readonly eventName: string;
+  readonly outcome: string;
+  readonly refs: readonly ReplayObjectCheck[];
+}
+
+export interface ReplayProductContent {
+  readonly sourceMessage: Message;
+  readonly finalMessage?: Message;
+  readonly plans: readonly PlanRevision[];
+  readonly revisionInputs: readonly RevisionInput[];
+  readonly decisions: readonly Decision[];
+  readonly executionContracts: readonly ExecutionContract[];
+  readonly executionCandidates: readonly ExecutionCandidate[];
+  readonly validationResults: readonly ValidationResult[];
+  readonly artifacts: readonly Artifact[];
+}
+
+export type ReplayContentProjection =
+  { readonly included: false } | { readonly included: true; readonly facts: ReplayProductContent };
+
+export interface RunReplayView {
+  readonly productRunId: string;
+  readonly versionEvidence: {
+    readonly status: "ok" | "dirty" | "missing" | "invalid" | "mismatch";
+    readonly gitSha: string | null;
+    readonly capturedAt: string | null;
+    readonly sourceState: "clean" | "dirty" | null;
+    readonly sourceManifestSha256: string | null;
+    readonly bundleManifestSha256: string | null;
+    readonly workflowDefinitionVersions: readonly string[];
+    readonly promptTemplateVersions: readonly string[];
+    readonly modelConfigVersions: readonly string[];
+  };
+  readonly run: { status: string; phase: string; revision: number };
+  readonly timeline: readonly ReplayTimelineEntry[];
+  readonly content: ReplayContentProjection;
+  readonly failures: readonly string[];
+}
+
+export class ReplayError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReplayError";
+  }
+}
+
+function loadSnapshot(storePath: string, check: SnapshotIntegrityCheck): ProductSnapshot {
+  let raw: string;
+  try {
+    raw = readFileSync(storePath, "utf8");
+  } catch {
+    throw new ReplayError(`无法读取Product Store: ${storePath}`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new ReplayError("Product Store不是合法JSON");
+  }
+  const result = productSnapshotSchema.safeParse(parsed);
+  if (!result.success) throw new ReplayError("Product Store Schema校验失败");
+  try {
+    check(result.data);
+  } catch {
+    throw new ReplayError("Product Store完整对象图校验失败");
+  }
+  return result.data;
+}
+
+function messageSha256(message: Message): string {
+  return hashCanonical("message.v1", {
+    messageId: message.messageId,
+    sessionId: message.sessionId,
+    sessionSequence: message.sessionSequence,
+    role: message.role,
+    content: message.content,
+  });
+}
+
+function decisionSha256(decision: Decision): string {
+  return hashCanonical("decision.v1", {
+    decisionId: decision.decisionId,
+    approvalRequestId: decision.approvalRequestId,
+    productRunId: decision.productRunId,
+    planId: decision.planId,
+    planRevision: decision.planRevision,
+    planSha256: decision.planSha256,
+    kind: decision.kind,
+    ...(decision.revisionInputId !== undefined
+      ? { revisionInputId: decision.revisionInputId }
+      : {}),
+    ...(decision.reason !== undefined ? { reason: decision.reason } : {}),
+    principalId: decision.principalId,
+    commandId: decision.commandId,
+  });
+}
+
+function checkRevision(actual: number, ref: TraceObjectRef): ReplayObjectCheck | undefined {
+  if (ref.revision !== undefined && ref.revision !== actual) {
+    return {
+      ref,
+      status: "revision_mismatch",
+      detail: `期望revision ${String(ref.revision)}，实际${String(actual)}`,
+    };
+  }
+  return undefined;
+}
+
+function checkHash(ref: TraceObjectRef, actual: string, label: string): ReplayObjectCheck {
+  return actual === ref.sha256
+    ? { ref, status: "ok" }
+    : { ref, status: "hash_mismatch", detail: `${label} Hash不一致` };
+}
+
+function wrongRun(ref: TraceObjectRef): ReplayObjectCheck {
+  return { ref, status: "wrong_run", detail: "对象不属于目标Product Run" };
+}
+
+function checkRef(
+  snapshot: ProductSnapshot,
+  productRunId: string,
+  ref: TraceObjectRef,
+): ReplayObjectCheck {
+  switch (ref.objectType) {
+    case "plan": {
+      // planId不是Map键；历史版本必须用planId + revision精确定位，绝不能取第一条。
+      const plan = Object.values(snapshot.entities.plans).find(
+        (candidate) => candidate.planId === ref.objectId && candidate.planRevision === ref.revision,
+      );
+      if (plan === undefined) {
+        return { ref, status: "missing", detail: "指定Plan revision不存在" };
+      }
+      if (plan.productRunId !== productRunId) return wrongRun(ref);
+      const recomputed = computePlanSha256({
+        planId: plan.planId,
+        productRunId: plan.productRunId,
+        planRevision: plan.planRevision,
+        content: plan.content,
+      });
+      return checkHash(ref, recomputed, "Plan");
+    }
+    case "decision": {
+      const decision = snapshot.entities.decisions[ref.objectId as never];
+      if (decision === undefined) return { ref, status: "missing", detail: "Decision不存在" };
+      if (decision.productRunId !== productRunId) return wrongRun(ref);
+      const revision = checkRevision(decision.revision, ref);
+      return revision ?? checkHash(ref, decisionSha256(decision), "Decision");
+    }
+    case "message": {
+      const message = snapshot.entities.messages[ref.objectId as never];
+      if (message === undefined) return { ref, status: "missing", detail: "Message不存在" };
+      const run = snapshot.entities.runs[productRunId as never];
+      if (
+        run === undefined ||
+        message.sessionId !== run.sessionId ||
+        (message.messageId !== run.sourceMessageId && message.sourceRunId !== productRunId)
+      ) {
+        return wrongRun(ref);
+      }
+      const revision = checkRevision(message.revision, ref);
+      return revision ?? checkHash(ref, messageSha256(message), "Message");
+    }
+    case "execution_contract": {
+      const contract = snapshot.entities.executionContracts[ref.objectId as never];
+      if (contract === undefined) {
+        return { ref, status: "missing", detail: "Execution Contract不存在" };
+      }
+      if (contract.productRunId !== productRunId) return wrongRun(ref);
+      const revision = checkRevision(contract.revision, ref);
+      return revision ?? checkHash(ref, contract.sha256, "Execution Contract");
+    }
+    case "execution_candidate": {
+      const candidate = snapshot.entities.executionCandidates[ref.objectId as never];
+      if (candidate === undefined) {
+        return { ref, status: "missing", detail: "Execution Candidate不存在" };
+      }
+      if (candidate.productRunId !== productRunId) return wrongRun(ref);
+      const revision = checkRevision(candidate.revision, ref);
+      return revision ?? checkHash(ref, candidate.sha256, "Execution Candidate");
+    }
+    case "artifact": {
+      const artifact = snapshot.entities.artifacts[ref.objectId as never];
+      if (artifact === undefined) return { ref, status: "missing", detail: "Artifact不存在" };
+      if (artifact.productRunId !== productRunId) return wrongRun(ref);
+      const revision = checkRevision(artifact.revision, ref);
+      return revision ?? checkHash(ref, artifact.sha256, "Artifact");
+    }
+    case "context_package":
+      return {
+        ref,
+        status: "unsupported_type",
+        detail: "当前Product Snapshot没有Context Package事实源",
+      };
+  }
+}
+
+function eventRefs(event: TraceEvent): TraceObjectRef[] {
+  const refs: TraceObjectRef[] = [];
+  if ("planRef" in event && event.planRef !== undefined) refs.push(event.planRef);
+  if ("decisionRef" in event && event.decisionRef !== undefined) refs.push(event.decisionRef);
+  if ("candidateRef" in event && event.candidateRef !== undefined) refs.push(event.candidateRef);
+  if ("outputRefs" in event && event.outputRefs !== undefined) refs.push(...event.outputRefs);
+  if ("inputRefs" in event && event.inputRefs !== undefined) refs.push(...event.inputRefs);
+  return refs;
+}
+
+function sameRef(left: TraceObjectRef, right: TraceObjectRef): boolean {
+  return (
+    left.objectType === right.objectType &&
+    left.objectId === right.objectId &&
+    left.revision === right.revision &&
+    left.sha256 === right.sha256
+  );
+}
+
+function matchingRefCount(
+  events: readonly TraceEvent[],
+  name: string,
+  ref: TraceObjectRef,
+): number {
+  return events.filter(
+    (event) =>
+      event.eventName === name && eventRefs(event).some((candidate) => sameRef(candidate, ref)),
+  ).length;
+}
+
+function count(events: readonly TraceEvent[], eventName: string): number {
+  return events.filter((event) => event.eventName === eventName).length;
+}
+
+function requireCount(
+  failures: Set<string>,
+  events: readonly TraceEvent[],
+  eventName: string,
+  expected: number,
+): void {
+  const actual = count(events, eventName);
+  if (actual !== expected) {
+    failures.add(`Trace缺口：${eventName} 期望${String(expected)}条，实际${String(actual)}条`);
+  }
+}
+
+/** started/terminal必须严格一进一出；不能用一条孤立事件冒充完整调用。 */
+function checkSequentialPairs(
+  failures: Set<string>,
+  events: readonly TraceEvent[],
+  label: string,
+  isStarted: (event: TraceEvent) => boolean,
+  isTerminal: (event: TraceEvent) => boolean,
+  keyOf: (event: TraceEvent) => string,
+  terminalWithoutStart?: (event: TraceEvent) => boolean,
+): void {
+  const open = new Map<string, number>();
+  for (const event of events) {
+    if (isStarted(event)) {
+      const key = keyOf(event);
+      open.set(key, (open.get(key) ?? 0) + 1);
+      continue;
+    }
+    if (!isTerminal(event)) continue;
+    if (terminalWithoutStart?.(event) === true) continue;
+    const key = keyOf(event);
+    const pending = open.get(key) ?? 0;
+    if (pending === 0) failures.add(`Trace缺口：${label}终态没有对应started（${key}）`);
+    else open.set(key, pending - 1);
+  }
+  for (const [key, pending] of open) {
+    if (pending > 0)
+      failures.add(`Trace缺口：${label}有${String(pending)}个started没有终态（${key}）`);
+  }
+}
+
+function checkTimelineCompleteness(
+  snapshot: ProductSnapshot,
+  productRunId: string,
+  events: readonly TraceEvent[],
+  failures: Set<string>,
+): void {
+  const run = snapshot.entities.runs[productRunId as never];
+  if (run === undefined) return;
+  const eventIds = new Set<string>();
+  for (const event of events) {
+    if (eventIds.has(event.eventId)) failures.add(`Trace损坏：eventId重复 ${event.eventId}`);
+    eventIds.add(event.eventId);
+  }
+  requireCount(failures, events, "product_run.created", 1);
+
+  const messageReceipt = Object.values(snapshot.commandReceipts).find(
+    (receipt) =>
+      receipt.commandType === "SubmitUserMessage" &&
+      receipt.resultRefs["productRunId"] === productRunId,
+  );
+  if (messageReceipt !== undefined) {
+    const accepted = events.filter(
+      (event) =>
+        event.eventName === "http.command.accepted" &&
+        event.commandId === messageReceipt.commandId &&
+        event.productRunId === productRunId,
+    ).length;
+    if (accepted !== 1) {
+      failures.add(
+        `Trace缺口：Message Command ${messageReceipt.commandId} accepted期望1条，实际${String(accepted)}条`,
+      );
+    }
+    for (const eventName of [
+      "product.transaction.started",
+      "product.transaction.committed",
+    ] as const) {
+      const actual = events.filter(
+        (event) => event.eventName === eventName && event.commandId === messageReceipt.commandId,
+      ).length;
+      if (actual !== 1) {
+        failures.add(
+          `Trace缺口：Message Command ${messageReceipt.commandId} ${eventName}期望1条，实际${String(actual)}条`,
+        );
+      }
+    }
+  }
+
+  const plans = Object.values(snapshot.entities.plans).filter(
+    (plan) => plan.productRunId === productRunId,
+  );
+  const approvals = Object.values(snapshot.entities.approvalRequests).filter(
+    (approval) => approval.productRunId === productRunId,
+  );
+  const decisions = Object.values(snapshot.entities.decisions).filter(
+    (decision) => decision.productRunId === productRunId,
+  );
+  const planningAttempts = Object.values(snapshot.entities.attempts).filter(
+    (attempt) => attempt.productRunId === productRunId && attempt.kind === "planning",
+  );
+
+  const startOutbox = Object.values(snapshot.outbox).find(
+    (entry) => entry.productRunId === productRunId && entry.kind === "workflow_start",
+  );
+  if (startOutbox?.status === "failed_terminal") {
+    requireCount(failures, events, "workflow.start.failed", 1);
+  } else if (startOutbox?.status === "outcome_unknown") {
+    const boundaryCount =
+      count(events, "workflow.start.started") + count(events, "workflow.start.failed");
+    if (boundaryCount === 0) {
+      failures.add("Trace缺口：Workflow Start结果未知但没有started/failed边界证据");
+    }
+  } else if (
+    startOutbox?.status === "acknowledged" ||
+    plans.length > 0 ||
+    run.status !== "pending"
+  ) {
+    requireCount(failures, events, "workflow.start.started", 1);
+  }
+  requireCount(failures, events, "workflow.hook.waiting", plans.length);
+  requireCount(failures, events, "workflow.hook.resume_dispatched", decisions.length);
+  requireCount(failures, events, "workflow.hook.resumed", decisions.length);
+
+  for (const plan of plans) {
+    const ref: TraceObjectRef = {
+      objectType: "plan",
+      objectId: plan.planId,
+      revision: plan.planRevision,
+      sha256: plan.sha256,
+    };
+    const published = matchingRefCount(events, "plan.candidate.published", ref);
+    if (published !== 1) {
+      failures.add(
+        `Trace缺口：Plan ${plan.planId}@${String(plan.planRevision)} published期望1条，实际${String(published)}条`,
+      );
+    }
+    const approval = approvals.find(
+      (candidate) =>
+        candidate.planId === plan.planId && candidate.planRevision === plan.planRevision,
+    );
+    if (approval === undefined) {
+      failures.add(`产品事实缺口：Plan ${plan.planId}@${String(plan.planRevision)} 缺少Approval`);
+    } else {
+      const created = events.filter(
+        (event) =>
+          event.eventName === "approval.created" &&
+          event.approvalRequestId === approval.approvalRequestId &&
+          sameRef(event.planRef, ref),
+      ).length;
+      if (created !== 1) {
+        failures.add(
+          `Trace缺口：Approval ${approval.approvalRequestId} created期望1条，实际${String(created)}条`,
+        );
+      }
+    }
+  }
+
+  for (const attempt of planningAttempts) {
+    const scoped = events.filter(
+      (event) => "attemptId" in event && event.attemptId === attempt.attemptId,
+    );
+    const preRequestFailure = scoped.some(
+      (event) =>
+        event.eventName === "provider.request.failed" &&
+        event.inputManifestSha256 === undefined &&
+        event.error.code.startsWith("provider.pre_request."),
+    );
+    // 凭据/配置等请求前失败没有越过Provider边界，因此started必须为0；
+    // failed事件本身就是失败关闭证据。其它失败仍必须先有started。
+    requireCount(failures, scoped, "provider.request.started", preRequestFailure ? 0 : 1);
+    requireCount(
+      failures,
+      scoped,
+      attempt.outcome === "success" ? "provider.request.completed" : "provider.request.failed",
+      1,
+    );
+    requireCount(failures, scoped, "pi.node.started", preRequestFailure ? 0 : 1);
+    requireCount(
+      failures,
+      scoped,
+      attempt.outcome === "success" ? "pi.node.completed" : "pi.node.failed",
+      1,
+    );
+  }
+
+  for (const decision of decisions) {
+    const ref: TraceObjectRef = {
+      objectType: "decision",
+      objectId: decision.decisionId,
+      revision: decision.revision,
+      sha256: decisionSha256(decision),
+    };
+    const committed = matchingRefCount(events, "decision.committed", ref);
+    if (committed !== 1) {
+      failures.add(
+        `Trace缺口：Decision ${decision.decisionId} committed期望1条，实际${String(committed)}条`,
+      );
+    }
+  }
+
+  const executionAttemptIds = new Set(
+    Object.values(snapshot.entities.attempts)
+      .filter((attempt) => attempt.productRunId === productRunId && attempt.kind === "execution")
+      .map((attempt) => attempt.attemptId),
+  );
+
+  if (run.status === "succeeded") {
+    const contracts = Object.values(snapshot.entities.executionContracts).filter(
+      (contract) => contract.productRunId === productRunId,
+    );
+    const candidates = Object.values(snapshot.entities.executionCandidates).filter(
+      (candidate) => candidate.productRunId === productRunId,
+    );
+    const validations = Object.values(snapshot.entities.validationResults).filter(
+      (validation) => validation.productRunId === productRunId,
+    );
+    if (contracts.length !== 1 || candidates.length !== 1 || validations.length !== 1) {
+      failures.add("产品事实缺口：成功Run必须恰有一个Execution Contract/Candidate/Validation");
+    }
+    const candidate = candidates[0];
+    if (candidate !== undefined) {
+      const ref: TraceObjectRef = {
+        objectType: "execution_candidate",
+        objectId: candidate.executionCandidateId,
+        sha256: candidate.sha256,
+      };
+      if (matchingRefCount(events, "execution.validated", ref) !== 1) {
+        failures.add(
+          `Trace缺口：Execution Candidate ${candidate.executionCandidateId} 缺少唯一validated事件`,
+        );
+      }
+    }
+    const stepCount = contracts[0]?.steps.length ?? 0;
+    const executionEvents = events.filter(
+      (event) => "attemptId" in event && executionAttemptIds.has(event.attemptId),
+    );
+    const executorStarted = executionEvents.filter(
+      (event) => event.eventName === "pi.node.started" && event.nodeKind === "executor",
+    ).length;
+    const executorCompleted = executionEvents.filter(
+      (event) => event.eventName === "pi.node.completed" && event.nodeKind === "executor",
+    ).length;
+    if (executorStarted !== stepCount || executorCompleted !== stepCount) {
+      failures.add(
+        `Trace缺口：Executor步骤期望${String(stepCount)}次，started=${String(executorStarted)}, completed=${String(executorCompleted)}`,
+      );
+    }
+    requireCount(failures, events, "product_commit.started", 1);
+    requireCount(failures, events, "product_commit.committed", 1);
+    const final =
+      run.finalMessageId === undefined ? undefined : snapshot.entities.messages[run.finalMessageId];
+    if (final === undefined) failures.add("产品事实缺口：成功Run缺少正式Assistant Message");
+    else {
+      const ref: TraceObjectRef = {
+        objectType: "message",
+        objectId: final.messageId,
+        sha256: messageSha256(final),
+      };
+      if (matchingRefCount(events, "product_commit.committed", ref) !== 1) {
+        failures.add("Trace缺口：Product Commit没有精确引用正式Assistant Message");
+      }
+    }
+  }
+
+  if (run.status === "failed") {
+    const hasFailureBoundary = events.some(
+      (event) =>
+        event.outcome === "failure" ||
+        (event.eventName === "product_run.transitioned" && event.toStatus === "failed"),
+    );
+    if (!hasFailureBoundary) failures.add("Trace缺口：失败Run没有任何失败边界或失败状态转换");
+  }
+
+  checkSequentialPairs(
+    failures,
+    events,
+    "Workflow Step",
+    (event) => event.eventName === "workflow.step.started",
+    (event) =>
+      event.eventName === "workflow.step.completed" || event.eventName === "workflow.step.failed",
+    (event) =>
+      "stepKey" in event
+        ? `${event.attemptId}/${event.stepKey}/${String(event.stepAttempt)}`
+        : "invalid",
+  );
+  const preRequestAttemptIds = new Set(
+    events.flatMap((event) =>
+      event.eventName === "provider.request.failed" &&
+      event.inputManifestSha256 === undefined &&
+      event.error.code.startsWith("provider.pre_request.")
+        ? [event.attemptId]
+        : [],
+    ),
+  );
+  checkSequentialPairs(
+    failures,
+    events,
+    "Provider请求",
+    (event) => event.eventName === "provider.request.started",
+    (event) =>
+      event.eventName === "provider.request.completed" ||
+      event.eventName === "provider.request.failed",
+    (event) => ("attemptId" in event ? String(event.attemptId) : "invalid"),
+    (event) =>
+      event.eventName === "provider.request.failed" &&
+      event.inputManifestSha256 === undefined &&
+      event.error.code.startsWith("provider.pre_request."),
+  );
+  checkSequentialPairs(
+    failures,
+    events,
+    "pi节点",
+    (event) => event.eventName === "pi.node.started",
+    (event) => event.eventName === "pi.node.completed" || event.eventName === "pi.node.failed",
+    (event) => ("nodeKind" in event ? `${event.attemptId}/${event.nodeKind}` : "invalid"),
+    (event) => event.eventName === "pi.node.failed" && preRequestAttemptIds.has(event.attemptId),
+  );
+}
+
+function parseVersionEvidence(raw: unknown): HistoricalVersionEvidence | undefined {
+  return runtimeVersionEvidenceSchema.safeParse(raw).data;
+}
+
+function loadVersionEvidence(path: string | undefined): {
+  evidence?: HistoricalVersionEvidence;
+  status: "missing" | "invalid" | "loaded";
+} {
+  if (path === undefined) return { status: "missing" };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return { status: "invalid" };
+  }
+  const evidence = parseVersionEvidence(parsed);
+  return evidence === undefined ? { status: "invalid" } : { status: "loaded", evidence };
+}
+
+function sorted(values: Iterable<string>): string[] {
+  return [...new Set(values)].sort();
+}
+
+function containsObservedVersions(
+  captured: readonly string[],
+  observed: readonly string[],
+): boolean {
+  const capturedSet = new Set(captured);
+  return observed.every((value) => capturedSet.has(value));
+}
+
+function collectContent(snapshot: ProductSnapshot, productRunId: string): ReplayProductContent {
+  const run = snapshot.entities.runs[productRunId as never];
+  if (run === undefined) throw new ReplayError(`Product Run不存在: ${productRunId}`);
+  const sourceMessage = snapshot.entities.messages[run.sourceMessageId];
+  if (sourceMessage === undefined) throw new ReplayError("Product Run源Message不存在");
+  const finalMessage =
+    run.finalMessageId === undefined ? undefined : snapshot.entities.messages[run.finalMessageId];
+  const byCreatedAt = <T extends { createdAt: string }>(left: T, right: T) =>
+    left.createdAt.localeCompare(right.createdAt);
+  return {
+    sourceMessage,
+    ...(finalMessage !== undefined ? { finalMessage } : {}),
+    plans: Object.values(snapshot.entities.plans)
+      .filter((entity) => entity.productRunId === productRunId)
+      .sort((left, right) => left.planRevision - right.planRevision),
+    revisionInputs: Object.values(snapshot.entities.revisionInputs)
+      .filter((entity) => entity.productRunId === productRunId)
+      .sort(byCreatedAt),
+    decisions: Object.values(snapshot.entities.decisions)
+      .filter((entity) => entity.productRunId === productRunId)
+      .sort(byCreatedAt),
+    executionContracts: Object.values(snapshot.entities.executionContracts)
+      .filter((entity) => entity.productRunId === productRunId)
+      .sort(byCreatedAt),
+    executionCandidates: Object.values(snapshot.entities.executionCandidates)
+      .filter((entity) => entity.productRunId === productRunId)
+      .sort(byCreatedAt),
+    validationResults: Object.values(snapshot.entities.validationResults)
+      .filter((entity) => entity.productRunId === productRunId)
+      .sort(byCreatedAt),
+    artifacts: Object.values(snapshot.entities.artifacts)
+      .filter((entity) => entity.productRunId === productRunId)
+      .sort(byCreatedAt),
+  };
+}
+
+export function assembleRunReplay(
+  input: {
+    productRunId: string;
+    storePath: string;
+    traceDir?: string | undefined;
+    versionEvidencePath?: string | undefined;
+    contentAccess?: ReplayContentAccess | undefined;
+  },
+  deps: ReplayAssemblerDeps,
+): RunReplayView {
+  const snapshot = loadSnapshot(input.storePath, deps.snapshotIntegrityCheck);
+  const run = snapshot.entities.runs[input.productRunId as never];
+  if (run === undefined) throw new ReplayError(`Product Run不存在: ${input.productRunId}`);
+
+  const events = readTraceEvents({
+    productRunId: input.productRunId,
+    ...(input.traceDir !== undefined ? { dir: input.traceDir } : {}),
+  });
+  const failures = new Set<string>();
+  const timeline: ReplayTimelineEntry[] = events.map((event) => {
+    const refs = eventRefs(event).map((ref) => checkRef(snapshot, input.productRunId, ref));
+    for (const check of refs) {
+      if (check.status !== "ok") {
+        failures.add(
+          `${event.eventName}: ${check.ref.objectType}/${check.ref.objectId} ${check.status}${check.detail !== undefined ? `:${check.detail}` : ""}`,
+        );
+      }
+    }
+    return { timestamp: event.timestamp, eventName: event.eventName, outcome: event.outcome, refs };
+  });
+  checkTimelineCompleteness(snapshot, input.productRunId, events, failures);
+
+  const observedWorkflow = sorted(
+    events.flatMap((event) =>
+      "workflowDefinitionVersion" in event ? [event.workflowDefinitionVersion] : [],
+    ),
+  );
+  const observedPrompt = sorted(
+    events.flatMap((event) =>
+      "promptTemplateVersion" in event ? [event.promptTemplateVersion] : [],
+    ),
+  );
+  const observedModel = sorted(
+    events.flatMap((event) => ("modelConfigVersion" in event ? [event.modelConfigVersion] : [])),
+  );
+  const loadedEvidence = loadVersionEvidence(input.versionEvidencePath);
+  let versionStatus: RunReplayView["versionEvidence"]["status"];
+  if (loadedEvidence.status === "missing") {
+    versionStatus = "missing";
+    failures.add("版本证据缺失：未提供运行当时保存的版本证据文件");
+  } else if (loadedEvidence.status === "invalid" || loadedEvidence.evidence === undefined) {
+    versionStatus = "invalid";
+    failures.add("版本证据无效：文件不可读或不符合严格合同");
+  } else {
+    const evidence = loadedEvidence.evidence;
+    const matches =
+      evidence.productRunId === input.productRunId &&
+      containsObservedVersions(evidence.workflowDefinitionVersions, observedWorkflow) &&
+      containsObservedVersions(evidence.promptTemplateVersions, observedPrompt) &&
+      containsObservedVersions(evidence.modelConfigVersions, observedModel);
+    versionStatus = evidence.sourceState === "dirty" ? "dirty" : matches ? "ok" : "mismatch";
+    if (evidence.sourceState === "dirty") {
+      failures.add("版本证据不可复现：运行由dirty源码构建，不能归因为记录的Git SHA");
+    } else if (!matches) {
+      failures.add("版本证据不匹配：Trace出现了保存证据未捕获的运行版本");
+    }
+  }
+
+  let content: ReplayContentProjection = { included: false };
+  if (input.contentAccess !== undefined) {
+    if (
+      input.contentAccess.mode !== "authorized" ||
+      input.contentAccess.principalId.trim() === "" ||
+      input.contentAccess.purpose.trim() === ""
+    ) {
+      throw new ReplayError("正文访问授权上下文无效");
+    }
+    if (deps.authorizeContentAccess?.(input.contentAccess) !== true) {
+      throw new ReplayError("未授权读取Product Store正文");
+    }
+    content = { included: true, facts: collectContent(snapshot, input.productRunId) };
+  }
+
+  return {
+    productRunId: input.productRunId,
+    versionEvidence: {
+      status: versionStatus,
+      gitSha: loadedEvidence.evidence?.gitSha ?? null,
+      capturedAt: loadedEvidence.evidence?.capturedAt ?? null,
+      sourceState: loadedEvidence.evidence?.sourceState ?? null,
+      sourceManifestSha256: loadedEvidence.evidence?.sourceManifestSha256 ?? null,
+      bundleManifestSha256: loadedEvidence.evidence?.bundleManifestSha256 ?? null,
+      workflowDefinitionVersions: observedWorkflow,
+      promptTemplateVersions: observedPrompt,
+      modelConfigVersions: observedModel,
+    },
+    run: { status: run.status, phase: run.phase, revision: run.revision },
+    timeline,
+    content,
+    failures: [...failures],
+  };
+}

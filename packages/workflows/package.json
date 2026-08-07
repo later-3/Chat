@@ -11,14 +11,27 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "build:bundles": "tsx scripts/build-bundles.ts",
+    "start:runtime": "tsx src/runtime-main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "dependencies": {
     "@chat/application": "workspace:*",
-    "@chat/contracts": "workspace:*"
+    "@chat/contracts": "workspace:*",
+    "@chat/domain": "workspace:*",
+    "@chat/pi-runtime": "workspace:*",
+    "@chat/realtime": "workspace:*",
+    "@hono/node-server": "^2.1.0",
+    "hono": "^4.13.0",
+    "workflow": "4.8.0",
+    "@workflow/world-local": "4.2.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@workflow/builders": "4.1.6",
+    "@types/node": "^26.1.2",
+    "tsx": "^4.23.8",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }

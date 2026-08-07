@@ -2,14 +2,18 @@ import {
   TRACE_EVENT_NAMES,
   problemDetailSchema,
   requestIdSchema,
+  type PrincipalId,
   type ProblemDetail,
   type RequestId,
   type ServiceStatus,
   type TraceEventInput,
 } from "@chat/contracts";
+import type { ApplicationDeps } from "@chat/application";
 import { createTraceSink, type TraceSink } from "@chat/realtime";
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
+import { createProductRouter } from "./product-routes.js";
+import { createInternalRuntimeRouter } from "./internal-runtime-router.js";
 
 /**
  * Hono API Adapter。
@@ -33,6 +37,17 @@ type ApiVariables = { requestId: RequestId };
 export interface ApiAppOptions {
   /** 默认使用@chat/realtime JSONL Sink（CHAT_TRACE_DIR或仓库.data/traces）；测试可注入临时目录。 */
   traceSink?: TraceSink | null;
+  /** 产品路由上下文；缺省时只暴露健康检查（骨架模式）。 */
+  product?: {
+    readonly deps: ApplicationDeps;
+    readonly principalId: PrincipalId;
+  };
+  /** 私有Runtime Router（仅服务端凭据）；缺省时不挂载。 */
+  internalRuntime?: {
+    readonly credential: string;
+  };
+  /** Provider配置状态（readiness只报告布尔，永不泄漏凭据）。 */
+  providerReady?: boolean;
 }
 
 type HttpMethod = Extract<TraceEventInput, { eventName: "http.command.received" }>["httpMethod"];
@@ -134,11 +149,37 @@ export function createApiApp(options: ApiAppOptions = {}) {
     return c.json(body);
   });
 
-  app.get("/api/readyz", (c) => {
-    // B1：暂无外部依赖；B2/B4将在此检查Product Store与Workflow运行时可达性。
-    const body: ServiceStatus = { status: "ok", service: "chat-api" };
+  app.get("/api/readyz", async (c) => {
+    // 产品模式下探活Product Store；骨架模式只报告进程存活。
+    if (options.product !== undefined) {
+      await options.product.deps.store.read({ kind: "committedSnapshot" });
+    }
+    const body = {
+      status: "ok" as const,
+      service: "chat-api",
+      ...(options.providerReady !== undefined
+        ? { provider: { name: "bailian" as const, ready: options.providerReady } }
+        : {}),
+    };
     return c.json(body);
   });
+
+  if (options.product !== undefined) {
+    app.route(
+      "/api",
+      createProductRouter({ deps: options.product.deps, principalId: options.product.principalId }),
+    );
+  }
+
+  if (options.product !== undefined && options.internalRuntime !== undefined) {
+    app.route(
+      "/internal/runtime/v1",
+      createInternalRuntimeRouter({
+        deps: options.product.deps,
+        credential: options.internalRuntime.credential,
+      }),
+    );
+  }
 
   app.notFound((c) => {
     const problem: ProblemDetail = {

@@ -403,4 +403,4 @@ P0必须生成一份版本证据清单：
 - [Hono Streaming](https://hono.dev/docs/helpers/streaming)
 - [Vite Guide](https://vite.dev/guide/)
 - [TanStack Query Overview](https://tanstack.com/query/latest/docs/framework/react/overview)
-- pi固定源码：`/Users/xulater/Code/opc-os/pi`，提交`10e99ae9914cd34f622633fac42f9a90714e9cf4`
+- pi能力对照源码：`/Users/xulater/Code/opc-os/pi`，提交`10e99ae9914cd34f622633fac42f9a90714e9cf4`；实际运行工件固定为npm `@earendil-works/pi-agent-core`/`pi-ai` 0.82.1（发布基点`b4f293684bba718d59cc1157679bcf6157b3a7f5`），以pnpm锁文件SHA-512为准

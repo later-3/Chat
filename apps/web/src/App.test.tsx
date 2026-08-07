@@ -39,6 +39,7 @@ function openOkrSession() {
 }
 
 beforeEach(() => {
+  window.history.replaceState({}, "", "/?view=fixture");
   window.localStorage.clear();
   delete document.documentElement.dataset.theme;
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
@@ -64,6 +65,15 @@ afterEach(() => {
 });
 
 describe("P1.1 平铺工作空间", () => {
+  it("产品默认入口是真实规划会话，fixture只在显式查询参数下出现", async () => {
+    window.history.replaceState({}, "", "/");
+    stubHealthzFail();
+    renderApp();
+    expect(screen.getAllByText("真实规划会话").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("main", { name: "今日" })).toBeNull();
+    await screen.findByRole("alert");
+  });
+
   it("默认渲染今日总览，不把fixture伪装成正在运行的真实会话", async () => {
     stubHealthzOk();
     renderApp();

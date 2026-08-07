@@ -63,12 +63,13 @@ describe("VS Code调试配置", () => {
   });
 
   it("子配置等待链保证Workflow -> API -> Web顺序", () => {
-    expect(configOf("Chat：Workflow 运行时").preLaunchTask).toBe("chat-debug:preclean");
+    expect(configOf("Chat：Workflow 运行时").preLaunchTask).toBe("chat-debug:build-bundles");
     expect(configOf("Chat：API").preLaunchTask).toBe("chat-debug:wait-workflow");
     expect(configOf("Chat：Web 浏览器").preLaunchTask).toBe("chat-debug:start-web");
     const dependsOn = Object.fromEntries(
       tasks.tasks.map((task) => [task.label, task.dependsOn ?? []]),
     );
+    expect(dependsOn["chat-debug:build-bundles"]).toContain("chat-debug:preclean");
     expect(dependsOn["chat-debug:start-web"]).toContain("chat-debug:wait-api");
     expect(dependsOn["chat-debug:wait-api"]).toContain("chat-debug:wait-workflow");
   });
@@ -83,7 +84,35 @@ describe("VS Code调试配置", () => {
     expect(configOf("Chat：API").port).toBe(43120);
     expect(configOf("Chat：API").env?.["PORT"]).toBe("43111");
     expect(configOf("Chat：Workflow 运行时").port).toBe(43121);
-    expect(configOf("Chat：Workflow 运行时").env?.["WORKFLOW_PORT"]).toBe("43112");
-    expect(configOf("Chat：Web 浏览器").url).toBe("http://127.0.0.1:43110");
+    expect(configOf("Chat：Workflow 运行时").env?.["CHAT_WORKFLOW_PORT"]).toBe("43112");
+    expect(configOf("Chat：Web 浏览器").url).toBe("http://127.0.0.1:43110/");
+  });
+
+  it("API与Workflow调试进程都安全加载根目录.env，launch.json不含任何真实凭据", () => {
+    interface EnvFileConfig {
+      envFile?: string;
+    }
+    const api = configOf("Chat：API") as LaunchConfig & EnvFileConfig;
+    const workflow = configOf("Chat：Workflow 运行时") as LaunchConfig & EnvFileConfig;
+    expect(api.envFile).toBe("${workspaceFolder}/.env");
+    expect(workflow.envFile).toBe("${workspaceFolder}/.env");
+
+    // launch.json不写真实Key：不包含百炼Key变量名、Runtime凭据前缀或Bearer形态
+    const raw = readFileSync(join(repoRoot, ".vscode/launch.json"), "utf8");
+    expect(raw).not.toContain("DASHSCOPE_API_KEY");
+    expect(raw).not.toContain("rtk_");
+    expect(raw).not.toContain("Bearer ");
+    // .env继续被gitignore
+    const gitignore = readFileSync(join(repoRoot, ".gitignore"), "utf8");
+    expect(gitignore).toMatch(/^\.env$/m);
+  });
+
+  it(".env.example只保留变量名、安全说明与公开Base URL", () => {
+    const example = readFileSync(join(repoRoot, ".env.example"), "utf8");
+    expect(example).toContain("DASHSCOPE_API_KEY=");
+    expect(example).toContain("https://dashscope.aliyuncs.com/compatible-mode/v1");
+    // 不得出现真实Key值或Runtime凭据值（变量名后不允许跟非空值）
+    expect(example).not.toMatch(/^DASHSCOPE_API_KEY=\S+$/m);
+    expect(example).not.toMatch(/^CHAT_RUNTIME_KEY=\S+$/m);
   });
 });

@@ -147,3 +147,27 @@ Workflow不能只作为后端实现存在。用户需要在Chat中看见当前�
 Trace负责记录系统时间线、调用关系、状态转换、Attempt、版本、耗时、错误、统计和产品对象引用，不复制用户消息、Plan、Decision、模型候选、Prompt或Provider Payload正文。正文和产品事实只保存在Product Store；Workflow状态由Workflow Store保存；Git、Workflow Definition、Prompt模板和模型配置由版本证据保存。历史回放由Replay Assembler按对象ID、revision和Hash组合这些来源，缺失引用或Hash不一致必须显式报告；真实模型重新执行必须创建新Attempt，不能覆盖历史运行。
 
 检查：Trace合同是否使用事件级严格白名单并拒绝任意内容字段；能否用`productRunId`关联Trace与产品对象完成历史回放，同时保证Trace、PR证据和调试输出不复制正文、密钥、完整Provider Payload或隐藏推理？
+
+## 25. 跨Runtime副作用先写意图栅栏
+
+标签：`workflow`、`outbox`、`idempotency`、`outcome-unknown`
+
+Workflow Start与Hook Resume跨过进程边界后可能丢失响应。调用前先耐久写入`starting/dispatching`意图，调用后只有可验证响应才能标记完成；任何无法确认的结果进入`outcome_unknown`并对账，不能因为HTTP重试再次Start或Resume。Runtime已有耐久运行数据但私有Binding文件丢失时必须拒绝创建空映射。
+
+检查：断线发生在请求发出前、发出后、响应解析时和本地落盘时，系统是否都不会重复越过不可逆边界？
+
+## 26. 能力源码与运行工件必须分开记账
+
+标签：`dependency`、`supply-chain`、`pi`、`version-evidence`
+
+本地源码提交可以证明API和行为，但不等于npm实际安装工件。运行合同必须同时记录包版本、发布基点和锁文件完整性；能力对照提交只能叫“能力证据”，不得冒充运行来源。升级时重跑流截断、工具次数、Provider证据与错误归一化测试。
+
+检查：文档中的提交、锁文件中的SHA-512和CI安装到的包能否互相对应，是否还存在“同版本号所以同代码”的假设？
+
+## 27. 付费E2E必须与普通回归物理隔离
+
+标签：`e2e`、`provider`、`cost-control`、`test-isolation`
+
+真实Provider E2E使用独立Playwright配置和显式命令；普通PWA/移动端回归必须排除付费Spec。缺少Key时真实门失败关闭，普通CI仍可稳定运行确定性控制流测试，但不得把确定性pi结果写成真实Provider证据。
+
+检查：普通`pnpm test`或PWA回归是否可能误触发付费调用；真实门缺Key时是否明确失败而不是Skip？

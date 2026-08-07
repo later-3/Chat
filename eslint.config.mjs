@@ -6,7 +6,11 @@ export default tseslint.config(
       "**/node_modules/**",
       "**/dist/**",
       "**/.vite/**",
+      "**/.workflow-bundle/**",
       "**/coverage/**",
+      "**/test-results/**",
+      "**/playwright-report/**",
+      "**/.data/**",
       // 与.gitignore对齐：本地测试产物不参与lint
       "**/.test-artifacts/**",
     ],

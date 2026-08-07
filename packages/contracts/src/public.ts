@@ -1,0 +1,13 @@
+/**
+ * 浏览器唯一允许的合同入口。
+ *
+ * 不导出Product Store、Trace、Workflow私有Runtime、版本证据或Provider身份；
+ * 避免仅因根barrel的模块初始化就把私有Schema打进前端bundle。
+ */
+export * from "./ids.js";
+export * from "./hash.js";
+export * from "./problem-detail.js";
+export * from "./command.js";
+export * from "./query.js";
+export * from "./service-status.js";
+export * from "./product-api.js";

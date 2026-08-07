@@ -12,3 +12,4 @@
 export * from "./trace-paths.js";
 export * from "./trace-sink.js";
 export * from "./trace-reader.js";
+export * from "./replay.js";

@@ -7,6 +7,8 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
+  // 真实百炼闭环由独立配置显式运行；PWA回归不得误触发付费场景。
+  testIgnore: "planning-execution-real.spec.ts",
   fullyParallel: false,
   workers: 1,
   reporter: "list",
@@ -18,16 +20,17 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: "PORT=3000 pnpm --filter @chat/api start",
-      url: "http://localhost:3000/api/healthz",
-      reuseExistingServer: !process.env.CI,
+      command:
+        "PORT=43131 CHAT_PRODUCT_STORE_PATH=../../.test-artifacts/pwa/chat-product-store.v1.json pnpm --filter @chat/api start",
+      url: "http://127.0.0.1:43131/api/healthz",
+      reuseExistingServer: false,
       timeout: 60_000,
     },
     {
       command:
-        "pnpm --filter @chat/web build && pnpm --filter @chat/web exec vite preview --port 4173 --strictPort",
+        "CHAT_API_PROXY_URL=http://127.0.0.1:43131 pnpm --filter @chat/web build && CHAT_API_PROXY_URL=http://127.0.0.1:43131 pnpm --filter @chat/web exec vite preview --port 4173 --strictPort",
       url: "http://localhost:4173",
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 180_000,
     },
   ],

@@ -14,6 +14,17 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@chat/api": "workspace:*",
+    "@chat/application": "workspace:*",
+    "@chat/contracts": "workspace:*",
+    "@chat/domain": "workspace:*",
+    "@chat/pi-runtime": "workspace:*",
+    "@chat/product-store-json": "workspace:*",
+    "@chat/realtime": "workspace:*",
+    "@chat/workflows": "workspace:*",
+    "@hono/node-server": "^2.1.0"
+  },
   "devDependencies": {
     "@types/node": "^26.1.2",
     "typescript": "^5.9.3",

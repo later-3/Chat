@@ -10,7 +10,7 @@
 
 | 工具 | 版本 | 说明 |
 |---|---|---|
-| Node.js | 24.8.0（`engines: >=22.18`，CI固定24） | 运行时 |
+| Node.js | 24.8.0（`engines: >=22.19`，CI固定24） | 运行时 |
 | pnpm | 10.13.1（`packageManager`固定） | Workspace与锁文件 |
 | TypeScript | 5.9.3 | strict + noUncheckedIndexedAccess + exactOptionalPropertyTypes |
 
@@ -66,25 +66,17 @@ P0只安装实际使用的依赖；未实现的Workflow/pi运行时依赖不在P
 
 ### 4.2 pi（Agent Runtime）
 
-冻结合同钉住源码提交`10e99ae9914cd34f622633fac42f9a90714e9cf4`，该提交的
-`packages/{agent,ai,coding-agent}/package.json`均为`@earendil-works/*@0.82.1`（MIT）。
-
-但已核验：**npm上的`@earendil-works/pi-agent-core@0.82.1`发布自`b4f293684bba718d59cc1157679bcf6157b3a7f5`，
-与冻结提交`10e99ae`存在75个文件差异，不能视为同一工件。**
-
-因此P1引入pi前必须先决定工件方案，候选：
-
-1. 从冻结提交`10e99ae`自行构建并以可验证方式发布（如workspace file:/link:协议或私有registry），保留构建与哈希证据。
-2. 重新评估并将冻结提交更新到与npm发布一致的提交，走合同变更流程。
-
-从冻结提交生成可验证工件是P1实现决定；只有更新冻结提交才属于合同变更。两种路径都不在P0范围。记录：
+P0曾以本地源码提交`10e99ae9914cd34f622633fac42f9a90714e9cf4`作为能力证据，
+但npm同名版本发布自`b4f293684bba718d59cc1157679bcf6157b3a7f5`，两者不是同一工件。
+B2已完成工件决策：运行时只消费npm `0.82.1`，由pnpm锁文件的SHA-512完整性固定；
+`10e99ae`只保留为补充能力对照，不再被描述成实际运行工件。升级必须走合同PR。
 
 | 项 | 值 |
 |---|---|
-| 冻结源码 | `/Users/xulater/Code/opc-os/pi`@`10e99ae9914cd34f622633fac42f9a90714e9cf4` |
-| 冻结提交处版本 | `@earendil-works/pi-agent-core`/`pi-ai`/`pi-coding-agent` 0.82.1（MIT） |
-| npm同版本号工件 | 发布自`b4f293684bba718d59cc1157679bcf6157b3a7f5`，与冻结提交差75个文件；`engines: node>=22.19.0` |
-| 引入时机 | P1，且仅在工件方案决定之后 |
+| 能力对照源码 | `/Users/xulater/Code/opc-os/pi`@`10e99ae9914cd34f622633fac42f9a90714e9cf4` |
+| 实际运行工件 | npm `@earendil-works/pi-agent-core@0.82.1`与`pi-ai@0.82.1`，发布基点`b4f293684bba718d59cc1157679bcf6157b3a7f5`，`engines: node>=22.19.0` |
+| 锁文件完整性 | agent-core `sha512-Z3kloziJIE2dmrisRckZX8zDca/gIv9/YdFAzeoqpHiLV2wsni6bL4hInNSjVKLbqT+4kqLIkph2JQLKvSepjg==`；ai `sha512-3WFYRhEp3lQB3444EhPMBcM7zSaEUE3eJgHOR7s4081NLqbw/FsWilIKWXSua0Gv3sRr7m9xMidR3pPDE7jI/A==` |
+| 引入时机 | B2 M2（已引入） |
 | 升级门 | 重跑pi事件归一化、Tool与恢复合同测试 |
 
 ### 4.3 其他待引入
@@ -111,3 +103,48 @@ P0只安装实际使用的依赖；未实现的Workflow/pi运行时依赖不在P
 3. 真实Chromium（生产构建+vite preview+真实API）验证：SW激活控制页面、离线重开外壳、草稿跨刷新恢复、离线发送被阻止、恢复联网不自动发送、离线`/api/healthz`真实失败。
 4. 320/375/390/430px竖屏与844×390横屏无页面级横向滚动；手机触控目标≥44px。
 5. `pnpm audit --prod`通过；`workbox-window`作为浏览器运行时依赖已归入`dependencies`并纳入生产审计，vite-plugin-pwa与Playwright仅为dev依赖。
+
+## 7. B2 M2已安装的运行时依赖
+
+B2 M2首次引入Workflow与pi运行时。依赖证据如下；升级前必须重跑对应合同测试
+（Workflow Hook/重放/Retry、pi工具校验/事件归一化、Provider错误族）。
+
+| 依赖 | 版本 | 许可证 | 用途 | 所在边界 | 标准库为何不足 | 退出/替换方式 |
+|---|---|---|---|---|---|---|
+| `workflow` | 4.8.0（含`@workflow/core` 4.8.0） | Apache-2.0 | 耐久Step、Hook、重放与Checkpoint | packages/workflows（唯一Workflow定义与Step） | Node无内建耐久执行/暂停恢复语义 | 冻结技术栈；替换需重新批准Workflow选型 |
+| `@workflow/world-local` | 4.2.4 | Apache-2.0 | 本地World（JSON事件日志+内存队列） | packages/workflows Runtime进程 | 同上 | 可换远程World（Vercel/Postgres），Product Store事实不受影响 |
+| `@workflow/builders` | 4.1.6（dev） | Apache-2.0 | 预构建workflow/step bundle（SWC转换） | packages/workflows构建期脚本 | 无 | 仅开发期；产物gitignored |
+| `@earendil-works/pi-ai` | 0.82.1 | MIT | Model/Provider抽象与OpenAI兼容流 | packages/pi-runtime | 无统一模型流抽象 | 冻结pi选型；升级门为pi事件/Tool合同测试 |
+| `@earendil-works/pi-agent-core` | 0.82.1 | MIT | Agent loop与结构化工具 | packages/pi-runtime | 无Agent循环/工具治理 | 同上 |
+| `undici` | 7.29.0（根override只覆盖`>=7 <7.29`） | MIT | Workflow World的传递HTTP客户端；修复7.28.0安全公告 | `@workflow/world-local`/`world-vercel`传递边界 | Workflow SDK直接依赖，不能用Node内建fetch替换其内部实现 | Workflow上游依赖升级到安全版本后移除override并重跑全门 |
+
+### 7.1 pi工件与冻结源码的关系（重要）
+
+- 能力对照源码：`/Users/xulater/Code/opc-os/pi` @ `10e99ae9914cd34f622633fac42f9a90714e9cf4`；它不是运行时依赖来源。
+- 已核验：冻结提交的唯一自定义改动是`.gitignore`/`.vscode`调试配置（非运行时代码）；
+  其`packages/ai`、`packages/agent`代码 = npm 0.82.1发布基点`b4f2936`之后的39个上游提交。
+- 当前消费npm `@earendil-works/pi-ai`/`pi-agent-core` 0.82.1（gitHead `b4f2936`，MIT），
+  与冻结提交存在16个源文件差异（主要为`stopReason:"pending"`流错误强化与Bedrock/OpenRouter修补，
+  不减少Agent/AgentTool/openai-completions能力面）。
+- 本地与CI由pnpm锁文件中的上述SHA-512固定同一npm工件，满足“本地与CI使用同一份代码”；
+  能力对照以冻结提交为准（文档`docs/architecture/planning-execution-workflow.md`§18.2）。
+- 退出路径：上游发布覆盖冻结提交语义的版本后整体升级并重跑pi合同测试；
+  不得在未重跑测试时只更新锁文件。
+
+### 7.2 Workflow本地运行形态
+
+- Workflow Runtime进程（127.0.0.1:43112）= Local World + 预构建bundle + 进程内handler。
+- bundle由`@workflow/builders`从`packages/workflows/src`预构建（`pnpm --filter @chat/workflows build:bundles`），
+  产物`.workflow-bundle/`已gitignore；Step非step模块保持external，经tsx解析到TS源码，
+  VS Code断点直接命中TypeScript，不需要在生成产物中调试。
+- 确定性测试复用同一装配路径（`setupWorkflowWorld`），真实World+真实Hook+真实bundle。
+
+### 7.3 B2运行版本证据
+
+- Workflow bundle构建时保存Git SHA、源码状态（`clean|dirty`）、源码Manifest SHA-256、
+  bundle Manifest SHA-256，以及Workflow Definition、Prompt模板和模型配置版本集合。
+- Workflow Start越过Runtime边界前，按`productRunId`以0600不可变文件保存当次Build证据；
+  同一Run遇到内容不同的证据时失败关闭，不用当前HEAD覆盖历史。
+- Runtime启动恢复活动Run前逐字段比对当前Build与历史证据；不一致时拒绝使用新bundle恢复旧Run。
+- Replay遇到`dirty`源码证据必须标为不可复现，不能把结果归因到记录的Git SHA。
+- 真实付费E2E只接受`clean`证据；工作区有未提交运行源码时在Provider调用前失败关闭。

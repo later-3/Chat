@@ -66,6 +66,11 @@ a {
   transition: grid-template-columns 200ms ease-out;
 }
 
+/* 真实纵向链没有全局/会话侧栏，工作区必须占满唯一一列。 */
+.workspace-app.real-app {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .workspace-app.global-closed {
   grid-template-columns: 0 var(--session-rail-width) minmax(0, 1fr);
 }
@@ -1265,6 +1270,10 @@ a {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .workspace-app.real-app {
+    height: 100%;
+  }
+
   .global-rail {
     display: none;
   }
@@ -1374,7 +1383,9 @@ a {
   }
 
   .workspace-app[data-mobile-pane="chat"] .work-pane,
-  .workspace-app[data-mobile-pane="work"] .chat-pane {
+  .workspace-app[data-mobile-pane="work"] .chat-pane,
+  .real-grid[data-mobile-pane="chat"] .work-pane,
+  .real-grid[data-mobile-pane="work"] .chat-pane {
     display: none;
   }
 
@@ -1472,5 +1483,300 @@ a {
   *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- M3 真实规划会话 ---------- */
+
+.real-grid {
+  grid-template-columns: minmax(340px, 42%) minmax(380px, 1fr);
+}
+
+.model-fixed-label {
+  align-self: flex-start;
+  padding: 4px 12px;
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.message-markdown {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-empty {
+  color: var(--text-tertiary);
+  font-size: 14px;
+  padding: var(--space-4);
+  list-style: none;
+}
+
+.sr-status {
+  min-height: 16px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.loading-note,
+.error-note {
+  padding: var(--space-6);
+  color: var(--text-secondary);
+}
+
+.error-note {
+  color: var(--status-danger);
+}
+
+.real-work-body {
+  padding: var(--space-4);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.work-empty {
+  padding: var(--space-6);
+  color: var(--text-secondary);
+}
+
+.run-status-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--separator);
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.run-status-banner .status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 6px;
+  background: var(--status-warning);
+  flex-shrink: 0;
+}
+
+.run-status-banner[data-tone="success"] .status-dot {
+  background: var(--status-success);
+}
+
+.run-status-banner[data-tone="danger"] .status-dot {
+  background: var(--status-danger);
+}
+
+.run-status-banner .run-failure {
+  color: var(--status-danger);
+}
+
+.plan-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.plan-card {
+  border: 1px solid var(--separator);
+  border-radius: 14px;
+  background: var(--bg-secondary);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.plan-card[data-current="false"] {
+  opacity: 0.72;
+}
+
+.plan-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.plan-revision {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-card h4 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.plan-summary {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.plan-steps {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.plan-steps li {
+  display: flex;
+  flex-direction: column;
+}
+
+.plan-steps small {
+  color: var(--text-tertiary);
+}
+
+.plan-criteria {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.plan-criteria ul {
+  margin: 4px 0 0;
+  padding-left: var(--space-5);
+  color: var(--text-secondary);
+}
+
+.plan-warnings {
+  font-size: 13px;
+  color: var(--status-warning);
+}
+
+.plan-warnings p {
+  margin: 2px 0;
+}
+
+.decision-box {
+  border: 1px solid var(--separator);
+  border-radius: 14px;
+  background: var(--bg-secondary);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.decision-input {
+  width: 100%;
+  resize: vertical;
+  border-radius: 10px;
+  border: 1px solid var(--separator);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: var(--space-3);
+  font: inherit;
+  font-size: 14px;
+}
+
+.decision-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.decision-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.decision-actions .small-button,
+.reject-box .small-button,
+.composer-offline-note .small-button {
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border-radius: 10px;
+  border: 1px solid var(--separator);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.decision-actions .small-button.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: transparent;
+}
+
+.decision-actions .small-button.danger,
+.reject-box .small-button.danger {
+  color: var(--status-danger);
+}
+
+.decision-actions .small-button:disabled,
+.reject-box .small-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.decision-actions .small-button:focus-visible,
+.reject-box .small-button:focus-visible,
+.composer-offline-note .small-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.reject-box {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.reject-box input {
+  flex: 1;
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--separator);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: 14px;
+}
+
+.decision-error {
+  color: var(--status-danger);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.run-done-note {
+  color: var(--status-success);
+  font-size: 14px;
+}
+
+@media (max-width: 560px) {
+  .real-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .real-grid[data-mobile-pane="chat"] .work-pane,
+  .real-grid[data-mobile-pane="work"] .chat-pane {
+    display: none;
+  }
+
+  .real-grid[data-mobile-pane] .pane {
+    display: flex;
+    width: 100%;
+    height: 100%;
   }
 }

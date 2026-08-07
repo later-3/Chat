@@ -81,4 +81,5 @@ jobs:
             if curl -fsS localhost:5299/ | grep -q "<title>Chat</title>"; then break; fi
             if [ "$i" = "30" ]; then exit 1; fi
           done
-          curl -fsS "localhost:5299/src/App.tsx" | grep -q "packages/contracts/src/index.ts"
+          # Web必须从显式public入口消费合同，避免Trace/Runtime私有Schema进入浏览器bundle。
+          curl -fsS "localhost:5299/src/App.tsx" | grep -q "packages/contracts/src/public.ts"

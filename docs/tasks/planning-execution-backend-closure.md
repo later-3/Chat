@@ -265,7 +265,7 @@ outcome
 2. `product.transaction.started/committed/failed`。
 3. `product_run.created/transitioned`。
 4. `workflow.start.requested/started/failed`。
-5. `workflow.step.started/completed/failed/replayed`。
+5. `workflow.step.started/completed/failed`；事件中的`stepAttempt`取自Workflow SDK的真实Step metadata。
 6. `plan.candidate.received/rejected/published`。
 7. `approval.created`、`decision.committed/rejected`。
 8. `workflow.hook.waiting/resume_dispatched/resumed/resume_failed`。
@@ -275,6 +275,10 @@ outcome
 12. `product_commit.started/committed/failed`。
 
 Provider Trace可记录Provider、模型、Endpoint host、响应状态、百炼请求ID、耗时和Token Usage；不得记录API Key、Authorization Header、Cookie、完整Prompt、完整响应、完整Provider Payload或隐藏推理（由严格合同结构性排除，而非黑名单过滤）。
+
+Workflow命中已完成Checkpoint时不会重新执行Step代码，因此Chat不能在Step内部伪造
+`workflow.step.replayed`。真实重放证据由Workflow Store/World与保存的Step attempt共同提供；
+合同中的`workflow.step.replayed`只保留给未来由World事件投影生成的证据或旧数据兼容，不属于当前Step必发事件。
 
 ### 7.4 Trace调试入口
 
@@ -286,11 +290,11 @@ pnpm debug:trace --run run_xxx
 
 输出只含严格合同校验通过的事件。Trace读取失败不能修改原始JSONL文件。
 
-### 7.5 历史回放设计（B7实现）
+### 7.5 历史回放设计（B2纵向闭环已实现）
 
 “历史回放”和“重新执行”分开：回放读取当时保存的对象与Trace精确重建；重新执行真实模型必须创建新的Run Attempt，不覆盖原运行。
 
-B7实现`RunReplayAssembler`，按`productRunId`完成：
+`RunReplayAssembler`按`productRunId`完成：
 
 ```text
 读取Trace
@@ -305,7 +309,7 @@ Replay结果必须标出：引用对象缺失、revision不存在、Hash不一�
 两个不同入口：
 
 1. `pnpm debug:trace --run ...`：只看脱敏系统时间线（B1已提供）。
-2. `pnpm debug:replay --run ...`：在本地授权环境组合Product Store和Trace查看完整历史（B7提供）。
+2. `pnpm debug:replay --run ...`：在本地授权环境组合Product Store和Trace查看完整历史。
 
 导出到PR、CI附件或截图的证据默认不包含正文；完整正文只能在本地回放视图按需读取。
 
@@ -638,7 +642,7 @@ POST /api/runs/:productRunId/decisions
 4. [百炼OpenAI兼容Chat API](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)：`DASHSCOPE_API_KEY`和OpenAI兼容调用方法。
 5. [Vercel Workflow Hooks](https://useworkflow.dev/docs/foundations/hooks)：Workflow暂停和外部恢复。
 6. [Vercel Workflow Testing](https://useworkflow.dev/docs/testing)：真实Hook、Resume和Replay测试。
-7. 冻结pi源码：`/Users/xulater/Code/opc-os/pi`提交`10e99ae9914cd34f622633fac42f9a90714e9cf4`。
+7. pi能力对照源码：`/Users/xulater/Code/opc-os/pi`提交`10e99ae9914cd34f622633fac42f9a90714e9cf4`；实际运行工件由B2合同固定为npm `@earendil-works/pi-agent-core`/`pi-ai` 0.82.1（发布基点`b4f293684bba718d59cc1157679bcf6157b3a7f5`）及pnpm锁文件SHA-512。
 8. 冻结pi的`packages/ai/src/providers/qwen-token-plan-cn.ts`证明其Qwen Token Plan Provider使用OpenAI兼容API，但百炼官方限制Token Plan不能作为后端服务，因此Chat建立单独`bailian`Provider配置。
 
 ## 20. 提交给实现者前的最后检查

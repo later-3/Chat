@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sha256Schema } from "./hash.js";
 import {
   approvalRequestIdSchema,
   commandIdSchema,
@@ -94,7 +95,7 @@ const traceIdLikeSchema = z.string().regex(/^[a-z][a-z0-9]*_[A-Za-z0-9-]{1,80}$/
 const versionSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/);
 
 /** SHA-256摘要，固定小写十六进制。 */
-export const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
+export { sha256Schema } from "./hash.js";
 
 /** 稳定错误码：小写点分层级，不允许塞入原始错误消息。 */
 export const stableErrorCodeSchema = z

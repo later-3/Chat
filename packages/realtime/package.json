@@ -7,6 +7,10 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./replay-cli": {
+      "types": "./src/replay-cli.ts",
+      "import": "./src/replay-cli.ts"
     }
   },
   "scripts": {
@@ -15,11 +19,14 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@chat/contracts": "workspace:*"
+    "@chat/contracts": "workspace:*",
+    "@chat/application": "workspace:*",
+    "@chat/domain": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "tsx": "^4.23.8"
   }
 }

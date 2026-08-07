@@ -23,7 +23,7 @@ test.describe("手机竖屏无页面级横向滚动", () => {
   for (const width of PORTRAIT_WIDTHS) {
     test(`${width}px 今日页与会话页无横向滚动`, async ({ page }) => {
       await page.setViewportSize({ width, height: 760 });
-      await page.goto("/");
+      await page.goto("/?view=fixture");
       await expect(page.getByRole("main", { name: "今日" })).toBeVisible();
       await expectNoHorizontalScroll(page);
 
@@ -44,14 +44,14 @@ test.describe("手机竖屏无页面级横向滚动", () => {
 
   test("手机横屏无页面级横向滚动", async ({ page }) => {
     await page.setViewportSize(LANDSCAPE);
-    await page.goto("/");
+    await page.goto("/?view=fixture");
     await expect(page.getByRole("main", { name: "今日" })).toBeVisible();
     await expectNoHorizontalScroll(page);
   });
 
   test("手机触控目标不小于 44px", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 760 });
-    await page.goto("/");
+    await page.goto("/?view=fixture");
     await page
       .getByRole("navigation", { name: "手机主导航" })
       .getByRole("button", { name: "会话" })

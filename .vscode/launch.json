@@ -11,16 +11,19 @@
       "runtimeArgs": [
         "--import",
         "${workspaceFolder}/scripts/debug/register-process.mjs",
-        "${workspaceFolder}/scripts/debug/workflow-stub.mjs"
+        "--import",
+        "tsx",
+        "packages/workflows/src/runtime-main.ts"
       ],
+      "envFile": "${workspaceFolder}/.env",
       "env": {
         "CHAT_DEBUG_ROLE": "workflow",
         "CHAT_DEBUG_PORT": "43112",
         "CHAT_REPO_ROOT": "${workspaceFolder}",
-        "WORKFLOW_PORT": "43112"
+        "CHAT_WORKFLOW_PORT": "43112"
       },
       "console": "integratedTerminal",
-      "preLaunchTask": "chat-debug:preclean",
+      "preLaunchTask": "chat-debug:build-bundles",
       "postDebugTask": "chat-debug:stop"
     },
     {
@@ -37,6 +40,7 @@
         "tsx",
         "src/index.ts"
       ],
+      "envFile": "${workspaceFolder}/.env",
       "env": {
         "CHAT_DEBUG_ROLE": "api",
         "CHAT_DEBUG_PORT": "43111",
@@ -51,7 +55,7 @@
       "name": "Chat：Web 浏览器",
       "type": "chrome",
       "request": "launch",
-      "url": "http://127.0.0.1:43110",
+      "url": "http://127.0.0.1:43110/",
       "webRoot": "${workspaceFolder}/apps/web",
       "preLaunchTask": "chat-debug:start-web",
       "postDebugTask": "chat-debug:stop"

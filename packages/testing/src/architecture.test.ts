@@ -18,39 +18,79 @@ const repoRoot = resolve(fileURLToPath(import.meta.url), "../../../..");
 /** 每个源码目录允许的外部运行时依赖与@chat内部依赖。 */
 const rules: Record<
   string,
-  { external: readonly string[]; internal: readonly string[]; forbidden?: readonly RegExp[] }
+  {
+    external: readonly string[];
+    internal: readonly string[];
+    /** 仅测试文件允许的额外内部依赖（集成测试用真实Adapter验证用例）。 */
+    devInternal?: readonly string[];
+    forbidden?: readonly RegExp[];
+  }
 > = {
   "packages/contracts": { external: ["zod", "@ag-ui/core"], internal: [] },
   "packages/domain": { external: [], internal: [] },
-  "packages/application": { external: [], internal: ["@chat/contracts", "@chat/domain"] },
-  "packages/realtime": { external: [], internal: ["@chat/contracts"] },
-  "packages/workflows": {
+  "packages/application": {
     external: [],
-    internal: ["@chat/contracts", "@chat/application"],
-    forbidden: [
-      /^react/,
-      /^hono$/,
-      /^@hono\//,
-      /^workflow$/,
-      /^@ag-ui\//,
-      /^pi-/,
-      /^@earendil-works\//,
+    internal: ["@chat/contracts", "@chat/domain"],
+  },
+  // realtime的Replay Assembler需要@chat/application的Hash唯一实现（computePlanSha256）
+  // 与@chat/domain的canonical hash；不产生反向运行时依赖
+  "packages/realtime": {
+    external: [],
+    internal: ["@chat/contracts", "@chat/application", "@chat/domain"],
+  },
+  // packages/testing是跨Adapter集成测试与Fixture边界，允许组合全部内部包
+  "packages/testing": {
+    external: ["@hono/node-server"],
+    internal: [
+      "@chat/api",
+      "@chat/application",
+      "@chat/contracts",
+      "@chat/domain",
+      "@chat/pi-runtime",
+      "@chat/product-store-json",
+      "@chat/realtime",
+      "@chat/workflows",
     ],
   },
+  "packages/workflows": {
+    external: ["hono", "@hono/node-server", "zod", "workflow", "@workflow/world-local"],
+    internal: [
+      "@chat/contracts",
+      "@chat/application",
+      "@chat/domain",
+      "@chat/pi-runtime",
+      "@chat/realtime",
+    ],
+    devInternal: ["@workflow/builders"],
+    forbidden: [/^react/, /^@ag-ui\//, /^pi-/],
+  },
   "packages/pi-runtime": {
-    external: [],
+    external: ["zod", "@earendil-works/pi-ai", "@earendil-works/pi-agent-core"],
     internal: ["@chat/contracts"],
-    forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@earendil-works\//],
+    forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/],
+  },
+  "packages/product-store-json": {
+    external: ["zod"],
+    internal: ["@chat/contracts", "@chat/domain", "@chat/application"],
+    forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@ag-ui\//],
   },
   "apps/web": {
     // workbox-window 进入浏览器运行时bundle（PWA注册与更新提示），属于运行时依赖
-    external: ["react", "react-dom", "@tanstack/react-query", "workbox-window"],
+    external: ["react", "react-dom", "@tanstack/react-query", "workbox-window", "zod"],
     internal: ["@chat/contracts"],
     forbidden: [/^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@ag-ui\//],
   },
   "apps/api": {
     external: ["hono", "@hono/node-server", "zod"],
-    internal: ["@chat/contracts", "@chat/application", "@chat/realtime"],
+    internal: [
+      "@chat/contracts",
+      "@chat/application",
+      "@chat/domain",
+      "@chat/realtime",
+      "@chat/product-store-json",
+      "@chat/pi-runtime",
+      "@chat/workflows",
+    ],
     forbidden: [/^react/, /^workflow$/, /^pi-/],
   },
 };
@@ -64,10 +104,13 @@ const devOnlyExternal = [
   "react-dom",
   "@testing-library/react",
   "@testing-library/dom",
+  "@testing-library/user-event",
   "jsdom",
   // P1.2：PWA构建插件与真实浏览器E2E
   "vite-plugin-pwa",
   "@playwright/test",
+  // B2：workflow bundle预构建脚本（仅开发期）
+  "@workflow/builders",
 ];
 
 const importPattern = /(?:import|export)[^'"]*from\s+["']([^"']+)["']|import\s+["']([^"']+)["']/g;
@@ -105,9 +148,13 @@ describe("架构依赖方向", () => {
       const violations: string[] = [];
       for (const file of files) {
         const isDevFile =
-          /\.(test|spec)\.tsx?$/.test(file) ||
+          /\.(test|spec|real)\.tsx?$/.test(file) ||
           /(^|\/)vite\.config\.ts$/.test(file) ||
-          /(^|\/)playwright\.config\.ts$/.test(file);
+          /(^|\/)vitest(\.global-setup)?\.ts$/.test(file) ||
+          /(^|\/)vitest(\.[a-z-]+)*\.config\.ts$/.test(file) ||
+          /(^|\/)playwright(\.[a-z-]+)*\.config\.ts$/.test(file) ||
+          // 构建/开发期脚本（如workflow bundle预构建），不进入运行时
+          /(^|\/)scripts\/[^/]+\.ts$/.test(file);
         const source = readFileSync(file, "utf8");
         for (const match of source.matchAll(importPattern)) {
           const specifier = match[1] ?? match[2] ?? "";
@@ -120,7 +167,8 @@ describe("架构依赖方向", () => {
           if (isDevFile && devOnlyExternal.includes(name)) continue;
 
           if (name.startsWith("@chat/")) {
-            if (!rule.internal.includes(name)) {
+            const devAllowed = isDevFile && (rule.devInternal?.includes(name) ?? false);
+            if (!rule.internal.includes(name) && !devAllowed) {
               violations.push(`${rel}: 不允许依赖 ${name}`);
             }
             continue;
