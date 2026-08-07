@@ -14,7 +14,11 @@ import type {
   RunAttemptId,
   ValidationResultId,
 } from "@chat/contracts";
+import type { TraceEventInput } from "@chat/contracts";
 import type { ProductStorePort } from "./product-store-port.js";
+
+/** Trace发射器：由组合根提供（@chat/realtime Sink）；Application不依赖具体Sink。 */
+export type TraceEmitter = (event: TraceEventInput) => void;
 
 /**
  * Application用例的外部能力依赖。
@@ -44,6 +48,8 @@ export interface ApplicationDeps {
   readonly store: ProductStorePort;
   readonly now: () => string;
   readonly ids: IdFactory;
+  /** 可选Trace发射；缺省时用例不产生Trace（骨架模式与部分纯规则测试）。 */
+  readonly trace?: TraceEmitter;
 }
 
 /** 规划修订默认上限（任务书§9.2.7）。 */

@@ -11,8 +11,11 @@
       "runtimeArgs": [
         "--import",
         "${workspaceFolder}/scripts/debug/register-process.mjs",
-        "${workspaceFolder}/scripts/debug/workflow-stub.mjs"
+        "--import",
+        "tsx",
+        "packages/workflows/src/runtime-main.ts"
       ],
+      "envFile": "${workspaceFolder}/.env",
       "env": {
         "CHAT_DEBUG_ROLE": "workflow",
         "CHAT_DEBUG_PORT": "43112",
@@ -20,7 +23,7 @@
         "WORKFLOW_PORT": "43112"
       },
       "console": "integratedTerminal",
-      "preLaunchTask": "chat-debug:preclean",
+      "preLaunchTask": "chat-debug:build-bundles",
       "postDebugTask": "chat-debug:stop"
     },
     {
@@ -37,6 +40,7 @@
         "tsx",
         "src/index.ts"
       ],
+      "envFile": "${workspaceFolder}/.env",
       "env": {
         "CHAT_DEBUG_ROLE": "api",
         "CHAT_DEBUG_PORT": "43111",

@@ -20,12 +20,14 @@ import type {
   PlanRevision,
   PrincipalId,
   ProductRunId,
+  RunAttemptId,
   RunDto,
   SubmitDecisionPayload,
 } from "@chat/contracts";
 import { type ApplicationDeps } from "./deps.js";
 import { toApprovalDto, toDecisionDto, toPlanDto, toRunDto } from "./dto.js";
 import { ApplicationError, forbidden, notFound, revisionConflict } from "./errors.js";
+import { emitRunEvent } from "./trace-helpers.js";
 
 /**
  * PublishPlanForReview / SubmitPlanDecision用例。
@@ -43,6 +45,8 @@ export interface PublishPlanForReviewInput {
   readonly productRunId: ProductRunId;
   readonly commandId: CommandId;
   readonly content: PlanContent;
+  /** M2由Workflow传入本版规划的Attempt，用于Attempt闭环与Trace关联。 */
+  readonly attemptId?: RunAttemptId;
 }
 
 /**
@@ -158,6 +162,17 @@ export async function publishPlanForReview(
 
       draft.entities.plans[planRevisionId] = plan;
       draft.entities.approvalRequests[approvalRequestId] = approval;
+      if (input.attemptId !== undefined) {
+        const attempt = draft.entities.attempts[input.attemptId];
+        if (attempt !== undefined && attempt.outcome === "running") {
+          draft.entities.attempts[input.attemptId] = {
+            ...attempt,
+            outcome: "success",
+            revision: attempt.revision + 1,
+            updatedAt: now,
+          };
+        }
+      }
       assertSinglePlanUnderReview(
         Object.values(draft.entities.plans).filter(
           (candidate) => candidate.productRunId === input.productRunId,
@@ -191,6 +206,42 @@ export async function publishPlanForReview(
   const run = snapshot.entities.runs[input.productRunId];
   if (plan === undefined || approval === undefined || run === undefined) {
     throw notFound("Plan或Approval不存在");
+  }
+  if (input.attemptId !== undefined && !result.replayed) {
+    const planRef = {
+      objectType: "plan" as const,
+      objectId: plan.planId,
+      revision: plan.planRevision,
+      sha256: plan.sha256,
+    };
+    emitRunEvent(deps, input.productRunId, {
+      level: "info",
+      eventName: "plan.candidate.published",
+      outcome: "success",
+      productRunId: input.productRunId,
+      attemptId: input.attemptId,
+      planRef,
+    });
+    emitRunEvent(deps, input.productRunId, {
+      level: "info",
+      eventName: "approval.created",
+      outcome: "success",
+      productRunId: input.productRunId,
+      attemptId: input.attemptId,
+      approvalRequestId: approval.approvalRequestId,
+      planRef,
+    });
+    emitRunEvent(deps, input.productRunId, {
+      level: "info",
+      eventName: "product_run.transitioned",
+      outcome: "success",
+      productRunId: input.productRunId,
+      fromStatus: "running",
+      toStatus: "waiting_human",
+      fromPhase: "planning",
+      toPhase: "plan_review",
+      revision: run.revision,
+    });
   }
   return {
     plan: toPlanDto(plan),
@@ -373,6 +424,57 @@ export async function submitPlanDecision(
     run.currentApprovalRequestId !== undefined
       ? snapshot.entities.approvalRequests[run.currentApprovalRequestId]
       : undefined;
+  if (!result.replayed) {
+    const planningAttempt = Object.values(snapshot.entities.attempts).find(
+      (attempt) =>
+        attempt.productRunId === input.productRunId &&
+        attempt.kind === "planning" &&
+        attempt.planRevision === decision.planRevision,
+    );
+    if (planningAttempt !== undefined) {
+      const plan = Object.values(snapshot.entities.plans).find(
+        (candidate) =>
+          candidate.planId === decision.planId && candidate.planRevision === decision.planRevision,
+      );
+      if (plan !== undefined) {
+        emitRunEvent(deps, input.productRunId, {
+          level: "info",
+          eventName: "decision.committed",
+          outcome: "success",
+          productRunId: input.productRunId,
+          attemptId: planningAttempt.attemptId,
+          commandId: input.commandId,
+          decisionKind: decision.kind,
+          decisionRef: {
+            objectType: "decision",
+            objectId: decision.decisionId,
+            revision: decision.revision,
+            sha256: hashCanonical("decision.v1", {
+              decisionId: decision.decisionId,
+              approvalRequestId: decision.approvalRequestId,
+              productRunId: decision.productRunId,
+              planId: decision.planId,
+              planRevision: decision.planRevision,
+              planSha256: decision.planSha256,
+              kind: decision.kind,
+              ...(decision.revisionInputId !== undefined
+                ? { revisionInputId: decision.revisionInputId }
+                : {}),
+              ...(decision.reason !== undefined ? { reason: decision.reason } : {}),
+              principalId: decision.principalId,
+              commandId: decision.commandId,
+            }),
+          },
+          planRef: {
+            objectType: "plan",
+            objectId: plan.planId,
+            revision: plan.planRevision,
+            sha256: plan.sha256,
+          },
+        });
+      }
+    }
+  }
   return { decision: toDecisionDto(decision), run: toRunDto(run, currentPlan, currentApproval) };
 }
 

@@ -33,24 +33,42 @@ const rules: Record<
     internal: ["@chat/contracts", "@chat/domain"],
     devInternal: ["@chat/product-store-json"],
   },
-  "packages/realtime": { external: [], internal: ["@chat/contracts"] },
-  "packages/workflows": {
+  // realtime的Replay Assembler需要@chat/application的Hash唯一实现（computePlanSha256）
+  // 与@chat/domain的canonical hash；不产生反向运行时依赖
+  "packages/realtime": {
     external: [],
-    internal: ["@chat/contracts", "@chat/application"],
-    forbidden: [
-      /^react/,
-      /^hono$/,
-      /^@hono\//,
-      /^workflow$/,
-      /^@ag-ui\//,
-      /^pi-/,
-      /^@earendil-works\//,
+    internal: ["@chat/contracts", "@chat/application", "@chat/domain"],
+  },
+  // packages/testing是跨Adapter集成测试与Fixture边界，允许组合全部内部包
+  "packages/testing": {
+    external: ["@hono/node-server"],
+    internal: [
+      "@chat/api",
+      "@chat/application",
+      "@chat/contracts",
+      "@chat/domain",
+      "@chat/pi-runtime",
+      "@chat/product-store-json",
+      "@chat/realtime",
+      "@chat/workflows",
     ],
   },
+  "packages/workflows": {
+    external: ["hono", "@hono/node-server", "zod", "workflow", "@workflow/world-local"],
+    internal: [
+      "@chat/contracts",
+      "@chat/application",
+      "@chat/domain",
+      "@chat/pi-runtime",
+      "@chat/realtime",
+    ],
+    devInternal: ["@workflow/builders"],
+    forbidden: [/^react/, /^@ag-ui\//, /^pi-/],
+  },
   "packages/pi-runtime": {
-    external: [],
+    external: ["zod", "@earendil-works/pi-ai", "@earendil-works/pi-agent-core"],
     internal: ["@chat/contracts"],
-    forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@earendil-works\//],
+    forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/],
   },
   "packages/product-store-json": {
     external: ["zod"],
@@ -68,8 +86,11 @@ const rules: Record<
     internal: [
       "@chat/contracts",
       "@chat/application",
+      "@chat/domain",
       "@chat/realtime",
       "@chat/product-store-json",
+      "@chat/pi-runtime",
+      "@chat/workflows",
     ],
     forbidden: [/^react/, /^workflow$/, /^pi-/],
   },
@@ -88,6 +109,8 @@ const devOnlyExternal = [
   // P1.2：PWA构建插件与真实浏览器E2E
   "vite-plugin-pwa",
   "@playwright/test",
+  // B2：workflow bundle预构建脚本（仅开发期）
+  "@workflow/builders",
 ];
 
 const importPattern = /(?:import|export)[^'"]*from\s+["']([^"']+)["']|import\s+["']([^"']+)["']/g;
@@ -125,9 +148,13 @@ describe("架构依赖方向", () => {
       const violations: string[] = [];
       for (const file of files) {
         const isDevFile =
-          /\.(test|spec)\.tsx?$/.test(file) ||
+          /\.(test|spec|real)\.tsx?$/.test(file) ||
           /(^|\/)vite\.config\.ts$/.test(file) ||
-          /(^|\/)playwright\.config\.ts$/.test(file);
+          /(^|\/)vitest(\.global-setup)?\.ts$/.test(file) ||
+          /(^|\/)vitest(\.[a-z-]+)*\.config\.ts$/.test(file) ||
+          /(^|\/)playwright\.config\.ts$/.test(file) ||
+          // 构建/开发期脚本（如workflow bundle预构建），不进入运行时
+          /(^|\/)scripts\/[^/]+\.ts$/.test(file);
         const source = readFileSync(file, "utf8");
         for (const match of source.matchAll(importPattern)) {
           const specifier = match[1] ?? match[2] ?? "";

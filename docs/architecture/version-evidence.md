@@ -111,3 +111,37 @@ P0只安装实际使用的依赖；未实现的Workflow/pi运行时依赖不在P
 3. 真实Chromium（生产构建+vite preview+真实API）验证：SW激活控制页面、离线重开外壳、草稿跨刷新恢复、离线发送被阻止、恢复联网不自动发送、离线`/api/healthz`真实失败。
 4. 320/375/390/430px竖屏与844×390横屏无页面级横向滚动；手机触控目标≥44px。
 5. `pnpm audit --prod`通过；`workbox-window`作为浏览器运行时依赖已归入`dependencies`并纳入生产审计，vite-plugin-pwa与Playwright仅为dev依赖。
+
+## 7. B2 M2已安装的运行时依赖
+
+B2 M2首次引入Workflow与pi运行时。依赖证据如下；升级前必须重跑对应合同测试
+（Workflow Hook/重放/Retry、pi工具校验/事件归一化、Provider错误族）。
+
+| 依赖 | 版本 | 许可证 | 用途 | 所在边界 | 标准库为何不足 | 退出/替换方式 |
+|---|---|---|---|---|---|---|
+| `workflow` | 4.8.0（含`@workflow/core` 4.8.0） | Apache-2.0 | 耐久Step、Hook、重放与Checkpoint | packages/workflows（唯一Workflow定义与Step） | Node无内建耐久执行/暂停恢复语义 | 冻结技术栈；替换需重新批准Workflow选型 |
+| `@workflow/world-local` | 4.2.4 | Apache-2.0 | 本地World（JSON事件日志+内存队列） | packages/workflows Runtime进程 | 同上 | 可换远程World（Vercel/Postgres），Product Store事实不受影响 |
+| `@workflow/builders` | 4.1.6（dev） | Apache-2.0 | 预构建workflow/step bundle（SWC转换） | packages/workflows构建期脚本 | 无 | 仅开发期；产物gitignored |
+| `@earendil-works/pi-ai` | 0.82.1 | MIT | Model/Provider抽象与OpenAI兼容流 | packages/pi-runtime | 无统一模型流抽象 | 冻结pi选型；升级门为pi事件/Tool合同测试 |
+| `@earendil-works/pi-agent-core` | 0.82.1 | MIT | Agent loop与结构化工具 | packages/pi-runtime | 无Agent循环/工具治理 | 同上 |
+
+### 7.1 pi工件与冻结源码的关系（重要）
+
+- 能力证据冻结源码：`/Users/xulater/Code/opc-os/pi` @ `10e99ae9914cd34f622633fac42f9a90714e9cf4`。
+- 已核验：冻结提交的唯一自定义改动是`.gitignore`/`.vscode`调试配置（非运行时代码）；
+  其`packages/ai`、`packages/agent`代码 = npm 0.82.1发布基点`b4f2936`之后的39个上游提交。
+- 当前消费npm `@earendil-works/pi-ai`/`pi-agent-core` 0.82.1（gitHead `b4f2936`，MIT），
+  与冻结提交存在16个源文件差异（主要为`stopReason:"pending"`流错误强化与Bedrock/OpenRouter修补，
+  不减少Agent/AgentTool/openai-completions能力面）。
+- 本地与CI由pnpm锁文件固定同一npm工件，满足“本地与CI使用同一份代码”；
+  能力对照以冻结提交为准（文档`docs/architecture/planning-execution-workflow.md`§18.2）。
+- 退出路径：上游发布覆盖冻结提交语义的版本后整体升级并重跑pi合同测试；
+  不得在未重跑测试时只更新锁文件。
+
+### 7.2 Workflow本地运行形态
+
+- Workflow Runtime进程（127.0.0.1:43112）= Local World + 预构建bundle + 进程内handler。
+- bundle由`@workflow/builders`从`packages/workflows/src`预构建（`pnpm --filter @chat/workflows build:bundles`），
+  产物`.workflow-bundle/`已gitignore；Step非step模块保持external，经tsx解析到TS源码，
+  VS Code断点直接命中TypeScript，不需要在生成产物中调试。
+- 确定性测试复用同一装配路径（`setupWorkflowWorld`），真实World+真实Hook+真实bundle。

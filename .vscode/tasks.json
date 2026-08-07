@@ -10,6 +10,15 @@
       "problemMatcher": []
     },
     {
+      "label": "chat-debug:build-bundles",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["--filter", "@chat/workflows", "build:bundles"],
+      "dependsOn": ["chat-debug:preclean"],
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
       "label": "chat-debug:wait-workflow",
       "type": "shell",
       "command": "node",

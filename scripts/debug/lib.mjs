@@ -23,7 +23,7 @@ export const FROZEN_PORTS = Object.freeze({
 /** 各调试角色的命令行身份片段（用于PID复用复核）。 */
 export const ROLE_COMMAND_FRAGMENTS = Object.freeze({
   api: ["src/index.ts", "tsx"],
-  workflow: ["workflow-stub.mjs"],
+  workflow: ["runtime-main.ts", "tsx"],
   web: ["vite", "43110"],
 });
 

@@ -68,11 +68,15 @@ export async function openProductStore(filePath?: string): Promise<ProductStoreP
   return JsonProductStore.open({ filePath: path, now: () => new Date().toISOString() });
 }
 
-export async function createApplicationDeps(filePath?: string): Promise<ApplicationDeps> {
+export async function createApplicationDeps(
+  filePath?: string,
+  trace?: ApplicationDeps["trace"],
+): Promise<ApplicationDeps> {
   const store = await openProductStore(filePath);
   return {
     store,
     now: () => new Date().toISOString(),
     ids: createIdFactory(),
+    ...(trace !== undefined ? { trace } : {}),
   };
 }

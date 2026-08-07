@@ -15,7 +15,9 @@
     "debug:preclean": "node scripts/debug/preclean.mjs",
     "debug:stop": "node scripts/debug/stop.mjs",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "debug:replay": "pnpm --filter @chat/realtime exec tsx src/replay-cli.ts",
+    "test:provider:bailian": "pnpm --filter @chat/pi-runtime test:provider:bailian"
   },
   "devDependencies": {
     "eslint": "^10.8.0",

@@ -13,6 +13,7 @@ import { createTraceSink, type TraceSink } from "@chat/realtime";
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import { createProductRouter } from "./product-routes.js";
+import { createInternalRuntimeRouter } from "./internal-runtime-router.js";
 
 /**
  * Hono API Adapter。
@@ -41,6 +42,12 @@ export interface ApiAppOptions {
     readonly deps: ApplicationDeps;
     readonly principalId: PrincipalId;
   };
+  /** 私有Runtime Router（仅服务端凭据）；缺省时不挂载。 */
+  internalRuntime?: {
+    readonly credential: string;
+  };
+  /** Provider配置状态（readiness只报告布尔，永不泄漏凭据）。 */
+  providerReady?: boolean;
 }
 
 type HttpMethod = Extract<TraceEventInput, { eventName: "http.command.received" }>["httpMethod"];
@@ -147,7 +154,13 @@ export function createApiApp(options: ApiAppOptions = {}) {
     if (options.product !== undefined) {
       await options.product.deps.store.read({ kind: "committedSnapshot" });
     }
-    const body: ServiceStatus = { status: "ok", service: "chat-api" };
+    const body = {
+      status: "ok" as const,
+      service: "chat-api",
+      ...(options.providerReady !== undefined
+        ? { provider: { name: "bailian" as const, ready: options.providerReady } }
+        : {}),
+    };
     return c.json(body);
   });
 
@@ -155,6 +168,16 @@ export function createApiApp(options: ApiAppOptions = {}) {
     app.route(
       "/api",
       createProductRouter({ deps: options.product.deps, principalId: options.product.principalId }),
+    );
+  }
+
+  if (options.product !== undefined && options.internalRuntime !== undefined) {
+    app.route(
+      "/internal/runtime/v1",
+      createInternalRuntimeRouter({
+        deps: options.product.deps,
+        credential: options.internalRuntime.credential,
+      }),
     );
   }
 

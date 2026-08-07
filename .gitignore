@@ -46,3 +46,6 @@ __pycache__/
 .tmp-*
 tmp/
 temp/
+
+# B2 workflow bundles
+.workflow-bundle/

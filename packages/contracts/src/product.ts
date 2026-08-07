@@ -139,7 +139,7 @@ export const productRunSchema = z
 
 /* ---------- Run Attempt ---------- */
 
-export const runAttemptKindSchema = z.enum(["planning", "execution"]);
+export const runAttemptKindSchema = z.enum(["workflow", "planning", "execution"]);
 export const runAttemptOutcomeSchema = z.enum(["running", "success", "failure"]);
 
 export const runAttemptSchema = z
@@ -312,6 +312,8 @@ export const executionContractSchema = z
     approvedPlanSha256: sha256Schema,
     approvalDecisionId: decisionIdSchema,
     steps: z.array(approvedExecutionStepSchema).min(1).max(50),
+    /** 从Approved Plan确定性拷贝的完成条件；验证时必须逐条有证据。 */
+    completionCriteria: z.array(z.string().min(1).max(500)).min(1).max(20),
     /** 第一版只允许无外部副作用能力；创建后不可修改。 */
     capabilityRefs: z.array(z.string().min(1).max(100)).max(20),
     limits: z

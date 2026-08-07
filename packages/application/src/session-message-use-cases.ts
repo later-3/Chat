@@ -12,6 +12,7 @@ import type {
 import { DEFAULT_MAX_PLAN_REVISIONS, type ApplicationDeps } from "./deps.js";
 import { toMessageDto, toRunDto, toSessionDto } from "./dto.js";
 import { forbidden, notFound } from "./errors.js";
+import { emitRunEvent } from "./trace-helpers.js";
 import type { MessageDto, RunDto } from "@chat/contracts";
 
 /**
@@ -83,6 +84,7 @@ export async function submitUserMessage(
   const messageId = deps.ids.message();
   const productRunId = deps.ids.run();
   const outboxId = deps.ids.outbox();
+  const workflowAttemptId = deps.ids.attempt();
   const requestSha256 = hashCanonical("command.submit-user-message.v1", {
     principalId: input.principalId,
     sessionId: input.sessionId,
@@ -125,6 +127,17 @@ export async function submitUserMessage(
       };
       draft.entities.messages[messageId] = message;
       draft.entities.runs[productRunId] = run;
+      // 一个Product Run对应一个Workflow执行Attempt（Trace关联与生命周期看护）
+      draft.entities.attempts[workflowAttemptId] = {
+        schemaVersion: "run-attempt.v1",
+        attemptId: workflowAttemptId,
+        productRunId,
+        kind: "workflow",
+        outcome: "running",
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
       draft.entities.sessions[input.sessionId] = {
         ...session,
         lastMessageSequence: sessionSequence,
@@ -151,5 +164,17 @@ export async function submitUserMessage(
   const message = snapshot.entities.messages[result.resultRefs["messageId"] ?? ""];
   const run = snapshot.entities.runs[result.resultRefs["productRunId"] ?? ""];
   if (message === undefined || run === undefined) throw notFound("消息或运行不存在");
+  if (!result.replayed) {
+    emitRunEvent(deps, run.productRunId, {
+      level: "info",
+      eventName: "product_run.created",
+      outcome: "success",
+      productRunId: run.productRunId,
+      productSessionId: run.sessionId,
+      runStatus: run.status,
+      phase: run.phase,
+      revision: run.revision,
+    });
+  }
   return { message: toMessageDto(message), run: toRunDto(run, undefined, undefined) };
 }

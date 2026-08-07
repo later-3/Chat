@@ -1,11 +1,11 @@
-/**
- * @chat/workflows
- *
- * Vercel Workflow定义与活动层。
- *
- * 边界（P0仅固定依赖方向，实现属于P1+）：
- * - Workflow通过Application Port/Activity Adapter提交产品事实，不直接写产品表。
- * - Step输入输出必须可序列化并通过Schema校验；Step不接收数据库连接或HTTP Context。
- * - Hook Token、Workflow Run ID和Checkpoint ID只存在于Runtime Adapter。
- */
-export {};
+export * from "./workflow-input.js";
+export * from "./runtime-bindings.js";
+export * from "./runtime-credential.js";
+export * from "./runtime-context.js";
+export * from "./api-client.js";
+export * from "./workflow-world.js";
+export * from "./workflow-steps.js";
+export * from "./planning-execution-workflow.js";
+export * from "./runtime-server.js";
+// Workflow Adapter边界的底层恢复原语；只能由本Adapter内的分发路径使用
+export { resumeHook, getHookByToken } from "workflow/api";
