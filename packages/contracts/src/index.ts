@@ -5,3 +5,6 @@ export * from "./query.js";
 export * from "./events.js";
 export * from "./service-status.js";
 export * from "./trace.js";
+export * from "./product.js";
+export * from "./product-store.js";
+export * from "./product-api.js";

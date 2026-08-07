@@ -18,11 +18,21 @@ const repoRoot = resolve(fileURLToPath(import.meta.url), "../../../..");
 /** 每个源码目录允许的外部运行时依赖与@chat内部依赖。 */
 const rules: Record<
   string,
-  { external: readonly string[]; internal: readonly string[]; forbidden?: readonly RegExp[] }
+  {
+    external: readonly string[];
+    internal: readonly string[];
+    /** 仅测试文件允许的额外内部依赖（集成测试用真实Adapter验证用例）。 */
+    devInternal?: readonly string[];
+    forbidden?: readonly RegExp[];
+  }
 > = {
   "packages/contracts": { external: ["zod", "@ag-ui/core"], internal: [] },
   "packages/domain": { external: [], internal: [] },
-  "packages/application": { external: [], internal: ["@chat/contracts", "@chat/domain"] },
+  "packages/application": {
+    external: [],
+    internal: ["@chat/contracts", "@chat/domain"],
+    devInternal: ["@chat/product-store-json"],
+  },
   "packages/realtime": { external: [], internal: ["@chat/contracts"] },
   "packages/workflows": {
     external: [],
@@ -42,6 +52,11 @@ const rules: Record<
     internal: ["@chat/contracts"],
     forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@earendil-works\//],
   },
+  "packages/product-store-json": {
+    external: ["zod"],
+    internal: ["@chat/contracts", "@chat/domain", "@chat/application"],
+    forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@ag-ui\//],
+  },
   "apps/web": {
     // workbox-window 进入浏览器运行时bundle（PWA注册与更新提示），属于运行时依赖
     external: ["react", "react-dom", "@tanstack/react-query", "workbox-window"],
@@ -50,7 +65,12 @@ const rules: Record<
   },
   "apps/api": {
     external: ["hono", "@hono/node-server", "zod"],
-    internal: ["@chat/contracts", "@chat/application", "@chat/realtime"],
+    internal: [
+      "@chat/contracts",
+      "@chat/application",
+      "@chat/realtime",
+      "@chat/product-store-json",
+    ],
     forbidden: [/^react/, /^workflow$/, /^pi-/],
   },
 };
@@ -120,7 +140,8 @@ describe("架构依赖方向", () => {
           if (isDevFile && devOnlyExternal.includes(name)) continue;
 
           if (name.startsWith("@chat/")) {
-            if (!rule.internal.includes(name)) {
+            const devAllowed = isDevFile && (rule.devInternal?.includes(name) ?? false);
+            if (!rule.internal.includes(name) && !devAllowed) {
               violations.push(`${rel}: 不允许依赖 ${name}`);
             }
             continue;

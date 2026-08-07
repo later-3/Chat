@@ -24,6 +24,18 @@ export const commandIdSchema = prefixedId("cmd");
 export const workflowDefinitionIdSchema = prefixedId("wfd");
 export const projectIdSchema = prefixedId("prj");
 
+/* B2 规划—确认—执行纵向链新增的产品身份。 */
+export const principalIdSchema = prefixedId("usr");
+export const planIdSchema = prefixedId("pln");
+export const planRevisionIdSchema = prefixedId("plr");
+export const revisionInputIdSchema = prefixedId("rin");
+export const decisionIdSchema = prefixedId("dec");
+export const executionContractIdSchema = prefixedId("exc");
+export const executionCandidateIdSchema = prefixedId("xcd");
+export const validationResultIdSchema = prefixedId("val");
+export const artifactIdSchema = prefixedId("art");
+export const outboxEntryIdSchema = prefixedId("obx");
+
 /**
  * 服务端请求ID。客户端可提议复用，但必须通过本Schema才被信任；
  * 否则服务端生成新的req_*并在响应头返回最终生效ID。
@@ -40,3 +52,13 @@ export type ApprovalRequestId = z.infer<typeof approvalRequestIdSchema>;
 export type CommandId = z.infer<typeof commandIdSchema>;
 export type WorkflowDefinitionId = z.infer<typeof workflowDefinitionIdSchema>;
 export type ProjectId = z.infer<typeof projectIdSchema>;
+export type PrincipalId = z.infer<typeof principalIdSchema>;
+export type PlanId = z.infer<typeof planIdSchema>;
+export type PlanRevisionId = z.infer<typeof planRevisionIdSchema>;
+export type RevisionInputId = z.infer<typeof revisionInputIdSchema>;
+export type DecisionId = z.infer<typeof decisionIdSchema>;
+export type ExecutionContractId = z.infer<typeof executionContractIdSchema>;
+export type ExecutionCandidateId = z.infer<typeof executionCandidateIdSchema>;
+export type ValidationResultId = z.infer<typeof validationResultIdSchema>;
+export type ArtifactId = z.infer<typeof artifactIdSchema>;
+export type OutboxEntryId = z.infer<typeof outboxEntryIdSchema>;

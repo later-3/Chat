@@ -13,9 +13,11 @@
   "dependencies": {
     "@chat/application": "workspace:*",
     "@chat/contracts": "workspace:*",
+    "@chat/product-store-json": "workspace:*",
     "@chat/realtime": "workspace:*",
     "@hono/node-server": "^2.1.0",
-    "hono": "^4.13.0"
+    "hono": "^4.13.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
