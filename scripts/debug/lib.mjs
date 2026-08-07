@@ -156,15 +156,16 @@ export function describeProcess(pid) {
 }
 
 /**
- * 面向用户报告的安全进程名：仅可执行文件basename。
- * 完整argv可能包含其他应用的Token、密码或私有路径，绝不输出。
+ * 面向用户报告的安全进程名：仅argv[0]的可执行文件basename。
+ * 后续argv可能包含其他应用的Token、密码或私有路径，绝不输出。
  */
 export function safeProcessName(pid) {
   try {
-    const comm = execFileSync("ps", ["-p", String(pid), "-o", "comm="], {
+    const args = execFileSync("ps", ["-p", String(pid), "-o", "args="], {
       encoding: "utf8",
     }).trim();
-    const basename = comm.split("/").pop() ?? comm;
+    const argv0 = args.split(/\s+/)[0] ?? "";
+    const basename = (argv0.split("/").pop() ?? argv0).slice(0, 64);
     return basename || "unknown";
   } catch {
     return "unknown";
