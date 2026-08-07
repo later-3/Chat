@@ -1,6 +1,7 @@
 import { FatalError, getStepMetadata } from "workflow";
 import { sha256Hex } from "@chat/domain";
 import { WORKFLOW_DEFINITION_VERSION, type PlanningInputDto } from "@chat/contracts";
+import type { ProviderCallMeta } from "@chat/pi-runtime";
 import { ApiClientError } from "./api-client.js";
 import { PiStepFailure } from "./workflow-error.js";
 import {
@@ -85,6 +86,18 @@ export interface ProviderEventScope {
   modelConfigVersion: string;
 }
 
+export function providerResultTraceDetails(meta: ProviderCallMeta): {
+  readonly providerStopReason?: "stop" | "length" | "toolUse" | "error" | "aborted";
+  readonly toolCallCount?: number;
+} {
+  return {
+    ...(meta.providerStopReason !== undefined
+      ? { providerStopReason: meta.providerStopReason }
+      : {}),
+    ...(meta.toolCallCount !== undefined ? { toolCallCount: meta.toolCallCount } : {}),
+  };
+}
+
 interface CompletedProviderEvidence {
   readonly httpStatus: number;
   readonly providerRequestId: string;
@@ -138,6 +151,8 @@ export function emitProviderTrace(
     httpStatus?: number;
     providerRequestId?: string;
     tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+    providerStopReason?: "stop" | "length" | "toolUse" | "error" | "aborted";
+    toolCallCount?: number;
     errorCode?: string;
     preRequest?: boolean;
   },
@@ -188,6 +203,10 @@ export function emitProviderTrace(
       providerRequestId: details.providerRequestId,
       tokenUsage: details.tokenUsage,
       inputManifestSha256: details.inputManifestSha256,
+      ...(details.providerStopReason !== undefined
+        ? { providerStopReason: details.providerStopReason }
+        : {}),
+      ...(details.toolCallCount !== undefined ? { toolCallCount: details.toolCallCount } : {}),
     } as never);
     return;
   }
@@ -211,6 +230,10 @@ export function emitProviderTrace(
       ? { providerRequestId: details.providerRequestId }
       : {}),
     ...(preRequest ? {} : { inputManifestSha256: details.inputManifestSha256 }),
+    ...(details.providerStopReason !== undefined
+      ? { providerStopReason: details.providerStopReason }
+      : {}),
+    ...(details.toolCallCount !== undefined ? { toolCallCount: details.toolCallCount } : {}),
   } as never);
 }
 

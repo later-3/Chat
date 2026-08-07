@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Response } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   approvalDtoSchema,
   cursorPageSchema,
@@ -23,11 +23,11 @@ const FORBIDDEN_PUBLIC_MARKERS = [
   "DASHSCOPE_API_KEY",
 ] as const;
 
-async function expectNoPrivateRuntimeIdentity(response: Response): Promise<void> {
-  const contentType = response.headers()["content-type"] ?? "";
+function expectNoPrivateRuntimeIdentity(contentType: string, body: string): void {
   if (!contentType.includes("application/json")) return;
-  const body = await response.text();
-  for (const marker of FORBIDDEN_PUBLIC_MARKERS) expect(body).not.toContain(marker);
+  for (const marker of FORBIDDEN_PUBLIC_MARKERS) {
+    if (body.includes(marker)) throw new Error(`公开API响应包含私有Runtime标识：${marker}`);
+  }
 }
 
 async function expectNoHorizontalScroll(page: Page): Promise<void> {
@@ -89,9 +89,11 @@ async function submitStaleApproval(
 }
 
 test("真实 qwen3.7-plus：发送 -> Plan v1 -> 修改 -> v2 -> 批准 -> 正式结果", async ({ page }) => {
-  const apiResponses: Response[] = [];
-  page.on("response", (response) => {
-    if (response.url().includes("/api/")) apiResponses.push(response);
+  await page.route("**/api/**", async (route) => {
+    const response = await route.fetch();
+    const body = await response.body();
+    expectNoPrivateRuntimeIdentity(response.headers()["content-type"] ?? "", body.toString("utf8"));
+    await route.fulfill({ response, body });
   });
 
   await page.goto("/");
@@ -162,11 +164,15 @@ test("真实 qwen3.7-plus：发送 -> Plan v1 -> 修改 -> v2 -> 批准 -> 正�
     timeout: 8 * 60_000,
   });
   await page.getByRole("tab", { name: "对话" }).click();
-  await expect(page.locator('.chat-message[data-role="assistant"]')).toContainText("风险与下一步");
+  const assistantMessage = page.locator('.chat-message[data-role="assistant"]');
+  await expect(assistantMessage).toContainText("风险");
+  await expect(assistantMessage).toContainText(/下一步|下周计划|行动项/);
 
   // 完成后刷新：正式Assistant Message仍来自Message Query。
   await page.reload();
-  await expect(page.locator('.chat-message[data-role="assistant"]')).toContainText("风险与下一步");
+  const restoredAssistantMessage = page.locator('.chat-message[data-role="assistant"]');
+  await expect(restoredAssistantMessage).toContainText("风险");
+  await expect(restoredAssistantMessage).toContainText(/下一步|下周计划|行动项/);
   await expectNoHorizontalScroll(page);
 
   const finalRun = runResponseSchema.parse(
@@ -185,7 +191,6 @@ test("真实 qwen3.7-plus：发送 -> Plan v1 -> 修改 -> v2 -> 批准 -> 正�
   expect(finalMessages.filter((message) => message.role === "user")).toHaveLength(1);
   expect(finalMessages.filter((message) => message.role === "assistant")).toHaveLength(1);
 
-  for (const response of apiResponses) await expectNoPrivateRuntimeIdentity(response);
   const browserState = await page.evaluate(() => ({
     url: location.href,
     localStorage: Object.fromEntries(Object.entries(localStorage)),

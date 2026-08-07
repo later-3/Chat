@@ -5,7 +5,7 @@
  * 既有Run固定原Definition语义，新部署只影响新Run。
  */
 
-export const WORKFLOW_DEFINITION_ID = "wfd_planning_execution";
+export const WORKFLOW_DEFINITION_ID = "wfd_planningexecution";
 export const WORKFLOW_DEFINITION_VERSION = "planning-execution-workflow.v1";
 
 export const PLANNER_PROMPT_TEMPLATE_VERSION = "planner-prompt.v1";

@@ -606,6 +606,13 @@ const providerSharedFields = {
   operation: z.enum(["chat_completion"]),
 };
 
+/** Provider终止原因与工具调用计数只描述代码路径，不包含请求/响应正文。 */
+export const providerStopReasonSchema = z.enum(["stop", "length", "toolUse", "error", "aborted"]);
+const providerResultDiagnostics = {
+  providerStopReason: providerStopReasonSchema.optional(),
+  toolCallCount: z.number().int().nonnegative().max(64).optional(),
+};
+
 const providerRequestStartedSchema = defineTraceEvent(
   TRACE_EVENT_NAMES.providerRequestStarted,
   "unknown",
@@ -627,6 +634,7 @@ const providerRequestCompletedSchema = defineTraceEvent(
     providerRequestId: providerRequestIdSchema,
     tokenUsage: tokenUsageSchema,
     inputManifestSha256: sha256Schema,
+    ...providerResultDiagnostics,
     ...durationMsRequired,
   },
 );
@@ -641,6 +649,7 @@ const providerRequestFailedSchema = defineTraceEvent(
     httpStatus: httpStatusCodeSchema.optional(),
     providerRequestId: providerRequestIdSchema.optional(),
     inputManifestSha256: sha256Schema.optional(),
+    ...providerResultDiagnostics,
     ...durationMsRequired,
   },
 ).refine(

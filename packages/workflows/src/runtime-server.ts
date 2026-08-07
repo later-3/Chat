@@ -3,6 +3,7 @@ import { z } from "zod";
 import { readdir } from "node:fs/promises";
 import { getHookByToken, getRun, resumeHook, start } from "workflow/api";
 import {
+  WORKFLOW_DEFINITION_ID,
   WORKFLOW_DEFINITION_VERSION,
   workflowResumeRequestSchema,
   workflowStartRequestSchema,
@@ -161,7 +162,7 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
         productRunId: request.productRunId,
         attemptId: request.attemptId,
         workflowDefinitionVersion: WORKFLOW_DEFINITION_VERSION,
-        workflowDefinitionId: "wfd_planning_execution",
+        workflowDefinitionId: WORKFLOW_DEFINITION_ID,
         runMappingRef: `map_${request.productRunId.slice(4)}`,
       } as TraceEventInput);
       return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "started" }, 201);
@@ -176,7 +177,7 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
         productRunId: request.productRunId,
         attemptId: request.attemptId,
         workflowDefinitionVersion: WORKFLOW_DEFINITION_VERSION,
-        workflowDefinitionId: "wfd_planning_execution",
+        workflowDefinitionId: WORKFLOW_DEFINITION_ID,
         error: { code: "workflow.start_failed", type: "WorkflowStartError" },
       } as TraceEventInput);
       return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" }, 202);

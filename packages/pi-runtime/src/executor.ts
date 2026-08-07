@@ -20,21 +20,40 @@ import type { BailianConfig } from "./config.js";
  * Executor不得修改Plan、增加步骤或宣布Product Run成功。
  */
 
-const submitExecutionResultParameters = Type.Object({
-  stepId: Type.String(),
-  output: Type.String(),
-  sections: Type.Array(Type.Object({ heading: Type.String(), body: Type.String() })),
-  successCriteriaEvidence: Type.Array(Type.String()),
-  criteriaEvidence: Type.Array(Type.String()),
-  warnings: Type.Array(Type.String()),
-});
-
-function createSubmitExecutionResultTool(): AgentTool {
+function createSubmitExecutionResultTool(stepId: string): AgentTool {
   return {
     name: "submit_execution_result",
     label: "提交执行结果候选",
     description: "提交当前步骤的执行结果候选。必须且只能调用一次；结果随后由服务端确定性验证。",
-    parameters: submitExecutionResultParameters,
+    parameters: Type.Object(
+      {
+        stepId: Type.String({
+          minLength: 1,
+          maxLength: 100,
+          description: `必须逐字等于当前步骤ID：${stepId}`,
+        }),
+        output: Type.String({ minLength: 1, maxLength: 50_000 }),
+        sections: Type.Array(
+          Type.Object(
+            {
+              heading: Type.String({ minLength: 1, maxLength: 200 }),
+              body: Type.String({ minLength: 1, maxLength: 50_000 }),
+            },
+            { additionalProperties: false },
+          ),
+          { maxItems: 20 },
+        ),
+        successCriteriaEvidence: Type.Array(Type.String({ minLength: 1, maxLength: 1_000 }), {
+          minItems: 1,
+          maxItems: 20,
+        }),
+        criteriaEvidence: Type.Array(Type.String({ minLength: 1, maxLength: 1_000 }), {
+          maxItems: 20,
+        }),
+        warnings: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { maxItems: 50 }),
+      },
+      { additionalProperties: false },
+    ),
     execute: async (_toolCallId: string, _params: unknown) => ({
       content: [{ type: "text", text: "执行结果候选已收到，等待服务端验证。" }],
       details: undefined,
@@ -127,16 +146,17 @@ export async function runPiExecutor(
   }
   const apiKey = input.config.apiKey;
   const step = input.contract.steps.find((candidate) => candidate.stepId === input.stepId);
+  if (step === undefined) throw new Error(`当前步骤${input.stepId}不在Execution Contract中`);
   return runAgentWithTool<ExecutorStepCandidate>({
     apiKey,
     baseUrl: input.config.baseUrl,
     systemPrompt: EXECUTOR_SYSTEM_PROMPT,
     userPrompt: buildExecutorUserPrompt(input.contract, input.stepId, input.dependencyResults),
-    tool: createSubmitExecutionResultTool(),
+    tool: createSubmitExecutionResultTool(step.stepId),
     parseCandidate: (params) => {
       const parsed = executorStepCandidateSchema.safeParse(params);
       if (!parsed.success) return { ok: false, errorCode: "schema_invalid" };
-      if (step === undefined || parsed.data.stepId !== step.stepId) {
+      if (parsed.data.stepId !== step.stepId) {
         return { ok: false, errorCode: "schema_invalid" };
       }
       return { ok: true, candidate: parsed.data };

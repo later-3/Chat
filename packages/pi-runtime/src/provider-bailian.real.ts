@@ -75,9 +75,12 @@ describe("真实百炼qwen3.7-plus（付费，显式运行）", () => {
     recordCall({
       node: "planner",
       kind: result.kind,
+      ...(result.kind !== "candidate" ? { errorCode: result.errorCode } : {}),
       durationMs: result.durationMs,
       httpStatus: result.providerMeta.httpStatus,
       providerRequestId: result.providerMeta.providerRequestId,
+      providerStopReason: result.providerMeta.providerStopReason,
+      toolCallCount: result.providerMeta.toolCallCount,
       providerCallCount: result.providerCallCount,
       usage: result.usage,
     });
@@ -144,9 +147,12 @@ describe("真实百炼qwen3.7-plus（付费，显式运行）", () => {
     recordCall({
       node: "executor",
       kind: result.kind,
+      ...(result.kind !== "candidate" ? { errorCode: result.errorCode } : {}),
       durationMs: result.durationMs,
       httpStatus: result.providerMeta.httpStatus,
       providerRequestId: result.providerMeta.providerRequestId,
+      providerStopReason: result.providerMeta.providerStopReason,
+      toolCallCount: result.providerMeta.toolCallCount,
       providerCallCount: result.providerCallCount,
       usage: result.usage,
     });

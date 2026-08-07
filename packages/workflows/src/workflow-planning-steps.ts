@@ -11,6 +11,7 @@ import {
   emitPiNodeTrace,
   emitProviderTrace,
   PiStepFailure,
+  providerResultTraceDetails,
   runStep,
   wrapApiError,
 } from "./workflow-step-support.js";
@@ -83,6 +84,7 @@ export async function runPiPlannerStep(planningInput: PlanningInputDto): Promise
             ...(result.providerMeta.providerRequestId !== undefined
               ? { providerRequestId: result.providerMeta.providerRequestId }
               : {}),
+            ...providerResultTraceDetails(result.providerMeta),
           });
           emitPiNodeTrace(planningInput, "pi.node.failed", "planner", {
             durationMs: result.durationMs,
@@ -96,6 +98,7 @@ export async function runPiPlannerStep(planningInput: PlanningInputDto): Promise
           httpStatus: evidence.httpStatus,
           providerRequestId: evidence.providerRequestId,
           tokenUsage: evidence.tokenUsage,
+          ...providerResultTraceDetails(result.providerMeta),
         });
         emitPiNodeTrace(planningInput, "pi.node.completed", "planner", {
           durationMs: result.durationMs,
@@ -116,6 +119,7 @@ export async function runPiPlannerStep(planningInput: PlanningInputDto): Promise
         ...(result.providerMeta.providerRequestId !== undefined
           ? { providerRequestId: result.providerMeta.providerRequestId }
           : {}),
+        ...providerResultTraceDetails(result.providerMeta),
         ...(result.providerCallCount === 0 ? { preRequest: true } : {}),
       });
       emitPiNodeTrace(planningInput, "pi.node.failed", "planner", {

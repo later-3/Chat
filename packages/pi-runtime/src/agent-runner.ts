@@ -1,7 +1,7 @@
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
-import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { PROVIDER_MODEL, PROVIDER_NAME } from "@chat/contracts";
 import { classifyProviderError, type StableProviderErrorCode } from "./errors.js";
 
@@ -19,6 +19,8 @@ import { classifyProviderError, type StableProviderErrorCode } from "./errors.js
 export interface ProviderCallMeta {
   readonly httpStatus?: number;
   readonly providerRequestId?: string;
+  readonly providerStopReason?: AssistantMessage["stopReason"];
+  readonly toolCallCount?: number;
 }
 
 export interface AgentRunUsage {
@@ -118,6 +120,11 @@ function requestIdFrom(headers: Readonly<Record<string, string>>): string | unde
   return undefined;
 }
 
+function responseIdFrom(message: AssistantMessage): string | undefined {
+  const value = message.responseId;
+  return value !== undefined && /^[A-Za-z0-9-]{1,128}$/.test(value) ? value : undefined;
+}
+
 export async function runAgentWithTool<TCandidate>(
   options: RunAgentWithToolOptions<TCandidate>,
 ): Promise<AgentRunResult<TCandidate>> {
@@ -131,7 +138,12 @@ export async function runAgentWithTool<TCandidate>(
     throw new Error("B2 pi节点必须配置正整数timeoutMs");
   }
   const startedAt = performance.now();
-  const providerMeta: { httpStatus?: number; providerRequestId?: string } = {};
+  const providerMeta: {
+    httpStatus?: number;
+    providerRequestId?: string;
+    providerStopReason?: AssistantMessage["stopReason"];
+    toolCallCount?: number;
+  } = {};
   const model = buildBailianModel(options.baseUrl);
   let providerCallCount = 0;
   let providerRequestLimitExceeded = false;
@@ -156,10 +168,11 @@ export async function runAgentWithTool<TCandidate>(
     }
     providerCallCount += 1;
     options.onProviderRequestStart?.();
-    const stream = providerStreamFn(streamModel, context, {
+    const providerOptions: SimpleStreamOptions = {
       ...streamOptions,
       apiKey: options.apiKey,
       maxTokens: options.maxTokens,
+      temperature: 0,
       timeoutMs: options.timeoutMs,
       maxRetries: 0,
       maxRetryDelayMs: 0,
@@ -170,10 +183,23 @@ export async function runAgentWithTool<TCandidate>(
         if (requestId !== undefined) providerMeta.providerRequestId = requestId;
         await streamOptions?.onResponse?.(response, responseModel);
       },
-    });
+    };
+    const stream = providerStreamFn(streamModel, context, providerOptions);
     // StreamFn既可能同步也可能异步返回事件流；保存真实Provider终止结果，
     // 供pi随后触发第二轮但被本地栅栏拒绝时恢复第一轮根因。
-    lastProviderResult = Promise.resolve(stream).then((eventStream) => eventStream.result());
+    lastProviderResult = Promise.resolve(stream)
+      .then((eventStream) => eventStream.result())
+      .then((message) => {
+        providerMeta.providerStopReason = message.stopReason;
+        providerMeta.toolCallCount = message.content.filter(
+          (content) => content.type === "toolCall",
+        ).length;
+        if (providerMeta.providerRequestId === undefined) {
+          const responseId = responseIdFrom(message);
+          if (responseId !== undefined) providerMeta.providerRequestId = responseId;
+        }
+        return message;
+      });
     return stream;
   };
 

@@ -6,7 +6,9 @@ import {
   productRunIdSchema,
   productSessionIdSchema,
   runAttemptIdSchema,
+  workflowDefinitionIdSchema,
 } from "./ids.js";
+import { WORKFLOW_DEFINITION_ID } from "./versions.js";
 
 describe("id contracts", () => {
   it("接受带正确前缀的ID", () => {
@@ -16,6 +18,7 @@ describe("id contracts", () => {
     expect(commandIdSchema.parse("cmd_abc123")).toBe("cmd_abc123");
     expect(runAttemptIdSchema.parse("att_9")).toBe("att_9");
     expect(approvalRequestIdSchema.parse("apr_7")).toBe("apr_7");
+    expect(workflowDefinitionIdSchema.parse(WORKFLOW_DEFINITION_ID)).toBe(WORKFLOW_DEFINITION_ID);
   });
 
   it("拒绝错误前缀、空串和非法字符", () => {
