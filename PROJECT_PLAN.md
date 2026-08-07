@@ -45,6 +45,8 @@
 
 ## 5. P1：第一次可用的Chat闭环
 
+> 2026-08-07调整：用户批准B2纵向任务书后，P1.3～P1.8不再按旧顺序小PR执行；B2一次打通JSON Store、Workflow、pi、HITL、Product Commit和最小前端。下列P1.3～P1.8保留为历史拆分依据，其中SSE Cursor仍未实现。
+
 ### 5.1 阶段目标
 
 用户可以安装并打开 Chat，发送一条消息，看见后台处理进度，得到一条正式回复；刷新页面或短暂断线后，仍能从服务端恢复已提交内容和当前状态。
@@ -184,4 +186,4 @@ P1是一个阶段目标，拆成下面8个独立开发任务，不作为一个�
 
 ## 7. 当前唯一下一任务
 
-当前唯一开发任务是 **P1.2 可安装PWA、离线草稿与移动端发布**，已按[P1.2任务书](./docs/tasks/p1.2-installable-pwa-offline-boundary.md)在独立Git worktree中实现并提交PR #3（审核中，待实机验收与发布批准）。不得把P1.3消息、P1.4 Workflow、P1.7 pi或后续Memory/BMAD/经验规则系统混入本PR。
+当前唯一开发任务是 **B2可调试的真实规划—确认—执行纵向闭环**，详细边界见[B2任务书](./docs/tasks/b2-planning-execution-vertical-slice.md)。B2包含JSON Product Store、唯一Workflow、pi与百炼、Plan HITL、Product Commit和最小真实前端；不混入SSE Cursor、Memory、BMAD、经验规则、外部副作用Tool或服务器部署。

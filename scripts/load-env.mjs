@@ -2,9 +2,11 @@
 // 规则：不覆盖已有环境变量；不打印任何变量名对应的值；.env缺失时静默
 // （Provider not ready由配置检查明确报告，绝不切换假Provider）。
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const repoRoot = process.env.CHAT_REPO_ROOT ?? resolve(process.cwd());
+const repoRoot =
+  process.env.CHAT_REPO_ROOT ?? resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 try {
   const content = readFileSync(resolve(repoRoot, ".env"), "utf8");

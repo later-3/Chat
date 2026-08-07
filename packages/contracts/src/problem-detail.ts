@@ -40,15 +40,17 @@ export const recoveryActionSchema = z.enum([
   "none",
 ]);
 
-export const problemDetailSchema = z.object({
-  type: z.string().min(1),
-  title: z.string().min(1),
-  status: z.number().int().min(400).max(599),
-  code: problemCodeSchema,
-  requestId: z.string().min(1),
-  retryable: z.boolean(),
-  recoveryAction: recoveryActionSchema,
-});
+export const problemDetailSchema = z
+  .object({
+    type: z.string().min(1),
+    title: z.string().min(1),
+    status: z.number().int().min(400).max(599),
+    code: problemCodeSchema,
+    requestId: z.string().min(1),
+    retryable: z.boolean(),
+    recoveryAction: recoveryActionSchema,
+  })
+  .strict();
 
 export type ProblemCode = z.infer<typeof problemCodeSchema>;
 export type RecoveryAction = z.infer<typeof recoveryActionSchema>;

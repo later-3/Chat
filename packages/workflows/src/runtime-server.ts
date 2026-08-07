@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { resumeHook, start, getHookByToken } from "workflow/api";
+import { readdir } from "node:fs/promises";
+import { getHookByToken, getRun, resumeHook, start } from "workflow/api";
 import {
   WORKFLOW_DEFINITION_VERSION,
   workflowResumeRequestSchema,
@@ -17,6 +18,11 @@ import {
   workflowSpanId,
 } from "./runtime-context.js";
 import { setupWorkflowWorld } from "./workflow-world.js";
+import {
+  assertRunVersionMatchesBuild,
+  captureRunVersionEvidence,
+  loadRuntimeBuildEvidence,
+} from "./runtime-version-evidence.js";
 
 /**
  * Workflow Runtime进程（固定端口43112）。
@@ -40,14 +46,25 @@ export interface WorkflowRuntimeServerOptions {
 }
 
 export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServerOptions) {
-  const bindings = await RuntimeBindingStore.open(options.bindingsPath);
+  const hasWorkflowData = await directoryContainsFiles(options.workflowDataDir);
+  const bindings = await RuntimeBindingStore.open(options.bindingsPath, {
+    allowCreate: !hasWorkflowData,
+  });
+  if (!hasWorkflowData && bindings.hasDurableBindings()) {
+    throw new Error("Runtime Binding存在但Workflow耐久数据缺失，拒绝用陈旧映射启动");
+  }
+  const buildEvidence = await loadRuntimeBuildEvidence(options.bundleDir);
+  let traceEmitFailures = 0;
   const trace =
     options.traceSink !== undefined
       ? (event: TraceEventInput) => {
           try {
             options.traceSink?.emit(event);
           } catch {
-            // Trace失败不影响业务；故障计数由Sink Owner看护
+            traceEmitFailures += 1;
+            console.error(
+              `[trace] emit_failed code=trace.emit_failed owner=workflow total=${String(traceEmitFailures)}`,
+            );
           }
         }
       : () => undefined;
@@ -66,6 +83,21 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
     dataDir: options.workflowDataDir,
     bundleDir: options.bundleDir,
     recoverActiveRuns: true,
+    beforeStart: async () => {
+      for (const { productRunId, binding } of bindings.listWorkflowBindings()) {
+        const run = getRun(binding.workflowRunId);
+        if (!(await run.exists)) {
+          throw new Error("Runtime Binding引用的Workflow Run不存在，拒绝恢复");
+        }
+        const status = String(await run.status);
+        if (["completed", "failed", "cancelled"].includes(status)) continue;
+        await assertRunVersionMatchesBuild({
+          workflowDataDir: options.workflowDataDir,
+          productRunId,
+          buildEvidence,
+        });
+      }
+    },
   });
 
   const app = new Hono();
@@ -86,9 +118,23 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       return c.json({ code: "validation_failed", title: "请求不符合合同" }, 400);
     }
     const request = parsed.data;
-    const existing = bindings.getWorkflowBinding(request.productRunId);
-    if (existing !== undefined) {
+    await captureRunVersionEvidence({
+      workflowDataDir: options.workflowDataDir,
+      productRunId: request.productRunId,
+      buildEvidence,
+      now: new Date().toISOString(),
+    });
+    const startClaim = await bindings.claimStartIntent({
+      productRunId: request.productRunId,
+      outboxId: request.outboxId as never,
+      workflowDefinitionVersion: request.workflowDefinitionVersion,
+      now: new Date().toISOString(),
+    });
+    if (startClaim === "already_started") {
       return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "already_started" }, 200);
+    }
+    if (startClaim === "outcome_unknown") {
+      return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" }, 202);
     }
     try {
       const run = await start({ workflowId: world.workflowId }, [
@@ -101,6 +147,7 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       ]);
       await bindings.claimWorkflowBinding({
         productRunId: request.productRunId,
+        outboxId: request.outboxId as never,
         workflowRunId: run.runId,
         workflowDefinitionVersion: request.workflowDefinitionVersion,
         now: new Date().toISOString(),
@@ -118,7 +165,8 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
         runMappingRef: `map_${request.productRunId.slice(4)}`,
       } as TraceEventInput);
       return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "started" }, 201);
-    } catch (error) {
+    } catch {
+      await bindings.markStartOutcomeUnknown(request.productRunId, new Date().toISOString());
       trace({
         level: "warn",
         eventName: "workflow.start.failed",
@@ -131,7 +179,7 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
         workflowDefinitionId: "wfd_planning_execution",
         error: { code: "workflow.start_failed", type: "WorkflowStartError" },
       } as TraceEventInput);
-      throw error;
+      return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" }, 202);
     }
   });
 
@@ -141,22 +189,39 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       return c.json({ code: "validation_failed", title: "请求不符合合同" }, 400);
     }
     const request = parsed.data;
-    // Decision可能在Workflow完成Hook Claim之前到达（用户决定与后台规划竞速）；
-    // 有界等待Claim落地，仍缺失才按映射缺失失败关闭，不盲目重试
+    // Plan先成为可见产品事实，Workflow随后提交Hook绑定；Decision可能落在这段窄窗口。
+    // 只等待绑定出现，不把超时猜成终态；Hook注册已由getConflict在绑定Step之前耐久提交。
     let binding = bindings.getHookBinding(request.approvalRequestId);
     if (binding === undefined) {
       const deadline = Date.now() + 5_000;
       while (binding === undefined && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 50));
         binding = bindings.getHookBinding(request.approvalRequestId);
       }
     }
     if (binding === undefined || binding.productRunId !== request.productRunId) {
-      return c.json({ code: "workflow_resume_unknown", title: "Hook映射缺失或冲突" }, 409);
+      // Decision可能先于Workflow完成Hook绑定；没有映射证明不了终态，等待对账后重派。
+      return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" }, 202);
     }
     if (binding.resumeDispatchState === "dispatched") {
       return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "already_resumed" }, 200);
     }
+    if (
+      binding.resumeDispatchState === "dispatching" ||
+      binding.resumeDispatchState === "outcome_unknown"
+    ) {
+      return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" }, 202);
+    }
+    if (binding.resumeDispatchState === "failed_terminal") {
+      return c.json({ code: "workflow_resume_unknown", title: "Hook恢复已终止" }, 409);
+    }
+    try {
+      await getHookByToken(binding.hookToken);
+    } catch {
+      // 绑定只应在Hook注册后出现；恢复中的短暂不可见保持未知，不作终态猜测。
+      return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" }, 202);
+    }
+    await bindings.markResumeDispatching(request.approvalRequestId, new Date().toISOString());
     try {
       const payload = {
         schemaVersion: "plan-decision-hook-payload.v1",
@@ -164,26 +229,7 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
         approvalRequestId: request.approvalRequestId,
         decisionId: request.decisionId,
       };
-      try {
-        await resumeHook(binding.hookToken, payload);
-      } catch (firstError) {
-        // Hook Claim先於Hook注册：Decision竞速到达时注册可能尚未提交，
-        // 有界等待注册落地后重试一次；仍失败则按终态失败关闭，不盲目循环
-        const notFound = firstError instanceof Error && firstError.name === "HookNotFoundError";
-        if (!notFound) throw firstError;
-        const deadline = Date.now() + 5_000;
-        let registered = false;
-        while (!registered && Date.now() < deadline) {
-          try {
-            await getHookByToken(binding.hookToken);
-            registered = true;
-          } catch {
-            await new Promise((resolve) => setTimeout(resolve, 100));
-          }
-        }
-        if (!registered) throw firstError;
-        await resumeHook(binding.hookToken, payload);
-      }
+      await resumeHook(binding.hookToken, payload);
       await bindings.markResumeDispatched(request.approvalRequestId, new Date().toISOString());
       trace({
         level: "info",
@@ -198,12 +244,9 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       } as TraceEventInput);
       return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "resumed" }, 200);
     } catch (resumeError) {
-      const detail =
-        resumeError instanceof Error
-          ? `${resumeError.name}:${resumeError.message}`
-          : String(resumeError);
-      console.error("[workflow-runtime] resumeHook失败:", detail);
-      await bindings.markResumeFailedTerminal(request.approvalRequestId, new Date().toISOString());
+      void resumeError;
+      await bindings.markResumeOutcomeUnknown(request.approvalRequestId, new Date().toISOString());
+      console.error("[workflow-runtime] resumeHook失败，结果=outcome_unknown");
       trace({
         level: "warn",
         eventName: "workflow.hook.resume_failed",
@@ -216,20 +259,22 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
         resumeAttempt: 1,
         error: { code: "workflow.hook_resume_failed", type: "HookResumeError" },
       } as TraceEventInput);
-      return c.json({ code: "workflow_resume_unknown", title: "Hook恢复失败" }, 409);
+      return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" }, 202);
     }
   });
 
-  const reconcileQuerySchema = z.object({
-    productRunId: z.string().min(1),
-    approvalRequestId: z.string().min(1).optional(),
-  });
+  const reconcileQuerySchema = z
+    .object({
+      productRunId: z.string().min(1),
+      approvalRequestId: z.string().min(1).optional(),
+    })
+    .strict();
   app.get("/internal/workflow/v1/reconcile", async (c) => {
     const query = reconcileQuerySchema.safeParse(c.req.query());
     if (!query.success) {
       return c.json({ code: "validation_failed", title: "请求不符合合同" }, 400);
     }
-    const binding = bindings.getWorkflowBinding(query.data.productRunId as never);
+    const startBinding = bindings.getStartState(query.data.productRunId as never);
     const hookBinding =
       query.data.approvalRequestId !== undefined
         ? bindings.getHookBinding(query.data.approvalRequestId as never)
@@ -237,7 +282,7 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
     return c.json({
       schemaVersion: "chat-workflow-dispatch.v1",
       productRunId: query.data.productRunId,
-      startBinding: binding !== undefined ? "exists" : "missing",
+      startBinding,
       ...(query.data.approvalRequestId !== undefined
         ? {
             hookResumeState:
@@ -248,4 +293,16 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
   });
 
   return { app, world, bindings };
+}
+
+async function directoryContainsFiles(directory: string): Promise<boolean> {
+  try {
+    const entries = await readdir(directory, { recursive: true, withFileTypes: true });
+    return entries.some((entry) => entry.isFile());
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
 }

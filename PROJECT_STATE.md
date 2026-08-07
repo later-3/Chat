@@ -7,7 +7,7 @@
 | 项目 | 当前事实 |
 |---|---|
 | 产品身份 | 独立、完整、持续运营的Chat产品 |
-| 当前分支 | `codex/chat-workflow-foundation` |
+| 主分支 | `main` |
 | 前端 | React + TypeScript + Vite；响应式PWA |
 | 后端 | Node.js + TypeScript；Hono Web/API Adapter |
 | 产品接口 | REST Query/Command + 运行时校验 |
@@ -15,9 +15,9 @@
 | Workflow | Vercel Workflow |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent` |
 | 前端服务端状态 | TanStack Query；浏览器仅持有投影与草稿 |
-| 代码状态 | P0已合并；P1.1响应式Chat工作空间已通过PR #2合并（`0b24b9f`）；P1.2已实现，PR #3审核中 |
-| 当前阶段 | P1第一次可用的Chat闭环，已拆为8个独立任务 |
-| 当前任务 | P1.2可安装PWA、离线草稿与移动端发布；实现与自动门已通过，待实机验收与生产发布批准后合并 |
+| 代码状态 | P0、P1.1、P1.2、B1调试/Trace已合并；B2纵向闭环代码已完成确定性实现与审核修复 |
+| 当前阶段 | B2真实规划—确认—执行纵向闭环 |
+| 当前任务 | 真实百炼Provider与浏览器E2E由用户配置本地Key后验收 |
 
 ## 2. 已冻结决定
 
@@ -37,25 +37,22 @@
 
 以下内容不属于本轮前后端技术选型，不得假装已经冻结：
 
-1. Product Store的具体数据库与迁移工具。
+1. B2冻结版本化JSON快照为单机Product Store；后续生产数据库与迁移工具仍未决定。
 2. Identity Provider与认证部署方式。
 3. 对象存储、向量检索和Memory实现。
 4. API、Workflow、Product Store等后端的具体部署拓扑；P1.2只确定Web静态产物部署到现有服务器，具体Origin、路径和私有连接参数仍由部署环境提供。
 5. UI组件库、视觉系统和Canvas协作引擎。
 6. 语音媒体服务、日历Provider与通知Provider。
-7. 本地、CI和未来部署怎样稳定使用同一份经过确认的pi代码；这个决定只在P1.7接入Agent前关闭，不阻塞前面的PWA、消息和Workflow任务。
+7. pi实际运行工件已固定为npm 0.82.1及pnpm SHA-512；未来升级版本仍需合同PR。
 
 这些选择必须服从已冻结状态所有权和前后端合同。
 
 ## 4. 当前没有的能力
 
-- 没有业务Schema、Product Store实现或迁移。
-- 没有从发送消息到正式Assistant Message的端到端纵向链。
-- 没有Workflow Definition实现。
-- 没有pi Adapter实现。
-- 没有Runtime Journal、SSE Cursor重放或pi到AG-UI的运行时适配实现；P0只固定官方事件Schema与Envelope。
-- 没有HITL、Checkpoint或重连的可运行证明。
-- P1.1 Web已经有响应式Chat工作空间，但会话、消息、运行和产物仍是本地fixture；P1.2已实现Manifest、Service Worker、离线草稿边界与静态发布文档并通过自动门，但尚未完成实机验收与生产发布证明。
+- 没有SSE Cursor Runtime Journal和AG-UI活动流投影；B2暂用受控Query轮询。
+- 没有Memory Adapter、BMAD、经验规则选择、长期Project/Work或上下文包实现。
+- 没有外部副作用Tool、多实例数据库、备份恢复和生产部署拓扑。
+- 真实百炼付费闭环需要本地`DASHSCOPE_API_KEY`验收；普通CI只跑确定性pi流，不冒充真实Provider。
 
 文档批准不等于软件已经实现；P0骨架也不等于纵向链已经打通。
 
@@ -73,12 +70,10 @@
 | 任务 | 结果 | 状态 |
 |---|---|---|
 | P1.1 | 响应式Chat工作空间 | 已完成，PR #2合并于`0b24b9f` |
-| P1.2 | 可安装PWA与离线边界 | 已实现，PR #3审核中（自动门通过；待实机验收与发布批准） |
-| P1.3 | 消息由服务端保存并可读回 | 待开始 |
-| P1.4 | 后台Workflow能独立跑通 | 待开始 |
-| P1.5 | 网页显示后台状态 | 待开始 |
+| P1.2 | 可安装PWA与离线边界 | 已完成并合并 |
+| B1 | 固定端口调试与严格Trace | 已完成并合并 |
+| B2 | JSON Store + Workflow + pi + HITL + Product Commit + 最小前端 | 确定性实现完成；待真实百炼验收 |
 | P1.6 | 实时进度与断线续接 | 待开始 |
-| P1.7 | 接入一次无工具的Agent回答 | 待开始 |
-| P1.8 | 整条链验收与失败加固 | 待开始 |
+| 后续 | Memory、BMAD、经验规则、外部Tool | 未开始 |
 
-每个任务的用户场景、范围和完成门以[项目计划](./PROJECT_PLAN.md)为准；当前详细执行边界见[P1.2任务书](./docs/tasks/p1.2-installable-pwa-offline-boundary.md)。
+当前详细执行边界与验收缺口见[B2任务书](./docs/tasks/b2-planning-execution-vertical-slice.md)。

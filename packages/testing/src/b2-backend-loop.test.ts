@@ -94,6 +94,7 @@ function createFakePi(): FakePi {
         candidate: content,
         usage: { inputTokens: 100, outputTokens: 50 },
         durationMs: 5,
+        providerCallCount: 1,
         providerMeta: { httpStatus: 200, providerRequestId: "req-fake-1" },
       };
     },
@@ -114,6 +115,7 @@ function createFakePi(): FakePi {
         },
         usage: { inputTokens: 80, outputTokens: 40 },
         durationMs: 5,
+        providerCallCount: 1,
         providerMeta: { httpStatus: 200, providerRequestId: "req-fake-2" },
       };
     },

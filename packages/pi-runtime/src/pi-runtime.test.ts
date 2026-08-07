@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import type { ExecutionContract, PlanningInputDto } from "@chat/contracts";
+import {
+  B2_EXECUTOR_TOKEN_BUDGET_PER_STEP,
+  B2_PLANNER_TOKEN_BUDGET,
+  type ExecutionContract,
+  type PlanningInputDto,
+} from "@chat/contracts";
 import { runPiPlanner, BailianNotReadyError } from "./planner.js";
 import { runPiExecutor } from "./executor.js";
 import { classifyProviderError } from "./errors.js";
@@ -23,10 +28,12 @@ const planningInput: PlanningInputDto = {
   schemaVersion: "chat-internal-runtime.v1",
   productRunId: "run_1" as PlanningInputDto["productRunId"],
   attemptId: "att_1" as PlanningInputDto["attemptId"],
+  inputRunRevision: 2,
+  inputManifestSha256: "c".repeat(64),
   sourceMessageRef: { messageId: "msg_1" as never, sha256: "a".repeat(64) },
   sourceMessageText: "根据我的项目进展生成一份包含风险与下一步的Markdown周报",
   planRevision: 1,
-  limits: { maxTurns: 6, timeoutMs: 10_000 },
+  limits: { maxTurns: 1, timeoutMs: 10_000, tokenBudget: B2_PLANNER_TOKEN_BUDGET },
   promptTemplateVersion: "planner-prompt.v1",
   modelConfigVersion: "bailian.qwen3.7-plus.v1",
 };
@@ -74,9 +81,13 @@ function fauxStreamFn(
 
 describe("runPiPlanner（真实pi Agent loop + faux流）", () => {
   it("模型调用一次submit_plan_candidate且Schema合法时产生候选", async () => {
+    let providerRequestStarts = 0;
     const result = await runPiPlanner({
       config,
       planningInput,
+      onProviderRequestStart: () => {
+        providerRequestStarts += 1;
+      },
       streamFnOverride: fauxStreamFn([
         fauxAssistantMessage([fauxToolCall("submit_plan_candidate", validPlanParams)]),
       ]),
@@ -86,7 +97,9 @@ describe("runPiPlanner（真实pi Agent loop + faux流）", () => {
       expect(result.candidate.objective).toBe("整理项目进展并生成Markdown周报");
       expect(result.candidate.steps).toHaveLength(2);
       expect(result.durationMs).toBeGreaterThanOrEqual(0);
+      expect(result.providerCallCount).toBe(1);
     }
+    expect(providerRequestStarts).toBe(1);
   });
 
   it("模型不调用工具时返回no_tool_call，不发布候选", async () => {
@@ -159,10 +172,118 @@ describe("runPiPlanner（真实pi Agent loop + faux流）", () => {
     if (result.kind === "provider_failed") expect(result.errorCode).toBe("provider.auth_failed");
   });
 
+  it("即使带完整工具参数，length截断也不得接纳候选", async () => {
+    const result = await runPiPlanner({
+      config,
+      planningInput,
+      streamFnOverride: fauxStreamFn([
+        fauxAssistantMessage([fauxToolCall("submit_plan_candidate", validPlanParams)], {
+          stopReason: "length",
+        }),
+      ]),
+    });
+    expect(result.kind).toBe("provider_failed");
+    if (result.kind === "provider_failed") {
+      expect(result.errorCode).toBe("provider.stream_interrupted");
+    }
+  });
+
+  it("在非付费流上冻结百炼模型与单次请求Payload选项，并只采集真实响应证据", async () => {
+    const faux = fauxProvider({ provider: "bailian" });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("submit_plan_candidate", validPlanParams)]),
+    ]);
+    let captured:
+      | {
+          model: Parameters<StreamFn>[0];
+          options: Parameters<StreamFn>[2];
+        }
+      | undefined;
+    const streamFn: StreamFn = async (model, context, options) => {
+      captured = { model, options };
+      await options?.onResponse?.(
+        {
+          status: 201,
+          headers: { "X-DashScope-Request-Id": "dashscope-req-123" },
+        },
+        model,
+      );
+      const fauxOptions = { ...options };
+      delete fauxOptions.onResponse;
+      return faux.provider.streamSimple(model, context, fauxOptions);
+    };
+
+    const result = await runPiPlanner({ config, planningInput, streamFnOverride: streamFn });
+    expect(result.kind).toBe("candidate");
+    expect(result.providerCallCount).toBe(1);
+    expect(result.providerMeta).toEqual({
+      httpStatus: 201,
+      providerRequestId: "dashscope-req-123",
+    });
+    expect(captured?.model).toMatchObject({
+      id: "qwen3.7-plus",
+      provider: "bailian",
+      api: "openai-completions",
+      baseUrl: config.baseUrl,
+      reasoning: false,
+      compat: {
+        supportsStore: false,
+        supportsDeveloperRole: false,
+        supportsUsageInStreaming: true,
+        maxTokensField: "max_tokens",
+        supportsStrictMode: false,
+      },
+    });
+    expect(captured?.options).toMatchObject({
+      apiKey: "test-key",
+      maxTokens: B2_PLANNER_TOKEN_BUDGET,
+      timeoutMs: 10_000,
+      maxRetries: 0,
+      maxRetryDelayMs: 0,
+      cacheRetention: "none",
+    });
+  });
+
+  it("第二次Provider请求在发出前被硬门终止", async () => {
+    const faux = fauxProvider({ provider: "bailian" });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("unknown_tool", {})]),
+      fauxAssistantMessage([fauxToolCall("submit_plan_candidate", validPlanParams)]),
+    ]);
+    let dispatched = 0;
+    let providerRequestStarts = 0;
+    const result = await runPiPlanner({
+      config,
+      planningInput,
+      onProviderRequestStart: () => {
+        providerRequestStarts += 1;
+      },
+      streamFnOverride: (model, context, options) => {
+        dispatched += 1;
+        return faux.provider.streamSimple(model, context, options);
+      },
+    });
+    expect(result).toMatchObject({
+      kind: "provider_failed",
+      errorCode: "provider.request_failed",
+      providerCallCount: 1,
+    });
+    expect(dispatched).toBe(1);
+    expect(providerRequestStarts).toBe(1);
+  });
+
   it("缺少API Key时失败关闭，不发起任何调用", async () => {
+    let providerRequestStarts = 0;
     await expect(
-      runPiPlanner({ config: { ...config, apiKey: undefined }, planningInput }),
+      runPiPlanner({
+        config: { ...config, apiKey: undefined },
+        planningInput,
+        onProviderRequestStart: () => {
+          providerRequestStarts += 1;
+        },
+      }),
     ).rejects.toBeInstanceOf(BailianNotReadyError);
+    expect(providerRequestStarts).toBe(0);
   });
 });
 
@@ -180,13 +301,19 @@ const contract: ExecutionContract = {
       title: "整理进展",
       purpose: "结构化原始输入",
       dependsOn: [],
+      inputRefs: [],
       expectedOutput: "要点清单",
       successCriteria: ["覆盖全部输入要点"],
+      capabilityRefs: ["markdown_text_compose"],
     },
   ],
   completionCriteria: ["周报包含风险与下一步"],
   capabilityRefs: ["markdown_text_compose"],
-  limits: { maxTurnsPerStep: 6, timeoutMsPerStep: 10_000 },
+  limits: {
+    maxTurnsPerStep: 1,
+    timeoutMsPerStep: 10_000,
+    tokenBudgetPerStep: B2_EXECUTOR_TOKEN_BUDGET_PER_STEP,
+  },
   sha256: "c".repeat(64),
   revision: 1,
   createdAt: "2026-08-07T12:00:00.000Z",
@@ -199,6 +326,7 @@ describe("runPiExecutor（真实pi Agent loop + faux流）", () => {
       config,
       contract,
       stepId: "step-1",
+      dependencyResults: [],
       streamFnOverride: fauxStreamFn([
         fauxAssistantMessage([
           fauxToolCall("submit_execution_result", {
@@ -224,6 +352,7 @@ describe("runPiExecutor（真实pi Agent loop + faux流）", () => {
       config,
       contract,
       stepId: "step-1",
+      dependencyResults: [],
       streamFnOverride: fauxStreamFn([
         fauxAssistantMessage([
           fauxToolCall("submit_execution_result", {

@@ -3,12 +3,17 @@ import {
   commitRejectedRunRequestSchema,
   commitRunFailureRequestSchema,
   completeRunAttemptRequestSchema,
+  beginRunAttemptRequestSchema,
+  beginRunAttemptResponseSchema,
+  expireApprovalRequestSchema,
+  expireApprovalResponseSchema,
   compileExecutionContractResponseSchema,
   loadCommittedDecisionResponseSchema,
   persistExecutionCandidateResponseSchema,
   persistValidationResultResponseSchema,
   planningInputDtoSchema,
   publishPlanReviewResponseSchema,
+  problemDetailSchema,
   runRevisionResponseSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   type CompilePlanningInputRequest,
@@ -19,7 +24,7 @@ import {
   type PersistValidationResultRequest,
   type PublishPlanReviewRequest,
 } from "@chat/contracts";
-import { z, type ZodType } from "zod";
+import type { ZodType } from "zod";
 
 /**
  * Workflow Runtime -> API私有Runtime Router的类型化客户端。
@@ -68,6 +73,7 @@ async function call<TReq, TRes>(
         "x-chat-runtime-key": options.credential,
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
     });
   } catch {
     throw new ApiClientError({
@@ -77,21 +83,33 @@ async function call<TReq, TRes>(
     });
   }
   if (!response.ok) {
-    let code = "internal_error";
+    let problem: ReturnType<typeof problemDetailSchema.parse>;
     try {
-      const problem = (await response.json()) as { code?: string };
-      if (typeof problem.code === "string") code = problem.code;
+      problem = problemDetailSchema.parse(await response.json());
     } catch {
-      // 保留默认错误码
+      throw new ApiClientError({
+        code: "internal_error",
+        message: `私有命令错误响应合同损坏:${path}`,
+        httpStatus: response.status,
+        retryable: response.status >= 500,
+      });
     }
     throw new ApiClientError({
-      code,
-      message: `私有命令被拒绝:${path}:${code}`,
+      code: problem.code,
+      message: `私有命令被拒绝:${path}:${problem.code}`,
       httpStatus: response.status,
+      retryable: problem.retryable,
     });
   }
-  const json: unknown = await response.json();
-  return responseSchema.parse(json);
+  try {
+    return responseSchema.parse(await response.json());
+  } catch {
+    throw new ApiClientError({
+      code: "dispatch.outcome_unknown",
+      message: `私有命令成功响应合同损坏:${path}`,
+      retryable: true,
+    });
+  }
 }
 
 export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
@@ -131,20 +149,20 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
     beginRunAttempt(input: {
       commandId: string;
       productRunId: string;
-      kind: "planning" | "execution";
-      planRevision?: number;
-      stepId?: string;
+      kind: "execution";
+      stepId: string;
+      inputManifestSha256: string;
+      promptTemplateVersion: string;
+      modelConfigVersion: string;
     }) {
       return call(
         options,
         "/internal/runtime/v1/begin-run-attempt",
-        { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, ...input },
-        z
-          .object({
-            schemaVersion: z.literal(INTERNAL_RUNTIME_SCHEMA_VERSION),
-            attemptId: z.string(),
-          })
-          .strict(),
+        beginRunAttemptRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        beginRunAttemptResponseSchema,
       );
     },
     completeRunAttempt(input: {
@@ -212,6 +230,22 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
           ...input,
         }),
         runRevisionResponseSchema,
+      );
+    },
+    expireApproval(input: {
+      commandId: string;
+      productRunId: string;
+      approvalRequestId: string;
+      expectedExpiresAt: string;
+    }) {
+      return call(
+        options,
+        "/internal/runtime/v1/expire-approval",
+        expireApprovalRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        expireApprovalResponseSchema,
       );
     },
   };

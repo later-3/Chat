@@ -38,7 +38,12 @@ const key = (state: RunLifecycle): string => `${state.status}/${state.phase}`;
 
 /** 合法(status, phase)组合及其允许的后续组合；不在表内的转换一律非法。 */
 const allowedTransitions: Readonly<Record<string, readonly string[]>> = {
-  "pending/queued": ["running/planning", "cancelled/queued"],
+  "pending/queued": [
+    "running/planning",
+    "cancelled/queued",
+    "failed/queued",
+    "outcome_unknown/queued",
+  ],
   "running/planning": [
     "waiting_human/plan_review",
     "failed/planning",

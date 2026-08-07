@@ -17,7 +17,8 @@ import {
   runAttemptIdSchema,
   validationResultIdSchema,
 } from "./ids.js";
-import { sha256Schema } from "./trace.js";
+import { sha256Schema } from "./hash.js";
+import { B2_MAX_PLAN_STEPS } from "./versions.js";
 
 /**
  * B2产品持久化实体合同（任务书§8.3、§9）。
@@ -152,6 +153,14 @@ export const runAttemptSchema = z
     planRevision: z.number().int().positive().optional(),
     /** execution Attempt绑定Approved Plan Step。 */
     stepId: z.string().min(1).max(100).optional(),
+    /** planning Attempt固定编译输入时的Run CAS与全部版本证据。 */
+    inputRunRevision: z.number().int().positive().optional(),
+    sourceMessageSha256: sha256Schema.optional(),
+    priorPlanRevisionId: planRevisionIdSchema.optional(),
+    revisionInputId: revisionInputIdSchema.optional(),
+    inputManifestSha256: sha256Schema.optional(),
+    promptTemplateVersion: z.string().min(1).max(100).optional(),
+    modelConfigVersion: z.string().min(1).max(100).optional(),
     outcome: runAttemptOutcomeSchema,
     errorCode: z
       .string()
@@ -201,7 +210,7 @@ export const planContentSchema = z
     summary: z.string().min(1).max(4000),
     assumptions: z.array(planAssumptionSchema).max(50),
     openQuestions: z.array(z.string().min(1).max(500)).max(50),
-    steps: z.array(planStepSchema).min(1).max(50),
+    steps: z.array(planStepSchema).min(1).max(B2_MAX_PLAN_STEPS),
     completionCriteria: z.array(z.string().min(1).max(500)).min(1).max(20),
     warnings: z.array(z.string().min(1).max(500)).max(50),
   })
@@ -221,6 +230,8 @@ export const planRevisionSchema = z
     planRevisionId: planRevisionIdSchema,
     planId: planIdSchema,
     productRunId: productRunIdSchema,
+    /** 产生本候选的planning Attempt；用于拒绝延迟/陈旧模型结果。 */
+    planningAttemptId: runAttemptIdSchema,
     /** Plan业务版本号，从1开始单调递增；旧版本永久保留。 */
     planRevision: z.number().int().positive(),
     status: planRevisionStatusSchema,
@@ -260,6 +271,9 @@ export const approvalRequestSchema = z
     planSha256: sha256Schema,
     status: approvalRequestStatusSchema,
     decidedByDecisionId: decisionIdSchema.optional(),
+    /** 审批窗口是产品事实，不能只靠status假装存在过期语义。 */
+    expiresAt: isoDateTimeSchema,
+    expiredAt: isoDateTimeSchema.optional(),
     ...entityBaseFields,
   })
   .strict();
@@ -297,8 +311,10 @@ export const approvedExecutionStepSchema = z
     title: z.string().min(1).max(200),
     purpose: z.string().min(1).max(1000),
     dependsOn: z.array(z.string().min(1).max(100)).max(50),
+    inputRefs: z.array(contextRefSchema).max(50),
     expectedOutput: z.string().min(1).max(1000),
     successCriteria: z.array(z.string().min(1).max(500)).min(1).max(20),
+    capabilityRefs: z.array(z.string().min(1).max(100)).max(20),
   })
   .strict();
 
@@ -311,7 +327,7 @@ export const executionContractSchema = z
     approvedPlanRevision: z.number().int().positive(),
     approvedPlanSha256: sha256Schema,
     approvalDecisionId: decisionIdSchema,
-    steps: z.array(approvedExecutionStepSchema).min(1).max(50),
+    steps: z.array(approvedExecutionStepSchema).min(1).max(B2_MAX_PLAN_STEPS),
     /** 从Approved Plan确定性拷贝的完成条件；验证时必须逐条有证据。 */
     completionCriteria: z.array(z.string().min(1).max(500)).min(1).max(20),
     /** 第一版只允许无外部副作用能力；创建后不可修改。 */
@@ -330,19 +346,36 @@ export const executionContractSchema = z
 
 /* ---------- Execution Candidate ---------- */
 
-export const stepResultSchema = z
-  .object({
-    stepId: z.string().min(1).max(100),
-    output: z.string().min(1).max(50_000),
-    successCriteriaEvidence: z.array(z.string().min(1).max(1000)).min(1).max(20),
-  })
-  .strict();
-
 /** 第一版finalOutput只允许Markdown section数据；服务端确定性渲染Markdown。 */
 export const markdownSectionSchema = z
   .object({
     heading: z.string().min(1).max(200),
     body: z.string().min(1).max(50_000),
+  })
+  .strict();
+
+export const stepResultSchema = z
+  .object({
+    stepId: z.string().min(1).max(100),
+    executionAttemptId: runAttemptIdSchema,
+    inputManifestSha256: sha256Schema,
+    dependencyRefs: z
+      .array(
+        z
+          .object({
+            stepId: z.string().min(1).max(100),
+            executionAttemptId: runAttemptIdSchema,
+            sha256: sha256Schema,
+          })
+          .strict(),
+      )
+      .max(B2_MAX_PLAN_STEPS),
+    output: z.string().min(1).max(50_000),
+    sections: z.array(markdownSectionSchema).max(20),
+    successCriteriaEvidence: z.array(z.string().min(1).max(1000)).min(1).max(20),
+    criteriaEvidence: z.array(z.string().min(1).max(1000)).max(20),
+    warnings: z.array(z.string().min(1).max(500)).max(50),
+    sha256: sha256Schema,
   })
   .strict();
 
@@ -352,12 +385,14 @@ export const executionCandidateSchema = z
     executionCandidateId: executionCandidateIdSchema,
     productRunId: productRunIdSchema,
     executionContractId: executionContractIdSchema,
-    attemptId: runAttemptIdSchema,
-    stepResults: z.array(stepResultSchema).min(1).max(50),
+    stepResults: z.array(stepResultSchema).min(1).max(B2_MAX_PLAN_STEPS),
     finalOutput: z
       .object({
         format: z.literal("markdown_sections"),
-        sections: z.array(markdownSectionSchema).min(1).max(50),
+        sections: z
+          .array(markdownSectionSchema)
+          .min(1)
+          .max(B2_MAX_PLAN_STEPS * 20),
       })
       .strict(),
     completionCriteriaEvidence: z.array(z.string().min(1).max(1000)).min(1).max(50),

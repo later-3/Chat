@@ -1,4 +1,5 @@
 export * from "./ids.js";
+export * from "./hash.js";
 export * from "./problem-detail.js";
 export * from "./command.js";
 export * from "./query.js";
@@ -10,3 +11,4 @@ export * from "./product-store.js";
 export * from "./product-api.js";
 export * from "./internal-runtime.js";
 export * from "./versions.js";
+export * from "./version-evidence.js";

@@ -19,3 +19,8 @@ export const BAILIAN_DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatib
 
 /** 第一版Execution Contract允许的唯一无外部副作用Capability。 */
 export const EXECUTION_CAPABILITY_MARKDOWN_COMPOSE = "markdown_text_compose";
+
+/** B2费用/时延硬边界：一次Run最多5次Planner + 8次Executor真实调用。 */
+export const B2_MAX_PLAN_STEPS = 8;
+export const B2_PLANNER_TOKEN_BUDGET = 4_096;
+export const B2_EXECUTOR_TOKEN_BUDGET_PER_STEP = 2_048;

@@ -4,7 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@10.13.1",
   "engines": {
-    "node": ">=22.18"
+    "node": ">=22.19"
   },
   "scripts": {
     "build": "pnpm -r --sort build",
@@ -16,8 +16,9 @@
     "debug:stop": "node scripts/debug/stop.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "debug:replay": "pnpm --filter @chat/realtime exec tsx src/replay-cli.ts",
-    "test:provider:bailian": "pnpm --filter @chat/pi-runtime test:provider:bailian"
+    "debug:replay": "pnpm --filter @chat/api exec tsx src/replay-main.ts",
+    "test:provider:bailian": "pnpm --filter @chat/pi-runtime test:provider:bailian",
+    "test:e2e:planning-execution:real": "pnpm debug:preclean && node scripts/e2e/preflight-planning-real.mjs && pnpm --filter @chat/workflows build:bundles && node scripts/e2e/assert-clean-runtime-evidence.mjs && pnpm --filter @chat/web exec playwright test --config playwright.planning-real.config.ts"
   },
   "devDependencies": {
     "eslint": "^10.8.0",

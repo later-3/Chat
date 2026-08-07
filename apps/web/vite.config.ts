@@ -2,6 +2,8 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { configDefaults, defineConfig } from "vitest/config";
 
+const apiProxyTarget = process.env.CHAT_API_PROXY_URL ?? "http://127.0.0.1:43111";
+
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
@@ -46,12 +48,12 @@ export default defineConfig(({ mode }) => ({
   define: mode === "test" ? { "process.env.NODE_ENV": '"development"' } : {},
   server: {
     proxy: {
-      "/api": "http://localhost:3000",
+      "/api": apiProxyTarget,
     },
   },
   preview: {
     proxy: {
-      "/api": "http://localhost:3000",
+      "/api": apiProxyTarget,
     },
   },
   test: {

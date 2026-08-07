@@ -70,6 +70,7 @@ export function toApprovalDto(approval: ApprovalRequest): ApprovalDto {
     planSha256: approval.planSha256,
     status: approval.status,
     createdAt: approval.createdAt,
+    expiresAt: approval.expiresAt,
   };
 }
 

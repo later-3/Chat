@@ -11,6 +11,23 @@ async function tempPath(): Promise<string> {
   return join(dir, "runtime-bindings.v1.json");
 }
 
+async function claimWorkflow(store: RuntimeBindingStore, workflowRunId = "wrun_a") {
+  const intent = await store.claimStartIntent({
+    productRunId: "run_1" as never,
+    outboxId: "obx_1" as never,
+    workflowDefinitionVersion: "planning-execution-workflow.v1",
+    now: NOW,
+  });
+  expect(intent).toBe("claimed");
+  return store.claimWorkflowBinding({
+    productRunId: "run_1" as never,
+    outboxId: "obx_1" as never,
+    workflowRunId,
+    workflowDefinitionVersion: "planning-execution-workflow.v1",
+    now: NOW,
+  });
+}
+
 describe("RuntimeBindingStore", () => {
   it("缺失时初始化空映射并持久化0600", async () => {
     const filePath = await tempPath();
@@ -18,18 +35,21 @@ describe("RuntimeBindingStore", () => {
     expect((await stat(filePath)).mode & 0o777).toBe(0o600);
   });
 
+  it("已有Workflow耐久数据时禁止用空Binding覆盖丢失映射", async () => {
+    const filePath = await tempPath();
+    await expect(RuntimeBindingStore.open(filePath, { allowCreate: false })).rejects.toThrow(
+      "已有耐久运行数据",
+    );
+  });
+
   it("同一productRunId重复认领幂等；不同workflowRunId冲突失败关闭", async () => {
     const filePath = await tempPath();
     const store = await RuntimeBindingStore.open(filePath);
-    const first = await store.claimWorkflowBinding({
-      productRunId: "run_1" as never,
-      workflowRunId: "wrun_a",
-      workflowDefinitionVersion: "planning-execution-workflow.v1",
-      now: NOW,
-    });
+    const first = await claimWorkflow(store);
     expect(first.alreadyExisted).toBe(false);
     const second = await store.claimWorkflowBinding({
       productRunId: "run_1" as never,
+      outboxId: "obx_1" as never,
       workflowRunId: "wrun_a",
       workflowDefinitionVersion: "planning-execution-workflow.v1",
       now: NOW,
@@ -38,6 +58,7 @@ describe("RuntimeBindingStore", () => {
     await expect(
       store.claimWorkflowBinding({
         productRunId: "run_1" as never,
+        outboxId: "obx_1" as never,
         workflowRunId: "wrun_b",
         workflowDefinitionVersion: "planning-execution-workflow.v1",
         now: NOW,
@@ -48,6 +69,7 @@ describe("RuntimeBindingStore", () => {
   it("Hook映射缺失、冲突与Resume状态流转", async () => {
     const filePath = await tempPath();
     const store = await RuntimeBindingStore.open(filePath);
+    await claimWorkflow(store);
     await expect(store.markResumeDispatched("apr_1" as never, NOW)).rejects.toBeInstanceOf(
       RuntimeBindingError,
     );
@@ -67,6 +89,7 @@ describe("RuntimeBindingStore", () => {
         now: NOW,
       }),
     ).rejects.toBeInstanceOf(RuntimeBindingError);
+    await store.markResumeDispatching("apr_1" as never, NOW);
     await store.markResumeDispatched("apr_1" as never, NOW);
     expect(store.getHookBinding("apr_1" as never)?.resumeDispatchState).toBe("dispatched");
   });
@@ -91,13 +114,56 @@ describe("RuntimeBindingStore", () => {
   it("重启后可读取已提交映射", async () => {
     const filePath = await tempPath();
     const store = await RuntimeBindingStore.open(filePath);
-    await store.claimWorkflowBinding({
-      productRunId: "run_1" as never,
-      workflowRunId: "wrun_a",
+    await claimWorkflow(store);
+    const reopened = await RuntimeBindingStore.open(filePath);
+    expect(reopened.getWorkflowBinding("run_1" as never)?.workflowRunId).toBe("wrun_a");
+  });
+
+  it("未决start意图与dispatching Resume重启后保持结果未知，禁止盲重试", async () => {
+    const filePath = await tempPath();
+    const store = await RuntimeBindingStore.open(filePath);
+    expect(
+      await store.claimStartIntent({
+        productRunId: "run_unknown" as never,
+        outboxId: "obx_unknown" as never,
+        workflowDefinitionVersion: "planning-execution-workflow.v1",
+        now: NOW,
+      }),
+    ).toBe("claimed");
+    await store.claimStartIntent({
+      productRunId: "run_bound" as never,
+      outboxId: "obx_bound" as never,
       workflowDefinitionVersion: "planning-execution-workflow.v1",
       now: NOW,
     });
+    await store.claimWorkflowBinding({
+      productRunId: "run_bound" as never,
+      outboxId: "obx_bound" as never,
+      workflowRunId: "wrun_bound",
+      workflowDefinitionVersion: "planning-execution-workflow.v1",
+      now: NOW,
+    });
+    await store.claimHookBinding({
+      approvalRequestId: "apr_unknown" as never,
+      productRunId: "run_bound" as never,
+      planRevision: 1,
+      hookToken: "pdh-run-unknown-1",
+      now: NOW,
+    });
+    await store.markResumeDispatching("apr_unknown" as never, NOW);
+
     const reopened = await RuntimeBindingStore.open(filePath);
-    expect(reopened.getWorkflowBinding("run_1" as never)?.workflowRunId).toBe("wrun_a");
+    expect(reopened.getStartState("run_unknown" as never)).toBe("outcome_unknown");
+    expect(
+      await reopened.claimStartIntent({
+        productRunId: "run_unknown" as never,
+        outboxId: "obx_unknown" as never,
+        workflowDefinitionVersion: "planning-execution-workflow.v1",
+        now: NOW,
+      }),
+    ).toBe("outcome_unknown");
+    expect(reopened.getHookBinding("apr_unknown" as never)?.resumeDispatchState).toBe(
+      "dispatching",
+    );
   });
 });

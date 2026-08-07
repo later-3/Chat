@@ -1,5 +1,6 @@
-import { hashCanonical, nextPlanRevision } from "@chat/domain";
+import { DomainInvariantError, hashCanonical, nextPlanRevision } from "@chat/domain";
 import {
+  B2_PLANNER_TOKEN_BUDGET,
   MODEL_CONFIG_VERSION,
   PLANNER_PROMPT_TEMPLATE_VERSION,
   type CommandId,
@@ -18,7 +19,11 @@ import { emitRunEvent } from "./trace-helpers.js";
  * 产品事实并编译本轮规划输入。模型只看到编译结果，不直接读Product Store。
  */
 
-export const PLANNER_LIMITS = { maxTurns: 6, timeoutMs: 120_000 } as const;
+export const PLANNER_LIMITS = {
+  maxTurns: 1,
+  timeoutMs: 120_000,
+  tokenBudget: B2_PLANNER_TOKEN_BUDGET,
+} as const;
 
 export interface CompilePlanningInputCommand {
   readonly commandId: CommandId;
@@ -57,17 +62,28 @@ export async function compilePlanningInput(
     commandId: input.commandId,
     commandType: "CompilePlanningInput",
     requestSha256,
+    traceContext: { productRunId: input.productRunId },
     mutate: (draft) => {
       const run = draft.entities.runs[input.productRunId];
       if (run === undefined) throw notFound("Product Run不存在");
+      const message = draft.entities.messages[run.sourceMessageId];
+      if (message === undefined) throw notFound("源消息不存在");
 
       const existingPlans = Object.values(draft.entities.plans)
         .filter((plan) => plan.productRunId === input.productRunId)
         .sort((a, b) => a.planRevision - b.planRevision);
-      const expectedNext = nextPlanRevision(
-        existingPlans.map((plan) => plan.planRevision),
-        run.maxPlanRevisions,
-      );
+      let expectedNext: number;
+      try {
+        expectedNext = nextPlanRevision(
+          existingPlans.map((plan) => plan.planRevision),
+          run.maxPlanRevisions,
+        );
+      } catch (error) {
+        if (error instanceof DomainInvariantError && error.code === "plan_revision_limit_reached") {
+          throw revisionConflict(error.message);
+        }
+        throw error;
+      }
       if (expectedNext !== input.planRevision) {
         throw revisionConflict(
           `请求编译的planRevision ${String(input.planRevision)}与产品事实期望的${String(expectedNext)}不一致`,
@@ -77,6 +93,42 @@ export async function compilePlanningInput(
       if (priorPlan !== undefined && priorPlan.status === "under_review") {
         throw revisionConflict("存在仍在审核中的Plan，不能编译下一轮规划输入");
       }
+      const revisionInput =
+        priorPlan === undefined
+          ? undefined
+          : Object.values(draft.entities.revisionInputs)
+              .filter(
+                (candidate) =>
+                  candidate.planId === priorPlan.planId &&
+                  candidate.planRevision === priorPlan.planRevision &&
+                  candidate.productRunId === input.productRunId,
+              )
+              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+      if (input.planRevision > 1 && revisionInput === undefined) {
+        throw revisionConflict("修订规划缺少已提交Revision Input");
+      }
+
+      const sourceMessageSha256 = messageSha256(message);
+      const inputManifestSha256 = hashCanonical("planning-input-manifest.v1", {
+        productRunId: input.productRunId,
+        planRevision: input.planRevision,
+        sourceMessageRef: { messageId: message.messageId, sha256: sourceMessageSha256 },
+        ...(priorPlan !== undefined
+          ? {
+              priorPlanRef: {
+                planRevisionId: priorPlan.planRevisionId,
+                planId: priorPlan.planId,
+                planRevision: priorPlan.planRevision,
+                sha256: priorPlan.sha256,
+              },
+            }
+          : {}),
+        ...(revisionInput !== undefined
+          ? { revisionInputRef: { revisionInputId: revisionInput.revisionInputId } }
+          : {}),
+        promptTemplateVersion: PLANNER_PROMPT_TEMPLATE_VERSION,
+        modelConfigVersion: MODEL_CONFIG_VERSION,
+      });
 
       // 生命周期：首次规划从pending/queued进入running/planning；修改循环保持在running/planning
       if (run.status === "pending" && run.phase === "queued") {
@@ -91,12 +143,21 @@ export async function compilePlanningInput(
         throw revisionConflict(`Run状态${run.status}/${run.phase}不允许编译规划输入`);
       }
 
+      const inputRunRevision = run.status === "pending" ? run.revision + 1 : run.revision;
+
       draft.entities.attempts[attemptId] = {
         schemaVersion: "run-attempt.v1",
         attemptId,
         productRunId: input.productRunId,
         kind: "planning",
         planRevision: input.planRevision,
+        inputRunRevision,
+        sourceMessageSha256,
+        ...(priorPlan !== undefined ? { priorPlanRevisionId: priorPlan.planRevisionId } : {}),
+        ...(revisionInput !== undefined ? { revisionInputId: revisionInput.revisionInputId } : {}),
+        inputManifestSha256,
+        promptTemplateVersion: PLANNER_PROMPT_TEMPLATE_VERSION,
+        modelConfigVersion: MODEL_CONFIG_VERSION,
         outcome: "running",
         revision: 1,
         createdAt: now,
@@ -115,22 +176,36 @@ export async function compilePlanningInput(
 
   const message = snapshot.entities.messages[run.sourceMessageId];
   if (message === undefined) throw notFound("源消息不存在");
-  const plans = Object.values(snapshot.entities.plans)
-    .filter((plan) => plan.productRunId === input.productRunId)
-    .sort((a, b) => a.planRevision - b.planRevision);
-  const priorPlan = plans[plans.length - 1];
-  const revisionInput =
-    priorPlan === undefined
+  const priorPlan =
+    attempt.priorPlanRevisionId === undefined
       ? undefined
-      : Object.values(snapshot.entities.revisionInputs)
-          .filter(
-            (candidate) =>
-              candidate.planId === priorPlan.planId &&
-              candidate.planRevision === priorPlan.planRevision,
-          )
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+      : snapshot.entities.plans[attempt.priorPlanRevisionId];
+  const revisionInput =
+    attempt.revisionInputId === undefined
+      ? undefined
+      : snapshot.entities.revisionInputs[attempt.revisionInputId];
+  if (
+    attempt.inputRunRevision === undefined ||
+    attempt.sourceMessageSha256 === undefined ||
+    attempt.inputManifestSha256 === undefined ||
+    attempt.promptTemplateVersion === undefined ||
+    attempt.modelConfigVersion === undefined
+  ) {
+    throw revisionConflict("Planning Attempt缺少冻结输入证据");
+  }
+  if (attempt.priorPlanRevisionId !== undefined && priorPlan === undefined) {
+    throw revisionConflict("Planning Attempt引用的上一版Plan不存在");
+  }
+  if (attempt.revisionInputId !== undefined && revisionInput === undefined) {
+    throw revisionConflict("Planning Attempt引用的Revision Input不存在");
+  }
 
-  if (run.status === "running" && run.phase === "planning" && input.planRevision === 1) {
+  if (
+    !result.replayed &&
+    run.status === "running" &&
+    run.phase === "planning" &&
+    input.planRevision === 1
+  ) {
     emitRunEvent(deps, input.productRunId, {
       level: "info",
       eventName: "product_run.transitioned",
@@ -148,9 +223,11 @@ export async function compilePlanningInput(
     schemaVersion: "chat-internal-runtime.v1",
     productRunId: input.productRunId,
     attemptId: attempt.attemptId,
+    inputRunRevision: attempt.inputRunRevision,
+    inputManifestSha256: attempt.inputManifestSha256,
     sourceMessageRef: {
       messageId: message.messageId,
-      sha256: messageSha256(message),
+      sha256: attempt.sourceMessageSha256,
     },
     sourceMessageText: message.content.text,
     ...(priorPlan !== undefined
@@ -166,8 +243,8 @@ export async function compilePlanningInput(
     ...(revisionInput !== undefined ? { revisionInstruction: revisionInput.instruction } : {}),
     planRevision: input.planRevision,
     limits: { ...PLANNER_LIMITS },
-    promptTemplateVersion: PLANNER_PROMPT_TEMPLATE_VERSION,
-    modelConfigVersion: MODEL_CONFIG_VERSION,
+    promptTemplateVersion: attempt.promptTemplateVersion,
+    modelConfigVersion: attempt.modelConfigVersion,
   };
 }
 

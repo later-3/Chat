@@ -50,9 +50,18 @@ function encodeCursor(sessionSequence: number): string {
 }
 
 function decodeCursor(cursor: string): number {
+  if (!/^[A-Za-z0-9_-]+$/u.test(cursor)) {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 400,
+      message: "非法分页cursor",
+    });
+  }
   let text: string;
   try {
-    text = Buffer.from(cursor, "base64url").toString("utf8");
+    const bytes = Buffer.from(cursor, "base64url");
+    if (bytes.toString("base64url") !== cursor) throw new Error("non-canonical cursor");
+    text = bytes.toString("utf8");
   } catch {
     throw new ApplicationError({
       code: "validation_failed",
@@ -60,14 +69,15 @@ function decodeCursor(cursor: string): number {
       message: "非法分页cursor",
     });
   }
-  if (!text.startsWith(CURSOR_PREFIX)) {
+  const match = /^seq:(0|[1-9][0-9]*)$/u.exec(text);
+  if (match === null) {
     throw new ApplicationError({
       code: "validation_failed",
       httpStatus: 400,
       message: "非法分页cursor",
     });
   }
-  const seq = Number.parseInt(text.slice(CURSOR_PREFIX.length), 10);
+  const seq = Number(match[1]);
   if (!Number.isSafeInteger(seq) || seq < 0) {
     throw new ApplicationError({
       code: "validation_failed",
@@ -121,10 +131,16 @@ function loadRunContext(
       plan.planId === run.currentPlanId &&
       plan.planRevision === run.currentPlanRevision,
   );
-  const currentApproval =
+  const persistedApproval =
     run.currentApprovalRequestId !== undefined
       ? snapshot.entities.approvalRequests[run.currentApprovalRequestId]
       : undefined;
+  // Query不改写产品事实，但必须按当前时间明确投影过期状态，防止浏览器继续呈现可操作按钮。
+  const currentApproval =
+    persistedApproval?.status === "open" &&
+    Date.parse(deps.now()) >= Date.parse(persistedApproval.expiresAt)
+      ? { ...persistedApproval, status: "expired" as const }
+      : persistedApproval;
   return { run, currentPlan, currentApproval };
 }
 

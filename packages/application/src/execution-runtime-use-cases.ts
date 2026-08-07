@@ -1,5 +1,6 @@
 import { hashCanonical } from "@chat/domain";
 import {
+  B2_EXECUTOR_TOKEN_BUDGET_PER_STEP,
   EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
   type CommandId,
   type DecisionId,
@@ -20,7 +21,11 @@ import { notFound, revisionConflict } from "./errors.js";
  * - Product Commit重试只能重用已验证候选，不再次调用已成功的付费Executor。
  */
 
-export const EXECUTOR_LIMITS = { maxTurnsPerStep: 6, timeoutMsPerStep: 120_000 } as const;
+export const EXECUTOR_LIMITS = {
+  maxTurnsPerStep: 1,
+  timeoutMsPerStep: 120_000,
+  tokenBudgetPerStep: B2_EXECUTOR_TOKEN_BUDGET_PER_STEP,
+} as const;
 
 export interface BeginRunAttemptCommand {
   readonly commandId: CommandId;
@@ -28,6 +33,9 @@ export interface BeginRunAttemptCommand {
   readonly kind: "planning" | "execution";
   readonly planRevision?: number;
   readonly stepId?: string;
+  readonly inputManifestSha256?: string;
+  readonly promptTemplateVersion?: string;
+  readonly modelConfigVersion?: string;
 }
 
 export async function beginRunAttempt(
@@ -41,9 +49,28 @@ export async function beginRunAttempt(
     commandId: input.commandId,
     commandType: "BeginRunAttempt",
     requestSha256,
+    traceContext: { productRunId: input.productRunId },
     mutate: (draft) => {
       const run = draft.entities.runs[input.productRunId];
       if (run === undefined) throw notFound("Product Run不存在");
+      if (input.kind === "execution") {
+        if (
+          input.stepId === undefined ||
+          input.inputManifestSha256 === undefined ||
+          input.promptTemplateVersion === undefined ||
+          input.modelConfigVersion === undefined ||
+          input.planRevision !== undefined
+        ) {
+          throw revisionConflict("Execution Attempt缺少步骤或输入版本证据");
+        }
+      } else if (
+        input.stepId !== undefined ||
+        input.inputManifestSha256 !== undefined ||
+        input.promptTemplateVersion !== undefined ||
+        input.modelConfigVersion !== undefined
+      ) {
+        throw revisionConflict("Planning Attempt不能携带Execution输入证据");
+      }
       draft.entities.attempts[attemptId] = {
         schemaVersion: "run-attempt.v1",
         attemptId,
@@ -51,6 +78,15 @@ export async function beginRunAttempt(
         kind: input.kind,
         ...(input.planRevision !== undefined ? { planRevision: input.planRevision } : {}),
         ...(input.stepId !== undefined ? { stepId: input.stepId } : {}),
+        ...(input.inputManifestSha256 !== undefined
+          ? { inputManifestSha256: input.inputManifestSha256 }
+          : {}),
+        ...(input.promptTemplateVersion !== undefined
+          ? { promptTemplateVersion: input.promptTemplateVersion }
+          : {}),
+        ...(input.modelConfigVersion !== undefined
+          ? { modelConfigVersion: input.modelConfigVersion }
+          : {}),
         outcome: "running",
         revision: 1,
         createdAt: now,
@@ -74,11 +110,15 @@ export async function completeRunAttempt(
   input: CompleteRunAttemptCommand,
 ): Promise<{ revision: number }> {
   const now = deps.now();
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const existingAttempt = snapshot.entities.attempts[input.attemptId];
+  if (existingAttempt === undefined) throw notFound("Run Attempt不存在");
   const requestSha256 = hashCanonical("command.complete-run-attempt.v1", input);
   const result = await deps.store.transact({
     commandId: input.commandId,
     commandType: "CompleteRunAttempt",
     requestSha256,
+    traceContext: { productRunId: existingAttempt.productRunId },
     mutate: (draft) => {
       const attempt = draft.entities.attempts[input.attemptId];
       if (attempt === undefined) throw notFound("Run Attempt不存在");
@@ -117,6 +157,7 @@ export async function compileExecutionContract(
     commandId: input.commandId,
     commandType: "CompileExecutionContract",
     requestSha256,
+    traceContext: { productRunId: input.productRunId },
     mutate: (draft) => {
       const run = draft.entities.runs[input.productRunId];
       if (run === undefined) throw notFound("Product Run不存在");
@@ -154,9 +195,19 @@ export async function compileExecutionContract(
         title: step.title,
         purpose: step.purpose,
         dependsOn: step.dependsOn,
+        inputRefs: step.inputRefs,
         expectedOutput: step.expectedOutput,
         successCriteria: step.successCriteria,
+        capabilityRefs: step.requestedCapabilities,
       }));
+      const capabilityRefs = [
+        ...new Set(plan.content.steps.flatMap((step) => step.requestedCapabilities)),
+      ];
+      if (
+        capabilityRefs.some((capability) => capability !== EXECUTION_CAPABILITY_MARKDOWN_COMPOSE)
+      ) {
+        throw revisionConflict("Approved Plan包含未允许的Capability");
+      }
       const contract: ExecutionContract = {
         schemaVersion: "execution-contract.v1",
         executionContractId,
@@ -167,7 +218,7 @@ export async function compileExecutionContract(
         approvalDecisionId: decision.decisionId,
         steps,
         completionCriteria: plan.content.completionCriteria,
-        capabilityRefs: [EXECUTION_CAPABILITY_MARKDOWN_COMPOSE],
+        capabilityRefs,
         limits: { ...EXECUTOR_LIMITS },
         sha256: hashCanonical("execution-contract.v1", {
           productRunId: input.productRunId,
@@ -177,7 +228,7 @@ export async function compileExecutionContract(
           approvalDecisionId: decision.decisionId,
           steps,
           completionCriteria: plan.content.completionCriteria,
-          capabilityRefs: [EXECUTION_CAPABILITY_MARKDOWN_COMPOSE],
+          capabilityRefs,
           limits: EXECUTOR_LIMITS,
         }),
         revision: 1,

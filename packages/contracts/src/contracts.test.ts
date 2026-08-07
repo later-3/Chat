@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { commandEnvelopeSchema } from "./command.js";
 import { chatEventEnvelopeSchema } from "./events.js";
 import { problemDetailSchema } from "./problem-detail.js";
+import {
+  beginRunAttemptRequestSchema,
+  completeRunAttemptRequestSchema,
+} from "./internal-runtime.js";
 
 describe("command envelope contract", () => {
   it("要求commandId，expectedRevision可选", () => {
@@ -14,6 +18,14 @@ describe("command envelope contract", () => {
     expect(() => commandEnvelopeSchema.parse({ payload: {} })).toThrow();
     expect(() =>
       commandEnvelopeSchema.parse({ commandId: "cmd_1", expectedRevision: -1, payload: {} }),
+    ).toThrow();
+    expect(() =>
+      commandEnvelopeSchema.parse({
+        commandId: "cmd_1",
+        payload: {},
+        provider: "bailian",
+        model: "qwen3.7-plus",
+      }),
     ).toThrow();
   });
 });
@@ -42,6 +54,7 @@ describe("problem detail contract", () => {
         recoveryAction: "none",
       }),
     ).toThrow();
+    expect(() => problemDetailSchema.parse({ ...ok, secret: "must-not-be-accepted" })).toThrow();
   });
 });
 
@@ -128,5 +141,59 @@ describe("chat event envelope contract", () => {
         payload: { type: "RUN_STARTED", threadId: "psn_1", runId: "run_1" },
       }),
     ).toThrow();
+  });
+});
+
+describe("private runtime attempt contracts", () => {
+  const begin = {
+    schemaVersion: "chat-internal-runtime.v1",
+    commandId: "cmd_attempt1",
+    productRunId: "run_attempt1",
+    kind: "execution",
+    stepId: "step-1",
+    inputManifestSha256: "a".repeat(64),
+    promptTemplateVersion: "executor-prompt.v1",
+    modelConfigVersion: "bailian.qwen3.7-plus.v1",
+  };
+
+  it("begin只接受证据完整的execution attempt", () => {
+    expect(beginRunAttemptRequestSchema.safeParse(begin).success).toBe(true);
+    expect(beginRunAttemptRequestSchema.safeParse({ ...begin, kind: "planning" }).success).toBe(
+      false,
+    );
+    const missingManifest: Partial<typeof begin> = { ...begin };
+    delete missingManifest.inputManifestSha256;
+    expect(beginRunAttemptRequestSchema.safeParse(missingManifest).success).toBe(false);
+  });
+
+  it("complete用判别联合绑定outcome与errorCode", () => {
+    const base = {
+      schemaVersion: "chat-internal-runtime.v1",
+      commandId: "cmd_attempt2",
+      attemptId: "att_attempt1",
+    };
+    expect(completeRunAttemptRequestSchema.safeParse({ ...base, outcome: "success" }).success).toBe(
+      true,
+    );
+    expect(
+      completeRunAttemptRequestSchema.safeParse({
+        ...base,
+        outcome: "failure",
+        errorCode: "execution.failed",
+      }).success,
+    ).toBe(true);
+    expect(completeRunAttemptRequestSchema.safeParse({ ...base, outcome: "running" }).success).toBe(
+      false,
+    );
+    expect(completeRunAttemptRequestSchema.safeParse({ ...base, outcome: "failure" }).success).toBe(
+      false,
+    );
+    expect(
+      completeRunAttemptRequestSchema.safeParse({
+        ...base,
+        outcome: "success",
+        errorCode: "must_not_exist",
+      }).success,
+    ).toBe(false);
   });
 });

@@ -7,7 +7,13 @@ import {
   type OutboxEntry,
   type ProductSnapshot,
 } from "@chat/contracts";
-import { updateOutboxStatus, type ApplicationDeps } from "@chat/application";
+import {
+  commitRunOutcomeUnknown,
+  emitRunEvent,
+  failOutboxAndRun,
+  updateOutboxStatus,
+  type ApplicationDeps,
+} from "@chat/application";
 import { sha256Hex } from "@chat/domain";
 
 /**
@@ -29,6 +35,7 @@ export interface OutboxDispatcherOptions {
 }
 
 type Snapshot = ProductSnapshot;
+const OUTCOME_UNKNOWN_SETTLE_MS = 30_000;
 
 function dispatchCommandId(...parts: string[]): CommandId {
   return `cmd_${sha256Hex(parts.join(":")).slice(0, 32)}` as CommandId;
@@ -45,12 +52,18 @@ async function postToWorkflowRuntime(
       method: "POST",
       headers: { "content-type": "application/json", "x-chat-runtime-key": options.credential },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
     });
   } catch {
     return "unknown";
   }
   if (!response.ok) return { ok: false, status: response.status };
-  return { ok: true, json: await response.json() };
+  try {
+    return { ok: true, json: await response.json() };
+  } catch {
+    // 请求可能已在Runtime侧生效，响应体损坏或中途断开不能安全重派。
+    return "unknown";
+  }
 }
 
 async function markStatus(
@@ -58,6 +71,7 @@ async function markStatus(
   entry: OutboxEntry,
   status: "pending" | "dispatched" | "acknowledged" | "outcome_unknown" | "failed_terminal",
   errorCode?: string,
+  incrementDispatchAttempts = false,
 ): Promise<void> {
   await updateOutboxStatus(options.deps, {
     commandId: dispatchCommandId(
@@ -69,6 +83,37 @@ async function markStatus(
     outboxId: entry.outboxId,
     status,
     ...(errorCode !== undefined ? { errorCode } : {}),
+    ...(incrementDispatchAttempts ? { incrementDispatchAttempts: true } : {}),
+  });
+}
+
+async function failDispatch(
+  options: OutboxDispatcherOptions,
+  entry: OutboxEntry,
+  errorCode: string,
+  incrementDispatchAttempts: boolean,
+): Promise<void> {
+  await failOutboxAndRun(options.deps, {
+    commandId: dispatchCommandId("fail-outbox-and-run", entry.outboxId, String(entry.revision)),
+    outboxId: entry.outboxId,
+    errorCode,
+    summary: "后台工作无法安全派发，已停止本次运行",
+    incrementDispatchAttempts,
+  });
+}
+
+async function settleUnknownIfExpired(
+  options: OutboxDispatcherOptions,
+  entry: OutboxEntry,
+): Promise<void> {
+  if (Date.parse(options.deps.now()) - Date.parse(entry.updatedAt) < OUTCOME_UNKNOWN_SETTLE_MS) {
+    return;
+  }
+  await commitRunOutcomeUnknown(options.deps, {
+    commandId: dispatchCommandId("settle-outcome-unknown", entry.outboxId),
+    productRunId: entry.productRunId,
+    errorCode: "workflow.outcome_unknown",
+    summary: "后台派发结果长期无法确认，已停止自动操作，请人工核对后重新开始",
   });
 }
 
@@ -85,9 +130,18 @@ async function dispatchStart(
 ): Promise<void> {
   const attemptId = findWorkflowAttemptId(snapshot, entry.productRunId);
   if (attemptId === undefined) {
-    await markStatus(options, entry, "failed_terminal", "outbox.missing_attempt");
+    await failDispatch(options, entry, "outbox.missing_attempt", false);
     return;
   }
+  emitRunEvent(options.deps, entry.productRunId, {
+    level: "info",
+    eventName: "workflow.start.requested",
+    outcome: "unknown",
+    productRunId: entry.productRunId,
+    attemptId: attemptId as never,
+    workflowDefinitionVersion: WORKFLOW_DEFINITION_VERSION,
+    workflowDefinitionId: "wfd_planning_execution" as never,
+  });
   const result = await postToWorkflowRuntime(options, "/internal/workflow/v1/start", {
     schemaVersion: "chat-workflow-dispatch.v1",
     productRunId: entry.productRunId,
@@ -96,15 +150,34 @@ async function dispatchStart(
     outboxId: entry.outboxId,
   });
   if (result === "unknown") {
-    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown");
+    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
     return;
   }
   if (!result.ok) {
-    await markStatus(options, entry, "failed_terminal", `dispatch.http_${String(result.status)}`);
+    if (result.status >= 500) {
+      await markStatus(
+        options,
+        entry,
+        "outcome_unknown",
+        `dispatch.http_${String(result.status)}`,
+        true,
+      );
+    } else {
+      await failDispatch(options, entry, `dispatch.http_${String(result.status)}`, true);
+    }
     return;
   }
-  workflowStartResponseSchema.parse(result.json);
-  await markStatus(options, entry, "acknowledged");
+  const parsedResponse = workflowStartResponseSchema.safeParse(result.json);
+  if (!parsedResponse.success) {
+    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
+    return;
+  }
+  const response = parsedResponse.data;
+  if (response.status === "outcome_unknown") {
+    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
+  } else {
+    await markStatus(options, entry, "acknowledged", undefined, true);
+  }
 }
 
 async function dispatchResume(
@@ -118,7 +191,7 @@ async function dispatchResume(
     entry.approvalRequestId === undefined ||
     entry.decisionId === undefined
   ) {
-    await markStatus(options, entry, "failed_terminal", "outbox.missing_refs");
+    await failDispatch(options, entry, "outbox.missing_refs", false);
     return;
   }
   const result = await postToWorkflowRuntime(options, "/internal/workflow/v1/resume", {
@@ -130,15 +203,34 @@ async function dispatchResume(
     outboxId: entry.outboxId,
   });
   if (result === "unknown") {
-    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown");
+    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
     return;
   }
   if (!result.ok) {
-    await markStatus(options, entry, "failed_terminal", `dispatch.http_${String(result.status)}`);
+    if (result.status >= 500) {
+      await markStatus(
+        options,
+        entry,
+        "outcome_unknown",
+        `dispatch.http_${String(result.status)}`,
+        true,
+      );
+    } else {
+      await failDispatch(options, entry, `dispatch.http_${String(result.status)}`, true);
+    }
     return;
   }
-  workflowResumeResponseSchema.parse(result.json);
-  await markStatus(options, entry, "acknowledged");
+  const parsedResponse = workflowResumeResponseSchema.safeParse(result.json);
+  if (!parsedResponse.success) {
+    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
+    return;
+  }
+  const response = parsedResponse.data;
+  if (response.status === "outcome_unknown") {
+    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
+  } else {
+    await markStatus(options, entry, "acknowledged", undefined, true);
+  }
 }
 
 /** outcome_unknown对账：先查Runtime绑定是否已存在，再决定重派或确认，不盲目新建。 */
@@ -154,37 +246,62 @@ async function reconcileUnknown(
   try {
     response = await fetch(
       `${options.workflowRuntimeBaseUrl}/internal/workflow/v1/reconcile?${params.toString()}`,
-      { headers: { "x-chat-runtime-key": options.credential } },
+      {
+        headers: { "x-chat-runtime-key": options.credential },
+        signal: AbortSignal.timeout(30_000),
+      },
     );
   } catch {
-    return; // 对账本身结果未知：保持outcome_unknown，下个周期重试
+    await settleUnknownIfExpired(options, entry);
+    return;
   }
-  if (!response.ok) return;
-  const reconcile = workflowReconcileResponseSchema.parse(await response.json());
+  if (!response.ok) {
+    await settleUnknownIfExpired(options, entry);
+    return;
+  }
+  let reconcile: ReturnType<typeof workflowReconcileResponseSchema.parse>;
+  try {
+    reconcile = workflowReconcileResponseSchema.parse(await response.json());
+  } catch {
+    await settleUnknownIfExpired(options, entry);
+    return;
+  }
   if (entry.kind === "workflow_start") {
     if (reconcile.startBinding === "exists") {
       await markStatus(options, entry, "acknowledged");
-    } else {
-      // Runtime侧没有绑定：start请求未生效，重排队走正常幂等派发
+      return;
+    }
+    if (reconcile.startBinding === "missing") {
+      // Runtime明确确认既无启动意图也无Workflow绑定，说明Start栅栏尚未越过，可安全重排队。
       await updateOutboxStatus(options.deps, {
         commandId: dispatchCommandId("requeue-outbox", entry.outboxId, String(entry.revision)),
         outboxId: entry.outboxId,
         status: "pending",
       });
+      return;
     }
+    // outcome_unknown说明Runtime已写入启动意图但未能证明是否越过边界，禁止第二次start。
+    await settleUnknownIfExpired(options, entry);
     return;
   }
   // workflow_resume：以Runtime侧Hook派发状态为准
   if (reconcile.hookResumeState === "dispatched") {
     await markStatus(options, entry, "acknowledged");
-  } else if (reconcile.hookResumeState === "none") {
+  } else if (reconcile.hookResumeState === "none" || reconcile.hookResumeState === "missing") {
     await updateOutboxStatus(options.deps, {
       commandId: dispatchCommandId("requeue-outbox", entry.outboxId, String(entry.revision)),
       outboxId: entry.outboxId,
       status: "pending",
     });
+  } else if (
+    reconcile.hookResumeState === "dispatching" ||
+    reconcile.hookResumeState === "outcome_unknown"
+  ) {
+    // 已越过或可能越过Resume边界：保持outcome_unknown，禁止重复恢复。
+    await settleUnknownIfExpired(options, entry);
+    return;
   } else {
-    await markStatus(options, entry, "failed_terminal", "reconcile.resume_failed_terminal");
+    await failDispatch(options, entry, "reconcile.resume_failed_terminal", false);
   }
 }
 

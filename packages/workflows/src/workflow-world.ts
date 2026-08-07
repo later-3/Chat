@@ -20,6 +20,8 @@ export interface WorkflowWorldSetupOptions {
   readonly tag?: string;
   /** 测试隔离：启动前清空该tag下的运行数据。 */
   readonly clearBeforeStart?: boolean;
+  /** setWorld后、恢复队列前执行的只读安全门。 */
+  readonly beforeStart?: () => Promise<void>;
 }
 
 export interface WorkflowWorldHandle {
@@ -78,8 +80,15 @@ export async function setupWorkflowWorld(
     lazyBundleHandler(join(options.bundleDir, "workflows.mjs")),
   );
   world.registerHandler("__wkf_step_", lazyBundleHandler(join(options.bundleDir, "steps.mjs")));
-  await world.start?.();
   setWorld(world);
+  try {
+    await options.beforeStart?.();
+    await world.start?.();
+  } catch (error) {
+    setWorld(undefined);
+    await world.close?.();
+    throw error;
+  }
   return {
     world,
     workflowId,

@@ -84,8 +84,8 @@ describe("VS Code调试配置", () => {
     expect(configOf("Chat：API").port).toBe(43120);
     expect(configOf("Chat：API").env?.["PORT"]).toBe("43111");
     expect(configOf("Chat：Workflow 运行时").port).toBe(43121);
-    expect(configOf("Chat：Workflow 运行时").env?.["WORKFLOW_PORT"]).toBe("43112");
-    expect(configOf("Chat：Web 浏览器").url).toBe("http://127.0.0.1:43110");
+    expect(configOf("Chat：Workflow 运行时").env?.["CHAT_WORKFLOW_PORT"]).toBe("43112");
+    expect(configOf("Chat：Web 浏览器").url).toBe("http://127.0.0.1:43110/");
   });
 
   it("API与Workflow调试进程都安全加载根目录.env，launch.json不含任何真实凭据", () => {

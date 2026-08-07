@@ -21,11 +21,15 @@ const hostname = process.env.CHAT_API_HOST ?? "127.0.0.1";
 
 const repoRoot = process.env.CHAT_REPO_ROOT ?? process.cwd();
 const traceSink = createTraceSink();
+let applicationTraceFailures = 0;
 const deps = await createApplicationDeps(undefined, (event) => {
   try {
     traceSink.emit(event);
   } catch {
-    // Trace失败不影响业务；故障由Sink Owner看护
+    applicationTraceFailures += 1;
+    console.error(
+      `[trace] emit_failed code=trace.emit_failed owner=application total=${String(applicationTraceFailures)}`,
+    );
   }
 });
 const credential = await loadRuntimeCredential(repoRoot);

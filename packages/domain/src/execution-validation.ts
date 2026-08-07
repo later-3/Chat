@@ -71,7 +71,6 @@ export function validateExecutionCandidate(
     const expected = contract.steps[index];
     const actual = candidate.stepResults[index];
     if (expected === undefined || actual === undefined) continue;
-    seen.add(actual.stepId);
     if (actual.stepId !== expected.stepId) {
       failures.push({
         code: "step_order_mismatch",
@@ -86,6 +85,7 @@ export function validateExecutionCandidate(
         });
       }
     }
+    seen.add(actual.stepId);
     // 每条Step成功标准必须有证据
     for (const criterion of expected.successCriteria) {
       if (!mentions(actual.successCriteriaEvidence, criterion)) {

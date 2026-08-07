@@ -3,17 +3,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { JsonProductStore } from "@chat/product-store-json";
-import type { CommandId, PlanContent, PrincipalId } from "@chat/contracts";
-import { type ApplicationDeps, type IdFactory } from "./deps.js";
-import { ApplicationError, CommandIdReusedError } from "./errors.js";
-import { createProductSession, submitUserMessage } from "./session-message-use-cases.js";
-import { publishPlanForReview, submitPlanDecision } from "./plan-decision-use-cases.js";
+import type { CommandId, PlanContent, PrincipalId, ProductRunId } from "@chat/contracts";
 import {
+  type ApplicationDeps,
+  type IdFactory,
+  ApplicationError,
+  CommandIdReusedError,
+  createProductSession,
+  submitUserMessage,
+  publishPlanForReview as publishPlanForReviewUseCase,
+  submitPlanDecision,
+  commitRunFailure,
+  compilePlanningInput,
   getCurrentApproval,
   getProductRun,
   getRunPlans,
   getSessionMessages,
-} from "./query-use-cases.js";
+} from "@chat/application";
 
 const PRINCIPAL = "usr_debug" as PrincipalId;
 const OTHER = "usr_other" as PrincipalId;
@@ -48,11 +54,13 @@ const cmd = (() => {
   return () => `cmd_${(++n).toString().padStart(6, "0")}` as CommandId;
 })();
 
-async function testDeps(): Promise<{ deps: ApplicationDeps; filePath: string }> {
+async function testDeps(
+  nowOverride: () => string = now,
+): Promise<{ deps: ApplicationDeps; filePath: string }> {
   const dir = await mkdtemp(join(tmpdir(), "chat-app-"));
   const filePath = join(dir, "chat-product-store.v1.json");
-  const store = await JsonProductStore.open({ filePath, now });
-  return { deps: { store, now, ids: testIds() }, filePath };
+  const store = await JsonProductStore.open({ filePath, now: nowOverride });
+  return { deps: { store, now: nowOverride, ids: testIds() }, filePath };
 }
 
 async function reopenDeps(filePath: string): Promise<ApplicationDeps> {
@@ -106,6 +114,29 @@ async function seedSessionWithMessage(deps: ApplicationDeps, text = "根据我�
     payload: { text },
   });
   return { session, ...submitted };
+}
+
+/** 测试也必须走正式Planning Input -> Attempt -> Plan发布绑定，禁止无Attempt捷径。 */
+async function publishPlanForReview(
+  deps: ApplicationDeps,
+  input: { productRunId: ProductRunId; commandId: CommandId; content: PlanContent },
+) {
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const planRevision =
+    Object.values(snapshot.entities.plans).filter(
+      (plan) => plan.productRunId === input.productRunId,
+    ).length + 1;
+  const planning = await compilePlanningInput(deps, {
+    commandId: cmd(),
+    productRunId: input.productRunId,
+    planRevision,
+  });
+  return publishPlanForReviewUseCase(deps, {
+    ...input,
+    attemptId: planning.attemptId,
+    expectedRunRevision: planning.inputRunRevision,
+    inputManifestSha256: planning.inputManifestSha256,
+  });
 }
 
 describe("CreateProductSession + SubmitUserMessage", () => {
@@ -188,6 +219,36 @@ describe("CreateProductSession + SubmitUserMessage", () => {
         payload: { text: "different" },
       }),
     ).rejects.toBeInstanceOf(CommandIdReusedError);
+  });
+
+  it("同一Session存在未终态Run时拒绝第二条Message Command", async () => {
+    const { deps } = await testDeps();
+    const { session } = await createProductSession(deps, {
+      principalId: PRINCIPAL,
+      commandId: cmd(),
+      payload: {},
+    });
+    await submitUserMessage(deps, {
+      principalId: PRINCIPAL,
+      sessionId: session.sessionId,
+      commandId: cmd(),
+      payload: { text: "第一项工作" },
+    });
+
+    await expect(
+      submitUserMessage(deps, {
+        principalId: PRINCIPAL,
+        sessionId: session.sessionId,
+        commandId: cmd(),
+        payload: { text: "不应覆盖当前审核入口的第二项工作" },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict", httpStatus: 409 });
+
+    const { messages } = await getSessionMessages(deps, {
+      principalId: PRINCIPAL,
+      sessionId: session.sessionId,
+    });
+    expect(messages.items.map((message) => message.content.text)).toEqual(["第一项工作"]);
   });
 });
 
@@ -274,6 +335,14 @@ describe("PublishPlanForReview + SubmitPlanDecision", () => {
     expect(approved.run.status).toBe("running");
     expect(approved.run.phase).toBe("executing");
     expect(approved.run.allowedActions).toEqual([]);
+    expect(
+      (
+        await getCurrentApproval(deps, {
+          principalId: PRINCIPAL,
+          productRunId: run.productRunId,
+        })
+      ).approval,
+    ).toBeNull();
 
     // 第二个Run走reject路径
     const { run: run2 } = await seedSessionWithMessage(deps, "另一条消息");
@@ -407,6 +476,86 @@ describe("PublishPlanForReview + SubmitPlanDecision", () => {
     expect(Object.keys(snapshot.entities.decisions)).toHaveLength(1);
   });
 
+  it("拒绝输入证据不匹配或Run CAS过期的Planner候选", async () => {
+    const { deps } = await testDeps();
+    const { run } = await seedSessionWithMessage(deps);
+    const planning = await compilePlanningInput(deps, {
+      commandId: cmd(),
+      productRunId: run.productRunId,
+      planRevision: 1,
+    });
+
+    await expect(
+      publishPlanForReviewUseCase(deps, {
+        productRunId: run.productRunId,
+        commandId: cmd(),
+        content: planContent,
+        attemptId: planning.attemptId,
+        expectedRunRevision: planning.inputRunRevision,
+        inputManifestSha256: "0".repeat(64),
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+
+    await expect(
+      publishPlanForReviewUseCase(deps, {
+        productRunId: run.productRunId,
+        commandId: cmd(),
+        content: planContent,
+        attemptId: planning.attemptId,
+        expectedRunRevision: planning.inputRunRevision + 1,
+        inputManifestSha256: planning.inputManifestSha256,
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+    expect(Object.keys(snapshot.entities.plans)).toHaveLength(0);
+  });
+
+  it("Approval超过expiresAt后原子过期并失败关闭，重复命令保持同一结果", async () => {
+    let instant = Date.parse("2026-08-07T12:00:00.000Z");
+    const controlledNow = () => new Date(instant).toISOString();
+    const { deps } = await testDeps(controlledNow);
+    const { run } = await seedSessionWithMessage(deps);
+    const published = await publishPlanForReview(deps, {
+      productRunId: run.productRunId,
+      commandId: cmd(),
+      content: planContent,
+    });
+    expect(Date.parse(published.approval.expiresAt)).toBeGreaterThan(instant);
+
+    instant = Date.parse(published.approval.expiresAt) + 1;
+    const commandId = cmd();
+    const input = {
+      principalId: PRINCIPAL,
+      productRunId: run.productRunId,
+      commandId,
+      expectedRunRevision: published.run.revision,
+      payload: {
+        approvalRequestId: published.approval.approvalRequestId,
+        planId: published.plan.planId,
+        planRevision: published.plan.planRevision,
+        planSha256: published.plan.sha256,
+        kind: "approve" as const,
+      },
+    };
+    await expect(submitPlanDecision(deps, input)).rejects.toMatchObject({
+      code: "approval_expired",
+    });
+    await expect(submitPlanDecision(deps, input)).rejects.toMatchObject({
+      code: "approval_expired",
+    });
+
+    const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+    expect(snapshot.entities.runs[run.productRunId]?.status).toBe("failed");
+    expect(snapshot.entities.runs[run.productRunId]?.currentApprovalRequestId).toBeUndefined();
+    expect(snapshot.entities.approvalRequests[published.approval.approvalRequestId]?.status).toBe(
+      "expired",
+    );
+    expect(Object.keys(snapshot.entities.decisions)).toHaveLength(0);
+    expect(
+      Object.values(snapshot.outbox).filter((entry) => entry.kind === "workflow_resume"),
+    ).toHaveLength(0);
+  });
+
   it("相同Decision commandId重放只产生一个Decision和一个Resume Outbox", async () => {
     const { deps } = await testDeps();
     const { run } = await seedSessionWithMessage(deps);
@@ -505,12 +654,25 @@ describe("查询用例", () => {
       payload: {},
     });
     for (let i = 1; i <= 3; i++) {
-      await submitUserMessage(deps, {
+      const submitted = await submitUserMessage(deps, {
         principalId: PRINCIPAL,
         sessionId: session.sessionId,
         commandId: cmd(),
         payload: { text: `消息${String(i)}` },
       });
+      if (i < 3) {
+        await compilePlanningInput(deps, {
+          commandId: cmd(),
+          productRunId: submitted.run.productRunId,
+          planRevision: 1,
+        });
+        await commitRunFailure(deps, {
+          commandId: cmd(),
+          productRunId: submitted.run.productRunId,
+          errorCode: "test.completed_boundary",
+          summary: "分页Fixture结束前一个Run",
+        });
+      }
     }
     const page1 = await getSessionMessages(deps, {
       principalId: PRINCIPAL,
@@ -531,7 +693,7 @@ describe("查询用例", () => {
     expect(page2.messages.nextCursor).toBeUndefined();
   });
 
-  it("非法cursor以validation_failed拒绝", async () => {
+  it("非法、非规范或带尾随内容的cursor以validation_failed拒绝", async () => {
     const { deps } = await testDeps();
     const { session } = await createProductSession(deps, {
       principalId: PRINCIPAL,
@@ -545,6 +707,20 @@ describe("查询用例", () => {
         cursor: "not-a-cursor",
       }),
     ).rejects.toBeInstanceOf(ApplicationError);
+    for (const cursor of [
+      Buffer.from("seq:1junk", "utf8").toString("base64url"),
+      `${Buffer.from("seq:1", "utf8").toString("base64url")}=`,
+      Buffer.from("seq:01", "utf8").toString("base64url"),
+      Buffer.from("seq:1.5", "utf8").toString("base64url"),
+    ]) {
+      await expect(
+        getSessionMessages(deps, {
+          principalId: PRINCIPAL,
+          sessionId: session.sessionId,
+          cursor,
+        }),
+      ).rejects.toMatchObject({ code: "validation_failed" });
+    }
   });
 
   it("GetCurrentApproval返回当前open Approval或null", async () => {
@@ -565,5 +741,35 @@ describe("查询用例", () => {
       productRunId: run.productRunId,
     });
     expect(after.approval?.approvalRequestId).toBe(v1.approval.approvalRequestId);
+  });
+
+  it("到达expiresAt后Query明确投影expired且不再返回可操作动作", async () => {
+    let instant = Date.parse("2026-08-07T12:00:00.000Z");
+    const controlledNow = () => new Date(instant).toISOString();
+    const { deps } = await testDeps(controlledNow);
+    const { run } = await seedSessionWithMessage(deps);
+    const published = await publishPlanForReview(deps, {
+      productRunId: run.productRunId,
+      commandId: cmd(),
+      content: planContent,
+    });
+    instant = Date.parse(published.approval.expiresAt);
+
+    const approval = await getCurrentApproval(deps, {
+      principalId: PRINCIPAL,
+      productRunId: run.productRunId,
+    });
+    const projectedRun = await getProductRun(deps, {
+      principalId: PRINCIPAL,
+      productRunId: run.productRunId,
+    });
+    expect(approval.approval?.status).toBe("expired");
+    expect(projectedRun.run.allowedActions).toEqual([]);
+
+    // Query只做时间投影，不在读取路径偷偷改写Product Store。
+    const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+    expect(snapshot.entities.approvalRequests[published.approval.approvalRequestId]?.status).toBe(
+      "open",
+    );
   });
 });

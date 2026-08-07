@@ -20,7 +20,7 @@
         "CHAT_DEBUG_ROLE": "workflow",
         "CHAT_DEBUG_PORT": "43112",
         "CHAT_REPO_ROOT": "${workspaceFolder}",
-        "WORKFLOW_PORT": "43112"
+        "CHAT_WORKFLOW_PORT": "43112"
       },
       "console": "integratedTerminal",
       "preLaunchTask": "chat-debug:build-bundles",
@@ -55,7 +55,7 @@
       "name": "Chat：Web 浏览器",
       "type": "chrome",
       "request": "launch",
-      "url": "http://127.0.0.1:43110",
+      "url": "http://127.0.0.1:43110/",
       "webRoot": "${workspaceFolder}/apps/web",
       "preLaunchTask": "chat-debug:start-web",
       "postDebugTask": "chat-debug:stop"

@@ -7,6 +7,10 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./public": {
+      "types": "./src/public.ts",
+      "import": "./src/public.ts"
     }
   },
   "scripts": {

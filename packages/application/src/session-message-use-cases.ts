@@ -11,7 +11,7 @@ import type {
 } from "@chat/contracts";
 import { DEFAULT_MAX_PLAN_REVISIONS, type ApplicationDeps } from "./deps.js";
 import { toMessageDto, toRunDto, toSessionDto } from "./dto.js";
-import { forbidden, notFound } from "./errors.js";
+import { forbidden, notFound, revisionConflict } from "./errors.js";
 import { emitRunEvent } from "./trace-helpers.js";
 import type { MessageDto, RunDto } from "@chat/contracts";
 
@@ -46,6 +46,7 @@ export async function createProductSession(
     commandId: input.commandId,
     commandType: "CreateProductSession",
     requestSha256,
+    traceContext: { productSessionId: sessionId },
     mutate: (draft) => {
       const session: ProductSession = {
         schemaVersion: "product-session.v1",
@@ -95,11 +96,23 @@ export async function submitUserMessage(
     commandId: input.commandId,
     commandType: "SubmitUserMessage",
     requestSha256,
+    traceContext: { productRunId, productSessionId: input.sessionId },
     mutate: (draft) => {
       const session = draft.entities.sessions[input.sessionId];
       if (session === undefined) throw notFound("Session不存在");
       if (session.ownerPrincipalId !== input.principalId) {
         throw forbidden("无权向该Session发送消息");
+      }
+      const hasActiveRun = Object.values(draft.entities.runs).some(
+        (run) =>
+          run.sessionId === input.sessionId &&
+          run.status !== "succeeded" &&
+          run.status !== "failed" &&
+          run.status !== "cancelled" &&
+          run.status !== "outcome_unknown",
+      );
+      if (hasActiveRun) {
+        throw revisionConflict("当前Session已有未结束的Product Run");
       }
       const sessionSequence = session.lastMessageSequence + 1;
       const message: Message = {

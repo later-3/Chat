@@ -35,7 +35,7 @@ async function waitForServiceWorkerControl(page: Page) {
 
 test.describe("PWA 安装元数据与产物", () => {
   test("Manifest 字段、图标与 Service Worker 产物有效", async ({ page, request }) => {
-    await page.goto("/");
+    await page.goto("/?view=fixture");
 
     const manifestHref = await page.locator('link[rel="manifest"]').getAttribute("href");
     expect(manifestHref).toBeTruthy();
@@ -73,15 +73,38 @@ test.describe("PWA 安装元数据与产物", () => {
   });
 
   test("Service Worker 激活后控制页面", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?view=fixture");
     await waitForServiceWorkerControl(page);
     await expect(page.getByText("已连接")).toBeVisible();
   });
 });
 
 test.describe("离线外壳与草稿边界", () => {
-  test("离线重开外壳、草稿恢复、离线发送被阻止、恢复后不自动发送", async ({ page, context }) => {
+  test("默认真实入口离线恢复草稿并禁止发送", async ({ page, context }) => {
     await page.goto("/");
+    const input = page.getByLabel("消息输入框");
+    // 先等真实Session bootstrap落盘，再允许SW helper触发reload；否则首次导航
+    // 会在CreateSession响应前被中断，离线外壳没有可恢复的公开sessionId。
+    await expect(input).toBeVisible();
+    await waitForServiceWorkerControl(page);
+    await input.fill("真实入口离线前草稿");
+    await page.reload();
+    await expect(page.getByLabel("消息输入框")).toHaveValue("真实入口离线前草稿");
+
+    await context.setOffline(true);
+    await page.goto("/");
+    await expect(page.getByLabel("消息输入框")).toHaveValue("真实入口离线前草稿");
+    await expect(page.getByLabel("发送")).toBeDisabled();
+    await expect(page.getByText("当前离线，草稿已保存在此设备，联网后请手动发送。")).toBeVisible();
+
+    await context.setOffline(false);
+    await page.reload();
+    await expect(page.getByLabel("消息输入框")).toHaveValue("真实入口离线前草稿");
+    await expect(page.getByLabel("发送")).toBeEnabled();
+  });
+
+  test("离线重开外壳、草稿恢复、离线发送被阻止、恢复后不自动发送", async ({ page, context }) => {
+    await page.goto("/?view=fixture");
     await waitForServiceWorkerControl(page);
     await expect(page.getByText("已连接")).toBeVisible();
 
@@ -95,7 +118,7 @@ test.describe("离线外壳与草稿边界", () => {
 
     // 场景B：断网后重新导航，外壳仍能打开且明确显示未连接
     await context.setOffline(true);
-    await page.goto("/");
+    await page.goto("/?view=fixture");
     await expect(page.getByText("未连接")).toBeVisible();
     await expect(page.getByRole("main", { name: "今日" })).toBeVisible();
 

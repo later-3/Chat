@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import { ZodError } from "zod";
 import {
   compileExecutionContractRequestSchema,
+  beginRunAttemptRequestSchema,
   loadCommittedDecisionRequestSchema,
   persistExecutionCandidateRequestSchema,
   persistValidationResultRequestSchema,
@@ -10,6 +11,7 @@ import {
   commitRunFailureRequestSchema,
   compilePlanningInputRequestSchema,
   completeRunAttemptRequestSchema,
+  expireApprovalRequestSchema,
   publishPlanReviewRequestSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   type ProblemDetail,
@@ -25,6 +27,7 @@ import {
   commitRejectedRun,
   commitRunFailure,
   completeRunAttempt,
+  expireApproval,
   loadCommittedDecision,
   persistExecutionCandidate,
   persistValidationResult,
@@ -32,7 +35,6 @@ import {
   beginRunAttempt,
   type ApplicationDeps,
 } from "@chat/application";
-import { z } from "zod";
 
 /**
  * 后端私有Runtime Router（任务书§12.4）。
@@ -43,17 +45,6 @@ import { z } from "zod";
  * - 所有写命令仍经过strict Zod、Application Coordinator、CAS、Trace与幂等；
  *   本Router不是直接写Store的后门。
  */
-
-const beginRunAttemptRequestSchema = z
-  .object({
-    schemaVersion: z.literal(INTERNAL_RUNTIME_SCHEMA_VERSION),
-    commandId: z.string().regex(/^cmd_[A-Za-z0-9]+$/),
-    productRunId: z.string().regex(/^run_[A-Za-z0-9]+$/),
-    kind: z.enum(["planning", "execution"]),
-    planRevision: z.number().int().positive().optional(),
-    stepId: z.string().min(1).max(100).optional(),
-  })
-  .strict();
 
 type Variables = { requestId: RequestId };
 
@@ -130,6 +121,18 @@ function mapInternalError(
 
 type Ctx = Context<{ Variables: Variables }>;
 
+async function parseInternalBody(c: Ctx): Promise<unknown> {
+  try {
+    return await c.req.json();
+  } catch {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 400,
+      message: "请求体不是合法JSON",
+    });
+  }
+}
+
 function handle<S extends 200 | 201, T>(status: S, fn: (c: Ctx) => Promise<T>) {
   return async (c: Ctx): Promise<Response> => {
     try {
@@ -166,7 +169,7 @@ export function createInternalRuntimeRouter(
   router.post(
     "/compile-planning-input",
     handle(200, async (c) => {
-      const request = compilePlanningInputRequestSchema.parse(await c.req.json());
+      const request = compilePlanningInputRequestSchema.parse(await parseInternalBody(c));
       return compilePlanningInput(options.deps, request);
     }),
   );
@@ -174,12 +177,14 @@ export function createInternalRuntimeRouter(
   router.post(
     "/publish-plan-review",
     handle(201, async (c) => {
-      const request = publishPlanReviewRequestSchema.parse(await c.req.json());
+      const request = publishPlanReviewRequestSchema.parse(await parseInternalBody(c));
       const result = await publishPlanForReview(options.deps, {
         productRunId: request.productRunId,
         commandId: request.commandId,
         content: request.content,
         attemptId: request.attemptId,
+        expectedRunRevision: request.expectedRunRevision,
+        inputManifestSha256: request.inputManifestSha256,
       });
       return {
         schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
@@ -187,6 +192,7 @@ export function createInternalRuntimeRouter(
         planRevision: result.plan.planRevision,
         planSha256: result.plan.sha256,
         approvalRequestId: result.approval.approvalRequestId,
+        approvalExpiresAt: result.approval.expiresAt,
       };
     }),
   );
@@ -194,7 +200,7 @@ export function createInternalRuntimeRouter(
   router.post(
     "/load-committed-decision",
     handle(200, async (c) => {
-      const request = loadCommittedDecisionRequestSchema.parse(await c.req.json());
+      const request = loadCommittedDecisionRequestSchema.parse(await parseInternalBody(c));
       return loadCommittedDecision(options.deps, request);
     }),
   );
@@ -202,7 +208,7 @@ export function createInternalRuntimeRouter(
   router.post(
     "/compile-execution-contract",
     handle(201, async (c) => {
-      const request = compileExecutionContractRequestSchema.parse(await c.req.json());
+      const request = compileExecutionContractRequestSchema.parse(await parseInternalBody(c));
       const result = await compileExecutionContract(options.deps, request);
       return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, contract: result.contract };
     }),
@@ -211,14 +217,8 @@ export function createInternalRuntimeRouter(
   router.post(
     "/begin-run-attempt",
     handle(201, async (c) => {
-      const request = beginRunAttemptRequestSchema.parse(await c.req.json());
-      const result = await beginRunAttempt(options.deps, {
-        commandId: request.commandId as never,
-        productRunId: request.productRunId as never,
-        kind: request.kind,
-        ...(request.planRevision !== undefined ? { planRevision: request.planRevision } : {}),
-        ...(request.stepId !== undefined ? { stepId: request.stepId } : {}),
-      });
+      const request = beginRunAttemptRequestSchema.parse(await parseInternalBody(c));
+      const result = await beginRunAttempt(options.deps, request);
       return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, attemptId: result.attemptId };
     }),
   );
@@ -226,20 +226,8 @@ export function createInternalRuntimeRouter(
   router.post(
     "/complete-run-attempt",
     handle(200, async (c) => {
-      const request = completeRunAttemptRequestSchema.parse(await c.req.json());
-      if (request.outcome === "running") {
-        throw new ApplicationError({
-          code: "validation_failed",
-          httpStatus: 400,
-          message: "complete-run-attempt不接受running outcome",
-        });
-      }
-      const result = await completeRunAttempt(options.deps, {
-        commandId: request.commandId,
-        attemptId: request.attemptId,
-        outcome: request.outcome,
-        ...(request.errorCode !== undefined ? { errorCode: request.errorCode } : {}),
-      });
+      const request = completeRunAttemptRequestSchema.parse(await parseInternalBody(c));
+      const result = await completeRunAttempt(options.deps, request);
       return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, revision: result.revision };
     }),
   );
@@ -247,7 +235,7 @@ export function createInternalRuntimeRouter(
   router.post(
     "/persist-execution-candidate",
     handle(201, async (c) => {
-      const request = persistExecutionCandidateRequestSchema.parse(await c.req.json());
+      const request = persistExecutionCandidateRequestSchema.parse(await parseInternalBody(c));
       const result = await persistExecutionCandidate(options.deps, request);
       return {
         schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
@@ -260,11 +248,13 @@ export function createInternalRuntimeRouter(
   router.post(
     "/persist-validation-result",
     handle(201, async (c) => {
-      const request = persistValidationResultRequestSchema.parse(await c.req.json());
+      const request = persistValidationResultRequestSchema.parse(await parseInternalBody(c));
       const result = await persistValidationResult(options.deps, request);
       return {
         schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
         validationResultId: result.validationResultId,
+        outcome: result.outcome,
+        failures: result.failures,
       };
     }),
   );
@@ -272,7 +262,7 @@ export function createInternalRuntimeRouter(
   router.post(
     "/commit-execution-result",
     handle(201, async (c) => {
-      const request = commitExecutionResultRequestSchema.parse(await c.req.json());
+      const request = commitExecutionResultRequestSchema.parse(await parseInternalBody(c));
       const result = await commitExecutionResult(options.deps, request);
       return {
         schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
@@ -285,16 +275,29 @@ export function createInternalRuntimeRouter(
   router.post(
     "/commit-rejected-run",
     handle(200, async (c) => {
-      const request = commitRejectedRunRequestSchema.parse(await c.req.json());
+      const request = commitRejectedRunRequestSchema.parse(await parseInternalBody(c));
       const result = await commitRejectedRun(options.deps, request);
       return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, revision: result.revision };
     }),
   );
 
   router.post(
+    "/expire-approval",
+    handle(200, async (c) => {
+      const request = expireApprovalRequestSchema.parse(await parseInternalBody(c));
+      const result = await expireApproval(options.deps, request);
+      return {
+        schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+        status: result.status,
+        revision: result.revision,
+      };
+    }),
+  );
+
+  router.post(
     "/commit-run-failure",
     handle(200, async (c) => {
-      const request = commitRunFailureRequestSchema.parse(await c.req.json());
+      const request = commitRunFailureRequestSchema.parse(await parseInternalBody(c));
       const result = await commitRunFailure(options.deps, request);
       return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, revision: result.revision };
     }),

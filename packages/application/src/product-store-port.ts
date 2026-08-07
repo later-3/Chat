@@ -1,4 +1,4 @@
-import type { CommandId, ProductSnapshot } from "@chat/contracts";
+import type { CommandId, ProductRunId, ProductSessionId, ProductSnapshot } from "@chat/contracts";
 
 /**
  * Product Store Port（任务书§10）。
@@ -33,6 +33,11 @@ export interface ProductTransaction {
   readonly commandType: string;
   /** canonical JSON SHA-256；同一commandId不同Hash返回COMMAND_ID_REUSED。 */
   readonly requestSha256: string;
+  /** 仅用于Trace关联，不参与业务判断，也不得携带正文。 */
+  readonly traceContext?: {
+    readonly productRunId?: ProductRunId;
+    readonly productSessionId?: ProductSessionId;
+  };
   readonly mutate: (draft: ProductSnapshot) => ProductMutationResult;
 }
 

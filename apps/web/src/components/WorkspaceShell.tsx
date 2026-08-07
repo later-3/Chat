@@ -54,6 +54,8 @@ interface WorkspaceShellProps {
   onModelChange: (modelId: string) => void;
   messagesBySession: Readonly<Record<SessionId, readonly ChatMessage[]>>;
   onSend: (sessionId: SessionId, text: string) => void;
+  /** M3真实会话入口；提供时在会话列表顶部显示。 */
+  onOpenReal?: () => void;
 }
 
 function StatusBadge({ tone, children }: { tone: StatusTone; children: React.ReactNode }) {
@@ -117,20 +119,27 @@ function SessionRail({
   onOpenSplit,
   onHide,
   onNew,
+  onOpenReal,
 }: {
   active: WorkspaceId;
   onOpen: (id: SessionId) => void;
   onOpenSplit: (id: SessionId) => void;
   onHide: () => void;
   onNew: () => void;
+  onOpenReal?: () => void;
 }) {
   return (
     <aside className="session-rail" aria-label="会话列表">
       <header className="session-rail-header">
         <span className="session-rail-title">
-          会话 <small>本地示例</small>
+          会话 <small>演示数据 · 未接入真实链</small>
         </span>
         <div className="session-header-actions">
+          {onOpenReal && (
+            <button className="small-button primary" onClick={onOpenReal}>
+              真实会话
+            </button>
+          )}
           <button className="small-button" onClick={onNew}>
             新建
           </button>
@@ -712,6 +721,7 @@ export function WorkspaceShell({
   onModelChange,
   messagesBySession,
   onSend,
+  onOpenReal,
 }: WorkspaceShellProps) {
   const detachedQuery = useMemo(() => new URLSearchParams(window.location.search), []);
   const detachedSessionValue = detachedQuery.get("detached");
@@ -846,6 +856,7 @@ export function WorkspaceShell({
           setMobileSessionsOpen(false);
         }}
         onNew={() => openSession("canvas", true)}
+        {...(onOpenReal !== undefined ? { onOpenReal } : {})}
       />
 
       <section className="workspace-stage">

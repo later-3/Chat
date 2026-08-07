@@ -14,6 +14,10 @@ import {
   submitDecisionPayloadSchema,
   submitMessagePayloadSchema,
 } from "./product-api.js";
+import {
+  commitExecutionResultRequestSchema,
+  persistValidationResultRequestSchema,
+} from "./internal-runtime.js";
 
 const NOW = "2026-08-07T12:00:00.000Z";
 const HASH_A = "a".repeat(64);
@@ -69,6 +73,7 @@ describe("product entity contracts", () => {
       planRevisionId: "plr_1",
       planId: "pln_1",
       productRunId: "run_1",
+      planningAttemptId: "att_1",
       planRevision: 1,
       status: "under_review",
       content: planContent,
@@ -167,6 +172,36 @@ describe("product snapshot contract", () => {
 });
 
 describe("product api command payloads", () => {
+  it("私有验证与Product Commit合同不接受Workflow伪造结论或正文", () => {
+    const validation = {
+      schemaVersion: "chat-internal-runtime.v1",
+      commandId: "cmd_1",
+      productRunId: "run_1",
+      executionContractId: "exc_1",
+      executionCandidateId: "xcd_1",
+    };
+    expect(persistValidationResultRequestSchema.parse(validation)).toEqual(validation);
+    expect(() =>
+      persistValidationResultRequestSchema.parse({
+        ...validation,
+        outcome: "pass",
+        failures: [],
+      }),
+    ).toThrow();
+
+    const commit = {
+      ...validation,
+      validationResultId: "val_1",
+    };
+    expect(commitExecutionResultRequestSchema.parse(commit)).toEqual(commit);
+    expect(() =>
+      commitExecutionResultRequestSchema.parse({
+        ...commit,
+        renderedMarkdown: "绕过Candidate注入的正文",
+      }),
+    ).toThrow();
+  });
+
   it("Message payload拒绝浏览器指定Provider/模型/Runtime参数", () => {
     expect(submitMessagePayloadSchema.parse({ text: "帮我写周报" }).text).toBe("帮我写周报");
     expect(() => submitMessagePayloadSchema.parse({ text: "hi", model: "qwen3.7-plus" })).toThrow();

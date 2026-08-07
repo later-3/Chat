@@ -1,9 +1,18 @@
-import { hashCanonical, transitionRunLifecycle, type RunLifecycle } from "@chat/domain";
+import {
+  computeExecutionInputManifestSha256,
+  hashCanonical,
+  transitionRunLifecycle,
+  validateExecutionCandidate,
+  type RunLifecycle,
+} from "@chat/domain";
 import type {
   CommandId,
   DecisionId,
   ExecutionCandidateId,
+  ExecutionCandidate,
   ExecutionContractId,
+  ExecutionContract,
+  ApprovalRequestId,
   Message,
   ProductRunId,
   ValidationResultId,
@@ -14,7 +23,8 @@ import type {
 } from "@chat/contracts";
 import { type ApplicationDeps } from "./deps.js";
 import { notFound, revisionConflict } from "./errors.js";
-import { emitRunEvent } from "./trace-helpers.js";
+import { emitProductRunTransition, settleRunWithoutSuccess } from "./run-settlement.js";
+import { emitRunEvent, safeErrorType } from "./trace-helpers.js";
 
 /**
  * 候选持久化、验证结果与Product Commit（任务书§11三道门）。
@@ -29,7 +39,6 @@ export async function persistExecutionCandidate(
   const requestSha256 = hashCanonical("command.persist-execution-candidate.v1", input);
   const sha256 = hashCanonical("execution-candidate.v1", {
     executionContractId: input.executionContractId,
-    attemptId: input.attemptId,
     stepResults: input.stepResults,
     finalOutput: input.finalOutput,
     completionCriteriaEvidence: input.completionCriteriaEvidence,
@@ -40,21 +49,76 @@ export async function persistExecutionCandidate(
     commandId: input.commandId,
     commandType: "PersistExecutionCandidate",
     requestSha256,
+    traceContext: { productRunId: input.productRunId },
     mutate: (draft) => {
       const contract = draft.entities.executionContracts[input.executionContractId];
       if (contract === undefined || contract.productRunId !== input.productRunId) {
         throw notFound("Execution Contract不存在");
       }
-      const attempt = draft.entities.attempts[input.attemptId];
-      if (attempt === undefined || attempt.productRunId !== input.productRunId) {
-        throw notFound("Run Attempt不存在");
+      const priorResults = new Map<string, (typeof input.stepResults)[number]>();
+      for (const stepResult of input.stepResults) {
+        const attempt = draft.entities.attempts[stepResult.executionAttemptId];
+        if (
+          attempt === undefined ||
+          attempt.productRunId !== input.productRunId ||
+          attempt.kind !== "execution" ||
+          attempt.stepId !== stepResult.stepId ||
+          attempt.outcome !== "success" ||
+          attempt.inputManifestSha256 !== stepResult.inputManifestSha256 ||
+          attempt.promptTemplateVersion === undefined ||
+          attempt.modelConfigVersion === undefined
+        ) {
+          throw revisionConflict(`步骤${stepResult.stepId}的Execution Attempt血缘不合法`);
+        }
+        const contractStep = contract.steps.find((step) => step.stepId === stepResult.stepId);
+        if (contractStep === undefined) throw revisionConflict("Execution Step不在合同中");
+        if (
+          stepResult.dependencyRefs.length !== contractStep.dependsOn.length ||
+          stepResult.dependencyRefs.some((ref, index) => {
+            const expectedId = contractStep.dependsOn[index];
+            const dependency = priorResults.get(ref.stepId);
+            return (
+              expectedId !== ref.stepId ||
+              dependency === undefined ||
+              dependency.executionAttemptId !== ref.executionAttemptId ||
+              dependency.sha256 !== ref.sha256
+            );
+          })
+        ) {
+          throw revisionConflict(`步骤${stepResult.stepId}的依赖结果血缘不合法`);
+        }
+        const expectedInputManifestSha256 = computeExecutionInputManifestSha256({
+          executionContractId: contract.executionContractId,
+          approvedPlanSha256: contract.approvedPlanSha256,
+          stepId: stepResult.stepId,
+          dependencyRefs: stepResult.dependencyRefs,
+          promptTemplateVersion: attempt.promptTemplateVersion,
+          modelConfigVersion: attempt.modelConfigVersion,
+        });
+        if (expectedInputManifestSha256 !== stepResult.inputManifestSha256) {
+          throw revisionConflict(`步骤${stepResult.stepId}的输入Manifest不一致`);
+        }
+        const expectedStepSha256 = hashCanonical("execution-step-result.v1", {
+          stepId: stepResult.stepId,
+          executionAttemptId: stepResult.executionAttemptId,
+          inputManifestSha256: stepResult.inputManifestSha256,
+          dependencyRefs: stepResult.dependencyRefs,
+          output: stepResult.output,
+          sections: stepResult.sections,
+          successCriteriaEvidence: stepResult.successCriteriaEvidence,
+          criteriaEvidence: stepResult.criteriaEvidence,
+          warnings: stepResult.warnings,
+        });
+        if (expectedStepSha256 !== stepResult.sha256) {
+          throw revisionConflict(`步骤${stepResult.stepId}的结果Hash不一致`);
+        }
+        priorResults.set(stepResult.stepId, stepResult);
       }
       draft.entities.executionCandidates[executionCandidateId] = {
         schemaVersion: "execution-candidate.v1",
         executionCandidateId,
         productRunId: input.productRunId,
         executionContractId: input.executionContractId,
-        attemptId: input.attemptId,
         stepResults: input.stepResults,
         finalOutput: input.finalOutput,
         completionCriteriaEvidence: input.completionCriteriaEvidence,
@@ -76,7 +140,11 @@ export async function persistExecutionCandidate(
 export async function persistValidationResult(
   deps: ApplicationDeps,
   input: Omit<PersistValidationResultRequest, "schemaVersion">,
-): Promise<{ validationResultId: ValidationResultId }> {
+): Promise<{
+  validationResultId: ValidationResultId;
+  outcome: "pass" | "fail";
+  failures: { code: string; detail: string }[];
+}> {
   const now = deps.now();
   const validationResultId = deps.ids.validationResult();
   const requestSha256 = hashCanonical("command.persist-validation-result.v1", input);
@@ -85,6 +153,7 @@ export async function persistValidationResult(
     commandId: input.commandId,
     commandType: "PersistValidationResult",
     requestSha256,
+    traceContext: { productRunId: input.productRunId },
     mutate: (draft) => {
       const contract = draft.entities.executionContracts[input.executionContractId];
       if (contract === undefined || contract.productRunId !== input.productRunId) {
@@ -94,14 +163,15 @@ export async function persistValidationResult(
       if (candidate === undefined || candidate.executionContractId !== input.executionContractId) {
         throw notFound("Execution Candidate不存在");
       }
+      const failures = validatePersistedCandidate(contract, candidate);
       draft.entities.validationResults[validationResultId] = {
         schemaVersion: "validation-result.v1",
         validationResultId,
         productRunId: input.productRunId,
         executionContractId: input.executionContractId,
         executionCandidateId: input.executionCandidateId,
-        outcome: input.outcome,
-        failures: input.failures,
+        outcome: failures.length === 0 ? "pass" : "fail",
+        failures,
         revision: 1,
         createdAt: now,
         updatedAt: now,
@@ -112,8 +182,13 @@ export async function persistValidationResult(
 
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
   const candidate = snapshot.entities.executionCandidates[input.executionCandidateId];
+  const validation =
+    snapshot.entities.validationResults[
+      result.resultRefs["validationResultId"] as ValidationResultId
+    ];
+  if (validation === undefined) throw notFound("Validation Result不存在");
   const workflowAttempt = findWorkflowAttempt(snapshot.entities, input.productRunId);
-  if (candidate !== undefined && workflowAttempt !== undefined) {
+  if (!result.replayed && candidate !== undefined && workflowAttempt !== undefined) {
     const eventBase = {
       productRunId: input.productRunId,
       attemptId: workflowAttempt.attemptId,
@@ -123,7 +198,7 @@ export async function persistValidationResult(
         sha256: candidate.sha256,
       },
     };
-    if (input.outcome === "pass") {
+    if (validation.outcome === "pass") {
       emitRunEvent(deps, input.productRunId, {
         level: "info",
         eventName: "execution.validated",
@@ -137,13 +212,17 @@ export async function persistValidationResult(
         outcome: "rejected",
         ...eventBase,
         error: {
-          code: input.failures[0]?.code ?? "validation_failed",
+          code: validation.failures[0]?.code ?? "validation_failed",
           type: "ValidationError",
         },
       });
     }
   }
-  return { validationResultId: result.resultRefs["validationResultId"] as ValidationResultId };
+  return {
+    validationResultId: validation.validationResultId,
+    outcome: validation.outcome,
+    failures: validation.failures,
+  };
 }
 
 export interface CommitExecutionResultCommand {
@@ -152,7 +231,6 @@ export interface CommitExecutionResultCommand {
   readonly executionContractId: ExecutionContractId;
   readonly executionCandidateId: ExecutionCandidateId;
   readonly validationResultId: ValidationResultId;
-  readonly renderedMarkdown: string;
 }
 
 /** Product Commit：原子提交Assistant Message + Run终态 + Receipt；失败三者都不提交。 */
@@ -161,19 +239,22 @@ export async function commitExecutionResult(
   input: CommitExecutionResultCommand,
 ): Promise<{ finalMessageId: string; revision: number }> {
   const now = deps.now();
+  const startedAt = performance.now();
   const finalMessageId = deps.ids.message();
-  const renderedMarkdown = input.renderedMarkdown;
   const requestSha256 = hashCanonical("command.commit-execution-result.v1", {
     productRunId: input.productRunId,
     executionContractId: input.executionContractId,
     executionCandidateId: input.executionCandidateId,
     validationResultId: input.validationResultId,
-    renderedMarkdown,
   });
 
   const { snapshot: before } = await deps.store.read({ kind: "committedSnapshot" });
   const workflowAttempt = findWorkflowAttempt(before.entities, input.productRunId);
-  if (workflowAttempt !== undefined) {
+  const priorReceipt = before.commandReceipts[input.commandId];
+  const exactReplay =
+    priorReceipt?.commandType === "CommitExecutionResult" &&
+    priorReceipt.requestSha256 === requestSha256;
+  if (workflowAttempt !== undefined && !exactReplay) {
     emitRunEvent(deps, input.productRunId, {
       level: "info",
       eventName: "product_commit.started",
@@ -184,90 +265,116 @@ export async function commitExecutionResult(
     });
   }
 
-  const result = await deps.store.transact({
-    commandId: input.commandId,
-    commandType: "CommitExecutionResult",
-    requestSha256,
-    mutate: (draft) => {
-      const run = draft.entities.runs[input.productRunId];
-      if (run === undefined) throw notFound("Product Run不存在");
-      const contract = draft.entities.executionContracts[input.executionContractId];
-      if (contract === undefined || contract.productRunId !== input.productRunId) {
-        throw notFound("Execution Contract不存在");
-      }
-      const candidate = draft.entities.executionCandidates[input.executionCandidateId];
-      if (
-        candidate === undefined ||
-        candidate.executionContractId !== contract.executionContractId
-      ) {
-        throw notFound("Execution Candidate不存在");
-      }
-      const validation = draft.entities.validationResults[input.validationResultId];
-      if (
-        validation === undefined ||
-        validation.executionCandidateId !== candidate.executionCandidateId ||
-        validation.executionContractId !== contract.executionContractId
-      ) {
-        throw notFound("Validation Result不存在");
-      }
-      if (validation.outcome !== "pass") {
-        throw revisionConflict("验证未通过的候选不能提交为正式结果");
-      }
+  const result = await deps.store
+    .transact({
+      commandId: input.commandId,
+      commandType: "CommitExecutionResult",
+      requestSha256,
+      traceContext: { productRunId: input.productRunId },
+      mutate: (draft) => {
+        const run = draft.entities.runs[input.productRunId];
+        if (run === undefined) throw notFound("Product Run不存在");
+        const contract = draft.entities.executionContracts[input.executionContractId];
+        if (contract === undefined || contract.productRunId !== input.productRunId) {
+          throw notFound("Execution Contract不存在");
+        }
+        const candidate = draft.entities.executionCandidates[input.executionCandidateId];
+        if (
+          candidate === undefined ||
+          candidate.executionContractId !== contract.executionContractId
+        ) {
+          throw notFound("Execution Candidate不存在");
+        }
+        const validation = draft.entities.validationResults[input.validationResultId];
+        if (
+          validation === undefined ||
+          validation.executionCandidateId !== candidate.executionCandidateId ||
+          validation.executionContractId !== contract.executionContractId
+        ) {
+          throw notFound("Validation Result不存在");
+        }
+        if (validation.outcome !== "pass") {
+          throw revisionConflict("验证未通过的候选不能提交为正式结果");
+        }
+        const currentFailures = validatePersistedCandidate(contract, candidate);
+        if (
+          currentFailures.length !== 0 ||
+          hashCanonical("validation-failures.v1", validation.failures) !==
+            hashCanonical("validation-failures.v1", currentFailures)
+        ) {
+          throw revisionConflict("Validation Result与当前持久化候选不一致");
+        }
+        const renderedMarkdown = renderCandidateMarkdown(candidate);
 
-      let lifecycle: RunLifecycle = { status: run.status, phase: run.phase };
-      if (lifecycle.status === "running" && lifecycle.phase === "executing") {
-        lifecycle = transitionRunLifecycle(lifecycle, { status: "running", phase: "validating" });
-      }
-      lifecycle = transitionRunLifecycle(lifecycle, { status: "succeeded", phase: "completed" });
+        let lifecycle: RunLifecycle = { status: run.status, phase: run.phase };
+        if (lifecycle.status === "running" && lifecycle.phase === "executing") {
+          lifecycle = transitionRunLifecycle(lifecycle, { status: "running", phase: "validating" });
+        }
+        lifecycle = transitionRunLifecycle(lifecycle, { status: "succeeded", phase: "completed" });
 
-      const session = draft.entities.sessions[run.sessionId];
-      if (session === undefined) throw notFound("Session不存在");
-      const sessionSequence = session.lastMessageSequence + 1;
-      const message: Message = {
-        schemaVersion: "message.v1",
-        messageId: finalMessageId,
-        sessionId: run.sessionId,
-        sessionSequence,
-        role: "assistant",
-        content: { format: "markdown", text: renderedMarkdown },
-        sourceRunId: input.productRunId,
-        revision: 1,
-        createdAt: now,
-        updatedAt: now,
-      };
-      draft.entities.messages[finalMessageId] = message;
-      draft.entities.sessions[run.sessionId] = {
-        ...session,
-        lastMessageSequence: sessionSequence,
-        revision: session.revision + 1,
-        updatedAt: now,
-      };
-      draft.entities.runs[input.productRunId] = {
-        ...run,
-        status: lifecycle.status,
-        phase: lifecycle.phase,
-        finalMessageId,
-        revision: run.revision + 1,
-        updatedAt: now,
-      };
-      completeWorkflowAttempt(draft, input.productRunId, "success", now);
-      return {
-        resultRefs: {
+        const session = draft.entities.sessions[run.sessionId];
+        if (session === undefined) throw notFound("Session不存在");
+        const sessionSequence = session.lastMessageSequence + 1;
+        const message: Message = {
+          schemaVersion: "message.v1",
+          messageId: finalMessageId,
+          sessionId: run.sessionId,
+          sessionSequence,
+          role: "assistant",
+          content: { format: "markdown", text: renderedMarkdown },
+          sourceRunId: input.productRunId,
+          revision: 1,
+          createdAt: now,
+          updatedAt: now,
+        };
+        draft.entities.messages[finalMessageId] = message;
+        draft.entities.sessions[run.sessionId] = {
+          ...session,
+          lastMessageSequence: sessionSequence,
+          revision: session.revision + 1,
+          updatedAt: now,
+        };
+        draft.entities.runs[input.productRunId] = {
+          ...run,
+          status: lifecycle.status,
+          phase: lifecycle.phase,
           finalMessageId,
+          revision: run.revision + 1,
+          updatedAt: now,
+        };
+        completeWorkflowAttempt(draft, input.productRunId, "success", now);
+        return {
+          resultRefs: {
+            finalMessageId,
+            productRunId: input.productRunId,
+            messageSha256: hashCanonical("message.v1", {
+              messageId: finalMessageId,
+              sessionId: run.sessionId,
+              sessionSequence,
+              role: "assistant",
+              content: message.content,
+            }),
+          },
+        };
+      },
+    })
+    .catch((error: unknown) => {
+      if (workflowAttempt !== undefined && !exactReplay) {
+        emitRunEvent(deps, input.productRunId, {
+          level: "warn",
+          eventName: "product_commit.failed",
+          outcome: "failure",
           productRunId: input.productRunId,
-          messageSha256: hashCanonical("message.v1", {
-            messageId: finalMessageId,
-            sessionId: run.sessionId,
-            sessionSequence,
-            role: "assistant",
-            content: message.content,
-          }),
-        },
-      };
-    },
-  });
+          attemptId: workflowAttempt.attemptId,
+          error: { code: "product_commit.failed", type: safeErrorType(error) },
+          outputRefs: [],
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+      }
+      throw error;
+    });
 
-  if (workflowAttempt !== undefined) {
+  if (workflowAttempt !== undefined && !result.replayed) {
     emitRunEvent(deps, input.productRunId, {
       level: "info",
       eventName: "product_commit.committed",
@@ -281,12 +388,53 @@ export async function commitExecutionResult(
           sha256: result.resultRefs["messageSha256"] ?? "",
         },
       ],
+      durationMs: Math.round(performance.now() - startedAt),
     });
+    const priorRun = before.entities.runs[input.productRunId];
+    if (priorRun !== undefined) {
+      const { snapshot: after } = await deps.store.read({ kind: "committedSnapshot" });
+      const committedRun = after.entities.runs[input.productRunId];
+      if (committedRun !== undefined)
+        emitProductRunTransition(deps, priorRun, committedRun, "info");
+    }
   }
   return {
     finalMessageId: result.resultRefs["finalMessageId"] ?? "",
     revision: result.storeRevision,
   };
+}
+
+function validatePersistedCandidate(
+  contract: ExecutionContract,
+  candidate: ExecutionCandidate,
+): { code: string; detail: string }[] {
+  return validateExecutionCandidate(
+    {
+      executionContractId: contract.executionContractId,
+      approvedPlanId: contract.approvedPlanId,
+      approvedPlanRevision: contract.approvedPlanRevision,
+      approvedPlanSha256: contract.approvedPlanSha256,
+      steps: contract.steps,
+      completionCriteria: contract.completionCriteria,
+    },
+    {
+      executionContractId: candidate.executionContractId,
+      stepResults: candidate.stepResults,
+      finalOutputSections: candidate.finalOutput.sections,
+      completionCriteriaEvidence: candidate.completionCriteriaEvidence,
+    },
+  );
+}
+
+/** Product Commit唯一正文渲染器：只接受已持久化Candidate，Workflow不能注入正文。 */
+function renderCandidateMarkdown(candidate: ExecutionCandidate): string {
+  const markdown = candidate.finalOutput.sections
+    .map((section) => `## ${section.heading}\n\n${section.body}`)
+    .join("\n\n");
+  if (markdown.length > 100_000) {
+    throw revisionConflict("执行候选渲染结果超过Message正文上限");
+  }
+  return markdown;
 }
 
 export interface CommitRejectedRunCommand {
@@ -306,6 +454,7 @@ export async function commitRejectedRun(
     commandId: input.commandId,
     commandType: "CommitRejectedRun",
     requestSha256,
+    traceContext: { productRunId: input.productRunId },
     mutate: (draft) => {
       const run = draft.entities.runs[input.productRunId];
       if (run === undefined) throw notFound("Product Run不存在");
@@ -331,6 +480,97 @@ export interface CommitRunFailureCommand {
   readonly summary: string;
 }
 
+export interface ExpireApprovalCommand {
+  readonly commandId: CommandId;
+  readonly productRunId: ProductRunId;
+  readonly approvalRequestId: ApprovalRequestId;
+  readonly expectedExpiresAt: string;
+}
+
+/** Workflow耐久定时器触发的审批收敛；浏览器不能调用本命令。 */
+export async function expireApproval(
+  deps: ApplicationDeps,
+  input: ExpireApprovalCommand,
+): Promise<{ status: "expired" | "already_decided"; revision: number }> {
+  const now = deps.now();
+  const requestSha256 = hashCanonical("command.expire-approval.v1", input);
+  const { snapshot: before } = await deps.store.read({ kind: "committedSnapshot" });
+  const priorRun = before.entities.runs[input.productRunId];
+  const result = await deps.store.transact({
+    commandId: input.commandId,
+    commandType: "ExpireApproval",
+    requestSha256,
+    traceContext: { productRunId: input.productRunId },
+    mutate: (draft) => {
+      const run = draft.entities.runs[input.productRunId];
+      if (run === undefined) throw notFound("Product Run不存在");
+      const approval = draft.entities.approvalRequests[input.approvalRequestId];
+      if (approval === undefined || approval.productRunId !== input.productRunId) {
+        throw notFound("Approval Request不存在");
+      }
+      if (approval.expiresAt !== input.expectedExpiresAt) {
+        throw revisionConflict("审批定时器与当前Approval过期事实不一致");
+      }
+      if (Date.parse(now) < Date.parse(approval.expiresAt)) {
+        throw revisionConflict("审批尚未到期，拒绝提前过期");
+      }
+      if (approval.status === "decided") {
+        return { resultRefs: { status: "already_decided" } };
+      }
+
+      if (approval.status === "open") {
+        draft.entities.approvalRequests[approval.approvalRequestId] = {
+          ...approval,
+          status: "expired",
+          expiredAt: now,
+          revision: approval.revision + 1,
+          updatedAt: now,
+        };
+        const plan = Object.values(draft.entities.plans).find(
+          (candidate) =>
+            candidate.productRunId === input.productRunId &&
+            candidate.planId === approval.planId &&
+            candidate.planRevision === approval.planRevision,
+        );
+        if (plan?.status === "under_review") {
+          draft.entities.plans[plan.planRevisionId] = {
+            ...plan,
+            status: "expired",
+            revision: plan.revision + 1,
+            updatedAt: now,
+          };
+        }
+      }
+
+      if (run.status === "waiting_human" && run.phase === "plan_review") {
+        const expiredRun = {
+          ...run,
+          status: "failed" as const,
+          failure: { code: "approval.expired", summary: "计划确认已过期，请重新开始" },
+          revision: run.revision + 1,
+          updatedAt: now,
+        };
+        delete expiredRun.currentApprovalRequestId;
+        draft.entities.runs[input.productRunId] = expiredRun;
+      } else if (run.status !== "failed" || run.failure?.code !== "approval.expired") {
+        throw revisionConflict("当前Product Run状态不允许审批过期");
+      }
+      completeWorkflowAttempt(draft, input.productRunId, "failure", now, "approval.expired");
+      return { resultRefs: { status: "expired" } };
+    },
+  });
+  const status = result.resultRefs["status"] === "already_decided" ? "already_decided" : "expired";
+  if (!result.replayed && status === "expired" && priorRun !== undefined) {
+    const { snapshot: after } = await deps.store.read({ kind: "committedSnapshot" });
+    const settledRun = after.entities.runs[input.productRunId];
+    if (settledRun !== undefined) emitProductRunTransition(deps, priorRun, settledRun, "warn");
+  }
+  return {
+    status,
+    revision: result.storeRevision,
+  };
+}
+
 /** 明确失败终态：不产生产假成功；等待中的Approval与under_review Plan一并过期。 */
 export async function commitRunFailure(
   deps: ApplicationDeps,
@@ -344,98 +584,33 @@ export async function commitRunFailure(
     commandId: input.commandId,
     commandType: "CommitRunFailure",
     requestSha256,
+    traceContext: { productRunId: input.productRunId },
     mutate: (draft) => {
-      const run = draft.entities.runs[input.productRunId];
-      if (run === undefined) throw notFound("Product Run不存在");
-      const lifecycle = transitionRunLifecycle(
-        { status: run.status, phase: run.phase },
-        { status: "failed", phase: run.phase },
+      settleRunWithoutSuccess(
+        draft,
+        input.productRunId,
+        "failed",
+        input.errorCode,
+        input.summary,
+        now,
       );
-      draft.entities.runs[input.productRunId] = {
-        ...run,
-        status: lifecycle.status,
-        phase: lifecycle.phase,
-        failure: { code: input.errorCode, summary: input.summary },
-        revision: run.revision + 1,
-        updatedAt: now,
-      };
-      for (const approval of Object.values(draft.entities.approvalRequests)) {
-        if (approval.productRunId === input.productRunId && approval.status === "open") {
-          draft.entities.approvalRequests[approval.approvalRequestId] = {
-            ...approval,
-            status: "expired",
-            revision: approval.revision + 1,
-            updatedAt: now,
-          };
-        }
-      }
-      for (const plan of Object.values(draft.entities.plans)) {
-        if (plan.productRunId === input.productRunId && plan.status === "under_review") {
-          draft.entities.plans[plan.planRevisionId] = {
-            ...plan,
-            status: "expired",
-            revision: plan.revision + 1,
-            updatedAt: now,
-          };
-        }
-      }
-      completeWorkflowAttempt(draft, input.productRunId, "failure", now, input.errorCode);
       return { resultRefs: { productRunId: input.productRunId } };
     },
   });
 
-  if (priorRun !== undefined) {
-    emitRunEvent(deps, input.productRunId, {
-      level: "warn",
-      eventName: "product_run.transitioned",
-      outcome: "success",
-      productRunId: input.productRunId,
-      fromStatus: priorRun.status,
-      toStatus: "failed",
-      fromPhase: priorRun.phase,
-      toPhase: priorRun.phase,
-      revision: result.storeRevision,
-    });
+  if (
+    !result.replayed &&
+    priorRun !== undefined &&
+    priorRun.status !== "succeeded" &&
+    priorRun.status !== "failed" &&
+    priorRun.status !== "cancelled" &&
+    priorRun.status !== "outcome_unknown"
+  ) {
+    const { snapshot: after } = await deps.store.read({ kind: "committedSnapshot" });
+    const settledRun = after.entities.runs[input.productRunId];
+    if (settledRun !== undefined) emitProductRunTransition(deps, priorRun, settledRun, "warn");
   }
   return { revision: result.storeRevision };
-}
-
-/* ---------- Outbox（Dispatcher使用） ---------- */
-
-export interface UpdateOutboxStatusCommand {
-  readonly commandId: CommandId;
-  readonly outboxId: string;
-  /** pending仅用于对账后的安全重排队。 */
-  readonly status:
-    "pending" | "dispatched" | "acknowledged" | "outcome_unknown" | "failed_terminal";
-  readonly errorCode?: string;
-}
-
-export async function updateOutboxStatus(
-  deps: ApplicationDeps,
-  input: UpdateOutboxStatusCommand,
-): Promise<void> {
-  const now = deps.now();
-  const requestSha256 = hashCanonical("command.update-outbox-status.v1", input);
-  await deps.store.transact({
-    commandId: input.commandId,
-    commandType: "UpdateOutboxStatus",
-    requestSha256,
-    mutate: (draft) => {
-      const entry = draft.outbox[input.outboxId];
-      if (entry === undefined) throw notFound("Outbox Entry不存在");
-      draft.outbox[input.outboxId] = {
-        ...entry,
-        status: input.status,
-        dispatchAttempts:
-          input.status === "dispatched" ? entry.dispatchAttempts + 1 : entry.dispatchAttempts,
-        ...(input.errorCode !== undefined ? { lastErrorCode: input.errorCode } : {}),
-        revision: entry.revision + 1,
-        updatedAt: now,
-      };
-      return { resultRefs: {} };
-    },
-  });
 }
 
 /* ---------- 内部助手 ---------- */

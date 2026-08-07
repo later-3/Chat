@@ -1,7 +1,16 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BaseBuilder, createBaseBuilderConfig } from "@workflow/builders";
+import {
+  MODEL_CONFIG_VERSION,
+  PLANNER_PROMPT_TEMPLATE_VERSION,
+  EXECUTOR_PROMPT_TEMPLATE_VERSION,
+  WORKFLOW_DEFINITION_VERSION,
+  runtimeBuildEvidenceSchema,
+} from "@chat/contracts";
 
 /**
  * 预构建Workflow/Step bundle（任务书§17：真实Vercel Workflow运行时）。
@@ -17,7 +26,38 @@ import { BaseBuilder, createBaseBuilderConfig } from "@workflow/builders";
  */
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = resolve(packageDir, "../..");
 const outDir = process.env.CHAT_WORKFLOW_BUNDLE_DIR ?? join(packageDir, ".workflow-bundle");
+const sourceRoots = [
+  "packages/contracts/src",
+  "packages/domain/src",
+  "packages/application/src",
+  "packages/pi-runtime/src",
+  "packages/workflows/src",
+] as const;
+
+async function sourceFiles(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) return sourceFiles(path);
+      return entry.isFile() && !entry.name.includes(".test.") ? [path] : [];
+    }),
+  );
+  return files.flat().sort();
+}
+
+async function manifestSha256(files: readonly string[], root: string): Promise<string> {
+  const hash = createHash("sha256");
+  for (const file of [...files].sort()) {
+    hash.update(file.slice(root.length + 1));
+    hash.update("\0");
+    hash.update(await readFile(file));
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
 
 class ChatWorkflowBuilder extends BaseBuilder {
   readonly #outDir: string;
@@ -50,6 +90,50 @@ class ChatWorkflowBuilder extends BaseBuilder {
       inputFiles,
     });
     await writeFile(join(this.#outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
+    const gitSha =
+      process.env.CHAT_GIT_SHA ??
+      execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: repoRoot,
+        encoding: "utf8",
+      }).trim();
+    const trackedSources = (
+      await Promise.all(sourceRoots.map((root) => sourceFiles(join(repoRoot, root))))
+    ).flat();
+    const sourceManifestSha256 = await manifestSha256(trackedSources, repoRoot);
+    const bundleManifestSha256 = await manifestSha256(
+      [
+        join(this.#outDir, "manifest.json"),
+        join(this.#outDir, "steps.mjs"),
+        join(this.#outDir, "workflows.mjs"),
+      ],
+      this.#outDir,
+    );
+    const sourceState =
+      execFileSync(
+        "git",
+        ["status", "--porcelain=v1", "--untracked-files=all", "--", ...sourceRoots],
+        {
+          cwd: repoRoot,
+          encoding: "utf8",
+        },
+      ).trim() === ""
+        ? "clean"
+        : "dirty";
+    const evidence = runtimeBuildEvidenceSchema.parse({
+      schemaVersion: "chat-runtime-build-evidence.v1",
+      builtAt: new Date().toISOString(),
+      gitSha,
+      sourceState,
+      sourceManifestSha256,
+      bundleManifestSha256,
+      workflowDefinitionVersions: [WORKFLOW_DEFINITION_VERSION],
+      promptTemplateVersions: [PLANNER_PROMPT_TEMPLATE_VERSION, EXECUTOR_PROMPT_TEMPLATE_VERSION],
+      modelConfigVersions: [MODEL_CONFIG_VERSION],
+    });
+    await writeFile(
+      join(this.#outDir, "runtime-build-evidence.json"),
+      JSON.stringify(evidence, null, 2),
+    );
   }
 }
 

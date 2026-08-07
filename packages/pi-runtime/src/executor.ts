@@ -1,6 +1,10 @@
 import { Type } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { EXECUTOR_PROMPT_TEMPLATE_VERSION, type ExecutionContract } from "@chat/contracts";
+import {
+  B2_EXECUTOR_TOKEN_BUDGET_PER_STEP,
+  EXECUTOR_PROMPT_TEMPLATE_VERSION,
+  type ExecutionContract,
+} from "@chat/contracts";
 import { z } from "zod";
 import { runAgentWithTool, type AgentRunResult } from "./agent-runner.js";
 import { BailianNotReadyError } from "./planner.js";
@@ -71,7 +75,18 @@ const EXECUTOR_SYSTEM_PROMPT = [
   "7. 你提交的是候选，服务端会做确定性验证；不要声称整个任务已经完成。",
 ].join("\n");
 
-export function buildExecutorUserPrompt(contract: ExecutionContract, stepId: string): string {
+export interface ExecutorDependencyResult {
+  readonly stepId: string;
+  readonly sha256: string;
+  readonly output: string;
+  readonly sections: readonly { readonly heading: string; readonly body: string }[];
+}
+
+export function buildExecutorUserPrompt(
+  contract: ExecutionContract,
+  stepId: string,
+  dependencyResults: readonly ExecutorDependencyResult[],
+): string {
   const step = contract.steps.find((candidate) => candidate.stepId === stepId);
   if (step === undefined) {
     throw new Error(`当前步骤${stepId}不在Execution Contract中`);
@@ -83,6 +98,9 @@ export function buildExecutorUserPrompt(contract: ExecutionContract, stepId: str
     `当前步骤（共${String(contract.steps.length)}步，按顺序执行）：`,
     JSON.stringify(step),
     "",
+    "已完成的直接依赖步骤结果（只读；仅包含当前步骤声明的dependsOn）：",
+    JSON.stringify(dependencyResults),
+    "",
     "请只完成当前步骤并提交结果候选。",
   ].join("\n");
 }
@@ -91,21 +109,29 @@ export interface RunPiExecutorInput {
   readonly config: BailianConfig;
   readonly contract: ExecutionContract;
   readonly stepId: string;
+  readonly dependencyResults: readonly ExecutorDependencyResult[];
   /** 确定性测试注入；生产必须缺省。 */
   readonly streamFnOverride?: StreamFn;
+  readonly onProviderRequestStart?: () => void;
 }
 
 export async function runPiExecutor(
   input: RunPiExecutorInput,
 ): Promise<AgentRunResult<ExecutorStepCandidate>> {
   if (input.config.apiKey === undefined) throw new BailianNotReadyError();
+  if (
+    input.contract.limits.maxTurnsPerStep !== 1 ||
+    input.contract.limits.tokenBudgetPerStep !== B2_EXECUTOR_TOKEN_BUDGET_PER_STEP
+  ) {
+    throw new Error("Executor费用边界与B2冻结合同不一致");
+  }
   const apiKey = input.config.apiKey;
   const step = input.contract.steps.find((candidate) => candidate.stepId === input.stepId);
   return runAgentWithTool<ExecutorStepCandidate>({
     apiKey,
     baseUrl: input.config.baseUrl,
     systemPrompt: EXECUTOR_SYSTEM_PROMPT,
-    userPrompt: buildExecutorUserPrompt(input.contract, input.stepId),
+    userPrompt: buildExecutorUserPrompt(input.contract, input.stepId, input.dependencyResults),
     tool: createSubmitExecutionResultTool(),
     parseCandidate: (params) => {
       const parsed = executorStepCandidateSchema.safeParse(params);
@@ -116,8 +142,11 @@ export async function runPiExecutor(
       return { ok: true, candidate: parsed.data };
     },
     timeoutMs: input.contract.limits.timeoutMsPerStep,
-    ...(input.contract.limits.tokenBudgetPerStep !== undefined
-      ? { maxTokens: input.contract.limits.tokenBudgetPerStep }
+    maxTurns: 1,
+    maxProviderRequests: 1,
+    maxTokens: B2_EXECUTOR_TOKEN_BUDGET_PER_STEP,
+    ...(input.onProviderRequestStart !== undefined
+      ? { onProviderRequestStart: input.onProviderRequestStart }
       : {}),
     ...(input.streamFnOverride !== undefined ? { streamFnOverride: input.streamFnOverride } : {}),
   });

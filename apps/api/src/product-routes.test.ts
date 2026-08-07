@@ -15,7 +15,12 @@ import {
   type PlanContent,
   type ProductRunId,
 } from "@chat/contracts";
-import { publishPlanForReview, type ApplicationDeps, type IdFactory } from "@chat/application";
+import {
+  compilePlanningInput,
+  publishPlanForReview as publishPlanForReviewUseCase,
+  type ApplicationDeps,
+  type IdFactory,
+} from "@chat/application";
 import { JsonProductStore } from "@chat/product-store-json";
 import { z } from "zod";
 import { createApiApp, type ApiApp } from "./app.js";
@@ -95,6 +100,28 @@ async function postJson(app: ApiApp, path: string, body: unknown): Promise<Respo
   });
 }
 
+async function publishPlanForReview(
+  deps: ApplicationDeps,
+  input: { productRunId: ProductRunId; commandId: CommandId; content: PlanContent },
+) {
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const planRevision =
+    Object.values(snapshot.entities.plans).filter(
+      (plan) => plan.productRunId === input.productRunId,
+    ).length + 1;
+  const planning = await compilePlanningInput(deps, {
+    commandId: nextCmd(),
+    productRunId: input.productRunId,
+    planRevision,
+  });
+  return publishPlanForReviewUseCase(deps, {
+    ...input,
+    attemptId: planning.attemptId,
+    expectedRunRevision: planning.inputRunRevision,
+    inputManifestSha256: planning.inputManifestSha256,
+  });
+}
+
 describe("公开产品API", () => {
   it("完整链路：建Session -> 发消息 -> 查消息/运行 -> 决定", async () => {
     const { app, deps } = await testApp();
@@ -143,6 +170,21 @@ describe("公开产品API", () => {
     expect(messages.status).toBe(200);
     const page = cursorPageSchema(messageDtoSchema).parse(await messages.json());
     expect(page.items).toHaveLength(1);
+
+    for (const query of [
+      "limit=1junk",
+      "limit=1.5",
+      "limit=%201",
+      "limit=1&limit=2",
+      "cursor=",
+      "unknown=1",
+    ]) {
+      const invalidPage = await app.request(
+        `/api/sessions/${sessionDto.sessionId}/messages?${query}`,
+      );
+      expect(invalidPage.status, query).toBe(400);
+      expect(problemDetailSchema.parse(await invalidPage.json()).code).toBe("validation_failed");
+    }
 
     // 播种Plan v1（私有命令路径，M2由Workflow调用）
     const published = await publishPlanForReview(deps, {

@@ -62,17 +62,24 @@ export function defaultProductStorePath(): string {
   );
 }
 
-export async function openProductStore(filePath?: string): Promise<ProductStorePort> {
+export async function openProductStore(
+  filePath?: string,
+  trace?: ApplicationDeps["trace"],
+): Promise<ProductStorePort> {
   const path = filePath ?? defaultProductStorePath();
   await mkdir(dirname(path), { recursive: true });
-  return JsonProductStore.open({ filePath: path, now: () => new Date().toISOString() });
+  return JsonProductStore.open({
+    filePath: path,
+    now: () => new Date().toISOString(),
+    ...(trace !== undefined ? { trace } : {}),
+  });
 }
 
 export async function createApplicationDeps(
   filePath?: string,
   trace?: ApplicationDeps["trace"],
 ): Promise<ApplicationDeps> {
-  const store = await openProductStore(filePath);
+  const store = await openProductStore(filePath, trace);
   return {
     store,
     now: () => new Date().toISOString(),

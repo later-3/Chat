@@ -54,3 +54,6 @@ export interface ApplicationDeps {
 
 /** 规划修订默认上限（任务书§9.2.7）。 */
 export const DEFAULT_MAX_PLAN_REVISIONS = 5;
+
+/** 首版审批窗口：24小时；到期时间作为Approval产品事实持久化。 */
+export const DEFAULT_APPROVAL_TTL_MS = 24 * 60 * 60 * 1000;

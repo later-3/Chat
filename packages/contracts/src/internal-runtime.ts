@@ -6,6 +6,7 @@ import {
   executionCandidateIdSchema,
   executionContractIdSchema,
   messageIdSchema,
+  outboxEntryIdSchema,
   planIdSchema,
   principalIdSchema,
   productRunIdSchema,
@@ -15,14 +16,12 @@ import {
 } from "./ids.js";
 import {
   decisionKindSchema,
+  executionCandidateSchema,
   executionContractSchema,
-  markdownSectionSchema,
   planContentSchema,
-  runAttemptOutcomeSchema,
-  stepResultSchema,
   validationResultSchema,
 } from "./product.js";
-import { sha256Schema } from "./trace.js";
+import { sha256Schema } from "./hash.js";
 
 /**
  * 后端私有Runtime合同（任务书§12.4）。
@@ -56,6 +55,8 @@ export const planningInputDtoSchema = z
     ...versioned,
     productRunId: productRunIdSchema,
     attemptId: runAttemptIdSchema,
+    inputRunRevision: z.number().int().positive(),
+    inputManifestSha256: sha256Schema,
     sourceMessageRef: z.object({ messageId: messageIdSchema, sha256: sha256Schema }).strict(),
     sourceMessageText: z.string().min(1),
     priorPlan: z
@@ -89,6 +90,8 @@ export const publishPlanReviewRequestSchema = z
     commandId: commandIdSchema,
     productRunId: productRunIdSchema,
     attemptId: runAttemptIdSchema,
+    expectedRunRevision: z.number().int().positive(),
+    inputManifestSha256: sha256Schema,
     content: planContentSchema,
   })
   .strict();
@@ -100,6 +103,7 @@ export const publishPlanReviewResponseSchema = z
     planRevision: z.number().int().positive(),
     planSha256: sha256Schema,
     approvalRequestId: approvalRequestIdSchema,
+    approvalExpiresAt: z.iso.datetime(),
   })
   .strict();
 
@@ -154,12 +158,11 @@ export const persistExecutionCandidateRequestSchema = z
     commandId: commandIdSchema,
     productRunId: productRunIdSchema,
     executionContractId: executionContractIdSchema,
-    attemptId: runAttemptIdSchema,
-    stepResults: z.array(stepResultSchema).min(1).max(50),
+    stepResults: executionCandidateSchema.shape.stepResults,
     finalOutput: z
       .object({
         format: z.literal("markdown_sections"),
-        sections: z.array(markdownSectionSchema).min(1).max(50),
+        sections: executionCandidateSchema.shape.finalOutput.shape.sections,
       })
       .strict(),
     completionCriteriaEvidence: z.array(z.string().min(1).max(1000)).min(1).max(50),
@@ -182,8 +185,6 @@ export const persistValidationResultRequestSchema = z
     productRunId: productRunIdSchema,
     executionContractId: executionContractIdSchema,
     executionCandidateId: executionCandidateIdSchema,
-    outcome: z.enum(["pass", "fail"]),
-    failures: validationResultSchema.shape.failures,
   })
   .strict();
 
@@ -191,6 +192,8 @@ export const persistValidationResultResponseSchema = z
   .object({
     ...versioned,
     validationResultId: validationResultIdSchema,
+    outcome: validationResultSchema.shape.outcome,
+    failures: validationResultSchema.shape.failures,
   })
   .strict();
 
@@ -204,8 +207,6 @@ export const commitExecutionResultRequestSchema = z
     executionContractId: executionContractIdSchema,
     executionCandidateId: executionCandidateIdSchema,
     validationResultId: validationResultIdSchema,
-    /** 服务端确定性渲染的Markdown正文。 */
-    renderedMarkdown: z.string().min(1).max(100_000),
   })
   .strict();
 
@@ -241,6 +242,25 @@ export const commitRunFailureRequestSchema = z
   })
   .strict();
 
+export const expireApprovalRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    productRunId: productRunIdSchema,
+    approvalRequestId: approvalRequestIdSchema,
+    /** 必须与已提交Approval事实一致；定时器不能过期另一个版本。 */
+    expectedExpiresAt: z.iso.datetime(),
+  })
+  .strict();
+
+export const expireApprovalResponseSchema = z
+  .object({
+    ...versioned,
+    status: z.enum(["expired", "already_decided"]),
+    revision: z.number().int().positive(),
+  })
+  .strict();
+
 export const runRevisionResponseSchema = z
   .object({
     ...versioned,
@@ -248,19 +268,48 @@ export const runRevisionResponseSchema = z
   })
   .strict();
 
-export const completeRunAttemptRequestSchema = z
+const stableRuntimeErrorCodeSchema = z
+  .string()
+  .regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/)
+  .max(64);
+
+/** Planning Attempt只由compilePlanningInput创建；该私有命令只创建执行Attempt。 */
+export const beginRunAttemptRequestSchema = z
   .object({
     ...versioned,
     commandId: commandIdSchema,
-    attemptId: runAttemptIdSchema,
-    outcome: runAttemptOutcomeSchema,
-    errorCode: z
-      .string()
-      .regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/)
-      .max(64)
-      .optional(),
+    productRunId: productRunIdSchema,
+    kind: z.literal("execution"),
+    stepId: z.string().min(1).max(100),
+    inputManifestSha256: sha256Schema,
+    promptTemplateVersion: z.string().min(1).max(100),
+    modelConfigVersion: z.string().min(1).max(100),
   })
   .strict();
+
+export const beginRunAttemptResponseSchema = z
+  .object({ ...versioned, attemptId: runAttemptIdSchema })
+  .strict();
+
+export const completeRunAttemptRequestSchema = z.discriminatedUnion("outcome", [
+  z
+    .object({
+      ...versioned,
+      commandId: commandIdSchema,
+      attemptId: runAttemptIdSchema,
+      outcome: z.literal("success"),
+    })
+    .strict(),
+  z
+    .object({
+      ...versioned,
+      commandId: commandIdSchema,
+      attemptId: runAttemptIdSchema,
+      outcome: z.literal("failure"),
+      errorCode: stableRuntimeErrorCodeSchema,
+    })
+    .strict(),
+]);
 
 /* ---------- Workflow Runtime分发合同（API Outbox Dispatcher -> Workflow进程） ---------- */
 
@@ -273,14 +322,14 @@ export const workflowStartRequestSchema = z
     /** 关联的workflow Run Attempt（Trace关联用，不是Runtime私有身份）。 */
     attemptId: runAttemptIdSchema,
     workflowDefinitionVersion: z.string().min(1),
-    outboxId: z.string().min(1),
+    outboxId: outboxEntryIdSchema,
   })
   .strict();
 
 export const workflowStartResponseSchema = z
   .object({
     schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
-    status: z.enum(["started", "already_started"]),
+    status: z.enum(["started", "already_started", "outcome_unknown"]),
   })
   .strict();
 
@@ -291,14 +340,14 @@ export const workflowResumeRequestSchema = z
     attemptId: runAttemptIdSchema,
     approvalRequestId: approvalRequestIdSchema,
     decisionId: decisionIdSchema,
-    outboxId: z.string().min(1),
+    outboxId: outboxEntryIdSchema,
   })
   .strict();
 
 export const workflowResumeResponseSchema = z
   .object({
     schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
-    status: z.enum(["resumed", "already_resumed"]),
+    status: z.enum(["resumed", "already_resumed", "outcome_unknown"]),
   })
   .strict();
 
@@ -307,8 +356,10 @@ export const workflowReconcileResponseSchema = z
   .object({
     schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
     productRunId: productRunIdSchema,
-    startBinding: z.enum(["exists", "missing"]),
-    hookResumeState: z.enum(["none", "dispatched", "failed_terminal", "missing"]).optional(),
+    startBinding: z.enum(["exists", "missing", "outcome_unknown"]),
+    hookResumeState: z
+      .enum(["none", "dispatching", "dispatched", "outcome_unknown", "failed_terminal", "missing"])
+      .optional(),
   })
   .strict();
 
@@ -328,6 +379,8 @@ export type PersistValidationResultRequest = z.infer<typeof persistValidationRes
 export type CommitExecutionResultRequest = z.infer<typeof commitExecutionResultRequestSchema>;
 export type CommitRejectedRunRequest = z.infer<typeof commitRejectedRunRequestSchema>;
 export type CommitRunFailureRequest = z.infer<typeof commitRunFailureRequestSchema>;
+export type ExpireApprovalRequest = z.infer<typeof expireApprovalRequestSchema>;
+export type BeginRunAttemptRequest = z.infer<typeof beginRunAttemptRequestSchema>;
 export type CompleteRunAttemptRequest = z.infer<typeof completeRunAttemptRequestSchema>;
 export type WorkflowStartRequest = z.infer<typeof workflowStartRequestSchema>;
 export type WorkflowResumeRequest = z.infer<typeof workflowResumeRequestSchema>;

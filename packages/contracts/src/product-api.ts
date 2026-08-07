@@ -18,7 +18,7 @@ import {
   productRunStatusSchema,
   runFailureSchema,
 } from "./product.js";
-import { sha256Schema } from "./trace.js";
+import { sha256Schema } from "./hash.js";
 
 /**
  * B2公开Query/Command网络DTO（任务书§12）。
@@ -142,6 +142,7 @@ export const approvalDtoSchema = z
     planSha256: sha256Schema,
     status: approvalRequestStatusSchema,
     createdAt: z.iso.datetime(),
+    expiresAt: z.iso.datetime(),
   })
   .strict();
 

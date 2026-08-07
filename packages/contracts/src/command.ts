@@ -10,17 +10,21 @@ import { commandIdSchema } from "./ids.js";
  * - Command响应返回被接纳的产品对象、revision和后续订阅位置；
  *   永远不返回Workflow Hook Token或pi Session ID。
  */
-export const commandEnvelopeSchema = z.object({
-  commandId: commandIdSchema,
-  expectedRevision: z.number().int().nonnegative().optional(),
-  payload: z.unknown(),
-});
+export const commandEnvelopeSchema = z
+  .object({
+    commandId: commandIdSchema,
+    expectedRevision: z.number().int().nonnegative().optional(),
+    payload: z.unknown(),
+  })
+  .strict();
 
-export const commandAcceptedSchema = z.object({
-  revision: z.number().int().nonnegative(),
-  /** 客户端可从该游标继续订阅Chat Realtime Feed。 */
-  subscriptionCursor: z.string().min(1).optional(),
-});
+export const commandAcceptedSchema = z
+  .object({
+    revision: z.number().int().nonnegative(),
+    /** 客户端可从该游标继续订阅Chat Realtime Feed。 */
+    subscriptionCursor: z.string().min(1).optional(),
+  })
+  .strict();
 
 export type CommandEnvelope = z.infer<typeof commandEnvelopeSchema>;
 export type CommandAccepted = z.infer<typeof commandAcceptedSchema>;

@@ -691,13 +691,15 @@ GET  /api/sessions/:sessionId/messages
 
 ### pi
 
-核验冻结源码：`/Users/xulater/Code/opc-os/pi`提交`10e99ae9914cd34f622633fac42f9a90714e9cf4`。
+能力核验源码：`/Users/xulater/Code/opc-os/pi`提交`10e99ae9914cd34f622633fac42f9a90714e9cf4`。
+实际运行工件是锁文件固定的npm `@earendil-works/pi-agent-core`/`pi-ai` 0.82.1，
+发布基点`b4f293684bba718d59cc1157679bcf6157b3a7f5`；两者不得混称。
 
 1. `packages/agent/src/agent.ts`：`Agent`支持`prompt()`、`continue()`、`subscribe()`、`abort()`、消息状态和工具配置。
 2. `packages/agent/src/types.ts`：`AgentTool`具有Schema参数、执行回调、更新事件和`terminate`提示。
 3. `packages/agent/src/agent-loop.ts`：Agent循环发出message/tool/turn/agent事件，并在模型边界转换上下文。
 4. `packages/agent/test/agent-loop.test.ts`：测试证明工具参数校验、顺序/并行执行、截断Tool Call拒绝和可控stream函数。
-5. 本地pi工作区当前HEAD不是冻结提交，因此本设计只使用`git show 10e99ae...`核验的能力，不把后续分支能力误写成冻结事实。
+5. 本地pi工作区当前HEAD不是能力对照提交，因此本设计只使用`git show 10e99ae...`核验能力；运行行为由npm工件合同测试背书，不把本地后续分支能力写成运行事实。
 
 ### 阿里云百炼
 

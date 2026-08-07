@@ -1,6 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
+  B2_PLANNER_TOKEN_BUDGET,
   EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
   planContentSchema,
   PLANNER_PROMPT_TEMPLATE_VERSION,
@@ -70,8 +71,9 @@ const PLANNER_SYSTEM_PROMPT = [
   "3. 每个step包含stepId、title、purpose、dependsOn、inputRefs、expectedOutput、successCriteria、requestedCapabilities、risk。",
   "4. steps按执行顺序排列，dependsOn只能引用排在前面的stepId。",
   "5. 你只能请求markdown_text_compose这一种无外部副作用能力；不得请求Shell、Git、文件、网络、邮件、日历、删除或支付能力。",
-  "6. 计划是候选，需要用户审核后才会执行；不要声称已经完成任何工作。",
-  "7. successCriteria与completionCriteria必须是可由服务端逐条核对证据的明确陈述。",
+  "6. 当前版本没有注入额外上下文对象，每个步骤的inputRefs必须是空数组；用户原始消息不是inputRef。",
+  "7. 计划是候选，需要用户审核后才会执行；不要声称已经完成任何工作。",
+  "8. successCriteria与completionCriteria必须是可由服务端逐条核对证据的明确陈述。",
 ].join("\n");
 
 export function buildPlannerUserPrompt(input: PlanningInputDto): string {
@@ -98,6 +100,7 @@ export interface RunPiPlannerInput {
   readonly planningInput: PlanningInputDto;
   /** 确定性测试注入；生产必须缺省。 */
   readonly streamFnOverride?: StreamFn;
+  readonly onProviderRequestStart?: () => void;
 }
 
 /** 缺少API Key时抛出；调用方映射为provider.pre_request.no_api_key，绝不切换假Provider。 */
@@ -111,6 +114,12 @@ export class BailianNotReadyError extends Error {
 
 export async function runPiPlanner(input: RunPiPlannerInput): Promise<AgentRunResult<PlanContent>> {
   if (input.config.apiKey === undefined) throw new BailianNotReadyError();
+  if (
+    input.planningInput.limits.maxTurns !== 1 ||
+    input.planningInput.limits.tokenBudget !== B2_PLANNER_TOKEN_BUDGET
+  ) {
+    throw new Error("Planner费用边界与B2冻结合同不一致");
+  }
   const apiKey = input.config.apiKey;
   return runAgentWithTool<PlanContent>({
     apiKey,
@@ -131,8 +140,11 @@ export async function runPiPlanner(input: RunPiPlannerInput): Promise<AgentRunRe
       return { ok: true, candidate: parsed.data };
     },
     timeoutMs: input.planningInput.limits.timeoutMs,
-    ...(input.planningInput.limits.tokenBudget !== undefined
-      ? { maxTokens: input.planningInput.limits.tokenBudget }
+    maxTurns: 1,
+    maxProviderRequests: 1,
+    maxTokens: B2_PLANNER_TOKEN_BUDGET,
+    ...(input.onProviderRequestStart !== undefined
+      ? { onProviderRequestStart: input.onProviderRequestStart }
       : {}),
     ...(input.streamFnOverride !== undefined ? { streamFnOverride: input.streamFnOverride } : {}),
   });

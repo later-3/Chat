@@ -9,6 +9,7 @@ import type {
   PrincipalId,
   ProductRunId,
   RevisionInputId,
+  RunAttemptId,
 } from "@chat/contracts";
 
 /**
@@ -127,6 +128,9 @@ export interface CompilePlanningInput {
 
 export interface PublishPlanInput {
   readonly productRunId: ProductRunId;
+  readonly attemptId: RunAttemptId;
+  readonly expectedRunRevision: number;
+  readonly inputManifestSha256: string;
   readonly content: PlanContent;
   readonly commandId: CommandId;
 }
@@ -176,7 +180,6 @@ export interface CommitResultInput {
   readonly executionContractId: string;
   readonly executionCandidateId: string;
   readonly validationResultId: string;
-  readonly renderedMarkdown: string;
   readonly commandId: CommandId;
 }
 

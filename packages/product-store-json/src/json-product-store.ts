@@ -11,6 +11,7 @@ import {
   type ProductStorePort,
   type ProductTransaction,
   type ProductTransactionResult,
+  type TraceEmitter,
 } from "@chat/application";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
@@ -65,6 +66,7 @@ const defaultIo: StoreIo = {
 export interface JsonProductStoreOptions {
   readonly filePath: string;
   readonly now: () => string;
+  readonly trace?: TraceEmitter;
   /** 失败注入点；生产必须缺省。 */
   readonly io?: Partial<StoreIo>;
 }
@@ -73,13 +75,16 @@ export class JsonProductStore implements ProductStorePort {
   private readonly filePath: string;
   private readonly now: () => string;
   private readonly io: StoreIo;
+  private readonly trace: TraceEmitter | undefined;
   private snapshot: ProductSnapshot;
   private queue: Promise<unknown> = Promise.resolve();
+  private unavailable: StoreCorruptedError | undefined;
 
   private constructor(options: JsonProductStoreOptions, snapshot: ProductSnapshot) {
     this.filePath = options.filePath;
     this.now = options.now;
     this.io = { ...defaultIo, ...options.io };
+    this.trace = options.trace;
     this.snapshot = snapshot;
   }
 
@@ -118,8 +123,10 @@ export class JsonProductStore implements ProductStorePort {
     return new JsonProductStore(options, parsed.data);
   }
 
-  read(_query: ProductReadRequest): Promise<ProductReadResult> {
-    return Promise.resolve({ snapshot: this.snapshot });
+  async read(_query: ProductReadRequest): Promise<ProductReadResult> {
+    this.assertAvailable();
+    // 不能把内部权威快照的可变引用交给Application；调用方只能修改自己的副本。
+    return { snapshot: structuredClone(this.snapshot) };
   }
 
   transact(command: ProductTransaction): Promise<ProductTransactionResult> {
@@ -130,6 +137,7 @@ export class JsonProductStore implements ProductStorePort {
   }
 
   private async doTransact(command: ProductTransaction): Promise<ProductTransactionResult> {
+    this.assertAvailable();
     const current = this.snapshot;
     const receipt = current.commandReceipts[command.commandId];
     if (receipt !== undefined) {
@@ -146,44 +154,102 @@ export class JsonProductStore implements ProductStorePort {
       throw new CommandIdReusedError(command.commandId);
     }
 
-    const draft = structuredClone(current);
-    const mutation = command.mutate(draft);
-    draft.storeRevision = current.storeRevision + 1;
-    draft.committedAt = this.now();
-    draft.commandReceipts[command.commandId] = {
+    const startedAt = performance.now();
+    const traceId = command.traceContext?.productRunId
+      ? `tr_${command.traceContext.productRunId.slice(4)}`
+      : `tr_${randomUUID().replaceAll("-", "")}`;
+    const transactionType = command.commandType
+      .replace(/([a-z0-9])([A-Z])/gu, "$1_$2")
+      .toLowerCase();
+    const traceBase = {
+      traceId,
+      spanId: `sp_${randomUUID().replaceAll("-", "")}`,
+      transactionType,
       commandId: command.commandId,
-      commandType: command.commandType,
-      requestSha256: command.requestSha256,
-      resultRefs: mutation.resultRefs,
-      committedStoreRevision: draft.storeRevision,
-      createdAt: draft.committedAt,
+      ...(command.traceContext?.productRunId !== undefined
+        ? { productRunId: command.traceContext.productRunId }
+        : {}),
+      ...(command.traceContext?.productSessionId !== undefined
+        ? { productSessionId: command.traceContext.productSessionId }
+        : {}),
     };
+    this.safeEmit({
+      ...traceBase,
+      level: "info",
+      eventName: "product.transaction.started",
+      outcome: "unknown",
+    });
 
-    const parsed = productSnapshotSchema.safeParse(draft);
-    if (!parsed.success) {
-      // 用例产生了非法快照：这是内部缺陷，不写入、不替换内存
-      throw new ApplicationError({
-        code: "internal_error",
-        httpStatus: 500,
-        message: "事务产生了非法产品快照，已放弃提交",
+    try {
+      const draft = structuredClone(current);
+      const mutation = command.mutate(draft);
+      draft.storeRevision = current.storeRevision + 1;
+      draft.committedAt = this.now();
+      draft.commandReceipts[command.commandId] = {
+        commandId: command.commandId,
+        commandType: command.commandType,
+        requestSha256: command.requestSha256,
+        resultRefs: mutation.resultRefs,
+        committedStoreRevision: draft.storeRevision,
+        createdAt: draft.committedAt,
+      };
+
+      const parsed = productSnapshotSchema.safeParse(draft);
+      if (!parsed.success) {
+        // 用例产生了非法快照：这是内部缺陷，不写入、不替换内存
+        const evidence = parsed.error.issues
+          .slice(0, 3)
+          .map((issue) => `${issue.path.join(".")}:${issue.code}`)
+          .join(",");
+        throw new ApplicationError({
+          code: "internal_error",
+          httpStatus: 500,
+          message: `事务产生了非法产品快照，已放弃提交（${evidence}）`,
+        });
+      }
+      assertSnapshotIntegrity(parsed.data);
+
+      await this.persist(parsed.data);
+      this.snapshot = parsed.data;
+      this.safeEmit({
+        ...traceBase,
+        level: "info",
+        eventName: "product.transaction.committed",
+        outcome: "success",
+        durationMs: Math.round(performance.now() - startedAt),
       });
+      return {
+        storeRevision: parsed.data.storeRevision,
+        resultRefs: mutation.resultRefs,
+        replayed: false,
+      };
+    } catch (error) {
+      this.safeEmit({
+        ...traceBase,
+        level: "error",
+        eventName: "product.transaction.failed",
+        outcome: "failure",
+        error: { code: stableErrorCode(error), type: safeErrorType(error) },
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+      throw error;
     }
-    assertSnapshotIntegrity(parsed.data);
+  }
 
-    await this.persist(parsed.data);
-    this.snapshot = parsed.data;
-    return {
-      storeRevision: parsed.data.storeRevision,
-      resultRefs: mutation.resultRefs,
-      replayed: false,
-    };
+  private safeEmit(event: Parameters<TraceEmitter>[0]): void {
+    try {
+      this.trace?.(event);
+    } catch {
+      // Trace故障不能破坏产品事务；组合根的Trace Sink另有故障计数。
+    }
   }
 
   /**
    * 原子替换正式文件。顺序：写临时文件 -> fsync临时文件 -> fsync父目录 ->
    * atomic rename -> fsync父目录。
-   * rename前任何一步失败，旧正式文件逐字节不变；rename后目录fsync失败时
-   * 内存仍指向旧快照，下次open从正式文件恢复，不依赖内存状态。
+   * rename前任何一步失败，旧正式文件逐字节不变。rename成功但最终目录fsync
+   * 失败时磁盘结果已不可判定：当前Store立即熔断，禁止继续从旧内存提交；
+   * 只能重新open并从正式文件恢复，避免下一次事务覆盖已经rename成功的事实。
    */
   private async persist(snapshot: ProductSnapshot): Promise<void> {
     const bytes = JSON.stringify(snapshot, null, 2);
@@ -191,12 +257,53 @@ export class JsonProductStore implements ProductStorePort {
       dirname(this.filePath),
       `.${basename(this.filePath)}.tmp-${randomUUID()}`,
     );
-    await this.io.writeTempFile(tempPath, bytes);
-    await this.io.fsyncTempFile(tempPath);
-    await this.io.fsyncParentDirectory(dirname(this.filePath));
-    await this.io.renameTempFile(tempPath, this.filePath);
-    await this.io.fsyncParentDirectory(dirname(this.filePath));
+    let renamed = false;
+    try {
+      await this.io.writeTempFile(tempPath, bytes);
+      await this.io.fsyncTempFile(tempPath);
+      await this.io.fsyncParentDirectory(dirname(this.filePath));
+      await this.io.renameTempFile(tempPath, this.filePath);
+      renamed = true;
+      await this.io.fsyncParentDirectory(dirname(this.filePath));
+    } catch {
+      if (renamed) {
+        this.unavailable = new StoreCorruptedError(
+          "Product Store在atomic rename后无法确认目录持久化，当前实例已熔断；必须重新打开后再继续",
+        );
+        throw this.unavailable;
+      }
+      throw new ApplicationError({
+        code: "internal_error",
+        httpStatus: 503,
+        message: "Product Store提交在atomic rename前失败，可用同一commandId安全重试",
+        retryable: true,
+        recoveryAction: "retry_same_command",
+      });
+    }
   }
+
+  private assertAvailable(): void {
+    if (this.unavailable !== undefined) throw this.unavailable;
+  }
+}
+
+function stableErrorCode(error: unknown): string {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    /^[a-z][a-z0-9_.-]{0,63}$/u.test(error.code)
+  ) {
+    return error.code;
+  }
+  return "internal_error";
+}
+
+function safeErrorType(error: unknown): string {
+  return error instanceof Error && /^[A-Za-z][A-Za-z0-9]{0,63}$/u.test(error.name)
+    ? error.name
+    : "Error";
 }
 
 function isFileNotFound(error: unknown): boolean {

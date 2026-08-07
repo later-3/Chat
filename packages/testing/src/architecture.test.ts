@@ -31,7 +31,6 @@ const rules: Record<
   "packages/application": {
     external: [],
     internal: ["@chat/contracts", "@chat/domain"],
-    devInternal: ["@chat/product-store-json"],
   },
   // realtime的Replay Assembler需要@chat/application的Hash唯一实现（computePlanSha256）
   // 与@chat/domain的canonical hash；不产生反向运行时依赖
@@ -77,7 +76,7 @@ const rules: Record<
   },
   "apps/web": {
     // workbox-window 进入浏览器运行时bundle（PWA注册与更新提示），属于运行时依赖
-    external: ["react", "react-dom", "@tanstack/react-query", "workbox-window"],
+    external: ["react", "react-dom", "@tanstack/react-query", "workbox-window", "zod"],
     internal: ["@chat/contracts"],
     forbidden: [/^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@ag-ui\//],
   },
@@ -105,6 +104,7 @@ const devOnlyExternal = [
   "react-dom",
   "@testing-library/react",
   "@testing-library/dom",
+  "@testing-library/user-event",
   "jsdom",
   // P1.2：PWA构建插件与真实浏览器E2E
   "vite-plugin-pwa",
@@ -152,7 +152,7 @@ describe("架构依赖方向", () => {
           /(^|\/)vite\.config\.ts$/.test(file) ||
           /(^|\/)vitest(\.global-setup)?\.ts$/.test(file) ||
           /(^|\/)vitest(\.[a-z-]+)*\.config\.ts$/.test(file) ||
-          /(^|\/)playwright\.config\.ts$/.test(file) ||
+          /(^|\/)playwright(\.[a-z-]+)*\.config\.ts$/.test(file) ||
           // 构建/开发期脚本（如workflow bundle预构建），不进入运行时
           /(^|\/)scripts\/[^/]+\.ts$/.test(file);
         const source = readFileSync(file, "utf8");

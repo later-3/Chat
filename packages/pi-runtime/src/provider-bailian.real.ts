@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
+  B2_EXECUTOR_TOKEN_BUDGET_PER_STEP,
+  B2_PLANNER_TOKEN_BUDGET,
   PROVIDER_MODEL,
   type ExecutionContract,
   type PlanningInputDto,
@@ -59,11 +61,13 @@ describe("真实百炼qwen3.7-plus（付费，显式运行）", () => {
       schemaVersion: "chat-internal-runtime.v1",
       productRunId: "run_providergate" as never,
       attemptId: "att_providergate" as never,
+      inputRunRevision: 2,
+      inputManifestSha256: "d".repeat(64),
       sourceMessageRef: { messageId: "msg_providergate" as never, sha256: "a".repeat(64) },
       sourceMessageText:
         "本周完成了登录模块联调并修复了两个崩溃问题；下周计划做支付对接。请整理为一份Markdown周报，必须包含“风险与下一步”。",
       planRevision: 1,
-      limits: { maxTurns: 6, timeoutMs: 120_000 },
+      limits: { maxTurns: 1, timeoutMs: 120_000, tokenBudget: B2_PLANNER_TOKEN_BUDGET },
       promptTemplateVersion: "planner-prompt.v1",
       modelConfigVersion: "bailian.qwen3.7-plus.v1",
     };
@@ -74,8 +78,10 @@ describe("真实百炼qwen3.7-plus（付费，显式运行）", () => {
       durationMs: result.durationMs,
       httpStatus: result.providerMeta.httpStatus,
       providerRequestId: result.providerMeta.providerRequestId,
-      usage: result.kind === "candidate" ? result.usage : undefined,
+      providerCallCount: result.providerCallCount,
+      usage: result.usage,
     });
+    writeEvidence();
     expect(result.kind).toBe("candidate");
     if (result.kind === "candidate") {
       expect(result.candidate.objective.length).toBeGreaterThan(0);
@@ -85,9 +91,14 @@ describe("真实百炼qwen3.7-plus（付费，显式运行）", () => {
           expect(capability).toBe(EXECUTION_CAPABILITY_MARKDOWN_COMPOSE);
         }
       }
+      expect(result.providerCallCount).toBe(1);
+      expect(result.providerMeta.httpStatus).toBeGreaterThanOrEqual(200);
+      expect(result.providerMeta.httpStatus).toBeLessThan(300);
+      expect(result.providerMeta.providerRequestId).toMatch(/^[A-Za-z0-9-]{1,128}$/);
+      if (result.usage === undefined) throw new Error("Planner响应缺少真实usage");
       expect(result.usage.inputTokens).toBeGreaterThan(0);
+      expect(result.usage.outputTokens).toBeGreaterThan(0);
     }
-    writeEvidence();
   }, 180_000);
 
   it("Executor经真实pi Agent loop按Execution Contract产出候选", async () => {
@@ -106,34 +117,53 @@ describe("真实百炼qwen3.7-plus（付费，显式运行）", () => {
           title: "整理本周进展",
           purpose: "把原始进展整理为结构化要点",
           dependsOn: [],
+          inputRefs: [],
           expectedOutput: "要点清单",
           successCriteria: ["覆盖登录联调与崩溃修复两个要点"],
+          capabilityRefs: [EXECUTION_CAPABILITY_MARKDOWN_COMPOSE],
         },
       ],
       completionCriteria: ["周报包含风险与下一步"],
       capabilityRefs: [EXECUTION_CAPABILITY_MARKDOWN_COMPOSE],
-      limits: { maxTurnsPerStep: 6, timeoutMsPerStep: 120_000 },
+      limits: {
+        maxTurnsPerStep: 1,
+        timeoutMsPerStep: 120_000,
+        tokenBudgetPerStep: B2_EXECUTOR_TOKEN_BUDGET_PER_STEP,
+      },
       sha256: "c".repeat(64),
       revision: 1,
       createdAt: "2026-08-07T12:00:00.000Z",
       updatedAt: "2026-08-07T12:00:00.000Z",
     };
-    const result = await runPiExecutor({ config, contract, stepId: "step-1" });
+    const result = await runPiExecutor({
+      config,
+      contract,
+      stepId: "step-1",
+      dependencyResults: [],
+    });
     recordCall({
       node: "executor",
       kind: result.kind,
       durationMs: result.durationMs,
       httpStatus: result.providerMeta.httpStatus,
       providerRequestId: result.providerMeta.providerRequestId,
-      usage: result.kind === "candidate" ? result.usage : undefined,
+      providerCallCount: result.providerCallCount,
+      usage: result.usage,
     });
+    writeEvidence();
     expect(result.kind).toBe("candidate");
     if (result.kind === "candidate") {
       expect(result.candidate.stepId).toBe("step-1");
       expect(result.candidate.sections.length).toBeGreaterThan(0);
       expect(result.candidate.successCriteriaEvidence.length).toBeGreaterThan(0);
+      expect(result.providerCallCount).toBe(1);
+      expect(result.providerMeta.httpStatus).toBeGreaterThanOrEqual(200);
+      expect(result.providerMeta.httpStatus).toBeLessThan(300);
+      expect(result.providerMeta.providerRequestId).toMatch(/^[A-Za-z0-9-]{1,128}$/);
+      if (result.usage === undefined) throw new Error("Executor响应缺少真实usage");
+      expect(result.usage.inputTokens).toBeGreaterThan(0);
+      expect(result.usage.outputTokens).toBeGreaterThan(0);
     }
-    writeEvidence();
     const calls = evidence["calls"] as unknown[];
     console.log(
       `[provider-evidence] 真实调用次数: ${calls.length}（planner=1, executor=1，无自动重试）`,

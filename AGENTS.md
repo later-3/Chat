@@ -8,9 +8,9 @@ Chat 是独立开发、独立运行、独立运营并持续演进的完整产品
 
 ## 2. 当前阶段
 
-前端、后端、实时交互、Workflow 与 Agent Runtime 技术基线已经冻结。P0工程与合同骨架已经合并：仓库已有TypeScript Workspace、共享合同、React/Hono空应用、架构测试、CI和版本证据，但仍没有业务Schema、Product Store、Workflow Definition或pi Adapter实现。
+前端、后端、Workflow 与 Agent Runtime 技术基线已经冻结。P0、P1.1、P1.2及B1调试/Trace基线均已合并；仓库已有TypeScript Workspace、响应式PWA、严格Trace与固定端口调试能力。
 
-当前阶段是P1第一次可用的Chat闭环，但P1不是一次开发任务。它已经拆成8个独立、顺序交付的任务；P1.1“响应式Chat工作空间”已通过PR #2合并，当前[P1.2可安装PWA、离线草稿与移动端发布](./docs/tasks/p1.2-installable-pwa-offline-boundary.md)已实现并进入PR #3审核，待实机验收与发布批准后合并。P1.2只增加Manifest、Service Worker、离线外壳、按会话保存的本地草稿、离线发送失败语义和手机布局修正；不新增业务后端。存储、Workflow和pi的技术决定分别在真正需要它们的P1.3、P1.4和P1.7中关闭，不得阻塞或污染前面的任务。
+当前任务是[B2可调试的真实规划—确认—执行纵向闭环](./docs/tasks/b2-planning-execution-vertical-slice.md)。用户已批准以一个纵向PR取代旧B2～B7顺序小PR：实现版本化JSON Product Store、唯一`PlanningExecutionWorkflow`、pi Planner/Executor、百炼`qwen3.7-plus`、Plan修改/批准/拒绝、Product Commit、最小真实前端和多源Replay。本任务不实现SSE Cursor、Memory、BMAD、经验规则系统、外部副作用Tool或服务器部署；弱服务器继续禁止编译。
 
 当前事实以[PROJECT_STATE.md](./PROJECT_STATE.md)为准，技术边界以[技术合同](./docs/architecture/technology-contract.md)为准。
 

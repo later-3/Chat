@@ -2,7 +2,9 @@ import { Hono } from "hono";
 import { ZodError } from "zod";
 import {
   commandEnvelopeSchema,
+  commandIdSchema,
   createSessionPayloadSchema,
+  cursorPageRequestSchema,
   problemDetailSchema,
   productRunIdSchema,
   productSessionIdSchema,
@@ -22,6 +24,8 @@ import {
   getRunPlans,
   getSession,
   getSessionMessages,
+  newSpanId,
+  runTraceId,
   submitPlanDecision,
   submitUserMessage,
   type ApplicationDeps,
@@ -124,6 +128,93 @@ async function parseJsonBody(c: { req: { json: () => Promise<unknown> } }): Prom
   }
 }
 
+function parseMessagePageQuery(url: string): {
+  cursor?: string | undefined;
+  limit?: number | undefined;
+} {
+  const params = new URL(url).searchParams;
+  for (const key of params.keys()) {
+    if (key !== "cursor" && key !== "limit") {
+      throw new ApplicationError({
+        code: "validation_failed",
+        httpStatus: 400,
+        message: "消息分页查询包含未知参数",
+      });
+    }
+  }
+  const cursors = params.getAll("cursor");
+  const limits = params.getAll("limit");
+  if (cursors.length > 1 || limits.length > 1) {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 400,
+      message: "消息分页参数不得重复",
+    });
+  }
+  const cursor = cursors[0];
+  const limitRaw = limits[0];
+  if (limitRaw !== undefined && !/^[0-9]+$/u.test(limitRaw)) {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 400,
+      message: "limit必须是1到200的整数",
+    });
+  }
+  const limit = limitRaw !== undefined ? Number(limitRaw) : undefined;
+  return cursorPageRequestSchema.parse({
+    ...(cursor !== undefined ? { cursor } : {}),
+    ...(limit !== undefined ? { limit } : {}),
+  });
+}
+
+function assertNoQuery(url: string): void {
+  if ([...new URL(url).searchParams.keys()].length !== 0) {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 400,
+      message: "该查询不接受Query参数",
+    });
+  }
+}
+
+function emitCommandAccepted(
+  ctx: ProductRouteContext,
+  c: { get: (key: "requestId") => RequestId },
+  input: {
+    commandId: string;
+    routeTemplate: string;
+    statusCode: number;
+    productRunId?: string;
+    productSessionId?: string;
+  },
+): void {
+  if (ctx.deps.trace === undefined) return;
+  try {
+    const productRunId =
+      input.productRunId === undefined ? undefined : productRunIdSchema.parse(input.productRunId);
+    const productSessionId =
+      input.productSessionId === undefined
+        ? undefined
+        : productSessionIdSchema.parse(input.productSessionId);
+    ctx.deps.trace({
+      level: "info",
+      eventName: "http.command.accepted",
+      outcome: "success",
+      traceId: productRunId !== undefined ? runTraceId(productRunId) : c.get("requestId"),
+      spanId: newSpanId(),
+      requestId: c.get("requestId"),
+      httpMethod: "POST",
+      routeTemplate: input.routeTemplate,
+      statusCode: input.statusCode,
+      commandId: commandIdSchema.parse(input.commandId),
+      ...(productRunId !== undefined ? { productRunId } : {}),
+      ...(productSessionId !== undefined ? { productSessionId } : {}),
+    });
+  } catch {
+    // Trace故障不能把已经提交的产品命令改写成HTTP失败。
+  }
+}
+
 export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables: Variables }> {
   const router = new Hono<{ Variables: Variables }>();
 
@@ -136,6 +227,12 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
         commandId: envelope.commandId,
         payload,
       });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/sessions",
+        statusCode: 201,
+        productSessionId: result.session.sessionId,
+      });
       return c.json(result, 201);
     } catch (error) {
       return mapError(c, error);
@@ -144,6 +241,7 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
 
   router.get("/sessions/:sessionId", async (c) => {
     try {
+      assertNoQuery(c.req.url);
       const sessionId = productSessionIdSchema.parse(c.req.param("sessionId"));
       const result = await getSession(ctx.deps, { principalId: ctx.principalId, sessionId });
       return c.json(result, 200);
@@ -163,6 +261,13 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
         commandId: envelope.commandId,
         payload,
       });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/sessions/:sessionId/messages",
+        statusCode: 201,
+        productRunId: result.run.productRunId,
+        productSessionId: sessionId,
+      });
       return c.json(result, 201);
     } catch (error) {
       return mapError(c, error);
@@ -172,19 +277,7 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
   router.get("/sessions/:sessionId/messages", async (c) => {
     try {
       const sessionId = productSessionIdSchema.parse(c.req.param("sessionId"));
-      const cursor = c.req.query("cursor");
-      const limitRaw = c.req.query("limit");
-      const limit = limitRaw !== undefined ? Number.parseInt(limitRaw, 10) : undefined;
-      if (
-        limitRaw !== undefined &&
-        (!Number.isSafeInteger(limit) || limit === undefined || limit < 1 || limit > 200)
-      ) {
-        throw new ApplicationError({
-          code: "validation_failed",
-          httpStatus: 400,
-          message: "limit必须是1到200的整数",
-        });
-      }
+      const { cursor, limit } = parseMessagePageQuery(c.req.url);
       const result = await getSessionMessages(ctx.deps, {
         principalId: ctx.principalId,
         sessionId,
@@ -199,6 +292,7 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
 
   router.get("/runs/:productRunId", async (c) => {
     try {
+      assertNoQuery(c.req.url);
       const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
       const result = await getProductRun(ctx.deps, { principalId: ctx.principalId, productRunId });
       return c.json(result, 200);
@@ -209,6 +303,7 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
 
   router.get("/runs/:productRunId/plans", async (c) => {
     try {
+      assertNoQuery(c.req.url);
       const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
       const result = await getRunPlans(ctx.deps, { principalId: ctx.principalId, productRunId });
       return c.json({ items: result.plans }, 200);
@@ -219,6 +314,7 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
 
   router.get("/runs/:productRunId/approvals/current", async (c) => {
     try {
+      assertNoQuery(c.req.url);
       const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
       const result = await getCurrentApproval(ctx.deps, {
         principalId: ctx.principalId,
@@ -248,6 +344,13 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
         commandId: envelope.commandId,
         expectedRunRevision: envelope.expectedRevision,
         payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/runs/:productRunId/decisions",
+        statusCode: 201,
+        productRunId,
+        productSessionId: result.run.sessionId,
       });
       return c.json(result, 201);
     } catch (error) {
