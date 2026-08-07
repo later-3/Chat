@@ -11,6 +11,9 @@
     "typecheck": "pnpm -r --sort typecheck",
     "test": "pnpm -r --sort test",
     "lint": "eslint .",
+    "debug:trace": "pnpm --filter @chat/api exec tsx ../../packages/realtime/src/trace-cli.ts",
+    "debug:preclean": "node scripts/debug/preclean.mjs",
+    "debug:stop": "node scripts/debug/stop.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

@@ -1,0 +1,67 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Chat：Workflow 运行时",
+      "type": "node",
+      "request": "launch",
+      "port": 43121,
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--import",
+        "${workspaceFolder}/scripts/debug/register-process.mjs",
+        "${workspaceFolder}/scripts/debug/workflow-stub.mjs"
+      ],
+      "env": {
+        "CHAT_DEBUG_ROLE": "workflow",
+        "CHAT_DEBUG_PORT": "43112",
+        "CHAT_REPO_ROOT": "${workspaceFolder}",
+        "WORKFLOW_PORT": "43112"
+      },
+      "console": "integratedTerminal",
+      "preLaunchTask": "chat-debug:preclean",
+      "postDebugTask": "chat-debug:stop"
+    },
+    {
+      "name": "Chat：API",
+      "type": "node",
+      "request": "launch",
+      "port": 43120,
+      "cwd": "${workspaceFolder}/apps/api",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--import",
+        "${workspaceFolder}/scripts/debug/register-process.mjs",
+        "--import",
+        "tsx",
+        "src/index.ts"
+      ],
+      "env": {
+        "CHAT_DEBUG_ROLE": "api",
+        "CHAT_DEBUG_PORT": "43111",
+        "CHAT_REPO_ROOT": "${workspaceFolder}",
+        "PORT": "43111"
+      },
+      "console": "integratedTerminal",
+      "preLaunchTask": "chat-debug:wait-workflow",
+      "postDebugTask": "chat-debug:stop"
+    },
+    {
+      "name": "Chat：Web 浏览器",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://127.0.0.1:43110",
+      "webRoot": "${workspaceFolder}/apps/web",
+      "preLaunchTask": "chat-debug:start-web",
+      "postDebugTask": "chat-debug:stop"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Chat：完整后端闭环",
+      "configurations": ["Chat：Workflow 运行时", "Chat：API", "Chat：Web 浏览器"],
+      "stopAll": true
+    }
+  ]
+}

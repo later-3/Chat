@@ -1,0 +1,52 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "chat-debug:preclean",
+      "type": "shell",
+      "command": "node",
+      "args": ["scripts/debug/preclean.mjs"],
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "chat-debug:wait-workflow",
+      "type": "shell",
+      "command": "node",
+      "args": [
+        "scripts/debug/wait-ready.mjs",
+        "workflow",
+        "http://127.0.0.1:43112/healthz",
+        "30000"
+      ],
+      "presentation": { "reveal": "silent", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "chat-debug:wait-api",
+      "type": "shell",
+      "command": "node",
+      "args": ["scripts/debug/wait-ready.mjs", "api", "http://127.0.0.1:43111/api/readyz", "30000"],
+      "dependsOn": ["chat-debug:wait-workflow"],
+      "presentation": { "reveal": "silent", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "chat-debug:start-web",
+      "type": "shell",
+      "command": "node",
+      "args": ["scripts/debug/start-web.mjs"],
+      "dependsOn": ["chat-debug:wait-api"],
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "chat-debug:stop",
+      "type": "shell",
+      "command": "node",
+      "args": ["scripts/debug/stop.mjs"],
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    }
+  ]
+}

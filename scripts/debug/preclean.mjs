@@ -1,0 +1,36 @@
+import { checkPorts, frozenPortList, loadPidEntries, terminateRecorded } from "./lib.mjs";
+
+/**
+ * chat-debug:preclean（任务书§8.2）。
+ *
+ * 1. 按pids.json向上次Chat调试进程发送SIGTERM，有限等待后仅对仍存活且
+ *    身份一致者SIGKILL；
+ * 2. 检查全部冻结端口；
+ * 3. 端口仍被本轮记录进程占用时清理后复查一次；
+ * 4. 端口被未知应用占用时报告端口/PID/进程名并失败退出，绝不杀未知进程；
+ * 5. 端口全部释放才退出码0。
+ */
+
+const entries = loadPidEntries();
+const results = terminateRecorded(entries);
+for (const result of results) {
+  console.log(`[preclean] ${result.role} pid=${result.pid}: ${result.action}`);
+}
+
+let occupied = checkPorts();
+if (occupied.length > 0 && entries.length > 0) {
+  // 刚清理的进程可能尚未释放端口，等待后复查一次
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+  occupied = checkPorts();
+}
+
+if (occupied.length > 0) {
+  console.error("[preclean] 失败：以下冻结端口被未记录的进程占用，已拒绝清理（不杀未知进程）：");
+  for (const item of occupied) {
+    console.error(`  端口 ${item.port} pid=${item.pid} 命令: ${item.command}`);
+  }
+  console.error("[preclean] 请手动释放端口或联系维护者确认后重试。");
+  process.exit(1);
+}
+
+console.log(`[preclean] 完成：冻结端口 ${frozenPortList().join(", ")} 全部可用。`);

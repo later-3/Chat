@@ -3,7 +3,10 @@
   "compilerOptions": {
     "noEmit": true,
     "rootDir": ".",
-    "types": []
+    "types": ["node"],
+    // TODO(B6)：P1.2并行期不能改动pnpm-lock.yaml，realtime暂不能声明
+    // @types/node devDependency；锁文件解冻后改为正式声明并移除此typeRoots。
+    "typeRoots": ["../../apps/api/node_modules/@types"]
   },
   "include": ["src"]
 }
