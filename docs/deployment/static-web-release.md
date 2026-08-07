@@ -38,7 +38,11 @@ mkdir -p "$ARTIFACT_DIR"
 cp -R apps/web/dist "$ARTIFACT_DIR/dist"
 echo "$GIT_SHA" > "$ARTIFACT_DIR/GIT_SHA"
 tar -C "$ARTIFACT_DIR" -czf "$ARTIFACT_DIR/chat-web-$GIT_SHA.tar.gz" dist GIT_SHA
-shasum -a 256 "$ARTIFACT_DIR/chat-web-$GIT_SHA.tar.gz" > "$ARTIFACT_DIR/chat-web-$GIT_SHA.tar.gz.sha256"
+# 校验文件必须记录相对路径：在产物目录内生成，服务器上 sha256sum -c 才能找到文件
+(
+  cd "$ARTIFACT_DIR"
+  shasum -a 256 "chat-web-$GIT_SHA.tar.gz" > "chat-web-$GIT_SHA.tar.gz.sha256"
+)
 echo "产物目录：$ARTIFACT_DIR"
 ```
 

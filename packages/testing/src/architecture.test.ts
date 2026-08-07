@@ -43,7 +43,8 @@ const rules: Record<
     forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@earendil-works\//],
   },
   "apps/web": {
-    external: ["react", "react-dom", "@tanstack/react-query"],
+    // workbox-window 进入浏览器运行时bundle（PWA注册与更新提示），属于运行时依赖
+    external: ["react", "react-dom", "@tanstack/react-query", "workbox-window"],
     internal: ["@chat/contracts"],
     forbidden: [/^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@ag-ui\//],
   },
@@ -66,7 +67,6 @@ const devOnlyExternal = [
   "jsdom",
   // P1.2：PWA构建插件与真实浏览器E2E
   "vite-plugin-pwa",
-  "workbox-window",
   "@playwright/test",
 ];
 
