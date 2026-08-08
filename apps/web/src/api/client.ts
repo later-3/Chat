@@ -5,9 +5,11 @@ import {
   cursorPageSchema,
   decisionDtoSchema,
   messageDtoSchema,
+  memoryBackendProfileDtoSchema,
   planDtoSchema,
   problemDetailSchema,
   runDtoSchema,
+  runContextDtoSchema,
   sessionDtoSchema,
   submitDecisionPayloadSchema,
   submitMessagePayloadSchema,
@@ -16,12 +18,15 @@ import {
   type CursorPage,
   type DecisionDto,
   type MessageDto,
+  type MemoryBackendProfileDto,
   type PlanDto,
   type ProblemCode,
   type RecoveryAction,
   type RunDto,
+  type RunContextDto,
   type SessionDto,
   type SubmitDecisionPayload,
+  type SubmitMessagePayload,
 } from "@chat/contracts/public";
 import { z } from "zod";
 
@@ -29,6 +34,10 @@ const sessionResponseSchema = z.object({ session: sessionDtoSchema }).strict();
 const runResponseSchema = z.object({ run: runDtoSchema }).strict();
 const plansResponseSchema = z.object({ items: z.array(planDtoSchema) }).strict();
 const approvalResponseSchema = z.object({ approval: approvalDtoSchema.nullable() }).strict();
+const memoryBackendsResponseSchema = z
+  .object({ backends: z.array(memoryBackendProfileDtoSchema) })
+  .strict();
+const runContextResponseSchema = z.object({ context: runContextDtoSchema }).strict();
 const submitMessageResponseSchema = z
   .object({ message: messageDtoSchema, run: runDtoSchema })
   .strict();
@@ -147,18 +156,29 @@ export function apiCreateSession(commandId: CommandId, title?: string): Promise<
 export function apiSubmitMessage(
   sessionId: string,
   commandId: CommandId,
-  text: string,
+  payload: SubmitMessagePayload,
 ): Promise<{ message: MessageDto; run: RunDto }> {
   return post(
     `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
     commandEnvelopeSchema.parse({
       commandId,
-      payload: submitMessagePayloadSchema.parse({ text }),
+      payload: submitMessagePayloadSchema.parse(payload),
     }),
     (json) => {
       const body = submitMessageResponseSchema.parse(json);
       return { message: body.message, run: body.run };
     },
+  );
+}
+
+export function apiGetMemoryBackends(): Promise<MemoryBackendProfileDto[]> {
+  return get("/api/memory-backends", (json) => memoryBackendsResponseSchema.parse(json).backends);
+}
+
+export function apiGetRunContext(productRunId: string): Promise<RunContextDto> {
+  return get(
+    `/api/runs/${encodeURIComponent(productRunId)}/context`,
+    (json) => runContextResponseSchema.parse(json).context,
   );
 }
 

@@ -535,6 +535,8 @@ Executor 只得到不可变 Execution Contract 和当前 Approved Step。第一�
 
 执行候选使用结构化合同：`approvedPlanRef`、有序 `stepResults`、`finalOutput`、逐条 `completionCriteriaEvidence` 和 warnings。`finalOutput` 第一版只允许 Markdown section 数据；服务端确定性渲染 Markdown。真实 E2E 断言 Schema、批准版本、必需 section 和证据覆盖，不对模型自然语言做脆弱的全文快照比较。
 
+Provider 工具入口保持窄合同：每个 Step 只提交 `stepId + output`，不要求模型重复组装 Chat 自己拥有的候选结构。pi Adapter 用 Approved Step 标题、成功标准、整体完成条件和真实 `output` 确定性投影 Markdown section 与证据引用，再由最终 strict Schema 和 Domain Validation 校验。证据引用必须同时包含原标准和实际输出片段，禁止直接采用模型自报的“已经满足”；该边界由 `executor-prompt.v3` 标识。
+
 Executor 不得修改 Plan、增加步骤或宣布 Product Run 成功。所有候选经过确定性验证与 Product Commit。
 
 ### 14.4 Provider 可观察性

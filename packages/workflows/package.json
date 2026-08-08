@@ -20,6 +20,7 @@
     "@chat/application": "workspace:*",
     "@chat/contracts": "workspace:*",
     "@chat/domain": "workspace:*",
+    "@chat/memory-runtime": "workspace:*",
     "@chat/pi-runtime": "workspace:*",
     "@chat/realtime": "workspace:*",
     "@hono/node-server": "^2.1.0",

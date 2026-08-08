@@ -4,6 +4,7 @@ import { chatEventEnvelopeSchema } from "./events.js";
 import { problemDetailSchema } from "./problem-detail.js";
 import {
   beginRunAttemptRequestSchema,
+  beginRunAttemptResponseSchema,
   completeRunAttemptRequestSchema,
 } from "./internal-runtime.js";
 
@@ -150,8 +151,9 @@ describe("private runtime attempt contracts", () => {
     commandId: "cmd_attempt1",
     productRunId: "run_attempt1",
     kind: "execution",
+    executionContractId: "exc_attempt1",
     stepId: "step-1",
-    inputManifestSha256: "a".repeat(64),
+    dependencyRefs: [],
     promptTemplateVersion: "executor-prompt.v1",
     modelConfigVersion: "bailian.qwen3.7-plus.v1",
   };
@@ -161,9 +163,42 @@ describe("private runtime attempt contracts", () => {
     expect(beginRunAttemptRequestSchema.safeParse({ ...begin, kind: "planning" }).success).toBe(
       false,
     );
-    const missingManifest: Partial<typeof begin> = { ...begin };
-    delete missingManifest.inputManifestSha256;
-    expect(beginRunAttemptRequestSchema.safeParse(missingManifest).success).toBe(false);
+    const missingContract: Partial<typeof begin> = { ...begin };
+    delete missingContract.executionContractId;
+    expect(beginRunAttemptRequestSchema.safeParse(missingContract).success).toBe(false);
+    expect(
+      beginRunAttemptRequestSchema.safeParse({
+        ...begin,
+        inputManifestSha256: "a".repeat(64),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("begin响应只返回Application解析的当前步骤条目", () => {
+    const response = {
+      schemaVersion: "chat-internal-runtime.v1",
+      attemptId: "att_attempt1",
+      inputManifestSha256: "a".repeat(64),
+      contextItems: [
+        {
+          refId: "mrs_attempt1",
+          revision: 1,
+          sha256: "b".repeat(64),
+          title: "已冻结事实",
+          kind: "world_model",
+          layer: "L2",
+          tags: ["project"],
+          content: "只读正文",
+        },
+      ],
+    };
+    expect(beginRunAttemptResponseSchema.safeParse(response).success).toBe(true);
+    expect(
+      beginRunAttemptResponseSchema.safeParse({
+        ...response,
+        contextItems: [{ ...response.contextItems[0], endpoint: "private" }],
+      }).success,
+    ).toBe(false);
   });
 
   it("complete用判别联合绑定outcome与errorCode", () => {

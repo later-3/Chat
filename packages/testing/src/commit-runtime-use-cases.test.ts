@@ -161,19 +161,25 @@ async function buildCandidate(validEvidence: boolean) {
       executionContractId: contract.executionContractId,
       approvedPlanSha256: contract.approvedPlanSha256,
       stepId: contractStep.stepId,
+      inputRefs: contractStep.inputRefs,
       dependencyRefs,
       promptTemplateVersion: EXECUTOR_PROMPT_TEMPLATE_VERSION,
       modelConfigVersion: MODEL_CONFIG_VERSION,
     });
-    const { attemptId } = await beginRunAttempt(deps, {
-      commandId: cmd(),
-      productRunId: run.productRunId,
-      kind: "execution",
-      stepId: contractStep.stepId,
-      inputManifestSha256,
-      promptTemplateVersion: EXECUTOR_PROMPT_TEMPLATE_VERSION,
-      modelConfigVersion: MODEL_CONFIG_VERSION,
-    });
+    const { attemptId, inputManifestSha256: committedManifestSha256 } = await beginRunAttempt(
+      deps,
+      {
+        commandId: cmd(),
+        productRunId: run.productRunId,
+        kind: "execution",
+        executionContractId: contract.executionContractId,
+        stepId: contractStep.stepId,
+        dependencyRefs,
+        promptTemplateVersion: EXECUTOR_PROMPT_TEMPLATE_VERSION,
+        modelConfigVersion: MODEL_CONFIG_VERSION,
+      },
+    );
+    expect(committedManifestSha256).toBe(inputManifestSha256);
     await completeRunAttempt(deps, { commandId: cmd(), attemptId, outcome: "success" });
     const base = {
       stepId: contractStep.stepId,

@@ -3,6 +3,7 @@ import type {
   CommandId,
   DecisionId,
   ExecutionCandidate,
+  ExecutionContextItemDto,
   ExecutionContract,
   PlanContent,
   PlanId,
@@ -86,6 +87,7 @@ export interface ExecutionStepInput {
   readonly executionContract: ExecutionContract;
   readonly stepId: string;
   readonly attemptId: string;
+  readonly contextItems: readonly ExecutionContextItemDto[];
 }
 
 export type ExecutionCandidateResult =

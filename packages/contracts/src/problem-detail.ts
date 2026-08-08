@@ -25,6 +25,7 @@ export const problemCodeSchema = z.enum([
   "provider_timeout",
   "provider_stream_interrupted",
   "model_candidate_invalid",
+  "memory_context_required_failed",
   "product_commit_failed",
   "store_corrupted",
   "outcome_unknown",

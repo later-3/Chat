@@ -3,20 +3,25 @@ import {
   productSnapshotSchema,
   runtimeVersionEvidenceSchema,
   type Artifact,
+  type ContextPackage,
   type Decision,
   type ExecutionCandidate,
   type ExecutionContract,
   type Message,
+  type MemoryAdoption,
+  type MemoryQuery,
+  type MemoryResultSnapshot,
   type PlanRevision,
   type ProductSnapshot,
   type RevisionInput,
+  type RunContextRequest,
   type TraceEvent,
   type TraceObjectRef,
   type ValidationResult,
   type RuntimeVersionEvidence,
 } from "@chat/contracts";
 import { computePlanSha256 } from "@chat/application";
-import { hashCanonical } from "@chat/domain";
+import { computeContextPackageSha256, hashCanonical } from "@chat/domain";
 import { readTraceEvents } from "./trace-reader.js";
 
 /**
@@ -63,6 +68,11 @@ export interface ReplayProductContent {
   readonly executionCandidates: readonly ExecutionCandidate[];
   readonly validationResults: readonly ValidationResult[];
   readonly artifacts: readonly Artifact[];
+  readonly contextRequests: readonly RunContextRequest[];
+  readonly memoryQueries: readonly MemoryQuery[];
+  readonly memoryResultSnapshots: readonly MemoryResultSnapshot[];
+  readonly memoryAdoptions: readonly MemoryAdoption[];
+  readonly contextPackages: readonly ContextPackage[];
 }
 
 export type ReplayContentProjection =
@@ -235,12 +245,25 @@ function checkRef(
       const revision = checkRevision(artifact.revision, ref);
       return revision ?? checkHash(ref, artifact.sha256, "Artifact");
     }
-    case "context_package":
-      return {
-        ref,
-        status: "unsupported_type",
-        detail: "当前Product Snapshot没有Context Package事实源",
-      };
+    case "context_package": {
+      const contextPackage = snapshot.entities.contextPackages[ref.objectId as never];
+      if (contextPackage === undefined) {
+        return { ref, status: "missing", detail: "Context Package不存在" };
+      }
+      if (contextPackage.productRunId !== productRunId) return wrongRun(ref);
+      const revision = checkRevision(contextPackage.revision, ref);
+      if (revision !== undefined) return revision;
+      const recomputed = computeContextPackageSha256({
+        contextRequestId: contextPackage.contextRequestId,
+        productRunId: contextPackage.productRunId,
+        assembledForPlanRevision: contextPackage.assembledForPlanRevision,
+        purpose: contextPackage.purpose,
+        memoryQueryId: contextPackage.memoryQueryId,
+        items: contextPackage.items,
+        exclusions: contextPackage.exclusions,
+      });
+      return checkHash(ref, recomputed, "Context Package");
+    }
   }
 }
 
@@ -249,6 +272,9 @@ function eventRefs(event: TraceEvent): TraceObjectRef[] {
   if ("planRef" in event && event.planRef !== undefined) refs.push(event.planRef);
   if ("decisionRef" in event && event.decisionRef !== undefined) refs.push(event.decisionRef);
   if ("candidateRef" in event && event.candidateRef !== undefined) refs.push(event.candidateRef);
+  if ("contextPackageRef" in event && event.contextPackageRef !== undefined) {
+    refs.push(event.contextPackageRef);
+  }
   if ("outputRefs" in event && event.outputRefs !== undefined) refs.push(...event.outputRefs);
   if ("inputRefs" in event && event.inputRefs !== undefined) refs.push(...event.inputRefs);
   return refs;
@@ -317,6 +343,240 @@ function checkSequentialPairs(
   for (const [key, pending] of open) {
     if (pending > 0)
       failures.add(`Trace缺口：${label}有${String(pending)}个started没有终态（${key}）`);
+  }
+}
+
+const CONTEXT_EVENT_NAMES = new Set([
+  "context.assembly.started",
+  "context.assembly.completed",
+  "context.assembly.failed",
+]);
+const MEMORY_QUERY_EVENT_NAMES = new Set([
+  "memory.query.started",
+  "memory.query.completed",
+  "memory.query.failed",
+]);
+
+function checkContextMemoryCompleteness(
+  snapshot: ProductSnapshot,
+  productRunId: string,
+  events: readonly TraceEvent[],
+  failures: Set<string>,
+): void {
+  const requests = Object.values(snapshot.entities.contextRequests).filter(
+    (request) => request.productRunId === productRunId,
+  );
+  if (requests.length !== 1) {
+    failures.add(
+      `产品事实缺口：Run ${productRunId} 的ContextRequest期望1个，实际${String(requests.length)}个`,
+    );
+    return;
+  }
+
+  const request = requests[0]!;
+  const contextEvents = events.filter((event) => CONTEXT_EVENT_NAMES.has(event.eventName));
+  const memoryEvents = events.filter((event) => MEMORY_QUERY_EVENT_NAMES.has(event.eventName));
+  for (const event of contextEvents) {
+    if (
+      !("contextRequestId" in event) ||
+      event.contextRequestId !== request.contextRequestId ||
+      !("memoryRequested" in event) ||
+      event.memoryRequested !== (request.memory !== undefined)
+    ) {
+      failures.add(`Trace关联错误：${event.eventName} 未指向该Run唯一ContextRequest`);
+    }
+  }
+
+  if (request.memory === undefined) {
+    if (memoryEvents.length > 0) {
+      failures.add("Trace关联错误：no-memory ContextRequest不应出现memory.query事件");
+    }
+    checkSequentialPairs(
+      failures,
+      contextEvents,
+      "Context assembly",
+      (event) => event.eventName === "context.assembly.started",
+      (event) =>
+        event.eventName === "context.assembly.completed" ||
+        event.eventName === "context.assembly.failed",
+      (event) => ("contextRequestId" in event ? event.contextRequestId : "invalid"),
+    );
+    return;
+  }
+
+  const queries = Object.values(snapshot.entities.memoryQueries).filter(
+    (query) => query.contextRequestId === request.contextRequestId,
+  );
+  if (queries.length !== 1) {
+    failures.add(
+      `产品事实缺口：Memory ContextRequest ${request.contextRequestId} 的Query期望1个，实际${String(queries.length)}个`,
+    );
+    return;
+  }
+  const query = queries[0]!;
+
+  const contextStarted = contextEvents.filter(
+    (event) =>
+      event.eventName === "context.assembly.started" &&
+      event.contextRequestId === request.contextRequestId,
+  );
+  const contextTerminal = contextEvents.filter(
+    (event) =>
+      (event.eventName === "context.assembly.completed" ||
+        event.eventName === "context.assembly.failed") &&
+      event.contextRequestId === request.contextRequestId,
+  );
+  if (contextStarted.length !== 1 || contextTerminal.length !== 1) {
+    failures.add(
+      `Trace缺口：Memory Context assembly期望started/terminal各1条，实际${String(contextStarted.length)}/${String(contextTerminal.length)}`,
+    );
+  }
+  checkSequentialPairs(
+    failures,
+    contextEvents,
+    "Context assembly",
+    (event) => event.eventName === "context.assembly.started",
+    (event) =>
+      event.eventName === "context.assembly.completed" ||
+      event.eventName === "context.assembly.failed",
+    (event) => ("contextRequestId" in event ? event.contextRequestId : "invalid"),
+  );
+
+  for (const event of memoryEvents) {
+    if (
+      !("memoryQueryId" in event) ||
+      event.memoryQueryId !== query.memoryQueryId ||
+      event.contextRequestId !== request.contextRequestId ||
+      event.backendId !== query.backendId ||
+      event.requirement !== query.requirement ||
+      event.sourceMessageSha256 !== query.sourceMessageSha256 ||
+      event.tagCount !== query.tags.length ||
+      event.layerCount !== query.layers.length ||
+      event.requestedLimit !== query.limit ||
+      event.contextBudget !== query.contextBudget
+    ) {
+      failures.add(`Trace关联错误：${event.eventName} 与持久化Memory Query不一致`);
+    }
+  }
+  const queryStarted = memoryEvents.filter(
+    (event) =>
+      event.eventName === "memory.query.started" && event.memoryQueryId === query.memoryQueryId,
+  ).length;
+  const queryCompleted = memoryEvents.filter(
+    (event) =>
+      event.eventName === "memory.query.completed" && event.memoryQueryId === query.memoryQueryId,
+  ).length;
+  const queryFailed = memoryEvents.filter(
+    (event) =>
+      event.eventName === "memory.query.failed" && event.memoryQueryId === query.memoryQueryId,
+  ).length;
+  const expectedCompleted = query.status === "completed" ? 1 : 0;
+  const expectedFailed = query.status === "failed" ? 1 : 0;
+  if (
+    queryStarted !== 1 ||
+    queryCompleted !== expectedCompleted ||
+    queryFailed !== expectedFailed
+  ) {
+    failures.add(
+      `Trace缺口：Memory Query ${query.memoryQueryId} 与持久化终态${query.status}不一致（started=${String(queryStarted)}, completed=${String(queryCompleted)}, failed=${String(queryFailed)}）`,
+    );
+  }
+  const completedQueryEvent = memoryEvents.find(
+    (event): event is Extract<TraceEvent, { eventName: "memory.query.completed" }> =>
+      event.eventName === "memory.query.completed" && event.memoryQueryId === query.memoryQueryId,
+  );
+  const failedQueryEvent = memoryEvents.find(
+    (event): event is Extract<TraceEvent, { eventName: "memory.query.failed" }> =>
+      event.eventName === "memory.query.failed" && event.memoryQueryId === query.memoryQueryId,
+  );
+  if (
+    query.status === "completed" &&
+    (completedQueryEvent?.resultSetSha256 !== query.resultSetSha256 ||
+      completedQueryEvent.hitCount !== query.hitCount ||
+      completedQueryEvent.adoptedCount !== query.adoptedCount)
+  ) {
+    failures.add(`Trace关联错误：Memory Query ${query.memoryQueryId} completed统计或Hash不一致`);
+  }
+  if (query.status === "failed" && failedQueryEvent?.error.code !== query.errorCode) {
+    failures.add(`Trace关联错误：Memory Query ${query.memoryQueryId} failed错误码不一致`);
+  }
+  checkSequentialPairs(
+    failures,
+    memoryEvents,
+    "Memory Query",
+    (event) => event.eventName === "memory.query.started",
+    (event) =>
+      event.eventName === "memory.query.completed" || event.eventName === "memory.query.failed",
+    (event) => ("memoryQueryId" in event ? event.memoryQueryId : "invalid"),
+  );
+
+  const packages = Object.values(snapshot.entities.contextPackages).filter(
+    (contextPackage) =>
+      contextPackage.productRunId === productRunId &&
+      contextPackage.contextRequestId === request.contextRequestId &&
+      contextPackage.memoryQueryId === query.memoryQueryId,
+  );
+  const completedEvent = contextTerminal.find(
+    (event) => event.eventName === "context.assembly.completed",
+  );
+  const failedEvent = contextTerminal.find(
+    (event) => event.eventName === "context.assembly.failed",
+  );
+
+  if (
+    query.status === "completed" ||
+    (query.status === "failed" && query.requirement === "optional")
+  ) {
+    const expectedStatus = query.status === "completed" ? "ready" : "optional_failed";
+    const contextPackage = packages[0];
+    if (
+      packages.length !== 1 ||
+      completedEvent?.status !== expectedStatus ||
+      completedEvent.contextPackageRef === undefined ||
+      contextPackage === undefined
+    ) {
+      failures.add(
+        `Trace关联错误：Memory Query ${query.memoryQueryId} 的${expectedStatus}终态必须精确引用唯一Context Package`,
+      );
+    } else {
+      const expectedRef: TraceObjectRef = {
+        objectType: "context_package",
+        objectId: contextPackage.contextPackageId,
+        revision: contextPackage.revision,
+        sha256: contextPackage.sha256,
+      };
+      if (!sameRef(completedEvent.contextPackageRef, expectedRef)) {
+        failures.add(
+          `Trace关联错误：context.assembly.completed未精确引用Memory Query ${query.memoryQueryId} 的Context Package`,
+        );
+      }
+      if (
+        completedEvent.adoptedCount !== contextPackage.items.length ||
+        completedEvent.excludedCount !== contextPackage.exclusions.length ||
+        (expectedStatus === "optional_failed" &&
+          (contextPackage.items.length !== 0 ||
+            contextPackage.exclusions.length !== 1 ||
+            contextPackage.exclusions[0]?.backendId !== query.backendId))
+      ) {
+        failures.add(
+          `Trace关联错误：Context Package ${contextPackage.contextPackageId} 的采用/排除结果与终态不一致`,
+        );
+      }
+    }
+    if (failedEvent !== undefined) {
+      failures.add(
+        `Trace关联错误：Memory Query ${query.memoryQueryId} 不应以Context assembly失败终止`,
+      );
+    }
+    return;
+  }
+
+  if (query.status === "failed" && query.requirement === "required") {
+    if (packages.length !== 0 || failedEvent === undefined || completedEvent !== undefined) {
+      failures.add(
+        `Trace关联错误：required Memory Query ${query.memoryQueryId} 失败时必须无Context Package且以失败终态结束`,
+      );
+    }
   }
 }
 
@@ -596,6 +856,7 @@ function checkTimelineCompleteness(
     (event) => ("nodeKind" in event ? `${event.attemptId}/${event.nodeKind}` : "invalid"),
     (event) => event.eventName === "pi.node.failed" && preRequestAttemptIds.has(event.attemptId),
   );
+  checkContextMemoryCompleteness(snapshot, productRunId, events, failures);
 }
 
 function parseVersionEvidence(raw: unknown): HistoricalVersionEvidence | undefined {
@@ -660,6 +921,24 @@ function collectContent(snapshot: ProductSnapshot, productRunId: string): Replay
       .filter((entity) => entity.productRunId === productRunId)
       .sort(byCreatedAt),
     artifacts: Object.values(snapshot.entities.artifacts)
+      .filter((entity) => entity.productRunId === productRunId)
+      .sort(byCreatedAt),
+    contextRequests: Object.values(snapshot.entities.contextRequests)
+      .filter((entity) => entity.productRunId === productRunId)
+      .sort(byCreatedAt),
+    memoryQueries: Object.values(snapshot.entities.memoryQueries)
+      .filter((entity) => entity.productRunId === productRunId)
+      .sort(byCreatedAt),
+    memoryResultSnapshots: Object.values(snapshot.entities.memoryResultSnapshots)
+      .filter((entity) => {
+        const query = snapshot.entities.memoryQueries[entity.memoryQueryId];
+        return query?.productRunId === productRunId;
+      })
+      .sort(byCreatedAt),
+    memoryAdoptions: Object.values(snapshot.entities.memoryAdoptions)
+      .filter((entity) => entity.productRunId === productRunId)
+      .sort(byCreatedAt),
+    contextPackages: Object.values(snapshot.entities.contextPackages)
       .filter((entity) => entity.productRunId === productRunId)
       .sort(byCreatedAt),
   };

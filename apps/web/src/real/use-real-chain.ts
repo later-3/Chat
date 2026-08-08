@@ -4,8 +4,10 @@ import {
   apiCreateSession,
   apiGetCurrentApproval,
   apiGetMessages,
+  apiGetMemoryBackends,
   apiGetPlans,
   apiGetRun,
+  apiGetRunContext,
   apiSubmitDecision,
   apiSubmitMessage,
   ApiProblemError,
@@ -27,16 +29,20 @@ import {
   writeStoredSession,
   type PendingDecision,
   type PendingSend,
+  pendingSendPayload,
 } from "./real-storage.js";
 import type {
   ApprovalDto,
   CommandId,
   CursorPage,
   MessageDto,
+  MemoryBackendProfileDto,
   PlanDto,
   ProductRunId,
   RunDto,
+  RunContextDto,
   SubmitDecisionPayload,
+  SubmitMessagePayload,
 } from "@chat/contracts/public";
 
 /**
@@ -73,10 +79,12 @@ export interface RealChainState {
   readonly run: UseQueryResult<RunDto>;
   readonly plans: UseQueryResult<PlanDto[]>;
   readonly approval: UseQueryResult<ApprovalDto | null>;
+  readonly memoryBackends: UseQueryResult<MemoryBackendProfileDto[]>;
+  readonly runContext: UseQueryResult<RunContextDto>;
   readonly pendingSend: PendingSend | null;
   /** B2首版一个Session同一时刻只允许一个未终态Run。 */
   readonly canStartNewRun: boolean;
-  readonly sendMessage: (text: string) => void;
+  readonly sendMessage: (text: string, context?: SubmitMessagePayload["context"]) => void;
   readonly retryPendingSend: () => void;
   readonly sending: boolean;
   readonly sendError: ApiProblemError | null;
@@ -162,6 +170,24 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     refetchIntervalInBackground: false,
   });
 
+  const memoryBackends = useQuery({
+    queryKey: ["memory-backends"],
+    queryFn: apiGetMemoryBackends,
+    staleTime: 30_000,
+  });
+
+  const runContext = useQuery({
+    queryKey: ["real-run-context", activeRunId],
+    enabled: activeRunId !== null,
+    queryFn: () => apiGetRunContext(activeRunId ?? ""),
+    refetchInterval: () => {
+      const status = run.data?.status;
+      if (status !== undefined && TERMINAL_STATUSES.has(status)) return false;
+      return refetchMs;
+    },
+    refetchIntervalInBackground: false,
+  });
+
   const messages = useQuery({
     queryKey: ["real-messages", sessionId],
     enabled: sessionId !== null,
@@ -205,6 +231,7 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     void queryClient.invalidateQueries({ queryKey: ["real-run", runId] });
     void queryClient.invalidateQueries({ queryKey: ["real-plans", runId] });
     void queryClient.invalidateQueries({ queryKey: ["real-approval", runId] });
+    void queryClient.invalidateQueries({ queryKey: ["real-run-context", runId] });
   };
 
   // 终态到达时再刷新一次正式消息与最终Plan；之后停止轮询。
@@ -214,12 +241,13 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     void queryClient.invalidateQueries({ queryKey: ["real-messages", sessionId] });
     void queryClient.invalidateQueries({ queryKey: ["real-plans", activeRunId] });
     void queryClient.invalidateQueries({ queryKey: ["real-approval", activeRunId] });
+    void queryClient.invalidateQueries({ queryKey: ["real-run-context", activeRunId] });
   }, [activeRunId, queryClient, run.data?.status, sessionId]);
 
   const sendMutation = useMutation({
     mutationFn: async (pending: PendingSend) => {
       if (sessionId === null) throw new Error("session not ready");
-      return apiSubmitMessage(sessionId, pending.commandId, pending.text);
+      return apiSubmitMessage(sessionId, pending.commandId, pendingSendPayload(pending));
     },
     onSuccess: (result) => {
       if (sessionId !== null) {
@@ -237,7 +265,7 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     },
   });
 
-  const sendMessage = (text: string) => {
+  const sendMessage = (text: string, context?: SubmitMessagePayload["context"]) => {
     const activeRunIsUnfinished =
       activeRunId !== null && (run.data === undefined || !TERMINAL_STATUSES.has(run.data.status));
     if (
@@ -248,7 +276,11 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     ) {
       return;
     }
-    const pending: PendingSend = { version: 1, text, commandId: newCommandId() };
+    const pending: PendingSend = {
+      version: 2,
+      payload: { text, ...(context !== undefined ? { context } : {}) },
+      commandId: newCommandId(),
+    };
     writePendingSend(storage, sessionId, pending);
     setPendingSend(pending);
     setSendError(null);
@@ -324,6 +356,8 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
       run,
       plans,
       approval,
+      memoryBackends,
+      runContext,
       pendingSend,
       canStartNewRun: pendingSend === null && !sendMutation.isPending && !activeRunIsUnfinished,
       sendMessage,
@@ -357,6 +391,8 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     run,
     plans,
     approval,
+    memoryBackends,
+    runContext,
     pendingSend,
     sendMutation.isPending,
     sendError,

@@ -1,7 +1,7 @@
 import { TRACE_EVENT_NAMES } from "./trace.js";
 
 /**
- * 39种Trace事件的合法Fixture。仅用于测试与本地调试证据；
+ * 45种Trace事件的合法Fixture。仅用于测试与本地调试证据；
  * 全部为合成数据，不含正文、密钥或真实Provider Payload。
  */
 
@@ -30,6 +30,12 @@ const planRef = { objectType: "plan", objectId: "plan_fx1", revision: 2, sha256:
 const decisionRef = { objectType: "decision", objectId: "dec_fx1", revision: 1, sha256: SHA256_B };
 const candidateRef = { objectType: "execution_candidate", objectId: "exc_fx1", sha256: SHA256_C };
 const messageRef = { objectType: "message", objectId: "msg_fx1", sha256: SHA256_A };
+const contextPackageRef = {
+  objectType: "context_package",
+  objectId: "ctxp_fx1",
+  revision: 1,
+  sha256: SHA256_C,
+};
 const err = { code: "provider.timeout", type: "TimeoutError" };
 const providerShared = {
   provider: "bailian",
@@ -130,6 +136,89 @@ export const validTraceFixtures: ReadonlyArray<Record<string, unknown>> = [
     fromPhase: "plan",
     toPhase: "approval",
     revision: 1,
+  },
+  // Context / Memory
+  {
+    ...base,
+    eventName: TRACE_EVENT_NAMES.contextAssemblyStarted,
+    outcome: "unknown",
+    ...run,
+    contextRequestId: "ctxr_fx1",
+    memoryRequested: true,
+  },
+  {
+    ...base,
+    eventName: TRACE_EVENT_NAMES.contextAssemblyCompleted,
+    outcome: "success",
+    ...run,
+    contextRequestId: "ctxr_fx1",
+    status: "ready",
+    memoryRequested: true,
+    adoptedCount: 1,
+    excludedCount: 0,
+    contextPackageRef,
+    durationMs: 12,
+  },
+  {
+    ...base,
+    eventName: TRACE_EVENT_NAMES.contextAssemblyFailed,
+    outcome: "failure",
+    ...run,
+    contextRequestId: "ctxr_fx1",
+    memoryRequested: true,
+    error: { code: "memory.backend.timeout", type: "MemoryBackendError" },
+    durationMs: 10000,
+  },
+  {
+    ...base,
+    eventName: TRACE_EVENT_NAMES.memoryQueryStarted,
+    outcome: "unknown",
+    ...run,
+    contextRequestId: "ctxr_fx1",
+    memoryQueryId: "mqy_fx1",
+    backendId: "mbk_memmy",
+    requirement: "optional",
+    sourceMessageSha256: SHA256_A,
+    tagCount: 1,
+    layerCount: 1,
+    requestedLimit: 3,
+    contextBudget: 512,
+  },
+  {
+    ...base,
+    eventName: TRACE_EVENT_NAMES.memoryQueryCompleted,
+    outcome: "success",
+    ...run,
+    contextRequestId: "ctxr_fx1",
+    memoryQueryId: "mqy_fx1",
+    backendId: "mbk_memmy",
+    requirement: "optional",
+    sourceMessageSha256: SHA256_A,
+    tagCount: 1,
+    layerCount: 1,
+    requestedLimit: 3,
+    contextBudget: 512,
+    hitCount: 2,
+    adoptedCount: 1,
+    resultSetSha256: SHA256_B,
+    durationMs: 25,
+  },
+  {
+    ...base,
+    eventName: TRACE_EVENT_NAMES.memoryQueryFailed,
+    outcome: "failure",
+    ...run,
+    contextRequestId: "ctxr_fx1",
+    memoryQueryId: "mqy_fx1",
+    backendId: "mbk_memmy",
+    requirement: "required",
+    sourceMessageSha256: SHA256_A,
+    tagCount: 1,
+    layerCount: 1,
+    requestedLimit: 3,
+    contextBudget: 512,
+    error: { code: "memory.backend.timeout", type: "MemoryBackendError" },
+    durationMs: 10000,
   },
   // Workflow
   {

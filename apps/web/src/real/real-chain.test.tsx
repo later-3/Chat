@@ -5,10 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ApprovalDto,
   MessageDto,
+  MemoryBackendProfileDto,
   PlanDto,
+  RunContextDto,
   RunDto,
   SessionDto,
   SubmitDecisionPayload,
+  SubmitMessagePayload,
 } from "@chat/contracts/public";
 import { RealWorkspace } from "../components/RealWorkspace.js";
 import { useRealChain } from "./use-real-chain.js";
@@ -33,7 +36,9 @@ interface FakeState {
   plans: PlanDto[];
   approval: ApprovalDto | null;
   sessionCommandIds: string[];
-  submitCalls: { text: string; commandId: string }[];
+  memoryBackends: MemoryBackendProfileDto[];
+  runContext: RunContextDto | null;
+  submitCalls: { payload: SubmitMessagePayload; commandId: string }[];
   decisionCalls: { payload: SubmitDecisionPayload; commandId: string }[];
   failNextSession: boolean;
   failNextSend: boolean;
@@ -88,6 +93,24 @@ function installFakeApi(initial?: Partial<FakeState>) {
     run: null,
     plans: [],
     approval: null,
+    memoryBackends: [
+      {
+        schemaVersion: "chat-product-api.v1",
+        backendId: "mbk_memmy" as never,
+        displayName: "memmy",
+        kind: "memmy",
+        configured: true,
+        health: "ready",
+        capabilities: {
+          query: true,
+          tags: true,
+          layers: ["L1", "L2", "L3", "Skill"],
+          maxLimit: 20,
+          maxContextBudget: 8_192,
+        },
+      },
+    ],
+    runContext: null,
     sessionCommandIds: [],
     submitCalls: [],
     decisionCalls: [],
@@ -116,10 +139,13 @@ function installFakeApi(initial?: Partial<FakeState>) {
       }
       return json({ session: state.session }, 201);
     }
+    if (url === "/api/memory-backends" && method === "GET") {
+      return json({ backends: state.memoryBackends });
+    }
     if (url.endsWith("/messages") && method === "POST") {
       const body = JSON.parse(String(init?.body)) as {
         commandId: string;
-        payload: { text: string };
+        payload: SubmitMessagePayload;
       };
       if (state.failNextSend) {
         state.failNextSend = false;
@@ -136,7 +162,7 @@ function installFakeApi(initial?: Partial<FakeState>) {
           500,
         );
       }
-      state.submitCalls.push({ text: body.payload.text, commandId: body.commandId });
+      state.submitCalls.push({ payload: body.payload, commandId: body.commandId });
       const message: MessageDto = {
         schemaVersion: "chat-product-api.v1",
         messageId: `msg_${String(state.messages.length + 1)}` as never,
@@ -160,6 +186,20 @@ function installFakeApi(initial?: Partial<FakeState>) {
         createdAt: "2026-08-07T12:00:00.000Z",
         updatedAt: "2026-08-07T12:00:00.000Z",
       };
+      state.runContext = {
+        schemaVersion: "chat-product-api.v1",
+        productRunId: state.run.productRunId,
+        ...(body.payload.context !== undefined
+          ? {
+              memory: {
+                backendId: body.payload.context.memory.backendId,
+                requirement: body.payload.context.memory.requirement,
+                queryStatus: "pending",
+                memoryQueryId: "mqy_fake1" as never,
+              },
+            }
+          : {}),
+      };
       return json({ message, run: state.run }, 201);
     }
     if (url.endsWith("/messages") && method === "GET") {
@@ -168,6 +208,9 @@ function installFakeApi(initial?: Partial<FakeState>) {
     if (url.includes("/plans") && method === "GET") return json({ items: state.plans });
     if (url.includes("/approvals/current") && method === "GET")
       return json({ approval: state.approval });
+    if (url.includes("/context") && method === "GET" && state.runContext !== null) {
+      return json({ context: state.runContext });
+    }
     if (url.includes("/decisions") && method === "POST") {
       const body = JSON.parse(String(init?.body)) as {
         commandId: string;
@@ -411,6 +454,111 @@ describe("M3真实前端闭环", () => {
     await user.click(screen.getByRole("button", { name: "用同一命令重试" }));
     await waitFor(() => expect(state.submitCalls).toHaveLength(1));
     expect(screen.getAllByText("生成周报").length).toBeGreaterThan(0);
+  }, 30_000);
+
+  it("选择memmy后发送冻结完整上下文payload并投影采用来源", async () => {
+    const state = installFakeApi();
+    const user = userEvent.setup();
+    renderReal();
+
+    await user.click(await screen.findByRole("button", { name: /上下文/ }));
+    const memoryToggle = await screen.findByRole("checkbox", { name: /使用 Memory 上下文/ });
+    await user.click(memoryToggle);
+    await user.selectOptions(screen.getByLabelText("Memory 失败策略"), "required");
+    await user.type(screen.getByLabelText("Memory 标签"), "项目, 决策");
+    await user.clear(screen.getByLabelText("Memory 条目上限"));
+    await user.type(screen.getByLabelText("Memory 条目上限"), "2");
+    await user.type(screen.getByLabelText("消息输入框"), "使用记忆生成周报");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(state.submitCalls).toHaveLength(1));
+    // Memory 是单轮选择：提交成功后，下一轮不得静默继承本轮配置。
+    await waitFor(() => expect(screen.getByText("本轮不查询 Memory")).toBeTruthy());
+    expect(state.submitCalls[0]?.payload).toMatchObject({
+      text: "使用记忆生成周报",
+      context: {
+        memory: {
+          backendId: "mbk_memmy",
+          requirement: "required",
+          tags: ["项目", "决策"],
+          limit: 2,
+          contextBudget: 1_800,
+        },
+      },
+    });
+
+    act(() => {
+      state.runContext = {
+        schemaVersion: "chat-product-api.v1",
+        productRunId: "run_fake1" as never,
+        memory: {
+          backendId: "mbk_memmy" as never,
+          requirement: "required",
+          queryStatus: "completed",
+          memoryQueryId: "mqy_fake1" as never,
+          hitCount: 3,
+          adoptedCount: 2,
+        },
+        contextPackage: {
+          contextPackageId: "ctxp_fake1" as never,
+          revision: 1,
+          sha256: "c".repeat(64),
+          sources: [
+            {
+              memoryResultSnapshotId: "mrs_fake1" as never,
+              backendId: "mbk_memmy" as never,
+              title: "项目决定",
+              kind: "policy",
+              memoryLayer: "L1",
+              tags: ["项目"],
+              revision: 1,
+              sha256: "d".repeat(64),
+            },
+            {
+              memoryResultSnapshotId: "mrs_fake2" as never,
+              backendId: "mbk_memmy" as never,
+              title: "历史风险",
+              kind: "trace",
+              memoryLayer: "L2",
+              tags: ["决策"],
+              revision: 1,
+              sha256: "e".repeat(64),
+            },
+          ],
+          exclusions: [],
+        },
+      };
+    });
+    await waitFor(() => expect(screen.getByText("使用 memmy 2 条")).toBeTruthy());
+    expect(screen.getByText("项目决定、历史风险")).toBeTruthy();
+  }, 30_000);
+
+  it("可选memmy失败时明确显示未采用原因而不是假成功", async () => {
+    const state = installFakeApi();
+    const user = userEvent.setup();
+    renderReal();
+    await user.click(await screen.findByRole("button", { name: /上下文/ }));
+    await user.click(await screen.findByRole("checkbox", { name: /使用 Memory 上下文/ }));
+    await user.type(screen.getByLabelText("消息输入框"), "可选记忆周报");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(state.submitCalls).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText("正在查询 memmy 上下文")).toBeTruthy());
+
+    act(() => {
+      state.runContext = {
+        schemaVersion: "chat-product-api.v1",
+        productRunId: "run_fake1" as never,
+        memory: {
+          backendId: "mbk_memmy" as never,
+          requirement: "optional",
+          queryStatus: "failed",
+          memoryQueryId: "mqy_fake1" as never,
+          errorCode: "memory.backend.timeout",
+        },
+      };
+    });
+    await waitFor(() => expect(screen.getByText(/memmy 可选上下文未采用：查询超时/)).toBeTruthy());
+    expect(screen.queryByText(/使用 memmy/)).toBeNull();
   }, 30_000);
 
   it("Decision失败保留修改意见", async () => {

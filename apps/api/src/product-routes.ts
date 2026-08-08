@@ -24,6 +24,8 @@ import {
   getRunPlans,
   getSession,
   getSessionMessages,
+  getRunContext,
+  listMemoryBackends,
   newSpanId,
   runTraceId,
   submitPlanDecision,
@@ -218,6 +220,15 @@ function emitCommandAccepted(
 export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables: Variables }> {
   const router = new Hono<{ Variables: Variables }>();
 
+  router.get("/memory-backends", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      return c.json(await listMemoryBackends(ctx.deps), 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
   router.post("/sessions", async (c) => {
     try {
       const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
@@ -296,6 +307,19 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
       const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
       const result = await getProductRun(ctx.deps, { principalId: ctx.principalId, productRunId });
       return c.json(result, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/runs/:productRunId/context", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
+      return c.json(
+        await getRunContext(ctx.deps, { principalId: ctx.principalId, productRunId }),
+        200,
+      );
     } catch (error) {
       return mapError(c, error);
     }

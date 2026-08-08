@@ -32,6 +32,7 @@ const sourceRoots = [
   "packages/contracts/src",
   "packages/domain/src",
   "packages/application/src",
+  "packages/memory-runtime/src",
   "packages/pi-runtime/src",
   "packages/workflows/src",
 ] as const;

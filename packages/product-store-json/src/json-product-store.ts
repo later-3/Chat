@@ -14,6 +14,7 @@ import {
   type TraceEmitter,
 } from "@chat/application";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
+import { migrateProductSnapshotV1ToV2, productSnapshotV1Schema } from "./migrate-v1-to-v2.js";
 
 /**
  * 版本化JSON Product Store Adapter（任务书§8）。
@@ -115,12 +116,22 @@ export class JsonProductStore implements ProductStorePort {
     } catch {
       throw new StoreCorruptedError("Product Store不是合法JSON，已保留原文件");
     }
-    const parsed = productSnapshotSchema.safeParse(parsedJson);
-    if (!parsed.success) {
+    const current = productSnapshotSchema.safeParse(parsedJson);
+    if (current.success) {
+      assertSnapshotIntegrity(current.data);
+      return new JsonProductStore(options, current.data);
+    }
+
+    const legacy = productSnapshotV1Schema.safeParse(parsedJson);
+    if (!legacy.success) {
       throw new StoreCorruptedError("Product Store Schema未知或非法，已保留原文件");
     }
-    assertSnapshotIntegrity(parsed.data);
-    return new JsonProductStore(options, parsed.data);
+    const migrated = productSnapshotSchema.parse(migrateProductSnapshotV1ToV2(legacy.data));
+    assertSnapshotIntegrity(migrated);
+    const store = new JsonProductStore(options, migrated);
+    // 成功迁移使用与普通事务相同的原子替换；rename 前失败时旧 v1 文件逐字节不变。
+    await store.persist(migrated);
+    return store;
   }
 
   async read(_query: ProductReadRequest): Promise<ProductReadResult> {

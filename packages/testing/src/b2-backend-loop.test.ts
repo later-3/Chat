@@ -17,6 +17,7 @@ import {
   submitPlanDecision,
   type ApplicationDeps,
   type IdFactory,
+  type MemoryBackendRegistryPort,
 } from "@chat/application";
 import { JsonProductStore } from "@chat/product-store-json";
 import { createApiApp } from "@chat/api";
@@ -209,6 +210,12 @@ const BUNDLE_DIR = resolve(
   "../../workflows/.workflow-bundle",
 );
 
+/** B2场景不选择Memory；严格空Registry确保测试不会意外越过外部查询边界。 */
+const EMPTY_MEMORY_BACKENDS: MemoryBackendRegistryPort = {
+  list: () => [],
+  get: () => undefined,
+};
+
 function listen(app: {
   fetch: (req: Request) => Promise<Response> | Response;
 }): Promise<{ server: ReturnType<typeof serve>; port: number }> {
@@ -263,6 +270,7 @@ async function startStack(fakePi: FakePi): Promise<TestStack> {
   setWorkflowRuntimeContext({
     api: createRuntimeApiClient({ baseUrl: apiBaseUrl, credential }),
     bindings,
+    memoryBackends: EMPTY_MEMORY_BACKENDS,
     trace,
     now: () => new Date().toISOString(),
     bailian: {

@@ -13,6 +13,8 @@ import {
   completeRunAttemptRequestSchema,
   expireApprovalRequestSchema,
   publishPlanReviewRequestSchema,
+  preparePlanningContextRequestSchema,
+  persistPlanningContextResultRequestSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   type ProblemDetail,
   type RequestId,
@@ -33,6 +35,8 @@ import {
   persistValidationResult,
   publishPlanForReview,
   beginRunAttempt,
+  beginPlanningContext,
+  persistPlanningContextResult,
   type ApplicationDeps,
 } from "@chat/application";
 
@@ -167,6 +171,22 @@ export function createInternalRuntimeRouter(
   });
 
   router.post(
+    "/begin-planning-context",
+    handle(200, async (c) => {
+      const request = preparePlanningContextRequestSchema.parse(await parseInternalBody(c));
+      return beginPlanningContext(options.deps, request);
+    }),
+  );
+
+  router.post(
+    "/persist-planning-context-result",
+    handle(200, async (c) => {
+      const request = persistPlanningContextResultRequestSchema.parse(await parseInternalBody(c));
+      return persistPlanningContextResult(options.deps, request);
+    }),
+  );
+
+  router.post(
     "/compile-planning-input",
     handle(200, async (c) => {
       const request = compilePlanningInputRequestSchema.parse(await parseInternalBody(c));
@@ -219,7 +239,12 @@ export function createInternalRuntimeRouter(
     handle(201, async (c) => {
       const request = beginRunAttemptRequestSchema.parse(await parseInternalBody(c));
       const result = await beginRunAttempt(options.deps, request);
-      return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, attemptId: result.attemptId };
+      return {
+        schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+        attemptId: result.attemptId,
+        inputManifestSha256: result.inputManifestSha256,
+        contextItems: result.contextItems,
+      };
     }),
   );
 

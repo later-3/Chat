@@ -21,8 +21,17 @@ import {
   type ApplicationDeps,
   type IdFactory,
 } from "@chat/application";
-import { hashCanonical } from "@chat/domain";
+import {
+  computeContextPackageSha256,
+  computeMemoryBackendDescriptorSha256,
+  computeMemoryQueryResultSha256,
+  computeMemoryResultSnapshotSha256,
+  computeRunContextRequestSha256,
+  estimateMemorySectionTokens,
+  hashCanonical,
+} from "@chat/domain";
 import { JsonProductStore, type StoreIo } from "./json-product-store.js";
+import { migrateProductSnapshotV1ToV2, productSnapshotV1Schema } from "./migrate-v1-to-v2.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-07T12:00:00.000Z";
@@ -61,6 +70,24 @@ function addSessionTransaction(commandId: string, sessionId: string) {
 
 async function listTempFiles(dir: string): Promise<string[]> {
   return (await readdir(dir)).filter((name) => name.includes(".tmp-"));
+}
+
+function legacyEntitiesFrom(snapshot: ProductSnapshot) {
+  const entities = snapshot.entities;
+  return {
+    sessions: entities.sessions,
+    messages: entities.messages,
+    runs: entities.runs,
+    attempts: entities.attempts,
+    plans: entities.plans,
+    revisionInputs: entities.revisionInputs,
+    approvalRequests: entities.approvalRequests,
+    decisions: entities.decisions,
+    executionContracts: entities.executionContracts,
+    executionCandidates: entities.executionCandidates,
+    validationResults: entities.validationResults,
+    artifacts: entities.artifacts,
+  };
 }
 
 async function validReviewSnapshot(): Promise<ProductSnapshot> {
@@ -134,6 +161,199 @@ async function validReviewSnapshot(): Promise<ProductSnapshot> {
   ) as ProductSnapshot;
 }
 
+async function validMemoryReviewSnapshot(): Promise<ProductSnapshot> {
+  const snapshot = await validReviewSnapshot();
+  const request = Object.values(snapshot.entities.contextRequests)[0];
+  const attempt = Object.values(snapshot.entities.attempts).find(
+    (candidate) => candidate.kind === "planning",
+  );
+  const source =
+    request === undefined ? undefined : snapshot.entities.messages[request.sourceMessageId];
+  if (request === undefined || attempt === undefined || source === undefined) {
+    throw new Error("fixture缺少ContextRequest、Planning Attempt或源消息");
+  }
+
+  const memory = {
+    backendId: "mbk_memmy" as never,
+    requirement: "optional" as const,
+    tags: ["project"],
+    layers: ["L1" as const],
+    limit: 3,
+    contextBudget: 512,
+  };
+  request.memory = memory;
+  request.sha256 = computeRunContextRequestSha256({
+    productRunId: request.productRunId,
+    requestedByPrincipalId: request.requestedByPrincipalId,
+    sourceMessageId: request.sourceMessageId,
+    sourceMessageSha256: request.sourceMessageSha256,
+    memory,
+  });
+
+  const backendDescriptor = {
+    backendId: memory.backendId,
+    displayName: "Memmy",
+    kind: "memmy" as const,
+    adapterContractVersion: "memmy-http-query.v1" as const,
+    configured: true,
+    authMode: "none" as const,
+    credentialRevision: "none" as const,
+    configurationFingerprint: "b".repeat(64),
+    capabilities: {
+      query: true as const,
+      tags: true as const,
+      layers: ["L1" as const, "L2" as const],
+      maxLimit: 5,
+      maxContextBudget: 1_024,
+    },
+  };
+  const memoryQueryId = "mqy_integrity1" as never;
+  const memoryResultSnapshotId = "mrs_integrity1" as never;
+  const contextPackageId = "ctxp_integrity1" as never;
+  const completedAt = snapshot.committedAt;
+  const section = {
+    externalObjectIds: ["memory-1"],
+    title: "项目约束",
+    kind: "policy" as const,
+    memoryLayer: "L1" as const,
+    content: "正式结果必须可由产品事实解释。",
+    tags: ["project"],
+  };
+  const tokenEstimate = estimateMemorySectionTokens(section);
+  const sectionWithToken = { ...section, tokenEstimate };
+  const resultSetSha256 = computeMemoryQueryResultSha256({
+    externalQueryId: "memmy-query-1",
+    hitCount: 1,
+    tokenEstimate,
+    sections: [sectionWithToken],
+  });
+  snapshot.entities.memoryQueries[memoryQueryId] = {
+    schemaVersion: "memory-query.v1",
+    memoryQueryId,
+    contextRequestId: request.contextRequestId,
+    productRunId: request.productRunId,
+    planRevision: 1,
+    backendId: memory.backendId,
+    backendDescriptor,
+    backendDescriptorSha256: computeMemoryBackendDescriptorSha256(backendDescriptor),
+    requirement: memory.requirement,
+    sourceMessageSha256: request.sourceMessageSha256,
+    tags: memory.tags,
+    layers: memory.layers,
+    limit: memory.limit,
+    contextBudget: memory.contextBudget,
+    status: "completed",
+    startedAt: request.createdAt,
+    externalQueryId: "memmy-query-1",
+    hitCount: 1,
+    adoptedCount: 1,
+    tokenEstimate,
+    resultSetSha256,
+    completedAt,
+    revision: 2,
+    createdAt: request.createdAt,
+    updatedAt: completedAt,
+  };
+  const memorySnapshotShape = {
+    backendId: memory.backendId,
+    ...sectionWithToken,
+  };
+  const memorySnapshotSha256 = computeMemoryResultSnapshotSha256(memorySnapshotShape);
+  snapshot.entities.memoryResultSnapshots[memoryResultSnapshotId] = {
+    schemaVersion: "memory-result-snapshot.v1",
+    memoryResultSnapshotId,
+    memoryQueryId,
+    ...memorySnapshotShape,
+    sha256: memorySnapshotSha256,
+    revision: 1,
+    createdAt: completedAt,
+    updatedAt: completedAt,
+  };
+  const packageShape = {
+    contextRequestId: request.contextRequestId,
+    productRunId: request.productRunId,
+    assembledForPlanRevision: 1,
+    purpose: "planning" as const,
+    memoryQueryId,
+    items: [
+      {
+        kind: "memory_snapshot" as const,
+        memoryResultSnapshotId,
+        revision: 1,
+        sha256: memorySnapshotSha256,
+        selection: "retrieved" as const,
+        reasonCode: "within_budget" as const,
+      },
+    ],
+    exclusions: [],
+  };
+  const contextPackageSha256 = computeContextPackageSha256(packageShape);
+  snapshot.entities.contextPackages[contextPackageId] = {
+    schemaVersion: "context-package.v1",
+    contextPackageId,
+    ...packageShape,
+    sha256: contextPackageSha256,
+    revision: 1,
+    createdAt: completedAt,
+    updatedAt: completedAt,
+  };
+  snapshot.entities.memoryAdoptions["mad_integrity1"] = {
+    schemaVersion: "memory-adoption.v1",
+    memoryAdoptionId: "mad_integrity1" as never,
+    productRunId: request.productRunId,
+    contextPackageId,
+    memoryResultSnapshotId,
+    status: "adopted",
+    reasonCode: "within_budget",
+    revision: 1,
+    createdAt: completedAt,
+    updatedAt: completedAt,
+  };
+
+  attempt.contextPackageId = contextPackageId;
+  attempt.contextPackageSha256 = contextPackageSha256;
+  attempt.inputManifestSha256 = hashCanonical("planning-input-manifest.v2", {
+    productRunId: attempt.productRunId,
+    planRevision: attempt.planRevision,
+    sourceMessageRef: { messageId: source.messageId, sha256: attempt.sourceMessageSha256 },
+    contextPackageRef: {
+      contextPackageId,
+      revision: 1,
+      sha256: contextPackageSha256,
+    },
+    promptTemplateVersion: attempt.promptTemplateVersion,
+    modelConfigVersion: attempt.modelConfigVersion,
+  });
+  assertSnapshotIntegrity(snapshot);
+  return snapshot;
+}
+
+function requiredMemoryFacts(snapshot: ProductSnapshot) {
+  const request = Object.values(snapshot.entities.contextRequests)[0];
+  const query = Object.values(snapshot.entities.memoryQueries)[0];
+  const memorySnapshot = Object.values(snapshot.entities.memoryResultSnapshots)[0];
+  const contextPackage = Object.values(snapshot.entities.contextPackages)[0];
+  const adoption = Object.values(snapshot.entities.memoryAdoptions)[0];
+  if (
+    request === undefined ||
+    query === undefined ||
+    memorySnapshot === undefined ||
+    contextPackage === undefined ||
+    adoption === undefined
+  ) {
+    throw new Error("fixture缺少完整Memory事实");
+  }
+  return { request, query, memorySnapshot, contextPackage, adoption };
+}
+
+async function expectSnapshotOpenFailure(snapshot: ProductSnapshot): Promise<void> {
+  const { filePath } = await tempStorePath();
+  await writeFile(filePath, JSON.stringify(snapshot, null, 2));
+  await expect(JsonProductStore.open({ filePath, now })).rejects.toBeInstanceOf(
+    StoreCorruptedError,
+  );
+}
+
 describe("JsonProductStore 原子提交与重启恢复", () => {
   it("文件不存在时创建创世快照并持久化", async () => {
     const { filePath } = await tempStorePath();
@@ -142,7 +362,74 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
     expect(snapshot.storeRevision).toBe(0);
 
     const onDisk = productSnapshotSchema.parse(JSON.parse(await readFile(filePath, "utf8")));
-    expect(onDisk.schemaVersion).toBe("chat-product-store.v1");
+    expect(onDisk.schemaVersion).toBe("chat-product-store.v2");
+  });
+
+  it("非空v1真实快照确定性迁移到v2，保留旧事实并合成no-memory ContextRequest，重启幂等", async () => {
+    const { filePath } = await tempStorePath();
+    const current = await validReviewSnapshot();
+    const legacy = productSnapshotV1Schema.parse({
+      ...current,
+      schemaVersion: "chat-product-store.v1",
+      entities: legacyEntitiesFrom(current),
+    });
+    const before = JSON.stringify(legacy, null, 2);
+    await writeFile(filePath, before);
+
+    const store = await JsonProductStore.open({ filePath, now });
+    const { snapshot } = await store.read({ kind: "committedSnapshot" });
+    expect(snapshot.schemaVersion).toBe("chat-product-store.v2");
+    expect(snapshot.storeRevision).toBe(legacy.storeRevision);
+    expect(snapshot.commandReceipts).toEqual(legacy.commandReceipts);
+    expect(snapshot.outbox).toEqual(legacy.outbox);
+    expect(legacyEntitiesFrom(snapshot)).toEqual(legacy.entities);
+    const runs = Object.values(legacy.entities.runs);
+    expect(runs.length).toBeGreaterThan(0);
+    expect(Object.values(snapshot.entities.contextRequests)).toHaveLength(runs.length);
+    for (const run of runs) {
+      const requests = Object.values(snapshot.entities.contextRequests).filter(
+        (request) => request.productRunId === run.productRunId,
+      );
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.memory).toBeUndefined();
+      expect(requests[0]?.createdAt).toBe(legacy.committedAt);
+      expect(requests[0]?.updatedAt).toBe(legacy.committedAt);
+    }
+    expect(snapshot.entities.memoryQueries).toEqual({});
+    expect(snapshot.entities.memoryResultSnapshots).toEqual({});
+    expect(snapshot.entities.memoryAdoptions).toEqual({});
+    expect(snapshot.entities.contextPackages).toEqual({});
+    const expectedMigration = migrateProductSnapshotV1ToV2(legacy);
+    expect(snapshot).toEqual(expectedMigration);
+    expect(migrateProductSnapshotV1ToV2(legacy)).toEqual(expectedMigration);
+    const once = await readFile(filePath, "utf8");
+    expect(once).not.toBe(before);
+
+    await JsonProductStore.open({ filePath, now });
+    expect(await readFile(filePath, "utf8")).toBe(once);
+  });
+
+  it("v1迁移在atomic rename前失败时原文件逐字节不变", async () => {
+    const { filePath } = await tempStorePath();
+    const current = createEmptySnapshot(NOW);
+    const before = JSON.stringify(
+      productSnapshotV1Schema.parse({
+        ...current,
+        schemaVersion: "chat-product-store.v1",
+        entities: legacyEntitiesFrom(current),
+      }),
+      null,
+      2,
+    );
+    await writeFile(filePath, before);
+    await expect(
+      JsonProductStore.open({
+        filePath,
+        now,
+        io: { writeTempFile: async () => Promise.reject(new Error("migration write failed")) },
+      }),
+    ).rejects.toThrow();
+    expect(await readFile(filePath, "utf8")).toBe(before);
   });
 
   it("transact原子提交并可跨重启读取", async () => {
@@ -510,6 +797,21 @@ describe("JsonProductStore 损坏与失败注入", () => {
           role: "user",
           content: { format: "markdown", text: "hi" },
         });
+        const contextRequestShape = {
+          productRunId: "run_1" as never,
+          requestedByPrincipalId: "usr_debug" as never,
+          sourceMessageId: "msg_1" as never,
+          sourceMessageSha256,
+        };
+        draft.entities.contextRequests["ctxr_1"] = {
+          schemaVersion: "run-context-request.v1",
+          contextRequestId: "ctxr_1" as never,
+          ...contextRequestShape,
+          sha256: computeRunContextRequestSha256(contextRequestShape),
+          revision: 1,
+          createdAt: NOW,
+          updatedAt: NOW,
+        };
         const inputManifestSha256 = hashCanonical("planning-input-manifest.v1", {
           productRunId: "run_1",
           planRevision: 1,
@@ -656,5 +958,223 @@ describe("Product Snapshot跨对象完整性", () => {
     const snapshot = await validReviewSnapshot();
     corrupt(snapshot);
     expect(() => assertSnapshotIntegrity(snapshot)).toThrow(StoreCorruptedError);
+  });
+});
+
+describe("M1 Context持久化完整性", () => {
+  it("接受完整的Memory Query→Snapshot→Package→Adoption双向事实链", async () => {
+    const snapshot = await validMemoryReviewSnapshot();
+    expect(() => assertSnapshotIntegrity(snapshot)).not.toThrow();
+    const parsed = productSnapshotSchema.safeParse(snapshot);
+    expect(parsed.success ? [] : parsed.error.issues).toEqual([]);
+  });
+
+  it.each([
+    [
+      "同一Run出现重复ContextRequest",
+      (snapshot: ProductSnapshot) => {
+        const { request } = requiredMemoryFacts(snapshot);
+        snapshot.entities.contextRequests["ctxr_duplicate"] = {
+          ...request,
+          contextRequestId: "ctxr_duplicate" as never,
+        };
+      },
+    ],
+    [
+      "no-memory ContextRequest仍存在Query",
+      (snapshot: ProductSnapshot) => {
+        const { request } = requiredMemoryFacts(snapshot);
+        delete request.memory;
+        request.sha256 = computeRunContextRequestSha256({
+          productRunId: request.productRunId,
+          requestedByPrincipalId: request.requestedByPrincipalId,
+          sourceMessageId: request.sourceMessageId,
+          sourceMessageSha256: request.sourceMessageSha256,
+        });
+      },
+    ],
+    [
+      "同一ContextRequest出现重复Query",
+      (snapshot: ProductSnapshot) => {
+        const { query } = requiredMemoryFacts(snapshot);
+        snapshot.entities.memoryQueries["mqy_duplicate"] = {
+          ...query,
+          memoryQueryId: "mqy_duplicate" as never,
+        };
+      },
+    ],
+    [
+      "后端descriptor未覆盖选择的Layer",
+      (snapshot: ProductSnapshot) => {
+        const { query } = requiredMemoryFacts(snapshot);
+        query.backendDescriptor.capabilities.layers = ["L2"];
+        query.backendDescriptorSha256 = computeMemoryBackendDescriptorSha256(
+          query.backendDescriptor,
+        );
+      },
+    ],
+    [
+      "查询limit超过descriptor最大值",
+      (snapshot: ProductSnapshot) => {
+        const { query } = requiredMemoryFacts(snapshot);
+        query.backendDescriptor.capabilities.maxLimit = query.limit - 1;
+        query.backendDescriptorSha256 = computeMemoryBackendDescriptorSha256(
+          query.backendDescriptor,
+        );
+      },
+    ],
+    [
+      "查询tokenBudget超过descriptor最大值",
+      (snapshot: ProductSnapshot) => {
+        const { query } = requiredMemoryFacts(snapshot);
+        query.backendDescriptor.capabilities.maxContextBudget = query.contextBudget - 1;
+        query.backendDescriptorSha256 = computeMemoryBackendDescriptorSha256(
+          query.backendDescriptor,
+        );
+      },
+    ],
+    [
+      "ContextRequest不可变时间戳被改写",
+      (snapshot: ProductSnapshot) => {
+        const { request } = requiredMemoryFacts(snapshot);
+        request.updatedAt = snapshot.committedAt;
+        if (request.updatedAt === request.createdAt) {
+          request.updatedAt = new Date(Date.parse(request.createdAt) + 1_000).toISOString();
+        }
+      },
+    ],
+    [
+      "MemorySnapshot不可变时间戳被改写",
+      (snapshot: ProductSnapshot) => {
+        const { memorySnapshot } = requiredMemoryFacts(snapshot);
+        memorySnapshot.updatedAt = new Date(
+          Date.parse(memorySnapshot.createdAt) + 1_000,
+        ).toISOString();
+      },
+    ],
+    [
+      "ContextPackage不可变时间戳被改写",
+      (snapshot: ProductSnapshot) => {
+        const { contextPackage } = requiredMemoryFacts(snapshot);
+        contextPackage.updatedAt = new Date(
+          Date.parse(contextPackage.createdAt) + 1_000,
+        ).toISOString();
+      },
+    ],
+    [
+      "MemoryAdoption不可变时间戳被改写",
+      (snapshot: ProductSnapshot) => {
+        const { adoption } = requiredMemoryFacts(snapshot);
+        adoption.updatedAt = new Date(Date.parse(adoption.createdAt) + 1_000).toISOString();
+      },
+    ],
+    [
+      "terminal Query的updatedAt不等于completedAt",
+      (snapshot: ProductSnapshot) => {
+        const { query } = requiredMemoryFacts(snapshot);
+        query.updatedAt = query.createdAt;
+      },
+    ],
+    [
+      "MemorySnapshot悬空Query",
+      (snapshot: ProductSnapshot) => {
+        const { memorySnapshot } = requiredMemoryFacts(snapshot);
+        memorySnapshot.memoryQueryId = "mqy_missing" as never;
+      },
+    ],
+    [
+      "ContextPackage悬空ContextRequest",
+      (snapshot: ProductSnapshot) => {
+        const { contextPackage } = requiredMemoryFacts(snapshot);
+        contextPackage.contextRequestId = "ctxr_missing" as never;
+      },
+    ],
+    [
+      "重复MemoryAdoption",
+      (snapshot: ProductSnapshot) => {
+        const { adoption } = requiredMemoryFacts(snapshot);
+        snapshot.entities.memoryAdoptions["mad_duplicate"] = {
+          ...adoption,
+          memoryAdoptionId: "mad_duplicate" as never,
+        };
+      },
+    ],
+    [
+      "MemorySnapshot Hash被篡改",
+      (snapshot: ProductSnapshot) => {
+        const { memorySnapshot } = requiredMemoryFacts(snapshot);
+        memorySnapshot.sha256 = "0".repeat(64);
+      },
+    ],
+    [
+      "ContextPackage Hash被篡改",
+      (snapshot: ProductSnapshot) => {
+        const { contextPackage } = requiredMemoryFacts(snapshot);
+        contextPackage.sha256 = "0".repeat(64);
+      },
+    ],
+    [
+      "Query resultSet Hash被篡改",
+      (snapshot: ProductSnapshot) => {
+        const { query } = requiredMemoryFacts(snapshot);
+        if (query.status !== "completed") throw new Error("fixture Query不是completed");
+        query.resultSetSha256 = "0".repeat(64);
+      },
+    ],
+    [
+      "Snapshot Token估算被篡改且内容Hash已同步伪造",
+      (snapshot: ProductSnapshot) => {
+        const { memorySnapshot } = requiredMemoryFacts(snapshot);
+        memorySnapshot.tokenEstimate = 0;
+        memorySnapshot.sha256 = computeMemoryResultSnapshotSha256({
+          backendId: memorySnapshot.backendId,
+          externalObjectIds: memorySnapshot.externalObjectIds,
+          title: memorySnapshot.title,
+          kind: memorySnapshot.kind,
+          memoryLayer: memorySnapshot.memoryLayer,
+          content: memorySnapshot.content,
+          tags: memorySnapshot.tags,
+          ...(memorySnapshot.score !== undefined ? { score: memorySnapshot.score } : {}),
+          tokenEstimate: memorySnapshot.tokenEstimate,
+          ...(memorySnapshot.sourceUpdatedAt !== undefined
+            ? { sourceUpdatedAt: memorySnapshot.sourceUpdatedAt }
+            : {}),
+        });
+      },
+    ],
+    [
+      "Package丢失导致Query反向基数不成立",
+      (snapshot: ProductSnapshot) => {
+        const { contextPackage } = requiredMemoryFacts(snapshot);
+        delete snapshot.entities.contextPackages[contextPackage.contextPackageId];
+      },
+    ],
+  ])("损坏文件启动失败关闭：%s", async (_label, corrupt) => {
+    const snapshot = await validMemoryReviewSnapshot();
+    corrupt(snapshot);
+    await expectSnapshotOpenFailure(snapshot);
+  });
+
+  it.each([
+    ["ContextRequest", "contextRequests" as const],
+    ["MemorySnapshot", "memoryResultSnapshots" as const],
+    ["ContextPackage", "contextPackages" as const],
+    ["MemoryAdoption", "memoryAdoptions" as const],
+  ])("拒绝%s revision从1被篡改", async (_label, collection) => {
+    const snapshot = await validMemoryReviewSnapshot();
+    const entity = Object.values(snapshot.entities[collection])[0] as unknown as {
+      revision: number;
+    };
+    entity.revision = 2;
+    expect(productSnapshotSchema.safeParse(snapshot).success).toBe(false);
+    await expectSnapshotOpenFailure(snapshot);
+  });
+
+  it("拒绝completed Query revision从2被篡改为1", async () => {
+    const snapshot = await validMemoryReviewSnapshot();
+    const { query } = requiredMemoryFacts(snapshot);
+    (query as { revision: number }).revision = 1;
+    expect(productSnapshotSchema.safeParse(snapshot).success).toBe(false);
+    await expectSnapshotOpenFailure(snapshot);
   });
 });

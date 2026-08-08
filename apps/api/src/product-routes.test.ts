@@ -4,19 +4,24 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   approvalDtoSchema,
+  beginPlanningContextResponseSchema,
   decisionDtoSchema,
   messageDtoSchema,
   planDtoSchema,
+  preparePlanningContextResponseSchema,
   problemDetailSchema,
   runDtoSchema,
   sessionDtoSchema,
   cursorPageSchema,
+  memoryBackendProfileDtoSchema,
+  runContextDtoSchema,
   type CommandId,
   type PlanContent,
   type ProductRunId,
 } from "@chat/contracts";
 import {
   compilePlanningInput,
+  normalizeMemoryQueryResult,
   publishPlanForReview as publishPlanForReviewUseCase,
   type ApplicationDeps,
   type IdFactory,
@@ -59,10 +64,56 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     artifact: () => gen("art"),
     outbox: () => gen("obx"),
   } as IdFactory;
-  const deps: ApplicationDeps = { store, now, ids: idFactory };
+  const backend = {
+    describe: () => ({
+      backendId: "mbk_memmy" as never,
+      displayName: "memmy 本地记忆",
+      kind: "memmy" as const,
+      adapterContractVersion: "memmy-http-query.v1" as const,
+      authMode: "bearer" as const,
+      credentialRevision: "api-test-key-1",
+      configurationFingerprint: "f".repeat(64),
+      configured: true,
+      capabilities: {
+        query: true as const,
+        tags: true as const,
+        layers: ["L2"] as const,
+        maxLimit: 20,
+        maxContextBudget: 8192,
+      },
+    }),
+    health: async () => ({ status: "ready" as const }),
+    query: async () => ({
+      externalQueryId: "search-test-1",
+      hitCount: 1,
+      tokenEstimate: 12,
+      sections: [
+        {
+          externalObjectIds: ["memory-test-1"],
+          title: "测试来源",
+          kind: "trace" as const,
+          memoryLayer: "L2" as const,
+          content: "只用于API合同测试的记忆正文",
+          tags: ["api-test"],
+          score: 0.9,
+          tokenEstimate: 12,
+        },
+      ],
+    }),
+  };
+  const deps: ApplicationDeps = {
+    store,
+    now,
+    ids: idFactory,
+    memoryBackends: {
+      list: () => [backend],
+      get: (backendId) => (backendId === "mbk_memmy" ? backend : undefined),
+    },
+  };
   const app = createApiApp({
     traceSink: null,
     product: { deps, principalId: DEBUG_PRINCIPAL_ID },
+    internalRuntime: { credential: "rtk_test" },
   });
   return { app, deps };
 }
@@ -96,6 +147,14 @@ async function postJson(app: ApiApp, path: string, body: unknown): Promise<Respo
   return app.request(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+async function postInternal(app: ApiApp, path: string, body: unknown): Promise<Response> {
+  return app.request(path, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-chat-runtime-key": "rtk_test" },
     body: JSON.stringify(body),
   });
 }
@@ -271,6 +330,128 @@ describe("公开产品API", () => {
     });
     expect(res.status).toBe(400);
     expect(problemDetailSchema.parse(await res.json()).code).toBe("validation_failed");
+  });
+
+  it("安全列出Memory后端并恢复Run Context来源，不暴露服务配置", async () => {
+    const { app, deps } = await testApp();
+    const backendsResponse = await app.request("/api/memory-backends");
+    expect(backendsResponse.status).toBe(200);
+    const backendBody = z
+      .object({ backends: z.array(memoryBackendProfileDtoSchema) })
+      .parse(await backendsResponse.json());
+    expect(backendBody.backends[0]?.backendId).toBe("mbk_memmy");
+    expect(JSON.stringify(backendBody)).not.toContain("baseUrl");
+    expect(JSON.stringify(backendBody)).not.toContain("token");
+    expect(JSON.stringify(backendBody)).not.toContain("authMode");
+    expect(JSON.stringify(backendBody)).not.toContain("api-test-key-1");
+
+    const created = await postJson(app, "/api/sessions", {
+      commandId: nextCmd(),
+      payload: {},
+    });
+    const { session } = (await created.json()) as { session: { sessionId: string } };
+    const sent = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
+      commandId: nextCmd(),
+      payload: {
+        text: "使用测试记忆规划",
+        context: {
+          memory: {
+            backendId: "mbk_memmy",
+            requirement: "required",
+            tags: ["api-test"],
+            layers: ["L2"],
+            limit: 3,
+            contextBudget: 512,
+          },
+        },
+      },
+    });
+    expect(sent.status).toBe(201);
+    const { run } = (await sent.json()) as { run: { productRunId: ProductRunId } };
+    const snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const workflowAttempt = Object.values(snapshot.entities.attempts).find(
+      (attempt) => attempt.productRunId === run.productRunId && attempt.kind === "workflow",
+    );
+    expect(workflowAttempt).toBeDefined();
+    if (workflowAttempt === undefined) throw new Error("缺少Workflow Attempt");
+    const beginResponse = await postInternal(app, "/internal/runtime/v1/begin-planning-context", {
+      schemaVersion: "chat-internal-runtime.v1",
+      commandId: nextCmd(),
+      productRunId: run.productRunId,
+      attemptId: workflowAttempt.attemptId,
+      planRevision: 1,
+    });
+    expect(beginResponse.status).toBe(200);
+    const begun = beginPlanningContextResponseSchema.parse(await beginResponse.json());
+    // begin只冻结派发意图；若Router直接调用外部Memory，这里会错误地返回ready。
+    if (begun.status !== "dispatch_required") throw new Error("缺少Memory查询派发");
+    const backend = deps.memoryBackends?.get(begun.query.backendId);
+    if (backend === undefined) throw new Error("缺少Memory测试后端");
+    const output = await backend.query({
+      operationId: begun.query.memoryQueryId,
+      productRunId: begun.query.productRunId,
+      productSessionId: begun.query.productSessionId,
+      query: begun.query.queryText,
+      tags: begun.query.tags,
+      layers: begun.query.layers,
+      limit: begun.query.limit,
+      contextBudget: begun.query.contextBudget,
+    });
+    const persistResponse = await postInternal(
+      app,
+      "/internal/runtime/v1/persist-planning-context-result",
+      {
+        schemaVersion: "chat-internal-runtime.v1",
+        commandId: nextCmd(),
+        productRunId: run.productRunId,
+        attemptId: workflowAttempt.attemptId,
+        memoryQueryId: begun.query.memoryQueryId,
+        result: normalizeMemoryQueryResult(begun.query, output),
+      },
+    );
+    expect(persistResponse.status).toBe(200);
+    expect(preparePlanningContextResponseSchema.parse(await persistResponse.json()).status).toBe(
+      "ready",
+    );
+
+    const contextResponse = await app.request(`/api/runs/${run.productRunId}/context`);
+    expect(contextResponse.status).toBe(200);
+    const context = runContextDtoSchema.parse(
+      ((await contextResponse.json()) as { context: unknown }).context,
+    );
+    expect(context.memory?.queryStatus).toBe("completed");
+    expect(context.contextPackage?.sources).toHaveLength(1);
+    expect(context.contextPackage?.sources[0]?.title).toBe("测试来源");
+    const serialized = JSON.stringify(context);
+    expect(serialized).not.toContain("只用于API合同测试的记忆正文");
+    expect(serialized).not.toContain("memory-test-1");
+  });
+
+  it("Memory选择拒绝浏览器提交endpoint、Token和namespace", async () => {
+    const { app } = await testApp();
+    const created = await postJson(app, "/api/sessions", { commandId: nextCmd(), payload: {} });
+    const { session } = (await created.json()) as { session: { sessionId: string } };
+    const response = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
+      commandId: nextCmd(),
+      payload: {
+        text: "非法配置",
+        context: {
+          memory: {
+            backendId: "mbk_memmy",
+            requirement: "optional",
+            tags: [],
+            layers: ["L2"],
+            limit: 3,
+            contextBudget: 512,
+            endpoint: "https://evil.example",
+            token: "secret",
+            namespace: { userId: "other" },
+          },
+        },
+      },
+    });
+    expect(response.status).toBe(400);
+    expect(problemDetailSchema.parse(await response.json()).code).toBe("validation_failed");
   });
 
   it("未知资源返回not_found；公开响应不携带Runtime私有身份", async () => {

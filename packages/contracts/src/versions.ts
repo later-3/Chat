@@ -6,10 +6,10 @@
  */
 
 export const WORKFLOW_DEFINITION_ID = "wfd_planningexecution";
-export const WORKFLOW_DEFINITION_VERSION = "planning-execution-workflow.v1";
+export const WORKFLOW_DEFINITION_VERSION = "planning-execution-workflow.v2";
 
-export const PLANNER_PROMPT_TEMPLATE_VERSION = "planner-prompt.v1";
-export const EXECUTOR_PROMPT_TEMPLATE_VERSION = "executor-prompt.v1";
+export const PLANNER_PROMPT_TEMPLATE_VERSION = "planner-prompt.v2";
+export const EXECUTOR_PROMPT_TEMPLATE_VERSION = "executor-prompt.v3";
 export const MODEL_CONFIG_VERSION = "bailian.qwen3.7-plus.v1";
 
 /** Provider与模型冻结（任务书§14）：变更需合同PR。 */

@@ -7,6 +7,7 @@ import {
   type LoadCommittedDecisionResponse,
   type PlanningInputDto,
   type ProductRunId,
+  type CompilePlanningInputRequest,
 } from "@chat/contracts";
 import { type ApplicationDeps } from "./deps.js";
 import { notFound, revisionConflict } from "./errors.js";
@@ -29,6 +30,7 @@ export interface CompilePlanningInputCommand {
   readonly commandId: CommandId;
   readonly productRunId: ProductRunId;
   readonly planRevision: number;
+  readonly contextPackageRef?: CompilePlanningInputRequest["contextPackageRef"] | undefined;
 }
 
 function messageSha256(message: {
@@ -56,6 +58,9 @@ export async function compilePlanningInput(
   const requestSha256 = hashCanonical("command.compile-planning-input.v1", {
     productRunId: input.productRunId,
     planRevision: input.planRevision,
+    ...(input.contextPackageRef !== undefined
+      ? { contextPackageRef: input.contextPackageRef }
+      : {}),
   });
 
   const result = await deps.store.transact({
@@ -68,6 +73,26 @@ export async function compilePlanningInput(
       if (run === undefined) throw notFound("Product Run不存在");
       const message = draft.entities.messages[run.sourceMessageId];
       if (message === undefined) throw notFound("源消息不存在");
+      const contextRequest = Object.values(draft.entities.contextRequests).find(
+        (candidate) => candidate.productRunId === input.productRunId,
+      );
+      const contextPackage =
+        input.contextPackageRef === undefined
+          ? undefined
+          : draft.entities.contextPackages[input.contextPackageRef.contextPackageId];
+      if (contextRequest?.memory !== undefined) {
+        if (
+          contextPackage === undefined ||
+          contextPackage.productRunId !== input.productRunId ||
+          contextPackage.contextRequestId !== contextRequest.contextRequestId ||
+          contextPackage.revision !== input.contextPackageRef?.revision ||
+          contextPackage.sha256 !== input.contextPackageRef?.sha256
+        ) {
+          throw revisionConflict("Memory选择缺少已冻结的ContextPackage");
+        }
+      } else if (contextPackage !== undefined) {
+        throw revisionConflict("本轮没有Memory选择，不允许附加ContextPackage");
+      }
 
       const existingPlans = Object.values(draft.entities.plans)
         .filter((plan) => plan.productRunId === input.productRunId)
@@ -107,28 +132,49 @@ export async function compilePlanningInput(
       if (input.planRevision > 1 && revisionInput === undefined) {
         throw revisionConflict("修订规划缺少已提交Revision Input");
       }
+      if (priorPlan !== undefined) {
+        const priorAttempt = draft.entities.attempts[priorPlan.planningAttemptId];
+        if (
+          priorAttempt?.contextPackageId !== input.contextPackageRef?.contextPackageId ||
+          priorAttempt?.contextPackageSha256 !== input.contextPackageRef?.sha256
+        ) {
+          throw revisionConflict("M1规划修订必须复用上一版ContextPackage");
+        }
+      }
 
       const sourceMessageSha256 = messageSha256(message);
-      const inputManifestSha256 = hashCanonical("planning-input-manifest.v1", {
-        productRunId: input.productRunId,
-        planRevision: input.planRevision,
-        sourceMessageRef: { messageId: message.messageId, sha256: sourceMessageSha256 },
-        ...(priorPlan !== undefined
-          ? {
-              priorPlanRef: {
-                planRevisionId: priorPlan.planRevisionId,
-                planId: priorPlan.planId,
-                planRevision: priorPlan.planRevision,
-                sha256: priorPlan.sha256,
-              },
-            }
-          : {}),
-        ...(revisionInput !== undefined
-          ? { revisionInputRef: { revisionInputId: revisionInput.revisionInputId } }
-          : {}),
-        promptTemplateVersion: PLANNER_PROMPT_TEMPLATE_VERSION,
-        modelConfigVersion: MODEL_CONFIG_VERSION,
-      });
+      const inputManifestSha256 = hashCanonical(
+        contextPackage === undefined ? "planning-input-manifest.v1" : "planning-input-manifest.v2",
+        {
+          productRunId: input.productRunId,
+          planRevision: input.planRevision,
+          sourceMessageRef: { messageId: message.messageId, sha256: sourceMessageSha256 },
+          ...(priorPlan !== undefined
+            ? {
+                priorPlanRef: {
+                  planRevisionId: priorPlan.planRevisionId,
+                  planId: priorPlan.planId,
+                  planRevision: priorPlan.planRevision,
+                  sha256: priorPlan.sha256,
+                },
+              }
+            : {}),
+          ...(revisionInput !== undefined
+            ? { revisionInputRef: { revisionInputId: revisionInput.revisionInputId } }
+            : {}),
+          ...(contextPackage !== undefined
+            ? {
+                contextPackageRef: {
+                  contextPackageId: contextPackage.contextPackageId,
+                  revision: contextPackage.revision,
+                  sha256: contextPackage.sha256,
+                },
+              }
+            : {}),
+          promptTemplateVersion: PLANNER_PROMPT_TEMPLATE_VERSION,
+          modelConfigVersion: MODEL_CONFIG_VERSION,
+        },
+      );
 
       // 生命周期：首次规划从pending/queued进入running/planning；修改循环保持在running/planning
       if (run.status === "pending" && run.phase === "queued") {
@@ -158,6 +204,12 @@ export async function compilePlanningInput(
         inputManifestSha256,
         promptTemplateVersion: PLANNER_PROMPT_TEMPLATE_VERSION,
         modelConfigVersion: MODEL_CONFIG_VERSION,
+        ...(contextPackage !== undefined
+          ? {
+              contextPackageId: contextPackage.contextPackageId,
+              contextPackageSha256: contextPackage.sha256,
+            }
+          : {}),
         outcome: "running",
         revision: 1,
         createdAt: now,
@@ -184,6 +236,10 @@ export async function compilePlanningInput(
     attempt.revisionInputId === undefined
       ? undefined
       : snapshot.entities.revisionInputs[attempt.revisionInputId];
+  const contextPackage =
+    attempt.contextPackageId === undefined
+      ? undefined
+      : snapshot.entities.contextPackages[attempt.contextPackageId];
   if (
     attempt.inputRunRevision === undefined ||
     attempt.sourceMessageSha256 === undefined ||
@@ -198,6 +254,12 @@ export async function compilePlanningInput(
   }
   if (attempt.revisionInputId !== undefined && revisionInput === undefined) {
     throw revisionConflict("Planning Attempt引用的Revision Input不存在");
+  }
+  if (
+    attempt.contextPackageId !== undefined &&
+    (contextPackage === undefined || contextPackage.sha256 !== attempt.contextPackageSha256)
+  ) {
+    throw revisionConflict("Planning Attempt引用的ContextPackage不存在或Hash不一致");
   }
 
   if (
@@ -241,6 +303,42 @@ export async function compilePlanningInput(
         }
       : {}),
     ...(revisionInput !== undefined ? { revisionInstruction: revisionInput.instruction } : {}),
+    ...(contextPackage !== undefined
+      ? {
+          contextPackage: {
+            ref: {
+              contextPackageId: contextPackage.contextPackageId,
+              revision: contextPackage.revision,
+              sha256: contextPackage.sha256,
+            },
+            memory: {
+              backendId:
+                snapshot.entities.memoryQueries[contextPackage.memoryQueryId]?.backendId ?? "",
+              items: contextPackage.items.map((item) => {
+                const memorySnapshot =
+                  snapshot.entities.memoryResultSnapshots[item.memoryResultSnapshotId];
+                if (memorySnapshot === undefined) {
+                  throw revisionConflict("ContextPackage引用的Memory Snapshot不存在");
+                }
+                return {
+                  refId: memorySnapshot.memoryResultSnapshotId,
+                  revision: memorySnapshot.revision,
+                  sha256: memorySnapshot.sha256,
+                  title: memorySnapshot.title,
+                  kind: memorySnapshot.kind,
+                  memoryLayer: memorySnapshot.memoryLayer,
+                  content: memorySnapshot.content,
+                  tags: memorySnapshot.tags,
+                };
+              }),
+              exclusions: contextPackage.exclusions.map((exclusion) => ({
+                backendId: exclusion.backendId,
+                reasonCode: exclusion.reasonCode,
+              })),
+            },
+          },
+        }
+      : {}),
     planRevision: input.planRevision,
     limits: { ...PLANNER_LIMITS },
     promptTemplateVersion: attempt.promptTemplateVersion,

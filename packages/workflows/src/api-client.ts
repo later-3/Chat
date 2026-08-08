@@ -12,6 +12,9 @@ import {
   persistExecutionCandidateResponseSchema,
   persistValidationResultResponseSchema,
   planningInputDtoSchema,
+  beginPlanningContextResponseSchema,
+  preparePlanningContextResponseSchema,
+  persistPlanningContextResultRequestSchema,
   publishPlanReviewResponseSchema,
   problemDetailSchema,
   runRevisionResponseSchema,
@@ -22,6 +25,8 @@ import {
   type LoadCommittedDecisionRequest,
   type PersistExecutionCandidateRequest,
   type PersistValidationResultRequest,
+  type PreparePlanningContextRequest,
+  type PersistPlanningContextResultRequest,
   type PublishPlanReviewRequest,
 } from "@chat/contracts";
 import type { ZodType } from "zod";
@@ -114,6 +119,27 @@ async function call<TReq, TRes>(
 
 export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
   return {
+    beginPlanningContext(input: Omit<PreparePlanningContextRequest, "schemaVersion">) {
+      return call(
+        options,
+        "/internal/runtime/v1/begin-planning-context",
+        { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, ...input },
+        beginPlanningContextResponseSchema,
+      );
+    },
+    persistPlanningContextResult(
+      input: Omit<PersistPlanningContextResultRequest, "schemaVersion">,
+    ) {
+      return call(
+        options,
+        "/internal/runtime/v1/persist-planning-context-result",
+        persistPlanningContextResultRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        preparePlanningContextResponseSchema,
+      );
+    },
     compilePlanningInput(input: Omit<CompilePlanningInputRequest, "schemaVersion">) {
       return call(
         options,
@@ -150,8 +176,13 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
       commandId: string;
       productRunId: string;
       kind: "execution";
+      executionContractId: string;
       stepId: string;
-      inputManifestSha256: string;
+      dependencyRefs: readonly {
+        stepId: string;
+        executionAttemptId: string;
+        sha256: string;
+      }[];
       promptTemplateVersion: string;
       modelConfigVersion: string;
     }) {

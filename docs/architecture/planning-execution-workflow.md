@@ -372,6 +372,8 @@ type ExecutionContract = {
 3. 每一步输出结构化`ExecutionCandidatePayload`。
 4. 所有步骤完成后进入统一确定性验证。
 
+模型工具只提交当前步骤的`stepId + output`。`sections`、逐条成功条件证据和最终完成条件证据由Chat在pi Adapter边界使用Approved Step与实际`output`确定性投影；这既减少Provider复杂工具参数漂移，也避免让模型自报证据直接成为产品结构。Provider返回成功但候选合同失败时，Trace记录`provider.request.completed + pi.node.failed`，不能把模型候选失败误算成Provider故障。
+
 ### 10.3 第一版执行范围
 
 第一条验证场景只开放无外部副作用或可确定性重放的Chat内部能力，例如整理输入、生成Markdown候选和形成摘要。发送邮件、修改代码仓库、写日历、扣费或删除数据等真实副作用到P5接入Tool Execution Ledger后再开放。

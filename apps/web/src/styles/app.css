@@ -1502,6 +1502,185 @@ a {
   font-weight: 600;
 }
 
+.context-picker {
+  position: relative;
+  z-index: 12;
+}
+
+.context-picker-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.context-picker-trigger > span:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.context-picker-trigger strong {
+  font-size: var(--font-caption);
+}
+
+.context-picker-trigger small,
+.context-picker-trigger > span:last-child {
+  color: var(--text-tertiary);
+  font-size: var(--font-caption);
+}
+
+.context-picker-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + var(--space-2));
+  left: 0;
+  z-index: 20;
+  max-height: min(55dvh, 480px);
+  overflow-y: auto;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-panel);
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-panel);
+}
+
+.context-picker-panel > header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--separator);
+  background: var(--bg-primary);
+}
+
+.context-picker-panel > header button {
+  min-width: 52px;
+  min-height: 44px;
+  border-radius: var(--radius-control);
+  color: var(--accent);
+  font-size: var(--font-caption);
+  font-weight: 600;
+}
+
+.context-enable-row {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.context-enable-row input,
+.context-layers input {
+  width: var(--space-4);
+  height: var(--space-4);
+  accent-color: var(--accent);
+}
+
+.context-enable-row > span {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.context-enable-row strong {
+  font-size: var(--font-caption);
+  font-weight: 600;
+}
+
+.context-enable-row small {
+  color: var(--text-tertiary);
+  font-size: var(--font-caption);
+}
+
+.context-picker-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--separator);
+  background: var(--bg-primary);
+}
+
+.context-picker-options > label,
+.context-layers {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+  border: 0;
+}
+
+.context-picker-options label > span,
+.context-layers legend {
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+}
+
+.context-picker-options select,
+.context-picker-options input[type="text"],
+.context-picker-options input[type="number"],
+.context-tags-field input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 0 var(--space-2);
+  font: inherit;
+  font-size: var(--font-caption);
+}
+
+.context-tags-field,
+.context-layers {
+  grid-column: 1 / -1;
+}
+
+.context-layers {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.context-layers legend {
+  width: 100%;
+}
+
+.context-layers label {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.context-picker :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .message-markdown {
   margin: 0;
   font: inherit;
@@ -1581,6 +1760,38 @@ a {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.context-summary {
+  display: flex;
+  min-height: 44px;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+}
+
+.context-summary strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.context-summary[data-tone="success"] {
+  border-color: color-mix(in srgb, var(--status-success) 40%, var(--separator));
+}
+
+.context-summary[data-tone="warning"] {
+  border-color: color-mix(in srgb, var(--status-warning) 40%, var(--separator));
+}
+
+.context-summary[data-tone="danger"] {
+  border-color: color-mix(in srgb, var(--status-danger) 40%, var(--separator));
+  color: var(--status-danger);
 }
 
 .plan-card {
@@ -1778,5 +1989,23 @@ a {
     display: flex;
     width: 100%;
     height: 100%;
+  }
+
+  .context-picker-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .context-picker-panel {
+    max-height: min(48dvh, 360px);
+  }
+
+  .context-tags-field,
+  .context-layers {
+    grid-column: auto;
+  }
+
+  .context-enable-row > span {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

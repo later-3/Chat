@@ -46,6 +46,7 @@ const rules: Record<
       "@chat/application",
       "@chat/contracts",
       "@chat/domain",
+      "@chat/memory-runtime",
       "@chat/pi-runtime",
       "@chat/product-store-json",
       "@chat/realtime",
@@ -58,6 +59,8 @@ const rules: Record<
       "@chat/contracts",
       "@chat/application",
       "@chat/domain",
+      // runtime-server 是 Workflow 进程的组合根，负责注入具体 Memory Adapter。
+      "@chat/memory-runtime",
       "@chat/pi-runtime",
       "@chat/realtime",
     ],
@@ -74,6 +77,12 @@ const rules: Record<
     internal: ["@chat/contracts", "@chat/domain", "@chat/application"],
     forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@ag-ui\//],
   },
+  "packages/memory-runtime": {
+    external: ["zod"],
+    // Adapter 可依赖内层 Domain 的 canonical hash / token 预算算法。
+    internal: ["@chat/contracts", "@chat/application", "@chat/domain"],
+    forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@ag-ui\//],
+  },
   "apps/web": {
     // workbox-window 进入浏览器运行时bundle（PWA注册与更新提示），属于运行时依赖
     external: ["react", "react-dom", "@tanstack/react-query", "workbox-window", "zod"],
@@ -86,6 +95,7 @@ const rules: Record<
       "@chat/contracts",
       "@chat/application",
       "@chat/domain",
+      "@chat/memory-runtime",
       "@chat/realtime",
       "@chat/product-store-json",
       "@chat/pi-runtime",
@@ -148,7 +158,7 @@ describe("架构依赖方向", () => {
       const violations: string[] = [];
       for (const file of files) {
         const isDevFile =
-          /\.(test|spec|real)\.tsx?$/.test(file) ||
+          /\.(test|spec|real|e2e)\.tsx?$/.test(file) ||
           /(^|\/)vite\.config\.ts$/.test(file) ||
           /(^|\/)vitest(\.global-setup)?\.ts$/.test(file) ||
           /(^|\/)vitest(\.[a-z-]+)*\.config\.ts$/.test(file) ||

@@ -20,7 +20,7 @@ function fixtureOf(eventName: string): Record<string, unknown> {
   return found;
 }
 
-describe("traceEventSchema：39种正式事件的合法Fixture全部通过", () => {
+describe("traceEventSchema：45种正式事件的合法Fixture全部通过", () => {
   it("Fixture覆盖任务书§7.3全部事件名", () => {
     const covered = new Set(validTraceFixtures.map((fixture) => fixture["eventName"]));
     for (const name of Object.values(TRACE_EVENT_NAMES)) {
@@ -64,6 +64,40 @@ describe("traceEventSchema：事件族关联字段强制", () => {
       delete tampered["productRunId"];
       expect(traceEventSchema.safeParse(tampered).success, name).toBe(false);
     }
+  });
+
+  it("pi候选诊断只接受冻结字段和枚举错误码", () => {
+    const fixture = fixtureOf(TRACE_EVENT_NAMES.piNodeFailed);
+    expect(
+      traceEventSchema.safeParse({
+        ...fixture,
+        candidateValidation: {
+          stage: "tool_argument_schema",
+          fields: ["output"],
+          issueCodes: ["invalid_type", "output.missing"],
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      traceEventSchema.safeParse({
+        ...fixture,
+        candidateValidation: {
+          stage: "tool_argument_schema",
+          fields: [CONTENT_MARKER],
+          issueCodes: ["invalid_type"],
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      traceEventSchema.safeParse({
+        ...fixture,
+        candidateValidation: {
+          stage: "candidate_contract",
+          fields: ["output"],
+          issueCodes: [CONTENT_MARKER],
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it("Workflow/Provider/pi/执行/Commit事件缺productRunId或attemptId被拒绝", () => {
@@ -212,6 +246,33 @@ describe("traceEventSchema：对象引用语义", () => {
       traceEventSchema.safeParse({
         ...fixture,
         planRef: { objectType: "decision", objectId: "dec_1", revision: 1, sha256: SHA256_A },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("context.assembly.completed必须按状态携带精确版本化ContextPackage引用", () => {
+    const ready = fixtureOf(TRACE_EVENT_NAMES.contextAssemblyCompleted);
+    expect(traceEventSchema.safeParse(ready).success).toBe(true);
+    const withoutRef = { ...ready };
+    delete withoutRef["contextPackageRef"];
+    expect(traceEventSchema.safeParse(withoutRef).success).toBe(false);
+    expect(
+      traceEventSchema.safeParse({
+        ...ready,
+        contextPackageRef: {
+          objectType: "context_package",
+          objectId: "ctxp_1",
+          sha256: SHA256_A,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      traceEventSchema.safeParse({
+        ...ready,
+        status: "none",
+        memoryRequested: false,
+        adoptedCount: 0,
+        excludedCount: 0,
       }).success,
     ).toBe(false);
   });

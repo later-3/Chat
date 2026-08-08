@@ -4,7 +4,9 @@ import type {
   CommandId,
   DecisionDto,
   MessageDto,
+  MemoryBackendProfileDto,
   PlanDto,
+  RunContextDto,
   RunDto,
   SessionDto,
 } from "@chat/contracts/public";
@@ -12,8 +14,10 @@ import {
   apiCreateSession,
   apiGetCurrentApproval,
   apiGetMessages,
+  apiGetMemoryBackends,
   apiGetPlans,
   apiGetRun,
+  apiGetRunContext,
   apiSubmitDecision,
   apiSubmitMessage,
 } from "./client.js";
@@ -102,6 +106,31 @@ const decision: DecisionDto = {
   createdAt: now,
 };
 const commandId = "cmd_client" as CommandId;
+const backend: MemoryBackendProfileDto = {
+  schemaVersion: "chat-product-api.v1",
+  backendId: "mbk_memmy" as never,
+  displayName: "memmy",
+  kind: "memmy",
+  configured: true,
+  health: "ready",
+  capabilities: {
+    query: true,
+    tags: true,
+    layers: ["L1", "L2"],
+    maxLimit: 20,
+    maxContextBudget: 8_192,
+  },
+};
+const runContext: RunContextDto = {
+  schemaVersion: "chat-product-api.v1",
+  productRunId: run.productRunId,
+  memory: {
+    backendId: backend.backendId,
+    requirement: "optional",
+    queryStatus: "pending",
+    memoryQueryId: "mqy_client" as never,
+  },
+};
 
 function respond(body: unknown): void {
   vi.stubGlobal(
@@ -122,7 +151,7 @@ describe("公开API浏览器响应边界", () => {
     ["CreateSession", () => apiCreateSession(commandId), { session, runtimeSecret: "forbidden" }],
     [
       "SubmitMessage",
-      () => apiSubmitMessage(session.sessionId, commandId, "目标"),
+      () => apiSubmitMessage(session.sessionId, commandId, { text: "目标" }),
       { message, run, runtimeSecret: "forbidden" },
     ],
     [
@@ -159,6 +188,16 @@ describe("公开API浏览器响应边界", () => {
       { items: [message], runtimeSecret: "forbidden" },
     ],
     ["Run", () => apiGetRun(run.productRunId), { run, runtimeSecret: "forbidden" }],
+    [
+      "MemoryBackends",
+      () => apiGetMemoryBackends(),
+      { backends: [backend], runtimeSecret: "forbidden" },
+    ],
+    [
+      "RunContext",
+      () => apiGetRunContext(run.productRunId),
+      { context: runContext, runtimeSecret: "forbidden" },
+    ],
     ["Plans", () => apiGetPlans(run.productRunId), { items: [plan], runtimeSecret: "forbidden" }],
     [
       "Approval",

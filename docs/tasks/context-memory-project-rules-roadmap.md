@@ -1,8 +1,8 @@
 # C1 任务书：Memory、Project 与用户规则纵向建设
 
-> 状态：待用户审核，未授权实现  
+> 状态：设计已审核；M1 实现中
 > 架构依据：[长期上下文架构](../architecture/context-memory-project-rules.md)  
-> 基线：`main` @ `7daaf5a`
+> 基线：`main` @ `6784580`
 
 ## 1. 总目标
 

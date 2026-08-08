@@ -1,7 +1,7 @@
-import { Agent } from "@earendil-works/pi-agent-core";
-import type { AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
+import { runAgentLoop } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
-import type { AssistantMessage, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { PROVIDER_MODEL, PROVIDER_NAME } from "@chat/contracts";
 import { classifyProviderError, type StableProviderErrorCode } from "./errors.js";
 
@@ -28,6 +28,13 @@ export interface AgentRunUsage {
   readonly outputTokens: number;
 }
 
+export interface CandidateValidationDiagnostics {
+  readonly stage: "tool_argument_schema" | "candidate_contract" | "capability_policy";
+  /** 只允许合同字段名，不包含字段值、正文或Provider原始错误。 */
+  readonly fields: readonly string[];
+  readonly issueCodes: readonly string[];
+}
+
 export type AgentRunResult<TCandidate> =
   | {
       readonly kind: "candidate";
@@ -45,6 +52,7 @@ export type AgentRunResult<TCandidate> =
       readonly providerCallCount: number;
       readonly usage?: AgentRunUsage;
       readonly providerMeta: ProviderCallMeta;
+      readonly diagnostics?: CandidateValidationDiagnostics;
     }
   | {
       readonly kind: "provider_failed";
@@ -62,11 +70,16 @@ export interface RunAgentWithToolOptions<TCandidate> {
   readonly userPrompt: string;
   readonly tool: AgentTool;
   /** 把工具参数转换为候选；schema非法与能力越界分别进入稳定错误码。 */
-  readonly parseCandidate: (
-    params: unknown,
-  ) =>
+  readonly parseCandidate: (params: unknown) =>
     | { readonly ok: true; readonly candidate: TCandidate }
-    | { readonly ok: false; readonly errorCode: "schema_invalid" | "capability_violation" };
+    | {
+        readonly ok: false;
+        readonly errorCode: "schema_invalid" | "capability_violation";
+        readonly diagnostics?: {
+          readonly fields: readonly string[];
+          readonly issueCodes: readonly string[];
+        };
+      };
   readonly timeoutMs: number;
   /** B2只允许单次Provider请求；工具无论成功或拒绝都terminate。 */
   readonly maxTurns: number;
@@ -123,6 +136,19 @@ function requestIdFrom(headers: Readonly<Record<string, string>>): string | unde
 function responseIdFrom(message: AssistantMessage): string | undefined {
   const value = message.responseId;
   return value !== undefined && /^[A-Za-z0-9-]{1,128}$/.test(value) ? value : undefined;
+}
+
+function safeCandidateDiagnostics(
+  stage: CandidateValidationDiagnostics["stage"],
+  value?: { readonly fields: readonly string[]; readonly issueCodes: readonly string[] },
+): CandidateValidationDiagnostics {
+  const safe = (items: readonly string[]) =>
+    [...new Set(items)].filter((item) => /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(item)).slice(0, 12);
+  return {
+    stage,
+    fields: safe(value?.fields ?? []),
+    issueCodes: safe(value?.issueCodes ?? []),
+  };
 }
 
 export async function runAgentWithTool<TCandidate>(
@@ -207,14 +233,28 @@ export async function runAgentWithTool<TCandidate>(
   let invalidSchemaCalls = 0;
   let capabilityViolations = 0;
   let candidate: TCandidate | undefined;
+  let candidateDiagnostics: CandidateValidationDiagnostics | undefined;
+  const executedToolCallIds = new Set<string>();
 
   const tool: AgentTool = {
     ...options.tool,
     execute: async (toolCallId, params, signal, onUpdate) => {
+      executedToolCallIds.add(toolCallId);
       const parsed = options.parseCandidate(params);
       if (!parsed.ok) {
-        if (parsed.errorCode === "capability_violation") capabilityViolations += 1;
-        else invalidSchemaCalls += 1;
+        if (parsed.errorCode === "capability_violation") {
+          capabilityViolations += 1;
+          candidateDiagnostics ??= safeCandidateDiagnostics(
+            "capability_policy",
+            parsed.diagnostics,
+          );
+        } else {
+          invalidSchemaCalls += 1;
+          candidateDiagnostics ??= safeCandidateDiagnostics(
+            "candidate_contract",
+            parsed.diagnostics,
+          );
+        }
         // 非法候选不交给模型自我修正：整个运行按MODEL_CANDIDATE_INVALID失败关闭
         return {
           content: [{ type: "text", text: "candidate rejected by server contract" }],
@@ -229,22 +269,73 @@ export async function runAgentWithTool<TCandidate>(
     },
   };
 
-  const agent = new Agent({
-    initialState: { model, systemPrompt: options.systemPrompt, tools: [tool] },
-    streamFn,
-    getApiKey: () => options.apiKey,
-    toolExecution: "sequential",
-  });
-
-  const timer = setTimeout(() => agent.abort(), options.timeoutMs);
+  const abortController = new AbortController();
+  let loopMessages: AgentMessage[] = [];
+  const timer = setTimeout(() => abortController.abort(), options.timeoutMs);
   try {
-    await agent.prompt(options.userPrompt);
+    const prompt: Message = {
+      role: "user",
+      content: [{ type: "text", text: options.userPrompt }],
+      timestamp: Date.now(),
+    };
+    loopMessages = await runAgentLoop(
+      [prompt],
+      { systemPrompt: options.systemPrompt, messages: [], tools: [tool] },
+      {
+        model,
+        convertToLlm: (messages) =>
+          messages.filter(
+            (message): message is Message =>
+              message.role === "user" ||
+              message.role === "assistant" ||
+              message.role === "toolResult",
+          ),
+        getApiKey: () => options.apiKey,
+        toolExecution: "sequential",
+        // Agent类当前没有暴露shouldStopAfterTurn；直接使用同一pi Agent loop的
+        // 官方低层入口，保证TypeBox在execute前拒绝参数时也不会触发第二次付费请求。
+        shouldStopAfterTurn: ({ message, toolResults }) => {
+          if (toolResults.length === 0) return false;
+          for (const content of message.content) {
+            if (content.type !== "toolCall" || executedToolCallIds.has(content.id)) continue;
+            if (content.name !== tool.name) {
+              invalidSchemaCalls += 1;
+              candidateDiagnostics ??= safeCandidateDiagnostics("tool_argument_schema", {
+                fields: [],
+                issueCodes: ["unknown_tool"],
+              });
+              continue;
+            }
+            const parsed = options.parseCandidate(content.arguments);
+            if (!parsed.ok && parsed.errorCode === "capability_violation") {
+              capabilityViolations += 1;
+              candidateDiagnostics ??= safeCandidateDiagnostics(
+                "tool_argument_schema",
+                parsed.diagnostics,
+              );
+            } else {
+              // 包括“Chat Schema合法但pi/TypeBox入口更严格”的情况；它依然是
+              // 模型候选不符合本节点工具合同，而不是Provider故障。
+              invalidSchemaCalls += 1;
+              candidateDiagnostics ??= safeCandidateDiagnostics(
+                "tool_argument_schema",
+                parsed.ok ? undefined : parsed.diagnostics,
+              );
+            }
+          }
+          return true;
+        },
+      },
+      async () => undefined,
+      abortController.signal,
+      streamFn,
+    );
   } catch (error) {
     const durationMs = Math.round(performance.now() - startedAt);
     const classifiedError = classifyProviderError(
       error instanceof Error ? error.message : String(error),
     );
-    let interruptedByLength = [...agent.state.messages]
+    let interruptedByLength = [...loopMessages]
       .reverse()
       .some((message) => message.role === "assistant" && message.stopReason === "length");
     if (!interruptedByLength && lastProviderResult !== undefined) {
@@ -271,8 +362,7 @@ export async function runAgentWithTool<TCandidate>(
   }
 
   const durationMs = Math.round(performance.now() - startedAt);
-  const messages = agent.state.messages;
-  const lastAssistant = [...messages]
+  const lastAssistant = [...loopMessages]
     .reverse()
     .find((message): message is AssistantMessage => message.role === "assistant");
   const usage = usageFrom(lastAssistant);
@@ -338,6 +428,16 @@ export async function runAgentWithTool<TCandidate>(
     };
   }
 
+  if ((providerMeta.toolCallCount ?? 0) > 1) {
+    return {
+      kind: "invalid_candidate",
+      errorCode: "multiple_tool_calls",
+      durationMs,
+      providerCallCount,
+      ...(usage !== undefined ? { usage } : {}),
+      providerMeta,
+    };
+  }
   if (validCalls === 1 && candidate !== undefined) {
     return {
       kind: "candidate",
@@ -345,16 +445,6 @@ export async function runAgentWithTool<TCandidate>(
       ...(usage !== undefined ? { usage } : {}),
       durationMs,
       providerCallCount,
-      providerMeta,
-    };
-  }
-  if (validCalls > 1) {
-    return {
-      kind: "invalid_candidate",
-      errorCode: "multiple_tool_calls",
-      durationMs,
-      providerCallCount,
-      ...(usage !== undefined ? { usage } : {}),
       providerMeta,
     };
   }
@@ -366,6 +456,7 @@ export async function runAgentWithTool<TCandidate>(
       providerCallCount,
       ...(usage !== undefined ? { usage } : {}),
       providerMeta,
+      ...(candidateDiagnostics !== undefined ? { diagnostics: candidateDiagnostics } : {}),
     };
   }
   if (invalidSchemaCalls > 0) {
@@ -376,6 +467,7 @@ export async function runAgentWithTool<TCandidate>(
       providerCallCount,
       ...(usage !== undefined ? { usage } : {}),
       providerMeta,
+      ...(candidateDiagnostics !== undefined ? { diagnostics: candidateDiagnostics } : {}),
     };
   }
   return {
