@@ -465,6 +465,7 @@ async function superviseAcknowledgedImport(
   const result = importResult(snapshot, entry);
   if (
     result === undefined ||
+    result.status === "accepted" ||
     result.status === "materialized" ||
     result.status === "failed" ||
     Date.parse(options.deps.now()) - Date.parse(entry.updatedAt) < ACKNOWLEDGED_IMPORT_SUPERVISE_MS
@@ -472,7 +473,7 @@ async function superviseAcknowledgedImport(
     return;
   }
   if (
-    (result.status === "accepted" || result.status === "outcome_unknown") &&
+    result.status === "outcome_unknown" &&
     result.reconcileAttempts >= MAX_AUTOMATIC_IMPORT_RECOVERIES
   ) {
     return;

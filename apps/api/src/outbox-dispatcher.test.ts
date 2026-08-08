@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TraceEventInput } from "@chat/contracts";
 import type { ApplicationDeps, IdFactory } from "@chat/application";
 import {
+  commitMemoryImportAccepted,
   createMemoryImport,
   createProductSession,
   markMemoryImportDispatching,
@@ -298,5 +299,70 @@ describe("Outbox结果未知栅栏", () => {
     await dispatcher.tick();
     snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
     expect(dispatchedModes).toEqual(["import", "reconcile"]);
+  });
+
+  it("L0导入已accepted时不得被终态监督器降级为outcome_unknown", async () => {
+    const { deps, memoryImport, advance } = await seedMemoryImport();
+    let reconcileCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes("/memory-import/start")) {
+          return Response.json(
+            { schemaVersion: "chat-workflow-dispatch.v1", status: "started" },
+            { status: 201 },
+          );
+        }
+        if (url.includes("/memory-import/reconcile")) {
+          reconcileCalls += 1;
+          throw new Error("accepted结果不应触发终态故障恢复");
+        }
+        throw new Error("unexpected fetch");
+      }),
+    );
+    const dispatcher = new OutboxDispatcher({
+      deps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+    await dispatcher.tick();
+    const before = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const intent = before.entities.memoryImportIntents[memoryImport.memoryImportIntentId];
+    if (intent === undefined) throw new Error("缺少Intent");
+    const dispatching = await markMemoryImportDispatching(deps, {
+      commandId: "cmd_markaccepted" as never,
+      memoryImportIntentId: intent.memoryImportIntentId,
+      memoryImportResultId: memoryImport.memoryImportResultId,
+      requestSha256: intent.requestSha256,
+      expectedRevision: 1,
+    });
+    await commitMemoryImportAccepted(deps, {
+      commandId: "cmd_commitaccepted" as never,
+      memoryImportIntentId: intent.memoryImportIntentId,
+      memoryImportResultId: memoryImport.memoryImportResultId,
+      requestSha256: intent.requestSha256,
+      expectedRevision: dispatching.revision,
+      accepted: {
+        externalObjectId: "chat-import:mii_dispatchaccepted",
+        externalStatus: "l0_accepted",
+        responseSha256: "b".repeat(64),
+      },
+      reconciled: true,
+    });
+
+    advance(2_000);
+    await dispatcher.tick();
+    const snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.memoryImportResults[memoryImport.memoryImportResultId]).toMatchObject({
+      status: "accepted",
+      reconcileAttempts: 1,
+    });
+    expect(reconcileCalls).toBe(0);
+    expect(
+      Object.values(snapshot.outbox).filter(
+        (entry) => entry.kind === "memory_import_reconcile" && entry.status === "pending",
+      ),
+    ).toHaveLength(0);
   });
 });
