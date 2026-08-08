@@ -2,8 +2,15 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { TraceEventInput } from "@chat/contracts";
 import type { ApplicationDeps, IdFactory } from "@chat/application";
-import { createProductSession, submitUserMessage } from "@chat/application";
+import {
+  createMemoryImport,
+  createProductSession,
+  markMemoryImportDispatching,
+  submitUserMessage,
+  updateOutboxStatus,
+} from "@chat/application";
 import { JsonProductStore } from "@chat/product-store-json";
 import { OutboxDispatcher } from "./outbox-dispatcher.js";
 
@@ -28,26 +35,107 @@ function ids(): IdFactory {
   };
 }
 
-async function seed(): Promise<{ deps: ApplicationDeps; productRunId: string }> {
+const importBackend = {
+  describeImport: () => ({
+    descriptor: {
+      backendId: "mbk_memmy" as never,
+      displayName: "memmy",
+      kind: "memmy" as const,
+      adapterContractVersion: "memmy-http-import.v1" as const,
+      configured: true,
+      configurationFingerprint: "a".repeat(64) as never,
+      capabilities: {
+        mode: "explicit_fact" as const,
+        layers: ["L2"] as ["L2"],
+        title: true as const,
+        tags: true as const,
+        maxContentChars: 50_000,
+      },
+      authMode: "none" as const,
+      credentialRevision: "none" as never,
+    },
+  }),
+  import: vi.fn(),
+  reconcile: vi.fn(),
+};
+
+async function seed(): Promise<{
+  deps: ApplicationDeps;
+  productRunId: string;
+  messageId: string;
+  messageSha256: string;
+  traces: TraceEventInput[];
+  advance: (milliseconds: number) => void;
+}> {
   const directory = await mkdtemp(join(tmpdir(), "chat-dispatch-test-"));
-  const now = () => "2026-08-07T12:00:00.000Z";
+  let timestamp = Date.parse("2026-08-07T12:00:00.000Z");
+  const now = () => new Date(timestamp).toISOString();
   const store = await JsonProductStore.open({
     filePath: join(directory, "chat-product-store.v1.json"),
     now,
   });
-  const deps: ApplicationDeps = { store, now, ids: ids() };
+  const traces: TraceEventInput[] = [];
+  const deps: ApplicationDeps = {
+    store,
+    now,
+    ids: ids(),
+    trace: (event) => traces.push(event),
+    memoryImportBackends: {
+      list: () => [importBackend],
+      get: (backendId) => (backendId === "mbk_memmy" ? importBackend : undefined),
+    },
+  };
   const { session } = await createProductSession(deps, {
     principalId: "usr_dispatchtest" as never,
     commandId: "cmd_dispatch1" as never,
     payload: {},
   });
-  const { run } = await submitUserMessage(deps, {
+  const { message, run } = await submitUserMessage(deps, {
     principalId: "usr_dispatchtest" as never,
     sessionId: session.sessionId,
     commandId: "cmd_dispatch2" as never,
     payload: { text: "启动规划" },
   });
-  return { deps, productRunId: run.productRunId };
+  if (message.sha256 === undefined) throw new Error("测试Message缺少Hash");
+  return {
+    deps,
+    productRunId: run.productRunId,
+    messageId: message.messageId,
+    messageSha256: message.sha256,
+    traces,
+    advance: (milliseconds) => {
+      timestamp += milliseconds;
+    },
+  };
+}
+
+async function seedMemoryImport() {
+  const seeded = await seed();
+  const snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+  const planningOutbox = Object.values(snapshot.outbox).find(
+    (entry) => entry.kind === "workflow_start",
+  );
+  if (planningOutbox === undefined) throw new Error("缺少规划Outbox");
+  await updateOutboxStatus(seeded.deps, {
+    commandId: "cmd_disableplanning" as never,
+    outboxId: planningOutbox.outboxId,
+    status: "failed_terminal",
+  });
+  const { memoryImport } = await createMemoryImport(seeded.deps, {
+    principalId: "usr_dispatchtest" as never,
+    commandId: "cmd_memoryimport1" as never,
+    payload: {
+      sourceSelection: {
+        kind: "full_message",
+        sourceMessageId: seeded.messageId as never,
+        sourceMessageSha256: seeded.messageSha256 as never,
+      },
+      backendId: "mbk_memmy" as never,
+      title: "派发恢复测试",
+      tags: ["recovery"],
+    },
+  });
+  return { ...seeded, memoryImport };
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -93,5 +181,122 @@ describe("Outbox结果未知栅栏", () => {
     expect(entry?.status).toBe("outcome_unknown");
     expect(entry?.dispatchAttempts).toBe(1);
     expect(startCalls).toBe(1);
+  });
+
+  it("Workflow在mark前终止时只创建新的start Outbox，原条目不再永久acknowledged", async () => {
+    const { deps, memoryImport, advance } = await seedMemoryImport();
+    const dispatchedBodies: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/memory-import/start")) {
+          dispatchedBodies.push(JSON.parse(String(init?.body)));
+          return Response.json(
+            { schemaVersion: "chat-workflow-dispatch.v1", status: "started" },
+            { status: 201 },
+          );
+        }
+        if (url.includes("/memory-import/reconcile")) {
+          const outboxId = new URL(url).searchParams.get("outboxId");
+          return Response.json({
+            schemaVersion: "chat-workflow-dispatch.v1",
+            outboxId,
+            startBinding: "exists",
+            runStatus: "failed",
+          });
+        }
+        throw new Error("unexpected fetch");
+      }),
+    );
+    const dispatcher = new OutboxDispatcher({
+      deps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+    await dispatcher.tick();
+    advance(2_000);
+    await dispatcher.tick();
+    let snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const imports = Object.values(snapshot.outbox).filter(
+      (entry) => entry.kind === "memory_import_start",
+    );
+    expect(imports.map((entry) => entry.status).sort()).toEqual(["failed_terminal", "pending"]);
+    expect(snapshot.entities.memoryImportResults[memoryImport.memoryImportResultId]?.status).toBe(
+      "queued",
+    );
+    await dispatcher.tick();
+    snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(dispatchedBodies).toHaveLength(2);
+    expect(dispatchedBodies).toEqual([
+      expect.objectContaining({ mode: "import" }),
+      expect.objectContaining({ mode: "import" }),
+    ]);
+  });
+
+  it("Workflow越过mark后终止时收敛为outcome_unknown并只派发reconcile", async () => {
+    const { deps, memoryImport, advance, traces } = await seedMemoryImport();
+    const dispatchedModes: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/memory-import/start")) {
+          const body = JSON.parse(String(init?.body)) as { mode: string };
+          dispatchedModes.push(body.mode);
+          return Response.json(
+            { schemaVersion: "chat-workflow-dispatch.v1", status: "started" },
+            { status: 201 },
+          );
+        }
+        if (url.includes("/memory-import/reconcile")) {
+          return Response.json({
+            schemaVersion: "chat-workflow-dispatch.v1",
+            outboxId: new URL(url).searchParams.get("outboxId"),
+            startBinding: "exists",
+            runStatus: "failed",
+          });
+        }
+        throw new Error("unexpected fetch");
+      }),
+    );
+    const dispatcher = new OutboxDispatcher({
+      deps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+    await dispatcher.tick();
+    const before = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const intent = before.entities.memoryImportIntents[memoryImport.memoryImportIntentId];
+    if (intent === undefined) throw new Error("缺少Intent");
+    await markMemoryImportDispatching(deps, {
+      commandId: "cmd_markdispatching" as never,
+      memoryImportIntentId: intent.memoryImportIntentId,
+      memoryImportResultId: memoryImport.memoryImportResultId,
+      requestSha256: intent.requestSha256,
+      expectedRevision: 1,
+    });
+    advance(2_000);
+    await dispatcher.tick();
+    let snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.memoryImportResults[memoryImport.memoryImportResultId]).toMatchObject({
+      status: "outcome_unknown",
+      revision: 3,
+    });
+    expect(
+      Object.values(snapshot.outbox).filter(
+        (entry) => entry.kind === "memory_import_reconcile" && entry.status === "pending",
+      ),
+    ).toHaveLength(1);
+    expect(traces).toContainEqual(
+      expect.objectContaining({
+        eventName: "memory.import.outcome_unknown",
+        origin: "recovery",
+        memoryImportIntentId: memoryImport.memoryImportIntentId,
+      }),
+    );
+    await dispatcher.tick();
+    snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(dispatchedModes).toEqual(["import", "reconcile"]);
   });
 });

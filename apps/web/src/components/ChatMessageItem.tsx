@@ -75,6 +75,8 @@ export function ChatMessageItem({
   const [preparingImport, setPreparingImport] = useState(false);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const currentImport = latestImport(chain.memoryImports.data ?? [], message.messageId);
+  const pendingForMessage =
+    chain.pendingMemoryImport?.payload.sourceSelection.sourceMessageId === message.messageId;
 
   function closeImportDialog() {
     setDialogSelection(undefined);
@@ -219,7 +221,7 @@ export function ChatMessageItem({
           {selectionError}
         </p>
       )}
-      {submittedHere && chain.memoryImportError !== null && (
+      {(submittedHere || pendingForMessage) && chain.memoryImportError !== null && (
         <p className="memory-import-error" role="alert">
           导入请求结果未知或失败（{chain.memoryImportError.code}）。
           <button

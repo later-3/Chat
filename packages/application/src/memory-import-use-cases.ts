@@ -8,7 +8,9 @@ import {
   type MemoryImportIntentId,
   type MemoryImportResult,
   type MemoryImportResultId,
+  type OutboxEntryId,
   type PrincipalId,
+  type Sha256,
 } from "@chat/contracts";
 import {
   assertMemoryImportTransition,
@@ -448,7 +450,9 @@ export async function loadMemoryImportForRuntime(
 
 interface ResultCommandBase {
   readonly commandId: CommandId;
+  readonly memoryImportIntentId: MemoryImportIntentId;
   readonly memoryImportResultId: MemoryImportResultId;
+  readonly requestSha256: Sha256;
   readonly expectedRevision: number;
 }
 
@@ -468,6 +472,13 @@ async function updateResult(
     mutate: (draft) => {
       const current = draft.entities.memoryImportResults[input.memoryImportResultId];
       if (current === undefined) throw notFound("Memory Import Result不存在");
+      if (current.memoryImportIntentId !== input.memoryImportIntentId) {
+        throw revisionConflict("Memory Import Result与Intent不匹配");
+      }
+      const intent = draft.entities.memoryImportIntents[input.memoryImportIntentId];
+      if (intent === undefined || intent.requestSha256 !== input.requestSha256) {
+        throw revisionConflict("Memory Import Intent请求Hash不匹配");
+      }
       if (current.revision !== input.expectedRevision) {
         throw revisionConflict("Memory Import Result revision已变化");
       }
@@ -510,6 +521,12 @@ export function commitMemoryImportAccepted(
     if (!(current.status === "accepted" && input.reconciled === true)) {
       assertMemoryImportTransition(current, "accepted");
     }
+    if (
+      current.status === "accepted" &&
+      current.externalObjectId !== input.accepted.externalObjectId
+    ) {
+      throw revisionConflict("Memory Import外部对象身份不可改写");
+    }
     return {
       schemaVersion: current.schemaVersion,
       memoryImportResultId: current.memoryImportResultId,
@@ -536,6 +553,12 @@ export function commitMemoryImportMaterialized(
 ): Promise<MemoryImportResult> {
   return updateResult(deps, "CommitMemoryImportMaterialized", input, (current, now) => {
     assertMemoryImportTransition(current, "materialized");
+    if (
+      current.status === "accepted" &&
+      current.externalObjectId !== input.accepted.externalObjectId
+    ) {
+      throw revisionConflict("Memory Import外部对象身份不可改写");
+    }
     return {
       schemaVersion: current.schemaVersion,
       memoryImportResultId: current.memoryImportResultId,
@@ -587,24 +610,172 @@ export function commitMemoryImportOutcomeUnknown(
   input: ResultCommandBase & { readonly errorCode: string; readonly reconciled?: boolean },
 ): Promise<MemoryImportResult> {
   return updateResult(deps, "CommitMemoryImportOutcomeUnknown", input, (current, now) => {
-    if (current.status !== "outcome_unknown") {
-      assertMemoryImportTransition(current, "outcome_unknown");
-    }
-    return {
-      schemaVersion: current.schemaVersion,
-      memoryImportResultId: current.memoryImportResultId,
-      memoryImportIntentId: current.memoryImportIntentId,
-      status: "outcome_unknown",
-      dispatchAttempts: current.dispatchAttempts,
-      reconcileAttempts: current.reconcileAttempts + (input.reconciled === true ? 1 : 0),
-      errorCode: input.errorCode,
-      unknownSince: current.status === "outcome_unknown" ? current.unknownSince : now,
-      ...(input.reconciled === true ? { lastReconciledAt: now } : {}),
-      revision: current.revision + 1,
-      createdAt: current.createdAt,
-      updatedAt: now,
-    };
+    return toMemoryImportOutcomeUnknown(current, now, input.errorCode, input.reconciled === true);
   });
+}
+
+function toMemoryImportOutcomeUnknown(
+  current: MemoryImportResult,
+  now: string,
+  errorCode: string,
+  reconciled: boolean,
+): MemoryImportResult {
+  if (current.status !== "outcome_unknown") {
+    assertMemoryImportTransition(current, "outcome_unknown");
+  }
+  return {
+    schemaVersion: current.schemaVersion,
+    memoryImportResultId: current.memoryImportResultId,
+    memoryImportIntentId: current.memoryImportIntentId,
+    status: "outcome_unknown",
+    dispatchAttempts: current.dispatchAttempts,
+    reconcileAttempts: current.reconcileAttempts + (reconciled ? 1 : 0),
+    errorCode,
+    unknownSince: current.status === "outcome_unknown" ? current.unknownSince : now,
+    ...(reconciled ? { lastReconciledAt: now } : {}),
+    revision: current.revision + 1,
+    createdAt: current.createdAt,
+    updatedAt: now,
+  };
+}
+
+/**
+ * Runtime已证明某个Import Workflow终止，但产品结果仍未收敛时的恢复事务。
+ * queued说明尚未越过mark栅栏，可重新启动普通import；其余非终态只能转为
+ * outcome_unknown并创建reconcile，禁止再次执行普通add。
+ */
+export async function recoverMemoryImportAfterTerminalWorkflow(
+  deps: ApplicationDeps,
+  input: {
+    readonly commandId: CommandId;
+    readonly outboxId: OutboxEntryId;
+    readonly errorCode: string;
+  },
+): Promise<void> {
+  const now = deps.now();
+  const recoveryOutboxId = deps.ids.outbox();
+  let recoveredUnknown:
+    | {
+        intent: MemoryImportIntent;
+        result: MemoryImportResult;
+        sourceOutboxId: OutboxEntryId;
+      }
+    | undefined;
+  const transaction = await deps.store.transact({
+    commandId: input.commandId,
+    commandType: "RecoverMemoryImportAfterTerminalWorkflow",
+    requestSha256: hashCanonical("command.recover-memory-import-after-terminal-workflow.v1", input),
+    mutate: (draft) => {
+      const entry = draft.outbox[input.outboxId];
+      if (
+        entry === undefined ||
+        (entry.kind !== "memory_import_start" && entry.kind !== "memory_import_reconcile")
+      ) {
+        throw notFound("Memory Import Outbox不存在");
+      }
+      const intent = draft.entities.memoryImportIntents[entry.memoryImportIntentId];
+      const current = draft.entities.memoryImportResults[entry.memoryImportResultId];
+      if (
+        intent === undefined ||
+        current === undefined ||
+        current.memoryImportIntentId !== intent.memoryImportIntentId
+      ) {
+        throw revisionConflict("Memory Import Outbox绑定不完整");
+      }
+      if (entry.status !== "acknowledged") {
+        return {
+          resultRefs: {
+            outboxId: entry.outboxId,
+            memoryImportResultId: current.memoryImportResultId,
+            recoveryOutboxId: entry.outboxId,
+          },
+        };
+      }
+      if (current.status === "materialized" || current.status === "failed") {
+        return {
+          resultRefs: {
+            outboxId: entry.outboxId,
+            memoryImportResultId: current.memoryImportResultId,
+            recoveryOutboxId: entry.outboxId,
+          },
+        };
+      }
+
+      const nextResult =
+        current.status === "queued" || current.status === "outcome_unknown"
+          ? current
+          : toMemoryImportOutcomeUnknown(current, now, input.errorCode, false);
+      if (nextResult !== current) {
+        draft.entities.memoryImportResults[nextResult.memoryImportResultId] = nextResult;
+        recoveredUnknown = {
+          intent,
+          result: nextResult,
+          sourceOutboxId: entry.outboxId,
+        };
+      }
+      draft.outbox[entry.outboxId] = {
+        ...entry,
+        status: "failed_terminal",
+        lastErrorCode: input.errorCode,
+        revision: entry.revision + 1,
+        updatedAt: now,
+      };
+
+      const recoveryKind =
+        current.status === "queued" ? "memory_import_start" : "memory_import_reconcile";
+      const existingRecovery = Object.values(draft.outbox).find(
+        (candidate) =>
+          candidate.outboxId !== entry.outboxId &&
+          (candidate.kind === "memory_import_start" ||
+            candidate.kind === "memory_import_reconcile") &&
+          candidate.memoryImportResultId === current.memoryImportResultId &&
+          candidate.expectedResultRevision === nextResult.revision &&
+          ["pending", "dispatched", "acknowledged", "outcome_unknown"].includes(candidate.status),
+      );
+      if (existingRecovery === undefined) {
+        draft.outbox[recoveryOutboxId] = {
+          schemaVersion: "outbox-entry.v1",
+          outboxId: recoveryOutboxId,
+          kind: recoveryKind,
+          status: "pending",
+          memoryImportIntentId: intent.memoryImportIntentId,
+          memoryImportResultId: current.memoryImportResultId,
+          expectedResultRevision: nextResult.revision,
+          dispatchAttempts: 0,
+          revision: 1,
+          createdAt: now,
+          updatedAt: now,
+        };
+      }
+      return {
+        resultRefs: {
+          outboxId: entry.outboxId,
+          memoryImportResultId: current.memoryImportResultId,
+          recoveryOutboxId: existingRecovery?.outboxId ?? recoveryOutboxId,
+        },
+      };
+    },
+  });
+  if (!transaction.replayed && recoveredUnknown !== undefined) {
+    const { intent, result, sourceOutboxId } = recoveredUnknown;
+    emitMemoryImportEvent(deps, intent.memoryImportIntentId, {
+      level: "warn",
+      eventName: "memory.import.outcome_unknown",
+      outcome: "unknown",
+      memoryImportIntentId: intent.memoryImportIntentId,
+      memoryImportResultId: result.memoryImportResultId,
+      outboxId: sourceOutboxId,
+      operationId: intent.operationId,
+      backendId: intent.backendId,
+      requestSha256: intent.requestSha256,
+      intentRevision: intent.revision,
+      resultRevision: result.revision,
+      origin: "recovery",
+      attempt: Math.max(1, result.dispatchAttempts),
+      error: { code: input.errorCode, type: "WorkflowTerminalError" },
+      durationMs: 0,
+    });
+  }
 }
 
 export async function requestMemoryImportReconciliation(
@@ -647,7 +818,11 @@ export async function requestMemoryImportReconciliation(
           entry.kind === "memory_import_reconcile" &&
           entry.memoryImportIntentId === intent.memoryImportIntentId &&
           entry.expectedResultRevision === result.revision &&
-          entry.status !== "failed_terminal",
+          (entry.status === "pending" ||
+            entry.status === "dispatched" ||
+            entry.status === "outcome_unknown" ||
+            (entry.status === "acknowledged" &&
+              Date.parse(now) - Date.parse(entry.updatedAt) < 30_000)),
       );
       if (!pending) {
         draft.outbox[outboxId] = {

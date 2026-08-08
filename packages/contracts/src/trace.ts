@@ -593,7 +593,7 @@ const memoryImportOutcomeUnknownSchema = defineTraceEvent(
   "unknown",
   {
     ...memoryImportFields,
-    origin: z.enum(["dispatch", "reconcile"]),
+    origin: z.enum(["workflow_dispatch", "dispatch", "reconcile", "recovery"]),
     attempt: stepAttemptSchema,
     error: traceErrorSchema,
     ...durationMsRequired,
@@ -602,7 +602,7 @@ const memoryImportOutcomeUnknownSchema = defineTraceEvent(
 
 const memoryImportFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.memoryImportFailed, "failure", {
   ...memoryImportFields,
-  origin: z.enum(["dispatch", "reconcile"]),
+  origin: z.enum(["workflow_dispatch", "dispatch", "reconcile", "recovery"]),
   attempt: stepAttemptSchema,
   error: traceErrorSchema,
   ...durationMsRequired,

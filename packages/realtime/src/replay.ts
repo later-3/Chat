@@ -411,9 +411,9 @@ function checkSequentialPairs(
       continue;
     }
     if (!isTerminal(event)) continue;
-    if (terminalWithoutStart?.(event) === true) continue;
     const key = keyOf(event);
     const pending = open.get(key) ?? 0;
+    if (terminalWithoutStart?.(event) === true && pending === 0) continue;
     if (pending === 0) failures.add(`Trace缺口：${label}终态没有对应started（${key}）`);
     else open.set(key, pending - 1);
   }
@@ -1173,6 +1173,10 @@ function checkMemoryImportTimeline(
                 : 1,
           )}`
         : "invalid",
+    (event) =>
+      (event.eventName === "memory.import.outcome_unknown" ||
+        event.eventName === "memory.import.failed") &&
+      (event.origin === "workflow_dispatch" || event.origin === "recovery"),
   );
   checkSequentialPairs(
     failures,

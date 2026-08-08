@@ -320,6 +320,12 @@ export class RuntimeBindingStore {
       : "missing";
   }
 
+  getMemoryImportWorkflowBinding(outboxId: OutboxEntryId): MemoryImportWorkflowBinding | undefined {
+    this.assertAvailable();
+    const value = this.bindings.memoryImportWorkflows[outboxId];
+    return value === undefined ? undefined : structuredClone(value);
+  }
+
   /** Import每个Outbox只允许启动一个私有Workflow Run；对账使用新的Outbox身份。 */
   async claimMemoryImportStartIntent(input: {
     outboxId: OutboxEntryId;

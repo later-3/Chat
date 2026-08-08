@@ -71,13 +71,16 @@ export async function loadMemoryImportStep(input: {
 export async function markMemoryImportDispatchingStep(input: {
   memoryImportIntentId: string;
   memoryImportResultId: string;
+  requestSha256: string;
   expectedRevision: number;
 }): Promise<MemoryImportResult> {
   "use step";
   try {
     const response = await getWorkflowRuntimeContext().api.markMemoryImportDispatching({
       commandId: cmdId("memory-import-dispatching", input.memoryImportIntentId),
+      memoryImportIntentId: input.memoryImportIntentId,
       memoryImportResultId: input.memoryImportResultId,
+      requestSha256: input.requestSha256,
       expectedRevision: input.expectedRevision,
     });
     return response.result;
@@ -226,7 +229,9 @@ export async function commitMemoryImportAcceptedStep(input: {
   try {
     const response = await getWorkflowRuntimeContext().api.commitMemoryImportAccepted({
       commandId: cmdId("memory-import-accepted", input.intentId, String(input.result.revision)),
+      memoryImportIntentId: input.loaded.intent.memoryImportIntentId,
       memoryImportResultId: input.result.memoryImportResultId,
+      requestSha256: input.loaded.intent.requestSha256,
       expectedRevision: input.result.revision,
       accepted: input.accepted,
       ...(input.reconciled === true ? { reconciled: true } : {}),
@@ -261,7 +266,9 @@ export async function commitMemoryImportMaterializedStep(input: {
   try {
     const response = await getWorkflowRuntimeContext().api.commitMemoryImportMaterialized({
       commandId: cmdId("memory-import-materialized", input.intentId, String(input.result.revision)),
+      memoryImportIntentId: input.loaded.intent.memoryImportIntentId,
       memoryImportResultId: input.result.memoryImportResultId,
+      requestSha256: input.loaded.intent.requestSha256,
       expectedRevision: input.result.revision,
       accepted: input.accepted,
       verificationSha256: input.verificationSha256,
@@ -301,7 +308,9 @@ export async function commitMemoryImportFailedStep(input: {
         String(input.result.revision),
         input.errorCode,
       ),
+      memoryImportIntentId: input.loaded.intent.memoryImportIntentId,
       memoryImportResultId: input.result.memoryImportResultId,
+      requestSha256: input.loaded.intent.requestSha256,
       expectedRevision: input.result.revision,
       errorCode: input.errorCode,
       summary: input.summary,
@@ -343,7 +352,9 @@ export async function commitMemoryImportUnknownStep(input: {
         String(input.result.revision),
         input.errorCode,
       ),
+      memoryImportIntentId: input.loaded.intent.memoryImportIntentId,
       memoryImportResultId: input.result.memoryImportResultId,
+      requestSha256: input.loaded.intent.requestSha256,
       expectedRevision: input.result.revision,
       errorCode: input.errorCode,
       ...(input.reconciled === true ? { reconciled: true } : {}),

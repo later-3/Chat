@@ -121,6 +121,7 @@ export async function memoryImportWorkflow(
   const dispatching = await markMemoryImportDispatchingStep({
     memoryImportIntentId: input.memoryImportIntentId,
     memoryImportResultId: input.memoryImportResultId,
+    requestSha256: loaded.intent.requestSha256,
     expectedRevision: input.expectedResultRevision,
   });
   const call = await callMemoryImportStep({ loaded, dispatching });

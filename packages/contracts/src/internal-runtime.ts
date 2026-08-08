@@ -607,7 +607,9 @@ const memoryImportResultCommandBase = {
   ...versioned,
   workflowDefinitionVersion: z.literal(MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION),
   commandId: commandIdSchema,
+  memoryImportIntentId: memoryImportIntentIdSchema,
   memoryImportResultId: memoryImportResultIdSchema,
+  requestSha256: sha256Schema,
   expectedRevision: z.number().int().positive(),
 };
 
@@ -681,13 +683,26 @@ export const memoryImportWorkflowDispatchResponseSchema = z
   })
   .strict();
 
-export const memoryImportWorkflowReconcileResponseSchema = z
-  .object({
-    schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
-    outboxId: outboxEntryIdSchema,
-    startBinding: z.enum(["exists", "missing", "outcome_unknown"]),
-  })
-  .strict();
+const memoryImportWorkflowReconcileResponseBase = {
+  schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
+  outboxId: outboxEntryIdSchema,
+};
+
+export const memoryImportWorkflowReconcileResponseSchema = z.discriminatedUnion("startBinding", [
+  z
+    .object({
+      ...memoryImportWorkflowReconcileResponseBase,
+      startBinding: z.literal("exists"),
+      runStatus: z.enum(["active", "completed", "failed", "cancelled", "missing"]),
+    })
+    .strict(),
+  z
+    .object({
+      ...memoryImportWorkflowReconcileResponseBase,
+      startBinding: z.enum(["missing", "outcome_unknown"]),
+    })
+    .strict(),
+]);
 
 /* ---------- 类型 ---------- */
 

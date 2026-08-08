@@ -304,7 +304,9 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
     },
     markMemoryImportDispatching(input: {
       commandId: string;
+      memoryImportIntentId: string;
       memoryImportResultId: string;
+      requestSha256: string;
       expectedRevision: number;
     }) {
       return call(
@@ -320,7 +322,9 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
     },
     commitMemoryImportAccepted(input: {
       commandId: string;
+      memoryImportIntentId: string;
       memoryImportResultId: string;
+      requestSha256: string;
       expectedRevision: number;
       accepted: {
         externalObjectId: string;
@@ -343,7 +347,9 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
     },
     commitMemoryImportMaterialized(input: {
       commandId: string;
+      memoryImportIntentId: string;
       memoryImportResultId: string;
+      requestSha256: string;
       expectedRevision: number;
       accepted: {
         externalObjectId: string;
@@ -367,7 +373,9 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
     },
     commitMemoryImportFailed(input: {
       commandId: string;
+      memoryImportIntentId: string;
       memoryImportResultId: string;
+      requestSha256: string;
       expectedRevision: number;
       errorCode: string;
       summary: string;
@@ -386,7 +394,9 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
     },
     commitMemoryImportOutcomeUnknown(input: {
       commandId: string;
+      memoryImportIntentId: string;
       memoryImportResultId: string;
+      requestSha256: string;
       expectedRevision: number;
       errorCode: string;
       reconciled?: boolean;

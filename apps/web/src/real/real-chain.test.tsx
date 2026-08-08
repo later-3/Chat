@@ -6,12 +6,14 @@ import type {
   ApprovalDto,
   MessageDto,
   MemoryBackendProfileDto,
+  MemoryImportDto,
   PlanDto,
   RunContextDto,
   RunDto,
   SessionDto,
   SubmitDecisionPayload,
   SubmitMessagePayload,
+  CreateMemoryImportPayload,
 } from "@chat/contracts/public";
 import { RealWorkspace } from "../components/RealWorkspace.js";
 import { useRealChain } from "./use-real-chain.js";
@@ -40,10 +42,14 @@ interface FakeState {
   runContext: RunContextDto | null;
   submitCalls: { payload: SubmitMessagePayload; commandId: string }[];
   decisionCalls: { payload: SubmitDecisionPayload; commandId: string }[];
+  memoryImports: MemoryImportDto[];
+  memoryImportCalls: { payload: CreateMemoryImportPayload; commandId: string }[];
+  memoryImportQueryCalls: number;
   failNextSession: boolean;
   failNextSend: boolean;
   failNextDecision: boolean;
   disconnectNextDecision: boolean;
+  disconnectNextMemoryImport: boolean;
 }
 
 function makePlan(revision: number, sha: string, status: PlanDto["status"]): PlanDto {
@@ -107,6 +113,13 @@ function installFakeApi(initial?: Partial<FakeState>) {
           layers: ["L1", "L2", "L3", "Skill"],
           maxLimit: 20,
           maxContextBudget: 8_192,
+          import: {
+            mode: "explicit_fact",
+            layers: ["L2"],
+            title: true,
+            tags: true,
+            maxContentChars: 50_000,
+          },
         },
       },
     ],
@@ -114,10 +127,14 @@ function installFakeApi(initial?: Partial<FakeState>) {
     sessionCommandIds: [],
     submitCalls: [],
     decisionCalls: [],
+    memoryImports: [],
+    memoryImportCalls: [],
+    memoryImportQueryCalls: 0,
     failNextSession: false,
     failNextSend: false,
     failNextDecision: false,
     disconnectNextDecision: false,
+    disconnectNextMemoryImport: false,
     ...initial,
   };
 
@@ -141,6 +158,45 @@ function installFakeApi(initial?: Partial<FakeState>) {
     }
     if (url === "/api/memory-backends" && method === "GET") {
       return json({ backends: state.memoryBackends });
+    }
+    if (url.endsWith("/memory-imports") && method === "GET") {
+      state.memoryImportQueryCalls += 1;
+      return json({ memoryImports: state.memoryImports });
+    }
+    if (url === "/api/memory-imports" && method === "POST") {
+      const body = JSON.parse(String(init?.body)) as {
+        commandId: string;
+        payload: CreateMemoryImportPayload;
+      };
+      state.memoryImportCalls.push({ commandId: body.commandId, payload: body.payload });
+      const existing = state.memoryImports[0];
+      const memoryImport: MemoryImportDto =
+        existing ??
+        ({
+          schemaVersion: "chat-product-api.v1",
+          memoryImportIntentId: "mii_fakeimport1" as never,
+          memoryImportResultId: "mir_fakeimport1" as never,
+          sessionId: state.session.sessionId,
+          sourceMessageId: body.payload.sourceSelection.sourceMessageId,
+          selectionKind: body.payload.sourceSelection.kind,
+          sourcePreview: "需要导入的正式事实",
+          backendId: body.payload.backendId,
+          backendDisplayName: "memmy",
+          memoryLayer: "L2",
+          title: body.payload.title,
+          tags: body.payload.tags,
+          status: "queued",
+          resultRevision: 1,
+          allowedActions: [],
+          createdAt: "2026-08-08T00:00:00.000Z",
+          updatedAt: "2026-08-08T00:00:00.000Z",
+        } satisfies MemoryImportDto);
+      if (existing === undefined) state.memoryImports.push(memoryImport);
+      if (state.disconnectNextMemoryImport) {
+        state.disconnectNextMemoryImport = false;
+        throw new TypeError("connection lost after memory import commit");
+      }
+      return json({ memoryImport }, 201);
     }
     if (url.endsWith("/messages") && method === "POST") {
       const body = JSON.parse(String(init?.body)) as {
@@ -605,6 +661,86 @@ describe("M3真实前端闭环", () => {
     await user.click(screen.getByRole("button", { name: "用同一决定重试" }));
     await waitFor(() => expect(state.decisionCalls).toHaveLength(2));
     expect(state.decisionCalls[1]?.commandId).toBe(firstCommandId);
+  }, 30_000);
+
+  it("Memory Import响应丢失后刷新仍保留同一commandId供手动重试", async () => {
+    const state = installFakeApi();
+    const formalMessage: MessageDto = {
+      schemaVersion: "chat-product-api.v1",
+      messageId: "msg_memorypending1" as never,
+      sessionId: state.session.sessionId,
+      sessionSequence: 1,
+      role: "user",
+      content: { format: "markdown", text: "需要导入的正式事实" },
+      sha256: "d".repeat(64) as never,
+      createdAt: "2026-08-08T00:00:00.000Z",
+    };
+    state.messages.push(formalMessage);
+    state.disconnectNextMemoryImport = true;
+    window.localStorage.setItem(
+      "chat:real-session:v1",
+      JSON.stringify({
+        version: 1,
+        sessionId: state.session.sessionId,
+        bootstrapCommandId: "cmd_bootstrap_memory",
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderReal();
+    await user.click(await screen.findByRole("button", { name: "导入记忆" }));
+    await user.click(screen.getByRole("button", { name: "确认导入" }));
+    await waitFor(() => expect(state.memoryImportCalls).toHaveLength(1));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("结果未知"));
+    const firstCommandId = state.memoryImportCalls[0]?.commandId;
+
+    cleanup();
+    renderReal();
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("结果未知"));
+    await user.click(screen.getByRole("button", { name: "用同一命令重试" }));
+    await waitFor(() => expect(state.memoryImportCalls).toHaveLength(2));
+    expect(state.memoryImportCalls[1]?.commandId).toBe(firstCommandId);
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  }, 30_000);
+
+  it("accepted状态只做3次有界自动验证轮询，不无限请求", async () => {
+    const state = installFakeApi({
+      memoryImports: [
+        {
+          schemaVersion: "chat-product-api.v1",
+          memoryImportIntentId: "mii_acceptedpoll1" as never,
+          memoryImportResultId: "mir_acceptedpoll1" as never,
+          sessionId: "psn_fake1" as never,
+          sourceMessageId: "msg_acceptedpoll1" as never,
+          selectionKind: "full_message",
+          sourcePreview: "已接收事实",
+          backendId: "mbk_memmy" as never,
+          backendDisplayName: "memmy",
+          memoryLayer: "L2",
+          title: "有界轮询",
+          tags: [],
+          status: "accepted",
+          externalObjectId: "memory-accepted-poll-1",
+          resultRevision: 3,
+          allowedActions: ["reconcile"],
+          createdAt: "2026-08-08T00:00:00.000Z",
+          updatedAt: "2026-08-08T00:00:00.000Z",
+        },
+      ],
+    });
+    window.localStorage.setItem(
+      "chat:real-session:v1",
+      JSON.stringify({
+        version: 1,
+        sessionId: state.session.sessionId,
+        bootstrapCommandId: "cmd_bootstrap_polling",
+      }),
+    );
+    renderReal();
+    await waitFor(() => expect(state.memoryImportQueryCalls).toBe(4), { timeout: 2_000 });
+    const settledCount = state.memoryImportQueryCalls;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 150));
+    expect(state.memoryImportQueryCalls).toBe(settledCount);
   }, 30_000);
 
   it("Session创建响应未知后刷新仍复用同一个bootstrap commandId", async () => {

@@ -85,8 +85,13 @@ export function resolveMemoryImportContent(input: {
     }
   }
 
-  if (content.trim().length === 0) {
-    throw new MemoryImportInvariantError("memory.import.selection_empty", "不能导入空白内容");
+  // `trim()`不会移除NUL、方向控制符等Unicode控制字符；这类内容对用户不可读，
+  // 也会在memmy协议规范化时发生变化，因此必须在进入Intent之前失败关闭。
+  if (!/[^\p{C}\s]/u.test(content)) {
+    throw new MemoryImportInvariantError(
+      "memory.import.selection_empty",
+      "不能导入空白或仅含控制字符的内容",
+    );
   }
   if (content.length > input.maxContentChars) {
     throw new MemoryImportInvariantError(

@@ -260,8 +260,8 @@ test("正式消息选区 -> 真实memmy -> 重启恢复 -> 新会话真实规划
     timeout: 2 * 60_000,
   });
   const imported = (await sessionImports(page, sourceSessionId))[0];
-  expect(imported).toMatchObject({ status: "materialized", selectionKind: "utf16_range" });
-  if (imported === undefined) throw new Error("导入完成后缺少MemoryImport产品事实");
+  if (imported?.status !== "materialized") throw new Error("导入完成后缺少materialized产品事实");
+  expect(imported).toMatchObject({ selectionKind: "utf16_range" });
 
   // 真正重启两个后端进程，再由页面从服务端重建同一Import与待审核Plan。
   await expect(page.getByLabel("计划第1版")).toBeVisible({ timeout: 5 * 60_000 });
@@ -340,6 +340,19 @@ test("正式消息选区 -> 真实memmy -> 重启恢复 -> 新会话真实规划
   await expect(assistant).toContainText("周四 22:30");
   await expect(assistant).toContainText(/风险/u);
   await expect(assistant).toContainText(/回滚/u);
+
+  if (!/^[A-Za-z0-9_-]+$/u.test(imported.externalObjectId)) {
+    throw new Error("真实memmy external ID包含不安全字符，拒绝拼接SQLite只读断言");
+  }
+  const externalCount = execFileSync(
+    "/usr/bin/sqlite3",
+    [
+      resolve(dataRoot, "memmy/memory.sqlite"),
+      `SELECT COUNT(*) FROM memories WHERE id='${imported.externalObjectId}';`,
+    ],
+    { encoding: "utf8" },
+  ).trim();
+  expect(externalCount).toBe("1");
 
   const importReplay = replay("import", imported.memoryImportIntentId, canary);
   expect(importReplay["result"]).toMatchObject({ status: "materialized" });

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   apiCreateSession,
   apiGetCurrentApproval,
@@ -19,18 +19,22 @@ import {
   clearBootstrapCommand,
   clearActiveRunId,
   clearPendingDecision,
+  clearPendingMemoryImport,
   clearPendingSend,
   readActiveRunId,
   readBootstrapCommand,
   readPendingDecision,
+  readPendingMemoryImport,
   readPendingSend,
   readStoredSession,
   writeActiveRunId,
   writeBootstrapCommand,
   writePendingDecision,
+  writePendingMemoryImport,
   writePendingSend,
   writeStoredSession,
   type PendingDecision,
+  type PendingMemoryImport,
   type PendingSend,
   pendingSendPayload,
 } from "./real-storage.js";
@@ -61,6 +65,7 @@ import type {
  */
 
 const ACTIVE_RUN_REFETCH_MS = 1_500;
+const ACCEPTED_IMPORT_MAX_POLLS = 3;
 const TERMINAL_STATUSES = new Set(["succeeded", "failed", "cancelled", "outcome_unknown"]);
 
 function newCommandId(): CommandId {
@@ -105,6 +110,7 @@ export interface RealChainState {
   readonly clearDecisionError: () => void;
   readonly clearStaleActiveRun: () => void;
   readonly importMemory: (payload: CreateMemoryImportPayload) => void;
+  readonly pendingMemoryImport: PendingMemoryImport | null;
   readonly retryPendingMemoryImport: () => void;
   readonly importingMemory: boolean;
   readonly memoryImportError: ApiProblemError | null;
@@ -137,11 +143,18 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
   const [decisionError, setDecisionError] = useState<ApiProblemError | null>(() =>
     pendingDecision === null ? null : recoveredPendingError(),
   );
-  const [pendingMemoryImport, setPendingMemoryImport] = useState<{
-    commandId: CommandId;
-    payload: CreateMemoryImportPayload;
+  const [pendingMemoryImport, setPendingMemoryImport] = useState<PendingMemoryImport | null>(() => {
+    const stored = readStoredSession(storage);
+    return stored === null ? null : readPendingMemoryImport(storage, stored.sessionId);
+  });
+  const [memoryImportError, setMemoryImportError] = useState<ApiProblemError | null>(() =>
+    pendingMemoryImport === null ? null : recoveredPendingError(),
+  );
+  const acceptedImportPolls = useRef<{
+    signature: string;
+    dataUpdatedAt: number;
+    count: number;
   } | null>(null);
-  const [memoryImportError, setMemoryImportError] = useState<ApiProblemError | null>(null);
 
   // 首次使用：无本地Session定位时，用稳定bootstrapCommandId幂等创建真实Session
   const bootstrap = useQuery({
@@ -198,10 +211,32 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     enabled: sessionId !== null,
     queryFn: () => apiGetSessionMemoryImports(sessionId ?? ""),
     refetchInterval: (query) => {
-      const active = query.state.data?.some((item) =>
-        ["queued", "dispatching", "accepted"].includes(item.status),
-      );
-      return active === true ? refetchMs : false;
+      const imports = query.state.data ?? [];
+      if (imports.some((item) => ["queued", "dispatching"].includes(item.status))) {
+        return refetchMs;
+      }
+      const accepted = imports.filter((item) => item.status === "accepted");
+      if (accepted.length === 0) {
+        acceptedImportPolls.current = null;
+        return false;
+      }
+      const signature = accepted
+        .map((item) => `${item.memoryImportIntentId}:${item.updatedAt}`)
+        .sort()
+        .join("|");
+      const previous = acceptedImportPolls.current;
+      const nextCount =
+        previous === null || previous.signature !== signature
+          ? 1
+          : previous.dataUpdatedAt === query.state.dataUpdatedAt
+            ? previous.count
+            : previous.count + 1;
+      acceptedImportPolls.current = {
+        signature,
+        dataUpdatedAt: query.state.dataUpdatedAt,
+        count: nextCount,
+      };
+      return nextCount <= ACCEPTED_IMPORT_MAX_POLLS ? refetchMs : false;
     },
     refetchIntervalInBackground: false,
   });
@@ -350,12 +385,18 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
   const memoryImportMutation = useMutation({
     mutationFn: apiCreateMemoryImport,
     onSuccess: () => {
+      if (sessionId !== null) clearPendingMemoryImport(storage, sessionId);
       setPendingMemoryImport(null);
       setMemoryImportError(null);
       void queryClient.invalidateQueries({ queryKey: ["memory-imports", sessionId] });
     },
     onError: (error) => {
-      setMemoryImportError(error instanceof ApiProblemError ? error : null);
+      const problem = error instanceof ApiProblemError ? error : null;
+      if (problem?.recoveryAction !== "retry_same_command") {
+        if (sessionId !== null) clearPendingMemoryImport(storage, sessionId);
+        setPendingMemoryImport(null);
+      }
+      setMemoryImportError(problem);
     },
   });
 
@@ -367,6 +408,7 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
         expectedResultRevision: memoryImport.resultRevision,
       }),
     onSuccess: () => {
+      acceptedImportPolls.current = null;
       setMemoryImportError(null);
       void queryClient.invalidateQueries({ queryKey: ["memory-imports", sessionId] });
     },
@@ -440,12 +482,15 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
         setDecisionError(null);
       },
       importMemory: (payload) => {
-        if (memoryImportMutation.isPending || pendingMemoryImport !== null) return;
-        const pending = { commandId: newCommandId(), payload };
+        if (sessionId === null || memoryImportMutation.isPending || pendingMemoryImport !== null)
+          return;
+        const pending: PendingMemoryImport = { version: 1, commandId: newCommandId(), payload };
+        writePendingMemoryImport(storage, sessionId, pending);
         setPendingMemoryImport(pending);
         setMemoryImportError(null);
         memoryImportMutation.mutate(pending);
       },
+      pendingMemoryImport,
       retryPendingMemoryImport: () => {
         if (pendingMemoryImport === null || memoryImportMutation.isPending) return;
         setMemoryImportError(null);

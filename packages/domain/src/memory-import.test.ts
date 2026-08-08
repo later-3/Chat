@@ -72,6 +72,23 @@ describe("Memory Import领域规则", () => {
     ).toThrow("选区内容已变化");
   });
 
+  it("拒绝空白和仅含Unicode控制字符的权威正文", () => {
+    for (const text of [" \n\t", "\u0000\u0007", "\u200b\u2060"]) {
+      const controlMessage = { ...message, content: { format: "markdown" as const, text } };
+      expect(() =>
+        resolveMemoryImportContent({
+          message: controlMessage,
+          selection: {
+            kind: "full_message",
+            sourceMessageId: controlMessage.messageId,
+            sourceMessageSha256: computeMessageSha256(controlMessage),
+          },
+          maxContentChars: 100,
+        }),
+      ).toThrow("不能导入空白或仅含控制字符的内容");
+    }
+  });
+
   it("标签规范化为去重、小写、稳定排序", () => {
     expect(normalizeMemoryImportTags([" Release ", "project", "release"])).toEqual([
       "project",

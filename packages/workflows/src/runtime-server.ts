@@ -123,6 +123,8 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
         if (!(await run.exists)) {
           throw new Error("Memory Import Binding引用的Workflow Run不存在，拒绝恢复");
         }
+        const status = String(await run.status);
+        if (["completed", "failed", "cancelled"].includes(status)) continue;
         if (
           binding.workflowDefinitionVersion !== MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION ||
           !buildEvidence.workflowDefinitionVersions.includes(binding.workflowDefinitionVersion)
@@ -381,15 +383,33 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
   });
 
   const memoryImportReconcileQuerySchema = z.object({ outboxId: z.string().min(1) }).strict();
-  app.get("/internal/workflow/v1/memory-import/reconcile", (c) => {
+  app.get("/internal/workflow/v1/memory-import/reconcile", async (c) => {
     const query = memoryImportReconcileQuerySchema.safeParse(c.req.query());
     if (!query.success) {
       return c.json({ code: "validation_failed", title: "请求不符合合同" }, 400);
     }
+    const outboxId = query.data.outboxId as never;
+    const startBinding = bindings.getMemoryImportStartState(outboxId);
+    if (startBinding !== "exists") {
+      return c.json({
+        schemaVersion: "chat-workflow-dispatch.v1",
+        outboxId: query.data.outboxId,
+        startBinding,
+      });
+    }
+    const binding = bindings.getMemoryImportWorkflowBinding(outboxId);
+    const run = binding === undefined ? undefined : getRun(binding.workflowRunId);
+    const status = run === undefined || !(await run.exists) ? "missing" : String(await run.status);
+    const runStatus = ["completed", "failed", "cancelled"].includes(status)
+      ? status
+      : status === "missing"
+        ? "missing"
+        : "active";
     return c.json({
       schemaVersion: "chat-workflow-dispatch.v1",
       outboxId: query.data.outboxId,
-      startBinding: bindings.getMemoryImportStartState(query.data.outboxId as never),
+      startBinding,
+      runStatus,
     });
   });
 

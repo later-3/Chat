@@ -15,8 +15,10 @@ import {
   commitRunOutcomeUnknown,
   commitMemoryImportFailed,
   commitMemoryImportOutcomeUnknown,
+  emitMemoryImportEvent,
   emitRunEvent,
   failOutboxAndRun,
+  recoverMemoryImportAfterTerminalWorkflow,
   updateOutboxStatus,
   type ApplicationDeps,
 } from "@chat/application";
@@ -49,6 +51,8 @@ type MemoryImportEntry = Extract<
   { kind: "memory_import_start" | "memory_import_reconcile" }
 >;
 const OUTCOME_UNKNOWN_SETTLE_MS = 30_000;
+const ACKNOWLEDGED_IMPORT_SUPERVISE_MS = 1_000;
+const MAX_AUTOMATIC_IMPORT_RECOVERIES = 3;
 
 function dispatchCommandId(...parts: string[]): CommandId {
   return `cmd_${sha256Hex(parts.join(":")).slice(0, 32)}` as CommandId;
@@ -255,19 +259,45 @@ async function failImportDispatch(
   snapshot: Snapshot,
   entry: MemoryImportEntry,
   errorCode: string,
+  origin: "workflow_dispatch" | "recovery" = "workflow_dispatch",
 ): Promise<void> {
   const result = importResult(snapshot, entry);
-  if (result !== undefined && result.status !== "failed" && result.status !== "materialized") {
-    await commitMemoryImportFailed(options.deps, {
+  const intent = snapshot.entities.memoryImportIntents[entry.memoryImportIntentId];
+  if (
+    result !== undefined &&
+    intent !== undefined &&
+    result.status !== "failed" &&
+    result.status !== "materialized"
+  ) {
+    const failed = await commitMemoryImportFailed(options.deps, {
       commandId: dispatchCommandId(
         "fail-memory-import-dispatch",
         entry.outboxId,
         String(result.revision),
       ),
+      memoryImportIntentId: intent.memoryImportIntentId,
       memoryImportResultId: result.memoryImportResultId,
+      requestSha256: intent.requestSha256,
       expectedRevision: result.revision,
       errorCode,
       summary: "Memory导入工作流无法安全启动",
+    });
+    emitMemoryImportEvent(options.deps, intent.memoryImportIntentId, {
+      level: "warn",
+      eventName: "memory.import.failed",
+      outcome: "failure",
+      memoryImportIntentId: intent.memoryImportIntentId,
+      memoryImportResultId: failed.memoryImportResultId,
+      outboxId: entry.outboxId,
+      operationId: intent.operationId,
+      backendId: intent.backendId,
+      requestSha256: intent.requestSha256,
+      intentRevision: intent.revision,
+      resultRevision: failed.revision,
+      origin,
+      attempt: Math.max(1, entry.dispatchAttempts),
+      error: { code: errorCode, type: "WorkflowDispatchError" },
+      durationMs: 0,
     });
   }
   await markStatus(options, entry, "failed_terminal", errorCode, true);
@@ -285,7 +315,9 @@ async function dispatchMemoryImport(
   }
   if (
     (entry.kind === "memory_import_start" && resultBefore.status !== "queued") ||
-    (entry.kind === "memory_import_reconcile" && resultBefore.status !== "outcome_unknown")
+    (entry.kind === "memory_import_reconcile" &&
+      (!["dispatching", "accepted", "outcome_unknown"].includes(resultBefore.status) ||
+        resultBefore.revision !== entry.expectedResultRevision))
   ) {
     await markStatus(options, entry, "acknowledged");
     return;
@@ -352,12 +384,32 @@ async function settleImportDispatchUnknown(
     return;
   }
   const result = importResult(snapshot, entry);
-  if (result?.status === "queued") {
-    await commitMemoryImportOutcomeUnknown(options.deps, {
+  const intent = snapshot.entities.memoryImportIntents[entry.memoryImportIntentId];
+  if (result?.status === "queued" && intent !== undefined) {
+    const settled = await commitMemoryImportOutcomeUnknown(options.deps, {
       commandId: dispatchCommandId("settle-memory-import-dispatch", entry.outboxId),
+      memoryImportIntentId: intent.memoryImportIntentId,
       memoryImportResultId: result.memoryImportResultId,
+      requestSha256: intent.requestSha256,
       expectedRevision: result.revision,
       errorCode: "memory.import.workflow_dispatch_unknown",
+    });
+    emitMemoryImportEvent(options.deps, intent.memoryImportIntentId, {
+      level: "warn",
+      eventName: "memory.import.outcome_unknown",
+      outcome: "unknown",
+      memoryImportIntentId: intent.memoryImportIntentId,
+      memoryImportResultId: settled.memoryImportResultId,
+      outboxId: entry.outboxId,
+      operationId: intent.operationId,
+      backendId: intent.backendId,
+      requestSha256: intent.requestSha256,
+      intentRevision: intent.revision,
+      resultRevision: settled.revision,
+      origin: "workflow_dispatch",
+      attempt: Math.max(1, entry.dispatchAttempts),
+      error: { code: "memory.import.workflow_dispatch_unknown", type: "WorkflowDispatchError" },
+      durationMs: OUTCOME_UNKNOWN_SETTLE_MS,
     });
   }
   await markStatus(options, entry, "failed_terminal", "memory.import.workflow_dispatch_unknown");
@@ -403,6 +455,83 @@ async function reconcileImportUnknown(
   } else {
     await settleImportDispatchUnknown(options, snapshot, entry);
   }
+}
+
+async function superviseAcknowledgedImport(
+  options: OutboxDispatcherOptions,
+  snapshot: Snapshot,
+  entry: MemoryImportEntry,
+): Promise<void> {
+  const result = importResult(snapshot, entry);
+  if (
+    result === undefined ||
+    result.status === "materialized" ||
+    result.status === "failed" ||
+    Date.parse(options.deps.now()) - Date.parse(entry.updatedAt) < ACKNOWLEDGED_IMPORT_SUPERVISE_MS
+  ) {
+    return;
+  }
+  if (
+    (result.status === "accepted" || result.status === "outcome_unknown") &&
+    result.reconcileAttempts >= MAX_AUTOMATIC_IMPORT_RECOVERIES
+  ) {
+    return;
+  }
+  let response: Response;
+  try {
+    response = await fetch(
+      `${options.workflowRuntimeBaseUrl}/internal/workflow/v1/memory-import/reconcile?${new URLSearchParams({ outboxId: entry.outboxId }).toString()}`,
+      {
+        headers: { "x-chat-runtime-key": options.credential },
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+  } catch {
+    return;
+  }
+  if (!response.ok) return;
+  const parsed = memoryImportWorkflowReconcileResponseSchema.safeParse(
+    await response.json().catch(() => undefined),
+  );
+  if (!parsed.success) return;
+  if (parsed.data.startBinding !== "exists") {
+    if (
+      parsed.data.startBinding !== "missing" ||
+      Date.parse(options.deps.now()) - Date.parse(entry.updatedAt) < OUTCOME_UNKNOWN_SETTLE_MS
+    ) {
+      return;
+    }
+  } else if (parsed.data.runStatus === "active") {
+    return;
+  }
+  if (result.status === "queued") {
+    const attemptedStarts = Object.values(snapshot.outbox).filter(
+      (candidate) =>
+        candidate.kind === "memory_import_start" &&
+        candidate.memoryImportIntentId === entry.memoryImportIntentId &&
+        (candidate.status === "failed_terminal" || candidate.outboxId === entry.outboxId),
+    ).length;
+    if (attemptedStarts >= MAX_AUTOMATIC_IMPORT_RECOVERIES) {
+      await failImportDispatch(
+        options,
+        snapshot,
+        entry,
+        "memory.import.workflow_retry_exhausted",
+        "recovery",
+      );
+      return;
+    }
+  }
+  await recoverMemoryImportAfterTerminalWorkflow(options.deps, {
+    commandId: dispatchCommandId(
+      "recover-terminal-memory-import-workflow",
+      entry.outboxId,
+      String(entry.revision),
+      String(result.revision),
+    ),
+    outboxId: entry.outboxId,
+    errorCode: "memory.import.workflow_terminal_without_commit",
+  });
 }
 
 /** outcome_unknown对账：先查Runtime绑定是否已存在，再决定重派或确认，不盲目新建。 */
@@ -524,6 +653,16 @@ export class OutboxDispatcher {
         } else {
           await reconcileImportUnknown(this.options, snapshot, entry);
         }
+      }
+      const acknowledgedImports = Object.values(snapshot.outbox)
+        .filter(
+          (entry): entry is MemoryImportEntry =>
+            entry.status === "acknowledged" &&
+            (entry.kind === "memory_import_start" || entry.kind === "memory_import_reconcile"),
+        )
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      for (const entry of acknowledgedImports) {
+        await superviseAcknowledgedImport(this.options, snapshot, entry);
       }
     } finally {
       this.running = false;

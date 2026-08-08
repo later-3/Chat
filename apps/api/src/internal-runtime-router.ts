@@ -353,7 +353,13 @@ export function createInternalRuntimeRouter(
     "/memory-import/mark-dispatching",
     handle(200, async (c) => {
       const request = markMemoryImportDispatchingRequestSchema.parse(await parseInternalBody(c));
-      const result = await markMemoryImportDispatching(options.deps, request);
+      const result = await markMemoryImportDispatching(options.deps, {
+        commandId: request.commandId,
+        memoryImportIntentId: request.memoryImportIntentId,
+        memoryImportResultId: request.memoryImportResultId,
+        requestSha256: request.requestSha256,
+        expectedRevision: request.expectedRevision,
+      });
       return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, result };
     }),
   );
@@ -364,7 +370,9 @@ export function createInternalRuntimeRouter(
       const request = commitMemoryImportAcceptedRequestSchema.parse(await parseInternalBody(c));
       const result = await commitMemoryImportAccepted(options.deps, {
         commandId: request.commandId,
+        memoryImportIntentId: request.memoryImportIntentId,
         memoryImportResultId: request.memoryImportResultId,
+        requestSha256: request.requestSha256,
         expectedRevision: request.expectedRevision,
         ...(request.reconciled !== undefined ? { reconciled: request.reconciled } : {}),
         accepted: {
@@ -388,7 +396,9 @@ export function createInternalRuntimeRouter(
       const request = commitMemoryImportMaterializedRequestSchema.parse(await parseInternalBody(c));
       const result = await commitMemoryImportMaterialized(options.deps, {
         commandId: request.commandId,
+        memoryImportIntentId: request.memoryImportIntentId,
         memoryImportResultId: request.memoryImportResultId,
+        requestSha256: request.requestSha256,
         expectedRevision: request.expectedRevision,
         verificationSha256: request.verificationSha256,
         ...(request.reconciled !== undefined ? { reconciled: request.reconciled } : {}),
@@ -413,7 +423,9 @@ export function createInternalRuntimeRouter(
       const request = commitMemoryImportFailedRequestSchema.parse(await parseInternalBody(c));
       const result = await commitMemoryImportFailed(options.deps, {
         commandId: request.commandId,
+        memoryImportIntentId: request.memoryImportIntentId,
         memoryImportResultId: request.memoryImportResultId,
+        requestSha256: request.requestSha256,
         expectedRevision: request.expectedRevision,
         errorCode: request.errorCode,
         summary: request.summary,
@@ -431,7 +443,9 @@ export function createInternalRuntimeRouter(
       );
       const result = await commitMemoryImportOutcomeUnknown(options.deps, {
         commandId: request.commandId,
+        memoryImportIntentId: request.memoryImportIntentId,
         memoryImportResultId: request.memoryImportResultId,
+        requestSha256: request.requestSha256,
         expectedRevision: request.expectedRevision,
         errorCode: request.errorCode,
         ...(request.reconciled !== undefined ? { reconciled: request.reconciled } : {}),

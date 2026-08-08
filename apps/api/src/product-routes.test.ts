@@ -428,17 +428,36 @@ describe("公开产品API", () => {
     expect(JSON.stringify(listedBody)).not.toContain("configurationFingerprint");
 
     const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+    const intent = snapshot.entities.memoryImportIntents[first.memoryImportIntentId];
+    if (intent === undefined) throw new Error("缺少Memory Import Intent");
     expect(Object.keys(snapshot.entities.memoryImportIntents)).toHaveLength(1);
     expect(Object.keys(snapshot.entities.memoryImportResults)).toHaveLength(1);
     expect(
       Object.values(snapshot.outbox).filter((entry) => entry.kind === "memory_import_start"),
     ).toHaveLength(1);
 
+    const wrongIdentity = await postInternal(
+      app,
+      "/internal/runtime/v1/memory-import/mark-dispatching",
+      {
+        schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+        workflowDefinitionVersion: MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
+        commandId: nextCmd(),
+        memoryImportIntentId: "mii_wrongidentity1",
+        memoryImportResultId: first.memoryImportResultId,
+        requestSha256: intent.requestSha256,
+        expectedRevision: 1,
+      },
+    );
+    expect(wrongIdentity.status).toBe(409);
+
     const mark = await postInternal(app, "/internal/runtime/v1/memory-import/mark-dispatching", {
       schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
       workflowDefinitionVersion: MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
       commandId: nextCmd(),
+      memoryImportIntentId: first.memoryImportIntentId,
       memoryImportResultId: first.memoryImportResultId,
+      requestSha256: intent.requestSha256,
       expectedRevision: 1,
     });
     const dispatching = memoryImportResultResponseSchema.parse(await mark.json()).result;
@@ -451,7 +470,9 @@ describe("公开产品API", () => {
         schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
         workflowDefinitionVersion: MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
         commandId: nextCmd(),
+        memoryImportIntentId: first.memoryImportIntentId,
         memoryImportResultId: first.memoryImportResultId,
+        requestSha256: intent.requestSha256,
         expectedRevision: dispatching.revision,
         accepted: {
           externalObjectId: "memory-api-1",
@@ -465,6 +486,27 @@ describe("公开产品API", () => {
     ).result;
     expect(acceptedResult).toMatchObject({ status: "accepted", revision: 3 });
     expect("dispatchStartedAt" in acceptedResult).toBe(false);
+
+    const overwriteAcceptedIdentity = await postInternal(
+      app,
+      "/internal/runtime/v1/memory-import/commit-materialized",
+      {
+        schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+        workflowDefinitionVersion: MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
+        commandId: nextCmd(),
+        memoryImportIntentId: first.memoryImportIntentId,
+        memoryImportResultId: first.memoryImportResultId,
+        requestSha256: intent.requestSha256,
+        expectedRevision: acceptedResult.revision,
+        accepted: {
+          externalObjectId: "memory-api-overwrite",
+          externalStatus: "activated",
+          responseSha256: "b".repeat(64),
+        },
+        verificationSha256: "c".repeat(64),
+      },
+    );
+    expect(overwriteAcceptedIdentity.status).toBe(409);
 
     const firstReconcile = await postJson(
       app,
@@ -511,7 +553,9 @@ describe("公开产品API", () => {
         schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
         workflowDefinitionVersion: MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
         commandId: nextCmd(),
+        memoryImportIntentId: first.memoryImportIntentId,
         memoryImportResultId: first.memoryImportResultId,
+        requestSha256: intent.requestSha256,
         expectedRevision: acceptedResult.revision,
         accepted: {
           externalObjectId: "memory-api-1",

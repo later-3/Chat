@@ -1363,6 +1363,11 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
     CommitMemoryImportFailed: ["memoryImportResultId"],
     CommitMemoryImportOutcomeUnknown: ["memoryImportResultId"],
     RequestMemoryImportReconciliation: ["memoryImportIntentId", "memoryImportResultId"],
+    RecoverMemoryImportAfterTerminalWorkflow: [
+      "outboxId",
+      "memoryImportResultId",
+      "recoveryOutboxId",
+    ],
   };
   for (const receipt of receipts) {
     if (
@@ -1414,13 +1419,15 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
                                     ? entities.memoryImportIntents[value] !== undefined
                                     : key === "memoryImportResultId"
                                       ? entities.memoryImportResults[value] !== undefined
-                                      : key === "messageSha256"
-                                        ? /^[a-f0-9]{64}$/.test(value)
-                                        : key === "approvalExpired"
-                                          ? value === "true"
-                                          : key === "status"
-                                            ? value === "expired" || value === "already_decided"
-                                            : false;
+                                      : key === "outboxId" || key === "recoveryOutboxId"
+                                        ? snapshot.outbox[value] !== undefined
+                                        : key === "messageSha256"
+                                          ? /^[a-f0-9]{64}$/.test(value)
+                                          : key === "approvalExpired"
+                                            ? value === "true"
+                                            : key === "status"
+                                              ? value === "expired" || value === "already_decided"
+                                              : false;
       if (!exists) fail(`receipt ${receipt.commandId} 的${key}引用无效`);
     }
     if (receipt.commandType === "SubmitUserMessage") {

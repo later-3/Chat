@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 |---|---|
-| 状态 | 用户已批准；生产代码开发中 |
+| 状态 | 用户已批准；纵向代码、自审、确定性门与真实memmy门完成，待clean提交复跑最终百炼浏览器门 |
 | 基线 | `main` @ `8acafb5638ea3cf4e3c7afaec9350419c12c9156`（M1 已合并） |
 | 主要结果 | 用户从正式会话消息导入一条事实记忆到真实 memmy，并在新会话中让真实 `qwen3.7-plus` 规划采用它 |
 | 交付方式 | 用户批准本任务书后，创建 1 个独立 worktree、1 个 `codex/` 分支、1 个 Draft PR；不拆等待型子 PR |
@@ -881,3 +881,11 @@ Message正文
 6. 任何 fetch 后不确定错误进入 outcome_unknown，只有原生幂等对账可以再次触达 add。
 7. Product Store 由 v2 升级到 v3，Project/Rules 后续版本顺延。
 8. 真实完成门包含响应丢失、外部对象数为 1、新会话真实查询和真实模型采用。
+
+## 26. 执行证据（合入前更新）
+
+1. 固定memmy commit/tree保持`211d521b310fc23c63dd3d9ca848941173981c5e` / `c4b1e78046f10011dc28b0408fb1bb3b61a5c3a1`。
+2. `pnpm test:memory:memmy-real-import`已证明真实add、同身份同正文幂等、同身份异文冲突、GET+Search物化和SQLite唯一对象。
+3. `pnpm test:memory:memmy-response-drop`已升级为完整Chat门：Product Store → Outbox → Workflow → 真实memmy 200落库后断响应 → `outcome_unknown` → 同身份reconcile → `materialized`；Replay零缺口、Trace无正文、SQLite对象数为1。
+4. build、lint、format、typecheck、484项确定性测试和`pnpm audit --prod`已通过；生产依赖已知漏洞为0。
+5. 最终百炼E2E首次预检因工作树非clean而在Provider调用前正确失败关闭；形成当前里程碑提交后再运行一次，不把旧提交证据冒充当前代码证据。
