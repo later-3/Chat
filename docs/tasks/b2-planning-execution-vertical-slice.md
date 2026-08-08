@@ -884,6 +884,6 @@ PR 只有在以下条件全部满足后才可请求最终审核：
 | M1 | 合同、领域、JSON Store、Query/Command完成 | 原子提交、幂等/CAS、Plan/Decision不变量、损坏与fsync/rename失败关闭 |
 | M2 | 真实Vercel Workflow定义、Hook、Runtime Binding、pi Adapter、百炼配置、Product Commit完成 | 真实Workflow Local World + 确定性pi闭环；Provider替身仅用于非付费控制流测试 |
 | M3 | 默认真实前端、Plan修改/批准/拒绝、轮询恢复、375px完成 | React合同测试与10项PWA/移动端Playwright回归 |
-| M4 | Trace/Replay、版本证据、结果未知栅栏、错误/安全加固完成 | 全仓确定性测试、架构测试、Replay严格校验、公开响应秘密扫描 |
+| M4 | Trace/Replay、版本证据、结果未知栅栏、错误/安全加固完成 | 440项确定性测试、架构测试、Replay严格校验、公开响应秘密扫描 |
 
-真实门保持失败关闭：本worktree没有读取或输出私有Key；缺少`DASHSCOPE_API_KEY`时`test:provider:bailian`与真实浏览器E2E明确失败，不Skip、不切换假Provider。用户随后明确授权先合入已通过确定性门的代码、再由其配置Key进行实际验收；这只改变合入时机，不改变§22的B2产品完成定义。合入代码不等于声称真实付费验收已通过。
+M1真实门已从clean提交`fa2a1e7`通过：脚本通过用户已批准的pi Key reader仅在父进程内存中取得百炼凭据，固定memmy第三方进程不继承Provider密钥。`pnpm test:e2e:memory-planning:real`完成无Memory对照、真实查询、Plan v1/v2、批准、5个Executor Step、Product Commit、手机刷新恢复与Replay；共8次真实`qwen3.7-plus`调用，全部HTTP成功且没有额外付费重试。缺少凭据时真实门仍失败关闭，不Skip、不切换假Provider。
