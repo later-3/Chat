@@ -33,9 +33,9 @@ Product Session、Product Run、Workflow Run、Workflow Checkpoint、pi Runtime 
 
 ## 当前仓库状态
 
-P0工程与合同骨架已经完成并合并。仓库现在包含pnpm TypeScript Workspace、共享合同、React/Hono空应用、架构依赖测试、CI和版本证据；业务Schema、Product Store、Workflow/pi Adapter与第一条纵向链尚未实现。
+P0工程骨架、响应式PWA、固定端口调试与严格Trace、版本化JSON Product Store、真实Vercel Workflow、pi Planner/Executor、百炼`qwen3.7-plus`、Plan人工修订/批准和Product Commit已经合入。第一条真实规划—确认—执行纵向链可从浏览器完成并在刷新后恢复。
 
-当前阶段是P1第一次可用的Chat闭环：可安装PWA、发送一条消息、看见后台进度、得到正式回复，并在页面刷新或短暂断线后恢复。P1已拆成8个独立任务；当前先审核[P1.1响应式Chat与工作流界面任务书](./docs/tasks/p1.1-responsive-chat-workflow-shell.md)，随后再进入纯前端实现。
+当前进入长期上下文与知识复用阶段：真实接入多个Memory项目、把BMAD方法转化为Chat拥有的项目上下文能力、实现带标签并可主动选择的用户规则集。当前事实和下一步入口见[项目状态](./PROJECT_STATE.md)与[跨Session续接](./docs/project-session-handoff.md)。
 
 ## 文档入口
 
@@ -48,4 +48,7 @@ P0工程与合同骨架已经完成并合并。仓库现在包含pnpm TypeScript
 7. [状态与运行时边界](./docs/architecture/system-boundaries.md)
 8. [工程规范](./docs/engineering-standards.md)
 9. [P1.1响应式Chat与工作流界面任务书](./docs/tasks/p1.1-responsive-chat-workflow-shell.md)
-10. [跨 Session 续接入口](./docs/project-session-handoff.md)
+10. [P1.2可安装PWA、离线草稿与移动端发布任务书](./docs/tasks/p1.2-installable-pwa-offline-boundary.md)
+11. [单Workflow任务规划与执行设计](./docs/architecture/planning-execution-workflow.md)
+12. [B2真实规划—确认—执行纵向闭环任务书](./docs/tasks/b2-planning-execution-vertical-slice.md)
+13. [跨 Session 续接入口](./docs/project-session-handoff.md)
