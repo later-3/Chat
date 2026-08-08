@@ -133,13 +133,43 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
       errorCode: "memory.import.test_unknown",
     }),
   };
+  const tencentBackend = {
+    describe: () => ({
+      backendId: "mbk_tencentmemorycore" as never,
+      displayName: "Tencent MemoryCore",
+      kind: "tencent_memorycore" as const,
+      adapterContractVersion: "tencent-memorycore-http-query.v1" as const,
+      authMode: "bearer" as const,
+      credentialRevision: "api-test-memorycore-key-1",
+      configurationFingerprint: "e".repeat(64),
+      configured: true,
+      capabilities: {
+        query: true as const,
+        tags: false as const,
+        layers: ["L1"] as const,
+        maxLimit: 20,
+        maxContextBudget: 8192,
+      },
+    }),
+    health: async () => ({ status: "ready" as const }),
+    query: async () => ({
+      externalQueryId: "memorycore-search-test-1",
+      hitCount: 0,
+      tokenEstimate: 0,
+      sections: [],
+    }),
+  };
   const deps: ApplicationDeps = {
     store,
     now,
     ids: idFactory,
     memoryBackends: {
-      list: () => [backend],
-      get: (backendId) => (backendId === "mbk_memmy" ? backend : undefined),
+      list: () => [backend, tencentBackend],
+      get: (backendId) => {
+        if (backendId === "mbk_memmy") return backend;
+        if (backendId === "mbk_tencentmemorycore") return tencentBackend;
+        return undefined;
+      },
     },
     memoryImportBackends: {
       list: () => [backend],
@@ -610,6 +640,11 @@ describe("公开产品API", () => {
       .object({ backends: z.array(memoryBackendProfileDtoSchema) })
       .parse(await backendsResponse.json());
     expect(backendBody.backends[0]?.backendId).toBe("mbk_memmy");
+    expect(backendBody.backends[1]).toMatchObject({
+      backendId: "mbk_tencentmemorycore",
+      kind: "tencent_memorycore",
+      capabilities: { tags: false, layers: ["L1"] },
+    });
     expect(JSON.stringify(backendBody)).not.toContain("baseUrl");
     expect(JSON.stringify(backendBody)).not.toContain("token");
     expect(JSON.stringify(backendBody)).not.toContain("authMode");

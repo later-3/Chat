@@ -82,7 +82,7 @@ test("真实MemoryCore：浏览器选择、qwen规划采用、L0导入与accepte
   await page.getByRole("checkbox", { name: /使用 Memory 上下文/u }).check();
   await expect(page.getByLabel("Memory 后端")).toHaveValue("mbk_tencentmemorycore");
   await page.getByLabel("Memory 失败策略").selectOption("required");
-  await expect(page.getByLabel("Memory 标签")).toHaveCount(0);
+  await expect(page.getByLabel("Memory 标签")).toHaveCount(0, { timeout: 5_000 });
   const layers = page.getByRole("group", { name: "层级" });
   await expect(layers.getByRole("checkbox", { name: "L1" })).toBeChecked();
   await expect(layers.getByRole("checkbox")).toHaveCount(1);
@@ -105,8 +105,8 @@ test("真实MemoryCore：浏览器选择、qwen规划采用、L0导入与accepte
   await expect(dialog.getByText("会话捕获（L0）")).toBeVisible();
   await expect(dialog.getByText("先保存原始事实，再由 MemoryCore 异步提炼")).toBeVisible();
   await expect(dialog.getByLabel("Memory 服务")).toHaveValue("mbk_tencentmemorycore");
-  await expect(dialog.getByText("标题")).toHaveCount(0);
-  await expect(dialog.getByText("标签")).toHaveCount(0);
+  await expect(dialog.getByText("标题")).toHaveCount(0, { timeout: 5_000 });
+  await expect(dialog.getByText("标签")).toHaveCount(0, { timeout: 5_000 });
   await page.getByRole("button", { name: "确认导入" }).click();
   await expect(userMessage.getByRole("status")).toHaveText("已接收，等待异步提炼", {
     timeout: 60_000,
