@@ -9,6 +9,9 @@ import {
   requestIdSchema,
   runAttemptIdSchema,
   workflowDefinitionIdSchema,
+  contextRequestIdSchema,
+  memoryBackendIdSchema,
+  memoryQueryIdSchema,
 } from "./ids.js";
 
 /**
@@ -53,6 +56,12 @@ export const TRACE_EVENT_NAMES = {
   productTransactionFailed: "product.transaction.failed",
   productRunCreated: "product_run.created",
   productRunTransitioned: "product_run.transitioned",
+  contextAssemblyStarted: "context.assembly.started",
+  contextAssemblyCompleted: "context.assembly.completed",
+  contextAssemblyFailed: "context.assembly.failed",
+  memoryQueryStarted: "memory.query.started",
+  memoryQueryCompleted: "memory.query.completed",
+  memoryQueryFailed: "memory.query.failed",
   workflowStartRequested: "workflow.start.requested",
   workflowStartStarted: "workflow.start.started",
   workflowStartFailed: "workflow.start.failed",
@@ -172,7 +181,7 @@ export const planRefSchema = versionedObjectRef("plan");
 export const decisionRefSchema = versionedObjectRef("decision");
 export const executionContractRefSchema = immutableObjectRef("execution_contract");
 export const executionCandidateRefSchema = immutableObjectRef("execution_candidate");
-export const contextPackageRefSchema = immutableObjectRef("context_package");
+export const contextPackageRefSchema = versionedObjectRef("context_package");
 export const artifactRefSchema = immutableObjectRef("artifact");
 
 /** 通用对象引用：类型判别联合，每种类型的revision/Hash语义固定。 */
@@ -425,6 +434,96 @@ const productRunTransitionedSchema = defineTraceEvent(
   },
 );
 
+// 长期上下文：只记录选择、数量、Hash和耗时，禁止 query、标签值和 Memory 正文。
+const contextScopedFields = {
+  ...runScopedFields,
+  contextRequestId: contextRequestIdSchema,
+};
+
+const contextAssemblyStartedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.contextAssemblyStarted,
+  "unknown",
+  {
+    ...contextScopedFields,
+    memoryRequested: z.boolean(),
+    ...durationMsOptional,
+  },
+);
+
+const contextAssemblyCompletedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.contextAssemblyCompleted,
+  "success",
+  {
+    ...contextScopedFields,
+    status: z.enum(["none", "ready", "optional_failed"]),
+    memoryRequested: z.boolean(),
+    adoptedCount: z.number().int().nonnegative().max(10_000),
+    excludedCount: z.number().int().nonnegative().max(10_000),
+    contextPackageRef: contextPackageRefSchema.optional(),
+    ...durationMsRequired,
+  },
+).superRefine((event, context) => {
+  const hasRef = event.contextPackageRef !== undefined;
+  const valid =
+    event.status === "none"
+      ? !event.memoryRequested && !hasRef && event.adoptedCount === 0 && event.excludedCount === 0
+      : event.status === "ready"
+        ? event.memoryRequested && hasRef && event.excludedCount === 0
+        : event.memoryRequested && hasRef && event.adoptedCount === 0 && event.excludedCount === 1;
+  if (!valid) {
+    context.addIssue({
+      code: "custom",
+      message: "Context完成状态、数量与ContextPackage引用不一致",
+    });
+  }
+});
+
+const contextAssemblyFailedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.contextAssemblyFailed,
+  "failure",
+  {
+    ...contextScopedFields,
+    memoryRequested: z.literal(true),
+    error: traceErrorSchema,
+    ...durationMsRequired,
+  },
+);
+
+const memoryQueryFields = {
+  ...contextScopedFields,
+  memoryQueryId: memoryQueryIdSchema,
+  backendId: memoryBackendIdSchema,
+  requirement: z.enum(["required", "optional"]),
+  sourceMessageSha256: sha256Schema,
+  tagCount: z.number().int().nonnegative().max(20),
+  layerCount: z.number().int().positive().max(4),
+  requestedLimit: z.number().int().positive().max(20),
+  contextBudget: z.number().int().positive().max(8_192),
+};
+
+const memoryQueryStartedSchema = defineTraceEvent(TRACE_EVENT_NAMES.memoryQueryStarted, "unknown", {
+  ...memoryQueryFields,
+  ...durationMsOptional,
+});
+
+const memoryQueryCompletedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.memoryQueryCompleted,
+  "success",
+  {
+    ...memoryQueryFields,
+    hitCount: z.number().int().nonnegative().max(10_000),
+    adoptedCount: z.number().int().nonnegative().max(10_000),
+    resultSetSha256: sha256Schema,
+    ...durationMsRequired,
+  },
+);
+
+const memoryQueryFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.memoryQueryFailed, "failure", {
+  ...memoryQueryFields,
+  error: traceErrorSchema,
+  ...durationMsRequired,
+});
+
 // Workflow事件族：Run + Attempt + Definition版本；runMappingRef为后端私有映射引用，不是Hook Token。
 const workflowStartRequestedSchema = defineTraceEvent(
   TRACE_EVENT_NAMES.workflowStartRequested,
@@ -664,6 +763,36 @@ const providerRequestFailedSchema = defineTraceEvent(
 
 // pi节点：Run + Attempt + Prompt模板 + 模型配置版本。
 const piNodeKindSchema = z.enum(["planner", "executor"]);
+const candidateValidationDiagnosticsSchema = z
+  .object({
+    stage: z.enum(["tool_argument_schema", "candidate_contract", "capability_policy"]),
+    fields: z.array(z.enum(["root", "stepId", "output"])).max(3),
+    issueCodes: z
+      .array(
+        z.enum([
+          "unknown_tool",
+          "invalid_type",
+          "too_small",
+          "too_big",
+          "unrecognized_keys",
+          "value_mismatch",
+          "stepId.missing",
+          "stepId.null",
+          "stepId.array",
+          "stepId.string",
+          "stepId.object",
+          "stepId.other",
+          "output.missing",
+          "output.null",
+          "output.array",
+          "output.string",
+          "output.object",
+          "output.other",
+        ]),
+      )
+      .max(12),
+  })
+  .strict();
 
 const piNodeStartedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piNodeStarted, "unknown", {
   ...modelScopedFields,
@@ -682,6 +811,7 @@ const piNodeFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piNodeFailed, "fai
   ...modelScopedFields,
   nodeKind: piNodeKindSchema,
   error: traceErrorSchema,
+  candidateValidation: candidateValidationDiagnosticsSchema.optional(),
   ...durationMsOptional,
 });
 
@@ -762,6 +892,12 @@ export const traceEventSchema = z.discriminatedUnion("eventName", [
   productTransactionFailedSchema,
   productRunCreatedSchema,
   productRunTransitionedSchema,
+  contextAssemblyStartedSchema,
+  contextAssemblyCompletedSchema,
+  contextAssemblyFailedSchema,
+  memoryQueryStartedSchema,
+  memoryQueryCompletedSchema,
+  memoryQueryFailedSchema,
   workflowStartRequestedSchema,
   workflowStartStartedSchema,
   workflowStartFailedSchema,

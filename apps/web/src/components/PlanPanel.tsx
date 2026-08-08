@@ -35,6 +35,72 @@ function decisionProblemText(error: ApiProblemError): string {
   }
 }
 
+function memoryFailureText(code: string | undefined): string {
+  switch (code) {
+    case "memory.backend.not_configured":
+    case "memory.backend.config_invalid":
+      return "后端未配置";
+    case "memory.backend.timeout":
+      return "查询超时";
+    case "memory.backend.rate_limited":
+      return "请求过于频繁";
+    case "memory.backend.unauthorized":
+    case "memory.backend.forbidden":
+      return "后端认证失败";
+    case "memory.backend.contract_invalid":
+      return "返回内容不符合合同";
+    case "memory.response.over_budget":
+      return "返回内容超过本轮预算";
+    case "memory.backend.unavailable":
+      return "后端暂时不可用";
+    default:
+      return code ?? "查询失败";
+  }
+}
+
+function ContextSummary({ chain }: { chain: RealChainState }) {
+  const context = chain.runContext.data;
+  if (chain.runContext.isError) {
+    return (
+      <p className="context-summary" data-tone="danger" role="status">
+        上下文来源读取失败
+      </p>
+    );
+  }
+  if (context?.memory === undefined) return null;
+  const backend = chain.memoryBackends.data?.find(
+    (candidate) => candidate.backendId === context.memory?.backendId,
+  );
+  const backendName = backend?.kind ?? "memmy";
+  if (context.memory.queryStatus === "failed") {
+    return (
+      <p className="context-summary" data-tone="warning" role="status">
+        {backendName}{" "}
+        {context.memory.requirement === "optional" ? "可选上下文未采用" : "上下文失败"}：
+        {memoryFailureText(context.memory.errorCode)}
+      </p>
+    );
+  }
+  if (context.memory.queryStatus === "pending") {
+    return (
+      <p className="context-summary" data-tone="warning" role="status">
+        正在查询 {backendName} 上下文
+      </p>
+    );
+  }
+  const adoptedCount = context.contextPackage?.sources.length ?? context.memory.adoptedCount ?? 0;
+  return (
+    <div className="context-summary" data-tone="success" role="status">
+      <strong>
+        使用 {backendName} {adoptedCount} 条
+      </strong>
+      {context.contextPackage !== undefined && context.contextPackage.sources.length > 0 && (
+        <span>{context.contextPackage.sources.map((source) => source.title).join("、")}</span>
+      )}
+    </div>
+  );
+}
+
 function PlanCard({ plan, current }: { plan: PlanDto; current: boolean }) {
   return (
     <article
@@ -259,6 +325,7 @@ export function PlanPanel({
 
   return (
     <div className="plan-panel">
+      <ContextSummary chain={chain} />
       {plans.length === 0 && run.status !== "succeeded" && (
         <p className="loading-note">系统正在工作中，计划形成后会出现在这里。</p>
       )}

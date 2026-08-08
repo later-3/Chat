@@ -5,8 +5,11 @@ import {
   type PlanningExecutionWorkflowInput,
 } from "./workflow-input.js";
 import {
+  beginPlanningContextStep,
   compilePlanningInputStep,
+  persistPlanningContextResultStep,
   publishPlanReviewStep,
+  queryMemoryContextStep,
   runPiPlannerStep,
 } from "./workflow-planning-steps.js";
 import {
@@ -88,10 +91,55 @@ export async function planningExecutionWorkflow(
 
   const { productRunId, attemptId } = input;
   try {
+    let preparedContext;
+    try {
+      // 3个耐久节点都在修订循环外：Plan v2+复用同一不可变包，不再查询Memory。
+      const begun = await beginPlanningContextStep({ productRunId, attemptId });
+      if (begun.status === "dispatch_required") {
+        const result = await queryMemoryContextStep({ attemptId, query: begun.query });
+        preparedContext = await persistPlanningContextResultStep({
+          productRunId,
+          attemptId,
+          memoryQueryId: begun.query.memoryQueryId,
+          result,
+        });
+      } else {
+        preparedContext = begun;
+      }
+    } catch (error) {
+      const failure = failureSummary(error);
+      await commitRunFailureStep({
+        productRunId,
+        attemptId,
+        errorCode: failure.code,
+        summary: failure.summary,
+      });
+      return { outcome: "failed", productRunId, errorCode: failure.code };
+    }
+    if (preparedContext.status === "required_failed") {
+      const errorCode = "memory_context_required_failed";
+      await commitRunFailureStep({
+        productRunId,
+        attemptId,
+        errorCode,
+        summary: "必需Memory上下文不可用，后台工作已安全停止",
+      });
+      return { outcome: "failed", productRunId, errorCode };
+    }
+    const contextPackageRef =
+      preparedContext.status === "ready" || preparedContext.status === "optional_failed"
+        ? preparedContext.contextPackageRef
+        : undefined;
+
     for (let planRevision = 1; planRevision <= input.maxPlanRevisions; planRevision += 1) {
       let planningInput;
       try {
-        planningInput = await compilePlanningInputStep({ productRunId, attemptId, planRevision });
+        planningInput = await compilePlanningInputStep({
+          productRunId,
+          attemptId,
+          planRevision,
+          ...(contextPackageRef !== undefined ? { contextPackageRef } : {}),
+        });
       } catch (error) {
         const failure = failureSummary(error);
         await commitRunFailureStep({
@@ -256,7 +304,6 @@ export async function planningExecutionWorkflow(
             productRunId,
             attemptId,
             executionContractId: contract.executionContractId,
-            approvedPlanSha256: contract.approvedPlanSha256,
             stepId: planStep.stepId,
             dependencyRefs: dependencyResults.map((dependency) => ({
               stepId: dependency.stepId,
@@ -272,6 +319,7 @@ export async function planningExecutionWorkflow(
             stepId: planStep.stepId,
             executionAttemptId: begun.attemptId,
             inputManifestSha256: begun.inputManifestSha256,
+            contextItems: begun.contextItems,
             dependencyResults,
           });
           await completeRunAttemptStep({

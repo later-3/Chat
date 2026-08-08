@@ -21,6 +21,7 @@ import {
 } from "@chat/contracts";
 import type { ApplicationDeps, IdFactory, ProductStorePort } from "@chat/application";
 import { JsonProductStore } from "@chat/product-store-json";
+import { createMemoryBackendRegistry } from "@chat/memory-runtime";
 
 /**
  * API组合根。
@@ -84,6 +85,7 @@ export async function createApplicationDeps(
     store,
     now: () => new Date().toISOString(),
     ids: createIdFactory(),
+    memoryBackends: createMemoryBackendRegistry(process.env),
     ...(trace !== undefined ? { trace } : {}),
   };
 }

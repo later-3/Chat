@@ -11,10 +11,12 @@ import {
 } from "@chat/contracts";
 import { planningExecutionWorkflowInputSchema } from "./workflow-input.js";
 import { loadBailianConfig, runPiExecutor, runPiPlanner } from "@chat/pi-runtime";
+import { createMemoryBackendRegistry } from "@chat/memory-runtime";
 import { createRuntimeApiClient } from "./api-client.js";
 import { RuntimeBindingStore } from "./runtime-bindings.js";
 import {
   setWorkflowRuntimeContext,
+  type WorkflowRuntimeContext,
   workflowRunTraceId,
   workflowSpanId,
 } from "./runtime-context.js";
@@ -44,6 +46,14 @@ export interface WorkflowRuntimeServerOptions {
   readonly apiBaseUrl: string;
   readonly credential: string;
   readonly traceSink?: { emit: (event: TraceEventInput) => void };
+  /**
+   * 确定性集成测试只替换付费/外部边界；API Client、Binding Store、bundle、
+   * Hook 与Local World仍由本组合根真实装配。覆盖必须在world.start()前生效，
+   * 否则recoverActiveRuns可能先用生产配置执行恢复后的第一个Step。
+   */
+  readonly runtimeOverrides?: Partial<
+    Pick<WorkflowRuntimeContext, "memoryBackends" | "bailian" | "planner" | "executor" | "now">
+  >;
 }
 
 export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServerOptions) {
@@ -73,11 +83,13 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
   setWorkflowRuntimeContext({
     api: createRuntimeApiClient({ baseUrl: options.apiBaseUrl, credential: options.credential }),
     bindings,
+    memoryBackends: createMemoryBackendRegistry(process.env),
     trace,
     now: () => new Date().toISOString(),
     bailian: loadBailianConfig(process.env),
     planner: runPiPlanner,
     executor: runPiExecutor,
+    ...options.runtimeOverrides,
   });
 
   const world = await setupWorkflowWorld({

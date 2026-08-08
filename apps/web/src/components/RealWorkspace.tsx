@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { MessageDto, PlanDto, RunDto } from "@chat/contracts/public";
+import type { MessageDto, PlanDto, RunDto, SubmitMessagePayload } from "@chat/contracts/public";
 import { ApiProblemError } from "../api/client.js";
 import { readDraft, writeDraft } from "../drafts/draft-store.js";
+import { pendingSendPayload } from "../real/real-storage.js";
 import type { RealChainState } from "../real/use-real-chain.js";
 import { PlanPanel } from "./PlanPanel.js";
+import { ContextPicker } from "./ContextPicker.js";
 
 /**
  * 真实规划—确认—执行工作区（M3最小真实前端闭环）。
@@ -67,11 +69,21 @@ function RealChatPane({
   onOpenWork: () => void;
 }) {
   const [draft, setDraft] = useState(() => readDraft(window.localStorage, sessionId));
+  const [context, setContext] = useState<SubmitMessagePayload["context"]>(() =>
+    chain.pendingSend === null ? undefined : pendingSendPayload(chain.pendingSend).context,
+  );
+  const [contextEditorOpen, setContextEditorOpen] = useState(false);
   const [awaitingOutcome, setAwaitingOutcome] = useState(false);
   const listRef = useRef<HTMLOListElement>(null);
   const messages: readonly MessageDto[] = chain.messages.data?.items ?? [];
   const sending = chain.sending;
   const canSend = connected && draft.trim().length > 0 && !sending && chain.canStartNewRun;
+  const frozenPendingContext =
+    chain.pendingSend === null ? undefined : pendingSendPayload(chain.pendingSend).context;
+
+  useEffect(() => {
+    if (frozenPendingContext !== undefined) setContext(frozenPendingContext);
+  }, [frozenPendingContext]);
 
   useEffect(() => {
     if (listRef.current !== null) {
@@ -89,6 +101,9 @@ function RealChatPane({
     if (chain.pendingSend === null && !chain.sending) {
       setAwaitingOutcome(false);
       setDraft("");
+      // Context 是“本轮”输入，提交成功后不应静默影响下一轮；
+      // 当前 Run 已冻结的来源仍由工作区中的 PlanPanel 展示。
+      setContext(undefined);
       writeDraft(window.localStorage, sessionId, "");
     }
   }, [awaitingOutcome, chain.pendingSend, chain.sendError, chain.sending, sessionId]);
@@ -100,8 +115,9 @@ function RealChatPane({
 
   function send() {
     if (!canSend) return;
+    setContextEditorOpen(false);
     setAwaitingOutcome(true);
-    chain.sendMessage(draft.trim());
+    chain.sendMessage(draft.trim(), context);
   }
 
   function retrySend() {
@@ -151,6 +167,15 @@ function RealChatPane({
           <div className="model-fixed-label" aria-label="当前模型">
             百炼 Qwen3.7 Plus
           </div>
+          <ContextPicker
+            backends={chain.memoryBackends.data ?? []}
+            loading={chain.memoryBackends.isPending}
+            disabled={sending || chain.pendingSend !== null || !chain.canStartNewRun}
+            value={frozenPendingContext ?? context}
+            onChange={setContext}
+            expanded={contextEditorOpen}
+            onExpandedChange={setContextEditorOpen}
+          />
           <div className="composer-row">
             <textarea
               className="composer-input"
@@ -158,6 +183,7 @@ function RealChatPane({
               placeholder="描述你要推进的事…"
               rows={2}
               value={draft}
+              onFocus={() => setContextEditorOpen(false)}
               onChange={(event) => updateDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {

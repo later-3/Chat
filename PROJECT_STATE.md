@@ -7,16 +7,16 @@
 | 项目 | 当前事实 |
 |---|---|
 | 产品身份 | 独立、完整、持续运营的Chat产品 |
-| 主分支 | `main`；远端与本地已同步到PR #7合并提交`06d1177` |
+| 主分支 | `main`仍为PR #7合并提交`06d1177`；M1候选在`codex/m1-memmy-planning-context` @ `fa2a1e7`等待PR审核 |
 | 前端 | React + TypeScript + Vite；响应式PWA；最小Plan审核与运行投影已接真实后端 |
 | 后端 | Node.js + TypeScript；Hono协议入口；Application拥有事务 |
-| Product Store | `chat-product-store.v1`版本化JSON快照；单实例、单写者、原子替换、损坏失败关闭 |
+| Product Store | M1候选升级为`chat-product-store.v2`；保留v1迁移、单实例单写者、原子替换与损坏失败关闭 |
 | Workflow | 唯一`PlanningExecutionWorkflow`；规划、Hook等待、修订循环、批准、执行、验证、Product Commit在同一运行中完成 |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent`；百炼真实`qwen3.7-plus`已验证 |
 | 调试与回放 | 固定端口VS Code Compound；严格脱敏Trace；Trace + Product Store多源Replay |
-| 代码状态 | P0、P1.1、P1.2、B1和B2均已合入`main` |
+| 代码状态 | P0、P1.1、P1.2、B1和B2已合入`main`；M1真实Memory规划上下文纵向链已完成、待PR审核 |
 | 当前阶段 | 长期上下文与知识复用：Memory、BMAD项目上下文、用户规则集 |
-| 当前任务 | 收口旧会话并复核真实参考项目，形成有依赖关系的小任务书后逐项实现 |
+| 当前任务 | 审核M1；通过后继续Memory导入与第二真实后端，再进入BMAD项目上下文和用户规则集 |
 
 ## 2. B2已完成的真实证据
 
@@ -27,7 +27,15 @@
 5. `format`、`lint`、`typecheck`、326项测试、`build`和生产依赖审计全部通过；PR #7的6个CI检查全部通过。
 6. 已知非阻断现象：Workflow SDK 4.8按官方`Promise.race`实现Hook与超时时，会在胜出后报告两个未提交sleep operation警告；本次运行、Store、Trace和Replay均正确，后续升级SDK或修改等待策略时重新验证。
 
-## 3. 已冻结决定
+## 3. M1待审分支的真实证据
+
+1. 固定使用memmy提交`211d521b310f`，独立SQLite写入2条可区分L2，真实标签查询只采用1条；第三方构建与服务进程使用密钥隔离环境。
+2. `pnpm test:e2e:memory-planning:real`从clean提交`fa2a1e7`通过1/1：无Memory对照、390px选择、真实查询、Plan v1→修订→v2、同一冻结ContextPackage、批准、5个真实Executor Step、Validation、Product Commit、刷新恢复和Replay全部通过。
+3. 本次真实运行共8次百炼`qwen3.7-plus`调用，Trace为8次`provider.request.completed`、0次Provider失败、8个pi节点完成；Trace不含Memory/消息/Provider正文。
+4. Executor工具已收敛为`stepId + output`，Chat从Approved Step与实际输出确定性投影Markdown section及证据引用；Provider成功但候选非法按`provider.request.completed + pi.node.failed`统计。
+5. 全仓build/lint/format/typecheck、440项确定性测试、生产依赖审计、memmy脚本6/6及PWA/移动端Playwright 10/10通过；7个固定端口在真实门结束后全部释放。
+
+## 4. 已冻结决定
 
 1. Product Store是产品事实源；外部Memory服务、Workflow Store、pi Session、Trace和浏览器缓存不能替代产品事实。
 2. 浏览器不直接调用Vercel Workflow、pi或外部Memory服务，也不持有Hook Token、Workflow Run ID和pi Session ID。
@@ -38,15 +46,15 @@
 7. 实现任务使用独立Git worktree、`codex/`分支和PR；简单任务不扩大验证，纵向里程碑必须运行真实服务、真实模型和浏览器E2E。
 8. 弱服务器只接收开发机或CI构建、测试、校验后的可追溯产物，不在服务器安装依赖、编译或运行测试。
 
-## 4. 当前没有的能力
+## 5. 当前没有的能力
 
-1. 没有Memory Adapter注册与配置、真实Memory查询/导入节点，也没有Memory来源与采用记录。
+1. M1候选已有真实memmy查询、Registry、来源快照、采用记录和规划节点；尚无Memory导入节点、第二真实后端Adapter与生产服务部署配置。
 2. 没有长期Project/Work/Stage/Status、项目文档清单和版本化Context Package实现。
 3. 没有带标签、场景范围、修订和选择证据的用户规则集，也没有规划节点规则注入。
 4. 没有Chat有序SSE Cursor Runtime Journal；B2仍使用受控Query轮询。
 5. 没有外部副作用Tool、多实例数据库、备份恢复和生产后端部署拓扑。
 
-## 5. 下一阶段的三个用户结果
+## 6. 下一阶段的三个用户结果
 
 1. **Memory**：用户能够选择或配置真实Memory后端；Workflow按需查询记忆，或把经过明确选择的信息导入指定后端，并保留来源、后端、请求和结果证据。
 2. **项目上下文**：用户用Chat推进项目时，可以恢复当前阶段、状态、目标、决定、阻塞、文档与下一步；结构受BMAD真实方法启发，但允许按项目类型裁剪。
@@ -54,7 +62,7 @@
 
 详细任务数量、依赖、合同和完成门必须在复核本地参考项目与既有分析后写入任务书，审核前不假装已冻结。
 
-## 6. 安全与开发边界
+## 7. 安全与开发边界
 
 1. 不提交API Key、Memory服务Token、本地数据库、运行Trace、缓存、构建产物或`.env`。
 2. 不把外部Memory记录直接当成Chat长期事实；召回结果先成为有来源的上下文候选，导入动作必须有明确目标与幂等语义。

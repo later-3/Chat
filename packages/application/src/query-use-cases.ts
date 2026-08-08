@@ -7,6 +7,9 @@ import type {
   ProductRunId,
   ProductSessionId,
   RunDto,
+  MemoryBackendProfileDto,
+  MemoryQuery,
+  RunContextDto,
   SessionDto,
 } from "@chat/contracts";
 import { type ApplicationDeps } from "./deps.js";
@@ -178,4 +181,114 @@ export async function getCurrentApproval(
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
   const { currentApproval } = loadRunContext(deps, snapshot, input.productRunId, input.principalId);
   return { approval: currentApproval !== undefined ? toApprovalDto(currentApproval) : null };
+}
+
+export async function listMemoryBackends(
+  deps: ApplicationDeps,
+): Promise<{ backends: MemoryBackendProfileDto[] }> {
+  const backends = deps.memoryBackends?.list() ?? [];
+  return {
+    backends: await Promise.all(
+      backends.map(async (backend) => {
+        const profile = backend.describe();
+        const health = await backend.health();
+        return {
+          schemaVersion: "chat-product-api.v1" as const,
+          backendId: profile.backendId,
+          displayName: profile.displayName,
+          kind: profile.kind,
+          configured: profile.configured,
+          health: health.status,
+          capabilities: {
+            query: true as const,
+            tags: true as const,
+            layers: [...profile.capabilities.layers],
+            maxLimit: profile.capabilities.maxLimit,
+            maxContextBudget: profile.capabilities.maxContextBudget,
+          },
+        };
+      }),
+    ),
+  };
+}
+
+function toRunContextMemory(query: MemoryQuery): NonNullable<RunContextDto["memory"]> {
+  const base = {
+    backendId: query.backendId,
+    requirement: query.requirement,
+    memoryQueryId: query.memoryQueryId,
+  };
+  switch (query.status) {
+    case "pending":
+      return { ...base, queryStatus: "pending" };
+    case "completed":
+      return {
+        ...base,
+        queryStatus: "completed",
+        hitCount: query.hitCount,
+        adoptedCount: query.adoptedCount,
+      };
+    case "failed":
+      return { ...base, queryStatus: "failed", errorCode: query.errorCode };
+  }
+}
+
+export async function getRunContext(
+  deps: ApplicationDeps,
+  input: { principalId: PrincipalId; productRunId: ProductRunId },
+): Promise<{ context: RunContextDto }> {
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const { run } = loadRunContext(deps, snapshot, input.productRunId, input.principalId);
+  const request = Object.values(snapshot.entities.contextRequests).find(
+    (candidate) => candidate.productRunId === run.productRunId,
+  );
+  const query = Object.values(snapshot.entities.memoryQueries).find(
+    (candidate) => candidate.productRunId === run.productRunId,
+  );
+  const contextPackage = Object.values(snapshot.entities.contextPackages).find(
+    (candidate) => candidate.productRunId === run.productRunId,
+  );
+  return {
+    context: {
+      schemaVersion: "chat-product-api.v1",
+      productRunId: run.productRunId,
+      ...(request?.memory !== undefined && query !== undefined
+        ? { memory: toRunContextMemory(query) }
+        : {}),
+      ...(contextPackage !== undefined
+        ? {
+            contextPackage: {
+              contextPackageId: contextPackage.contextPackageId,
+              revision: contextPackage.revision,
+              sha256: contextPackage.sha256,
+              sources: contextPackage.items.map((item) => {
+                const memorySnapshot =
+                  snapshot.entities.memoryResultSnapshots[item.memoryResultSnapshotId];
+                if (memorySnapshot === undefined) {
+                  throw new ApplicationError({
+                    code: "store_corrupted",
+                    httpStatus: 500,
+                    message: "ContextPackage来源损坏",
+                  });
+                }
+                return {
+                  memoryResultSnapshotId: memorySnapshot.memoryResultSnapshotId,
+                  backendId: memorySnapshot.backendId,
+                  title: memorySnapshot.title,
+                  kind: memorySnapshot.kind,
+                  memoryLayer: memorySnapshot.memoryLayer,
+                  tags: memorySnapshot.tags,
+                  revision: memorySnapshot.revision,
+                  sha256: memorySnapshot.sha256,
+                };
+              }),
+              exclusions: contextPackage.exclusions.map((exclusion) => ({
+                backendId: exclusion.backendId,
+                reasonCode: exclusion.reasonCode,
+              })),
+            },
+          }
+        : {}),
+    },
+  };
 }

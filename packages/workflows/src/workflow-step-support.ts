@@ -1,7 +1,7 @@
 import { FatalError, getStepMetadata } from "workflow";
 import { sha256Hex } from "@chat/domain";
 import { WORKFLOW_DEFINITION_VERSION, type PlanningInputDto } from "@chat/contracts";
-import type { ProviderCallMeta } from "@chat/pi-runtime";
+import type { CandidateValidationDiagnostics, ProviderCallMeta } from "@chat/pi-runtime";
 import { ApiClientError } from "./api-client.js";
 import { PiStepFailure } from "./workflow-error.js";
 import {
@@ -142,6 +142,27 @@ export function completedProviderEvidence(result: {
   };
 }
 
+export function emitCompletedProviderCall(
+  scope: ProviderEventScope | PlanningInputDto,
+  inputManifestSha256: string,
+  result: Parameters<typeof completedProviderEvidence>[0] & {
+    readonly durationMs: number;
+    readonly providerMeta: ProviderCallMeta;
+  },
+): boolean {
+  const evidence = completedProviderEvidence(result);
+  if (evidence === undefined) return false;
+  emitProviderTrace(scope, "provider.request.completed", {
+    inputManifestSha256,
+    durationMs: result.durationMs,
+    httpStatus: evidence.httpStatus,
+    providerRequestId: evidence.providerRequestId,
+    tokenUsage: evidence.tokenUsage,
+    ...providerResultTraceDetails(result.providerMeta),
+  });
+  return true;
+}
+
 export function emitProviderTrace(
   scope: ProviderEventScope | PlanningInputDto,
   eventName: "provider.request.started" | "provider.request.completed" | "provider.request.failed",
@@ -241,7 +262,11 @@ export function emitPiNodeTrace(
   scope: ProviderEventScope | PlanningInputDto,
   eventName: "pi.node.started" | "pi.node.completed" | "pi.node.failed",
   nodeKind: "planner" | "executor",
-  details: { durationMs?: number; errorCode?: string } = {},
+  details: {
+    durationMs?: number;
+    errorCode?: string;
+    candidateValidation?: CandidateValidationDiagnostics;
+  } = {},
 ): void {
   const ctx = getWorkflowRuntimeContext();
   const base = {
@@ -273,6 +298,9 @@ export function emitPiNodeTrace(
     eventName,
     outcome: "failure",
     error: { code: details.errorCode ?? "pi.node_failed", type: "PiNodeError" },
+    ...(details.candidateValidation !== undefined
+      ? { candidateValidation: details.candidateValidation }
+      : {}),
     ...(details.durationMs !== undefined ? { durationMs: details.durationMs } : {}),
   } as never);
 }

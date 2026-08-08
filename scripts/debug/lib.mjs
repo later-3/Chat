@@ -16,19 +16,23 @@ export const FROZEN_PORTS = Object.freeze({
   web: 43110,
   api: 43111,
   workflow: 43112,
+  memory: 18960,
   apiInspector: 43120,
   workflowInspector: 43121,
+  memoryInspector: 43122,
 });
 
 /** 各调试角色的命令行身份片段（用于PID复用复核）。 */
 export const ROLE_COMMAND_FRAGMENTS = Object.freeze({
   api: ["src/index.ts", "tsx"],
   workflow: ["runtime-main.ts", "tsx"],
+  memory: ["start-fixed-memmy.mjs"],
   web: ["vite", "43110"],
 });
 
 /** 记录启动时间与ps lstart的允许偏差（防御PID复用）。 */
 const START_TIME_TOLERANCE_MS = 120_000;
+const MEMORY_WRAPPER_TERM_WAIT_MS = 7_000;
 
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -235,6 +239,16 @@ function signal(entry, sig) {
 }
 
 /**
+ * memmy包装进程收到SIGTERM后最多用5秒向真实服务子进程转发并等待退出。
+ * 调试清理必须比该上限更长，避免先杀包装器而遗留未登记的子进程。
+ */
+export function termWaitMsForEntry(entry, requestedTermWaitMs = 3000) {
+  return entry.role === "memory"
+    ? Math.max(requestedTermWaitMs, MEMORY_WRAPPER_TERM_WAIT_MS)
+    : requestedTermWaitMs;
+}
+
+/**
  * 终止一条记录：SIGTERM后有限等待，仍存活且身份一致才SIGKILL。
  * 任何身份不匹配都跳过并报告，绝不强行终止。
  */
@@ -245,7 +259,7 @@ export function terminateEntry(entry, { termWaitMs = 3000 } = {}) {
     return { role, pid, action: "skipped-identity-mismatch" };
   }
   signal(entry, "SIGTERM");
-  const deadline = Date.now() + termWaitMs;
+  const deadline = Date.now() + termWaitMsForEntry(entry, termWaitMs);
   while (Date.now() < deadline) {
     if (!isEffectivelyAlive(pid)) return { role, pid, action: "terminated" };
     sleepSync(100);

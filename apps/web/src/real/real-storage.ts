@@ -2,10 +2,12 @@ import {
   commandIdSchema,
   productRunIdSchema,
   productSessionIdSchema,
+  submitMessagePayloadSchema,
   submitDecisionPayloadSchema,
   type CommandId,
   type ProductRunId,
   type SubmitDecisionPayload,
+  type SubmitMessagePayload,
 } from "@chat/contracts/public";
 import { z } from "zod";
 
@@ -15,8 +17,8 @@ import { z } from "zod";
  * - sessionId/bootstrapCommandId：首次幂等创建真实Session的定位信息，
  *   不是授权凭据。
  * - activeRunId：当前看护的Product Run公开定位ID，刷新后从服务端恢复状态。
- * - pendingSend：已发起但结果未知的Message Command（text + commandId），
- *   供用户手动重试复用同一commandId；服务端幂等保证不产生第二条消息。
+ * - pendingSend：已发起但结果未知的完整Message Command payload + commandId，
+ *   供用户手动重试复用同一commandId；v1记录只含text，读取时保持兼容。
  */
 
 const SESSION_KEY = "chat:real-session:v1";
@@ -103,19 +105,30 @@ export function clearActiveRunId(storage: Storage, sessionId: string): void {
   }
 }
 
-export interface PendingSend {
-  version: 1;
-  text: string;
-  commandId: CommandId;
-}
+export type PendingSend =
+  | { readonly version: 1; readonly text: string; readonly commandId: CommandId }
+  | { readonly version: 2; readonly payload: SubmitMessagePayload; readonly commandId: CommandId };
 
-const pendingSendSchema = z
-  .object({
-    version: z.literal(1),
-    text: z.string().min(1).max(4000),
-    commandId: commandIdSchema,
-  })
-  .strict();
+const pendingSendSchema = z.discriminatedUnion("version", [
+  z
+    .object({
+      version: z.literal(1),
+      text: z.string().min(1).max(4000),
+      commandId: commandIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      version: z.literal(2),
+      payload: submitMessagePayloadSchema,
+      commandId: commandIdSchema,
+    })
+    .strict(),
+]);
+
+export function pendingSendPayload(pending: PendingSend): SubmitMessagePayload {
+  return pending.version === 1 ? { text: pending.text } : pending.payload;
+}
 
 export function readPendingSend(storage: Storage, sessionId: string): PendingSend | null {
   try {

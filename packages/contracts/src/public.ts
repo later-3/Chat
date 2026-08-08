@@ -11,3 +11,12 @@ export * from "./command.js";
 export * from "./query.js";
 export * from "./service-status.js";
 export * from "./product-api.js";
+export { memoryBackendIdSchema, type MemoryBackendId } from "./ids.js";
+export {
+  memoryContextSelectionSchema,
+  memoryLayerSchema,
+  memoryRequirementSchema,
+  type MemoryContextSelection,
+  type MemoryLayer,
+  type MemoryRequirement,
+} from "./context.js";

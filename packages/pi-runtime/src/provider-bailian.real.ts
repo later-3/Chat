@@ -142,6 +142,7 @@ describe("真实百炼qwen3.7-plus（付费，显式运行）", () => {
       config,
       contract,
       stepId: "step-1",
+      contextItems: [],
       dependencyResults: [],
     });
     recordCall({

@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -18,7 +18,7 @@ import { afterEach, describe, expect, it } from "vitest";
 const repoRoot = resolve(fileURLToPath(import.meta.url), "../../../..");
 const scriptsDir = join(repoRoot, "scripts", "debug");
 
-const TEST_PORTS = "44110,44111,44112,44120,44121";
+const TEST_PORTS = "44110,44111,44112,44120,44121,44122";
 
 function makeEnv(debugDir: string): NodeJS.ProcessEnv {
   return {
@@ -67,6 +67,37 @@ function writePidsFile(debugDir: string, entries: unknown[]) {
   );
 }
 
+function writeProviderFixture(
+  configPath: string,
+  readerPath: string,
+  baseUrl: string,
+  readerSource = 'process.stdout.write(process.env.FAKE_READER_VALUE ?? "")',
+) {
+  writeFileSync(
+    configPath,
+    JSON.stringify({ providers: [{ id: "dashscope", base_url: baseUrl }] }),
+    "utf8",
+  );
+  writeFileSync(readerPath, readerSource, "utf8");
+}
+
+function runProviderPreload(env: NodeJS.ProcessEnv) {
+  return spawnSync(
+    process.execPath,
+    [
+      "--import",
+      join(scriptsDir, "load-provider-env.mjs"),
+      "-e",
+      [
+        "if (process.env.DASHSCOPE_API_KEY !== process.env.EXPECTED_KEY) process.exit(4);",
+        "if (process.env.DASHSCOPE_BASE_URL !== process.env.EXPECTED_BASE_URL) process.exit(5);",
+        'process.stdout.write("PROVIDER_READY\\n");',
+      ].join(" "),
+    ],
+    { env, encoding: "utf8", timeout: 15_000 },
+  );
+}
+
 const cleanup: Array<() => void> = [];
 afterEach(() => {
   while (cleanup.length > 0) cleanup.pop()?.();
@@ -100,7 +131,97 @@ describe("wait-ready", () => {
   });
 });
 
+describe("VS Code Provider preload", () => {
+  it("环境/.env中的Provider配置优先，且stdout/stderr不泄漏Key", () => {
+    const fixtureDir = tempDebugDir();
+    const configPath = join(fixtureDir, "pi-config.json");
+    const readerPath = join(fixtureDir, "reader.mjs");
+    const existingKey = "ENV_KEY_MUST_NOT_APPEAR_1";
+    const existingBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+    writeProviderFixture(
+      configPath,
+      readerPath,
+      "https://invalid.example.test/v1",
+      'throw new Error("reader must not run")',
+    );
+
+    const result = runProviderPreload({
+      ...makeEnv(fixtureDir),
+      CHAT_DEBUG_PI_KEY_READER: readerPath,
+      CHAT_DEBUG_PI_PROVIDER_CONFIG: configPath,
+      DASHSCOPE_API_KEY: existingKey,
+      DASHSCOPE_BASE_URL: existingBaseUrl,
+      EXPECTED_KEY: existingKey,
+      EXPECTED_BASE_URL: existingBaseUrl,
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("PROVIDER_READY");
+    expect(result.stdout).not.toContain(existingKey);
+    expect(result.stderr).not.toContain(existingKey);
+  });
+
+  it("缺失环境配置时仅在进程内复用注入的pi配置", () => {
+    const fixtureDir = tempDebugDir();
+    const configPath = join(fixtureDir, "pi-config.json");
+    const readerPath = join(fixtureDir, "reader.mjs");
+    const fallbackKey = "PI_KEY_MUST_NOT_APPEAR_2";
+    const fallbackBaseUrl = "https://workspace.dashscope.aliyuncs.com/compatible-mode/v1";
+    writeProviderFixture(configPath, readerPath, fallbackBaseUrl);
+
+    const result = runProviderPreload({
+      ...makeEnv(fixtureDir),
+      CHAT_DEBUG_PI_KEY_READER: readerPath,
+      CHAT_DEBUG_PI_PROVIDER_CONFIG: configPath,
+      DASHSCOPE_API_KEY: "",
+      DASHSCOPE_BASE_URL: "",
+      FAKE_READER_VALUE: fallbackKey,
+      EXPECTED_KEY: fallbackKey,
+      EXPECTED_BASE_URL: fallbackBaseUrl,
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("PROVIDER_READY");
+    expect(result.stdout).not.toContain(fallbackKey);
+    expect(result.stderr).not.toContain(fallbackKey);
+  });
+
+  it("pi Base URL非HTTPS百炼域名时失败关闭且不泄漏Key", () => {
+    const fixtureDir = tempDebugDir();
+    const configPath = join(fixtureDir, "pi-config.json");
+    const readerPath = join(fixtureDir, "reader.mjs");
+    const fallbackKey = "PI_KEY_MUST_NOT_APPEAR_3";
+    writeProviderFixture(configPath, readerPath, "http://not-dashscope.example.test/v1");
+
+    const result = runProviderPreload({
+      ...makeEnv(fixtureDir),
+      CHAT_DEBUG_PI_KEY_READER: readerPath,
+      CHAT_DEBUG_PI_PROVIDER_CONFIG: configPath,
+      DASHSCOPE_API_KEY: "",
+      DASHSCOPE_BASE_URL: "",
+      FAKE_READER_VALUE: fallbackKey,
+      EXPECTED_KEY: fallbackKey,
+      EXPECTED_BASE_URL: "https://unused.dashscope.aliyuncs.com/v1",
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Base URL");
+    expect(result.stdout).not.toContain(fallbackKey);
+    expect(result.stderr).not.toContain(fallbackKey);
+  });
+});
+
 describe("preclean", () => {
+  it("固定memmy端口18960纳入统一未知占用保护", () => {
+    const debugLibrary = readFileSync(join(scriptsDir, "lib.mjs"), "utf8");
+    expect(debugLibrary).toMatch(/memory:\s*18960/u);
+    // 下方“未知应用占用端口”黑盒用例通过CHAT_DEBUG_PORTS复用同一preclean逻辑，
+    // 证明冻结端口（包括18960）遇到未登记监听者均只报告、不终止。
+  });
+
+  it("memory包装进程有足够时间转发停止信号，其他角色保留默认上限", () => {
+    const debugLibrary = readFileSync(join(scriptsDir, "lib.mjs"), "utf8");
+    expect(debugLibrary).toContain("MEMORY_WRAPPER_TERM_WAIT_MS = 7_000");
+    expect(debugLibrary).toContain('entry.role === "memory"');
+  });
+
   it("清理已记录进程并释放，连续两次运行均成功且幂等", async () => {
     const debugDir = tempDebugDir();
     const child = spawn("node", ["-e", "setInterval(() => {}, 1000)"], {
@@ -328,6 +449,56 @@ describe("preclean", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("进程登记失败");
     expect(result.stdout).not.toContain("SERVICE_STARTED");
+  });
+
+  it("memory登记的旧包装进程由stop精准释放", async () => {
+    const debugDir = tempDebugDir();
+    const child = spawn(
+      "node",
+      [
+        "--import",
+        join(scriptsDir, "register-process.mjs"),
+        "-e",
+        "setInterval(() => {}, 1000)",
+        "start-fixed-memmy.mjs",
+      ],
+      {
+        env: {
+          ...makeEnv(debugDir),
+          CHAT_DEBUG_ROLE: "memory",
+          CHAT_DEBUG_PORT: "18960",
+        },
+        stdio: "ignore",
+      },
+    );
+    cleanup.push(() => {
+      try {
+        process.kill(child.pid ?? 0, "SIGKILL");
+      } catch {
+        // 已被stop清理
+      }
+    });
+
+    const pidsFile = join(debugDir, "pids.json");
+    const deadline = Date.now() + 3_000;
+    while (!existsSync(pidsFile) && Date.now() < deadline) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+    }
+    expect(existsSync(pidsFile)).toBe(true);
+    expect(readFileSync(pidsFile, "utf8")).toContain('"role": "memory"');
+
+    const result = runScript("stop.mjs", [], makeEnv(debugDir));
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("memory");
+    expect(result.stdout).toContain("terminated");
+    await new Promise<void>((resolveExit, rejectExit) => {
+      const timer = setTimeout(() => rejectExit(new Error("memory包装进程未被精准释放")), 3_000);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        resolveExit();
+      });
+    });
+    expect(child.signalCode).toBe("SIGTERM");
   });
 
   it("pids.json损坏时保留现场并继续按空记录执行，端口检查仍生效", async () => {

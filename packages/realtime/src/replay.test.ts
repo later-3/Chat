@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computePlanSha256 } from "@chat/application";
 import {
+  contextPackageIdSchema,
+  contextRequestIdSchema,
   messageIdSchema,
+  memoryAdoptionIdSchema,
+  memoryBackendIdSchema,
+  memoryQueryIdSchema,
+  memoryResultSnapshotIdSchema,
   planIdSchema,
   planRevisionIdSchema,
   productSnapshotSchema,
@@ -14,6 +20,13 @@ import {
   type ProductSnapshot,
   type TraceEventInput,
 } from "@chat/contracts";
+import {
+  computeContextPackageSha256,
+  computeMemoryBackendDescriptorSha256,
+  computeMemoryResultSnapshotSha256,
+  computeRunContextRequestSha256,
+  hashCanonical,
+} from "@chat/domain";
 import { describe, expect, it, vi } from "vitest";
 import {
   assembleRunReplay,
@@ -29,7 +42,14 @@ const SESSION_ID = productSessionIdSchema.parse("psn_replay1");
 const MESSAGE_ID = messageIdSchema.parse("msg_replay1");
 const ATTEMPT_ID = runAttemptIdSchema.parse("att_workflow1");
 const PLANNING_ATTEMPT_ID = runAttemptIdSchema.parse("att_planning1");
+const CONTEXT_REQUEST_ID = contextRequestIdSchema.parse("ctxr_replay1");
+const MEMORY_QUERY_ID = memoryQueryIdSchema.parse("mqy_replay1");
+const MEMORY_BACKEND_ID = memoryBackendIdSchema.parse("mbk_replay1");
+const CONTEXT_PACKAGE_ID = contextPackageIdSchema.parse("ctxp_replay1");
+const MEMORY_SNAPSHOT_ID = memoryResultSnapshotIdSchema.parse("mrs_replay1");
+const MEMORY_ADOPTION_ID = memoryAdoptionIdSchema.parse("mad_replay1");
 const SECRET = "PRODUCT_CONTENT_ONLY_7f9c";
+const MEMORY_SECRET = "MEMORY_CONTENT_ONLY_13e8";
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "chat-replay-"));
@@ -38,8 +58,21 @@ function tempDir(): string {
 function minimalSnapshot(
   run: Partial<ProductSnapshot["entities"]["runs"][string]> = {},
 ): ProductSnapshot {
+  const sourceMessageSha256 = hashCanonical("message.v1", {
+    messageId: MESSAGE_ID,
+    sessionId: SESSION_ID,
+    sessionSequence: 1,
+    role: "user",
+    content: { format: "markdown", text: SECRET },
+  });
+  const contextRequestShape = {
+    productRunId: RUN_ID,
+    requestedByPrincipalId: "usr_replay1",
+    sourceMessageId: MESSAGE_ID,
+    sourceMessageSha256,
+  } as const;
   return productSnapshotSchema.parse({
-    schemaVersion: "chat-product-store.v1",
+    schemaVersion: "chat-product-store.v2",
     storeRevision: 1,
     committedAt: NOW,
     entities: {
@@ -103,10 +136,303 @@ function minimalSnapshot(
       executionCandidates: {},
       validationResults: {},
       artifacts: {},
+      contextRequests: {
+        [CONTEXT_REQUEST_ID]: {
+          schemaVersion: "run-context-request.v1",
+          contextRequestId: CONTEXT_REQUEST_ID,
+          ...contextRequestShape,
+          sha256: computeRunContextRequestSha256(contextRequestShape),
+          revision: 1,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      },
+      memoryQueries: {},
+      memoryResultSnapshots: {},
+      memoryAdoptions: {},
+      contextPackages: {},
     },
     commandReceipts: {},
     outbox: {},
   });
+}
+
+type MemoryFixtureOutcome = "completed" | "optional_failed" | "required_failed";
+
+function withMemoryContext(
+  snapshot: ProductSnapshot,
+  outcome: MemoryFixtureOutcome = "completed",
+): ProductSnapshot {
+  const requirement: "optional" | "required" =
+    outcome === "optional_failed" ? "optional" : "required";
+  const memory = {
+    backendId: MEMORY_BACKEND_ID,
+    requirement,
+    tags: ["project"],
+    layers: ["L1" as const],
+    limit: 5,
+    contextBudget: 512,
+  };
+  const request = snapshot.entities.contextRequests[CONTEXT_REQUEST_ID]!;
+  snapshot.entities.contextRequests[CONTEXT_REQUEST_ID] = {
+    ...request,
+    memory,
+    sha256: computeRunContextRequestSha256({
+      productRunId: request.productRunId,
+      requestedByPrincipalId: request.requestedByPrincipalId,
+      sourceMessageId: request.sourceMessageId,
+      sourceMessageSha256: request.sourceMessageSha256,
+      memory,
+    }),
+  };
+  const backendDescriptor = {
+    backendId: MEMORY_BACKEND_ID,
+    displayName: "Replay Memmy",
+    kind: "memmy" as const,
+    adapterContractVersion: "memmy-http-query.v1" as const,
+    configured: true,
+    authMode: "none" as const,
+    credentialRevision: "none" as const,
+    configurationFingerprint: "d".repeat(64),
+    capabilities: {
+      query: true as const,
+      tags: true as const,
+      layers: ["L1" as const],
+      maxLimit: 5,
+      maxContextBudget: 512,
+    },
+  };
+  const base = {
+    schemaVersion: "memory-query.v1" as const,
+    memoryQueryId: MEMORY_QUERY_ID,
+    contextRequestId: CONTEXT_REQUEST_ID,
+    productRunId: RUN_ID,
+    planRevision: 1 as const,
+    backendId: MEMORY_BACKEND_ID,
+    backendDescriptor,
+    backendDescriptorSha256: computeMemoryBackendDescriptorSha256(backendDescriptor),
+    requirement,
+    sourceMessageSha256: request.sourceMessageSha256,
+    tags: memory.tags,
+    layers: memory.layers,
+    limit: memory.limit,
+    contextBudget: memory.contextBudget,
+    startedAt: NOW,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+  if (outcome === "completed") {
+    const memorySnapshotShape = {
+      backendId: MEMORY_BACKEND_ID,
+      externalObjectIds: ["memmy-object-1"],
+      title: "Replay Memory",
+      kind: "trace" as const,
+      memoryLayer: "L1" as const,
+      content: MEMORY_SECRET,
+      tags: ["project"],
+      tokenEstimate: 10,
+    };
+    const memorySnapshot = {
+      schemaVersion: "memory-result-snapshot.v1" as const,
+      memoryResultSnapshotId: MEMORY_SNAPSHOT_ID,
+      memoryQueryId: MEMORY_QUERY_ID,
+      ...memorySnapshotShape,
+      sha256: computeMemoryResultSnapshotSha256(memorySnapshotShape),
+      revision: 1 as const,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    snapshot.entities.memoryResultSnapshots[MEMORY_SNAPSHOT_ID] = memorySnapshot;
+    snapshot.entities.memoryQueries[MEMORY_QUERY_ID] = {
+      ...base,
+      status: "completed",
+      externalQueryId: "memmy-query-1",
+      hitCount: 1,
+      adoptedCount: 1,
+      tokenEstimate: 10,
+      resultSetSha256: "e".repeat(64),
+      completedAt: NOW,
+      revision: 2,
+    };
+    const packageShape = {
+      contextRequestId: CONTEXT_REQUEST_ID,
+      productRunId: RUN_ID,
+      assembledForPlanRevision: 1,
+      purpose: "planning" as const,
+      memoryQueryId: MEMORY_QUERY_ID,
+      items: [
+        {
+          kind: "memory_snapshot" as const,
+          memoryResultSnapshotId: MEMORY_SNAPSHOT_ID,
+          revision: 1,
+          sha256: memorySnapshot.sha256,
+          selection: "retrieved" as const,
+          reasonCode: "within_budget" as const,
+        },
+      ],
+      exclusions: [],
+    };
+    snapshot.entities.contextPackages[CONTEXT_PACKAGE_ID] = {
+      schemaVersion: "context-package.v1",
+      contextPackageId: CONTEXT_PACKAGE_ID,
+      ...packageShape,
+      sha256: computeContextPackageSha256(packageShape),
+      revision: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    snapshot.entities.memoryAdoptions[MEMORY_ADOPTION_ID] = {
+      schemaVersion: "memory-adoption.v1",
+      memoryAdoptionId: MEMORY_ADOPTION_ID,
+      productRunId: RUN_ID,
+      contextPackageId: CONTEXT_PACKAGE_ID,
+      memoryResultSnapshotId: MEMORY_SNAPSHOT_ID,
+      status: "adopted",
+      reasonCode: "within_budget",
+      revision: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    return snapshot;
+  }
+
+  snapshot.entities.memoryQueries[MEMORY_QUERY_ID] = {
+    ...base,
+    status: "failed",
+    errorCode: "memory.backend.unavailable",
+    completedAt: NOW,
+    revision: 2,
+  };
+  if (outcome === "optional_failed") {
+    const packageShape = {
+      contextRequestId: CONTEXT_REQUEST_ID,
+      productRunId: RUN_ID,
+      assembledForPlanRevision: 1,
+      purpose: "planning" as const,
+      memoryQueryId: MEMORY_QUERY_ID,
+      items: [],
+      exclusions: [
+        {
+          kind: "memory_backend" as const,
+          backendId: MEMORY_BACKEND_ID,
+          reasonCode: "memory.backend.unavailable",
+        },
+      ],
+    };
+    snapshot.entities.contextPackages[CONTEXT_PACKAGE_ID] = {
+      schemaVersion: "context-package.v1",
+      contextPackageId: CONTEXT_PACKAGE_ID,
+      ...packageShape,
+      sha256: computeContextPackageSha256(packageShape),
+      revision: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+  }
+  return snapshot;
+}
+
+function emitMemoryTrace(
+  traceDir: string,
+  snapshot: ProductSnapshot,
+  outcome: MemoryFixtureOutcome,
+  contextPackageRef?: {
+    objectType: "context_package";
+    objectId: string;
+    revision: number;
+    sha256: string;
+  },
+): void {
+  const trace = createTraceSink({ dir: traceDir, now: () => new Date(NOW) });
+  const request = snapshot.entities.contextRequests[CONTEXT_REQUEST_ID]!;
+  const query = snapshot.entities.memoryQueries[MEMORY_QUERY_ID]!;
+  const contextScope = {
+    traceId: "trace_replay1",
+    productRunId: RUN_ID,
+    attemptId: PLANNING_ATTEMPT_ID,
+    contextRequestId: CONTEXT_REQUEST_ID,
+  } as const;
+  const memoryScope = {
+    ...contextScope,
+    memoryQueryId: MEMORY_QUERY_ID,
+    backendId: MEMORY_BACKEND_ID,
+    requirement: query.requirement,
+    sourceMessageSha256: request.sourceMessageSha256,
+    tagCount: query.tags.length,
+    layerCount: query.layers.length,
+    requestedLimit: query.limit,
+    contextBudget: query.contextBudget,
+  } as const;
+  trace.emit({
+    ...contextScope,
+    level: "info",
+    eventName: "context.assembly.started",
+    outcome: "unknown",
+    spanId: "span_context-started",
+    memoryRequested: true,
+  } as TraceEventInput);
+  trace.emit({
+    ...memoryScope,
+    level: "info",
+    eventName: "memory.query.started",
+    outcome: "unknown",
+    spanId: "span_memory-started",
+  } as TraceEventInput);
+  if (outcome === "completed") {
+    trace.emit({
+      ...memoryScope,
+      level: "info",
+      eventName: "memory.query.completed",
+      outcome: "success",
+      spanId: "span_memory-completed",
+      hitCount: 1,
+      adoptedCount: 1,
+      resultSetSha256: "e".repeat(64),
+      durationMs: 10,
+    } as TraceEventInput);
+  } else {
+    trace.emit({
+      ...memoryScope,
+      level: "warn",
+      eventName: "memory.query.failed",
+      outcome: "failure",
+      spanId: "span_memory-failed",
+      error: { code: "memory.backend.unavailable", type: "MemoryBackendError" },
+      durationMs: 10,
+    } as TraceEventInput);
+  }
+  if (outcome === "required_failed") {
+    trace.emit({
+      ...contextScope,
+      level: "error",
+      eventName: "context.assembly.failed",
+      outcome: "failure",
+      spanId: "span_context-failed",
+      memoryRequested: true,
+      error: { code: "memory.backend.unavailable", type: "MemoryBackendError" },
+      durationMs: 10,
+    } as TraceEventInput);
+    return;
+  }
+  const packageEntity = snapshot.entities.contextPackages[CONTEXT_PACKAGE_ID]!;
+  trace.emit({
+    ...contextScope,
+    level: "info",
+    eventName: "context.assembly.completed",
+    outcome: "success",
+    spanId: "span_context-completed",
+    status: outcome === "completed" ? "ready" : "optional_failed",
+    memoryRequested: true,
+    adoptedCount: outcome === "completed" ? 1 : 0,
+    excludedCount: outcome === "completed" ? 0 : 1,
+    contextPackageRef: contextPackageRef ?? {
+      objectType: "context_package",
+      objectId: packageEntity.contextPackageId,
+      revision: packageEntity.revision,
+      sha256: packageEntity.sha256,
+    },
+    durationMs: 10,
+  } as TraceEventInput);
 }
 
 function planContent(label: string): PlanContent {
@@ -522,6 +848,198 @@ describe("assembleRunReplay", () => {
     expect(
       view.failures.some((failure) => failure.includes("Provider请求终态没有对应started")),
     ).toBe(true);
+  });
+
+  it.each([
+    ["ok", CONTEXT_PACKAGE_ID, undefined, "ok"],
+    ["hash mismatch", CONTEXT_PACKAGE_ID, "f".repeat(64), "hash_mismatch"],
+    ["missing", "ctxp_missing1", "f".repeat(64), "missing"],
+  ] as const)("Context Package引用校验：%s", (_label, objectId, shaOverride, expectedStatus) => {
+    const dir = tempDir();
+    const traceDir = join(dir, "traces");
+    const snapshot = withMemoryContext(minimalSnapshot(), "completed");
+    const contextPackage = snapshot.entities.contextPackages[CONTEXT_PACKAGE_ID]!;
+    emitCreated(traceDir, snapshot.entities.runs[RUN_ID]!);
+    emitMemoryTrace(traceDir, snapshot, "completed", {
+      objectType: "context_package",
+      objectId,
+      revision: 1,
+      sha256: shaOverride ?? contextPackage.sha256,
+    });
+
+    const view = assembleRunReplay(
+      {
+        productRunId: RUN_ID,
+        storePath: writeSnapshot(dir, snapshot),
+        traceDir,
+        versionEvidencePath: writeEvidence(dir),
+      },
+      deps(),
+    );
+    const check = view.timeline
+      .flatMap((entry) => entry.refs)
+      .find((candidate) => candidate.ref.objectType === "context_package");
+    expect(check?.status).toBe(expectedStatus);
+    if (expectedStatus === "ok") expect(view.failures).toEqual([]);
+    else {
+      expect(view.failures.some((failure) => failure.includes("context.assembly.completed"))).toBe(
+        true,
+      );
+    }
+  });
+
+  it.each(["optional_failed", "required_failed"] as const)(
+    "%s Memory失败按产品终态结束且不伪造成功包",
+    (outcome) => {
+      const dir = tempDir();
+      const traceDir = join(dir, "traces");
+      const snapshot = withMemoryContext(minimalSnapshot(), outcome);
+      emitCreated(traceDir, snapshot.entities.runs[RUN_ID]!);
+      emitMemoryTrace(traceDir, snapshot, outcome);
+      const view = assembleRunReplay(
+        {
+          productRunId: RUN_ID,
+          storePath: writeSnapshot(dir, snapshot),
+          traceDir,
+          versionEvidencePath: writeEvidence(dir),
+        },
+        deps(),
+      );
+      expect(view.failures).toEqual([]);
+      expect(Object.keys(snapshot.entities.contextPackages)).toHaveLength(
+        outcome === "optional_failed" ? 1 : 0,
+      );
+    },
+  );
+
+  it("Memory Query孤立started与孤立terminal都被按memoryQueryId拒绝", () => {
+    const dir = tempDir();
+    const traceDir = join(dir, "traces");
+    const snapshot = withMemoryContext(minimalSnapshot(), "completed");
+    emitCreated(traceDir, snapshot.entities.runs[RUN_ID]!);
+    emitMemoryTrace(traceDir, snapshot, "completed");
+    const request = snapshot.entities.contextRequests[CONTEXT_REQUEST_ID]!;
+    const query = snapshot.entities.memoryQueries[MEMORY_QUERY_ID]!;
+    const trace = createTraceSink({ dir: traceDir, now: () => new Date(NOW) });
+    const common = {
+      traceId: "trace_replay1",
+      productRunId: RUN_ID,
+      attemptId: PLANNING_ATTEMPT_ID,
+      contextRequestId: CONTEXT_REQUEST_ID,
+      backendId: MEMORY_BACKEND_ID,
+      requirement: query.requirement,
+      sourceMessageSha256: request.sourceMessageSha256,
+      tagCount: 1,
+      layerCount: 1,
+      requestedLimit: 5,
+      contextBudget: 512,
+    } as const;
+    trace.emit({
+      ...common,
+      level: "info",
+      eventName: "memory.query.started",
+      outcome: "unknown",
+      spanId: "span_orphan-started",
+      memoryQueryId: "mqy_orphanstarted1",
+    } as TraceEventInput);
+    trace.emit({
+      ...common,
+      level: "warn",
+      eventName: "memory.query.failed",
+      outcome: "failure",
+      spanId: "span_orphan-terminal",
+      memoryQueryId: "mqy_orphanterminal1",
+      error: { code: "memory.backend.unavailable", type: "MemoryBackendError" },
+      durationMs: 1,
+    } as TraceEventInput);
+
+    const view = assembleRunReplay(
+      {
+        productRunId: RUN_ID,
+        storePath: writeSnapshot(dir, snapshot),
+        traceDir,
+        versionEvidencePath: writeEvidence(dir),
+      },
+      deps(),
+    );
+    expect(view.failures.some((failure) => failure.includes("started没有终态"))).toBe(true);
+    expect(view.failures.some((failure) => failure.includes("终态没有对应started"))).toBe(true);
+  });
+
+  it("no-memory ContextRequest拒绝任何memory.query Trace", () => {
+    const dir = tempDir();
+    const traceDir = join(dir, "traces");
+    const snapshot = minimalSnapshot();
+    emitCreated(traceDir, snapshot.entities.runs[RUN_ID]!);
+    const request = snapshot.entities.contextRequests[CONTEXT_REQUEST_ID]!;
+    createTraceSink({ dir: traceDir, now: () => new Date(NOW) }).emit({
+      level: "info",
+      eventName: "memory.query.started",
+      outcome: "unknown",
+      traceId: "trace_replay1",
+      spanId: "span_no-memory-query",
+      productRunId: RUN_ID,
+      attemptId: PLANNING_ATTEMPT_ID,
+      contextRequestId: CONTEXT_REQUEST_ID,
+      memoryQueryId: MEMORY_QUERY_ID,
+      backendId: MEMORY_BACKEND_ID,
+      requirement: "required",
+      sourceMessageSha256: request.sourceMessageSha256,
+      tagCount: 0,
+      layerCount: 1,
+      requestedLimit: 1,
+      contextBudget: 128,
+    } as TraceEventInput);
+    const view = assembleRunReplay(
+      {
+        productRunId: RUN_ID,
+        storePath: writeSnapshot(dir, snapshot),
+        traceDir,
+        versionEvidencePath: writeEvidence(dir),
+      },
+      deps(),
+    );
+    expect(view.failures).toContain(
+      "Trace关联错误：no-memory ContextRequest不应出现memory.query事件",
+    );
+  });
+
+  it("Context/Memory正文默认隔离，授权后才组装Request、Query、Snapshot、Adoption与Package", () => {
+    const dir = tempDir();
+    const traceDir = join(dir, "traces");
+    const snapshot = withMemoryContext(minimalSnapshot(), "completed");
+    emitCreated(traceDir, snapshot.entities.runs[RUN_ID]!);
+    emitMemoryTrace(traceDir, snapshot, "completed");
+    const input = {
+      productRunId: RUN_ID,
+      storePath: writeSnapshot(dir, snapshot),
+      traceDir,
+      versionEvidencePath: writeEvidence(dir),
+    };
+    const hidden = assembleRunReplay(input, deps());
+    expect(hidden.content).toEqual({ included: false });
+    expect(JSON.stringify(hidden)).not.toContain(SECRET);
+    expect(JSON.stringify(hidden)).not.toContain(MEMORY_SECRET);
+
+    const authorized = assembleRunReplay(
+      {
+        ...input,
+        contentAccess: {
+          mode: "authorized",
+          principalId: "usr_operator1",
+          purpose: "debug",
+        },
+      },
+      { snapshotIntegrityCheck: () => undefined, authorizeContentAccess: () => true },
+    );
+    expect(authorized.content.included).toBe(true);
+    if (!authorized.content.included) throw new Error("测试授权正文未组装");
+    expect(authorized.content.facts.contextRequests).toHaveLength(1);
+    expect(authorized.content.facts.memoryQueries).toHaveLength(1);
+    expect(authorized.content.facts.memoryResultSnapshots).toHaveLength(1);
+    expect(authorized.content.facts.memoryAdoptions).toHaveLength(1);
+    expect(authorized.content.facts.contextPackages).toHaveLength(1);
+    expect(JSON.stringify(authorized.content)).toContain(MEMORY_SECRET);
   });
 
   it("只有组合根授权后才组装Message与Plan正文", () => {

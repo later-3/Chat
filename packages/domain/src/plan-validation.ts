@@ -19,7 +19,8 @@ export interface PlanSemanticIssue {
     | "duplicate_step_id"
     | "duplicate_dependency"
     | "dependency_not_previous"
-    | "capability_not_allowed";
+    | "capability_not_allowed"
+    | "context_ref_not_allowed";
   readonly detail: string;
 }
 
@@ -78,7 +79,7 @@ export function validatePlanSemantics(
       const key = `${ref.refId}:${String(ref.revision)}:${ref.sha256}`;
       if (contextRefs.has(key) || !options.allowedContextRefs.has(key)) {
         issues.push({
-          code: "capability_not_allowed",
+          code: "context_ref_not_allowed",
           detail: `步骤${step.stepId}引用了未允许或重复的上下文:${ref.refId}`,
         });
       }

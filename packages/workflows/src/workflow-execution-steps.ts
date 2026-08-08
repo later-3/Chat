@@ -2,13 +2,14 @@ import { computeExecutionInputManifestSha256, hashCanonical } from "@chat/domain
 import {
   EXECUTOR_PROMPT_TEMPLATE_VERSION,
   MODEL_CONFIG_VERSION,
+  type ExecutionContextItemDto,
   type ExecutionContract,
 } from "@chat/contracts";
 import type { ExecutorDependencyResult, ExecutorStepCandidate } from "@chat/pi-runtime";
 import { getWorkflowRuntimeContext } from "./runtime-context.js";
 import {
   cmdId,
-  completedProviderEvidence,
+  emitCompletedProviderCall,
   emitPiNodeTrace,
   emitProviderTrace,
   PiStepFailure,
@@ -55,7 +56,6 @@ export async function beginExecutionAttemptStep(input: {
   productRunId: string;
   attemptId: string;
   executionContractId: string;
-  approvedPlanSha256: string;
   stepId: string;
   dependencyRefs: readonly {
     stepId: string;
@@ -64,29 +64,25 @@ export async function beginExecutionAttemptStep(input: {
   }[];
   promptTemplateVersion: string;
   modelConfigVersion: string;
-}): Promise<{ attemptId: string; inputManifestSha256: string }> {
+}): Promise<{
+  attemptId: string;
+  inputManifestSha256: string;
+  contextItems: readonly ExecutionContextItemDto[];
+}> {
   "use step";
   return runStep(input.productRunId, input.attemptId, "begin_execution_attempt", async () => {
     const ctx = getWorkflowRuntimeContext();
-    const inputManifestSha256 = computeExecutionInputManifestSha256({
-      executionContractId: input.executionContractId,
-      approvedPlanSha256: input.approvedPlanSha256,
-      stepId: input.stepId,
-      dependencyRefs: input.dependencyRefs,
-      promptTemplateVersion: input.promptTemplateVersion,
-      modelConfigVersion: input.modelConfigVersion,
-    });
     try {
-      const result = await ctx.api.beginRunAttempt({
+      return await ctx.api.beginRunAttempt({
         commandId: cmdId("begin-execution-attempt", input.productRunId, input.stepId) as never,
         productRunId: input.productRunId,
         kind: "execution",
+        executionContractId: input.executionContractId,
         stepId: input.stepId,
-        inputManifestSha256,
+        dependencyRefs: input.dependencyRefs,
         promptTemplateVersion: input.promptTemplateVersion,
         modelConfigVersion: input.modelConfigVersion,
       });
-      return { attemptId: result.attemptId, inputManifestSha256 };
     } catch (error) {
       wrapApiError(error);
     }
@@ -98,6 +94,7 @@ export async function runPiExecutorStep(input: {
   stepId: string;
   executionAttemptId: string;
   inputManifestSha256: string;
+  contextItems: readonly ExecutionContextItemDto[];
   dependencyResults: readonly (ExecutorDependencyResult & {
     executionAttemptId: string;
   })[];
@@ -107,10 +104,26 @@ export async function runPiExecutorStep(input: {
   return runStep(productRunId, input.executionAttemptId, "pi.execute", async () => {
     const ctx = getWorkflowRuntimeContext();
     const startedAt = performance.now();
+    const contractStep = input.contract.steps.find((step) => step.stepId === input.stepId);
+    const contextRefs = input.contextItems.map(({ refId, revision, sha256 }) => ({
+      refId,
+      revision,
+      sha256,
+    }));
+    if (
+      contractStep === undefined ||
+      JSON.stringify(contextRefs) !== JSON.stringify(contractStep.inputRefs)
+    ) {
+      throw new PiStepFailure(
+        "execution.context_ref_mismatch",
+        "执行上下文与Approved Step引用不一致",
+      );
+    }
     const computedInputManifestSha256 = computeExecutionInputManifestSha256({
       executionContractId: input.contract.executionContractId,
       approvedPlanSha256: input.contract.approvedPlanSha256,
       stepId: input.stepId,
+      inputRefs: contractStep.inputRefs,
       dependencyRefs: input.dependencyResults.map((dependency) => ({
         stepId: dependency.stepId,
         executionAttemptId: dependency.executionAttemptId,
@@ -145,6 +158,7 @@ export async function runPiExecutorStep(input: {
         config: ctx.bailian,
         contract: input.contract,
         stepId: input.stepId,
+        contextItems: input.contextItems,
         dependencyResults: input.dependencyResults.map(({ stepId, sha256, output, sections }) => ({
           stepId,
           sha256,
@@ -155,8 +169,7 @@ export async function runPiExecutorStep(input: {
           emitProviderTrace(scoped, "provider.request.started", { inputManifestSha256 }),
       });
       if (result.kind === "candidate") {
-        const evidence = completedProviderEvidence(result);
-        if (evidence === undefined) {
+        if (!emitCompletedProviderCall(scoped, inputManifestSha256, result)) {
           const errorCode = "provider.evidence_missing";
           emitProviderTrace(scoped, "provider.request.failed", {
             inputManifestSha256,
@@ -176,14 +189,6 @@ export async function runPiExecutorStep(input: {
           });
           throw new PiStepFailure(errorCode, "pi.execute证据缺失");
         }
-        emitProviderTrace(scoped, "provider.request.completed", {
-          inputManifestSha256,
-          durationMs: result.durationMs,
-          httpStatus: evidence.httpStatus,
-          providerRequestId: evidence.providerRequestId,
-          tokenUsage: evidence.tokenUsage,
-          ...providerResultTraceDetails(result.providerMeta),
-        });
         emitPiNodeTrace(scoped, "pi.node.completed", "executor", {
           durationMs: result.durationMs,
         });
@@ -203,10 +208,36 @@ export async function runPiExecutorStep(input: {
           sha256: hashCanonical("execution-step-result.v1", durable),
         };
       }
-      const errorCode =
-        result.kind === "invalid_candidate"
-          ? `model.candidate.${result.errorCode}`
-          : result.errorCode;
+      if (result.kind === "invalid_candidate") {
+        if (!emitCompletedProviderCall(scoped, inputManifestSha256, result)) {
+          const errorCode = "provider.evidence_missing";
+          emitProviderTrace(scoped, "provider.request.failed", {
+            inputManifestSha256,
+            durationMs: result.durationMs,
+            errorCode,
+            ...(result.providerMeta.httpStatus !== undefined
+              ? { httpStatus: result.providerMeta.httpStatus }
+              : {}),
+            ...(result.providerMeta.providerRequestId !== undefined
+              ? { providerRequestId: result.providerMeta.providerRequestId }
+              : {}),
+            ...providerResultTraceDetails(result.providerMeta),
+          });
+          emitPiNodeTrace(scoped, "pi.node.failed", "executor", {
+            durationMs: result.durationMs,
+            errorCode,
+          });
+          throw new PiStepFailure(errorCode, "pi.execute证据缺失");
+        }
+        const errorCode = `model.candidate.${result.errorCode}`;
+        emitPiNodeTrace(scoped, "pi.node.failed", "executor", {
+          durationMs: result.durationMs,
+          errorCode,
+          ...(result.diagnostics !== undefined ? { candidateValidation: result.diagnostics } : {}),
+        });
+        throw new PiStepFailure(errorCode, `pi.execute失败:${errorCode}`);
+      }
+      const errorCode = result.errorCode;
       emitProviderTrace(scoped, "provider.request.failed", {
         inputManifestSha256,
         durationMs: result.durationMs,

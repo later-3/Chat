@@ -1,10 +1,13 @@
-import { hashCanonical } from "@chat/domain";
+import { computeExecutionInputManifestSha256, hashCanonical } from "@chat/domain";
 import {
   B2_EXECUTOR_TOKEN_BUDGET_PER_STEP,
   EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
   type CommandId,
   type DecisionId,
+  type ExecutionContextItemDto,
   type ExecutionContract,
+  type ExecutionContractId,
+  type ProductSnapshot,
   type ProductRunId,
   type RunAttemptId,
 } from "@chat/contracts";
@@ -30,18 +33,121 @@ export const EXECUTOR_LIMITS = {
 export interface BeginRunAttemptCommand {
   readonly commandId: CommandId;
   readonly productRunId: ProductRunId;
-  readonly kind: "planning" | "execution";
-  readonly planRevision?: number;
-  readonly stepId?: string;
-  readonly inputManifestSha256?: string;
-  readonly promptTemplateVersion?: string;
-  readonly modelConfigVersion?: string;
+  readonly kind: "execution";
+  readonly executionContractId: ExecutionContractId;
+  readonly stepId: string;
+  readonly dependencyRefs: readonly {
+    readonly stepId: string;
+    readonly executionAttemptId: RunAttemptId;
+    readonly sha256: string;
+  }[];
+  readonly promptTemplateVersion: string;
+  readonly modelConfigVersion: string;
+}
+
+interface ResolvedExecutionStep {
+  readonly inputRefs: ExecutionContract["steps"][number]["inputRefs"];
+  readonly contextItems: readonly ExecutionContextItemDto[];
+}
+
+/**
+ * 只沿Approved Plan的Planning Attempt所绑定ContextPackage解析当前Step。
+ * 任何跨包、缺失或版本/Hash偏差都在进入Executor前失败关闭。
+ */
+function resolveExecutionStepContext(
+  snapshot: ProductSnapshot,
+  contract: ExecutionContract,
+  stepId: string,
+): ResolvedExecutionStep {
+  const step = contract.steps.find((candidate) => candidate.stepId === stepId);
+  if (step === undefined) throw revisionConflict("Execution Step不在已批准合同中");
+  const plan = Object.values(snapshot.entities.plans).find(
+    (candidate) =>
+      candidate.productRunId === contract.productRunId &&
+      candidate.planId === contract.approvedPlanId &&
+      candidate.planRevision === contract.approvedPlanRevision,
+  );
+  if (
+    plan === undefined ||
+    plan.status !== "approved" ||
+    plan.sha256 !== contract.approvedPlanSha256
+  ) {
+    throw revisionConflict("Execution Contract缺少精确Approved Plan血缘");
+  }
+  const planStep = plan.content.steps.find((candidate) => candidate.stepId === stepId);
+  if (
+    planStep === undefined ||
+    JSON.stringify(planStep.inputRefs) !== JSON.stringify(step.inputRefs)
+  ) {
+    throw revisionConflict("Execution Step与Approved Plan的上下文引用不一致");
+  }
+  if (step.inputRefs.length === 0) return { inputRefs: step.inputRefs, contextItems: [] };
+
+  const planningAttempt = snapshot.entities.attempts[plan.planningAttemptId];
+  if (
+    planningAttempt === undefined ||
+    planningAttempt.kind !== "planning" ||
+    planningAttempt.productRunId !== contract.productRunId ||
+    planningAttempt.planRevision !== plan.planRevision ||
+    planningAttempt.contextPackageId === undefined ||
+    planningAttempt.contextPackageSha256 === undefined
+  ) {
+    throw revisionConflict("Approved Plan缺少冻结ContextPackage血缘");
+  }
+  const contextPackage = snapshot.entities.contextPackages[planningAttempt.contextPackageId];
+  if (
+    contextPackage === undefined ||
+    contextPackage.productRunId !== contract.productRunId ||
+    contextPackage.sha256 !== planningAttempt.contextPackageSha256
+  ) {
+    throw revisionConflict("Approved Plan绑定的ContextPackage不存在或Hash不一致");
+  }
+
+  const seen = new Set<string>();
+  const contextItems = step.inputRefs.map((ref): ExecutionContextItemDto => {
+    const key = `${ref.refId}:${String(ref.revision)}:${ref.sha256}`;
+    if (seen.has(key)) throw revisionConflict("Execution Step不允许重复上下文引用");
+    seen.add(key);
+    const packageItem = contextPackage.items.find(
+      (candidate) =>
+        candidate.memoryResultSnapshotId === ref.refId &&
+        candidate.revision === ref.revision &&
+        candidate.sha256 === ref.sha256,
+    );
+    if (packageItem === undefined) {
+      throw revisionConflict("Execution Step引用了未被本轮ContextPackage采用的条目");
+    }
+    const memory = snapshot.entities.memoryResultSnapshots[packageItem.memoryResultSnapshotId];
+    if (
+      memory === undefined ||
+      memory.memoryQueryId !== contextPackage.memoryQueryId ||
+      memory.revision !== ref.revision ||
+      memory.sha256 !== ref.sha256
+    ) {
+      throw revisionConflict("Execution Step的Memory Snapshot缺失或版本证据不一致");
+    }
+    return {
+      refId: memory.memoryResultSnapshotId,
+      revision: memory.revision,
+      sha256: memory.sha256,
+      title: memory.title,
+      kind: memory.kind,
+      layer: memory.memoryLayer,
+      tags: memory.tags,
+      content: memory.content,
+    };
+  });
+  return { inputRefs: step.inputRefs, contextItems };
 }
 
 export async function beginRunAttempt(
   deps: ApplicationDeps,
   input: BeginRunAttemptCommand,
-): Promise<{ attemptId: RunAttemptId }> {
+): Promise<{
+  attemptId: RunAttemptId;
+  inputManifestSha256: string;
+  contextItems: readonly ExecutionContextItemDto[];
+}> {
   const now = deps.now();
   const attemptId = deps.ids.attempt();
   const requestSha256 = hashCanonical("command.begin-run-attempt.v1", input);
@@ -53,40 +159,47 @@ export async function beginRunAttempt(
     mutate: (draft) => {
       const run = draft.entities.runs[input.productRunId];
       if (run === undefined) throw notFound("Product Run不存在");
-      if (input.kind === "execution") {
-        if (
-          input.stepId === undefined ||
-          input.inputManifestSha256 === undefined ||
-          input.promptTemplateVersion === undefined ||
-          input.modelConfigVersion === undefined ||
-          input.planRevision !== undefined
-        ) {
-          throw revisionConflict("Execution Attempt缺少步骤或输入版本证据");
-        }
-      } else if (
-        input.stepId !== undefined ||
-        input.inputManifestSha256 !== undefined ||
-        input.promptTemplateVersion !== undefined ||
-        input.modelConfigVersion !== undefined
-      ) {
-        throw revisionConflict("Planning Attempt不能携带Execution输入证据");
+      const contract = draft.entities.executionContracts[input.executionContractId];
+      if (contract === undefined || contract.productRunId !== input.productRunId) {
+        throw notFound("Execution Contract不存在");
       }
+      const step = contract.steps.find((candidate) => candidate.stepId === input.stepId);
+      if (step === undefined) throw revisionConflict("Execution Step不在合同中");
+      if (
+        input.dependencyRefs.length !== step.dependsOn.length ||
+        input.dependencyRefs.some((ref, index) => {
+          const priorAttempt = draft.entities.attempts[ref.executionAttemptId];
+          return (
+            ref.stepId !== step.dependsOn[index] ||
+            priorAttempt === undefined ||
+            priorAttempt.productRunId !== input.productRunId ||
+            priorAttempt.kind !== "execution" ||
+            priorAttempt.stepId !== ref.stepId ||
+            priorAttempt.outcome !== "success"
+          );
+        })
+      ) {
+        throw revisionConflict("Execution Step的依赖血缘不完整");
+      }
+      const resolved = resolveExecutionStepContext(draft, contract, input.stepId);
+      const inputManifestSha256 = computeExecutionInputManifestSha256({
+        executionContractId: contract.executionContractId,
+        approvedPlanSha256: contract.approvedPlanSha256,
+        stepId: input.stepId,
+        inputRefs: resolved.inputRefs,
+        dependencyRefs: input.dependencyRefs,
+        promptTemplateVersion: input.promptTemplateVersion,
+        modelConfigVersion: input.modelConfigVersion,
+      });
       draft.entities.attempts[attemptId] = {
         schemaVersion: "run-attempt.v1",
         attemptId,
         productRunId: input.productRunId,
-        kind: input.kind,
-        ...(input.planRevision !== undefined ? { planRevision: input.planRevision } : {}),
-        ...(input.stepId !== undefined ? { stepId: input.stepId } : {}),
-        ...(input.inputManifestSha256 !== undefined
-          ? { inputManifestSha256: input.inputManifestSha256 }
-          : {}),
-        ...(input.promptTemplateVersion !== undefined
-          ? { promptTemplateVersion: input.promptTemplateVersion }
-          : {}),
-        ...(input.modelConfigVersion !== undefined
-          ? { modelConfigVersion: input.modelConfigVersion }
-          : {}),
+        kind: "execution",
+        stepId: input.stepId,
+        inputManifestSha256,
+        promptTemplateVersion: input.promptTemplateVersion,
+        modelConfigVersion: input.modelConfigVersion,
         outcome: "running",
         revision: 1,
         createdAt: now,
@@ -95,7 +208,40 @@ export async function beginRunAttempt(
       return { resultRefs: { attemptId } };
     },
   });
-  return { attemptId: result.resultRefs["attemptId"] as RunAttemptId };
+  const committedAttemptId = result.resultRefs["attemptId"] as RunAttemptId;
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const attempt = snapshot.entities.attempts[committedAttemptId];
+  const contract = snapshot.entities.executionContracts[input.executionContractId];
+  if (
+    attempt === undefined ||
+    contract === undefined ||
+    attempt.productRunId !== input.productRunId ||
+    attempt.kind !== "execution" ||
+    attempt.stepId !== input.stepId ||
+    attempt.inputManifestSha256 === undefined ||
+    attempt.promptTemplateVersion !== input.promptTemplateVersion ||
+    attempt.modelConfigVersion !== input.modelConfigVersion
+  ) {
+    throw notFound("Execution Attempt或输入证据不存在");
+  }
+  const resolved = resolveExecutionStepContext(snapshot, contract, input.stepId);
+  const expectedManifestSha256 = computeExecutionInputManifestSha256({
+    executionContractId: contract.executionContractId,
+    approvedPlanSha256: contract.approvedPlanSha256,
+    stepId: input.stepId,
+    inputRefs: resolved.inputRefs,
+    dependencyRefs: input.dependencyRefs,
+    promptTemplateVersion: input.promptTemplateVersion,
+    modelConfigVersion: input.modelConfigVersion,
+  });
+  if (attempt.inputManifestSha256 !== expectedManifestSha256) {
+    throw revisionConflict("Execution Attempt的输入Manifest与冻结上下文不一致");
+  }
+  return {
+    attemptId: committedAttemptId,
+    inputManifestSha256: expectedManifestSha256,
+    contextItems: resolved.contextItems,
+  };
 }
 
 export interface CompleteRunAttemptCommand {

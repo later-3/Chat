@@ -15,6 +15,7 @@ import {
   productSessionIdSchema,
   revisionInputIdSchema,
   runAttemptIdSchema,
+  contextPackageIdSchema,
   validationResultIdSchema,
 } from "./ids.js";
 import { sha256Schema } from "./hash.js";
@@ -161,6 +162,8 @@ export const runAttemptSchema = z
     inputManifestSha256: sha256Schema.optional(),
     promptTemplateVersion: z.string().min(1).max(100).optional(),
     modelConfigVersion: z.string().min(1).max(100).optional(),
+    contextPackageId: contextPackageIdSchema.optional(),
+    contextPackageSha256: sha256Schema.optional(),
     outcome: runAttemptOutcomeSchema,
     errorCode: z
       .string()

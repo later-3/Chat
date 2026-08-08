@@ -535,6 +535,8 @@ Executor 只得到不可变 Execution Contract 和当前 Approved Step。第一�
 
 执行候选使用结构化合同：`approvedPlanRef`、有序 `stepResults`、`finalOutput`、逐条 `completionCriteriaEvidence` 和 warnings。`finalOutput` 第一版只允许 Markdown section 数据；服务端确定性渲染 Markdown。真实 E2E 断言 Schema、批准版本、必需 section 和证据覆盖，不对模型自然语言做脆弱的全文快照比较。
 
+Provider 工具入口保持窄合同：每个 Step 只提交 `stepId + output`，不要求模型重复组装 Chat 自己拥有的候选结构。pi Adapter 用 Approved Step 标题、成功标准、整体完成条件和真实 `output` 确定性投影 Markdown section 与证据引用，再由最终 strict Schema 和 Domain Validation 校验。证据引用必须同时包含原标准和实际输出片段，禁止直接采用模型自报的“已经满足”；该边界由 `executor-prompt.v3` 标识。
+
 Executor 不得修改 Plan、增加步骤或宣布 Product Run 成功。所有候选经过确定性验证与 Product Commit。
 
 ### 14.4 Provider 可观察性
@@ -882,6 +884,6 @@ PR 只有在以下条件全部满足后才可请求最终审核：
 | M1 | 合同、领域、JSON Store、Query/Command完成 | 原子提交、幂等/CAS、Plan/Decision不变量、损坏与fsync/rename失败关闭 |
 | M2 | 真实Vercel Workflow定义、Hook、Runtime Binding、pi Adapter、百炼配置、Product Commit完成 | 真实Workflow Local World + 确定性pi闭环；Provider替身仅用于非付费控制流测试 |
 | M3 | 默认真实前端、Plan修改/批准/拒绝、轮询恢复、375px完成 | React合同测试与10项PWA/移动端Playwright回归 |
-| M4 | Trace/Replay、版本证据、结果未知栅栏、错误/安全加固完成 | 全仓确定性测试、架构测试、Replay严格校验、公开响应秘密扫描 |
+| M4 | Trace/Replay、版本证据、结果未知栅栏、错误/安全加固完成 | 440项确定性测试、架构测试、Replay严格校验、公开响应秘密扫描 |
 
-真实门保持失败关闭：本worktree没有读取或输出私有Key；缺少`DASHSCOPE_API_KEY`时`test:provider:bailian`与真实浏览器E2E明确失败，不Skip、不切换假Provider。用户随后明确授权先合入已通过确定性门的代码、再由其配置Key进行实际验收；这只改变合入时机，不改变§22的B2产品完成定义。合入代码不等于声称真实付费验收已通过。
+M1真实门已从clean提交`fa2a1e7`通过：脚本通过用户已批准的pi Key reader仅在父进程内存中取得百炼凭据，固定memmy第三方进程不继承Provider密钥。`pnpm test:e2e:memory-planning:real`完成无Memory对照、真实查询、Plan v1/v2、批准、5个Executor Step、Product Commit、手机刷新恢复与Replay；共8次真实`qwen3.7-plus`调用，全部HTTP成功且没有额外付费重试。缺少凭据时真实门仍失败关闭，不Skip、不切换假Provider。

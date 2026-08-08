@@ -22,6 +22,7 @@ import {
   transitionRunLifecycle,
   type RunLifecycle,
 } from "./run-lifecycle.js";
+import { computeExecutionInputManifestSha256 } from "./execution-manifest.js";
 
 describe("canonical json", () => {
   it("对象键排序、数组保持顺序，键顺序不同Hash相同", () => {
@@ -56,6 +57,27 @@ describe("canonical json", () => {
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
     );
     expect(() => hashCanonical("PlanV1", value)).toThrow(CanonicalJsonError);
+  });
+});
+
+describe("execution input manifest", () => {
+  const common = {
+    executionContractId: "exc_1",
+    approvedPlanSha256: "a".repeat(64),
+    stepId: "step-1",
+    dependencyRefs: [],
+    promptTemplateVersion: "executor-prompt.v1",
+    modelConfigVersion: "bailian.qwen3.7-plus.v1",
+  };
+
+  it("无上下文时保留B2 v1 Hash，非空Memory引用进入v2证据域", () => {
+    expect(computeExecutionInputManifestSha256({ ...common, inputRefs: [] })).toBe(
+      hashCanonical("execution-input-manifest.v1", common),
+    );
+    const inputRefs = [{ refId: "mrs_1", revision: 1, sha256: "b".repeat(64) }];
+    expect(computeExecutionInputManifestSha256({ ...common, inputRefs })).toBe(
+      hashCanonical("execution-input-manifest.v2", { ...common, inputRefs }),
+    );
   });
 });
 

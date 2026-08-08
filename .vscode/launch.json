@@ -2,6 +2,30 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Chat：Memory（memmy）",
+      "type": "node",
+      "request": "launch",
+      "port": 43122,
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--import",
+        "${workspaceFolder}/scripts/debug/register-process.mjs",
+        "scripts/memory/start-fixed-memmy.mjs"
+      ],
+      "env": {
+        "CHAT_DEBUG_ROLE": "memory",
+        "CHAT_DEBUG_PORT": "18960",
+        "CHAT_REPO_ROOT": "${workspaceFolder}",
+        "CHAT_MEMMY_PORT": "18960",
+        "CHAT_MEMMY_RUN_ROOT": "${workspaceFolder}/.data/debug/memmy",
+        "CHAT_MEMMY_DB_PATH": "${workspaceFolder}/.data/debug/memmy/memory.sqlite"
+      },
+      "console": "integratedTerminal",
+      "preLaunchTask": "chat-debug:prepare-memory",
+      "postDebugTask": "chat-debug:stop"
+    },
+    {
       "name": "Chat：Workflow 运行时",
       "type": "node",
       "request": "launch",
@@ -9,6 +33,8 @@
       "cwd": "${workspaceFolder}",
       "runtimeExecutable": "node",
       "runtimeArgs": [
+        "--import",
+        "${workspaceFolder}/scripts/debug/load-provider-env.mjs",
         "--import",
         "${workspaceFolder}/scripts/debug/register-process.mjs",
         "--import",
@@ -48,7 +74,7 @@
         "PORT": "43111"
       },
       "console": "integratedTerminal",
-      "preLaunchTask": "chat-debug:wait-workflow",
+      "preLaunchTask": "chat-debug:wait-runtime-dependencies",
       "postDebugTask": "chat-debug:stop"
     },
     {
@@ -64,7 +90,12 @@
   "compounds": [
     {
       "name": "Chat：完整后端闭环",
-      "configurations": ["Chat：Workflow 运行时", "Chat：API", "Chat：Web 浏览器"],
+      "configurations": [
+        "Chat：Memory（memmy）",
+        "Chat：Workflow 运行时",
+        "Chat：API",
+        "Chat：Web 浏览器"
+      ],
       "preLaunchTask": "chat-debug:preclean",
       "stopAll": true
     }

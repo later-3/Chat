@@ -70,19 +70,6 @@ export async function publishPlanForReview(
   deps: ApplicationDeps,
   input: PublishPlanForReviewInput,
 ): Promise<{ plan: PlanDto; approval: ApprovalDto; run: RunDto }> {
-  const semanticIssues = validatePlanSemantics(input.content.steps, {
-    maxSteps: B2_MAX_PLAN_STEPS,
-    allowedCapabilities: new Set([EXECUTION_CAPABILITY_MARKDOWN_COMPOSE]),
-    // B2尚未接入Memory/主动上下文选择；源Message由PlanningInput固定传入，不是contextRef。
-    allowedContextRefs: new Set(),
-  });
-  if (semanticIssues.length !== 0) {
-    throw new ApplicationError({
-      code: "validation_failed",
-      httpStatus: 400,
-      message: semanticIssues[0]?.detail ?? "Plan语义校验失败",
-    });
-  }
   const now = deps.now();
   const newPlanId = deps.ids.plan();
   const planRevisionId = deps.ids.planRevision();
@@ -140,6 +127,32 @@ export async function publishPlanForReview(
         attempt.inputManifestSha256 !== input.inputManifestSha256
       ) {
         throw revisionConflict("Plan Candidate与当前Planning Attempt或输入证据不匹配");
+      }
+      const contextPackage =
+        attempt.contextPackageId === undefined
+          ? undefined
+          : draft.entities.contextPackages[attempt.contextPackageId];
+      if (
+        attempt.contextPackageId !== undefined &&
+        (contextPackage === undefined || contextPackage.sha256 !== attempt.contextPackageSha256)
+      ) {
+        throw revisionConflict("Planning Attempt的ContextPackage证据不完整");
+      }
+      const semanticIssues = validatePlanSemantics(input.content.steps, {
+        maxSteps: B2_MAX_PLAN_STEPS,
+        allowedCapabilities: new Set([EXECUTION_CAPABILITY_MARKDOWN_COMPOSE]),
+        allowedContextRefs: new Set(
+          (contextPackage?.items ?? []).map(
+            (item) => `${item.memoryResultSnapshotId}:${String(item.revision)}:${item.sha256}`,
+          ),
+        ),
+      });
+      if (semanticIssues.length !== 0) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: semanticIssues[0]?.detail ?? "Plan语义校验失败",
+        });
       }
 
       // 生命周期：允许从pending/queued或running/planning进入审核中

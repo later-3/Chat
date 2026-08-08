@@ -91,6 +91,7 @@ export async function persistExecutionCandidate(
           executionContractId: contract.executionContractId,
           approvedPlanSha256: contract.approvedPlanSha256,
           stepId: stepResult.stepId,
+          inputRefs: contractStep.inputRefs,
           dependencyRefs: stepResult.dependencyRefs,
           promptTemplateVersion: attempt.promptTemplateVersion,
           modelConfigVersion: attempt.modelConfigVersion,

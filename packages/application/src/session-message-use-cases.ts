@@ -1,4 +1,5 @@
-import { hashCanonical } from "@chat/domain";
+import { computeRunContextRequestSha256, hashCanonical } from "@chat/domain";
+import { contextRequestIdSchema } from "@chat/contracts";
 import type {
   CreateSessionPayload,
   Message,
@@ -91,6 +92,9 @@ export async function submitUserMessage(
     sessionId: input.sessionId,
     payload: input.payload,
   });
+  const contextRequestId = contextRequestIdSchema.parse(
+    `ctxr_${hashCanonical("id.run-context-request.v1", { productRunId }).slice(0, 32)}`,
+  );
 
   const result = await deps.store.transact({
     commandId: input.commandId,
@@ -138,8 +142,43 @@ export async function submitUserMessage(
         createdAt: now,
         updatedAt: now,
       };
+      const sourceMessageSha256 = hashCanonical("message.v1", {
+        messageId: message.messageId,
+        sessionId: message.sessionId,
+        sessionSequence: message.sessionSequence,
+        role: message.role,
+        content: message.content,
+      });
+      const selectedMemory = input.payload.context?.memory;
+      const normalizedMemory =
+        selectedMemory === undefined
+          ? undefined
+          : {
+              ...selectedMemory,
+              tags: [...new Set(selectedMemory.tags.map((tag) => tag.trim().toLowerCase()))].sort(),
+              layers: (["L1", "L2", "L3", "Skill"] as const).filter((layer) =>
+                selectedMemory.layers.includes(layer),
+              ),
+            };
+      const contextRequestShape = {
+        productRunId,
+        requestedByPrincipalId: input.principalId,
+        sourceMessageId: messageId,
+        sourceMessageSha256,
+        ...(normalizedMemory !== undefined ? { memory: normalizedMemory } : {}),
+      };
       draft.entities.messages[messageId] = message;
       draft.entities.runs[productRunId] = run;
+      // 即使本轮没有选择Memory也保存ContextRequest，明确区分“未选择”与事实丢失。
+      draft.entities.contextRequests[contextRequestId] = {
+        schemaVersion: "run-context-request.v1",
+        contextRequestId,
+        ...contextRequestShape,
+        sha256: computeRunContextRequestSha256(contextRequestShape),
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
       // 一个Product Run对应一个Workflow执行Attempt（Trace关联与生命周期看护）
       draft.entities.attempts[workflowAttemptId] = {
         schemaVersion: "run-attempt.v1",

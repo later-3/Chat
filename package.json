@@ -18,7 +18,11 @@
     "format:check": "prettier --check .",
     "debug:replay": "pnpm --filter @chat/api exec tsx src/replay-main.ts",
     "test:provider:bailian": "pnpm --filter @chat/pi-runtime test:provider:bailian",
-    "test:e2e:planning-execution:real": "pnpm debug:preclean && node scripts/e2e/preflight-planning-real.mjs && pnpm --filter @chat/workflows build:bundles && node scripts/e2e/assert-clean-runtime-evidence.mjs && pnpm --filter @chat/web exec playwright test --config playwright.planning-real.config.ts"
+    "test:e2e:planning-execution:real": "pnpm debug:preclean && node scripts/e2e/preflight-planning-real.mjs && pnpm --filter @chat/workflows build:bundles && node scripts/e2e/assert-clean-runtime-evidence.mjs && pnpm --filter @chat/web exec playwright test --config playwright.planning-real.config.ts",
+    "memory:prepare:fixed": "node scripts/memory/prepare-fixed-memmy.mjs",
+    "test:memory:scripts": "node --test scripts/memory/fixed-memmy.test.mjs",
+    "test:memory:memmy-real-http": "pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-fixed-memmy-http.ts",
+    "test:e2e:memory-planning:real": "node scripts/e2e/run-memory-planning-real.mjs"
   },
   "devDependencies": {
     "eslint": "^10.8.0",

@@ -1,4 +1,5 @@
 import type { TraceEventInput } from "@chat/contracts";
+import type { MemoryBackendRegistryPort } from "@chat/application";
 import type { BailianConfig, runPiExecutor, runPiPlanner } from "@chat/pi-runtime";
 import type { RuntimeApiClient } from "./api-client.js";
 import type { RuntimeBindingStore } from "./runtime-bindings.js";
@@ -17,6 +18,8 @@ import type { RuntimeBindingStore } from "./runtime-bindings.js";
 export interface WorkflowRuntimeContext {
   readonly api: RuntimeApiClient;
   readonly bindings: RuntimeBindingStore;
+  /** 外部Memory调用只允许由Workflow Step通过本服务端Registry执行。 */
+  readonly memoryBackends: MemoryBackendRegistryPort;
   readonly trace: (event: TraceEventInput) => void;
   readonly now: () => string;
   readonly bailian: BailianConfig;

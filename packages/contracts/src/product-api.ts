@@ -6,6 +6,10 @@ import {
   planIdSchema,
   productRunIdSchema,
   productSessionIdSchema,
+  contextPackageIdSchema,
+  memoryBackendIdSchema,
+  memoryQueryIdSchema,
+  memoryResultSnapshotIdSchema,
 } from "./ids.js";
 import {
   approvalRequestStatusSchema,
@@ -19,6 +23,7 @@ import {
   runFailureSchema,
 } from "./product.js";
 import { sha256Schema } from "./hash.js";
+import { memoryContextSelectionSchema, memoryLayerSchema } from "./context.js";
 
 /**
  * B2公开Query/Command网络DTO（任务书§12）。
@@ -44,6 +49,12 @@ export const createSessionPayloadSchema = z
 export const submitMessagePayloadSchema = z
   .object({
     text: z.string().min(1).max(4000),
+    context: z
+      .object({
+        memory: memoryContextSelectionSchema,
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -91,6 +102,99 @@ export const submitDecisionPayloadSchema = z
 export type CreateSessionPayload = z.infer<typeof createSessionPayloadSchema>;
 export type SubmitMessagePayload = z.infer<typeof submitMessagePayloadSchema>;
 export type SubmitDecisionPayload = z.infer<typeof submitDecisionPayloadSchema>;
+
+/* ---------- Memory backend 与 Run Context ---------- */
+
+export const memoryBackendProfileDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    backendId: memoryBackendIdSchema,
+    displayName: z.string().min(1).max(100),
+    kind: z.literal("memmy"),
+    configured: z.boolean(),
+    health: z.enum(["ready", "unavailable"]),
+    capabilities: z
+      .object({
+        query: z.literal(true),
+        tags: z.literal(true),
+        layers: z.array(memoryLayerSchema).min(1).max(4),
+        maxLimit: z.number().int().positive().max(20),
+        maxContextBudget: z.number().int().min(128).max(8_192),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const memoryContextSourceDtoSchema = z
+  .object({
+    memoryResultSnapshotId: memoryResultSnapshotIdSchema,
+    backendId: memoryBackendIdSchema,
+    title: z.string().min(1).max(200),
+    kind: z.enum(["trace", "span", "policy", "world_model", "skill"]),
+    memoryLayer: memoryLayerSchema,
+    tags: z.array(z.string().min(1).max(64)).max(50),
+    revision: z.number().int().positive(),
+    sha256: sha256Schema,
+  })
+  .strict();
+
+const runContextMemoryBase = {
+  backendId: memoryBackendIdSchema,
+  requirement: z.enum(["required", "optional"]),
+  memoryQueryId: memoryQueryIdSchema,
+};
+
+export const runContextMemoryDtoSchema = z.discriminatedUnion("queryStatus", [
+  z.object({ ...runContextMemoryBase, queryStatus: z.literal("pending") }).strict(),
+  z
+    .object({
+      ...runContextMemoryBase,
+      queryStatus: z.literal("completed"),
+      hitCount: z.number().int().nonnegative(),
+      adoptedCount: z.number().int().nonnegative(),
+    })
+    .strict(),
+  z
+    .object({
+      ...runContextMemoryBase,
+      queryStatus: z.literal("failed"),
+      errorCode: z
+        .string()
+        .regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/)
+        .max(64),
+    })
+    .strict(),
+]);
+
+export const runContextDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    productRunId: productRunIdSchema,
+    memory: runContextMemoryDtoSchema.optional(),
+    contextPackage: z
+      .object({
+        contextPackageId: contextPackageIdSchema,
+        revision: z.number().int().positive(),
+        sha256: sha256Schema,
+        sources: z.array(memoryContextSourceDtoSchema).max(20),
+        exclusions: z
+          .array(
+            z
+              .object({
+                backendId: memoryBackendIdSchema,
+                reasonCode: z.string().min(1).max(64),
+              })
+              .strict(),
+          )
+          .max(20),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type MemoryBackendProfileDto = z.infer<typeof memoryBackendProfileDtoSchema>;
+export type RunContextDto = z.infer<typeof runContextDtoSchema>;
 
 /* ---------- Query DTO ---------- */
 

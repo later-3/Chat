@@ -4,11 +4,12 @@
 
 ## 1. 当前停点
 
-1. `main`已合入PR #7，当前提交`06d1177bdfd0f78bd84430d2eb57513b7638d08c`；本地与远端同步。
+1. `main`仍为PR #7合并提交`06d1177bdfd0f78bd84430d2eb57513b7638d08c`；M1候选分支`codex/m1-memmy-planning-context`当前为`fa2a1e7`，真实门已过，等待Draft PR审核。
 2. P0、P1.1、P1.2、B1、B2已完成。浏览器可以真实完成“发送消息 → pi规划 → 用户修订/批准 → 同一Vercel Workflow恢复 → pi执行 → Product Commit → 正式回复”。
 3. 本地百炼私有配置已可用于真实`qwen3.7-plus`测试；`.env`被Git忽略且权限为`0600`，任何续接过程不得输出或提交Key。
-4. B2真实Provider测试3/3、真实浏览器E2E 1/1、326项普通测试和全部CI已通过。真实运行Trace有124条事件，Replay完整性错误为0。
-5. 当前没有Memory Adapter、BMAD项目上下文和用户规则集。用户已经要求逐步完成这三类真实能力，并要求所有设计有参考项目依据、代码有中文注释、纵向里程碑用真实模型和严格E2E验证。
+4. M1已增加真实memmy查询、Memory Registry/Adapter、版本化ContextPackage、Plan v1/v2冻结复用、最小选择UI、Trace与Replay；尚未增加Memory导入和第二后端。
+5. M1真实浏览器E2E从clean提交通过1/1：固定memmy真实命中、8次真实`qwen3.7-plus`调用、5个Executor Step、Product Commit、手机恢复与Replay完整通过；440项确定性测试、memmy脚本6/6、PWA回归10/10通过。
+6. 当前仍没有BMAD项目上下文和用户规则集。用户要求逐步完成三类真实能力，所有设计必须有参考项目依据、代码有中文注释、纵向里程碑使用真实模型和严格E2E。
 6. 旧会话遗留的治理文档和设计截图已经恢复；不能再使用“B2待真实Key验收”或“P1.2待实现”等旧状态。
 
 ## 2. 新 Session 读取顺序
@@ -37,7 +38,7 @@ Hono -> Application -> JSON Product Store
         |
 PlanningExecutionWorkflow
         |
-pi Planner -> HITL Hook -> pi Executor -> Validation -> Product Commit
+Memory Query -> ContextPackage -> pi Planner -> HITL Hook -> pi Executor -> Validation -> Product Commit
         |
 Bailian qwen3.7-plus
 
@@ -51,8 +52,8 @@ Trace + Product Store + Version Evidence -> Replay
 当前是一个阶段目标，不是一个大PR。先复核真实参考项目与既有分析，再冻结小任务书；建议依赖顺序如下，最终编号以任务书为准：
 
 1. **参考证据与共享边界**：定位腾讯Memory、memory-agent及其他已调研项目，定位BMAD源码/文档和既有分析，明确采用、调整、拒绝；只定义三个能力真正共享的身份、来源、版本和选择证据，不做万能Context Service。
-2. **Memory单后端纵向链**：先接通一个真实服务的查询与导入，从Application Port到Workflow节点、Trace、最小UI和真实E2E完整证明。
-3. **Memory多后端适配**：接入第二个真实项目，验证Adapter抽象确实覆盖差异；用户能选择后端，配置和密钥不进入浏览器或产品正文。
+2. **Memory单后端查询纵向链**：M1候选已完成真实memmy查询、Application Port、Workflow节点、Trace、最小UI和真实E2E，待审核合入。
+3. **Memory导入与多后端适配**：先实现有来源、目标、幂等和人工决定的导入节点，再接入第二个真实项目验证Adapter抽象；配置和密钥不进入浏览器或产品正文。
 4. **项目上下文纵向链**：基于BMAD的阶段、状态、产物和推进门设计Chat自己的Project/Work/Document Manifest/Context Package，并让Workflow可读取、维护候选和提交用户确认后的变化。
 5. **用户规则纵向链**：实现Rule/RuleRevision/Tag/Scope，统一管理界面、对话主动勾选/标签筛选、合理自动召回和规划节点注入；记录采用了哪些规则及版本。
 6. **组合验收**：真实用户场景同时使用项目上下文、选择规则和Memory查询完成规划—确认—执行，页面刷新后能从权威事实恢复，公开面不泄漏外部服务或Runtime私有身份。
@@ -79,8 +80,9 @@ Trace + Product Store + Version Evidence -> Replay
 
 ```text
 继续Chat项目。按AGENTS.md规定顺序读取治理文件和docs/project-session-handoff.md。
-main已在06d1177完成真实规划—确认—执行闭环，百炼qwen3.7-plus与真实浏览器E2E已通过。
-当前阶段依次建设：真实Memory查询/导入与多后端Adapter、BMAD启发的项目上下文、
+main已在06d1177完成真实规划—确认—执行闭环。M1分支fa2a1e7已完成固定memmy真实查询、
+冻结ContextPackage、规划采用、5步执行、手机恢复与Replay真实E2E，等待PR审核。
+当前阶段接着建设：Memory导入与第二真实后端Adapter、BMAD启发的项目上下文、
 带标签且可主动选择的用户规则集。先读取本地参考项目与既有分析，给每个设计写出采用/调整/拒绝依据，
 再按依赖拆成可独立合并的小任务；实现使用worktree+PR，纵向完成门必须包含真实服务、真实模型和浏览器E2E。
 不要建立万能Context Service，不要把外部Memory、BMAD或Prompt当成Chat产品事实源。

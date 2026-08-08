@@ -76,4 +76,20 @@ describe("Plan语义校验", () => {
       expect.objectContaining({ code: "step_limit_exceeded" }),
     );
   });
+
+  it("上下文引用错误使用独立稳定码，不冒充Capability错误", () => {
+    expect(
+      validatePlanSemantics(
+        [
+          {
+            stepId: "a",
+            dependsOn: [],
+            requestedCapabilities: [],
+            inputRefs: [{ refId: "ctx_1", revision: 2, sha256: "a".repeat(64) }],
+          },
+        ],
+        options,
+      ),
+    ).toContainEqual(expect.objectContaining({ code: "context_ref_not_allowed" }));
+  });
 });

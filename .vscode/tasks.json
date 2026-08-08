@@ -10,11 +10,34 @@
       "problemMatcher": []
     },
     {
+      "label": "chat-debug:prepare-memory",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["memory:prepare:fixed"],
+      "dependsOn": ["chat-debug:preclean"],
+      "dependsOrder": "sequence",
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "chat-debug:wait-memory",
+      "type": "shell",
+      "command": "node",
+      "args": [
+        "scripts/debug/wait-ready.mjs",
+        "memmy",
+        "http://127.0.0.1:18960/api/v1/health",
+        "180000"
+      ],
+      "presentation": { "reveal": "silent", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
       "label": "chat-debug:build-bundles",
       "type": "shell",
       "command": "pnpm",
       "args": ["--filter", "@chat/workflows", "build:bundles"],
-      "dependsOn": ["chat-debug:preclean"],
+      "dependsOn": ["chat-debug:wait-memory"],
       "presentation": { "reveal": "always", "panel": "dedicated" },
       "problemMatcher": []
     },
@@ -32,11 +55,20 @@
       "problemMatcher": []
     },
     {
+      "label": "chat-debug:wait-runtime-dependencies",
+      "type": "shell",
+      "command": "node",
+      "args": ["-e", "process.exit(0)"],
+      "dependsOn": ["chat-debug:wait-memory", "chat-debug:wait-workflow"],
+      "presentation": { "reveal": "silent", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
       "label": "chat-debug:wait-api",
       "type": "shell",
       "command": "node",
       "args": ["scripts/debug/wait-ready.mjs", "api", "http://127.0.0.1:43111/api/readyz", "30000"],
-      "dependsOn": ["chat-debug:wait-workflow"],
+      "dependsOn": ["chat-debug:wait-runtime-dependencies"],
       "presentation": { "reveal": "silent", "panel": "dedicated" },
       "problemMatcher": []
     },
