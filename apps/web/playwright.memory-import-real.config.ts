@@ -12,7 +12,6 @@ const sharedEnv = {
 const providerIsolatedEnv = {
   ...sharedEnv,
   DASHSCOPE_API_KEY: "",
-  DASHSCOPE_BASE_URL: "",
 };
 
 /** M2 付费门：真实消息导入 -> 重启恢复 -> 新会话检索 -> 真实规划与执行。 */
