@@ -26,6 +26,30 @@
       "postDebugTask": "chat-debug:stop"
     },
     {
+      "name": "Chat：Memory（Tencent MemoryCore）",
+      "type": "node",
+      "request": "launch",
+      "port": 43123,
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--import",
+        "${workspaceFolder}/scripts/debug/load-memorycore-debug-env.mjs",
+        "--import",
+        "${workspaceFolder}/scripts/debug/register-process.mjs",
+        "scripts/memory/start-fixed-memorycore.mjs"
+      ],
+      "env": {
+        "CHAT_DEBUG_ROLE": "memoryCore",
+        "CHAT_DEBUG_PORT": "18970",
+        "CHAT_REPO_ROOT": "${workspaceFolder}",
+        "CHAT_TENCENT_MEMORYCORE_RUN_ROOT": "${workspaceFolder}/.data/debug/memorycore"
+      },
+      "console": "integratedTerminal",
+      "preLaunchTask": "chat-debug:prepare-memorycore",
+      "postDebugTask": "chat-debug:stop"
+    },
+    {
       "name": "Chat：Workflow 运行时",
       "type": "node",
       "request": "launch",
@@ -35,6 +59,8 @@
       "runtimeArgs": [
         "--import",
         "${workspaceFolder}/scripts/debug/load-provider-env.mjs",
+        "--import",
+        "${workspaceFolder}/scripts/debug/load-memorycore-debug-env.mjs",
         "--import",
         "${workspaceFolder}/scripts/debug/register-process.mjs",
         "--import",
@@ -60,6 +86,8 @@
       "cwd": "${workspaceFolder}/apps/api",
       "runtimeExecutable": "node",
       "runtimeArgs": [
+        "--import",
+        "${workspaceFolder}/scripts/debug/load-memorycore-debug-env.mjs",
         "--import",
         "${workspaceFolder}/scripts/debug/register-process.mjs",
         "--import",
@@ -92,6 +120,7 @@
       "name": "Chat：完整后端闭环",
       "configurations": [
         "Chat：Memory（memmy）",
+        "Chat：Memory（Tencent MemoryCore）",
         "Chat：Workflow 运行时",
         "Chat：API",
         "Chat：Web 浏览器"

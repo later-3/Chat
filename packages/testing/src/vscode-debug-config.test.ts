@@ -63,6 +63,7 @@ describe("VS Code调试配置", () => {
     expect(compound?.preLaunchTask).toBe("chat-debug:preclean");
     expect(compound?.configurations).toEqual([
       "Chat：Memory（memmy）",
+      "Chat：Memory（Tencent MemoryCore）",
       "Chat：Workflow 运行时",
       "Chat：API",
       "Chat：Web 浏览器",
@@ -70,8 +71,11 @@ describe("VS Code调试配置", () => {
     expect(compound?.stopAll).toBe(true);
   });
 
-  it("子配置等待链保证Memory -> Workflow -> API -> Web顺序", () => {
+  it("子配置等待链保证两个Memory -> Workflow -> API -> Web顺序", () => {
     expect(configOf("Chat：Memory（memmy）").preLaunchTask).toBe("chat-debug:prepare-memory");
+    expect(configOf("Chat：Memory（Tencent MemoryCore）").preLaunchTask).toBe(
+      "chat-debug:prepare-memorycore",
+    );
     expect(configOf("Chat：Workflow 运行时").preLaunchTask).toBe("chat-debug:build-bundles");
     expect(configOf("Chat：API").preLaunchTask).toBe("chat-debug:wait-runtime-dependencies");
     expect(configOf("Chat：Web 浏览器").preLaunchTask).toBe("chat-debug:start-web");
@@ -83,9 +87,19 @@ describe("VS Code调试配置", () => {
     expect(taskByLabel["chat-debug:prepare-memory"]?.command).toBe("pnpm");
     expect(taskByLabel["chat-debug:prepare-memory"]?.args).toEqual(["memory:prepare:fixed"]);
     expect(taskByLabel["chat-debug:prepare-memory"]?.dependsOrder).toBe("sequence");
-    expect(dependsOn["chat-debug:build-bundles"]).toEqual(["chat-debug:wait-memory"]);
+    expect(dependsOn["chat-debug:prepare-memorycore"]).toContain("chat-debug:preclean");
+    expect(taskByLabel["chat-debug:prepare-memorycore"]?.command).toBe("pnpm");
+    expect(taskByLabel["chat-debug:prepare-memorycore"]?.args).toEqual([
+      "memory:prepare:memorycore-fixed",
+    ]);
+    expect(taskByLabel["chat-debug:prepare-memorycore"]?.dependsOrder).toBe("sequence");
+    expect(dependsOn["chat-debug:build-bundles"]).toEqual([
+      "chat-debug:wait-memory",
+      "chat-debug:wait-memorycore",
+    ]);
     expect(dependsOn["chat-debug:wait-runtime-dependencies"]).toEqual([
       "chat-debug:wait-memory",
+      "chat-debug:wait-memorycore",
       "chat-debug:wait-workflow",
     ]);
     expect(dependsOn["chat-debug:start-web"]).toContain("chat-debug:wait-api");
@@ -95,6 +109,7 @@ describe("VS Code调试配置", () => {
   it("每个子配置都有postDebugTask清理", () => {
     for (const name of [
       "Chat：Memory（memmy）",
+      "Chat：Memory（Tencent MemoryCore）",
       "Chat：Workflow 运行时",
       "Chat：API",
       "Chat：Web 浏览器",
@@ -109,6 +124,14 @@ describe("VS Code调试配置", () => {
     expect(configOf("Chat：Memory（memmy）").env?.["CHAT_MEMMY_PORT"]).toBe("18960");
     expect(configOf("Chat：Memory（memmy）").runtimeArgs).toContain(
       "scripts/memory/start-fixed-memmy.mjs",
+    );
+    const memoryCore = configOf("Chat：Memory（Tencent MemoryCore）");
+    expect(memoryCore.port).toBe(43123);
+    expect(memoryCore.env?.["CHAT_DEBUG_ROLE"]).toBe("memoryCore");
+    expect(memoryCore.env?.["CHAT_DEBUG_PORT"]).toBe("18970");
+    expect(memoryCore.runtimeArgs).toContain("scripts/memory/start-fixed-memorycore.mjs");
+    expect(memoryCore.runtimeArgs).toContain(
+      "${workspaceFolder}/scripts/debug/load-memorycore-debug-env.mjs",
     );
     expect(configOf("Chat：API").port).toBe(43120);
     expect(configOf("Chat：API").env?.["PORT"]).toBe("43111");
@@ -128,6 +151,11 @@ describe("VS Code调试配置", () => {
     expect(workflow.runtimeArgs).toContain(
       "${workspaceFolder}/scripts/debug/load-provider-env.mjs",
     );
+    for (const config of [api, workflow, configOf("Chat：Memory（Tencent MemoryCore）")]) {
+      expect(config.runtimeArgs).toContain(
+        "${workspaceFolder}/scripts/debug/load-memorycore-debug-env.mjs",
+      );
+    }
     expect(
       workflow.runtimeArgs?.indexOf("${workspaceFolder}/scripts/debug/load-provider-env.mjs"),
     ).toBeLessThan(
@@ -150,9 +178,22 @@ describe("VS Code调试配置", () => {
     expect(example).toContain("DASHSCOPE_API_KEY=");
     expect(example).toContain("https://dashscope.aliyuncs.com/compatible-mode/v1");
     expect(example).toContain("CHAT_MEMMY_BASE_URL=http://127.0.0.1:18960");
+    expect(example).toContain("CHAT_TENCENT_MEMORYCORE_BASE_URL=http://127.0.0.1:18970");
+    for (const name of [
+      "CHAT_TENCENT_MEMORYCORE_TOKEN",
+      "CHAT_TENCENT_MEMORYCORE_SERVICE_ID",
+      "CHAT_TENCENT_MEMORYCORE_TEAM_ID",
+      "CHAT_TENCENT_MEMORYCORE_USER_ID",
+      "CHAT_TENCENT_MEMORYCORE_AGENT_ID",
+      "CHAT_TENCENT_MEMORYCORE_CONFIG_REVISION",
+      "CHAT_TENCENT_MEMORYCORE_CREDENTIAL_REVISION",
+    ]) {
+      expect(example).toMatch(new RegExp(`^${name}=$`, "m"));
+    }
     expect(example).toContain("无需复制Key");
     // 不得出现真实Key值或Runtime凭据值（变量名后不允许跟非空值）
     expect(example).not.toMatch(/^DASHSCOPE_API_KEY=\S+$/m);
     expect(example).not.toMatch(/^CHAT_RUNTIME_KEY=\S+$/m);
+    expect(example).not.toMatch(/^CHAT_TENCENT_MEMORYCORE_TOKEN=\S+$/m);
   });
 });

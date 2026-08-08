@@ -4,12 +4,12 @@
 
 ## 1. 当前停点
 
-1. `main`为PR #10合并提交`8acafb5`；M2候选分支`codex/m2-memmy-memory-import`在Draft PR #11，真实门已过，等待最终合入。
-2. P0、P1.1、P1.2、B1、B2和M1已完成。浏览器可以真实完成“发送消息 → 可选Memory查询 → pi规划 → 用户修订/批准 → 同一Vercel Workflow恢复 → pi执行 → Product Commit → 正式回复”。
+1. `main`为PR #12合并提交`6bd7129`；当前小任务分支`codex/m3-debug-comments`补齐MemoryCore VS Code Compound与关键中文注释。
+2. P0、P1.1、P1.2、B1、B2和M1～M3已完成。浏览器可以真实完成“发送消息 → 选择memmy或Tencent MemoryCore → pi规划 → 用户修订/批准 → 同一Vercel Workflow恢复 → pi执行 → Product Commit → 正式回复”。
 3. 本地百炼私有配置已可用于真实`qwen3.7-plus`测试；`.env`被Git忽略且权限为`0600`，任何续接过程不得输出或提交Key。
-4. M2已增加正式消息整条/UTF-16选区导入、`MemoryImportWorkflow`、memmy真实add/对账、Store v3、严格Trace/Replay、最小统一UI与重启恢复；仍未增加第二后端。
+4. M2已增加正式消息整条/UTF-16选区导入、`MemoryImportWorkflow`、memmy真实add/对账、Store v3、严格Trace/Replay、最小统一UI与重启恢复；M3又增加Tencent L0接收、L0/L1只读对账与L1查询。
 5. M2固定memmy真实导入与原生幂等、完整Chat响应丢失对账且SQLite唯一已经通过；最终clean代码提交`3bcb7b7`的真实浏览器1/1通过（浏览器2.8分钟、命令3.1分钟），Import Replay 6事件、Run Replay 103事件、真实`qwen3.7-plus`规划与执行均成功。
-6. 当前仍没有Tencent真实Adapter、BMAD项目上下文和用户规则集。用户要求逐步完成三类真实能力，所有设计必须有参考项目依据、代码有中文注释、纵向里程碑使用真实模型和严格E2E。
+6. Tencent真实Adapter已经合入；当前仍没有BMAD项目上下文和用户规则集。所有后续设计必须有参考项目依据、代码有中文注释、纵向里程碑使用真实模型和严格E2E。
 7. 旧会话遗留的治理文档和设计截图已经恢复；不能再使用“M1待审核”“B2待真实Key验收”或“P1.2待实现”等旧状态。
 
 ## 2. 新 Session 读取顺序
@@ -43,12 +43,13 @@ Memory Query -> ContextPackage -> pi Planner -> HITL Hook -> pi Executor -> Vali
 Bailian qwen3.7-plus
 
 Message Selection -> MemoryImportIntent/Outbox -> MemoryImportWorkflow
-                  -> memmy add -> GET+Search materialized / outcome_unknown reconcile
+                  -> memmy L2 materialized
+                  -> Tencent L0 accepted -> L0/L1只读reconcile
 
 Trace + Product Store + Version Evidence -> Replay
 ```
 
-固定本地调试端口为Web `43110`、API `43111`、Workflow `43112`、Inspector `43120/43121`。启动前只清理身份确认属于本项目的旧进程；未知占用只报告、不杀进程。
+固定本地调试端口为Web `43110`、API `43111`、Workflow `43112`、memmy `18960`、MemoryCore `18970`、Inspector `43120～43123`。启动前只清理身份确认属于本项目的旧进程；未知占用只报告、不杀进程。
 
 ## 4. 下一阶段目标与依赖
 
@@ -56,9 +57,9 @@ Trace + Product Store + Version Evidence -> Replay
 
 1. **参考证据与共享边界**：定位腾讯Memory、memory-agent及其他已调研项目，定位BMAD源码/文档和既有分析，明确采用、调整、拒绝；只定义三个能力真正共享的身份、来源、版本和选择证据，不做万能Context Service。
 2. **Memory单后端查询纵向链**：M1已由PR #10合入，真实memmy查询、Application Port、Workflow节点、Trace、最小UI和真实E2E均完成。
-3. **Memory显式导入纵向链**：M2候选PR #11已完成有来源、目标、幂等、结果未知对账和重启恢复的真实memmy导入。
-4. **第二真实Memory后端**：下一任务用固定Tencent MemoryCore真实服务验证查询与导入Adapter抽象；配置和密钥不进入浏览器或产品正文。
-5. **项目上下文纵向链**：基于BMAD的阶段、状态、产物和推进门设计Chat自己的Project/Work/Document Manifest/Context Package，并让Workflow可读取、维护候选和提交用户确认后的变化。
+3. **Memory显式导入纵向链**：M2已由PR #11合入，完成有来源、目标、幂等、结果未知对账和重启恢复的真实memmy导入。
+4. **第二真实Memory后端**：M3已由PR #12合入，固定Tencent MemoryCore真实服务验证了L0接收、L1查询、强隔离与异步物化语义。
+5. **项目上下文纵向链（下一任务）**：基于BMAD的阶段、状态、产物和推进门设计Chat自己的Project/Work/Document Manifest/Context Package，并让Workflow可读取、维护候选和提交用户确认后的变化。
 6. **用户规则纵向链**：实现Rule/RuleRevision/Tag/Scope，统一管理界面、对话主动勾选/标签筛选、合理自动召回和规划节点注入；记录采用了哪些规则及版本。
 7. **组合验收**：真实用户场景同时使用项目上下文、选择规则和Memory查询完成规划—确认—执行，页面刷新后能从权威事实恢复，公开面不泄漏外部服务或Runtime私有身份。
 
@@ -85,9 +86,9 @@ Trace + Product Store + Version Evidence -> Replay
 
 ```text
 继续Chat项目。按AGENTS.md规定顺序读取治理文件和docs/project-session-handoff.md。
-main已在8acafb5完成真实规划—确认—执行及memmy查询闭环。M2分支PR #11已完成正式消息选区、
-真实memmy导入、结果未知对账、后端重启恢复、新会话查询和qwen3.7-plus规划/执行真实E2E。
-当前阶段接着建设：Tencent MemoryCore第二真实后端Adapter、BMAD启发的项目上下文、
+main已在6bd7129完成真实规划—确认—执行、memmy查询/导入和Tencent MemoryCore第二后端闭环。
+当前小任务补齐MemoryCore VS Code Compound、等待链、loopback调试身份和关键中文注释。
+下一阶段接着建设：BMAD启发的项目上下文、
 带标签且可主动选择的用户规则集。先读取本地参考项目与既有分析，给每个设计写出采用/调整/拒绝依据，
 再按依赖拆成可独立合并的小任务；实现使用worktree+PR，纵向完成门必须包含真实服务、真实模型和浏览器E2E。
 不要建立万能Context Service，不要把外部Memory、BMAD或Prompt当成Chat产品事实源。

@@ -291,6 +291,11 @@ function queryStatusError(status: number): MemoryBackendError {
   });
 }
 
+/**
+ * MemoryCore 的 conversation/add 没有 Chat commandId 幂等合同，因此用已经持久化的
+ * MemoryImportIntentId 派生稳定 session。响应丢失后只能用同一 session 对账，绝不能
+ * 生成新身份再次 add；随机 accepted message ID 只作为响应证据，不作为重放身份。
+ */
 function stableImportSession(operationId: string): string {
   return `chat-import:${operationId}`;
 }
@@ -305,6 +310,13 @@ function mappedKind(type: string): MemoryQuerySection["kind"] {
   return "trace";
 }
 
+/**
+ * Tencent MemoryCore 的信任边界 Adapter。
+ *
+ * Chat Product Store 仍拥有查询意图、导入状态和最终完成事实；MemoryCore 只拥有自己的
+ * L0/L1对象。Adapter不缓存产品状态，只把严格校验后的外部结果归一化为两个窄Port。
+ * endpoint、Bearer与隔离身份只存在于本进程，绝不进入公开DTO或Trace。
+ */
 export class TencentMemoryCoreAdapter implements MemoryBackendPort, MemoryImportBackendPort {
   private readonly baseUrl: string;
   private readonly configuration: ResolvedConfiguration | undefined;
@@ -425,6 +437,7 @@ export class TencentMemoryCoreAdapter implements MemoryBackendPort, MemoryImport
     }
   }
 
+  /** 查询只有读取副作用；能力越权必须在发出HTTP前失败。 */
   async query(input: MemoryQueryInput): Promise<MemoryQueryOutput> {
     const config = this.requireConfiguration("query");
     if (input.tags.length > 0 || input.layers.some((layer) => layer !== "L1")) {
@@ -473,6 +486,11 @@ export class TencentMemoryCoreAdapter implements MemoryBackendPort, MemoryImport
     };
   }
 
+  /**
+   * 唯一外部写入边界。Workflow已在调用前把产品结果标为dispatching，且本Step禁止自动
+   * 重试；一旦fetch可能发出，超时、断连、5xx或坏成功响应都归类为结果未知，交给同一
+   * stable session的只读对账收敛，不能在这里再次conversation/add。
+   */
   async import(input: MemoryImportInput): Promise<MemoryImportAccepted> {
     const config = this.requireImportConfiguration();
     this.assertImportInput(input);
@@ -533,6 +551,11 @@ export class TencentMemoryCoreAdapter implements MemoryBackendPort, MemoryImport
     }
   }
 
+  /**
+   * 对账严格只读：先证明稳定session中存在完全一致的L0，再检查同session的L1。
+   * L0存在只能证明accepted；只有L1真实存在才返回materialized。任何查询故障保持
+   * outcome_unknown，既不补造成功，也不调用atomic/update或再次add。
+   */
   async reconcile(input: MemoryImportReconcileInput): Promise<MemoryImportReconcileOutput> {
     const config = this.requireImportConfiguration();
     try {
