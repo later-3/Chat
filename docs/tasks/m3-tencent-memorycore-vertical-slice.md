@@ -8,6 +8,8 @@
 | 服务 | MemoryCore `2.0.0-beta.1`，本地 Standalone，SQLite + BM25，embedding=`none` |
 | 首版原则 | 先打通真实纵向路径；不伪造 L1，不把 `accepted` 显示成 `materialized` |
 
+> 状态：实现与本地完成门已通过，等待 CI 与 PR 合入。
+
 ## 1. 目标
 
 在现有同一套 Chat 交互、Workflow、Product Store 和 Memory Port 上增加第二个真实后端。用户可以：
@@ -121,3 +123,10 @@ Trace 只记录 backendId、operationId、阶段、耗时、稳定错误码、re
 ## 9. 完成判定
 
 M3 首版只有在“双后端可选择 + Tencent 真实 query/import/reconcile + accepted/materialized 如实区分 + memmy 回归 + 全质量门 + CI”全部通过后才可合并。L1 自动等待、后台定时对账和更丰富能力展示属于后续优化，不阻塞这个真实纵向闭环。
+
+## 10. 实施证据
+
+1. 固定 MemoryCore `3a9748d3c61c` 的真实 HTTP 门通过：L0 add/query、L1 BM25 atomic/search、错误 Token、错误隔离、重复只读对账和端口释放均已验证。
+2. 真实 Chromium E2E 通过：前端选择 Tencent → 真实 L1 查询 → 百炼 `qwen3.7-plus` 规划采用 → L0 导入 → accepted → 手动对账 → 刷新恢复 → 拒绝结束。
+3. E2E 发现并修复两项跨层缺陷：公开能力曾错误硬编码 `tags=true`；Outbox 终态监督器曾把合法 L0 `accepted` 降级为 `outcome_unknown`。两项均有确定性回归测试。
+4. Trace 与公开响应扫描未出现用户正文、Token、endpoint、service/team/user/agent 私有隔离值或 Workflow/pi 私有身份。

@@ -7,16 +7,16 @@
 | 项目 | 当前事实 |
 |---|---|
 | 产品身份 | 独立、完整、持续运营的Chat产品 |
-| 主分支 | `main`为PR #10合并提交`8acafb5`；M2候选在`codex/m2-memmy-memory-import`的Draft PR #11等待最终合入 |
+| 主分支 | `main`为PR #11合并提交`0682ed4`；M3候选在`codex/m3-tencent-memorycore`等待最终质量门与合入 |
 | 前端 | React + TypeScript + Vite；响应式PWA；最小Plan审核与运行投影已接真实后端 |
 | 后端 | Node.js + TypeScript；Hono协议入口；Application拥有事务 |
-| Product Store | M2候选升级为`chat-product-store.v3`；串行支持v1→v2→v3，保持单实例单写者、原子替换与损坏失败关闭 |
+| Product Store | `chat-product-store.v3`；串行支持v1→v2→v3，保持单实例单写者、原子替换与损坏失败关闭；M3复用现有Memory事实集合 |
 | Workflow | 规划仍由唯一`PlanningExecutionWorkflow`完成；M2另有独立`MemoryImportWorkflow`拥有导入/对账副作用生命周期 |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent`；百炼真实`qwen3.7-plus`已验证 |
 | 调试与回放 | 固定端口VS Code Compound；严格脱敏Trace；Trace + Product Store多源Replay |
-| 代码状态 | P0、P1.1、P1.2、B1、B2和M1已合入`main`；M2真实memmy显式导入纵向链已完成、待PR #11最终合入 |
+| 代码状态 | P0、P1.1、P1.2、B1、B2、M1和M2已合入`main`；M3腾讯MemoryCore第二真实后端纵向链已通过本地真实门 |
 | 当前阶段 | 长期上下文与知识复用：Memory、BMAD项目上下文、用户规则集 |
-| 当前任务 | 完成M2自审、质量门和PR合入；下一任务用Tencent MemoryCore真实Adapter验证查询/导入抽象 |
+| 当前任务 | 完成M3全量质量门、CI和PR合入；下一任务进入BMAD启发的Project基础、阶段与文档清单 |
 
 ## 2. B2已完成的真实证据
 
@@ -48,9 +48,16 @@
 7. 实现任务使用独立Git worktree、`codex/`分支和PR；简单任务不扩大验证，纵向里程碑必须运行真实服务、真实模型和浏览器E2E。
 8. 弱服务器只接收开发机或CI构建、测试、校验后的可追溯产物，不在服务器安装依赖、编译或运行测试。
 
+## 4.1 M3的真实证据
+
+1. 固定Tencent MemoryCore提交`3a9748d3c61c`真实HTTP门通过，证明L0接收、L0只读对账、L1 BM25查询、错误Token与错误隔离语义。
+2. 真实Chromium + 百炼`qwen3.7-plus`纵向门通过：选后端、召回L1、规划采用、导入L0、accepted显示、手动对账、刷新恢复和拒绝闭环全部贯通。
+3. UI由后端能力投影驱动：MemoryCore仅开放L1查询和L0会话捕获，不显示标签或标题；服务端再次拒绝越权参数。
+4. `accepted`是L0已落事实的合法状态，不等同于L1 `materialized`；终态监督器不得把合法accepted误降级为结果未知。
+
 ## 5. 当前没有的能力
 
-1. 已有真实memmy查询和显式L2导入；尚无第二真实后端Adapter、自动后台记忆和生产Memory服务部署配置。
+1. 已有真实memmy和Tencent MemoryCore查询/导入；尚无自动后台记忆、L1后台定时对账和生产Memory服务部署配置。
 2. 没有长期Project/Work/Stage/Status、项目文档清单和版本化Context Package实现。
 3. 没有带标签、场景范围、修订和选择证据的用户规则集，也没有规划节点规则注入。
 4. 没有Chat有序SSE Cursor Runtime Journal；B2仍使用受控Query轮询。
@@ -58,7 +65,7 @@
 
 ## 6. 下一阶段的三个用户结果
 
-1. **Memory**：M1/M2已让用户按标签查询真实memmy并把明确选区导入；下一步接入Tencent MemoryCore，验证同一能力边界能承载异步物化与不同隔离语义。
+1. **Memory**：M1/M2/M3已验证两套真实服务的查询、显式导入、同步物化与异步接收差异；后续优化是后台提炼/对账和生产部署，不再阻塞项目上下文建设。
 2. **项目上下文**：用户用Chat推进项目时，可以恢复当前阶段、状态、目标、决定、阻塞、文档与下一步；结构受BMAD真实方法启发，但允许按项目类型裁剪。
 3. **用户规则**：用户可以在统一界面维护带标签和场景范围的个人习惯/要求，也可以让Chat提出维护建议；对话中可主动勾选或按标签筛选，规划时记录最终采用规则及其版本。
 

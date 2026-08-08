@@ -1,6 +1,6 @@
 # C1 任务书：Memory、Project 与用户规则纵向建设
 
-> 状态：设计已审核；M1 实现中
+> 状态：设计已审核；M1/M2已合入，M3本地完成门已通过，等待CI与合入
 > 架构依据：[长期上下文架构](../architecture/context-memory-project-rules.md)  
 > 基线：`main` @ `6784580`
 
@@ -117,6 +117,13 @@ Memory 选择器同时显示 memmy 与 Tencent MemoryCore。用户能选择任�
 3. 真实 E2E 分别完成：memmy query/import、Tencent query/import/reconcile；UI 不把 accepted 显示成 materialized。
 4. 后端 endpoint、Bearer、serviceId、tenant 字段不出现在浏览器、Trace、Product 正文或测试快照。
 5. MemOS 仅在本任务开始时复核真实服务可用性；若没有本地依赖或云 Key，保持“候选 Adapter”并记录证据，不虚构第三后端完成。
+
+### 6.4 实施结果
+
+1. 第二真实后端已落在现有Query/Import Port上，没有增加任意metadata袋子；memmy能力保持不变。
+2. 固定MemoryCore真实HTTP门与真实Chromium + 百炼`qwen3.7-plus`门均已通过。
+3. Tencent导入当前如实收敛为L0 `accepted`；只有同一稳定session出现L1时才可升级`materialized`。
+4. L1自动等待、后台定时对账与生产部署属于明确后续优化；下一纵向任务切换到P1 Project基础。
 
 ## 7. P1：Project 基础、阶段与文档清单
 
