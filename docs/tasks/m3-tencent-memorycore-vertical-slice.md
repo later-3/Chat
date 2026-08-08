@@ -8,7 +8,7 @@
 | 服务 | MemoryCore `2.0.0-beta.1`，本地 Standalone，SQLite + BM25，embedding=`none` |
 | 首版原则 | 先打通真实纵向路径；不伪造 L1，不把 `accepted` 显示成 `materialized` |
 
-> 状态：实现与本地完成门已通过，等待 CI 与 PR 合入。
+> 状态：已由 PR #12 合入 `main@6bd7129`；后续小任务补齐 MemoryCore VS Code Compound 与关键中文注释。
 
 ## 1. 目标
 

@@ -21,6 +21,7 @@ export const FROZEN_PORTS = Object.freeze({
   apiInspector: 43120,
   workflowInspector: 43121,
   memoryInspector: 43122,
+  memoryCoreInspector: 43123,
 });
 
 /** 各调试角色的命令行身份片段（用于PID复用复核）。 */
@@ -28,6 +29,7 @@ export const ROLE_COMMAND_FRAGMENTS = Object.freeze({
   api: ["src/index.ts", "tsx"],
   workflow: ["runtime-main.ts", "tsx"],
   memory: ["start-fixed-memmy.mjs"],
+  memoryCore: ["start-fixed-memorycore.mjs"],
   web: ["vite", "43110"],
 });
 
@@ -244,7 +246,7 @@ function signal(entry, sig) {
  * 调试清理必须比该上限更长，避免先杀包装器而遗留未登记的子进程。
  */
 export function termWaitMsForEntry(entry, requestedTermWaitMs = 3000) {
-  return entry.role === "memory"
+  return entry.role === "memory" || entry.role === "memoryCore"
     ? Math.max(requestedTermWaitMs, MEMORY_WRAPPER_TERM_WAIT_MS)
     : requestedTermWaitMs;
 }

@@ -463,6 +463,8 @@ async function superviseAcknowledgedImport(
   entry: MemoryImportEntry,
 ): Promise<void> {
   const result = importResult(snapshot, entry);
+  // accepted是Tencent L0已经提交的合法结果，不是“Workflow终止但未提交”。后续是否
+  // 物化由用户/后台显式创建只读reconcile Outbox推进，监督器不能擅自降级或重复写入。
   if (
     result === undefined ||
     result.status === "accepted" ||

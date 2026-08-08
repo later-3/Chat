@@ -33,11 +33,34 @@
       "problemMatcher": []
     },
     {
+      "label": "chat-debug:prepare-memorycore",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["memory:prepare:memorycore-fixed"],
+      "dependsOn": ["chat-debug:preclean"],
+      "dependsOrder": "sequence",
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "chat-debug:wait-memorycore",
+      "type": "shell",
+      "command": "node",
+      "args": [
+        "scripts/debug/wait-ready.mjs",
+        "Tencent MemoryCore",
+        "http://127.0.0.1:18970/health",
+        "180000"
+      ],
+      "presentation": { "reveal": "silent", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
       "label": "chat-debug:build-bundles",
       "type": "shell",
       "command": "pnpm",
       "args": ["--filter", "@chat/workflows", "build:bundles"],
-      "dependsOn": ["chat-debug:wait-memory"],
+      "dependsOn": ["chat-debug:wait-memory", "chat-debug:wait-memorycore"],
       "presentation": { "reveal": "always", "panel": "dedicated" },
       "problemMatcher": []
     },
@@ -59,7 +82,11 @@
       "type": "shell",
       "command": "node",
       "args": ["-e", "process.exit(0)"],
-      "dependsOn": ["chat-debug:wait-memory", "chat-debug:wait-workflow"],
+      "dependsOn": [
+        "chat-debug:wait-memory",
+        "chat-debug:wait-memorycore",
+        "chat-debug:wait-workflow"
+      ],
       "presentation": { "reveal": "silent", "panel": "dedicated" },
       "problemMatcher": []
     },

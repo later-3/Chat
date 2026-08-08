@@ -111,6 +111,10 @@ function runtimeImportBackend(loaded: LoadedMemoryImportStepResult) {
   return backend;
 }
 
+/**
+ * 外部写入Step：只允许调用一次。`maxRetries=0`不是性能选择，而是副作用安全合同；
+ * 网络异常无法证明服务端未写入，只能返回outcome_unknown并由后续只读对账确认。
+ */
 export async function callMemoryImportStep(input: {
   loaded: LoadedMemoryImportStepResult;
   dispatching: MemoryImportResult;
@@ -151,6 +155,7 @@ export async function callMemoryImportStep(input: {
 }
 callMemoryImportStep.maxRetries = 0;
 
+/** 对账Step只调用Adapter.reconcile，不得退回import，也不得自行修改产品状态。 */
 export async function reconcileMemoryImportStep(input: {
   loaded: LoadedMemoryImportStepResult;
   result: MemoryImportResult;
@@ -217,6 +222,7 @@ export async function reconcileMemoryImportStep(input: {
 }
 reconcileMemoryImportStep.maxRetries = 0;
 
+/** accepted提交的是“外部已接收”事实；对Tencent而言仍需后续L1证据才能materialized。 */
 export async function commitMemoryImportAcceptedStep(input: {
   loaded: LoadedMemoryImportStepResult;
   intentId: string;
@@ -254,6 +260,7 @@ export async function commitMemoryImportAcceptedStep(input: {
   }
 }
 
+/** materialized必须同时提交类型化验证方式与Hash，不能仅依据Provider成功响应。 */
 export async function commitMemoryImportMaterializedStep(input: {
   loaded: LoadedMemoryImportStepResult;
   intentId: string;

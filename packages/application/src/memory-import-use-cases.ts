@@ -97,6 +97,11 @@ function mapInvariantError(error: unknown): never {
   throw error;
 }
 
+/**
+ * 创建导入的唯一产品事务：冻结来源选区、后端能力、请求Hash、初始Result与Outbox。
+ * 外部Memory调用不在本事务内；commandId与语义Hash共同保证刷新/重复点击不会制造
+ * 第二个Intent，真正的副作用由Workflow在dispatching栅栏之后执行。
+ */
 export async function createMemoryImport(
   deps: ApplicationDeps,
   input: CreateMemoryImportInput,
@@ -533,6 +538,10 @@ export function markMemoryImportDispatching(
   });
 }
 
+/**
+ * 提交“外部已接收”事实。重复对账可增加reconcileAttempts，但外部对象身份一经接受
+ * 就不可改写；accepted不是materialized，也不会被终态监督器降级成结果未知。
+ */
 export function commitMemoryImportAccepted(
   deps: ApplicationDeps,
   input: ResultCommandBase & {
@@ -566,6 +575,7 @@ export function commitMemoryImportAccepted(
   });
 }
 
+/** 只有Adapter提供可重建的验证类型与Hash后，Application才允许进入materialized。 */
 export function commitMemoryImportMaterialized(
   deps: ApplicationDeps,
   input: ResultCommandBase & {
@@ -802,6 +812,10 @@ export async function recoverMemoryImportAfterTerminalWorkflow(
   }
 }
 
+/**
+ * 用户主动对账只创建memory_import_reconcile Outbox；相同revision已有待处理Outbox时
+ * 不重复创建。该命令永远不会创建普通import Outbox，因此不能绕过副作用幂等边界。
+ */
 export async function requestMemoryImportReconciliation(
   deps: ApplicationDeps,
   input: {

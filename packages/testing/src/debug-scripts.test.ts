@@ -18,7 +18,7 @@ import { afterEach, describe, expect, it } from "vitest";
 const repoRoot = resolve(fileURLToPath(import.meta.url), "../../../..");
 const scriptsDir = join(repoRoot, "scripts", "debug");
 
-const TEST_PORTS = "44110,44111,44112,44120,44121,44122";
+const TEST_PORTS = "44110,44111,44112,44120,44121,44122,44123";
 
 function makeEnv(debugDir: string): NodeJS.ProcessEnv {
   return {
@@ -92,6 +92,24 @@ function runProviderPreload(env: NodeJS.ProcessEnv) {
         "if (process.env.DASHSCOPE_API_KEY !== process.env.EXPECTED_KEY) process.exit(4);",
         "if (process.env.DASHSCOPE_BASE_URL !== process.env.EXPECTED_BASE_URL) process.exit(5);",
         'process.stdout.write("PROVIDER_READY\\n");',
+      ].join(" "),
+    ],
+    { env, encoding: "utf8", timeout: 15_000 },
+  );
+}
+
+function runMemoryCoreDebugPreload(env: NodeJS.ProcessEnv) {
+  return spawnSync(
+    process.execPath,
+    [
+      "--import",
+      join(scriptsDir, "load-memorycore-debug-env.mjs"),
+      "-e",
+      [
+        'if (process.env.CHAT_TENCENT_MEMORYCORE_BASE_URL !== "http://127.0.0.1:18970") process.exit(4);',
+        'if (process.env.CHAT_TENCENT_MEMORYCORE_SERVICE_ID !== "chat-local-debug-service") process.exit(5);',
+        'if (!/^chat-debug-[0-9a-f]{32}$/.test(process.env.CHAT_TENCENT_MEMORYCORE_TOKEN ?? "")) process.exit(6);',
+        'process.stdout.write("MEMORYCORE_DEBUG_READY\\n");',
       ].join(" "),
     ],
     { env, encoding: "utf8", timeout: 15_000 },
@@ -208,10 +226,28 @@ describe("VS Code Provider preload", () => {
   });
 });
 
+describe("VS Code MemoryCore preload", () => {
+  it("强制三个调试进程使用同一loopback身份且不输出配置", () => {
+    const hostileToken = "REMOTE_TOKEN_MUST_NOT_APPEAR_7";
+    const result = runMemoryCoreDebugPreload({
+      ...makeEnv(tempDebugDir()),
+      CHAT_TENCENT_MEMORYCORE_BASE_URL: "https://remote.example.test",
+      CHAT_TENCENT_MEMORYCORE_TOKEN: hostileToken,
+      CHAT_TENCENT_MEMORYCORE_SERVICE_ID: "remote-private-service",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("MEMORYCORE_DEBUG_READY\n");
+    expect(result.stdout).not.toContain(hostileToken);
+    expect(result.stderr).not.toContain(hostileToken);
+  });
+});
+
 describe("preclean", () => {
-  it("固定memmy端口18960纳入统一未知占用保护", () => {
+  it("固定memmy与MemoryCore端口纳入统一未知占用保护", () => {
     const debugLibrary = readFileSync(join(scriptsDir, "lib.mjs"), "utf8");
     expect(debugLibrary).toMatch(/memory:\s*18960/u);
+    expect(debugLibrary).toMatch(/memoryCore:\s*18970/u);
+    expect(debugLibrary).toMatch(/memoryCoreInspector:\s*43123/u);
     // 下方“未知应用占用端口”黑盒用例通过CHAT_DEBUG_PORTS复用同一preclean逻辑，
     // 证明冻结端口（包括18960）遇到未登记监听者均只报告、不终止。
   });
@@ -219,7 +255,7 @@ describe("preclean", () => {
   it("memory包装进程有足够时间转发停止信号，其他角色保留默认上限", () => {
     const debugLibrary = readFileSync(join(scriptsDir, "lib.mjs"), "utf8");
     expect(debugLibrary).toContain("MEMORY_WRAPPER_TERM_WAIT_MS = 7_000");
-    expect(debugLibrary).toContain('entry.role === "memory"');
+    expect(debugLibrary).toContain('entry.role === "memory" || entry.role === "memoryCore"');
   });
 
   it("清理已记录进程并释放，连续两次运行均成功且幂等", async () => {
@@ -493,6 +529,59 @@ describe("preclean", () => {
     expect(result.stdout).toContain("terminated");
     await new Promise<void>((resolveExit, rejectExit) => {
       const timer = setTimeout(() => rejectExit(new Error("memory包装进程未被精准释放")), 3_000);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        resolveExit();
+      });
+    });
+    expect(child.signalCode).toBe("SIGTERM");
+  });
+
+  it("memoryCore登记的旧包装进程由stop精准释放", async () => {
+    const debugDir = tempDebugDir();
+    const child = spawn(
+      "node",
+      [
+        "--import",
+        join(scriptsDir, "register-process.mjs"),
+        "-e",
+        "setInterval(() => {}, 1000)",
+        "start-fixed-memorycore.mjs",
+      ],
+      {
+        env: {
+          ...makeEnv(debugDir),
+          CHAT_DEBUG_ROLE: "memoryCore",
+          CHAT_DEBUG_PORT: "18970",
+        },
+        stdio: "ignore",
+      },
+    );
+    cleanup.push(() => {
+      try {
+        process.kill(child.pid ?? 0, "SIGKILL");
+      } catch {
+        // 已被stop清理
+      }
+    });
+
+    const pidsFile = join(debugDir, "pids.json");
+    const deadline = Date.now() + 3_000;
+    while (!existsSync(pidsFile) && Date.now() < deadline) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+    }
+    expect(existsSync(pidsFile)).toBe(true);
+    expect(readFileSync(pidsFile, "utf8")).toContain('"role": "memoryCore"');
+
+    const result = runScript("stop.mjs", [], makeEnv(debugDir));
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("memoryCore");
+    expect(result.stdout).toContain("terminated");
+    await new Promise<void>((resolveExit, rejectExit) => {
+      const timer = setTimeout(
+        () => rejectExit(new Error("memoryCore包装进程未被精准释放")),
+        3_000,
+      );
       child.once("exit", () => {
         clearTimeout(timer);
         resolveExit();

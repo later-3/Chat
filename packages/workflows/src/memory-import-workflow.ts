@@ -20,6 +20,10 @@ export interface MemoryImportWorkflowResult {
   readonly status: MemoryImportResult["status"];
 }
 
+/**
+ * 把外部只读对账结果提交回Chat产品事实。Workflow只协调步骤，不直接改Product Store；
+ * 每个commit都经API进入Application并携带expected revision，所以重放不会覆盖新状态。
+ */
 async function settleReconcile(
   input: MemoryImportWorkflowInput,
   loaded: LoadedMemoryImportStepResult,
@@ -90,6 +94,13 @@ async function settleReconcile(
   });
 }
 
+/**
+ * 一次导入或一次人工对账对应一个耐久Workflow Run。
+ *
+ * 普通导入固定经过 load → dispatching栅栏 → 单次外部call → 产品提交 → 只读对账。
+ * 外部call结果未知时也只能进入reconcile，绝不回到call；reconcile模式同样不会执行写入。
+ * accepted是Tencent L0已经存在的合法收敛状态，不代表L1已经可用于长期查询。
+ */
 export async function memoryImportWorkflow(
   rawInput: MemoryImportWorkflowInput,
 ): Promise<MemoryImportWorkflowResult> {
