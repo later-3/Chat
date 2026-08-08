@@ -68,7 +68,9 @@ async function stopChild() {
   }
   const exited = await Promise.race([
     new Promise((resolveExit) => child.once("exit", () => resolveExit(true))),
-    new Promise((resolveTimeout) => setTimeout(() => resolveTimeout(false), 7_000)),
+    // Playwright给webServer wrapper的清理窗口有限；这是本监督器精确创建的独立进程组，
+    // 先TERM，1.5秒仍未退出才KILL，避免wrapper先被强停后遗留监听者。
+    new Promise((resolveTimeout) => setTimeout(() => resolveTimeout(false), 1_500)),
   ]);
   if (!exited) {
     try {

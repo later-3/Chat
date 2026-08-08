@@ -44,10 +44,15 @@ async function currentSessionId(page: Page): Promise<string> {
 }
 
 async function activeRunId(page: Page): Promise<string> {
-  const value = await page.evaluate(() => {
-    const entry = Object.entries(localStorage).find(([key]) => key.startsWith("chat:real-run:v1:"));
-    return entry?.[1] ?? null;
-  });
+  const read = () =>
+    page.evaluate(() => {
+      const entry = Object.entries(localStorage).find(([key]) =>
+        key.startsWith("chat:real-run:v1:"),
+      );
+      return entry?.[1] ?? null;
+    });
+  await expect.poll(read, { timeout: 30_000 }).not.toBeNull();
+  const value = await read();
   return productRunIdSchema.parse(value);
 }
 
@@ -206,6 +211,10 @@ function replay(kind: "run" | "import", id: string, canary: string): Record<stri
   expect(stdout).not.toContain(canary);
   return JSON.parse(stdout) as Record<string, unknown>;
 }
+
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
 
 test("正式消息选区 -> 真实memmy -> 重启恢复 -> 新会话真实规划执行", async ({ page }) => {
   const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
