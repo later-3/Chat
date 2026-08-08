@@ -411,7 +411,7 @@ describe("M3真实前端闭环", () => {
     expect(screen.getByText("Plan v1")).toBeTruthy();
 
     // 提交修改意见
-    await user.type(screen.getByLabelText("修改意见"), "把风险单独成节");
+    await user.type(await screen.findByLabelText("修改意见"), "把风险单独成节");
     await user.click(screen.getByRole("button", { name: "要求修改" }));
     await waitFor(() => expect(state.decisionCalls).toHaveLength(1));
     expect(state.decisionCalls[0]?.payload.kind).toBe("request_revision");
@@ -574,7 +574,7 @@ describe("M3真实前端闭环", () => {
 
     // decision接口本次返回冲突
     state.failNextDecision = true;
-    await user.type(screen.getByLabelText("修改意见"), "这条意见不能丢");
+    await user.type(await screen.findByLabelText("修改意见"), "这条意见不能丢");
     await user.click(screen.getByRole("button", { name: "要求修改" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("状态已变化"));
     expect((screen.getByLabelText("修改意见") as HTMLTextAreaElement).value).toBe("这条意见不能丢");
@@ -591,7 +591,7 @@ describe("M3真实前端闭环", () => {
     await waitFor(() => expect(screen.getByLabelText("计划第1版")).toBeTruthy());
 
     state.disconnectNextDecision = true;
-    await user.type(screen.getByLabelText("修改意见"), "保留这条修改意见");
+    await user.type(await screen.findByLabelText("修改意见"), "保留这条修改意见");
     await user.click(screen.getByRole("button", { name: "要求修改" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("重试同一决定"));
     expect((screen.getByLabelText("修改意见") as HTMLTextAreaElement).value).toBe(
