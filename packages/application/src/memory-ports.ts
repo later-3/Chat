@@ -1,16 +1,20 @@
-import type { MemoryBackendId, MemoryLayer, ProductRunId, ProductSessionId } from "@chat/contracts";
+import type {
+  MemoryBackendDescriptor,
+  MemoryBackendId,
+  MemoryLayer,
+  ProductRunId,
+  ProductSessionId,
+} from "@chat/contracts";
 
 /** 进程内部的安全能力说明；不包含 endpoint、Token 或 namespace 映射。 */
 interface MemoryBackendProfileBase {
   readonly backendId: MemoryBackendId;
   readonly displayName: string;
-  readonly kind: "memmy";
-  readonly adapterContractVersion: "memmy-http-query.v1";
   readonly configurationFingerprint: string;
   readonly configured: boolean;
   readonly capabilities: {
     readonly query: true;
-    readonly tags: true;
+    readonly tags: boolean;
     readonly layers: readonly MemoryLayer[];
     readonly maxLimit: number;
     readonly maxContextBudget: number;
@@ -18,11 +22,20 @@ interface MemoryBackendProfileBase {
 }
 
 /** 认证模式与非秘密keyId/revision必须同步；它不是Token的Hash。 */
-export type MemoryBackendProfile = MemoryBackendProfileBase &
-  (
-    | { readonly authMode: "none"; readonly credentialRevision: "none" }
-    | { readonly authMode: "bearer"; readonly credentialRevision: string }
-  );
+export type MemoryBackendProfile =
+  | (MemoryBackendProfileBase & {
+      readonly kind: "memmy";
+      readonly adapterContractVersion: "memmy-http-query.v1";
+    } & (
+        | { readonly authMode: "none"; readonly credentialRevision: "none" }
+        | { readonly authMode: "bearer"; readonly credentialRevision: string }
+      ))
+  | (MemoryBackendProfileBase & {
+      readonly kind: "tencent_memorycore";
+      readonly adapterContractVersion: "tencent-memorycore-http-query.v1";
+      readonly authMode: "bearer";
+      readonly credentialRevision: string;
+    });
 
 export interface MemoryBackendHealth {
   readonly status: "ready" | "unavailable";
@@ -72,6 +85,49 @@ export interface MemoryBackendPort {
 export interface MemoryBackendRegistryPort {
   list(): readonly MemoryBackendPort[];
   get(backendId: MemoryBackendId): MemoryBackendPort | undefined;
+}
+
+/** 把运行时Profile冻结为可持久化安全描述；保持kind/version/auth的判别关系。 */
+export function freezeMemoryBackendDescriptor(
+  profile: MemoryBackendProfile,
+): MemoryBackendDescriptor {
+  const common = {
+    backendId: profile.backendId,
+    displayName: profile.displayName,
+    configured: profile.configured,
+    configurationFingerprint: profile.configurationFingerprint,
+    capabilities: {
+      query: profile.capabilities.query,
+      tags: profile.capabilities.tags,
+      layers: [...profile.capabilities.layers],
+      maxLimit: profile.capabilities.maxLimit,
+      maxContextBudget: profile.capabilities.maxContextBudget,
+    },
+  };
+  if (profile.kind === "tencent_memorycore") {
+    return {
+      ...common,
+      kind: "tencent_memorycore",
+      adapterContractVersion: "tencent-memorycore-http-query.v1",
+      authMode: "bearer",
+      credentialRevision: profile.credentialRevision,
+    };
+  }
+  return profile.authMode === "none"
+    ? {
+        ...common,
+        kind: "memmy",
+        adapterContractVersion: "memmy-http-query.v1",
+        authMode: "none",
+        credentialRevision: "none",
+      }
+    : {
+        ...common,
+        kind: "memmy",
+        adapterContractVersion: "memmy-http-query.v1",
+        authMode: "bearer",
+        credentialRevision: profile.credentialRevision,
+      };
 }
 
 /** Adapter 只抛稳定错误；外部响应正文和底层异常不跨过 Port。 */

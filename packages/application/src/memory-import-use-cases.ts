@@ -62,11 +62,20 @@ function sourceContent(
 }
 
 function requestShape(input: {
+  readonly backendKind: MemoryImportIntent["backendDescriptor"]["kind"];
   readonly content: string;
   readonly title: string;
   readonly tags: readonly string[];
   readonly turnId: string;
 }): MemoryImportRequestShape {
+  if (input.backendKind === "tencent_memorycore") {
+    return {
+      kind: "tencent_conversation_capture",
+      content: input.content,
+      layer: "L0",
+      turnId: input.turnId,
+    };
+  }
   return {
     content: input.content,
     layer: "L2",
@@ -139,8 +148,17 @@ export async function createMemoryImport(
           maxContentChars: descriptor.capabilities.maxContentChars,
         });
         const title = normalizeMemoryImportTitle(input.payload.title);
-        const tags = normalizeMemoryImportTags(input.payload.tags);
+        if (!descriptor.capabilities.tags && input.payload.tags.length > 0) {
+          throw new MemoryImportInvariantError(
+            "memory.import.tags_unsupported",
+            "所选Memory后端不支持标签",
+          );
+        }
+        const tags = descriptor.capabilities.tags
+          ? normalizeMemoryImportTags(input.payload.tags)
+          : [];
         const normalizedRequest = requestShape({
+          backendKind: descriptor.kind,
           content,
           title,
           tags,
@@ -183,7 +201,7 @@ export async function createMemoryImport(
           backendId: input.payload.backendId,
           backendDescriptor: descriptor,
           backendDescriptorSha256: computeMemoryImportBackendDescriptorSha256(descriptor),
-          memoryLayer: "L2",
+          memoryLayer: descriptor.capabilities.layers[0],
           title,
           tags,
           operationId: candidateIntentId,
@@ -281,7 +299,7 @@ function toMemoryImportDto(
     sourcePreview: preview(source.content),
     backendId: intent.backendId,
     backendDisplayName: intent.backendDescriptor.displayName,
-    memoryLayer: "L2" as const,
+    memoryLayer: intent.memoryLayer,
     title: intent.title,
     tags: intent.tags,
     resultRevision: result.revision,
@@ -427,6 +445,7 @@ export async function loadMemoryImportForRuntime(
   }
   const source = sourceContent(snapshot, intent);
   const shape = requestShape({
+    backendKind: intent.backendDescriptor.kind,
     content: source.content,
     title: intent.title,
     tags: intent.tags,
@@ -441,7 +460,11 @@ export async function loadMemoryImportForRuntime(
     adapterInput: {
       operationId: intent.operationId,
       requestSha256: intent.requestSha256,
-      ...shape,
+      content: source.content,
+      layer: shape.layer,
+      title: intent.title,
+      tags: intent.tags,
+      turnId: source.turnId,
       source: "chat.explicit_import",
       sessionId: source.sessionId as never,
     },
@@ -547,6 +570,7 @@ export function commitMemoryImportMaterialized(
   deps: ApplicationDeps,
   input: ResultCommandBase & {
     readonly accepted: MemoryImportAccepted;
+    readonly verificationKind: "read_by_id_and_search" | "l0_and_session_l1";
     readonly verificationSha256: string;
     readonly reconciled?: boolean;
   },
@@ -569,7 +593,7 @@ export function commitMemoryImportMaterialized(
       ...input.accepted,
       acceptedAt: current.status === "accepted" ? current.acceptedAt : now,
       materializedAt: now,
-      verificationKind: "read_by_id_and_search",
+      verificationKind: input.verificationKind,
       verificationSha256: input.verificationSha256 as never,
       revision: current.revision + 1,
       createdAt: current.createdAt,

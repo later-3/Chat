@@ -5,7 +5,7 @@ vi.mock("workflow", async (importOriginal) => {
   return { ...original, getStepMetadata: () => ({ attempt: 1 }) };
 });
 
-import type { MemoryBackendPort } from "@chat/application";
+import { freezeMemoryBackendDescriptor, type MemoryBackendPort } from "@chat/application";
 import type { MemoryQueryDispatchDto } from "@chat/contracts";
 import { computeMemoryBackendDescriptorSha256 } from "@chat/domain";
 import { setWorkflowRuntimeContext } from "./runtime-context.js";
@@ -39,29 +39,8 @@ function backend(queryImpl: MemoryBackendPort["query"]): MemoryBackendPort {
 
 function dispatch(memory: MemoryBackendPort): MemoryQueryDispatchDto {
   const profile = memory.describe();
-  const descriptorBase = {
-    backendId: profile.backendId,
-    displayName: profile.displayName,
-    kind: profile.kind,
-    adapterContractVersion: profile.adapterContractVersion,
-    configured: profile.configured,
-    configurationFingerprint: profile.configurationFingerprint,
-    capabilities: {
-      query: profile.capabilities.query,
-      tags: profile.capabilities.tags,
-      layers: [...profile.capabilities.layers],
-      maxLimit: profile.capabilities.maxLimit,
-      maxContextBudget: profile.capabilities.maxContextBudget,
-    },
-  };
   const backendDescriptor: MemoryQueryDispatchDto["backendDescriptor"] =
-    profile.authMode === "none"
-      ? { ...descriptorBase, authMode: "none", credentialRevision: "none" }
-      : {
-          ...descriptorBase,
-          authMode: "bearer",
-          credentialRevision: profile.credentialRevision,
-        };
+    freezeMemoryBackendDescriptor(profile);
   return {
     memoryQueryId: "mqy_workflow1" as never,
     contextRequestId: "ctxr_workflow1" as never,

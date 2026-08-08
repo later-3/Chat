@@ -58,7 +58,7 @@ describe("ContextPicker", () => {
     const user = userEvent.setup();
     render(<PickerHarness backend={{ ...readyMemmy, health: "unavailable" }} />);
     await user.click(screen.getByRole("button", { name: /上下文/ }));
-    expect(screen.getAllByText("memmy 尚未就绪")).toHaveLength(2);
+    expect(screen.getAllByText("Memory 后端尚未就绪")).toHaveLength(2);
     expect(
       (screen.getByRole("checkbox", { name: /使用 Memory 上下文/ }) as HTMLInputElement).disabled,
     ).toBe(true);

@@ -14,9 +14,13 @@ const variants = {
     preflight: "preflight-memory-planning-real.mjs",
     config: "playwright.memory-import-real.config.ts",
   },
+  tencent: {
+    preflight: "preflight-memorycore-real.mjs",
+    config: "playwright.memorycore-real.config.ts",
+  },
 };
 const selected = variants[variant];
-if (selected === undefined) throw new Error("真实Memory E2E仅支持planning/import");
+if (selected === undefined) throw new Error("真实Memory E2E仅支持planning/import/tencent");
 
 /**
  * 已有环境/.env 优先；否则通过用户已有 pi Key reader 获取百炼 Key。
@@ -76,7 +80,15 @@ function run(command, args, env) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-run(process.execPath, ["scripts/memory/prepare-fixed-memmy.mjs"], preparationEnv);
+run(
+  process.execPath,
+  [
+    variant === "tencent"
+      ? "scripts/memory/prepare-fixed-memorycore.mjs"
+      : "scripts/memory/prepare-fixed-memmy.mjs",
+  ],
+  preparationEnv,
+);
 const providerEnv = {
   ...process.env,
   CHAT_REPO_ROOT: repoRoot,
@@ -84,7 +96,14 @@ const providerEnv = {
   DASHSCOPE_BASE_URL: resolveBailianBaseUrl(),
 };
 run("pnpm", ["debug:preclean"], providerEnv);
-run(process.execPath, ["scripts/e2e/preflight-memory-planning-real.mjs", variant], providerEnv);
+run(
+  process.execPath,
+  [
+    `scripts/e2e/${selected.preflight}`,
+    ...(selected.preflight === "preflight-memory-planning-real.mjs" ? [variant] : []),
+  ],
+  providerEnv,
+);
 run("pnpm", ["--filter", "@chat/workflows", "build:bundles"], providerEnv);
 run(process.execPath, ["scripts/e2e/assert-clean-runtime-evidence.mjs"], providerEnv);
 run(

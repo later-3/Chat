@@ -103,7 +103,7 @@ export function ContextPicker({
             {loading
               ? "正在读取后端…"
               : usableBackends.length === 0
-                ? "memmy 尚未就绪"
+                ? "Memory 后端尚未就绪"
                 : enabled
                   ? `${selectedProfile?.displayName ?? "Memory"} · ${memory.requirement === "required" ? "必需" : "可选"}`
                   : "本轮不查询 Memory"}
@@ -141,7 +141,7 @@ export function ContextPicker({
                 {loading
                   ? "正在读取后端…"
                   : usableBackends.length === 0
-                    ? "memmy 尚未就绪"
+                    ? "Memory 后端尚未就绪"
                     : enabled
                       ? "本轮查询已启用"
                       : "本轮不查询"}
@@ -159,9 +159,14 @@ export function ContextPicker({
                   disabled={disabled}
                   onChange={(event) => switchBackend(event.target.value)}
                 >
-                  {usableBackends.map((backend) => (
-                    <option key={backend.backendId} value={backend.backendId}>
+                  {backends.map((backend) => (
+                    <option
+                      key={backend.backendId}
+                      value={backend.backendId}
+                      disabled={!backend.configured || backend.health !== "ready"}
+                    >
                       {backend.displayName}
+                      {!backend.configured || backend.health !== "ready" ? "（不可用）" : ""}
                     </option>
                   ))}
                 </select>
@@ -183,19 +188,21 @@ export function ContextPicker({
                   <option value="required">必需：失败时停止</option>
                 </select>
               </label>
-              <label className="context-tags-field">
-                <span>标签（逗号分隔）</span>
-                <input
-                  aria-label="Memory 标签"
-                  value={tagsText}
-                  disabled={disabled}
-                  placeholder="例如：项目, 决策"
-                  onChange={(event) => {
-                    setTagsText(event.target.value);
-                    updateMemory({ ...memory, tags: parseTags(event.target.value) });
-                  }}
-                />
-              </label>
+              {selectedProfile.capabilities.tags && (
+                <label className="context-tags-field">
+                  <span>标签（逗号分隔）</span>
+                  <input
+                    aria-label="Memory 标签"
+                    value={tagsText}
+                    disabled={disabled}
+                    placeholder="例如：项目, 决策"
+                    onChange={(event) => {
+                      setTagsText(event.target.value);
+                      updateMemory({ ...memory, tags: parseTags(event.target.value) });
+                    }}
+                  />
+                </label>
+              )}
               <fieldset className="context-layers">
                 <legend>层级</legend>
                 {selectedProfile.capabilities.layers.map((layer) => (

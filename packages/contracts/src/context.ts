@@ -37,35 +37,52 @@ export const memoryCredentialRevisionSchema = z
 export const memoryBackendCapabilitiesSchema = z
   .object({
     query: z.literal(true),
-    tags: z.literal(true),
+    tags: z.boolean(),
     layers: z.array(memoryLayerSchema).min(1).max(4),
     maxLimit: z.number().int().min(1).max(20),
     maxContextBudget: z.number().int().min(128).max(8_192),
   })
   .strict();
 
-const memoryBackendDescriptorBase = {
+const memoryBackendDescriptorCommon = {
   backendId: memoryBackendIdSchema,
   displayName: z.string().min(1).max(100),
-  kind: z.literal("memmy"),
-  adapterContractVersion: z.literal("memmy-http-query.v1"),
   configured: z.boolean(),
   configurationFingerprint: sha256Schema,
   capabilities: memoryBackendCapabilitiesSchema,
 };
 
+const memmyQueryDescriptorBase = {
+  ...memoryBackendDescriptorCommon,
+  kind: z.literal("memmy"),
+  adapterContractVersion: z.literal("memmy-http-query.v1"),
+};
+
+const tencentQueryDescriptorBase = {
+  ...memoryBackendDescriptorCommon,
+  kind: z.literal("tencent_memorycore"),
+  adapterContractVersion: z.literal("tencent-memorycore-http-query.v1"),
+};
+
 /** Query冻结时保存的安全后端描述；revision/keyId只标识凭据版本，绝不保存Token。 */
-export const memoryBackendDescriptorSchema = z.discriminatedUnion("authMode", [
+export const memoryBackendDescriptorSchema = z.union([
   z
     .object({
-      ...memoryBackendDescriptorBase,
+      ...memmyQueryDescriptorBase,
       authMode: z.literal("none"),
       credentialRevision: z.literal("none"),
     })
     .strict(),
   z
     .object({
-      ...memoryBackendDescriptorBase,
+      ...memmyQueryDescriptorBase,
+      authMode: z.literal("bearer"),
+      credentialRevision: memoryCredentialRevisionSchema.refine((value) => value !== "none"),
+    })
+    .strict(),
+  z
+    .object({
+      ...tencentQueryDescriptorBase,
       authMode: z.literal("bearer"),
       credentialRevision: memoryCredentialRevisionSchema.refine((value) => value !== "none"),
     })
@@ -223,6 +240,7 @@ export const memoryAdoptionSchema = z
 
 export type MemoryLayer = z.infer<typeof memoryLayerSchema>;
 export type MemoryRequirement = z.infer<typeof memoryRequirementSchema>;
+export type MemoryBackendDescriptor = z.infer<typeof memoryBackendDescriptorSchema>;
 export type MemoryContextSelection = z.infer<typeof memoryContextSelectionSchema>;
 export type RunContextRequest = z.infer<typeof runContextRequestSchema>;
 export type MemoryQuery = z.infer<typeof memoryQuerySchema>;

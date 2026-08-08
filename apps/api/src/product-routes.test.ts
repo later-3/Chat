@@ -503,6 +503,7 @@ describe("公开产品API", () => {
           externalStatus: "activated",
           responseSha256: "b".repeat(64),
         },
+        verificationKind: "read_by_id_and_search",
         verificationSha256: "c".repeat(64),
       },
     );
@@ -562,6 +563,7 @@ describe("公开产品API", () => {
           externalStatus: "activated",
           responseSha256: "b".repeat(64),
         },
+        verificationKind: "read_by_id_and_search",
         verificationSha256: "c".repeat(64),
         reconciled: true,
       },

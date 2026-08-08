@@ -14,7 +14,7 @@ export interface MemoryImportInput {
   readonly operationId: MemoryImportIntentId;
   readonly requestSha256: string;
   readonly content: string;
-  readonly layer: "L2";
+  readonly layer: "L0" | "L2";
   readonly title: string;
   readonly tags: readonly string[];
   readonly source: "chat.explicit_import";
@@ -34,6 +34,7 @@ export type MemoryImportReconcileOutput =
   | {
       readonly status: "materialized";
       readonly accepted: MemoryImportAccepted;
+      readonly verificationKind: "read_by_id_and_search" | "l0_and_session_l1";
       readonly verificationSha256: string;
     }
   | { readonly status: "failed"; readonly errorCode: string; readonly summary: string }

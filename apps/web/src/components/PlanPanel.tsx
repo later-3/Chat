@@ -71,7 +71,8 @@ function ContextSummary({ chain }: { chain: RealChainState }) {
   const backend = chain.memoryBackends.data?.find(
     (candidate) => candidate.backendId === context.memory?.backendId,
   );
-  const backendName = backend?.kind ?? "memmy";
+  const backendName =
+    backend?.kind === "tencent_memorycore" ? backend.displayName : (backend?.kind ?? "memmy");
   if (context.memory.queryStatus === "failed") {
     return (
       <p className="context-summary" data-tone="warning" role="status">

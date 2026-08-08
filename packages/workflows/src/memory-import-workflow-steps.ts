@@ -259,6 +259,7 @@ export async function commitMemoryImportMaterializedStep(input: {
   intentId: string;
   result: MemoryImportResult;
   accepted: MemoryImportAccepted;
+  verificationKind: "read_by_id_and_search" | "l0_and_session_l1";
   verificationSha256: string;
   reconciled?: boolean;
 }): Promise<MemoryImportResult> {
@@ -271,6 +272,7 @@ export async function commitMemoryImportMaterializedStep(input: {
       requestSha256: input.loaded.intent.requestSha256,
       expectedRevision: input.result.revision,
       accepted: input.accepted,
+      verificationKind: input.verificationKind,
       verificationSha256: input.verificationSha256,
       ...(input.reconciled === true ? { reconciled: true } : {}),
     });
