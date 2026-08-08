@@ -8,7 +8,7 @@
 2. P0、P1.1、P1.2、B1、B2和M1已完成。浏览器可以真实完成“发送消息 → 可选Memory查询 → pi规划 → 用户修订/批准 → 同一Vercel Workflow恢复 → pi执行 → Product Commit → 正式回复”。
 3. 本地百炼私有配置已可用于真实`qwen3.7-plus`测试；`.env`被Git忽略且权限为`0600`，任何续接过程不得输出或提交Key。
 4. M2已增加正式消息整条/UTF-16选区导入、`MemoryImportWorkflow`、memmy真实add/对账、Store v3、严格Trace/Replay、最小统一UI与重启恢复；仍未增加第二后端。
-5. M2固定memmy真实导入与原生幂等、完整Chat响应丢失对账且SQLite唯一已经通过；此前候选的真实浏览器1/1（2.1分钟）、Import Replay 6事件、Run Replay 103事件和真实`qwen3.7-plus`也通过，当前修复提交后仍须复跑最终一次clean证据。
+5. M2固定memmy真实导入与原生幂等、完整Chat响应丢失对账且SQLite唯一已经通过；最终clean代码提交`3bcb7b7`的真实浏览器1/1通过（浏览器2.8分钟、命令3.1分钟），Import Replay 6事件、Run Replay 103事件、真实`qwen3.7-plus`规划与执行均成功。
 6. 当前仍没有Tencent真实Adapter、BMAD项目上下文和用户规则集。用户要求逐步完成三类真实能力，所有设计必须有参考项目依据、代码有中文注释、纵向里程碑使用真实模型和严格E2E。
 7. 旧会话遗留的治理文档和设计截图已经恢复；不能再使用“M1待审核”“B2待真实Key验收”或“P1.2待实现”等旧状态。
 

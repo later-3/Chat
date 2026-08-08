@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 |---|---|
-| 状态 | 用户已批准；纵向代码、自审、确定性门与真实memmy门完成，待clean提交复跑最终百炼浏览器门 |
+| 状态 | 完成候选；纵向代码、自审、全部质量门、真实memmy门和clean提交百炼浏览器门均通过，待PR合入 |
 | 基线 | `main` @ `8acafb5638ea3cf4e3c7afaec9350419c12c9156`（M1 已合并） |
 | 主要结果 | 用户从正式会话消息导入一条事实记忆到真实 memmy，并在新会话中让真实 `qwen3.7-plus` 规划采用它 |
 | 交付方式 | 用户批准本任务书后，创建 1 个独立 worktree、1 个 `codex/` 分支、1 个 Draft PR；不拆等待型子 PR |
@@ -888,4 +888,4 @@ Message正文
 2. `pnpm test:memory:memmy-real-import`已证明真实add、同身份同正文幂等、同身份异文冲突、GET+Search物化和SQLite唯一对象。
 3. `pnpm test:memory:memmy-response-drop`已升级为完整Chat门：Product Store → Outbox → Workflow → 真实memmy 200落库后断响应 → `outcome_unknown` → 同身份reconcile → `materialized`；Replay零缺口、Trace无正文、SQLite对象数为1。
 4. build、lint、format、typecheck、484项确定性测试和`pnpm audit --prod`已通过；生产依赖已知漏洞为0。
-5. 最终百炼E2E首次预检因工作树非clean而在Provider调用前正确失败关闭；形成当前里程碑提交后再运行一次，不把旧提交证据冒充当前代码证据。
+5. 最终`pnpm test:e2e:memory-import:real`从clean代码提交`3bcb7b7`通过1/1：浏览器场景2.8分钟、命令总计3.1分钟；真实导入、API/Workflow重启、无Memory对照、新会话查询、真实`qwen3.7-plus`规划/执行、Product Commit、手机恢复全部通过。Import Replay 6事件、Run Replay 103事件，引用缺口均为0。

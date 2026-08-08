@@ -32,10 +32,10 @@
 1. M1已经由PR #10合入；固定memmy提交为`211d521b310fc23c63dd3d9ca848941173981c5e`，真实查询、冻结ContextPackage、规划采用、执行和Replay闭环均已证明。
 2. M2的`pnpm test:memory:memmy-real-import`通过：真实add、相同requestId/正文原生幂等、不同正文409、GET+Search物化验证及SQLite唯一对象均成立。
 3. M2的`pnpm test:memory:memmy-response-drop`通过：真实路径贯穿Product Store、Outbox、Workflow与Memmy；Memmy返回200并落库后代理销毁响应，Chat提交`outcome_unknown`，再以同一身份对账为`materialized`，Replay无缺口且SQLite仍只有1条。
-4. `pnpm test:e2e:memory-import:real`从clean提交通过1/1（2.1分钟）：390×844正式消息选区、真实导入、API/Workflow真重启恢复、无Memory对照、新会话真实查询、百炼`qwen3.7-plus`规划与执行全部成功。
+4. `pnpm test:e2e:memory-import:real`从clean代码提交`3bcb7b7`通过1/1（浏览器2.8分钟、命令总计3.1分钟）：390×844正式消息选区、真实导入、API/Workflow真重启恢复、无Memory对照、新会话真实查询、百炼`qwen3.7-plus`规划与执行全部成功。
 5. 同一真实门的Import Replay含6个事件、Run Replay含103个事件，二者完整性错误为0且默认不含正文；Trace不含唯一canary、消息选区、密钥、endpoint或Runtime私有身份。
 6. M2把Store升级为v3，非空v2 Memory事实逐对象迁移；截断、未知Schema、悬空引用、Hash篡改、迁移I/O故障均失败关闭且不改原文件。
-7. 当前确定性测试共484项；全仓build/lint/format/typecheck、生产依赖审计和真实Memmy两条门已通过。最终百炼浏览器门会从当前clean提交再跑一次，不能用旧提交证据替代。
+7. 当前确定性测试共484项；全仓build/lint/format/typecheck、生产依赖审计、真实Memmy两条门与最终clean提交百炼浏览器门均已通过。
 
 ## 4. 已冻结决定
 
