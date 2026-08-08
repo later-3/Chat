@@ -400,6 +400,7 @@ export function createInternalRuntimeRouter(
         memoryImportResultId: request.memoryImportResultId,
         requestSha256: request.requestSha256,
         expectedRevision: request.expectedRevision,
+        verificationKind: request.verificationKind,
         verificationSha256: request.verificationSha256,
         ...(request.reconciled !== undefined ? { reconciled: request.reconciled } : {}),
         accepted: {

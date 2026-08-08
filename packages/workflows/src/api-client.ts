@@ -357,6 +357,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         externalStatus?: string;
         responseSha256: string;
       };
+      verificationKind: "read_by_id_and_search" | "l0_and_session_l1";
       verificationSha256: string;
       reconciled?: boolean;
     }) {

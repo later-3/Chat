@@ -46,7 +46,7 @@ export function computeMemoryBackendDescriptorSha256(input: {
   readonly configurationFingerprint: string;
   readonly capabilities: {
     readonly query: true;
-    readonly tags: true;
+    readonly tags: boolean;
     readonly layers: readonly string[];
     readonly maxLimit: number;
     readonly maxContextBudget: number;

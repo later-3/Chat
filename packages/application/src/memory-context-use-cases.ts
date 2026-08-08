@@ -28,6 +28,7 @@ import {
 import type { ApplicationDeps } from "./deps.js";
 import { notFound, revisionConflict } from "./errors.js";
 import {
+  freezeMemoryBackendDescriptor,
   MemoryBackendError,
   type MemoryBackendProfile,
   type MemoryQueryOutput,
@@ -68,28 +69,7 @@ function derivedId(prefix: "mqy" | "mrs" | "mad" | "ctxp", domain: string, input
 }
 
 function backendDescriptor(profile: MemoryBackendProfile): MemoryQuery["backendDescriptor"] {
-  const base = {
-    backendId: profile.backendId,
-    displayName: profile.displayName,
-    kind: profile.kind,
-    adapterContractVersion: profile.adapterContractVersion,
-    configured: profile.configured,
-    configurationFingerprint: profile.configurationFingerprint,
-    capabilities: {
-      query: profile.capabilities.query,
-      tags: profile.capabilities.tags,
-      layers: [...profile.capabilities.layers],
-      maxLimit: profile.capabilities.maxLimit,
-      maxContextBudget: profile.capabilities.maxContextBudget,
-    },
-  };
-  return profile.authMode === "none"
-    ? { ...base, authMode: "none", credentialRevision: "none" }
-    : {
-        ...base,
-        authMode: "bearer",
-        credentialRevision: profile.credentialRevision,
-      };
+  return freezeMemoryBackendDescriptor(profile);
 }
 
 function missingBackendDescriptor(

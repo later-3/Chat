@@ -7,6 +7,7 @@ import {
   memoryResultSnapshotSchema,
   runContextRequestSchema,
 } from "./context.js";
+import { memoryImportBackendDescriptorSchema } from "./memory-import.js";
 import {
   beginPlanningContextResponseSchema,
   compilePlanningInputRequestSchema,
@@ -90,6 +91,65 @@ describe("Context 产品合同", () => {
         ...descriptor,
         authMode: "bearer",
         credentialRevision: "none",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("Tencent MemoryCore用独立判别合同表达无标签L1查询与异步L0导入", () => {
+    const tencentQuery = {
+      backendId: "mbk_tencentmemorycore",
+      displayName: "Tencent MemoryCore",
+      kind: "tencent_memorycore",
+      adapterContractVersion: "tencent-memorycore-http-query.v1",
+      configured: true,
+      authMode: "bearer",
+      credentialRevision: "memorycore-key-v1",
+      configurationFingerprint: SHA_A,
+      capabilities: {
+        query: true,
+        tags: false,
+        layers: ["L1"],
+        maxLimit: 20,
+        maxContextBudget: 8_192,
+      },
+    } as const;
+    expect(memoryBackendDescriptorSchema.safeParse(tencentQuery).success).toBe(true);
+    expect(
+      memoryBackendDescriptorSchema.safeParse({
+        ...tencentQuery,
+        authMode: "none",
+        credentialRevision: "none",
+      }).success,
+    ).toBe(false);
+    expect(
+      memoryBackendDescriptorSchema.safeParse({
+        ...tencentQuery,
+        adapterContractVersion: "memmy-http-query.v1",
+      }).success,
+    ).toBe(false);
+
+    const tencentImport = {
+      backendId: "mbk_tencentmemorycore",
+      displayName: "Tencent MemoryCore",
+      kind: "tencent_memorycore",
+      adapterContractVersion: "tencent-memorycore-http-import.v1",
+      configured: true,
+      authMode: "bearer",
+      credentialRevision: "memorycore-key-v1",
+      configurationFingerprint: SHA_A,
+      capabilities: {
+        mode: "conversation_capture",
+        layers: ["L0"],
+        title: false,
+        tags: false,
+        maxContentChars: 8_192,
+      },
+    } as const;
+    expect(memoryImportBackendDescriptorSchema.safeParse(tencentImport).success).toBe(true);
+    expect(
+      memoryImportBackendDescriptorSchema.safeParse({
+        ...tencentImport,
+        capabilities: { ...tencentImport.capabilities, layers: ["L2"] },
       }).success,
     ).toBe(false);
   });

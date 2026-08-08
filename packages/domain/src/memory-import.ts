@@ -123,32 +123,48 @@ export function normalizeMemoryImportTags(tags: readonly string[]): string[] {
 export function computeMemoryImportBackendDescriptorSha256(descriptor: {
   readonly backendId: string;
   readonly displayName: string;
-  readonly kind: "memmy";
-  readonly adapterContractVersion: "memmy-http-import.v1";
+  readonly kind: "memmy" | "tencent_memorycore";
+  readonly adapterContractVersion: "memmy-http-import.v1" | "tencent-memorycore-http-import.v1";
   readonly configured: boolean;
   readonly configurationFingerprint: string;
   readonly capabilities: {
-    readonly mode: "explicit_fact";
-    readonly layers: readonly ["L2"];
-    readonly title: true;
-    readonly tags: true;
+    readonly mode: "explicit_fact" | "conversation_capture";
+    readonly layers: readonly ["L2"] | readonly ["L0"];
+    readonly title: boolean;
+    readonly tags: boolean;
     readonly maxContentChars: number;
   };
   readonly authMode: "none" | "bearer";
   readonly credentialRevision: string;
 }): string {
-  return hashCanonical("memory-import-backend-profile.v1", descriptor);
+  return hashCanonical(
+    descriptor.kind === "memmy"
+      ? "memory-import-backend-profile.v1"
+      : "memory-import-backend-profile.tencent-memorycore.v1",
+    descriptor,
+  );
 }
 
-export interface MemoryImportRequestShape {
-  readonly content: string;
-  readonly layer: "L2";
-  readonly title: string;
-  readonly tags: readonly string[];
-  readonly turnId: string;
-}
+export type MemoryImportRequestShape =
+  | {
+      readonly content: string;
+      readonly layer: "L2";
+      readonly title: string;
+      readonly tags: readonly string[];
+      readonly turnId: string;
+    }
+  | {
+      readonly kind: "tencent_conversation_capture";
+      readonly content: string;
+      readonly layer: "L0";
+      readonly turnId: string;
+    };
 
 export function computeMemoryImportRequestSha256(input: MemoryImportRequestShape): string {
+  if ("kind" in input) {
+    return hashCanonical("memory-import-request.tencent-memorycore.v1", input);
+  }
+  // 保持M2已持久化memmy Intent的Hash域与输入形状逐字不变。
   return hashCanonical("memory-import-request.v1", input);
 }
 

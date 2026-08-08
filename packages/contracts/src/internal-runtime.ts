@@ -576,7 +576,7 @@ export const memoryImportAdapterInputSchema = z
     operationId: memoryImportIntentIdSchema,
     requestSha256: sha256Schema,
     content: z.string().min(1).max(50_000),
-    layer: z.literal("L2"),
+    layer: z.enum(["L0", "L2"]),
     title: z.string().min(1).max(200),
     tags: z.array(z.string().min(1).max(64)).max(20),
     source: z.literal("chat.explicit_import"),
@@ -638,6 +638,7 @@ export const commitMemoryImportMaterializedRequestSchema = z
   .object({
     ...memoryImportResultCommandBase,
     accepted: memoryImportAcceptedSchema,
+    verificationKind: z.enum(["read_by_id_and_search", "l0_and_session_l1"]),
     verificationSha256: sha256Schema,
     reconciled: z.boolean().optional(),
   })

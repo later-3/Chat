@@ -733,6 +733,13 @@ export class MemmyMemoryAdapter implements MemoryBackendPort, MemoryImportBacken
   }
 
   async import(input: MemoryImportInput): Promise<MemoryImportAccepted> {
+    if (input.layer !== "L2") {
+      throw new MemoryImportBackendError({
+        code: "memory.import.layer_unsupported",
+        message: "memmy只接受L2显式事实导入",
+        phase: "before_external_call",
+      });
+    }
     if (
       normalizeMemmyProtocolText(input.content) !== input.content ||
       normalizeMemmyProtocolText(input.title) !== input.title
@@ -940,6 +947,7 @@ export class MemmyMemoryAdapter implements MemoryBackendPort, MemoryImportBacken
     return {
       status: "materialized",
       accepted: verified,
+      verificationKind: "read_by_id_and_search",
       verificationSha256: hashCanonical("memmy-memory-import-verification.v1", {
         externalObjectId: detail.id,
         version: detail.version,

@@ -204,7 +204,7 @@ export async function listMemoryBackends(
           health: health.status,
           capabilities: {
             query: true as const,
-            tags: true as const,
+            tags: profile.capabilities.tags,
             layers: [...profile.capabilities.layers],
             maxLimit: profile.capabilities.maxLimit,
             maxContextBudget: profile.capabilities.maxContextBudget,

@@ -42,6 +42,19 @@ const STATUS_LABEL: Record<MemoryImportDto["status"], string> = {
   outcome_unknown: "写入结果未知",
 };
 
+function importStatusLabel(
+  item: MemoryImportDto,
+  backends: readonly MemoryBackendProfileDto[],
+): string {
+  if (
+    item.status === "accepted" &&
+    backends.find((backend) => backend.backendId === item.backendId)?.kind === "tencent_memorycore"
+  ) {
+    return "已接收，等待异步提炼";
+  }
+  return STATUS_LABEL[item.status];
+}
+
 function latestImport(imports: readonly MemoryImportDto[], messageId: string) {
   return imports
     .filter((item) => item.sourceMessageId === messageId)
@@ -63,9 +76,12 @@ export function ChatMessageItem({
   // 按钮获得焦点时浏览器可能清除选区，pointerdown先冻结本次用户选择。
   const pendingSelectionRef = useRef<TextRangeSelection | null | "invalid" | undefined>(undefined);
   const importBackends = useMemo(
-    () =>
-      backends.filter((backend) => backend.configured && backend.capabilities.import !== undefined),
+    () => backends.filter((backend) => backend.capabilities.import !== undefined),
     [backends],
+  );
+  const availableImportBackends = useMemo(
+    () => importBackends.filter((backend) => backend.configured && backend.health === "ready"),
+    [importBackends],
   );
   const [dialogSelection, setDialogSelection] = useState<TextRangeSelection | null | undefined>();
   const [title, setTitle] = useState("");
@@ -75,6 +91,7 @@ export function ChatMessageItem({
   const [preparingImport, setPreparingImport] = useState(false);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const currentImport = latestImport(chain.memoryImports.data ?? [], message.messageId);
+  const selectedImportBackend = importBackends.find((backend) => backend.backendId === backendId);
   const pendingForMessage =
     chain.pendingMemoryImport?.payload.sourceSelection.sourceMessageId === message.messageId;
 
@@ -100,7 +117,7 @@ export function ChatMessageItem({
     setDialogSelection(selection);
     setTitle(message.content.text.split("\n")[0]?.trim().slice(0, 120) || "会话事实");
     setTagsText("");
-    setBackendId(importBackends[0]?.backendId ?? "");
+    setBackendId(availableImportBackends[0]?.backendId ?? "");
     setSubmittedHere(false);
   }
 
@@ -194,7 +211,7 @@ export function ChatMessageItem({
           onClick={openImportDialog}
           disabled={
             message.sha256 === undefined ||
-            importBackends.length === 0 ||
+            availableImportBackends.length === 0 ||
             chain.importingMemory ||
             preparingImport
           }
@@ -203,7 +220,7 @@ export function ChatMessageItem({
         </button>
         {currentImport !== undefined && (
           <span className="memory-import-status" data-status={currentImport.status} role="status">
-            {STATUS_LABEL[currentImport.status]}
+            {importStatusLabel(currentImport, backends)}
           </span>
         )}
         {currentImport?.allowedActions[0] === "reconcile" && (
@@ -268,34 +285,51 @@ export function ChatMessageItem({
               <span>Memory 服务</span>
               <select value={backendId} onChange={(event) => setBackendId(event.target.value)}>
                 {importBackends.map((backend) => (
-                  <option value={backend.backendId} key={backend.backendId}>
+                  <option
+                    value={backend.backendId}
+                    key={backend.backendId}
+                    disabled={!backend.configured || backend.health !== "ready"}
+                  >
                     {backend.displayName}
+                    {!backend.configured || backend.health !== "ready" ? "（不可用）" : ""}
                   </option>
                 ))}
               </select>
             </label>
             <div className="memory-import-kind">
-              <strong>事实记忆（L2）</strong>
-              <span>适合长期有效的事实、要求和偏好</span>
+              <strong>
+                {selectedImportBackend?.capabilities.import?.mode === "conversation_capture"
+                  ? "会话捕获（L0）"
+                  : "事实记忆（L2）"}
+              </strong>
+              <span>
+                {selectedImportBackend?.capabilities.import?.mode === "conversation_capture"
+                  ? "先保存原始事实，再由 MemoryCore 异步提炼"
+                  : "适合长期有效的事实、要求和偏好"}
+              </span>
             </div>
-            <label>
-              <span>标题</span>
-              <input
-                autoFocus
-                maxLength={200}
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-              />
-            </label>
-            <label>
-              <span>标签</span>
-              <input
-                maxLength={400}
-                placeholder="project, release"
-                value={tagsText}
-                onChange={(event) => setTagsText(event.target.value)}
-              />
-            </label>
+            {selectedImportBackend?.capabilities.import?.title !== false && (
+              <label>
+                <span>标题</span>
+                <input
+                  autoFocus
+                  maxLength={200}
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                />
+              </label>
+            )}
+            {selectedImportBackend?.capabilities.import?.tags !== false && (
+              <label>
+                <span>标签</span>
+                <input
+                  maxLength={400}
+                  placeholder="project, release"
+                  value={tagsText}
+                  onChange={(event) => setTagsText(event.target.value)}
+                />
+              </label>
+            )}
             <footer>
               <button className="pane-button" onClick={closeImportDialog}>
                 取消

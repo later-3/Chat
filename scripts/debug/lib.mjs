@@ -17,6 +17,7 @@ export const FROZEN_PORTS = Object.freeze({
   api: 43111,
   workflow: 43112,
   memory: 18960,
+  memoryCore: 18970,
   apiInspector: 43120,
   workflowInspector: 43121,
   memoryInspector: 43122,

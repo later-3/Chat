@@ -111,7 +111,7 @@ function assertMemoryImports(snapshot: ProductSnapshot, fail: Fail): void {
       intent.operationId !== intent.memoryImportIntentId ||
       intent.backendDescriptor.backendId !== intent.backendId ||
       !intent.backendDescriptor.configured ||
-      intent.memoryLayer !== "L2" ||
+      intent.memoryLayer !== intent.backendDescriptor.capabilities.layers[0] ||
       intent.updatedAt !== intent.createdAt
     ) {
       fail(`memoryImportIntent ${intent.memoryImportIntentId} 冻结字段不一致`);
@@ -135,13 +135,22 @@ function assertMemoryImports(snapshot: ProductSnapshot, fail: Fail): void {
         fail(`memoryImportIntent ${intent.memoryImportIntentId} Backend Hash不一致`);
       }
       if (
-        computeMemoryImportRequestSha256({
-          content,
-          layer: "L2",
-          title: intent.title,
-          tags: intent.tags,
-          turnId: message.messageId,
-        }) !== intent.requestSha256
+        computeMemoryImportRequestSha256(
+          intent.backendDescriptor.kind === "tencent_memorycore"
+            ? {
+                kind: "tencent_conversation_capture",
+                content,
+                layer: "L0",
+                turnId: message.messageId,
+              }
+            : {
+                content,
+                layer: "L2",
+                title: intent.title,
+                tags: intent.tags,
+                turnId: message.messageId,
+              },
+        ) !== intent.requestSha256
       ) {
         fail(`memoryImportIntent ${intent.memoryImportIntentId} Request Hash不一致`);
       }

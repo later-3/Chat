@@ -1,4 +1,5 @@
 import {
+  freezeMemoryBackendDescriptor,
   MemoryBackendError,
   normalizeMemoryQueryResult,
   stableMemoryBackendFailure,
@@ -86,30 +87,7 @@ function runtimeDescriptor(query: MemoryQueryDispatchDto) {
       retryable: false,
     });
   }
-  const profile = backend.describe();
-  const descriptorBase = {
-    backendId: profile.backendId,
-    displayName: profile.displayName,
-    kind: profile.kind,
-    adapterContractVersion: profile.adapterContractVersion,
-    configured: profile.configured,
-    configurationFingerprint: profile.configurationFingerprint,
-    capabilities: {
-      query: profile.capabilities.query,
-      tags: profile.capabilities.tags,
-      layers: [...profile.capabilities.layers],
-      maxLimit: profile.capabilities.maxLimit,
-      maxContextBudget: profile.capabilities.maxContextBudget,
-    },
-  };
-  const descriptor: MemoryQueryDispatchDto["backendDescriptor"] =
-    profile.authMode === "none"
-      ? { ...descriptorBase, authMode: "none", credentialRevision: "none" }
-      : {
-          ...descriptorBase,
-          authMode: "bearer",
-          credentialRevision: profile.credentialRevision,
-        };
+  const descriptor = freezeMemoryBackendDescriptor(backend.describe());
   if (
     query.backendDescriptor.backendId !== query.backendId ||
     !sameDescriptor(query.backendDescriptor, descriptor) ||
@@ -144,6 +122,22 @@ function memoryTraceFields(query: MemoryQueryDispatchDto, attemptId: string) {
   };
 }
 
+function assertQueryWithinCapabilities(query: MemoryQueryDispatchDto): void {
+  const capabilities = query.backendDescriptor.capabilities;
+  if (
+    (!capabilities.tags && query.tags.length > 0) ||
+    query.layers.some((layer) => !capabilities.layers.includes(layer)) ||
+    query.limit > capabilities.maxLimit ||
+    query.contextBudget > capabilities.maxContextBudget
+  ) {
+    throw new MemoryBackendError({
+      code: "memory.backend.capability_unsupported",
+      message: "Memory查询超出冻结后端能力",
+      retryable: false,
+    });
+  }
+}
+
 /**
  * 第二个耐久节点是唯一允许调用外部Memory服务的规划节点。它只返回strict
  * checkpoint结果，成功正文随Workflow checkpoint传给第三节点，Trace只保留统计与Hash。
@@ -165,6 +159,7 @@ export async function queryMemoryContextStep(input: {
     } as never);
     try {
       const backend = runtimeDescriptor(input.query);
+      assertQueryWithinCapabilities(input.query);
       const output = await backend.query({
         operationId: input.query.memoryQueryId,
         productRunId: input.query.productRunId,

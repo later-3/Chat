@@ -42,37 +42,66 @@ export const memoryImportSourceSelectionSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
-export const memoryImportCapabilitiesSchema = z
-  .object({
-    mode: z.literal("explicit_fact"),
-    layers: z.tuple([z.literal("L2")]),
-    title: z.literal(true),
-    tags: z.literal(true),
-    maxContentChars: z.number().int().min(1).max(100_000),
-  })
-  .strict();
-
-const memoryImportBackendDescriptorBase = {
-  backendId: memoryBackendIdSchema,
-  displayName: z.string().min(1).max(100),
-  kind: z.literal("memmy"),
-  adapterContractVersion: z.literal("memmy-http-import.v1"),
-  configured: z.boolean(),
-  configurationFingerprint: sha256Schema,
-  capabilities: memoryImportCapabilitiesSchema,
-};
-
-export const memoryImportBackendDescriptorSchema = z.discriminatedUnion("authMode", [
+export const memoryImportCapabilitiesSchema = z.discriminatedUnion("mode", [
   z
     .object({
-      ...memoryImportBackendDescriptorBase,
+      mode: z.literal("explicit_fact"),
+      layers: z.tuple([z.literal("L2")]),
+      title: z.literal(true),
+      tags: z.literal(true),
+      maxContentChars: z.number().int().min(1).max(100_000),
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.literal("conversation_capture"),
+      layers: z.tuple([z.literal("L0")]),
+      title: z.literal(false),
+      tags: z.literal(false),
+      maxContentChars: z.number().int().min(1).max(8_192),
+    })
+    .strict(),
+]);
+
+const memoryImportBackendDescriptorCommon = {
+  backendId: memoryBackendIdSchema,
+  displayName: z.string().min(1).max(100),
+  configured: z.boolean(),
+  configurationFingerprint: sha256Schema,
+};
+
+const memmyImportDescriptorBase = {
+  ...memoryImportBackendDescriptorCommon,
+  kind: z.literal("memmy"),
+  adapterContractVersion: z.literal("memmy-http-import.v1"),
+  capabilities: memoryImportCapabilitiesSchema.options[0],
+};
+
+const tencentImportDescriptorBase = {
+  ...memoryImportBackendDescriptorCommon,
+  kind: z.literal("tencent_memorycore"),
+  adapterContractVersion: z.literal("tencent-memorycore-http-import.v1"),
+  capabilities: memoryImportCapabilitiesSchema.options[1],
+};
+
+export const memoryImportBackendDescriptorSchema = z.union([
+  z
+    .object({
+      ...memmyImportDescriptorBase,
       authMode: z.literal("none"),
       credentialRevision: z.literal("none"),
     })
     .strict(),
   z
     .object({
-      ...memoryImportBackendDescriptorBase,
+      ...memmyImportDescriptorBase,
+      authMode: z.literal("bearer"),
+      credentialRevision: memoryCredentialRevisionSchema.refine((value) => value !== "none"),
+    })
+    .strict(),
+  z
+    .object({
+      ...tencentImportDescriptorBase,
       authMode: z.literal("bearer"),
       credentialRevision: memoryCredentialRevisionSchema.refine((value) => value !== "none"),
     })
@@ -88,7 +117,7 @@ export const memoryImportIntentSchema = z
     backendId: memoryBackendIdSchema,
     backendDescriptor: memoryImportBackendDescriptorSchema,
     backendDescriptorSha256: sha256Schema,
-    memoryLayer: z.literal("L2"),
+    memoryLayer: z.enum(["L0", "L2"]),
     title: z.string().min(1).max(200),
     tags: z.array(z.string().min(1).max(64)).max(20),
     /** memmy requestId 使用该稳定产品身份；一次 Intent 永不改变。 */
@@ -136,7 +165,7 @@ export const memoryImportResultSchema = z.discriminatedUnion("status", [
       status: z.literal("materialized"),
       ...acceptedEvidence,
       materializedAt: isoDateTimeSchema,
-      verificationKind: z.literal("read_by_id_and_search"),
+      verificationKind: z.enum(["read_by_id_and_search", "l0_and_session_l1"]),
       verificationSha256: sha256Schema,
     })
     .strict(),

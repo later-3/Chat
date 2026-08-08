@@ -37,6 +37,7 @@ async function settleReconcile(
       intentId: input.memoryImportIntentId,
       result,
       accepted: reconciled.accepted,
+      verificationKind: reconciled.verificationKind,
       verificationSha256: reconciled.verificationSha256,
       reconciled: true,
     });
