@@ -81,11 +81,13 @@ export async function createApplicationDeps(
   trace?: ApplicationDeps["trace"],
 ): Promise<ApplicationDeps> {
   const store = await openProductStore(filePath, trace);
+  const memoryRegistry = createMemoryBackendRegistry(process.env);
   return {
     store,
     now: () => new Date().toISOString(),
     ids: createIdFactory(),
-    memoryBackends: createMemoryBackendRegistry(process.env),
+    memoryBackends: memoryRegistry,
+    memoryImportBackends: memoryRegistry,
     ...(trace !== undefined ? { trace } : {}),
   };
 }

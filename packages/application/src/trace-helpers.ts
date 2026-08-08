@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ProductRunId, TraceEventInput } from "@chat/contracts";
+import type { MemoryImportIntentId, ProductRunId, TraceEventInput } from "@chat/contracts";
 import type { ApplicationDeps } from "./deps.js";
 
 /**
@@ -12,6 +12,11 @@ import type { ApplicationDeps } from "./deps.js";
 
 export function runTraceId(productRunId: ProductRunId): string {
   return `tr_${productRunId.slice(4)}`;
+}
+
+/** Memory Import没有Product Run；以不可变Intent身份建立独立Trace时间线。 */
+export function memoryImportTraceId(memoryImportIntentId: MemoryImportIntentId): string {
+  return `tr_${memoryImportIntentId.slice(4)}`;
 }
 
 export function newSpanId(): string {
@@ -30,6 +35,20 @@ export function emitRunEvent(
 ): void {
   if (deps.trace === undefined) return;
   const full = { ...event, traceId: runTraceId(productRunId), spanId: newSpanId() };
+  deps.trace(full);
+}
+
+export function emitMemoryImportEvent(
+  deps: ApplicationDeps,
+  memoryImportIntentId: MemoryImportIntentId,
+  event: RunTraceEventInput,
+): void {
+  if (deps.trace === undefined) return;
+  const full = {
+    ...event,
+    traceId: memoryImportTraceId(memoryImportIntentId),
+    spanId: newSpanId(),
+  };
   deps.trace(full);
 }
 

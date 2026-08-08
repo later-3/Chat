@@ -1,8 +1,8 @@
 # 长期上下文架构：Memory、Project 与用户规则
 
-> 状态：设计已审核；M1 实现中
+> 状态：M1已合入；M2真实memmy显式导入候选已完成
 >
-> 适用基线：`main` @ `6784580`
+> 适用基线：`main` @ `8acafb5`，M2 Draft PR #11
 > 目标：在现有“对话 → 规划 → 人工确认 → 执行 → Product Commit”闭环上，增加可追溯、可选择、可回放的长期上下文能力。
 
 ## 1. 要解决的用户问题
@@ -38,12 +38,14 @@
 
 `memmy-agent` 本地工作树当前有用户未提交改动。本设计与后续合同测试只认上述 Git 提交中的公开合同；不得读取临时改动来悄悄扩大接口。
 
-固定提交还有 4 个必须由 Chat 边界补足的事实：
+固定提交还有 6 个必须由 Chat 边界补足的事实：
 
 1. HTTP 接受 namespace，但本地 `MemoryService` 的 `assert*InScope` 在该提交中为空实现，检索候选也没有按 namespace 过滤；因此 namespace 不是 M1 的隔离证据，真实 E2E 每次重建独立 SQLite 文件。
 2. `contextBudget` 会参与 injected sections 组装，但外部 `tokenEstimate` 仍不可直接信任；Adapter、Application 与 Store 使用同一保守算法再次校验。
 3. verbose 查询没有稳定的外部对象 revision；Chat 保存 `externalObjectIds`、可用的 `sourceUpdatedAt`、不可变正文快照和自己的 revision/Hash，不虚构外部版本。
 4. `hitCount` 按去重后的 `sourceMemoryIds` 计算；`adoptedCount` 按真正进入 ContextPackage 的规范化 section/Snapshot 计算，因为一个 section 可以合成多个外部来源。外部来源集合、实际 sections 和 Product Store 的 result-set Hash 必须能相互重建，UI 的“使用 N 条”明确指采用快照数。
+5. `memory/add`的顶层`source`会覆盖namespace来源，原生`sessionId`要求Memmy先存在对应Session；Chat导入只发送服务端映射的namespace、稳定`turnId`和L2事实字段，不伪造外部Session。
+6. L2 add返回成功不等于Chat已经证明可查询；M2按真实external ID执行strict GET，再用同一namespace/tag执行Search，二者一致才提交`materialized`。成功响应丢失时只用原operationId与相同正文做原生幂等对账。
 
 ### 3.2 BMAD
 
@@ -94,7 +96,7 @@ Workflow 为保证 Worker 重启后不重复付费调用或丢失外部查询结
 3. `MemoryResultSnapshot`：外部命中的规范化、不可变快照；保存一个或多个 externalObjectId、可用的源更新时间、正文、Hash、分数、标签、时间和 backendId；外部没有版本时不伪造。
 4. `MemoryAdoption`：哪些快照真正进入哪个 ContextPackage，以及采用/排除原因。
 5. `MemoryImportIntent`：用户明确选择的正文引用、目标后端、标签、稳定 operationId、请求 Hash 和状态。
-6. `MemoryImportResult`：`accepted | materialized | failed | outcome_unknown`；记录外部 ID/版本与对账结果。
+6. `MemoryImportResult`：`queued | dispatching | accepted | materialized | failed | outcome_unknown`；记录派发/对账次数、外部ID/版本和验证结果；未知结果不能伪造外部ID或自动换身份重写。
 
 查询快照只在结果被规划采用时保留正文；未采用结果只保留数量、状态和诊断证据，避免 Product Store 无限制膨胀。
 
@@ -138,10 +140,20 @@ interface MemoryBackendPort {
 
 1. 输入输出均为 strict Schema；Adapter 负责验证外部响应并转换稳定错误码。
 2. 不提供 `Record<string, unknown>` 元数据口袋；后端差异通过能力判别联合表达。
-3. M1 只冻结已经被真实 memmy 查询证明的最小 Port；M2 的 `import/reconcile` 是不同失败语义的外部副作用 Port，不提前塞进查询接口。查询可有限重试；导入发送后失联必须进入 `outcome_unknown`，先对账再决定是否重发。
+3. Query Port只冻结真实memmy查询证明的最小语义；M2把`import/reconcile`实现为独立`MemoryImportBackendPort`，不塞进查询接口。查询可有限重试；导入发送后失联必须进入`outcome_unknown`，只用同一身份对账。
 4. Registry 在 API/Workflow 服务端组合根构建。浏览器提交 backendId，无法提交 endpoint、Token、模型或 tenant。
 
 `@chat/memory-runtime` 是 Chat 自有的内部 Adapter 包，只依赖 Workspace Port、合同、Domain 和仓库已有的 Zod，没有引入 Memory SDK。真实验收启动固定提交的 memmy HTTP 服务；该参考项目为 MIT License。退出时删除 Registry 中的 memmy 注册和该 Adapter 即可，Product Store 中已经冻结的 backendId、快照、revision 与 Hash 仍可回放，不要求继续运行 memmy，也不污染 Domain。
+
+```ts
+interface MemoryImportBackendPort {
+  describeImport(): MemoryImportCapabilities;
+  import(input: MemoryImportInput): Promise<MemoryImportAccepted>;
+  reconcile(input: MemoryImportReconcileInput): Promise<MemoryImportReconcileOutput>;
+}
+```
+
+`import`一旦跨过fetch边界，断连、超时、5xx或非法成功响应都按`write_outcome_unknown`处理；`reconcile`不是普通重试。有external ID时执行GET+Search验证，没有ID时memmy只能用相同adapterId、requestId和相同规范化正文触发原生幂等对账。
 
 固定 memmy 提交首次执行 `npm ci` 时，npm 审计报告 8 项已知问题（1 low、1 moderate、5 high、1 critical）。M1 不修改第三方固定提交来伪造“已修复”：它只允许在本地测试/调试中以 loopback、物理隔离 SQLite、最小子进程环境运行，不进入 Chat 生产依赖、不上传服务器、也不作为服务器部署产物。后续升级必须先固定新的 commit/tree，复跑合同、真实 HTTP、供应链审计与退出兼容门，再决定是否扩大使用范围。
 
@@ -215,7 +227,7 @@ Memory Import Command
 
 ## 8. 存储与迁移
 
-1. Product Store 每次增加新事实集合都升级显式 Schema 版本：M1 提供 v1 → v2，P1 提供 v2 → v3，R1 提供 v3 → v4；迁移必须确定性、可测试并有字节级失败保护，不让 Zod 默认值悄悄改写历史。
+1. Product Store 每次增加新事实集合都升级显式 Schema 版本：M1 提供 v1 → v2，M2 提供 v2 → v3，R1 计划提供 v3 → v4；迁移必须确定性、可测试并有字节级失败保护，不让 Zod 默认值悄悄改写历史。
 2. 新集合仍使用 ID → Entity 映射；跨对象引用、revision、Hash 和状态机在启动时完整校验。
 3. Memory 服务数据库、Token、本地配置、Trace、E2E 数据和构建产物都在 `.gitignore` 范围内。
 4. 当前仍是单 API 写者 JSON Store，不宣称多实例；外部 Memory 调用不得发生在 Product Store `transact` 内。

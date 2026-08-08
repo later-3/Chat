@@ -15,6 +15,12 @@ import {
   publishPlanReviewRequestSchema,
   preparePlanningContextRequestSchema,
   persistPlanningContextResultRequestSchema,
+  loadMemoryImportRequestSchema,
+  markMemoryImportDispatchingRequestSchema,
+  commitMemoryImportAcceptedRequestSchema,
+  commitMemoryImportMaterializedRequestSchema,
+  commitMemoryImportFailedRequestSchema,
+  commitMemoryImportOutcomeUnknownRequestSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   type ProblemDetail,
   type RequestId,
@@ -37,6 +43,12 @@ import {
   beginRunAttempt,
   beginPlanningContext,
   persistPlanningContextResult,
+  loadMemoryImportForRuntime,
+  markMemoryImportDispatching,
+  commitMemoryImportAccepted,
+  commitMemoryImportMaterialized,
+  commitMemoryImportFailed,
+  commitMemoryImportOutcomeUnknown,
   type ApplicationDeps,
 } from "@chat/application";
 
@@ -325,6 +337,120 @@ export function createInternalRuntimeRouter(
       const request = commitRunFailureRequestSchema.parse(await parseInternalBody(c));
       const result = await commitRunFailure(options.deps, request);
       return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, revision: result.revision };
+    }),
+  );
+
+  router.post(
+    "/memory-import/load",
+    handle(200, async (c) => {
+      const request = loadMemoryImportRequestSchema.parse(await parseInternalBody(c));
+      const loaded = await loadMemoryImportForRuntime(options.deps, request);
+      return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, ...loaded };
+    }),
+  );
+
+  router.post(
+    "/memory-import/mark-dispatching",
+    handle(200, async (c) => {
+      const request = markMemoryImportDispatchingRequestSchema.parse(await parseInternalBody(c));
+      const result = await markMemoryImportDispatching(options.deps, {
+        commandId: request.commandId,
+        memoryImportIntentId: request.memoryImportIntentId,
+        memoryImportResultId: request.memoryImportResultId,
+        requestSha256: request.requestSha256,
+        expectedRevision: request.expectedRevision,
+      });
+      return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, result };
+    }),
+  );
+
+  router.post(
+    "/memory-import/commit-accepted",
+    handle(200, async (c) => {
+      const request = commitMemoryImportAcceptedRequestSchema.parse(await parseInternalBody(c));
+      const result = await commitMemoryImportAccepted(options.deps, {
+        commandId: request.commandId,
+        memoryImportIntentId: request.memoryImportIntentId,
+        memoryImportResultId: request.memoryImportResultId,
+        requestSha256: request.requestSha256,
+        expectedRevision: request.expectedRevision,
+        ...(request.reconciled !== undefined ? { reconciled: request.reconciled } : {}),
+        accepted: {
+          externalObjectId: request.accepted.externalObjectId,
+          responseSha256: request.accepted.responseSha256,
+          ...(request.accepted.externalObjectVersion !== undefined
+            ? { externalObjectVersion: request.accepted.externalObjectVersion }
+            : {}),
+          ...(request.accepted.externalStatus !== undefined
+            ? { externalStatus: request.accepted.externalStatus }
+            : {}),
+        },
+      });
+      return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, result };
+    }),
+  );
+
+  router.post(
+    "/memory-import/commit-materialized",
+    handle(200, async (c) => {
+      const request = commitMemoryImportMaterializedRequestSchema.parse(await parseInternalBody(c));
+      const result = await commitMemoryImportMaterialized(options.deps, {
+        commandId: request.commandId,
+        memoryImportIntentId: request.memoryImportIntentId,
+        memoryImportResultId: request.memoryImportResultId,
+        requestSha256: request.requestSha256,
+        expectedRevision: request.expectedRevision,
+        verificationSha256: request.verificationSha256,
+        ...(request.reconciled !== undefined ? { reconciled: request.reconciled } : {}),
+        accepted: {
+          externalObjectId: request.accepted.externalObjectId,
+          responseSha256: request.accepted.responseSha256,
+          ...(request.accepted.externalObjectVersion !== undefined
+            ? { externalObjectVersion: request.accepted.externalObjectVersion }
+            : {}),
+          ...(request.accepted.externalStatus !== undefined
+            ? { externalStatus: request.accepted.externalStatus }
+            : {}),
+        },
+      });
+      return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, result };
+    }),
+  );
+
+  router.post(
+    "/memory-import/commit-failed",
+    handle(200, async (c) => {
+      const request = commitMemoryImportFailedRequestSchema.parse(await parseInternalBody(c));
+      const result = await commitMemoryImportFailed(options.deps, {
+        commandId: request.commandId,
+        memoryImportIntentId: request.memoryImportIntentId,
+        memoryImportResultId: request.memoryImportResultId,
+        requestSha256: request.requestSha256,
+        expectedRevision: request.expectedRevision,
+        errorCode: request.errorCode,
+        summary: request.summary,
+        ...(request.reconciled !== undefined ? { reconciled: request.reconciled } : {}),
+      });
+      return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, result };
+    }),
+  );
+
+  router.post(
+    "/memory-import/commit-outcome-unknown",
+    handle(200, async (c) => {
+      const request = commitMemoryImportOutcomeUnknownRequestSchema.parse(
+        await parseInternalBody(c),
+      );
+      const result = await commitMemoryImportOutcomeUnknown(options.deps, {
+        commandId: request.commandId,
+        memoryImportIntentId: request.memoryImportIntentId,
+        memoryImportResultId: request.memoryImportResultId,
+        requestSha256: request.requestSha256,
+        expectedRevision: request.expectedRevision,
+        errorCode: request.errorCode,
+        ...(request.reconciled !== undefined ? { reconciled: request.reconciled } : {}),
+      });
+      return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, result };
     }),
   );
 

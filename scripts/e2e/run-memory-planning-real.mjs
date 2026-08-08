@@ -4,6 +4,19 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const repoRoot = resolve(process.env.CHAT_REPO_ROOT ?? process.cwd());
+const variant = process.argv[2] ?? "planning";
+const variants = {
+  planning: {
+    preflight: "preflight-memory-planning-real.mjs",
+    config: "playwright.memory-real.config.ts",
+  },
+  import: {
+    preflight: "preflight-memory-planning-real.mjs",
+    config: "playwright.memory-import-real.config.ts",
+  },
+};
+const selected = variants[variant];
+if (selected === undefined) throw new Error("真实Memory E2E仅支持planning/import");
 
 /**
  * 已有环境/.env 优先；否则通过用户已有 pi Key reader 获取百炼 Key。
@@ -71,19 +84,11 @@ const providerEnv = {
   DASHSCOPE_BASE_URL: resolveBailianBaseUrl(),
 };
 run("pnpm", ["debug:preclean"], providerEnv);
-run(process.execPath, ["scripts/e2e/preflight-memory-planning-real.mjs"], providerEnv);
+run(process.execPath, ["scripts/e2e/preflight-memory-planning-real.mjs", variant], providerEnv);
 run("pnpm", ["--filter", "@chat/workflows", "build:bundles"], providerEnv);
 run(process.execPath, ["scripts/e2e/assert-clean-runtime-evidence.mjs"], providerEnv);
 run(
   "pnpm",
-  [
-    "--filter",
-    "@chat/web",
-    "exec",
-    "playwright",
-    "test",
-    "--config",
-    "playwright.memory-real.config.ts",
-  ],
+  ["--filter", "@chat/web", "exec", "playwright", "test", "--config", selected.config],
   providerEnv,
 );

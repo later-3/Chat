@@ -1,10 +1,12 @@
 import {
   commandIdSchema,
+  createMemoryImportPayloadSchema,
   productRunIdSchema,
   productSessionIdSchema,
   submitMessagePayloadSchema,
   submitDecisionPayloadSchema,
   type CommandId,
+  type CreateMemoryImportPayload,
   type ProductRunId,
   type SubmitDecisionPayload,
   type SubmitMessagePayload,
@@ -26,6 +28,7 @@ const BOOTSTRAP_KEY = "chat:real-bootstrap:v1";
 const RUN_KEY_PREFIX = "chat:real-run:v1:";
 const PENDING_SEND_PREFIX = "chat:pending-send:v1:";
 const PENDING_DECISION_PREFIX = "chat:pending-decision:v1:";
+const PENDING_MEMORY_IMPORT_PREFIX = "chat:pending-memory-import:v1:";
 
 const storedSessionSchema = z
   .object({
@@ -178,6 +181,54 @@ export function writePendingDecision(storage: Storage, pending: PendingDecision)
 export function clearPendingDecision(storage: Storage, runId: string): void {
   try {
     storage.removeItem(`${PENDING_DECISION_PREFIX}${runId}`);
+  } catch {
+    // 同上
+  }
+}
+
+export interface PendingMemoryImport {
+  readonly version: 1;
+  readonly commandId: CommandId;
+  readonly payload: CreateMemoryImportPayload;
+}
+
+const pendingMemoryImportSchema = z
+  .object({
+    version: z.literal(1),
+    commandId: commandIdSchema,
+    payload: createMemoryImportPayloadSchema,
+  })
+  .strict();
+
+export function readPendingMemoryImport(
+  storage: Storage,
+  sessionId: string,
+): PendingMemoryImport | null {
+  try {
+    const raw = storage.getItem(`${PENDING_MEMORY_IMPORT_PREFIX}${sessionId}`);
+    return raw === null
+      ? null
+      : (pendingMemoryImportSchema.safeParse(JSON.parse(raw)).data ?? null);
+  } catch {
+    return null;
+  }
+}
+
+export function writePendingMemoryImport(
+  storage: Storage,
+  sessionId: string,
+  pending: PendingMemoryImport,
+): void {
+  try {
+    storage.setItem(`${PENDING_MEMORY_IMPORT_PREFIX}${sessionId}`, JSON.stringify(pending));
+  } catch {
+    // Storage不可用时只保留在内存，服务端幂等仍是最终防线。
+  }
+}
+
+export function clearPendingMemoryImport(storage: Storage, sessionId: string): void {
+  try {
+    storage.removeItem(`${PENDING_MEMORY_IMPORT_PREFIX}${sessionId}`);
   } catch {
     // 同上
   }

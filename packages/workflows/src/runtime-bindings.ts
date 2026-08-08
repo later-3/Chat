@@ -1,12 +1,17 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { z } from "zod";
 import {
   approvalRequestIdSchema,
+  memoryImportIntentIdSchema,
+  memoryImportResultIdSchema,
   outboxEntryIdSchema,
   productRunIdSchema,
   type ApprovalRequestId,
+  type MemoryImportIntentId,
+  type MemoryImportResultId,
   type OutboxEntryId,
   type ProductRunId,
 } from "@chat/contracts";
@@ -20,7 +25,7 @@ import {
  * 立即熔断，避免旧内存覆盖已提交映射。
  */
 
-const RUNTIME_BINDINGS_SCHEMA_VERSION = "runtime-bindings.v1";
+const RUNTIME_BINDINGS_SCHEMA_VERSION = "runtime-bindings.v2";
 
 const startIntentSchema = z
   .object({
@@ -59,19 +64,122 @@ const hookBindingSchema = z
   })
   .strict();
 
-export const runtimeBindingsFileSchema = z
+const memoryImportStartIntentSchema = z
   .object({
-    schemaVersion: z.literal(RUNTIME_BINDINGS_SCHEMA_VERSION),
-    /** default保持对早期v1调试文件的向后读取兼容。 */
+    memoryImportIntentId: memoryImportIntentIdSchema,
+    memoryImportResultId: memoryImportResultIdSchema,
+    mode: z.enum(["import", "reconcile"]),
+    workflowDefinitionVersion: z.string().min(1).max(100),
+    state: z.enum(["starting", "outcome_unknown"]),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+
+const memoryImportWorkflowBindingSchema = z
+  .object({
+    memoryImportIntentId: memoryImportIntentIdSchema,
+    memoryImportResultId: memoryImportResultIdSchema,
+    mode: z.enum(["import", "reconcile"]),
+    workflowRunId: z.string().min(1).max(200),
+    workflowDefinitionVersion: z.string().min(1).max(100),
+    startDispatchState: z.literal("started"),
+    createdAt: z.iso.datetime(),
+  })
+  .strict();
+
+const runtimeBindingsFileV1Schema = z
+  .object({
+    schemaVersion: z.literal("runtime-bindings.v1"),
     startIntents: z.record(productRunIdSchema, startIntentSchema).default({}),
     workflows: z.record(productRunIdSchema, workflowBindingSchema),
     hooks: z.record(approvalRequestIdSchema, hookBindingSchema),
   })
   .strict();
 
+export const runtimeBindingsFileSchema = z
+  .object({
+    schemaVersion: z.literal(RUNTIME_BINDINGS_SCHEMA_VERSION),
+    startIntents: z.record(productRunIdSchema, startIntentSchema),
+    workflows: z.record(productRunIdSchema, workflowBindingSchema),
+    hooks: z.record(approvalRequestIdSchema, hookBindingSchema),
+    memoryImportStartIntents: z.record(outboxEntryIdSchema, memoryImportStartIntentSchema),
+    memoryImportWorkflows: z.record(outboxEntryIdSchema, memoryImportWorkflowBindingSchema),
+  })
+  .strict();
+
 export type RuntimeBindingsFile = z.infer<typeof runtimeBindingsFileSchema>;
 export type WorkflowBinding = z.infer<typeof workflowBindingSchema>;
 export type HookBinding = z.infer<typeof hookBindingSchema>;
+export type MemoryImportWorkflowBinding = z.infer<typeof memoryImportWorkflowBindingSchema>;
+
+export interface SafeMemoryImportRuntimeEvidence {
+  readonly status: "ok" | "missing" | "invalid" | "mismatch";
+  readonly entries: readonly {
+    readonly outboxId: string;
+    readonly mode: "import" | "reconcile";
+    readonly state: "started" | "outcome_unknown" | "missing";
+    readonly workflowDefinitionVersion: string | null;
+  }[];
+}
+
+/** 严格解析包含私有身份的Binding文件，只返回不含Workflow Run ID/Token的安全投影。 */
+export function readSafeMemoryImportRuntimeEvidence(input: {
+  readonly path: string | undefined;
+  readonly memoryImportIntentId: string;
+  readonly memoryImportResultId: string;
+  readonly outbox: readonly {
+    readonly outboxId: string;
+    readonly kind: "memory_import_start" | "memory_import_reconcile";
+  }[];
+}): SafeMemoryImportRuntimeEvidence {
+  if (input.path === undefined) return { status: "missing", entries: [] };
+  let parsed: RuntimeBindingsFile;
+  try {
+    parsed = runtimeBindingsFileSchema.parse(JSON.parse(readFileSync(input.path, "utf8")));
+    assertRuntimeBindingsIntegrity(parsed);
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "ENOENT"
+    ) {
+      return { status: "missing", entries: [] };
+    }
+    return { status: "invalid", entries: [] };
+  }
+  let mismatch = false;
+  const entries: SafeMemoryImportRuntimeEvidence["entries"] = input.outbox.map((entry) => {
+    const expectedMode = entry.kind === "memory_import_start" ? "import" : "reconcile";
+    const workflow = parsed.memoryImportWorkflows[entry.outboxId as OutboxEntryId];
+    const start = parsed.memoryImportStartIntents[entry.outboxId as OutboxEntryId];
+    const candidate = workflow ?? start;
+    const state =
+      workflow !== undefined
+        ? "started"
+        : start?.state === "outcome_unknown"
+          ? "outcome_unknown"
+          : "missing";
+    const version = candidate?.workflowDefinitionVersion ?? null;
+    if (
+      candidate?.memoryImportIntentId !== input.memoryImportIntentId ||
+      candidate.memoryImportResultId !== input.memoryImportResultId ||
+      candidate.mode !== expectedMode ||
+      version === null ||
+      state === "missing"
+    ) {
+      mismatch = true;
+    }
+    return {
+      outboxId: entry.outboxId,
+      mode: expectedMode,
+      state,
+      workflowDefinitionVersion: version,
+    };
+  });
+  return { status: mismatch ? "mismatch" : "ok", entries };
+}
 
 export class RuntimeBindingError extends Error {
   readonly code = "runtime_binding_invalid";
@@ -87,6 +195,8 @@ function emptyBindings(): RuntimeBindingsFile {
     startIntents: {},
     workflows: {},
     hooks: {},
+    memoryImportStartIntents: {},
+    memoryImportWorkflows: {},
   };
 }
 
@@ -129,11 +239,26 @@ export class RuntimeBindingStore {
       throw new RuntimeBindingError("Runtime Binding Store不是合法JSON，已保留原文件");
     }
     const validated = runtimeBindingsFileSchema.safeParse(parsed);
-    if (!validated.success) {
+    if (validated.success) {
+      assertRuntimeBindingsIntegrity(validated.data);
+      return new RuntimeBindingStore(filePath, validated.data);
+    }
+    const legacy = runtimeBindingsFileV1Schema.safeParse(parsed);
+    if (!legacy.success) {
       throw new RuntimeBindingError("Runtime Binding Store版本未知或内容非法，已保留原文件");
     }
-    assertRuntimeBindingsIntegrity(validated.data);
-    return new RuntimeBindingStore(filePath, validated.data);
+    const migrated: RuntimeBindingsFile = {
+      schemaVersion: RUNTIME_BINDINGS_SCHEMA_VERSION,
+      startIntents: legacy.data.startIntents,
+      workflows: legacy.data.workflows,
+      hooks: legacy.data.hooks,
+      memoryImportStartIntents: {},
+      memoryImportWorkflows: {},
+    };
+    assertRuntimeBindingsIntegrity(migrated);
+    const store = new RuntimeBindingStore(filePath, migrated);
+    await store.persist(migrated);
+    return store;
   }
 
   hasDurableBindings(): boolean {
@@ -141,7 +266,9 @@ export class RuntimeBindingStore {
     return (
       Object.keys(this.bindings.startIntents).length > 0 ||
       Object.keys(this.bindings.workflows).length > 0 ||
-      Object.keys(this.bindings.hooks).length > 0
+      Object.keys(this.bindings.hooks).length > 0 ||
+      Object.keys(this.bindings.memoryImportStartIntents).length > 0 ||
+      Object.keys(this.bindings.memoryImportWorkflows).length > 0
     );
   }
 
@@ -172,6 +299,140 @@ export class RuntimeBindingStore {
     this.assertAvailable();
     if (this.bindings.workflows[productRunId] !== undefined) return "exists";
     return this.bindings.startIntents[productRunId] !== undefined ? "outcome_unknown" : "missing";
+  }
+
+  listMemoryImportBindings(): readonly {
+    outboxId: OutboxEntryId;
+    binding: MemoryImportWorkflowBinding;
+  }[] {
+    this.assertAvailable();
+    return Object.entries(this.bindings.memoryImportWorkflows).map(([outboxId, binding]) => ({
+      outboxId: outboxId as OutboxEntryId,
+      binding: structuredClone(binding),
+    }));
+  }
+
+  getMemoryImportStartState(outboxId: OutboxEntryId): "missing" | "outcome_unknown" | "exists" {
+    this.assertAvailable();
+    if (this.bindings.memoryImportWorkflows[outboxId] !== undefined) return "exists";
+    return this.bindings.memoryImportStartIntents[outboxId] !== undefined
+      ? "outcome_unknown"
+      : "missing";
+  }
+
+  getMemoryImportWorkflowBinding(outboxId: OutboxEntryId): MemoryImportWorkflowBinding | undefined {
+    this.assertAvailable();
+    const value = this.bindings.memoryImportWorkflows[outboxId];
+    return value === undefined ? undefined : structuredClone(value);
+  }
+
+  /** Import每个Outbox只允许启动一个私有Workflow Run；对账使用新的Outbox身份。 */
+  async claimMemoryImportStartIntent(input: {
+    outboxId: OutboxEntryId;
+    memoryImportIntentId: MemoryImportIntentId;
+    memoryImportResultId: MemoryImportResultId;
+    mode: "import" | "reconcile";
+    workflowDefinitionVersion: string;
+    now: string;
+  }): Promise<"claimed" | "already_started" | "outcome_unknown"> {
+    return this.enqueue(async () => {
+      this.assertAvailable();
+      if (this.bindings.memoryImportWorkflows[input.outboxId] !== undefined) {
+        return "already_started";
+      }
+      const existing = this.bindings.memoryImportStartIntents[input.outboxId];
+      if (existing !== undefined) {
+        if (
+          existing.memoryImportIntentId !== input.memoryImportIntentId ||
+          existing.memoryImportResultId !== input.memoryImportResultId ||
+          existing.mode !== input.mode ||
+          existing.workflowDefinitionVersion !== input.workflowDefinitionVersion
+        ) {
+          throw new RuntimeBindingError("Memory Import Workflow start意图冲突");
+        }
+        return "outcome_unknown";
+      }
+      const next = structuredClone(this.bindings);
+      next.memoryImportStartIntents[input.outboxId] = {
+        memoryImportIntentId: input.memoryImportIntentId,
+        memoryImportResultId: input.memoryImportResultId,
+        mode: input.mode,
+        workflowDefinitionVersion: input.workflowDefinitionVersion,
+        state: "starting",
+        createdAt: input.now,
+        updatedAt: input.now,
+      };
+      await this.commit(next);
+      return "claimed";
+    });
+  }
+
+  async claimMemoryImportWorkflowBinding(input: {
+    outboxId: OutboxEntryId;
+    memoryImportIntentId: MemoryImportIntentId;
+    memoryImportResultId: MemoryImportResultId;
+    mode: "import" | "reconcile";
+    workflowRunId: string;
+    workflowDefinitionVersion: string;
+    now: string;
+  }): Promise<{ alreadyExisted: boolean }> {
+    return this.enqueue(async () => {
+      this.assertAvailable();
+      const existing = this.bindings.memoryImportWorkflows[input.outboxId];
+      if (existing !== undefined) {
+        if (
+          existing.workflowRunId !== input.workflowRunId ||
+          existing.memoryImportIntentId !== input.memoryImportIntentId ||
+          existing.memoryImportResultId !== input.memoryImportResultId ||
+          existing.mode !== input.mode
+        ) {
+          throw new RuntimeBindingError("Memory Import Workflow映射冲突");
+        }
+        return { alreadyExisted: true };
+      }
+      const intent = this.bindings.memoryImportStartIntents[input.outboxId];
+      if (
+        intent === undefined ||
+        intent.memoryImportIntentId !== input.memoryImportIntentId ||
+        intent.memoryImportResultId !== input.memoryImportResultId ||
+        intent.mode !== input.mode ||
+        intent.workflowDefinitionVersion !== input.workflowDefinitionVersion
+      ) {
+        throw new RuntimeBindingError("Memory Import Workflow结果缺少匹配的持久化意图");
+      }
+      const next = structuredClone(this.bindings);
+      next.memoryImportWorkflows[input.outboxId] = {
+        memoryImportIntentId: input.memoryImportIntentId,
+        memoryImportResultId: input.memoryImportResultId,
+        mode: input.mode,
+        workflowRunId: input.workflowRunId,
+        workflowDefinitionVersion: input.workflowDefinitionVersion,
+        startDispatchState: "started",
+        createdAt: input.now,
+      };
+      delete next.memoryImportStartIntents[input.outboxId];
+      await this.commit(next);
+      return { alreadyExisted: false };
+    });
+  }
+
+  async markMemoryImportStartOutcomeUnknown(outboxId: OutboxEntryId, now: string): Promise<void> {
+    await this.enqueue(async () => {
+      this.assertAvailable();
+      const existing = this.bindings.memoryImportStartIntents[outboxId];
+      if (existing === undefined) {
+        if (this.bindings.memoryImportWorkflows[outboxId] !== undefined) return;
+        throw new RuntimeBindingError("Memory Import start结果未知但意图缺失");
+      }
+      if (existing.state === "outcome_unknown") return;
+      const next = structuredClone(this.bindings);
+      next.memoryImportStartIntents[outboxId] = {
+        ...existing,
+        state: "outcome_unknown",
+        updatedAt: now,
+      };
+      await this.commit(next);
+    });
   }
 
   /** 先落盘start意图；已有未决意图时绝不再次调用Workflow start。 */
@@ -399,8 +660,12 @@ function assertRuntimeBindingsIntegrity(bindings: RuntimeBindingsFile): void {
     }
   }
   const workflowRunIds = Object.values(bindings.workflows).map((binding) => binding.workflowRunId);
-  if (new Set(workflowRunIds).size !== workflowRunIds.length) {
-    throw new RuntimeBindingError("多个Product Run不能共享同一Workflow Run映射");
+  const importWorkflowRunIds = Object.values(bindings.memoryImportWorkflows).map(
+    (binding) => binding.workflowRunId,
+  );
+  const allWorkflowRunIds = [...workflowRunIds, ...importWorkflowRunIds];
+  if (new Set(allWorkflowRunIds).size !== allWorkflowRunIds.length) {
+    throw new RuntimeBindingError("多个产品操作不能共享同一Workflow Run映射");
   }
   const hookTokens = Object.values(bindings.hooks).map((binding) => binding.hookToken);
   if (new Set(hookTokens).size !== hookTokens.length) {
@@ -409,6 +674,11 @@ function assertRuntimeBindingsIntegrity(bindings: RuntimeBindingsFile): void {
   for (const hook of Object.values(bindings.hooks)) {
     if (bindings.workflows[hook.productRunId] === undefined) {
       throw new RuntimeBindingError("Hook映射缺少对应Workflow映射");
+    }
+  }
+  for (const outboxId of Object.keys(bindings.memoryImportStartIntents) as OutboxEntryId[]) {
+    if (bindings.memoryImportWorkflows[outboxId] !== undefined) {
+      throw new RuntimeBindingError("同一Import Outbox不能同时存在start意图与Workflow映射");
     }
   }
 }

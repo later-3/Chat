@@ -8,6 +8,7 @@ export * from "./service-status.js";
 export * from "./trace.js";
 export * from "./product.js";
 export * from "./context.js";
+export * from "./memory-import.js";
 export * from "./product-store.js";
 export * from "./product-api.js";
 export * from "./internal-runtime.js";

@@ -43,6 +43,8 @@ export const memoryResultSnapshotIdSchema = prefixedId("mrs");
 export const memoryAdoptionIdSchema = prefixedId("mad");
 export const contextPackageIdSchema = prefixedId("ctxp");
 export const memoryBackendIdSchema = prefixedId("mbk");
+export const memoryImportIntentIdSchema = prefixedId("mii");
+export const memoryImportResultIdSchema = prefixedId("mir");
 
 /**
  * 服务端请求ID。客户端可提议复用，但必须通过本Schema才被信任；
@@ -76,3 +78,5 @@ export type MemoryResultSnapshotId = z.infer<typeof memoryResultSnapshotIdSchema
 export type MemoryAdoptionId = z.infer<typeof memoryAdoptionIdSchema>;
 export type ContextPackageId = z.infer<typeof contextPackageIdSchema>;
 export type MemoryBackendId = z.infer<typeof memoryBackendIdSchema>;
+export type MemoryImportIntentId = z.infer<typeof memoryImportIntentIdSchema>;
+export type MemoryImportResultId = z.infer<typeof memoryImportResultIdSchema>;

@@ -2,7 +2,11 @@ import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { RuntimeBindingError, RuntimeBindingStore } from "./runtime-bindings.js";
+import {
+  readSafeMemoryImportRuntimeEvidence,
+  RuntimeBindingError,
+  RuntimeBindingStore,
+} from "./runtime-bindings.js";
 
 const NOW = "2026-08-07T12:00:00.000Z";
 
@@ -165,5 +169,47 @@ describe("RuntimeBindingStore", () => {
     expect(reopened.getHookBinding("apr_unknown" as never)?.resumeDispatchState).toBe(
       "dispatching",
     );
+  });
+
+  it("Memory Import回放复用严格Binding Schema且安全投影不暴露Workflow Run ID", async () => {
+    const filePath = await tempPath();
+    const store = await RuntimeBindingStore.open(filePath);
+    await store.claimMemoryImportStartIntent({
+      outboxId: "obx_import1" as never,
+      memoryImportIntentId: "mii_import1" as never,
+      memoryImportResultId: "mir_import1" as never,
+      mode: "import",
+      workflowDefinitionVersion: "memory-import-workflow.v1",
+      now: NOW,
+    });
+    await store.claimMemoryImportWorkflowBinding({
+      outboxId: "obx_import1" as never,
+      memoryImportIntentId: "mii_import1" as never,
+      memoryImportResultId: "mir_import1" as never,
+      mode: "import",
+      workflowRunId: "private-workflow-run-must-not-leak",
+      workflowDefinitionVersion: "memory-import-workflow.v1",
+      now: NOW,
+    });
+    const evidence = readSafeMemoryImportRuntimeEvidence({
+      path: filePath,
+      memoryImportIntentId: "mii_import1",
+      memoryImportResultId: "mir_import1",
+      outbox: [{ outboxId: "obx_import1", kind: "memory_import_start" }],
+    });
+    expect(evidence.status).toBe("ok");
+    expect(JSON.stringify(evidence)).not.toContain("private-workflow-run-must-not-leak");
+
+    const parsed = JSON.parse(await readFile(filePath, "utf8")) as Record<string, unknown>;
+    parsed["unexpected"] = "strict-schema-must-reject";
+    await writeFile(filePath, JSON.stringify(parsed));
+    expect(
+      readSafeMemoryImportRuntimeEvidence({
+        path: filePath,
+        memoryImportIntentId: "mii_import1",
+        memoryImportResultId: "mir_import1",
+        outbox: [{ outboxId: "obx_import1", kind: "memory_import_start" }],
+      }).status,
+    ).toBe("invalid");
   });
 });

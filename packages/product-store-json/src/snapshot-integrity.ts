@@ -6,11 +6,15 @@ import {
   computeExecutionInputManifestSha256,
   computeContextPackageSha256,
   computeMemoryBackendDescriptorSha256,
+  computeMemoryImportBackendDescriptorSha256,
+  computeMemoryImportRequestSha256,
+  computeMemoryImportSemanticDedupeSha256,
   computeMemoryQueryResultSha256,
   computeMemoryResultSnapshotSha256,
   computeRunContextRequestSha256,
   estimateMemorySectionTokens,
   hashCanonical,
+  resolveMemoryImportContent,
   validateExecutionCandidate,
 } from "@chat/domain";
 
@@ -33,6 +37,7 @@ export function assertSnapshotIntegrity(snapshot: ProductSnapshot): void {
   assertRuns(snapshot, fail);
   assertPlansAndReviews(snapshot, fail);
   assertLongTermContext(snapshot, fail);
+  assertMemoryImports(snapshot, fail);
   assertExecution(snapshot, fail);
   assertReceiptsAndOutbox(snapshot, fail);
 
@@ -73,6 +78,8 @@ function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
     ["memorySnapshot", snapshot.entities.memoryResultSnapshots, "memoryResultSnapshotId"],
     ["memoryAdoption", snapshot.entities.memoryAdoptions, "memoryAdoptionId"],
     ["contextPackage", snapshot.entities.contextPackages, "contextPackageId"],
+    ["memoryImportIntent", snapshot.entities.memoryImportIntents, "memoryImportIntentId"],
+    ["memoryImportResult", snapshot.entities.memoryImportResults, "memoryImportResultId"],
     ["receipt", snapshot.commandReceipts, "commandId"],
     ["outbox", snapshot.outbox, "outboxId"],
   ] as const;
@@ -81,6 +88,124 @@ function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
       if ((entity as unknown as Record<string, string>)[idField] !== key) {
         fail(`${label} Map键${key}与${idField}不一致`);
       }
+    }
+  }
+}
+
+function assertMemoryImports(snapshot: ProductSnapshot, fail: Fail): void {
+  const { entities } = snapshot;
+  const resultCountByIntent = new Map<string, number>();
+  const liveDedupe = new Set<string>();
+
+  for (const intent of Object.values(entities.memoryImportIntents)) {
+    const message = entities.messages[intent.sourceSelection.sourceMessageId];
+    const session = message === undefined ? undefined : entities.sessions[message.sessionId];
+    if (
+      message === undefined ||
+      session === undefined ||
+      session.ownerPrincipalId !== intent.requestedByPrincipalId
+    ) {
+      fail(`memoryImportIntent ${intent.memoryImportIntentId} 来源Message/Principal不一致`);
+    }
+    if (
+      intent.operationId !== intent.memoryImportIntentId ||
+      intent.backendDescriptor.backendId !== intent.backendId ||
+      !intent.backendDescriptor.configured ||
+      intent.memoryLayer !== "L2" ||
+      intent.updatedAt !== intent.createdAt
+    ) {
+      fail(`memoryImportIntent ${intent.memoryImportIntentId} 冻结字段不一致`);
+    }
+    if (
+      new Set(intent.tags).size !== intent.tags.length ||
+      JSON.stringify([...intent.tags].sort()) !== JSON.stringify(intent.tags)
+    ) {
+      fail(`memoryImportIntent ${intent.memoryImportIntentId} 标签未规范化`);
+    }
+    try {
+      const content = resolveMemoryImportContent({
+        message,
+        selection: intent.sourceSelection,
+        maxContentChars: intent.backendDescriptor.capabilities.maxContentChars,
+      });
+      if (
+        computeMemoryImportBackendDescriptorSha256(intent.backendDescriptor) !==
+        intent.backendDescriptorSha256
+      ) {
+        fail(`memoryImportIntent ${intent.memoryImportIntentId} Backend Hash不一致`);
+      }
+      if (
+        computeMemoryImportRequestSha256({
+          content,
+          layer: "L2",
+          title: intent.title,
+          tags: intent.tags,
+          turnId: message.messageId,
+        }) !== intent.requestSha256
+      ) {
+        fail(`memoryImportIntent ${intent.memoryImportIntentId} Request Hash不一致`);
+      }
+      if (
+        computeMemoryImportSemanticDedupeSha256({
+          requestedByPrincipalId: intent.requestedByPrincipalId,
+          sourceSelection: intent.sourceSelection,
+          backendId: intent.backendId,
+          title: intent.title,
+          tags: intent.tags,
+        }) !== intent.semanticDedupeSha256
+      ) {
+        fail(`memoryImportIntent ${intent.memoryImportIntentId} Semantic Hash不一致`);
+      }
+    } catch (error) {
+      fail(
+        `memoryImportIntent ${intent.memoryImportIntentId} 内容证据无效:${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  for (const result of Object.values(entities.memoryImportResults)) {
+    const intent = entities.memoryImportIntents[result.memoryImportIntentId];
+    if (intent === undefined) {
+      fail(`memoryImportResult ${result.memoryImportResultId} 悬空Intent`);
+    }
+    resultCountByIntent.set(
+      result.memoryImportIntentId,
+      (resultCountByIntent.get(result.memoryImportIntentId) ?? 0) + 1,
+    );
+    if (Date.parse(result.updatedAt) < Date.parse(result.createdAt)) {
+      fail(`memoryImportResult ${result.memoryImportResultId} 时间线倒置`);
+    }
+    if (
+      (result.status === "queued" &&
+        (result.dispatchAttempts !== 0 || result.reconcileAttempts !== 0)) ||
+      (result.status === "dispatching" &&
+        (result.dispatchAttempts < 1 || result.dispatchStartedAt !== result.updatedAt)) ||
+      (result.status === "accepted" &&
+        (result.dispatchAttempts < 1 ||
+          Date.parse(result.acceptedAt) > Date.parse(result.updatedAt))) ||
+      (result.status === "materialized" &&
+        (result.dispatchAttempts < 1 ||
+          result.reconcileAttempts < 1 ||
+          result.materializedAt !== result.updatedAt ||
+          Date.parse(result.acceptedAt) > Date.parse(result.materializedAt))) ||
+      (result.status === "failed" && result.failedAt !== result.updatedAt) ||
+      (result.status === "outcome_unknown" &&
+        (Date.parse(result.unknownSince) > Date.parse(result.updatedAt) ||
+          (result.lastReconciledAt !== undefined && result.lastReconciledAt !== result.updatedAt)))
+    ) {
+      fail(`memoryImportResult ${result.memoryImportResultId} 状态时间或计数不一致`);
+    }
+    if (result.status !== "failed") {
+      if (liveDedupe.has(intent.semanticDedupeSha256)) {
+        fail(`memoryImportIntent semanticDedupeSha256重复`);
+      }
+      liveDedupe.add(intent.semanticDedupeSha256);
+    }
+  }
+
+  for (const intent of Object.values(entities.memoryImportIntents)) {
+    if ((resultCountByIntent.get(intent.memoryImportIntentId) ?? 0) !== 1) {
+      fail(`memoryImportIntent ${intent.memoryImportIntentId} 必须恰有一个Result`);
     }
   }
 }
@@ -1231,6 +1356,18 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
     CompleteMemoryContextQuery: ["contextPackageId", "productRunId"],
     CommitOptionalMemoryQueryFailure: ["contextPackageId", "productRunId"],
     CommitRequiredMemoryQueryFailure: ["productRunId"],
+    CreateMemoryImport: ["memoryImportIntentId", "memoryImportResultId"],
+    MarkMemoryImportDispatching: ["memoryImportResultId"],
+    CommitMemoryImportAccepted: ["memoryImportResultId"],
+    CommitMemoryImportMaterialized: ["memoryImportResultId"],
+    CommitMemoryImportFailed: ["memoryImportResultId"],
+    CommitMemoryImportOutcomeUnknown: ["memoryImportResultId"],
+    RequestMemoryImportReconciliation: ["memoryImportIntentId", "memoryImportResultId"],
+    RecoverMemoryImportAfterTerminalWorkflow: [
+      "outboxId",
+      "memoryImportResultId",
+      "recoveryOutboxId",
+    ],
   };
   for (const receipt of receipts) {
     if (
@@ -1278,13 +1415,19 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
                                 ? entities.contextRequests[value] !== undefined
                                 : key === "contextPackageId"
                                   ? entities.contextPackages[value] !== undefined
-                                  : key === "messageSha256"
-                                    ? /^[a-f0-9]{64}$/.test(value)
-                                    : key === "approvalExpired"
-                                      ? value === "true"
-                                      : key === "status"
-                                        ? value === "expired" || value === "already_decided"
-                                        : false;
+                                  : key === "memoryImportIntentId"
+                                    ? entities.memoryImportIntents[value] !== undefined
+                                    : key === "memoryImportResultId"
+                                      ? entities.memoryImportResults[value] !== undefined
+                                      : key === "outboxId" || key === "recoveryOutboxId"
+                                        ? snapshot.outbox[value] !== undefined
+                                        : key === "messageSha256"
+                                          ? /^[a-f0-9]{64}$/.test(value)
+                                          : key === "approvalExpired"
+                                            ? value === "true"
+                                            : key === "status"
+                                              ? value === "expired" || value === "already_decided"
+                                              : false;
       if (!exists) fail(`receipt ${receipt.commandId} 的${key}引用无效`);
     }
     if (receipt.commandType === "SubmitUserMessage") {
@@ -1351,20 +1494,13 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
     }
   }
   for (const entry of Object.values(snapshot.outbox)) {
-    if (entities.runs[entry.productRunId] === undefined) {
-      fail(`outbox ${entry.outboxId} 悬空productRunId`);
-    }
-    if (entry.kind === "workflow_start") {
-      if (entry.approvalRequestId !== undefined || entry.decisionId !== undefined) {
-        fail(`outbox ${entry.outboxId} workflow_start不允许Decision字段`);
+    if (entry.kind === "workflow_start" || entry.kind === "workflow_resume") {
+      if (entities.runs[entry.productRunId] === undefined) {
+        fail(`outbox ${entry.outboxId} 悬空productRunId`);
       }
-    } else {
-      const approval =
-        entry.approvalRequestId === undefined
-          ? undefined
-          : entities.approvalRequests[entry.approvalRequestId];
-      const decision =
-        entry.decisionId === undefined ? undefined : entities.decisions[entry.decisionId];
+      if (entry.kind === "workflow_start") continue;
+      const approval = entities.approvalRequests[entry.approvalRequestId];
+      const decision = entities.decisions[entry.decisionId];
       if (
         approval === undefined ||
         decision === undefined ||
@@ -1374,6 +1510,17 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
       ) {
         fail(`outbox ${entry.outboxId} workflow_resume绑定不完整`);
       }
+      continue;
+    }
+    const intent = entities.memoryImportIntents[entry.memoryImportIntentId];
+    const result = entities.memoryImportResults[entry.memoryImportResultId];
+    if (
+      intent === undefined ||
+      result === undefined ||
+      result.memoryImportIntentId !== intent.memoryImportIntentId ||
+      entry.expectedResultRevision > result.revision
+    ) {
+      fail(`outbox ${entry.outboxId} Memory Import绑定不完整`);
     }
   }
 }

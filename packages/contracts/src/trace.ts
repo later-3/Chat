@@ -11,7 +11,10 @@ import {
   workflowDefinitionIdSchema,
   contextRequestIdSchema,
   memoryBackendIdSchema,
+  memoryImportIntentIdSchema,
+  memoryImportResultIdSchema,
   memoryQueryIdSchema,
+  outboxEntryIdSchema,
 } from "./ids.js";
 
 /**
@@ -62,6 +65,15 @@ export const TRACE_EVENT_NAMES = {
   memoryQueryStarted: "memory.query.started",
   memoryQueryCompleted: "memory.query.completed",
   memoryQueryFailed: "memory.query.failed",
+  memoryImportIntentCreated: "memory.import.intent_created",
+  memoryImportStarted: "memory.import.started",
+  memoryImportAccepted: "memory.import.accepted",
+  memoryImportMaterialized: "memory.import.materialized",
+  memoryImportOutcomeUnknown: "memory.import.outcome_unknown",
+  memoryImportFailed: "memory.import.failed",
+  memoryImportReconcileStarted: "memory.import.reconcile.started",
+  memoryImportReconcileCompleted: "memory.import.reconcile.completed",
+  memoryImportReconcileFailed: "memory.import.reconcile.failed",
   workflowStartRequested: "workflow.start.requested",
   workflowStartStarted: "workflow.start.started",
   workflowStartFailed: "workflow.start.failed",
@@ -524,6 +536,107 @@ const memoryQueryFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.memoryQueryFa
   ...durationMsRequired,
 });
 
+// Memory Import：正文仍只存在Message；Trace只保存稳定身份、Hash、状态与耗时。
+const memoryImportFields = {
+  memoryImportIntentId: memoryImportIntentIdSchema,
+  memoryImportResultId: memoryImportResultIdSchema,
+  outboxId: outboxEntryIdSchema,
+  operationId: memoryImportIntentIdSchema,
+  backendId: memoryBackendIdSchema,
+  requestSha256: sha256Schema,
+  intentRevision: revisionSchema,
+  resultRevision: revisionSchema,
+};
+
+const memoryImportIntentCreatedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.memoryImportIntentCreated,
+  "success",
+  {
+    ...memoryImportFields,
+    backendDescriptorSha256: sha256Schema,
+    ...durationMsOptional,
+  },
+);
+
+const memoryImportStartedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.memoryImportStarted,
+  "unknown",
+  { ...memoryImportFields, dispatchAttempt: stepAttemptSchema, ...durationMsOptional },
+);
+
+const memoryImportAcceptedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.memoryImportAccepted,
+  "success",
+  {
+    ...memoryImportFields,
+    externalObjectIdSha256: sha256Schema,
+    responseSha256: sha256Schema,
+    dispatchAttempt: stepAttemptSchema,
+    ...durationMsRequired,
+  },
+);
+
+const memoryImportMaterializedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.memoryImportMaterialized,
+  "success",
+  {
+    ...memoryImportFields,
+    externalObjectIdSha256: sha256Schema,
+    verificationSha256: sha256Schema,
+    reconcileAttempt: stepAttemptSchema,
+    ...durationMsRequired,
+  },
+);
+
+const memoryImportOutcomeUnknownSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.memoryImportOutcomeUnknown,
+  "unknown",
+  {
+    ...memoryImportFields,
+    origin: z.enum(["workflow_dispatch", "dispatch", "reconcile", "recovery"]),
+    attempt: stepAttemptSchema,
+    error: traceErrorSchema,
+    ...durationMsRequired,
+  },
+);
+
+const memoryImportFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.memoryImportFailed, "failure", {
+  ...memoryImportFields,
+  origin: z.enum(["workflow_dispatch", "dispatch", "reconcile", "recovery"]),
+  attempt: stepAttemptSchema,
+  error: traceErrorSchema,
+  ...durationMsRequired,
+});
+
+const memoryImportReconcileStartedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.memoryImportReconcileStarted,
+  "unknown",
+  { ...memoryImportFields, reconcileAttempt: stepAttemptSchema, ...durationMsOptional },
+);
+
+const memoryImportReconcileCompletedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.memoryImportReconcileCompleted,
+  "success",
+  {
+    ...memoryImportFields,
+    resolution: z.enum(["accepted", "materialized", "failed"]),
+    reconcileAttempt: stepAttemptSchema,
+    externalObjectIdSha256: sha256Schema.optional(),
+    ...durationMsRequired,
+  },
+);
+
+const memoryImportReconcileFailedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.memoryImportReconcileFailed,
+  "failure",
+  {
+    ...memoryImportFields,
+    reconcileAttempt: stepAttemptSchema,
+    error: traceErrorSchema,
+    ...durationMsRequired,
+  },
+);
+
 // Workflow事件族：Run + Attempt + Definition版本；runMappingRef为后端私有映射引用，不是Hook Token。
 const workflowStartRequestedSchema = defineTraceEvent(
   TRACE_EVENT_NAMES.workflowStartRequested,
@@ -898,6 +1011,15 @@ export const traceEventSchema = z.discriminatedUnion("eventName", [
   memoryQueryStartedSchema,
   memoryQueryCompletedSchema,
   memoryQueryFailedSchema,
+  memoryImportIntentCreatedSchema,
+  memoryImportStartedSchema,
+  memoryImportAcceptedSchema,
+  memoryImportMaterializedSchema,
+  memoryImportOutcomeUnknownSchema,
+  memoryImportFailedSchema,
+  memoryImportReconcileStartedSchema,
+  memoryImportReconcileCompletedSchema,
+  memoryImportReconcileFailedSchema,
   workflowStartRequestedSchema,
   workflowStartStartedSchema,
   workflowStartFailedSchema,

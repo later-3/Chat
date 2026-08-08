@@ -14,6 +14,7 @@ import {
   type Decision,
   type DecisionDto,
 } from "@chat/contracts";
+import { computeMessageSha256 } from "@chat/domain";
 
 /**
  * 实体 -> 公开DTO映射。
@@ -43,6 +44,7 @@ export function toMessageDto(message: Message): MessageDto {
     role: message.role,
     content: message.content,
     ...(message.sourceRunId !== undefined ? { sourceRunId: message.sourceRunId } : {}),
+    sha256: computeMessageSha256(message) as never,
     createdAt: message.createdAt,
   };
 }

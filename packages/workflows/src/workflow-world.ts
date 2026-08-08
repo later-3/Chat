@@ -26,7 +26,9 @@ export interface WorkflowWorldSetupOptions {
 
 export interface WorkflowWorldHandle {
   readonly world: LocalWorld;
+  /** 兼容现有调用方：始终是PlanningExecutionWorkflow。 */
   readonly workflowId: string;
+  readonly memoryImportWorkflowId: string;
   close(): Promise<void>;
 }
 
@@ -34,16 +36,27 @@ interface WorkflowManifestFile {
   workflows: Record<string, Record<string, { workflowId: string }>>;
 }
 
-async function resolveWorkflowId(bundleDir: string): Promise<string> {
+async function resolveWorkflowIds(
+  bundleDir: string,
+): Promise<{ planningExecution: string; memoryImport: string }> {
   const raw = await readFile(join(bundleDir, "manifest.json"), "utf8");
   const manifest = JSON.parse(raw) as WorkflowManifestFile;
+  let planningExecution: string | undefined;
+  let memoryImport: string | undefined;
   for (const [filePath, entries] of Object.entries(manifest.workflows)) {
     if (filePath.includes("planning-execution-workflow")) {
       const entry = entries["planningExecutionWorkflow"];
-      if (entry !== undefined) return entry.workflowId;
+      if (entry !== undefined) planningExecution = entry.workflowId;
+    }
+    if (filePath.includes("memory-import-workflow")) {
+      const entry = entries["memoryImportWorkflow"];
+      if (entry !== undefined) memoryImport = entry.workflowId;
     }
   }
-  throw new Error("manifest.json中找不到planningExecutionWorkflow的workflowId");
+  if (planningExecution === undefined || memoryImport === undefined) {
+    throw new Error("manifest.json缺少PlanningExecutionWorkflow或MemoryImportWorkflow");
+  }
+  return { planningExecution, memoryImport };
 }
 
 type QueueHandler = (req: Request) => Promise<Response>;
@@ -65,7 +78,7 @@ function lazyBundleHandler(bundlePath: string): QueueHandler {
 export async function setupWorkflowWorld(
   options: WorkflowWorldSetupOptions,
 ): Promise<WorkflowWorldHandle> {
-  const workflowId = await resolveWorkflowId(options.bundleDir);
+  const workflowIds = await resolveWorkflowIds(options.bundleDir);
   const world = createLocalWorld({
     dataDir: options.dataDir,
     recoverActiveRuns: options.recoverActiveRuns,
@@ -91,7 +104,8 @@ export async function setupWorkflowWorld(
   }
   return {
     world,
-    workflowId,
+    workflowId: workflowIds.planningExecution,
+    memoryImportWorkflowId: workflowIds.memoryImport,
     close: async () => {
       setWorld(undefined);
       await world.close?.();

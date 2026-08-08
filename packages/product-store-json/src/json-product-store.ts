@@ -15,6 +15,7 @@ import {
 } from "@chat/application";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 import { migrateProductSnapshotV1ToV2, productSnapshotV1Schema } from "./migrate-v1-to-v2.js";
+import { migrateProductSnapshotV2ToV3, productSnapshotV2Schema } from "./migrate-v2-to-v3.js";
 
 /**
  * 版本化JSON Product Store Adapter（任务书§8）。
@@ -122,14 +123,21 @@ export class JsonProductStore implements ProductStorePort {
       return new JsonProductStore(options, current.data);
     }
 
-    const legacy = productSnapshotV1Schema.safeParse(parsedJson);
-    if (!legacy.success) {
-      throw new StoreCorruptedError("Product Store Schema未知或非法，已保留原文件");
+    const legacyV2 = productSnapshotV2Schema.safeParse(parsedJson);
+    let v2;
+    if (legacyV2.success) {
+      v2 = legacyV2.data;
+    } else {
+      const legacyV1 = productSnapshotV1Schema.safeParse(parsedJson);
+      if (!legacyV1.success) {
+        throw new StoreCorruptedError("Product Store Schema未知或非法，已保留原文件");
+      }
+      v2 = migrateProductSnapshotV1ToV2(legacyV1.data);
     }
-    const migrated = productSnapshotSchema.parse(migrateProductSnapshotV1ToV2(legacy.data));
+    const migrated = productSnapshotSchema.parse(migrateProductSnapshotV2ToV3(v2));
     assertSnapshotIntegrity(migrated);
     const store = new JsonProductStore(options, migrated);
-    // 成功迁移使用与普通事务相同的原子替换；rename 前失败时旧 v1 文件逐字节不变。
+    // 成功迁移使用与普通事务相同的原子替换；rename 前失败时旧文件逐字节不变。
     await store.persist(migrated);
     return store;
   }

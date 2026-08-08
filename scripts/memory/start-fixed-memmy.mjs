@@ -35,7 +35,11 @@ if (
 }
 
 const port = Number.parseInt(process.env.CHAT_MEMMY_PORT ?? String(FIXED_MEMMY_PORT), 10);
-if (port !== FIXED_MEMMY_PORT) throw new Error(`M1 固定 memmy 端口必须是 ${FIXED_MEMMY_PORT}`);
+const responseDropBackend =
+  process.env.CHAT_MEMMY_TEST_ALLOW_ALTERNATE_PORT === "1" && port === FIXED_MEMMY_PORT + 1;
+if (port !== FIXED_MEMMY_PORT && !responseDropBackend) {
+  throw new Error(`固定 memmy 端口必须是 ${FIXED_MEMMY_PORT}；仅响应丢失测试可用后端端口`);
+}
 const occupiedPid = findListenerPid(port);
 if (occupiedPid !== null) {
   console.error(

@@ -18,7 +18,15 @@ import {
   publishPlanReviewResponseSchema,
   problemDetailSchema,
   runRevisionResponseSchema,
+  loadMemoryImportResponseSchema,
+  memoryImportResultResponseSchema,
+  markMemoryImportDispatchingRequestSchema,
+  commitMemoryImportAcceptedRequestSchema,
+  commitMemoryImportMaterializedRequestSchema,
+  commitMemoryImportFailedRequestSchema,
+  commitMemoryImportOutcomeUnknownRequestSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
+  MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
   type CompilePlanningInputRequest,
   type CommitExecutionResultRequest,
   type CompileExecutionContractRequest,
@@ -28,6 +36,7 @@ import {
   type PreparePlanningContextRequest,
   type PersistPlanningContextResultRequest,
   type PublishPlanReviewRequest,
+  type LoadMemoryImportRequest,
 } from "@chat/contracts";
 import type { ZodType } from "zod";
 
@@ -277,6 +286,130 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
           ...input,
         }),
         expireApprovalResponseSchema,
+      );
+    },
+    loadMemoryImport(
+      input: Omit<LoadMemoryImportRequest, "schemaVersion" | "workflowDefinitionVersion">,
+    ) {
+      return call(
+        options,
+        "/internal/runtime/v1/memory-import/load",
+        {
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          workflowDefinitionVersion: MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
+          ...input,
+        },
+        loadMemoryImportResponseSchema,
+      );
+    },
+    markMemoryImportDispatching(input: {
+      commandId: string;
+      memoryImportIntentId: string;
+      memoryImportResultId: string;
+      requestSha256: string;
+      expectedRevision: number;
+    }) {
+      return call(
+        options,
+        "/internal/runtime/v1/memory-import/mark-dispatching",
+        markMemoryImportDispatchingRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          workflowDefinitionVersion: MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
+          ...input,
+        }),
+        memoryImportResultResponseSchema,
+      );
+    },
+    commitMemoryImportAccepted(input: {
+      commandId: string;
+      memoryImportIntentId: string;
+      memoryImportResultId: string;
+      requestSha256: string;
+      expectedRevision: number;
+      accepted: {
+        externalObjectId: string;
+        externalObjectVersion?: string;
+        externalStatus?: string;
+        responseSha256: string;
+      };
+      reconciled?: boolean;
+    }) {
+      return call(
+        options,
+        "/internal/runtime/v1/memory-import/commit-accepted",
+        commitMemoryImportAcceptedRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          workflowDefinitionVersion: MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
+          ...input,
+        }),
+        memoryImportResultResponseSchema,
+      );
+    },
+    commitMemoryImportMaterialized(input: {
+      commandId: string;
+      memoryImportIntentId: string;
+      memoryImportResultId: string;
+      requestSha256: string;
+      expectedRevision: number;
+      accepted: {
+        externalObjectId: string;
+        externalObjectVersion?: string;
+        externalStatus?: string;
+        responseSha256: string;
+      };
+      verificationSha256: string;
+      reconciled?: boolean;
+    }) {
+      return call(
+        options,
+        "/internal/runtime/v1/memory-import/commit-materialized",
+        commitMemoryImportMaterializedRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          workflowDefinitionVersion: MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
+          ...input,
+        }),
+        memoryImportResultResponseSchema,
+      );
+    },
+    commitMemoryImportFailed(input: {
+      commandId: string;
+      memoryImportIntentId: string;
+      memoryImportResultId: string;
+      requestSha256: string;
+      expectedRevision: number;
+      errorCode: string;
+      summary: string;
+      reconciled?: boolean;
+    }) {
+      return call(
+        options,
+        "/internal/runtime/v1/memory-import/commit-failed",
+        commitMemoryImportFailedRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          workflowDefinitionVersion: MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
+          ...input,
+        }),
+        memoryImportResultResponseSchema,
+      );
+    },
+    commitMemoryImportOutcomeUnknown(input: {
+      commandId: string;
+      memoryImportIntentId: string;
+      memoryImportResultId: string;
+      requestSha256: string;
+      expectedRevision: number;
+      errorCode: string;
+      reconciled?: boolean;
+    }) {
+      return call(
+        options,
+        "/internal/runtime/v1/memory-import/commit-outcome-unknown",
+        commitMemoryImportOutcomeUnknownRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          workflowDefinitionVersion: MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
+          ...input,
+        }),
+        memoryImportResultResponseSchema,
       );
     },
   };

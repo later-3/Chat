@@ -9,6 +9,7 @@ import {
   PLANNER_PROMPT_TEMPLATE_VERSION,
   EXECUTOR_PROMPT_TEMPLATE_VERSION,
   WORKFLOW_DEFINITION_VERSION,
+  MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
   runtimeBuildEvidenceSchema,
 } from "@chat/contracts";
 
@@ -127,7 +128,10 @@ class ChatWorkflowBuilder extends BaseBuilder {
       sourceState,
       sourceManifestSha256,
       bundleManifestSha256,
-      workflowDefinitionVersions: [WORKFLOW_DEFINITION_VERSION],
+      workflowDefinitionVersions: [
+        WORKFLOW_DEFINITION_VERSION,
+        MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
+      ],
       promptTemplateVersions: [PLANNER_PROMPT_TEMPLATE_VERSION, EXECUTOR_PROMPT_TEMPLATE_VERSION],
       modelConfigVersions: [MODEL_CONFIG_VERSION],
     });

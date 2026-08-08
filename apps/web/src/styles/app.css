@@ -1975,6 +1975,151 @@ a {
   font-size: 14px;
 }
 
+.message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.message-action-button {
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.message-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.memory-import-status {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.memory-import-status[data-status="materialized"] {
+  color: var(--status-success);
+}
+
+.memory-import-status[data-status="failed"],
+.memory-import-status[data-status="outcome_unknown"],
+.memory-import-error {
+  color: var(--status-danger);
+}
+
+.memory-import-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 13px;
+}
+
+.memory-import-backdrop {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: rgb(0 0 0 / 42%);
+}
+
+.memory-import-dialog {
+  display: flex;
+  width: min(520px, 100%);
+  max-height: min(760px, calc(100dvh - 32px));
+  overflow-y: auto;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-panel);
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-elevated);
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.memory-import-dialog > header,
+.memory-import-dialog > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.memory-import-dialog h3,
+.memory-import-dialog p {
+  margin: 0;
+}
+
+.memory-import-dialog header p,
+.memory-import-kind span {
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.dialog-close {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: 24px;
+}
+
+.memory-import-preview,
+.memory-import-kind {
+  padding: var(--space-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  background: var(--bg-secondary);
+}
+
+.memory-import-preview p {
+  max-height: 140px;
+  margin-top: var(--space-2);
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.memory-import-dialog label,
+.memory-import-kind {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: 14px;
+}
+
+.memory-import-dialog input,
+.memory-import-dialog select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 16px;
+}
+
+.memory-import-dialog > footer {
+  justify-content: flex-end;
+}
+
 @media (max-width: 560px) {
   .real-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -2007,5 +2152,30 @@ a {
   .context-enable-row > span {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .chat-message {
+    max-width: 94%;
+  }
+
+  .memory-import-backdrop {
+    place-items: end stretch;
+    padding: 0;
+  }
+
+  .memory-import-dialog {
+    width: 100%;
+    max-height: min(82dvh, 720px);
+    padding: var(--space-4);
+    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  }
+
+  .memory-import-dialog > footer .pane-button,
+  .memory-import-dialog > footer .send-button {
+    min-height: 44px;
   }
 }

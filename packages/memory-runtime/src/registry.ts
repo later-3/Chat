@@ -1,4 +1,9 @@
-import type { MemoryBackendPort, MemoryBackendRegistryPort } from "@chat/application";
+import type {
+  MemoryBackendPort,
+  MemoryBackendRegistryPort,
+  MemoryImportBackendPort,
+  MemoryImportBackendRegistryPort,
+} from "@chat/application";
 import type { MemoryBackendId } from "@chat/contracts";
 import {
   MEMMY_DEFAULT_BASE_URL,
@@ -6,11 +11,15 @@ import {
   type MemmyAdapterOptions,
 } from "./memmy-adapter.js";
 
-export class MemoryBackendRegistry implements MemoryBackendRegistryPort {
-  private readonly byId: ReadonlyMap<MemoryBackendId, MemoryBackendPort>;
+type RegisteredMemoryBackend = MemoryBackendPort & MemoryImportBackendPort;
 
-  constructor(backends: readonly MemoryBackendPort[]) {
-    const byId = new Map<MemoryBackendId, MemoryBackendPort>();
+export class MemoryBackendRegistry
+  implements MemoryBackendRegistryPort, MemoryImportBackendRegistryPort
+{
+  private readonly byId: ReadonlyMap<MemoryBackendId, RegisteredMemoryBackend>;
+
+  constructor(backends: readonly RegisteredMemoryBackend[]) {
+    const byId = new Map<MemoryBackendId, RegisteredMemoryBackend>();
     for (const backend of backends) {
       const id = backend.describe().backendId;
       if (byId.has(id)) throw new Error(`重复Memory backendId:${id}`);
@@ -19,11 +28,11 @@ export class MemoryBackendRegistry implements MemoryBackendRegistryPort {
     this.byId = byId;
   }
 
-  list(): readonly MemoryBackendPort[] {
+  list(): readonly RegisteredMemoryBackend[] {
     return [...this.byId.values()];
   }
 
-  get(backendId: MemoryBackendId): MemoryBackendPort | undefined {
+  get(backendId: MemoryBackendId): RegisteredMemoryBackend | undefined {
     return this.byId.get(backendId);
   }
 }

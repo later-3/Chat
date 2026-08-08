@@ -7,6 +7,8 @@ import {
   executionCandidateIdSchema,
   executionContractIdSchema,
   messageIdSchema,
+  memoryImportIntentIdSchema,
+  memoryImportResultIdSchema,
   outboxEntryIdSchema,
   planIdSchema,
   planRevisionIdSchema,
@@ -467,7 +469,12 @@ export const commandReceiptSchema = z
 
 /* ---------- Outbox ---------- */
 
-export const outboxEntryKindSchema = z.enum(["workflow_start", "workflow_resume"]);
+export const outboxEntryKindSchema = z.enum([
+  "workflow_start",
+  "workflow_resume",
+  "memory_import_start",
+  "memory_import_reconcile",
+]);
 
 export const outboxEntryStatusSchema = z.enum([
   "pending",
@@ -481,25 +488,56 @@ export const outboxEntryStatusSchema = z.enum([
  * Transactional Outbox：与产品事实同一次快照提交。
  * 只保存逻辑目标和公开对象引用，绝不保存Hook Token或Workflow Run ID。
  */
-export const outboxEntrySchema = z
-  .object({
-    schemaVersion: z.literal("outbox-entry.v1"),
-    outboxId: outboxEntryIdSchema,
-    kind: outboxEntryKindSchema,
-    status: outboxEntryStatusSchema,
-    productRunId: productRunIdSchema,
-    /** workflow_resume绑定它要恢复的Approval与已提交Decision。 */
-    approvalRequestId: approvalRequestIdSchema.optional(),
-    decisionId: decisionIdSchema.optional(),
-    dispatchAttempts: z.number().int().nonnegative(),
-    lastErrorCode: z
-      .string()
-      .regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/)
-      .max(64)
-      .optional(),
-    ...entityBaseFields,
-  })
-  .strict();
+const outboxCommonFields = {
+  schemaVersion: z.literal("outbox-entry.v1"),
+  outboxId: outboxEntryIdSchema,
+  status: outboxEntryStatusSchema,
+  dispatchAttempts: z.number().int().nonnegative(),
+  lastErrorCode: z
+    .string()
+    .regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/)
+    .max(64)
+    .optional(),
+  ...entityBaseFields,
+};
+
+/** kind决定唯一目标，避免把无关可选字段组合成非法派发。 */
+export const outboxEntrySchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      ...outboxCommonFields,
+      kind: z.literal("workflow_start"),
+      productRunId: productRunIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...outboxCommonFields,
+      kind: z.literal("workflow_resume"),
+      productRunId: productRunIdSchema,
+      approvalRequestId: approvalRequestIdSchema,
+      decisionId: decisionIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...outboxCommonFields,
+      kind: z.literal("memory_import_start"),
+      memoryImportIntentId: memoryImportIntentIdSchema,
+      memoryImportResultId: memoryImportResultIdSchema,
+      expectedResultRevision: z.number().int().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      ...outboxCommonFields,
+      kind: z.literal("memory_import_reconcile"),
+      memoryImportIntentId: memoryImportIntentIdSchema,
+      memoryImportResultId: memoryImportResultIdSchema,
+      expectedResultRevision: z.number().int().positive(),
+    })
+    .strict(),
+]);
 
 /* ---------- 推导类型 ---------- */
 

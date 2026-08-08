@@ -15,6 +15,7 @@ import { TRACE_FILE_PATTERN, resolveTraceDir } from "./trace-paths.js";
 export interface TraceQuery {
   dir?: string;
   productRunId?: string;
+  memoryImportIntentId?: string;
   requestId?: string;
   commandId?: string;
 }
@@ -75,7 +76,14 @@ export function readTraceEvents(query: TraceQuery): TraceEvent[] {
       const productRunId = "productRunId" in event ? event.productRunId : undefined;
       const requestId = "requestId" in event ? event.requestId : undefined;
       const commandId = "commandId" in event ? event.commandId : undefined;
+      const memoryImportIntentId =
+        "memoryImportIntentId" in event ? event.memoryImportIntentId : undefined;
       if (query.productRunId !== undefined && productRunId !== query.productRunId) return;
+      if (
+        query.memoryImportIntentId !== undefined &&
+        memoryImportIntentId !== query.memoryImportIntentId
+      )
+        return;
       if (query.requestId !== undefined && requestId !== query.requestId) return;
       if (query.commandId !== undefined && commandId !== query.commandId) return;
       collected.push({ event, fileIndex, lineIndex: index });

@@ -7,16 +7,16 @@
 | 项目 | 当前事实 |
 |---|---|
 | 产品身份 | 独立、完整、持续运营的Chat产品 |
-| 主分支 | `main`仍为PR #7合并提交`06d1177`；M1候选在`codex/m1-memmy-planning-context` @ `fa2a1e7`等待PR审核 |
+| 主分支 | `main`为PR #10合并提交`8acafb5`；M2候选在`codex/m2-memmy-memory-import`的Draft PR #11等待最终合入 |
 | 前端 | React + TypeScript + Vite；响应式PWA；最小Plan审核与运行投影已接真实后端 |
 | 后端 | Node.js + TypeScript；Hono协议入口；Application拥有事务 |
-| Product Store | M1候选升级为`chat-product-store.v2`；保留v1迁移、单实例单写者、原子替换与损坏失败关闭 |
-| Workflow | 唯一`PlanningExecutionWorkflow`；规划、Hook等待、修订循环、批准、执行、验证、Product Commit在同一运行中完成 |
+| Product Store | M2候选升级为`chat-product-store.v3`；串行支持v1→v2→v3，保持单实例单写者、原子替换与损坏失败关闭 |
+| Workflow | 规划仍由唯一`PlanningExecutionWorkflow`完成；M2另有独立`MemoryImportWorkflow`拥有导入/对账副作用生命周期 |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent`；百炼真实`qwen3.7-plus`已验证 |
 | 调试与回放 | 固定端口VS Code Compound；严格脱敏Trace；Trace + Product Store多源Replay |
-| 代码状态 | P0、P1.1、P1.2、B1和B2已合入`main`；M1真实Memory规划上下文纵向链已完成、待PR审核 |
+| 代码状态 | P0、P1.1、P1.2、B1、B2和M1已合入`main`；M2真实memmy显式导入纵向链已完成、待PR #11最终合入 |
 | 当前阶段 | 长期上下文与知识复用：Memory、BMAD项目上下文、用户规则集 |
-| 当前任务 | 审核M1；通过后继续Memory导入与第二真实后端，再进入BMAD项目上下文和用户规则集 |
+| 当前任务 | 完成M2自审、质量门和PR合入；下一任务用Tencent MemoryCore真实Adapter验证查询/导入抽象 |
 
 ## 2. B2已完成的真实证据
 
@@ -27,13 +27,15 @@
 5. `format`、`lint`、`typecheck`、326项测试、`build`和生产依赖审计全部通过；PR #7的6个CI检查全部通过。
 6. 已知非阻断现象：Workflow SDK 4.8按官方`Promise.race`实现Hook与超时时，会在胜出后报告两个未提交sleep operation警告；本次运行、Store、Trace和Replay均正确，后续升级SDK或修改等待策略时重新验证。
 
-## 3. M1待审分支的真实证据
+## 3. M1与M2的真实证据
 
-1. 固定使用memmy提交`211d521b310f`，独立SQLite写入2条可区分L2，真实标签查询只采用1条；第三方构建与服务进程使用密钥隔离环境。
-2. `pnpm test:e2e:memory-planning:real`从clean提交`fa2a1e7`通过1/1：无Memory对照、390px选择、真实查询、Plan v1→修订→v2、同一冻结ContextPackage、批准、5个真实Executor Step、Validation、Product Commit、刷新恢复和Replay全部通过。
-3. 本次真实运行共8次百炼`qwen3.7-plus`调用，Trace为8次`provider.request.completed`、0次Provider失败、8个pi节点完成；Trace不含Memory/消息/Provider正文。
-4. Executor工具已收敛为`stepId + output`，Chat从Approved Step与实际输出确定性投影Markdown section及证据引用；Provider成功但候选非法按`provider.request.completed + pi.node.failed`统计。
-5. 全仓build/lint/format/typecheck、440项确定性测试、生产依赖审计、memmy脚本6/6及PWA/移动端Playwright 10/10通过；7个固定端口在真实门结束后全部释放。
+1. M1已经由PR #10合入；固定memmy提交为`211d521b310fc23c63dd3d9ca848941173981c5e`，真实查询、冻结ContextPackage、规划采用、执行和Replay闭环均已证明。
+2. M2的`pnpm test:memory:memmy-real-import`通过：真实add、相同requestId/正文原生幂等、不同正文409、GET+Search物化验证及SQLite唯一对象均成立。
+3. M2的`pnpm test:memory:memmy-response-drop`通过：真实路径贯穿Product Store、Outbox、Workflow与Memmy；Memmy返回200并落库后代理销毁响应，Chat提交`outcome_unknown`，再以同一身份对账为`materialized`，Replay无缺口且SQLite仍只有1条。
+4. `pnpm test:e2e:memory-import:real`从clean代码提交`3bcb7b7`通过1/1（浏览器2.8分钟、命令总计3.1分钟）：390×844正式消息选区、真实导入、API/Workflow真重启恢复、无Memory对照、新会话真实查询、百炼`qwen3.7-plus`规划与执行全部成功。
+5. 同一真实门的Import Replay含6个事件、Run Replay含103个事件，二者完整性错误为0且默认不含正文；Trace不含唯一canary、消息选区、密钥、endpoint或Runtime私有身份。
+6. M2把Store升级为v3，非空v2 Memory事实逐对象迁移；截断、未知Schema、悬空引用、Hash篡改、迁移I/O故障均失败关闭且不改原文件。
+7. 当前确定性测试共484项；全仓build/lint/format/typecheck、生产依赖审计、真实Memmy两条门与最终clean提交百炼浏览器门均已通过。
 
 ## 4. 已冻结决定
 
@@ -48,7 +50,7 @@
 
 ## 5. 当前没有的能力
 
-1. M1候选已有真实memmy查询、Registry、来源快照、采用记录和规划节点；尚无Memory导入节点、第二真实后端Adapter与生产服务部署配置。
+1. 已有真实memmy查询和显式L2导入；尚无第二真实后端Adapter、自动后台记忆和生产Memory服务部署配置。
 2. 没有长期Project/Work/Stage/Status、项目文档清单和版本化Context Package实现。
 3. 没有带标签、场景范围、修订和选择证据的用户规则集，也没有规划节点规则注入。
 4. 没有Chat有序SSE Cursor Runtime Journal；B2仍使用受控Query轮询。
@@ -56,7 +58,7 @@
 
 ## 6. 下一阶段的三个用户结果
 
-1. **Memory**：用户能够选择或配置真实Memory后端；Workflow按需查询记忆，或把经过明确选择的信息导入指定后端，并保留来源、后端、请求和结果证据。
+1. **Memory**：M1/M2已让用户按标签查询真实memmy并把明确选区导入；下一步接入Tencent MemoryCore，验证同一能力边界能承载异步物化与不同隔离语义。
 2. **项目上下文**：用户用Chat推进项目时，可以恢复当前阶段、状态、目标、决定、阻塞、文档与下一步；结构受BMAD真实方法启发，但允许按项目类型裁剪。
 3. **用户规则**：用户可以在统一界面维护带标签和场景范围的个人习惯/要求，也可以让Chat提出维护建议；对话中可主动勾选或按标签筛选，规划时记录最终采用规则及其版本。
 

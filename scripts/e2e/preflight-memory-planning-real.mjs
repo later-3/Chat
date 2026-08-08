@@ -17,12 +17,20 @@ if (!process.env.DASHSCOPE_API_KEY?.trim()) {
 }
 
 const repoRoot = chatRepoRoot();
+const variant = process.argv[2] ?? "planning";
+const rootName =
+  variant === "planning"
+    ? "memory-planning-real"
+    : variant === "import"
+      ? "memory-import-real"
+      : undefined;
+if (rootName === undefined) throw new Error("真实Memory E2E仅支持planning/import");
 const testRoot = assertChatDataPath(
-  resolve(repoRoot, ".data/e2e/memory-planning-real"),
+  resolve(repoRoot, `.data/e2e/${rootName}`),
   repoRoot,
   "memory planning E2E root",
 );
-if (!testRoot.endsWith("/.data/e2e/memory-planning-real")) {
+if (!testRoot.endsWith(`/.data/e2e/${rootName}`)) {
   throw new Error("拒绝清理未通过精确后缀校验的 Memory E2E 目录");
 }
 

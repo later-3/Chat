@@ -13,6 +13,8 @@ import {
   sessionDtoSchema,
   submitDecisionPayloadSchema,
   submitMessagePayloadSchema,
+  createMemoryImportPayloadSchema,
+  memoryImportDtoSchema,
   type ApprovalDto,
   type CommandId,
   type CursorPage,
@@ -27,6 +29,8 @@ import {
   type SessionDto,
   type SubmitDecisionPayload,
   type SubmitMessagePayload,
+  type CreateMemoryImportPayload,
+  type MemoryImportDto,
 } from "@chat/contracts/public";
 import { z } from "zod";
 
@@ -43,6 +47,13 @@ const submitMessageResponseSchema = z
   .strict();
 const submitDecisionResponseSchema = z
   .object({ decision: decisionDtoSchema, run: runDtoSchema })
+  .strict();
+const memoryImportResponseSchema = z.object({ memoryImport: memoryImportDtoSchema }).strict();
+const memoryImportsResponseSchema = z
+  .object({
+    memoryImports: z.array(memoryImportDtoSchema).max(100),
+    nextCursor: z.string().optional(),
+  })
   .strict();
 
 /**
@@ -226,5 +237,42 @@ export function apiSubmitDecision(input: {
       const body = submitDecisionResponseSchema.parse(json);
       return { decision: body.decision, run: body.run };
     },
+  );
+}
+
+export function apiCreateMemoryImport(input: {
+  commandId: CommandId;
+  payload: CreateMemoryImportPayload;
+}): Promise<MemoryImportDto> {
+  return post(
+    "/api/memory-imports",
+    commandEnvelopeSchema.parse({
+      commandId: input.commandId,
+      payload: createMemoryImportPayloadSchema.parse(input.payload),
+    }),
+    (json) => memoryImportResponseSchema.parse(json).memoryImport,
+  );
+}
+
+export function apiGetSessionMemoryImports(sessionId: string): Promise<MemoryImportDto[]> {
+  return get(
+    `/api/sessions/${encodeURIComponent(sessionId)}/memory-imports`,
+    (json) => memoryImportsResponseSchema.parse(json).memoryImports,
+  );
+}
+
+export function apiReconcileMemoryImport(input: {
+  memoryImportIntentId: string;
+  commandId: CommandId;
+  expectedResultRevision: number;
+}): Promise<MemoryImportDto> {
+  return post(
+    `/api/memory-imports/${encodeURIComponent(input.memoryImportIntentId)}/reconcile`,
+    commandEnvelopeSchema.parse({
+      commandId: input.commandId,
+      expectedRevision: input.expectedResultRevision,
+      payload: {},
+    }),
+    (json) => memoryImportResponseSchema.parse(json).memoryImport,
   );
 }
