@@ -25,7 +25,7 @@ Vite使用`--strictPort`，API/Workflow端口被占用时进程直接失败关�
 主入口：Compound **“Chat：完整后端闭环”**，启动顺序固定：
 
 ```text
-chat-debug:preclean（清理上次Chat调试进程并校验端口）
+chat-debug:prepare-compound（只执行一次安全preclean，再顺序准备两套Memory缓存）
 -> 并行准备并启动两个固定Memory服务：
    - Chat：Memory（memmy）（18960，Inspector 43122）
    - Chat：Memory（Tencent MemoryCore）（18970，包装进程Inspector 43123）
@@ -50,8 +50,21 @@ chat-debug:preclean（清理上次Chat调试进程并校验端口）
   调试身份；即使`.env`配置了远端地址，主Compound也不会把本地断点请求发往远端。
 - 单独启动 **“Chat：Workflow 运行时”** 前，必须先启动并确认两个Memory服务就绪；该配置
   只等待健康检查，不会自行启动Memory。主Compound会自动安排此顺序。
-- Compound统一门：`chat-debug:preclean`先于所有子会话执行；Memory的独立启动任务也按顺序
-  重跑该安全门。Workflow构建只等待Memory，不会并行触发第二次preclean误杀已登记的Memory。
+- Compound统一门：`chat-debug:prepare-compound`先完成一次安全preclean和两套缓存准备，随后使用
+  两个隐藏的Memory内部配置启动服务。Compound子配置的等待链不会再次触发preclean，因此不会发生
+  “后启动的Memory清理任务误杀已Ready服务”的竞态。两个可见Memory配置仍保留单独启动能力，
+  单独启动时各自先执行安全preclean。只负责汇合依赖的两个空任务使用`process`类型，避免
+  `node -e`参数被zsh二次解释。
+- Node调试配置显式使用`program`指向入口文件；`runtimeArgs`只放`--import`加载器，防止
+  js-debug退化为从stdin执行`-`。`.env`由被调试进程内部安全加载，不使用会把Key展开到
+  集成终端命令行的`envFile`。TypeScript加载器使用Workflow/API各自包内的`tsx`固定路径，
+  不从仓库根目录解析未声明的裸包名。
+- 6个Node服务使用`internalConsole`由js-debug直接创建进程，日志进入VS Code Debug Console；
+  服务不需要交互式stdin，因此不经过多个集成终端并发初始化zsh，避免命令已写入但未执行的竞态。
+- Node进程同时用`--inspect=127.0.0.1:<冻结端口>`显式开放43120～43123；`launch.json`里的
+  `port`字段不能替代真实监听验收，Inspector只绑定loopback且纳入统一preclean冲突检查。
+- Workflow/API设置空`outFiles`，禁止js-debug因工作区恰好存在`dist`而把`.ts`入口替换成
+  可能过期的构建产物；实际进程参数必须始终指向workspace源码，tsx负责运行时转换与源码映射。
 - 清理语义：`preclean`/`stop`只终止pids.json中有记录、且通过身份复核
   （命令片段+启动时间容差）的进程；SIGTERM后有限等待，仍存活且身份一致才SIGKILL。
 - 端口被未知应用占用时：启动失败并报告端口、PID与命令行，**不会**终止未知进程；

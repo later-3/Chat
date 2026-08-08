@@ -1,22 +1,22 @@
 # Chat 项目状态
 
-> 更新日期：2026-08-08
+> 更新日期：2026-08-09
 
 ## 1. 当前结论
 
 | 项目 | 当前事实 |
 |---|---|
 | 产品身份 | 独立、完整、持续运营的Chat产品 |
-| 主分支 | `main`为PR #12合并提交`6bd7129`；调试收口候选在`codex/m3-debug-comments` |
+| 主分支 | `main`是唯一开发基线；精确提交以`origin/main`为准 |
 | 前端 | React + TypeScript + Vite；响应式PWA；最小Plan审核与运行投影已接真实后端 |
 | 后端 | Node.js + TypeScript；Hono协议入口；Application拥有事务 |
 | Product Store | `chat-product-store.v3`；串行支持v1→v2→v3，保持单实例单写者、原子替换与损坏失败关闭；M3复用现有Memory事实集合 |
 | Workflow | 规划仍由唯一`PlanningExecutionWorkflow`完成；M2另有独立`MemoryImportWorkflow`拥有导入/对账副作用生命周期 |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent`；百炼真实`qwen3.7-plus`已验证 |
-| 调试与回放 | VS Code Compound覆盖memmy与MemoryCore；固定端口、安全清理、严格脱敏Trace及多源Replay |
-| 代码状态 | P0、P1.1、P1.2、B1、B2、M1、M2和M3已合入`main`；MemoryCore调试/注释收口待当前小PR合入 |
+| 调试与回放 | VS Code真实F5 Compound覆盖memmy、MemoryCore、Workflow、API和Web；固定端口、安全清理、严格脱敏Trace及多源Replay |
+| 代码状态 | P0、P1.1、P1.2、B1、B2、M1、M2、M3与MemoryCore调试/注释收口均已进入`main`；真实VS Code启动缺陷已完成修复验收 |
 | 当前阶段 | 长期上下文与知识复用：Memory、BMAD项目上下文、用户规则集 |
-| 当前任务 | 完成MemoryCore VS Code Compound、等待链与关键中文注释收口；下一任务进入BMAD启发的Project基础、阶段与文档清单 |
+| 当前任务 | 下一任务进入BMAD启发的Project基础、阶段与文档清单 |
 
 ## 2. B2已完成的真实证据
 
@@ -54,7 +54,7 @@
 2. 真实Chromium + 百炼`qwen3.7-plus`纵向门通过：选后端、召回L1、规划采用、导入L0、accepted显示、手动对账、刷新恢复和拒绝闭环全部贯通。
 3. UI由后端能力投影驱动：MemoryCore仅开放L1查询和L0会话捕获，不显示标签或标题；服务端再次拒绝越权参数。
 4. `accepted`是L0已落事实的合法状态，不等同于L1 `materialized`；终态监督器不得把合法accepted误降级为结果未知。
-5. PR #12已合入`main@6bd7129`；后续调试收口候选已完成两轮MemoryCore `43123/18970`启动、健康、精确停止与端口释放验证。
+5. PR #12与PR #13已合入；真实VS Code主Compound已验证5个服务全部Ready、Chrome页面可访问，停止后9个固定端口全部释放。
 
 ## 5. 当前没有的能力
 
