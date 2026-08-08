@@ -400,7 +400,13 @@ export class TencentMemoryCoreAdapter implements MemoryBackendPort, MemoryImport
               embeddingService: z.boolean(),
             })
             .strict(),
-          services: z.object({}).passthrough(),
+          services: z
+            .object({
+              timerScanner: z.unknown().nullable(),
+              pipelineWorker: z.unknown().nullable(),
+              stateBackend: z.enum(["connected", "none"]),
+            })
+            .strict(),
         })
         .strict()
         .parse(raw);

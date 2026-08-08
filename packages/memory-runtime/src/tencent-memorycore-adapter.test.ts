@@ -98,6 +98,32 @@ describe("TencentMemoryCoreAdapter", () => {
     });
   });
 
+  it("健康响应按固定源码合同严格校验", async () => {
+    const validHealth = {
+      status: "ok",
+      version: "2.0.0-beta.1",
+      uptime: 12,
+      stores: { vectorStore: true, embeddingService: false },
+      services: { timerScanner: null, pipelineWorker: null, stateBackend: "connected" },
+    };
+    const ready = new TencentMemoryCoreAdapter(
+      options(vi.fn<typeof fetch>(async () => json(validHealth))),
+    );
+    await expect(ready.health()).resolves.toEqual({ status: "ready" });
+
+    const contractDrift = new TencentMemoryCoreAdapter(
+      options(
+        vi.fn<typeof fetch>(async () =>
+          json({ ...validHealth, services: { ...validHealth.services, privateToken: "never" } }),
+        ),
+      ),
+    );
+    await expect(contractDrift.health()).resolves.toEqual({
+      status: "unavailable",
+      errorCode: "memory.backend.contract_invalid",
+    });
+  });
+
   it("真实合同映射atomic/search并在Chat预算内组装L1 section", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async (_url, init) => {
       const headers = new Headers(init?.headers);
