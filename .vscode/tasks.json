@@ -20,6 +20,14 @@
       "problemMatcher": []
     },
     {
+      "label": "chat-debug:prepare-memory-cache",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["memory:prepare:fixed"],
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
       "label": "chat-debug:wait-memory",
       "type": "shell",
       "command": "node",
@@ -38,6 +46,28 @@
       "command": "pnpm",
       "args": ["memory:prepare:memorycore-fixed"],
       "dependsOn": ["chat-debug:preclean"],
+      "dependsOrder": "sequence",
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "chat-debug:prepare-memorycore-cache",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["memory:prepare:memorycore-fixed"],
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "chat-debug:prepare-compound",
+      "type": "process",
+      "command": "node",
+      "args": ["-e", "process.exit(0)"],
+      "dependsOn": [
+        "chat-debug:preclean",
+        "chat-debug:prepare-memory-cache",
+        "chat-debug:prepare-memorycore-cache"
+      ],
       "dependsOrder": "sequence",
       "presentation": { "reveal": "always", "panel": "dedicated" },
       "problemMatcher": []
@@ -79,7 +109,7 @@
     },
     {
       "label": "chat-debug:wait-runtime-dependencies",
-      "type": "shell",
+      "type": "process",
       "command": "node",
       "args": ["-e", "process.exit(0)"],
       "dependsOn": [

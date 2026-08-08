@@ -203,3 +203,11 @@ Memory、项目管理和规则系统不能只凭抽象接口或模型直觉设�
 不同Memory后端可能支持不同标签、层级和完成语义。公开能力必须逐字段投影Adapter声明，不能硬编码成第一个后端的能力；UI只负责据此显示，Application仍要再次校验。异步系统的`accepted`是“外部已接收”的合法收敛状态，不等于`materialized`，也不能被通用Workflow终态监督器误判成未提交或结果未知。后续物化通过显式、只读对账推进，不能重复写入。
 
 检查：增加第二后端后，能力DTO是否仍逐字段来自真实Profile；每种非失败终态是否在Outbox监督、恢复、页面文案和回放中保持同一个含义？
+
+## 32. VS Code可调试性必须用真实F5证明
+
+标签：`vscode`、`debug`、`process-lifecycle`、`acceptance`
+
+配置合同和“等价命令启动”只能证明JSON结构与服务入口，不能证明VS Code实际编排。Compound还会引入子配置并发`preLaunchTask`、shell参数二次解析、js-debug的`program`默认值、workspace包解析和集成终端初始化竞态。完成门必须从VS Code真实选择主Compound并启动，观察全部调试会话、固定端口与前端页面，再从VS Code停止并确认端口释放。无交互式stdin的Node服务由js-debug直接创建进程；私有环境在进程内部加载，不能用会把值展开到终端命令行的`envFile`。
+
+检查：证据是否来自真实F5而非手工拼出的近似命令；Memory、Workflow、API和Web是否全部Ready，Chrome能否访问页面，停止后所有固定端口是否释放且终端/argv没有凭据？
