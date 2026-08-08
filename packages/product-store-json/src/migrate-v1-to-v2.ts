@@ -8,7 +8,6 @@ import {
   executionCandidateSchema,
   executionContractSchema,
   messageSchema,
-  outboxEntrySchema,
   planRevisionSchema,
   productRunSchema,
   productSessionSchema,
@@ -19,9 +18,9 @@ import {
   revisionInputIdSchema,
   sha256Schema,
   validationResultSchema,
-  type ProductSnapshot,
 } from "@chat/contracts";
 import { computeRunContextRequestSha256, hashCanonical } from "@chat/domain";
+import { outboxEntryV2Schema, type ProductSnapshotV2 } from "./migrate-v2-to-v3.js";
 
 /**
  * chat-product-store.v1 的冻结形状。
@@ -84,14 +83,14 @@ export const productSnapshotV1Schema = z
       })
       .strict(),
     commandReceipts: z.record(idKeySchema, commandReceiptSchema),
-    outbox: z.record(idKeySchema, outboxEntrySchema),
+    outbox: z.record(idKeySchema, outboxEntryV2Schema),
   })
   .strict();
 
 export type ProductSnapshotV1 = z.infer<typeof productSnapshotV1Schema>;
 
-export function migrateProductSnapshotV1ToV2(snapshot: ProductSnapshotV1): ProductSnapshot {
-  const contextRequests: ProductSnapshot["entities"]["contextRequests"] = {};
+export function migrateProductSnapshotV1ToV2(snapshot: ProductSnapshotV1): ProductSnapshotV2 {
+  const contextRequests: ProductSnapshotV2["entities"]["contextRequests"] = {};
   for (const run of Object.values(snapshot.entities.runs)) {
     const message = snapshot.entities.messages[run.sourceMessageId];
     const session = snapshot.entities.sessions[run.sessionId];

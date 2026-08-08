@@ -1,7 +1,7 @@
 import { hashCanonical } from "@chat/domain";
 import type { CommandId, ProductRunId } from "@chat/contracts";
 import type { ApplicationDeps } from "./deps.js";
-import { notFound } from "./errors.js";
+import { notFound, revisionConflict } from "./errors.js";
 import { emitProductRunTransition, settleRunWithoutSuccess } from "./run-settlement.js";
 
 export interface UpdateOutboxStatusCommand {
@@ -26,7 +26,9 @@ export async function updateOutboxStatus(
     commandId: input.commandId,
     commandType: "UpdateOutboxStatus",
     requestSha256: hashCanonical("command.update-outbox-status.v1", input),
-    traceContext: { productRunId: existingEntry.productRunId },
+    ...(existingEntry.kind === "workflow_start" || existingEntry.kind === "workflow_resume"
+      ? { traceContext: { productRunId: existingEntry.productRunId } }
+      : {}),
     mutate: (draft) => {
       const entry = draft.outbox[input.outboxId];
       if (entry === undefined) throw notFound("Outbox Entry不存在");
@@ -64,6 +66,13 @@ export async function failOutboxAndRun(
   const now = deps.now();
   const { snapshot: before } = await deps.store.read({ kind: "committedSnapshot" });
   const entryBefore = before.outbox[input.outboxId];
+  if (
+    entryBefore !== undefined &&
+    entryBefore.kind !== "workflow_start" &&
+    entryBefore.kind !== "workflow_resume"
+  ) {
+    throw revisionConflict("Memory Import Outbox不能使用Product Run失败收敛用例");
+  }
   const priorRun =
     entryBefore === undefined ? undefined : before.entities.runs[entryBefore.productRunId];
   const result = await deps.store.transact({
@@ -76,6 +85,9 @@ export async function failOutboxAndRun(
     mutate: (draft) => {
       const entry = draft.outbox[input.outboxId];
       if (entry === undefined) throw notFound("Outbox Entry不存在");
+      if (entry.kind !== "workflow_start" && entry.kind !== "workflow_resume") {
+        throw revisionConflict("Memory Import Outbox不能使用Product Run失败收敛用例");
+      }
       draft.outbox[input.outboxId] = {
         ...entry,
         status: "failed_terminal",

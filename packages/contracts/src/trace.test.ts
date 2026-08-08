@@ -20,7 +20,7 @@ function fixtureOf(eventName: string): Record<string, unknown> {
   return found;
 }
 
-describe("traceEventSchema：45种正式事件的合法Fixture全部通过", () => {
+describe("traceEventSchema：54种正式事件的合法Fixture全部通过", () => {
   it("Fixture覆盖任务书§7.3全部事件名", () => {
     const covered = new Set(validTraceFixtures.map((fixture) => fixture["eventName"]));
     for (const name of Object.values(TRACE_EVENT_NAMES)) {
@@ -48,6 +48,9 @@ describe("traceEventSchema：outcome按事件名固定", () => {
     [TRACE_EVENT_NAMES.httpCommandRejected, "failure"],
     [TRACE_EVENT_NAMES.executionRejected, "failure"],
     [TRACE_EVENT_NAMES.providerRequestFailed, "unknown"],
+    [TRACE_EVENT_NAMES.memoryImportIntentCreated, "unknown"],
+    [TRACE_EVENT_NAMES.memoryImportOutcomeUnknown, "failure"],
+    [TRACE_EVENT_NAMES.memoryImportReconcileCompleted, "unknown"],
   ])("%s 不接受 outcome=%s", (eventName, wrongOutcome) => {
     const tampered = { ...fixtureOf(eventName), outcome: wrongOutcome };
     expect(traceEventSchema.safeParse(tampered).success).toBe(false);
@@ -182,6 +185,34 @@ describe("traceEventSchema：事件族关联字段强制", () => {
       ),
     ).toBe(true);
     expect(traceEventSchema.safeParse(preRequest).success).toBe(true);
+  });
+
+  it("Memory Import事件强制稳定身份、Hash、revision与终态耗时", () => {
+    for (const name of [
+      TRACE_EVENT_NAMES.memoryImportAccepted,
+      TRACE_EVENT_NAMES.memoryImportMaterialized,
+      TRACE_EVENT_NAMES.memoryImportOutcomeUnknown,
+      TRACE_EVENT_NAMES.memoryImportFailed,
+      TRACE_EVENT_NAMES.memoryImportReconcileCompleted,
+      TRACE_EVENT_NAMES.memoryImportReconcileFailed,
+    ]) {
+      const fixture = fixtureOf(name);
+      for (const key of [
+        "memoryImportIntentId",
+        "memoryImportResultId",
+        "outboxId",
+        "operationId",
+        "backendId",
+        "requestSha256",
+        "intentRevision",
+        "resultRevision",
+        "durationMs",
+      ]) {
+        const tampered = { ...fixture };
+        delete tampered[key];
+        expect(traceEventSchema.safeParse(tampered).success, `${name}缺${key}`).toBe(false);
+      }
+    }
   });
 });
 
@@ -394,6 +425,11 @@ describe("traceEventSchema：任意内容通道被关闭", () => {
       },
       { ...fixtureOf(TRACE_EVENT_NAMES.productRunTransitioned), fromStatus: CONTENT_MARKER },
       { ...fixtureOf(TRACE_EVENT_NAMES.decisionCommitted), decisionKind: CONTENT_MARKER },
+      { ...fixtureOf(TRACE_EVENT_NAMES.memoryImportAccepted), backendId: CONTENT_MARKER },
+      {
+        ...fixtureOf(TRACE_EVENT_NAMES.memoryImportAccepted),
+        externalObjectIdSha256: CONTENT_MARKER,
+      },
     ];
     for (const attempt of attempts) {
       expect(traceEventSchema.safeParse(attempt).success).toBe(false);

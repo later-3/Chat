@@ -38,6 +38,7 @@ const message: MessageDto = {
   sessionSequence: 1,
   role: "user",
   content: { format: "markdown", text: "目标" },
+  sha256: "a".repeat(64),
   createdAt: now,
 };
 const run: RunDto = {

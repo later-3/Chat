@@ -1,5 +1,5 @@
 import type { TraceEventInput } from "@chat/contracts";
-import type { MemoryBackendRegistryPort } from "@chat/application";
+import type { MemoryBackendRegistryPort, MemoryImportBackendRegistryPort } from "@chat/application";
 import type { BailianConfig, runPiExecutor, runPiPlanner } from "@chat/pi-runtime";
 import type { RuntimeApiClient } from "./api-client.js";
 import type { RuntimeBindingStore } from "./runtime-bindings.js";
@@ -20,6 +20,7 @@ export interface WorkflowRuntimeContext {
   readonly bindings: RuntimeBindingStore;
   /** 外部Memory调用只允许由Workflow Step通过本服务端Registry执行。 */
   readonly memoryBackends: MemoryBackendRegistryPort;
+  readonly memoryImportBackends?: MemoryImportBackendRegistryPort;
   readonly trace: (event: TraceEventInput) => void;
   readonly now: () => string;
   readonly bailian: BailianConfig;
@@ -48,6 +49,11 @@ export function getWorkflowRuntimeContext(): WorkflowRuntimeContext {
 /** Trace辅助：同一Product Run共享确定性traceId（由公开ID推导）。 */
 export function workflowRunTraceId(productRunId: string): string {
   return `tr_${productRunId.slice(4)}`;
+}
+
+/** Memory Import不属于Product Run，以不可变Intent建立独立Trace链。 */
+export function workflowMemoryImportTraceId(memoryImportIntentId: string): string {
+  return `tr_${memoryImportIntentId.slice(4)}`;
 }
 
 let spanCounter = 0;

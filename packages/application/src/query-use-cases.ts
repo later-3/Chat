@@ -191,6 +191,9 @@ export async function listMemoryBackends(
     backends: await Promise.all(
       backends.map(async (backend) => {
         const profile = backend.describe();
+        const importProfile = deps.memoryImportBackends
+          ?.get(profile.backendId)
+          ?.describeImport().descriptor;
         const health = await backend.health();
         return {
           schemaVersion: "chat-product-api.v1" as const,
@@ -205,6 +208,7 @@ export async function listMemoryBackends(
             layers: [...profile.capabilities.layers],
             maxLimit: profile.capabilities.maxLimit,
             maxContextBudget: profile.capabilities.maxContextBudget,
+            ...(importProfile !== undefined ? { import: importProfile.capabilities } : {}),
           },
         };
       }),

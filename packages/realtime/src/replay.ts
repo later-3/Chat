@@ -9,6 +9,8 @@ import {
   type ExecutionContract,
   type Message,
   type MemoryAdoption,
+  type MemoryImportIntent,
+  type MemoryImportResult,
   type MemoryQuery,
   type MemoryResultSnapshot,
   type PlanRevision,
@@ -21,7 +23,12 @@ import {
   type RuntimeVersionEvidence,
 } from "@chat/contracts";
 import { computePlanSha256 } from "@chat/application";
-import { computeContextPackageSha256, hashCanonical } from "@chat/domain";
+import {
+  computeContextPackageSha256,
+  hashCanonical,
+  resolveMemoryImportContent,
+  sha256Hex,
+} from "@chat/domain";
 import { readTraceEvents } from "./trace-reader.js";
 
 /**
@@ -40,6 +47,15 @@ export interface ReplayContentAccess {
 export interface ReplayAssemblerDeps {
   readonly snapshotIntegrityCheck: SnapshotIntegrityCheck;
   readonly authorizeContentAccess?: (access: ReplayContentAccess) => boolean;
+  readonly readMemoryImportRuntimeEvidence?: (input: {
+    readonly path: string | undefined;
+    readonly memoryImportIntentId: string;
+    readonly memoryImportResultId: string;
+    readonly outbox: readonly {
+      readonly outboxId: string;
+      readonly kind: "memory_import_start" | "memory_import_reconcile";
+    }[];
+  }) => MemoryImportRuntimeEvidence;
 }
 
 export type HistoricalVersionEvidence = RuntimeVersionEvidence;
@@ -94,6 +110,67 @@ export interface RunReplayView {
   readonly run: { status: string; phase: string; revision: number };
   readonly timeline: readonly ReplayTimelineEntry[];
   readonly content: ReplayContentProjection;
+  readonly failures: readonly string[];
+}
+
+export interface MemoryImportReplayContent {
+  readonly sourceMessage: Message;
+  readonly selectedContent: string;
+}
+
+export type MemoryImportReplayContentProjection =
+  | { readonly included: false }
+  | { readonly included: true; readonly facts: MemoryImportReplayContent };
+
+export interface MemoryImportRuntimeEvidence {
+  readonly status: "ok" | "missing" | "invalid" | "mismatch";
+  readonly entries: readonly {
+    readonly outboxId: string;
+    readonly mode: "import" | "reconcile";
+    readonly state: "started" | "outcome_unknown" | "missing";
+    readonly workflowDefinitionVersion: string | null;
+  }[];
+}
+
+export interface MemoryImportReplayView {
+  readonly memoryImportIntentId: string;
+  readonly intent: {
+    readonly memoryImportResultId: string;
+    readonly sourceMessageId: string;
+    readonly selectionKind: "full_message" | "utf16_range";
+    readonly backendId: string;
+    readonly intentRevision: number;
+    readonly requestSha256: string;
+    readonly backendDescriptorSha256: string;
+  };
+  readonly result: {
+    readonly status: MemoryImportResult["status"];
+    readonly revision: number;
+    readonly dispatchAttempts: number;
+    readonly reconcileAttempts: number;
+    readonly externalObjectIdSha256: string | null;
+    readonly errorCode: string | null;
+  };
+  readonly outbox: readonly {
+    readonly outboxId: string;
+    readonly kind: "memory_import_start" | "memory_import_reconcile";
+    readonly status: string;
+    readonly revision: number;
+    readonly dispatchAttempts: number;
+  }[];
+  readonly runtimeEvidence: MemoryImportRuntimeEvidence;
+  readonly downstreamUse: readonly {
+    readonly productRunId: string;
+    readonly memoryQueryId: string;
+    readonly contextPackageIds: readonly string[];
+    readonly planRefs: readonly {
+      readonly planId: string;
+      readonly revision: number;
+      readonly sha256: string;
+    }[];
+  }[];
+  readonly timeline: readonly ReplayTimelineEntry[];
+  readonly content: MemoryImportReplayContentProjection;
   readonly failures: readonly string[];
 }
 
@@ -641,7 +718,7 @@ function checkTimelineCompleteness(
   );
 
   const startOutbox = Object.values(snapshot.outbox).find(
-    (entry) => entry.productRunId === productRunId && entry.kind === "workflow_start",
+    (entry) => entry.kind === "workflow_start" && entry.productRunId === productRunId,
   );
   if (startOutbox?.status === "failed_terminal") {
     requireCount(failures, events, "workflow.start.failed", 1);
@@ -1041,6 +1118,262 @@ export function assembleRunReplay(
       modelConfigVersions: observedModel,
     },
     run: { status: run.status, phase: run.phase, revision: run.revision },
+    timeline,
+    content,
+    failures: [...failures],
+  };
+}
+
+function checkMemoryImportTimeline(
+  intent: MemoryImportIntent,
+  result: MemoryImportResult,
+  outboxIds: ReadonlySet<string>,
+  events: readonly TraceEvent[],
+  failures: Set<string>,
+): void {
+  const eventIds = new Set<string>();
+  for (const event of events) {
+    if (eventIds.has(event.eventId)) failures.add(`Trace损坏：eventId重复 ${event.eventId}`);
+    eventIds.add(event.eventId);
+    if (!("memoryImportIntentId" in event)) {
+      failures.add(`Trace关联错误：${event.eventName} 不是Memory Import事件`);
+      continue;
+    }
+    if (
+      event.memoryImportResultId !== result.memoryImportResultId ||
+      event.operationId !== intent.operationId ||
+      event.backendId !== intent.backendId ||
+      event.requestSha256 !== intent.requestSha256 ||
+      event.intentRevision !== intent.revision ||
+      event.resultRevision > result.revision ||
+      !outboxIds.has(event.outboxId)
+    ) {
+      failures.add(`Trace关联错误：${event.eventName} 与持久化Intent/Result/Outbox不一致`);
+    }
+  }
+
+  requireCount(failures, events, "memory.import.intent_created", 1);
+  requireCount(failures, events, "memory.import.started", result.dispatchAttempts);
+  checkSequentialPairs(
+    failures,
+    events,
+    "Memory Import外部写入",
+    (event) => event.eventName === "memory.import.started",
+    (event) =>
+      event.eventName === "memory.import.accepted" ||
+      (event.eventName === "memory.import.outcome_unknown" && event.origin === "dispatch") ||
+      (event.eventName === "memory.import.failed" && event.origin === "dispatch"),
+    (event) =>
+      "memoryImportIntentId" in event
+        ? `${event.memoryImportIntentId}/${String(
+            "dispatchAttempt" in event
+              ? event.dispatchAttempt
+              : "attempt" in event
+                ? event.attempt
+                : 1,
+          )}`
+        : "invalid",
+  );
+  checkSequentialPairs(
+    failures,
+    events,
+    "Memory Import对账",
+    (event) => event.eventName === "memory.import.reconcile.started",
+    (event) =>
+      event.eventName === "memory.import.reconcile.completed" ||
+      event.eventName === "memory.import.reconcile.failed",
+    (event) =>
+      "memoryImportIntentId" in event
+        ? `${event.memoryImportIntentId}/${String("reconcileAttempt" in event ? event.reconcileAttempt : 1)}`
+        : "invalid",
+  );
+
+  const terminalByStatus: Partial<Record<MemoryImportResult["status"], string>> = {
+    materialized: "memory.import.materialized",
+    failed: "memory.import.failed",
+    outcome_unknown: "memory.import.outcome_unknown",
+  };
+  const expectedTerminal = terminalByStatus[result.status];
+  if (expectedTerminal !== undefined && count(events, expectedTerminal) === 0) {
+    failures.add(`Trace缺口：持久化终态${result.status}缺少${expectedTerminal}`);
+  }
+  if (
+    result.status === "accepted" &&
+    !events.some(
+      (event) =>
+        event.eventName === "memory.import.accepted" ||
+        (event.eventName === "memory.import.reconcile.completed" &&
+          event.resolution === "accepted"),
+    )
+  ) {
+    failures.add("Trace缺口：持久化终态accepted缺少写入接收或对账接收证据");
+  }
+  if ("externalObjectId" in result) {
+    const expectedHash = sha256Hex(result.externalObjectId);
+    const externalHashes = events.flatMap((event) =>
+      "externalObjectIdSha256" in event && event.externalObjectIdSha256 !== undefined
+        ? [event.externalObjectIdSha256]
+        : [],
+    );
+    if (!externalHashes.includes(expectedHash)) {
+      failures.add("Trace关联错误：accepted/materialized未记录外部对象ID的不可逆Hash");
+    }
+  }
+}
+
+function collectMemoryImportDownstreamUse(
+  snapshot: ProductSnapshot,
+  result: MemoryImportResult,
+): MemoryImportReplayView["downstreamUse"] {
+  if (!("externalObjectId" in result)) return [];
+  return Object.values(snapshot.entities.memoryResultSnapshots)
+    .filter((memory) => memory.externalObjectIds.includes(result.externalObjectId))
+    .flatMap((memory) => {
+      const query = snapshot.entities.memoryQueries[memory.memoryQueryId];
+      if (query === undefined) return [];
+      const packages = Object.values(snapshot.entities.contextPackages).filter(
+        (contextPackage) =>
+          contextPackage.memoryQueryId === query.memoryQueryId &&
+          contextPackage.items.some(
+            (item) => item.memoryResultSnapshotId === memory.memoryResultSnapshotId,
+          ),
+      );
+      const plans = Object.values(snapshot.entities.plans).filter(
+        (plan) => plan.productRunId === query.productRunId,
+      );
+      return [
+        {
+          productRunId: query.productRunId,
+          memoryQueryId: query.memoryQueryId,
+          contextPackageIds: packages.map((item) => item.contextPackageId).sort(),
+          planRefs: plans
+            .map((plan) => ({
+              planId: plan.planId,
+              revision: plan.planRevision,
+              sha256: plan.sha256,
+            }))
+            .sort((left, right) => left.revision - right.revision),
+        },
+      ];
+    });
+}
+
+export function assembleMemoryImportReplay(
+  input: {
+    memoryImportIntentId: string;
+    storePath: string;
+    traceDir?: string | undefined;
+    runtimeBindingsPath?: string | undefined;
+    contentAccess?: ReplayContentAccess | undefined;
+  },
+  deps: ReplayAssemblerDeps,
+): MemoryImportReplayView {
+  const snapshot = loadSnapshot(input.storePath, deps.snapshotIntegrityCheck);
+  const intent = snapshot.entities.memoryImportIntents[input.memoryImportIntentId as never];
+  if (intent === undefined) {
+    throw new ReplayError(`Memory Import Intent不存在: ${input.memoryImportIntentId}`);
+  }
+  const result = Object.values(snapshot.entities.memoryImportResults).find(
+    (candidate) => candidate.memoryImportIntentId === intent.memoryImportIntentId,
+  );
+  if (result === undefined) throw new ReplayError("Memory Import Result不存在");
+  const sourceMessage = snapshot.entities.messages[intent.sourceSelection.sourceMessageId];
+  if (sourceMessage === undefined) throw new ReplayError("Memory Import源Message不存在");
+
+  const outbox = Object.values(snapshot.outbox)
+    .filter(
+      (
+        entry,
+      ): entry is Extract<
+        (typeof snapshot.outbox)[string],
+        { kind: "memory_import_start" | "memory_import_reconcile" }
+      > =>
+        (entry.kind === "memory_import_start" || entry.kind === "memory_import_reconcile") &&
+        entry.memoryImportIntentId === intent.memoryImportIntentId,
+    )
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .map((entry) => ({
+      outboxId: entry.outboxId,
+      kind: entry.kind,
+      status: entry.status,
+      revision: entry.revision,
+      dispatchAttempts: entry.dispatchAttempts,
+    }));
+  const failures = new Set<string>();
+  if (outbox.length === 0) failures.add("产品事实缺口：Memory Import没有关联Outbox");
+  const runtimeEvidence = deps.readMemoryImportRuntimeEvidence?.({
+    path: input.runtimeBindingsPath,
+    memoryImportIntentId: intent.memoryImportIntentId,
+    memoryImportResultId: result.memoryImportResultId,
+    outbox,
+  }) ?? { status: "missing", entries: [] };
+  if (runtimeEvidence.status !== "ok") {
+    failures.add(`Runtime证据${runtimeEvidence.status}：无法完整确认Import Workflow派发栅栏`);
+  }
+  const events = readTraceEvents({
+    memoryImportIntentId: intent.memoryImportIntentId,
+    ...(input.traceDir !== undefined ? { dir: input.traceDir } : {}),
+  });
+  checkMemoryImportTimeline(
+    intent,
+    result,
+    new Set(outbox.map((entry) => entry.outboxId)),
+    events,
+    failures,
+  );
+  const timeline = events.map((event) => ({
+    timestamp: event.timestamp,
+    eventName: event.eventName,
+    outcome: event.outcome,
+    refs: [],
+  }));
+
+  let content: MemoryImportReplayContentProjection = { included: false };
+  if (input.contentAccess !== undefined) {
+    if (
+      input.contentAccess.mode !== "authorized" ||
+      input.contentAccess.principalId.trim() === "" ||
+      input.contentAccess.purpose.trim() === "" ||
+      deps.authorizeContentAccess?.(input.contentAccess) !== true
+    ) {
+      throw new ReplayError("未授权读取Product Store正文");
+    }
+    content = {
+      included: true,
+      facts: {
+        sourceMessage,
+        selectedContent: resolveMemoryImportContent({
+          message: sourceMessage,
+          selection: intent.sourceSelection,
+          maxContentChars: intent.backendDescriptor.capabilities.maxContentChars,
+        }),
+      },
+    };
+  }
+
+  return {
+    memoryImportIntentId: intent.memoryImportIntentId,
+    intent: {
+      memoryImportResultId: result.memoryImportResultId,
+      sourceMessageId: sourceMessage.messageId,
+      selectionKind: intent.sourceSelection.kind,
+      backendId: intent.backendId,
+      intentRevision: intent.revision,
+      requestSha256: intent.requestSha256,
+      backendDescriptorSha256: intent.backendDescriptorSha256,
+    },
+    result: {
+      status: result.status,
+      revision: result.revision,
+      dispatchAttempts: result.dispatchAttempts,
+      reconcileAttempts: result.reconcileAttempts,
+      externalObjectIdSha256:
+        "externalObjectId" in result ? sha256Hex(result.externalObjectId) : null,
+      errorCode: "errorCode" in result ? result.errorCode : null,
+    },
+    outbox,
+    runtimeEvidence,
+    downstreamUse: collectMemoryImportDownstreamUse(snapshot, result),
     timeline,
     content,
     failures: [...failures],

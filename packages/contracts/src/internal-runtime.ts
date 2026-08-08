@@ -18,6 +18,8 @@ import {
   memoryBackendIdSchema,
   memoryQueryIdSchema,
   memoryResultSnapshotIdSchema,
+  memoryImportIntentIdSchema,
+  memoryImportResultIdSchema,
   productSessionIdSchema,
 } from "./ids.js";
 import {
@@ -34,6 +36,8 @@ import {
   memoryRequirementSchema,
   memoryResultSnapshotSchema,
 } from "./context.js";
+import { memoryImportIntentSchema, memoryImportResultSchema } from "./memory-import.js";
+import { MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION } from "./versions.js";
 
 /**
  * 后端私有Runtime合同（任务书§12.4）。
@@ -565,6 +569,126 @@ export const workflowReconcileResponseSchema = z
   })
   .strict();
 
+/* ---------- Memory Import Workflow 私有合同 ---------- */
+
+export const memoryImportAdapterInputSchema = z
+  .object({
+    operationId: memoryImportIntentIdSchema,
+    requestSha256: sha256Schema,
+    content: z.string().min(1).max(50_000),
+    layer: z.literal("L2"),
+    title: z.string().min(1).max(200),
+    tags: z.array(z.string().min(1).max(64)).max(20),
+    source: z.literal("chat.explicit_import"),
+    sessionId: productSessionIdSchema,
+    turnId: messageIdSchema,
+  })
+  .strict();
+
+export const loadMemoryImportRequestSchema = z
+  .object({
+    ...versioned,
+    workflowDefinitionVersion: z.literal(MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION),
+    memoryImportIntentId: memoryImportIntentIdSchema,
+    memoryImportResultId: memoryImportResultIdSchema,
+  })
+  .strict();
+
+export const loadMemoryImportResponseSchema = z
+  .object({
+    ...versioned,
+    intent: memoryImportIntentSchema,
+    result: memoryImportResultSchema,
+    adapterInput: memoryImportAdapterInputSchema,
+  })
+  .strict();
+
+const memoryImportResultCommandBase = {
+  ...versioned,
+  workflowDefinitionVersion: z.literal(MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION),
+  commandId: commandIdSchema,
+  memoryImportResultId: memoryImportResultIdSchema,
+  expectedRevision: z.number().int().positive(),
+};
+
+export const markMemoryImportDispatchingRequestSchema = z
+  .object(memoryImportResultCommandBase)
+  .strict();
+
+export const memoryImportAcceptedSchema = z
+  .object({
+    externalObjectId: z.string().min(1).max(200),
+    externalObjectVersion: z.string().min(1).max(200).optional(),
+    externalStatus: z.string().min(1).max(100).optional(),
+    responseSha256: sha256Schema,
+  })
+  .strict();
+
+export const commitMemoryImportAcceptedRequestSchema = z
+  .object({
+    ...memoryImportResultCommandBase,
+    accepted: memoryImportAcceptedSchema,
+    reconciled: z.boolean().optional(),
+  })
+  .strict();
+
+export const commitMemoryImportMaterializedRequestSchema = z
+  .object({
+    ...memoryImportResultCommandBase,
+    accepted: memoryImportAcceptedSchema,
+    verificationSha256: sha256Schema,
+    reconciled: z.boolean().optional(),
+  })
+  .strict();
+
+export const commitMemoryImportFailedRequestSchema = z
+  .object({
+    ...memoryImportResultCommandBase,
+    errorCode: stableRuntimeErrorCodeSchema,
+    summary: z.string().min(1).max(500),
+    reconciled: z.boolean().optional(),
+  })
+  .strict();
+
+export const commitMemoryImportOutcomeUnknownRequestSchema = z
+  .object({
+    ...memoryImportResultCommandBase,
+    errorCode: stableRuntimeErrorCodeSchema,
+    reconciled: z.boolean().optional(),
+  })
+  .strict();
+
+export const memoryImportResultResponseSchema = z
+  .object({ ...versioned, result: memoryImportResultSchema })
+  .strict();
+
+export const memoryImportWorkflowDispatchRequestSchema = z
+  .object({
+    schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
+    memoryImportIntentId: memoryImportIntentIdSchema,
+    memoryImportResultId: memoryImportResultIdSchema,
+    expectedResultRevision: z.number().int().positive(),
+    mode: z.enum(["import", "reconcile"]),
+    workflowDefinitionVersion: z.string().min(1).max(100),
+    outboxId: outboxEntryIdSchema,
+  })
+  .strict();
+
+export const memoryImportWorkflowDispatchResponseSchema = z
+  .object({
+    schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
+    status: z.enum(["started", "already_started", "outcome_unknown"]),
+  })
+  .strict();
+
+export const memoryImportWorkflowReconcileResponseSchema = z
+  .object({
+    schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
+    outboxId: outboxEntryIdSchema,
+    startBinding: z.enum(["exists", "missing", "outcome_unknown"]),
+  })
+  .strict();
+
 /* ---------- 类型 ---------- */
 
 export type CompilePlanningInputRequest = z.infer<typeof compilePlanningInputRequestSchema>;
@@ -588,6 +712,8 @@ export type PersistExecutionCandidateRequest = z.infer<
 export type PersistValidationResultRequest = z.infer<typeof persistValidationResultRequestSchema>;
 export type CommitExecutionResultRequest = z.infer<typeof commitExecutionResultRequestSchema>;
 export type CommitRejectedRunRequest = z.infer<typeof commitRejectedRunRequestSchema>;
+export type LoadMemoryImportRequest = z.infer<typeof loadMemoryImportRequestSchema>;
+export type LoadMemoryImportResponse = z.infer<typeof loadMemoryImportResponseSchema>;
 export type CommitRunFailureRequest = z.infer<typeof commitRunFailureRequestSchema>;
 export type ExpireApprovalRequest = z.infer<typeof expireApprovalRequestSchema>;
 export type BeginRunAttemptRequest = z.infer<typeof beginRunAttemptRequestSchema>;

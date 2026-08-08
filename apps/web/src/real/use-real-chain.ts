@@ -10,6 +10,9 @@ import {
   apiGetRunContext,
   apiSubmitDecision,
   apiSubmitMessage,
+  apiCreateMemoryImport,
+  apiGetSessionMemoryImports,
+  apiReconcileMemoryImport,
   ApiProblemError,
 } from "../api/client.js";
 import {
@@ -43,6 +46,8 @@ import type {
   RunContextDto,
   SubmitDecisionPayload,
   SubmitMessagePayload,
+  CreateMemoryImportPayload,
+  MemoryImportDto,
 } from "@chat/contracts/public";
 
 /**
@@ -81,6 +86,7 @@ export interface RealChainState {
   readonly approval: UseQueryResult<ApprovalDto | null>;
   readonly memoryBackends: UseQueryResult<MemoryBackendProfileDto[]>;
   readonly runContext: UseQueryResult<RunContextDto>;
+  readonly memoryImports: UseQueryResult<MemoryImportDto[]>;
   readonly pendingSend: PendingSend | null;
   /** B2首版一个Session同一时刻只允许一个未终态Run。 */
   readonly canStartNewRun: boolean;
@@ -98,6 +104,12 @@ export interface RealChainState {
   readonly retryPendingDecision: () => void;
   readonly clearDecisionError: () => void;
   readonly clearStaleActiveRun: () => void;
+  readonly importMemory: (payload: CreateMemoryImportPayload) => void;
+  readonly retryPendingMemoryImport: () => void;
+  readonly importingMemory: boolean;
+  readonly memoryImportError: ApiProblemError | null;
+  readonly reconcileMemoryImport: (memoryImport: MemoryImportDto) => void;
+  readonly reconcilingMemory: boolean;
 }
 
 export function useRealChain(storage: Storage, options?: { refetchMs?: number }): RealChainState {
@@ -125,6 +137,11 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
   const [decisionError, setDecisionError] = useState<ApiProblemError | null>(() =>
     pendingDecision === null ? null : recoveredPendingError(),
   );
+  const [pendingMemoryImport, setPendingMemoryImport] = useState<{
+    commandId: CommandId;
+    payload: CreateMemoryImportPayload;
+  } | null>(null);
+  const [memoryImportError, setMemoryImportError] = useState<ApiProblemError | null>(null);
 
   // 首次使用：无本地Session定位时，用稳定bootstrapCommandId幂等创建真实Session
   const bootstrap = useQuery({
@@ -174,6 +191,19 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     queryKey: ["memory-backends"],
     queryFn: apiGetMemoryBackends,
     staleTime: 30_000,
+  });
+
+  const memoryImports = useQuery({
+    queryKey: ["memory-imports", sessionId],
+    enabled: sessionId !== null,
+    queryFn: () => apiGetSessionMemoryImports(sessionId ?? ""),
+    refetchInterval: (query) => {
+      const active = query.state.data?.some((item) =>
+        ["queued", "dispatching", "accepted"].includes(item.status),
+      );
+      return active === true ? refetchMs : false;
+    },
+    refetchIntervalInBackground: false,
   });
 
   const runContext = useQuery({
@@ -317,6 +347,34 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     },
   });
 
+  const memoryImportMutation = useMutation({
+    mutationFn: apiCreateMemoryImport,
+    onSuccess: () => {
+      setPendingMemoryImport(null);
+      setMemoryImportError(null);
+      void queryClient.invalidateQueries({ queryKey: ["memory-imports", sessionId] });
+    },
+    onError: (error) => {
+      setMemoryImportError(error instanceof ApiProblemError ? error : null);
+    },
+  });
+
+  const reconcileMemoryMutation = useMutation({
+    mutationFn: (memoryImport: MemoryImportDto) =>
+      apiReconcileMemoryImport({
+        memoryImportIntentId: memoryImport.memoryImportIntentId,
+        commandId: newCommandId(),
+        expectedResultRevision: memoryImport.resultRevision,
+      }),
+    onSuccess: () => {
+      setMemoryImportError(null);
+      void queryClient.invalidateQueries({ queryKey: ["memory-imports", sessionId] });
+    },
+    onError: (error) => {
+      setMemoryImportError(error instanceof ApiProblemError ? error : null);
+    },
+  });
+
   const beginDecision = (input: {
     payload: SubmitDecisionPayload;
     expectedRunRevision: number;
@@ -358,6 +416,7 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
       approval,
       memoryBackends,
       runContext,
+      memoryImports,
       pendingSend,
       canStartNewRun: pendingSend === null && !sendMutation.isPending && !activeRunIsUnfinished,
       sendMessage,
@@ -380,6 +439,26 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
         setPendingDecision(null);
         setDecisionError(null);
       },
+      importMemory: (payload) => {
+        if (memoryImportMutation.isPending || pendingMemoryImport !== null) return;
+        const pending = { commandId: newCommandId(), payload };
+        setPendingMemoryImport(pending);
+        setMemoryImportError(null);
+        memoryImportMutation.mutate(pending);
+      },
+      retryPendingMemoryImport: () => {
+        if (pendingMemoryImport === null || memoryImportMutation.isPending) return;
+        setMemoryImportError(null);
+        memoryImportMutation.mutate(pendingMemoryImport);
+      },
+      importingMemory: memoryImportMutation.isPending,
+      memoryImportError,
+      reconcileMemoryImport: (memoryImport) => {
+        if (reconcileMemoryMutation.isPending) return;
+        setMemoryImportError(null);
+        reconcileMemoryMutation.mutate(memoryImport);
+      },
+      reconcilingMemory: reconcileMemoryMutation.isPending,
     };
   }, [
     sessionId,
@@ -393,12 +472,17 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     approval,
     memoryBackends,
     runContext,
+    memoryImports,
     pendingSend,
     sendMutation.isPending,
     sendError,
     decisionMutation.isPending,
     decisionError,
     pendingDecision,
+    pendingMemoryImport,
+    memoryImportMutation.isPending,
+    memoryImportError,
+    reconcileMemoryMutation.isPending,
   ]);
   return state;
 }

@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import {
+  assembleMemoryImportReplay,
   assembleRunReplay,
   ReplayError,
   type ReplayAssemblerDeps,
@@ -8,7 +9,7 @@ import {
 
 /**
  * 回放调试入口（任务书§16）：
- *   pnpm debug:replay --run run_xxx [--store <path>] [--dir <traceDir>]
+ *   pnpm debug:replay (--run run_xxx | --import mii_xxx) [--store <path>] [--dir <traceDir>]
  *     [--evidence <runtime-version-evidence.json>] [--include-content]
  *
  * 本地授权环境使用：按对象ID/revision/Hash读取产品正文并组装回放。
@@ -17,14 +18,16 @@ import {
  * 输出约定：回放视图JSON写stdout（含正文引用状态，不含密钥），摘要写stderr。
  */
 
-const USAGE = `用法: pnpm debug:replay --run <productRunId> [--store <storePath>] [--dir <traceDir>] [--evidence <runtime-version-evidence.json>] [--include-content]
+const USAGE = `用法: pnpm debug:replay (--run <productRunId> | --import <memoryImportIntentId>) [--store <storePath>] [--dir <traceDir>] [--evidence <runtime-version-evidence.json>] [--bindings <runtime-bindings.json>] [--include-content]
 输出: 默认不含正文；--include-content须由组合根显式授权；任何完整性失败以退出码3结束。`;
 
 export function runReplayCli(argv: string[], deps: ReplayAssemblerDeps): number {
   let productRunId: string | undefined;
+  let memoryImportIntentId: string | undefined;
   let storePath: string | undefined;
   let traceDir: string | undefined;
   let versionEvidencePath: string | undefined;
+  let runtimeBindingsPath: string | undefined;
   let includeContent = false;
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
@@ -36,6 +39,11 @@ export function runReplayCli(argv: string[], deps: ReplayAssemblerDeps): number 
       case "--run":
         if (value === undefined) return usageError(`参数${flag}缺少值`);
         productRunId = value;
+        index += 1;
+        break;
+      case "--import":
+        if (value === undefined) return usageError(`参数${flag}缺少值`);
+        memoryImportIntentId = value;
         index += 1;
         break;
       case "--store":
@@ -53,12 +61,17 @@ export function runReplayCli(argv: string[], deps: ReplayAssemblerDeps): number 
         versionEvidencePath = value;
         index += 1;
         break;
+      case "--bindings":
+        if (value === undefined) return usageError(`参数${flag}缺少值`);
+        runtimeBindingsPath = value;
+        index += 1;
+        break;
       default:
         return usageError(`未知参数: ${flag ?? ""}`);
     }
   }
-  if (productRunId === undefined) {
-    console.error("必须提供 --run <productRunId>。");
+  if ((productRunId === undefined) === (memoryImportIntentId === undefined)) {
+    console.error("必须且只能提供 --run 或 --import 之一。");
     console.error(USAGE);
     return 2;
   }
@@ -74,6 +87,10 @@ export function runReplayCli(argv: string[], deps: ReplayAssemblerDeps): number 
       "version-evidence",
       `${productRunId}.json`,
     );
+  const resolvedBindings =
+    runtimeBindingsPath ??
+    process.env.CHAT_RUNTIME_BINDINGS_PATH ??
+    resolve(repoRoot, ".data/runtime/runtime-bindings.v1.json");
 
   try {
     const contentAccess: ReplayContentAccess | undefined = includeContent
@@ -83,16 +100,28 @@ export function runReplayCli(argv: string[], deps: ReplayAssemblerDeps): number 
           purpose: "local-run-replay",
         }
       : undefined;
-    const view = assembleRunReplay(
-      {
-        productRunId,
-        storePath: resolvedStore,
-        ...(traceDir !== undefined ? { traceDir } : {}),
-        versionEvidencePath: resolvedEvidence,
-        ...(contentAccess !== undefined ? { contentAccess } : {}),
-      },
-      deps,
-    );
+    const view =
+      productRunId !== undefined
+        ? assembleRunReplay(
+            {
+              productRunId,
+              storePath: resolvedStore,
+              ...(traceDir !== undefined ? { traceDir } : {}),
+              versionEvidencePath: resolvedEvidence,
+              ...(contentAccess !== undefined ? { contentAccess } : {}),
+            },
+            deps,
+          )
+        : assembleMemoryImportReplay(
+            {
+              memoryImportIntentId: memoryImportIntentId!,
+              storePath: resolvedStore,
+              ...(traceDir !== undefined ? { traceDir } : {}),
+              runtimeBindingsPath: resolvedBindings,
+              ...(contentAccess !== undefined ? { contentAccess } : {}),
+            },
+            deps,
+          );
     process.stdout.write(`${JSON.stringify(view, null, 2)}\n`);
     if (view.failures.length > 0) {
       console.error(`replay: ${view.failures.length} 项完整性失败（标红）:`);
@@ -100,7 +129,9 @@ export function runReplayCli(argv: string[], deps: ReplayAssemblerDeps): number 
       return 3;
     }
     console.error(
-      `replay: ${view.timeline.length} 个事件，${view.versionEvidence.workflowDefinitionVersions.length} 个Workflow版本，全部对象引用校验通过`,
+      "versionEvidence" in view
+        ? `replay: ${view.timeline.length} 个事件，${view.versionEvidence.workflowDefinitionVersions.length} 个Workflow版本，全部对象引用校验通过`
+        : `replay: ${view.timeline.length} 个Memory Import事件，Runtime与产品事实校验通过`,
     );
     return 0;
   } catch (error) {

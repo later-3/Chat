@@ -1,12 +1,14 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   productRunIdSchema,
   productSessionIdSchema,
+  memoryImportIntentIdSchema,
   type MemoryLayer,
 } from "../../packages/contracts/src/index.ts";
 import { MEMMY_BACKEND_ID, MemmyMemoryAdapter } from "../../packages/memory-runtime/src/index.ts";
+import { computeMemoryImportRequestSha256 } from "../../packages/domain/src/index.ts";
 import {
   FIXED_MEMMY_PORT,
   assertChatDataPath,
@@ -120,7 +122,89 @@ try {
   ) {
     throw new Error("Chat memmy Adapter 未从固定真服务取得唯一正确 L2 来源");
   }
-  console.log("[memmy-real-http] 固定源码、真实 HTTP、Chat Adapter、标签/L2 门通过");
+
+  const importShape = {
+    content: "M2-REAL-IMPORT-7319：发布前必须完成真实浏览器与回放验收。",
+    layer: "L2" as const,
+    title: "M2 真实导入规则",
+    tags: ["m2-real-import", "release-gate"],
+    turnId: "msg_m2realimport1",
+  };
+  const importInput = {
+    operationId: memoryImportIntentIdSchema.parse("mii_m2realimport1"),
+    requestSha256: computeMemoryImportRequestSha256(importShape),
+    ...importShape,
+    source: "chat.explicit_import" as const,
+    productSessionId: productSessionIdSchema.parse("psn_m2realimport1"),
+  };
+  const adapterInput = {
+    ...importInput,
+    sessionId: importInput.productSessionId,
+  };
+  const first = await adapter.import(adapterInput);
+  const duplicate = await adapter.import(adapterInput);
+  if (duplicate.externalObjectId !== first.externalObjectId) {
+    throw new Error("固定 memmy 未按相同adapterId/requestId/正文返回同一外部对象");
+  }
+  const conflict = await fetch(`http://127.0.0.1:${FIXED_MEMMY_PORT}/api/v1/memory/add`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      requestId: adapterInput.operationId,
+      adapterId: "chat",
+      namespace: {
+        source: "chat",
+        profileId: "chat-debug",
+        sessionKey: adapterInput.sessionId,
+      },
+      ...importShape,
+      content: `${importShape.content} 冲突正文`,
+      deferProcessing: false,
+    }),
+  });
+  if (conflict.status !== 409) {
+    throw new Error(`相同requestId不同正文未返回409，而是${String(conflict.status)}`);
+  }
+  const materialized = await adapter.reconcile({
+    ...adapterInput,
+    externalObjectId: first.externalObjectId,
+  });
+  if (materialized.status !== "materialized") {
+    throw new Error(`真实GET+Search未证明materialized，而是${materialized.status}`);
+  }
+  const detailResponse = await fetch(
+    `http://127.0.0.1:${FIXED_MEMMY_PORT}/api/v1/memory/${encodeURIComponent(first.externalObjectId)}`,
+  );
+  const detail = (await detailResponse.json()) as {
+    body?: unknown;
+    memoryLayer?: unknown;
+    title?: unknown;
+    tags?: unknown;
+  };
+  if (
+    !detailResponse.ok ||
+    detail.body !== importShape.content ||
+    detail.memoryLayer !== "L2" ||
+    detail.title !== importShape.title ||
+    !Array.isArray(detail.tags) ||
+    !["manual", ...importShape.tags].every((tag) => detail.tags?.includes(tag))
+  ) {
+    throw new Error("真实memmy GET未保留正文、L2、标题与固定manual+用户标签");
+  }
+  if (!/^[A-Za-z0-9_-]+$/u.test(first.externalObjectId)) {
+    throw new Error("真实memmy external ID包含不安全字符，拒绝拼接SQLite只读断言");
+  }
+  const objectCount = execFileSync(
+    "/usr/bin/sqlite3",
+    [
+      resolve(runRoot, "memory.sqlite"),
+      `SELECT COUNT(*) FROM memories WHERE id='${first.externalObjectId}';`,
+    ],
+    { encoding: "utf8" },
+  ).trim();
+  if (objectCount !== "1") throw new Error(`真实memmy幂等对象数不是1，而是${objectCount}`);
+
+  console.log("[memmy-real-http] 固定源码、真实add/幂等冲突、GET+Search、SQLite唯一对象门通过");
 } finally {
   await stopService();
 }

@@ -4,12 +4,17 @@ import {
   workflowResumeResponseSchema,
   workflowReconcileResponseSchema,
   workflowStartResponseSchema,
+  memoryImportWorkflowDispatchResponseSchema,
+  memoryImportWorkflowReconcileResponseSchema,
+  MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
   type CommandId,
   type OutboxEntry,
   type ProductSnapshot,
 } from "@chat/contracts";
 import {
   commitRunOutcomeUnknown,
+  commitMemoryImportFailed,
+  commitMemoryImportOutcomeUnknown,
   emitRunEvent,
   failOutboxAndRun,
   updateOutboxStatus,
@@ -36,6 +41,13 @@ export interface OutboxDispatcherOptions {
 }
 
 type Snapshot = ProductSnapshot;
+type WorkflowStartEntry = Extract<OutboxEntry, { kind: "workflow_start" }>;
+type WorkflowResumeEntry = Extract<OutboxEntry, { kind: "workflow_resume" }>;
+type WorkflowEntry = WorkflowStartEntry | WorkflowResumeEntry;
+type MemoryImportEntry = Extract<
+  OutboxEntry,
+  { kind: "memory_import_start" | "memory_import_reconcile" }
+>;
 const OUTCOME_UNKNOWN_SETTLE_MS = 30_000;
 
 function dispatchCommandId(...parts: string[]): CommandId {
@@ -90,7 +102,7 @@ async function markStatus(
 
 async function failDispatch(
   options: OutboxDispatcherOptions,
-  entry: OutboxEntry,
+  entry: WorkflowEntry,
   errorCode: string,
   incrementDispatchAttempts: boolean,
 ): Promise<void> {
@@ -105,7 +117,7 @@ async function failDispatch(
 
 async function settleUnknownIfExpired(
   options: OutboxDispatcherOptions,
-  entry: OutboxEntry,
+  entry: WorkflowEntry,
 ): Promise<void> {
   if (Date.parse(options.deps.now()) - Date.parse(entry.updatedAt) < OUTCOME_UNKNOWN_SETTLE_MS) {
     return;
@@ -127,7 +139,7 @@ function findWorkflowAttemptId(snapshot: Snapshot, productRunId: string): string
 async function dispatchStart(
   options: OutboxDispatcherOptions,
   snapshot: Snapshot,
-  entry: OutboxEntry,
+  entry: WorkflowStartEntry,
 ): Promise<void> {
   const attemptId = findWorkflowAttemptId(snapshot, entry.productRunId);
   if (attemptId === undefined) {
@@ -184,7 +196,7 @@ async function dispatchStart(
 async function dispatchResume(
   options: OutboxDispatcherOptions,
   snapshot: Snapshot,
-  entry: OutboxEntry,
+  entry: WorkflowResumeEntry,
 ): Promise<void> {
   const attemptId = findWorkflowAttemptId(snapshot, entry.productRunId);
   if (
@@ -234,15 +246,173 @@ async function dispatchResume(
   }
 }
 
+function importResult(snapshot: Snapshot, entry: MemoryImportEntry) {
+  return snapshot.entities.memoryImportResults[entry.memoryImportResultId];
+}
+
+async function failImportDispatch(
+  options: OutboxDispatcherOptions,
+  snapshot: Snapshot,
+  entry: MemoryImportEntry,
+  errorCode: string,
+): Promise<void> {
+  const result = importResult(snapshot, entry);
+  if (result !== undefined && result.status !== "failed" && result.status !== "materialized") {
+    await commitMemoryImportFailed(options.deps, {
+      commandId: dispatchCommandId(
+        "fail-memory-import-dispatch",
+        entry.outboxId,
+        String(result.revision),
+      ),
+      memoryImportResultId: result.memoryImportResultId,
+      expectedRevision: result.revision,
+      errorCode,
+      summary: "Memory导入工作流无法安全启动",
+    });
+  }
+  await markStatus(options, entry, "failed_terminal", errorCode, true);
+}
+
+async function dispatchMemoryImport(
+  options: OutboxDispatcherOptions,
+  snapshot: Snapshot,
+  entry: MemoryImportEntry,
+): Promise<void> {
+  const resultBefore = importResult(snapshot, entry);
+  if (resultBefore === undefined) {
+    await markStatus(options, entry, "failed_terminal", "outbox.missing_import_result", false);
+    return;
+  }
+  if (
+    (entry.kind === "memory_import_start" && resultBefore.status !== "queued") ||
+    (entry.kind === "memory_import_reconcile" && resultBefore.status !== "outcome_unknown")
+  ) {
+    await markStatus(options, entry, "acknowledged");
+    return;
+  }
+
+  const response = await postToWorkflowRuntime(
+    options,
+    "/internal/workflow/v1/memory-import/start",
+    {
+      schemaVersion: "chat-workflow-dispatch.v1",
+      memoryImportIntentId: entry.memoryImportIntentId,
+      memoryImportResultId: entry.memoryImportResultId,
+      expectedResultRevision: entry.expectedResultRevision,
+      mode: entry.kind === "memory_import_start" ? "import" : "reconcile",
+      workflowDefinitionVersion: MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
+      outboxId: entry.outboxId,
+    },
+  );
+  if (response === "unknown") {
+    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
+    return;
+  }
+  if (!response.ok) {
+    if (response.status >= 500) {
+      await markStatus(
+        options,
+        entry,
+        "outcome_unknown",
+        `dispatch.http_${String(response.status)}`,
+        true,
+      );
+    } else if (entry.kind === "memory_import_start") {
+      await failImportDispatch(
+        options,
+        snapshot,
+        entry,
+        `dispatch.http_${String(response.status)}`,
+      );
+    } else {
+      await markStatus(
+        options,
+        entry,
+        "failed_terminal",
+        `dispatch.http_${String(response.status)}`,
+        true,
+      );
+    }
+    return;
+  }
+  const parsed = memoryImportWorkflowDispatchResponseSchema.safeParse(response.json);
+  if (!parsed.success || parsed.data.status === "outcome_unknown") {
+    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
+    return;
+  }
+  await markStatus(options, entry, "acknowledged", undefined, true);
+}
+
+async function settleImportDispatchUnknown(
+  options: OutboxDispatcherOptions,
+  snapshot: Snapshot,
+  entry: MemoryImportEntry,
+): Promise<void> {
+  if (Date.parse(options.deps.now()) - Date.parse(entry.updatedAt) < OUTCOME_UNKNOWN_SETTLE_MS) {
+    return;
+  }
+  const result = importResult(snapshot, entry);
+  if (result?.status === "queued") {
+    await commitMemoryImportOutcomeUnknown(options.deps, {
+      commandId: dispatchCommandId("settle-memory-import-dispatch", entry.outboxId),
+      memoryImportResultId: result.memoryImportResultId,
+      expectedRevision: result.revision,
+      errorCode: "memory.import.workflow_dispatch_unknown",
+    });
+  }
+  await markStatus(options, entry, "failed_terminal", "memory.import.workflow_dispatch_unknown");
+}
+
+async function reconcileImportUnknown(
+  options: OutboxDispatcherOptions,
+  snapshot: Snapshot,
+  entry: MemoryImportEntry,
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${options.workflowRuntimeBaseUrl}/internal/workflow/v1/memory-import/reconcile?${new URLSearchParams({ outboxId: entry.outboxId }).toString()}`,
+      {
+        headers: { "x-chat-runtime-key": options.credential },
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+  } catch {
+    await settleImportDispatchUnknown(options, snapshot, entry);
+    return;
+  }
+  if (!response.ok) {
+    await settleImportDispatchUnknown(options, snapshot, entry);
+    return;
+  }
+  const parsed = memoryImportWorkflowReconcileResponseSchema.safeParse(
+    await response.json().catch(() => undefined),
+  );
+  if (!parsed.success) {
+    await settleImportDispatchUnknown(options, snapshot, entry);
+    return;
+  }
+  if (parsed.data.startBinding === "exists") {
+    await markStatus(options, entry, "acknowledged");
+  } else if (parsed.data.startBinding === "missing") {
+    await updateOutboxStatus(options.deps, {
+      commandId: dispatchCommandId("requeue-memory-import-outbox", entry.outboxId),
+      outboxId: entry.outboxId,
+      status: "pending",
+    });
+  } else {
+    await settleImportDispatchUnknown(options, snapshot, entry);
+  }
+}
+
 /** outcome_unknown对账：先查Runtime绑定是否已存在，再决定重派或确认，不盲目新建。 */
 async function reconcileUnknown(
   options: OutboxDispatcherOptions,
   snapshot: Snapshot,
-  entry: OutboxEntry,
+  entry: WorkflowEntry,
 ): Promise<void> {
   const params = new URLSearchParams({ productRunId: entry.productRunId });
-  if (entry.approvalRequestId !== undefined)
-    params.set("approvalRequestId", entry.approvalRequestId);
+  if (entry.kind === "workflow_resume") params.set("approvalRequestId", entry.approvalRequestId);
   let response: Response;
   try {
     response = await fetch(
@@ -341,13 +511,19 @@ export class OutboxDispatcher {
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       for (const entry of entries) {
         if (entry.kind === "workflow_start") await dispatchStart(this.options, snapshot, entry);
-        else await dispatchResume(this.options, snapshot, entry);
+        else if (entry.kind === "workflow_resume")
+          await dispatchResume(this.options, snapshot, entry);
+        else await dispatchMemoryImport(this.options, snapshot, entry);
       }
       const unknownEntries = Object.values(snapshot.outbox)
         .filter((entry) => entry.status === "outcome_unknown")
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       for (const entry of unknownEntries) {
-        await reconcileUnknown(this.options, snapshot, entry);
+        if (entry.kind === "workflow_start" || entry.kind === "workflow_resume") {
+          await reconcileUnknown(this.options, snapshot, entry);
+        } else {
+          await reconcileImportUnknown(this.options, snapshot, entry);
+        }
       }
     } finally {
       this.running = false;

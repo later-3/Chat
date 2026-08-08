@@ -10,6 +10,9 @@ export * from "./workflow-execution-steps.js";
 export * from "./workflow-result-steps.js";
 export * from "./workflow-error.js";
 export * from "./planning-execution-workflow.js";
+export * from "./memory-import-workflow.js";
+export * from "./memory-import-workflow-input.js";
+export * from "./memory-import-workflow-steps.js";
 export * from "./runtime-server.js";
 // Workflow Adapter边界的底层恢复原语；只能由本Adapter内的分发路径使用
 export { resumeHook, getHookByToken } from "workflow/api";

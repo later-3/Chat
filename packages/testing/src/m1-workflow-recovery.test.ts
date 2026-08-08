@@ -303,7 +303,7 @@ async function waitForRun(
     current = await readRunSnapshot(deps, productRunId);
   }
   const outbox = Object.values(current.snapshot.outbox)
-    .filter((entry) => entry.productRunId === productRunId)
+    .filter((entry) => "productRunId" in entry && entry.productRunId === productRunId)
     .map((entry) => ({ kind: entry.kind, status: entry.status, error: entry.lastErrorCode }));
   throw new Error(
     `${label}超时：${JSON.stringify({
@@ -526,7 +526,7 @@ describe("M1真实Local World恢复", () => {
         Object.keys(current.snapshot.entities.memoryAdoptions).length,
       ]).toEqual([1, 1, 1, 1]);
       const runOutbox = Object.values(current.snapshot.outbox).filter(
-        (entry) => entry.productRunId === productRunId,
+        (entry) => "productRunId" in entry && entry.productRunId === productRunId,
       );
       expect(runOutbox).toHaveLength(3);
       expect(runOutbox.every((entry) => entry.status === "acknowledged")).toBe(true);

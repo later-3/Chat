@@ -1,5 +1,15 @@
-import { MemoryBackendError, type MemoryQueryInput } from "@chat/application";
-import { productRunIdSchema, productSessionIdSchema } from "@chat/contracts";
+import {
+  MemoryBackendError,
+  MemoryImportBackendError,
+  type MemoryImportInput,
+  type MemoryQueryInput,
+} from "@chat/application";
+import {
+  memoryImportIntentIdSchema,
+  productRunIdSchema,
+  productSessionIdSchema,
+} from "@chat/contracts";
+import { computeMemoryImportRequestSha256 } from "@chat/domain";
 import { describe, expect, it } from "vitest";
 import { MEMMY_BACKEND_ID, MemmyMemoryAdapter, type MemmyAdapterOptions } from "./memmy-adapter.js";
 import { createMemoryBackendRegistry } from "./registry.js";
@@ -155,6 +165,90 @@ function adapter(fetchImpl: typeof fetch, options: Partial<MemmyAdapterOptions> 
   });
 }
 
+function importInput(overrides: Partial<MemoryImportInput> = {}): MemoryImportInput {
+  const shape = {
+    content: "M2 canary：发布前必须完成真实浏览器验收。",
+    layer: "L2" as const,
+    title: "M2 验收规则",
+    tags: ["m2", "release"],
+    turnId: "msg_importtest",
+  };
+  return {
+    operationId: memoryImportIntentIdSchema.parse("mii_importtest"),
+    requestSha256: computeMemoryImportRequestSha256(shape),
+    ...shape,
+    source: "chat.explicit_import",
+    sessionId: productSessionIdSchema.parse("psn_importtest"),
+    ...overrides,
+  };
+}
+
+function addBody(): Record<string, unknown> {
+  return {
+    id: "memory_import_1",
+    kind: "policy",
+    memoryLayer: "L2",
+    status: "activated",
+    title: "M2 验收规则",
+    summary: "M2 canary",
+    tags: ["manual", "m2", "release"],
+    createdAt: TEST_TIME,
+    serverTime: TEST_TIME,
+  };
+}
+
+function detailBody(): Record<string, unknown> {
+  const detail = {
+    id: "memory_import_1",
+    kind: "policy",
+    memoryLayer: "L2",
+    status: "activated",
+    title: "M2 验收规则",
+    summary: "M2 canary",
+    tags: ["manual", "m2", "release"],
+    metadata: {},
+    createdAt: TEST_TIME,
+    updatedAt: TEST_TIME,
+    version: 1,
+    body: "M2 canary：发布前必须完成真实浏览器验收。",
+    sourceMemoryIds: [],
+    policy: { evidenceMemoryIds: [], repairHints: [] },
+  };
+  return { ...detail, item: { ...detail, refs: {} }, refs: {}, etag: "etag-import-1" };
+}
+
+function importSearchBody(): Record<string, unknown> {
+  return {
+    injectedContext: "<memmy_memory_context>M2 canary</memmy_memory_context>",
+    debug: {
+      searchEventId: "search_import_1",
+      hits: [
+        hit({
+          id: "memory_import_1",
+          title: "M2 验收规则",
+          tags: ["manual", "m2", "release"],
+          score: 1,
+        }),
+      ],
+      sourceMemoryIds: ["memory_import_1"],
+      status: ["ok"],
+      sections: [
+        {
+          id: "memory-memory_import_1",
+          title: "M2 验收规则",
+          kind: "policy",
+          memoryLayer: "L2",
+          memoryIds: ["memory_import_1"],
+          content: "M2 canary：发布前必须完成真实浏览器验收。",
+          tokenEstimate: 20,
+        },
+      ],
+      tokenEstimate: 20,
+      serverTime: TEST_TIME,
+    },
+  };
+}
+
 async function backendError(promise: Promise<unknown>): Promise<MemoryBackendError> {
   try {
     await promise;
@@ -165,7 +259,151 @@ async function backendError(promise: Promise<unknown>): Promise<MemoryBackendErr
   throw new Error("expected MemoryBackendError");
 }
 
+async function importError(promise: Promise<unknown>): Promise<MemoryImportBackendError> {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error).toBeInstanceOf(MemoryImportBackendError);
+    return error as MemoryImportBackendError;
+  }
+  throw new Error("expected MemoryImportBackendError");
+}
+
 describe("MemmyMemoryAdapter", () => {
+  it("按固定合同发送L2 add，requestId使用稳定Intent身份且响应严格归一化", async () => {
+    let captured: unknown;
+    const memory = adapter(
+      fetchStub(async (input, init) => {
+        expect(String(input)).toBe("http://127.0.0.1:18960/api/v1/memory/add");
+        captured = JSON.parse(String(init?.body));
+        return jsonResponse(addBody());
+      }),
+    );
+    const result = await memory.import(importInput());
+    expect(captured).toEqual({
+      requestId: "mii_importtest",
+      adapterId: "chat",
+      namespace: { source: "chat", profileId: "chat-debug", sessionKey: "psn_importtest" },
+      content: "M2 canary：发布前必须完成真实浏览器验收。",
+      layer: "L2",
+      title: "M2 验收规则",
+      tags: ["m2", "release"],
+      turnId: "msg_importtest",
+      deferProcessing: false,
+    });
+    expect(result).toMatchObject({
+      externalObjectId: "memory_import_1",
+      externalStatus: "activated",
+    });
+    expect(result.responseSha256).toMatch(/^[a-f0-9]{64}$/u);
+  });
+
+  it("严格区分请求前失败、明确拒绝与请求发出后结果未知", async () => {
+    const invalidHash = await importError(
+      adapter(fetchStub(async () => jsonResponse(addBody()))).import(
+        importInput({ requestSha256: "a".repeat(64) }),
+      ),
+    );
+    expect(invalidHash).toMatchObject({
+      code: "memory.import.request_hash_mismatch",
+      phase: "before_external_call",
+    });
+
+    const protocolContent = "<memmy_memory_context>不能静默删除</memmy_memory_context>";
+    const protocolShape = {
+      content: protocolContent,
+      layer: "L2" as const,
+      title: "协议块",
+      tags: [],
+      turnId: "msg_protocol",
+    };
+    const normalized = await importError(
+      adapter(fetchStub(async () => jsonResponse(addBody()))).import(
+        importInput({
+          ...protocolShape,
+          requestSha256: computeMemoryImportRequestSha256(protocolShape),
+        }),
+      ),
+    );
+    expect(normalized).toMatchObject({
+      code: "memory.import.content_requires_normalization",
+      phase: "before_external_call",
+    });
+
+    const conflict = await importError(
+      adapter(fetchStub(async () => jsonResponse({}, 409))).import(importInput()),
+    );
+    expect(conflict).toMatchObject({
+      code: "memory.import.idempotency_conflict",
+      phase: "rejected_before_write",
+    });
+
+    const disconnected = await importError(
+      adapter(fetchStub(async () => Promise.reject(new Error("secret upstream detail")))).import(
+        importInput(),
+      ),
+    );
+    expect(disconnected).toMatchObject({
+      code: "memory.import.connection_lost",
+      phase: "write_outcome_unknown",
+    });
+    expect(disconnected.message).not.toContain("secret upstream detail");
+
+    const invalidSuccess = await importError(
+      adapter(fetchStub(async () => new Response("{broken", { status: 200 }))).import(
+        importInput(),
+      ),
+    );
+    expect(invalidSuccess).toMatchObject({
+      code: "memory.import.response_invalid",
+      phase: "write_outcome_unknown",
+    });
+  });
+
+  it("使用已知外部ID执行GET+Search双重验证后才返回materialized", async () => {
+    const calls: string[] = [];
+    const memory = adapter(
+      fetchStub(async (input) => {
+        const url = String(input);
+        calls.push(url);
+        if (url.endsWith("/api/v1/memory/memory_import_1")) return jsonResponse(detailBody());
+        if (url.endsWith("/api/v1/memory/search")) return jsonResponse(importSearchBody());
+        throw new Error("unexpected URL");
+      }),
+    );
+    const result = await memory.reconcile({
+      ...importInput(),
+      externalObjectId: "memory_import_1",
+    });
+    expect(result).toMatchObject({
+      status: "materialized",
+      accepted: { externalObjectId: "memory_import_1", externalObjectVersion: "1" },
+    });
+    expect(calls).toEqual([
+      "http://127.0.0.1:18960/api/v1/memory/memory_import_1",
+      "http://127.0.0.1:18960/api/v1/memory/search",
+    ]);
+  });
+
+  it("结果未知且没有外部ID时只用相同requestId做一次memmy原生幂等对账", async () => {
+    const requestIds: string[] = [];
+    const memory = adapter(
+      fetchStub(async (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/api/v1/memory/add")) {
+          requestIds.push((JSON.parse(String(init?.body)) as { requestId: string }).requestId);
+          return jsonResponse({ ...addBody(), duplicate: true });
+        }
+        if (url.endsWith("/api/v1/memory/memory_import_1")) return jsonResponse(detailBody());
+        if (url.endsWith("/api/v1/memory/search")) return jsonResponse(importSearchBody());
+        throw new Error("unexpected URL");
+      }),
+    );
+    await expect(memory.reconcile(importInput())).resolves.toMatchObject({
+      status: "materialized",
+    });
+    expect(requestIds).toEqual(["mii_importtest"]);
+  });
   it("发送固定 verbose query，并用去重 sourceMemoryIds 计算来源数", async () => {
     let capturedUrl = "";
     let capturedInit: RequestInit | undefined;
@@ -247,6 +485,30 @@ describe("MemmyMemoryAdapter", () => {
     await expect(memory.query(queryInput())).rejects.toMatchObject({
       code: "memory.backend.contract_invalid",
       retryable: false,
+    });
+  });
+
+  it("在JSON解析前拒绝Content-Length或流式正文超过字节上限", async () => {
+    const announced = adapter(
+      fetchStub(
+        async () =>
+          new Response("{}", {
+            status: 200,
+            headers: { "content-length": "2000000" },
+          }),
+      ),
+    );
+    await expect(announced.query(queryInput())).rejects.toMatchObject({
+      code: "memory.backend.contract_invalid",
+    });
+
+    const streamed = adapter(
+      fetchStub(async () => new Response("x".repeat(1_500_001), { status: 200 })),
+    );
+    const error = await importError(streamed.import(importInput()));
+    expect(error).toMatchObject({
+      code: "memory.import.response_invalid",
+      phase: "write_outcome_unknown",
     });
   });
 

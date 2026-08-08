@@ -349,7 +349,7 @@ async function readRun(deps: ApplicationDeps, productRunId: string) {
     .filter((message) => message.sourceRunId === productRunId)
     .sort((a, b) => a.sessionSequence - b.sessionSequence);
   const outbox = Object.values(snapshot.outbox).filter(
-    (entry) => entry.productRunId === productRunId,
+    (entry) => "productRunId" in entry && entry.productRunId === productRunId,
   );
   return { run, plans, approvals, messages, outbox, snapshot };
 }

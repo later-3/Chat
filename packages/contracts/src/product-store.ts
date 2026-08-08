@@ -22,6 +22,7 @@ import {
   memoryResultSnapshotSchema,
   runContextRequestSchema,
 } from "./context.js";
+import { memoryImportIntentSchema, memoryImportResultSchema } from "./memory-import.js";
 
 /**
  * Product Snapshot顶层合同（任务书§8.3）。
@@ -33,7 +34,7 @@ import {
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v2";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v3";
 
 const idKeySchema = z.string().min(1).max(200);
 
@@ -61,6 +62,8 @@ export const productSnapshotSchema = z
         memoryResultSnapshots: z.record(idKeySchema, memoryResultSnapshotSchema),
         memoryAdoptions: z.record(idKeySchema, memoryAdoptionSchema),
         contextPackages: z.record(idKeySchema, contextPackageSchema),
+        memoryImportIntents: z.record(idKeySchema, memoryImportIntentSchema),
+        memoryImportResults: z.record(idKeySchema, memoryImportResultSchema),
       })
       .strict(),
     commandReceipts: z.record(idKeySchema, commandReceiptSchema),
@@ -94,6 +97,8 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       memoryResultSnapshots: {},
       memoryAdoptions: {},
       contextPackages: {},
+      memoryImportIntents: {},
+      memoryImportResults: {},
     },
     commandReceipts: {},
     outbox: {},

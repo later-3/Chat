@@ -8,6 +8,8 @@ import {
   productSessionIdSchema,
   contextPackageIdSchema,
   memoryBackendIdSchema,
+  memoryImportIntentIdSchema,
+  memoryImportResultIdSchema,
   memoryQueryIdSchema,
   memoryResultSnapshotIdSchema,
 } from "./ids.js";
@@ -24,6 +26,10 @@ import {
 } from "./product.js";
 import { sha256Schema } from "./hash.js";
 import { memoryContextSelectionSchema, memoryLayerSchema } from "./context.js";
+import {
+  memoryImportCapabilitiesSchema,
+  memoryImportSourceSelectionSchema,
+} from "./memory-import.js";
 
 /**
  * B2公开Query/Command网络DTO（任务书§12）。
@@ -99,9 +105,22 @@ export const submitDecisionPayloadSchema = z
     }
   });
 
+export const createMemoryImportPayloadSchema = z
+  .object({
+    sourceSelection: memoryImportSourceSelectionSchema,
+    backendId: memoryBackendIdSchema,
+    title: z.string().min(1).max(200),
+    tags: z.array(z.string().min(1).max(64)).max(20),
+  })
+  .strict();
+
+export const reconcileMemoryImportPayloadSchema = z.object({}).strict();
+
 export type CreateSessionPayload = z.infer<typeof createSessionPayloadSchema>;
 export type SubmitMessagePayload = z.infer<typeof submitMessagePayloadSchema>;
 export type SubmitDecisionPayload = z.infer<typeof submitDecisionPayloadSchema>;
+export type CreateMemoryImportPayload = z.infer<typeof createMemoryImportPayloadSchema>;
+export type ReconcileMemoryImportPayload = z.infer<typeof reconcileMemoryImportPayloadSchema>;
 
 /* ---------- Memory backend 与 Run Context ---------- */
 
@@ -120,6 +139,7 @@ export const memoryBackendProfileDtoSchema = z
         layers: z.array(memoryLayerSchema).min(1).max(4),
         maxLimit: z.number().int().positive().max(20),
         maxContextBudget: z.number().int().min(128).max(8_192),
+        import: memoryImportCapabilitiesSchema.optional(),
       })
       .strict(),
   })
@@ -196,6 +216,74 @@ export const runContextDtoSchema = z
 export type MemoryBackendProfileDto = z.infer<typeof memoryBackendProfileDtoSchema>;
 export type RunContextDto = z.infer<typeof runContextDtoSchema>;
 
+/* ---------- Memory Import Query DTO ---------- */
+
+const memoryImportDtoBase = {
+  schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+  memoryImportIntentId: memoryImportIntentIdSchema,
+  memoryImportResultId: memoryImportResultIdSchema,
+  sessionId: productSessionIdSchema,
+  sourceMessageId: messageIdSchema,
+  selectionKind: z.enum(["full_message", "utf16_range"]),
+  sourcePreview: z.string().min(1).max(500),
+  backendId: memoryBackendIdSchema,
+  backendDisplayName: z.string().min(1).max(100),
+  memoryLayer: z.literal("L2"),
+  title: z.string().min(1).max(200),
+  tags: z.array(z.string().min(1).max(64)).max(20),
+  resultRevision: z.number().int().positive(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+};
+
+export const memoryImportDtoSchema = z.discriminatedUnion("status", [
+  z
+    .object({ ...memoryImportDtoBase, status: z.literal("queued"), allowedActions: z.tuple([]) })
+    .strict(),
+  z
+    .object({
+      ...memoryImportDtoBase,
+      status: z.literal("dispatching"),
+      allowedActions: z.union([z.tuple([]), z.tuple([z.literal("reconcile")])]),
+    })
+    .strict(),
+  z
+    .object({
+      ...memoryImportDtoBase,
+      status: z.literal("accepted"),
+      externalObjectId: z.string().min(1).max(200),
+      allowedActions: z.tuple([z.literal("reconcile")]),
+    })
+    .strict(),
+  z
+    .object({
+      ...memoryImportDtoBase,
+      status: z.literal("materialized"),
+      externalObjectId: z.string().min(1).max(200),
+      allowedActions: z.tuple([]),
+    })
+    .strict(),
+  z
+    .object({
+      ...memoryImportDtoBase,
+      status: z.literal("failed"),
+      errorCode: z.string().min(1).max(64),
+      summary: z.string().min(1).max(500),
+      allowedActions: z.tuple([]),
+    })
+    .strict(),
+  z
+    .object({
+      ...memoryImportDtoBase,
+      status: z.literal("outcome_unknown"),
+      errorCode: z.string().min(1).max(64),
+      allowedActions: z.tuple([z.literal("reconcile")]),
+    })
+    .strict(),
+]);
+
+export type MemoryImportDto = z.infer<typeof memoryImportDtoSchema>;
+
 /* ---------- Query DTO ---------- */
 
 export const sessionDtoSchema = z
@@ -219,6 +307,8 @@ export const messageDtoSchema = z
     role: messageRoleSchema,
     content: messageContentSchema,
     sourceRunId: productRunIdSchema.optional(),
+    /** 服务端对正式Message正文计算的版本化Hash，用于绑定导入选区。 */
+    sha256: sha256Schema,
     createdAt: z.iso.datetime(),
   })
   .strict();

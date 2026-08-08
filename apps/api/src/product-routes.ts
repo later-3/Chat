@@ -10,6 +10,9 @@ import {
   productSessionIdSchema,
   submitDecisionPayloadSchema,
   submitMessagePayloadSchema,
+  createMemoryImportPayloadSchema,
+  reconcileMemoryImportPayloadSchema,
+  memoryImportIntentIdSchema,
   type PrincipalId,
   type ProblemDetail,
   type RequestId,
@@ -30,6 +33,10 @@ import {
   runTraceId,
   submitPlanDecision,
   submitUserMessage,
+  createMemoryImport,
+  getMemoryImport,
+  listSessionMemoryImports,
+  requestMemoryImportReconciliation,
   type ApplicationDeps,
 } from "@chat/application";
 
@@ -229,6 +236,77 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
     }
   });
 
+  router.post("/memory-imports", async (c) => {
+    try {
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const payload = createMemoryImportPayloadSchema.parse(envelope.payload);
+      const result = await createMemoryImport(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/memory-imports",
+        statusCode: 201,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/memory-imports/:memoryImportIntentId", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const memoryImportIntentId = memoryImportIntentIdSchema.parse(
+        c.req.param("memoryImportIntentId"),
+      );
+      return c.json(
+        {
+          memoryImport: await getMemoryImport(ctx.deps, {
+            principalId: ctx.principalId,
+            memoryImportIntentId,
+          }),
+        },
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/memory-imports/:memoryImportIntentId/reconcile", async (c) => {
+    try {
+      const memoryImportIntentId = memoryImportIntentIdSchema.parse(
+        c.req.param("memoryImportIntentId"),
+      );
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      reconcileMemoryImportPayloadSchema.parse(envelope.payload);
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Memory Import对账必须携带expectedRevision",
+        });
+      }
+      const result = await requestMemoryImportReconciliation(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        memoryImportIntentId,
+        expectedResultRevision: envelope.expectedRevision,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/memory-imports/:memoryImportIntentId/reconcile",
+        statusCode: 202,
+      });
+      return c.json(result, 202);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
   router.post("/sessions", async (c) => {
     try {
       const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
@@ -296,6 +374,48 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
         limit,
       });
       return c.json(result.messages, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/sessions/:sessionId/memory-imports", async (c) => {
+    try {
+      const sessionId = productSessionIdSchema.parse(c.req.param("sessionId"));
+      const params = new URL(c.req.url).searchParams;
+      if (
+        [...params.keys()].some((key) => key !== "limit" && key !== "cursor") ||
+        params.getAll("limit").length > 1 ||
+        params.getAll("cursor").length > 1
+      ) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Memory Import列表包含未知或重复参数",
+        });
+      }
+      const rawLimit = params.get("limit");
+      if (
+        rawLimit !== null &&
+        (!/^[0-9]+$/u.test(rawLimit) || Number(rawLimit) < 1 || Number(rawLimit) > 100)
+      ) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "limit必须是正整数",
+        });
+      }
+      return c.json(
+        await listSessionMemoryImports(ctx.deps, {
+          principalId: ctx.principalId,
+          sessionId,
+          ...(rawLimit !== null ? { limit: Number(rawLimit) } : {}),
+          ...(params.get("cursor") !== null
+            ? { cursor: memoryImportIntentIdSchema.parse(params.get("cursor")) }
+            : {}),
+        }),
+        200,
+      );
     } catch (error) {
       return mapError(c, error);
     }

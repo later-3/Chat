@@ -170,6 +170,7 @@ function installFakeApi(initial?: Partial<FakeState>) {
         sessionSequence: state.messages.length + 1,
         role: "user",
         content: { format: "markdown", text: body.payload.text },
+        sha256: "a".repeat(64),
         createdAt: "2026-08-07T12:00:00.000Z",
       };
       state.messages.push(message);
@@ -361,6 +362,7 @@ function completeRun(state: FakeState) {
       text: "## 本周进展\n\n- A完成\n\n## 风险与下一步\n\n行动项1/2/3",
     },
     sourceRunId: "run_fake1" as never,
+    sha256: "b".repeat(64),
     createdAt: "2026-08-07T12:00:00.000Z",
   });
 }
@@ -630,6 +632,7 @@ describe("M3真实前端闭环", () => {
       sessionSequence: 1,
       role: "user",
       content: { format: "markdown", text: "之前发送的目标" },
+      sha256: "c".repeat(64),
       createdAt: "2026-08-07T12:00:00.000Z",
     });
     state.run = {

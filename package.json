@@ -22,7 +22,10 @@
     "memory:prepare:fixed": "node scripts/memory/prepare-fixed-memmy.mjs",
     "test:memory:scripts": "node --test scripts/memory/fixed-memmy.test.mjs",
     "test:memory:memmy-real-http": "pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-fixed-memmy-http.ts",
-    "test:e2e:memory-planning:real": "node scripts/e2e/run-memory-planning-real.mjs"
+    "test:memory:memmy-real-import": "pnpm test:memory:memmy-real-http",
+    "test:memory:memmy-response-drop": "pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-response-drop.ts",
+    "test:e2e:memory-planning:real": "node scripts/e2e/run-memory-planning-real.mjs planning",
+    "test:e2e:memory-import:real": "node scripts/e2e/run-memory-planning-real.mjs import"
   },
   "devDependencies": {
     "eslint": "^10.8.0",

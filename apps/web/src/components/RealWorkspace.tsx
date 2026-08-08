@@ -6,6 +6,7 @@ import { pendingSendPayload } from "../real/real-storage.js";
 import type { RealChainState } from "../real/use-real-chain.js";
 import { PlanPanel } from "./PlanPanel.js";
 import { ContextPicker } from "./ContextPicker.js";
+import { ChatMessageItem } from "./ChatMessageItem.js";
 
 /**
  * 真实规划—确认—执行工作区（M3最小真实前端闭环）。
@@ -153,12 +154,12 @@ function RealChatPane({
             </li>
           )}
           {messages.map((message) => (
-            <li className="chat-message" data-role={message.role} key={message.messageId}>
-              {message.role === "assistant" && <span className="message-author">Assistant</span>}
-              <div className="message-bubble">
-                <pre className="message-markdown">{message.content.text}</pre>
-              </div>
-            </li>
+            <ChatMessageItem
+              key={message.messageId}
+              message={message}
+              chain={chain}
+              backends={chain.memoryBackends.data ?? []}
+            />
           ))}
         </ol>
       </div>
