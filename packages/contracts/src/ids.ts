@@ -67,6 +67,14 @@ export const projectMilestoneIdSchema = prefixedId("pml");
 export const projectUpdateIdSchema = prefixedId("pup");
 export const projectStateTransitionIdSchema = prefixedId("ptr");
 
+/* R1/R2 用户规则身份；Revision与Selection必须能独立冻结、回放和审计。 */
+export const ruleIdSchema = prefixedId("rul");
+export const ruleRevisionIdSchema = prefixedId("rrv");
+export const ruleTagIdSchema = prefixedId("rtg");
+export const ruleScopeIdSchema = prefixedId("rsc");
+export const ruleDecisionIdSchema = prefixedId("rde");
+export const ruleSelectionIdSchema = prefixedId("rsl");
+
 /**
  * 服务端请求ID。客户端可提议复用，但必须通过本Schema才被信任；
  * 否则服务端生成新的req_*并在响应头返回最终生效ID。
@@ -119,3 +127,9 @@ export type ProjectCandidateId = z.infer<typeof projectCandidateIdSchema>;
 export type ProjectMilestoneId = z.infer<typeof projectMilestoneIdSchema>;
 export type ProjectUpdateId = z.infer<typeof projectUpdateIdSchema>;
 export type ProjectStateTransitionId = z.infer<typeof projectStateTransitionIdSchema>;
+export type RuleId = z.infer<typeof ruleIdSchema>;
+export type RuleRevisionId = z.infer<typeof ruleRevisionIdSchema>;
+export type RuleTagId = z.infer<typeof ruleTagIdSchema>;
+export type RuleScopeId = z.infer<typeof ruleScopeIdSchema>;
+export type RuleDecisionId = z.infer<typeof ruleDecisionIdSchema>;
+export type RuleSelectionId = z.infer<typeof ruleSelectionIdSchema>;

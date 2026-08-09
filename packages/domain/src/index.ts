@@ -12,3 +12,5 @@ export * from "./project.js";
 export * from "./workflow-view.js";
 export * from "./workflow-node-run.js";
 export * from "./workflow-definition-kernel.js";
+export * from "./rule-revision.js";
+export * from "./rule-selection.js";

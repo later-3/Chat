@@ -14,6 +14,8 @@ export * from "./memory-import.js";
 export * from "./project.js";
 export * from "./project-api.js";
 export * from "./project-internal-runtime.js";
+export * from "./rules.js";
+export * from "./rules-api.js";
 export * from "./product-store.js";
 export * from "./product-api.js";
 export * from "./internal-runtime.js";
