@@ -23,7 +23,7 @@ Project Solution让用户通过对话管理多个长期项目，并把自然语�
 
 1. **Project是产品事实，不是Prompt**：Product Store拥有Project身份、生命周期、方法、Work和决定。
 2. **真实资源保留自身所有权**：Git、文件、脚本、服务和外部系统保存资源正文与真实状态；Chat保存引用、Observation、Contribution和Evidence。
-3. **模型只负责解释与草拟**：pi返回运行时校验过的Interpretation/Draft；Application结合用户正式输入、Resource Evidence和Domain Policy编译Chat拥有的Candidate。建项、方法选择、Iteration、决定、贡献、状态和Correct Course未经确认不能成为权威事实。
+3. **自然语言理解与项目管理解耦**：可替换的`ProjectIntakeUnderstandingPort`只返回运行时校验过的理解结果；Application结合用户正式输入、Resource Evidence和Domain Policy编译Chat拥有的Candidate。建项、方法选择、Iteration、决定、贡献、状态和Correct Course未经确认不能成为权威事实。
 4. **阶段与迭代分离**：Stage表达长期成熟度，Iteration表达一次有限投入；一个Stage可包含多个Iteration。
 5. **进度不压成百分比**：阶段目标、Milestone、Iteration边界、未知度、负责人Update和Evidence分别表达。
 6. **Task允许被发现**：计划不假装提前知道所有Task；执行中可以新增discovered Action并记录来源。
@@ -32,15 +32,15 @@ Project Solution让用户通过对话管理多个长期项目，并把自然语�
 9. **副作用能力按Port拆分**：Observe、Write、Execute、Verify和Reconcile不能塞进一个万能Resource接口。
 10. **Chat是主要入口，UI是控制面**：用户可只靠说话驱动，界面用于观察、修改、确认和恢复。
 
-### 2.1 Interpretation、Candidate与Fact
+### 2.1 理解结果、Candidate与Fact
 
 | 层 | 所有者 | 作用 | 是否权威 |
 |---|---|---|---|
-| `ProjectIntakeInterpretation` | pi Runtime | 把自然语言解释为strict结构；可随模型与Prompt版本重新生成 | 否，不进入项目账本 |
-| `ProjectIntakeCandidate` | Chat Application/Product Store | 合并用户输入、Interpretation、Resource Evidence和Method/Domain规则，形成可修改、版本绑定的审核对象 | 否，等待用户决定 |
+| `ProjectIntakeUnderstanding` | `ProjectIntakeUnderstandingPort`的Adapter | 把自然语言转换为strict临时结构；可随实现、模型与Prompt版本重新生成 | 否，不进入项目账本 |
+| `ProjectIntakeCandidate` | Chat Application/Product Store | 合并用户输入、Understanding、Resource Evidence和Method/Domain规则，形成可修改、版本绑定的审核对象 | 否，等待用户决定 |
 | `Project`及初始事实 | Chat Product Store | 用户确认后在一个事务内提交的项目事实 | 是 |
 
-因此不存在“Qwen Candidate”这一产品层。`qwen3.7-plus`只是`ProjectIntakeInterpreter`当前冻结的真实Provider/模型；替换模型不能改变Candidate合同、Application不变量或用户确认流程。
+不存在“Qwen Candidate”或“Qwen项目管理”这一产品层。`ProjectIntakeUnderstandingPort`可以由pi Agent、其他模型Adapter或确定性解析器实现；Provider和模型由服务端Composition Root的Model Profile选择，不能进入Domain、Application命令或浏览器合同。当前使用哪个真实模型只属于部署配置和验收证据；替换模型不能改变Candidate合同、Application不变量或用户确认流程。
 
 ## 3. 领域层级
 
@@ -364,9 +364,9 @@ Method定义不是运行时DSL解释器。Domain中使用版本化纯函数，�
 
 ```text
 用户建项消息
-→ pi ProjectIntakeInterpreter生成strict ProjectIntakeInterpretation
+→ Chat通过ProjectIntakeUnderstandingPort理解建项诉求
 → Resource Observe
-→ Application结合用户输入、Interpretation、Resource Evidence和Method/Domain规则
+→ Application结合用户输入、Understanding、Resource Evidence和Method/Domain规则
 → 编译ProjectIntakeCandidate
 → 前端修改/确认
 → 原子提交Project、Method、Resource、Participant、Stage、初始Work/Action、Decision、Observation

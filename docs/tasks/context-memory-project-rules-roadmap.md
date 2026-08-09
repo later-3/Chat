@@ -131,19 +131,19 @@ Memory 选择器同时显示 memmy 与 Tencent MemoryCore。用户能选择任�
 
 ### 7.1 用户结果
 
-用户只用一句话和一个已允许的真实工作区建立Project；Chat使用qwen理解自然语言，真实观察Git、项目文档与脚本清单，再由Application编译可修改候选。用户确认后，Portfolio/Project Room能够回答项目目标、资源、参与者、初始Stage、谁负责什么、最近决定和待办，刷新/API/Workflow重启后恢复。
+用户只用一句话和一个已允许的真实工作区建立Project；Chat通过可替换的自然语言理解Port理解输入，真实观察Git、项目文档与脚本清单，再由Application编译可修改候选。用户确认后，Portfolio/Project Room能够回答项目目标、资源、参与者、初始Stage、谁负责什么、最近决定和待办，刷新/API/Workflow重启后恢复。
 
 ### 7.2 实现范围
 
 1. `Project/ProjectMethodSnapshot/ProjectStage/ProjectResource/ProjectParticipant/Work/ProjectAction/ProjectContribution/ProjectEvidence/ProjectDecision/ProjectObservation/ProjectCandidate`与Store v3→v4。
 2. 真实只读`local-git-workspace`、`project-document-manifest`与`package-script-catalog` Adapter；服务端允许根与路径安全。
-3. Project Intake Workflow：真实模型Interpretation→真实Resource Observe→Application编译Candidate→候选审核→用户确认→原子建项。
+3. Project Intake Workflow：自然语言理解Port→真实Resource Observe→Application编译Candidate→候选审核→用户确认→原子建项。
 4. Portfolio/Project Room、候选审核、参与者、资源、Work/待办、决定、贡献、观察与Timeline UI。
 5. 对话式新增/分派待办、记录Decision/Contribution Candidate和显式刷新Observation。
 
 ### 7.3 完成门
 
-1. 真实Chat、真实qwen3.7-plus、真实临时Git仓库和真实浏览器完成建项。
+1. 真实Chat、当前Model Profile选定的真实模型、真实临时Git仓库和真实浏览器完成建项；当前验收Profile使用百炼`qwen3.7-plus`，更换Profile不修改产品合同。
 2. 模型输出未经确认不能写Project；旧revision/并发确认失败关闭。
 3. Agent自述Contribution只能reported；verified必须有Resource/Workflow/Test Evidence。
 4. 路径/符号链接逃逸、秘密文件、大文件与预算攻击被拒绝。

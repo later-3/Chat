@@ -216,7 +216,7 @@ Memory Import Command
 
 ### 6.3 Project 管理与推进链
 
-用户以对话驱动Project。建项时，pi只产生strict `ProjectIntakeInterpretation`；Application结合用户输入、Resource Adapter对真实仓库/文档/脚本的只读观察以及Method/Domain规则，编译Chat拥有的`ProjectIntakeCandidate`。用户确认后才原子创建Project、Method Snapshot、初始Stage、Resource、Participant、Work/Action、Decision和Observation。
+用户以对话驱动Project。建项时，可替换的`ProjectIntakeUnderstandingPort`只产生strict临时理解结果；Application结合用户输入、Resource Adapter对真实仓库/文档/脚本的只读观察以及Method/Domain规则，编译Chat拥有的`ProjectIntakeCandidate`。用户确认后才原子创建Project、Method Snapshot、初始Stage、Resource、Participant、Work/Action、Decision和Observation。
 
 项目随后按独立循环推进：Stage Goal/Milestone管理长期结果；Proposal→Commitment→Iteration→Review管理有限投入；Work→Scope→Action管理交付结构；observe→compare→candidate→confirm→reconcile管理资源漂移。阶段推进、Iteration承诺/结果、Work完成、关键Artifact接受、Contribution确认和Correct Course都必须经过Application不变量与用户决定。
 
@@ -266,7 +266,7 @@ Trace 是不阻断产品事务的可观察证据：写入故障或进程在产�
 
 1. Memory 后端配置是服务端文件或环境变量；配置对象引用环境变量名，不把密钥值写入 JSON Product Store。
 2. API 与 Workflow 分别装配 Registry，因此冻结的后端描述和配置指纹必须包含 `authMode + credentialRevision`。启用 Bearer 时必须显式提供同一个非秘密凭据版本/keyId；禁止把 Token 本身或 Token Hash 用作漂移证据。两进程描述不一致时在外部查询前失败关闭。
-3. 百炼仍固定真实 `qwen3.7-plus`。本地测试优先复用 `/Users/xulater/.pi/agent/read-chat-provider-key.mjs` 从 pi 配置读取到子进程环境；不打印、不写入 Git，也不再次要求用户手工提供已存在的 Key。
+3. Agent Provider和模型使用服务端Model Profile配置，产品合同不得写死Provider或模型。当前真实验收Profile使用百炼`qwen3.7-plus`；本地测试优先复用`/Users/xulater/.pi/agent/read-chat-provider-key.mjs`从pi配置读取到子进程环境，不打印、不写入Git，也不再次要求用户手工提供已存在的Key。切换Profile必须重跑同一合同测试和真实E2E，不能修改Domain/API合同来迁就模型。
 4. Memory 服务固定到独立调试端口；启动前使用现有安全 preclean 机制，只清理自己登记且身份匹配的进程，未知占用只报告不杀。
 5. 弱服务器只接收本地构建产物；本阶段不在服务器编译，也不自动部署。
 

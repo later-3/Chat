@@ -7,7 +7,7 @@
 | 方法依据 | Shape Up、BMAD、Basecamp、Linear、Things与Chat现有事实/Workflow；采用、调整、拒绝见方法论文档 |
 | 本次用户结果 | 用户用一句话和真实工作区建立Project；Chat观察代码、文档与脚本，生成可修改候选；确认后形成可恢复的项目账本和管理页面 |
 | 交付方式 | 1个完整纵向PR；内部检查点不能作为半成品交付 |
-| 技术链 | 真实对话→pi/qwen Interpretation→只读Resource Adapter→Application编译Candidate→用户确认→Product Store v4→Portfolio/Project UI→真实E2E |
+| 技术链 | 真实对话→可替换Understanding Port→只读Resource Adapter→Application编译Candidate→用户确认→Product Store v4→Portfolio/Project UI→真实E2E |
 | 下一任务 | PS2 Stage、Milestone、Proposal、Iteration、Work/Scope/Action与Project Update管理闭环 |
 
 设计依据：
@@ -130,11 +130,11 @@ Shape Up提供小团队如何Shaping、设定Appetite、形成Commitment、按Cy
 Chat必须：
 
 1. 用户从Portfolio“新建项目”或对话中的可见“建项目”动作进入Intake模式；不靠隐藏模型分类器自动劫持普通任务消息。
-2. pi解析目标和资源定位，生成strict `ProjectIntakeInterpretation`；它不是Candidate，也不直接创建Project。
+2. Chat通过`ProjectIntakeUnderstandingPort`理解目标和资源定位，生成strict临时理解结果；它不是Candidate，也不直接创建Project。
 3. 使用Resource Adapter只读观察真实工作区。
 4. 识别Git状态、主要文档、可用脚本、测试与项目结构。
 5. 根据证据建议项目类型、Shape Up/BMAD组合profile或轻量方法，并解释理由。
-6. Application结合用户输入、Interpretation、资源证据和Domain规则，编译初始范围、成功标准、参与者、Work和Action组成的`ProjectIntakeCandidate`。
+6. Application结合用户输入、Understanding、资源证据和Domain规则，编译初始范围、成功标准、参与者、Work和Action组成的`ProjectIntakeCandidate`。
 7. 在前端展示可修改候选。
 8. 用户确认后，一次事务提交Project及全部初始事实。
 
@@ -257,8 +257,8 @@ Trace不能复制目标、决定理由、Contribution摘要、文档正文、Dif
    - `package-script-catalog.v1`：从受支持manifest读取脚本名称和用途；PS1禁止执行任意脚本。
 3. 服务端Resource Registry、允许根目录和安全locator合同；浏览器不能提交任意绝对路径直接读取服务器。
 4. Portfolio/Chat提供可见Project Intake模式，公开命令使用字面量意图；普通消息默认仍走现有规划链。
-5. 真实百炼`qwen3.7-plus`的Project Intake解释节点，输出strict `ProjectIntakeInterpretation`。
-6. Application结合用户正式输入、Interpretation、Resource Evidence和Method/Domain规则编译`ProjectIntakeCandidate`；候选可修改/确认，模型输出不能直接成为Candidate或Project事实。
+5. 模型无关的`ProjectIntakeUnderstandingPort`与pi Agent Adapter，输出strict `ProjectIntakeUnderstanding`；Provider/模型由服务端Model Profile配置，不能出现在Domain、Application命令或浏览器合同。
+6. Application结合用户正式输入、Understanding、Resource Evidence和Method/Domain规则编译`ProjectIntakeCandidate`；候选可修改/确认，模型输出不能直接成为Candidate或Project事实。
 7. 确认后原子创建Project、Method Snapshot、初始Stage Goal、Resources、用户Participant、初始Work/Action、建项Decision、Evidence和首个Observation。
 8. 对话式管理命令候选：新增/分派待办、记录决定、记录已发生贡献、刷新Observation。
 9. 项目列表、详情、参与者、资源、Work/待办、决定、贡献和时间线的响应式UI。
@@ -283,10 +283,10 @@ Trace不能复制目标、决定理由、Contribution摘要、文档正文、Dif
 “把Chat仓库建成一个项目，目标是持续开发Chat产品，先告诉我目前谁在做什么、有哪些待办。”
 
 → Message Command创建Product Run
-→ Project Intake节点调用真实qwen3.7-plus
-→ pi只返回strict ProjectIntakeInterpretation
+→ Project Intake节点调用ProjectIntakeUnderstandingPort
+→ 当前Model Profile对应的真实Adapter返回strict ProjectIntakeUnderstanding
 → local-git/document/script Adapter观察真实仓库
-→ Application将用户输入、Interpretation、资源证据与Method/Domain规则编译成ProjectIntakeCandidate
+→ Application将用户输入、Understanding、资源证据与Method/Domain规则编译成ProjectIntakeCandidate
 → Workflow等待用户确认
 → 前端展示目标、范围、方法、资源、参与者、Work/Action和证据
 → 用户修改/确认
@@ -368,7 +368,7 @@ Snapshot Integrity至少校验Map key/ID、owner、Method Hash、Stage引用、R
 
 ### 12.2 Workflow
 
-新增独立`ProjectIntakeWorkflow`。它拥有建项解释、Resource Observe、Candidate编译、Hook等待和确认提交这一项独立用户结果，不能塞进以Plan Revision/Execution Contract为状态核心的`PlanningExecutionWorkflow`；仓库已有独立`MemoryImportWorkflow`证明同一Runtime可承载不同产品Workflow。耐久链必须包含：Outbox启动、真实模型Interpretation、真实Resource Observe、Application编译Candidate、候选发布、Hook等待、确认后提交。浏览器不接触Workflow ID、Hook Token或pi Session ID。
+新增独立`ProjectIntakeWorkflow`。它拥有建项理解、Resource Observe、Candidate编译、Hook等待和确认提交这一项独立用户结果，不能塞进以Plan Revision/Execution Contract为状态核心的`PlanningExecutionWorkflow`；仓库已有独立`MemoryImportWorkflow`证明同一Runtime可承载不同产品Workflow。耐久链必须包含：Outbox启动、模型无关Understanding Port、真实Resource Observe、Application编译Candidate、候选发布、Hook等待、确认后提交。浏览器不接触Workflow ID、Hook Token或pi Session ID。
 
 ### 12.3 公开API
 
@@ -430,7 +430,7 @@ Trace只记录对象ID、revision、Hash、adapter kind、actor产品ID、耗时
 
 ### 15.3 真实模型与浏览器E2E
 
-1. 真实qwen3.7-plus从自然语言生成strict `ProjectIntakeInterpretation`；Application生成的Candidate必须包含真实Resource Evidence和Domain默认值。
+1. 当前服务端Model Profile选定的真实模型从自然语言生成strict `ProjectIntakeUnderstanding`；Application生成的Candidate必须包含真实Resource Evidence和Domain默认值。当前验收Profile使用百炼`qwen3.7-plus`，但相同E2E可通过配置切换模型且不改产品代码或合同。
 2. 浏览器从真实Chat发送建项消息，观察真实仓库，修改并确认候选。
 3. 页面显示真实Project、Resources、Participants、Work/Actions、Decision和Observation。
 4. 第二条对话记录“谁负责什么”和一条项目Decision，确认后Timeline正确。
@@ -450,7 +450,7 @@ packages/application     Intake/确认/管理/Observe用例与事务
 packages/project-runtime Resource Port、Registry与只读Adapters
 packages/product-store-json v3→v4与Integrity
 packages/workflows       Project Intake耐久链
-packages/pi-runtime      严格Project Interpretation Adapter
+packages/pi-runtime      模型无关Project Understanding Adapter
 apps/api                 REST与组合根
 apps/web                 Portfolio、Project Workspace、候选审核
 packages/testing         真实Git fixture与E2E工具
@@ -479,7 +479,7 @@ packages/testing         真实Git fixture与E2E工具
 1. Project是否采用“目标+方法/阶段+真实资源+参与者+工作+决定+贡献+证据”的定义。
 2. Chat是否以对话为主要驱动，表单/UI作为观察与确认手段。
 3. PS1是否必须真实读取Git工作区、项目文档与脚本清单。
-4. 是否接受模型只生成Interpretation/Draft，Chat Application编译Candidate，用户确认后才写Project事实。
+4. 是否接受可替换的理解Port只生成临时Understanding/Draft，Chat Application编译Candidate，用户确认后才写Project事实。
 5. 是否接受Contribution区分reported与verified，不能把Agent自述当证据。
 6. 是否接受Stage与Iteration彻底分离；PS1只建立初始Stage，PS2打通完整Iteration管理。
 7. 是否接受PS1先做真实只读Observe；资源写入、脚本执行和验证在PS3开放。
