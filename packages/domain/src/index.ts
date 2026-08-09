@@ -11,3 +11,4 @@ export * from "./memory-import.js";
 export * from "./project.js";
 export * from "./workflow-view.js";
 export * from "./workflow-node-run.js";
+export * from "./workflow-definition-kernel.js";

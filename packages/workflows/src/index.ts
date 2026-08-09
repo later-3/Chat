@@ -19,5 +19,10 @@ export * from "./project-advancement-workflow.js";
 export * from "./project-advancement-workflow-steps.js";
 export * from "./runtime-server.js";
 export * from "./local-version-recovery.js";
+export * from "./definition-kernel-executor-registry.js";
+export * from "./definition-kernel-lab-runtime.js";
+export * from "./definition-kernel-lab-steps.js";
+export * from "./definition-kernel-lab-workflow.js";
+export * from "./definition-kernel-lab-test-adapter.js";
 // Workflow Adapter边界的底层恢复原语；只能由本Adapter内的分发路径使用
 export { resumeHook, getHookByToken } from "workflow/api";

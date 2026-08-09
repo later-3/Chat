@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@chat/contracts": "workspace:*",
-    "@chat/domain": "workspace:*"
+    "@chat/domain": "workspace:*",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
