@@ -104,14 +104,18 @@ Workflow 为保证 Worker 重启后不重复付费调用或丢失外部查询结
 
 ### 4.3 Project 对象
 
-1. `Project`：目标、项目类型、当前阶段、方法模板版本和生命周期。
-2. `ProjectMethodTemplate`：阶段、允许转换、必需/可选文档角色、推进门；内置 `bmad-software.v1`，项目可裁剪并固定模板版本。
-3. `Work`：可执行工作项，默认状态 `draft/approved/in_progress/review/done/cancelled`，携带验收条件、依赖和负责人。
-4. `ProjectDocument`：文档角色、URI/存储引用、revision、sha256、状态；角色包括 brief、prd、ux、architecture、story、qa、change-proposal，也允许自定义角色。
-5. `ProjectDecision`：阶段推进、范围变化、文档接受等用户决定。
-6. `ProjectChangeProposal`：Correct Course 候选；在用户确认前不修改权威项目状态。
+1. `Project`：长期目标、范围、成功标准、项目类型、当前状态、方法版本和生命周期；它不是Session、仓库或任务列表。
+2. `ProjectResource`：项目拥有或引用的仓库、目录、文档、脚本、服务和外部系统；保存安全locator、Adapter类型、能力、revision/Hash，不复制全部资源正文。
+3. `ProjectParticipant`：用户、Agent、自动化和外部参与方的项目身份、角色、能力范围与有效状态。
+4. `ProjectMethodTemplate`：阶段、允许转换、必需/可选Artifact角色、推进门；内置BMAD启发的软件profile和轻量profile，项目固定所选版本。
+5. `Work`：有明确交付结果的工作单元，携带验收条件、依赖、风险和当前负责人。
+6. `ProjectAction`：Work下的具体待办、负责人、阻塞、状态与完成证据。
+7. `ProjectContribution`：不可变记录谁做了什么、影响了哪个Resource版本、关联哪个Work/Action和哪些验证证据；Agent自述与已验证贡献必须区分。
+8. `ProjectDecision`：问题、选项、选择、理由、决策者、受影响对象和版本绑定；阶段推进只是其中一种决定。
+9. `ProjectObservation`：Resource Adapter某一时刻产生的不可变真实资源观察，用于发现代码、文档、脚本与Project记录的漂移。
+10. `ProjectChangeProposal`：Correct Course候选；在用户确认前不修改权威项目状态或真实资源。
 
-项目模板是约束检查器，不是脚手架监狱。非软件项目可以选择轻量模板，只保留目标、阶段、工作、文档和决定这五类稳定概念。
+项目模板是推进方法，不是脚手架监狱。Project的稳定核心是目标、真实资源、参与者、工作/待办、贡献、决定、证据和观察；BMAD只为软件项目的阶段、Artifact、质量门和纠偏方式提供输入。
 
 ### 4.4 Rule 对象
 
@@ -202,9 +206,11 @@ Memory Import Command
 
 导入使用独立耐久 Workflow，因为它有自己的用户结果和外部副作用生命周期；它不改变 `PlanningExecutionWorkflow` 的唯一性。
 
-### 6.3 Project 推进链
+### 6.3 Project 管理与推进链
 
-模型只能产生 `ProjectChangeCandidate`。阶段推进、Work 完成、关键文档接受和 Correct Course 必须经过 Application 不变量与用户决定，再成为 `ProjectDecision`。简单的标题、标签等低风险修改可直接使用普通 Command，但仍需 expectedRevision。
+用户以对话驱动Project。建项时，模型只产生`ProjectIntakeCandidate`，Resource Adapter只读观察真实仓库、文档与脚本，用户确认后才原子创建Project、Resource、Participant、Work/Action、Decision和Observation。维护时通过`observe → compare → maintenance candidate → user confirm → reconcile`发现资源漂移。
+
+推进时，模型只能产生版本绑定的Project/Work/Resource候选。阶段推进、Work完成、关键Artifact接受、Contribution确认和Correct Course必须经过Application不变量与用户决定，再成为权威事实。简单标题等低风险修改仍需expectedRevision。
 
 ## 7. API 与最小统一 UI
 
@@ -222,7 +228,7 @@ Memory Import Command
 在现有响应式 PWA 内增加一致的侧栏/抽屉页面：
 
 1. Memory 后端：只展示配置状态、能力和健康，不编辑密钥。
-2. Projects：项目、阶段、Work、文档清单与变更候选。
+2. Projects：项目组合、真实资源、参与者、阶段、Work/待办、贡献、决定、观察、证据和变更候选。
 3. Rules：规则 CRUD、标签、Scope、生命周期、筛选与启停。
 
 桌面与手机使用同一组件和信息架构；手机不得新增横向溢出或遮挡输入区。
