@@ -1614,6 +1614,30 @@ button:disabled {
   background: transparent;
 }
 
+/* Keep project copy, filters, and sections on one optical measure. */
+.project-view:not(.list-view):not(.area-view) .project-intro,
+.project-view:not(.list-view):not(.area-view) .project-sections {
+  width: min(683px, calc(100% - 45px));
+  max-width: none;
+  box-sizing: border-box;
+}
+
+.project-view:not(.list-view):not(.area-view) .project-section-heading h2 {
+  font-size: 19px;
+  line-height: 24px;
+  letter-spacing: -0.2px;
+  font-weight: 700;
+}
+
+/* Things leaves a calm beat between a Heading rule and its first to-do. */
+.project-list .project-section-heading + .task-row {
+  margin-top: 18px;
+}
+
+.project-list .project-section-heading + .empty-project {
+  margin-top: 18px;
+}
+
 .project-direct-tags {
   margin: -27px 0 30px 45px;
 }

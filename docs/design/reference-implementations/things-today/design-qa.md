@@ -117,4 +117,17 @@ Fix: introduced the normalized Things model, distinct list projections and dialo
 
 No actionable P0/P1/P2 issue remains.
 
+### v0.3 Project spacing polish
+
+- User source crop: `evidence/interaction-audit/source-project-spacing-user.png` (local ignored evidence copied from the supplied clipboard attachment).
+- Official comparison crop: `evidence/interaction-audit/source-project-spacing-official.png`, derived from the official Project/Headings visual.
+- Post-fix browser evidence: `evidence/interaction-audit/implementation-project-spacing-v1.png` and its focused crop `implementation-project-spacing-v1-focus.png`.
+- State: Vacation in Rome Project, collapsed “Things to do” Heading, first active to-do visible.
+- `[P2]` Earlier finding: the first task row began at the Heading rule with `0px` separation, making the rule, checkbox, and task title feel crowded.
+- Fix: introduced an `18px` Heading-to-first-row rhythm and applied the same rhythm to empty Heading states.
+- `[P2]` Earlier finding: Project notes used a `620px` measure while the Heading sections used the remaining `683px` measure, producing visibly different right edges.
+- Fix: Project copy and sections now share one responsive `683px` optical measure and explicit Heading typography.
+- Post-fix measurement at the active scaled viewport: `16.25px` visible Heading-to-first-row gap; Project note and section right edges both end at `x=1042.07`.
+- Focused comparison: the post-fix title/rule/first-row rhythm now matches the official reference anatomy; no actionable P0/P1/P2 difference remains.
+
 final result: passed
