@@ -106,8 +106,10 @@ test("真实Project：对话建项→推进修订/确认→项目账本→管理
   expect(
     [(await firstDecisionResponse).status(), (await secondDecisionResponse).status()].sort(),
   ).toEqual([201, 409]);
-  await expect(page.getByRole("heading", { name: "Chat产品工程" })).toBeVisible();
+  // 不假定哪一页赢得CAS；两页都重新Query权威事实后必须收敛到同一Project。
+  await page.reload();
   await second.reload();
+  await expect(page.getByRole("heading", { name: "Chat产品工程" })).toBeVisible();
   await expect(second.getByRole("heading", { name: "Chat产品工程" })).toBeVisible();
 
   const projectResponse = await page.evaluate(async () => {
