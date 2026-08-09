@@ -142,6 +142,13 @@ function RealChatPane({
     writeDraft(window.localStorage, sessionId, text);
   }
 
+  /**
+   * 调试导航①：用户点击“发送”的UI边界。
+   *
+   * 这里还没有产生任何服务端事实，只把文本和本轮显式选择的Context交给
+   * useRealChain。真正的commandId、网络未知恢复和Product Run定位都在
+   * use-real-chain.ts的sendMessage/sendMutation中处理，组件不能提前显示“已提交”。
+   */
   function send() {
     if (!canSend) return;
     setContextEditorOpen(false);

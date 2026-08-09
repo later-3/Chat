@@ -200,4 +200,6 @@ M3合入后的下一阶段是Project Solution，先完成[方法论](./docs/prod
 
 PS1已经完成对话建项、真实Resource、项目账本和最小管理候选闭环，完整范围与证据见[PS1 Project Intake](./docs/tasks/ps1-project-intake-ledger-vertical-slice.md)。当前唯一下一实现任务是PS2：一次打通Stage Goal/Milestone、Proposal/Iteration Commitment、Work/Action推进和负责人Project Update；任务书审核通过前不得开始实现。Rules按R1→R2在Project Solution完成后的下一个Store版本推进。
 
+统一应用启动与调试属于进入P1前的工程维护任务：仓库级`pnpm dev/dev:debug`和单一VS Code入口已完成本地实现与真实F5验收，待独立PR；它不改变上述产品任务顺序。
+
 这三个结果形成若干0.5～2日、可独立合并的纵向任务。不得把整个阶段塞进一个大PR，也不得只交付孤立Schema或假服务；每个外部集成必须有真实服务测试，每个面向用户的里程碑必须有真实模型和浏览器E2E。

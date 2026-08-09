@@ -1,4 +1,11 @@
-import { checkPorts, frozenPortList, loadPidEntries, terminateRecorded } from "./lib.mjs";
+import {
+  checkPorts,
+  frozenPortList,
+  loadPidEntries,
+  repoRoot,
+  terminateOwnedChatPortProcesses,
+  terminateRecorded,
+} from "./lib.mjs";
 
 /**
  * chat-debug:preclean（任务书§8.2）。
@@ -6,9 +13,10 @@ import { checkPorts, frozenPortList, loadPidEntries, terminateRecorded } from ".
  * 1. 按pids.json向上次Chat调试进程发送SIGTERM，有限等待后仅对仍存活且
  *    身份一致者SIGKILL；
  * 2. 检查全部冻结端口；
- * 3. 端口仍被本轮记录进程占用时清理后复查一次；
- * 4. 端口被未知应用占用时报告端口/PID/进程名并失败退出，绝不杀未知进程；
- * 5. 端口全部释放才退出码0。
+ * 3. PID登记缺失时只清理经端口角色、命令、cwd与Git Common Directory四重验证的同仓库进程；
+ * 4. 清理后复查一次；
+ * 5. 端口被未知应用占用时报告端口/PID/进程名并失败退出，绝不杀未知进程；
+ * 6. 端口全部释放才退出码0。
  */
 
 const entries = loadPidEntries();
@@ -18,7 +26,11 @@ for (const result of results) {
 }
 
 let occupied = checkPorts();
-if (occupied.length > 0 && entries.length > 0) {
+const recovered = terminateOwnedChatPortProcesses(repoRoot(), occupied);
+for (const result of recovered) {
+  console.log(`[preclean] 同仓库遗留 ${result.role} pid=${result.pid}: ${result.action}`);
+}
+if (occupied.length > 0 && (entries.length > 0 || recovered.length > 0)) {
   // 刚清理的进程可能尚未释放端口，等待后复查一次
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
   occupied = checkPorts();

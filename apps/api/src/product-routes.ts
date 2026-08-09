@@ -701,6 +701,14 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
     }
   });
 
+  /**
+   * 调试导航④：浏览器Message Command进入Chat后端的唯一公开入口。
+   *
+   * 三层校验分别回答：URL属于哪个Session、命令是否有幂等身份、业务Payload是否符合公开合同。
+   * submitUserMessage会在一个Product Store事务中提交Message、Run、ContextRequest、
+   * Workflow Attempt和workflow_start Outbox；本Router不直接调用Workflow。
+   * HTTP 201只表示这些Chat产品事实已提交，后台Workflow结果由后续Query投影。
+   */
   router.post("/sessions/:sessionId/messages", async (c) => {
     try {
       const sessionId = productSessionIdSchema.parse(c.req.param("sessionId"));
@@ -783,6 +791,11 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
     }
   });
 
+  /**
+   * 调试导航：下面4个Run Query是浏览器的权威回读面。
+   * Run、Context、Plans和Approval分开投影，各自经过权限与公开DTO裁剪；它们只读Product Store，
+   * 不读取Workflow返回值、Hook或pi会话。前端轮询这些资源，所以在这里断点会重复命中。
+   */
   router.get("/runs/:productRunId", async (c) => {
     try {
       assertNoQuery(c.req.url);
@@ -832,6 +845,13 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
     }
   });
 
+  /**
+   * 调试导航⑨：浏览器对当前Plan提交决定，而不是直接恢复Workflow Hook。
+   *
+   * expectedRevision是Product Run的乐观锁：用户看到旧计划后，若Run已变化，服务端返回409，
+   * 防止旧页面批准新状态。submitPlanDecision会在同一事务中提交Decision、更新Plan/Approval/Run，
+   * 并写入workflow_resume Outbox；201只表示决定已成为产品事实，不表示Hook已经恢复或执行完成。
+   */
   router.post("/runs/:productRunId/decisions", async (c) => {
     try {
       const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));

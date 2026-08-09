@@ -2,7 +2,7 @@
 
 > 文档类型：当前实现（as-built）导航
 >
-> 核对基线：`origin/main` @ `5616609` + PS1实现分支
+> 核对基线：当前本地`main`（`origin/main` PS1基线 + 统一启动调试修复）
 >
 > 当前能力事实以根目录[PROJECT_STATE.md](../../PROJECT_STATE.md)为准；目标架构以[技术合同](./technology-contract.md)为准。
 
@@ -35,12 +35,13 @@ Chat/
 │   ├── realtime/               当前Trace与Replay；未来承接Runtime Journal/SSE
 │   └── testing/                跨包架构、集成、恢复和调试合同测试
 ├── scripts/
-│   ├── debug/                  固定端口、进程登记、等待链和安全清理
+│   ├── dev/                    Chat应用服务图、健康门、日志汇总和生命周期监督
+│   ├── debug/                  固定端口、进程登记和低层安全清理
 │   ├── e2e/                    真实浏览器/真实模型场景编排
 │   └── memory/                 两个固定Memory参考服务及真实HTTP验证
 ├── docs/                       产品、架构、任务、调试、部署和设计文档
 ├── diagram/                    已提交的架构图导出物
-├── .vscode/                    可复现的F5 Compound与Task配置
+├── .vscode/                    调用仓库启动器的单一应用级F5入口
 ├── .github/workflows/          CI质量门
 ├── AGENTS.md                   长期协作边界与强制架构规则
 ├── PROJECT_CONTEXT.md          产品上下文与核心对象
@@ -134,9 +135,10 @@ workflows ─┬─> pi-runtime
 
 | 用户行为/故障 | 第一入口 | 下一层 |
 |---|---|---|
-| 页面启动、创建Session | `apps/web/src/App.tsx`、`use-real-chain.ts` | `api/client.ts` → `product-routes.ts` → `session-message-use-cases.ts` |
-| 发送消息并启动规划 | `use-real-chain.ts` | Message Route → Application事务 → Outbox Dispatcher → Planning Workflow |
-| 修改/批准/拒绝Plan | `RealWorkspace.tsx` | Decision Route → `plan-decision-use-cases.ts` → Resume Outbox → Hook |
+| 页面启动、创建Session | `apps/web/src/App.tsx`、`useRealChain`的Bootstrap Query | `apiCreateSession` → Session Route → `createProductSession` |
+| 发送消息并启动规划 | `RealChatPane.send` → `useRealChain.sendMessage` | `apiSubmitMessage` → Message Route → `submitUserMessage` → `dispatchStart` → `planningExecutionWorkflow` |
+| 修改/批准/拒绝Plan | `DecisionBox.requestRevision/approve/reject` | `beginDecision` → `apiSubmitDecision` → `submitPlanDecision` → `dispatchResume` → Hook |
+| 执行结果成为正式回复 | `planningExecutionWorkflow`批准分支 | `runPiExecutorStep` → `persistExecutionCandidateStep` → `validateExecutionStep` → `commitExecutionResultStep` |
 | Memory规划召回 | `ContextPicker.tsx` | Planning Context Application → Workflow Memory Step → Memory Adapter |
 | 显式导入Memory | `ChatMessageItem.tsx`/`RealWorkspace.tsx` | Memory Import Route → Outbox → Memory Import Workflow → Adapter |
 | 对话建项 | `RealWorkspace.tsx`/`use-project-chain.ts` | Project Intake Route → Outbox → Project Intake Workflow → pi Understanding + Resource Observe → Candidate Hook |
@@ -145,7 +147,9 @@ workflows ─┬─> pi-runtime
 | Product Store损坏/迁移 | API启动 | `composition.ts` → `json-product-store.ts` → `snapshot-integrity.ts`/迁移 |
 | Provider或候选失败 | Workflow Step | `pi-runtime` → 失败归一化 → Application失败提交 |
 | 回放一次Run | `apps/api/src/replay-main.ts` | `packages/realtime/src/replay.ts` + Product Store + 版本证据 |
-| VS Code启动失败 | `.vscode/launch.json`/`tasks.json` | `scripts/debug/` → `docs/debug/local-debug.md` |
+| 本地应用/VS Code启动失败 | `scripts/dev/start.mjs` | `scripts/dev/app-runtime.mjs`/`browser-lifecycle.mjs` → `docs/debug/local-debug.md` |
+
+完整断点顺序、调试进程归属和Watch变量见[本地调试与Trace](../debug/local-debug.md)；请求、DTO与产品事实的转换见[前后端交互](./frontend-backend-interaction.md)。
 
 ## 7. 文档类型与事实优先级
 

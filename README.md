@@ -41,6 +41,14 @@ memmy与Tencent MemoryCore两套真实Memory后端的查询、显式导入和对
 
 ## 文档入口
 
+如果目的是熟悉代码或单步调试，先按这个顺序阅读：
+
+1. [本地调试与Trace](./docs/debug/local-debug.md)：按场景列出前端、API、Application、Outbox和Workflow的文件、函数、观察变量。
+2. [前后端交互（当前实现）](./docs/architecture/frontend-backend-interaction.md)：解释请求/响应、关键数据结构、身份和状态所有权。
+3. [仓库目录与关键文件地图（当前实现）](./docs/architecture/repository-map.md)：从用户行为定位目录与模块边界。
+
+下面是完整项目文档入口：
+
 1. [Chat概念空间](./docs/product/concept-space.md)
 2. [项目上下文](./PROJECT_CONTEXT.md)
 3. [当前状态](./PROJECT_STATE.md)

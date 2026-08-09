@@ -146,6 +146,11 @@ async function parseProblem(res: Response): Promise<never> {
   }
 }
 
+/**
+ * 公开Command传输边界。HTTP非2xx是服务端已分类失败；fetch异常或2xx响应无法通过Schema时，
+ * 服务端可能已经提交，因此统一归为network_unknown，由上层复用原commandId人工重试。
+ * 本函数不做自动重试，避免把一次用户意图变成两次写命令。
+ */
 async function post<TRes>(
   path: string,
   body: unknown,
@@ -179,6 +184,10 @@ async function post<TRes>(
   }
 }
 
+/**
+ * 公开Query传输边界。Query无产品副作用，可以由TanStack Query按页面可见性和Run状态重新读取；
+ * 即使HTTP 200也必须通过对应DTO Schema，防止损坏或越界字段进入React状态。
+ */
 async function get<TRes>(path: string, parse: (json: unknown) => TRes): Promise<TRes> {
   let res: Response;
   try {
@@ -210,6 +219,8 @@ export function apiSubmitMessage(
   commandId: CommandId,
   payload: SubmitMessagePayload,
 ): Promise<{ message: MessageDto; run: RunDto }> {
+  // 调试导航③：公开HTTP合同边界。CommandEnvelope把可重试的commandId与业务payload分开；
+  // 返回的Message/Run是服务端已提交事实，但只表示“消息与Run已受理”，不表示Workflow已完成。
   return post(
     `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
     commandEnvelopeSchema.parse({
@@ -267,6 +278,8 @@ export function apiSubmitDecision(input: {
   expectedRunRevision: number;
   payload: SubmitDecisionPayload;
 }): Promise<{ decision: DecisionDto; run: RunDto }> {
+  // Decision同时绑定Run revision（CAS）和Plan三元组（ID/revision/Hash）；
+  // API返回Decision/Run仍只代表产品事务成功，Workflow Resume在Outbox中异步发生。
   return post(
     `/api/runs/${encodeURIComponent(input.productRunId)}/decisions`,
     commandEnvelopeSchema.parse({

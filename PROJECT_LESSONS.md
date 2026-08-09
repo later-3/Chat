@@ -204,15 +204,38 @@ Memory、项目管理和规则系统不能只凭抽象接口或模型直觉设�
 
 检查：增加第二后端后，能力DTO是否仍逐字段来自真实Profile；每种非失败终态是否在Outbox监督、恢复、页面文案和回放中保持同一个含义？
 
-## 32. VS Code可调试性必须用真实F5证明
+## 32. 应用启动合同归仓库，VS Code只做薄调试入口且必须用真实F5证明
 
 标签：`vscode`、`debug`、`process-lifecycle`、`acceptance`
 
-配置合同和“等价命令启动”只能证明JSON结构与服务入口，不能证明VS Code实际编排。Compound还会引入子配置并发`preLaunchTask`、shell参数二次解析、js-debug的`program`默认值、workspace包解析和集成终端初始化竞态。完成门必须从VS Code真实选择主Compound并启动，观察全部调试会话、固定端口与前端页面，再从VS Code停止并确认端口释放。无交互式stdin的Node服务由js-debug直接创建进程；私有环境在进程内部加载，不能用会把值展开到终端命令行的`envFile`。
+本地服务图、准备、健康门和停止顺序必须由仓库统一`dev/dev:debug`启动器拥有，保证终端、VS Code和未来CI复用同一合同；不得再把Memory、Workflow、API和Web的生命周期复制进`launch.json/tasks.json`。VS Code只调用同一个启动器、附加Chat拥有的进程并在应用Ready后打开浏览器。浏览器必须使用worktree专属Profile，启动前只按“浏览器可执行文件+精确user-data-dir”身份收敛遗留进程和锁，不能为了避免旧Session警告杀全部Chrome；父会话停止时同时收敛整个专属浏览器。配置合同和等价命令仍不能替代真实F5：完成门必须从VS Code选择唯一应用入口，确认Chrome和TypeScript断点，再停止并确认端口、浏览器与进程投影收敛。私有环境在目标进程内部加载，不能用会把值展开到命令行的`envFile`。
 
-检查：证据是否来自真实F5而非手工拼出的近似命令；Memory、Workflow、API和Web是否全部Ready，Chrome能否访问页面，停止后所有固定端口是否释放且终端/argv没有凭据？
+检查：`pnpm dev`能否脱离编辑器独立启动应用；F5是否只调用同一启动器而不复制服务图；Memory、Workflow、API和Web是否全部Ready，Chrome与断点是否可用；遗留专属浏览器能否自动清理且日常Chrome不受影响；停止后固定端口是否释放且输出/argv没有凭据？
 
-## 33. Project Solution不能退化为阶段、任务和文档CRUD
+## 33. 关键纵向链必须同时交付中文代码导航和函数级调试文档
+
+标签：`documentation`、`debug`、`maintainability`、`data-flow`
+
+只有架构图无法解释断点中的具体对象，只有散落注释也无法给出完整阅读顺序。前端、公开API、Application事务、Outbox、Workflow私有API、Hook、Provider和Product Commit之间的主链必须同时具备两层导航：代码边界用中文注释解释数据结构、身份、所有权与失败语义；as-built文档用文件、函数/路由和观察变量给出可执行的断点顺序。断点索引以函数名为主，不能依赖会随注释漂移的固定行号。新增纵向能力时同步更新现有交互/调试事实源，不为同一行为再建互相竞争的说明。
+
+检查：一个第一次阅读该功能的人，能否从README找到当前交互与调试入口，并在不猜Runtime身份、不翻历史任务书的情况下，从用户动作单步走到正式产品事实？
+
+## 34. 本地旧Workflow版本不兼容时收敛工作，不能阻塞整套应用或删除事实
+
+标签：`workflow`、`debug`、`version-evidence`、`recovery`
+
+活动Workflow Run只能由创建它的代码/Bundle安全恢复；新代码不能静默续跑旧Checkpoint。但本地开发反复改代码时，一个不可恢复的旧Run也不应让Memory、API和Web全部无法启动。`pnpm dev/dev:debug`在Bundle构建后检查活动Run证据：一致则正常恢复；明确版本冲突则保留Message、Plan、Trace、Runtime事件、Binding和版本证据，通过Application原子终结Product Run/Attempt/Outbox，再用Workflow SDK取消旧Run并继续启动。证据缺失、损坏或映射不完整仍失败关闭。生产环境不使用这种开发降级，而应保留历史部署承接旧Run。
+
+检查：代码变化后再次F5，旧Run是否形成可解释终态且当前应用Ready；是否没有删除`.data`、重放Provider/外部副作用或用新Bundle续跑旧Checkpoint？
+
+## 35. 固定调试端口的所有权属于Git仓库，不能被worktree局部登记割裂
+
+标签：`debug`、`process-lifecycle`、`worktree`、`ports`
+
+多个worktree共享固定端口，却各自保存PID登记，会让一个worktree留下的Chat孤儿进程在另一个worktree中被误判为未知占用者，最终把“一键F5”退化为人工找PID。固定端口登记必须由Git Common Directory锚定为仓库级运行投影。登记因旧方案或IDE强停而丢失时，可以自动收敛的充分条件不是“进程名叫node”，而是固定端口角色、角色命令签名、进程cwd和Git Common Directory四重一致；发信号前还要再次校验命令与启动时间。任何一项不成立都继续失败关闭，不能用`pkill`、端口号或模糊路径误杀其他应用。
+
+检查：另一个worktree留下无登记Chat服务后能否直接F5；换成相同端口上的其他仓库Node进程时是否仍拒绝清理；同一监听PID同时占服务端口和Inspector时是否只终止一次？
+## 36. Project Solution不能退化为阶段、任务和文档CRUD
 
 标签：`project`、`methodology`、`shape-up`、`bmad`、`domain-model`
 
@@ -222,7 +245,7 @@ Stage是长期发展阶段，Iteration是一次有限投入，Work是交付单�
 
 检查：方案是否能基于证据回答用户有哪些项目、阶段目标、当前Iteration、谁在做、改了什么、为什么决定、有哪些待办和下一步；还是只能展示几个状态字段？
 
-## 34. 项目进展、健康和完成必须由不同事实表达
+## 37. 项目进展、健康和完成必须由不同事实表达
 
 标签：`project`、`progress`、`health`、`evidence`、`candidate`
 

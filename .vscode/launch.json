@@ -2,189 +2,31 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Chat：Memory（memmy）",
+      "name": "Chat：调试应用",
       "type": "node",
       "request": "launch",
-      "port": 43122,
       "cwd": "${workspaceFolder}",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "--inspect=127.0.0.1:43122",
-        "--import",
-        "${workspaceFolder}/scripts/debug/register-process.mjs"
-      ],
-      "program": "${workspaceFolder}/scripts/memory/start-fixed-memmy.mjs",
-      "env": {
-        "CHAT_DEBUG_ROLE": "memory",
-        "CHAT_DEBUG_PORT": "18960",
-        "CHAT_REPO_ROOT": "${workspaceFolder}",
-        "CHAT_MEMMY_PORT": "18960",
-        "CHAT_MEMMY_RUN_ROOT": "${workspaceFolder}/.data/debug/memmy",
-        "CHAT_MEMMY_DB_PATH": "${workspaceFolder}/.data/debug/memmy/memory.sqlite"
-      },
+      "program": "${workspaceFolder}/scripts/dev/start.mjs",
+      "args": ["--debug"],
+      "autoAttachChildProcesses": true,
       "console": "internalConsole",
-      "preLaunchTask": "chat-debug:prepare-memory",
-      "postDebugTask": "chat-debug:stop"
-    },
-    {
-      "name": "Chat：Memory（Tencent MemoryCore）",
-      "type": "node",
-      "request": "launch",
-      "port": 43123,
-      "cwd": "${workspaceFolder}",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "--inspect=127.0.0.1:43123",
-        "--import",
-        "${workspaceFolder}/scripts/debug/load-memorycore-debug-env.mjs",
-        "--import",
-        "${workspaceFolder}/scripts/debug/register-process.mjs"
-      ],
-      "program": "${workspaceFolder}/scripts/memory/start-fixed-memorycore.mjs",
-      "env": {
-        "CHAT_DEBUG_ROLE": "memoryCore",
-        "CHAT_DEBUG_PORT": "18970",
-        "CHAT_REPO_ROOT": "${workspaceFolder}",
-        "CHAT_TENCENT_MEMORYCORE_RUN_ROOT": "${workspaceFolder}/.data/debug/memorycore"
-      },
-      "console": "internalConsole",
-      "preLaunchTask": "chat-debug:prepare-memorycore",
-      "postDebugTask": "chat-debug:stop"
-    },
-    {
-      "name": "Chat：Memory（memmy，Compound内部）",
-      "type": "node",
-      "request": "launch",
-      "port": 43122,
-      "cwd": "${workspaceFolder}",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "--inspect=127.0.0.1:43122",
-        "--import",
-        "${workspaceFolder}/scripts/debug/register-process.mjs"
-      ],
-      "program": "${workspaceFolder}/scripts/memory/start-fixed-memmy.mjs",
-      "env": {
-        "CHAT_DEBUG_ROLE": "memory",
-        "CHAT_DEBUG_PORT": "18960",
-        "CHAT_REPO_ROOT": "${workspaceFolder}",
-        "CHAT_MEMMY_PORT": "18960",
-        "CHAT_MEMMY_RUN_ROOT": "${workspaceFolder}/.data/debug/memmy",
-        "CHAT_MEMMY_DB_PATH": "${workspaceFolder}/.data/debug/memmy/memory.sqlite"
-      },
-      "console": "internalConsole",
-      "postDebugTask": "chat-debug:stop",
-      "presentation": { "hidden": true }
-    },
-    {
-      "name": "Chat：Memory（Tencent MemoryCore，Compound内部）",
-      "type": "node",
-      "request": "launch",
-      "port": 43123,
-      "cwd": "${workspaceFolder}",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "--inspect=127.0.0.1:43123",
-        "--import",
-        "${workspaceFolder}/scripts/debug/load-memorycore-debug-env.mjs",
-        "--import",
-        "${workspaceFolder}/scripts/debug/register-process.mjs"
-      ],
-      "program": "${workspaceFolder}/scripts/memory/start-fixed-memorycore.mjs",
-      "env": {
-        "CHAT_DEBUG_ROLE": "memoryCore",
-        "CHAT_DEBUG_PORT": "18970",
-        "CHAT_REPO_ROOT": "${workspaceFolder}",
-        "CHAT_TENCENT_MEMORYCORE_RUN_ROOT": "${workspaceFolder}/.data/debug/memorycore"
-      },
-      "console": "internalConsole",
-      "postDebugTask": "chat-debug:stop",
-      "presentation": { "hidden": true }
-    },
-    {
-      "name": "Chat：Workflow 运行时",
-      "type": "node",
-      "request": "launch",
-      "port": 43121,
-      "cwd": "${workspaceFolder}",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "--inspect=127.0.0.1:43121",
-        "--import",
-        "${workspaceFolder}/scripts/debug/load-provider-env.mjs",
-        "--import",
-        "${workspaceFolder}/scripts/debug/load-memorycore-debug-env.mjs",
-        "--import",
-        "${workspaceFolder}/scripts/debug/register-process.mjs",
-        "--import",
-        "${workspaceFolder}/packages/workflows/node_modules/tsx/dist/loader.mjs"
-      ],
-      "program": "${workspaceFolder}/packages/workflows/src/runtime-main.ts",
-      "outFiles": [],
-      "env": {
-        "CHAT_DEBUG_ROLE": "workflow",
-        "CHAT_DEBUG_PORT": "43112",
-        "CHAT_REPO_ROOT": "${workspaceFolder}",
-        "CHAT_WORKFLOW_PORT": "43112"
-      },
-      "console": "internalConsole",
-      "preLaunchTask": "chat-debug:build-bundles",
-      "postDebugTask": "chat-debug:stop"
-    },
-    {
-      "name": "Chat：API",
-      "type": "node",
-      "request": "launch",
-      "port": 43120,
-      "cwd": "${workspaceFolder}/apps/api",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "--inspect=127.0.0.1:43120",
-        "--import",
-        "${workspaceFolder}/scripts/load-env.mjs",
-        "--import",
-        "${workspaceFolder}/scripts/debug/load-provider-env.mjs",
-        "--import",
-        "${workspaceFolder}/scripts/debug/load-memorycore-debug-env.mjs",
-        "--import",
-        "${workspaceFolder}/scripts/debug/register-process.mjs",
-        "--import",
-        "${workspaceFolder}/apps/api/node_modules/tsx/dist/loader.mjs"
-      ],
-      "program": "${workspaceFolder}/apps/api/src/index.ts",
-      "outFiles": [],
-      "env": {
-        "CHAT_DEBUG_ROLE": "api",
-        "CHAT_DEBUG_PORT": "43111",
-        "CHAT_REPO_ROOT": "${workspaceFolder}",
-        "PORT": "43111"
-      },
-      "console": "internalConsole",
-      "preLaunchTask": "chat-debug:wait-runtime-dependencies",
-      "postDebugTask": "chat-debug:stop"
-    },
-    {
-      "name": "Chat：Web 浏览器",
-      "type": "chrome",
-      "request": "launch",
-      "url": "http://127.0.0.1:43110/",
-      "webRoot": "${workspaceFolder}/apps/web",
-      "preLaunchTask": "chat-debug:start-web",
-      "postDebugTask": "chat-debug:stop"
-    }
-  ],
-  "compounds": [
-    {
-      "name": "Chat：完整后端闭环",
-      "configurations": [
-        "Chat：Memory（memmy，Compound内部）",
-        "Chat：Memory（Tencent MemoryCore，Compound内部）",
-        "Chat：Workflow 运行时",
-        "Chat：API",
-        "Chat：Web 浏览器"
-      ],
-      "preLaunchTask": "chat-debug:prepare-compound",
-      "stopAll": true
+      "outputCapture": "std",
+      "skipFiles": ["<node_internals>/**"],
+      "serverReadyAction": {
+        "pattern": "\\[chat\\] ready: (http://127\\.0\\.0\\.1:43110/)",
+        "action": "startDebugging",
+        "killOnServerStop": true,
+        "config": {
+          "name": "Chat：前端浏览器（内部）",
+          "type": "pwa-chrome",
+          "request": "launch",
+          "url": "http://127.0.0.1:43110/",
+          "webRoot": "${workspaceFolder}/apps/web",
+          "userDataDir": "${workspaceFolder}/.data/debug/browser-profile",
+          "cleanUp": "wholeBrowser",
+          "killBehavior": "forceful"
+        }
+      }
     }
   ]
 }

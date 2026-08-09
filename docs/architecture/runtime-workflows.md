@@ -200,6 +200,8 @@ Runtime Binding保存以下私有关系：
 5. 活动Project Intake Run核对独立Definition Version、Candidate身份和Start/Resume状态。
 6. Runtime ID只用于后端诊断，不进入浏览器、公开API和Product Store身份模型。
 
+本地开发每次重建Bundle后会在服务启动前检查活动Planning Run。证据完全一致时继续恢复；若代码版本已经变化且旧Bundle不再可执行，则保留全部历史证据，通过Application把Product Run、Attempt和Workflow Outbox收敛为`workflow.version_incompatible`，并用Workflow SDK取消旧Runtime Run。该路径不删除Store或Runtime文件，也不重启同一产品工作；生产环境应保留旧部署完成原版本恢复。
+
 ## 8. 重试与结果未知
 
 | 边界 | 当前策略 |

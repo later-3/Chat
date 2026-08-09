@@ -116,3 +116,12 @@ Mock只能证明调用合同；真实Workflow、真实pi和真实浏览器证据
 - 退出或替换方式。
 
 升级AG-UI、Vercel Workflow或pi之前，必须先运行对应事件、Hook、Checkpoint、Tool和恢复合同测试。
+
+## 11. 中文注释与当前实现文档
+
+1. 跨前端、HTTP、Application、Store、Outbox、Workflow、Provider或外部服务的关键边界必须有中文JSDoc或块注释，说明“进入什么、离开什么、谁拥有事实、失败怎样恢复”。
+2. 注释优先解释原因和不变量：身份为什么不能混用、为什么需要CAS/Hash/Outbox、为什么不能自动重试；不为显而易见的赋值和语法逐行翻译。
+3. 关键数据结构要说明字段角色，尤其是`commandId`、各种revision/Hash、产品ID、Attempt、Outbox与Runtime私有ID；同名或相近对象必须明确“是什么/不是什么”。
+4. 新增或改变纵向交互时，同步更新最接近行为的as-built文档。前后端数据流更新`docs/architecture/frontend-backend-interaction.md`，Workflow节点更新`runtime-workflows.md`，启动、断点或排障更新`docs/debug/local-debug.md`。
+5. 调试文档以“文件 + 函数/路由 + 观察变量”为稳定入口；行号只能作为临时提示，不能作为唯一定位方式。
+6. 当前实现、目标架构和历史任务书必须分开。注释与调试指南只描述当前代码已存在的行为，不把未来SSE、生产Store或未实现节点写成现状。

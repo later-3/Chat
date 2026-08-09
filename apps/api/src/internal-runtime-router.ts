@@ -184,6 +184,14 @@ export function createInternalRuntimeRouter(
     await next();
   });
 
+  /**
+   * 调试导航：以下路由是Workflow Step回到Application的唯一数据通道。
+   *
+   * 主链顺序为：准备Context → 编译Planning Input → 发布Plan/Approval → 读取已提交Decision
+   * → 编译Execution Contract → 创建/完成执行Attempt → 持久化候选 → Validation → Product Commit。
+   * Workflow进程不能打开Product Store；即使是私有路由，每个写入仍需strict Schema、稳定
+   * commandId、CAS和Application事务。这里传递产品引用与结构化候选，不传SDK Workflow对象。
+   */
   router.post(
     "/prepare-project-candidate",
     handle(200, async (c) => {
@@ -223,6 +231,8 @@ export function createInternalRuntimeRouter(
   router.post(
     "/publish-plan-review",
     handle(201, async (c) => {
+      // Plan Candidate在这里越过“模型候选 → 产品审核事实”边界；
+      // publishPlanForReview会计算/校验Hash并原子提交Plan、Approval和Run状态。
       const request = publishPlanReviewRequestSchema.parse(await parseInternalBody(c));
       const result = await publishPlanForReview(options.deps, {
         productRunId: request.productRunId,
@@ -313,6 +323,8 @@ export function createInternalRuntimeRouter(
   router.post(
     "/commit-execution-result",
     handle(201, async (c) => {
+      // 只有已经持久化且Validation通过的候选才能到达Product Commit；
+      // commitExecutionResult原子生成正式Assistant Message并推进Run终态。
       const request = commitExecutionResultRequestSchema.parse(await parseInternalBody(c));
       const result = await commitExecutionResult(options.deps, request);
       return {

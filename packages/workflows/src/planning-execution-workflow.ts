@@ -89,8 +89,11 @@ export async function planningExecutionWorkflow(
 ): Promise<PlanningExecutionWorkflowResult> {
   "use workflow";
 
+  // productRunId是Chat产品身份；attemptId是Chat的Workflow Attempt证据。
+  // 二者都不是Vercel Workflow Run ID，Step只能借它们调用内部Application API。
   const { productRunId, attemptId } = input;
   try {
+    // 阶段A：按用户本轮ContextRequest准备一次不可变上下文包；后续Plan修订复用它。
     let preparedContext;
     try {
       // 3个耐久节点都在修订循环外：Plan v2+复用同一不可变包，不再查询Memory。
@@ -131,6 +134,7 @@ export async function planningExecutionWorkflow(
         ? preparedContext.contextPackageRef
         : undefined;
 
+    // 阶段B：规划—用户决定循环。request_revision只增加Plan版本，不启动第二个Workflow。
     for (let planRevision = 1; planRevision <= input.maxPlanRevisions; planRevision += 1) {
       let planningInput;
       try {
@@ -186,6 +190,8 @@ export async function planningExecutionWorkflow(
         return { outcome: "failed", productRunId, errorCode: failure.code };
       }
 
+      // Plan先由Application提交成under_review事实，再创建耐久Hook等待用户决定。
+      // 浏览器提交的是Decision Command；Runtime收到Resume Outbox后才恢复这个Hook。
       using decisionHook = planDecisionHook.create({
         token: `pdh-${productRunId}-${String(review.planRevision)}`,
       });
@@ -258,7 +264,8 @@ export async function planningExecutionWorkflow(
         return { outcome: "cancelled", productRunId };
       }
 
-      // approve：生成不可变Execution Contract并逐步执行
+      // 阶段C（approve）：从已批准Plan编译不可变Execution Contract，再按依赖顺序逐步执行。
+      // Executor输出仍是候选，只有后续持久化、验证和Product Commit完成才算产品成功。
       let contract;
       try {
         contract = await compileExecutionContractStep({

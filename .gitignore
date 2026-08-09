@@ -32,7 +32,6 @@ htmlcov/
 .idea/
 .vscode/*
 !.vscode/launch.json
-!.vscode/tasks.json
 .pnpm-store/
 playwright-report/
 test-results/

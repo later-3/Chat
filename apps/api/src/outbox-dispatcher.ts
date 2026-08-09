@@ -35,6 +35,16 @@ import { z } from "zod";
  * - 网络结果未知进入outcome_unknown；对账后决定重派或标记，不盲目新建
  *   第二个Workflow或第二次恢复Hook。
  * - 重复派发、响应丢失不会产生第二个Workflow Run。
+ *
+ * 从前端消息开始调试时，主链按以下顺序走：
+ * RealWorkspace.send → use-real-chain.sendMutation → apiSubmitMessage
+ * → product-routes的POST /sessions/:sessionId/messages → submitUserMessage
+ * → 本文件tick/dispatchStart → Workflow Runtime /internal/workflow/v1/start
+ * → planningExecutionWorkflow。
+ *
+ * 关键边界：submitUserMessage先在一个Product Store事务里提交Message、Product Run和
+ * workflow_start Outbox；Dispatcher之后才消费Outbox。这样API进程即使在提交后崩溃，
+ * “应该启动Workflow”这件事也不会随内存丢失。
  */
 
 export interface OutboxDispatcherOptions {
@@ -44,6 +54,8 @@ export interface OutboxDispatcherOptions {
   readonly intervalMs?: number;
 }
 
+// Snapshot是Product Store已经提交的只读快照；Dispatcher只能通过Application Command改状态，
+// 不能直接改Snapshot。下面的Extract把Outbox联合类型收窄，避免把Start/Resume字段混用。
 type Snapshot = ProductSnapshot;
 type WorkflowStartEntry = Extract<OutboxEntry, { kind: "workflow_start" }>;
 type WorkflowResumeEntry = Extract<OutboxEntry, { kind: "workflow_resume" }>;
@@ -67,9 +79,16 @@ const ACKNOWLEDGED_IMPORT_SUPERVISE_MS = 1_000;
 const MAX_AUTOMATIC_IMPORT_RECOVERIES = 3;
 
 function dispatchCommandId(...parts: string[]): CommandId {
+  // Dispatcher会轮询和崩溃恢复；派生出的稳定commandId让同一次状态转换可安全重复提交。
   return `cmd_${sha256Hex(parts.join(":")).slice(0, 32)}` as CommandId;
 }
 
+/**
+ * 跨进程HTTP只有三类结果：
+ * - ok：收到2xx且JSON可读，后续仍要按运行时Schema验证；
+ * - HTTP失败：确定收到了状态码，可区分调用方错误和服务端不确定错误；
+ * - unknown：请求可能已经生效，但连接/响应不可用，绝不能直接重派制造第二个副作用。
+ */
 async function postToWorkflowRuntime(
   options: OutboxDispatcherOptions,
   path: string,
@@ -152,6 +171,18 @@ function findWorkflowAttemptId(snapshot: Snapshot, productRunId: string): string
   )?.attemptId;
 }
 
+/**
+ * 调试导航⑦：把已提交的workflow_start Outbox派发给Workflow Runtime。
+ *
+ * 数据身份不能混用：
+ * - productRunId：Chat公开产品运行身份，也是Runtime认领Start的幂等键；
+ * - attemptId：Chat记录的一次Workflow执行尝试，用于Trace和生命周期结算；
+ * - outboxId：这条跨边界意图的耐久身份，用于证明重复HTTP仍是同一次派发；
+ * - workflowDefinitionVersion：固定运行定义，恢复时拒绝拿新代码继续旧Run。
+ *
+ * 这里不创建产品事实，也不把HTTP 201当成业务完成；它只把Outbox从pending推进到
+ * acknowledged/outcome_unknown。真正的Plan、审批和终态由Workflow通过内部Application Command提交。
+ */
 async function dispatchStart(
   options: OutboxDispatcherOptions,
   snapshot: Snapshot,
@@ -162,6 +193,7 @@ async function dispatchStart(
     await failDispatch(options, entry, "outbox.missing_attempt", false);
     return;
   }
+  // 先记录“已请求、结果未知”的可观察事件；只有收到并验证Runtime响应后才更新Outbox状态。
   emitRunEvent(options.deps, entry.productRunId, {
     level: "info",
     eventName: "workflow.start.requested",
@@ -178,6 +210,7 @@ async function dispatchStart(
     workflowDefinitionVersion: WORKFLOW_DEFINITION_VERSION,
     outboxId: entry.outboxId,
   });
+  // unknown与5xx都不能证明Runtime没启动，因此进入对账路径而不是自动创建第二个Workflow。
   if (result === "unknown") {
     await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
     return;
@@ -205,10 +238,15 @@ async function dispatchStart(
   if (response.status === "outcome_unknown") {
     await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
   } else {
+    // acknowledged只表示Runtime已认领/已启动同一Product Run，不表示Plan或执行已经成功。
     await markStatus(options, entry, "acknowledged", undefined, true);
   }
 }
 
+/**
+ * 调试导航⑩：用户决定已先成为Chat产品Decision，Resume Outbox再携带引用恢复同一Hook。
+ * approvalRequestId定位等待点，decisionId定位已提交决定；正文和Hook Token都不穿过Outbox。
+ */
 async function dispatchResume(
   options: OutboxDispatcherOptions,
   snapshot: Snapshot,
@@ -669,6 +707,18 @@ async function reconcileUnknown(
   }
 }
 
+/**
+ * Outbox的进程内轮询执行器，不是产品业务状态机。
+ *
+ * tick每次只读取一份已提交快照，然后按createdAt串行处理：
+ * 1. pending：第一次跨边界派发；
+ * 2. outcome_unknown：向Runtime查询实际结果，禁止盲目重放副作用；
+ * 3. acknowledged的Memory导入：监督异步Workflow是否已经进入终态。
+ *
+ * 不使用Promise.all是有意设计：单进程内串行可避免同一轮重复派发，也让Trace顺序稳定；
+ * 跨进程/崩溃场景的最终幂等仍由outboxId、productRunId和Runtime Binding共同保证。
+ * 本轮内状态更新不会反写当前snapshot，而会在下一轮读到新的提交版本。
+ */
 export class OutboxDispatcher {
   private readonly options: OutboxDispatcherOptions;
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -693,7 +743,10 @@ export class OutboxDispatcher {
     this.timer = undefined;
   }
 
-  /** 单轮派发；序列化执行，绝不并发派发同一Entry。 */
+  /**
+   * 执行一轮“读快照 → 分组 → 串行处理”。running防止setInterval在慢请求期间重入；
+   * finally必须释放锁，否则一次异常会让后续轮询永久停止。
+   */
   async tick(): Promise<void> {
     if (this.running) return;
     this.running = true;

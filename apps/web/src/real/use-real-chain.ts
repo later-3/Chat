@@ -188,6 +188,15 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     setPendingDecision(activeRunId === null ? null : readPendingDecision(storage, activeRunId));
   }, [activeRunId, storage]);
 
+  /**
+   * 调试导航：下面不是一份可变的“前端Run对象”，而是一组独立的服务端资源投影。
+   * activeRunId只是公开定位ID；Run负责生命周期，Plan负责版本内容，Approval负责当前等待点，
+   * Context负责本轮采用来源，Message负责正式会话历史。拆开Query可按资源精确失效，也避免
+   * Workflow内部状态或某个大响应替浏览器拥有全部产品事实。
+   *
+   * 当前1.5秒轮询只在Run活动且页面可见时发生；终态后停止。未来换成SSE时，SSE也只通知
+   * 资源失效，最终内容仍通过这些Query读取。
+   */
   const run = useQuery({
     queryKey: ["real-run", activeRunId],
     enabled: activeRunId !== null,
@@ -291,6 +300,7 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     refetchIntervalInBackground: false,
   });
 
+  // Command响应只证明对应事务已提交；统一失效相关Query后，页面再从服务端读取新的权威投影。
   const invalidateRunScoped = (runId: string) => {
     void queryClient.invalidateQueries({ queryKey: ["real-messages"] });
     void queryClient.invalidateQueries({ queryKey: ["real-run", runId] });
@@ -309,6 +319,17 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     void queryClient.invalidateQueries({ queryKey: ["real-run-context", activeRunId] });
   }, [activeRunId, queryClient, run.data?.status, sessionId]);
 
+  /**
+   * 调试导航②：浏览器Command协调边界。
+   *
+   * PendingSend不是服务端Message，而是“待确认命令”：
+   * - commandId：幂等身份，响应丢失后必须原样重试；
+   * - payload：已经冻结的文本和本轮Context选择；
+   * - version：localStorage恢复格式版本，不是产品对象revision。
+   *
+   * 只有API返回并通过公开合同校验后，才清除PendingSend并保存Product Run定位；
+   * 网络异常时保留同一个对象，绝不能生成新commandId猜测重发。
+   */
   const sendMutation = useMutation({
     mutationFn: async (pending: PendingSend) => {
       if (sessionId === null) throw new Error("session not ready");
@@ -341,6 +362,7 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     ) {
       return;
     }
+    // 先持久化完整命令再发HTTP，页面在响应中途刷新也能用同一身份恢复。
     const pending: PendingSend = {
       version: 2,
       payload: { text, ...(context !== undefined ? { context } : {}) },
@@ -357,6 +379,11 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     sendMutation.mutate(pendingSend);
   };
 
+  /**
+   * 调试导航⑨：Plan决定仍然是产品Command，不是浏览器直接恢复Workflow Hook。
+   * expectedRunRevision防止旧页面决定新状态；payload绑定approval/plan/hash；
+   * API提交Decision和workflow_resume Outbox后，Dispatcher才恢复同一个Workflow。
+   */
   const decisionMutation = useMutation({
     mutationFn: async (input: PendingDecision) => {
       return apiSubmitDecision({

@@ -4,12 +4,12 @@
 
 ## 1. 当前停点
 
-1. `main`已经包含PR #12与PR #13；精确提交以`origin/main`为准。MemoryCore Compound、等待链与关键中文注释均已完成。
+1. `origin/main`已经包含PR #20与PS1；本地`main`同时保留统一应用启动与调试修复。
 2. P0、P1.1、P1.2、B1、B2和M1～M3已完成。浏览器可以真实完成“发送消息 → 选择memmy或Tencent MemoryCore → pi规划 → 用户修订/批准 → 同一Vercel Workflow恢复 → pi执行 → Product Commit → 正式回复”。
 3. 本地百炼私有配置已可用于真实`qwen3.7-plus`测试；`.env`被Git忽略且权限为`0600`，任何续接过程不得输出或提交Key。
 4. M2已增加正式消息整条/UTF-16选区导入、`MemoryImportWorkflow`、memmy真实add/对账、Store v3、严格Trace/Replay、最小统一UI与重启恢复；M3又增加Tencent L0接收、L0/L1只读对账与L1查询。
 5. M2固定memmy真实导入与原生幂等、完整Chat响应丢失对账且SQLite唯一已经通过；最终clean代码提交`3bcb7b7`的真实浏览器1/1通过（浏览器2.8分钟、命令3.1分钟），Import Replay 6事件、Run Replay 103事件、真实`qwen3.7-plus`规划与执行均成功。
-6. 真实VS Code主Compound已完成F5验收：memmy、MemoryCore、Workflow、API、Web全部Ready，Chrome页面可访问，停止后9个固定端口释放。配置合同或等价命令不能替代该验收。
+6. 当前标准入口是仓库拥有的`pnpm dev/dev:debug`；VS Code只有`Chat：调试应用`一个薄入口。真实F5已验证5个服务Ready、专属Profile Chrome、TypeScript附加、遗留浏览器自动收敛，停止后浏览器和7个固定端口释放。
 7. Tencent真实Adapter已经合入；PS1又完成了对话建项、真实Git/文档/脚本观察、Project账本、管理候选与响应式UI。当前仍没有完整Stage/Milestone/Iteration推进、Planning Project Context和用户规则集。
 8. 旧会话遗留的治理文档和设计截图已经恢复；不能再使用“M1待审核”“B2待真实Key验收”或“P1.2待实现”等旧状态。
 
@@ -57,7 +57,7 @@ Project Management Message -> revision/Hash Candidate -> 用户确认 -> Action/
 Trace + Product Store + Version Evidence -> Replay
 ```
 
-固定本地调试端口为Web `43110`、API `43111`、Workflow `43112`、memmy `18960`、MemoryCore `18970`、Inspector `43120～43123`。启动前只清理身份确认属于本项目的旧进程；未知占用只报告、不杀进程。
+固定本地端口为Web `43110`、API `43111`、Workflow `43112`、memmy `18960`、MemoryCore `18970`、API Inspector `43120`和Workflow Inspector `43121`。启动前只清理身份确认属于本项目的旧进程；未知占用只报告、不杀进程。
 
 ## 4. 下一阶段目标与依赖
 
@@ -94,8 +94,8 @@ Trace + Product Store + Version Evidence -> Replay
 
 ```text
 继续Chat项目。按AGENTS.md规定顺序读取治理文件和docs/project-session-handoff.md。
-main基线已完成真实规划—确认—执行、memmy查询/导入和Tencent MemoryCore第二后端闭环；PS1实现分支已完成对话建项、真实Resource和Project账本，等待PR复审。
-VS Code主Compound已经过真实F5验证；不能用等价命令或静态配置测试替代。
+main已完成真实规划—确认—执行、memmy查询/导入、Tencent MemoryCore第二后端，以及PS1对话建项、真实Resource和Project账本闭环。
+仓库统一`pnpm dev/dev:debug`已经过终端与真实VS Code F5验证；VS Code不再拥有或复制服务生命周期，不能用静态配置测试替代真实F5验收。
 下一阶段接着建设：PS2 Stage/Milestone/Iteration与Project Update、
 带标签且可主动选择的用户规则集。先读取本地参考项目与既有分析，给每个设计写出采用/调整/拒绝依据，
 再按依赖拆成可独立合并的小任务；实现使用worktree+PR，纵向完成门必须包含真实服务、真实模型和浏览器E2E。

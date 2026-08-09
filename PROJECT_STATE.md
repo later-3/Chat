@@ -13,10 +13,10 @@
 | Product Store | `chat-product-store.v4`；串行支持v1→v2→v3→v4，保持单实例单写者、原子替换与损坏失败关闭；v4新增Project账本与Candidate |
 | Workflow | 规划仍由唯一`PlanningExecutionWorkflow`完成；另有独立`MemoryImportWorkflow`和`ProjectIntakeWorkflow`分别拥有导入/对账与建项审核生命周期 |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent`；Planner/Executor与模型无关Project Understanding均已用百炼真实`qwen3.7-plus`验证 |
-| 调试与回放 | VS Code真实F5 Compound覆盖memmy、MemoryCore、Workflow、API和Web；固定端口、安全清理、严格脱敏Trace及多源Replay |
-| 代码状态 | P0、P1.1、P1.2、B1、B2、M1、M2、M3与MemoryCore调试/注释收口均已进入`main`；真实VS Code启动缺陷已完成修复验收；当前实现文档已按仓库地图、前后端交互和Workflow运行边界收口 |
+| 调试与回放 | 仓库统一`pnpm dev/dev:debug`拥有Memory、Workflow、API和Web服务图；VS Code只有应用级薄入口；固定端口、安全清理、严格脱敏Trace及多源Replay |
+| 代码状态 | P0、P1.1、P1.2、B1、B2、M1～M3与PS1均已进入`origin/main`；统一应用启动、浏览器生命周期、旧Workflow和跨worktree端口恢复修复保留在本地`main` |
 | 当前阶段 | 长期上下文与知识复用：Memory、BMAD项目上下文、用户规则集 |
-| 当前任务 | PS1 Project Intake、真实Resource、项目账本与最小管理闭环已完成实现和真实验收，等待实现PR复审；下一任务是PS2 Stage/Milestone/Iteration完整推进闭环 |
+| 当前任务 | PS1已由PR #20合入；下一任务是PS2 Stage/Milestone/Iteration完整推进闭环 |
 
 ## 2. B2已完成的真实证据
 
@@ -54,7 +54,17 @@
 2. 真实Chromium + 百炼`qwen3.7-plus`纵向门通过：选后端、召回L1、规划采用、导入L0、accepted显示、手动对账、刷新恢复和拒绝闭环全部贯通。
 3. UI由后端能力投影驱动：MemoryCore仅开放L1查询和L0会话捕获，不显示标签或标题；服务端再次拒绝越权参数。
 4. `accepted`是L0已落事实的合法状态，不等同于L1 `materialized`；终态监督器不得把合法accepted误降级为结果未知。
-5. PR #12与PR #13已合入；真实VS Code主Compound已验证5个服务全部Ready、Chrome页面可访问，停止后9个固定端口全部释放。
+5. PR #12与PR #13已合入；当时的真实VS Code Compound曾验证5个服务全部Ready和9个历史端口释放。该历史编排已被仓库统一启动器替代，不再作为当前开发入口。
+
+## 4.2 统一应用启动与调试证据
+
+1. `pnpm dev`真实启动memmy、Tencent MemoryCore、Workflow、API和Web；5个HTTP入口均返回200，应用最后才输出唯一`[chat] ready`行。
+2. `pnpm dev:debug`复用同一服务图，只开放API `43120`与Workflow `43121`；Memory不创建默认Inspector，历史`43122/43123`不再属于冻结端口。
+3. 同一Git仓库的worktree共享经过commit/tree/Hash复核的固定Memory源码缓存；Product Store、Workflow Store、Memory数据库和Trace仍按worktree隔离。
+4. VS Code只显示`Chat：调试应用`一个入口；真实F5到达Ready后自动建立专属Profile的Chrome调试，并附加Chat自己的API与Workflow TypeScript进程；API源码断点成功绑定，没有Memory或准备阶段短命令调试会话。
+5. 真实遗留浏览器门已通过：预置携带worktree专属Profile的Chrome与Singleton锁后，下一次F5自动收敛旧进程、无旧Session警告并成功附加新浏览器；连续干净F5也成功。
+6. 从终端SIGINT以及VS Code停止后，Web、API、Workflow、两套Memory和两个Inspector共7个固定端口及专属浏览器全部释放，`pnpm dev:status`报告未运行。
+7. 固定端口登记现由Git Common Directory锚定为仓库级运行投影。真实预置另一个worktree中无PID登记的Web/API/Workflow监听者后，当前`main`能按端口角色、命令、cwd和Git仓库四重身份自动收敛并Ready；随后在TraeCode真实F5中API停在`OutboxDispatcher.tick`断点、Workflow与内部Chrome均已附加，Stop后全部端口释放。
 
 ## 4.2 PS1的真实证据
 

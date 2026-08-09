@@ -310,6 +310,8 @@ export async function submitPlanDecision(
   deps: ApplicationDeps,
   input: SubmitPlanDecisionInput,
 ): Promise<{ decision: DecisionDto; run: RunDto }> {
+  // 这些ID先生成、再交给幂等事务使用。若同一commandId重放，Store返回首次resultRefs；
+  // 本次新生成但未引用的候选ID不会形成实体，也不会改变首次决定。
   const now = deps.now();
   const decisionId = deps.ids.decision();
   const revisionInputId = deps.ids.revisionInput();
@@ -330,6 +332,8 @@ export async function submitPlanDecision(
       mutate: (draft) => {
         const run = draft.entities.runs[input.productRunId];
         if (run === undefined) throw notFound("Product Run不存在");
+        // revision是用户所见Run版本的CAS条件，不是Plan版本。它阻止两个页面或两次点击
+        // 基于同一个旧状态同时生效；commandId则处理“同一个请求因网络问题而重试”。
         if (run.revision !== input.expectedRunRevision) {
           throw revisionConflict("Run revision已变化，请重新读取后重试");
         }
@@ -382,6 +386,8 @@ export async function submitPlanDecision(
             },
           };
         }
+        // Approval里冻结了待审核Plan的三元组。这里同时校验planId、planRevision和内容Hash，
+        // 因而决定绑定的是用户实际看到的那一版内容，而不是某个可变的“当前计划”指针。
         mapDecisionBindingError(() =>
           assertDecisionBinding(approval, {
             planId: input.payload.planId,
@@ -442,6 +448,8 @@ export async function submitPlanDecision(
           };
         }
 
+        // Decision是不可替换的审核事实；Approval和Plan保存当前投影状态，Run保存后续生命周期。
+        // 三者同一事务提交，避免出现“已批准但Run仍等待”或“Run执行但没有批准证据”。
         const decision: Decision = {
           schemaVersion: "decision.v1",
           decisionId,
@@ -482,7 +490,9 @@ export async function submitPlanDecision(
         };
         delete decidedRun.currentApprovalRequestId;
         draft.entities.runs[input.productRunId] = decidedRun;
-        // Resume Outbox与Decision同一次快照提交；Hook Token只属于Workflow Adapter
+        // Resume Outbox与Decision同一次快照提交：即使API在响应201前后崩溃，后台仍能继续派发。
+        // Outbox只存产品引用，不存Hook Token；Token及Workflow Run ID只属于Workflow Adapter，
+        // 浏览器和Product Store都不能用运行时私有身份绕过上面的版本、权限与Hash校验。
         draft.outbox[outboxId] = {
           schemaVersion: "outbox-entry.v1",
           outboxId,

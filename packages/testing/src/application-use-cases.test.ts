@@ -11,6 +11,7 @@ import {
   CommandIdReusedError,
   createProductSession,
   submitUserMessage,
+  settleIncompatibleWorkflowRun,
   publishPlanForReview as publishPlanForReviewUseCase,
   submitPlanDecision,
   commitRunFailure,
@@ -249,6 +250,56 @@ describe("CreateProductSession + SubmitUserMessage", () => {
       sessionId: session.sessionId,
     });
     expect(messages.items.map((message) => message.content.text)).toEqual(["第一项工作"]);
+  });
+
+  it("本地旧版本Workflow不可恢复时原子收敛Run、Attempt与Outbox并保留消息", async () => {
+    const { deps } = await testDeps();
+    const { session, message, run } = await seedSessionWithMessage(deps);
+    const commandId = cmd();
+    const input = {
+      commandId,
+      productRunId: run.productRunId,
+      errorCode: "workflow.version_incompatible",
+      summary: "本地代码版本已变化，旧后台运行无法安全恢复",
+    };
+    await settleIncompatibleWorkflowRun(deps, input);
+    await settleIncompatibleWorkflowRun(deps, input);
+
+    const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+    expect(snapshot.entities.runs[run.productRunId]).toMatchObject({
+      status: "failed",
+      phase: "queued",
+      failure: { code: "workflow.version_incompatible" },
+    });
+    expect(snapshot.entities.messages[message.messageId]?.content.text).toBe(
+      "根据我的进展生成周报",
+    );
+    expect(
+      Object.values(snapshot.entities.attempts).find(
+        (attempt) => attempt.productRunId === run.productRunId,
+      ),
+    ).toMatchObject({ outcome: "failure", errorCode: "workflow.version_incompatible" });
+    expect(
+      Object.values(snapshot.outbox).filter(
+        (entry) => entry.kind === "workflow_start" && entry.productRunId === run.productRunId,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        kind: "workflow_start",
+        status: "failed_terminal",
+        lastErrorCode: "workflow.version_incompatible",
+      }),
+    ]);
+
+    // 旧Run已经明确终结，同一Session可以提交新的工作；不需要清空Product Store。
+    await expect(
+      submitUserMessage(deps, {
+        principalId: PRINCIPAL,
+        sessionId: session.sessionId,
+        commandId: cmd(),
+        payload: { text: "使用当前代码重新开始" },
+      }),
+    ).resolves.toMatchObject({ run: { status: "pending" } });
   });
 });
 

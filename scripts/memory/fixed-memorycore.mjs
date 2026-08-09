@@ -31,7 +31,10 @@ const EVIDENCE_FILE = ".chat-fixed-memorycore-source.json";
 const EVIDENCE_SCHEMA = "chat-fixed-memorycore-source.v1";
 
 export function fixedMemoryCoreCacheRoot(repoRoot = chatRepoRoot()) {
-  return resolve(repoRoot, ".data/cache/tencent-memorycore", FIXED_MEMORYCORE_COMMIT);
+  const cacheRoot = resolve(
+    process.env.CHAT_FIXED_SOURCE_CACHE_ROOT ?? resolve(repoRoot, ".data/cache"),
+  );
+  return resolve(cacheRoot, "tencent-memorycore", FIXED_MEMORYCORE_COMMIT);
 }
 
 export function fixedMemoryCoreRoot(repoRoot = chatRepoRoot()) {

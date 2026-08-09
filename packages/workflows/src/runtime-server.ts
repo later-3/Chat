@@ -165,12 +165,21 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
     await next();
   });
 
+  /**
+   * 调试导航⑧：API Dispatcher与Vercel Workflow SDK之间的适配边界。
+   *
+   * 请求仍使用Chat身份，不包含SDK workflowRunId。RuntimeBindingStore先以
+   * productRunId+outboxId认领Start意图，再调用SDK；这样HTTP响应丢失后的重复请求
+   * 会返回already_started/outcome_unknown，而不是创建第二个Workflow Run。
+   * SDK runId只写入Runtime自己的Binding Store，不能回流成浏览器授权或产品身份。
+   */
   app.post("/internal/workflow/v1/start", async (c) => {
     const parsed = workflowStartRequestSchema.safeParse(await c.req.json().catch(() => undefined));
     if (!parsed.success) {
       return c.json({ code: "validation_failed", title: "请求不符合合同" }, 400);
     }
     const request = parsed.data;
+    // 在启动SDK Run之前冻结构建/Workflow版本证据，后续恢复先证明仍是同一份可执行定义。
     await captureRunVersionEvidence({
       workflowDataDir: options.workflowDataDir,
       productRunId: request.productRunId,
@@ -190,6 +199,8 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" }, 202);
     }
     try {
+      // 传给耐久Workflow的输入只含Chat Product Run、Attempt和修订上限；
+      // 完整Message/Context由Step通过内部API按版本读取，避免复制多份事实。
       const run = await start({ workflowId: world.workflowId }, [
         planningExecutionWorkflowInputSchema.parse({
           schemaVersion: "planning-execution-workflow-input.v1",
