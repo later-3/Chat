@@ -112,17 +112,19 @@ test("真实Project Intake：对话建项→修改/并发确认→项目账本�
 
   await page.getByLabel("新待办标题").fill("完成PS1真实验收");
   await page.getByRole("button", { name: "确认新增待办" }).click();
-  await expect(page.getByText("完成PS1真实验收", { exact: true })).toBeVisible();
+  await expect(page.getByText("完成PS1真实验收", { exact: true }).first()).toBeVisible();
 
   await page.getByLabel("决定问题").fill("BMAD与模型是否成为项目事实源？");
   await page.getByLabel("决定选择").fill(DECISION_MARKER);
   await page.getByLabel("决定理由").fill("Project事实由Chat Product Store和用户确认拥有");
   await page.getByRole("button", { name: "确认记录决定" }).click();
-  await expect(page.getByText(DECISION_MARKER, { exact: true })).toBeVisible();
+  await expect(page.getByText(DECISION_MARKER, { exact: true }).first()).toBeVisible();
 
   await page.getByLabel("贡献摘要").fill("用户完成PS1范围与方法边界确认");
   await page.getByRole("button", { name: "确认记录贡献" }).click();
-  await expect(page.getByText("用户完成PS1范围与方法边界确认", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("用户完成PS1范围与方法边界确认", { exact: true }).first(),
+  ).toBeVisible();
   await page.getByRole("button", { name: "刷新观察" }).click();
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -131,8 +133,8 @@ test("真实Project Intake：对话建项→修改/并发确认→项目账本�
   await expectNoHorizontalScroll(page);
   await page.reload();
   await page.getByRole("tab", { name: "工作" }).click();
-  await expect(page.getByText("完成PS1真实验收", { exact: true })).toBeVisible();
-  await expect(page.getByText(DECISION_MARKER, { exact: true })).toBeVisible();
+  await expect(page.getByText("完成PS1真实验收", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(DECISION_MARKER, { exact: true }).first()).toBeVisible();
 
   const currentCandidateResponse = await page.evaluate(async (id) => {
     const response = await fetch(
