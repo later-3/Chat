@@ -154,7 +154,7 @@ test("真实Project：对话建项→推进修订/确认→项目账本→管理
     .getByLabel("阶段目标")
     .fill("让用户只靠对话维护阶段目标、关键结果和可信的负责人更新");
   await advancementCard.getByLabel("健康判断").selectOption("at_risk");
-  await advancementCard.getByLabel("负责人更新").fill(UPDATE_MARKER);
+  await advancementCard.getByLabel("负责人更新", { exact: true }).fill(UPDATE_MARKER);
   await advancementCard.getByLabel("关键结果1").fill("完成真实模型与浏览器推进闭环");
   await advancementCard.getByRole("button", { name: "保存推进方案" }).click();
   await expect(advancementCard.getByLabel("当前阶段名称")).toHaveValue("PS2 项目推进闭环");
