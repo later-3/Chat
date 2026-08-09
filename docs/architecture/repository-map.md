@@ -138,7 +138,7 @@ workflows ─┬─> pi-runtime
 | Product Store损坏/迁移 | API启动 | `composition.ts` → `json-product-store.ts` → `snapshot-integrity.ts`/迁移 |
 | Provider或候选失败 | Workflow Step | `pi-runtime` → 失败归一化 → Application失败提交 |
 | 回放一次Run | `apps/api/src/replay-main.ts` | `packages/realtime/src/replay.ts` + Product Store + 版本证据 |
-| 本地应用/VS Code启动失败 | `scripts/dev/start.mjs` | `scripts/dev/app-runtime.mjs` → `docs/debug/local-debug.md` |
+| 本地应用/VS Code启动失败 | `scripts/dev/start.mjs` | `scripts/dev/app-runtime.mjs`/`browser-lifecycle.mjs` → `docs/debug/local-debug.md` |
 
 ## 7. 文档类型与事实优先级
 

@@ -1,8 +1,6 @@
 # Chat 统一开发启动与调试任务书
 
-> 状态：实现与本地验收完成，待PR
->
-> 分支：`codex/app-dev-runtime`
+> 状态：已完成并合入本地`main`，待远端同步
 
 ## 1. 用户场景
 
@@ -32,6 +30,8 @@
    Product Store、Workflow Store、Memory数据库和其他运行数据仍按worktree物理隔离。
 9. PID登记是可重建运行投影：监督器是正常运行时的单写者；终端强制中断后，下一次status/start/stop会
    剔除已确认退出或僵尸的记录，但仍保留活PID并继续执行命令片段与启动时间身份复核。
+10. 前端调试使用worktree专属浏览器Profile；启动前只终止携带该精确Profile参数的遗留浏览器并清理
+    Profile锁，父调试会话停止时强制收敛整个专属浏览器，不影响日常Chrome。
 
 ## 4. 明确不做
 
@@ -65,12 +65,16 @@ API和Web为30秒；期限从对应`spawn`成功后开始。进程提前退出�
 4. `pnpm dev:debug`证明API/Workflow Inspector固定在43120/43121，Memory不创建默认Inspector。
 5. 从终端SIGINT停止后，全部固定端口释放；连续启动两次不依赖旧产物或残留进程。
 6. 从VS Code真实F5启动`Chat：调试应用`，Chrome可访问页面、TypeScript断点可绑定，停止后端口释放。
-7. `format:check`、`lint`、`typecheck`、相关测试与`build`通过。
+7. 预置一轮携带专属Profile的遗留Chrome及锁文件后，下一次F5自动收敛旧浏览器、无旧Session警告，
+   新浏览器成功附加；连续干净F5也通过。
+8. `format:check`、`lint`、`typecheck`、相关测试与`build`通过。
 
 ## 7. 本地验收结果
 
-1. `scripts/dev/app-runtime.test.mjs`覆盖参数/Profile、服务顺序、Inspector边界、共享缓存、准备阶段自动附加隔离、就绪期限和反向停止；与VS Code合同测试合计73项相关测试通过。
+1. `scripts/dev/app-runtime.test.mjs`覆盖参数/Profile、服务顺序、Inspector边界、共享缓存、准备阶段自动附加隔离、浏览器精确身份/锁清理、就绪期限和反向停止；与VS Code合同测试合计76项相关测试通过。
 2. 终端普通模式和Debug模式均真实到达Ready；5个HTTP入口返回200，Debug模式仅`43120/43121`监听。
 3. 真实VS Code F5只显示`Chat：调试应用`，Ready后Chrome自动进入调试；Call Stack识别Workflow与API的TypeScript源码，API源码断点已成功绑定，未附加两套Memory或准备阶段短命令。
 4. 终端SIGINT和VS Code停止均已验证；当前7个固定端口全部释放，`pnpm dev:status`为空。
-5. 全仓`format:check`、`lint`、`typecheck`、500项Workspace测试、11个Workspace构建和`pnpm audit --prod`全部通过；另有6项固定memmy脚本合同通过。
+5. 全仓`format:check`、`lint`、`typecheck`、503项Workspace测试、11个Workspace构建和`pnpm audit --prod`全部通过；另有6项固定memmy脚本合同通过。
+6. 使用真实Chrome专属Profile制造遗留进程和`SingletonLock`后，下一次F5自动清理并成功建立
+   `Chat：前端浏览器（内部）`会话；没有旧Debug Session弹窗。一次Stop同时结束浏览器与应用，第二次F5继续成功。

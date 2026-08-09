@@ -14,6 +14,7 @@ import {
 } from "../debug/lib.mjs";
 import { ensureFixedMemmy } from "../memory/fixed-memmy.mjs";
 import { ensureFixedMemoryCore } from "../memory/fixed-memorycore.mjs";
+import { cleanupOwnedDebugBrowser } from "./browser-lifecycle.mjs";
 
 export const MEMORY_PROFILES = Object.freeze(["all", "memmy", "memorycore"]);
 const READY_POLL_INTERVAL_MS = 250;
@@ -268,12 +269,18 @@ export function runPreparationCommand({
   });
 }
 
-export async function preflightLocalRuntime() {
+export async function preflightLocalRuntime(root) {
   const entries = loadPidEntries();
   for (const result of terminateRecorded(entries)) {
     console.log(`[chat] 清理 ${result.role} pid=${result.pid}: ${result.action}`);
   }
   if (entries.length > 0) await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+  const browserCleanup = await cleanupOwnedDebugBrowser(root);
+  if (browserCleanup.terminatedPids.length > 0 || browserCleanup.removedLocks.length > 0) {
+    console.log(
+      `[chat] 清理专属调试浏览器：processes=${browserCleanup.terminatedPids.length}, locks=${browserCleanup.removedLocks.length}`,
+    );
+  }
   const occupied = checkPorts();
   if (occupied.length === 0) {
     console.log(`[chat] 固定端口可用：${frozenPortList().join(", ")}`);
@@ -286,7 +293,7 @@ export async function preflightLocalRuntime() {
 }
 
 export async function prepareLocalRuntime({ root, memory, signal }) {
-  await preflightLocalRuntime();
+  await preflightLocalRuntime(root);
   if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
   const sharedCacheRoot = resolveSharedFixedCacheRoot(root);
   process.env.CHAT_FIXED_SOURCE_CACHE_ROOT = sharedCacheRoot;

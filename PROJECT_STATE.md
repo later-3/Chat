@@ -14,7 +14,7 @@
 | Workflow | 规划仍由唯一`PlanningExecutionWorkflow`完成；M2另有独立`MemoryImportWorkflow`拥有导入/对账副作用生命周期 |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent`；百炼真实`qwen3.7-plus`已验证 |
 | 调试与回放 | 仓库统一`pnpm dev/dev:debug`拥有Memory、Workflow、API和Web服务图；VS Code只有应用级薄入口；固定端口、安全清理、严格脱敏Trace及多源Replay |
-| 代码状态 | P0、P1.1、P1.2、B1、B2、M1、M2、M3与MemoryCore调试/注释收口均已进入`main`；统一应用启动与调试已在独立任务完成实现和本地验收，待PR；当前实现文档已按仓库地图、前后端交互和Workflow运行边界收口 |
+| 代码状态 | P0、P1.1、P1.2、B1、B2、M1、M2、M3与MemoryCore调试/注释收口均已进入`main`；统一应用启动与调试已完成并合入本地`main`，待远端同步；当前实现文档已按仓库地图、前后端交互和Workflow运行边界收口 |
 | 当前阶段 | 长期上下文与知识复用：Memory、BMAD项目上下文、用户规则集 |
 | 当前任务 | 下一任务进入BMAD启发的Project基础、阶段与文档清单 |
 
@@ -61,8 +61,9 @@
 1. `pnpm dev`真实启动memmy、Tencent MemoryCore、Workflow、API和Web；5个HTTP入口均返回200，应用最后才输出唯一`[chat] ready`行。
 2. `pnpm dev:debug`复用同一服务图，只开放API `43120`与Workflow `43121`；Memory不创建默认Inspector，历史`43122/43123`不再属于冻结端口。
 3. 同一Git仓库的worktree共享经过commit/tree/Hash复核的固定Memory源码缓存；Product Store、Workflow Store、Memory数据库和Trace仍按worktree隔离。
-4. VS Code只显示`Chat：调试应用`一个入口；真实F5到达Ready后自动建立Chrome调试，并附加Chat自己的API与Workflow TypeScript进程；API源码断点成功绑定，没有Memory或准备阶段短命令调试会话。
-5. 从终端SIGINT以及VS Code停止后，Web、API、Workflow、两套Memory和两个Inspector共7个固定端口全部释放，`pnpm dev:status`报告未运行。
+4. VS Code只显示`Chat：调试应用`一个入口；真实F5到达Ready后自动建立专属Profile的Chrome调试，并附加Chat自己的API与Workflow TypeScript进程；API源码断点成功绑定，没有Memory或准备阶段短命令调试会话。
+5. 真实遗留浏览器门已通过：预置携带worktree专属Profile的Chrome与Singleton锁后，下一次F5自动收敛旧进程、无旧Session警告并成功附加新浏览器；连续干净F5也成功。
+6. 从终端SIGINT以及VS Code停止后，Web、API、Workflow、两套Memory和两个Inspector共7个固定端口及专属浏览器全部释放，`pnpm dev:status`报告未运行。
 
 ## 5. 当前没有的能力
 

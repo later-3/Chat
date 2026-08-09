@@ -24,9 +24,18 @@ interface LaunchConfig {
   postDebugTask?: string;
   serverReadyAction?: {
     pattern?: string;
-    uriFormat?: string;
     action?: string;
-    webRoot?: string;
+    killOnServerStop?: boolean;
+    config?: {
+      name?: string;
+      type?: string;
+      request?: string;
+      url?: string;
+      webRoot?: string;
+      userDataDir?: string;
+      cleanUp?: string;
+      killBehavior?: string;
+    };
   };
 }
 
@@ -69,10 +78,27 @@ describe("VS Code应用级调试配置", () => {
   it("应用Ready后才启动Chrome前端调试", () => {
     expect(appDebug?.serverReadyAction).toEqual({
       pattern: "\\[chat\\] ready: (http://127\\.0\\.0\\.1:43110/)",
-      uriFormat: "%s",
-      action: "debugWithChrome",
-      webRoot: "${workspaceFolder}/apps/web",
+      action: "startDebugging",
+      killOnServerStop: true,
+      config: {
+        name: "Chat：前端浏览器（内部）",
+        type: "pwa-chrome",
+        request: "launch",
+        url: "http://127.0.0.1:43110/",
+        webRoot: "${workspaceFolder}/apps/web",
+        userDataDir: "${workspaceFolder}/.data/debug/browser-profile",
+        cleanUp: "wholeBrowser",
+        killBehavior: "forceful",
+      },
     });
+  });
+
+  it("浏览器使用worktree专属profile并随父会话停止", () => {
+    const browser = appDebug?.serverReadyAction?.config;
+    expect(browser?.userDataDir).toBe("${workspaceFolder}/.data/debug/browser-profile");
+    expect(browser?.cleanUp).toBe("wholeBrowser");
+    expect(browser?.killBehavior).toBe("forceful");
+    expect(appDebug?.serverReadyAction?.killOnServerStop).toBe(true);
   });
 
   it("VS Code配置不包含服务参数、私密配置或Memory调试会话", () => {

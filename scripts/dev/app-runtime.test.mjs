@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 
@@ -11,6 +14,12 @@ import {
   sharedCacheRootFromGitCommonDir,
   waitForServiceReady,
 } from "./app-runtime.mjs";
+import {
+  cleanupOwnedDebugBrowser,
+  debugBrowserProfileRoot,
+  isOwnedDebugBrowserCommand,
+  ownedDebugBrowserPidsFromPsOutput,
+} from "./browser-lifecycle.mjs";
 
 const ROOT = "/workspace/chat";
 
@@ -79,6 +88,51 @@ test("准备命令不继承VS Code自动附加环境", async () => {
   assert.equal(receivedEnvironment.VSCODE_INSPECTOR_OPTIONS, undefined);
   assert.equal(receivedEnvironment.NODE_OPTIONS, undefined);
   assert.equal(receivedEnvironment.CHAT_REPO_ROOT, ROOT);
+});
+
+test("浏览器身份必须同时命中可执行文件与worktree专属profile", () => {
+  const profile = debugBrowserProfileRoot(ROOT);
+  const owned =
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome " +
+    `--user-data-dir=${profile} --remote-debugging-pipe`;
+  assert.equal(isOwnedDebugBrowserCommand(owned, profile), true);
+  assert.equal(
+    isOwnedDebugBrowserCommand(
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --profile-directory=Default",
+      profile,
+    ),
+    false,
+  );
+  assert.equal(
+    isOwnedDebugBrowserCommand(`node inspect.mjs --user-data-dir=${profile}`, profile),
+    false,
+  );
+  assert.deepEqual(ownedDebugBrowserPidsFromPsOutput(`  42 ${owned}\n`, profile), [42]);
+});
+
+test("浏览器清理先收敛精确进程再删除悬空锁", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chat-debug-browser-"));
+  try {
+    const profile = debugBrowserProfileRoot(root);
+    mkdirSync(profile, { recursive: true });
+    symlinkSync("stale-host-123", join(profile, "SingletonLock"));
+    writeFileSync(join(profile, "code.lock"), "123\n");
+    let alive = [42];
+    const signals = [];
+    const result = await cleanupOwnedDebugBrowser(root, {
+      findPids: () => alive,
+      kill(pid, signal) {
+        signals.push([pid, signal]);
+        alive = [];
+      },
+      sleep: async () => {},
+    });
+    assert.deepEqual(signals, [[42, "SIGTERM"]]);
+    assert.deepEqual(result.terminatedPids, [42]);
+    assert.deepEqual(result.removedLocks.sort(), ["SingletonLock", "code.lock"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("就绪期限从服务自己的启动时刻计算", async () => {

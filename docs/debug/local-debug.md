@@ -26,7 +26,7 @@ Memory是本地真实依赖，但不是默认调试目标，因此不开放Inspe
 仓库拥有唯一服务图，VS Code不拥有应用生命周期：
 
 ```text
-preflight（清理已登记旧进程 + 拒绝未知端口占用）
+preflight（清理已登记旧进程/专属调试浏览器 + 拒绝未知端口占用）
 → 校验/准备固定Memory源码缓存
 → 构建Workflow Bundles
 → 启动所选Memory并逐个等待真实健康检查
@@ -56,6 +56,12 @@ pnpm dev:stop                                 # 安全停止已登记进程
 Console中汇总带服务前缀的日志；应用输出Ready标记后才启动Chrome。`.vscode/tasks.json`不再存在，
 VS Code不复制Memory、Workflow、API和Web的启动/停止合同。
 
+前端通过内联`pwa-chrome`会话启动，固定使用当前worktree的`.data/debug/browser-profile`。启动器会在
+服务准备前只查找带这个精确`--user-data-dir`的Chrome主进程，先SIGTERM、再次身份复核后才可能
+SIGKILL，并在进程收敛后删除该Profile中的`SingletonLock/Socket/Cookie`和`code.lock`。日常Chrome
+没有这个参数，不会成为清理目标。父会话停止时使用`cleanUp: wholeBrowser`和`killBehavior: forceful`
+收敛专属浏览器，因此正常停止和下一次F5都不需要开发者手动关窗口。
+
 ### 2.3 就绪期限与失败
 
 - Memory冷启动期限为180秒；Workflow、API和Web为30秒。
@@ -73,6 +79,7 @@ VS Code不复制Memory、Workflow、API和Web的启动/停止合同。
   Memory数据库、Product Store、Workflow Store和Trace仍保存在各worktree自己的`.data`中。
 - `.env`和本地Provider配置由目标进程内部加载，不写入`launch.json`、argv、日志或Git。
 - `pnpm dev:debug`只开放API `43120`和Workflow `43121`；Memory第三方进程不开放Inspector。
+- `pnpm dev:stop`同时收敛已登记Chat进程与当前worktree的专属调试浏览器；未知浏览器不处理。
 
 保留的低层安全入口：
 

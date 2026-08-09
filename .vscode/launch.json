@@ -14,9 +14,18 @@
       "skipFiles": ["<node_internals>/**"],
       "serverReadyAction": {
         "pattern": "\\[chat\\] ready: (http://127\\.0\\.0\\.1:43110/)",
-        "uriFormat": "%s",
-        "action": "debugWithChrome",
-        "webRoot": "${workspaceFolder}/apps/web"
+        "action": "startDebugging",
+        "killOnServerStop": true,
+        "config": {
+          "name": "Chat：前端浏览器（内部）",
+          "type": "pwa-chrome",
+          "request": "launch",
+          "url": "http://127.0.0.1:43110/",
+          "webRoot": "${workspaceFolder}/apps/web",
+          "userDataDir": "${workspaceFolder}/.data/debug/browser-profile",
+          "cleanUp": "wholeBrowser",
+          "killBehavior": "forceful"
+        }
       }
     }
   ]

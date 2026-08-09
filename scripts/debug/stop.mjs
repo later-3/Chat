@@ -1,18 +1,25 @@
-import { checkPorts, loadPidEntries, terminateRecorded } from "./lib.mjs";
+import { checkPorts, loadPidEntries, repoRoot, terminateRecorded } from "./lib.mjs";
+import { cleanupOwnedDebugBrowser } from "../dev/browser-lifecycle.mjs";
 
 /**
- * chat-debug:stop（postDebugTask）。
+ * Chat本地开发环境的显式停止入口。
  *
- * 停止本轮记录的Chat调试进程并报告端口释放情况；
+ * 停止本轮记录的Chat进程和worktree专属调试浏览器，并报告端口释放情况；
  * 端口被未记录进程占用只警告不清理。
  */
 
 const entries = loadPidEntries();
 const results = terminateRecorded(entries);
+const browserCleanup = await cleanupOwnedDebugBrowser(repoRoot());
 let failed = false;
 for (const result of results) {
   console.log(`[stop] ${result.role} pid=${result.pid}: ${result.action}`);
   if (result.action === "kill-failed") failed = true;
+}
+if (browserCleanup.terminatedPids.length > 0 || browserCleanup.removedLocks.length > 0) {
+  console.log(
+    `[stop] browser: processes=${browserCleanup.terminatedPids.length}, locks=${browserCleanup.removedLocks.length}`,
+  );
 }
 
 const occupied = checkPorts();
