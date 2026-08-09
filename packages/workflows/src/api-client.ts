@@ -38,6 +38,7 @@ import {
   type PublishPlanReviewRequest,
   type LoadMemoryImportRequest,
   prepareProjectCandidateRequestSchema,
+  prepareProjectAdvancementCandidateRequestSchema,
   projectCandidateDtoSchema,
 } from "@chat/contracts";
 import { z, type ZodType } from "zod";
@@ -153,6 +154,22 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         // 私有响应仍使用公开Candidate投影，避免出现第二套候选合同。
         z.object({ candidate: projectCandidateDtoSchema }).strict(),
         // Project理解节点本身有90秒Provider硬超时；HTTP边界必须留出提交响应余量。
+        120_000,
+      );
+    },
+    prepareProjectAdvancementCandidate(input: {
+      commandId: string;
+      projectCandidateId: string;
+      expectedRevision: number;
+    }) {
+      return call(
+        options,
+        "/internal/runtime/v1/prepare-project-advancement-candidate",
+        prepareProjectAdvancementCandidateRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        z.object({ candidate: projectCandidateDtoSchema }).strict(),
         120_000,
       );
     },

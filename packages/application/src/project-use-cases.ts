@@ -41,6 +41,7 @@ import {
 } from "@chat/contracts";
 import {
   compileProjectIntakeProposal,
+  compileProjectMethodSnapshotPolicies,
   assertProjectActionTransition,
   computeProjectCandidateSha256,
   computeProjectMethodSnapshotSha256,
@@ -115,6 +116,58 @@ function toCandidateDto(candidate: ProjectCandidate): ProjectCandidateDto {
       createdAt: candidate.createdAt,
       updatedAt: candidate.updatedAt,
       allowedActions: candidate.status === "under_review" ? ["revise", "confirm", "reject"] : [],
+    });
+  }
+  if (candidate.candidateKind === "advancement") {
+    const base = {
+      schemaVersion: PROJECT_API_SCHEMA_VERSION,
+      projectCandidateId: candidate.projectCandidateId,
+      sessionId: candidate.sessionId,
+      candidateKind: "advancement" as const,
+      projectId: candidate.projectId,
+      boundProjectRevision: candidate.boundProjectRevision,
+      boundStageId: candidate.boundStageId,
+      boundStageRevision: candidate.boundStageRevision,
+      revision: candidate.revision,
+      createdAt: candidate.createdAt,
+      updatedAt: candidate.updatedAt,
+    };
+    if (candidate.status === "queued") {
+      return projectCandidateDtoSchema.parse({ ...base, status: "queued", allowedActions: [] });
+    }
+    if (candidate.status === "failed") {
+      return projectCandidateDtoSchema.parse({
+        ...base,
+        status: "failed",
+        failureCode: candidate.failureCode,
+        allowedActions: [],
+      });
+    }
+    if (candidate.status === "under_review") {
+      return projectCandidateDtoSchema.parse({
+        ...base,
+        status: "under_review",
+        proposal: candidate.proposal,
+        candidateSha256: candidate.candidateSha256,
+        allowedActions: ["revise", "confirm", "reject"],
+      });
+    }
+    if (candidate.status === "confirmed") {
+      return projectCandidateDtoSchema.parse({
+        ...base,
+        status: "confirmed",
+        proposal: candidate.proposal,
+        candidateSha256: candidate.candidateSha256,
+        committedStageId: candidate.committedStageId,
+        committedMilestoneIds: candidate.committedMilestoneIds,
+        committedUpdateId: candidate.committedUpdateId,
+        allowedActions: [],
+      });
+    }
+    return projectCandidateDtoSchema.parse({
+      ...base,
+      status: "rejected",
+      allowedActions: [],
     });
   }
   const base = {
@@ -1238,7 +1291,7 @@ function createProjectFacts(input: {
 }): void {
   const { draft, candidate, ids, now, proposal } = input;
   const project: Project = {
-    schemaVersion: "project.v1",
+    schemaVersion: "project.v2",
     projectId: ids.projectId,
     ownerPrincipalId: candidate.requestedByPrincipalId,
     name: proposal.name,
@@ -1254,23 +1307,38 @@ function createProjectFacts(input: {
     createdAt: now,
     updatedAt: now,
   };
+  const methodPolicies = compileProjectMethodSnapshotPolicies(proposal.method.profileId);
   const method: ProjectMethodSnapshot = {
-    schemaVersion: "project-method-snapshot.v1",
+    schemaVersion: "project-method-snapshot.v2",
     projectMethodSnapshotId: ids.methodId,
     projectId: ids.projectId,
-    ...proposal.method,
-    sha256: computeProjectMethodSnapshotSha256(proposal.method) as never,
+    profileId: proposal.method.profileId,
+    rationale: proposal.method.rationale,
+    policies: methodPolicies,
+    source: "project_intake",
+    sha256: computeProjectMethodSnapshotSha256({
+      profileId: proposal.method.profileId,
+      rationale: proposal.method.rationale,
+      policies: methodPolicies,
+      source: "project_intake",
+    }) as never,
     revision: 1,
     createdAt: now,
     updatedAt: now,
   };
   const stage: ProjectStage = {
-    schemaVersion: "project-stage.v1",
+    schemaVersion: "project-stage.v2",
     projectStageId: ids.stageId,
     projectId: ids.projectId,
-    ...proposal.initialStage,
+    methodSnapshotId: ids.methodId,
+    key: "initial",
+    name: proposal.initialStage.name,
+    goal: proposal.initialStage.goal,
+    successCriteria: proposal.successCriteria.slice(0, 20),
     status: "active",
     sequence: 1,
+    startedAt: now,
+    completionEvidenceIds: [],
     revision: 1,
     createdAt: now,
     updatedAt: now,
@@ -1491,12 +1559,49 @@ function projectWorkspace(
   const contributions = Object.values(snapshot.entities.projectContributions).filter(
     (item) => item.projectId === project.projectId,
   );
+  const stage = snapshot.entities.projectStages[project.currentStageId];
+  if (stage === undefined) throw notFound("Project当前Stage不存在");
+  const milestones = Object.values(snapshot.entities.projectMilestones).filter(
+    (item) => item.projectId === project.projectId && item.stageId === stage.projectStageId,
+  );
+  const latestUpdate = Object.values(snapshot.entities.projectUpdates)
+    .filter((item) => item.projectId === project.projectId)
+    .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))[0];
   return projectWorkspaceDtoSchema.parse({
     schemaVersion: PROJECT_API_SCHEMA_VERSION,
     project: projectSummary(snapshot, project),
     scopeIn: project.scopeIn,
     scopeOut: project.scopeOut,
     successCriteria: project.successCriteria,
+    stage: {
+      projectStageId: stage.projectStageId,
+      name: stage.name,
+      goal: stage.goal,
+      successCriteria: stage.successCriteria,
+      status: stage.status,
+      revision: stage.revision,
+    },
+    milestones: milestones.map((item) => ({
+      projectMilestoneId: item.projectMilestoneId,
+      outcome: item.outcome,
+      acceptanceCriteria: item.acceptanceCriteria,
+      status: item.status,
+      ...(item.targetAt !== undefined ? { targetAt: item.targetAt } : {}),
+      revision: item.revision,
+    })),
+    latestUpdate:
+      latestUpdate === undefined
+        ? null
+        : {
+            projectUpdateId: latestUpdate.projectUpdateId,
+            authorParticipantId: latestUpdate.authorParticipantId,
+            health: latestUpdate.health,
+            narrative: latestUpdate.narrative,
+            observedChanges: latestUpdate.observedChanges,
+            blockers: latestUpdate.blockers,
+            nextFocus: latestUpdate.nextFocus,
+            publishedAt: latestUpdate.publishedAt,
+          },
     participants: participants.map((item) => ({
       projectParticipantId: item.projectParticipantId,
       kind: item.kind,
@@ -1626,6 +1731,31 @@ export async function getProjectTimeline(
         actorParticipantId: item.ownerParticipantId,
         title: item.title,
         occurredAt: item.updatedAt,
+        objectRevision: item.revision,
+      })),
+    ...Object.values(snapshot.entities.projectStateTransitions)
+      .filter((item) => item.projectId === project.projectId)
+      .map((item) => ({
+        id: item.projectStateTransitionId,
+        kind: "state_transition" as const,
+        actorParticipantId: item.actorParticipantId,
+        title:
+          item.objectType === "stage"
+            ? `阶段：${item.from} → ${item.to}`
+            : item.objectType === "milestone"
+              ? `里程碑：${item.from} → ${item.to}`
+              : `项目：${item.from} → ${item.to}`,
+        occurredAt: item.occurredAt,
+        objectRevision: item.revision,
+      })),
+    ...Object.values(snapshot.entities.projectUpdates)
+      .filter((item) => item.projectId === project.projectId)
+      .map((item) => ({
+        id: item.projectUpdateId,
+        kind: "project_update" as const,
+        actorParticipantId: item.authorParticipantId,
+        title: `项目更新 · ${item.health}`,
+        occurredAt: item.publishedAt,
         objectRevision: item.revision,
       })),
   ];

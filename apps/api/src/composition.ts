@@ -29,6 +29,9 @@ import {
   projectDecisionIdSchema,
   projectObservationIdSchema,
   projectCandidateIdSchema,
+  projectMilestoneIdSchema,
+  projectUpdateIdSchema,
+  projectStateTransitionIdSchema,
   type PrincipalId,
 } from "@chat/contracts";
 import type {
@@ -40,7 +43,11 @@ import type {
 import { JsonProductStore } from "@chat/product-store-json";
 import { createMemoryBackendRegistry } from "@chat/memory-runtime";
 import { createProjectResourceRegistry } from "@chat/project-runtime";
-import { loadProjectModelProfile, PiProjectIntakeUnderstandingAdapter } from "@chat/pi-runtime";
+import {
+  loadProjectModelProfile,
+  PiProjectAdvancementUnderstandingAdapter,
+  PiProjectIntakeUnderstandingAdapter,
+} from "@chat/pi-runtime";
 
 /**
  * API组合根。
@@ -89,6 +96,9 @@ export function createProjectIdFactory(): ProjectIdFactory {
     decision: () => projectDecisionIdSchema.parse(`pdc_${randomSuffix()}`),
     observation: () => projectObservationIdSchema.parse(`pob_${randomSuffix()}`),
     candidate: () => projectCandidateIdSchema.parse(`pca_${randomSuffix()}`),
+    milestone: () => projectMilestoneIdSchema.parse(`pml_${randomSuffix()}`),
+    update: () => projectUpdateIdSchema.parse(`pup_${randomSuffix()}`),
+    stateTransition: () => projectStateTransitionIdSchema.parse(`ptr_${randomSuffix()}`),
   };
 }
 
@@ -119,8 +129,10 @@ export async function createApplicationDeps(
   const store = await openProductStore(filePath, trace);
   const memoryRegistry = createMemoryBackendRegistry(process.env);
   const projectRoots = await createProjectResourceRegistry(process.env);
-  const projectUnderstanding = new PiProjectIntakeUnderstandingAdapter(
-    loadProjectModelProfile(process.env),
+  const projectModelProfile = loadProjectModelProfile(process.env);
+  const projectUnderstanding = new PiProjectIntakeUnderstandingAdapter(projectModelProfile);
+  const advancementUnderstanding = new PiProjectAdvancementUnderstandingAdapter(
+    projectModelProfile,
   );
   return {
     store,
@@ -130,6 +142,7 @@ export async function createApplicationDeps(
     memoryImportBackends: memoryRegistry,
     projectRoots,
     projectIntakeUnderstanding: projectUnderstanding,
+    projectAdvancementUnderstanding: advancementUnderstanding,
     projectIds: createProjectIdFactory(),
     ...(trace !== undefined ? { trace } : {}),
   };

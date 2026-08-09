@@ -5,6 +5,9 @@ import {
   compileProjectIntakeProposal,
   computeProjectCandidateSha256,
   computeProjectObservationSha256,
+  compileProjectMethodSnapshotPolicies,
+  assertProjectStageTransition,
+  assertProjectMilestoneTransition,
   type ProjectIntakeUnderstandingShape,
   type ProjectObservationDataShape,
   type ProjectWorkShape,
@@ -87,5 +90,68 @@ describe("Project Action状态机", () => {
     expect(() => assertProjectActionTransition({ from: "cancelled", to: "todo" })).toThrow(
       "不允许",
     );
+  });
+});
+
+describe("PS2.1 Method、Stage与Milestone规则", () => {
+  it("按profile编译完整且不同的软件/轻量策略", () => {
+    const software = compileProjectMethodSnapshotPolicies("software-delivery.v1");
+    const lightweight = compileProjectMethodSnapshotPolicies("lightweight.v1");
+    expect(software).toMatchObject({
+      iteration: { enabled: true, circuitBreaker: true },
+      artifact: { requiredRoles: ["requirements", "architecture", "testing_strategy"] },
+      work: { readyGate: "required", doneGate: "required" },
+    });
+    expect(lightweight).toMatchObject({
+      iteration: { enabled: false, appetiteKind: "review_trigger" },
+      artifact: { requiredRoles: [] },
+    });
+  });
+
+  it("Stage终态必须有Decision，软件完成还必须有Evidence", () => {
+    expect(() =>
+      assertProjectStageTransition({
+        from: "active",
+        to: "review",
+        evidenceIds: [],
+        evidenceRequirement: "required",
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertProjectStageTransition({
+        from: "review",
+        to: "completed",
+        evidenceIds: [],
+        evidenceRequirement: "required",
+      }),
+    ).toThrow("Decision");
+    expect(() =>
+      assertProjectStageTransition({
+        from: "review",
+        to: "completed",
+        decisionId: "pdc_done",
+        evidenceIds: [],
+        evidenceRequirement: "required",
+      }),
+    ).toThrow("Evidence");
+  });
+
+  it("Milestone达成不能由Action计数推导，必须显式Decision和Evidence", () => {
+    expect(() =>
+      assertProjectMilestoneTransition({
+        from: "planned",
+        to: "achieved",
+        decisionId: "pdc_done",
+        evidenceIds: [],
+      }),
+    ).toThrow("Evidence");
+    expect(() =>
+      assertProjectMilestoneTransition({
+        from: "planned",
+        to: "achieved",
+        decisionId: "pdc_done",
+        evidenceIds: ["pev_proof"],
+      }),
+    ).not.toThrow();
   });
 });

@@ -19,10 +19,14 @@ import {
   projectActionIdSchema,
   projectContributionIdSchema,
   projectDecisionIdSchema,
+  projectMilestoneIdSchema,
   projectIdSchema,
   projectObservationIdSchema,
   projectParticipantIdSchema,
   projectResourceIdSchema,
+  projectStageIdSchema,
+  projectStateTransitionIdSchema,
+  projectUpdateIdSchema,
   projectWorkIdSchema,
 } from "./ids.js";
 
@@ -87,6 +91,13 @@ export const TRACE_EVENT_NAMES = {
   projectIntakeCandidatePublished: "project.intake.candidate_published",
   projectIntakeConfirmed: "project.intake.confirmed",
   projectIntakeRejected: "project.intake.rejected",
+  projectAdvancementStarted: "project.advancement.started",
+  projectAdvancementCandidatePublished: "project.advancement.candidate_published",
+  projectAdvancementConfirmed: "project.advancement.confirmed",
+  projectAdvancementRejected: "project.advancement.rejected",
+  projectStageTransitioned: "project.stage.transitioned",
+  projectMilestoneTransitioned: "project.milestone.transitioned",
+  projectUpdatePublished: "project.update.published",
   projectUnderstandingStarted: "project.understanding.started",
   projectUnderstandingCompleted: "project.understanding.completed",
   projectUnderstandingFailed: "project.understanding.failed",
@@ -716,6 +727,118 @@ const projectIntakeRejectedSchema = defineTraceEvent(
   },
 );
 
+const projectAdvancementStartedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectAdvancementStarted,
+  "unknown",
+  {
+    projectCandidateId: projectCandidateIdSchema,
+    projectId: projectIdSchema,
+    projectStageId: projectStageIdSchema,
+    boundProjectRevision: revisionSchema,
+    boundStageRevision: revisionSchema,
+    commandId: commandIdSchema,
+    candidateRevision: revisionSchema,
+    ...durationMsOptional,
+  },
+);
+
+const projectAdvancementCandidatePublishedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectAdvancementCandidatePublished,
+  "success",
+  {
+    projectCandidateId: projectCandidateIdSchema,
+    projectId: projectIdSchema,
+    projectStageId: projectStageIdSchema,
+    candidateRevision: revisionSchema,
+    candidateSha256: sha256Schema,
+    ...durationMsRequired,
+  },
+);
+
+const projectAdvancementConfirmedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectAdvancementConfirmed,
+  "success",
+  {
+    projectCandidateId: projectCandidateIdSchema,
+    projectId: projectIdSchema,
+    projectStageId: projectStageIdSchema,
+    projectUpdateId: projectUpdateIdSchema,
+    candidateRevision: revisionSchema,
+    candidateSha256: sha256Schema,
+    projectRevision: revisionSchema,
+    stageRevision: revisionSchema,
+    milestoneCount: z.number().int().nonnegative().max(8),
+    commandId: commandIdSchema,
+    ...durationMsOptional,
+  },
+);
+
+const projectAdvancementRejectedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectAdvancementRejected,
+  "rejected",
+  {
+    projectCandidateId: projectCandidateIdSchema,
+    projectId: projectIdSchema,
+    projectStageId: projectStageIdSchema,
+    candidateRevision: revisionSchema,
+    candidateSha256: sha256Schema,
+    commandId: commandIdSchema,
+    ...durationMsOptional,
+  },
+);
+
+const projectStageTransitionedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectStageTransitioned,
+  "success",
+  {
+    projectId: projectIdSchema,
+    projectStageId: projectStageIdSchema,
+    projectStateTransitionId: projectStateTransitionIdSchema,
+    projectDecisionId: projectDecisionIdSchema,
+    fromStatus: z.enum(["planned", "active", "review", "completed", "skipped"]),
+    toStatus: z.enum(["planned", "active", "review", "completed", "skipped"]),
+    beforeRevision: revisionSchema,
+    afterRevision: revisionSchema,
+    evidenceCount: z.number().int().nonnegative().max(20),
+    commandId: commandIdSchema,
+    ...durationMsOptional,
+  },
+);
+
+const projectMilestoneTransitionedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectMilestoneTransitioned,
+  "success",
+  {
+    projectId: projectIdSchema,
+    projectMilestoneId: projectMilestoneIdSchema,
+    projectStateTransitionId: projectStateTransitionIdSchema,
+    projectDecisionId: projectDecisionIdSchema,
+    fromStatus: z.enum(["planned", "achieved", "cancelled"]),
+    toStatus: z.enum(["planned", "achieved", "cancelled"]),
+    beforeRevision: revisionSchema,
+    afterRevision: revisionSchema,
+    evidenceCount: z.number().int().nonnegative().max(20),
+    commandId: commandIdSchema,
+    ...durationMsOptional,
+  },
+);
+
+const projectUpdatePublishedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectUpdatePublished,
+  "success",
+  {
+    projectId: projectIdSchema,
+    projectStageId: projectStageIdSchema,
+    projectUpdateId: projectUpdateIdSchema,
+    projectRevision: revisionSchema,
+    stageRevision: revisionSchema,
+    updateRevision: revisionSchema,
+    evidenceCount: z.number().int().nonnegative().max(20),
+    commandId: commandIdSchema,
+    ...durationMsOptional,
+  },
+);
+
 const projectModelFields = {
   projectCandidateId: projectCandidateIdSchema,
   candidateRevision: revisionSchema,
@@ -1290,6 +1413,13 @@ export const traceEventSchema = z.discriminatedUnion("eventName", [
   projectIntakeCandidatePublishedSchema,
   projectIntakeConfirmedSchema,
   projectIntakeRejectedSchema,
+  projectAdvancementStartedSchema,
+  projectAdvancementCandidatePublishedSchema,
+  projectAdvancementConfirmedSchema,
+  projectAdvancementRejectedSchema,
+  projectStageTransitionedSchema,
+  projectMilestoneTransitionedSchema,
+  projectUpdatePublishedSchema,
   projectUnderstandingStartedSchema,
   projectUnderstandingCompletedSchema,
   projectUnderstandingFailedSchema,

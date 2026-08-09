@@ -632,6 +632,24 @@ describe("公开产品API", () => {
     expect(problemDetailSchema.parse(await response.json()).code).toBe("validation_failed");
   });
 
+  it("Project推进入口拒绝浏览器指定Provider、模型和Workflow私有身份", async () => {
+    const { app } = await testApp();
+    const response = await postJson(app, "/api/project-advancements", {
+      commandId: nextCmd(),
+      payload: {
+        sessionId: "psn_injected",
+        projectId: "prj_injected",
+        text: "推进项目",
+        provider: "bailian",
+        model: "qwen3.7-plus",
+        workflowRunId: "wfr_private",
+        hookToken: "secret",
+      },
+    });
+    expect(response.status).toBe(400);
+    expect(problemDetailSchema.parse(await response.json()).code).toBe("validation_failed");
+  });
+
   it("安全列出Memory后端并恢复Run Context来源，不暴露服务配置", async () => {
     const { app, deps } = await testApp();
     const backendsResponse = await app.request("/api/memory-backends");

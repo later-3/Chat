@@ -85,6 +85,9 @@ function testProjectIds(): ProjectIdFactory {
     decision: () => next("pdc") as ReturnType<ProjectIdFactory["decision"]>,
     observation: () => next("pob") as ReturnType<ProjectIdFactory["observation"]>,
     candidate: () => next("pca") as ReturnType<ProjectIdFactory["candidate"]>,
+    milestone: () => next("pml") as ReturnType<ProjectIdFactory["milestone"]>,
+    update: () => next("pup") as ReturnType<ProjectIdFactory["update"]>,
+    stateTransition: () => next("ptr") as ReturnType<ProjectIdFactory["stateTransition"]>,
   };
 }
 
@@ -610,7 +613,7 @@ describe("M1真实Local World恢复", () => {
     }
   }, 120_000);
 
-  it("Project Intake等待确认时同时重启API与Workflow，仍恢复同一候选和同一运行", async () => {
+  it("Project Intake与Advancement等待确认时重启API/Workflow，仍恢复同一候选且不重复调用模型", async () => {
     const root = await mkdtemp(join(tmpdir(), "chat-project-world-recovery-"));
     const productPath = join(root, "product.json");
     const projectRoot = join(root, "project-root");
@@ -621,6 +624,7 @@ describe("M1真实Local World恢复", () => {
     const applicationIds = testIds();
     const applicationProjectIds = testProjectIds();
     let understandingCalls = 0;
+    let advancementCalls = 0;
     let apiServer: HttpServer | undefined;
     let runtimeProcess: RuntimeProcessHandle | undefined;
 
@@ -682,6 +686,43 @@ describe("M1真实Local World恢复", () => {
             };
           },
         };
+      const projectAdvancementUnderstanding: NonNullable<
+        ApplicationDeps["projectAdvancementUnderstanding"]
+      > = {
+        describe: () => ({
+          profileVersion: "test.project-recovery.v1",
+          providerName: "test-provider",
+          modelId: "test-model",
+          promptTemplateVersion: "project-advancement-understanding.v1",
+          endpointHost: "models.example.test",
+        }),
+        understand: async () => {
+          advancementCalls += 1;
+          return {
+            understanding: {
+              stage: {
+                name: "耐久推进验证",
+                goal: "证明项目推进候选在API与Workflow重启后继续同一运行",
+                successCriteria: ["只调用一次理解节点", "确认后发布项目更新"],
+              },
+              milestones: [
+                {
+                  outcome: "完成推进恢复闭环",
+                  acceptanceCriteria: ["Stage、Milestone与Update原子提交"],
+                },
+              ],
+              update: {
+                health: "on_track" as const,
+                narrative: "推进候选已经恢复并等待确认。",
+                observedChanges: [],
+                blockers: [],
+                nextFocus: ["确认推进候选"],
+              },
+            },
+            evidence: { durationMs: 1, providerRequestId: "req-advancement-recovery" },
+          };
+        },
+      };
       const now = () => new Date().toISOString();
       const openDeps = async (): Promise<ApplicationDeps> => ({
         store: await JsonProductStore.open({ filePath: productPath, now }),
@@ -690,6 +731,7 @@ describe("M1真实Local World恢复", () => {
         memoryBackends: createApplicationMemoryRegistry(),
         projectRoots,
         projectIntakeUnderstanding,
+        projectAdvancementUnderstanding,
         projectIds: applicationProjectIds,
       });
       const openApi = async (deps: ApplicationDeps, port = 0) => {
@@ -825,6 +867,106 @@ describe("M1真实Local World恢复", () => {
       );
       expect(workflowRunFiles).toHaveLength(1);
       expect(understandingCalls).toBe(1);
+
+      const project = Object.values(snapshot.entities.projects)[0];
+      if (project === undefined) throw new Error("Project Intake未创建Project");
+      const advancementResponse = (await postJson(
+        apiBaseUrl,
+        "/api/project-advancements",
+        {
+          commandId: nextCommandId(),
+          payload: {
+            sessionId: session.sessionId,
+            projectId: project.projectId,
+            text: "推进到耐久恢复验证阶段，并记录当前进展",
+          },
+        },
+        202,
+      )) as { candidate: unknown };
+      const advancementQueued = projectCandidateDtoSchema.parse(advancementResponse.candidate);
+      expect(advancementQueued).toMatchObject({
+        candidateKind: "advancement",
+        status: "queued",
+        revision: 1,
+      });
+      await dispatcher.tick();
+      const advancementReviewing = await waitForProjectCandidate(
+        apiBaseUrl,
+        advancementQueued.projectCandidateId,
+        "under_review",
+      );
+      if (
+        advancementReviewing.candidateKind !== "advancement" ||
+        advancementReviewing.status !== "under_review"
+      ) {
+        throw new Error("Project Advancement候选未进入审核态");
+      }
+      expect(advancementCalls).toBe(1);
+      const advancementBindingBefore = (
+        await RuntimeBindingStore.open(bindingsPath, { allowCreate: false })
+      ).getProjectIntakeBinding(advancementQueued.projectCandidateId);
+      expect(advancementBindingBefore).toBeDefined();
+
+      await runtimeProcess.stop();
+      runtimeProcess = undefined;
+      await closeHttpServer(apiServer);
+      apiServer = undefined;
+      deps = await openDeps();
+      const advancementReopenedApi = await openApi(deps, apiPort);
+      apiServer = advancementReopenedApi.server;
+      runtimeProcess = await startRuntimeProcess(runtimeOptions);
+      dispatcher = new OutboxDispatcher({
+        deps,
+        workflowRuntimeBaseUrl: runtimeProcess.baseUrl,
+        credential: CREDENTIAL,
+      });
+      const advancementRecovered = await getProjectCandidateFromApi(
+        apiBaseUrl,
+        advancementQueued.projectCandidateId,
+      );
+      expect(advancementRecovered).toMatchObject({
+        candidateKind: "advancement",
+        status: "under_review",
+        revision: advancementReviewing.revision,
+      });
+      expect(advancementCalls).toBe(1);
+
+      const advancementConfirmResponse = (await postJson(
+        apiBaseUrl,
+        `/api/project-advancements/${advancementQueued.projectCandidateId}/decisions`,
+        {
+          commandId: nextCommandId(),
+          expectedRevision: advancementRecovered.revision,
+          payload: {
+            kind: "confirm",
+            candidateSha256:
+              advancementRecovered.candidateKind === "advancement" &&
+              advancementRecovered.status === "under_review"
+                ? advancementRecovered.candidateSha256
+                : "invalid",
+          },
+        },
+      )) as { candidate: unknown };
+      expect(projectCandidateDtoSchema.parse(advancementConfirmResponse.candidate)).toMatchObject({
+        candidateKind: "advancement",
+        status: "confirmed",
+      });
+      await dispatcher.tick();
+      const finalSnapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+      expect(Object.values(finalSnapshot.entities.projectMilestones)).toHaveLength(1);
+      expect(Object.values(finalSnapshot.entities.projectUpdates)).toHaveLength(1);
+      expect(finalSnapshot.entities.projectStages[project.currentStageId]?.name).toBe(
+        "耐久推进验证",
+      );
+      expect(
+        (
+          await RuntimeBindingStore.open(bindingsPath, { allowCreate: false })
+        ).getProjectIntakeBinding(advancementQueued.projectCandidateId)?.workflowRunId,
+      ).toBe(advancementBindingBefore?.workflowRunId);
+      expect(advancementCalls).toBe(1);
+      expect(
+        (await readdir(join(workflowDataDir, "runs"))).filter((name) => name.endsWith(".json")),
+      ).toHaveLength(2);
     } catch (error) {
       throw new Error(
         `Project Intake恢复场景失败 stdout=${runtimeProcess?.stdout().slice(-4_000) ?? ""} stderr=${runtimeProcess?.stderr().slice(-4_000) ?? ""}`,

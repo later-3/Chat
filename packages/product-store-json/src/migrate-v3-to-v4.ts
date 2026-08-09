@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { productSnapshotSchema, type ProductSnapshot } from "@chat/contracts";
+import { productSnapshotV4Schema, type ProductSnapshotV4 } from "./legacy-v4.js";
 
 /** v3只比v4少Project Solution集合；迁移不得改写任何既有事实。 */
-const productEntitiesV3Schema = productSnapshotSchema.shape.entities.omit({
+const productEntitiesV3Schema = productSnapshotV4Schema.shape.entities.omit({
   projects: true,
   projectMethodSnapshots: true,
   projectStages: true,
@@ -23,14 +23,14 @@ export const productSnapshotV3Schema = z
     storeRevision: z.number().int().nonnegative(),
     committedAt: z.iso.datetime(),
     entities: productEntitiesV3Schema,
-    commandReceipts: productSnapshotSchema.shape.commandReceipts,
-    outbox: productSnapshotSchema.shape.outbox,
+    commandReceipts: productSnapshotV4Schema.shape.commandReceipts,
+    outbox: productSnapshotV4Schema.shape.outbox,
   })
   .strict();
 
 export type ProductSnapshotV3 = z.infer<typeof productSnapshotV3Schema>;
 
-export function migrateProductSnapshotV3ToV4(snapshot: ProductSnapshotV3): ProductSnapshot {
+export function migrateProductSnapshotV3ToV4(snapshot: ProductSnapshotV3): ProductSnapshotV4 {
   return {
     schemaVersion: "chat-product-store.v4",
     storeRevision: snapshot.storeRevision,

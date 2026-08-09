@@ -8,6 +8,8 @@ import {
 } from "@chat/contracts/public";
 
 const CONTENT_MARKER = "TRACE_CONTENT_MUST_NEVER_BE_WRITTEN_PROJECT_E2E";
+const ADVANCEMENT_MARKER = "TRACE_MUST_NOT_COPY_PROJECT_ADVANCEMENT_BODY";
+const UPDATE_MARKER = "负责人确认当前仍有真实恢复验证待完成";
 const DECISION_MARKER = "BMAD只作为方法输入，不绑定任何模型";
 const FORBIDDEN_PUBLIC_MARKERS = [
   "workflowRunId",
@@ -35,10 +37,7 @@ async function readTraceLines(directory: string): Promise<string[]> {
   ).flatMap((content) => content.split("\n").filter(Boolean));
 }
 
-test("真实Project Intake：对话建项→修改/并发确认→项目账本→管理与恢复", async ({
-  page,
-  context,
-}) => {
+test("真实Project：对话建项→推进修订/确认→项目账本→管理与恢复", async ({ page, context }) => {
   await page.route("**/api/**", async (route) => {
     const response = await route.fetch();
     const body = await response.body();
@@ -125,6 +124,74 @@ test("真实Project Intake：对话建项→修改/并发确认→项目账本�
   expect(initialWorkspace.participants).toHaveLength(1);
   expect(initialWorkspace.works.length).toBeGreaterThan(0);
 
+  // 同一个Chat显式进入“推进项目”，真实模型只生成临时Understanding。
+  await page.getByRole("button", { name: "推进项目" }).click();
+  await page
+    .getByLabel("消息输入框")
+    .fill(
+      `进入PS2阶段：阶段目标是打通项目推进闭环，关键结果是Stage、Milestone和负责人更新可以跨重启恢复；当前有风险。${ADVANCEMENT_MARKER}`,
+    );
+  await page.getByRole("button", { name: "发送" }).click();
+  const advancementCard = page.getByLabel("项目推进方案");
+  await expect(advancementCard).toBeVisible();
+  const oldAdvancementResponse = await page.evaluate(async (id) => {
+    const response = await fetch(
+      `/api/sessions/${encodeURIComponent(String(id))}/project-candidates/current`,
+    );
+    return response.json();
+  }, sessionId);
+  const oldAdvancement =
+    currentProjectCandidateResponseSchema.parse(oldAdvancementResponse).candidate;
+  if (
+    oldAdvancement === null ||
+    oldAdvancement.candidateKind !== "advancement" ||
+    oldAdvancement.status !== "under_review"
+  ) {
+    throw new Error("真实推进Candidate未进入审核态");
+  }
+  await advancementCard.getByLabel("当前阶段名称").fill("PS2 项目推进闭环");
+  await advancementCard
+    .getByLabel("阶段目标")
+    .fill("让用户只靠对话维护阶段目标、关键结果和可信的负责人更新");
+  await advancementCard.getByLabel("健康判断").selectOption("at_risk");
+  await advancementCard.getByLabel("负责人更新").fill(UPDATE_MARKER);
+  await advancementCard.getByLabel("关键结果1").fill("完成真实模型与浏览器推进闭环");
+  await advancementCard.getByRole("button", { name: "保存推进方案" }).click();
+  await expect(advancementCard.getByLabel("当前阶段名称")).toHaveValue("PS2 项目推进闭环");
+
+  // 旧revision/Hash不能确认新候选，且失败不能产生任何项目事实。
+  const staleStatus = await page.evaluate(
+    async ({ candidateId, revision, candidateSha256 }) => {
+      const response = await fetch(
+        `/api/project-advancements/${encodeURIComponent(candidateId)}/decisions`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            commandId: "cmd_projectadvancemente2estale",
+            expectedRevision: revision,
+            payload: { kind: "confirm", candidateSha256 },
+          }),
+        },
+      );
+      return response.status;
+    },
+    {
+      candidateId: oldAdvancement.projectCandidateId,
+      revision: oldAdvancement.revision,
+      candidateSha256: oldAdvancement.candidateSha256,
+    },
+  );
+  expect(staleStatus).toBe(409);
+  await advancementCard.getByRole("button", { name: "确认阶段与发布更新" }).click();
+  await expect(page.getByLabel("当前阶段").getByRole("heading")).toHaveText("PS2 项目推进闭环");
+  await expect(page.getByText("完成真实模型与浏览器推进闭环", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("最新项目更新")).toContainText(UPDATE_MARKER);
+
+  await page.reload();
+  await expect(page.getByLabel("当前阶段").getByRole("heading")).toHaveText("PS2 项目推进闭环");
+  await expect(page.getByLabel("最新项目更新")).toContainText(UPDATE_MARKER);
+
   await page.getByRole("button", { name: "管理项目" }).click();
   await page.getByLabel("项目管理动作").selectOption("action");
   await page.getByLabel("消息输入框").fill("新增待办：完成PS1真实验收");
@@ -201,10 +268,10 @@ test("真实Project Intake：对话建项→修改/并发确认→项目账本�
   );
   expect(
     traceEvents.filter((event) => event.eventName === "project.understanding.started"),
-  ).toHaveLength(1);
+  ).toHaveLength(2);
   expect(
     traceEvents.filter((event) => event.eventName === "project.understanding.completed"),
-  ).toHaveLength(1);
+  ).toHaveLength(2);
   expect(
     traceEvents.filter((event) => event.eventName === "project.understanding.failed"),
   ).toHaveLength(0);
@@ -212,9 +279,20 @@ test("真实Project Intake：对话建项→修改/并发确认→项目账本�
   expect(traceText).toContain('"providerName":"bailian"');
   expect(traceText).toContain('"modelId":"qwen3.7-plus"');
   expect(traceText).not.toContain(CONTENT_MARKER);
+  expect(traceText).not.toContain(ADVANCEMENT_MARKER);
+  expect(traceText).not.toContain(UPDATE_MARKER);
   expect(traceText).not.toContain(DECISION_MARKER);
   expect(traceText).not.toContain(resolve(process.cwd(), "../.."));
   expect(traceText).not.toContain("DASHSCOPE_API_KEY");
+  expect(
+    traceEvents.filter((event) => event.eventName === "project.advancement.candidate_published"),
+  ).toHaveLength(1);
+  expect(
+    traceEvents.filter((event) => event.eventName === "project.advancement.confirmed"),
+  ).toHaveLength(1);
+  expect(
+    traceEvents.filter((event) => event.eventName === "project.update.published"),
+  ).toHaveLength(1);
 
   // Public Candidate合同不含provider/model；模型替换不会改变产品对象。
   if (pending !== null) {

@@ -58,6 +58,10 @@ export const projectEvidenceIdSchema = prefixedId("pev");
 export const projectDecisionIdSchema = prefixedId("pdc");
 export const projectObservationIdSchema = prefixedId("pob");
 export const projectCandidateIdSchema = prefixedId("pca");
+/* PS2.1 阶段推进新增身份；正文事实和系统Trace身份不得混用。 */
+export const projectMilestoneIdSchema = prefixedId("pml");
+export const projectUpdateIdSchema = prefixedId("pup");
+export const projectStateTransitionIdSchema = prefixedId("ptr");
 
 /**
  * 服务端请求ID。客户端可提议复用，但必须通过本Schema才被信任；
@@ -104,3 +108,6 @@ export type ProjectEvidenceId = z.infer<typeof projectEvidenceIdSchema>;
 export type ProjectDecisionId = z.infer<typeof projectDecisionIdSchema>;
 export type ProjectObservationId = z.infer<typeof projectObservationIdSchema>;
 export type ProjectCandidateId = z.infer<typeof projectCandidateIdSchema>;
+export type ProjectMilestoneId = z.infer<typeof projectMilestoneIdSchema>;
+export type ProjectUpdateId = z.infer<typeof projectUpdateIdSchema>;
+export type ProjectStateTransitionId = z.infer<typeof projectStateTransitionIdSchema>;

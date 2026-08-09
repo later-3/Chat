@@ -30,11 +30,14 @@ import {
   projectDecisionSchema,
   projectEvidenceSchema,
   projectMethodSnapshotSchema,
+  projectMilestoneSchema,
   projectObservationSchema,
   projectParticipantSchema,
   projectResourceSchema,
   projectSchema,
   projectStageSchema,
+  projectStateTransitionSchema,
+  projectUpdateSchema,
   projectWorkSchema,
 } from "./project.js";
 
@@ -48,7 +51,7 @@ import {
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v4";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v5";
 
 const idKeySchema = z.string().min(1).max(200);
 
@@ -81,6 +84,9 @@ export const productSnapshotSchema = z
         projects: z.record(idKeySchema, projectSchema),
         projectMethodSnapshots: z.record(idKeySchema, projectMethodSnapshotSchema),
         projectStages: z.record(idKeySchema, projectStageSchema),
+        projectMilestones: z.record(idKeySchema, projectMilestoneSchema),
+        projectUpdates: z.record(idKeySchema, projectUpdateSchema),
+        projectStateTransitions: z.record(idKeySchema, projectStateTransitionSchema),
         projectResources: z.record(idKeySchema, projectResourceSchema),
         projectParticipants: z.record(idKeySchema, projectParticipantSchema),
         projectWorks: z.record(idKeySchema, projectWorkSchema),
@@ -128,6 +134,9 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       projects: {},
       projectMethodSnapshots: {},
       projectStages: {},
+      projectMilestones: {},
+      projectUpdates: {},
+      projectStateTransitions: {},
       projectResources: {},
       projectParticipants: {},
       projectWorks: {},

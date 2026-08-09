@@ -30,6 +30,7 @@ export interface WorkflowWorldHandle {
   readonly workflowId: string;
   readonly memoryImportWorkflowId: string;
   readonly projectIntakeWorkflowId: string;
+  readonly projectAdvancementWorkflowId: string;
   close(): Promise<void>;
 }
 
@@ -37,14 +38,18 @@ interface WorkflowManifestFile {
   workflows: Record<string, Record<string, { workflowId: string }>>;
 }
 
-async function resolveWorkflowIds(
-  bundleDir: string,
-): Promise<{ planningExecution: string; memoryImport: string; projectIntake: string }> {
+async function resolveWorkflowIds(bundleDir: string): Promise<{
+  planningExecution: string;
+  memoryImport: string;
+  projectIntake: string;
+  projectAdvancement: string;
+}> {
   const raw = await readFile(join(bundleDir, "manifest.json"), "utf8");
   const manifest = JSON.parse(raw) as WorkflowManifestFile;
   let planningExecution: string | undefined;
   let memoryImport: string | undefined;
   let projectIntake: string | undefined;
+  let projectAdvancement: string | undefined;
   for (const [filePath, entries] of Object.entries(manifest.workflows)) {
     if (filePath.includes("planning-execution-workflow")) {
       const entry = entries["planningExecutionWorkflow"];
@@ -58,17 +63,22 @@ async function resolveWorkflowIds(
       const entry = entries["projectIntakeWorkflow"];
       if (entry !== undefined) projectIntake = entry.workflowId;
     }
+    if (filePath.includes("project-advancement-workflow")) {
+      const entry = entries["projectAdvancementWorkflow"];
+      if (entry !== undefined) projectAdvancement = entry.workflowId;
+    }
   }
   if (
     planningExecution === undefined ||
     memoryImport === undefined ||
-    projectIntake === undefined
+    projectIntake === undefined ||
+    projectAdvancement === undefined
   ) {
     throw new Error(
-      "manifest.json缺少PlanningExecutionWorkflow、MemoryImportWorkflow或ProjectIntakeWorkflow",
+      "manifest.json缺少PlanningExecution、MemoryImport、ProjectIntake或ProjectAdvancement Workflow",
     );
   }
-  return { planningExecution, memoryImport, projectIntake };
+  return { planningExecution, memoryImport, projectIntake, projectAdvancement };
 }
 
 type QueueHandler = (req: Request) => Promise<Response>;
@@ -119,6 +129,7 @@ export async function setupWorkflowWorld(
     workflowId: workflowIds.planningExecution,
     memoryImportWorkflowId: workflowIds.memoryImport,
     projectIntakeWorkflowId: workflowIds.projectIntake,
+    projectAdvancementWorkflowId: workflowIds.projectAdvancement,
     close: async () => {
       setWorld(undefined);
       await world.close?.();
