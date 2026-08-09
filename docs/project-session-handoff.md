@@ -1,6 +1,6 @@
 # Chat 项目跨 Session 续接入口
 
-> 更新日期：2026-08-09
+> 更新日期：2026-08-10
 
 ## 1. 当前停点
 
@@ -101,3 +101,17 @@ main已完成真实规划—确认—执行、memmy查询/导入、Tencent Memor
 再按依赖拆成可独立合并的小任务；实现使用worktree+PR，纵向完成门必须包含真实服务、真实模型和浏览器E2E。
 不要建立万能Context Service，不要把外部Memory、BMAD或Prompt当成Chat产品事实源。
 ```
+
+## 8. 参考原型与组合策略冻结输入
+
+本节只冻结独立设计原型和下一任务输入，**没有修改生产 UI**。
+
+1. 唯一登记入口：[`docs/design/references/README.md`](./design/references/README.md)。6 × 7 事实场景矩阵：[`reference-scenario-matrix-v0.1.md`](./design/references/reference-scenario-matrix-v0.1.md)。
+2. 工作 branch：`codex/reference-prototype-combinations`；worktree：`/Users/xulater/.codex/worktrees/b469/Chat`；共同 freeze commit：`FREEZE_COMMIT_PENDING`。
+3. Heptabase Workbench：`docs/design/reference-implementations/heptabase`；本轮 URL `http://127.0.0.1:4175/`；模型 / UI 合同 `15/15`、Sites `4/4`、仓库内 IAB browser E2E gates `9/9`，桌面 / 移动 console `0`、残余 `P0/P1/P2 = 0`。
+4. 组合原型：`docs/design/combination-prototypes`；本轮 URL 根 `http://127.0.0.1:4176/`；Project / Today / Workbench 精确 query 见统一登记入口。合同 `17/17`、Sites `4/4`；真实浏览器 6 个桌面 / 移动表面、10 条核心路径，`391 × 844` 无横溢出、无未命名 / 小于 44px 的启用控件、console `0`，残余 `P0/P1/P2 = 0`。
+5. 数量决定：冻结 3 套——Project Room（持续高上下文）、Today Rhythm（个人主动选择）、Evidence Workbench（中断式高风险监督）。2 套会混合互斥注意力合同；4 套会把 Resource / Evidence 从 Project 重复拆出。
+6. 对象合同：三套共享 Project / Work / Action / Resource / Evidence / Decision / Run / Participant 的稳定 ID 和返回锚点；Today / Feed / Canvas 只保存投影，不拥有权威事实。正式 Decision、accepted Candidate 和 reconciliation 无通用 Undo；`outcome_unknown` 只有 Query / Reconcile / Escalate。
+7. 视觉合同：Chat 黑白骨架、小面积暖色 Agent 标识、Phosphor 图标、统一 token / 字体 / 间距 / 层级 / 键盘语义；桌面与移动是真实响应式结构，不缩放 Things 窗口或 Heptabase Canvas。
+8. 参考缺口：Microsoft Agent Feed freeze `eed0aa0e4b9fec38fcf7e4eb6684a23e9897e8aa` 的实现仍有 `2 P1 + 4 P2`；Basecamp / Things / Linear 也有矩阵列出的复用阻断。下一任务不得复制这些 CSS 或动作语义。
+9. 依赖任务 2：thread `019fe738-1b0d-70e3-932c-cdad3b702124`，worktree `/Users/xulater/.codex/worktrees/35f2/Chat`。稳定输入是本节、统一登记入口、矩阵、组合 `README.md` / `design-qa.md` 与上述 freeze commit；冻结完成后已经由本任务直接发消息交接，不需要用户手工搬运。

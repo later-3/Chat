@@ -1,13 +1,13 @@
 ---
 status: approved
-version: 0.1
-date: 2026-08-08
+version: 0.2
+date: 2026-08-10
 product: Heptabase
 surface: Whiteboard + Card + Tabs + Context Chat
 evidence: official-wiki + official-product-screenshots
 ---
 
-# Heptabase Workbench 交互审计 v0.1
+# Heptabase Workbench 交互审计 v0.2
 
 ## 1. 结论
 
@@ -44,8 +44,8 @@ Application shell
 | 7 | New tab / Global Search `Cmd+O` | 搜索 Card、Whiteboard、Chat、Tag、Google、YouTube 并打开为 tab | `D` | 搜索同时是导航和工作上下文入口 |
 | 8 | Pin / Folder / Tab Group | 保持常用上下文并按 Work / Life 等场景分组 | `D+O` | 用户组织的是正在进行的上下文，不是数据目录 |
 | 9 | 右侧 Card Library | Card 在 side panel 中作为参考；Whiteboard 上可继续拖入 | `D` | 写作或思考时保留主表面，同时并排引用 |
-| 10 | 右侧 Chat | 当前 Card / Whiteboard 自动成为上下文；也可只看当前 tab 相关 chat | `D` | AI 对话明确绑定可见上下文 |
-| 11 | Chat `+` / `@` | 增加 Card、Whiteboard、Section、PDF 等上下文并返回段落引用 | `D` | 上下文可见、可增补、可追溯 |
+| 10 | 右侧 Chat | 当前 tab 名称对 AI 可见，但内容不会自动送入模型；开启 Space search 后系统可检索 Space，实际读取会显示 `searched / viewed` | `D` | 工作位置、检索范围和真正读取的材料必须区分 |
+| 11 | Chat `+` / `@` | 手动增加 Card、Whiteboard、Section、PDF 等上下文并返回引用；关闭 Space search 时可只允许这些显式材料 | `D` | 上下文可见、可增补、可追溯，并给敏感材料一个确定边界 |
 | 12 | 拖动 AI response 到 Whiteboard | 变成可编辑、可注释和连接的内容；也可保存为 Note Card | `D` | 模型输出先是候选，用户选择后才进入知识空间 |
 | 13 | Card 的 Whiteboard location | 查看该 Card 在哪些 Whiteboard 的哪个位置 | `D` | 对象身份与每个空间实例的位置分离 |
 | 14 | `Cmd+K` Command Palette | 查找动作和快捷键 | `D` | 复杂工作台提供统一动作发现面 |
@@ -68,13 +68,14 @@ Card Library owns Card A
 ```text
 Open Card / Whiteboard tab
   → open Chat right sidebar
-  → current tab auto-added as context
-  → add sources with @
+  → AI knows the current tab name, not its content
+  → manually add sources, or enable Space search
+  → show searched / viewed access records
   → answer with citations
   → drag useful answer to Whiteboard / save as Card
 ```
 
-关键边界：AI response 在被保存前只是对话输出；保存后仍应保留来源和生成身份。
+关键边界：`Space search` 在当前产品中默认开启，可搜索整个 Space，但模型只读取系统选出的少量对象（官方说明约 20 个），且访问会显示 `searched / viewed`。用户若不希望自动检索敏感材料，应关闭它并只手动添加上下文。AI response 在被保存前只是对话输出；保存后仍应保留来源和生成身份。
 
 ### 4.3 浏览式工作上下文
 
@@ -92,7 +93,7 @@ Global Search / New tab
 2. 左侧 apps 是稳定能力，tabs 是短期工作记忆；信息架构与进行中上下文分层。
 3. 中央主表面与右侧引用 / Chat 构成“做事 + 看材料”的并排工作台。
 4. 空间位置、Section、连接和子白板帮助外化思考，但 Card Library 仍保存权威对象。
-5. AI 上下文来自当前 tab 并可显式增补，回答带引用；模型与材料关系可见。
+5. AI 只先知道当前 tab 名称；真正读取来自手动上下文或 Space search 的可见访问记录，回答带引用；模型与材料关系可追踪。
 
 ## 6. 风险与证据边界
 
@@ -102,6 +103,8 @@ Global Search / New tab
 4. 右键、拖拽、画框和 hover AI actions 都必须有键盘 / 触摸 / 辅助技术等价路径。
 5. AI 自动创建新 Card 会增加重复内容和来源治理压力。
 6. 官方 Wiki 不能证明焦点顺序、屏幕阅读器语义、协作冲突与离线恢复。
+7. Space search 目前只能按整个 Space 开关，不能声明“可搜索本 Space、但永不读取其中某张 Card”；这不是细粒度 consent 模型。
+8. 共享 Whiteboard 的权限边界依赖显式放置：协作者只看到被分享 Whiteboard 及其关联 Card；嵌入但未直接放置的 Card 可能不可见，不能从“同在一个 Space”推断可见性。
 
 ## 7. 对 Chat 的翻译
 
@@ -111,6 +114,7 @@ Global Search / New tab
 2. 同一 Work / Artifact 可出现在 Project、Whiteboard、Conversation 和 Today。
 3. 主工作面与上下文侧栏并排，AI 上下文显式可见。
 4. 从对象可回到每个空间位置，避免“画布里失踪”。
+5. 把 AI 的搜索范围、实际读取记录和手动上下文分开显示。
 
 ### Adapt
 
@@ -118,6 +122,7 @@ Global Search / New tab
 2. 连接先是用户的视觉关系；确认后才可升级为 Dependency / Evidence link 等领域关系。
 3. AI response 落入 Workbench 时标记为 candidate；采纳或保存后保留 provenance。
 4. 桌面可用三栏，移动端改成层级导航和明确返回，不缩小无限画布硬塞。
+5. Chat 的 visibility / consent 必须由 Participant、Resource 与版本化权限事实表达；不能照搬 Heptabase 当前整个 Space 的搜索开关。
 
 ### Refuse
 
@@ -125,6 +130,7 @@ Global Search / New tab
 2. 不把位置、颜色、箭头直接当 Project / Run 的权威状态。
 3. 不在拖拽时复制 Work、Decision、Artifact 或 Card。
 4. 不让 AI 自动生成的 Card 无来源地进入长期知识。
+5. 不把“当前打开”“同一 Space”或“Agent 搜索得到”当成用户已同意读取、共享或写回。
 
 ## 8. 对 UI Lab 的约束
 
@@ -134,8 +140,20 @@ Global Search / New tab
 4. AI 上下文 chips、引用、candidate 状态和保存动作必须可见。
 5. 右键、拖拽、hover 都有按钮或菜单等价动作。
 
-## 9. 官方证据
+## 9. 2026-08-10 当前界面与边界复核
+
+1. 当前官方首页的 `Whiteboard + Card detail` 仍直接证明：画布承担空间编排，Card 内容在相邻编辑面中保持独立身份；`Whiteboard + PDF + AI Chat` 又证明主材料、阅读面和 AI 对话可以并排工作。
+2. 当前 `User Interface Logic` 继续明确：所有 Apps 共享同一 Card 数据库；Card Info 可列出出现过的所有 Whiteboards；右侧 Card Library 可作为参考并把同一 Card 拖入 Whiteboard。
+3. 当前 AI 数据说明纠正了旧审计中的“当前 tab 自动成为内容上下文”推断：默认只知道 tab 名；只有手动添加、或 Space search 后显式 `searched / viewed` 的对象正文会发送给模型。
+4. 当前 Collaboration Q&A 明确：Space 默认私有；协作者只看到显式共享的 Whiteboard 及其关联 Card；权限分 Owner / Full access / Can edit / Can view；共享范围不是未来 Chat 社交系统的替代品。
+5. 本轮冻结原型把这些边界做成可点击证明，而不是扩写 Heptabase：`Card Library → placement → all locations → back`、`explicit context → access log → AI candidate → save as Card`、`Share → per-Whiteboard × per-participant permission`，移动端改成 Section 顺序大纲。
+
+## 10. 官方证据
 
 1. [User Interface Logic](https://wiki.heptabase.com/user-interface-logic)。
 2. [Fundamental Elements](https://wiki.heptabase.com/fundamental-elements)。
 3. [Use Case and Workflow](https://wiki.heptabase.com/use-case-and-workflow)。
+4. [Heptabase current product page](https://heptabase.com/)，本轮于 2026-08-09/10 从页面实际渲染与官方图片资产复核。
+5. [What data can AI access when Space search is on?](https://support.heptabase.com/en/articles/13009956-what-data-can-ai-access-when-i-turn-on-the-space-search-option-in-an-ai-conversation)。
+6. [Collaboration Q&A](https://support.heptabase.com/en/articles/10510497-collaboration-q-a)。
+7. [Publish Whiteboards with a public link](https://support.heptabase.com/en/articles/12121546-how-do-i-publish-whiteboards-with-a-public-link)。
