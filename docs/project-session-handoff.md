@@ -10,7 +10,7 @@
 4. M2已增加正式消息整条/UTF-16选区导入、`MemoryImportWorkflow`、memmy真实add/对账、Store v3、严格Trace/Replay、最小统一UI与重启恢复；M3又增加Tencent L0接收、L0/L1只读对账与L1查询。
 5. M2固定memmy真实导入与原生幂等、完整Chat响应丢失对账且SQLite唯一已经通过；最终clean代码提交`3bcb7b7`的真实浏览器1/1通过（浏览器2.8分钟、命令3.1分钟），Import Replay 6事件、Run Replay 103事件、真实`qwen3.7-plus`规划与执行均成功。
 6. 真实VS Code主Compound已完成F5验收：memmy、MemoryCore、Workflow、API、Web全部Ready，Chrome页面可访问，停止后9个固定端口释放。配置合同或等价命令不能替代该验收。
-7. Tencent真实Adapter已经合入；当前仍没有BMAD项目上下文和用户规则集。所有后续设计必须有参考项目依据、代码有中文注释、纵向里程碑使用真实模型和严格E2E。
+7. Tencent真实Adapter已经合入；PS1又完成了对话建项、真实Git/文档/脚本观察、Project账本、管理候选与响应式UI。当前仍没有完整Stage/Milestone/Iteration推进、Planning Project Context和用户规则集。
 8. 旧会话遗留的治理文档和设计截图已经恢复；不能再使用“M1待审核”“B2待真实Key验收”或“P1.2待实现”等旧状态。
 
 ## 2. 新 Session 读取顺序
@@ -50,6 +50,10 @@ Message Selection -> MemoryImportIntent/Outbox -> MemoryImportWorkflow
                   -> memmy L2 materialized
                   -> Tencent L0 accepted -> L0/L1只读reconcile
 
+Project Intake Message -> ProjectIntakeWorkflow -> pi Project Understanding + Resource Observe
+                       -> Candidate HITL -> Project/Stage/Work/Action/Decision/Observation账本
+Project Management Message -> revision/Hash Candidate -> 用户确认 -> Action/Decision/Contribution
+
 Trace + Product Store + Version Evidence -> Replay
 ```
 
@@ -63,7 +67,7 @@ Trace + Product Store + Version Evidence -> Replay
 2. **Memory单后端查询纵向链**：M1已由PR #10合入，真实memmy查询、Application Port、Workflow节点、Trace、最小UI和真实E2E均完成。
 3. **Memory显式导入纵向链**：M2已由PR #11合入，完成有来源、目标、幂等、结果未知对账和重启恢复的真实memmy导入。
 4. **第二真实Memory后端**：M3已由PR #12合入，固定Tencent MemoryCore真实服务验证了L0接收、L1查询、强隔离与异步物化语义。
-5. **Project Solution纵向链（下一任务）**：先按已形成的Shape Up/BMAD方法论、架构与场景验证完成PS1对话建项、真实Resource和项目账本；随后推进PS2 Stage/Milestone/Iteration、PS3真实资源执行和PS4维护/Correct Course。
+5. **Project Solution纵向链**：PS1对话建项、真实Resource和项目账本已完成；当前下一任务是PS2 Stage/Milestone/Iteration与Project Update，随后推进PS3真实资源执行和PS4维护/Correct Course。
 6. **用户规则纵向链**：实现Rule/RuleRevision/Tag/Scope，统一管理界面、对话主动勾选/标签筛选、合理自动召回和规划节点注入；记录采用了哪些规则及版本。
 7. **组合验收**：真实用户场景同时使用项目上下文、选择规则和Memory查询完成规划—确认—执行，页面刷新后能从权威事实恢复，公开面不泄漏外部服务或Runtime私有身份。
 
@@ -90,9 +94,9 @@ Trace + Product Store + Version Evidence -> Replay
 
 ```text
 继续Chat项目。按AGENTS.md规定顺序读取治理文件和docs/project-session-handoff.md。
-main已完成真实规划—确认—执行、memmy查询/导入和Tencent MemoryCore第二后端闭环。
+main基线已完成真实规划—确认—执行、memmy查询/导入和Tencent MemoryCore第二后端闭环；PS1实现分支已完成对话建项、真实Resource和Project账本，等待PR复审。
 VS Code主Compound已经过真实F5验证；不能用等价命令或静态配置测试替代。
-下一阶段接着建设：Shape Up与BMAD共同启发的Project Solution、
+下一阶段接着建设：PS2 Stage/Milestone/Iteration与Project Update、
 带标签且可主动选择的用户规则集。先读取本地参考项目与既有分析，给每个设计写出采用/调整/拒绝依据，
 再按依赖拆成可独立合并的小任务；实现使用worktree+PR，纵向完成门必须包含真实服务、真实模型和浏览器E2E。
 不要建立万能Context Service，不要把外部Memory、BMAD或Prompt当成Chat产品事实源。

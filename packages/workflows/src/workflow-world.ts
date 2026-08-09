@@ -29,6 +29,7 @@ export interface WorkflowWorldHandle {
   /** 兼容现有调用方：始终是PlanningExecutionWorkflow。 */
   readonly workflowId: string;
   readonly memoryImportWorkflowId: string;
+  readonly projectIntakeWorkflowId: string;
   close(): Promise<void>;
 }
 
@@ -38,11 +39,12 @@ interface WorkflowManifestFile {
 
 async function resolveWorkflowIds(
   bundleDir: string,
-): Promise<{ planningExecution: string; memoryImport: string }> {
+): Promise<{ planningExecution: string; memoryImport: string; projectIntake: string }> {
   const raw = await readFile(join(bundleDir, "manifest.json"), "utf8");
   const manifest = JSON.parse(raw) as WorkflowManifestFile;
   let planningExecution: string | undefined;
   let memoryImport: string | undefined;
+  let projectIntake: string | undefined;
   for (const [filePath, entries] of Object.entries(manifest.workflows)) {
     if (filePath.includes("planning-execution-workflow")) {
       const entry = entries["planningExecutionWorkflow"];
@@ -52,11 +54,21 @@ async function resolveWorkflowIds(
       const entry = entries["memoryImportWorkflow"];
       if (entry !== undefined) memoryImport = entry.workflowId;
     }
+    if (filePath.includes("project-intake-workflow")) {
+      const entry = entries["projectIntakeWorkflow"];
+      if (entry !== undefined) projectIntake = entry.workflowId;
+    }
   }
-  if (planningExecution === undefined || memoryImport === undefined) {
-    throw new Error("manifest.json缺少PlanningExecutionWorkflow或MemoryImportWorkflow");
+  if (
+    planningExecution === undefined ||
+    memoryImport === undefined ||
+    projectIntake === undefined
+  ) {
+    throw new Error(
+      "manifest.json缺少PlanningExecutionWorkflow、MemoryImportWorkflow或ProjectIntakeWorkflow",
+    );
   }
-  return { planningExecution, memoryImport };
+  return { planningExecution, memoryImport, projectIntake };
 }
 
 type QueueHandler = (req: Request) => Promise<Response>;
@@ -106,6 +118,7 @@ export async function setupWorkflowWorld(
     world,
     workflowId: workflowIds.planningExecution,
     memoryImportWorkflowId: workflowIds.memoryImport,
+    projectIntakeWorkflowId: workflowIds.projectIntake,
     close: async () => {
       setWorld(undefined);
       await world.close?.();

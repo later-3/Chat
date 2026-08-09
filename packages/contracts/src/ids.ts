@@ -46,6 +46,19 @@ export const memoryBackendIdSchema = prefixedId("mbk");
 export const memoryImportIntentIdSchema = prefixedId("mii");
 export const memoryImportResultIdSchema = prefixedId("mir");
 
+/* PS1 Project Solution新增身份；与Git、Workflow和pi私有身份严格分离。 */
+export const projectMethodSnapshotIdSchema = prefixedId("pms");
+export const projectStageIdSchema = prefixedId("pst");
+export const projectResourceIdSchema = prefixedId("prs");
+export const projectParticipantIdSchema = prefixedId("ppt");
+export const projectWorkIdSchema = prefixedId("pwk");
+export const projectActionIdSchema = prefixedId("pac");
+export const projectContributionIdSchema = prefixedId("pct");
+export const projectEvidenceIdSchema = prefixedId("pev");
+export const projectDecisionIdSchema = prefixedId("pdc");
+export const projectObservationIdSchema = prefixedId("pob");
+export const projectCandidateIdSchema = prefixedId("pca");
+
 /**
  * 服务端请求ID。客户端可提议复用，但必须通过本Schema才被信任；
  * 否则服务端生成新的req_*并在响应头返回最终生效ID。
@@ -80,3 +93,14 @@ export type ContextPackageId = z.infer<typeof contextPackageIdSchema>;
 export type MemoryBackendId = z.infer<typeof memoryBackendIdSchema>;
 export type MemoryImportIntentId = z.infer<typeof memoryImportIntentIdSchema>;
 export type MemoryImportResultId = z.infer<typeof memoryImportResultIdSchema>;
+export type ProjectMethodSnapshotId = z.infer<typeof projectMethodSnapshotIdSchema>;
+export type ProjectStageId = z.infer<typeof projectStageIdSchema>;
+export type ProjectResourceId = z.infer<typeof projectResourceIdSchema>;
+export type ProjectParticipantId = z.infer<typeof projectParticipantIdSchema>;
+export type ProjectWorkId = z.infer<typeof projectWorkIdSchema>;
+export type ProjectActionId = z.infer<typeof projectActionIdSchema>;
+export type ProjectContributionId = z.infer<typeof projectContributionIdSchema>;
+export type ProjectEvidenceId = z.infer<typeof projectEvidenceIdSchema>;
+export type ProjectDecisionId = z.infer<typeof projectDecisionIdSchema>;
+export type ProjectObservationId = z.infer<typeof projectObservationIdSchema>;
+export type ProjectCandidateId = z.infer<typeof projectCandidateIdSchema>;

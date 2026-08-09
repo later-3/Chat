@@ -15,6 +15,15 @@ import {
   memoryImportResultIdSchema,
   memoryQueryIdSchema,
   outboxEntryIdSchema,
+  projectCandidateIdSchema,
+  projectActionIdSchema,
+  projectContributionIdSchema,
+  projectDecisionIdSchema,
+  projectIdSchema,
+  projectObservationIdSchema,
+  projectParticipantIdSchema,
+  projectResourceIdSchema,
+  projectWorkIdSchema,
 } from "./ids.js";
 
 /**
@@ -74,6 +83,25 @@ export const TRACE_EVENT_NAMES = {
   memoryImportReconcileStarted: "memory.import.reconcile.started",
   memoryImportReconcileCompleted: "memory.import.reconcile.completed",
   memoryImportReconcileFailed: "memory.import.reconcile.failed",
+  projectIntakeStarted: "project.intake.started",
+  projectIntakeCandidatePublished: "project.intake.candidate_published",
+  projectIntakeConfirmed: "project.intake.confirmed",
+  projectIntakeRejected: "project.intake.rejected",
+  projectUnderstandingStarted: "project.understanding.started",
+  projectUnderstandingCompleted: "project.understanding.completed",
+  projectUnderstandingFailed: "project.understanding.failed",
+  projectResourceObserveStarted: "project.resource.observe.started",
+  projectResourceObserveCompleted: "project.resource.observe.completed",
+  projectResourceObserveFailed: "project.resource.observe.failed",
+  projectActionCreated: "project.action.created",
+  projectActionAssigned: "project.action.assigned",
+  projectActionTransitioned: "project.action.transitioned",
+  projectDecisionCandidate: "project.decision.candidate",
+  projectDecisionCommitted: "project.decision.committed",
+  projectDecisionRejected: "project.decision.rejected",
+  projectContributionCandidate: "project.contribution.candidate",
+  projectContributionCommitted: "project.contribution.committed",
+  projectContributionRejected: "project.contribution.rejected",
   workflowStartRequested: "workflow.start.requested",
   workflowStartStarted: "workflow.start.started",
   workflowStartFailed: "workflow.start.failed",
@@ -637,6 +665,244 @@ const memoryImportReconcileFailedSchema = defineTraceEvent(
   },
 );
 
+// Project Trace只保存产品身份、revision、Hash与结果，不复制目标、路径或候选正文。
+const projectIntakeStartedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectIntakeStarted,
+  "unknown",
+  {
+    projectCandidateId: projectCandidateIdSchema,
+    productSessionId: productSessionIdSchema,
+    commandId: commandIdSchema,
+    candidateRevision: revisionSchema,
+    ...durationMsOptional,
+  },
+);
+
+const projectIntakeCandidatePublishedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectIntakeCandidatePublished,
+  "success",
+  {
+    projectCandidateId: projectCandidateIdSchema,
+    candidateRevision: revisionSchema,
+    candidateSha256: sha256Schema,
+    observationSha256: sha256Schema,
+    ...durationMsRequired,
+  },
+);
+
+const projectIntakeConfirmedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectIntakeConfirmed,
+  "success",
+  {
+    projectCandidateId: projectCandidateIdSchema,
+    candidateRevision: revisionSchema,
+    candidateSha256: sha256Schema,
+    projectId: projectIdSchema,
+    projectRevision: revisionSchema,
+    commandId: commandIdSchema,
+    ...durationMsOptional,
+  },
+);
+
+const projectIntakeRejectedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectIntakeRejected,
+  "rejected",
+  {
+    projectCandidateId: projectCandidateIdSchema,
+    candidateRevision: revisionSchema,
+    candidateSha256: sha256Schema,
+    commandId: commandIdSchema,
+    ...durationMsOptional,
+  },
+);
+
+const projectModelFields = {
+  projectCandidateId: projectCandidateIdSchema,
+  candidateRevision: revisionSchema,
+  providerName: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/u),
+  modelId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u),
+  endpointHost: endpointHostSchema,
+  promptTemplateVersion: versionSchema,
+  modelProfileVersion: versionSchema,
+  inputManifestSha256: sha256Schema,
+};
+
+const projectUnderstandingStartedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectUnderstandingStarted,
+  "unknown",
+  { ...projectModelFields, ...durationMsOptional },
+);
+
+const projectUnderstandingCompletedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectUnderstandingCompleted,
+  "success",
+  {
+    ...projectModelFields,
+    providerRequestId: providerRequestIdSchema.optional(),
+    tokenUsage: tokenUsageSchema.optional(),
+    ...durationMsRequired,
+  },
+);
+
+const projectUnderstandingFailedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectUnderstandingFailed,
+  "failure",
+  {
+    ...projectModelFields,
+    providerRequestId: providerRequestIdSchema.optional(),
+    error: traceErrorSchema,
+    ...durationMsRequired,
+  },
+);
+
+const projectResourceObserveStartedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectResourceObserveStarted,
+  "unknown",
+  {
+    projectId: projectIdSchema,
+    projectResourceId: projectResourceIdSchema,
+    adapterCount: z.number().int().positive().max(8),
+    ...durationMsOptional,
+  },
+);
+
+const projectResourceObserveCompletedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectResourceObserveCompleted,
+  "success",
+  {
+    projectId: projectIdSchema,
+    projectResourceId: projectResourceIdSchema,
+    projectObservationId: projectObservationIdSchema,
+    observationSha256: sha256Schema,
+    adapterCount: z.number().int().positive().max(8),
+    ...durationMsRequired,
+  },
+);
+
+const projectResourceObserveFailedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectResourceObserveFailed,
+  "failure",
+  {
+    projectId: projectIdSchema.optional(),
+    projectResourceId: projectResourceIdSchema.optional(),
+    adapterCount: z.number().int().nonnegative().max(8),
+    error: traceErrorSchema,
+    ...durationMsRequired,
+  },
+);
+
+const projectActionBaseFields = {
+  projectId: projectIdSchema,
+  projectActionId: projectActionIdSchema,
+  projectWorkId: projectWorkIdSchema,
+  ownerParticipantId: projectParticipantIdSchema,
+  actionRevision: revisionSchema,
+};
+
+const projectActionCreatedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectActionCreated,
+  "success",
+  { ...projectActionBaseFields, commandId: commandIdSchema, ...durationMsOptional },
+);
+
+const projectActionAssignedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectActionAssigned,
+  "success",
+  { ...projectActionBaseFields, commandId: commandIdSchema, ...durationMsOptional },
+);
+
+const projectActionTransitionedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectActionTransitioned,
+  "success",
+  {
+    ...projectActionBaseFields,
+    fromStatus: z.enum(["todo", "doing", "blocked", "done", "cancelled"]),
+    toStatus: z.enum(["todo", "doing", "blocked", "done", "cancelled"]),
+    commandId: commandIdSchema,
+    ...durationMsOptional,
+  },
+);
+
+const projectDecisionCandidateSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectDecisionCandidate,
+  "unknown",
+  {
+    projectId: projectIdSchema,
+    projectCandidateId: projectCandidateIdSchema,
+    boundProjectRevision: revisionSchema,
+    candidateRevision: revisionSchema,
+    candidateSha256: sha256Schema,
+    ...durationMsOptional,
+  },
+);
+
+const projectDecisionCommittedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectDecisionCommitted,
+  "success",
+  {
+    projectId: projectIdSchema,
+    projectDecisionId: projectDecisionIdSchema,
+    decidedByParticipantId: projectParticipantIdSchema,
+    boundProjectRevision: revisionSchema,
+    decisionRevision: revisionSchema,
+    commandId: commandIdSchema,
+    ...durationMsOptional,
+  },
+);
+
+const projectDecisionRejectedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectDecisionRejected,
+  "rejected",
+  {
+    projectId: projectIdSchema,
+    projectCandidateId: projectCandidateIdSchema,
+    candidateRevision: revisionSchema,
+    candidateSha256: sha256Schema,
+    commandId: commandIdSchema,
+    ...durationMsOptional,
+  },
+);
+
+const projectContributionCandidateSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectContributionCandidate,
+  "unknown",
+  {
+    projectId: projectIdSchema,
+    projectCandidateId: projectCandidateIdSchema,
+    candidateRevision: revisionSchema,
+    candidateSha256: sha256Schema,
+    ...durationMsOptional,
+  },
+);
+
+const projectContributionCommittedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectContributionCommitted,
+  "success",
+  {
+    projectId: projectIdSchema,
+    projectContributionId: projectContributionIdSchema,
+    participantId: projectParticipantIdSchema,
+    contributionRevision: revisionSchema,
+    evidenceStatus: z.enum(["reported", "verified"]),
+    evidenceCount: z.number().int().nonnegative().max(20),
+    commandId: commandIdSchema,
+    ...durationMsOptional,
+  },
+);
+
+const projectContributionRejectedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectContributionRejected,
+  "rejected",
+  {
+    projectId: projectIdSchema,
+    projectCandidateId: projectCandidateIdSchema,
+    candidateRevision: revisionSchema,
+    candidateSha256: sha256Schema,
+    commandId: commandIdSchema,
+    ...durationMsOptional,
+  },
+);
+
 // Workflow事件族：Run + Attempt + Definition版本；runMappingRef为后端私有映射引用，不是Hook Token。
 const workflowStartRequestedSchema = defineTraceEvent(
   TRACE_EVENT_NAMES.workflowStartRequested,
@@ -1020,6 +1286,25 @@ export const traceEventSchema = z.discriminatedUnion("eventName", [
   memoryImportReconcileStartedSchema,
   memoryImportReconcileCompletedSchema,
   memoryImportReconcileFailedSchema,
+  projectIntakeStartedSchema,
+  projectIntakeCandidatePublishedSchema,
+  projectIntakeConfirmedSchema,
+  projectIntakeRejectedSchema,
+  projectUnderstandingStartedSchema,
+  projectUnderstandingCompletedSchema,
+  projectUnderstandingFailedSchema,
+  projectResourceObserveStartedSchema,
+  projectResourceObserveCompletedSchema,
+  projectResourceObserveFailedSchema,
+  projectActionCreatedSchema,
+  projectActionAssignedSchema,
+  projectActionTransitionedSchema,
+  projectDecisionCandidateSchema,
+  projectDecisionCommittedSchema,
+  projectDecisionRejectedSchema,
+  projectContributionCandidateSchema,
+  projectContributionCommittedSchema,
+  projectContributionRejectedSchema,
   workflowStartRequestedSchema,
   workflowStartStartedSchema,
   workflowStartFailedSchema,

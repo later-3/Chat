@@ -28,7 +28,8 @@
     "test:memory:memorycore-real-http": "pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-fixed-memorycore-http.ts",
     "test:e2e:memory-planning:real": "node scripts/e2e/run-memory-planning-real.mjs planning",
     "test:e2e:memory-import:real": "node scripts/e2e/run-memory-planning-real.mjs import",
-    "test:e2e:memorycore:real": "node scripts/e2e/run-memory-planning-real.mjs tencent"
+    "test:e2e:memorycore:real": "node scripts/e2e/run-memory-planning-real.mjs tencent",
+    "test:e2e:project-intake:real": "node scripts/e2e/run-project-intake-real.mjs"
   },
   "devDependencies": {
     "eslint": "^10.8.0",

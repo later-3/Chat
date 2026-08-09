@@ -48,6 +48,7 @@ const rules: Record<
       "@chat/domain",
       "@chat/memory-runtime",
       "@chat/pi-runtime",
+      "@chat/project-runtime",
       "@chat/product-store-json",
       "@chat/realtime",
       "@chat/workflows",
@@ -83,6 +84,11 @@ const rules: Record<
     internal: ["@chat/contracts", "@chat/application", "@chat/domain"],
     forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@ag-ui\//],
   },
+  "packages/project-runtime": {
+    external: ["zod"],
+    internal: ["@chat/contracts", "@chat/application", "@chat/domain"],
+    forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@ag-ui\//],
+  },
   "apps/web": {
     // workbox-window 进入浏览器运行时bundle（PWA注册与更新提示），属于运行时依赖
     external: ["react", "react-dom", "@tanstack/react-query", "workbox-window", "zod"],
@@ -99,6 +105,7 @@ const rules: Record<
       "@chat/realtime",
       "@chat/product-store-json",
       "@chat/pi-runtime",
+      "@chat/project-runtime",
       "@chat/workflows",
     ],
     forbidden: [/^react/, /^workflow$/, /^pi-/],

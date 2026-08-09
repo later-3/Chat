@@ -198,6 +198,6 @@ B2已经通过PR #7合入，M1真实memmy查询通过PR #10合入，M2真实显�
 
 M3合入后的下一阶段是Project Solution，先完成[方法论](./docs/product/project-solution-methodology.md)、[架构](./docs/architecture/project-solution.md)与[场景验证](./docs/product/project-solution-scenario-validation.md)，再依次交付：PS1对话建项/真实Resource/项目账本，PS2 Stage/Milestone/Iteration/任务管理，PS3 Project Context/真实Resource推进，PS4维护/Correct Course/多项目注意力。Shape Up控制小团队的投入、边界、未知和Circuit Breaker；BMAD控制软件Artifact、Story准备度、开发、QA与Correct Course；不复制任一项目的产品形态。
 
-当前唯一下一实现任务是PS1，完整任务书见[PS1 Project Intake](./docs/tasks/ps1-project-intake-ledger-vertical-slice.md)。方法论、架构和任务书审核通过前不得开始产品实现。Rules按R1→R2在Project Solution完成后的下一个Store版本推进。
+PS1已经完成对话建项、真实Resource、项目账本和最小管理候选闭环，完整范围与证据见[PS1 Project Intake](./docs/tasks/ps1-project-intake-ledger-vertical-slice.md)。当前唯一下一实现任务是PS2：一次打通Stage Goal/Milestone、Proposal/Iteration Commitment、Work/Action推进和负责人Project Update；任务书审核通过前不得开始实现。Rules按R1→R2在Project Solution完成后的下一个Store版本推进。
 
 这三个结果形成若干0.5～2日、可独立合并的纵向任务。不得把整个阶段塞进一个大PR，也不得只交付孤立Schema或假服务；每个外部集成必须有真实服务测试，每个面向用户的里程碑必须有真实模型和浏览器E2E。

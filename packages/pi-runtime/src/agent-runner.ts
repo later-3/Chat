@@ -66,6 +66,8 @@ export type AgentRunResult<TCandidate> =
 export interface RunAgentWithToolOptions<TCandidate> {
   readonly apiKey: string;
   readonly baseUrl: string;
+  /** 缺省保持冻结的B2百炼模型；Project等新节点可由服务端Model Profile注入。 */
+  readonly model?: Model<"openai-completions">;
   readonly systemPrompt: string;
   readonly userPrompt: string;
   readonly tool: AgentTool;
@@ -170,7 +172,7 @@ export async function runAgentWithTool<TCandidate>(
     providerStopReason?: AssistantMessage["stopReason"];
     toolCallCount?: number;
   } = {};
-  const model = buildBailianModel(options.baseUrl);
+  const model = options.model ?? buildBailianModel(options.baseUrl);
   let providerCallCount = 0;
   let providerRequestLimitExceeded = false;
   let lastProviderResult: Promise<AssistantMessage> | undefined;

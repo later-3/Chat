@@ -10,13 +10,13 @@
 | 主分支 | `main`是唯一开发基线；精确提交以`origin/main`为准 |
 | 前端 | React + TypeScript + Vite；响应式PWA；最小Plan审核与运行投影已接真实后端 |
 | 后端 | Node.js + TypeScript；Hono协议入口；Application拥有事务 |
-| Product Store | `chat-product-store.v3`；串行支持v1→v2→v3，保持单实例单写者、原子替换与损坏失败关闭；M3复用现有Memory事实集合 |
-| Workflow | 规划仍由唯一`PlanningExecutionWorkflow`完成；M2另有独立`MemoryImportWorkflow`拥有导入/对账副作用生命周期 |
-| Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent`；百炼真实`qwen3.7-plus`已验证 |
+| Product Store | `chat-product-store.v4`；串行支持v1→v2→v3→v4，保持单实例单写者、原子替换与损坏失败关闭；v4新增Project账本与Candidate |
+| Workflow | 规划仍由唯一`PlanningExecutionWorkflow`完成；另有独立`MemoryImportWorkflow`和`ProjectIntakeWorkflow`分别拥有导入/对账与建项审核生命周期 |
+| Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent`；Planner/Executor与模型无关Project Understanding均已用百炼真实`qwen3.7-plus`验证 |
 | 调试与回放 | VS Code真实F5 Compound覆盖memmy、MemoryCore、Workflow、API和Web；固定端口、安全清理、严格脱敏Trace及多源Replay |
 | 代码状态 | P0、P1.1、P1.2、B1、B2、M1、M2、M3与MemoryCore调试/注释收口均已进入`main`；真实VS Code启动缺陷已完成修复验收；当前实现文档已按仓库地图、前后端交互和Workflow运行边界收口 |
 | 当前阶段 | 长期上下文与知识复用：Memory、BMAD项目上下文、用户规则集 |
-| 当前任务 | Project Solution方法论、架构与场景验证已形成Draft；PS1 Project Intake任务书等待审核，产品实现尚未开始 |
+| 当前任务 | PS1 Project Intake、真实Resource、项目账本与最小管理闭环已完成实现和真实验收，等待实现PR复审；下一任务是PS2 Stage/Milestone/Iteration完整推进闭环 |
 
 ## 2. B2已完成的真实证据
 
@@ -56,10 +56,20 @@
 4. `accepted`是L0已落事实的合法状态，不等同于L1 `materialized`；终态监督器不得把合法accepted误降级为结果未知。
 5. PR #12与PR #13已合入；真实VS Code主Compound已验证5个服务全部Ready、Chrome页面可访问，停止后9个固定端口全部释放。
 
+## 4.2 PS1的真实证据
+
+1. 用户可从正式Chat显式进入建项模式；Message、queued Candidate、Receipt和Start Outbox原子提交，独立`ProjectIntakeWorkflow`完成模型理解、真实资源观察、Hook等待与恢复。
+2. `ProjectIntakeUnderstandingPort`与服务端Model Profile解耦；真实E2E使用百炼`qwen3.7-plus`完成唯一一次模型调用，公开DTO不含Provider/模型，失败使用`FatalError`禁止自动付费重试。
+3. 真实Resource Registry只接受服务端配置的rootId；已真实观察Git HEAD/branch/status/recent commits、治理文档Manifest与package脚本清单，不执行脚本、不写Git、不暴露绝对路径。
+4. 建项确认原子创建Project、Method Snapshot、初始Stage、Resource、Participant、Work/Action、Decision、Evidence与Observation；Portfolio、Workspace和Timeline可在刷新后恢复。
+5. “管理项目”对话可生成绑定revision/Hash的待办、决定和贡献Candidate；修订/确认/拒绝均经CAS，两个页面并发确认严格为一个201和一个409。
+6. 独立恢复测试真实停止并重建API与Workflow进程；恢复后Candidate revision/Hash、Workflow Run ID和唯一理解调用不变，最终只创建一个Project。
+7. 真实Chromium场景通过桌面与390×844手机视口；Trace含严格模型/对象/耗时证据，不含用户正文、决定正文、绝对路径、密钥或Runtime私有身份。
+
 ## 5. 当前没有的能力
 
 1. 已有真实memmy和Tencent MemoryCore查询/导入；尚无自动后台记忆、L1后台定时对账和生产Memory服务部署配置。
-2. 没有长期Project、Stage Goal/Milestone、Iteration、Work/Scope/Action、真实Resource、Participant/Contribution/Decision/Evidence、Project Update和版本化Project Context实现。
+2. 已有长期Project、初始Stage、Work/Action、真实Resource、Participant/Contribution/Decision/Evidence；尚无Milestone、Iteration、Project Update、Correct Course和注入Planning的版本化Project Context。
 3. 没有带标签、场景范围、修订和选择证据的用户规则集，也没有规划节点规则注入。
 4. 没有Chat有序SSE Cursor Runtime Journal；B2仍使用受控Query轮询。
 5. 没有外部副作用Tool、多实例数据库、备份恢复和生产后端部署拓扑。
@@ -67,7 +77,7 @@
 ## 6. 下一阶段的三个用户结果
 
 1. **Memory**：M1/M2/M3已验证两套真实服务的查询、显式导入、同步物化与异步接收差异；后续优化是后台提炼/对账和生产部署，不再阻塞项目上下文建设。
-2. **Project Solution**：用户只靠对话也能管理多个真实项目，恢复目标、阶段目标、Iteration、参与者、资源、Work/待办、贡献、决定、阻塞和下一步；方法结合Shape Up与BMAD，并按项目规模、类型和成熟度裁剪。
+2. **Project Solution**：PS1已完成对话建项、真实资源和初始账本；下一步让用户只靠对话持续推进Stage Goal、Milestone、Iteration、Work/待办、阻塞、Project Update和下一步，并按项目规模、类型和成熟度裁剪Shape Up/BMAD方法。
 3. **用户规则**：用户可以在统一界面维护带标签和场景范围的个人习惯/要求，也可以让Chat提出维护建议；对话中可主动勾选或按标签筛选，规划时记录最终采用规则及其版本。
 
 详细任务数量、依赖、合同和完成门必须在复核本地参考项目与既有分析后写入任务书，审核前不假装已冻结。
