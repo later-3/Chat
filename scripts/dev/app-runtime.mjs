@@ -10,6 +10,7 @@ import {
   loadPidEntries,
   recordPidEntry,
   removePidEntry,
+  terminateOwnedChatPortProcesses,
   terminateRecorded,
 } from "../debug/lib.mjs";
 import { ensureFixedMemmy } from "../memory/fixed-memmy.mjs";
@@ -310,6 +311,14 @@ export function runVersionRecoveryCommand({
   });
 }
 
+/**
+ * 回收登记丢失但仍可严格证明属于同一Git仓库的Chat固定端口进程。
+ * 身份识别与最终发信号之间还会由terminateEntry再次校验命令和启动时间。
+ */
+export function reclaimOwnedPortOccupants(root, occupied, dependencies) {
+  return terminateOwnedChatPortProcesses(root, occupied, dependencies);
+}
+
 export async function preflightLocalRuntime(root) {
   const entries = loadPidEntries();
   for (const result of terminateRecorded(entries)) {
@@ -322,7 +331,17 @@ export async function preflightLocalRuntime(root) {
       `[chat] 清理专属调试浏览器：processes=${browserCleanup.terminatedPids.length}, locks=${browserCleanup.removedLocks.length}`,
     );
   }
-  const occupied = checkPorts();
+  let occupied = checkPorts();
+  if (occupied.length > 0) {
+    const recovered = reclaimOwnedPortOccupants(root, occupied);
+    for (const result of recovered) {
+      console.log(`[chat] 清理同仓库遗留 ${result.role} pid=${result.pid}: ${result.action}`);
+    }
+    if (recovered.length > 0) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+      occupied = checkPorts();
+    }
+  }
   if (occupied.length === 0) {
     console.log(`[chat] 固定端口可用：${frozenPortList().join(", ")}`);
     return;

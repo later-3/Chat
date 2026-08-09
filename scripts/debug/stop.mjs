@@ -1,11 +1,17 @@
-import { checkPorts, loadPidEntries, repoRoot, terminateRecorded } from "./lib.mjs";
+import {
+  checkPorts,
+  loadPidEntries,
+  repoRoot,
+  terminateOwnedChatPortProcesses,
+  terminateRecorded,
+} from "./lib.mjs";
 import { cleanupOwnedDebugBrowser } from "../dev/browser-lifecycle.mjs";
 
 /**
  * Chat本地开发环境的显式停止入口。
  *
- * 停止本轮记录的Chat进程和worktree专属调试浏览器，并报告端口释放情况；
- * 端口被未记录进程占用只警告不清理。
+ * 停止本仓库记录过或可严格证明的Chat进程，以及当前worktree专属调试浏览器；
+ * 端口被其他进程占用只警告不清理。
  */
 
 const entries = loadPidEntries();
@@ -22,7 +28,17 @@ if (browserCleanup.terminatedPids.length > 0 || browserCleanup.removedLocks.leng
   );
 }
 
-const occupied = checkPorts();
+let occupied = checkPorts();
+const recovered = terminateOwnedChatPortProcesses(repoRoot(), occupied);
+for (const result of recovered) {
+  console.log(`[stop] 同仓库遗留 ${result.role} pid=${result.pid}: ${result.action}`);
+  if (result.action === "kill-failed") failed = true;
+}
+if (recovered.length > 0) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+  occupied = checkPorts();
+}
+
 for (const item of occupied) {
   // 只报告端口/PID/安全进程名，不输出完整argv
   console.warn(

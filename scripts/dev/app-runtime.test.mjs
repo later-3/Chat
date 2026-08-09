@@ -10,11 +10,17 @@ import {
   AppSupervisor,
   createServiceDefinitions,
   parseDevArgs,
+  reclaimOwnedPortOccupants,
   runPreparationCommand,
   runVersionRecoveryCommand,
   sharedCacheRootFromGitCommonDir,
   waitForServiceReady,
 } from "./app-runtime.mjs";
+import {
+  findOwnedChatPortProcesses,
+  findOwnedChatProcessForPort,
+  sharedDebugDirFromGitCommonDir,
+} from "../debug/lib.mjs";
 import {
   cleanupOwnedDebugBrowser,
   debugBrowserProfileRoot,
@@ -67,6 +73,126 @@ test("同一Git仓库的worktree共享固定源码缓存", () => {
     sharedCacheRootFromGitCommonDir("/workspace/chat-feature", "/workspace/chat-main/.git"),
     "/workspace/chat-main/.data/cache",
   );
+});
+
+test("同一Git仓库的worktree共享固定端口PID登记", () => {
+  assert.equal(
+    sharedDebugDirFromGitCommonDir("/workspace/chat-feature", "/workspace/chat-main/.git"),
+    "/workspace/chat-main/.data/debug",
+  );
+});
+
+test("登记丢失时只识别同仓库且命令与固定端口角色匹配的Chat进程", () => {
+  const descriptions = new Map([
+    [
+      52,
+      {
+        startedAtMs: Date.parse("2026-08-09T08:00:00.000Z"),
+        command: "node /workspace/chat-feature/node_modules/tsx/loader.mjs src/index.ts",
+      },
+    ],
+  ]);
+  const dependencies = {
+    describe: (pid) => descriptions.get(pid) ?? null,
+    workingDirectory: () => "/workspace/chat-feature/apps/api",
+    findParentPid: () => 1,
+    findGitCommonDir: (path) =>
+      path.startsWith("/workspace/chat") ? "/workspace/chat-main/.git" : null,
+  };
+  const owned = findOwnedChatProcessForPort(
+    "/workspace/chat-main",
+    { port: 43111, pid: 52 },
+    dependencies,
+  );
+  assert.deepEqual(
+    { role: owned?.role, pid: owned?.pid, killScope: owned?.killScope },
+    { role: "api", pid: 52, killScope: "process" },
+  );
+
+  const foreign = findOwnedChatProcessForPort(
+    "/workspace/chat-main",
+    { port: 43111, pid: 52 },
+    {
+      ...dependencies,
+      findGitCommonDir: (path) =>
+        path === "/workspace/chat-main" ? "/workspace/chat-main/.git" : "/workspace/other/.git",
+    },
+  );
+  assert.equal(foreign, null);
+
+  const wrongCommand = findOwnedChatProcessForPort(
+    "/workspace/chat-main",
+    { port: 43111, pid: 52 },
+    {
+      ...dependencies,
+      describe: () => ({
+        startedAtMs: Date.parse("2026-08-09T08:00:00.000Z"),
+        command: "node another-server.js",
+      }),
+    },
+  );
+  assert.equal(wrongCommand, null);
+});
+
+test("监听子进程没有角色签名时可回溯到同仓库Memory包装器", () => {
+  const owned = findOwnedChatProcessForPort(
+    "/workspace/chat-main",
+    { port: 18960, pid: 62 },
+    {
+      describe: (pid) =>
+        pid === 62
+          ? { startedAtMs: 1_000, command: "node memory-server.js" }
+          : {
+              startedAtMs: 900,
+              command: "node /workspace/chat-feature/scripts/memory/start-fixed-memmy.mjs",
+            },
+      workingDirectory: (pid) =>
+        pid === 62 ? "/workspace/chat-main/.data/cache/memmy" : "/workspace/chat-feature",
+      findParentPid: (pid) => (pid === 62 ? 61 : 1),
+      findGitCommonDir: () => "/workspace/chat-main/.git",
+    },
+  );
+  assert.equal(owned?.pid, 61);
+  assert.equal(owned?.role, "memory");
+});
+
+test("同一进程同时监听服务端口与Inspector时只回收一次", () => {
+  const descriptions = {
+    describe: () => ({
+      startedAtMs: 1_000,
+      command: "node --import tsx/dist/loader.mjs src/index.ts",
+    }),
+    workingDirectory: () => "/workspace/chat-feature/apps/api",
+    findParentPid: () => 1,
+    findGitCommonDir: () => "/workspace/chat-main/.git",
+  };
+  const entries = findOwnedChatPortProcesses(
+    "/workspace/chat-main",
+    [
+      { port: 43111, pid: 72 },
+      { port: 43120, pid: 72 },
+    ],
+    descriptions,
+  );
+  assert.equal(entries.length, 1);
+
+  const terminated = [];
+  const results = reclaimOwnedPortOccupants(
+    "/workspace/chat-main",
+    [
+      { port: 43111, pid: 72 },
+      { port: 43120, pid: 72 },
+    ],
+    {
+      findOwned: () => entries,
+      terminate: (entry) => {
+        terminated.push(entry.pid);
+        return { role: entry.role, pid: entry.pid, action: "terminated" };
+      },
+    },
+  );
+  assert.deepEqual(terminated, [72]);
+  assert.deepEqual(results, [{ role: "api", pid: 72, action: "terminated" }]);
 });
 
 test("准备命令不继承VS Code自动附加环境", async () => {

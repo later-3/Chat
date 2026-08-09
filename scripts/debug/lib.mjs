@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  readlinkSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,8 +15,10 @@ import { fileURLToPath } from "node:url";
  * Chat本地调试进程管理共享库（任务书§8）。
  *
  * 安全规则：
- * - 只终止记录在.data/debug/pids.json中、且通过身份复核（命令片段+启动时间）的进程；
- * - 端口被未知应用占用时安全失败并报告端口/PID/进程名，绝不杀未知进程；
+ * - PID登记由同一Git仓库的所有worktree共享，因为固定端口本来就是仓库级排他资源；
+ * - 优先终止登记过且通过身份复核（命令片段+启动时间）的进程；
+ * - 登记丢失时，只回收“固定端口角色+命令签名+进程cwd+Git Common Directory”四重匹配的Chat进程；
+ * - 端口被其他应用占用时安全失败并报告端口/PID/进程名，绝不杀未知进程；
  * - 禁止使用pkill、killall或按模糊名称终止进程。
  */
 
@@ -42,8 +52,38 @@ export function repoRoot() {
   return resolve(SCRIPTS_DIR, "../..");
 }
 
+export function sharedDebugDirFromGitCommonDir(root, gitCommonDir) {
+  const commonDirectory = resolve(root, gitCommonDir);
+  if (!commonDirectory.endsWith("/.git")) {
+    throw new Error(`无法从Git Common Directory确定共享调试目录：${commonDirectory}`);
+  }
+  return join(resolve(commonDirectory, ".."), ".data", "debug");
+}
+
+/** 返回指定目录所属仓库的Git Common Directory；非Git目录返回null。 */
+export function gitCommonDirForPath(path) {
+  try {
+    const commonDirectory = execFileSync("git", ["-C", path, "rev-parse", "--git-common-dir"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return normalizeExistingPath(resolve(path, commonDirectory));
+  } catch {
+    return null;
+  }
+}
+
 export function debugDir() {
   if (process.env.CHAT_DEBUG_DIR) return resolve(process.env.CHAT_DEBUG_DIR);
+  const root = repoRoot();
+  const commonDirectory = gitCommonDirForPath(root);
+  if (commonDirectory) {
+    try {
+      return sharedDebugDirFromGitCommonDir(root, commonDirectory);
+    } catch {
+      // 非标准Git布局回退到当前worktree；端口身份检查仍会失败关闭。
+    }
+  }
   return join(repoRoot(), ".data", "debug");
 }
 
@@ -168,6 +208,36 @@ export function describeProcess(pid) {
   }
 }
 
+/** 查询进程cwd；Linux优先/proc，macOS等平台回退到lsof。 */
+export function processWorkingDirectory(pid) {
+  try {
+    return normalizeExistingPath(readlinkSync(`/proc/${String(pid)}/cwd`));
+  } catch {
+    // macOS没有/proc，继续使用lsof。
+  }
+  const output = tryExec(
+    ["lsof", "/usr/sbin/lsof", "/sbin/lsof"],
+    ["-a", "-p", String(pid), "-d", "cwd", "-Fn"],
+  );
+  if (!output) return null;
+  const match = output.match(/^n(.+)$/m);
+  return match?.[1] ? normalizeExistingPath(match[1]) : null;
+}
+
+/** 查询父PID；进程已退出或系统不支持ps时返回null。 */
+export function parentPid(pid) {
+  try {
+    const value = execFileSync("ps", ["-p", String(pid), "-o", "ppid="], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    const parsed = Number.parseInt(value, 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 面向用户报告的安全进程名：仅argv[0]的可执行文件basename。
  * 后续argv可能包含其他应用的Token、密码或私有路径，绝不输出。
@@ -199,6 +269,14 @@ function tryExec(candidates, args) {
     }
   }
   return undefined;
+}
+
+function normalizeExistingPath(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
 }
 
 /** 通过lsof查找监听端口的PID；无监听者返回null。lsof不可用时尝试ss。 */
@@ -310,4 +388,89 @@ export function checkPorts(ports = frozenPortList()) {
     occupied.push({ port, pid, processName: safeProcessName(pid) });
   }
   return occupied;
+}
+
+/** 固定端口到Chat服务角色的唯一映射；未知端口永远不参与自动回收。 */
+export function roleForFrozenPort(port) {
+  if (port === FROZEN_PORTS.web) return "web";
+  if (port === FROZEN_PORTS.api || port === FROZEN_PORTS.apiInspector) return "api";
+  if (port === FROZEN_PORTS.workflow || port === FROZEN_PORTS.workflowInspector) {
+    return "workflow";
+  }
+  if (port === FROZEN_PORTS.memory) return "memory";
+  if (port === FROZEN_PORTS.memoryCore) return "memoryCore";
+  return null;
+}
+
+/**
+ * 从监听进程向父进程回溯，寻找能被证明属于同一Chat仓库、同一固定端口角色的进程。
+ *
+ * 这是PID登记因IDE强停或旧调试方案而丢失时的恢复门。仅有node进程名、端口号或相似命令
+ * 都不够；命令签名与进程cwd所属Git Common Directory必须同时匹配。返回的startedAt来自
+ * 当前ps快照，后续terminateEntry还会再次复核，防御查询和发信号之间的PID复用。
+ */
+export function findOwnedChatProcessForPort(
+  root,
+  occupant,
+  {
+    describe = describeProcess,
+    workingDirectory = processWorkingDirectory,
+    findParentPid = parentPid,
+    findGitCommonDir = gitCommonDirForPath,
+  } = {},
+) {
+  const role = roleForFrozenPort(occupant.port);
+  if (!role) return null;
+  const expectedFragments = ROLE_COMMAND_FRAGMENTS[role];
+  const rootCommonDirectory = findGitCommonDir(root);
+  if (!rootCommonDirectory) return null;
+
+  const visited = new Set();
+  let candidatePid = occupant.pid;
+  while (Number.isInteger(candidatePid) && candidatePid > 1 && !visited.has(candidatePid)) {
+    visited.add(candidatePid);
+    const description = describe(candidatePid);
+    const cwd = workingDirectory(candidatePid);
+    const processCommonDirectory = cwd ? findGitCommonDir(cwd) : null;
+    if (
+      description &&
+      Number.isFinite(description.startedAtMs) &&
+      expectedFragments.every((fragment) => description.command.includes(fragment)) &&
+      processCommonDirectory === rootCommonDirectory
+    ) {
+      return {
+        role,
+        pid: candidatePid,
+        port: occupant.port,
+        killScope: "process",
+        startedAt: new Date(description.startedAtMs).toISOString(),
+        commandFragments: expectedFragments,
+        workspaceRoot: cwd,
+      };
+    }
+    candidatePid = findParentPid(candidatePid);
+  }
+  return null;
+}
+
+/** 同一监听PID（例如API与Inspector）只生成一条回收记录。 */
+export function findOwnedChatPortProcesses(root, occupied, dependencies) {
+  const owned = [];
+  const seen = new Set();
+  for (const occupant of occupied) {
+    const entry = findOwnedChatProcessForPort(root, occupant, dependencies);
+    if (!entry || seen.has(entry.pid)) continue;
+    seen.add(entry.pid);
+    owned.push(entry);
+  }
+  return owned;
+}
+
+/** 识别后逐条复用terminateEntry的二次身份校验与有限等待。 */
+export function terminateOwnedChatPortProcesses(
+  root,
+  occupied,
+  { findOwned = findOwnedChatPortProcesses, terminate = terminateEntry } = {},
+) {
+  return findOwned(root, occupied).map((entry) => terminate(entry));
 }

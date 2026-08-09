@@ -26,12 +26,12 @@
    监督器按反向顺序收敛仍在运行的子进程并清理登记。
 6. 默认本地Profile启动memmy与Tencent MemoryCore；可用`--memory=memmy|memorycore|all`缩小范围。
 7. VS Code只保留一个用户入口`Chat：调试应用`，调用同一启动器并在Ready后打开Chrome。
-8. 固定端口、已登记进程精准清理、未知端口占用拒绝清理、私密配置进程内加载和固定Memory源码
-   证据全部保留。
+8. 固定端口属于Git仓库级排他资源：所有worktree共享PID登记；登记丢失时只回收通过端口角色、命令、
+   cwd与Git Common Directory四重验证的同仓库Chat进程，其他占用者仍拒绝清理。
 9. 同一Git仓库的worktree共享经过commit/tree/Hash校验的固定源码缓存，避免重复下载和原生编译；
    Product Store、Workflow Store、Memory数据库和其他运行数据仍按worktree物理隔离。
-10. PID登记是可重建运行投影：监督器是正常运行时的单写者；终端强制中断后，下一次status/start/stop会
-   剔除已确认退出或僵尸的记录，但仍保留活PID并继续执行命令片段与启动时间身份复核。
+10. PID登记是Git仓库级、可重建的运行投影：监督器是正常运行时的单写者；终端强制中断后，下一次
+    status/start/stop会剔除已确认退出或僵尸的记录，但仍保留活PID并继续执行身份复核。
 11. 前端调试使用worktree专属浏览器Profile；启动前只终止携带该精确Profile参数的遗留浏览器并清理
     Profile锁，父调试会话停止时强制收敛整个专属浏览器，不影响日常Chrome。
 
@@ -70,7 +70,9 @@ API和Web为30秒；期限从对应`spawn`成功后开始。进程提前退出�
 6. 从VS Code真实F5启动`Chat：调试应用`，Chrome可访问页面、TypeScript断点可绑定，停止后端口释放。
 7. 预置一轮携带专属Profile的遗留Chrome及锁文件后，下一次F5自动收敛旧浏览器、无旧Session警告，
    新浏览器成功附加；连续干净F5也通过。
-8. `format:check`、`lint`、`typecheck`、相关测试与`build`通过。
+8. 从另一个worktree遗留无PID登记的Workflow、API和Web后，当前worktree下一次F5只清理已证明属于
+   同一Git仓库的Chat进程并成功Ready；伪装成node的其他仓库进程仍拒绝清理。
+9. `format:check`、`lint`、`typecheck`、相关测试与`build`通过。
 
 ## 7. 本地验收结果
 

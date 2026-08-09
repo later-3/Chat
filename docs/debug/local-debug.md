@@ -26,7 +26,7 @@ Memory是本地真实依赖，但不是默认调试目标，因此不开放Inspe
 仓库拥有唯一服务图，VS Code不拥有应用生命周期：
 
 ```text
-preflight（清理已登记旧进程/专属调试浏览器 + 拒绝未知端口占用）
+preflight（清理同仓库已登记/可证明的遗留进程与专属浏览器 + 拒绝其他端口占用）
 → 校验/准备固定Memory源码缓存
 → 构建Workflow Bundles
 → 检查活动Workflow与当前Bundle版本；本地不兼容Run安全收敛
@@ -73,12 +73,15 @@ SIGKILL，并在进程收敛后删除该Profile中的`SingletonLock/Socket/Cooki
 - 期限从对应进程`spawn`成功后开始，不包含前置服务准备时间；这不是业务倒计时，也不重试用户命令。
 - 探针每250ms复核进程状态与HTTP；单次HTTP最长1.5秒。进程提前退出时立即失败。
 - 任一必要服务失败，启动器停止本轮已启动进程并退出非0，不留下半套应用。
-- 端口被未知应用占用时只报告端口、PID和安全进程名，不终止未知进程。
+- 固定端口是整个Git仓库的排他资源；从另一个worktree启动时，会先停止同仓库上一轮Chat调试服务。
+- PID登记丢失时，只有固定端口角色、命令签名、进程cwd和Git Common Directory四项同时匹配，
+  才会被识别为同仓库遗留进程并清理；其他应用仍只报告端口、PID和安全进程名，不自动终止。
 
 ### 2.4 进程、缓存与秘密
 
-- 应用监督器是`.data/debug/pids.json`的正常单写者；终端强制中断后，下一次status/start/stop会剔除
-  已确认退出或僵尸的记录。活PID仍需通过命令片段和启动时间身份复核。
+- 应用监督器是主仓库`.data/debug/pids.json`的正常单写者；同一Git仓库的worktree共享这份固定端口
+  登记。终端或IDE强制中断后，下一次status/start/stop会剔除已确认退出或僵尸的记录；活PID仍需
+  通过命令片段和启动时间身份复核。
 - Memory包装进程收到SIGTERM后向真实子进程转发；安全清理至少等待7秒后才考虑SIGKILL。
 - 同一Git仓库的worktree共享主仓库`.data/cache`中经过commit/tree/Hash校验的固定源码缓存；
   Memory数据库、Product Store、Workflow Store和Trace仍保存在各worktree自己的`.data`中。

@@ -227,3 +227,11 @@ Memory、项目管理和规则系统不能只凭抽象接口或模型直觉设�
 活动Workflow Run只能由创建它的代码/Bundle安全恢复；新代码不能静默续跑旧Checkpoint。但本地开发反复改代码时，一个不可恢复的旧Run也不应让Memory、API和Web全部无法启动。`pnpm dev/dev:debug`在Bundle构建后检查活动Run证据：一致则正常恢复；明确版本冲突则保留Message、Plan、Trace、Runtime事件、Binding和版本证据，通过Application原子终结Product Run/Attempt/Outbox，再用Workflow SDK取消旧Run并继续启动。证据缺失、损坏或映射不完整仍失败关闭。生产环境不使用这种开发降级，而应保留历史部署承接旧Run。
 
 检查：代码变化后再次F5，旧Run是否形成可解释终态且当前应用Ready；是否没有删除`.data`、重放Provider/外部副作用或用新Bundle续跑旧Checkpoint？
+
+## 35. 固定调试端口的所有权属于Git仓库，不能被worktree局部登记割裂
+
+标签：`debug`、`process-lifecycle`、`worktree`、`ports`
+
+多个worktree共享固定端口，却各自保存PID登记，会让一个worktree留下的Chat孤儿进程在另一个worktree中被误判为未知占用者，最终把“一键F5”退化为人工找PID。固定端口登记必须由Git Common Directory锚定为仓库级运行投影。登记因旧方案或IDE强停而丢失时，可以自动收敛的充分条件不是“进程名叫node”，而是固定端口角色、角色命令签名、进程cwd和Git Common Directory四重一致；发信号前还要再次校验命令与启动时间。任何一项不成立都继续失败关闭，不能用`pkill`、端口号或模糊路径误杀其他应用。
+
+检查：另一个worktree留下无登记Chat服务后能否直接F5；换成相同端口上的其他仓库Node进程时是否仍拒绝清理；同一监听PID同时占服务端口和Inspector时是否只终止一次？
