@@ -28,7 +28,7 @@ import {
   projectWorkStatusSchema,
 } from "./project.js";
 
-export const PROJECT_API_SCHEMA_VERSION = "chat-project-api.v1";
+export const PROJECT_API_SCHEMA_VERSION = "chat-project-api.v2";
 
 export const beginProjectIntakePayloadSchema = z
   .object({
@@ -137,6 +137,15 @@ export const transitionProjectActionPayloadSchema = z
 export const transitionProjectStagePayloadSchema = z
   .object({
     status: z.enum(["active", "review", "completed", "skipped"]),
+    reason: z.string().trim().min(1).max(2_000),
+    decidedByParticipantId: projectParticipantIdSchema,
+    evidenceIds: z.array(projectEvidenceIdSchema).max(20),
+  })
+  .strict();
+
+export const transitionProjectLifecyclePayloadSchema = z
+  .object({
+    status: projectStatusSchema,
     reason: z.string().trim().min(1).max(2_000),
     decidedByParticipantId: projectParticipantIdSchema,
     evidenceIds: z.array(projectEvidenceIdSchema).max(20),
@@ -554,6 +563,9 @@ export type CreateProjectActionPayload = z.infer<typeof createProjectActionPaylo
 export type AssignProjectActionPayload = z.infer<typeof assignProjectActionPayloadSchema>;
 export type TransitionProjectActionPayload = z.infer<typeof transitionProjectActionPayloadSchema>;
 export type TransitionProjectStagePayload = z.infer<typeof transitionProjectStagePayloadSchema>;
+export type TransitionProjectLifecyclePayload = z.infer<
+  typeof transitionProjectLifecyclePayloadSchema
+>;
 export type TransitionProjectMilestonePayload = z.infer<
   typeof transitionProjectMilestonePayloadSchema
 >;

@@ -90,6 +90,10 @@ const memoryImportWorkflowBindingSchema = z
   })
   .strict();
 
+/**
+ * v3落盘字段沿用PS1的projectIntake命名以保持兼容；其语义已经是通用Project
+ * Candidate Workflow绑定，Definition Version区分Intake与Advancement。
+ */
 const projectIntakeStartIntentSchema = z
   .object({
     outboxId: outboxEntryIdSchema,

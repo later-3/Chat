@@ -27,6 +27,7 @@ import {
   setProjectArchiveStatus,
   transitionProjectAction,
   transitionProjectMilestone,
+  transitionProjectLifecycle,
   transitionProjectStage,
   type ApplicationDeps,
   type IdFactory,
@@ -441,6 +442,32 @@ describe("PS1 Project Intake Application纵向链", () => {
       payload: { status: "active" },
     });
     expect(restored.project.project.status).toBe("active");
+    const paused = await transitionProjectLifecycle(application, {
+      principalId,
+      commandId: "cmd_projectpause" as never,
+      projectId,
+      expectedRevision: restored.project.project.revision,
+      payload: {
+        status: "paused",
+        reason: "等待外部确认，暂时停止普通推进",
+        decidedByParticipantId: owner.projectParticipantId,
+        evidenceIds: [],
+      },
+    });
+    expect(paused.project.project.status).toBe("paused");
+    const resumed = await transitionProjectLifecycle(application, {
+      principalId,
+      commandId: "cmd_projectresume" as never,
+      projectId,
+      expectedRevision: paused.project.project.revision,
+      payload: {
+        status: "active",
+        reason: "外部确认完成，恢复推进",
+        decidedByParticipantId: owner.projectParticipantId,
+        evidenceIds: [],
+      },
+    });
+    expect(resumed.project.project.status).toBe("active");
     await expect(
       decideProjectManagementCandidate(application, {
         principalId,

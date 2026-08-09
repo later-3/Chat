@@ -215,7 +215,7 @@ Workflow Step通过tsx解析回TypeScript源码，断点应设置在上述`.ts`�
 `.workflow-bundle`或`dist`。第三方Memory进程保持环境隔离，日常排查优先观察Chat Adapter请求与
 严格响应分类。
 
-## 6. Project Intake断点顺序
+## 6. Project Intake与Advancement断点顺序
 
 先按`.env.example`配置`CHAT_PROJECT_ROOTS_JSON`，只加入你明确允许Chat只读观察的工作区。随后从浏览器切换“建立项目”、选择资源并发送消息，建议按以下顺序设置断点：
 
@@ -229,6 +229,24 @@ Workflow Step通过tsx解析回TypeScript源码，断点应设置在上述`.ts`�
 8. 同文件的`decideProjectCandidate`：用户确认后原子提交Project账本和Resume Outbox。
 
 项目建成后，从浏览器切换“管理项目”发送待办、决定或贡献，可在`beginProjectManagementCandidate`和`decideProjectManagementCandidate`断点观察“正式Message → 可修改Candidate → 确认后单一账本事实”。这条简单确定性链不调用模型，也不启动额外Workflow。
+
+### 6.1 从前端调试Project推进
+
+在页面先选择Project，再切换“推进项目”并发送阶段目标/关键结果。建议按顺序设置以下断点：
+
+1. Browser `apps/web/src/components/RealWorkspace.tsx`的`send`与`ProjectPanel`：观察显式`advance`模式、可编辑`advancementProposal`，页面不携带Provider/模型。
+2. Browser `apps/web/src/real/use-project-chain.ts`的`beginAdvancement`、`decideAdvancement`：观察`activeProjectId`、Candidate `revision/candidateSha256`和每次新Command ID。
+3. API `apps/api/src/product-routes.ts`的`POST /project-advancements`：公开strict payload只含Session、Project和正文。
+4. API `packages/application/src/project-advancement-use-cases.ts`的`beginProjectAdvancement`：同一事务里的Message、queued Candidate、Receipt和Start Outbox。
+5. API `apps/api/src/outbox-dispatcher.ts`的`dispatchProjectAdvancement`：只派发产品Candidate引用，不把正文或模型配置发给Runtime。
+6. Workflow `packages/workflows/src/project-advancement-workflow.ts`的`projectAdvancementWorkflow`：观察Candidate ID/revision、Hook等待与恢复。
+7. Workflow `packages/workflows/src/project-advancement-workflow-steps.ts`的`prepareProjectAdvancementCandidateStep`：Workflow到API私有Command边界。
+8. API/Workflow `packages/pi-runtime/src/project-advancement-understanding.ts`的`understand`：观察服务端Model Profile、一次Provider调用和strict工具候选；不要把Prompt或工具参数加入Watch日志。
+9. API `packages/application/src/project-advancement-use-cases.ts`的`prepareProjectAdvancementCandidate`：观察输入manifest Hash、模型证据和`under_review` Candidate编译。
+10. 同文件的`decideProjectAdvancementCandidate`：观察旧revision/Hash 409，以及确认时Decision、Stage、Milestone、Project Update、Project revision和Resume Outbox的一次原子提交。
+11. 同文件的`transitionProjectStage`、`transitionProjectMilestone`：观察Domain转换规则、Decision/Evidence要求和严格`ProjectStateTransition`历史。
+
+建议Watch：`projectCandidateId`、`boundProjectRevision`、`boundStageRevision`、`boundMethodSha256`、`candidateSha256`、`projectStageId`、`projectUpdateId`和`outboxId`。Workflow Run ID与Hook Token仍只在Runtime私有调试上下文中查看，禁止加入浏览器Watch或公开响应。
 
 ## 7. Trace 查询
 

@@ -84,6 +84,36 @@ export interface ProjectWorkShape {
 }
 
 export type ProjectActionStatusShape = "todo" | "doing" | "blocked" | "done" | "cancelled";
+export type ProjectLifecycleStatusShape = "active" | "paused" | "completed" | "archived";
+
+const PROJECT_LIFECYCLE_TRANSITIONS: Readonly<
+  Record<ProjectLifecycleStatusShape, readonly ProjectLifecycleStatusShape[]>
+> = {
+  active: ["paused", "completed", "archived"],
+  paused: ["active", "completed", "archived"],
+  completed: ["archived"],
+  archived: ["active"],
+};
+
+/** completed是用户确认的目标达成；archived只是维护生命周期，两者不能混用。 */
+export function assertProjectLifecycleTransition(input: {
+  readonly from: ProjectLifecycleStatusShape;
+  readonly to: ProjectLifecycleStatusShape;
+  readonly evidenceIds: readonly string[];
+}): void {
+  if (!PROJECT_LIFECYCLE_TRANSITIONS[input.from].includes(input.to)) {
+    throw new ProjectDomainError(
+      "project_lifecycle_transition_invalid",
+      `Project不允许从${input.from}转换到${input.to}`,
+    );
+  }
+  if (input.to === "completed" && input.evidenceIds.length === 0) {
+    throw new ProjectDomainError(
+      "project_lifecycle_evidence_required",
+      "Project完成必须引用至少一条Evidence",
+    );
+  }
+}
 
 const PROJECT_ACTION_TRANSITIONS: Readonly<
   Record<ProjectActionStatusShape, readonly ProjectActionStatusShape[]>

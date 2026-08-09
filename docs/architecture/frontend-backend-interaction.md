@@ -22,7 +22,7 @@
 flowchart LR
     WEB[React PWA] -->|REST Query / Command| API[Hono Public Router]
     API --> APP[Application Use Cases]
-    APP --> STORE[JSON Product Store v4]
+    APP --> STORE[JSON Product Store v5]
     APP --> OUTBOX[Transactional Outbox]
     OUTBOX --> DISPATCHER[API Outbox Dispatcher]
     DISPATCHER -->|私有HTTP + Runtime凭据| WFR[Workflow Runtime]
@@ -91,9 +91,13 @@ flowchart LR
 | POST | `/api/project-candidates/:id/decisions` | Command | 修订/确认/拒绝建项Candidate，确认时原子创建完整Project账本 |
 | POST | `/api/project-management-candidates` | Command | 从显式管理模式的正式Message确定性编译待办/决定/贡献Candidate |
 | POST | `/api/project-management-candidates/:id/decisions` | Command | CAS修订/确认/拒绝；确认后只提交一种对应Project事实 |
+| POST | `/api/project-advancements` | Command | 原子提交推进Message、版本绑定queued Candidate、Receipt与Start Outbox，返回202 |
+| POST | `/api/project-advancements/:id/decisions` | Command | CAS修订/确认/拒绝Stage/Milestone/Update候选；确认时一次提交账本事实与Resume Outbox |
 | GET | `/api/projects`、`/api/projects/:id`、`/api/projects/:id/timeline` | Query | Portfolio、Workspace与事实时间线 |
 | POST | `/api/projects/:id/actions`及Action子命令 | Command | 新增、分派和状态转换，均校验对象revision |
 | POST | `/api/projects/:id/resources/:resourceId/observations` | Command | 从允许根刷新只读Observation与Evidence |
+| POST | `/api/project-stages/:id/transitions`、`/api/project-milestones/:id/transitions` | Command | 绑定Decision/Evidence的显式状态转换；写入严格State Transition历史 |
+| POST | `/api/projects/:id/transitions` | Command | 显式暂停、恢复、完成或归档Project；完成必须绑定Evidence，完成与归档语义分离 |
 
 ## 5. Command合同
 
@@ -115,7 +119,7 @@ flowchart LR
 4. Decision还必须绑定Plan ID、Plan revision和Plan SHA-256。
 5. 浏览器不能指定Provider、模型、endpoint、Token、Workflow ID、Hook Token或pi Session ID。
 6. POST已经发送但响应丢失时，浏览器保留同一个`commandId`并只允许“使用同一命令重试”。
-7. Project Candidate同时绑定自身revision/Hash；管理Candidate还绑定Project revision。Project变化后旧候选不能确认，但允许显式拒绝以解除Session阻塞。
+7. Project Candidate同时绑定自身revision/Hash；管理Candidate绑定Project revision；推进Candidate同时绑定Project、Stage、Method Snapshot的revision/Hash。任一事实变化后旧候选不能确认，但允许显式拒绝以解除Session阻塞。
 
 ### 5.1 主链关键数据结构
 
@@ -267,6 +271,22 @@ memmy可通过读取与搜索收敛为`materialized`；Tencent MemoryCore的L0�
 普通任务消息不会被隐藏分类器改道。Provider/模型只由服务端Model Profile选择；公开Candidate没有Provider或模型字段。页面删除Candidate定位或刷新时，按Session Query恢复唯一未决候选。
 
 项目建成后，显式“管理项目”模式把用户消息编译为待办、决定或贡献Candidate；必须再次确认才能写入账本。待办分派/状态转换与资源刷新是可见的显式Command：前两者使用对象CAS，资源刷新只观察允许根并生成Observation/Evidence。
+
+### 9.1 Project推进交互
+
+```text
+用户显式选择Project并切换“推进项目”
+→ POST /api/project-advancements
+→ Message + queued Candidate + Receipt + Start Outbox原子提交
+→ ProjectAdvancementWorkflow调用模型无关Understanding Port
+→ Application结合当前Project/Stage/Method编译strict Candidate
+→ 页面展示并允许直接修改Stage、Milestone和负责人Update
+→ POST /api/project-advancements/:id/decisions
+→ 确认时Decision、Stage revision、Milestone、Project Update和Resume Outbox一次提交
+→ Workflow恢复；页面重新Query Project Workspace与Timeline
+```
+
+模型输出只是临时Understanding。公开Candidate不含Provider/模型；Project Update必须由当前Project的人类所有者Participant署名并由同一Principal确认。Timeline从Decision、State Transition和Project Update等产品事实组装，Trace只记录ID、revision/Hash、边界、耗时和结果，不复制Stage/Update正文。
 
 ## 10. 错误与恢复
 

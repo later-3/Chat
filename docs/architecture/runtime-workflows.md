@@ -2,19 +2,20 @@
 
 > 文档类型：当前实现（as-built）
 >
-> 当前Workflow Definition：`planning-execution-workflow.v2`、`memory-import-workflow.v1`、`project-intake-workflow.v1`
+> 当前Workflow Definition：`planning-execution-workflow.v2`、`memory-import-workflow.v1`、`project-intake-workflow.v1`、`project-advancement-workflow.v1`
 >
 > 产品事实源：Product Store；Workflow返回值和Runtime状态不是产品终态。
 
-## 1. 为什么有三套Workflow
+## 1. 为什么有四套Workflow
 
-当前有三个独立的用户结果，因此有三套耐久生命周期：
+当前有四个独立的用户结果，因此有四套耐久生命周期：
 
 1. `PlanningExecutionWorkflow`：一条消息的Memory召回、规划、人工修订/批准、执行、验证和正式提交。
 2. `MemoryImportWorkflow`：一次显式Memory外部写入或一次只读对账。
 3. `ProjectIntakeWorkflow`：一次真实资源建项理解、候选审核和确认。
+4. `ProjectAdvancementWorkflow`：现有Project的一次Stage/Milestone/负责人Update理解、候选修订和确认。
 
-“规划必须在同一个Workflow中完成”指的是规划、修订循环和执行不能拆成多个竞争的规划Run；它不要求把所有独立业务塞进这一条Workflow。Memory导入拥有外部写入/对账生命周期；Project Intake以Project Candidate而不是Plan Approval为暂停对象，所以两者分别使用独立Workflow。
+“规划必须在同一个Workflow中完成”指的是规划、修订循环和执行不能拆成多个竞争的规划Run；它不要求把所有独立业务塞进这一条Workflow。Memory导入拥有外部写入/对账生命周期；Project Intake与Advancement都以Project Candidate而不是Plan Approval为暂停对象，但分别承担“创建Project”和“推进既有Project”两个独立用户结果，因此各自拥有Definition与恢复生命周期。
 
 ## 2. 运行时组件
 
@@ -32,7 +33,7 @@ API Product Command
 | 组件 | 当前责任 |
 |---|---|
 | API进程 | 唯一Product Store Owner、公开Command/Query、Outbox Dispatcher |
-| Workflow Runtime进程 | Local World、bundle、Hook、Runtime Binding、三套Workflow启动/恢复 |
+| Workflow Runtime进程 | Local World、bundle、Hook、Runtime Binding、四套Workflow启动/恢复 |
 | Runtime Binding Store | 私下关联Product Run/Outbox/Approval与Workflow Run/Hook Token |
 | Workflow Store | Step结果、Hook等待、Checkpoint和重放 |
 | pi Runtime | 真实百炼Planner/Executor调用及结构化候选 |
@@ -43,7 +44,7 @@ Workflow进程不得打开Product JSON文件；所有产品读写都通过API私
 
 ## 3. Outbox分发边界
 
-当前Outbox有六种事件：
+当前Outbox有八种事件：
 
 | kind | 产生位置 | 分发结果 |
 |---|---|---|
@@ -53,6 +54,8 @@ Workflow进程不得打开Product JSON文件；所有产品读写都通过API私
 | `memory_import_reconcile` | Reconcile Command事务 | 启动一次只读对账Workflow |
 | `project_intake_start` | Project Intake Command事务 | 启动一次建项Workflow |
 | `project_intake_resume` | Candidate Decision事务 | 恢复对应Project Candidate Hook |
+| `project_advancement_start` | Project Advancement Command事务 | 启动一次现有Project推进Workflow |
+| `project_advancement_resume` | Advancement Decision事务 | 恢复对应推进Candidate Hook |
 
 分发流程遵守“先写意图栅栏，再跨Runtime边界”：
 
@@ -182,6 +185,24 @@ Project Understanding当前由pi Adapter执行，部署时使用服务端Model P
 
 待办、决定和贡献的“管理项目”消息不会启动新Workflow：用户已经显式选择命令类型，Application可确定性编译一个绑定Project revision/Hash的可编辑Candidate，不需要用模型重述正文。刷新Observation只提交客观只读观察，也不制造无价值审批层。
 
+### 6.1 ProjectAdvancementWorkflow
+
+```text
+Project Advancement Command
+→ Product事务提交Message + 版本绑定queued Candidate + Start Outbox
+→ prepareProjectAdvancementCandidateStep
+   → API私有Command读取当前Project/Stage/Method最小清单
+   → pi Adapter调用当前服务端Model Profile
+   → Application编译并提交under_review Candidate
+→ 建立Candidate Hook并等待
+→ 用户直接修改Candidate，或确认/拒绝
+→ Product事务先提交Decision与Stage/Milestone/Update事实 + Resume Outbox
+→ Runtime恢复同一Hook
+→ Workflow返回product_decided
+```
+
+Workflow不拥有Stage状态机。Application/Domain校验Principal、Candidate CAS/Hash、Project/Stage/Method绑定和Update作者；确认分支在同一JSON Store事务中写入所有产品事实。模型调用位于事务外，`FatalError`禁止同一Candidate revision自动再次付费；免费恢复测试真实重启API与Workflow后证明调用计数仍为1。
+
 ## 7. Runtime Binding与版本证据
 
 Runtime Binding保存以下私有关系：
@@ -189,7 +210,7 @@ Runtime Binding保存以下私有关系：
 - Product Run/Start Outbox → Workflow Run。
 - Approval Request → Hook Token和Resume状态。
 - Memory Import Outbox → Memory Import Workflow Run。
-- Project Candidate/Outbox → Project Intake Workflow Run和Hook恢复状态。
+- Project Candidate/Outbox → Project Intake或Advancement Workflow Run和Hook恢复状态。
 
 约束：
 
@@ -197,7 +218,7 @@ Runtime Binding保存以下私有关系：
 2. Binding存在但对应Workflow Run不存在时启动失败关闭。
 3. 活动Planning Run恢复前核对Workflow Definition、bundle和版本证据。
 4. 活动Memory Import Run核对其独立Definition Version。
-5. 活动Project Intake Run核对独立Definition Version、Candidate身份和Start/Resume状态。
+5. 活动Project Intake/Advancement Run核对各自Definition Version、Candidate身份和Start/Resume状态。
 6. Runtime ID只用于后端诊断，不进入浏览器、公开API和Product Store身份模型。
 
 本地开发每次重建Bundle后会在服务启动前检查活动Planning Run。证据完全一致时继续恢复；若代码版本已经变化且旧Bundle不再可执行，则保留全部历史证据，通过Application把Product Run、Attempt和Workflow Outbox收敛为`workflow.version_incompatible`，并用Workflow SDK取消旧Runtime Run。该路径不删除Store或Runtime文件，也不重启同一产品工作；生产环境应保留旧部署完成原版本恢复。
@@ -242,13 +263,14 @@ Replay Assembler按产品对象ID、revision和SHA-256组合：
 | Memory Import主编排 | `memory-import-workflow.ts` |
 | Memory Import Step | `memory-import-workflow-steps.ts` |
 | Project Intake主编排/Step | `project-intake-workflow.ts`、`project-intake-workflow-steps.ts` |
+| Project Advancement主编排/Step | `project-advancement-workflow.ts`、`project-advancement-workflow-steps.ts` |
 | Runtime HTTP与Local World | `runtime-server.ts`、`workflow-world.ts` |
 | Runtime Binding | `runtime-bindings.ts` |
 | Workflow→API私有客户端 | `api-client.ts` |
 | API私有Application Router | `apps/api/src/internal-runtime-router.ts` |
 | Outbox分发与监督 | `apps/api/src/outbox-dispatcher.ts` |
 | pi Planner/Executor | `packages/pi-runtime/src/planner.ts`、`executor.ts` |
-| Project Understanding/Model Profile | `packages/pi-runtime/src/project-intake-understanding.ts`、`project-model-profile.ts` |
+| Project Understanding/Model Profile | `packages/pi-runtime/src/project-intake-understanding.ts`、`project-advancement-understanding.ts`、`project-model-profile.ts` |
 | Memory Adapter | `packages/memory-runtime/src/*-adapter.ts` |
 | Project Resource Adapter | `packages/project-runtime/src/registry.ts` |
 
@@ -262,6 +284,7 @@ Replay Assembler按产品对象ID、revision和SHA-256组合：
 4. 真实百炼`qwen3.7-plus`、真实Memory服务和真实浏览器E2E。
 5. 固定端口F5调试、严格Trace和多源Replay。
 6. 独立Project Intake耐久链、真实Git/文档/脚本观察、候选确认与Project账本。
+7. 独立Project Advancement耐久链、Stage/Milestone/负责人Update审核、State Transition与Timeline。
 
 尚未实现：
 

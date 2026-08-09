@@ -22,6 +22,7 @@ import type {
   ProjectResource,
   ProjectRootDto,
   ProjectStage,
+  ProjectStateTransition,
   ProjectSummaryDto,
   ProjectTimelineItemDto,
   ProjectWorkspaceDto,
@@ -30,6 +31,7 @@ import type {
   RecordProjectDecisionPayload,
   SetProjectArchiveStatusPayload,
   TransitionProjectActionPayload,
+  TransitionProjectLifecyclePayload,
   TraceEventInput,
 } from "@chat/contracts";
 import {
@@ -43,6 +45,7 @@ import {
   compileProjectIntakeProposal,
   compileProjectMethodSnapshotPolicies,
   assertProjectActionTransition,
+  assertProjectLifecycleTransition,
   computeProjectCandidateSha256,
   computeProjectMethodSnapshotSha256,
   computeProjectManagementCandidateSha256,
@@ -85,6 +88,32 @@ function emitProjectTrace(deps: ApplicationDeps, event: TraceEventInput): void {
   }
 }
 
+async function emitProjectLifecycleTrace(
+  deps: ApplicationDeps,
+  transitionId: string,
+  commandId: CommandId,
+): Promise<void> {
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const transition = snapshot.entities.projectStateTransitions[transitionId];
+  if (transition === undefined || transition.objectType !== "project") return;
+  emitProjectTrace(deps, {
+    level: "info",
+    eventName: "project.lifecycle.transitioned",
+    outcome: "success",
+    traceId: projectTraceId(transition.projectId),
+    spanId: projectSpanId(transition.projectStateTransitionId, commandId),
+    projectId: transition.projectId,
+    projectStateTransitionId: transition.projectStateTransitionId,
+    projectDecisionId: transition.decisionId,
+    fromStatus: transition.from,
+    toStatus: transition.to,
+    beforeRevision: transition.beforeRevision,
+    afterRevision: transition.afterRevision,
+    evidenceCount: transition.evidenceIds.length,
+    commandId,
+  });
+}
+
 function projectTraceId(id: string): string {
   return `tr_${id.slice(4)}`;
 }
@@ -94,7 +123,9 @@ function projectSpanId(...parts: string[]): string {
 }
 
 function assertProjectWritable(project: Project): void {
-  if (project.status === "archived") throw revisionConflict("已归档Project不能普通写入");
+  if (project.status !== "active") {
+    throw revisionConflict("只有active Project可以执行普通写入；请先显式恢复生命周期");
+  }
 }
 
 function toCandidateDto(candidate: ProjectCandidate): ProjectCandidateDto {
@@ -1977,9 +2008,12 @@ export async function setProjectArchiveStatus(
     readonly payload: SetProjectArchiveStatusPayload;
   },
 ): Promise<{ project: ProjectWorkspaceDto }> {
+  const ids = requireProjectIds(deps);
+  const decisionId = ids.decision();
+  const transitionId = ids.stateTransition();
   const now = deps.now();
   const requestSha256 = hashCanonical("command.set-project-archive-status.v1", input);
-  await deps.store.transact({
+  const transaction = await deps.store.transact({
     commandId: input.commandId,
     commandType: "SetProjectArchiveStatus",
     requestSha256,
@@ -1990,15 +2024,184 @@ export async function setProjectArchiveStatus(
       if (project.revision !== input.expectedRevision)
         throw revisionConflict("Project revision冲突");
       if (project.status === input.payload.status) throw revisionConflict("Project状态没有变化");
-      draft.entities.projects[project.projectId] = {
+      const actor = Object.values(draft.entities.projectParticipants).find(
+        (participant) =>
+          participant.projectId === project.projectId &&
+          participant.kind === "human" &&
+          participant.principalId === input.principalId &&
+          participant.status === "active",
+      );
+      if (actor === undefined) throw forbidden("Project缺少可确认生命周期转换的所有者Participant");
+      assertProjectLifecycleTransition({
+        from: project.status,
+        to: input.payload.status,
+        evidenceIds: [],
+      });
+      const reason =
+        input.payload.status === "archived" ? "用户显式归档Project" : "用户显式恢复Project";
+      draft.entities.projectDecisions[decisionId] = {
+        schemaVersion: "project-decision.v1",
+        projectDecisionId: decisionId,
+        projectId: project.projectId,
+        question: `是否把Project从${project.status}转换为${input.payload.status}？`,
+        options: [input.payload.status],
+        choice: input.payload.status,
+        rationale: reason,
+        decidedByParticipantId: actor.projectParticipantId,
+        boundProjectRevision: project.revision,
+        status: "active",
+        commandId: input.commandId,
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const nextProject = {
         ...project,
         status: input.payload.status,
         revision: project.revision + 1,
         updatedAt: now,
       };
-      return { resultRefs: { projectId: project.projectId } };
+      draft.entities.projects[project.projectId] = {
+        ...nextProject,
+      };
+      draft.entities.projectStateTransitions[transitionId] = {
+        schemaVersion: "project-state-transition.v1",
+        projectStateTransitionId: transitionId,
+        projectId: project.projectId,
+        objectType: "project",
+        objectId: project.projectId,
+        from: project.status,
+        to: input.payload.status,
+        actorParticipantId: actor.projectParticipantId,
+        commandId: input.commandId,
+        beforeRevision: project.revision,
+        afterRevision: nextProject.revision,
+        reason,
+        decisionId,
+        evidenceIds: [],
+        occurredAt: now,
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
+      return {
+        resultRefs: {
+          projectId: project.projectId,
+          projectDecisionId: decisionId,
+          projectStateTransitionId: transitionId,
+        },
+      };
     },
   });
+  if (!transaction.replayed) {
+    await emitProjectLifecycleTrace(deps, transitionId, input.commandId);
+  }
+  return getProjectWorkspace(deps, { principalId: input.principalId, projectId: input.projectId });
+}
+
+/** 通用Project生命周期转换；完成与归档分离，并把每次转换写入产品审计历史。 */
+export async function transitionProjectLifecycle(
+  deps: ApplicationDeps,
+  input: {
+    readonly principalId: PrincipalId;
+    readonly commandId: CommandId;
+    readonly projectId: string;
+    readonly expectedRevision: number;
+    readonly payload: TransitionProjectLifecyclePayload;
+  },
+): Promise<{ project: ProjectWorkspaceDto }> {
+  const ids = requireProjectIds(deps);
+  const decisionId = ids.decision();
+  const transitionId = ids.stateTransition();
+  const now = deps.now();
+  const transaction = await deps.store.transact({
+    commandId: input.commandId,
+    commandType: "TransitionProjectLifecycle",
+    requestSha256: hashCanonical("command.transition-project-lifecycle.v1", input),
+    mutate: (draft) => {
+      const project = draft.entities.projects[input.projectId];
+      const actor = draft.entities.projectParticipants[input.payload.decidedByParticipantId];
+      if (project === undefined) throw notFound("Project不存在");
+      if (
+        project.ownerPrincipalId !== input.principalId ||
+        actor?.projectId !== project.projectId ||
+        actor.kind !== "human" ||
+        actor.principalId !== input.principalId ||
+        actor.status !== "active"
+      ) {
+        throw forbidden("无权转换该Project生命周期");
+      }
+      if (project.revision !== input.expectedRevision)
+        throw revisionConflict("Project revision冲突");
+      if (
+        input.payload.evidenceIds.some(
+          (id) => draft.entities.projectEvidence[id]?.projectId !== project.projectId,
+        )
+      ) {
+        throw revisionConflict("Evidence不存在或属于其他Project");
+      }
+      assertProjectLifecycleTransition({
+        from: project.status,
+        to: input.payload.status,
+        evidenceIds: input.payload.evidenceIds,
+      });
+      const decision: ProjectDecision = {
+        schemaVersion: "project-decision.v1",
+        projectDecisionId: decisionId,
+        projectId: project.projectId,
+        question: `是否把Project从${project.status}转换为${input.payload.status}？`,
+        options: [input.payload.status],
+        choice: input.payload.status,
+        rationale: input.payload.reason,
+        decidedByParticipantId: actor.projectParticipantId,
+        boundProjectRevision: project.revision,
+        status: "active",
+        commandId: input.commandId,
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const nextProject: Project = {
+        ...project,
+        status: input.payload.status,
+        revision: project.revision + 1,
+        updatedAt: now,
+      };
+      const transition: ProjectStateTransition = {
+        schemaVersion: "project-state-transition.v1",
+        projectStateTransitionId: transitionId,
+        projectId: project.projectId,
+        objectType: "project",
+        objectId: project.projectId,
+        from: project.status,
+        to: input.payload.status,
+        actorParticipantId: actor.projectParticipantId,
+        commandId: input.commandId,
+        beforeRevision: project.revision,
+        afterRevision: nextProject.revision,
+        reason: input.payload.reason,
+        decisionId,
+        evidenceIds: input.payload.evidenceIds,
+        occurredAt: now,
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
+      draft.entities.projects[project.projectId] = nextProject;
+      draft.entities.projectDecisions[decisionId] = decision;
+      draft.entities.projectStateTransitions[transitionId] = transition;
+      return {
+        resultRefs: {
+          projectId: project.projectId,
+          projectDecisionId: decisionId,
+          projectStateTransitionId: transitionId,
+        },
+      };
+    },
+  });
+  if (!transaction.replayed) {
+    await emitProjectLifecycleTrace(deps, transitionId, input.commandId);
+  }
   return getProjectWorkspace(deps, { principalId: input.principalId, projectId: input.projectId });
 }
 

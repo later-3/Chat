@@ -208,14 +208,23 @@ function assertProjects(snapshot: ProductSnapshot, fail: Fail): void {
   for (const update of Object.values(entities.projectUpdates)) {
     const project = entities.projects[update.projectId];
     const participant = entities.projectParticipants[update.authorParticipantId];
+    const stage = entities.projectStages[update.stageId];
+    const superseded =
+      update.supersedesUpdateId === undefined
+        ? undefined
+        : entities.projectUpdates[update.supersedesUpdateId];
     if (
       project === undefined ||
       participant?.projectId !== update.projectId ||
       participant.principalId !== update.confirmedByPrincipalId ||
       participant.kind !== "human" ||
       participant.status !== "active" ||
-      entities.projectStages[update.stageId]?.projectId !== update.projectId ||
-      update.boundProjectRevision > project.revision
+      stage?.projectId !== update.projectId ||
+      update.boundProjectRevision > project.revision ||
+      update.boundStageRevision > stage.revision ||
+      (update.supersedesUpdateId !== undefined && superseded === undefined) ||
+      (superseded !== undefined &&
+        (superseded.projectId !== update.projectId || superseded.publishedAt >= update.publishedAt))
     ) {
       fail(`projectUpdate ${update.projectUpdateId} 作者或Project绑定不一致`);
     }
@@ -225,6 +234,10 @@ function assertProjects(snapshot: ProductSnapshot, fail: Fail): void {
       fail(`projectUpdate ${update.projectUpdateId} Evidence绑定不一致`);
     }
   }
+  const transitionsByObject = new Map<
+    string,
+    (typeof entities.projectStateTransitions)[string][]
+  >();
   for (const transition of Object.values(entities.projectStateTransitions)) {
     const object =
       transition.objectType === "stage"
@@ -246,6 +259,37 @@ function assertProjects(snapshot: ProductSnapshot, fail: Fail): void {
       )
     ) {
       fail(`projectStateTransition ${transition.projectStateTransitionId} 绑定或revision无效`);
+    }
+    const key = `${transition.objectType}:${transition.objectId}`;
+    const sequence = transitionsByObject.get(key) ?? [];
+    sequence.push(transition);
+    transitionsByObject.set(key, sequence);
+  }
+  for (const [key, transitions] of transitionsByObject) {
+    transitions.sort((left, right) => left.beforeRevision - right.beforeRevision);
+    for (let index = 1; index < transitions.length; index += 1) {
+      const previous = transitions[index - 1];
+      const current = transitions[index];
+      if (
+        previous === undefined ||
+        current === undefined ||
+        current.beforeRevision < previous.afterRevision ||
+        current.from !== previous.to
+      ) {
+        fail(`projectStateTransition ${key} 历史链不连续`);
+      }
+    }
+    const latest = transitions.at(-1);
+    const currentObject =
+      latest?.objectType === "stage"
+        ? entities.projectStages[latest.objectId]
+        : latest?.objectType === "milestone"
+          ? entities.projectMilestones[latest.objectId]
+          : latest === undefined
+            ? undefined
+            : entities.projects[latest.objectId];
+    if (latest === undefined || currentObject?.status !== latest.to) {
+      fail(`projectStateTransition ${key} 最新状态与对象不一致`);
     }
   }
   for (const resource of Object.values(entities.projectResources)) {
@@ -466,7 +510,11 @@ function assertProjects(snapshot: ProductSnapshot, fail: Fail): void {
       ) {
         fail(`projectCandidate ${candidate.projectCandidateId} Advancement绑定不一致`);
       }
-      if (candidate.status === "under_review" || candidate.status === "confirmed") {
+      if (
+        candidate.status === "under_review" ||
+        candidate.status === "confirmed" ||
+        candidate.status === "rejected"
+      ) {
         if (
           computeProjectAdvancementCandidateSha256({
             projectId: candidate.projectId,
@@ -1797,7 +1845,8 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
     CreateProjectAction: ["projectId", "projectActionId"],
     AssignProjectAction: ["projectId"],
     TransitionProjectAction: ["projectId"],
-    SetProjectArchiveStatus: ["projectId"],
+    SetProjectArchiveStatus: ["projectId", "projectDecisionId", "projectStateTransitionId"],
+    TransitionProjectLifecycle: ["projectId", "projectDecisionId", "projectStateTransitionId"],
     RecordProjectDecision: ["projectId", "projectDecisionId"],
     RecordProjectContribution: ["projectId", "projectContributionId"],
     ObserveProjectResource: ["projectId", "projectObservationId"],
@@ -1870,20 +1919,23 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
                                                   ? entities.projectActions[value] !== undefined
                                                   : key === "projectDecisionId"
                                                     ? entities.projectDecisions[value] !== undefined
-                                                    : key === "projectContributionId"
-                                                      ? entities.projectContributions[value] !==
+                                                    : key === "projectStateTransitionId"
+                                                      ? entities.projectStateTransitions[value] !==
                                                         undefined
-                                                      : key === "projectObservationId"
-                                                        ? entities.projectObservations[value] !==
+                                                      : key === "projectContributionId"
+                                                        ? entities.projectContributions[value] !==
                                                           undefined
-                                                        : key === "messageSha256"
-                                                          ? /^[a-f0-9]{64}$/.test(value)
-                                                          : key === "approvalExpired"
-                                                            ? value === "true"
-                                                            : key === "status"
-                                                              ? value === "expired" ||
-                                                                value === "already_decided"
-                                                              : false;
+                                                        : key === "projectObservationId"
+                                                          ? entities.projectObservations[value] !==
+                                                            undefined
+                                                          : key === "messageSha256"
+                                                            ? /^[a-f0-9]{64}$/.test(value)
+                                                            : key === "approvalExpired"
+                                                              ? value === "true"
+                                                              : key === "status"
+                                                                ? value === "expired" ||
+                                                                  value === "already_decided"
+                                                                : false;
       if (!exists) fail(`receipt ${receipt.commandId} 的${key}引用无效`);
     }
     if (receipt.commandType === "SubmitUserMessage") {

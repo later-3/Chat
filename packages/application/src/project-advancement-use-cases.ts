@@ -763,9 +763,6 @@ export async function decideProjectAdvancementCandidate(
       });
     }
   } else if (!tx.replayed && candidate.status === "rejected") {
-    if (candidate.candidateSha256 === undefined) {
-      throw revisionConflict("已拒绝的推进Candidate缺少Hash证据");
-    }
     emitProjectTrace(deps, {
       level: "info",
       eventName: "project.advancement.rejected",

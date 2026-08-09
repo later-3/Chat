@@ -95,6 +95,7 @@ export const TRACE_EVENT_NAMES = {
   projectAdvancementCandidatePublished: "project.advancement.candidate_published",
   projectAdvancementConfirmed: "project.advancement.confirmed",
   projectAdvancementRejected: "project.advancement.rejected",
+  projectLifecycleTransitioned: "project.lifecycle.transitioned",
   projectStageTransitioned: "project.stage.transitioned",
   projectMilestoneTransitioned: "project.milestone.transitioned",
   projectUpdatePublished: "project.update.published",
@@ -805,6 +806,23 @@ const projectStageTransitionedSchema = defineTraceEvent(
   },
 );
 
+const projectLifecycleTransitionedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.projectLifecycleTransitioned,
+  "success",
+  {
+    projectId: projectIdSchema,
+    projectStateTransitionId: projectStateTransitionIdSchema,
+    projectDecisionId: projectDecisionIdSchema,
+    fromStatus: z.enum(["active", "paused", "completed", "archived"]),
+    toStatus: z.enum(["active", "paused", "completed", "archived"]),
+    beforeRevision: revisionSchema,
+    afterRevision: revisionSchema,
+    evidenceCount: z.number().int().nonnegative().max(20),
+    commandId: commandIdSchema,
+    ...durationMsOptional,
+  },
+);
+
 const projectMilestoneTransitionedSchema = defineTraceEvent(
   TRACE_EVENT_NAMES.projectMilestoneTransitioned,
   "success",
@@ -1417,6 +1435,7 @@ export const traceEventSchema = z.discriminatedUnion("eventName", [
   projectAdvancementCandidatePublishedSchema,
   projectAdvancementConfirmedSchema,
   projectAdvancementRejectedSchema,
+  projectLifecycleTransitionedSchema,
   projectStageTransitionedSchema,
   projectMilestoneTransitionedSchema,
   projectUpdatePublishedSchema,

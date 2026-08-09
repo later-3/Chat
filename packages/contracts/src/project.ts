@@ -729,9 +729,9 @@ const projectAdvancementCandidateSchema = z.discriminatedUnion("status", [
     .object({
       ...projectAdvancementCandidateBase,
       status: z.literal("rejected"),
-      understanding: projectAdvancementUnderstandingSchema.optional(),
-      proposal: projectAdvancementProposalSchema.optional(),
-      candidateSha256: sha256Schema.optional(),
+      understanding: projectAdvancementUnderstandingSchema,
+      proposal: projectAdvancementProposalSchema,
+      candidateSha256: sha256Schema,
       rejectionReason: z.string().trim().min(1).max(2_000).optional(),
       decidedByCommandId: commandIdSchema,
     })

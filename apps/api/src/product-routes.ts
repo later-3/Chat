@@ -30,6 +30,7 @@ import {
   setProjectArchiveStatusPayloadSchema,
   transitionProjectActionPayloadSchema,
   transitionProjectStagePayloadSchema,
+  transitionProjectLifecyclePayloadSchema,
   transitionProjectMilestonePayloadSchema,
   recordProjectDecisionPayloadSchema,
   recordProjectContributionPayloadSchema,
@@ -74,6 +75,7 @@ import {
   setProjectArchiveStatus,
   transitionProjectAction,
   transitionProjectStage,
+  transitionProjectLifecycle,
   transitionProjectMilestone,
   recordProjectDecision,
   recordProjectContribution,
@@ -647,6 +649,32 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
             payload: transitionProjectStagePayloadSchema.parse(envelope.payload),
           }),
         },
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/projects/:projectId/transitions", async (c) => {
+    try {
+      const projectId = projectIdSchema.parse(c.req.param("projectId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Project生命周期转换必须携带expectedRevision",
+        });
+      }
+      return c.json(
+        await transitionProjectLifecycle(ctx.deps, {
+          principalId: ctx.principalId,
+          commandId: envelope.commandId,
+          projectId,
+          expectedRevision: envelope.expectedRevision,
+          payload: transitionProjectLifecyclePayloadSchema.parse(envelope.payload),
+        }),
         200,
       );
     } catch (error) {

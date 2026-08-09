@@ -8,6 +8,7 @@ import {
   compileProjectMethodSnapshotPolicies,
   assertProjectStageTransition,
   assertProjectMilestoneTransition,
+  assertProjectLifecycleTransition,
   type ProjectIntakeUnderstandingShape,
   type ProjectObservationDataShape,
   type ProjectWorkShape,
@@ -94,6 +95,28 @@ describe("Project Action状态机", () => {
 });
 
 describe("PS2.1 Method、Stage与Milestone规则", () => {
+  it("Project完成、暂停、归档与恢复是不同的显式生命周期", () => {
+    expect(() =>
+      assertProjectLifecycleTransition({ from: "active", to: "paused", evidenceIds: [] }),
+    ).not.toThrow();
+    expect(() =>
+      assertProjectLifecycleTransition({ from: "paused", to: "completed", evidenceIds: [] }),
+    ).toThrow("Evidence");
+    expect(() =>
+      assertProjectLifecycleTransition({
+        from: "paused",
+        to: "completed",
+        evidenceIds: ["pev_done"],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertProjectLifecycleTransition({ from: "completed", to: "active", evidenceIds: [] }),
+    ).toThrow("不允许");
+    expect(() =>
+      assertProjectLifecycleTransition({ from: "archived", to: "active", evidenceIds: [] }),
+    ).not.toThrow();
+  });
+
   it("按profile编译完整且不同的软件/轻量策略", () => {
     const software = compileProjectMethodSnapshotPolicies("software-delivery.v1");
     const lightweight = compileProjectMethodSnapshotPolicies("lightweight.v1");
