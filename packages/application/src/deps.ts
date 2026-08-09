@@ -13,11 +13,27 @@ import type {
   RevisionInputId,
   RunAttemptId,
   ValidationResultId,
+  ProjectId,
+  ProjectMethodSnapshotId,
+  ProjectStageId,
+  ProjectResourceId,
+  ProjectParticipantId,
+  ProjectWorkId,
+  ProjectActionId,
+  ProjectContributionId,
+  ProjectEvidenceId,
+  ProjectDecisionId,
+  ProjectObservationId,
+  ProjectCandidateId,
 } from "@chat/contracts";
 import type { TraceEventInput } from "@chat/contracts";
 import type { ProductStorePort } from "./product-store-port.js";
 import type { MemoryBackendRegistryPort } from "./memory-ports.js";
 import type { MemoryImportBackendRegistryPort } from "./memory-import-ports.js";
+import type {
+  ProjectIntakeUnderstandingPort,
+  ProjectResourceRootRegistryPort,
+} from "./project-ports.js";
 
 /** Trace发射器：由组合根提供（@chat/realtime Sink）；Application不依赖具体Sink。 */
 export type TraceEmitter = (event: TraceEventInput) => void;
@@ -46,6 +62,22 @@ export interface IdFactory {
   outbox(): OutboxEntryId;
 }
 
+/** Project Solution单独占有自己的ID空间，旧规划/Memory用例不被迫依赖它。 */
+export interface ProjectIdFactory {
+  project(): ProjectId;
+  methodSnapshot(): ProjectMethodSnapshotId;
+  stage(): ProjectStageId;
+  resource(): ProjectResourceId;
+  participant(): ProjectParticipantId;
+  work(): ProjectWorkId;
+  action(): ProjectActionId;
+  contribution(): ProjectContributionId;
+  evidence(): ProjectEvidenceId;
+  decision(): ProjectDecisionId;
+  observation(): ProjectObservationId;
+  candidate(): ProjectCandidateId;
+}
+
 export interface ApplicationDeps {
   readonly store: ProductStorePort;
   readonly now: () => string;
@@ -56,6 +88,9 @@ export interface ApplicationDeps {
   readonly memoryBackends?: MemoryBackendRegistryPort;
   /** 外部写入能力与Query分离，避免调用方忽略outcome_unknown。 */
   readonly memoryImportBackends?: MemoryImportBackendRegistryPort;
+  readonly projectRoots?: ProjectResourceRootRegistryPort;
+  readonly projectIntakeUnderstanding?: ProjectIntakeUnderstandingPort;
+  readonly projectIds?: ProjectIdFactory;
 }
 
 /** 规划修订默认上限（任务书§9.2.7）。 */

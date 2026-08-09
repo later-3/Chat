@@ -33,6 +33,7 @@ import {
 import { JsonProductStore, type StoreIo } from "./json-product-store.js";
 import { migrateProductSnapshotV1ToV2, productSnapshotV1Schema } from "./migrate-v1-to-v2.js";
 import { migrateProductSnapshotV2ToV3, productSnapshotV2Schema } from "./migrate-v2-to-v3.js";
+import { migrateProductSnapshotV3ToV4 } from "./migrate-v3-to-v4.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-07T12:00:00.000Z";
@@ -95,6 +96,22 @@ function v2EntitiesFrom(snapshot: ProductSnapshot): Record<string, unknown> {
   const entities = structuredClone(snapshot.entities) as unknown as Record<string, unknown>;
   delete entities["memoryImportIntents"];
   delete entities["memoryImportResults"];
+  for (const key of [
+    "projects",
+    "projectMethodSnapshots",
+    "projectStages",
+    "projectResources",
+    "projectParticipants",
+    "projectWorks",
+    "projectActions",
+    "projectContributions",
+    "projectEvidence",
+    "projectDecisions",
+    "projectObservations",
+    "projectCandidates",
+  ]) {
+    delete entities[key];
+  }
   return entities;
 }
 
@@ -370,10 +387,10 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
     expect(snapshot.storeRevision).toBe(0);
 
     const onDisk = productSnapshotSchema.parse(JSON.parse(await readFile(filePath, "utf8")));
-    expect(onDisk.schemaVersion).toBe("chat-product-store.v3");
+    expect(onDisk.schemaVersion).toBe("chat-product-store.v4");
   });
 
-  it("非空v1真实快照串行迁移到v3，保留旧事实并合成no-memory ContextRequest，重启幂等", async () => {
+  it("非空v1真实快照串行迁移到v4，保留旧事实并合成no-memory ContextRequest，重启幂等", async () => {
     const { filePath } = await tempStorePath();
     const current = await validReviewSnapshot();
     const legacy = productSnapshotV1Schema.parse({
@@ -386,7 +403,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
 
     const store = await JsonProductStore.open({ filePath, now });
     const { snapshot } = await store.read({ kind: "committedSnapshot" });
-    expect(snapshot.schemaVersion).toBe("chat-product-store.v3");
+    expect(snapshot.schemaVersion).toBe("chat-product-store.v4");
     expect(snapshot.storeRevision).toBe(legacy.storeRevision);
     expect(snapshot.commandReceipts).toEqual(legacy.commandReceipts);
     expect(snapshot.outbox).toEqual(legacy.outbox);
@@ -409,11 +426,17 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
     expect(snapshot.entities.contextPackages).toEqual({});
     expect(snapshot.entities.memoryImportIntents).toEqual({});
     expect(snapshot.entities.memoryImportResults).toEqual({});
-    const expectedMigration = migrateProductSnapshotV2ToV3(migrateProductSnapshotV1ToV2(legacy));
-    expect(snapshot).toEqual(expectedMigration);
-    expect(migrateProductSnapshotV2ToV3(migrateProductSnapshotV1ToV2(legacy))).toEqual(
-      expectedMigration,
+    expect(snapshot.entities.projects).toEqual({});
+    expect(snapshot.entities.projectCandidates).toEqual({});
+    const expectedMigration = migrateProductSnapshotV3ToV4(
+      migrateProductSnapshotV2ToV3(migrateProductSnapshotV1ToV2(legacy)),
     );
+    expect(snapshot).toEqual(expectedMigration);
+    expect(
+      migrateProductSnapshotV3ToV4(
+        migrateProductSnapshotV2ToV3(migrateProductSnapshotV1ToV2(legacy)),
+      ),
+    ).toEqual(expectedMigration);
     const once = await readFile(filePath, "utf8");
     expect(once).not.toBe(before);
 
@@ -421,7 +444,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
     expect(await readFile(filePath, "utf8")).toBe(once);
   });
 
-  it("非空v2 M1快照直接迁移到v3，逐对象保留Memory事实且重启不重复迁移", async () => {
+  it("非空v2 M1快照直接迁移到v4，逐对象保留Memory事实且重启不重复迁移", async () => {
     const { filePath } = await tempStorePath();
     const current = await validMemoryReviewSnapshot();
     const legacy = productSnapshotV2Schema.parse({
@@ -434,14 +457,14 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
 
     const opened = await JsonProductStore.open({ filePath, now });
     const { snapshot } = await opened.read({ kind: "committedSnapshot" });
-    expect(snapshot.schemaVersion).toBe("chat-product-store.v3");
+    expect(snapshot.schemaVersion).toBe("chat-product-store.v4");
     expect(snapshot.entities.memoryQueries).toEqual(legacy.entities.memoryQueries);
     expect(snapshot.entities.memoryResultSnapshots).toEqual(legacy.entities.memoryResultSnapshots);
     expect(snapshot.entities.memoryAdoptions).toEqual(legacy.entities.memoryAdoptions);
     expect(snapshot.entities.contextPackages).toEqual(legacy.entities.contextPackages);
     expect(snapshot.entities.memoryImportIntents).toEqual({});
     expect(snapshot.entities.memoryImportResults).toEqual({});
-    expect(snapshot).toEqual(migrateProductSnapshotV2ToV3(legacy));
+    expect(snapshot).toEqual(migrateProductSnapshotV3ToV4(migrateProductSnapshotV2ToV3(legacy)));
     const migratedBytes = await readFile(filePath, "utf8");
     expect(migratedBytes).not.toBe(before);
     await JsonProductStore.open({ filePath, now });

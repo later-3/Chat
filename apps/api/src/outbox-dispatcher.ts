@@ -1,4 +1,5 @@
 import {
+  PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION,
   WORKFLOW_DEFINITION_ID,
   WORKFLOW_DEFINITION_VERSION,
   workflowResumeResponseSchema,
@@ -23,6 +24,7 @@ import {
   type ApplicationDeps,
 } from "@chat/application";
 import { sha256Hex } from "@chat/domain";
+import { z } from "zod";
 
 /**
  * Outbox Dispatcher（任务书§10、§14.1）。
@@ -62,6 +64,16 @@ type MemoryImportEntry = Extract<
   OutboxEntry,
   { kind: "memory_import_start" | "memory_import_reconcile" }
 >;
+type ProjectIntakeEntry = Extract<
+  OutboxEntry,
+  { kind: "project_intake_start" | "project_intake_resume" }
+>;
+const projectDispatchResponseSchema = z
+  .object({
+    schemaVersion: z.literal("chat-workflow-dispatch.v1"),
+    status: z.enum(["started", "already_started", "resumed", "already_resumed", "outcome_unknown"]),
+  })
+  .strict();
 const OUTCOME_UNKNOWN_SETTLE_MS = 30_000;
 const ACKNOWLEDGED_IMPORT_SUPERVISE_MS = 1_000;
 const MAX_AUTOMATIC_IMPORT_RECOVERIES = 3;
@@ -413,6 +425,55 @@ async function dispatchMemoryImport(
   await markStatus(options, entry, "acknowledged", undefined, true);
 }
 
+async function dispatchProjectIntake(
+  options: OutboxDispatcherOptions,
+  entry: ProjectIntakeEntry,
+): Promise<void> {
+  const response = await postToWorkflowRuntime(
+    options,
+    entry.kind === "project_intake_start"
+      ? "/internal/workflow/v1/project-intake/start"
+      : "/internal/workflow/v1/project-intake/resume",
+    {
+      schemaVersion: "chat-workflow-dispatch.v1",
+      workflowDefinitionVersion: PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION,
+      projectCandidateId: entry.projectCandidateId,
+      expectedCandidateRevision: entry.expectedCandidateRevision,
+      outboxId: entry.outboxId,
+    },
+  );
+  if (response === "unknown") {
+    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
+    return;
+  }
+  if (!response.ok) {
+    if (response.status >= 500) {
+      await markStatus(
+        options,
+        entry,
+        "outcome_unknown",
+        `dispatch.http_${String(response.status)}`,
+        true,
+      );
+    } else {
+      await markStatus(
+        options,
+        entry,
+        "failed_terminal",
+        `dispatch.http_${String(response.status)}`,
+        true,
+      );
+    }
+    return;
+  }
+  const parsed = projectDispatchResponseSchema.safeParse(response.json);
+  if (!parsed.success || parsed.data.status === "outcome_unknown") {
+    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
+    return;
+  }
+  await markStatus(options, entry, "acknowledged", undefined, true);
+}
+
 async function settleImportDispatchUnknown(
   options: OutboxDispatcherOptions,
   snapshot: Snapshot,
@@ -698,7 +759,9 @@ export class OutboxDispatcher {
         if (entry.kind === "workflow_start") await dispatchStart(this.options, snapshot, entry);
         else if (entry.kind === "workflow_resume")
           await dispatchResume(this.options, snapshot, entry);
-        else await dispatchMemoryImport(this.options, snapshot, entry);
+        else if (entry.kind === "memory_import_start" || entry.kind === "memory_import_reconcile")
+          await dispatchMemoryImport(this.options, snapshot, entry);
+        else await dispatchProjectIntake(this.options, entry);
       }
       const unknownEntries = Object.values(snapshot.outbox)
         .filter((entry) => entry.status === "outcome_unknown")
@@ -706,8 +769,18 @@ export class OutboxDispatcher {
       for (const entry of unknownEntries) {
         if (entry.kind === "workflow_start" || entry.kind === "workflow_resume") {
           await reconcileUnknown(this.options, snapshot, entry);
-        } else {
+        } else if (
+          entry.kind === "memory_import_start" ||
+          entry.kind === "memory_import_reconcile"
+        ) {
           await reconcileImportUnknown(this.options, snapshot, entry);
+        } else if (
+          Date.parse(this.options.deps.now()) - Date.parse(entry.updatedAt) >=
+          OUTCOME_UNKNOWN_SETTLE_MS
+        ) {
+          // Project Intake没有外部业务副作用；Runtime结果长期未知时停止自动派发，
+          // 保留Candidate供用户刷新后重新发起，而不是盲目创建第二个Workflow。
+          await markStatus(this.options, entry, "failed_terminal", "dispatch.outcome_unknown");
         }
       }
       const acknowledgedImports = Object.values(snapshot.outbox)

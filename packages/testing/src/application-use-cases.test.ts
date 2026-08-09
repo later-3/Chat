@@ -281,8 +281,7 @@ describe("CreateProductSession + SubmitUserMessage", () => {
     ).toMatchObject({ outcome: "failure", errorCode: "workflow.version_incompatible" });
     expect(
       Object.values(snapshot.outbox).filter(
-        (entry) =>
-          entry.kind === "workflow_start" && entry.productRunId === run.productRunId,
+        (entry) => entry.kind === "workflow_start" && entry.productRunId === run.productRunId,
       ),
     ).toEqual([
       expect.objectContaining({

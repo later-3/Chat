@@ -215,7 +215,22 @@ Workflow Step通过tsx解析回TypeScript源码，断点应设置在上述`.ts`�
 `.workflow-bundle`或`dist`。第三方Memory进程保持环境隔离，日常排查优先观察Chat Adapter请求与
 严格响应分类。
 
-## 6. Trace 查询
+## 6. Project Intake断点顺序
+
+先按`.env.example`配置`CHAT_PROJECT_ROOTS_JSON`，只加入你明确允许Chat只读观察的工作区。随后从浏览器切换“建立项目”、选择资源并发送消息，建议按以下顺序设置断点：
+
+1. `packages/application/src/project-use-cases.ts`的`beginProjectIntake`：原子提交Message、queued Candidate和Start Outbox。
+2. `apps/api/src/outbox-dispatcher.ts`的`dispatchProjectIntake`：派发独立Project Intake Workflow。
+3. `packages/workflows/src/project-intake-workflow.ts`的`projectIntakeWorkflow`：进入耐久建项链与Hook等待。
+4. `packages/workflows/src/project-intake-workflow-steps.ts`的`prepareProjectCandidateStep`：Workflow到API私有Command边界。
+5. `packages/pi-runtime/src/project-intake-understanding.ts`的`understand`：pi与当前服务端Model Profile的真实模型调用。
+6. `packages/project-runtime/src/registry.ts`的`observe`：允许根内Git、治理文档和脚本清单观察。
+7. `packages/application/src/project-use-cases.ts`的`prepareProjectCandidateForReview`：模型理解、资源证据与Domain规则编译Candidate。
+8. 同文件的`decideProjectCandidate`：用户确认后原子提交Project账本和Resume Outbox。
+
+项目建成后，从浏览器切换“管理项目”发送待办、决定或贡献，可在`beginProjectManagementCandidate`和`decideProjectManagementCandidate`断点观察“正式Message → 可修改Candidate → 确认后单一账本事实”。这条简单确定性链不调用模型，也不启动额外Workflow。
+
+## 7. Trace 查询
 
 Request ID规则：API不信任客户端`x-request-id`，只有通过受限Schema（`req_`前缀）
 的传入ID才被复用，否则生成新的服务端ID；响应头始终返回最终生效ID。
@@ -238,14 +253,14 @@ pnpm debug:trace --command cmd_xxx    # 按命令
   正文、密钥、Prompt与Provider Payload在结构上无法写入（不是写入后脱敏）。
   完整历史回放（组合Product Store正文）属B7的`pnpm debug:replay`，见任务书§7.5。
 
-## 7. Trace实现边界
+## 8. Trace实现边界
 
 - API、Application、Outbox、Workflow、Hook、Provider/pi、Memory、Validation和Product Commit均已产生严格Trace事件。
 - API使用`@chat/realtime`提供的唯一Trace Sink；Workflow进程也通过相同严格合同写入当前worktree的Trace目录。
 - 事件名及允许字段在`packages/contracts/src/trace.ts`冻结；新增事件必须先扩展判别联合和测试，不能临时塞任意`attributes`。
 - 当前前端仍使用Query轮询；Trace不是浏览器实时协议，也不能替代Product Store正文。
 
-## 8. 端口冲突报告的安全边界
+## 9. 端口冲突报告的安全边界
 
 - 进程身份复核在内部使用完整命令行片段（防止PID复用误杀），但不输出到报告或Trace。
 - 面向用户的端口冲突报告只包含：端口、PID、可执行文件basename（如`node`）。

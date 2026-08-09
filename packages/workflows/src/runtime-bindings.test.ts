@@ -212,4 +212,66 @@ describe("RuntimeBindingStore", () => {
       }).status,
     ).toBe("invalid");
   });
+
+  it("Project Intake的start与resume先落栅栏，重启后禁止重复派发", async () => {
+    const filePath = await tempPath();
+    const store = await RuntimeBindingStore.open(filePath);
+    expect(
+      await store.claimProjectIntakeStartIntent({
+        projectCandidateId: "pca_candidate1" as never,
+        outboxId: "obx_project1" as never,
+        workflowDefinitionVersion: "project-intake-workflow.v1",
+        now: NOW,
+      }),
+    ).toBe("claimed");
+    await store.claimProjectIntakeWorkflowBinding({
+      projectCandidateId: "pca_candidate1" as never,
+      outboxId: "obx_project1" as never,
+      workflowRunId: "private-project-workflow-run",
+      workflowDefinitionVersion: "project-intake-workflow.v1",
+      hookToken: "pih-pca_candidate1",
+      now: NOW,
+    });
+    await store.markProjectIntakeResumeDispatching("pca_candidate1" as never, NOW);
+
+    const reopened = await RuntimeBindingStore.open(filePath);
+    expect(reopened.getProjectIntakeStartState("pca_candidate1" as never)).toBe("exists");
+    expect(
+      await reopened.claimProjectIntakeStartIntent({
+        projectCandidateId: "pca_candidate1" as never,
+        outboxId: "obx_project1" as never,
+        workflowDefinitionVersion: "project-intake-workflow.v1",
+        now: NOW,
+      }),
+    ).toBe("already_started");
+    expect(reopened.getProjectIntakeBinding("pca_candidate1" as never)?.resumeDispatchState).toBe(
+      "dispatching",
+    );
+    await expect(
+      reopened.markProjectIntakeResumeDispatching("pca_candidate1" as never, NOW),
+    ).rejects.toBeInstanceOf(RuntimeBindingError);
+  });
+
+  it("Project Intake未确认start结果时重启后保持unknown", async () => {
+    const filePath = await tempPath();
+    const store = await RuntimeBindingStore.open(filePath);
+    await store.claimProjectIntakeStartIntent({
+      projectCandidateId: "pca_unknown1" as never,
+      outboxId: "obx_unknown1" as never,
+      workflowDefinitionVersion: "project-intake-workflow.v1",
+      now: NOW,
+    });
+    await store.markProjectIntakeStartOutcomeUnknown("pca_unknown1" as never, NOW);
+
+    const reopened = await RuntimeBindingStore.open(filePath);
+    expect(reopened.getProjectIntakeStartState("pca_unknown1" as never)).toBe("outcome_unknown");
+    expect(
+      await reopened.claimProjectIntakeStartIntent({
+        projectCandidateId: "pca_unknown1" as never,
+        outboxId: "obx_unknown1" as never,
+        workflowDefinitionVersion: "project-intake-workflow.v1",
+        now: NOW,
+      }),
+    ).toBe("outcome_unknown");
+  });
 });

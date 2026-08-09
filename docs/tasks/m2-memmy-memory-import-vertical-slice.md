@@ -93,6 +93,8 @@ P1 Project:       v3 -> v4
 R1 Rules:         v4 -> v5
 ```
 
+> 2026-08-09后续规划修订：上表是M2当时的历史版本预留。Project范围已经扩展为PS1～PS4，只有PS1确定使用v3→v4；Rules改为使用Project Solution完成后的下一个可用Store版本，不再把v5视为已冻结事实。
+
 ## 5. 研究依据：采用、调整与拒绝
 
 ### 5.1 memmy 固定源码证据

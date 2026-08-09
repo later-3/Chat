@@ -1,8 +1,8 @@
 # C1 任务书：Memory、Project 与用户规则纵向建设
 
-> 状态：设计已审核；M1/M2已合入，M3本地完成门已通过，等待CI与合入
+> 状态：Memory M1～M3已合入；Project Solution正在进行方法论与架构重构；Rules尚未开始
 > 架构依据：[长期上下文架构](../architecture/context-memory-project-rules.md)  
-> 基线：`main` @ `6784580`
+> Project依据：[方法论](../product/project-solution-methodology.md)、[架构](../architecture/project-solution.md)、[场景验证](../product/project-solution-scenario-validation.md)
 
 ## 1. 总目标
 
@@ -35,17 +35,19 @@ M1 Memory 查询纵向链
   └─ M2 Memory 导入纵向链
        └─ M3 Tencent 第二后端与多后端证明
 
-P1 Project 基础与 BMAD 模板
-  └─ P2 Project Context 与推进节点
+PS1 Project Intake、真实Resource与项目账本
+  └─ PS2 Stage、Milestone、Iteration与任务管理
+       └─ PS3 Project Context与真实Resource推进
+            └─ PS4 维护、Correct Course与多项目注意力
 
 R1 规则管理与标签
   └─ R2 规则选择与规划注入
 
-M3 + P2 + R2
+M3 + PS4 + R2
   └─ X1 组合真实 E2E 与收口
 ```
 
-P1/R1 可以在 M2 合并后与 Memory 后续设计并行准备，但同一 Product Store Schema 变更仍按合并顺序串行 rebase，避免多份迁移冲突。
+Rules实现从Project Solution完成后的下一个Store Schema版本开始，不能提前抢占v5。所有Product Store Schema变更仍按合并顺序串行rebase，避免多份迁移冲突。
 
 ## 4. M1：memmy 真实查询进入规划
 
@@ -123,93 +125,134 @@ Memory 选择器同时显示 memmy 与 Tencent MemoryCore。用户能选择任�
 1. 第二真实后端已落在现有Query/Import Port上，没有增加任意metadata袋子；memmy能力保持不变。
 2. 固定MemoryCore真实HTTP门与真实Chromium + 百炼`qwen3.7-plus`门均已通过。
 3. Tencent导入当前如实收敛为L0 `accepted`；只有同一稳定session出现L1时才可升级`materialized`。
-4. L1自动等待、后台定时对账与生产部署属于明确后续优化；下一纵向任务切换到P1 Project基础。
+4. L1自动等待、后台定时对账与生产部署属于明确后续优化；下一纵向任务切换到PS1 Project Intake。
 
-## 7. P1：Project 基础、阶段与文档清单
+## 7. PS1：Project Intake、真实Resource与项目账本
 
 ### 7.1 用户结果
 
-用户能创建项目，选择“BMAD 软件项目”或轻量模板，查看/修改当前阶段、Work 和文档清单；项目不会因为模板不同被强制成同一目录。
+用户只用一句话和一个已允许的真实工作区建立Project；Chat通过可替换的自然语言理解Port理解输入，真实观察Git、项目文档与脚本清单，再由Application编译可修改候选。用户确认后，Portfolio/Project Room能够回答项目目标、资源、参与者、初始Stage、谁负责什么、最近决定和待办，刷新/API/Workflow重启后恢复。
 
 ### 7.2 实现范围
 
-1. 新增 `Project/ProjectMethodTemplate/Work/ProjectDocument/ProjectDecision`、v2→v3 Store 迁移与状态机。
-2. 内置 `bmad-software.v1`：brief → planning → solutioning → implementation → review；映射 BMAD 的必需/可选文档和 Work 状态。
-3. 内置 `lightweight.v1`：goal → active → review → done；允许自定义文档角色。
-4. 新增 Project CRUD、阶段/Work/文档 Command/Query，全部带 expectedRevision。
-5. 前端增加统一 Project 管理页与手机抽屉；显示当前阶段、下一门、阻塞和文档版本。
+1. `Project/ProjectMethodSnapshot/ProjectStage/ProjectResource/ProjectParticipant/Work/ProjectAction/ProjectContribution/ProjectEvidence/ProjectDecision/ProjectObservation/ProjectCandidate`与Store v3→v4。
+2. 真实只读`local-git-workspace`、`project-document-manifest`与`package-script-catalog` Adapter；服务端允许根与路径安全。
+3. Project Intake Workflow：自然语言理解Port→真实Resource Observe→Application编译Candidate→候选审核→用户确认→原子建项。
+4. Portfolio/Project Room、候选审核、参与者、资源、Work/待办、决定、贡献、观察与Timeline UI。
+5. 对话式新增/分派待办、记录Decision/Contribution Candidate和显式刷新Observation。
 
 ### 7.3 完成门
 
-1. 非法跳阶段、缺少必需文档、未批准 Work 开始、旧 revision 更新均失败关闭。
-2. 模板裁剪不会修改模板定义；项目固定模板版本，升级必须显式迁移。
-3. BMAD greenfield、brownfield 小改动、非软件轻量项目三个场景测试通过。
-4. 刷新/API 重启后阶段、Work、文档 Hash 与允许动作完全恢复。
+1. 真实Chat、当前Model Profile选定的真实模型、真实临时Git仓库和真实浏览器完成建项；当前验收Profile使用百炼`qwen3.7-plus`，更换Profile不修改产品合同。
+2. 模型输出未经确认不能写Project；旧revision/并发确认失败关闭。
+3. Agent自述Contribution只能reported；verified必须有Resource/Workflow/Test Evidence。
+4. 路径/符号链接逃逸、秘密文件、大文件与预算攻击被拒绝。
+5. Store v1→v2→v3→v4迁移、损坏保护和重启恢复通过。
 
-## 8. P2：Project Context 与推进 Workflow 节点
+完整任务书见[PS1任务书](./ps1-project-intake-ledger-vertical-slice.md)。
+
+## 8. PS2：Stage、Milestone、Iteration与任务管理
 
 ### 8.1 用户结果
 
-用户在对话中选择项目后，规划会使用当前目标、阶段、活动 Work、决定、阻塞和必要文档；模型提出推进或改道时，页面展示候选，用户确认后才更新项目。
+用户用自然语言设定阶段性目标、Milestone和一次有限投入；Chat根据Shape Up/BMAD/轻量方法形成Proposal、Appetite、Payout、No-Gos、Iteration Commitment、Work/Scope/Action和负责人Update。用户无需学习方法术语，但可以在界面检查和修改。
 
 ### 8.2 实现范围
 
-1. Project Context Builder 按目的、阶段和预算选择对象，写入 ContextPackage；不加载全部项目历史。
-2. Planner/Executor 输出可带类型化 `ProjectChangeCandidate`，但不直接写 Project。
-3. 新增 `ProjectChangeProposal` 与 HITL Command；复用版本/Hash/审批不变量。
-4. Correct Course 映射为 proposal → 用户确认 → 原子 ProjectDecision/状态变更。
-5. PlanPanel 展示项目来源、候选变化及其影响文档；保持现有修订/批准交互一致。
+1. `ProjectMilestone/ProjectProposal/ProjectIteration/ProjectScope/ProjectUpdate/IterationReview`及所需Store升级。
+2. `small-project.v1`、`software-delivery.v1`和`lightweight.v1` Method Profile；Snapshot完整持久化与Hash。
+3. Stage Goal/Milestone推进门、Proposal Shaping、Commitment、Iteration Review和Circuit Breaker。
+4. Work/Scope/Action imagined/discovered、Must-have/Nice-to-have和未知度管理。
+5. Portfolio/Project Room显示当前Stage、Iteration、负责人健康Update、阻塞与下一步。
 
 ### 8.3 完成门
 
-1. 模型不能绕过 Application 转换状态；陈旧项目版本的候选不能提交。
-2. 规划 Input Manifest 能重建精确 Project Context；Trace 无文档正文。
-3. 真实模型 E2E：同一项目跨两个会话恢复阶段和 Work；Correct Course 拒绝后项目不变，批准后精确变更。
-4. BMAD“下一 Story”场景仅加载所需 PRD/Architecture 分片和前序经验，预算测试证明不会全量注入。
+1. 两周小项目完成Shape→Commit→Build facts→Review→Close/Reshape真实浏览器闭环。
+2. BMAD棕地软件项目证明Shape Up投入边界与Artifact/Story/QA规则共同生效。
+3. 非软件轻量和持续运维项目不被强迫使用PRD、六周Cycle或永不结束Iteration。
+4. Task数量不能推导百分比或项目完成；Stage/Iteration完成都有独立Decision/Evidence。
 
-## 9. R1：规则、标签与生命周期管理
+## 9. PS3：Project Context与真实Resource推进
 
 ### 9.1 用户结果
 
-用户能在 Rules 页面创建、修改、打标签、筛选、试用、启用和禁用个人规则；也能在对话中要求 Chat 提议一条规则，但提议默认只是 candidate。
+用户选择Project/Iteration/Work后，规划读取精确项目上下文；批准后Workflow真实修改允许的代码/文档或执行脚本，验证结果并形成Contribution/Evidence和项目更新候选。
 
 ### 9.2 实现范围
 
-1. 新增 `Rule/RuleRevision/RuleTag/RuleScope/RuleDecision`、v3→v4 Store 迁移与生命周期状态机。
+1. Project Context Builder按purpose、Method、Stage、Iteration、Work和预算选择Resource/Decision/Observation/Memory/Rules。
+2. 类型化Resource Action/Verify/Reconcile Port，operationId、前置revision、幂等和outcome_unknown。
+3. 现有规划—确认—执行闭环接入Project Context和真实Resource能力。
+4. Work/Action/Contribution/Evidence回写候选与用户确认。
+
+### 9.3 完成门
+
+1. 真实代码/文档修改、脚本验证和Git Evidence闭环；失败不产生假Contribution或假完成。
+2. 同一Project跨Session恢复；Context Manifest可精确回放且不全量注入。
+3. 外部副作用结果未知时只对账，不自动换身份重试。
+
+## 10. PS4：维护、Correct Course与多项目注意力
+
+### 10.1 用户结果
+
+Chat可以发现外部Resource漂移、过期Project Update、到期Iteration和项目方向变化；用户通过Correct Course决定如何调整，并从Portfolio/Today/Pulse看到真正需要介入的项目事项。
+
+### 10.2 实现范围
+
+1. Observe/Reconcile与类型化Drift Candidate。
+2. ProjectChangeProposal覆盖Stage、Iteration、Work、Resource、Artifact与方法影响。
+3. 周期Project Update/Review、可配置提醒和陈旧信号。
+4. Portfolio风险、Today个人注意力和Pulse事实投影。
+
+### 10.3 完成门
+
+1. 外部PR合并/文档变化能形成Observation与Contribution Candidate，不自动完成Work。
+2. Correct Course拒绝后Project不变，批准后精确更新并保留旧历史。
+3. 多项目用户能准确回答谁在做、改了什么、决定了什么、有哪些待办和下一步。
+
+## 11. R1：规则、标签与生命周期管理
+
+### 11.1 用户结果
+
+用户能在 Rules 页面创建、修改、打标签、筛选、试用、启用和禁用个人规则；也能在对话中要求 Chat 提议一条规则，但提议默认只是 candidate。
+
+### 11.2 实现范围
+
+1. 新增`Rule/RuleRevision/RuleTag/RuleScope/RuleDecision`，使用Project Solution完成后的下一个Store Schema版本与显式迁移。
 2. Rule Revision 保存理由、适用/不适用场景、风险、来源案例与 Hash。
 3. 公开 CRUD/Query、标签筛选、生命周期 Command；所有更新使用 CAS。
 4. 响应式 Rules 管理页与候选确认交互；删除采用禁用/归档语义，保留历史引用。
 
-### 9.3 完成门
+### 11.3 完成门
 
 1. candidate 不能自动变 active；active 必须有用户决定或明确治理授权。
 2. 修改 active 规则产生新 revision，旧 ContextPackage 仍能回放旧版本。
 3. 标签重名、规则冲突提示、禁用后陈旧客户端提交、来源缺失等边界测试通过。
 4. 桌面/手机 CRUD、筛选、标签和生命周期 E2E 通过。
 
-## 10. R2：规则选择与规划注入
+## 12. R2：规则选择与规划注入
 
-### 10.1 用户结果
+### 12.1 用户结果
 
 用户在发送前可主动勾选规则或按标签筛选；未主动选择时，系统按当前项目/阶段/场景选择合适 active 规则。规划面板显示采用、排除和冲突原因。
 
-### 10.2 实现范围
+### 12.2 实现范围
 
 1. 实现确定性 Rule Selector：显式排除 → 显式选择 → 必需规则 → Scope 匹配 → 声明冲突处理 → 预算裁剪。
 2. `submitMessage` 保存显式 Rule/Tag 选择；Workflow Context Builder 生成 `RuleSelection` 并写入 ContextPackage。
 3. Planner Prompt 使用精确 Rule Revision，Input Manifest 包含 Hash；Executor 只接收计划明确需要的规则。
 4. 前端 Context 选择器与 Rules 管理页复用同一查询模型，不复制第二套规则状态。
 
-### 10.3 完成门
+### 12.3 完成门
 
 1. 显式选择优先于自动选择；显式排除生效；disabled/旧 revision 不得注入。
 2. 冲突规则不静默覆盖，用户可在规划前或修订时解决。
 3. 真实模型对照 E2E：选中规则时 Plan 遵守独特要求；未选且 Scope 不匹配时不得泄漏该规则。
 4. 回放能重建当时 Rule Revision、选择原因和排除列表，Trace 无规则正文。
 
-## 11. X1：组合闭环、质量审查与收口
+## 13. X1：组合闭环、质量审查与收口
 
-### 11.1 真实用户场景
+### 13.1 真实用户场景
 
 建立一个软件 Project，导入一条 Memory，创建一条带标签规则；新会话选择 Project、Memory 后端和规则标签后发送需求，完成：
 
@@ -224,7 +267,7 @@ Memory 选择器同时显示 memmy 与 Tencent MemoryCore。用户能选择任�
 → 页面刷新/API 重启/回放
 ```
 
-### 11.2 严格 E2E
+### 13.2 严格 E2E
 
 1. 两个真实 Memory 后端各至少一个查询与导入证据；无凭据或服务未启动时失败，不 Skip。
 2. 真实百炼规划/执行返回真实 Provider HTTP 证据；模型固定 `qwen3.7-plus`。
@@ -233,7 +276,7 @@ Memory 选择器同时显示 memmy 与 Tencent MemoryCore。用户能选择任�
 5. Replay 组装 Trace + Product Store 后无完整性错误；Trace 扫描不得出现三类正文、Token、endpoint 或私有 Runtime ID。
 6. 桌面 Chromium 与 390×844 手机场景通过；无横向溢出、焦点丢失、重复提交或状态误报。
 
-### 11.3 代码质量门
+### 13.3 代码质量门
 
 1. `pnpm build / lint / format:check / typecheck / test / audit --prod` 全绿。
 2. 架构测试验证依赖方向；新增包必须说明许可证、退出方式和为何需要。
@@ -241,9 +284,9 @@ Memory 选择器同时显示 memmy 与 Tencent MemoryCore。用户能选择任�
 4. 对公开 API 做秘密/内部 ID 泄漏扫描；对 Trace 做严格 Schema 与正文哨兵测试。
 5. 完成开发者自审：删除重复抽象、无效兼容层、超长函数和无依据配置；重点代码保持短、清晰、可替换。
 
-## 12. PR 与验证节奏
+## 14. PR 与验证节奏
 
-每个任务只跑与改动相关的单元/合同/集成测试，再跑一次全量质量门。真实付费模型与完整浏览器 E2E 只在 M1、M2、M3、P2、R2 和 X1 的纵向完成门运行；P1/R1 的纯管理能力使用真实浏览器但不浪费模型调用。
+每个任务只跑与改动相关的单元/合同/集成测试，再跑一次全量质量门。真实付费模型与完整浏览器E2E只在形成用户结果的纵向完成门运行：PS1真实Intake、PS2方法/Iteration候选、PS3真实推进、PS4 Correct Course、R2规则注入和X1组合收口。纯确定性管理测试不重复调用模型。
 
 每个 PR 描述必须给出：
 
@@ -254,7 +297,7 @@ Memory 选择器同时显示 memmy 与 Tencent MemoryCore。用户能选择任�
 5. 真实服务、真实模型的脱敏证据；不得粘贴正文或密钥。
 6. 审核后才转 Ready；合并后删除分支和 worktree。
 
-## 13. 开始与停止条件
+## 15. 开始与停止条件
 
 1. 本任务书和架构说明经用户审核后，才开始 M1 生产代码。
 2. 任一任务发现公共 Port 无法覆盖真实第二后端时，先在当前 PR 收窄或版本化合同，不用任意字段兜底。

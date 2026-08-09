@@ -2,7 +2,7 @@
 
 > 文档类型：当前实现（as-built）导航
 >
-> 核对基线：`main` @ `141e089`
+> 核对基线：当前本地`main`（`origin/main` PS1基线 + 统一启动调试修复）
 >
 > 当前能力事实以根目录[PROJECT_STATE.md](../../PROJECT_STATE.md)为准；目标架构以[技术合同](./technology-contract.md)为准。
 
@@ -28,9 +28,10 @@ Chat/
 │   ├── domain/                 纯领域规则、状态机、Hash和不变量
 │   ├── application/            用例、事务边界以及外部能力Port
 │   ├── product-store-json/     当前JSON Product Store Adapter及迁移
-│   ├── workflows/              两套Vercel Workflow与本地Runtime
-│   ├── pi-runtime/             pi Planner/Executor与百炼Provider适配
+│   ├── workflows/              三套Vercel Workflow与本地Runtime
+│   ├── pi-runtime/             pi Planner/Executor、Project Understanding与模型Profile
 │   ├── memory-runtime/         memmy与Tencent MemoryCore Adapter/Registry
+│   ├── project-runtime/        允许根内Git、治理文档与脚本清单只读Adapter
 │   ├── realtime/               当前Trace与Replay；未来承接Runtime Journal/SSE
 │   └── testing/                跨包架构、集成、恢复和调试合同测试
 ├── scripts/
@@ -64,8 +65,10 @@ Chat/
 |---|---|
 | `src/main.tsx` | React与TanStack Query组合入口 |
 | `src/App.tsx` | 真实工作区/视觉fixture入口、API健康状态、主题 |
-| `src/components/RealWorkspace.tsx` | 当前真实对话、Plan审核、Memory选择/导入界面 |
+| `src/components/RealWorkspace.tsx` | 当前真实对话、Plan审核、Memory选择/导入、Project Intake与管理候选界面 |
+| `src/components/ProjectManagementControls.tsx` | Project待办、决定、贡献、观察和归档的显式控制面 |
 | `src/real/use-real-chain.ts` | Query、Command、轮询、失效和恢复协调 |
+| `src/real/use-project-chain.ts` | Project Candidate、Portfolio、Workspace与Timeline的Query/Command协调 |
 | `src/api/client.ts` | 浏览器唯一公开API客户端；响应也执行Zod校验 |
 | `src/real/real-storage.ts` | Session定位、活动Run与网络未知命令身份；不保存权威事实 |
 | `src/drafts/` | 未发送草稿 |
@@ -98,12 +101,13 @@ Router不直接写JSON、调用pi或恢复Hook；产品事务只能由 `packages
 | 包 | 当前责任 | 主要入口/文件 | 禁止承担 |
 |---|---|---|---|
 | `@chat/contracts` | strict Zod合同、ID、DTO、持久化快照、错误、Trace事件 | `src/public.ts`、`product-api.ts`、`product-store.ts`、`internal-runtime.ts` | 用例编排、I/O、框架组合 |
-| `@chat/domain` | canonical Hash、Run/Plan/Memory状态机与不变量 | `canonical-hash.ts`、`run-state.ts`、`plan-state.ts`、`memory-import.ts` | Hono、React、Workflow、Provider、文件I/O |
+| `@chat/domain` | canonical Hash、Run/Plan/Memory/Project状态机与不变量 | `canonical-hash.ts`、`run-state.ts`、`plan-state.ts`、`memory-import.ts`、`project.ts` | Hono、React、Workflow、Provider、文件I/O |
 | `@chat/application` | Query/Command用例、事务、CAS、幂等、Outbox、Port | `product-store-port.ts`、`*-use-cases.ts`、`*-ports.ts` | HTTP、SDK对象、直接外部调用 |
-| `@chat/product-store-json` | 单实例单写JSON Adapter、原子替换、完整性校验和v1→v3迁移 | `json-product-store.ts`、`snapshot-integrity.ts`、`migrate-*.ts` | 路由、Workflow、产品策略 |
-| `@chat/workflows` | `PlanningExecutionWorkflow`、`MemoryImportWorkflow`、Step、Hook、Runtime Binding和Local World | `planning-execution-workflow.ts`、`memory-import-workflow.ts`、`runtime-server.ts` | 直接打开Product Store、向浏览器泄漏Runtime ID |
-| `@chat/pi-runtime` | pi Agent loop、Planner/Executor输出合同和百炼配置 | `planner.ts`、`executor.ts`、`agent-runner.ts`、`config.ts` | Product Run终态、审批、Store事务 |
+| `@chat/product-store-json` | 单实例单写JSON Adapter、原子替换、完整性校验和v1→v4迁移 | `json-product-store.ts`、`snapshot-integrity.ts`、`migrate-*.ts` | 路由、Workflow、产品策略 |
+| `@chat/workflows` | Planning、Memory Import、Project Intake三套Workflow、Step、Hook、Runtime Binding和Local World | `planning-execution-workflow.ts`、`memory-import-workflow.ts`、`project-intake-workflow.ts`、`runtime-server.ts` | 直接打开Product Store、向浏览器泄漏Runtime ID |
+| `@chat/pi-runtime` | pi Agent loop、Planner/Executor、模型无关Project Understanding Adapter与服务端Model Profile | `planner.ts`、`executor.ts`、`project-intake-understanding.ts`、`project-model-profile.ts` | Product Run/Project终态、审批、Store事务 |
 | `@chat/memory-runtime` | 两套真实Memory Query/Import Adapter及服务端Registry | `registry.ts`、`memmy-adapter.ts`、`tencent-memorycore-adapter.ts` | 把外部记录升级成Chat权威事实 |
+| `@chat/project-runtime` | 允许根内真实Git、治理文档和package脚本只读观察 | `registry.ts` | 任意路径读取、脚本执行、Git写入、Project事实提交 |
 | `@chat/realtime` | 严格Trace写读、运行回放组装和CLI | `trace-sink.ts`、`trace-reader.ts`、`replay.ts` | 保存正文；当前尚未实现公开SSE Cursor Journal |
 | `@chat/testing` | 架构依赖、跨Adapter集成、恢复和调试配置测试 | `architecture.test.ts`、`b2-backend-loop.test.ts`、`vscode-debug-config.test.ts` | 生产运行逻辑 |
 
@@ -115,6 +119,7 @@ apps/web ───────────────────────�
 apps/api ─┬─> application ─────────────> domain + contracts
           ├─> product-store-json ───────> application + domain + contracts
           ├─> memory-runtime ───────────> application ports + domain + contracts
+          ├─> project-runtime ──────────> application ports + domain + contracts
           ├─> workflows ────────────────> application ports + adapters
           └─> realtime
 
@@ -136,6 +141,9 @@ workflows ─┬─> pi-runtime
 | 执行结果成为正式回复 | `planningExecutionWorkflow`批准分支 | `runPiExecutorStep` → `persistExecutionCandidateStep` → `validateExecutionStep` → `commitExecutionResultStep` |
 | Memory规划召回 | `ContextPicker.tsx` | Planning Context Application → Workflow Memory Step → Memory Adapter |
 | 显式导入Memory | `ChatMessageItem.tsx`/`RealWorkspace.tsx` | Memory Import Route → Outbox → Memory Import Workflow → Adapter |
+| 对话建项 | `RealWorkspace.tsx`/`use-project-chain.ts` | Project Intake Route → Outbox → Project Intake Workflow → pi Understanding + Resource Observe → Candidate Hook |
+| 对话管理Project | `RealWorkspace.tsx`/`use-project-chain.ts` | Management Candidate Route → Application确定性编译 → 用户修订/确认 → Project账本 |
+| 刷新真实项目资源 | `ProjectManagementControls.tsx` | Observation Command → `project-runtime`只读Adapter → Observation/Evidence事务 |
 | Product Store损坏/迁移 | API启动 | `composition.ts` → `json-product-store.ts` → `snapshot-integrity.ts`/迁移 |
 | Provider或候选失败 | Workflow Step | `pi-runtime` → 失败归一化 → Application失败提交 |
 | 回放一次Run | `apps/api/src/replay-main.ts` | `packages/realtime/src/replay.ts` + Product Store + 版本证据 |

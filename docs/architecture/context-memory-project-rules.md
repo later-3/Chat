@@ -23,7 +23,7 @@
 |---|---|---|---|
 | 会话、消息、运行、审批 | Chat Product Store | 完整产品事实 | 由 Memory 或 Workflow 替代 |
 | 外部 Memory 记录与索引 | 对应 Memory 服务 | 后端选择、查询/导入意图、来源、结果快照、采用证据 | 把外部记录直接冒充 Chat 产品事实 |
-| 项目状态与文档清单 | Chat Product Store | Project、阶段、Work、文档角色、版本、Hash、推进决定 | 让 BMAD 文件目录成为唯一状态源 |
+| Project Solution | Chat Product Store + 真实Resource Owner | Project、Stage/Milestone、Iteration、Work/Scope/Action、Resource引用、Participant、Contribution、Decision、Evidence、Update | 让BMAD目录、Git状态、模型摘要或Task计数成为唯一状态源 |
 | 用户规则 | Chat Product Store | Rule、Revision、Tag、Scope、生命周期、采用证据 | 只存在于 Prompt 或一份不可追溯偏好文本 |
 | Workflow Checkpoint | Vercel Workflow Store | 当前运行所需的有界 Step 输入/输出、Checkpoint、后端私有映射和产品引用 | 暴露给浏览器、保存无限历史对象图或当成产品终态 |
 | Trace | Trace Journal | 路径、对象引用、版本、Hash、数量、耗时、错误码 | 复制会话、Memory、文档、规则或 Provider 正文 |
@@ -62,7 +62,15 @@
 
 主要源码入口为 `docs/user-guide.md`、`docs/core-architecture.md`、`bmad-core/core-config.yaml`、greenfield/brownfield workflow、`story-tmpl.yaml`、`create-next-story.md`、`validate-next-story.md` 与 `correct-course.md`；结论绑定该版本，不宣称未来 BMAD 版本仍保持相同合同。
 
-### 3.3 经验规则飞轮
+### 3.3 Shape Up
+
+固定证据为Basecamp公开的[Shape Up官方原文](https://basecamp.com/shapeup)，覆盖Shaping、Betting、Building和`Adjust to Your Size`。采用Appetite、Problem/Payout、Rabbit Holes、No-Gos、固定投入可变范围、Scope发现、未知/已知进展和Circuit Breaker；不把六周Cycle、两周Cool-down、正式Betting Table或无中央Backlog写死为所有用户规则。
+
+Shape Up负责小团队如何控制投入、未知和交付风险；BMAD负责软件Artifact、Story准备度、开发、QA与Correct Course。二者通过版本化`ProjectMethodSnapshot`的Stage、Iteration、Work、Artifact、Quality和Change Policy组合，不合成一条所有项目必须执行的巨型流程。
+
+完整取舍见[Project Solution方法论](../product/project-solution-methodology.md)，领域和Workflow见[Project Solution架构](./project-solution.md)。
+
+### 3.4 经验规则飞轮
 
 参考 OPC 飞轮与 `规则目录-v1.json`：规则从真实案例产生，经历候选、试用、验证、生效、弱化/禁用；按责任主体、场景和阶段选择，而不是加载全部规则。Chat 额外增加版本、标签、用户显式选择、冲突说明与 Prompt 采用证据。
 
@@ -104,14 +112,18 @@ Workflow 为保证 Worker 重启后不重复付费调用或丢失外部查询结
 
 ### 4.3 Project 对象
 
-1. `Project`：目标、项目类型、当前阶段、方法模板版本和生命周期。
-2. `ProjectMethodTemplate`：阶段、允许转换、必需/可选文档角色、推进门；内置 `bmad-software.v1`，项目可裁剪并固定模板版本。
-3. `Work`：可执行工作项，默认状态 `draft/approved/in_progress/review/done/cancelled`，携带验收条件、依赖和负责人。
-4. `ProjectDocument`：文档角色、URI/存储引用、revision、sha256、状态；角色包括 brief、prd、ux、architecture、story、qa、change-proposal，也允许自定义角色。
-5. `ProjectDecision`：阶段推进、范围变化、文档接受等用户决定。
-6. `ProjectChangeProposal`：Correct Course 候选；在用户确认前不修改权威项目状态。
+1. `Project`：长期目标、范围、成功标准、项目类型、当前状态、方法版本和生命周期；它不是Session、仓库或任务列表。
+2. `ProjectMethodSnapshot`：Stage、Iteration、Work、Artifact、Quality和Change Policy的完整不可变配置、版本与Hash。
+3. `ProjectStage/ProjectMilestone`：长期阶段、阶段目标与关键结果；Stage与Iteration不能合并。
+4. `ProjectProposal/ProjectIteration`：Shaping候选与一次有限投入承诺；Appetite、Payout、Scope和Circuit Breaker属于Iteration责任。
+5. `ProjectResource/ProjectObservation`：仓库、目录、文档、脚本、服务和外部系统，以及Resource Adapter产生的不可变真实观察。
+6. `ProjectParticipant`：用户、Agent、自动化和外部参与方的项目身份、角色、能力范围与有效状态。
+7. `Work/ProjectScope/ProjectAction`：可交付工作、执行中发现的独立结构和具体待办；Action完成不能自动完成上层对象。
+8. `ProjectContribution/ProjectEvidence`：谁做了什么、影响了哪个Resource版本及其Commit、PR、测试、Artifact或部署证据；Agent自述与已验证贡献必须区分。
+9. `ProjectDecision/ProjectChangeProposal`：问题、选项、选择、理由、影响与Correct Course候选；未经用户确认不修改权威Project或真实资源。
+10. `ProjectUpdate`：负责人署名的健康、变化、阻塞和下一步叙事；Activity或模型摘要不能冒充。
 
-项目模板是约束检查器，不是脚手架监狱。非软件项目可以选择轻量模板，只保留目标、阶段、工作、文档和决定这五类稳定概念。
+Project方法是推进策略，不是脚手架监狱。轻量和持续运维项目可以关闭Proposal/Iteration/Scope；软件项目组合Shape Up投入边界与BMAD Artifact/QA规则。完整对象边界见[Project Solution架构](./project-solution.md)。
 
 ### 4.4 Rule 对象
 
@@ -202,9 +214,11 @@ Memory Import Command
 
 导入使用独立耐久 Workflow，因为它有自己的用户结果和外部副作用生命周期；它不改变 `PlanningExecutionWorkflow` 的唯一性。
 
-### 6.3 Project 推进链
+### 6.3 Project 管理与推进链
 
-模型只能产生 `ProjectChangeCandidate`。阶段推进、Work 完成、关键文档接受和 Correct Course 必须经过 Application 不变量与用户决定，再成为 `ProjectDecision`。简单的标题、标签等低风险修改可直接使用普通 Command，但仍需 expectedRevision。
+用户以对话驱动Project。建项时，可替换的`ProjectIntakeUnderstandingPort`只产生strict临时理解结果；Application结合用户输入、Resource Adapter对真实仓库/文档/脚本的只读观察以及Method/Domain规则，编译Chat拥有的`ProjectIntakeCandidate`。用户确认后才原子创建Project、Method Snapshot、初始Stage、Resource、Participant、Work/Action、Decision和Observation。
+
+项目随后按独立循环推进：Stage Goal/Milestone管理长期结果；Proposal→Commitment→Iteration→Review管理有限投入；Work→Scope→Action管理交付结构；observe→compare→candidate→confirm→reconcile管理资源漂移。阶段推进、Iteration承诺/结果、Work完成、关键Artifact接受、Contribution确认和Correct Course都必须经过Application不变量与用户决定。
 
 ## 7. API 与最小统一 UI
 
@@ -222,14 +236,14 @@ Memory Import Command
 在现有响应式 PWA 内增加一致的侧栏/抽屉页面：
 
 1. Memory 后端：只展示配置状态、能力和健康，不编辑密钥。
-2. Projects：项目、阶段、Work、文档清单与变更候选。
+2. Projects：项目组合、Stage Goal/Milestone、当前Iteration、真实资源、参与者、Work/Scope/待办、负责人Update、贡献、决定、观察、证据和变更候选。
 3. Rules：规则 CRUD、标签、Scope、生命周期、筛选与启停。
 
 桌面与手机使用同一组件和信息架构；手机不得新增横向溢出或遮挡输入区。
 
 ## 8. 存储与迁移
 
-1. Product Store 每次增加新事实集合都升级显式 Schema 版本：M1 提供 v1 → v2，M2 提供 v2 → v3，R1 计划提供 v3 → v4；迁移必须确定性、可测试并有字节级失败保护，不让 Zod 默认值悄悄改写历史。
+1. Product Store每次增加新事实集合都升级显式Schema版本：M1提供v1→v2，M2提供v2→v3，Project PS1计划提供v3→v4；后续Project阶段如增加新事实集合继续顺序升级，Rules使用Project Solution完成后的下一个可用版本，不提前抢占v5。迁移必须确定性、可测试并有字节级失败保护，不让Zod默认值悄悄改写历史。
 2. 新集合仍使用 ID → Entity 映射；跨对象引用、revision、Hash 和状态机在启动时完整校验。
 3. Memory 服务数据库、Token、本地配置、Trace、E2E 数据和构建产物都在 `.gitignore` 范围内。
 4. 当前仍是单 API 写者 JSON Store，不宣称多实例；外部 Memory 调用不得发生在 Product Store `transact` 内。
@@ -241,7 +255,7 @@ Memory Import Command
 1. `context.assembly.started/completed/failed`
 2. `memory.query.started/completed/failed`
 3. `memory.import.started/accepted/materialized/outcome_unknown/failed`
-4. `project.transition.candidate/committed/rejected`
+4. `project.intake/resource_observe/stage/iteration/work/decision/contribution`对应的严格候选、提交与拒绝事件
 5. `rule.selection.completed/failed`
 
 字段只含 productRunId、operationId、backendId、对象引用、数量、Hash、durationMs、outcome 和稳定 errorCode。正文从 Product Store 的版本对象读取，Trace 不保存正文副本。
@@ -252,7 +266,7 @@ Trace 是不阻断产品事务的可观察证据：写入故障或进程在产�
 
 1. Memory 后端配置是服务端文件或环境变量；配置对象引用环境变量名，不把密钥值写入 JSON Product Store。
 2. API 与 Workflow 分别装配 Registry，因此冻结的后端描述和配置指纹必须包含 `authMode + credentialRevision`。启用 Bearer 时必须显式提供同一个非秘密凭据版本/keyId；禁止把 Token 本身或 Token Hash 用作漂移证据。两进程描述不一致时在外部查询前失败关闭。
-3. 百炼仍固定真实 `qwen3.7-plus`。本地测试优先复用 `/Users/xulater/.pi/agent/read-chat-provider-key.mjs` 从 pi 配置读取到子进程环境；不打印、不写入 Git，也不再次要求用户手工提供已存在的 Key。
+3. Agent Provider和模型使用服务端Model Profile配置，产品合同不得写死Provider或模型。当前真实验收Profile使用百炼`qwen3.7-plus`；本地测试优先复用`/Users/xulater/.pi/agent/read-chat-provider-key.mjs`从pi配置读取到子进程环境，不打印、不写入Git，也不再次要求用户手工提供已存在的Key。切换Profile必须重跑同一合同测试和真实E2E，不能修改Domain/API合同来迁就模型。
 4. Memory 服务固定到独立调试端口；启动前使用现有安全 preclean 机制，只清理自己登记且身份匹配的进程，未知占用只报告不杀。
 5. 弱服务器只接收本地构建产物；本阶段不在服务器编译，也不自动部署。
 

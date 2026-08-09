@@ -3,3 +3,5 @@ export * from "./errors.js";
 export * from "./agent-runner.js";
 export * from "./planner.js";
 export * from "./executor.js";
+export * from "./project-intake-understanding.js";
+export * from "./project-model-profile.js";

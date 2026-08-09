@@ -8,3 +8,4 @@ export * from "./context-package.js";
 export * from "./execution-manifest.js";
 export * from "./plan-validation.js";
 export * from "./memory-import.js";
+export * from "./project.js";

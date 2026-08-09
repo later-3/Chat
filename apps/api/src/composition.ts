@@ -17,11 +17,30 @@ import {
   revisionInputIdSchema,
   runAttemptIdSchema,
   validationResultIdSchema,
+  projectIdSchema,
+  projectMethodSnapshotIdSchema,
+  projectStageIdSchema,
+  projectResourceIdSchema,
+  projectParticipantIdSchema,
+  projectWorkIdSchema,
+  projectActionIdSchema,
+  projectContributionIdSchema,
+  projectEvidenceIdSchema,
+  projectDecisionIdSchema,
+  projectObservationIdSchema,
+  projectCandidateIdSchema,
   type PrincipalId,
 } from "@chat/contracts";
-import type { ApplicationDeps, IdFactory, ProductStorePort } from "@chat/application";
+import type {
+  ApplicationDeps,
+  IdFactory,
+  ProductStorePort,
+  ProjectIdFactory,
+} from "@chat/application";
 import { JsonProductStore } from "@chat/product-store-json";
 import { createMemoryBackendRegistry } from "@chat/memory-runtime";
+import { createProjectResourceRegistry } from "@chat/project-runtime";
+import { loadProjectModelProfile, PiProjectIntakeUnderstandingAdapter } from "@chat/pi-runtime";
 
 /**
  * API组合根。
@@ -56,6 +75,23 @@ export function createIdFactory(): IdFactory {
   };
 }
 
+export function createProjectIdFactory(): ProjectIdFactory {
+  return {
+    project: () => projectIdSchema.parse(`prj_${randomSuffix()}`),
+    methodSnapshot: () => projectMethodSnapshotIdSchema.parse(`pms_${randomSuffix()}`),
+    stage: () => projectStageIdSchema.parse(`pst_${randomSuffix()}`),
+    resource: () => projectResourceIdSchema.parse(`prs_${randomSuffix()}`),
+    participant: () => projectParticipantIdSchema.parse(`ppt_${randomSuffix()}`),
+    work: () => projectWorkIdSchema.parse(`pwk_${randomSuffix()}`),
+    action: () => projectActionIdSchema.parse(`pac_${randomSuffix()}`),
+    contribution: () => projectContributionIdSchema.parse(`pct_${randomSuffix()}`),
+    evidence: () => projectEvidenceIdSchema.parse(`pev_${randomSuffix()}`),
+    decision: () => projectDecisionIdSchema.parse(`pdc_${randomSuffix()}`),
+    observation: () => projectObservationIdSchema.parse(`pob_${randomSuffix()}`),
+    candidate: () => projectCandidateIdSchema.parse(`pca_${randomSuffix()}`),
+  };
+}
+
 export function defaultProductStorePath(): string {
   return (
     process.env.CHAT_PRODUCT_STORE_PATH ??
@@ -82,12 +118,19 @@ export async function createApplicationDeps(
 ): Promise<ApplicationDeps> {
   const store = await openProductStore(filePath, trace);
   const memoryRegistry = createMemoryBackendRegistry(process.env);
+  const projectRoots = await createProjectResourceRegistry(process.env);
+  const projectUnderstanding = new PiProjectIntakeUnderstandingAdapter(
+    loadProjectModelProfile(process.env),
+  );
   return {
     store,
     now: () => new Date().toISOString(),
     ids: createIdFactory(),
     memoryBackends: memoryRegistry,
     memoryImportBackends: memoryRegistry,
+    projectRoots,
+    projectIntakeUnderstanding: projectUnderstanding,
+    projectIds: createProjectIdFactory(),
     ...(trace !== undefined ? { trace } : {}),
   };
 }

@@ -10,7 +10,7 @@ Chat 是独立开发、独立运行、独立运营并持续演进的完整产品
 
 前端、后端、Workflow 与 Agent Runtime 技术基线已经冻结。P0、P1.1、P1.2及B1调试/Trace基线均已合并；仓库已有TypeScript Workspace、响应式PWA、严格Trace与固定端口调试能力。
 
-P1响应式PWA与B2真实规划—确认—执行纵向闭环已经完成并合入`main`。当前进入“长期上下文与知识复用”阶段：真实接入多个Memory项目、把BMAD项目推进方法转化为Chat拥有的Project上下文与文档维护能力、实现带标签的用户规则集并注入规划Workflow。实现前必须先复核本地参考项目和既有分析，形成可审核的小任务书；每个实现任务使用独立worktree、分支和PR，并以真实服务、真实模型和浏览器E2E证明用户结果。
+P1响应式PWA与B2真实规划—确认—执行纵向闭环已经完成并合入`main`。当前进入“长期上下文与知识复用”阶段：真实接入多个Memory项目；结合Shape Up、BMAD及已审核Project产品研究，建设Chat自己的Project Solution，包括长期目标、Stage/Milestone、Iteration、Work/Scope/Action、真实Resource、Participant/Contribution/Decision/Evidence和推进/维护Workflow；随后实现带标签的用户规则集并注入规划Workflow。实现前必须先复核固定参考证据，形成可审核的方法论、架构、场景验证和纵向任务书；每个实现任务使用独立worktree、分支和PR，并以真实服务、真实模型和浏览器E2E证明用户结果。
 
 当前事实以[PROJECT_STATE.md](./PROJECT_STATE.md)为准，技术边界以[技术合同](./docs/architecture/technology-contract.md)为准。
 

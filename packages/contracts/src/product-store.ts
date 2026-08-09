@@ -23,6 +23,20 @@ import {
   runContextRequestSchema,
 } from "./context.js";
 import { memoryImportIntentSchema, memoryImportResultSchema } from "./memory-import.js";
+import {
+  projectActionSchema,
+  projectCandidateSchema,
+  projectContributionSchema,
+  projectDecisionSchema,
+  projectEvidenceSchema,
+  projectMethodSnapshotSchema,
+  projectObservationSchema,
+  projectParticipantSchema,
+  projectResourceSchema,
+  projectSchema,
+  projectStageSchema,
+  projectWorkSchema,
+} from "./project.js";
 
 /**
  * Product Snapshot顶层合同（任务书§8.3）。
@@ -34,7 +48,7 @@ import { memoryImportIntentSchema, memoryImportResultSchema } from "./memory-imp
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v3";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v4";
 
 const idKeySchema = z.string().min(1).max(200);
 
@@ -64,6 +78,18 @@ export const productSnapshotSchema = z
         contextPackages: z.record(idKeySchema, contextPackageSchema),
         memoryImportIntents: z.record(idKeySchema, memoryImportIntentSchema),
         memoryImportResults: z.record(idKeySchema, memoryImportResultSchema),
+        projects: z.record(idKeySchema, projectSchema),
+        projectMethodSnapshots: z.record(idKeySchema, projectMethodSnapshotSchema),
+        projectStages: z.record(idKeySchema, projectStageSchema),
+        projectResources: z.record(idKeySchema, projectResourceSchema),
+        projectParticipants: z.record(idKeySchema, projectParticipantSchema),
+        projectWorks: z.record(idKeySchema, projectWorkSchema),
+        projectActions: z.record(idKeySchema, projectActionSchema),
+        projectContributions: z.record(idKeySchema, projectContributionSchema),
+        projectEvidence: z.record(idKeySchema, projectEvidenceSchema),
+        projectDecisions: z.record(idKeySchema, projectDecisionSchema),
+        projectObservations: z.record(idKeySchema, projectObservationSchema),
+        projectCandidates: z.record(idKeySchema, projectCandidateSchema),
       })
       .strict(),
     commandReceipts: z.record(idKeySchema, commandReceiptSchema),
@@ -99,6 +125,18 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       contextPackages: {},
       memoryImportIntents: {},
       memoryImportResults: {},
+      projects: {},
+      projectMethodSnapshots: {},
+      projectStages: {},
+      projectResources: {},
+      projectParticipants: {},
+      projectWorks: {},
+      projectActions: {},
+      projectContributions: {},
+      projectEvidence: {},
+      projectDecisions: {},
+      projectObservations: {},
+      projectCandidates: {},
     },
     commandReceipts: {},
     outbox: {},

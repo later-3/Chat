@@ -1,13 +1,15 @@
 import { serve } from "@hono/node-server";
-import { spawn } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import {
   runDtoSchema,
   sessionDtoSchema,
+  projectCandidateDtoSchema,
   type MemoryBackendId,
   type ProductRunId,
 } from "@chat/contracts";
@@ -16,11 +18,13 @@ import {
   type IdFactory,
   type MemoryBackendPort,
   type MemoryBackendRegistryPort,
+  type ProjectIdFactory,
 } from "@chat/application";
 import { createApiApp } from "@chat/api";
 import { OutboxDispatcher } from "@chat/api/outbox-dispatcher";
 import { JsonProductStore } from "@chat/product-store-json";
 import { RuntimeBindingStore } from "@chat/workflows";
+import { createProjectResourceRegistry } from "@chat/project-runtime";
 
 /**
  * M1 免费恢复门：真实Hono、JSON Store、Runtime Binding、预构建bundle、
@@ -40,6 +44,7 @@ const TSX_BIN = join(REPO_ROOT, "packages/testing/node_modules/.bin/tsx");
 const PRINCIPAL_ID = "usr_debug" as const;
 const CREDENTIAL = "rtk_m1recoverytest0000000000";
 const WAIT_TIMEOUT_MS = 30_000;
+const exec = promisify(execFile);
 
 type HttpServer = ReturnType<typeof serve>;
 
@@ -64,17 +69,39 @@ function testIds(): IdFactory {
   };
 }
 
+let projectIdCounter = 0;
+function testProjectIds(): ProjectIdFactory {
+  const next = (prefix: string) => `${prefix}_m1r${(++projectIdCounter).toString(36)}`;
+  return {
+    project: () => next("prj") as ReturnType<ProjectIdFactory["project"]>,
+    methodSnapshot: () => next("pms") as ReturnType<ProjectIdFactory["methodSnapshot"]>,
+    stage: () => next("pst") as ReturnType<ProjectIdFactory["stage"]>,
+    resource: () => next("prs") as ReturnType<ProjectIdFactory["resource"]>,
+    participant: () => next("ppt") as ReturnType<ProjectIdFactory["participant"]>,
+    work: () => next("pwk") as ReturnType<ProjectIdFactory["work"]>,
+    action: () => next("pac") as ReturnType<ProjectIdFactory["action"]>,
+    contribution: () => next("pct") as ReturnType<ProjectIdFactory["contribution"]>,
+    evidence: () => next("pev") as ReturnType<ProjectIdFactory["evidence"]>,
+    decision: () => next("pdc") as ReturnType<ProjectIdFactory["decision"]>,
+    observation: () => next("pob") as ReturnType<ProjectIdFactory["observation"]>,
+    candidate: () => next("pca") as ReturnType<ProjectIdFactory["candidate"]>,
+  };
+}
+
 let commandCounter = 0;
 function nextCommandId(): string {
   commandCounter += 1;
   return `cmd_m1recovery${commandCounter.toString(36)}`;
 }
 
-function listen(app: {
-  fetch: (request: Request) => Promise<Response> | Response;
-}): Promise<{ server: HttpServer; port: number }> {
+function listen(
+  app: {
+    fetch: (request: Request) => Promise<Response> | Response;
+  },
+  port = 0,
+): Promise<{ server: HttpServer; port: number }> {
   return new Promise((resolveListen, reject) => {
-    const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 }, (info) =>
+    const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port }, (info) =>
       resolveListen({ server, port: info.port }),
     );
     server.on("error", reject);
@@ -102,6 +129,40 @@ async function postJson(baseUrl: string, path: string, body: unknown, expectedSt
     );
   }
   return JSON.parse(text) as unknown;
+}
+
+async function getProjectCandidateFromApi(baseUrl: string, projectCandidateId: string) {
+  const response = await fetch(`${baseUrl}/api/project-candidates/${projectCandidateId}`, {
+    signal: AbortSignal.timeout(10_000),
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`GET project candidate返回${String(response.status)}：${text.slice(0, 1_000)}`);
+  }
+  const body = JSON.parse(text) as { candidate?: unknown };
+  return projectCandidateDtoSchema.parse(body.candidate);
+}
+
+async function waitForProjectCandidate(
+  baseUrl: string,
+  projectCandidateId: string,
+  status: "under_review" | "confirmed",
+) {
+  const deadline = Date.now() + WAIT_TIMEOUT_MS;
+  let candidate = await getProjectCandidateFromApi(baseUrl, projectCandidateId);
+  while (Date.now() < deadline) {
+    if (candidate.status === status) return candidate;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+    candidate = await getProjectCandidateFromApi(baseUrl, projectCandidateId);
+  }
+  throw new Error(
+    `Project Candidate等待${status}超时：${JSON.stringify({
+      projectCandidateId,
+      candidateKind: candidate.candidateKind,
+      status: candidate.status,
+      revision: candidate.revision,
+    })}`,
+  );
 }
 
 function createApplicationMemoryRegistry(): MemoryBackendRegistryPort {
@@ -546,6 +607,241 @@ describe("M1真实Local World恢复", () => {
       );
       if (cleanupErrors.length > 0)
         throw new AggregateError(cleanupErrors, "M1恢复测试资源清理失败");
+    }
+  }, 120_000);
+
+  it("Project Intake等待确认时同时重启API与Workflow，仍恢复同一候选和同一运行", async () => {
+    const root = await mkdtemp(join(tmpdir(), "chat-project-world-recovery-"));
+    const productPath = join(root, "product.json");
+    const projectRoot = join(root, "project-root");
+    const workflowDataDir = join(root, "workflow-data");
+    const bindingsPath = join(root, "bindings.json");
+    const memoryCallsPath = join(root, "memory-calls.jsonl");
+    const plannerCallsPath = join(root, "planner-calls.jsonl");
+    const applicationIds = testIds();
+    const applicationProjectIds = testProjectIds();
+    let understandingCalls = 0;
+    let apiServer: HttpServer | undefined;
+    let runtimeProcess: RuntimeProcessHandle | undefined;
+
+    try {
+      await mkdir(join(projectRoot, "docs"), { recursive: true });
+      await writeFile(join(projectRoot, "AGENTS.md"), "# Project recovery rules\n", "utf8");
+      await writeFile(
+        join(projectRoot, "docs", "architecture.md"),
+        "# Architecture\nProject recovery fixture.\n",
+        "utf8",
+      );
+      await writeFile(
+        join(projectRoot, "package.json"),
+        JSON.stringify({ scripts: { build: "tsc", test: "vitest" } }),
+        "utf8",
+      );
+      await exec("git", ["init", projectRoot]);
+      await exec("git", ["-C", projectRoot, "config", "user.email", "recovery@example.test"]);
+      await exec("git", ["-C", projectRoot, "config", "user.name", "Recovery Test"]);
+      await exec("git", ["-C", projectRoot, "add", "."]);
+      await exec("git", ["-C", projectRoot, "commit", "-m", "initial"]);
+
+      const projectRoots = await createProjectResourceRegistry({
+        CHAT_PROJECT_ROOTS_JSON: JSON.stringify([
+          {
+            rootId: "root_recovery",
+            displayName: "恢复测试项目",
+            canonicalPath: projectRoot,
+            enabledAdapters: [
+              "local-git-workspace.v1",
+              "project-document-manifest.v1",
+              "package-script-catalog.v1",
+            ],
+          },
+        ]),
+      });
+      const projectIntakeUnderstanding: NonNullable<ApplicationDeps["projectIntakeUnderstanding"]> =
+        {
+          describe: () => ({
+            profileVersion: "test.project-recovery.v1",
+            providerName: "test-provider",
+            modelId: "test-model",
+            promptTemplateVersion: "project-intake-understanding.v1",
+            endpointHost: "models.example.test",
+          }),
+          understand: async () => {
+            understandingCalls += 1;
+            return {
+              understanding: {
+                name: "恢复测试项目",
+                goal: "证明建项在API与Workflow重启后仍能从同一审核事实继续",
+                summary: "耐久建项恢复验证",
+                scopeHints: ["观察真实Git和文档资源", "保存建项账本"],
+                successCriteriaHints: ["重启后确认只创建一个Project"],
+                initialWorkHints: ["验证耐久候选", "确认项目事实"],
+                openQuestions: [],
+              },
+              evidence: { durationMs: 1, providerRequestId: "req-project-recovery" },
+            };
+          },
+        };
+      const now = () => new Date().toISOString();
+      const openDeps = async (): Promise<ApplicationDeps> => ({
+        store: await JsonProductStore.open({ filePath: productPath, now }),
+        now,
+        ids: applicationIds,
+        memoryBackends: createApplicationMemoryRegistry(),
+        projectRoots,
+        projectIntakeUnderstanding,
+        projectIds: applicationProjectIds,
+      });
+      const openApi = async (deps: ApplicationDeps, port = 0) => {
+        const app = createApiApp({
+          traceSink: null,
+          product: { deps, principalId: PRINCIPAL_ID as never },
+          internalRuntime: { credential: CREDENTIAL },
+        });
+        return listen(app, port);
+      };
+
+      let deps = await openDeps();
+      const firstApi = await openApi(deps);
+      apiServer = firstApi.server;
+      const apiPort = firstApi.port;
+      const apiBaseUrl = `http://127.0.0.1:${String(apiPort)}`;
+      const runtimeOptions: RuntimeProcessOptions = {
+        repoRoot: root,
+        bundleDir: BUNDLE_DIR,
+        workflowDataDir,
+        bindingsPath,
+        apiBaseUrl,
+        credential: CREDENTIAL,
+        memoryCallsPath,
+        plannerCallsPath,
+      };
+      runtimeProcess = await startRuntimeProcess(runtimeOptions);
+      let dispatcher = new OutboxDispatcher({
+        deps,
+        workflowRuntimeBaseUrl: runtimeProcess.baseUrl,
+        credential: CREDENTIAL,
+      });
+
+      const sessionResponse = (await postJson(apiBaseUrl, "/api/sessions", {
+        commandId: nextCommandId(),
+        payload: {},
+      })) as { session: unknown };
+      const session = sessionDtoSchema.parse(sessionResponse.session);
+      const beginResponse = (await postJson(
+        apiBaseUrl,
+        "/api/project-intakes",
+        {
+          commandId: nextCommandId(),
+          payload: {
+            sessionId: session.sessionId,
+            text: "把这个真实Git工作区建立为项目，并准备当前推进基线",
+            rootId: "root_recovery",
+          },
+        },
+        202,
+      )) as { candidate: unknown };
+      const queued = projectCandidateDtoSchema.parse(beginResponse.candidate);
+      expect(queued).toMatchObject({ candidateKind: "intake", status: "queued", revision: 1 });
+
+      await dispatcher.tick();
+      const reviewing = await waitForProjectCandidate(
+        apiBaseUrl,
+        queued.projectCandidateId,
+        "under_review",
+      );
+      if (reviewing.candidateKind !== "intake" || reviewing.status !== "under_review") {
+        throw new Error("Project Intake候选未进入审核态");
+      }
+      expect(understandingCalls).toBe(1);
+      const bindingsBefore = await RuntimeBindingStore.open(bindingsPath, { allowCreate: false });
+      const bindingBefore = bindingsBefore.getProjectIntakeBinding(queued.projectCandidateId);
+      expect(bindingBefore).toBeDefined();
+
+      // 同时关闭两个服务。随后仅依赖JSON Product Store、Binding和Workflow数据目录恢复。
+      await runtimeProcess.stop();
+      runtimeProcess = undefined;
+      await closeHttpServer(apiServer);
+      apiServer = undefined;
+
+      deps = await openDeps();
+      const reopenedApi = await openApi(deps, apiPort);
+      apiServer = reopenedApi.server;
+      runtimeProcess = await startRuntimeProcess(runtimeOptions);
+      dispatcher = new OutboxDispatcher({
+        deps,
+        workflowRuntimeBaseUrl: runtimeProcess.baseUrl,
+        credential: CREDENTIAL,
+      });
+      expect(runtimeProcess.stdout()).toContain("Re-enqueued 1 active run(s) on startup");
+
+      const recovered = await getProjectCandidateFromApi(apiBaseUrl, queued.projectCandidateId);
+      expect(recovered).toMatchObject({
+        candidateKind: "intake",
+        status: "under_review",
+        revision: reviewing.revision,
+        candidateSha256: reviewing.candidateSha256,
+      });
+      expect(understandingCalls).toBe(1);
+      const bindingsAfter = await RuntimeBindingStore.open(bindingsPath, { allowCreate: false });
+      expect(bindingsAfter.getProjectIntakeBinding(queued.projectCandidateId)?.workflowRunId).toBe(
+        bindingBefore?.workflowRunId,
+      );
+
+      const confirmResponse = (await postJson(
+        apiBaseUrl,
+        `/api/project-candidates/${queued.projectCandidateId}/decisions`,
+        {
+          commandId: nextCommandId(),
+          expectedRevision: recovered.revision,
+          payload: {
+            kind: "confirm",
+            candidateSha256:
+              recovered.candidateKind === "intake" && recovered.status === "under_review"
+                ? recovered.candidateSha256
+                : "invalid",
+          },
+        },
+      )) as { candidate: unknown };
+      const confirmed = projectCandidateDtoSchema.parse(confirmResponse.candidate);
+      expect(confirmed).toMatchObject({ candidateKind: "intake", status: "confirmed" });
+      await dispatcher.tick();
+
+      const finalBindings = await RuntimeBindingStore.open(bindingsPath, { allowCreate: false });
+      const finalBinding = finalBindings.getProjectIntakeBinding(queued.projectCandidateId);
+      expect(finalBinding?.workflowRunId).toBe(bindingBefore?.workflowRunId);
+      expect(finalBinding?.resumeDispatchState).toBe("dispatched");
+      const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+      expect(Object.keys(snapshot.entities.projects)).toHaveLength(1);
+      expect(Object.keys(snapshot.entities.projectObservations)).toHaveLength(1);
+      const projectOutbox = Object.values(snapshot.outbox).filter(
+        (entry) =>
+          "projectCandidateId" in entry && entry.projectCandidateId === queued.projectCandidateId,
+      );
+      expect(projectOutbox).toHaveLength(2);
+      expect(projectOutbox.every((entry) => entry.status === "acknowledged")).toBe(true);
+      const workflowRunFiles = (await readdir(join(workflowDataDir, "runs"))).filter((name) =>
+        name.endsWith(".json"),
+      );
+      expect(workflowRunFiles).toHaveLength(1);
+      expect(understandingCalls).toBe(1);
+    } catch (error) {
+      throw new Error(
+        `Project Intake恢复场景失败 stdout=${runtimeProcess?.stdout().slice(-4_000) ?? ""} stderr=${runtimeProcess?.stderr().slice(-4_000) ?? ""}`,
+        { cause: error },
+      );
+    } finally {
+      const cleanupErrors: unknown[] = [];
+      if (runtimeProcess !== undefined) {
+        await runtimeProcess.stop().catch((error: unknown) => cleanupErrors.push(error));
+      }
+      await closeHttpServer(apiServer).catch((error: unknown) => cleanupErrors.push(error));
+      await rm(root, { recursive: true, force: true }).catch((error: unknown) =>
+        cleanupErrors.push(error),
+      );
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(cleanupErrors, "Project Intake恢复测试资源清理失败");
+      }
     }
   }, 120_000);
 });

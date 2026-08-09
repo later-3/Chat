@@ -15,6 +15,7 @@ import {
   principalIdSchema,
   productRunIdSchema,
   productSessionIdSchema,
+  projectCandidateIdSchema,
   revisionInputIdSchema,
   runAttemptIdSchema,
   contextPackageIdSchema,
@@ -474,6 +475,8 @@ export const outboxEntryKindSchema = z.enum([
   "workflow_resume",
   "memory_import_start",
   "memory_import_reconcile",
+  "project_intake_start",
+  "project_intake_resume",
 ]);
 
 export const outboxEntryStatusSchema = z.enum([
@@ -535,6 +538,22 @@ export const outboxEntrySchema = z.discriminatedUnion("kind", [
       memoryImportIntentId: memoryImportIntentIdSchema,
       memoryImportResultId: memoryImportResultIdSchema,
       expectedResultRevision: z.number().int().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      ...outboxCommonFields,
+      kind: z.literal("project_intake_start"),
+      projectCandidateId: projectCandidateIdSchema,
+      expectedCandidateRevision: z.number().int().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      ...outboxCommonFields,
+      kind: z.literal("project_intake_resume"),
+      projectCandidateId: projectCandidateIdSchema,
+      expectedCandidateRevision: z.number().int().positive(),
     })
     .strict(),
 ]);

@@ -22,6 +22,7 @@ import {
   commitMemoryImportFailedRequestSchema,
   commitMemoryImportOutcomeUnknownRequestSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
+  prepareProjectCandidateRequestSchema,
   type ProblemDetail,
   type RequestId,
 } from "@chat/contracts";
@@ -49,6 +50,7 @@ import {
   commitMemoryImportMaterialized,
   commitMemoryImportFailed,
   commitMemoryImportOutcomeUnknown,
+  prepareProjectCandidateForReview,
   type ApplicationDeps,
 } from "@chat/application";
 
@@ -190,6 +192,18 @@ export function createInternalRuntimeRouter(
    * Workflow进程不能打开Product Store；即使是私有路由，每个写入仍需strict Schema、稳定
    * commandId、CAS和Application事务。这里传递产品引用与结构化候选，不传SDK Workflow对象。
    */
+  router.post(
+    "/prepare-project-candidate",
+    handle(200, async (c) => {
+      const request = prepareProjectCandidateRequestSchema.parse(await parseInternalBody(c));
+      return prepareProjectCandidateForReview(options.deps, {
+        commandId: request.commandId,
+        projectCandidateId: request.projectCandidateId,
+        expectedRevision: request.expectedRevision,
+      });
+    }),
+  );
+
   router.post(
     "/begin-planning-context",
     handle(200, async (c) => {

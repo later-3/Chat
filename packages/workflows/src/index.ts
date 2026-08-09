@@ -13,6 +13,8 @@ export * from "./planning-execution-workflow.js";
 export * from "./memory-import-workflow.js";
 export * from "./memory-import-workflow-input.js";
 export * from "./memory-import-workflow-steps.js";
+export * from "./project-intake-workflow.js";
+export * from "./project-intake-workflow-steps.js";
 export * from "./runtime-server.js";
 export * from "./local-version-recovery.js";
 // Workflow Adapter边界的底层恢复原语；只能由本Adapter内的分发路径使用

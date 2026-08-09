@@ -37,8 +37,10 @@ import {
   type PersistPlanningContextResultRequest,
   type PublishPlanReviewRequest,
   type LoadMemoryImportRequest,
+  prepareProjectCandidateRequestSchema,
+  projectCandidateDtoSchema,
 } from "@chat/contracts";
-import type { ZodType } from "zod";
+import { z, type ZodType } from "zod";
 
 /**
  * Workflow Runtime -> API私有Runtime Router的类型化客户端。
@@ -84,6 +86,7 @@ async function call<TReq, TRes>(
   path: string,
   body: TReq,
   responseSchema: ZodType<TRes>,
+  timeoutMs = 30_000,
 ): Promise<TRes> {
   let response: Response;
   try {
@@ -94,7 +97,7 @@ async function call<TReq, TRes>(
         "x-chat-runtime-key": options.credential,
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
     throw new ApiClientError({
@@ -135,6 +138,24 @@ async function call<TReq, TRes>(
 
 export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
   return {
+    prepareProjectCandidate(input: {
+      commandId: string;
+      projectCandidateId: string;
+      expectedRevision: number;
+    }) {
+      return call(
+        options,
+        "/internal/runtime/v1/prepare-project-candidate",
+        prepareProjectCandidateRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        // 私有响应仍使用公开Candidate投影，避免出现第二套候选合同。
+        z.object({ candidate: projectCandidateDtoSchema }).strict(),
+        // Project理解节点本身有90秒Provider硬超时；HTTP边界必须留出提交响应余量。
+        120_000,
+      );
+    },
     beginPlanningContext(input: Omit<PreparePlanningContextRequest, "schemaVersion">) {
       return call(
         options,

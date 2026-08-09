@@ -2,18 +2,19 @@
 
 > 文档类型：当前实现（as-built）
 >
-> 当前Workflow Definition：`planning-execution-workflow.v2`、`memory-import-workflow.v1`
+> 当前Workflow Definition：`planning-execution-workflow.v2`、`memory-import-workflow.v1`、`project-intake-workflow.v1`
 >
 > 产品事实源：Product Store；Workflow返回值和Runtime状态不是产品终态。
 
-## 1. 为什么有两套Workflow
+## 1. 为什么有三套Workflow
 
-当前有两个独立的用户结果，因此有两套耐久生命周期：
+当前有三个独立的用户结果，因此有三套耐久生命周期：
 
 1. `PlanningExecutionWorkflow`：一条消息的Memory召回、规划、人工修订/批准、执行、验证和正式提交。
 2. `MemoryImportWorkflow`：一次显式Memory外部写入或一次只读对账。
+3. `ProjectIntakeWorkflow`：一次真实资源建项理解、候选审核和确认。
 
-“规划必须在同一个Workflow中完成”指的是规划、修订循环和执行不能拆成多个竞争的规划Run；它不要求把所有独立外部业务都塞进这一条Workflow。Memory导入拥有独立身份、状态和副作用恢复语义，因此使用独立Workflow。
+“规划必须在同一个Workflow中完成”指的是规划、修订循环和执行不能拆成多个竞争的规划Run；它不要求把所有独立业务塞进这一条Workflow。Memory导入拥有外部写入/对账生命周期；Project Intake以Project Candidate而不是Plan Approval为暂停对象，所以两者分别使用独立Workflow。
 
 ## 2. 运行时组件
 
@@ -31,7 +32,7 @@ API Product Command
 | 组件 | 当前责任 |
 |---|---|
 | API进程 | 唯一Product Store Owner、公开Command/Query、Outbox Dispatcher |
-| Workflow Runtime进程 | Local World、bundle、Hook、Runtime Binding、两套Workflow启动/恢复 |
+| Workflow Runtime进程 | Local World、bundle、Hook、Runtime Binding、三套Workflow启动/恢复 |
 | Runtime Binding Store | 私下关联Product Run/Outbox/Approval与Workflow Run/Hook Token |
 | Workflow Store | Step结果、Hook等待、Checkpoint和重放 |
 | pi Runtime | 真实百炼Planner/Executor调用及结构化候选 |
@@ -42,7 +43,7 @@ Workflow进程不得打开Product JSON文件；所有产品读写都通过API私
 
 ## 3. Outbox分发边界
 
-当前Outbox有四种事件：
+当前Outbox有六种事件：
 
 | kind | 产生位置 | 分发结果 |
 |---|---|---|
@@ -50,6 +51,8 @@ Workflow进程不得打开Product JSON文件；所有产品读写都通过API私
 | `workflow_resume` | Decision Command事务 | 恢复对应Approval的Hook |
 | `memory_import_start` | Memory Import Command事务 | 启动一次外部导入Workflow |
 | `memory_import_reconcile` | Reconcile Command事务 | 启动一次只读对账Workflow |
+| `project_intake_start` | Project Intake Command事务 | 启动一次建项Workflow |
+| `project_intake_resume` | Candidate Decision事务 | 恢复对应Project Candidate Hook |
 
 分发流程遵守“先写意图栅栏，再跨Runtime边界”：
 
@@ -157,13 +160,36 @@ loadMemoryImportStep
 
 `accepted`是合法非失败终态。Dispatcher监督器和页面都不得把它自动降级成未知结果，也不得为了追求`materialized`重复写入。
 
-## 6. Runtime Binding与版本证据
+## 6. ProjectIntakeWorkflow
+
+```text
+Project Intake Command
+→ Product事务提交Message + queued Candidate + Start Outbox
+→ prepareProjectCandidateStep
+   → API私有Command调用模型无关ProjectIntakeUnderstandingPort
+   → 允许根内并行观察Git、治理文档与脚本清单
+   → Application编译并提交under_review Candidate
+→ 建立Candidate Hook并等待
+→ 用户通过公开Command修订、确认或拒绝
+→ Product事务先提交Project事实/拒绝事实 + Resume Outbox
+→ Runtime恢复同一Hook
+→ Workflow返回product_decided
+```
+
+Project Understanding当前由pi Adapter执行，部署时使用服务端Model Profile选择Provider、模型、endpoint和凭据环境变量；这些配置不进入Domain、公开API或浏览器。真实验收Profile为百炼`qwen3.7-plus`，替换模型不改变Candidate合同。
+
+模型调用和真实Resource Observe位于产品事务外；任一边界失败都会把Candidate提交为`failed`。Workflow Step使用`FatalError`禁止默认重试，避免一次建项故障触发多次付费调用。用户修复配置后显式发起新的建项意图。
+
+待办、决定和贡献的“管理项目”消息不会启动新Workflow：用户已经显式选择命令类型，Application可确定性编译一个绑定Project revision/Hash的可编辑Candidate，不需要用模型重述正文。刷新Observation只提交客观只读观察，也不制造无价值审批层。
+
+## 7. Runtime Binding与版本证据
 
 Runtime Binding保存以下私有关系：
 
 - Product Run/Start Outbox → Workflow Run。
 - Approval Request → Hook Token和Resume状态。
 - Memory Import Outbox → Memory Import Workflow Run。
+- Project Candidate/Outbox → Project Intake Workflow Run和Hook恢复状态。
 
 约束：
 
@@ -171,23 +197,25 @@ Runtime Binding保存以下私有关系：
 2. Binding存在但对应Workflow Run不存在时启动失败关闭。
 3. 活动Planning Run恢复前核对Workflow Definition、bundle和版本证据。
 4. 活动Memory Import Run核对其独立Definition Version。
-5. Runtime ID只用于后端诊断，不进入浏览器、公开API和Product Store身份模型。
+5. 活动Project Intake Run核对独立Definition Version、Candidate身份和Start/Resume状态。
+6. Runtime ID只用于后端诊断，不进入浏览器、公开API和Product Store身份模型。
 
 本地开发每次重建Bundle后会在服务启动前检查活动Planning Run。证据完全一致时继续恢复；若代码版本已经变化且旧Bundle不再可执行，则保留全部历史证据，通过Application把Product Run、Attempt和Workflow Outbox收敛为`workflow.version_incompatible`，并用Workflow SDK取消旧Runtime Run。该路径不删除Store或Runtime文件，也不重启同一产品工作；生产环境应保留旧部署完成原版本恢复。
 
-## 7. 重试与结果未知
+## 8. 重试与结果未知
 
 | 边界 | 当前策略 |
 |---|---|
 | 纯确定性Step | 可由Workflow按耐久语义重放 |
 | Planner/Executor付费模型调用 | `maxRetries=0`；失败形成稳定错误，不自动再次扣费 |
+| Project Understanding付费模型调用 | `FatalError`终止Step；Candidate记录failed，不自动再次扣费 |
 | Memory外部写入 | `maxRetries=0`；发出后失联进入`outcome_unknown` |
 | Product Commit | 使用稳定Command ID幂等重试，不重新生成候选 |
 | Workflow Start/Resume | 先记录Binding意图，失联后对账，不盲目重复 |
 | Hook等待 | 同一Workflow、同一Approval绑定；页面断开不取消等待 |
 | Approval过期 | Application确认状态后收敛；已决定但未恢复时继续等同一Hook |
 
-## 8. Trace与回放
+## 9. Trace与回放
 
 Trace记录：命令入口、事务、Outbox、Workflow Start/Resume、Step、Provider/Memory Attempt、状态转换、耗时、错误和产品对象引用。
 
@@ -202,7 +230,7 @@ Replay Assembler按产品对象ID、revision和SHA-256组合：
 
 缺少revision或Hash不一致必须显式报告，不能生成“看起来完整”的假回放。
 
-## 9. 关键源码地图
+## 10. 关键源码地图
 
 | 关注点 | 文件 |
 |---|---|
@@ -213,15 +241,18 @@ Replay Assembler按产品对象ID、revision和SHA-256组合：
 | 验证和Product Commit Step | `workflow-result-steps.ts` |
 | Memory Import主编排 | `memory-import-workflow.ts` |
 | Memory Import Step | `memory-import-workflow-steps.ts` |
+| Project Intake主编排/Step | `project-intake-workflow.ts`、`project-intake-workflow-steps.ts` |
 | Runtime HTTP与Local World | `runtime-server.ts`、`workflow-world.ts` |
 | Runtime Binding | `runtime-bindings.ts` |
 | Workflow→API私有客户端 | `api-client.ts` |
 | API私有Application Router | `apps/api/src/internal-runtime-router.ts` |
 | Outbox分发与监督 | `apps/api/src/outbox-dispatcher.ts` |
 | pi Planner/Executor | `packages/pi-runtime/src/planner.ts`、`executor.ts` |
+| Project Understanding/Model Profile | `packages/pi-runtime/src/project-intake-understanding.ts`、`project-model-profile.ts` |
 | Memory Adapter | `packages/memory-runtime/src/*-adapter.ts` |
+| Project Resource Adapter | `packages/project-runtime/src/registry.ts` |
 
-## 10. 当前边界与后续演进
+## 11. 当前边界与后续演进
 
 已经实现：
 
@@ -230,18 +261,19 @@ Replay Assembler按产品对象ID、revision和SHA-256组合：
 3. 独立Memory导入/对账Workflow及结果未知语义。
 4. 真实百炼`qwen3.7-plus`、真实Memory服务和真实浏览器E2E。
 5. 固定端口F5调试、严格Trace和多源Replay。
+6. 独立Project Intake耐久链、真实Git/文档/脚本观察、候选确认与Project账本。
 
 尚未实现：
 
 1. Chat公开SSE Cursor Runtime Journal。
-2. Project/Work/Stage/文档Context节点。
+2. Project Context进入Planning Workflow的节点；PS1已实现Project、初始Stage、Work/Action和资源观察，但尚未注入任务规划。
 3. 用户规则选择与规划注入节点。
 4. 生产多实例Store、正式身份、Worker生产接管和后端部署拓扑。
 5. 外部副作用Tool与通用Workflow编辑器。
 
 未来新增节点前，应先确认它属于现有Workflow的一个步骤，还是拥有独立用户结果和独立恢复生命周期；不能为了“统一”把所有业务塞进一个永久Workflow。
 
-## 11. 验证入口
+## 12. 验证入口
 
 ```bash
 pnpm test
@@ -252,6 +284,7 @@ pnpm test:e2e:planning-execution:real
 pnpm test:memory:memmy-response-drop
 pnpm test:e2e:memory-import:real
 pnpm test:e2e:memorycore:real
+pnpm test:e2e:project-intake:real
 ```
 
 普通质量门与真实付费/外部服务门必须分开运行；没有真实凭据时不得用fixture冒充真实完成证据。

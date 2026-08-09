@@ -235,3 +235,20 @@ Memory、项目管理和规则系统不能只凭抽象接口或模型直觉设�
 多个worktree共享固定端口，却各自保存PID登记，会让一个worktree留下的Chat孤儿进程在另一个worktree中被误判为未知占用者，最终把“一键F5”退化为人工找PID。固定端口登记必须由Git Common Directory锚定为仓库级运行投影。登记因旧方案或IDE强停而丢失时，可以自动收敛的充分条件不是“进程名叫node”，而是固定端口角色、角色命令签名、进程cwd和Git Common Directory四重一致；发信号前还要再次校验命令与启动时间。任何一项不成立都继续失败关闭，不能用`pkill`、端口号或模糊路径误杀其他应用。
 
 检查：另一个worktree留下无登记Chat服务后能否直接F5；换成相同端口上的其他仓库Node进程时是否仍拒绝清理；同一监听PID同时占服务端口和Inspector时是否只终止一次？
+## 36. Project Solution不能退化为阶段、任务和文档CRUD
+
+标签：`project`、`methodology`、`shape-up`、`bmad`、`domain-model`
+
+用户需要的是一套能管理、维护和推进多个真实项目的解决方案，而不是BMAD文件目录或几张项目管理表。设计前必须分别研究：Shape Up如何为小团队处理Shaping、Appetite、Iteration、Scope、未知和Circuit Breaker；BMAD如何处理软件Artifact、Story准备度、开发、QA与Correct Course；Basecamp/Linear/Things如何处理Project地点、负责人Update和个人Next Action。Chat在此基础上拥有Project、Stage Goal/Milestone、Iteration、Work/Scope/Action、Resource、Participant、Contribution、Decision、Evidence和Update等产品事实。
+
+Stage是长期发展阶段，Iteration是一次有限投入，Work是交付单元，Scope是执行中发现的结构，Action是具体待办；不能因为它们都“像任务”而合并。不同Method Profile选择需要的结构，小团队不强制六周，非软件和运维项目不强制BMAD Artifact或Iteration。每个设计概念必须经过多项目、小项目、棕地软件、非软件、运维、外部漂移和失败迭代场景验证。
+
+检查：方案是否能基于证据回答用户有哪些项目、阶段目标、当前Iteration、谁在做、改了什么、为什么决定、有哪些待办和下一步；还是只能展示几个状态字段？
+
+## 37. 项目进展、健康和完成必须由不同事实表达
+
+标签：`project`、`progress`、`health`、`evidence`、`candidate`
+
+Task完成比例不能代表Project进度，Git变化不能自动完成Work，Agent自述也不能成为verified Contribution。Project进展至少分为Stage/Milestone结果、Iteration边界、Scope未知度、Work/Action状态、负责人Project Update和真实Evidence。系统可以观察Resource、提示风险和起草Update，但健康判断由有责任的Participant发布；Stage、Iteration、Work和Project终态分别经过自己的Gate与Decision。
+
+检查：10个Task完成8个但核心未知未解时，系统是否仍明确显示风险；PR合并后是否只形成Observation/Contribution Candidate，而不会自动把Project标成完成？
