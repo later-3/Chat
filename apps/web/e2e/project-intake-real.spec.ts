@@ -125,7 +125,12 @@ test("真实Project Intake：对话建项→修改/并发确认→项目账本�
   await expect(
     page.getByText("用户完成PS1范围与方法边界确认", { exact: true }).first(),
   ).toBeVisible();
+  const observationResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" && response.url().endsWith("/observations"),
+  );
   await page.getByRole("button", { name: "刷新观察" }).click();
+  expect((await observationResponse).status()).toBe(201);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("tab", { name: "工作" }).click();
@@ -172,4 +177,5 @@ test("真实Project Intake：对话建项→修改/并发确认→项目账本�
     expect(serialized).not.toContain("providerName");
     expect(serialized).not.toContain("modelId");
   }
+  await page.unrouteAll({ behavior: "wait" });
 });
