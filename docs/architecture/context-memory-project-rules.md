@@ -229,7 +229,7 @@ Memory Import Command
 
 ## 8. 存储与迁移
 
-1. Product Store 每次增加新事实集合都升级显式 Schema 版本：M1 提供 v1 → v2，M2 提供 v2 → v3，R1 计划提供 v3 → v4；迁移必须确定性、可测试并有字节级失败保护，不让 Zod 默认值悄悄改写历史。
+1. Product Store 每次增加新事实集合都升级显式 Schema 版本：M1 提供 v1 → v2，M2 提供 v2 → v3，Project P1 计划提供 v3 → v4，R1 规则基础顺延为 v4 → v5；迁移必须确定性、可测试并有字节级失败保护，不让 Zod 默认值悄悄改写历史。
 2. 新集合仍使用 ID → Entity 映射；跨对象引用、revision、Hash 和状态机在启动时完整校验。
 3. Memory 服务数据库、Token、本地配置、Trace、E2E 数据和构建产物都在 `.gitignore` 范围内。
 4. 当前仍是单 API 写者 JSON Store，不宣称多实例；外部 Memory 调用不得发生在 Product Store `transact` 内。
