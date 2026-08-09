@@ -40,7 +40,7 @@ scope: Basecamp + Things + Linear + HEY Calendar + Microsoft Agent Feed + Heptab
 
 1. 事实来自冻结 worktree / commit 中的实际实现、自动化测试和浏览器路径；不是只读审计总结。
 2. QA 数字表示本轮实际运行的合同 / Sites 测试；浏览器结论包含桌面与移动主路径及控制台检查，但不宣称完整无障碍合规。
-3. Heptabase 当前已完成独立复核后的最终 QA，但尚未产生 freeze commit；在父任务冻结后把 `FREEZE_COMMIT_PENDING` 替换为精确提交，不能用工作树基点冒充 freeze。
+3. Heptabase 已完成独立复核后的最终 QA；共同 freeze 是 `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`，不能用工作树基点冒充 freeze。
 4. 本文只决定组合原型的事实输入，不改变生产 UI，也不把任何参考产品提升为 Chat 的产品事实源。
 
 ## 3. 精确证据账本
@@ -52,7 +52,7 @@ scope: Basecamp + Things + Linear + HEY Calendar + Microsoft Agent Feed + Heptab
 | Linear | `codex/linear-reference-v0.1` / `a74e088c0f7f1d04c653ae0a18c2487e0dff3879` | `/Users/xulater/Code/Chat-linear-reference-v01` | `docs/design/reference-implementations/linear` | 交互 `10/10` + Sites `4/4` = `14/14`；桌面 / 移动 console `0` |
 | HEY Calendar | `codex/hey-calendar-reference-v0.1` / `87596d433e120fa09c85484bd8591c1c6a4fdd30` | `/Users/xulater/Code/Chat-hey-calendar-reference-v01` | `docs/design/reference-implementations/hey-calendar` | 交互 `11/11` + Sites `4/4` = `15/15`；桌面 / 移动 console `0` |
 | Microsoft Agent Feed | `codex/microsoft-agent-feed-reference-v0.1` / `eed0aa0e4b9fec38fcf7e4eb6684a23e9897e8aa` | `/Users/xulater/Code/Chat-agent-feed-reference-v01` | `docs/design/reference-implementations/microsoft-agent-feed` | 交互 `15/15` + Sites `4/4` = `19/19`，build 通过；console `0`。当前 worktree HEAD `b65f061` 只含登记更新，原型目录相对 freeze 无 diff |
-| Heptabase | `codex/reference-prototype-combinations` / `FREEZE_COMMIT_PENDING` | `/Users/xulater/.codex/worktrees/b469/Chat` | `docs/design/reference-implementations/heptabase` | 模型 / UI `15/15` + Sites `4/4` + IAB browser gates `9/9` = `28/28`；CSS `391×844` 无横溢、启用控件 `<44px = 0`、console `0`；freeze pending |
+| Heptabase | `codex/reference-prototype-combinations` / `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb` | `/Users/xulater/.codex/worktrees/b469/Chat` | `docs/design/reference-implementations/heptabase` | 模型 / UI `15/15` + Sites `4/4` + IAB browser gates `9/9` = `28/28`；CSS `391×844` 无横溢、启用控件 `<44px = 0`、console `0`；frozen |
 
 对应审计入口：[`Basecamp`](./basecamp-interaction-audit-v0.1.md)、[`Things`](./things-today-interaction-audit-v0.1.md)、[`Linear`](./linear-interaction-audit-v0.1.md)、[`HEY Calendar`](./hey-calendar-interaction-audit-v0.1.md)、[`Microsoft Agent Feed`](./microsoft-agent-feed-interaction-audit-v0.1.md)、[`Heptabase`](./heptabase-interaction-audit-v0.1.md)。
 
@@ -295,6 +295,6 @@ Needs attention
 - Heptabase 实现：`docs/design/reference-implementations/heptabase`
 - 组合原型实现：`docs/design/combination-prototypes`
 - 本矩阵：`docs/design/references/reference-scenario-matrix-v0.1.md`
-- 共同 freeze commit：`FREEZE_COMMIT_PENDING`
+- 共同 freeze commit：`3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`
 
-父任务冻结后只替换精确 commit 与最终 QA 数字；如果实现偏离第 8、9 节，必须修改实现或重新打开组合决策，不能仅更新文字把偏离合理化。
+若后续实现偏离第 8、9 节，必须修改实现或重新打开组合决策，不能仅更新文字把偏离合理化。

@@ -107,7 +107,7 @@ main已完成真实规划—确认—执行、memmy查询/导入、Tencent Memor
 本节只冻结独立设计原型和下一任务输入，**没有修改生产 UI**。
 
 1. 唯一登记入口：[`docs/design/references/README.md`](./design/references/README.md)。6 × 7 事实场景矩阵：[`reference-scenario-matrix-v0.1.md`](./design/references/reference-scenario-matrix-v0.1.md)。
-2. 工作 branch：`codex/reference-prototype-combinations`；worktree：`/Users/xulater/.codex/worktrees/b469/Chat`；共同 freeze commit：`FREEZE_COMMIT_PENDING`。
+2. 工作 branch：`codex/reference-prototype-combinations`；worktree：`/Users/xulater/.codex/worktrees/b469/Chat`；共同 freeze commit：`3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`。
 3. Heptabase Workbench：`docs/design/reference-implementations/heptabase`；本轮 URL `http://127.0.0.1:4175/`；模型 / UI 合同 `15/15`、Sites `4/4`、仓库内 IAB browser E2E gates `9/9`，桌面 / 移动 console `0`、残余 `P0/P1/P2 = 0`。
 4. 组合原型：`docs/design/combination-prototypes`；本轮 URL 根 `http://127.0.0.1:4176/`；Project / Today / Workbench 精确 query 见统一登记入口。合同 `17/17`、Sites `4/4`；真实浏览器 6 个桌面 / 移动表面、10 条核心路径，`391 × 844` 无横溢出、无未命名 / 小于 44px 的启用控件、console `0`，残余 `P0/P1/P2 = 0`。
 5. 数量决定：冻结 3 套——Project Room（持续高上下文）、Today Rhythm（个人主动选择）、Evidence Workbench（中断式高风险监督）。2 套会混合互斥注意力合同；4 套会把 Resource / Evidence 从 Project 重复拆出。

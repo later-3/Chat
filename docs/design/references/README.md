@@ -13,7 +13,7 @@
 | Linear | List / Peek / Detail 三档阅读与负责人 Update | frozen；`14/14`、desktop / mobile console `0`；复用阻断 `1 P2` | branch `codex/linear-reference-v0.1` · commit `a74e088c0f7f1d04c653ae0a18c2487e0dff3879` · worktree `/Users/xulater/Code/Chat-linear-reference-v01` · `docs/design/reference-implementations/linear` | Take 渐进披露；Adapt Update 与 observed change；Refuse Issue 充当全部对象 |
 | HEY Calendar | Day / Week / Year 连续时间尺度与 source → candidate → conflict → commit | frozen / QA passed；`15/15`、desktop / mobile console `0`；`P0/P1/P2 = 0` | branch `codex/hey-calendar-reference-v0.1` · commit `87596d433e120fa09c85484bd8591c1c6a4fdd30` · worktree `/Users/xulater/Code/Chat-hey-calendar-reference-v01` · `docs/design/reference-implementations/hey-calendar` | Take 时间尺度与候选；Adapt Today 约束；Refuse Calendar 拥有 Project |
 | Microsoft Agent Feed | 多 Agent 类型化监督、人工介入、异常与 related record | frozen implementation / QA reopened；`19/19`、console `0`；当前 `2 P1 + 4 P2`，不得直接复用移动 grid 或通用 Undo | branch `codex/microsoft-agent-feed-reference-v0.1` · commit `eed0aa0e4b9fec38fcf7e4eb6684a23e9897e8aa` · worktree `/Users/xulater/Code/Chat-agent-feed-reference-v01` · `docs/design/reference-implementations/microsoft-agent-feed` | Take 风险优先 typed supervision；Adapt 权威对象返回；Refuse Feed 成为事实源、盲目 Retry / Undo |
-| Heptabase Workbench | canonical Card identity、Whiteboard placement、显式 AI context、资料编排复用 | freeze pending；模型 / UI 合同 `15/15` + Sites `4/4` + IAB browser E2E gates `9/9` = `28/28`；desktop / mobile console `0`；`P0/P1/P2 = 0` | branch `codex/reference-prototype-combinations` · commit `FREEZE_COMMIT_PENDING` · worktree `/Users/xulater/.codex/worktrees/b469/Chat` · `docs/design/reference-implementations/heptabase` · 本轮运行 `http://127.0.0.1:4175/` | Take identity × placement、context panel；Adapt 移动 Section outline、board-scoped permission；Refuse Canvas 默认首页、位置自动成为领域关系 |
+| Heptabase Workbench | canonical Card identity、Whiteboard placement、显式 AI context、资料编排复用 | frozen / QA passed；模型 / UI 合同 `15/15` + Sites `4/4` + IAB browser E2E gates `9/9` = `28/28`；desktop / mobile console `0`；`P0/P1/P2 = 0` | branch `codex/reference-prototype-combinations` · commit `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb` · worktree `/Users/xulater/.codex/worktrees/b469/Chat` · `docs/design/reference-implementations/heptabase` · 本轮运行 `http://127.0.0.1:4175/` | Take identity × placement、context panel；Adapt 移动 Section outline、board-scoped permission；Refuse Canvas 默认首页、位置自动成为领域关系 |
 
 完整 6 × 7 事实结论、已知 P1/P2 和引用证据统一见 [`reference-scenario-matrix-v0.1.md`](./reference-scenario-matrix-v0.1.md)。Heptabase 当前一手资料与 Take / Adapt / Refuse 见 [`heptabase-interaction-audit-v0.1.md`](./heptabase-interaction-audit-v0.1.md)。
 
@@ -29,14 +29,14 @@
 
 为什么不是 2 或 4 套：2 套会让个人主动选择的 Today 与系统中断式 Agent 风险争抢同一默认入口，或让监督 Feed 侵入 Project room；4 套会把 Resource Workbench 从 Project Room 重复拆出，造成同一 Project / Resource / Evidence 的双导航和归属冲突。完整推导见矩阵第 7～9 节。
 
-组合实现位于 `docs/design/combination-prototypes`，branch `codex/reference-prototype-combinations`，共同 freeze commit `FREEZE_COMMIT_PENDING`。自动化合同 `17/17` + Sites `4/4` = `21/21`；真实浏览器覆盖 6 个桌面 / 移动表面、10 条核心路径，`391 × 844` 横向溢出 `0`、未命名控件 `0`、小于 `44px` 的启用控件 `0`、console `0`，残余 `P0/P1/P2 = 0`。视觉证据见 [`../combination-prototypes/design-qa.md`](../combination-prototypes/design-qa.md)。
+组合实现位于 `docs/design/combination-prototypes`，branch `codex/reference-prototype-combinations`，共同 freeze commit `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`。自动化合同 `17/17` + Sites `4/4` = `21/21`；真实浏览器覆盖 6 个桌面 / 移动表面、10 条核心路径，`391 × 844` 横向溢出 `0`、未命名控件 `0`、小于 `44px` 的启用控件 `0`、console `0`，残余 `P0/P1/P2 = 0`。视觉证据见 [`../combination-prototypes/design-qa.md`](../combination-prototypes/design-qa.md)。
 
 ## 任务 2 稳定输入
 
 - 任务：`019fe738-1b0d-70e3-932c-cdad3b702124`（“实现 Chat 多套可运行原型”）
 - 任务 worktree：`/Users/xulater/.codex/worktrees/35f2/Chat`
 - 稳定 branch：`codex/reference-prototype-combinations`
-- freeze commit：`FREEZE_COMMIT_PENDING`
+- freeze commit：`3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`
 - 必读输入：本登记册、[`reference-scenario-matrix-v0.1.md`](./reference-scenario-matrix-v0.1.md)、[`../combination-prototypes/README.md`](../combination-prototypes/README.md)、[`../combination-prototypes/design-qa.md`](../combination-prototypes/design-qa.md)
 - 稳定实现路径：`docs/design/reference-implementations/heptabase`、`docs/design/combination-prototypes`、`docs/design/screenshots/heptabase`、`docs/design/screenshots/combinations`
 - 依赖规则：只复用冻结对象 / 交互 / token，不继承矩阵第 6.3 节列出的参考原型 P1/P2；不修改生产 UI，除非任务 2 获得单独授权。
@@ -110,5 +110,5 @@
 
 1. UL0 已于 2026-08-08 整体通过；Take / Adapt / Refuse 作为 UI Lab 的批准输入。
 2. UL1、6 个参考原型与 6 × 7 事实矩阵已经完成；冻结实现分别按登记册中的 branch / commit 恢复。
-3. Heptabase Workbench 与 3 套组合原型已通过自动化、真实浏览器、响应式、控制台和同屏视觉 QA；共同 freeze commit 在本任务最终提交后写回本入口。
+3. Heptabase Workbench 与 3 套组合原型已通过自动化、真实浏览器、响应式、控制台和同屏视觉 QA；共同 freeze commit 已写回本入口。
 4. 下一任务只能把上述 freeze 当作设计输入；是否改生产 UI、怎样进入正式对象 / 权限 / Product Store 合同，必须由任务 2 自己的授权和任务书决定。
