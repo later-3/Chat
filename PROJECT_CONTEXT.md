@@ -62,7 +62,10 @@ Chat 是一个以对话为入口、由用户持续看护、能够长期推进工
 | Product Session | 用户可打开、恢复和归档的协作容器 |
 | Interaction | 围绕一次用户输入发生的完整交互 |
 | Message | 已提交的用户、Assistant或Tool可见消息 |
-| Project / Work / Action | 长期目标、持续工作与明确下一行动 |
+| Project / Stage / Iteration | 长期目标、阶段性结果与一次有限投入承诺 |
+| Work / Scope / Action | 可交付工作、执行中发现的结构与明确下一行动 |
+| Participant / Contribution / Decision | 谁在做、改了什么以及为什么这样决定 |
+| Resource / Observation / Evidence | 真实代码、文档、脚本、服务及其可验证状态 |
 | Context Package | 本次被采用、排除和裁剪的版本化上下文 |
 | Workflow Definition | 用户可选择的版本化执行图 |
 | Product Run | 用户长期看到的一次执行事实 |
@@ -93,7 +96,7 @@ Chat 是一个以对话为入口、由用户持续看护、能够长期推进工
 目标产品覆盖：
 
 1. Web/PWA连续对话、会话、搜索、分支和恢复。
-2. Project、Work、Plan、Action、Note与Context。
+2. Project、Stage/Milestone、Iteration、Work/Scope/Action、Resource、Participant、Contribution、Decision、Plan、Evidence与Context。
 3. Workflow选择、DIY、图/Loop、节点配置与运行看护。
 4. HITL、审批策略、Tool治理、取消、重试、恢复和结果未知处置。
 5. 文件、Markdown、HTML、Artifact、Evidence和未来Canvas。
