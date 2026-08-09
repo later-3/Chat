@@ -47,7 +47,7 @@ Year → all-day / multi-day seasonal overview
 | 8 | composer 下方日程 Peek | 查看当天时间线并拖动新事件调整时间 | `D` | 创建与冲突判断同屏，避免往返 Calendar |
 | 9 | Calendar 选择 | Event 自动使用所属 Calendar 的颜色 | `D` | 颜色稳定表达来源，避免任意涂色 |
 | 10 | Day name / background / circle | 给某一天命名、加图或圈出 | `D` | 让时间具有记忆点，但不改事件事实 |
-| 11 | Journal / `K` | 在 Day 打开当天 Journal；输入自动保存 | `D` | 日历不仅记录承诺，也容纳围绕一天的上下文 |
+| 11 | Journal / `J` | 在 Day 打开当天 Journal；输入自动保存 | `D` | 日历不仅记录承诺，也容纳围绕一天的上下文 |
 | 12 | Habits | 配置名称、图标、颜色；Day / Week 显示完成轨迹 | `D` | 重复实践进入时间视图，但与 Event 分型 |
 | 13 | Search / `S` | 搜索 Event、Sometime、Journal、Time Tracking；隐藏 Calendar 同时隐藏其结果 | `D` | 搜索尊重当前可见范围，Today 分隔过去与未来 |
 

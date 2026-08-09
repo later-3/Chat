@@ -156,6 +156,7 @@ rights: external-reference / link-only unless marked own-work
 - **Refuse**：桌面横向时间轴原样搬到手机；用 emoji 代替事件语义；让视觉趣味降低扫描效率。
 - **映射**：Today 日历、Agent 计划与人的时间冲突、运行窗口。
 - **深审计**：[HEY Calendar 交互审计 v0.1](./hey-calendar-interaction-audit-v0.1.md)。
+- **可运行参考**：[HEY Calendar 场景覆盖与冻结记录 v0.1](./hey-calendar-scenario-coverage-v0.1.md)；实现位于 `docs/design/reference-implementations/hey-calendar/`。
 - **来源**：[HEY Calendar Overview](https://help.hey.com/article/800-calendar-overview)，`external-reference / link-only`。
 
 ### R11 · Kinopio — 局部不规则让空间有手感
