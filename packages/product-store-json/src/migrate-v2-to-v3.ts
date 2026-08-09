@@ -23,8 +23,8 @@ import {
   runAttemptSchema,
   runContextRequestSchema,
   validationResultSchema,
-  type ProductSnapshot,
 } from "@chat/contracts";
+import type { ProductSnapshotV3 } from "./migrate-v3-to-v4.js";
 
 /** v2 的 Outbox 允许可选 Decision 字段；v3 迁移后收窄为 kind 判别联合。 */
 const legacyEntityFields = {
@@ -88,8 +88,8 @@ export const productSnapshotV2Schema = z
 
 export type ProductSnapshotV2 = z.infer<typeof productSnapshotV2Schema>;
 
-export function migrateProductSnapshotV2ToV3(snapshot: ProductSnapshotV2): ProductSnapshot {
-  const migratedOutbox: ProductSnapshot["outbox"] = {};
+export function migrateProductSnapshotV2ToV3(snapshot: ProductSnapshotV2): ProductSnapshotV3 {
+  const migratedOutbox: ProductSnapshotV3["outbox"] = {};
   for (const [outboxId, entry] of Object.entries(snapshot.outbox)) {
     if (entry.kind === "workflow_start") {
       migratedOutbox[outboxId] = {

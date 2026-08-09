@@ -16,6 +16,10 @@ import {
   hashCanonical,
   resolveMemoryImportContent,
   validateExecutionCandidate,
+  assertProjectWorkGraph,
+  computeProjectCandidateSha256,
+  computeProjectMethodSnapshotSha256,
+  computeProjectObservationSha256,
 } from "@chat/domain";
 
 /**
@@ -38,6 +42,7 @@ export function assertSnapshotIntegrity(snapshot: ProductSnapshot): void {
   assertPlansAndReviews(snapshot, fail);
   assertLongTermContext(snapshot, fail);
   assertMemoryImports(snapshot, fail);
+  assertProjects(snapshot, fail);
   assertExecution(snapshot, fail);
   assertReceiptsAndOutbox(snapshot, fail);
 
@@ -80,6 +85,18 @@ function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
     ["contextPackage", snapshot.entities.contextPackages, "contextPackageId"],
     ["memoryImportIntent", snapshot.entities.memoryImportIntents, "memoryImportIntentId"],
     ["memoryImportResult", snapshot.entities.memoryImportResults, "memoryImportResultId"],
+    ["project", snapshot.entities.projects, "projectId"],
+    ["projectMethod", snapshot.entities.projectMethodSnapshots, "projectMethodSnapshotId"],
+    ["projectStage", snapshot.entities.projectStages, "projectStageId"],
+    ["projectResource", snapshot.entities.projectResources, "projectResourceId"],
+    ["projectParticipant", snapshot.entities.projectParticipants, "projectParticipantId"],
+    ["projectWork", snapshot.entities.projectWorks, "projectWorkId"],
+    ["projectAction", snapshot.entities.projectActions, "projectActionId"],
+    ["projectContribution", snapshot.entities.projectContributions, "projectContributionId"],
+    ["projectEvidence", snapshot.entities.projectEvidence, "projectEvidenceId"],
+    ["projectDecision", snapshot.entities.projectDecisions, "projectDecisionId"],
+    ["projectObservation", snapshot.entities.projectObservations, "projectObservationId"],
+    ["projectCandidate", snapshot.entities.projectCandidates, "projectCandidateId"],
     ["receipt", snapshot.commandReceipts, "commandId"],
     ["outbox", snapshot.outbox, "outboxId"],
   ] as const;
@@ -88,6 +105,170 @@ function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
       if ((entity as unknown as Record<string, string>)[idField] !== key) {
         fail(`${label} Map键${key}与${idField}不一致`);
       }
+    }
+  }
+}
+
+function assertProjects(snapshot: ProductSnapshot, fail: Fail): void {
+  const { entities } = snapshot;
+  for (const project of Object.values(entities.projects)) {
+    const method = entities.projectMethodSnapshots[project.methodSnapshotId];
+    const stage = entities.projectStages[project.currentStageId];
+    if (method?.projectId !== project.projectId || stage?.projectId !== project.projectId) {
+      fail(`project ${project.projectId} Method/Stage绑定不一致`);
+    }
+  }
+  for (const method of Object.values(entities.projectMethodSnapshots)) {
+    if (entities.projects[method.projectId] === undefined)
+      fail(`projectMethod ${method.projectMethodSnapshotId} 悬空Project`);
+    if (
+      computeProjectMethodSnapshotSha256({
+        profileId: method.profileId,
+        rationale: method.rationale,
+        policies: method.policies,
+      }) !== method.sha256
+    ) {
+      fail(`projectMethod ${method.projectMethodSnapshotId} Hash不一致`);
+    }
+  }
+  for (const stage of Object.values(entities.projectStages)) {
+    if (entities.projects[stage.projectId] === undefined)
+      fail(`projectStage ${stage.projectStageId} 悬空Project`);
+  }
+  for (const resource of Object.values(entities.projectResources)) {
+    if (entities.projects[resource.projectId] === undefined)
+      fail(`projectResource ${resource.projectResourceId} 悬空Project`);
+  }
+  for (const participant of Object.values(entities.projectParticipants)) {
+    const project = entities.projects[participant.projectId];
+    if (project === undefined)
+      fail(`projectParticipant ${participant.projectParticipantId} 悬空Project`);
+    if (participant.principalId !== undefined && participant.kind !== "human") {
+      fail(`projectParticipant ${participant.projectParticipantId} 非human不允许principalId`);
+    }
+  }
+  try {
+    const worksByProject = new Map<string, (typeof entities.projectWorks)[string][]>();
+    for (const work of Object.values(entities.projectWorks)) {
+      const group = worksByProject.get(work.projectId) ?? [];
+      group.push(work);
+      worksByProject.set(work.projectId, group);
+    }
+    for (const works of worksByProject.values()) assertProjectWorkGraph(works);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+  for (const work of Object.values(entities.projectWorks)) {
+    const stage = entities.projectStages[work.stageId];
+    const owner = entities.projectParticipants[work.ownerParticipantId];
+    if (stage?.projectId !== work.projectId || owner?.projectId !== work.projectId) {
+      fail(`projectWork ${work.projectWorkId} Stage/Owner绑定不一致`);
+    }
+  }
+  for (const action of Object.values(entities.projectActions)) {
+    const work = entities.projectWorks[action.workId];
+    const owner = entities.projectParticipants[action.ownerParticipantId];
+    if (work?.projectId !== action.projectId || owner?.projectId !== action.projectId) {
+      fail(`projectAction ${action.projectActionId} Work/Owner绑定不一致`);
+    }
+    if ((action.status === "blocked") !== (action.blockedReason !== undefined)) {
+      fail(`projectAction ${action.projectActionId} blockedReason不一致`);
+    }
+    for (const evidenceId of action.completedEvidenceIds) {
+      if (entities.projectEvidence[evidenceId]?.projectId !== action.projectId) {
+        fail(`projectAction ${action.projectActionId} Evidence绑定不一致`);
+      }
+    }
+  }
+  for (const evidence of Object.values(entities.projectEvidence)) {
+    if (entities.projects[evidence.projectId] === undefined)
+      fail(`projectEvidence ${evidence.projectEvidenceId} 悬空Project`);
+    if (
+      evidence.resourceId !== undefined &&
+      entities.projectResources[evidence.resourceId]?.projectId !== evidence.projectId
+    ) {
+      fail(`projectEvidence ${evidence.projectEvidenceId} Resource绑定不一致`);
+    }
+  }
+  for (const observation of Object.values(entities.projectObservations)) {
+    if (entities.projectResources[observation.resourceId]?.projectId !== observation.projectId) {
+      fail(`projectObservation ${observation.projectObservationId} Resource绑定不一致`);
+    }
+    if (computeProjectObservationSha256(observation.data) !== observation.sha256) {
+      fail(`projectObservation ${observation.projectObservationId} Hash不一致`);
+    }
+    if (observation.previousObservationId !== undefined) {
+      const previous = entities.projectObservations[observation.previousObservationId];
+      if (
+        previous?.resourceId !== observation.resourceId ||
+        previous.observedAt >= observation.observedAt
+      ) {
+        fail(`projectObservation ${observation.projectObservationId} 前序Observation无效`);
+      }
+    }
+  }
+  for (const contribution of Object.values(entities.projectContributions)) {
+    if (
+      entities.projectParticipants[contribution.participantId]?.projectId !== contribution.projectId
+    ) {
+      fail(`projectContribution ${contribution.projectContributionId} Participant绑定不一致`);
+    }
+    if (contribution.evidenceStatus === "verified" && contribution.evidenceIds.length === 0) {
+      fail(`projectContribution ${contribution.projectContributionId} verified缺少Evidence`);
+    }
+    if (
+      contribution.evidenceIds.some(
+        (id) => entities.projectEvidence[id]?.projectId !== contribution.projectId,
+      )
+    ) {
+      fail(`projectContribution ${contribution.projectContributionId} Evidence绑定不一致`);
+    }
+  }
+  for (const decision of Object.values(entities.projectDecisions)) {
+    const project = entities.projects[decision.projectId];
+    if (
+      project === undefined ||
+      entities.projectParticipants[decision.decidedByParticipantId]?.projectId !==
+        decision.projectId
+    ) {
+      fail(`projectDecision ${decision.projectDecisionId} Project/Participant绑定不一致`);
+    }
+    if (decision.boundProjectRevision > project.revision)
+      fail(`projectDecision ${decision.projectDecisionId} 绑定未来revision`);
+  }
+  for (const candidate of Object.values(entities.projectCandidates)) {
+    const session = entities.sessions[candidate.sessionId];
+    const message = entities.messages[candidate.sourceMessageId];
+    if (
+      session?.ownerPrincipalId !== candidate.requestedByPrincipalId ||
+      message?.sessionId !== candidate.sessionId ||
+      message.role !== "user"
+    ) {
+      fail(`projectCandidate ${candidate.projectCandidateId} Session/Message绑定不一致`);
+    }
+    if (candidate.status === "under_review" || candidate.status === "confirmed") {
+      if (
+        computeProjectObservationSha256(candidate.observationData) !== candidate.observationSha256
+      ) {
+        fail(`projectCandidate ${candidate.projectCandidateId} Observation Hash不一致`);
+      }
+      if (
+        computeProjectCandidateSha256({
+          proposal: candidate.proposal,
+          observationSha256: candidate.observationSha256,
+          sourceMessageId: candidate.sourceMessageId,
+          rootId: candidate.rootId,
+          enabledAdapters: candidate.enabledAdapters,
+        }) !== candidate.candidateSha256
+      ) {
+        fail(`projectCandidate ${candidate.projectCandidateId} Candidate Hash不一致`);
+      }
+    }
+    if (
+      candidate.status === "confirmed" &&
+      entities.projects[candidate.confirmedProjectId] === undefined
+    ) {
+      fail(`projectCandidate ${candidate.projectCandidateId} 悬空confirmedProjectId`);
     }
   }
 }
@@ -1377,6 +1558,15 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
       "memoryImportResultId",
       "recoveryOutboxId",
     ],
+    BeginProjectIntake: ["projectCandidateId", "messageId"],
+    PrepareProjectCandidateForReview: ["projectCandidateId"],
+    CreateProjectAction: ["projectId", "projectActionId"],
+    AssignProjectAction: ["projectId"],
+    TransitionProjectAction: ["projectId"],
+    SetProjectArchiveStatus: ["projectId"],
+    RecordProjectDecision: ["projectId", "projectDecisionId"],
+    RecordProjectContribution: ["projectId", "projectContributionId"],
+    ObserveProjectResource: ["projectId", "projectObservationId"],
   };
   for (const receipt of receipts) {
     if (
@@ -1390,7 +1580,11 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
         ? receipt.resultRefs["approvalExpired"] === "true"
           ? ["approvalExpired", "productRunId"]
           : ["decisionId", "productRunId"]
-        : receiptShapes[receipt.commandType];
+        : receipt.commandType === "DecideProjectCandidate"
+          ? receipt.resultRefs["projectId"] === undefined
+            ? ["projectCandidateId"]
+            : ["projectCandidateId", "projectId"]
+          : receiptShapes[receipt.commandType];
     if (expectedKeys === undefined) fail(`receipt ${receipt.commandId} commandType未知`);
     const actualKeys = Object.keys(receipt.resultRefs).sort();
     if (JSON.stringify(actualKeys) !== JSON.stringify([...expectedKeys].sort())) {
@@ -1430,13 +1624,28 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
                                       ? entities.memoryImportResults[value] !== undefined
                                       : key === "outboxId" || key === "recoveryOutboxId"
                                         ? snapshot.outbox[value] !== undefined
-                                        : key === "messageSha256"
-                                          ? /^[a-f0-9]{64}$/.test(value)
-                                          : key === "approvalExpired"
-                                            ? value === "true"
-                                            : key === "status"
-                                              ? value === "expired" || value === "already_decided"
-                                              : false;
+                                        : key === "projectId"
+                                          ? entities.projects[value] !== undefined
+                                          : key === "projectCandidateId"
+                                            ? entities.projectCandidates[value] !== undefined
+                                            : key === "projectActionId"
+                                              ? entities.projectActions[value] !== undefined
+                                              : key === "projectDecisionId"
+                                                ? entities.projectDecisions[value] !== undefined
+                                                : key === "projectContributionId"
+                                                  ? entities.projectContributions[value] !==
+                                                    undefined
+                                                  : key === "projectObservationId"
+                                                    ? entities.projectObservations[value] !==
+                                                      undefined
+                                                    : key === "messageSha256"
+                                                      ? /^[a-f0-9]{64}$/.test(value)
+                                                      : key === "approvalExpired"
+                                                        ? value === "true"
+                                                        : key === "status"
+                                                          ? value === "expired" ||
+                                                            value === "already_decided"
+                                                          : false;
       if (!exists) fail(`receipt ${receipt.commandId} 的${key}引用无效`);
     }
     if (receipt.commandType === "SubmitUserMessage") {
@@ -1503,6 +1712,13 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
     }
   }
   for (const entry of Object.values(snapshot.outbox)) {
+    if (entry.kind === "project_intake_start" || entry.kind === "project_intake_resume") {
+      const candidate = entities.projectCandidates[entry.projectCandidateId];
+      if (candidate === undefined || entry.expectedCandidateRevision > candidate.revision) {
+        fail(`outbox ${entry.outboxId} Project Intake绑定不完整`);
+      }
+      continue;
+    }
     if (entry.kind === "workflow_start" || entry.kind === "workflow_resume") {
       if (entities.runs[entry.productRunId] === undefined) {
         fail(`outbox ${entry.outboxId} 悬空productRunId`);

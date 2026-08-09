@@ -454,8 +454,8 @@ describe("M3真实前端闭环", () => {
     const user = userEvent.setup();
     renderReal();
 
-    // 输入并发送（模型标签固定为真实百炼文案，不提供模型选择）
-    expect((await screen.findByLabelText("当前模型")).textContent).toContain("百炼 Qwen3.7 Plus");
+    // 产品界面不绑定Provider/模型；真实模型由服务端Profile配置并在E2E取证。
+    expect((await screen.findByLabelText("模型配置")).textContent).toContain("服务端配置");
     await user.type(screen.getByLabelText("消息输入框"), "根据项目进展生成周报");
     await user.click(screen.getByRole("button", { name: "发送" }));
     await waitFor(() => expect(state.submitCalls).toHaveLength(1));

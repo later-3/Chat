@@ -143,6 +143,8 @@
         "--import",
         "${workspaceFolder}/scripts/load-env.mjs",
         "--import",
+        "${workspaceFolder}/scripts/debug/load-provider-env.mjs",
+        "--import",
         "${workspaceFolder}/scripts/debug/load-memorycore-debug-env.mjs",
         "--import",
         "${workspaceFolder}/scripts/debug/register-process.mjs",

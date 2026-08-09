@@ -22,6 +22,7 @@ import {
   commitMemoryImportFailedRequestSchema,
   commitMemoryImportOutcomeUnknownRequestSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
+  prepareProjectCandidateRequestSchema,
   type ProblemDetail,
   type RequestId,
 } from "@chat/contracts";
@@ -49,6 +50,7 @@ import {
   commitMemoryImportMaterialized,
   commitMemoryImportFailed,
   commitMemoryImportOutcomeUnknown,
+  prepareProjectCandidateForReview,
   type ApplicationDeps,
 } from "@chat/application";
 
@@ -181,6 +183,18 @@ export function createInternalRuntimeRouter(
     }
     await next();
   });
+
+  router.post(
+    "/prepare-project-candidate",
+    handle(200, async (c) => {
+      const request = prepareProjectCandidateRequestSchema.parse(await parseInternalBody(c));
+      return prepareProjectCandidateForReview(options.deps, {
+        commandId: request.commandId,
+        projectCandidateId: request.projectCandidateId,
+        expectedRevision: request.expectedRevision,
+      });
+    }),
+  );
 
   router.post(
     "/begin-planning-context",

@@ -11,6 +11,8 @@ export * from "./command.js";
 export * from "./query.js";
 export * from "./service-status.js";
 export * from "./product-api.js";
+export type { ProjectIntakeProposal } from "./project.js";
+export * from "./project-api.js";
 export { memoryBackendIdSchema, type MemoryBackendId } from "./ids.js";
 export {
   memoryContextSelectionSchema,

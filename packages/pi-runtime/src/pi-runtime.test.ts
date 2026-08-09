@@ -16,6 +16,11 @@ import {
 } from "./executor.js";
 import { classifyProviderError } from "./errors.js";
 import { loadBailianConfig, isBailianReady, BailianConfigError } from "./config.js";
+import {
+  buildProjectModel,
+  loadProjectModelProfile,
+  ProjectModelProfileError,
+} from "./project-model-profile.js";
 
 /**
  * pi Adapter确定性测试：真实pi Agent loop + faux流。
@@ -636,6 +641,32 @@ describe("runPiExecutor（真实pi Agent loop + faux流）", () => {
 });
 
 describe("Provider配置与错误归一化", () => {
+  it("Project Model Profile可仅通过服务端配置替换Provider和模型", () => {
+    const profile = loadProjectModelProfile({
+      CHAT_PROJECT_MODEL_PROVIDER: "example",
+      CHAT_PROJECT_MODEL_ID: "model-v2",
+      CHAT_PROJECT_MODEL_DISPLAY_NAME: "Example Model V2",
+      CHAT_PROJECT_MODEL_PROFILE_VERSION: "example.model-v2.v1",
+      CHAT_PROJECT_MODEL_BASE_URL: "https://models.example.com/v1",
+      CHAT_PROJECT_MODEL_API_KEY_ENV: "EXAMPLE_API_KEY",
+      EXAMPLE_API_KEY: "secret",
+    });
+    expect(profile).toMatchObject({
+      providerName: "example",
+      modelId: "model-v2",
+      endpointHost: "models.example.com",
+      apiKey: "secret",
+    });
+    expect(buildProjectModel(profile)).toMatchObject({
+      provider: "example",
+      id: "model-v2",
+      baseUrl: "https://models.example.com/v1",
+    });
+    expect(() =>
+      loadProjectModelProfile({ CHAT_PROJECT_MODEL_BASE_URL: "http://models.example.com/v1" }),
+    ).toThrow(ProjectModelProfileError);
+  });
+
   it("Base URL必须是HTTPS且符合百炼域名合同", () => {
     expect(() =>
       loadBailianConfig({ DASHSCOPE_BASE_URL: "http://dashscope.aliyuncs.com/v1" }),

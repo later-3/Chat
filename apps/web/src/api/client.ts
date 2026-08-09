@@ -31,6 +31,33 @@ import {
   type SubmitMessagePayload,
   type CreateMemoryImportPayload,
   type MemoryImportDto,
+  beginProjectIntakePayloadSchema,
+  projectCandidateDecisionPayloadSchema,
+  projectCandidateDtoSchema,
+  currentProjectCandidateResponseSchema,
+  createProjectActionPayloadSchema,
+  assignProjectActionPayloadSchema,
+  transitionProjectActionPayloadSchema,
+  recordProjectDecisionPayloadSchema,
+  recordProjectContributionPayloadSchema,
+  setProjectArchiveStatusPayloadSchema,
+  projectRootDtoSchema,
+  projectSummaryDtoSchema,
+  projectWorkspaceDtoSchema,
+  projectTimelineItemDtoSchema,
+  type BeginProjectIntakePayload,
+  type ProjectCandidateDecisionPayload,
+  type ProjectCandidateDto,
+  type ProjectRootDto,
+  type ProjectSummaryDto,
+  type ProjectWorkspaceDto,
+  type ProjectTimelineItemDto,
+  type CreateProjectActionPayload,
+  type AssignProjectActionPayload,
+  type TransitionProjectActionPayload,
+  type RecordProjectDecisionPayload,
+  type RecordProjectContributionPayload,
+  type SetProjectArchiveStatusPayload,
 } from "@chat/contracts/public";
 import { z } from "zod";
 
@@ -54,6 +81,16 @@ const memoryImportsResponseSchema = z
     memoryImports: z.array(memoryImportDtoSchema).max(100),
     nextCursor: z.string().optional(),
   })
+  .strict();
+const projectRootsResponseSchema = z.object({ roots: z.array(projectRootDtoSchema) }).strict();
+const projectCandidateResponseSchema = z.object({ candidate: projectCandidateDtoSchema }).strict();
+const projectDecisionResponseSchema = z
+  .object({ candidate: projectCandidateDtoSchema, project: projectWorkspaceDtoSchema.optional() })
+  .strict();
+const projectsResponseSchema = z.object({ projects: z.array(projectSummaryDtoSchema) }).strict();
+const projectWorkspaceResponseSchema = z.object({ project: projectWorkspaceDtoSchema }).strict();
+const projectTimelineResponseSchema = z
+  .object({ items: z.array(projectTimelineItemDtoSchema) })
   .strict();
 
 /**
@@ -274,5 +311,191 @@ export function apiReconcileMemoryImport(input: {
       payload: {},
     }),
     (json) => memoryImportResponseSchema.parse(json).memoryImport,
+  );
+}
+
+export function apiGetProjectRoots(): Promise<ProjectRootDto[]> {
+  return get("/api/project-roots", (json) => projectRootsResponseSchema.parse(json).roots);
+}
+
+export function apiBeginProjectIntake(input: {
+  commandId: CommandId;
+  payload: BeginProjectIntakePayload;
+}): Promise<ProjectCandidateDto> {
+  return post(
+    "/api/project-intakes",
+    commandEnvelopeSchema.parse({
+      commandId: input.commandId,
+      payload: beginProjectIntakePayloadSchema.parse(input.payload),
+    }),
+    (json) => projectCandidateResponseSchema.parse(json).candidate,
+  );
+}
+
+export function apiGetProjectCandidate(projectCandidateId: string): Promise<ProjectCandidateDto> {
+  return get(
+    `/api/project-candidates/${encodeURIComponent(projectCandidateId)}`,
+    (json) => projectCandidateResponseSchema.parse(json).candidate,
+  );
+}
+
+export function apiGetCurrentProjectCandidate(
+  sessionId: string,
+): Promise<ReturnType<typeof currentProjectCandidateResponseSchema.parse>> {
+  return get(`/api/sessions/${encodeURIComponent(sessionId)}/project-candidates/current`, (json) =>
+    currentProjectCandidateResponseSchema.parse(json),
+  );
+}
+
+export function apiDecideProjectCandidate(input: {
+  projectCandidateId: string;
+  commandId: CommandId;
+  expectedRevision: number;
+  payload: ProjectCandidateDecisionPayload;
+}): Promise<{ candidate: ProjectCandidateDto; project?: ProjectWorkspaceDto }> {
+  return post(
+    `/api/project-candidates/${encodeURIComponent(input.projectCandidateId)}/decisions`,
+    commandEnvelopeSchema.parse({
+      commandId: input.commandId,
+      expectedRevision: input.expectedRevision,
+      payload: projectCandidateDecisionPayloadSchema.parse(input.payload),
+    }),
+    (json) => {
+      const body = projectDecisionResponseSchema.parse(json);
+      return body.project === undefined
+        ? { candidate: body.candidate }
+        : { candidate: body.candidate, project: body.project };
+    },
+  );
+}
+
+export function apiListProjects(): Promise<ProjectSummaryDto[]> {
+  return get("/api/projects", (json) => projectsResponseSchema.parse(json).projects);
+}
+
+export function apiGetProject(projectId: string): Promise<ProjectWorkspaceDto> {
+  return get(
+    `/api/projects/${encodeURIComponent(projectId)}`,
+    (json) => projectWorkspaceResponseSchema.parse(json).project,
+  );
+}
+
+export function apiGetProjectTimeline(projectId: string): Promise<ProjectTimelineItemDto[]> {
+  return get(
+    `/api/projects/${encodeURIComponent(projectId)}/timeline`,
+    (json) => projectTimelineResponseSchema.parse(json).items,
+  );
+}
+
+export function apiCreateProjectAction(input: {
+  projectId: string;
+  commandId: CommandId;
+  payload: CreateProjectActionPayload;
+}): Promise<ProjectWorkspaceDto> {
+  return post(
+    `/api/projects/${encodeURIComponent(input.projectId)}/actions`,
+    commandEnvelopeSchema.parse({
+      commandId: input.commandId,
+      payload: createProjectActionPayloadSchema.parse(input.payload),
+    }),
+    (json) => projectWorkspaceResponseSchema.parse(json).project,
+  );
+}
+
+export function apiAssignProjectAction(input: {
+  actionId: string;
+  commandId: CommandId;
+  expectedRevision: number;
+  payload: AssignProjectActionPayload;
+}): Promise<ProjectWorkspaceDto> {
+  return post(
+    `/api/project-actions/${encodeURIComponent(input.actionId)}/assignments`,
+    commandEnvelopeSchema.parse({
+      commandId: input.commandId,
+      expectedRevision: input.expectedRevision,
+      payload: assignProjectActionPayloadSchema.parse(input.payload),
+    }),
+    (json) => projectWorkspaceResponseSchema.parse(json).project,
+  );
+}
+
+export function apiTransitionProjectAction(input: {
+  actionId: string;
+  commandId: CommandId;
+  expectedRevision: number;
+  payload: TransitionProjectActionPayload;
+}): Promise<ProjectWorkspaceDto> {
+  return post(
+    `/api/project-actions/${encodeURIComponent(input.actionId)}/transitions`,
+    commandEnvelopeSchema.parse({
+      commandId: input.commandId,
+      expectedRevision: input.expectedRevision,
+      payload: transitionProjectActionPayloadSchema.parse(input.payload),
+    }),
+    (json) => projectWorkspaceResponseSchema.parse(json).project,
+  );
+}
+
+export function apiObserveProjectResource(input: {
+  projectId: string;
+  resourceId: string;
+  commandId: CommandId;
+}): Promise<ProjectWorkspaceDto> {
+  return post(
+    `/api/projects/${encodeURIComponent(input.projectId)}/observations`,
+    commandEnvelopeSchema.parse({
+      commandId: input.commandId,
+      payload: { resourceId: input.resourceId },
+    }),
+    (json) => projectWorkspaceResponseSchema.parse(json).project,
+  );
+}
+
+export function apiRecordProjectDecision(input: {
+  projectId: string;
+  commandId: CommandId;
+  expectedRevision: number;
+  payload: RecordProjectDecisionPayload;
+}): Promise<ProjectWorkspaceDto> {
+  return post(
+    `/api/projects/${encodeURIComponent(input.projectId)}/decision-candidates`,
+    commandEnvelopeSchema.parse({
+      commandId: input.commandId,
+      expectedRevision: input.expectedRevision,
+      payload: recordProjectDecisionPayloadSchema.parse(input.payload),
+    }),
+    (json) => projectWorkspaceResponseSchema.parse(json).project,
+  );
+}
+
+export function apiRecordProjectContribution(input: {
+  projectId: string;
+  commandId: CommandId;
+  payload: RecordProjectContributionPayload;
+}): Promise<ProjectWorkspaceDto> {
+  return post(
+    `/api/projects/${encodeURIComponent(input.projectId)}/contribution-candidates`,
+    commandEnvelopeSchema.parse({
+      commandId: input.commandId,
+      payload: recordProjectContributionPayloadSchema.parse(input.payload),
+    }),
+    (json) => projectWorkspaceResponseSchema.parse(json).project,
+  );
+}
+
+export function apiSetProjectArchiveStatus(input: {
+  projectId: string;
+  commandId: CommandId;
+  expectedRevision: number;
+  payload: SetProjectArchiveStatusPayload;
+}): Promise<ProjectWorkspaceDto> {
+  return post(
+    `/api/projects/${encodeURIComponent(input.projectId)}/archive-status`,
+    commandEnvelopeSchema.parse({
+      commandId: input.commandId,
+      expectedRevision: input.expectedRevision,
+      payload: setProjectArchiveStatusPayloadSchema.parse(input.payload),
+    }),
+    (json) => projectWorkspaceResponseSchema.parse(json).project,
   );
 }

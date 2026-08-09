@@ -9,6 +9,10 @@ import {
   workflowStartRequestSchema,
   memoryImportWorkflowDispatchRequestSchema,
   MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
+  projectIntakeWorkflowDispatchRequestSchema,
+  projectIntakeWorkflowInputSchema,
+  projectIntakeHookPayloadSchema,
+  PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION,
   type TraceEventInput,
 } from "@chat/contracts";
 import { planningExecutionWorkflowInputSchema } from "./workflow-input.js";
@@ -130,6 +134,20 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
           !buildEvidence.workflowDefinitionVersions.includes(binding.workflowDefinitionVersion)
         ) {
           throw new Error("活动Memory Import Workflow版本与当前构建不一致，拒绝恢复");
+        }
+      }
+      for (const { binding } of bindings.listProjectIntakeBindings()) {
+        const run = getRun(binding.workflowRunId);
+        if (!(await run.exists)) {
+          throw new Error("Project Intake Binding引用的Workflow Run不存在，拒绝恢复");
+        }
+        const status = String(await run.status);
+        if (["completed", "failed", "cancelled"].includes(status)) continue;
+        if (
+          binding.workflowDefinitionVersion !== PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION ||
+          !buildEvidence.workflowDefinitionVersions.includes(binding.workflowDefinitionVersion)
+        ) {
+          throw new Error("活动Project Intake Workflow版本与当前构建不一致，拒绝恢复");
         }
       }
     },
@@ -347,6 +365,134 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
     } catch {
       await bindings.markMemoryImportStartOutcomeUnknown(
         request.outboxId,
+        new Date().toISOString(),
+      );
+      return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" }, 202);
+    }
+  });
+
+  app.post("/internal/workflow/v1/project-intake/start", async (c) => {
+    const parsed = projectIntakeWorkflowDispatchRequestSchema.safeParse(
+      await c.req.json().catch(() => undefined),
+    );
+    if (!parsed.success) {
+      return c.json({ code: "validation_failed", title: "请求不符合合同" }, 400);
+    }
+    const request = parsed.data;
+    if (request.workflowDefinitionVersion !== PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION) {
+      return c.json({ code: "revision_conflict", title: "Project Intake Workflow版本不一致" }, 409);
+    }
+    const startClaim = await bindings.claimProjectIntakeStartIntent({
+      projectCandidateId: request.projectCandidateId,
+      outboxId: request.outboxId,
+      workflowDefinitionVersion: request.workflowDefinitionVersion,
+      now: new Date().toISOString(),
+    });
+    if (startClaim === "already_started") {
+      return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "already_started" }, 200);
+    }
+    if (startClaim === "outcome_unknown") {
+      return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" }, 202);
+    }
+    const hookToken = `pih-${request.projectCandidateId}`;
+    try {
+      const run = await start({ workflowId: world.projectIntakeWorkflowId }, [
+        projectIntakeWorkflowInputSchema.parse({
+          schemaVersion: "project-intake-workflow-input.v1",
+          projectCandidateId: request.projectCandidateId,
+          expectedCandidateRevision: request.expectedCandidateRevision,
+        }),
+      ]);
+      await bindings.claimProjectIntakeWorkflowBinding({
+        projectCandidateId: request.projectCandidateId,
+        outboxId: request.outboxId,
+        workflowRunId: run.runId,
+        workflowDefinitionVersion: request.workflowDefinitionVersion,
+        hookToken,
+        now: new Date().toISOString(),
+      });
+      return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "started" }, 201);
+    } catch {
+      // start越过Runtime边界后无法确认时绝不重派；Binding与Outbox均保留未知状态。
+      await bindings.markProjectIntakeStartOutcomeUnknown(
+        request.projectCandidateId,
+        new Date().toISOString(),
+      );
+      return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" }, 202);
+    }
+  });
+
+  app.post("/internal/workflow/v1/project-intake/resume", async (c) => {
+    const parsed = projectIntakeWorkflowDispatchRequestSchema.safeParse(
+      await c.req.json().catch(() => undefined),
+    );
+    if (!parsed.success) {
+      return c.json({ code: "validation_failed", title: "请求不符合合同" }, 400);
+    }
+    const request = parsed.data;
+    if (request.workflowDefinitionVersion !== PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION) {
+      return c.json({ code: "revision_conflict", title: "Project Intake Workflow版本不一致" }, 409);
+    }
+    let binding = bindings.getProjectIntakeBinding(request.projectCandidateId);
+    const deadline = Date.now() + 5_000;
+    while (binding === undefined && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      binding = bindings.getProjectIntakeBinding(request.projectCandidateId);
+    }
+    if (binding === undefined) {
+      return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" }, 202);
+    }
+    if (binding.resumeDispatchState === "dispatched") {
+      return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "already_resumed" }, 200);
+    }
+    if (
+      binding.resumeDispatchState === "dispatching" ||
+      binding.resumeDispatchState === "outcome_unknown"
+    ) {
+      return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" }, 202);
+    }
+    if (binding.resumeDispatchState === "failed_terminal") {
+      return c.json({ code: "workflow_resume_unknown", title: "Project Intake恢复已终止" }, 409);
+    }
+    try {
+      await getHookByToken(binding.hookToken);
+    } catch {
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        try {
+          await getHookByToken(binding.hookToken);
+          break;
+        } catch {
+          if (Date.now() >= deadline) {
+            return c.json(
+              { schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" },
+              202,
+            );
+          }
+        }
+      }
+    }
+    await bindings.markProjectIntakeResumeDispatching(
+      request.projectCandidateId,
+      new Date().toISOString(),
+    );
+    try {
+      await resumeHook(
+        binding.hookToken,
+        projectIntakeHookPayloadSchema.parse({
+          schemaVersion: "project-intake-hook-payload.v1",
+          projectCandidateId: request.projectCandidateId,
+          candidateRevision: request.expectedCandidateRevision,
+        }),
+      );
+      await bindings.markProjectIntakeResumeDispatched(
+        request.projectCandidateId,
+        new Date().toISOString(),
+      );
+      return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "resumed" }, 200);
+    } catch {
+      await bindings.markProjectIntakeResumeOutcomeUnknown(
+        request.projectCandidateId,
         new Date().toISOString(),
       );
       return c.json({ schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" }, 202);
