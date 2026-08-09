@@ -216,7 +216,7 @@ Memory Import Command
 
 ### 6.3 Project 管理与推进链
 
-用户以对话驱动Project。建项时，模型只产生`ProjectIntakeCandidate`，Resource Adapter只读观察真实仓库、文档与脚本，用户确认后才原子创建Project、Method Snapshot、初始Stage、Resource、Participant、Work/Action、Decision和Observation。
+用户以对话驱动Project。建项时，pi只产生strict `ProjectIntakeInterpretation`；Application结合用户输入、Resource Adapter对真实仓库/文档/脚本的只读观察以及Method/Domain规则，编译Chat拥有的`ProjectIntakeCandidate`。用户确认后才原子创建Project、Method Snapshot、初始Stage、Resource、Participant、Work/Action、Decision和Observation。
 
 项目随后按独立循环推进：Stage Goal/Milestone管理长期结果；Proposal→Commitment→Iteration→Review管理有限投入；Work→Scope→Action管理交付结构；observe→compare→candidate→confirm→reconcile管理资源漂移。阶段推进、Iteration承诺/结果、Work完成、关键Artifact接受、Contribution确认和Correct Course都必须经过Application不变量与用户决定。
 

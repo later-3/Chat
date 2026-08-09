@@ -9,7 +9,7 @@
 每个场景必须回答：
 
 1. 用户只靠自然语言能否启动和推进？
-2. 哪些事实来自用户，哪些来自真实Resource，哪些只是模型Candidate？
+2. 哪些事实来自用户，哪些来自真实Resource，哪些只是模型Interpretation，哪些已由Application编译成Chat Candidate？
 3. Stage、Iteration、Work、Scope和Action是否各自承担不同责任？
 4. 谁在做、改了什么、为什么决定、还有什么待办能否被证据化回答？
 5. 页面刷新、API/Workflow重启和外部资源变化后能否恢复？
