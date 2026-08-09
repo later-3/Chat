@@ -9,6 +9,7 @@ import type {
   RunContextDto,
   RunDto,
   SessionDto,
+  WorkflowRunViewDto,
 } from "@chat/contracts/public";
 import {
   apiCreateSession,
@@ -18,8 +19,11 @@ import {
   apiGetPlans,
   apiGetRun,
   apiGetRunContext,
+  apiGetWorkflowNodeDetail,
+  apiGetWorkflowRunView,
   apiSubmitDecision,
   apiSubmitMessage,
+  clearWorkflowProjectionTransportCache,
 } from "./client.js";
 
 const now = "2026-08-07T12:00:00.000Z";
@@ -145,7 +149,50 @@ function respond(body: unknown): void {
   );
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  clearWorkflowProjectionTransportCache();
+  vi.unstubAllGlobals();
+});
+
+const workflowView: WorkflowRunViewDto = {
+  schemaVersion: "chat-workflow-api.v1",
+  productRunId: run.productRunId,
+  workflowViewDefinitionId: "wvd_client1" as never,
+  title: "规划工作流",
+  viewHash: "b".repeat(64),
+  sourceKind: "legacy_code",
+  historyCompleteness: "complete",
+  definitionNodes: [
+    {
+      definitionNodeId: "context" as never,
+      nodeType: "context.compile" as never,
+      nodeSchemaVersion: "1",
+      title: "整理上下文",
+      kind: "task",
+      optional: false,
+    },
+  ],
+  edges: [],
+  nodeRuns: [
+    {
+      workflowNodeRunId: "wnr_client1" as never,
+      definitionNodeId: "context" as never,
+      nodeType: "context.compile" as never,
+      title: "整理上下文",
+      kind: "task",
+      optional: false,
+      executionPath: [],
+      attemptNumber: 1,
+      status: "succeeded",
+      revision: 1,
+      updatedAt: now,
+      allowedActions: ["inspect"],
+    },
+  ],
+  revision: 1,
+  updatedAt: now,
+  allowedActions: ["inspect_nodes"],
+};
 
 describe("公开API浏览器响应边界", () => {
   it.each([
@@ -208,5 +255,50 @@ describe("公开API浏览器响应边界", () => {
   ])("%s查询响应根出现未声明字段时失败关闭", async (_name, request, body) => {
     respond(body);
     await expect(request()).rejects.toMatchObject({ name: "ZodError" });
+  });
+
+  it("Workflow View使用ETag复用同URL已校验快照", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(workflowView), {
+          status: 200,
+          headers: { "content-type": "application/json", ETag: '"view-v1"' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 304 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(apiGetWorkflowRunView(run.productRunId)).resolves.toEqual(workflowView);
+    await expect(apiGetWorkflowRunView(run.productRunId)).resolves.toEqual(workflowView);
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      headers: { "If-None-Match": '"view-v1"' },
+    });
+  });
+
+  it("Node Detail的include去重排序且合同损坏失败关闭", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ...workflowView, runtimeSecret: "forbidden" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      apiGetWorkflowNodeDetail(run.productRunId, "wnr_client1", [
+        "timeline",
+        "summary",
+        "timeline",
+      ]),
+    ).rejects.toMatchObject({ name: "ApiProblemError", code: "internal_error" });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("include=summary%2Ctimeline");
+  });
+
+  it("切换节点取消旧Query时保留AbortError语义", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new DOMException("cancelled", "AbortError")));
+    const controller = new AbortController();
+    controller.abort();
+    await expect(apiGetWorkflowRunView(run.productRunId, controller.signal)).rejects.toMatchObject({
+      name: "AbortError",
+    });
   });
 });

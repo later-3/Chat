@@ -8,7 +8,7 @@
 
 ## 1. 一句话说明
 
-浏览器只向Chat API发送公开Query/Command。API校验请求后调用Application用例；Application在Product Store中原子提交产品事实、幂等Receipt和Outbox；API进程再异步启动或恢复Workflow。页面通过Query读取Run、Plan、Approval、Message、Context、Memory Import、Project Candidate和Project账本的权威投影，不从Workflow返回值或本地缓存猜测成功。
+浏览器只向Chat API发送公开Query/Command。API校验请求后调用Application用例；Application在Product Store中原子提交产品事实、幂等Receipt和Outbox；API进程再异步启动或恢复Workflow。页面通过Query读取Run、Workflow View/Node Detail、Plan、Approval、Message、Context、Memory Import、Project Candidate和Project账本的权威投影，不从Workflow返回值或本地缓存猜测成功。
 
 阅读和调试时按三个入口分工：
 
@@ -70,6 +70,8 @@ flowchart LR
 | GET | `/api/runs/:productRunId/plans` | Query | 读取全部Plan Revision安全投影 |
 | GET | `/api/runs/:productRunId/approvals/current` | Query | 读取当前仍可操作的Approval |
 | POST | `/api/runs/:productRunId/decisions` | Command | 提交`request_revision/approve/reject`，返回201 |
+| GET | `/api/runs/:productRunId/workflow-view` | Query | ETag支持的稳定图结构与Node Run摘要；不含正文、坐标或Runtime身份 |
+| GET | `/api/runs/:productRunId/workflow-nodes/:workflowNodeRunId?include=...` | Query | 按需读取安全Manifest、状态时间线和Evidence引用；只允许公开include枚举 |
 
 ### 4.3 Memory
 
@@ -138,12 +140,14 @@ flowchart LR
 | `workflow_resume` Outbox | `packages/contracts/src/product.ts` | Application事务 | 与Decision同事务提交，只携带产品引用；Hook Token仍留在Workflow Runtime |
 | `ExecutionContract` | `packages/contracts/src/product.ts` | Application | 从已批准Plan编译出的不可变执行输入；Executor无权自行扩展目标或能力 |
 | `ExecutionCandidate / Validation / final Message` | Product Store合同与Application用例 | Workflow Step + Application | 模型输出先是候选，再确定性验证，最后Product Commit才形成正式Assistant Message和Run终态 |
+| `WorkflowRunViewDto` | `packages/contracts/src/workflow-api.ts` | Application Query投影 | 一次Run冻结的View结构和Node Run摘要；不含React Flow坐标、Trace正文、Workflow/Hook/pi身份 |
+| `WorkflowNodeDetailDto` | `packages/contracts/src/workflow-api.ts` | Application Query投影 | 按Tab惰性返回Manifest、Transition与Evidence产品引用；错误只含公开code/summary |
 
 这张表描述的是对象角色，字段级真相仍以对应Zod Schema为准。调试时不要把DTO、持久化实体和Runtime SDK对象混成一个“Run”。
 
 ## 6. Query合同与当前轮询
 
-前端 `useRealChain` 负责Query组合：
+前端 `useRealChain` 负责会话资源Query组合，`useWorkflowRunView/useWorkflowNodeDetail`独立负责运行图Query：
 
 1. 首次打开没有Session定位时，以稳定Bootstrap Command幂等创建Session。
 2. 活动Run期间每1.5秒轮询Run、Message、Plan、Approval和Context。
@@ -151,8 +155,48 @@ flowchart LR
 4. 导入处于`queued/dispatching`时轮询；MemoryCore的合法`accepted`只有限补查，不把它伪装成L1已物化。
 5. 页面不可见时不在后台持续轮询。
 6. Command成功后使相关Query失效，再从服务端读取权威状态。
+7. Workflow View与Node Detail保存同URL的内存ETag；304只复用已经通过公开Zod合同的快照。
+8. 切换Run或节点时TanStack Query把AbortSignal传入`fetch`，旧响应不能覆盖新选择；掉线时保留最后成功快照并标记陈旧。
 
 这是一条已经实现并通过真实浏览器验证的恢复路径。未来SSE只负责活动事件和资源失效通知，不改变Query/Command合同，也不能成为产品事实源。
+
+### 6.1 真实Run Viewer（as-built）
+
+`RealWorkspace`把当前Run交给`WorkflowRunPanel`，Viewer只消费上述两个公开DTO：
+
+```text
+WorkflowRunViewDto
+→ layoutWorkflowView（纯函数，只产生临时坐标）
+→ 桌面只读React Flow / 手机linearizedWorkflowView
+→ 选择Node Run
+→ useWorkflowNodeDetail按当前Tab请求summary/manifests/timeline/evidence
+→ Human Review概览复用唯一PlanReviewContent
+→ Decision仍走useRealChain的原Command、CAS、Plan revision/Hash和pending command恢复
+```
+
+边界和失败语义：
+
+1. `@xyflow/react`只出现在`apps/web/src/components/workflow/WorkflowCanvas.tsx`及其自定义节点适配层；公开DTO、Domain、Store和测试Fixture不导入React Flow类型。
+2. 画布显式关闭拖动、连线、元素选择、重连与Delete快捷键，只保留缩放、平移、显式Reset和节点内部可访问按钮。
+3. Definition/View不保存坐标；`viewHash + Node Run身份/层级/iteration`组成结构签名。只更新status、duration或summary不会自动`fitView`、改变selection或重置Inspector Tab。
+4. 桌面按确定性拓扑从左到右布局；`outcomeCode`稳定分lane，`loop_back`不参与DAG排序，Composite子运行按`parentNodeRunId`展开/收起。手机使用同一拓扑的顺序列表，不依赖Canvas完成审核。
+5. `historyCompleteness=legacy_limited`明确显示“旧运行·细节有限”，不会用新Node Run终态规则误判历史；`complete`投影才执行Run终态与节点状态一致性门。
+6. Inspector只显示公开摘要、对象ID、revision和Hash；不执行HTML/脚本，不`JSON.stringify`未知对象，不展示Stack、Provider Payload、Credential或隐藏推理。
+7. review节点的计划阅读和决定表单来自原`PlanReviewContent`，页面任何时刻只存在一个可提交实例；选择其他节点时未提交修改草稿保留在当前Run组件状态，切Run清空。
+8. URL只可保存`workflowRun/workflowNode/workflowTab`公开定位，不保存正文、Token或Runtime身份。
+
+#### React Flow依赖证据与退出路径
+
+| 项目 | 已验证事实 |
+|---|---|
+| 固定版本 | `@xyflow/react 12.11.2`，lock integrity `sha512-eLAl...ld12cA==` |
+| 许可证/兼容 | MIT；peer要求React/React DOM与类型`>=17`，当前React 19.2.8与TypeScript 5.9通过typecheck/build |
+| 能力证据 | 官方[ReactFlow组件合同](https://reactflow.dev/api-reference/react-flow)提供只读交互开关；[Accessibility](https://reactflow.dev/learn/advanced-use/accessibility)说明键盘/ARIA边界；[Custom Nodes](https://reactflow.dev/learn/customization/custom-nodes)支持自定义节点；[Layouting](https://reactflow.dev/learn/layouting/layouting)明确布局由应用选择 |
+| 构建测量 | 引入前主入口`444.70 kB / 124.65 kB gzip`；引入后主入口`469.35 kB / 131.88 kB gzip`。React Flow懒加载Chunk为`180.36 kB / 58.44 kB gzip`，其CSS为`15.41 kB / 2.56 kB gzip`；手机线性模式不渲染该Chunk |
+| CSS/PWA | React Flow基础CSS与变量覆盖只在`WorkflowCanvas`懒加载Chunk；生产PWA构建和公开Bundle秘密标记扫描通过 |
+| 退出方式 | 替换`WorkflowCanvas`渲染器即可；`layoutWorkflowView`、公开API、Product Store、Definition、Inspector、手机顺序列表与审核Command均不变 |
+
+首期没有引入ELK、dagre或布局Worker。当前纯布局的六节点、choice、bounded loop、Composite、空/单节点、错误结构与多组DAG不重叠测试已经覆盖批准范围；只有真实代表图证明不足时才重新审查布局依赖。
 
 ## 7. 规划—确认—执行交互
 
@@ -171,7 +215,7 @@ flowchart LR
 | 7 | Workflow | `runtime-server.ts`：`POST /internal/workflow/v1/start` | `WorkflowStartRequest` | Runtime先认领Binding，再启动唯一SDK Workflow Run |
 | 8 | Workflow | `planning-execution-workflow.ts`：`planningExecutionWorkflow` | 最小Workflow Input | 准备Context、规划、发布Plan并等待Hook；所有产品读写走私有API |
 | 9 | Workflow → API | `workflow-planning-steps.ts`：`publishPlanReviewStep` → `api-client.ts`：`publishPlanReview` → `internal-runtime-router.ts` | Plan候选、Run revision、Manifest Hash | Application提交Plan Revision、Approval并把Run推进到`waiting_human` |
-| 10 | Browser | `use-real-chain.ts`中的`run/plans/approval` Query，`PlanPanel.tsx` | `RunDto + PlanDto[] + ApprovalDto` | 页面只根据服务端投影显示计划和允许动作 |
+| 10 | Browser | `use-real-chain.ts`的Run/Plan/Approval Query + `use-workflow-run-view.ts` + `WorkflowRunPanel.tsx` | `RunDto + WorkflowRunViewDto + WorkflowNodeDetailDto + Plan/Approval` | 页面从真实Node Run投影显示图与详情；review节点复用唯一Plan表单，不按phase猜节点 |
 | 11 | Browser → API | `PlanPanel.DecisionBox` → `beginDecision/decisionMutation` → `apiSubmitDecision` → Decision Route | `PendingDecision`与Decision Envelope | Application原子提交Decision、状态变化和Resume Outbox |
 | 12 | API → Workflow | `outbox-dispatcher.ts`：`dispatchResume` → `runtime-server.ts`：`POST /internal/workflow/v1/resume` | 产品Run、Approval、Decision、Outbox引用 | Runtime查私有Hook Binding并恢复同一个Workflow |
 | 13 | Workflow | `loadCommittedDecisionStep`、`compileExecutionContractStep`、`runPiExecutorStep` | 已提交Decision与已批准Plan引用 | 形成不可变执行合同和结构化执行候选，尚未产品成功 |

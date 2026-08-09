@@ -37,6 +37,9 @@
   --session-rail-width: 264px;
   --topbar-height: 48px;
   --mobile-nav-height: 64px;
+  --workflow-canvas-height: 520px;
+  --workflow-inspector-width: 380px;
+  --workflow-node-min-width: 196px;
   color-scheme: light;
 }
 

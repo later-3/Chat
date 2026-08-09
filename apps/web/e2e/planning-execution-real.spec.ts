@@ -130,6 +130,8 @@ test("真实 qwen3.7-plus：发送 -> Plan v1 -> 修改 -> v2 -> 批准 -> 正�
 
   await page.getByLabel("修改意见").fill("把风险单独成节，并增加下周三个行动项");
   await page.getByRole("button", { name: "要求修改" }).click();
+  // 保留用户正在查看的旧review节点；新revision到达后由用户显式切到新的等待点。
+  await page.getByRole("button", { name: "转到等待审核节点" }).click();
   const v2 = page.getByLabel("计划第2版");
   await expect(v2).toBeVisible();
   await expect(page.getByText("已被新版本取代")).toBeVisible();

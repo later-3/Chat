@@ -66,6 +66,11 @@ import {
   type RecordProjectDecisionPayload,
   type RecordProjectContributionPayload,
   type SetProjectArchiveStatusPayload,
+  workflowNodeDetailDtoSchema,
+  workflowRunViewDtoSchema,
+  type WorkflowNodeDetailDto,
+  type WorkflowNodeDetailInclude,
+  type WorkflowRunViewDto,
 } from "@chat/contracts/public";
 import { z } from "zod";
 
@@ -205,6 +210,94 @@ async function get<TRes>(path: string, parse: (json: unknown) => TRes): Promise<
   }
   if (!res.ok) return parseProblem(res);
   return parse(await res.json());
+}
+
+interface WorkflowQueryCacheEntry<T> {
+  readonly etag: string;
+  readonly value: T;
+}
+
+const workflowQueryCache = new Map<string, WorkflowQueryCacheEntry<unknown>>();
+
+/**
+ * Workflow详情可能被短轮询频繁读取，因此在传输边界使用ETag；304只复用同URL、
+ * 已通过公开Schema校验的内存快照。缓存不是产品事实，刷新或切Principal后可安全丢弃。
+ */
+async function getWorkflowProjection<T>(
+  path: string,
+  parse: (json: unknown) => T,
+  signal?: AbortSignal,
+): Promise<T> {
+  const cached = workflowQueryCache.get(path) as WorkflowQueryCacheEntry<T> | undefined;
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...(cached === undefined ? {} : { headers: { "If-None-Match": cached.etag } }),
+      ...(signal === undefined ? {} : { signal }),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new ApiProblemError({
+      code: "network_unknown",
+      retryable: true,
+      recoveryAction: "retry_same_command",
+    });
+  }
+  if (response.status === 304) {
+    if (cached !== undefined) return cached.value;
+    throw new ApiProblemError({
+      code: "internal_error",
+      httpStatus: 304,
+      retryable: true,
+      recoveryAction: "none",
+    });
+  }
+  if (!response.ok) return parseProblem(response);
+  let value: T;
+  try {
+    value = parse(await response.json());
+  } catch {
+    throw new ApiProblemError({
+      code: "internal_error",
+      httpStatus: response.status,
+      retryable: true,
+      recoveryAction: "none",
+    });
+  }
+  const etag = response.headers.get("ETag");
+  if (etag !== null) workflowQueryCache.set(path, { etag, value });
+  return value;
+}
+
+export function apiGetWorkflowRunView(
+  productRunId: string,
+  signal?: AbortSignal,
+): Promise<WorkflowRunViewDto> {
+  return getWorkflowProjection(
+    `/api/runs/${encodeURIComponent(productRunId)}/workflow-view`,
+    (json) => workflowRunViewDtoSchema.parse(json),
+    signal,
+  );
+}
+
+export function apiGetWorkflowNodeDetail(
+  productRunId: string,
+  workflowNodeRunId: string,
+  includes: readonly WorkflowNodeDetailInclude[],
+  signal?: AbortSignal,
+): Promise<WorkflowNodeDetailDto> {
+  const normalizedIncludes = [...new Set(includes)].sort();
+  const query = new URLSearchParams({ include: normalizedIncludes.join(",") });
+  return getWorkflowProjection(
+    `/api/runs/${encodeURIComponent(productRunId)}/workflow-nodes/${encodeURIComponent(workflowNodeRunId)}?${query.toString()}`,
+    (json) => workflowNodeDetailDtoSchema.parse(json),
+    signal,
+  );
+}
+
+/** 登录主体或测试隔离变化时只清浏览器投影，不影响任何服务端事实。 */
+export function clearWorkflowProjectionTransportCache(): void {
+  workflowQueryCache.clear();
 }
 
 export function apiCreateSession(commandId: CommandId, title?: string): Promise<SessionDto> {

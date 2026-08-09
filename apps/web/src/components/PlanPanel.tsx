@@ -158,17 +158,26 @@ function DecisionBox({
   run,
   plan,
   approval,
+  revisionInstructionDraft,
 }: {
   chain: RealChainState;
   run: RunDto;
   plan: PlanDto;
   approval: ApprovalDto;
+  revisionInstructionDraft?:
+    | {
+        readonly value: string;
+        readonly onChange: (value: string) => void;
+      }
+    | undefined;
 }) {
-  const [instruction, setInstruction] = useState(() =>
+  const [localInstruction, setLocalInstruction] = useState(() =>
     chain.pendingDecision?.payload.kind === "request_revision"
       ? (chain.pendingDecision.payload.revisionInstruction ?? "")
       : "",
   );
+  const instruction = revisionInstructionDraft?.value ?? localInstruction;
+  const setInstruction = revisionInstructionDraft?.onChange ?? setLocalInstruction;
   const [rejectReason, setRejectReason] = useState("");
   const [showReject, setShowReject] = useState(false);
   const [awaitingRevision, setAwaitingRevision] = useState(false);
@@ -309,16 +318,23 @@ function DecisionBox({
   );
 }
 
-export function PlanPanel({
+export function PlanReviewContent({
   chain,
   run,
   plans,
   approval,
+  revisionInstructionDraft,
 }: {
   chain: RealChainState;
   run: RunDto;
   plans: readonly PlanDto[];
   approval: ApprovalDto | null;
+  revisionInstructionDraft?:
+    | {
+        readonly value: string;
+        readonly onChange: (value: string) => void;
+      }
+    | undefined;
 }) {
   const currentPlan = plans[plans.length - 1];
   const canDecide =
@@ -342,7 +358,13 @@ export function PlanPanel({
         />
       ))}
       {canDecide && approval !== null && currentPlan !== undefined && (
-        <DecisionBox chain={chain} run={run} plan={currentPlan} approval={approval} />
+        <DecisionBox
+          chain={chain}
+          run={run}
+          plan={currentPlan}
+          approval={approval}
+          revisionInstructionDraft={revisionInstructionDraft}
+        />
       )}
       {approval?.status === "expired" && (
         <p className="decision-error" role="alert">
@@ -362,3 +384,6 @@ export function PlanPanel({
     </div>
   );
 }
+
+/** 旧入口只作为Workflow View查询不可用时的单一审核降级，不复制表单实现。 */
+export const PlanPanel = PlanReviewContent;

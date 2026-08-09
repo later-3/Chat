@@ -13,11 +13,11 @@ import { ApiProblemError } from "../api/client.js";
 import { readDraft, writeDraft } from "../drafts/draft-store.js";
 import { pendingSendPayload } from "../real/real-storage.js";
 import type { RealChainState } from "../real/use-real-chain.js";
-import { PlanPanel } from "./PlanPanel.js";
 import { ContextPicker } from "./ContextPicker.js";
 import { ChatMessageItem } from "./ChatMessageItem.js";
 import { useProjectChain } from "../real/use-project-chain.js";
 import { ProjectManagementControls } from "./ProjectManagementControls.js";
+import { WorkflowRunPanel } from "./workflow/WorkflowRunPanel.js";
 
 type ProjectChain = ReturnType<typeof useProjectChain>;
 
@@ -1059,7 +1059,7 @@ export function RealWorkspace({ chain, connected }: { chain: RealChainState; con
                     </button>
                   </p>
                 )}
-                <PlanPanel chain={chain} run={run} plans={plans} approval={approval} />
+                <WorkflowRunPanel chain={chain} run={run} plans={plans} approval={approval} />
               </>
             )}
           </div>
