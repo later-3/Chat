@@ -13,6 +13,7 @@ import {
 } from "@chat/contracts";
 import { type ApplicationDeps } from "./deps.js";
 import { notFound, revisionConflict } from "./errors.js";
+import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
 
 /**
  * Workflow私有Application Command：执行合同、候选、验证与Product Commit。
@@ -205,6 +206,7 @@ export async function beginRunAttempt(
         createdAt: now,
         updatedAt: now,
       };
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { attemptId } };
     },
   });
@@ -382,6 +384,7 @@ export async function compileExecutionContract(
         updatedAt: now,
       };
       draft.entities.executionContracts[executionContractId] = contract;
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { executionContractId } };
     },
   });

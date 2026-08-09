@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   createEmptySnapshot,
   productSnapshotSchema,
+  workflowViewDefinitionSchema,
   type CommandId,
   type ProductSession,
   type ProductSnapshot,
@@ -26,16 +27,20 @@ import {
   computeMemoryBackendDescriptorSha256,
   computeMemoryQueryResultSha256,
   computeMemoryResultSnapshotSha256,
+  computeNodeValueManifestSha256,
   computeRunContextRequestSha256,
   estimateMemorySectionTokens,
   hashCanonical,
+  createLegacyPlanningWorkflowView,
 } from "@chat/domain";
 import { JsonProductStore, type StoreIo } from "./json-product-store.js";
 import { migrateProductSnapshotV1ToV2, productSnapshotV1Schema } from "./migrate-v1-to-v2.js";
 import { migrateProductSnapshotV2ToV3, productSnapshotV2Schema } from "./migrate-v2-to-v3.js";
 import { migrateProductSnapshotV3ToV4 } from "./migrate-v3-to-v4.js";
 import { migrateProductSnapshotV4ToV5 } from "./migrate-v4-to-v5.js";
+import { migrateProductSnapshotV5ToV6 } from "./migrate-v5-to-v6.js";
 import { productSnapshotV4Schema } from "./legacy-v4.js";
+import { productSnapshotV5Schema } from "./legacy-v5.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-07T12:00:00.000Z";
@@ -78,10 +83,18 @@ async function listTempFiles(dir: string): Promise<string[]> {
 
 function legacyEntitiesFrom(snapshot: ProductSnapshot) {
   const entities = snapshot.entities;
+  const runs = Object.fromEntries(
+    Object.entries(entities.runs).map(([id, run]) => {
+      const legacy = { ...run } as unknown as Record<string, unknown>;
+      delete legacy["schemaVersion"];
+      delete legacy["workflowViewDefinitionId"];
+      return [id, { ...legacy, schemaVersion: "product-run.v1" as const }];
+    }),
+  );
   return {
     sessions: entities.sessions,
     messages: entities.messages,
-    runs: entities.runs,
+    runs,
     attempts: entities.attempts,
     plans: entities.plans,
     revisionInputs: entities.revisionInputs,
@@ -114,10 +127,33 @@ function v2EntitiesFrom(snapshot: ProductSnapshot): Record<string, unknown> {
     "projectDecisions",
     "projectObservations",
     "projectCandidates",
+    "workflowViewDefinitions",
+    "workflowNodeRuns",
+    "nodeRunTransitions",
+    "nodeValueManifests",
   ]) {
     delete entities[key];
   }
+  entities["runs"] = legacyEntitiesFrom(snapshot).runs;
   return entities;
+}
+
+function v5SnapshotFrom(snapshot: ProductSnapshot) {
+  const entities = structuredClone(snapshot.entities) as unknown as Record<string, unknown>;
+  for (const key of [
+    "workflowViewDefinitions",
+    "workflowNodeRuns",
+    "nodeRunTransitions",
+    "nodeValueManifests",
+  ]) {
+    delete entities[key];
+  }
+  entities["runs"] = legacyEntitiesFrom(snapshot).runs;
+  return productSnapshotV5Schema.parse({
+    ...snapshot,
+    schemaVersion: "chat-product-store.v5",
+    entities,
+  });
 }
 
 async function validReviewSnapshot(): Promise<ProductSnapshot> {
@@ -392,7 +428,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
     expect(snapshot.storeRevision).toBe(0);
 
     const onDisk = productSnapshotSchema.parse(JSON.parse(await readFile(filePath, "utf8")));
-    expect(onDisk.schemaVersion).toBe("chat-product-store.v5");
+    expect(onDisk.schemaVersion).toBe("chat-product-store.v6");
   });
 
   it("非空v1真实快照串行迁移到v4，保留旧事实并合成no-memory ContextRequest，重启幂等", async () => {
@@ -408,7 +444,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
 
     const store = await JsonProductStore.open({ filePath, now });
     const { snapshot } = await store.read({ kind: "committedSnapshot" });
-    expect(snapshot.schemaVersion).toBe("chat-product-store.v5");
+    expect(snapshot.schemaVersion).toBe("chat-product-store.v6");
     expect(snapshot.storeRevision).toBe(legacy.storeRevision);
     expect(snapshot.commandReceipts).toEqual(legacy.commandReceipts);
     expect(snapshot.outbox).toEqual(legacy.outbox);
@@ -433,16 +469,20 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
     expect(snapshot.entities.memoryImportResults).toEqual({});
     expect(snapshot.entities.projects).toEqual({});
     expect(snapshot.entities.projectCandidates).toEqual({});
-    const expectedMigration = migrateProductSnapshotV4ToV5(
-      migrateProductSnapshotV3ToV4(
-        migrateProductSnapshotV2ToV3(migrateProductSnapshotV1ToV2(legacy)),
+    const expectedMigration = migrateProductSnapshotV5ToV6(
+      migrateProductSnapshotV4ToV5(
+        migrateProductSnapshotV3ToV4(
+          migrateProductSnapshotV2ToV3(migrateProductSnapshotV1ToV2(legacy)),
+        ),
       ),
     );
     expect(snapshot).toEqual(expectedMigration);
     expect(
-      migrateProductSnapshotV4ToV5(
-        migrateProductSnapshotV3ToV4(
-          migrateProductSnapshotV2ToV3(migrateProductSnapshotV1ToV2(legacy)),
+      migrateProductSnapshotV5ToV6(
+        migrateProductSnapshotV4ToV5(
+          migrateProductSnapshotV3ToV4(
+            migrateProductSnapshotV2ToV3(migrateProductSnapshotV1ToV2(legacy)),
+          ),
         ),
       ),
     ).toEqual(expectedMigration);
@@ -466,7 +506,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
 
     const opened = await JsonProductStore.open({ filePath, now });
     const { snapshot } = await opened.read({ kind: "committedSnapshot" });
-    expect(snapshot.schemaVersion).toBe("chat-product-store.v5");
+    expect(snapshot.schemaVersion).toBe("chat-product-store.v6");
     expect(snapshot.entities.memoryQueries).toEqual(legacy.entities.memoryQueries);
     expect(snapshot.entities.memoryResultSnapshots).toEqual(legacy.entities.memoryResultSnapshots);
     expect(snapshot.entities.memoryAdoptions).toEqual(legacy.entities.memoryAdoptions);
@@ -474,8 +514,10 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
     expect(snapshot.entities.memoryImportIntents).toEqual({});
     expect(snapshot.entities.memoryImportResults).toEqual({});
     expect(snapshot).toEqual(
-      migrateProductSnapshotV4ToV5(
-        migrateProductSnapshotV3ToV4(migrateProductSnapshotV2ToV3(legacy)),
+      migrateProductSnapshotV5ToV6(
+        migrateProductSnapshotV4ToV5(
+          migrateProductSnapshotV3ToV4(migrateProductSnapshotV2ToV3(legacy)),
+        ),
       ),
     );
     const migratedBytes = await readFile(filePath, "utf8");
@@ -491,6 +533,11 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
     delete legacyEntities["projectMilestones"];
     delete legacyEntities["projectUpdates"];
     delete legacyEntities["projectStateTransitions"];
+    delete legacyEntities["workflowViewDefinitions"];
+    delete legacyEntities["workflowNodeRuns"];
+    delete legacyEntities["nodeRunTransitions"];
+    delete legacyEntities["nodeValueManifests"];
+    legacyEntities["runs"] = legacyEntitiesFrom(current).runs;
     const legacy = productSnapshotV4Schema.parse({
       ...current,
       schemaVersion: "chat-product-store.v4",
@@ -555,7 +602,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
 
     const opened = await JsonProductStore.open({ filePath, now });
     const { snapshot } = await opened.read({ kind: "committedSnapshot" });
-    expect(snapshot.schemaVersion).toBe("chat-product-store.v5");
+    expect(snapshot.schemaVersion).toBe("chat-product-store.v6");
     expect(snapshot.entities.projects["prj_migration"]?.schemaVersion).toBe("project.v2");
     expect(snapshot.entities.projectMethodSnapshots["pms_migration"]).toMatchObject({
       schemaVersion: "project-method-snapshot.v2",
@@ -963,10 +1010,11 @@ describe("JsonProductStore 损坏与失败注入", () => {
           warnings: [],
         };
         draft.entities.runs["run_1"] = {
-          schemaVersion: "product-run.v1",
+          schemaVersion: "product-run.v2",
           productRunId: "run_1" as never,
           sessionId: "psn_1" as never,
           sourceMessageId: "msg_1" as never,
+          workflowViewDefinitionId: "wvd_planninglegacyv1" as never,
           status: "running",
           phase: "planning",
           currentPlanId: "pln_1" as never,
@@ -976,6 +1024,8 @@ describe("JsonProductStore 损坏与失败注入", () => {
           createdAt: NOW,
           updatedAt: NOW,
         };
+        draft.entities.workflowViewDefinitions["wvd_planninglegacyv1"] =
+          workflowViewDefinitionSchema.parse(createLegacyPlanningWorkflowView(NOW));
         draft.entities.messages["msg_1"] = {
           schemaVersion: "message.v1",
           messageId: "msg_1" as never,
@@ -1073,6 +1123,78 @@ describe("JsonProductStore 损坏与失败注入", () => {
     await expect(JsonProductStore.open({ filePath, now })).rejects.toBeInstanceOf(
       StoreCorruptedError,
     );
+  });
+});
+
+describe("v5→v6 Workflow投影迁移", () => {
+  it("等待审核Run只回填已提交事实，不伪造Context成功或started时间", async () => {
+    const current = await validReviewSnapshot();
+    const legacy = v5SnapshotFrom(current);
+    const migrated = migrateProductSnapshotV5ToV6(legacy);
+    const migratedAgain = migrateProductSnapshotV5ToV6(legacy);
+
+    expect(migrated).toEqual(migratedAgain);
+    expect(migrated.entities.workflowViewDefinitions["wvd_planninglegacyv1"]?.createdAt).toBe(
+      legacy.committedAt,
+    );
+    const nodes = Object.values(migrated.entities.workflowNodeRuns);
+    const context = nodes.find((node) => node.definitionNodeId === "context");
+    const plan = nodes.find((node) => node.definitionNodeId === "plan");
+    const review = nodes.find((node) => node.definitionNodeId === "review");
+    expect(context?.status).toBe("queued");
+    expect(plan?.status).toBe("succeeded");
+    expect(review?.status).toBe("waiting_human");
+    expect(nodes.every((node) => node.startedAt === undefined)).toBe(true);
+    for (const node of nodes) {
+      const transitions = Object.values(migrated.entities.nodeRunTransitions).filter(
+        (transition) => transition.workflowNodeRunId === node.workflowNodeRunId,
+      );
+      expect(transitions).toHaveLength(1);
+      expect(transitions[0]).toMatchObject({
+        nodeSequence: 1,
+        toStatus: node.status,
+        reasonKind: "projected",
+        projectionSource: "legacy_product_facts",
+      });
+    }
+    expect(migrated.entities.sessions).toEqual(legacy.entities.sessions);
+    expect(migrated.entities.messages).toEqual(legacy.entities.messages);
+    expect(migrated.entities.plans).toEqual(legacy.entities.plans);
+    expect(migrated.entities.approvalRequests).toEqual(legacy.entities.approvalRequests);
+    expect(() => assertSnapshotIntegrity(migrated)).not.toThrow();
+  });
+
+  it("迁移后的悬空/错Hash Product Ref和Transition断号都失败关闭", async () => {
+    const migrated = migrateProductSnapshotV5ToV6(v5SnapshotFrom(await validReviewSnapshot()));
+    const manifest = Object.values(migrated.entities.nodeValueManifests).find((candidate) =>
+      candidate.slots.some((slot) => slot.refs.length > 0),
+    );
+    if (manifest === undefined) throw new Error("迁移Fixture缺少Manifest");
+    manifest.slots[0]!.refs[0]!.sha256 = "0".repeat(64);
+    manifest.sha256 = computeNodeValueManifestSha256(manifest);
+    expect(() => assertSnapshotIntegrity(migrated)).toThrow(/版本证据不一致/u);
+
+    const fresh = migrateProductSnapshotV5ToV6(v5SnapshotFrom(await validReviewSnapshot()));
+    const transition = Object.values(fresh.entities.nodeRunTransitions)[0];
+    if (transition === undefined) throw new Error("迁移Fixture缺少Transition");
+    transition.nodeSequence = 2;
+    expect(() => assertSnapshotIntegrity(fresh)).toThrow(/Transition链不连续/u);
+
+    const missingManifest = migrateProductSnapshotV5ToV6(
+      v5SnapshotFrom(await validReviewSnapshot()),
+    );
+    const owner = Object.values(missingManifest.entities.workflowNodeRuns).find(
+      (nodeRun) => nodeRun.inputManifestId !== undefined,
+    );
+    if (owner?.inputManifestId === undefined) throw new Error("迁移Fixture缺少Input Manifest");
+    delete missingManifest.entities.nodeValueManifests[owner.inputManifestId];
+    expect(() => assertSnapshotIntegrity(missingManifest)).toThrow(/Manifest引用悬空/u);
+
+    const invalidReason = migrateProductSnapshotV5ToV6(v5SnapshotFrom(await validReviewSnapshot()));
+    const firstTransition = Object.values(invalidReason.entities.nodeRunTransitions)[0];
+    if (firstTransition === undefined) throw new Error("迁移Fixture缺少Transition");
+    firstTransition.reasonKind = "completed";
+    expect(() => assertSnapshotIntegrity(invalidReason)).toThrow(/首条Transition/u);
   });
 });
 

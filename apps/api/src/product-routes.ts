@@ -7,6 +7,8 @@ import {
   cursorPageRequestSchema,
   problemDetailSchema,
   productRunIdSchema,
+  workflowNodeRunIdSchema,
+  workflowNodeDetailIncludeSchema,
   productSessionIdSchema,
   submitDecisionPayloadSchema,
   submitMessagePayloadSchema,
@@ -80,6 +82,8 @@ import {
   recordProjectDecision,
   recordProjectContribution,
   observeProjectResource,
+  getWorkflowRunView,
+  getWorkflowNodeDetail,
   type ApplicationDeps,
 } from "@chat/application";
 
@@ -227,6 +231,35 @@ function assertNoQuery(url: string): void {
       message: "该查询不接受Query参数",
     });
   }
+}
+
+function parseWorkflowNodeIncludes(url: string) {
+  const params = new URL(url).searchParams;
+  if ([...params.keys()].some((key) => key !== "include") || params.getAll("include").length > 1) {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 400,
+      message: "Workflow Node查询包含未知或重复参数",
+    });
+  }
+  const raw = params.get("include");
+  if (raw === null) return undefined;
+  if (raw.length === 0) {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 400,
+      message: "include不能为空",
+    });
+  }
+  return raw.split(",").map((value) => workflowNodeDetailIncludeSchema.parse(value));
+}
+
+function matchesEtag(ifNoneMatch: string | undefined, etag: string): boolean {
+  if (ifNoneMatch === undefined) return false;
+  return ifNoneMatch
+    .split(",")
+    .map((value) => value.trim())
+    .some((value) => value === "*" || value === etag);
 }
 
 function emitCommandAccepted(
@@ -942,6 +975,42 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
       const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
       const result = await getProductRun(ctx.deps, { principalId: ctx.principalId, productRunId });
       return c.json(result, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/runs/:productRunId/workflow-view", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
+      const result = await getWorkflowRunView(ctx.deps, {
+        principalId: ctx.principalId,
+        productRunId,
+      });
+      c.header("ETag", result.etag);
+      c.header("Cache-Control", "private, no-cache");
+      if (matchesEtag(c.req.header("If-None-Match"), result.etag)) return c.body(null, 304);
+      return c.json(result.value, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/runs/:productRunId/workflow-nodes/:workflowNodeRunId", async (c) => {
+    try {
+      const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
+      const workflowNodeRunId = workflowNodeRunIdSchema.parse(c.req.param("workflowNodeRunId"));
+      const result = await getWorkflowNodeDetail(ctx.deps, {
+        principalId: ctx.principalId,
+        productRunId,
+        workflowNodeRunId,
+        include: parseWorkflowNodeIncludes(c.req.url),
+      });
+      c.header("ETag", result.etag);
+      c.header("Cache-Control", "private, no-cache");
+      if (matchesEtag(c.req.header("If-None-Match"), result.etag)) return c.body(null, 304);
+      return c.json(result.value, 200);
     } catch (error) {
       return mapError(c, error);
     }

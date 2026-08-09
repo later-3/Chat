@@ -17,7 +17,7 @@ import {
   outboxEntryStatusSchema,
   planRevisionSchema,
   productRunIdSchema,
-  productRunSchema,
+  productRunV1Schema,
   productSessionSchema,
   revisionInputSchema,
   runAttemptSchema,
@@ -64,7 +64,7 @@ export const productSnapshotV2Schema = z
       .object({
         sessions: z.record(idKeySchema, productSessionSchema),
         messages: z.record(idKeySchema, messageSchema),
-        runs: z.record(idKeySchema, productRunSchema),
+        runs: z.record(idKeySchema, productRunV1Schema),
         attempts: z.record(idKeySchema, runAttemptSchema),
         plans: z.record(idKeySchema, planRevisionSchema),
         revisionInputs: z.record(idKeySchema, revisionInputSchema),

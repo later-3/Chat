@@ -1,5 +1,5 @@
 import { computeRunContextRequestSha256, hashCanonical } from "@chat/domain";
-import { contextRequestIdSchema } from "@chat/contracts";
+import { contextRequestIdSchema, workflowViewDefinitionIdSchema } from "@chat/contracts";
 import type {
   CreateSessionPayload,
   Message,
@@ -15,6 +15,11 @@ import { toMessageDto, toRunDto, toSessionDto } from "./dto.js";
 import { forbidden, notFound, revisionConflict } from "./errors.js";
 import { emitRunEvent } from "./trace-helpers.js";
 import type { MessageDto, RunDto } from "@chat/contracts";
+import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
+
+const LEGACY_PLANNING_VIEW_ID = workflowViewDefinitionIdSchema.parse(
+  "wvd_planninglegacyv1",
+);
 
 /**
  * CreateProductSession / SubmitUserMessage用例。
@@ -135,10 +140,11 @@ export async function submitUserMessage(
         updatedAt: now,
       };
       const run: ProductRun = {
-        schemaVersion: "product-run.v1",
+        schemaVersion: "product-run.v2",
         productRunId,
         sessionId: input.sessionId,
         sourceMessageId: messageId,
+        workflowViewDefinitionId: LEGACY_PLANNING_VIEW_ID,
         status: "pending",
         phase: "queued",
         maxPlanRevisions: DEFAULT_MAX_PLAN_REVISIONS,
@@ -216,6 +222,7 @@ export async function submitUserMessage(
         createdAt: now,
         updatedAt: now,
       };
+      synchronizePlanningWorkflowProjection(draft, productRunId, now);
       return { resultRefs: { messageId, productRunId } };
     },
   });

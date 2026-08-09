@@ -18,7 +18,9 @@ import { migrateProductSnapshotV1ToV2, productSnapshotV1Schema } from "./migrate
 import { migrateProductSnapshotV2ToV3, productSnapshotV2Schema } from "./migrate-v2-to-v3.js";
 import { migrateProductSnapshotV3ToV4, productSnapshotV3Schema } from "./migrate-v3-to-v4.js";
 import { productSnapshotV4Schema } from "./legacy-v4.js";
+import { productSnapshotV5Schema } from "./legacy-v5.js";
 import { migrateProductSnapshotV4ToV5 } from "./migrate-v4-to-v5.js";
+import { migrateProductSnapshotV5ToV6 } from "./migrate-v5-to-v6.js";
 
 /**
  * 版本化JSON Product Store Adapter（任务书§8）。
@@ -126,32 +128,39 @@ export class JsonProductStore implements ProductStorePort {
       return new JsonProductStore(options, current.data);
     }
 
-    const legacyV4 = productSnapshotV4Schema.safeParse(parsedJson);
-    let v4;
-    if (legacyV4.success) {
-      v4 = legacyV4.data;
+    const legacyV5 = productSnapshotV5Schema.safeParse(parsedJson);
+    let v5;
+    if (legacyV5.success) {
+      v5 = legacyV5.data;
     } else {
-      const legacyV3 = productSnapshotV3Schema.safeParse(parsedJson);
-      let v3;
-      if (legacyV3.success) {
-        v3 = legacyV3.data;
+      const legacyV4 = productSnapshotV4Schema.safeParse(parsedJson);
+      let v4;
+      if (legacyV4.success) {
+        v4 = legacyV4.data;
       } else {
-        const legacyV2 = productSnapshotV2Schema.safeParse(parsedJson);
-        let v2;
-        if (legacyV2.success) {
-          v2 = legacyV2.data;
+        const legacyV3 = productSnapshotV3Schema.safeParse(parsedJson);
+        let v3;
+        if (legacyV3.success) {
+          v3 = legacyV3.data;
         } else {
-          const legacyV1 = productSnapshotV1Schema.safeParse(parsedJson);
-          if (!legacyV1.success) {
-            throw new StoreCorruptedError("Product Store Schema未知或非法，已保留原文件");
+          const legacyV2 = productSnapshotV2Schema.safeParse(parsedJson);
+          let v2;
+          if (legacyV2.success) {
+            v2 = legacyV2.data;
+          } else {
+            const legacyV1 = productSnapshotV1Schema.safeParse(parsedJson);
+            if (!legacyV1.success) {
+              throw new StoreCorruptedError("Product Store Schema未知或非法，已保留原文件");
+            }
+            v2 = migrateProductSnapshotV1ToV2(legacyV1.data);
           }
-          v2 = migrateProductSnapshotV1ToV2(legacyV1.data);
+          v3 = migrateProductSnapshotV2ToV3(v2);
         }
-        v3 = migrateProductSnapshotV2ToV3(v2);
+        v4 = migrateProductSnapshotV3ToV4(v3);
       }
-      v4 = migrateProductSnapshotV3ToV4(v3);
+      v5 = migrateProductSnapshotV4ToV5(v4);
     }
-    const migrated = migrateProductSnapshotV4ToV5(v4);
+    const migrated = migrateProductSnapshotV5ToV6(v5);
     assertSnapshotIntegrity(migrated);
     const store = new JsonProductStore(options, migrated);
     // 成功迁移使用与普通事务相同的原子替换；rename 前失败时旧文件逐字节不变。

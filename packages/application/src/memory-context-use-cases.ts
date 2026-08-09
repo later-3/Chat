@@ -34,6 +34,7 @@ import {
   type MemoryQueryOutput,
 } from "./memory-ports.js";
 import { emitRunEvent } from "./trace-helpers.js";
+import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
 
 export interface BeginPlanningContextCommand {
   readonly commandId: CommandId;
@@ -292,6 +293,7 @@ export async function beginPlanningContext(
         updatedAt: now,
       };
       draft.entities.memoryQueries[memoryQueryId] = query;
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { memoryQueryId, productRunId: input.productRunId } };
     },
   });
@@ -568,6 +570,7 @@ async function settleMemorySuccess(
         revision: 2,
         updatedAt: now,
       };
+      synchronizePlanningWorkflowProjection(draft, committedQuery.productRunId, now);
       return { resultRefs: { contextPackageId, productRunId: committedQuery.productRunId } };
     },
   });
@@ -609,7 +612,10 @@ async function settleMemoryFailure(
         revision: 2,
         updatedAt: now,
       };
-      if (!optional) return { resultRefs: { productRunId: committedQuery.productRunId } };
+      if (!optional) {
+        synchronizePlanningWorkflowProjection(draft, committedQuery.productRunId, now);
+        return { resultRefs: { productRunId: committedQuery.productRunId } };
+      }
       const packageShape = {
         contextRequestId: committedQuery.contextRequestId,
         productRunId: committedQuery.productRunId,
@@ -634,6 +640,7 @@ async function settleMemoryFailure(
         createdAt: now,
         updatedAt: now,
       };
+      synchronizePlanningWorkflowProjection(draft, committedQuery.productRunId, now);
       return { resultRefs: { contextPackageId, productRunId: committedQuery.productRunId } };
     },
   });

@@ -3,6 +3,7 @@ import type { ProductRun, ProductRunId, ProductSnapshot } from "@chat/contracts"
 import type { ApplicationDeps } from "./deps.js";
 import { notFound } from "./errors.js";
 import { emitRunEvent } from "./trace-helpers.js";
+import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
 
 /** 失败/结果未知的产品事实收敛；跨Runtime派发由Outbox用例负责。 */
 export function settleRunWithoutSuccess(
@@ -22,6 +23,7 @@ export function settleRunWithoutSuccess(
     run.status === "outcome_unknown"
   ) {
     failRunningAttempts(draft, productRunId, now, errorCode);
+    synchronizePlanningWorkflowProjection(draft, productRunId, now);
     return;
   }
   const lifecycle = transitionRunLifecycle(
@@ -60,6 +62,7 @@ export function settleRunWithoutSuccess(
     }
   }
   failRunningAttempts(draft, productRunId, now, errorCode);
+  synchronizePlanningWorkflowProjection(draft, productRunId, now);
 }
 
 export function emitProductRunTransition(

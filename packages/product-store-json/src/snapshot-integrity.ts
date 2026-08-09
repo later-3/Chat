@@ -22,6 +22,11 @@ import {
   computeProjectManagementCandidateSha256,
   computeProjectMethodSnapshotSha256,
   computeProjectObservationSha256,
+  assertWorkflowNodeRunTimestamps,
+  assertPersistedWorkflowNodeTransition,
+  assertWorkflowViewDefinition,
+  computeNodeValueManifestSha256,
+  workflowNodeRunIdentityKey,
 } from "@chat/domain";
 
 /**
@@ -41,6 +46,7 @@ export function assertSnapshotIntegrity(snapshot: ProductSnapshot): void {
   assertSessionsAndMessages(snapshot, fail);
   assertAttempts(snapshot, fail);
   assertRuns(snapshot, fail);
+  assertWorkflowProjection(snapshot, fail);
   assertPlansAndReviews(snapshot, fail);
   assertLongTermContext(snapshot, fail);
   assertMemoryImports(snapshot, fail);
@@ -106,6 +112,14 @@ function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
     ["projectDecision", snapshot.entities.projectDecisions, "projectDecisionId"],
     ["projectObservation", snapshot.entities.projectObservations, "projectObservationId"],
     ["projectCandidate", snapshot.entities.projectCandidates, "projectCandidateId"],
+    [
+      "workflowViewDefinition",
+      snapshot.entities.workflowViewDefinitions,
+      "workflowViewDefinitionId",
+    ],
+    ["workflowNodeRun", snapshot.entities.workflowNodeRuns, "workflowNodeRunId"],
+    ["nodeRunTransition", snapshot.entities.nodeRunTransitions, "nodeRunTransitionId"],
+    ["nodeValueManifest", snapshot.entities.nodeValueManifests, "nodeValueManifestId"],
     ["receipt", snapshot.commandReceipts, "commandId"],
     ["outbox", snapshot.outbox, "outboxId"],
   ] as const;
@@ -115,6 +129,237 @@ function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
         fail(`${label} Map键${key}与${idField}不一致`);
       }
     }
+  }
+}
+
+function assertWorkflowProjection(snapshot: ProductSnapshot, fail: Fail): void {
+  const { entities } = snapshot;
+  for (const view of Object.values(entities.workflowViewDefinitions)) {
+    try {
+      assertWorkflowViewDefinition(view);
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  const identityKeys = new Set<string>();
+  const transitionsByNode = new Map<string, (typeof entities.nodeRunTransitions)[string][]>();
+  for (const transition of Object.values(entities.nodeRunTransitions)) {
+    if (entities.workflowNodeRuns[transition.workflowNodeRunId] === undefined) {
+      fail(`nodeRunTransition ${transition.nodeRunTransitionId} 悬空Node Run`);
+    }
+    const values = transitionsByNode.get(transition.workflowNodeRunId) ?? [];
+    values.push(transition);
+    transitionsByNode.set(transition.workflowNodeRunId, values);
+    if (transition.relatedProductRef !== undefined) {
+      assertNodeProductRef(snapshot, transition.relatedProductRef, fail);
+    }
+  }
+
+  for (const nodeRun of Object.values(entities.workflowNodeRuns)) {
+    const run = entities.runs[nodeRun.productRunId];
+    const view = entities.workflowViewDefinitions[nodeRun.workflowViewDefinitionId];
+    if (
+      run === undefined ||
+      view === undefined ||
+      run.workflowViewDefinitionId !== nodeRun.workflowViewDefinitionId
+    ) {
+      fail(`workflowNodeRun ${nodeRun.workflowNodeRunId} Run/View绑定不一致`);
+    }
+    const viewNode = view.nodes.find((node) => node.definitionNodeId === nodeRun.definitionNodeId);
+    const dynamicParent =
+      nodeRun.nodeType === "execute.plan_step" && nodeRun.parentNodeRunId !== undefined
+        ? entities.workflowNodeRuns[nodeRun.parentNodeRunId]
+        : undefined;
+    const dynamicExecutionChild = dynamicParent !== undefined;
+    if (
+      (!dynamicExecutionChild &&
+        (viewNode === undefined ||
+          viewNode.nodeType !== nodeRun.nodeType ||
+          viewNode.nodeSchemaVersion !== nodeRun.nodeSchemaVersion)) ||
+      (dynamicExecutionChild && dynamicParent.productRunId !== nodeRun.productRunId)
+    ) {
+      fail(`workflowNodeRun ${nodeRun.workflowNodeRunId} Definition节点绑定不一致`);
+    }
+    if (
+      nodeRun.parentNodeRunId !== undefined &&
+      (nodeRun.parentNodeRunId === nodeRun.workflowNodeRunId ||
+        entities.workflowNodeRuns[nodeRun.parentNodeRunId]?.productRunId !== nodeRun.productRunId)
+    ) {
+      fail(`workflowNodeRun ${nodeRun.workflowNodeRunId} Parent绑定不一致`);
+    }
+    const identityKey = workflowNodeRunIdentityKey(nodeRun);
+    if (identityKeys.has(identityKey)) {
+      fail(`workflowNodeRun ${nodeRun.workflowNodeRunId} 稳定身份重复`);
+    }
+    identityKeys.add(identityKey);
+    try {
+      assertWorkflowNodeRunTimestamps(nodeRun);
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+
+    const transitions = transitionsByNode.get(nodeRun.workflowNodeRunId) ?? [];
+    transitions.sort((left, right) => left.nodeSequence - right.nodeSequence);
+    if (transitions.length === 0) {
+      fail(`workflowNodeRun ${nodeRun.workflowNodeRunId} 缺少Transition`);
+    }
+    for (let index = 0; index < transitions.length; index += 1) {
+      const transition = transitions[index];
+      const previous = transitions[index - 1];
+      if (
+        transition === undefined ||
+        transition.nodeSequence !== index + 1 ||
+        (index === 0 && transition.fromStatus !== undefined) ||
+        (index > 0 && transition.fromStatus !== previous?.toStatus) ||
+        transition.projectionSource !== nodeRun.projectionSource
+      ) {
+        fail(`workflowNodeRun ${nodeRun.workflowNodeRunId} Transition链不连续`);
+      }
+      try {
+        assertPersistedWorkflowNodeTransition({
+          nodeType: nodeRun.nodeType,
+          projectionSource: transition.projectionSource,
+          ...(transition.fromStatus !== undefined ? { fromStatus: transition.fromStatus } : {}),
+          toStatus: transition.toStatus,
+          reasonKind: transition.reasonKind,
+          ...(transition.relatedProductRef !== undefined
+            ? { relatedProductRef: transition.relatedProductRef }
+            : {}),
+        });
+      } catch (error) {
+        fail(error instanceof Error ? error.message : String(error));
+      }
+    }
+    if (transitions.at(-1)?.toStatus !== nodeRun.status) {
+      fail(`workflowNodeRun ${nodeRun.workflowNodeRunId} 最新Transition与状态不一致`);
+    }
+    if (
+      (nodeRun.inputManifestId !== undefined &&
+        entities.nodeValueManifests[nodeRun.inputManifestId]?.workflowNodeRunId !==
+          nodeRun.workflowNodeRunId) ||
+      (nodeRun.outputManifestId !== undefined &&
+        entities.nodeValueManifests[nodeRun.outputManifestId]?.workflowNodeRunId !==
+          nodeRun.workflowNodeRunId)
+    ) {
+      fail(`workflowNodeRun ${nodeRun.workflowNodeRunId} Manifest引用悬空或Owner不一致`);
+    }
+  }
+
+  for (const manifest of Object.values(entities.nodeValueManifests)) {
+    const nodeRun = entities.workflowNodeRuns[manifest.workflowNodeRunId];
+    if (
+      nodeRun === undefined ||
+      (manifest.direction === "input"
+        ? nodeRun.inputManifestId !== manifest.nodeValueManifestId
+        : nodeRun.outputManifestId !== manifest.nodeValueManifestId)
+    ) {
+      fail(`nodeValueManifest ${manifest.nodeValueManifestId} Owner绑定不一致`);
+    }
+    if (computeNodeValueManifestSha256(manifest) !== manifest.sha256) {
+      fail(`nodeValueManifest ${manifest.nodeValueManifestId} Hash不一致`);
+    }
+    const slotNames = new Set<string>();
+    for (const slot of manifest.slots) {
+      if (slotNames.has(slot.name)) {
+        fail(`nodeValueManifest ${manifest.nodeValueManifestId} Slot重名`);
+      }
+      slotNames.add(slot.name);
+      for (const ref of slot.refs) assertNodeProductRef(snapshot, ref, fail);
+    }
+  }
+}
+
+function assertNodeProductRef(
+  snapshot: ProductSnapshot,
+  ref: ProductSnapshot["entities"]["nodeValueManifests"][string]["slots"][number]["refs"][number],
+  fail: Fail,
+): void {
+  const { entities } = snapshot;
+  let expected: { readonly revision: number; readonly sha256: string } | undefined;
+  if (ref.kind === "message") {
+    const target = entities.messages[ref.id];
+    if (target !== undefined) {
+      expected = {
+        revision: target.revision,
+        sha256: hashCanonical("message.v1", {
+          messageId: target.messageId,
+          sessionId: target.sessionId,
+          sessionSequence: target.sessionSequence,
+          role: target.role,
+          content: target.content,
+        }),
+      };
+    }
+  } else if (ref.kind === "context_package") {
+    const target = entities.contextPackages[ref.id];
+    if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
+  } else if (ref.kind === "plan_revision") {
+    const target = entities.plans[ref.id];
+    if (target !== undefined) {
+      expected = { revision: target.planRevision, sha256: target.sha256 };
+    }
+  } else if (ref.kind === "approval_request") {
+    const target = entities.approvalRequests[ref.id];
+    if (target !== undefined) {
+      expected = {
+        revision: 1,
+        sha256: hashCanonical("approval-request.v1", {
+          productRunId: target.productRunId,
+          planId: target.planId,
+          planRevision: target.planRevision,
+          planSha256: target.planSha256,
+          expiresAt: target.expiresAt,
+        }),
+      };
+    }
+  } else if (ref.kind === "decision") {
+    const target = entities.decisions[ref.id];
+    if (target !== undefined) {
+      expected = {
+        revision: target.revision,
+        sha256: hashCanonical("decision.v1", {
+          approvalRequestId: target.approvalRequestId,
+          productRunId: target.productRunId,
+          planId: target.planId,
+          planRevision: target.planRevision,
+          planSha256: target.planSha256,
+          kind: target.kind,
+          principalId: target.principalId,
+          commandId: target.commandId,
+        }),
+      };
+    }
+  } else if (ref.kind === "execution_contract") {
+    const target = entities.executionContracts[ref.id];
+    if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
+  } else if (ref.kind === "execution_candidate") {
+    const target = entities.executionCandidates[ref.id];
+    if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
+  } else if (ref.kind === "validation_result") {
+    const target = entities.validationResults[ref.id];
+    if (target !== undefined) {
+      expected = {
+        revision: target.revision,
+        sha256: hashCanonical("validation-result.v1", {
+          productRunId: target.productRunId,
+          executionContractId: target.executionContractId,
+          executionCandidateId: target.executionCandidateId,
+          outcome: target.outcome,
+          failures: target.failures,
+        }),
+      };
+    }
+  } else {
+    const target = entities.artifacts[ref.id];
+    if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
+  }
+  if (
+    expected === undefined ||
+    expected.revision !== ref.revision ||
+    expected.sha256 !== ref.sha256
+  ) {
+    fail(`Node Product Ref ${ref.kind}:${ref.id} 悬空或版本证据不一致`);
   }
 }
 
@@ -1373,6 +1618,9 @@ function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
     if (source === undefined) fail(`run ${run.productRunId} 悬空sourceMessageId`);
     if (source.sessionId !== run.sessionId || source.role !== "user") {
       fail(`run ${run.productRunId} 源消息必须是同Session的User Message`);
+    }
+    if (entities.workflowViewDefinitions[run.workflowViewDefinitionId] === undefined) {
+      fail(`run ${run.productRunId} 悬空workflowViewDefinitionId`);
     }
     const currentFields = [run.currentPlanId, run.currentPlanRevision];
     if (currentFields.filter((value) => value !== undefined).length === 1) {

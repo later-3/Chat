@@ -29,3 +29,5 @@ export * from "./outbox-runtime-use-cases.js";
 export * from "./trace-helpers.js";
 export * from "./project-use-cases.js";
 export * from "./project-advancement-use-cases.js";
+export * from "./planning-workflow-projection.js";
+export * from "./workflow-query-use-cases.js";

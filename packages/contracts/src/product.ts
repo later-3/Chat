@@ -20,6 +20,7 @@ import {
   runAttemptIdSchema,
   contextPackageIdSchema,
   validationResultIdSchema,
+  workflowViewDefinitionIdSchema,
 } from "./ids.js";
 import { sha256Schema } from "./hash.js";
 import { B2_MAX_PLAN_STEPS } from "./versions.js";
@@ -122,7 +123,7 @@ export const runFailureSchema = z
   })
   .strict();
 
-export const productRunSchema = z
+export const productRunV1Schema = z
   .object({
     schemaVersion: z.literal("product-run.v1"),
     productRunId: productRunIdSchema,
@@ -137,6 +138,26 @@ export const productRunSchema = z
     finalMessageId: messageIdSchema.optional(),
     failure: runFailureSchema.optional(),
     /** 规划修订上限；达到后不再调用模型，Run进入明确失败。 */
+    maxPlanRevisions: z.number().int().positive().max(20),
+    ...entityBaseFields,
+  })
+  .strict();
+
+/** S1起每个Run必须绑定当时的用户可见图快照；运行语义仍保持原Planning状态机。 */
+export const productRunSchema = z
+  .object({
+    schemaVersion: z.literal("product-run.v2"),
+    productRunId: productRunIdSchema,
+    sessionId: productSessionIdSchema,
+    sourceMessageId: messageIdSchema,
+    workflowViewDefinitionId: workflowViewDefinitionIdSchema,
+    status: productRunStatusSchema,
+    phase: productRunPhaseSchema,
+    currentPlanId: planIdSchema.optional(),
+    currentPlanRevision: z.number().int().positive().optional(),
+    currentApprovalRequestId: approvalRequestIdSchema.optional(),
+    finalMessageId: messageIdSchema.optional(),
+    failure: runFailureSchema.optional(),
     maxPlanRevisions: z.number().int().positive().max(20),
     ...entityBaseFields,
   })

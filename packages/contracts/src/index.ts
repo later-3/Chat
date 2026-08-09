@@ -7,6 +7,8 @@ export * from "./events.js";
 export * from "./service-status.js";
 export * from "./trace.js";
 export * from "./product.js";
+export * from "./workflow-run.js";
+export * from "./workflow-api.js";
 export * from "./context.js";
 export * from "./memory-import.js";
 export * from "./project.js";

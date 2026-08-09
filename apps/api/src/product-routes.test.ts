@@ -19,6 +19,8 @@ import {
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
   runContextDtoSchema,
+  workflowRunViewDtoSchema,
+  workflowNodeDetailDtoSchema,
   type CommandId,
   type PlanContent,
   type ProductRunId,
@@ -335,6 +337,66 @@ describe("公开产品API", () => {
       .parse(await approvalRes.json());
     expect(approvalBody.approval?.status).toBe("open");
 
+    const workflowViewResponse = await app.request(`/api/runs/${run.productRunId}/workflow-view`);
+    expect(workflowViewResponse.status).toBe(200);
+    const workflowEtag = workflowViewResponse.headers.get("etag");
+    expect(workflowEtag).toMatch(/^"[a-f0-9]{64}"$/u);
+    const workflowView = workflowRunViewDtoSchema.parse(await workflowViewResponse.json());
+    expect(workflowView.definitionNodes.map((node) => node.definitionNodeId)).toEqual([
+      "context",
+      "plan",
+      "review",
+      "execute",
+      "validate",
+      "commit",
+    ]);
+    const reviewNode = workflowView.nodeRuns.find(
+      (node) => node.nodeType === "human.plan_review" && node.status === "waiting_human",
+    );
+    expect(reviewNode?.allowedActions).toEqual(["inspect", "submit_decision"]);
+    const notModified = await app.request(`/api/runs/${run.productRunId}/workflow-view`, {
+      headers: { "if-none-match": workflowEtag ?? "" },
+    });
+    expect(notModified.status).toBe(304);
+    expect(await notModified.text()).toBe("");
+
+    const otherPrincipalApp = createApiApp({
+      traceSink: null,
+      product: { deps, principalId: "usr_other" as never },
+      internalRuntime: { credential: "rtk_test" },
+    });
+    const unauthorizedView = await otherPrincipalApp.request(
+      `/api/runs/${run.productRunId}/workflow-view`,
+    );
+    expect(unauthorizedView.status).toBe(404);
+    expect(problemDetailSchema.parse(await unauthorizedView.json()).code).toBe("not_found");
+
+    if (reviewNode === undefined) throw new Error("缺少等待审核Node Run");
+    const detailResponse = await app.request(
+      `/api/runs/${run.productRunId}/workflow-nodes/${reviewNode.workflowNodeRunId}`,
+    );
+    const detail = workflowNodeDetailDtoSchema.parse(await detailResponse.json());
+    expect(detail.node.status).toBe("waiting_human");
+    expect(detail.input?.slots.flatMap((slot) => slot.refs).map((ref) => ref.kind)).toContain(
+      "approval_request",
+    );
+    expect(detail.timeline?.at(-1)?.toStatus).toBe("waiting_human");
+    expect(JSON.stringify(detail)).not.toMatch(/hook|token|provider|prompt|pi[_-]?session/iu);
+    const unauthorizedDetail = await otherPrincipalApp.request(
+      `/api/runs/${run.productRunId}/workflow-nodes/${reviewNode.workflowNodeRunId}`,
+    );
+    expect(unauthorizedDetail.status).toBe(404);
+    const summaryOnlyResponse = await app.request(
+      `/api/runs/${run.productRunId}/workflow-nodes/${reviewNode.workflowNodeRunId}?include=summary`,
+    );
+    const summaryOnly = workflowNodeDetailDtoSchema.parse(await summaryOnlyResponse.json());
+    expect(summaryOnly.timeline).toBeUndefined();
+    expect(summaryOnly.input).toBeUndefined();
+    const invalidInclude = await app.request(
+      `/api/runs/${run.productRunId}/workflow-nodes/${reviewNode.workflowNodeRunId}?include=runtime`,
+    );
+    expect(invalidInclude.status).toBe(400);
+
     // 缺少expectedRevision：400
     const missingRevision = await postJson(app, `/api/runs/${run.productRunId}/decisions`, {
       commandId: nextCmd(),
@@ -361,12 +423,25 @@ describe("公开产品API", () => {
         kind: "approve",
       },
     });
-    expect(decided.status).toBe(201);
+    expect(decided.status, await decided.clone().text()).toBe(201);
     const decidedBody = (await decided.json()) as { decision: unknown; run: unknown };
     decisionDtoSchema.parse(decidedBody.decision);
     const decidedRun = runDtoSchema.parse(decidedBody.run);
     expect(decidedRun.status).toBe("running");
     expect(decidedRun.phase).toBe("executing");
+
+    const workflowAfterDecisionResponse = await app.request(
+      `/api/runs/${run.productRunId}/workflow-view`,
+    );
+    expect(workflowAfterDecisionResponse.headers.get("etag")).not.toBe(workflowEtag);
+    const workflowAfterDecision = workflowRunViewDtoSchema.parse(
+      await workflowAfterDecisionResponse.json(),
+    );
+    expect(
+      workflowAfterDecision.nodeRuns.find(
+        (node) => node.workflowNodeRunId === reviewNode.workflowNodeRunId,
+      ),
+    ).toMatchObject({ status: "succeeded", outcomeCode: "approve" });
 
     // 旧Approval重复决定：409 APPROVAL_ALREADY_DECIDED
     const duplicated = await postJson(app, `/api/runs/${run.productRunId}/decisions`, {

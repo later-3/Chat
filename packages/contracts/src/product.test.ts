@@ -110,10 +110,11 @@ describe("product entity contracts", () => {
 
   it("Product Run拒绝未知status/phase组合以外的值", () => {
     const base = {
-      schemaVersion: "product-run.v1",
+      schemaVersion: "product-run.v2",
       productRunId: "run_1",
       sessionId: "psn_1",
       sourceMessageId: "msg_1",
+      workflowViewDefinitionId: "wvd_planninglegacyv1",
       status: "waiting_human",
       phase: "plan_review",
       maxPlanRevisions: 5,

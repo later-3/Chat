@@ -12,6 +12,7 @@ import {
 import { type ApplicationDeps } from "./deps.js";
 import { notFound, revisionConflict } from "./errors.js";
 import { emitRunEvent } from "./trace-helpers.js";
+import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
 
 /**
  * Workflow私有Application Command：compilePlanningInput / loadCommittedDecision。
@@ -215,6 +216,7 @@ export async function compilePlanningInput(
         createdAt: now,
         updatedAt: now,
       };
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { attemptId, productRunId: input.productRunId } };
     },
   });

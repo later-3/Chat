@@ -22,6 +22,10 @@ export const runAttemptIdSchema = prefixedId("att");
 export const approvalRequestIdSchema = prefixedId("apr");
 export const commandIdSchema = prefixedId("cmd");
 export const workflowDefinitionIdSchema = prefixedId("wfd");
+export const workflowViewDefinitionIdSchema = prefixedId("wvd");
+export const workflowNodeRunIdSchema = prefixedId("wnr");
+export const nodeRunTransitionIdSchema = prefixedId("wnt");
+export const nodeValueManifestIdSchema = prefixedId("wvm");
 export const projectIdSchema = prefixedId("prj");
 
 /* B2 规划—确认—执行纵向链新增的产品身份。 */
@@ -78,6 +82,10 @@ export type RunAttemptId = z.infer<typeof runAttemptIdSchema>;
 export type ApprovalRequestId = z.infer<typeof approvalRequestIdSchema>;
 export type CommandId = z.infer<typeof commandIdSchema>;
 export type WorkflowDefinitionId = z.infer<typeof workflowDefinitionIdSchema>;
+export type WorkflowViewDefinitionId = z.infer<typeof workflowViewDefinitionIdSchema>;
+export type WorkflowNodeRunId = z.infer<typeof workflowNodeRunIdSchema>;
+export type NodeRunTransitionId = z.infer<typeof nodeRunTransitionIdSchema>;
+export type NodeValueManifestId = z.infer<typeof nodeValueManifestIdSchema>;
 export type ProjectId = z.infer<typeof projectIdSchema>;
 export type PrincipalId = z.infer<typeof principalIdSchema>;
 export type PlanId = z.infer<typeof planIdSchema>;

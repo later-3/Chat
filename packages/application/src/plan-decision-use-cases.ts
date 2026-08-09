@@ -30,6 +30,7 @@ import { DEFAULT_APPROVAL_TTL_MS, type ApplicationDeps } from "./deps.js";
 import { toApprovalDto, toDecisionDto, toPlanDto, toRunDto } from "./dto.js";
 import { ApplicationError, forbidden, notFound, revisionConflict } from "./errors.js";
 import { emitRunEvent, safeErrorType } from "./trace-helpers.js";
+import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
 
 /**
  * PublishPlanForReview / SubmitPlanDecision用例。
@@ -241,6 +242,7 @@ export async function publishPlanForReview(
         revision: run.revision + 1,
         updatedAt: now,
       };
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return {
         resultRefs: { planRevisionId, approvalRequestId, productRunId: input.productRunId },
       };
@@ -379,6 +381,7 @@ export async function submitPlanDecision(
           };
           delete expiredRun.currentApprovalRequestId;
           draft.entities.runs[input.productRunId] = expiredRun;
+          synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
           return {
             resultRefs: {
               productRunId: input.productRunId,
@@ -506,6 +509,7 @@ export async function submitPlanDecision(
           createdAt: now,
           updatedAt: now,
         };
+        synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
         return { resultRefs: { decisionId, productRunId: input.productRunId } };
       },
     })

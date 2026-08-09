@@ -25,6 +25,7 @@ import { type ApplicationDeps } from "./deps.js";
 import { notFound, revisionConflict } from "./errors.js";
 import { emitProductRunTransition, settleRunWithoutSuccess } from "./run-settlement.js";
 import { emitRunEvent, safeErrorType } from "./trace-helpers.js";
+import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
 
 /**
  * 候选持久化、验证结果与Product Commit（任务书§11三道门）。
@@ -129,6 +130,7 @@ export async function persistExecutionCandidate(
         createdAt: now,
         updatedAt: now,
       };
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { executionCandidateId } };
     },
   });
@@ -177,6 +179,7 @@ export async function persistValidationResult(
         createdAt: now,
         updatedAt: now,
       };
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { validationResultId } };
     },
   });
@@ -344,6 +347,7 @@ export async function commitExecutionResult(
           updatedAt: now,
         };
         completeWorkflowAttempt(draft, input.productRunId, "success", now);
+        synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
         return {
           resultRefs: {
             finalMessageId,
@@ -468,6 +472,7 @@ export async function commitRejectedRun(
         throw revisionConflict("Product Run不在cancelled/rejected终态");
       }
       completeWorkflowAttempt(draft, input.productRunId, "success", now);
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { productRunId: input.productRunId } };
     },
   });
@@ -516,6 +521,7 @@ export async function expireApproval(
         throw revisionConflict("审批尚未到期，拒绝提前过期");
       }
       if (approval.status === "decided") {
+        synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
         return { resultRefs: { status: "already_decided" } };
       }
 
@@ -557,6 +563,7 @@ export async function expireApproval(
         throw revisionConflict("当前Product Run状态不允许审批过期");
       }
       completeWorkflowAttempt(draft, input.productRunId, "failure", now, "approval.expired");
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { status: "expired" } };
     },
   });

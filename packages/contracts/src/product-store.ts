@@ -16,6 +16,12 @@ import {
   validationResultSchema,
 } from "./product.js";
 import {
+  nodeRunTransitionSchema,
+  nodeValueManifestSchema,
+  workflowNodeRunSchema,
+  workflowViewDefinitionSchema,
+} from "./workflow-run.js";
+import {
   contextPackageSchema,
   memoryAdoptionSchema,
   memoryQuerySchema,
@@ -51,7 +57,7 @@ import {
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v5";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v6";
 
 const idKeySchema = z.string().min(1).max(200);
 
@@ -96,6 +102,10 @@ export const productSnapshotSchema = z
         projectDecisions: z.record(idKeySchema, projectDecisionSchema),
         projectObservations: z.record(idKeySchema, projectObservationSchema),
         projectCandidates: z.record(idKeySchema, projectCandidateSchema),
+        workflowViewDefinitions: z.record(idKeySchema, workflowViewDefinitionSchema),
+        workflowNodeRuns: z.record(idKeySchema, workflowNodeRunSchema),
+        nodeRunTransitions: z.record(idKeySchema, nodeRunTransitionSchema),
+        nodeValueManifests: z.record(idKeySchema, nodeValueManifestSchema),
       })
       .strict(),
     commandReceipts: z.record(idKeySchema, commandReceiptSchema),
@@ -146,6 +156,10 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       projectDecisions: {},
       projectObservations: {},
       projectCandidates: {},
+      workflowViewDefinitions: {},
+      workflowNodeRuns: {},
+      nodeRunTransitions: {},
+      nodeValueManifests: {},
     },
     commandReceipts: {},
     outbox: {},
