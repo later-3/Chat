@@ -25,6 +25,9 @@ import type {
   ProjectDecisionId,
   ProjectObservationId,
   ProjectCandidateId,
+  ProjectMilestoneId,
+  ProjectUpdateId,
+  ProjectStateTransitionId,
 } from "@chat/contracts";
 import type { TraceEventInput } from "@chat/contracts";
 import type { ProductStorePort } from "./product-store-port.js";
@@ -32,6 +35,7 @@ import type { MemoryBackendRegistryPort } from "./memory-ports.js";
 import type { MemoryImportBackendRegistryPort } from "./memory-import-ports.js";
 import type {
   ProjectIntakeUnderstandingPort,
+  ProjectAdvancementUnderstandingPort,
   ProjectResourceRootRegistryPort,
 } from "./project-ports.js";
 
@@ -76,6 +80,9 @@ export interface ProjectIdFactory {
   decision(): ProjectDecisionId;
   observation(): ProjectObservationId;
   candidate(): ProjectCandidateId;
+  milestone(): ProjectMilestoneId;
+  update(): ProjectUpdateId;
+  stateTransition(): ProjectStateTransitionId;
 }
 
 export interface ApplicationDeps {
@@ -90,6 +97,7 @@ export interface ApplicationDeps {
   readonly memoryImportBackends?: MemoryImportBackendRegistryPort;
   readonly projectRoots?: ProjectResourceRootRegistryPort;
   readonly projectIntakeUnderstanding?: ProjectIntakeUnderstandingPort;
+  readonly projectAdvancementUnderstanding?: ProjectAdvancementUnderstandingPort;
   readonly projectIds?: ProjectIdFactory;
 }
 

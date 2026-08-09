@@ -18,6 +18,7 @@ import {
   validateExecutionCandidate,
   assertProjectWorkGraph,
   computeProjectCandidateSha256,
+  computeProjectAdvancementCandidateSha256,
   computeProjectManagementCandidateSha256,
   computeProjectMethodSnapshotSha256,
   computeProjectObservationSha256,
@@ -89,6 +90,13 @@ function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
     ["project", snapshot.entities.projects, "projectId"],
     ["projectMethod", snapshot.entities.projectMethodSnapshots, "projectMethodSnapshotId"],
     ["projectStage", snapshot.entities.projectStages, "projectStageId"],
+    ["projectMilestone", snapshot.entities.projectMilestones, "projectMilestoneId"],
+    ["projectUpdate", snapshot.entities.projectUpdates, "projectUpdateId"],
+    [
+      "projectStateTransition",
+      snapshot.entities.projectStateTransitions,
+      "projectStateTransitionId",
+    ],
     ["projectResource", snapshot.entities.projectResources, "projectResourceId"],
     ["projectParticipant", snapshot.entities.projectParticipants, "projectParticipantId"],
     ["projectWork", snapshot.entities.projectWorks, "projectWorkId"],
@@ -127,14 +135,162 @@ function assertProjects(snapshot: ProductSnapshot, fail: Fail): void {
         profileId: method.profileId,
         rationale: method.rationale,
         policies: method.policies,
+        source: method.source,
       }) !== method.sha256
     ) {
       fail(`projectMethod ${method.projectMethodSnapshotId} Hash不一致`);
     }
   }
   for (const stage of Object.values(entities.projectStages)) {
-    if (entities.projects[stage.projectId] === undefined)
+    if (
+      entities.projects[stage.projectId] === undefined ||
+      entities.projectMethodSnapshots[stage.methodSnapshotId]?.projectId !== stage.projectId
+    )
       fail(`projectStage ${stage.projectStageId} 悬空Project`);
+    const terminal = stage.status === "completed" || stage.status === "skipped";
+    const migratedLegacyStage =
+      entities.projectMethodSnapshots[stage.methodSnapshotId]?.source === "migrated_v1";
+    if (
+      terminal !== (stage.completedAt !== undefined) ||
+      (!migratedLegacyStage && terminal !== (stage.completionDecisionId !== undefined))
+    ) {
+      fail(`projectStage ${stage.projectStageId} 终态证据字段不一致`);
+    }
+    if (
+      stage.completionDecisionId !== undefined &&
+      entities.projectDecisions[stage.completionDecisionId]?.projectId !== stage.projectId
+    ) {
+      fail(`projectStage ${stage.projectStageId} Completion Decision绑定不一致`);
+    }
+    if (
+      stage.completionEvidenceIds.some(
+        (id) => entities.projectEvidence[id]?.projectId !== stage.projectId,
+      )
+    ) {
+      fail(`projectStage ${stage.projectStageId} Completion Evidence绑定不一致`);
+    }
+  }
+  const activeStageCounts = new Map<string, number>();
+  for (const stage of Object.values(entities.projectStages)) {
+    if (stage.status === "active") {
+      activeStageCounts.set(stage.projectId, (activeStageCounts.get(stage.projectId) ?? 0) + 1);
+    }
+  }
+  for (const [projectId, count] of activeStageCounts) {
+    if (count > 1) fail(`project ${projectId} 存在多个active Stage`);
+  }
+  for (const milestone of Object.values(entities.projectMilestones)) {
+    if (entities.projects[milestone.projectId] === undefined) {
+      fail(`projectMilestone ${milestone.projectMilestoneId} 悬空Project`);
+    }
+    if (
+      milestone.stageId !== undefined &&
+      entities.projectStages[milestone.stageId]?.projectId !== milestone.projectId
+    ) {
+      fail(`projectMilestone ${milestone.projectMilestoneId} Stage绑定不一致`);
+    }
+    if (
+      milestone.evidenceIds.some(
+        (id) => entities.projectEvidence[id]?.projectId !== milestone.projectId,
+      )
+    ) {
+      fail(`projectMilestone ${milestone.projectMilestoneId} Evidence绑定不一致`);
+    }
+    if (
+      (milestone.status === "achieved") !== (milestone.achievedDecisionId !== undefined) ||
+      (milestone.status === "achieved" && milestone.evidenceIds.length === 0) ||
+      (milestone.achievedDecisionId !== undefined &&
+        entities.projectDecisions[milestone.achievedDecisionId]?.projectId !== milestone.projectId)
+    ) {
+      fail(`projectMilestone ${milestone.projectMilestoneId} Achieved Decision不一致`);
+    }
+  }
+  for (const update of Object.values(entities.projectUpdates)) {
+    const project = entities.projects[update.projectId];
+    const participant = entities.projectParticipants[update.authorParticipantId];
+    const stage = entities.projectStages[update.stageId];
+    const superseded =
+      update.supersedesUpdateId === undefined
+        ? undefined
+        : entities.projectUpdates[update.supersedesUpdateId];
+    if (
+      project === undefined ||
+      participant?.projectId !== update.projectId ||
+      participant.principalId !== update.confirmedByPrincipalId ||
+      participant.kind !== "human" ||
+      participant.status !== "active" ||
+      stage?.projectId !== update.projectId ||
+      update.boundProjectRevision > project.revision ||
+      update.boundStageRevision > stage.revision ||
+      (update.supersedesUpdateId !== undefined && superseded === undefined) ||
+      (superseded !== undefined &&
+        (superseded.projectId !== update.projectId || superseded.publishedAt >= update.publishedAt))
+    ) {
+      fail(`projectUpdate ${update.projectUpdateId} 作者或Project绑定不一致`);
+    }
+    if (
+      update.evidenceIds.some((id) => entities.projectEvidence[id]?.projectId !== update.projectId)
+    ) {
+      fail(`projectUpdate ${update.projectUpdateId} Evidence绑定不一致`);
+    }
+  }
+  const transitionsByObject = new Map<
+    string,
+    (typeof entities.projectStateTransitions)[string][]
+  >();
+  for (const transition of Object.values(entities.projectStateTransitions)) {
+    const object =
+      transition.objectType === "stage"
+        ? entities.projectStages[transition.objectId]
+        : transition.objectType === "milestone"
+          ? entities.projectMilestones[transition.objectId]
+          : entities.projects[transition.objectId];
+    if (
+      entities.projects[transition.projectId] === undefined ||
+      entities.projectParticipants[transition.actorParticipantId]?.projectId !==
+        transition.projectId ||
+      entities.projectDecisions[transition.decisionId]?.projectId !== transition.projectId ||
+      object?.projectId !== transition.projectId ||
+      object.revision < transition.afterRevision ||
+      transition.afterRevision !== transition.beforeRevision + 1 ||
+      transition.from === transition.to ||
+      transition.evidenceIds.some(
+        (id) => entities.projectEvidence[id]?.projectId !== transition.projectId,
+      )
+    ) {
+      fail(`projectStateTransition ${transition.projectStateTransitionId} 绑定或revision无效`);
+    }
+    const key = `${transition.objectType}:${transition.objectId}`;
+    const sequence = transitionsByObject.get(key) ?? [];
+    sequence.push(transition);
+    transitionsByObject.set(key, sequence);
+  }
+  for (const [key, transitions] of transitionsByObject) {
+    transitions.sort((left, right) => left.beforeRevision - right.beforeRevision);
+    for (let index = 1; index < transitions.length; index += 1) {
+      const previous = transitions[index - 1];
+      const current = transitions[index];
+      if (
+        previous === undefined ||
+        current === undefined ||
+        current.beforeRevision < previous.afterRevision ||
+        current.from !== previous.to
+      ) {
+        fail(`projectStateTransition ${key} 历史链不连续`);
+      }
+    }
+    const latest = transitions.at(-1);
+    const currentObject =
+      latest?.objectType === "stage"
+        ? entities.projectStages[latest.objectId]
+        : latest?.objectType === "milestone"
+          ? entities.projectMilestones[latest.objectId]
+          : latest === undefined
+            ? undefined
+            : entities.projects[latest.objectId];
+    if (latest === undefined || currentObject?.status !== latest.to) {
+      fail(`projectStateTransition ${key} 最新状态与对象不一致`);
+    }
   }
   for (const resource of Object.values(entities.projectResources)) {
     if (entities.projects[resource.projectId] === undefined)
@@ -337,6 +493,52 @@ function assertProjects(snapshot: ProductSnapshot, fail: Fail): void {
             candidate.projectId
         ) {
           fail(`projectCandidate ${candidate.projectCandidateId} committed Contribution缺失`);
+        }
+      }
+    }
+    if (candidate.candidateKind === "advancement") {
+      const project = entities.projects[candidate.projectId];
+      const stage = entities.projectStages[candidate.boundStageId];
+      const method = entities.projectMethodSnapshots[candidate.boundMethodSnapshotId];
+      if (
+        project?.ownerPrincipalId !== candidate.requestedByPrincipalId ||
+        stage?.projectId !== candidate.projectId ||
+        method?.projectId !== candidate.projectId ||
+        candidate.boundProjectRevision > project.revision ||
+        candidate.boundStageRevision > stage.revision ||
+        candidate.boundMethodSha256 !== method.sha256
+      ) {
+        fail(`projectCandidate ${candidate.projectCandidateId} Advancement绑定不一致`);
+      }
+      if (
+        candidate.status === "under_review" ||
+        candidate.status === "confirmed" ||
+        candidate.status === "rejected"
+      ) {
+        if (
+          computeProjectAdvancementCandidateSha256({
+            projectId: candidate.projectId,
+            boundProjectRevision: candidate.boundProjectRevision,
+            boundStageId: candidate.boundStageId,
+            boundStageRevision: candidate.boundStageRevision,
+            boundMethodSnapshotId: candidate.boundMethodSnapshotId,
+            boundMethodSha256: candidate.boundMethodSha256,
+            sourceMessageId: candidate.sourceMessageId,
+            proposal: candidate.proposal,
+          }) !== candidate.candidateSha256
+        ) {
+          fail(`projectCandidate ${candidate.projectCandidateId} Advancement Hash不一致`);
+        }
+      }
+      if (candidate.status === "confirmed") {
+        if (
+          entities.projectStages[candidate.committedStageId]?.projectId !== candidate.projectId ||
+          entities.projectUpdates[candidate.committedUpdateId]?.projectId !== candidate.projectId ||
+          candidate.committedMilestoneIds.some(
+            (id) => entities.projectMilestones[id]?.projectId !== candidate.projectId,
+          )
+        ) {
+          fail(`projectCandidate ${candidate.projectCandidateId} committed Advancement缺失`);
         }
       }
     }
@@ -1631,13 +1833,20 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
     ],
     BeginProjectIntake: ["projectCandidateId", "messageId"],
     BeginProjectManagementCandidate: ["projectCandidateId", "messageId"],
+    BeginProjectAdvancement: ["projectCandidateId", "messageId"],
+    PrepareProjectAdvancementCandidate: ["projectCandidateId"],
+    FailProjectAdvancementCandidate: ["projectCandidateId"],
+    DecideProjectAdvancementCandidate: ["projectCandidateId", "projectId"],
+    TransitionProjectStage: ["projectId", "projectStageId"],
+    TransitionProjectMilestone: ["projectId", "projectMilestoneId"],
     DecideProjectManagementCandidate: ["projectCandidateId", "projectId"],
     PrepareProjectCandidateForReview: ["projectCandidateId"],
     FailProjectCandidateForReview: ["projectCandidateId"],
     CreateProjectAction: ["projectId", "projectActionId"],
     AssignProjectAction: ["projectId"],
     TransitionProjectAction: ["projectId"],
-    SetProjectArchiveStatus: ["projectId"],
+    SetProjectArchiveStatus: ["projectId", "projectDecisionId", "projectStateTransitionId"],
+    TransitionProjectLifecycle: ["projectId", "projectDecisionId", "projectStateTransitionId"],
     RecordProjectDecision: ["projectId", "projectDecisionId"],
     RecordProjectContribution: ["projectId", "projectContributionId"],
     ObserveProjectResource: ["projectId", "projectObservationId"],
@@ -1702,24 +1911,31 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
                                           ? entities.projects[value] !== undefined
                                           : key === "projectCandidateId"
                                             ? entities.projectCandidates[value] !== undefined
-                                            : key === "projectActionId"
-                                              ? entities.projectActions[value] !== undefined
-                                              : key === "projectDecisionId"
-                                                ? entities.projectDecisions[value] !== undefined
-                                                : key === "projectContributionId"
-                                                  ? entities.projectContributions[value] !==
-                                                    undefined
-                                                  : key === "projectObservationId"
-                                                    ? entities.projectObservations[value] !==
-                                                      undefined
-                                                    : key === "messageSha256"
-                                                      ? /^[a-f0-9]{64}$/.test(value)
-                                                      : key === "approvalExpired"
-                                                        ? value === "true"
-                                                        : key === "status"
-                                                          ? value === "expired" ||
-                                                            value === "already_decided"
-                                                          : false;
+                                            : key === "projectStageId"
+                                              ? entities.projectStages[value] !== undefined
+                                              : key === "projectMilestoneId"
+                                                ? entities.projectMilestones[value] !== undefined
+                                                : key === "projectActionId"
+                                                  ? entities.projectActions[value] !== undefined
+                                                  : key === "projectDecisionId"
+                                                    ? entities.projectDecisions[value] !== undefined
+                                                    : key === "projectStateTransitionId"
+                                                      ? entities.projectStateTransitions[value] !==
+                                                        undefined
+                                                      : key === "projectContributionId"
+                                                        ? entities.projectContributions[value] !==
+                                                          undefined
+                                                        : key === "projectObservationId"
+                                                          ? entities.projectObservations[value] !==
+                                                            undefined
+                                                          : key === "messageSha256"
+                                                            ? /^[a-f0-9]{64}$/.test(value)
+                                                            : key === "approvalExpired"
+                                                              ? value === "true"
+                                                              : key === "status"
+                                                                ? value === "expired" ||
+                                                                  value === "already_decided"
+                                                                : false;
       if (!exists) fail(`receipt ${receipt.commandId} 的${key}引用无效`);
     }
     if (receipt.commandType === "SubmitUserMessage") {
@@ -1794,6 +2010,17 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
         entry.expectedCandidateRevision > candidate.revision
       ) {
         fail(`outbox ${entry.outboxId} Project Intake绑定不完整`);
+      }
+      continue;
+    }
+    if (entry.kind === "project_advancement_start" || entry.kind === "project_advancement_resume") {
+      const candidate = entities.projectCandidates[entry.projectCandidateId];
+      if (
+        candidate === undefined ||
+        candidate.candidateKind !== "advancement" ||
+        entry.expectedCandidateRevision > candidate.revision
+      ) {
+        fail(`outbox ${entry.outboxId} Project Advancement绑定不完整`);
       }
       continue;
     }

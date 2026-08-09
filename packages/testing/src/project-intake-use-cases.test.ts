@@ -19,10 +19,16 @@ import {
   listProjects,
   observeProjectResource,
   prepareProjectCandidateForReview,
+  beginProjectAdvancement,
+  prepareProjectAdvancementCandidate,
+  decideProjectAdvancementCandidate,
   recordProjectContribution,
   recordProjectDecision,
   setProjectArchiveStatus,
   transitionProjectAction,
+  transitionProjectMilestone,
+  transitionProjectLifecycle,
+  transitionProjectStage,
   type ApplicationDeps,
   type IdFactory,
   type ProjectIdFactory,
@@ -70,6 +76,9 @@ function projectIds(): ProjectIdFactory {
     decision: () => next("pdc") as never,
     observation: () => next("pob") as never,
     candidate: () => next("pca") as never,
+    milestone: () => next("pml") as never,
+    update: () => next("pup") as never,
+    stateTransition: () => next("ptr") as never,
   };
 }
 
@@ -130,6 +139,38 @@ async function deps(): Promise<ApplicationDeps> {
           openQuestions: [],
         },
         evidence: { durationMs: 5, providerRequestId: "req-test-project" },
+      }),
+    },
+    projectAdvancementUnderstanding: {
+      describe: () => ({
+        profileVersion: "test.project-model.v1",
+        providerName: "test-provider",
+        modelId: "test-model",
+        promptTemplateVersion: "project-advancement-understanding.v1",
+        endpointHost: "models.example.test",
+      }),
+      understand: async () => ({
+        understanding: {
+          stage: {
+            name: "可用的项目推进",
+            goal: "让用户只靠对话推进项目阶段和关键结果",
+            successCriteria: ["阶段目标和负责人更新可跨重启恢复"],
+          },
+          milestones: [
+            {
+              outcome: "完成PS2.1纵向闭环",
+              acceptanceCriteria: ["真实对话到项目账本完整贯通"],
+            },
+          ],
+          update: {
+            health: "on_track" as const,
+            narrative: "Stage和Milestone方案已准备，等待用户确认。",
+            observedChanges: [],
+            blockers: [],
+            nextFocus: ["完成PS2.1实现和验证"],
+          },
+        },
+        evidence: { durationMs: 7, providerRequestId: "req-test-advancement" },
       }),
     },
   };
@@ -401,6 +442,32 @@ describe("PS1 Project Intake Application纵向链", () => {
       payload: { status: "active" },
     });
     expect(restored.project.project.status).toBe("active");
+    const paused = await transitionProjectLifecycle(application, {
+      principalId,
+      commandId: "cmd_projectpause" as never,
+      projectId,
+      expectedRevision: restored.project.project.revision,
+      payload: {
+        status: "paused",
+        reason: "等待外部确认，暂时停止普通推进",
+        decidedByParticipantId: owner.projectParticipantId,
+        evidenceIds: [],
+      },
+    });
+    expect(paused.project.project.status).toBe("paused");
+    const resumed = await transitionProjectLifecycle(application, {
+      principalId,
+      commandId: "cmd_projectresume" as never,
+      projectId,
+      expectedRevision: paused.project.project.revision,
+      payload: {
+        status: "active",
+        reason: "外部确认完成，恢复推进",
+        decidedByParticipantId: owner.projectParticipantId,
+        evidenceIds: [],
+      },
+    });
+    expect(resumed.project.project.status).toBe("active");
     await expect(
       decideProjectManagementCandidate(application, {
         principalId,
@@ -576,5 +643,196 @@ describe("PS1 Project Intake Application纵向链", () => {
       }),
     ).rejects.toMatchObject({ code: "revision_conflict" });
     expect(providerCalls).toBe(1);
+  });
+});
+
+describe("PS2.1 Project Advancement Application纵向链", () => {
+  it("Queued→真实理解Port→修订/CAS→原子Stage、Milestone与Update", async () => {
+    const application = await deps();
+    const principalId = "usr_advancementowner" as never;
+    const { session } = await createProductSession(application, {
+      principalId,
+      commandId: "cmd_advancesession" as never,
+      payload: { title: "Project Advancement" },
+    });
+    const intake = await beginProjectIntake(application, {
+      principalId,
+      commandId: "cmd_advanceintake" as never,
+      payload: { sessionId: session.sessionId, text: "建立Chat项目", rootId: "root_chat" },
+    });
+    const intakePrepared = await prepareProjectCandidateForReview(application, {
+      commandId: "cmd_advanceintakeprepare" as never,
+      projectCandidateId: intake.candidate.projectCandidateId,
+      expectedRevision: 1,
+    });
+    if (
+      intakePrepared.candidate.candidateKind !== "intake" ||
+      intakePrepared.candidate.status !== "under_review"
+    ) {
+      throw new Error("intake candidate missing");
+    }
+    const intakeConfirmed = await decideProjectCandidate(application, {
+      principalId,
+      commandId: "cmd_advanceintakeconfirm" as never,
+      projectCandidateId: intakePrepared.candidate.projectCandidateId,
+      expectedRevision: intakePrepared.candidate.revision,
+      payload: {
+        kind: "confirm",
+        candidateSha256: intakePrepared.candidate.candidateSha256,
+      },
+    });
+    const projectId = intakeConfirmed.project?.project.projectId;
+    if (projectId === undefined) throw new Error("project missing");
+
+    const begun = await beginProjectAdvancement(application, {
+      principalId,
+      commandId: "cmd_advancebegin" as never,
+      payload: {
+        sessionId: session.sessionId,
+        projectId,
+        text: "进入可用项目推进阶段，先完成PS2.1并发布正常进展更新",
+      },
+    });
+    expect(begun.candidate).toMatchObject({ candidateKind: "advancement", status: "queued" });
+    const prepared = await prepareProjectAdvancementCandidate(application, {
+      commandId: "cmd_advanceprepare" as never,
+      projectCandidateId: begun.candidate.projectCandidateId,
+      expectedRevision: 1,
+    });
+    if (
+      prepared.candidate.candidateKind !== "advancement" ||
+      prepared.candidate.status !== "under_review"
+    ) {
+      throw new Error("advancement candidate missing");
+    }
+    expect(prepared.candidate.proposal.update.health).toBe("on_track");
+
+    const revised = await decideProjectAdvancementCandidate(application, {
+      principalId,
+      commandId: "cmd_advancerevise" as never,
+      projectCandidateId: prepared.candidate.projectCandidateId,
+      expectedRevision: prepared.candidate.revision,
+      payload: {
+        kind: "revise",
+        candidateSha256: prepared.candidate.candidateSha256,
+        proposal: {
+          ...prepared.candidate.proposal,
+          update: {
+            ...prepared.candidate.proposal.update,
+            health: "at_risk",
+            blockers: ["真实浏览器门尚未完成"],
+          },
+        },
+      },
+    });
+    if (
+      revised.candidate.candidateKind !== "advancement" ||
+      revised.candidate.status !== "under_review"
+    ) {
+      throw new Error("advancement candidate not revised");
+    }
+    await expect(
+      decideProjectAdvancementCandidate(application, {
+        principalId,
+        commandId: "cmd_advanceoldconfirm" as never,
+        projectCandidateId: revised.candidate.projectCandidateId,
+        expectedRevision: prepared.candidate.revision,
+        payload: { kind: "confirm", candidateSha256: prepared.candidate.candidateSha256 },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+
+    const confirmed = await decideProjectAdvancementCandidate(application, {
+      principalId,
+      commandId: "cmd_advanceconfirm" as never,
+      projectCandidateId: revised.candidate.projectCandidateId,
+      expectedRevision: revised.candidate.revision,
+      payload: { kind: "confirm", candidateSha256: revised.candidate.candidateSha256 },
+    });
+    expect(confirmed.candidate.status).toBe("confirmed");
+    expect(confirmed.project.stage.name).toBe("可用的项目推进");
+    expect(confirmed.project.milestones).toHaveLength(1);
+    expect(confirmed.project.latestUpdate).toMatchObject({
+      health: "at_risk",
+      blockers: ["真实浏览器门尚未完成"],
+    });
+
+    const { snapshot } = await application.store.read({ kind: "committedSnapshot" });
+    expect(Object.values(snapshot.entities.projectUpdates)).toHaveLength(1);
+    expect(Object.values(snapshot.entities.projectMilestones)).toHaveLength(1);
+    expect(
+      Object.values(snapshot.outbox).some(
+        (entry) => entry.kind === "project_advancement_resume" && entry.status === "pending",
+      ),
+    ).toBe(true);
+
+    const owner = Object.values(snapshot.entities.projectParticipants).find(
+      (item) => item.projectId === projectId && item.principalId === principalId,
+    );
+    const evidence = Object.values(snapshot.entities.projectEvidence).find(
+      (item) => item.projectId === projectId,
+    );
+    const milestone = Object.values(snapshot.entities.projectMilestones).find(
+      (item) => item.projectId === projectId,
+    );
+    if (owner === undefined || evidence === undefined || milestone === undefined) {
+      throw new Error("advancement fixtures missing");
+    }
+
+    const review = await transitionProjectStage(application, {
+      principalId,
+      commandId: "cmd_advancestagereview" as never,
+      projectStageId: confirmed.project.stage.projectStageId,
+      expectedRevision: confirmed.project.stage.revision,
+      payload: {
+        status: "review",
+        reason: "进入阶段评审",
+        decidedByParticipantId: owner.projectParticipantId,
+        evidenceIds: [],
+      },
+    });
+    await expect(
+      transitionProjectStage(application, {
+        principalId,
+        commandId: "cmd_advancestagecomplete_without_evidence" as never,
+        projectStageId: review.stage.projectStageId,
+        expectedRevision: review.stage.revision,
+        payload: {
+          status: "completed",
+          reason: "没有证据不能完成",
+          decidedByParticipantId: owner.projectParticipantId,
+          evidenceIds: [],
+        },
+      }),
+    ).rejects.toMatchObject({ code: "project_stage_evidence_required" });
+    const completed = await transitionProjectStage(application, {
+      principalId,
+      commandId: "cmd_advancestagecomplete" as never,
+      projectStageId: review.stage.projectStageId,
+      expectedRevision: review.stage.revision,
+      payload: {
+        status: "completed",
+        reason: "已有资源观察证据，阶段评审通过",
+        decidedByParticipantId: owner.projectParticipantId,
+        evidenceIds: [evidence.projectEvidenceId],
+      },
+    });
+    expect(completed.stage.status).toBe("completed");
+
+    const milestoneResult = await transitionProjectMilestone(application, {
+      principalId,
+      commandId: "cmd_advancemilestoneachieve" as never,
+      projectMilestoneId: milestone.projectMilestoneId,
+      expectedRevision: milestone.revision,
+      payload: {
+        status: "achieved",
+        reason: "已绑定可核验资源观察",
+        decidedByParticipantId: owner.projectParticipantId,
+        evidenceIds: [evidence.projectEvidenceId],
+      },
+    });
+    expect(milestoneResult.milestones[0]?.status).toBe("achieved");
+    const timeline = await getProjectTimeline(application, { principalId, projectId });
+    expect(timeline.items.some((item) => item.kind === "state_transition")).toBe(true);
+    expect(timeline.items.some((item) => item.kind === "project_update")).toBe(true);
   });
 });

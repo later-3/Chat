@@ -477,6 +477,8 @@ export const outboxEntryKindSchema = z.enum([
   "memory_import_reconcile",
   "project_intake_start",
   "project_intake_resume",
+  "project_advancement_start",
+  "project_advancement_resume",
 ]);
 
 export const outboxEntryStatusSchema = z.enum([
@@ -552,6 +554,22 @@ export const outboxEntrySchema = z.discriminatedUnion("kind", [
     .object({
       ...outboxCommonFields,
       kind: z.literal("project_intake_resume"),
+      projectCandidateId: projectCandidateIdSchema,
+      expectedCandidateRevision: z.number().int().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      ...outboxCommonFields,
+      kind: z.literal("project_advancement_start"),
+      projectCandidateId: projectCandidateIdSchema,
+      expectedCandidateRevision: z.number().int().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      ...outboxCommonFields,
+      kind: z.literal("project_advancement_resume"),
       projectCandidateId: projectCandidateIdSchema,
       expectedCandidateRevision: z.number().int().positive(),
     })

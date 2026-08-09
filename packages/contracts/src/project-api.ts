@@ -6,14 +6,20 @@ import {
   projectCandidateIdSchema,
   projectContributionIdSchema,
   projectDecisionIdSchema,
+  projectEvidenceIdSchema,
   projectIdSchema,
+  projectMilestoneIdSchema,
   projectObservationIdSchema,
   projectParticipantIdSchema,
   projectResourceIdSchema,
+  projectStageIdSchema,
+  projectUpdateIdSchema,
   projectWorkIdSchema,
 } from "./ids.js";
 import {
   projectActionStatusSchema,
+  projectAdvancementProposalSchema,
+  projectHealthSchema,
   projectIntakeProposalSchema,
   projectManagementProposalSchema,
   projectMethodProfileIdSchema,
@@ -22,7 +28,7 @@ import {
   projectWorkStatusSchema,
 } from "./project.js";
 
-export const PROJECT_API_SCHEMA_VERSION = "chat-project-api.v1";
+export const PROJECT_API_SCHEMA_VERSION = "chat-project-api.v2";
 
 export const beginProjectIntakePayloadSchema = z
   .object({
@@ -40,6 +46,32 @@ export const beginProjectManagementCandidatePayloadSchema = z
     text: z.string().trim().min(1).max(4_000),
   })
   .strict();
+
+export const beginProjectAdvancementPayloadSchema = z
+  .object({
+    sessionId: productSessionIdSchema,
+    projectId: projectIdSchema,
+    text: z.string().trim().min(1).max(4_000),
+  })
+  .strict();
+
+export const projectAdvancementCandidateDecisionPayloadSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("revise"),
+      candidateSha256: sha256Schema,
+      proposal: projectAdvancementProposalSchema,
+    })
+    .strict(),
+  z.object({ kind: z.literal("confirm"), candidateSha256: sha256Schema }).strict(),
+  z
+    .object({
+      kind: z.literal("reject"),
+      candidateSha256: sha256Schema,
+      reason: z.string().trim().min(1).max(2_000).optional(),
+    })
+    .strict(),
+]);
 
 export const projectManagementCandidateDecisionPayloadSchema = z.discriminatedUnion("kind", [
   z
@@ -99,6 +131,33 @@ export const transitionProjectActionPayloadSchema = z
   .object({
     status: projectActionStatusSchema,
     blockedReason: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();
+
+export const transitionProjectStagePayloadSchema = z
+  .object({
+    status: z.enum(["active", "review", "completed", "skipped"]),
+    reason: z.string().trim().min(1).max(2_000),
+    decidedByParticipantId: projectParticipantIdSchema,
+    evidenceIds: z.array(projectEvidenceIdSchema).max(20),
+  })
+  .strict();
+
+export const transitionProjectLifecyclePayloadSchema = z
+  .object({
+    status: projectStatusSchema,
+    reason: z.string().trim().min(1).max(2_000),
+    decidedByParticipantId: projectParticipantIdSchema,
+    evidenceIds: z.array(projectEvidenceIdSchema).max(20),
+  })
+  .strict();
+
+export const transitionProjectMilestonePayloadSchema = z
+  .object({
+    status: z.enum(["achieved", "cancelled"]),
+    reason: z.string().trim().min(1).max(2_000),
+    decidedByParticipantId: projectParticipantIdSchema,
+    evidenceIds: z.array(projectEvidenceIdSchema).max(20),
   })
   .strict();
 
@@ -252,9 +311,72 @@ const projectManagementCandidateDtoSchema = z.discriminatedUnion("status", [
     .strict(),
 ]);
 
+const projectAdvancementCandidateDtoBase = {
+  schemaVersion: z.literal(PROJECT_API_SCHEMA_VERSION),
+  projectCandidateId: projectCandidateIdSchema,
+  sessionId: productSessionIdSchema,
+  candidateKind: z.literal("advancement"),
+  projectId: projectIdSchema,
+  boundProjectRevision: z.number().int().positive(),
+  boundStageId: projectStageIdSchema,
+  boundStageRevision: z.number().int().positive(),
+  proposal: projectAdvancementProposalSchema.optional(),
+  candidateSha256: sha256Schema.optional(),
+  revision: z.number().int().positive(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+};
+
+const projectAdvancementCandidateDtoSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      ...projectAdvancementCandidateDtoBase,
+      status: z.literal("queued"),
+      allowedActions: z.tuple([]),
+    })
+    .strict(),
+  z
+    .object({
+      ...projectAdvancementCandidateDtoBase,
+      status: z.literal("failed"),
+      failureCode: z.string().regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/u),
+      allowedActions: z.tuple([]),
+    })
+    .strict(),
+  z
+    .object({
+      ...projectAdvancementCandidateDtoBase,
+      status: z.literal("under_review"),
+      proposal: projectAdvancementProposalSchema,
+      candidateSha256: sha256Schema,
+      allowedActions: z.tuple([z.literal("revise"), z.literal("confirm"), z.literal("reject")]),
+    })
+    .strict(),
+  z
+    .object({
+      ...projectAdvancementCandidateDtoBase,
+      status: z.literal("confirmed"),
+      proposal: projectAdvancementProposalSchema,
+      candidateSha256: sha256Schema,
+      committedStageId: projectStageIdSchema,
+      committedMilestoneIds: z.array(projectMilestoneIdSchema).max(8),
+      committedUpdateId: projectUpdateIdSchema,
+      allowedActions: z.tuple([]),
+    })
+    .strict(),
+  z
+    .object({
+      ...projectAdvancementCandidateDtoBase,
+      status: z.literal("rejected"),
+      allowedActions: z.tuple([]),
+    })
+    .strict(),
+]);
+
 export const projectCandidateDtoSchema = z.union([
   projectIntakeCandidateDtoSchema,
   projectManagementCandidateDtoSchema,
+  projectAdvancementCandidateDtoSchema,
 ]);
 
 export const currentProjectCandidateResponseSchema = z
@@ -322,6 +444,43 @@ export const projectWorkspaceDtoSchema = z
     scopeIn: z.array(z.string()).max(30),
     scopeOut: z.array(z.string()).max(30),
     successCriteria: z.array(z.string()).min(1).max(30),
+    stage: z
+      .object({
+        projectStageId: projectStageIdSchema,
+        name: z.string().min(1).max(120),
+        goal: z.string().min(1).max(4_000),
+        successCriteria: z.array(z.string()).min(1).max(20),
+        status: z.enum(["planned", "active", "review", "completed", "skipped"]),
+        revision: z.number().int().positive(),
+      })
+      .strict(),
+    milestones: z
+      .array(
+        z
+          .object({
+            projectMilestoneId: projectMilestoneIdSchema,
+            outcome: z.string().min(1).max(4_000),
+            acceptanceCriteria: z.array(z.string()).min(1).max(20),
+            status: z.enum(["planned", "achieved", "cancelled"]),
+            targetAt: z.iso.datetime().optional(),
+            revision: z.number().int().positive(),
+          })
+          .strict(),
+      )
+      .max(100),
+    latestUpdate: z
+      .object({
+        projectUpdateId: projectUpdateIdSchema,
+        authorParticipantId: projectParticipantIdSchema,
+        health: projectHealthSchema,
+        narrative: z.string().min(1).max(4_000),
+        observedChanges: z.array(z.string()).max(20),
+        blockers: z.array(z.string()).max(20),
+        nextFocus: z.array(z.string()).min(1).max(20),
+        publishedAt: z.iso.datetime(),
+      })
+      .strict()
+      .nullable(),
     participants: z.array(participantDtoSchema).max(100),
     resources: z
       .array(
@@ -372,7 +531,15 @@ export const projectWorkspaceDtoSchema = z
 export const projectTimelineItemDtoSchema = z
   .object({
     id: z.string().min(1).max(200),
-    kind: z.enum(["project_created", "decision", "contribution", "resource_observation", "action"]),
+    kind: z.enum([
+      "project_created",
+      "decision",
+      "contribution",
+      "resource_observation",
+      "action",
+      "state_transition",
+      "project_update",
+    ]),
     actorParticipantId: projectParticipantIdSchema.optional(),
     title: z.string().min(1).max(240),
     occurredAt: z.iso.datetime(),
@@ -384,6 +551,10 @@ export type BeginProjectIntakePayload = z.infer<typeof beginProjectIntakePayload
 export type BeginProjectManagementCandidatePayload = z.infer<
   typeof beginProjectManagementCandidatePayloadSchema
 >;
+export type BeginProjectAdvancementPayload = z.infer<typeof beginProjectAdvancementPayloadSchema>;
+export type ProjectAdvancementCandidateDecisionPayload = z.infer<
+  typeof projectAdvancementCandidateDecisionPayloadSchema
+>;
 export type ProjectCandidateDecisionPayload = z.infer<typeof projectCandidateDecisionPayloadSchema>;
 export type ProjectManagementCandidateDecisionPayload = z.infer<
   typeof projectManagementCandidateDecisionPayloadSchema
@@ -391,6 +562,13 @@ export type ProjectManagementCandidateDecisionPayload = z.infer<
 export type CreateProjectActionPayload = z.infer<typeof createProjectActionPayloadSchema>;
 export type AssignProjectActionPayload = z.infer<typeof assignProjectActionPayloadSchema>;
 export type TransitionProjectActionPayload = z.infer<typeof transitionProjectActionPayloadSchema>;
+export type TransitionProjectStagePayload = z.infer<typeof transitionProjectStagePayloadSchema>;
+export type TransitionProjectLifecyclePayload = z.infer<
+  typeof transitionProjectLifecyclePayloadSchema
+>;
+export type TransitionProjectMilestonePayload = z.infer<
+  typeof transitionProjectMilestonePayloadSchema
+>;
 export type SetProjectArchiveStatusPayload = z.infer<typeof setProjectArchiveStatusPayloadSchema>;
 export type RecordProjectDecisionPayload = z.infer<typeof recordProjectDecisionPayloadSchema>;
 export type RecordProjectContributionPayload = z.infer<

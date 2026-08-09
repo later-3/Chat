@@ -23,6 +23,7 @@ import {
   commitMemoryImportOutcomeUnknownRequestSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   prepareProjectCandidateRequestSchema,
+  prepareProjectAdvancementCandidateRequestSchema,
   type ProblemDetail,
   type RequestId,
 } from "@chat/contracts";
@@ -51,6 +52,7 @@ import {
   commitMemoryImportFailed,
   commitMemoryImportOutcomeUnknown,
   prepareProjectCandidateForReview,
+  prepareProjectAdvancementCandidate,
   type ApplicationDeps,
 } from "@chat/application";
 
@@ -197,6 +199,20 @@ export function createInternalRuntimeRouter(
     handle(200, async (c) => {
       const request = prepareProjectCandidateRequestSchema.parse(await parseInternalBody(c));
       return prepareProjectCandidateForReview(options.deps, {
+        commandId: request.commandId,
+        projectCandidateId: request.projectCandidateId,
+        expectedRevision: request.expectedRevision,
+      });
+    }),
+  );
+
+  router.post(
+    "/prepare-project-advancement-candidate",
+    handle(200, async (c) => {
+      const request = prepareProjectAdvancementCandidateRequestSchema.parse(
+        await parseInternalBody(c),
+      );
+      return prepareProjectAdvancementCandidate(options.deps, {
         commandId: request.commandId,
         projectCandidateId: request.projectCandidateId,
         expectedRevision: request.expectedRevision,

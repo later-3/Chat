@@ -33,6 +33,8 @@ import {
   type MemoryImportDto,
   beginProjectIntakePayloadSchema,
   beginProjectManagementCandidatePayloadSchema,
+  beginProjectAdvancementPayloadSchema,
+  projectAdvancementCandidateDecisionPayloadSchema,
   projectCandidateDecisionPayloadSchema,
   projectManagementCandidateDecisionPayloadSchema,
   projectCandidateDtoSchema,
@@ -49,6 +51,8 @@ import {
   projectTimelineItemDtoSchema,
   type BeginProjectIntakePayload,
   type BeginProjectManagementCandidatePayload,
+  type BeginProjectAdvancementPayload,
+  type ProjectAdvancementCandidateDecisionPayload,
   type ProjectCandidateDecisionPayload,
   type ProjectManagementCandidateDecisionPayload,
   type ProjectCandidateDto,
@@ -363,6 +367,20 @@ export function apiBeginProjectManagementCandidate(input: {
   );
 }
 
+export function apiBeginProjectAdvancement(input: {
+  commandId: CommandId;
+  payload: BeginProjectAdvancementPayload;
+}): Promise<ProjectCandidateDto> {
+  return post(
+    "/api/project-advancements",
+    commandEnvelopeSchema.parse({
+      commandId: input.commandId,
+      payload: beginProjectAdvancementPayloadSchema.parse(input.payload),
+    }),
+    (json) => projectCandidateResponseSchema.parse(json).candidate,
+  );
+}
+
 export function apiGetProjectCandidate(projectCandidateId: string): Promise<ProjectCandidateDto> {
   return get(
     `/api/project-candidates/${encodeURIComponent(projectCandidateId)}`,
@@ -416,6 +434,27 @@ export function apiDecideProjectManagementCandidate(input: {
     (json) => {
       const body = projectDecisionResponseSchema.parse(json);
       if (body.project === undefined) throw new Error("管理Candidate确认响应缺少Project");
+      return { candidate: body.candidate, project: body.project };
+    },
+  );
+}
+
+export function apiDecideProjectAdvancementCandidate(input: {
+  projectCandidateId: string;
+  commandId: CommandId;
+  expectedRevision: number;
+  payload: ProjectAdvancementCandidateDecisionPayload;
+}): Promise<{ candidate: ProjectCandidateDto; project: ProjectWorkspaceDto }> {
+  return post(
+    `/api/project-advancements/${encodeURIComponent(input.projectCandidateId)}/decisions`,
+    commandEnvelopeSchema.parse({
+      commandId: input.commandId,
+      expectedRevision: input.expectedRevision,
+      payload: projectAdvancementCandidateDecisionPayloadSchema.parse(input.payload),
+    }),
+    (json) => {
+      const body = projectDecisionResponseSchema.parse(json);
+      if (body.project === undefined) throw new Error("推进Candidate响应缺少Project");
       return { candidate: body.candidate, project: body.project };
     },
   );

@@ -34,6 +34,8 @@ import { JsonProductStore, type StoreIo } from "./json-product-store.js";
 import { migrateProductSnapshotV1ToV2, productSnapshotV1Schema } from "./migrate-v1-to-v2.js";
 import { migrateProductSnapshotV2ToV3, productSnapshotV2Schema } from "./migrate-v2-to-v3.js";
 import { migrateProductSnapshotV3ToV4 } from "./migrate-v3-to-v4.js";
+import { migrateProductSnapshotV4ToV5 } from "./migrate-v4-to-v5.js";
+import { productSnapshotV4Schema } from "./legacy-v4.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-07T12:00:00.000Z";
@@ -100,6 +102,9 @@ function v2EntitiesFrom(snapshot: ProductSnapshot): Record<string, unknown> {
     "projects",
     "projectMethodSnapshots",
     "projectStages",
+    "projectMilestones",
+    "projectUpdates",
+    "projectStateTransitions",
     "projectResources",
     "projectParticipants",
     "projectWorks",
@@ -387,7 +392,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
     expect(snapshot.storeRevision).toBe(0);
 
     const onDisk = productSnapshotSchema.parse(JSON.parse(await readFile(filePath, "utf8")));
-    expect(onDisk.schemaVersion).toBe("chat-product-store.v4");
+    expect(onDisk.schemaVersion).toBe("chat-product-store.v5");
   });
 
   it("非空v1真实快照串行迁移到v4，保留旧事实并合成no-memory ContextRequest，重启幂等", async () => {
@@ -403,7 +408,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
 
     const store = await JsonProductStore.open({ filePath, now });
     const { snapshot } = await store.read({ kind: "committedSnapshot" });
-    expect(snapshot.schemaVersion).toBe("chat-product-store.v4");
+    expect(snapshot.schemaVersion).toBe("chat-product-store.v5");
     expect(snapshot.storeRevision).toBe(legacy.storeRevision);
     expect(snapshot.commandReceipts).toEqual(legacy.commandReceipts);
     expect(snapshot.outbox).toEqual(legacy.outbox);
@@ -428,13 +433,17 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
     expect(snapshot.entities.memoryImportResults).toEqual({});
     expect(snapshot.entities.projects).toEqual({});
     expect(snapshot.entities.projectCandidates).toEqual({});
-    const expectedMigration = migrateProductSnapshotV3ToV4(
-      migrateProductSnapshotV2ToV3(migrateProductSnapshotV1ToV2(legacy)),
+    const expectedMigration = migrateProductSnapshotV4ToV5(
+      migrateProductSnapshotV3ToV4(
+        migrateProductSnapshotV2ToV3(migrateProductSnapshotV1ToV2(legacy)),
+      ),
     );
     expect(snapshot).toEqual(expectedMigration);
     expect(
-      migrateProductSnapshotV3ToV4(
-        migrateProductSnapshotV2ToV3(migrateProductSnapshotV1ToV2(legacy)),
+      migrateProductSnapshotV4ToV5(
+        migrateProductSnapshotV3ToV4(
+          migrateProductSnapshotV2ToV3(migrateProductSnapshotV1ToV2(legacy)),
+        ),
       ),
     ).toEqual(expectedMigration);
     const once = await readFile(filePath, "utf8");
@@ -457,16 +466,110 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
 
     const opened = await JsonProductStore.open({ filePath, now });
     const { snapshot } = await opened.read({ kind: "committedSnapshot" });
-    expect(snapshot.schemaVersion).toBe("chat-product-store.v4");
+    expect(snapshot.schemaVersion).toBe("chat-product-store.v5");
     expect(snapshot.entities.memoryQueries).toEqual(legacy.entities.memoryQueries);
     expect(snapshot.entities.memoryResultSnapshots).toEqual(legacy.entities.memoryResultSnapshots);
     expect(snapshot.entities.memoryAdoptions).toEqual(legacy.entities.memoryAdoptions);
     expect(snapshot.entities.contextPackages).toEqual(legacy.entities.contextPackages);
     expect(snapshot.entities.memoryImportIntents).toEqual({});
     expect(snapshot.entities.memoryImportResults).toEqual({});
-    expect(snapshot).toEqual(migrateProductSnapshotV3ToV4(migrateProductSnapshotV2ToV3(legacy)));
+    expect(snapshot).toEqual(
+      migrateProductSnapshotV4ToV5(
+        migrateProductSnapshotV3ToV4(migrateProductSnapshotV2ToV3(legacy)),
+      ),
+    );
     const migratedBytes = await readFile(filePath, "utf8");
     expect(migratedBytes).not.toBe(before);
+    await JsonProductStore.open({ filePath, now });
+    expect(await readFile(filePath, "utf8")).toBe(migratedBytes);
+  });
+
+  it("非空v4 Project确定性迁移到v5，不伪造完成Decision且重启幂等", async () => {
+    const { filePath } = await tempStorePath();
+    const current = createEmptySnapshot(NOW);
+    const legacyEntities = structuredClone(current.entities) as unknown as Record<string, unknown>;
+    delete legacyEntities["projectMilestones"];
+    delete legacyEntities["projectUpdates"];
+    delete legacyEntities["projectStateTransitions"];
+    const legacy = productSnapshotV4Schema.parse({
+      ...current,
+      schemaVersion: "chat-product-store.v4",
+      entities: {
+        ...legacyEntities,
+        projects: {
+          prj_migration: {
+            schemaVersion: "project.v1",
+            projectId: "prj_migration",
+            ownerPrincipalId: "usr_migration",
+            name: "迁移项目",
+            summary: "验证旧项目事实迁移",
+            goal: "保留既有完成阶段",
+            scopeIn: [],
+            scopeOut: [],
+            successCriteria: ["迁移后仍可读取"],
+            status: "active",
+            methodSnapshotId: "pms_migration",
+            currentStageId: "pst_migration",
+            revision: 2,
+            createdAt: NOW,
+            updatedAt: NOW,
+          },
+        },
+        projectMethodSnapshots: {
+          pms_migration: {
+            schemaVersion: "project-method-snapshot.v1",
+            projectMethodSnapshotId: "pms_migration",
+            projectId: "prj_migration",
+            profileId: "software-delivery.v1",
+            rationale: "旧版本方法选择",
+            policies: {
+              shaping: true,
+              stagedDelivery: true,
+              boundedIteration: true,
+              evidenceRequired: true,
+            },
+            sha256: "a".repeat(64),
+            revision: 1,
+            createdAt: NOW,
+            updatedAt: NOW,
+          },
+        },
+        projectStages: {
+          pst_migration: {
+            schemaVersion: "project-stage.v1",
+            projectStageId: "pst_migration",
+            projectId: "prj_migration",
+            name: "旧完成阶段",
+            goal: "验证迁移",
+            status: "completed",
+            sequence: 1,
+            revision: 2,
+            createdAt: NOW,
+            updatedAt: NOW,
+          },
+        },
+      },
+    });
+    const bytes = JSON.stringify(legacy, null, 2);
+    await writeFile(filePath, bytes);
+
+    const opened = await JsonProductStore.open({ filePath, now });
+    const { snapshot } = await opened.read({ kind: "committedSnapshot" });
+    expect(snapshot.schemaVersion).toBe("chat-product-store.v5");
+    expect(snapshot.entities.projects["prj_migration"]?.schemaVersion).toBe("project.v2");
+    expect(snapshot.entities.projectMethodSnapshots["pms_migration"]).toMatchObject({
+      schemaVersion: "project-method-snapshot.v2",
+      source: "migrated_v1",
+    });
+    expect(snapshot.entities.projectStages["pst_migration"]).toMatchObject({
+      schemaVersion: "project-stage.v2",
+      status: "completed",
+      completionEvidenceIds: [],
+    });
+    expect(snapshot.entities.projectStages["pst_migration"]?.completionDecisionId).toBeUndefined();
+    expect(() => assertSnapshotIntegrity(snapshot)).not.toThrow();
+
+    const migratedBytes = await readFile(filePath, "utf8");
     await JsonProductStore.open({ filePath, now });
     expect(await readFile(filePath, "utf8")).toBe(migratedBytes);
   });

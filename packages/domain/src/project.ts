@@ -7,6 +7,33 @@ export interface ProjectMethodPolicyShape {
   evidenceRequired: boolean;
 }
 
+export interface ProjectMethodSnapshotPoliciesShape {
+  stage: {
+    singleActive: true;
+    completionDecision: "required" | "optional";
+    completionEvidence: "required" | "optional";
+  };
+  iteration: {
+    enabled: boolean;
+    singleActive: true;
+    appetiteKind: "timebox_days" | "review_trigger";
+    minDays?: number | undefined;
+    maxDays?: number | undefined;
+    circuitBreaker: boolean;
+  };
+  work: {
+    scopeEnabled: boolean;
+    readyGate: "required" | "optional";
+    doneGate: "required" | "optional";
+  };
+  artifact: { requiredRoles: ("requirements" | "architecture" | "testing_strategy")[] };
+  quality: { evidenceRequired: boolean; waiverRequiresApproverAndExpiry: true };
+  change: {
+    stageTransitionDecision: "required" | "optional";
+    iterationCommitmentDecision: "required" | "optional";
+  };
+}
+
 export interface ProjectIntakeUnderstandingShape {
   name: string;
   goal: string;
@@ -57,6 +84,36 @@ export interface ProjectWorkShape {
 }
 
 export type ProjectActionStatusShape = "todo" | "doing" | "blocked" | "done" | "cancelled";
+export type ProjectLifecycleStatusShape = "active" | "paused" | "completed" | "archived";
+
+const PROJECT_LIFECYCLE_TRANSITIONS: Readonly<
+  Record<ProjectLifecycleStatusShape, readonly ProjectLifecycleStatusShape[]>
+> = {
+  active: ["paused", "completed", "archived"],
+  paused: ["active", "completed", "archived"],
+  completed: ["archived"],
+  archived: ["active"],
+};
+
+/** completed是用户确认的目标达成；archived只是维护生命周期，两者不能混用。 */
+export function assertProjectLifecycleTransition(input: {
+  readonly from: ProjectLifecycleStatusShape;
+  readonly to: ProjectLifecycleStatusShape;
+  readonly evidenceIds: readonly string[];
+}): void {
+  if (!PROJECT_LIFECYCLE_TRANSITIONS[input.from].includes(input.to)) {
+    throw new ProjectDomainError(
+      "project_lifecycle_transition_invalid",
+      `Project不允许从${input.from}转换到${input.to}`,
+    );
+  }
+  if (input.to === "completed" && input.evidenceIds.length === 0) {
+    throw new ProjectDomainError(
+      "project_lifecycle_evidence_required",
+      "Project完成必须引用至少一条Evidence",
+    );
+  }
+}
 
 const PROJECT_ACTION_TRANSITIONS: Readonly<
   Record<ProjectActionStatusShape, readonly ProjectActionStatusShape[]>
@@ -184,9 +241,161 @@ export function computeProjectObservationSha256(data: ProjectObservationDataShap
 export function computeProjectMethodSnapshotSha256(input: {
   readonly profileId: string;
   readonly rationale: string;
-  readonly policies: ProjectMethodPolicyShape;
+  readonly policies: ProjectMethodSnapshotPoliciesShape;
+  readonly source: "project_intake" | "migrated_v1" | "user_tailored";
 }): string {
-  return hashCanonical("project-method-snapshot.v1", input);
+  return hashCanonical("project-method-snapshot.v2", input);
+}
+
+/** Profile编译是版本化纯规则；Model、Router和页面都不能各自解释方法。 */
+export function compileProjectMethodSnapshotPolicies(
+  profileId: "small-project.v1" | "software-delivery.v1" | "lightweight.v1",
+): ProjectMethodSnapshotPoliciesShape {
+  if (profileId === "software-delivery.v1") {
+    return {
+      stage: {
+        singleActive: true,
+        completionDecision: "required",
+        completionEvidence: "required",
+      },
+      iteration: {
+        enabled: true,
+        singleActive: true,
+        appetiteKind: "timebox_days",
+        minDays: 1,
+        maxDays: 42,
+        circuitBreaker: true,
+      },
+      work: { scopeEnabled: true, readyGate: "required", doneGate: "required" },
+      artifact: { requiredRoles: ["requirements", "architecture", "testing_strategy"] },
+      quality: { evidenceRequired: true, waiverRequiresApproverAndExpiry: true },
+      change: {
+        stageTransitionDecision: "required",
+        iterationCommitmentDecision: "required",
+      },
+    };
+  }
+  if (profileId === "small-project.v1") {
+    return {
+      stage: {
+        singleActive: true,
+        completionDecision: "required",
+        completionEvidence: "optional",
+      },
+      iteration: {
+        enabled: true,
+        singleActive: true,
+        appetiteKind: "timebox_days",
+        minDays: 1,
+        maxDays: 42,
+        circuitBreaker: true,
+      },
+      work: { scopeEnabled: true, readyGate: "optional", doneGate: "required" },
+      artifact: { requiredRoles: [] },
+      quality: { evidenceRequired: true, waiverRequiresApproverAndExpiry: true },
+      change: {
+        stageTransitionDecision: "required",
+        iterationCommitmentDecision: "required",
+      },
+    };
+  }
+  return {
+    stage: {
+      singleActive: true,
+      completionDecision: "required",
+      completionEvidence: "optional",
+    },
+    iteration: {
+      enabled: false,
+      singleActive: true,
+      appetiteKind: "review_trigger",
+      circuitBreaker: false,
+    },
+    work: { scopeEnabled: false, readyGate: "optional", doneGate: "optional" },
+    artifact: { requiredRoles: [] },
+    quality: { evidenceRequired: true, waiverRequiresApproverAndExpiry: true },
+    change: {
+      stageTransitionDecision: "required",
+      iterationCommitmentDecision: "optional",
+    },
+  };
+}
+
+export type ProjectStageStatusShape = "planned" | "active" | "review" | "completed" | "skipped";
+export type ProjectMilestoneStatusShape = "planned" | "achieved" | "cancelled";
+
+const PROJECT_STAGE_TRANSITIONS: Readonly<
+  Record<ProjectStageStatusShape, readonly ProjectStageStatusShape[]>
+> = {
+  planned: ["active", "skipped"],
+  active: ["review"],
+  review: ["active", "completed"],
+  completed: [],
+  skipped: [],
+};
+
+export function assertProjectStageTransition(input: {
+  readonly from: ProjectStageStatusShape;
+  readonly to: ProjectStageStatusShape;
+  readonly decisionId?: string;
+  readonly evidenceIds: readonly string[];
+  readonly evidenceRequirement: "required" | "optional";
+}): void {
+  if (!PROJECT_STAGE_TRANSITIONS[input.from].includes(input.to)) {
+    throw new ProjectDomainError(
+      "project_stage_transition_invalid",
+      `Project Stage不允许从${input.from}转换到${input.to}`,
+    );
+  }
+  if (["completed", "skipped"].includes(input.to) && input.decisionId === undefined) {
+    throw new ProjectDomainError("project_stage_decision_required", "Stage终态必须绑定Decision");
+  }
+  if (
+    input.to === "completed" &&
+    input.evidenceRequirement === "required" &&
+    input.evidenceIds.length === 0
+  ) {
+    throw new ProjectDomainError("project_stage_evidence_required", "Stage完成缺少Evidence");
+  }
+}
+
+export function assertProjectMilestoneTransition(input: {
+  readonly from: ProjectMilestoneStatusShape;
+  readonly to: ProjectMilestoneStatusShape;
+  readonly decisionId?: string;
+  readonly evidenceIds: readonly string[];
+}): void {
+  if (input.from !== "planned" || !["achieved", "cancelled"].includes(input.to)) {
+    throw new ProjectDomainError(
+      "project_milestone_transition_invalid",
+      `Project Milestone不允许从${input.from}转换到${input.to}`,
+    );
+  }
+  if (input.decisionId === undefined) {
+    throw new ProjectDomainError(
+      "project_milestone_decision_required",
+      "Milestone终态必须绑定Decision",
+    );
+  }
+  if (input.to === "achieved" && input.evidenceIds.length === 0) {
+    throw new ProjectDomainError(
+      "project_milestone_evidence_required",
+      "Milestone达成缺少Evidence",
+    );
+  }
+}
+
+export function computeProjectAdvancementCandidateSha256(input: {
+  readonly projectId: string;
+  readonly boundProjectRevision: number;
+  readonly boundStageId: string;
+  readonly boundStageRevision: number;
+  readonly boundMethodSnapshotId: string;
+  readonly boundMethodSha256: string;
+  readonly sourceMessageId: string;
+  readonly proposal: unknown;
+}): string {
+  return hashCanonical("project-advancement-candidate.v1", input);
 }
 
 /** Work依赖必须留在同一Project内且为DAG。 */

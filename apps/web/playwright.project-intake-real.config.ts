@@ -21,6 +21,7 @@ export default defineConfig({
   expect: { timeout: 5 * 60_000 },
   use: {
     baseURL: "http://127.0.0.1:43110",
+    actionTimeout: 30_000,
     trace: "off",
     screenshot: "off",
     video: "off",

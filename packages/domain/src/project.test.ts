@@ -5,6 +5,10 @@ import {
   compileProjectIntakeProposal,
   computeProjectCandidateSha256,
   computeProjectObservationSha256,
+  compileProjectMethodSnapshotPolicies,
+  assertProjectStageTransition,
+  assertProjectMilestoneTransition,
+  assertProjectLifecycleTransition,
   type ProjectIntakeUnderstandingShape,
   type ProjectObservationDataShape,
   type ProjectWorkShape,
@@ -87,5 +91,90 @@ describe("Project Action状态机", () => {
     expect(() => assertProjectActionTransition({ from: "cancelled", to: "todo" })).toThrow(
       "不允许",
     );
+  });
+});
+
+describe("PS2.1 Method、Stage与Milestone规则", () => {
+  it("Project完成、暂停、归档与恢复是不同的显式生命周期", () => {
+    expect(() =>
+      assertProjectLifecycleTransition({ from: "active", to: "paused", evidenceIds: [] }),
+    ).not.toThrow();
+    expect(() =>
+      assertProjectLifecycleTransition({ from: "paused", to: "completed", evidenceIds: [] }),
+    ).toThrow("Evidence");
+    expect(() =>
+      assertProjectLifecycleTransition({
+        from: "paused",
+        to: "completed",
+        evidenceIds: ["pev_done"],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertProjectLifecycleTransition({ from: "completed", to: "active", evidenceIds: [] }),
+    ).toThrow("不允许");
+    expect(() =>
+      assertProjectLifecycleTransition({ from: "archived", to: "active", evidenceIds: [] }),
+    ).not.toThrow();
+  });
+
+  it("按profile编译完整且不同的软件/轻量策略", () => {
+    const software = compileProjectMethodSnapshotPolicies("software-delivery.v1");
+    const lightweight = compileProjectMethodSnapshotPolicies("lightweight.v1");
+    expect(software).toMatchObject({
+      iteration: { enabled: true, circuitBreaker: true },
+      artifact: { requiredRoles: ["requirements", "architecture", "testing_strategy"] },
+      work: { readyGate: "required", doneGate: "required" },
+    });
+    expect(lightweight).toMatchObject({
+      iteration: { enabled: false, appetiteKind: "review_trigger" },
+      artifact: { requiredRoles: [] },
+    });
+  });
+
+  it("Stage终态必须有Decision，软件完成还必须有Evidence", () => {
+    expect(() =>
+      assertProjectStageTransition({
+        from: "active",
+        to: "review",
+        evidenceIds: [],
+        evidenceRequirement: "required",
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertProjectStageTransition({
+        from: "review",
+        to: "completed",
+        evidenceIds: [],
+        evidenceRequirement: "required",
+      }),
+    ).toThrow("Decision");
+    expect(() =>
+      assertProjectStageTransition({
+        from: "review",
+        to: "completed",
+        decisionId: "pdc_done",
+        evidenceIds: [],
+        evidenceRequirement: "required",
+      }),
+    ).toThrow("Evidence");
+  });
+
+  it("Milestone达成不能由Action计数推导，必须显式Decision和Evidence", () => {
+    expect(() =>
+      assertProjectMilestoneTransition({
+        from: "planned",
+        to: "achieved",
+        decisionId: "pdc_done",
+        evidenceIds: [],
+      }),
+    ).toThrow("Evidence");
+    expect(() =>
+      assertProjectMilestoneTransition({
+        from: "planned",
+        to: "achieved",
+        decisionId: "pdc_done",
+        evidenceIds: ["pev_proof"],
+      }),
+    ).not.toThrow();
   });
 });

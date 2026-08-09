@@ -10,13 +10,13 @@
 | 主分支 | `main`是唯一开发基线；精确提交以`origin/main`为准 |
 | 前端 | React + TypeScript + Vite；响应式PWA；最小Plan审核与运行投影已接真实后端 |
 | 后端 | Node.js + TypeScript；Hono协议入口；Application拥有事务 |
-| Product Store | `chat-product-store.v4`；串行支持v1→v2→v3→v4，保持单实例单写者、原子替换与损坏失败关闭；v4新增Project账本与Candidate |
-| Workflow | 规划仍由唯一`PlanningExecutionWorkflow`完成；另有独立`MemoryImportWorkflow`和`ProjectIntakeWorkflow`分别拥有导入/对账与建项审核生命周期 |
+| Product Store | `chat-product-store.v5`；串行支持v1→v2→v3→v4→v5，保持单实例单写者、原子替换与损坏失败关闭；v5新增完整Method/Stage、Milestone、Project Update与State Transition |
+| Workflow | 规划仍由唯一`PlanningExecutionWorkflow`完成；另有独立`MemoryImportWorkflow`、`ProjectIntakeWorkflow`和`ProjectAdvancementWorkflow`分别拥有导入/对账、建项与既有项目推进生命周期 |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent`；Planner/Executor与模型无关Project Understanding均已用百炼真实`qwen3.7-plus`验证 |
 | 调试与回放 | 仓库统一`pnpm dev/dev:debug`拥有Memory、Workflow、API和Web服务图；VS Code只有应用级薄入口；固定端口、安全清理、严格脱敏Trace及多源Replay |
 | 代码状态 | P0、P1.1、P1.2、B1、B2、M1～M3与PS1均已进入`origin/main`；统一应用启动、浏览器生命周期、旧Workflow和跨worktree端口恢复修复保留在本地`main` |
 | 当前阶段 | 长期上下文与知识复用：Memory、BMAD项目上下文、用户规则集 |
-| 当前任务 | PS1已由PR #20合入；下一任务是PS2 Stage/Milestone/Iteration完整推进闭环 |
+| 当前任务 | PS2.1实现与真实门已完成，正在Draft PR复审；合并后才从最新main开始PS2.2 Shaping/Iteration |
 
 ## 2. B2已完成的真实证据
 
@@ -76,10 +76,20 @@
 6. 独立恢复测试真实停止并重建API与Workflow进程；恢复后Candidate revision/Hash、Workflow Run ID和唯一理解调用不变，最终只创建一个Project。
 7. 真实Chromium场景通过桌面与390×844手机视口；Trace含严格模型/对象/耗时证据，不含用户正文、决定正文、绝对路径、密钥或Runtime私有身份。
 
+## 4.3 PS2.1的真实证据
+
+1. 用户可在现有Project显式切换“推进项目”；正式Message、版本绑定queued Candidate、Receipt和Start Outbox原子提交，独立`ProjectAdvancementWorkflow`完成理解、Hook等待与恢复。
+2. Method Snapshot v2与Stage v2进入Store v5；v4→v5对旧Project采用确定性映射并标记`migrated_v1`，不伪造历史用户Decision。非空迁移、重启幂等和跨对象完整性测试通过。
+3. Candidate同时绑定Project/Stage revision与Method Hash；旧revision/Hash确认返回409。确认分支一次提交Decision、Stage revision、Milestone、负责人Project Update、Project revision和Resume Outbox。
+4. Stage/Milestone状态转换必须经过Domain规则、Principal/Participant权限、Decision与Evidence校验；Timeline从严格State Transition、Decision和Update等产品事实组装，不用Trace冒充账本。
+5. 免费恢复门真实停止并重建API与Workflow：Intake与Advancement等待确认后都恢复同一Candidate和Workflow Run，同一Candidate revision的Understanding调用各保持1次。
+6. 真实Chromium + 当前服务端Model Profile的百炼`qwen3.7-plus`通过：建项、推进、直接修订、旧版本409、确认、刷新恢复和390×844无横向溢出；最终HEAD连续两轮真实门分别耗时28.6秒和27.7秒。pi Provider边界显式关闭Qwen思考模式并强制唯一结果工具，避免普通正文响应绕过候选合同。
+7. Trace新增严格Project Advancement/Stage/Milestone/Update事件，只含对象ID、revision/Hash、模型版本、耗时和结果；真实canary、Stage/Update正文、密钥与Runtime私有身份扫描均为0。
+
 ## 5. 当前没有的能力
 
 1. 已有真实memmy和Tencent MemoryCore查询/导入；尚无自动后台记忆、L1后台定时对账和生产Memory服务部署配置。
-2. 已有长期Project、初始Stage、Work/Action、真实Resource、Participant/Contribution/Decision/Evidence；尚无Milestone、Iteration、Project Update、Correct Course和注入Planning的版本化Project Context。
+2. 已有长期Project、完整Stage Goal/Milestone、负责人Project Update、Work/Action、真实Resource、Participant/Contribution/Decision/Evidence；尚无Shaping Proposal、Iteration、Scope、Gate/Review、Correct Course和注入Planning的版本化Project Context。
 3. 没有带标签、场景范围、修订和选择证据的用户规则集，也没有规划节点规则注入。
 4. 没有Chat有序SSE Cursor Runtime Journal；B2仍使用受控Query轮询。
 5. 没有外部副作用Tool、多实例数据库、备份恢复和生产后端部署拓扑。
@@ -87,7 +97,7 @@
 ## 6. 下一阶段的三个用户结果
 
 1. **Memory**：M1/M2/M3已验证两套真实服务的查询、显式导入、同步物化与异步接收差异；后续优化是后台提炼/对账和生产部署，不再阻塞项目上下文建设。
-2. **Project Solution**：PS1已完成对话建项、真实资源和初始账本；下一步让用户只靠对话持续推进Stage Goal、Milestone、Iteration、Work/待办、阻塞、Project Update和下一步，并按项目规模、类型和成熟度裁剪Shape Up/BMAD方法。
+2. **Project Solution**：PS1与PS2.1已完成对话建项、真实资源、Stage Goal/Milestone和负责人Update；下一步按已批准PS2.2实现Shaping Proposal与显式Iteration Commitment，再由PS2.3推进Scope/Gate/Review。
 3. **用户规则**：用户可以在统一界面维护带标签和场景范围的个人习惯/要求，也可以让Chat提出维护建议；对话中可主动勾选或按标签筛选，规划时记录最终采用规则及其版本。
 
 详细任务数量、依赖、合同和完成门必须在复核本地参考项目与既有分析后写入任务书，审核前不假装已冻结。

@@ -1,5 +1,6 @@
 import type {
   ProjectIntakeUnderstanding,
+  ProjectAdvancementUnderstanding,
   ProjectObservationData,
   ProjectResourceAdapterKind,
 } from "@chat/contracts";
@@ -32,6 +33,40 @@ export interface ProjectIntakeUnderstandingPort {
   };
   understand(input: { readonly text: string; readonly resourceDisplayName: string }): Promise<{
     readonly understanding: ProjectIntakeUnderstanding;
+    readonly evidence: {
+      readonly durationMs: number;
+      readonly providerRequestId?: string;
+      readonly tokenUsage?: {
+        readonly promptTokens: number;
+        readonly completionTokens: number;
+        readonly totalTokens: number;
+      };
+    };
+  }>;
+}
+
+/**
+ * PS2项目推进理解Port只读取已裁剪的当前Stage摘要；它不拥有Candidate或项目事实。
+ * Provider/模型证据仅用于Trace和验收，不进入公开Command。
+ */
+export interface ProjectAdvancementUnderstandingPort {
+  describe(): {
+    readonly profileVersion: string;
+    readonly providerName: string;
+    readonly modelId: string;
+    readonly promptTemplateVersion: string;
+    readonly endpointHost: string;
+  };
+  understand(input: {
+    readonly text: string;
+    readonly projectName: string;
+    readonly currentStage: {
+      readonly name: string;
+      readonly goal: string;
+      readonly successCriteria: readonly string[];
+    };
+  }): Promise<{
+    readonly understanding: ProjectAdvancementUnderstanding;
     readonly evidence: {
       readonly durationMs: number;
       readonly providerRequestId?: string;

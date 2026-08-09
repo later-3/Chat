@@ -16,15 +16,22 @@ import {
   projectCandidateIdSchema,
   projectIdSchema,
   projectActionIdSchema,
+  projectStageIdSchema,
+  projectMilestoneIdSchema,
   projectResourceIdSchema,
   beginProjectIntakePayloadSchema,
   beginProjectManagementCandidatePayloadSchema,
+  beginProjectAdvancementPayloadSchema,
+  projectAdvancementCandidateDecisionPayloadSchema,
   projectCandidateDecisionPayloadSchema,
   projectManagementCandidateDecisionPayloadSchema,
   createProjectActionPayloadSchema,
   assignProjectActionPayloadSchema,
   setProjectArchiveStatusPayloadSchema,
   transitionProjectActionPayloadSchema,
+  transitionProjectStagePayloadSchema,
+  transitionProjectLifecyclePayloadSchema,
+  transitionProjectMilestonePayloadSchema,
   recordProjectDecisionPayloadSchema,
   recordProjectContributionPayloadSchema,
   type PrincipalId,
@@ -54,6 +61,8 @@ import {
   listProjectRoots,
   beginProjectIntake,
   beginProjectManagementCandidate,
+  beginProjectAdvancement,
+  decideProjectAdvancementCandidate,
   getProjectCandidate,
   getCurrentProjectCandidate,
   decideProjectCandidate,
@@ -65,6 +74,9 @@ import {
   assignProjectAction,
   setProjectArchiveStatus,
   transitionProjectAction,
+  transitionProjectStage,
+  transitionProjectLifecycle,
+  transitionProjectMilestone,
   recordProjectDecision,
   recordProjectContribution,
   observeProjectResource,
@@ -406,6 +418,27 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
     }
   });
 
+  router.post("/project-advancements", async (c) => {
+    try {
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const payload = beginProjectAdvancementPayloadSchema.parse(envelope.payload);
+      const result = await beginProjectAdvancement(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/project-advancements",
+        statusCode: 202,
+        productSessionId: payload.sessionId,
+      });
+      return c.json(result, 202);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
   router.get("/project-candidates/:projectCandidateId", async (c) => {
     try {
       assertNoQuery(c.req.url);
@@ -489,6 +522,31 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
     }
   });
 
+  router.post("/project-advancements/:projectCandidateId/decisions", async (c) => {
+    try {
+      const projectCandidateId = projectCandidateIdSchema.parse(c.req.param("projectCandidateId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Project推进Candidate决定必须携带expectedRevision",
+        });
+      }
+      const payload = projectAdvancementCandidateDecisionPayloadSchema.parse(envelope.payload);
+      const result = await decideProjectAdvancementCandidate(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        projectCandidateId,
+        expectedRevision: envelope.expectedRevision,
+        payload,
+      });
+      return payload.kind === "confirm" ? c.json(result, 201) : c.json(result, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
   router.get("/projects", async (c) => {
     try {
       assertNoQuery(c.req.url);
@@ -563,6 +621,88 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
           expectedRevision: envelope.expectedRevision,
           payload,
         }),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/project-stages/:projectStageId/transitions", async (c) => {
+    try {
+      const projectStageId = projectStageIdSchema.parse(c.req.param("projectStageId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Stage转换必须携带expectedRevision",
+        });
+      }
+      return c.json(
+        {
+          project: await transitionProjectStage(ctx.deps, {
+            principalId: ctx.principalId,
+            commandId: envelope.commandId,
+            projectStageId,
+            expectedRevision: envelope.expectedRevision,
+            payload: transitionProjectStagePayloadSchema.parse(envelope.payload),
+          }),
+        },
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/projects/:projectId/transitions", async (c) => {
+    try {
+      const projectId = projectIdSchema.parse(c.req.param("projectId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Project生命周期转换必须携带expectedRevision",
+        });
+      }
+      return c.json(
+        await transitionProjectLifecycle(ctx.deps, {
+          principalId: ctx.principalId,
+          commandId: envelope.commandId,
+          projectId,
+          expectedRevision: envelope.expectedRevision,
+          payload: transitionProjectLifecyclePayloadSchema.parse(envelope.payload),
+        }),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/project-milestones/:projectMilestoneId/transitions", async (c) => {
+    try {
+      const projectMilestoneId = projectMilestoneIdSchema.parse(c.req.param("projectMilestoneId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Milestone转换必须携带expectedRevision",
+        });
+      }
+      return c.json(
+        {
+          project: await transitionProjectMilestone(ctx.deps, {
+            principalId: ctx.principalId,
+            commandId: envelope.commandId,
+            projectMilestoneId,
+            expectedRevision: envelope.expectedRevision,
+            payload: transitionProjectMilestonePayloadSchema.parse(envelope.payload),
+          }),
+        },
         200,
       );
     } catch (error) {

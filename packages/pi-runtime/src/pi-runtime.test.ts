@@ -356,7 +356,7 @@ describe("runPiPlanner（真实pi Agent loop + faux流）", () => {
       provider: "bailian",
       api: "openai-completions",
       baseUrl: config.baseUrl,
-      reasoning: false,
+      reasoning: true,
       compat: {
         supportsStore: false,
         supportsDeveloperRole: false,
@@ -367,6 +367,7 @@ describe("runPiPlanner（真实pi Agent loop + faux流）", () => {
     });
     expect(captured?.options).toMatchObject({
       apiKey: "test-key",
+      toolChoice: { type: "function", function: { name: "submit_plan_candidate" } },
       maxTokens: B2_PLANNER_TOKEN_BUDGET,
       temperature: 0,
       timeoutMs: 10_000,
@@ -661,7 +662,12 @@ describe("Provider配置与错误归一化", () => {
       provider: "example",
       id: "model-v2",
       baseUrl: "https://models.example.com/v1",
+      reasoning: false,
     });
+    expect(
+      buildProjectModel(loadProjectModelProfile({ CHAT_PROJECT_MODEL_ID: "qwen3.7-plus" }))
+        .reasoning,
+    ).toBe(true);
     expect(() =>
       loadProjectModelProfile({ CHAT_PROJECT_MODEL_BASE_URL: "http://models.example.com/v1" }),
     ).toThrow(ProjectModelProfileError);

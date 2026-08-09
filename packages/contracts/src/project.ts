@@ -12,10 +12,13 @@ import {
   projectEvidenceIdSchema,
   projectIdSchema,
   projectMethodSnapshotIdSchema,
+  projectMilestoneIdSchema,
   projectObservationIdSchema,
   projectParticipantIdSchema,
   projectResourceIdSchema,
   projectStageIdSchema,
+  projectStateTransitionIdSchema,
+  projectUpdateIdSchema,
   projectWorkIdSchema,
 } from "./ids.js";
 
@@ -56,23 +59,76 @@ export const projectMethodPolicySchema = z
   })
   .strict();
 
+const methodDecisionRequirementSchema = z.enum(["required", "optional"]);
+
+/**
+ * Method Snapshot v2不是可解释DSL，而是Domain已编译的完整策略结果。
+ * 字段只覆盖PS2真正执行的门，后续能力通过新版本演进。
+ */
+export const projectMethodSnapshotPoliciesSchema = z
+  .object({
+    stage: z
+      .object({
+        singleActive: z.literal(true),
+        completionDecision: methodDecisionRequirementSchema,
+        completionEvidence: methodDecisionRequirementSchema,
+      })
+      .strict(),
+    iteration: z
+      .object({
+        enabled: z.boolean(),
+        singleActive: z.literal(true),
+        appetiteKind: z.enum(["timebox_days", "review_trigger"]),
+        minDays: z.number().int().positive().optional(),
+        maxDays: z.number().int().positive().optional(),
+        circuitBreaker: z.boolean(),
+      })
+      .strict(),
+    work: z
+      .object({
+        scopeEnabled: z.boolean(),
+        readyGate: methodDecisionRequirementSchema,
+        doneGate: methodDecisionRequirementSchema,
+      })
+      .strict(),
+    artifact: z
+      .object({
+        requiredRoles: z.array(z.enum(["requirements", "architecture", "testing_strategy"])).max(3),
+      })
+      .strict(),
+    quality: z
+      .object({
+        evidenceRequired: z.boolean(),
+        waiverRequiresApproverAndExpiry: z.literal(true),
+      })
+      .strict(),
+    change: z
+      .object({
+        stageTransitionDecision: methodDecisionRequirementSchema,
+        iterationCommitmentDecision: methodDecisionRequirementSchema,
+      })
+      .strict(),
+  })
+  .strict();
+
 export const projectMethodSnapshotSchema = z
   .object({
-    schemaVersion: z.literal("project-method-snapshot.v1"),
+    schemaVersion: z.literal("project-method-snapshot.v2"),
     projectMethodSnapshotId: projectMethodSnapshotIdSchema,
     projectId: projectIdSchema,
     profileId: projectMethodProfileIdSchema,
     rationale: z.string().min(1).max(2_000),
-    policies: projectMethodPolicySchema,
+    policies: projectMethodSnapshotPoliciesSchema,
+    source: z.enum(["project_intake", "migrated_v1", "user_tailored"]),
     sha256: sha256Schema,
     ...entityBase,
   })
   .strict();
 
-export const projectStatusSchema = z.enum(["active", "archived"]);
+export const projectStatusSchema = z.enum(["active", "paused", "completed", "archived"]);
 export const projectSchema = z
   .object({
-    schemaVersion: z.literal("project.v1"),
+    schemaVersion: z.literal("project.v2"),
     projectId: projectIdSchema,
     ownerPrincipalId: principalIdSchema,
     name: z.string().min(1).max(120),
@@ -90,16 +146,110 @@ export const projectSchema = z
 
 export const projectStageSchema = z
   .object({
-    schemaVersion: z.literal("project-stage.v1"),
+    schemaVersion: z.literal("project-stage.v2"),
     projectStageId: projectStageIdSchema,
     projectId: projectIdSchema,
+    methodSnapshotId: projectMethodSnapshotIdSchema,
+    key: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/u),
     name: z.string().min(1).max(120),
     goal: longText,
-    status: z.enum(["active", "completed", "cancelled"]),
+    successCriteria: z.array(shortText).min(1).max(20),
+    status: z.enum(["planned", "active", "review", "completed", "skipped"]),
     sequence: z.number().int().positive(),
+    startedAt: isoDateTimeSchema.optional(),
+    completedAt: isoDateTimeSchema.optional(),
+    completionDecisionId: projectDecisionIdSchema.optional(),
+    completionEvidenceIds: z.array(projectEvidenceIdSchema).max(20),
     ...entityBase,
   })
   .strict();
+
+export const projectMilestoneStatusSchema = z.enum(["planned", "achieved", "cancelled"]);
+export const projectMilestoneSchema = z
+  .object({
+    schemaVersion: z.literal("project-milestone.v1"),
+    projectMilestoneId: projectMilestoneIdSchema,
+    projectId: projectIdSchema,
+    stageId: projectStageIdSchema.optional(),
+    outcome: longText,
+    acceptanceCriteria: z.array(shortText).min(1).max(20),
+    targetAt: isoDateTimeSchema.optional(),
+    status: projectMilestoneStatusSchema,
+    achievedDecisionId: projectDecisionIdSchema.optional(),
+    evidenceIds: z.array(projectEvidenceIdSchema).max(20),
+    ...entityBase,
+  })
+  .strict();
+
+export const projectHealthSchema = z.enum(["on_track", "at_risk", "off_track", "unknown"]);
+export const projectUpdateSchema = z
+  .object({
+    schemaVersion: z.literal("project-update.v1"),
+    projectUpdateId: projectUpdateIdSchema,
+    projectId: projectIdSchema,
+    stageId: projectStageIdSchema,
+    authorParticipantId: projectParticipantIdSchema,
+    confirmedByPrincipalId: principalIdSchema,
+    health: projectHealthSchema,
+    narrative: longText,
+    observedChanges: z.array(shortText).max(20),
+    blockers: z.array(shortText).max(20),
+    nextFocus: z.array(shortText).min(1).max(20),
+    evidenceIds: z.array(projectEvidenceIdSchema).max(20),
+    boundProjectRevision: z.number().int().positive(),
+    boundStageRevision: z.number().int().positive(),
+    publishedAt: isoDateTimeSchema,
+    supersedesUpdateId: projectUpdateIdSchema.optional(),
+    commandId: commandIdSchema,
+    ...entityBase,
+  })
+  .strict();
+
+const projectTransitionCommon = {
+  schemaVersion: z.literal("project-state-transition.v1"),
+  projectStateTransitionId: projectStateTransitionIdSchema,
+  projectId: projectIdSchema,
+  actorParticipantId: projectParticipantIdSchema,
+  commandId: commandIdSchema,
+  beforeRevision: z.number().int().positive(),
+  afterRevision: z.number().int().positive(),
+  reason: z.string().trim().min(1).max(2_000),
+  decisionId: projectDecisionIdSchema,
+  evidenceIds: z.array(projectEvidenceIdSchema).max(20),
+  occurredAt: isoDateTimeSchema,
+  ...entityBase,
+};
+
+/** 严格状态历史只记录转换，不复制Stage/Update正文，也不承担Activity职责。 */
+export const projectStateTransitionSchema = z.discriminatedUnion("objectType", [
+  z
+    .object({
+      ...projectTransitionCommon,
+      objectType: z.literal("project"),
+      objectId: projectIdSchema,
+      from: projectStatusSchema,
+      to: projectStatusSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...projectTransitionCommon,
+      objectType: z.literal("stage"),
+      objectId: projectStageIdSchema,
+      from: z.enum(["planned", "active", "review", "completed", "skipped"]),
+      to: z.enum(["planned", "active", "review", "completed", "skipped"]),
+    })
+    .strict(),
+  z
+    .object({
+      ...projectTransitionCommon,
+      objectType: z.literal("milestone"),
+      objectId: projectMilestoneIdSchema,
+      from: projectMilestoneStatusSchema,
+      to: projectMilestoneStatusSchema,
+    })
+    .strict(),
+]);
 
 export const projectResourceAdapterKindSchema = z.enum([
   "local-git-workspace.v1",
@@ -314,6 +464,76 @@ export const projectIntakeProposalSchema = z
   })
   .strict();
 
+/**
+ * PS2.1真实模型只负责理解用户想表达的阶段、关键结果和负责人更新。
+ * 这里不含产品ID/revision，Application会结合当前权威事实编译Candidate。
+ */
+export const projectAdvancementUnderstandingSchema = z
+  .object({
+    stage: z
+      .object({
+        name: z.string().trim().min(1).max(120),
+        goal: longText,
+        successCriteria: z.array(shortText).min(1).max(20),
+      })
+      .strict(),
+    milestones: z
+      .array(
+        z
+          .object({
+            outcome: longText,
+            acceptanceCriteria: z.array(shortText).min(1).max(20),
+            targetAt: isoDateTimeSchema.optional(),
+          })
+          .strict(),
+      )
+      .max(8),
+    update: z
+      .object({
+        health: projectHealthSchema,
+        narrative: longText,
+        observedChanges: z.array(shortText).max(20),
+        blockers: z.array(shortText).max(20),
+        nextFocus: z.array(shortText).min(1).max(20),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const projectAdvancementProposalSchema = z
+  .object({
+    stage: z
+      .object({
+        name: z.string().trim().min(1).max(120),
+        goal: longText,
+        successCriteria: z.array(shortText).min(1).max(20),
+      })
+      .strict(),
+    milestones: z
+      .array(
+        z
+          .object({
+            outcome: longText,
+            acceptanceCriteria: z.array(shortText).min(1).max(20),
+            targetAt: isoDateTimeSchema.optional(),
+          })
+          .strict(),
+      )
+      .max(8),
+    update: z
+      .object({
+        authorParticipantId: projectParticipantIdSchema,
+        health: projectHealthSchema,
+        narrative: longText,
+        observedChanges: z.array(shortText).max(20),
+        blockers: z.array(shortText).max(20),
+        nextFocus: z.array(shortText).min(1).max(20),
+        evidenceIds: z.array(projectEvidenceIdSchema).max(20),
+      })
+      .strict(),
+  })
+  .strict();
+
 const projectCandidateCommon = {
   schemaVersion: z.literal("project-candidate.v1"),
   projectCandidateId: projectCandidateIdSchema,
@@ -459,19 +679,85 @@ const projectManagementCandidateSchema = z.discriminatedUnion("status", [
     .strict(),
 ]);
 
+const projectAdvancementCandidateBase = {
+  ...projectCandidateCommon,
+  candidateKind: z.literal("advancement"),
+  projectId: projectIdSchema,
+  boundProjectRevision: z.number().int().positive(),
+  boundStageId: projectStageIdSchema,
+  boundStageRevision: z.number().int().positive(),
+  boundMethodSnapshotId: projectMethodSnapshotIdSchema,
+  boundMethodSha256: sha256Schema,
+};
+
+const projectAdvancementCandidateSchema = z.discriminatedUnion("status", [
+  z.object({ ...projectAdvancementCandidateBase, status: z.literal("queued") }).strict(),
+  z
+    .object({
+      ...projectAdvancementCandidateBase,
+      status: z.literal("failed"),
+      failureCode: z
+        .string()
+        .regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/u)
+        .max(64),
+      failedByCommandId: commandIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...projectAdvancementCandidateBase,
+      status: z.literal("under_review"),
+      understanding: projectAdvancementUnderstandingSchema,
+      proposal: projectAdvancementProposalSchema,
+      candidateSha256: sha256Schema,
+    })
+    .strict(),
+  z
+    .object({
+      ...projectAdvancementCandidateBase,
+      status: z.literal("confirmed"),
+      understanding: projectAdvancementUnderstandingSchema,
+      proposal: projectAdvancementProposalSchema,
+      candidateSha256: sha256Schema,
+      committedStageId: projectStageIdSchema,
+      committedMilestoneIds: z.array(projectMilestoneIdSchema).max(8),
+      committedUpdateId: projectUpdateIdSchema,
+      decidedByCommandId: commandIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...projectAdvancementCandidateBase,
+      status: z.literal("rejected"),
+      understanding: projectAdvancementUnderstandingSchema,
+      proposal: projectAdvancementProposalSchema,
+      candidateSha256: sha256Schema,
+      rejectionReason: z.string().trim().min(1).max(2_000).optional(),
+      decidedByCommandId: commandIdSchema,
+    })
+    .strict(),
+]);
+
 export const projectCandidateSchema = z.union([
   projectIntakeCandidateSchema,
   projectManagementCandidateSchema,
+  projectAdvancementCandidateSchema,
 ]);
 
 export type ProjectIntakeUnderstanding = z.infer<typeof projectIntakeUnderstandingSchema>;
 export type ProjectIntakeProposal = z.infer<typeof projectIntakeProposalSchema>;
 export type ProjectManagementProposal = z.infer<typeof projectManagementProposalSchema>;
 export type ProjectMethodPolicy = z.infer<typeof projectMethodPolicySchema>;
+export type ProjectMethodSnapshotPolicies = z.infer<typeof projectMethodSnapshotPoliciesSchema>;
 export type ProjectResourceAdapterKind = z.infer<typeof projectResourceAdapterKindSchema>;
 export type Project = z.infer<typeof projectSchema>;
 export type ProjectMethodSnapshot = z.infer<typeof projectMethodSnapshotSchema>;
 export type ProjectStage = z.infer<typeof projectStageSchema>;
+export type ProjectMilestone = z.infer<typeof projectMilestoneSchema>;
+export type ProjectUpdate = z.infer<typeof projectUpdateSchema>;
+export type ProjectStateTransition = z.infer<typeof projectStateTransitionSchema>;
+export type ProjectAdvancementUnderstanding = z.infer<typeof projectAdvancementUnderstandingSchema>;
+export type ProjectAdvancementProposal = z.infer<typeof projectAdvancementProposalSchema>;
 export type ProjectResource = z.infer<typeof projectResourceSchema>;
 export type ProjectParticipant = z.infer<typeof projectParticipantSchema>;
 export type ProjectWork = z.infer<typeof projectWorkSchema>;

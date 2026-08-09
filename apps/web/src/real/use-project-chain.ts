@@ -6,6 +6,8 @@ import type {
   ProjectIntakeProposal,
   ProjectManagementProposal,
   ProjectManagementCandidateDecisionPayload,
+  ProjectAdvancementProposal,
+  ProjectAdvancementCandidateDecisionPayload,
   CreateProjectActionPayload,
   RecordProjectDecisionPayload,
   RecordProjectContributionPayload,
@@ -14,8 +16,10 @@ import type {
 import {
   apiBeginProjectIntake,
   apiBeginProjectManagementCandidate,
+  apiBeginProjectAdvancement,
   apiDecideProjectCandidate,
   apiDecideProjectManagementCandidate,
+  apiDecideProjectAdvancementCandidate,
   apiGetProject,
   apiGetProjectCandidate,
   apiGetCurrentProjectCandidate,
@@ -198,6 +202,56 @@ export function useProjectChain(storage: Storage, sessionId: string | null) {
     },
   });
 
+  const beginAdvancement = useMutation({
+    mutationFn: (text: string) => {
+      if (sessionId === null || activeProjectId === null) throw new Error("project not ready");
+      return apiBeginProjectAdvancement({
+        commandId: commandId(),
+        payload: {
+          sessionId: sessionId as never,
+          projectId: activeProjectId as never,
+          text,
+        },
+      });
+    },
+    onSuccess: (next) => {
+      storage.setItem(CANDIDATE_KEY, next.projectCandidateId);
+      setActiveCandidateId(next.projectCandidateId);
+      void queryClient.setQueryData(["project-candidate", next.projectCandidateId], next);
+      void queryClient.invalidateQueries({ queryKey: ["real-messages", sessionId] });
+    },
+  });
+
+  const decideAdvancement = useMutation({
+    mutationFn: (payload: ProjectAdvancementCandidateDecisionPayload) => {
+      const current = candidate.data;
+      if (
+        current === undefined ||
+        current.candidateKind !== "advancement" ||
+        current.status !== "under_review"
+      ) {
+        throw new Error("advancement candidate not ready");
+      }
+      return apiDecideProjectAdvancementCandidate({
+        projectCandidateId: current.projectCandidateId,
+        commandId: commandId(),
+        expectedRevision: current.revision,
+        payload,
+      });
+    },
+    onSuccess: (result) => {
+      void queryClient.setQueryData(
+        ["project-candidate", result.candidate.projectCandidateId],
+        result.candidate,
+      );
+      void queryClient.setQueryData(["project", result.project.project.projectId], result.project);
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["project-timeline", result.project.project.projectId],
+      });
+    },
+  });
+
   const manage = useMutation({
     mutationFn: async (operation: ProjectManagementOperation) => {
       const current = project.data;
@@ -333,6 +387,34 @@ export function useProjectChain(storage: Storage, sessionId: string | null) {
     },
     decidingManagement: decideManagement.isPending,
     managementDecisionError: decideManagement.error,
+    beginAdvancement: beginAdvancement.mutate,
+    beginningAdvancement: beginAdvancement.isPending,
+    advancementBeginError: beginAdvancement.error,
+    confirmAdvancement: () => {
+      const current = candidate.data;
+      if (current?.candidateKind !== "advancement" || current.status !== "under_review") return;
+      decideAdvancement.mutate({ kind: "confirm", candidateSha256: current.candidateSha256 });
+    },
+    rejectAdvancement: (reason?: string) => {
+      const current = candidate.data;
+      if (current?.candidateKind !== "advancement" || current.status !== "under_review") return;
+      decideAdvancement.mutate({
+        kind: "reject",
+        candidateSha256: current.candidateSha256,
+        ...(reason !== undefined && reason.trim() !== "" ? { reason: reason.trim() } : {}),
+      });
+    },
+    reviseAdvancement: (proposal: ProjectAdvancementProposal) => {
+      const current = candidate.data;
+      if (current?.candidateKind !== "advancement" || current.status !== "under_review") return;
+      decideAdvancement.mutate({
+        kind: "revise",
+        candidateSha256: current.candidateSha256,
+        proposal,
+      });
+    },
+    decidingAdvancement: decideAdvancement.isPending,
+    advancementDecisionError: decideAdvancement.error,
     manage: manage.mutate,
     managing: manage.isPending,
     manageError: manage.error,
