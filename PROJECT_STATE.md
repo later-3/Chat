@@ -14,7 +14,7 @@
 | Workflow | 规划仍由唯一`PlanningExecutionWorkflow`完成；M2另有独立`MemoryImportWorkflow`拥有导入/对账副作用生命周期 |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent`；百炼真实`qwen3.7-plus`已验证 |
 | 调试与回放 | VS Code真实F5 Compound覆盖memmy、MemoryCore、Workflow、API和Web；固定端口、安全清理、严格脱敏Trace及多源Replay |
-| 代码状态 | P0、P1.1、P1.2、B1、B2、M1、M2、M3与MemoryCore调试/注释收口均已进入`main`；真实VS Code启动缺陷已完成修复验收 |
+| 代码状态 | P0、P1.1、P1.2、B1、B2、M1、M2、M3与MemoryCore调试/注释收口均已进入`main`；真实VS Code启动缺陷已完成修复验收；当前实现文档已按仓库地图、前后端交互和Workflow运行边界收口 |
 | 当前阶段 | 长期上下文与知识复用：Memory、BMAD项目上下文、用户规则集 |
 | 当前任务 | 下一任务进入BMAD启发的Project基础、阶段与文档清单 |
 

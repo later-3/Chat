@@ -1,8 +1,10 @@
 # 长期上下文架构：Memory、Project 与用户规则
 
-> 状态：M1已合入；M2真实memmy显式导入候选已完成
+> 文档类型：分阶段架构。Memory M1～M3已经实现；Project与Rules章节仍是后续目标，不能当成已交付能力。当前Memory运行节点见[Workflow运行设计](./runtime-workflows.md)，当前能力与缺口见根目录[PROJECT_STATE.md](../../PROJECT_STATE.md)。
+
+> 状态：Memory M1～M3与调试收口已经合入；Project与Rules尚未实现
 >
-> 适用基线：`main` @ `8acafb5`，M2 Draft PR #11
+> 适用基线：当前`main`；精确提交以`origin/main`为准
 > 目标：在现有“对话 → 规划 → 人工确认 → 执行 → Product Commit”闭环上，增加可追溯、可选择、可回放的长期上下文能力。
 
 ## 1. 要解决的用户问题

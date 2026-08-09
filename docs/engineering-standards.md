@@ -10,6 +10,8 @@ apps/api
 packages/contracts
 packages/domain
 packages/application
+packages/product-store-json
+packages/memory-runtime
 packages/realtime
 packages/workflows
 packages/pi-runtime
@@ -61,6 +63,8 @@ Web/Hono/Vercel/pi Adapters
 5. Workflow Definition变更发布新版本；历史Run继续引用原版本语义。
 
 ## 6. 实时事件
+
+以下条款约束目标Runtime Journal/SSE实现。当前仓库的`packages/realtime`只拥有严格Trace和Replay，Web仍使用受控Query轮询；在SSE纵向任务完成前不得把本节当作已交付事实。
 
 1. Runtime Journal是公开事件顺序的唯一Owner。
 2. 每个Product Run的sequence严格递增。

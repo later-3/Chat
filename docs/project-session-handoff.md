@@ -23,9 +23,12 @@
 6. [PROJECT_PLAN.md](../PROJECT_PLAN.md)
 7. [Chat项目飞轮](./product/flywheel.md)
 8. [设计规范](./product/design-guidelines.md)
-9. [技术合同](./architecture/technology-contract.md)
-10. [系统边界](./architecture/system-boundaries.md)
-11. 本文件与当前任务书
+9. [仓库目录与关键文件地图](./architecture/repository-map.md)
+10. [前后端交互现状](./architecture/frontend-backend-interaction.md)
+11. [Workflow运行设计现状](./architecture/runtime-workflows.md)
+12. [技术合同](./architecture/technology-contract.md)
+13. [系统边界](./architecture/system-boundaries.md)
+14. 本文件与当前任务书
 
 ## 3. 已证明的技术基线
 
