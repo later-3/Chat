@@ -163,3 +163,32 @@ final result: passed
 - Browser main path passed: Home → distinct Project → all six tools → create/complete/filter task → Todo detail → subtask/comment/bookmark → Back with shared state.
 
 v0.2 final result: passed
+
+---
+
+## v0.3 · Scenario completeness and theme continuity
+
+### Audit result
+
+1. The Home/Project dark-light discontinuity was confirmed as a prototype defect, not a Project state. Home, Folder, Project, Tool, and Item now inherit one global light environment theme.
+2. Project tool thumbnails and the Hill Chart may remain dark as contained content; navigation no longer changes the surrounding shell.
+3. My bar and New for you remain reachable inside Project, all six Tool views, and Todo detail.
+4. Home now exposes Folder as a visible destination; its view projects the same Project objects and folder-scoped Activity.
+5. Message Board, Docs & Files, Chat, Schedule, and Workflow no longer reuse one generic list. Each exposes the signature UI and state transition that explains its job.
+
+### Current-run browser evidence
+
+1. Accepted visual states inspected: Project Room, Folder, Message Board, Docs & Files, Chat, Schedule, Workflow.
+2. Message Board category filter and a persisted reply passed.
+3. Docs search reduced the result to `Interactive prototype`; its reference preview opened.
+4. Chat send appended `Scenario audit message` to the same stream.
+5. Schedule changed from Agenda to Calendar.
+6. Workflow moved `Confirm homepage copy` from New requests to Working on; column counts changed from `1/1` to `0/2` without replacing the card.
+7. Project shell computed background was `rgb(255, 250, 246)` and `.my-bar` remained present.
+
+### Verification
+
+- Scenario coverage matrix: `docs/design/references/basecamp-scenario-coverage-v0.3.md`.
+- `npm test`: 21/21 passed.
+- `npm run build`: passed.
+- Final result: frozen for reference-study use.

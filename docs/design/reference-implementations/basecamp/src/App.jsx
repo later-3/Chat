@@ -2,9 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Chart from "chart.js/auto";
 import {
   addComment,
+  addChatMessage,
+  addDocument,
   addHillUpdate,
+  addMessageReply,
+  addMessageThread,
+  addScheduleEvent,
   addSubtask,
   addToolItem,
+  addWorkflowCard,
   aggregateViews,
   avatars,
   createFolder,
@@ -13,6 +19,7 @@ import {
   createTodo,
   filterTodos,
   listDefinitions,
+  moveWorkflowCard,
   people,
   personById,
   projectById,
@@ -28,7 +35,7 @@ import {
   updateTodo,
 } from "./basecampModel.js";
 
-const allowedViews = new Set(["home", "aggregate", "project", "tool", "todo"]);
+const allowedViews = new Set(["home", "folder", "aggregate", "project", "tool", "todo"]);
 
 function readRoute() {
   const params = new URLSearchParams(window.location.search);
@@ -51,6 +58,7 @@ function readRoute() {
     toolId: params.get("tool") || "todos",
     todoId: params.get("todo") || "kickoff",
     aggregateId: params.get("section") || "activity",
+    folderId: params.get("folder") || "client-work",
     personId: params.get("person") || "",
   };
 }
@@ -65,6 +73,7 @@ function routeUrl(route) {
   if (route.view === "todo" && route.todoId) url.searchParams.set("todo", route.todoId);
   if (route.view === "aggregate" && route.aggregateId) url.searchParams.set("section", route.aggregateId);
   if (route.view === "aggregate" && route.personId) url.searchParams.set("person", route.personId);
+  if (route.view === "folder" && route.folderId) url.searchParams.set("folder", route.folderId);
   return url;
 }
 
@@ -275,6 +284,20 @@ function HomeScreen({ state, setState, navigate, openDialog }) {
               </div>
             )}
           </div>
+          {!query.trim() && state.folders.length > 0 && (
+            <section className="folder-shelf" aria-label="Project folders">
+              <div className="folder-shelf__heading"><strong>Folders</strong><span>Group related projects without changing where the work lives.</span></div>
+              <div className="folder-shelf__list">
+                {state.folders.map((folder) => (
+                  <button type="button" key={folder.id} onClick={() => navigate({ view: "folder", folderId: folder.id })}>
+                    <span className="folder-icon"><Icon name="fa-folder" /></span>
+                    <span><strong>{folder.name}</strong><small>{folder.projectIds.length} projects</small></span>
+                    <Icon name="fa-chevron-right" />
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
           <div className="project-grid">
             {visibleProjects.map((project) => (
               <ProjectCard
@@ -301,6 +324,31 @@ function HomeScreen({ state, setState, navigate, openDialog }) {
       </main>
 
       <button type="button" className="support-link" onClick={() => openDialog({ type: "support" })}><Icon name="fa-circle-question" />Support</button>
+      <MyBar state={state} navigate={navigate} />
+    </div>
+  );
+}
+
+function FolderView({ state, setState, route, navigate, goBack }) {
+  const folder = state.folders.find((item) => item.id === route.folderId) || state.folders[0];
+  const projects = folder ? state.projects.filter((project) => folder.projectIds.includes(project.id)) : [];
+  const activity = folder ? state.activity.filter((item) => folder.projectIds.includes(item.projectId)) : [];
+  return (
+    <div className={`folder-screen home-screen--theme-${state.themeIndex}`}>
+      <HomeHeader navigate={navigate} />
+      <main className="folder-shell">
+        <header className="folder-heading">
+          <button type="button" className="aggregate-back" onClick={() => goBack({ view: "home" })}><Icon name="fa-arrow-left" />Home</button>
+          <div><p>Folder</p><h1><Icon name="fa-folder" />{folder?.name || "Folder"}</h1><span>Projects and recent activity in this part of your workspace.</span></div>
+        </header>
+        <section className="folder-projects" aria-label={`${folder?.name || "Folder"} projects`}>
+          {projects.length ? projects.map((project) => <ProjectCard key={project.id} project={project} onStar={() => setState((current) => toggleProjectStar(current, project.id))} onOpen={() => navigate({ view: "project", projectId: project.id })} />) : <EmptyState icon="fa-folder-open" title="This folder is ready" copy="New folders start empty so you can decide which projects belong together." />}
+        </section>
+        <section className="folder-activity">
+          <h2>Activity in this folder</h2>
+          {activity.length ? <ol className="activity-list activity-list--large">{activity.map((item) => <ActivityItem key={item.id} item={item} state={state} navigate={navigate} />)}</ol> : <p>No recent activity in this folder.</p>}
+        </section>
+      </main>
       <MyBar state={state} navigate={navigate} />
     </div>
   );
@@ -347,7 +395,7 @@ function ProjectHeader({ project, crumb, navigate, goBack, backRoute }) {
 function ProjectRoom({ state, setState, route, navigate, goBack, openDialog }) {
   const project = projectById(state, route.projectId);
   return (
-    <div className="project-app">
+    <div className={`project-app project-app--theme-${state.themeIndex}`}>
       <ProjectHeader project={project} navigate={navigate} goBack={goBack} backRoute={{ view: "home" }} />
       <main className="project-room">
         <div className="project-room__title">
@@ -388,6 +436,7 @@ function ProjectRoom({ state, setState, route, navigate, goBack, openDialog }) {
           </div>
         </section>
       </main>
+      <MyBar state={state} navigate={navigate} />
     </div>
   );
 }
@@ -397,8 +446,17 @@ function AggregateView({ state, setState, route, navigate, goBack, announce }) {
   const [report, setReport] = useState("Upcoming assignments");
   const [noteDraft, setNoteDraft] = useState("");
   const dated = state.todos.filter((todo) => todo.due && !todo.done).sort((a, b) => a.due.localeCompare(b.due));
+  const scheduled = state.scheduleEvents.slice().sort((a, b) => a.date.localeCompare(b.date));
   const myTasks = state.todos.filter((todo) => todo.ownerId === "geoff" && !todo.done);
   const openTodo = (todo) => navigate({ view: "todo", projectId: todo.projectId, toolId: "todos", todoId: todo.id });
+  const toolCount = (toolId) => ({
+    message: state.messageThreads.length,
+    docs: state.documents.length,
+    todos: state.todos.length,
+    chat: state.chatMessages.length,
+    schedule: state.scheduleEvents.length,
+    cards: state.workflowCards.length,
+  })[toolId] || 0;
 
   const addNote = () => {
     if (!noteDraft.trim()) return;
@@ -408,7 +466,7 @@ function AggregateView({ state, setState, route, navigate, goBack, announce }) {
   };
 
   return (
-    <div className="aggregate-screen">
+    <div className={`aggregate-screen aggregate-screen--theme-${state.themeIndex}`}>
       <HomeHeader navigate={navigate} active={definition.id} />
       <main className="aggregate-shell">
         <header className="aggregate-heading">
@@ -421,6 +479,7 @@ function AggregateView({ state, setState, route, navigate, goBack, announce }) {
         )}
         {(definition.id === "calendar" || definition.id === "my-events") && (
           <section className="calendar-grid">
+            {scheduled.map((event) => <button type="button" key={event.id} className="calendar-item" onClick={() => navigate({ view: "tool", projectId: event.projectId, toolId: "schedule" })}><time>{event.dateLabel}</time><span><strong>{event.title}</strong><small>{event.kind} · {projectById(state, event.projectId).name}</small></span></button>)}
             {dated.map((todo) => <button type="button" key={todo.id} className="calendar-item" onClick={() => openTodo(todo)}><time>{todo.dueLabel}</time><span><strong>{todo.title}</strong><small>{projectById(state, todo.projectId).name}</small></span></button>)}
           </section>
         )}
@@ -433,7 +492,7 @@ function AggregateView({ state, setState, route, navigate, goBack, announce }) {
           </div>
         )}
         {definition.id === "everything" && (
-          <section className="everything-grid">{toolCatalog.map((tool) => <button type="button" key={tool.id} onClick={() => navigate({ view: "tool", projectId: "enormicom", toolId: tool.id })}><Icon name={tool.icon} /><span><strong>{tool.name}</strong><small>{tool.id === "todos" ? state.todos.length : state.toolItems[tool.id]?.length || 0} items across the account</small></span><Icon name="fa-arrow-right" /></button>)}</section>
+          <section className="everything-grid">{toolCatalog.map((tool) => <button type="button" key={tool.id} onClick={() => navigate({ view: "tool", projectId: "enormicom", toolId: tool.id })}><Icon name={tool.icon} /><span><strong>{tool.name}</strong><small>{toolCount(tool.id)} items across the account</small></span><Icon name="fa-arrow-right" /></button>)}</section>
         )}
         {(definition.id === "my-tasks" || definition.id === "do-today") && (
           <section className="aggregate-card personal-list">{(definition.id === "do-today" ? myTasks.slice(0, 3) : myTasks).map((todo) => <TodoRow key={todo.id} todo={todo} onOpen={() => openTodo(todo)} onToggle={() => setState((current) => toggleTodo(current, todo.id))} />)}</section>
@@ -544,7 +603,7 @@ function TodosView({ state, setState, route, navigate, goBack, openDialog, annou
   };
 
   return (
-    <div className="project-app">
+    <div className={`project-app project-app--theme-${state.themeIndex}`}>
       <ProjectHeader project={project} crumb="Project Tasks" navigate={navigate} goBack={goBack} backRoute={{ view: "project", projectId: project.id }} />
       <main className="tool-view">
         <div className="tool-view__heading">
@@ -594,6 +653,7 @@ function TodosView({ state, setState, route, navigate, goBack, openDialog, annou
           })}
         </div>
       </main>
+      <MyBar state={state} navigate={navigate} />
     </div>
   );
 }
@@ -603,27 +663,78 @@ function GenericToolView({ state, setState, route, navigate, goBack, openDialog,
   const tool = toolCatalog.find((item) => item.id === route.toolId) || toolCatalog[0];
   const [draft, setDraft] = useState("");
   const [adding, setAdding] = useState(false);
-  const items = state.toolItems[tool.id] || [];
+  const [category, setCategory] = useState("Updates");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [docQuery, setDocQuery] = useState("");
+  const [scheduleMode, setScheduleMode] = useState("agenda");
+  const [eventDate, setEventDate] = useState("2026-08-12");
+  const chatInputRef = useRef(null);
+  const messageThreads = state.messageThreads.filter((item) => item.projectId === project.id && (categoryFilter === "All" || item.category === categoryFilter));
+  const documents = state.documents.filter((item) => item.projectId === project.id && `${item.title} ${item.folder} ${item.type}`.toLowerCase().includes(docQuery.trim().toLowerCase()));
+  const chatMessages = state.chatMessages.filter((item) => item.projectId === project.id);
+  const scheduleEvents = state.scheduleEvents.filter((item) => item.projectId === project.id);
+  const workflowCards = state.workflowCards.filter((item) => item.projectId === project.id);
   const addItem = () => {
     if (!draft.trim()) return;
-    setState((current) => addToolItem(current, tool.id, draft));
+    if (tool.id === "message") setState((current) => addMessageThread(current, { projectId: project.id, title: draft, category }));
+    else if (tool.id === "docs") setState((current) => addDocument(current, { projectId: project.id, title: draft }));
+    else if (tool.id === "chat") setState((current) => addChatMessage(current, project.id, draft));
+    else if (tool.id === "schedule") setState((current) => addScheduleEvent(current, { projectId: project.id, title: draft, date: eventDate }));
+    else if (tool.id === "cards") setState((current) => addWorkflowCard(current, { projectId: project.id, title: draft }));
+    else setState((current) => addToolItem(current, tool.id, draft));
     setDraft("");
     setAdding(false);
     announce(`${tool.singular[0].toUpperCase() + tool.singular.slice(1)} added`);
   };
+  const advanceCard = (card) => {
+    const columnIndex = state.workflowColumns.findIndex((column) => column.id === card.columnId);
+    const nextColumn = state.workflowColumns[Math.min(columnIndex + 1, state.workflowColumns.length - 1)];
+    if (!nextColumn || nextColumn.id === card.columnId) return;
+    setState((current) => moveWorkflowCard(current, card.id, nextColumn.id));
+    announce(`${card.title} moved to ${nextColumn.title}`);
+  };
+  const toolIntro = tool.id === "message" ? "Post durable announcements and decisions, then keep the full discussion attached." : tool.id === "docs" ? "Find shared project reference material, preview it, and keep it organized." : tool.id === "chat" ? "Use a lightweight stream for quick coordination that does not need a formal record." : tool.id === "schedule" ? "See events and dated work together, then switch between agenda and calendar context." : "Move process-driven work through clear stages from request to done.";
+  const topAction = tool.id === "chat" ? () => chatInputRef.current?.focus() : () => setAdding(true);
   return (
-    <div className="project-app">
+    <div className={`project-app project-app--theme-${state.themeIndex}`}>
       <ProjectHeader project={project} crumb={tool.name} navigate={navigate} goBack={goBack} backRoute={{ view: "project", projectId: project.id }} />
       <main className={`tool-view generic-tool generic-tool--${tool.id}`}>
-        <div className="tool-view__heading"><div><p>{project.name}</p><h1>{tool.name}</h1></div><button type="button" className="primary-button" onClick={() => setAdding(true)}><Icon name="fa-plus" />New {tool.singular}</button></div>
-        <p className="tool-intro">{tool.id === "message" ? "Announcements, proposals, updates, and discussions that stay easy to find." : tool.id === "docs" ? "Shared project reference material, files, and links." : tool.id === "chat" ? "Quick, real-time conversation for the people in this project." : tool.id === "schedule" ? "Events, milestones, and dated project work." : "Work moving through clear stages from new request to done."}</p>
-        {adding && <div className="tool-composer"><input autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addItem(); if (event.key === "Escape") setAdding(false); }} placeholder={`Add a ${tool.singular}…`} /><button type="button" className="primary-button" disabled={!draft.trim()} title={!draft.trim() ? "Enter a title first" : `Add ${tool.singular}`} onClick={addItem}>Add</button><button type="button" className="secondary-button" onClick={() => setAdding(false)}>Cancel</button></div>}
-        {tool.id === "cards" ? (
-          <section className="card-table">{items.map((item, index) => <article key={`${item}-${index}`}><header><strong>{item}</strong><span>{index === items.length - 1 ? 2 : 1} cards</span></header><button type="button" onClick={() => openDialog({ type: "tool-item", title: `${item} card`, copy: `A workflow card in ${project.name}.` })}>Open sample card</button><button type="button" className="card-add" onClick={() => setAdding(true)}>Add a card</button></article>)}</section>
-        ) : (
-          <section className={`tool-item-list tool-item-list--${tool.id}`}>{items.map((item, index) => <button type="button" key={`${item}-${index}`} onClick={() => openDialog({ type: "tool-item", title: item, copy: `${tool.name} item in ${project.name}. You can continue discussion from this preview.` })}><span className="tool-item-icon"><Icon name={tool.icon} /></span><span><strong>{item}</strong><small>{tool.id === "chat" ? `${personById(["geoff", "kimberly", "daniel"][index % 3]).shortName} · Today` : `${project.name} · Updated ${index + 1}h ago`}</small></span><Icon name="fa-chevron-right" /></button>)}</section>
-        )}
+        <div className="tool-view__heading"><div><p>{project.name}</p><h1>{tool.name}</h1></div><button type="button" className="primary-button" onClick={topAction}><Icon name={tool.id === "chat" ? "fa-arrow-down" : "fa-plus"} />{tool.id === "chat" ? "Jump to composer" : `New ${tool.singular}`}</button></div>
+        <p className="tool-intro">{toolIntro}</p>
+        {adding && <div className="tool-composer tool-composer--rich">
+          <input autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addItem(); if (event.key === "Escape") setAdding(false); }} placeholder={`Add a ${tool.singular}…`} />
+          {tool.id === "message" && <select aria-label="Message category" value={category} onChange={(event) => setCategory(event.target.value)}>{["Announcements", "Updates", "Decisions"].map((value) => <option key={value}>{value}</option>)}</select>}
+          {tool.id === "schedule" && <input aria-label="Event date" type="date" value={eventDate} onChange={(event) => setEventDate(event.target.value)} />}
+          <button type="button" className="primary-button" disabled={!draft.trim()} title={!draft.trim() ? "Enter a title first" : `Add ${tool.singular}`} onClick={addItem}>Add</button><button type="button" className="secondary-button" onClick={() => setAdding(false)}>Cancel</button>
+        </div>}
+
+        {tool.id === "message" && <>
+          <nav className="scenario-toolbar" aria-label="Message categories">{["All", "Announcements", "Updates", "Decisions"].map((value) => <button type="button" key={value} className={categoryFilter === value ? "is-active" : ""} onClick={() => setCategoryFilter(value)}>{value}</button>)}</nav>
+          <section className="message-thread-list">{messageThreads.map((thread) => <button type="button" key={thread.id} onClick={() => openDialog({ type: "message-thread", threadId: thread.id })}><span className="tool-item-icon"><Icon name="fa-message" /></span><span><span className="message-meta"><em>{thread.category}</em>{thread.pinned && <em><Icon name="fa-thumbtack" />Pinned</em>}</span><strong>{thread.title}</strong><small>{personById(thread.authorId).shortName} · {thread.updated} · {thread.replies.length} replies</small></span><Icon name="fa-chevron-right" /></button>)}</section>
+        </>}
+
+        {tool.id === "docs" && <>
+          <label className="docs-search"><Icon name="fa-magnifying-glass" /><input value={docQuery} onChange={(event) => setDocQuery(event.target.value)} placeholder="Find a document, file, link, or folder" /></label>
+          <section className="document-grid">{documents.map((document) => <button type="button" key={document.id} onClick={() => openDialog({ type: "document-preview", documentId: document.id })}><span className="document-type"><Icon name={document.type === "PDF" ? "fa-file-pdf" : document.type === "Link" ? "fa-link" : "fa-file-lines"} /></span><span><em>{document.folder}</em><strong>{document.title}</strong><small>{document.type} · Updated {document.updated}</small></span></button>)}</section>
+        </>}
+
+        {tool.id === "chat" && <section className="chat-room" aria-label="Project chat">
+          <div className="chat-day"><span>Today</span></div>
+          <ol>{chatMessages.map((message) => <li key={message.id}><Avatar name={message.authorId} size="medium" /><div><p><strong>{personById(message.authorId).shortName}</strong><time>{message.time}</time></p><span>{message.body}</span></div></li>)}</ol>
+          <div className="chat-composer"><Avatar name="geoff" size="medium" /><input ref={chatInputRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => event.key === "Enter" && addItem()} placeholder="Type a quick message…" /><button type="button" className="primary-button" disabled={!draft.trim()} title={!draft.trim() ? "Write a message first" : "Send message"} onClick={addItem}>Send</button></div>
+        </section>}
+
+        {tool.id === "schedule" && <>
+          <nav className="scenario-toolbar scenario-toolbar--split" aria-label="Schedule view"><span>{scheduleEvents.length} dated commitments</span><div>{["agenda", "calendar"].map((mode) => <button type="button" key={mode} className={scheduleMode === mode ? "is-active" : ""} onClick={() => setScheduleMode(mode)}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}</div></nav>
+          {scheduleMode === "agenda" ? <section className="schedule-agenda">{scheduleEvents.map((event) => <article key={event.id}><time>{event.dateLabel}</time><span className="tool-item-icon"><Icon name="fa-calendar-day" /></span><span><em>{event.kind}</em><strong>{event.title}</strong><small>{event.time} · {project.name}</small></span></article>)}</section> : <section className="schedule-calendar">{scheduleEvents.map((event) => <article key={event.id}><time>{event.date.slice(-2)}</time><strong>{event.title}</strong><small>{event.time}</small></article>)}</section>}
+        </>}
+
+        {tool.id === "cards" && <section className="card-table">{state.workflowColumns.map((column, columnIndex) => {
+          const cards = workflowCards.filter((card) => card.columnId === column.id);
+          return <article key={column.id}><header><strong>{column.title}</strong><span>{cards.length} {cards.length === 1 ? "card" : "cards"}</span></header>{cards.map((card) => <div className="workflow-card" key={card.id}><button type="button" className="workflow-card__open" onClick={() => openDialog({ type: "tool-item", title: card.title, copy: `Workflow card in ${column.title}.` })}><strong>{card.title}</strong><span><Avatar name={card.ownerId} size="micro" />{personById(card.ownerId).shortName}</span></button>{columnIndex < state.workflowColumns.length - 1 && <button type="button" className="workflow-card__move" onClick={() => advanceCard(card)}>Move to {state.workflowColumns[columnIndex + 1].title}<Icon name="fa-arrow-right" /></button>}</div>)}<button type="button" className="card-add" onClick={() => setAdding(true)}>Add a card</button></article>;
+        })}</section>}
       </main>
+      <MyBar state={state} navigate={navigate} />
     </div>
   );
 }
@@ -652,7 +763,7 @@ function TodoDetail({ state, setState, route, navigate, goBack, announce }) {
   };
 
   return (
-    <div className="project-app">
+    <div className={`project-app project-app--theme-${state.themeIndex}`}>
       <ProjectHeader project={project} crumb="Project Tasks / To-do" navigate={navigate} goBack={goBack} backRoute={{ view: "tool", projectId: project.id, toolId: "todos" }} />
       <main className="todo-detail">
         <header>
@@ -699,6 +810,7 @@ function TodoDetail({ state, setState, route, navigate, goBack, announce }) {
           })}
         </section>
       </main>
+      <MyBar state={state} navigate={navigate} />
     </div>
   );
 }
@@ -736,6 +848,16 @@ function AppDialog({ overlay, close, state, setState, announce }) {
   if (overlay.type === "external") return <DialogShell title={overlay.label} copy={`Safe preview for ${overlay.host}. No external service is connected.`} onClose={close}><div className="external-preview"><Icon name="fa-arrow-up-right-from-square" /><p>{overlay.host}</p><button type="button" disabled title="External services are intentionally disconnected in this reference prototype">Open external service</button></div></DialogShell>;
   if (overlay.type === "hill-update") return <DialogShell title="Update the Hill Chart" copy="Describe what moved and what remains uncertain." onClose={close}><div className="dialog-form"><label>Progress note<textarea autoFocus value={hillSummary} onChange={(event) => setHillSummary(event.target.value)} /></label><div className="dialog-actions"><button type="button" className="primary-button" disabled={!hillSummary.trim()} title={!hillSummary.trim() ? "Add a progress note first" : "Save update"} onClick={() => { setState((current) => addHillUpdate(current, hillSummary)); announce("Hill Chart updated"); close(); }}>Save update</button><button type="button" className="secondary-button" onClick={close}>Cancel</button></div></div></DialogShell>;
   if (overlay.type === "hill-history") return <DialogShell title="Hill Chart history" copy="Every manual progress update stays visible." onClose={close}><ol className="history-list">{state.hillUpdates.map((update) => <li key={update.id}><strong>{update.label}</strong><span>{update.summary}</span></li>)}</ol></DialogShell>;
+  if (overlay.type === "message-thread") {
+    const thread = state.messageThreads.find((item) => item.id === overlay.threadId);
+    if (!thread) return null;
+    return <DialogShell title={thread.title} copy={`${thread.category} · ${personById(thread.authorId).shortName} · ${thread.updated}`} onClose={close}><article className="thread-detail"><p>{thread.body}</p><ol>{thread.replies.map((reply) => <li key={reply.id}><Avatar name={reply.authorId} size="small" /><div><strong>{personById(reply.authorId).shortName}</strong><time>{reply.time}</time><p>{reply.body}</p></div></li>)}</ol><div className="thread-reply"><textarea aria-label="Add a reply" placeholder="Add a reply to this discussion…" value={note} onChange={(event) => setNote(event.target.value)} /><button type="button" className="primary-button" disabled={!note.trim()} title={!note.trim() ? "Write a reply first" : "Post reply"} onClick={() => { setState((current) => addMessageReply(current, thread.id, note)); setNote(""); announce("Reply added to this message"); }}>Post reply</button></div></article></DialogShell>;
+  }
+  if (overlay.type === "document-preview") {
+    const document = state.documents.find((item) => item.id === overlay.documentId);
+    if (!document) return null;
+    return <DialogShell title={document.title} copy={`${document.folder} · ${document.type} · Updated ${document.updated}`} onClose={close}><article className="document-preview"><Icon name={document.type === "PDF" ? "fa-file-pdf" : document.type === "Link" ? "fa-link" : "fa-file-lines"} /><div><strong>Reference preview</strong><p>{document.summary}</p><small>The underlying file service is intentionally disconnected; this preview demonstrates find-and-revisit behavior.</small></div><button type="button" className="secondary-button" onClick={() => { announce(`${document.title} bookmarked for the project`); close(); }}>Bookmark reference</button></article></DialogShell>;
+  }
   if (overlay.type === "tool-item") return <DialogShell title={overlay.title} copy={overlay.copy} onClose={close}><div className="item-preview"><p>Discussion and details remain attached to this item.</p><textarea aria-label="Add a reply" placeholder="Add a reply…" value={note} onChange={(event) => setNote(event.target.value)} /><button type="button" className="primary-button" disabled={!note.trim()} title={!note.trim() ? "Write a reply first" : "Post reply"} onClick={() => { announce("Reply added to this preview"); close(); }}>Post reply</button></div></DialogShell>;
   return null;
 }
@@ -754,7 +876,7 @@ export function App() {
   };
 
   const navigate = (nextRoute, mode = "push") => {
-    const completeRoute = { projectId: "enormicom", toolId: "todos", todoId: "kickoff", aggregateId: "activity", ...nextRoute };
+    const completeRoute = { projectId: "enormicom", toolId: "todos", todoId: "kickoff", aggregateId: "activity", folderId: "client-work", ...nextRoute };
     const url = routeUrl(completeRoute);
     if (mode === "replace") window.history.replaceState({ basecamp: true, route: completeRoute }, "", url);
     else window.history.pushState({ basecamp: true, route: completeRoute }, "", url);
@@ -784,7 +906,8 @@ export function App() {
   });
 
   let screen;
-  if (route.view === "aggregate") screen = <AggregateView state={state} setState={setState} route={route} navigate={navigate} goBack={goBack} announce={announce} />;
+  if (route.view === "folder") screen = <FolderView state={state} setState={setState} route={route} navigate={navigate} goBack={goBack} />;
+  else if (route.view === "aggregate") screen = <AggregateView state={state} setState={setState} route={route} navigate={navigate} goBack={goBack} announce={announce} />;
   else if (route.view === "project") screen = <ProjectRoom state={state} setState={setState} route={route} navigate={navigate} goBack={goBack} openDialog={setOverlay} />;
   else if (route.view === "tool" && route.toolId === "todos") screen = <TodosView state={state} setState={setState} route={route} navigate={navigate} goBack={goBack} openDialog={setOverlay} announce={announce} />;
   else if (route.view === "tool") screen = <GenericToolView state={state} setState={setState} route={route} navigate={navigate} goBack={goBack} openDialog={setOverlay} announce={announce} />;

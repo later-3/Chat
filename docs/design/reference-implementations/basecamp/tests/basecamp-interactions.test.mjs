@@ -2,16 +2,23 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
+  addChatMessage,
   addComment,
+  addDocument,
   addHillUpdate,
+  addMessageReply,
+  addMessageThread,
+  addScheduleEvent,
   addSubtask,
   addToolItem,
+  addWorkflowCard,
   aggregateViews,
   createFolder,
   createInitialState,
   createProject,
   createTodo,
   filterTodos,
+  moveWorkflowCard,
   quickFind,
   removeComment,
   todoById,
@@ -140,9 +147,56 @@ test("tool items and hill history are real model changes", () => {
   assert.equal(withHillUpdate.hillUpdates.length, state.hillUpdates.length + 1);
 });
 
+test("folder organization projects the same project objects into a scalable Home group", () => {
+  const state = createInitialState();
+  const folder = state.folders.find((item) => item.id === "client-work");
+  const projects = state.projects.filter((project) => folder.projectIds.includes(project.id));
+  assert.deepEqual(projects.map((project) => project.id), ["website", "gh-designs"]);
+  assert.equal(projects[0], state.projects.find((project) => project.id === "website"));
+});
+
+test("message board discussions keep durable replies attached to the thread", () => {
+  let state = createInitialState();
+  state = addMessageThread(state, { projectId: "enormicom", title: "Launch decision", category: "Decisions" });
+  const thread = state.messageThreads[0];
+  state = addMessageReply(state, thread.id, "Approved for the August release.");
+  const updated = state.messageThreads.find((item) => item.id === thread.id);
+  assert.equal(updated.category, "Decisions");
+  assert.equal(updated.replies[0].body, "Approved for the August release.");
+  assert.equal(updated.updated, "Just now");
+});
+
+test("docs, chat, and schedule each preserve their scenario-specific fields", () => {
+  let state = createInitialState();
+  state = addDocument(state, { projectId: "enormicom", title: "Launch runbook.pdf", type: "PDF" });
+  state = addChatMessage(state, "enormicom", "Ready for a quick review.");
+  state = addScheduleEvent(state, { projectId: "enormicom", title: "Release review", date: "2026-08-12", time: "3:00pm", kind: "Milestone" });
+  assert.equal(state.documents[0].title, "Launch runbook.pdf");
+  assert.equal(state.documents[0].type, "PDF");
+  assert.equal(state.chatMessages.at(-1).body, "Ready for a quick review.");
+  assert.equal(state.scheduleEvents.find((item) => item.title === "Release review").date, "2026-08-12");
+});
+
+test("workflow cards move between stages without changing card identity", () => {
+  let state = createInitialState();
+  state = addWorkflowCard(state, { projectId: "enormicom", title: "Check analytics" });
+  const card = state.workflowCards.at(-1);
+  state = moveWorkflowCard(state, card.id, "working");
+  const moved = state.workflowCards.find((item) => item.id === card.id);
+  assert.equal(moved.id, card.id);
+  assert.equal(moved.columnId, "working");
+  assert.equal(state.workflowCards.length, createInitialState().workflowCards.length + 1);
+});
+
 test("JSX has no empty click handlers or legacy single-project routing", async () => {
   const source = await readFile(new URL("../src/App.jsx", import.meta.url), "utf8");
   assert.equal(source.includes("onClick={() => {}}"), false);
   assert.equal(source.includes('navigate(project.id === "enormicom" ? "project" : "project")'), false);
   assert.equal(source.includes("tool.id === \"todos\" ? navigate"), false);
+  assert.equal(source.includes('const allowedViews = new Set(["home", "folder"'), true);
+  assert.equal(source.includes("project-app project-app--theme-"), true);
+  assert.equal((source.match(/<MyBar state=\{state\} navigate=\{navigate\}/g) || []).length >= 6, true);
+  assert.equal(source.includes('type: "message-thread"'), true);
+  assert.equal(source.includes('type: "document-preview"'), true);
+  assert.equal(source.includes("Move to {state.workflowColumns"), true);
 });

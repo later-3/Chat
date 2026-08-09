@@ -107,6 +107,45 @@ export function createInitialState() {
       schedule: ["Project kickoff · Jul 31", "Design review · Aug 7", "Launch readiness · Aug 28"],
       cards: ["New requests", "Working on", "Client review", "Done"],
     },
+    messageThreads: [
+      { id: "message-welcome", projectId: "enormicom", title: "Welcome to Enormicom HQ", category: "Announcements", pinned: true, authorId: "kimberly", updated: "Today at 9:10am", body: "Use this space for durable announcements, proposals, and decisions everyone may need later.", replies: [
+        { id: "reply-welcome-1", authorId: "geoff", time: "Today at 9:22am", body: "Got it — quick coordination stays in Chat, final decisions stay here." },
+      ] },
+      { id: "message-update", projectId: "enormicom", title: "Weekly client update", category: "Updates", pinned: false, authorId: "geoff", updated: "Yesterday", body: "The client approved the navigation direction. The next review focuses on responsive layouts.", replies: [
+        { id: "reply-update-1", authorId: "sofia", time: "Yesterday at 4:40pm", body: "I’ll attach the revised mobile screens before the review." },
+        { id: "reply-update-2", authorId: "daniel", time: "Yesterday at 5:05pm", body: "I’ll confirm the component constraints in the same thread." },
+      ] },
+      { id: "message-decisions", projectId: "enormicom", title: "Decisions from kickoff", category: "Decisions", pinned: false, authorId: "geoff", updated: "Monday", body: "We agreed to launch the core conversion path first and defer the resource library.", replies: [] },
+    ],
+    documents: [
+      { id: "doc-brand", projectId: "enormicom", title: "Brand guidelines.pdf", type: "PDF", folder: "Brand", updated: "Today", summary: "Logo use, color values, typography, and voice principles." },
+      { id: "doc-feedback", projectId: "enormicom", title: "Client feedback.md", type: "Document", folder: "Research", updated: "Yesterday", summary: "Consolidated feedback from the kickoff and first design review." },
+      { id: "doc-brief", projectId: "enormicom", title: "Project brief.docx", type: "Document", folder: "Planning", updated: "Monday", summary: "Audience, goals, success criteria, constraints, and launch scope." },
+      { id: "doc-prototype", projectId: "enormicom", title: "Interactive prototype", type: "Link", folder: "Design", updated: "Friday", summary: "The current client-facing prototype and review notes." },
+    ],
+    chatMessages: [
+      { id: "chat-1", projectId: "enormicom", authorId: "kimberly", time: "9:14am", body: "Morning! The kickoff notes are ready." },
+      { id: "chat-2", projectId: "enormicom", authorId: "daniel", time: "9:21am", body: "I added the revised timeline." },
+      { id: "chat-3", projectId: "enormicom", authorId: "geoff", time: "9:28am", body: "Looks good — sharing with the client." },
+      { id: "chat-4", projectId: "enormicom", authorId: "sofia", time: "9:36am", body: "I’ll stay here for quick feedback during the review." },
+    ],
+    scheduleEvents: [
+      { id: "event-kickoff", projectId: "enormicom", title: "Project kickoff", date: "2026-07-31", dateLabel: "Fri, Jul 31", time: "10:00am", kind: "Event" },
+      { id: "event-review", projectId: "enormicom", title: "Design review", date: "2026-08-07", dateLabel: "Fri, Aug 7", time: "2:00pm", kind: "Milestone" },
+      { id: "event-launch", projectId: "enormicom", title: "Launch readiness", date: "2026-08-28", dateLabel: "Fri, Aug 28", time: "11:30am", kind: "Event" },
+    ],
+    workflowColumns: [
+      { id: "new", title: "New requests" },
+      { id: "working", title: "Working on" },
+      { id: "review", title: "Client review" },
+      { id: "done", title: "Done" },
+    ],
+    workflowCards: [
+      { id: "card-copy", projectId: "enormicom", title: "Confirm homepage copy", columnId: "new", ownerId: "alex" },
+      { id: "card-nav", projectId: "enormicom", title: "Build responsive navigation", columnId: "working", ownerId: "daniel" },
+      { id: "card-mobile", projectId: "enormicom", title: "Review mobile mockups", columnId: "review", ownerId: "sofia" },
+      { id: "card-brief", projectId: "enormicom", title: "Approve project brief", columnId: "done", ownerId: "geoff" },
+    ],
     foldersOpen: [],
     notes: ["Ask about the marketing campaign timeline.", "Bring revised sitemap to Friday review."],
     notifications: [
@@ -213,6 +252,40 @@ export function removeComment(state, todoId, commentId) {
 
 export function addToolItem(state, toolId, value) {
   return { ...state, toolItems: { ...state.toolItems, [toolId]: [value.trim(), ...(state.toolItems[toolId] || [])] } };
+}
+
+export function addMessageThread(state, { projectId, title, category = "Updates" }) {
+  const thread = { id: `message-${state.nextId}`, projectId, title: title.trim(), category, pinned: false, authorId: "geoff", updated: "Just now", body: "New message ready for the project discussion.", replies: [] };
+  return { ...state, nextId: state.nextId + 1, messageThreads: [thread, ...state.messageThreads] };
+}
+
+export function addMessageReply(state, threadId, body, authorId = "geoff") {
+  const reply = { id: `reply-${state.nextId}`, authorId, time: "Just now", body: body.trim() };
+  return { ...state, nextId: state.nextId + 1, messageThreads: state.messageThreads.map((thread) => thread.id === threadId ? { ...thread, updated: "Just now", replies: [...thread.replies, reply] } : thread) };
+}
+
+export function addDocument(state, { projectId, title, type = "Document" }) {
+  const document = { id: `doc-${state.nextId}`, projectId, title: title.trim(), type, folder: "Uploads", updated: "Just now", summary: "New shared reference material for this project." };
+  return { ...state, nextId: state.nextId + 1, documents: [document, ...state.documents] };
+}
+
+export function addChatMessage(state, projectId, body, authorId = "geoff") {
+  const message = { id: `chat-${state.nextId}`, projectId, authorId, time: "Just now", body: body.trim() };
+  return { ...state, nextId: state.nextId + 1, chatMessages: [...state.chatMessages, message] };
+}
+
+export function addScheduleEvent(state, { projectId, title, date, time = "9:00am", kind = "Event" }) {
+  const event = { id: `event-${state.nextId}`, projectId, title: title.trim(), date, dateLabel: date || "No date", time, kind };
+  return { ...state, nextId: state.nextId + 1, scheduleEvents: [...state.scheduleEvents, event].sort((a, b) => a.date.localeCompare(b.date)) };
+}
+
+export function addWorkflowCard(state, { projectId, title, columnId = "new" }) {
+  const card = { id: `card-${state.nextId}`, projectId, title: title.trim(), columnId, ownerId: "geoff" };
+  return { ...state, nextId: state.nextId + 1, workflowCards: [...state.workflowCards, card] };
+}
+
+export function moveWorkflowCard(state, cardId, targetColumnId) {
+  return { ...state, workflowCards: state.workflowCards.map((card) => card.id === cardId ? { ...card, columnId: targetColumnId } : card) };
 }
 
 export function addHillUpdate(state, summary) {
