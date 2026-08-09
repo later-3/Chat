@@ -193,6 +193,10 @@ function DecisionBox({
     setInstruction("");
   }, [awaitingRevision, chain.decisionError, chain.deciding]);
 
+  /**
+   * 决定必须绑定当前界面展示的Approval和精确Plan版本/Hash。expectedRunRevision在调用处
+   * 另外绑定当前Run版本：任一事实变化，服务端都会拒绝旧页面的决定并要求重新读取。
+   */
   function basePayload(kind: SubmitDecisionPayload["kind"]): SubmitDecisionPayload {
     return {
       approvalRequestId: approval.approvalRequestId,

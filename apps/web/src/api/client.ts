@@ -169,6 +169,8 @@ export function apiSubmitMessage(
   commandId: CommandId,
   payload: SubmitMessagePayload,
 ): Promise<{ message: MessageDto; run: RunDto }> {
+  // 调试导航③：公开HTTP合同边界。CommandEnvelope把可重试的commandId与业务payload分开；
+  // 返回的Message/Run是服务端已提交事实，但只表示“消息与Run已受理”，不表示Workflow已完成。
   return post(
     `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
     commandEnvelopeSchema.parse({

@@ -83,6 +83,8 @@ export async function submitUserMessage(
   input: SubmitUserMessageInput,
 ): Promise<{ message: MessageDto; run: RunDto }> {
   const now = deps.now();
+  // 调试导航⑤：先分配候选ID，再由commandId+requestSha256决定事务是首次提交还是幂等重放。
+  // 重放时Store返回首次提交的resultRefs；本次新分配但未写入的候选ID不会成为产品事实。
   const messageId = deps.ids.message();
   const productRunId = deps.ids.run();
   const outboxId = deps.ids.outbox();
@@ -119,6 +121,8 @@ export async function submitUserMessage(
         throw revisionConflict("当前Session已有未结束的Product Run");
       }
       const sessionSequence = session.lastMessageSequence + 1;
+      // Message是用户输入的耐久会话事实；ProductRun是“围绕该消息推进一次工作”的生命周期事实。
+      // 两者分开后，同一Session可保留完整消息历史，而每次工作有独立状态机和revision。
       const message: Message = {
         schemaVersion: "message.v1",
         messageId,
@@ -160,6 +164,8 @@ export async function submitUserMessage(
                 selectedMemory.layers.includes(layer),
               ),
             };
+      // ContextRequest保存“本轮请求了什么”及来源Message Hash，不保存外部Memory查询结果；
+      // 后续Workflow会据此生成不可变ContextPackage，避免修订Plan时重新召回导致上下文漂移。
       const contextRequestShape = {
         productRunId,
         requestedByPrincipalId: input.principalId,
@@ -196,7 +202,9 @@ export async function submitUserMessage(
         revision: session.revision + 1,
         updatedAt: now,
       };
-      // Workflow Start Outbox与产品事实同一次快照提交；不含任何Runtime私有身份
+      // 调试导航⑥：Workflow Start Outbox与产品事实同一次快照提交。
+      // Outbox只保存Chat拥有的productRunId和派发状态，不保存Workflow Run ID/Hook Token；
+      // 即使进程在事务提交后立即崩溃，Dispatcher仍能从pending事实恢复派发。
       draft.outbox[outboxId] = {
         schemaVersion: "outbox-entry.v1",
         outboxId,

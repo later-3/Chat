@@ -309,6 +309,17 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     void queryClient.invalidateQueries({ queryKey: ["real-run-context", activeRunId] });
   }, [activeRunId, queryClient, run.data?.status, sessionId]);
 
+  /**
+   * 调试导航②：浏览器Command协调边界。
+   *
+   * PendingSend不是服务端Message，而是“待确认命令”：
+   * - commandId：幂等身份，响应丢失后必须原样重试；
+   * - payload：已经冻结的文本和本轮Context选择；
+   * - version：localStorage恢复格式版本，不是产品对象revision。
+   *
+   * 只有API返回并通过公开合同校验后，才清除PendingSend并保存Product Run定位；
+   * 网络异常时保留同一个对象，绝不能生成新commandId猜测重发。
+   */
   const sendMutation = useMutation({
     mutationFn: async (pending: PendingSend) => {
       if (sessionId === null) throw new Error("session not ready");
@@ -341,6 +352,7 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     ) {
       return;
     }
+    // 先持久化完整命令再发HTTP，页面在响应中途刷新也能用同一身份恢复。
     const pending: PendingSend = {
       version: 2,
       payload: { text, ...(context !== undefined ? { context } : {}) },
@@ -357,6 +369,11 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     sendMutation.mutate(pendingSend);
   };
 
+  /**
+   * 调试导航⑨：Plan决定仍然是产品Command，不是浏览器直接恢复Workflow Hook。
+   * expectedRunRevision防止旧页面决定新状态；payload绑定approval/plan/hash；
+   * API提交Decision和workflow_resume Outbox后，Dispatcher才恢复同一个Workflow。
+   */
   const decisionMutation = useMutation({
     mutationFn: async (input: PendingDecision) => {
       return apiSubmitDecision({
