@@ -324,6 +324,11 @@ function ProjectPanel({ projects }: { projects: ProjectChain }) {
       {candidate?.status === "queued" && (
         <p className="loading-note">正在理解诉求并观察真实项目资源…</p>
       )}
+      {candidate?.status === "failed" && (
+        <p className="error-note" role="alert">
+          建项理解或资源观察失败（{candidate.failureCode}）。原消息已保留，请修复配置后重新发起。
+        </p>
+      )}
       {candidate?.status === "under_review" && proposal !== null && (
         <div className="project-candidate-card">
           <span className="eyebrow">建项方案 · 等待你的确认</span>

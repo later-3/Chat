@@ -372,4 +372,61 @@ describe("PS1 Project Intake Application纵向链", () => {
     expect(attempts.filter((item) => item.status === "fulfilled")).toHaveLength(1);
     expect(attempts.filter((item) => item.status === "rejected")).toHaveLength(1);
   });
+
+  it("Provider失败只调用一次并提交可恢复的failed Candidate", async () => {
+    const base = await deps();
+    let providerCalls = 0;
+    const application: ApplicationDeps = {
+      ...base,
+      projectIntakeUnderstanding: {
+        describe: () => ({
+          profileVersion: "test.project-model.v1",
+          providerName: "test-provider",
+          modelId: "test-model",
+          promptTemplateVersion: "project-intake-understanding.v1",
+          endpointHost: "models.example.test",
+        }),
+        understand: async () => {
+          providerCalls += 1;
+          throw Object.assign(new Error("auth failed"), { code: "provider.auth_failed" });
+        },
+      },
+    };
+    const principalId = "usr_projectowner" as never;
+    const { session } = await createProductSession(application, {
+      principalId,
+      commandId: "cmd_projectfailsession" as never,
+      payload: {},
+    });
+    const begun = await beginProjectIntake(application, {
+      principalId,
+      commandId: "cmd_projectfailbegin" as never,
+      payload: { sessionId: session.sessionId, text: "建立失败测试项目", rootId: "root_chat" },
+    });
+    await expect(
+      prepareProjectCandidateForReview(application, {
+        commandId: "cmd_projectfailprepare" as never,
+        projectCandidateId: begun.candidate.projectCandidateId,
+        expectedRevision: 1,
+      }),
+    ).rejects.toMatchObject({ code: "provider_auth_failed", retryable: false });
+    expect(providerCalls).toBe(1);
+    const failed = await getProjectCandidate(application, {
+      principalId,
+      projectCandidateId: begun.candidate.projectCandidateId,
+    });
+    expect(failed.candidate).toMatchObject({
+      status: "failed",
+      failureCode: "provider.auth_failed",
+      revision: 2,
+    });
+    await expect(
+      prepareProjectCandidateForReview(application, {
+        commandId: "cmd_projectfailprepare" as never,
+        projectCandidateId: begun.candidate.projectCandidateId,
+        expectedRevision: 1,
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    expect(providerCalls).toBe(1);
+  });
 });

@@ -105,6 +105,14 @@ function toCandidateDto(candidate: ProjectCandidate): ProjectCandidateDto {
   if (candidate.status === "queued") {
     return projectCandidateDtoSchema.parse({ ...base, status: "queued", allowedActions: [] });
   }
+  if (candidate.status === "failed") {
+    return projectCandidateDtoSchema.parse({
+      ...base,
+      status: "failed",
+      failureCode: candidate.failureCode,
+      allowedActions: [],
+    });
+  }
   if (candidate.status === "under_review") {
     return projectCandidateDtoSchema.parse({
       ...base,
@@ -329,6 +337,14 @@ export async function prepareProjectCandidateForReview(
       requireProjectRoots(deps).observe(candidate.rootId),
     ]);
   } catch (error) {
+    const failureCode =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof error.code === "string" &&
+      /^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/u.test(error.code)
+        ? error.code
+        : "project.understanding_failed";
     emitProjectTrace(deps, {
       level: "warn",
       eventName: "project.understanding.failed",
@@ -344,18 +360,59 @@ export async function prepareProjectCandidateForReview(
       modelProfileVersion: model.profileVersion,
       inputManifestSha256: inputManifestSha256 as never,
       error: {
-        code:
-          typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          typeof error.code === "string"
-            ? error.code
-            : "project.understanding_failed",
+        code: failureCode,
         type: "ProjectUnderstandingError",
       },
       durationMs: Math.round(performance.now() - startedAt),
     });
-    throw error;
+    const failureSha256 = hashCanonical("command.fail-project-candidate.v1", {
+      projectCandidateId: candidate.projectCandidateId,
+      expectedRevision: input.expectedRevision,
+      failureCode,
+    });
+    await deps.store.transact({
+      commandId: input.commandId,
+      commandType: "FailProjectCandidateForReview",
+      requestSha256: failureSha256,
+      mutate: (draft) => {
+        const current = draft.entities.projectCandidates[candidate.projectCandidateId];
+        if (current === undefined) throw notFound("建项方案不存在");
+        if (current.status === "failed") {
+          return { resultRefs: { projectCandidateId: current.projectCandidateId } };
+        }
+        if (current.status !== "queued" || current.revision !== input.expectedRevision) {
+          throw revisionConflict("建项失败状态提交时Candidate已经变化");
+        }
+        draft.entities.projectCandidates[current.projectCandidateId] = {
+          ...current,
+          status: "failed",
+          failureCode,
+          failedByCommandId: input.commandId,
+          revision: current.revision + 1,
+          updatedAt: deps.now(),
+        };
+        return { resultRefs: { projectCandidateId: current.projectCandidateId } };
+      },
+    });
+    const problemCode =
+      failureCode === "provider.auth_failed"
+        ? "provider_auth_failed"
+        : failureCode === "provider.rate_limited"
+          ? "provider_rate_limited"
+          : failureCode === "provider.timeout"
+            ? "provider_timeout"
+            : failureCode === "provider.stream_interrupted"
+              ? "provider_stream_interrupted"
+              : failureCode === "model_candidate_invalid"
+                ? "model_candidate_invalid"
+                : "internal_error";
+    throw new ApplicationError({
+      code: problemCode,
+      httpStatus: problemCode === "provider_auth_failed" ? 401 : 502,
+      message: "Project理解节点失败，Candidate已记录失败状态",
+      retryable: false,
+      recoveryAction: problemCode === "provider_auth_failed" ? "reauthenticate" : "none",
+    });
   }
   const understanding = understood.understanding;
   emitProjectTrace(deps, {
@@ -1050,7 +1107,7 @@ export async function createProjectAction(
   const actionId = requireProjectIds(deps).action();
   const now = deps.now();
   const requestSha256 = hashCanonical("command.create-project-action.v1", input);
-  await deps.store.transact({
+  const transaction = await deps.store.transact({
     commandId: input.commandId,
     commandType: "CreateProjectAction",
     requestSha256,

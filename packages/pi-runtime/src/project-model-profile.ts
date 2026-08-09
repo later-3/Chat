@@ -31,7 +31,10 @@ export function loadProjectModelProfile(
   const displayName = env.CHAT_PROJECT_MODEL_DISPLAY_NAME?.trim() || modelId;
   const profileVersion =
     env.CHAT_PROJECT_MODEL_PROFILE_VERSION?.trim() || `${providerName}.${modelId}.v1`;
-  const baseUrl = env.CHAT_PROJECT_MODEL_BASE_URL?.trim() || BAILIAN_DEFAULT_BASE_URL;
+  const baseUrl =
+    env.CHAT_PROJECT_MODEL_BASE_URL?.trim() ||
+    (providerName === "bailian" ? env.DASHSCOPE_BASE_URL?.trim() : undefined) ||
+    BAILIAN_DEFAULT_BASE_URL;
   const apiKeyEnv = env.CHAT_PROJECT_MODEL_API_KEY_ENV?.trim() || "DASHSCOPE_API_KEY";
   if (!/^[a-z][a-z0-9_-]{0,63}$/u.test(providerName)) {
     throw new ProjectModelProfileError("CHAT_PROJECT_MODEL_PROVIDER格式非法");

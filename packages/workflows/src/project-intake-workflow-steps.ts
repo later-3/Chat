@@ -1,6 +1,6 @@
 import { sha256Hex } from "@chat/domain";
+import { FatalError } from "workflow";
 import { getWorkflowRuntimeContext } from "./runtime-context.js";
-import { wrapApiError } from "./workflow-step-support.js";
 
 export async function prepareProjectCandidateStep(input: {
   readonly projectCandidateId: string;
@@ -14,6 +14,8 @@ export async function prepareProjectCandidateStep(input: {
       expectedRevision: input.expectedRevision,
     });
   } catch (error) {
-    wrapApiError(error);
+    // Provider调用和Resource Observe发生在产品事务前；网络未知或服务端失败都不能由
+    // Workflow默认重试再次付费。用户可从失败Candidate显式重新发起新建项。
+    throw new FatalError(error instanceof Error ? error.message : "Project Intake prepare失败");
   }
 }

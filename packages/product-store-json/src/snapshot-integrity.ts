@@ -1560,6 +1560,7 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
     ],
     BeginProjectIntake: ["projectCandidateId", "messageId"],
     PrepareProjectCandidateForReview: ["projectCandidateId"],
+    FailProjectCandidateForReview: ["projectCandidateId"],
     CreateProjectAction: ["projectId", "projectActionId"],
     AssignProjectAction: ["projectId"],
     TransitionProjectAction: ["projectId"],

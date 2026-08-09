@@ -665,6 +665,11 @@ describe("Provider配置与错误归一化", () => {
     expect(() =>
       loadProjectModelProfile({ CHAT_PROJECT_MODEL_BASE_URL: "http://models.example.com/v1" }),
     ).toThrow(ProjectModelProfileError);
+    expect(
+      loadProjectModelProfile({
+        DASHSCOPE_BASE_URL: "https://coding.dashscope.aliyuncs.com/v1",
+      }).endpointHost,
+    ).toBe("coding.dashscope.aliyuncs.com");
   });
 
   it("Base URL必须是HTTPS且符合百炼域名合同", () => {

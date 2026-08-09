@@ -329,6 +329,17 @@ export const projectCandidateSchema = z.discriminatedUnion("status", [
   z
     .object({
       ...projectCandidateBase,
+      status: z.literal("failed"),
+      failureCode: z
+        .string()
+        .regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/u)
+        .max(64),
+      failedByCommandId: commandIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...projectCandidateBase,
       status: z.literal("under_review"),
       understanding: projectIntakeUnderstandingSchema,
       proposal: projectIntakeProposalSchema,

@@ -139,6 +139,14 @@ export const projectCandidateDtoSchema = z.discriminatedUnion("status", [
   z
     .object({
       ...projectCandidateBaseDto,
+      status: z.literal("failed"),
+      failureCode: z.string().regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/u),
+      allowedActions: z.tuple([]),
+    })
+    .strict(),
+  z
+    .object({
+      ...projectCandidateBaseDto,
       status: z.literal("under_review"),
       proposal: projectIntakeProposalSchema,
       resource: z
