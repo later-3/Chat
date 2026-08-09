@@ -1,0 +1,77 @@
+[data-theme="thread"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f4f4f1;
+  --bg-tertiary: #ecece8;
+  --surface-raised: #ffffff;
+  --surface-soft: #f8f8f5;
+  --text-primary: #1d1d1f;
+  --text-secondary: #65656b;
+  --text-tertiary: #76767d;
+  --separator: rgba(29, 29, 31, 0.12);
+  --separator-strong: rgba(29, 29, 31, 0.24);
+  --accent: #1d1d1f;
+  --accent-text: #ffffff;
+  --focus: #1d1d1f;
+  --status-success: #237a3b;
+  --status-warning: #9b5c08;
+  --status-danger: #b73745;
+  --status-info: #245e91;
+  --agent-a: #c55e49;
+  --agent-b: #9a6b28;
+  --agent-c: #a24d73;
+  --event-meeting: #4b6784;
+  --event-focus: #8b6f37;
+  color-scheme: light;
+}
+
+[data-theme="paper"] {
+  --bg-primary: #f5f0e6;
+  --bg-secondary: #ebe4d7;
+  --bg-tertiary: #ded6c7;
+  --surface-raised: #fffdf7;
+  --surface-soft: #f9f4ea;
+  --text-primary: #29251f;
+  --text-secondary: #6f665a;
+  --text-tertiary: #766c60;
+  --separator: rgba(54, 45, 34, 0.14);
+  --separator-strong: rgba(54, 45, 34, 0.28);
+  --accent: #2e2923;
+  --accent-text: #fffdf7;
+  --focus: #2e2923;
+  --status-success: #3f734a;
+  --status-warning: #94601c;
+  --status-danger: #a74543;
+  --status-info: #38647c;
+  --agent-a: #b95d46;
+  --agent-b: #9e722c;
+  --agent-c: #9a526a;
+  --event-meeting: #526b75;
+  --event-focus: #92703b;
+  color-scheme: light;
+}
+
+[data-theme="graphite"] {
+  --bg-primary: #0b0b0c;
+  --bg-secondary: #151516;
+  --bg-tertiary: #242426;
+  --surface-raised: #1b1b1d;
+  --surface-soft: #121214;
+  --text-primary: #f4f4f2;
+  --text-secondary: #aaaab0;
+  --text-tertiary: #96969d;
+  --separator: rgba(244, 244, 242, 0.14);
+  --separator-strong: rgba(244, 244, 242, 0.3);
+  --accent: #f4f4f2;
+  --accent-text: #0b0b0c;
+  --focus: #ffffff;
+  --status-success: #55c573;
+  --status-warning: #e4a14b;
+  --status-danger: #ff6e72;
+  --status-info: #77a9d4;
+  --agent-a: #ff8068;
+  --agent-b: #d5a653;
+  --agent-c: #e07ca8;
+  --event-meeting: #7fa2bf;
+  --event-focus: #d1a960;
+  color-scheme: dark;
+}
