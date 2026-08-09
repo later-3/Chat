@@ -204,10 +204,10 @@ Memory、项目管理和规则系统不能只凭抽象接口或模型直觉设�
 
 检查：增加第二后端后，能力DTO是否仍逐字段来自真实Profile；每种非失败终态是否在Outbox监督、恢复、页面文案和回放中保持同一个含义？
 
-## 32. VS Code可调试性必须用真实F5证明
+## 32. 应用启动合同归仓库，VS Code只做薄调试入口且必须用真实F5证明
 
 标签：`vscode`、`debug`、`process-lifecycle`、`acceptance`
 
-配置合同和“等价命令启动”只能证明JSON结构与服务入口，不能证明VS Code实际编排。Compound还会引入子配置并发`preLaunchTask`、shell参数二次解析、js-debug的`program`默认值、workspace包解析和集成终端初始化竞态。完成门必须从VS Code真实选择主Compound并启动，观察全部调试会话、固定端口与前端页面，再从VS Code停止并确认端口释放。无交互式stdin的Node服务由js-debug直接创建进程；私有环境在进程内部加载，不能用会把值展开到终端命令行的`envFile`。
+本地服务图、准备、健康门和停止顺序必须由仓库统一`dev/dev:debug`启动器拥有，保证终端、VS Code和未来CI复用同一合同；不得再把Memory、Workflow、API和Web的生命周期复制进`launch.json/tasks.json`。VS Code只调用同一个启动器、附加Chat拥有的进程并在应用Ready后打开浏览器。配置合同和等价命令仍不能替代真实F5：完成门必须从VS Code选择唯一应用入口，确认Chrome和TypeScript断点，再停止并确认端口与进程投影收敛。私有环境在目标进程内部加载，不能用会把值展开到命令行的`envFile`。
 
-检查：证据是否来自真实F5而非手工拼出的近似命令；Memory、Workflow、API和Web是否全部Ready，Chrome能否访问页面，停止后所有固定端口是否释放且终端/argv没有凭据？
+检查：`pnpm dev`能否脱离编辑器独立启动应用；F5是否只调用同一启动器而不复制服务图；Memory、Workflow、API和Web是否全部Ready，Chrome与断点是否可用；停止后固定端口是否释放且输出/argv没有凭据？

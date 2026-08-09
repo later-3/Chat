@@ -1,7 +1,9 @@
 # Chat 本地调试与 Trace
 
-本文固定本地调试入口、端口与 Trace 查询方式，对应任务书§7/§8。
-规则来源：[后端闭环任务书](../tasks/planning-execution-backend-closure.md)；清理只作用于已确认属于本项目的进程，不使用模糊`pkill`伤害其他应用。
+本文说明Chat应用统一的本地启动、VS Code调试、端口与Trace查询方式。
+当前运行合同见[统一开发启动与调试任务书](../tasks/app-development-runtime.md)；历史验收背景见
+[后端闭环任务书](../tasks/planning-execution-backend-closure.md)。清理只作用于已确认属于本项目的进程，
+不使用模糊`pkill`伤害其他应用。
 
 ## 1. 固定端口
 
@@ -14,68 +16,65 @@
 | Tencent MemoryCore HTTP | `127.0.0.1:18970` |
 | API Node Inspector | `127.0.0.1:43120` |
 | Workflow Node Inspector | `127.0.0.1:43121` |
-| memmy Node Inspector | `127.0.0.1:43122` |
-| MemoryCore包装进程 Node Inspector | `127.0.0.1:43123` |
 
 Vite使用`--strictPort`，API/Workflow端口被占用时进程直接失败关闭，禁止自动换号。
-并行期不修改`apps/web/vite.config.ts`（属于P1.2 PR），Web端口由`scripts/debug/start-web.mjs`经CLI传入。
+Memory是本地真实依赖，但不是默认调试目标，因此不开放Inspector；日常在Chat自己的API、Workflow和
+`packages/memory-runtime` Adapter中设置断点。
 
-## 2. 一键调试（VS Code）
+## 2. 统一启动入口
 
-主入口：Compound **“Chat：完整后端闭环”**，启动顺序固定：
+仓库拥有唯一服务图，VS Code不拥有应用生命周期：
 
 ```text
-chat-debug:prepare-compound（只执行一次安全preclean，再顺序准备两套Memory缓存）
--> 并行准备并启动两个固定Memory服务：
-   - Chat：Memory（memmy）（18960，Inspector 43122）
-   - Chat：Memory（Tencent MemoryCore）（18970，包装进程Inspector 43123）
--> chat-debug:wait-memory + chat-debug:wait-memorycore 等待两个真实健康检查
--> Chat：Workflow 运行时（43112，Inspector 43121）
--> chat-debug:wait-workflow 等待 /healthz
--> Chat：API（43111，Inspector 43120；同时确认Workflow与两个Memory已就绪）
--> chat-debug:wait-api 等待 /api/readyz
--> chat-debug:start-web（Vite 43110）
--> Chat：Web 浏览器（打开 http://127.0.0.1:43110）
+preflight（清理已登记旧进程 + 拒绝未知端口占用）
+→ 校验/准备固定Memory源码缓存
+→ 构建Workflow Bundles
+→ 启动所选Memory并逐个等待真实健康检查
+→ 启动Workflow并等待/healthz
+→ 启动API并等待/api/readyz
+→ 启动Vite并等待页面
+→ 输出 [chat] ready: http://127.0.0.1:43110/
 ```
 
-- 进程登记：被调试进程通过`node --import scripts/debug/register-process.mjs`
-  把`role/pid/port`写入`.data/debug/pids.json`；两个Memory登记的都是包装进程，包装进程收到停止信号后会安全转发给真实服务子进程；Web由`start-web.mjs`登记进程组。
-  登记是安全前置条件：登记失败时进程终止启动，不产生无法清理的未登记服务。
-- 单独启动 **“Chat：Memory（memmy）”** 也会先执行`chat-debug:preclean`，再运行
-  `pnpm memory:prepare:fixed`准备固定提交源码缓存，最后才执行
-  `scripts/memory/start-fixed-memmy.mjs`；不会使用参考仓库的工作树。
-- 单独启动 **“Chat：Memory（Tencent MemoryCore）”** 同样先执行安全preclean，核验固定
-  commit/tree并准备隔离缓存，再启动`127.0.0.1:18970`。VS Code通过
-  `load-memorycore-debug-env.mjs`强制MemoryCore、Workflow和API使用同一套仅loopback有效的
-  调试身份；即使`.env`配置了远端地址，主Compound也不会把本地断点请求发往远端。
-- 单独启动 **“Chat：Workflow 运行时”** 前，必须先启动并确认两个Memory服务就绪；该配置
-  只等待健康检查，不会自行启动Memory。主Compound会自动安排此顺序。
-- Compound统一门：`chat-debug:prepare-compound`先完成一次安全preclean和两套缓存准备，随后使用
-  两个隐藏的Memory内部配置启动服务。Compound子配置的等待链不会再次触发preclean，因此不会发生
-  “后启动的Memory清理任务误杀已Ready服务”的竞态。两个可见Memory配置仍保留单独启动能力，
-  单独启动时各自先执行安全preclean。只负责汇合依赖的两个空任务使用`process`类型，避免
-  `node -e`参数被zsh二次解释。
-- Node调试配置显式使用`program`指向入口文件；`runtimeArgs`只放`--import`加载器，防止
-  js-debug退化为从stdin执行`-`。`.env`由被调试进程内部安全加载，不使用会把Key展开到
-  集成终端命令行的`envFile`。TypeScript加载器使用Workflow/API各自包内的`tsx`固定路径，
-  不从仓库根目录解析未声明的裸包名。
-- 6个Node服务使用`internalConsole`由js-debug直接创建进程，日志进入VS Code Debug Console；
-  服务不需要交互式stdin，因此不经过多个集成终端并发初始化zsh，避免命令已写入但未执行的竞态。
-- Node进程同时用`--inspect=127.0.0.1:<冻结端口>`显式开放43120～43123；`launch.json`里的
-  `port`字段不能替代真实监听验收，Inspector只绑定loopback且纳入统一preclean冲突检查。
-- Workflow/API设置空`outFiles`，禁止js-debug因工作区恰好存在`dist`而把`.ts`入口替换成
-  可能过期的构建产物；实际进程参数必须始终指向workspace源码，tsx负责运行时转换与源码映射。
-- 清理语义：`preclean`/`stop`只终止pids.json中有记录、且通过身份复核
-  （命令片段+启动时间容差）的进程；SIGTERM后有限等待，仍存活且身份一致才SIGKILL。
-- 端口被未知应用占用时：启动失败并报告端口、PID与命令行，**不会**终止未知进程；
-  请手动释放端口后重试。
-- 启动失败（如Web超时）会清理本轮已启动进程，不留下半套服务占端口。
-- 停止调试（`stopAll`）后执行`chat-debug:stop`释放本轮进程与端口。
-- 停止Memory时，`stop`先向已登记包装进程发送`SIGTERM`，至少等待7秒让它转发给真实
-  memmy子进程；仍存活时才再次身份复核并`SIGKILL`，不会用模糊进程匹配。
-- Workflow与两个Memory均为真实本地运行时；API只有在三者的健康检查均通过后才启动。
+### 2.1 终端
 
-命令行等价入口：
+```bash
+pnpm dev                                      # 默认启动两套Memory、Workflow、API和Web
+pnpm dev -- --memory=memmy                   # 只启动memmy依赖
+pnpm dev -- --memory=memorycore              # 只启动MemoryCore依赖
+pnpm dev:debug                                # 同一服务图；API/Workflow开放Inspector
+pnpm dev:status                               # 查看登记与监听状态
+pnpm dev:stop                                 # 安全停止已登记进程
+```
+
+`pnpm dev`与`pnpm dev:debug`都调用`scripts/dev/start.mjs`。启动器是本地开发工具，不是生产部署器；
+生产环境仍由未来部署编排分别管理Chat进程和外部依赖。
+
+### 2.2 VS Code
+
+唯一入口是 **“Chat：调试应用”**。它直接调用同一个`scripts/dev/start.mjs --debug`，在唯一Debug
+Console中汇总带服务前缀的日志；应用输出Ready标记后才启动Chrome。`.vscode/tasks.json`不再存在，
+VS Code不复制Memory、Workflow、API和Web的启动/停止合同。
+
+### 2.3 就绪期限与失败
+
+- Memory冷启动期限为180秒；Workflow、API和Web为30秒。
+- 期限从对应进程`spawn`成功后开始，不包含前置服务准备时间；这不是业务倒计时，也不重试用户命令。
+- 探针每250ms复核进程状态与HTTP；单次HTTP最长1.5秒。进程提前退出时立即失败。
+- 任一必要服务失败，启动器停止本轮已启动进程并退出非0，不留下半套应用。
+- 端口被未知应用占用时只报告端口、PID和安全进程名，不终止未知进程。
+
+### 2.4 进程、缓存与秘密
+
+- 应用监督器是`.data/debug/pids.json`的正常单写者；终端强制中断后，下一次status/start/stop会剔除
+  已确认退出或僵尸的记录。活PID仍需通过命令片段和启动时间身份复核。
+- Memory包装进程收到SIGTERM后向真实子进程转发；安全清理至少等待7秒后才考虑SIGKILL。
+- 同一Git仓库的worktree共享主仓库`.data/cache`中经过commit/tree/Hash校验的固定源码缓存；
+  Memory数据库、Product Store、Workflow Store和Trace仍保存在各worktree自己的`.data`中。
+- `.env`和本地Provider配置由目标进程内部加载，不写入`launch.json`、argv、日志或Git。
+- `pnpm dev:debug`只开放API `43120`和Workflow `43121`；Memory第三方进程不开放Inspector。
+
+保留的低层安全入口：
 
 ```bash
 pnpm debug:preclean   # 清理并校验冻结端口
@@ -103,8 +102,8 @@ pnpm debug:stop       # 停止本轮调试进程
 8. `apps/api/src/outbox-dispatcher.ts:460`：确认accepted不会被终态监督器降级。
 
 Workflow Step通过tsx解析回TypeScript源码，断点应设置在上述`.ts`文件，不要进入
-`.workflow-bundle`或`dist`。MemoryCore Inspector调试的是Chat拥有的包装/启动边界；第三方固定
-源码进程保持环境隔离，日常排查优先观察Adapter请求与严格响应分类。
+`.workflow-bundle`或`dist`。第三方Memory进程保持环境隔离，日常排查优先观察Chat Adapter请求与
+严格响应分类。
 
 ## 4. Trace 查询
 

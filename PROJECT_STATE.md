@@ -13,8 +13,8 @@
 | Product Store | `chat-product-store.v3`；串行支持v1→v2→v3，保持单实例单写者、原子替换与损坏失败关闭；M3复用现有Memory事实集合 |
 | Workflow | 规划仍由唯一`PlanningExecutionWorkflow`完成；M2另有独立`MemoryImportWorkflow`拥有导入/对账副作用生命周期 |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent`；百炼真实`qwen3.7-plus`已验证 |
-| 调试与回放 | VS Code真实F5 Compound覆盖memmy、MemoryCore、Workflow、API和Web；固定端口、安全清理、严格脱敏Trace及多源Replay |
-| 代码状态 | P0、P1.1、P1.2、B1、B2、M1、M2、M3与MemoryCore调试/注释收口均已进入`main`；真实VS Code启动缺陷已完成修复验收；当前实现文档已按仓库地图、前后端交互和Workflow运行边界收口 |
+| 调试与回放 | 仓库统一`pnpm dev/dev:debug`拥有Memory、Workflow、API和Web服务图；VS Code只有应用级薄入口；固定端口、安全清理、严格脱敏Trace及多源Replay |
+| 代码状态 | P0、P1.1、P1.2、B1、B2、M1、M2、M3与MemoryCore调试/注释收口均已进入`main`；统一应用启动与调试已在独立任务完成实现和本地验收，待PR；当前实现文档已按仓库地图、前后端交互和Workflow运行边界收口 |
 | 当前阶段 | 长期上下文与知识复用：Memory、BMAD项目上下文、用户规则集 |
 | 当前任务 | 下一任务进入BMAD启发的Project基础、阶段与文档清单 |
 
@@ -54,7 +54,15 @@
 2. 真实Chromium + 百炼`qwen3.7-plus`纵向门通过：选后端、召回L1、规划采用、导入L0、accepted显示、手动对账、刷新恢复和拒绝闭环全部贯通。
 3. UI由后端能力投影驱动：MemoryCore仅开放L1查询和L0会话捕获，不显示标签或标题；服务端再次拒绝越权参数。
 4. `accepted`是L0已落事实的合法状态，不等同于L1 `materialized`；终态监督器不得把合法accepted误降级为结果未知。
-5. PR #12与PR #13已合入；真实VS Code主Compound已验证5个服务全部Ready、Chrome页面可访问，停止后9个固定端口全部释放。
+5. PR #12与PR #13已合入；当时的真实VS Code Compound曾验证5个服务全部Ready和9个历史端口释放。该历史编排已被仓库统一启动器替代，不再作为当前开发入口。
+
+## 4.2 统一应用启动与调试证据
+
+1. `pnpm dev`真实启动memmy、Tencent MemoryCore、Workflow、API和Web；5个HTTP入口均返回200，应用最后才输出唯一`[chat] ready`行。
+2. `pnpm dev:debug`复用同一服务图，只开放API `43120`与Workflow `43121`；Memory不创建默认Inspector，历史`43122/43123`不再属于冻结端口。
+3. 同一Git仓库的worktree共享经过commit/tree/Hash复核的固定Memory源码缓存；Product Store、Workflow Store、Memory数据库和Trace仍按worktree隔离。
+4. VS Code只显示`Chat：调试应用`一个入口；真实F5到达Ready后自动建立Chrome调试，并附加Chat自己的API与Workflow TypeScript进程；API源码断点成功绑定，没有Memory或准备阶段短命令调试会话。
+5. 从终端SIGINT以及VS Code停止后，Web、API、Workflow、两套Memory和两个Inspector共7个固定端口全部释放，`pnpm dev:status`报告未运行。
 
 ## 5. 当前没有的能力
 

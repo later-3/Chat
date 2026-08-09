@@ -47,7 +47,10 @@ export function chatRepoRoot() {
 }
 
 export function fixedMemmyCacheRoot(repoRoot = chatRepoRoot()) {
-  return resolve(repoRoot, ".data/cache/memmy-agent", FIXED_MEMMY_COMMIT);
+  const cacheRoot = resolve(
+    process.env.CHAT_FIXED_SOURCE_CACHE_ROOT ?? resolve(repoRoot, ".data/cache"),
+  );
+  return resolve(cacheRoot, "memmy-agent", FIXED_MEMMY_COMMIT);
 }
 
 export function fixedMemmyServerEntry(repoRoot = chatRepoRoot()) {

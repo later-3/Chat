@@ -20,8 +20,6 @@ export const FROZEN_PORTS = Object.freeze({
   memoryCore: 18970,
   apiInspector: 43120,
   workflowInspector: 43121,
-  memoryInspector: 43122,
-  memoryCoreInspector: 43123,
 });
 
 /** 各调试角色的命令行身份片段（用于PID复用复核）。 */
@@ -73,7 +71,7 @@ export function loadPidEntries() {
   try {
     const parsed = JSON.parse(raw);
     const processes = Array.isArray(parsed?.processes) ? parsed.processes : [];
-    return processes.filter(
+    const valid = processes.filter(
       (entry) =>
         entry &&
         typeof entry.role === "string" &&
@@ -81,6 +79,14 @@ export function loadPidEntries() {
         typeof entry.startedAt === "string" &&
         Array.isArray(entry.commandFragments),
     );
+    // PID登记只是可重建的本地运行投影，不是产品事实。终端可能把SIGINT同时发送给
+    // pnpm、监督器和全部子进程，使监督器来不及执行异步finally；读取时安全剔除
+    // 已确认退出/僵尸的记录。仍存活（包括PID复用）的条目保留，后续继续做身份复核。
+    const active = valid.filter((entry) => isEffectivelyAlive(entry.pid));
+    if (active.length !== valid.length || valid.length !== processes.length) {
+      savePidEntries(active);
+    }
+    return active;
   } catch {
     const backup = `${path}.corrupt-${Date.now()}`;
     renameSync(path, backup);
@@ -108,7 +114,7 @@ export function removePidsFile() {
   }
 }
 
-/** 登记/替换一个角色的进程记录（由register-process.mjs与start-web.mjs调用）。 */
+/** 登记/替换一个角色的进程记录（由应用监督器和保留的低层调试入口调用）。 */
 export function recordPidEntry(entry) {
   const entries = loadPidEntries().filter(
     (existing) => !(existing.role === entry.role && existing.pid === entry.pid),

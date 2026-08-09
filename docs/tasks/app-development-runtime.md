@@ -1,0 +1,76 @@
+# Chat 统一开发启动与调试任务书
+
+> 状态：实现与本地验收完成，待PR
+>
+> 分支：`codex/app-dev-runtime`
+
+## 1. 用户场景
+
+开发者只把Chat理解成一个前后端应用。无论从终端还是VS Code启动，都应使用同一套仓库入口，
+一次看到应用是否就绪、失败在哪个服务，并能一次停止全部本地进程。
+
+## 2. 当前问题
+
+1. 根Workspace没有统一`dev`入口，服务生命周期散落在`.vscode/launch.json`和`tasks.json`。
+2. VS Code Compound把Memory、Workflow、API、Web暴露成多个并列“应用”，产品语言错误。
+3. API侧的Workflow就绪等待会与Workflow Bundle构建并发计时，冷启动可能在服务真正启动前超时。
+4. 多个子配置分别执行停止任务，产生大量终端面板，也让命令行、CI和VS Code无法共享启动合同。
+
+## 3. 交付结果
+
+1. `pnpm dev`成为普通本地开发的唯一入口。
+2. `pnpm dev:debug`使用完全相同的服务图，只为Chat拥有的API和Workflow开放Inspector。
+3. 仓库级启动器按确定顺序准备并启动Memory依赖、Workflow、API和Web；就绪期限从对应进程
+   真正启动后计算。
+4. 启动器拥有子进程生命周期：必要服务异常退出时整套环境失败关闭；SIGINT/SIGTERM时停止整棵进程树，
+   监督器按反向顺序收敛仍在运行的子进程并清理登记。
+5. 默认本地Profile启动memmy与Tencent MemoryCore；可用`--memory=memmy|memorycore|all`缩小范围。
+6. VS Code只保留一个用户入口`Chat：调试应用`，调用同一启动器并在Ready后打开Chrome。
+7. 固定端口、已登记进程精准清理、未知端口占用拒绝清理、私密配置进程内加载和固定Memory源码
+   证据全部保留。
+8. 同一Git仓库的worktree共享经过commit/tree/Hash校验的固定源码缓存，避免重复下载和原生编译；
+   Product Store、Workflow Store、Memory数据库和其他运行数据仍按worktree物理隔离。
+9. PID登记是可重建运行投影：监督器是正常运行时的单写者；终端强制中断后，下一次status/start/stop会
+   剔除已确认退出或僵尸的记录，但仍保留活PID并继续执行命令片段与启动时间身份复核。
+
+## 4. 明确不做
+
+1. 不修改前端、产品API、Workflow业务语义、Memory Adapter合同或Product Store。
+2. 不增加Docker、PM2、concurrently、wait-on等运行依赖；现有Node标准库已经足够拥有本地进程图。
+3. 不把本地开发启动器当成生产部署器；生产仍由未来部署编排分别管理应用和外部依赖。
+4. 不在普通启动时调用付费模型；只有用户实际提交规划或执行请求时才调用Provider。
+5. 不为第三方Memory源码创建默认调试会话；日常断点位于Chat自己的API、Workflow和Adapter。
+
+## 5. 运行合同
+
+```text
+preflight（安全清理已登记旧进程 + 检查固定端口）
+→ 准备所选Memory固定源码缓存
+→ 构建Workflow Bundles
+→ 启动所选Memory并逐个等待真实健康检查
+→ 启动Workflow并等待/healthz
+→ 启动API并等待/api/readyz
+→ 启动Vite并等待页面
+→ 输出唯一`[chat] ready: http://127.0.0.1:43110/`标记
+```
+
+每个就绪门只观察自己的进程与HTTP探针，不重试业务命令。Memory冷启动期限为180秒，Workflow、
+API和Web为30秒；期限从对应`spawn`成功后开始。进程提前退出时立即失败，不等待期限耗尽。
+
+## 6. 完成门
+
+1. 纯规则测试固定参数解析、Profile服务图、Inspector边界、就绪期限和反向停止顺序。
+2. VS Code合同测试证明只有一个应用级入口、没有`tasks.json`服务编排、没有凭据进入配置。
+3. `pnpm dev`真实启动两套Memory、Workflow、API和Web，五个HTTP入口全部Ready。
+4. `pnpm dev:debug`证明API/Workflow Inspector固定在43120/43121，Memory不创建默认Inspector。
+5. 从终端SIGINT停止后，全部固定端口释放；连续启动两次不依赖旧产物或残留进程。
+6. 从VS Code真实F5启动`Chat：调试应用`，Chrome可访问页面、TypeScript断点可绑定，停止后端口释放。
+7. `format:check`、`lint`、`typecheck`、相关测试与`build`通过。
+
+## 7. 本地验收结果
+
+1. `scripts/dev/app-runtime.test.mjs`覆盖参数/Profile、服务顺序、Inspector边界、共享缓存、准备阶段自动附加隔离、就绪期限和反向停止；与VS Code合同测试合计73项相关测试通过。
+2. 终端普通模式和Debug模式均真实到达Ready；5个HTTP入口返回200，Debug模式仅`43120/43121`监听。
+3. 真实VS Code F5只显示`Chat：调试应用`，Ready后Chrome自动进入调试；Call Stack识别Workflow与API的TypeScript源码，API源码断点已成功绑定，未附加两套Memory或准备阶段短命令。
+4. 终端SIGINT和VS Code停止均已验证；当前7个固定端口全部释放，`pnpm dev:status`为空。
+5. 全仓`format:check`、`lint`、`typecheck`、500项Workspace测试、11个Workspace构建和`pnpm audit --prod`全部通过；另有6项固定memmy脚本合同通过。

@@ -247,7 +247,9 @@ describe("preclean", () => {
     const debugLibrary = readFileSync(join(scriptsDir, "lib.mjs"), "utf8");
     expect(debugLibrary).toMatch(/memory:\s*18960/u);
     expect(debugLibrary).toMatch(/memoryCore:\s*18970/u);
-    expect(debugLibrary).toMatch(/memoryCoreInspector:\s*43123/u);
+    expect(debugLibrary).toMatch(/apiInspector:\s*43120/u);
+    expect(debugLibrary).toMatch(/workflowInspector:\s*43121/u);
+    expect(debugLibrary).not.toMatch(/memoryCoreInspector/u);
     // 下方“未知应用占用端口”黑盒用例通过CHAT_DEBUG_PORTS复用同一preclean逻辑，
     // 证明冻结端口（包括18960）遇到未登记监听者均只报告、不终止。
   });

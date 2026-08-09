@@ -7,6 +7,11 @@
     "node": ">=22.19"
   },
   "scripts": {
+    "dev": "node scripts/dev/start.mjs",
+    "dev:debug": "node scripts/dev/start.mjs --debug",
+    "dev:status": "node scripts/dev/status.mjs",
+    "dev:stop": "node scripts/debug/stop.mjs",
+    "test:dev-runtime": "node --test scripts/dev/app-runtime.test.mjs",
     "build": "pnpm -r --sort build",
     "typecheck": "pnpm -r --sort typecheck",
     "test": "pnpm -r --sort test",
