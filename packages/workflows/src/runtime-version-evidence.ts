@@ -9,6 +9,16 @@ import {
   type RuntimeVersionEvidence,
 } from "@chat/contracts";
 
+/** 证据都可读且合法，但活动Run与当前构建不是同一份可执行代码。 */
+export class RuntimeVersionConflictError extends Error {
+  readonly code = "workflow.version_incompatible";
+
+  constructor() {
+    super("同一Product Run的运行版本证据冲突");
+    this.name = "RuntimeVersionConflictError";
+  }
+}
+
 export async function loadRuntimeBuildEvidence(bundleDir: string): Promise<RuntimeBuildEvidence> {
   let parsed: unknown;
   try {
@@ -139,7 +149,7 @@ function assertSameBuild(
     JSON.stringify(existing.promptTemplateVersions) ===
       JSON.stringify(expected.promptTemplateVersions) &&
     JSON.stringify(existing.modelConfigVersions) === JSON.stringify(expected.modelConfigVersions);
-  if (!sameBuild) throw new Error("同一Product Run的运行版本证据冲突");
+  if (!sameBuild) throw new RuntimeVersionConflictError();
   return existing;
 }
 

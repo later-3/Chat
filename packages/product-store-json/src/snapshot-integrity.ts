@@ -1360,6 +1360,7 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
     UpdateOutboxStatus: [],
     FailOutboxAndRun: ["productRunId"],
     CommitRunOutcomeUnknown: ["productRunId"],
+    SettleIncompatibleWorkflowRun: ["productRunId"],
     PreparePlanningContextNone: ["contextRequestId", "productRunId"],
     BeginMemoryContextQuery: ["memoryQueryId", "productRunId"],
     CompleteMemoryContextQuery: ["contextPackageId", "productRunId"],

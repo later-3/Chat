@@ -29,6 +29,7 @@ Memory是本地真实依赖，但不是默认调试目标，因此不开放Inspe
 preflight（清理已登记旧进程/专属调试浏览器 + 拒绝未知端口占用）
 → 校验/准备固定Memory源码缓存
 → 构建Workflow Bundles
+→ 检查活动Workflow与当前Bundle版本；本地不兼容Run安全收敛
 → 启动所选Memory并逐个等待真实健康检查
 → 启动Workflow并等待/healthz
 → 启动API并等待/api/readyz
@@ -64,6 +65,10 @@ SIGKILL，并在进程收敛后删除该Profile中的`SingletonLock/Socket/Cooki
 
 ### 2.3 就绪期限与失败
 
+- Bundle构建后，启动器会比较活动Planning Run的Git、源码Manifest、Bundle Manifest和定义版本。
+- 完全一致的Run按Checkpoint正常恢复；历史证据缺失、损坏或Binding不完整仍失败关闭。
+- 本地代码已经变化且旧Bundle不可用时，旧SDK Run通过Workflow API取消，Product Run、Attempt和相关Outbox通过Application事务进入`workflow.version_incompatible`失败终态。Message、Plan、Trace、Runtime事件、Binding和版本证据全部保留，不删除`.data`，随后继续启动当前应用。
+- 该自动收敛只属于`pnpm dev/dev:debug`；生产环境必须保留历史Workflow部署并把旧Run路由到原版本。
 - Memory冷启动期限为180秒；Workflow、API和Web为30秒。
 - 期限从对应进程`spawn`成功后开始，不包含前置服务准备时间；这不是业务倒计时，也不重试用户命令。
 - 探针每250ms复核进程状态与HTTP；单次HTTP最长1.5秒。进程提前退出时立即失败。

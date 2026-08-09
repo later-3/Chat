@@ -269,6 +269,47 @@ export function runPreparationCommand({
   });
 }
 
+export function runVersionRecoveryCommand({
+  root,
+  signal,
+  spawnImpl = spawn,
+  environment = process.env,
+}) {
+  return new Promise((resolveRun, rejectRun) => {
+    const child = spawnImpl(
+      pnpmExecutable(),
+      [
+        "--filter",
+        "@chat/api",
+        "exec",
+        "tsx",
+        "../../scripts/dev/settle-incompatible-workflows.ts",
+      ],
+      {
+        cwd: root,
+        env: {
+          ...withoutVsCodeAutoAttach(environment),
+          CHAT_REPO_ROOT: root,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+        signal,
+      },
+    );
+    forwardLines(child.stdout, "prepare", process.stdout);
+    forwardLines(child.stderr, "prepare", process.stderr);
+    child.once("error", rejectRun);
+    child.once("close", (code, childSignal) => {
+      if (code === 0) resolveRun();
+      else
+        rejectRun(
+          new Error(
+            `Workflow版本恢复检查失败（code=${String(code)} signal=${childSignal ?? "none"}）`,
+          ),
+        );
+    });
+  });
+}
+
 export async function preflightLocalRuntime(root) {
   const entries = loadPidEntries();
   for (const result of terminateRecorded(entries)) {
@@ -304,6 +345,9 @@ export async function prepareLocalRuntime({ root, memory, signal }) {
   if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
   console.log("[chat] 构建Workflow Bundles…");
   await runPreparationCommand({ root, signal });
+  if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
+  console.log("[chat] 检查活动Workflow版本兼容性…");
+  await runVersionRecoveryCommand({ root, signal });
 }
 
 export async function waitForServiceReady({

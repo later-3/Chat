@@ -219,3 +219,11 @@ Memory、项目管理和规则系统不能只凭抽象接口或模型直觉设�
 只有架构图无法解释断点中的具体对象，只有散落注释也无法给出完整阅读顺序。前端、公开API、Application事务、Outbox、Workflow私有API、Hook、Provider和Product Commit之间的主链必须同时具备两层导航：代码边界用中文注释解释数据结构、身份、所有权与失败语义；as-built文档用文件、函数/路由和观察变量给出可执行的断点顺序。断点索引以函数名为主，不能依赖会随注释漂移的固定行号。新增纵向能力时同步更新现有交互/调试事实源，不为同一行为再建互相竞争的说明。
 
 检查：一个第一次阅读该功能的人，能否从README找到当前交互与调试入口，并在不猜Runtime身份、不翻历史任务书的情况下，从用户动作单步走到正式产品事实？
+
+## 34. 本地旧Workflow版本不兼容时收敛工作，不能阻塞整套应用或删除事实
+
+标签：`workflow`、`debug`、`version-evidence`、`recovery`
+
+活动Workflow Run只能由创建它的代码/Bundle安全恢复；新代码不能静默续跑旧Checkpoint。但本地开发反复改代码时，一个不可恢复的旧Run也不应让Memory、API和Web全部无法启动。`pnpm dev/dev:debug`在Bundle构建后检查活动Run证据：一致则正常恢复；明确版本冲突则保留Message、Plan、Trace、Runtime事件、Binding和版本证据，通过Application原子终结Product Run/Attempt/Outbox，再用Workflow SDK取消旧Run并继续启动。证据缺失、损坏或映射不完整仍失败关闭。生产环境不使用这种开发降级，而应保留历史部署承接旧Run。
+
+检查：代码变化后再次F5，旧Run是否形成可解释终态且当前应用Ready；是否没有删除`.data`、重放Provider/外部副作用或用新Bundle续跑旧Checkpoint？

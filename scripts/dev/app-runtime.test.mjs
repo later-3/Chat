@@ -11,6 +11,7 @@ import {
   createServiceDefinitions,
   parseDevArgs,
   runPreparationCommand,
+  runVersionRecoveryCommand,
   sharedCacheRootFromGitCommonDir,
   waitForServiceReady,
 } from "./app-runtime.mjs";
@@ -85,6 +86,37 @@ test("准备命令不继承VS Code自动附加环境", async () => {
       return child;
     },
   });
+  assert.equal(receivedEnvironment.VSCODE_INSPECTOR_OPTIONS, undefined);
+  assert.equal(receivedEnvironment.NODE_OPTIONS, undefined);
+  assert.equal(receivedEnvironment.CHAT_REPO_ROOT, ROOT);
+});
+
+test("版本恢复检查复用仓库入口且不继承VS Code自动附加环境", async () => {
+  let receivedArgs;
+  let receivedEnvironment;
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  await runVersionRecoveryCommand({
+    root: ROOT,
+    environment: {
+      NODE_OPTIONS: "--require /vscode/bootloader.js",
+      VSCODE_INSPECTOR_OPTIONS: "attach-options",
+    },
+    spawnImpl(_command, args, options) {
+      receivedArgs = args;
+      receivedEnvironment = options.env;
+      queueMicrotask(() => child.emit("close", 0, null));
+      return child;
+    },
+  });
+  assert.deepEqual(receivedArgs, [
+    "--filter",
+    "@chat/api",
+    "exec",
+    "tsx",
+    "../../scripts/dev/settle-incompatible-workflows.ts",
+  ]);
   assert.equal(receivedEnvironment.VSCODE_INSPECTOR_OPTIONS, undefined);
   assert.equal(receivedEnvironment.NODE_OPTIONS, undefined);
   assert.equal(receivedEnvironment.CHAT_REPO_ROOT, ROOT);

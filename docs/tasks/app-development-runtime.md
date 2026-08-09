@@ -20,17 +20,19 @@
 2. `pnpm dev:debug`使用完全相同的服务图，只为Chat拥有的API和Workflow开放Inspector。
 3. 仓库级启动器按确定顺序准备并启动Memory依赖、Workflow、API和Web；就绪期限从对应进程
    真正启动后计算。
-4. 启动器拥有子进程生命周期：必要服务异常退出时整套环境失败关闭；SIGINT/SIGTERM时停止整棵进程树，
+4. Workflow Bundle构建后先检查活动Run版本：同版本继续耐久恢复；本地代码变化且旧Bundle不可用时
+   保留历史证据，原子终结旧Product Run/Outbox并取消旧SDK Run，不能让一个不可恢复的旧Run阻止整套应用启动，也不能删除`.data`后盲目重跑。
+5. 启动器拥有子进程生命周期：必要服务异常退出时整套环境失败关闭；SIGINT/SIGTERM时停止整棵进程树，
    监督器按反向顺序收敛仍在运行的子进程并清理登记。
-5. 默认本地Profile启动memmy与Tencent MemoryCore；可用`--memory=memmy|memorycore|all`缩小范围。
-6. VS Code只保留一个用户入口`Chat：调试应用`，调用同一启动器并在Ready后打开Chrome。
-7. 固定端口、已登记进程精准清理、未知端口占用拒绝清理、私密配置进程内加载和固定Memory源码
+6. 默认本地Profile启动memmy与Tencent MemoryCore；可用`--memory=memmy|memorycore|all`缩小范围。
+7. VS Code只保留一个用户入口`Chat：调试应用`，调用同一启动器并在Ready后打开Chrome。
+8. 固定端口、已登记进程精准清理、未知端口占用拒绝清理、私密配置进程内加载和固定Memory源码
    证据全部保留。
-8. 同一Git仓库的worktree共享经过commit/tree/Hash校验的固定源码缓存，避免重复下载和原生编译；
+9. 同一Git仓库的worktree共享经过commit/tree/Hash校验的固定源码缓存，避免重复下载和原生编译；
    Product Store、Workflow Store、Memory数据库和其他运行数据仍按worktree物理隔离。
-9. PID登记是可重建运行投影：监督器是正常运行时的单写者；终端强制中断后，下一次status/start/stop会
+10. PID登记是可重建运行投影：监督器是正常运行时的单写者；终端强制中断后，下一次status/start/stop会
    剔除已确认退出或僵尸的记录，但仍保留活PID并继续执行命令片段与启动时间身份复核。
-10. 前端调试使用worktree专属浏览器Profile；启动前只终止携带该精确Profile参数的遗留浏览器并清理
+11. 前端调试使用worktree专属浏览器Profile；启动前只终止携带该精确Profile参数的遗留浏览器并清理
     Profile锁，父调试会话停止时强制收敛整个专属浏览器，不影响日常Chrome。
 
 ## 4. 明确不做
@@ -47,6 +49,7 @@
 preflight（安全清理已登记旧进程 + 检查固定端口）
 → 准备所选Memory固定源码缓存
 → 构建Workflow Bundles
+→ 检查并安全收敛本地不兼容的活动Workflow Run
 → 启动所选Memory并逐个等待真实健康检查
 → 启动Workflow并等待/healthz
 → 启动API并等待/api/readyz
