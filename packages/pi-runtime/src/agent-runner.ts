@@ -110,7 +110,8 @@ export function buildBailianModel(baseUrl: string): Model<"openai-completions"> 
     api: "openai-completions",
     provider: PROVIDER_NAME,
     baseUrl,
-    reasoning: false,
+    // reasoning表示模型具备可切换思考能力；具体候选节点在请求选项中关闭它。
+    reasoning: true,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 131_072,
@@ -212,6 +213,9 @@ export async function runAgentWithTool<TCandidate>(
       // 所有Chat候选节点都只暴露一个结果收集工具。百炼Chat兼容接口支持
       // 指定function的tool_choice；强制它可消除模型偶发返回普通文本而不调用工具。
       toolChoice: { type: "function", function: { name: options.tool.name } },
+      // 百炼qwen3.7-plus默认可能进入思考模式，而思考模式拒绝强制tool_choice。
+      // 不提供reasoning level时，pi会根据Qwen Model能力发送enable_thinking:false；
+      // 其他不声明thinkingFormat的模型不会收到这个Provider专属字段。
       maxTokens: options.maxTokens,
       temperature: 0,
       timeoutMs: options.timeoutMs,

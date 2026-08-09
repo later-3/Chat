@@ -76,13 +76,15 @@ export function loadProjectModelProfile(
 }
 
 export function buildProjectModel(profile: ProjectModelProfile): Model<"openai-completions"> {
+  const isQwen = profile.modelId.toLowerCase().includes("qwen");
   return {
     id: profile.modelId,
     name: profile.displayName,
     api: "openai-completions",
     provider: profile.providerName,
     baseUrl: profile.baseUrl,
-    reasoning: false,
+    // Model只描述能力；候选节点通过请求选项统一关闭思考，确保强制结果工具可用。
+    reasoning: isQwen,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 131_072,
@@ -93,9 +95,7 @@ export function buildProjectModel(profile: ProjectModelProfile): Model<"openai-c
       supportsReasoningEffort: false,
       supportsUsageInStreaming: true,
       maxTokensField: "max_tokens",
-      ...(profile.modelId.toLowerCase().includes("qwen")
-        ? { thinkingFormat: "qwen" as const }
-        : {}),
+      ...(isQwen ? { thinkingFormat: "qwen" as const } : {}),
       supportsStrictMode: false,
       supportsOpenAIGrammarTools: false,
       supportsLongCacheRetention: false,
