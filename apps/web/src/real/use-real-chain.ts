@@ -188,6 +188,15 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     setPendingDecision(activeRunId === null ? null : readPendingDecision(storage, activeRunId));
   }, [activeRunId, storage]);
 
+  /**
+   * 调试导航：下面不是一份可变的“前端Run对象”，而是一组独立的服务端资源投影。
+   * activeRunId只是公开定位ID；Run负责生命周期，Plan负责版本内容，Approval负责当前等待点，
+   * Context负责本轮采用来源，Message负责正式会话历史。拆开Query可按资源精确失效，也避免
+   * Workflow内部状态或某个大响应替浏览器拥有全部产品事实。
+   *
+   * 当前1.5秒轮询只在Run活动且页面可见时发生；终态后停止。未来换成SSE时，SSE也只通知
+   * 资源失效，最终内容仍通过这些Query读取。
+   */
   const run = useQuery({
     queryKey: ["real-run", activeRunId],
     enabled: activeRunId !== null,
@@ -291,6 +300,7 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     refetchIntervalInBackground: false,
   });
 
+  // Command响应只证明对应事务已提交；统一失效相关Query后，页面再从服务端读取新的权威投影。
   const invalidateRunScoped = (runId: string) => {
     void queryClient.invalidateQueries({ queryKey: ["real-messages"] });
     void queryClient.invalidateQueries({ queryKey: ["real-run", runId] });

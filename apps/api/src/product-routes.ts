@@ -429,6 +429,11 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
     }
   });
 
+  /**
+   * 调试导航：下面4个Run Query是浏览器的权威回读面。
+   * Run、Context、Plans和Approval分开投影，各自经过权限与公开DTO裁剪；它们只读Product Store，
+   * 不读取Workflow返回值、Hook或pi会话。前端轮询这些资源，所以在这里断点会重复命中。
+   */
   router.get("/runs/:productRunId", async (c) => {
     try {
       assertNoQuery(c.req.url);

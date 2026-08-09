@@ -72,6 +72,13 @@ export interface RuntimeApiClientOptions {
   readonly credential: string;
 }
 
+/**
+ * Workflow Step到API私有Application Router的传输边界。
+ *
+ * 这里与浏览器客户端不同：调用方是可重放的耐久Step，但网络结果未知仍不能在本层随意重试。
+ * 请求是否可重放由具体Step的稳定commandId和副作用语义决定；本函数只负责凭据、超时、
+ * Problem Detail分类以及请求/响应Schema校验，不把HTTP成功等同于产品终态。
+ */
 async function call<TReq, TRes>(
   options: RuntimeApiClientOptions,
   path: string,

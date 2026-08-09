@@ -144,10 +144,15 @@ export function readPendingSend(storage: Storage, sessionId: string): PendingSen
 }
 
 export interface PendingDecision {
+  /** localStorage格式版本，不是Run或Plan revision。 */
   readonly version: 1;
+  /** 网络未知时复用；重新生成会把一次点击变成第二个产品命令。 */
   readonly commandId: CommandId;
+  /** 公开产品定位ID，不是Workflow Runtime身份。 */
   readonly productRunId: ProductRunId;
+  /** 用户看到页面时的Run revision，用作服务端CAS。 */
   readonly expectedRunRevision: number;
+  /** 绑定Approval和Plan ID/revision/Hash的完整决定正文。 */
   readonly payload: SubmitDecisionPayload;
 }
 

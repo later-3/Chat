@@ -4,6 +4,15 @@ import { cmdId, runStep, wrapApiError } from "./workflow-step-support.js";
 
 /* ---------- 候选、验证与提交 ---------- */
 
+/**
+ * 调试导航：这三个Step把“Agent说完成”逐级收敛为“Chat产品事实”。
+ *
+ * AssembledExecutionCandidate保存每个Plan Step的Attempt、输入Manifest、依赖、输出和Hash；
+ * 它仍是候选。persist只取得耐久候选引用，validate用确定性规则产生Validation事实，最后
+ * commit才原子写入正式Assistant Message与Run终态。拆成三步后，Product Commit失败可以用
+ * 同一候选和稳定commandId重试，而不重新调用付费Executor。
+ */
+
 export interface AssembledExecutionCandidate {
   readonly stepResults: readonly {
     stepId: string;

@@ -10,6 +10,12 @@
 
 浏览器只向Chat API发送公开Query/Command。API校验请求后调用Application用例；Application在Product Store中原子提交产品事实、幂等Receipt和Outbox；API进程再异步启动或恢复Workflow。页面通过Query读取Run、Plan、Approval、Message、Context和Memory Import的权威投影，不从Workflow返回值或本地缓存猜测成功。
 
+阅读和调试时按三个入口分工：
+
+1. 本文回答“前后端传什么、对象在哪里改变、谁拥有最终状态”。
+2. [本地调试与Trace](../debug/local-debug.md)回答“在哪个文件、哪个函数下断点、观察什么变量”。
+3. [Workflow运行设计](./runtime-workflows.md)回答“进入耐久Workflow后有哪些节点、怎样暂停和恢复”。
+
 ## 2. 当前拓扑
 
 ```mermaid
@@ -95,6 +101,26 @@ flowchart LR
 5. 浏览器不能指定Provider、模型、endpoint、Token、Workflow ID、Hook Token或pi Session ID。
 6. POST已经发送但响应丢失时，浏览器保留同一个`commandId`并只允许“使用同一命令重试”。
 
+### 5.1 主链关键数据结构
+
+| 数据结构 | 定义位置 | 谁创建 | 作用与边界 |
+|---|---|---|---|
+| `PendingSend` | `apps/web/src/real/real-storage.ts` | Web | 保存尚未确认的`commandId + SubmitMessagePayload`；只用于网络未知恢复，不是正式Message |
+| `CommandEnvelope` | `packages/contracts/src/command.ts` | Web / Runtime客户端 | 把幂等身份、可选CAS revision和业务payload分开；服务端按规范化请求Hash防止同ID换正文 |
+| `SubmitMessagePayload` | `packages/contracts/src/product-api.ts` | Web | 只含用户文本和可选Memory选择；不能携带模型、Provider或Runtime身份 |
+| `MessageDto + RunDto` | `packages/contracts/src/product-api.ts` | API Query/Command投影 | Message是正式会话内容，Run是围绕该消息的一次工作生命周期；201返回它们不代表Workflow完成 |
+| `workflow_start` Outbox | `packages/contracts/src/product.ts` | Application事务 | 记录“这个Product Run必须启动Workflow”的耐久意图；与Message/Run同事务提交 |
+| `WorkflowStartRequest` | `packages/contracts/src/internal-runtime.ts` | API Dispatcher | 只传`productRunId + attemptId + outboxId + definitionVersion`；不传用户正文和SDK Run ID |
+| `PlanningExecutionWorkflowInput` | `packages/workflows/src/workflow-input.ts` | Workflow Runtime | 耐久Workflow的最小启动输入；完整Message、Context和Plan通过私有Application API按引用读取 |
+| `PlanDto + ApprovalDto` | `packages/contracts/src/product-api.ts` | Application投影 | Plan保存候选版本和Hash；Approval把用户可决定的等待点绑定到精确Plan版本 |
+| `PendingDecision` | `apps/web/src/real/real-storage.ts` | Web | 保存`commandId + expectedRunRevision + SubmitDecisionPayload`；用于同一决定的网络未知恢复 |
+| `DecisionDto` | `packages/contracts/src/product-api.ts` | Application事务 | 已通过权限、CAS、Plan revision/Hash校验的正式用户决定 |
+| `workflow_resume` Outbox | `packages/contracts/src/product.ts` | Application事务 | 与Decision同事务提交，只携带产品引用；Hook Token仍留在Workflow Runtime |
+| `ExecutionContract` | `packages/contracts/src/product.ts` | Application | 从已批准Plan编译出的不可变执行输入；Executor无权自行扩展目标或能力 |
+| `ExecutionCandidate / Validation / final Message` | Product Store合同与Application用例 | Workflow Step + Application | 模型输出先是候选，再确定性验证，最后Product Commit才形成正式Assistant Message和Run终态 |
+
+这张表描述的是对象角色，字段级真相仍以对应Zod Schema为准。调试时不要把DTO、持久化实体和Runtime SDK对象混成一个“Run”。
+
 ## 6. Query合同与当前轮询
 
 前端 `useRealChain` 负责Query组合：
@@ -109,6 +135,43 @@ flowchart LR
 这是一条已经实现并通过真实浏览器验证的恢复路径。未来SSE只负责活动事件和资源失效通知，不改变Query/Command合同，也不能成为产品事实源。
 
 ## 7. 规划—确认—执行交互
+
+### 7.0 函数级主链导航
+
+以下顺序与[本地调试断点表](../debug/local-debug.md)保持一致。函数名比行号稳定；新增注释或格式化后不需要重新猜断点。
+
+| 顺序 | 进程 | 文件与函数/入口 | 进入的数据 | 离开时应该成立的事实 |
+|---:|---|---|---|---|
+| 1 | Browser | `RealWorkspace.tsx`：`RealChatPane.send` | 输入框文本、Memory选择 | 只调用`chain.sendMessage`，UI没有制造成功Message |
+| 2 | Browser | `use-real-chain.ts`：`sendMessage`、`sendMutation` | `PendingSend` | 先写localStorage，再用同一个`commandId`发起请求；成功后保存`activeRunId` |
+| 3 | Browser | `api/client.ts`：`apiSubmitMessage`、`post` | `CommandEnvelope<SubmitMessagePayload>` | 请求和201响应都通过公开Zod合同 |
+| 4 | API | `product-routes.ts`：`POST /sessions/:sessionId/messages` | URL Session、Envelope、Payload | 只完成协议校验并调用Application，不直接启动Workflow |
+| 5 | API | `session-message-use-cases.ts`：`submitUserMessage` | Principal、Session、Command、Payload | 原子提交Message、Run、ContextRequest、Attempt、Receipt和Start Outbox |
+| 6 | API | `outbox-dispatcher.ts`：`tick`、`dispatchStart` | 已提交`workflow_start` Outbox | 向Runtime派发或进入`outcome_unknown`；不把HTTP成功当产品完成 |
+| 7 | Workflow | `runtime-server.ts`：`POST /internal/workflow/v1/start` | `WorkflowStartRequest` | Runtime先认领Binding，再启动唯一SDK Workflow Run |
+| 8 | Workflow | `planning-execution-workflow.ts`：`planningExecutionWorkflow` | 最小Workflow Input | 准备Context、规划、发布Plan并等待Hook；所有产品读写走私有API |
+| 9 | Workflow → API | `workflow-planning-steps.ts`：`publishPlanReviewStep` → `api-client.ts`：`publishPlanReview` → `internal-runtime-router.ts` | Plan候选、Run revision、Manifest Hash | Application提交Plan Revision、Approval并把Run推进到`waiting_human` |
+| 10 | Browser | `use-real-chain.ts`中的`run/plans/approval` Query，`PlanPanel.tsx` | `RunDto + PlanDto[] + ApprovalDto` | 页面只根据服务端投影显示计划和允许动作 |
+| 11 | Browser → API | `PlanPanel.DecisionBox` → `beginDecision/decisionMutation` → `apiSubmitDecision` → Decision Route | `PendingDecision`与Decision Envelope | Application原子提交Decision、状态变化和Resume Outbox |
+| 12 | API → Workflow | `outbox-dispatcher.ts`：`dispatchResume` → `runtime-server.ts`：`POST /internal/workflow/v1/resume` | 产品Run、Approval、Decision、Outbox引用 | Runtime查私有Hook Binding并恢复同一个Workflow |
+| 13 | Workflow | `loadCommittedDecisionStep`、`compileExecutionContractStep`、`runPiExecutorStep` | 已提交Decision与已批准Plan引用 | 形成不可变执行合同和结构化执行候选，尚未产品成功 |
+| 14 | Workflow → API | `persistExecutionCandidateStep`、`validateExecutionStep`、`commitExecutionResultStep` | 候选、Hash、Validation引用 | Application原子提交正式Assistant Message并把Run置为`succeeded` |
+| 15 | Browser | `useRealChain`终态Query失效与重新读取 | 服务端最终Message/Run/Plan | 页面显示正式结果并停止活动轮询 |
+
+### 7.0.1 调试时应持续跟踪的身份
+
+| 身份 | 作用域 | 能否给浏览器 | 常见误解 |
+|---|---|---:|---|
+| `commandId` | 一次可重试用户/内部命令 | 是 | 不是Message ID；相同意图重试必须复用 |
+| `sessionId` | 用户会话 | 是 | 不是浏览器Tab，也不是Workflow Run |
+| `messageId` | 一条正式消息 | 是 | 输入框草稿没有Message ID |
+| `productRunId` | 用户可见的一次后台工作 | 是 | 不是Vercel Workflow Run ID |
+| `attemptId` | Product Run的一次规划/执行尝试证据 | 公开DTO通常不需要 | 不是Workflow Checkpoint |
+| `outboxId` | 一次跨Runtime派发意图 | 否 | 不是业务Run；用于幂等和对账 |
+| `planId + planRevision + planSha256` | 用户实际审核的精确计划版本 | 是 | 只传planId不能防止批准到错误版本 |
+| `approvalRequestId` | 当前人工等待点的产品身份 | 是 | 不是Hook Token |
+| `decisionId` | 已提交用户决定 | 是 | Hook Payload只能引用它，不能代替它 |
+| SDK Workflow Run ID / Hook Token | Workflow Runtime私有映射 | 否 | 不能作为产品授权、URL或前端状态 |
 
 ### 7.1 发送
 

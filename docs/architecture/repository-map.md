@@ -2,7 +2,7 @@
 
 > 文档类型：当前实现（as-built）导航
 >
-> 核对基线：`main` @ `47a12be`
+> 核对基线：`main` @ `141e089`
 >
 > 当前能力事实以根目录[PROJECT_STATE.md](../../PROJECT_STATE.md)为准；目标架构以[技术合同](./technology-contract.md)为准。
 
@@ -130,15 +130,18 @@ workflows ─┬─> pi-runtime
 
 | 用户行为/故障 | 第一入口 | 下一层 |
 |---|---|---|
-| 页面启动、创建Session | `apps/web/src/App.tsx`、`use-real-chain.ts` | `api/client.ts` → `product-routes.ts` → `session-message-use-cases.ts` |
-| 发送消息并启动规划 | `use-real-chain.ts` | Message Route → Application事务 → Outbox Dispatcher → Planning Workflow |
-| 修改/批准/拒绝Plan | `RealWorkspace.tsx` | Decision Route → `plan-decision-use-cases.ts` → Resume Outbox → Hook |
+| 页面启动、创建Session | `apps/web/src/App.tsx`、`useRealChain`的Bootstrap Query | `apiCreateSession` → Session Route → `createProductSession` |
+| 发送消息并启动规划 | `RealChatPane.send` → `useRealChain.sendMessage` | `apiSubmitMessage` → Message Route → `submitUserMessage` → `dispatchStart` → `planningExecutionWorkflow` |
+| 修改/批准/拒绝Plan | `DecisionBox.requestRevision/approve/reject` | `beginDecision` → `apiSubmitDecision` → `submitPlanDecision` → `dispatchResume` → Hook |
+| 执行结果成为正式回复 | `planningExecutionWorkflow`批准分支 | `runPiExecutorStep` → `persistExecutionCandidateStep` → `validateExecutionStep` → `commitExecutionResultStep` |
 | Memory规划召回 | `ContextPicker.tsx` | Planning Context Application → Workflow Memory Step → Memory Adapter |
 | 显式导入Memory | `ChatMessageItem.tsx`/`RealWorkspace.tsx` | Memory Import Route → Outbox → Memory Import Workflow → Adapter |
 | Product Store损坏/迁移 | API启动 | `composition.ts` → `json-product-store.ts` → `snapshot-integrity.ts`/迁移 |
 | Provider或候选失败 | Workflow Step | `pi-runtime` → 失败归一化 → Application失败提交 |
 | 回放一次Run | `apps/api/src/replay-main.ts` | `packages/realtime/src/replay.ts` + Product Store + 版本证据 |
 | 本地应用/VS Code启动失败 | `scripts/dev/start.mjs` | `scripts/dev/app-runtime.mjs`/`browser-lifecycle.mjs` → `docs/debug/local-debug.md` |
+
+完整断点顺序、调试进程归属和Watch变量见[本地调试与Trace](../debug/local-debug.md)；请求、DTO与产品事实的转换见[前后端交互](./frontend-backend-interaction.md)。
 
 ## 7. 文档类型与事实优先级
 

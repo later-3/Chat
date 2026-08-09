@@ -88,31 +88,126 @@ pnpm debug:preclean   # 清理并校验冻结端口
 pnpm debug:stop       # 停止本轮调试进程
 ```
 
-## 3. MemoryCore断点顺序
+## 3. 调试会话与源码归属
+
+选择唯一入口 **“Chat：调试应用”** 后，VS Code会建立三类真正需要关注的调试上下文：
+
+| 调试上下文 | 负责源码 | 常用断点 |
+|---|---|---|
+| Chrome：`Chat：前端浏览器（内部）` | `apps/web/src/**/*.ts(x)` | React事件、TanStack Query、公开API Client |
+| API Node Inspector `43120` | `apps/api`、`packages/application`、`packages/product-store-json` | 公开路由、事务、Outbox、Product Commit |
+| Workflow Node Inspector `43121` | `packages/workflows`、`packages/pi-runtime`、`packages/memory-runtime` | Workflow主函数、耐久Step、Hook、Planner/Executor、Memory Adapter |
+
+`autoAttachChildProcesses`会把API和Workflow子进程附加到同一个父调试会话；看到多个Call Stack属于正常现象，不代表启动了多套Chat。memmy和Tencent MemoryCore是真实依赖进程，但默认不开放Inspector，也不需要在第三方服务里单步。
+
+断点文档以“文件 + 函数/路由 + 观察变量”为准，不把会随注释和格式化漂移的行号当合同。VS Code中可用`⌘P`打开文件，再用`⌘⇧O`按函数名定位。
+
+## 4. 规划—确认—执行主链断点
+
+完整数据角色和所有权见[前后端交互：当前实现](../architecture/frontend-backend-interaction.md)。第一次熟悉代码不需要把下表所有断点同时打开；建议按4.1、4.2、4.3分三次走。
+
+### 4.1 用户发送到Plan出现
+
+| 顺序 | 进程 | 文件 | 函数/断点位置 | 重点观察 |
+|---:|---|---|---|---|
+| 1 | Browser | `apps/web/src/components/RealWorkspace.tsx` | `RealChatPane`内的`send` | `text`、`selectedContext`；这里只提交意图，不创建Message |
+| 2 | Browser | `apps/web/src/real/use-real-chain.ts` | `sendMessage`创建`pending`后 | `PendingSend.version/payload/commandId`以及先写Storage、后发HTTP的顺序 |
+| 3 | Browser | 同上 | `sendMutation.mutationFn`、`onSuccess` | 请求前的同一`commandId`；响应中的`message`、`run.productRunId` |
+| 4 | Browser | `apps/web/src/api/client.ts` | `apiSubmitMessage` | `CommandEnvelope<SubmitMessagePayload>`；201只表示产品事务已提交 |
+| 5 | API | `apps/api/src/product-routes.ts` | `POST /sessions/:sessionId/messages`回调 | URL `sessionId`、`envelope.commandId`、严格`payload` |
+| 6 | API | `packages/application/src/session-message-use-cases.ts` | `submitUserMessage`的`deps.store.transact` | 同一draft中新建的Message、Product Run、ContextRequest、Workflow Attempt和Outbox |
+| 7 | API | `apps/api/src/outbox-dispatcher.ts` | `OutboxDispatcher.tick`、`dispatchStart` | `entry.kind/status/outboxId/productRunId`、`attemptId`、Runtime三态响应 |
+| 8 | Workflow | `packages/workflows/src/runtime-server.ts` | `/internal/workflow/v1/start`路由 | `WorkflowStartRequest`、`startClaim`、SDK `run.runId`只进入私有Binding |
+| 9 | Workflow | `packages/workflows/src/planning-execution-workflow.ts` | `planningExecutionWorkflow`入口 | `productRunId`、`attemptId`、`maxPlanRevisions`；没有用户正文和Hook Token |
+| 10 | Workflow | `packages/workflows/src/workflow-planning-steps.ts` | `compilePlanningInputStep`、`runPiPlannerStep`、`publishPlanReviewStep` | Planning Input Manifest、结构化Plan候选、提交后的Plan/Approval引用 |
+| 11 | API | `apps/api/src/internal-runtime-router.ts` | `/publish-plan-review`路由 | Workflow通过私有API回到Application，而不是直接写JSON Store |
+| 12 | API | `packages/application/src/plan-decision-use-cases.ts` | `publishPlanForReview` | Plan Hash、Approval绑定以及Run进入`waiting_human/plan_review` |
+
+正常现象：浏览器在第4～6步后就收到201，而第7～12步异步继续。若在API断点暂停时间较长，前端轮询可能挂起或显示连接问题，但不会因此创建第二个Run。
+
+### 4.2 Plan Query回到页面
+
+| 进程 | 文件 | 函数/断点位置 | 重点观察 |
+|---|---|---|---|
+| Browser | `apps/web/src/real/use-real-chain.ts` | `run`、`plans`、`approval`三个`useQuery`的`queryFn` | 三个Query共享`activeRunId`，但分别读取Run、Plan集合和当前Approval |
+| Browser | `apps/web/src/api/client.ts` | `apiGetRun`、`apiGetPlans`、`apiGetCurrentApproval` | 每个响应再次通过公开Zod DTO校验 |
+| API | `apps/api/src/product-routes.ts` | 三个`GET /runs/:productRunId/*`路由 | Query只读取Product Store投影，不查询Workflow返回值 |
+| Browser | `apps/web/src/components/PlanPanel.tsx` | `PlanPanel`、`DecisionBox` | `run.allowedActions`决定按钮；界面不自行推导服务端状态机 |
+
+也可以在Chrome Network面板按`/api/runs/`过滤。当前活动Run每1.5秒受控轮询；终态后停止，并最后失效一次Message/Plan/Approval/Context Query。
+
+### 4.3 修改、批准或拒绝到Workflow恢复
+
+| 顺序 | 进程 | 文件 | 函数/断点位置 | 重点观察 |
+|---:|---|---|---|---|
+| 1 | Browser | `apps/web/src/components/PlanPanel.tsx` | `requestRevision`、`approve`或`reject` | payload绑定`approvalRequestId + planId + revision + sha256` |
+| 2 | Browser | `apps/web/src/real/use-real-chain.ts` | `beginDecision`、`decisionMutation` | `expectedRunRevision`与稳定`commandId`；网络未知时是否保留同一PendingDecision |
+| 3 | Browser | `apps/web/src/api/client.ts` | `apiSubmitDecision` | Command Envelope中的CAS revision和Decision payload |
+| 4 | API | `apps/api/src/product-routes.ts` | `POST /runs/:productRunId/decisions` | Principal、Envelope、payload三层边界 |
+| 5 | API | `packages/application/src/plan-decision-use-cases.ts` | `submitPlanDecision`事务 | Run CAS、Approval三元组绑定、Decision、Plan/Run状态、Resume Outbox原子提交 |
+| 6 | API | `apps/api/src/outbox-dispatcher.ts` | `dispatchResume` | Outbox只传Approval/Decision产品引用，不读取Hook Token |
+| 7 | Workflow | `packages/workflows/src/runtime-server.ts` | `/internal/workflow/v1/resume`路由 | `approvalRequestId`查私有Binding、`resumeDispatchState`和`resumeHook`结果 |
+| 8 | Workflow | `packages/workflows/src/planning-execution-workflow.ts` | `await decisionHook`之后、`loadCommittedDecisionStep` | Hook信号只给`decisionId`；Workflow再次读取并核验已提交Decision |
+
+分支结果：
+
+- `request_revision`：同一个Workflow进入下一轮`for`循环，Plan revision增加，不启动新Workflow。
+- `reject`：调用`commitRejectedRunStep`，Run进入`cancelled/rejected`。
+- `approve`：进入不可变Execution Contract和执行链。
+
+### 4.4 批准后执行到正式回复
+
+| 顺序 | 进程 | 文件 | 函数/断点位置 | 重点观察 |
+|---:|---|---|---|---|
+| 1 | Workflow | `packages/workflows/src/workflow-execution-steps.ts` | `compileExecutionContractStep` | 合同引用已批准Plan/Decision/Context和限制，不接受浏览器原始正文 |
+| 2 | Workflow | 同上 | `beginExecutionAttemptStep`、`runPiExecutorStep`、`completeRunAttemptStep` | 每个Plan Step独立Attempt、依赖引用、输入Manifest和候选Hash |
+| 3 | Workflow | `packages/workflows/src/workflow-result-steps.ts` | `persistExecutionCandidateStep` | Executor输出先成为耐久候选引用，不是正式Assistant Message |
+| 4 | Workflow | 同上 | `validateExecutionStep` | 确定性Validation结果与失败项，不依赖模型自述成功 |
+| 5 | Workflow | 同上 | `commitExecutionResultStep` | 使用稳定Command ID提交已经验证的候选；失败时不重新调用Executor |
+| 6 | API | `apps/api/src/internal-runtime-router.ts` | `/commit-execution-result`路由 | 私有DTO校验后调用Application Product Commit |
+| 7 | API | `packages/application/src/commit-runtime-use-cases.ts` | `commitExecutionResult` | 正式Assistant Message和Run`succeeded`在同一Product Store事务提交 |
+| 8 | Browser | `apps/web/src/real/use-real-chain.ts` | 终态`useEffect`和`messages` Query | 最终回复来自重新Query的`MessageDto`，不是Workflow函数返回值 |
+
+### 4.5 建议固定在Watch中的身份
+
+| 变量 | 在哪里首次出现 | 用途 |
+|---|---|---|
+| `commandId` | Web `PendingSend/PendingDecision` | 判断网络重试是否仍是同一意图 |
+| `sessionId` | Session Bootstrap响应 | 关联正式消息历史 |
+| `productRunId` | Message Command响应 | 贯穿Query、Trace、Outbox和Workflow产品引用 |
+| `messageId` | Message事务 | 区分用户正式Message与最终Assistant Message |
+| `attemptId` | Message事务创建的Workflow Attempt | 关联Trace和一次Runtime尝试 |
+| `outboxId` | Message/Decision事务 | 关联一次Start或Resume派发及对账 |
+| `planId / planRevision / planSha256` | Plan Review提交 | 证明用户决定绑定到精确计划版本 |
+| `approvalRequestId / decisionId` | Plan Review / Decision事务 | 连接产品审核事实与Runtime私有Hook映射 |
+
+不要把SDK `workflowRunId`、Hook Token或pi Session ID加入前端Watch、localStorage或公开请求；它们只应在Workflow Runtime内部诊断。
+
+## 5. Memory断点顺序
 
 规划召回建议按以下顺序设置断点：
 
-1. `packages/workflows/src/planning-execution-workflow.ts:99`：进入Memory节点。
-2. `packages/workflows/src/workflow-planning-steps.ts:145`：耐久查询Step。
-3. `packages/memory-runtime/src/tencent-memorycore-adapter.ts:441`：真实`atomic/search`。
-4. `packages/workflows/src/workflow-planning-steps.ts:269`：Memory上下文进入真实Planner。
+1. `packages/workflows/src/planning-execution-workflow.ts`：`beginPlanningContextStep`调用处，进入Memory节点。
+2. `packages/workflows/src/workflow-planning-steps.ts`：`queryMemoryContextStep`，耐久查询Step。
+3. `packages/memory-runtime/src/tencent-memorycore-adapter.ts`：`query`中的真实`atomic/search`请求。
+4. `packages/workflows/src/workflow-planning-steps.ts`：`runPiPlannerStep`，观察Memory Context如何进入Planner。
 
 显式导入建议按以下顺序设置断点：
 
-1. `packages/application/src/memory-import-use-cases.ts:105`：冻结Intent/Result/Outbox。
-2. `apps/api/src/outbox-dispatcher.ts:306`：派发MemoryImportWorkflow。
-3. `packages/workflows/src/memory-import-workflow.ts:104`：导入与对账状态分支。
-4. `packages/workflows/src/memory-import-workflow-steps.ts:118`：唯一外部写入Step。
-5. `packages/memory-runtime/src/tencent-memorycore-adapter.ts:494`：真实`conversation/add`。
-6. `packages/memory-runtime/src/tencent-memorycore-adapter.ts:559`：L0/L1只读对账。
-7. `packages/application/src/memory-import-use-cases.ts:545`：提交accepted。
-8. `apps/api/src/outbox-dispatcher.ts:460`：确认accepted不会被终态监督器降级。
+1. `packages/application/src/memory-import-use-cases.ts`：`createMemoryImport`，冻结Intent/Result/Outbox。
+2. `apps/api/src/outbox-dispatcher.ts`：`dispatchMemoryImport`，派发MemoryImportWorkflow。
+3. `packages/workflows/src/memory-import-workflow.ts`：`memoryImportWorkflow`，观察导入/对账分支。
+4. `packages/workflows/src/memory-import-workflow-steps.ts`：`callMemoryImportStep`，唯一外部写入Step。
+5. `packages/memory-runtime/src/tencent-memorycore-adapter.ts`：`import`中的真实`conversation/add`。
+6. 同上：`reconcile`中的L0/L1只读对账。
+7. `packages/application/src/memory-import-use-cases.ts`：`commitMemoryImportAccepted`，提交合法accepted。
+8. `apps/api/src/outbox-dispatcher.ts`：`superviseAcknowledgedImport`，确认accepted不会被终态监督器降级。
 
 Workflow Step通过tsx解析回TypeScript源码，断点应设置在上述`.ts`文件，不要进入
 `.workflow-bundle`或`dist`。第三方Memory进程保持环境隔离，日常排查优先观察Chat Adapter请求与
 严格响应分类。
 
-## 4. Trace 查询
+## 6. Trace 查询
 
 Request ID规则：API不信任客户端`x-request-id`，只有通过受限Schema（`req_`前缀）
 的传入ID才被复用，否则生成新的服务端ID；响应头始终返回最终生效ID。
@@ -135,16 +230,14 @@ pnpm debug:trace --command cmd_xxx    # 按命令
   正文、密钥、Prompt与Provider Payload在结构上无法写入（不是写入后脱敏）。
   完整历史回放（组合Product Store正文）属B7的`pnpm debug:replay`，见任务书§7.5。
 
-## 5. B1 范围说明
+## 7. Trace实现边界
 
-- API已产生`http.command.received/completed/rejected`事件；`/api/healthz`与
-  `/api/readyz`就绪探针可用（B2/B4起`readyz`将检查Product Store与Workflow依赖）。
-- API使用`@chat/realtime`提供的唯一Trace Sink（`createTraceSink`）；
-  `packages/realtime`声明自己的`@types/node`类型依赖，不存在跨包typeRoots引用。
-- Provider、Workflow、Hook、pi与Product Commit事件在B4/B5/B7接入，
-  事件名已在`packages/contracts/src/trace.ts`按任务书§7.3冻结。
+- API、Application、Outbox、Workflow、Hook、Provider/pi、Memory、Validation和Product Commit均已产生严格Trace事件。
+- API使用`@chat/realtime`提供的唯一Trace Sink；Workflow进程也通过相同严格合同写入当前worktree的Trace目录。
+- 事件名及允许字段在`packages/contracts/src/trace.ts`冻结；新增事件必须先扩展判别联合和测试，不能临时塞任意`attributes`。
+- 当前前端仍使用Query轮询；Trace不是浏览器实时协议，也不能替代Product Store正文。
 
-## 6. 端口冲突报告的安全边界
+## 8. 端口冲突报告的安全边界
 
 - 进程身份复核在内部使用完整命令行片段（防止PID复用误杀），但不输出到报告或Trace。
 - 面向用户的端口冲突报告只包含：端口、PID、可执行文件basename（如`node`）。

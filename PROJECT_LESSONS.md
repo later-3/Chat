@@ -211,3 +211,11 @@ Memory、项目管理和规则系统不能只凭抽象接口或模型直觉设�
 本地服务图、准备、健康门和停止顺序必须由仓库统一`dev/dev:debug`启动器拥有，保证终端、VS Code和未来CI复用同一合同；不得再把Memory、Workflow、API和Web的生命周期复制进`launch.json/tasks.json`。VS Code只调用同一个启动器、附加Chat拥有的进程并在应用Ready后打开浏览器。浏览器必须使用worktree专属Profile，启动前只按“浏览器可执行文件+精确user-data-dir”身份收敛遗留进程和锁，不能为了避免旧Session警告杀全部Chrome；父会话停止时同时收敛整个专属浏览器。配置合同和等价命令仍不能替代真实F5：完成门必须从VS Code选择唯一应用入口，确认Chrome和TypeScript断点，再停止并确认端口、浏览器与进程投影收敛。私有环境在目标进程内部加载，不能用会把值展开到命令行的`envFile`。
 
 检查：`pnpm dev`能否脱离编辑器独立启动应用；F5是否只调用同一启动器而不复制服务图；Memory、Workflow、API和Web是否全部Ready，Chrome与断点是否可用；遗留专属浏览器能否自动清理且日常Chrome不受影响；停止后固定端口是否释放且输出/argv没有凭据？
+
+## 33. 关键纵向链必须同时交付中文代码导航和函数级调试文档
+
+标签：`documentation`、`debug`、`maintainability`、`data-flow`
+
+只有架构图无法解释断点中的具体对象，只有散落注释也无法给出完整阅读顺序。前端、公开API、Application事务、Outbox、Workflow私有API、Hook、Provider和Product Commit之间的主链必须同时具备两层导航：代码边界用中文注释解释数据结构、身份、所有权与失败语义；as-built文档用文件、函数/路由和观察变量给出可执行的断点顺序。断点索引以函数名为主，不能依赖会随注释漂移的固定行号。新增纵向能力时同步更新现有交互/调试事实源，不为同一行为再建互相竞争的说明。
+
+检查：一个第一次阅读该功能的人，能否从README找到当前交互与调试入口，并在不猜Runtime身份、不翻历史任务书的情况下，从用户动作单步走到正式产品事实？
