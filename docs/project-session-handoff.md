@@ -63,7 +63,7 @@ Trace + Product Store + Version Evidence -> Replay
 2. **Memory单后端查询纵向链**：M1已由PR #10合入，真实memmy查询、Application Port、Workflow节点、Trace、最小UI和真实E2E均完成。
 3. **Memory显式导入纵向链**：M2已由PR #11合入，完成有来源、目标、幂等、结果未知对账和重启恢复的真实memmy导入。
 4. **第二真实Memory后端**：M3已由PR #12合入，固定Tencent MemoryCore真实服务验证了L0接收、L1查询、强隔离与异步物化语义。
-5. **项目上下文纵向链（下一任务）**：基于BMAD的阶段、状态、产物和推进门设计Chat自己的Project/Work/Document Manifest/Context Package，并让Workflow可读取、维护候选和提交用户确认后的变化。
+5. **Project Solution纵向链（下一任务）**：先按已形成的Shape Up/BMAD方法论、架构与场景验证完成PS1对话建项、真实Resource和项目账本；随后推进PS2 Stage/Milestone/Iteration、PS3真实资源执行和PS4维护/Correct Course。
 6. **用户规则纵向链**：实现Rule/RuleRevision/Tag/Scope，统一管理界面、对话主动勾选/标签筛选、合理自动召回和规划节点注入；记录采用了哪些规则及版本。
 7. **组合验收**：真实用户场景同时使用项目上下文、选择规则和Memory查询完成规划—确认—执行，页面刷新后能从权威事实恢复，公开面不泄漏外部服务或Runtime私有身份。
 
@@ -72,7 +72,7 @@ Trace + Product Store + Version Evidence -> Replay
 ## 5. 三类能力的硬边界
 
 1. 外部Memory服务拥有其内部记录和检索索引；Chat拥有本次查询条件、返回来源、用户选择、采用证据和导入意图。召回内容不能未经筛选直接变成长期产品事实。
-2. BMAD是项目推进方法和参考实现，不是Chat的事实源。Chat必须拥有Project阶段、状态、文档清单、版本、决定和Context Package，且允许不同项目裁剪结构。
+2. Shape Up与BMAD都是方法输入，不是Chat事实源。Chat拥有Project、Stage Goal/Milestone、Iteration、Work/Scope/Action、Resource、Participant、Contribution、Decision、Evidence、Update和Context Package；小团队不强制六周，非软件/运维项目不强制BMAD Artifact或Iteration。
 3. 用户规则是可修订、可删除、带标签与场景范围的产品对象，不是藏在Prompt里的不可见文本。自动维护只能提出候选，正式规则变化必须经过确定性校验和必要的用户确认。
 4. 规划节点只接收本轮明确选中的版本化Context Package；完整会话、全部Memory、全部项目文档和全部规则不能默认塞进模型上下文。
 5. Trace继续只记录系统路径、选择结果、版本、Hash、耗时、错误与对象引用，不复制会话、Memory正文、项目文档正文、规则正文或Provider Payload。
@@ -92,7 +92,7 @@ Trace + Product Store + Version Evidence -> Replay
 继续Chat项目。按AGENTS.md规定顺序读取治理文件和docs/project-session-handoff.md。
 main已完成真实规划—确认—执行、memmy查询/导入和Tencent MemoryCore第二后端闭环。
 VS Code主Compound已经过真实F5验证；不能用等价命令或静态配置测试替代。
-下一阶段接着建设：BMAD启发的项目上下文、
+下一阶段接着建设：Shape Up与BMAD共同启发的Project Solution、
 带标签且可主动选择的用户规则集。先读取本地参考项目与既有分析，给每个设计写出采用/调整/拒绝依据，
 再按依赖拆成可独立合并的小任务；实现使用worktree+PR，纵向完成门必须包含真实服务、真实模型和浏览器E2E。
 不要建立万能Context Service，不要把外部Memory、BMAD或Prompt当成Chat产品事实源。

@@ -1,14 +1,20 @@
-# P1 Project Solution 基础纵向任务书：对话建项、真实资源与项目账本
+# PS1 Project Intake 纵向任务书：对话建项、真实资源与项目账本
 
 | 项目 | 内容 |
 |---|---|
-| 状态 | 目标重构草案，待用户审核；批准前不得实现 |
+| 状态 | 方法论与架构重构草案，待用户审核；批准前不得实现 |
 | 核心目标 | 帮助不会管理项目的用户，仅靠对话建立、理解、维护并逐步推进多个真实项目 |
-| BMAD定位 | 项目方法输入之一；吸收阶段、Work、Artifact、质量门和Correct Course，不复制BMAD产品形态 |
+| 方法依据 | Shape Up、BMAD、Basecamp、Linear、Things与Chat现有事实/Workflow；采用、调整、拒绝见方法论文档 |
 | 本次用户结果 | 用户用一句话和真实工作区建立Project；Chat观察代码、文档与脚本，生成可修改候选；确认后形成可恢复的项目账本和管理页面 |
 | 交付方式 | 1个完整纵向PR；内部检查点不能作为半成品交付 |
 | 技术链 | 真实对话→qwen候选→只读Resource Adapter→用户确认→Product Store v4→Portfolio/Project UI→真实E2E |
-| 下一任务 | Project Progress Workflow：组织项目上下文、规划下一Work、执行真实资源动作、验证并回写项目事实 |
+| 下一任务 | PS2 Stage、Milestone、Proposal、Iteration、Work/Scope/Action与Project Update管理闭环 |
+
+设计依据：
+
+1. [Project Solution方法论](../product/project-solution-methodology.md)
+2. [Project Solution架构](../architecture/project-solution.md)
+3. [Project Solution场景验证](../product/project-solution-scenario-validation.md)
 
 ## 1. 最终产品目标
 
@@ -61,6 +67,7 @@ Project定义为：
 ```text
 Project
 ├─ Definition       目标、范围、成功标准、方法
+├─ Method/Stage      方法快照、初始阶段与阶段目标
 ├─ Resources        仓库、目录、文档、脚本、服务、外部系统
 ├─ Participants     用户、Agent、自动化及其项目角色
 ├─ Work             可交付工作、状态、依赖、验收标准
@@ -71,9 +78,9 @@ Project
 └─ Observations     某一时刻真实资源的版本化观察结果
 ```
 
-Project Query根据这些事实生成当前阶段、健康度、活动Work、阻塞和下一步投影；浏览器和模型都不能自己维护第二套状态。
+Project Query根据这些事实生成当前阶段、Resource/Observation风险信号、活动Work、阻塞和下一步投影；负责人署名的健康判断由PS2 `ProjectUpdate`交付，PS1不能用机器摘要冒充。浏览器和模型都不能自己维护第二套状态。
 
-## 3. 我们为什么参考BMAD
+## 3. 方法输入如何组合
 
 固定源码证据：
 
@@ -83,7 +90,7 @@ commit 4c4f6dc8534f95427e66e122ac5de47ac51b5f94
 tag v4.44.3
 ```
 
-BMAD为Chat提供经过真实项目使用验证的输入：
+BMAD为Chat提供经过真实软件项目使用验证的输入：
 
 | 输入 | 源码证据 | Chat吸收 | Chat调整 |
 |---|---|---|---|
@@ -96,6 +103,10 @@ BMAD为Chat提供经过真实项目使用验证的输入：
 | 文档配置 | `core-config.yaml` | 按角色组织项目Artifact | 不固定目录，不复制整套文档正文 |
 
 BMAD不负责Chat的资源Adapter、多人/Agent贡献账本、耐久Workflow、跨会话Memory、多项目组合和权限，这些由Chat自己的架构负责。
+
+Shape Up提供小团队如何Shaping、设定Appetite、形成Commitment、按Cycle交付、发现Scope、表达未知度和使用Circuit Breaker的输入。Chat不写死六周、Betting Table或Cool-down；小团队只保留先塑形再承诺、固定投入可变范围、区分未知/已知和限制损失等原则。
+
+统一方法不是一条巨型流程，而是版本化`ProjectMethodSnapshot`：PS1只完成方法建议、完整Snapshot和初始Stage；PS2再实现Stage/Milestone/Proposal/Iteration的完整管理行为。
 
 ### 3.1 其他输入的责任
 
@@ -118,13 +129,14 @@ BMAD不负责Chat的资源Adapter、多人/Agent贡献账本、耐久Workflow、
 
 Chat必须：
 
-1. 解析目标和资源定位，生成`ProjectIntakeCandidate`，不直接创建Project。
-2. 使用Resource Adapter只读观察真实工作区。
-3. 识别Git状态、主要文档、可用脚本、测试与项目结构。
-4. 根据证据建议项目类型、BMAD profile或轻量方法，并解释理由。
-5. 生成初始范围、成功标准、参与者、Work和Action候选。
-6. 在前端展示可修改候选。
-7. 用户确认后，一次事务提交Project及全部初始事实。
+1. 用户从Portfolio“新建项目”或对话中的可见“建项目”动作进入Intake模式；不靠隐藏模型分类器自动劫持普通任务消息。
+2. 解析目标和资源定位，生成`ProjectIntakeCandidate`，不直接创建Project。
+3. 使用Resource Adapter只读观察真实工作区。
+4. 识别Git状态、主要文档、可用脚本、测试与项目结构。
+5. 根据证据建议项目类型、Shape Up/BMAD组合profile或轻量方法，并解释理由。
+6. 生成初始范围、成功标准、参与者、Work和Action候选。
+7. 在前端展示可修改候选。
+8. 用户确认后，一次事务提交Project及全部初始事实。
 
 ### 4.2 管理：Portfolio与Project Ledger
 
@@ -134,7 +146,7 @@ Chat必须：
 
 系统从Project事实生成：
 
-- 项目目标、状态、最近活动和健康度。
+- 项目目标、状态、最近活动和可观察风险信号；负责人健康判断在PS2交付。
 - 当前负责人、Agent和自动化正在处理的Work/Action。
 - 最近贡献、决定和真实资源变化。
 - 阻塞、风险、等待用户确认的候选。
@@ -155,7 +167,7 @@ Chat必须：
 
 必须能表达：PR已合并但Work未完成、文档Hash变化、脚本消失、测试失败、仓库HEAD变化、新资源出现、项目记录引用旧版本等场景。
 
-P1先实现真实Observe和人工触发刷新；自动定时维护、写资源和执行脚本属于后续任务。
+PS1先实现真实Observe和人工触发刷新；自动定时维护、写资源和执行脚本属于后续任务。
 
 ### 4.4 推进：Plan、Execute、Verify、Commit
 
@@ -168,7 +180,7 @@ P1先实现真实Observe和人工触发刷新；自动定时维护、写资源�
 5. 验证结果并生成Contribution、Evidence和项目更新候选。
 6. 用户确认后更新Work/Action/Decision/Project状态。
 
-这部分在下一纵向任务实现；P1必须先把对象、真实资源观察和用户入口设计成可直接承接它，而不能预埋空Workflow或假执行结果。
+这部分在后续纵向任务实现；PS1必须先把对象、真实资源观察和用户入口设计成可直接承接它，而不能预埋空Workflow或假执行结果。
 
 ## 5. 参与者、贡献、决定和待办
 
@@ -234,33 +246,35 @@ P1先实现真实Observe和人工触发刷新；自动定时维护、写资源�
 
 Trace不能复制目标、决定理由、Contribution摘要、文档正文、Diff、URI或命令Body。项目审计正文属于Product Store，系统诊断属于Trace。
 
-## 7. P1必须交付的完整用户闭环
+## 7. PS1必须交付的完整用户闭环
 
 ### 7.1 本任务范围
 
-1. Project、Resource、Participant、Work、Action、Contribution、Decision、Observation strict合同。
-2. `ProjectResourcePort`及第一批真实只读Adapter：
+1. Project、Method Snapshot、初始Stage、Resource、Participant、Work、Action、Contribution、Evidence、Decision、Observation strict合同。
+2. `ProjectResourceObservePort`及第一批真实只读Adapter：
    - `local-git-workspace.v1`：允许根目录内的Git HEAD、branch、status、tracked file manifest和recent commits。
    - `project-document-manifest.v1`：识别项目治理/产品/架构/任务文档的路径、revision evidence和Hash。
-   - `package-script-catalog.v1`：从受支持manifest读取脚本名称和用途；P1禁止执行任意脚本。
+   - `package-script-catalog.v1`：从受支持manifest读取脚本名称和用途；PS1禁止执行任意脚本。
 3. 服务端Resource Registry、允许根目录和安全locator合同；浏览器不能提交任意绝对路径直接读取服务器。
-4. 真实百炼`qwen3.7-plus`的Project Intake节点，输出严格`ProjectIntakeCandidate`。
-5. 候选修改/确认：模型输出不能直接成为Project事实。
-6. 确认后原子创建Project、初始Resources、用户Participant、初始Work/Action、建项Decision和首个Observation。
-7. 对话式管理命令候选：新增/分派待办、记录决定、记录已发生贡献、刷新Observation。
-8. 项目列表、详情、参与者、资源、Work/待办、决定、贡献和时间线的响应式UI。
-9. Product Store v3→v4迁移、CAS、幂等、完整性与损坏失败关闭。
-10. 真实API、真实Resource、真实模型和浏览器E2E。
+4. Portfolio/Chat提供可见Project Intake模式，公开命令使用字面量意图；普通消息默认仍走现有规划链。
+5. 真实百炼`qwen3.7-plus`的Project Intake节点，输出严格`ProjectIntakeCandidate`。
+6. 候选修改/确认：模型输出不能直接成为Project事实。
+7. 确认后原子创建Project、Method Snapshot、初始Stage Goal、Resources、用户Participant、初始Work/Action、建项Decision、Evidence和首个Observation。
+8. 对话式管理命令候选：新增/分派待办、记录决定、记录已发生贡献、刷新Observation。
+9. 项目列表、详情、参与者、资源、Work/待办、决定、贡献和时间线的响应式UI。
+10. Product Store v3→v4迁移、CAS、幂等、完整性与损坏失败关闭。
+11. 真实API、真实Resource、真实模型和浏览器E2E。
 
 ### 7.2 明确不做
 
-1. P1不写代码/文档、不运行项目脚本、不调用部署或Git push。
+1. PS1不写代码/文档、不运行项目脚本、不调用部署或Git push。
 2. 不把服务器全部文件系统暴露给Chat；只允许配置的资源根和已确认Resource。
 3. 不自动定时扫描；用户或后端管理动作显式触发Observe。
 4. 不实现Project Context到现有PlanningExecutionWorkflow的完整注入。
 5. 不实现真实Resource副作用、结果未知对账或自动提交PR。
 6. 不实现Correct Course、完整质量门、Rules或主动提醒。
 7. 不让用户为了使用基础能力必须理解BMAD术语。
+8. 不实现Stage/Milestone/Proposal/Iteration/Scope/Project Update的完整生命周期；这些由PS2一次打通，PS1只保存初始Stage和可承接的Method Snapshot。
 
 ## 8. 第一个纵向场景
 
@@ -290,17 +304,17 @@ Trace不能复制目标、决定理由、Contribution摘要、文档正文、Dif
 ## 9. Resource Adapter边界
 
 ```ts
-interface ProjectResourcePort {
-  describe(): ProjectResourceCapabilities;
+interface ProjectResourceObservePort {
+  describe(): ProjectResourceObserveCapabilities;
   observe(input: ObserveProjectResourceInput): Promise<ProjectResourceObservation>;
 }
 ```
 
-P1只冻结所有首批Adapter都真实支持的`observe`，不提前加入假的`write/execute`方法。未来副作用使用独立能力接口和Workflow节点。
+PS1只冻结所有首批Adapter都真实支持的`observe`，不提前加入假的`write/execute`方法。未来副作用使用独立能力接口和Workflow节点。
 
 安全要求：
 
-1. 服务端配置允许资源根；locator规范化后必须仍位于允许根。
+1. 服务端私有Root Registry保存`rootId/displayName/canonicalPath/allowedAdapters`；浏览器只读取安全`rootId/displayName`。locator规范化后必须仍位于允许根。
 2. 拒绝`..`逃逸、符号链接逃逸、NUL、凭据化URL和未知scheme。
 3. 默认忽略`.env`、密钥、凭据、依赖目录、构建产物和大文件。
 4. Git命令参数使用固定argv，不经过shell字符串拼接。
@@ -326,19 +340,22 @@ P1只冻结所有首批Adapter都真实支持的`observe`，不提前加入假�
 
 ```text
 projects
+projectMethodSnapshots
+projectStages
 projectResources
 projectParticipants
 projectWorks
 projectActions
 projectContributions
+projectEvidence
 projectDecisions
 projectObservations
 projectCandidates
 ```
 
-Project P1占用`chat-product-store.v4`；Rules基础顺延为v5。迁移必须显式`v1→v2→v3→v4`，旧Session/Run/Memory/Import/Receipt/Outbox逐对象等值，新集合为空。
+Project PS1占用`chat-product-store.v4`。PS2以及后续Resource Action如增加新的权威事实集合，继续显式升级Store；Rules使用Project Solution阶段完成后的下一个可用版本，不再提前写死v5。迁移必须显式`v1→v2→v3→v4`，旧Session/Run/Memory/Import/Receipt/Outbox逐对象等值，新集合为空。
 
-Snapshot Integrity至少校验Map key/ID、owner、Resource locator与Adapter kind、Participant引用、Work依赖、Action负责人、Contribution证据、Decision revision、Observation链和Candidate生命周期。
+Snapshot Integrity至少校验Map key/ID、owner、Method Hash、Stage引用、Resource locator与Adapter kind、Participant引用、Work依赖、Action负责人、Contribution/Evidence绑定、Decision revision、Observation链和Candidate生命周期。
 
 ## 12. Application、Workflow与API
 
@@ -351,7 +368,7 @@ Snapshot Integrity至少校验Map key/ID、owner、Resource locator与Adapter ki
 
 ### 12.2 Workflow
 
-新增唯一`ProjectIntakeWorkflow`或在现有定义中增加明确Project Intake入口，最终实现前必须通过源码核验选择较小方案。耐久链必须包含：真实模型候选、真实Resource Observe、候选发布、Hook等待、确认后提交。浏览器不接触Workflow ID、Hook Token或pi Session ID。
+新增独立`ProjectIntakeWorkflow`。它拥有建项候选、Resource Observe、Hook等待和确认提交这一项独立用户结果，不能塞进以Plan Revision/Execution Contract为状态核心的`PlanningExecutionWorkflow`；仓库已有独立`MemoryImportWorkflow`证明同一Runtime可承载不同产品Workflow。耐久链必须包含：Outbox启动、真实模型候选、真实Resource Observe、候选发布、Hook等待、确认后提交。浏览器不接触Workflow ID、Hook Token或pi Session ID。
 
 ### 12.3 公开API
 
@@ -377,7 +394,7 @@ POST /api/projects/:projectId/contribution-candidates
 
 1. Chat仍是主要输入；用户可以在消息中选择现有Project或发起建项。
 2. 候选确认沿用计划审核的“可读、可修改、批准/拒绝”交互，不另外发明一套审批语言。
-3. 增加Portfolio入口：项目、健康度、当前负责人、活动Work、待办、阻塞和最近更新。
+3. 增加Portfolio入口：项目、Resource/Observation风险信号、当前负责人、活动Work、待办、阻塞和最近更新；不伪造负责人健康Update。
 4. Project Workspace包含概览、资源、参与者、Work/待办、决定、贡献、时间线。
 5. Timeline明确区分“用户决定”“Agent贡献”“资源观察”“系统状态转换”。
 6. 手机390×844可完成建项确认、查看谁在做、记录决定和管理待办，无横向溢出。
@@ -442,7 +459,7 @@ packages/testing         真实Git fixture与E2E工具
 1. Domain不得依赖Git、Node fs、Hono、React、Workflow或pi。
 2. Adapter依赖Application Port；Router、Workflow和React不直接写Store。
 3. 不建立万能ProjectService、万能Resource接口或任意metadata口袋。
-4. P1只有真实observe能力；不要提前设计空write/execute实现。
+4. PS1只有真实observe能力；不要提前设计空write/execute实现。
 5. 核心边界、不变量、安全路径和Product Store/Trace分工使用精炼中文注释。
 6. 注释解释为什么，不逐行翻译代码；超大文件和多责任组件必须拆分。
 7. 不新增生产依赖，除非先证明用途、许可证、退出方式和现有能力不足。
@@ -457,14 +474,16 @@ packages/testing         真实Git fixture与E2E工具
 
 ## 18. 用户审核点
 
-请用户确认以下7项：
+请用户确认以下9项：
 
-1. Project是否采用“目标+真实资源+参与者+工作+决定+贡献+证据”的定义。
+1. Project是否采用“目标+方法/阶段+真实资源+参与者+工作+决定+贡献+证据”的定义。
 2. Chat是否以对话为主要驱动，表单/UI作为观察与确认手段。
-3. P1是否必须真实读取Git工作区、项目文档与脚本清单。
+3. PS1是否必须真实读取Git工作区、项目文档与脚本清单。
 4. 是否接受模型只生成Candidate，用户确认后才写Project事实。
 5. 是否接受Contribution区分reported与verified，不能把Agent自述当证据。
-6. 是否接受P1先只读管理与维护，下一任务再开放代码/文档/脚本副作用执行。
-7. 是否接受Project用Store v4、Rules后续使用v5。
+6. 是否接受Stage与Iteration彻底分离；PS1只建立初始Stage，PS2打通完整Iteration管理。
+7. 是否接受PS1先做真实只读Observe；资源写入、脚本执行和验证在PS3开放。
+8. 是否接受Shape Up与BMAD组合成Method Policy，而不是写死六周或固定BMAD目录。
+9. 是否接受Project PS1使用Store v4，后续能力按实际新增事实顺序升级，Rules不预占固定版本。
 
 未得到明确批准前，不开始产品实现。

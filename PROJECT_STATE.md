@@ -16,7 +16,7 @@
 | 调试与回放 | VS Code真实F5 Compound覆盖memmy、MemoryCore、Workflow、API和Web；固定端口、安全清理、严格脱敏Trace及多源Replay |
 | 代码状态 | P0、P1.1、P1.2、B1、B2、M1、M2、M3与MemoryCore调试/注释收口均已进入`main`；真实VS Code启动缺陷已完成修复验收；当前实现文档已按仓库地图、前后端交互和Workflow运行边界收口 |
 | 当前阶段 | 长期上下文与知识复用：Memory、BMAD项目上下文、用户规则集 |
-| 当前任务 | 下一任务进入BMAD启发的Project基础、阶段与文档清单 |
+| 当前任务 | Project Solution方法论、架构与场景验证已形成Draft；PS1 Project Intake任务书等待审核，产品实现尚未开始 |
 
 ## 2. B2已完成的真实证据
 
@@ -59,7 +59,7 @@
 ## 5. 当前没有的能力
 
 1. 已有真实memmy和Tencent MemoryCore查询/导入；尚无自动后台记忆、L1后台定时对账和生产Memory服务部署配置。
-2. 没有长期Project/Work/Stage/Status、项目文档清单和版本化Context Package实现。
+2. 没有长期Project、Stage Goal/Milestone、Iteration、Work/Scope/Action、真实Resource、Participant/Contribution/Decision/Evidence、Project Update和版本化Project Context实现。
 3. 没有带标签、场景范围、修订和选择证据的用户规则集，也没有规划节点规则注入。
 4. 没有Chat有序SSE Cursor Runtime Journal；B2仍使用受控Query轮询。
 5. 没有外部副作用Tool、多实例数据库、备份恢复和生产后端部署拓扑。
@@ -67,7 +67,7 @@
 ## 6. 下一阶段的三个用户结果
 
 1. **Memory**：M1/M2/M3已验证两套真实服务的查询、显式导入、同步物化与异步接收差异；后续优化是后台提炼/对账和生产部署，不再阻塞项目上下文建设。
-2. **项目上下文**：用户用Chat推进项目时，可以恢复当前阶段、状态、目标、决定、阻塞、文档与下一步；结构受BMAD真实方法启发，但允许按项目类型裁剪。
+2. **Project Solution**：用户只靠对话也能管理多个真实项目，恢复目标、阶段目标、Iteration、参与者、资源、Work/待办、贡献、决定、阻塞和下一步；方法结合Shape Up与BMAD，并按项目规模、类型和成熟度裁剪。
 3. **用户规则**：用户可以在统一界面维护带标签和场景范围的个人习惯/要求，也可以让Chat提出维护建议；对话中可主动勾选或按标签筛选，规划时记录最终采用规则及其版本。
 
 详细任务数量、依赖、合同和完成门必须在复核本地参考项目与既有分析后写入任务书，审核前不假装已冻结。

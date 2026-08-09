@@ -193,9 +193,11 @@ P1是一个阶段目标，拆成下面8个独立开发任务，不作为一个�
 B2已经通过PR #7合入，M1真实memmy查询通过PR #10合入，M2真实显式导入通过PR #11合入；M3腾讯MemoryCore第二真实后端和VS Code调试收口也已合入。下一阶段仍围绕三个用户结果推进：
 
 1. 用户可以在Workflow中按配置从真实Memory服务查询或导入记忆，并看见来源、选择和结果。
-2. 用户使用Chat推进项目时，系统能够按BMAD启发的阶段、状态、文档与上下文结构持续维护项目，但不把不同项目限制成同一模板。
+2. 用户使用Chat推进项目时，系统能够结合Shape Up、BMAD及既有Project产品研究，持续维护长期Project、阶段目标、Milestone、Iteration、Work/Scope/Action、真实资源、参与者、贡献、决定、证据和下一步，同时允许不同规模与类型选择不同方法。
 3. 用户可以维护带标签和场景范围的个人规则，在对话中主动选择或由系统合理召回，并把最终采用的规则带入规划节点。
 
-M3合入后的唯一下一实现任务是P1 Project基础、阶段与文档清单：以固定BMAD参考源码为依据，交付BMAD软件模板与轻量模板、版本化阶段/Work/文档事实、CAS状态机和统一响应式管理入口。不得复制整套BMAD文档，也不得把不同项目限制成同一目录模板。P1审核并合入后再进入P2 Project Context推进节点，规则集按R1→R2顺序推进。
+M3合入后的下一阶段是Project Solution，先完成[方法论](./docs/product/project-solution-methodology.md)、[架构](./docs/architecture/project-solution.md)与[场景验证](./docs/product/project-solution-scenario-validation.md)，再依次交付：PS1对话建项/真实Resource/项目账本，PS2 Stage/Milestone/Iteration/任务管理，PS3 Project Context/真实Resource推进，PS4维护/Correct Course/多项目注意力。Shape Up控制小团队的投入、边界、未知和Circuit Breaker；BMAD控制软件Artifact、Story准备度、开发、QA与Correct Course；不复制任一项目的产品形态。
+
+当前唯一下一实现任务是PS1，完整任务书见[PS1 Project Intake](./docs/tasks/ps1-project-intake-ledger-vertical-slice.md)。方法论、架构和任务书审核通过前不得开始产品实现。Rules按R1→R2在Project Solution完成后的下一个Store版本推进。
 
 这三个结果形成若干0.5～2日、可独立合并的纵向任务。不得把整个阶段塞进一个大PR，也不得只交付孤立Schema或假服务；每个外部集成必须有真实服务测试，每个面向用户的里程碑必须有真实模型和浏览器E2E。
