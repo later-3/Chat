@@ -64,6 +64,7 @@
 4. VS Code只显示`Chat：调试应用`一个入口；真实F5到达Ready后自动建立专属Profile的Chrome调试，并附加Chat自己的API与Workflow TypeScript进程；API源码断点成功绑定，没有Memory或准备阶段短命令调试会话。
 5. 真实遗留浏览器门已通过：预置携带worktree专属Profile的Chrome与Singleton锁后，下一次F5自动收敛旧进程、无旧Session警告并成功附加新浏览器；连续干净F5也成功。
 6. 从终端SIGINT以及VS Code停止后，Web、API、Workflow、两套Memory和两个Inspector共7个固定端口及专属浏览器全部释放，`pnpm dev:status`报告未运行。
+7. 固定端口登记现由Git Common Directory锚定为仓库级运行投影。真实预置另一个worktree中无PID登记的Web/API/Workflow监听者后，当前`main`能按端口角色、命令、cwd和Git仓库四重身份自动收敛并Ready；随后在TraeCode真实F5中API停在`OutboxDispatcher.tick`断点、Workflow与内部Chrome均已附加，Stop后全部端口释放。
 
 ## 5. 当前没有的能力
 

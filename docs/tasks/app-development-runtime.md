@@ -76,10 +76,11 @@ API和Web为30秒；期限从对应`spawn`成功后开始。进程提前退出�
 
 ## 7. 本地验收结果
 
-1. `scripts/dev/app-runtime.test.mjs`覆盖参数/Profile、服务顺序、Inspector边界、共享缓存、准备阶段自动附加隔离、浏览器精确身份/锁清理、就绪期限和反向停止；与VS Code合同测试合计76项相关测试通过。
+1. `scripts/dev/app-runtime.test.mjs`覆盖参数/Profile、服务顺序、Inspector边界、共享缓存与共享PID登记、跨worktree进程身份、误杀防护、准备阶段自动附加隔离、浏览器精确身份/锁清理、就绪期限和反向停止。
 2. 终端普通模式和Debug模式均真实到达Ready；5个HTTP入口返回200，Debug模式仅`43120/43121`监听。
 3. 真实VS Code F5只显示`Chat：调试应用`，Ready后Chrome自动进入调试；Call Stack识别Workflow与API的TypeScript源码，API源码断点已成功绑定，未附加两套Memory或准备阶段短命令。
 4. 终端SIGINT和VS Code停止均已验证；当前7个固定端口全部释放，`pnpm dev:status`为空。
-5. 全仓`format:check`、`lint`、`typecheck`、503项Workspace测试、11个Workspace构建和`pnpm audit --prod`全部通过；另有6项固定memmy脚本合同通过。
+5. 全仓`format:check`、`lint`、`typecheck`、522项测试（508项Vitest + 14项启动器Node测试）、11个Workspace构建和`pnpm audit --prod`全部通过；另有6项固定memmy脚本合同通过。
 6. 使用真实Chrome专属Profile制造遗留进程和`SingletonLock`后，下一次F5自动清理并成功建立
    `Chat：前端浏览器（内部）`会话；没有旧Debug Session弹窗。一次Stop同时结束浏览器与应用，第二次F5继续成功。
+7. 使用另一个Chat worktree真实制造无PID登记的Web/API/Workflow固定端口监听者后，`main`启动器自动输出3条“清理同仓库遗留”并到达Ready；两轮5个健康入口均返回200。TraeCode真实F5随后再次到达Ready，API停在`OutboxDispatcher.tick`源码断点，Call Stack同时包含Workflow与内部Chrome；IDE Stop后7个固定端口全部释放。
