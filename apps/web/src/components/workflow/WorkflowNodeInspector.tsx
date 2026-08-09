@@ -16,6 +16,7 @@ import {
   WORKFLOW_STATUS,
 } from "../../workflow/workflow-presenters.js";
 import { PlanReviewContent } from "../PlanPanel.js";
+import { NoteReviewContent } from "../NoteReviewContent.js";
 
 export type WorkflowInspectorTab = "overview" | "input" | "output" | "timeline" | "evidence";
 
@@ -36,6 +37,12 @@ type ProductRef = WorkflowNodeManifestDto["slots"][number]["refs"][number];
 const REF_KIND_LABEL: Record<ProductRef["kind"], string> = {
   message: "正式消息",
   context_package: "上下文包",
+  memory_result_snapshot: "Memory快照",
+  planning_memory_selection: "Planning Memory选择",
+  project: "项目",
+  planning_project_context: "Planning项目上下文",
+  rule_revision: "规则版本",
+  rule_selection: "规则选择",
   plan_revision: "计划版本",
   approval_request: "审核请求",
   decision: "人工决定",
@@ -43,6 +50,10 @@ const REF_KIND_LABEL: Record<ProductRef["kind"], string> = {
   execution_candidate: "执行候选",
   validation_result: "验证结果",
   artifact: "产物",
+  note_candidate: "Note候选",
+  note_decision: "Note决定",
+  note_revision: "Note版本",
+  workflow_policy_resolution: "工作流策略解析",
 };
 
 function formatTimestamp(value: string | undefined): string {
@@ -247,6 +258,11 @@ export function WorkflowNodeInspector({
     node.nodeType === "human.plan_review" &&
     node.status === "waiting_human" &&
     node.allowedActions.includes("submit_decision");
+  const canSubmitNoteReview =
+    node.nodeType === "human.note_review" &&
+    node.status === "waiting_human" &&
+    node.allowedActions.includes("submit_decision") &&
+    chain.sessionId !== null;
 
   useEffect(() => {
     const panel = document.getElementById(`workflow-panel-${tab}`);
@@ -325,11 +341,23 @@ export function WorkflowNodeInspector({
                 />
               </section>
             )}
+            {canSubmitNoteReview && (
+              <section className="workflow-review-content" aria-label="当前节点笔记审核">
+                <NoteReviewContent sessionId={chain.sessionId ?? ""} run={run} />
+              </section>
+            )}
             {node.nodeType === "human.plan_review" && !canSubmitReview && (
               <p className="workflow-review-resolution">
                 {node.outcomeCode === "policy_auto_continue"
                   ? "本节点按运行前策略自动继续；未生成虚假的人工决定。"
                   : "审核窗口已关闭或当前节点只读，不能再提交决定。"}
+              </p>
+            )}
+            {node.nodeType === "human.note_review" && !canSubmitNoteReview && (
+              <p className="workflow-review-resolution">
+                {node.outcomeCode === "policy_auto_continue"
+                  ? "本次候选按允许的 Policy 自动确认；未伪造人工决定。"
+                  : "笔记审核窗口已关闭或当前节点只读，不能再提交决定。"}
               </p>
             )}
           </>

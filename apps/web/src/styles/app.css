@@ -803,6 +803,179 @@ a {
   font-size: var(--font-caption);
 }
 
+/* S4 Composer：只编辑未发送的有限选择；已提交配置由RunSpec摘要单独展示。 */
+.workflow-picker,
+.run-config-panel,
+.workflow-run-summary {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.workflow-picker > span,
+.workflow-composer-resources legend {
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+  font-weight: 600;
+}
+
+.workflow-picker select {
+  width: 100%;
+  min-height: calc(var(--space-8) + var(--space-3));
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  padding: 0 var(--space-3);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.workflow-picker small,
+.workflow-composer-note,
+.workflow-composer-resources > p,
+.workflow-config-node small,
+.workflow-run-summary p {
+  color: var(--text-tertiary);
+  font-size: var(--font-caption);
+}
+
+.run-config-panel,
+.workflow-run-summary {
+  padding: var(--space-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  background: var(--bg-primary);
+}
+
+.run-config-heading,
+.workflow-config-node > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.run-config-heading h3,
+.workflow-run-summary h3 {
+  font-size: var(--font-body);
+  font-weight: 600;
+}
+
+.run-config-heading p {
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+}
+
+.workflow-config-node {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--separator);
+}
+
+.workflow-config-node > header > div {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.workflow-config-node > header > span,
+.workflow-composer-stale {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-round);
+  background: var(--bg-tertiary);
+  color: var(--status-warning);
+  font-size: var(--font-caption);
+}
+
+.workflow-composer-resources {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  border: 0;
+}
+
+.workflow-note-capture-config {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+}
+
+.workflow-note-source-modes,
+.workflow-note-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: end;
+}
+
+.workflow-note-range label {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 96px;
+  flex: 1;
+}
+
+.workflow-note-range small,
+.workflow-note-range [role="alert"] {
+  width: 100%;
+  margin: 0;
+}
+
+.workflow-composer-option {
+  display: flex;
+  min-height: calc(var(--space-8) + var(--space-3));
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+}
+
+.workflow-composer-option:hover {
+  background: var(--bg-tertiary);
+}
+
+.workflow-composer-option input {
+  width: var(--space-4);
+  height: var(--space-4);
+  flex: none;
+}
+
+.workflow-composer-option > span {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.workflow-composer-option strong,
+.workflow-composer-option small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-composer-error,
+.workflow-composer-risk {
+  padding: var(--space-2);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  background: var(--bg-tertiary);
+  color: var(--status-danger);
+  font-size: var(--font-caption);
+}
+
+.workflow-composer-risk {
+  color: var(--status-warning);
+}
+
+.workflow-run-summary ul {
+  display: grid;
+  gap: var(--space-1);
+  padding-left: var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+}
+
 /* PWA 更新提示：固定在底部导航之上，不遮挡输入区 */
 .pwa-update-banner {
   position: fixed;
@@ -877,6 +1050,323 @@ a {
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--separator);
+}
+
+.work-surface-tabs {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.55rem 0.7rem 0;
+  border-bottom: 1px solid var(--separator);
+}
+
+.work-surface-tabs button {
+  appearance: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 0.45rem 0.65rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.work-surface-tabs button.active {
+  border-bottom-color: var(--accent);
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.notes-panel,
+.rules-panel,
+.notes-detail,
+.note-review-content {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.notes-panel > header h3,
+.rules-panel > header h3,
+.notes-detail h3,
+.note-edit-section h4 {
+  margin: 0.2rem 0;
+}
+
+.notes-panel > header p,
+.rules-panel > header p,
+.notes-detail-header p,
+.note-review-content > header p,
+.note-source-summary p {
+  color: var(--text-secondary);
+  margin: 0.25rem 0 0;
+}
+
+.notes-filter,
+.rules-create,
+.rule-detail,
+.note-edit-form,
+.note-review-content {
+  border: 1px solid var(--separator);
+  border-radius: 0.7rem;
+  background: var(--surface-raised);
+  padding: 0.8rem;
+}
+
+.notes-filter {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.notes-filter label,
+.rules-create label,
+.rule-detail label,
+.note-edit-form label,
+.note-review-content > label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+}
+
+.notes-filter input,
+.rules-create input,
+.rules-create textarea,
+.rule-detail textarea,
+.notes-filter select,
+.note-edit-form input,
+.note-edit-form select,
+.note-edit-form textarea,
+.note-review-content input,
+.note-review-content select,
+.note-review-content textarea {
+  min-width: 0;
+  border: 1px solid var(--separator);
+  border-radius: 0.45rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: 0.5rem 0.6rem;
+  font: inherit;
+}
+
+.notes-list,
+.note-history ol,
+.note-source-summary ul {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.rules-create,
+.rule-detail {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.rules-tag-create {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.rules-tag-create input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--separator);
+  border-radius: 0.45rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: 0.5rem 0.6rem;
+  font: inherit;
+}
+
+.rules-tags,
+.rules-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rules-tags li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.rule-card {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid var(--separator);
+  border-radius: 0.7rem;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  padding: 0.7rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rule-card span,
+.rule-detail > p {
+  color: var(--text-secondary);
+}
+
+.rule-body {
+  white-space: pre-wrap;
+  color: var(--text-primary) !important;
+}
+
+.rules-panel :where(button, input, textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.note-card {
+  width: 100%;
+  display: grid;
+  gap: 0.35rem;
+  border: 1px solid var(--separator);
+  border-radius: 0.7rem;
+  padding: 0.85rem;
+  background: var(--surface-raised);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.note-card:hover,
+.note-card:focus-visible {
+  border-color: var(--accent);
+}
+
+.note-card > span:not(.note-tags),
+.note-history li > span {
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+}
+
+.note-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.note-tags span,
+.note-tags em {
+  border: 1px solid var(--separator);
+  border-radius: 999px;
+  padding: 0.12rem 0.42rem;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-style: normal;
+}
+
+.note-markdown {
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: 0.7rem;
+  background: var(--bg-primary);
+}
+
+.note-markdown header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--separator);
+  color: var(--text-secondary);
+}
+
+.note-markdown header small {
+  font-size: 0.75rem;
+}
+
+.note-markdown-rendered {
+  display: grid;
+  gap: 0.65rem;
+  max-block-size: 24rem;
+  padding: 0.8rem;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+
+.note-markdown-rendered :where(h1, h2, h3, h4, p, ul, ol, blockquote, pre) {
+  margin: 0;
+}
+
+.note-markdown-rendered pre {
+  overflow: auto;
+  padding: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 0.83rem/1.55 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-control);
+}
+
+.note-external-link,
+.note-link-blocked {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  align-items: baseline;
+}
+
+.note-external-link small,
+.note-link-blocked small {
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+}
+
+.note-source-summary,
+.note-history,
+.note-edit-section {
+  display: grid;
+  gap: 0.55rem;
+  border-top: 1px solid var(--separator);
+  padding-top: 0.8rem;
+}
+
+.note-edit-section > div:first-child,
+.notes-detail-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.note-edit-form {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.note-history li {
+  display: grid;
+  gap: 0.25rem;
+  border-left: 2px solid var(--separator);
+  padding-left: 0.7rem;
+}
+
+@media (max-width: 760px) {
+  .notes-filter {
+    grid-template-columns: 1fr;
+  }
+  .note-markdown header,
+  .notes-detail-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .note-markdown-rendered {
+    max-block-size: 18rem;
+  }
 }
 
 .work-toolbar {
@@ -2353,6 +2843,19 @@ a {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .run-config-heading,
+  .workflow-config-node > header {
+    flex-direction: column;
+  }
+
+  .workflow-composer-option {
+    align-items: flex-start;
+  }
+
+  .workflow-picker select {
+    font-size: var(--font-input-mobile);
+  }
+
   .context-picker-panel {
     max-height: min(48dvh, 360px);
   }
@@ -2946,5 +3449,560 @@ a {
 @media (prefers-reduced-motion: reduce) {
   .workflow-canvas .react-flow__viewport {
     transition: none;
+  }
+}
+
+/* ---------- S6 受约束 Definition Designer ---------- */
+
+.real-grid[data-work-surface="designer"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.real-grid[data-work-surface="designer"] > .chat-pane {
+  display: none;
+}
+
+.real-grid[data-work-surface="designer"] > .work-pane {
+  border-left: 0;
+}
+
+.designer-work-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.workflow-designer {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  background:
+    radial-gradient(
+      circle at 55% 5%,
+      color-mix(in srgb, var(--accent) 7%, transparent),
+      transparent 32%
+    ),
+    var(--bg-primary);
+}
+
+.workflow-designer-toolbar {
+  display: grid;
+  flex: none;
+  grid-template-columns: minmax(250px, 1fr) minmax(210px, 320px);
+  gap: var(--space-3) var(--space-5);
+  align-items: end;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--separator);
+  background: color-mix(in srgb, var(--bg-primary) 94%, transparent);
+}
+
+.workflow-designer-toolbar h2,
+.workflow-designer-toolbar p,
+.designer-catalog h3,
+.designer-inspector h3,
+.designer-diagnostics h3,
+.designer-copy-panel p,
+.designer-conflict h3,
+.designer-conflict p {
+  margin: 0;
+}
+
+.workflow-designer-toolbar h2 {
+  margin-top: var(--space-1);
+  font-size: 1.3rem;
+}
+
+.workflow-designer-toolbar p,
+.designer-catalog > p,
+.designer-canvas-help,
+.designer-inspector p,
+.designer-field small,
+.designer-runtime-selector span,
+.designer-runtime-selector small {
+  color: var(--text-tertiary);
+  font-size: var(--font-caption);
+}
+
+.workflow-designer-toolbar > label,
+.designer-copy-panel label,
+.designer-field {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+  font-weight: 600;
+}
+
+.workflow-designer-toolbar select,
+.designer-copy-panel input,
+.designer-field input,
+.designer-field select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--separator-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.designer-toolbar-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.designer-toolbar-actions button,
+.designer-copy-panel button,
+.designer-conflict button,
+.designer-catalog button,
+.designer-node-move button,
+.designer-inspector button {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--separator-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-caption);
+  font-weight: 600;
+}
+
+.designer-toolbar-actions button:not(:disabled):hover,
+.designer-copy-panel button:not(:disabled):hover,
+.designer-conflict button:not(:disabled):hover,
+.designer-catalog button:not(:disabled):hover,
+.designer-node-move button:not(:disabled):hover,
+.designer-inspector button:not(:disabled):hover {
+  border-color: var(--accent);
+}
+
+.designer-toolbar-actions button:disabled,
+.designer-copy-panel button:disabled,
+.designer-catalog button:disabled,
+.designer-inspector button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.designer-state-line {
+  grid-column: 1 / -1;
+  min-height: 20px;
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+}
+
+.designer-copy-panel,
+.designer-conflict {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--separator);
+  background: var(--bg-secondary);
+}
+
+.designer-copy-panel strong,
+.designer-conflict h3,
+.designer-conflict p {
+  align-self: center;
+}
+
+.designer-copy-panel label {
+  min-width: 180px;
+  flex: 1;
+}
+
+.designer-conflict {
+  align-items: center;
+  border-left: 4px solid var(--status-warning);
+}
+
+.designer-conflict > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.designer-blocker,
+.designer-operation-error {
+  margin: var(--space-3) var(--space-5) 0;
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--status-danger) 45%, var(--separator));
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--status-danger) 8%, var(--bg-primary));
+  color: var(--text-primary);
+}
+
+.workflow-designer-grid {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(190px, 230px) minmax(0, 1fr) minmax(260px, 320px);
+  overflow: hidden;
+}
+
+.designer-catalog,
+.designer-inspector {
+  min-height: 0;
+  padding: var(--space-4);
+  overflow-y: auto;
+  background: color-mix(in srgb, var(--bg-secondary) 76%, var(--bg-primary));
+}
+
+.designer-catalog {
+  border-right: 1px solid var(--separator);
+}
+
+.designer-inspector {
+  border-left: 1px solid var(--separator);
+}
+
+.designer-catalog > article {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-panel);
+  background: var(--bg-primary);
+  cursor: grab;
+}
+
+.designer-catalog > article small {
+  color: var(--text-tertiary);
+}
+
+.designer-canvas-region {
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-4);
+  overflow: auto;
+}
+
+.designer-canvas-help {
+  position: sticky;
+  left: 0;
+  margin-bottom: var(--space-3);
+}
+
+.designer-sequence {
+  display: flex;
+  min-width: max-content;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.designer-element-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.designer-node-card {
+  display: flex;
+  min-width: 176px;
+  max-width: 220px;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 1px solid var(--separator-strong);
+  border-radius: var(--radius-panel);
+  background: var(--bg-primary);
+  box-shadow: 0 8px 24px color-mix(in srgb, #000 8%, transparent);
+}
+
+.designer-node-card.selected,
+.designer-structure-container.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.designer-node-main,
+.designer-container-heading {
+  display: grid;
+  width: 100%;
+  min-height: 96px;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.designer-node-main span {
+  font-weight: 700;
+}
+
+.designer-node-main small,
+.designer-node-main em {
+  color: var(--text-tertiary);
+  font-size: var(--font-caption);
+  font-style: normal;
+}
+
+.designer-node-move {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1);
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.designer-node-move button {
+  padding: 0;
+}
+
+.designer-drop-zones {
+  display: flex;
+  min-width: 38px;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+}
+
+.designer-drop-zone {
+  width: 38px;
+  min-height: 72px;
+  padding: var(--space-1);
+  border: 1px dashed var(--separator-strong);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 0;
+}
+
+.designer-drop-zone span {
+  font-size: 1rem;
+}
+
+.designer-drop-zone:not(:disabled):hover,
+.designer-drop-zone:not(:disabled):focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.designer-structure-container {
+  min-width: 260px;
+  padding: var(--space-3);
+  border: 1px solid var(--separator-strong);
+  border-radius: var(--radius-panel);
+  background: color-mix(in srgb, var(--bg-secondary) 70%, transparent);
+}
+
+.designer-container-label,
+.designer-container-heading {
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+  font-weight: 700;
+}
+
+.designer-container-heading {
+  min-height: 40px;
+  padding: 0 0 var(--space-2);
+}
+
+.designer-branch-lanes {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.designer-branch-lane {
+  padding: var(--space-2);
+  border-left: 3px solid var(--accent);
+}
+
+.designer-branch-lane h4 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-caption);
+}
+
+.designer-inspector > section,
+.designer-diagnostics {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.designer-structure-actions,
+.designer-loop-wrap {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  background: var(--bg-primary);
+}
+
+.designer-structure-actions h5,
+.designer-loop-wrap legend {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+  font-weight: 700;
+}
+
+.designer-loop-wrap label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+}
+
+.designer-loop-wrap input,
+.designer-loop-wrap select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--separator-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.designer-field-checkbox {
+  display: flex;
+  min-height: 40px;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.designer-field-checkbox input {
+  width: 18px;
+  min-height: 18px;
+}
+
+.designer-runtime-selector {
+  padding: var(--space-3);
+  border: 1px dashed var(--separator-strong);
+  border-radius: var(--radius-control);
+}
+
+.designer-diagnostics ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.designer-diagnostics li button {
+  display: grid;
+  width: 100%;
+  min-height: 44px;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--separator);
+  border-left: 3px solid var(--status-warning);
+  border-radius: var(--radius-control);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.designer-diagnostics li[data-severity="error"] button {
+  border-left-color: var(--status-danger);
+}
+
+.workflow-designer :where(button, input, select):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1120px) and (min-width: 761px) {
+  .workflow-designer-grid {
+    grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  }
+
+  .designer-inspector {
+    grid-column: 1 / -1;
+    max-height: 320px;
+    border-top: 1px solid var(--separator);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .real-grid[data-work-surface="designer"][data-mobile-pane="work"] > .work-pane {
+    display: flex;
+  }
+
+  .workflow-designer-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--space-3);
+  }
+
+  .workflow-designer-toolbar > label,
+  .designer-toolbar-actions,
+  .designer-state-line {
+    grid-column: 1;
+  }
+
+  .designer-copy-panel,
+  .designer-conflict {
+    align-items: stretch;
+    padding: var(--space-3);
+  }
+
+  .workflow-designer-grid {
+    display: block;
+    overflow-y: auto;
+  }
+
+  .designer-catalog,
+  .designer-canvas-region,
+  .designer-inspector {
+    overflow: visible;
+    border: 0;
+    border-bottom: 1px solid var(--separator);
+  }
+
+  .designer-sequence,
+  .designer-element-wrap {
+    min-width: 0;
+    flex-direction: column;
+  }
+
+  .designer-node-card {
+    width: 100%;
+    max-width: none;
+  }
+
+  .designer-drop-zones {
+    width: 100%;
+    flex-direction: row;
+  }
+
+  .designer-drop-zone {
+    width: 100%;
+    min-height: 42px;
+    font-size: var(--font-caption);
+  }
+
+  .designer-structure-container {
+    min-width: 0;
+  }
+
+  .designer-toolbar-actions button,
+  .designer-copy-panel button,
+  .designer-conflict button,
+  .designer-catalog button,
+  .designer-node-move button,
+  .designer-inspector button,
+  .workflow-designer-toolbar select,
+  .designer-copy-panel input,
+  .designer-field input,
+  .designer-field select,
+  .designer-loop-wrap input,
+  .designer-loop-wrap select {
+    min-height: 44px;
+    font-size: var(--font-input-mobile);
   }
 }
