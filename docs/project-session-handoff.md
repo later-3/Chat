@@ -13,6 +13,14 @@
 7. Tencent真实Adapter已经合入；PS1又完成了对话建项、真实Git/文档/脚本观察、Project账本、管理候选与响应式UI。当前仍没有完整Stage/Milestone/Iteration推进、Planning Project Context和用户规则集。
 8. 旧会话遗留的治理文档和设计截图已经恢复；不能再使用“M1待审核”“B2待真实Key验收”或“P1.2待实现”等旧状态。
 
+## 1.1 设计参考研究续接
+
+1. 唯一登记入口是 [`docs/design/references/README.md`](./design/references/README.md)。新 Session 先看登记册，不要凭当前分支目录猜哪些原型已完成。
+2. 已冻结并通过 QA：Basecamp `13656c4`、Things `2b431c0`、Linear `a74e088`、HEY Calendar `87596d4`；各自的分支、worktree、实现和场景覆盖路径都在登记册。
+3. 当前正在制作 Microsoft Agent Feed 多 Agent 监督原型：branch `codex/microsoft-agent-feed-reference-v0.1`，worktree `/Users/xulater/Code/Chat-agent-feed-reference-v01`，实现目录 `docs/design/reference-implementations/microsoft-agent-feed`。
+4. Agent Feed 当前研究快照是 [`microsoft-agent-feed-current-research-v0.2.md`](./design/references/microsoft-agent-feed-current-research-v0.2.md)，重点是类型化监督任务、related record、Decision revision/hash 与 `outcome_unknown` 对账，不是复刻社交动态流。
+5. Agent Feed 冻结后的下一个参考是 Heptabase Workbench，用于验证 Card identity、空间关系、资料编排和 UL2/UL3 工作台场景。
+
 ## 2. 新 Session 读取顺序
 
 1. [AGENTS.md](../AGENTS.md)

@@ -1,6 +1,21 @@
-# Chat 设计参考区
+# Chat 设计参考区与原型总入口
 
-这里保存 Chat 的视觉研究、参考证据与待审核的设计假设。它帮助我们讨论“为什么这样设计”，但不自动改变产品规范。
+这里是换 Session、换 Agent 后恢复设计调研的**唯一入口**。它同时登记研究证据、场景结论、可运行原型、冻结状态、分支提交和 QA；参考结论不自动改变生产产品规范。
+
+## 原型与研究登记册
+
+更新日期：2026-08-09。仓库文档是权威入口，Figma 只可作为补充画板。
+
+| 参考项目 | 要回答的场景问题 | 审计 / 覆盖 | 原型状态 | 精确实现位置 | 关键 Take / Refuse |
+|---|---|---|---|---|---|
+| Basecamp | 多人 Project room 如何让事务、讨论、资料和推进保持上下文 | [`basecamp-interaction-audit-v0.1.md`](./basecamp-interaction-audit-v0.1.md)；分支内 `basecamp-scenario-coverage-v0.3.md` | frozen / QA passed | branch `codex/basecamp-full-interaction-v0.2` · commit `13656c4` · worktree `/Users/xulater/Code/Chat-basecamp-reference-v02` · `docs/design/reference-implementations/basecamp` | Take 房间与返回连续性；Refuse 工具列表成为事实模型 |
+| Things | 长期 Project 与个人 Today 如何正交组织，而不改写任务身份 | [`things-today-interaction-audit-v0.1.md`](./things-today-interaction-audit-v0.1.md)；分支内 `things-full-interaction-reference-v0.2.md` | frozen / QA passed | branch `codex/things-today-reference-qa` · commit `2b431c0` · worktree `/Users/xulater/Code/Chat-things-today-reference-qa` · `docs/design/reference-implementations/things-today` | Take Today/Project 投影正交；Refuse 用 completed 隐藏任务 |
+| Linear | 多项目工作如何用 List、Peek、Project Update 支持三档阅读速度 | [`linear-interaction-audit-v0.1.md`](./linear-interaction-audit-v0.1.md)；分支内 `linear-scenario-coverage-v0.2.md` | frozen / QA passed | branch `codex/linear-reference-v0.1` · commit `a74e088` · worktree `/Users/xulater/Code/Chat-linear-reference-v01` · `docs/design/reference-implementations/linear` | Take 稳定主题与渐进披露；Refuse 颜色随对象漂移、Issue 等于 Project |
+| HEY Calendar | Project/生活事务如何在 Day、Week、Year 连续时间尺度间切换 | [`hey-calendar-interaction-audit-v0.1.md`](./hey-calendar-interaction-audit-v0.1.md)；分支内 `hey-calendar-scenario-coverage-v0.1.md` | frozen / QA passed | branch `codex/hey-calendar-reference-v0.1` · commit `87596d4` · worktree `/Users/xulater/Code/Chat-hey-calendar-reference-v01` · `docs/design/reference-implementations/hey-calendar` | Take 时间尺度连续性；Refuse 日历成为 Project 事实源 |
+| Microsoft Agent Feed | 多 Agent 如何产生可监督动态，并把人带到正确决定/补充/异常处置 | [`microsoft-agent-feed-interaction-audit-v0.1.md`](./microsoft-agent-feed-interaction-audit-v0.1.md)、[`microsoft-agent-feed-current-research-v0.2.md`](./microsoft-agent-feed-current-research-v0.2.md) | building / 2026-08-09 | branch `codex/microsoft-agent-feed-reference-v0.1` · worktree `/Users/xulater/Code/Chat-agent-feed-reference-v01` · `docs/design/reference-implementations/microsoft-agent-feed` | Take 类型化监督任务；Refuse Feed 成为事实源、Completed 大桶、盲目 Retry |
+| Heptabase | 多资料与想法如何保持 Card identity，并在 Workbench 中建立空间关系 | [`heptabase-interaction-audit-v0.1.md`](./heptabase-interaction-audit-v0.1.md) | research approved / prototype pending | 下一参考原型；实现分支尚未创建 | Take card identity + context workbench；Refuse 无限画布成为唯一导航 |
+
+跨分支文件的恢复方式：先按表中分支/提交定位，或运行 `git show <branch>:<path>`；不要因为当前分支没有某个冻结原型目录就误判为未完成。
 
 ## 本轮唯一决策入口
 
@@ -51,6 +66,7 @@
 - [`hey-calendar-interaction-audit-v0.1.md`](./hey-calendar-interaction-audit-v0.1.md)：Day / Week / Year 的连续时间尺度。
 - [`heptabase-interaction-audit-v0.1.md`](./heptabase-interaction-audit-v0.1.md)：Card identity、Whiteboard placement 与上下文工作台。
 - [`microsoft-agent-feed-interaction-audit-v0.1.md`](./microsoft-agent-feed-interaction-audit-v0.1.md)：类型化监督任务与 preview / 权限边界。
+- [`microsoft-agent-feed-current-research-v0.2.md`](./microsoft-agent-feed-current-research-v0.2.md)：截至 2026-08-09 的官方现状、截图结构与 Chat 场景翻译。
 
 ## 状态标记
 
