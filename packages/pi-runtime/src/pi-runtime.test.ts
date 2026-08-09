@@ -367,6 +367,7 @@ describe("runPiPlanner（真实pi Agent loop + faux流）", () => {
     });
     expect(captured?.options).toMatchObject({
       apiKey: "test-key",
+      toolChoice: { type: "function", function: { name: "submit_plan_candidate" } },
       maxTokens: B2_PLANNER_TOKEN_BUDGET,
       temperature: 0,
       timeoutMs: 10_000,

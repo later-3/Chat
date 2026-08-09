@@ -1,6 +1,9 @@
 import { runAgentLoop } from "@earendil-works/pi-agent-core";
 import type { AgentMessage, AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
-import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
+import {
+  streamSimple,
+  type OpenAICompletionsOptions,
+} from "@earendil-works/pi-ai/api/openai-completions";
 import type { AssistantMessage, Message, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { PROVIDER_MODEL, PROVIDER_NAME } from "@chat/contracts";
 import { classifyProviderError, type StableProviderErrorCode } from "./errors.js";
@@ -92,6 +95,13 @@ export interface RunAgentWithToolOptions<TCandidate> {
   /** 确定性测试注入：替代真实百炼流；生产必须缺省，不得用于伪造真实验收。 */
   readonly streamFnOverride?: StreamFn;
 }
+
+/**
+ * pi的openai-completions运行时会从simple options转发toolChoice，但0.82.1的
+ * SimpleStreamOptions声明尚未暴露该字段。这里用Provider专属类型补齐静态合同，
+ * 避免把百炼兼容参数扩散到通用Agent Port。
+ */
+type ToolForcedStreamOptions = SimpleStreamOptions & Pick<OpenAICompletionsOptions, "toolChoice">;
 
 export function buildBailianModel(baseUrl: string): Model<"openai-completions"> {
   return {
@@ -196,9 +206,12 @@ export async function runAgentWithTool<TCandidate>(
     }
     providerCallCount += 1;
     options.onProviderRequestStart?.();
-    const providerOptions: SimpleStreamOptions = {
+    const providerOptions: ToolForcedStreamOptions = {
       ...streamOptions,
       apiKey: options.apiKey,
+      // 所有Chat候选节点都只暴露一个结果收集工具。百炼Chat兼容接口支持
+      // 指定function的tool_choice；强制它可消除模型偶发返回普通文本而不调用工具。
+      toolChoice: { type: "function", function: { name: options.tool.name } },
       maxTokens: options.maxTokens,
       temperature: 0,
       timeoutMs: options.timeoutMs,
