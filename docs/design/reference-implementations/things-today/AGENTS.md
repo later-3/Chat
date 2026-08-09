@@ -17,3 +17,11 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 - Preserve Things' macOS window, two organization axes, whitespace, row rhythm, source subtitles, in-place detail, and nearby popovers.
 - Do not reuse the rejected UL1 shell, Chat fixtures, Chat themes, cards, badges, or product copy.
 - The primary flow is `Today → To-do detail → When → This Evening / Tomorrow → complete or reschedule`.
+
+## Full-interaction acceptance
+
+- The reference must cover the complete visible Things navigation model, not only Today: Inbox, Today, Upcoming, Anytime, Someday, Logbook, Areas, Projects, Headings, Quick Find special lists, task detail, and the bottom toolbar.
+- Research official Things behavior and visual evidence before changing the prototype. Do not use a generic project screen as a placeholder for built-in lists with different responsibilities.
+- Every control that looks interactive must either perform the expected front-end interaction or be visibly disabled with an explanation. Silent no-op buttons are not acceptable.
+- Keep this a front-end reference study: in-memory state and realistic feedback are sufficient; do not add sync, accounts, notifications, or a backend.
+- Preserve object identity across projections. Scheduling or moving a to-do changes its attention/parent fields; it must not create a duplicate object or misuse `completed` as a hiding flag.

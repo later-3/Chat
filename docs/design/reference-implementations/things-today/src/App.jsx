@@ -1,171 +1,60 @@
-import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  buildQuickFindResults,
+  builtInLists,
+  cloneInitialThingsState,
+  completeTask as completeTaskInModel,
+  getNewTaskDefaults,
+  getTasksForView,
+  moveTask as moveTaskInModel,
+  restoreTask,
+  scheduleTask as scheduleTaskInModel,
+  TODAY_DATE,
+} from "./thingsModel.js";
+import {
+  Icon,
+  NewListPopover,
+  QuickFind,
+  SettingsPopover,
+  Sidebar,
+  ThingsContent,
+} from "./ThingsViews.jsx";
 
-const initialTasks = [
-  {
-    id: "travel-guide",
-    title: "Borrow Emma’s travel guide",
-    project: "Vacation in Rome",
-    note: "Emma said the new edition has the best neighborhood walks.",
-    checklist: ["Ask Emma when she is home", "Pick it up after work"],
-    evening: false,
-  },
-  {
-    id: "expense",
-    title: "Finish expense report",
-    project: "Work",
-    note: "Add the train receipt and send the report to Finance.",
-    checklist: ["Add missing receipt", "Review totals", "Submit to Finance"],
-    evening: false,
-    deadline: "today",
-  },
-  {
-    id: "conference",
-    title: "Confirm conference call for Friday",
-    project: "Work",
-    note: "Confirm the time with the London team.",
-    checklist: ["Check time zones", "Send final invite"],
-    evening: false,
-  },
-  {
-    id: "lunch",
-    title: "Organize team lunch",
-    project: "Onboard Julia",
-    note: "Find somewhere close to the office with outdoor tables.",
-    checklist: ["Choose a place", "Book for six people"],
-    evening: false,
-  },
-  {
-    id: "milestones",
-    title: "Review milestones from last quarter",
-    project: "Prepare Presentation",
-    note: "Pull out the three lessons that matter for the new plan.",
-    checklist: ["Read the notes", "Mark key decisions", "Share the summary"],
-    evening: false,
-  },
-  {
-    id: "dinner",
-    title: "Make dinner reservation",
-    project: "Throw Party for Eve",
-    note: "A quiet table for four, around 7:30.",
-    checklist: ["Check two restaurants", "Confirm with Eve"],
-    evening: true,
-  },
-  {
-    id: "field-trip",
-    title: "Pack bag for Olivia’s field trip",
-    project: "Family",
-    note: "The bus leaves at 08:15 tomorrow.",
-    checklist: ["Water bottle", "Rain jacket", "Lunch box"],
-    evening: true,
-    checklistMark: true,
-  },
-  {
-    id: "nutrition",
-    title: "Read article about nutrition",
-    project: "Run a Marathon",
-    note: "Save any useful notes for next week’s meal plan.",
-    checklist: ["Read the article", "Capture three notes"],
-    evening: true,
-    attachment: true,
-  },
-];
-
-const navigation = [
-  { id: "inbox", label: "Inbox", icon: "fa-solid fa-inbox", tone: "blue", count: "2" },
-  { id: "today", label: "Today", icon: "fa-solid fa-star", tone: "yellow", badge: "1", count: "7" },
-  { id: "upcoming", label: "Upcoming", icon: "fa-solid fa-calendar-days", tone: "pink" },
-  { id: "anytime", label: "Anytime", icon: "fa-solid fa-layer-group", tone: "teal" },
-  { id: "someday", label: "Someday", icon: "fa-solid fa-box-archive", tone: "olive" },
-  {
-    id: "logbook",
-    label: "Logbook",
-    icon: "fa-solid fa-square-check",
-    tone: "green",
-    separated: true,
-  },
-];
-
-const areas = [
-  { name: "Family", items: ["Vacation in Rome", "Throw Party for Eve", "Buy a New Bike"] },
-  {
-    name: "Work",
-    items: ["Prepare Presentation", "Onboard Julia", "Write User Guide", "Order Team T-Shirts"],
-  },
-  { name: "Hobbies", items: ["Learn Basic Italian", "Run a Marathon"] },
-];
-
-const whenOptions = [
-  { value: "today", label: "Today", hint: "Today", icon: "fa-solid fa-star", tone: "yellow" },
-  {
-    value: "evening",
-    label: "This Evening",
-    hint: "Tonight",
-    icon: "fa-solid fa-moon",
-    tone: "blue",
-  },
-  {
-    value: "tomorrow",
-    label: "Tomorrow",
-    hint: "Mon, Aug 10",
-    icon: "fa-solid fa-calendar-day",
-    tone: "pink",
-  },
-  {
-    value: "someday",
-    label: "Someday",
-    hint: "No start date",
-    icon: "fa-solid fa-box-archive",
-    tone: "olive",
-  },
-  {
-    value: "clear",
-    label: "Clear",
-    hint: "Move to Anytime",
-    icon: "fa-solid fa-xmark",
-    tone: "gray",
-  },
-];
-
-function Icon({ className, label }) {
-  return <i className={className} aria-hidden={label ? undefined : "true"} aria-label={label} />;
+function initialViewFromLocation() {
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  return params.get("view") || "today";
 }
 
-function TrafficLights() {
-  return (
-    <div className="traffic-lights" aria-label="Window controls">
-      <Icon className="fa-solid fa-circle traffic red" />
-      <Icon className="fa-solid fa-circle traffic amber" />
-      <Icon className="fa-solid fa-circle traffic green" />
-    </div>
-  );
-}
-
-function Checkbox({ checked, onChange, label }) {
-  return (
-    <button
-      className={`task-checkbox${checked ? " checked" : ""}`}
-      onClick={onChange}
-      aria-label={label}
-      aria-pressed={checked}
-    >
-      <Icon className={checked ? "fa-solid fa-circle-check" : "fa-regular fa-square"} />
-    </button>
-  );
+function taskDestinationLabel(value) {
+  if (value === "today") return "Today";
+  if (value === "evening") return "This Evening";
+  if (value === "tomorrow") return "Tomorrow";
+  if (value === "someday") return "Someday";
+  if (value === "clear") return "Anytime";
+  return value;
 }
 
 export function App() {
   const [scale, setScale] = useState(1);
-  const [view, setView] = useState("today");
-  const [tasks, setTasks] = useState(initialTasks);
+  const [things, setThings] = useState(cloneInitialThingsState);
+  const [view, setView] = useState(initialViewFromLocation);
   const [selectedId, setSelectedId] = useState(null);
-  const [whenOpen, setWhenOpen] = useState(false);
+  const [overlay, setOverlay] = useState(null);
   const [quickFindOpen, setQuickFindOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [quickExtended, setQuickExtended] = useState(false);
+  const [quickIndex, setQuickIndex] = useState(0);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskHeadingId, setNewTaskHeadingId] = useState(null);
   const [toast, setToast] = useState(null);
-  const [completedSnapshot, setCompletedSnapshot] = useState(null);
+  const [movedOutInbox, setMovedOutInbox] = useState(0);
+  const [filterTags, setFilterTags] = useState([]);
+  const [expandedGroups, setExpandedGroups] = useState([]);
+  const [settings, setSettings] = useState({ showCalendar: true, groupToday: false });
   const searchRef = useRef(null);
+  const toastTimer = useRef(null);
+  const quickTrigger = useRef(null);
 
   useEffect(() => {
     const resize = () =>
@@ -175,181 +64,781 @@ export function App() {
     return () => window.removeEventListener("resize", resize);
   }, []);
 
+  const closeQuickFind = useCallback(() => {
+    setQuickFindOpen(false);
+    setQuery("");
+    setQuickExtended(false);
+    setQuickIndex(0);
+    requestAnimationFrame(() => quickTrigger.current?.focus());
+  }, []);
+
+  const openQuickFind = useCallback((initialQuery = "", trigger = null) => {
+    quickTrigger.current = trigger ?? document.activeElement;
+    setOverlay(null);
+    setQuickFindOpen(true);
+    setQuery(initialQuery);
+    setQuickExtended(false);
+    setQuickIndex(0);
+    requestAnimationFrame(() => searchRef.current?.focus());
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
         event.preventDefault();
-        setQuickFindOpen(true);
-        requestAnimationFrame(() => searchRef.current?.focus());
+        openQuickFind();
         return;
       }
       if (event.key === "Escape") {
-        setQuickFindOpen(false);
-        setWhenOpen(false);
-        setSelectedId(null);
+        if (quickFindOpen) {
+          event.preventDefault();
+          closeQuickFind();
+          return;
+        }
+        if (overlay) {
+          event.preventDefault();
+          setOverlay(null);
+          return;
+        }
+        if (newTaskOpen) {
+          event.preventDefault();
+          setNewTaskOpen(false);
+          setNewTaskTitle("");
+          setNewTaskHeadingId(null);
+          return;
+        }
+        if (selectedId) {
+          event.preventDefault();
+          setSelectedId(null);
+        }
         return;
       }
+
       const target = event.target;
+      const isTypingTarget =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLButtonElement ||
+        target?.isContentEditable;
       if (
         !quickFindOpen &&
         !event.metaKey &&
         !event.ctrlKey &&
         !event.altKey &&
-        event.key.length === 1 &&
-        !(target instanceof HTMLInputElement) &&
-        !(target instanceof HTMLTextAreaElement)
+        /^[a-z0-9]$/i.test(event.key) &&
+        !isTypingTarget
       ) {
-        setQuickFindOpen(true);
-        setQuery(event.key);
-        requestAnimationFrame(() => searchRef.current?.focus());
+        openQuickFind(event.key);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [quickFindOpen]);
+  }, [closeQuickFind, newTaskOpen, openQuickFind, overlay, quickFindOpen, selectedId]);
 
-  const selectedTask = tasks.find((task) => task.id === selectedId) ?? null;
-  const daytime = tasks.filter((task) => !task.evening && !task.completed);
-  const evening = tasks.filter((task) => task.evening && !task.completed);
+  useEffect(
+    () => () => {
+      window.clearTimeout(toastTimer.current);
+    },
+    [],
+  );
 
-  const quickResults = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    const isSubsequence = (needle, haystack) => {
-      let cursor = 0;
-      for (const character of haystack) {
-        if (character === needle[cursor]) cursor += 1;
-        if (cursor === needle.length) return true;
+  const announce = useCallback((message, actionLabel, onAction) => {
+    window.clearTimeout(toastTimer.current);
+    setToast({ message, actionLabel, onAction });
+    toastTimer.current = window.setTimeout(() => setToast(null), 8000);
+  }, []);
+
+  const navigate = useCallback(
+    (nextView) => {
+      if (view === "inbox" && nextView !== "inbox") setMovedOutInbox(0);
+      setView(nextView);
+      setSelectedId(null);
+      setOverlay(null);
+      setNewTaskOpen(false);
+      setNewTaskTitle("");
+      setNewTaskHeadingId(null);
+      setFilterTags([]);
+      window.location.hash = `view=${encodeURIComponent(nextView)}`;
+    },
+    [view],
+  );
+
+  const selectedTask = things.tasks.find((task) => task.id === selectedId) ?? null;
+  const visibleTasks = useMemo(() => getTasksForView(things, view), [things, view]);
+
+  const effectiveTags = useCallback(
+    (task) => {
+      const inherited = [];
+      if (task.parent.type === "project") {
+        const project = things.projects.find((item) => item.id === task.parent.id);
+        if (project) {
+          inherited.push(...project.tags);
+          const area = things.areas.find((item) => item.id === project.areaId);
+          if (area) inherited.push(...area.tags);
+        }
+      } else if (task.parent.type === "area") {
+        const area = things.areas.find((item) => item.id === task.parent.id);
+        if (area) inherited.push(...area.tags);
       }
-      return needle.length === 0;
-    };
-    const destinations = [
-      {
-        type: "list",
-        id: "today",
-        title: "Today",
-        icon: "fa-solid fa-star",
-        tone: "yellow",
-        meta: "8",
-      },
-      ...areas.flatMap((area) => [
-        { type: "area", id: area.name, title: area.name, icon: "fa-solid fa-cube", tone: "gray" },
-        ...area.items.map((item) => ({
-          type: "project",
-          id: item,
-          title: item,
-          icon: "fa-solid fa-circle-half-stroke",
-          tone: "gray",
-        })),
-      ]),
-      ...tasks.map((task) => ({
-        type: "task",
-        id: task.id,
-        title: task.title,
-        icon: "fa-regular fa-square",
-        tone: "gray",
-        meta: task.project,
-      })),
-    ];
-    if (!normalized) return destinations.slice(0, 7);
-    return destinations
-      .filter((item) => {
-        const title = item.title.toLowerCase();
-        const meta = item.meta?.toLowerCase() ?? "";
-        return (
-          title.includes(normalized) ||
-          meta.includes(normalized) ||
-          isSubsequence(normalized, title)
-        );
-      })
-      .slice(0, 8);
-  }, [query, tasks]);
+      return [...new Set([...task.tags, ...inherited])];
+    },
+    [things.areas, things.projects],
+  );
 
-  const announce = (message, action) => {
-    setToast({ message, action });
-    window.clearTimeout(announce.timer);
-    announce.timer = window.setTimeout(() => setToast(null), 8000);
-  };
+  const filteredTasks = useMemo(
+    () =>
+      filterTags.length
+        ? visibleTasks.filter((task) =>
+            filterTags.every((tag) => effectiveTags(task).includes(tag)),
+          )
+        : visibleTasks,
+    [effectiveTags, filterTags, visibleTasks],
+  );
 
-  const completeTask = (task) => {
-    setTasks((items) =>
-      items.map((item) => (item.id === task.id ? { ...item, completed: true } : item)),
+  const availableFilterTags = useMemo(
+    () => [...new Set(visibleTasks.flatMap((task) => effectiveTags(task)))],
+    [effectiveTags, visibleTasks],
+  );
+
+  const updateTask = useCallback((id, updater) => {
+    setThings((current) => ({
+      ...current,
+      tasks: current.tasks.map((task) => {
+        if (task.id !== id) return task;
+        return typeof updater === "function" ? updater(task) : { ...task, ...updater };
+      }),
+    }));
+  }, []);
+
+  const completeTask = useCallback(
+    (task, status = "completed") => {
+      const before = structuredClone(task);
+      setThings((current) => {
+        const result = completeTaskInModel(current.tasks, task.id, TODAY_DATE, status);
+        return { ...current, tasks: result.tasks };
+      });
+      setSelectedId(null);
+      setOverlay(null);
+      announce(
+        `${status === "canceled" ? "Canceled" : "Completed"} “${task.title}”`,
+        "Undo",
+        () => {
+          setThings((current) => ({ ...current, tasks: restoreTask(current.tasks, before) }));
+          setToast(null);
+        },
+      );
+    },
+    [announce],
+  );
+
+  const reopenTask = useCallback(
+    (task) => {
+      const before = structuredClone(task);
+      updateTask(task.id, {
+        status: "open",
+        isLogged: false,
+        completedAt: undefined,
+      });
+      setSelectedId(null);
+      announce(`Reopened “${task.title}”`, "Undo", () => {
+        setThings((current) => ({ ...current, tasks: restoreTask(current.tasks, before) }));
+        setToast(null);
+      });
+    },
+    [announce, updateTask],
+  );
+
+  const scheduleTask = useCallback(
+    (task, value) => {
+      const before = structuredClone(task);
+      setThings((current) => ({
+        ...current,
+        tasks: scheduleTaskInModel(current.tasks, task.id, value),
+      }));
+      if (task.isInbox) setMovedOutInbox((count) => count + 1);
+      setSelectedId(null);
+      setOverlay(null);
+      announce(`Scheduled “${task.title}” for ${taskDestinationLabel(value)}`, "Undo", () => {
+        setThings((current) => ({ ...current, tasks: restoreTask(current.tasks, before) }));
+        if (task.isInbox) setMovedOutInbox((count) => Math.max(0, count - 1));
+        setToast(null);
+      });
+    },
+    [announce],
+  );
+
+  const moveTask = useCallback(
+    (task, destination) => {
+      const before = structuredClone(task);
+      setThings((current) => ({
+        ...current,
+        tasks: moveTaskInModel(current.tasks, task.id, destination),
+      }));
+      if (task.isInbox) setMovedOutInbox((count) => count + 1);
+      setSelectedId(null);
+      setOverlay(null);
+      announce(`Moved “${task.title}” to ${destination.label}`, "Undo", () => {
+        setThings((current) => ({ ...current, tasks: restoreTask(current.tasks, before) }));
+        if (task.isInbox) setMovedOutInbox((count) => Math.max(0, count - 1));
+        setToast(null);
+      });
+    },
+    [announce],
+  );
+
+  const setTaskDeadline = useCallback(
+    (task, deadline) => {
+      const before = structuredClone(task);
+      updateTask(task.id, { deadline: deadline || undefined });
+      setOverlay(null);
+      announce(
+        deadline ? `Deadline set for “${task.title}”` : `Cleared deadline for “${task.title}”`,
+        "Undo",
+        () => {
+          setThings((current) => ({ ...current, tasks: restoreTask(current.tasks, before) }));
+          setToast(null);
+        },
+      );
+    },
+    [announce, updateTask],
+  );
+
+  const setTaskTags = useCallback(
+    (task, tags) => {
+      updateTask(task.id, { tags });
+      announce(`Updated tags for “${task.title}”`);
+    },
+    [announce, updateTask],
+  );
+
+  const toggleChecklist = useCallback(
+    (task, checklistId) => {
+      updateTask(task.id, (current) => ({
+        ...current,
+        checklist: current.checklist.map((item) =>
+          item.id === checklistId ? { ...item, completed: !item.completed } : item,
+        ),
+      }));
+    },
+    [updateTask],
+  );
+
+  const addChecklistItem = useCallback(
+    (task, title) => {
+      const normalized = title.trim();
+      if (!normalized) return;
+      updateTask(task.id, (current) => ({
+        ...current,
+        checklist: [
+          ...current.checklist,
+          { id: `check-${Date.now()}`, title: normalized, completed: false },
+        ],
+      }));
+    },
+    [updateTask],
+  );
+
+  const removeChecklistItem = useCallback(
+    (task, checklistId) => {
+      updateTask(task.id, (current) => ({
+        ...current,
+        checklist: current.checklist.filter((item) => item.id !== checklistId),
+      }));
+    },
+    [updateTask],
+  );
+
+  const addTag = useCallback((tag) => {
+    const normalized = tag.trim();
+    if (!normalized) return;
+    setThings((current) =>
+      current.tags.includes(normalized)
+        ? current
+        : { ...current, tags: [...current.tags, normalized] },
     );
-    setCompletedSnapshot(task);
-    if (selectedId === task.id) setSelectedId(null);
-    setWhenOpen(false);
-    announce(`Completed “${task.title}”`, "Undo");
-  };
+  }, []);
 
-  const undoComplete = () => {
-    if (!completedSnapshot) return;
-    setTasks((items) =>
-      items.map((item) =>
-        item.id === completedSnapshot.id ? { ...completedSnapshot, completed: false } : item,
-      ),
-    );
-    setToast(null);
-    setCompletedSnapshot(null);
-  };
+  const duplicateTask = useCallback(
+    (task) => {
+      const copy = {
+        ...structuredClone(task),
+        id: `task-copy-${Date.now()}`,
+        title: `${task.title} copy`,
+        status: "open",
+        isLogged: false,
+        completedAt: undefined,
+      };
+      setThings((current) => ({ ...current, tasks: [copy, ...current.tasks] }));
+      setOverlay(null);
+      setSelectedId(copy.id);
+      announce(`Duplicated “${task.title}”`);
+    },
+    [announce],
+  );
 
-  const chooseWhen = (value) => {
-    if (!selectedTask) return;
-    setCompletedSnapshot(selectedTask);
-    if (value === "evening") {
-      setTasks((items) =>
-        items.map((item) =>
-          item.id === selectedTask.id
-            ? { ...item, evening: true, scheduled: "This Evening" }
+  const createProjectForTask = useCallback(
+    (task, title) => {
+      const normalized = title.trim();
+      if (!normalized) return;
+      const projectId = `project-${Date.now()}`;
+      setThings((current) => ({
+        ...current,
+        projects: [
+          ...current.projects,
+          {
+            id: projectId,
+            name: normalized,
+            areaId: null,
+            note: "Created from Move.",
+            tags: [],
+            start: "anytime",
+            evening: false,
+            status: "open",
+            isLogged: false,
+            headings: [],
+          },
+        ],
+        tasks: current.tasks.map((item) =>
+          item.id === task.id
+            ? { ...item, parent: { type: "project", id: projectId }, headingId: undefined, isInbox: false }
             : item,
         ),
-      );
-      announce(`Moved “${selectedTask.title}” to This Evening`, "Undo");
-    } else if (value === "today") {
-      setTasks((items) =>
-        items.map((item) =>
-          item.id === selectedTask.id ? { ...item, evening: false, scheduled: "Today" } : item,
-        ),
-      );
-      announce(`Moved “${selectedTask.title}” to Today`);
-    } else if (value === "tomorrow" || value === "someday" || value === "clear") {
-      setTasks((items) =>
-        items.map((item) =>
-          item.id === selectedTask.id ? { ...item, completed: true, scheduled: value } : item,
-        ),
-      );
-      const destination =
-        value === "tomorrow" ? "Tomorrow" : value === "someday" ? "Someday" : "Anytime";
-      announce(`Moved “${selectedTask.title}” to ${destination}`, "Undo");
-      setCompletedSnapshot(selectedTask);
+      }));
+      if (task.isInbox) setMovedOutInbox((count) => count + 1);
+      setOverlay(null);
       setSelectedId(null);
-    }
-    setWhenOpen(false);
-  };
+      announce(`Created “${normalized}” and moved “${task.title}”`);
+    },
+    [announce],
+  );
 
-  const addTask = () => {
+  const startNewTask = useCallback((headingId = null) => {
+    setOverlay(null);
+    setSelectedId(null);
+    setNewTaskHeadingId(headingId);
+    setNewTaskOpen(true);
+    requestAnimationFrame(() => document.querySelector("[data-new-task-input]")?.focus());
+  }, []);
+
+  const addTask = useCallback(() => {
     const title = newTaskTitle.trim();
     if (!title) return;
-    setTasks((items) => [
-      { id: `new-${Date.now()}`, title, project: "Inbox", note: "", checklist: [], evening: false },
-      ...items,
-    ]);
+    const defaults = getNewTaskDefaults(view, things);
+    const task = {
+      id: `task-${Date.now()}`,
+      title,
+      ...defaults,
+      headingId: newTaskHeadingId || undefined,
+      note: "",
+      checklist: [],
+      status: "open",
+      isLogged: false,
+    };
+    setThings((current) => ({ ...current, tasks: [task, ...current.tasks] }));
     setNewTaskOpen(false);
     setNewTaskTitle("");
-    announce(`Added “${title}” to Today`);
-  };
+    setNewTaskHeadingId(null);
+    const destination =
+      view === "upcoming" || view === "tomorrow"
+        ? "Tomorrow"
+        : view === "logbook" || view.startsWith("logged-")
+          ? "Inbox"
+          : view.startsWith("project:")
+            ? things.projects.find((project) => `project:${project.id}` === view)?.name
+            : view.startsWith("area:")
+              ? things.areas.find((area) => `area:${area.id}` === view)?.name
+              : builtInLists.find((list) => list.id === view)?.label ?? "Inbox";
+    announce(`Added “${title}” to ${destination || "Inbox"}`);
+  }, [announce, newTaskHeadingId, newTaskTitle, things, view]);
 
-  const chooseQuickResult = (item) => {
-    setQuickFindOpen(false);
-    setQuery("");
-    if (item.type === "task") {
-      setView("today");
-      setSelectedId(item.id);
-    } else if (item.id === "today") {
-      setView("today");
-      setSelectedId(null);
-    } else {
-      setView(item.id);
-      setSelectedId(null);
-    }
+  const createList = useCallback(
+    ({ type, title, areaId }) => {
+      const normalized = title.trim();
+      if (!normalized) return;
+      const id = `${type}-${Date.now()}`;
+      if (type === "area") {
+        setThings((current) => ({
+          ...current,
+          areas: [...current.areas, { id, name: normalized, tags: [] }],
+        }));
+        setOverlay(null);
+        navigate(`area:${id}`);
+        announce(`Created area “${normalized}”`);
+        return;
+      }
+      setThings((current) => ({
+        ...current,
+        projects: [
+          ...current.projects,
+          {
+            id,
+            name: normalized,
+            areaId: areaId || null,
+            note: "",
+            tags: [],
+            start: "anytime",
+            evening: false,
+            status: "open",
+            isLogged: false,
+            headings: [],
+          },
+        ],
+      }));
+      setOverlay(null);
+      navigate(`project:${id}`);
+      announce(`Created project “${normalized}”`);
+    },
+    [announce, navigate],
+  );
+
+  const updateProject = useCallback((id, updater) => {
+    setThings((current) => ({
+      ...current,
+      projects: current.projects.map((project) => {
+        if (project.id !== id) return project;
+        return typeof updater === "function" ? updater(project) : { ...project, ...updater };
+      }),
+    }));
+  }, []);
+
+  const reopenProject = useCallback(
+    (project) => {
+      updateProject(project.id, { status: "open", isLogged: false, completedAt: undefined });
+      announce(`Reopened project “${project.name}”`);
+      navigate(`project:${project.id}`);
+    },
+    [announce, navigate, updateProject],
+  );
+
+  const updateArea = useCallback((id, updater) => {
+    setThings((current) => ({
+      ...current,
+      areas: current.areas.map((area) => {
+        if (area.id !== id) return area;
+        return typeof updater === "function" ? updater(area) : { ...area, ...updater };
+      }),
+    }));
+  }, []);
+
+  const projectAction = useCallback(
+    (project, action, value) => {
+      if (action === "duplicate") {
+        const suffix = Date.now();
+        const copyId = `project-copy-${suffix}`;
+        const headings = project.headings.map((heading) => ({
+          ...heading,
+          id: `${heading.id}-copy-${suffix}`,
+        }));
+        const headingMap = new Map(
+          project.headings.map((heading, index) => [heading.id, headings[index].id]),
+        );
+        const copies = things.tasks
+          .filter((task) => task.parent.type === "project" && task.parent.id === project.id)
+          .map((task) => ({
+            ...structuredClone(task),
+            id: `${task.id}-copy-${suffix}`,
+            title: task.title,
+            parent: { type: "project", id: copyId },
+            headingId: task.headingId ? headingMap.get(task.headingId) : undefined,
+            status: "open",
+            isLogged: false,
+            completedAt: undefined,
+          }));
+        setThings((current) => ({
+          ...current,
+          projects: [
+            ...current.projects,
+            { ...structuredClone(project), id: copyId, name: `${project.name} copy`, headings },
+          ],
+          tasks: [...current.tasks, ...copies],
+        }));
+        setOverlay(null);
+        announce(`Duplicated “${project.name}”`);
+        return;
+      }
+      if (action === "complete" || action === "cancel") {
+        const status = action === "complete" ? "completed" : "canceled";
+        updateProject(project.id, { status, isLogged: true, completedAt: TODAY_DATE });
+        setThings((current) => ({
+          ...current,
+          tasks: current.tasks.map((task) =>
+            task.parent.type === "project" && task.parent.id === project.id
+              ? { ...task, status, isLogged: true, completedAt: TODAY_DATE }
+              : task,
+          ),
+        }));
+        setOverlay(null);
+        navigate("today");
+        announce(`${status === "completed" ? "Completed" : "Canceled"} “${project.name}”`);
+        return;
+      }
+      if (action === "move") {
+        updateProject(project.id, { areaId: value || null });
+        setOverlay(null);
+        announce(`Moved “${project.name}”`);
+        return;
+      }
+      if (action === "schedule") {
+        const patch =
+          value === "someday"
+            ? { start: "someday", startDate: undefined, evening: false }
+            : value === "clear"
+              ? { start: "anytime", startDate: undefined, evening: false }
+              : {
+                  start: "on-date",
+                  startDate: value === "tomorrow" ? "2026-08-10" : TODAY_DATE,
+                  evening: value === "evening",
+                };
+        updateProject(project.id, patch);
+        setOverlay(null);
+        announce(`Scheduled “${project.name}” for ${taskDestinationLabel(value)}`);
+        return;
+      }
+      if (action === "deadline") {
+        updateProject(project.id, { deadline: value || undefined });
+        setOverlay(null);
+        announce(value ? `Deadline set for “${project.name}”` : `Cleared project deadline`);
+      }
+    },
+    [announce, navigate, things.tasks, updateProject],
+  );
+
+  const headingAction = useCallback(
+    (project, heading, action, value) => {
+      if (action === "rename") {
+        updateProject(project.id, (current) => ({
+          ...current,
+          headings: current.headings.map((item) =>
+            item.id === heading.id ? { ...item, title: value } : item,
+          ),
+        }));
+        setOverlay(null);
+        announce(`Renamed heading to “${value}”`);
+        return;
+      }
+      if (action === "duplicate") {
+        const copyId = `${heading.id}-copy-${Date.now()}`;
+        updateProject(project.id, (current) => ({
+          ...current,
+          headings: [
+            ...current.headings,
+            { ...structuredClone(heading), id: copyId, title: `${heading.title} copy` },
+          ],
+        }));
+        setThings((current) => ({
+          ...current,
+          tasks: [
+            ...current.tasks,
+            ...current.tasks
+              .filter(
+                (task) =>
+                  task.parent.type === "project" &&
+                  task.parent.id === project.id &&
+                  task.headingId === heading.id,
+              )
+              .map((task) => ({
+                ...structuredClone(task),
+                id: `${task.id}-copy-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                headingId: copyId,
+                status: "open",
+                isLogged: false,
+              })),
+          ],
+        }));
+        setOverlay(null);
+        announce(`Duplicated heading “${heading.title}”`);
+        return;
+      }
+      if (action === "archive") {
+        updateProject(project.id, (current) => ({
+          ...current,
+          headings: current.headings.map((item) =>
+            item.id === heading.id ? { ...item, archived: true } : item,
+          ),
+        }));
+        setThings((current) => ({
+          ...current,
+          tasks: current.tasks.map((task) =>
+            task.parent.type === "project" &&
+            task.parent.id === project.id &&
+            task.headingId === heading.id
+              ? { ...task, status: "completed", isLogged: true, completedAt: TODAY_DATE }
+              : task,
+          ),
+        }));
+        setOverlay(null);
+        announce(`Archived heading “${heading.title}”`);
+        return;
+      }
+      if (action === "move") {
+        const destination = things.projects.find((item) => item.id === value);
+        if (!destination) return;
+        updateProject(project.id, (current) => ({
+          ...current,
+          headings: current.headings.filter((item) => item.id !== heading.id),
+        }));
+        updateProject(destination.id, (current) => ({
+          ...current,
+          headings: [...current.headings, heading],
+        }));
+        setThings((current) => ({
+          ...current,
+          tasks: current.tasks.map((task) =>
+            task.parent.type === "project" &&
+            task.parent.id === project.id &&
+            task.headingId === heading.id
+              ? { ...task, parent: { type: "project", id: destination.id } }
+              : task,
+          ),
+        }));
+        setOverlay(null);
+        announce(`Moved heading to “${destination.name}”`);
+        return;
+      }
+      if (action === "convert") {
+        const newProjectId = `project-${Date.now()}`;
+        setThings((current) => ({
+          ...current,
+          projects: [
+            ...current.projects.map((item) =>
+              item.id === project.id
+                ? { ...item, headings: item.headings.filter((entry) => entry.id !== heading.id) }
+                : item,
+            ),
+            {
+              id: newProjectId,
+              name: heading.title,
+              areaId: project.areaId,
+              note: "Converted from a heading.",
+              tags: [...project.tags],
+              start: "anytime",
+              evening: false,
+              status: "open",
+              isLogged: false,
+              headings: [],
+            },
+          ],
+          tasks: current.tasks.map((task) =>
+            task.parent.type === "project" &&
+            task.parent.id === project.id &&
+            task.headingId === heading.id
+              ? {
+                  ...task,
+                  parent: { type: "project", id: newProjectId },
+                  headingId: undefined,
+                }
+              : task,
+          ),
+        }));
+        setOverlay(null);
+        navigate(`project:${newProjectId}`);
+        announce(`Converted “${heading.title}” to a project`);
+      }
+    },
+    [announce, navigate, things.projects, updateProject],
+  );
+
+  const quickResults = useMemo(
+    () => buildQuickFindResults(things, query, { extended: quickExtended }),
+    [query, quickExtended, things],
+  );
+
+  useEffect(() => {
+    setQuickIndex(0);
+  }, [query, quickExtended]);
+
+  const chooseQuickResult = useCallback(
+    (item) => {
+      closeQuickFind();
+      if (item.type === "settings") {
+        setOverlay({ type: "settings" });
+        return;
+      }
+      if (item.type === "task") {
+        const task = things.tasks.find((entry) => entry.id === item.id);
+        if (!task) return;
+        let destination = item.viewId;
+        if (!destination) {
+          if (task.isInbox) destination = "inbox";
+          else if (task.start === "someday") destination = "someday";
+          else if (task.start === "on-date" && task.startDate > TODAY_DATE) destination = "upcoming";
+          else if (task.parent.type === "project") destination = `project:${task.parent.id}`;
+          else destination = "anytime";
+        }
+        navigate(destination);
+        requestAnimationFrame(() => setSelectedId(task.id));
+        return;
+      }
+      navigate(item.viewId);
+    },
+    [closeQuickFind, navigate, things.tasks],
+  );
+
+  const openWindow = useCallback(
+    (event) => {
+      const targetView = event.altKey ? view : "today";
+      const url = `${window.location.href.split("#")[0]}#view=${encodeURIComponent(targetView)}`;
+      const opened = window.open(url, "_blank", "noopener,noreferrer");
+      announce(
+        opened
+          ? `Opened ${event.altKey ? "the current list" : "Today"} in a new window`
+          : "Your browser blocked the new window",
+      );
+    },
+    [announce, view],
+  );
+
+  const controller = {
+    things,
+    view,
+    selectedId,
+    selectedTask,
+    overlay,
+    filteredTasks,
+    availableFilterTags,
+    filterTags,
+    expandedGroups,
+    settings,
+    newTaskOpen,
+    newTaskTitle,
+    movedOutInbox,
+    navigate,
+    setSelectedId: (id) => {
+      setSelectedId((current) => (current === id ? null : id));
+      setOverlay(null);
+    },
+    setOverlay,
+    setFilterTags,
+    setExpandedGroups,
+    setSettings,
+    setNewTaskTitle,
+    setMovedOutInbox,
+    startNewTask,
+    addTask,
+    cancelNewTask: () => {
+      setNewTaskOpen(false);
+      setNewTaskTitle("");
+      setNewTaskHeadingId(null);
+    },
+    updateTask,
+    completeTask,
+    reopenTask,
+    scheduleTask,
+    moveTask,
+    setTaskDeadline,
+    setTaskTags,
+    toggleChecklist,
+    addChecklistItem,
+    removeChecklistItem,
+    addTag,
+    duplicateTask,
+    createProjectForTask,
+    updateProject,
+    reopenProject,
+    updateArea,
+    projectAction,
+    headingAction,
+    announce,
   };
 
   return (
@@ -358,127 +847,37 @@ export function App() {
         <section
           className="things-window"
           style={{ transform: `scale(${scale})` }}
-          aria-label="Things Today reference prototype"
+          aria-label="Things complete interaction reference prototype"
         >
-          <aside className="sidebar">
-            <TrafficLights />
-            <nav className="primary-nav" aria-label="Things lists">
-              {navigation.map((item) => (
-                <button
-                  key={item.id}
-                  className={`nav-row${view === item.id ? " active" : ""}${item.separated ? " separated" : ""}`}
-                  onClick={() => {
-                    setView(item.id);
-                    setSelectedId(null);
-                    setWhenOpen(false);
-                  }}
-                >
-                  <span className={`nav-icon ${item.tone}`}>
-                    <Icon className={item.icon} />
-                  </span>
-                  <span className="nav-label">{item.label}</span>
-                  <span className="nav-numbers">
-                    {item.badge && <span className="badge">{item.badge}</span>}
-                    {item.count && <span className="count">{item.count}</span>}
-                  </span>
-                </button>
-              ))}
-            </nav>
-
-            <nav className="area-nav" aria-label="Areas and projects">
-              {areas.map((area) => (
-                <section className="area-group" key={area.name}>
-                  <button
-                    className={`area-title${view === area.name ? " current" : ""}`}
-                    onClick={() => setView(area.name)}
-                  >
-                    <Icon className="fa-solid fa-cube" />
-                    <span>{area.name}</span>
-                  </button>
-                  {area.items.map((item) => (
-                    <button
-                      key={item}
-                      className={`project-row${view === item ? " current" : ""}`}
-                      onClick={() => setView(item)}
-                    >
-                      <Icon className="fa-solid fa-circle-half-stroke" />
-                      <span>{item}</span>
-                    </button>
-                  ))}
-                </section>
-              ))}
-            </nav>
-
-            <button className="new-list-button">
-              <Icon className="fa-solid fa-plus" />
-              <span>New List</span>
-            </button>
-            <button className="sidebar-settings" aria-label="List settings">
-              <Icon className="fa-solid fa-sliders" />
-            </button>
-          </aside>
+          <Sidebar
+            controller={controller}
+            onNewList={() => setOverlay({ type: "new-list" })}
+            onSettings={() => setOverlay({ type: "settings" })}
+          />
 
           <section className="content-shell">
-            <button className="open-new-window" aria-label="Open in new window">
+            <button
+              className="open-new-window"
+              aria-label="Open in new window"
+              title="Click for Today; Option-click for the current list"
+              onClick={openWindow}
+            >
               <Icon className="fa-regular fa-clone" />
             </button>
 
-            {view === "today" ? (
-              <TodayView
-                daytime={daytime}
-                evening={evening}
-                selectedTask={selectedTask}
-                whenOpen={whenOpen}
-                onSelectTask={(id) => {
-                  setSelectedId((current) => (current === id ? null : id));
-                  setWhenOpen(false);
-                }}
-                onComplete={completeTask}
-                onOpenWhen={() => setWhenOpen((open) => !open)}
-                onChooseWhen={chooseWhen}
-                onCloseDetail={() => {
-                  setSelectedId(null);
-                  setWhenOpen(false);
-                }}
-                newTaskOpen={newTaskOpen}
-                newTaskTitle={newTaskTitle}
-                onNewTaskTitle={setNewTaskTitle}
-                onAddTask={addTask}
-                onCancelNewTask={() => {
-                  setNewTaskOpen(false);
-                  setNewTaskTitle("");
-                }}
-              />
-            ) : (
-              <ProjectView
-                title={view}
-                tasks={tasks.filter((task) => task.project === view)}
-                onBack={() => setView("today")}
-                onSelectTask={(id) => {
-                  setView("today");
-                  setSelectedId(id);
-                }}
-              />
-            )}
+            <ThingsContent controller={controller} />
 
             <footer className="bottom-toolbar" aria-label="Things actions">
-              <button
-                className="tool-button"
-                aria-label="New to-do"
-                onClick={() => {
-                  setView("today");
-                  setNewTaskOpen(true);
-                  setSelectedId(null);
-                }}
-              >
+              <button className="tool-button" aria-label="New to-do" onClick={() => startNewTask()}>
                 <Icon className="fa-solid fa-plus" />
               </button>
               <button
                 className="tool-button"
                 aria-label="When"
+                aria-expanded={overlay?.type === "when"}
                 onClick={() =>
                   selectedTask
-                    ? setWhenOpen((open) => !open)
+                    ? setOverlay({ type: "when", taskId: selectedTask.id })
                     : announce("Open a to-do before choosing When")
                 }
               >
@@ -487,9 +886,10 @@ export function App() {
               <button
                 className="tool-button"
                 aria-label="Move"
+                aria-expanded={overlay?.type === "move"}
                 onClick={() =>
                   selectedTask
-                    ? setWhenOpen((open) => !open)
+                    ? setOverlay({ type: "move", taskId: selectedTask.id })
                     : announce("Open a to-do before moving it")
                 }
               >
@@ -498,10 +898,7 @@ export function App() {
               <button
                 className="tool-button"
                 aria-label="Quick Find"
-                onClick={() => {
-                  setQuickFindOpen(true);
-                  requestAnimationFrame(() => searchRef.current?.focus());
-                }}
+                onClick={(event) => openQuickFind("", event.currentTarget)}
               >
                 <Icon className="fa-solid fa-magnifying-glass" />
               </button>
@@ -514,377 +911,37 @@ export function App() {
               query={query}
               onQuery={setQuery}
               results={quickResults}
-              onClose={() => {
-                setQuickFindOpen(false);
-                setQuery("");
-              }}
+              activeIndex={quickIndex}
+              onActiveIndex={setQuickIndex}
+              extended={quickExtended}
+              onExtend={() => setQuickExtended(true)}
+              onClose={closeQuickFind}
               onChoose={chooseQuickResult}
             />
           )}
 
+          {overlay?.type === "new-list" && (
+            <NewListPopover areas={things.areas} onClose={() => setOverlay(null)} onCreate={createList} />
+          )}
+
+          {overlay?.type === "settings" && (
+            <SettingsPopover
+              settings={settings}
+              onSettings={setSettings}
+              onClose={() => setOverlay(null)}
+            />
+          )}
+
           {toast && (
-            <div className="toast" role="status">
+            <div className="toast" role="status" aria-live="polite">
               <span>{toast.message}</span>
-              {toast.action && <button onClick={undoComplete}>{toast.action}</button>}
+              {toast.actionLabel && (
+                <button onClick={toast.onAction}>{toast.actionLabel}</button>
+              )}
             </div>
           )}
         </section>
       </div>
     </main>
-  );
-}
-
-function TodayView({
-  daytime,
-  evening,
-  selectedTask,
-  whenOpen,
-  onSelectTask,
-  onComplete,
-  onOpenWhen,
-  onChooseWhen,
-  onCloseDetail,
-  newTaskOpen,
-  newTaskTitle,
-  onNewTaskTitle,
-  onAddTask,
-  onCancelNewTask,
-}) {
-  return (
-    <div className="today-view">
-      <header className="today-heading">
-        <Icon className="fa-solid fa-star heading-star" />
-        <h1>Today</h1>
-      </header>
-
-      <section className="calendar-events" aria-label="Calendar events">
-        <div className="event birthday">
-          <span className="event-mark">I</span>
-          <span>Ben’s birthday</span>
-        </div>
-        <div className="event blue">
-          <span>07:00</span>
-          <span>Hit the gym with Lucas</span>
-        </div>
-        <div className="event blue">
-          <span>08:30</span>
-          <span>Coffee with Emma</span>
-        </div>
-        <div className="event green">
-          <span>11:00</span>
-          <span>Team meeting</span>
-        </div>
-        <div className="event green">
-          <span>15:30</span>
-          <span>Budget review</span>
-        </div>
-      </section>
-
-      <section className="task-section daytime-section" aria-label="Daytime to-dos">
-        {newTaskOpen && (
-          <div className="new-task-row">
-            <Icon className="fa-regular fa-square" />
-            <input
-              autoFocus
-              value={newTaskTitle}
-              onChange={(event) => onNewTaskTitle(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") onAddTask();
-                if (event.key === "Escape") onCancelNewTask();
-              }}
-              placeholder="New To-Do"
-              aria-label="New to-do title"
-            />
-            <button onClick={onAddTask}>Add</button>
-          </div>
-        )}
-        {daytime.map((task) => (
-          <TaskBlock
-            key={task.id}
-            task={task}
-            selected={selectedTask?.id === task.id}
-            whenOpen={selectedTask?.id === task.id && whenOpen}
-            onSelect={() => onSelectTask(task.id)}
-            onComplete={() => onComplete(task)}
-            onOpenWhen={onOpenWhen}
-            onChooseWhen={onChooseWhen}
-            onClose={onCloseDetail}
-          />
-        ))}
-      </section>
-
-      <section className="evening-section" aria-label="This Evening">
-        <div className="evening-heading">
-          <Icon className="fa-solid fa-moon" />
-          <h2>This Evening</h2>
-          <span className="rule" />
-        </div>
-        {evening.map((task) => (
-          <TaskBlock
-            key={task.id}
-            task={task}
-            selected={selectedTask?.id === task.id}
-            whenOpen={selectedTask?.id === task.id && whenOpen}
-            onSelect={() => onSelectTask(task.id)}
-            onComplete={() => onComplete(task)}
-            onOpenWhen={onOpenWhen}
-            onChooseWhen={onChooseWhen}
-            onClose={onCloseDetail}
-            compact
-          />
-        ))}
-      </section>
-    </div>
-  );
-}
-
-function TaskBlock({
-  task,
-  selected,
-  whenOpen,
-  onSelect,
-  onComplete,
-  onOpenWhen,
-  onChooseWhen,
-  onClose,
-  compact,
-}) {
-  if (selected) {
-    return (
-      <article className={`task-detail${compact ? " compact-detail" : ""}`}>
-        <div className="detail-main-row">
-          <Checkbox checked={false} onChange={onComplete} label={`Complete ${task.title}`} />
-          <div className="detail-copy">
-            <input className="detail-title" value={task.title} readOnly aria-label="To-do title" />
-            <textarea className="detail-note" value={task.note} readOnly aria-label="Notes" />
-          </div>
-          <button className="detail-close" aria-label="Close to-do" onClick={onClose}>
-            <Icon className="fa-solid fa-xmark" />
-          </button>
-        </div>
-        {task.checklist.length > 0 && (
-          <div className="checklist">
-            {task.checklist.map((item) => (
-              <div className="checklist-row" key={item}>
-                <Icon className="fa-regular fa-circle" />
-                <span>{item}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="detail-footer">
-          <button className="when-button active" onClick={onOpenWhen} aria-expanded={whenOpen}>
-            <Icon className={task.evening ? "fa-solid fa-moon" : "fa-solid fa-star"} />
-            <span>{task.evening ? "This Evening" : "Today"}</span>
-          </button>
-          <div className="detail-actions">
-            <button aria-label="Tags">
-              <Icon className="fa-solid fa-tag" />
-            </button>
-            <button aria-label="Deadline">
-              <Icon className="fa-regular fa-flag" />
-            </button>
-          </div>
-        </div>
-        {whenOpen && <WhenPopover onChoose={onChooseWhen} />}
-      </article>
-    );
-  }
-
-  return (
-    <div className="task-row">
-      <Checkbox checked={false} onChange={onComplete} label={`Complete ${task.title}`} />
-      <button className="task-copy" onClick={onSelect}>
-        <span className="task-title">
-          {task.title}
-          {task.checklistMark && <Icon className="fa-solid fa-list-ul row-meta-icon" />}
-          {task.attachment && <Icon className="fa-regular fa-file row-meta-icon" />}
-        </span>
-        <span className="task-project">{task.project}</span>
-      </button>
-      {task.deadline && (
-        <button className="deadline-chip" onClick={onSelect}>
-          <Icon className="fa-solid fa-flag" />
-          <span>{task.deadline}</span>
-        </button>
-      )}
-    </div>
-  );
-}
-
-function WhenPopover({ onChoose }) {
-  const [dateQuery, setDateQuery] = useState("");
-  const naturalSuggestions = [
-    { label: "in 3 days", hint: "Sun", value: "tomorrow" },
-    { label: "in 3 weeks", hint: "Thu, Jun 8", value: "tomorrow" },
-    { label: "in 3 months", hint: "Fri, Aug 18", value: "tomorrow" },
-  ];
-
-  return (
-    <div
-      className={`when-popover${dateQuery ? " natural" : ""}`}
-      role="dialog"
-      aria-label="Choose when"
-    >
-      <label className="when-search">
-        <Icon className="fa-solid fa-magnifying-glass" />
-        <input
-          value={dateQuery}
-          onChange={(event) => setDateQuery(event.target.value)}
-          placeholder="Type a date"
-          aria-label="Type a natural language date"
-        />
-      </label>
-      <div className="when-options">
-        {dateQuery
-          ? naturalSuggestions.map((option, index) => (
-              <button
-                key={option.label}
-                className={index === 0 ? "suggestion-selected" : ""}
-                onClick={() => onChoose(option.value)}
-              >
-                <span className="when-icon pink">
-                  <Icon className="fa-solid fa-calendar-days" />
-                </span>
-                <span className="when-label">{option.label}</span>
-                <span className="when-hint">{option.hint}</span>
-              </button>
-            ))
-          : whenOptions.map((option) => (
-              <button key={option.value} onClick={() => onChoose(option.value)}>
-                <span className={`when-icon ${option.tone}`}>
-                  <Icon className={option.icon} />
-                </span>
-                <span className="when-label">{option.label}</span>
-                <span className="when-hint">{option.hint}</span>
-              </button>
-            ))}
-      </div>
-    </div>
-  );
-}
-
-const QuickFind = forwardRef(function QuickFind(
-  { query, onQuery, results, onClose, onChoose },
-  ref,
-) {
-  return (
-    <div className="quick-find" role="dialog" aria-label="Quick Find">
-      <label className="quick-input">
-        <Icon className="fa-solid fa-magnifying-glass" />
-        <input
-          ref={ref}
-          value={query}
-          onChange={(event) => onQuery(event.target.value)}
-          placeholder="Quick Find"
-          aria-label="Quick Find"
-        />
-        <button onClick={onClose} aria-label="Close Quick Find">
-          <Icon className="fa-solid fa-xmark" />
-        </button>
-      </label>
-      <div className="quick-results">
-        {results.map((item, index) => (
-          <button
-            key={`${item.type}-${item.id}`}
-            className={index === 0 ? "highlighted" : ""}
-            onClick={() => onChoose(item)}
-          >
-            <span className={`quick-icon ${item.tone}`}>
-              <Icon className={item.icon} />
-            </span>
-            <span className="quick-title">{item.title}</span>
-            {item.id === "today" && <span className="quick-badge">1</span>}
-            {item.meta && <span className="quick-meta">{item.meta}</span>}
-          </button>
-        ))}
-        <button className="continue-search">
-          <Icon className="fa-solid fa-magnifying-glass" />
-          <span>Continue Search</span>
-        </button>
-      </div>
-    </div>
-  );
-});
-
-function ProjectView({ title, tasks, onBack, onSelectTask }) {
-  const presentationSections = [
-    {
-      title: "Slides and notes",
-      tasks: [
-        { title: "Review the story and simplify the opening", id: "milestones" },
-        { title: "Update slide layouts", marks: ["fa-regular fa-file", "fa-solid fa-list-ul"] },
-        { title: "Review quarterly data with Olivia", starred: true },
-        { title: "Print handouts for attendees", date: "May 25" },
-      ],
-    },
-    {
-      title: "Preparation",
-      tasks: [
-        { title: "Email John for presentation tips" },
-        { title: "Check out book recommendations", marks: ["fa-regular fa-file"] },
-        { title: "Time a full rehearsal", tag: "Important" },
-        { title: "Do a practice run with Eric" },
-        { title: "Confirm presentation time", tag: "Important" },
-      ],
-    },
-    { title: "Facilities", tasks: [{ title: "Book the conference room" }] },
-  ];
-  const sections =
-    title === "Prepare Presentation"
-      ? presentationSections
-      : [{ title: "To-Dos", tasks: tasks.map((task) => ({ title: task.title, id: task.id })) }];
-
-  return (
-    <div className="project-view">
-      <button className="project-back" onClick={onBack}>
-        <Icon className="fa-solid fa-chevron-left" />
-        <span>Today</span>
-      </button>
-      <header>
-        <Icon className="fa-solid fa-circle-notch project-heading-icon" />
-        <h1>{title}</h1>
-        <button className="project-more" aria-label="Project menu">
-          <Icon className="fa-solid fa-ellipsis" />
-        </button>
-      </header>
-      <p className="project-intro">
-        Keep the talk and slides simple: what are the three things about this that everyone should
-        remember?
-      </p>
-      <div className="project-filters">
-        <button className="selected">All</button>
-        <button>Important</button>
-        <button>Diane</button>
-      </div>
-      <div className="project-sections">
-        {sections.map((section) => (
-          <section className="project-list" key={section.title}>
-            <div className="project-section-heading">
-              <h2>{section.title}</h2>
-              <button aria-label={`${section.title} menu`}>
-                <Icon className="fa-solid fa-ellipsis" />
-              </button>
-            </div>
-            {section.tasks.length ? (
-              section.tasks.map((task) => (
-                <button key={task.title} onClick={() => task.id && onSelectTask(task.id)}>
-                  <Icon className="fa-regular fa-square" />
-                  {task.starred && <Icon className="fa-solid fa-star project-task-star" />}
-                  {task.date && <span className="project-date">{task.date}</span>}
-                  <span className="project-task-title">{task.title}</span>
-                  {task.marks?.map((mark) => (
-                    <Icon key={mark} className={`project-task-mark ${mark}`} />
-                  ))}
-                  {task.tag && <span className="project-tag">{task.tag}</span>}
-                </button>
-              ))
-            ) : (
-              <p className="empty-project">No to-dos in this project yet.</p>
-            )}
-          </section>
-        ))}
-      </div>
-    </div>
   );
 }

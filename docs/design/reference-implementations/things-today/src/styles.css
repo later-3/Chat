@@ -1024,3 +1024,713 @@ body {
     min-width: 760px;
   }
 }
+
+/* v0.2 complete interaction surfaces */
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid #2f7ed0;
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.static-area-title {
+  cursor: default;
+}
+
+.list-view,
+.area-view,
+.project-view {
+  position: relative;
+}
+
+.list-view {
+  padding-top: 102px;
+}
+
+.list-heading {
+  min-height: 48px;
+}
+
+.list-heading-icon {
+  width: 34px;
+  display: grid;
+  place-items: center;
+  font-size: 31px;
+}
+
+.list-heading-icon.blue {
+  color: #58aee2;
+}
+
+.list-heading-icon.yellow {
+  color: #f6ce34;
+}
+
+.list-heading-icon.pink {
+  color: #e34b73;
+}
+
+.list-heading-icon.teal {
+  color: #55a69c;
+}
+
+.list-heading-icon.olive {
+  color: #b5aa6a;
+}
+
+.list-heading-icon.green {
+  color: #68b66c;
+}
+
+.list-heading-icon.gray {
+  color: #969ca1;
+}
+
+.list-view .project-filters {
+  margin-top: 18px;
+  margin-bottom: 54px;
+}
+
+.today-view > .project-filters {
+  margin: 18px 0 24px 0;
+}
+
+.plain-task-list {
+  margin: 52px 0 0 45px;
+}
+
+.inbox-view .plain-task-list {
+  margin-top: 58px;
+}
+
+.task-row {
+  grid-template-columns: 31px minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto auto;
+}
+
+.task-checkbox {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+
+.task-copy {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.task-project {
+  grid-column: 2;
+  grid-row: 2;
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-project:hover {
+  color: #367fc8;
+}
+
+.task-tag {
+  grid-row: 1;
+  align-self: center;
+  margin: 2px 8px 0 0;
+  padding: 2px 9px;
+  border: 1px solid #d0d3d6;
+  border-radius: 999px;
+  color: #a1a5aa;
+  font-size: 13px;
+}
+
+.deadline-chip {
+  grid-row: 1 / span 2;
+}
+
+.logged-status {
+  grid-row: 1;
+  align-self: center;
+  color: #9aa0a5;
+  font-size: 13px;
+}
+
+.row-today-star {
+  margin-right: 8px;
+  color: #f4ca2c;
+}
+
+.row-repeat-icon {
+  margin-right: 8px;
+  color: #747b81;
+  font-size: 14px;
+}
+
+.someday-task {
+  opacity: 0.8;
+}
+
+.someday-task .task-checkbox {
+  color: #c6c9cb;
+}
+
+.new-task-row {
+  grid-template-columns: 31px minmax(0, 1fr) auto auto;
+  margin-left: 45px;
+}
+
+.today-view .new-task-row {
+  margin: 24px 0 0;
+}
+
+.new-task-row button:disabled {
+  background: #bcc5cc;
+}
+
+.new-task-row .new-task-cancel {
+  width: 31px;
+  margin-left: 6px;
+  padding: 5px;
+  background: transparent;
+  color: #8f969c;
+}
+
+.checklist-row {
+  grid-template-columns: 29px minmax(0, 1fr) 30px;
+}
+
+.checklist-toggle,
+.checklist-remove {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.checklist-toggle.completed + span {
+  color: #90959a;
+  text-decoration: line-through;
+}
+
+.checklist-remove {
+  color: #b3b8bc;
+}
+
+.checklist-add-row {
+  min-height: 41px;
+  display: grid;
+  grid-template-columns: 29px minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.checklist-add-row > i {
+  color: #c3c8cc;
+}
+
+.checklist-add-row input {
+  height: 35px;
+  border: 0;
+  outline: 0;
+}
+
+.checklist-add-row button {
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: #2f7ed0;
+  color: #ffffff;
+}
+
+.detail-actions {
+  gap: 11px;
+}
+
+.detail-actions button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.detail-actions button:disabled {
+  color: #d0d3d5;
+}
+
+.detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 10px 13px 0 31px;
+}
+
+.detail-tags span {
+  padding: 3px 9px;
+  border: 1px solid #d2d5d7;
+  border-radius: 999px;
+  color: #8e9398;
+  font-size: 13px;
+}
+
+.archived-detail {
+  background: #f7f8f8;
+}
+
+.archived-detail .detail-title,
+.archived-detail .detail-note {
+  color: #777d82;
+}
+
+.popover-title-row {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px 0 13px;
+  color: #4b5157;
+  font-size: 15px;
+}
+
+.popover-title-row button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: #7f868c;
+  cursor: pointer;
+}
+
+.when-popover,
+.deadline-popover,
+.tag-popover,
+.move-popover {
+  position: absolute;
+  z-index: 18;
+  top: calc(100% - 8px);
+  left: 32px;
+  bottom: auto;
+  width: 384px;
+  max-height: 430px;
+  overflow: auto;
+  border: 1px solid #aeb3b8;
+  border-radius: 12px;
+  background: #f0f1f3;
+  box-shadow:
+    0 18px 34px rgba(27, 31, 35, 0.27),
+    0 2px 7px rgba(27, 31, 35, 0.14);
+}
+
+.when-popover.natural {
+  background: #343b43;
+}
+
+.deadline-popover .when-search,
+.tag-popover .when-search,
+.move-popover .when-search {
+  background: #d9dde1;
+}
+
+.tag-options,
+.move-options {
+  padding: 3px 10px 10px;
+}
+
+.tag-options button,
+.move-options button {
+  width: 100%;
+  min-height: 39px;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tag-options button:hover,
+.tag-options button.selected,
+.move-options button:hover {
+  background: #c7ddf5;
+}
+
+.move-options small {
+  color: #8d9399;
+}
+
+.move-icon {
+  color: #798087;
+}
+
+.tag-create-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding: 0 12px 10px;
+}
+
+.tag-create-row input,
+.name-dialog input {
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid #c8cdd1;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.tag-create-row button,
+.popover-done {
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: #2f7ed0;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.tag-popover > .popover-done,
+.settings-popover > .popover-done,
+.new-list-popover > .popover-done,
+.name-dialog > .popover-done {
+  float: right;
+  margin: 0 12px 12px;
+}
+
+.context-popover,
+.name-dialog {
+  position: absolute;
+  z-index: 19;
+  min-width: 250px;
+  padding: 8px;
+  border: 1px solid #c1c6ca;
+  border-radius: 11px;
+  background: #f7f8f9;
+  box-shadow: 0 14px 30px rgba(24, 28, 32, 0.2);
+}
+
+.context-popover > button {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-popover > button:hover {
+  background: #dbe8f7;
+}
+
+.task-menu-popover {
+  right: 9px;
+  top: calc(100% - 8px);
+}
+
+.header-menu-popover {
+  top: 118px;
+  right: 72px;
+}
+
+.heading-menu-popover {
+  top: 210px;
+  right: 72px;
+}
+
+.name-dialog {
+  top: 140px;
+  right: 72px;
+  width: 330px;
+  min-height: 122px;
+}
+
+.name-dialog > input {
+  width: calc(100% - 24px);
+  margin: 6px 12px 12px;
+}
+
+.moved-out-panel {
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 32px 0 0 45px;
+  padding: 0 12px 0 18px;
+  border-radius: 8px;
+  background: #e8eaed;
+  color: #4e5358;
+  font-size: 17px;
+}
+
+.moved-out-panel button {
+  padding: 5px 13px;
+  border: 0;
+  border-radius: 6px;
+  background: #cbd1d7;
+  cursor: pointer;
+}
+
+.upcoming-day {
+  margin: 34px 0 46px 45px;
+}
+
+.upcoming-day-heading {
+  height: 43px;
+  display: grid;
+  grid-template-columns: 42px auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.upcoming-day-heading strong {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.upcoming-day-heading > span:not(.rule) {
+  color: #555a60;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.upcoming-day-heading .rule,
+.grouped-list-heading .rule,
+.project-section-heading .rule {
+  height: 1px;
+  margin-left: 8px;
+  background: #dfe3e6;
+}
+
+.mini-calendar-events {
+  margin: 12px 0 19px 3px;
+  color: #757b80;
+  font-size: 16px;
+  line-height: 21px;
+}
+
+.mini-calendar-events span {
+  display: inline-block;
+  width: 53px;
+  color: #76ad43;
+}
+
+.grouped-task-section,
+.all-projects-group,
+.logbook-day {
+  margin: 44px 0 44px 45px;
+}
+
+.grouped-list-heading {
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+}
+
+.group-title-button {
+  width: auto !important;
+  display: flex !important;
+  gap: 10px;
+  color: #2c3034 !important;
+}
+
+.group-title-button > i {
+  color: #53a395;
+}
+
+.show-more {
+  margin: 4px 0 0 31px;
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  color: #888e94;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.area-projects {
+  display: grid;
+  gap: 2px;
+  margin: 40px 0 45px 45px;
+}
+
+.area-project-card {
+  width: 100%;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 1px solid #e4e7e9;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.area-project-card:hover {
+  background: #f4f6f7;
+}
+
+.area-project-card > i {
+  color: #377fca;
+}
+
+.area-project-card small {
+  color: #999fa4;
+}
+
+.someday-project-card {
+  width: calc(100% - 45px);
+  margin: 8px 0 8px 45px;
+  opacity: 0.82;
+}
+
+.project-note-editor {
+  width: 620px;
+  min-height: 58px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  resize: vertical;
+  background: transparent;
+}
+
+.project-direct-tags {
+  margin: -27px 0 30px 45px;
+}
+
+.project-list .task-row {
+  min-height: 45px;
+}
+
+.later-project-list {
+  opacity: 0.76;
+}
+
+.logged-headings > button {
+  color: #8c9297;
+}
+
+.quick-empty {
+  margin: 10px;
+  padding: 13px;
+  color: #858b91;
+  text-align: center;
+}
+
+.quick-results > button:disabled {
+  cursor: default;
+}
+
+.new-list-popover,
+.settings-popover {
+  position: absolute;
+  z-index: 40;
+  left: 228px;
+  bottom: 58px;
+  width: 360px;
+  overflow: hidden;
+  border: 1px solid #bfc4c8;
+  border-radius: 13px;
+  background: #f5f6f7;
+  box-shadow: 0 18px 38px rgba(24, 28, 32, 0.24);
+}
+
+.settings-popover {
+  left: 16px;
+  width: 430px;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 8px 12px 14px;
+  padding: 3px;
+  border-radius: 8px;
+  background: #e1e4e7;
+}
+
+.segmented-control button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.segmented-control button.selected {
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.new-list-popover > label {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 12px;
+  color: #6b7177;
+}
+
+.new-list-popover input,
+.new-list-popover select {
+  height: 38px;
+  padding: 0 9px;
+  border: 1px solid #c8cdd1;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.setting-row {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0 12px;
+  border-bottom: 1px solid #d9dde0;
+}
+
+.setting-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.setting-row small {
+  color: #8b9196;
+}
+
+.setting-row input {
+  width: 18px;
+  height: 18px;
+}
+
+.return-today {
+  margin: 20px 0 0 45px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: #2f7ed0;
+  color: #ffffff;
+  cursor: pointer;
+}
