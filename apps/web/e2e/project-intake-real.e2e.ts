@@ -163,7 +163,13 @@ test("真实Project：对话建项→推进修订/确认→项目账本→管理
   await advancementCard
     .getByRole("textbox", { name: "负责人更新", exact: true })
     .fill(UPDATE_MARKER);
+  if ((await advancementCard.getByLabel("关键结果1").count()) === 0) {
+    await advancementCard.getByRole("button", { name: "新增关键结果" }).click();
+  }
   await advancementCard.getByLabel("关键结果1").fill("完成真实模型与浏览器推进闭环");
+  await advancementCard
+    .getByLabel("验收标准1（每行一项）")
+    .fill("真实百炼调用、浏览器确认与重启恢复全部通过");
   await advancementCard.getByRole("button", { name: "保存推进方案" }).click();
   await expect(
     advancementCard.getByRole("textbox", { name: "当前阶段名称", exact: true }),

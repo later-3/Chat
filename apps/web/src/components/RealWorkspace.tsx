@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import type {
-  MessageDto,
-  PlanDto,
-  ProjectIntakeProposal,
-  ProjectManagementProposal,
-  ProjectAdvancementProposal,
-  RunDto,
-  SubmitMessagePayload,
+import {
+  projectAdvancementCandidateDecisionPayloadSchema,
+  type MessageDto,
+  type PlanDto,
+  type ProjectIntakeProposal,
+  type ProjectManagementProposal,
+  type ProjectAdvancementProposal,
+  type RunDto,
+  type SubmitMessagePayload,
 } from "@chat/contracts/public";
 import { ApiProblemError } from "../api/client.js";
 import { readDraft, writeDraft } from "../drafts/draft-store.js";
@@ -68,6 +69,36 @@ function problemText(error: ApiProblemError | null): string | null {
     default:
       return `操作未完成（${error.code}）。`;
   }
+}
+
+function nonEmptyLines(value: string): string[] {
+  return value
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function LineListField({
+  label,
+  value,
+  onChange,
+  rows = 2,
+}: {
+  label: string;
+  value: readonly string[];
+  onChange: (value: string[]) => void;
+  rows?: number;
+}) {
+  return (
+    <label>
+      {label}
+      <textarea
+        rows={rows}
+        value={value.join("\n")}
+        onChange={(event) => onChange(nonEmptyLines(event.target.value))}
+      />
+    </label>
+  );
 }
 
 function RealChatPane({
@@ -393,6 +424,18 @@ function ProjectPanel({ projects }: { projects: ProjectChain }) {
       setAdvancementProposal(candidate.proposal);
     }
   }, [candidate]);
+  const advancementProposalValid =
+    advancementProposal !== null &&
+    projectAdvancementCandidateDecisionPayloadSchema.safeParse({
+      kind: "revise",
+      candidateSha256: "0".repeat(64),
+      proposal: advancementProposal,
+    }).success;
+  const advancementProposalDirty =
+    candidate?.candidateKind === "advancement" &&
+    candidate.status === "under_review" &&
+    advancementProposal !== null &&
+    JSON.stringify(advancementProposal) !== JSON.stringify(candidate.proposal);
 
   return (
     <section className="project-panel" aria-label="项目管理">
@@ -630,25 +673,17 @@ function ProjectPanel({ projects }: { projects: ProjectChain }) {
                 }
               />
             </label>
-            <label>
-              成功标准（每行一项）
-              <textarea
-                rows={3}
-                value={advancementProposal.stage.successCriteria.join("\n")}
-                onChange={(event) =>
-                  setAdvancementProposal({
-                    ...advancementProposal,
-                    stage: {
-                      ...advancementProposal.stage,
-                      successCriteria: event.target.value
-                        .split("\n")
-                        .map((item) => item.trim())
-                        .filter(Boolean),
-                    },
-                  })
-                }
-              />
-            </label>
+            <LineListField
+              label="成功标准（每行一项）"
+              rows={3}
+              value={advancementProposal.stage.successCriteria}
+              onChange={(successCriteria) =>
+                setAdvancementProposal({
+                  ...advancementProposal,
+                  stage: { ...advancementProposal.stage, successCriteria },
+                })
+              }
+            />
             <label>
               健康判断
               <select
@@ -682,34 +717,138 @@ function ProjectPanel({ projects }: { projects: ProjectChain }) {
                 }
               />
             </label>
+            <LineListField
+              label="已观察变化（每行一项）"
+              value={advancementProposal.update.observedChanges}
+              onChange={(observedChanges) =>
+                setAdvancementProposal({
+                  ...advancementProposal,
+                  update: { ...advancementProposal.update, observedChanges },
+                })
+              }
+            />
+            <LineListField
+              label="阻塞项（每行一项）"
+              value={advancementProposal.update.blockers}
+              onChange={(blockers) =>
+                setAdvancementProposal({
+                  ...advancementProposal,
+                  update: { ...advancementProposal.update, blockers },
+                })
+              }
+            />
+            <LineListField
+              label="下一步重点（每行一项）"
+              value={advancementProposal.update.nextFocus}
+              onChange={(nextFocus) =>
+                setAdvancementProposal({
+                  ...advancementProposal,
+                  update: { ...advancementProposal.update, nextFocus },
+                })
+              }
+            />
             <div>
               <strong>关键结果</strong>
               <ul className="project-decision-list">
                 {advancementProposal.milestones.map((milestone, index) => (
-                  <li key={`${String(index)}-${milestone.outcome}`}>
-                    <input
-                      aria-label={`关键结果${String(index + 1)}`}
-                      value={milestone.outcome}
-                      onChange={(event) =>
+                  <li key={`milestone-${String(index)}`}>
+                    <label>
+                      关键结果{String(index + 1)}
+                      <textarea
+                        rows={2}
+                        value={milestone.outcome}
+                        onChange={(event) =>
+                          setAdvancementProposal({
+                            ...advancementProposal,
+                            milestones: advancementProposal.milestones.map((item, itemIndex) =>
+                              itemIndex === index ? { ...item, outcome: event.target.value } : item,
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                    <LineListField
+                      label={`验收标准${String(index + 1)}（每行一项）`}
+                      value={milestone.acceptanceCriteria}
+                      onChange={(acceptanceCriteria) =>
                         setAdvancementProposal({
                           ...advancementProposal,
                           milestones: advancementProposal.milestones.map((item, itemIndex) =>
-                            itemIndex === index ? { ...item, outcome: event.target.value } : item,
+                            itemIndex === index ? { ...item, acceptanceCriteria } : item,
                           ),
                         })
                       }
                     />
+                    <label>
+                      目标时间{String(index + 1)}（RFC3339，可选）
+                      <input
+                        value={milestone.targetAt ?? ""}
+                        onChange={(event) =>
+                          setAdvancementProposal({
+                            ...advancementProposal,
+                            milestones: advancementProposal.milestones.map((item, itemIndex) => {
+                              if (itemIndex !== index) return item;
+                              const targetAt = event.target.value.trim();
+                              return {
+                                outcome: item.outcome,
+                                acceptanceCriteria: item.acceptanceCriteria,
+                                ...(targetAt === "" ? {} : { targetAt }),
+                              };
+                            }),
+                          })
+                        }
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="small-button"
+                      onClick={() =>
+                        setAdvancementProposal({
+                          ...advancementProposal,
+                          milestones: advancementProposal.milestones.filter(
+                            (_item, itemIndex) => itemIndex !== index,
+                          ),
+                        })
+                      }
+                    >
+                      删除关键结果{String(index + 1)}
+                    </button>
                   </li>
                 ))}
               </ul>
+              <button
+                type="button"
+                className="small-button"
+                disabled={advancementProposal.milestones.length >= 8}
+                onClick={() =>
+                  setAdvancementProposal({
+                    ...advancementProposal,
+                    milestones: [
+                      ...advancementProposal.milestones,
+                      { outcome: "", acceptanceCriteria: [] },
+                    ],
+                  })
+                }
+              >
+                新增关键结果
+              </button>
             </div>
+            {!advancementProposalValid && (
+              <p className="error-note" role="alert">
+                请补齐阶段目标、成功标准、下一步重点以及每个关键结果的验收标准。
+              </p>
+            )}
             {projects.advancementDecisionError !== null && (
               <p className="error-note">推进方案版本已变化，请刷新后重新确认。</p>
             )}
             <div className="project-candidate-actions">
               <button
                 className="small-button"
-                disabled={projects.decidingAdvancement}
+                disabled={
+                  projects.decidingAdvancement ||
+                  !advancementProposalValid ||
+                  !advancementProposalDirty
+                }
                 onClick={() => projects.reviseAdvancement(advancementProposal)}
               >
                 保存推进方案
@@ -723,7 +862,11 @@ function ProjectPanel({ projects }: { projects: ProjectChain }) {
               </button>
               <button
                 className="send-button"
-                disabled={projects.decidingAdvancement}
+                disabled={
+                  projects.decidingAdvancement ||
+                  !advancementProposalValid ||
+                  advancementProposalDirty
+                }
                 onClick={projects.confirmAdvancement}
               >
                 确认阶段与发布更新
