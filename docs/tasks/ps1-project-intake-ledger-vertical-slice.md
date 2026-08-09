@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 |---|---|
-| 状态 | 2026-08-09用户已审核批准；PS1实现与真实完成门进行中 |
+| 状态 | 2026-08-09用户已审核批准；PS1实现、自审与真实完成门已完成，等待PR复审 |
 | 核心目标 | 帮助不会管理项目的用户，仅靠对话建立、理解、维护并逐步推进多个真实项目 |
 | 方法依据 | Shape Up、BMAD、Basecamp、Linear、Things与Chat现有事实/Workflow；采用、调整、拒绝见方法论文档 |
 | 本次用户结果 | 用户用一句话和真实工作区建立Project；Chat观察代码、文档与脚本，生成可修改候选；确认后形成可恢复的项目账本和管理页面 |
@@ -260,7 +260,7 @@ Trace不能复制目标、决定理由、Contribution摘要、文档正文、Dif
 5. 模型无关的`ProjectIntakeUnderstandingPort`与pi Agent Adapter，输出strict `ProjectIntakeUnderstanding`；Provider/模型由服务端Model Profile配置，不能出现在Domain、Application命令或浏览器合同。
 6. Application结合用户正式输入、Understanding、Resource Evidence和Method/Domain规则编译`ProjectIntakeCandidate`；候选可修改/确认，模型输出不能直接成为Candidate或Project事实。
 7. 确认后原子创建Project、Method Snapshot、初始Stage Goal、Resources、用户Participant、初始Work/Action、建项Decision、Evidence和首个Observation。
-8. 对话式管理命令候选：新增/分派待办、记录决定、记录已发生贡献、刷新Observation。
+8. 对话式管理命令候选：新增并分派待办、记录决定、记录已发生贡献；既有待办分派/状态转换使用显式CAS命令。刷新Observation是只写客观观察的显式命令，不制造一层无意义候选。
 9. 项目列表、详情、参与者、资源、Work/待办、决定、贡献和时间线的响应式UI。
 10. Product Store v3→v4迁移、CAS、幂等、完整性与损坏失败关闭。
 11. 真实API、真实Resource、真实模型和浏览器E2E。
@@ -282,7 +282,7 @@ Trace不能复制目标、决定理由、Contribution摘要、文档正文、Dif
 用户在真实Chat输入：
 “把Chat仓库建成一个项目，目标是持续开发Chat产品，先告诉我目前谁在做什么、有哪些待办。”
 
-→ Message Command创建Product Run
+→ Project Intake Command原子创建正式Message、queued Candidate、Receipt和Start Outbox
 → Project Intake节点调用ProjectIntakeUnderstandingPort
 → 当前Model Profile对应的真实Adapter返回strict ProjectIntakeUnderstanding
 → local-git/document/script Adapter观察真实仓库

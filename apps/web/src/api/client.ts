@@ -32,7 +32,9 @@ import {
   type CreateMemoryImportPayload,
   type MemoryImportDto,
   beginProjectIntakePayloadSchema,
+  beginProjectManagementCandidatePayloadSchema,
   projectCandidateDecisionPayloadSchema,
+  projectManagementCandidateDecisionPayloadSchema,
   projectCandidateDtoSchema,
   currentProjectCandidateResponseSchema,
   createProjectActionPayloadSchema,
@@ -46,7 +48,9 @@ import {
   projectWorkspaceDtoSchema,
   projectTimelineItemDtoSchema,
   type BeginProjectIntakePayload,
+  type BeginProjectManagementCandidatePayload,
   type ProjectCandidateDecisionPayload,
+  type ProjectManagementCandidateDecisionPayload,
   type ProjectCandidateDto,
   type ProjectRootDto,
   type ProjectSummaryDto,
@@ -332,6 +336,20 @@ export function apiBeginProjectIntake(input: {
   );
 }
 
+export function apiBeginProjectManagementCandidate(input: {
+  commandId: CommandId;
+  payload: BeginProjectManagementCandidatePayload;
+}): Promise<ProjectCandidateDto> {
+  return post(
+    "/api/project-management-candidates",
+    commandEnvelopeSchema.parse({
+      commandId: input.commandId,
+      payload: beginProjectManagementCandidatePayloadSchema.parse(input.payload),
+    }),
+    (json) => projectCandidateResponseSchema.parse(json).candidate,
+  );
+}
+
 export function apiGetProjectCandidate(projectCandidateId: string): Promise<ProjectCandidateDto> {
   return get(
     `/api/project-candidates/${encodeURIComponent(projectCandidateId)}`,
@@ -365,6 +383,27 @@ export function apiDecideProjectCandidate(input: {
       return body.project === undefined
         ? { candidate: body.candidate }
         : { candidate: body.candidate, project: body.project };
+    },
+  );
+}
+
+export function apiDecideProjectManagementCandidate(input: {
+  projectCandidateId: string;
+  commandId: CommandId;
+  expectedRevision: number;
+  payload: ProjectManagementCandidateDecisionPayload;
+}): Promise<{ candidate: ProjectCandidateDto; project: ProjectWorkspaceDto }> {
+  return post(
+    `/api/project-management-candidates/${encodeURIComponent(input.projectCandidateId)}/decisions`,
+    commandEnvelopeSchema.parse({
+      commandId: input.commandId,
+      expectedRevision: input.expectedRevision,
+      payload: projectManagementCandidateDecisionPayloadSchema.parse(input.payload),
+    }),
+    (json) => {
+      const body = projectDecisionResponseSchema.parse(json);
+      if (body.project === undefined) throw new Error("管理Candidate确认响应缺少Project");
+      return { candidate: body.candidate, project: body.project };
     },
   );
 }

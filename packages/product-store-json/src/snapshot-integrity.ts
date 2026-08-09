@@ -18,6 +18,7 @@ import {
   validateExecutionCandidate,
   assertProjectWorkGraph,
   computeProjectCandidateSha256,
+  computeProjectManagementCandidateSha256,
   computeProjectMethodSnapshotSha256,
   computeProjectObservationSha256,
 } from "@chat/domain";
@@ -246,7 +247,10 @@ function assertProjects(snapshot: ProductSnapshot, fail: Fail): void {
     ) {
       fail(`projectCandidate ${candidate.projectCandidateId} Session/Message绑定不一致`);
     }
-    if (candidate.status === "under_review" || candidate.status === "confirmed") {
+    if (
+      candidate.candidateKind === "intake" &&
+      (candidate.status === "under_review" || candidate.status === "confirmed")
+    ) {
       if (
         computeProjectObservationSha256(candidate.observationData) !== candidate.observationSha256
       ) {
@@ -265,10 +269,76 @@ function assertProjects(snapshot: ProductSnapshot, fail: Fail): void {
       }
     }
     if (
+      candidate.candidateKind === "intake" &&
       candidate.status === "confirmed" &&
       entities.projects[candidate.confirmedProjectId] === undefined
     ) {
       fail(`projectCandidate ${candidate.projectCandidateId} 悬空confirmedProjectId`);
+    }
+    if (candidate.candidateKind === "management") {
+      const project = entities.projects[candidate.projectId];
+      if (
+        project?.ownerPrincipalId !== candidate.requestedByPrincipalId ||
+        candidate.boundProjectRevision > project.revision ||
+        computeProjectManagementCandidateSha256({
+          projectId: candidate.projectId,
+          boundProjectRevision: candidate.boundProjectRevision,
+          sourceMessageId: candidate.sourceMessageId,
+          proposal: candidate.proposal,
+        }) !== candidate.candidateSha256
+      ) {
+        fail(`projectCandidate ${candidate.projectCandidateId} 管理Candidate绑定或Hash不一致`);
+      }
+      if (candidate.proposal.kind === "action") {
+        if (
+          entities.projectWorks[candidate.proposal.workId]?.projectId !== candidate.projectId ||
+          entities.projectParticipants[candidate.proposal.ownerParticipantId]?.projectId !==
+            candidate.projectId
+        ) {
+          fail(`projectCandidate ${candidate.projectCandidateId} Action引用不一致`);
+        }
+        if (
+          candidate.status === "confirmed" &&
+          entities.projectActions[candidate.committedObjectId]?.projectId !== candidate.projectId
+        ) {
+          fail(`projectCandidate ${candidate.projectCandidateId} committed Action缺失`);
+        }
+      } else if (candidate.proposal.kind === "decision") {
+        if (
+          entities.projectParticipants[candidate.proposal.decidedByParticipantId]?.projectId !==
+          candidate.projectId
+        ) {
+          fail(`projectCandidate ${candidate.projectCandidateId} Decision参与者不一致`);
+        }
+        if (
+          candidate.status === "confirmed" &&
+          entities.projectDecisions[candidate.committedObjectId]?.projectId !== candidate.projectId
+        ) {
+          fail(`projectCandidate ${candidate.projectCandidateId} committed Decision缺失`);
+        }
+      } else {
+        if (
+          entities.projectParticipants[candidate.proposal.participantId]?.projectId !==
+            candidate.projectId ||
+          (candidate.proposal.workId !== undefined &&
+            entities.projectWorks[candidate.proposal.workId]?.projectId !== candidate.projectId) ||
+          (candidate.proposal.actionId !== undefined &&
+            entities.projectActions[candidate.proposal.actionId]?.projectId !==
+              candidate.projectId) ||
+          candidate.proposal.evidenceIds.some(
+            (id) => entities.projectEvidence[id]?.projectId !== candidate.projectId,
+          )
+        ) {
+          fail(`projectCandidate ${candidate.projectCandidateId} Contribution引用不一致`);
+        }
+        if (
+          candidate.status === "confirmed" &&
+          entities.projectContributions[candidate.committedObjectId]?.projectId !==
+            candidate.projectId
+        ) {
+          fail(`projectCandidate ${candidate.projectCandidateId} committed Contribution缺失`);
+        }
+      }
     }
   }
 }
@@ -1559,6 +1629,8 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
       "recoveryOutboxId",
     ],
     BeginProjectIntake: ["projectCandidateId", "messageId"],
+    BeginProjectManagementCandidate: ["projectCandidateId", "messageId"],
+    DecideProjectManagementCandidate: ["projectCandidateId", "projectId"],
     PrepareProjectCandidateForReview: ["projectCandidateId"],
     FailProjectCandidateForReview: ["projectCandidateId"],
     CreateProjectAction: ["projectId", "projectActionId"],
@@ -1715,7 +1787,11 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
   for (const entry of Object.values(snapshot.outbox)) {
     if (entry.kind === "project_intake_start" || entry.kind === "project_intake_resume") {
       const candidate = entities.projectCandidates[entry.projectCandidateId];
-      if (candidate === undefined || entry.expectedCandidateRevision > candidate.revision) {
+      if (
+        candidate === undefined ||
+        candidate.candidateKind !== "intake" ||
+        entry.expectedCandidateRevision > candidate.revision
+      ) {
         fail(`outbox ${entry.outboxId} Project Intake绑定不完整`);
       }
       continue;

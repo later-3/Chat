@@ -6,10 +6,12 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import {
   beginProjectIntake,
+  beginProjectManagementCandidate,
   assignProjectAction,
   createProjectAction,
   createProductSession,
   decideProjectCandidate,
+  decideProjectManagementCandidate,
   getProjectCandidate,
   getCurrentProjectCandidate,
   getProjectTimeline,
@@ -163,7 +165,12 @@ describe("PS1 Project Intake Application纵向链", () => {
       expectedRevision: 1,
     });
     expect(prepared.candidate.status).toBe("under_review");
-    if (prepared.candidate.status !== "under_review") throw new Error("candidate not ready");
+    if (
+      prepared.candidate.candidateKind !== "intake" ||
+      prepared.candidate.status !== "under_review"
+    ) {
+      throw new Error("candidate not ready");
+    }
     expect(prepared.candidate.resource.documentCount).toBe(2);
     expect(prepared.candidate.proposal.method.profileId).toBe("software-delivery.v1");
 
@@ -179,7 +186,12 @@ describe("PS1 Project Intake Application纵向链", () => {
       },
     });
     expect(revised.candidate.status).toBe("under_review");
-    if (revised.candidate.status !== "under_review") throw new Error("candidate not revised");
+    if (
+      revised.candidate.candidateKind !== "intake" ||
+      revised.candidate.status !== "under_review"
+    ) {
+      throw new Error("candidate not revised");
+    }
 
     const confirmed = await decideProjectCandidate(application, {
       principalId,
@@ -263,6 +275,56 @@ describe("PS1 Project Intake Application纵向链", () => {
       .find((item) => item.projectActionId === action.projectActionId);
     expect(doingAction?.status).toBe("doing");
 
+    const management = await beginProjectManagementCandidate(application, {
+      principalId,
+      commandId: "cmd_projectmanagementbegin" as never,
+      payload: {
+        sessionId: session.sessionId,
+        projectId,
+        kind: "decision",
+        text: "记录决定：BMAD只作为方法输入，不成为项目事实源",
+      },
+    });
+    expect(management.candidate).toMatchObject({
+      candidateKind: "management",
+      status: "under_review",
+    });
+    const managementReplay = await beginProjectManagementCandidate(application, {
+      principalId,
+      commandId: "cmd_projectmanagementbegin" as never,
+      payload: {
+        sessionId: session.sessionId,
+        projectId,
+        kind: "decision",
+        text: "记录决定：BMAD只作为方法输入，不成为项目事实源",
+      },
+    });
+    expect(managementReplay.candidate.projectCandidateId).toBe(
+      management.candidate.projectCandidateId,
+    );
+    if (
+      management.candidate.candidateKind !== "management" ||
+      management.candidate.status !== "under_review"
+    ) {
+      throw new Error("management candidate missing");
+    }
+    const managementConfirmed = await decideProjectManagementCandidate(application, {
+      principalId,
+      commandId: "cmd_projectmanagementconfirm" as never,
+      projectCandidateId: management.candidate.projectCandidateId,
+      expectedRevision: management.candidate.revision,
+      payload: {
+        kind: "confirm",
+        candidateSha256: management.candidate.candidateSha256,
+      },
+    });
+    expect(managementConfirmed.candidate.status).toBe("confirmed");
+    expect(
+      managementConfirmed.project.decisions.some(
+        (item) => item.choice === "BMAD只作为方法输入，不成为项目事实源",
+      ),
+    ).toBe(true);
+
     await recordProjectDecision(application, {
       principalId,
       commandId: "cmd_projectdecision" as never,
@@ -295,6 +357,22 @@ describe("PS1 Project Intake Application纵向链", () => {
       projectId,
       resourceId: resource.projectResourceId,
     });
+    const staleManagement = await beginProjectManagementCandidate(application, {
+      principalId,
+      commandId: "cmd_projectstalebegin" as never,
+      payload: {
+        sessionId: session.sessionId,
+        projectId,
+        kind: "contribution",
+        text: "记录贡献：验证旧Project revision失败关闭",
+      },
+    });
+    if (
+      staleManagement.candidate.candidateKind !== "management" ||
+      staleManagement.candidate.status !== "under_review"
+    ) {
+      throw new Error("stale management candidate missing");
+    }
     const archived = await setProjectArchiveStatus(application, {
       principalId,
       commandId: "cmd_projectarchive" as never,
@@ -323,6 +401,71 @@ describe("PS1 Project Intake Application纵向链", () => {
       payload: { status: "active" },
     });
     expect(restored.project.project.status).toBe("active");
+    await expect(
+      decideProjectManagementCandidate(application, {
+        principalId,
+        commandId: "cmd_projectstaleconfirm" as never,
+        projectCandidateId: staleManagement.candidate.projectCandidateId,
+        expectedRevision: staleManagement.candidate.revision,
+        payload: {
+          kind: "confirm",
+          candidateSha256: staleManagement.candidate.candidateSha256,
+        },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    const staleRejected = await decideProjectManagementCandidate(application, {
+      principalId,
+      commandId: "cmd_projectstalereject" as never,
+      projectCandidateId: staleManagement.candidate.projectCandidateId,
+      expectedRevision: staleManagement.candidate.revision,
+      payload: {
+        kind: "reject",
+        candidateSha256: staleManagement.candidate.candidateSha256,
+        reason: "Project已经变化，关闭旧候选",
+      },
+    });
+    expect(staleRejected.candidate.status).toBe("rejected");
+
+    const concurrentManagement = await beginProjectManagementCandidate(application, {
+      principalId,
+      commandId: "cmd_projectracebegin" as never,
+      payload: {
+        sessionId: session.sessionId,
+        projectId,
+        kind: "action",
+        text: "新增待办：并发确认只能提交一次",
+      },
+    });
+    if (
+      concurrentManagement.candidate.candidateKind !== "management" ||
+      concurrentManagement.candidate.status !== "under_review"
+    ) {
+      throw new Error("concurrent management candidate missing");
+    }
+    const managementAttempts = await Promise.allSettled([
+      decideProjectManagementCandidate(application, {
+        principalId,
+        commandId: "cmd_projectmanagementrace1" as never,
+        projectCandidateId: concurrentManagement.candidate.projectCandidateId,
+        expectedRevision: concurrentManagement.candidate.revision,
+        payload: {
+          kind: "confirm",
+          candidateSha256: concurrentManagement.candidate.candidateSha256,
+        },
+      }),
+      decideProjectManagementCandidate(application, {
+        principalId,
+        commandId: "cmd_projectmanagementrace2" as never,
+        projectCandidateId: concurrentManagement.candidate.projectCandidateId,
+        expectedRevision: concurrentManagement.candidate.revision,
+        payload: {
+          kind: "confirm",
+          candidateSha256: concurrentManagement.candidate.candidateSha256,
+        },
+      }),
+    ]);
+    expect(managementAttempts.filter((item) => item.status === "fulfilled")).toHaveLength(1);
+    expect(managementAttempts.filter((item) => item.status === "rejected")).toHaveLength(1);
   });
 
   it("旧revision、旧Hash和并发确认失败关闭", async () => {
@@ -343,7 +486,12 @@ describe("PS1 Project Intake Application纵向链", () => {
       projectCandidateId: begun.candidate.projectCandidateId,
       expectedRevision: 1,
     });
-    if (prepared.candidate.status !== "under_review") throw new Error("candidate not ready");
+    if (
+      prepared.candidate.candidateKind !== "intake" ||
+      prepared.candidate.status !== "under_review"
+    ) {
+      throw new Error("candidate not ready");
+    }
     await expect(
       decideProjectCandidate(application, {
         principalId,

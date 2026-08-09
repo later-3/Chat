@@ -4,6 +4,8 @@ import type {
   CommandId,
   ProjectCandidateDecisionPayload,
   ProjectIntakeProposal,
+  ProjectManagementProposal,
+  ProjectManagementCandidateDecisionPayload,
   CreateProjectActionPayload,
   RecordProjectDecisionPayload,
   RecordProjectContributionPayload,
@@ -11,7 +13,9 @@ import type {
 } from "@chat/contracts/public";
 import {
   apiBeginProjectIntake,
+  apiBeginProjectManagementCandidate,
   apiDecideProjectCandidate,
+  apiDecideProjectManagementCandidate,
   apiGetProject,
   apiGetProjectCandidate,
   apiGetCurrentProjectCandidate,
@@ -117,7 +121,11 @@ export function useProjectChain(storage: Storage, sessionId: string | null) {
   const decide = useMutation({
     mutationFn: (payload: ProjectCandidateDecisionPayload) => {
       const current = candidate.data;
-      if (current === undefined || current.status !== "under_review") {
+      if (
+        current === undefined ||
+        current.candidateKind !== "intake" ||
+        current.status !== "under_review"
+      ) {
         throw new Error("candidate not ready");
       }
       return apiDecideProjectCandidate({
@@ -136,6 +144,57 @@ export function useProjectChain(storage: Storage, sessionId: string | null) {
         setActiveProjectId(projectId);
         void queryClient.setQueryData(["project", projectId], result.project);
       }
+    },
+  });
+
+  const beginManagement = useMutation({
+    mutationFn: (input: { text: string; kind: "action" | "decision" | "contribution" }) => {
+      if (sessionId === null || activeProjectId === null) throw new Error("project not ready");
+      return apiBeginProjectManagementCandidate({
+        commandId: commandId(),
+        payload: {
+          sessionId: sessionId as never,
+          projectId: activeProjectId as never,
+          kind: input.kind,
+          text: input.text,
+        },
+      });
+    },
+    onSuccess: (next) => {
+      storage.setItem(CANDIDATE_KEY, next.projectCandidateId);
+      setActiveCandidateId(next.projectCandidateId);
+      void queryClient.setQueryData(["project-candidate", next.projectCandidateId], next);
+      void queryClient.invalidateQueries({ queryKey: ["real-messages", sessionId] });
+    },
+  });
+
+  const decideManagement = useMutation({
+    mutationFn: (payload: ProjectManagementCandidateDecisionPayload) => {
+      const current = candidate.data;
+      if (
+        current === undefined ||
+        current.candidateKind !== "management" ||
+        current.status !== "under_review"
+      ) {
+        throw new Error("management candidate not ready");
+      }
+      return apiDecideProjectManagementCandidate({
+        projectCandidateId: current.projectCandidateId,
+        commandId: commandId(),
+        expectedRevision: current.revision,
+        payload,
+      });
+    },
+    onSuccess: (result) => {
+      void queryClient.setQueryData(
+        ["project-candidate", result.candidate.projectCandidateId],
+        result.candidate,
+      );
+      void queryClient.setQueryData(["project", result.project.project.projectId], result.project);
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["project-timeline", result.project.project.projectId],
+      });
     },
   });
 
@@ -212,12 +271,12 @@ export function useProjectChain(storage: Storage, sessionId: string | null) {
 
   const confirm = () => {
     const current = candidate.data;
-    if (current?.status !== "under_review") return;
+    if (current?.candidateKind !== "intake" || current.status !== "under_review") return;
     decide.mutate({ kind: "confirm", candidateSha256: current.candidateSha256 });
   };
   const reject = (reason?: string) => {
     const current = candidate.data;
-    if (current?.status !== "under_review") return;
+    if (current?.candidateKind !== "intake" || current.status !== "under_review") return;
     decide.mutate({
       kind: "reject",
       candidateSha256: current.candidateSha256,
@@ -226,7 +285,7 @@ export function useProjectChain(storage: Storage, sessionId: string | null) {
   };
   const revise = (proposal: ProjectIntakeProposal) => {
     const current = candidate.data;
-    if (current?.status !== "under_review") return;
+    if (current?.candidateKind !== "intake" || current.status !== "under_review") return;
     decide.mutate({ kind: "revise", candidateSha256: current.candidateSha256, proposal });
   };
 
@@ -246,6 +305,34 @@ export function useProjectChain(storage: Storage, sessionId: string | null) {
     confirm,
     reject,
     revise,
+    beginManagement: beginManagement.mutate,
+    beginningManagement: beginManagement.isPending,
+    managementBeginError: beginManagement.error,
+    confirmManagement: () => {
+      const current = candidate.data;
+      if (current?.candidateKind !== "management" || current.status !== "under_review") return;
+      decideManagement.mutate({ kind: "confirm", candidateSha256: current.candidateSha256 });
+    },
+    rejectManagement: (reason?: string) => {
+      const current = candidate.data;
+      if (current?.candidateKind !== "management" || current.status !== "under_review") return;
+      decideManagement.mutate({
+        kind: "reject",
+        candidateSha256: current.candidateSha256,
+        ...(reason !== undefined && reason.trim() !== "" ? { reason: reason.trim() } : {}),
+      });
+    },
+    reviseManagement: (proposal: ProjectManagementProposal) => {
+      const current = candidate.data;
+      if (current?.candidateKind !== "management" || current.status !== "under_review") return;
+      decideManagement.mutate({
+        kind: "revise",
+        candidateSha256: current.candidateSha256,
+        proposal,
+      });
+    },
+    decidingManagement: decideManagement.isPending,
+    managementDecisionError: decideManagement.error,
     manage: manage.mutate,
     managing: manage.isPending,
     manageError: manage.error,

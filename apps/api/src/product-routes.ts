@@ -18,7 +18,9 @@ import {
   projectActionIdSchema,
   projectResourceIdSchema,
   beginProjectIntakePayloadSchema,
+  beginProjectManagementCandidatePayloadSchema,
   projectCandidateDecisionPayloadSchema,
+  projectManagementCandidateDecisionPayloadSchema,
   createProjectActionPayloadSchema,
   assignProjectActionPayloadSchema,
   setProjectArchiveStatusPayloadSchema,
@@ -51,9 +53,11 @@ import {
   requestMemoryImportReconciliation,
   listProjectRoots,
   beginProjectIntake,
+  beginProjectManagementCandidate,
   getProjectCandidate,
   getCurrentProjectCandidate,
   decideProjectCandidate,
+  decideProjectManagementCandidate,
   listProjects,
   getProjectWorkspace,
   getProjectTimeline,
@@ -385,6 +389,23 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
     }
   });
 
+  router.post("/project-management-candidates", async (c) => {
+    try {
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const payload = beginProjectManagementCandidatePayloadSchema.parse(envelope.payload);
+      return c.json(
+        await beginProjectManagementCandidate(ctx.deps, {
+          principalId: ctx.principalId,
+          commandId: envelope.commandId,
+          payload,
+        }),
+        201,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
   router.get("/project-candidates/:projectCandidateId", async (c) => {
     try {
       assertNoQuery(c.req.url);
@@ -437,6 +458,32 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
         payload,
       });
       return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/project-management-candidates/:projectCandidateId/decisions", async (c) => {
+    try {
+      const projectCandidateId = projectCandidateIdSchema.parse(c.req.param("projectCandidateId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Project管理Candidate决定必须携带expectedRevision",
+        });
+      }
+      return c.json(
+        await decideProjectManagementCandidate(ctx.deps, {
+          principalId: ctx.principalId,
+          commandId: envelope.commandId,
+          projectCandidateId,
+          expectedRevision: envelope.expectedRevision,
+          payload: projectManagementCandidateDecisionPayloadSchema.parse(envelope.payload),
+        }),
+        201,
+      );
     } catch (error) {
       return mapError(c, error);
     }

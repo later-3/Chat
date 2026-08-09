@@ -8,7 +8,7 @@
 
 ## 1. 一句话说明
 
-浏览器只向Chat API发送公开Query/Command。API校验请求后调用Application用例；Application在Product Store中原子提交产品事实、幂等Receipt和Outbox；API进程再异步启动或恢复Workflow。页面通过Query读取Run、Plan、Approval、Message、Context和Memory Import的权威投影，不从Workflow返回值或本地缓存猜测成功。
+浏览器只向Chat API发送公开Query/Command。API校验请求后调用Application用例；Application在Product Store中原子提交产品事实、幂等Receipt和Outbox；API进程再异步启动或恢复Workflow。页面通过Query读取Run、Plan、Approval、Message、Context、Memory Import、Project Candidate和Project账本的权威投影，不从Workflow返回值或本地缓存猜测成功。
 
 ## 2. 当前拓扑
 
@@ -16,12 +16,13 @@
 flowchart LR
     WEB[React PWA] -->|REST Query / Command| API[Hono Public Router]
     API --> APP[Application Use Cases]
-    APP --> STORE[JSON Product Store v3]
+    APP --> STORE[JSON Product Store v4]
     APP --> OUTBOX[Transactional Outbox]
     OUTBOX --> DISPATCHER[API Outbox Dispatcher]
     DISPATCHER -->|私有HTTP + Runtime凭据| WFR[Workflow Runtime]
-    WFR --> PI[pi Planner / Executor]
+    WFR --> PI[pi Planner / Executor / Project Understanding]
     WFR --> MEM[memmy / MemoryCore]
+    API --> PRJ[Project Resource Registry]
     WFR -->|私有Application Command| API
     WEB -->|1.5秒活动轮询| API
 ```
@@ -32,7 +33,7 @@ flowchart LR
 
 | 状态 | 权威所有者 | 浏览器怎样使用 |
 |---|---|---|
-| Session、Message、Run、Plan、Approval、Decision、Memory事实 | Product Store | 通过Query读取，通过Command请求改变 |
+| Session、Message、Run、Plan、Approval、Decision、Memory与Project事实 | Product Store | 通过Query读取，通过Command请求改变 |
 | Workflow控制流、Hook等待和Checkpoint | Vercel Workflow Store | 不可见；只看到产品状态投影 |
 | Workflow Run ID、Hook Token、Runtime Binding | Workflow Runtime私有存储 | 不进入响应、URL、localStorage或前端Bundle |
 | pi会话、Provider请求和模型原始结果 | pi/Provider运行边界 | 只投影经校验的Plan、候选、使用量证据或稳定错误 |
@@ -74,6 +75,20 @@ flowchart LR
 | GET | `/api/sessions/:sessionId/memory-imports` | Query | Cursor分页读取Session导入记录 |
 | POST | `/api/memory-imports/:memoryImportIntentId/reconcile` | Command | CAS请求只读对账，返回202 |
 
+### 4.4 Project
+
+| 方法 | 路径 | 类型 | 当前结果 |
+|---|---|---|---|
+| GET | `/api/project-roots` | Query | 返回服务端允许根及安全Adapter能力，不返回绝对路径 |
+| POST | `/api/project-intakes` | Command | 原子提交Message、queued Candidate、Receipt与Start Outbox，返回202 |
+| GET | `/api/sessions/:sessionId/project-candidates/current` | Query | 刷新后恢复该Session唯一未决Candidate |
+| POST | `/api/project-candidates/:id/decisions` | Command | 修订/确认/拒绝建项Candidate，确认时原子创建完整Project账本 |
+| POST | `/api/project-management-candidates` | Command | 从显式管理模式的正式Message确定性编译待办/决定/贡献Candidate |
+| POST | `/api/project-management-candidates/:id/decisions` | Command | CAS修订/确认/拒绝；确认后只提交一种对应Project事实 |
+| GET | `/api/projects`、`/api/projects/:id`、`/api/projects/:id/timeline` | Query | Portfolio、Workspace与事实时间线 |
+| POST | `/api/projects/:id/actions`及Action子命令 | Command | 新增、分派和状态转换，均校验对象revision |
+| POST | `/api/projects/:id/resources/:resourceId/observations` | Command | 从允许根刷新只读Observation与Evidence |
+
 ## 5. Command合同
 
 所有公开写请求使用统一Envelope：
@@ -94,6 +109,7 @@ flowchart LR
 4. Decision还必须绑定Plan ID、Plan revision和Plan SHA-256。
 5. 浏览器不能指定Provider、模型、endpoint、Token、Workflow ID、Hook Token或pi Session ID。
 6. POST已经发送但响应丢失时，浏览器保留同一个`commandId`并只允许“使用同一命令重试”。
+7. Project Candidate同时绑定自身revision/Hash；管理Candidate还绑定Project revision。Project变化后旧候选不能确认，但允许显式拒绝以解除Session阻塞。
 
 ## 6. Query合同与当前轮询
 
@@ -171,7 +187,25 @@ Workflow函数正常返回、pi返回成功或前端轮询超时都不能独立�
 
 memmy可通过读取与搜索收敛为`materialized`；Tencent MemoryCore的L0接收可以合法停在`accepted`，不能因为L1暂未出现而重复写入。
 
-## 9. 错误与恢复
+## 9. Project建项与管理交互
+
+```text
+用户显式切换“建立项目”并选择安全rootId
+→ POST Project Intake Command
+→ Message + queued Candidate + Receipt + Start Outbox
+→ ProjectIntakeWorkflow调用Project Understanding并观察真实资源
+→ under_review Candidate
+→ Web展示可编辑目标、方法、初始Work/Action与资源证据
+→ 用户修订/确认/拒绝
+→ 确认时原子创建Project完整初始账本 + Resume Outbox
+→ Portfolio、Workspace和Timeline从Query恢复
+```
+
+普通任务消息不会被隐藏分类器改道。Provider/模型只由服务端Model Profile选择；公开Candidate没有Provider或模型字段。页面删除Candidate定位或刷新时，按Session Query恢复唯一未决候选。
+
+项目建成后，显式“管理项目”模式把用户消息编译为待办、决定或贡献Candidate；必须再次确认才能写入账本。待办分派/状态转换与资源刷新是可见的显式Command：前两者使用对象CAS，资源刷新只观察允许根并生成Observation/Evidence。
+
+## 10. 错误与恢复
 
 HTTP错误统一使用Problem Detail安全投影：
 
@@ -191,26 +225,26 @@ type, title, status, code, requestId, retryable, recoveryAction
 | API重启 | 从JSON Product Store和Outbox恢复；浏览器继续Query |
 | Workflow启动/恢复响应未知 | Dispatcher对账Runtime Binding，不盲目启动/恢复第二次 |
 
-## 10. 私有Runtime接口
+## 11. 私有Runtime接口
 
 Workflow Step访问 `/internal/runtime/v1/*`，API Dispatcher访问Workflow Runtime的 `/internal/workflow/v1/*`。两组接口都只绑定本地服务、要求服务端Runtime凭据，并与公开Router、公开DTO和前端Bundle物理分离。
 
 私有接口仍然经过Zod、Application用例、CAS、幂等和Trace；“私有”不等于可以绕过产品事务。
 
-## 11. 当前实现与目标架构的差异
+## 12. 当前实现与目标架构的差异
 
 | 能力 | 当前 | 目标 |
 |---|---|---|
 | 产品读取/写入 | REST Query/Command | 保持不变 |
 | 活动状态更新 | 1.5秒受控Query轮询 | Chat自有SSE + Cursor；Query仍负责Hydrate |
 | Agent事件 | 只形成后端Trace和产品投影 | AG-UI兼容事件进入唯一Chat事件流 |
-| Product Store | 单实例、单写者、版本化JSON v3 | 支持生产事务、多实例、备份恢复的持久Store |
+| Product Store | 单实例、单写者、版本化JSON v4 | 支持生产事务、多实例、备份恢复的持久Store |
 | 身份 | 固定调试Principal | 正式认证、授权与租户隔离 |
 | 后端部署 | 本地纵向链已验证 | 生产API/Workflow/Memory部署拓扑尚未冻结 |
 
 不得根据目标架构中的SSE、Runtime Journal或生产数据库描述，声称当前代码已经提供这些能力。
 
-## 12. 修改交互时必须同步验证
+## 13. 修改交互时必须同步验证
 
 1. `packages/contracts`：公开Schema严格拒绝未知字段和内部身份。
 2. `packages/application`：命令幂等、CAS、不变量和原子Outbox。

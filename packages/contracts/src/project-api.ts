@@ -15,6 +15,7 @@ import {
 import {
   projectActionStatusSchema,
   projectIntakeProposalSchema,
+  projectManagementProposalSchema,
   projectMethodProfileIdSchema,
   projectResourceAdapterKindSchema,
   projectStatusSchema,
@@ -30,6 +31,33 @@ export const beginProjectIntakePayloadSchema = z
     rootId: z.string().regex(/^root_[A-Za-z0-9]+$/u),
   })
   .strict();
+
+export const beginProjectManagementCandidatePayloadSchema = z
+  .object({
+    sessionId: productSessionIdSchema,
+    projectId: projectIdSchema,
+    kind: z.enum(["action", "decision", "contribution"]),
+    text: z.string().trim().min(1).max(4_000),
+  })
+  .strict();
+
+export const projectManagementCandidateDecisionPayloadSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("revise"),
+      candidateSha256: sha256Schema,
+      proposal: projectManagementProposalSchema,
+    })
+    .strict(),
+  z.object({ kind: z.literal("confirm"), candidateSha256: sha256Schema }).strict(),
+  z
+    .object({
+      kind: z.literal("reject"),
+      candidateSha256: sha256Schema,
+      reason: z.string().trim().min(1).max(2_000).optional(),
+    })
+    .strict(),
+]);
 
 export const projectCandidateDecisionPayloadSchema = z.discriminatedUnion("kind", [
   z
@@ -122,13 +150,14 @@ const projectCandidateBaseDto = {
   schemaVersion: z.literal(PROJECT_API_SCHEMA_VERSION),
   projectCandidateId: projectCandidateIdSchema,
   sessionId: productSessionIdSchema,
+  candidateKind: z.literal("intake"),
   rootId: z.string().regex(/^root_[A-Za-z0-9]+$/u),
   revision: z.number().int().positive(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 };
 
-export const projectCandidateDtoSchema = z.discriminatedUnion("status", [
+const projectIntakeCandidateDtoSchema = z.discriminatedUnion("status", [
   z
     .object({
       ...projectCandidateBaseDto,
@@ -182,6 +211,50 @@ export const projectCandidateDtoSchema = z.discriminatedUnion("status", [
       allowedActions: z.tuple([]),
     })
     .strict(),
+]);
+
+const projectManagementCandidateDtoBase = {
+  schemaVersion: z.literal(PROJECT_API_SCHEMA_VERSION),
+  projectCandidateId: projectCandidateIdSchema,
+  sessionId: productSessionIdSchema,
+  candidateKind: z.literal("management"),
+  projectId: projectIdSchema,
+  boundProjectRevision: z.number().int().positive(),
+  proposal: projectManagementProposalSchema,
+  candidateSha256: sha256Schema,
+  revision: z.number().int().positive(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+};
+
+const projectManagementCandidateDtoSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      ...projectManagementCandidateDtoBase,
+      status: z.literal("under_review"),
+      allowedActions: z.tuple([z.literal("revise"), z.literal("confirm"), z.literal("reject")]),
+    })
+    .strict(),
+  z
+    .object({
+      ...projectManagementCandidateDtoBase,
+      status: z.literal("confirmed"),
+      committedObjectId: z.string().regex(/^(pac|pdc|pct)_[A-Za-z0-9]+$/u),
+      allowedActions: z.tuple([]),
+    })
+    .strict(),
+  z
+    .object({
+      ...projectManagementCandidateDtoBase,
+      status: z.literal("rejected"),
+      allowedActions: z.tuple([]),
+    })
+    .strict(),
+]);
+
+export const projectCandidateDtoSchema = z.union([
+  projectIntakeCandidateDtoSchema,
+  projectManagementCandidateDtoSchema,
 ]);
 
 export const currentProjectCandidateResponseSchema = z
@@ -308,7 +381,13 @@ export const projectTimelineItemDtoSchema = z
   .strict();
 
 export type BeginProjectIntakePayload = z.infer<typeof beginProjectIntakePayloadSchema>;
+export type BeginProjectManagementCandidatePayload = z.infer<
+  typeof beginProjectManagementCandidatePayloadSchema
+>;
 export type ProjectCandidateDecisionPayload = z.infer<typeof projectCandidateDecisionPayloadSchema>;
+export type ProjectManagementCandidateDecisionPayload = z.infer<
+  typeof projectManagementCandidateDecisionPayloadSchema
+>;
 export type CreateProjectActionPayload = z.infer<typeof createProjectActionPayloadSchema>;
 export type AssignProjectActionPayload = z.infer<typeof assignProjectActionPayloadSchema>;
 export type TransitionProjectActionPayload = z.infer<typeof transitionProjectActionPayloadSchema>;

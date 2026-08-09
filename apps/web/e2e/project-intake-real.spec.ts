@@ -88,10 +88,25 @@ test("真实Project Intake：对话建项→修改/并发确认→项目账本�
   const second = await context.newPage();
   await second.goto("/");
   await expect(second.getByText("建项方案 · 等待你的确认")).toBeVisible();
+  const firstDecisionResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().includes("/api/project-candidates/") &&
+      response.url().endsWith("/decisions"),
+  );
+  const secondDecisionResponse = second.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().includes("/api/project-candidates/") &&
+      response.url().endsWith("/decisions"),
+  );
   await Promise.all([
     page.getByRole("button", { name: "确认建立项目" }).click(),
     second.getByRole("button", { name: "确认建立项目" }).click(),
   ]);
+  expect(
+    [(await firstDecisionResponse).status(), (await secondDecisionResponse).status()].sort(),
+  ).toEqual([201, 409]);
   await expect(page.getByRole("heading", { name: "Chat产品工程" })).toBeVisible();
   await second.reload();
   await expect(second.getByRole("heading", { name: "Chat产品工程" })).toBeVisible();
@@ -110,18 +125,36 @@ test("真实Project Intake：对话建项→修改/并发确认→项目账本�
   expect(initialWorkspace.participants).toHaveLength(1);
   expect(initialWorkspace.works.length).toBeGreaterThan(0);
 
-  await page.getByLabel("新待办标题").fill("完成PS1真实验收");
-  await page.getByRole("button", { name: "确认新增待办" }).click();
+  await page.getByRole("button", { name: "管理项目" }).click();
+  await page.getByLabel("项目管理动作").selectOption("action");
+  await page.getByLabel("消息输入框").fill("新增待办：完成PS1真实验收");
+  await page.getByRole("button", { name: "发送" }).click();
+  const actionCandidate = page.getByLabel("项目管理方案");
+  await expect(actionCandidate).toBeVisible();
+  await actionCandidate.getByRole("button", { name: "确认写入项目账本" }).click();
   await expect(page.getByText("完成PS1真实验收", { exact: true }).first()).toBeVisible();
 
-  await page.getByLabel("决定问题").fill("BMAD与模型是否成为项目事实源？");
-  await page.getByLabel("决定选择").fill(DECISION_MARKER);
-  await page.getByLabel("决定理由").fill("Project事实由Chat Product Store和用户确认拥有");
-  await page.getByRole("button", { name: "确认记录决定" }).click();
+  await page.getByRole("button", { name: "管理项目" }).click();
+  await page.getByLabel("项目管理动作").selectOption("decision");
+  await page.getByLabel("消息输入框").fill(`记录决定：${DECISION_MARKER}`);
+  await page.getByRole("button", { name: "发送" }).click();
+  const decisionCandidate = page.getByLabel("项目管理方案");
+  await expect(decisionCandidate).toBeVisible();
+  await decisionCandidate.getByLabel("决定问题").fill("BMAD与模型是否成为项目事实源？");
+  await decisionCandidate
+    .getByLabel("决定理由")
+    .fill("Project事实由Chat Product Store和用户确认拥有");
+  await decisionCandidate.getByRole("button", { name: "保存管理方案" }).click();
+  await decisionCandidate.getByRole("button", { name: "确认写入项目账本" }).click();
   await expect(page.getByText(DECISION_MARKER, { exact: true }).first()).toBeVisible();
 
-  await page.getByLabel("贡献摘要").fill("用户完成PS1范围与方法边界确认");
-  await page.getByRole("button", { name: "确认记录贡献" }).click();
+  await page.getByRole("button", { name: "管理项目" }).click();
+  await page.getByLabel("项目管理动作").selectOption("contribution");
+  await page.getByLabel("消息输入框").fill("记录贡献：用户完成PS1范围与方法边界确认");
+  await page.getByRole("button", { name: "发送" }).click();
+  const contributionCandidate = page.getByLabel("项目管理方案");
+  await expect(contributionCandidate).toBeVisible();
+  await contributionCandidate.getByRole("button", { name: "确认写入项目账本" }).click();
   await expect(
     page.getByText("用户完成PS1范围与方法边界确认", { exact: true }).first(),
   ).toBeVisible();
@@ -163,6 +196,18 @@ test("真实Project Intake：对话建项→修改/并发确认→项目账本�
   const traceLines = await readTraceLines(
     resolve(process.cwd(), "../../.data/e2e/project-intake-real/traces"),
   );
+  const traceEvents = traceLines.map(
+    (line) => JSON.parse(line) as { eventName?: string; outcome?: string },
+  );
+  expect(
+    traceEvents.filter((event) => event.eventName === "project.understanding.started"),
+  ).toHaveLength(1);
+  expect(
+    traceEvents.filter((event) => event.eventName === "project.understanding.completed"),
+  ).toHaveLength(1);
+  expect(
+    traceEvents.filter((event) => event.eventName === "project.understanding.failed"),
+  ).toHaveLength(0);
   const traceText = traceLines.join("\n");
   expect(traceText).toContain('"providerName":"bailian"');
   expect(traceText).toContain('"modelId":"qwen3.7-plus"');

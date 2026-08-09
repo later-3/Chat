@@ -3,6 +3,7 @@ import type {
   MessageDto,
   PlanDto,
   ProjectIntakeProposal,
+  ProjectManagementProposal,
   RunDto,
   SubmitMessagePayload,
 } from "@chat/contracts/public";
@@ -87,7 +88,10 @@ function RealChatPane({
   );
   const [contextEditorOpen, setContextEditorOpen] = useState(false);
   const [awaitingOutcome, setAwaitingOutcome] = useState(false);
-  const [composerMode, setComposerMode] = useState<"task" | "project">("task");
+  const [composerMode, setComposerMode] = useState<"task" | "project" | "manage">("task");
+  const [managementKind, setManagementKind] = useState<"action" | "decision" | "contribution">(
+    "decision",
+  );
   const [rootId, setRootId] = useState("");
   const listRef = useRef<HTMLOListElement>(null);
   const messages: readonly MessageDto[] = chain.messages.data?.items ?? [];
@@ -98,8 +102,11 @@ function RealChatPane({
     draft.trim().length > 0 &&
     !sending &&
     !projects.beginning &&
+    !projects.beginningManagement &&
     chain.canStartNewRun &&
-    (composerMode === "task" || projectRootId !== "");
+    (composerMode === "task" ||
+      (composerMode === "project" && projectRootId !== "") ||
+      (composerMode === "manage" && projects.activeProjectId !== null));
   const frozenPendingContext =
     chain.pendingSend === null ? undefined : pendingSendPayload(chain.pendingSend).context;
 
@@ -140,6 +147,12 @@ function RealChatPane({
     setContextEditorOpen(false);
     if (composerMode === "project") {
       projects.begin({ text: draft.trim(), rootId: projectRootId });
+      updateDraft("");
+      onOpenWork();
+      return;
+    }
+    if (composerMode === "manage") {
+      projects.beginManagement({ text: draft.trim(), kind: managementKind });
       updateDraft("");
       onOpenWork();
       return;
@@ -207,6 +220,14 @@ function RealChatPane({
             >
               建立项目
             </button>
+            <button
+              className={composerMode === "manage" ? "small-button active" : "small-button"}
+              onClick={() => setComposerMode("manage")}
+              type="button"
+              disabled={projects.activeProjectId === null}
+            >
+              管理项目
+            </button>
           </div>
           <div className="model-fixed-label" aria-label="模型配置">
             模型由服务端配置
@@ -221,7 +242,7 @@ function RealChatPane({
               expanded={contextEditorOpen}
               onExpandedChange={setContextEditorOpen}
             />
-          ) : (
+          ) : composerMode === "project" ? (
             <label className="project-root-picker">
               <span>真实项目资源</span>
               <select
@@ -236,13 +257,32 @@ function RealChatPane({
                 ))}
               </select>
             </label>
+          ) : (
+            <label className="project-root-picker">
+              <span>项目管理动作</span>
+              <select
+                aria-label="项目管理动作"
+                value={managementKind}
+                onChange={(event) =>
+                  setManagementKind(event.target.value as "action" | "decision" | "contribution")
+                }
+              >
+                <option value="decision">记录决定</option>
+                <option value="action">新增待办</option>
+                <option value="contribution">记录贡献</option>
+              </select>
+            </label>
           )}
           <div className="composer-row">
             <textarea
               className="composer-input"
               aria-label="消息输入框"
               placeholder={
-                composerMode === "project" ? "描述项目目标、范围和当前诉求…" : "描述你要推进的事…"
+                composerMode === "project"
+                  ? "描述项目目标、范围和当前诉求…"
+                  : composerMode === "manage"
+                    ? "用自然语言说明要记录的决定、待办或贡献…"
+                    : "描述你要推进的事…"
               }
               rows={2}
               value={draft}
@@ -256,11 +296,13 @@ function RealChatPane({
               }}
             />
             <button className="send-button" aria-label="发送" disabled={!canSend} onClick={send}>
-              {sending || projects.beginning
+              {sending || projects.beginning || projects.beginningManagement
                 ? "发送中…"
                 : composerMode === "project"
                   ? "生成建项方案"
-                  : "发送"}
+                  : composerMode === "manage"
+                    ? "生成管理方案"
+                    : "发送"}
             </button>
           </div>
           {chain.pendingSend !== null && chain.sendError !== null && (
@@ -294,8 +336,16 @@ function ProjectPanel({ projects }: { projects: ProjectChain }) {
   const candidate = projects.candidate.data;
   const workspace = projects.project.data;
   const [proposal, setProposal] = useState<ProjectIntakeProposal | null>(null);
+  const [managementProposal, setManagementProposal] = useState<ProjectManagementProposal | null>(
+    null,
+  );
   useEffect(() => {
-    if (candidate?.status === "under_review") setProposal(candidate.proposal);
+    if (candidate?.candidateKind === "intake" && candidate.status === "under_review") {
+      setProposal(candidate.proposal);
+    }
+    if (candidate?.candidateKind === "management" && candidate.status === "under_review") {
+      setManagementProposal(candidate.proposal);
+    }
   }, [candidate]);
 
   return (
@@ -321,72 +371,178 @@ function ProjectPanel({ projects }: { projects: ProjectChain }) {
       {projects.beginError !== null && (
         <p className="error-note">建项请求未能提交，请刷新后重试。</p>
       )}
-      {candidate?.status === "queued" && (
+      {projects.managementBeginError !== null && (
+        <p className="error-note">项目管理消息未能生成Candidate，请刷新后重试。</p>
+      )}
+      {candidate?.candidateKind === "intake" && candidate.status === "queued" && (
         <p className="loading-note">正在理解诉求并观察真实项目资源…</p>
       )}
-      {candidate?.status === "failed" && (
+      {candidate?.candidateKind === "intake" && candidate.status === "failed" && (
         <p className="error-note" role="alert">
           建项理解或资源观察失败（{candidate.failureCode}）。原消息已保留，请修复配置后重新发起。
         </p>
       )}
-      {candidate?.status === "under_review" && proposal !== null && (
-        <div className="project-candidate-card">
-          <span className="eyebrow">建项方案 · 等待你的确认</span>
-          <label>
-            项目名称
-            <input
-              value={proposal.name}
-              onChange={(event) => setProposal({ ...proposal, name: event.target.value })}
-            />
-          </label>
-          <label>
-            项目目标
-            <textarea
-              rows={3}
-              value={proposal.goal}
-              onChange={(event) => setProposal({ ...proposal, goal: event.target.value })}
-            />
-          </label>
-          <p>{proposal.method.rationale}</p>
-          <dl className="project-evidence-grid">
-            <div>
-              <dt>分支</dt>
-              <dd>{candidate.resource.branch}</dd>
+      {candidate?.candidateKind === "intake" &&
+        candidate.status === "under_review" &&
+        proposal !== null && (
+          <div className="project-candidate-card">
+            <span className="eyebrow">建项方案 · 等待你的确认</span>
+            <label>
+              项目名称
+              <input
+                value={proposal.name}
+                onChange={(event) => setProposal({ ...proposal, name: event.target.value })}
+              />
+            </label>
+            <label>
+              项目目标
+              <textarea
+                rows={3}
+                value={proposal.goal}
+                onChange={(event) => setProposal({ ...proposal, goal: event.target.value })}
+              />
+            </label>
+            <p>{proposal.method.rationale}</p>
+            <dl className="project-evidence-grid">
+              <div>
+                <dt>分支</dt>
+                <dd>{candidate.resource.branch}</dd>
+              </div>
+              <div>
+                <dt>提交</dt>
+                <dd>{candidate.resource.headSha.slice(0, 8)}</dd>
+              </div>
+              <div>
+                <dt>文档</dt>
+                <dd>{candidate.resource.documentCount}</dd>
+              </div>
+              <div>
+                <dt>脚本</dt>
+                <dd>{candidate.resource.scriptCount}</dd>
+              </div>
+            </dl>
+            <div className="project-candidate-actions">
+              <button
+                className="small-button"
+                disabled={projects.deciding}
+                onClick={() => projects.revise(proposal)}
+              >
+                保存修改
+              </button>
+              <button
+                className="small-button"
+                disabled={projects.deciding}
+                onClick={() => projects.reject("用户拒绝建项方案")}
+              >
+                拒绝
+              </button>
+              <button
+                className="send-button"
+                disabled={projects.deciding}
+                onClick={projects.confirm}
+              >
+                确认建立项目
+              </button>
             </div>
-            <div>
-              <dt>提交</dt>
-              <dd>{candidate.resource.headSha.slice(0, 8)}</dd>
-            </div>
-            <div>
-              <dt>文档</dt>
-              <dd>{candidate.resource.documentCount}</dd>
-            </div>
-            <div>
-              <dt>脚本</dt>
-              <dd>{candidate.resource.scriptCount}</dd>
-            </div>
-          </dl>
-          <div className="project-candidate-actions">
-            <button
-              className="small-button"
-              disabled={projects.deciding}
-              onClick={() => projects.revise(proposal)}
-            >
-              保存修改
-            </button>
-            <button
-              className="small-button"
-              disabled={projects.deciding}
-              onClick={() => projects.reject("用户拒绝建项方案")}
-            >
-              拒绝
-            </button>
-            <button className="send-button" disabled={projects.deciding} onClick={projects.confirm}>
-              确认建立项目
-            </button>
           </div>
-        </div>
-      )}
+        )}
+      {candidate?.candidateKind === "management" &&
+        candidate.status === "under_review" &&
+        managementProposal !== null && (
+          <div className="project-candidate-card" aria-label="项目管理方案">
+            <span className="eyebrow">项目管理方案 · 等待你的确认</span>
+            {managementProposal.kind === "decision" ? (
+              <>
+                <label>
+                  决定问题
+                  <input
+                    value={managementProposal.question}
+                    onChange={(event) =>
+                      setManagementProposal({
+                        ...managementProposal,
+                        question: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  最终选择
+                  <textarea
+                    rows={2}
+                    value={managementProposal.choice}
+                    onChange={(event) =>
+                      setManagementProposal({
+                        ...managementProposal,
+                        options: [event.target.value],
+                        choice: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  决定理由
+                  <textarea
+                    rows={2}
+                    value={managementProposal.rationale}
+                    onChange={(event) =>
+                      setManagementProposal({
+                        ...managementProposal,
+                        rationale: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+              </>
+            ) : managementProposal.kind === "action" ? (
+              <label>
+                待办标题
+                <input
+                  value={managementProposal.title}
+                  onChange={(event) =>
+                    setManagementProposal({ ...managementProposal, title: event.target.value })
+                  }
+                />
+              </label>
+            ) : (
+              <label>
+                贡献摘要
+                <textarea
+                  rows={2}
+                  value={managementProposal.summary}
+                  onChange={(event) =>
+                    setManagementProposal({ ...managementProposal, summary: event.target.value })
+                  }
+                />
+              </label>
+            )}
+            {projects.managementDecisionError !== null && (
+              <p className="error-note">Candidate状态已变化，请刷新后重新确认。</p>
+            )}
+            <div className="project-candidate-actions">
+              <button
+                className="small-button"
+                disabled={projects.decidingManagement}
+                onClick={() => projects.reviseManagement(managementProposal)}
+              >
+                保存管理方案
+              </button>
+              <button
+                className="small-button"
+                disabled={projects.decidingManagement}
+                onClick={() => projects.rejectManagement("用户拒绝项目管理方案")}
+              >
+                拒绝管理方案
+              </button>
+              <button
+                className="send-button"
+                disabled={projects.decidingManagement}
+                onClick={projects.confirmManagement}
+              >
+                确认写入项目账本
+              </button>
+            </div>
+          </div>
+        )}
       {workspace !== undefined && (
         <div className="project-workspace-card">
           <span className="eyebrow">{workspace.project.stageName}</span>

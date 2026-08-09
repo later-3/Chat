@@ -168,6 +168,15 @@ export function computeProjectCandidateSha256(input: {
   return hashCanonical("project-intake-candidate.v1", input);
 }
 
+export function computeProjectManagementCandidateSha256(input: {
+  readonly projectId: string;
+  readonly boundProjectRevision: number;
+  readonly sourceMessageId: string;
+  readonly proposal: unknown;
+}): string {
+  return hashCanonical("project-management-candidate.v1", input);
+}
+
 export function computeProjectObservationSha256(data: ProjectObservationDataShape): string {
   return hashCanonical("project-observation.v1", data);
 }

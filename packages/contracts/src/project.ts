@@ -314,21 +314,26 @@ export const projectIntakeProposalSchema = z
   })
   .strict();
 
-const projectCandidateBase = {
+const projectCandidateCommon = {
   schemaVersion: z.literal("project-candidate.v1"),
   projectCandidateId: projectCandidateIdSchema,
   sessionId: productSessionIdSchema,
   sourceMessageId: messageIdSchema,
   requestedByPrincipalId: principalIdSchema,
-  rootId: z.string().regex(/^root_[A-Za-z0-9]+$/u),
   ...entityBase,
 };
 
-export const projectCandidateSchema = z.discriminatedUnion("status", [
-  z.object({ ...projectCandidateBase, status: z.literal("queued") }).strict(),
+const projectIntakeCandidateBase = {
+  ...projectCandidateCommon,
+  candidateKind: z.literal("intake"),
+  rootId: z.string().regex(/^root_[A-Za-z0-9]+$/u),
+};
+
+const projectIntakeCandidateSchema = z.discriminatedUnion("status", [
+  z.object({ ...projectIntakeCandidateBase, status: z.literal("queued") }).strict(),
   z
     .object({
-      ...projectCandidateBase,
+      ...projectIntakeCandidateBase,
       status: z.literal("failed"),
       failureCode: z
         .string()
@@ -339,7 +344,7 @@ export const projectCandidateSchema = z.discriminatedUnion("status", [
     .strict(),
   z
     .object({
-      ...projectCandidateBase,
+      ...projectIntakeCandidateBase,
       status: z.literal("under_review"),
       understanding: projectIntakeUnderstandingSchema,
       proposal: projectIntakeProposalSchema,
@@ -352,7 +357,7 @@ export const projectCandidateSchema = z.discriminatedUnion("status", [
     .strict(),
   z
     .object({
-      ...projectCandidateBase,
+      ...projectIntakeCandidateBase,
       status: z.literal("confirmed"),
       understanding: projectIntakeUnderstandingSchema,
       proposal: projectIntakeProposalSchema,
@@ -367,7 +372,7 @@ export const projectCandidateSchema = z.discriminatedUnion("status", [
     .strict(),
   z
     .object({
-      ...projectCandidateBase,
+      ...projectIntakeCandidateBase,
       status: z.literal("rejected"),
       understanding: projectIntakeUnderstandingSchema.optional(),
       proposal: projectIntakeProposalSchema.optional(),
@@ -382,8 +387,86 @@ export const projectCandidateSchema = z.discriminatedUnion("status", [
     .strict(),
 ]);
 
+export const projectManagementProposalSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("action"),
+      workId: projectWorkIdSchema,
+      title: z.string().trim().min(1).max(240),
+      ownerParticipantId: projectParticipantIdSchema,
+      dueAt: isoDateTimeSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("decision"),
+      question: z.string().trim().min(1).max(1_000),
+      options: z.array(z.string().trim().min(1).max(1_000)).min(1).max(12),
+      choice: z.string().trim().min(1).max(1_000),
+      rationale: z.string().trim().min(1).max(2_000),
+      decidedByParticipantId: projectParticipantIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("contribution"),
+      participantId: projectParticipantIdSchema,
+      workId: projectWorkIdSchema.optional(),
+      actionId: projectActionIdSchema.optional(),
+      contributionKind: z.enum([
+        "analysis",
+        "code",
+        "document",
+        "script",
+        "review",
+        "test",
+        "deployment",
+        "coordination",
+      ]),
+      summary: z.string().trim().min(1).max(2_000),
+      evidenceIds: z.array(projectEvidenceIdSchema).max(20),
+      occurredAt: isoDateTimeSchema,
+    })
+    .strict(),
+]);
+
+const projectManagementCandidateBase = {
+  ...projectCandidateCommon,
+  candidateKind: z.literal("management"),
+  projectId: projectIdSchema,
+  boundProjectRevision: z.number().int().positive(),
+  proposal: projectManagementProposalSchema,
+  candidateSha256: sha256Schema,
+};
+
+const projectManagementCandidateSchema = z.discriminatedUnion("status", [
+  z.object({ ...projectManagementCandidateBase, status: z.literal("under_review") }).strict(),
+  z
+    .object({
+      ...projectManagementCandidateBase,
+      status: z.literal("confirmed"),
+      committedObjectId: z.string().regex(/^(pac|pdc|pct)_[A-Za-z0-9]+$/u),
+      decidedByCommandId: commandIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...projectManagementCandidateBase,
+      status: z.literal("rejected"),
+      rejectionReason: z.string().min(1).max(2_000).optional(),
+      decidedByCommandId: commandIdSchema,
+    })
+    .strict(),
+]);
+
+export const projectCandidateSchema = z.union([
+  projectIntakeCandidateSchema,
+  projectManagementCandidateSchema,
+]);
+
 export type ProjectIntakeUnderstanding = z.infer<typeof projectIntakeUnderstandingSchema>;
 export type ProjectIntakeProposal = z.infer<typeof projectIntakeProposalSchema>;
+export type ProjectManagementProposal = z.infer<typeof projectManagementProposalSchema>;
 export type ProjectMethodPolicy = z.infer<typeof projectMethodPolicySchema>;
 export type ProjectResourceAdapterKind = z.infer<typeof projectResourceAdapterKindSchema>;
 export type Project = z.infer<typeof projectSchema>;
