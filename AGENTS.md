@@ -51,7 +51,9 @@ apps/api           Hono协议入口与组合根
 packages/contracts 网络合同与事件类型
 packages/domain    产品对象、状态机与不变量
 packages/application 用例协调与事务边界
-packages/realtime  Runtime Journal与SSE投影
+packages/product-store-json 当前JSON Product Store Adapter与迁移
+packages/memory-runtime Memory Port的memmy与Tencent MemoryCore Adapter
+packages/realtime  当前Trace与Replay；未来Runtime Journal与SSE投影
 packages/workflows Vercel Workflow定义与活动
 packages/pi-runtime pi适配与Agent节点
 packages/testing   合同、Fixture与测试工具

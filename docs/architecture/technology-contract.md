@@ -5,6 +5,8 @@
 > 日期：2026-08-06
 >
 > 作用：约束目标系统的前端、后端、实时交互、Workflow、HITL、Checkpoint与Agent Runtime。字段级Schema仍在各实现工作包中定义。
+>
+> 文档边界：本文是**目标架构合同**，不是“所有能力都已实现”的声明。当前实现、实际REST交互和两套Workflow分别见[PROJECT_STATE.md](../../PROJECT_STATE.md)、[仓库地图](./repository-map.md)、[前后端交互](./frontend-backend-interaction.md)与[Workflow运行设计](./runtime-workflows.md)。截至当前基线，SSE Cursor Runtime Journal仍未实现，Web使用受控Query轮询。
 
 ## 1. 决策摘要
 

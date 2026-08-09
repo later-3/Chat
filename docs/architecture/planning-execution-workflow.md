@@ -1,6 +1,8 @@
 # 单Workflow任务规划与执行设计
 
-> 状态：核心方向已由用户确认；后端实施边界见[工作流后端闭环任务书](../tasks/planning-execution-backend-closure.md)
+> 文档类型：已批准的设计依据，包含实施前的历史拆分。当前已运行节点、Outbox、Hook与失败语义以[Workflow运行设计](./runtime-workflows.md)为现状入口；当前完成事实以根目录[PROJECT_STATE.md](../../PROJECT_STATE.md)为准。
+
+> 状态：规划—修订—批准/拒绝—执行—Product Commit纵向链已经实现；历史实施边界见[工作流后端闭环任务书](../tasks/planning-execution-backend-closure.md)
 >
 > 日期：2026-08-07
 >

@@ -1,5 +1,7 @@
 # Chat 状态与运行时边界
 
+> 文档类型：目标状态与恢复边界。当前已经实现的链路见[前后端交互](./frontend-backend-interaction.md)和[Workflow运行设计](./runtime-workflows.md)。本文件中的SSE Cursor/Runtime Journal是冻结目标；当前Web仍使用Query轮询，不能据此宣称SSE已经交付。
+
 ## 1. 核心原则
 
 一次用户操作会经过多种对象。它们可以互相引用，但不能因为ID暂时相同就合并所有权。
