@@ -180,6 +180,8 @@ P1是一个阶段目标，拆成下面8个独立开发任务，不作为一个�
 
 在P1已有工作流运行区之外，交付稳定节点、组合结构、定义版本、发布校验和Workflow定义图/编辑能力；图只投影真实定义或运行事实。
 
+2026-08-10已完成实现前审核包：[技术研究](./docs/architecture/configurable-workflow-research.md)、[阶段总纲与验证闭包](./docs/tasks/configurable-workflow-stage-program.md)、[详细架构与方案](./docs/architecture/configurable-workflow-design.md)、[42项全任务地图](./docs/tasks/configurable-workflow-task-map.md)、S1～S7逐任务方案/测试书及[整体自审](./docs/tasks/configurable-workflow-self-review.md)。用户已批准整套设计并授权连续完成开发、测试、自检和最终单一PR；实现必须如实处理尚未具备的Project Context/Rules依赖，不能用假数据绕过。
+
 ### P7 多媒介与PWA增强
 
 在P1已有PWA基础上增加推送通知、允许缓存的只读内容和跨设备恢复，并逐步加入文件、语音、日历、提醒和Canvas。
