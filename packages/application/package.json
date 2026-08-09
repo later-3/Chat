@@ -7,6 +7,18 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./workflow-system-definitions": {
+      "types": "./src/workflow-system-definitions.ts",
+      "import": "./src/workflow-system-definitions.ts"
+    },
+    "./workflow-run-spec-compiler": {
+      "types": "./src/workflow-run-spec-compiler.ts",
+      "import": "./src/workflow-run-spec-compiler.ts"
+    },
+    "./workflow-kernel-fixtures": {
+      "types": "./src/workflow-kernel-fixtures.ts",
+      "import": "./src/workflow-kernel-fixtures.ts"
     }
   },
   "scripts": {

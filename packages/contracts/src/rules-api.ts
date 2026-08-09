@@ -109,6 +109,17 @@ export const createRuleTagPayloadSchema = z
   .strict();
 
 export const updateRuleTagPayloadSchema = createRuleTagPayloadSchema;
+export const archiveRuleTagPayloadSchema = z.object({}).strict();
+
+export const listRulesQuerySchema = z
+  .object({
+    cursor: z.string().min(1).max(500).optional(),
+    limit: z.number().int().min(1).max(100).default(50),
+    lifecycle: ruleLifecycleSchema.optional(),
+    tagId: ruleTagIdSchema.optional(),
+    scenario: ruleScenarioSchema.optional(),
+  })
+  .strict();
 
 export const ruleTagDtoSchema = z
   .object({
@@ -172,6 +183,7 @@ export const ruleRevisionDetailDtoSchema = z
     ruleId: ruleIdSchema,
     revision: z.number().int().positive(),
     supersedesRevisionId: ruleRevisionIdSchema.optional(),
+    supersedesRevisionSha256: sha256Schema.optional(),
     body: z.string().min(1).max(8_000),
     rationale: z.string().min(1).max(4_000),
     appliesWhen: z.array(z.string().min(1).max(500)).max(20),
@@ -239,6 +251,45 @@ export const ruleSelectionDtoSchema = z
   })
   .strict();
 
+export const rulePageDtoSchema = z
+  .object({
+    schemaVersion: z.literal(RULES_API_SCHEMA_VERSION),
+    items: z.array(ruleSummaryDtoSchema).max(100),
+    nextCursor: z.string().min(1).max(500).optional(),
+  })
+  .strict();
+
+export const ruleTagsDtoSchema = z
+  .object({
+    schemaVersion: z.literal(RULES_API_SCHEMA_VERSION),
+    items: z.array(ruleTagDtoSchema).max(500),
+  })
+  .strict();
+
+export const ruleDetailResponseDtoSchema = z
+  .object({
+    schemaVersion: z.literal(RULES_API_SCHEMA_VERSION),
+    rule: ruleDetailDtoSchema,
+    decisions: z.array(ruleDecisionDtoSchema).max(100),
+  })
+  .strict();
+
+export const ruleCommandResultDtoSchema = z
+  .object({
+    schemaVersion: z.literal(RULES_API_SCHEMA_VERSION),
+    rule: ruleDetailDtoSchema,
+    replayed: z.boolean(),
+  })
+  .strict();
+
+export const ruleTagCommandResultDtoSchema = z
+  .object({
+    schemaVersion: z.literal(RULES_API_SCHEMA_VERSION),
+    tag: ruleTagDtoSchema,
+    replayed: z.boolean(),
+  })
+  .strict();
+
 export type RuleSelectionInput = z.infer<typeof ruleSelectionInputSchema>;
 export type RuleScopeInput = z.infer<typeof ruleScopeInputSchema>;
 export type RuleScopeDto = z.infer<typeof ruleScopeDtoSchema>;
@@ -247,6 +298,8 @@ export type CreateRulePayload = z.infer<typeof createRulePayloadSchema>;
 export type ReviseRulePayload = z.infer<typeof reviseRulePayloadSchema>;
 export type TransitionRulePayload = z.infer<typeof transitionRulePayloadSchema>;
 export type CreateRuleTagPayload = z.infer<typeof createRuleTagPayloadSchema>;
+export type UpdateRuleTagPayload = z.infer<typeof updateRuleTagPayloadSchema>;
+export type ListRulesQuery = z.infer<typeof listRulesQuerySchema>;
 export type RuleTagDto = z.infer<typeof ruleTagDtoSchema>;
 export type RuleRevisionSummaryDto = z.infer<typeof ruleRevisionSummaryDtoSchema>;
 export type RuleSummaryDto = z.infer<typeof ruleSummaryDtoSchema>;
@@ -254,3 +307,8 @@ export type RuleRevisionDetailDto = z.infer<typeof ruleRevisionDetailDtoSchema>;
 export type RuleDetailDto = z.infer<typeof ruleDetailDtoSchema>;
 export type RuleDecisionDto = z.infer<typeof ruleDecisionDtoSchema>;
 export type RuleSelectionDto = z.infer<typeof ruleSelectionDtoSchema>;
+export type RulePageDto = z.infer<typeof rulePageDtoSchema>;
+export type RuleTagsDto = z.infer<typeof ruleTagsDtoSchema>;
+export type RuleDetailResponseDto = z.infer<typeof ruleDetailResponseDtoSchema>;
+export type RuleCommandResultDto = z.infer<typeof ruleCommandResultDtoSchema>;
+export type RuleTagCommandResultDto = z.infer<typeof ruleTagCommandResultDtoSchema>;

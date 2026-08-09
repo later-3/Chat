@@ -31,10 +31,23 @@ export interface BailianEnv {
   readonly DASHSCOPE_BASE_URL?: string | undefined;
 }
 
-function assertAllowedBailianHost(hostname: string): void {
+const SHARED_BAILIAN_HOSTS: ReadonlySet<string> = new Set([
+  "dashscope.aliyuncs.com",
+  "dashscope-intl.aliyuncs.com",
+  "dashscope-us.aliyuncs.com",
+]);
+
+const WORKSPACE_BAILIAN_HOST =
+  /^[a-z0-9][a-z0-9-]{0,62}\.(?:cn-beijing|ap-southeast-1|ap-northeast-1|eu-central-1)\.maas\.aliyuncs\.com$/u;
+
+export function assertAllowedBailianHost(hostname: string): void {
+  // 官方Base URL总览把按量付费共享域名与业务空间专属maas域名穷尽列出；
+  // Coding/Token Plan仅供交互式开发工具使用，不能以contains/后缀规则混入后端服务。
+  // https://help.aliyun.com/zh/model-studio/base-url
+  const toolOnly =
+    hostname === "coding.dashscope.aliyuncs.com" || hostname.startsWith("token-plan.");
   const allowed =
-    hostname === "dashscope.aliyuncs.com" ||
-    (hostname.endsWith(".aliyuncs.com") && hostname.includes("dashscope"));
+    !toolOnly && (SHARED_BAILIAN_HOSTS.has(hostname) || WORKSPACE_BAILIAN_HOST.test(hostname));
   if (!allowed) {
     throw new BailianConfigError(`DASHSCOPE_BASE_URL域名不符合百炼合同:${hostname}`);
   }

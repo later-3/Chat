@@ -124,6 +124,7 @@ export const ruleRevisionSchema = z
     ruleId: ruleIdSchema,
     revision: z.number().int().positive(),
     supersedesRevisionId: ruleRevisionIdSchema.optional(),
+    supersedesRevisionSha256: sha256Schema.optional(),
     body: z.string().trim().min(1).max(8_000),
     rationale: z.string().trim().min(1).max(4_000),
     appliesWhen: z.array(shortTextSchema).max(20),
@@ -319,6 +320,22 @@ export const ruleSelectionDiagnosticSchema = z
   })
   .strict();
 
+/** Selection创建时冻结的候选摘要；不含正文，但足以在未来Rule变化后重算选择结果。 */
+export const ruleSelectionCandidateSnapshotSchema = z
+  .object({
+    ruleId: ruleIdSchema,
+    ruleRevisionId: ruleRevisionIdSchema,
+    ruleRevisionSha256: sha256Schema,
+    lifecycle: ruleLifecycleSchema,
+    enforcement: ruleEnforcementSchema,
+    priority: z.number().int().min(0).max(1_000),
+    tagIds: z.array(ruleTagIdSchema).max(30),
+    scopes: z.array(ruleScopeSchema).min(1).max(20),
+    conflictsWithRuleIds: z.array(ruleIdSchema).max(30),
+    contentCharacters: z.number().int().positive().max(8_000),
+  })
+  .strict();
+
 /**
  * RuleSelection只保存精确Revision引用、选择原因和稳定诊断；规则正文仍只在Revision中。
  */
@@ -331,6 +348,7 @@ export const ruleSelectionSchema = z
     context: ruleSelectionContextSchema,
     request: ruleSelectionRequestSnapshotSchema,
     budget: ruleSelectionBudgetSchema,
+    candidates: z.array(ruleSelectionCandidateSnapshotSchema).max(100),
     status: z.enum(["ready", "requires_user_resolution", "blocked"]),
     selected: z.array(selectedRuleRevisionRefSchema).max(100),
     excluded: z.array(excludedRuleRevisionRefSchema).max(200),

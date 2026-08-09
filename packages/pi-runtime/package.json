@@ -13,7 +13,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "test:provider:bailian": "vitest run --config vitest.provider.config.ts"
+    "test:provider:bailian": "vitest run --config vitest.provider.config.ts",
+    "test:provider:bailian:note": "vitest run --config vitest.provider-note.config.ts"
   },
   "dependencies": {
     "@chat/contracts": "workspace:*",

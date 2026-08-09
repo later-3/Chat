@@ -22,10 +22,10 @@ export interface RuleSelectionCandidateShape {
 
 export interface RuleSelectionContextShape {
   readonly scenario: RuleScenarioShape;
-  readonly projectMethodProfileId?: string;
-  readonly projectStageKey?: string;
-  readonly workflowNodeKey?: string;
-  readonly projectId?: string;
+  readonly projectMethodProfileId?: string | undefined;
+  readonly projectStageKey?: string | undefined;
+  readonly workflowNodeKey?: string | undefined;
+  readonly projectId?: string | undefined;
 }
 
 export interface RequestedRuleRevisionShape {
@@ -73,9 +73,9 @@ export type RuleSelectionExclusionCodeShape =
 
 export interface ExcludedRuleRevisionShape {
   readonly ruleId: string;
-  readonly ruleRevisionId?: string;
+  readonly ruleRevisionId?: string | undefined;
   readonly code: RuleSelectionExclusionCodeShape;
-  readonly conflictingRuleId?: string;
+  readonly conflictingRuleId?: string | undefined;
 }
 
 export type RuleSelectionDiagnosticCodeShape =

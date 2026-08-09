@@ -5,6 +5,7 @@ import type {
 } from "./workflow-run-spec-compiler.js";
 import type { WorkflowDefinitionRevisionInput } from "./workflow-definition-schema.js";
 import { NODE_CATALOG_DESCRIPTORS } from "./workflow-node-catalog.js";
+import { BUILTIN_WORKFLOW_EXECUTOR_MANIFEST } from "./workflow-executor-manifest.js";
 
 const task = (
   definitionNodeId: string,
@@ -99,11 +100,7 @@ export const PLANNING_MIXED_ROOT: WorkflowSequence = {
 };
 
 export const KERNEL_EXECUTOR_MANIFEST_FIXTURE: readonly WorkflowExecutorManifestEntry[] =
-  NODE_CATALOG_DESCRIPTORS.map((descriptor) => ({
-    nodeType: descriptor.nodeType,
-    schemaVersion: descriptor.schemaVersion,
-    executorVersion: `${descriptor.nodeType}.v1`,
-  }));
+  BUILTIN_WORKFLOW_EXECUTOR_MANIFEST;
 
 export function kernelDefinitionFixture(
   key: "sequence" | "choice" | "bounded_loop" | "human_review" | "composite" | "mixed",
@@ -119,7 +116,7 @@ export function kernelDefinitionFixture(
   };
   return {
     schemaVersion: "workflow-definition-revision-input.v1",
-    workflowDefinitionRevisionId: `wfr_fixture${key.replace("_", "")}`,
+    workflowDefinitionRevisionId: `wfr_fixture${key.replace("_", "")}` as never,
     definitionRevision: 1,
     blueprintKey: note ? "note" : "planning",
     blueprintVersion: 1,

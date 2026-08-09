@@ -1,5 +1,18 @@
 import { z } from "zod";
 import {
+  workflowExecutorManifestEntrySchema,
+  workflowRunBusinessInputSchema,
+  workflowRunSpecSchema,
+  workflowRunnerEvidenceSchema,
+  type WorkflowExecutorManifestEntry,
+  type WorkflowNodeResolution,
+  type WorkflowResolvedResource,
+  type WorkflowReviewResolution,
+  type WorkflowRunSpec,
+  type WorkflowRunnerEvidence,
+} from "@chat/contracts";
+export type { WorkflowExecutorManifestEntry, WorkflowRunSpec } from "@chat/contracts";
+import {
   WORKFLOW_KERNEL_LIMITS,
   hashCanonical,
   sortWorkflowDiagnostics,
@@ -20,7 +33,6 @@ import {
   workflowFrozenResourceSchema,
   workflowPrincipalSnapshotSchema,
   workflowRunConfigurationSchema,
-  workflowSequenceBoundarySchema,
   type WorkflowDefinitionRevisionInput,
   type WorkflowFrozenResource,
   type WorkflowPrincipalSnapshot,
@@ -34,145 +46,6 @@ import {
   type NodeCatalog,
 } from "./workflow-node-catalog.js";
 import { normalizeWorkflowDefinition } from "./workflow-definition-normalize.js";
-
-const executorManifestEntrySchema = z.strictObject({
-  nodeType: z.enum([
-    "context.memory",
-    "context.project",
-    "policy.rules",
-    "capability.skills",
-    "agent.research",
-    "agent.plan",
-    "human.plan_review",
-    "execute.plan",
-    "result.validate",
-    "product.commit",
-    "note.extract",
-    "note.classify",
-    "human.note_review",
-    "note.commit",
-  ]),
-  schemaVersion: z.number().int().min(1).max(32),
-  executorVersion: z
-    .string()
-    .min(1)
-    .max(80)
-    .regex(/^[a-z0-9][a-z0-9._-]*$/),
-});
-export type WorkflowExecutorManifestEntry = z.infer<typeof executorManifestEntrySchema>;
-
-const runnerEvidenceSchema = z.strictObject({
-  runnerFamily: z.literal("definition-kernel-lab.v1"),
-  runnerBundleVersion: z
-    .string()
-    .min(1)
-    .max(128)
-    .regex(/^[A-Za-z0-9._-]+$/),
-});
-export type WorkflowRunnerEvidence = z.infer<typeof runnerEvidenceSchema>;
-
-const resolvedResourceBase = {
-  definitionNodeId: z.string(),
-  resourceKind: z.enum(["memory", "project", "rule", "skill"]),
-} as const;
-const frozenSelectedResourceFields = {
-  resourceId: z.string(),
-  expectedRevision: z.number().int().min(1),
-  expectedSha256: z.string().regex(/^[a-f0-9]{64}$/),
-} as const;
-const resolvedResourceSchema = z.union([
-  z.strictObject({
-    ...resolvedResourceBase,
-    ...frozenSelectedResourceFields,
-    resolution: z.literal("included"),
-  }),
-  z.strictObject({
-    ...resolvedResourceBase,
-    ...frozenSelectedResourceFields,
-    resolution: z.literal("excluded"),
-    exclusionReason: z.enum([
-      "not_found",
-      "archived",
-      "forbidden",
-      "revision_stale",
-      "hash_mismatch",
-    ]),
-  }),
-  z.strictObject({
-    ...resolvedResourceBase,
-    resolution: z.literal("excluded"),
-    exclusionReason: z.literal("not_selected"),
-  }),
-]);
-export type WorkflowResolvedResource = z.infer<typeof resolvedResourceSchema>;
-
-const nodeResolutionSchema = z.strictObject({
-  definitionNodeId: z.string(),
-  nodeType: executorManifestEntrySchema.shape.nodeType,
-  schemaVersion: z.number().int().min(1),
-  config: z.record(z.string(), z.unknown()),
-  activation: z.enum(["enabled", "skipped"]),
-  skipOutcome: z.string().optional(),
-});
-export type WorkflowNodeResolution = z.infer<typeof nodeResolutionSchema>;
-
-const reviewResolutionSchema = z.strictObject({
-  definitionNodeId: z.string(),
-  mode: z.enum(["manual", "auto_continue_if_policy_allows", "always_auto"]),
-  actor: z.enum(["user", "system_policy"]),
-  policyRef: z
-    .strictObject({
-      resourceId: z.string(),
-      revision: z.number().int().min(1),
-      sha256: z.string().regex(/^[a-f0-9]{64}$/),
-    })
-    .optional(),
-});
-export type WorkflowReviewResolution = z.infer<typeof reviewResolutionSchema>;
-
-const kernelLimitsSchema = z.strictObject({
-  request: z.strictObject({ maxDefinitionBytes: z.number().int().positive() }),
-  structure: z.strictObject({
-    maxDepth: z.number().int().positive(),
-    maxNodes: z.number().int().positive(),
-    maxBranches: z.number().int().positive(),
-    maxLoops: z.number().int().positive(),
-    maxNestedLoops: z.number().int().positive(),
-    maxLoopIterations: z.number().int().positive(),
-  }),
-  runtime: z.strictObject({
-    maxNodeExecutions: z.number().int().positive(),
-    maxCompositeChildren: z.number().int().positive(),
-    maxWaits: z.number().int().positive(),
-  }),
-  projection: z.strictObject({
-    maxManifestSlots: z.number().int().positive(),
-    maxPreviewBytes: z.number().int().positive(),
-  }),
-});
-
-export const workflowRunSpecSchema = z.strictObject({
-  schemaVersion: z.literal("workflow-run-spec.v1"),
-  workflowRunSpecId: z.string().regex(/^wrs_[A-Za-z0-9]+$/),
-  productRunId: z.string().regex(/^run_[A-Za-z0-9]+$/),
-  definitionRef: z.strictObject({
-    workflowDefinitionRevisionId: z.string().regex(/^wfr_[A-Za-z0-9]+$/),
-    definitionRevision: z.number().int().min(1),
-    definitionSha256: z.string().regex(/^[a-f0-9]{64}$/),
-    blueprintKey: z.enum(["planning", "note"]),
-    blueprintVersion: z.number().int().min(1),
-  }),
-  runner: runnerEvidenceSchema,
-  semanticRoot: workflowSequenceBoundarySchema,
-  nodeResolutions: z.array(nodeResolutionSchema).max(WORKFLOW_KERNEL_LIMITS.structure.maxNodes),
-  resourceResolutions: z.array(resolvedResourceSchema).max(128),
-  reviewResolutions: z.array(reviewResolutionSchema).max(16),
-  limits: kernelLimitsSchema,
-  executorManifest: z.array(executorManifestEntrySchema).max(64),
-  sha256: z.string().regex(/^[a-f0-9]{64}$/),
-  createdAt: z.string().datetime(),
-});
-export type WorkflowRunSpec = z.infer<typeof workflowRunSpecSchema>;
 
 const policyEvidenceSchema = z.strictObject({
   resourceId: z.string().min(3).max(128),
@@ -191,6 +64,7 @@ export interface CompileWorkflowRunSpecInput {
   readonly availableResources: readonly unknown[];
   readonly executorManifest: readonly unknown[];
   readonly runner: unknown;
+  readonly businessInput?: unknown;
   /** 服务端策略解析结果；浏览器不能自行提交该字段。 */
   readonly autoContinuePolicy?: unknown;
 }
@@ -206,6 +80,7 @@ interface CompilerContext {
   readonly resources: readonly WorkflowFrozenResource[];
   readonly executorManifest: readonly WorkflowExecutorManifestEntry[];
   readonly runner: WorkflowRunnerEvidence;
+  readonly businessInput?: unknown;
   readonly policyEvidence?: WorkflowPolicyEvidence | undefined;
   readonly blueprint: WorkflowBlueprint;
 }
@@ -310,6 +185,7 @@ export function compileWorkflowRunSpec(
     nodeResolutions: policy.nodeResolutions,
     resourceResolutions: resources.resolutions,
     reviewResolutions: policy.reviewResolutions,
+    ...(context.businessInput !== undefined ? { businessInput: context.businessInput } : {}),
     limits: WORKFLOW_KERNEL_LIMITS,
     executorManifest: [...context.executorManifest].sort((left, right) =>
       nodeExecutorKey(left.nodeType, left.schemaVersion).localeCompare(
@@ -354,14 +230,20 @@ export function validateWorkflowRunSpecIntegrity(
       ],
     };
   }
-  const {
-    schemaVersion: _schema,
-    workflowRunSpecId: _id,
-    productRunId: _run,
-    sha256,
-    createdAt: _at,
-    ...payload
-  } = parsed.data;
+  const { sha256 } = parsed.data;
+  const payload = {
+    definitionRef: parsed.data.definitionRef,
+    runner: parsed.data.runner,
+    semanticRoot: parsed.data.semanticRoot,
+    nodeResolutions: parsed.data.nodeResolutions,
+    resourceResolutions: parsed.data.resourceResolutions,
+    reviewResolutions: parsed.data.reviewResolutions,
+    ...(parsed.data.businessInput !== undefined
+      ? { businessInput: parsed.data.businessInput }
+      : {}),
+    limits: parsed.data.limits,
+    executorManifest: parsed.data.executorManifest,
+  };
   const expected = hashCanonical("workflow-run-spec.v1", payload);
   if (expected !== sha256) {
     return {
@@ -418,12 +300,17 @@ function parseCompilerBoundaries(
     } {
   const configuration = workflowRunConfigurationSchema.safeParse(input.runConfiguration);
   const principal = workflowPrincipalSnapshotSchema.safeParse(input.principal);
-  const resources = z
-    .array(workflowFrozenResourceSchema)
-    .max(256)
-    .safeParse(input.availableResources);
-  const manifest = z.array(executorManifestEntrySchema).max(64).safeParse(input.executorManifest);
-  const runner = runnerEvidenceSchema.safeParse(input.runner);
+  const resources = parseContractArray(input.availableResources, 256, workflowFrozenResourceSchema);
+  const manifest = parseContractArray(
+    input.executorManifest,
+    64,
+    workflowExecutorManifestEntrySchema,
+  );
+  const runner = workflowRunnerEvidenceSchema.safeParse(input.runner);
+  const businessInput =
+    input.businessInput === undefined
+      ? { success: true as const, data: undefined }
+      : workflowRunBusinessInputSchema.safeParse(input.businessInput);
   const policyEvidence =
     input.autoContinuePolicy === undefined
       ? { success: true as const, data: undefined }
@@ -435,6 +322,7 @@ function parseCompilerBoundaries(
   if (!resources.success) invalid.push("resources");
   if (!manifest.success) invalid.push("executor_manifest");
   if (!runner.success) invalid.push("runner");
+  if (!businessInput.success) invalid.push("business_input");
   if (!policyEvidence.success) invalid.push("auto_continue_policy");
   if (blueprint === undefined) invalid.push("blueprint");
   if (
@@ -444,6 +332,7 @@ function parseCompilerBoundaries(
     !resources.success ||
     !manifest.success ||
     !runner.success ||
+    !businessInput.success ||
     !policyEvidence.success ||
     blueprint === undefined
   ) {
@@ -457,6 +346,31 @@ function parseCompilerBoundaries(
       })),
     };
   }
+  if (businessInput.data !== undefined) {
+    const expectedInputKind =
+      definition.blueprintKey === "note" ? "note_capture" : "planning_message";
+    const expectedRunnerFamily =
+      definition.blueprintKey === "note" ? "note-capture.v1" : "configurable-planning.v1";
+    if (
+      businessInput.data.kind !== expectedInputKind ||
+      runner.data.runnerFamily !== expectedRunnerFamily
+    ) {
+      return {
+        success: false,
+        diagnostics: [
+          {
+            family: "definition_invalid",
+            code: "compiler.business_input_runner_mismatch",
+            path: "$.businessInput",
+            params: {
+              blueprintKey: definition.blueprintKey,
+              runnerFamily: runner.data.runnerFamily,
+            },
+          },
+        ],
+      };
+    }
+  }
   return {
     success: true,
     context: {
@@ -466,10 +380,26 @@ function parseCompilerBoundaries(
       resources: resources.data,
       executorManifest: manifest.data,
       runner: runner.data,
+      businessInput: businessInput.data,
       policyEvidence: policyEvidence.data,
       blueprint,
     },
   };
+}
+
+function parseContractArray<T>(
+  input: readonly unknown[],
+  maxItems: number,
+  schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false } },
+): { success: true; data: T[] } | { success: false } {
+  if (!Array.isArray(input) || input.length > maxItems) return { success: false };
+  const parsed: T[] = [];
+  for (const item of input) {
+    const result = schema.safeParse(item);
+    if (!result.success) return { success: false };
+    parsed.push(result.data);
+  }
+  return { success: true, data: parsed };
 }
 
 interface IndexedNode {
@@ -591,15 +521,21 @@ function resolvePolicyAndNodes(
     const descriptor = catalog.get(node.nodeType, node.schemaVersion);
     if (descriptor === undefined) continue;
     const requestedEnabled = enabled.get(node.definitionNodeId);
-    const activation =
-      requestedEnabled === undefined
+    // agent.research v1没有受治理的调研底座；历史Definition仍可读取，但新Run固定跳过，
+    // 不能用装饰性maxSources配置制造“已调研”假象。
+    const legacyResearchWithoutExecutor = node.nodeType === "agent.research";
+    const activation = legacyResearchWithoutExecutor
+      ? "skipped"
+      : requestedEnabled === undefined
         ? node.defaultActivation
         : requestedEnabled
           ? "enabled"
           : "skipped";
     let skipOutcome: string | undefined;
     if (activation === "skipped") {
-      if (
+      if (legacyResearchWithoutExecutor) {
+        skipOutcome = "no_evidence";
+      } else if (
         !context.blueprint.optionalNodeTypes.includes(node.nodeType) ||
         descriptor.skipPolicy.kind === "never"
       ) {
@@ -631,6 +567,10 @@ function resolvePolicyAndNodes(
           ? (node.config.reviewMode as WorkflowReviewMode)
           : "manual";
       const mode = reviewModes.get(node.definitionNodeId) ?? configuredMode;
+      if (mode === "always_auto") {
+        diagnostics.push(policyDiagnostic("policy.always_auto_not_supported", node.path, {}));
+        continue;
+      }
       if (
         mode !== "manual" &&
         context.blueprint.mandatoryManualReviewTypes.includes(node.nodeType)
@@ -661,12 +601,11 @@ function resolvePolicyAndNodes(
 
 function resolveAutoPolicy(
   context: CompilerContext,
-  mode: Exclude<WorkflowReviewMode, "manual">,
+  mode: "auto_continue_if_policy_allows",
   path: string,
   diagnostics: WorkflowDiagnostic[],
 ): { readonly resourceId: string; readonly revision: number; readonly sha256: string } | undefined {
-  const requiredCapability =
-    mode === "always_auto" ? "workflow.review.always_auto" : "workflow.review.auto";
+  const requiredCapability = "workflow.review.auto";
   if (
     !context.principal.capabilities.includes(requiredCapability) ||
     context.policyEvidence === undefined
@@ -745,6 +684,28 @@ function resolveResources(
       );
       continue;
     }
+    if (node.nodeType === "context.project" && override.selections.length > 1) {
+      diagnostics.push(
+        policyDiagnostic("resource.project_selection_limit_exceeded", node.path, {
+          selectedCount: override.selections.length,
+          maxSelections: 1,
+        }),
+      );
+      continue;
+    }
+    const configuredMaxItems =
+      node.nodeType === "context.memory" && typeof node.config.maxItems === "number"
+        ? node.config.maxItems
+        : undefined;
+    if (configuredMaxItems !== undefined && override.selections.length > configuredMaxItems) {
+      diagnostics.push(
+        policyDiagnostic("resource.memory_selection_limit_exceeded", node.path, {
+          selectedCount: override.selections.length,
+          maxSelections: configuredMaxItems,
+        }),
+      );
+      continue;
+    }
     for (const selected of override.selections) {
       if (selectedIds.has(selected.resourceId)) {
         diagnostics.push(
@@ -781,24 +742,14 @@ function resolveResources(
                   ? "hash_mismatch"
                   : undefined;
       if (exclusionReason !== undefined) {
-        if (required) {
-          diagnostics.push({
-            family: "resource_stale",
-            code: `resource.${exclusionReason}`,
-            path: node.path,
-            params: { resourceKind: override.resourceKind, resourceId: selected.resourceId },
-          });
-        } else {
-          resolutions.push({
-            definitionNodeId: node.definitionNodeId,
-            resourceKind: override.resourceKind,
-            resourceId: selected.resourceId,
-            expectedRevision: selected.expectedRevision,
-            expectedSha256: selected.expectedSha256,
-            resolution: "excluded",
-            exclusionReason,
-          });
-        }
+        // “可选”只表示可以不选；一旦用户明确选择，服务端必须精确冻结该资源，
+        // 不能把无权/不存在/过期引用悄悄改写成excluded继续执行。
+        diagnostics.push({
+          family: "resource_stale",
+          code: `resource.${exclusionReason}`,
+          path: node.path,
+          params: { resourceKind: override.resourceKind, resourceId: selected.resourceId },
+        });
       } else {
         resolutions.push({
           definitionNodeId: node.definitionNodeId,
@@ -854,7 +805,9 @@ function validateExecutorManifest(
 }
 
 function overrideIdentity(override: WorkflowRunOverride): string {
-  return `${override.kind}\0${override.definitionNodeId}${override.kind === "resource_selection" ? `\0${override.resourceKind}` : ""}`;
+  // 一个节点每类override只能出现一次；resourceKind是该节点类型的服务端派生属性，
+  // 不能被客户端用来制造两个selection并让后一个被find()静默忽略。
+  return `${override.kind}\0${override.definitionNodeId}`;
 }
 
 function resourceKindForNode(nodeType: WorkflowNodeTypeKey): WorkflowResourceKind | undefined {

@@ -124,6 +124,7 @@ export const noteSchema = z
     schemaVersion: z.literal("note.v1"),
     noteId: noteIdSchema,
     ownerPrincipalId: principalIdSchema,
+    sourceCandidateId: noteCandidateIdSchema,
     currentRevisionId: noteRevisionIdSchema,
     status: noteStatusSchema,
     revision: z.number().int().positive(),

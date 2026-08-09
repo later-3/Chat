@@ -47,6 +47,7 @@ function mentions(haystacks: readonly string[], needle: string): boolean {
 export function validateExecutionCandidate(
   contract: ValidationContract,
   candidate: ValidationCandidate,
+  options: { readonly strictEvidence: boolean } = { strictEvidence: true },
 ): ValidationFailure[] {
   const failures: ValidationFailure[] = [];
 
@@ -86,24 +87,29 @@ export function validateExecutionCandidate(
       }
     }
     seen.add(actual.stepId);
-    // 每条Step成功标准必须有证据
-    for (const criterion of expected.successCriteria) {
-      if (!mentions(actual.successCriteriaEvidence, criterion)) {
-        failures.push({
-          code: "step_evidence_missing",
-          detail: `步骤${actual.stepId}缺少成功标准证据:${criterion.slice(0, 80)}`,
-        });
+    // strictEvidence=false只放宽“逐条文字覆盖”，不放宽合同、顺序、依赖或输出结构。
+    // 这样配置影响真实行为，但不能把验证节点变成无条件通过开关。
+    if (options.strictEvidence) {
+      for (const criterion of expected.successCriteria) {
+        if (!mentions(actual.successCriteriaEvidence, criterion)) {
+          failures.push({
+            code: "step_evidence_missing",
+            detail: `步骤${actual.stepId}缺少成功标准证据:${criterion.slice(0, 80)}`,
+          });
+        }
       }
     }
   }
 
   // 每条完成条件必须有对应证据
-  for (const criterion of contract.completionCriteria) {
-    if (!mentions(candidate.completionCriteriaEvidence, criterion)) {
-      failures.push({
-        code: "completion_evidence_missing",
-        detail: `完成条件缺少证据:${criterion.slice(0, 80)}`,
-      });
+  if (options.strictEvidence) {
+    for (const criterion of contract.completionCriteria) {
+      if (!mentions(candidate.completionCriteriaEvidence, criterion)) {
+        failures.push({
+          code: "completion_evidence_missing",
+          detail: `完成条件缺少证据:${criterion.slice(0, 80)}`,
+        });
+      }
     }
   }
 

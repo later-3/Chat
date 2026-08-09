@@ -32,11 +32,14 @@ function baseSnapshot(): ProductSnapshot {
     updatedAt: NOW,
   };
   snapshot.entities.runs["run_projection"] = {
-    schemaVersion: "product-run.v2",
+    schemaVersion: "product-run.v3",
+    runKind: "planning",
     productRunId: "run_projection" as never,
     sessionId: "psn_projection" as never,
     sourceMessageId: "msg_projection" as never,
     workflowViewDefinitionId: LEGACY_PLANNING_VIEW_ID as never,
+    runnerFamily: "legacy-planning.v1",
+    runnerBundleVersion: "legacy-planning.bundle.v1",
     status: "pending",
     phase: "queued",
     maxPlanRevisions: 5,
@@ -193,8 +196,10 @@ function addTwoReviewCycles(snapshot: ProductSnapshot): void {
     createdAt: LATER,
     updatedAt: LATER,
   };
+  const run = snapshot.entities.runs["run_projection"];
+  if (run?.runKind !== "planning") throw new Error("fixture run must be planning");
   snapshot.entities.runs["run_projection"] = {
-    ...snapshot.entities.runs["run_projection"]!,
+    ...run,
     status: "waiting_human",
     phase: "plan_review",
     currentPlanId: "pln_projection" as never,
@@ -277,8 +282,10 @@ describe("planning workflow product projection", () => {
 
   it("execute动态子节点按stepId稳定，不把父失败/未知伪造成每个子步骤失败", () => {
     const snapshot = baseSnapshot();
+    const run = snapshot.entities.runs["run_projection"];
+    if (run?.runKind !== "planning") throw new Error("fixture run must be planning");
     snapshot.entities.runs["run_projection"] = {
-      ...snapshot.entities.runs["run_projection"]!,
+      ...run,
       status: "outcome_unknown",
       phase: "executing",
       failure: { code: "execution.response_lost", summary: "执行响应未知" },
@@ -437,6 +444,11 @@ describe("planning workflow product projection", () => {
     addTwoReviewCycles(snapshot);
     synchronizePlanningWorkflowProjection(snapshot, "run_projection" as never, LATER);
     const serialized = JSON.stringify(snapshot.entities.nodeValueManifests);
+    expect(
+      Object.values(snapshot.entities.nodeValueManifests).every(
+        (manifest) => manifest.revision === 1 && manifest.createdAt === manifest.updatedAt,
+      ),
+    ).toBe(true);
     expect(serialized).not.toContain("请整理计划");
     expect(serialized).not.toContain("第一版摘要");
     expect(serialized).not.toContain("第二版摘要");

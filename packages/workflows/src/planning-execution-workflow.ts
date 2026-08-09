@@ -81,8 +81,13 @@ function failureSummary(error: unknown): { code: string; summary: string } {
   if (error instanceof PiStepFailure) {
     return { code: error.stableCode, summary: "后台工作失败，请稍后重试或调整目标后重新开始" };
   }
+  if (error instanceof Error && STABLE_ERROR_CODE.test(error.message)) {
+    return { code: error.message, summary: "后台工作失败，请稍后重试或调整目标后重新开始" };
+  }
   return { code: "workflow.step_failed", summary: "后台工作遇到内部错误" };
 }
+
+const STABLE_ERROR_CODE = /^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$/;
 
 export async function planningExecutionWorkflow(
   input: PlanningExecutionWorkflowInput,

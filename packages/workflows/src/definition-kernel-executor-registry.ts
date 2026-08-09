@@ -1,12 +1,28 @@
-import { nodeExecutorKey, type WorkflowExecutorManifestEntry } from "@chat/application";
-import {
-  WORKFLOW_NODE_TYPES,
-  type WorkflowExecutorKind,
-  type WorkflowNodeTypeKey,
-} from "@chat/domain";
+import type { WorkflowExecutorManifestEntry } from "@chat/contracts";
+
+type WorkflowNodeTypeKey = WorkflowExecutorManifestEntry["nodeType"];
+type WorkflowExecutorKind = "step" | "human_review" | "composite";
 
 export const DEFINITION_KERNEL_RUNNER_FAMILY = "definition-kernel-lab.v1" as const;
 export const DEFINITION_KERNEL_RUNNER_BUNDLE_VERSION = "definition-kernel-lab.bundle.v1" as const;
+
+/**
+ * S4正式Planning Runner与S3实验室使用不同的耐久身份。
+ *
+ * 这两个值会同时进入Product Run/RunSpec与Runtime Binding；发布回滚只能停止创建
+ * 这个family的新Run，不能把已经创建的Run改标给legacy bundle继续执行。
+ */
+export const CONFIGURABLE_PLANNING_RUNNER_FAMILY = "configurable-planning.v1" as const;
+export const CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION =
+  "configurable-planning.bundle.v1" as const;
+export const LEGACY_PLANNING_RUNNER_FAMILY = "legacy-planning.v1" as const;
+export const LEGACY_PLANNING_RUNNER_BUNDLE_VERSION = "legacy-planning.bundle.v1" as const;
+export const NOTE_CAPTURE_RUNNER_FAMILY = "note-capture.v1" as const;
+export const NOTE_CAPTURE_RUNNER_BUNDLE_VERSION = "note-capture.bundle.v1" as const;
+
+export type PlanningRunnerFamily =
+  typeof LEGACY_PLANNING_RUNNER_FAMILY | typeof CONFIGURABLE_PLANNING_RUNNER_FAMILY;
+export type ProductWorkflowRunnerFamily = PlanningRunnerFamily | typeof NOTE_CAPTURE_RUNNER_FAMILY;
 
 export interface KernelExecutorRegistration extends WorkflowExecutorManifestEntry {
   readonly executorKind: WorkflowExecutorKind;
@@ -84,8 +100,15 @@ export class KernelExecutorRegistry {
 
 export const DEFINITION_KERNEL_EXECUTORS = new KernelExecutorRegistry(REGISTRATIONS);
 
-if (DEFINITION_KERNEL_EXECUTORS.list().length !== WORKFLOW_NODE_TYPES.length) {
+// 静态表同时被Workflow函数解释器引用，不能为一个key helper拉入Application或
+// Domain运行时代码（其中含Node crypto，Workflow sandbox不允许）。14是冻结内置集合，
+// Catalog/Compiler的完整集合一致性另由definition-kernel conformance测试逐项证明。
+if (DEFINITION_KERNEL_EXECUTORS.list().length !== 14) {
   throw new Error("workflow.executor_registry.incomplete_builtin_set");
+}
+
+function nodeExecutorKey(nodeType: WorkflowNodeTypeKey, schemaVersion: number): string {
+  return `${nodeType}@${String(schemaVersion)}`;
 }
 
 function entry(

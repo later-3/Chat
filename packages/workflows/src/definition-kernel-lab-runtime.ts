@@ -1,5 +1,5 @@
+import type { WorkflowRunSpec } from "@chat/contracts";
 import type { WorkflowNodeTypeKey } from "@chat/domain";
-import type { WorkflowRunSpec } from "@chat/application";
 
 export interface KernelNodeExecutionScope {
   readonly workflowRunSpecId: string;

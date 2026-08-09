@@ -32,13 +32,25 @@ import {
   projectMilestoneIdSchema,
   projectUpdateIdSchema,
   projectStateTransitionIdSchema,
+  noteIdSchema,
+  noteRevisionIdSchema,
+  noteCandidateIdSchema,
+  noteDecisionIdSchema,
+  ruleIdSchema,
+  ruleRevisionIdSchema,
+  ruleTagIdSchema,
+  ruleScopeIdSchema,
+  ruleDecisionIdSchema,
+  ruleSelectionIdSchema,
   type PrincipalId,
 } from "@chat/contracts";
 import type {
   ApplicationDeps,
   IdFactory,
+  NoteIdFactory,
   ProductStorePort,
   ProjectIdFactory,
+  RuleIdFactory,
 } from "@chat/application";
 import { JsonProductStore } from "@chat/product-store-json";
 import { createMemoryBackendRegistry } from "@chat/memory-runtime";
@@ -102,6 +114,26 @@ export function createProjectIdFactory(): ProjectIdFactory {
   };
 }
 
+export function createNoteIdFactory(): NoteIdFactory {
+  return {
+    note: () => noteIdSchema.parse(`nte_${randomSuffix()}`),
+    revision: () => noteRevisionIdSchema.parse(`ntr_${randomSuffix()}`),
+    candidate: () => noteCandidateIdSchema.parse(`ntc_${randomSuffix()}`),
+    decision: () => noteDecisionIdSchema.parse(`ntd_${randomSuffix()}`),
+  };
+}
+
+export function createRuleIdFactory(): RuleIdFactory {
+  return {
+    rule: () => ruleIdSchema.parse(`rul_${randomSuffix()}`),
+    revision: () => ruleRevisionIdSchema.parse(`rrv_${randomSuffix()}`),
+    tag: () => ruleTagIdSchema.parse(`rtg_${randomSuffix()}`),
+    scope: () => ruleScopeIdSchema.parse(`rsc_${randomSuffix()}`),
+    decision: () => ruleDecisionIdSchema.parse(`rde_${randomSuffix()}`),
+    selection: () => ruleSelectionIdSchema.parse(`rsl_${randomSuffix()}`),
+  };
+}
+
 export function defaultProductStorePath(): string {
   return (
     process.env.CHAT_PRODUCT_STORE_PATH ??
@@ -144,6 +176,8 @@ export async function createApplicationDeps(
     projectIntakeUnderstanding: projectUnderstanding,
     projectAdvancementUnderstanding: advancementUnderstanding,
     projectIds: createProjectIdFactory(),
+    noteIds: createNoteIdFactory(),
+    ruleIds: createRuleIdFactory(),
     ...(trace !== undefined ? { trace } : {}),
   };
 }

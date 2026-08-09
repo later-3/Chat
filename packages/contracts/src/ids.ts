@@ -22,6 +22,8 @@ export const runAttemptIdSchema = prefixedId("att");
 export const approvalRequestIdSchema = prefixedId("apr");
 export const commandIdSchema = prefixedId("cmd");
 export const workflowDefinitionIdSchema = prefixedId("wfd");
+export const workflowDefinitionRevisionIdSchema = prefixedId("wfr");
+export const workflowRunSpecIdSchema = prefixedId("wrs");
 export const workflowViewDefinitionIdSchema = prefixedId("wvd");
 export const workflowNodeRunIdSchema = prefixedId("wnr");
 export const nodeRunTransitionIdSchema = prefixedId("wnt");
@@ -74,6 +76,12 @@ export const ruleTagIdSchema = prefixedId("rtg");
 export const ruleScopeIdSchema = prefixedId("rsc");
 export const ruleDecisionIdSchema = prefixedId("rde");
 export const ruleSelectionIdSchema = prefixedId("rsl");
+/* Planning运行冻结的Project Context；不是Project聚合或Workflow Runtime身份。 */
+export const planningProjectContextIdSchema = prefixedId("pcx");
+/** Planning Memory Selection不能复用ProjectMethodSnapshot既有的pms_*身份。 */
+export const planningMemorySelectionIdSchema = prefixedId("pmsl");
+/** Workflow Policy Resolution是产品策略事实，不是human Decision或Rule Decision。 */
+export const workflowPolicyResolutionIdSchema = prefixedId("wpr");
 
 /* S5 Note Capture产品身份；Note不得复用Message、Artifact或Workflow Runtime身份。 */
 export const noteIdSchema = prefixedId("nte");
@@ -96,6 +104,8 @@ export type RunAttemptId = z.infer<typeof runAttemptIdSchema>;
 export type ApprovalRequestId = z.infer<typeof approvalRequestIdSchema>;
 export type CommandId = z.infer<typeof commandIdSchema>;
 export type WorkflowDefinitionId = z.infer<typeof workflowDefinitionIdSchema>;
+export type WorkflowDefinitionRevisionId = z.infer<typeof workflowDefinitionRevisionIdSchema>;
+export type WorkflowRunSpecId = z.infer<typeof workflowRunSpecIdSchema>;
 export type WorkflowViewDefinitionId = z.infer<typeof workflowViewDefinitionIdSchema>;
 export type WorkflowNodeRunId = z.infer<typeof workflowNodeRunIdSchema>;
 export type NodeRunTransitionId = z.infer<typeof nodeRunTransitionIdSchema>;
@@ -139,6 +149,9 @@ export type RuleTagId = z.infer<typeof ruleTagIdSchema>;
 export type RuleScopeId = z.infer<typeof ruleScopeIdSchema>;
 export type RuleDecisionId = z.infer<typeof ruleDecisionIdSchema>;
 export type RuleSelectionId = z.infer<typeof ruleSelectionIdSchema>;
+export type PlanningProjectContextId = z.infer<typeof planningProjectContextIdSchema>;
+export type PlanningMemorySelectionId = z.infer<typeof planningMemorySelectionIdSchema>;
+export type WorkflowPolicyResolutionId = z.infer<typeof workflowPolicyResolutionIdSchema>;
 export type NoteId = z.infer<typeof noteIdSchema>;
 export type NoteRevisionId = z.infer<typeof noteRevisionIdSchema>;
 export type NoteCandidateId = z.infer<typeof noteCandidateIdSchema>;

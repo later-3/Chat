@@ -122,12 +122,12 @@ export function toRunDto(
           },
         }
       : {}),
-    ...(run.currentApprovalRequestId !== undefined
+    ...(run.runKind === "planning" && run.currentApprovalRequestId !== undefined
       ? { currentApprovalRequestId: run.currentApprovalRequestId }
       : {}),
     ...(run.finalMessageId !== undefined ? { finalMessageId: run.finalMessageId } : {}),
     ...(run.failure !== undefined ? { failure: run.failure } : {}),
-    maxPlanRevisions: run.maxPlanRevisions,
+    ...(run.runKind === "planning" ? { maxPlanRevisions: run.maxPlanRevisions } : {}),
     allowedActions: runAllowedActions(run, currentApproval),
     revision: run.revision,
     createdAt: run.createdAt,

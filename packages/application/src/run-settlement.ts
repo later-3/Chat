@@ -26,6 +26,17 @@ export function settleRunWithoutSuccess(
     synchronizePlanningWorkflowProjection(draft, productRunId, now);
     return;
   }
+  if (run.runKind === "note_capture") {
+    draft.entities.runs[productRunId] = {
+      ...run,
+      status,
+      failure: { code: errorCode, summary },
+      revision: run.revision + 1,
+      updatedAt: now,
+    };
+    failRunningAttempts(draft, productRunId, now, errorCode);
+    return;
+  }
   const lifecycle = transitionRunLifecycle(
     { status: run.status, phase: run.phase },
     { status, phase: run.phase },

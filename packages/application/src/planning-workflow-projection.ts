@@ -193,6 +193,7 @@ function desiredPlanningNodes(
 ): DesiredNodeProjection[] {
   const run = snapshot.entities.runs[runId];
   if (run === undefined) return [];
+  if ("runKind" in run && run.runKind !== "planning") return [];
   const message = messageRef(snapshot, run.sourceMessageId);
   const context = contextPackageRef(snapshot, runId);
   const plans = Object.values(snapshot.entities.plans)
@@ -577,13 +578,7 @@ function upsertManifest(
       slots,
     });
     if (existing.sha256 !== sha256) {
-      snapshot.entities.nodeValueManifests[id] = {
-        ...existing,
-        slots,
-        sha256,
-        revision: existing.revision + 1,
-        updatedAt: at,
-      };
+      throw new Error("Workflow Node Manifest已冻结且内容不同");
     }
   }
   return id;
@@ -619,20 +614,16 @@ function createLegacyProjectedNode(
     createdAt: desired.occurredAt,
     updatedAt: desired.occurredAt,
   });
-  const inputManifestId = upsertManifest(
-    snapshot,
-    nodeRun,
-    "input",
-    desired.inputs,
-    desired.occurredAt,
-  );
-  const outputManifestId = upsertManifest(
-    snapshot,
-    nodeRun,
-    "output",
-    desired.outputs,
-    desired.occurredAt,
-  );
+  // queued只表示身份已排队，尚未实际消费输入。等节点真正开始或形成终态时才冻结
+  // Manifest，避免上游Context随后完成时“补全”并原地改写历史证据。
+  const inputManifestId =
+    nodeRun.status === "queued"
+      ? undefined
+      : upsertManifest(snapshot, nodeRun, "input", desired.inputs, desired.occurredAt);
+  const outputManifestId =
+    nodeRun.status === "queued"
+      ? undefined
+      : upsertManifest(snapshot, nodeRun, "output", desired.outputs, desired.occurredAt);
   const withManifests = workflowNodeRunSchema.parse({
     ...nodeRun,
     ...(inputManifestId !== undefined ? { inputManifestId } : {}),
@@ -697,22 +688,24 @@ function advanceRuntimeNode(
     ) {
       apply("running");
     }
+    // 人工恢复是独立证据：waiting_human不能直接跳成业务终态，必须先记录resumed。
+    if (
+      nodeRun.status === "waiting_human" &&
+      !["waiting_human", "cancelled", "failed"].includes(desired.status)
+    ) {
+      apply("running");
+    }
     if (nodeRun.status !== desired.status) apply(desired.status);
   }
-  const inputManifestId = upsertManifest(
-    snapshot,
-    nodeRun,
-    "input",
-    desired.inputs,
-    desired.occurredAt,
-  );
-  const outputManifestId = upsertManifest(
-    snapshot,
-    nodeRun,
-    "output",
-    desired.outputs,
-    desired.occurredAt,
-  );
+  // queued节点还未消费输入；只在真正开始/结束后冻结Manifest。
+  const inputManifestId =
+    nodeRun.status === "queued"
+      ? undefined
+      : upsertManifest(snapshot, nodeRun, "input", desired.inputs, desired.occurredAt);
+  const outputManifestId =
+    nodeRun.status === "queued"
+      ? undefined
+      : upsertManifest(snapshot, nodeRun, "output", desired.outputs, desired.occurredAt);
   const changed =
     nodeRun.inputManifestId !== inputManifestId ||
     nodeRun.outputManifestId !== outputManifestId ||
@@ -731,6 +724,197 @@ function advanceRuntimeNode(
     : nodeRun;
 }
 
+interface ConfigurableNodeIdentity {
+  readonly definitionNodeId: DefinitionNodeId;
+  readonly nodeType: WorkflowNodeRun["nodeType"];
+  readonly executionPath: WorkflowNodeRun["executionPath"];
+}
+
+/**
+ * RunSpec是configurable Node身份的唯一来源。这里仅展开确定会执行的Sequence/Loop首轮；
+ * Choice未选分支和Loop后续轮由Runner真正进入时创建，不能预先伪造Node Run。
+ */
+function configurableInitialNodeIdentities(
+  snapshot: ProductSnapshot,
+  runId: ProductRunId,
+): readonly ConfigurableNodeIdentity[] {
+  const run = snapshot.entities.runs[runId];
+  const runSpec =
+    run?.workflowRunSpecId === undefined
+      ? undefined
+      : snapshot.entities.workflowRunSpecs[run.workflowRunSpecId];
+  if (runSpec === undefined) return [];
+  const identities: ConfigurableNodeIdentity[] = [];
+  const stack: {
+    readonly sequence: (typeof runSpec)["semanticRoot"];
+    readonly executionPath: WorkflowNodeRun["executionPath"];
+  }[] = [{ sequence: runSpec.semanticRoot, executionPath: [] }];
+  while (stack.length > 0) {
+    const frame = stack.pop();
+    if (frame === undefined) break;
+    for (let index = frame.sequence.elements.length - 1; index >= 0; index -= 1) {
+      const element = frame.sequence.elements[index];
+      if (element === undefined) continue;
+      if (element.kind === "sequence") {
+        stack.push({ sequence: element, executionPath: frame.executionPath });
+      } else if (element.kind === "bounded_loop") {
+        stack.push({
+          sequence: element.body,
+          executionPath: [
+            ...frame.executionPath,
+            {
+              containerNodeId: nodeId(`${element.outcomeFromDefinitionNodeId}.loop`),
+              iteration: 1,
+            },
+          ],
+        });
+      } else if (element.kind === "choice") {
+        // outcome尚未成为产品事实，不能猜测会进入哪个分支。
+      } else {
+        identities.push({
+          definitionNodeId: nodeId(element.definitionNodeId),
+          nodeType: nodeType(element.nodeType),
+          executionPath: frame.executionPath,
+        });
+      }
+    }
+  }
+  return identities.reverse();
+}
+
+function configurableFactDesiredNodes(
+  snapshot: ProductSnapshot,
+  runId: ProductRunId,
+  source: "runtime" | "legacy_product_facts",
+): readonly DesiredNodeProjection[] {
+  const run = snapshot.entities.runs[runId];
+  const runSpec =
+    run?.workflowRunSpecId === undefined
+      ? undefined
+      : snapshot.entities.workflowRunSpecs[run.workflowRunSpecId];
+  if (runSpec === undefined) return [];
+  const byType = new Map<string, (typeof runSpec.nodeResolutions)[number]>(
+    runSpec.nodeResolutions.map((resolution) => [resolution.nodeType, resolution] as const),
+  );
+  const reviewDefinitionNodeId = byType.get("human.plan_review")?.definitionNodeId;
+  const supportedTypes: ReadonlySet<string> = new Set([
+    "agent.plan",
+    "human.plan_review",
+    "execute.plan",
+    "result.validate",
+    "product.commit",
+  ]);
+  return desiredPlanningNodes(snapshot, runId, source).flatMap((desired) => {
+    if (!supportedTypes.has(desired.nodeType)) return [];
+    const resolution = byType.get(desired.nodeType);
+    if (resolution === undefined) return [];
+    const iteration = desired.executionPath.at(-1)?.iteration;
+    const executionPath =
+      iteration === undefined || reviewDefinitionNodeId === undefined
+        ? []
+        : [
+            {
+              containerNodeId: nodeId(`${reviewDefinitionNodeId}.loop`),
+              iteration,
+            },
+          ];
+    return [
+      {
+        ...desired,
+        definitionNodeId: nodeId(resolution.definitionNodeId),
+        nodeType: nodeType(resolution.nodeType),
+        executionPath,
+      },
+    ];
+  });
+}
+
+function upsertConfigurableRuntimeNode(
+  snapshot: ProductSnapshot,
+  runId: ProductRunId,
+  desired: DesiredNodeProjection,
+): void {
+  const run = snapshot.entities.runs[runId];
+  if (run === undefined) return;
+  const workflowNodeRunId = derivedNodeRunId(runId, desired);
+  const existing = snapshot.entities.workflowNodeRuns[workflowNodeRunId];
+  if (existing !== undefined) {
+    if (existing.projectionSource !== "runtime") return;
+    snapshot.entities.workflowNodeRuns[workflowNodeRunId] = advanceRuntimeNode(
+      snapshot,
+      existing,
+      desired,
+    );
+    return;
+  }
+  const created = createWorkflowNodeRun({
+    nodeRun: {
+      workflowNodeRunId,
+      productRunId: runId,
+      workflowViewDefinitionId: run.workflowViewDefinitionId,
+      definitionNodeId: desired.definitionNodeId,
+      nodeType: desired.nodeType,
+      nodeSchemaVersion: "1",
+      executionPath: desired.executionPath,
+      attemptNumber: desired.attemptNumber,
+      ...(desired.parentNodeRunId !== undefined
+        ? { parentNodeRunId: desired.parentNodeRunId }
+        : {}),
+    },
+    transitionId: derivedTransitionId(workflowNodeRunId, 1),
+    at: run.createdAt,
+    projectionSource: "runtime",
+  });
+  const createdTransition = nodeRunTransitionSchema.parse(created.transition);
+  const createdNodeRun = workflowNodeRunSchema.parse(created.nodeRun);
+  snapshot.entities.nodeRunTransitions[createdTransition.nodeRunTransitionId] = createdTransition;
+  snapshot.entities.workflowNodeRuns[workflowNodeRunId] = advanceRuntimeNode(
+    snapshot,
+    createdNodeRun,
+    desired,
+  );
+}
+
+function synchronizeConfigurablePlanningProjection(
+  draft: ProductSnapshot,
+  runId: ProductRunId,
+  at: string,
+  source: "runtime" | "legacy_product_facts",
+): void {
+  const run = draft.entities.runs[runId];
+  const runSpec =
+    run?.workflowRunSpecId === undefined
+      ? undefined
+      : draft.entities.workflowRunSpecs[run.workflowRunSpecId];
+  if (run === undefined || runSpec === undefined) return;
+  const resolutions = new Map(
+    runSpec.nodeResolutions.map((resolution) => [resolution.definitionNodeId, resolution] as const),
+  );
+  for (const identity of configurableInitialNodeIdentities(draft, runId)) {
+    const resolution = resolutions.get(identity.definitionNodeId);
+    if (resolution === undefined) continue;
+    const skipped = resolution.activation === "skipped";
+    const initialDesired: DesiredNodeProjection = {
+      ...identity,
+      attemptNumber: 1,
+      status: skipped ? "skipped" : "queued",
+      ...(skipped && resolution.skipOutcome !== undefined
+        ? { outcomeCode: resolution.skipOutcome, publicSummary: "已按冻结运行配置跳过" }
+        : {}),
+      inputs: [],
+      outputs: [],
+      occurredAt: at,
+    };
+    // 初始化投影只补缺失身份；后续事务不得用queued把Runner已推进的节点倒退。
+    if (draft.entities.workflowNodeRuns[derivedNodeRunId(runId, initialDesired)] === undefined) {
+      upsertConfigurableRuntimeNode(draft, runId, initialDesired);
+    }
+  }
+  for (const desired of configurableFactDesiredNodes(draft, runId, source)) {
+    upsertConfigurableRuntimeNode(draft, runId, desired);
+  }
+}
+
 /**
  * 把当前Planning产品事实原子投影为Node Run。调用方必须在同一个Product Store事务的
  * mutate末尾调用；它不读取Trace、不调用Runtime，也不会在事务提交后best-effort补写。
@@ -743,6 +927,12 @@ export function synchronizePlanningWorkflowProjection(
 ): void {
   const run = draft.entities.runs[runId];
   if (run === undefined) return;
+  if ("runKind" in run && run.runKind !== "planning") return;
+  // configurable只按冻结RunSpec投影真实节点身份，绝不回写legacy View或伪造可选节点成功。
+  if (run.runnerFamily === "configurable-planning.v1") {
+    synchronizeConfigurablePlanningProjection(draft, runId, at, source);
+    return;
+  }
   if (draft.entities.workflowViewDefinitions[LEGACY_PLANNING_VIEW_DEFINITION_ID] === undefined) {
     draft.entities.workflowViewDefinitions[LEGACY_PLANNING_VIEW_DEFINITION_ID] =
       workflowViewDefinitionSchema.parse(createLegacyPlanningWorkflowView(run.createdAt));

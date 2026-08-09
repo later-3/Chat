@@ -13,14 +13,32 @@ import {
   type ProductTransactionResult,
   type TraceEmitter,
 } from "@chat/application";
+import {
+  createSystemPlanningDefinition,
+  createSystemNoteDefinition,
+  SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
+  SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
+  SYSTEM_PLANNING_WORKFLOW_VIEW_ID,
+  SYSTEM_NOTE_WORKFLOW_DEFINITION_ID,
+  SYSTEM_NOTE_WORKFLOW_REVISION_ID,
+  SYSTEM_NOTE_WORKFLOW_VIEW_ID,
+} from "@chat/application/workflow-system-definitions";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 import { migrateProductSnapshotV1ToV2, productSnapshotV1Schema } from "./migrate-v1-to-v2.js";
 import { migrateProductSnapshotV2ToV3, productSnapshotV2Schema } from "./migrate-v2-to-v3.js";
 import { migrateProductSnapshotV3ToV4, productSnapshotV3Schema } from "./migrate-v3-to-v4.js";
 import { productSnapshotV4Schema } from "./legacy-v4.js";
 import { productSnapshotV5Schema } from "./legacy-v5.js";
+import { productSnapshotV6Schema, type ProductSnapshotV6 } from "./legacy-v6.js";
+import { productSnapshotV7Schema, type ProductSnapshotV7 } from "./legacy-v7.js";
+import { productSnapshotV8Schema, type ProductSnapshotV8 } from "./legacy-v8.js";
+import { productSnapshotV9Schema, type ProductSnapshotV9 } from "./legacy-v9.js";
 import { migrateProductSnapshotV4ToV5 } from "./migrate-v4-to-v5.js";
 import { migrateProductSnapshotV5ToV6 } from "./migrate-v5-to-v6.js";
+import { migrateProductSnapshotV6ToV7 } from "./migrate-v6-to-v7.js";
+import { migrateProductSnapshotV7ToV8 } from "./migrate-v7-to-v8.js";
+import { migrateProductSnapshotV8ToV9 } from "./migrate-v8-to-v9.js";
+import { migrateProductSnapshotV9ToV10 } from "./migrate-v9-to-v10.js";
 
 /**
  * 版本化JSON Product Store Adapter（任务书§8）。
@@ -107,6 +125,18 @@ export class JsonProductStore implements ProductStorePort {
     } catch (error) {
       if (isFileNotFound(error)) {
         const genesis = createEmptySnapshot(options.now());
+        const seed = createSystemPlanningDefinition(genesis.committedAt);
+        const noteSeed = createSystemNoteDefinition(genesis.committedAt);
+        genesis.entities.workflowDefinitions[SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID] =
+          seed.definition;
+        genesis.entities.workflowDefinitions[SYSTEM_NOTE_WORKFLOW_DEFINITION_ID] =
+          noteSeed.definition;
+        genesis.entities.workflowDefinitionRevisions[SYSTEM_PLANNING_WORKFLOW_REVISION_ID] =
+          seed.revision;
+        genesis.entities.workflowDefinitionRevisions[SYSTEM_NOTE_WORKFLOW_REVISION_ID] =
+          noteSeed.revision;
+        genesis.entities.workflowViewDefinitions[SYSTEM_PLANNING_WORKFLOW_VIEW_ID] = seed.view;
+        genesis.entities.workflowViewDefinitions[SYSTEM_NOTE_WORKFLOW_VIEW_ID] = noteSeed.view;
         const store = new JsonProductStore(options, genesis);
         await store.persist(genesis);
         return store;
@@ -128,39 +158,67 @@ export class JsonProductStore implements ProductStorePort {
       return new JsonProductStore(options, current.data);
     }
 
-    const legacyV5 = productSnapshotV5Schema.safeParse(parsedJson);
-    let v5;
-    if (legacyV5.success) {
-      v5 = legacyV5.data;
+    const legacyV9 = productSnapshotV9Schema.safeParse(parsedJson);
+    let v9: ProductSnapshotV9;
+    if (legacyV9.success) {
+      v9 = legacyV9.data;
     } else {
-      const legacyV4 = productSnapshotV4Schema.safeParse(parsedJson);
-      let v4;
-      if (legacyV4.success) {
-        v4 = legacyV4.data;
+      const legacyV8 = productSnapshotV8Schema.safeParse(parsedJson);
+      let v8: ProductSnapshotV8;
+      if (legacyV8.success) {
+        v8 = legacyV8.data;
       } else {
-        const legacyV3 = productSnapshotV3Schema.safeParse(parsedJson);
-        let v3;
-        if (legacyV3.success) {
-          v3 = legacyV3.data;
+        const legacyV7 = productSnapshotV7Schema.safeParse(parsedJson);
+        let v7: ProductSnapshotV7;
+        if (legacyV7.success) {
+          v7 = legacyV7.data;
         } else {
-          const legacyV2 = productSnapshotV2Schema.safeParse(parsedJson);
-          let v2;
-          if (legacyV2.success) {
-            v2 = legacyV2.data;
+          const legacyV6 = productSnapshotV6Schema.safeParse(parsedJson);
+          let v6: ProductSnapshotV6;
+          if (legacyV6.success) {
+            v6 = legacyV6.data;
           } else {
-            const legacyV1 = productSnapshotV1Schema.safeParse(parsedJson);
-            if (!legacyV1.success) {
-              throw new StoreCorruptedError("Product Store Schema未知或非法，已保留原文件");
+            const legacyV5 = productSnapshotV5Schema.safeParse(parsedJson);
+            let v5;
+            if (legacyV5.success) {
+              v5 = legacyV5.data;
+            } else {
+              const legacyV4 = productSnapshotV4Schema.safeParse(parsedJson);
+              let v4;
+              if (legacyV4.success) {
+                v4 = legacyV4.data;
+              } else {
+                const legacyV3 = productSnapshotV3Schema.safeParse(parsedJson);
+                let v3;
+                if (legacyV3.success) {
+                  v3 = legacyV3.data;
+                } else {
+                  const legacyV2 = productSnapshotV2Schema.safeParse(parsedJson);
+                  let v2;
+                  if (legacyV2.success) {
+                    v2 = legacyV2.data;
+                  } else {
+                    const legacyV1 = productSnapshotV1Schema.safeParse(parsedJson);
+                    if (!legacyV1.success) {
+                      throw new StoreCorruptedError("Product Store Schema未知或非法，已保留原文件");
+                    }
+                    v2 = migrateProductSnapshotV1ToV2(legacyV1.data);
+                  }
+                  v3 = migrateProductSnapshotV2ToV3(v2);
+                }
+                v4 = migrateProductSnapshotV3ToV4(v3);
+              }
+              v5 = migrateProductSnapshotV4ToV5(v4);
             }
-            v2 = migrateProductSnapshotV1ToV2(legacyV1.data);
+            v6 = migrateProductSnapshotV5ToV6(v5);
           }
-          v3 = migrateProductSnapshotV2ToV3(v2);
+          v7 = migrateProductSnapshotV6ToV7(v6);
         }
-        v4 = migrateProductSnapshotV3ToV4(v3);
+        v8 = productSnapshotV8Schema.parse(migrateProductSnapshotV7ToV8(v7));
       }
-      v5 = migrateProductSnapshotV4ToV5(v4);
+      v9 = migrateProductSnapshotV8ToV9(v8);
     }
-    const migrated = migrateProductSnapshotV5ToV6(v5);
+    const migrated = migrateProductSnapshotV9ToV10(v9);
     assertSnapshotIntegrity(migrated);
     const store = new JsonProductStore(options, migrated);
     // 成功迁移使用与普通事务相同的原子替换；rename 前失败时旧文件逐字节不变。

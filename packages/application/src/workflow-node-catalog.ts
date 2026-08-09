@@ -38,7 +38,15 @@ export type PublicConfigField =
       readonly maximumLength: number;
     }
   | {
-      readonly type: "resource_selector" | "rule_selector" | "skill_selector";
+      readonly type: "tag_list";
+      readonly name: string;
+      readonly label: string;
+      readonly maxItems: number;
+      readonly maxLabelLength: number;
+    }
+  | {
+      readonly type:
+        "resource_selector" | "rule_selector" | "skill_selector" | "note_source_selector";
       readonly name: string;
       readonly label: string;
       readonly multiple: boolean;
@@ -149,12 +157,23 @@ const integerField = (
   maximum,
 });
 
-const reviewModeField = (defaultValue: "manual"): PublicConfigField => ({
+const reviewModeField = (
+  defaultValue: "manual",
+  options: readonly ("manual" | "auto_continue_if_policy_allows")[],
+): PublicConfigField => ({
   type: "review_mode",
   name: "reviewMode",
   label: "审核方式",
   defaultValue,
-  options: ["manual", "auto_continue_if_policy_allows", "always_auto"],
+  options,
+});
+
+const noteKindField = (): PublicConfigField => ({
+  type: "enum_select",
+  name: "defaultKind",
+  label: "默认笔记类型",
+  defaultValue: "general",
+  options: ["idea", "project_idea", "learning", "general"],
 });
 
 const slot = (
@@ -215,7 +234,7 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
         type: "resource_selector",
         name: "selection",
         label: "项目",
-        multiple: true,
+        multiple: false,
         required: false,
       },
     ],
@@ -271,11 +290,11 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
     nodeType: "agent.research",
     schemaVersion: 1,
     displayName: "调研",
-    description: "围绕目标产生可引用证据候选",
+    description: "旧定义兼容节点；当前没有受治理调研底座时固定跳过并返回no_evidence",
     category: "agent",
-    configSchema: z.strictObject({ maxSources: z.number().int().min(1).max(20).default(8) }),
-    defaultConfig: { maxSources: 8 },
-    publicConfigFields: [integerField("maxSources", "最多来源数", 8, 1, 20)],
+    configSchema: EMPTY_CONFIG,
+    defaultConfig: {},
+    publicConfigFields: [],
     inputSlots: [slot("message", "message_ref", true)],
     outputSlots: [slot("evidence", "evidence_ref", false, true)],
     outcomes: ["researched", "no_evidence"],
@@ -309,7 +328,7 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
     category: "human",
     configSchema: REVIEW_CONFIG,
     defaultConfig: { reviewMode: "manual" },
-    publicConfigFields: [reviewModeField("manual")],
+    publicConfigFields: [reviewModeField("manual", ["manual"])],
     inputSlots: [slot("plan", "plan_revision_ref", true)],
     outputSlots: [slot("decision", "decision_ref", true)],
     outcomes: ["approved", "request_revision", "rejected"],
@@ -379,9 +398,28 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
     category: "note",
     configSchema: z.strictObject({
       maxCharacters: z.number().int().min(128).max(20_000).default(4_000),
+      defaultKind: z.enum(["idea", "project_idea", "learning", "general"]).default("general"),
+      suggestedTagLabels: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
     }),
-    defaultConfig: { maxCharacters: 4_000 },
-    publicConfigFields: [integerField("maxCharacters", "最多字符", 4_000, 128, 20_000)],
+    defaultConfig: { maxCharacters: 4_000, defaultKind: "general", suggestedTagLabels: [] },
+    publicConfigFields: [
+      {
+        type: "note_source_selector",
+        name: "source",
+        label: "笔记来源",
+        multiple: false,
+        required: true,
+      },
+      noteKindField(),
+      {
+        type: "tag_list",
+        name: "suggestedTagLabels",
+        label: "建议标签",
+        maxItems: 20,
+        maxLabelLength: 64,
+      },
+      integerField("maxCharacters", "最多字符", 4_000, 128, 20_000),
+    ],
     inputSlots: [slot("message", "message_ref", true)],
     outputSlots: [slot("candidate", "note_candidate_ref", true)],
     outcomes: ["extracted", "no_note"],
@@ -415,7 +453,7 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
     category: "human",
     configSchema: REVIEW_CONFIG,
     defaultConfig: { reviewMode: "manual" },
-    publicConfigFields: [reviewModeField("manual")],
+    publicConfigFields: [reviewModeField("manual", ["manual", "auto_continue_if_policy_allows"])],
     inputSlots: [slot("candidate", "note_candidate_ref", true)],
     outputSlots: [slot("decision", "decision_ref", true)],
     outcomes: ["approved", "request_revision", "rejected"],

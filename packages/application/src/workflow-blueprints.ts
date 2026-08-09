@@ -35,7 +35,7 @@ export interface WorkflowRunOverrideRule {
 export interface WorkflowBlueprint {
   readonly blueprintKey: WorkflowBlueprintKey;
   readonly blueprintVersion: number;
-  readonly runnerFamily: "definition-kernel-lab.v1";
+  readonly runnerFamily: "configurable-planning.v1" | "note-capture.v1";
   readonly allowedNodeTypes: readonly WorkflowNodeTypeKey[];
   readonly optionalNodeTypes: readonly WorkflowNodeTypeKey[];
   readonly requiredRoles: readonly WorkflowRequiredRole[];
@@ -101,15 +101,9 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
   {
     blueprintKey: "planning",
     blueprintVersion: 1,
-    runnerFamily: "definition-kernel-lab.v1",
+    runnerFamily: "configurable-planning.v1",
     allowedNodeTypes: PLANNING_NODE_TYPES,
-    optionalNodeTypes: [
-      "context.memory",
-      "context.project",
-      "policy.rules",
-      "capability.skills",
-      "agent.research",
-    ],
+    optionalNodeTypes: ["context.memory", "context.project", "policy.rules", "capability.skills"],
     requiredRoles: [
       { role: "planner", nodeType: "agent.plan", exactlyOnce: true },
       { role: "plan_reviewer", nodeType: "human.plan_review", exactlyOnce: true },
@@ -130,8 +124,6 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
       { nodeType: "context.project", fields: ["enabled", "selection"] },
       { nodeType: "policy.rules", fields: ["enabled", "selection"] },
       { nodeType: "capability.skills", fields: ["enabled", "selection"] },
-      { nodeType: "agent.research", fields: ["enabled"] },
-      { nodeType: "human.plan_review", fields: ["reviewMode"] },
     ],
     immutableMinimumRisk: {
       "human.plan_review": "human_decision",
@@ -144,7 +136,7 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
   {
     blueprintKey: "note",
     blueprintVersion: 1,
-    runnerFamily: "definition-kernel-lab.v1",
+    runnerFamily: "note-capture.v1",
     allowedNodeTypes: NOTE_NODE_TYPES,
     optionalNodeTypes: ["human.note_review"],
     requiredRoles: [
@@ -152,7 +144,14 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
       { role: "classifier", nodeType: "note.classify", exactlyOnce: true },
       { role: "terminal_commit", nodeType: "note.commit", exactlyOnce: true },
     ],
-    loopRules: [],
+    loopRules: [
+      {
+        outcomeNodeType: "human.note_review",
+        continueOutcomes: ["request_revision"],
+        exitOutcomes: ["approved", "rejected"],
+        maxIterations: 2,
+      },
+    ],
     perRunOverrides: [{ nodeType: "human.note_review", fields: ["reviewMode"] }],
     immutableMinimumRisk: {
       "human.note_review": "human_decision",
@@ -174,7 +173,11 @@ export function validateDefinitionAgainstBlueprint(
   catalog: NodeCatalog,
 ): readonly WorkflowDiagnostic[] {
   const diagnostics: WorkflowDiagnostic[] = [];
-  const nodes: { readonly nodeType: WorkflowNodeTypeKey; readonly path: string }[] = [];
+  const nodes: {
+    readonly nodeType: WorkflowNodeTypeKey;
+    readonly path: string;
+    readonly config: Readonly<Record<string, unknown>>;
+  }[] = [];
   const loops: {
     readonly outcomeNodeId: string;
     readonly continueOutcomes: readonly string[];
@@ -192,7 +195,7 @@ export function validateDefinitionAgainstBlueprint(
     if (frame === undefined) break;
     const element = frame.element;
     if (element.kind === "task" || element.kind === "composite") {
-      nodes.push({ nodeType: element.nodeType, path: frame.path });
+      nodes.push({ nodeType: element.nodeType, path: frame.path, config: element.config });
       typeById.set(element.definitionNodeId, element.nodeType);
       if (!blueprint.allowedNodeTypes.includes(element.nodeType)) {
         diagnostics.push(
@@ -247,6 +250,23 @@ export function validateDefinitionAgainstBlueprint(
     if (count === 0 || (role.exactlyOnce && count !== 1)) {
       diagnostics.push(
         invalid("blueprint.required_role_mismatch", "$", { role: role.role, count }),
+      );
+    }
+  }
+  for (const nodeType of blueprint.optionalNodeTypes) {
+    const count = nodes.filter((node) => node.nodeType === nodeType).length;
+    if (count > 1) {
+      diagnostics.push(invalid("blueprint.optional_node_duplicated", "$", { nodeType, count }));
+    }
+  }
+  for (const node of nodes) {
+    if (
+      blueprint.mandatoryManualReviewTypes.includes(node.nodeType) &&
+      node.config["reviewMode"] !== undefined &&
+      node.config["reviewMode"] !== "manual"
+    ) {
+      diagnostics.push(
+        invalid("blueprint.mandatory_manual_review", node.path, { nodeType: node.nodeType }),
       );
     }
   }

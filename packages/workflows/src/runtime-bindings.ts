@@ -1,22 +1,48 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { z } from "zod";
 import {
-  approvalRequestIdSchema,
-  memoryImportIntentIdSchema,
-  memoryImportResultIdSchema,
-  outboxEntryIdSchema,
-  productRunIdSchema,
-  projectCandidateIdSchema,
   type ApprovalRequestId,
   type MemoryImportIntentId,
   type MemoryImportResultId,
+  type NoteCandidateId,
   type OutboxEntryId,
   type ProductRunId,
   type ProjectCandidateId,
 } from "@chat/contracts";
+import {
+  NOTE_CAPTURE_RUNNER_FAMILY,
+  type ProductWorkflowRunnerFamily,
+} from "./definition-kernel-executor-registry.js";
+import {
+  RuntimeBindingError,
+  assertRuntimeBindingsIntegrity,
+  emptyBindings,
+  normalizeProductRunnerEvidence,
+  parseRuntimeBindingsFile,
+  runtimeBindingsFileSchema,
+  type HookBinding,
+  type MemoryImportWorkflowBinding,
+  type NoteHookBinding,
+  type ProjectIntakeWorkflowBinding,
+  type RuntimeBindingsFile,
+  type WorkflowBinding,
+} from "./runtime-bindings-schema.js";
+
+export {
+  RuntimeBindingError,
+  runtimeBindingsFileSchema,
+  type HookBinding,
+  type MemoryImportWorkflowBinding,
+  type NoteHookBinding,
+  type ProjectIntakeWorkflowBinding,
+  type RuntimeBindingsFile,
+  type WorkflowBinding,
+} from "./runtime-bindings-schema.js";
+export {
+  readSafeMemoryImportRuntimeEvidence,
+  type SafeMemoryImportRuntimeEvidence,
+} from "./runtime-bindings-evidence.js";
 
 /**
  * Runtime Binding Store：产品身份到Workflow私有身份的单机映射与派发栅栏。
@@ -26,229 +52,6 @@ import {
  * 恢复”。文件本身使用克隆提交与atomic rename；rename后目录fsync不确定时实例
  * 立即熔断，避免旧内存覆盖已提交映射。
  */
-
-const RUNTIME_BINDINGS_SCHEMA_VERSION = "runtime-bindings.v3";
-
-const startIntentSchema = z
-  .object({
-    outboxId: outboxEntryIdSchema,
-    workflowDefinitionVersion: z.string().min(1).max(100),
-    state: z.enum(["starting", "outcome_unknown"]),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
-  })
-  .strict();
-
-const workflowBindingSchema = z
-  .object({
-    workflowRunId: z.string().min(1).max(200),
-    workflowDefinitionVersion: z.string().min(1).max(100),
-    startDispatchState: z.literal("started"),
-    createdAt: z.iso.datetime(),
-  })
-  .strict();
-
-const hookBindingSchema = z
-  .object({
-    hookToken: z.string().min(1).max(300),
-    productRunId: productRunIdSchema,
-    planRevision: z.number().int().positive(),
-    hookClaimState: z.literal("claimed"),
-    resumeDispatchState: z.enum([
-      "none",
-      "dispatching",
-      "dispatched",
-      "outcome_unknown",
-      "failed_terminal",
-    ]),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
-  })
-  .strict();
-
-const memoryImportStartIntentSchema = z
-  .object({
-    memoryImportIntentId: memoryImportIntentIdSchema,
-    memoryImportResultId: memoryImportResultIdSchema,
-    mode: z.enum(["import", "reconcile"]),
-    workflowDefinitionVersion: z.string().min(1).max(100),
-    state: z.enum(["starting", "outcome_unknown"]),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
-  })
-  .strict();
-
-const memoryImportWorkflowBindingSchema = z
-  .object({
-    memoryImportIntentId: memoryImportIntentIdSchema,
-    memoryImportResultId: memoryImportResultIdSchema,
-    mode: z.enum(["import", "reconcile"]),
-    workflowRunId: z.string().min(1).max(200),
-    workflowDefinitionVersion: z.string().min(1).max(100),
-    startDispatchState: z.literal("started"),
-    createdAt: z.iso.datetime(),
-  })
-  .strict();
-
-/**
- * v3落盘字段沿用PS1的projectIntake命名以保持兼容；其语义已经是通用Project
- * Candidate Workflow绑定，Definition Version区分Intake与Advancement。
- */
-const projectIntakeStartIntentSchema = z
-  .object({
-    outboxId: outboxEntryIdSchema,
-    workflowDefinitionVersion: z.string().min(1).max(100),
-    state: z.enum(["starting", "outcome_unknown"]),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
-  })
-  .strict();
-
-const projectIntakeWorkflowBindingSchema = z
-  .object({
-    startOutboxId: outboxEntryIdSchema,
-    workflowRunId: z.string().min(1).max(200),
-    workflowDefinitionVersion: z.string().min(1).max(100),
-    hookToken: z.string().min(1).max(300),
-    resumeDispatchState: z.enum([
-      "none",
-      "dispatching",
-      "dispatched",
-      "outcome_unknown",
-      "failed_terminal",
-    ]),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
-  })
-  .strict();
-
-const runtimeBindingsFileV1Schema = z
-  .object({
-    schemaVersion: z.literal("runtime-bindings.v1"),
-    startIntents: z.record(productRunIdSchema, startIntentSchema).default({}),
-    workflows: z.record(productRunIdSchema, workflowBindingSchema),
-    hooks: z.record(approvalRequestIdSchema, hookBindingSchema),
-  })
-  .strict();
-
-const runtimeBindingsFileV2Schema = z
-  .object({
-    schemaVersion: z.literal("runtime-bindings.v2"),
-    startIntents: z.record(productRunIdSchema, startIntentSchema),
-    workflows: z.record(productRunIdSchema, workflowBindingSchema),
-    hooks: z.record(approvalRequestIdSchema, hookBindingSchema),
-    memoryImportStartIntents: z.record(outboxEntryIdSchema, memoryImportStartIntentSchema),
-    memoryImportWorkflows: z.record(outboxEntryIdSchema, memoryImportWorkflowBindingSchema),
-  })
-  .strict();
-
-export const runtimeBindingsFileSchema = z
-  .object({
-    schemaVersion: z.literal(RUNTIME_BINDINGS_SCHEMA_VERSION),
-    startIntents: z.record(productRunIdSchema, startIntentSchema),
-    workflows: z.record(productRunIdSchema, workflowBindingSchema),
-    hooks: z.record(approvalRequestIdSchema, hookBindingSchema),
-    memoryImportStartIntents: z.record(outboxEntryIdSchema, memoryImportStartIntentSchema),
-    memoryImportWorkflows: z.record(outboxEntryIdSchema, memoryImportWorkflowBindingSchema),
-    projectIntakeStartIntents: z.record(projectCandidateIdSchema, projectIntakeStartIntentSchema),
-    projectIntakeWorkflows: z.record(projectCandidateIdSchema, projectIntakeWorkflowBindingSchema),
-  })
-  .strict();
-
-export type RuntimeBindingsFile = z.infer<typeof runtimeBindingsFileSchema>;
-export type WorkflowBinding = z.infer<typeof workflowBindingSchema>;
-export type HookBinding = z.infer<typeof hookBindingSchema>;
-export type MemoryImportWorkflowBinding = z.infer<typeof memoryImportWorkflowBindingSchema>;
-export type ProjectIntakeWorkflowBinding = z.infer<typeof projectIntakeWorkflowBindingSchema>;
-
-export interface SafeMemoryImportRuntimeEvidence {
-  readonly status: "ok" | "missing" | "invalid" | "mismatch";
-  readonly entries: readonly {
-    readonly outboxId: string;
-    readonly mode: "import" | "reconcile";
-    readonly state: "started" | "outcome_unknown" | "missing";
-    readonly workflowDefinitionVersion: string | null;
-  }[];
-}
-
-/** 严格解析包含私有身份的Binding文件，只返回不含Workflow Run ID/Token的安全投影。 */
-export function readSafeMemoryImportRuntimeEvidence(input: {
-  readonly path: string | undefined;
-  readonly memoryImportIntentId: string;
-  readonly memoryImportResultId: string;
-  readonly outbox: readonly {
-    readonly outboxId: string;
-    readonly kind: "memory_import_start" | "memory_import_reconcile";
-  }[];
-}): SafeMemoryImportRuntimeEvidence {
-  if (input.path === undefined) return { status: "missing", entries: [] };
-  let parsed: RuntimeBindingsFile;
-  try {
-    parsed = runtimeBindingsFileSchema.parse(JSON.parse(readFileSync(input.path, "utf8")));
-    assertRuntimeBindingsIntegrity(parsed);
-  } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      (error as { code?: string }).code === "ENOENT"
-    ) {
-      return { status: "missing", entries: [] };
-    }
-    return { status: "invalid", entries: [] };
-  }
-  let mismatch = false;
-  const entries: SafeMemoryImportRuntimeEvidence["entries"] = input.outbox.map((entry) => {
-    const expectedMode = entry.kind === "memory_import_start" ? "import" : "reconcile";
-    const workflow = parsed.memoryImportWorkflows[entry.outboxId as OutboxEntryId];
-    const start = parsed.memoryImportStartIntents[entry.outboxId as OutboxEntryId];
-    const candidate = workflow ?? start;
-    const state =
-      workflow !== undefined
-        ? "started"
-        : start?.state === "outcome_unknown"
-          ? "outcome_unknown"
-          : "missing";
-    const version = candidate?.workflowDefinitionVersion ?? null;
-    if (
-      candidate?.memoryImportIntentId !== input.memoryImportIntentId ||
-      candidate.memoryImportResultId !== input.memoryImportResultId ||
-      candidate.mode !== expectedMode ||
-      version === null ||
-      state === "missing"
-    ) {
-      mismatch = true;
-    }
-    return {
-      outboxId: entry.outboxId,
-      mode: expectedMode,
-      state,
-      workflowDefinitionVersion: version,
-    };
-  });
-  return { status: mismatch ? "mismatch" : "ok", entries };
-}
-
-export class RuntimeBindingError extends Error {
-  readonly code = "runtime_binding_invalid";
-  constructor(message: string) {
-    super(message);
-    this.name = "RuntimeBindingError";
-  }
-}
-
-function emptyBindings(): RuntimeBindingsFile {
-  return {
-    schemaVersion: RUNTIME_BINDINGS_SCHEMA_VERSION,
-    startIntents: {},
-    workflows: {},
-    hooks: {},
-    memoryImportStartIntents: {},
-    memoryImportWorkflows: {},
-    projectIntakeStartIntents: {},
-    projectIntakeWorkflows: {},
-  };
-}
 
 export class RuntimeBindingStore {
   private readonly filePath: string;
@@ -288,36 +91,12 @@ export class RuntimeBindingStore {
     } catch {
       throw new RuntimeBindingError("Runtime Binding Store不是合法JSON，已保留原文件");
     }
-    const validated = runtimeBindingsFileSchema.safeParse(parsed);
-    if (validated.success) {
-      assertRuntimeBindingsIntegrity(validated.data);
-      return new RuntimeBindingStore(filePath, validated.data);
+    const loaded = parseRuntimeBindingsFile(parsed);
+    if (!loaded.migrationRequired) {
+      return new RuntimeBindingStore(filePath, loaded.bindings);
     }
-    const legacyV2 = runtimeBindingsFileV2Schema.safeParse(parsed);
-    const legacyV1 = legacyV2.success ? undefined : runtimeBindingsFileV1Schema.safeParse(parsed);
-    if (!legacyV2.success && legacyV1?.success !== true) {
-      throw new RuntimeBindingError("Runtime Binding Store版本未知或内容非法，已保留原文件");
-    }
-    const source = legacyV2.success
-      ? legacyV2.data
-      : {
-          ...legacyV1!.data,
-          memoryImportStartIntents: {},
-          memoryImportWorkflows: {},
-        };
-    const migrated: RuntimeBindingsFile = {
-      schemaVersion: RUNTIME_BINDINGS_SCHEMA_VERSION,
-      startIntents: source.startIntents ?? {},
-      workflows: source.workflows ?? {},
-      hooks: source.hooks ?? {},
-      memoryImportStartIntents: source.memoryImportStartIntents,
-      memoryImportWorkflows: source.memoryImportWorkflows,
-      projectIntakeStartIntents: {},
-      projectIntakeWorkflows: {},
-    };
-    assertRuntimeBindingsIntegrity(migrated);
-    const store = new RuntimeBindingStore(filePath, migrated);
-    await store.persist(migrated);
+    const store = new RuntimeBindingStore(filePath, loaded.bindings);
+    await store.persist(loaded.bindings);
     return store;
   }
 
@@ -327,6 +106,7 @@ export class RuntimeBindingStore {
       Object.keys(this.bindings.startIntents).length > 0 ||
       Object.keys(this.bindings.workflows).length > 0 ||
       Object.keys(this.bindings.hooks).length > 0 ||
+      Object.keys(this.bindings.noteHooks).length > 0 ||
       Object.keys(this.bindings.memoryImportStartIntents).length > 0 ||
       Object.keys(this.bindings.memoryImportWorkflows).length > 0 ||
       Object.keys(this.bindings.projectIntakeStartIntents).length > 0 ||
@@ -354,6 +134,12 @@ export class RuntimeBindingStore {
   getHookBinding(approvalRequestId: ApprovalRequestId): HookBinding | undefined {
     this.assertAvailable();
     const value = this.bindings.hooks[approvalRequestId];
+    return value === undefined ? undefined : structuredClone(value);
+  }
+
+  getNoteHookBinding(noteCandidateId: NoteCandidateId): NoteHookBinding | undefined {
+    this.assertAvailable();
+    const value = this.bindings.noteHooks[noteCandidateId];
     return value === undefined ? undefined : structuredClone(value);
   }
 
@@ -683,16 +469,33 @@ export class RuntimeBindingStore {
     productRunId: ProductRunId;
     outboxId: OutboxEntryId;
     workflowDefinitionVersion: string;
+    runnerFamily?: ProductWorkflowRunnerFamily;
+    runnerBundleVersion?: string;
+    workflowRunSpecId?: string;
     now: string;
   }): Promise<"claimed" | "already_started" | "outcome_unknown"> {
     return this.enqueue(async () => {
       this.assertAvailable();
-      if (this.bindings.workflows[input.productRunId] !== undefined) return "already_started";
+      const runner = normalizeProductRunnerEvidence(input);
+      const started = this.bindings.workflows[input.productRunId];
+      if (started !== undefined) {
+        if (
+          started.runnerFamily !== runner.runnerFamily ||
+          started.runnerBundleVersion !== runner.runnerBundleVersion ||
+          started.workflowRunSpecId !== runner.workflowRunSpecId
+        ) {
+          throw new RuntimeBindingError("已启动Product Run的Runner绑定与重复请求冲突");
+        }
+        return "already_started";
+      }
       const existing = this.bindings.startIntents[input.productRunId];
       if (existing !== undefined) {
         if (
           existing.outboxId !== input.outboxId ||
-          existing.workflowDefinitionVersion !== input.workflowDefinitionVersion
+          existing.workflowDefinitionVersion !== input.workflowDefinitionVersion ||
+          existing.runnerFamily !== runner.runnerFamily ||
+          existing.runnerBundleVersion !== runner.runnerBundleVersion ||
+          existing.workflowRunSpecId !== runner.workflowRunSpecId
         ) {
           throw new RuntimeBindingError("productRunId的Workflow start意图冲突，失败关闭");
         }
@@ -702,6 +505,7 @@ export class RuntimeBindingStore {
       next.startIntents[input.productRunId] = {
         outboxId: input.outboxId,
         workflowDefinitionVersion: input.workflowDefinitionVersion,
+        ...runner,
         state: "starting",
         createdAt: input.now,
         updatedAt: input.now,
@@ -717,15 +521,22 @@ export class RuntimeBindingStore {
     outboxId: OutboxEntryId;
     workflowRunId: string;
     workflowDefinitionVersion: string;
+    runnerFamily?: ProductWorkflowRunnerFamily;
+    runnerBundleVersion?: string;
+    workflowRunSpecId?: string;
     now: string;
   }): Promise<{ alreadyExisted: boolean }> {
     return this.enqueue(async () => {
       this.assertAvailable();
+      const runner = normalizeProductRunnerEvidence(input);
       const existing = this.bindings.workflows[input.productRunId];
       if (existing !== undefined) {
         if (
           existing.workflowRunId !== input.workflowRunId ||
-          existing.workflowDefinitionVersion !== input.workflowDefinitionVersion
+          existing.workflowDefinitionVersion !== input.workflowDefinitionVersion ||
+          existing.runnerFamily !== runner.runnerFamily ||
+          existing.runnerBundleVersion !== runner.runnerBundleVersion ||
+          existing.workflowRunSpecId !== runner.workflowRunSpecId
         ) {
           throw new RuntimeBindingError("productRunId的Workflow映射冲突，失败关闭");
         }
@@ -735,7 +546,10 @@ export class RuntimeBindingStore {
       if (
         intent === undefined ||
         intent.outboxId !== input.outboxId ||
-        intent.workflowDefinitionVersion !== input.workflowDefinitionVersion
+        intent.workflowDefinitionVersion !== input.workflowDefinitionVersion ||
+        intent.runnerFamily !== runner.runnerFamily ||
+        intent.runnerBundleVersion !== runner.runnerBundleVersion ||
+        intent.workflowRunSpecId !== runner.workflowRunSpecId
       ) {
         throw new RuntimeBindingError("Workflow start结果缺少匹配的持久化意图");
       }
@@ -743,6 +557,7 @@ export class RuntimeBindingStore {
       next.workflows[input.productRunId] = {
         workflowRunId: input.workflowRunId,
         workflowDefinitionVersion: input.workflowDefinitionVersion,
+        ...runner,
         startDispatchState: "started",
         createdAt: input.now,
       };
@@ -792,6 +607,91 @@ export class RuntimeBindingStore {
         resumeDispatchState: "none",
         createdAt: input.now,
         updatedAt: input.now,
+      };
+      await this.commit(next);
+    });
+  }
+
+  async claimNoteHookBinding(input: {
+    noteCandidateId: NoteCandidateId;
+    productRunId: ProductRunId;
+    candidateSequence: number;
+    hookToken: string;
+    now: string;
+  }): Promise<void> {
+    await this.enqueue(async () => {
+      this.assertAvailable();
+      const existing = this.bindings.noteHooks[input.noteCandidateId];
+      if (existing !== undefined) {
+        if (
+          existing.hookToken !== input.hookToken ||
+          existing.productRunId !== input.productRunId ||
+          existing.candidateSequence !== input.candidateSequence
+        ) {
+          throw new RuntimeBindingError("noteCandidateId的Hook映射冲突，失败关闭");
+        }
+        return;
+      }
+      const workflow = this.bindings.workflows[input.productRunId];
+      if (workflow?.runnerFamily !== NOTE_CAPTURE_RUNNER_FAMILY) {
+        throw new RuntimeBindingError("Note Hook缺少对应Note Workflow映射");
+      }
+      const next = structuredClone(this.bindings);
+      next.noteHooks[input.noteCandidateId] = {
+        hookToken: input.hookToken,
+        productRunId: input.productRunId,
+        candidateSequence: input.candidateSequence,
+        hookClaimState: "claimed",
+        resumeDispatchState: "none",
+        createdAt: input.now,
+        updatedAt: input.now,
+      };
+      await this.commit(next);
+    });
+  }
+
+  async markNoteResumeDispatching(noteCandidateId: NoteCandidateId, now: string): Promise<void> {
+    await this.setNoteResumeState(noteCandidateId, "dispatching", now, ["none"]);
+  }
+
+  async markNoteResumeDispatched(noteCandidateId: NoteCandidateId, now: string): Promise<void> {
+    await this.setNoteResumeState(noteCandidateId, "dispatched", now, [
+      "dispatching",
+      "dispatched",
+    ]);
+  }
+
+  async markNoteResumeOutcomeUnknown(noteCandidateId: NoteCandidateId, now: string): Promise<void> {
+    await this.setNoteResumeState(noteCandidateId, "outcome_unknown", now, [
+      "dispatching",
+      "outcome_unknown",
+    ]);
+  }
+
+  async markNoteResumeFailedTerminal(noteCandidateId: NoteCandidateId, now: string): Promise<void> {
+    await this.setNoteResumeState(noteCandidateId, "failed_terminal", now, ["none", "dispatching"]);
+  }
+
+  private async setNoteResumeState(
+    noteCandidateId: NoteCandidateId,
+    state: NoteHookBinding["resumeDispatchState"],
+    now: string,
+    allowedFrom: readonly NoteHookBinding["resumeDispatchState"][],
+  ): Promise<void> {
+    await this.enqueue(async () => {
+      this.assertAvailable();
+      const existing = this.bindings.noteHooks[noteCandidateId];
+      if (existing === undefined)
+        throw new RuntimeBindingError("Note Resume的Hook映射缺失，失败关闭");
+      if (!allowedFrom.includes(existing.resumeDispatchState)) {
+        throw new RuntimeBindingError(`Note Hook Resume状态不允许转换到${state}`);
+      }
+      if (existing.resumeDispatchState === state) return;
+      const next = structuredClone(this.bindings);
+      next.noteHooks[noteCandidateId] = {
+        ...existing,
+        resumeDispatchState: state,
+        updatedAt: now,
       };
       await this.commit(next);
     });
@@ -893,57 +793,6 @@ export class RuntimeBindingStore {
 
   private assertAvailable(): void {
     if (this.unavailable !== undefined) throw this.unavailable;
-  }
-}
-
-function assertRuntimeBindingsIntegrity(bindings: RuntimeBindingsFile): void {
-  for (const productRunId of Object.keys(bindings.startIntents) as ProductRunId[]) {
-    if (bindings.workflows[productRunId] !== undefined) {
-      throw new RuntimeBindingError("同一Product Run不能同时存在start意图与Workflow映射");
-    }
-  }
-  const workflowRunIds = Object.values(bindings.workflows).map((binding) => binding.workflowRunId);
-  const importWorkflowRunIds = Object.values(bindings.memoryImportWorkflows).map(
-    (binding) => binding.workflowRunId,
-  );
-  const allWorkflowRunIds = [...workflowRunIds, ...importWorkflowRunIds];
-  if (new Set(allWorkflowRunIds).size !== allWorkflowRunIds.length) {
-    throw new RuntimeBindingError("多个产品操作不能共享同一Workflow Run映射");
-  }
-  const hookTokens = Object.values(bindings.hooks).map((binding) => binding.hookToken);
-  if (new Set(hookTokens).size !== hookTokens.length) {
-    throw new RuntimeBindingError("多个Approval不能共享同一Hook Token");
-  }
-  for (const hook of Object.values(bindings.hooks)) {
-    if (bindings.workflows[hook.productRunId] === undefined) {
-      throw new RuntimeBindingError("Hook映射缺少对应Workflow映射");
-    }
-  }
-  for (const outboxId of Object.keys(bindings.memoryImportStartIntents) as OutboxEntryId[]) {
-    if (bindings.memoryImportWorkflows[outboxId] !== undefined) {
-      throw new RuntimeBindingError("同一Import Outbox不能同时存在start意图与Workflow映射");
-    }
-  }
-  for (const projectCandidateId of Object.keys(
-    bindings.projectIntakeStartIntents,
-  ) as ProjectCandidateId[]) {
-    if (bindings.projectIntakeWorkflows[projectCandidateId] !== undefined) {
-      throw new RuntimeBindingError("同一Project Candidate不能同时存在start意图与Workflow映射");
-    }
-  }
-  const projectWorkflowRunIds = Object.values(bindings.projectIntakeWorkflows).map(
-    (binding) => binding.workflowRunId,
-  );
-  const everyWorkflowRunId = [...allWorkflowRunIds, ...projectWorkflowRunIds];
-  if (new Set(everyWorkflowRunId).size !== everyWorkflowRunId.length) {
-    throw new RuntimeBindingError("多个产品操作不能共享同一Workflow Run映射");
-  }
-  const projectHookTokens = Object.values(bindings.projectIntakeWorkflows).map(
-    (binding) => binding.hookToken,
-  );
-  const everyHookToken = [...hookTokens, ...projectHookTokens];
-  if (new Set(everyHookToken).size !== everyHookToken.length) {
-    throw new RuntimeBindingError("多个产品操作不能共享同一Hook Token");
   }
 }
 

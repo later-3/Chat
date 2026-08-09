@@ -39,6 +39,7 @@ function makeRevision(
     revision?: number;
     ruleRevisionId?: string;
     supersedesRevisionId?: string;
+    supersedesRevisionSha256?: string;
     body?: string;
     tagIds?: readonly string[];
     conflictsWithRuleIds?: readonly string[];
@@ -51,6 +52,9 @@ function makeRevision(
     ...(input.supersedesRevisionId === undefined
       ? {}
       : { supersedesRevisionId: input.supersedesRevisionId }),
+    ...(revision === 1
+      ? {}
+      : { supersedesRevisionSha256: input.supersedesRevisionSha256 ?? makeRevision().sha256 }),
     body: input.body ?? "交付前必须运行与风险匹配的测试。",
     rationale: "产品完成必须来自可验证事实。",
     appliesWhen: ["修改产品行为"],

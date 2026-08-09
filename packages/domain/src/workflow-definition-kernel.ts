@@ -167,7 +167,7 @@ export const WORKFLOW_KERNEL_LIMITS = Object.freeze({
     maxWaits: 16,
   },
   projection: {
-    maxManifestSlots: 64,
+    maxManifestSlots: 30,
     maxPreviewBytes: 16 * 1024,
   },
 } as const);

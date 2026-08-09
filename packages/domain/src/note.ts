@@ -42,6 +42,7 @@ export interface NoteDraftShape {
 }
 
 export interface NoteRevisionSnapshotShape extends NoteDraftShape {
+  readonly schemaVersion?: "note-revision.v1" | undefined;
   readonly noteRevisionId: string;
   readonly noteId: string;
   readonly noteRevision: number;
@@ -52,8 +53,10 @@ export interface NoteRevisionSnapshotShape extends NoteDraftShape {
 }
 
 export interface NoteAggregateShape {
+  readonly schemaVersion?: "note.v1" | undefined;
   readonly noteId: string;
   readonly ownerPrincipalId: string;
+  readonly sourceCandidateId: string;
   readonly currentRevisionId: string;
   readonly status: NoteStatusShape;
   readonly revision: number;
@@ -62,14 +65,15 @@ export interface NoteAggregateShape {
 }
 
 export interface NoteCandidateSnapshotShape {
+  readonly schemaVersion?: "note-candidate.v1" | undefined;
   readonly noteCandidateId: string;
   readonly productRunId: string;
   readonly candidateSequence: number;
-  readonly supersedesCandidateId?: string;
+  readonly supersedesCandidateId?: string | undefined;
   readonly proposed: NoteDraftShape;
   readonly sourceRefs: readonly NoteSourceRefShape[];
   readonly status: NoteCandidateStatusShape;
-  readonly failure?: { readonly code: string; readonly summary: string };
+  readonly failure?: { readonly code: string; readonly summary: string } | undefined;
   readonly sha256: string;
   readonly revision: number;
   readonly createdAt: string;
@@ -77,14 +81,15 @@ export interface NoteCandidateSnapshotShape {
 }
 
 export interface NoteDecisionShape {
+  readonly schemaVersion?: "note-decision.v1" | undefined;
   readonly noteDecisionId: string;
   readonly productRunId: string;
   readonly noteCandidateId: string;
   readonly candidateRevision: number;
   readonly candidateSha256: string;
   readonly kind: NoteDecisionKindShape;
-  readonly revisionInstruction?: string;
-  readonly reason?: string;
+  readonly revisionInstruction?: string | undefined;
+  readonly reason?: string | undefined;
   readonly principalId: string;
   readonly commandId: string;
   readonly revision: 1;

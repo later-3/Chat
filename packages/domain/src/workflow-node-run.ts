@@ -313,15 +313,43 @@ function assertTransitionEvidence(
   if (input.reasonKind !== expectedReason) {
     throw new Error(`Workflow Node Transition状态与reason不匹配:${input.toStatus}`);
   }
-  if (input.toStatus === "waiting_human" && input.relatedProductRef?.kind !== "approval_request") {
+  if (
+    input.toStatus === "waiting_human" &&
+    current.nodeType === "human.note_review" &&
+    input.relatedProductRef?.kind !== "note_candidate"
+  ) {
+    throw new Error("Workflow Node waiting_human必须关联Note Candidate");
+  }
+  if (
+    input.toStatus === "waiting_human" &&
+    current.nodeType !== "human.note_review" &&
+    input.relatedProductRef?.kind !== "approval_request"
+  ) {
     throw new Error("Workflow Node waiting_human必须关联Approval Request");
   }
   if (
     current.status === "waiting_human" &&
     (input.toStatus === "running" || input.toStatus === "succeeded") &&
+    current.nodeType === "human.note_review" &&
+    input.relatedProductRef?.kind !== "note_decision"
+  ) {
+    throw new Error("Workflow Node恢复或完成必须关联已提交Note Decision");
+  }
+  if (
+    current.status === "waiting_human" &&
+    (input.toStatus === "running" || input.toStatus === "succeeded") &&
+    current.nodeType !== "human.note_review" &&
     input.relatedProductRef?.kind !== "decision"
   ) {
     throw new Error("Workflow Node恢复或完成必须关联已提交Decision");
+  }
+  if (
+    current.status === "waiting_human" &&
+    input.toStatus === "cancelled" &&
+    current.nodeType === "human.note_review" &&
+    input.relatedProductRef?.kind !== "note_decision"
+  ) {
+    throw new Error("Workflow Node取消必须关联已提交Note Decision事实");
   }
   if (input.toStatus === "outcome_unknown" && !current.nodeType.startsWith("execute.")) {
     throw new Error("outcome_unknown只允许用于无法确认的外部执行节点");

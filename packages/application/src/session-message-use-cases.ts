@@ -1,25 +1,57 @@
-import { computeRunContextRequestSha256, hashCanonical } from "@chat/domain";
-import { contextRequestIdSchema, workflowViewDefinitionIdSchema } from "@chat/contracts";
+import {
+  computeRunContextRequestSha256,
+  hashCanonical,
+  NOTE_LOW_RISK_AUTO_POLICY_RESOURCE_ID,
+  NOTE_LOW_RISK_AUTO_POLICY_REVISION,
+  NOTE_LOW_RISK_AUTO_POLICY_SHA256,
+  normalizeNoteTags,
+  resolveNoteSourceText,
+  sha256Hex,
+  type WorkflowDiagnostic,
+} from "@chat/domain";
+import { contextRequestIdSchema, noteKindSchema, workflowRunSpecIdSchema } from "@chat/contracts";
 import type {
+  NoteCaptureSubmitInput,
+  NoteKind,
+  NoteSourceRef,
+  NoteTag,
   CreateSessionPayload,
   Message,
   PrincipalId,
   ProductRun,
   ProductSession,
   ProductSessionId,
+  ProductSnapshot,
   SessionDto,
   SubmitMessagePayload,
+  WorkflowRunBusinessInput,
+  WorkflowDefinitionRevision,
 } from "@chat/contracts";
 import { DEFAULT_MAX_PLAN_REVISIONS, type ApplicationDeps } from "./deps.js";
 import { toMessageDto, toRunDto, toSessionDto } from "./dto.js";
-import { forbidden, notFound, revisionConflict } from "./errors.js";
+import { ApplicationError, forbidden, notFound, revisionConflict } from "./errors.js";
 import { emitRunEvent } from "./trace-helpers.js";
 import type { MessageDto, RunDto } from "@chat/contracts";
+import {
+  compileWorkflowRunSpec,
+  validateRunSpecResourcesCurrent,
+} from "./workflow-run-spec-compiler.js";
+import { BUILTIN_WORKFLOW_EXECUTOR_MANIFEST } from "./workflow-executor-manifest.js";
+import {
+  CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
+  CONFIGURABLE_PLANNING_RUNNER_FAMILY,
+  NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
+  NOTE_CAPTURE_RUNNER_FAMILY,
+  SYSTEM_NOTE_WORKFLOW_REVISION_ID,
+  SYSTEM_NOTE_WORKFLOW_VIEW_ID,
+  SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
+  SYSTEM_PLANNING_WORKFLOW_VIEW_ID,
+} from "./workflow-system-definitions.js";
 import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
-
-const LEGACY_PLANNING_VIEW_ID = workflowViewDefinitionIdSchema.parse(
-  "wvd_planninglegacyv1",
-);
+import { listAuthorizedWorkflowResources } from "./workflow-resource-catalog.js";
+import { assertWorkflowResourceSelectionsAuthorized } from "./workflow-resource-catalog.js";
+import { createPublishedWorkflowView } from "./workflow-view-builder.js";
+import { DEFAULT_NODE_CATALOG } from "./workflow-node-catalog.js";
 
 /**
  * CreateProductSession / SubmitUserMessage用例。
@@ -94,10 +126,128 @@ export async function submitUserMessage(
   const productRunId = deps.ids.run();
   const outboxId = deps.ids.outbox();
   const workflowAttemptId = deps.ids.attempt();
+  const workflowRunSpecId = workflowRunSpecIdSchema.parse(
+    `wrs_${hashCanonical("id.workflow-run-spec.v1", { productRunId }).slice(0, 32)}`,
+  );
+  const { snapshot: preflightSnapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const preflightSession = preflightSnapshot.entities.sessions[input.sessionId];
+  if (preflightSession === undefined) throw notFound("Session不存在");
+  if (preflightSession.ownerPrincipalId !== input.principalId) {
+    throw forbidden("无权向该Session发送消息");
+  }
+  const preflightSessionSequence = preflightSession.lastMessageSequence + 1;
+  const sourceMessageSha256 = hashCanonical("message.v1", {
+    messageId,
+    sessionId: input.sessionId,
+    sessionSequence: preflightSessionSequence,
+    role: "user",
+    content: { format: "markdown" as const, text: input.payload.text },
+  });
+  const selectedRevision = resolvePublishedWorkflowRevision(
+    preflightSnapshot,
+    input.payload,
+    input.principalId,
+  );
+  const selectedView =
+    selectedRevision.workflowDefinitionRevisionId === SYSTEM_PLANNING_WORKFLOW_REVISION_ID
+      ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_PLANNING_WORKFLOW_VIEW_ID]
+      : selectedRevision.workflowDefinitionRevisionId === SYSTEM_NOTE_WORKFLOW_REVISION_ID
+        ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_NOTE_WORKFLOW_VIEW_ID]
+        : createPublishedWorkflowView({ revision: selectedRevision, createdAt: now });
+  if (selectedView === undefined) {
+    throw new ApplicationError({
+      code: "store_corrupted",
+      httpStatus: 500,
+      message: "Workflow View快照不存在",
+      recoveryAction: "contact_support",
+    });
+  }
+  const runConfiguration = input.payload.workflowSelection?.runConfiguration ?? {
+    schemaVersion: "workflow-run-configuration.v1" as const,
+    overrides: [],
+  };
+  const business = resolveSubmitBusinessInput({
+    revision: selectedRevision,
+    submitInput: input.payload.workflowSelection?.businessInput,
+    messageId,
+    sessionId: input.sessionId,
+    sessionSequence: preflightSessionSequence,
+    text: input.payload.text,
+    sourceMessageSha256,
+  });
+  const runner =
+    selectedRevision.blueprintKey === "note"
+      ? {
+          runnerFamily: NOTE_CAPTURE_RUNNER_FAMILY,
+          runnerBundleVersion: NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
+        }
+      : {
+          runnerFamily: CONFIGURABLE_PLANNING_RUNNER_FAMILY,
+          runnerBundleVersion: CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
+        };
+  assertWorkflowResourceSelectionsAuthorized(
+    preflightSnapshot,
+    input.principalId,
+    runConfiguration,
+  );
+  const authorizedResources = listAuthorizedWorkflowResources(
+    preflightSnapshot,
+    input.principalId,
+  ).map((resource) => resource.frozen);
+  const noteAutoPolicyEnabled = selectedRevision.blueprintKey === "note";
+  const availableResources = noteAutoPolicyEnabled
+    ? [
+        ...authorizedResources,
+        {
+          resourceKind: "rule" as const,
+          resourceId: NOTE_LOW_RISK_AUTO_POLICY_RESOURCE_ID,
+          revision: NOTE_LOW_RISK_AUTO_POLICY_REVISION,
+          sha256: NOTE_LOW_RISK_AUTO_POLICY_SHA256,
+          status: "active" as const,
+          allowedPrincipalIds: [input.principalId],
+        },
+      ]
+    : authorizedResources;
+  const compiled = compileWorkflowRunSpec({
+    workflowRunSpecId,
+    productRunId,
+    createdAt: now,
+    definition: revisionToCompilerInput(selectedRevision),
+    runConfiguration,
+    principal: {
+      principalId: input.principalId,
+      capabilities: noteAutoPolicyEnabled ? ["workflow.review.auto"] : [],
+    },
+    availableResources,
+    executorManifest: BUILTIN_WORKFLOW_EXECUTOR_MANIFEST,
+    runner,
+    businessInput: business.runSpecBusinessInput,
+    ...(noteAutoPolicyEnabled
+      ? {
+          autoContinuePolicy: {
+            resourceId: NOTE_LOW_RISK_AUTO_POLICY_RESOURCE_ID,
+            expectedRevision: NOTE_LOW_RISK_AUTO_POLICY_REVISION,
+            expectedSha256: NOTE_LOW_RISK_AUTO_POLICY_SHA256,
+          },
+        }
+      : {}),
+  });
+  if (!compiled.success) throw compilerDiagnosticsToError(compiled.diagnostics);
   const requestSha256 = hashCanonical("command.submit-user-message.v1", {
     principalId: input.principalId,
     sessionId: input.sessionId,
-    payload: input.payload,
+    payload: {
+      ...input.payload,
+      workflowSelection: {
+        kind: "published_revision",
+        workflowDefinitionRevisionId: selectedRevision.workflowDefinitionRevisionId,
+        definitionSha256: selectedRevision.definitionSha256,
+        runConfiguration,
+        ...(business.requestBusinessInput !== undefined
+          ? { businessInput: business.requestBusinessInput }
+          : {}),
+      },
+    },
   });
   const contextRequestId = contextRequestIdSchema.parse(
     `ctxr_${hashCanonical("id.run-context-request.v1", { productRunId }).slice(0, 32)}`,
@@ -114,18 +264,10 @@ export async function submitUserMessage(
       if (session.ownerPrincipalId !== input.principalId) {
         throw forbidden("无权向该Session发送消息");
       }
-      const hasActiveRun = Object.values(draft.entities.runs).some(
-        (run) =>
-          run.sessionId === input.sessionId &&
-          run.status !== "succeeded" &&
-          run.status !== "failed" &&
-          run.status !== "cancelled" &&
-          run.status !== "outcome_unknown",
-      );
-      if (hasActiveRun) {
-        throw revisionConflict("当前Session已有未结束的Product Run");
-      }
       const sessionSequence = session.lastMessageSequence + 1;
+      if (sessionSequence !== preflightSessionSequence) {
+        throw revisionConflict("Session消息序号已变化，请刷新后重试");
+      }
       // Message是用户输入的耐久会话事实；ProductRun是“围绕该消息推进一次工作”的生命周期事实。
       // 两者分开后，同一Session可保留完整消息历史，而每次工作有独立状态机和revision。
       const message: Message = {
@@ -139,26 +281,41 @@ export async function submitUserMessage(
         createdAt: now,
         updatedAt: now,
       };
-      const run: ProductRun = {
-        schemaVersion: "product-run.v2",
-        productRunId,
-        sessionId: input.sessionId,
-        sourceMessageId: messageId,
-        workflowViewDefinitionId: LEGACY_PLANNING_VIEW_ID,
-        status: "pending",
-        phase: "queued",
-        maxPlanRevisions: DEFAULT_MAX_PLAN_REVISIONS,
-        revision: 1,
-        createdAt: now,
-        updatedAt: now,
-      };
-      const sourceMessageSha256 = hashCanonical("message.v1", {
-        messageId: message.messageId,
-        sessionId: message.sessionId,
-        sessionSequence: message.sessionSequence,
-        role: message.role,
-        content: message.content,
-      });
+      const run: ProductRun =
+        selectedRevision.blueprintKey === "note"
+          ? {
+              schemaVersion: "product-run.v3",
+              runKind: "note_capture",
+              productRunId,
+              sessionId: input.sessionId,
+              sourceMessageId: messageId,
+              workflowViewDefinitionId: selectedView.workflowViewDefinitionId,
+              workflowRunSpecId,
+              runnerFamily: NOTE_CAPTURE_RUNNER_FAMILY,
+              runnerBundleVersion: NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
+              status: "pending",
+              phase: "queued",
+              revision: 1,
+              createdAt: now,
+              updatedAt: now,
+            }
+          : {
+              schemaVersion: "product-run.v3",
+              runKind: "planning",
+              productRunId,
+              sessionId: input.sessionId,
+              sourceMessageId: messageId,
+              workflowViewDefinitionId: selectedView.workflowViewDefinitionId,
+              workflowRunSpecId,
+              runnerFamily: CONFIGURABLE_PLANNING_RUNNER_FAMILY,
+              runnerBundleVersion: CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
+              status: "pending",
+              phase: "queued",
+              maxPlanRevisions: DEFAULT_MAX_PLAN_REVISIONS,
+              revision: 1,
+              createdAt: now,
+              updatedAt: now,
+            };
       const selectedMemory = input.payload.context?.memory;
       const normalizedMemory =
         selectedMemory === undefined
@@ -181,6 +338,45 @@ export async function submitUserMessage(
       };
       draft.entities.messages[messageId] = message;
       draft.entities.runs[productRunId] = run;
+      const currentRevision = resolvePublishedWorkflowRevision(
+        draft,
+        input.payload,
+        input.principalId,
+      );
+      if (
+        currentRevision.workflowDefinitionRevisionId !==
+        selectedRevision.workflowDefinitionRevisionId
+      ) {
+        throw new ApplicationError({
+          code: "definition_stale",
+          httpStatus: 409,
+          message: "Workflow Definition已变化，请刷新后重试",
+          recoveryAction: "rehydrate_and_retry",
+        });
+      }
+      const currentView =
+        draft.entities.workflowViewDefinitions[selectedView.workflowViewDefinitionId];
+      if (currentView !== undefined && currentView.sha256 !== selectedView.sha256) {
+        throw new ApplicationError({
+          code: "store_corrupted",
+          httpStatus: 500,
+          message: "Workflow View身份发生Hash冲突",
+          recoveryAction: "contact_support",
+        });
+      }
+      if (currentView === undefined) {
+        draft.entities.workflowViewDefinitions[selectedView.workflowViewDefinitionId] =
+          selectedView;
+      }
+      assertWorkflowResourceSelectionsAuthorized(draft, input.principalId, runConfiguration);
+      const resourceDrift = validateRunSpecResourcesCurrent(
+        compiled.runSpec,
+        listAuthorizedWorkflowResources(draft, input.principalId).map(
+          (resource) => resource.frozen,
+        ),
+      );
+      if (resourceDrift.length > 0) throw compilerDiagnosticsToError(resourceDrift);
+      draft.entities.workflowRunSpecs[workflowRunSpecId] = compiled.runSpec;
       // 即使本轮没有选择Memory也保存ContextRequest，明确区分“未选择”与事实丢失。
       draft.entities.contextRequests[contextRequestId] = {
         schemaVersion: "run-context-request.v1",
@@ -217,13 +413,17 @@ export async function submitUserMessage(
         kind: "workflow_start",
         status: "pending",
         productRunId,
+        workflowRunSpecId,
+        runnerFamily: runner.runnerFamily,
+        runnerBundleVersion: runner.runnerBundleVersion,
         dispatchAttempts: 0,
         revision: 1,
         createdAt: now,
         updatedAt: now,
       };
-      synchronizePlanningWorkflowProjection(draft, productRunId, now);
-      return { resultRefs: { messageId, productRunId } };
+      if (run.runKind === "planning")
+        synchronizePlanningWorkflowProjection(draft, productRunId, now);
+      return { resultRefs: { messageId, productRunId, workflowRunSpecId } };
     },
   });
 
@@ -244,4 +444,257 @@ export async function submitUserMessage(
     });
   }
   return { message: toMessageDto(message), run: toRunDto(run, undefined, undefined) };
+}
+
+function resolveSubmitBusinessInput(input: {
+  readonly revision: WorkflowDefinitionRevision;
+  readonly submitInput: NoteCaptureSubmitInput | undefined;
+  readonly messageId: Message["messageId"];
+  readonly sessionId: ProductSessionId;
+  readonly sessionSequence: number;
+  readonly text: string;
+  readonly sourceMessageSha256: string;
+}): {
+  readonly runSpecBusinessInput: WorkflowRunBusinessInput;
+  readonly requestBusinessInput?: NoteCaptureSubmitInput | undefined;
+} {
+  if (input.revision.blueprintKey === "planning") {
+    if (input.submitInput !== undefined) {
+      throw new ApplicationError({
+        code: "validation_failed",
+        httpStatus: 422,
+        message: "Planning Workflow不得携带Note Capture输入",
+      });
+    }
+    return { runSpecBusinessInput: { kind: "planning_message" } };
+  }
+
+  if (input.revision.blueprintKey !== "note") {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 422,
+      message: "未知Workflow Blueprint",
+    });
+  }
+
+  const noteInput = input.submitInput ?? { kind: "note_capture" as const };
+  const definitionDefaults = noteExtractDefinitionDefaults(input.revision);
+  const sourceIntent = noteInput.source ?? { kind: "full_message" as const };
+  const source = resolveNoteSubmitSource({
+    source: sourceIntent,
+    messageId: input.messageId,
+    sessionId: input.sessionId,
+    sessionSequence: input.sessionSequence,
+    text: input.text,
+    sourceMessageSha256: input.sourceMessageSha256,
+  });
+  const defaultKind: NoteKind = noteInput.defaultKind ?? definitionDefaults.defaultKind;
+  const suggestedTags: NoteTag[] = normalizeNoteTags(
+    noteInput.suggestedTagLabels ?? definitionDefaults.suggestedTagLabels,
+  );
+  return {
+    runSpecBusinessInput: {
+      kind: "note_capture",
+      source,
+      defaultKind,
+      suggestedTags,
+    },
+    requestBusinessInput: {
+      kind: "note_capture",
+      source:
+        sourceIntent.kind === "full_message"
+          ? { kind: "full_message" }
+          : {
+              kind: "selection",
+              startUtf16: sourceIntent.startUtf16,
+              endUtf16: sourceIntent.endUtf16,
+              selectedTextSha256: sourceIntent.selectedTextSha256,
+            },
+      defaultKind,
+      suggestedTagLabels: suggestedTags.map((tag) => tag.label),
+    },
+  };
+}
+
+/**
+ * Definition默认值只从已验证、已规范化的note.extract节点读取；浏览器按字段覆盖。
+ * 不能在Run开始后回读Catalog最新默认值，否则旧Published Revision会发生语义漂移。
+ */
+function noteExtractDefinitionDefaults(revision: WorkflowDefinitionRevision): {
+  readonly defaultKind: NoteKind;
+  readonly suggestedTagLabels: readonly string[];
+} {
+  const stack = [...revision.semanticRoot.elements];
+  while (stack.length > 0) {
+    const element = stack.pop();
+    if (element === undefined) continue;
+    if (element.kind === "task" || element.kind === "composite") {
+      if (element.nodeType !== "note.extract") continue;
+      const parsed = DEFAULT_NODE_CATALOG.parseConfig(
+        element.nodeType,
+        element.schemaVersion,
+        element.config,
+      );
+      const defaultKind = parsed.success
+        ? noteKindSchema.safeParse(parsed.data["defaultKind"])
+        : undefined;
+      const suggestedTagLabels = parsed.success ? parsed.data["suggestedTagLabels"] : undefined;
+      if (
+        defaultKind === undefined ||
+        !defaultKind.success ||
+        !Array.isArray(suggestedTagLabels) ||
+        !suggestedTagLabels.every((item): item is string => typeof item === "string")
+      ) {
+        break;
+      }
+      return { defaultKind: defaultKind.data, suggestedTagLabels };
+    }
+    if (element.kind === "sequence") {
+      stack.push(...element.elements);
+    } else if (element.kind === "choice") {
+      for (const branch of element.branches) stack.push(...branch.body.elements);
+    } else {
+      stack.push(...element.body.elements);
+    }
+  }
+  throw new ApplicationError({
+    code: "store_corrupted",
+    httpStatus: 500,
+    message: "Note Definition缺少合法的note.extract默认配置",
+    recoveryAction: "contact_support",
+  });
+}
+
+function resolveNoteSubmitSource(input: {
+  readonly source: NonNullable<NoteCaptureSubmitInput["source"]>;
+  readonly messageId: Message["messageId"];
+  readonly sessionId: ProductSessionId;
+  readonly sessionSequence: number;
+  readonly text: string;
+  readonly sourceMessageSha256: string;
+}): NoteSourceRef {
+  const message = {
+    messageId: input.messageId,
+    sessionId: input.sessionId,
+    sessionSequence: input.sessionSequence,
+    role: "user" as const,
+    content: { format: "markdown" as const, text: input.text },
+  };
+  const sourceRef: NoteSourceRef =
+    input.source.kind === "full_message"
+      ? {
+          kind: "full_message",
+          sourceMessageId: input.messageId,
+          sourceMessageSha256: input.sourceMessageSha256,
+        }
+      : {
+          kind: "utf16_range",
+          sourceMessageId: input.messageId,
+          sourceMessageSha256: input.sourceMessageSha256,
+          startUtf16: input.source.startUtf16,
+          endUtf16: input.source.endUtf16,
+          selectedTextSha256: input.source.selectedTextSha256,
+        };
+  try {
+    const selected = resolveNoteSourceText({ message, sourceRef });
+    if (sourceRef.kind === "utf16_range" && sha256Hex(selected) !== sourceRef.selectedTextSha256) {
+      throw new Error("selection_hash_mismatch");
+    }
+    return sourceRef;
+  } catch {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 422,
+      message: "Note来源选区与本次消息不一致",
+    });
+  }
+}
+
+function resolvePublishedWorkflowRevision(
+  snapshot: ProductSnapshot,
+  payload: SubmitMessagePayload,
+  principalId: PrincipalId,
+): WorkflowDefinitionRevision {
+  const revisionId =
+    payload.workflowSelection?.workflowDefinitionRevisionId ?? SYSTEM_PLANNING_WORKFLOW_REVISION_ID;
+  const revision = snapshot.entities.workflowDefinitionRevisions[revisionId];
+  if (revision === undefined || revision.state !== "published") {
+    throw new ApplicationError({
+      code: "definition_stale",
+      httpStatus: 409,
+      message: "Workflow Definition不存在或未发布",
+      recoveryAction: "rehydrate_and_retry",
+    });
+  }
+  const definition = snapshot.entities.workflowDefinitions[revision.workflowDefinitionId];
+  if (
+    definition === undefined ||
+    definition.status !== "active" ||
+    definition.publishedRevisionId !== revision.workflowDefinitionRevisionId
+  ) {
+    throw new ApplicationError({
+      code: "definition_stale",
+      httpStatus: 409,
+      message: "Workflow Definition不存在、未激活或已被替换",
+      recoveryAction: "rehydrate_and_retry",
+    });
+  }
+  if (definition.ownerKind === "principal" && definition.ownerPrincipalId !== principalId) {
+    throw forbidden("无权使用该Workflow Definition");
+  }
+  const expected = payload.workflowSelection?.definitionSha256;
+  if (expected !== undefined && expected !== revision.definitionSha256) {
+    throw new ApplicationError({
+      code: "definition_stale",
+      httpStatus: 409,
+      message: "Workflow Definition Hash已过期",
+      recoveryAction: "rehydrate_and_retry",
+    });
+  }
+  return revision;
+}
+
+function revisionToCompilerInput(revision: WorkflowDefinitionRevision) {
+  return {
+    schemaVersion: "workflow-definition-revision-input.v1" as const,
+    workflowDefinitionRevisionId: revision.workflowDefinitionRevisionId,
+    definitionRevision: revision.definitionRevision,
+    blueprintKey: revision.blueprintKey,
+    blueprintVersion: revision.blueprintVersion,
+    semanticRoot: revision.semanticRoot,
+    expectedSha256: revision.definitionSha256,
+  };
+}
+
+function compilerDiagnosticsToError(diagnostics: readonly WorkflowDiagnostic[]): ApplicationError {
+  const first = diagnostics[0];
+  const family = first?.family;
+  if (family === "resource_stale") {
+    return new ApplicationError({
+      code: "resource_stale",
+      httpStatus: 409,
+      message: "运行资源已变化，请刷新后重试",
+      recoveryAction: "rehydrate_and_retry",
+    });
+  }
+  if (family === "policy_denied") {
+    return new ApplicationError({
+      code: "policy_denied",
+      httpStatus: 422,
+      message: "当前Workflow配置被策略拒绝",
+    });
+  }
+  if (first?.code === "definition.hash_stale") {
+    return new ApplicationError({
+      code: "definition_stale",
+      httpStatus: 409,
+      message: "Workflow Definition Hash已过期",
+      recoveryAction: "rehydrate_and_retry",
+    });
+  }
+  return new ApplicationError({
+    code: "validation_failed",
+    httpStatus: 422,
+    message: "Workflow配置不符合合同",
+  });
 }

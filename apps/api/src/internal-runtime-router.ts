@@ -3,12 +3,15 @@ import { ZodError } from "zod";
 import {
   compileExecutionContractRequestSchema,
   beginRunAttemptRequestSchema,
+  commitConfirmedNoteRuntimeRequestSchema,
+  commitConfirmedNoteRuntimeResponseSchema,
   loadCommittedDecisionRequestSchema,
   persistExecutionCandidateRequestSchema,
   persistValidationResultRequestSchema,
   commitExecutionResultRequestSchema,
   commitRejectedRunRequestSchema,
   commitRunFailureRequestSchema,
+  commitRunOutcomeUnknownRuntimeRequestSchema,
   compilePlanningInputRequestSchema,
   completeRunAttemptRequestSchema,
   expireApprovalRequestSchema,
@@ -21,6 +24,21 @@ import {
   commitMemoryImportMaterializedRequestSchema,
   commitMemoryImportFailedRequestSchema,
   commitMemoryImportOutcomeUnknownRequestSchema,
+  loadNoteDecisionRuntimeRequestSchema,
+  loadNoteDecisionRuntimeResponseSchema,
+  prepareNoteCaptureInputRuntimeRequestSchema,
+  prepareNoteCaptureInputRuntimeResponseSchema,
+  loadWorkflowRunSpecRequestSchema,
+  loadWorkflowRunSpecResponseSchema,
+  publishNoteCandidateRuntimeRequestSchema,
+  publishNoteCandidateRuntimeResponseSchema,
+  transitionConfigurablePlanningNodeRequestSchema,
+  preparePlanningMemoryContextRequestSchema,
+  preparePlanningMemoryContextResponseSchema,
+  preparePlanningProjectContextRequestSchema,
+  preparePlanningProjectContextResponseSchema,
+  preparePlanningRulesContextRequestSchema,
+  preparePlanningRulesContextResponseSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   prepareProjectCandidateRequestSchema,
   prepareProjectAdvancementCandidateRequestSchema,
@@ -34,8 +52,10 @@ import {
   compileExecutionContract,
   compilePlanningInput,
   commitExecutionResult,
+  commitConfirmedNote,
   commitRejectedRun,
   commitRunFailure,
+  commitRunOutcomeUnknown,
   completeRunAttempt,
   expireApproval,
   loadCommittedDecision,
@@ -53,6 +73,14 @@ import {
   commitMemoryImportOutcomeUnknown,
   prepareProjectCandidateForReview,
   prepareProjectAdvancementCandidate,
+  getWorkflowRunSpecForRuntime,
+  loadNoteDecisionForRuntime,
+  prepareNoteCaptureInputForRuntime,
+  publishNoteCandidate,
+  transitionConfigurablePlanningNode,
+  preparePlanningMemoryContext,
+  preparePlanningProjectContext,
+  preparePlanningRulesContext,
   type ApplicationDeps,
 } from "@chat/application";
 
@@ -194,6 +222,160 @@ export function createInternalRuntimeRouter(
    * Workflow进程不能打开Product Store；即使是私有路由，每个写入仍需strict Schema、稳定
    * commandId、CAS和Application事务。这里传递产品引用与结构化候选，不传SDK Workflow对象。
    */
+  router.post(
+    "/load-workflow-run-spec",
+    handle(200, async (c) => {
+      const request = loadWorkflowRunSpecRequestSchema.parse(await parseInternalBody(c));
+      const { runSpec } = await getWorkflowRunSpecForRuntime(options.deps, {
+        productRunId: request.productRunId,
+        workflowRunSpecId: request.workflowRunSpecId,
+      });
+      return loadWorkflowRunSpecResponseSchema.parse({
+        schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+        productRunId: request.productRunId,
+        workflowRunSpecId: request.workflowRunSpecId,
+        workflowDefinitionRevisionId: runSpec.definitionRef.workflowDefinitionRevisionId,
+        runSpec,
+      });
+    }),
+  );
+
+  router.post(
+    "/prepare-planning-memory-context",
+    handle(200, async (c) => {
+      const request = preparePlanningMemoryContextRequestSchema.parse(await parseInternalBody(c));
+      return preparePlanningMemoryContextResponseSchema.parse(
+        await preparePlanningMemoryContext(options.deps, request),
+      );
+    }),
+  );
+
+  router.post(
+    "/prepare-planning-project-context",
+    handle(200, async (c) => {
+      const request = preparePlanningProjectContextRequestSchema.parse(await parseInternalBody(c));
+      const prepared = await preparePlanningProjectContext(options.deps, request);
+      return preparePlanningProjectContextResponseSchema.parse({
+        schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+        productRunId: request.productRunId,
+        workflowRunSpecId: request.workflowRunSpecId,
+        ...prepared,
+      });
+    }),
+  );
+
+  router.post(
+    "/prepare-planning-rules-context",
+    handle(200, async (c) => {
+      const request = preparePlanningRulesContextRequestSchema.parse(await parseInternalBody(c));
+      return preparePlanningRulesContextResponseSchema.parse(
+        await preparePlanningRulesContext(options.deps, request),
+      );
+    }),
+  );
+
+  router.post(
+    "/publish-note-candidate",
+    handle(201, async (c) => {
+      const request = publishNoteCandidateRuntimeRequestSchema.parse(await parseInternalBody(c));
+      const result = await publishNoteCandidate(options.deps, {
+        commandId: request.commandId,
+        productRunId: request.productRunId,
+        proposed: request.proposed,
+      });
+      return publishNoteCandidateRuntimeResponseSchema.parse({
+        schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+        candidate: result.candidate,
+        review: result.review,
+      });
+    }),
+  );
+
+  router.post(
+    "/prepare-note-capture-input",
+    handle(200, async (c) => {
+      const request = prepareNoteCaptureInputRuntimeRequestSchema.parse(await parseInternalBody(c));
+      const prepared = await prepareNoteCaptureInputForRuntime(options.deps, {
+        productRunId: request.productRunId,
+        workflowRunSpecId: request.workflowRunSpecId,
+      });
+      return prepareNoteCaptureInputRuntimeResponseSchema.parse({
+        schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+        productRunId: request.productRunId,
+        workflowRunSpecId: request.workflowRunSpecId,
+        ...prepared,
+      });
+    }),
+  );
+
+  router.post(
+    "/load-note-decision",
+    handle(200, async (c) => {
+      const request = loadNoteDecisionRuntimeRequestSchema.parse(await parseInternalBody(c));
+      const result = await loadNoteDecisionForRuntime(options.deps, {
+        productRunId: request.productRunId,
+        workflowRunSpecId: request.workflowRunSpecId,
+        noteCandidateId: request.noteCandidateId,
+        noteDecisionId: request.noteDecisionId,
+      });
+      return loadNoteDecisionRuntimeResponseSchema.parse({
+        schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+        candidate: result.candidate,
+        decision: result.decision,
+      });
+    }),
+  );
+
+  router.post(
+    "/commit-confirmed-note",
+    handle(200, async (c) => {
+      const request = commitConfirmedNoteRuntimeRequestSchema.parse(await parseInternalBody(c));
+      await commitConfirmedNote(options.deps, {
+        commandId: request.commandId,
+        productRunId: request.productRunId,
+        noteCandidateId: request.noteCandidateId,
+      });
+      return commitConfirmedNoteRuntimeResponseSchema.parse({
+        schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+        status: "committed",
+      });
+    }),
+  );
+
+  router.post(
+    "/transition-configurable-planning-node",
+    handle(200, async (c) => {
+      const request = transitionConfigurablePlanningNodeRequestSchema.parse(
+        await parseInternalBody(c),
+      );
+      return transitionConfigurablePlanningNode(options.deps, {
+        commandId: request.commandId,
+        productRunId: request.productRunId,
+        workflowRunSpecId: request.workflowRunSpecId,
+        definitionNodeId: request.definitionNodeId,
+        executionPath: request.executionPath,
+        attemptNumber: request.attemptNumber,
+        toStatus: request.toStatus,
+        ...(request.outcomeCode !== undefined ? { outcomeCode: request.outcomeCode } : {}),
+        ...(request.publicSummary !== undefined ? { publicSummary: request.publicSummary } : {}),
+      });
+    }),
+  );
+
+  router.post(
+    "/commit-run-outcome-unknown",
+    handle(200, async (c) => {
+      const request = commitRunOutcomeUnknownRuntimeRequestSchema.parse(await parseInternalBody(c));
+      await commitRunOutcomeUnknown(options.deps, {
+        commandId: request.commandId,
+        productRunId: request.productRunId,
+        errorCode: request.errorCode,
+        summary: request.summary,
+      });
+      return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, status: "committed" as const };
+    }),
+  );
+
   router.post(
     "/prepare-project-candidate",
     handle(200, async (c) => {

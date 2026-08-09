@@ -24,5 +24,11 @@ export * from "./definition-kernel-lab-runtime.js";
 export * from "./definition-kernel-lab-steps.js";
 export * from "./definition-kernel-lab-workflow.js";
 export * from "./definition-kernel-lab-test-adapter.js";
+export * from "./planning-runner-dispatch.js";
+export * from "./configurable-planning-steps.js";
+export * from "./configurable-planning-workflow.js";
+export * from "./restricted-run-spec-interpreter.js";
+export * from "./note-capture-steps.js";
+export * from "./note-capture-workflow.js";
 // Workflow Adapter边界的底层恢复原语；只能由本Adapter内的分发路径使用
 export { resumeHook, getHookByToken } from "workflow/api";

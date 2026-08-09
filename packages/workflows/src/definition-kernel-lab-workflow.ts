@@ -1,7 +1,7 @@
 import { defineHook } from "workflow";
 import { z } from "zod";
+import type { WorkflowRunSpec } from "@chat/contracts";
 import type { WorkflowBoundedLoopElement, WorkflowSequence } from "@chat/domain";
-import type { WorkflowRunSpec } from "@chat/application";
 import {
   autoContinueDefinitionKernelReviewStep,
   beginDefinitionKernelLoopLimitReviewStep,
@@ -208,7 +208,7 @@ async function interpretRunSpec(
       (candidate) => candidate.definitionNodeId === element.definitionNodeId,
     );
     if (resolution === undefined) throw new Error("kernel.node_resolution_missing");
-    const context = nodeContext(input, element.definitionNodeId, elementPath, "execute");
+    const context = nodeContext(input, element.definitionNodeId, elementPath);
     let outcome: string;
     if (resolution.activation === "skipped") {
       if (resolution.skipOutcome === undefined) throw new Error("kernel.skip_outcome_missing");
@@ -247,7 +247,7 @@ async function interpretRunSpec(
         );
         const childPath = `${elementPath}/action-${action.actionId}`;
         const child = await executeDefinitionKernelCompositeChildStep({
-          context: nodeContext(input, element.definitionNodeId, childPath, "execute_action"),
+          context: nodeContext(input, element.definitionNodeId, childPath),
           actionId: action.actionId,
         });
         if (child.outcomeCode === "outcome_unknown") compositeOutcome = "outcome_unknown";
@@ -355,7 +355,6 @@ function nodeContext(
   input: DefinitionKernelLabWorkflowInput,
   definitionNodeId: string,
   executionPath: string,
-  operation: string,
 ): KernelNodeExecutionScope {
   return {
     workflowRunSpecId: input.workflowRunSpecId,

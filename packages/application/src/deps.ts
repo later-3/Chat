@@ -28,6 +28,16 @@ import type {
   ProjectMilestoneId,
   ProjectUpdateId,
   ProjectStateTransitionId,
+  NoteId,
+  NoteRevisionId,
+  NoteCandidateId,
+  NoteDecisionId,
+  RuleId,
+  RuleRevisionId,
+  RuleTagId,
+  RuleScopeId,
+  RuleDecisionId,
+  RuleSelectionId,
 } from "@chat/contracts";
 import type { TraceEventInput } from "@chat/contracts";
 import type { ProductStorePort } from "./product-store-port.js";
@@ -85,6 +95,22 @@ export interface ProjectIdFactory {
   stateTransition(): ProjectStateTransitionId;
 }
 
+export interface NoteIdFactory {
+  note(): NoteId;
+  revision(): NoteRevisionId;
+  candidate(): NoteCandidateId;
+  decision(): NoteDecisionId;
+}
+
+export interface RuleIdFactory {
+  rule(): RuleId;
+  revision(): RuleRevisionId;
+  tag(): RuleTagId;
+  scope(): RuleScopeId;
+  decision(): RuleDecisionId;
+  selection(): RuleSelectionId;
+}
+
 export interface ApplicationDeps {
   readonly store: ProductStorePort;
   readonly now: () => string;
@@ -99,6 +125,8 @@ export interface ApplicationDeps {
   readonly projectIntakeUnderstanding?: ProjectIntakeUnderstandingPort;
   readonly projectAdvancementUnderstanding?: ProjectAdvancementUnderstandingPort;
   readonly projectIds?: ProjectIdFactory;
+  readonly noteIds?: NoteIdFactory;
+  readonly ruleIds?: RuleIdFactory;
 }
 
 /** 规划修订默认上限（任务书§9.2.7）。 */

@@ -1,5 +1,16 @@
 import { EXECUTION_CAPABILITY_MARKDOWN_COMPOSE, type ProductSnapshot } from "@chat/contracts";
 import { computePlanSha256, StoreCorruptedError } from "@chat/application";
+import { validateWorkflowRunSpecIntegrity } from "@chat/application/workflow-run-spec-compiler";
+import {
+  createSystemPlanningDefinition,
+  createSystemNoteDefinition,
+  SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
+  SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
+  SYSTEM_PLANNING_WORKFLOW_VIEW_ID,
+  SYSTEM_NOTE_WORKFLOW_DEFINITION_ID,
+  SYSTEM_NOTE_WORKFLOW_REVISION_ID,
+  SYSTEM_NOTE_WORKFLOW_VIEW_ID,
+} from "@chat/application/workflow-system-definitions";
 import {
   assertSingleOpenApproval,
   assertSinglePlanUnderReview,
@@ -27,6 +38,24 @@ import {
   assertWorkflowViewDefinition,
   computeNodeValueManifestSha256,
   workflowNodeRunIdentityKey,
+  assertNoteAggregateIntegrity,
+  assertNoteCandidateIntegrity,
+  assertNoteDecisionBinding,
+  assertNoteRevisionIntegrity,
+  assertPlanningProjectContextIntegrity,
+  assertPlanningMemorySelectionIntegrity,
+  computePlanningProjectSourceRefSha256,
+  computeWorkflowProjectResourceSha256,
+  computePlanningInputManifestSha256,
+  assertRuleLifecycleTransition,
+  assertRuleRevisionAppend,
+  assertRuleRevisionIntegrity,
+  selectRules,
+  assertWorkflowPolicyResolutionIntegrity,
+  evaluateNoteLowRiskAutoPolicy,
+  NOTE_LOW_RISK_AUTO_POLICY_RESOURCE_ID,
+  NOTE_LOW_RISK_AUTO_POLICY_REVISION,
+  NOTE_LOW_RISK_AUTO_POLICY_SHA256,
 } from "@chat/domain";
 
 /**
@@ -46,11 +75,17 @@ export function assertSnapshotIntegrity(snapshot: ProductSnapshot): void {
   assertSessionsAndMessages(snapshot, fail);
   assertAttempts(snapshot, fail);
   assertRuns(snapshot, fail);
+  assertWorkflowDefinitions(snapshot, fail);
   assertWorkflowProjection(snapshot, fail);
   assertPlansAndReviews(snapshot, fail);
   assertLongTermContext(snapshot, fail);
   assertMemoryImports(snapshot, fail);
   assertProjects(snapshot, fail);
+  assertPlanningProjectContexts(snapshot, fail);
+  assertPlanningMemorySelections(snapshot, fail);
+  assertRules(snapshot, fail);
+  assertNotes(snapshot, fail);
+  assertWorkflowPolicyResolutions(snapshot, fail);
   assertExecution(snapshot, fail);
   assertReceiptsAndOutbox(snapshot, fail);
 
@@ -112,6 +147,13 @@ function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
     ["projectDecision", snapshot.entities.projectDecisions, "projectDecisionId"],
     ["projectObservation", snapshot.entities.projectObservations, "projectObservationId"],
     ["projectCandidate", snapshot.entities.projectCandidates, "projectCandidateId"],
+    ["workflowDefinition", snapshot.entities.workflowDefinitions, "workflowDefinitionId"],
+    [
+      "workflowDefinitionRevision",
+      snapshot.entities.workflowDefinitionRevisions,
+      "workflowDefinitionRevisionId",
+    ],
+    ["workflowRunSpec", snapshot.entities.workflowRunSpecs, "workflowRunSpecId"],
     [
       "workflowViewDefinition",
       snapshot.entities.workflowViewDefinitions,
@@ -120,6 +162,30 @@ function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
     ["workflowNodeRun", snapshot.entities.workflowNodeRuns, "workflowNodeRunId"],
     ["nodeRunTransition", snapshot.entities.nodeRunTransitions, "nodeRunTransitionId"],
     ["nodeValueManifest", snapshot.entities.nodeValueManifests, "nodeValueManifestId"],
+    ["note", snapshot.entities.notes, "noteId"],
+    ["noteRevision", snapshot.entities.noteRevisions, "noteRevisionId"],
+    ["noteCandidate", snapshot.entities.noteCandidates, "noteCandidateId"],
+    ["noteDecision", snapshot.entities.noteDecisions, "noteDecisionId"],
+    ["rule", snapshot.entities.rules, "ruleId"],
+    ["ruleRevision", snapshot.entities.ruleRevisions, "ruleRevisionId"],
+    ["ruleTag", snapshot.entities.ruleTags, "ruleTagId"],
+    ["ruleDecision", snapshot.entities.ruleDecisions, "ruleDecisionId"],
+    ["ruleSelection", snapshot.entities.ruleSelections, "ruleSelectionId"],
+    [
+      "planningProjectContext",
+      snapshot.entities.planningProjectContexts,
+      "planningProjectContextId",
+    ],
+    [
+      "planningMemorySelection",
+      snapshot.entities.planningMemorySelections,
+      "planningMemorySelectionId",
+    ],
+    [
+      "workflowPolicyResolution",
+      snapshot.entities.workflowPolicyResolutions,
+      "workflowPolicyResolutionId",
+    ],
     ["receipt", snapshot.commandReceipts, "commandId"],
     ["outbox", snapshot.outbox, "outboxId"],
   ] as const;
@@ -129,6 +195,225 @@ function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
         fail(`${label} Map键${key}与${idField}不一致`);
       }
     }
+  }
+}
+
+function assertWorkflowDefinitions(snapshot: ProductSnapshot, fail: Fail): void {
+  const { entities } = snapshot;
+  const revisionNumbersByDefinition = new Map<string, Set<number>>();
+  for (const revision of Object.values(entities.workflowDefinitionRevisions)) {
+    const definition = entities.workflowDefinitions[revision.workflowDefinitionId];
+    if (definition === undefined) {
+      fail(`workflowDefinitionRevision ${revision.workflowDefinitionRevisionId} 悬空Definition`);
+    }
+    if (
+      definition.blueprintKey !== revision.blueprintKey ||
+      definition.blueprintVersion !== revision.blueprintVersion
+    ) {
+      fail(`workflowDefinitionRevision ${revision.workflowDefinitionRevisionId} Blueprint不一致`);
+    }
+    const numbers = revisionNumbersByDefinition.get(revision.workflowDefinitionId) ?? new Set();
+    if (numbers.has(revision.definitionRevision)) {
+      fail(`workflowDefinition ${revision.workflowDefinitionId} Revision号重复`);
+    }
+    numbers.add(revision.definitionRevision);
+    revisionNumbersByDefinition.set(revision.workflowDefinitionId, numbers);
+    if (
+      hashCanonical("workflow-definition.v1", revision.semanticRoot) !== revision.definitionSha256
+    ) {
+      fail(`workflowDefinitionRevision ${revision.workflowDefinitionRevisionId} Hash不一致`);
+    }
+    if (revision.state === "published" && revision.publishedAt === undefined) {
+      fail(`workflowDefinitionRevision ${revision.workflowDefinitionRevisionId} 缺少publishedAt`);
+    }
+    if (revision.state === "superseded" && revision.supersededAt === undefined) {
+      fail(`workflowDefinitionRevision ${revision.workflowDefinitionRevisionId} 缺少supersededAt`);
+    }
+    if (revision.basedOnRevisionId !== undefined) {
+      const base = entities.workflowDefinitionRevisions[revision.basedOnRevisionId];
+      if (
+        base === undefined ||
+        base.workflowDefinitionRevisionId === revision.workflowDefinitionRevisionId
+      ) {
+        fail(
+          `workflowDefinitionRevision ${revision.workflowDefinitionRevisionId} Base Revision悬空`,
+        );
+      }
+      if (
+        revision.definitionRevision === 1 &&
+        (base.publishedAt === undefined || !["published", "superseded"].includes(base.state))
+      ) {
+        fail(
+          `workflowDefinitionRevision ${revision.workflowDefinitionRevisionId} Copy Base未曾发布`,
+        );
+      }
+      if (
+        revision.definitionRevision > 1 &&
+        (base.workflowDefinitionId !== revision.workflowDefinitionId ||
+          base.definitionRevision !== revision.definitionRevision - 1)
+      ) {
+        fail(`workflowDefinitionRevision ${revision.workflowDefinitionRevisionId} Save Base不连续`);
+      }
+    }
+  }
+  for (const definition of Object.values(entities.workflowDefinitions)) {
+    const published =
+      definition.publishedRevisionId === undefined
+        ? undefined
+        : entities.workflowDefinitionRevisions[definition.publishedRevisionId];
+    if (definition.publishedRevisionId !== undefined && published === undefined) {
+      fail(`workflowDefinition ${definition.workflowDefinitionId} Published Revision悬空`);
+    }
+    if (
+      published !== undefined &&
+      (published.workflowDefinitionId !== definition.workflowDefinitionId ||
+        published.state !== "published")
+    ) {
+      fail(`workflowDefinition ${definition.workflowDefinitionId} Published Revision绑定不一致`);
+    }
+    const draft =
+      definition.currentDraftRevisionId === undefined
+        ? undefined
+        : entities.workflowDefinitionRevisions[definition.currentDraftRevisionId];
+    if (definition.currentDraftRevisionId !== undefined && draft === undefined) {
+      fail(`workflowDefinition ${definition.workflowDefinitionId} Current Draft悬空`);
+    }
+    if (
+      draft !== undefined &&
+      (draft.workflowDefinitionId !== definition.workflowDefinitionId || draft.state !== "draft")
+    ) {
+      fail(`workflowDefinition ${definition.workflowDefinitionId} Current Draft绑定不一致`);
+    }
+    const unboundDraft = Object.values(entities.workflowDefinitionRevisions).find(
+      (revision) =>
+        revision.workflowDefinitionId === definition.workflowDefinitionId &&
+        revision.state === "draft" &&
+        revision.workflowDefinitionRevisionId !== definition.currentDraftRevisionId,
+    );
+    if (unboundDraft !== undefined) {
+      fail(`workflowDefinition ${definition.workflowDefinitionId} 存在未绑定的活动Draft`);
+    }
+  }
+  for (const runSpec of Object.values(entities.workflowRunSpecs)) {
+    const validation = validateWorkflowRunSpecIntegrity(runSpec);
+    if (!validation.success) {
+      fail(`workflowRunSpec ${runSpec.workflowRunSpecId} Hash不一致`);
+    }
+    const run = entities.runs[runSpec.productRunId];
+    const revision =
+      entities.workflowDefinitionRevisions[runSpec.definitionRef.workflowDefinitionRevisionId];
+    if (run === undefined || run.workflowRunSpecId !== runSpec.workflowRunSpecId) {
+      fail(`workflowRunSpec ${runSpec.workflowRunSpecId} Run反向绑定不一致`);
+    }
+    if (
+      revision === undefined ||
+      revision.definitionRevision !== runSpec.definitionRef.definitionRevision ||
+      revision.definitionSha256 !== runSpec.definitionRef.definitionSha256 ||
+      revision.blueprintKey !== runSpec.definitionRef.blueprintKey ||
+      revision.blueprintVersion !== runSpec.definitionRef.blueprintVersion ||
+      hashCanonical("workflow-definition.v1", runSpec.semanticRoot) !== revision.definitionSha256 ||
+      !["published", "superseded"].includes(revision.state) ||
+      revision.publishedAt === undefined
+    ) {
+      fail(`workflowRunSpec ${runSpec.workflowRunSpecId} Definition Revision绑定不一致`);
+    }
+    if (
+      run !== undefined &&
+      (run.runnerFamily !== runSpec.runner.runnerFamily ||
+        run.runnerBundleVersion !== runSpec.runner.runnerBundleVersion)
+    ) {
+      fail(`workflowRunSpec ${runSpec.workflowRunSpecId} Runner证据与Run不一致`);
+    }
+    const view =
+      run === undefined
+        ? undefined
+        : entities.workflowViewDefinitions[run.workflowViewDefinitionId];
+    if (
+      view === undefined ||
+      view.source.kind !== "published_definition" ||
+      view.source.workflowDefinitionId !== revision?.workflowDefinitionId ||
+      view.source.definitionRevision !== runSpec.definitionRef.definitionRevision ||
+      view.source.definitionSha256 !== runSpec.definitionRef.definitionSha256 ||
+      view.source.blueprintKey !== runSpec.definitionRef.blueprintKey ||
+      view.source.blueprintVersion !== String(runSpec.definitionRef.blueprintVersion)
+    ) {
+      fail(`workflowRunSpec ${runSpec.workflowRunSpecId} View快照绑定不一致`);
+    }
+  }
+
+  for (const view of Object.values(entities.workflowViewDefinitions)) {
+    if (view.source.kind !== "published_definition") continue;
+    const source = view.source;
+    const matchingRevision = Object.values(entities.workflowDefinitionRevisions).find(
+      (revision) =>
+        revision.workflowDefinitionId === source.workflowDefinitionId &&
+        revision.definitionRevision === source.definitionRevision &&
+        revision.definitionSha256 === source.definitionSha256,
+    );
+    if (
+      matchingRevision === undefined ||
+      !["published", "superseded"].includes(matchingRevision.state) ||
+      matchingRevision.publishedAt === undefined ||
+      matchingRevision.blueprintKey !== source.blueprintKey ||
+      String(matchingRevision.blueprintVersion) !== source.blueprintVersion
+    ) {
+      fail(`workflowViewDefinition ${view.workflowViewDefinitionId} Published来源绑定不一致`);
+    }
+  }
+
+  assertPinnedSystemDefinition(snapshot, fail, {
+    label: "planning",
+    workflowDefinitionId: SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
+    workflowDefinitionRevisionId: SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
+    workflowViewDefinitionId: SYSTEM_PLANNING_WORKFLOW_VIEW_ID,
+    create: createSystemPlanningDefinition,
+  });
+  assertPinnedSystemDefinition(snapshot, fail, {
+    label: "note",
+    workflowDefinitionId: SYSTEM_NOTE_WORKFLOW_DEFINITION_ID,
+    workflowDefinitionRevisionId: SYSTEM_NOTE_WORKFLOW_REVISION_ID,
+    workflowViewDefinitionId: SYSTEM_NOTE_WORKFLOW_VIEW_ID,
+    create: createSystemNoteDefinition,
+  });
+}
+
+/** 内置Definition是部署的一部分；固定ID不能被同时改正文和Hash后伪装成合法系统流程。 */
+function assertPinnedSystemDefinition(
+  snapshot: ProductSnapshot,
+  fail: Fail,
+  input: {
+    readonly label: string;
+    readonly workflowDefinitionId: string;
+    readonly workflowDefinitionRevisionId: string;
+    readonly workflowViewDefinitionId: string;
+    readonly create: typeof createSystemPlanningDefinition;
+  },
+): void {
+  const definition = snapshot.entities.workflowDefinitions[input.workflowDefinitionId];
+  const revision =
+    snapshot.entities.workflowDefinitionRevisions[input.workflowDefinitionRevisionId];
+  const view = snapshot.entities.workflowViewDefinitions[input.workflowViewDefinitionId];
+  if (definition === undefined || revision === undefined || view === undefined) {
+    fail(`system ${input.label} Definition种子不完整`);
+  }
+  const expected = input.create(revision.createdAt);
+  if (
+    definition.ownerKind !== expected.definition.ownerKind ||
+    definition.key !== expected.definition.key ||
+    definition.title !== expected.definition.title ||
+    definition.description !== expected.definition.description ||
+    definition.blueprintKey !== expected.definition.blueprintKey ||
+    definition.blueprintVersion !== expected.definition.blueprintVersion ||
+    definition.status !== "active" ||
+    definition.publishedRevisionId !== input.workflowDefinitionRevisionId ||
+    revision.workflowDefinitionId !== input.workflowDefinitionId ||
+    revision.definitionRevision !== expected.revision.definitionRevision ||
+    revision.state !== "published" ||
+    revision.title !== expected.revision.title ||
+    revision.definitionSha256 !== expected.revision.definitionSha256 ||
+    view.sha256 !== expected.view.sha256
+  ) {
+    fail(`system ${input.label} Definition与部署种子不一致`);
   }
 }
 
@@ -294,6 +579,45 @@ function assertNodeProductRef(
   } else if (ref.kind === "context_package") {
     const target = entities.contextPackages[ref.id];
     if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
+  } else if (ref.kind === "memory_result_snapshot") {
+    const target = entities.memoryResultSnapshots[ref.id];
+    if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
+  } else if (ref.kind === "planning_memory_selection") {
+    const target = entities.planningMemorySelections[ref.id];
+    if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
+  } else if (ref.kind === "project") {
+    const target = entities.projects[ref.id];
+    if (target !== undefined) {
+      if (target.revision === ref.revision) {
+        expected = {
+          revision: target.revision,
+          sha256: computeWorkflowProjectResourceSha256(target),
+        };
+      } else if (
+        ref.revision < target.revision &&
+        Object.values(entities.planningProjectContexts).some((context) =>
+          context.sourceRefs.some(
+            (source) =>
+              source.kind === "project" &&
+              source.objectId === ref.id &&
+              source.revision === ref.revision &&
+              source.sha256 === ref.sha256,
+          ),
+        )
+      ) {
+        // Project当前无历史表；旧revision由不可变PlanningProjectContext继续自证。
+        return;
+      }
+    }
+  } else if (ref.kind === "planning_project_context") {
+    const target = entities.planningProjectContexts[ref.id];
+    if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
+  } else if (ref.kind === "rule_revision") {
+    const target = entities.ruleRevisions[ref.id];
+    if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
+  } else if (ref.kind === "rule_selection") {
+    const target = entities.ruleSelections[ref.id];
+    if (target !== undefined) expected = { revision: 1, sha256: target.sha256 };
   } else if (ref.kind === "plan_revision") {
     const target = entities.plans[ref.id];
     if (target !== undefined) {
@@ -330,6 +654,46 @@ function assertNodeProductRef(
         }),
       };
     }
+  } else if (ref.kind === "note_candidate") {
+    const target = entities.noteCandidates[ref.id];
+    if (
+      target !== undefined &&
+      ref.sha256 === target.sha256 &&
+      ref.revision > 0 &&
+      ref.revision <= target.revision
+    ) {
+      return;
+    }
+  } else if (ref.kind === "note_decision") {
+    const target = entities.noteDecisions[ref.id];
+    if (target !== undefined) {
+      expected = {
+        revision: target.revision,
+        sha256: hashCanonical("note-decision.v1", {
+          productRunId: target.productRunId,
+          noteCandidateId: target.noteCandidateId,
+          candidateRevision: target.candidateRevision,
+          candidateSha256: target.candidateSha256,
+          kind: target.kind,
+          ...(target.kind === "request_revision"
+            ? { revisionInstruction: target.revisionInstruction }
+            : {}),
+          ...(target.kind === "reject" && target.reason !== undefined
+            ? { reason: target.reason }
+            : {}),
+          principalId: target.principalId,
+          commandId: target.commandId,
+        }),
+      };
+    }
+  } else if (ref.kind === "note_revision") {
+    const target = entities.noteRevisions[ref.id];
+    if (target !== undefined) {
+      expected = { revision: target.noteRevision, sha256: target.sha256 };
+    }
+  } else if (ref.kind === "workflow_policy_resolution") {
+    const target = entities.workflowPolicyResolutions[ref.id];
+    if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
   } else if (ref.kind === "execution_contract") {
     const target = entities.executionContracts[ref.id];
     if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
@@ -790,6 +1154,672 @@ function assertProjects(snapshot: ProductSnapshot, fail: Fail): void {
   }
 }
 
+function assertPlanningProjectContexts(snapshot: ProductSnapshot, fail: Fail): void {
+  const { entities } = snapshot;
+  const runIds = new Set<string>();
+  for (const context of Object.values(entities.planningProjectContexts)) {
+    try {
+      assertPlanningProjectContextIntegrity(context);
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+    if (runIds.has(context.productRunId)) {
+      fail(`planningProjectContext ${context.planningProjectContextId} Run重复`);
+    }
+    runIds.add(context.productRunId);
+    const run = entities.runs[context.productRunId];
+    const runSession = run === undefined ? undefined : entities.sessions[run.sessionId];
+    const project = entities.projects[context.projectId];
+    const method = entities.projectMethodSnapshots[context.methodRef.projectMethodSnapshotId];
+    const stage = entities.projectStages[context.stageRef.projectStageId];
+    if (
+      run?.runKind !== "planning" ||
+      runSession === undefined ||
+      project === undefined ||
+      project.ownerPrincipalId !== runSession.ownerPrincipalId ||
+      method?.projectId !== project.projectId ||
+      stage?.projectId !== project.projectId ||
+      stage.methodSnapshotId !== method.projectMethodSnapshotId
+    ) {
+      fail(`planningProjectContext ${context.planningProjectContextId} Run/Project绑定不一致`);
+    }
+    if (
+      context.methodRef.revision !== method.revision ||
+      context.methodRef.sha256 !== method.sha256
+    ) {
+      fail(`planningProjectContext ${context.planningProjectContextId} Method证据不一致`);
+    }
+    const projectSource = context.sourceRefs.find(
+      (ref) => ref.kind === "project" && ref.objectId === context.projectId,
+    );
+    if (
+      projectSource?.revision !== context.projectRevision ||
+      projectSource.sha256 !== context.projectSha256
+    ) {
+      fail(`planningProjectContext ${context.planningProjectContextId} Project证据不一致`);
+    }
+    for (const ref of context.sourceRefs) {
+      const entity = getPlanningProjectSourceEntity(snapshot, ref.kind, ref.objectId);
+      if (entity === undefined || entity.projectId !== context.projectId) {
+        fail(`planningProjectContext ${context.planningProjectContextId} 来源悬空或跨Project`);
+      }
+      // Project聚合与Stage等对象当前没有历史表；只有仍处于同一revision时才能反查正文。
+      // 后续revision不得让旧运行Context损坏，旧Context由自身snapshot+Hash继续自证。
+      if (entity.revision === ref.revision) {
+        const expectedSha =
+          ref.kind === "method" && "sha256" in entity
+            ? String(entity.sha256)
+            : ref.kind === "project"
+              ? computeWorkflowProjectResourceSha256(entity)
+              : computePlanningProjectSourceRefSha256({ kind: ref.kind, entity });
+        if (expectedSha !== ref.sha256) {
+          fail(`planningProjectContext ${context.planningProjectContextId} 来源Hash不一致`);
+        }
+      }
+    }
+  }
+}
+
+function getPlanningProjectSourceEntity(
+  snapshot: ProductSnapshot,
+  kind: ProductSnapshot["entities"]["planningProjectContexts"][string]["sourceRefs"][number]["kind"],
+  objectId: string,
+):
+  | ({ readonly projectId: string; readonly revision: number; readonly updatedAt: string } & object)
+  | undefined {
+  const entities = snapshot.entities;
+  if (kind === "project") return entities.projects[objectId];
+  if (kind === "method") return entities.projectMethodSnapshots[objectId];
+  if (kind === "stage") return entities.projectStages[objectId];
+  if (kind === "milestone") return entities.projectMilestones[objectId];
+  if (kind === "update") return entities.projectUpdates[objectId];
+  if (kind === "work") return entities.projectWorks[objectId];
+  return entities.projectActions[objectId];
+}
+
+function assertPlanningMemorySelections(snapshot: ProductSnapshot, fail: Fail): void {
+  const { entities } = snapshot;
+  const identityKeys = new Set<string>();
+  for (const selection of Object.values(entities.planningMemorySelections)) {
+    try {
+      assertPlanningMemorySelectionIntegrity(selection);
+    } catch (error) {
+      fail(
+        `planningMemorySelection ${selection.planningMemorySelectionId} ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    const identityKey = `${selection.productRunId}\0${selection.definitionNodeId}`;
+    if (identityKeys.has(identityKey)) {
+      fail(`planningMemorySelection ${selection.planningMemorySelectionId} Run/Node重复`);
+    }
+    identityKeys.add(identityKey);
+    const run = entities.runs[selection.productRunId];
+    const session = run === undefined ? undefined : entities.sessions[run.sessionId];
+    const runSpec = entities.workflowRunSpecs[selection.workflowRunSpecId];
+    const validated = runSpec === undefined ? undefined : validateWorkflowRunSpecIntegrity(runSpec);
+    if (
+      run?.runKind !== "planning" ||
+      session === undefined ||
+      run.workflowRunSpecId !== selection.workflowRunSpecId ||
+      runSpec?.productRunId !== selection.productRunId ||
+      runSpec.sha256 !== selection.workflowRunSpecSha256 ||
+      validated === undefined ||
+      !validated.success
+    ) {
+      fail(`planningMemorySelection ${selection.planningMemorySelectionId} Run/RunSpec绑定无效`);
+    }
+    const node = validated?.success
+      ? validated.runSpec.nodeResolutions.find(
+          (candidate) => candidate.definitionNodeId === selection.definitionNodeId,
+        )
+      : undefined;
+    const maxItems = node?.config["maxItems"];
+    if (
+      node?.nodeType !== "context.memory" ||
+      node.activation === "skipped" ||
+      typeof maxItems !== "number" ||
+      !Number.isInteger(maxItems) ||
+      maxItems !== selection.maxItems
+    ) {
+      fail(`planningMemorySelection ${selection.planningMemorySelectionId} Node/maxItems无效`);
+    }
+    const included = (validated?.success ? validated.runSpec.resourceResolutions : [])
+      .flatMap((resource) =>
+        resource.definitionNodeId === selection.definitionNodeId &&
+        resource.resourceKind === "memory" &&
+        resource.resolution === "included"
+          ? [
+              {
+                memoryResultSnapshotId: resource.resourceId,
+                revision: resource.expectedRevision,
+                sha256: resource.expectedSha256,
+              },
+            ]
+          : [],
+      )
+      .sort((left, right) =>
+        left.memoryResultSnapshotId.localeCompare(right.memoryResultSnapshotId),
+      );
+    if (JSON.stringify(included) !== JSON.stringify(selection.selected)) {
+      fail(`planningMemorySelection ${selection.planningMemorySelectionId} 与RunSpec选择不一致`);
+    }
+    for (const selected of selection.selected) {
+      const memory = entities.memoryResultSnapshots[selected.memoryResultSnapshotId];
+      const query = memory === undefined ? undefined : entities.memoryQueries[memory.memoryQueryId];
+      const sourceRun = query === undefined ? undefined : entities.runs[query.productRunId];
+      const sourceOwner =
+        sourceRun === undefined
+          ? undefined
+          : entities.sessions[sourceRun.sessionId]?.ownerPrincipalId;
+      if (
+        memory === undefined ||
+        memory.revision !== selected.revision ||
+        memory.sha256 !== selected.sha256 ||
+        sourceOwner !== session?.ownerPrincipalId
+      ) {
+        fail(
+          `planningMemorySelection ${selection.planningMemorySelectionId} Snapshot越权、悬空或Hash不一致`,
+        );
+      }
+    }
+    const nodeRun = Object.values(entities.workflowNodeRuns).find(
+      (candidate) =>
+        candidate.productRunId === selection.productRunId &&
+        candidate.definitionNodeId === selection.definitionNodeId &&
+        candidate.executionPath.length === 0 &&
+        candidate.attemptNumber === 1,
+    );
+    const output =
+      nodeRun?.outputManifestId === undefined
+        ? undefined
+        : entities.nodeValueManifests[nodeRun.outputManifestId];
+    const transition = Object.values(entities.nodeRunTransitions).find(
+      (candidate) =>
+        candidate.workflowNodeRunId === nodeRun?.workflowNodeRunId &&
+        candidate.relatedProductRef?.kind === "planning_memory_selection" &&
+        candidate.relatedProductRef.id === selection.planningMemorySelectionId &&
+        candidate.relatedProductRef.sha256 === selection.sha256,
+    );
+    if (
+      nodeRun?.status !== "succeeded" ||
+      output === undefined ||
+      !output.slots.some((slot) =>
+        slot.refs.some(
+          (ref) =>
+            ref.kind === "planning_memory_selection" &&
+            ref.id === selection.planningMemorySelectionId &&
+            ref.revision === selection.revision &&
+            ref.sha256 === selection.sha256,
+        ),
+      ) ||
+      transition === undefined
+    ) {
+      fail(`planningMemorySelection ${selection.planningMemorySelectionId} 缺少原子Node终态证据`);
+    }
+  }
+}
+
+function assertWorkflowPolicyResolutions(snapshot: ProductSnapshot, fail: Fail): void {
+  const { entities } = snapshot;
+  const candidateIds = new Set<string>();
+  for (const resolution of Object.values(entities.workflowPolicyResolutions)) {
+    try {
+      assertWorkflowPolicyResolutionIntegrity(resolution);
+    } catch (error) {
+      fail(
+        `workflowPolicyResolution ${resolution.workflowPolicyResolutionId} ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    if (candidateIds.has(resolution.noteCandidateId)) {
+      fail(`workflowPolicyResolution ${resolution.workflowPolicyResolutionId} Candidate重复`);
+    }
+    candidateIds.add(resolution.noteCandidateId);
+    const run = entities.runs[resolution.productRunId];
+    const runSpec = entities.workflowRunSpecs[resolution.workflowRunSpecId];
+    const candidate = entities.noteCandidates[resolution.noteCandidateId];
+    const review = runSpec?.reviewResolutions.find(
+      (item) => item.definitionNodeId === resolution.definitionNodeId,
+    );
+    if (
+      run?.runKind !== "note_capture" ||
+      run.workflowRunSpecId !== resolution.workflowRunSpecId ||
+      runSpec?.productRunId !== resolution.productRunId ||
+      runSpec.sha256 !== resolution.workflowRunSpecSha256 ||
+      candidate?.productRunId !== resolution.productRunId ||
+      candidate.sha256 !== resolution.candidateSha256 ||
+      candidate.revision < resolution.candidateRevision ||
+      review?.mode !== "auto_continue_if_policy_allows" ||
+      review.actor !== "system_policy" ||
+      review.policyRef?.resourceId !== NOTE_LOW_RISK_AUTO_POLICY_RESOURCE_ID ||
+      review.policyRef.revision !== NOTE_LOW_RISK_AUTO_POLICY_REVISION ||
+      review.policyRef.sha256 !== NOTE_LOW_RISK_AUTO_POLICY_SHA256
+    ) {
+      fail(`workflowPolicyResolution ${resolution.workflowPolicyResolutionId} 绑定证据无效`);
+    }
+    if (candidate !== undefined) {
+      const expected = evaluateNoteLowRiskAutoPolicy(candidate);
+      if (
+        expected.outcome !== resolution.outcome ||
+        expected.reasonCode !== resolution.reasonCode ||
+        (resolution.outcome === "allowed" && candidate.status !== "confirmed")
+      ) {
+        fail(`workflowPolicyResolution ${resolution.workflowPolicyResolutionId} 决策结果不一致`);
+      }
+    }
+    if (
+      resolution.outcome === "allowed" &&
+      Object.values(entities.noteDecisions).some(
+        (decision) => decision.noteCandidateId === resolution.noteCandidateId,
+      )
+    ) {
+      fail(
+        `workflowPolicyResolution ${resolution.workflowPolicyResolutionId} 伪造或混入人工Decision`,
+      );
+    }
+    const owningNode = Object.values(entities.workflowNodeRuns).find(
+      (node) =>
+        node.productRunId === resolution.productRunId &&
+        node.definitionNodeId === resolution.definitionNodeId &&
+        Object.values(entities.nodeRunTransitions).some(
+          (transition) =>
+            transition.workflowNodeRunId === node.workflowNodeRunId &&
+            (resolution.outcome === "allowed"
+              ? transition.relatedProductRef?.kind === "workflow_policy_resolution" &&
+                transition.relatedProductRef.id === resolution.workflowPolicyResolutionId &&
+                transition.relatedProductRef.revision === resolution.revision &&
+                transition.relatedProductRef.sha256 === resolution.sha256
+              : transition.toStatus === "waiting_human" &&
+                transition.relatedProductRef?.kind === "note_candidate" &&
+                transition.relatedProductRef.id === resolution.noteCandidateId),
+        ),
+    );
+    const output =
+      owningNode?.outputManifestId === undefined
+        ? undefined
+        : entities.nodeValueManifests[owningNode.outputManifestId];
+    if (
+      owningNode === undefined ||
+      output === undefined ||
+      !output.slots.some((slot) =>
+        slot.refs.some(
+          (ref) =>
+            ref.kind === "workflow_policy_resolution" &&
+            ref.id === resolution.workflowPolicyResolutionId &&
+            ref.revision === resolution.revision &&
+            ref.sha256 === resolution.sha256,
+        ),
+      )
+    ) {
+      fail(`workflowPolicyResolution ${resolution.workflowPolicyResolutionId} 缺少Node证据`);
+    }
+  }
+}
+
+function assertRules(snapshot: ProductSnapshot, fail: Fail): void {
+  const { entities } = snapshot;
+  const normalizedTagKeys = new Set<string>();
+  for (const tag of Object.values(entities.ruleTags)) {
+    const expectedKey = normalizeRuleTagKey(tag.name);
+    const ownerKey = `${tag.ownerPrincipalId}\0${tag.normalizedKey}`;
+    if (tag.normalizedKey !== expectedKey || normalizedTagKeys.has(ownerKey)) {
+      fail(`ruleTag ${tag.ruleTagId} normalizedKey无效或Owner内重复`);
+    }
+    normalizedTagKeys.add(ownerKey);
+  }
+
+  const revisionsByRule = new Map<string, (typeof entities.ruleRevisions)[string][]>();
+  for (const revision of Object.values(entities.ruleRevisions)) {
+    try {
+      assertRuleRevisionIntegrity(revision);
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+    if (entities.rules[revision.ruleId] === undefined) {
+      fail(`ruleRevision ${revision.ruleRevisionId} 悬空Rule`);
+    }
+    const list = revisionsByRule.get(revision.ruleId) ?? [];
+    list.push(revision);
+    revisionsByRule.set(revision.ruleId, list);
+  }
+
+  for (const rule of Object.values(entities.rules)) {
+    const revisions = (revisionsByRule.get(rule.ruleId) ?? []).sort(
+      (left, right) => left.revision - right.revision,
+    );
+    const current = entities.ruleRevisions[rule.currentRevisionId];
+    if (
+      revisions.length === 0 ||
+      current === undefined ||
+      current.ruleId !== rule.ruleId ||
+      current.revision !== rule.currentRevisionNumber ||
+      current.sha256 !== rule.currentRevisionSha256 ||
+      revisions.at(-1)?.ruleRevisionId !== current.ruleRevisionId
+    ) {
+      fail(`rule ${rule.ruleId} Current/Highest Revision绑定不一致`);
+    }
+    for (let index = 0; index < revisions.length; index += 1) {
+      const revision = revisions[index];
+      if (revision?.revision !== index + 1) fail(`rule ${rule.ruleId} Revision号不连续`);
+      if (index > 0) {
+        try {
+          assertRuleRevisionAppend({ current: revisions[index - 1]!, next: revision! });
+        } catch (error) {
+          fail(error instanceof Error ? error.message : String(error));
+        }
+      }
+      if (revision !== undefined) assertRuleRevisionReferences(snapshot, rule, revision, fail);
+    }
+    assertRuleDecisionChain(snapshot, rule, fail);
+  }
+
+  const selectionRunIds = new Set<string>();
+  for (const selection of Object.values(entities.ruleSelections)) {
+    if (selectionRunIds.has(selection.productRunId)) {
+      fail(`ruleSelection ${selection.ruleSelectionId} Run重复`);
+    }
+    selectionRunIds.add(selection.productRunId);
+    const run = entities.runs[selection.productRunId];
+    const session = run === undefined ? undefined : entities.sessions[run.sessionId];
+    if (run?.runKind !== "planning" || session === undefined) {
+      fail(`ruleSelection ${selection.ruleSelectionId} 必须绑定Planning Run`);
+    }
+    if (
+      selection.context.projectId !== undefined &&
+      entities.projects[selection.context.projectId]?.ownerPrincipalId !== session.ownerPrincipalId
+    ) {
+      fail(`ruleSelection ${selection.ruleSelectionId} Context Project越权`);
+    }
+    for (const tagId of selection.request.selectedTagIds) {
+      if (entities.ruleTags[tagId]?.ownerPrincipalId !== session.ownerPrincipalId) {
+        fail(`ruleSelection ${selection.ruleSelectionId} Tag越权或悬空`);
+      }
+    }
+    const candidates = selection.candidates;
+    for (const candidate of candidates) {
+      const rule = entities.rules[candidate.ruleId];
+      const revision = entities.ruleRevisions[candidate.ruleRevisionId];
+      if (
+        rule?.ownerPrincipalId !== session.ownerPrincipalId ||
+        revision?.ruleId !== rule.ruleId ||
+        revision.sha256 !== candidate.ruleRevisionSha256 ||
+        revision.body.length !== candidate.contentCharacters ||
+        JSON.stringify(revision.tagIds) !== JSON.stringify(candidate.tagIds) ||
+        JSON.stringify(revision.scopes) !== JSON.stringify(candidate.scopes) ||
+        JSON.stringify(revision.conflictsWithRuleIds) !==
+          JSON.stringify(candidate.conflictsWithRuleIds)
+      ) {
+        fail(`ruleSelection ${selection.ruleSelectionId} Candidate引用或正文长度不一致`);
+      }
+    }
+    let recomputed;
+    try {
+      recomputed = selectRules({
+        candidates,
+        request: {
+          ...selection.request,
+          context: selection.context,
+          budget: selection.budget,
+        },
+      });
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+    if (
+      recomputed === undefined ||
+      recomputed.sha256 !== selection.sha256 ||
+      JSON.stringify(recomputed) !==
+        JSON.stringify({
+          status: selection.status,
+          selected: selection.selected,
+          excluded: selection.excluded,
+          conflicts: selection.conflicts,
+          diagnostics: selection.diagnostics,
+          selectedContentCharacters: selection.selectedContentCharacters,
+          sha256: selection.sha256,
+        })
+    ) {
+      fail(`ruleSelection ${selection.ruleSelectionId} 选择算法结果或Hash不一致`);
+    }
+  }
+}
+
+function assertRuleRevisionReferences(
+  snapshot: ProductSnapshot,
+  rule: ProductSnapshot["entities"]["rules"][string],
+  revision: ProductSnapshot["entities"]["ruleRevisions"][string],
+  fail: Fail,
+): void {
+  const { entities } = snapshot;
+  const originOwner =
+    revision.origin.kind === "assistant_candidate"
+      ? entities.sessions[entities.messages[revision.origin.sourceMessageId]?.sessionId ?? ""]
+          ?.ownerPrincipalId
+      : revision.origin.principalId;
+  if (originOwner !== rule.ownerPrincipalId)
+    fail(`ruleRevision ${revision.ruleRevisionId} Origin越权`);
+  for (const tagId of revision.tagIds) {
+    if (entities.ruleTags[tagId]?.ownerPrincipalId !== rule.ownerPrincipalId) {
+      fail(`ruleRevision ${revision.ruleRevisionId} Tag越权或悬空`);
+    }
+  }
+  for (const conflictId of revision.conflictsWithRuleIds) {
+    if (entities.rules[conflictId]?.ownerPrincipalId !== rule.ownerPrincipalId) {
+      fail(`ruleRevision ${revision.ruleRevisionId} 冲突Rule越权或悬空`);
+    }
+  }
+  for (const scope of revision.scopes) {
+    if (scope.kind === "contextual" && scope.projectId !== undefined) {
+      const project = entities.projects[scope.projectId];
+      const methodMatches =
+        scope.projectMethodProfileId === undefined ||
+        Object.values(entities.projectMethodSnapshots).some(
+          (method) =>
+            method.projectId === project?.projectId &&
+            method.profileId === scope.projectMethodProfileId,
+        );
+      const stageMatches =
+        scope.projectStageKey === undefined ||
+        Object.values(entities.projectStages).some(
+          (stage) => stage.projectId === project?.projectId && stage.key === scope.projectStageKey,
+        );
+      if (project?.ownerPrincipalId !== rule.ownerPrincipalId || !methodMatches || !stageMatches) {
+        fail(`ruleRevision ${revision.ruleRevisionId} Scope Project/Method/Stage无效`);
+      }
+    }
+  }
+  for (const source of revision.sourceCases) {
+    const owner =
+      source.kind === "message"
+        ? entities.sessions[entities.messages[source.messageId]?.sessionId ?? ""]?.ownerPrincipalId
+        : source.kind === "product_run"
+          ? entities.sessions[entities.runs[source.productRunId]?.sessionId ?? ""]?.ownerPrincipalId
+          : entities.projects[entities.projectDecisions[source.projectDecisionId]?.projectId ?? ""]
+              ?.ownerPrincipalId;
+    if (owner !== rule.ownerPrincipalId) {
+      fail(`ruleRevision ${revision.ruleRevisionId} Source Case越权或悬空`);
+    }
+  }
+}
+
+function assertRuleDecisionChain(
+  snapshot: ProductSnapshot,
+  rule: ProductSnapshot["entities"]["rules"][string],
+  fail: Fail,
+): void {
+  const decisions = Object.values(snapshot.entities.ruleDecisions)
+    .filter((decision) => decision.ruleId === rule.ruleId)
+    .sort((left, right) => left.decidedAt.localeCompare(right.decidedAt));
+  let lifecycle: ProductSnapshot["entities"]["rules"][string]["lifecycle"] = "candidate";
+  let lastExpectedRevision = 0;
+  for (const decision of decisions) {
+    const revision = snapshot.entities.ruleRevisions[decision.boundRevisionId];
+    if (
+      revision?.ruleId !== rule.ruleId ||
+      revision.sha256 !== decision.boundRevisionSha256 ||
+      decision.fromLifecycle !== lifecycle ||
+      decision.expectedRuleRevision <= lastExpectedRevision ||
+      decision.expectedRuleRevision >= rule.revision ||
+      (decision.actor.kind === "principal" && decision.actor.principalId !== rule.ownerPrincipalId)
+    ) {
+      fail(`ruleDecision ${decision.ruleDecisionId} 绑定/Actor/CAS无效`);
+    }
+    try {
+      assertRuleLifecycleTransition({
+        from: decision.fromLifecycle,
+        to: decision.toLifecycle,
+        enforcement: rule.enforcement,
+        actor: decision.actor,
+        reason: decision.reason,
+      });
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+    lifecycle = decision.toLifecycle;
+    lastExpectedRevision = decision.expectedRuleRevision;
+  }
+  if (
+    lifecycle !== rule.lifecycle ||
+    (decisions.at(-1)?.ruleDecisionId ?? undefined) !== rule.latestDecisionId
+  ) {
+    fail(`rule ${rule.ruleId} Lifecycle/Latest Decision不一致`);
+  }
+}
+
+function normalizeRuleTagKey(name: string): string {
+  return name.trim().normalize("NFKC").toLocaleLowerCase("und").replaceAll(/\s+/gu, "-");
+}
+
+function assertNotes(snapshot: ProductSnapshot, fail: Fail): void {
+  const { entities } = snapshot;
+  const noteIdBySourceCandidateId = new Map<string, string>();
+  for (const note of Object.values(entities.notes)) {
+    const revisions = Object.values(entities.noteRevisions).filter(
+      (revision) => revision.noteId === note.noteId,
+    );
+    try {
+      assertNoteAggregateIntegrity({ note, revisions });
+    } catch (error) {
+      fail(`note ${note.noteId} ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (entities.sessions[note.ownerPrincipalId] !== undefined) {
+      fail(`note ${note.noteId} ownerPrincipalId误用Session身份`);
+    }
+    const sourceCandidate = entities.noteCandidates[note.sourceCandidateId];
+    if (sourceCandidate === undefined) {
+      fail(`note ${note.noteId} 悬空sourceCandidateId`);
+    }
+    const previousNoteId = noteIdBySourceCandidateId.get(note.sourceCandidateId);
+    if (previousNoteId !== undefined) {
+      fail(`note ${note.noteId} 与 ${previousNoteId} 重复绑定同一Note Candidate`);
+    }
+    noteIdBySourceCandidateId.set(note.sourceCandidateId, note.noteId);
+    if (sourceCandidate !== undefined) {
+      if (sourceCandidate.status !== "confirmed") {
+        fail(`note ${note.noteId} sourceCandidate未确认`);
+      }
+      const run = entities.runs[sourceCandidate.productRunId];
+      const session = run === undefined ? undefined : entities.sessions[run.sessionId];
+      if (run === undefined || run.runKind !== "note_capture") {
+        fail(`note ${note.noteId} sourceCandidate未绑定Note Capture Run`);
+      }
+      if (session === undefined || session.ownerPrincipalId !== note.ownerPrincipalId) {
+        fail(`note ${note.noteId} ownerPrincipalId与sourceCandidate Run owner不一致`);
+      }
+      const initialRevision = revisions.find((revision) => revision.noteRevision === 1);
+      if (initialRevision === undefined) {
+        fail(`note ${note.noteId} 缺少首个Revision`);
+      } else {
+        const revisionSourceHash = hashCanonical("note.initial-revision-source.v1", {
+          title: initialRevision.title,
+          kind: initialRevision.kind,
+          contentMarkdown: initialRevision.contentMarkdown,
+          tags: initialRevision.tags,
+          sourceRefs: initialRevision.sourceRefs,
+        });
+        const candidateSourceHash = hashCanonical("note.initial-revision-source.v1", {
+          title: sourceCandidate.proposed.title,
+          kind: sourceCandidate.proposed.kind,
+          contentMarkdown: sourceCandidate.proposed.contentMarkdown,
+          tags: sourceCandidate.proposed.tags,
+          sourceRefs: sourceCandidate.sourceRefs,
+        });
+        if (revisionSourceHash !== candidateSourceHash) {
+          fail(`note ${note.noteId} 首版Revision与sourceCandidate内容或来源不一致`);
+        }
+      }
+    }
+  }
+  for (const revision of Object.values(entities.noteRevisions)) {
+    try {
+      assertNoteRevisionIntegrity(revision);
+    } catch (error) {
+      fail(
+        `noteRevision ${revision.noteRevisionId} ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    const note = entities.notes[revision.noteId];
+    if (note === undefined) fail(`noteRevision ${revision.noteRevisionId} 悬空noteId`);
+    if (note !== undefined && note.ownerPrincipalId !== revision.createdByPrincipalId) {
+      fail(`noteRevision ${revision.noteRevisionId} createdByPrincipalId与Note owner不一致`);
+    }
+    for (const sourceRef of revision.sourceRefs) {
+      const message = entities.messages[sourceRef.sourceMessageId];
+      if (message === undefined)
+        fail(`noteRevision ${revision.noteRevisionId} 悬空sourceMessageId`);
+    }
+  }
+  for (const candidate of Object.values(entities.noteCandidates)) {
+    try {
+      assertNoteCandidateIntegrity(candidate);
+    } catch (error) {
+      fail(
+        `noteCandidate ${candidate.noteCandidateId} ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    const run = entities.runs[candidate.productRunId];
+    if (run === undefined || run.runKind !== "note_capture") {
+      fail(`noteCandidate ${candidate.noteCandidateId} 未绑定Note Capture Run`);
+    }
+    if (
+      candidate.supersedesCandidateId !== undefined &&
+      entities.noteCandidates[candidate.supersedesCandidateId]?.productRunId !==
+        candidate.productRunId
+    ) {
+      fail(`noteCandidate ${candidate.noteCandidateId} successor链跨Run或悬空`);
+    }
+    for (const sourceRef of candidate.sourceRefs) {
+      if (entities.messages[sourceRef.sourceMessageId] === undefined) {
+        fail(`noteCandidate ${candidate.noteCandidateId} 悬空sourceMessageId`);
+      }
+    }
+  }
+  for (const decision of Object.values(entities.noteDecisions)) {
+    const candidate = entities.noteCandidates[decision.noteCandidateId];
+    if (candidate === undefined) fail(`noteDecision ${decision.noteDecisionId} 悬空candidate`);
+    if (candidate !== undefined) {
+      try {
+        const decisionCandidate = {
+          ...candidate,
+          status: "under_review" as const,
+          revision: decision.candidateRevision,
+        };
+        assertNoteDecisionBinding({ candidate: decisionCandidate, decision });
+      } catch (error) {
+        fail(
+          `noteDecision ${decision.noteDecisionId} ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      if (candidate.productRunId !== decision.productRunId) {
+        fail(`noteDecision ${decision.noteDecisionId} productRunId与Candidate不一致`);
+      }
+    }
+  }
+}
+
 function assertMemoryImports(snapshot: ProductSnapshot, fail: Fail): void {
   const { entities } = snapshot;
   const resultCountByIntent = new Map<string, number>();
@@ -996,6 +2026,11 @@ function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
       if (sourceHash !== attempt.sourceMessageSha256) {
         fail(`planning attempt ${attempt.attemptId} sourceMessageSha256不一致`);
       }
+      const promptTemplateVersion = attempt.promptTemplateVersion;
+      const modelConfigVersion = attempt.modelConfigVersion;
+      if (promptTemplateVersion === undefined || modelConfigVersion === undefined) {
+        fail(`planning attempt ${attempt.attemptId} 缺少输入版本证据`);
+      }
       const prior =
         attempt.priorPlanRevisionId === undefined
           ? undefined
@@ -1021,6 +2056,49 @@ function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
         fail(`planning attempt ${attempt.attemptId} ContextPackage证据不成对`);
       }
       if (
+        (attempt.planningMemorySelectionId === undefined) !==
+          (attempt.planningMemorySelectionSha256 === undefined) ||
+        (attempt.planningProjectContextId === undefined) !==
+          (attempt.planningProjectContextSha256 === undefined) ||
+        (attempt.ruleSelectionId === undefined) !== (attempt.ruleSelectionSha256 === undefined)
+      ) {
+        fail(`planning attempt ${attempt.attemptId} 高级Context证据不成对`);
+      }
+      const memorySelection =
+        attempt.planningMemorySelectionId === undefined
+          ? undefined
+          : entities.planningMemorySelections[attempt.planningMemorySelectionId];
+      if (
+        attempt.planningMemorySelectionId !== undefined &&
+        (memorySelection?.productRunId !== attempt.productRunId ||
+          memorySelection.workflowRunSpecId !== run.workflowRunSpecId ||
+          memorySelection.sha256 !== attempt.planningMemorySelectionSha256)
+      ) {
+        fail(`planning attempt ${attempt.attemptId} Memory Selection引用不一致`);
+      }
+      const projectContext =
+        attempt.planningProjectContextId === undefined
+          ? undefined
+          : entities.planningProjectContexts[attempt.planningProjectContextId];
+      if (
+        attempt.planningProjectContextId !== undefined &&
+        (projectContext?.productRunId !== attempt.productRunId ||
+          projectContext.sha256 !== attempt.planningProjectContextSha256)
+      ) {
+        fail(`planning attempt ${attempt.attemptId} Project Context引用不一致`);
+      }
+      const ruleSelection =
+        attempt.ruleSelectionId === undefined
+          ? undefined
+          : entities.ruleSelections[attempt.ruleSelectionId];
+      if (
+        attempt.ruleSelectionId !== undefined &&
+        (ruleSelection?.productRunId !== attempt.productRunId ||
+          ruleSelection.sha256 !== attempt.ruleSelectionSha256)
+      ) {
+        fail(`planning attempt ${attempt.attemptId} Rule Selection引用不一致`);
+      }
+      if (
         attempt.contextPackageId !== undefined &&
         (contextPackage === undefined ||
           contextPackage.productRunId !== attempt.productRunId ||
@@ -1031,38 +2109,62 @@ function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
       if ((attempt.planRevision ?? 1) > 1 && (prior === undefined || revisionInput === undefined)) {
         fail(`planning attempt ${attempt.attemptId} 修订轮缺少上一版Plan或Revision Input`);
       }
-      const manifest = hashCanonical(
-        contextPackage === undefined ? "planning-input-manifest.v1" : "planning-input-manifest.v2",
-        {
-          productRunId: attempt.productRunId,
-          planRevision: attempt.planRevision,
-          sourceMessageRef: { messageId: source.messageId, sha256: sourceHash },
-          ...(prior !== undefined
-            ? {
-                priorPlanRef: {
-                  planRevisionId: prior.planRevisionId,
-                  planId: prior.planId,
-                  planRevision: prior.planRevision,
-                  sha256: prior.sha256,
-                },
-              }
-            : {}),
-          ...(revisionInput !== undefined
-            ? { revisionInputRef: { revisionInputId: revisionInput.revisionInputId } }
-            : {}),
-          ...(contextPackage !== undefined
-            ? {
-                contextPackageRef: {
-                  contextPackageId: contextPackage.contextPackageId,
-                  revision: contextPackage.revision,
-                  sha256: contextPackage.sha256,
-                },
-              }
-            : {}),
-          promptTemplateVersion: attempt.promptTemplateVersion,
-          modelConfigVersion: attempt.modelConfigVersion,
-        },
-      );
+      const manifest = computePlanningInputManifestSha256({
+        productRunId: attempt.productRunId,
+        planRevision: attempt.planRevision,
+        sourceMessageRef: { messageId: source.messageId, sha256: sourceHash },
+        ...(prior !== undefined
+          ? {
+              priorPlanRef: {
+                planRevisionId: prior.planRevisionId,
+                planId: prior.planId,
+                planRevision: prior.planRevision,
+                sha256: prior.sha256,
+              },
+            }
+          : {}),
+        ...(revisionInput !== undefined
+          ? { revisionInputRef: { revisionInputId: revisionInput.revisionInputId } }
+          : {}),
+        ...(contextPackage !== undefined
+          ? {
+              contextPackageRef: {
+                contextPackageId: contextPackage.contextPackageId,
+                revision: contextPackage.revision,
+                sha256: contextPackage.sha256,
+              },
+            }
+          : {}),
+        ...(memorySelection !== undefined
+          ? {
+              planningMemorySelectionRef: {
+                planningMemorySelectionId: memorySelection.planningMemorySelectionId,
+                revision: memorySelection.revision,
+                sha256: memorySelection.sha256,
+              },
+            }
+          : {}),
+        ...(projectContext !== undefined
+          ? {
+              planningProjectContextRef: {
+                planningProjectContextId: projectContext.planningProjectContextId,
+                revision: projectContext.revision,
+                sha256: projectContext.sha256,
+              },
+            }
+          : {}),
+        ...(ruleSelection !== undefined
+          ? {
+              ruleSelectionRef: {
+                ruleSelectionId: ruleSelection.ruleSelectionId,
+                revision: 1,
+                sha256: ruleSelection.sha256,
+              },
+            }
+          : {}),
+        promptTemplateVersion,
+        modelConfigVersion,
+      });
       if (manifest !== attempt.inputManifestSha256) {
         fail(`planning attempt ${attempt.attemptId} inputManifestSha256不一致`);
       }
@@ -1077,7 +2179,13 @@ function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
         attempt.priorPlanRevisionId !== undefined ||
         attempt.revisionInputId !== undefined ||
         attempt.contextPackageId !== undefined ||
-        attempt.contextPackageSha256 !== undefined
+        attempt.contextPackageSha256 !== undefined ||
+        attempt.planningMemorySelectionId !== undefined ||
+        attempt.planningMemorySelectionSha256 !== undefined ||
+        attempt.planningProjectContextId !== undefined ||
+        attempt.planningProjectContextSha256 !== undefined ||
+        attempt.ruleSelectionId !== undefined ||
+        attempt.ruleSelectionSha256 !== undefined
       ) {
         fail(`execution attempt ${attempt.attemptId} 不允许planning输入证据`);
       }
@@ -1090,6 +2198,12 @@ function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
       attempt.revisionInputId !== undefined ||
       attempt.contextPackageId !== undefined ||
       attempt.contextPackageSha256 !== undefined ||
+      attempt.planningMemorySelectionId !== undefined ||
+      attempt.planningMemorySelectionSha256 !== undefined ||
+      attempt.planningProjectContextId !== undefined ||
+      attempt.planningProjectContextSha256 !== undefined ||
+      attempt.ruleSelectionId !== undefined ||
+      attempt.ruleSelectionSha256 !== undefined ||
       versionEvidence.some((value) => value !== undefined)
     ) {
       fail(`workflow attempt ${attempt.attemptId} 不允许节点输入证据`);
@@ -1589,7 +2703,7 @@ function assertLongTermContextCardinalityAndReuse(
 
 function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
   const { entities } = snapshot;
-  const legal = new Set([
+  const planningLegal = new Set([
     "pending/queued",
     "running/planning",
     "running/executing",
@@ -1610,7 +2724,28 @@ function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
     "outcome_unknown/executing",
     "outcome_unknown/validating",
   ]);
+  const noteCaptureLegal = new Set([
+    "pending/queued",
+    "running/extracting",
+    "running/classifying",
+    "waiting_human/note_review",
+    "running/committing",
+    "succeeded/completed",
+    "failed/queued",
+    "failed/extracting",
+    "failed/classifying",
+    "failed/note_review",
+    "failed/committing",
+    "cancelled/queued",
+    "cancelled/note_review",
+    "cancelled/rejected",
+    "outcome_unknown/queued",
+    "outcome_unknown/extracting",
+    "outcome_unknown/classifying",
+    "outcome_unknown/committing",
+  ]);
   for (const run of Object.values(entities.runs)) {
+    const legal = run.runKind === "note_capture" ? noteCaptureLegal : planningLegal;
     if (!legal.has(`${run.status}/${run.phase}`)) fail(`run ${run.productRunId} 生命周期组合非法`);
     const session = entities.sessions[run.sessionId];
     const source = entities.messages[run.sourceMessageId];
@@ -1621,6 +2756,44 @@ function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
     }
     if (entities.workflowViewDefinitions[run.workflowViewDefinitionId] === undefined) {
       fail(`run ${run.productRunId} 悬空workflowViewDefinitionId`);
+    }
+    const view = entities.workflowViewDefinitions[run.workflowViewDefinitionId];
+    if (run.runKind === "note_capture") {
+      if (
+        run.runnerFamily !== "note-capture.v1" ||
+        run.workflowRunSpecId === undefined ||
+        entities.workflowRunSpecs[run.workflowRunSpecId]?.productRunId !== run.productRunId ||
+        view?.source.kind !== "published_definition"
+      ) {
+        fail(`run ${run.productRunId} note_capture runner/RunSpec/View绑定不一致`);
+      }
+      if (run.status === "succeeded") {
+        const final =
+          run.finalMessageId === undefined ? undefined : entities.messages[run.finalMessageId];
+        if (
+          final === undefined ||
+          final.role !== "assistant" ||
+          final.sourceRunId !== run.productRunId
+        ) {
+          fail(`run ${run.productRunId} note_capture succeeded缺少绑定的Assistant Message`);
+        }
+      }
+      continue;
+    }
+    if (run.runnerFamily === "legacy-planning.v1") {
+      if (run.workflowRunSpecId !== undefined || view?.source.kind !== "legacy_code") {
+        fail(`run ${run.productRunId} legacy runner不得绑定RunSpec且必须使用legacy View`);
+      }
+    } else if (run.runnerFamily === "configurable-planning.v1") {
+      if (
+        run.workflowRunSpecId === undefined ||
+        entities.workflowRunSpecs[run.workflowRunSpecId]?.productRunId !== run.productRunId ||
+        view?.source.kind !== "published_definition"
+      ) {
+        fail(`run ${run.productRunId} configurable runner缺少RunSpec或Published View`);
+      }
+    } else {
+      fail(`run ${run.productRunId} 使用非正式Runner family`);
     }
     const currentFields = [run.currentPlanId, run.currentPlanRevision];
     if (currentFields.filter((value) => value !== undefined).length === 1) {
@@ -2014,6 +3187,7 @@ function assertExecution(snapshot: ProductSnapshot, fail: Fail): void {
         finalOutputSections: candidate.finalOutput.sections,
         completionCriteriaEvidence: candidate.completionCriteriaEvidence,
       },
+      { strictEvidence: validation.strictEvidence ?? true },
     );
     if (JSON.stringify(validation.failures) !== JSON.stringify(expectedFailures)) {
       fail(`validation ${validation.validationResultId} 不是服务端确定性验证结果`);
@@ -2046,7 +3220,7 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
   }
   const receiptShapes: Record<string, readonly string[]> = {
     CreateProductSession: ["sessionId"],
-    SubmitUserMessage: ["messageId", "productRunId"],
+    // SubmitUserMessage在下方按Run保存的runner family区分历史/正式configurable形状。
     CompilePlanningInput: ["attemptId", "productRunId"],
     PublishPlanForReview: ["planRevisionId", "approvalRequestId", "productRunId"],
     BeginRunAttempt: ["attemptId"],
@@ -2061,6 +3235,11 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
     UpdateOutboxStatus: [],
     FailOutboxAndRun: ["productRunId"],
     CommitRunOutcomeUnknown: ["productRunId"],
+    TransitionConfigurablePlanningNode: ["workflowNodeRunId"],
+    CopyWorkflowDefinition: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
+    SaveWorkflowDefinitionDraft: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
+    PublishWorkflowDefinition: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
+    ChangeWorkflowDefinitionArchiveStatus: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
     SettleIncompatibleWorkflowRun: ["productRunId"],
     PreparePlanningContextNone: ["contextRequestId", "productRunId"],
     BeginMemoryContextQuery: ["memoryQueryId", "productRunId"],
@@ -2098,6 +3277,19 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
     RecordProjectDecision: ["projectId", "projectDecisionId"],
     RecordProjectContribution: ["projectId", "projectContributionId"],
     ObserveProjectResource: ["projectId", "projectObservationId"],
+    ReviseNote: ["noteId", "noteRevisionId"],
+    ArchiveNote: ["noteId"],
+    RestoreNote: ["noteId"],
+    // PublishNoteCandidate在下方按manual/system_policy动态校验resultRefs。
+    SubmitNoteDecision: ["noteDecisionId", "noteCandidateId"],
+    CommitConfirmedNote: ["noteId", "noteRevisionId", "productRunId", "finalMessageId"],
+    CreateRule: ["ruleId", "ruleRevisionId"],
+    ReviseRule: ["ruleId", "ruleRevisionId"],
+    TransitionRuleLifecycle: ["ruleId", "ruleDecisionId"],
+    CreateRuleTag: ["ruleTagId"],
+    UpdateRuleTag: ["ruleTagId"],
+    ArchiveRuleTag: ["ruleTagId"],
+    // 三类Planning Context在none/ready时返回不同的事实引用，见下方动态分支。
   };
   for (const receipt of receipts) {
     if (
@@ -2106,16 +3298,42 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
     ) {
       fail(`receipt ${receipt.commandId} committedStoreRevision越界`);
     }
+    const receiptRun = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
     const expectedKeys =
-      receipt.commandType === "SubmitPlanDecision"
-        ? receipt.resultRefs["approvalExpired"] === "true"
-          ? ["approvalExpired", "productRunId"]
-          : ["decisionId", "productRunId"]
-        : receipt.commandType === "DecideProjectCandidate"
-          ? receipt.resultRefs["projectId"] === undefined
-            ? ["projectCandidateId"]
-            : ["projectCandidateId", "projectId"]
-          : receiptShapes[receipt.commandType];
+      receipt.commandType === "SubmitUserMessage"
+        ? receiptRun?.runnerFamily === "legacy-planning.v1"
+          ? ["messageId", "productRunId"]
+          : ["messageId", "productRunId", "workflowRunSpecId"]
+        : receipt.commandType === "SubmitPlanDecision"
+          ? receipt.resultRefs["approvalExpired"] === "true"
+            ? ["approvalExpired", "productRunId"]
+            : ["decisionId", "productRunId"]
+          : receipt.commandType === "DecideProjectCandidate"
+            ? receipt.resultRefs["projectId"] === undefined
+              ? ["projectCandidateId"]
+              : ["projectCandidateId", "projectId"]
+            : receipt.commandType === "PreparePlanningMemoryContext"
+              ? receipt.resultRefs["planningMemorySelectionId"] === undefined
+                ? ["contextStatus", "productRunId", "workflowNodeRunId"]
+                : [
+                    "contextStatus",
+                    "planningMemorySelectionId",
+                    "productRunId",
+                    "workflowNodeRunId",
+                  ]
+              : receipt.commandType === "PreparePlanningProjectContext"
+                ? receipt.resultRefs["planningProjectContextId"] === undefined
+                  ? ["productRunId", "workflowNodeRunId"]
+                  : ["planningProjectContextId", "productRunId", "workflowNodeRunId"]
+                : receipt.commandType === "PreparePlanningRulesContext"
+                  ? receipt.resultRefs["ruleSelectionId"] === undefined
+                    ? ["productRunId", "workflowNodeRunId"]
+                    : ["productRunId", "ruleSelectionId", "workflowNodeRunId"]
+                  : receipt.commandType === "PublishNoteCandidate"
+                    ? receipt.resultRefs["workflowPolicyResolutionId"] === undefined
+                      ? ["noteCandidateId", "productRunId"]
+                      : ["noteCandidateId", "productRunId", "workflowPolicyResolutionId"]
+                    : receiptShapes[receipt.commandType];
     if (expectedKeys === undefined) fail(`receipt ${receipt.commandId} commandType未知`);
     const actualKeys = Object.keys(receipt.resultRefs).sort();
     if (JSON.stringify(actualKeys) !== JSON.stringify([...expectedKeys].sort())) {
@@ -2129,62 +3347,162 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
             ? entities.messages[value] !== undefined
             : key === "productRunId"
               ? entities.runs[value] !== undefined
-              : key === "attemptId"
-                ? entities.attempts[value] !== undefined
-                : key === "planRevisionId"
-                  ? entities.plans[value] !== undefined
-                  : key === "approvalRequestId"
-                    ? entities.approvalRequests[value] !== undefined
-                    : key === "decisionId"
-                      ? entities.decisions[value] !== undefined
-                      : key === "executionContractId"
-                        ? entities.executionContracts[value] !== undefined
-                        : key === "executionCandidateId"
-                          ? entities.executionCandidates[value] !== undefined
-                          : key === "validationResultId"
-                            ? entities.validationResults[value] !== undefined
-                            : key === "memoryQueryId"
-                              ? entities.memoryQueries[value] !== undefined
-                              : key === "contextRequestId"
-                                ? entities.contextRequests[value] !== undefined
-                                : key === "contextPackageId"
-                                  ? entities.contextPackages[value] !== undefined
-                                  : key === "memoryImportIntentId"
-                                    ? entities.memoryImportIntents[value] !== undefined
-                                    : key === "memoryImportResultId"
-                                      ? entities.memoryImportResults[value] !== undefined
-                                      : key === "outboxId" || key === "recoveryOutboxId"
-                                        ? snapshot.outbox[value] !== undefined
-                                        : key === "projectId"
-                                          ? entities.projects[value] !== undefined
-                                          : key === "projectCandidateId"
-                                            ? entities.projectCandidates[value] !== undefined
-                                            : key === "projectStageId"
-                                              ? entities.projectStages[value] !== undefined
-                                              : key === "projectMilestoneId"
-                                                ? entities.projectMilestones[value] !== undefined
-                                                : key === "projectActionId"
-                                                  ? entities.projectActions[value] !== undefined
-                                                  : key === "projectDecisionId"
-                                                    ? entities.projectDecisions[value] !== undefined
-                                                    : key === "projectStateTransitionId"
-                                                      ? entities.projectStateTransitions[value] !==
-                                                        undefined
-                                                      : key === "projectContributionId"
-                                                        ? entities.projectContributions[value] !==
+              : key === "workflowRunSpecId"
+                ? entities.workflowRunSpecs[value] !== undefined
+                : key === "workflowDefinitionId"
+                  ? entities.workflowDefinitions[value] !== undefined
+                  : key === "workflowDefinitionRevisionId"
+                    ? entities.workflowDefinitionRevisions[value] !== undefined
+                    : key === "attemptId"
+                      ? entities.attempts[value] !== undefined
+                      : key === "planRevisionId"
+                        ? entities.plans[value] !== undefined
+                        : key === "approvalRequestId"
+                          ? entities.approvalRequests[value] !== undefined
+                          : key === "decisionId"
+                            ? entities.decisions[value] !== undefined
+                            : key === "executionContractId"
+                              ? entities.executionContracts[value] !== undefined
+                              : key === "executionCandidateId"
+                                ? entities.executionCandidates[value] !== undefined
+                                : key === "validationResultId"
+                                  ? entities.validationResults[value] !== undefined
+                                  : key === "workflowNodeRunId"
+                                    ? entities.workflowNodeRuns[value] !== undefined
+                                    : key === "memoryQueryId"
+                                      ? entities.memoryQueries[value] !== undefined
+                                      : key === "contextRequestId"
+                                        ? entities.contextRequests[value] !== undefined
+                                        : key === "contextPackageId"
+                                          ? entities.contextPackages[value] !== undefined
+                                          : key === "memoryImportIntentId"
+                                            ? entities.memoryImportIntents[value] !== undefined
+                                            : key === "memoryImportResultId"
+                                              ? entities.memoryImportResults[value] !== undefined
+                                              : key === "outboxId" || key === "recoveryOutboxId"
+                                                ? snapshot.outbox[value] !== undefined
+                                                : key === "projectId"
+                                                  ? entities.projects[value] !== undefined
+                                                  : key === "projectCandidateId"
+                                                    ? entities.projectCandidates[value] !==
+                                                      undefined
+                                                    : key === "projectStageId"
+                                                      ? entities.projectStages[value] !== undefined
+                                                      : key === "projectMilestoneId"
+                                                        ? entities.projectMilestones[value] !==
                                                           undefined
-                                                        : key === "projectObservationId"
-                                                          ? entities.projectObservations[value] !==
+                                                        : key === "projectActionId"
+                                                          ? entities.projectActions[value] !==
                                                             undefined
-                                                          : key === "messageSha256"
-                                                            ? /^[a-f0-9]{64}$/.test(value)
-                                                            : key === "approvalExpired"
-                                                              ? value === "true"
-                                                              : key === "status"
-                                                                ? value === "expired" ||
-                                                                  value === "already_decided"
-                                                                : false;
+                                                          : key === "projectDecisionId"
+                                                            ? entities.projectDecisions[value] !==
+                                                              undefined
+                                                            : key === "projectStateTransitionId"
+                                                              ? entities.projectStateTransitions[
+                                                                  value
+                                                                ] !== undefined
+                                                              : key === "projectContributionId"
+                                                                ? entities.projectContributions[
+                                                                    value
+                                                                  ] !== undefined
+                                                                : key === "projectObservationId"
+                                                                  ? entities.projectObservations[
+                                                                      value
+                                                                    ] !== undefined
+                                                                  : key === "noteId"
+                                                                    ? entities.notes[value] !==
+                                                                      undefined
+                                                                    : key === "noteRevisionId"
+                                                                      ? entities.noteRevisions[
+                                                                          value
+                                                                        ] !== undefined
+                                                                      : key === "noteCandidateId"
+                                                                        ? entities.noteCandidates[
+                                                                            value
+                                                                          ] !== undefined
+                                                                        : key === "noteDecisionId"
+                                                                          ? entities.noteDecisions[
+                                                                              value
+                                                                            ] !== undefined
+                                                                          : key === "ruleId"
+                                                                            ? entities.rules[
+                                                                                value
+                                                                              ] !== undefined
+                                                                            : key ===
+                                                                                "ruleRevisionId"
+                                                                              ? entities
+                                                                                  .ruleRevisions[
+                                                                                  value
+                                                                                ] !== undefined
+                                                                              : key === "ruleTagId"
+                                                                                ? entities.ruleTags[
+                                                                                    value
+                                                                                  ] !== undefined
+                                                                                : key ===
+                                                                                    "ruleDecisionId"
+                                                                                  ? entities
+                                                                                      .ruleDecisions[
+                                                                                      value
+                                                                                    ] !== undefined
+                                                                                  : key ===
+                                                                                      "ruleSelectionId"
+                                                                                    ? entities
+                                                                                        .ruleSelections[
+                                                                                        value
+                                                                                      ] !==
+                                                                                      undefined
+                                                                                    : key ===
+                                                                                        "planningProjectContextId"
+                                                                                      ? entities
+                                                                                          .planningProjectContexts[
+                                                                                          value
+                                                                                        ] !==
+                                                                                        undefined
+                                                                                      : key ===
+                                                                                          "planningMemorySelectionId"
+                                                                                        ? entities
+                                                                                            .planningMemorySelections[
+                                                                                            value
+                                                                                          ] !==
+                                                                                          undefined
+                                                                                        : key ===
+                                                                                            "workflowPolicyResolutionId"
+                                                                                          ? entities
+                                                                                              .workflowPolicyResolutions[
+                                                                                              value
+                                                                                            ] !==
+                                                                                            undefined
+                                                                                          : key ===
+                                                                                              "contextStatus"
+                                                                                            ? value ===
+                                                                                                "none" ||
+                                                                                              value ===
+                                                                                                "ready"
+                                                                                            : key ===
+                                                                                                "messageSha256"
+                                                                                              ? /^[a-f0-9]{64}$/.test(
+                                                                                                  value,
+                                                                                                )
+                                                                                              : key ===
+                                                                                                  "approvalExpired"
+                                                                                                ? value ===
+                                                                                                  "true"
+                                                                                                : key ===
+                                                                                                    "status"
+                                                                                                  ? value ===
+                                                                                                      "expired" ||
+                                                                                                    value ===
+                                                                                                      "already_decided"
+                                                                                                  : false;
       if (!exists) fail(`receipt ${receipt.commandId} 的${key}引用无效`);
+    }
+    const receiptDefinitionId = receipt.resultRefs["workflowDefinitionId"];
+    const receiptRevisionId = receipt.resultRefs["workflowDefinitionRevisionId"];
+    if (receiptDefinitionId !== undefined && receiptRevisionId !== undefined) {
+      const referencedRevision = entities.workflowDefinitionRevisions[receiptRevisionId];
+      if (referencedRevision?.workflowDefinitionId !== receiptDefinitionId) {
+        fail(`receipt ${receipt.commandId} Definition与Revision交叉绑定不一致`);
+      }
     }
     if (receipt.commandType === "SubmitUserMessage") {
       const message = entities.messages[receipt.resultRefs["messageId"] ?? ""];
@@ -2197,6 +3515,50 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
         message.role !== "user"
       ) {
         fail(`receipt ${receipt.commandId} 的Message/Run绑定不一致`);
+      }
+    }
+    if (receipt.commandType === "PreparePlanningRulesContext") {
+      const selection = entities.ruleSelections[receipt.resultRefs["ruleSelectionId"] ?? ""];
+      if (
+        receipt.resultRefs["ruleSelectionId"] !== undefined &&
+        selection?.productRunId !== receipt.resultRefs["productRunId"]
+      ) {
+        fail(`receipt ${receipt.commandId} Rule Selection与Run交叉绑定不一致`);
+      }
+    }
+    if (receipt.commandType === "PreparePlanningMemoryContext") {
+      const selection =
+        entities.planningMemorySelections[receipt.resultRefs["planningMemorySelectionId"] ?? ""];
+      if (
+        receipt.resultRefs["contextStatus"] === "ready" &&
+        selection?.productRunId !== receipt.resultRefs["productRunId"]
+      ) {
+        fail(`receipt ${receipt.commandId} Memory Selection与Run交叉绑定不一致`);
+      }
+    }
+    if (receipt.commandType === "PreparePlanningProjectContext") {
+      const context =
+        entities.planningProjectContexts[receipt.resultRefs["planningProjectContextId"] ?? ""];
+      if (
+        receipt.resultRefs["planningProjectContextId"] !== undefined &&
+        context?.productRunId !== receipt.resultRefs["productRunId"]
+      ) {
+        fail(`receipt ${receipt.commandId} Project Context与Run交叉绑定不一致`);
+      }
+    }
+    if (receipt.commandType === "PublishNoteCandidate") {
+      const candidate = entities.noteCandidates[receipt.resultRefs["noteCandidateId"] ?? ""];
+      const resolution =
+        entities.workflowPolicyResolutions[receipt.resultRefs["workflowPolicyResolutionId"] ?? ""];
+      if (
+        candidate?.productRunId !== receipt.resultRefs["productRunId"] ||
+        (receipt.resultRefs["workflowPolicyResolutionId"] !== undefined &&
+          (resolution === undefined ||
+            candidate === undefined ||
+            resolution.productRunId !== receipt.resultRefs["productRunId"] ||
+            resolution.noteCandidateId !== candidate.noteCandidateId))
+      ) {
+        fail(`receipt ${receipt.commandId} Note Candidate/Policy/Run交叉绑定不一致`);
       }
     }
     if (receipt.commandType === "PublishPlanForReview") {
@@ -2277,16 +3639,48 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
         fail(`outbox ${entry.outboxId} 悬空productRunId`);
       }
       if (entry.kind === "workflow_start") continue;
-      const approval = entities.approvalRequests[entry.approvalRequestId];
-      const decision = entities.decisions[entry.decisionId];
-      if (
-        approval === undefined ||
-        decision === undefined ||
-        approval.productRunId !== entry.productRunId ||
-        decision.productRunId !== entry.productRunId ||
-        decision.approvalRequestId !== approval.approvalRequestId
-      ) {
-        fail(`outbox ${entry.outboxId} workflow_resume绑定不完整`);
+      if (entry.approvalRequestId !== undefined || entry.decisionId !== undefined) {
+        const approval =
+          entry.approvalRequestId === undefined
+            ? undefined
+            : entities.approvalRequests[entry.approvalRequestId];
+        const decision =
+          entry.decisionId === undefined ? undefined : entities.decisions[entry.decisionId];
+        if (
+          approval === undefined ||
+          decision === undefined ||
+          approval.productRunId !== entry.productRunId ||
+          decision.productRunId !== entry.productRunId ||
+          decision.approvalRequestId !== approval.approvalRequestId
+        ) {
+          fail(`outbox ${entry.outboxId} workflow_resume绑定不完整`);
+        }
+      } else {
+        const hookCandidate =
+          entry.hookNoteCandidateId === undefined
+            ? undefined
+            : entities.noteCandidates[entry.hookNoteCandidateId];
+        const candidate =
+          entry.noteCandidateId === undefined
+            ? undefined
+            : entities.noteCandidates[entry.noteCandidateId];
+        const decision =
+          entry.noteDecisionId === undefined
+            ? undefined
+            : entities.noteDecisions[entry.noteDecisionId];
+        if (
+          hookCandidate === undefined ||
+          candidate === undefined ||
+          decision === undefined ||
+          hookCandidate.productRunId !== entry.productRunId ||
+          candidate.productRunId !== entry.productRunId ||
+          decision.productRunId !== entry.productRunId ||
+          decision.noteCandidateId !== candidate.noteCandidateId ||
+          (hookCandidate.noteCandidateId !== candidate.noteCandidateId &&
+            candidate.supersedesCandidateId !== hookCandidate.noteCandidateId)
+        ) {
+          fail(`outbox ${entry.outboxId} workflow_resume绑定不完整`);
+        }
       }
       continue;
     }

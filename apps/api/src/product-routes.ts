@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z, ZodError } from "zod";
 import {
   commandEnvelopeSchema,
@@ -36,12 +36,35 @@ import {
   transitionProjectMilestonePayloadSchema,
   recordProjectDecisionPayloadSchema,
   recordProjectContributionPayloadSchema,
+  noteIdSchema,
+  listNotesQuerySchema,
+  getNoteHistoryQuerySchema,
+  reviseNotePayloadSchema,
+  archiveNotePayloadSchema,
+  restoreNotePayloadSchema,
+  submitNoteDecisionPayloadSchema,
+  workflowDefinitionIdSchema,
+  createWorkflowDefinitionCopyPayloadSchema,
+  saveWorkflowDefinitionDraftPayloadSchema,
+  validateWorkflowDefinitionPayloadSchema,
+  publishWorkflowDefinitionPayloadSchema,
+  changeWorkflowDefinitionArchiveStatusPayloadSchema,
+  ruleIdSchema,
+  ruleTagIdSchema,
+  listRulesQuerySchema,
+  createRulePayloadSchema,
+  reviseRulePayloadSchema,
+  transitionRulePayloadSchema,
+  createRuleTagPayloadSchema,
+  updateRuleTagPayloadSchema,
+  archiveRuleTagPayloadSchema,
   type PrincipalId,
   type ProblemDetail,
   type RequestId,
 } from "@chat/contracts";
 import {
   ApplicationError,
+  notFound,
   CommandIdReusedError,
   StoreCorruptedError,
   createProductSession,
@@ -84,8 +107,37 @@ import {
   observeProjectResource,
   getWorkflowRunView,
   getWorkflowNodeDetail,
+  getWorkflowBlueprints,
+  getWorkflowCatalog,
+  getWorkflowDefinitions,
+  getWorkflowResources,
+  getWorkflowRunConfigSummary,
+  listNotes,
+  getNote,
+  getNoteHistory,
+  getCurrentNoteCandidate,
+  reviseNote,
+  archiveNote,
+  restoreNote,
+  submitNoteDecision,
+  getWorkflowDefinitionDetail,
+  createWorkflowDefinitionCopy,
+  saveWorkflowDefinitionDraft,
+  validateWorkflowDefinition,
+  publishWorkflowDefinition,
+  changeWorkflowDefinitionArchiveStatus,
+  listRules,
+  getRule,
+  createRule,
+  reviseRule,
+  transitionRuleLifecycle,
+  listRuleTags,
+  createRuleTag,
+  updateRuleTag,
+  archiveRuleTag,
   type ApplicationDeps,
 } from "@chat/application";
+import { hashCanonical } from "@chat/domain";
 
 /**
  * B2公开产品路由（任务书§12.1）。
@@ -233,6 +285,65 @@ function assertNoQuery(url: string): void {
   }
 }
 
+function parseWorkflowResourcesQuery(url: string): {
+  resourceKind?: "memory" | "project" | "rule" | "skill" | undefined;
+} {
+  const params = new URL(url).searchParams;
+  if ([...params.keys()].some((key) => key !== "kind") || params.getAll("kind").length > 1) {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 400,
+      message: "Workflow资源查询包含未知或重复参数",
+    });
+  }
+  const kind = params.get("kind");
+  if (kind === null) return {};
+  if (kind !== "memory" && kind !== "project" && kind !== "rule" && kind !== "skill") {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 400,
+      message: "Workflow资源kind非法",
+    });
+  }
+  return { resourceKind: kind };
+}
+
+function strictQueryParams(
+  url: string,
+  allowedKeys: readonly string[],
+  label: string,
+): URLSearchParams {
+  const params = new URL(url).searchParams;
+  const allowed = new Set(allowedKeys);
+  for (const key of params.keys()) {
+    if (!allowed.has(key) || params.getAll(key).length > 1) {
+      throw new ApplicationError({
+        code: "validation_failed",
+        httpStatus: 400,
+        message: `${label}包含未知或重复参数`,
+      });
+    }
+  }
+  return params;
+}
+
+function parseOptionalPositiveInteger(
+  params: URLSearchParams,
+  key: string,
+  label: string,
+): number | undefined {
+  const raw = params.get(key);
+  if (raw === null) return undefined;
+  if (!/^[1-9][0-9]*$/u.test(raw)) {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 400,
+      message: `${label}必须是正整数`,
+    });
+  }
+  return Number(raw);
+}
+
 function parseWorkflowNodeIncludes(url: string) {
   const params = new URL(url).searchParams;
   if ([...params.keys()].some((key) => key !== "include") || params.getAll("include").length > 1) {
@@ -260,6 +371,19 @@ function matchesEtag(ifNoneMatch: string | undefined, etag: string): boolean {
     .split(",")
     .map((value) => value.trim())
     .some((value) => value === "*" || value === etag);
+}
+
+function privateEtagJson(
+  c: Context<{ Variables: Variables }>,
+  namespace: string,
+  value: object,
+): Response {
+  const etag = `"${hashCanonical(`http.query.${namespace}.v1`, value)}"`;
+  c.header("ETag", etag);
+  c.header("Cache-Control", "private, no-cache");
+  c.header("Vary", "Authorization");
+  if (matchesEtag(c.req.header("If-None-Match"), etag)) return c.body(null, 304);
+  return c.json(value, 200);
 }
 
 function emitCommandAccepted(
@@ -307,6 +431,600 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
     try {
       assertNoQuery(c.req.url);
       return c.json(await listMemoryBackends(ctx.deps), 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/workflow/catalog", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      return privateEtagJson(c, "workflow-catalog", await getWorkflowCatalog(ctx.deps));
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/workflow/blueprints", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      return privateEtagJson(c, "workflow-blueprints", await getWorkflowBlueprints(ctx.deps));
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/workflow/definitions", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      return privateEtagJson(
+        c,
+        "workflow-definitions",
+        await getWorkflowDefinitions(ctx.deps, { principalId: ctx.principalId }),
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/workflow/definitions/copies", async (c) => {
+    try {
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const payload = createWorkflowDefinitionCopyPayloadSchema.parse(envelope.payload);
+      const result = await createWorkflowDefinitionCopy(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/workflow/definitions/copies",
+        statusCode: 201,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/workflow/definitions/validate", async (c) => {
+    try {
+      const payload = validateWorkflowDefinitionPayloadSchema.parse(await parseJsonBody(c));
+      return c.json(
+        await validateWorkflowDefinition(ctx.deps, {
+          principalId: ctx.principalId,
+          payload,
+        }),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/workflow/definitions/:workflowDefinitionId", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const workflowDefinitionId = workflowDefinitionIdSchema.parse(
+        c.req.param("workflowDefinitionId"),
+      );
+      return privateEtagJson(
+        c,
+        "workflow-definition-detail",
+        await getWorkflowDefinitionDetail(ctx.deps, {
+          principalId: ctx.principalId,
+          workflowDefinitionId,
+        }),
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/workflow/definitions/:workflowDefinitionId/drafts", async (c) => {
+    try {
+      const workflowDefinitionId = workflowDefinitionIdSchema.parse(
+        c.req.param("workflowDefinitionId"),
+      );
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "保存Definition Draft必须携带expectedRevision",
+        });
+      }
+      const payload = saveWorkflowDefinitionDraftPayloadSchema.parse(envelope.payload);
+      const result = await saveWorkflowDefinitionDraft(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        workflowDefinitionId,
+        expectedRevision: envelope.expectedRevision,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/workflow/definitions/:workflowDefinitionId/drafts",
+        statusCode: 201,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/workflow/definitions/:workflowDefinitionId/publish", async (c) => {
+    try {
+      const workflowDefinitionId = workflowDefinitionIdSchema.parse(
+        c.req.param("workflowDefinitionId"),
+      );
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "发布Definition必须携带expectedRevision",
+        });
+      }
+      const payload = publishWorkflowDefinitionPayloadSchema.parse(envelope.payload);
+      const result = await publishWorkflowDefinition(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        workflowDefinitionId,
+        expectedRevision: envelope.expectedRevision,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/workflow/definitions/:workflowDefinitionId/publish",
+        statusCode: 200,
+      });
+      return c.json(result, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/workflow/definitions/:workflowDefinitionId/archive-status", async (c) => {
+    try {
+      const workflowDefinitionId = workflowDefinitionIdSchema.parse(
+        c.req.param("workflowDefinitionId"),
+      );
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "归档或恢复Definition必须携带expectedRevision",
+        });
+      }
+      const payload = changeWorkflowDefinitionArchiveStatusPayloadSchema.parse(envelope.payload);
+      const result = await changeWorkflowDefinitionArchiveStatus(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        workflowDefinitionId,
+        expectedRevision: envelope.expectedRevision,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/workflow/definitions/:workflowDefinitionId/archive-status",
+        statusCode: 200,
+      });
+      return c.json(result, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/workflow/resources", async (c) => {
+    try {
+      const query = parseWorkflowResourcesQuery(c.req.url);
+      return privateEtagJson(
+        c,
+        "workflow-resources",
+        await getWorkflowResources(ctx.deps, {
+          principalId: ctx.principalId,
+          ...query,
+        }),
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/rules", async (c) => {
+    try {
+      const params = strictQueryParams(
+        c.req.url,
+        ["cursor", "limit", "lifecycle", "tagId", "scenario"],
+        "Rule列表查询",
+      );
+      const limit = parseOptionalPositiveInteger(params, "limit", "Rule列表limit");
+      const query = listRulesQuerySchema.parse({
+        ...(params.get("cursor") !== null ? { cursor: params.get("cursor") } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+        ...(params.get("lifecycle") !== null ? { lifecycle: params.get("lifecycle") } : {}),
+        ...(params.get("tagId") !== null ? { tagId: params.get("tagId") } : {}),
+        ...(params.get("scenario") !== null ? { scenario: params.get("scenario") } : {}),
+      });
+      return privateEtagJson(
+        c,
+        "rules-list",
+        await listRules(ctx.deps, { principalId: ctx.principalId, query }),
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/rules/:ruleId", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const ruleId = ruleIdSchema.parse(c.req.param("ruleId"));
+      return privateEtagJson(
+        c,
+        "rule-detail",
+        await getRule(ctx.deps, { principalId: ctx.principalId, ruleId }),
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/rules", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const result = await createRule(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        payload: createRulePayloadSchema.parse(envelope.payload),
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/rules",
+        statusCode: 201,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/rules/:ruleId/revisions", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const ruleId = ruleIdSchema.parse(c.req.param("ruleId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "修订Rule必须携带expectedRevision",
+        });
+      }
+      const result = await reviseRule(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        ruleId,
+        expectedRevision: envelope.expectedRevision,
+        payload: reviseRulePayloadSchema.parse(envelope.payload),
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/rules/:ruleId/revisions",
+        statusCode: 201,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/rules/:ruleId/lifecycle", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const ruleId = ruleIdSchema.parse(c.req.param("ruleId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Rule生命周期命令必须携带expectedRevision",
+        });
+      }
+      const result = await transitionRuleLifecycle(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        ruleId,
+        expectedRevision: envelope.expectedRevision,
+        payload: transitionRulePayloadSchema.parse(envelope.payload),
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/rules/:ruleId/lifecycle",
+        statusCode: 200,
+      });
+      return c.json(result, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/rule-tags", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      return privateEtagJson(
+        c,
+        "rule-tags",
+        await listRuleTags(ctx.deps, { principalId: ctx.principalId }),
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/rule-tags", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const result = await createRuleTag(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        payload: createRuleTagPayloadSchema.parse(envelope.payload),
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/rule-tags",
+        statusCode: 201,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/rule-tags/:ruleTagId", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const ruleTagId = ruleTagIdSchema.parse(c.req.param("ruleTagId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "修改Rule Tag必须携带expectedRevision",
+        });
+      }
+      const result = await updateRuleTag(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        ruleTagId,
+        expectedRevision: envelope.expectedRevision,
+        payload: updateRuleTagPayloadSchema.parse(envelope.payload),
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/rule-tags/:ruleTagId",
+        statusCode: 200,
+      });
+      return c.json(result, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/rule-tags/:ruleTagId/archive", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const ruleTagId = ruleTagIdSchema.parse(c.req.param("ruleTagId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "归档Rule Tag必须携带expectedRevision",
+        });
+      }
+      archiveRuleTagPayloadSchema.parse(envelope.payload);
+      const result = await archiveRuleTag(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        ruleTagId,
+        expectedRevision: envelope.expectedRevision,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/rule-tags/:ruleTagId/archive",
+        statusCode: 200,
+      });
+      return c.json(result, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/notes", async (c) => {
+    try {
+      const params = strictQueryParams(
+        c.req.url,
+        ["cursor", "limit", "kind", "tagKey", "status"],
+        "Note列表查询",
+      );
+      const limit = parseOptionalPositiveInteger(params, "limit", "Note列表limit");
+      const query = listNotesQuerySchema.parse({
+        ...(params.get("cursor") !== null ? { cursor: params.get("cursor") } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+        ...(params.get("kind") !== null ? { kind: params.get("kind") } : {}),
+        ...(params.get("tagKey") !== null ? { tagKey: params.get("tagKey") } : {}),
+        ...(params.get("status") !== null ? { status: params.get("status") } : {}),
+      });
+      const result = await listNotes(ctx.deps, { principalId: ctx.principalId, query });
+      return privateEtagJson(c, "notes-list", result.notes);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/notes/:noteId", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const noteId = noteIdSchema.parse(c.req.param("noteId"));
+      const result = await getNote(ctx.deps, { principalId: ctx.principalId, noteId });
+      return privateEtagJson(c, "note-detail", result.note);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/notes/:noteId/history", async (c) => {
+    try {
+      const noteId = noteIdSchema.parse(c.req.param("noteId"));
+      const params = strictQueryParams(c.req.url, ["cursor", "limit"], "Note历史查询");
+      const limit = parseOptionalPositiveInteger(params, "limit", "Note历史limit");
+      const query = getNoteHistoryQuerySchema.parse({
+        ...(params.get("cursor") !== null ? { cursor: params.get("cursor") } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+      });
+      const result = await getNoteHistory(ctx.deps, {
+        principalId: ctx.principalId,
+        noteId,
+        query,
+      });
+      return privateEtagJson(c, "note-history", result.history);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/notes/:noteId/revisions", async (c) => {
+    try {
+      const noteId = noteIdSchema.parse(c.req.param("noteId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Note Revision Command必须携带expectedRevision",
+        });
+      }
+      const payload = reviseNotePayloadSchema.parse(envelope.payload);
+      const result = await reviseNote(ctx.deps, {
+        principalId: ctx.principalId,
+        noteId,
+        commandId: envelope.commandId,
+        expectedRevision: envelope.expectedRevision,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/notes/:noteId/revisions",
+        statusCode: 201,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/notes/:noteId/archive", async (c) => {
+    try {
+      const noteId = noteIdSchema.parse(c.req.param("noteId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Archive Note Command必须携带expectedRevision",
+        });
+      }
+      const payload = archiveNotePayloadSchema.parse(envelope.payload);
+      const result = await archiveNote(ctx.deps, {
+        principalId: ctx.principalId,
+        noteId,
+        commandId: envelope.commandId,
+        expectedRevision: envelope.expectedRevision,
+        payload,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/notes/:noteId/restore", async (c) => {
+    try {
+      const noteId = noteIdSchema.parse(c.req.param("noteId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Restore Note Command必须携带expectedRevision",
+        });
+      }
+      const payload = restoreNotePayloadSchema.parse(envelope.payload);
+      const result = await restoreNote(ctx.deps, {
+        principalId: ctx.principalId,
+        noteId,
+        commandId: envelope.commandId,
+        expectedRevision: envelope.expectedRevision,
+        payload,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/runs/:productRunId/note-candidates/current", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
+      const result = await getCurrentNoteCandidate(ctx.deps, {
+        principalId: ctx.principalId,
+        productRunId,
+      });
+      if (result.candidate === null) throw notFound("当前Note Candidate不存在");
+      return privateEtagJson(c, "note-candidate", result.candidate);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/runs/:productRunId/note-decisions", async (c) => {
+    try {
+      const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "提交Note Decision必须携带expectedRevision",
+        });
+      }
+      const payload = submitNoteDecisionPayloadSchema.parse(envelope.payload);
+      if (payload.productRunId !== productRunId) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "URL中的Product Run与payload不一致",
+        });
+      }
+      const result = await submitNoteDecision(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        expectedRunRevision: envelope.expectedRevision,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/runs/:productRunId/note-decisions",
+        statusCode: 201,
+        productRunId: payload.productRunId,
+      });
+      return c.json(result, 201);
     } catch (error) {
       return mapError(c, error);
     }
@@ -975,6 +1693,23 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
       const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
       const result = await getProductRun(ctx.deps, { principalId: ctx.principalId, productRunId });
       return c.json(result, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/runs/:productRunId/workflow-config-summary", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
+      return privateEtagJson(
+        c,
+        "workflow-run-config-summary",
+        await getWorkflowRunConfigSummary(ctx.deps, {
+          principalId: ctx.principalId,
+          productRunId,
+        }),
+      );
     } catch (error) {
       return mapError(c, error);
     }

@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import { hashCanonical, type WorkflowSequence } from "@chat/domain";
 import {
   DEFAULT_WORKFLOW_BLUEPRINTS,
+  validateDefinitionAgainstBlueprint,
   WorkflowBlueprintRegistry,
   WORKFLOW_BLUEPRINTS,
 } from "./workflow-blueprints.js";
-import { kernelCompilerInputFixture, kernelDefinitionFixture } from "./workflow-kernel-fixtures.js";
+import {
+  kernelCompilerInputFixture,
+  kernelDefinitionFixture,
+  PLANNING_LOOP_ROOT,
+} from "./workflow-kernel-fixtures.js";
 import {
   DEFAULT_NODE_CATALOG,
   NODE_CATALOG_DESCRIPTORS,
@@ -84,6 +89,34 @@ describe("Node Catalog与Blueprint一致性", () => {
     expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("planning", 1)?.terminalNodeType).toBe("product.commit");
     expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("note", 1)?.terminalNodeType).toBe("note.commit");
     expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("planning", 99)).toBeUndefined();
+  });
+
+  it("Planning发布定义不能把强制人工审核配置成自动继续", () => {
+    const root: WorkflowSequence = {
+      ...PLANNING_LOOP_ROOT,
+      elements: PLANNING_LOOP_ROOT.elements.map((element) =>
+        element.kind !== "bounded_loop"
+          ? element
+          : {
+              ...element,
+              body: {
+                ...element.body,
+                elements: element.body.elements.map((child) =>
+                  child.kind === "task" && child.nodeType === "human.plan_review"
+                    ? { ...child, config: { reviewMode: "auto_continue_if_policy_allows" } }
+                    : child,
+                ),
+              },
+            },
+      ),
+    };
+    const blueprint = DEFAULT_WORKFLOW_BLUEPRINTS.get("planning", 1);
+    if (blueprint === undefined) throw new Error("Planning Blueprint不存在");
+    expect(
+      validateDefinitionAgainstBlueprint(root, blueprint, DEFAULT_NODE_CATALOG).map(
+        (diagnostic) => diagnostic.code,
+      ),
+    ).toContain("blueprint.mandatory_manual_review");
   });
 });
 
@@ -308,7 +341,12 @@ describe("Definition规范化与RunSpec Compiler", () => {
     expect(validateWorkflowRunSpecIntegrity(tampered)).toMatchObject({ success: false });
     expect(
       validateRunSpecResourcesCurrent(compiled.runSpec, [
-        { ...resource, revision: 2, sha256: "d".repeat(64) },
+        {
+          ...resource,
+          revision: 2,
+          sha256: "d".repeat(64),
+          allowedPrincipalIds: ["usr_fixture" as never],
+        },
       ]).map((entry) => entry.code),
     ).toEqual(["resource.changed_before_run_create"]);
   });
@@ -359,5 +397,38 @@ describe("Definition规范化与RunSpec Compiler", () => {
     );
     expect(stale.success).toBe(false);
     if (!stale.success) expect(stale.diagnostics[0]?.code).toBe("definition.hash_stale");
+  });
+
+  it("Planning可选业务节点当前只允许各出现一次，拒绝设计器复制出Runner无法表达的第二份Context", () => {
+    const definition = kernelDefinitionFixture("mixed");
+    const memory = definition.semanticRoot.elements[0];
+    if (memory?.kind !== "task" || memory.nodeType !== "context.memory") {
+      throw new Error("Fixture错误");
+    }
+    const duplicated = compileWorkflowRunSpec(
+      kernelCompilerInputFixture("mixed", {
+        definition: {
+          ...definition,
+          semanticRoot: {
+            kind: "sequence",
+            elements: [
+              memory,
+              {
+                ...memory,
+                definitionNodeId: "planning.memory.second",
+                config: { ...memory.config },
+              },
+              ...definition.semanticRoot.elements.slice(1),
+            ],
+          },
+        },
+      }),
+    );
+    expect(duplicated.success).toBe(false);
+    if (!duplicated.success) {
+      expect(duplicated.diagnostics.map((item) => item.code)).toContain(
+        "blueprint.optional_node_duplicated",
+      );
+    }
   });
 });

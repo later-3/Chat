@@ -12,6 +12,9 @@ import {
   memoryImportResultIdSchema,
   memoryQueryIdSchema,
   memoryResultSnapshotIdSchema,
+  workflowDefinitionIdSchema,
+  workflowDefinitionRevisionIdSchema,
+  workflowRunSpecIdSchema,
 } from "./ids.js";
 import {
   approvalRequestStatusSchema,
@@ -24,12 +27,24 @@ import {
   productRunStatusSchema,
   runFailureSchema,
 } from "./product.js";
+import { NOTE_TAG_LABEL_MAX_CHARACTERS, NOTE_TAG_MAX_COUNT, noteKindSchema } from "./note.js";
 import { sha256Schema } from "./hash.js";
 import { memoryContextSelectionSchema, memoryLayerSchema } from "./context.js";
 import {
   memoryImportCapabilitiesSchema,
   memoryImportSourceSelectionSchema,
 } from "./memory-import.js";
+import {
+  WORKFLOW_DEFINITION_CONTRACT_LIMITS,
+  workflowBlueprintKeySchema,
+  workflowDefinitionNodeIdSchema,
+  workflowDefinitionNodeTypeSchema,
+  workflowExecutorKindSchema,
+  workflowRiskLevelSchema,
+  workflowReviewModeSchema,
+  workflowRunConfigurationSchema,
+  workflowRunnerFamilySchema,
+} from "./workflow-definition.js";
 
 /**
  * B2公开Query/Command网络DTO（任务书§12）。
@@ -52,12 +67,58 @@ export const createSessionPayloadSchema = z
   })
   .strict();
 
+export const noteCaptureSubmitSourceSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("full_message"),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("selection"),
+      startUtf16: z.number().int().nonnegative(),
+      endUtf16: z.number().int().positive(),
+      selectedTextSha256: sha256Schema,
+    })
+    .strict()
+    .refine((value) => value.startUtf16 < value.endUtf16, {
+      message: "Note选区起点必须小于终点",
+      path: ["endUtf16"],
+    }),
+]);
+
+export const noteCaptureSubmitInputSchema = z
+  .object({
+    kind: z.literal("note_capture"),
+    source: noteCaptureSubmitSourceSchema.optional(),
+    defaultKind: noteKindSchema.optional(),
+    suggestedTagLabels: z
+      .array(z.string().trim().min(1).max(NOTE_TAG_LABEL_MAX_CHARACTERS))
+      .max(NOTE_TAG_MAX_COUNT)
+      .optional(),
+  })
+  .strict();
+
 export const submitMessagePayloadSchema = z
   .object({
     text: z.string().min(1).max(4000),
     context: z
       .object({
         memory: memoryContextSelectionSchema,
+      })
+      .strict()
+      .optional(),
+    /**
+     * S4兼容期：旧客户端不传时，服务端显式映射到system Planning已发布Revision。
+     * 浏览器只能提交有限选择；不能提交Executor key、Runtime ID、Secret或任意Graph。
+     */
+    workflowSelection: z
+      .object({
+        kind: z.literal("published_revision"),
+        workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+        definitionSha256: sha256Schema,
+        runConfiguration: workflowRunConfigurationSchema.optional(),
+        businessInput: noteCaptureSubmitInputSchema.optional(),
       })
       .strict()
       .optional(),
@@ -117,10 +178,267 @@ export const createMemoryImportPayloadSchema = z
 export const reconcileMemoryImportPayloadSchema = z.object({}).strict();
 
 export type CreateSessionPayload = z.infer<typeof createSessionPayloadSchema>;
+export type NoteCaptureSubmitInput = z.infer<typeof noteCaptureSubmitInputSchema>;
 export type SubmitMessagePayload = z.infer<typeof submitMessagePayloadSchema>;
 export type SubmitDecisionPayload = z.infer<typeof submitDecisionPayloadSchema>;
 export type CreateMemoryImportPayload = z.infer<typeof createMemoryImportPayloadSchema>;
 export type ReconcileMemoryImportPayload = z.infer<typeof reconcileMemoryImportPayloadSchema>;
+
+/* ---------- Configurable Workflow公开Query DTO ---------- */
+
+const publicConfigFieldSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("boolean"),
+      name: z.string().min(1).max(64),
+      label: z.string().min(1).max(120),
+      defaultValue: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.union([z.literal("enum_select"), z.literal("review_mode")]),
+      name: z.string().min(1).max(64),
+      label: z.string().min(1).max(120),
+      defaultValue: z.string().min(1).max(80),
+      options: z.array(z.string().min(1).max(80)).min(1).max(20),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("bounded_integer"),
+      name: z.string().min(1).max(64),
+      label: z.string().min(1).max(120),
+      defaultValue: z.number().int(),
+      minimum: z.number().int(),
+      maximum: z.number().int(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("short_text"),
+      name: z.string().min(1).max(64),
+      label: z.string().min(1).max(120),
+      defaultValue: z.string().max(200),
+      maximumLength: z.number().int().positive().max(2000),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("tag_list"),
+      name: z.string().min(1).max(64),
+      label: z.string().min(1).max(120),
+      maxItems: z.number().int().positive().max(NOTE_TAG_MAX_COUNT),
+      maxLabelLength: z.number().int().positive().max(NOTE_TAG_LABEL_MAX_CHARACTERS),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.union([
+        z.literal("resource_selector"),
+        z.literal("rule_selector"),
+        z.literal("skill_selector"),
+        z.literal("note_source_selector"),
+      ]),
+      name: z.string().min(1).max(64),
+      label: z.string().min(1).max(120),
+      multiple: z.boolean(),
+      required: z.boolean(),
+    })
+    .strict(),
+]);
+
+export const workflowNodeCatalogItemDtoSchema = z
+  .object({
+    nodeType: workflowDefinitionNodeTypeSchema,
+    schemaVersion: z.number().int().positive().max(32),
+    displayName: z.string().min(1).max(120),
+    description: z.string().min(1).max(500),
+    category: z.enum([
+      "context",
+      "policy",
+      "agent",
+      "human",
+      "execution",
+      "validation",
+      "commit",
+      "note",
+    ]),
+    executorKind: workflowExecutorKindSchema,
+    riskPolicy: workflowRiskLevelSchema,
+    /** 仅公开是否允许默认跳过，不公开默认outcome/value等执行细节。 */
+    canDefaultSkip: z.boolean(),
+    supportedBlueprints: z.array(workflowBlueprintKeySchema).min(1).max(4),
+    publicConfigFields: z.array(publicConfigFieldSchema).max(16),
+    outcomes: z.array(z.string().min(1).max(64)).min(1).max(32),
+  })
+  .strict();
+
+export const workflowCatalogDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    nodes: z.array(workflowNodeCatalogItemDtoSchema).max(64),
+  })
+  .strict();
+
+export const workflowBlueprintDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    blueprintKey: workflowBlueprintKeySchema,
+    blueprintVersion: z.number().int().positive().max(32),
+    title: z.string().min(1).max(160),
+    description: z.string().min(1).max(1000),
+    runnerFamily: workflowRunnerFamilySchema,
+    terminalNodeType: workflowDefinitionNodeTypeSchema,
+    optionalNodeTypes: z.array(workflowDefinitionNodeTypeSchema).max(32),
+    loopRules: z
+      .array(
+        z
+          .object({
+            outcomeNodeType: workflowDefinitionNodeTypeSchema,
+            continueOutcomes: z.array(z.string().min(1).max(64)).min(1).max(16),
+            exitOutcomes: z.array(z.string().min(1).max(64)).min(1).max(16),
+            maxIterations: z
+              .number()
+              .int()
+              .positive()
+              .max(WORKFLOW_DEFINITION_CONTRACT_LIMITS.structure.maxLoopIterations),
+          })
+          .strict(),
+      )
+      .max(8),
+    perRunOverrides: z
+      .array(
+        z
+          .object({
+            nodeType: workflowDefinitionNodeTypeSchema,
+            fields: z
+              .array(z.enum(["enabled", "selection", "reviewMode"]))
+              .min(1)
+              .max(8),
+          })
+          .strict(),
+      )
+      .max(32),
+    reviewModes: z.array(workflowReviewModeSchema).min(1).max(3),
+  })
+  .strict();
+
+export const workflowBlueprintsDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    blueprints: z.array(workflowBlueprintDtoSchema).max(16),
+  })
+  .strict();
+
+export const workflowDefinitionPublishedDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    workflowDefinitionId: workflowDefinitionIdSchema,
+    workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+    definitionRevision: z.number().int().positive(),
+    title: z.string().min(1).max(160),
+    description: z.string().min(1).max(1000),
+    blueprintKey: workflowBlueprintKeySchema,
+    blueprintVersion: z.number().int().positive().max(32),
+    definitionSha256: sha256Schema,
+    ownerKind: z.enum(["system", "principal"]),
+    nodes: z
+      .array(
+        z
+          .object({
+            definitionNodeId: workflowDefinitionNodeIdSchema,
+            nodeType: workflowDefinitionNodeTypeSchema,
+            schemaVersion: z.number().int().positive().max(32),
+            displayName: z.string().min(1).max(120),
+            optional: z.boolean(),
+            defaultActivation: z.enum(["enabled", "skipped"]),
+            publicConfigFields: z.array(publicConfigFieldSchema).max(16),
+          })
+          .strict(),
+      )
+      .max(100),
+    publishedAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+
+export const workflowDefinitionsDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    definitions: z.array(workflowDefinitionPublishedDtoSchema).max(100),
+  })
+  .strict();
+
+export const workflowRunConfigSummaryDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema.optional(),
+    runnerFamily: workflowRunnerFamilySchema,
+    runnerBundleVersion: z.string().min(1).max(128),
+    definition: workflowDefinitionPublishedDtoSchema.optional(),
+    definitionSha256: sha256Schema.optional(),
+    nodeCount: z.number().int().nonnegative().max(100),
+    resourceSummary: z
+      .array(
+        z
+          .object({
+            definitionNodeId: workflowDefinitionNodeIdSchema,
+            resourceKind: z.enum(["memory", "project", "rule", "skill"]),
+            resolution: z.enum(["included", "excluded"]),
+            reason: z.string().min(1).max(64).optional(),
+          })
+          .strict(),
+      )
+      .max(128),
+    reviewSummary: z
+      .array(
+        z
+          .object({
+            definitionNodeId: workflowDefinitionNodeIdSchema,
+            mode: workflowReviewModeSchema,
+            actor: z.enum(["user", "system_policy"]),
+          })
+          .strict(),
+      )
+      .max(16),
+    createdAt: z.iso.datetime(),
+  })
+  .strict();
+
+export const workflowResourceRefDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    resourceKind: z.enum(["memory", "project", "rule", "skill"]),
+    resourceId: z
+      .string()
+      .min(3)
+      .max(128)
+      .regex(/^[a-z][a-z0-9]*_[A-Za-z0-9]+$/),
+    revision: z.number().int().positive(),
+    sha256: sha256Schema,
+    status: z.enum(["active", "archived"]),
+    label: z.string().min(1).max(200),
+    source: z.string().min(1).max(80),
+  })
+  .strict();
+
+export const workflowResourcesDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    resources: z.array(workflowResourceRefDtoSchema).max(500),
+  })
+  .strict();
+
+export type WorkflowCatalogDto = z.infer<typeof workflowCatalogDtoSchema>;
+export type WorkflowBlueprintDto = z.infer<typeof workflowBlueprintDtoSchema>;
+export type WorkflowBlueprintsDto = z.infer<typeof workflowBlueprintsDtoSchema>;
+export type WorkflowDefinitionPublishedDto = z.infer<typeof workflowDefinitionPublishedDtoSchema>;
+export type WorkflowDefinitionsDto = z.infer<typeof workflowDefinitionsDtoSchema>;
+export type WorkflowRunConfigSummaryDto = z.infer<typeof workflowRunConfigSummaryDtoSchema>;
+export type WorkflowResourceRefDto = z.infer<typeof workflowResourceRefDtoSchema>;
+export type WorkflowResourcesDto = z.infer<typeof workflowResourcesDtoSchema>;
 
 /* ---------- Memory backend 与 Run Context ---------- */
 
@@ -362,7 +680,7 @@ export const runDtoSchema = z
     currentApprovalRequestId: approvalRequestIdSchema.optional(),
     finalMessageId: messageIdSchema.optional(),
     failure: runFailureSchema.optional(),
-    maxPlanRevisions: z.number().int().positive(),
+    maxPlanRevisions: z.number().int().positive().optional(),
     /** 浏览器只根据本字段呈现可执行动作，不自行猜测状态机。 */
     allowedActions: z.array(runAllowedActionSchema),
     revision: z.number().int().positive(),

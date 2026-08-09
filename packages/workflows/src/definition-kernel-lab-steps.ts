@@ -4,12 +4,12 @@ import {
   DEFAULT_NODE_CATALOG,
   DEFAULT_WORKFLOW_BLUEPRINTS,
   validateDefinitionAgainstBlueprint,
-  validateWorkflowRunSpecIntegrity,
-  type WorkflowRunSpec,
 } from "@chat/application";
+import { workflowRunSpecSchema, type WorkflowRunSpec } from "@chat/contracts";
 import {
   WORKFLOW_KERNEL_LIMITS,
   canonicalJsonStringify,
+  hashCanonical,
   sha256Hex,
   validateWorkflowStructure,
   type WorkflowNodeTypeKey,
@@ -70,10 +70,17 @@ export async function loadDefinitionKernelRunSpecStep(input: {
 }): Promise<WorkflowRunSpec> {
   "use step";
   const loaded = await getKernelLabRuntimePort().loadRunSpec(input);
-  const integrity = validateWorkflowRunSpecIntegrity(loaded);
-  if (!integrity.success)
-    throw new FatalError(integrity.diagnostics[0]?.code ?? "run_spec.invalid");
-  const runSpec = integrity.runSpec;
+  const parsed = workflowRunSpecSchema.safeParse(loaded);
+  if (!parsed.success) throw new FatalError("run_spec.schema_invalid");
+  const runSpec = parsed.data;
+  const { sha256 } = runSpec;
+  const hashPayload = { ...runSpec } as Record<string, unknown>;
+  for (const key of ["schemaVersion", "workflowRunSpecId", "productRunId", "sha256", "createdAt"]) {
+    delete hashPayload[key];
+  }
+  if (hashCanonical("workflow-run-spec.v1", hashPayload) !== sha256) {
+    throw new FatalError("run_spec.hash_mismatch");
+  }
   if (
     runSpec.workflowRunSpecId !== input.workflowRunSpecId ||
     runSpec.productRunId !== input.productRunId

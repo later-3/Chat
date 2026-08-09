@@ -15,6 +15,7 @@ htmlcov/
 .test-artifacts/
 .pi/
 .workflow/
+.workflow-data/
 .vercel/
 *.db
 *.db-*

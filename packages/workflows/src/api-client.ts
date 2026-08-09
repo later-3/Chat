@@ -40,6 +40,33 @@ import {
   prepareProjectCandidateRequestSchema,
   prepareProjectAdvancementCandidateRequestSchema,
   projectCandidateDtoSchema,
+  loadWorkflowRunSpecRequestSchema,
+  loadWorkflowRunSpecResponseSchema,
+  transitionConfigurablePlanningNodeRequestSchema,
+  preparePlanningMemoryContextRequestSchema,
+  preparePlanningMemoryContextResponseSchema,
+  preparePlanningProjectContextRequestSchema,
+  preparePlanningProjectContextResponseSchema,
+  preparePlanningRulesContextRequestSchema,
+  preparePlanningRulesContextResponseSchema,
+  commitRunOutcomeUnknownRuntimeRequestSchema,
+  publishNoteCandidateRuntimeRequestSchema,
+  publishNoteCandidateRuntimeResponseSchema,
+  prepareNoteCaptureInputRuntimeRequestSchema,
+  prepareNoteCaptureInputRuntimeResponseSchema,
+  loadNoteDecisionRuntimeRequestSchema,
+  loadNoteDecisionRuntimeResponseSchema,
+  commitConfirmedNoteRuntimeRequestSchema,
+  commitConfirmedNoteRuntimeResponseSchema,
+  type LoadWorkflowRunSpecRequest,
+  type TransitionConfigurablePlanningNodeRequest,
+  type PreparePlanningMemoryContextRequest,
+  type PreparePlanningProjectContextRequest,
+  type PreparePlanningRulesContextRequest,
+  type PublishNoteCandidateRuntimeRequest,
+  type PrepareNoteCaptureInputRuntimeRequest,
+  type LoadNoteDecisionRuntimeRequest,
+  type CommitConfirmedNoteRuntimeRequest,
 } from "@chat/contracts";
 import { z, type ZodType } from "zod";
 
@@ -139,6 +166,137 @@ async function call<TReq, TRes>(
 
 export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
   return {
+    loadWorkflowRunSpec(input: Omit<LoadWorkflowRunSpecRequest, "schemaVersion">) {
+      return call(
+        options,
+        "/internal/runtime/v1/load-workflow-run-spec",
+        loadWorkflowRunSpecRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        loadWorkflowRunSpecResponseSchema,
+      );
+    },
+    preparePlanningMemoryContext(
+      input: Omit<PreparePlanningMemoryContextRequest, "schemaVersion">,
+    ) {
+      return call(
+        options,
+        "/internal/runtime/v1/prepare-planning-memory-context",
+        preparePlanningMemoryContextRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        preparePlanningMemoryContextResponseSchema,
+      );
+    },
+    preparePlanningProjectContext(
+      input: Omit<PreparePlanningProjectContextRequest, "schemaVersion">,
+    ) {
+      return call(
+        options,
+        "/internal/runtime/v1/prepare-planning-project-context",
+        preparePlanningProjectContextRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        preparePlanningProjectContextResponseSchema,
+      );
+    },
+    preparePlanningRulesContext(input: Omit<PreparePlanningRulesContextRequest, "schemaVersion">) {
+      return call(
+        options,
+        "/internal/runtime/v1/prepare-planning-rules-context",
+        preparePlanningRulesContextRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        preparePlanningRulesContextResponseSchema,
+      );
+    },
+    prepareNoteCaptureInput(input: Omit<PrepareNoteCaptureInputRuntimeRequest, "schemaVersion">) {
+      return call(
+        options,
+        "/internal/runtime/v1/prepare-note-capture-input",
+        prepareNoteCaptureInputRuntimeRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        prepareNoteCaptureInputRuntimeResponseSchema,
+      );
+    },
+    publishNoteCandidate(input: Omit<PublishNoteCandidateRuntimeRequest, "schemaVersion">) {
+      return call(
+        options,
+        "/internal/runtime/v1/publish-note-candidate",
+        publishNoteCandidateRuntimeRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        publishNoteCandidateRuntimeResponseSchema,
+      );
+    },
+    loadNoteDecision(input: Omit<LoadNoteDecisionRuntimeRequest, "schemaVersion">) {
+      return call(
+        options,
+        "/internal/runtime/v1/load-note-decision",
+        loadNoteDecisionRuntimeRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        loadNoteDecisionRuntimeResponseSchema,
+      );
+    },
+    commitConfirmedNote(input: Omit<CommitConfirmedNoteRuntimeRequest, "schemaVersion">) {
+      return call(
+        options,
+        "/internal/runtime/v1/commit-confirmed-note",
+        commitConfirmedNoteRuntimeRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        commitConfirmedNoteRuntimeResponseSchema,
+      );
+    },
+    transitionConfigurablePlanningNode(
+      input: Omit<TransitionConfigurablePlanningNodeRequest, "schemaVersion">,
+    ) {
+      return call(
+        options,
+        "/internal/runtime/v1/transition-configurable-planning-node",
+        transitionConfigurablePlanningNodeRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        z
+          .object({
+            workflowNodeRunId: z.string().regex(/^wnr_[A-Za-z0-9]+$/),
+            revision: z.number().int().positive(),
+          })
+          .strict(),
+      );
+    },
+    commitRunOutcomeUnknown(input: {
+      commandId: string;
+      productRunId: string;
+      errorCode: string;
+      summary: string;
+    }) {
+      return call(
+        options,
+        "/internal/runtime/v1/commit-run-outcome-unknown",
+        commitRunOutcomeUnknownRuntimeRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        z
+          .object({
+            schemaVersion: z.literal(INTERNAL_RUNTIME_SCHEMA_VERSION),
+            status: z.literal("committed"),
+          })
+          .strict(),
+      );
+    },
     prepareProjectCandidate(input: {
       commandId: string;
       projectCandidateId: string;

@@ -143,6 +143,20 @@ describe("Rule持久合同", () => {
         selectedTagIds: ["rtg_quality"],
       },
       budget: { maxRules: 10, maxContentCharacters: 8_000 },
+      candidates: [
+        {
+          ruleId: "rul_quality",
+          ruleRevisionId: "rrv_quality1",
+          ruleRevisionSha256: shaA,
+          lifecycle: "active" as const,
+          enforcement: "user_selectable" as const,
+          priority: 500,
+          tagIds: ["rtg_quality"],
+          scopes: [scope],
+          conflictsWithRuleIds: [],
+          contentCharacters: 21,
+        },
+      ],
       status: "ready" as const,
       selected: [
         {

@@ -15,8 +15,13 @@ import {
   submitMessagePayloadSchema,
 } from "./product-api.js";
 import {
+  commitConfirmedNoteRuntimeRequestSchema,
   commitExecutionResultRequestSchema,
+  loadNoteDecisionRuntimeRequestSchema,
+  prepareNoteCaptureInputRuntimeRequestSchema,
+  prepareNoteCaptureInputRuntimeResponseSchema,
   persistValidationResultRequestSchema,
+  publishNoteCandidateRuntimeRequestSchema,
 } from "./internal-runtime.js";
 
 const NOW = "2026-08-07T12:00:00.000Z";
@@ -110,11 +115,14 @@ describe("product entity contracts", () => {
 
   it("Product Run拒绝未知status/phase组合以外的值", () => {
     const base = {
-      schemaVersion: "product-run.v2",
+      schemaVersion: "product-run.v3",
+      runKind: "planning",
       productRunId: "run_1",
       sessionId: "psn_1",
       sourceMessageId: "msg_1",
       workflowViewDefinitionId: "wvd_planninglegacyv1",
+      runnerFamily: "legacy-planning.v1",
+      runnerBundleVersion: "legacy-planning.bundle.v1",
       status: "waiting_human",
       phase: "plan_review",
       maxPlanRevisions: 5,
@@ -152,6 +160,25 @@ describe("product entity contracts", () => {
       updatedAt: NOW,
     });
     expect(entry.status).toBe("pending");
+    const noteResume = outboxEntrySchema.parse({
+      ...entry,
+      outboxId: "obx_2",
+      approvalRequestId: undefined,
+      decisionId: undefined,
+      hookNoteCandidateId: "ntc_1",
+      noteCandidateId: "ntc_1",
+      noteDecisionId: "ntd_1",
+    });
+    expect(noteResume.kind).toBe("workflow_resume");
+    expect(() =>
+      outboxEntrySchema.parse({
+        ...entry,
+        outboxId: "obx_3",
+        hookNoteCandidateId: "ntc_1",
+        noteCandidateId: "ntc_1",
+        noteDecisionId: "ntd_1",
+      }),
+    ).toThrow();
     expect(() => outboxEntrySchema.parse({ ...entry, hookToken: "secret" })).toThrow();
   });
 });
@@ -180,6 +207,7 @@ describe("product api command payloads", () => {
       productRunId: "run_1",
       executionContractId: "exc_1",
       executionCandidateId: "xcd_1",
+      strictEvidence: true,
     };
     expect(persistValidationResultRequestSchema.parse(validation)).toEqual(validation);
     expect(() =>
@@ -191,7 +219,11 @@ describe("product api command payloads", () => {
     ).toThrow();
 
     const commit = {
-      ...validation,
+      schemaVersion: validation.schemaVersion,
+      commandId: validation.commandId,
+      productRunId: validation.productRunId,
+      executionContractId: validation.executionContractId,
+      executionCandidateId: validation.executionCandidateId,
       validationResultId: "val_1",
     };
     expect(commitExecutionResultRequestSchema.parse(commit)).toEqual(commit);
@@ -201,6 +233,71 @@ describe("product api command payloads", () => {
         renderedMarkdown: "绕过Candidate注入的正文",
       }),
     ).toThrow();
+  });
+
+  it("Note Runtime私有合同不接受伪造source/sourceRefs且Decision加载不访问DTO union shape", () => {
+    const proposed = {
+      title: "候选笔记",
+      kind: "general",
+      contentMarkdown: "候选正文",
+      tagLabels: [],
+    };
+    const request = {
+      schemaVersion: "chat-internal-runtime.v1",
+      commandId: "cmd_notepublish1",
+      productRunId: "run_notepublish1",
+      proposed,
+    };
+    expect(publishNoteCandidateRuntimeRequestSchema.parse(request)).toEqual(request);
+    expect(() =>
+      publishNoteCandidateRuntimeRequestSchema.parse({
+        ...request,
+        sourceRefs: [],
+      }),
+    ).toThrow();
+    expect(() =>
+      publishNoteCandidateRuntimeRequestSchema.parse({
+        ...request,
+        source: { kind: "full_message" },
+      }),
+    ).toThrow();
+
+    const prepare = {
+      schemaVersion: "chat-internal-runtime.v1",
+      productRunId: "run_notepublish1",
+      workflowRunSpecId: "wrs_notepublish1",
+    };
+    expect(prepareNoteCaptureInputRuntimeRequestSchema.parse(prepare)).toEqual(prepare);
+    expect(
+      prepareNoteCaptureInputRuntimeResponseSchema.parse({
+        ...prepare,
+        source: {
+          kind: "full_message",
+          sourceMessageId: "msg_notepublish1",
+          sourceMessageSha256: HASH_A,
+        },
+        sourceText: "Runtime只能读取Application派生的来源正文",
+        defaultKind: "general",
+        suggestedTagLabels: ["Runtime"],
+      }).sourceText,
+    ).toContain("Application");
+
+    const load = {
+      schemaVersion: "chat-internal-runtime.v1",
+      productRunId: "run_notepublish1",
+      workflowRunSpecId: "wrs_notepublish1",
+      noteCandidateId: "ntc_notepublish1",
+      noteDecisionId: "ntd_notepublish1",
+    };
+    expect(loadNoteDecisionRuntimeRequestSchema.parse(load)).toEqual(load);
+
+    const commit = {
+      schemaVersion: "chat-internal-runtime.v1",
+      commandId: "cmd_notecommit1",
+      productRunId: "run_notepublish1",
+      noteCandidateId: "ntc_notepublish1",
+    };
+    expect(commitConfirmedNoteRuntimeRequestSchema.parse(commit)).toEqual(commit);
   });
 
   it("Message payload拒绝浏览器指定Provider/模型/Runtime参数", () => {

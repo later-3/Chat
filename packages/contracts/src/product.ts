@@ -9,7 +9,11 @@ import {
   messageIdSchema,
   memoryImportIntentIdSchema,
   memoryImportResultIdSchema,
+  noteCandidateIdSchema,
+  noteDecisionIdSchema,
   outboxEntryIdSchema,
+  planningMemorySelectionIdSchema,
+  planningProjectContextIdSchema,
   planIdSchema,
   planRevisionIdSchema,
   principalIdSchema,
@@ -17,13 +21,16 @@ import {
   productSessionIdSchema,
   projectCandidateIdSchema,
   revisionInputIdSchema,
+  ruleSelectionIdSchema,
   runAttemptIdSchema,
   contextPackageIdSchema,
   validationResultIdSchema,
   workflowViewDefinitionIdSchema,
+  workflowRunSpecIdSchema,
 } from "./ids.js";
 import { sha256Schema } from "./hash.js";
 import { B2_MAX_PLAN_STEPS } from "./versions.js";
+import { workflowRunnerFamilySchema } from "./workflow-definition.js";
 
 /**
  * B2产品持久化实体合同（任务书§8.3、§9）。
@@ -102,7 +109,7 @@ export const productRunStatusSchema = z.enum([
 ]);
 
 /** phase解释当前用户可见阶段；status才是权威生命周期，不得建立第二套终态。 */
-export const productRunPhaseSchema = z.enum([
+export const planningRunPhaseSchema = z.enum([
   "queued",
   "planning",
   "plan_review",
@@ -111,6 +118,16 @@ export const productRunPhaseSchema = z.enum([
   "completed",
   "rejected",
 ]);
+export const noteCaptureRunPhaseSchema = z.enum([
+  "queued",
+  "extracting",
+  "classifying",
+  "note_review",
+  "committing",
+  "completed",
+  "rejected",
+]);
+export const productRunPhaseSchema = z.union([planningRunPhaseSchema, noteCaptureRunPhaseSchema]);
 
 /** 用户可读的安全失败摘要；不携带Provider Payload、Stack或内部诊断。 */
 export const runFailureSchema = z
@@ -130,7 +147,7 @@ export const productRunV1Schema = z
     sessionId: productSessionIdSchema,
     sourceMessageId: messageIdSchema,
     status: productRunStatusSchema,
-    phase: productRunPhaseSchema,
+    phase: planningRunPhaseSchema,
     currentPlanId: planIdSchema.optional(),
     currentPlanRevision: z.number().int().positive().optional(),
     currentApprovalRequestId: approvalRequestIdSchema.optional(),
@@ -143,8 +160,8 @@ export const productRunV1Schema = z
   })
   .strict();
 
-/** S1起每个Run必须绑定当时的用户可见图快照；运行语义仍保持原Planning状态机。 */
-export const productRunSchema = z
+/** S1/S2历史Run形状；只用于Store迁移与旧Fixture解析。 */
+export const productRunV2Schema = z
   .object({
     schemaVersion: z.literal("product-run.v2"),
     productRunId: productRunIdSchema,
@@ -152,7 +169,7 @@ export const productRunSchema = z
     sourceMessageId: messageIdSchema,
     workflowViewDefinitionId: workflowViewDefinitionIdSchema,
     status: productRunStatusSchema,
-    phase: productRunPhaseSchema,
+    phase: planningRunPhaseSchema,
     currentPlanId: planIdSchema.optional(),
     currentPlanRevision: z.number().int().positive().optional(),
     currentApprovalRequestId: approvalRequestIdSchema.optional(),
@@ -162,6 +179,66 @@ export const productRunSchema = z
     ...entityBaseFields,
   })
   .strict();
+
+/** S4起Run显式成为planning分支，并绑定Runner版本证据与可选RunSpec。 */
+export const planningProductRunSchema = z
+  .object({
+    schemaVersion: z.literal("product-run.v3"),
+    runKind: z.literal("planning"),
+    productRunId: productRunIdSchema,
+    sessionId: productSessionIdSchema,
+    sourceMessageId: messageIdSchema,
+    workflowViewDefinitionId: workflowViewDefinitionIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema.optional(),
+    runnerFamily: workflowRunnerFamilySchema,
+    runnerBundleVersion: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[A-Za-z0-9._-]+$/),
+    status: productRunStatusSchema,
+    phase: planningRunPhaseSchema,
+    currentPlanId: planIdSchema.optional(),
+    currentPlanRevision: z.number().int().positive().optional(),
+    currentApprovalRequestId: approvalRequestIdSchema.optional(),
+    finalMessageId: messageIdSchema.optional(),
+    failure: runFailureSchema.optional(),
+    maxPlanRevisions: z.number().int().positive().max(20),
+    ...entityBaseFields,
+  })
+  .strict();
+
+/**
+ * S5 Note Capture使用独立Run分支，明确不携带Plan/Approval字段。
+ * Runner/RunSpec字段继续复用S4合同，避免为第二业务流程复制Runtime身份。
+ */
+export const noteCaptureProductRunSchema = z
+  .object({
+    schemaVersion: z.literal("product-run.v3"),
+    runKind: z.literal("note_capture"),
+    productRunId: productRunIdSchema,
+    sessionId: productSessionIdSchema,
+    sourceMessageId: messageIdSchema,
+    workflowViewDefinitionId: workflowViewDefinitionIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema.optional(),
+    runnerFamily: workflowRunnerFamilySchema,
+    runnerBundleVersion: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[A-Za-z0-9._-]+$/),
+    status: productRunStatusSchema,
+    phase: noteCaptureRunPhaseSchema,
+    finalMessageId: messageIdSchema.optional(),
+    failure: runFailureSchema.optional(),
+    ...entityBaseFields,
+  })
+  .strict();
+
+export const productRunSchema = z.discriminatedUnion("runKind", [
+  planningProductRunSchema,
+  noteCaptureProductRunSchema,
+]);
 
 /* ---------- Run Attempt ---------- */
 
@@ -188,6 +265,12 @@ export const runAttemptSchema = z
     modelConfigVersion: z.string().min(1).max(100).optional(),
     contextPackageId: contextPackageIdSchema.optional(),
     contextPackageSha256: sha256Schema.optional(),
+    planningMemorySelectionId: planningMemorySelectionIdSchema.optional(),
+    planningMemorySelectionSha256: sha256Schema.optional(),
+    planningProjectContextId: planningProjectContextIdSchema.optional(),
+    planningProjectContextSha256: sha256Schema.optional(),
+    ruleSelectionId: ruleSelectionIdSchema.optional(),
+    ruleSelectionSha256: sha256Schema.optional(),
     outcome: runAttemptOutcomeSchema,
     errorCode: z
       .string()
@@ -438,6 +521,8 @@ export const validationResultSchema = z
     productRunId: productRunIdSchema,
     executionContractId: executionContractIdSchema,
     executionCandidateId: executionCandidateIdSchema,
+    /** 旧固定Runner缺省为true；新Runner必须显式持久化冻结的验证策略。 */
+    strictEvidence: z.boolean().optional(),
     outcome: z.enum(["pass", "fail"]),
     failures: z
       .array(
@@ -534,6 +619,14 @@ export const outboxEntrySchema = z.discriminatedUnion("kind", [
       ...outboxCommonFields,
       kind: z.literal("workflow_start"),
       productRunId: productRunIdSchema,
+      workflowRunSpecId: workflowRunSpecIdSchema.optional(),
+      runnerFamily: workflowRunnerFamilySchema.optional(),
+      runnerBundleVersion: z
+        .string()
+        .min(1)
+        .max(128)
+        .regex(/^[A-Za-z0-9._-]+$/)
+        .optional(),
     })
     .strict(),
   z
@@ -541,10 +634,45 @@ export const outboxEntrySchema = z.discriminatedUnion("kind", [
       ...outboxCommonFields,
       kind: z.literal("workflow_resume"),
       productRunId: productRunIdSchema,
-      approvalRequestId: approvalRequestIdSchema,
-      decisionId: decisionIdSchema,
+      approvalRequestId: approvalRequestIdSchema.optional(),
+      decisionId: decisionIdSchema.optional(),
+      hookNoteCandidateId: noteCandidateIdSchema.optional(),
+      noteCandidateId: noteCandidateIdSchema.optional(),
+      noteDecisionId: noteDecisionIdSchema.optional(),
+      workflowRunSpecId: workflowRunSpecIdSchema.optional(),
+      runnerFamily: workflowRunnerFamilySchema.optional(),
+      runnerBundleVersion: z
+        .string()
+        .min(1)
+        .max(128)
+        .regex(/^[A-Za-z0-9._-]+$/)
+        .optional(),
     })
-    .strict(),
+    .strict()
+    .check((ctx) => {
+      const value = ctx.value;
+      const hasPlanning = value.approvalRequestId !== undefined || value.decisionId !== undefined;
+      const hasNote =
+        value.hookNoteCandidateId !== undefined ||
+        value.noteCandidateId !== undefined ||
+        value.noteDecisionId !== undefined;
+      if (
+        hasPlanning === hasNote ||
+        (hasPlanning &&
+          (value.approvalRequestId === undefined || value.decisionId === undefined)) ||
+        (hasNote &&
+          (value.hookNoteCandidateId === undefined ||
+            value.noteCandidateId === undefined ||
+            value.noteDecisionId === undefined))
+      ) {
+        ctx.issues.push({
+          code: "custom",
+          input: value,
+          message: "workflow_resume必须且只能携带Planning或Note决定引用",
+          path: ["kind"],
+        });
+      }
+    }),
   z
     .object({
       ...outboxCommonFields,

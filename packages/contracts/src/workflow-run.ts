@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { WORKFLOW_DEFINITION_CONTRACT_LIMITS } from "./workflow-definition.js";
 import { sha256Schema } from "./hash.js";
 import {
   approvalRequestIdSchema,
@@ -7,11 +8,21 @@ import {
   executionCandidateIdSchema,
   executionContractIdSchema,
   messageIdSchema,
+  memoryResultSnapshotIdSchema,
+  noteCandidateIdSchema,
+  noteDecisionIdSchema,
+  noteRevisionIdSchema,
   nodeRunTransitionIdSchema,
   nodeValueManifestIdSchema,
   planRevisionIdSchema,
+  planningMemorySelectionIdSchema,
+  planningProjectContextIdSchema,
+  projectIdSchema,
+  ruleRevisionIdSchema,
+  ruleSelectionIdSchema,
   productRunIdSchema,
   validationResultIdSchema,
+  workflowPolicyResolutionIdSchema,
   workflowDefinitionIdSchema,
   workflowNodeRunIdSchema,
   workflowViewDefinitionIdSchema,
@@ -143,6 +154,42 @@ export const nodeProductRefSchema = z.discriminatedUnion("kind", [
   z
     .object({
       ...productRefBase,
+      kind: z.literal("memory_result_snapshot"),
+      id: memoryResultSnapshotIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...productRefBase,
+      kind: z.literal("planning_memory_selection"),
+      id: planningMemorySelectionIdSchema,
+    })
+    .strict(),
+  z.object({ ...productRefBase, kind: z.literal("project"), id: projectIdSchema }).strict(),
+  z
+    .object({
+      ...productRefBase,
+      kind: z.literal("planning_project_context"),
+      id: planningProjectContextIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...productRefBase,
+      kind: z.literal("rule_revision"),
+      id: ruleRevisionIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...productRefBase,
+      kind: z.literal("rule_selection"),
+      id: ruleSelectionIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...productRefBase,
       kind: z.literal("plan_revision"),
       id: planRevisionIdSchema,
     })
@@ -155,6 +202,34 @@ export const nodeProductRefSchema = z.discriminatedUnion("kind", [
     })
     .strict(),
   z.object({ ...productRefBase, kind: z.literal("decision"), id: decisionIdSchema }).strict(),
+  z
+    .object({
+      ...productRefBase,
+      kind: z.literal("note_candidate"),
+      id: noteCandidateIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...productRefBase,
+      kind: z.literal("note_decision"),
+      id: noteDecisionIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...productRefBase,
+      kind: z.literal("note_revision"),
+      id: noteRevisionIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...productRefBase,
+      kind: z.literal("workflow_policy_resolution"),
+      id: workflowPolicyResolutionIdSchema,
+    })
+    .strict(),
   z
     .object({
       ...productRefBase,
@@ -192,7 +267,9 @@ export const nodeValueManifestSchema = z
     nodeValueManifestId: nodeValueManifestIdSchema,
     workflowNodeRunId: workflowNodeRunIdSchema,
     direction: z.enum(["input", "output"]),
-    slots: z.array(nodeValueManifestSlotSchema).max(30),
+    slots: z
+      .array(nodeValueManifestSlotSchema)
+      .max(WORKFLOW_DEFINITION_CONTRACT_LIMITS.projection.maxManifestSlots),
     sha256: sha256Schema,
     revision: z.number().int().positive(),
     createdAt: z.iso.datetime(),

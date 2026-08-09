@@ -1,4 +1,3 @@
-import type { ExecutionContract } from "@chat/contracts";
 import { getWorkflowRuntimeContext } from "./runtime-context.js";
 import { cmdId, runStep, wrapApiError } from "./workflow-step-support.js";
 
@@ -63,30 +62,45 @@ export async function persistExecutionCandidateStep(input: {
   });
 }
 
-export async function validateExecutionStep(input: {
-  contract: ExecutionContract;
-  executionCandidateId: string;
-  workflowAttemptId: string;
-}): Promise<{
+export async function validateExecutionStep(
+  input:
+    | {
+        productRunId: string;
+        executionContractId: string;
+        executionCandidateId: string;
+        workflowAttemptId: string;
+        strictEvidence: boolean;
+      }
+    | {
+        /** Legacy Runner兼容输入；新Runner禁止把完整Contract跨checkpoint传入。 */
+        contract: import("@chat/contracts").ExecutionContract;
+        executionCandidateId: string;
+        workflowAttemptId: string;
+      },
+): Promise<{
   outcome: "pass" | "fail";
   validationResultId: string;
   failures: { code: string; detail: string }[];
 }> {
   "use step";
-  const productRunId = input.contract.productRunId;
+  const productRunId = "contract" in input ? input.contract.productRunId : input.productRunId;
+  const executionContractId =
+    "contract" in input ? input.contract.executionContractId : input.executionContractId;
+  const strictEvidence = "strictEvidence" in input ? input.strictEvidence : true;
   return runStep(productRunId, input.workflowAttemptId, "validate_execution", async () => {
     const ctx = getWorkflowRuntimeContext();
     try {
       const result = await ctx.api.persistValidationResult({
         commandId: cmdId(
           "persist-validation-result",
-          input.contract.productRunId,
+          productRunId,
           input.executionCandidateId,
         ) as never,
-        productRunId: input.contract.productRunId as never,
-        executionContractId: input.contract.executionContractId as never,
+        productRunId: productRunId as never,
+        executionContractId: executionContractId as never,
         executionCandidateId: input.executionCandidateId as never,
-      });
+        strictEvidence,
+      } as never);
       return {
         outcome: result.outcome,
         validationResultId: result.validationResultId,
@@ -157,6 +171,36 @@ export async function commitRunFailureStep(input: {
       await ctx.api.commitRunFailure({
         commandId: cmdId("commit-run-failure", input.productRunId, input.errorCode) as never,
         productRunId: input.productRunId as never,
+        errorCode: input.errorCode,
+        summary: input.summary,
+      });
+    } catch (error) {
+      wrapApiError(error);
+    }
+  });
+}
+
+/**
+ * 外部副作用越过请求边界后失去响应时，必须提交独立unknown终态；不能降级为普通
+ * failed后让调度器自动重试。commandId按Run+error稳定，Workflow重放不会重复处置。
+ */
+export async function commitRunOutcomeUnknownStep(input: {
+  productRunId: string;
+  attemptId: string;
+  errorCode: string;
+  summary: string;
+}): Promise<void> {
+  "use step";
+  return runStep(input.productRunId, input.attemptId, "commit_run_outcome_unknown", async () => {
+    const ctx = getWorkflowRuntimeContext();
+    try {
+      await ctx.api.commitRunOutcomeUnknown({
+        commandId: cmdId(
+          "commit-run-outcome-unknown",
+          input.productRunId,
+          input.errorCode,
+        ) as never,
+        productRunId: input.productRunId,
         errorCode: input.errorCode,
         summary: input.summary,
       });

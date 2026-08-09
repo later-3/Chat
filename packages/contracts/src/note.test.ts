@@ -41,6 +41,7 @@ describe("Note持久合同", () => {
         schemaVersion: "note.v1",
         noteId: "nte_note1",
         ownerPrincipalId: "usr_owner1",
+        sourceCandidateId: "ntc_candidate1",
         currentRevisionId: "ntr_note1v1",
         status: "active",
         revision: 1,

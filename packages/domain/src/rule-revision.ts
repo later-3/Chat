@@ -25,10 +25,10 @@ export type RuleScopeShape =
       readonly ruleScopeId: string;
       readonly kind: "contextual";
       readonly scenario: RuleScenarioShape;
-      readonly projectMethodProfileId?: string;
-      readonly projectStageKey?: string;
-      readonly workflowNodeKey?: string;
-      readonly projectId?: string;
+      readonly projectMethodProfileId?: string | undefined;
+      readonly projectStageKey?: string | undefined;
+      readonly workflowNodeKey?: string | undefined;
+      readonly projectId?: string | undefined;
     };
 
 export type RuleRevisionOriginShape =
@@ -45,7 +45,8 @@ export interface RuleRevisionSnapshotShape {
   readonly ruleRevisionId: string;
   readonly ruleId: string;
   readonly revision: number;
-  readonly supersedesRevisionId?: string;
+  readonly supersedesRevisionId?: string | undefined;
+  readonly supersedesRevisionSha256?: string | undefined;
   readonly body: string;
   readonly rationale: string;
   readonly appliesWhen: readonly string[];
@@ -133,6 +134,7 @@ export function computeRuleRevisionSha256(
     ruleId: input.ruleId,
     revision: input.revision,
     supersedesRevisionId: input.supersedesRevisionId ?? null,
+    supersedesRevisionSha256: input.supersedesRevisionSha256 ?? null,
     body: input.body,
     rationale: input.rationale,
     appliesWhen: input.appliesWhen,
@@ -153,13 +155,19 @@ export function computeRuleRevisionSha256(
 }
 
 export function assertRuleRevisionIntegrity(revision: RuleRevisionSnapshotShape): void {
-  if (revision.revision === 1 && revision.supersedesRevisionId !== undefined) {
+  if (
+    revision.revision === 1 &&
+    (revision.supersedesRevisionId !== undefined || revision.supersedesRevisionSha256 !== undefined)
+  ) {
     throw new RuleDomainError(
       "rule_revision_initial_supersedes_invalid",
       "首个Rule Revision不能引用被替代Revision",
     );
   }
-  if (revision.revision > 1 && revision.supersedesRevisionId === undefined) {
+  if (
+    revision.revision > 1 &&
+    (revision.supersedesRevisionId === undefined || revision.supersedesRevisionSha256 === undefined)
+  ) {
     throw new RuleDomainError(
       "rule_revision_supersedes_required",
       "后续Rule Revision必须引用上一Revision",
@@ -206,6 +214,12 @@ export function assertRuleRevisionAppend(input: {
     throw new RuleDomainError(
       "rule_revision_supersedes_mismatch",
       "新Revision必须精确引用当前Revision",
+    );
+  }
+  if (input.next.supersedesRevisionSha256 !== input.current.sha256) {
+    throw new RuleDomainError(
+      "rule_revision_supersedes_hash_mismatch",
+      "新Revision必须精确引用当前Revision Hash",
     );
   }
 }

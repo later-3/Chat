@@ -285,6 +285,7 @@ describe("Note Revision不可变事实", () => {
     const note = {
       noteId: "nte_note1",
       ownerPrincipalId: "usr_owner1",
+      sourceCandidateId: "ntc_candidate1",
       currentRevisionId: second.noteRevisionId,
       status: "active" as const,
       revision: 2,
