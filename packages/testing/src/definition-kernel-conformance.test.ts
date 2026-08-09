@@ -4,14 +4,13 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_NODE_CATALOG,
   DEFAULT_WORKFLOW_BLUEPRINTS,
-  compileWorkflowRunSpec,
-  kernelCompilerInputFixture,
   nodeExecutorKey,
-  normalizeWorkflowDefinition,
-  parseWorkflowDefinitionRevision,
 } from "@chat/application";
+import { workflowDefinitionRevisionInputSchema } from "@chat/contracts";
 import { validateWorkflowStructure, type WorkflowSequence } from "@chat/domain";
 import { DEFINITION_KERNEL_EXECUTORS, KernelExecutorRegistry } from "@chat/workflows";
+import { compileWorkflowRunSpec } from "@chat/application/workflow-run-spec-compiler";
+import { kernelCompilerInputFixture } from "@chat/application/workflow-kernel-fixtures";
 
 describe("Definition Kernel三方Conformance", () => {
   it("Catalog、Blueprint与静态Executor集合完全对齐", () => {
@@ -74,29 +73,27 @@ describe("Definition Kernel三方Conformance", () => {
         blueprintVersion: 1,
         semanticRoot: root,
       };
-      const parsed = parseWorkflowDefinitionRevision(definition);
+      const parsed = workflowDefinitionRevisionInputSchema.safeParse(definition);
       expect(parsed.success).toBe(true);
       if (!parsed.success) continue;
-      const normalized = normalizeWorkflowDefinition(
-        parsed.definition.semanticRoot,
-        DEFAULT_NODE_CATALOG,
+      const first = compileWorkflowRunSpec(
+        kernelCompilerInputFixture("sequence", { definition: parsed.data }),
       );
-      expect(normalized.success).toBe(true);
-      if (!normalized.success) continue;
-      const reparsed = parseWorkflowDefinitionRevision({
-        ...definition,
-        semanticRoot: normalized.normalized.semanticRoot,
+      expect(first.success).toBe(true);
+      if (!first.success) continue;
+      const reparsed = workflowDefinitionRevisionInputSchema.safeParse({
+        ...parsed.data,
+        semanticRoot: first.runSpec.semanticRoot,
       });
       expect(reparsed.success).toBe(true);
       if (!reparsed.success) continue;
-      const normalizedAgain = normalizeWorkflowDefinition(
-        reparsed.definition.semanticRoot,
-        DEFAULT_NODE_CATALOG,
+      const second = compileWorkflowRunSpec(
+        kernelCompilerInputFixture("sequence", { definition: reparsed.data }),
       );
-      expect(normalizedAgain.success).toBe(true);
-      if (normalizedAgain.success) {
-        expect(normalizedAgain.normalized.definitionSha256).toBe(
-          normalized.normalized.definitionSha256,
+      expect(second.success).toBe(true);
+      if (second.success) {
+        expect(second.runSpec.definitionRef.definitionSha256).toBe(
+          first.runSpec.definitionRef.definitionSha256,
         );
       }
     }

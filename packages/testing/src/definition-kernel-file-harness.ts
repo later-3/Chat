@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { workflowRunSpecSchema, type WorkflowRunSpec } from "@chat/application";
+import { workflowRunSpecSchema, type WorkflowRunSpec } from "@chat/contracts";
 import type {
   KernelLabRuntimePort,
   KernelLabSettlement,

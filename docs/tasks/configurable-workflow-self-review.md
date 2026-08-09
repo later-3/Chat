@@ -1,6 +1,6 @@
 # Chat 可配置工作流实现前整体自审
 
-> 状态：自审通过并获用户批准；实现进行中  
+> 状态：实现前自审已获用户批准；核心实现进入发布收口，但G3中的正式Research与Skill资源纵向尚未交付，原始目标只达到部分完成
 > 日期：2026-08-10  
 > 审查对象：原始目标、阶段总纲、参考研究、详细架构、42个任务、测试与发布门  
 > 结论：方案在当前冻结技术基线上可行，任务闭包完整；未发现需要推翻S1到S7顺序的阻断矛盾
@@ -16,7 +16,7 @@
 5. **测试不是最后补。** 每个任务有确定性与故障测试，每个PR有真实已发布链回归，S2/S4/S5/S6有真实用户里程碑，S7再做干净组合门。
 6. **仍未确定的数字和依赖版本被放进证据任务，而不是静默猜测。** React Flow版本、结构/预览上限、coverage基线必须由对应Spike/基准给出，失败会阻断下游实现。
 
-因此，这套设计已达到“可以交给用户做实现前最终审核”的状态；它还不是已完成代码，也不授权安装依赖、修改Workflow或创建实现分支。
+批准后的核心实现已经落地，实际产品对象、配置语义、Runner、前后端合同、迁移、延期项和剩余外部阻断以[可配置工作流As-built](../architecture/configurable-workflow-as-built.md)为准。本文件继续保存实现前目标与防漂移依据；若方案文字与As-built冲突，必须在最终PR中解释差异，不能继续把旧假设当成已交付事实。
 
 ## 1. 审查材料与方法
 
@@ -48,7 +48,7 @@
 | --- | --- | --- | --- | --- |
 | G1 | 运行前选择、启停、配置已有节点 | Run Configuration、Blueprint、skip/risk policy | S4.2/S4.6/S6.3，S7.4 | 完整；不是运行中修改 |
 | G2 | 前端拖拽组合工作流 | 结构化IR + semantic operations + constrained React Flow | S6.2到S6.7 | 完整；明确无自由连线 |
-| G3 | Planning调研、Memory/Project/Rules/Skill、任务书 | Planning Definition与真实资源refs | S4.3/S4.7，S7.4 | 完整；依赖Project/Rules先完成 |
+| G3 | Planning调研、Memory/Project/Rules/Skill、任务书 | Planning Definition与真实资源refs | Memory/Project/Rules与Plan/Review/Execute纵向已落地；Research/Skill见§2.1 | **部分完成**；正式Research与Skill产品纵向明确延期，不计入本次完成 |
 | G4 | 审核、修订循环、批准/拒绝、允许时默认继续 | Human Review、Decision、Policy Resolution、BoundedLoop | S4.4、S6.4、S7.3 | 完整；高影响不能被auto绕过 |
 | G5 | 执行前停下，执行后验证和提交 | waiting_human、Execution Contract、Validation、Commit | S4.4/S4.5/S4.7 | 完整；保留结果未知语义 |
 | G6 | 左到右运行图，节点输入/输出/Trace日志 | View Snapshot、Node Run/Manifest/Transition、Evidence/Trace深链 | S1/S2、S7.4 | 完整；不把raw Trace当产品API |
@@ -58,13 +58,15 @@
 
 ### 2.1 有意不纳入本次完成声明
 
-1. **Reminder/待办调度。** 用户把它作为后续可能场景；它需要时区、调度、通知投递、幂等和对账，不能用Note或聊天文字冒充已经提醒。
-2. **Quick Answer独立Preset。** 受限Kernel能够以后增加agent.answer类Node，但S1到S7的第二生命周期证明选择Note；当前Chat既有简短对话能力不因P6回归。本次不为凑第三流程增加未经验证Node。
-3. **任意自动化平台能力。** 插件市场、任意Code/HTTP、表达式、Join、局部执行、pin data和无界回边明确不做。
-4. **实时多人Definition协作。** 首版用CAS冲突与语义操作重放，不引入CRDT。
-5. **生产数据库替换、部署和旧Runner删除。** JSON Product Store仍是当前Adapter；容量不足会阻断并另立任务，不在S7偷换底座。
+1. **原始G3中的正式Research。** 当前`agent.research`只保留旧Definition兼容，新的系统Planning不执行它；在具备来源、证据、预算、失败和产品提交边界前明确延期，不能用Planner一次调用或`no_evidence`冒充调研完成。
+2. **原始G3中的正式Skill资源。** 当前只有节点/资源合同和`optional_unavailable`失败关闭；正式Skill集合、授权、冻结Revision/Hash与Runner消费另立纵向，不能把空选择器计作Skill完成。
+3. **Reminder/待办调度。** 用户把它作为后续可能场景；它需要时区、调度、通知投递、幂等和对账，不能用Note或聊天文字冒充已经提醒。
+4. **Quick Answer独立Preset。** 受限Kernel能够以后增加agent.answer类Node，但S1到S7的第二生命周期证明选择Note；当前Chat既有简短对话能力不因P6回归。本次不为凑第三流程增加未经验证Node。
+5. **任意自动化平台能力。** 插件市场、任意Code/HTTP、表达式、Join、局部执行、pin data和无界回边明确不做。
+6. **实时多人Definition协作。** 首版用CAS冲突与语义操作重放，不引入CRDT。
+7. **生产数据库替换、部署和旧Runner删除。** JSON Product Store仍是当前Adapter；容量不足会阻断并另立任务，不在S7偷换底座。
 
-以上边界没有阻止原始主目标达成；若用户要求Quick Answer也作为本次必须交付的第三Preset，应在批准前新增独立纵向任务，而不是塞进S4.3。
+Reminder、Quick Answer和通用自动化属于原本明确的非目标；Research与Skill则是原始G3的范围差异，因此全部原始目标尚未达成。只有用户明确接受延期，或后续纵向真实补齐后，才能关闭这项防漂移检查；不能靠修改“完成”措辞把差异抹掉。
 
 ## 3. 阶段闭环反证
 

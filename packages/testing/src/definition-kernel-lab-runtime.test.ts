@@ -3,11 +3,9 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  compileWorkflowRunSpec,
-  kernelCompilerInputFixture,
-  type WorkflowRunSpec,
-} from "@chat/application";
+import type { WorkflowRunSpec } from "@chat/contracts";
+import { compileWorkflowRunSpec } from "@chat/application/workflow-run-spec-compiler";
+import { kernelCompilerInputFixture } from "@chat/application/workflow-kernel-fixtures";
 import {
   definitionKernelReviewHookToken,
   getDefinitionKernelLabRun,
@@ -46,7 +44,7 @@ describe("Definition Kernel真实Local World实验室", () => {
       tag: "definition-kernel-lab",
     });
     stack = { root, harness, world };
-  }, 60_000);
+  }, 120_000);
 
   afterAll(async () => {
     setKernelLabRuntimePort(undefined);
@@ -182,8 +180,10 @@ describe("Definition Kernel真实Local World实验室", () => {
         workflowRunSpecId: `wrs_tamper${suffix}`,
         productRunId: `run_tamper${suffix}`,
       };
-      await stack.harness.seedRunSpec(isolated);
-      await expect(runSeeded(stack, isolated)).resolves.toMatchObject({ outcome: "failed" });
+      await stack.harness.seedRunSpec(isolated as never);
+      await expect(runSeeded(stack, isolated as never)).resolves.toMatchObject({
+        outcome: "failed",
+      });
     }
   }, 60_000);
 

@@ -101,7 +101,7 @@ async function createDeps(): Promise<{ deps: ApplicationDeps; cmd: () => Command
   return { deps: { store, now, ids: ids() }, cmd: commands() };
 }
 
-async function buildCandidate(validEvidence: boolean) {
+async function buildCandidate(validEvidence: boolean, strictEvidence = true) {
   const { deps, cmd } = await createDeps();
   const { session } = await createProductSession(deps, {
     principalId: PRINCIPAL,
@@ -224,6 +224,7 @@ async function buildCandidate(validEvidence: boolean) {
     productRunId: run.productRunId,
     executionContractId: contract.executionContractId,
     executionCandidateId: candidate.executionCandidateId,
+    strictEvidence,
   });
   return { deps, cmd, run, session, contract, candidate, validation };
 }
@@ -263,5 +264,14 @@ describe("验证与Product Commit信任边界", () => {
     expect(
       Object.values(snapshot.entities.messages).filter((message) => message.role === "assistant"),
     ).toHaveLength(0);
+  });
+
+  it("非严格模式只放宽逐条证据覆盖，且把冻结策略写入Validation事实", async () => {
+    const state = await buildCandidate(false, false);
+    expect(state.validation.outcome).toBe("pass");
+    const { snapshot } = await state.deps.store.read({ kind: "committedSnapshot" });
+    expect(
+      snapshot.entities.validationResults[state.validation.validationResultId]?.strictEvidence,
+    ).toBe(false);
   });
 });

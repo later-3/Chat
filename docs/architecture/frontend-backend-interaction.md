@@ -101,6 +101,21 @@ flowchart LR
 | POST | `/api/project-stages/:id/transitions`、`/api/project-milestones/:id/transitions` | Command | 绑定Decision/Evidence的显式状态转换；写入严格State Transition历史 |
 | POST | `/api/projects/:id/transitions` | Command | 显式暂停、恢复、完成或归档Project；完成必须绑定Evidence，完成与归档语义分离 |
 
+### 4.5 Workflow Definition设计器
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET | `/api/workflow/catalog`、`/api/workflow/blueprints` | 返回可公开节点表单、是否可默认跳过、固定outcome与BoundedLoop规则；不返回Executor实现 |
+| GET | `/api/workflow/definitions`、`/api/workflow/definitions/:id` | 读取已发布摘要或可编辑`semanticRoot + slots + base revision/hash` |
+| POST | `/api/workflow/definitions/copies` | 从精确已发布revision/hash创建用户副本 |
+| POST | `/api/workflow/definitions/validate` | 无写入地执行服务端Structure、Blueprint、Catalog与Hash全校验 |
+| POST | `/api/workflow/definitions/:id/drafts` | 以Command ID、expected revision和base hash保存完整语义草稿 |
+| POST | `/api/workflow/definitions/:id/publish` | 发布精确草稿revision/hash；运行中的Run继续使用已冻结RunSpec |
+
+设计器没有自由edge或表达式。浏览器工作副本只记录公开strict Operation：节点插入/移动/跳过/配置，以及`wrap_in_choice`、`move_into_branch`、`unwrap_choice`、`wrap_in_bounded_loop`、`update_loop_policy`、`unwrap_loop`。Choice分支只能来自Catalog outcome，Loop的continue/exit和最大次数只能来自Blueprint；拖拽、键盘按钮和手机控件都生成同一种Operation，坐标不进入草稿或Definition Hash。
+
+浏览器的纯函数变换只用于即时预览和undo/redo。Application用同一Operation合同重新解释后，必须再执行完整Domain/Blueprint/Catalog Validator；只有服务端validate/save/publish响应能声明合法或已提交。localStorage按`workflowDefinitionId + baseDefinitionSha256`隔离，CAS冲突只从最新base顺序重放Operation，首个失效操作即停止，不做JSON猜测合并。
+
 ## 5. Command合同
 
 所有公开写请求使用统一Envelope：

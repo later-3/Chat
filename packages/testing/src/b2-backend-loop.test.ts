@@ -12,18 +12,28 @@ import {
   type TraceEventInput,
 } from "@chat/contracts";
 import {
+  createRule,
+  createRuleTag,
   createProductSession,
   submitUserMessage,
   submitPlanDecision,
+  transitionRuleLifecycle,
   type ApplicationDeps,
   type IdFactory,
   type MemoryBackendRegistryPort,
+  type RuleIdFactory,
 } from "@chat/application";
+import { SYSTEM_PLANNING_WORKFLOW_REVISION_ID } from "@chat/application/workflow-system-definitions";
+import {
+  compileProjectMethodSnapshotPolicies,
+  computeProjectMethodSnapshotSha256,
+  computeWorkflowProjectResourceSha256,
+  hashCanonical,
+} from "@chat/domain";
 import { JsonProductStore } from "@chat/product-store-json";
 import { createApiApp } from "@chat/api";
 import { OutboxDispatcher } from "@chat/api/outbox-dispatcher";
 import {
-  createRuntimeApiClient,
   createWorkflowRuntimeServer,
   RuntimeBindingStore,
   setWorkflowRuntimeContext,
@@ -71,6 +81,7 @@ const PLAN_V2: PlanContent = planContentSchema.parse({
 
 interface FakePi {
   plannerCalls: number;
+  planningInputs: PlanningInputDto[];
   executorCalls: string[];
   planner: (input: {
     config: BailianConfig;
@@ -86,9 +97,11 @@ interface FakePi {
 function createFakePi(): FakePi {
   const state: FakePi = {
     plannerCalls: 0,
+    planningInputs: [],
     executorCalls: [],
     planner: async ({ planningInput }) => {
       state.plannerCalls += 1;
+      state.planningInputs.push(structuredClone(planningInput));
       const content = planningInput.planRevision === 1 ? PLAN_V1 : PLAN_V2;
       return {
         kind: "candidate",
@@ -145,6 +158,18 @@ function testIds(): IdFactory {
   };
 }
 
+function testRuleIds(): RuleIdFactory {
+  const next = (prefix: string) => `${prefix}_b2resource${(++idCounter).toString(36)}`;
+  return {
+    rule: () => next("rul") as ReturnType<RuleIdFactory["rule"]>,
+    revision: () => next("rrv") as ReturnType<RuleIdFactory["revision"]>,
+    tag: () => next("rtg") as ReturnType<RuleIdFactory["tag"]>,
+    scope: () => next("rsc") as ReturnType<RuleIdFactory["scope"]>,
+    decision: () => next("rde") as ReturnType<RuleIdFactory["decision"]>,
+    selection: () => next("rsl") as ReturnType<RuleIdFactory["selection"]>,
+  };
+}
+
 let cmdCounter = 0;
 const nextCmd = (): string => `cmd_it${(++cmdCounter).toString(36)}`;
 
@@ -155,6 +180,7 @@ interface TestStack {
   traceEvents: TraceEventInput[];
   bindings: RuntimeBindingStore;
   worldRuns: () => Promise<unknown>;
+  restartWorkflowRuntime: () => Promise<void>;
   close: () => Promise<void>;
 }
 
@@ -216,14 +242,23 @@ const EMPTY_MEMORY_BACKENDS: MemoryBackendRegistryPort = {
   get: () => undefined,
 };
 
-function listen(app: {
-  fetch: (req: Request) => Promise<Response> | Response;
-}): Promise<{ server: ReturnType<typeof serve>; port: number }> {
+function listen(
+  app: {
+    fetch: (req: Request) => Promise<Response> | Response;
+  },
+  port = 0,
+): Promise<{ server: ReturnType<typeof serve>; port: number }> {
   return new Promise((resolve, reject) => {
-    const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" }, (info) => {
+    const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (info) => {
       resolve({ server, port: info.port });
     });
     server.on("error", reject);
+  });
+}
+
+async function closeServer(server: ReturnType<typeof serve>): Promise<void> {
+  await new Promise<void>((resolveClose, rejectClose) => {
+    server.close((error) => (error === undefined ? resolveClose() : rejectClose(error)));
   });
 }
 
@@ -242,6 +277,7 @@ async function startStack(fakePi: FakePi): Promise<TestStack> {
     store,
     now: () => new Date().toISOString(),
     ids: testIds(),
+    ruleIds: testRuleIds(),
     trace,
   };
 
@@ -254,34 +290,29 @@ async function startStack(fakePi: FakePi): Promise<TestStack> {
   const { server: apiServer, port: apiPort } = await listen(apiApp);
   const apiBaseUrl = `http://127.0.0.1:${String(apiPort)}`;
 
-  const {
-    app: workflowApp,
-    world,
-    bindings,
-  } = await createWorkflowRuntimeServer({
+  const workflowOptions = {
     repoRoot: dir,
     bundleDir: BUNDLE_DIR,
     workflowDataDir: join(dir, "workflow-data"),
     bindingsPath: join(dir, "bindings.json"),
     apiBaseUrl,
     credential,
-  });
-  // 注入确定性pi与测试Trace（默认装配为真实百炼路径）
-  setWorkflowRuntimeContext({
-    api: createRuntimeApiClient({ baseUrl: apiBaseUrl, credential }),
-    bindings,
-    memoryBackends: EMPTY_MEMORY_BACKENDS,
-    trace,
-    now: () => new Date().toISOString(),
-    bailian: {
-      apiKey: "fake",
-      baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      endpointHost: "dashscope.aliyuncs.com",
+    traceSink: { emit: trace },
+    runtimeOverrides: {
+      memoryBackends: EMPTY_MEMORY_BACKENDS,
+      now: () => new Date().toISOString(),
+      bailian: {
+        apiKey: "fake",
+        baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        endpointHost: "dashscope.aliyuncs.com",
+      },
+      planner: fakePi.planner as never,
+      executor: fakePi.executor as never,
     },
-    planner: fakePi.planner as never,
-    executor: fakePi.executor as never,
-  });
-  const { server: workflowServer, port: workflowPort } = await listen(workflowApp);
+  } as const;
+  let workflowRuntime = await createWorkflowRuntimeServer(workflowOptions);
+  let listenedWorkflow = await listen(workflowRuntime.app);
+  const workflowPort = listenedWorkflow.port;
 
   const dispatcher = new OutboxDispatcher({
     deps,
@@ -289,17 +320,17 @@ async function startStack(fakePi: FakePi): Promise<TestStack> {
     credential,
   });
 
-  return {
+  const stack: TestStack = {
     deps,
     dispatcher,
     fakePi,
     traceEvents,
-    bindings,
+    bindings: workflowRuntime.bindings,
     worldRuns: async () => {
-      const runs = await world.world.runs.list({ pagination: { limit: 5 } });
+      const runs = await workflowRuntime.world.world.runs.list({ pagination: { limit: 5 } });
       const first = runs.data[0];
       if (first === undefined) return runs;
-      const events = await world.world.events.list({
+      const events = await workflowRuntime.world.world.events.list({
         runId: first.runId,
         pagination: { limit: 100 },
         resolveData: "all",
@@ -312,13 +343,21 @@ async function startStack(fakePi: FakePi): Promise<TestStack> {
         })),
       };
     },
+    restartWorkflowRuntime: async () => {
+      await closeServer(listenedWorkflow.server);
+      await workflowRuntime.world.close();
+      workflowRuntime = await createWorkflowRuntimeServer(workflowOptions);
+      listenedWorkflow = await listen(workflowRuntime.app, workflowPort);
+      stack.bindings = workflowRuntime.bindings;
+    },
     close: async () => {
-      apiServer.close();
-      workflowServer.close();
-      await world.close();
+      await closeServer(apiServer);
+      await closeServer(listenedWorkflow.server);
+      await workflowRuntime.world.close();
       setWorkflowRuntimeContext(undefined);
     },
   };
+  return stack;
 }
 
 async function seedRun(deps: ApplicationDeps, text = "根据我的项目进展生成包含风险与下一步的周报") {
@@ -334,6 +373,198 @@ async function seedRun(deps: ApplicationDeps, text = "根据我的项目进展�
     payload: { text },
   });
   return { session, run };
+}
+
+async function seedProjectAndRuleRun(deps: ApplicationDeps) {
+  const principalId = "usr_debug" as never;
+  const { session } = await createProductSession(deps, {
+    principalId,
+    commandId: nextCmd() as never,
+    payload: {},
+  });
+  const at = deps.now();
+  const projectId = "prj_b2resource1" as never;
+  const methodSnapshotId = "pms_b2resource1" as never;
+  const stageId = "pst_b2resource1" as never;
+  const policies = compileProjectMethodSnapshotPolicies("small-project.v1");
+  const methodSha256 = computeProjectMethodSnapshotSha256({
+    profileId: "small-project.v1",
+    rationale: "B2真实Project/Rule上下文链",
+    policies,
+    source: "user_tailored",
+  });
+  await deps.store.transact({
+    commandId: nextCmd() as never,
+    commandType: "CreateProductSession",
+    requestSha256: hashCanonical("b2-project-rule-resource-fixture.v1", {
+      sessionId: session.sessionId,
+      projectId,
+    }),
+    mutate: (draft) => {
+      draft.entities.projectMethodSnapshots[methodSnapshotId] = {
+        schemaVersion: "project-method-snapshot.v2",
+        projectMethodSnapshotId: methodSnapshotId,
+        projectId,
+        profileId: "small-project.v1",
+        rationale: "B2真实Project/Rule上下文链",
+        policies,
+        source: "user_tailored",
+        sha256: methodSha256,
+        revision: 1,
+        createdAt: at,
+        updatedAt: at,
+      };
+      draft.entities.projectStages[stageId] = {
+        schemaVersion: "project-stage.v2",
+        projectStageId: stageId,
+        projectId,
+        methodSnapshotId,
+        key: "delivery",
+        name: "交付",
+        goal: "PROJECT_CONTEXT_B2_CANARY进入真实Planner输入",
+        successCriteria: ["Project与Rule Context原子投影成功"],
+        status: "active",
+        sequence: 1,
+        startedAt: at,
+        completionEvidenceIds: [],
+        revision: 1,
+        createdAt: at,
+        updatedAt: at,
+      };
+      draft.entities.projectParticipants["ppt_b2resource1"] = {
+        schemaVersion: "project-participant.v1",
+        projectParticipantId: "ppt_b2resource1" as never,
+        projectId,
+        kind: "human",
+        principalId,
+        displayName: "B2 Owner",
+        role: "owner",
+        status: "active",
+        revision: 1,
+        createdAt: at,
+        updatedAt: at,
+      };
+      draft.entities.projects[projectId] = {
+        schemaVersion: "project.v2",
+        projectId,
+        ownerPrincipalId: principalId,
+        name: "B2 Context Project",
+        summary: "验证真实Workflow消费冻结Project与Rule",
+        goal: "PROJECT_CONTEXT_B2_CANARY进入真实Planner输入",
+        scopeIn: ["Planning Context"],
+        scopeOut: ["外部副作用"],
+        successCriteria: ["节点生命周期无Runner双写"],
+        status: "active",
+        methodSnapshotId,
+        currentStageId: stageId,
+        revision: 1,
+        createdAt: at,
+        updatedAt: at,
+      };
+      return { resultRefs: { sessionId: session.sessionId } };
+    },
+  });
+  const tag = await createRuleTag(deps, {
+    principalId,
+    commandId: nextCmd() as never,
+    payload: { name: "B2 Context" },
+  });
+  const created = await createRule(deps, {
+    principalId,
+    commandId: nextCmd() as never,
+    payload: {
+      title: "B2真实规则",
+      priority: 900,
+      revision: {
+        body: "RULE_CONTEXT_B2_CANARY：提交前必须保留真实跨层证据。",
+        rationale: "验证Rule Selection进入Planner",
+        appliesWhen: ["执行Planning Workflow"],
+        doesNotApplyWhen: [],
+        positiveExamples: [],
+        negativeExamples: [],
+        scopes: [{ kind: "contextual", scenario: "planning", workflowNodeKey: "policy.rules" }],
+        tagIds: [tag.tag.ruleTagId],
+        conflictsWithRuleIds: [],
+        risk: "high",
+        sourceCases: [],
+      },
+    },
+  });
+  const trial = await transitionRuleLifecycle(deps, {
+    principalId,
+    commandId: nextCmd() as never,
+    ruleId: created.rule.ruleId,
+    expectedRevision: created.rule.revision,
+    payload: {
+      boundRevisionId: created.rule.currentRevision.ruleRevisionId,
+      boundRevisionSha256: created.rule.currentRevision.sha256,
+      toLifecycle: "trial",
+      reason: "B2试用",
+    },
+  });
+  const active = await transitionRuleLifecycle(deps, {
+    principalId,
+    commandId: nextCmd() as never,
+    ruleId: trial.rule.ruleId,
+    expectedRevision: trial.rule.revision,
+    payload: {
+      boundRevisionId: trial.rule.currentRevision.ruleRevisionId,
+      boundRevisionSha256: trial.rule.currentRevision.sha256,
+      toLifecycle: "active",
+      reason: "B2启用",
+    },
+  });
+  const snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+  const definition =
+    snapshot.entities.workflowDefinitionRevisions[SYSTEM_PLANNING_WORKFLOW_REVISION_ID];
+  const project = snapshot.entities.projects[projectId];
+  if (definition === undefined || project === undefined) throw new Error("B2资源fixture损坏");
+  const { run } = await submitUserMessage(deps, {
+    principalId,
+    sessionId: session.sessionId,
+    commandId: nextCmd() as never,
+    payload: {
+      text: "结合冻结Project与Rule给出下一步计划",
+      workflowSelection: {
+        kind: "published_revision",
+        workflowDefinitionRevisionId: definition.workflowDefinitionRevisionId,
+        definitionSha256: definition.definitionSha256,
+        runConfiguration: {
+          schemaVersion: "workflow-run-configuration.v1",
+          overrides: [
+            {
+              kind: "resource_selection",
+              definitionNodeId: "planning.project",
+              resourceKind: "project",
+              required: true,
+              selections: [
+                {
+                  resourceId: project.projectId,
+                  expectedRevision: project.revision,
+                  expectedSha256: computeWorkflowProjectResourceSha256(project),
+                },
+              ],
+            },
+            { kind: "node_enabled", definitionNodeId: "planning.rules", enabled: true },
+            {
+              kind: "resource_selection",
+              definitionNodeId: "planning.rules",
+              resourceKind: "rule",
+              required: true,
+              selections: [
+                {
+                  resourceId: active.rule.ruleId,
+                  expectedRevision: active.rule.currentRevision.revision,
+                  expectedSha256: active.rule.currentRevision.sha256,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  });
+  return { run };
 }
 
 async function readRun(deps: ApplicationDeps, productRunId: string) {
@@ -354,13 +585,32 @@ async function readRun(deps: ApplicationDeps, productRunId: string) {
   return { run, plans, approvals, messages, outbox, snapshot };
 }
 
+async function reviewCheckpointReady(stack: TestStack, productRunId: string): Promise<boolean> {
+  const current = await readRun(stack.deps, productRunId);
+  if (current.run?.status !== "waiting_human") return false;
+  const approval = current.approvals.find((candidate) => candidate.status === "open");
+  if (approval === undefined) return false;
+  const hook = stack.bindings.getHookBinding(approval.approvalRequestId);
+  if (hook?.hookClaimState !== "claimed") return false;
+  const reviewNode = Object.values(current.snapshot.entities.workflowNodeRuns).find(
+    (candidate) =>
+      candidate.productRunId === productRunId &&
+      candidate.nodeType === "human.plan_review" &&
+      candidate.status === "waiting_human" &&
+      candidate.executionPath.at(-1)?.iteration === approval.planRevision,
+  );
+  // publishPlan原子生成waiting产品事实；Hook Binding已claim即是可恢复耐久点。
+  // 不要求第二条通用Transition Receipt，避免测试反向制造业务节点双写。
+  return reviewNode !== undefined;
+}
+
 describe("M2后端闭环（真实Workflow运行时 + Hook + 确定性pi）", () => {
   let stack: TestStack;
   beforeAll(async () => {
     stack = await startStack(createFakePi());
   }, 120_000);
   afterAll(async () => {
-    await stack.close();
+    await stack?.close();
   });
 
   it("完整链路：v1 -> 修改 -> v2 -> 批准 -> 执行 -> 正式Assistant Message", async () => {
@@ -368,10 +618,7 @@ describe("M2后端闭环（真实Workflow运行时 + Hook + 确定性pi）", () 
 
     await stack.dispatcher.tick();
     try {
-      await waitForCondition(async () => {
-        const current = await readRun(stack.deps, run.productRunId);
-        return current.run?.status === "waiting_human";
-      });
+      await waitForCondition(() => reviewCheckpointReady(stack, run.productRunId));
     } catch (error) {
       const current = await readRun(stack.deps, run.productRunId);
       const runs = await stack.worldRuns();
@@ -403,10 +650,22 @@ describe("M2后端闭环（真实Workflow运行时 + Hook + 确定性pi）", () 
     expect(current.plans[0]?.status).toBe("under_review");
     expect(stack.fakePi.plannerCalls).toBe(1);
     const bindingV1 = stack.bindings.getWorkflowBinding(run.productRunId as never);
-    expect(bindingV1).toBeDefined();
+    expect(bindingV1).toMatchObject({
+      runnerFamily: "configurable-planning.v1",
+      runnerBundleVersion: "configurable-planning.bundle.v1",
+      workflowRunSpecId: current.run?.workflowRunSpecId,
+    });
 
     const v1Approval = current.approvals.find((approval) => approval.status === "open");
     expect(v1Approval).toBeDefined();
+
+    // 真实关闭并重建Workflow Runtime/Local World；恢复同一Hook，不重新调用Planner。
+    await stack.restartWorkflowRuntime();
+    expect(stack.bindings.getWorkflowBinding(run.productRunId as never)?.workflowRunId).toBe(
+      bindingV1?.workflowRunId,
+    );
+    expect(stack.fakePi.plannerCalls).toBe(1);
+    current = await readRun(stack.deps, run.productRunId);
 
     // 提交修改意见
     const v1 = current.plans[0];
@@ -430,7 +689,7 @@ describe("M2后端闭环（真实Workflow运行时 + Hook + 确定性pi）", () 
     try {
       await waitForCondition(async () => {
         const next = await readRun(stack.deps, run.productRunId);
-        return next.plans.length === 2 && next.run?.status === "waiting_human";
+        return next.plans.length === 2 && (await reviewCheckpointReady(stack, run.productRunId));
       });
     } catch (error) {
       const current2 = await readRun(stack.deps, run.productRunId);
@@ -528,10 +787,7 @@ describe("M2后端闭环（真实Workflow运行时 + Hook + 确定性pi）", () 
     const { run } = await seedRun(stack.deps, "另一条消息：测试拒绝路径");
     const executorBefore = stack.fakePi.executorCalls.length;
     await stack.dispatcher.tick();
-    await waitForCondition(async () => {
-      const current = await readRun(stack.deps, run.productRunId);
-      return current.run?.status === "waiting_human";
-    });
+    await waitForCondition(() => reviewCheckpointReady(stack, run.productRunId));
     const current = await readRun(stack.deps, run.productRunId);
     const approval = current.approvals.find((candidate) => candidate.status === "open");
     const plan = current.plans[0];
@@ -563,10 +819,7 @@ describe("M2后端闭环（真实Workflow运行时 + Hook + 确定性pi）", () 
   it("同一commandId重复提交Decision只恢复一次Hook", async () => {
     const { run } = await seedRun(stack.deps, "第三条消息：重复决定");
     await stack.dispatcher.tick();
-    await waitForCondition(async () => {
-      const current = await readRun(stack.deps, run.productRunId);
-      return current.run?.status === "waiting_human";
-    });
+    await waitForCondition(() => reviewCheckpointReady(stack, run.productRunId));
     const current = await readRun(stack.deps, run.productRunId);
     const approval = current.approvals.find((candidate) => candidate.status === "open");
     const plan = current.plans[0];
@@ -598,5 +851,62 @@ describe("M2后端闭环（真实Workflow运行时 + Hook + 确定性pi）", () 
     expect(resumeEntries).toHaveLength(1);
     const hookBinding = stack.bindings.getHookBinding(approval?.approvalRequestId as never);
     expect(hookBinding?.resumeDispatchState).toBe("dispatched");
+  }, 90_000);
+
+  it("真实Project+Rule选择由Application原子投影并进入Planner，Runner不双写Node", async () => {
+    const plannerBefore = stack.fakePi.plannerCalls;
+    const { run } = await seedProjectAndRuleRun(stack.deps);
+    await stack.dispatcher.tick();
+    await waitForCondition(() => reviewCheckpointReady(stack, run.productRunId));
+
+    const current = await readRun(stack.deps, run.productRunId);
+    expect(stack.fakePi.plannerCalls).toBe(plannerBefore + 1);
+    const planningInput = stack.fakePi.planningInputs.at(-1);
+    expect(planningInput?.projectContext?.snapshot.goal).toContain("PROJECT_CONTEXT_B2_CANARY");
+    expect(planningInput?.rulesContext?.rules[0]?.body).toContain("RULE_CONTEXT_B2_CANARY");
+    const resourceNodes = Object.values(current.snapshot.entities.workflowNodeRuns).filter(
+      (node) =>
+        node.productRunId === run.productRunId &&
+        (node.definitionNodeId === "planning.project" ||
+          node.definitionNodeId === "planning.rules"),
+    );
+    expect(resourceNodes).toHaveLength(2);
+    for (const node of resourceNodes) {
+      expect(node).toMatchObject({
+        status: "succeeded",
+        outcomeCode: "success",
+        executionPath: [],
+        attemptNumber: 1,
+      });
+      const transitions = Object.values(current.snapshot.entities.nodeRunTransitions)
+        .filter((transition) => transition.workflowNodeRunId === node.workflowNodeRunId)
+        .sort((left, right) => left.nodeSequence - right.nodeSequence);
+      expect(transitions.map((transition) => transition.toStatus)).toEqual([
+        "queued",
+        "running",
+        "succeeded",
+      ]);
+    }
+
+    const approval = current.approvals.find((candidate) => candidate.status === "open");
+    const plan = current.plans[0];
+    await submitPlanDecision(stack.deps, {
+      principalId: "usr_debug" as never,
+      productRunId: run.productRunId as never,
+      commandId: nextCmd() as never,
+      expectedRunRevision: current.run?.revision ?? 0,
+      payload: {
+        approvalRequestId: approval?.approvalRequestId as never,
+        planId: plan?.planId as never,
+        planRevision: 1,
+        planSha256: plan?.sha256 ?? "",
+        kind: "reject",
+        reason: "跨层资源证据已验证",
+      },
+    });
+    await stack.dispatcher.tick();
+    await waitForCondition(
+      async () => (await readRun(stack.deps, run.productRunId)).run?.status === "cancelled",
+    );
   }, 90_000);
 });

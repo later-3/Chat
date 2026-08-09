@@ -1,6 +1,6 @@
 # Chat 可配置工作流详细架构与方案设计
 
-> 状态：已获用户批准；实现按S1～S7推进，完成后再更新为as-built事实  
+> 状态：已获用户批准；S1～S7核心实现已落地，但原始目标中的正式Research与Skill资源纵向尚未交付，不能按完整目标宣称完成；实际边界以As-built为准
 > 日期：2026-08-09  
 > 上位目标：[阶段总纲与验证闭包](../tasks/configurable-workflow-stage-program.md)  
 > 研究依据：[参考项目与技术研究](./configurable-workflow-research.md)  
@@ -18,6 +18,15 @@
 6. 架构、代码风格和测试必须可长期演进，不能为了做拖拽界面重造一个低质量n8n。
 
 任何设计如果不能直接服务以上结果，或者削弱Chat既有事实所有权、HITL、耐久恢复和真实E2E，都不进入实现。
+
+### 0.1 原始目标的实际处置
+
+| 原始能力 | 本次已经交付 | 明确延期，不计入完成 |
+| --- | --- | --- |
+| Planning上下文与任务推进 | Memory Snapshot、Project Context、Rule Revision、Plan/Review循环、Execute、Validate、Commit | 独立Research产品事实、来源证据与受治理调用边界；当前新Planning不执行`agent.research` |
+| Skill选择与消费 | `capability.skills`节点合同、资源类型和失败关闭语义 | 正式Skill产品集合、授权查询、冻结Revision/Hash及Runner消费；当前没有真实Skill可选 |
+
+Research和Skill不是从原始目标中删除，而是因缺少对应产品事实与授权边界明确延期。最终发布说明必须把P6核心交付与这两项延期分别列出；除非用户接受范围调整或后续纵向真实完成，不能把G3或全部原始目标标记为“完整”。
 
 ## 1. 参考项目如何转化为Chat设计
 

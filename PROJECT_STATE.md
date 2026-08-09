@@ -1,6 +1,6 @@
 # Chat 项目状态
 
-> 更新日期：2026-08-09
+> 更新日期：2026-08-10
 
 ## 1. 当前结论
 
@@ -10,13 +10,13 @@
 | 主分支 | `main`是唯一开发基线；精确提交以`origin/main`为准 |
 | 前端 | React + TypeScript + Vite；响应式PWA；最小Plan审核与运行投影已接真实后端 |
 | 后端 | Node.js + TypeScript；Hono协议入口；Application拥有事务 |
-| Product Store | `chat-product-store.v5`；串行支持v1→v2→v3→v4→v5，保持单实例单写者、原子替换与损坏失败关闭；v5新增完整Method/Stage、Milestone、Project Update与State Transition |
-| Workflow | 规划仍由唯一`PlanningExecutionWorkflow`完成；另有独立`MemoryImportWorkflow`、`ProjectIntakeWorkflow`和`ProjectAdvancementWorkflow`分别拥有导入/对账、建项与既有项目推进生命周期 |
+| Product Store | `chat-product-store.v10`；串行支持v1→v10，保持单实例单写者、原子替换与损坏失败关闭；新增Workflow Definition/RunSpec/Node事实、Note、Rules、Planning Project/Memory Context与Policy Resolution |
+| Workflow | 旧`PlanningExecutionWorkflow`继续兼容历史Run；新Run由固定`configurable-planning.v1`或`note-capture.v1` Runner解释不可变RunSpec；Memory Import、Project Intake/Advancement保持独立生命周期 |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent`；Planner/Executor与模型无关Project Understanding均已用百炼真实`qwen3.7-plus`验证 |
 | 调试与回放 | 仓库统一`pnpm dev/dev:debug`拥有Memory、Workflow、API和Web服务图；VS Code只有应用级薄入口；固定端口、安全清理、严格脱敏Trace及多源Replay |
-| 代码状态 | P0、P1.1、P1.2、B1、B2、M1～M3与PS1均已进入`origin/main`；统一应用启动、浏览器生命周期、旧Workflow和跨worktree端口恢复修复保留在本地`main` |
-| 当前阶段 | 长期上下文与知识复用：Memory、BMAD项目上下文、用户规则集 |
-| 当前任务 | PS2.1实现与真实门已完成，正在Draft PR复审；合并后才从最新main开始PS2.2 Shaping/Iteration |
+| 代码状态 | P0、P1、B1/B2、M1～M3、PS1/PS2.1已在既有基线；当前`codex/configurable-workflow-complete`已落地P6核心纵向，但原始G3中的正式Research与Skill资源尚未交付，不能称整套原始目标完成 |
+| 当前阶段 | P6 Workflow工厂与可视化：核心实现正在修复发布阻断、收口质量证据，并等待对Research/Skill延期范围的明确验收 |
+| 当前任务 | 关闭发布阻断、完成全仓门/v1→v10证据与正式环境复验，再形成分阶段commit与最终PR；正式Provider门被Coding Plan Host安全拒绝，Research/Skill属于产品延期，二者不能混为同一阻断 |
 
 ## 2. B2已完成的真实证据
 
@@ -89,16 +89,16 @@
 ## 5. 当前没有的能力
 
 1. 已有真实memmy和Tencent MemoryCore查询/导入；尚无自动后台记忆、L1后台定时对账和生产Memory服务部署配置。
-2. 已有长期Project、完整Stage Goal/Milestone、负责人Project Update、Work/Action、真实Resource、Participant/Contribution/Decision/Evidence；尚无Shaping Proposal、Iteration、Scope、Gate/Review、Correct Course和注入Planning的版本化Project Context。
-3. 没有带标签、场景范围、修订和选择证据的用户规则集，也没有规划节点规则注入。
-4. 没有Chat有序SSE Cursor Runtime Journal；B2仍使用受控Query轮询。
-5. 没有外部副作用Tool、多实例数据库、备份恢复和生产后端部署拓扑。
+2. 已有版本化Planning Project Context与Rules注入；尚无完整Shaping Proposal、Iteration、Scope、Gate/Review和Correct Course产品纵向。
+3. 已有Note、Rules与受限Workflow Designer；原始P6目标中的正式Research和Skill产品集合/消费链尚未交付，此外也没有Reminder/日历调度、任意插件市场或通用自动化节点。
+4. 没有Chat有序SSE Cursor Runtime Journal；当前活动投影仍使用受控Query轮询。
+5. 没有多实例数据库、备份恢复和生产后端部署拓扑；外部副作用仍只开放既有受治理能力。
 
 ## 6. 下一阶段的三个用户结果
 
-1. **Memory**：M1/M2/M3已验证两套真实服务的查询、显式导入、同步物化与异步接收差异；后续优化是后台提炼/对账和生产部署，不再阻塞项目上下文建设。
-2. **Project Solution**：PS1与PS2.1已完成对话建项、真实资源、Stage Goal/Milestone和负责人Update；下一步按已批准PS2.2实现Shaping Proposal与显式Iteration Commitment，再由PS2.3推进Scope/Gate/Review。
-3. **用户规则**：用户可以在统一界面维护带标签和场景范围的个人习惯/要求，也可以让Chat提出维护建议；对话中可主动勾选或按标签筛选，规划时记录最终采用规则及其版本。
+1. **P6发布**：先关闭当前发布阻断并由用户明确验收Research/Skill延期范围，再完成可配置Workflow最终PR；正式百炼按量付费/业务空间Endpoint与对应Key可用后补跑Planning + Note + Designer组合门。
+2. **Project Solution**：在已接Planning Project Context基础上继续Shaping Proposal、显式Iteration Commitment、Scope/Gate/Review与Correct Course。
+3. **运行时与运营**：补Chat有序SSE Cursor、生产Store/备份/容量和正式Skill/Reminder产品纵向，不把它们塞进通用Workflow表达式引擎。
 
 详细任务数量、依赖、合同和完成门必须在复核本地参考项目与既有分析后写入任务书，审核前不假装已冻结。
 
