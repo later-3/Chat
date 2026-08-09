@@ -11,7 +11,8 @@ const sharedEnv = {
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: "project-intake-real.spec.ts",
+  // 使用.e2e.ts后缀，确保普通PWA配置不会误执行真实Provider专用场景。
+  testMatch: "project-intake-real.e2e.ts",
   fullyParallel: false,
   workers: 1,
   retries: 0,
