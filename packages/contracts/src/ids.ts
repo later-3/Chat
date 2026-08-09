@@ -75,6 +75,12 @@ export const ruleScopeIdSchema = prefixedId("rsc");
 export const ruleDecisionIdSchema = prefixedId("rde");
 export const ruleSelectionIdSchema = prefixedId("rsl");
 
+/* S5 Note Capture产品身份；Note不得复用Message、Artifact或Workflow Runtime身份。 */
+export const noteIdSchema = prefixedId("nte");
+export const noteRevisionIdSchema = prefixedId("ntr");
+export const noteCandidateIdSchema = prefixedId("ntc");
+export const noteDecisionIdSchema = prefixedId("ntd");
+
 /**
  * 服务端请求ID。客户端可提议复用，但必须通过本Schema才被信任；
  * 否则服务端生成新的req_*并在响应头返回最终生效ID。
@@ -133,3 +139,7 @@ export type RuleTagId = z.infer<typeof ruleTagIdSchema>;
 export type RuleScopeId = z.infer<typeof ruleScopeIdSchema>;
 export type RuleDecisionId = z.infer<typeof ruleDecisionIdSchema>;
 export type RuleSelectionId = z.infer<typeof ruleSelectionIdSchema>;
+export type NoteId = z.infer<typeof noteIdSchema>;
+export type NoteRevisionId = z.infer<typeof noteRevisionIdSchema>;
+export type NoteCandidateId = z.infer<typeof noteCandidateIdSchema>;
+export type NoteDecisionId = z.infer<typeof noteDecisionIdSchema>;

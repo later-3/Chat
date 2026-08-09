@@ -9,6 +9,8 @@ export * from "./trace.js";
 export * from "./product.js";
 export * from "./workflow-run.js";
 export * from "./workflow-api.js";
+export * from "./note.js";
+export * from "./note-api.js";
 export * from "./context.js";
 export * from "./memory-import.js";
 export * from "./project.js";

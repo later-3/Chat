@@ -14,3 +14,4 @@ export * from "./workflow-node-run.js";
 export * from "./workflow-definition-kernel.js";
 export * from "./rule-revision.js";
 export * from "./rule-selection.js";
+export * from "./note.js";
