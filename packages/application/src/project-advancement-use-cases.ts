@@ -349,12 +349,24 @@ export async function prepareProjectAdvancementCandidate(
         return { resultRefs: { projectCandidateId: current.projectCandidateId } };
       },
     });
+    const problemCode =
+      failureCode === "provider.auth_failed"
+        ? "provider_auth_failed"
+        : failureCode === "provider.rate_limited"
+          ? "provider_rate_limited"
+          : failureCode === "provider.timeout"
+            ? "provider_timeout"
+            : failureCode === "provider.stream_interrupted"
+              ? "provider_stream_interrupted"
+              : failureCode === "model_candidate_invalid"
+                ? "model_candidate_invalid"
+                : "internal_error";
     throw new ApplicationError({
-      code: failureCode === "provider.auth_failed" ? "provider_auth_failed" : "internal_error",
-      httpStatus: failureCode === "provider.auth_failed" ? 401 : 502,
+      code: problemCode,
+      httpStatus: problemCode === "provider_auth_failed" ? 401 : 502,
       message: "Project推进理解失败，Candidate已记录失败状态",
       retryable: false,
-      recoveryAction: failureCode === "provider.auth_failed" ? "reauthenticate" : "none",
+      recoveryAction: problemCode === "provider_auth_failed" ? "reauthenticate" : "none",
     });
   }
   const owner = Object.values(before.snapshot.entities.projectParticipants).find(

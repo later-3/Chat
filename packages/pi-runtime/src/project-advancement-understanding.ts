@@ -10,16 +10,25 @@ import { buildProjectModel, type ProjectModelProfile } from "./project-model-pro
 
 const parameters = Type.Object({
   stage: Type.Object({
-    name: Type.String(),
-    goal: Type.String(),
-    successCriteria: Type.Array(Type.String()),
+    name: Type.String({ minLength: 1, maxLength: 120 }),
+    goal: Type.String({ minLength: 1, maxLength: 4_000 }),
+    successCriteria: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), {
+      minItems: 1,
+      maxItems: 20,
+    }),
   }),
   milestones: Type.Array(
     Type.Object({
-      outcome: Type.String(),
-      acceptanceCriteria: Type.Array(Type.String()),
-      targetAt: Type.Optional(Type.String()),
+      outcome: Type.String({ minLength: 1, maxLength: 4_000 }),
+      acceptanceCriteria: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), {
+        minItems: 1,
+        maxItems: 20,
+      }),
+      targetAt: Type.Optional(
+        Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" }),
+      ),
     }),
+    { maxItems: 8 },
   ),
   update: Type.Object({
     health: Type.Union([
@@ -28,10 +37,15 @@ const parameters = Type.Object({
       Type.Literal("off_track"),
       Type.Literal("unknown"),
     ]),
-    narrative: Type.String(),
-    observedChanges: Type.Array(Type.String()),
-    blockers: Type.Array(Type.String()),
-    nextFocus: Type.Array(Type.String()),
+    narrative: Type.String({ minLength: 1, maxLength: 4_000 }),
+    observedChanges: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), {
+      maxItems: 20,
+    }),
+    blockers: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { maxItems: 20 }),
+    nextFocus: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), {
+      minItems: 1,
+      maxItems: 20,
+    }),
   }),
 });
 
@@ -54,7 +68,8 @@ const systemPrompt = [
   "不要虚构完成、测试、部署、贡献、文件变化或健康结论；信息不足时health使用unknown。",
   "Milestone只保留可验证关键结果，最多8项；普通待办不要冒充Milestone。",
   "Project Update是候选草稿：narrative说明当前判断，observedChanges只写用户明确提到的变化，blockers与nextFocus使用短句。",
-  "targetAt只有用户给出可确定日期时才填写ISO 8601；不要猜日期。",
+  "所有Schema字段必须完整：successCriteria、acceptanceCriteria和nextFocus至少一项，允许milestones、observedChanges、blockers为空数组。",
+  "不要输出null或未声明字段。targetAt只有用户给出可确定日期时才填写RFC 3339 date-time，否则完全省略；不要猜日期。",
 ].join("\n");
 
 export const PROJECT_ADVANCEMENT_PROMPT_TEMPLATE_VERSION = "project-advancement-understanding.v1";
@@ -147,6 +162,13 @@ export class PiProjectAdvancementUnderstandingAdapter {
       Object.assign(error, { code: result.errorCode });
       throw error;
     }
+    // 只记录字段名/校验码，禁止把工具参数或Provider正文带入日志。
+    console.warn("[project-advancement] 模型Candidate未通过严格合同", {
+      errorCode: result.errorCode,
+      diagnostics: result.diagnostics,
+      providerStopReason: result.providerMeta.providerStopReason,
+      toolCallCount: result.providerMeta.toolCallCount,
+    });
     const error = new Error("Project Advancement理解结果不符合合同");
     Object.assign(error, { code: "model_candidate_invalid" });
     throw error;
