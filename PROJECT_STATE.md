@@ -83,7 +83,7 @@
 3. Candidate同时绑定Project/Stage revision与Method Hash；旧revision/Hash确认返回409。确认分支一次提交Decision、Stage revision、Milestone、负责人Project Update、Project revision和Resume Outbox。
 4. Stage/Milestone状态转换必须经过Domain规则、Principal/Participant权限、Decision与Evidence校验；Timeline从严格State Transition、Decision和Update等产品事实组装，不用Trace冒充账本。
 5. 免费恢复门真实停止并重建API与Workflow：Intake与Advancement等待确认后都恢复同一Candidate和Workflow Run，同一Candidate revision的Understanding调用各保持1次。
-6. 真实Chromium + 当前服务端Model Profile的百炼`qwen3.7-plus`通过：建项、推进、直接修订、旧版本409、确认、刷新恢复和390×844无横向溢出；真实门耗时53.7秒。
+6. 真实Chromium + 当前服务端Model Profile的百炼`qwen3.7-plus`通过：建项、推进、直接修订、旧版本409、确认、刷新恢复和390×844无横向溢出；最终HEAD连续两轮真实门分别耗时28.6秒和27.7秒。pi Provider边界显式关闭Qwen思考模式并强制唯一结果工具，避免普通正文响应绕过候选合同。
 7. Trace新增严格Project Advancement/Stage/Milestone/Update事件，只含对象ID、revision/Hash、模型版本、耗时和结果；真实canary、Stage/Update正文、密钥与Runtime私有身份扫描均为0。
 
 ## 5. 当前没有的能力
