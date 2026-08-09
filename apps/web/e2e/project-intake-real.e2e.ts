@@ -151,15 +151,23 @@ test("真实Project：对话建项→推进修订/确认→项目账本→管理
   ) {
     throw new Error("真实推进Candidate未进入审核态");
   }
-  await advancementCard.getByLabel("当前阶段名称").fill("PS2 项目推进闭环");
   await advancementCard
-    .getByLabel("阶段目标")
+    .getByRole("textbox", { name: "当前阶段名称", exact: true })
+    .fill("PS2 项目推进闭环");
+  await advancementCard
+    .getByRole("textbox", { name: "阶段目标", exact: true })
     .fill("让用户只靠对话维护阶段目标、关键结果和可信的负责人更新");
-  await advancementCard.getByLabel("健康判断").selectOption("at_risk");
-  await advancementCard.getByLabel("负责人更新", { exact: true }).fill(UPDATE_MARKER);
+  await advancementCard
+    .getByRole("combobox", { name: "健康判断", exact: true })
+    .selectOption("at_risk");
+  await advancementCard
+    .getByRole("textbox", { name: "负责人更新", exact: true })
+    .fill(UPDATE_MARKER);
   await advancementCard.getByLabel("关键结果1").fill("完成真实模型与浏览器推进闭环");
   await advancementCard.getByRole("button", { name: "保存推进方案" }).click();
-  await expect(advancementCard.getByLabel("当前阶段名称")).toHaveValue("PS2 项目推进闭环");
+  await expect(
+    advancementCard.getByRole("textbox", { name: "当前阶段名称", exact: true }),
+  ).toHaveValue("PS2 项目推进闭环");
 
   // 旧revision/Hash不能确认新候选，且失败不能产生任何项目事实。
   const staleStatus = await page.evaluate(
