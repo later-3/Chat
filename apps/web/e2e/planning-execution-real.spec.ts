@@ -142,7 +142,7 @@ test("真实 qwen3.7-plus：发送 -> Plan v1 -> 修改 -> v2 -> 批准 -> 正�
   // 同一条真实路径切到375px，验证手机“对话/工作”切换与页面无横向滚动。
   await page.setViewportSize({ width: 375, height: 760 });
   await expectNoHorizontalScroll(page);
-  await page.getByRole("tab", { name: "工作" }).click();
+  await page.getByRole("tab", { name: "工作", exact: true }).click();
   await expect(page.getByRole("region", { name: "工作窗口" })).toBeVisible();
 
   await page.getByLabel("修改意见").fill("把风险单独成节，并增加下周三个行动项");
