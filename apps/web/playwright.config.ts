@@ -33,8 +33,7 @@ export default defineConfig({
       timeout: 60_000,
     },
     {
-      command:
-        `CHAT_API_PROXY_URL=http://127.0.0.1:43131 pnpm --filter @chat/web build && CHAT_API_PROXY_URL=http://127.0.0.1:43131 pnpm --filter @chat/web exec vite preview --port ${String(previewPort)} --strictPort`,
+      command: `CHAT_API_PROXY_URL=http://127.0.0.1:43131 pnpm --filter @chat/web build && CHAT_API_PROXY_URL=http://127.0.0.1:43131 pnpm --filter @chat/web exec vite preview --port ${String(previewPort)} --strictPort`,
       url: previewUrl,
       reuseExistingServer: false,
       timeout: 180_000,
