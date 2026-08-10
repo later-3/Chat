@@ -7,7 +7,7 @@ import {
   problemDetailSchema,
   productRunIdSchema,
   runDtoSchema,
-  serviceStatusSchema,
+  readinessStatusSchema,
 } from "@chat/contracts/public";
 import { z } from "zod";
 
@@ -29,6 +29,10 @@ function expectNoPrivateRuntimeIdentity(contentType: string, body: string): void
   for (const marker of FORBIDDEN_PUBLIC_MARKERS) {
     if (body.includes(marker)) throw new Error(`公开API响应包含私有Runtime标识：${marker}`);
   }
+}
+
+function responseWasDisposed(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("Response has been disposed");
 }
 
 async function expectNoHorizontalScroll(page: Page): Promise<void> {
@@ -91,15 +95,22 @@ async function submitStaleApproval(
 
 test("真实 qwen3.7-plus：发送 -> Plan v1 -> 修改 -> v2 -> 批准 -> 正式结果", async ({ page }) => {
   await page.route("**/api/**", async (route) => {
-    const response = await route.fetch();
-    const body = await response.body();
-    expectNoPrivateRuntimeIdentity(response.headers()["content-type"] ?? "", body.toString("utf8"));
-    await route.fulfill({ response, body });
+    try {
+      const response = await route.fetch();
+      const body = await response.body();
+      expectNoPrivateRuntimeIdentity(
+        response.headers()["content-type"] ?? "",
+        body.toString("utf8"),
+      );
+      await route.fulfill({ response, body });
+    } catch (error) {
+      if (!responseWasDisposed(error)) throw error;
+    }
   });
 
   await page.goto("/");
   await expect(page.getByText("模型由服务端配置", { exact: true })).toBeVisible();
-  expect(serviceStatusSchema.parse(await publicGet(page, "/api/readyz"))).toMatchObject({
+  expect(readinessStatusSchema.parse(await publicGet(page, "/api/readyz"))).toMatchObject({
     status: "ok",
     provider: { name: "bailian", ready: true },
   });

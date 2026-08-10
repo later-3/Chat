@@ -15,6 +15,10 @@ function guardPublicResponse(contentType: string, body: string): void {
   }
 }
 
+function responseWasDisposed(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("Response has been disposed");
+}
+
 async function openWaitingNoteReview(page: Page): Promise<void> {
   const jump = page.getByRole("button", { name: "转到等待审核节点" });
   await expect
@@ -30,10 +34,16 @@ async function openWaitingNoteReview(page: Page): Promise<void> {
 
 test("真实Note：配置输入→候选→编辑确认→正式Revision→打开Designer副本", async ({ page }) => {
   await page.route("**/api/**", async (route) => {
-    const response = await route.fetch();
-    const body = await response.body();
-    guardPublicResponse(response.headers()["content-type"] ?? "", body.toString("utf8"));
-    await route.fulfill({ response, body });
+    try {
+      const response = await route.fetch();
+      const body = await response.body();
+      guardPublicResponse(response.headers()["content-type"] ?? "", body.toString("utf8"));
+      await route.fulfill({ response, body });
+    } catch (error) {
+      // 页面结束/导航时会取消仍在轮询的只读Query；该Response已不再交付给浏览器，
+      // 不能把Playwright释放对象误报成产品或泄密失败。
+      if (!responseWasDisposed(error)) throw error;
+    }
   });
 
   await page.goto("/");
