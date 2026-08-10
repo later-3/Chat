@@ -413,7 +413,7 @@ Linear Work → Peek / Detail
 - 实现：`docs/design/combination-prototypes`
 - 6 来源副本：`docs/design/combination-prototypes/references/{basecamp,linear,things,hey,agent-feed,heptabase}`
 - Heptabase 独立 freeze：`3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`
-- literal combination freeze：`FREEZE_COMMIT_PENDING`
+- literal combination freeze：`58257710cd78285b7616067ba6685271e0c741ff`
 - 体验根：`http://127.0.0.1:4177/`
 - 自动化：宿主 / theme `15/15` + 六来源 `88/88` + Sites `4/4` = `107/107`
 - 浏览器 / 视觉证据：`docs/design/combination-prototypes/evidence/stage1`、`docs/design/combination-prototypes/evidence/theme-qa`

@@ -108,7 +108,7 @@ main已完成真实规划—确认—执行、memmy查询/导入、Tencent Memor
 
 1. 唯一登记入口：[`docs/design/references/README.md`](./design/references/README.md)。6 × 7 事实场景矩阵：[`reference-scenario-matrix-v0.1.md`](./design/references/reference-scenario-matrix-v0.1.md)。
 2. Heptabase 独立 freeze：branch `codex/reference-prototype-combinations`，commit `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`，实现 `docs/design/reference-implementations/heptabase`；合同 / Sites / browser gates `28/28`，`P0/P1/P2 = 0`。
-3. 当前组合 branch：`codex/literal-reference-compositions`；worktree：`/Users/xulater/.codex/worktrees/b469/Chat`；literal combination freeze：`FREEZE_COMMIT_PENDING`。
+3. 当前组合 branch：`codex/literal-reference-compositions`；worktree：`/Users/xulater/.codex/worktrees/b469/Chat`；literal combination freeze：`58257710cd78285b7616067ba6685271e0c741ff`。
 4. 当前组合不是抽象重绘。实现 `docs/design/combination-prototypes` 直接包含 `references/{basecamp,linear,things,hey,agent-feed,heptabase}`；宿主只做 canonical scene、唯一 owner 与主题切换。此前 `Project Room / Today Rhythm / Evidence Workbench` 方向已废弃，不再是任务输入。
 5. 数量决定：冻结 3 套 ownership 变体——`room-linear`（Basecamp Project / Room + Linear Work / Update）、`room-basecamp`（Basecamp Project / Room / Work + Linear Update）、`work-linear`（Linear Project / Work / Update + Basecamp Room）。Things / HEY / Agent Feed / Heptabase 在三套中固定主责 Today / Calendar / Agents / Knowledge。
 6. 本地体验根：`http://127.0.0.1:4177/`。8 个 scene：`projects / room / work / updates / today / calendar / agents / knowledge`。主题：`source / warm-room / quiet-day / graphite-ops / common-thread`。

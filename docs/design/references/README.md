@@ -31,14 +31,14 @@
 
 主题按钮为 `source / warm-room / quiet-day / graphite-ops / common-thread`；`source` 保留 6 套冻结原貌，其余 4 套只统一视觉 token，不改布局、对象或交互。主题通过独立 `chat:theme` 消息更新，不重放子原型 route。
 
-组合实现位于 `docs/design/combination-prototypes`，branch `codex/literal-reference-compositions`，literal combination freeze commit `FREEZE_COMMIT_PENDING`。Heptabase 独立 freeze 仍为 `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`。自动化为宿主 / theme `15/15` + 六来源 `88/88` + Sites `4/4` = `107/107`，production build `4805 modules`；第一阶段桌面与移动残余 `P0/P1/P2 = 0`，主题最终浏览器数字见 [`../combination-prototypes/design-qa.md`](../combination-prototypes/design-qa.md)。
+组合实现位于 `docs/design/combination-prototypes`，branch `codex/literal-reference-compositions`，literal combination freeze commit `58257710cd78285b7616067ba6685271e0c741ff`。Heptabase 独立 freeze 仍为 `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`。自动化为宿主 / theme `15/15` + 六来源 `88/88` + Sites `4/4` = `107/107`，production build `4805 modules`；第一阶段桌面与移动残余 `P0/P1/P2 = 0`，主题最终浏览器数字见 [`../combination-prototypes/design-qa.md`](../combination-prototypes/design-qa.md)。
 
 ## 任务 2 稳定输入
 
 - 任务：`019fe738-1b0d-70e3-932c-cdad3b702124`（“实现 Chat 多套可运行原型”）
 - 任务 worktree：`/Users/xulater/.codex/worktrees/35f2/Chat`
 - 稳定 branch：`codex/literal-reference-compositions`
-- literal combination freeze commit：`FREEZE_COMMIT_PENDING`
+- literal combination freeze commit：`58257710cd78285b7616067ba6685271e0c741ff`
 - Heptabase 独立 freeze commit：`3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`
 - 必读输入：本登记册、[`reference-scenario-matrix-v0.1.md`](./reference-scenario-matrix-v0.1.md)、[`../combination-prototypes/README.md`](../combination-prototypes/README.md)、[`../combination-prototypes/design-qa.md`](../combination-prototypes/design-qa.md)
 - 稳定实现路径：`docs/design/reference-implementations/heptabase`、`docs/design/combination-prototypes`、`docs/design/combination-prototypes/references`、`docs/design/combination-prototypes/evidence`
@@ -106,5 +106,5 @@
 
 1. UL0 已于 2026-08-08 整体通过；Take / Adapt / Refuse 作为 UI Lab 的批准输入。
 2. UL1、6 个参考原型与 6 × 7 事实矩阵已经完成；冻结实现分别按登记册中的 branch / commit 恢复。
-3. Heptabase Workbench 与 3 套 literal-reference ownership 组合已通过自动化、真实浏览器、响应式、控制台、状态连续性和同屏视觉 QA；Heptabase freeze 已登记，literal combination freeze 在 `FREEZE_COMMIT_PENDING` 替换后生效。
+3. Heptabase Workbench 与 3 套 literal-reference ownership 组合已通过自动化、真实浏览器、响应式、控制台、状态连续性和同屏视觉 QA；Heptabase 与 literal combination freeze 均已登记。
 4. 下一任务只能把上述 freeze 当作设计输入；是否改生产 UI、怎样进入正式对象 / 权限 / Product Store 合同，必须由任务 2 自己的授权和任务书决定。
