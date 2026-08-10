@@ -172,8 +172,12 @@ const view = workflowRunViewDtoSchema.parse({
   allowedActions: ["inspect_nodes"],
 });
 
-function detailFor(nodeId: string, url: string): WorkflowNodeDetailDto {
-  const node = view.nodeRuns.find((candidate) => candidate.workflowNodeRunId === nodeId);
+function detailFor(
+  nodeId: string,
+  url: string,
+  sourceView: typeof view = view,
+): WorkflowNodeDetailDto {
+  const node = sourceView.nodeRuns.find((candidate) => candidate.workflowNodeRunId === nodeId);
   if (node === undefined) throw new Error(`unknown node:${nodeId}`);
   const include = new URL(url, "http://chat.test").searchParams.get("include") ?? "";
   return workflowNodeDetailDtoSchema.parse({
@@ -255,18 +259,18 @@ function chainFixture(): RealChainState {
   } as unknown as RealChainState;
 }
 
-function installWorkflowApi(): ReturnType<typeof vi.fn> {
+function installWorkflowApi(sourceView: typeof view = view): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith("/workflow-view")) {
-      return new Response(JSON.stringify(view), {
+      return new Response(JSON.stringify(sourceView), {
         status: 200,
         headers: { "content-type": "application/json", ETag: '"viewer-v1"' },
       });
     }
     const match = /\/workflow-nodes\/(wnr_[^?]+)/u.exec(url);
     if (match?.[1] !== undefined) {
-      return new Response(JSON.stringify(detailFor(match[1], url)), {
+      return new Response(JSON.stringify(detailFor(match[1], url, sourceView)), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -339,6 +343,34 @@ describe("真实Workflow Run Viewer", () => {
       "保留这条审核意见",
     );
     expect(screen.getAllByLabelText("修改意见")).toHaveLength(1);
+  });
+
+  it("Note进入等待后也提供统一的审核节点入口", async () => {
+    const noteView = workflowRunViewDtoSchema.parse({
+      ...view,
+      title: "默认笔记工作流",
+      definitionNodes: view.definitionNodes.map((node) =>
+        node.definitionNodeId === "review"
+          ? { ...node, nodeType: "human.note_review", title: "审核笔记" }
+          : node,
+      ),
+      nodeRuns: view.nodeRuns.map((node) =>
+        node.definitionNodeId === "review"
+          ? { ...node, nodeType: "human.note_review", title: "审核笔记" }
+          : node,
+      ),
+    });
+    window.history.replaceState(
+      {},
+      "",
+      `/?workflowRun=${run.productRunId}&workflowNode=wnr_context1`,
+    );
+    installWorkflowApi(noteView);
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(await screen.findByRole("button", { name: "转到等待审核节点" }));
+    expect(await screen.findByRole("heading", { name: "审核笔记" })).toBeTruthy();
   });
 
   it("审核命令继续绑定Run revision与Plan hash，不在前端乐观改节点状态", async () => {

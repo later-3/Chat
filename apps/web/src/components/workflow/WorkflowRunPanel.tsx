@@ -171,7 +171,9 @@ export function WorkflowRunPanel({
   );
   const waitingReviewNode =
     view?.nodeRuns.find(
-      (node) => node.nodeType === "human.plan_review" && node.status === "waiting_human",
+      (node) =>
+        (node.nodeType === "human.plan_review" || node.nodeType === "human.note_review") &&
+        node.status === "waiting_human",
     ) ?? null;
   const chooseNode = useCallback(
     (nodeId: string) => {
