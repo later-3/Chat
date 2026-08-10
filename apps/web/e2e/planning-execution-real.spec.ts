@@ -7,6 +7,7 @@ import {
   problemDetailSchema,
   productRunIdSchema,
   runDtoSchema,
+  serviceStatusSchema,
 } from "@chat/contracts/public";
 import { z } from "zod";
 
@@ -97,7 +98,11 @@ test("真实 qwen3.7-plus：发送 -> Plan v1 -> 修改 -> v2 -> 批准 -> 正�
   });
 
   await page.goto("/");
-  await expect(page.getByLabel("当前模型")).toContainText("百炼 Qwen3.7 Plus");
+  await expect(page.getByText("模型由服务端配置", { exact: true })).toBeVisible();
+  expect(serviceStatusSchema.parse(await publicGet(page, "/api/readyz"))).toMatchObject({
+    status: "ok",
+    provider: { name: "bailian", ready: true },
+  });
   await page
     .getByLabel("消息输入框")
     .fill(
