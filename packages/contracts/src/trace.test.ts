@@ -20,7 +20,7 @@ function fixtureOf(eventName: string): Record<string, unknown> {
   return found;
 }
 
-describe("traceEventSchema：54种正式事件的合法Fixture全部通过", () => {
+describe("traceEventSchema：全部正式事件的合法Fixture通过", () => {
   it("Fixture覆盖任务书§7.3全部事件名", () => {
     const covered = new Set(validTraceFixtures.map((fixture) => fixture["eventName"]));
     for (const name of Object.values(TRACE_EVENT_NAMES)) {
