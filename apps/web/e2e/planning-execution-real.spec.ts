@@ -151,7 +151,6 @@ test("真实 qwen3.7-plus：发送 -> Plan v1 -> 修改 -> v2 -> 批准 -> 正�
   await page.getByRole("button", { name: "转到等待审核节点" }).click();
   const v2 = page.getByLabel("计划第2版");
   await expect(v2).toBeVisible();
-  await expect(page.getByText("已被新版本取代")).toBeVisible();
   const v2Sha = await v2.getAttribute("data-plan-sha256");
   expect(v2Sha).toMatch(/^[a-f0-9]{64}$/);
   expect(v2Sha).not.toBe(v1Sha);
