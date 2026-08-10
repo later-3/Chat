@@ -122,6 +122,7 @@ test("真实 qwen3.7-plus：发送 -> Plan v1 -> 修改 -> v2 -> 批准 -> 正�
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByRole("status")).toContainText(/正在规划|等待你确认计划/);
 
+  await page.getByRole("button", { name: "转到等待审核节点" }).click();
   const v1 = page.getByLabel("计划第1版");
   await expect(v1).toBeVisible();
   await expect(page.getByText("等待你确认计划")).toBeVisible();
