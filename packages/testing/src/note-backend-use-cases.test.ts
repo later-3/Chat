@@ -21,6 +21,7 @@ import {
   type NoteIdFactory,
   commitConfirmedNote,
   createProductSession,
+  getWorkflowRunView,
   loadNoteDecisionForRuntime,
   prepareNoteCaptureInputForRuntime,
   publishNoteCandidate,
@@ -310,6 +311,14 @@ describe("Note后端用例与持久完整性", () => {
       outcome: "denied",
       reasonCode: "note_candidate_exceeds_auto_bounds",
     });
+    const workflowView = await getWorkflowRunView(deps, {
+      principalId: PRINCIPAL,
+      productRunId,
+    });
+    expect(
+      workflowView.value.nodeRuns.find((node) => node.nodeType === "human.note_review")
+        ?.allowedActions,
+    ).toEqual(["inspect", "submit_decision"]);
     expect(Object.values(snapshot.entities.noteDecisions)).toHaveLength(0);
   });
 

@@ -42,15 +42,33 @@ function allowedActions(
   nodeRun: WorkflowNodeRun,
   now: string,
 ): WorkflowNodeRunSummaryDto["allowedActions"] {
-  if (nodeRun.nodeType !== "human.plan_review" || nodeRun.status !== "waiting_human") {
+  if (nodeRun.status !== "waiting_human") return ["inspect"];
+  if (nodeRun.nodeType === "human.plan_review") {
+    const approval = Object.values(snapshot.entities.approvalRequests).find(
+      (candidate) =>
+        candidate.productRunId === nodeRun.productRunId &&
+        candidate.planRevision === nodeRun.executionPath.at(-1)?.iteration,
+    );
+    return approval?.status === "open" && Date.parse(now) < Date.parse(approval.expiresAt)
+      ? ["inspect", "submit_decision"]
+      : ["inspect"];
+  }
+  if (nodeRun.nodeType !== "human.note_review" || nodeRun.inputManifestId === undefined) {
     return ["inspect"];
   }
-  const approval = Object.values(snapshot.entities.approvalRequests).find(
-    (candidate) =>
-      candidate.productRunId === nodeRun.productRunId &&
-      candidate.planRevision === nodeRun.executionPath.at(-1)?.iteration,
-  );
-  return approval?.status === "open" && Date.parse(now) < Date.parse(approval.expiresAt)
+  // Note审核没有Approval聚合；操作权限必须绑定该Node冻结输入Manifest中的精确Candidate，
+  // 不能仅凭Run处于waiting_human就让浏览器对任意或已结束Candidate提交决定。
+  const manifest = snapshot.entities.nodeValueManifests[nodeRun.inputManifestId];
+  const candidateRef = manifest?.slots
+    .flatMap((slot) => slot.refs)
+    .find((ref) => ref.kind === "note_candidate");
+  const candidate =
+    candidateRef === undefined ? undefined : snapshot.entities.noteCandidates[candidateRef.id];
+  return candidate !== undefined &&
+    candidate.productRunId === nodeRun.productRunId &&
+    candidate.revision === candidateRef?.revision &&
+    candidate.sha256 === candidateRef.sha256 &&
+    candidate.status === "under_review"
     ? ["inspect", "submit_decision"]
     : ["inspect"];
 }
