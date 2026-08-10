@@ -8,6 +8,7 @@ import {
 } from "@chat/contracts";
 import { loadBailianConfig, runPiExecutor, runPiNoteCapture, runPiPlanner } from "@chat/pi-runtime";
 import { createMemoryBackendRegistry } from "@chat/memory-runtime";
+import { ZodError } from "zod";
 import { createRuntimeApiClient } from "./api-client.js";
 import { RuntimeBindingStore } from "./runtime-bindings.js";
 import { setWorkflowRuntimeContext, type WorkflowRuntimeContext } from "./runtime-context.js";
@@ -79,10 +80,10 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       ? (event: TraceEventInput) => {
           try {
             options.traceSink?.emit(event);
-          } catch {
+          } catch (error) {
             traceEmitFailures += 1;
             console.error(
-              `[trace] emit_failed code=trace.emit_failed owner=workflow total=${String(traceEmitFailures)}`,
+              `[trace] emit_failed code=trace.emit_failed owner=workflow event=${event.eventName} cause=${traceFailureCause(error)} total=${String(traceEmitFailures)}`,
             );
           }
         }
@@ -167,6 +168,30 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
     trace,
   });
   return { app, world, bindings };
+}
+
+/**
+ * Trace失败日志只能暴露合同字段路径或稳定I/O错误码，不能输出异常message，避免
+ * Zod收到意外正文后把原值带进控制台。完整输入仍由严格Trace合同负责拒绝。
+ */
+function traceFailureCause(error: unknown): string {
+  if (error instanceof ZodError) {
+    const issues = error.issues
+      .slice(0, 3)
+      .map((issue) => `${issue.code}@${issue.path.join(".") || "root"}`)
+      .join(",");
+    return `validation:${issues || "unknown"}`;
+  }
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    /^[A-Z0-9_]{1,40}$/.test(error.code)
+  ) {
+    return `io:${error.code}`;
+  }
+  return "unknown";
 }
 
 async function directoryContainsFiles(directory: string): Promise<boolean> {
