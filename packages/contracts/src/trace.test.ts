@@ -57,6 +57,17 @@ describe("traceEventSchema：outcome按事件名固定", () => {
   });
 });
 
+describe("traceEventSchema：pi节点类型与正式Runner一致", () => {
+  it.each(["planner", "executor", "note_capture"] as const)("接受 %s", (nodeKind) => {
+    expect(
+      traceEventSchema.safeParse({
+        ...fixtureOf(TRACE_EVENT_NAMES.piNodeStarted),
+        nodeKind,
+      }).success,
+    ).toBe(true);
+  });
+});
+
 describe("traceEventSchema：事件族关联字段强制", () => {
   it("Product Run事件缺productRunId被拒绝", () => {
     for (const name of [

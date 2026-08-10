@@ -1302,7 +1302,7 @@ const providerRequestFailedSchema = defineTraceEvent(
 );
 
 // pi节点：Run + Attempt + Prompt模板 + 模型配置版本。
-const piNodeKindSchema = z.enum(["planner", "executor"]);
+const piNodeKindSchema = z.enum(["planner", "executor", "note_capture"]);
 const candidateValidationDiagnosticsSchema = z
   .object({
     stage: z.enum(["tool_argument_schema", "candidate_contract", "capability_policy"]),

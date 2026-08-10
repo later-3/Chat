@@ -889,7 +889,7 @@ export const validTraceFixtures: ReadonlyArray<Record<string, unknown>> = [
     eventName: TRACE_EVENT_NAMES.piNodeStarted,
     outcome: "unknown",
     ...model,
-    nodeKind: "planner",
+    nodeKind: "note_capture",
   },
   {
     ...base,
