@@ -1,90 +1,144 @@
-# Combination Prototypes Design QA
+# Literal Reference Compositions — Design QA
 
-## 对照对象
+final result: **passed**
 
-Source visual truth：
+- Stage 1 literal composition：`P0=0 / P1=0 / P2=0`
+- Stage 2 themes：`P0=0 / P1=0 / P2=0`
+- 自动化：`107/107`
+- production build：`4805 modules`
+- 页面 console warn/error：`0`
 
-- `docs/design/ui-lab/evidence/ul1-project-thread-desktop.png`：已批准的 Project Room 黑白壳层、房间连续性与负责人 Update。
-- `docs/design/ui-lab/evidence/ul1-today-thread-desktop.png`：已批准的 Today 连续日节奏、时间约束与对象分型。
-- `docs/design/screenshots/heptabase/heptabase-workbench-desktop.png`：冻结参考原型中的对象身份、材料并排与工作台层级；组合原型有意不复制无限画布。
-- `docs/product/design-guidelines.md`：Chat 语义 Token、44px、无渐变 / 重阴影、响应式与可访问性约束。
+## 1. 对照对象
 
-Rendered implementation：`http://127.0.0.1:4176/`（本次 freeze Session 保留的统一入口）。
+当前实现不再对照旧的抽象组合画面，而是逐个对照 6 个冻结来源：
 
-Implementation screenshots：
+| 来源 | freeze | 组合内代表状态 |
+|---|---|---|
+| Basecamp | `13656c41f0407e24d94a2f174a71525f21c2fc9c` | Enormicom Project Room |
+| Linear | `a74e088c0f7f1d04c653ae0a18c2487e0dff3879` | Issue List + Peek |
+| Things | `2b431c0942b7747e4c56210ada148e37684f109d` | Today |
+| HEY Calendar | `87596d433e120fa09c85484bd8591c1c6a4fdd30` | Day + Event candidate |
+| Microsoft Agent Feed | `eed0aa0e4b9fec38fcf7e4eb6684a23e9897e8aa` | Needs attention + detail |
+| Heptabase | `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb` | Whiteboard + Card panel |
 
-- `evidence/qa/project-desktop-pass1.png`
-- `evidence/qa/today-desktop-pass2.png`
-- `evidence/qa/workbench-desktop-pass1.png`
-- `evidence/qa/project-mobile-pass1.png`
-- `evidence/qa/today-mobile-pass1.png`
-- `evidence/qa/workbench-mobile-pass2.png`
+同尺寸 source-left 对照见 `evidence/stage1/visual-compare/compare-*.png`；六来源总表为 `compare-six-sources-contact-sheet.png`。判断依据是同屏比较，不是只看实现截图。
 
-同屏比较证据（左侧 source，右侧 implementation）：
+## 2. Stage 1：原型原貌组合
 
-- `evidence/qa/compare-project-source-left.png`
-- `evidence/qa/compare-today-source-left.png`
-- `evidence/qa/compare-workbench-source-left.png`
+### 2.1 桌面视觉
 
-## 视口与密度归一化
+- CSS viewport：`1440×900`；最终主题矩阵记录的设备像素比为 `1.5`。早期同屏证据曾使用 `0.75` 图像归一化比例，那不是浏览器 DPR。
+- 宿主胶水：左栏 `58px`；顶部 header + context 共 `90px`；iframe `1382×810`。
+- 6/6 来源直接显示冻结字体、颜色、图标、资产、内容密度与原交互层级。
+- Basecamp 长页 `scrollHeight=1157` 属原来源；HEY 比 iframe 高 `3px` 属舍入 P3；其余来源无横溢。
+- fresh-tab 6 场景 console warn/error `0`。
 
-- Desktop：页面报告 `1440 × 900` CSS px、`devicePixelRatio 1.5`；浏览器 override 为 `2160 × 1350`，implementation capture 为 `1440 × 900` px。
-- Mobile：页面报告 `391 × 844` CSS px、`devicePixelRatio 1.5`；浏览器 override 为 `587 × 1266`，implementation capture 为 `391 × 843` px（捕获边界舍入 1px）。页面和文档 `scrollWidth = clientWidth = 391`。
-- Project / Today source 原始文件为 `1920 × 1200`，其中已批准画面以 `960 × 600` 区域记录；同屏比较先裁出该区域并归一化到 `720 × 450`。
-- Heptabase source 与 implementation 均为 `1440 × 900`，同屏比较各归一化为 `720 × 450`。
+证据：`evidence/stage1/visual-compare/` 与 `evidence/stage1/pass1/`。
 
-## 对照状态
+### 2.2 移动矩阵
 
-1. Project Room：`?mode=project&view=overview`，Project Solution，Overview。
-2. Today Rhythm：`?mode=today&view=overview`，全部范围，首屏。
-3. Evidence Workbench：`?mode=workbench&view=overview`，需要我介入，全部 Agent。
-4. Mobile：以上 3 个模式在页面实际报告的 `391 × 844` CSS 视口。
-5. 额外状态：深色主题、Project Work 详情、Update editor、Decision revision / accept、Candidate edit / accept、Run reconciliation、Action complete / move / Undo。
+- CSS viewport：`391×844`。
+- 3 组合 × 8 场景 = `24/24` 非空，owner / source 映射正确。
+- document root、组合按钮、场景导航和 6 来源均无横向溢出。
+- 可见启用控件 `<44×44 = 0`；无名称控件 `0`；console warn/error `0`。
+- Things / HEY / Agent Feed / Heptabase 使用原生单列或 section 层级；没有缩放桌面窗口或 Canvas。
 
-## 五项设计检查
+证据：`evidence/stage1/mobile-audit/`，最终 Agent 宽度复验在 `after-fix-2/agent-feed-391x844.png`。
 
-1. **字体与排版**：沿用 Chat 已批准的系统字体栈与 400 / 600–680 权重；页面标题 34–52px 自适应，正文 15–16px，小字 12–13px。桌面与 391px 中文标题自然换行，无截断。
-2. **间距与布局**：桌面为全局模式、上下文与主工作区三层；Project 保持房间式表面，Today 保持连续垂直节奏，Workbench 保持监督列表 + 责任边界。移动端移除两层侧栏，改用顶部上下文、单列内容与底部模式导航。
-3. **颜色与 Token**：所有组件颜色消费语义 Token；黑白骨架只用小面积暖色标记 Agent，success / warning / danger 保持独立。源码无渐变、发光或 box-shadow。
-4. **图像与资产**：目标不需要照片、插画或品牌图像；所有 UI 图标使用 `@phosphor-icons/react`，未使用 emoji、inline SVG、手绘 SVG、占位图或 CSS 绘制的品牌资产。
-5. **文案与内容**：3 个真实感 Project 覆盖工作、生活与爱好；Decision、Run、Candidate、Resource、Evidence、Participant 使用稳定 mock ID。页面持续标记组合原型与非真实服务，不冒充生产事实。
+### 2.3 真实核心路径
 
-## 浏览器行为与可访问性
+1. Basecamp Home → Project Room → Tasks / Schedule / My Events / Do Today 的 canonical owner 跳转。
+2. Linear List → Peek → full detail → Back；Project Updates → compose → publish → history / Pulse。
+3. Basecamp Todo List → Detail → Complete → Back（只在 `room-basecamp` 可达）。
+4. Things Today → Complete → Undo；Event row → HEY Calendar。
+5. HEY Day → Week → Year；email candidate → conflict → free slot → Save。
+6. Agent Feed `outcome_unknown` → Reconcile；Open record → 当前组合的 Work owner。
+7. Heptabase Card → Locations / Library / Chat / Board；Share focus lifecycle。
+8. 浏览器 / 产品返回保持来源对象与焦点语义。
 
-- Project：3 个 Project 可切换；Overview → Work → detail → 可见返回与浏览器返回均通过，返回焦点恢复到触发行；负责人 Update 编辑并发布 revision 通过。
-- Today：Decision / Run / Blocker 没有完成按钮；4 个可逆 Action 才显示完成 / 移晚。完成 → Undo、移晚 → Undo 均恢复原状态。
-- Workbench：Decision `revision 4 → 5` 且 hash 变化后接受；Candidate `revision 2 → 3` 后接受；已处理对象离开“需要我介入”。
-- Run：`outcome_unknown → querying → verified / succeeded` 通过；全路径不存在 Undo，也不触发第二次发布。
-- Filtering：Project status、Today scope、Workbench task type 与 Agent 均可交互；空结果有明确空态。
-- Desktop 内置设备开关实测得到 `391 × 844` 移动壳层；真实 391px 视口自动使用同一层级导航。
-- 391px 下无横向溢出、无未命名可见按钮，所有可见 `button / select` 宽高均不小于 44px。
-- 键盘数字 `1 / 2 / 3` 切换模式，`Esc` 返回；`:focus-visible` 与 `prefers-reduced-motion` 已实现。
-- 深色主题使用语义 Token 切换；浏览器控制台 `error / warn = 0`。
-- 浏览器扩展在 capture 右侧叠加的两个粉色悬浮按钮不属于页面 DOM，已从实现判断中排除。
+## 3. Stage 2：4 个统一主题 + source 基线
 
-## 比较与修复历史
+### 3.1 自动化合同
 
-### 第 1 轮
+- 宿主 / owner / theme：`15/15`
+- Basecamp：`22/22`
+- Linear：`16/16`
+- Things：`18/18`
+- HEY：`3/3`
+- Agent Feed：`11/11`
+- Heptabase：`18/18`
+- Sites：`4/4`
+- 合计：`107/107`
 
-- [P1] 可见“返回”按钮依赖 `history.state`，在外部浏览器控制面下点击没有离开详情。
-  - 修复：可见返回使用 URL state 的 replace 导航；浏览器原生 Back 仍由 popstate 恢复列表。
-  - 复验：Project detail → 返回得到 `?mode=project&view=work`，焦点恢复到 `work-list-work_memory_reconciliation-0`。
-- [P2] 从 Project 滚动位置切换到 Today 时沿用了相同 scrollTop，Today 首屏从中段开始。
-  - 修复：跨模式与列表 → detail 时重置 scrollTop；detail → list 恢复列表 scrollTop 和焦点。
-  - 复验：Today / Workbench 切换后 `workspace-scroll.scrollTop = 0`。
-- [P2] 移动 Workbench 的 status chip 作为 Grid item 被拉伸到整列宽。
-  - 修复：移动选择器为 status chip 增加 `justify-self: start; width: auto`。
-  - 复验：391px 下 chip `70px`、卡片 `359px`，不再拉伸且无横溢出。
+所有来源都在原 `styles.css` 后加载 `theme-overrides.css`；override 只命中 `warm-room / quiet-day / graphite-ops / common-thread`，`source` 没有 selector。合同禁止主题层重画 display / grid / position / width / spacing 等布局声明。
 
-### 第 2 轮
+### 3.2 桌面 30 面
 
-- 重新验证桌面、391px、深色主题、三套模式、设备开关、列表 / 详情 / 返回 / 焦点、筛选、编辑、决定、完成、撤销与对账。
-- 同屏对照确认：实现保留已批准的字体、黑白骨架、栏宽层级、连续时间节奏与工作台结构；为组合冲突有意统一对象语法并拒绝复制 6 个产品皮肤。
-- 未发现新的 P0 / P1 / P2。
+- 5 主题 × 6 来源 = `30/30`。
+- host `data-theme` 与激活 iframe `html.dataset.theme`：`30/30` 一致。
+- 真实内容：`30/30`；空白 `0`；横溢 `0`；console warn/error `0`。
+- CSS viewport：`30/30` 为 `1440×900`。
+- Warm `#245a46 / r10`、Quiet `#126fd3 / r8`、Graphite `#5b5fc7 / r6`、Common `#3d6f60 / r8` 在六来源的 canvas / ink / border / primary / radius 上均可区分且同主题一致。Quiet 从视觉参考的 `#1677e8` 下调亮度，白字对比由 `4.34:1` 提升到 `4.95:1`。
+- Quiet 对比度调整后由根 IAB 定点重跑 6/6 来源：`data-theme=quiet-day`、真实内容、`1440/1440`、console `0`；新截图为 `quiet-day-*-accessible.png`，并已覆盖 `theme-quiet-day-contact-sheet.png`。
 
-## 残余边界
+证据：
 
-- P3：外部浏览器扩展会在截图右侧显示不属于页面的悬浮按钮；不影响应用 DOM、点击路径或交付 URL。
-- P3：本原型为内存 Fixture，刷新会恢复初始状态；这是独立设计原型边界，不声称真实 Product Store 持久化。
+- `evidence/theme-qa/desktop/metrics.json`
+- `theme-warm-room-contact-sheet.png`
+- `theme-quiet-day-contact-sheet.png`
+- `theme-graphite-ops-contact-sheet.png`
+- `theme-common-thread-contact-sheet.png`
+- `source-vs-themes-{projects,work,today,calendar,agents,knowledge}.png`
 
-final result: passed
+### 3.3 移动 40 面
+
+- 5 主题 × 8 场景 = `40/40` 非空，主题传播 `40/40`。
+- 3/3 组合切换通过。
+- Host / iframe 无横溢 `40/40`；组合栏、主题栏、场景栏无横滚 `40/40`。
+- 可见启用控件 `<44×44 = 0`；无名称控件 `0`；console warn/error `0`。
+- 首轮 16 张矩阵截图为 CSS `391×844`，浏览器输出像素 `520×1125`；Quiet 对比度调整后另有 8 张逐场景 accessibility 定点复验和 1 张 contact sheet。
+- Quiet 对比度调整后再次定点重跑 8/8 场景：host 与 child 均 `391/391`、主题同步 `8/8`、console `0`；新证据为 `quiet-day-*-accessible-391x844.png` 与 `quiet-day-accessible-contact-sheet.png`。
+
+证据：`evidence/theme-qa/mobile/`。
+
+### 3.4 状态连续性
+
+主题最初复用 `chat:route`，会把 Linear canonical `peek=1` 重放，形成 P1。已拆成独立 `chat:theme`：只 `replaceState` 子 iframe 的 theme query 与 `documentElement.dataset.theme`，不 dispatch `popstate`、不重建 React App。
+
+真实浏览器复验 6/6：
+
+| 来源 | 非默认状态 | 切主题后 |
+|---|---|---|
+| Basecamp | Unstar Enormicom | 仍为未星标 |
+| Linear | Close Peek | Peek 保持关闭，iframe src 不重建 |
+| Things | Complete Action + Undo toast | Action 仍完成，Undo 仍在 |
+| HEY | Event composer draft | dialog / draft 保留 |
+| Agent Feed | 选择 `outcome_unknown` item | pressed item 与 detail 保留 |
+| Heptabase | Locations tab selected | `aria-selected=true` 保留 |
+
+## 4. 修复历史
+
+### Stage 1
+
+- **P1** direct `scene=room` 首载误显示 Basecamp Home → iframe 初始 URL 捕获当前 deep-link。
+- **P1** Linear Work 默认没有 Peek → canonical route 增加 `peek=1`。
+- **P2** 126px 宿主壳导致 HEY 首屏裁切 → desktop shell 压到 90px。
+- **P1** `room-basecamp` Project Tasks 已打开 Basecamp Todo，但宿主仍标 Room → 所有组合都先进入 canonical Work scene。
+- **P2** 移动组合栏 / 场景栏持久横滚 → 缩减到 44px 网格并消除滚轨。
+- **P2** Basecamp mobile brand 宽 35px → 扩到至少 44px。
+- **P2** Agent Feed page-bar 多出 8.38px → grid item stretch / max-width 收口，最终 root / workspace / page-bar 均 `391/391`。
+
+### Stage 2
+
+- **P1** 主题切换重放 canonical route，Linear Peek 重新打开 → 独立 `chat:theme`，状态 6/6 保留。
+- **P1** 带 `theme=` 的 direct deep-link 初始 iframe 仍先固定为 `source`，部分来源 URL 已变但 `data-theme` 未同步 → stable iframe 的一次性 initial URL 直接捕获当前 theme；之后切换仍只走 `chat:theme`。
+- **P2** 移动场景按钮 focus tooltip 把底栏从 391 扩到 478px → 移动端隐藏视觉 tooltip，accessible name / title 保留。
+
+## 5. 残余边界
+
+- P3：旧 Stage 1 全页截图没有后来加入的主题按钮；iframe 内 `source` 原貌未漂移。当前 theme QA 已提供新版 source-vs-theme 对照。
+- P3：HEY 桌面有 `3px` 内滚动舍入；不遮挡持久控件。
+- P3：原型使用内存 fixture，刷新恢复初始状态；不声称 Product Store 持久化。
+- 浏览器工具本身偶发 Statsig 网络日志不属于页面；页面 `dev.logs({warn,error})` 始终为 `[]`。
+
+最终残余：`P0=0 / P1=0 / P2=0`。

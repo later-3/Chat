@@ -1,52 +1,115 @@
-# Chat 参考组合原型
+# Chat Literal Reference Compositions
 
-这不是 6 个产品皮肤的拼盘，而是用同一批稳定对象与同一套 Chat 视觉语言，验证 3 个互斥注意力模式。
+这是 6 个冻结参考原型的**直接组合应用**，不是重新画一套“像参考产品”的 UI。Basecamp、Things、Linear、HEY Calendar、Microsoft Agent Feed、Heptabase 的真实 JSX、交互模型、CSS 和资产都保留在 `references/`；宿主只负责 3 件事：场景路由、重叠功能唯一主责、可切换主题。
 
-## 为什么是 3 个模式
+此前的 `Project Room / Today Rhythm / Evidence Workbench` 抽象重绘方案已经废弃，不再是当前实现、体验 URL 或任务 2 输入。
 
-场景按“用户此刻在回答什么问题”收口后，形成 3 个不能继续合并的工作模式：
+## 为什么是 3 套
 
-1. **Project Room**：我的长期 Project 现在处于哪个 Stage / Milestone / Iteration，哪些 Work / Scope / Action 正在推进，负责人怎样基于 Evidence 写 Update。
-2. **Today Rhythm**：今天有哪些不可压缩的时间约束，我个人要完成、判断或看护什么；Today 只投影 Action，不拥有长期 Project。
-3. **Evidence Workbench**：多 Agent 产生的 Decision、Candidate、Run 与 Evidence 中，哪里需要人；`outcome_unknown` 只允许查询对账。
+6 个参考里真正影响整 App 骨架的重叠主要发生在 Basecamp 与 Linear：
 
-合并 Project Room 与 Today 会混淆长期归属和个人注意力；合并 Today 与 Workbench 会把 Decision / Run 伪装成勾选任务；合并 Project Room 与 Workbench 会让监督 Feed 取代 Project 叙事。因此 3 套是当前场景轴下最小且有区分度的数量。
+- 谁拥有多 Project 的默认入口：Basecamp Home，还是 Linear Project overview。
+- 谁拥有 Work 的 List / Peek / Detail：Basecamp To-do，还是 Linear Issue。
+- 谁拥有 Project Update：三套都由 Linear 独占，避免 Message Board 与 Update 重复。
 
-## 参考语法与拒绝项
+Things、HEY、Agent Feed、Heptabase 分别独占 Today、Calendar、Agent supervision、Knowledge，不参与重复竞争。由此得到 3 个完整度高且不重复的有效组合；第 4 个数学组合“Linear Project 首页 + Basecamp Work”只增加第二套 Project / Work 跳转，没有新增能力，因此拒绝。
 
-| 模式 | 采用 / 适配 | 明确拒绝 |
+| 组合 | 默认骨架 | Projects | Room | Work | Update | 固定补全场景 |
+|---|---|---|---|---|---|---|
+| `room-linear` / 房间优先 | Basecamp | Basecamp | Basecamp | Linear | Linear | Things Today、HEY Calendar、Agent Feed、Heptabase |
+| `room-basecamp` / 原生房间 | Basecamp | Basecamp | Basecamp | Basecamp | Linear | Things Today、HEY Calendar、Agent Feed、Heptabase |
+| `work-linear` / 工作优先 | Linear | Linear | Basecamp | Linear | Linear | Things Today、HEY Calendar、Agent Feed、Heptabase |
+
+每个能力在每套里只有 1 个 owner。被裁掉的只是重复入口，不是把两个任务系统拼在同屏：
+
+- Linear-work 组合中，Basecamp 的 Project Tasks / My Tasks / Everything todos 都跳到同一个 Linear Work 场景；Basecamp Todo 链不可达。
+- Basecamp-work 组合中，Linear Issues 不可达；Linear 只补 Project Update / Pulse。
+- Calendar / My Events / Schedule 统一进入 HEY；Do Today 统一进入 Things。
+- Agent Feed 的 related record 回到当前组合的权威 Work；Feed 不拥有 Decision / Run / Evidence 正式事实。
+- Things 只拥有 Action；HEY 只拥有 Event；Heptabase 只拥有知识 Card / placement / context。
+
+## 可体验入口
+
+启动后统一入口为 `http://127.0.0.1:4177/`。
+
+| 组合 | URL |
+|---|---|
+| 房间优先 | `/?composition=room-linear&scene=projects` |
+| 原生房间 | `/?composition=room-basecamp&scene=projects` |
+| 工作优先 | `/?composition=work-linear&scene=work` |
+
+8 个场景均可直接 deep-link：`projects`、`room`、`work`、`updates`、`today`、`calendar`、`agents`、`knowledge`。例如：
+
+```text
+/?composition=room-linear&scene=room
+/?composition=room-basecamp&scene=work
+/?composition=work-linear&scene=agents
+```
+
+## 主题切换
+
+顶部 `原 / 暖 / 静 / 准 / 合` 5 个按钮在同一套完整应用内切换：
+
+| ID | 按钮 | 来源 |
 |---|---|---|
-| Project Room | Basecamp 的房间连续性；Linear 的 List → detail → return 与负责人 Update | 六宫格工具首页、活动日志冒充 Update、密集灰阶皮肤 |
-| Today Rhythm | Things 的 Project × Today 正交；HEY 的连续日节奏与真实时间约束 | 所有对象都变成 checkbox、Work 自动变 Event、任意彩色装饰 |
-| Evidence Workbench | Microsoft Agent Feed 的“需介入”分流；Heptabase 的稳定对象身份、材料并排与显式上下文 | 社交 Feed、Completed 大桶、无限画布默认首页、画布位置成为权威关系 |
+| `source` | 原 | 6 个参考原型各自的冻结视觉；不做 override |
+| `warm-room` | 暖 | Basecamp 的纸张、forest green、clay 协作感 |
+| `quiet-day` | 静 | Things / HEY 的 clean white、ink blue、sky / gold 节奏 |
+| `graphite-ops` | 准 | Linear / Agent Feed 的 graphite、indigo、cyan 精密感 |
+| `common-thread` | 合 | 从 6 套提炼的 neutral stone、evergreen、amber Chat 共性 |
 
-三套共用 Chat 黑白骨架、Phosphor 图标、语义 Token、44px 控件与小面积暖色 Agent 标识。
+主题层只覆盖颜色、文字、边界、focus、圆角与阴影，不改 JSX、布局尺寸、图标、资产、对象或交互。主题使用独立 `chat:theme` 消息原地更新 iframe；不会重放 canonical route，因此关闭 Peek、编辑草稿、完成 Action、选择 Feed item 或切换 Heptabase panel 后换主题，状态仍保留。
 
-## 可体验路由
+可直接用 query 打开主题：
 
-本地服务器启动后：
+```text
+/?composition=room-linear&scene=room&theme=warm-room
+/?composition=room-linear&scene=today&theme=quiet-day
+/?composition=work-linear&scene=agents&theme=graphite-ops
+/?composition=room-basecamp&scene=knowledge&theme=common-thread
+```
 
-- Project Room：`/?mode=project&view=overview`
-- Today Rhythm：`/?mode=today&view=overview`
-- Evidence Workbench：`/?mode=workbench&view=overview`
+## 直接复用路径
 
-桌面右上角可切换 `391 × 844` 移动预览；真实窄屏会自动进入同一移动布局。数字键 `1 / 2 / 3` 切换模式，`Esc` 关闭详情。
+```text
+references/basecamp     Basecamp Home / Room / Tools / Todo
+references/linear       Linear List / Peek / Detail / Update / Pulse
+references/things       Things Today / Project / When / Deadline / Complete / Undo
+references/hey          HEY Day / Week / Year / Event candidate / conflict / save
+references/agent-feed   typed Agent supervision / HITL / outcome_unknown
+references/heptabase    Card / Whiteboard / placement / context / provenance
+```
 
-## 合同边界
+宿主实现仅在 `src/App.jsx`、`src/model.js`、`src/styles.css`。每个来源的 `theme-overrides.css` 都在原 `styles.css` 后加载；`source` 不命中任何主题选择器。
 
-- `src/model.js` 保存稳定 mock IDs 与纯状态转换。
-- 完成、移晚与撤销只允许作用于 `reversible Action`。
-- Decision 修改会增加 revision 并重算 mock hash；接受绑定当前 revision。
-- Candidate 可编辑或接受，但接受前不成为正式事实。
-- `outcome_unknown` 不提供 Undo 或普通重试；只支持查询回执后提交正式结果。
-- Decision、Run、Candidate 显式保存 visibility、consent 与 participant 边界。
+## 核心可点击路径
 
-## 验证命令
+- Basecamp Home → Project room → Message / Docs / Tasks / Chat / Schedule / Workflow → Back。
+- Linear List + Peek → full detail → Back；Project Overview → Updates → New update → Publish → Pulse。
+- Things Today → detail / When / Deadline / complete → Undo；Calendar row → HEY。
+- HEY Day → Week → Year；Email candidate → conflict → free slot → Save。
+- Agent Feed Needs attention → typed task → Decide / Reconcile / Open record。
+- Heptabase Whiteboard → Card / Locations / Library / Chat / Board → Share。
+- 3 套组合切换、8 场景切换、5 主题切换都不复制权威对象。
+
+## 运行与验证
 
 ```bash
+cd docs/design/combination-prototypes
+npm install
+npm run dev -- --host 127.0.0.1 --port 4177 --strictPort
 npm test
 npm run build
 npm run test:sites
 ```
 
-视觉与交互证据见 [`design-qa.md`](./design-qa.md)。
+当前自动化为宿主 / 主题 `15/15` + 六来源 `88/88` + Sites `4/4` = `107/107`；production build `4805 modules`。桌面、移动、同屏视觉和状态连续性证据见 [`design-qa.md`](./design-qa.md)。
+
+## 边界
+
+- 这是独立设计原型，不修改 `apps/web` 或生产 UI。
+- mock state 保存在当前 iframe 内存；刷新恢复 fixture。
+- 参考 UI 只背书覆盖范围与交互语法；Chat 的 Stage / Milestone / Iteration / Work / Scope / Action / Decision / Evidence / Participant 仍由正式产品合同拥有。
+- 当前不虚构跨账户社交、他人 Agent 授权、Agent—Agent 私聊或代表他人 consent。
+
+工作 branch：`codex/literal-reference-compositions`。最终 freeze commit 以 [`../references/README.md`](../references/README.md) 登记为准。

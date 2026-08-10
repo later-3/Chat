@@ -1,0 +1,2386 @@
+{
+  "summary": {
+    "screens": 30,
+    "themes": [
+      "source",
+      "warm-room",
+      "quiet-day",
+      "graphite-ops",
+      "common-thread"
+    ],
+    "scenes": [
+      "projects",
+      "work",
+      "today",
+      "calendar",
+      "agents",
+      "knowledge"
+    ],
+    "blank": [],
+    "overflow": [],
+    "themeMismatch": [],
+    "viewportMismatch": [],
+    "continuity": {
+      "scene": "work",
+      "closePeekRemainedClosed": true,
+      "iframeSrcStable": true,
+      "theme": "warm-room"
+    },
+    "quietAccessibilityRetest": {
+      "primary": "#126fd3",
+      "whiteTextContrast": 4.95,
+      "desktopScenes": 6,
+      "desktopThemeMatches": 6,
+      "desktopOverflow": 0,
+      "mobileScenes": 8,
+      "mobileThemeMatches": 8,
+      "mobileOverflow": 0,
+      "pageConsole": []
+    },
+    "pageConsole": []
+  },
+  "sync": [
+    {
+      "theme": "source",
+      "hostTheme": "source",
+      "activeFrames": [
+        {
+          "source": "basecamp",
+          "theme": "source"
+        },
+        {
+          "source": "linear",
+          "theme": "source"
+        },
+        {
+          "source": "things",
+          "theme": "source"
+        },
+        {
+          "source": "hey",
+          "theme": "source"
+        },
+        {
+          "source": "agent-feed",
+          "theme": "source"
+        },
+        {
+          "source": "heptabase",
+          "theme": "source"
+        }
+      ]
+    },
+    {
+      "theme": "warm-room",
+      "hostTheme": "warm-room",
+      "activeFrames": [
+        {
+          "source": "basecamp",
+          "theme": "warm-room"
+        },
+        {
+          "source": "linear",
+          "theme": "warm-room"
+        },
+        {
+          "source": "things",
+          "theme": "warm-room"
+        },
+        {
+          "source": "hey",
+          "theme": "warm-room"
+        },
+        {
+          "source": "agent-feed",
+          "theme": "warm-room"
+        },
+        {
+          "source": "heptabase",
+          "theme": "warm-room"
+        }
+      ]
+    },
+    {
+      "theme": "quiet-day",
+      "hostTheme": "quiet-day",
+      "activeFrames": [
+        {
+          "source": "basecamp",
+          "theme": "quiet-day"
+        },
+        {
+          "source": "linear",
+          "theme": "quiet-day"
+        },
+        {
+          "source": "things",
+          "theme": "quiet-day"
+        },
+        {
+          "source": "hey",
+          "theme": "quiet-day"
+        },
+        {
+          "source": "agent-feed",
+          "theme": "quiet-day"
+        },
+        {
+          "source": "heptabase",
+          "theme": "quiet-day"
+        }
+      ]
+    },
+    {
+      "theme": "graphite-ops",
+      "hostTheme": "graphite-ops",
+      "activeFrames": [
+        {
+          "source": "basecamp",
+          "theme": "graphite-ops"
+        },
+        {
+          "source": "linear",
+          "theme": "graphite-ops"
+        },
+        {
+          "source": "things",
+          "theme": "graphite-ops"
+        },
+        {
+          "source": "hey",
+          "theme": "graphite-ops"
+        },
+        {
+          "source": "agent-feed",
+          "theme": "graphite-ops"
+        },
+        {
+          "source": "heptabase",
+          "theme": "graphite-ops"
+        }
+      ]
+    },
+    {
+      "theme": "common-thread",
+      "hostTheme": "common-thread",
+      "activeFrames": [
+        {
+          "source": "basecamp",
+          "theme": "common-thread"
+        },
+        {
+          "source": "linear",
+          "theme": "common-thread"
+        },
+        {
+          "source": "things",
+          "theme": "common-thread"
+        },
+        {
+          "source": "hey",
+          "theme": "common-thread"
+        },
+        {
+          "source": "agent-feed",
+          "theme": "common-thread"
+        },
+        {
+          "source": "heptabase",
+          "theme": "common-thread"
+        }
+      ]
+    }
+  ],
+  "records": [
+    {
+      "theme": "source",
+      "scene": "projects",
+      "source": "basecamp",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/source-projects.png",
+      "htmlTheme": "source",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(251, 250, 247)",
+        "hostHtmlTheme": null,
+        "hostTheme": "source",
+        "hostTokens": {
+          "accent": "#2f5f50",
+          "ink": "#202124",
+          "line": "#d9d6cf",
+          "panel": "#fbfaf7"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=projects",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgba(0, 0, 0, 0)",
+          "color": "rgb(38, 52, 61)",
+          "font": "-apple-system, \"system-ui\", \"Segoe UI\", Helvetica, Arial, sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(38, 52, 61)",
+          "color": "rgb(38, 52, 61)",
+          "minHeight": "44px",
+          "radius": "0px"
+        },
+        "elements": 234,
+        "surface": {
+          "background": "rgba(0, 0, 0, 0)",
+          "borderColor": "rgb(38, 52, 61)",
+          "className": "home-layout",
+          "color": "rgb(38, 52, 61)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 1180,
+        "tokens": {
+          "border": "",
+          "canvas": "",
+          "ink": "",
+          "primary": "",
+          "radius": "",
+          "surface": ""
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 1078,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "source",
+      "scene": "work",
+      "source": "linear",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/source-work.png",
+      "htmlTheme": "source",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(251, 250, 247)",
+        "hostHtmlTheme": null,
+        "hostTheme": "source",
+        "hostTokens": {
+          "accent": "#2f5f50",
+          "ink": "#202124",
+          "line": "#d9d6cf",
+          "panel": "#fbfaf7"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=work",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(13, 14, 16)",
+          "color": "rgb(241, 241, 243)",
+          "font": "Inter, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(180, 180, 187)",
+          "color": "rgb(180, 180, 187)",
+          "minHeight": "34px",
+          "radius": "6px"
+        },
+        "elements": 305,
+        "surface": {
+          "background": "rgba(0, 0, 0, 0)",
+          "borderColor": "rgb(241, 241, 243)",
+          "className": "app-main",
+          "color": "rgb(241, 241, 243)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 1039,
+        "tokens": {
+          "border": "",
+          "canvas": "",
+          "ink": "",
+          "primary": "",
+          "radius": "",
+          "surface": ""
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "source",
+      "scene": "today",
+      "source": "things",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/source-today.png",
+      "htmlTheme": "source",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(251, 250, 247)",
+        "hostHtmlTheme": null,
+        "hostTheme": "source",
+        "hostTokens": {
+          "accent": "#2f5f50",
+          "ink": "#202124",
+          "line": "#d9d6cf",
+          "panel": "#fbfaf7"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=today",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(255, 255, 255)",
+          "color": "rgb(37, 37, 37)",
+          "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"Helvetica Neue\", Arial, sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(37, 37, 37)",
+          "color": "rgb(37, 37, 37)",
+          "minHeight": "auto",
+          "radius": "8px"
+        },
+        "elements": 180,
+        "surface": {
+          "background": "rgb(255, 255, 255)",
+          "borderColor": "rgb(37, 37, 37)",
+          "className": "stage",
+          "color": "rgb(37, 37, 37)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 694,
+        "tokens": {
+          "border": "",
+          "canvas": "",
+          "ink": "",
+          "primary": "",
+          "radius": "",
+          "surface": ""
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "source",
+      "scene": "calendar",
+      "source": "hey",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/source-calendar.png",
+      "htmlTheme": "source",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(251, 250, 247)",
+        "hostHtmlTheme": null,
+        "hostTheme": "source",
+        "hostTokens": {
+          "accent": "#2f5f50",
+          "ink": "#202124",
+          "line": "#d9d6cf",
+          "panel": "#fbfaf7"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=calendar",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(251, 251, 252)",
+          "color": "rgb(33, 29, 49)",
+          "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"Helvetica Neue\", Arial, sans-serif"
+        },
+        "button": {
+          "background": "rgb(49, 95, 233)",
+          "border": "rgb(255, 255, 255)",
+          "color": "rgb(255, 255, 255)",
+          "minHeight": "auto",
+          "radius": "25px 0px 0px 25px"
+        },
+        "elements": 184,
+        "surface": {
+          "background": "rgb(255, 255, 255)",
+          "borderColor": "rgb(33, 29, 49)",
+          "className": "calendar-main day-main",
+          "color": "rgb(33, 29, 49)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 408,
+        "tokens": {
+          "border": "",
+          "canvas": "",
+          "ink": "",
+          "primary": "",
+          "radius": "",
+          "surface": ""
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 813,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "source",
+      "scene": "agents",
+      "source": "agent-feed",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/source-agents.png",
+      "htmlTheme": "source",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(251, 250, 247)",
+        "hostHtmlTheme": null,
+        "hostTheme": "source",
+        "hostTokens": {
+          "accent": "#2f5f50",
+          "ink": "#202124",
+          "line": "#d9d6cf",
+          "panel": "#fbfaf7"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=agents",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgba(0, 0, 0, 0)",
+          "color": "rgb(36, 36, 36)",
+          "font": "\"Segoe UI\", -apple-system, \"system-ui\", system-ui, sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(36, 36, 36)",
+          "color": "rgb(36, 36, 36)",
+          "minHeight": "auto",
+          "radius": "3px"
+        },
+        "elements": 195,
+        "surface": {
+          "background": "rgb(255, 255, 255)",
+          "borderColor": "rgb(36, 36, 36)",
+          "className": "workspace",
+          "color": "rgb(36, 36, 36)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 1477,
+        "tokens": {
+          "border": "",
+          "canvas": "",
+          "ink": "",
+          "primary": "",
+          "radius": "",
+          "surface": ""
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "source",
+      "scene": "knowledge",
+      "source": "heptabase",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/source-knowledge.png",
+      "htmlTheme": "source",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(251, 250, 247)",
+        "hostHtmlTheme": null,
+        "hostTheme": "source",
+        "hostTokens": {
+          "accent": "#2f5f50",
+          "ink": "#202124",
+          "line": "#d9d6cf",
+          "panel": "#fbfaf7"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=knowledge",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(243, 243, 242)",
+          "color": "rgb(36, 36, 36)",
+          "font": "Inter, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif"
+        },
+        "button": {
+          "background": "rgb(255, 255, 255)",
+          "border": "rgba(36, 36, 36, 0.2)",
+          "color": "rgb(36, 36, 36)",
+          "minHeight": "44px",
+          "radius": "8px"
+        },
+        "elements": 341,
+        "surface": {
+          "background": "rgba(0, 0, 0, 0)",
+          "borderColor": "rgb(36, 36, 36)",
+          "className": "heptabase-app has-panel ",
+          "color": "rgb(36, 36, 36)",
+          "radius": "0px",
+          "tag": "DIV"
+        },
+        "textLength": 860,
+        "tokens": {
+          "border": "",
+          "canvas": "",
+          "ink": "",
+          "primary": "",
+          "radius": "",
+          "surface": ""
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "warm-room",
+      "scene": "projects",
+      "source": "basecamp",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/warm-room-projects.png",
+      "htmlTheme": "warm-room",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 253, 248)",
+        "hostBackground": "rgb(246, 241, 232)",
+        "hostHtmlTheme": null,
+        "hostTheme": "warm-room",
+        "hostTokens": {
+          "accent": "#245a46",
+          "ink": "#17352d",
+          "line": "#ded4c5",
+          "panel": "#fffaf2"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=projects&theme=warm-room",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(247, 242, 234)",
+          "color": "rgb(39, 51, 46)",
+          "font": "-apple-system, \"system-ui\", \"Segoe UI\", Helvetica, Arial, sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(39, 51, 46)",
+          "color": "rgb(39, 51, 46)",
+          "minHeight": "44px",
+          "radius": "0px"
+        },
+        "elements": 234,
+        "surface": {
+          "background": "rgba(0, 0, 0, 0)",
+          "borderColor": "rgb(39, 51, 46)",
+          "className": "home-layout",
+          "color": "rgb(39, 51, 46)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 1180,
+        "tokens": {
+          "border": "#d8d0c3",
+          "canvas": "#f7f2ea",
+          "ink": "#27332e",
+          "primary": "#245a46",
+          "radius": "10px",
+          "surface": "#fffaf3"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 1078,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "warm-room",
+      "scene": "work",
+      "source": "linear",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/warm-room-work.png",
+      "htmlTheme": "warm-room",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 253, 248)",
+        "hostBackground": "rgb(246, 241, 232)",
+        "hostHtmlTheme": null,
+        "hostTheme": "warm-room",
+        "hostTokens": {
+          "accent": "#245a46",
+          "ink": "#17352d",
+          "line": "#ded4c5",
+          "panel": "#fffaf2"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=work&theme=warm-room",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(243, 237, 226)",
+          "color": "rgb(32, 55, 46)",
+          "font": "Inter, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(102, 115, 108)",
+          "color": "rgb(102, 115, 108)",
+          "minHeight": "34px",
+          "radius": "10px"
+        },
+        "elements": 305,
+        "surface": {
+          "background": "rgb(243, 237, 226)",
+          "borderColor": "rgb(32, 55, 46)",
+          "className": "app-main",
+          "color": "rgb(32, 55, 46)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 1039,
+        "tokens": {
+          "border": "#d6c6b0",
+          "canvas": "#f3ede2",
+          "ink": "#20372e",
+          "primary": "#245a46",
+          "radius": "10px",
+          "surface": "#fffaf1"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "warm-room",
+      "scene": "today",
+      "source": "things",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/warm-room-today.png",
+      "htmlTheme": "warm-room",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 253, 248)",
+        "hostBackground": "rgb(246, 241, 232)",
+        "hostHtmlTheme": null,
+        "hostTheme": "warm-room",
+        "hostTokens": {
+          "accent": "#245a46",
+          "ink": "#17352d",
+          "line": "#ded4c5",
+          "panel": "#fffaf2"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=today&theme=warm-room",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(247, 242, 234)",
+          "color": "rgb(39, 51, 46)",
+          "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"Helvetica Neue\", Arial, sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(39, 51, 46)",
+          "color": "rgb(39, 51, 46)",
+          "minHeight": "auto",
+          "radius": "8px"
+        },
+        "elements": 180,
+        "surface": {
+          "background": "rgb(247, 242, 234)",
+          "borderColor": "rgb(39, 51, 46)",
+          "className": "stage",
+          "color": "rgb(39, 51, 46)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 694,
+        "tokens": {
+          "border": "#d8d0c3",
+          "canvas": "#f7f2ea",
+          "ink": "#27332e",
+          "primary": "#245a46",
+          "radius": "10px",
+          "surface": "#fffaf3"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "warm-room",
+      "scene": "calendar",
+      "source": "hey",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/warm-room-calendar.png",
+      "htmlTheme": "warm-room",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 253, 248)",
+        "hostBackground": "rgb(246, 241, 232)",
+        "hostHtmlTheme": null,
+        "hostTheme": "warm-room",
+        "hostTokens": {
+          "accent": "#245a46",
+          "ink": "#17352d",
+          "line": "#ded4c5",
+          "panel": "#fffaf2"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=calendar&theme=warm-room",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(247, 242, 234)",
+          "color": "rgb(39, 51, 46)",
+          "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"Helvetica Neue\", Arial, sans-serif"
+        },
+        "button": {
+          "background": "rgb(36, 90, 70)",
+          "border": "rgb(255, 255, 255)",
+          "color": "rgb(255, 255, 255)",
+          "minHeight": "auto",
+          "radius": "25px 0px 0px 25px"
+        },
+        "elements": 184,
+        "surface": {
+          "background": "rgb(255, 250, 243)",
+          "borderColor": "rgb(39, 51, 46)",
+          "className": "calendar-main day-main",
+          "color": "rgb(39, 51, 46)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 408,
+        "tokens": {
+          "border": "#d8d0c3",
+          "canvas": "#f7f2ea",
+          "ink": "#27332e",
+          "primary": "#245a46",
+          "radius": "10px",
+          "surface": "#fffaf3"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 813,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "warm-room",
+      "scene": "agents",
+      "source": "agent-feed",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/warm-room-agents.png",
+      "htmlTheme": "warm-room",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 253, 248)",
+        "hostBackground": "rgb(246, 241, 232)",
+        "hostHtmlTheme": null,
+        "hostTheme": "warm-room",
+        "hostTokens": {
+          "accent": "#245a46",
+          "ink": "#17352d",
+          "line": "#ded4c5",
+          "panel": "#fffaf2"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=agents&theme=warm-room",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(243, 237, 226)",
+          "color": "rgb(32, 55, 46)",
+          "font": "\"Segoe UI\", -apple-system, \"system-ui\", system-ui, sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(32, 55, 46)",
+          "color": "rgb(32, 55, 46)",
+          "minHeight": "auto",
+          "radius": "10px"
+        },
+        "elements": 195,
+        "surface": {
+          "background": "rgb(255, 250, 241)",
+          "borderColor": "rgb(214, 198, 176)",
+          "className": "workspace",
+          "color": "rgb(32, 55, 46)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 1477,
+        "tokens": {
+          "border": "#d6c6b0",
+          "canvas": "#f3ede2",
+          "ink": "#20372e",
+          "primary": "#245a46",
+          "radius": "10px",
+          "surface": "#fffaf1"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "warm-room",
+      "scene": "knowledge",
+      "source": "heptabase",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/warm-room-knowledge.png",
+      "htmlTheme": "warm-room",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 253, 248)",
+        "hostBackground": "rgb(246, 241, 232)",
+        "hostHtmlTheme": null,
+        "hostTheme": "warm-room",
+        "hostTokens": {
+          "accent": "#245a46",
+          "ink": "#17352d",
+          "line": "#ded4c5",
+          "panel": "#fffaf2"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=knowledge&theme=warm-room",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(243, 237, 226)",
+          "color": "rgb(32, 55, 46)",
+          "font": "Inter, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif"
+        },
+        "button": {
+          "background": "rgb(255, 250, 241)",
+          "border": "rgb(214, 198, 176)",
+          "color": "rgb(32, 55, 46)",
+          "minHeight": "44px",
+          "radius": "10px"
+        },
+        "elements": 341,
+        "surface": {
+          "background": "rgb(243, 237, 226)",
+          "borderColor": "rgb(32, 55, 46)",
+          "className": "heptabase-app has-panel ",
+          "color": "rgb(32, 55, 46)",
+          "radius": "0px",
+          "tag": "DIV"
+        },
+        "textLength": 860,
+        "tokens": {
+          "border": "#d6c6b0",
+          "canvas": "#f3ede2",
+          "ink": "#20372e",
+          "primary": "#245a46",
+          "radius": "10px",
+          "surface": "#fffaf1"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "quiet-day",
+      "scene": "projects",
+      "source": "basecamp",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/quiet-day-projects.png",
+      "htmlTheme": "quiet-day",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(247, 249, 252)",
+        "hostHtmlTheme": null,
+        "hostTheme": "quiet-day",
+        "hostTokens": {
+          "accent": "#126fd3",
+          "ink": "#123a6d",
+          "line": "#dbe4ef",
+          "panel": "#fbfdff"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=projects&theme=quiet-day",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(247, 249, 252)",
+          "color": "rgb(18, 58, 109)",
+          "font": "-apple-system, \"system-ui\", \"Segoe UI\", Helvetica, Arial, sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(18, 58, 109)",
+          "color": "rgb(18, 58, 109)",
+          "minHeight": "44px",
+          "radius": "0px"
+        },
+        "elements": 234,
+        "surface": {
+          "background": "rgba(0, 0, 0, 0)",
+          "borderColor": "rgb(18, 58, 109)",
+          "className": "home-layout",
+          "color": "rgb(18, 58, 109)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 1180,
+        "tokens": {
+          "border": "#dfe6ef",
+          "canvas": "#f7f9fc",
+          "ink": "#123a6d",
+          "primary": "#126fd3",
+          "radius": "8px",
+          "surface": "#ffffff"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 1078,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "quiet-day",
+      "scene": "work",
+      "source": "linear",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/quiet-day-work.png",
+      "htmlTheme": "quiet-day",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(247, 249, 252)",
+        "hostHtmlTheme": null,
+        "hostTheme": "quiet-day",
+        "hostTokens": {
+          "accent": "#126fd3",
+          "ink": "#123a6d",
+          "line": "#dbe4ef",
+          "panel": "#fbfdff"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=work&theme=quiet-day",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(245, 248, 252)",
+          "color": "rgb(18, 58, 109)",
+          "font": "Inter, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(97, 115, 138)",
+          "color": "rgb(97, 115, 138)",
+          "minHeight": "34px",
+          "radius": "8px"
+        },
+        "elements": 305,
+        "surface": {
+          "background": "rgb(245, 248, 252)",
+          "borderColor": "rgb(18, 58, 109)",
+          "className": "app-main",
+          "color": "rgb(18, 58, 109)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 1039,
+        "tokens": {
+          "border": "#d7e0e9",
+          "canvas": "#f5f8fc",
+          "ink": "#123a6d",
+          "primary": "#126fd3",
+          "radius": "8px",
+          "surface": "#ffffff"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "quiet-day",
+      "scene": "today",
+      "source": "things",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/quiet-day-today.png",
+      "htmlTheme": "quiet-day",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(247, 249, 252)",
+        "hostHtmlTheme": null,
+        "hostTheme": "quiet-day",
+        "hostTokens": {
+          "accent": "#126fd3",
+          "ink": "#123a6d",
+          "line": "#dbe4ef",
+          "panel": "#fbfdff"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=today&theme=quiet-day",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(247, 249, 252)",
+          "color": "rgb(18, 58, 109)",
+          "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"Helvetica Neue\", Arial, sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(18, 58, 109)",
+          "color": "rgb(18, 58, 109)",
+          "minHeight": "auto",
+          "radius": "8px"
+        },
+        "elements": 180,
+        "surface": {
+          "background": "rgb(247, 249, 252)",
+          "borderColor": "rgb(18, 58, 109)",
+          "className": "stage",
+          "color": "rgb(18, 58, 109)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 694,
+        "tokens": {
+          "border": "#dfe6ef",
+          "canvas": "#f7f9fc",
+          "ink": "#123a6d",
+          "primary": "#126fd3",
+          "radius": "8px",
+          "surface": "#ffffff"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "quiet-day",
+      "scene": "calendar",
+      "source": "hey",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/quiet-day-calendar.png",
+      "htmlTheme": "quiet-day",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(247, 249, 252)",
+        "hostHtmlTheme": null,
+        "hostTheme": "quiet-day",
+        "hostTokens": {
+          "accent": "#126fd3",
+          "ink": "#123a6d",
+          "line": "#dbe4ef",
+          "panel": "#fbfdff"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=calendar&theme=quiet-day",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(247, 249, 252)",
+          "color": "rgb(18, 58, 109)",
+          "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"Helvetica Neue\", Arial, sans-serif"
+        },
+        "button": {
+          "background": "rgb(18, 111, 211)",
+          "border": "rgb(255, 255, 255)",
+          "color": "rgb(255, 255, 255)",
+          "minHeight": "auto",
+          "radius": "25px 0px 0px 25px"
+        },
+        "elements": 184,
+        "surface": {
+          "background": "rgb(255, 255, 255)",
+          "borderColor": "rgb(18, 58, 109)",
+          "className": "calendar-main day-main",
+          "color": "rgb(18, 58, 109)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 408,
+        "tokens": {
+          "border": "#dfe6ef",
+          "canvas": "#f7f9fc",
+          "ink": "#123a6d",
+          "primary": "#126fd3",
+          "radius": "8px",
+          "surface": "#ffffff"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 813,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "quiet-day",
+      "scene": "agents",
+      "source": "agent-feed",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/quiet-day-agents.png",
+      "htmlTheme": "quiet-day",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(247, 249, 252)",
+        "hostHtmlTheme": null,
+        "hostTheme": "quiet-day",
+        "hostTokens": {
+          "accent": "#126fd3",
+          "ink": "#123a6d",
+          "line": "#dbe4ef",
+          "panel": "#fbfdff"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=agents&theme=quiet-day",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(245, 248, 252)",
+          "color": "rgb(18, 58, 109)",
+          "font": "\"Segoe UI\", -apple-system, \"system-ui\", system-ui, sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(18, 58, 109)",
+          "color": "rgb(18, 58, 109)",
+          "minHeight": "auto",
+          "radius": "8px"
+        },
+        "elements": 195,
+        "surface": {
+          "background": "rgb(255, 255, 255)",
+          "borderColor": "rgb(215, 224, 233)",
+          "className": "workspace",
+          "color": "rgb(18, 58, 109)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 1477,
+        "tokens": {
+          "border": "#d7e0e9",
+          "canvas": "#f5f8fc",
+          "ink": "#123a6d",
+          "primary": "#126fd3",
+          "radius": "8px",
+          "surface": "#ffffff"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "quiet-day",
+      "scene": "knowledge",
+      "source": "heptabase",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/quiet-day-knowledge.png",
+      "htmlTheme": "quiet-day",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(247, 249, 252)",
+        "hostHtmlTheme": null,
+        "hostTheme": "quiet-day",
+        "hostTokens": {
+          "accent": "#126fd3",
+          "ink": "#123a6d",
+          "line": "#dbe4ef",
+          "panel": "#fbfdff"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=knowledge&theme=quiet-day",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(245, 248, 252)",
+          "color": "rgb(18, 58, 109)",
+          "font": "Inter, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif"
+        },
+        "button": {
+          "background": "rgb(255, 255, 255)",
+          "border": "rgb(215, 224, 233)",
+          "color": "rgb(18, 58, 109)",
+          "minHeight": "44px",
+          "radius": "8px"
+        },
+        "elements": 341,
+        "surface": {
+          "background": "rgb(245, 248, 252)",
+          "borderColor": "rgb(18, 58, 109)",
+          "className": "heptabase-app has-panel ",
+          "color": "rgb(18, 58, 109)",
+          "radius": "0px",
+          "tag": "DIV"
+        },
+        "textLength": 860,
+        "tokens": {
+          "border": "#d7e0e9",
+          "canvas": "#f5f8fc",
+          "ink": "#123a6d",
+          "primary": "#126fd3",
+          "radius": "8px",
+          "surface": "#ffffff"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "graphite-ops",
+      "scene": "projects",
+      "source": "basecamp",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/graphite-ops-projects.png",
+      "htmlTheme": "graphite-ops",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(246, 247, 249)",
+        "hostHtmlTheme": null,
+        "hostTheme": "graphite-ops",
+        "hostTokens": {
+          "accent": "#5b5fc7",
+          "ink": "#17191c",
+          "line": "#dfe3e8",
+          "panel": "#fafbfc"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=projects&theme=graphite-ops",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(245, 247, 249)",
+          "color": "rgb(23, 25, 28)",
+          "font": "-apple-system, \"system-ui\", \"Segoe UI\", Helvetica, Arial, sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(23, 25, 28)",
+          "color": "rgb(23, 25, 28)",
+          "minHeight": "44px",
+          "radius": "0px"
+        },
+        "elements": 234,
+        "surface": {
+          "background": "rgba(0, 0, 0, 0)",
+          "borderColor": "rgb(23, 25, 28)",
+          "className": "home-layout",
+          "color": "rgb(23, 25, 28)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 1180,
+        "tokens": {
+          "border": "#ccd2d9",
+          "canvas": "#f5f7f9",
+          "ink": "#17191c",
+          "primary": "#5b5fc7",
+          "radius": "6px",
+          "surface": "#ffffff"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 1078,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "graphite-ops",
+      "scene": "work",
+      "source": "linear",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/graphite-ops-work.png",
+      "htmlTheme": "graphite-ops",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(246, 247, 249)",
+        "hostHtmlTheme": null,
+        "hostTheme": "graphite-ops",
+        "hostTokens": {
+          "accent": "#5b5fc7",
+          "ink": "#17191c",
+          "line": "#dfe3e8",
+          "panel": "#fafbfc"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=work&theme=graphite-ops",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(238, 241, 244)",
+          "color": "rgb(23, 25, 28)",
+          "font": "Inter, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(95, 102, 112)",
+          "color": "rgb(95, 102, 112)",
+          "minHeight": "34px",
+          "radius": "6px"
+        },
+        "elements": 305,
+        "surface": {
+          "background": "rgb(238, 241, 244)",
+          "borderColor": "rgb(23, 25, 28)",
+          "className": "app-main",
+          "color": "rgb(23, 25, 28)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 1039,
+        "tokens": {
+          "border": "#cbd2d8",
+          "canvas": "#eef1f4",
+          "ink": "#17191c",
+          "primary": "#5b5fc7",
+          "radius": "6px",
+          "surface": "#f8fafc"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "graphite-ops",
+      "scene": "today",
+      "source": "things",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/graphite-ops-today.png",
+      "htmlTheme": "graphite-ops",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(246, 247, 249)",
+        "hostHtmlTheme": null,
+        "hostTheme": "graphite-ops",
+        "hostTokens": {
+          "accent": "#5b5fc7",
+          "ink": "#17191c",
+          "line": "#dfe3e8",
+          "panel": "#fafbfc"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=today&theme=graphite-ops",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(245, 247, 249)",
+          "color": "rgb(23, 25, 28)",
+          "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"Helvetica Neue\", Arial, sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(23, 25, 28)",
+          "color": "rgb(23, 25, 28)",
+          "minHeight": "auto",
+          "radius": "8px"
+        },
+        "elements": 180,
+        "surface": {
+          "background": "rgb(245, 247, 249)",
+          "borderColor": "rgb(23, 25, 28)",
+          "className": "stage",
+          "color": "rgb(23, 25, 28)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 694,
+        "tokens": {
+          "border": "#ccd2d9",
+          "canvas": "#f5f7f9",
+          "ink": "#17191c",
+          "primary": "#5b5fc7",
+          "radius": "6px",
+          "surface": "#ffffff"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "graphite-ops",
+      "scene": "calendar",
+      "source": "hey",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/graphite-ops-calendar.png",
+      "htmlTheme": "graphite-ops",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(246, 247, 249)",
+        "hostHtmlTheme": null,
+        "hostTheme": "graphite-ops",
+        "hostTokens": {
+          "accent": "#5b5fc7",
+          "ink": "#17191c",
+          "line": "#dfe3e8",
+          "panel": "#fafbfc"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=calendar&theme=graphite-ops",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(245, 247, 249)",
+          "color": "rgb(23, 25, 28)",
+          "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"Helvetica Neue\", Arial, sans-serif"
+        },
+        "button": {
+          "background": "rgb(91, 95, 199)",
+          "border": "rgb(255, 255, 255)",
+          "color": "rgb(255, 255, 255)",
+          "minHeight": "auto",
+          "radius": "25px 0px 0px 25px"
+        },
+        "elements": 184,
+        "surface": {
+          "background": "rgb(255, 255, 255)",
+          "borderColor": "rgb(23, 25, 28)",
+          "className": "calendar-main day-main",
+          "color": "rgb(23, 25, 28)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 408,
+        "tokens": {
+          "border": "#ccd2d9",
+          "canvas": "#f5f7f9",
+          "ink": "#17191c",
+          "primary": "#5b5fc7",
+          "radius": "6px",
+          "surface": "#ffffff"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 813,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "graphite-ops",
+      "scene": "agents",
+      "source": "agent-feed",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/graphite-ops-agents.png",
+      "htmlTheme": "graphite-ops",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(246, 247, 249)",
+        "hostHtmlTheme": null,
+        "hostTheme": "graphite-ops",
+        "hostTokens": {
+          "accent": "#5b5fc7",
+          "ink": "#17191c",
+          "line": "#dfe3e8",
+          "panel": "#fafbfc"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=agents&theme=graphite-ops",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(238, 241, 244)",
+          "color": "rgb(23, 25, 28)",
+          "font": "\"Segoe UI\", -apple-system, \"system-ui\", system-ui, sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(23, 25, 28)",
+          "color": "rgb(23, 25, 28)",
+          "minHeight": "auto",
+          "radius": "6px"
+        },
+        "elements": 195,
+        "surface": {
+          "background": "rgb(248, 250, 252)",
+          "borderColor": "rgb(203, 210, 216)",
+          "className": "workspace",
+          "color": "rgb(23, 25, 28)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 1477,
+        "tokens": {
+          "border": "#cbd2d8",
+          "canvas": "#eef1f4",
+          "ink": "#17191c",
+          "primary": "#5b5fc7",
+          "radius": "6px",
+          "surface": "#f8fafc"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "graphite-ops",
+      "scene": "knowledge",
+      "source": "heptabase",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/graphite-ops-knowledge.png",
+      "htmlTheme": "graphite-ops",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(246, 247, 249)",
+        "hostHtmlTheme": null,
+        "hostTheme": "graphite-ops",
+        "hostTokens": {
+          "accent": "#5b5fc7",
+          "ink": "#17191c",
+          "line": "#dfe3e8",
+          "panel": "#fafbfc"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=knowledge&theme=graphite-ops",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(238, 241, 244)",
+          "color": "rgb(23, 25, 28)",
+          "font": "Inter, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif"
+        },
+        "button": {
+          "background": "rgb(248, 250, 252)",
+          "border": "rgb(203, 210, 216)",
+          "color": "rgb(23, 25, 28)",
+          "minHeight": "44px",
+          "radius": "6px"
+        },
+        "elements": 341,
+        "surface": {
+          "background": "rgb(238, 241, 244)",
+          "borderColor": "rgb(23, 25, 28)",
+          "className": "heptabase-app has-panel ",
+          "color": "rgb(23, 25, 28)",
+          "radius": "0px",
+          "tag": "DIV"
+        },
+        "textLength": 860,
+        "tokens": {
+          "border": "#cbd2d8",
+          "canvas": "#eef1f4",
+          "ink": "#17191c",
+          "primary": "#5b5fc7",
+          "radius": "6px",
+          "surface": "#f8fafc"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "common-thread",
+      "scene": "projects",
+      "source": "basecamp",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/common-thread-projects.png",
+      "htmlTheme": "common-thread",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(245, 244, 241)",
+        "hostHtmlTheme": null,
+        "hostTheme": "common-thread",
+        "hostTokens": {
+          "accent": "#3d6f60",
+          "ink": "#1f2b2c",
+          "line": "#dcdfda",
+          "panel": "#faf9f6"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=projects&theme=common-thread",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(245, 244, 241)",
+          "color": "rgb(31, 43, 44)",
+          "font": "-apple-system, \"system-ui\", \"Segoe UI\", Helvetica, Arial, sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(31, 43, 44)",
+          "color": "rgb(31, 43, 44)",
+          "minHeight": "44px",
+          "radius": "0px"
+        },
+        "elements": 234,
+        "surface": {
+          "background": "rgba(0, 0, 0, 0)",
+          "borderColor": "rgb(31, 43, 44)",
+          "className": "home-layout",
+          "color": "rgb(31, 43, 44)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 1180,
+        "tokens": {
+          "border": "#d8d8d2",
+          "canvas": "#f5f4f1",
+          "ink": "#1f2b2c",
+          "primary": "#3d6f60",
+          "radius": "8px",
+          "surface": "#ffffff"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 1078,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "common-thread",
+      "scene": "work",
+      "source": "linear",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/common-thread-work.png",
+      "htmlTheme": "common-thread",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(245, 244, 241)",
+        "hostHtmlTheme": null,
+        "hostTheme": "common-thread",
+        "hostTokens": {
+          "accent": "#3d6f60",
+          "ink": "#1f2b2c",
+          "line": "#dcdfda",
+          "panel": "#faf9f6"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=work&theme=common-thread",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(238, 236, 231)",
+          "color": "rgb(31, 43, 44)",
+          "font": "Inter, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(101, 113, 112)",
+          "color": "rgb(101, 113, 112)",
+          "minHeight": "34px",
+          "radius": "8px"
+        },
+        "elements": 305,
+        "surface": {
+          "background": "rgb(238, 236, 231)",
+          "borderColor": "rgb(31, 43, 44)",
+          "className": "app-main",
+          "color": "rgb(31, 43, 44)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 1039,
+        "tokens": {
+          "border": "#d3d0c8",
+          "canvas": "#eeece7",
+          "ink": "#1f2b2c",
+          "primary": "#3d6f60",
+          "radius": "8px",
+          "surface": "#f9f8f5"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "common-thread",
+      "scene": "today",
+      "source": "things",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/common-thread-today.png",
+      "htmlTheme": "common-thread",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(245, 244, 241)",
+        "hostHtmlTheme": null,
+        "hostTheme": "common-thread",
+        "hostTokens": {
+          "accent": "#3d6f60",
+          "ink": "#1f2b2c",
+          "line": "#dcdfda",
+          "panel": "#faf9f6"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=today&theme=common-thread",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(245, 244, 241)",
+          "color": "rgb(31, 43, 44)",
+          "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"Helvetica Neue\", Arial, sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(31, 43, 44)",
+          "color": "rgb(31, 43, 44)",
+          "minHeight": "auto",
+          "radius": "8px"
+        },
+        "elements": 180,
+        "surface": {
+          "background": "rgb(245, 244, 241)",
+          "borderColor": "rgb(31, 43, 44)",
+          "className": "stage",
+          "color": "rgb(31, 43, 44)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 694,
+        "tokens": {
+          "border": "#d8d8d2",
+          "canvas": "#f5f4f1",
+          "ink": "#1f2b2c",
+          "primary": "#3d6f60",
+          "radius": "8px",
+          "surface": "#ffffff"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "common-thread",
+      "scene": "calendar",
+      "source": "hey",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/common-thread-calendar.png",
+      "htmlTheme": "common-thread",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(245, 244, 241)",
+        "hostHtmlTheme": null,
+        "hostTheme": "common-thread",
+        "hostTokens": {
+          "accent": "#3d6f60",
+          "ink": "#1f2b2c",
+          "line": "#dcdfda",
+          "panel": "#faf9f6"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=calendar&theme=common-thread",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(245, 244, 241)",
+          "color": "rgb(31, 43, 44)",
+          "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"Helvetica Neue\", Arial, sans-serif"
+        },
+        "button": {
+          "background": "rgb(61, 111, 96)",
+          "border": "rgb(255, 255, 255)",
+          "color": "rgb(255, 255, 255)",
+          "minHeight": "auto",
+          "radius": "25px 0px 0px 25px"
+        },
+        "elements": 184,
+        "surface": {
+          "background": "rgb(255, 255, 255)",
+          "borderColor": "rgb(31, 43, 44)",
+          "className": "calendar-main day-main",
+          "color": "rgb(31, 43, 44)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 408,
+        "tokens": {
+          "border": "#d8d8d2",
+          "canvas": "#f5f4f1",
+          "ink": "#1f2b2c",
+          "primary": "#3d6f60",
+          "radius": "8px",
+          "surface": "#ffffff"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 813,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "common-thread",
+      "scene": "agents",
+      "source": "agent-feed",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/common-thread-agents.png",
+      "htmlTheme": "common-thread",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(245, 244, 241)",
+        "hostHtmlTheme": null,
+        "hostTheme": "common-thread",
+        "hostTokens": {
+          "accent": "#3d6f60",
+          "ink": "#1f2b2c",
+          "line": "#dcdfda",
+          "panel": "#faf9f6"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=agents&theme=common-thread",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(238, 236, 231)",
+          "color": "rgb(31, 43, 44)",
+          "font": "\"Segoe UI\", -apple-system, \"system-ui\", system-ui, sans-serif"
+        },
+        "button": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgb(31, 43, 44)",
+          "color": "rgb(31, 43, 44)",
+          "minHeight": "auto",
+          "radius": "8px"
+        },
+        "elements": 195,
+        "surface": {
+          "background": "rgb(249, 248, 245)",
+          "borderColor": "rgb(211, 208, 200)",
+          "className": "workspace",
+          "color": "rgb(31, 43, 44)",
+          "radius": "0px",
+          "tag": "MAIN"
+        },
+        "textLength": 1477,
+        "tokens": {
+          "border": "#d3d0c8",
+          "canvas": "#eeece7",
+          "ink": "#1f2b2c",
+          "primary": "#3d6f60",
+          "radius": "8px",
+          "surface": "#f9f8f5"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    },
+    {
+      "theme": "common-thread",
+      "scene": "knowledge",
+      "source": "heptabase",
+      "path": "/Users/xulater/.codex/worktrees/b469/Chat/docs/design/combination-prototypes/evidence/theme-qa/desktop/common-thread-knowledge.png",
+      "htmlTheme": "common-thread",
+      "host": {
+        "frameRect": {
+          "height": 810,
+          "width": 1382,
+          "x": 58,
+          "y": 90
+        },
+        "headerBackground": "rgb(255, 255, 255)",
+        "hostBackground": "rgb(245, 244, 241)",
+        "hostHtmlTheme": null,
+        "hostTheme": "common-thread",
+        "hostTokens": {
+          "accent": "#3d6f60",
+          "ink": "#1f2b2c",
+          "line": "#dcdfda",
+          "panel": "#faf9f6"
+        },
+        "overflow": {
+          "clientWidth": 1440,
+          "scrollWidth": 1440
+        },
+        "url": "http://127.0.0.1:4177/?composition=room-linear&scene=knowledge&theme=common-thread",
+        "viewport": {
+          "dpr": 1.5,
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "child": {
+        "body": {
+          "background": "rgb(238, 236, 231)",
+          "color": "rgb(31, 43, 44)",
+          "font": "Inter, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif"
+        },
+        "button": {
+          "background": "rgb(249, 248, 245)",
+          "border": "rgb(211, 208, 200)",
+          "color": "rgb(31, 43, 44)",
+          "minHeight": "44px",
+          "radius": "8px"
+        },
+        "elements": 341,
+        "surface": {
+          "background": "rgb(238, 236, 231)",
+          "borderColor": "rgb(31, 43, 44)",
+          "className": "heptabase-app has-panel ",
+          "color": "rgb(31, 43, 44)",
+          "radius": "0px",
+          "tag": "DIV"
+        },
+        "textLength": 860,
+        "tokens": {
+          "border": "#d3d0c8",
+          "canvas": "#eeece7",
+          "ink": "#1f2b2c",
+          "primary": "#3d6f60",
+          "radius": "8px",
+          "surface": "#f9f8f5"
+        },
+        "viewport": {
+          "clientHeight": 810,
+          "clientWidth": 1382,
+          "scrollHeight": 810,
+          "scrollWidth": 1382
+        }
+      }
+    }
+  ]
+}

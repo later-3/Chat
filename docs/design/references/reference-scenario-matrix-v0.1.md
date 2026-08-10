@@ -9,7 +9,7 @@ scope: Basecamp + Things + Linear + HEY Calendar + Microsoft Agent Feed + Heptab
 
 ## 1. 结论先行
 
-六个参考原型不是六套待拼接的皮肤，而是六种边界不同的交互证据：
+六个参考原型既是边界不同的交互证据，也是本轮组合实现必须直接复用的 UI / 交互来源：
 
 1. **Basecamp** 最完整地证明多 Project、Project room 与对象返回连续性。
 2. **Things** 最完整地证明长期 Project 与个人 Today 是两条正交轴，也覆盖个人生活、娱乐与爱好。
@@ -20,13 +20,13 @@ scope: Basecamp + Things + Linear + HEY Calendar + Microsoft Agent Feed + Heptab
 
 七条场景轴中，只有“多 Project”“Today / 个人节奏”“多 Agent 看护”“知识资料编排”分别出现明确主参考；**没有任何一个参考完整覆盖 Chat 的 Stage / Milestone / Iteration / Work / Scope / Action / Update 对象链，也没有任何一个参考完整覆盖未来用户—用户、用户—他人 Agent、Agent—Agent 的 visibility / consent / participant 合同。** 这两处必须由 Chat 的产品事实与权限合同补足，不能借参考产品的外观假装已经成立。
 
-从工作模式和注意力强度推导，最小且有区分度的组合数量是 **3 套**：
+本轮不再把上述场景重新画成 3 个抽象模式。每套都是包含 `Projects / Room / Work / Updates / Today / Calendar / Agents / Knowledge` 的完整 App；差异只来自 Basecamp 与 Linear 的真实重叠主责。最小且有区分度的组合数量仍是 **3 套**：
 
-- **Project Room（项目房间）**：持续、高上下文的项目推进与资料编排。
-- **Today Rhythm（今日节奏）**：个人、跨 Project、低到中等注意力的一日选择与时间安排。
-- **Evidence Workbench（证据工作台）**：中断驱动、高风险优先的多 Agent 监督与人工介入。
+- **Room × Linear Work（房间优先）**：Basecamp 拥有 Project 入口 / Room，Linear 独占 Work / Update。
+- **Basecamp Native × Linear Update（原生房间）**：Basecamp 独占 Project / Room / Work，Linear 只补 Update。
+- **Linear Console × Basecamp Room（工作优先）**：Linear 拥有 Project / Work / Update，Basecamp 只补协作 Room。
 
-2 套会迫使至少两种互斥的注意力合同共用默认入口；4 套则会把 Resource Workbench 从 Project Room 再拆成一个重复导航和对象归属不清的高上下文空间。第 7 节给出完整推导。
+Things、HEY、Agent Feed、Heptabase 在 3 套中分别固定拥有 Today、Calendar、Agent supervision、Knowledge。第 4 个数学组合“Linear Project 首页 + Basecamp Work”只会增加反向跳转和第二套 Project 语法，没有新增用户能力，因此不成立。第 11 节给出当前完整推导。
 
 ## 2. 判定口径与证据范围
 
@@ -40,7 +40,7 @@ scope: Basecamp + Things + Linear + HEY Calendar + Microsoft Agent Feed + Heptab
 
 1. 事实来自冻结 worktree / commit 中的实际实现、自动化测试和浏览器路径；不是只读审计总结。
 2. QA 数字表示本轮实际运行的合同 / Sites 测试；浏览器结论包含桌面与移动主路径及控制台检查，但不宣称完整无障碍合规。
-3. Heptabase 已完成独立复核后的最终 QA；共同 freeze 是 `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`，不能用工作树基点冒充 freeze。
+3. Heptabase 已完成独立复核后的最终 QA；其独立 freeze 是 `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`，不能用工作树基点冒充 freeze。literal combination 另以第 14 节登记的 commit 冻结。
 4. 本文只决定组合原型的事实输入，不改变生产 UI，也不把任何参考产品提升为 Chat 的产品事实源。
 
 ## 3. 精确证据账本
@@ -124,7 +124,9 @@ scope: Basecamp + Things + Linear + HEY Calendar + Microsoft Agent Feed + Heptab
 
 未分级但必须进入组合 E2E 的证据缺口：对所有 modal / drawer 验证焦点锁定、`Escape`、关闭后的焦点返回；自动化和截图不能单独证明完整屏幕阅读器顺序。
 
-## 7. 为什么最终是 3 套，而不是 2 套或 4 套
+## 7. 已废弃的第一次抽象组合推导（历史记录）
+
+> **Superseded 2026-08-10**：第 7～10 节描述的 `Project Room / Today Rhythm / Evidence Workbench` 是用户已退回的抽象重绘方向，不再是实现、体验 URL、冻结输入或任务 2 依赖。保留本段只用于解释为什么旧方案被废弃；当前事实从第 11 节开始。
 
 ### 7.1 先按工作模式与注意力合同分组
 
@@ -146,7 +148,7 @@ Resource Workbench 与 Project Room 都是高上下文、持续工作的模式�
 
 因此冻结 **3 套**。这是最小数量，不是固定模板；未来只有在第四种独立注意力合同被真实场景和浏览器路径证明后才重新打开数量决定。
 
-## 8. 三套组合原型合同
+## 8. 已废弃的三套抽象模式合同
 
 ### 8.1 Project Room｜项目房间
 
@@ -276,7 +278,7 @@ Needs attention
 - `Personal Studio` 可被降噪，但必须保留私人 visibility 标签；其他参与者与 Agent 不因出现在 Feed 就自动获得访问权。
 - 每个 item 显示 `visible to` / required permission / related object；这些只是当前 fixture 的明确边界，不声称已实现跨账户社交系统。
 
-## 9. 三套之间必须共享的设计与事实合同
+## 9. 已废弃方案当时的共享合同
 
 1. **对象身份**：Project、Stage、Milestone、Iteration、Work、Scope、Action、Update、Resource、Evidence、Participant、Contribution、Decision、Product Run / Attempt 都有稳定 ID；三套只保存各自 projection / layout，不复制权威内容。
 2. **任务连续性**：跨套跳转携带 `returnTo + focusedObjectId + filter / scroll anchor`；浏览器 Back、产品 Back 和关闭 Peek 都回到同一上下文。
@@ -289,7 +291,7 @@ Needs attention
 9. **visibility / consent 边界**：只呈现当前 fixture 已定义的 Project / Board / object 可见范围、Participant role 与权限警告；不虚构好友、关注、跨账户 Agent 授权、代表他人同意或 Agent—Agent 私聊。
 10. **Feed / Today / Canvas 都不是事实源**：清缓存或离开 projection 后，正式状态必须能由 canonical mock model 重建；组合原型也要用这一结构预演未来 Product Store 所有权。
 
-## 10. 当前实现输入与冻结占位
+## 10. 已废弃方案的冻结记录
 
 - 组合工作 branch：`codex/reference-prototype-combinations`
 - Heptabase 实现：`docs/design/reference-implementations/heptabase`
@@ -297,4 +299,123 @@ Needs attention
 - 本矩阵：`docs/design/references/reference-scenario-matrix-v0.1.md`
 - 共同 freeze commit：`3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`
 
-若后续实现偏离第 8、9 节，必须修改实现或重新打开组合决策，不能仅更新文字把偏离合理化。
+第 8、9 节不再约束后续实现；当前约束以第 11～14 节为准。
+
+## 11. 当前组合数量：从真实重叠主责推导 3 套
+
+### 11.1 先定不重叠场景
+
+以下 4 个场景在 6 个参考中各有明确且互补的主责，不需要做变体：
+
+| 场景 | 唯一 UI / 交互来源 | 明确边界 |
+|---|---|---|
+| Today / Action | Things | When / Deadline / Complete 只改变 Action，不创建 Event |
+| Calendar / Event | HEY Calendar | Day / Week / Year、candidate / conflict / save；不拥有 Work |
+| Agent supervision | Microsoft Agent Feed | typed task、人工介入、异常；正式事实回权威对象 |
+| Knowledge / Evidence material | Heptabase | Card / placement / context / provenance；不自动成为正式 Evidence |
+
+3 套都必须包含这 4 个场景，而且直接复用对应冻结原型；不存在“这一套没有日历”或“另一套没有 Agent”的残缺版。
+
+### 11.2 再解 Basecamp × Linear 的重叠
+
+| 能力 | Basecamp 可主责 | Linear 可主责 | 组合规则 |
+|---|---|---|---|
+| 多 Project 默认入口 | Home / Folder / Room 地点感 | Project overview / Favorites 工作台 | 每套只能选一个默认 Project index |
+| Project room | Message / Docs / Chat / Schedule / Workflow | 不覆盖完整协作 Room | Basecamp 固定主责 |
+| Work List / Detail | To-do List / Detail | List / Peek / full Detail | 每套只能有一条 Work 对象链 |
+| Project Update | Message Board / Activity 的部分语法 | Overview / Update composer / History / Pulse | Linear 固定主责；Basecamp Message Board 不再展示重复 Update |
+
+数学上有 4 个 Project owner × Work owner 组合；其中 `Linear Project + Basecamp Work` 要从 Linear 默认工作台反向跳到另一套任务系统，同时丢掉 Linear Peek，没有新增能力也没有降低适配量，所以拒绝。剩下 3 套都是完整且有区分度的有效解。
+
+### 11.3 三套 owner 矩阵
+
+| 组合 | Projects | Room | Work | Updates | Today | Calendar | Agents | Knowledge |
+|---|---|---|---|---|---|---|---|---|
+| `room-linear` 房间优先 | Basecamp | Basecamp | Linear | Linear | Things | HEY | Agent Feed | Heptabase |
+| `room-basecamp` 原生房间 | Basecamp | Basecamp | Basecamp | Linear | Things | HEY | Agent Feed | Heptabase |
+| `work-linear` 工作优先 | Linear | Basecamp | Linear | Linear | Things | HEY | Agent Feed | Heptabase |
+
+## 12. 当前三套 literal-reference 组合合同
+
+### 12.1 Room × Linear Work｜房间优先
+
+**主场景**：用户先把 Project 视为一个持续协作地点，再用 Linear 的高密度 Work 链推进。
+
+**直接采用**：Basecamp Home / Folder / Project Room / Message / Docs / Chat / Schedule / Workflow；Linear Issue List / Peek / Detail、Project Overview / Updates / Pulse；其余 4 个固定场景。
+
+**去重**：Basecamp Project Tasks、My Tasks、Everything todos 都跳同一个 Linear Work route；Basecamp Todo List / Detail 不可达。Linear Project 的 Issues tab 也回 canonical Work，不出现第二个列表。
+
+**核心路径**：
+
+```text
+Basecamp Home → Project Room → Project Tasks
+→ Linear List + Peek → full detail → Back
+→ Linear Updates → compose / publish → Pulse
+→ Today / Calendar / Agents / Knowledge → authoritative record → return
+```
+
+**为什么成立**：Basecamp 负责“在哪里协作”，Linear 负责“工作对象如何快速读写”；地点感与执行密度互补，没有重叠导航。
+
+### 12.2 Basecamp Native × Linear Update｜原生房间
+
+**主场景**：优先保留 Basecamp 从 Home → Room → To-do 的完整原生连续性，只借 Linear 补负责人 Update。
+
+**直接采用**：Basecamp Home / Room / Tools / Todo List / Todo Detail；Linear Project Overview / Updates / Pulse；其余 4 个固定场景。
+
+**去重**：Linear Issues / Peek / Detail 不可达；Basecamp Message Board 不再拥有 `Updates` 类别或 weekly client update。
+
+**核心路径**：
+
+```text
+Basecamp Home → Room → Project Tasks
+→ Basecamp To-do List → Detail → Complete / Back
+→ Linear Updates → compose / publish
+→ Today / Calendar / Agents / Knowledge
+```
+
+**为什么成立**：它是适配最少的完整版本，牺牲 Linear Peek，换取 Basecamp 工作链原貌；仍然只有一个 Work owner。
+
+### 12.3 Linear Console × Basecamp Room｜工作优先
+
+**主场景**：用户默认从 Linear Work / Project status 开始，只在需要多人协作上下文时进入 Basecamp Room。
+
+**直接采用**：Linear Project / List / Peek / Detail / Updates / Pulse；Basecamp Project Room 与 Message / Docs / Chat / Schedule / Workflow；其余 4 个固定场景。
+
+**去重**：Basecamp Home / My Tasks / Todo 不可达；Linear Projects / Favorites 是唯一 Project index。Room 只补协作工具，不复制 Work list。
+
+**核心路径**：
+
+```text
+Linear Work → Peek / Detail
+→ Project Overview / Updates / Pulse
+→ Basecamp Room → Message / Docs / Chat / Schedule / Workflow
+→ Today / Calendar / Agents / Knowledge
+```
+
+**为什么成立**：它把高频执行入口前置，同时保留 Basecamp 真正独有的 Room；适合工作状态优先而不是地点优先的用户。
+
+## 13. 三套当前共享合同
+
+1. **直接复用**：6 个参考各自保留 App / model / markup / CSS / 真实资产；宿主只做路由、owner 和主题胶水，不重新画 Project、Task、Calendar、Feed 或 Whiteboard 页面。
+2. **唯一主责**：同一组合中的 Project index、Work List / Detail、Update、Today、Calendar、Agent supervision、Knowledge 都只有 1 个 owner。
+3. **稳定 iframe**：切场景不销毁 6 个来源实例；source 内编辑、选择、完成、候选与白板状态保存在原模型中。
+4. **主题不碰状态**：`source` 保留冻结视觉；`warm-room / quiet-day / graphite-ops / common-thread` 只映射视觉 token，并通过 `chat:theme` 更新，不重放 canonical route。
+5. **对象边界**：Action 与 Event 分离；Feed 只是权威 Project / Run / Decision / Evidence 的投影；Card material 与正式 Evidence fact 分离。
+6. **返回连续性**：List / Peek / Detail、Room / Tool / Item 和 related record 走来源原生返回；跨场景由宿主 canonical route 交接。
+7. **响应式**：`391×844` 宿主和 6 来源无横向溢出；核心启用控件 `≥44×44px`；移动端使用来源适配层，不缩放桌面窗或 Canvas。
+8. **可见边界**：只呈现 fixture 中已有的 access / permission / visibility；不虚构用户—用户、用户—他人 Agent 或 Agent—Agent 社交系统。
+9. **生产边界**：这是独立设计原型，不修改生产 UI；正式产品对象与事务所有权继续以架构合同为准。
+
+## 14. 当前实现与冻结输入
+
+- branch：`codex/literal-reference-compositions`
+- worktree：`/Users/xulater/.codex/worktrees/b469/Chat`
+- 实现：`docs/design/combination-prototypes`
+- 6 来源副本：`docs/design/combination-prototypes/references/{basecamp,linear,things,hey,agent-feed,heptabase}`
+- Heptabase 独立 freeze：`3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`
+- literal combination freeze：`FREEZE_COMMIT_PENDING`
+- 体验根：`http://127.0.0.1:4177/`
+- 自动化：宿主 / theme `15/15` + 六来源 `88/88` + Sites `4/4` = `107/107`
+- 浏览器 / 视觉证据：`docs/design/combination-prototypes/evidence/stage1`、`docs/design/combination-prototypes/evidence/theme-qa`
+
+任务 2 只能从第 11～14 节、统一登记入口和最终 freeze commit 读取组合事实；不得恢复第 7～10 节的抽象重绘方案。

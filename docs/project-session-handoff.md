@@ -4,13 +4,13 @@
 
 ## 1. 当前停点
 
-1. `origin/main`已经包含PR #20与PS1；本地`main`同时保留统一应用启动与调试修复。
+1. `origin/main`已经包含PR #22与PS2.1，当前merge commit为`71ac8282318230a033a8826832d312352b5fdf72`；下一实现任务从该基线开始。
 2. P0、P1.1、P1.2、B1、B2和M1～M3已完成。浏览器可以真实完成“发送消息 → 选择memmy或Tencent MemoryCore → pi规划 → 用户修订/批准 → 同一Vercel Workflow恢复 → pi执行 → Product Commit → 正式回复”。
 3. 本地百炼私有配置已可用于真实`qwen3.7-plus`测试；`.env`被Git忽略且权限为`0600`，任何续接过程不得输出或提交Key。
 4. M2已增加正式消息整条/UTF-16选区导入、`MemoryImportWorkflow`、memmy真实add/对账、Store v3、严格Trace/Replay、最小统一UI与重启恢复；M3又增加Tencent L0接收、L0/L1只读对账与L1查询。
 5. M2固定memmy真实导入与原生幂等、完整Chat响应丢失对账且SQLite唯一已经通过；最终clean代码提交`3bcb7b7`的真实浏览器1/1通过（浏览器2.8分钟、命令3.1分钟），Import Replay 6事件、Run Replay 103事件、真实`qwen3.7-plus`规划与执行均成功。
 6. 当前标准入口是仓库拥有的`pnpm dev/dev:debug`；VS Code只有`Chat：调试应用`一个薄入口。真实F5已验证5个服务Ready、专属Profile Chrome、TypeScript附加、遗留浏览器自动收敛，停止后浏览器和7个固定端口释放。
-7. Tencent真实Adapter已经合入；PS1又完成了对话建项、真实Git/文档/脚本观察、Project账本、管理候选与响应式UI。当前仍没有完整Stage/Milestone/Iteration推进、Planning Project Context和用户规则集。
+7. Tencent真实Adapter已经合入；PS1完成对话建项、真实Git/文档/脚本观察、Project账本、管理候选与响应式UI；PS2.1又完成Stage Goal / Milestone、负责人Project Update与严格状态转换。当前仍没有Shaping Proposal、Iteration Commitment、Scope / Gate / Review、Planning Project Context和用户规则集。
 8. 旧会话遗留的治理文档和设计截图已经恢复；不能再使用“M1待审核”“B2待真实Key验收”或“P1.2待实现”等旧状态。
 
 ## 2. 新 Session 读取顺序
@@ -52,7 +52,7 @@ Message Selection -> MemoryImportIntent/Outbox -> MemoryImportWorkflow
 
 Project Intake Message -> ProjectIntakeWorkflow -> pi Project Understanding + Resource Observe
                        -> Candidate HITL -> Project/Stage/Work/Action/Decision/Observation账本
-Project Management Message -> revision/Hash Candidate -> 用户确认 -> Action/Decision/Contribution
+Project Advancement Message -> revision/Hash Candidate -> 用户确认 -> Stage/Milestone/Update/Decision
 
 Trace + Product Store + Version Evidence -> Replay
 ```
@@ -67,7 +67,7 @@ Trace + Product Store + Version Evidence -> Replay
 2. **Memory单后端查询纵向链**：M1已由PR #10合入，真实memmy查询、Application Port、Workflow节点、Trace、最小UI和真实E2E均完成。
 3. **Memory显式导入纵向链**：M2已由PR #11合入，完成有来源、目标、幂等、结果未知对账和重启恢复的真实memmy导入。
 4. **第二真实Memory后端**：M3已由PR #12合入，固定Tencent MemoryCore真实服务验证了L0接收、L1查询、强隔离与异步物化语义。
-5. **Project Solution纵向链**：PS1对话建项、真实Resource和项目账本已完成；当前下一任务是PS2 Stage/Milestone/Iteration与Project Update，随后推进PS3真实资源执行和PS4维护/Correct Course。
+5. **Project Solution纵向链**：PS1与PS2.1已经完成对话建项、真实Resource、项目账本、Stage Goal / Milestone和负责人Project Update；当前下一任务是PS2.2 Shaping Proposal / Iteration Commitment，随后由PS2.3推进Scope / Gate / Review，再进入PS3真实资源执行和PS4维护 / Correct Course。
 6. **用户规则纵向链**：实现Rule/RuleRevision/Tag/Scope，统一管理界面、对话主动勾选/标签筛选、合理自动召回和规划节点注入；记录采用了哪些规则及版本。
 7. **组合验收**：真实用户场景同时使用项目上下文、选择规则和Memory查询完成规划—确认—执行，页面刷新后能从权威事实恢复，公开面不泄漏外部服务或Runtime私有身份。
 
@@ -94,9 +94,9 @@ Trace + Product Store + Version Evidence -> Replay
 
 ```text
 继续Chat项目。按AGENTS.md规定顺序读取治理文件和docs/project-session-handoff.md。
-main已完成真实规划—确认—执行、memmy查询/导入、Tencent MemoryCore第二后端，以及PS1对话建项、真实Resource和Project账本闭环。
+main已完成真实规划—确认—执行、memmy查询/导入、Tencent MemoryCore第二后端、PS1对话建项/真实Resource/Project账本，以及PS2.1 Stage Goal/Milestone/负责人Project Update闭环。
 仓库统一`pnpm dev/dev:debug`已经过终端与真实VS Code F5验证；VS Code不再拥有或复制服务生命周期，不能用静态配置测试替代真实F5验收。
-下一阶段接着建设：PS2 Stage/Milestone/Iteration与Project Update、
+下一阶段接着建设：PS2.2 Shaping Proposal/Iteration Commitment，随后PS2.3 Scope/Gate/Review，
 带标签且可主动选择的用户规则集。先读取本地参考项目与既有分析，给每个设计写出采用/调整/拒绝依据，
 再按依赖拆成可独立合并的小任务；实现使用worktree+PR，纵向完成门必须包含真实服务、真实模型和浏览器E2E。
 不要建立万能Context Service，不要把外部Memory、BMAD或Prompt当成Chat产品事实源。
@@ -107,11 +107,12 @@ main已完成真实规划—确认—执行、memmy查询/导入、Tencent Memor
 本节只冻结独立设计原型和下一任务输入，**没有修改生产 UI**。
 
 1. 唯一登记入口：[`docs/design/references/README.md`](./design/references/README.md)。6 × 7 事实场景矩阵：[`reference-scenario-matrix-v0.1.md`](./design/references/reference-scenario-matrix-v0.1.md)。
-2. 工作 branch：`codex/reference-prototype-combinations`；worktree：`/Users/xulater/.codex/worktrees/b469/Chat`；共同 freeze commit：`3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`。
-3. Heptabase Workbench：`docs/design/reference-implementations/heptabase`；本轮 URL `http://127.0.0.1:4175/`；模型 / UI 合同 `15/15`、Sites `4/4`、仓库内 IAB browser E2E gates `9/9`，桌面 / 移动 console `0`、残余 `P0/P1/P2 = 0`。
-4. 组合原型：`docs/design/combination-prototypes`；本轮 URL 根 `http://127.0.0.1:4176/`；Project / Today / Workbench 精确 query 见统一登记入口。合同 `17/17`、Sites `4/4`；真实浏览器 6 个桌面 / 移动表面、10 条核心路径，`391 × 844` 无横溢出、无未命名 / 小于 44px 的启用控件、console `0`，残余 `P0/P1/P2 = 0`。
-5. 数量决定：冻结 3 套——Project Room（持续高上下文）、Today Rhythm（个人主动选择）、Evidence Workbench（中断式高风险监督）。2 套会混合互斥注意力合同；4 套会把 Resource / Evidence 从 Project 重复拆出。
-6. 对象合同：三套共享 Project / Work / Action / Resource / Evidence / Decision / Run / Participant 的稳定 ID 和返回锚点；Today / Feed / Canvas 只保存投影，不拥有权威事实。正式 Decision、accepted Candidate 和 reconciliation 无通用 Undo；`outcome_unknown` 只有 Query / Reconcile / Escalate。
-7. 视觉合同：Chat 黑白骨架、小面积暖色 Agent 标识、Phosphor 图标、统一 token / 字体 / 间距 / 层级 / 键盘语义；桌面与移动是真实响应式结构，不缩放 Things 窗口或 Heptabase Canvas。
-8. 参考缺口：Microsoft Agent Feed freeze `eed0aa0e4b9fec38fcf7e4eb6684a23e9897e8aa` 的实现仍有 `2 P1 + 4 P2`；Basecamp / Things / Linear 也有矩阵列出的复用阻断。下一任务不得复制这些 CSS 或动作语义。
-9. 依赖任务 2：thread `019fe738-1b0d-70e3-932c-cdad3b702124`，worktree `/Users/xulater/.codex/worktrees/35f2/Chat`。稳定输入是本节、统一登记入口、矩阵、组合 `README.md` / `design-qa.md` 与上述 freeze commit；冻结完成后已经由本任务直接发消息交接，不需要用户手工搬运。
+2. Heptabase 独立 freeze：branch `codex/reference-prototype-combinations`，commit `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`，实现 `docs/design/reference-implementations/heptabase`；合同 / Sites / browser gates `28/28`，`P0/P1/P2 = 0`。
+3. 当前组合 branch：`codex/literal-reference-compositions`；worktree：`/Users/xulater/.codex/worktrees/b469/Chat`；literal combination freeze：`FREEZE_COMMIT_PENDING`。
+4. 当前组合不是抽象重绘。实现 `docs/design/combination-prototypes` 直接包含 `references/{basecamp,linear,things,hey,agent-feed,heptabase}`；宿主只做 canonical scene、唯一 owner 与主题切换。此前 `Project Room / Today Rhythm / Evidence Workbench` 方向已废弃，不再是任务输入。
+5. 数量决定：冻结 3 套 ownership 变体——`room-linear`（Basecamp Project / Room + Linear Work / Update）、`room-basecamp`（Basecamp Project / Room / Work + Linear Update）、`work-linear`（Linear Project / Work / Update + Basecamp Room）。Things / HEY / Agent Feed / Heptabase 在三套中固定主责 Today / Calendar / Agents / Knowledge。
+6. 本地体验根：`http://127.0.0.1:4177/`。8 个 scene：`projects / room / work / updates / today / calendar / agents / knowledge`。主题：`source / warm-room / quiet-day / graphite-ops / common-thread`。
+7. 验证：宿主 / theme `15/15` + 六来源 `88/88` + Sites `4/4` = `107/107`；production build `4805 modules`；desktop theme `30/30`、mobile theme `40/40`、state continuity `6/6`，console `0`，残余 `P0/P1/P2 = 0`。
+8. 对象合同：每套只有一个 Project index、Work、Update、Today、Calendar、Agent supervision、Knowledge owner；Action / Event、Feed / authoritative record、Card material / Evidence fact 不合并。`chat:theme` 只换视觉 token，不重放 route 或丢本地状态。
+9. 参考缺口：冻结 Agent Feed、Basecamp、Things、Linear 的原始 P1/P2 仍记录在矩阵第 6.3 节；组合副本已经用 canonical route、移动适配、动作裁剪和 44px 合同收口，下一任务只能复用当前组合路径，不能倒退复制冻结缺陷。
+10. 依赖任务 2：thread `019fe738-1b0d-70e3-932c-cdad3b702124`，worktree `/Users/xulater/.codex/worktrees/35f2/Chat`。稳定输入是本节、统一登记入口、矩阵第 11～14 节、组合 `README.md` / `design-qa.md` 与 literal freeze commit；冻结后由本任务直接发消息交接，不需要用户手工搬运。

@@ -17,36 +17,40 @@
 
 完整 6 × 7 事实结论、已知 P1/P2 和引用证据统一见 [`reference-scenario-matrix-v0.1.md`](./reference-scenario-matrix-v0.1.md)。Heptabase 当前一手资料与 Take / Adapt / Refuse 见 [`heptabase-interaction-audit-v0.1.md`](./heptabase-interaction-audit-v0.1.md)。
 
-## 组合策略与可运行原型
+## 当前组合策略与可运行原型
 
-矩阵按“用户此刻要回答的问题”和注意力强度推导出最小且有区分度的 **3 套**，不是把 6 个参考产品拼成 6 个区块：
+此前的 `Project Room / Today Rhythm / Evidence Workbench` 抽象重绘方案已被用户退回并废弃。当前实现直接复用 6 个冻结参考原型，只在 Basecamp / Linear 的真实重叠处选择唯一 owner；每套仍包含完整的 Projects、Room、Work、Updates、Today、Calendar、Agents、Knowledge。
 
-| 组合模式 | 主问题 | 采用的参考语法 | 明确拒绝 | 本轮体验 URL |
+| 组合 | Projects / Room / Work / Update 主责 | 采用的原型场景 | 明确拒绝 | 本轮体验 URL |
 |---|---|---|---|---|
-| Project Room | 长期 Project 现在处于哪里，下一段 Work / Scope / Action、Update 与 Evidence 怎样推进 | Basecamp room / return + Linear list / detail / Update + Heptabase stable Resource identity | 六宫格全局骨架、Issue 万能化、Canvas 默认首页、Today / Feed 侵入项目叙事 | `http://127.0.0.1:4176/?mode=project&view=overview` |
-| Today Rhythm | 今天真正关注什么，何时做，怎样不丢长期 Project 来源 | Things parent × Today + HEY 的时间约束和候选冲突 | 所有对象 checkbox 化、Calendar 拥有 Work、自动滚动无记录 | `http://127.0.0.1:4176/?mode=today&view=overview` |
-| Evidence Workbench | 哪些 Agent 现在需要人，Decision / Candidate / Run 异常应如何处置 | Agent Feed typed supervision + Linear detail / return + Heptabase explicit context / provenance | 社交 Feed、Completed 大桶、正式决定 / 对账通用 Undo、`outcome_unknown` 普通 Retry | `http://127.0.0.1:4176/?mode=workbench&view=overview` |
+| `room-linear` 房间优先 | Basecamp / Basecamp / Linear / Linear | Basecamp Home + Room；Linear List / Peek / Detail / Update；其余四来源固定补全 | Basecamp Todo 与 Linear Issue 同时可达 | `http://127.0.0.1:4177/?composition=room-linear&scene=projects` |
+| `room-basecamp` 原生房间 | Basecamp / Basecamp / Basecamp / Linear | Basecamp Home + Room + Todo；Linear 只补 Update；其余四来源固定补全 | Linear Issues 与 Basecamp Todo 同时可达 | `http://127.0.0.1:4177/?composition=room-basecamp&scene=projects` |
+| `work-linear` 工作优先 | Linear / Basecamp / Linear / Linear | Linear Project + Work + Update；Basecamp 只补 Room；其余四来源固定补全 | Basecamp Home / Todo 成为第二套 Project / Work 入口 | `http://127.0.0.1:4177/?composition=work-linear&scene=work` |
 
-为什么不是 2 或 4 套：2 套会让个人主动选择的 Today 与系统中断式 Agent 风险争抢同一默认入口，或让监督 Feed 侵入 Project room；4 套会把 Resource Workbench 从 Project Room 重复拆出，造成同一 Project / Resource / Evidence 的双导航和归属冲突。完整推导见矩阵第 7～9 节。
+为什么是 3 套：Things、HEY、Agent Feed、Heptabase 分别独占 Today、Calendar、Agent supervision、Knowledge，不需要做变体；Basecamp / Linear 的 Project / Work 重叠产生 3 个有效 ownership 解。第 4 个数学组合 `Linear Project + Basecamp Work` 只增加反向跳转并丢掉 Peek，没有新增能力。完整推导见矩阵第 11～14 节。
 
-组合实现位于 `docs/design/combination-prototypes`，branch `codex/reference-prototype-combinations`，共同 freeze commit `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`。自动化合同 `17/17` + Sites `4/4` = `21/21`；真实浏览器覆盖 6 个桌面 / 移动表面、10 条核心路径，`391 × 844` 横向溢出 `0`、未命名控件 `0`、小于 `44px` 的启用控件 `0`、console `0`，残余 `P0/P1/P2 = 0`。视觉证据见 [`../combination-prototypes/design-qa.md`](../combination-prototypes/design-qa.md)。
+主题按钮为 `source / warm-room / quiet-day / graphite-ops / common-thread`；`source` 保留 6 套冻结原貌，其余 4 套只统一视觉 token，不改布局、对象或交互。主题通过独立 `chat:theme` 消息更新，不重放子原型 route。
+
+组合实现位于 `docs/design/combination-prototypes`，branch `codex/literal-reference-compositions`，literal combination freeze commit `FREEZE_COMMIT_PENDING`。Heptabase 独立 freeze 仍为 `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`。自动化为宿主 / theme `15/15` + 六来源 `88/88` + Sites `4/4` = `107/107`，production build `4805 modules`；第一阶段桌面与移动残余 `P0/P1/P2 = 0`，主题最终浏览器数字见 [`../combination-prototypes/design-qa.md`](../combination-prototypes/design-qa.md)。
 
 ## 任务 2 稳定输入
 
 - 任务：`019fe738-1b0d-70e3-932c-cdad3b702124`（“实现 Chat 多套可运行原型”）
 - 任务 worktree：`/Users/xulater/.codex/worktrees/35f2/Chat`
-- 稳定 branch：`codex/reference-prototype-combinations`
-- freeze commit：`3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`
+- 稳定 branch：`codex/literal-reference-compositions`
+- literal combination freeze commit：`FREEZE_COMMIT_PENDING`
+- Heptabase 独立 freeze commit：`3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb`
 - 必读输入：本登记册、[`reference-scenario-matrix-v0.1.md`](./reference-scenario-matrix-v0.1.md)、[`../combination-prototypes/README.md`](../combination-prototypes/README.md)、[`../combination-prototypes/design-qa.md`](../combination-prototypes/design-qa.md)
-- 稳定实现路径：`docs/design/reference-implementations/heptabase`、`docs/design/combination-prototypes`、`docs/design/screenshots/heptabase`、`docs/design/screenshots/combinations`
-- 依赖规则：只复用冻结对象 / 交互 / token，不继承矩阵第 6.3 节列出的参考原型 P1/P2；不修改生产 UI，除非任务 2 获得单独授权。
+- 稳定实现路径：`docs/design/reference-implementations/heptabase`、`docs/design/combination-prototypes`、`docs/design/combination-prototypes/references`、`docs/design/combination-prototypes/evidence`
+- 稳定体验根：`http://127.0.0.1:4177/`；精确 composition / scene / theme query 见组合 README。
+- 依赖规则：直接复用 literal-reference surfaces 与当前 owner 矩阵；不得恢复已废弃的抽象重绘方案，不继承矩阵第 6.3 节列出的冻结参考 P1/P2；不修改生产 UI，除非任务 2 获得单独授权。
 
-## 本轮唯一决策入口
+## 历史决策记录（已完成）
 
-推荐工作假设：
+以下命题与锚点是 2026-08-08 UL0 / UL1 的历史审核输入；当前不再要求用户回复或重复过门：
 
-1. **方向命题**：接受“安静的项目系统，鲜活的 Agent；严肃的事实，轻巧的交接”。
-2. **五个锚点**：整体接受；只需指出是否有某一个明确不属于 Chat。
+1. **方向命题**：“安静的项目系统，鲜活的 Agent；严肃的事实，轻巧的交接”。
+2. **五个锚点**：
 
    - A. Project 是一个房间
    - B. 工作在空间间不断线
@@ -54,21 +58,13 @@
    - D. 个性来自一个机制
    - E. AI 必须显露责任边界
 
-`3/5` 只作为设计团队起步旋钮，不要求用户在看图前批准。下一轮会用实际画面比较“更安静 / 当前 / 更冒险”。如果上面两项都接受，回复“通过”即可；有修改时使用：
-
-```text
-结论：修改后通过 / 退回
-命题：
-明确反对的锚点：
-```
-
-这里的“通过”最初只授权我们基于命题与锚点制作 3 个视觉方向；Taste Contract 的详细规则继续保持 `candidate`，不会自动合并进正式规范，也不授权生产 UI 变更。
+`3/5` 当时只作为设计团队起步旋钮；它没有自动把 Taste Contract 合并进正式规范，也没有授权生产 UI 变更。
 
 历史审核记录：2026-08-08，用户先回复“通过”，随后确认改用 HTML-first；同日用户明确回复“UL0 通过”，6 个锚点产品深审计整体获批。其后已经完成 UL1、6 个参考原型事实复核、Heptabase Workbench 和 3 套组合原型；截至 2026-08-10 仍未授权修改生产 UI。
 
-现在**不要求选择**票据、接力结或落印。它们将在可操作的 HTML 场景中验证，届时再基于真实交互比较。
+当前**不要求选择**票据、接力结或落印；这些早期命题不再构成组合原型或任务 2 的阻塞门。
 
-决策更新：2026-08-08，用户认为静态出图不利于指出具体交互问题，确认改用 **HTML-first**。下一设计门因此改为 [`UI Interaction Lab v0.1 小任务书`](../../tasks/ui-interaction-lab-v0.1.md)：先收集少量参考状态，再通过 5 个场景、3 个主题和桌面/移动交互进行标注。此前的静态方向只作为情绪参考，不再要求用户先选 A/B/C。
+决策更新：2026-08-08，用户认为静态出图不利于指出具体交互问题，确认改用 **HTML-first**。[`UI Interaction Lab v0.1 小任务书`](../../tasks/ui-interaction-lab-v0.1.md) 随后完成了参考状态、桌面 / 移动交互与真实浏览器验证；此前的静态方向只作为历史情绪参考。
 
 ## 权威顺序
 
@@ -110,5 +106,5 @@
 
 1. UL0 已于 2026-08-08 整体通过；Take / Adapt / Refuse 作为 UI Lab 的批准输入。
 2. UL1、6 个参考原型与 6 × 7 事实矩阵已经完成；冻结实现分别按登记册中的 branch / commit 恢复。
-3. Heptabase Workbench 与 3 套组合原型已通过自动化、真实浏览器、响应式、控制台和同屏视觉 QA；共同 freeze commit 已写回本入口。
+3. Heptabase Workbench 与 3 套 literal-reference ownership 组合已通过自动化、真实浏览器、响应式、控制台、状态连续性和同屏视觉 QA；Heptabase freeze 已登记，literal combination freeze 在 `FREEZE_COMMIT_PENDING` 替换后生效。
 4. 下一任务只能把上述 freeze 当作设计输入；是否改生产 UI、怎样进入正式对象 / 权限 / Product Store 合同，必须由任务 2 自己的授权和任务书决定。

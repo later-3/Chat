@@ -1,6 +1,6 @@
 # Chat 项目状态
 
-> 更新日期：2026-08-09
+> 更新日期：2026-08-10
 
 ## 1. 当前结论
 
@@ -14,9 +14,9 @@
 | Workflow | 规划仍由唯一`PlanningExecutionWorkflow`完成；另有独立`MemoryImportWorkflow`、`ProjectIntakeWorkflow`和`ProjectAdvancementWorkflow`分别拥有导入/对账、建项与既有项目推进生命周期 |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent`；Planner/Executor与模型无关Project Understanding均已用百炼真实`qwen3.7-plus`验证 |
 | 调试与回放 | 仓库统一`pnpm dev/dev:debug`拥有Memory、Workflow、API和Web服务图；VS Code只有应用级薄入口；固定端口、安全清理、严格脱敏Trace及多源Replay |
-| 代码状态 | P0、P1.1、P1.2、B1、B2、M1～M3与PS1均已进入`origin/main`；统一应用启动、浏览器生命周期、旧Workflow和跨worktree端口恢复修复保留在本地`main` |
+| 代码状态 | P0、P1.1、P1.2、B1、B2、M1～M3、PS1与PS2.1均已进入`origin/main`；PS2.1由PR #22合入，merge commit为`71ac8282318230a033a8826832d312352b5fdf72` |
 | 当前阶段 | 长期上下文与知识复用：Memory、BMAD项目上下文、用户规则集 |
-| 当前任务 | PS2.1实现与真实门已完成，正在Draft PR复审；合并后才从最新main开始PS2.2 Shaping/Iteration |
+| 当前任务 | 从最新`main`开始PS2.2 Shaping Proposal / Iteration Commitment；随后由PS2.3推进Scope / Gate / Review |
 
 ## 2. B2已完成的真实证据
 
