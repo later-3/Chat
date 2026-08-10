@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getHookByToken, resumeHook, start } from "workflow/api";
+import { getHookByToken, getRun, resumeHook, start } from "workflow/api";
 import {
   WORKFLOW_DEFINITION_ID,
   WORKFLOW_DEFINITION_VERSION,
@@ -226,6 +226,11 @@ export function registerProductWorkflowHttpRoutes(context: WorkflowRuntimeHttpRo
         return c.json({ code: "revision_conflict", title: "Planning Runner版本不受支持" }, 409);
       }
       await resumeHook(binding.hookToken, payload);
+      if (!isNoteResume) {
+        // Plan审核同时耐久等待Hook与到期sleep。Hook事件已先写入SDK事件日志后，唤醒
+        // 同一Run的sleep，既保持确定的“决定优先”顺序，也避免每轮审核留下悬空操作。
+        await getRun(workflowBinding.workflowRunId).wakeUp();
+      }
       if (isNoteResume) {
         await bindings.markNoteResumeDispatched(
           request.hookNoteCandidateId,
