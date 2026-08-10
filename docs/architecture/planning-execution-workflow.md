@@ -709,7 +709,7 @@ GET  /api/sessions/:sessionId/messages
 
 1. [模型大全](https://help.aliyun.com/zh/model-studio/models)：确认真实模型ID为`qwen3.7-plus`。
 2. [文本生成模型](https://help.aliyun.com/zh/model-studio/text-generation-model)：确认`qwen3.7-plus`支持Function Calling和结构化输出。
-3. [Base URL总览](https://help.aliyun.com/zh/model-studio/base-url)：确认按量付费与业务空间Endpoint，并明确Token Plan/Coding Plan不能用于后端服务。
+3. [Base URL总览](https://help.aliyun.com/zh/model-studio/base-url)：确认不同服务Endpoint；Chat只接受精确HTTPS允许域，并以当前账号/Key的真实请求结果验证可用性，不从Endpoint名称臆造不可用结论。
 4. [OpenAI兼容Chat API](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)：确认`DASHSCOPE_API_KEY`与OpenAI兼容调用方式。
 
 ## 19. 用户已经确认的实施决定

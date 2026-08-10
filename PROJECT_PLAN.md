@@ -182,7 +182,7 @@ P1是一个阶段目标，拆成下面8个独立开发任务，不作为一个�
 
 2026-08-10已完成实现前审核包：[技术研究](./docs/architecture/configurable-workflow-research.md)、[阶段总纲与验证闭包](./docs/tasks/configurable-workflow-stage-program.md)、[详细架构与方案](./docs/architecture/configurable-workflow-design.md)、[42项全任务地图](./docs/tasks/configurable-workflow-task-map.md)、S1～S7逐任务方案/测试书及[整体自审](./docs/tasks/configurable-workflow-self-review.md)。用户已批准整套设计并授权连续完成开发、测试、自检和最终单一PR；实现必须如实处理尚未具备的Project Context/Rules依赖，不能用假数据绕过。
 
-2026-08-10已按批准顺序落地P6核心实现，实际边界见[可配置工作流As-built](./docs/architecture/configurable-workflow-as-built.md)：Store v10、运行投影/Viewer、受限Definition Kernel、Memory/Project/Rules配置化Planning、Note、Rules、Choice/BoundedLoop Designer和v1→v10验收已落地。原始G3中的正式Research产品事实与正式Skill集合/授权/冻结/Runner消费尚未交付，明确延期且不计入“全部目标完成”；最终PR前需要用户验收该范围处置。正式百炼组合门仍必须在非Coding Plan的正式Endpoint与对应Key上复验；安全预检拒绝当前环境时不得用Fixture或历史200替代。
+2026-08-10已按批准顺序落地P6核心实现，实际边界见[可配置工作流As-built](./docs/architecture/configurable-workflow-as-built.md)：Store v10、运行投影/Viewer、受限Definition Kernel、Memory/Project/Rules配置化Planning、Note、Rules、Choice/BoundedLoop Designer和v1→v10验收已落地。原始G3中的正式Research产品事实与正式Skill集合/授权/冻结/Runner消费尚未交付，明确延期且不计入“全部目标完成”；最终PR前需要用户验收该范围处置。用户已配置并授权的Coding Endpoint通过精确HTTPS Host安全门；真实`qwen3.7-plus` Provider、Note Provider及Planning + Note + Designer组合门均已在clean HEAD通过，不能再写成环境阻断。
 
 ### P7 多媒介与PWA增强
 
@@ -194,7 +194,7 @@ P1是一个阶段目标，拆成下面8个独立开发任务，不作为一个�
 
 ## 7. 当前唯一下一任务
 
-当前收口任务是关闭`codex/configurable-workflow-complete`的发布阻断，完成全仓质量门、迁移/发布证据，并把Research/Skill明确延期作为范围差异交由用户验收后再形成分阶段commit与最终PR。合并后可从最新`main`继续Project Shaping/Iteration、SSE Cursor、生产Store/备份、Research或Skill/Reminder等独立纵向；不得为了掩盖未交付项在本PR临时伪造能力。
+当前收口任务是复审`codex/configurable-workflow-complete`的Draft PR #23；全仓质量门、迁移/发布证据和真实Provider组合验收已完成。Research/Skill明确延期仍作为范围差异交由用户验收。合并后可从最新`main`继续Project Shaping/Iteration、SSE Cursor、生产Store/备份、Research或Skill/Reminder等独立纵向；不得为了掩盖未交付项在本PR临时伪造能力。
 
 以下内容保留为此前Project Solution路线的历史依据；与当前P6收口冲突时，以上述当前任务和`PROJECT_STATE.md`为准。
 

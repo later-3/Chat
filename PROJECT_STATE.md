@@ -15,8 +15,8 @@
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent`；Planner/Executor与模型无关Project Understanding均已用百炼真实`qwen3.7-plus`验证 |
 | 调试与回放 | 仓库统一`pnpm dev/dev:debug`拥有Memory、Workflow、API和Web服务图；VS Code只有应用级薄入口；固定端口、安全清理、严格脱敏Trace及多源Replay |
 | 代码状态 | P0、P1、B1/B2、M1～M3、PS1/PS2.1已在既有基线；当前`codex/configurable-workflow-complete`已落地P6核心纵向，但原始G3中的正式Research与Skill资源尚未交付，不能称整套原始目标完成 |
-| 当前阶段 | P6 Workflow工厂与可视化：核心实现正在修复发布阻断、收口质量证据，并等待对Research/Skill延期范围的明确验收 |
-| 当前任务 | 关闭发布阻断、完成全仓门/v1→v10证据与正式环境复验，再形成分阶段commit与最终PR；正式Provider门被Coding Plan Host安全拒绝，Research/Skill属于产品延期，二者不能混为同一阻断 |
+| 当前阶段 | P6 Workflow工厂与可视化：核心实现、全仓门、真实Provider组合链与发布证据已收口；等待对Research/Skill延期范围的明确验收 |
+| 当前任务 | 复审Draft PR #23；本机已授权Coding Endpoint的真实Provider门已通过，Research/Skill仍属于明确的产品延期，二者不能混为同一阻断 |
 
 ## 2. B2已完成的真实证据
 
@@ -25,7 +25,7 @@
 3. 真实浏览器E2E`pnpm test:e2e:planning-execution:real`通过：发送消息、Plan v1、刷新恢复、手机布局、要求修订、Plan v2、旧审批409、批准、真实执行、正式Assistant Message、完成后刷新恢复。
 4. 真实运行`run_610673cbd1464274a5cc5af5213b22d3`产生2版Plan、2个Decision、4次HTTP 200的真实Provider调用、124条严格Trace事件；Replay发现0个完整性错误。
 5. `format`、`lint`、`typecheck`、326项测试、`build`和生产依赖审计全部通过；PR #7的6个CI检查全部通过。
-6. 已知非阻断现象：Workflow SDK 4.8按官方`Promise.race`实现Hook与超时时，会在胜出后报告两个未提交sleep operation警告；本次运行、Store、Trace和Replay均正确，后续升级SDK或修改等待策略时重新验证。
+6. Workflow Runtime在Hook恢复事实写入后显式唤醒同一Run的审核超时sleep；最终两轮审核真实链没有未提交operation或Trace写入告警。
 
 ## 3. M1与M2的真实证据
 
@@ -96,7 +96,7 @@
 
 ## 6. 下一阶段的三个用户结果
 
-1. **P6发布**：先关闭当前发布阻断并由用户明确验收Research/Skill延期范围，再完成可配置Workflow最终PR；正式百炼按量付费/业务空间Endpoint与对应Key可用后补跑Planning + Note + Designer组合门。
+1. **P6发布**：真实`qwen3.7-plus` Planning + Note + Designer组合门已在clean HEAD通过6/6；由用户复审PR并明确验收Research/Skill延期范围。
 2. **Project Solution**：在已接Planning Project Context基础上继续Shaping Proposal、显式Iteration Commitment、Scope/Gate/Review与Correct Course。
 3. **运行时与运营**：补Chat有序SSE Cursor、生产Store/备份/容量和正式Skill/Reminder产品纵向，不把它们塞进通用Workflow表达式引擎。
 

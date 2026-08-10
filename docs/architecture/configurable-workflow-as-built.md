@@ -124,7 +124,7 @@ Query使用ETag/`If-None-Match`/304；Web Query传递AbortSignal并在切换Run�
 - Hook先由产品Decision提交，再由Outbox恢复；edited Note同时区分被claim的旧Candidate和Decision绑定的successor。
 - Runtime Binding保存runner family/bundle版本；恢复按当次Run证据分派，不按当前全局默认猜测。
 - Runtime私有命令校验RunSpec、节点类型、合法executionPath、activation、状态、终态和产品引用；持有Runtime Key也不能伪造另一路径或在Run终态后创建节点。
-- 百炼Host采用精确正式域名/Workspace正则；Coding Plan与Token Plan端点在启动或付费调用前失败关闭。Project模型Profile在provider为`bailian`时使用同一安全合同。
+- 百炼Host采用精确域名/Workspace正则；当前允许用户已配置并授权且真实验收通过的`coding.dashscope.aliyuncs.com`，Token Plan与同形恶意域名仍在启动或付费调用前失败关闭。Project模型Profile在provider为`bailian`时使用同一安全合同。
 
 ## 8. Store与迁移
 
@@ -149,11 +149,11 @@ JSON Store仍是当前单实例Adapter，不宣称多实例数据库、备份或
 
 Markdown渲染启用`skipHtml`、元素白名单、仅HTTP(S)链接和外链安全属性；不允许图片、iframe、相对URL或`dangerouslySetInnerHTML`。
 
-## 10. 验证与剩余外部阻断
+## 10. 验证与剩余边界
 
 自动门覆盖Contracts、Domain、Application、Store、Workflow、Runtime、Web、API、迁移、并发、权限、IDOR、容量、Checkpoint正文扫描和三视口浏览器场景。最终数字记录在`docs/testing/`与PR描述中。
 
-当前不能在本工作树诚实宣称通过的外部验证门是正式百炼组合链：本机配置指向Coding Plan Host，安全预检在清理测试目录、启动服务或产生付费调用前拒绝。不能把此前在该端点得到的200响应冒充正式百炼服务证据；需要部署者提供正式按量付费/业务空间Endpoint与对应Key后复跑。Research与Skill则是产品范围延期，不是换一组凭据即可关闭的测试门：
+当前3条显式真实门均已使用用户已配置的`coding.dashscope.aliyuncs.com`与真实`qwen3.7-plus`通过。Planner、Executor与Note Capture各自保存HTTP 200、唯一请求、工具调用数、耗时和Token Usage的脱敏证据；最终clean HEAD浏览器组合为6/6，且Trace拒绝计数与未提交Workflow operation均为0：
 
 ```text
 pnpm test:provider:bailian
@@ -161,4 +161,4 @@ pnpm test:provider:bailian:note
 pnpm test:e2e:planning-note-designer:real
 ```
 
-Designer自身的375/768/1440px与Choice/Loop真实API/生产build浏览器门不依赖模型，已单独执行。
+Research与Skill仍是产品范围延期，不是Provider问题。Designer的375/768/1440px与Choice/Loop同组合门一起走真实API/生产build完成。

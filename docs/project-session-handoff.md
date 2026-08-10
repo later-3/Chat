@@ -4,7 +4,7 @@
 
 ## 1. 当前停点
 
-1. 当前分支为`codex/configurable-workflow-complete`；P6整套实现已落工作树，正在完成最终全仓门、分阶段commit和单一PR。
+1. 当前分支为`codex/configurable-workflow-complete`，Draft PR #23；P6核心实现、分阶段commit、全仓门和真实组合验收已完成，等待用户复审。
 2. P0、P1.1、P1.2、B1、B2和M1～M3已完成。浏览器可以真实完成“发送消息 → 选择memmy或Tencent MemoryCore → pi规划 → 用户修订/批准 → 同一Vercel Workflow恢复 → pi执行 → Product Commit → 正式回复”。
 3. 本地百炼私有配置已可用于真实`qwen3.7-plus`测试；`.env`被Git忽略且权限为`0600`，任何续接过程不得输出或提交Key。
 4. M2已增加正式消息整条/UTF-16选区导入、`MemoryImportWorkflow`、memmy真实add/对账、Store v3、严格Trace/Replay、最小统一UI与重启恢复；M3又增加Tencent L0接收、L0/L1只读对账与L1查询。
@@ -12,7 +12,7 @@
 6. 当前标准入口是仓库拥有的`pnpm dev/dev:debug`；VS Code只有`Chat：调试应用`一个薄入口。真实F5已验证5个服务Ready、专属Profile Chrome、TypeScript附加、遗留浏览器自动收敛，停止后浏览器和7个固定端口释放。
 7. Store已演进到v10；可配置Planning、Note、Rule、Planning Project/Memory Context、低风险Note Policy Resolution、Run Viewer和受限Designer已实现，实际合同见[As-built](./architecture/configurable-workflow-as-built.md)。
 8. 新系统Planning不再包含装饰性Research；Planning审核固定manual，Note低风险才允许有证据的策略自动继续。旧Runner和旧Definition仍按保存的family/version兼容。
-9. 当前私有配置指向Coding Plan Host；新安全门会在清理目录、启动组合服务或产生付费调用前拒绝。只有正式百炼按量付费/业务空间Endpoint与对应Key才能补跑最终组合门，不能把历史200冒充本轮证据。
+9. 当前私有配置指向用户已授权的`coding.dashscope.aliyuncs.com`；Chat以精确HTTPS Host允许该Coding Endpoint，仍拒绝Token Plan和同形恶意域名。当前clean HEAD已真实运行`qwen3.7-plus`并完成组合门，凭据、Prompt和正文未进入证据文件。
 
 ## 2. 新 Session 读取顺序
 
@@ -72,7 +72,7 @@ Trace + Product Store + Version Evidence -> Replay
 4. **第二真实Memory后端**：M3已由PR #12合入，固定Tencent MemoryCore真实服务验证了L0接收、L1查询、强隔离与异步物化语义。
 5. **Project Solution纵向链**：PS1对话建项、真实Resource和项目账本已完成；当前下一任务是PS2 Stage/Milestone/Iteration与Project Update，随后推进PS3真实资源执行和PS4维护/Correct Course。
 6. **用户规则纵向链**：实现Rule/RuleRevision/Tag/Scope，统一管理界面、对话主动勾选/标签筛选、合理自动召回和规划节点注入；记录采用了哪些规则及版本。
-7. **组合验收**：确定性、Local World、三视口Designer和安全门已通过；正式Planning + Note + Designer组合仍需在合规百炼Endpoint/Key上复跑，结果不得由Fixture替代。
+7. **组合验收**：确定性、Local World、三视口Designer和安全门均通过；真实Planning + Note + Designer在clean HEAD完成6/6，包含Plan v1→修改→v2→批准→执行、Note编辑确认、3个视口及Choice/Loop。
 
 每个实现任务使用独立worktree、`codex/`分支和PR，控制在约0.5～2个单人开发日。小任务在最接近代码边界的位置运行合同/状态机测试；真实服务、真实模型和浏览器E2E在形成可用纵向结果时运行，不在每次机械改动后重复付费。
 
