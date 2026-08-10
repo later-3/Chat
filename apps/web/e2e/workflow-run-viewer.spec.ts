@@ -311,6 +311,40 @@ async function installApiProjection(page: Page, decisions: unknown[]): Promise<v
       });
     }
     if (pathname === `/api/runs/${RUN_ID}`) return fulfillJson(route, { run });
+    if (pathname === "/api/workflow/catalog") {
+      return fulfillJson(route, {
+        catalog: { schemaVersion: "chat-product-api.v1", nodes: [] },
+      });
+    }
+    if (pathname === "/api/workflow/blueprints") {
+      return fulfillJson(route, {
+        blueprints: { schemaVersion: "chat-product-api.v1", blueprints: [] },
+      });
+    }
+    if (pathname === "/api/workflow/definitions") {
+      return fulfillJson(route, {
+        definitions: { schemaVersion: "chat-product-api.v1", definitions: [] },
+      });
+    }
+    if (pathname === "/api/workflow/resources") {
+      return fulfillJson(route, {
+        resources: { schemaVersion: "chat-product-api.v1", resources: [] },
+      });
+    }
+    if (pathname === `/api/runs/${RUN_ID}/workflow-config-summary`) {
+      return fulfillJson(route, {
+        summary: {
+          schemaVersion: "chat-product-api.v1",
+          productRunId: RUN_ID,
+          runnerFamily: "legacy-planning.v1",
+          runnerBundleVersion: "legacy-planning.bundle.v1",
+          nodeCount: view.nodeRuns.length,
+          resourceSummary: [],
+          reviewSummary: [],
+          createdAt: NOW,
+        },
+      });
+    }
     if (pathname === "/api/memory-backends") return fulfillJson(route, { backends: [] });
     if (pathname.endsWith("/memory-imports")) return fulfillJson(route, { memoryImports: [] });
     if (pathname === "/api/project-roots") return fulfillJson(route, { roots: [] });
@@ -358,7 +392,9 @@ for (const viewport of [
     await installApiProjection(page, decisions);
     await page.setViewportSize(viewport);
     await page.goto("/");
-    if (viewport.mode === "mobile") await page.getByRole("tab", { name: "工作" }).click();
+    if (viewport.mode === "mobile") {
+      await page.getByRole("tab", { name: "工作", exact: true }).click();
+    }
 
     await expect(page.getByRole("heading", { name: "规划—确认—执行" })).toBeVisible();
     if (viewport.mode === "mobile") {

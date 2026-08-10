@@ -1,5 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const previewPort = Number(process.env.CHAT_PWA_PREVIEW_PORT ?? "4173");
+if (!Number.isInteger(previewPort) || previewPort < 1 || previewPort > 65_535) {
+  throw new Error("CHAT_PWA_PREVIEW_PORT必须是有效端口");
+}
+const previewUrl = `http://localhost:${String(previewPort)}`;
+
 /**
  * P1.2 PWA 真实浏览器验证。
  * 一律从生产构建产物启动 vite preview（不使用 dev server），
@@ -8,14 +14,14 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   // 真实百炼闭环由独立配置显式运行；PWA回归不得误触发付费场景。
-  testIgnore: "planning-execution-real.spec.ts",
+  testIgnore: "**/*-real.spec.ts",
   fullyParallel: false,
   workers: 1,
   reporter: "list",
   timeout: 60_000,
   expect: { timeout: 15_000 },
   use: {
-    baseURL: "http://localhost:4173",
+    baseURL: previewUrl,
     trace: "retain-on-failure",
   },
   webServer: [
@@ -28,8 +34,8 @@ export default defineConfig({
     },
     {
       command:
-        "CHAT_API_PROXY_URL=http://127.0.0.1:43131 pnpm --filter @chat/web build && CHAT_API_PROXY_URL=http://127.0.0.1:43131 pnpm --filter @chat/web exec vite preview --port 4173 --strictPort",
-      url: "http://localhost:4173",
+        `CHAT_API_PROXY_URL=http://127.0.0.1:43131 pnpm --filter @chat/web build && CHAT_API_PROXY_URL=http://127.0.0.1:43131 pnpm --filter @chat/web exec vite preview --port ${String(previewPort)} --strictPort`,
+      url: previewUrl,
       reuseExistingServer: false,
       timeout: 180_000,
     },
