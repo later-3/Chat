@@ -70,7 +70,7 @@ describe("Definition Kernel真实Local World实验室", () => {
     await expect(runFixture(stack, "human_review", ["approved"])).resolves.toMatchObject({
       outcome: "completed",
     });
-  }, 60_000);
+  }, 120_000); // 5个真实Local World Run串行执行；全仓并行负载下不能沿用单场景60秒门。
 
   it("Composite有界展开3个Action，失败与结果未知都失败关闭", async () => {
     const success = compileFixture("composite", "compositesuccess");
