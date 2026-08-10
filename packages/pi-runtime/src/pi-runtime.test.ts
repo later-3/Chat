@@ -900,11 +900,11 @@ describe("Provider配置与错误归一化", () => {
     expect(() =>
       loadProjectModelProfile({ CHAT_PROJECT_MODEL_BASE_URL: "http://models.example.com/v1" }),
     ).toThrow(ProjectModelProfileError);
-    expect(() =>
+    expect(
       loadProjectModelProfile({
         DASHSCOPE_BASE_URL: "https://coding.dashscope.aliyuncs.com/v1",
-      }),
-    ).toThrow(ProjectModelProfileError);
+      }).endpointHost,
+    ).toBe("coding.dashscope.aliyuncs.com");
   });
 
   it("Base URL必须是HTTPS且符合百炼域名合同", () => {
@@ -924,8 +924,12 @@ describe("Provider配置与错误归一化", () => {
         DASHSCOPE_BASE_URL: "https://dashscope-us.aliyuncs.com/compatible-mode/v1",
       }).endpointHost,
     ).toBe("dashscope-us.aliyuncs.com");
-    for (const maliciousOrToolOnlyHost of [
-      "coding.dashscope.aliyuncs.com",
+    expect(
+      loadBailianConfig({
+        DASHSCOPE_BASE_URL: "https://coding.dashscope.aliyuncs.com/v1",
+      }).endpointHost,
+    ).toBe("coding.dashscope.aliyuncs.com");
+    for (const maliciousOrUnsupportedHost of [
       "token-plan.cn-beijing.maas.aliyuncs.com",
       "evil-dashscope.aliyuncs.com",
       "dashscope.aliyuncs.com.evil.example",
@@ -933,7 +937,7 @@ describe("Provider配置与错误归一化", () => {
     ]) {
       expect(() =>
         loadBailianConfig({
-          DASHSCOPE_BASE_URL: `https://${maliciousOrToolOnlyHost}/compatible-mode/v1`,
+          DASHSCOPE_BASE_URL: `https://${maliciousOrUnsupportedHost}/compatible-mode/v1`,
         }),
       ).toThrow(BailianConfigError);
     }

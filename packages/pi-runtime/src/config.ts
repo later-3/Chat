@@ -6,8 +6,8 @@ import { BAILIAN_DEFAULT_BASE_URL } from "@chat/contracts";
  * 安全规则：
  * - 凭据只检查存在性并在内存中使用；不打印、不持久化、不进入Trace或浏览器。
  * - Base URL必须是HTTPS且符合允许的百炼域名合同。
- * - Token Plan/Coding Plan Key和Endpoint禁止用于后端服务（域名合同拒绝
- *   已知Token Plan域名；Key类型由部署者保证，代码不尝试探测）。
+ * - 当前本地验收允许用户已经配置并授权的Coding Plan兼容Endpoint；Token Plan及
+ *   非精确阿里云域名仍拒绝。Key类型由部署者保证，代码不尝试探测或打印。
  * - 缺少Key时明确报告not ready，绝不切换为假Provider。
  */
 
@@ -35,19 +35,19 @@ const SHARED_BAILIAN_HOSTS: ReadonlySet<string> = new Set([
   "dashscope.aliyuncs.com",
   "dashscope-intl.aliyuncs.com",
   "dashscope-us.aliyuncs.com",
+  "coding.dashscope.aliyuncs.com",
 ]);
 
 const WORKSPACE_BAILIAN_HOST =
   /^[a-z0-9][a-z0-9-]{0,62}\.(?:cn-beijing|ap-southeast-1|ap-northeast-1|eu-central-1)\.maas\.aliyuncs\.com$/u;
 
 export function assertAllowedBailianHost(hostname: string): void {
-  // 官方Base URL总览把按量付费共享域名与业务空间专属maas域名穷尽列出；
-  // Coding/Token Plan仅供交互式开发工具使用，不能以contains/后缀规则混入后端服务。
-  // https://help.aliyun.com/zh/model-studio/base-url
-  const toolOnly =
-    hostname === "coding.dashscope.aliyuncs.com" || hostname.startsWith("token-plan.");
+  // 使用精确共享域名和锚定的业务空间正则，避免contains/宽泛后缀放过同形恶意Host。
+  // Coding Endpoint是用户当前已配置并明确要求使用的真实Provider入口；Token Plan
+  // 仍不在允许集合中，也不能通过Workspace正则混入。
   const allowed =
-    !toolOnly && (SHARED_BAILIAN_HOSTS.has(hostname) || WORKSPACE_BAILIAN_HOST.test(hostname));
+    !hostname.startsWith("token-plan.") &&
+    (SHARED_BAILIAN_HOSTS.has(hostname) || WORKSPACE_BAILIAN_HOST.test(hostname));
   if (!allowed) {
     throw new BailianConfigError(`DASHSCOPE_BASE_URL域名不符合百炼合同:${hostname}`);
   }
