@@ -166,6 +166,7 @@ async function call<TReq, TRes>(
 
 export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
   return {
+    /** 加载工作流运行规格：读取本轮运行的workflow定义、配置和身份（工作流启动时调用）。 */
     loadWorkflowRunSpec(input: Omit<LoadWorkflowRunSpecRequest, "schemaVersion">) {
       return call(
         options,
@@ -177,6 +178,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         loadWorkflowRunSpecResponseSchema,
       );
     },
+    /** 准备规划Memory上下文：为可配置规划工作流预读Memory层上下文。 */
     preparePlanningMemoryContext(
       input: Omit<PreparePlanningMemoryContextRequest, "schemaVersion">,
     ) {
@@ -190,6 +192,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         preparePlanningMemoryContextResponseSchema,
       );
     },
+    /** 准备规划Project上下文：为可配置规划工作流预读Project层上下文。 */
     preparePlanningProjectContext(
       input: Omit<PreparePlanningProjectContextRequest, "schemaVersion">,
     ) {
@@ -203,6 +206,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         preparePlanningProjectContextResponseSchema,
       );
     },
+    /** 准备规划规则上下文：为可配置规划工作流预读用户规则集上下文。 */
     preparePlanningRulesContext(input: Omit<PreparePlanningRulesContextRequest, "schemaVersion">) {
       return call(
         options,
@@ -214,6 +218,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         preparePlanningRulesContextResponseSchema,
       );
     },
+    /** 准备笔记捕获输入：NoteCapture工作流组装捕获请求的不可变输入。 */
     prepareNoteCaptureInput(input: Omit<PrepareNoteCaptureInputRuntimeRequest, "schemaVersion">) {
       return call(
         options,
@@ -225,6 +230,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         prepareNoteCaptureInputRuntimeResponseSchema,
       );
     },
+    /** 发布笔记候选：NoteCapture工作流把模型输出提交为待审核候选。 */
     publishNoteCandidate(input: Omit<PublishNoteCandidateRuntimeRequest, "schemaVersion">) {
       return call(
         options,
@@ -236,6 +242,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         publishNoteCandidateRuntimeResponseSchema,
       );
     },
+    /** 加载笔记决定：NoteCapture工作流读取用户对笔记候选的确认/拒绝决定。 */
     loadNoteDecision(input: Omit<LoadNoteDecisionRuntimeRequest, "schemaVersion">) {
       return call(
         options,
@@ -247,6 +254,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         loadNoteDecisionRuntimeResponseSchema,
       );
     },
+    /** 提交确认笔记：NoteCapture工作流把用户确认的笔记提交为产品终态。 */
     commitConfirmedNote(input: Omit<CommitConfirmedNoteRuntimeRequest, "schemaVersion">) {
       return call(
         options,
@@ -258,6 +266,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         commitConfirmedNoteRuntimeResponseSchema,
       );
     },
+    /** 转换可配置规划节点：ConfigurablePlanning工作流推进单个规划节点的状态。 */
     transitionConfigurablePlanningNode(
       input: Omit<TransitionConfigurablePlanningNodeRequest, "schemaVersion">,
     ) {
@@ -276,6 +285,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
           .strict(),
       );
     },
+    /** 提交运行结果未知：副作用网络未知时的安全收敛，不重试付费路径。 */
     commitRunOutcomeUnknown(input: {
       commandId: string;
       productRunId: string;
@@ -297,6 +307,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
           .strict(),
       );
     },
+    /** 准备项目候选：ProjectIntake工作流为项目接入生成待审核候选（90秒Provider超时）。 */
     prepareProjectCandidate(input: {
       commandId: string;
       projectCandidateId: string;
@@ -315,6 +326,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         120_000,
       );
     },
+    /** 准备项目推进候选：ProjectAdvancement工作流为项目推进生成待审核候选（90秒Provider超时）。 */
     prepareProjectAdvancementCandidate(input: {
       commandId: string;
       projectCandidateId: string;
@@ -331,6 +343,32 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         120_000,
       );
     },
+    /**
+     * 开始准备规划上下文：Workflow 阶段 A 的第一个耐久节点调用此方法，
+     * POST 到后端 /internal/runtime/v1/begin-planning-context。
+     *
+     * 这是 createRuntimeApiClient 返回对象上的一个方法（不是独立函数），
+     * 每个方法对应一个后端私有 Application Command 端点。
+     *
+     * 参数 input：
+     * - 类型 Omit<PreparePlanningContextRequest, "schemaVersion"> 表示调用方
+     *   不需要（也不应该）传 schemaVersion，由本方法用 INTERNAL_RUNTIME_SCHEMA_VERSION
+     *   统一填充，保证合同版本一致。调用方只需传 commandId、productRunId、
+     *   attemptId、planRevision。
+     *
+     * 请求体 { schemaVersion, ...input }：
+     * - ...input 是展开运算符，把调用方传入的字段平铺出来，
+     *   再和 schemaVersion 合并成完整请求体。
+     *
+     * call(...) 是同文件 L112 定义的通用 HTTP 函数，负责：
+     * POST + 凭据头 + 超时 + Zod 响应校验 + 错误分类（网络未知/业务拒绝/合同损坏）。
+     *
+     * 响应 beginPlanningContextResponseSchema 按 status 分三支：
+     * - none：本轮不需要上下文
+     * - dispatch_required：需要先查 Memory（query 字段给出查询派发信息）
+     * - ready / optional_failed：上下文已就绪（contextPackageRef 指向不可变上下文包）
+     * 对应 planning-execution-workflow.ts L106 的分支判断。
+     */
     beginPlanningContext(input: Omit<PreparePlanningContextRequest, "schemaVersion">) {
       return call(
         options,
@@ -339,6 +377,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         beginPlanningContextResponseSchema,
       );
     },
+    /** 持久化规划上下文结果：把Memory查询结果存为不可变上下文包（阶段A，Plan v2+复用）。 */
     persistPlanningContextResult(
       input: Omit<PersistPlanningContextResultRequest, "schemaVersion">,
     ) {
@@ -352,6 +391,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         preparePlanningContextResponseSchema,
       );
     },
+    /** 编译规划输入：组装发给Planner模型的完整输入（阶段B，每个planRevision调一次）。 */
     compilePlanningInput(input: Omit<CompilePlanningInputRequest, "schemaVersion">) {
       return call(
         options,
@@ -360,6 +400,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         planningInputDtoSchema,
       );
     },
+    /** 发布计划评审：把Plan候选提交为under_review事实并创建审批请求（阶段B）。 */
     publishPlanReview(input: Omit<PublishPlanReviewRequest, "schemaVersion">) {
       return call(
         options,
@@ -368,6 +409,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         publishPlanReviewResponseSchema,
       );
     },
+    /** 加载已提交决定：读取用户approve/reject/request_revision决定（阶段B，Hook恢复后调用）。 */
     loadCommittedDecision(input: Omit<LoadCommittedDecisionRequest, "schemaVersion">) {
       return call(
         options,
@@ -376,6 +418,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         loadCommittedDecisionResponseSchema,
       );
     },
+    /** 编译执行合同：从已批准Plan编译不可变执行步骤和依赖顺序（阶段C入口）。 */
     compileExecutionContract(input: Omit<CompileExecutionContractRequest, "schemaVersion">) {
       return call(
         options,
@@ -384,6 +427,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         compileExecutionContractResponseSchema,
       );
     },
+    /** 开始运行尝试：为执行单个plan step创建attempt记录并冻结输入清单（阶段C，逐步执行）。 */
     beginRunAttempt(input: {
       commandId: string;
       productRunId: string;
@@ -408,6 +452,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         beginRunAttemptResponseSchema,
       );
     },
+    /** 完成运行尝试：标记单个plan step的attempt成功或失败（阶段C，每个step执行完调）。 */
     completeRunAttempt(input: {
       commandId: string;
       attemptId: string;
@@ -424,6 +469,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         runRevisionResponseSchema,
       );
     },
+    /** 持久化执行候选：把Executor输出保存为待验证候选（阶段C，全部step执行完后调）。 */
     persistExecutionCandidate(input: Omit<PersistExecutionCandidateRequest, "schemaVersion">) {
       return call(
         options,
@@ -432,6 +478,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         persistExecutionCandidateResponseSchema,
       );
     },
+    /** 持久化验证结果：保存服务端对执行候选的验证结论（阶段C，persist后调）。 */
     persistValidationResult(input: Omit<PersistValidationResultRequest, "schemaVersion">) {
       return call(
         options,
@@ -440,6 +487,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         persistValidationResultResponseSchema,
       );
     },
+    /** 提交执行结果：把验证通过的候选提交为产品终态（阶段C终点，product_committed）。 */
     commitExecutionResult(input: Omit<CommitExecutionResultRequest, "schemaVersion">) {
       return call(
         options,
@@ -448,6 +496,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         commitExecutionResultResponseSchema,
       );
     },
+    /** 提交拒绝运行：用户reject后把Run标记为cancelled（阶段B，reject分支）。 */
     commitRejectedRun(input: { commandId: string; productRunId: string; decisionId: string }) {
       return call(
         options,
@@ -459,6 +508,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         runRevisionResponseSchema,
       );
     },
+    /** 提交运行失败：失败收敛，把Run标记为failed（所有阶段异常分支的统一出口，幂等）。 */
     commitRunFailure(input: {
       commandId: string;
       productRunId: string;
@@ -475,6 +525,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         runRevisionResponseSchema,
       );
     },
+    /** 过期审批：审批超时后尝试把Run标记为failed（阶段B，与decisionHook竞态）。 */
     expireApproval(input: {
       commandId: string;
       productRunId: string;
@@ -491,6 +542,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         expireApprovalResponseSchema,
       );
     },
+    /** 加载记忆导入：MemoryImport工作流读取导入意图和冻结请求清单。 */
     loadMemoryImport(
       input: Omit<LoadMemoryImportRequest, "schemaVersion" | "workflowDefinitionVersion">,
     ) {
@@ -505,6 +557,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         loadMemoryImportResponseSchema,
       );
     },
+    /** 标记记忆导入派发中：记录外部Memory请求已发出（结果未知，等待对账）。 */
     markMemoryImportDispatching(input: {
       commandId: string;
       memoryImportIntentId: string;
@@ -523,6 +576,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         memoryImportResultResponseSchema,
       );
     },
+    /** 提交记忆导入已接受：外部Memory接受了导入请求（尚未物化，待查询对账）。 */
     commitMemoryImportAccepted(input: {
       commandId: string;
       memoryImportIntentId: string;
@@ -548,6 +602,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         memoryImportResultResponseSchema,
       );
     },
+    /** 提交记忆导入已物化：导入对象已在外部Memory可查（验证通过，导入成功终态）。 */
     commitMemoryImportMaterialized(input: {
       commandId: string;
       memoryImportIntentId: string;
@@ -575,6 +630,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         memoryImportResultResponseSchema,
       );
     },
+    /** 提交记忆导入失败：外部Memory拒绝或出错（确定失败终态）。 */
     commitMemoryImportFailed(input: {
       commandId: string;
       memoryImportIntentId: string;
@@ -596,6 +652,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         memoryImportResultResponseSchema,
       );
     },
+    /** 提交记忆导入结果未知：网络未知的安全收敛，留待人工对账。 */
     commitMemoryImportOutcomeUnknown(input: {
       commandId: string;
       memoryImportIntentId: string;
