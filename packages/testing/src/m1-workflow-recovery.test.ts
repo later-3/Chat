@@ -357,12 +357,12 @@ async function waitForRun(
   deps: ApplicationDeps,
   productRunId: ProductRunId,
   label: string,
-  predicate: (current: Awaited<ReturnType<typeof readRunSnapshot>>) => boolean,
+  predicate: (current: Awaited<ReturnType<typeof readRunSnapshot>>) => boolean | Promise<boolean>,
 ): Promise<Awaited<ReturnType<typeof readRunSnapshot>>> {
   const deadline = Date.now() + WAIT_TIMEOUT_MS;
   let current = await readRunSnapshot(deps, productRunId);
   while (Date.now() < deadline) {
-    if (predicate(current)) return current;
+    if (await predicate(current)) return current;
     await new Promise((resolveWait) => setTimeout(resolveWait, 100));
     current = await readRunSnapshot(deps, productRunId);
   }
@@ -383,8 +383,45 @@ async function waitForRun(
         memoryAdoptions: Object.keys(current.snapshot.entities.memoryAdoptions).length,
         contextPackages: Object.keys(current.snapshot.entities.contextPackages).length,
       },
+      workflowNodeRuns: Object.values(current.snapshot.entities.workflowNodeRuns)
+        .filter((node) => node.productRunId === productRunId)
+        .map((node) => ({
+          definitionNodeId: node.definitionNodeId,
+          executionPath: node.executionPath,
+          status: node.status,
+          outcomeCode: node.outcomeCode,
+          revision: node.revision,
+        })),
     }).slice(0, 4_000)}`,
   );
+}
+
+async function reviewCheckpointReady(
+  current: Awaited<ReturnType<typeof readRunSnapshot>>,
+  productRunId: ProductRunId,
+  bindingsPath: string,
+): Promise<boolean> {
+  if (current.run?.status !== "waiting_human") return false;
+  const approval = current.approvals.find((candidate) => candidate.status === "open");
+  if (approval === undefined) return false;
+  let hookClaimed = false;
+  try {
+    const bindings = await RuntimeBindingStore.open(bindingsPath, { allowCreate: false });
+    hookClaimed = bindings.getHookBinding(approval.approvalRequestId)?.hookClaimState === "claimed";
+  } catch {
+    return false;
+  }
+  if (!hookClaimed) return false;
+  const reviewNode = Object.values(current.snapshot.entities.workflowNodeRuns).find(
+    (candidate) =>
+      candidate.productRunId === productRunId &&
+      candidate.nodeType === "human.plan_review" &&
+      candidate.status === "waiting_human" &&
+      candidate.executionPath.at(-1)?.iteration === approval.planRevision,
+  );
+  // Plan发布事务原子拥有waiting节点；Hook Binding独立耐久后即可安全重启。
+  // Runner不再为同一业务节点追加不同summary/outcome的通用Transition Receipt。
+  return reviewNode !== undefined;
 }
 
 describe("M1真实Local World恢复", () => {
@@ -468,7 +505,9 @@ describe("M1真实Local World恢复", () => {
         deps,
         productRunId,
         "Plan v1等待Hook",
-        (candidate) => candidate.run?.status === "waiting_human" && candidate.plans.length === 1,
+        async (candidate) =>
+          candidate.plans.length === 1 &&
+          (await reviewCheckpointReady(candidate, productRunId, bindingsPath)),
       );
       expect(await readLines(memoryCallsPath)).toHaveLength(1);
       expect(await readLines(plannerCallsPath)).toHaveLength(1);
@@ -521,7 +560,9 @@ describe("M1真实Local World恢复", () => {
         deps,
         productRunId,
         "恢复后的Plan v2等待Hook",
-        (candidate) => candidate.run?.status === "waiting_human" && candidate.plans.length === 2,
+        async (candidate) =>
+          candidate.plans.length === 2 &&
+          (await reviewCheckpointReady(candidate, productRunId, bindingsPath)),
       );
 
       expect(await readLines(memoryCallsPath)).toHaveLength(1);
@@ -596,7 +637,7 @@ describe("M1真实Local World恢复", () => {
       expect(runOutbox.every((entry) => entry.status === "acknowledged")).toBe(true);
     } catch (error) {
       throw new Error(
-        `M1恢复场景失败 stdout=${runtimeProcess?.stdout().slice(-4_000) ?? ""} stderr=${runtimeProcess?.stderr().slice(-4_000) ?? ""}`,
+        `M1恢复场景失败 stdout=${runtimeProcess?.stdout().slice(-12_000) ?? ""} stderr=${runtimeProcess?.stderr().slice(-12_000) ?? ""}`,
         { cause: error },
       );
     } finally {

@@ -16,6 +16,8 @@ import {
   productRunIdSchema,
   productSessionIdSchema,
   runAttemptIdSchema,
+  workflowViewDefinitionIdSchema,
+  workflowViewDefinitionSchema,
   type PlanContent,
   type ProductSnapshot,
   type TraceEventInput,
@@ -26,6 +28,7 @@ import {
   computeMemoryResultSnapshotSha256,
   computeRunContextRequestSha256,
   hashCanonical,
+  createLegacyPlanningWorkflowView,
 } from "@chat/domain";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -48,6 +51,7 @@ const MEMORY_BACKEND_ID = memoryBackendIdSchema.parse("mbk_replay1");
 const CONTEXT_PACKAGE_ID = contextPackageIdSchema.parse("ctxp_replay1");
 const MEMORY_SNAPSHOT_ID = memoryResultSnapshotIdSchema.parse("mrs_replay1");
 const MEMORY_ADOPTION_ID = memoryAdoptionIdSchema.parse("mad_replay1");
+const WORKFLOW_VIEW_ID = workflowViewDefinitionIdSchema.parse("wvd_planninglegacyv1");
 const SECRET = "PRODUCT_CONTENT_ONLY_7f9c";
 const MEMORY_SECRET = "MEMORY_CONTENT_ONLY_13e8";
 
@@ -72,7 +76,7 @@ function minimalSnapshot(
     sourceMessageSha256,
   } as const;
   return productSnapshotSchema.parse({
-    schemaVersion: "chat-product-store.v5",
+    schemaVersion: "chat-product-store.v10",
     storeRevision: 1,
     committedAt: NOW,
     entities: {
@@ -103,13 +107,17 @@ function minimalSnapshot(
       },
       runs: {
         [RUN_ID]: {
-          schemaVersion: "product-run.v1",
+          schemaVersion: "product-run.v3",
+          runKind: "planning",
           productRunId: RUN_ID,
           sessionId: SESSION_ID,
           sourceMessageId: MESSAGE_ID,
+          workflowViewDefinitionId: WORKFLOW_VIEW_ID,
           status: "pending",
           phase: "queued",
           maxPlanRevisions: 5,
+          runnerFamily: "legacy-planning.v1",
+          runnerBundleVersion: "legacy-planning.bundle.v1",
           revision: 1,
           createdAt: NOW,
           updatedAt: NOW,
@@ -168,6 +176,29 @@ function minimalSnapshot(
       projectDecisions: {},
       projectObservations: {},
       projectCandidates: {},
+      workflowViewDefinitions: {
+        [WORKFLOW_VIEW_ID]: workflowViewDefinitionSchema.parse(
+          createLegacyPlanningWorkflowView(NOW),
+        ),
+      },
+      workflowDefinitions: {},
+      workflowDefinitionRevisions: {},
+      workflowRunSpecs: {},
+      workflowNodeRuns: {},
+      nodeRunTransitions: {},
+      nodeValueManifests: {},
+      notes: {},
+      noteRevisions: {},
+      noteCandidates: {},
+      noteDecisions: {},
+      rules: {},
+      ruleRevisions: {},
+      ruleTags: {},
+      ruleDecisions: {},
+      ruleSelections: {},
+      planningProjectContexts: {},
+      planningMemorySelections: {},
+      workflowPolicyResolutions: {},
     },
     commandReceipts: {},
     outbox: {},

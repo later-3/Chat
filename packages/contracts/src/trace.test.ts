@@ -20,7 +20,7 @@ function fixtureOf(eventName: string): Record<string, unknown> {
   return found;
 }
 
-describe("traceEventSchema：54种正式事件的合法Fixture全部通过", () => {
+describe("traceEventSchema：全部正式事件的合法Fixture通过", () => {
   it("Fixture覆盖任务书§7.3全部事件名", () => {
     const covered = new Set(validTraceFixtures.map((fixture) => fixture["eventName"]));
     for (const name of Object.values(TRACE_EVENT_NAMES)) {
@@ -54,6 +54,17 @@ describe("traceEventSchema：outcome按事件名固定", () => {
   ])("%s 不接受 outcome=%s", (eventName, wrongOutcome) => {
     const tampered = { ...fixtureOf(eventName), outcome: wrongOutcome };
     expect(traceEventSchema.safeParse(tampered).success).toBe(false);
+  });
+});
+
+describe("traceEventSchema：pi节点类型与正式Runner一致", () => {
+  it.each(["planner", "executor", "note_capture"] as const)("接受 %s", (nodeKind) => {
+    expect(
+      traceEventSchema.safeParse({
+        ...fixtureOf(TRACE_EVENT_NAMES.piNodeStarted),
+        nodeKind,
+      }).success,
+    ).toBe(true);
   });
 });
 

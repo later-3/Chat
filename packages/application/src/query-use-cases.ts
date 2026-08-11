@@ -15,6 +15,7 @@ import type {
 import { type ApplicationDeps } from "./deps.js";
 import { toApprovalDto, toMessageDto, toPlanDto, toRunDto, toSessionDto } from "./dto.js";
 import { ApplicationError, forbidden, notFound } from "./errors.js";
+import { requirePlanningRun } from "./product-run-kind.js";
 
 /**
  * 查询用例。
@@ -130,12 +131,13 @@ function loadRunContext(
   assertSessionAccess(deps, snapshot, run.sessionId, principalId);
   const currentPlan = Object.values(snapshot.entities.plans).find(
     (plan) =>
+      run.runKind === "planning" &&
       run.currentPlanId !== undefined &&
       plan.planId === run.currentPlanId &&
       plan.planRevision === run.currentPlanRevision,
   );
   const persistedApproval =
-    run.currentApprovalRequestId !== undefined
+    run.runKind === "planning" && run.currentApprovalRequestId !== undefined
       ? snapshot.entities.approvalRequests[run.currentApprovalRequestId]
       : undefined;
   // Query不改写产品事实，但必须按当前时间明确投影过期状态，防止浏览器继续呈现可操作按钮。
@@ -166,7 +168,8 @@ export async function getRunPlans(
   input: { principalId: PrincipalId; productRunId: ProductRunId },
 ): Promise<{ plans: PlanDto[] }> {
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
-  loadRunContext(deps, snapshot, input.productRunId, input.principalId);
+  const { run } = loadRunContext(deps, snapshot, input.productRunId, input.principalId);
+  requirePlanningRun(run);
   const plans = Object.values(snapshot.entities.plans)
     .filter((plan) => plan.productRunId === input.productRunId)
     .sort((a, b) => a.planRevision - b.planRevision)
@@ -179,7 +182,13 @@ export async function getCurrentApproval(
   input: { principalId: PrincipalId; productRunId: ProductRunId },
 ): Promise<{ approval: ApprovalDto | null }> {
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
-  const { currentApproval } = loadRunContext(deps, snapshot, input.productRunId, input.principalId);
+  const { run, currentApproval } = loadRunContext(
+    deps,
+    snapshot,
+    input.productRunId,
+    input.principalId,
+  );
+  requirePlanningRun(run);
   return { approval: currentApproval !== undefined ? toApprovalDto(currentApproval) : null };
 }
 

@@ -16,6 +16,17 @@ import {
   validationResultSchema,
 } from "./product.js";
 import {
+  workflowDefinitionRevisionSchema,
+  workflowDefinitionSchema,
+  workflowRunSpecSchema,
+} from "./workflow-definition.js";
+import {
+  nodeRunTransitionSchema,
+  nodeValueManifestSchema,
+  workflowNodeRunSchema,
+  workflowViewDefinitionSchema,
+} from "./workflow-run.js";
+import {
   contextPackageSchema,
   memoryAdoptionSchema,
   memoryQuerySchema,
@@ -40,6 +51,17 @@ import {
   projectUpdateSchema,
   projectWorkSchema,
 } from "./project.js";
+import { noteCandidateSchema, noteDecisionSchema, noteRevisionSchema, noteSchema } from "./note.js";
+import {
+  ruleDecisionSchema,
+  ruleRevisionSchema,
+  ruleSchema,
+  ruleSelectionSchema,
+  ruleTagSchema,
+} from "./rules.js";
+import { planningProjectContextSchema } from "./planning-project-context.js";
+import { planningMemorySelectionSchema } from "./planning-memory-selection.js";
+import { workflowPolicyResolutionSchema } from "./workflow-policy-resolution.js";
 
 /**
  * Product Snapshot顶层合同（任务书§8.3）。
@@ -51,7 +73,7 @@ import {
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v5";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v10";
 
 const idKeySchema = z.string().min(1).max(200);
 
@@ -96,6 +118,25 @@ export const productSnapshotSchema = z
         projectDecisions: z.record(idKeySchema, projectDecisionSchema),
         projectObservations: z.record(idKeySchema, projectObservationSchema),
         projectCandidates: z.record(idKeySchema, projectCandidateSchema),
+        workflowViewDefinitions: z.record(idKeySchema, workflowViewDefinitionSchema),
+        workflowDefinitions: z.record(idKeySchema, workflowDefinitionSchema),
+        workflowDefinitionRevisions: z.record(idKeySchema, workflowDefinitionRevisionSchema),
+        workflowRunSpecs: z.record(idKeySchema, workflowRunSpecSchema),
+        workflowNodeRuns: z.record(idKeySchema, workflowNodeRunSchema),
+        nodeRunTransitions: z.record(idKeySchema, nodeRunTransitionSchema),
+        nodeValueManifests: z.record(idKeySchema, nodeValueManifestSchema),
+        notes: z.record(idKeySchema, noteSchema),
+        noteRevisions: z.record(idKeySchema, noteRevisionSchema),
+        noteCandidates: z.record(idKeySchema, noteCandidateSchema),
+        noteDecisions: z.record(idKeySchema, noteDecisionSchema),
+        rules: z.record(idKeySchema, ruleSchema),
+        ruleRevisions: z.record(idKeySchema, ruleRevisionSchema),
+        ruleTags: z.record(idKeySchema, ruleTagSchema),
+        ruleDecisions: z.record(idKeySchema, ruleDecisionSchema),
+        ruleSelections: z.record(idKeySchema, ruleSelectionSchema),
+        planningProjectContexts: z.record(idKeySchema, planningProjectContextSchema),
+        planningMemorySelections: z.record(idKeySchema, planningMemorySelectionSchema),
+        workflowPolicyResolutions: z.record(idKeySchema, workflowPolicyResolutionSchema),
       })
       .strict(),
     commandReceipts: z.record(idKeySchema, commandReceiptSchema),
@@ -146,6 +187,25 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       projectDecisions: {},
       projectObservations: {},
       projectCandidates: {},
+      workflowViewDefinitions: {},
+      workflowDefinitions: {},
+      workflowDefinitionRevisions: {},
+      workflowRunSpecs: {},
+      workflowNodeRuns: {},
+      nodeRunTransitions: {},
+      nodeValueManifests: {},
+      notes: {},
+      noteRevisions: {},
+      noteCandidates: {},
+      noteDecisions: {},
+      rules: {},
+      ruleRevisions: {},
+      ruleTags: {},
+      ruleDecisions: {},
+      ruleSelections: {},
+      planningProjectContexts: {},
+      planningMemorySelections: {},
+      workflowPolicyResolutions: {},
     },
     commandReceipts: {},
     outbox: {},

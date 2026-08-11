@@ -22,6 +22,12 @@ export const runAttemptIdSchema = prefixedId("att");
 export const approvalRequestIdSchema = prefixedId("apr");
 export const commandIdSchema = prefixedId("cmd");
 export const workflowDefinitionIdSchema = prefixedId("wfd");
+export const workflowDefinitionRevisionIdSchema = prefixedId("wfr");
+export const workflowRunSpecIdSchema = prefixedId("wrs");
+export const workflowViewDefinitionIdSchema = prefixedId("wvd");
+export const workflowNodeRunIdSchema = prefixedId("wnr");
+export const nodeRunTransitionIdSchema = prefixedId("wnt");
+export const nodeValueManifestIdSchema = prefixedId("wvm");
 export const projectIdSchema = prefixedId("prj");
 
 /* B2 规划—确认—执行纵向链新增的产品身份。 */
@@ -63,6 +69,26 @@ export const projectMilestoneIdSchema = prefixedId("pml");
 export const projectUpdateIdSchema = prefixedId("pup");
 export const projectStateTransitionIdSchema = prefixedId("ptr");
 
+/* R1/R2 用户规则身份；Revision与Selection必须能独立冻结、回放和审计。 */
+export const ruleIdSchema = prefixedId("rul");
+export const ruleRevisionIdSchema = prefixedId("rrv");
+export const ruleTagIdSchema = prefixedId("rtg");
+export const ruleScopeIdSchema = prefixedId("rsc");
+export const ruleDecisionIdSchema = prefixedId("rde");
+export const ruleSelectionIdSchema = prefixedId("rsl");
+/* Planning运行冻结的Project Context；不是Project聚合或Workflow Runtime身份。 */
+export const planningProjectContextIdSchema = prefixedId("pcx");
+/** Planning Memory Selection不能复用ProjectMethodSnapshot既有的pms_*身份。 */
+export const planningMemorySelectionIdSchema = prefixedId("pmsl");
+/** Workflow Policy Resolution是产品策略事实，不是human Decision或Rule Decision。 */
+export const workflowPolicyResolutionIdSchema = prefixedId("wpr");
+
+/* S5 Note Capture产品身份；Note不得复用Message、Artifact或Workflow Runtime身份。 */
+export const noteIdSchema = prefixedId("nte");
+export const noteRevisionIdSchema = prefixedId("ntr");
+export const noteCandidateIdSchema = prefixedId("ntc");
+export const noteDecisionIdSchema = prefixedId("ntd");
+
 /**
  * 服务端请求ID。客户端可提议复用，但必须通过本Schema才被信任；
  * 否则服务端生成新的req_*并在响应头返回最终生效ID。
@@ -78,6 +104,12 @@ export type RunAttemptId = z.infer<typeof runAttemptIdSchema>;
 export type ApprovalRequestId = z.infer<typeof approvalRequestIdSchema>;
 export type CommandId = z.infer<typeof commandIdSchema>;
 export type WorkflowDefinitionId = z.infer<typeof workflowDefinitionIdSchema>;
+export type WorkflowDefinitionRevisionId = z.infer<typeof workflowDefinitionRevisionIdSchema>;
+export type WorkflowRunSpecId = z.infer<typeof workflowRunSpecIdSchema>;
+export type WorkflowViewDefinitionId = z.infer<typeof workflowViewDefinitionIdSchema>;
+export type WorkflowNodeRunId = z.infer<typeof workflowNodeRunIdSchema>;
+export type NodeRunTransitionId = z.infer<typeof nodeRunTransitionIdSchema>;
+export type NodeValueManifestId = z.infer<typeof nodeValueManifestIdSchema>;
 export type ProjectId = z.infer<typeof projectIdSchema>;
 export type PrincipalId = z.infer<typeof principalIdSchema>;
 export type PlanId = z.infer<typeof planIdSchema>;
@@ -111,3 +143,16 @@ export type ProjectCandidateId = z.infer<typeof projectCandidateIdSchema>;
 export type ProjectMilestoneId = z.infer<typeof projectMilestoneIdSchema>;
 export type ProjectUpdateId = z.infer<typeof projectUpdateIdSchema>;
 export type ProjectStateTransitionId = z.infer<typeof projectStateTransitionIdSchema>;
+export type RuleId = z.infer<typeof ruleIdSchema>;
+export type RuleRevisionId = z.infer<typeof ruleRevisionIdSchema>;
+export type RuleTagId = z.infer<typeof ruleTagIdSchema>;
+export type RuleScopeId = z.infer<typeof ruleScopeIdSchema>;
+export type RuleDecisionId = z.infer<typeof ruleDecisionIdSchema>;
+export type RuleSelectionId = z.infer<typeof ruleSelectionIdSchema>;
+export type PlanningProjectContextId = z.infer<typeof planningProjectContextIdSchema>;
+export type PlanningMemorySelectionId = z.infer<typeof planningMemorySelectionIdSchema>;
+export type WorkflowPolicyResolutionId = z.infer<typeof workflowPolicyResolutionIdSchema>;
+export type NoteId = z.infer<typeof noteIdSchema>;
+export type NoteRevisionId = z.infer<typeof noteRevisionIdSchema>;
+export type NoteCandidateId = z.infer<typeof noteCandidateIdSchema>;
+export type NoteDecisionId = z.infer<typeof noteDecisionIdSchema>;

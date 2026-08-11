@@ -14,7 +14,10 @@ import {
 } from "@chat/contracts";
 import { computeExecutionInputManifestSha256 } from "@chat/domain";
 import { setWorkflowRuntimeContext } from "./runtime-context.js";
-import { runPiExecutorStep } from "./workflow-execution-steps.js";
+import {
+  executeAndPersistApprovedPlanStep,
+  runPiExecutorStep,
+} from "./workflow-execution-steps.js";
 
 const MEMORY_CONTENT = "Orchid protocol approval color is heliotrope.";
 const MEMORY_ITEM: ExecutionContextItemDto = {
@@ -82,9 +85,13 @@ function manifestSha256(contextItems: readonly ExecutionContextItemDto[]): strin
   });
 }
 
-function installContext(executor: ReturnType<typeof vi.fn>, events: unknown[]): void {
+function installContext(
+  executor: ReturnType<typeof vi.fn>,
+  events: unknown[],
+  api: Record<string, ReturnType<typeof vi.fn>> = {},
+): void {
   setWorkflowRuntimeContext({
-    api: {} as never,
+    api: api as never,
     bindings: {} as never,
     memoryBackends: { list: () => [], get: () => undefined },
     trace: (event) => events.push(event),
@@ -95,6 +102,7 @@ function installContext(executor: ReturnType<typeof vi.fn>, events: unknown[]): 
       endpointHost: "dashscope.aliyuncs.com",
     },
     planner: vi.fn() as never,
+    noteCapture: vi.fn() as never,
     executor: executor as never,
   });
 }
@@ -206,5 +214,93 @@ describe("runPiExecutorStep Memory输入证据", () => {
         },
       }),
     );
+  });
+});
+
+describe("Configurable执行合并Step", () => {
+  it("maxActions在任何执行副作用前拒绝，允许值只返回候选ref", async () => {
+    const twoStepContract: ExecutionContract = {
+      ...CONTRACT,
+      steps: [
+        ...CONTRACT.steps,
+        {
+          ...CONTRACT.steps[0]!,
+          stepId: "answer-2",
+          dependsOn: ["answer"],
+        },
+      ],
+    };
+    const compile = vi
+      .fn()
+      .mockResolvedValueOnce({ contract: twoStepContract })
+      .mockResolvedValueOnce({ contract: CONTRACT });
+    const begin = vi.fn(async () => ({
+      attemptId: "att_execute1",
+      inputManifestSha256: manifestSha256([MEMORY_ITEM]),
+      contextItems: [MEMORY_ITEM],
+    }));
+    const complete = vi.fn(async () => ({ revision: 2 }));
+    const persist = vi.fn(async () => ({
+      executionCandidateId: "xcd_workflow1",
+      sha256: "e".repeat(64),
+      revision: 1,
+    }));
+    const executor = vi.fn(async () => ({
+      kind: "candidate" as const,
+      candidate: {
+        stepId: "answer",
+        output: "不可进入Workflow checkpoint的正文",
+        sections: [{ heading: "答案", body: "私有输出" }],
+        successCriteriaEvidence: ["完成"],
+        criteriaEvidence: ["答案可读"],
+        warnings: [],
+      },
+      durationMs: 10,
+      providerCallCount: 1,
+      providerMeta: {
+        httpStatus: 200,
+        providerRequestId: "provider-execute-1",
+        providerStopReason: "toolUse" as const,
+        toolCallCount: 1,
+      },
+      usage: { inputTokens: 20, outputTokens: 10 },
+    }));
+    installContext(executor, [], {
+      compileExecutionContract: compile,
+      beginRunAttempt: begin,
+      completeRunAttempt: complete,
+      persistExecutionCandidate: persist,
+    });
+    const identity = {
+      productRunId: "run_workflowmemory1",
+      attemptId: "att_workflowmemory1",
+      approvalDecisionId: "dec_workflowmemory1",
+      maxActions: 1,
+    };
+
+    const blocked = await executeAndPersistApprovedPlanStep(identity);
+    const allowed = await executeAndPersistApprovedPlanStep(identity);
+
+    expect(blocked).toEqual({ status: "failed", errorCode: "execution.max_actions_exceeded" });
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(executor).toHaveBeenCalledTimes(1);
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(allowed).toEqual({
+      status: "persisted",
+      refs: {
+        executionContractId: CONTRACT.executionContractId,
+        approvedPlanSha256: CONTRACT.approvedPlanSha256,
+        executionCandidateId: "xcd_workflow1",
+        executionCandidateSha256: "e".repeat(64),
+      },
+    });
+    expect(JSON.stringify(allowed)).not.toContain("不可进入Workflow checkpoint的正文");
+    expect(
+      (
+        executeAndPersistApprovedPlanStep as typeof executeAndPersistApprovedPlanStep & {
+          maxRetries: number;
+        }
+      ).maxRetries,
+    ).toBe(0);
   });
 });

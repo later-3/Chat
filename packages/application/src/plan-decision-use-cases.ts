@@ -30,6 +30,8 @@ import { DEFAULT_APPROVAL_TTL_MS, type ApplicationDeps } from "./deps.js";
 import { toApprovalDto, toDecisionDto, toPlanDto, toRunDto } from "./dto.js";
 import { ApplicationError, forbidden, notFound, revisionConflict } from "./errors.js";
 import { emitRunEvent, safeErrorType } from "./trace-helpers.js";
+import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
+import { requirePlanningRun } from "./product-run-kind.js";
 
 /**
  * PublishPlanForReview / SubmitPlanDecision用例。
@@ -91,7 +93,8 @@ export async function publishPlanForReview(
     mutate: (draft) => {
       const run = draft.entities.runs[input.productRunId];
       if (run === undefined) throw notFound("Product Run不存在");
-      if (run.revision !== input.expectedRunRevision) {
+      const planningRun = requirePlanningRun(run);
+      if (planningRun.revision !== input.expectedRunRevision) {
         throw revisionConflict("Run revision已变化，拒绝发布陈旧Plan Candidate");
       }
 
@@ -102,7 +105,7 @@ export async function publishPlanForReview(
       try {
         planRevision = nextPlanRevision(
           existingPlans.map((plan) => plan.planRevision),
-          run.maxPlanRevisions,
+          planningRun.maxPlanRevisions,
         );
       } catch (error) {
         if (error instanceof DomainInvariantError && error.code === "plan_revision_limit_reached") {
@@ -138,14 +141,107 @@ export async function publishPlanForReview(
       ) {
         throw revisionConflict("Planning Attempt的ContextPackage证据不完整");
       }
-      const semanticIssues = validatePlanSemantics(input.content.steps, {
-        maxSteps: B2_MAX_PLAN_STEPS,
-        allowedCapabilities: new Set([EXECUTION_CAPABILITY_MARKDOWN_COMPOSE]),
-        allowedContextRefs: new Set(
-          (contextPackage?.items ?? []).map(
-            (item) => `${item.memoryResultSnapshotId}:${String(item.revision)}:${item.sha256}`,
-          ),
+      const memorySelection =
+        attempt.planningMemorySelectionId === undefined
+          ? undefined
+          : draft.entities.planningMemorySelections[attempt.planningMemorySelectionId];
+      if (
+        attempt.planningMemorySelectionId !== undefined &&
+        (memorySelection === undefined ||
+          memorySelection.productRunId !== input.productRunId ||
+          memorySelection.sha256 !== attempt.planningMemorySelectionSha256)
+      ) {
+        throw revisionConflict("Planning Attempt的Memory Selection证据不完整");
+      }
+      const projectContext =
+        attempt.planningProjectContextId === undefined
+          ? undefined
+          : draft.entities.planningProjectContexts[attempt.planningProjectContextId];
+      if (
+        attempt.planningProjectContextId !== undefined &&
+        (projectContext === undefined ||
+          projectContext.productRunId !== input.productRunId ||
+          projectContext.sha256 !== attempt.planningProjectContextSha256)
+      ) {
+        throw revisionConflict("Planning Attempt的Project Context证据不完整");
+      }
+      const ruleSelection =
+        attempt.ruleSelectionId === undefined
+          ? undefined
+          : draft.entities.ruleSelections[attempt.ruleSelectionId];
+      if (
+        attempt.ruleSelectionId !== undefined &&
+        (ruleSelection === undefined ||
+          ruleSelection.productRunId !== input.productRunId ||
+          ruleSelection.sha256 !== attempt.ruleSelectionSha256 ||
+          ruleSelection.status !== "ready")
+      ) {
+        throw revisionConflict("Planning Attempt的Rule Selection证据不完整");
+      }
+      const allowedContextRefs = new Set(
+        (contextPackage?.items ?? []).map(
+          (item) => `${item.memoryResultSnapshotId}:${String(item.revision)}:${item.sha256}`,
         ),
+      );
+      for (const selected of memorySelection?.selected ?? []) {
+        const snapshot = draft.entities.memoryResultSnapshots[selected.memoryResultSnapshotId];
+        if (
+          snapshot === undefined ||
+          snapshot.revision !== selected.revision ||
+          snapshot.sha256 !== selected.sha256
+        ) {
+          throw revisionConflict("Memory Selection引用的Snapshot证据不完整");
+        }
+        allowedContextRefs.add(
+          `${snapshot.memoryResultSnapshotId}:${String(snapshot.revision)}:${snapshot.sha256}`,
+        );
+      }
+      if (projectContext !== undefined) {
+        allowedContextRefs.add(
+          `${projectContext.planningProjectContextId}:${String(projectContext.revision)}:${projectContext.sha256}`,
+        );
+      }
+      for (const selected of ruleSelection?.selected ?? []) {
+        const revision = draft.entities.ruleRevisions[selected.ruleRevisionId];
+        if (
+          revision === undefined ||
+          revision.ruleId !== selected.ruleId ||
+          revision.sha256 !== selected.ruleRevisionSha256
+        ) {
+          throw revisionConflict("Rule Selection引用的Revision证据不完整");
+        }
+        allowedContextRefs.add(
+          `${revision.ruleRevisionId}:${String(revision.revision)}:${revision.sha256}`,
+        );
+      }
+      const runSpec =
+        planningRun.workflowRunSpecId === undefined
+          ? undefined
+          : draft.entities.workflowRunSpecs[planningRun.workflowRunSpecId];
+      const planNode = runSpec?.nodeResolutions.find((node) => node.nodeType === "agent.plan");
+      const frozenMaxSteps = planNode?.config["maxSteps"];
+      if (
+        planningRun.workflowRunSpecId !== undefined &&
+        (planNode === undefined ||
+          typeof frozenMaxSteps !== "number" ||
+          !Number.isInteger(frozenMaxSteps) ||
+          frozenMaxSteps < 1 ||
+          frozenMaxSteps > B2_MAX_PLAN_STEPS)
+      ) {
+        throw new ApplicationError({
+          code: "store_corrupted",
+          httpStatus: 500,
+          message: "RunSpec缺少合法的agent.plan maxSteps",
+          recoveryAction: "contact_support",
+        });
+      }
+      const semanticIssues = validatePlanSemantics(input.content.steps, {
+        maxSteps:
+          typeof frozenMaxSteps === "number" && Number.isInteger(frozenMaxSteps)
+            ? frozenMaxSteps
+            : B2_MAX_PLAN_STEPS,
+        allowedCapabilities: new Set([EXECUTION_CAPABILITY_MARKDOWN_COMPOSE]),
+        allowedContextRefs,
       });
       if (semanticIssues.length !== 0) {
         throw new ApplicationError({
@@ -156,7 +252,7 @@ export async function publishPlanForReview(
       }
 
       // 生命周期：允许从pending/queued或running/planning进入审核中
-      let lifecycle: RunLifecycle = { status: run.status, phase: run.phase };
+      let lifecycle: RunLifecycle = { status: planningRun.status, phase: planningRun.phase };
       if (lifecycle.status === "pending" && lifecycle.phase === "queued") {
         lifecycle = mapRunTransition(lifecycle, { status: "running", phase: "planning" });
       }
@@ -232,15 +328,16 @@ export async function publishPlanForReview(
       );
 
       draft.entities.runs[input.productRunId] = {
-        ...run,
+        ...planningRun,
         status: lifecycle.status,
         phase: lifecycle.phase,
         currentPlanId: planId,
         currentPlanRevision: planRevision,
         currentApprovalRequestId: approvalRequestId,
-        revision: run.revision + 1,
+        revision: planningRun.revision + 1,
         updatedAt: now,
       };
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return {
         resultRefs: { planRevisionId, approvalRequestId, productRunId: input.productRunId },
       };
@@ -332,12 +429,13 @@ export async function submitPlanDecision(
       mutate: (draft) => {
         const run = draft.entities.runs[input.productRunId];
         if (run === undefined) throw notFound("Product Run不存在");
+        const planningRun = requirePlanningRun(run);
         // revision是用户所见Run版本的CAS条件，不是Plan版本。它阻止两个页面或两次点击
         // 基于同一个旧状态同时生效；commandId则处理“同一个请求因网络问题而重试”。
-        if (run.revision !== input.expectedRunRevision) {
+        if (planningRun.revision !== input.expectedRunRevision) {
           throw revisionConflict("Run revision已变化，请重新读取后重试");
         }
-        const session = draft.entities.sessions[run.sessionId];
+        const session = draft.entities.sessions[planningRun.sessionId];
         if (session === undefined) throw notFound("Session不存在");
         if (session.ownerPrincipalId !== input.principalId) {
           throw forbidden("无权决定该Product Run");
@@ -370,15 +468,16 @@ export async function submitPlanDecision(
             };
           }
           const expiredRun = {
-            ...run,
+            ...planningRun,
             status: "failed" as const,
             phase: "plan_review" as const,
             failure: { code: "approval.expired", summary: "计划确认已过期，请重新开始" },
-            revision: run.revision + 1,
+            revision: planningRun.revision + 1,
             updatedAt: now,
           };
           delete expiredRun.currentApprovalRequestId;
           draft.entities.runs[input.productRunId] = expiredRun;
+          synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
           return {
             resultRefs: {
               productRunId: input.productRunId,
@@ -429,7 +528,10 @@ export async function submitPlanDecision(
             : input.payload.kind === "request_revision"
               ? { status: "running", phase: "planning" }
               : { status: "cancelled", phase: "rejected" };
-        const lifecycle = mapRunTransition({ status: run.status, phase: run.phase }, nextLifecycle);
+        const lifecycle = mapRunTransition(
+          { status: planningRun.status, phase: planningRun.phase },
+          nextLifecycle,
+        );
 
         if (
           input.payload.kind === "request_revision" &&
@@ -482,10 +584,10 @@ export async function submitPlanDecision(
           updatedAt: now,
         };
         const decidedRun = {
-          ...run,
+          ...planningRun,
           status: lifecycle.status,
           phase: lifecycle.phase,
-          revision: run.revision + 1,
+          revision: planningRun.revision + 1,
           updatedAt: now,
         };
         delete decidedRun.currentApprovalRequestId;
@@ -506,6 +608,7 @@ export async function submitPlanDecision(
           createdAt: now,
           updatedAt: now,
         };
+        synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
         return { resultRefs: { decisionId, productRunId: input.productRunId } };
       },
     })
@@ -546,15 +649,16 @@ export async function submitPlanDecision(
   const decision = snapshot.entities.decisions[result.resultRefs["decisionId"] ?? ""];
   const run = snapshot.entities.runs[input.productRunId];
   if (decision === undefined || run === undefined) throw notFound("Decision或Run不存在");
+  const planningRun = requirePlanningRun(run);
   const currentPlan = Object.values(snapshot.entities.plans).find(
     (plan) =>
-      run.currentPlanId !== undefined &&
-      plan.planId === run.currentPlanId &&
-      plan.planRevision === run.currentPlanRevision,
+      planningRun.currentPlanId !== undefined &&
+      plan.planId === planningRun.currentPlanId &&
+      plan.planRevision === planningRun.currentPlanRevision,
   );
   const currentApproval =
-    run.currentApprovalRequestId !== undefined
-      ? snapshot.entities.approvalRequests[run.currentApprovalRequestId]
+    planningRun.currentApprovalRequestId !== undefined
+      ? snapshot.entities.approvalRequests[planningRun.currentApprovalRequestId]
       : undefined;
   if (!result.replayed) {
     const planningAttempt = Object.values(snapshot.entities.attempts).find(

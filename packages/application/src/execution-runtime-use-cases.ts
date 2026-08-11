@@ -13,6 +13,8 @@ import {
 } from "@chat/contracts";
 import { type ApplicationDeps } from "./deps.js";
 import { notFound, revisionConflict } from "./errors.js";
+import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
+import { requirePlanningRun } from "./product-run-kind.js";
 
 /**
  * Workflow私有Application Command：执行合同、候选、验证与Product Commit。
@@ -51,8 +53,8 @@ interface ResolvedExecutionStep {
 }
 
 /**
- * 只沿Approved Plan的Planning Attempt所绑定ContextPackage解析当前Step。
- * 任何跨包、缺失或版本/Hash偏差都在进入Executor前失败关闭。
+ * 只沿Approved Plan的Planning Attempt所绑定Memory/Project/Rules冻结事实解析当前Step。
+ * 任何跨选择、缺失或版本/Hash偏差都在进入Executor前失败关闭。
  */
 function resolveExecutionStepContext(
   snapshot: ProductSnapshot,
@@ -88,19 +90,58 @@ function resolveExecutionStepContext(
     planningAttempt === undefined ||
     planningAttempt.kind !== "planning" ||
     planningAttempt.productRunId !== contract.productRunId ||
-    planningAttempt.planRevision !== plan.planRevision ||
-    planningAttempt.contextPackageId === undefined ||
-    planningAttempt.contextPackageSha256 === undefined
+    planningAttempt.planRevision !== plan.planRevision
   ) {
-    throw revisionConflict("Approved Plan缺少冻结ContextPackage血缘");
+    throw revisionConflict("Approved Plan缺少冻结Planning Attempt血缘");
   }
-  const contextPackage = snapshot.entities.contextPackages[planningAttempt.contextPackageId];
+  const contextPackage =
+    planningAttempt.contextPackageId === undefined
+      ? undefined
+      : snapshot.entities.contextPackages[planningAttempt.contextPackageId];
   if (
-    contextPackage === undefined ||
-    contextPackage.productRunId !== contract.productRunId ||
-    contextPackage.sha256 !== planningAttempt.contextPackageSha256
+    planningAttempt.contextPackageId !== undefined &&
+    (contextPackage === undefined ||
+      contextPackage.productRunId !== contract.productRunId ||
+      contextPackage.sha256 !== planningAttempt.contextPackageSha256)
   ) {
     throw revisionConflict("Approved Plan绑定的ContextPackage不存在或Hash不一致");
+  }
+  const memorySelection =
+    planningAttempt.planningMemorySelectionId === undefined
+      ? undefined
+      : snapshot.entities.planningMemorySelections[planningAttempt.planningMemorySelectionId];
+  if (
+    planningAttempt.planningMemorySelectionId !== undefined &&
+    (memorySelection === undefined ||
+      memorySelection.productRunId !== contract.productRunId ||
+      memorySelection.sha256 !== planningAttempt.planningMemorySelectionSha256)
+  ) {
+    throw revisionConflict("Approved Plan绑定的Memory Selection不存在或Hash不一致");
+  }
+  const projectContext =
+    planningAttempt.planningProjectContextId === undefined
+      ? undefined
+      : snapshot.entities.planningProjectContexts[planningAttempt.planningProjectContextId];
+  if (
+    planningAttempt.planningProjectContextId !== undefined &&
+    (projectContext === undefined ||
+      projectContext.productRunId !== contract.productRunId ||
+      projectContext.sha256 !== planningAttempt.planningProjectContextSha256)
+  ) {
+    throw revisionConflict("Approved Plan绑定的Project Context不存在或Hash不一致");
+  }
+  const ruleSelection =
+    planningAttempt.ruleSelectionId === undefined
+      ? undefined
+      : snapshot.entities.ruleSelections[planningAttempt.ruleSelectionId];
+  if (
+    planningAttempt.ruleSelectionId !== undefined &&
+    (ruleSelection === undefined ||
+      ruleSelection.productRunId !== contract.productRunId ||
+      ruleSelection.sha256 !== planningAttempt.ruleSelectionSha256 ||
+      ruleSelection.status !== "ready")
+  ) {
+    throw revisionConflict("Approved Plan绑定的Rule Selection不存在、未就绪或Hash不一致");
   }
 
   const seen = new Set<string>();
@@ -108,34 +149,100 @@ function resolveExecutionStepContext(
     const key = `${ref.refId}:${String(ref.revision)}:${ref.sha256}`;
     if (seen.has(key)) throw revisionConflict("Execution Step不允许重复上下文引用");
     seen.add(key);
-    const packageItem = contextPackage.items.find(
+    const packageItem = contextPackage?.items.find(
       (candidate) =>
         candidate.memoryResultSnapshotId === ref.refId &&
         candidate.revision === ref.revision &&
         candidate.sha256 === ref.sha256,
     );
-    if (packageItem === undefined) {
-      throw revisionConflict("Execution Step引用了未被本轮ContextPackage采用的条目");
+    if (packageItem !== undefined && contextPackage !== undefined) {
+      const memory = snapshot.entities.memoryResultSnapshots[packageItem.memoryResultSnapshotId];
+      if (
+        memory === undefined ||
+        memory.memoryQueryId !== contextPackage.memoryQueryId ||
+        memory.revision !== ref.revision ||
+        memory.sha256 !== ref.sha256
+      ) {
+        throw revisionConflict("Execution Step的Memory Snapshot缺失或版本证据不一致");
+      }
+      return {
+        refId: memory.memoryResultSnapshotId,
+        revision: memory.revision,
+        sha256: memory.sha256,
+        title: memory.title,
+        kind: memory.kind,
+        layer: memory.memoryLayer,
+        tags: memory.tags,
+        content: memory.content,
+      };
     }
-    const memory = snapshot.entities.memoryResultSnapshots[packageItem.memoryResultSnapshotId];
+    const selectedMemory = memorySelection?.selected.find(
+      (candidate) =>
+        candidate.memoryResultSnapshotId === ref.refId &&
+        candidate.revision === ref.revision &&
+        candidate.sha256 === ref.sha256,
+    );
+    if (selectedMemory !== undefined) {
+      const memory = snapshot.entities.memoryResultSnapshots[selectedMemory.memoryResultSnapshotId];
+      if (
+        memory === undefined ||
+        memory.revision !== ref.revision ||
+        memory.sha256 !== ref.sha256
+      ) {
+        throw revisionConflict("Execution Step的显式Memory Snapshot缺失或版本证据不一致");
+      }
+      return {
+        refId: memory.memoryResultSnapshotId,
+        revision: memory.revision,
+        sha256: memory.sha256,
+        title: memory.title,
+        kind: memory.kind,
+        layer: memory.memoryLayer,
+        tags: memory.tags,
+        content: memory.content,
+      };
+    }
     if (
-      memory === undefined ||
-      memory.memoryQueryId !== contextPackage.memoryQueryId ||
-      memory.revision !== ref.revision ||
-      memory.sha256 !== ref.sha256
+      projectContext !== undefined &&
+      projectContext.planningProjectContextId === ref.refId &&
+      projectContext.revision === ref.revision &&
+      projectContext.sha256 === ref.sha256
     ) {
-      throw revisionConflict("Execution Step的Memory Snapshot缺失或版本证据不一致");
+      return {
+        contextKind: "project",
+        refId: projectContext.planningProjectContextId,
+        revision: projectContext.revision,
+        sha256: projectContext.sha256,
+        title: projectContext.snapshot.name,
+        projectId: projectContext.projectId,
+        projectRevision: projectContext.projectRevision,
+        snapshot: projectContext.snapshot,
+      };
     }
-    return {
-      refId: memory.memoryResultSnapshotId,
-      revision: memory.revision,
-      sha256: memory.sha256,
-      title: memory.title,
-      kind: memory.kind,
-      layer: memory.memoryLayer,
-      tags: memory.tags,
-      content: memory.content,
-    };
+    const selectedRule = ruleSelection?.selected.find(
+      (candidate) =>
+        candidate.ruleRevisionId === ref.refId && candidate.ruleRevisionSha256 === ref.sha256,
+    );
+    if (selectedRule !== undefined) {
+      const revision = snapshot.entities.ruleRevisions[selectedRule.ruleRevisionId];
+      if (
+        revision === undefined ||
+        revision.ruleId !== selectedRule.ruleId ||
+        revision.revision !== ref.revision ||
+        revision.sha256 !== ref.sha256
+      ) {
+        throw revisionConflict("Execution Step的Rule Revision缺失或版本证据不一致");
+      }
+      return {
+        contextKind: "rule",
+        refId: revision.ruleRevisionId,
+        revision: revision.revision,
+        sha256: revision.sha256,
+        ruleId: selectedRule.ruleId,
+        content: revision.body,
+      };
+    }
+    throw revisionConflict("Execution Step引用了未被本轮冻结Context采用的条目");
   });
   return { inputRefs: step.inputRefs, contextItems };
 }
@@ -205,6 +312,7 @@ export async function beginRunAttempt(
         createdAt: now,
         updatedAt: now,
       };
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { attemptId } };
     },
   });
@@ -307,6 +415,7 @@ export async function compileExecutionContract(
     mutate: (draft) => {
       const run = draft.entities.runs[input.productRunId];
       if (run === undefined) throw notFound("Product Run不存在");
+      const planningRun = requirePlanningRun(run);
       const decision = Object.values(draft.entities.decisions).find(
         (candidate) => candidate.decisionId === input.approvalDecisionId,
       );
@@ -335,6 +444,24 @@ export async function compileExecutionContract(
       if (plan === undefined) throw notFound("Approved Plan不存在");
       if (plan.status !== "approved") throw revisionConflict("Plan不在approved状态");
       if (plan.sha256 !== decision.planSha256) throw revisionConflict("Plan Hash与Decision不一致");
+
+      if (planningRun.workflowRunSpecId !== undefined) {
+        const runSpec = draft.entities.workflowRunSpecs[planningRun.workflowRunSpecId];
+        const executeNode = runSpec?.nodeResolutions.find(
+          (node) => node.nodeType === "execute.plan",
+        );
+        const frozenMaxActions = executeNode?.config["maxActions"];
+        if (
+          runSpec === undefined ||
+          executeNode === undefined ||
+          typeof frozenMaxActions !== "number" ||
+          !Number.isInteger(frozenMaxActions) ||
+          frozenMaxActions < 1 ||
+          plan.content.steps.length > frozenMaxActions
+        ) {
+          throw revisionConflict("Approved Plan超过RunSpec冻结的execute.plan maxActions");
+        }
+      }
 
       const steps = plan.content.steps.map((step) => ({
         stepId: step.stepId,
@@ -382,6 +509,7 @@ export async function compileExecutionContract(
         updatedAt: now,
       };
       draft.entities.executionContracts[executionContractId] = contract;
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { executionContractId } };
     },
   });

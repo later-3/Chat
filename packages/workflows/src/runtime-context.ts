@@ -1,6 +1,11 @@
 import type { TraceEventInput } from "@chat/contracts";
 import type { MemoryBackendRegistryPort, MemoryImportBackendRegistryPort } from "@chat/application";
-import type { BailianConfig, runPiExecutor, runPiPlanner } from "@chat/pi-runtime";
+import type {
+  BailianConfig,
+  runPiExecutor,
+  runPiNoteCapture,
+  runPiPlanner,
+} from "@chat/pi-runtime";
 import type { RuntimeApiClient } from "./api-client.js";
 import type { RuntimeBindingStore } from "./runtime-bindings.js";
 
@@ -25,6 +30,7 @@ export interface WorkflowRuntimeContext {
   readonly now: () => string;
   readonly bailian: BailianConfig;
   readonly planner: typeof runPiPlanner;
+  readonly noteCapture: typeof runPiNoteCapture;
   readonly executor: typeof runPiExecutor;
 }
 

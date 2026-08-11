@@ -41,6 +41,45 @@ export async function claimDecisionHookStep(input: {
   });
 }
 
+/**
+ * Configurable Runner把稳定Approval Request产品身份直接作为Hook token。
+ * Legacy Runner继续使用上面的版本化token，避免回滚或重放时改变既有Binding。
+ */
+export async function claimConfigurableDecisionHookStep(input: {
+  productRunId: string;
+  attemptId: string;
+  planRevision: number;
+  approvalRequestId: string;
+}): Promise<void> {
+  "use step";
+  await runStep(
+    input.productRunId,
+    input.attemptId,
+    "claim_configurable_decision_hook",
+    async () => {
+      const ctx = getWorkflowRuntimeContext();
+      await ctx.bindings.claimHookBinding({
+        approvalRequestId: input.approvalRequestId as never,
+        productRunId: input.productRunId as never,
+        planRevision: input.planRevision,
+        hookToken: input.approvalRequestId,
+        now: ctx.now(),
+      });
+      ctx.trace({
+        level: "info",
+        eventName: "workflow.hook.waiting",
+        outcome: "unknown",
+        traceId: workflowRunTraceId(input.productRunId),
+        spanId: workflowSpanId(),
+        productRunId: input.productRunId as never,
+        attemptId: input.attemptId as never,
+        workflowDefinitionVersion: WORKFLOW_DEFINITION_VERSION,
+        waitReason: "plan_approval",
+      } as never);
+    },
+  );
+}
+
 export async function loadCommittedDecisionStep(input: {
   productRunId: string;
   attemptId: string;

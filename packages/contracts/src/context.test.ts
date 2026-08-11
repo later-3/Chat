@@ -363,12 +363,42 @@ describe("Memory Workflow 私有合同", () => {
         revision: 1,
         sha256: SHA_A,
       },
+      planningMemorySelectionRef: {
+        planningMemorySelectionId: "pmsl_contract1",
+        revision: 1,
+        sha256: SHA_B,
+      },
+      planningProjectContextRef: {
+        planningProjectContextId: "pcx_contract1",
+        revision: 1,
+        sha256: SHA_B,
+      },
+      ruleSelectionRef: {
+        ruleSelectionId: "rsl_contract1",
+        revision: 1,
+        sha256: SHA_A,
+      },
     };
     expect(compilePlanningInputRequestSchema.safeParse(compiled).success).toBe(true);
     expect(
       compilePlanningInputRequestSchema.safeParse({
         ...compiled,
         contextPackageRef: { ...compiled.contextPackageRef, revision: 2 },
+      }).success,
+    ).toBe(false);
+    expect(
+      compilePlanningInputRequestSchema.safeParse({
+        ...compiled,
+        planningMemorySelectionRef: {
+          ...compiled.planningMemorySelectionRef,
+          snapshots: ["正文不能由Workflow提交"],
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      compilePlanningInputRequestSchema.safeParse({
+        ...compiled,
+        ruleSelectionRef: { ...compiled.ruleSelectionRef, body: "不能由Workflow注入正文" },
       }).success,
     ).toBe(false);
   });

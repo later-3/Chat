@@ -7,6 +7,7 @@ import {
   problemDetailSchema,
   productRunIdSchema,
   runDtoSchema,
+  readinessStatusSchema,
 } from "@chat/contracts/public";
 import { z } from "zod";
 
@@ -28,6 +29,10 @@ function expectNoPrivateRuntimeIdentity(contentType: string, body: string): void
   for (const marker of FORBIDDEN_PUBLIC_MARKERS) {
     if (body.includes(marker)) throw new Error(`公开API响应包含私有Runtime标识：${marker}`);
   }
+}
+
+function responseWasDisposed(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("Response has been disposed");
 }
 
 async function expectNoHorizontalScroll(page: Page): Promise<void> {
@@ -90,14 +95,25 @@ async function submitStaleApproval(
 
 test("真实 qwen3.7-plus：发送 -> Plan v1 -> 修改 -> v2 -> 批准 -> 正式结果", async ({ page }) => {
   await page.route("**/api/**", async (route) => {
-    const response = await route.fetch();
-    const body = await response.body();
-    expectNoPrivateRuntimeIdentity(response.headers()["content-type"] ?? "", body.toString("utf8"));
-    await route.fulfill({ response, body });
+    try {
+      const response = await route.fetch();
+      const body = await response.body();
+      expectNoPrivateRuntimeIdentity(
+        response.headers()["content-type"] ?? "",
+        body.toString("utf8"),
+      );
+      await route.fulfill({ response, body });
+    } catch (error) {
+      if (!responseWasDisposed(error)) throw error;
+    }
   });
 
   await page.goto("/");
-  await expect(page.getByLabel("当前模型")).toContainText("百炼 Qwen3.7 Plus");
+  await expect(page.getByText("模型由服务端配置", { exact: true })).toBeVisible();
+  expect(readinessStatusSchema.parse(await publicGet(page, "/api/readyz"))).toMatchObject({
+    status: "ok",
+    provider: { name: "bailian", ready: true },
+  });
   await page
     .getByLabel("消息输入框")
     .fill(
@@ -106,6 +122,7 @@ test("真实 qwen3.7-plus：发送 -> Plan v1 -> 修改 -> v2 -> 批准 -> 正�
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByRole("status")).toContainText(/正在规划|等待你确认计划/);
 
+  await page.getByRole("button", { name: "转到等待审核节点" }).click();
   const v1 = page.getByLabel("计划第1版");
   await expect(v1).toBeVisible();
   await expect(page.getByText("等待你确认计划")).toBeVisible();
@@ -125,14 +142,15 @@ test("真实 qwen3.7-plus：发送 -> Plan v1 -> 修改 -> v2 -> 批准 -> 正�
   // 同一条真实路径切到375px，验证手机“对话/工作”切换与页面无横向滚动。
   await page.setViewportSize({ width: 375, height: 760 });
   await expectNoHorizontalScroll(page);
-  await page.getByRole("tab", { name: "工作" }).click();
+  await page.getByRole("tab", { name: "工作", exact: true }).click();
   await expect(page.getByRole("region", { name: "工作窗口" })).toBeVisible();
 
   await page.getByLabel("修改意见").fill("把风险单独成节，并增加下周三个行动项");
   await page.getByRole("button", { name: "要求修改" }).click();
+  // 保留用户正在查看的旧review节点；新revision到达后由用户显式切到新的等待点。
+  await page.getByRole("button", { name: "转到等待审核节点" }).click();
   const v2 = page.getByLabel("计划第2版");
   await expect(v2).toBeVisible();
-  await expect(page.getByText("已被新版本取代")).toBeVisible();
   const v2Sha = await v2.getAttribute("data-plan-sha256");
   expect(v2Sha).toMatch(/^[a-f0-9]{64}$/);
   expect(v2Sha).not.toBe(v1Sha);

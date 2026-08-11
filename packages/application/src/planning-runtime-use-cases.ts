@@ -1,4 +1,9 @@
-import { DomainInvariantError, hashCanonical, nextPlanRevision } from "@chat/domain";
+import {
+  DomainInvariantError,
+  computePlanningInputManifestSha256,
+  hashCanonical,
+  nextPlanRevision,
+} from "@chat/domain";
 import {
   B2_PLANNER_TOKEN_BUDGET,
   MODEL_CONFIG_VERSION,
@@ -12,6 +17,8 @@ import {
 import { type ApplicationDeps } from "./deps.js";
 import { notFound, revisionConflict } from "./errors.js";
 import { emitRunEvent } from "./trace-helpers.js";
+import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
+import { requirePlanningRun } from "./product-run-kind.js";
 
 /**
  * Workflow私有Application Command：compilePlanningInput / loadCommittedDecision。
@@ -31,6 +38,11 @@ export interface CompilePlanningInputCommand {
   readonly productRunId: ProductRunId;
   readonly planRevision: number;
   readonly contextPackageRef?: CompilePlanningInputRequest["contextPackageRef"] | undefined;
+  readonly planningMemorySelectionRef?:
+    CompilePlanningInputRequest["planningMemorySelectionRef"] | undefined;
+  readonly planningProjectContextRef?:
+    CompilePlanningInputRequest["planningProjectContextRef"] | undefined;
+  readonly ruleSelectionRef?: CompilePlanningInputRequest["ruleSelectionRef"] | undefined;
 }
 
 function messageSha256(message: {
@@ -61,6 +73,13 @@ export async function compilePlanningInput(
     ...(input.contextPackageRef !== undefined
       ? { contextPackageRef: input.contextPackageRef }
       : {}),
+    ...(input.planningMemorySelectionRef !== undefined
+      ? { planningMemorySelectionRef: input.planningMemorySelectionRef }
+      : {}),
+    ...(input.planningProjectContextRef !== undefined
+      ? { planningProjectContextRef: input.planningProjectContextRef }
+      : {}),
+    ...(input.ruleSelectionRef !== undefined ? { ruleSelectionRef: input.ruleSelectionRef } : {}),
   });
 
   const result = await deps.store.transact({
@@ -71,7 +90,8 @@ export async function compilePlanningInput(
     mutate: (draft) => {
       const run = draft.entities.runs[input.productRunId];
       if (run === undefined) throw notFound("Product Run不存在");
-      const message = draft.entities.messages[run.sourceMessageId];
+      const planningRun = requirePlanningRun(run);
+      const message = draft.entities.messages[planningRun.sourceMessageId];
       if (message === undefined) throw notFound("源消息不存在");
       const contextRequest = Object.values(draft.entities.contextRequests).find(
         (candidate) => candidate.productRunId === input.productRunId,
@@ -80,7 +100,58 @@ export async function compilePlanningInput(
         input.contextPackageRef === undefined
           ? undefined
           : draft.entities.contextPackages[input.contextPackageRef.contextPackageId];
-      if (contextRequest?.memory !== undefined) {
+      if (input.contextPackageRef !== undefined && input.planningMemorySelectionRef !== undefined) {
+        throw revisionConflict("查询Memory与显式Memory Selection不能同时编译");
+      }
+      const memorySelectionsForRun = Object.values(draft.entities.planningMemorySelections).filter(
+        (candidate) => candidate.productRunId === input.productRunId,
+      );
+      if (memorySelectionsForRun.length > 1) {
+        throw revisionConflict("同一Planning Run存在多个Memory Selection");
+      }
+      const memorySelection =
+        input.planningMemorySelectionRef === undefined
+          ? undefined
+          : draft.entities.planningMemorySelections[
+              input.planningMemorySelectionRef.planningMemorySelectionId
+            ];
+      if (input.planningMemorySelectionRef === undefined) {
+        if (memorySelectionsForRun.length > 0) {
+          throw revisionConflict("Planning Input遗漏已冻结的Memory Selection");
+        }
+      } else {
+        const runSpec =
+          planningRun.workflowRunSpecId === undefined
+            ? undefined
+            : draft.entities.workflowRunSpecs[planningRun.workflowRunSpecId];
+        if (
+          memorySelection === undefined ||
+          memorySelection.productRunId !== input.productRunId ||
+          memorySelection.revision !== input.planningMemorySelectionRef.revision ||
+          memorySelection.sha256 !== input.planningMemorySelectionRef.sha256 ||
+          memorySelectionsForRun[0]?.planningMemorySelectionId !==
+            memorySelection.planningMemorySelectionId ||
+          runSpec === undefined ||
+          memorySelection.workflowRunSpecId !== runSpec.workflowRunSpecId ||
+          memorySelection.workflowRunSpecSha256 !== runSpec.sha256
+        ) {
+          throw revisionConflict("Planning Memory Selection引用不存在或Hash不一致");
+        }
+        for (const selected of memorySelection.selected) {
+          const memory = draft.entities.memoryResultSnapshots[selected.memoryResultSnapshotId];
+          if (
+            memory === undefined ||
+            memory.revision !== selected.revision ||
+            memory.sha256 !== selected.sha256
+          ) {
+            throw revisionConflict("Planning Memory Selection引用的Snapshot已损坏");
+          }
+        }
+      }
+      if (memorySelection !== undefined && contextPackage !== undefined) {
+        throw revisionConflict("显式Memory Selection不能附加查询ContextPackage");
+      }
+      if (memorySelection === undefined && contextRequest?.memory !== undefined) {
         if (
           contextPackage === undefined ||
           contextPackage.productRunId !== input.productRunId ||
@@ -90,8 +161,60 @@ export async function compilePlanningInput(
         ) {
           throw revisionConflict("Memory选择缺少已冻结的ContextPackage");
         }
-      } else if (contextPackage !== undefined) {
+      } else if (memorySelection === undefined && contextPackage !== undefined) {
         throw revisionConflict("本轮没有Memory选择，不允许附加ContextPackage");
+      }
+
+      const projectContextsForRun = Object.values(draft.entities.planningProjectContexts).filter(
+        (candidate) => candidate.productRunId === input.productRunId,
+      );
+      if (projectContextsForRun.length > 1) {
+        throw revisionConflict("同一Planning Run存在多个Project Context");
+      }
+      const projectContext =
+        input.planningProjectContextRef === undefined
+          ? undefined
+          : draft.entities.planningProjectContexts[
+              input.planningProjectContextRef.planningProjectContextId
+            ];
+      if (input.planningProjectContextRef === undefined) {
+        if (projectContextsForRun.length > 0) {
+          throw revisionConflict("Planning Input遗漏已冻结的Project Context");
+        }
+      } else if (
+        projectContext === undefined ||
+        projectContext.productRunId !== input.productRunId ||
+        projectContext.revision !== input.planningProjectContextRef.revision ||
+        projectContext.sha256 !== input.planningProjectContextRef.sha256 ||
+        projectContextsForRun[0]?.planningProjectContextId !==
+          projectContext.planningProjectContextId
+      ) {
+        throw revisionConflict("Planning Project Context引用不存在或Hash不一致");
+      }
+
+      const ruleSelectionsForRun = Object.values(draft.entities.ruleSelections).filter(
+        (candidate) => candidate.productRunId === input.productRunId,
+      );
+      if (ruleSelectionsForRun.length > 1) {
+        throw revisionConflict("同一Planning Run存在多个Rule Selection");
+      }
+      const ruleSelection =
+        input.ruleSelectionRef === undefined
+          ? undefined
+          : draft.entities.ruleSelections[input.ruleSelectionRef.ruleSelectionId];
+      if (input.ruleSelectionRef === undefined) {
+        if (ruleSelectionsForRun.length > 0) {
+          throw revisionConflict("Planning Input遗漏已冻结的Rule Selection");
+        }
+      } else if (
+        ruleSelection === undefined ||
+        ruleSelection.productRunId !== input.productRunId ||
+        input.ruleSelectionRef.revision !== 1 ||
+        ruleSelection.sha256 !== input.ruleSelectionRef.sha256 ||
+        ruleSelection.status !== "ready" ||
+        ruleSelectionsForRun[0]?.ruleSelectionId !== ruleSelection.ruleSelectionId
+      ) {
+        throw revisionConflict("Rule Selection引用不存在、未就绪或Hash不一致");
       }
 
       const existingPlans = Object.values(draft.entities.plans)
@@ -101,7 +224,7 @@ export async function compilePlanningInput(
       try {
         expectedNext = nextPlanRevision(
           existingPlans.map((plan) => plan.planRevision),
-          run.maxPlanRevisions,
+          planningRun.maxPlanRevisions,
         );
       } catch (error) {
         if (error instanceof DomainInvariantError && error.code === "plan_revision_limit_reached") {
@@ -136,60 +259,96 @@ export async function compilePlanningInput(
         const priorAttempt = draft.entities.attempts[priorPlan.planningAttemptId];
         if (
           priorAttempt?.contextPackageId !== input.contextPackageRef?.contextPackageId ||
-          priorAttempt?.contextPackageSha256 !== input.contextPackageRef?.sha256
+          priorAttempt?.contextPackageSha256 !== input.contextPackageRef?.sha256 ||
+          priorAttempt?.planningMemorySelectionId !==
+            input.planningMemorySelectionRef?.planningMemorySelectionId ||
+          priorAttempt?.planningMemorySelectionSha256 !==
+            input.planningMemorySelectionRef?.sha256 ||
+          priorAttempt?.planningProjectContextId !==
+            input.planningProjectContextRef?.planningProjectContextId ||
+          priorAttempt?.planningProjectContextSha256 !== input.planningProjectContextRef?.sha256 ||
+          priorAttempt?.ruleSelectionId !== input.ruleSelectionRef?.ruleSelectionId ||
+          priorAttempt?.ruleSelectionSha256 !== input.ruleSelectionRef?.sha256
         ) {
-          throw revisionConflict("M1规划修订必须复用上一版ContextPackage");
+          throw revisionConflict("规划修订必须复用上一版全部冻结Context");
         }
       }
 
       const sourceMessageSha256 = messageSha256(message);
-      const inputManifestSha256 = hashCanonical(
-        contextPackage === undefined ? "planning-input-manifest.v1" : "planning-input-manifest.v2",
-        {
-          productRunId: input.productRunId,
-          planRevision: input.planRevision,
-          sourceMessageRef: { messageId: message.messageId, sha256: sourceMessageSha256 },
-          ...(priorPlan !== undefined
-            ? {
-                priorPlanRef: {
-                  planRevisionId: priorPlan.planRevisionId,
-                  planId: priorPlan.planId,
-                  planRevision: priorPlan.planRevision,
-                  sha256: priorPlan.sha256,
-                },
-              }
-            : {}),
-          ...(revisionInput !== undefined
-            ? { revisionInputRef: { revisionInputId: revisionInput.revisionInputId } }
-            : {}),
-          ...(contextPackage !== undefined
-            ? {
-                contextPackageRef: {
-                  contextPackageId: contextPackage.contextPackageId,
-                  revision: contextPackage.revision,
-                  sha256: contextPackage.sha256,
-                },
-              }
-            : {}),
-          promptTemplateVersion: PLANNER_PROMPT_TEMPLATE_VERSION,
-          modelConfigVersion: MODEL_CONFIG_VERSION,
-        },
-      );
+      const inputManifestSha256 = computePlanningInputManifestSha256({
+        productRunId: input.productRunId,
+        planRevision: input.planRevision,
+        sourceMessageRef: { messageId: message.messageId, sha256: sourceMessageSha256 },
+        ...(priorPlan !== undefined
+          ? {
+              priorPlanRef: {
+                planRevisionId: priorPlan.planRevisionId,
+                planId: priorPlan.planId,
+                planRevision: priorPlan.planRevision,
+                sha256: priorPlan.sha256,
+              },
+            }
+          : {}),
+        ...(revisionInput !== undefined
+          ? { revisionInputRef: { revisionInputId: revisionInput.revisionInputId } }
+          : {}),
+        ...(contextPackage !== undefined
+          ? {
+              contextPackageRef: {
+                contextPackageId: contextPackage.contextPackageId,
+                revision: contextPackage.revision,
+                sha256: contextPackage.sha256,
+              },
+            }
+          : {}),
+        ...(memorySelection !== undefined
+          ? {
+              planningMemorySelectionRef: {
+                planningMemorySelectionId: memorySelection.planningMemorySelectionId,
+                revision: memorySelection.revision,
+                sha256: memorySelection.sha256,
+              },
+            }
+          : {}),
+        ...(projectContext !== undefined
+          ? {
+              planningProjectContextRef: {
+                planningProjectContextId: projectContext.planningProjectContextId,
+                revision: projectContext.revision,
+                sha256: projectContext.sha256,
+              },
+            }
+          : {}),
+        ...(ruleSelection !== undefined
+          ? {
+              ruleSelectionRef: {
+                ruleSelectionId: ruleSelection.ruleSelectionId,
+                revision: 1,
+                sha256: ruleSelection.sha256,
+              },
+            }
+          : {}),
+        promptTemplateVersion: PLANNER_PROMPT_TEMPLATE_VERSION,
+        modelConfigVersion: MODEL_CONFIG_VERSION,
+      });
 
       // 生命周期：首次规划从pending/queued进入running/planning；修改循环保持在running/planning
-      if (run.status === "pending" && run.phase === "queued") {
+      if (planningRun.status === "pending" && planningRun.phase === "queued") {
         draft.entities.runs[input.productRunId] = {
-          ...run,
+          ...planningRun,
           status: "running",
           phase: "planning",
-          revision: run.revision + 1,
+          revision: planningRun.revision + 1,
           updatedAt: now,
         };
-      } else if (run.status !== "running" || run.phase !== "planning") {
-        throw revisionConflict(`Run状态${run.status}/${run.phase}不允许编译规划输入`);
+      } else if (planningRun.status !== "running" || planningRun.phase !== "planning") {
+        throw revisionConflict(
+          `Run状态${planningRun.status}/${planningRun.phase}不允许编译规划输入`,
+        );
       }
 
-      const inputRunRevision = run.status === "pending" ? run.revision + 1 : run.revision;
+      const inputRunRevision =
+        planningRun.status === "pending" ? planningRun.revision + 1 : planningRun.revision;
 
       draft.entities.attempts[attemptId] = {
         schemaVersion: "run-attempt.v1",
@@ -210,11 +369,30 @@ export async function compilePlanningInput(
               contextPackageSha256: contextPackage.sha256,
             }
           : {}),
+        ...(memorySelection !== undefined
+          ? {
+              planningMemorySelectionId: memorySelection.planningMemorySelectionId,
+              planningMemorySelectionSha256: memorySelection.sha256,
+            }
+          : {}),
+        ...(projectContext !== undefined
+          ? {
+              planningProjectContextId: projectContext.planningProjectContextId,
+              planningProjectContextSha256: projectContext.sha256,
+            }
+          : {}),
+        ...(ruleSelection !== undefined
+          ? {
+              ruleSelectionId: ruleSelection.ruleSelectionId,
+              ruleSelectionSha256: ruleSelection.sha256,
+            }
+          : {}),
         outcome: "running",
         revision: 1,
         createdAt: now,
         updatedAt: now,
       };
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { attemptId, productRunId: input.productRunId } };
     },
   });
@@ -240,6 +418,18 @@ export async function compilePlanningInput(
     attempt.contextPackageId === undefined
       ? undefined
       : snapshot.entities.contextPackages[attempt.contextPackageId];
+  const memorySelection =
+    attempt.planningMemorySelectionId === undefined
+      ? undefined
+      : snapshot.entities.planningMemorySelections[attempt.planningMemorySelectionId];
+  const projectContext =
+    attempt.planningProjectContextId === undefined
+      ? undefined
+      : snapshot.entities.planningProjectContexts[attempt.planningProjectContextId];
+  const ruleSelection =
+    attempt.ruleSelectionId === undefined
+      ? undefined
+      : snapshot.entities.ruleSelections[attempt.ruleSelectionId];
   if (
     attempt.inputRunRevision === undefined ||
     attempt.sourceMessageSha256 === undefined ||
@@ -260,6 +450,61 @@ export async function compilePlanningInput(
     (contextPackage === undefined || contextPackage.sha256 !== attempt.contextPackageSha256)
   ) {
     throw revisionConflict("Planning Attempt引用的ContextPackage不存在或Hash不一致");
+  }
+  if (
+    attempt.planningMemorySelectionId !== undefined &&
+    (memorySelection === undefined ||
+      memorySelection.productRunId !== input.productRunId ||
+      memorySelection.sha256 !== attempt.planningMemorySelectionSha256)
+  ) {
+    throw revisionConflict("Planning Attempt引用的Memory Selection不存在或Hash不一致");
+  }
+  if (
+    attempt.planningProjectContextId !== undefined &&
+    (projectContext === undefined ||
+      projectContext.productRunId !== input.productRunId ||
+      projectContext.sha256 !== attempt.planningProjectContextSha256)
+  ) {
+    throw revisionConflict("Planning Attempt引用的Project Context不存在或Hash不一致");
+  }
+  if (
+    attempt.ruleSelectionId !== undefined &&
+    (ruleSelection === undefined ||
+      ruleSelection.productRunId !== input.productRunId ||
+      ruleSelection.sha256 !== attempt.ruleSelectionSha256 ||
+      ruleSelection.status !== "ready")
+  ) {
+    throw revisionConflict("Planning Attempt引用的Rule Selection不存在、未就绪或Hash不一致");
+  }
+  const selectedRuleContents =
+    ruleSelection === undefined
+      ? []
+      : ruleSelection.selected.map((selected) => {
+          const revision = snapshot.entities.ruleRevisions[selected.ruleRevisionId];
+          if (
+            revision === undefined ||
+            revision.ruleId !== selected.ruleId ||
+            revision.sha256 !== selected.ruleRevisionSha256 ||
+            revision.body.length !== selected.contentCharacters
+          ) {
+            throw revisionConflict("Rule Selection引用的Rule Revision不存在或内容证据不一致");
+          }
+          return {
+            ruleId: selected.ruleId,
+            ruleRevisionId: revision.ruleRevisionId,
+            revision: revision.revision,
+            sha256: revision.sha256,
+            body: revision.body,
+            source: selected.source,
+            priority: selected.priority,
+          };
+        });
+  if (
+    ruleSelection !== undefined &&
+    selectedRuleContents.reduce((total, item) => total + item.body.length, 0) !==
+      ruleSelection.selectedContentCharacters
+  ) {
+    throw revisionConflict("Rule Selection正文预算证据不一致");
   }
 
   if (
@@ -303,6 +548,38 @@ export async function compilePlanningInput(
         }
       : {}),
     ...(revisionInput !== undefined ? { revisionInstruction: revisionInput.instruction } : {}),
+    ...(memorySelection !== undefined
+      ? {
+          memorySelection: {
+            ref: {
+              planningMemorySelectionId: memorySelection.planningMemorySelectionId,
+              revision: memorySelection.revision,
+              sha256: memorySelection.sha256,
+            },
+            items: memorySelection.selected.map((item) => {
+              const memorySnapshot =
+                snapshot.entities.memoryResultSnapshots[item.memoryResultSnapshotId];
+              if (
+                memorySnapshot === undefined ||
+                memorySnapshot.revision !== item.revision ||
+                memorySnapshot.sha256 !== item.sha256
+              ) {
+                throw revisionConflict("Memory Selection引用的Snapshot不存在或Hash不一致");
+              }
+              return {
+                refId: memorySnapshot.memoryResultSnapshotId,
+                revision: memorySnapshot.revision,
+                sha256: memorySnapshot.sha256,
+                title: memorySnapshot.title,
+                kind: memorySnapshot.kind,
+                memoryLayer: memorySnapshot.memoryLayer,
+                content: memorySnapshot.content,
+                tags: memorySnapshot.tags,
+              };
+            }),
+          },
+        }
+      : {}),
     ...(contextPackage !== undefined
       ? {
           contextPackage: {
@@ -336,6 +613,34 @@ export async function compilePlanningInput(
                 reasonCode: exclusion.reasonCode,
               })),
             },
+          },
+        }
+      : {}),
+    ...(projectContext !== undefined
+      ? {
+          projectContext: {
+            ref: {
+              planningProjectContextId: projectContext.planningProjectContextId,
+              revision: projectContext.revision,
+              sha256: projectContext.sha256,
+            },
+            projectId: projectContext.projectId,
+            projectRevision: projectContext.projectRevision,
+            projectSha256: projectContext.projectSha256,
+            snapshot: projectContext.snapshot,
+          },
+        }
+      : {}),
+    ...(ruleSelection !== undefined
+      ? {
+          rulesContext: {
+            ref: {
+              ruleSelectionId: ruleSelection.ruleSelectionId,
+              revision: 1 as const,
+              sha256: ruleSelection.sha256,
+            },
+            rules: selectedRuleContents,
+            totalContentCharacters: ruleSelection.selectedContentCharacters,
           },
         }
       : {}),

@@ -11,6 +11,7 @@ import {
   MemoryBackendError,
   normalizeMemoryQueryResult,
   persistPlanningContextResult,
+  preparePlanningMemoryContext,
   publishPlanForReview,
   stableMemoryBackendFailure,
   submitPlanDecision,
@@ -20,6 +21,7 @@ import {
   type MemoryBackendPort,
   type ProductStorePort,
 } from "@chat/application";
+import { SYSTEM_PLANNING_WORKFLOW_REVISION_ID } from "@chat/application/workflow-system-definitions";
 import type {
   BeginPlanningContextResponse,
   MemoryBackendId,
@@ -245,6 +247,242 @@ describe("Memory Context纵向用例", () => {
     expect(events.filter((event) => event.eventName === "context.assembly.started")).toHaveLength(
       1,
     );
+  });
+
+  it("显式Memory选择只进入所选正文，篡改失败且规划修订与执行复用同一冻结Selection", async () => {
+    const selectedCanary = "EXPLICIT_MEMORY_SELECTED_35C1";
+    const unselectedCanary = "EXPLICIT_MEMORY_UNSELECTED_82B7";
+    const backend = fakeBackend(async () => ({
+      externalQueryId: "search-explicit-memory-selection",
+      hitCount: 2,
+      tokenEstimate: 28,
+      sections: [
+        {
+          externalObjectIds: ["memory-selected"],
+          title: "选中的冻结事实",
+          kind: "world_model",
+          memoryLayer: "L2",
+          content: `${selectedCanary}：发布前必须完成两人复核。`,
+          tags: ["selected"],
+          tokenEstimate: 14,
+        },
+        {
+          externalObjectIds: ["memory-unselected"],
+          title: "未选中的冻结事实",
+          kind: "world_model",
+          memoryLayer: "L2",
+          content: `${unselectedCanary}：这条内容不应进入新Run。`,
+          tags: ["unselected"],
+          tokenEstimate: 14,
+        },
+      ],
+    }));
+    const deps = await depsWith(backend);
+    const source = await newRun(deps, "required");
+    const begun = await beginPlanningContext(deps, {
+      commandId: "cmd_beginexplicitmemory" as never,
+      productRunId: source.run.productRunId,
+      attemptId: source.workflowAttempt.attemptId,
+      planRevision: 1,
+    });
+    await executeDispatch(deps, backend, begun, "cmd_persistexplicitmemory");
+    const sourceSnapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const selected = Object.values(sourceSnapshot.entities.memoryResultSnapshots).find((item) =>
+      item.content.includes(selectedCanary),
+    );
+    const unselected = Object.values(sourceSnapshot.entities.memoryResultSnapshots).find((item) =>
+      item.content.includes(unselectedCanary),
+    );
+    const definition =
+      sourceSnapshot.entities.workflowDefinitionRevisions[SYSTEM_PLANNING_WORKFLOW_REVISION_ID];
+    if (selected === undefined || unselected === undefined || definition === undefined) {
+      throw new Error("显式Memory测试fixture不完整");
+    }
+
+    const { session } = await createProductSession(deps, {
+      principalId: "usr_memorytest" as never,
+      commandId: "cmd_explicitmemorysession" as never,
+      payload: {},
+    });
+    const submitted = await submitUserMessage(deps, {
+      principalId: "usr_memorytest" as never,
+      sessionId: session.sessionId,
+      commandId: "cmd_explicitmemorymessage" as never,
+      payload: {
+        text: "只使用我明确选择的记忆制定审核计划",
+        workflowSelection: {
+          kind: "published_revision",
+          workflowDefinitionRevisionId: definition.workflowDefinitionRevisionId,
+          definitionSha256: definition.definitionSha256,
+          runConfiguration: {
+            schemaVersion: "workflow-run-configuration.v1",
+            overrides: [
+              {
+                kind: "resource_selection",
+                definitionNodeId: "planning.memory",
+                resourceKind: "memory",
+                required: true,
+                selections: [
+                  {
+                    resourceId: selected.memoryResultSnapshotId,
+                    expectedRevision: selected.revision,
+                    expectedSha256: selected.sha256,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+    const configured = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const configuredRun = configured.entities.runs[submitted.run.productRunId];
+    if (configuredRun?.runKind !== "planning" || configuredRun.workflowRunSpecId === undefined) {
+      throw new Error("显式Memory RunSpec未生成");
+    }
+    const prepared = await preparePlanningMemoryContext(deps, {
+      schemaVersion: "chat-internal-runtime.v1",
+      commandId: "cmd_prepareexplicitmemory" as never,
+      productRunId: configuredRun.productRunId,
+      workflowRunSpecId: configuredRun.workflowRunSpecId,
+      definitionNodeId: "planning.memory",
+      executionPath: [],
+      attemptNumber: 1,
+    });
+    if (prepared.status !== "ready") throw new Error("显式Memory Selection未冻结");
+    expect(prepared.snapshots.map((item) => item.memoryResultSnapshotId)).toEqual([
+      selected.memoryResultSnapshotId,
+    ]);
+
+    await expect(
+      compilePlanningInput(deps, {
+        commandId: "cmd_compileexplicitmemorytamper" as never,
+        productRunId: configuredRun.productRunId,
+        planRevision: 1,
+        planningMemorySelectionRef: {
+          ...prepared.selectionRef,
+          sha256: "0".repeat(64),
+        },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+
+    const planningV1 = await compilePlanningInput(deps, {
+      commandId: "cmd_compileexplicitmemoryv1" as never,
+      productRunId: configuredRun.productRunId,
+      planRevision: 1,
+      planningMemorySelectionRef: prepared.selectionRef,
+    });
+    expect(planningV1.memorySelection?.ref).toEqual(prepared.selectionRef);
+    expect(planningV1.memorySelection?.items).toEqual([
+      expect.objectContaining({
+        refId: selected.memoryResultSnapshotId,
+        content: expect.stringContaining(selectedCanary),
+      }),
+    ]);
+    expect(JSON.stringify(planningV1)).not.toContain(unselectedCanary);
+
+    const planContent: PlanContent = {
+      objective: "按冻结Memory制定计划",
+      summary: "只引用用户明确选择的Memory",
+      assumptions: [{ statement: "选择事实有效", source: "context" }],
+      openQuestions: [],
+      steps: [
+        {
+          stepId: "answer",
+          title: "形成审核方案",
+          purpose: "使用冻结事实",
+          dependsOn: [],
+          inputRefs: [
+            {
+              refId: selected.memoryResultSnapshotId,
+              revision: selected.revision,
+              sha256: selected.sha256,
+            },
+          ],
+          expectedOutput: "Markdown方案",
+          successCriteria: ["只采用明确选择的事实"],
+          requestedCapabilities: ["markdown_text_compose"],
+          risk: "low",
+        },
+      ],
+      completionCriteria: ["方案可审核"],
+      warnings: [],
+    };
+    const reviewV1 = await publishPlanForReview(deps, {
+      commandId: "cmd_publishexplicitmemoryv1" as never,
+      productRunId: configuredRun.productRunId,
+      attemptId: planningV1.attemptId,
+      expectedRunRevision: planningV1.inputRunRevision,
+      inputManifestSha256: planningV1.inputManifestSha256,
+      content: planContent,
+    });
+    await submitPlanDecision(deps, {
+      commandId: "cmd_revisionexplicitmemory" as never,
+      principalId: "usr_memorytest" as never,
+      productRunId: configuredRun.productRunId,
+      expectedRunRevision: reviewV1.run.revision,
+      payload: {
+        approvalRequestId: reviewV1.approval.approvalRequestId,
+        planId: reviewV1.plan.planId,
+        planRevision: reviewV1.plan.planRevision,
+        planSha256: reviewV1.plan.sha256,
+        kind: "request_revision",
+        revisionInstruction: "保留同一Memory证据并缩短说明",
+      },
+    });
+    const planningV2 = await compilePlanningInput(deps, {
+      commandId: "cmd_compileexplicitmemoryv2" as never,
+      productRunId: configuredRun.productRunId,
+      planRevision: 2,
+      planningMemorySelectionRef: prepared.selectionRef,
+    });
+    expect(planningV2.memorySelection?.ref).toEqual(planningV1.memorySelection?.ref);
+    expect(planningV2.revisionInstruction).toContain("保留同一Memory证据");
+    expect(JSON.stringify(planningV2)).not.toContain(unselectedCanary);
+
+    const reviewV2 = await publishPlanForReview(deps, {
+      commandId: "cmd_publishexplicitmemoryv2" as never,
+      productRunId: configuredRun.productRunId,
+      attemptId: planningV2.attemptId,
+      expectedRunRevision: planningV2.inputRunRevision,
+      inputManifestSha256: planningV2.inputManifestSha256,
+      content: { ...planContent, summary: "缩短后的冻结Memory计划" },
+    });
+    const approved = await submitPlanDecision(deps, {
+      commandId: "cmd_approveexplicitmemory" as never,
+      principalId: "usr_memorytest" as never,
+      productRunId: configuredRun.productRunId,
+      expectedRunRevision: reviewV2.run.revision,
+      payload: {
+        approvalRequestId: reviewV2.approval.approvalRequestId,
+        planId: reviewV2.plan.planId,
+        planRevision: reviewV2.plan.planRevision,
+        planSha256: reviewV2.plan.sha256,
+        kind: "approve",
+      },
+    });
+    const { contract } = await compileExecutionContract(deps, {
+      commandId: "cmd_contractexplicitmemory" as never,
+      productRunId: configuredRun.productRunId,
+      approvalDecisionId: approved.decision.decisionId,
+    });
+    const execution = await beginRunAttempt(deps, {
+      commandId: "cmd_attemptexplicitmemory" as never,
+      productRunId: configuredRun.productRunId,
+      kind: "execution",
+      executionContractId: contract.executionContractId,
+      stepId: "answer",
+      dependencyRefs: [],
+      promptTemplateVersion: EXECUTOR_PROMPT_TEMPLATE_VERSION,
+      modelConfigVersion: MODEL_CONFIG_VERSION,
+    });
+    expect(execution.contextItems).toEqual([
+      expect.objectContaining({
+        refId: selected.memoryResultSnapshotId,
+        content: expect.stringContaining(selectedCanary),
+      }),
+    ]);
+    expect(JSON.stringify(execution)).not.toContain(unselectedCanary);
   });
 
   it("执行前只解析Approved Step明确引用的冻结Memory，伪造ref失败关闭", async () => {

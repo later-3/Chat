@@ -19,6 +19,8 @@ import {
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
   runContextDtoSchema,
+  workflowRunViewDtoSchema,
+  workflowNodeDetailDtoSchema,
   type CommandId,
   type PlanContent,
   type ProductRunId,
@@ -30,6 +32,7 @@ import {
   publishPlanForReview as publishPlanForReviewUseCase,
   type ApplicationDeps,
   type IdFactory,
+  type RuleIdFactory,
 } from "@chat/application";
 import { JsonProductStore } from "@chat/product-store-json";
 import { z } from "zod";
@@ -69,6 +72,14 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     artifact: () => gen("art"),
     outbox: () => gen("obx"),
   } as IdFactory;
+  const ruleIds = {
+    rule: () => gen("rul"),
+    revision: () => gen("rrv"),
+    tag: () => gen("rtg"),
+    scope: () => gen("rsc"),
+    decision: () => gen("rde"),
+    selection: () => gen("rsl"),
+  } as RuleIdFactory;
   const backend = {
     describe: () => ({
       backendId: "mbk_memmy" as never,
@@ -163,6 +174,7 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     store,
     now,
     ids: idFactory,
+    ruleIds,
     memoryBackends: {
       list: () => [backend, tencentBackend],
       get: (backendId) => {
@@ -335,6 +347,69 @@ describe("公开产品API", () => {
       .parse(await approvalRes.json());
     expect(approvalBody.approval?.status).toBe("open");
 
+    const workflowViewResponse = await app.request(`/api/runs/${run.productRunId}/workflow-view`);
+    expect(workflowViewResponse.status).toBe(200);
+    const workflowEtag = workflowViewResponse.headers.get("etag");
+    expect(workflowEtag).toMatch(/^"[a-f0-9]{64}"$/u);
+    const workflowView = workflowRunViewDtoSchema.parse(await workflowViewResponse.json());
+    expect(workflowView.definitionNodes.map((node) => node.definitionNodeId)).toEqual([
+      "planning.memory",
+      "planning.project",
+      "planning.rules",
+      "planning.skills",
+      "planning.plan",
+      "planning.review",
+      "planning.execute",
+      "planning.validate",
+      "planning.commit",
+    ]);
+    const reviewNode = workflowView.nodeRuns.find(
+      (node) => node.nodeType === "human.plan_review" && node.status === "waiting_human",
+    );
+    expect(reviewNode?.allowedActions).toEqual(["inspect", "submit_decision"]);
+    const notModified = await app.request(`/api/runs/${run.productRunId}/workflow-view`, {
+      headers: { "if-none-match": workflowEtag ?? "" },
+    });
+    expect(notModified.status).toBe(304);
+    expect(await notModified.text()).toBe("");
+
+    const otherPrincipalApp = createApiApp({
+      traceSink: null,
+      product: { deps, principalId: "usr_other" as never },
+      internalRuntime: { credential: "rtk_test" },
+    });
+    const unauthorizedView = await otherPrincipalApp.request(
+      `/api/runs/${run.productRunId}/workflow-view`,
+    );
+    expect(unauthorizedView.status).toBe(404);
+    expect(problemDetailSchema.parse(await unauthorizedView.json()).code).toBe("not_found");
+
+    if (reviewNode === undefined) throw new Error("缺少等待审核Node Run");
+    const detailResponse = await app.request(
+      `/api/runs/${run.productRunId}/workflow-nodes/${reviewNode.workflowNodeRunId}`,
+    );
+    const detail = workflowNodeDetailDtoSchema.parse(await detailResponse.json());
+    expect(detail.node.status).toBe("waiting_human");
+    expect(detail.input?.slots.flatMap((slot) => slot.refs).map((ref) => ref.kind)).toContain(
+      "approval_request",
+    );
+    expect(detail.timeline?.at(-1)?.toStatus).toBe("waiting_human");
+    expect(JSON.stringify(detail)).not.toMatch(/hook|token|provider|prompt|pi[_-]?session/iu);
+    const unauthorizedDetail = await otherPrincipalApp.request(
+      `/api/runs/${run.productRunId}/workflow-nodes/${reviewNode.workflowNodeRunId}`,
+    );
+    expect(unauthorizedDetail.status).toBe(404);
+    const summaryOnlyResponse = await app.request(
+      `/api/runs/${run.productRunId}/workflow-nodes/${reviewNode.workflowNodeRunId}?include=summary`,
+    );
+    const summaryOnly = workflowNodeDetailDtoSchema.parse(await summaryOnlyResponse.json());
+    expect(summaryOnly.timeline).toBeUndefined();
+    expect(summaryOnly.input).toBeUndefined();
+    const invalidInclude = await app.request(
+      `/api/runs/${run.productRunId}/workflow-nodes/${reviewNode.workflowNodeRunId}?include=runtime`,
+    );
+    expect(invalidInclude.status).toBe(400);
+
     // 缺少expectedRevision：400
     const missingRevision = await postJson(app, `/api/runs/${run.productRunId}/decisions`, {
       commandId: nextCmd(),
@@ -361,12 +436,25 @@ describe("公开产品API", () => {
         kind: "approve",
       },
     });
-    expect(decided.status).toBe(201);
+    expect(decided.status, await decided.clone().text()).toBe(201);
     const decidedBody = (await decided.json()) as { decision: unknown; run: unknown };
     decisionDtoSchema.parse(decidedBody.decision);
     const decidedRun = runDtoSchema.parse(decidedBody.run);
     expect(decidedRun.status).toBe("running");
     expect(decidedRun.phase).toBe("executing");
+
+    const workflowAfterDecisionResponse = await app.request(
+      `/api/runs/${run.productRunId}/workflow-view`,
+    );
+    expect(workflowAfterDecisionResponse.headers.get("etag")).not.toBe(workflowEtag);
+    const workflowAfterDecision = workflowRunViewDtoSchema.parse(
+      await workflowAfterDecisionResponse.json(),
+    );
+    expect(
+      workflowAfterDecision.nodeRuns.find(
+        (node) => node.workflowNodeRunId === reviewNode.workflowNodeRunId,
+      ),
+    ).toMatchObject({ status: "succeeded", outcomeCode: "approve" });
 
     // 旧Approval重复决定：409 APPROVAL_ALREADY_DECIDED
     const duplicated = await postJson(app, `/api/runs/${run.productRunId}/decisions`, {
@@ -732,7 +820,8 @@ describe("公开产品API", () => {
         result: normalizeMemoryQueryResult(begun.query, output),
       },
     );
-    expect(persistResponse.status).toBe(200);
+    const persistBody: unknown = await persistResponse.clone().json();
+    expect(persistResponse.status, JSON.stringify(persistBody)).toBe(200);
     expect(preparePlanningContextResponseSchema.parse(await persistResponse.json()).status).toBe(
       "ready",
     );
@@ -808,6 +897,95 @@ describe("公开产品API", () => {
       expect(text).not.toContain("piSessionId");
       expect(text).not.toContain("dashscope");
     }
+  });
+
+  it("Note查询严格拒绝未知、重复和非整数参数", async () => {
+    const { app } = await testApp();
+    for (const path of [
+      "/api/notes?unknown=1",
+      "/api/notes?limit=1&limit=2",
+      "/api/notes?limit=1.5",
+      "/api/notes?limit=0",
+    ]) {
+      const response = await app.request(path);
+      expect(response.status, path).toBe(400);
+      expect(problemDetailSchema.parse(await response.json()).code, path).toBe("validation_failed");
+    }
+  });
+
+  it("Note Decision公开命令必须携带expectedRevision", async () => {
+    const { app } = await testApp();
+    const response = await postJson(app, "/api/runs/run_notecasmissing1/note-decisions", {
+      commandId: nextCmd(),
+      payload: {},
+    });
+    expect(response.status).toBe(400);
+    expect(problemDetailSchema.parse(await response.json()).code).toBe("validation_failed");
+  });
+
+  it("Rule公开API使用strict Query/Command、ETag、CAS并且摘要不返回正文", async () => {
+    const { app } = await testApp();
+    const tagResponse = await postJson(app, "/api/rule-tags", {
+      commandId: nextCmd(),
+      payload: { name: "Quality" },
+    });
+    expect(tagResponse.status).toBe(201);
+    const tag = (await tagResponse.json()) as { tag: { ruleTagId: string } };
+    const createResponse = await postJson(app, "/api/rules", {
+      commandId: nextCmd(),
+      payload: {
+        title: "交付前验证",
+        priority: 500,
+        revision: {
+          body: "交付前必须运行测试。",
+          rationale: "完成需要证据。",
+          appliesWhen: [],
+          doesNotApplyWhen: [],
+          positiveExamples: [],
+          negativeExamples: [],
+          scopes: [{ kind: "global" }],
+          tagIds: [tag.tag.ruleTagId],
+          conflictsWithRuleIds: [],
+          risk: "low",
+          sourceCases: [],
+        },
+      },
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as {
+      rule: {
+        ruleId: string;
+        revision: number;
+        currentRevision: { ruleRevisionId: string; sha256: string };
+      };
+    };
+
+    const list = await app.request("/api/rules");
+    expect(list.status).toBe(200);
+    const listText = await list.text();
+    expect(listText).not.toContain("交付前必须运行测试");
+    const etag = list.headers.get("etag");
+    expect(etag).toBeTruthy();
+    expect(
+      (
+        await app.request("/api/rules", {
+          headers: { "if-none-match": etag ?? "" },
+        })
+      ).status,
+    ).toBe(304);
+    expect((await app.request("/api/rules?unknown=1")).status).toBe(400);
+    expect((await app.request("/api/rules?limit=1&limit=2")).status).toBe(400);
+
+    const missingCas = await postJson(app, `/api/rules/${created.rule.ruleId}/lifecycle`, {
+      commandId: nextCmd(),
+      payload: {
+        boundRevisionId: created.rule.currentRevision.ruleRevisionId,
+        boundRevisionSha256: created.rule.currentRevision.sha256,
+        toLifecycle: "trial",
+        reason: "试用",
+      },
+    });
+    expect(missingCas.status).toBe(400);
   });
 
   it("骨架模式（无产品上下文）下产品路由返回not_found", async () => {

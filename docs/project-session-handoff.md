@@ -1,17 +1,18 @@
 # Chat 项目跨 Session 续接入口
 
-> 更新日期：2026-08-09
+> 更新日期：2026-08-10
 
 ## 1. 当前停点
 
-1. `origin/main`已经包含PR #20与PS1；本地`main`同时保留统一应用启动与调试修复。
+1. 当前分支为`codex/configurable-workflow-complete`，Draft PR #23；P6核心实现、分阶段commit、全仓门和真实组合验收已完成，等待用户复审。
 2. P0、P1.1、P1.2、B1、B2和M1～M3已完成。浏览器可以真实完成“发送消息 → 选择memmy或Tencent MemoryCore → pi规划 → 用户修订/批准 → 同一Vercel Workflow恢复 → pi执行 → Product Commit → 正式回复”。
 3. 本地百炼私有配置已可用于真实`qwen3.7-plus`测试；`.env`被Git忽略且权限为`0600`，任何续接过程不得输出或提交Key。
 4. M2已增加正式消息整条/UTF-16选区导入、`MemoryImportWorkflow`、memmy真实add/对账、Store v3、严格Trace/Replay、最小统一UI与重启恢复；M3又增加Tencent L0接收、L0/L1只读对账与L1查询。
 5. M2固定memmy真实导入与原生幂等、完整Chat响应丢失对账且SQLite唯一已经通过；最终clean代码提交`3bcb7b7`的真实浏览器1/1通过（浏览器2.8分钟、命令3.1分钟），Import Replay 6事件、Run Replay 103事件、真实`qwen3.7-plus`规划与执行均成功。
 6. 当前标准入口是仓库拥有的`pnpm dev/dev:debug`；VS Code只有`Chat：调试应用`一个薄入口。真实F5已验证5个服务Ready、专属Profile Chrome、TypeScript附加、遗留浏览器自动收敛，停止后浏览器和7个固定端口释放。
-7. Tencent真实Adapter已经合入；PS1又完成了对话建项、真实Git/文档/脚本观察、Project账本、管理候选与响应式UI。当前仍没有完整Stage/Milestone/Iteration推进、Planning Project Context和用户规则集。
-8. 旧会话遗留的治理文档和设计截图已经恢复；不能再使用“M1待审核”“B2待真实Key验收”或“P1.2待实现”等旧状态。
+7. Store已演进到v10；可配置Planning、Note、Rule、Planning Project/Memory Context、低风险Note Policy Resolution、Run Viewer和受限Designer已实现，实际合同见[As-built](./architecture/configurable-workflow-as-built.md)。
+8. 新系统Planning不再包含装饰性Research；Planning审核固定manual，Note低风险才允许有证据的策略自动继续。旧Runner和旧Definition仍按保存的family/version兼容。
+9. 当前私有配置指向用户已授权的`coding.dashscope.aliyuncs.com`；Chat以精确HTTPS Host允许该Coding Endpoint，仍拒绝Token Plan和同形恶意域名。当前clean HEAD已真实运行`qwen3.7-plus`并完成组合门，凭据、Prompt和正文未进入证据文件。
 
 ## 2. 新 Session 读取顺序
 
@@ -40,9 +41,11 @@ REST Query / Command
 Hono -> Application -> JSON Product Store
                     -> Outbox / Runtime Binding
         |
-PlanningExecutionWorkflow
+Published Definition -> immutable RunSpec -> fixed Runner
         |
-Memory Query -> ContextPackage -> pi Planner -> HITL Hook -> pi Executor -> Validation -> Product Commit
+Memory/Project/Rules Selection -> pi Planner -> HITL -> pi Executor -> Validation -> Product Commit
+        |
+Note Extract/Classify -> Human/Policy Review -> Note Commit
         |
 Bailian qwen3.7-plus
 
@@ -69,7 +72,7 @@ Trace + Product Store + Version Evidence -> Replay
 4. **第二真实Memory后端**：M3已由PR #12合入，固定Tencent MemoryCore真实服务验证了L0接收、L1查询、强隔离与异步物化语义。
 5. **Project Solution纵向链**：PS1对话建项、真实Resource和项目账本已完成；当前下一任务是PS2 Stage/Milestone/Iteration与Project Update，随后推进PS3真实资源执行和PS4维护/Correct Course。
 6. **用户规则纵向链**：实现Rule/RuleRevision/Tag/Scope，统一管理界面、对话主动勾选/标签筛选、合理自动召回和规划节点注入；记录采用了哪些规则及版本。
-7. **组合验收**：真实用户场景同时使用项目上下文、选择规则和Memory查询完成规划—确认—执行，页面刷新后能从权威事实恢复，公开面不泄漏外部服务或Runtime私有身份。
+7. **组合验收**：确定性、Local World、三视口Designer和安全门均通过；真实Planning + Note + Designer在clean HEAD完成6/6，包含Plan v1→修改→v2→批准→执行、Note编辑确认、3个视口及Choice/Loop。
 
 每个实现任务使用独立worktree、`codex/`分支和PR，控制在约0.5～2个单人开发日。小任务在最接近代码边界的位置运行合同/状态机测试；真实服务、真实模型和浏览器E2E在形成可用纵向结果时运行，不在每次机械改动后重复付费。
 
@@ -89,6 +92,8 @@ Trace + Product Store + Version Evidence -> Replay
 4. 规则自动选择与Memory召回都可能污染规划上下文，必须有来源、版本、预算、排序和用户覆盖机制。
 5. `@workflow/core@4.8.1`把Hook赢得`Promise.race`后已产生`wait_created`的败选sleep误报为uncommitted；local world在Run完成后已删除wait，无功能/耐久缺口。后续升级SDK时应以官方race场景回归，不为消警告删除审批过期语义。
 6. 固定memmy提交的供应链审计仍有8项已知漏洞；它只用于loopback、物理隔离SQLite的本地合同/E2E，不是生产依赖或服务器部署产物。
+7. JSON Store仍是单实例Adapter；v10对象数量与本机warm-cache性能已有回归门，但尚无生产备份、容量告警和多实例写入语义。
+8. `agent.research`只为历史Definition兼容并固定`skipped/no_evidence`；正式调研底座、Skill产品集合与Reminder调度均需独立产品纵向，不能通过Designer伪造。
 
 ## 7. 可复制续接指令
 

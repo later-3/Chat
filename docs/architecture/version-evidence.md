@@ -36,6 +36,7 @@ P0只安装实际使用的依赖；未实现的Workflow/pi运行时依赖不在P
 | tsx | 4.23.8 | MIT | API dev/start的TS执行 | apps/api（dev） | 生产打包方式随部署拓扑（未决定项）再定 |
 | vite-plugin-pwa | 1.3.0 | MIT | P1.2：从实际dist生成Manifest、预缓存清单与Service Worker | apps/web构建期（dev only） | 构建期插件，不进运行时bundle；退出方式：移除插件与注册组件即回到纯静态站点。peer range含Vite 8，Node要求>=16，低于仓库基线 |
 | workbox-window | 7.4.1 | MIT | P1.2：浏览器侧SW注册与“用户确认后更新”流程 | apps/web**运行时**依赖：进入浏览器bundle（`workbox-window.prod.es5-*.js`），纳入`pnpm audit --prod`审计面 | 随vite-plugin-pwa一起退出；Workbox由Google维护，generateSW产物不缓存/api与写请求 |
+| react-markdown | 10.1.0 | MIT | S5：把Note Markdown源码安全投影为有限React元素；`skipHtml`、元素白名单和自定义URL/Link组件禁止raw HTML、图片、iframe与非HTTP(S)链接 | apps/web运行时，`NoteMarkdownRenderer`动态import为独立chunk | 标准React没有CommonMark解析器；退出时删除该依赖与lazy renderer并恢复安全源码视图，Note API、Store源码和Revision Hash均不变 |
 | @playwright/test | 1.62.1 | Apache-2.0 | P1.2：真实Chromium验证SW离线外壳、草稿与手机布局 | apps/web（dev） | 仅测试边界，替换不影响产品代码 |
 | @types/node / @types/react / @types/react-dom | 26.1.2 / 19.2.18 / 19.2.4 | MIT | 类型 | dev | — |
 

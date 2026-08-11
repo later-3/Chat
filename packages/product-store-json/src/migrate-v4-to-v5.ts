@@ -1,15 +1,15 @@
-import { productSnapshotSchema, type ProductSnapshot } from "@chat/contracts";
 import {
   compileProjectMethodSnapshotPolicies,
   computeProjectMethodSnapshotSha256,
 } from "@chat/domain";
 import type { ProductSnapshotV4 } from "./legacy-v4.js";
+import { productSnapshotV5Schema, type ProductSnapshotV5 } from "./legacy-v5.js";
 
 /**
  * v4→v5只把PS1的简化Method/Stage扩展成语义等价的完整结构。
  * 迁移来源被显式标记，不能伪造用户Decision；新集合保持为空。
  */
-export function migrateProductSnapshotV4ToV5(snapshot: ProductSnapshotV4): ProductSnapshot {
+export function migrateProductSnapshotV4ToV5(snapshot: ProductSnapshotV4): ProductSnapshotV5 {
   const methods = Object.fromEntries(
     Object.entries(snapshot.entities.projectMethodSnapshots).map(([id, method]) => {
       const policies = compileProjectMethodSnapshotPolicies(method.profileId);
@@ -64,7 +64,7 @@ export function migrateProductSnapshotV4ToV5(snapshot: ProductSnapshotV4): Produ
       ];
     }),
   );
-  return productSnapshotSchema.parse({
+  return productSnapshotV5Schema.parse({
     schemaVersion: "chat-product-store.v5",
     storeRevision: snapshot.storeRevision,
     committedAt: snapshot.committedAt,

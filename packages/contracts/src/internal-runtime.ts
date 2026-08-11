@@ -20,7 +20,18 @@ import {
   memoryResultSnapshotIdSchema,
   memoryImportIntentIdSchema,
   memoryImportResultIdSchema,
+  noteCandidateIdSchema,
+  noteDecisionIdSchema,
   productSessionIdSchema,
+  workflowDefinitionRevisionIdSchema,
+  workflowRunSpecIdSchema,
+  planningProjectContextIdSchema,
+  planningMemorySelectionIdSchema,
+  projectIdSchema,
+  ruleSelectionIdSchema,
+  ruleIdSchema,
+  ruleRevisionIdSchema,
+  workflowPolicyResolutionIdSchema,
 } from "./ids.js";
 import {
   decisionKindSchema,
@@ -37,7 +48,23 @@ import {
   memoryResultSnapshotSchema,
 } from "./context.js";
 import { memoryImportIntentSchema, memoryImportResultSchema } from "./memory-import.js";
+import {
+  NOTE_CONTENT_MARKDOWN_MAX_CHARACTERS,
+  NOTE_TAG_LABEL_MAX_CHARACTERS,
+  NOTE_TAG_MAX_COUNT,
+  noteKindSchema,
+  noteSourceRefSchema,
+} from "./note.js";
+import {
+  noteCandidateReviewDtoSchema,
+  noteDecisionDtoSchema,
+  noteRevisionInputSchema,
+} from "./note-api.js";
 import { MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION } from "./versions.js";
+import { workflowRunSpecSchema, workflowRunnerFamilySchema } from "./workflow-definition.js";
+import { workflowExecutionPathSegmentSchema } from "./workflow-run.js";
+import { planningProjectSnapshotSchema } from "./planning-project-context.js";
+import { ruleSelectionSourceSchema } from "./rules.js";
 
 /**
  * 后端私有Runtime合同（任务书§12.4）。
@@ -59,6 +86,27 @@ const contextPackageRefFields = {
   sha256: sha256Schema,
 };
 export const internalContextPackageRefSchema = z.object(contextPackageRefFields).strict();
+const internalPlanningProjectContextRefSchema = z
+  .object({
+    planningProjectContextId: planningProjectContextIdSchema,
+    revision: z.literal(1),
+    sha256: sha256Schema,
+  })
+  .strict();
+const internalPlanningMemorySelectionRefSchema = z
+  .object({
+    planningMemorySelectionId: planningMemorySelectionIdSchema,
+    revision: z.literal(1),
+    sha256: sha256Schema,
+  })
+  .strict();
+const internalRuleSelectionRefSchema = z
+  .object({
+    ruleSelectionId: ruleSelectionIdSchema,
+    revision: z.literal(1),
+    sha256: sha256Schema,
+  })
+  .strict();
 
 /* ---------- compilePlanningInput ---------- */
 
@@ -69,6 +117,9 @@ export const compilePlanningInputRequestSchema = z
     productRunId: productRunIdSchema,
     planRevision: z.number().int().positive(),
     contextPackageRef: internalContextPackageRefSchema.optional(),
+    planningMemorySelectionRef: internalPlanningMemorySelectionRefSchema.optional(),
+    planningProjectContextRef: internalPlanningProjectContextRefSchema.optional(),
+    ruleSelectionRef: internalRuleSelectionRefSchema.optional(),
   })
   .strict();
 
@@ -92,6 +143,29 @@ export const planningInputDtoSchema = z
       .strict()
       .optional(),
     revisionInstruction: z.string().min(1).optional(),
+    memorySelection: z
+      .object({
+        ref: internalPlanningMemorySelectionRefSchema,
+        items: z
+          .array(
+            z
+              .object({
+                refId: memoryResultSnapshotIdSchema,
+                revision: z.literal(1),
+                sha256: sha256Schema,
+                title: z.string().min(1).max(200),
+                kind: z.enum(["trace", "span", "policy", "world_model", "skill"]),
+                memoryLayer: z.enum(["L1", "L2", "L3", "Skill"]),
+                content: z.string().min(1).max(50_000),
+                tags: z.array(z.string().min(1).max(64)).max(50),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(20),
+      })
+      .strict()
+      .optional(),
     contextPackage: z
       .object({
         ref: z
@@ -132,6 +206,38 @@ export const planningInputDtoSchema = z
               .max(20),
           })
           .strict(),
+      })
+      .strict()
+      .optional(),
+    projectContext: z
+      .object({
+        ref: internalPlanningProjectContextRefSchema,
+        projectId: projectIdSchema,
+        projectRevision: z.number().int().positive(),
+        projectSha256: sha256Schema,
+        snapshot: planningProjectSnapshotSchema,
+      })
+      .strict()
+      .optional(),
+    rulesContext: z
+      .object({
+        ref: internalRuleSelectionRefSchema,
+        rules: z
+          .array(
+            z
+              .object({
+                ruleId: ruleIdSchema,
+                ruleRevisionId: ruleRevisionIdSchema,
+                revision: z.number().int().positive(),
+                sha256: sha256Schema,
+                body: z.string().trim().min(1).max(8_000),
+                source: ruleSelectionSourceSchema,
+                priority: z.number().int().min(0).max(1_000),
+              })
+              .strict(),
+          )
+          .max(100),
+        totalContentCharacters: z.number().int().nonnegative().max(200_000),
       })
       .strict()
       .optional(),
@@ -360,6 +466,8 @@ export const persistValidationResultRequestSchema = z
     productRunId: productRunIdSchema,
     executionContractId: executionContractIdSchema,
     executionCandidateId: executionCandidateIdSchema,
+    /** 由冻结Node config解析；浏览器不能调用或覆盖此私有验证策略。 */
+    strictEvidence: z.boolean(),
   })
   .strict();
 
@@ -417,6 +525,19 @@ export const commitRunFailureRequestSchema = z
   })
   .strict();
 
+export const commitRunOutcomeUnknownRuntimeRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    productRunId: productRunIdSchema,
+    errorCode: z
+      .string()
+      .regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/)
+      .max(64),
+    summary: z.string().min(1).max(500),
+  })
+  .strict();
+
 export const expireApprovalRequestSchema = z
   .object({
     ...versioned,
@@ -458,10 +579,10 @@ export const executionDependencyRefSchema = z
   .strict();
 
 /**
- * 只读的执行上下文条目。它是Application从已批准Step的inputRefs
- * 解析出的冻结投影，不是第二份权威Memory副本。
+ * 只读的执行上下文条目。它是Application从已批准Step的inputRefs解析出的
+ * Memory/Project/Rule冻结投影；权威正文仍分别属于对应Product对象。
  */
-export const executionContextItemDtoSchema = z
+const executionMemoryContextItemDtoSchema = z
   .object({
     refId: memoryResultSnapshotIdSchema,
     revision: z.number().int().positive(),
@@ -473,6 +594,36 @@ export const executionContextItemDtoSchema = z
     content: memoryResultSnapshotSchema.shape.content,
   })
   .strict();
+
+const executionProjectContextItemDtoSchema = z
+  .object({
+    contextKind: z.literal("project"),
+    refId: planningProjectContextIdSchema,
+    revision: z.literal(1),
+    sha256: sha256Schema,
+    title: z.string().trim().min(1).max(120),
+    projectId: projectIdSchema,
+    projectRevision: z.number().int().positive(),
+    snapshot: planningProjectSnapshotSchema,
+  })
+  .strict();
+
+const executionRuleContextItemDtoSchema = z
+  .object({
+    contextKind: z.literal("rule"),
+    refId: ruleRevisionIdSchema,
+    revision: z.number().int().positive(),
+    sha256: sha256Schema,
+    ruleId: ruleIdSchema,
+    content: z.string().trim().min(1).max(8_000),
+  })
+  .strict();
+
+export const executionContextItemDtoSchema = z.union([
+  executionMemoryContextItemDtoSchema,
+  executionProjectContextItemDtoSchema,
+  executionRuleContextItemDtoSchema,
+]);
 
 export const beginRunAttemptRequestSchema = z
   .object({
@@ -493,7 +644,7 @@ export const beginRunAttemptResponseSchema = z
     ...versioned,
     attemptId: runAttemptIdSchema,
     inputManifestSha256: sha256Schema,
-    contextItems: z.array(executionContextItemDtoSchema).max(20),
+    contextItems: z.array(executionContextItemDtoSchema).max(50),
   })
   .strict();
 
@@ -517,6 +668,291 @@ export const completeRunAttemptRequestSchema = z.discriminatedUnion("outcome", [
     .strict(),
 ]);
 
+/* ---------- S4 configurable planning runtime ---------- */
+
+export const loadWorkflowRunSpecRequestSchema = z
+  .object({
+    ...versioned,
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+  })
+  .strict();
+
+export const loadWorkflowRunSpecResponseSchema = z
+  .object({
+    ...versioned,
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+    workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+    runSpec: workflowRunSpecSchema,
+  })
+  .strict();
+
+/** Memory正文只通过本私有响应进入单个Step；Selection/Node/Manifest只保存引用。 */
+export const preparePlanningMemoryContextRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+    definitionNodeId: z.string().min(1).max(120),
+    executionPath: z.array(workflowExecutionPathSegmentSchema).max(8),
+    attemptNumber: z.number().int().positive().max(100),
+  })
+  .strict();
+
+const preparedMemorySnapshotSchema = memoryResultSnapshotSchema.pick({
+  memoryResultSnapshotId: true,
+  revision: true,
+  sha256: true,
+  title: true,
+  kind: true,
+  memoryLayer: true,
+  content: true,
+  tags: true,
+  tokenEstimate: true,
+});
+
+export const preparePlanningMemoryContextResponseSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      ...versioned,
+      status: z.literal("none"),
+      productRunId: productRunIdSchema,
+      workflowRunSpecId: workflowRunSpecIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...versioned,
+      status: z.literal("ready"),
+      productRunId: productRunIdSchema,
+      workflowRunSpecId: workflowRunSpecIdSchema,
+      selectionRef: internalPlanningMemorySelectionRefSchema,
+      snapshots: z.array(preparedMemorySnapshotSchema).min(1).max(20),
+      totalContentCharacters: z.number().int().positive().max(1_000_000),
+    })
+    .strict(),
+]);
+
+/** Project正文由Application冻结；Workflow只拿精确Context引用。 */
+export const preparePlanningProjectContextRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+    definitionNodeId: z.string().min(1).max(120),
+    executionPath: z.array(workflowExecutionPathSegmentSchema).max(8),
+    attemptNumber: z.number().int().positive().max(100),
+  })
+  .strict();
+
+export const preparePlanningProjectContextResponseSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      ...versioned,
+      status: z.literal("none"),
+      productRunId: productRunIdSchema,
+      workflowRunSpecId: workflowRunSpecIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...versioned,
+      status: z.literal("ready"),
+      productRunId: productRunIdSchema,
+      workflowRunSpecId: workflowRunSpecIdSchema,
+      contextRef: z
+        .object({
+          planningProjectContextId: planningProjectContextIdSchema,
+          revision: z.literal(1),
+          sha256: sha256Schema,
+        })
+        .strict(),
+    })
+    .strict(),
+]);
+
+export const preparePlanningRulesContextRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+    definitionNodeId: z.string().min(1).max(120),
+    executionPath: z.array(workflowExecutionPathSegmentSchema).max(8),
+    attemptNumber: z.number().int().positive().max(100),
+  })
+  .strict();
+
+const preparedRuleContentSchema = z
+  .object({
+    ruleId: ruleIdSchema,
+    ruleRevisionId: ruleRevisionIdSchema,
+    ruleRevisionSha256: sha256Schema,
+    body: z.string().min(1).max(8_000),
+  })
+  .strict();
+
+export const preparePlanningRulesContextResponseSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      ...versioned,
+      status: z.literal("none"),
+      productRunId: productRunIdSchema,
+      workflowRunSpecId: workflowRunSpecIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...versioned,
+      status: z.literal("ready"),
+      productRunId: productRunIdSchema,
+      workflowRunSpecId: workflowRunSpecIdSchema,
+      selectionRef: z
+        .object({
+          ruleSelectionId: ruleSelectionIdSchema,
+          revision: z.literal(1),
+          sha256: sha256Schema,
+        })
+        .strict(),
+      rules: z.array(preparedRuleContentSchema).max(100),
+      totalContentCharacters: z.number().int().nonnegative().max(200_000),
+    })
+    .strict(),
+]);
+
+/* ---------- S5 note capture runtime ---------- */
+
+/**
+ * Runtime只能提交候选正文；来源由Application从RunSpec.businessInput派生并复核。
+ * strict schema故意不接受source/sourceRefs，防止Workflow凭runtime key伪造跨Message来源。
+ */
+export const publishNoteCandidateRuntimeRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    productRunId: productRunIdSchema,
+    proposed: noteRevisionInputSchema,
+  })
+  .strict();
+
+export const publishNoteCandidateRuntimeResponseSchema = z
+  .object({
+    ...versioned,
+    candidate: noteCandidateReviewDtoSchema,
+    review: z.discriminatedUnion("outcome", [
+      z.object({ outcome: z.literal("waiting_human") }).strict(),
+      z
+        .object({
+          outcome: z.literal("policy_denied_waiting_human"),
+          policyResolutionRef: z
+            .object({
+              workflowPolicyResolutionId: workflowPolicyResolutionIdSchema,
+              revision: z.literal(1),
+              sha256: sha256Schema,
+            })
+            .strict(),
+        })
+        .strict(),
+      z
+        .object({
+          outcome: z.literal("auto_continued"),
+          policyResolutionRef: z
+            .object({
+              workflowPolicyResolutionId: workflowPolicyResolutionIdSchema,
+              revision: z.literal(1),
+              sha256: sha256Schema,
+            })
+            .strict(),
+        })
+        .strict(),
+    ]),
+  })
+  .strict();
+
+export const prepareNoteCaptureInputRuntimeRequestSchema = z
+  .object({
+    ...versioned,
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+  })
+  .strict();
+
+export const prepareNoteCaptureInputRuntimeResponseSchema = z
+  .object({
+    ...versioned,
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+    source: noteSourceRefSchema,
+    sourceText: z.string().min(1).max(NOTE_CONTENT_MARKDOWN_MAX_CHARACTERS),
+    defaultKind: noteKindSchema,
+    suggestedTagLabels: z
+      .array(z.string().trim().min(1).max(NOTE_TAG_LABEL_MAX_CHARACTERS))
+      .max(NOTE_TAG_MAX_COUNT),
+    priorCandidate: noteCandidateReviewDtoSchema.optional(),
+    revisionInstruction: z.string().trim().min(1).max(2_000).optional(),
+  })
+  .strict();
+
+export const loadNoteDecisionRuntimeRequestSchema = z
+  .object({
+    ...versioned,
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+    noteCandidateId: noteCandidateIdSchema,
+    noteDecisionId: noteDecisionIdSchema,
+  })
+  .strict();
+
+export const loadNoteDecisionRuntimeResponseSchema = z
+  .object({
+    ...versioned,
+    candidate: noteCandidateReviewDtoSchema,
+    decision: noteDecisionDtoSchema,
+  })
+  .strict();
+
+export const commitConfirmedNoteRuntimeRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    productRunId: productRunIdSchema,
+    noteCandidateId: noteCandidateIdSchema,
+  })
+  .strict();
+
+export const commitConfirmedNoteRuntimeResponseSchema = z
+  .object({
+    ...versioned,
+    status: z.literal("committed"),
+  })
+  .strict();
+
+export const transitionConfigurablePlanningNodeRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+    definitionNodeId: z.string().min(1).max(100),
+    executionPath: z.array(workflowExecutionPathSegmentSchema).max(8),
+    attemptNumber: z.number().int().positive().max(100),
+    toStatus: z.enum([
+      "running",
+      "waiting_human",
+      "skipped",
+      "succeeded",
+      "failed",
+      "cancelled",
+      "outcome_unknown",
+    ]),
+    outcomeCode: z.string().min(1).max(64).optional(),
+    publicSummary: z.string().min(1).max(500).optional(),
+  })
+  .strict();
+
 /* ---------- Workflow Runtime分发合同（API Outbox Dispatcher -> Workflow进程） ---------- */
 
 export const WORKFLOW_DISPATCH_SCHEMA_VERSION = "chat-workflow-dispatch.v1";
@@ -525,12 +961,60 @@ export const workflowStartRequestSchema = z
   .object({
     schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
     productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema.optional(),
+    runnerFamily: workflowRunnerFamilySchema.optional(),
+    runnerBundleVersion: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[A-Za-z0-9._-]+$/)
+      .optional(),
     /** 关联的workflow Run Attempt（Trace关联用，不是Runtime私有身份）。 */
     attemptId: runAttemptIdSchema,
     workflowDefinitionVersion: z.string().min(1),
     outboxId: outboxEntryIdSchema,
   })
-  .strict();
+  .strict()
+  .check((ctx) => {
+    const value = ctx.value;
+    if (value.runnerFamily === undefined || value.runnerBundleVersion === undefined) {
+      ctx.issues.push({
+        code: "custom",
+        input: value,
+        message: "Workflow Start必须携带冻结Runner身份",
+        path: ["runnerFamily"],
+      });
+      return;
+    }
+    if (
+      (value.runnerFamily === "configurable-planning.v1" ||
+        value.runnerFamily === "note-capture.v1") &&
+      value.workflowRunSpecId === undefined
+    ) {
+      ctx.issues.push({
+        code: "custom",
+        input: value,
+        message: "Definition Runner必须携带Workflow RunSpec",
+        path: ["workflowRunSpecId"],
+      });
+    }
+    if (value.runnerFamily === "legacy-planning.v1" && value.workflowRunSpecId !== undefined) {
+      ctx.issues.push({
+        code: "custom",
+        input: value,
+        message: "Legacy Runner不得携带Workflow RunSpec",
+        path: ["workflowRunSpecId"],
+      });
+    }
+    if (value.runnerFamily === "definition-kernel-lab.v1") {
+      ctx.issues.push({
+        code: "custom",
+        input: value,
+        message: "实验室Runner不得通过正式派发边界启动",
+        path: ["runnerFamily"],
+      });
+    }
+  });
 
 export const workflowStartResponseSchema = z
   .object({
@@ -539,16 +1023,34 @@ export const workflowStartResponseSchema = z
   })
   .strict();
 
-export const workflowResumeRequestSchema = z
+const workflowDispatchBase = {
+  schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
+  productRunId: productRunIdSchema,
+  attemptId: runAttemptIdSchema,
+  outboxId: outboxEntryIdSchema,
+};
+
+export const workflowPlanningResumeRequestSchema = z
   .object({
-    schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
-    productRunId: productRunIdSchema,
-    attemptId: runAttemptIdSchema,
+    ...workflowDispatchBase,
     approvalRequestId: approvalRequestIdSchema,
     decisionId: decisionIdSchema,
-    outboxId: outboxEntryIdSchema,
   })
   .strict();
+
+export const workflowNoteResumeRequestSchema = z
+  .object({
+    ...workflowDispatchBase,
+    hookNoteCandidateId: noteCandidateIdSchema,
+    noteCandidateId: noteCandidateIdSchema,
+    noteDecisionId: noteDecisionIdSchema,
+  })
+  .strict();
+
+export const workflowResumeRequestSchema = z.union([
+  workflowPlanningResumeRequestSchema,
+  workflowNoteResumeRequestSchema,
+]);
 
 export const workflowResumeResponseSchema = z
   .object({
@@ -731,10 +1233,56 @@ export type CommitRejectedRunRequest = z.infer<typeof commitRejectedRunRequestSc
 export type LoadMemoryImportRequest = z.infer<typeof loadMemoryImportRequestSchema>;
 export type LoadMemoryImportResponse = z.infer<typeof loadMemoryImportResponseSchema>;
 export type CommitRunFailureRequest = z.infer<typeof commitRunFailureRequestSchema>;
+export type CommitRunOutcomeUnknownRuntimeRequest = z.infer<
+  typeof commitRunOutcomeUnknownRuntimeRequestSchema
+>;
 export type ExpireApprovalRequest = z.infer<typeof expireApprovalRequestSchema>;
 export type BeginRunAttemptRequest = z.infer<typeof beginRunAttemptRequestSchema>;
 export type BeginRunAttemptResponse = z.infer<typeof beginRunAttemptResponseSchema>;
 export type CompleteRunAttemptRequest = z.infer<typeof completeRunAttemptRequestSchema>;
+export type LoadWorkflowRunSpecRequest = z.infer<typeof loadWorkflowRunSpecRequestSchema>;
+export type LoadWorkflowRunSpecResponse = z.infer<typeof loadWorkflowRunSpecResponseSchema>;
+export type PreparePlanningMemoryContextRequest = z.infer<
+  typeof preparePlanningMemoryContextRequestSchema
+>;
+export type PreparePlanningMemoryContextResponse = z.infer<
+  typeof preparePlanningMemoryContextResponseSchema
+>;
+export type PreparePlanningProjectContextRequest = z.infer<
+  typeof preparePlanningProjectContextRequestSchema
+>;
+export type PreparePlanningProjectContextResponse = z.infer<
+  typeof preparePlanningProjectContextResponseSchema
+>;
+export type PreparePlanningRulesContextRequest = z.infer<
+  typeof preparePlanningRulesContextRequestSchema
+>;
+export type PreparePlanningRulesContextResponse = z.infer<
+  typeof preparePlanningRulesContextResponseSchema
+>;
+export type PublishNoteCandidateRuntimeRequest = z.infer<
+  typeof publishNoteCandidateRuntimeRequestSchema
+>;
+export type PublishNoteCandidateRuntimeResponse = z.infer<
+  typeof publishNoteCandidateRuntimeResponseSchema
+>;
+export type PrepareNoteCaptureInputRuntimeRequest = z.infer<
+  typeof prepareNoteCaptureInputRuntimeRequestSchema
+>;
+export type PrepareNoteCaptureInputRuntimeResponse = z.infer<
+  typeof prepareNoteCaptureInputRuntimeResponseSchema
+>;
+export type LoadNoteDecisionRuntimeRequest = z.infer<typeof loadNoteDecisionRuntimeRequestSchema>;
+export type LoadNoteDecisionRuntimeResponse = z.infer<typeof loadNoteDecisionRuntimeResponseSchema>;
+export type CommitConfirmedNoteRuntimeRequest = z.infer<
+  typeof commitConfirmedNoteRuntimeRequestSchema
+>;
+export type CommitConfirmedNoteRuntimeResponse = z.infer<
+  typeof commitConfirmedNoteRuntimeResponseSchema
+>;
+export type TransitionConfigurablePlanningNodeRequest = z.infer<
+  typeof transitionConfigurablePlanningNodeRequestSchema
+>;
 export type ExecutionContextItemDto = z.infer<typeof executionContextItemDtoSchema>;
 export type WorkflowStartRequest = z.infer<typeof workflowStartRequestSchema>;
 export type WorkflowResumeRequest = z.infer<typeof workflowResumeRequestSchema>;

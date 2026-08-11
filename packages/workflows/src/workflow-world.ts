@@ -31,6 +31,12 @@ export interface WorkflowWorldHandle {
   readonly memoryImportWorkflowId: string;
   readonly projectIntakeWorkflowId: string;
   readonly projectAdvancementWorkflowId: string;
+  /** S3实验室入口；Runtime Server不公开分发路由，不影响活动产品Run。 */
+  readonly definitionKernelLabWorkflowId: string;
+  /** S4正式可配置Planning入口；Runtime按已保存runnerFamily静态选择。 */
+  readonly configurablePlanningWorkflowId: string;
+  /** S5正式Note入口；与Planning共用受限IR解释器。 */
+  readonly noteCaptureWorkflowId: string;
   close(): Promise<void>;
 }
 
@@ -43,6 +49,9 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
   memoryImport: string;
   projectIntake: string;
   projectAdvancement: string;
+  definitionKernelLab: string;
+  configurablePlanning: string;
+  noteCapture: string;
 }> {
   const raw = await readFile(join(bundleDir, "manifest.json"), "utf8");
   const manifest = JSON.parse(raw) as WorkflowManifestFile;
@@ -50,6 +59,9 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
   let memoryImport: string | undefined;
   let projectIntake: string | undefined;
   let projectAdvancement: string | undefined;
+  let definitionKernelLab: string | undefined;
+  let configurablePlanning: string | undefined;
+  let noteCapture: string | undefined;
   for (const [filePath, entries] of Object.entries(manifest.workflows)) {
     if (filePath.includes("planning-execution-workflow")) {
       const entry = entries["planningExecutionWorkflow"];
@@ -67,18 +79,39 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
       const entry = entries["projectAdvancementWorkflow"];
       if (entry !== undefined) projectAdvancement = entry.workflowId;
     }
+    if (filePath.includes("definition-kernel-lab-workflow")) {
+      const entry = entries["definitionKernelLabWorkflow"];
+      if (entry !== undefined) definitionKernelLab = entry.workflowId;
+    }
+    if (filePath.includes("configurable-planning-workflow")) {
+      const entry = entries["configurablePlanningWorkflow"];
+      if (entry !== undefined) configurablePlanning = entry.workflowId;
+    }
+    if (filePath.includes("note-capture-workflow")) {
+      const entry = entries["noteCaptureWorkflow"];
+      if (entry !== undefined) noteCapture = entry.workflowId;
+    }
   }
   if (
     planningExecution === undefined ||
     memoryImport === undefined ||
     projectIntake === undefined ||
-    projectAdvancement === undefined
+    projectAdvancement === undefined ||
+    definitionKernelLab === undefined ||
+    configurablePlanning === undefined ||
+    noteCapture === undefined
   ) {
-    throw new Error(
-      "manifest.json缺少PlanningExecution、MemoryImport、ProjectIntake或ProjectAdvancement Workflow",
-    );
+    throw new Error("manifest.json缺少活动Workflow或Definition Kernel Lab Workflow");
   }
-  return { planningExecution, memoryImport, projectIntake, projectAdvancement };
+  return {
+    planningExecution,
+    memoryImport,
+    projectIntake,
+    projectAdvancement,
+    definitionKernelLab,
+    configurablePlanning,
+    noteCapture,
+  };
 }
 
 type QueueHandler = (req: Request) => Promise<Response>;
@@ -130,6 +163,9 @@ export async function setupWorkflowWorld(
     memoryImportWorkflowId: workflowIds.memoryImport,
     projectIntakeWorkflowId: workflowIds.projectIntake,
     projectAdvancementWorkflowId: workflowIds.projectAdvancement,
+    definitionKernelLabWorkflowId: workflowIds.definitionKernelLab,
+    configurablePlanningWorkflowId: workflowIds.configurablePlanning,
+    noteCaptureWorkflowId: workflowIds.noteCapture,
     close: async () => {
       setWorld(undefined);
       await world.close?.();

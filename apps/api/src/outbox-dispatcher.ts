@@ -211,6 +211,13 @@ async function dispatchStart(
   const result = await postToWorkflowRuntime(options, "/internal/workflow/v1/start", {
     schemaVersion: "chat-workflow-dispatch.v1",
     productRunId: entry.productRunId,
+    ...(entry.workflowRunSpecId !== undefined
+      ? { workflowRunSpecId: entry.workflowRunSpecId }
+      : {}),
+    ...(entry.runnerFamily !== undefined ? { runnerFamily: entry.runnerFamily } : {}),
+    ...(entry.runnerBundleVersion !== undefined
+      ? { runnerBundleVersion: entry.runnerBundleVersion }
+      : {}),
     attemptId,
     workflowDefinitionVersion: WORKFLOW_DEFINITION_VERSION,
     outboxId: entry.outboxId,
@@ -258,11 +265,12 @@ async function dispatchResume(
   entry: WorkflowResumeEntry,
 ): Promise<void> {
   const attemptId = findWorkflowAttemptId(snapshot, entry.productRunId);
-  if (
-    attemptId === undefined ||
-    entry.approvalRequestId === undefined ||
-    entry.decisionId === undefined
-  ) {
+  const isPlanningResume = entry.approvalRequestId !== undefined && entry.decisionId !== undefined;
+  const isNoteResume =
+    entry.hookNoteCandidateId !== undefined &&
+    entry.noteCandidateId !== undefined &&
+    entry.noteDecisionId !== undefined;
+  if (attemptId === undefined || isPlanningResume === isNoteResume) {
     await failDispatch(options, entry, "outbox.missing_refs", false);
     return;
   }
@@ -270,8 +278,13 @@ async function dispatchResume(
     schemaVersion: "chat-workflow-dispatch.v1",
     productRunId: entry.productRunId,
     attemptId,
-    approvalRequestId: entry.approvalRequestId,
-    decisionId: entry.decisionId,
+    ...(isPlanningResume
+      ? { approvalRequestId: entry.approvalRequestId, decisionId: entry.decisionId }
+      : {
+          hookNoteCandidateId: entry.hookNoteCandidateId,
+          noteCandidateId: entry.noteCandidateId,
+          noteDecisionId: entry.noteDecisionId,
+        }),
     outboxId: entry.outboxId,
   });
   if (result === "unknown") {
@@ -687,7 +700,12 @@ async function reconcileUnknown(
   entry: WorkflowEntry,
 ): Promise<void> {
   const params = new URLSearchParams({ productRunId: entry.productRunId });
-  if (entry.kind === "workflow_resume") params.set("approvalRequestId", entry.approvalRequestId);
+  if (entry.kind === "workflow_resume" && entry.approvalRequestId !== undefined) {
+    params.set("approvalRequestId", entry.approvalRequestId);
+  }
+  if (entry.kind === "workflow_resume" && entry.hookNoteCandidateId !== undefined) {
+    params.set("hookNoteCandidateId", entry.hookNoteCandidateId);
+  }
   let response: Response;
   try {
     response = await fetch(

@@ -17,6 +17,10 @@ export type {
   ProjectAdvancementProposal,
 } from "./project.js";
 export * from "./project-api.js";
+export * from "./workflow-api.js";
+export * from "./workflow-designer-api.js";
+export * from "./rules-api.js";
+export * from "./note-api.js";
 export { memoryBackendIdSchema, type MemoryBackendId } from "./ids.js";
 export {
   memoryContextSelectionSchema,

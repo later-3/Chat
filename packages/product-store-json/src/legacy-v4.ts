@@ -1,12 +1,12 @@
 import { z } from "zod";
 import {
   principalIdSchema,
-  productSnapshotSchema,
   projectIdSchema,
   projectMethodPolicySchema,
   projectMethodSnapshotIdSchema,
   projectStageIdSchema,
 } from "@chat/contracts";
+import { productSnapshotV5Schema } from "./legacy-v5.js";
 
 const isoDateTimeSchema = z.iso.datetime();
 const entityBase = {
@@ -61,7 +61,7 @@ export const projectStageV1Schema = z
   })
   .strict();
 
-const entitiesV4Schema = productSnapshotSchema.shape.entities
+const entitiesV4Schema = productSnapshotV5Schema.shape.entities
   .omit({
     projects: true,
     projectMethodSnapshots: true,
@@ -83,8 +83,8 @@ export const productSnapshotV4Schema = z
     storeRevision: z.number().int().nonnegative(),
     committedAt: isoDateTimeSchema,
     entities: entitiesV4Schema,
-    commandReceipts: productSnapshotSchema.shape.commandReceipts,
-    outbox: productSnapshotSchema.shape.outbox,
+    commandReceipts: productSnapshotV5Schema.shape.commandReceipts,
+    outbox: productSnapshotV5Schema.shape.outbox,
   })
   .strict();
 

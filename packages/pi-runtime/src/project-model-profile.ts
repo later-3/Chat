@@ -1,5 +1,6 @@
 import type { Model } from "@earendil-works/pi-ai";
 import { BAILIAN_DEFAULT_BASE_URL } from "@chat/contracts";
+import { assertAllowedBailianHost } from "./config.js";
 
 export interface ProjectModelProfile {
   readonly profileVersion: string;
@@ -62,6 +63,15 @@ export function loadProjectModelProfile(
   }
   if (url.search !== "" || url.hash !== "") {
     throw new ProjectModelProfileError("Project模型Base URL不能包含query或fragment");
+  }
+  if (providerName === "bailian") {
+    try {
+      assertAllowedBailianHost(url.hostname);
+    } catch {
+      throw new ProjectModelProfileError(
+        `百炼Project模型Base URL域名不符合正式服务合同:${url.hostname}`,
+      );
+    }
   }
   const key = env[apiKeyEnv];
   return {

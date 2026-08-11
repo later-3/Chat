@@ -21,6 +21,7 @@ import {
   getRunPlans,
   getSessionMessages,
 } from "@chat/application";
+import { SYSTEM_NOTE_WORKFLOW_REVISION_ID } from "@chat/application/workflow-system-definitions";
 
 const PRINCIPAL = "usr_debug" as PrincipalId;
 const OTHER = "usr_other" as PrincipalId;
@@ -222,34 +223,59 @@ describe("CreateProductSession + SubmitUserMessage", () => {
     ).rejects.toBeInstanceOf(CommandIdReusedError);
   });
 
-  it("同一Session存在未终态Run时拒绝第二条Message Command", async () => {
+  it("同一Session允许Planning与Note各自形成独立未终态Run和Outbox", async () => {
     const { deps } = await testDeps();
     const { session } = await createProductSession(deps, {
       principalId: PRINCIPAL,
       commandId: cmd(),
       payload: {},
     });
-    await submitUserMessage(deps, {
+    const planning = await submitUserMessage(deps, {
       principalId: PRINCIPAL,
       sessionId: session.sessionId,
       commandId: cmd(),
       payload: { text: "第一项工作" },
     });
 
-    await expect(
-      submitUserMessage(deps, {
-        principalId: PRINCIPAL,
-        sessionId: session.sessionId,
-        commandId: cmd(),
-        payload: { text: "不应覆盖当前审核入口的第二项工作" },
-      }),
-    ).rejects.toMatchObject({ code: "revision_conflict", httpStatus: 409 });
+    const { snapshot: beforeNote } = await deps.store.read({ kind: "committedSnapshot" });
+    const noteRevision =
+      beforeNote.entities.workflowDefinitionRevisions[SYSTEM_NOTE_WORKFLOW_REVISION_ID];
+    if (noteRevision === undefined) throw new Error("测试Fixture缺少Note Definition");
+    const note = await submitUserMessage(deps, {
+      principalId: PRINCIPAL,
+      sessionId: session.sessionId,
+      commandId: cmd(),
+      payload: {
+        text: "把这一项保存为笔记",
+        workflowSelection: {
+          kind: "published_revision",
+          workflowDefinitionRevisionId: noteRevision.workflowDefinitionRevisionId,
+          definitionSha256: noteRevision.definitionSha256,
+        },
+      },
+    });
 
     const { messages } = await getSessionMessages(deps, {
       principalId: PRINCIPAL,
       sessionId: session.sessionId,
     });
-    expect(messages.items.map((message) => message.content.text)).toEqual(["第一项工作"]);
+    expect(messages.items.map((message) => message.content.text)).toEqual([
+      "第一项工作",
+      "把这一项保存为笔记",
+    ]);
+    expect(planning.run.productRunId).not.toBe(note.run.productRunId);
+    const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+    expect(snapshot.entities.runs[planning.run.productRunId]).toMatchObject({
+      runKind: "planning",
+    });
+    expect(snapshot.entities.runs[note.run.productRunId]).toMatchObject({
+      runKind: "note_capture",
+    });
+    expect(
+      Object.values(snapshot.outbox).filter(
+        (entry) => entry.kind === "workflow_start" && entry.status === "pending",
+      ),
+    ).toHaveLength(2);
   });
 
   it("本地旧版本Workflow不可恢复时原子收敛Run、Attempt与Outbox并保留消息", async () => {
@@ -596,8 +622,11 @@ describe("PublishPlanForReview + SubmitPlanDecision", () => {
     });
 
     const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
-    expect(snapshot.entities.runs[run.productRunId]?.status).toBe("failed");
-    expect(snapshot.entities.runs[run.productRunId]?.currentApprovalRequestId).toBeUndefined();
+    const storedRun = snapshot.entities.runs[run.productRunId];
+    expect(storedRun?.runKind).toBe("planning");
+    if (storedRun?.runKind !== "planning") throw new Error("fixture必须产生Planning Run");
+    expect(storedRun.status).toBe("failed");
+    expect(storedRun.currentApprovalRequestId).toBeUndefined();
     expect(snapshot.entities.approvalRequests[published.approval.approvalRequestId]?.status).toBe(
       "expired",
     );

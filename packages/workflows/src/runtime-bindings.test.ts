@@ -7,6 +7,12 @@ import {
   RuntimeBindingError,
   RuntimeBindingStore,
 } from "./runtime-bindings.js";
+import {
+  CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
+  CONFIGURABLE_PLANNING_RUNNER_FAMILY,
+  NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
+  NOTE_CAPTURE_RUNNER_FAMILY,
+} from "./definition-kernel-executor-registry.js";
 
 const NOW = "2026-08-07T12:00:00.000Z";
 
@@ -121,6 +127,135 @@ describe("RuntimeBindingStore", () => {
     await claimWorkflow(store);
     const reopened = await RuntimeBindingStore.open(filePath);
     expect(reopened.getWorkflowBinding("run_1" as never)?.workflowRunId).toBe("wrun_a");
+  });
+
+  it("Configurable Planning绑定冻结RunSpec且拒绝重放时改标legacy", async () => {
+    const filePath = await tempPath();
+    const store = await RuntimeBindingStore.open(filePath);
+    const evidence = {
+      runnerFamily: CONFIGURABLE_PLANNING_RUNNER_FAMILY,
+      runnerBundleVersion: CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
+      workflowRunSpecId: "wrs_configurable1",
+    } as const;
+    await store.claimStartIntent({
+      productRunId: "run_configurable1" as never,
+      outboxId: "obx_configurable1" as never,
+      workflowDefinitionVersion: "planning-execution-workflow.v2",
+      ...evidence,
+      now: NOW,
+    });
+    await store.claimWorkflowBinding({
+      productRunId: "run_configurable1" as never,
+      outboxId: "obx_configurable1" as never,
+      workflowRunId: "wrun_configurable1",
+      workflowDefinitionVersion: "planning-execution-workflow.v2",
+      ...evidence,
+      now: NOW,
+    });
+
+    const reopened = await RuntimeBindingStore.open(filePath);
+    expect(reopened.getWorkflowBinding("run_configurable1" as never)).toMatchObject(evidence);
+    await expect(
+      reopened.claimStartIntent({
+        productRunId: "run_configurable1" as never,
+        outboxId: "obx_configurable1" as never,
+        workflowDefinitionVersion: "planning-execution-workflow.v2",
+        now: NOW,
+      }),
+    ).rejects.toBeInstanceOf(RuntimeBindingError);
+  });
+
+  it("v3历史Binding迁移为显式legacy family，保留私有Run与Hook映射", async () => {
+    const filePath = await tempPath();
+    await writeFile(
+      filePath,
+      JSON.stringify({
+        schemaVersion: "runtime-bindings.v3",
+        startIntents: {},
+        workflows: {
+          run_legacy1: {
+            workflowRunId: "wrun_legacy1",
+            workflowDefinitionVersion: "planning-execution-workflow.v2",
+            startDispatchState: "started",
+            createdAt: NOW,
+          },
+        },
+        hooks: {
+          apr_legacy1: {
+            hookToken: "pdh-run_legacy1-1",
+            productRunId: "run_legacy1",
+            planRevision: 1,
+            hookClaimState: "claimed",
+            resumeDispatchState: "none",
+            createdAt: NOW,
+            updatedAt: NOW,
+          },
+        },
+        memoryImportStartIntents: {},
+        memoryImportWorkflows: {},
+        projectIntakeStartIntents: {},
+        projectIntakeWorkflows: {},
+      }),
+    );
+    const store = await RuntimeBindingStore.open(filePath);
+    expect(store.getWorkflowBinding("run_legacy1" as never)).toMatchObject({
+      workflowRunId: "wrun_legacy1",
+      runnerFamily: "legacy-planning.v1",
+      runnerBundleVersion: "legacy-planning.bundle.v1",
+    });
+    expect(store.getHookBinding("apr_legacy1" as never)?.hookToken).toBe("pdh-run_legacy1-1");
+    expect(JSON.parse(await readFile(filePath, "utf8"))).toMatchObject({
+      schemaVersion: "runtime-bindings.v5",
+    });
+  });
+
+  it("Note family冻结RunSpec并以Candidate隔离Hook恢复状态", async () => {
+    const filePath = await tempPath();
+    const store = await RuntimeBindingStore.open(filePath);
+    const evidence = {
+      runnerFamily: NOTE_CAPTURE_RUNNER_FAMILY,
+      runnerBundleVersion: NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
+      workflowRunSpecId: "wrs_notebinding1",
+    } as const;
+    await store.claimStartIntent({
+      productRunId: "run_notebinding1" as never,
+      outboxId: "obx_notebinding1" as never,
+      workflowDefinitionVersion: NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
+      ...evidence,
+      now: NOW,
+    });
+    await store.claimWorkflowBinding({
+      productRunId: "run_notebinding1" as never,
+      outboxId: "obx_notebinding1" as never,
+      workflowRunId: "wrun_notebinding1",
+      workflowDefinitionVersion: NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
+      ...evidence,
+      now: NOW,
+    });
+    await store.claimNoteHookBinding({
+      noteCandidateId: "ntc_notebinding1" as never,
+      productRunId: "run_notebinding1" as never,
+      candidateSequence: 1,
+      hookToken: "ndh-run-notebinding1-1",
+      now: NOW,
+    });
+    await store.markNoteResumeDispatching("ntc_notebinding1" as never, NOW);
+    const reopened = await RuntimeBindingStore.open(filePath);
+    expect(reopened.getWorkflowBinding("run_notebinding1" as never)).toMatchObject(evidence);
+    expect(reopened.getNoteHookBinding("ntc_notebinding1" as never)).toMatchObject({
+      productRunId: "run_notebinding1",
+      candidateSequence: 1,
+      resumeDispatchState: "dispatching",
+    });
+    await expect(
+      reopened.claimNoteHookBinding({
+        noteCandidateId: "ntc_notebinding1" as never,
+        productRunId: "run_notebinding1" as never,
+        candidateSequence: 2,
+        hookToken: "ndh-run-notebinding1-2",
+        now: NOW,
+      }),
+    ).rejects.toBeInstanceOf(RuntimeBindingError);
   });
 
   it("未决start意图与dispatching Resume重启后保持结果未知，禁止盲重试", async () => {

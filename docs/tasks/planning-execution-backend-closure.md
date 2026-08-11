@@ -375,10 +375,10 @@ Replay结果必须标出：引用对象缺失、revision不存在、Hash不一�
 2. API形态：百炼OpenAI兼容Chat Completions，通过pi的OpenAI兼容Provider能力接入。
 3. 模型ID：`qwen3.7-plus`。
 4. 默认华北2（北京）Base URL：`https://dashscope.aliyuncs.com/compatible-mode/v1`。
-5. 生产或专属空间可通过`DASHSCOPE_BASE_URL`使用业务空间专属域名。
+5. 可通过`DASHSCOPE_BASE_URL`使用业务空间域名，或用户明确配置并授权、经真实门验证的Coding Endpoint。
 6. API Key环境变量：`DASHSCOPE_API_KEY`。
 
-Token Plan和Coding Plan专用Endpoint不得用于Chat后端服务。冻结pi源码内置的`qwen-token-plan-cn`Provider不能直接作为本任务的后端Provider；`packages/pi-runtime`必须建立Chat拥有的`bailian`Provider配置，并复用pi已经核验的OpenAI兼容流和Qwen thinking格式能力。
+冻结pi源码内置的`qwen-token-plan-cn`Provider不能直接作为Chat后端Provider；`packages/pi-runtime`建立Chat拥有的`bailian`配置，并复用pi已经核验的OpenAI兼容流和Qwen thinking格式能力。Token Plan仍被拒绝；用户明确配置的Coding Endpoint只有在精确Host校验和真实Provider门都通过后才可使用。
 
 ### 9.2 凭据规则
 
@@ -643,11 +643,11 @@ POST /api/runs/:productRunId/decisions
 5. [Vercel Workflow Hooks](https://useworkflow.dev/docs/foundations/hooks)：Workflow暂停和外部恢复。
 6. [Vercel Workflow Testing](https://useworkflow.dev/docs/testing)：真实Hook、Resume和Replay测试。
 7. pi能力对照源码：`/Users/xulater/Code/opc-os/pi`提交`10e99ae9914cd34f622633fac42f9a90714e9cf4`；实际运行工件由B2合同固定为npm `@earendil-works/pi-agent-core`/`pi-ai` 0.82.1（发布基点`b4f293684bba718d59cc1157679bcf6157b3a7f5`）及pnpm锁文件SHA-512。
-8. 冻结pi的`packages/ai/src/providers/qwen-token-plan-cn.ts`证明其Qwen Token Plan Provider使用OpenAI兼容API，但百炼官方限制Token Plan不能作为后端服务，因此Chat建立单独`bailian`Provider配置。
+8. 冻结pi的`packages/ai/src/providers/qwen-token-plan-cn.ts`证明其Qwen Token Plan Provider使用OpenAI兼容API；Chat仍建立独立`bailian`配置，不把Token Plan身份或浏览器参数带入后端产品合同。
 
 ## 20. 提交给实现者前的最后检查
 
-1. 用户提供的Key属于百炼按量付费或业务空间，不是Token Plan/Coding Plan专用Key。
+1. 用户提供的Key与所配Endpoint匹配并已明确授权；Token Plan Key不进入Chat后端配置。
 2. `DASHSCOPE_BASE_URL`与Key区域、计费方案匹配。
 3. P1.2已经合并，目标基线已更新为最新主分支。
 4. B1的固定端口在实现开始时再次检查；若环境永久占用，先由用户批准统一改号，不能运行时自动漂移。

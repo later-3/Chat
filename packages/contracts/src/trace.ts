@@ -124,6 +124,8 @@ export const TRACE_EVENT_NAMES = {
   planCandidateReceived: "plan.candidate.received",
   planCandidateRejected: "plan.candidate.rejected",
   planCandidatePublished: "plan.candidate.published",
+  noteCandidateReceived: "note.candidate.received",
+  noteCandidateRejected: "note.candidate.rejected",
   approvalCreated: "approval.created",
   decisionCommitted: "decision.committed",
   decisionRejected: "decision.rejected",
@@ -1146,6 +1148,24 @@ const planCandidatePublishedSchema = defineTraceEvent(
   { ...runScopedFields, planRef: planRefSchema, ...durationMsOptional },
 );
 
+// Note候选与Plan候选一样只记录不可逆Hash，不把标题、正文或标签写入Trace。
+const noteCandidateReceivedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.noteCandidateReceived,
+  "unknown",
+  { ...runScopedFields, candidateSha256: sha256Schema, ...durationMsOptional },
+);
+
+const noteCandidateRejectedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.noteCandidateRejected,
+  "rejected",
+  {
+    ...runScopedFields,
+    candidateSha256: sha256Schema,
+    error: traceErrorSchema,
+    ...durationMsOptional,
+  },
+);
+
 // Approval与Decision：Run + Attempt（审批等待发生在同一Run Attempt内）。
 const approvalCreatedSchema = defineTraceEvent(TRACE_EVENT_NAMES.approvalCreated, "success", {
   ...runScopedFields,
@@ -1282,7 +1302,7 @@ const providerRequestFailedSchema = defineTraceEvent(
 );
 
 // pi节点：Run + Attempt + Prompt模板 + 模型配置版本。
-const piNodeKindSchema = z.enum(["planner", "executor"]);
+const piNodeKindSchema = z.enum(["planner", "executor", "note_capture"]);
 const candidateValidationDiagnosticsSchema = z
   .object({
     stage: z.enum(["tool_argument_schema", "candidate_contract", "capability_policy"]),
@@ -1464,6 +1484,8 @@ export const traceEventSchema = z.discriminatedUnion("eventName", [
   planCandidateReceivedSchema,
   planCandidateRejectedSchema,
   planCandidatePublishedSchema,
+  noteCandidateReceivedSchema,
+  noteCandidateRejectedSchema,
   approvalCreatedSchema,
   decisionCommittedSchema,
   decisionRejectedSchema,

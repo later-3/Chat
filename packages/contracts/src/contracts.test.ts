@@ -196,6 +196,49 @@ describe("private runtime attempt contracts", () => {
     expect(
       beginRunAttemptResponseSchema.safeParse({
         ...response,
+        contextItems: [
+          {
+            contextKind: "project",
+            refId: "pcx_attempt1",
+            revision: 1,
+            sha256: "c".repeat(64),
+            title: "Aurora",
+            projectId: "prj_attempt1",
+            projectRevision: 2,
+            snapshot: {
+              name: "Aurora",
+              summary: "项目上下文",
+              goal: "形成下一阶段计划",
+              scopeIn: [],
+              scopeOut: [],
+              successCriteria: ["可审核"],
+              status: "active",
+              methodProfileId: "small-project.v1",
+              stage: {
+                key: "delivery",
+                name: "交付",
+                goal: "完成交付",
+                successCriteria: ["测试通过"],
+                status: "active",
+              },
+              milestones: [],
+              activeWorks: [],
+            },
+          },
+          {
+            contextKind: "rule",
+            refId: "rrv_attempt1",
+            revision: 3,
+            sha256: "d".repeat(64),
+            ruleId: "rul_attempt1",
+            content: "每个结论必须绑定证据。",
+          },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      beginRunAttemptResponseSchema.safeParse({
+        ...response,
         contextItems: [{ ...response.contextItems[0], endpoint: "private" }],
       }).success,
     ).toBe(false);

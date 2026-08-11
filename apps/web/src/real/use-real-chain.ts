@@ -95,7 +95,11 @@ export interface RealChainState {
   readonly pendingSend: PendingSend | null;
   /** B2首版一个Session同一时刻只允许一个未终态Run。 */
   readonly canStartNewRun: boolean;
-  readonly sendMessage: (text: string, context?: SubmitMessagePayload["context"]) => void;
+  readonly sendMessage: (
+    text: string,
+    context?: SubmitMessagePayload["context"],
+    workflowSelection?: SubmitMessagePayload["workflowSelection"],
+  ) => void;
   readonly retryPendingSend: () => void;
   readonly sending: boolean;
   readonly sendError: ApiProblemError | null;
@@ -351,7 +355,11 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     },
   });
 
-  const sendMessage = (text: string, context?: SubmitMessagePayload["context"]) => {
+  const sendMessage = (
+    text: string,
+    context?: SubmitMessagePayload["context"],
+    workflowSelection?: SubmitMessagePayload["workflowSelection"],
+  ) => {
     const activeRunIsUnfinished =
       activeRunId !== null && (run.data === undefined || !TERMINAL_STATUSES.has(run.data.status));
     if (
@@ -365,7 +373,11 @@ export function useRealChain(storage: Storage, options?: { refetchMs?: number })
     // 先持久化完整命令再发HTTP，页面在响应中途刷新也能用同一身份恢复。
     const pending: PendingSend = {
       version: 2,
-      payload: { text, ...(context !== undefined ? { context } : {}) },
+      payload: {
+        text,
+        ...(context !== undefined ? { context } : {}),
+        ...(workflowSelection !== undefined ? { workflowSelection } : {}),
+      },
       commandId: newCommandId(),
     };
     writePendingSend(storage, sessionId, pending);

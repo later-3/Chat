@@ -252,3 +252,13 @@ Stage是长期发展阶段，Iteration是一次有限投入，Work是交付单�
 Task完成比例不能代表Project进度，Git变化不能自动完成Work，Agent自述也不能成为verified Contribution。Project进展至少分为Stage/Milestone结果、Iteration边界、Scope未知度、Work/Action状态、负责人Project Update和真实Evidence。系统可以观察Resource、提示风险和起草Update，但健康判断由有责任的Participant发布；Stage、Iteration、Work和Project终态分别经过自己的Gate与Decision。
 
 检查：10个Task完成8个但核心未知未解时，系统是否仍明确显示风险；PR合并后是否只形成Observation/Contribution Candidate，而不会自动把Project标成完成？
+
+## 38. 先证明阶段闭包，再拆任务；任务也要先设计和测试再实现
+
+标签：`planning`、`stage-gate`、`task-decomposition`、`verification`
+
+大型能力不能从一份总体研究直接跳到“第一个任务书”，也不能一边实现一边补齐后续阶段。先写清整体用户目标、全局约束和最终证据，再一次性列出所有候选阶段的目标、输入、输出、不做事项、依赖与完成门；对阶段间的缺口、重叠、顺序和风险做自审，直到能够用追踪矩阵证明“每个阶段完成门全部成立时，整体目标一定被覆盖”。随后才形成整体及逐阶段的方案设计和测试设计，并再次检查组合是否闭合。
+
+阶段总纲通过审核后，才一次性拆出全阶段的小任务依赖图，而不是只拆最近一个任务。任务地图也要检查是否完整覆盖阶段目标、是否存在孤立技术任务、是否能独立合并和回滚；之后每个任务分别完成用户结果、边界、实现方案、测试方案和完成门审核，最后才进入独立worktree、分支与PR实现。实现证据仍要在阶段结束和项目结束时回到阶段门与整体门复验，不能以“所有Task已完成”代替目标达成。
+
+检查：是否已经证明阶段集合对整体目标完备且无关键缺口；是否在阶段总纲未通过前就写了PR编号或开始编码；每个任务是否在实现前已有可审核的方案、测试和上层目标映射？

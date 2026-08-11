@@ -261,7 +261,7 @@ export function emitProviderTrace(
 export function emitPiNodeTrace(
   scope: ProviderEventScope | PlanningInputDto,
   eventName: "pi.node.started" | "pi.node.completed" | "pi.node.failed",
-  nodeKind: "planner" | "executor",
+  nodeKind: "planner" | "executor" | "note_capture",
   details: {
     durationMs?: number;
     errorCode?: string;

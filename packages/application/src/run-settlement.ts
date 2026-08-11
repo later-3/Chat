@@ -3,6 +3,7 @@ import type { ProductRun, ProductRunId, ProductSnapshot } from "@chat/contracts"
 import type { ApplicationDeps } from "./deps.js";
 import { notFound } from "./errors.js";
 import { emitRunEvent } from "./trace-helpers.js";
+import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
 
 /** 失败/结果未知的产品事实收敛；跨Runtime派发由Outbox用例负责。 */
 export function settleRunWithoutSuccess(
@@ -21,6 +22,18 @@ export function settleRunWithoutSuccess(
     run.status === "cancelled" ||
     run.status === "outcome_unknown"
   ) {
+    failRunningAttempts(draft, productRunId, now, errorCode);
+    synchronizePlanningWorkflowProjection(draft, productRunId, now);
+    return;
+  }
+  if (run.runKind === "note_capture") {
+    draft.entities.runs[productRunId] = {
+      ...run,
+      status,
+      failure: { code: errorCode, summary },
+      revision: run.revision + 1,
+      updatedAt: now,
+    };
     failRunningAttempts(draft, productRunId, now, errorCode);
     return;
   }
@@ -60,6 +73,7 @@ export function settleRunWithoutSuccess(
     }
   }
   failRunningAttempts(draft, productRunId, now, errorCode);
+  synchronizePlanningWorkflowProjection(draft, productRunId, now);
 }
 
 export function emitProductRunTransition(

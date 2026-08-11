@@ -29,7 +29,8 @@ const rules: Record<
   "packages/contracts": { external: ["zod", "@ag-ui/core"], internal: [] },
   "packages/domain": { external: [], internal: [] },
   "packages/application": {
-    external: [],
+    // Definition/RunSpec网络与Store边界使用strict Zod解析；Domain仍保持零运行时依赖。
+    external: ["zod"],
     internal: ["@chat/contracts", "@chat/domain"],
   },
   // realtime的Replay Assembler需要@chat/application的Hash唯一实现（computePlanSha256）
@@ -91,8 +92,18 @@ const rules: Record<
   },
   "apps/web": {
     // workbox-window 进入浏览器运行时bundle（PWA注册与更新提示），属于运行时依赖
-    external: ["react", "react-dom", "@tanstack/react-query", "workbox-window", "zod"],
+    external: [
+      "react",
+      "react-dom",
+      "@tanstack/react-query",
+      "@xyflow/react",
+      "react-markdown",
+      "workbox-window",
+      "zod",
+    ],
     internal: ["@chat/contracts"],
+    // 仅测试文件可直接对照Domain纯变换器；生产Web仍只能导入公开Contracts。
+    devInternal: ["@chat/domain"],
     forbidden: [/^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@ag-ui\//],
   },
   "apps/api": {

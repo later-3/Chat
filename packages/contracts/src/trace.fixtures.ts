@@ -765,6 +765,22 @@ export const validTraceFixtures: ReadonlyArray<Record<string, unknown>> = [
     ...run,
     planRef,
   },
+  // Note候选只保留Hash与对象身份上下文，不含标题、正文或标签。
+  {
+    ...base,
+    eventName: TRACE_EVENT_NAMES.noteCandidateReceived,
+    outcome: "unknown",
+    ...run,
+    candidateSha256: SHA256_B,
+  },
+  {
+    ...base,
+    eventName: TRACE_EVENT_NAMES.noteCandidateRejected,
+    outcome: "rejected",
+    ...run,
+    candidateSha256: SHA256_B,
+    error: { code: "note.candidate_rejected", type: "NoteCandidateError" },
+  },
   // Approval与Decision
   {
     ...base,
@@ -873,7 +889,7 @@ export const validTraceFixtures: ReadonlyArray<Record<string, unknown>> = [
     eventName: TRACE_EVENT_NAMES.piNodeStarted,
     outcome: "unknown",
     ...model,
-    nodeKind: "planner",
+    nodeKind: "note_capture",
   },
   {
     ...base,

@@ -25,6 +25,8 @@ import { type ApplicationDeps } from "./deps.js";
 import { notFound, revisionConflict } from "./errors.js";
 import { emitProductRunTransition, settleRunWithoutSuccess } from "./run-settlement.js";
 import { emitRunEvent, safeErrorType } from "./trace-helpers.js";
+import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
+import { requirePlanningRun } from "./product-run-kind.js";
 
 /**
  * 候选持久化、验证结果与Product Commit（任务书§11三道门）。
@@ -129,6 +131,7 @@ export async function persistExecutionCandidate(
         createdAt: now,
         updatedAt: now,
       };
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { executionCandidateId } };
     },
   });
@@ -164,19 +167,21 @@ export async function persistValidationResult(
       if (candidate === undefined || candidate.executionContractId !== input.executionContractId) {
         throw notFound("Execution Candidate不存在");
       }
-      const failures = validatePersistedCandidate(contract, candidate);
+      const failures = validatePersistedCandidate(contract, candidate, input.strictEvidence);
       draft.entities.validationResults[validationResultId] = {
         schemaVersion: "validation-result.v1",
         validationResultId,
         productRunId: input.productRunId,
         executionContractId: input.executionContractId,
         executionCandidateId: input.executionCandidateId,
+        strictEvidence: input.strictEvidence,
         outcome: failures.length === 0 ? "pass" : "fail",
         failures,
         revision: 1,
         createdAt: now,
         updatedAt: now,
       };
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { validationResultId } };
     },
   });
@@ -275,6 +280,7 @@ export async function commitExecutionResult(
       mutate: (draft) => {
         const run = draft.entities.runs[input.productRunId];
         if (run === undefined) throw notFound("Product Run不存在");
+        const planningRun = requirePlanningRun(run);
         const contract = draft.entities.executionContracts[input.executionContractId];
         if (contract === undefined || contract.productRunId !== input.productRunId) {
           throw notFound("Execution Contract不存在");
@@ -297,7 +303,11 @@ export async function commitExecutionResult(
         if (validation.outcome !== "pass") {
           throw revisionConflict("验证未通过的候选不能提交为正式结果");
         }
-        const currentFailures = validatePersistedCandidate(contract, candidate);
+        const currentFailures = validatePersistedCandidate(
+          contract,
+          candidate,
+          validation.strictEvidence ?? true,
+        );
         if (
           currentFailures.length !== 0 ||
           hashCanonical("validation-failures.v1", validation.failures) !==
@@ -307,19 +317,19 @@ export async function commitExecutionResult(
         }
         const renderedMarkdown = renderCandidateMarkdown(candidate);
 
-        let lifecycle: RunLifecycle = { status: run.status, phase: run.phase };
+        let lifecycle: RunLifecycle = { status: planningRun.status, phase: planningRun.phase };
         if (lifecycle.status === "running" && lifecycle.phase === "executing") {
           lifecycle = transitionRunLifecycle(lifecycle, { status: "running", phase: "validating" });
         }
         lifecycle = transitionRunLifecycle(lifecycle, { status: "succeeded", phase: "completed" });
 
-        const session = draft.entities.sessions[run.sessionId];
+        const session = draft.entities.sessions[planningRun.sessionId];
         if (session === undefined) throw notFound("Session不存在");
         const sessionSequence = session.lastMessageSequence + 1;
         const message: Message = {
           schemaVersion: "message.v1",
           messageId: finalMessageId,
-          sessionId: run.sessionId,
+          sessionId: planningRun.sessionId,
           sessionSequence,
           role: "assistant",
           content: { format: "markdown", text: renderedMarkdown },
@@ -329,28 +339,29 @@ export async function commitExecutionResult(
           updatedAt: now,
         };
         draft.entities.messages[finalMessageId] = message;
-        draft.entities.sessions[run.sessionId] = {
+        draft.entities.sessions[planningRun.sessionId] = {
           ...session,
           lastMessageSequence: sessionSequence,
           revision: session.revision + 1,
           updatedAt: now,
         };
         draft.entities.runs[input.productRunId] = {
-          ...run,
+          ...planningRun,
           status: lifecycle.status,
           phase: lifecycle.phase,
           finalMessageId,
-          revision: run.revision + 1,
+          revision: planningRun.revision + 1,
           updatedAt: now,
         };
         completeWorkflowAttempt(draft, input.productRunId, "success", now);
+        synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
         return {
           resultRefs: {
             finalMessageId,
             productRunId: input.productRunId,
             messageSha256: hashCanonical("message.v1", {
               messageId: finalMessageId,
-              sessionId: run.sessionId,
+              sessionId: planningRun.sessionId,
               sessionSequence,
               role: "assistant",
               content: message.content,
@@ -408,6 +419,7 @@ export async function commitExecutionResult(
 function validatePersistedCandidate(
   contract: ExecutionContract,
   candidate: ExecutionCandidate,
+  strictEvidence: boolean,
 ): { code: string; detail: string }[] {
   return validateExecutionCandidate(
     {
@@ -424,6 +436,7 @@ function validatePersistedCandidate(
       finalOutputSections: candidate.finalOutput.sections,
       completionCriteriaEvidence: candidate.completionCriteriaEvidence,
     },
+    { strictEvidence },
   );
 }
 
@@ -459,15 +472,17 @@ export async function commitRejectedRun(
     mutate: (draft) => {
       const run = draft.entities.runs[input.productRunId];
       if (run === undefined) throw notFound("Product Run不存在");
+      const planningRun = requirePlanningRun(run);
       const decision = draft.entities.decisions[input.decisionId];
       if (decision === undefined || decision.productRunId !== input.productRunId) {
         throw notFound("Decision不存在");
       }
       if (decision.kind !== "reject") throw revisionConflict("只有reject Decision能提交取消终态");
-      if (run.status !== "cancelled" || run.phase !== "rejected") {
+      if (planningRun.status !== "cancelled" || planningRun.phase !== "rejected") {
         throw revisionConflict("Product Run不在cancelled/rejected终态");
       }
       completeWorkflowAttempt(draft, input.productRunId, "success", now);
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { productRunId: input.productRunId } };
     },
   });
@@ -505,6 +520,7 @@ export async function expireApproval(
     mutate: (draft) => {
       const run = draft.entities.runs[input.productRunId];
       if (run === undefined) throw notFound("Product Run不存在");
+      const planningRun = requirePlanningRun(run);
       const approval = draft.entities.approvalRequests[input.approvalRequestId];
       if (approval === undefined || approval.productRunId !== input.productRunId) {
         throw notFound("Approval Request不存在");
@@ -516,6 +532,7 @@ export async function expireApproval(
         throw revisionConflict("审批尚未到期，拒绝提前过期");
       }
       if (approval.status === "decided") {
+        synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
         return { resultRefs: { status: "already_decided" } };
       }
 
@@ -543,20 +560,24 @@ export async function expireApproval(
         }
       }
 
-      if (run.status === "waiting_human" && run.phase === "plan_review") {
+      if (planningRun.status === "waiting_human" && planningRun.phase === "plan_review") {
         const expiredRun = {
-          ...run,
+          ...planningRun,
           status: "failed" as const,
           failure: { code: "approval.expired", summary: "计划确认已过期，请重新开始" },
-          revision: run.revision + 1,
+          revision: planningRun.revision + 1,
           updatedAt: now,
         };
         delete expiredRun.currentApprovalRequestId;
         draft.entities.runs[input.productRunId] = expiredRun;
-      } else if (run.status !== "failed" || run.failure?.code !== "approval.expired") {
+      } else if (
+        planningRun.status !== "failed" ||
+        planningRun.failure?.code !== "approval.expired"
+      ) {
         throw revisionConflict("当前Product Run状态不允许审批过期");
       }
       completeWorkflowAttempt(draft, input.productRunId, "failure", now, "approval.expired");
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { status: "expired" } };
     },
   });

@@ -140,9 +140,22 @@ pnpm debug:stop       # 停止本轮调试进程
 | Browser | `apps/web/src/real/use-real-chain.ts` | `run`、`plans`、`approval`三个`useQuery`的`queryFn` | 三个Query共享`activeRunId`，但分别读取Run、Plan集合和当前Approval |
 | Browser | `apps/web/src/api/client.ts` | `apiGetRun`、`apiGetPlans`、`apiGetCurrentApproval` | 每个响应再次通过公开Zod DTO校验 |
 | API | `apps/api/src/product-routes.ts` | 三个`GET /runs/:productRunId/*`路由 | Query只读取Product Store投影，不查询Workflow返回值 |
-| Browser | `apps/web/src/components/PlanPanel.tsx` | `PlanPanel`、`DecisionBox` | `run.allowedActions`决定按钮；界面不自行推导服务端状态机 |
+| Browser | `apps/web/src/workflow/use-workflow-run-view.ts` | `useWorkflowRunView`、`useWorkflowNodeDetail` | `productRunId/nodeRunId/include`、Query Key、AbortSignal；未来SSE只能失效Query |
+| Browser | `apps/web/src/components/workflow/WorkflowRunPanel.tsx` | `WorkflowRunPanel`、`chooseNode` | `WorkflowRunViewDto`、`historyCompleteness`、selection；节点从DTO读取，不从phase猜图 |
+| Browser | `apps/web/src/workflow/layout-workflow-view.ts` | `layoutWorkflowView`、`linearizedWorkflowView` | 临时LR坐标、loop_back、parentNodeRunId；坐标不得回写服务端 |
+| Browser | `apps/web/src/components/workflow/WorkflowNodeInspector.tsx` | `WorkflowNodeInspector` | 当前Tab只加载对应Manifest/Timeline/Evidence；viewHash不一致时失败关闭 |
+| Browser | `apps/web/src/components/PlanPanel.tsx` | `PlanReviewContent`、`DecisionBox` | review节点复用唯一表单；Run动作与Approval决定按钮，界面不推导状态机 |
 
 也可以在Chrome Network面板按`/api/runs/`过滤。当前活动Run每1.5秒受控轮询；终态后停止，并最后失效一次Message/Plan/Approval/Context Query。
+
+#### Run Viewer读取与恢复
+
+1. 在`api/client.ts`的`getWorkflowProjection`观察首次200的`ETag`；下一轮相同URL应发送`If-None-Match`，304只能返回此前已通过Schema的内存快照。
+2. 在`apps/api/src/product-routes.ts`的`GET /runs/:productRunId/workflow-view`观察公开DTO；响应不得含Workflow Run ID、Hook Token、pi Session、坐标或正文。
+3. 快速点击两个节点，在`useWorkflowNodeDetail`和Network面板确认旧请求收到Abort；最终Inspector只能显示最后一次选择。
+4. 断网时运行图保留最后一次成功投影并出现“离线·显示上次快照”；恢复网络后Query重新读取，不在前端合并第二套状态。
+5. `historyCompleteness=legacy_limited`是诚实的历史缺证据提示，不是`data_inconsistent`。只有`complete`投影的Run终态与Node Run状态矛盾时才停止渲染。
+6. 手机宽度默认走`linearizedWorkflowView`；桌面Canvas加载或React Flow故障不应阻止手机从顺序列表进入同一Inspector与审核表单。
 
 ### 4.3 修改、批准或拒绝到Workflow恢复
 

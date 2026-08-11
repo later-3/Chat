@@ -14,6 +14,11 @@ import {
   PROJECT_ADVANCEMENT_WORKFLOW_DEFINITION_VERSION,
   runtimeBuildEvidenceSchema,
 } from "@chat/contracts";
+import {
+  CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
+  LEGACY_PLANNING_RUNNER_BUNDLE_VERSION,
+  NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
+} from "../src/definition-kernel-executor-registry.js";
 
 /**
  * 预构建Workflow/Step bundle（任务书§17：真实Vercel Workflow运行时）。
@@ -132,6 +137,9 @@ class ChatWorkflowBuilder extends BaseBuilder {
       bundleManifestSha256,
       workflowDefinitionVersions: [
         WORKFLOW_DEFINITION_VERSION,
+        LEGACY_PLANNING_RUNNER_BUNDLE_VERSION,
+        CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
+        NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
         MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
         PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION,
         PROJECT_ADVANCEMENT_WORKFLOW_DEFINITION_VERSION,
