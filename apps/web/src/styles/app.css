@@ -845,6 +845,17 @@ a {
   background: var(--bg-primary);
 }
 
+/*
+ * 本次运行配置可以很长，但它只是发送前的辅助配置，不能把
+ * 消息流和输入框挤出会话可视区。超出高度时只在配置面板内滚动。
+ */
+.chat-pane .run-config-panel {
+  max-height: min(22dvh, 220px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 .run-config-heading,
 .workflow-config-node > header {
   display: flex;
@@ -3454,17 +3465,10 @@ a {
 
 /* ---------- S6 受约束 Definition Designer ---------- */
 
-.real-grid[data-work-surface="designer"] {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.real-grid[data-work-surface="designer"] > .chat-pane {
-  display: none;
-}
-
-.real-grid[data-work-surface="designer"] > .work-pane {
-  border-left: 0;
-}
+/*
+ * Designer 仍属于当前会话的工作面：桌面端继续保留左侧对话，
+ * 不得因切换工作面而隐藏持续对话。窄屏仍由“对话 / 工作”Tab负责切换。
+ */
 
 .designer-work-body {
   padding: 0;

@@ -23,6 +23,10 @@ async function openDesigner(page: Page, width: number): Promise<void> {
   await page.getByRole("tab", { name: "工作流设计器" }).click();
   await expect(page.getByRole("region", { name: "工作流 Definition 设计器" })).toBeVisible();
   await expect(page.getByRole("region", { name: "复制系统 Definition" })).toBeVisible();
+  if (width > 760) {
+    await expect(page.getByRole("region", { name: "持续对话" })).toBeVisible();
+    await expect(page.getByLabel("消息输入框")).toBeInViewport();
+  }
 }
 
 for (const viewport of VIEWPORTS) {
