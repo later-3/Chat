@@ -1,7 +1,7 @@
 ---
 status: candidate
 version: 0.1
-date: 2026-08-10
+date: 2026-08-11
 scope: Basecamp + Things + Linear + HEY Calendar + Microsoft Agent Feed + Heptabase
 ---
 
@@ -51,7 +51,8 @@ Things、HEY、Agent Feed、Heptabase 在 3 套中分别固定拥有 Today、Cal
 | Things | `codex/things-today-reference-qa` / `2b431c0942b7747e4c56210ada148e37684f109d` | `/Users/xulater/Code/Chat-things-today-reference-qa` | `docs/design/reference-implementations/things-today` | 合同与浏览器路径 `21/21`；console `0` |
 | Linear | `codex/linear-reference-v0.1` / `a74e088c0f7f1d04c653ae0a18c2487e0dff3879` | `/Users/xulater/Code/Chat-linear-reference-v01` | `docs/design/reference-implementations/linear` | 交互 `10/10` + Sites `4/4` = `14/14`；桌面 / 移动 console `0` |
 | HEY Calendar | `codex/hey-calendar-reference-v0.1` / `87596d433e120fa09c85484bd8591c1c6a4fdd30` | `/Users/xulater/Code/Chat-hey-calendar-reference-v01` | `docs/design/reference-implementations/hey-calendar` | 交互 `11/11` + Sites `4/4` = `15/15`；桌面 / 移动 console `0` |
-| Microsoft Agent Feed | `codex/microsoft-agent-feed-reference-v0.1` / `eed0aa0e4b9fec38fcf7e4eb6684a23e9897e8aa` | `/Users/xulater/Code/Chat-agent-feed-reference-v01` | `docs/design/reference-implementations/microsoft-agent-feed` | 交互 `15/15` + Sites `4/4` = `19/19`，build 通过；console `0`。当前 worktree HEAD `b65f061` 只含登记更新，原型目录相对 freeze 无 diff |
+| Microsoft Agent Feed v0.1 | `codex/microsoft-agent-feed-reference-v0.1` / `eed0aa0e4b9fec38fcf7e4eb6684a23e9897e8aa` | `/Users/xulater/Code/Chat-agent-feed-reference-v01` | `docs/design/reference-implementations/microsoft-agent-feed` | 原始视觉 freeze preserved；交互 `15/15` + Sites `4/4` = `19/19`，console `0`；复核缺口仍为 `2 P1 + 4 P2` |
+| Microsoft Agent Feed Human Loop v0.2 | `codex/microsoft-agent-feed-human-loop-v0.2` / `8d30cfe5651665407bf6e6dddc0339c075453704` | `/Users/xulater/Code/Chat-agent-feed-human-loop-v02` | `docs/design/reference-implementations/microsoft-agent-feed-human-loop-v0.2` | model/interaction `31/31` + Sites `4/4` = `35/35`；build、1440×900、391×844、console `0`、同屏视觉通过；`P0/P1/P2 = 0` |
 | Heptabase | `codex/reference-prototype-combinations` / `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb` | `/Users/xulater/.codex/worktrees/b469/Chat` | `docs/design/reference-implementations/heptabase` | 模型 / UI `15/15` + Sites `4/4` + IAB browser gates `9/9` = `28/28`；CSS `391×844` 无横溢、启用控件 `<44px = 0`、console `0`；frozen |
 
 对应审计入口：[`Basecamp`](./basecamp-interaction-audit-v0.1.md)、[`Things`](./things-today-interaction-audit-v0.1.md)、[`Linear`](./linear-interaction-audit-v0.1.md)、[`HEY Calendar`](./hey-calendar-interaction-audit-v0.1.md)、[`Microsoft Agent Feed`](./microsoft-agent-feed-interaction-audit-v0.1.md)、[`Heptabase`](./heptabase-interaction-audit-v0.1.md)。
@@ -64,7 +65,7 @@ Things、HEY、Agent Feed、Heptabase 在 3 套中分别固定拥有 Today、Cal
 | **Things** | **部分覆盖**：Area / Project / Today 管理多个个人 Project，状态跨列表与详情一致；没有团队 room、负责人 Update 或多人持续推进。 | **部分覆盖**：有 Area → Project → Heading → To-do、Checklist，以及 When / Move / Deadline / Complete 分责；没有 Stage、Milestone、Iteration、Scope、Evidence 或负责人 Update。 | **覆盖**：Today 是跨 Project 的独立注意力投影；This Evening、来源副标题、原位详情、完成 / 撤销与 Quick Find 都保持长期 Project 身份。 | **不负责**：没有 Agent、HITL、Decision、运行或异常处置。 | **不负责**：Notes / Checklist 不等于可收集、关联、验证和复用的 Resource / Evidence 系统。 | **覆盖**：冻结 fixture 直接包含工作、生活、娱乐与爱好；个人 Project、Anytime / Someday 和 Today 节奏可实际操作。 | **不负责**：是个人任务语法；没有共享参与者、权限或同意合同。 |
 | **Linear** | **部分覆盖**：3 个 Project 可切换并进入 Pulse / Updates；只有 Atlas 有完整 Issue 集，状态保存在前端内存，未证明完整 Portfolio 生命周期。 | **部分覆盖**：有 Overview、Issues、Updates、Milestones、Issue List / Peek / Detail 与负责人 Update；没有独立 Stage、Iteration、Scope、Action，Issue 不能代替所有工作层级。 | **不负责**：没有跨长期 Project 的个人 Today / 日程节奏。 | **部分覆盖**：单一 Agent 可起草 Project Update，人工编辑后 Publish；只有发布后才进入 Overview / History / Pulse。没有多 Agent、正式 Decision、Run 或异常监督。 | **部分覆盖**：有 Resources、来源、Observed changes 与 History；没有真实关联、空间编排、版本验证或复用闭环。 | **不负责**：冻结 fixture 是软件工程 Project，没有生活 / 爱好场景。 | **部分覆盖**：有 lead、assignee、author、commenter 身份；没有 permission、consent 或跨组织 participant 模型。 |
 | **HEY Calendar** | **不负责**：Calendar 与 calendar group 不是 Project 组合或推进生命周期。 | **不负责**：Event、Habit、Journal、Sometime 不等于 Project room、Stage / Work / Update。 | **部分覆盖**：Day / Week / Year 可连续切换，Event / Sometime / Habit / Journal 保持类型；但没有把 Today 项明确连回长期 Project，也不负责 Project 下一行动。 | **部分覆盖**：Email 来源先形成日历候选，冲突可见，用户可改时间、保存或取消；没有 Agent 身份、Decision 版本、Run 或异常恢复。 | **部分覆盖**：保留 Email / calendar source、搜索与 Journal；没有知识关系、版本、Evidence 验证或跨 Project 复用。 | **部分覆盖**：Personal / Family / Maybe、运动、旅行、Habit 与 Journal fixture 可体验；没有个人 Project 的阶段与持续推进。 | **部分覆盖**：有 calendar visibility、invitee 和来源；隐藏日历只是视图过滤，不是授权、consent 或 participant 合同。 |
-| **Microsoft Agent Feed** | **部分覆盖**：4 个 Project 可与 Agent 组合过滤并跨项目监督；没有 Project 目标、阶段或持续推进生命周期。 | **部分覆盖**：Update candidate、Decision / Run / Evidence 标签和 related record 可把人送回对象；没有 Room 或 Stage → Iteration → Work 层级闭环。 | **不负责**：风险队列不是个人 Today，不能占用日常节奏入口。 | **覆盖**：4 个 Agent 与 `assistance`、`data_entry`、`decision`、`outcome_unknown`、`review` 类型动作可筛选、预览与介入；当前 P1 仍阻止直接复用其 Undo 与移动布局。 | **部分覆盖**：有 Evidence list 与 related authoritative record；没有资料收集、关联编排与复用，Feed 也不拥有 Evidence。 | **部分覆盖**：有 `Personal Studio` dismissed fixture，只证明私人事项可被排除 / 降噪；没有个人 Project 的真实推进。 | **不负责**：只有 `participant-private` 与 permission warning 文案，没有可执行的 visibility、consent、participant 模型。 |
+| **Microsoft Agent Feed** | **部分覆盖**：v0.2 以 4 个角色 Agent、4 个 Project 跨项目监督；没有 Project 目标、阶段或持续推进生命周期。 | **部分覆盖**：Update candidate、Decision / Run / Evidence、related record 与 fact-before-resume 完整演示单条纵向闭环；没有 Room 或 Stage → Iteration → Work 层级。 | **不负责**：风险队列不是个人 Today，不能占用日常节奏入口。 | **覆盖**：Decision 修订、Assistance、candidate、`outcome_unknown` 与 Agent—Agent delegation 均有 typed human/system action、owner、waiting 和独立终态；v0.1 缺口不再阻断复用 v0.2。 | **部分覆盖**：可选择 Evidence、展示新 Evidence、delegated Evidence 与 related record；没有知识资料的长期编排，Feed 仍不拥有 Evidence。 | **部分覆盖**：保留只读 dismissed Personal Studio fixture，只证明私人候选可降噪；没有个人 Project 的真实推进。 | **部分覆盖**：delegation 明示 participant visibility 与 coordination-only；不虚构跨账户社交或生产 Agent 私聊。 |
 | **Heptabase** | **部分覆盖**：Work / Life tab group 与 3 个 Whiteboard 组织多个上下文；同一 Card 可跨 Board 复用，但没有 Project 生命周期、推进事务或负责人 Update。 | **部分覆盖**：Whiteboard、Section、Card placement、connection 与上下文侧栏可组成项目工作台；没有一等 Stage、Milestone、Iteration、Work、Scope、Action 或 Update。 | **部分覆盖**：官方 Daily Journal 与 Work / Life tab 分层提供日常记录语法，MCP 也可 append Journal；冻结核心路径没有执行 Today ↔ 长期 Project 的双向投影。 | **部分覆盖**：AI 上下文可显式选择，访问日志区分 `searched` / `viewed`，回答先是 candidate，保存后带 provenance；没有多 Agent、正式 Decision、Run Attempt 或异常监督。 | **覆盖**：Card / source card、PDF、highlight、双向链接、Search、Whiteboard placement / Section / connection 与同一 Card 多 Board 复用形成完整知识工作台；边界是这些仍不是 Chat 的正式 Evidence 验证与版本事实。 | **部分覆盖**：Life group 与“周末陶艺”Board 直接覆盖个人爱好资料编排；没有阶段、承诺、下一行动和健康 Update。 | **部分覆盖**：原型有 Board owner / edit / view / none，协作者只看显式共享 Board 上的 Card；AI 有 Space search 开关和访问日志，但官方目前不能在已开启的 Space search 内排除单张敏感 Card / Board，也没有 consent 历史或 Agent Participant。 |
 
 ## 5. Heptabase 当前官方补充及其影响
@@ -83,8 +84,8 @@ Things、HEY、Agent Feed、Heptabase 在 3 套中分别固定拥有 Today、Cal
 ### 6.1 六个参考共同没有解决的缺口
 
 1. **完整 Project 对象链缺口**：没有任何原型同时拥有 Stage Goal、Milestone、Iteration Commitment、Work、执行中发现的 Scope、具体 Action、负责人 Update、Gate 与 Decision。组合原型必须以 Chat 对象合同为骨架，不能用 Basecamp Workflow 列或 Linear Issue 状态补齐名词。
-2. **事实提交缺口**：没有任何参考完整证明 `candidate → 人工修订 → revision / hash 绑定 Decision → 耐久执行 → Product Commit → Evidence`。Microsoft Agent Feed 与 Linear 只提供部分交互语法，事实仍由 Chat Product Store / Application 合同拥有。
-3. **结果未知缺口**：只有 Agent Feed 呈现 `outcome_unknown` 类型；没有参考完整证明对账、补偿、权限与幂等。组合原型必须明确“对账”，不得提供普通 Retry。
+2. **事实提交缺口**：Microsoft Agent Feed v0.2 已用完整 fixture 状态机证明 `candidate → 人工修订 → revision / hash / scope / Evidence 绑定 Decision → Product Commit → Run resume → result` 的交互与非法转换；它仍不证明生产耐久执行，权威事实必须由 Chat Product Store / Application / Workflow 实现。
+3. **结果未知缺口**：Agent Feed v0.2 已证明 `outcome_unknown → provider query → Evidence → Product Commit / manual disposition` 的监督语法并拒绝普通 Retry；真实 provider 对账、幂等与结果未知仍属于生产 Application / Workflow 合同。
 4. **跨表面连续性缺口**：各原型分别证明 Project、Today、Agent Feed、Calendar、Workbench；没有一个证明同一 Work 在这四类投影间往返仍保持身份、revision、返回位置和未提交草稿。
 5. **未来参与边界缺口**：没有参考完整覆盖用户—用户、用户—他人 Agent、Agent—Agent 的 visibility / consent / participant。当前组合只展示显式可见范围、权限警告和 Participant 身份，不虚构社交关系、跨账户授权或代他人 Agent 同意。
 6. **正式 Evidence 缺口**：Heptabase 擅长知识资料，Basecamp / Linear 擅长附件与变化，Agent Feed 擅长 related record；但都不能直接背书 Chat 的 Evidence 验证、版本、贡献归属与完成门。
@@ -118,7 +119,7 @@ Things、HEY、Agent Feed、Heptabase 在 3 套中分别固定拥有 Today、Cal
 | Microsoft Agent Feed mobile controls | **P2** | 6 个核心移动控件只有 `30/32px` | 统一 `44px` 热区与可见焦点 |
 | Microsoft Agent Feed motion | **P2** | 无限旋转没有 `prefers-reduced-motion` 降级 | 去掉持续循环；reduced motion 下使用静态状态图标 |
 
-因此 Microsoft Agent Feed 现有的 `frozen / QA passed` 登记必须重新打开；`19/19` 自动化和 console `0` 不能抵消上述响应式与动作语义缺陷。
+因此 Microsoft Agent Feed v0.1 的 `frozen / QA passed` 仍只表示原始视觉 freeze，`19/19` 与 console `0` 不能抵消上述响应式和动作语义缺陷。Human Loop v0.2 已逐项收口这些阻断：`35/35`、1440×900 与 391×844 浏览器路径、console `0`、同屏视觉 QA，最终 `P0/P1/P2 = 0`。后续复用必须指向 v0.2 freeze；现有 literal combination 副本不会因登记更新而自动升级。
 
 已关闭、因此不再阻断当前复用的 Heptabase 问题：移动端曾丢失 Section / Card 关系、14 个触控目标 `<44px`；独立复核又发现 `6 P1 + 2 P2`（全状态 44px、键盘 Card 入口、移动 tab 名称、Share focus lifecycle、board-scoped permission、仓库 browser runner 和动态权限副标题）。最终已按 Section 顺序大纲、全端 44px、原生 Card 主按钮、具名 tabs、modal focus trap、`permissionsByBoardId` 和仓库内 IAB runner 收口；`391×844` 实测 `scrollWidth = clientWidth = 391`，Heptabase 最终 `P0/P1/P2 = 0`。HEY Calendar 当前也没有确认的 P0 / P1 / P2。
 

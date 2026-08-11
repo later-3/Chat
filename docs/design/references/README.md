@@ -4,7 +4,7 @@
 
 ## 参考原型登记册
 
-更新日期：2026-08-10。跨分支文件必须按表中 branch / commit 读取，或使用 `git show <commit>:<path>`；不能因为当前工作树没有某个目录就误判为未完成。
+更新日期：2026-08-11。跨分支文件必须按表中 branch / commit 读取，或使用 `git show <commit>:<path>`；不能因为当前工作树没有某个目录就误判为未完成。
 
 | 参考原型 | 事实场景主责 | 冻结状态与本轮 QA | 精确实现位置 | Take / Adapt / Refuse |
 |---|---|---|---|---|
@@ -12,10 +12,13 @@
 | Things | 长期 Project 与个人 Today 的正交投影；工作、生活、爱好共存 | frozen desktop scope；`21/21`、console `0`；组合复用阻断 `1 P1 + 1 P2` | branch `codex/things-today-reference-qa` · commit `2b431c0942b7747e4c56210ada148e37684f109d` · worktree `/Users/xulater/Code/Chat-things-today-reference-qa` · `docs/design/reference-implementations/things-today` | Take Today × parent context；Adapt 原生移动层级；Refuse 所有对象 checkbox 化 |
 | Linear | List / Peek / Detail 三档阅读与负责人 Update | frozen；`14/14`、desktop / mobile console `0`；复用阻断 `1 P2` | branch `codex/linear-reference-v0.1` · commit `a74e088c0f7f1d04c653ae0a18c2487e0dff3879` · worktree `/Users/xulater/Code/Chat-linear-reference-v01` · `docs/design/reference-implementations/linear` | Take 渐进披露；Adapt Update 与 observed change；Refuse Issue 充当全部对象 |
 | HEY Calendar | Day / Week / Year 连续时间尺度与 source → candidate → conflict → commit | frozen / QA passed；`15/15`、desktop / mobile console `0`；`P0/P1/P2 = 0` | branch `codex/hey-calendar-reference-v0.1` · commit `87596d433e120fa09c85484bd8591c1c6a4fdd30` · worktree `/Users/xulater/Code/Chat-hey-calendar-reference-v01` · `docs/design/reference-implementations/hey-calendar` | Take 时间尺度与候选；Adapt Today 约束；Refuse Calendar 拥有 Project |
-| Microsoft Agent Feed | 多 Agent 类型化监督、人工介入、异常与 related record | frozen implementation / QA reopened；`19/19`、console `0`；当前 `2 P1 + 4 P2`，不得直接复用移动 grid 或通用 Undo | branch `codex/microsoft-agent-feed-reference-v0.1` · commit `eed0aa0e4b9fec38fcf7e4eb6684a23e9897e8aa` · worktree `/Users/xulater/Code/Chat-agent-feed-reference-v01` · `docs/design/reference-implementations/microsoft-agent-feed` | Take 风险优先 typed supervision；Adapt 权威对象返回；Refuse Feed 成为事实源、盲目 Retry / Undo |
+| Microsoft Agent Feed v0.1 | 多 Agent 类型化监督、人工介入、异常与 related record 的原始视觉 freeze | frozen / preserved；`19/19`、console `0`；复核保留 `2 P1 + 4 P2`，只作为 v0.2 source，不直接复用移动 grid 或通用 Undo | branch `codex/microsoft-agent-feed-reference-v0.1` · commit `eed0aa0e4b9fec38fcf7e4eb6684a23e9897e8aa` · worktree `/Users/xulater/Code/Chat-agent-feed-reference-v01` · `docs/design/reference-implementations/microsoft-agent-feed` | Take 风险优先 typed supervision；Adapt 权威对象返回；Refuse Feed 成为事实源、盲目 Retry / Undo |
+| Microsoft Agent Feed Human Loop v0.2 | 人—Agent—Run、Agent—Agent 委派、Decision 修订、Assistance、candidate、outcome_unknown 对账 | frozen / QA passed；model/interaction `31/31` + Sites `4/4` = `35/35`；desktop / 391×844 / console / 同屏对照通过；`P0/P1/P2 = 0` | branch `codex/microsoft-agent-feed-human-loop-v0.2` · implementation freeze `8d30cfe5651665407bf6e6dddc0339c075453704` · worktree `/Users/xulater/Code/Chat-agent-feed-human-loop-v02` · `docs/design/reference-implementations/microsoft-agent-feed-human-loop-v0.2` · 本轮 `http://127.0.0.1:4184/` | Take Fluent/Power Apps 监督身份；Adapt typed fact-before-resume 与 delegation；Refuse 万能动作、通用聊天、coordination 伪装事实 |
 | Heptabase Workbench | canonical Card identity、Whiteboard placement、显式 AI context、资料编排复用 | frozen / QA passed；模型 / UI 合同 `15/15` + Sites `4/4` + IAB browser E2E gates `9/9` = `28/28`；desktop / mobile console `0`；`P0/P1/P2 = 0` | branch `codex/reference-prototype-combinations` · commit `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb` · worktree `/Users/xulater/.codex/worktrees/b469/Chat` · `docs/design/reference-implementations/heptabase` · 本轮运行 `http://127.0.0.1:4175/` | Take identity × placement、context panel；Adapt 移动 Section outline、board-scoped permission；Refuse Canvas 默认首页、位置自动成为领域关系 |
 
 完整 6 × 7 事实结论、已知 P1/P2 和引用证据统一见 [`reference-scenario-matrix-v0.1.md`](./reference-scenario-matrix-v0.1.md)。Heptabase 当前一手资料与 Take / Adapt / Refuse 见 [`heptabase-interaction-audit-v0.1.md`](./heptabase-interaction-audit-v0.1.md)。
+
+Microsoft Agent Feed v0.2 的稳定输入是 [`README`](../reference-implementations/microsoft-agent-feed-human-loop-v0.2/README.md)、[`current-audit`](../reference-implementations/microsoft-agent-feed-human-loop-v0.2/current-audit.md)、[`design-qa`](../reference-implementations/microsoft-agent-feed-human-loop-v0.2/design-qa.md) 与 freeze `8d30cfe5651665407bf6e6dddc0339c075453704`。现有 literal combination 的 `references/agent-feed` 仍是此前收口副本；只有后续组合接入任务才能按上述稳定合同替换，不能把本轮原型自动宣称为生产或已接入组合。
 
 ## 当前组合策略与可运行原型
 

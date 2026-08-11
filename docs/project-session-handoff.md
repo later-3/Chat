@@ -1,6 +1,6 @@
 # Chat 项目跨 Session 续接入口
 
-> 更新日期：2026-08-10
+> 更新日期：2026-08-11
 
 ## 1. 当前停点
 
@@ -116,3 +116,17 @@ main已完成真实规划—确认—执行、memmy查询/导入、Tencent Memor
 8. 对象合同：每套只有一个 Project index、Work、Update、Today、Calendar、Agent supervision、Knowledge owner；Action / Event、Feed / authoritative record、Card material / Evidence fact 不合并。`chat:theme` 只换视觉 token，不重放 route 或丢本地状态。
 9. 参考缺口：冻结 Agent Feed、Basecamp、Things、Linear 的原始 P1/P2 仍记录在矩阵第 6.3 节；组合副本已经用 canonical route、移动适配、动作裁剪和 44px 合同收口，下一任务只能复用当前组合路径，不能倒退复制冻结缺陷。
 10. 依赖任务 2：thread `019fe738-1b0d-70e3-932c-cdad3b702124`，worktree `/Users/xulater/.codex/worktrees/35f2/Chat`。稳定输入是本节、统一登记入口、矩阵第 11～14 节、组合 `README.md` / `design-qa.md` 与 literal freeze commit；冻结后由本任务直接发消息交接，不需要用户手工搬运。
+
+## 9. Microsoft Agent Feed Human Loop v0.2 冻结输入
+
+本节只登记独立参考原型，**没有修改生产 UI，也没有 push、deploy 或创建 PR**。
+
+1. branch：`codex/microsoft-agent-feed-human-loop-v0.2`；worktree：`/Users/xulater/Code/Chat-agent-feed-human-loop-v02`。
+2. implementation freeze：`8d30cfe5651665407bf6e6dddc0339c075453704`；实现：`docs/design/reference-implementations/microsoft-agent-feed-human-loop-v0.2`。
+3. 本地体验：`http://127.0.0.1:4184/`；核心 task ID 是 `task-decision-retry`、`task-assistance-source`、`task-data-project-update`、`task-outcome-unknown`、`task-delegation-evidence`。
+4. 完成门：model/interaction `31/31` + Sites `4/4` = `35/35`；Vite build `223 modules`；1440×900 / 391×844 `scrollWidth = clientWidth`；启用控件 `<44px = 0`；干净浏览器 console warn/error `0`；`P0/P1/P2 = 0`。
+5. Decision 路径固定为 `revision 7 → structured feedback → revision 8 + diff/new hash/new Evidence/response → Decision fact → Run resume → authoritative record`；stale revision 被拒绝。
+6. Assistance、candidate、outcome_unknown、delegation 分别拥有独立命令、waiting owner 与终态；没有万能 Approve / Complete / Undo，unknown side effect 没有普通 Retry。
+7. Agent—Agent handoff 展示 parent/delegated task、dependency、participants、visibility、current owner、returned Evidence；coordination 明确不是 Product fact，人可加方向、改派或停止。
+8. Microsoft Take：Fluent / Power Apps 三栏、typed feed、side/full/mobile hierarchy、Agent + Project 过滤、related record + Back。Chat Adapt：fact-before-resume、structured composer、typed reconciliation/delegation、权威 record。Refuse：Feed 事实源、通用聊天、coordination 冒充事实、硬编码 Insights、dismissed 可编辑、无限动效。
+9. 组合原型后续稳定输入：v0.2 `README.md`、`current-audit.md`、`design-qa.md`、`src/agentFeedModel.js`、核心 fixture ID 与上述 freeze。当前 `docs/design/combination-prototypes/references/agent-feed` 仍是此前收口副本；后续接入必须独立任务验证 canonical route、theme bridge 和组合状态连续性，不能直接复制内存 fixture 到生产。
