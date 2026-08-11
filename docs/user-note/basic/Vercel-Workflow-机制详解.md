@@ -2,6 +2,8 @@
 
 本文以 Chat 项目真实代码为唯一依据,解释 Vercel Workflow 本地运行时(`@workflow/world-local@4.2.4`)的内部机制。读者假定会一点 C++、刚开始接触 TypeScript / Node.js;涉及编译、链接的概念用 C++ 工具链(`.o`、`ld`、静态库 / 动态库)来类比,不依赖操作系统内核背景。
 
+> **术语速查**:文中高频术语(耐久、编排、checkpoint、重放、序列化、幂等、sourcemap 等)的解释和例子,见[架构概览.md §0 读前必懂](file:///Users/xulater/Code/Chat/docs/user-note/basic/架构概览.md),读到卡壳可先回那里对一下。
+
 一句话定位:Vercel Workflow 是一个**进程内的耐久编排运行时**,你可以把它理解成一个"能自动存档、崩溃后能读档继续、能在指定点暂停等人指令"的工作流执行器。它在 Chat 里以独立进程运行(HTTP 端口 `43112`,Inspector 端口 `43121`),用预编译的 bundle 执行 workflow 函数,在每个耐久 step 边界落盘 checkpoint,进程崩溃后重启可从最近 checkpoint 重放并恢复执行。
 
 ---
