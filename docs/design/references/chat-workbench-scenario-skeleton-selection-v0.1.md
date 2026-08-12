@@ -1,236 +1,444 @@
 ---
 status: candidate_selection
-version: 0.1
+version: 0.2
 date: 2026-08-12
-scope: Chat 工作台骨架与八场景选择菜单
-evidence: 9 项工作台研究 + 2 份总矩阵 + 视觉索引
+scope: Chat 工作台三轴选择菜单（A 轴 Workbench Surfaces + B 轴 Agent Constitution + C 轴 Agent Workflow Lifecycle）
+evidence: 9 项工作台研究 + 2 份总矩阵 + AnythingLLM Agent Constitution / Workflow 视觉证据 v0.1 + 视觉索引
+forbidden: 不修改生产 UI，不运行原型，不创建 HTML/React 原型，不部署，不推送，不创建 PR，不提交
 ---
 
-# Chat 工作台骨架与场景选择 v0.1
+# Chat 工作台三轴选择菜单 v0.2
 
-> 这是给用户直接选择的菜单，不是新的全景调研，也不是实现任务。证据标记：`F` = 仓库事实/已批准审计；`O` = 已检查画面；`I` = 跨证据归纳；`U` = 未证明。
+> 这是给用户直接选择的菜单，不是新的全景调研，也不是实现任务。
+>
+> **关键纠偏**：v0.1 的"八场景"（P/C/R/A/M/K/T/D）只覆盖 A 轴（Workbench Surfaces），不是完整场景集。v0.2 使用 A/B/C 三轴，B 轴覆盖 Agent Constitution，C 轴覆盖 Agent Workflow Lifecycle 12 阶段。
+>
+> 证据标记：`F` = Chat 已批准合同/冻结事实；`O` = 已检查画面；`D` = 官方文档/源码说明；`I` = 跨证据归纳；`U` = 没有证明。
 
 ## 1. 结论
 
-1. Chat 的产品对象、对话→Plan→人工决定→执行→正式结果闭环，以及最小运行投影底座已经存在（F）。Rich Artifact 审阅、执行工作空间、多 Agent 监督、Today / Calendar / Canvas 等表面尚未完整具备或未定型（F/U）。
-2. 不需要复制九套产品。工作台可以收敛为：**一个稳定六层骨架 + 三种默认页面中心 + 八个场景模块**（I）。
-3. 最关键的选择不是左栏还是右栏，而是：此刻由 Conversation、Project/Work，还是执行工作空间拥有页面中心；其他信息退到 Peek / Drawer / Sidecar（I）。
-4. 当前推荐顺序：**G2 对话入口 + 自适应工作台**、**G1 对象优先**、**G3 执行工作空间优先 / 多 Agent**。
-5. 本轮停在选择门，不制作原型，不修改生产 UI。
+1. Chat 的产品对象、对话→Plan→人工决定→执行→正式结果闭环，以及最小运行投影底座已经存在（F）。
+2. 不需要复制九套产品。工作台选择需要三条正交轴（I）：
+   - **A 轴：Workbench Surfaces** — 工作在哪里呈现？页面中心由谁拥有？
+   - **B 轴：Agent Constitution** — Agent 是谁？能力、记忆、权限边界？
+   - **C 轴：Agent Workflow Lifecycle** — 怎样从目标到结果？完整生命周期。
+3. 旧"八场景"只是 A 轴，不包含 Agent 身份/能力/记忆/权限（B 轴）和 Workflow 定义/执行/历史（C 轴）。
+4. 当前首选仍可保持"对话入口 + 自适应工作台"（A 轴），但必须补上 B 轴和 C 轴的选择。
+5. 没有任何一个项目完整覆盖三轴；组合结果属于 I。
+6. 本轮停在选择门 + HTML 视觉选型板范围确认，不制作原型，不修改生产 UI。
 
-## 2. 九项视觉索引
+## 2. 三轴概览
 
-![九组工作台机制视觉索引](./evidence/reference-workbench-mechanism-index-v0.1.png)
-
-| 位置 | 参考 | 主要证明的页面中心 | 证据边界 |
+| 轴 | 回答的问题 | 二级场景数 | 段落 |
 |---|---|---|---|
-| (0,0) | Basecamp | Project Room | Chat 冻结参考原型已验收画面 |
-| (0,1) | Things | Today 注意力投影 | Chat 冻结参考原型已验收画面 |
-| (0,2) | Linear | Work List + Peek | Chat 冻结参考原型已验收画面 |
-| (1,0) | HEY Calendar | Day / Week / Year 时间投影 | Chat 冻结参考原型已验收画面 |
-| (1,1) | Microsoft Agent Feed | 类型化监督 Feed | Chat 冻结参考原型已验收画面 |
-| (1,2) | Heptabase | Knowledge Canvas | Chat 冻结参考原型已验收画面 |
-| (2,0) | AnythingLLM / Open Computer | Conversation / 执行工作空间 | 官方/一手画面，非本地运行 |
-| (2,1) | Orca | Task / 执行工作空间 | 官方仓库逐帧，非本地运行 |
-| (2,2) | Plane | Project / Work object | 官方画面 + 部分开源源码，非本地完整运行 |
+| **A 轴：Workbench Surfaces** | 页面中心由谁拥有？ | 8 个表面 | — |
+| **B 轴：Agent Constitution** | Agent 是谁？能力/记忆/权限？ | 4 类 | — |
+| **C 轴：Agent Workflow Lifecycle** | 怎样从目标到结果？ | 12 阶段 | 4 段（C1–C4） |
 
-**静态图限制**（F）：这些画面只证明已看到的布局结构，不证明悬停、拖拽、键盘、屏幕阅读器、失败、等待、恢复、暂停或移动端等价路径。
+## 3. A 轴：Workbench Surfaces（工作在哪里呈现）
 
-## 3. 稳定骨架：六层职责
+去重后的可用表面。旧 v0.1 的"Context/Run"表述已拆分：Context 进入 B 轴，Run 进入 C 轴。
 
-所有 9 项都可以还原为 6 层职责（I）。具体位置可以变，但职责不能丢。
+### A1 — Project / Work / Task Board
 
-| 层 | 回答的问题 | Chat 必须固定 | 可选择的呈现 |
-|---|---|---|---|
-| 1. 作用域 / 导航 | 我现在在哪个范围？ | Portfolio、Project、Product Session 身份不混合 | Rail、侧栏、搜索、收藏、面包屑 |
-| 2. 主工作表面 | 我此刻主要在做什么？ | 同一时刻只有一个页面中心所有者 | Conversation、Project/Work、执行工作空间 |
-| 3. 上下文副表面 | 我还需要参考什么？ | 副表面不复制权威事实 | Peek、Drawer、Sidecar、Context sidebar |
-| 4. 对象身份 / 连续性 | 切走再回来还是同一件事吗？ | 保持 identity、revision、返回位置、未提交草稿 | 返回锚点、焦点恢复、布局恢复 |
-| 5. 人工检查点 | 我在哪里修改、确认或介入？ | 高影响动作走 Chat Decision、版本/Hash/权限/幂等校验 | 内嵌 Plan、Peek、Feed、Artifact 批注 |
-| 6. 结果 / Evidence 写回 | 最终结果保存在哪里？ | Product Store 和真实 Resource owner 仍是事实源 | Update、对象状态、Artifact、Evidence 绑定 |
-
-### 已具备、必须固定、仍待选择
-
-| 已具备的底座（F） | 必须固定的边界（F） | 仍待选择或补齐（I/U） |
-|---|---|---|
-| 响应式 PWA、对话与正式消息 | Product Store 拥有权威产品事实 | 默认页面中心和表面切换方式 |
-| 可修订/批准/拒绝的 Plan 与 Decision | 模型输出先是 candidate | Rich Artifact / File / Evidence 审阅 |
-| Workflow 耐久执行、最小 Run 投影 | 浏览器不直接调用 Workflow / pi | Open Computer / Orca 式执行工作空间 |
-| Memory 查询/导入、Trace / Replay | Feed / Today / Calendar / Canvas 只是投影 | 多 Agent 全局监督和任务内协作 |
-| Project、Stage、Milestone、Work、Action、Update 等事实 | Product Session、Product Run、Run Attempt、Workflow Run、pi Session 不合并 | Today、Calendar、Canvas 和交付表面 |
-
-> 术语：`Project Workspace` 是 Chat 当前的项目页面/投影；`执行工作空间`是 Open Computer / Orca 式桌面、浏览器、文件和 pane 现场。二者不是同一个对象。当前主线实际 Store 版本为 `chat-product-store.v10`，P6 Run Viewer / Designer 核心已落地；这些事实只证明底座，不代表工作台组合已经冻结。
-
-## 4. 三种默认页面中心（S）
-
-| 代码 | 方向 | 页面中心与布局 | 最适合 | 优势 | 代价 / 拒绝照搬 | 定位 |
-|---|---|---|---|---|---|---|
-| **S2** | 对话优先 | Conversation 默认居中；显式进入执行、文件或 Artifact 场景时让位，Chat 可变 sidecar，返回后恢复原对话位置 | 对话驱动的规划与协作 | 最符合 Chat“以对话为入口”；认知与改造成本最低 | 多 Project 扫描较弱；不让 Thread 吞并 Project，不自动抢屏 | **当前首选** |
-| **S1** | 对象优先 | Project / Work 默认居中；对话从对象内触发 | 多 Project、长期推进、高密度 Work | 长期目标、Work 和状态更容易扫读 | 纯对话多一步；不复制 Plane 五套事实或 Basecamp 六宫格 | 长期 Project 备选 |
-| **S3** | 执行工作空间优先 | 桌面 / 浏览器 / 文件 / pane 居中；Chat 成为 sidecar | 多 Agent、工具执行、Artifact 密集审阅 | 执行现场与多 Agent 状态最完整 | 依赖最多；不把 VNC 当通用模式，不把 terminal 当 Agent | 未来目标态 |
-
-## 5. 八个场景选择
-
-### P — Project / Work 管理
-
-| 代码 | 参考机制 | 页面与交互 | 适合 / Chat 适配 | 拒绝照搬 |
-|---|---|---|---|---|
-| P1 | Plane Work-object + 多布局 + Intake | Project / Work item 居中；同一对象集合切 List、Board 等布局；候选先进入 Intake | 结构化协作；映射 Chat Stage/Milestone/Work/Action。Iteration / Shaping 仍属后续独立范围 | 不复制多套事实；Intake Accept/Decline 不等于完整 HITL |
-| P2 | Basecamp Project Room | Account → Project → Tool → Item；稳定返回 | 多 Project 地点感与团队协作 | 不把六宫格当全局骨架，不让 Tool 拥有事实 |
-| P3 | Linear List / Peek / Detail | List 扫描 → Peek 临时理解 → Detail 深入 | 高频 Work 读写；Chat Work 不等于 Issue | 不把 Issue 当全部层级，不从完成比例推健康 |
-
-推荐：S1→P1；S2→P3；S3→P2。
-
-### C — Goal / Chat / Plan
-
-| 代码 | 参考机制 | 页面与交互 | 适合 / Chat 适配 | 拒绝照搬 |
-|---|---|---|---|---|
-| C1 | AnythingLLM Conversation-owned + Chat 当前 B2 | Thread / composer / Plan / Sources 都紧贴消息 | 问答、澄清、快速 Plan 审核 | 不把 token 数当进度，不让 Thread 吞并 Project |
-| C2 | Open Computer Workspace-owned | 从对话显式进入执行工作空间；Chat 退到 sidecar；可返回原对话 | 工具、文件、浏览器任务；负责“怎样进入/返回” | 不自动切换，不照搬固定 sidecar 宽度 |
-| C3 | C1 + C2 自适应 | 目标/澄清/Plan 时 Conversation；用户进入执行阶段后切换中心，完成/退出后恢复 | 最符合“对话为入口、工作表面按任务让位” | 切换必须显式且保留对象与草稿 |
-
-推荐：S1→C1；S2→C3；S3→C3。
-
-### R — Run / Workspace / Tool 现场
-
-| 代码 | 参考机制 | 页面与交互 | 适合 / Chat 适配 | 拒绝照搬 |
-|---|---|---|---|---|
-| R1 | Chat 当前最小 Run Viewer | 时间线 / 步骤作为副表面，显示工作进度但不拥有终态 | 当前 Planning-Execution 看护 | 不暴露 Runtime 私有身份，不把 Viewer 当控制台 |
-| R2 | Open Computer 桌面 + sidecar | 进入执行工作空间后显示桌面、浏览器、文件、日志；C2 负责进入/返回 | 通用电脑操作和浏览器任务 | 不把 VNC 当所有任务的主表面 |
-| R3 | Orca pane tree / task workspace | 执行工作空间拥有 terminal/editor/browser/diff 等 pane 的布局 | 多 Agent 编码、复杂 Artifact 现场 | 不把 terminal 当 Agent，不照搬 coding 复杂度 |
-
-推荐：S1/S2→R1；S3→R3。
-
-### A — Artifact / File / Evidence 审阅
-
-| 代码 | 参考机制 | 页面与交互 | 适合 / Chat 适配 | 拒绝照搬 |
-|---|---|---|---|---|
-| A1 | Orca Diff 行级批注 | 单个 Artifact 居中；行级批注 → 批量交回指定 Agent | 代码、文档和可锚定内容的精确审阅 | 不限制在 coding，不让 terminal 拥有审阅 |
-| A2 | Heptabase 单个 Artifact + context | 检查、评论、接受/拒绝；显式显示采用的 context / provenance | 研究材料和知识类 Artifact | 不把位置/颜色/连线当权威状态 |
-| A3 | Linear Peek / Detail | 列表扫读 → Peek 快速检查 → Detail 深入 | 轻量文件和 Evidence 检查；作为主表面的临时副表面 | 不把所有详情塞进抽屉 |
-
-推荐：S1/S2→A3；S3→A1。
-
-### M — 多 Agent / HITL / 异常监督
-
-| 代码 | 参考机制 | 页面与交互 | 适合 / Chat 适配 | 拒绝照搬 |
-|---|---|---|---|---|
-| M1 | Microsoft Agent Feed typed supervision | Needs Attention / Completed 分流；任务类型决定 Complete、Accept、Dismiss、Reconcile、Escalate | 全局回答“先看什么”；当前单 Agent 时可退化为内嵌检查点 | Feed 不是事实源；outcome_unknown 不普通 Retry |
-| M2 | Orca 任务内多 Agent | 执行工作空间内显示 Working / Needs You / Done / Blocked；人聚焦 Agent 或处理请求 | 回答“这个任务里谁在做、谁在等我” | 不让状态头像代替权限、风险或 Evidence |
-| M3 | M1 + M2 双层 | 全局 Feed 选择任务 → 进入任务内执行工作空间处理 | 完整多 Agent 监督 | 全局与任务内不能建立两套事实 |
-
-推荐：S1/S2→M1；S3→M3。
-
-### K — Knowledge / Canvas / Context
-
-| 代码 | 参考机制 | 页面与交互 | 适合 / Chat 适配 | 拒绝照搬 |
-|---|---|---|---|---|
-| K1 | Heptabase canonical object × placement | Card Library 是内容源；Whiteboard 只保存 placement；显式 context 和 searched/viewed 日志 | 长期资料收集、关联、空间编排 | 不把无限画布当首页，不让 placement 变产品事实 |
-| K2 | Plane Page / Work 内知识 | 文档与知识块贴在 Work object 中 | 结构化项目知识与文档型 Evidence | 不让 Page block 冒充独立知识对象 |
-| K3 | K1 + K2 混合 | 长期事实留 Chat 对象；Canvas 只保存 placement 与视图配置 | 最符合 Chat Product Store 边界 | 不把 Canvas 状态写成领域事实 |
-
-推荐：S1→K3；S2→K2；S3→K1。
-
-### T — Today / Todo / Calendar
-
-| 代码 | 参考机制 | 页面与交互 | 适合 / Chat 适配 | 拒绝照搬 |
-|---|---|---|---|---|
-| T1 | Things Today | 跨 Project Action 投影；原位详情；When / Move / Complete 分责 | 回答“今天做什么” | 不把所有对象 checkbox 化，不让 Today 拥有 Project |
-| T2 | HEY Day / Week / Year | 连续时间尺度；source → candidate → conflict → save/cancel | 回答“什么时候做”与时间冲突 | 不让 Calendar 拥有 Work / Project |
-| T3 | T1 + T2 双投影 | Today 选做什么，Calendar 决定何时做；Action 与 Event 保持不同身份 | 完整个人节奏与时间承诺 | 不共享同一完成或优先级语法 |
-
-推荐：三种骨架当前都先选 T1；T3 是完整目标。
-
-### D — 结果交付 / Update / 写回
-
-| 代码 | 参考机制 | 页面与交互 | 适合 / Chat 适配 | 拒绝照搬 |
-|---|---|---|---|---|
-| D1 | Linear 署名 Project Update | author + health + narrative + observed changes → history / Pulse | Project 健康、跨 Project 扫描；Chat 已有 Update 对象 | 不让 Activity / Agent 摘要冒充负责人 Update |
-| D2 | Plane 对象写回 | Work item 状态或可编辑 Page block 写回原 Project | 结构化工作交付 | 模型结果仍先是 candidate，不把 Accept 当完整 HITL |
-| D3 | Heptabase Artifact + provenance → Chat Evidence | 审阅后保存可继续编辑的 Artifact，并绑定来源与正式 Evidence | 研究与知识类交付 | 无来源 AI Card 不能自动成为正式事实 |
-
-推荐：S1/S2→D1；S3→D2。
-
-### 同源机制为什么不重复
-
-| 场景职责 | 只回答什么 | 不回答什么 |
-|---|---|---|
-| C | 怎样从对话进入/返回某个工作表面 | 进入后显示哪些运行状态 |
-| R | Agent/Tool 正在什么现场做什么 | 哪个 Agent 请求应先处理 |
-| M | 谁在做、谁在等待、什么风险先看 | 执行工作空间怎样布局 |
-| A | 当前 Artifact 怎样评论、修订、接受/拒绝 | 长期知识怎样编排 |
-| K | 长期对象、context 和 placement 怎样复用 | 本轮交付何时正式成立 |
-| D | 审阅后的结果怎样发布、写回和绑定 Evidence | 具体审阅动作本身 |
-
-一句话：Feed 决定“先看什么”，执行工作空间决定“在哪里做”，Artifact 决定“正在审什么”，交付决定“什么正式留下”。
-
-## 6. 三套推荐组合
-
-下表中的“中心”是该场景激活时的临时页面中心，不是多个中心同时共存。
-
-| 排名 | 组合 | 完整代码 | 补上的核心缺口 | 为什么适合 / 代价 |
-|---|---|---|---|---|
-| **1** | **G2 · 对话入口 + 自适应工作台** | `S2+P3+C3+R1+A3+M1+K2+T1+D1` | 保留自然语言入口，同时补 Work 扫描、显式表面切换、监督、Today 和交付 | 最符合 Chat 产品身份，改动和认知成本最低；Rich 执行现场仍需后续扩展 |
-| **2** | **G1 · 对象优先** | `S1+P1+C1+R1+A3+M1+K3+T1+D1` | 让长期 Project / Work 成为首屏中心 | 适合多 Project 密集工作；纯对话多一步，Plane 多布局适配量较大 |
-| **3** | **G3 · 执行工作空间优先 / 多 Agent** | `S3+P2+C3+R3+A1+M3+K1+T1+D2` | 最大程度补多 Agent、工具现场和 Artifact 锚定审阅 | 最有差异、依赖也最多；当前是未来目标态，不宜默认 |
-
-### 组合规则
-
-1. 同一时刻只有一个页面中心所有者；S1 / S2 / S3 决定默认中心（I）。
-2. Chat 以对话为入口，但是否长期占据中心是设计选择（I）。
-3. C3 的切换必须由用户动作或明确阶段动作触发；不能后台自动抢屏。
-4. Sidecar / Peek / Drawer 不拥有或复制权威事实。
-5. Feed / Today / Calendar / Canvas 是投影；离开后必须能从权威事实重建。
-6. 同一对象跨场景保持 identity、revision、返回位置、焦点和未提交草稿。
-7. 高影响动作仍受 Chat Decision、权限、版本/Hash 和幂等约束；`outcome_unknown` 不提供普通 Retry。
-
-## 7. 直接选择
-
-最简单的做法：先选一套 G，再只替换不喜欢的 1–2 项。
-
-```text
-G2
-```
-
-或：
-
-```text
-G2，M→M3，D→D2
-```
-
-也可以完全自定义：
-
-```text
-S2+P3+C3+R1+A3+M1+K2+T1+D1
-```
-
-| 类别 | 选项 |
+| 项 | 内容 |
 |---|---|
-| S 默认中心 | S1 对象 · S2 对话 · S3 执行工作空间 |
-| P Project/Work | P1 Plane · P2 Basecamp · P3 Linear |
-| C Chat/Plan | C1 Conversation · C2 Workspace · C3 自适应 |
-| R Run/Tool | R1 Chat Viewer · R2 Open Computer · R3 Orca |
-| A Artifact | A1 Diff 批注 · A2 单次 Artifact 审阅 · A3 Peek |
-| M 多 Agent | M1 Feed · M2 任务内 Agent · M3 双层 |
-| K Knowledge | K1 Heptabase · K2 Plane Page · K3 混合 |
-| T 时间 | T1 Today · T2 Calendar · T3 双投影 |
-| D 交付 | D1 Update · D2 对象写回 · D3 Artifact + Evidence |
+| **主参考** | Plane（Work-object-owned + 多布局 + Intake） |
+| **补充参考** | Basecamp（Room-owned）、Linear（Work-list-owned + Peek） |
+| **可直接借** | Plane 5 种布局切换 + 身份/筛选连续；Basecamp 四层作用域；Linear List/Peek/Detail 三档阅读 |
+| **必须适配** | Chat 的 Work 不等于 Issue；Intake Accept/Decline 不等于完整 HITL |
+| **拒绝照搬** | 不复制多套事实；不把六宫格当全局骨架 |
+| **证据** | F · audit + O · 冻结原型画面 |
 
-## 8. 证据与未知
+### A2 — Conversation / Goal / Plan
 
-- [九项工作台总报告](./nine-workbench-study-report-v0.1.md)
+| 项 | 内容 |
+|---|---|
+| **主参考** | AnythingLLM（Conversation-owned + Survey 澄清 + Sources） |
+| **补充参考** | Chat 当前 B2 闭环（F） |
+| **可直接借** | Conversation-owned 让状态与 Evidence 紧贴消息连续性；Survey 对话内结构化 Checkpoint |
+| **必须适配** | 不把 token 数当进度；不让 Thread 吞并 Project；Survey 回答需进入版本化 Plan |
+| **拒绝照搬** | 不把 Thinking UI 当 Chat 隐藏推理保存依据（F · AGENTS.md §6.6） |
+| **证据** | O · AnythingLLM 截图 `02`–`05`, `21` |
+
+### A3 — Execution Workspace / Browser / Files / Tools
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | Open Computer（Workspace-owned + sidecar） |
+| **补充参考** | Orca（pane tree + task workspace） |
+| **可直接借** | 桌面/浏览器/文件现场居中；Chat 退到 sidecar；异构 pane tree |
+| **必须适配** | 不自动切换；切换必须显式且保留对象与草稿；不把 VNC 当通用模式 |
+| **拒绝照搬** | 不照搬固定 sidecar 宽度；不把 terminal 当 Agent |
+| **证据** | O · v0.1 截图 06–07；O · Orca 截图 |
+
+### A4 — Artifact / Evidence Review
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | Orca（diff 行级批注 → 批量交回指定 Agent） |
+| **补充参考** | Heptabase（单个 Artifact + context/provenance） |
+| **可直接借** | 行级批注锚点持久化；显式 context 和 searched/viewed 日志 |
+| **必须适配** | 不限制在 coding；审阅结果先是 candidate，需正式 Evidence 验证 |
+| **拒绝照搬** | 不把位置/颜色/连线当权威状态 |
+| **证据** | F · Orca evidence card；F · Heptabase audit |
+
+### A5 — Multi-Agent Feed / HITL
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | MS Agent Feed（typed supervision + outcome_unknown） |
+| **补充参考** | Orca（任务内多 Agent 状态） |
+| **可直接借** | 风险优先类型化监督；任务类型决定动作；outcome_unknown 拒绝 Retry |
+| **必须适配** | Feed 不是事实源；正式事实回 Product Run/Decision/Evidence |
+| **拒绝照搬** | 不复制 Completed 大桶；不用普通 Retry 处理 outcome_unknown |
+| **证据** | F · Agent Feed audit v0.2 |
+
+### A6 — Knowledge / Canvas
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | Heptabase（canonical object × placement） |
+| **补充参考** | Plane Page / Work 内知识 |
+| **可直接借** | Card Library 是内容源；Whiteboard 只保存 placement；显式 AI context/provenance |
+| **必须适配** | 不把无限画布当首页；placement 不是产品事实 |
+| **拒绝照搬** | 不让无来源 AI Card 自动进入长期事实 |
+| **证据** | F · Heptabase audit |
+
+### A7 — Today / Todo / Calendar
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | Things（Today 投影）+ HEY Calendar（Day/Week/Year） |
+| **补充参考** | — |
+| **可直接借** | parent context × attention horizon 双轴；连续时间尺度 + 创建时同屏冲突判断 |
+| **必须适配** | 不把所有对象 checkbox 化；不让 Calendar 拥有 Work/Project |
+| **拒绝照搬** | 不共享同一完成或优先级语法 |
+| **证据** | F · Things audit + F · HEY audit |
+
+### A8 — Delivery / Update / Writeback
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | Linear（署名 Project Update） |
+| **补充参考** | Plane（对象写回）、Heptabase（Artifact + provenance → Evidence） |
+| **可直接借** | author + health + narrative + observed changes → history / Pulse |
+| **必须适配** | 模型结果先是 candidate；不让 Activity/Agent 摘要冒充负责人 Update |
+| **拒绝照搬** | 不让事件流冒充 Update |
+| **证据** | F · Linear audit |
+
+## 4. B 轴：Agent Constitution（Agent 是谁及边界）
+
+B 轴必须独立可选，不能再藏到 Knowledge/Context。4 类 Constitution 场景：
+
+### B1 — Identity / Role / Owner / Participant
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | MS Agent Feed（Agent 身份 + delegation + participant visibility） |
+| **补充参考** | AnythingLLM（Workspace Agent 模型选择） |
+| **可直接借** | Agent 身份类型化；delegation 明示 participant visibility；Agent 有独立终态 |
+| **必须适配** | Chat 需要完整耐久 Agent Profile（身份 + 职责 + 能力 + 记忆 + 权限 + 当前工作 + 贡献历史），当前无参考 |
+| **拒绝照搬** | 不声称完整 Agent Profile 已有参考（U） |
+| **证据** | F · Agent Feed audit；O · AnythingLLM `23` |
+
+### B2 — Capability / Skill / Tool / MCP / Model
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | AnythingLLM（Skills/MCP/Flows 同页管理 + Intelligent Selection） |
+| **补充参考** | Plane（3 种 AI 作用域） |
+| **可直接借** | Max Tool Calls / Intelligent Skill Selection / Max Tools 显式控制；MCP server 状态 + tools + startup command |
+| **必须适配** | Chat 需要自己的工具授权和副作用对账合同 |
+| **拒绝照搬** | 不证明真实工具授权和调用成功（U） |
+| **证据** | O · AnythingLLM `10`, `04` |
+
+### B3 — Memory / Context / Source / Provenance
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | AnythingLLM（Memory sidebar Workspace/Global scope）+ Heptabase（context chips + searched/viewed） |
+| **补充参考** | MS Agent Feed（related record + Evidence） |
+| **可直接借** | Memory Workspace/Global scope 分开、记忆卡可见可管理；显式 context chips；访问日志区分 searched/viewed |
+| **必须适配** | 自动提取和模型注入细节需 Chat 自建（D/U）；回答先是 candidate |
+| **拒绝照搬** | 不假设默认搜索整个 Space 的合理性；不虚构 provenance |
+| **证据** | O · AnythingLLM `02`；F · Heptabase audit |
+
+### B4 — Permission / Visibility / Consent / Write scope
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | MS Agent Feed（participant visibility + delegation 合同） |
+| **补充参考** | Heptabase（Board permission + Space search 开关） |
+| **可直接借** | delegation 明示 coordination-only；Board owner/edit/view/none；visible to / required permission 展示 |
+| **必须适配** | Chat 需要自己的权限、版本、hash 和幂等校验合同 |
+| **拒绝照搬** | 不虚构跨账户社交或代他人 Agent 同意 |
+| **证据** | F · Agent Feed audit；F · Heptabase audit |
+
+## 5. C 轴：Agent Workflow Lifecycle（怎样从目标到结果）
+
+12 阶段聚合为 4 段以控制认知负担。
+
+### C1 段：Goal → Plan（C1–C2）
+
+#### C1 — Goal input / Clarify / assumptions / scope
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | AnythingLLM（Agent Survey 对话内结构化澄清） |
+| **补充参考** | MS Agent Feed（candidate 入口） |
+| **可直接借** | 内嵌多题卡片、进度、选项、Other、Skip；不跳设置页面 |
+| **必须适配** | Survey 回答需进入版本化 Plan 假设 |
+| **拒绝照搬** | 不证明回答进入版本化 Plan（U） |
+| **证据** | O · AnythingLLM `21` |
+
+#### C2 — Editable Plan / confirmation
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | MS Agent Feed（candidate → 人工修订 → revision/hash/scope 绑定 Decision） |
+| **补充参考** | — |
+| **可直接借** | 可编辑 items + Approve/Deny；revision/hash 绑定 |
+| **必须适配** | Chat 的 Plan 需版本化确认，不能只停留在 candidate |
+| **拒绝照搬** | 不虚构生产耐久执行 |
+| **证据** | F · Agent Feed audit v0.2 |
+
+### C2 段：Define → Publish（C3–C5）
+
+#### C3 — Flow definition / nodes / blocks / variables / tools
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | AnythingLLM（Flow Builder） |
+| **补充参考** | Orca（worktree + pane tree 定义） |
+| **可直接借** | Flow name/description/variables/Flow Start/Complete/Add Block/Save |
+| **必须适配** | Chat 需要 version/publish/approval |
+| **拒绝照搬** | 不证明 Flow 版本历史或发布审批（U） |
+| **证据** | O · AnythingLLM `05`, `06`, `07`, `08` |
+
+#### C4 — Configuration / version / publish
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | AnythingLLM（Agent Configuration 模型选择） |
+| **补充参考** | — |
+| **可直接借** | Workspace Agent LLM provider/model 选择 |
+| **必须适配** | Chat 需要完整 version/publish 合同 |
+| **拒绝照搬** | 不证明 version/publish（U） |
+| **证据** | O · AnythingLLM `23` |
+
+#### C5 — Trigger: manual / event / schedule / object change
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | AnythingLLM（Scheduled Jobs） |
+| **补充参考** | MS Agent Feed（事件驱动监督） |
+| **可直接借** | Name + Prompt + Schedule（cron/interval）+ allowed Tools；Run now 手动触发 |
+| **必须适配** | Chat 需要事件触发和对象变化触发 |
+| **拒绝照搬** | 不证明 event/object change 触发（U） |
+| **证据** | O · AnythingLLM `18`, `19` |
+
+### C3 段：Run → Control（C6–C9）
+
+#### C6 — Run / task / subtask / tool progress
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | AnythingLLM（Run detail 同屏 Thinking/Tool Calls/Files/Response/Metrics）+ MS Agent Feed（typed Run 投影） |
+| **补充参考** | Orca（Agent 状态嵌任务行） |
+| **可直接借** | Run detail 分节展示；Tool Calls 展开工具/参数/时间/结果 |
+| **必须适配** | Thinking UI 不能成为 Chat 保存隐藏推理的依据（F · AGENTS.md §6.6） |
+| **拒绝照搬** | 不把 Thinking 当 Chat Trace 保存内容 |
+| **证据** | O · AnythingLLM `14`, `15`；F · Agent Feed audit |
+
+#### C7 — Checkpoint / ask-user / HITL / edit / accept / reject
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | MS Agent Feed（typed human/system action）+ AnythingLLM（Survey） |
+| **补充参考** | Orca（diff 行级批注 → 批量交回） |
+| **可直接借** | Complete / Accept+complete / Dismiss / Reconcile / Escalate；Survey 对话内澄清 |
+| **必须适配** | 高影响动作走 Chat Decision、版本/hash/权限/幂等校验 |
+| **拒绝照搬** | 不用普通 Retry 处理 outcome_unknown |
+| **证据** | F · Agent Feed audit；O · AnythingLLM `21` |
+
+#### C8 — Pause / resume / cancel / abort
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | **当前无完整参考** |
+| **补充参考** | AnythingLLM（Stop ≠ Pause/Resume）；MS Agent Feed（waiting 状态）；Orca（Blocked） |
+| **可直接借** | Stop/Abort 作为终止入口 |
+| **必须适配** | Chat 需要真正 Pause/Resume，当前所有参考都未证明 |
+| **拒绝照搬** | **Stop 不等于 Pause/Resume**（O · AnythingLLM `12`） |
+| **证据** | O · AnythingLLM `12`（Stop only）；U · Pause/resume |
+
+#### C9 — Failure / timeout / retry / outcome_unknown / reconcile
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | MS Agent Feed（outcome_unknown → provider query → Evidence → Product Commit / manual disposition） |
+| **补充参考** | AnythingLLM（Run History error status） |
+| **可直接借** | outcome_unknown 拒绝普通 Retry；typed Reconcile / Escalate |
+| **必须适配** | Chat 需要自己的幂等、结果未知、查询对账和人工处置语义 |
+| **拒绝照搬** | 不把普通异常重试用于未知副作用 |
+| **证据** | F · Agent Feed audit v0.2；O · AnythingLLM `11` |
+
+### C4 段：Artifact → History（C10–C12）
+
+#### C10 — Artifact / file / diff / Evidence review
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | Orca（diff 行级批注 → 批量交回指定 Agent） |
+| **补充参考** | AnythingLLM（Run Files 区）；Heptabase（context/provenance） |
+| **可直接借** | 行级批注锚点持久化；批量选择接收 Agent |
+| **必须适配** | AnythingLLM Files 只有结果展示，不能替代 Orca 式锚定评论与 Chat 正式 Evidence 完成门 |
+| **拒绝照搬** | 不把 terminal 当 Agent；不限制在 coding |
+| **证据** | F · Orca evidence card；O · AnythingLLM `16` |
+
+#### C11 — Delivery / writeback / notification
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | Linear（署名 Project Update）+ AnythingLLM（Continue in Thread） |
+| **补充参考** | Plane（对象写回） |
+| **可直接借** | author + health + narrative → history / Pulse；Continue in Thread 回到对话 |
+| **必须适配** | 正式 Delivery 需 Chat Decision + Evidence 绑定 |
+| **拒绝照搬** | 不让 Agent 摘要冒充负责人 Update |
+| **证据** | F · Linear audit；O · AnythingLLM `14` |
+
+#### C12 — Run history / Continue in Thread / reuse / next schedule
+
+| 项 | 内容 |
+|---|---|
+| **主参考** | AnythingLLM（Run History + Continue in Thread） |
+| **补充参考** | Linear（Updates history / Pulse） |
+| **可直接借** | Run History 列出 status/started/duration/error；Continue in Thread 明确返回对话 |
+| **必须适配** | Chat 需要 Run 复用和 next schedule 的产品合同 |
+| **拒绝照搬** | — |
+| **证据** | O · AnythingLLM `11`, `14` |
+
+## 6. 推荐组合
+
+推荐组合必须同时说明三个轴的选择，不再只给 `S+P+C+R...` 一条代码。
+
+### 首选：对话入口 + 自适应工作台（升级版的 G2）
+
+| 轴 | 选择 | 具体机制 |
+|---|---|---|
+| **A 轴默认主表面** | A2 Conversation-owned（默认）+ A3 执行工作空间（显式进入时让位） | AnythingLLM Conversation + Open Computer / Orca 式执行现场 |
+| **B 轴 Agent Constitution** | B1 AnythingLLM + Agent Feed（身份/模型选择）；B2 AnythingLLM（Skills/MCP/Flows 同页）；B3 AnythingLLM + Heptabase（Memory scope + context/provenance）；B4 Agent Feed（participant visibility + delegation） | 组合 AnythingLLM 配置面 + Agent Feed 监督合同 + Heptabase provenance |
+| **C 轴 Workflow Lifecycle** | C1 AnythingLLM Survey；C2 Agent Feed Plan/Decision；C3 AnythingLLM Flow Builder；C4 AnythingLLM Agent Config；C5 AnythingLLM Scheduled Jobs；C6 AnythingLLM Run detail + Agent Feed；C7 Agent Feed typed actions + AnythingLLM Survey；C8 Chat 自建（无参考）；C9 Agent Feed outcome_unknown；C10 Orca diff 批注；C11 Linear Update + AnythingLLM Continue in Thread；C12 AnythingLLM Run History | 主要借 AnythingLLM Definition/Run + Agent Feed HITL + Orca Artifact review |
+
+**补上的核心缺口**（相对 v0.1 G2）：
+- B 轴：Agent Configuration（AnythingLLM `23`）、Memory scope（`02`）、Skills/MCP（`10`）
+- C 轴：Flow Definition（`05`）、Scheduled Trigger/Run（`18`, `14`）、Survey 澄清（`21`）、Continue in Thread（`14`）
+- A4 Artifact review：Orca 行级批注（v0.1 只选 A3 Peek，升级为 Orca 主参考）
+- A6 Knowledge/Canvas：Heptabase provenance 组合职责
+
+**代价**：
+- B4 Permission/Write scope 仍主要由 Chat 自建
+- C8 Pause/Resume 无参考，必须 Chat 自建
+- 完整耐久 Agent Profile 无参考，必须 Chat 自建
+
+### 备选 1：对象优先
+
+| 轴 | 选择 |
+|---|---|
+| **A 轴** | A1 Project/Work（Plane 主参考）+ A8 Delivery（Linear Update） |
+| **B 轴** | 同首选，但 B1 以 Agent Feed 为主（Project 内的 Agent 身份） |
+| **C 轴** | 同首选，但 C6–C9 以 Agent Feed 为主（Project 内的 Run 监督） |
+
+### 备选 2：执行工作空间优先 / 多 Agent
+
+| 轴 | 选择 |
+|---|---|
+| **A 轴** | A3 Execution Workspace（Orca pane tree 主参考）+ A5 Multi-Agent Feed |
+| **B 轴** | B1–B4 以 Agent Feed + Orca 为主 |
+| **C 轴** | C6–C10 以 Orca + Agent Feed 为主；C3–C5 仍需 AnythingLLM Flow/Scheduled |
+
+## 7. 组合规则
+
+1. **同一时刻只有一个页面中心所有者**（A 轴）（I）。
+2. **B 轴 4 类必须全部选择**，不能跳过。任何一类选"无"等于放弃该维度的设计。
+3. **C 轴 12 阶段必须全部覆盖**，可以聚合为 4 段选择，但不能跳过。
+4. **Agent Workflow / Run / Business Workflow 分离**：业务 Work item 状态流不得冒充 Agent Workflow（F）。
+5. C 轴的切换必须由用户动作或明确阶段动作触发；不能后台自动抢屏。
+6. Sidecar / Peek / Drawer 不拥有或复制权威事实。
+7. Feed / Today / Calendar / Canvas 是投影；离开后必须能从权威事实重建。
+8. 同一对象跨场景保持 identity、revision、返回位置、焦点和未提交草稿。
+9. 高影响动作仍受 Chat Decision、权限、版本/Hash 和幂等约束；`outcome_unknown` 不提供普通 Retry。
+10. **Thinking UI 不保存为 Chat 隐藏推理**（F · AGENTS.md §6.6）。
+11. **Stop ≠ Pause/Resume**（O）。
+
+## 8. 直接选择
+
+### 最简选择
+
+```text
+首选（对话入口 + 自适应工作台，升级版 G2）
+```
+
+### 自定义
+
+对每个轴逐项选择：
+
+| 轴 | 选项 |
+|---|---|
+| A 默认中心 | A1 Project · A2 Conversation · A3 Execution · A4 Artifact · A5 Feed · A6 Knowledge · A7 Today · A8 Delivery |
+| B1 Identity | Agent Feed · AnythingLLM · Chat 自建 |
+| B2 Capability | AnythingLLM · Plane · Chat 自建 |
+| B3 Memory | AnythingLLM + Heptabase · Agent Feed · Chat 自建 |
+| B4 Permission | Agent Feed · Heptabase · Chat 自建 |
+| C1 Goal/Clarify | AnythingLLM Survey · Agent Feed · Chat 自建 |
+| C2 Plan/Confirm | Agent Feed · Chat 自建 |
+| C3 Flow Define | AnythingLLM Flow Builder · Chat 自建 |
+| C4 Config/Version | AnythingLLM Agent Config · Chat 自建 |
+| C5 Trigger | AnythingLLM Scheduled · Chat 自建 |
+| C6 Run/Progress | AnythingLLM Run detail + Agent Feed · Orca |
+| C7 Checkpoint/HITL | Agent Feed + AnythingLLM Survey · Orca |
+| C8 Pause/Resume | Chat 自建（无参考） |
+| C9 Failure/Reconcile | Agent Feed outcome_unknown · AnythingLLM |
+| C10 Artifact Review | Orca diff · Heptabase · AnythingLLM Files |
+| C11 Delivery/Writeback | Linear Update + AnythingLLM Continue · Plane |
+| C12 History/Continue | AnythingLLM Run History · Linear Pulse |
+
+## 9. 证据与未知
+
+### 证据来源
+
+- [九项工作台总报告 v0.2](./nine-workbench-study-report-v0.1.md)
 - [工作台机制矩阵](./reference-workbench-mechanism-matrix-v0.1.md)
 - [场景矩阵与冻结登记](./reference-scenario-matrix-v0.1.md)
+- [AnythingLLM 完整参考研究 v0.2](./anythingllm-workbench-study-v0.1.md)
+- [AnythingLLM Agent Constitution / Workflow 视觉证据 v0.1](./evidence/anythingllm-agent-constitution-workflow-v0.1/README.md)
 - [九项视觉索引](./evidence/reference-workbench-mechanism-index-v0.1.png)
 
-共同未知（U）：
+### 共同未知（U）
 
-1. 没有任何一个参考完整覆盖 goal → clarify → editable Plan → versioned confirm → Run/tool → pause/resume/cancel → failure/outcome_unknown → Artifact review → formal Evidence → writeback。
-2. 没有参考证明同一 Work 在 Project Room / Today / Agent Feed / 执行工作空间之间往返时，identity、revision、返回位置和草稿全部保持。
-3. 正式 Evidence 验证、Contribution 归属、participant / visibility、移动端等价路径仍需由 Chat 自己的产品合同和后续验证补足。
+1. **完整耐久 Agent Profile**：把身份、职责、能力、记忆、权限、当前工作和贡献历史统一在一起。没有任何参考（U）。
+2. **Plan 版本确认**：editable Plan → versioned confirm 的完整路径只有 Agent Feed 部分覆盖（F），其他项目不覆盖。
+3. **真正 Pause / Resume**：所有参考都只证明 Stop/Abort，不证明暂停后可恢复（U）。
+4. **Definition version / publish**：Flow Builder 没有证明版本历史或发布审批（U）。
+5. **跨表面连续性**：同一 Work 在 Project Room / Today / Agent Feed / Workbench 间往返仍保持身份、revision、返回位置和未提交草稿（U）。
+6. **正式 Evidence / Contribution**：Evidence 验证、版本、贡献归属与完成门（U）。
+7. **移动端等价交互**（U）。
 
-## 9. 当前停点
+## 10. HTML 视觉选型板范围确认
 
-**候选与证据已经准备好，请用户选择工作台骨架与场景组合。**
+下一步将制作 HTML 视觉选型板，用于辅助用户直观选择。范围确认：
 
-用户明确选择前不制作原型；选择后是否进入原型或实现，由用户另行授权。
+**包含**：
+- A 轴 8 个表面的代表截图和布局对照
+- B 轴 4 类 Constitution 的代表截图（AnythingLLM Agent Config / Skills / Memory / Agent Feed delegation）
+- C 轴 4 段的代表截图（Survey → Flow Builder → Run detail → Continue in Thread）
+- 三轴组合的查表界面
+
+**不包含**：
+- 不制作可交互原型
+- 不修改生产 UI
+- 不部署或推送
+- 不创建 PR 或提交
+
+**当前停点**：候选与证据已经准备好，请用户选择工作台三轴组合。用户明确选择前不制作 HTML 视觉选型板；选择后是否进入原型或实现，由用户另行授权。
