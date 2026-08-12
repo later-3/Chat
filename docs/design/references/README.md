@@ -80,6 +80,9 @@ Microsoft Agent Feed v0.2 的稳定输入是 [`README`](../reference-implementat
 
 ## 当前文件
 
+- [`nine-workbench-study-report-v0.1.md`](./nine-workbench-study-report-v0.1.md)：candidate；九项工作台的五类场景、Agent 参与谱系、六层通用骨架、差异机制与场景查表。本报告不选择新 frozen reference，也不授权制作原型。
+- [`reference-workbench-mechanism-matrix-v0.1.md`](./reference-workbench-mechanism-matrix-v0.1.md)：candidate；九项工作台的页面中心所有者、连续性、人工介入与结果写回机制矩阵。
+- 九份工作台单项研究卡：[`Basecamp`](./basecamp-workbench-study-v0.1.md)、[`Things`](./things-workbench-study-v0.1.md)、[`Linear`](./linear-workbench-study-v0.1.md)、[`HEY Calendar`](./hey-calendar-workbench-study-v0.1.md)、[`Microsoft Agent Feed`](./agent-feed-workbench-study-v0.1.md)、[`Heptabase`](./heptabase-workbench-study-v0.1.md)、[`AnythingLLM / Open Computer`](./anythingllm-workbench-study-v0.1.md)、[`Orca`](./orca-workbench-study-v0.1.md)、[`Plane`](./plane-workbench-study-v0.1.md)。
 - [`taste-contract-v0.1.md`](./taste-contract-v0.1.md)：候选的品味合同、反 AI 味硬规则与验收量表。
 - [`reference-board-v0.1.md`](./reference-board-v0.1.md)：18 个参考/反参考、Take/Refuse 判断与 5 个设计锚点。
 - [`reference-interaction-audit-method-v0.1.md`](./reference-interaction-audit-method-v0.1.md)：统一的对象、点击、状态路径、恢复、证据与 Chat 转译模板。
