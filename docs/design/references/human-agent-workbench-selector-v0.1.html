@@ -18,6 +18,8 @@
     --warn: #8a6d1f;
   }
   * { box-sizing: border-box; }
+  /* hidden 属性必须始终生效，不允许被其它 display 规则（如 .chosen-badge）覆盖 */
+  [hidden] { display: none !important; }
   html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0;
