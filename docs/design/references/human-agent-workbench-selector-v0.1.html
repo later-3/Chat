@@ -284,7 +284,8 @@
     .phase-evidence { grid-template-columns: 1fr; }
     .phase-evidence .shot { height: 220px; }
     .axis-tabs { padding: 6px 10px; }
-    .axis-tabs [role="tab"] { font-size: 14px; padding: 8px 4px; }
+    .axis-tabs .inner { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .axis-tabs [role="tab"] { font-size: 14px; padding: 8px 6px; min-height: 44px; }
     main { padding: 0 12px 48px; }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -982,6 +983,14 @@
       if (panel) panel.hidden = !selected;
     });
     if (moveFocus) tab.focus();
+    /* panel 显隐完成后，把新 panel 开头滚到 sticky tabs 下方（即时滚动，reduced-motion 安全） */
+    var panel = document.getElementById(tab.getAttribute("aria-controls"));
+    if (panel) {
+      var tabsBar = document.querySelector(".axis-tabs");
+      var barH = tabsBar ? tabsBar.getBoundingClientRect().height : 0;
+      var top = panel.getBoundingClientRect().top + window.pageYOffset - barH - 8;
+      window.scrollTo({ top: Math.max(top, 0), behavior: "auto" });
+    }
   }
   tabs.forEach(function (tab, i) {
     tab.addEventListener("click", function () { activateTab(tab, false); });
