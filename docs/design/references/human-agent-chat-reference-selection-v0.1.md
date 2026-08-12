@@ -1,12 +1,15 @@
 ---
-status: candidate
+status: superseded
 version: 0.1
 date: 2026-08-11
+superseded_by: human-agent-workbench-research-archive-v0.1.md
 scope: 第 7 个“人—Agent 聊天与协作”参考项目选型
 decision: pending-user-selection
 ---
 
 # 人—Agent 聊天与协作参考项目选型 v0.1
+
+> 历史候选扫描，未形成“第 7 个单一品牌参考项目”的最终选择。用户随后把目标调整为九项工作台机制研究、骨架 + 场景选择和统一骨架打样；当前结论以 [`human-agent-workbench-research-archive-v0.1.md`](./human-agent-workbench-research-archive-v0.1.md) 与 [`human-agent-workbench-selection-decision-v0.1.md`](./human-agent-workbench-selection-decision-v0.1.md) 为准。本文件保留候选与证据，不再用其推荐排序直接驱动实现。
 
 ## 1. 结论先行
 

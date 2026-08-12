@@ -1,13 +1,16 @@
 ---
-status: candidate_selection
+status: superseded
 version: 0.2
 date: 2026-08-12
+superseded_by: human-agent-workbench-selector-v0.1.html
 scope: Chat 工作台三轴选择菜单（A 轴 Workbench Surfaces + B 轴 Agent Constitution + C 轴 Agent Workflow Lifecycle）
 evidence: 9 项工作台研究 + 2 份总矩阵 + AnythingLLM Agent Constitution / Workflow 视觉证据 v0.1 + 视觉索引
 forbidden: 不修改生产 UI，不运行原型，不创建 HTML/React 原型，不部署，不推送，不创建 PR，不提交
 ---
 
 # Chat 工作台三轴选择菜单 v0.2
+
+> 历史中间方案。用户明确反馈 A/B/C 轴不利于直接选择，随后改成“整体骨架 + 有限场景机制”的 HTML 选择器。本文件保留分析过程；实际选择以 [`human-agent-workbench-selection-decision-v0.1.md`](./human-agent-workbench-selection-decision-v0.1.md) 为准。
 
 > 这是给用户直接选择的菜单，不是新的全景调研，也不是实现任务。
 >

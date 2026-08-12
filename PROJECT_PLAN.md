@@ -194,7 +194,7 @@ P1是一个阶段目标，拆成下面8个独立开发任务，不作为一个�
 
 ## 7. 当前唯一下一任务
 
-当前收口任务是复审`codex/configurable-workflow-complete`的Draft PR #23；全仓质量门、迁移/发布证据和真实Provider组合验收已完成。Research/Skill明确延期仍作为范围差异交由用户验收。合并后可从最新`main`继续Project Shaping/Iteration、SSE Cursor、生产Store/备份、Research或Skill/Reminder等独立纵向；不得为了掩盖未交付项在本PR临时伪造能力。
+PR #23已经合入`main`。当前即时下一任务不是启动新的生产纵向，而是从已归档的人—Agent工作台研究中选择一个具体场景，继续做可视化交互优化与用户审核；用户明确授权前不修改生产UI。若后续进入生产适配，第一项候选任务是统一现有`WorkspaceShell`与`RealWorkspace`壳层，并把右侧工作区改为按需打开；完整范围见[当前前端工作台适配审计](./docs/design/references/current-chat-frontend-workbench-adaptation-audit-v0.1.md)。
 
 以下内容保留为此前Project Solution路线的历史依据；与当前P6收口冲突时，以上述当前任务和`PROJECT_STATE.md`为准。
 

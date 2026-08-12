@@ -1,6 +1,6 @@
 # Chat 项目状态
 
-> 更新日期：2026-08-10
+> 更新日期：2026-08-13
 
 ## 1. 当前结论
 
@@ -14,9 +14,9 @@
 | Workflow | 旧`PlanningExecutionWorkflow`继续兼容历史Run；新Run由固定`configurable-planning.v1`或`note-capture.v1` Runner解释不可变RunSpec；Memory Import、Project Intake/Advancement保持独立生命周期 |
 | Agent Runtime | `pi-agent-core` + `pi-ai` + `pi-coding-agent`；Planner/Executor与模型无关Project Understanding均已用百炼真实`qwen3.7-plus`验证 |
 | 调试与回放 | 仓库统一`pnpm dev/dev:debug`拥有Memory、Workflow、API和Web服务图；VS Code只有应用级薄入口；固定端口、安全清理、严格脱敏Trace及多源Replay |
-| 代码状态 | P0、P1、B1/B2、M1～M3、PS1/PS2.1已在既有基线；当前`codex/configurable-workflow-complete`已落地P6核心纵向，但原始G3中的正式Research与Skill资源尚未交付，不能称整套原始目标完成 |
-| 当前阶段 | P6 Workflow工厂与可视化：核心实现、全仓门、真实Provider组合链与发布证据已收口；等待对Research/Skill延期范围的明确验收 |
-| 当前任务 | 复审Draft PR #23；本机已授权Coding Endpoint的真实Provider门已通过，Research/Skill仍属于明确的产品延期，二者不能混为同一阻断 |
+| 代码状态 | P0、P1、B1/B2、M1～M3、PS1/PS2.1与P6核心纵向均已进入`main`；PR #23 merge commit为`7fc8947`。原始P6 G3中的正式Research与Skill资源仍未交付 |
+| 当前阶段 | 人—Agent工作台参考研究已经收口归档；统一骨架和当前前端差距已有证据，但尚未应用到生产前端 |
+| 当前任务 | 下一Session从已归档选择中挑一个具体场景继续做视觉/交互优化；用户明确授权生产改造前，不修改`apps/web` |
 
 ## 2. B2已完成的真实证据
 
@@ -93,12 +93,13 @@
 3. 已有Note、Rules与受限Workflow Designer；原始P6目标中的正式Research和Skill产品集合/消费链尚未交付，此外也没有Reminder/日历调度、任意插件市场或通用自动化节点。
 4. 没有Chat有序SSE Cursor Runtime Journal；当前活动投影仍使用受控Query轮询。
 5. 没有多实例数据库、备份恢复和生产后端部署拓扑；外部副作用仍只开放既有受治理能力。
+6. 统一工作台骨架尚未接入生产前端；当前真实入口仍有独立壳层与固定双栏，Agent Profile、真正Pause/Resume、完整权限/写回合同和移动端等价路径仍需后续场景任务。
 
 ## 6. 下一阶段的三个用户结果
 
-1. **P6发布**：真实`qwen3.7-plus` Planning + Note + Designer组合门已在clean HEAD通过6/6；由用户复审PR并明确验收Research/Skill延期范围。
+1. **工作台场景优化**：基于已归档的9项工作台、用户选择和冻结骨架，一次只优化一个具体场景；先形成可审核视觉/交互方案，再决定是否进入生产实现。
 2. **Project Solution**：在已接Planning Project Context基础上继续Shaping Proposal、显式Iteration Commitment、Scope/Gate/Review与Correct Course。
-3. **运行时与运营**：补Chat有序SSE Cursor、生产Store/备份/容量和正式Skill/Reminder产品纵向，不把它们塞进通用Workflow表达式引擎。
+3. **运行时与运营**：补Chat有序SSE Cursor、生产Store/备份/容量和正式Research/Skill/Reminder产品纵向，不把它们塞进通用Workflow表达式引擎。
 
 详细任务数量、依赖、合同和完成门必须在复核本地参考项目与既有分析后写入任务书，审核前不假装已冻结。
 

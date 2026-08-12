@@ -1,10 +1,10 @@
 # Chat 项目跨 Session 续接入口
 
-> 更新日期：2026-08-10
+> 更新日期：2026-08-13
 
 ## 1. 当前停点
 
-1. 当前分支为`codex/configurable-workflow-complete`，Draft PR #23；P6核心实现、分阶段commit、全仓门和真实组合验收已完成，等待用户复审。
+1. PR #23已经合入`main`，merge commit为`7fc8947`；P6核心实现、全仓门和真实组合验收已进入当前技术基线，正式Research与Skill资源仍是明确延期项。
 2. P0、P1.1、P1.2、B1、B2和M1～M3已完成。浏览器可以真实完成“发送消息 → 选择memmy或Tencent MemoryCore → pi规划 → 用户修订/批准 → 同一Vercel Workflow恢复 → pi执行 → Product Commit → 正式回复”。
 3. 本地百炼私有配置已可用于真实`qwen3.7-plus`测试；`.env`被Git忽略且权限为`0600`，任何续接过程不得输出或提交Key。
 4. M2已增加正式消息整条/UTF-16选区导入、`MemoryImportWorkflow`、memmy真实add/对账、Store v3、严格Trace/Replay、最小统一UI与重启恢复；M3又增加Tencent L0接收、L0/L1只读对账与L1查询。
@@ -13,6 +13,8 @@
 7. Store已演进到v10；可配置Planning、Note、Rule、Planning Project/Memory Context、低风险Note Policy Resolution、Run Viewer和受限Designer已实现，实际合同见[As-built](./architecture/configurable-workflow-as-built.md)。
 8. 新系统Planning不再包含装饰性Research；Planning审核固定manual，Note低风险才允许有证据的策略自动继续。旧Runner和旧Definition仍按保存的family/version兼容。
 9. 当前私有配置指向用户已授权的`coding.dashscope.aliyuncs.com`；Chat以精确HTTPS Host允许该Coding Endpoint，仍拒绝Token Plan和同形恶意域名。当前clean HEAD已真实运行`qwen3.7-plus`并完成组合门，凭据、Prompt和正文未进入证据文件。
+10. 人—Agent工作台研究已经收口归档：6个早期冻结原型、9项完整工作台、用户选择、统一骨架与当前前端差距均已有本地证据和稳定入口；本轮没有修改生产UI。
+11. 用户下一步会在新Session指定一个具体场景继续优化。新Agent不能重新扩大候选池，也不能把冻结原型当成已经接入`apps/web`。
 
 ## 2. 新 Session 读取顺序
 
@@ -66,6 +68,8 @@ Trace + Product Store + Version Evidence -> Replay
 
 当前是一个阶段目标，不是一个大PR。先复核真实参考项目与既有分析，再冻结小任务书；建议依赖顺序如下，最终编号以任务书为准：
 
+即时设计任务：从[`人—Agent工作台研究归档`](./design/references/human-agent-workbench-research-archive-v0.1.md)和[`用户选择决定`](./design/references/human-agent-workbench-selection-decision-v0.1.md)恢复已有结论；由用户指定一个场景后，只读取该场景对应的证据与原型，继续做视觉/交互优化。生产实现仍需单独授权。
+
 1. **参考证据与共享边界**：定位腾讯Memory、memory-agent及其他已调研项目，定位BMAD源码/文档和既有分析，明确采用、调整、拒绝；只定义三个能力真正共享的身份、来源、版本和选择证据，不做万能Context Service。
 2. **Memory单后端查询纵向链**：M1已由PR #10合入，真实memmy查询、Application Port、Workflow节点、Trace、最小UI和真实E2E均完成。
 3. **Memory显式导入纵向链**：M2已由PR #11合入，完成有来源、目标、幂等、结果未知对账和重启恢复的真实memmy导入。
@@ -99,10 +103,18 @@ Trace + Product Store + Version Evidence -> Replay
 
 ```text
 继续Chat项目。按AGENTS.md规定顺序读取治理文件和docs/project-session-handoff.md。
-main已完成真实规划—确认—执行、memmy查询/导入、Tencent MemoryCore第二后端，以及PS1对话建项、真实Resource和Project账本闭环。
-仓库统一`pnpm dev/dev:debug`已经过终端与真实VS Code F5验证；VS Code不再拥有或复制服务生命周期，不能用静态配置测试替代真实F5验收。
-下一阶段接着建设：PS2 Stage/Milestone/Iteration与Project Update、
-带标签且可主动选择的用户规则集。先读取本地参考项目与既有分析，给每个设计写出采用/调整/拒绝依据，
-再按依赖拆成可独立合并的小任务；实现使用worktree+PR，纵向完成门必须包含真实服务、真实模型和浏览器E2E。
-不要建立万能Context Service，不要把外部Memory、BMAD或Prompt当成Chat产品事实源。
+本次任务属于工作台场景视觉/交互优化，先读docs/design/references/human-agent-workbench-research-archive-v0.1.md、human-agent-workbench-selection-decision-v0.1.md和README.md。
+此前已经完成6个冻结参考原型、9项工作台研究、HTML选择器、用户选择固化、统一工作台骨架v0.1和当前前端适配审计；没有把这些原型接入生产UI。
+不要重新扩大候选池。根据我本次指定的具体场景，只读取相应研究卡、证据图和冻结原型，说明Take / Adapt / Refuse，再给我可审核的视觉或交互方案。
+在我明确授权生产改造前，不修改apps/web；如果进入实现，必须新建worktree/branch并按真实服务、真实模型和浏览器E2E完成门验证。
 ```
+
+## 8. 人—Agent工作台研究归档
+
+1. 总入口：[`人—Agent工作台研究归档 v0.1`](./design/references/human-agent-workbench-research-archive-v0.1.md)。
+2. 用户批准输入：[`工作台选择决定 v0.1`](./design/references/human-agent-workbench-selection-decision-v0.1.md)，包含9个认可骨架、11组场景机制和12项共同缺口。
+3. 九项分类与差异：[`九项工作台研究报告`](./design/references/nine-workbench-study-report-v0.1.md)与[`机制矩阵`](./design/references/reference-workbench-mechanism-matrix-v0.1.md)。
+4. 可运行选择器：[`human-agent-workbench-selector-v0.1.html`](./design/references/human-agent-workbench-selector-v0.1.html)。选择结果已固化为文档，不依赖浏览器localStorage。
+5. 统一骨架：[`chat-unified-workbench-skeleton-v0.1.html`](./design/references/chat-unified-workbench-skeleton-v0.1.html)，实现freeze `2536cb4d22d9108bf7350dc911f8e9781c4e2f61`。
+6. 当前前端差距与首个实现候选：[`current-chat-frontend-workbench-adaptation-audit-v0.1.md`](./design/references/current-chat-frontend-workbench-adaptation-audit-v0.1.md)。其状态仍是candidate，不自动授权改生产UI。
+7. 历史“第7个单一参考项目”候选排序与三轴选择菜单均已标记`superseded`；不能拿历史推荐越过后来的用户选择。

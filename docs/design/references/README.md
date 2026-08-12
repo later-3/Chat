@@ -4,7 +4,7 @@
 
 ## 参考原型登记册
 
-更新日期：2026-08-12。跨分支文件必须按表中 branch / commit 读取，或使用 `git show <commit>:<path>`；不能因为当前工作树没有某个目录就误判为未完成。
+更新日期：2026-08-13。跨分支文件必须按表中 branch / commit 读取，或使用 `git show <commit>:<path>`；不能因为当前工作树没有某个目录就误判为未完成。
 
 | 参考原型 | 事实场景主责 | 冻结状态与本轮 QA | 精确实现位置 | Take / Adapt / Refuse |
 |---|---|---|---|---|
@@ -25,6 +25,8 @@
 | Chat 统一工作台骨架 v0.1 | **frozen research reference**；2026-08-12 用户确认冻结当前版本。冻结当前页面结构、路由、折叠与右侧工作区打开方式，不表示已经接入生产前端 | branch `codex/human-agent-workbench-selector-html` · commit `2536cb4d22d9108bf7350dc911f8e9781c4e2f61` · worktree `/private/tmp/Chat-human-agent-workbench-selector-html` · [`chat-unified-workbench-skeleton-v0.1.html`](./chat-unified-workbench-skeleton-v0.1.html) | 作为真实前端三栏适配的视觉与交互输入；左侧导航、中央对话、按需打开的右侧工作区先落骨架，Workflow 具体设计继续延期 |
 
 本冻结继承 [`human-agent-workbench-selector-v0.1.html`](./human-agent-workbench-selector-v0.1.html) 的用户选择结果，但不把九项来源机械拼接为生产 UI。真实前端的首轮改造仍需先审计当前代码与可运行界面，再单独形成实现任务与完成门。
+
+用户在选择器中导出的 9 个骨架方向、11 组场景机制、12 项共同缺口与后续三栏方向已固化为 [`human-agent-workbench-selection-decision-v0.1.md`](./human-agent-workbench-selection-decision-v0.1.md)。新 Session 先读该决定记录，不需要依赖浏览器 `localStorage` 恢复历史勾选。
 
 Microsoft Agent Feed v0.2 的稳定输入是 [`README`](../reference-implementations/microsoft-agent-feed-human-loop-v0.2/README.md)、[`current-audit`](../reference-implementations/microsoft-agent-feed-human-loop-v0.2/current-audit.md)、[`design-qa`](../reference-implementations/microsoft-agent-feed-human-loop-v0.2/design-qa.md) 与 freeze `8d30cfe5651665407bf6e6dddc0339c075453704`。现有 literal combination 的 `references/agent-feed` 仍是此前收口副本；只有后续组合接入任务才能按上述稳定合同替换，不能把本轮原型自动宣称为生产或已接入组合。
 
@@ -88,9 +90,11 @@ Microsoft Agent Feed v0.2 的稳定输入是 [`README`](../reference-implementat
 
 ## 当前文件
 
+- [`human-agent-workbench-research-archive-v0.1.md`](./human-agent-workbench-research-archive-v0.1.md)：archived；本轮完整收口入口，串起 6 个冻结原型、9 项工作台研究、用户选择、统一骨架、当前前端适配审计、稳定提交与下一 Session 续接方式。
 - [`nine-workbench-study-report-v0.1.md`](./nine-workbench-study-report-v0.1.md)：candidate；九项工作台的五类场景、Agent 参与谱系、六层通用骨架、差异机制与场景查表。本报告不选择新 frozen reference，也不授权制作原型。
 - [`reference-workbench-mechanism-matrix-v0.1.md`](./reference-workbench-mechanism-matrix-v0.1.md)：candidate；九项工作台的页面中心所有者、连续性、人工介入与结果写回机制矩阵。
 - [`current-chat-frontend-workbench-adaptation-audit-v0.1.md`](./current-chat-frontend-workbench-adaptation-audit-v0.1.md)：candidate；当前生产前端与冻结骨架的同尺度视觉审计、三栏语义、第一阶段改造范围和完成门。只整理任务，不授权修改生产 UI。
+- [`human-agent-workbench-selection-decision-v0.1.md`](./human-agent-workbench-selection-decision-v0.1.md)：approved；用户导出的 9 个骨架、11 组场景选择、12 项共同缺口、冻结骨架方向与新 Session 续接方法；不单独授权生产实现。
 - 九份工作台单项研究卡：[`Basecamp`](./basecamp-workbench-study-v0.1.md)、[`Things`](./things-workbench-study-v0.1.md)、[`Linear`](./linear-workbench-study-v0.1.md)、[`HEY Calendar`](./hey-calendar-workbench-study-v0.1.md)、[`Microsoft Agent Feed`](./agent-feed-workbench-study-v0.1.md)、[`Heptabase`](./heptabase-workbench-study-v0.1.md)、[`AnythingLLM / Open Computer`](./anythingllm-workbench-study-v0.1.md)、[`Orca`](./orca-workbench-study-v0.1.md)、[`Plane`](./plane-workbench-study-v0.1.md)。
 - [`taste-contract-v0.1.md`](./taste-contract-v0.1.md)：候选的品味合同、反 AI 味硬规则与验收量表。
 - [`reference-board-v0.1.md`](./reference-board-v0.1.md)：18 个参考/反参考、Take/Refuse 判断与 5 个设计锚点。
@@ -108,6 +112,7 @@ Microsoft Agent Feed v0.2 的稳定输入是 [`README`](../reference-implementat
 - `approved`：用户已确认，可提炼后合并进正式规范。
 - `rejected`：明确不采用，但保留判断理由，避免以后重复试错。
 - `superseded`：已被新版研究替代。
+- `archived`：研究阶段已经收口；保留事实、过程、证据和恢复入口，不再继续扩展候选池。
 
 ## 参考与版权
 
