@@ -263,8 +263,9 @@
   .scen-q { font-size: 15px; margin: 0 0 12px; }
   .scards {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-    gap: 12px;
+    /* 场景证据需要被看清，而不是缩成一排缩略图：每个候选独占一行。 */
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
     align-items: stretch;
   }
   .scard {
@@ -281,7 +282,7 @@
     border: 0;
     border-bottom: 1px solid var(--line);
     border-radius: 0;
-    height: 200px;
+    height: clamp(360px, 55vw, 620px);
     margin: 0;
     flex: none;
   }
@@ -344,8 +345,7 @@
     .kcard { grid-template-columns: 1fr; }
     .shot-main { height: 240px; }
     .shot-sub { height: 180px; }
-    .scards { grid-template-columns: 1fr; }
-    .scard .shot { height: 220px; }
+    .scard .shot { height: clamp(240px, 62vw, 520px); }
     .page-tabs { padding: 6px 10px; }
     .page-tabs [role="tab"] { font-size: 14px; padding: 8px 6px; min-height: 44px; }
     main { padding: 0 12px 48px; }
