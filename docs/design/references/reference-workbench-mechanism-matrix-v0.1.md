@@ -2,17 +2,17 @@
 status: candidate
 version: 0.1
 date: 2026-08-12
-scope: 6 frozen reference prototypes + 3 workbench samples
-forbidden: 不选择第七参考项目，不修改生产 UI，不运行原型
+scope: 9-item workbench research set (Basecamp, Things, Linear, HEY Calendar, MS Agent Feed, Heptabase, AnythingLLM/OC, Orca, Plane)
+forbidden: 不修改生产 UI，不运行原型
 ---
 
 # 参考工作台机制矩阵 v0.1
 
 ## 1. 目的与边界
 
-本文档是 6 个冻结参考原型（Basecamp、Things、Linear、HEY Calendar、Microsoft Agent Feed、Heptabase）与 3 组新增工作台样本（AnythingLLM/Open Computer、Orca、Plane）的**工作台设计机制盘点**。
+本文档是 **9 项完整工作台研究集**的机制盘点：Basecamp、Things、Linear、HEY Calendar、Microsoft Agent Feed、Heptabase、AnythingLLM/Open Computer、Orca、Plane。其中 1–6 来自 Chat 已冻结参考原型的交互审计，7–9 来自新增工作台研究；来源类别不同，但九项全部保留，共同用于总结工作台的基础设计、差异机制、服务场景和 Chat 可借鉴之处。
 
-- 不选择第七个参考项目；不修改生产 UI；不运行原型；不推断截图未展示的交互状态。
+- 不修改生产 UI；不运行原型；不推断截图未展示的交互状态。
 - 用同一套工作台语言（6 层职责）描述 9 组机制，生成 3×3 同尺度视觉索引。
 - 证据等级：`F` = 单个审计/证据卡直接记载的事实；`I` = 跨证据归纳；`U` = 当前未知/未覆盖。
 
@@ -30,11 +30,11 @@ forbidden: 不选择第七参考项目，不修改生产 UI，不运行原型
 | (1,0) | HEY Calendar | Chat 已冻结参考原型的已验收画面 | `hey-day-final-raw.png` |
 | (1,1) | Microsoft Agent Feed | Chat 已冻结参考原型的已验收画面 | `agent-feed-final-raw.png` |
 | (1,2) | Heptabase | Chat 已冻结参考原型的已验收画面 | `heptabase-whiteboard-final-raw.png` |
-| (2,0) | AnythingLLM / Open Computer | 既有官方/一手界面证据，非本地运行实例 | `06-open-computer-active-run-official-1280x720.png` |
-| (2,1) | Orca | 既有官方/一手界面证据，非本地运行实例 | `03-diff-annotation.png` |
-| (2,2) | Plane | 既有官方/一手界面证据，非本地运行实例 | `03a-github-overview.webp` |
+| (2,0) | AnythingLLM / Open Computer | 新增工作台研究；既有官方/一手界面证据，非本地运行实例 | `06-open-computer-active-run-official-1280x720.png` |
+| (2,1) | Orca | 新增工作台研究；既有官方/一手界面证据，非本地运行实例 | `03-diff-annotation.png` |
+| (2,2) | Plane | 新增工作台研究；既有官方/一手界面证据，非本地运行实例 | `03a-github-overview.webp` |
 
-**图例**：深绿色条（#2d5016）= 1–6 冻结原型；靛蓝色条（#4b0082）= 7–9 工作台样本。
+**图例**：深绿色条（#2d5016）= 1–6 冻结参考原型；靛蓝色条（#4b0082）= 7–9 新增工作台研究。
 
 **生成**：`scripts/design/build-reference-workbench-mechanism-index.sh`。当前 ffmpeg 无 drawtext filter，因此图内用类型色条区分来源类别，产品名由本表映射。
 
@@ -61,9 +61,9 @@ forbidden: 不选择第七参考项目，不修改生产 UI，不运行原型
 | **HEY Calendar** · 冻结机制 | 连续时间尺度：Day 连续故事 / Week 七天章节 / Year 季节轮廓 | 时间尺度递进：Day→Week→Year 主动减细节；Event/Habit/Journal/Sometime 类型区分 | Day 连续时间线 + Event composer（内嵌当天 Peek）+ Week/Year 切换 | 部分覆盖：Email→候选→冲突可见→改时间→Save/Cancel；无 Agent/Decision/Run | Event composer 拖拽排期、冲突同屏判断、Save/Cancel；Day 个人化 | Event 保存到所属 Calendar；Journal 自动保存；Email source link 保留 | F · [audit](./hey-calendar-interaction-audit-v0.1.md) |
 | **MS Agent Feed** · 冻结机制 | 监督分流队列：Needs Attention + Completed，按是否需要介入分组 | 任务类型决定动作：request_assistance→Complete / data_entry→Accept+complete 或 Dismiss / review→仅信息 | Feed list（side pane / full screen）+ Agent filter + item detail | 覆盖：Decision 修订、candidate、outcome_unknown、Agent—Agent delegation 均有 typed action + owner + waiting + 终态 | Complete / Accept+complete / Dismiss / Reconcile / Escalate | Feed 只是投影；权威事实回 Product Run / Decision / Evidence / related record | F · [audit](./microsoft-agent-feed-interaction-audit-v0.1.md) · [freeze ledger](./reference-scenario-matrix-v0.1.md) |
 | **Heptabase** · 冻结机制 | Card Library + Whiteboard placement：Card 属于 Library，Whiteboard 只拥有空间引用 | canonical object × placement 分离：编辑内容更新所有 placement；Card Info 列出所有 Board | Whiteboard 主画布 + 右侧 context sidebar + Card Library side panel | 部分覆盖：显式 context chips / Space search，访问日志 searched/viewed，回答先是 candidate | 手动添加上下文、拖动 AI response 到 Whiteboard / 保存为 Card、Share permission | Card 保存到 Card Library（权威源）；placement 保存 objectId+position+annotation | F · [audit](./heptabase-interaction-audit-v0.1.md) |
-| **AnythingLLM / OC** · 工作台样本 | 两种模式：AnythingLLM = Conversation-owned；Open Computer = Workspace-owned（桌面中心，对话退到 sidecar） | AnythingLLM：Thread 保存上下文；OC：Run sidecar + 桌面现场保存状态 | AnythingLLM：消息流 + Sources 抽屉；OC：VNC 桌面 + sidecar（Chat/Subagents/Logs/Deliverables） | 自然语言 composer 发起；进度成为消息流中间节点或 sidecar 任务卡 | 继续回复/追问（AnythingLLM）；追问/Abort run（OC） | AnythingLLM：回答 + Sources；OC：桌面现场 + Deliverables（Download/Remove） | F · [evidence card](./anythingllm-workbench-evidence-card-v0.1.md) |
-| **Orca** · 工作台样本 | Task/Worktree 隔离工作空间：主对象是任务空间，Chat/terminal 只是其中一种 pane | Worktree + pane tree + Agent sessions：布局按 worktree 保存，切换时整套恢复 | 异构 pane tree（terminal/editor/browser/diff/PR 嵌套分屏）+ 左侧 worktree/Agent 状态导航 | Agent 是可观察运行者：Working / Needs You / Done / Blocked / Idle | Diff 行级批注→批量选择接收 Agent→Send to agent；聚焦 pane；Abort/Retry | Diff 批注保留行锚点并持久化；修订后仍可 Resolve 或加入下一批复审 | F · [evidence card](./orca-workbench-evidence-card-v0.1.md) |
-| **Plane** · 工作台样本 | Project / Work item / Page：长期工作事实拥有页面中心，AI 进入对象所在表面 | 长期对象及其状态：同一 Work item 集合可切换 5 种布局，身份与筛选连续 | 产品级 Rail → Workspace/Project 侧栏 → Project 内导航 → Work items 主工作面 + Page 编辑器 + Intake | 部分覆盖：3 种 AI 作用域（全局/页面/块级）；开源源码只确认 Page 编辑器 AI | Intake 队列：Accept（先编辑再加入）/ Decline（不可撤销）/ Snooze | Work item 状态写入 Project；AI Block 成为可编辑 Page block；Intake Accept 写入 Work item | F · [evidence card](./plane-workbench-evidence-card-v0.1.md) |
+| **AnythingLLM / OC** · 新增工作台研究 | 两种模式：AnythingLLM = Conversation-owned；Open Computer = Workspace-owned（桌面中心，对话退到 sidecar） | AnythingLLM：Thread 保存上下文；OC：Run sidecar + 桌面现场保存状态 | AnythingLLM：消息流 + Sources 抽屉；OC：VNC 桌面 + sidecar（Chat/Subagents/Logs/Deliverables） | 自然语言 composer 发起；进度成为消息流中间节点或 sidecar 任务卡 | 继续回复/追问（AnythingLLM）；追问/Abort run（OC） | AnythingLLM：回答 + Sources；OC：桌面现场 + Deliverables（Download/Remove） | F · [evidence card](./anythingllm-workbench-evidence-card-v0.1.md) |
+| **Orca** · 新增工作台研究 | Task/Worktree 隔离工作空间：主对象是任务空间，Chat/terminal 只是其中一种 pane | Worktree + pane tree + Agent sessions：布局按 worktree 保存，切换时整套恢复 | 异构 pane tree（terminal/editor/browser/diff/PR 嵌套分屏）+ 左侧 worktree/Agent 状态导航 | Agent 是可观察运行者：Working / Needs You / Done / Blocked / Idle | Diff 行级批注→批量选择接收 Agent→Send to agent；聚焦 pane；Abort/Retry | Diff 批注保留行锚点并持久化；修订后仍可 Resolve 或加入下一批复审 | F · [evidence card](./orca-workbench-evidence-card-v0.1.md) |
+| **Plane** · 新增工作台研究 | Project / Work item / Page：长期工作事实拥有页面中心，AI 进入对象所在表面 | 长期对象及其状态：同一 Work item 集合可切换 5 种布局，身份与筛选连续 | 产品级 Rail → Workspace/Project 侧栏 → Project 内导航 → Work items 主工作面 + Page 编辑器 + Intake | 部分覆盖：3 种 AI 作用域（全局/页面/块级）；开源源码只确认 Page 编辑器 AI | Intake 队列：Accept（先编辑再加入）/ Decline（不可撤销）/ Snooze | Work item 状态写入 Project；AI Block 成为可编辑 Page block；Intake Accept 写入 Work item | F · [evidence card](./plane-workbench-evidence-card-v0.1.md) |
 
 ## 5. 差异矩阵
 
@@ -104,9 +104,9 @@ forbidden: 不选择第七参考项目，不修改生产 UI，不运行原型
 2. **跨表面连续性**：无原型证明同一 Work 在 Project Room / Today / Agent Feed / Workbench 间往返仍保持身份、revision、返回位置和未提交草稿。
 3. **正式 Evidence**：无原型能直接背书 Chat 的 Evidence 验证、版本、贡献归属与完成门。
 
-### 7.2 新增三组样本中的四种模式特定缺口（U）
+### 7.2 新增工作台研究特定缺口（U）
 
-| 样本 | 未证明 |
+| 研究项 | 未证明 |
 |---|---|
 | AnythingLLM | Plan 审核/版本绑定；Pause/Resume/失败恢复；Artifact 评论修订接受拒绝闭环 |
 | Open Computer | 同上 + Deliverable 只有 Download/Remove，无评论/修订 |
@@ -137,4 +137,4 @@ forbidden: 不选择第七参考项目，不修改生产 UI，不运行原型
 
 ## 9. 当前停点
 
-工作台基础机制与差异已盘点。没有选择第七参考项目，没有制作原型。下一步必须由用户决定继续扩大样本还是进入候选筛选。
+九项全部保留。当前完成的是共同骨架（§3 六层职责）、差异机制（§5）、八种所有权模式（§6）、服务场景与证据索引（§8）。没有制作原型。下一步由用户决定先深入或打样哪一项。
