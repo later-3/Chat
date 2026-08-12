@@ -15,6 +15,14 @@ freeze Orca as the seventh reference project.
 | `screenshots/03-diff-annotation.png` | `docs/assets/feature-wall/annotate-diff.gif` | frame at 2.9 s | Line-level human note on an AI-generated diff inside the workbench | Does not by itself prove how the note is delivered to or acted on by an agent |
 | `screenshots/04-terminal-splits.png` | `docs/assets/feature-wall/terminal-splits.gif` | frame at 5.7 s | One workbench composing a task list, many terminal panes, and a file tree | Shows composition capacity, not a full multi-agent task lifecycle |
 
+Derived comparison artifacts:
+
+- `screenshots/04-terminal-splits-focused.png`: content crop of the accepted
+  terminal-splits frame, used only to equalize the visible app area in a
+  comparison strip.
+- `orca-workbench-visual-strip.png`: three accepted states normalized to
+  `640 × 360` and placed side by side; no product UI was invented or altered.
+
 ## Rejected as primary evidence
 
 - `parallel-worktrees.jpg`: the official fallback still lands on an embedded
@@ -22,4 +30,3 @@ freeze Orca as the seventh reference project.
   orchestration.
 - README feature-wall montage: useful for discovery, but too compressed and
   marketing-edited to carry detailed interaction claims.
-
