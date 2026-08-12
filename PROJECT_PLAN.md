@@ -206,7 +206,7 @@ B2已经通过PR #7合入，M1真实memmy查询通过PR #10合入，M2真实显�
 
 M3合入后的下一阶段是Project Solution，先完成[方法论](./docs/product/project-solution-methodology.md)、[架构](./docs/architecture/project-solution.md)与[场景验证](./docs/product/project-solution-scenario-validation.md)，再依次交付：PS1对话建项/真实Resource/项目账本，PS2 Stage/Milestone/Iteration/任务管理，PS3 Project Context/真实Resource推进，PS4维护/Correct Course/多项目注意力。Shape Up控制小团队的投入、边界、未知和Circuit Breaker；BMAD控制软件Artifact、Story准备度、开发、QA与Correct Course；不复制任一项目的产品形态。
 
-PS1已经完成对话建项、真实Resource、项目账本和最小管理候选闭环，完整范围与证据见[PS1 Project Intake](./docs/tasks/ps1-project-intake-ledger-vertical-slice.md)。当前唯一下一实现任务是PS2：一次打通Stage Goal/Milestone、Proposal/Iteration Commitment、Work/Action推进和负责人Project Update；任务书审核通过前不得开始实现。Rules按R1→R2在Project Solution完成后的下一个Store版本推进。
+PS1已经完成对话建项、真实Resource、项目账本和最小管理候选闭环；PS2.1又完成Stage Goal / Milestone、Work / Action推进与负责人Project Update，并由PR #22合入`main`。完整PS1范围与证据见[PS1 Project Intake](./docs/tasks/ps1-project-intake-ledger-vertical-slice.md)。当前唯一下一实现任务是已批准的PS2.2 Shaping Proposal / Iteration Commitment；随后由PS2.3推进Scope / Gate / Review。Rules按R1→R2在Project Solution完成后的下一个Store版本推进。
 
 统一应用启动与调试属于进入P1前的工程维护任务：仓库级`pnpm dev/dev:debug`和单一VS Code入口已完成本地实现与真实F5验收，待独立PR；它不改变上述产品任务顺序。
 

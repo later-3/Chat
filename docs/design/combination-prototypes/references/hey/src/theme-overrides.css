@@ -1,0 +1,246 @@
+/* Color, elevation, and corner tokens only; the frozen HEY calendar layout and
+   Event interactions remain the original source implementation. */
+
+html[data-theme="warm-room"] {
+  --theme-canvas: #f7f2ea;
+  --theme-paper: #fffaf3;
+  --theme-panel: #f1eadf;
+  --theme-ink: #27332e;
+  --theme-muted: #6f766f;
+  --theme-primary: #245a46;
+  --theme-accent: #c96a49;
+  --theme-line: #d8d0c3;
+  --theme-soft: #e6eee9;
+  --theme-inverse: #245a46;
+  --theme-inverse-ink: #fffaf3;
+  --theme-radius: 10px;
+  --theme-shadow: 0 10px 30px rgb(39 51 46 / 10%);
+}
+
+html[data-theme="quiet-day"] {
+  --theme-canvas: #f7f9fc;
+  --theme-paper: #ffffff;
+  --theme-panel: #f2f6fb;
+  --theme-ink: #123a6d;
+  --theme-muted: #65758a;
+  --theme-primary: #126fd3;
+  --theme-accent: #e5a51a;
+  --theme-line: #dfe6ef;
+  --theme-soft: #eaf3ff;
+  --theme-inverse: #123a6d;
+  --theme-inverse-ink: #ffffff;
+  --theme-radius: 8px;
+  --theme-shadow: none;
+}
+
+html[data-theme="graphite-ops"] {
+  --theme-canvas: #f5f7f9;
+  --theme-paper: #ffffff;
+  --theme-panel: #eef1f4;
+  --theme-ink: #17191c;
+  --theme-muted: #626a73;
+  --theme-primary: #5b5fc7;
+  --theme-accent: #168aad;
+  --theme-line: #ccd2d9;
+  --theme-soft: #ececfa;
+  --theme-inverse: #17191c;
+  --theme-inverse-ink: #f7f8fa;
+  --theme-radius: 6px;
+  --theme-shadow: 0 1px 2px rgb(23 25 28 / 12%);
+}
+
+html[data-theme="common-thread"] {
+  --theme-canvas: #f5f4f1;
+  --theme-paper: #ffffff;
+  --theme-panel: #eeede8;
+  --theme-ink: #1f2b2c;
+  --theme-muted: #687170;
+  --theme-primary: #3d6f60;
+  --theme-accent: #c58a3a;
+  --theme-line: #d8d8d2;
+  --theme-soft: #e8efeb;
+  --theme-inverse: #1f2b2c;
+  --theme-inverse-ink: #ffffff;
+  --theme-radius: 8px;
+  --theme-shadow: 0 6px 18px rgb(31 43 44 / 8%);
+}
+
+html:is(
+  [data-theme="warm-room"],
+  [data-theme="quiet-day"],
+  [data-theme="graphite-ops"],
+  [data-theme="common-thread"]
+) {
+  --ink: var(--theme-ink);
+  --muted: var(--theme-muted);
+  --faint: color-mix(in srgb, var(--theme-muted) 72%, transparent);
+  --line: var(--theme-line);
+  --line-soft: color-mix(in srgb, var(--theme-line) 68%, transparent);
+  --paper: var(--theme-paper);
+  --soft: var(--theme-panel);
+  --soft-blue: var(--theme-soft);
+  --brand: var(--theme-primary);
+  --brand-violet: var(--theme-primary);
+  --orange: var(--theme-accent);
+  --radius-sm: var(--theme-radius);
+  --radius-md: calc(var(--theme-radius) + 4px);
+  --radius-lg: calc(var(--theme-radius) + 12px);
+  color: var(--theme-ink);
+  background: var(--theme-canvas);
+}
+
+html:is(
+  [data-theme="warm-room"],
+  [data-theme="quiet-day"],
+  [data-theme="graphite-ops"],
+  [data-theme="common-thread"]
+) :is(body, .hey-app) {
+  background: var(--theme-canvas);
+  color: var(--theme-ink);
+}
+
+html:is(
+  [data-theme="warm-room"],
+  [data-theme="quiet-day"],
+  [data-theme="graphite-ops"],
+  [data-theme="common-thread"]
+) :is(.app-header, .date-navigation, .calendar-main, .day-timeline, .week-section, .year-main) {
+  background: var(--theme-paper);
+  color: var(--theme-ink);
+}
+
+html:is(
+  [data-theme="warm-room"],
+  [data-theme="quiet-day"],
+  [data-theme="graphite-ops"],
+  [data-theme="common-thread"]
+) :is(.app-grid, .view-switcher, .save-event, .mobile-new.is-active) {
+  background: var(--theme-primary);
+  color: #ffffff;
+}
+
+html:is(
+  [data-theme="warm-room"],
+  [data-theme="quiet-day"],
+  [data-theme="graphite-ops"],
+  [data-theme="common-thread"]
+) :is(.brand, .source-link, .day-name-action) {
+  color: var(--theme-primary);
+}
+
+html:is(
+  [data-theme="warm-room"],
+  [data-theme="quiet-day"],
+  [data-theme="graphite-ops"],
+  [data-theme="common-thread"]
+) :is(
+  .new-event,
+  .icon-action,
+  .date-navigation > button,
+  .date-navigation > div,
+  .day-context-actions button,
+  .habit-rail > button,
+  .week-section,
+  .month-card,
+  .menu-layer > section,
+  .event-composer,
+  .journal-dialog,
+  .habits-dialog,
+  .search-dialog,
+  .task-dialog,
+  .mini-schedule
+) {
+  border-color: var(--theme-line);
+  background: var(--theme-paper);
+  color: var(--theme-ink);
+}
+
+html:is(
+  [data-theme="warm-room"],
+  [data-theme="quiet-day"],
+  [data-theme="graphite-ops"],
+  [data-theme="common-thread"]
+) :is(.event-composer, .journal-dialog, .habits-dialog, .search-dialog, .task-dialog, .mini-schedule) {
+  border-radius: calc(var(--theme-radius) + 4px);
+  box-shadow: var(--theme-shadow);
+}
+
+html:is(
+  [data-theme="warm-room"],
+  [data-theme="quiet-day"],
+  [data-theme="graphite-ops"],
+  [data-theme="common-thread"]
+) :is(
+  input,
+  textarea,
+  select,
+  .event-title-input,
+  .field-row,
+  .date-time-panel,
+  .day-name-field,
+  .search-results,
+  .calendar-menu
+) {
+  border-color: var(--theme-line);
+  background: var(--theme-paper);
+  color: var(--theme-ink);
+}
+
+html:is(
+  [data-theme="warm-room"],
+  [data-theme="quiet-day"],
+  [data-theme="graphite-ops"],
+  [data-theme="common-thread"]
+) :is(.date-time-panel, .mini-schedule, .calendar-menu, .search-results) {
+  background: var(--theme-panel);
+}
+
+html:is(
+  [data-theme="warm-room"],
+  [data-theme="quiet-day"],
+  [data-theme="graphite-ops"],
+  [data-theme="common-thread"]
+) :is(.hour-labels button:hover, .week-section.is-current, .month-days button.is-selected, .menu-actions button:hover, .search-results button:hover) {
+  background: var(--theme-soft);
+  color: var(--theme-primary);
+}
+
+html:is(
+  [data-theme="warm-room"],
+  [data-theme="quiet-day"],
+  [data-theme="graphite-ops"],
+  [data-theme="common-thread"]
+) :is(.day-title.is-circled h1, .now-line, .conflict-note) {
+  color: var(--theme-accent);
+  text-decoration-color: var(--theme-accent);
+}
+
+html:is(
+  [data-theme="warm-room"],
+  [data-theme="quiet-day"],
+  [data-theme="graphite-ops"],
+  [data-theme="common-thread"]
+) :is(.night-band, .toast) {
+  background: var(--theme-inverse);
+  color: var(--theme-inverse-ink);
+}
+
+html:is(
+  [data-theme="warm-room"],
+  [data-theme="quiet-day"],
+  [data-theme="graphite-ops"],
+  [data-theme="common-thread"]
+) :is(.secondary-action, .details-toggle, .menu-actions button) {
+  border-color: var(--theme-line);
+  border-radius: var(--theme-radius);
+}
+
+html:is(
+  [data-theme="warm-room"],
+  [data-theme="quiet-day"],
+  [data-theme="graphite-ops"],
+  [data-theme="common-thread"]
+) :is(button, input, textarea, select):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--theme-primary) 34%, transparent);
+  outline-offset: 2px;
+}

@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat 统一工作台骨架原型 v0.1（研究原型，非生产 UI）</title>
+<script>
+/* 防闪烁：首屏渲染前读取主题偏好。主题只是本地 UI 偏好，不是产品事实。 */
+(function () {
+  try {
+    var t = localStorage.getItem("chat-theme");
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) { /* 偏好不可读时跟随系统 */ }
+})();
+</script>
+<style>
+/* ============================================================
+   语义 Token：唯一色值来源，对应 docs/product/design-guidelines.md v1
+   ============================================================ */
+:root {
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F5F5F4;
+  --bg-tertiary: #EBEBE9;
+  --surface-raised: #FFFFFF;
+  --text-primary: #1D1D1F;
+  --text-secondary: #6E6E73;
+  --text-tertiary: #75757A;
+  --separator: rgba(29,29,31,0.10);
+  --accent: #1D1D1F;
+  --accent-text: #FFFFFF;
+  --status-success: #248A3D;
+  --status-warning: #A85B00;
+  --status-danger: #C22F3D;
+  --font-aux: 13px;
+  --font-body: 15px;
+  --font-title: 17px;
+  --font-page: 20px;
+  --radius-control: 10px;
+  --radius-panel: 14px;
+  --radius-bubble: 18px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-primary: #000000;
+    --bg-secondary: #161617;
+    --bg-tertiary: #242426;
+    --surface-raised: #2C2C2E;
+    --text-primary: #F5F5F7;
+    --text-secondary: #98989F;
+    --text-tertiary: #8E8E93;
+    --separator: rgba(245,245,247,0.14);
+    --accent: #FFFFFF;
+    --accent-text: #000000;
+    --status-success: #30D158;
+    --status-warning: #FF9F0A;
+    --status-danger: #FF453A;
+  }
+}
+[data-theme="dark"] {
+  --bg-primary: #000000;
+  --bg-secondary: #161617;
+  --bg-tertiary: #242426;
+  --surface-raised: #2C2C2E;
+  --text-primary: #F5F5F7;
+  --text-secondary: #98989F;
+  --text-tertiary: #8E8E93;
+  --separator: rgba(245,245,247,0.14);
+  --accent: #FFFFFF;
+  --accent-text: #000000;
+  --status-success: #30D158;
+  --status-warning: #FF9F0A;
+  --status-danger: #FF453A;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", "Segoe UI", sans-serif;
+  font-size: var(--font-body);
+  line-height: 1.45;
+}
+h1 { font-size: var(--font-page); margin: 0 0 4px; font-weight: 600; }
+h2 { font-size: var(--font-title); margin: 0 0 4px; font-weight: 600; }
+h3 { font-size: var(--font-body); margin: 0 0 4px; font-weight: 600; }
+p { margin: 0 0 8px; }
+button, input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* ---------- 应用骨架 ---------- */
+#app { display: flex; min-height: 100vh; }
+#rail {
+  flex: none;
+  width: 200px;
+  border-right: 1px solid var(--separator);
+  background: var(--bg-secondary);
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+.rail-title {
+  font-size: var(--font-aux);
+  color: var(--text-tertiary);
+  padding: 4px 12px 8px;
+}
+.rail-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--font-body);
+}
+.rail-btn[aria-current="page"] {
+  background: var(--surface-raised);
+  border-color: var(--separator);
+  font-weight: 600;
+}
+.rail-badge {
+  font-size: var(--font-aux);
+  min-width: 24px;
+  text-align: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-variant-numeric: tabular-nums;
+}
+#main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+/* ---------- 顶栏 ---------- */
+#topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--separator);
+  background: var(--bg-primary);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  flex-wrap: wrap;
+}
+.tb-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  background: var(--bg-primary);
+  cursor: pointer;
+  font-size: var(--font-body);
+}
+.tb-btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.tb-spacer { flex: 1; }
+.scope-chip {
+  font-size: var(--font-aux);
+  color: var(--text-secondary);
+  border: 1px solid var(--separator);
+  border-radius: 999px;
+  padding: 4px 12px;
+  max-width: 46ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scope-chip b { color: var(--text-primary); font-weight: 600; }
+
+/* ---------- 内容区：中心 + 副表面槽 ---------- */
+#content { flex: 1; display: flex; min-height: 0; align-items: stretch; }
+#center {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px;
+}
+.center-inner { max-width: 760px; margin: 0 auto; padding-bottom: 32px; }
+#panel {
+  flex: none;
+  width: 360px;
+  border-left: 1px solid var(--separator);
+  background: var(--bg-secondary);
+  overflow-y: auto;
+  padding: 16px;
+}
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.panel-title { font-size: var(--font-title); font-weight: 600; }
+
+/* ---------- 通用组件 ---------- */
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-panel);
+  padding: 12px 16px;
+  margin: 0 0 12px;
+}
+.card.raised { background: var(--surface-raised); }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.grow { flex: 1; min-width: 0; }
+.muted { color: var(--text-secondary); }
+.aux { font-size: var(--font-aux); color: var(--text-tertiary); }
+.idline { font-size: var(--font-aux); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.btn {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  cursor: pointer;
+  font-size: var(--font-body);
+}
+.btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.btn.danger { border-color: var(--status-danger); color: var(--status-danger); }
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+.btn.small { min-height: 44px; padding: 6px 12px; font-size: var(--font-aux); }
+
+/* 状态三通道：形状点 + 文字 + 颜色 */
+.dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.dot.ok { background: var(--status-success); }
+.dot.warn { background: var(--status-warning); }
+.dot.bad { background: var(--status-danger); }
+.dot.idle { background: var(--text-tertiary); }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-aux);
+  border: 1px solid var(--separator);
+  border-radius: 999px;
+  padding: 2px 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.chip b { color: var(--text-primary); font-weight: 600; }
+
+/* 列表 */
+.list { border: 1px solid var(--separator); border-radius: var(--radius-panel); overflow: hidden; background: var(--surface-raised); margin-bottom: 12px; }
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--separator);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.list-item:last-child { border-bottom: 0; }
+.list-item:focus-visible { outline-offset: -2px; }
+.list-item .t { font-weight: 600; }
+.list-item .s { font-size: var(--font-aux); color: var(--text-tertiary); }
+
+/* 看板 */
+.board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding-bottom: 8px; }
+.board-col {
+  flex: 1 1 0;
+  min-width: 160px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-panel);
+  padding: 8px;
+}
+.board-col h3 { padding: 4px 8px 8px; }
+.board-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--surface-raised);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+/* 分段控件 */
+.seg { display: inline-flex; border: 1px solid var(--separator); border-radius: var(--radius-control); overflow: hidden; background: var(--bg-secondary); }
+.seg button {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--font-body);
+  color: var(--text-secondary);
+}
+.seg button[aria-pressed="true"] { background: var(--surface-raised); color: var(--text-primary); font-weight: 600; box-shadow: inset 0 0 0 1px var(--separator); }
+
+/* 对话 */
+.msg { margin-bottom: 12px; display: flex; }
+.msg.user { justify-content: flex-end; }
+.bubble {
+  max-width: 78%;
+  border-radius: var(--radius-bubble);
+  padding: 10px 16px;
+  border: 1px solid var(--separator);
+  background: var(--bg-secondary);
+}
+.msg.user .bubble { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.composer { display: flex; gap: 8px; margin-top: 12px; }
+.composer input {
+  flex: 1;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+}
+.opt-list { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.opt-list .btn { text-align: left; }
+
+/* 执行现场 */
+.stage {
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-panel);
+  background: var(--bg-tertiary);
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  margin-bottom: 12px;
+}
+.panes { border: 1px solid var(--separator); border-radius: var(--radius-panel); overflow: hidden; margin-bottom: 12px; background: var(--surface-raised); }
+.pane-tabs { display: flex; border-bottom: 1px solid var(--separator); background: var(--bg-secondary); }
+.pane-tabs button {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 0;
+  border-right: 1px solid var(--separator);
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.pane-tabs button[aria-pressed="true"] { background: var(--surface-raised); color: var(--text-primary); font-weight: 600; }
+.pane-body { padding: 12px 16px; }
+
+/* Diff */
+.diff { border: 1px solid var(--separator); border-radius: var(--radius-panel); overflow: hidden; font-size: var(--font-aux); background: var(--surface-raised); }
+.diff-line { display: flex; align-items: stretch; border-bottom: 1px solid var(--separator); min-height: 44px; }
+.diff-line:last-child { border-bottom: 0; }
+.diff-no { flex: none; width: 44px; display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); border-right: 1px solid var(--separator); font-variant-numeric: tabular-nums; }
+.diff-text { flex: 1; padding: 10px 12px; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.diff-line.add .diff-text { background: var(--bg-secondary); border-left: 3px solid var(--status-success); }
+.diff-line.del .diff-text { border-left: 3px solid var(--status-danger); color: var(--text-secondary); text-decoration: line-through; }
+.diff-line.ctx .diff-text { border-left: 3px solid transparent; }
+.diff-act { flex: none; display: flex; align-items: center; padding: 0 8px; }
+.note {
+  border-left: 3px solid var(--status-warning);
+  background: var(--bg-secondary);
+  padding: 8px 12px;
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  font-size: var(--font-aux);
+  margin: 8px 0;
+}
+.note.ok { border-left-color: var(--status-success); }
+
+/* 场景标注 */
+.stag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  margin-left: 6px;
+  border: 1px dashed var(--text-tertiary);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  vertical-align: 2px;
+}
+body:not(.annot) .stag { display: none; }
+#legend {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: min(420px, 100vw);
+  background: var(--bg-primary);
+  border-left: 1px solid var(--separator);
+  z-index: 60;
+  overflow-y: auto;
+  padding: 16px;
+}
+.legend-item { border: 1px solid var(--separator); border-radius: var(--radius-control); padding: 10px 12px; margin-bottom: 8px; background: var(--surface-raised); }
+.legend-item.hl { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.legend-item .code { font-weight: 600; margin-right: 6px; }
+.legend-item .st { font-size: var(--font-aux); color: var(--text-tertiary); }
+#scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.32); z-index: 50; }
+
+/* 底部导航（移动） */
+#bottomnav { display: none; }
+#more-menu {
+  position: fixed;
+  left: 8px; right: 8px; bottom: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-panel);
+  z-index: 70;
+  padding: 8px;
+}
+#more-menu button { display: block; width: 100%; min-height: 44px; text-align: left; padding: 8px 12px; border: 0; background: transparent; cursor: pointer; border-radius: var(--radius-control); }
+
+/* 日历 */
+.cal-grid { display: flex; gap: 8px; overflow-x: auto; }
+.cal-col { flex: 1 1 0; min-width: 120px; border: 1px solid var(--separator); border-radius: var(--radius-control); padding: 8px; background: var(--surface-raised); }
+.cal-ev { border: 1px solid var(--separator); border-left: 3px solid var(--accent); border-radius: 6px; padding: 6px 8px; margin: 6px 0; font-size: var(--font-aux); background: var(--bg-secondary); }
+.cal-ev.cand { border-left-color: var(--status-warning); border-style: dashed; }
+
+.kcard { border: 1px solid var(--separator); border-radius: var(--radius-panel); padding: 12px; background: var(--surface-raised); margin-bottom: 8px; }
+
+@media (max-width: 900px) {
+  #app { min-width: 0; }
+  #rail { display: none; }
+  #main, #content, #center, .center-inner { width: 100%; min-width: 0; }
+  #topbar { flex-wrap: nowrap; overflow-x: auto; padding: 8px 12px; }
+  #topbar > * { flex: none; }
+  #topbar .tb-spacer { display: none; }
+  .scope-chip { max-width: 52vw; }
+  #center { padding: 12px; padding-bottom: 76px; overflow-x: hidden; }
+  #panel {
+    position: fixed;
+    inset: 0;
+    width: auto;
+    z-index: 40;
+    border-left: 0;
+    background: var(--bg-primary);
+  }
+  #bottomnav {
+    display: flex;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 30;
+    background: var(--bg-primary);
+    border-top: 1px solid var(--separator);
+  }
+  #bottomnav button {
+    flex: 1 1 0;
+    min-height: 56px;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font-size: var(--font-aux);
+    color: var(--text-secondary);
+    position: relative;
+  }
+  #bottomnav button[aria-current="page"] { color: var(--text-primary); font-weight: 600; }
+  #bottomnav .rail-badge { position: absolute; top: 6px; right: 12px; }
+  .bubble { max-width: 92%; }
+  .row { min-width: 0; }
+  .seg { display: flex; width: 100%; }
+  .seg button { flex: 1 1 0; min-width: 0; padding-inline: 8px; }
+  .board { flex-direction: column; }
+  .board-col { width: 100%; }
+  .cal-grid { max-width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; scroll-behavior: auto !important; }
+}
+</style>
+</head>
+<body class="annot">
+
+<div id="app">
+  <aside id="rail" aria-label="全局导航">
+    <div class="rail-title">Chat 工作台骨架 v0.1 · 研究原型</div>
+    <div id="rail-btns"></div>
+  </aside>
+  <div id="main">
+    <header id="topbar">
+      <button type="button" class="tb-btn" id="back-btn" data-action="back" hidden>返回</button>
+      <span class="scope-chip" id="scope-chip"></span>
+      <span class="tb-spacer"></span>
+      <button type="button" class="tb-btn" id="annot-btn" data-action="toggle-annot" aria-pressed="true">场景标注</button>
+      <button type="button" class="tb-btn" data-action="open-legend">场景图例</button>
+      <button type="button" class="tb-btn" id="theme-btn" data-action="toggle-theme">深色</button>
+    </header>
+    <div id="content">
+      <section id="center" aria-label="主工作表面" tabindex="-1"><div class="center-inner" id="center-inner"></div></section>
+      <aside id="panel" aria-label="上下文副表面" hidden></aside>
+    </div>
+  </div>
+</div>
+
+<nav id="bottomnav" aria-label="全局导航（移动）"></nav>
+<div id="scrim" hidden></div>
+<div id="legend" role="dialog" aria-modal="true" aria-label="场景图例" hidden></div>
+<div id="more-menu" role="menu" aria-label="更多导航" hidden></div>
+
+<script>
+"use strict";
+/* ============================================================
+   统一 mock product model：只保存一份对象事实。
+   Today / 监督队列 / 项目房间 / 知识全部从此投影，不复制数据。
+   ============================================================ */
+var model = {
+  projects: [
+    { id: "p1", name: "Chat · 工作台骨架", stage: "Stage 2 · 骨架原型", milestone: "M1 骨架可点", health: "正常", kind: "软件（棕地）" },
+    { id: "p2", name: "秋季家庭旅行", stage: "准备期", milestone: "预算确认", health: "有风险", kind: "家庭" },
+    { id: "p3", name: "周末陶艺", stage: "练习期", milestone: "第一只可用茶杯", health: "正常", kind: "爱好" }
+  ],
+  works: [
+    { id: "w1", projectId: "p1", title: "统一骨架 HTML 原型", status: "进行中", owner: "执行 Agent", desc: "把 Stage 1 收敛的唯一骨架落成单文件可交互原型。", scopes: ["导航与作用域", "副表面槽位"], actions: ["完成首屏渲染", "接入返回连续性"] },
+    { id: "w2", projectId: "p1", title: "设计 Token 对比度核对", status: "待办", owner: "你", desc: "核对浅深主题正文与交互对比度。", scopes: ["浅色", "深色"], actions: ["浅色核对", "深色核对"] },
+    { id: "w3", projectId: "p2", title: "行程候选整理", status: "进行中", owner: "你", desc: "把候选目的地收敛为两个可比较方案。", scopes: ["目的地"], actions: ["确认机票预算"] },
+    { id: "w4", projectId: "p3", title: "茶杯修坯练习", status: "待办", owner: "你", desc: "完成三次修坯练习并记录手感差异。", scopes: ["练习"], actions: ["修坯 30 分钟"] }
+  ],
+  today: [
+    { id: "t1", workId: "w1", title: "完成骨架首屏渲染", domain: "work", when: "today", done: false },
+    { id: "t2", workId: "w2", title: "核对 Token 对比度", domain: "work", when: "today", done: false },
+    { id: "t3", workId: "w3", title: "确认机票预算", domain: "life", when: "today", done: true },
+    { id: "t4", workId: "w4", title: "修坯 30 分钟", domain: "life", when: "evening", done: false }
+  ],
+  sessions: [
+    { id: "s1", projectId: null, title: "把骨架原型搭起来" },
+    { id: "s2", projectId: "p1", title: "房间周会讨论" }
+  ],
+  decisions: {
+    d1: { id: "d1", kind: "plan", title: "计划 v2 · 骨架原型", revision: 2, hash: "9f3a…c41", projectId: "p1", workId: "w1", runId: "r1", status: "pending",
+      steps: ["建立全局导航与作用域条", "实现统一副表面槽位", "接入对话、监督与项目表面", "完成双主题与 375px 折叠"] },
+    d2: { id: "d2", kind: "update", title: "项目进展更新候选 · 第 1 周", revision: 1, hash: "b71e…0d2", projectId: "p1", workId: "w1", runId: null, status: "pending",
+      steps: ["负责人叙事：骨架方向已收敛，原型进行中", "健康：正常", "已观察变化：Stage 1 评审通过"] }
+  },
+  runs: {
+    r1: { id: "r1", sessionId: "s1", workId: "w1", status: "waiting", agentId: "a2",
+      steps: [ { t: "澄清需求", s: "done" }, { t: "生成计划 v2", s: "done" }, { t: "等待计划批准", s: "active" }, { t: "生成骨架文件", s: "todo" } ] },
+    r2: { id: "r2", sessionId: "s1", workId: "w1", status: "outcome_unknown", agentId: "a2",
+      steps: [ { t: "写入 Artifact 文件", s: "unknown" } ] }
+  },
+  agents: [
+    { id: "a1", name: "规划 Agent", role: "把目标整理为可修订计划", participant: "你、执行 Agent 可见" },
+    { id: "a2", name: "执行 Agent", role: "按批准的计划生成产物", participant: "你可见；委派自规划 Agent" }
+  ],
+  feed: [
+    { id: "f1", type: "decision", agentId: "a1", projectId: "p1", title: "计划 v2 待批准", detail: "高影响动作前的人工决定", status: "needs", ref: "d1" },
+    { id: "f2", type: "outcome_unknown", agentId: "a2", projectId: "p1", title: "写入 Artifact 结果未知", detail: "响应丢失，需对账而非重试", status: "needs", ref: "r2" },
+    { id: "f3", type: "update_candidate", agentId: "a1", projectId: "p1", title: "项目进展更新候选", detail: "负责人署名更新前的候选", status: "needs", ref: "d2" },
+    { id: "f4", type: "review", agentId: "a2", projectId: "p1", title: "Diff 审阅已完成（示例）", detail: "已处理条目归入此列", status: "done", ref: null },
+    { id: "f5", type: "run_succeeded", agentId: "a2", projectId: "p2", title: "旅行方案检索完成", detail: "运行成功，无需介入", status: "done", ref: null }
+  ],
+  artifacts: {
+    art1: { id: "art1", runId: "r1", workId: "w1", name: "chat-skeleton-v0.1.html",
+      diff: [
+        { t: "ctx", x: "<nav class=\"rail\"> 全局导航" },
+        { t: "add", x: "+ <button>Today</button>" },
+        { t: "del", x: "- <button class=\"old\">今日清单</button>" },
+        { t: "ctx", x: "<section id=\"center\"> 主工作表面" },
+        { t: "add", x: "+ <aside id=\"panel\"> 统一副表面槽位" },
+        { t: "add", x: "+ 场景标注开关（默认开启）" },
+        { t: "ctx", x: "/* Token：仅语义变量，无硬编码色值 */" }
+      ] }
+  },
+  cards: [
+    { id: "c1", title: "工作台机制矩阵摘录", src: "docs/design/references（内部研究）", boards: ["骨架思考板"] },
+    { id: "c2", title: "设计 Token 值表 v1", src: "docs/product/design-guidelines.md", boards: ["骨架思考板", "规范板"] },
+    { id: "c3", title: "Stage 1 骨架决议", src: "本轮对话（已确认）", boards: ["规范板"] }
+  ],
+  calendar: {
+    day: [ { time: "10:00", title: "骨架评审（候选）", cand: true }, { time: "15:00", title: "Token 核对", cand: false }, { time: "20:00", title: "修坯练习", cand: false } ],
+    week: ["一 · 骨架评审", "二 · —", "三 · Token 核对", "四 · —", "五 · 周会", "六 · 陶艺", "日 · —"],
+    year: ["1 月", "2 月", "3 月", "4 月", "5 月", "6 月", "7 月", "8 月 · 骨架原型", "9 月", "10 月 · 家庭旅行", "11 月", "12 月"]
+  }
+};
+
+/* 运行时 UI 状态：过滤、批注等只是投影与草稿，不是第二份事实。 */
+var ui = {
+  annot: true,
+  todayFilter: "all",
+  feedTab: "needs",
+  calScale: "day",
+  knowTab: "library",
+  runPane: "files",
+  planEdit: false,
+  askLog: [],
+  annotations: [],           /* {line, text} 候选批注 */
+  handedBack: false,
+  reconcile: null,           /* null | 'confirmed' | 'escalated' */
+  legendHl: null,
+  moreOpen: false
+};
+
+/* ---------- 场景图例数据（S1–S11 全部站位） ---------- */
+var SCENES = [
+  { c: "S1", n: "对话、目标澄清与计划确认", m: "AnythingLLM 对话内澄清卡片 + Agent Feed 独立决定详情", s: "骨架可交互" },
+  { c: "S2", n: "项目、工作列表与候选审核", m: "Linear List→Peek→Detail + Plane 多布局看板", s: "骨架可交互" },
+  { c: "S3", n: "Agent 执行现场", m: "Open Computer 现场居中 + Orca 多窗格 + 对话内嵌进度", s: "骨架可交互" },
+  { c: "S4", n: "Agent 身份、团队、参与与权限边界", m: "Agent Feed 监督身份 + 委派", s: "站位：身份投影可读，完整 Agent Profile 属自建缺口" },
+  { c: "S5", n: "Agent 能力、工具、记忆与上下文", m: "AnythingLLM 能力/MCP 同页管理 + Heptabase 显式上下文/来源", s: "站位：分组与上下文面板可见，授权与对账属生产合同" },
+  { c: "S6", n: "多 Agent 动态、监督与人工介入", m: "Agent Feed 类型化监督队列", s: "骨架可交互" },
+  { c: "S7", n: "工作流定义、配置与触发", m: "自建，当前阶段暂缓", s: "禁用站位：只保留未来入口，不画 Workflow 图" },
+  { c: "S8", n: "运行进度、暂停、失败与对账", m: "Agent Feed 等待→决定→恢复 + outcome_unknown 对账", s: "骨架可交互；真正 Pause/Resume 属自建缺口" },
+  { c: "S9", n: "文件、Diff、产物与证据审阅", m: "Orca Diff 行级批注", s: "骨架可交互；正式 Evidence 完成门不在骨架内" },
+  { c: "S10", n: "今天、待办与日历", m: "Things Today 注意力投影 + HEY 时间尺度机制", s: "骨架可交互（Today）；日历为尺度站位" },
+  { c: "S11", n: "进展、动态、交付与历史", m: "Basecamp 房间 Activity 投影", s: "站位：投影可读，负责人署名 Update 属生产合同" }
+];
+
+/* ---------- 路由：canonical route = 表面 + 作用域 + 对象 + 副表面 ---------- */
+var scrollMap = {};
+var focusMap = {};
+
+function parseHash() {
+  var h = location.hash.slice(1) || "/chat";
+  var parts = h.split(";");
+  var seg = parts[0].split("/").filter(Boolean);
+  var s = { surface: seg[0] || "chat", id: seg[1] || null, sub: seg[2] || null, panel: null };
+  if (parts[1]) {
+    var m = parts[1].match(/^panel=(\w+):(.+)$/);
+    if (m) s.panel = { kind: m[1], ref: m[2] };
+  }
+  return s;
+}
+function buildHash(s) {
+  var h = "/" + s.surface + (s.id ? "/" + s.id : "") + (s.sub ? "/" + s.sub : "");
+  if (s.panel) h += ";panel=" + s.panel.kind + ":" + s.panel.ref;
+  return h;
+}
+var state = parseHash();
+
+function saveSpot() {
+  var h = buildHash(state);
+  scrollMap[h] = document.getElementById("center").scrollTop;
+  var a = document.activeElement;
+  if (a && a.getAttribute && a.getAttribute("data-fid")) focusMap[h] = a.getAttribute("data-fid");
+}
+function navigate(s, replace) {
+  saveSpot();
+  state = s;
+  var h = "#" + buildHash(s);
+  if (replace) history.replaceState(null, "", h); else history.pushState(null, "", h);
+  render();
+}
+function go(patch) {
+  var s = { surface: state.surface, id: state.id, sub: state.sub, panel: state.panel };
+  for (var k in patch) s[k] = patch[k];
+  navigate(s);
+}
+window.addEventListener("popstate", function () { state = parseHash(); render(); });
+
+/* ---------- 工具 ---------- */
+function esc(x) { return String(x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function project(id) { return model.projects.filter(function (p) { return p.id === id; })[0]; }
+function work(id) { return model.works.filter(function (w) { return w.id === id; })[0]; }
+function agent(id) { return model.agents.filter(function (a) { return a.id === id; })[0]; }
+function stag(code, label) {
+  return '<button type="button" class="stag" data-action="legend" data-scen="' + code + '" aria-label="查看场景 ' + code + ' 说明">' + code + (label ? " " + esc(label) : "") + '</button>';
+}
+function statusChip(text, level) {
+  return '<span class="chip"><span class="dot ' + level + '" aria-hidden="true"></span>' + esc(text) + '</span>';
+}
+function runStatusChip(st) {
+  if (st === "running") return statusChip("运行中", "ok");
+  if (st === "waiting") return statusChip("等待人工决定", "warn");
+  if (st === "outcome_unknown") return statusChip("结果未知", "bad");
+  if (st === "succeeded") return statusChip("已成功", "ok");
+  return statusChip(st, "idle");
+}
+function needsCount() { return model.feed.filter(function (f) { return f.status === "needs"; }).length; }
+
+/* ---------- 作用域推导 ---------- */
+function scopeLabel() {
+  switch (state.surface) {
+    case "chat": {
+      var sess = model.sessions.filter(function (x) { return x.id === (state.id || "s1"); })[0];
+      if (sess && sess.projectId) return '作用域：<b>项目</b> ' + esc(project(sess.projectId).name) + ' · 会话 ' + esc(sess.title);
+      return '作用域：<b>全局</b> · 会话 ' + esc(sess ? sess.title : "默认");
+    }
+    case "project": {
+      var p = project(state.id);
+      return '作用域：<b>项目</b> ' + esc(p ? p.name : state.id);
+    }
+    case "work": {
+      var w = work(state.id);
+      return '作用域：<b>Work</b> ' + esc(w ? w.title : state.id) + ' · 所属项目 ' + esc(project(w.projectId).name);
+    }
+    case "decision": {
+      var d = model.decisions[state.id];
+      return '作用域：<b>决定</b> ' + esc(state.id) + ' · 项目 ' + esc(project(d.projectId).name);
+    }
+    case "run": return '作用域：<b>Run</b> ' + esc(state.id) + ' · 来自会话 s1';
+    case "review": return '作用域：<b>Artifact</b> ' + esc(state.id) + ' · Run r1 · Work w1';
+    case "reconcile": return '作用域：<b>对账</b> ' + esc(state.id) + ' · 结果未知处置';
+    default: return '作用域：<b>全局</b>';
+  }
+}
+
+/* ============================================================
+   渲染：顶栏 / 导航 / 中心 / 副表面 / 图例
+   ============================================================ */
+function renderRail() {
+  var items = [
+    ["chat", "对话", null],
+    ["today", "Today", null],
+    ["projects", "项目", null],
+    ["feed", "监督", needsCount()],
+    ["calendar", "日历", null],
+    ["knowledge", "知识", null],
+    ["settings", "设置", null]
+  ];
+  var cur = state.surface === "project" || state.surface === "work" ? "projects" : state.surface;
+  document.getElementById("rail-btns").innerHTML = items.map(function (it) {
+    return '<button type="button" class="rail-btn" data-action="nav" data-nav="' + it[0] + '"' +
+      (cur === it[0] ? ' aria-current="page"' : "") + ' data-fid="rail-' + it[0] + '">' +
+      "<span>" + it[1] + "</span>" + (it[2] ? '<span class="rail-badge" aria-label="' + it[2] + ' 条待介入">' + it[2] + "</span>" : "") + "</button>";
+  }).join("");
+  var mobile = [["chat", "对话"], ["today", "Today"], ["projects", "项目"], ["feed", "监督"], ["more", "更多"]];
+  document.getElementById("bottomnav").innerHTML = mobile.map(function (it) {
+    return '<button type="button" data-action="' + (it[0] === "more" ? "more" : "nav") + '" data-nav="' + it[0] + '"' +
+      (cur === it[0] ? ' aria-current="page"' : "") + ' data-fid="bn-' + it[0] + '">' + it[1] +
+      (it[0] === "feed" && needsCount() ? '<span class="rail-badge">' + needsCount() + "</span>" : "") + "</button>";
+  }).join("");
+}
+
+function renderTopbar() {
+  document.getElementById("scope-chip").innerHTML = scopeLabel();
+  document.getElementById("back-btn").hidden = state.surface === "chat" && !state.panel;
+  var annotBtn = document.getElementById("annot-btn");
+  annotBtn.setAttribute("aria-pressed", ui.annot ? "true" : "false");
+  document.body.classList.toggle("annot", ui.annot);
+  var dark = (document.documentElement.getAttribute("data-theme") === "dark") ||
+    (!document.documentElement.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  document.getElementById("theme-btn").textContent = dark ? "浅色" : "深色";
+}
+
+/* ---------- 中心表面 ---------- */
+function renderCenter() {
+  var fn = {
+    chat: vChat, today: vToday, projects: vProjects, project: vProject, work: vWork,
+    feed: vFeed, calendar: vCalendar, knowledge: vKnowledge, settings: vSettings,
+    decision: vDecision, run: vRun, review: vReview, reconcile: vReconcile
+  }[state.surface] || vChat;
+  document.getElementById("center-inner").innerHTML = fn();
+  var h = buildHash(state);
+  var sc = document.getElementById("center");
+  sc.scrollTop = scrollMap[h] || 0;
+  var fid = focusMap[h];
+  if (fid) { var el = document.querySelector('[data-fid="' + fid + '"]'); if (el) el.focus(); }
+}
+
+/* 对话：S1 澄清卡 + 可修订计划摘要 + S3/S8 运行进度 */
+function vChat() {
+  var d1 = model.decisions.d1;
+  var r1 = model.runs.r1;
+  var decided = d1.status !== "pending";
+  var html = '<h1>对话' + stag("S1", "澄清与计划") + stag("S3", "内嵌进度") + "</h1>" +
+    '<p class="aux">对话是产品默认主页与全局入口；进度、候选与来源贴着消息流走。</p>';
+
+  html += '<div class="msg user"><div class="bubble">帮我把 Chat 工作台的统一骨架原型搭出来。</div></div>';
+  html += '<div class="msg"><div class="bubble">已收到。我先确认两个关键点，再给你一份可修订计划。</div></div>';
+
+  /* S1 澄清卡 */
+  html += '<div class="card raised" role="group" aria-label="澄清卡片">' +
+    '<div class="row"><h3>澄清 · 1/2</h3>' + stag("S1") + '<span class="aux">对话内结构化澄清，不跳页面</span></div>';
+  if (!ui.clarifyDone) {
+    html += '<p>骨架原型的主要用途是？</p><div class="opt-list">' +
+      '<button type="button" class="btn" data-action="clarify" data-v="review" data-fid="cl-a">评审导航与连续性（推荐）</button>' +
+      '<button type="button" class="btn" data-action="clarify" data-v="visual" data-fid="cl-b">只验证视觉与主题</button>' +
+      '<button type="button" class="btn" data-action="clarify" data-v="other" data-fid="cl-c">其他（在输入框补充）</button>' +
+      '<button type="button" class="btn" data-action="clarify" data-v="skip" data-fid="cl-d">跳过澄清</button></div>';
+  } else {
+    html += '<p class="row">' + statusChip("已回答", "ok") + '<span class="muted">主要用途：评审导航与连续性</span></p>';
+  }
+  html += "</div>";
+
+  /* S1 计划卡 → 独立决定详情 */
+  html += '<div class="card raised" role="group" aria-label="计划卡片">' +
+    '<div class="row"><h3>' + esc(d1.title) + '</h3>' + stag("S1") +
+    (d1.status === "approved" ? statusChip("已批准", "ok") : d1.status === "rejected" ? statusChip("已拒绝", "bad") : statusChip("待决定", "warn")) + "</div>" +
+    '<p class="aux">revision ' + d1.revision + " · hash " + esc(d1.hash) + " · 绑定 Work w1</p><ul>" +
+    d1.steps.map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("") + "</ul>" +
+    '<div class="row">' +
+    (decided ? "" : '<button type="button" class="btn primary" data-action="open-decision" data-id="d1" data-fid="plan-open">查看决定详情</button>') +
+    '<button type="button" class="btn" data-action="panel" data-kind="context" data-ref="d1" data-fid="plan-ctx">上下文与来源</button>' +
+    (decided ? '<span class="aux">决定已写回权威对象，Feed 与运行投影同步更新。</span>' : "") +
+    "</div></div>";
+
+  /* S3/S8 运行进度卡 */
+  var runSteps = r1.steps.map(function (st) {
+    var lv = st.s === "done" ? "ok" : st.s === "active" ? "warn" : st.s === "unknown" ? "bad" : "idle";
+    var tx = st.s === "done" ? "完成" : st.s === "active" ? "进行中" : st.s === "unknown" ? "未知" : "待执行";
+    return '<li class="row"><span class="dot ' + lv + '" aria-hidden="true"></span>' + esc(st.t) + ' <span class="aux">' + tx + "</span></li>";
+  }).join("");
+  html += '<div class="card" role="group" aria-label="运行进度卡片">' +
+    '<div class="row"><h3>运行 r1 · 执行 Agent</h3>' + stag("S3") + stag("S8") + runStatusChip(decided && r1.status === "waiting" ? "running" : r1.status) + "</div>" +
+    "<ul>" + runSteps + "</ul>" +
+    '<div class="row">' +
+    '<button type="button" class="btn" data-action="open-run" data-id="r1" data-fid="run-open">进入执行现场</button>' +
+    '<button type="button" class="btn" data-action="panel" data-kind="sidecar" data-ref="r1" data-fid="run-side">运行边车</button>' +
+    "</div></div>";
+
+  html += '<form class="composer" data-action-form="send">' +
+    '<input type="text" name="msg" aria-label="输入消息" placeholder="继续对话（骨架：仅本地追加）" autocomplete="off">' +
+    '<button type="submit" class="btn primary">发送</button></form>' +
+    '<div id="chat-log"></div>';
+  return html;
+}
+
+/* Today：S10 注意力投影 */
+function vToday() {
+  var filters = [["all", "全部"], ["work", "工作"], ["life", "生活"], ["evening", "今晚"]];
+  var items = model.today.filter(function (t) {
+    if (ui.todayFilter === "all") return true;
+    if (ui.todayFilter === "evening") return t.when === "evening";
+    return t.domain === ui.todayFilter && t.when !== "evening";
+  });
+  var html = "<h1>Today" + stag("S10", "注意力投影") + "</h1>" +
+    '<p class="aux">只放今天承诺的事项，每条带来源项目。这是投影，不复制对象事实。</p>' +
+    '<div class="seg" role="group" aria-label="Today 过滤">' +
+    filters.map(function (f) {
+      return '<button type="button" data-action="today-filter" data-v="' + f[0] + '" aria-pressed="' + (ui.todayFilter === f[0]) + '" data-fid="tf-' + f[0] + '">' + f[1] + "</button>";
+    }).join("") + "</div><div style=\"height:12px\"></div>" +
+    '<div class="list">' +
+    (items.length ? items.map(function (t) {
+      var w = work(t.workId);
+      return '<button type="button" class="list-item" data-action="open-work" data-id="' + t.workId + '" data-fid="today-' + t.id + '">' +
+        '<span class="grow"><span class="t">' + esc(t.title) + '</span><br><span class="s">来源：' + esc(project(w.projectId).name) + " · " + esc(w.title) + (t.when === "evening" ? " · 今晚" : "") + "</span></span>" +
+        (t.done ? statusChip("已完成", "ok") : statusChip("待办", "warn")) + "</button>";
+    }).join("") : '<div class="list-item">当前过滤下没有事项。</div>') +
+    "</div>" +
+    '<p class="aux">监督队列有 ' + needsCount() + ' 条待介入。Today 不列出监督条目，只给计数与入口。</p>' +
+    '<button type="button" class="btn" data-action="nav" data-nav="feed">前往监督队列</button>';
+  return html;
+}
+
+/* 项目列表 + 房间：S2 / S11 */
+function vProjects() {
+  return "<h1>项目" + stag("S2", "项目列表") + "</h1>" +
+    '<p class="aux">每个项目是一个房间：事务、资料、会话与动态按分区归位。</p><div class="list">' +
+    model.projects.map(function (p) {
+      return '<button type="button" class="list-item" data-action="open-project" data-id="' + p.id + '" data-fid="proj-' + p.id + '">' +
+        '<span class="grow"><span class="t">' + esc(p.name) + '</span><br><span class="s">' + esc(p.kind) + " · " + esc(p.stage) + " · " + esc(p.milestone) + "</span></span>" +
+        statusChip(p.health, p.health === "正常" ? "ok" : "warn") + "</button>";
+    }).join("") + "</div>";
+}
+
+function vProject() {
+  var p = project(state.id);
+  var tab = state.sub || "overview";
+  var tabs = [["overview", "概览"], ["work", "工作"], ["sessions", "会话"], ["files", "文件"], ["knowledge", "知识"], ["activity", "动态"]];
+  var html = "<h1>" + esc(p.name) + stag("S2") + (tab === "activity" || tab === "overview" ? stag("S11", "Activity 投影") : "") + "</h1>" +
+    '<p class="aux">' + esc(p.stage) + " · 里程碑：" + esc(p.milestone) + " · " + statusChip(p.health, p.health === "正常" ? "ok" : "warn") + "</p>" +
+    '<div class="seg" role="group" aria-label="项目分区" style="flex-wrap:wrap">' +
+    tabs.map(function (t) {
+      return '<button type="button" data-action="ptab" data-v="' + t[0] + '" aria-pressed="' + (tab === t[0]) + '" data-fid="pt-' + t[0] + '">' + t[1] + "</button>";
+    }).join("") + "</div><div style=\"height:12px\"></div>";
+
+  if (tab === "overview") {
+    html += '<div class="card"><h3>负责人更新（署名叙事，骨架站位）</h3><p class="muted">“骨架方向已收敛，原型进行中。”</p><p class="aux">健康：' + esc(p.health) + " · 与 Activity 投影分离，不由事件流冒充。</p></div>" +
+      '<div class="card"><h3>当前阶段</h3><p>' + esc(p.stage) + " · " + esc(p.milestone) + '</p><p class="aux">Stage / Milestone 是产品事实；百分比不是进度。</p></div>';
+  } else if (tab === "work") {
+    var works = model.works.filter(function (w) { return w.projectId === p.id; });
+    html += '<div class="row"><h2>工作</h2>' + stag("S2", "三档阅读") +
+      '<span class="grow"></span><div class="seg" role="group" aria-label="布局切换">' +
+      '<button type="button" data-action="layout" data-v="list" aria-pressed="' + (ui.workLayout === "list") + '" data-fid="lay-list">列表</button>' +
+      '<button type="button" data-action="layout" data-v="board" aria-pressed="' + (ui.workLayout === "board") + '" data-fid="lay-board">看板</button>' +
+      "</div></div>";
+    if (ui.workLayout === "list") {
+      html += '<div class="list">' + works.map(function (w) {
+        return '<button type="button" class="list-item" data-action="peek" data-id="' + w.id + '" data-fid="w-' + w.id + '">' +
+          '<span class="grow"><span class="t">' + esc(w.title) + '</span><br><span class="s">' + esc(w.owner) + " · " + esc(w.scopes.join(" / ")) + "</span></span>" +
+          statusChip(w.status, w.status === "进行中" ? "warn" : "idle") + "</button>";
+      }).join("") + "</div>";
+    } else {
+      var cols = ["待办", "进行中", "已完成"];
+      html += '<div class="board">' + cols.map(function (c) {
+        var inCol = works.filter(function (w) { return w.status === c; });
+        return '<div class="board-col"><h3>' + c + "</h3>" + (inCol.length ? inCol.map(function (w) {
+          return '<button type="button" class="board-card" data-action="peek" data-id="' + w.id + '" data-fid="wb-' + w.id + '"><b>' + esc(w.title) + '</b><br><span class="aux">' + esc(w.owner) + "</span></button>";
+        }).join("") : '<p class="aux" style="padding:0 8px">空</p>') + "</div>";
+      }).join("") + "</div>";
+    }
+    html += '<p class="aux">同一对象集合的两种布局；点击条目先打开右侧 Peek，再决定是否进入详情。</p>';
+  } else if (tab === "sessions") {
+    var sess = model.sessions.filter(function (s) { return s.projectId === p.id; });
+    html += '<div class="list">' + (sess.length ? sess.map(function (s) {
+      return '<button type="button" class="list-item" data-action="open-session" data-id="' + s.id + '" data-fid="sess-' + s.id + '"><span class="grow"><span class="t">' + esc(s.title) + '</span><br><span class="s">项目作用域会话 · 与全局会话同一 Session 身份体系</span></span></button>';
+    }).join("") : '<div class="list-item">暂无会话。</div>') + "</div>";
+  } else if (tab === "files") {
+    html += "<h2>文件与产物" + stag("S9", "审阅入口") + '</h2><div class="list">' +
+      '<button type="button" class="list-item" data-action="open-review" data-id="art1" data-fid="file-art1"><span class="grow"><span class="t">chat-skeleton-v0.1.html</span><br><span class="s">Artifact art1 · 来自 Run r1 · 待审阅</span></span>' + statusChip("待审阅", "warn") + "</button></div>";
+  } else if (tab === "knowledge") {
+    html += "<h2>项目知识（站位）</h2>" + '<p class="aux">项目内知识是全局知识表面的作用域过滤，同一 Card 身份。</p>' +
+      '<button type="button" class="btn" data-action="nav" data-nav="knowledge">打开知识表面</button>';
+  } else if (tab === "activity") {
+    html += "<h2>动态" + stag("S11") + '</h2><div class="list">' +
+      '<div class="list-item"><span class="grow"><span class="t">计划 v2 已生成</span><br><span class="s">规划 Agent · 今天 10:12 · 投影自 Decision 事实</span></span></div>' +
+      '<div class="list-item"><span class="grow"><span class="t">Work w1 状态改为进行中</span><br><span class="s">你 · 今天 09:40 · 投影自 Work 状态机</span></span></div>' +
+      '<div class="list-item"><span class="grow"><span class="t">项目负责人更新已发布（示例）</span><br><span class="s">你 · 昨天 · 负责人署名叙事</span></span></div></div>' +
+      '<p class="aux">动态是投影；离开此页后正式状态由权威对象重建。</p>';
+  }
+  return html;
+}
+
+/* Work 详情 */
+function vWork() {
+  var w = work(state.id);
+  var html = "<h1>" + esc(w.title) + stag("S2", "Detail") + "</h1>" +
+    '<p class="idline">Work · ' + esc(w.id) + " · 所属项目 " + esc(project(w.projectId).name) + "</p>" +
+    '<div class="card"><h3>描述</h3><p>' + esc(w.desc) + '</p><p class="aux">Scope：' + esc(w.scopes.join("、")) + "（执行中逐步发现，不与 Work 合并）</p></div>" +
+    '<div class="card"><h3>Action</h3><ul>' + w.actions.map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") + "</ul>" +
+    '<p class="aux">Action 全部完成也不能自动证明 Work 完成。</p></div>' +
+    '<div class="row">' +
+    '<button type="button" class="btn" data-action="open-review" data-id="art1">审阅关联产物</button>' +
+    '<button type="button" class="btn" data-action="panel" data-kind="ask" data-ref="' + w.id + '">就当前对象发问</button>' +
+    '<button type="button" class="btn" data-action="panel" data-kind="context" data-ref="' + w.id + '">上下文与来源</button>' +
+    "</div>";
+  return html;
+}
+
+/* 监督队列：S6 + S4 */
+function vFeed() {
+  var tabs = [["needs", "需要介入"], ["other", "其他状态"]];
+  var items = model.feed.filter(function (f) { return ui.feedTab === "needs" ? f.status === "needs" : f.status !== "needs"; });
+  var html = "<h1>监督" + stag("S6", "类型化队列") + stag("S4", "身份与委派") + "</h1>" +
+    '<p class="aux">跨工作项的注意力投影，不是第二套 Work 数据库；任务类型决定可用动作。</p>' +
+    '<div class="seg" role="group" aria-label="监督分流">' +
+    tabs.map(function (t) {
+      return '<button type="button" data-action="feed-tab" data-v="' + t[0] + '" aria-pressed="' + (ui.feedTab === t[0]) + '" data-fid="ft-' + t[0] + '">' + t[1] + (t[0] === "needs" ? "（" + needsCount() + "）" : "") + "</button>";
+    }).join("") + "</div><div style=\"height:12px\"></div><div class=\"list\">" +
+    (items.length ? items.map(function (f) {
+      var a = agent(f.agentId);
+      var act = f.type === "decision" || f.type === "update_candidate" ? "open-decision" : f.type === "outcome_unknown" ? "open-reconcile" : "noop";
+      var lv = f.status === "needs" ? (f.type === "outcome_unknown" ? "bad" : "warn") : "ok";
+      var tx = f.status === "needs" ? "需要介入" : "已处理";
+      return '<button type="button" class="list-item" data-action="' + act + '" data-id="' + (f.ref || "") + '" data-fid="feed-' + f.id + '"' + (act === "noop" ? " disabled" : "") + '>' +
+        '<span class="grow"><span class="t">' + esc(f.title) + '</span><br><span class="s">' + esc(a.name) + " · " + esc(project(f.projectId).name) + " · " + esc(f.detail) + '</span><br><span class="s">参与者：' + esc(a.participant) + "</span></span>" +
+        statusChip(tx, lv) + "</button>";
+    }).join("") : '<div class="list-item">此分流下暂无条目。</div>') + "</div>" +
+    '<p class="aux">委派链：规划 Agent → 执行 Agent（coordination-only）；完整耐久 Agent Profile 是明确自建缺口。</p>';
+  return html;
+}
+
+/* 决定详情：S1/S8 */
+function vDecision() {
+  var d = model.decisions[state.id];
+  var isPlan = d.kind === "plan";
+  var html = "<h1>" + esc(d.title) + stag("S1", "独立决定详情") + (isPlan ? stag("S8", "等待→决定→恢复") : stag("S11", "署名更新候选")) + "</h1>" +
+    '<p class="idline">Decision · ' + esc(d.id) + " · revision " + d.revision + " · hash " + esc(d.hash) + " · 绑定对象版本，过期决定安全失败</p>" +
+    '<div class="card raised"><h3>' + (isPlan ? "计划步骤（可修订）" : "更新内容（可修订）") + "</h3>";
+  if (ui.planEdit && d.status === "pending") {
+    html += '<form data-action-form="save-plan">' + d.steps.map(function (s, i) {
+      return '<div style="margin-bottom:8px"><input type="text" name="step' + i + '" value="' + esc(s) + '" aria-label="第 ' + (i + 1) + ' 条" style="width:100%;min-height:44px;padding:8px 12px;border:1px solid var(--separator);border-radius:var(--radius-control);background:var(--surface-raised)"></div>';
+    }).join("") + '<div class="row"><button type="submit" class="btn primary">保存修订（revision ' + (d.revision + 1) + "）</button>" +
+      '<button type="button" class="btn" data-action="edit-cancel">取消</button></div></form>';
+  } else {
+    html += "<ul>" + d.steps.map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("") + "</ul>";
+  }
+  html += "</div>";
+  if (d.status === "pending") {
+    html += '<div class="row">' +
+      '<button type="button" class="btn primary" data-action="decide" data-v="approved" data-fid="dec-ok">批准</button>' +
+      (ui.planEdit ? "" : '<button type="button" class="btn" data-action="edit-plan" data-fid="dec-edit">修订</button>') +
+      '<button type="button" class="btn danger" data-action="decide" data-v="rejected" data-fid="dec-no">拒绝</button></div>' +
+      '<p class="aux">批准后由产品提交决定并恢复运行；重复点击、旧页面与过期 revision 均安全失败（生产合同）。</p>';
+  } else {
+    html += "<p>" + (d.status === "approved" ? statusChip("已批准", "ok") : statusChip("已拒绝", "bad")) + ' <span class="aux">终态已写回权威对象；修订只能以新 revision 发起，骨架不提供通用 Undo。</span></p>';
+  }
+  html += '<div class="row" style="margin-top:12px"><button type="button" class="btn" data-action="open-work" data-id="' + d.workId + '">打开关联 Work</button>' +
+    '<button type="button" class="btn" data-action="panel" data-kind="context" data-ref="' + d.id + '">上下文与来源</button></div>';
+  return html;
+}
+
+/* outcome_unknown 对账：S8 */
+function vReconcile() {
+  var f = model.feed.filter(function (x) { return x.ref === state.id && x.type === "outcome_unknown"; })[0];
+  var html = "<h1>结果未知对账" + stag("S8", "outcome_unknown") + "</h1>" +
+    '<p class="idline">Run · ' + esc(state.id) + ' · Tool 调用：写入 Artifact · 请求已发出，响应丢失</p>' +
+    '<div class="card"><div class="row">' + statusChip("结果未知 outcome_unknown", "bad") + "</div>" +
+    '<p class="muted">外部副作用可能已提交，只是没有收到响应。普通重试可能重复写入，因此被明确禁止。</p></div>';
+  if (!ui.reconcile) {
+    html += '<div class="row">' +
+      '<button type="button" class="btn primary" data-action="reconcile" data-v="query" data-fid="rec-q">查询对账（同一身份）</button>' +
+      '<button type="button" class="btn" data-action="reconcile" data-v="escalate" data-fid="rec-e">升级人工处置</button>' +
+      '<button type="button" class="btn" disabled aria-disabled="true" title="结果未知不提供普通重试">重试（不可用）</button></div>';
+  } else if (ui.reconcile === "confirmed") {
+    html += '<div class="note ok"><b>对账结果：</b>使用同一幂等身份查询，外部只存在一条记录；已按已知 external ID 收敛为已提交。Feed 条目同步转为已处理。</div>';
+  } else {
+    html += '<div class="note"><b>已升级人工处置：</b>保留现场与证据，等待负责人选择补偿或确认，不做自动重试。</div>';
+  }
+  html += '<p class="aux">条目：' + esc(f ? f.title : state.id) + " · 对账只能使用同一身份与同一正文，或按已知 external ID 读取验证。</p>";
+  return html;
+}
+
+/* 执行现场：S3 */
+function vRun() {
+  var r = model.runs[state.id];
+  var panes = [["files", "文件"], ["diff", "Diff"], ["logs", "日志"]];
+  var html = "<h1>执行现场" + stag("S3", "现场居中 + 多窗格") + "</h1>" +
+    '<p class="idline">Run · ' + esc(r.id) + " · 任务隔离工作间 · 布局按 Run 恢复</p>" +
+    '<div class="row" style="margin-bottom:12px">' + runStatusChip(r.status === "waiting" && model.decisions.d1.status === "approved" ? "running" : r.status) +
+    '<span class="aux">现场由用户显式进入，不自动切屏；对话退到边车。</span></div>' +
+    '<div class="stage" aria-label="桌面现场（骨架站位）">' +
+    '<h2>桌面现场（骨架站位）</h2>' +
+    '<p class="muted">Open Computer 式现场居中：真实产品中这里呈现浏览器 / 桌面 / 文件现场。骨架只验证布局与往返，不实现电脑控制。</p>' +
+    '<p class="aux">当前步骤：' + esc((r.steps.filter(function (s) { return s.s === "active"; })[0] || {}).t || "等待输入") + "</p></div>" +
+    '<div class="panes"><div class="pane-tabs" role="group" aria-label="工作间窗格">' +
+    panes.map(function (p) {
+      return '<button type="button" data-action="run-pane" data-v="' + p[0] + '" aria-pressed="' + (ui.runPane === p[0]) + '" data-fid="rp-' + p[0] + '">' + p[1] + "</button>";
+    }).join("") + '</div><div class="pane-body">';
+  if (ui.runPane === "files") {
+    html += '<div class="list"><button type="button" class="list-item" data-action="open-review" data-id="art1"><span class="grow"><span class="t">chat-skeleton-v0.1.html</span><br><span class="s">Artifact art1 · 打开进入审阅表面</span></span>' + statusChip("待审阅", "warn") + "</button></div>";
+  } else if (ui.runPane === "diff") {
+    html += '<p class="muted">7 行改动：4 处新增、1 处删除、2 处上下文。</p><button type="button" class="btn" data-action="open-review" data-id="art1">打开行级批注审阅</button>';
+  } else {
+    html += '<div class="diff">' + ["10:01 计划 v2 已确认", "10:02 开始生成骨架文件", "10:03 等待人工决定（已解决）"].map(function (l, i) {
+      return '<div class="diff-line"><span class="diff-no">' + (i + 1) + '</span><span class="diff-text">' + esc(l) + "</span></div>";
+    }).join("") + "</div>";
+  }
+  html += "</div></div>" +
+    '<div class="row"><button type="button" class="btn" data-action="panel" data-kind="sidecar" data-ref="' + r.id + '">运行边车</button>' +
+    '<button type="button" class="btn" data-action="back">返回原对话位置</button></div>';
+  return html;
+}
+
+/* 文件/Diff 审阅：S9 */
+function vReview() {
+  var a = model.artifacts[state.id];
+  var html = "<h1>审阅 · " + esc(a.name) + stag("S9", "行级批注") + "</h1>" +
+    '<p class="idline">Artifact · ' + esc(a.id) + " · 来自 Run " + esc(a.runId) + " · Work " + esc(a.workId) + "</p>" +
+    '<div class="diff">' +
+    a.diff.map(function (l, i) {
+      var ann = ui.annotations.filter(function (x) { return x.line === i; });
+      return '<div class="diff-line ' + l.t + '"><span class="diff-no">' + (i + 1) + '</span><span class="diff-text">' + esc(l.x) + "</span>" +
+        '<span class="diff-act"><button type="button" class="btn small" data-action="annotate" data-line="' + i + '" data-fid="ann-' + i + '" aria-label="在第 ' + (i + 1) + ' 行添加批注">批注</button></span></div>' +
+        ann.map(function (x) { return '<div class="note">候选批注 · 第 ' + (i + 1) + " 行：" + esc(x.text) + "</div>"; }).join("") +
+        (ui.annotating === i ? '<form data-action-form="save-ann" data-line="' + i + '" style="padding:8px"><div class="row"><input type="text" name="ann" aria-label="批注内容" placeholder="写下对这一行的意见" style="flex:1;min-height:44px;padding:8px 12px;border:1px solid var(--separator);border-radius:var(--radius-control);background:var(--surface-raised)"><button type="submit" class="btn primary small">保存</button></div></form>' : "");
+    }).join("") + "</div>" +
+    '<div class="card" style="margin-top:12px"><div class="row">' +
+    '<button type="button" class="btn primary" data-action="handback"' + (ui.annotations.length && !ui.handedBack ? "" : " disabled") + ">交回 Agent（候选）</button>" +
+    (ui.handedBack ? statusChip("已生成交回候选", "ok") : '<span class="aux">需要至少一条批注</span>') + "</div>" +
+    '<p class="aux">批注与交回只是候选动作：正式 Evidence 需要验证、版本与完成门确认，骨架不生成正式证据。</p></div>';
+  return html;
+}
+
+/* 日历 / 知识 / 设置：骨架级但真实可切换 */
+function vCalendar() {
+  var scales = [["day", "Day"], ["week", "Week"], ["year", "Year"]];
+  var html = "<h1>日历" + stag("S10", "时间尺度") + "</h1>" +
+    '<p class="aux">只取 HEY 的连续时间尺度与候选机制；日历不拥有 Project 与 Work。</p>' +
+    '<div class="seg" role="group" aria-label="时间尺度">' +
+    scales.map(function (s) { return '<button type="button" data-action="cal" data-v="' + s[0] + '" aria-pressed="' + (ui.calScale === s[0]) + '" data-fid="cal-' + s[0] + '">' + s[1] + "</button>"; }).join("") +
+    "</div><div style=\"height:12px\"></div>";
+  if (ui.calScale === "day") {
+    html += "<h2>今天</h2>" + model.calendar.day.map(function (e) {
+      return '<div class="cal-ev' + (e.cand ? " cand" : "") + '"><b>' + esc(e.time) + "</b> " + esc(e.title) + (e.cand ? ' <span class="aux">来源候选 · 保存前不是正式 Event</span>' : "") + "</div>";
+    }).join("");
+  } else if (ui.calScale === "week") {
+    html += '<div class="cal-grid">' + model.calendar.week.map(function (d) { return '<div class="cal-col">' + esc(d) + "</div>"; }).join("") + "</div>";
+  } else {
+    html += '<div class="cal-grid" style="flex-wrap:wrap">' + model.calendar.year.map(function (mth) { return '<div class="cal-col" style="min-width:96px">' + esc(mth) + "</div>"; }).join("") + "</div>";
+  }
+  return html;
+}
+
+function vKnowledge() {
+  var tabs = [["library", "卡片库"], ["canvas", "画布"], ["sources", "来源"]];
+  var html = "<h1>知识" + stag("S5", "显式上下文与来源") + "</h1>" +
+    '<p class="aux">内容归卡片库，画布只管摆放；placement 不是产品事实。</p>' +
+    '<div class="seg" role="group" aria-label="知识分区">' +
+    tabs.map(function (t) { return '<button type="button" data-action="know" data-v="' + t[0] + '" aria-pressed="' + (ui.knowTab === t[0]) + '" data-fid="kn-' + t[0] + '">' + t[1] + "</button>"; }).join("") +
+    "</div><div style=\"height:12px\"></div>";
+  if (ui.knowTab === "library") {
+    html += model.cards.map(function (c) {
+      return '<div class="kcard"><h3>' + esc(c.title) + '</h3><p class="aux">来源：' + esc(c.src) + " · 出现于：" + esc(c.boards.join("、")) + "</p></div>";
+    }).join("");
+  } else if (ui.knowTab === "canvas") {
+    html += '<div class="stage"><h2>画布（站位）</h2><p class="muted">同一 Card 可进入多个思考空间；位置、颜色、连线不当领域关系。骨架不实现拖拽编排。</p></div>';
+  } else {
+    html += '<div class="list">' + model.cards.map(function (c) {
+      return '<div class="list-item"><span class="grow"><span class="t">' + esc(c.src) + '</span><br><span class="s">被引用：' + esc(c.title) + " · 访问日志区分 searched / viewed</span></span></div>";
+    }).join("") + "</div>";
+  }
+  return html;
+}
+
+function vSettings() {
+  return "<h1>设置" + stag("S5", "能力 / MCP / 记忆") + stag("S7", "工作流站位") + "</h1>" +
+    '<p class="aux">分组列表；配置可见不等于真实工具授权。</p>' +
+    '<div class="card"><h2>Agent 能力</h2><div class="list">' +
+    '<div class="list-item"><span class="grow"><span class="t">Skills</span><br><span class="s">网页检索 · 文件读写（Intelligent Selection，骨架展示）</span></span></div>' +
+    '<div class="list-item"><span class="grow"><span class="t">MCP 服务器</span><br><span class="s">2 个已登记 · 状态与工具清单可见</span></span>' + statusChip("已连接", "ok") + "</div></div></div>" +
+    '<div class="card"><h2>记忆</h2><div class="list">' +
+    '<div class="list-item"><span class="grow"><span class="t">工作区记忆</span><br><span class="s">3 条 · 仅本项目可见</span></span></div>' +
+    '<div class="list-item"><span class="grow"><span class="t">全局记忆</span><br><span class="s">1 条 · 跨项目；候选需接受门后才成为长期事实</span></span></div></div></div>' +
+    '<div class="card"><h2>工作流</h2><p class="muted">工作流定义、配置与触发属于后续设计。当前阶段只保留入口站位，不提供画布或编辑器。</p>' +
+    '<button type="button" class="btn" disabled aria-disabled="true">工作流设计器（后续设计）</button></div>';
+}
+
+/* ---------- 副表面（统一槽位，一次一个） ---------- */
+function renderPanel() {
+  var el = document.getElementById("panel");
+  if (!state.panel) { el.hidden = true; el.innerHTML = ""; return; }
+  var p = state.panel;
+  var body = "";
+  var title = "";
+  if (p.kind === "peek") {
+    var w = work(p.ref);
+    title = "快速预览 · Peek";
+    body = '<p class="idline">Work · ' + esc(w.id) + " · " + esc(project(w.projectId).name) + "</p>" +
+      "<h3>" + esc(w.title) + "</h3><p>" + esc(w.desc) + "</p><p>" + statusChip(w.status, w.status === "进行中" ? "warn" : "idle") + "</p>" +
+      '<p class="aux">Peek 不复制事实；深入时再打开完整详情。</p>' +
+      '<button type="button" class="btn primary" data-action="open-work" data-id="' + w.id + '">打开详情</button>';
+  } else if (p.kind === "context") {
+    title = "上下文与来源";
+    body = '<p class="aux">Heptabase 式显式上下文：本次采用与访问痕迹一目了然。</p>' +
+      '<div class="card"><h3>采用的上下文</h3><div class="row">' +
+      '<span class="chip">卡片 c2 · Token 值表</span><span class="chip">卡片 c3 · Stage 1 决议</span></div></div>' +
+      '<div class="card"><h3>访问日志</h3><div class="list">' +
+      '<div class="list-item"><span class="grow"><span class="t">c2</span></span>' + statusChip("viewed", "ok") + "</div>" +
+      '<div class="list-item"><span class="grow"><span class="t">c1</span></span>' + statusChip("searched", "idle") + "</div></div>" +
+      '<p class="aux">回答先是候选；保存后带来源。引用对象：' + esc(p.ref) + "</p></div>";
+  } else if (p.kind === "sidecar") {
+    var r = model.runs[p.ref];
+    title = "运行边车 · " + r.id;
+    body = '<p class="aux">Open Computer 式边车：现场居中时，对话 / 子任务 / 日志 / 产物退到这里。</p>' +
+      '<div class="card"><h3>子任务</h3><ul>' + r.steps.map(function (s) { return "<li>" + esc(s.t) + "</li>"; }).join("") + "</ul></div>" +
+      '<div class="card"><h3>产物</h3><button type="button" class="btn" data-action="open-review" data-id="art1">chat-skeleton-v0.1.html</button></div>' +
+      '<div class="card"><h3>边车对话</h3><p class="aux">追问不会离开现场；边车不拥有权威事实。</p></div>';
+  } else if (p.kind === "ask") {
+    title = "就当前对象发问";
+    body = '<p class="aux">消息归属对象所在线程，不是第二套对话。对象：' + esc(p.ref) + "</p>" +
+      '<div id="ask-log">' + ui.askLog.map(function (m) { return '<div class="msg user"><div class="bubble">' + esc(m) + "</div></div>"; }).join("") + "</div>" +
+      '<form class="composer" data-action-form="ask"><input type="text" name="msg" aria-label="就当前对象发问" placeholder="输入问题（骨架：仅本地追加）" autocomplete="off"><button type="submit" class="btn primary">发送</button></form>';
+  }
+  el.innerHTML = '<div class="panel-head"><span class="panel-title">' + title + '</span>' +
+    '<button type="button" class="btn small" data-action="close-panel" data-fid="panel-close">关闭</button></div>' + body;
+  el.hidden = false;
+  var close = el.querySelector("[data-action='close-panel']");
+  if (close) close.focus();
+}
+
+/* ---------- 场景图例抽屉 ---------- */
+function renderLegend() {
+  var el = document.getElementById("legend");
+  if (el.hidden) return;
+  el.innerHTML = '<div class="panel-head"><span class="panel-title">场景图例 · S1–S11</span>' +
+    '<button type="button" class="btn small" data-action="close-legend" data-fid="legend-close">关闭</button></div>' +
+    '<p class="aux">每组标注 = 场景名称 + 所取参考机制 + 当前是站位还是骨架交互。关闭“场景标注”后界面回到干净状态。</p>' +
+    SCENES.map(function (s) {
+      return '<div class="legend-item' + (ui.legendHl === s.c ? " hl" : "") + '" id="legend-' + s.c + '"><span class="code">' + s.c + "</span><b>" + esc(s.n) + "</b>" +
+        '<p class="aux" style="margin:4px 0">机制：' + esc(s.m) + '</p><p class="st">状态：' + esc(s.s) + "</p></div>";
+    }).join("");
+  if (ui.legendHl) { var t = document.getElementById("legend-" + ui.legendHl); if (t) t.scrollIntoView({ block: "nearest" }); }
+}
+
+/* ---------- 总渲染 ---------- */
+function render() {
+  renderRail();
+  renderTopbar();
+  renderCenter();
+  renderPanel();
+  renderLegend();
+  document.getElementById("more-menu").hidden = !ui.moreOpen;
+  document.getElementById("scrim").hidden = document.getElementById("legend").hidden && !ui.moreOpen;
+}
+
+/* ---------- 事件 ---------- */
+document.addEventListener("click", function (e) {
+  var t = e.target.closest("[data-action]");
+  if (!t) return;
+  var a = t.getAttribute("data-action");
+  var id = t.getAttribute("data-id");
+  var v = t.getAttribute("data-v");
+  switch (a) {
+    case "nav": ui.moreOpen = false; navigate({ surface: v || t.getAttribute("data-nav"), id: null, sub: null, panel: null }); break;
+    case "more":
+      ui.moreOpen = !ui.moreOpen;
+      var mm = document.getElementById("more-menu");
+      mm.innerHTML = [["calendar", "日历"], ["knowledge", "知识"], ["settings", "设置"]].map(function (x) {
+        return '<button type="button" role="menuitem" data-action="nav" data-nav="' + x[0] + '">' + x[1] + "</button>";
+      }).join("");
+      render(); break;
+    case "back": history.back(); break;
+    case "toggle-annot": ui.annot = !ui.annot; render(); break;
+    case "toggle-theme": {
+      var dark = (document.documentElement.getAttribute("data-theme") === "dark") ||
+        (!document.documentElement.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      var next = dark ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("chat-theme", next); } catch (err) { /* 忽略偏好写入失败 */ }
+      render(); break;
+    }
+    case "open-legend": ui.legendHl = null; document.getElementById("legend").hidden = false; renderLegend(); document.getElementById("scrim").hidden = false; { var lc = document.querySelector("[data-fid='legend-close']"); if (lc) lc.focus(); } break;
+    case "close-legend": document.getElementById("legend").hidden = true; document.getElementById("scrim").hidden = true; document.getElementById("annot-btn").focus(); break;
+    case "legend": ui.legendHl = t.getAttribute("data-scen"); document.getElementById("legend").hidden = false; renderLegend(); document.getElementById("scrim").hidden = false; break;
+    case "open-project": navigate({ surface: "project", id: id, sub: "overview", panel: null }); break;
+    case "ptab": go({ sub: v, panel: null }); break;
+    case "layout": ui.workLayout = v; render(); break;
+    case "peek": go({ panel: { kind: "peek", ref: id } }); break;
+    case "open-work": navigate({ surface: "work", id: id, sub: null, panel: null }); break;
+    case "open-session": navigate({ surface: "chat", id: id, sub: null, panel: null }); break;
+    case "today-filter": ui.todayFilter = v; render(); break;
+    case "feed-tab": ui.feedTab = v; render(); break;
+    case "open-decision": navigate({ surface: "decision", id: id, sub: null, panel: null }); break;
+    case "open-reconcile": ui.reconcile = null; navigate({ surface: "reconcile", id: id, sub: null, panel: null }); break;
+    case "open-run": navigate({ surface: "run", id: id, sub: null, panel: { kind: "sidecar", ref: id } }); break;
+    case "open-review": navigate({ surface: "review", id: id, sub: null, panel: null }); break;
+    case "panel": go({ panel: { kind: t.getAttribute("data-kind"), ref: t.getAttribute("data-ref") } }); break;
+    case "close-panel": go({ panel: null }); break;
+    case "clarify": ui.clarifyDone = true; render(); break;
+    case "edit-plan": ui.planEdit = true; render(); break;
+    case "edit-cancel": ui.planEdit = false; render(); break;
+    case "decide": {
+      var d = model.decisions[state.id];
+      d.status = v;
+      var f = model.feed.filter(function (x) { return x.ref === d.id; })[0];
+      if (f) f.status = "done";
+      if (d.id === "d1" && v === "approved") {
+        model.runs.r1.status = "running";
+        model.runs.r1.steps[2].s = "done";
+        model.runs.r1.steps[3].s = "active";
+      }
+      render(); break;
+    }
+    case "reconcile": {
+      ui.reconcile = v === "query" ? "confirmed" : "escalated";
+      if (v === "query") { var f2 = model.feed.filter(function (x) { return x.ref === state.id; })[0]; if (f2) f2.status = "done"; }
+      render(); break;
+    }
+    case "run-pane": ui.runPane = v; render(); break;
+    case "annotate": ui.annotating = Number(t.getAttribute("data-line")); render(); break;
+    case "handback": ui.handedBack = true; render(); break;
+    case "cal": ui.calScale = v; render(); break;
+    case "know": ui.knowTab = v; render(); break;
+    case "noop": break;
+  }
+});
+
+/* 点击遮罩：关闭图例 / 更多菜单 */
+document.getElementById("scrim").addEventListener("click", function () {
+  document.getElementById("legend").hidden = true;
+  ui.moreOpen = false;
+  render();
+});
+
+/* 表单提交 */
+document.addEventListener("submit", function (e) {
+  var f = e.target.closest("[data-action-form]");
+  if (!f) return;
+  e.preventDefault();
+  var kind = f.getAttribute("data-action-form");
+  if (kind === "save-plan") {
+    var d = model.decisions[state.id];
+    d.steps = d.steps.map(function (s, i) { return (f.elements["step" + i].value || s).trim() || s; });
+    d.revision += 1;
+    ui.planEdit = false;
+    render();
+  } else if (kind === "save-ann") {
+    var line = Number(f.getAttribute("data-line"));
+    var text = f.elements.ann.value.trim();
+    if (text) ui.annotations.push({ line: line, text: text });
+    ui.annotating = null;
+    render();
+  } else if (kind === "ask") {
+    var m = f.elements.msg.value.trim();
+    if (m) ui.askLog.push(m);
+    render();
+  } else if (kind === "send") {
+    f.elements.msg.value = "";
+  }
+});
+
+/* Escape：关闭临时层并把焦点还给触发点 */
+document.addEventListener("keydown", function (e) {
+  if (e.key !== "Escape") return;
+  if (!document.getElementById("legend").hidden) {
+    document.getElementById("legend").hidden = true;
+    document.getElementById("scrim").hidden = true;
+    document.getElementById("annot-btn").focus();
+  } else if (ui.moreOpen) {
+    ui.moreOpen = false; render();
+  } else if (state.panel) {
+    go({ panel: null });
+  }
+});
+
+/* ---------- 启动：默认进入对话 ---------- */
+if (!location.hash) history.replaceState(null, "", "#/chat");
+state = parseHash();
+render();
+</script>
+</body>
+</html>

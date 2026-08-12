@@ -1,0 +1,299 @@
+/*
+ * The Whiteboard/Card model is untouched; these named modes only remap its
+ * existing Heptabase tokens. `theme=source` intentionally matches no selector.
+ */
+html[data-theme="warm-room"] {
+  --theme-canvas: #f3ede2;
+  --theme-surface: #fffaf1;
+  --theme-nav: #eee5d6;
+  --theme-soft: #f3e8dc;
+  --theme-hover: #e7d8c7;
+  --theme-ink: #20372e;
+  --theme-muted: #66736c;
+  --theme-faint: #857f74;
+  --theme-border: #d6c6b0;
+  --theme-primary: #245a46;
+  --theme-accent: #c96a49;
+  --theme-radius: 10px;
+  --theme-shadow: 0 18px 42px rgb(54 42 27 / 16%);
+  --theme-mint: #dce9df;
+  --theme-coral: #f1ded8;
+  --theme-sand: #f0e3cc;
+  --theme-blue: #dfe8e3;
+  --theme-lavender: #e9e2e8;
+}
+
+html[data-theme="quiet-day"] {
+  --theme-canvas: #f5f8fc;
+  --theme-surface: #ffffff;
+  --theme-nav: #f4f7fb;
+  --theme-soft: #edf3fa;
+  --theme-hover: #e3eef9;
+  --theme-ink: #123a6d;
+  --theme-muted: #61738a;
+  --theme-faint: #7c8ca0;
+  --theme-border: #d7e0e9;
+  --theme-primary: #126fd3;
+  --theme-accent: #e5a51a;
+  --theme-radius: 8px;
+  --theme-shadow: none;
+  --theme-mint: #e2f3ed;
+  --theme-coral: #f8e8e3;
+  --theme-sand: #fbf0ce;
+  --theme-blue: #e1efff;
+  --theme-lavender: #ece8f7;
+}
+
+html[data-theme="graphite-ops"] {
+  --theme-canvas: #eef1f4;
+  --theme-surface: #f8fafc;
+  --theme-nav: #e9edf1;
+  --theme-soft: #e4e9ee;
+  --theme-hover: #dce2e8;
+  --theme-ink: #17191c;
+  --theme-muted: #5f6670;
+  --theme-faint: #747d87;
+  --theme-border: #cbd2d8;
+  --theme-primary: #5b5fc7;
+  --theme-accent: #168aad;
+  --theme-radius: 6px;
+  --theme-shadow: 0 14px 34px rgb(23 25 28 / 14%);
+  --theme-mint: #dcebea;
+  --theme-coral: #eee2e5;
+  --theme-sand: #ebe7d9;
+  --theme-blue: #dce8ee;
+  --theme-lavender: #e4e2f1;
+}
+
+html[data-theme="common-thread"] {
+  --theme-canvas: #eeece7;
+  --theme-surface: #f9f8f5;
+  --theme-nav: #e7e5df;
+  --theme-soft: #eeece6;
+  --theme-hover: #e1ded7;
+  --theme-ink: #1f2b2c;
+  --theme-muted: #657170;
+  --theme-faint: #7d8481;
+  --theme-border: #d3d0c8;
+  --theme-primary: #3d6f60;
+  --theme-accent: #c58a3a;
+  --theme-radius: 8px;
+  --theme-shadow: 0 16px 38px rgb(31 43 44 / 13%);
+  --theme-mint: #dfe9e2;
+  --theme-coral: #eee1dc;
+  --theme-sand: #eee6d3;
+  --theme-blue: #e0e7e5;
+  --theme-lavender: #e7e3e8;
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) {
+  color: var(--theme-ink);
+  background: var(--theme-canvas);
+  --bg-app: var(--theme-canvas);
+  --bg-panel: var(--theme-nav);
+  --bg-raised: var(--theme-surface);
+  --bg-subtle: var(--theme-soft);
+  --bg-hover: var(--theme-hover);
+  --text-primary: var(--theme-ink);
+  --text-secondary: var(--theme-muted);
+  --text-tertiary: var(--theme-faint);
+  --separator: color-mix(in srgb, var(--theme-border) 76%, transparent);
+  --separator-strong: var(--theme-border);
+  --focus: var(--theme-primary);
+  --accent: var(--theme-primary);
+  --accent-text: #ffffff;
+  --tone-mint: var(--theme-mint);
+  --tone-mint-strong: var(--theme-primary);
+  --tone-coral: var(--theme-coral);
+  --tone-coral-strong: var(--theme-accent);
+  --tone-sand: var(--theme-sand);
+  --tone-sand-strong: var(--theme-accent);
+  --tone-blue: var(--theme-blue);
+  --tone-blue-strong: var(--theme-primary);
+  --tone-lavender: var(--theme-lavender);
+  --tone-lavender-strong: color-mix(in srgb, var(--theme-primary) 70%, var(--theme-accent));
+  --status-success: var(--theme-primary);
+  --status-warning: color-mix(in srgb, var(--theme-accent) 78%, #000);
+  --radius-control: var(--theme-radius);
+  --radius-panel: calc(var(--theme-radius) + 4px);
+  --shadow-popover: var(--theme-shadow);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) body,
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) .heptabase-app,
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) .workspace {
+  color: var(--theme-ink);
+  background: var(--theme-canvas);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) :focus-visible {
+  outline-color: var(--theme-primary);
+}
+
+/* Navigation, canvas, and panel retain the source layout and density. */
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) :is(
+  .left-sidebar,
+  .right-panel,
+  .right-panel-header
+) {
+  color: var(--theme-ink);
+  background: var(--theme-nav);
+  border-color: var(--theme-border);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) .workspace-header {
+  color: var(--theme-ink);
+  background: color-mix(in srgb, var(--theme-surface) 92%, transparent);
+  border-color: var(--theme-border);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) .canvas-shell {
+  background-color: var(--theme-canvas);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) :is(
+  .canvas-tools,
+  .zoom-control
+) {
+  color: var(--theme-muted);
+  background: color-mix(in srgb, var(--theme-surface) 94%, transparent);
+  border-color: var(--theme-border);
+  box-shadow: var(--theme-shadow);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) .board-section {
+  border-color: var(--theme-border);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) .board-section h2 {
+  color: var(--theme-ink);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) :is(
+  .placement-card,
+  .location-list button,
+  .search-box,
+  .new-card-row,
+  .library-list article,
+  .chat-composer,
+  .ai-response,
+  .share-dialog
+) {
+  color: var(--theme-ink);
+  background: var(--theme-surface);
+  border-color: var(--theme-border);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) :is(
+  .research-button:hover,
+  .app-list button.active,
+  .app-list button:not(:disabled):hover,
+  .tab-group button.selected,
+  .tab-group button:hover,
+  .icon-button:hover,
+  .share-button:hover,
+  .panel-tabs button[aria-selected="true"],
+  .panel-tabs button:hover,
+  .location-row:hover,
+  .place-button,
+  .board-facts div,
+  .access-log
+) {
+  color: var(--theme-ink);
+  background: var(--theme-hover);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) .primary-button {
+  color: #fff;
+  background: var(--theme-primary);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) :is(
+  .privacy-note,
+  .space-search.active
+) {
+  color: color-mix(in srgb, var(--theme-accent) 78%, #000);
+  border-color: var(--theme-accent);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) :is(
+  .context-chips button.selected,
+  .candidate-label,
+  .visibility-proof
+) {
+  color: var(--theme-ink);
+  background: color-mix(in srgb, var(--theme-primary) 12%, var(--theme-surface));
+  border-color: color-mix(in srgb, var(--theme-primary) 46%, var(--theme-border));
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) :is(
+  .space-switcher,
+  .sidebar-footer,
+  .workspace-header,
+  .right-panel,
+  .right-panel-header,
+  .panel-section,
+  .placement-card footer,
+  .outline-section > header,
+  .search-box,
+  .new-card-row,
+  .library-list article,
+  .chat-composer,
+  .ai-response,
+  .share-dialog,
+  .permission-list select
+) {
+  border-color: var(--theme-border);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) .connection {
+  border-color: color-mix(in srgb, var(--theme-ink) 40%, transparent);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) .connection::after {
+  border-color: color-mix(in srgb, var(--theme-ink) 48%, transparent);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) .connection span {
+  color: var(--theme-muted);
+  background: color-mix(in srgb, var(--theme-canvas) 90%, transparent);
+}
+
+html:is([data-theme="warm-room"], [data-theme="quiet-day"], [data-theme="graphite-ops"], [data-theme="common-thread"]) :is(
+  .research-button,
+  .app-list button,
+  .tab-group button,
+  .icon-button,
+  .share-button,
+  .board-section,
+  .placement-card,
+  .placement-actions button,
+  .canvas-tools,
+  .zoom-control,
+  .panel-tabs button,
+  .tag-row span,
+  .context-chips button,
+  .candidate-label,
+  .location-row,
+  .location-list button,
+  .search-box,
+  .new-card-row,
+  .library-list article,
+  .place-button,
+  .space-search,
+  .access-log,
+  .ai-response,
+  .chat-composer,
+  .primary-button,
+  .board-facts div,
+  .share-dialog,
+  .permission-list label,
+  .permission-list select,
+  .visibility-proof
+) {
+  border-radius: var(--theme-radius);
+}
+
+html[data-theme="quiet-day"] :is(.placement-card, .canvas-tools, .share-dialog, .right-panel) {
+  box-shadow: none;
+}
