@@ -10,7 +10,13 @@ evidence: 9 份单项研究卡 + 2 份总矩阵 + AnythingLLM Agent Constitution
 
 > 本报告是 9 项工作台研究的汇总，用于以后设计 Chat 工作台时按场景查表。v0.2 在保留 v0.1 "五类主要场景 + 六层骨架"历史研究价值的基础上，新增三轴选择框架 A/B/C，明确旧"五类场景"只覆盖 A 轴（Workbench Surfaces），不能作为完整选型菜单。
 >
-> 证据标记：`F` = 已批准审计/矩阵/冻结登记中的事实；`O` = 对既有画面的可见观察；`D` = 官方文档/源码说明；`I` = 跨证据归纳；`U` = 当前未知/未验证。
+> **版本说明**：为保留稳定路径，文件名保留 v0.1；正文版本已升级到 v0.2。
+>
+> 截图命名空间定义：
+> - **ACW-** = `evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/`（25 张：ACW-01 – ACW-25；覆盖 Memory / Skills / Flow / MCP / Scheduled Jobs / Survey / Agent Configuration）
+> - **WB-** = `evidence/anythingllm-v0.1/screenshots/`（8 张：WB-00 – WB-07；覆盖 Conversation 起点 / 文件上下文 / Agent 进度 / 结果来源 / Open Computer）
+>
+> 证据标记：`F` = Chat 已批准合同、冻结事实或已批准研究登记；`O` = 本批已检查产品 UI 画面直接可见；`D` = 当前官方文档或官方源码说明；`I` = 跨证据归纳或 Chat 适配判断；`U` = 当前没有证明。
 
 ## 1. 结论先行
 
@@ -98,13 +104,13 @@ AnythingLLM 由 v0.1 的 L2 简单标签升级为多表面主参考（O · 25 �
 
 | AnythingLLM 表面 | A 轴归属 | 证据 |
 |---|---|---|
-| Conversation（消息流 + Sources） | A2 | O · `02`–`05` |
-| Agent Configuration（模型 + Skills 链接） | B 轴（§4） | O · `23` |
-| Memory sidebar（Workspace/Global） | B 轴（§4） | O · `02` |
-| Skills/MCP/Flows 同页管理 | B 轴 + C 轴 | O · `10`, `05` |
-| Flow Builder | C 轴（§5） | O · `05` |
-| Scheduled Jobs（Trigger + Run + History） | C 轴（§5） | O · `18`, `11`, `14` |
-| Open Computer（桌面 + sidecar） | A3 | O · v0.1 截图 06–07 |
+| Conversation（消息流 + Sources） | A2 | O · WB-02–WB-05 |
+| Agent Configuration（模型 + Skills 链接） | B 轴（§4） | O · ACW-23 |
+| Memory sidebar（Workspace/Global） | B 轴（§4） | O · ACW-02 |
+| Skills/MCP/Flows 同页管理 | B 轴 + C 轴 | O · ACW-10, ACW-05 |
+| Flow Builder | C 轴（§5） | O · ACW-05 |
+| Scheduled Jobs（Trigger + Run + History） | C 轴（§5） | O · ACW-18, ACW-11, ACW-14 |
+| Open Computer（桌面 + sidecar） | A3 | O · WB-06–WB-07 |
 
 ## 4. B 轴：Agent Constitution（Agent 是谁及边界）
 
@@ -114,9 +120,9 @@ B 轴必须是独立可选场景，不能再藏到 Knowledge/Context。
 
 | 代码 | 维度 | 回答的问题 | 参考项目 | 证据 |
 |---|---|---|---|---|
-| **B1** | Identity / Role / Owner / Participant | Agent 是谁？属于哪个 Workspace/Project？ | AnythingLLM（部分：模型选择）；MS Agent Feed（Agent 身份 + delegation） | O · `23`；F · Agent Feed audit |
-| **B2** | Capability / Skill / Tool / MCP / Model | Agent 能做什么？哪些工具/模型可用？ | AnythingLLM（Skills/MCP/Flows 同页）；Plane（AI 作用域） | O · `10`, `04` |
-| **B3** | Memory / Context / Source / Provenance | Agent 知道什么？上下文从哪里来？ | AnythingLLM（Memory sidebar Workspace/Global）；Heptabase（context chips + searched/viewed） | O · `02`；F · Heptabase audit |
+| **B1** | Identity / Role / Owner / Participant | Agent 是谁？属于哪个 Workspace/Project？ | MS Agent Feed（Agent 身份 + delegation）；AnythingLLM 模型选择归 B2，不作为 B1 证据 | F · Agent Feed audit；U · 完整 Agent Profile |
+| **B2** | Capability / Skill / Tool / MCP / Model | Agent 能做什么？哪些工具/模型可用？ | AnythingLLM（Skills/MCP/Flows 同页）；Plane（AI 作用域） | O · ACW-10, ACW-04 |
+| **B3** | Memory / Context / Source / Provenance | Agent 知道什么？上下文从哪里来？ | AnythingLLM（Memory sidebar Workspace/Global）；Heptabase（context chips + searched/viewed） | O · ACW-02；F · Heptabase audit |
 | **B4** | Permission / Visibility / Consent / Write scope | Agent 能看什么？能写到哪里？需要谁的同意？ | MS Agent Feed（participant visibility + delegation）；Heptabase（Board permission） | F · Agent Feed audit；F · Heptabase audit |
 
 ### B 轴覆盖矩阵
@@ -125,14 +131,14 @@ B 轴必须是独立可选场景，不能再藏到 Knowledge/Context。
 
 | 维度 | Basecamp | Things | Linear | HEY | Agent Feed | Heptabase | AnythingLLM | Orca | Plane |
 |---|---|---|---|---|---|---|---|---|---|
-| B1 Identity/Role | — | — | ◐ | — | ● | ◐ | ◐ | ◐ | ◐ |
+| B1 Identity/Role | — | — | ◐ | — | ● | ◐ | — | ◐ | ◐ |
 | B2 Capability/Tool | — | — | ◐ | — | ◐ | ◐ | ● | ◐ | ◐ |
 | B3 Memory/Context | ◐ | — | ◐ | ◐ | ◐ | ● | ● | ◐ | ◐ |
 | B4 Permission/Write | ◐ | — | ◐ | ◐ | ● | ● | — | — | — |
 
 **关键发现**（I）：
 - 没有任何一个项目在 B 轴 4 类全部 `●`。
-- AnythingLLM 在 B2（Capability/Tool）最强，B3（Memory）有 Workspace/Global scope，但 B1（完整 Identity/Role Profile）和 B4（Permission/Write scope）仍缺。
+- AnythingLLM 在 B2（Capability/Tool）最强，B3（Memory）有 Workspace/Global scope，但不提供可验证的 B1 Identity/Role/Owner/Participant，也缺 B4 Permission/Write scope。
 - MS Agent Feed 在 B1 和 B4 最强，但 B2（具体工具管理）不覆盖。
 - Heptabase 在 B3 和 B4 最强，但 B1 和 B2 不覆盖。
 - **完整耐久 Agent Profile（把身份、职责、能力、记忆、权限、当前工作和贡献历史统一在一起）不存在于任何已检查项目中**（U）。
@@ -145,18 +151,18 @@ C 轴以连续生命周期表达，分为 12 阶段，可聚合为 4 段以控�
 
 | 阶段 | 代码 | 聚合段 | 回答的问题 |
 |---|---|---|---|
-| Goal input / Clarify / assumptions / scope | C1 | **C1: Goal → Plan** | 目标是什么？需要澄清什么？ |
-| Editable Plan / confirmation | C2 | **C1: Goal → Plan** | Plan 可以编辑和确认吗？ |
-| Flow definition / nodes / blocks / variables / tools | C3 | **C2: Define → Publish** | 工作流怎样定义？ |
-| Configuration / version / publish | C4 | **C2: Define → Publish** | 配置怎样版本化和发布？ |
-| Trigger: manual / event / schedule / object change | C5 | **C2: Define → Publish** | 怎样触发执行？ |
-| Run / task / subtask / tool progress | C6 | **C3: Run → Control** | 正在执行什么？进度如何？ |
-| Checkpoint / ask-user / HITL / edit / accept / reject | C7 | **C3: Run → Control** | 人在哪里介入？ |
-| Pause / resume / cancel / abort | C8 | **C3: Run → Control** | 可以暂停/恢复/取消吗？ |
-| Failure / timeout / retry / outcome_unknown / reconcile | C9 | **C3: Run → Control** | 失败怎样处理？ |
-| Artifact / file / diff / Evidence review | C10 | **C4: Artifact → History** | 结果怎样审阅？ |
-| Delivery / writeback / notification | C11 | **C4: Artifact → History** | 结果怎样交付和写回？ |
-| Run history / Continue in Thread / reuse / next schedule | C12 | **C4: Artifact → History** | 历史怎样查看和复用？ |
+| Goal input / Clarify / assumptions / scope | C1 | **Phase 1: Goal → Plan** | 目标是什么？需要澄清什么？ |
+| Editable Plan / confirmation | C2 | **Phase 1: Goal → Plan** | Plan 可以编辑和确认吗？ |
+| Flow definition / nodes / blocks / variables / tools | C3 | **Phase 2: Define → Publish** | 工作流怎样定义？ |
+| Configuration / version / publish | C4 | **Phase 2: Define → Publish** | 配置怎样版本化和发布？ |
+| Trigger: manual / event / schedule / object change | C5 | **Phase 2: Define → Publish** | 怎样触发执行？ |
+| Run / task / subtask / tool progress | C6 | **Phase 3: Run → Control** | 正在执行什么？进度如何？ |
+| Checkpoint / ask-user / HITL / edit / accept / reject | C7 | **Phase 3: Run → Control** | 人在哪里介入？ |
+| Pause / resume / cancel / abort | C8 | **Phase 3: Run → Control** | 可以暂停/恢复/取消吗？ |
+| Failure / timeout / retry / outcome_unknown / reconcile | C9 | **Phase 3: Run → Control** | 失败怎样处理？ |
+| Artifact / file / diff / Evidence review | C10 | **Phase 4: Artifact → History** | 结果怎样审阅？ |
+| Delivery / writeback / notification | C11 | **Phase 4: Artifact → History** | 结果怎样交付和写回？ |
+| Run history / Continue in Thread / reuse / next schedule | C12 | **Phase 4: Artifact → History** | 历史怎样查看和复用？ |
 
 ### C 轴覆盖矩阵
 
@@ -232,13 +238,13 @@ C 轴以连续生命周期表达，分为 12 阶段，可聚合为 4 段以控�
 | **Workspace-owned** | Open Computer | 保留主工作表面，Run/Logs 进入 sidecar | 不照搬固定 sidecar 宽度 |
 | **Pane tree + diff notes** | Orca | 异构 pane tree + Artifact 锚定反馈 | 不把 terminal 当 Agent |
 | **Multi-layout + Intake** | Plane | 同一对象集合多布局 + Intake 审核队列 | 不把 Accept/Decline 当完整 HITL |
-| **Agent Configuration 独立面** | AnythingLLM | Agent 身份/能力是独立工作面（O · `23`） | 不声称完整 Agent Profile |
-| **Memory scope 可见** | AnythingLLM | Workspace/Global scope 分开（O · `02`） | 不假设自动提取细节 |
-| **Skills/MCP/Flow 同页** | AnythingLLM | 减少配置跳转（O · `10`） | 不证明真实工具授权 |
-| **对话内 Survey 澄清** | AnythingLLM | 结构化 Checkpoint 不跳页面（O · `21`） | 不证明回答进入版本化 Plan |
-| **Flow Builder** | AnythingLLM | Definition 独立表面（O · `05`） | 不证明 version/publish |
-| **Scheduled Run + History** | AnythingLLM | Trigger/Run/History 完整（O · `18`,`11`,`14`） | Stop ≠ Pause/Resume |
-| **Continue in Thread** | AnythingLLM | Run → Conversation 返回路径（O · `14`） | — |
+| **Agent Configuration 独立面** | AnythingLLM | Agent 的模型/能力配置是独立工作面（O · ACW-23） | 不把模型选择写成 Identity；不声称完整 Agent Profile |
+| **Memory scope 可见** | AnythingLLM | Workspace/Global scope 分开（O · ACW-02） | 不假设自动提取细节 |
+| **Skills/MCP/Flow 同页** | AnythingLLM | 减少配置跳转（O · ACW-10） | 不证明真实工具授权 |
+| **对话内 Survey 澄清** | AnythingLLM | 结构化 Checkpoint 不跳页面（O · ACW-21） | 不证明回答进入版本化 Plan |
+| **Flow Builder** | AnythingLLM | Definition 独立表面（O · ACW-05） | 不证明 version/publish |
+| **Scheduled Run + History** | AnythingLLM | Trigger → Run → History 可见连续路径（O · ACW-18, ACW-11, ACW-14） | 不是完整 Workflow 生命周期；Stop ≠ Pause/Resume |
+| **Continue in Thread** | AnythingLLM | Run → Conversation 返回路径（O · ACW-14） | — |
 
 ## 9. 场景 → 参考项目查表（更新版）
 
@@ -294,7 +300,7 @@ C 轴以连续生命周期表达，分为 12 阶段，可聚合为 4 段以控�
 
 1. **完整耐久 Agent Profile**：把身份、职责、能力、记忆、权限、当前工作和贡献历史统一在一起。没有任何一个项目覆盖（U）。
 2. **Plan 版本确认**：goal → clarify → editable Plan → versioned confirm 的完整路径。只有 MS Agent Feed 部分覆盖 C2（F · Agent Feed audit）；其他项目不覆盖。
-3. **真正 Pause / Resume**：AnythingLLM 只有 Stop（O · `12`）；MS Agent Feed 有 waiting 状态但不证明暂停恢复；Orca 有 Blocked 但不证明用户触发 Pause/Resume。
+3. **真正 Pause / Resume**：AnythingLLM 只有 Stop（O · ACW-12）；MS Agent Feed 有 waiting 状态但不证明暂停恢复；Orca 有 Blocked 但不证明用户触发 Pause/Resume。
 4. **Definition version / publish**：Flow Builder 画面没有证明版本历史或发布审批（U）。
 5. **跨表面连续性**：同一 Work 在 Project Room / Today / Agent Feed / Workbench 间往返仍保持身份、revision、返回位置和未提交草稿。
 6. **正式 Evidence / Contribution**：Evidence 验证、版本、贡献归属与完成门。
@@ -338,17 +344,17 @@ C 轴以连续生命周期表达，分为 12 阶段，可聚合为 4 段以控�
 
 ### 13.1 九份单项研究卡
 
-| # | 研究卡 | 主场景类别 | 页面中心所有者 | 证据等级 |
-|---|---|---|---|---|
-| 1 | [basecamp-workbench-study-v0.1.md](./basecamp-workbench-study-v0.1.md) | 长期项目/工作对象 | Room-owned | F · audit + O · 冻结原型画面 |
-| 2 | [things-workbench-study-v0.1.md](./things-workbench-study-v0.1.md) | 个人注意力/时间 | Attention/time projection-owned | F · audit + O · 冻结原型画面 |
-| 3 | [linear-workbench-study-v0.1.md](./linear-interaction-audit-v0.1.md) | 长期项目/工作对象 | Work-list-owned | F · audit + O · 冻结原型画面 |
-| 4 | [hey-calendar-workbench-study-v0.1.md](./hey-calendar-interaction-audit-v0.1.md) | 个人注意力/时间 | Time-scale-owned | F · audit + O · 冻结原型画面 |
-| 5 | [agent-feed-workbench-study-v0.1.md](./agent-feed-workbench-study-v0.1.md) | 多Agent监督/HITL | Supervision-feed-owned | F · audit + F · matrix (v0.2) + O · v0.1 画面 |
-| 6 | [heptabase-workbench-study-v0.1.md](./heptabase-workbench-study-v0.1.md) | 知识/Artifact/Evidence | Knowledge-canvas-owned | F · audit v0.2 + O · 冻结原型画面 |
-| 7 | [anythingllm-workbench-study-v0.1.md](./anythingllm-workbench-study-v0.1.md) | 对话/Agent执行/Configuration/Memory/Flow/Scheduled | Conversation-owned / Workspace-owned + 多表面 | F · evidence card + O · 官方演示 + O · Agent Constitution/Workflow 证据 v0.1 |
-| 8 | [orca-workbench-study-v0.1.md](./orca-workbench-evidence-card-v0.1.md) | 多Agent监督/HITL | Task/workspace-owned | F · evidence card + O · 官方仓库逐帧 |
-| 9 | [plane-workbench-study-v0.1.md](./plane-workbench-evidence-card-v0.1.md) | 长期项目/工作对象 | Work-object-owned | F · evidence card + O · 官方视觉 |
+| # | 研究卡 | 类型 | 主场景类别 | 页面中心所有者 | 证据等级 |
+|---|---|---|---|---|---|
+| 1 | [basecamp-workbench-study-v0.1.md](./basecamp-workbench-study-v0.1.md) | 研究卡 | 长期项目/工作对象 | Room-owned | F · audit + O · 冻结原型画面 |
+| 2 | [things-workbench-study-v0.1.md](./things-workbench-study-v0.1.md) | 研究卡 | 个人注意力/时间 | Attention/time projection-owned | F · audit + O · 冻结原型画面 |
+| 3 | [linear-interaction-audit-v0.1.md](./linear-interaction-audit-v0.1.md) | interaction audit | 长期项目/工作对象 | Work-list-owned | F · audit + O · 冻结原型画面 |
+| 4 | [hey-calendar-interaction-audit-v0.1.md](./hey-calendar-interaction-audit-v0.1.md) | interaction audit | 个人注意力/时间 | Time-scale-owned | F · audit + O · 冻结原型画面 |
+| 5 | [agent-feed-workbench-study-v0.1.md](./agent-feed-workbench-study-v0.1.md) | 研究卡 | 多Agent监督/HITL | Supervision-feed-owned | F · audit + F · matrix (v0.2) + O · v0.1 画面 |
+| 6 | [heptabase-workbench-study-v0.1.md](./heptabase-workbench-study-v0.1.md) | 研究卡 | 知识/Artifact/Evidence | Knowledge-canvas-owned | F · audit v0.2 + O · 冻结原型画面 |
+| 7 | [anythingllm-workbench-study-v0.1.md](./anythingllm-workbench-study-v0.1.md) | 研究卡 | 对话/Agent执行/Configuration/Memory/Flow/Scheduled | Conversation-owned / Workspace-owned + 多表面 | F · evidence card + O · 官方演示 + O · Agent Constitution/Workflow 证据 v0.1 |
+| 8 | [orca-workbench-evidence-card-v0.1.md](./orca-workbench-evidence-card-v0.1.md) | evidence card | 多Agent监督/HITL | Task/workspace-owned | F · evidence card + O · 官方仓库逐帧 |
+| 9 | [plane-workbench-evidence-card-v0.1.md](./plane-workbench-evidence-card-v0.1.md) | evidence card | 长期项目/工作对象 | Work-object-owned | F · evidence card + O · 官方视觉 |
 
 ### 13.2 两份总矩阵
 
