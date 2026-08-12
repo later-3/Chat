@@ -1,7 +1,9 @@
 # 工作台差异试点对照 v0.1
 
-> 样本：AnythingLLM / Open Computer、Orca、Plane。  
-> 目的：确认基础工作台骨架和真正改变交互逻辑的差异。  
+> 样本：AnythingLLM / Open Computer、Orca、Plane。
+>
+> 目的：确认基础工作台骨架和真正改变交互逻辑的差异。
+>
 > 状态：研究检查点；不选择第 7 个参考项目，不制作原型。
 
 ## 1. 同尺度视觉对照

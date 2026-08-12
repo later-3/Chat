@@ -203,4 +203,3 @@ Orca 值得保留在“有差异的工作台”集合中，最适合回答：
 - 纠正：3 处视觉过推断（把 worktree 行称为项目 / 仓库、把 diff 称为未提交、把非均匀 pane tree 称为 `2 × 4` 等）已写回 Dialogue
 - 事件：1 次 pre-dispatch 临时目录错误，`promptDispatched=false`、0 Token；重建目录后安全恢复，未重复发送未知结果
 - 验证：3 个成功 Attempt 的 source/worktree 均无改动
-

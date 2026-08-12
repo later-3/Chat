@@ -148,4 +148,3 @@ Codex 主要提供“按需打开工作区和返回对话”的节奏；Anything
 5. 在用户明确授权生产改造前，不修改 `apps/web`。
 
 若用户决定进入第一阶段生产适配，则以 [`current-chat-frontend-workbench-adaptation-audit-v0.1.md`](./current-chat-frontend-workbench-adaptation-audit-v0.1.md) 第 6 节作为任务书输入，另开 worktree / branch / PR；不得把本归档提交与生产 UI 改造混在一起。
-
