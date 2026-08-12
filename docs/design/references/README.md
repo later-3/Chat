@@ -4,7 +4,7 @@
 
 ## 参考原型登记册
 
-更新日期：2026-08-11。跨分支文件必须按表中 branch / commit 读取，或使用 `git show <commit>:<path>`；不能因为当前工作树没有某个目录就误判为未完成。
+更新日期：2026-08-12。跨分支文件必须按表中 branch / commit 读取，或使用 `git show <commit>:<path>`；不能因为当前工作树没有某个目录就误判为未完成。
 
 | 参考原型 | 事实场景主责 | 冻结状态与本轮 QA | 精确实现位置 | Take / Adapt / Refuse |
 |---|---|---|---|---|
@@ -17,6 +17,14 @@
 | Heptabase Workbench | canonical Card identity、Whiteboard placement、显式 AI context、资料编排复用 | frozen / QA passed；模型 / UI 合同 `15/15` + Sites `4/4` + IAB browser E2E gates `9/9` = `28/28`；desktop / mobile console `0`；`P0/P1/P2 = 0` | branch `codex/reference-prototype-combinations` · commit `3f9d9b5bf70f315580fa0d3f831f45f87a3d95eb` · worktree `/Users/xulater/.codex/worktrees/b469/Chat` · `docs/design/reference-implementations/heptabase` · 本轮运行 `http://127.0.0.1:4175/` | Take identity × placement、context panel；Adapt 移动 Section outline、board-scoped permission；Refuse Canvas 默认首页、位置自动成为领域关系 |
 
 完整 6 × 7 事实结论、已知 P1/P2 和引用证据统一见 [`reference-scenario-matrix-v0.1.md`](./reference-scenario-matrix-v0.1.md)。Heptabase 当前一手资料与 Take / Adapt / Refuse 见 [`heptabase-interaction-audit-v0.1.md`](./heptabase-interaction-audit-v0.1.md)。
+
+## 工作台选型与骨架冻结
+
+| 产物 | 状态与冻结范围 | 精确位置 | 后续边界 |
+|---|---|---|---|
+| Chat 统一工作台骨架 v0.1 | **frozen research reference**；2026-08-12 用户确认冻结当前版本。冻结当前页面结构、路由、折叠与右侧工作区打开方式，不表示已经接入生产前端 | branch `codex/human-agent-workbench-selector-html` · commit `2536cb4d22d9108bf7350dc911f8e9781c4e2f61` · worktree `/private/tmp/Chat-human-agent-workbench-selector-html` · [`chat-unified-workbench-skeleton-v0.1.html`](./chat-unified-workbench-skeleton-v0.1.html) | 作为真实前端三栏适配的视觉与交互输入；左侧导航、中央对话、按需打开的右侧工作区先落骨架，Workflow 具体设计继续延期 |
+
+本冻结继承 [`human-agent-workbench-selector-v0.1.html`](./human-agent-workbench-selector-v0.1.html) 的用户选择结果，但不把九项来源机械拼接为生产 UI。真实前端的首轮改造仍需先审计当前代码与可运行界面，再单独形成实现任务与完成门。
 
 Microsoft Agent Feed v0.2 的稳定输入是 [`README`](../reference-implementations/microsoft-agent-feed-human-loop-v0.2/README.md)、[`current-audit`](../reference-implementations/microsoft-agent-feed-human-loop-v0.2/current-audit.md)、[`design-qa`](../reference-implementations/microsoft-agent-feed-human-loop-v0.2/design-qa.md) 与 freeze `8d30cfe5651665407bf6e6dddc0339c075453704`。现有 literal combination 的 `references/agent-feed` 仍是此前收口副本；只有后续组合接入任务才能按上述稳定合同替换，不能把本轮原型自动宣称为生产或已接入组合。
 
