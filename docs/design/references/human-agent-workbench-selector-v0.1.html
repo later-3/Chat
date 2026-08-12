@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chat 工作台组合选型板 v0.1（研究工具，非产品原型）</title>
+<title>Chat 工作台“骨架 + 场景”选择页 v0.1（研究工具，非产品原型）</title>
 <style>
   :root {
     --bg: #faf9f6;
@@ -31,6 +31,7 @@
   h1 { font-size: 22px; margin: 0 0 8px; }
   h2 { font-size: 19px; margin: 0 0 4px; }
   h3 { font-size: 16px; margin: 0 0 6px; }
+  h4 { font-size: 15px; margin: 0 0 4px; }
   p { margin: 0 0 10px; }
   ul { margin: 4px 0 10px; padding-left: 20px; }
   li { margin: 2px 0; }
@@ -55,22 +56,21 @@
     border-radius: 3px;
     margin-bottom: 10px;
   }
-  .lede { color: var(--text-soft); max-width: 70ch; }
-  .axis-intro {
+  .lede { color: var(--text-soft); max-width: 72ch; }
+  .steps {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 12px;
     margin: 16px 0;
   }
-  .axis-intro > div {
+  .steps > div {
     border: 1px solid var(--line);
     border-radius: 4px;
     padding: 10px 12px;
     background: var(--bg);
     font-size: 14px;
   }
-  .axis-intro strong { display: block; margin-bottom: 2px; }
-  .path-note { font-size: 14px; color: var(--text-soft); }
+  .steps strong { display: block; margin-bottom: 2px; }
   .legend {
     font-size: 13px;
     color: var(--text-soft);
@@ -79,10 +79,24 @@
     padding-top: 10px;
   }
   .legend span { display: inline-block; margin-right: 14px; }
-  .legend b { color: var(--text); }
 
-  /* ---------- 轴切换（tabs） ---------- */
-  .axis-tabs {
+  /* ---------- 标签 ---------- */
+  .tag {
+    display: inline-block;
+    font-size: 12px;
+    padding: 1px 8px;
+    border-radius: 3px;
+    border: 1px solid var(--line-strong);
+    background: var(--bg);
+    color: var(--text-soft);
+    vertical-align: 1px;
+  }
+  .tag-frozen { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .tag-official { border-color: var(--line-strong); color: var(--text-soft); }
+  .tag-gap { border-color: var(--warn); color: var(--warn); }
+
+  /* ---------- 页签 ---------- */
+  .page-tabs {
     position: sticky;
     top: 0;
     z-index: 10;
@@ -90,13 +104,13 @@
     border-bottom: 1px solid var(--line);
     padding: 8px 20px;
   }
-  .axis-tabs .inner {
+  .page-tabs .inner {
     max-width: 1120px;
     margin: 0 auto;
     display: flex;
     gap: 4px;
   }
-  .axis-tabs [role="tab"] {
+  .page-tabs [role="tab"] {
     flex: 1 1 0;
     min-height: 44px;
     padding: 8px 10px;
@@ -108,7 +122,7 @@
     font-size: 15px;
     text-align: center;
   }
-  .axis-tabs [role="tab"][aria-selected="true"] {
+  .page-tabs [role="tab"][aria-selected="true"] {
     border-color: var(--accent);
     background: var(--accent-soft);
     color: var(--accent);
@@ -117,8 +131,8 @@
   .panel[hidden] { display: none; }
   .panel { padding-top: 24px; }
 
-  /* ---------- 通用项 ---------- */
-  .item {
+  /* ---------- 骨架卡 ---------- */
+  .kcard {
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 4px;
@@ -127,9 +141,37 @@
     display: grid;
     grid-template-columns: 55fr 45fr;
     gap: 18px;
+    cursor: pointer;
   }
-  .item.is-primary { border: 2px solid var(--accent); }
-  .item.is-aux, .item.is-picked { border: 1px solid var(--accent); }
+  .kcard.is-picked { border: 2px solid var(--accent); padding: 15px; }
+  .knum {
+    display: inline-block;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    padding: 0 7px;
+    margin-right: 6px;
+    background: var(--accent-soft);
+  }
+  .chosen-badge {
+    display: inline-block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 3px;
+    padding: 1px 8px;
+    margin-left: 8px;
+    vertical-align: 1px;
+  }
+  .question { font-size: 15px; font-weight: 600; }
+  .refs { font-size: 14px; margin: 0 0 8px; }
+  .refs dt { font-weight: 600; display: inline; }
+  .refs dd { display: inline; margin: 0 0 4px; }
+  .refs dd::after { content: ""; display: block; }
   .item-media { margin: 0; }
   .shot {
     background: var(--matte);
@@ -143,32 +185,43 @@
     height: 100%;
     object-fit: contain;
   }
-  .shot-main { height: 340px; }
-  .shot-sub { height: 200px; }
+  .shot-main { height: 320px; }
+  .shot-sub { height: 180px; }
   .item-media figcaption {
     font-size: 13px;
     color: var(--text-soft);
     margin: 0 0 12px;
   }
-  .owner { font-size: 14px; color: var(--text-soft); }
-  .status {
-    font-size: 14px;
-    font-weight: 600;
-    margin: 6px 0 10px;
-    padding: 4px 10px;
-    border: 1px solid var(--line-strong);
+
+  /* ---------- 选择控件 ---------- */
+  .pick {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 8px 6px;
     border-radius: 3px;
-    display: inline-block;
-    background: var(--bg);
+    cursor: pointer;
+    font-size: 15px;
+    border-top: 1px solid var(--line);
+    margin-top: 6px;
   }
-  .status.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-  .refs { font-size: 14px; margin: 0 0 8px; }
-  .refs dt { font-weight: 600; display: inline; }
-  .refs dd { display: inline; margin: 0 0 4px; }
-  .refs dd::after { content: ""; display: block; }
-  .fact-list { font-size: 14px; }
-  .fact-list li b { font-weight: 600; }
-  .ev { font-size: 13px; color: var(--text-soft); border-top: 1px solid var(--line); padding-top: 8px; }
+  .pick:hover { background: var(--bg); }
+  .pick input { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
+  .feedback {
+    font-size: 14px;
+    color: var(--warn);
+    min-height: 22px;
+    margin: 4px 0 0;
+  }
+  .panel-note {
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    background: var(--panel);
+    padding: 12px 16px;
+    margin: 0 0 16px;
+    font-size: 14px;
+  }
   .gap-note {
     font-size: 14px;
     border-left: 3px solid var(--warn);
@@ -177,42 +230,15 @@
     margin: 8px 0;
   }
 
-  /* ---------- 选择控件 ---------- */
-  fieldset.choice {
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    margin: 10px 0 0;
-    padding: 8px 12px 10px;
-  }
-  fieldset.choice legend { font-size: 13px; color: var(--text-soft); padding: 0 6px; }
-  fieldset.choice label {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    min-height: 44px;
-    padding: 8px 6px;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 15px;
-  }
-  fieldset.choice label:hover { background: var(--bg); }
-  fieldset.choice input { margin-top: 5px; width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
-  .feedback {
-    font-size: 14px;
-    color: var(--warn);
-    min-height: 22px;
-    margin: 4px 0 0;
-  }
-
-  /* ---------- C 轴 ---------- */
-  details.phase {
+  /* ---------- 场景 ---------- */
+  details.scenario {
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 4px;
     margin: 0 0 16px;
-    padding: 0 16px 12px;
+    padding: 0 16px 14px;
   }
-  details.phase > summary {
+  details.scenario > summary {
     cursor: pointer;
     min-height: 44px;
     padding: 12px 4px;
@@ -220,29 +246,50 @@
     font-weight: 600;
     list-style-position: inside;
   }
-  .phase-evidence {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin: 4px 0 14px;
-  }
-  .phase-evidence figure { margin: 0; }
-  .phase-evidence .shot { height: 240px; }
-  .phase-evidence figcaption { font-size: 13px; color: var(--text-soft); }
-  .stage {
-    border-top: 1px solid var(--line);
-    padding: 12px 0 6px;
-  }
-  .stage .status { margin-left: 0; }
-  .stage-note { font-size: 14px; color: var(--text-soft); }
-  .concept-note {
+  .scen-state {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-soft);
     border: 1px solid var(--line-strong);
-    border-radius: 4px;
-    background: var(--panel);
-    padding: 12px 16px;
-    margin: 0 0 16px;
-    font-size: 14px;
+    border-radius: 3px;
+    padding: 1px 8px;
+    margin-left: 8px;
+    background: var(--bg);
   }
+  .scen-state.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .scen-state.self { color: var(--warn); border-color: var(--warn); }
+  .scen-q { font-size: 15px; margin: 0 0 12px; }
+  .scards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 12px;
+    align-items: stretch;
+  }
+  .scard {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+    overflow: hidden;
+  }
+  .scard.is-picked { border: 2px solid var(--accent); }
+  .scard .shot {
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    height: 200px;
+    margin: 0;
+    flex: none;
+  }
+  .scard-body { padding: 10px 12px 6px; display: flex; flex-direction: column; flex: 1; }
+  .scard-body .seen, .scard-body .gapline { font-size: 13px; color: var(--text-soft); margin: 0 0 6px; }
+  .scard-body .gapline b { color: var(--warn); }
+  .scard .pick { margin-top: auto; }
+  .self-card { border-style: dashed; background: var(--panel); }
+  .self-card.is-picked { border-color: var(--warn); }
+  .self-card.is-picked .chosen-badge { color: var(--warn); border-color: var(--warn); background: var(--bg); }
 
   /* ---------- 汇总 ---------- */
   .summary-block {
@@ -254,7 +301,9 @@
   }
   .summary-block ul { margin: 6px 0 0; }
   .summary-block .self { color: var(--warn); font-weight: 600; }
-  .reset-btn {
+  .summary-block .todo { color: var(--text-soft); }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
+  .act-btn {
     min-height: 44px;
     padding: 10px 20px;
     border: 1px solid var(--accent);
@@ -264,7 +313,19 @@
     cursor: pointer;
     font-size: 15px;
   }
-  .reset-btn:active { background: #4c4a8c; }
+  .act-btn:active { background: #4c4a8c; }
+  .act-btn.secondary { background: var(--panel); color: var(--accent); }
+  .act-btn.secondary:active { background: var(--accent-soft); }
+  #copy-fallback {
+    width: 100%;
+    min-height: 220px;
+    font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    padding: 10px;
+    background: var(--bg);
+    color: var(--text);
+  }
 
   footer {
     border-top: 1px solid var(--line);
@@ -277,15 +338,14 @@
   /* ---------- 响应式 ---------- */
   @media (max-width: 900px) {
     body { font-size: 15px; }
-    .axis-intro { grid-template-columns: 1fr; }
-    .item { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: 1fr; }
+    .kcard { grid-template-columns: 1fr; }
     .shot-main { height: 240px; }
-    .shot-sub { height: 200px; }
-    .phase-evidence { grid-template-columns: 1fr; }
-    .phase-evidence .shot { height: 220px; }
-    .axis-tabs { padding: 6px 10px; }
-    .axis-tabs .inner { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-    .axis-tabs [role="tab"] { font-size: 14px; padding: 8px 6px; min-height: 44px; }
+    .shot-sub { height: 180px; }
+    .scards { grid-template-columns: 1fr; }
+    .scard .shot { height: 220px; }
+    .page-tabs { padding: 6px 10px; }
+    .page-tabs [role="tab"] { font-size: 14px; padding: 8px 6px; min-height: 44px; }
     main { padding: 0 12px 48px; }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -298,673 +358,764 @@
 <header class="page-header">
   <div class="inner">
     <p class="kicker">研究选型工具，不是 Chat 产品原型 · 不修改生产 UI · 不部署</p>
-    <h1>Chat 工作台组合选型板 v0.1</h1>
-    <p class="lede">一句话：用既有 9 项研究的真实画面，在同一页组合出 Chat 自己的工作台骨架——先选页面中心（A），再定 Agent 是谁（B），最后走一遍从目标到交付的生命周期（C）。本页不排名参考产品，只做组合选型；所有截图均为已登记证据，命题与边界以研究文件为准。</p>
-    <div class="axis-intro">
-      <div><strong>A · Workbench Surface</strong>页面中心由谁拥有：对话、工作对象、执行现场、监督队列……同一时刻只有一个主中心，可再加最多 2 个辅助表面。</div>
-      <div><strong>B · Agent Constitution</strong>Agent 是谁、能做什么、记得什么、边界在哪里：Identity / Capability / Memory / Permission 四项逐项选参考方向。</div>
-      <div><strong>C · Workflow Lifecycle</strong>怎样从目标走到交付与继续：12 个阶段折为 Phase 1–4，逐阶段选参考方向或标为 Chat 自建。</div>
+    <h1>Chat 工作台“骨架 + 场景”选择页 v0.1</h1>
+    <p class="lede">用法只有三步：<b>先选骨架，再按场景选喜欢的做法，最后查看汇总</b>。所有画面都来自已完成的真实研究证据，不排名、不推荐、不自动拼方案；你选完之后的兼容与冲突，由下一步任务处理。</p>
+    <div class="steps">
+      <div><strong>第一步 · 选骨架</strong>从 10 套真实整体骨架里，勾出你觉得值得参考的（可全不选，也可全选）。</div>
+      <div><strong>第二步 · 选场景</strong>11 个具体场景，每个场景里勾出喜欢的呈现方式；都不合适就勾“Chat 自建”。</div>
+      <div><strong>第三步 · 查看汇总</strong>随时打开汇总页查看当前选择、未作答场景和固定的参考缺口清单。</div>
     </div>
-    <p class="path-note">建议主路径：理解三轴 → 在 A 轴选唯一页面中心 → 补 B 轴四项 Constitution → 按 Phase 走完 C 轴 12 阶段 → 在“组合汇总”查看当前组合与共同缺口。</p>
     <p class="legend">
-      <span><b>F</b> 已批准合同 / 冻结事实 / 已批准研究登记</span>
-      <span><b>O</b> 已检查产品 UI 画面直接可见</span>
-      <span><b>I</b> 跨证据归纳或 Chat 适配判断</span>
-      <span><b>U</b> 当前没有证明</span>
+      <span><span class="tag tag-frozen">冻结原型画面</span> Chat 已冻结参考原型 / 参考实现的已验收画面</span>
+      <span><span class="tag tag-official">官方或一手界面</span> 产品官方或一手界面证据，非本地运行实例</span>
+      <span><span class="tag tag-gap">现有参考缺口</span> 九项参考都无法完整背书的明确缺口</span>
     </p>
   </div>
 </header>
 
-<nav class="axis-tabs" aria-label="三轴与汇总切换">
+<nav class="page-tabs" aria-label="选择步骤切换">
   <div class="inner" role="tablist">
-    <button type="button" role="tab" id="tab-a" aria-selected="true" aria-controls="panel-a" data-tab="panel-a">A · 页面中心</button>
-    <button type="button" role="tab" id="tab-b" aria-selected="false" aria-controls="panel-b" data-tab="panel-b" tabindex="-1">B · Agent Constitution</button>
-    <button type="button" role="tab" id="tab-c" aria-selected="false" aria-controls="panel-c" data-tab="panel-c" tabindex="-1">C · 生命周期</button>
-    <button type="button" role="tab" id="tab-s" aria-selected="false" aria-controls="panel-s" data-tab="panel-s" tabindex="-1">组合汇总</button>
+    <button type="button" role="tab" id="tab-k" aria-selected="true" aria-controls="panel-k" data-tab="panel-k">选骨架（10）</button>
+    <button type="button" role="tab" id="tab-s" aria-selected="false" aria-controls="panel-s" data-tab="panel-s" tabindex="-1">选场景（11）</button>
+    <button type="button" role="tab" id="tab-r" aria-selected="false" aria-controls="panel-r" data-tab="panel-r" tabindex="-1">查看汇总</button>
   </div>
 </nav>
 
 <main>
 
-<!-- ==================== A 轴 ==================== -->
-<section class="panel" id="panel-a" role="tabpanel" aria-labelledby="tab-a">
-  <h2>A 轴 · Workbench Surfaces（8 类）</h2>
-  <p class="lede">用 radio 选唯一页面主中心；用 checkbox 选辅助表面（最多 2 个）。默认推荐：主中心 A2，辅助 A3 + A5。</p>
-  <p class="feedback" id="a-feedback" role="status" aria-live="polite"></p>
-
-  <!-- A1 -->
-  <article class="item" id="item-a1">
-    <figure class="item-media">
-      <div class="shot shot-main"><img src="./evidence/plane-v0.1/screenshots/04-detailed-intake-work-item.webp" alt="Plane 的 Intake 审核画面中一个 work item 的详情：长期工作对象拥有页面中心，审核队列在决定前展示关键属性" loading="lazy"></div>
-      <figcaption>主参考画面：Plane Intake / work item 详情（O · 官方视觉）。命题：Work-object-owned + Intake 审核。</figcaption>
-      <div class="shot shot-sub"><img src="./evidence/plane-v0.1/screenshots/03a-github-overview.webp" alt="Plane 的项目概览画面：同一工作对象集合可以以多种布局呈现，身份与筛选保持连续" loading="lazy"></div>
-      <figcaption>补充画面：Plane 概览（O）。命题：同一对象集合多布局切换。</figcaption>
-    </figure>
-    <div class="item-body">
-      <h3>A1 · Project / Work / Task Board</h3>
-      <p class="owner">页面中心所有者：Work-object（长期工作对象及其状态）</p>
-      <p class="status" data-status="a1">状态：未选</p>
-      <dl class="refs">
-        <dt>主参考：</dt><dd>Plane（Work-object-owned + 多布局 + Intake）</dd>
-        <dt>补充参考：</dt><dd>Basecamp（Room-owned）、Linear（Work-list-owned + Peek）</dd>
-      </dl>
-      <ul class="fact-list">
-        <li><b>可直接借：</b>5 种布局切换 + 身份/筛选连续；Basecamp 四层作用域；Linear List/Peek/Detail 三档阅读。</li>
-        <li><b>必须适配：</b>Chat 的 Work 不等于 Issue；Intake Accept/Decline 不等于完整 HITL。</li>
-        <li><b>拒绝照搬：</b>不复制多套事实；不把六宫格当全局骨架。</li>
-      </ul>
-      <p class="ev">证据边界：F · audit + O · 冻结原型画面。截图只证明布局结构存在，不冒充完整交互路径。</p>
-      <fieldset class="choice">
-        <legend>A1 选择</legend>
-        <label><input type="radio" name="a-main" value="a1" data-label="A1 Project / Work / Task Board"> 选为唯一页面主中心</label>
-        <label><input type="checkbox" name="a-aux" value="a1" data-label="A1 Project / Work / Task Board"> 选为辅助表面（最多 2 个）</label>
-      </fieldset>
-    </div>
-  </article>
-
-  <!-- A2 -->
-  <article class="item" id="item-a2">
-    <figure class="item-media">
-      <div class="shot shot-main"><img src="./evidence/anythingllm-v0.1/screenshots/02-anythingllm-start-official-1240x720.png" alt="AnythingLLM 的对话起点画面：消息流拥有页面中心，自然语言输入仍在对话主线" loading="lazy"></div>
-      <figcaption>主参考画面：AnythingLLM Conversation 起点（O · WB-02）。命题：Conversation-owned 消息流。</figcaption>
-      <div class="shot shot-sub"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/21-agent-survey-multiple-choice.webp" alt="AnythingLLM 的 Agent Survey 画面：澄清问题以内嵌多题卡片出现在对话中，有进度、选项、Other 和 Skip" loading="lazy"></div>
-      <figcaption>补充画面：Agent Survey（O · ACW-21）。命题：对话内结构化澄清，不跳设置页面。</figcaption>
-    </figure>
-    <div class="item-body">
-      <h3>A2 · Conversation / Goal / Plan</h3>
-      <p class="owner">页面中心所有者：Conversation（对话消息流）</p>
-      <p class="status" data-status="a2">状态：未选</p>
-      <dl class="refs">
-        <dt>主参考：</dt><dd>AnythingLLM（Conversation-owned + Survey 澄清 + Sources）</dd>
-        <dt>补充参考：</dt><dd>Chat 当前 B2 闭环（F）</dd>
-      </dl>
-      <ul class="fact-list">
-        <li><b>可直接借：</b>Conversation-owned 让状态与 Evidence 紧贴消息连续性；Survey 对话内结构化 Checkpoint。</li>
-        <li><b>必须适配：</b>不把 token 数当进度；不让 Thread 吞并 Project；Survey 回答需进入版本化 Plan。</li>
-        <li><b>拒绝照搬：</b>不把 Thinking UI 当 Chat 隐藏推理保存依据（F · AGENTS.md §6.6）。</li>
-      </ul>
-      <p class="ev">证据边界：O · WB-02–WB-05；O · ACW-21。不证明显式 Goal/assumptions/scope 对象（U）。</p>
-      <fieldset class="choice">
-        <legend>A2 选择</legend>
-        <label><input type="radio" name="a-main" value="a2" data-label="A2 Conversation / Goal / Plan" checked> 选为唯一页面主中心</label>
-        <label><input type="checkbox" name="a-aux" value="a2" data-label="A2 Conversation / Goal / Plan"> 选为辅助表面（最多 2 个）</label>
-      </fieldset>
-    </div>
-  </article>
-
-  <!-- A3 -->
-  <article class="item" id="item-a3">
-    <figure class="item-media">
-      <div class="shot shot-main"><img src="./evidence/anythingllm-v0.1/screenshots/06-open-computer-active-run-official-1280x720.png" alt="Open Computer 运行中画面：桌面与浏览器执行现场居中，对话和运行状态退到侧边 sidecar" loading="lazy"></div>
-      <figcaption>主参考画面：Open Computer active run（O · WB-06）。命题：Workspace-owned + sidecar。</figcaption>
-      <div class="shot shot-sub"><img src="./evidence/anythingllm-v0.1/screenshots/07-open-computer-deliverable-official-1280x720.png" alt="Open Computer 的交付画面：产物在任务现场交付，提供 Download 和 Remove" loading="lazy"></div>
-      <figcaption>补充画面：Open Computer deliverable（O · WB-07）。命题：Deliverable 现场交付。</figcaption>
-    </figure>
-    <div class="item-body">
-      <h3>A3 · Execution Workspace / Browser / Files / Tools</h3>
-      <p class="owner">页面中心所有者：Workspace（执行现场：桌面 / 浏览器 / 文件 / 工具）</p>
-      <p class="status" data-status="a3">状态：未选</p>
-      <dl class="refs">
-        <dt>主参考：</dt><dd>Open Computer（Workspace-owned + sidecar）</dd>
-        <dt>补充参考：</dt><dd>Orca（pane tree + task workspace）</dd>
-      </dl>
-      <ul class="fact-list">
-        <li><b>可直接借：</b>桌面/浏览器/文件现场居中；Chat 退到 sidecar；异构 pane tree。</li>
-        <li><b>必须适配：</b>不自动切换；切换必须显式且保留对象与草稿；不把 VNC 当通用模式。</li>
-        <li><b>拒绝照搬：</b>不照搬固定 sidecar 宽度；不把 terminal 当 Agent。</li>
-      </ul>
-      <p class="ev">证据边界：O · WB-06–WB-07；O · Orca 截图。不证明 Pause/Resume 与 Artifact 审阅闭环。</p>
-      <fieldset class="choice">
-        <legend>A3 选择</legend>
-        <label><input type="radio" name="a-main" value="a3" data-label="A3 Execution Workspace / Browser / Files / Tools"> 选为唯一页面主中心</label>
-        <label><input type="checkbox" name="a-aux" value="a3" data-label="A3 Execution Workspace / Browser / Files / Tools" checked> 选为辅助表面（最多 2 个）</label>
-      </fieldset>
-    </div>
-  </article>
-
-  <!-- A4 -->
-  <article class="item" id="item-a4">
-    <figure class="item-media">
-      <div class="shot shot-main"><img src="./evidence/orca-v0.1/screenshots/03-diff-annotation.png" alt="Orca 的 diff 行级批注画面：审阅者在代码差异的具体行上留下锚定评论，可批量交回指定 Agent" loading="lazy"></div>
-      <figcaption>主参考画面：Orca diff 行级批注（O · 官方仓库逐帧）。命题：Artifact 锚定反馈。</figcaption>
-      <div class="shot shot-sub"><img src="./evidence/orca-v0.1/screenshots/02-agent-statuses.png" alt="Orca 的多 Agent 状态画面：Agent 以 Working、Needs You、Done、Blocked 等状态嵌在任务行中" loading="lazy"></div>
-      <figcaption>补充画面：Orca Agent 状态嵌任务行（O）。命题：Agent 是可观察运行者。</figcaption>
-    </figure>
-    <div class="item-body">
-      <h3>A4 · Artifact / Evidence Review</h3>
-      <p class="owner">页面中心所有者：Artifact（待审阅产物 / 证据）</p>
-      <p class="status" data-status="a4">状态：未选</p>
-      <dl class="refs">
-        <dt>主参考：</dt><dd>Orca（diff 行级批注 → 批量交回指定 Agent）</dd>
-        <dt>补充参考：</dt><dd>Heptabase（单个 Artifact + context/provenance）</dd>
-      </dl>
-      <ul class="fact-list">
-        <li><b>可直接借：</b>行级批注锚点持久化；显式 context 和 searched/viewed 日志。</li>
-        <li><b>必须适配：</b>不限制在 coding；审阅结果先是 candidate，需正式 Evidence 验证。</li>
-        <li><b>拒绝照搬：</b>不把位置/颜色/连线当权威状态。</li>
-      </ul>
-      <p class="ev">证据边界：F · Orca evidence card；F · Heptabase audit。正式 Evidence 完成门无参考（U）。</p>
-      <fieldset class="choice">
-        <legend>A4 选择</legend>
-        <label><input type="radio" name="a-main" value="a4" data-label="A4 Artifact / Evidence Review"> 选为唯一页面主中心</label>
-        <label><input type="checkbox" name="a-aux" value="a4" data-label="A4 Artifact / Evidence Review"> 选为辅助表面（最多 2 个）</label>
-      </fieldset>
-    </div>
-  </article>
-
-  <!-- A5 -->
-  <article class="item" id="item-a5">
-    <figure class="item-media">
-      <div class="shot shot-main"><img src="../reference-implementations/microsoft-agent-feed-human-loop-v0.2/evidence/current-audit/01-needs-attention.png" alt="Microsoft Agent Feed 的 Needs Attention 画面：监督分流队列按是否需要人工介入分组，风险优先" loading="lazy"></div>
-      <figcaption>主参考画面：MS Agent Feed Needs Attention（F · audit v0.2）。命题：Supervision-feed-owned。</figcaption>
-      <div class="shot shot-sub"><img src="../combination-prototypes/evidence/stage1/visual-compare/agent-feed-final-raw.png" alt="Chat 冻结参考原型中的 Agent Feed 已验收画面：类型化监督条目与筛选" loading="lazy"></div>
-      <figcaption>补充画面：冻结原型 Agent Feed（F · 已验收画面）。</figcaption>
-    </figure>
-    <div class="item-body">
-      <h3>A5 · Multi-Agent Feed / HITL</h3>
-      <p class="owner">页面中心所有者：Supervision Feed（类型化监督分流队列）</p>
-      <p class="status" data-status="a5">状态：未选</p>
-      <dl class="refs">
-        <dt>主参考：</dt><dd>MS Agent Feed（typed supervision + outcome_unknown）</dd>
-        <dt>补充参考：</dt><dd>Orca（任务内多 Agent 状态）</dd>
-      </dl>
-      <ul class="fact-list">
-        <li><b>可直接借：</b>风险优先类型化监督；任务类型决定动作；outcome_unknown 拒绝普通 Retry。</li>
-        <li><b>必须适配：</b>Feed 不是事实源；正式事实回 Product Run / Decision / Evidence。</li>
-        <li><b>拒绝照搬：</b>不复制 Completed 大桶；不用普通 Retry 处理 outcome_unknown。</li>
-      </ul>
-      <p class="ev">证据边界：F · Agent Feed audit v0.2。不证明生产耐久执行与完整 Project 生命周期。</p>
-      <fieldset class="choice">
-        <legend>A5 选择</legend>
-        <label><input type="radio" name="a-main" value="a5" data-label="A5 Multi-Agent Feed / HITL"> 选为唯一页面主中心</label>
-        <label><input type="checkbox" name="a-aux" value="a5" data-label="A5 Multi-Agent Feed / HITL" checked> 选为辅助表面（最多 2 个）</label>
-      </fieldset>
-    </div>
-  </article>
-
-  <!-- A6 -->
-  <article class="item" id="item-a6">
-    <figure class="item-media">
-      <div class="shot shot-main"><img src="../combination-prototypes/evidence/stage1/visual-compare/heptabase-whiteboard-final-raw.png" alt="Heptabase 白板画面：Card 内容属于 Library，白板只保存空间放置，AI 回答带有显式 context 与来源" loading="lazy"></div>
-      <figcaption>主参考画面：Heptabase Whiteboard（F · 已验收画面）。命题：Knowledge-canvas-owned；canonical object × placement。</figcaption>
-    </figure>
-    <div class="item-body">
-      <h3>A6 · Knowledge / Canvas</h3>
-      <p class="owner">页面中心所有者：Knowledge Canvas（知识对象 + 空间放置）</p>
-      <p class="status" data-status="a6">状态：未选</p>
-      <dl class="refs">
-        <dt>主参考：</dt><dd>Heptabase（canonical object × placement）</dd>
-        <dt>补充参考：</dt><dd>Plane Page / Work 内知识</dd>
-      </dl>
-      <ul class="fact-list">
-        <li><b>可直接借：</b>Card Library 是内容源；Whiteboard 只保存 placement；显式 AI context/provenance。</li>
-        <li><b>必须适配：</b>不把无限画布当首页；placement 不是产品事实。</li>
-        <li><b>拒绝照搬：</b>不让无来源 AI Card 自动进入长期事实。</li>
-      </ul>
-      <p class="ev">证据边界：F · Heptabase audit。无 Project 生命周期与耐久 Agent Run。</p>
-      <fieldset class="choice">
-        <legend>A6 选择</legend>
-        <label><input type="radio" name="a-main" value="a6" data-label="A6 Knowledge / Canvas"> 选为唯一页面主中心</label>
-        <label><input type="checkbox" name="a-aux" value="a6" data-label="A6 Knowledge / Canvas"> 选为辅助表面（最多 2 个）</label>
-      </fieldset>
-    </div>
-  </article>
-
-  <!-- A7 -->
-  <article class="item" id="item-a7">
-    <figure class="item-media">
-      <div class="shot shot-main"><img src="../combination-prototypes/evidence/stage1/visual-compare/things-today-final-raw.png" alt="Things 的 Today 画面：跨 Area 与 Project 的个人注意力投影，按今天与今晚组织" loading="lazy"></div>
-      <figcaption>主参考画面：Things Today（F · 已验收画面）。命题：Attention/time projection-owned。</figcaption>
-      <div class="shot shot-sub"><img src="../combination-prototypes/evidence/stage1/visual-compare/hey-day-final-raw.png" alt="HEY Calendar 的 Day 画面：连续时间线上创建事件时同屏判断冲突" loading="lazy"></div>
-      <figcaption>补充画面：HEY Calendar Day（F · 已验收画面）。命题：连续时间尺度 + 同屏冲突判断。</figcaption>
-    </figure>
-    <div class="item-body">
-      <h3>A7 · Today / Todo / Calendar</h3>
-      <p class="owner">页面中心所有者：Attention / Time 投影（注意力与时间尺度）</p>
-      <p class="status" data-status="a7">状态：未选</p>
-      <dl class="refs">
-        <dt>主参考：</dt><dd>Things（Today 投影）+ HEY Calendar（Day/Week/Year）</dd>
-        <dt>补充参考：</dt><dd>—</dd>
-      </dl>
-      <ul class="fact-list">
-        <li><b>可直接借：</b>parent context × attention horizon 双轴；连续时间尺度 + 创建时同屏冲突判断。</li>
-        <li><b>必须适配：</b>不把所有对象 checkbox 化；不让 Calendar 拥有 Work/Project。</li>
-        <li><b>拒绝照搬：</b>不共享同一完成或优先级语法。</li>
-      </ul>
-      <p class="ev">证据边界：F · Things audit + F · HEY audit。投影不是事实源，离开后可从权威事实重建。</p>
-      <fieldset class="choice">
-        <legend>A7 选择</legend>
-        <label><input type="radio" name="a-main" value="a7" data-label="A7 Today / Todo / Calendar"> 选为唯一页面主中心</label>
-        <label><input type="checkbox" name="a-aux" value="a7" data-label="A7 Today / Todo / Calendar"> 选为辅助表面（最多 2 个）</label>
-      </fieldset>
-    </div>
-  </article>
-
-  <!-- A8 -->
-  <article class="item" id="item-a8">
-    <figure class="item-media">
-      <div class="shot shot-main"><img src="../combination-prototypes/evidence/stage1/mobile-audit/work-linear-updates-391x844.png" alt="Linear 移动端的 Project Updates 画面：署名更新按时间列出，含健康度与叙述" loading="lazy"></div>
-      <figcaption>主参考画面：Linear Updates 移动端（F · audit）。命题：署名 Project Update → history。</figcaption>
-      <div class="shot shot-sub"><img src="../combination-prototypes/evidence/stage1/visual-compare/linear-list-peek-final-raw.png" alt="Linear 的 List 与 Peek 画面：同一工作对象在列表与临时预览间保持身份一致" loading="lazy"></div>
-      <figcaption>补充画面：Linear List/Peek（F · 已验收画面）。命题：三档阅读，身份连续。</figcaption>
-    </figure>
-    <div class="item-body">
-      <h3>A8 · Delivery / Update / Writeback</h3>
-      <p class="owner">页面中心所有者：投影（交付 / 更新写回，不是独立事实源）</p>
-      <p class="status" data-status="a8">状态：未选</p>
-      <dl class="refs">
-        <dt>主参考：</dt><dd>Linear（署名 Project Update）</dd>
-        <dt>补充参考：</dt><dd>Plane（对象写回）、Heptabase（Artifact + provenance → Evidence）</dd>
-      </dl>
-      <ul class="fact-list">
-        <li><b>可直接借：</b>author + health + narrative + observed changes → history / Pulse。</li>
-        <li><b>必须适配：</b>模型结果先是 candidate；不让 Activity/Agent 摘要冒充负责人 Update。</li>
-        <li><b>拒绝照搬：</b>不让事件流冒充 Update。</li>
-      </ul>
-      <p class="ev">证据边界：F · Linear audit。正式 Delivery 需 Chat Decision + Evidence 绑定（自建）。</p>
-      <fieldset class="choice">
-        <legend>A8 选择</legend>
-        <label><input type="radio" name="a-main" value="a8" data-label="A8 Delivery / Update / Writeback"> 选为唯一页面主中心</label>
-        <label><input type="checkbox" name="a-aux" value="a8" data-label="A8 Delivery / Update / Writeback"> 选为辅助表面（最多 2 个）</label>
-      </fieldset>
-    </div>
-  </article>
-</section>
-
-<!-- ==================== B 轴 ==================== -->
-<section class="panel" id="panel-b" role="tabpanel" aria-labelledby="tab-b" hidden>
-  <h2>B 轴 · Agent Constitution（4 类）</h2>
-  <p class="lede">四项都必须明确选择；选“Chat 自建”等于该维度当前没有参考方向。推荐：B1 Agent Feed · B2 AnythingLLM · B3 AnythingLLM + Heptabase · B4 Agent Feed。</p>
-  <p class="gap-note">显式缺口（U）：9 项研究中没有任何一个提供完整耐久 Agent Profile（身份 + 职责 + 能力 + 记忆 + 权限 + 当前工作 + 贡献历史）。无论 B 轴怎样组合，Agent Profile 都必须由 Chat 自建。另：AnythingLLM 的 provider/model 配置属于 B2 Capability，不属于 B1 Identity。</p>
-
-  <!-- B1 -->
-  <article class="item" id="item-b1">
-    <figure class="item-media">
-      <div class="shot shot-main"><img src="../reference-implementations/microsoft-agent-feed-human-loop-v0.2/evidence/browser-qa/15-delegated.jpg" alt="Microsoft Agent Feed 的 delegation 画面：任务的 participant、current owner 与委托关系可见，回答“这个 Agent 是谁、现在归谁”" loading="lazy"></div>
-      <figcaption>代表画面：Agent Feed delegation（F · audit）。B1 命题：participant / current owner / delegation 回答“Agent 是谁、归谁”。</figcaption>
-    </figure>
-    <div class="item-body">
-      <h3>B1 · Identity / Role / Owner / Participant</h3>
-      <p class="status" data-status="b1">状态：未选</p>
-      <dl class="refs">
-        <dt>主参考：</dt><dd>MS Agent Feed（Agent 身份类型化 + delegation 明示 participant visibility）</dd>
-        <dt>补充参考：</dt><dd>AnythingLLM Workspace Agent 模型选择仅属 B2，不作 B1 证据</dd>
-      </dl>
-      <ul class="fact-list">
-        <li><b>可直接借：</b>Agent 身份类型化；delegation 明示 participant visibility；Agent 有独立终态。</li>
-        <li><b>Chat 自建缺口：</b>完整耐久 Agent Profile（U）；身份与职责、能力、记忆、权限的统一。</li>
-      </ul>
-      <p class="ev">证据边界：F · Agent Feed audit；U · 完整 Agent Profile。B1 与 B4 可复用同一截图，但命题不同：B1 回答“谁”，B4 回答“能看什么、能写到哪里”。</p>
-      <fieldset class="choice">
-        <legend>B1 参考方向</legend>
-        <label><input type="radio" name="b1" value="agent-feed" data-label="MS Agent Feed（participant / current owner / delegation）" checked> MS Agent Feed（身份 / Owner / Participant）</label>
-        <label><input type="radio" name="b1" value="chat" data-label="Chat 自建"> Chat 自建（不选参考）</label>
-      </fieldset>
-    </div>
-  </article>
-
-  <!-- B2 -->
-  <article class="item" id="item-b2">
-    <figure class="item-media">
-      <div class="shot shot-main"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/10-mcp-management-ui.png" alt="AnythingLLM 的 MCP 管理画面：Agent Skills、Custom Skills、Agent Flows、MCP Servers 在同一页面管理，MCP server 显示状态、tools 和启动命令" loading="lazy"></div>
-      <figcaption>代表画面：MCP Management（O · ACW-10）。命题：Skills/Flows/MCP 同页管理。</figcaption>
-      <div class="shot shot-sub"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/04-agent-skills-intelligent-selection.webp" alt="AnythingLLM 的 Agent Skills 画面：Max Tool Calls、Intelligent Skill Selection、Max Tools 是显式控制项" loading="lazy"></div>
-      <figcaption>补充画面：Agent Skills 显式控制（O · ACW-04）。</figcaption>
-    </figure>
-    <div class="item-body">
-      <h3>B2 · Capability / Skill / Tool / MCP / Model</h3>
-      <p class="status" data-status="b2">状态：未选</p>
-      <dl class="refs">
-        <dt>主参考：</dt><dd>AnythingLLM（Skills/MCP/Flows 同页管理 + Intelligent Selection）</dd>
-        <dt>补充参考：</dt><dd>Plane（3 种 AI 作用域）</dd>
-      </dl>
-      <ul class="fact-list">
-        <li><b>可直接借：</b>Max Tool Calls / Intelligent Skill Selection / Max Tools 显式控制；MCP server 状态 + tools + startup command；provider/model 配置归此项。</li>
-        <li><b>Chat 自建缺口：</b>真实工具授权、调用成功与副作用对账合同（U · 画面只展示配置入口）。</li>
-      </ul>
-      <p class="ev">证据边界：O · ACW-10, ACW-04；U · 真实工具授权与调用结果。</p>
-      <fieldset class="choice">
-        <legend>B2 参考方向</legend>
-        <label><input type="radio" name="b2" value="anythingllm" data-label="AnythingLLM（Skills / MCP / Flows 同页 + provider/model 配置）" checked> AnythingLLM（Skills/MCP/Flows 同页 + provider/model）</label>
-        <label><input type="radio" name="b2" value="plane" data-label="Plane（3 种 AI 作用域）"> Plane（3 种 AI 作用域）</label>
-        <label><input type="radio" name="b2" value="chat" data-label="Chat 自建"> Chat 自建（不选参考）</label>
-      </fieldset>
-    </div>
-  </article>
-
-  <!-- B3 -->
-  <article class="item" id="item-b3">
-    <figure class="item-media">
-      <div class="shot shot-main"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/02-memory-sidebar.webp" alt="AnythingLLM 的 Memory 侧栏画面：Workspace 与 Global 两种 scope 分开，记忆卡可见、可管理" loading="lazy"></div>
-      <figcaption>代表画面：Memory Sidebar（O · ACW-02）。命题：Workspace / Global scope 分开，记忆卡可见可管理。</figcaption>
-    </figure>
-    <div class="item-body">
-      <h3>B3 · Memory / Context / Source / Provenance</h3>
-      <p class="status" data-status="b3">状态：未选</p>
-      <dl class="refs">
-        <dt>主参考：</dt><dd>AnythingLLM（Memory sidebar Workspace/Global scope）+ Heptabase（context chips + searched/viewed）</dd>
-        <dt>补充参考：</dt><dd>MS Agent Feed（related record + Evidence）</dd>
-      </dl>
-      <ul class="fact-list">
-        <li><b>可直接借：</b>Workspace/Global scope 分开、记忆卡可见可管理；显式 context chips；访问日志区分 searched/viewed。</li>
-        <li><b>Chat 自建缺口：</b>自动提取流程与模型注入范围（D/U）；回答先是 candidate；不虚构 provenance。</li>
-      </ul>
-      <p class="ev">证据边界：O · ACW-02；F · Heptabase audit；U · 第三方模型实际接收范围。</p>
-      <fieldset class="choice">
-        <legend>B3 参考方向</legend>
-        <label><input type="radio" name="b3" value="anythingllm-heptabase" data-label="AnythingLLM Memory scope + Heptabase context/provenance" checked> AnythingLLM + Heptabase（Memory scope + context/provenance）</label>
-        <label><input type="radio" name="b3" value="agent-feed" data-label="MS Agent Feed（related record + Evidence）"> MS Agent Feed（related record + Evidence）</label>
-        <label><input type="radio" name="b3" value="chat" data-label="Chat 自建"> Chat 自建（不选参考）</label>
-      </fieldset>
-    </div>
-  </article>
-
-  <!-- B4 -->
-  <article class="item" id="item-b4">
-    <figure class="item-media">
-      <div class="shot shot-main"><img src="../reference-implementations/microsoft-agent-feed-human-loop-v0.2/evidence/browser-qa/15-delegated.jpg" alt="Microsoft Agent Feed 的 delegation 画面：visible to participants 与 current owner 界定了谁可见、委托边界在哪里，回答“能看什么、能写到哪里”" loading="lazy"></div>
-      <figcaption>代表画面：Agent Feed delegation（F · audit）。B4 命题：与 B1 同图不同命题——这里回答“可见范围与有界委托（写边界）”，而非身份归属。</figcaption>
-    </figure>
-    <div class="item-body">
-      <h3>B4 · Permission / Visibility / Consent / Write scope</h3>
-      <p class="status" data-status="b4">状态：未选</p>
-      <dl class="refs">
-        <dt>主参考：</dt><dd>MS Agent Feed（participant visibility + delegation 合同）</dd>
-        <dt>补充参考：</dt><dd>Heptabase（Board owner/edit/view/none + Space search 开关）</dd>
-      </dl>
-      <ul class="fact-list">
-        <li><b>可直接借：</b>delegation 明示 coordination-only；Board owner/edit/view/none；visible to / required permission 展示。</li>
-        <li><b>Chat 自建缺口：</b>权限、版本、hash 与幂等校验合同；不虚构跨账户社交或代他人 Agent 同意。</li>
-      </ul>
-      <p class="ev">证据边界：F · Agent Feed audit；F · Heptabase audit。写范围与同意语义主要由 Chat 自建。</p>
-      <fieldset class="choice">
-        <legend>B4 参考方向</legend>
-        <label><input type="radio" name="b4" value="agent-feed" data-label="MS Agent Feed（participant visibility + 有界 delegation）" checked> MS Agent Feed（participant visibility + delegation）</label>
-        <label><input type="radio" name="b4" value="heptabase" data-label="Heptabase（Board permission + Space search 开关）"> Heptabase（Board permission + Space search 开关）</label>
-        <label><input type="radio" name="b4" value="chat" data-label="Chat 自建"> Chat 自建（不选参考）</label>
-      </fieldset>
-    </div>
-  </article>
-</section>
-
-<!-- ==================== C 轴 ==================== -->
-<section class="panel" id="panel-c" role="tabpanel" aria-labelledby="tab-c" hidden>
-  <h2>C 轴 · Agent Workflow Lifecycle（12 阶段 / Phase 1–4）</h2>
-  <p class="lede">逐阶段选择参考方向；未选参考即显示“Chat 自建”。折叠展开不影响选择状态。</p>
-
-  <div class="concept-note">
-    <p><b>四个概念必须分开：</b>Agent Constitution（B 轴：谁）≠ Agent Workflow Definition（定义/配置/版本/发布/触发）≠ Agent Workflow Run（一次执行的进度/介入/结果）≠ Business / Project Workflow（业务 Work item 状态流，不得冒充 Agent Workflow，F）。</p>
-    <p><b>本轴证据边界：</b>AnythingLLM Stop 只证明 cancel/abort，不证明 Pause/Resume（O · ACW-12）；AnythingLLM 的 Thinking 只是源 UI 标签，不是 Chat 应保存的隐藏推理（F · AGENTS.md §6.6）；Scheduled Jobs 只证明 Trigger → Run → History 可见路径，不是完整 Workflow 生命周期；version/publish、真正 Pause/Resume、完整 Agent Profile 均为 U 缺口。</p>
+<!-- ==================== 第一步：选骨架 ==================== -->
+<section class="panel" id="panel-k" role="tabpanel" aria-labelledby="tab-k">
+  <h2>第一步 · 选整体骨架（10 套，任意多选）</h2>
+  <div class="panel-note">
+    <p><b>多选只代表“这些骨架值得参考”，不是现在决定唯一默认骨架。</b>同一时刻一个页面只有一个主中心；多套骨架之间的冲突后续再处理，这里不用替系统做取舍。</p>
+    <p>每张卡整卡可点击勾选；初始全部不选，刷新页面恢复为空。</p>
   </div>
 
-  <!-- Phase 1 -->
-  <details class="phase" open>
-    <summary>Phase 1 · Goal → Plan（C1–C2）</summary>
-    <div class="phase-evidence">
-      <figure>
-        <div class="shot"><img src="./evidence/anythingllm-v0.1/screenshots/02-anythingllm-start-official-1240x720.png" alt="AnythingLLM 对话起点：自然语言输入仍在对话主线" loading="lazy"></div>
-        <figcaption>C1 入口证据：Conversation 起点（O · WB-02）。不证明显式 Goal 对象（U）。</figcaption>
-      </figure>
-      <figure>
-        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/21-agent-survey-multiple-choice.webp" alt="Agent Survey 对话内多题澄清卡片：有进度、选项、Other 与 Skip" loading="lazy"></div>
-        <figcaption>C1 澄清证据：Survey 对话内结构化澄清（O · ACW-21）。</figcaption>
-      </figure>
-      <figure>
-        <div class="shot"><img src="../reference-implementations/microsoft-agent-feed-human-loop-v0.2/evidence/current-audit/02-decision-detail.png" alt="MS Agent Feed 的 Decision 详情：可编辑条目、Approve 与 Request changes，revision 与 hash 绑定" loading="lazy"></div>
-        <figcaption>C2 确认证据：candidate → 人工修订 → revision/hash 绑定 Decision（F · audit v0.2）。</figcaption>
-      </figure>
+  <!-- K1 -->
+  <article class="kcard" data-cardfor>
+    <figure class="item-media">
+      <div class="shot shot-main"><img src="../combination-prototypes/evidence/stage1/visual-compare/basecamp-project-room-final-raw.png" alt="Basecamp 项目房间画面：房间中央按工具分区，包含留言、待办、文档与文件等固定区域" loading="lazy"></div>
+      <figcaption>用户看到什么：进入一个项目就是进入一个固定房间，按工具分区干活，成员头像回答“谁在这里”。明显缺口：没有 Agent、审批和运行概念。<span class="tag tag-frozen">冻结原型画面</span></figcaption>
+      <div class="shot shot-sub"><img src="./evidence/basecamp-workbench-v0.1/02-project-room.jpg" alt="Basecamp 项目房间另一视角：项目身份、成员头像与工具入口" loading="lazy"></div>
+      <figcaption>补图：项目房间的身份与工具入口。<span class="tag tag-frozen">冻结原型画面</span></figcaption>
+    </figure>
+    <div class="item-body">
+      <h3><span class="knum">K1</span>项目房间 · Basecamp<span class="chosen-badge" hidden>已选择</span></h3>
+      <p class="question">我想要每个项目像一个固定房间，进去按工具分区干活吗？</p>
+      <dl class="refs">
+        <dt>代表项目：</dt><dd>Basecamp</dd>
+        <dt>页面中心 / 布局：</dt><dd>Project Room；Account→Project→Tool→Item 四层下钻，地点与工具组织工作。</dd>
+        <dt>适合场景：</dt><dd>多项目持续推进、团队事务与资料的地点感。</dd>
+      </dl>
+      <label class="pick"><input type="checkbox" name="skel" value="k1" data-label="K1 项目房间 · Basecamp"> 这套骨架值得参考</label>
     </div>
+  </article>
 
-    <div class="stage">
-      <h3>C1 · Goal input / Clarify / assumptions / scope</h3>
-      <p class="status" data-status="c1">状态：未选</p>
-      <p class="stage-note">九项未证明“聊天消息 → 显式 Goal/assumptions/scope 对象”（U）；Survey 回答需进入版本化 Plan 假设（自建）。</p>
-      <fieldset class="choice">
-        <legend>C1 参考方向</legend>
-        <label><input type="radio" name="c1" value="survey" data-label="AnythingLLM（Conversation 起点 + Survey 澄清）" checked> AnythingLLM（Conversation 起点 + Survey 对话内澄清）· O</label>
-        <label><input type="radio" name="c1" value="agent-feed" data-label="MS Agent Feed（candidate 入口）"> MS Agent Feed（candidate 入口）· F</label>
-        <label><input type="radio" name="c1" value="chat" data-label="Chat 自建"> Chat 自建（显式 Goal/assumptions/scope · U）</label>
-      </fieldset>
+  <!-- K2 -->
+  <article class="kcard" data-cardfor>
+    <figure class="item-media">
+      <div class="shot shot-main"><img src="../combination-prototypes/evidence/stage1/visual-compare/things-today-final-raw.png" alt="Things 今日清单画面：只放今天承诺的事项，每条带来源项目，分今天与今晚" loading="lazy"></div>
+      <figcaption>用户看到什么：一张只放今天承诺的个人清单，每条事项标注来源项目，分“今天 / 今晚”节奏。明显缺口：单人清单，无团队、无 Agent。<span class="tag tag-frozen">冻结原型画面</span></figcaption>
+    </figure>
+    <div class="item-body">
+      <h3><span class="knum">K2</span>今日清单 · Things<span class="chosen-badge" hidden>已选择</span></h3>
+      <p class="question">我想要一张只放今天承诺、还能看见来源项目的个人清单吗？</p>
+      <dl class="refs">
+        <dt>代表项目：</dt><dd>Things</dd>
+        <dt>页面中心 / 布局：</dt><dd>Today 注意力投影；侧栏注意力桶 + 中央分节奏列表 + 原位详情。</dd>
+        <dt>适合场景：</dt><dd>个人每日节奏、跨项目注意力聚合。</dd>
+      </dl>
+      <label class="pick"><input type="checkbox" name="skel" value="k2" data-label="K2 今日清单 · Things"> 这套骨架值得参考</label>
     </div>
+  </article>
 
-    <div class="stage">
-      <h3>C2 · Editable Plan / confirmation</h3>
-      <p class="status" data-status="c2">状态：未选</p>
-      <p class="stage-note">Chat 的 Plan 需版本化确认，不能只停留在 candidate；不虚构生产耐久执行。</p>
-      <fieldset class="choice">
-        <legend>C2 参考方向</legend>
-        <label><input type="radio" name="c2" value="agent-feed" data-label="MS Agent Feed（可编辑 Plan + revision/hash 绑定 Decision）" checked> MS Agent Feed（可编辑 items + Approve/Deny + revision/hash 绑定）· F</label>
-        <label><input type="radio" name="c2" value="chat" data-label="Chat 自建"> Chat 自建</label>
-      </fieldset>
+  <!-- K3 -->
+  <article class="kcard" data-cardfor>
+    <figure class="item-media">
+      <div class="shot shot-main"><img src="../combination-prototypes/evidence/stage1/visual-compare/hey-day-final-raw.png" alt="HEY Calendar 的 Day 画面：连续时间线上创建事件时同屏看到当天已有安排" loading="lazy"></div>
+      <figcaption>用户看到什么：按 Day / Week / Year 连续尺度读时间；创建事件时同屏看到当天已有安排，直接判断冲突。明显缺口：不负责项目与工作状态。<span class="tag tag-frozen">冻结原型画面</span></figcaption>
+    </figure>
+    <div class="item-body">
+      <h3><span class="knum">K3</span>时间轴日历 · HEY Calendar<span class="chosen-badge" hidden>已选择</span></h3>
+      <p class="question">我想按 Day / Week / Year 连续尺度读时间，并在创建时同屏看冲突吗？</p>
+      <dl class="refs">
+        <dt>代表项目：</dt><dd>HEY Calendar</dd>
+        <dt>页面中心 / 布局：</dt><dd>Day / Week / Year 三尺度；创建面板内嵌当天预览。</dd>
+        <dt>适合场景：</dt><dd>时间承诺、日程冲突判断。</dd>
+      </dl>
+      <label class="pick"><input type="checkbox" name="skel" value="k3" data-label="K3 时间轴日历 · HEY Calendar"> 这套骨架值得参考</label>
     </div>
-  </details>
+  </article>
 
-  <!-- Phase 2 -->
-  <details class="phase">
-    <summary>Phase 2 · Define → Trigger（C3–C5）</summary>
-    <div class="phase-evidence">
-      <figure>
-        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/05-agent-flow-new.png" alt="AnythingLLM Flow Builder：Flow 名称、描述、变量、Flow Start 与 Complete 节点、Add Block 与 Save" loading="lazy"></div>
-        <figcaption>C3 证据：Flow Builder 独立 Definition 表面（O · ACW-05）。不证明 version/publish（U）。</figcaption>
-      </figure>
-      <figure>
-        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/23-workspace-agent-configuration.webp" alt="AnythingLLM Workspace Agent Configuration：选择 Agent LLM provider 与 model 并链接 Agent Skills" loading="lazy"></div>
-        <figcaption>C4 证据：Agent Configuration 模型选择（O · ACW-23）。属配置，不属于 Identity。</figcaption>
-      </figure>
-      <figure>
-        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/18-scheduled-job-create.webp" alt="AnythingLLM 创建 Scheduled Job：Name、Prompt、Schedule（cron 或 interval）与 allowed Tools" loading="lazy"></div>
-        <figcaption>C5 证据：Scheduled Job 创建（O · ACW-18）。只证明 schedule + manual 触发。</figcaption>
-      </figure>
-      <figure>
-        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/19-scheduled-job-list.webp" alt="AnythingLLM Scheduled Job 列表：schedule、status、last 与 next run，含 Run now 手动触发" loading="lazy"></div>
-        <figcaption>C5 补充：Job 列表 + Run now（O · ACW-19）。</figcaption>
-      </figure>
+  <!-- K4 -->
+  <article class="kcard" data-cardfor>
+    <figure class="item-media">
+      <div class="shot shot-main"><img src="../combination-prototypes/evidence/stage1/visual-compare/linear-list-peek-final-raw.png" alt="Linear 工作列表画面：先扫列表定位，再快速预览" loading="lazy"></div>
+      <figcaption>用户看到什么：先扫列表，按一下快速预览，再决定是否深入详情；同一对象在三档阅读间身份连续。明显缺口：无耐久 Agent 运行与审批。<span class="tag tag-frozen">冻结原型画面</span></figcaption>
+      <div class="shot shot-sub"><img src="../combination-prototypes/evidence/stage1/visual-compare/linear-list-peek-open-raw.png" alt="Linear 快速预览打开状态：列表旁浮现对象预览" loading="lazy"></div>
+      <figcaption>补图：快速预览（Peek）打开状态。<span class="tag tag-frozen">冻结原型画面</span></figcaption>
+    </figure>
+    <div class="item-body">
+      <h3><span class="knum">K4</span>工作列表 + 快速预览 · Linear<span class="chosen-badge" hidden>已选择</span></h3>
+      <p class="question">我想先扫列表、快速预览、再深入详情吗？</p>
+      <dl class="refs">
+        <dt>代表项目：</dt><dd>Linear</dd>
+        <dt>页面中心 / 布局：</dt><dd>List→Peek→Detail 三档阅读，同一对象身份连续。</dd>
+        <dt>适合场景：</dt><dd>大量工作项的扫描—抽查—深入。</dd>
+      </dl>
+      <label class="pick"><input type="checkbox" name="skel" value="k4" data-label="K4 工作列表 + 快速预览 · Linear"> 这套骨架值得参考</label>
     </div>
+  </article>
 
-    <div class="stage">
-      <h3>C3 · Flow definition / nodes / blocks / variables / tools</h3>
-      <p class="status" data-status="c3">状态：未选</p>
-      <p class="stage-note">Definition 是独立表面，≠ Run；Flow 版本历史与发布审批未证明（U → Chat 自建）。</p>
-      <fieldset class="choice">
-        <legend>C3 参考方向</legend>
-        <label><input type="radio" name="c3" value="flow" data-label="AnythingLLM Flow Builder（name / variables / blocks / Save）" checked> AnythingLLM Flow Builder · O</label>
-        <label><input type="radio" name="c3" value="chat" data-label="Chat 自建"> Chat 自建</label>
-      </fieldset>
+  <!-- K5 -->
+  <article class="kcard" data-cardfor>
+    <figure class="item-media">
+      <div class="shot shot-main"><img src="../combination-prototypes/evidence/stage1/visual-compare/agent-feed-final-raw.png" alt="Agent 监督队列画面：按是否需要人工介入分流，条目带类型与动作" loading="lazy"></div>
+      <figcaption>用户看到什么：一个按“是否需要我介入”分流的队列，任务类型决定可用动作。明显缺口：队列只是投影，不是事实源；无项目生命周期。<span class="tag tag-frozen">冻结原型画面</span></figcaption>
+      <div class="shot shot-sub"><img src="../reference-implementations/microsoft-agent-feed-human-loop-v0.2/evidence/current-audit/01-needs-attention.png" alt="Agent Feed 参考实现的 Needs Attention 分流画面" loading="lazy"></div>
+      <figcaption>补图：参考实现的“需要介入”分流（v0.2 冻结证据）。<span class="tag tag-frozen">冻结原型画面</span></figcaption>
+    </figure>
+    <div class="item-body">
+      <h3><span class="knum">K5</span>Agent 监督队列 · Microsoft Agent Feed<span class="chosen-badge" hidden>已选择</span></h3>
+      <p class="question">我想要一个按“是否需要我介入”分流、任务类型决定动作的队列吗？</p>
+      <dl class="refs">
+        <dt>代表项目：</dt><dd>Microsoft Agent Feed（v0.2 冻结参考实现）</dd>
+        <dt>页面中心 / 布局：</dt><dd>Needs Attention / Completed + Agent 筛选 + 详情；动作类型化。</dd>
+        <dt>适合场景：</dt><dd>多 Agent 异步看护、人工介入、运行异常。</dd>
+      </dl>
+      <label class="pick"><input type="checkbox" name="skel" value="k5" data-label="K5 Agent 监督队列 · Microsoft Agent Feed"> 这套骨架值得参考</label>
     </div>
+  </article>
 
-    <div class="stage">
-      <h3>C4 · Configuration / version / publish</h3>
-      <p class="status" data-status="c4">状态：未选</p>
-      <p class="stage-note">配置可见，但 version / publish 未证明（U）；Chat 需要完整 version/publish 合同。</p>
-      <fieldset class="choice">
-        <legend>C4 参考方向</legend>
-        <label><input type="radio" name="c4" value="config" data-label="AnythingLLM Agent Configuration（模型选择；version/publish 为 U）" checked> AnythingLLM Agent Configuration（模型选择）· O</label>
-        <label><input type="radio" name="c4" value="chat" data-label="Chat 自建"> Chat 自建</label>
-      </fieldset>
+  <!-- K6 -->
+  <article class="kcard" data-cardfor>
+    <figure class="item-media">
+      <div class="shot shot-main"><img src="../combination-prototypes/evidence/stage1/visual-compare/heptabase-whiteboard-final-raw.png" alt="Heptabase 白板画面：卡片内容归库，白板负责摆放，右侧显示上下文与来源" loading="lazy"></div>
+      <figcaption>用户看到什么：内容归卡片库，白板只管摆放；同一张卡可进入多个思考空间，右侧显示上下文与来源。明显缺口：无项目生命周期与耐久 Agent 运行。<span class="tag tag-frozen">冻结原型画面</span></figcaption>
+    </figure>
+    <div class="item-body">
+      <h3><span class="knum">K6</span>知识画布 · Heptabase<span class="chosen-badge" hidden>已选择</span></h3>
+      <p class="question">我想让内容归库、白板只管摆放，同一张卡进入多个思考空间吗？</p>
+      <dl class="refs">
+        <dt>代表项目：</dt><dd>Heptabase</dd>
+        <dt>页面中心 / 布局：</dt><dd>Card Library + Whiteboard placement；中央画布 + 右侧上下文 / 对话。</dd>
+        <dt>适合场景：</dt><dd>知识资料收集、关联、编排与复用。</dd>
+      </dl>
+      <label class="pick"><input type="checkbox" name="skel" value="k6" data-label="K6 知识画布 · Heptabase"> 这套骨架值得参考</label>
     </div>
+  </article>
 
-    <div class="stage">
-      <h3>C5 · Trigger：manual / event / schedule / object change</h3>
-      <p class="status" data-status="c5">状态：未选</p>
-      <p class="stage-note">Scheduled Jobs 只证明 schedule + manual（Run now）触发；event / object change 触发未证明（U）。</p>
-      <fieldset class="choice">
-        <legend>C5 参考方向</legend>
-        <label><input type="radio" name="c5" value="scheduled" data-label="AnythingLLM Scheduled Jobs（cron/interval + Run now + allowed tools）" checked> AnythingLLM Scheduled Jobs · O</label>
-        <label><input type="radio" name="c5" value="chat" data-label="Chat 自建"> Chat 自建</label>
-      </fieldset>
+  <!-- K7 -->
+  <article class="kcard" data-cardfor>
+    <figure class="item-media">
+      <div class="shot shot-main"><img src="./evidence/anythingllm-v0.1/screenshots/02-anythingllm-start-official-1240x720.png" alt="AnythingLLM 对话起点画面：消息流就是主页，左侧为工作区与会话导航" loading="lazy"></div>
+      <figcaption>用户看到什么：对话就是主页，进度、结果和来源都贴着消息流走，输入一直连续。明显缺口：没有版本化的计划确认。<span class="tag tag-official">官方或一手界面</span></figcaption>
+      <div class="shot shot-sub"><img src="./evidence/anythingllm-v0.1/screenshots/05-anythingllm-result-sources-official-1240x720.png" alt="AnythingLLM 结果与来源画面：来源从右侧抽屉展开，输入框保持可用" loading="lazy"></div>
+      <figcaption>补图：结果与 Sources 抽屉。<span class="tag tag-official">官方或一手界面</span></figcaption>
+    </figure>
+    <div class="item-body">
+      <h3><span class="knum">K7</span>对话中心工作台 · AnythingLLM<span class="chosen-badge" hidden>已选择</span></h3>
+      <p class="question">我想让对话就是主页，进度、结果和来源都贴着消息流走吗？</p>
+      <dl class="refs">
+        <dt>代表项目：</dt><dd>AnythingLLM</dd>
+        <dt>页面中心 / 布局：</dt><dd>Workspace / Thread 导航 + 消息流 + Sources 抽屉；输入连续。</dd>
+        <dt>适合场景：</dt><dd>问答、研究、反复追问型 Agent 工作。</dd>
+      </dl>
+      <label class="pick"><input type="checkbox" name="skel" value="k7" data-label="K7 对话中心工作台 · AnythingLLM"> 这套骨架值得参考</label>
     </div>
-  </details>
+  </article>
 
-  <!-- Phase 3 -->
-  <details class="phase">
-    <summary>Phase 3 · Run → Control（C6–C9）</summary>
-    <div class="phase-evidence">
-      <figure>
-        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/14-scheduled-job-run-detail-sections.webp" alt="AnythingLLM 单次 Run 详情：同屏分节展示 Prompt、Thinking、Tool Calls、Files、Response、Metrics 与 Continue in Thread" loading="lazy"></div>
-        <figcaption>C6 证据：Run detail 分节同屏（O · ACW-14）。Thinking 只是源 UI 标签，不是 Chat 应保存的隐藏推理（F）。</figcaption>
-      </figure>
-      <figure>
-        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/15-scheduled-job-tool-calls.webp" alt="AnythingLLM Run 的 Tool Calls 展开：工具名、参数、时间与结果入口" loading="lazy"></div>
-        <figcaption>C6 补充：Tool Calls 展开（O · ACW-15）。</figcaption>
-      </figure>
-      <figure>
-        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/12-scheduled-job-running-stop-control.webp" alt="AnythingLLM 运行中的 Job 行上有 Stop 控件：只证明终止入口" loading="lazy"></div>
-        <figcaption>C8 边界证据：Stop 控件（O · ACW-12）。Stop ≠ Pause/Resume。</figcaption>
-      </figure>
-      <figure>
-        <div class="shot"><img src="../reference-implementations/microsoft-agent-feed-human-loop-v0.2/evidence/browser-qa/12-reconciling.png" alt="MS Agent Feed 的 Reconcile 画面：结果未知时先查询对账，再决定提交或人工处置，不提供普通 Retry" loading="lazy"></div>
-        <figcaption>C9 证据：outcome_unknown → 查询对账 → Reconcile（F · audit v0.2）。</figcaption>
-      </figure>
+  <!-- K8 -->
+  <article class="kcard" data-cardfor>
+    <figure class="item-media">
+      <div class="shot shot-main"><img src="./evidence/anythingllm-v0.1/screenshots/06-open-computer-active-run-official-1280x720.png" alt="Open Computer 运行画面：桌面现场居中，对话、子 Agent、日志退到右侧边车" loading="lazy"></div>
+      <figcaption>用户看到什么：浏览器 / 桌面 / 文件现场居中，对话和控制退到右侧边车。明显缺口：只证明最小人工控制，不证明暂停与恢复。<span class="tag tag-official">官方或一手界面</span></figcaption>
+      <div class="shot shot-sub"><img src="./evidence/anythingllm-v0.1/screenshots/07-open-computer-deliverable-official-1280x720.png" alt="Open Computer 交付画面：产物在边车中提供下载与移除" loading="lazy"></div>
+      <figcaption>补图：产物交付（只有 Download / Remove）。<span class="tag tag-official">官方或一手界面</span></figcaption>
+    </figure>
+    <div class="item-body">
+      <h3><span class="knum">K8</span>执行现场 + 边车 · Open Computer<span class="chosen-badge" hidden>已选择</span></h3>
+      <p class="question">我想让浏览器/桌面/文件现场居中，对话和控制退到侧边吗？</p>
+      <dl class="refs">
+        <dt>代表项目：</dt><dd>Open Computer</dd>
+        <dt>页面中心 / 布局：</dt><dd>大面积桌面主区 + Chat / Subagents / Logs / Deliverables 边车。</dd>
+        <dt>适合场景：</dt><dd>需要看 Agent 真实操作环境的长任务。</dd>
+      </dl>
+      <label class="pick"><input type="checkbox" name="skel" value="k8" data-label="K8 执行现场 + 边车 · Open Computer"> 这套骨架值得参考</label>
     </div>
+  </article>
 
-    <div class="stage">
-      <h3>C6 · Run / task / subtask / tool progress</h3>
-      <p class="status" data-status="c6">状态：未选</p>
-      <p class="stage-note">Run 是 Agent Workflow Run，≠ Business/Project Workflow 状态流；Thinking UI 不能成为 Chat 保存隐藏推理的依据（F · §6.6）。</p>
-      <fieldset class="choice">
-        <legend>C6 参考方向</legend>
-        <label><input type="radio" name="c6" value="run-feed" data-label="AnythingLLM Run detail + MS Agent Feed typed Run 投影" checked> AnythingLLM Run detail + MS Agent Feed typed Run · O/F</label>
-        <label><input type="radio" name="c6" value="orca" data-label="Orca（Agent 状态嵌任务行）"> Orca（Agent 状态嵌任务行）· O</label>
-        <label><input type="radio" name="c6" value="chat" data-label="Chat 自建"> Chat 自建</label>
-      </fieldset>
+  <!-- K9 -->
+  <article class="kcard" data-cardfor>
+    <figure class="item-media">
+      <div class="shot shot-main"><img src="./evidence/orca-v0.1/screenshots/04-terminal-splits.png" alt="Orca 多窗格画面：任务空间内终端、文件树等多个窗格自由分屏" loading="lazy"></div>
+      <figcaption>用户看到什么：每个任务拥有隔离空间，终端 / 编辑器 / 浏览器 / Diff 自由分屏，布局按任务恢复。明显缺口：偏 coding 场景，非 coding 闭环未证明。<span class="tag tag-official">官方或一手界面</span></figcaption>
+      <div class="shot shot-sub"><img src="./evidence/orca-v0.1/screenshots/02-agent-statuses.png" alt="Orca 任务列表画面：Agent 状态嵌在任务行中" loading="lazy"></div>
+      <figcaption>补图：Agent 状态嵌任务行。<span class="tag tag-official">官方或一手界面</span></figcaption>
+    </figure>
+    <div class="item-body">
+      <h3><span class="knum">K9</span>任务隔离多窗格工作台 · Orca<span class="chosen-badge" hidden>已选择</span></h3>
+      <p class="question">我想让每个任务拥有隔离空间，终端/编辑器/浏览器/Diff 可以自由分屏吗？</p>
+      <dl class="refs">
+        <dt>代表项目：</dt><dd>Orca</dd>
+        <dt>页面中心 / 布局：</dt><dd>左侧 worktree / Agent 状态 + 异构 pane tree；布局按 worktree 恢复。</dd>
+        <dt>适合场景：</dt><dd>多 Agent 并行、Artifact 评审、可恢复工作面。</dd>
+      </dl>
+      <label class="pick"><input type="checkbox" name="skel" value="k9" data-label="K9 任务隔离多窗格工作台 · Orca"> 这套骨架值得参考</label>
     </div>
+  </article>
 
-    <div class="stage">
-      <h3>C7 · Checkpoint / ask-user / HITL / edit / accept / reject</h3>
-      <p class="status" data-status="c7">状态：未选</p>
-      <p class="stage-note">高影响动作走 Chat Decision、版本/hash/权限/幂等校验；不用普通 Retry 处理 outcome_unknown。</p>
-      <fieldset class="choice">
-        <legend>C7 参考方向</legend>
-        <label><input type="radio" name="c7" value="feed-survey" data-label="MS Agent Feed typed actions + AnythingLLM Survey" checked> MS Agent Feed typed actions + AnythingLLM Survey · F/O</label>
-        <label><input type="radio" name="c7" value="orca" data-label="Orca（diff 行级批注 → 批量交回）"> Orca（diff 行级批注 → 批量交回）· O</label>
-        <label><input type="radio" name="c7" value="chat" data-label="Chat 自建"> Chat 自建</label>
-      </fieldset>
+  <!-- K10 -->
+  <article class="kcard" data-cardfor>
+    <figure class="item-media">
+      <div class="shot shot-main"><img src="./evidence/plane-v0.1/screenshots/03a-github-overview.webp" alt="Plane 项目概览画面：长期工作对象拥有主页，同一批对象可切换多种布局" loading="lazy"></div>
+      <figcaption>用户看到什么：长期工作对象拥有主页，同一批对象可切看板 / 列表 / 日历等布局。明显缺口：无 Agent 计划、运行与暂停恢复。<span class="tag tag-official">官方或一手界面</span></figcaption>
+      <div class="shot shot-sub"><img src="./evidence/plane-v0.1/screenshots/04-detailed-intake-work-item.webp" alt="Plane Intake 画面：候选工作项在审核队列中等待接受或拒绝" loading="lazy"></div>
+      <figcaption>补图：Intake 候选审核队列。<span class="tag tag-official">官方或一手界面</span></figcaption>
+    </figure>
+    <div class="item-body">
+      <h3><span class="knum">K10</span>项目对象外壳 · Plane<span class="chosen-badge" hidden>已选择</span></h3>
+      <p class="question">我想让长期工作对象拥有主页，同一批对象可以切看板/列表/日历等布局吗？</p>
+      <dl class="refs">
+        <dt>代表项目：</dt><dd>Plane</dd>
+        <dt>页面中心 / 布局：</dt><dd>产品 Rail→Workspace / Project→项目导航→Work items 多布局 + Intake。</dd>
+        <dt>适合场景：</dt><dd>长期项目推进、结构化协作、对象级知识。</dd>
+      </dl>
+      <label class="pick"><input type="checkbox" name="skel" value="k10" data-label="K10 项目对象外壳 · Plane"> 这套骨架值得参考</label>
     </div>
-
-    <div class="stage">
-      <h3>C8 · Pause / resume / cancel / abort</h3>
-      <p class="status" data-status="c8">状态：未选</p>
-      <p class="gap-note">当前无完整参考。AnythingLLM Stop 只证明 cancel/abort（O · ACW-12）；MS Agent Feed waiting、Orca Blocked 均不证明用户触发的 Pause/Resume。真正 Pause/Resume 为 U，必须 Chat 自建。</p>
-      <fieldset class="choice">
-        <legend>C8 参考方向</legend>
-        <label><input type="radio" name="c8" value="chat" data-label="Chat 自建（真正 Pause/Resume 无参考 · U）" checked> Chat 自建（真正 Pause/Resume · 无参考 · U）</label>
-        <label><input type="radio" name="c8" value="stop-only" data-label="仅借 AnythingLLM Stop 作终止入口（cancel/abort，不证明 Pause/Resume）"> 仅借 AnythingLLM Stop 作终止入口（cancel/abort，不证明 Pause/Resume）· O</label>
-      </fieldset>
-    </div>
-
-    <div class="stage">
-      <h3>C9 · Failure / timeout / retry / outcome_unknown / reconcile</h3>
-      <p class="status" data-status="c9">状态：未选</p>
-      <p class="stage-note">Chat 需要自己的幂等、结果未知、查询对账与人工处置语义；不把普通异常重试用于未知副作用。</p>
-      <fieldset class="choice">
-        <legend>C9 参考方向</legend>
-        <label><input type="radio" name="c9" value="agent-feed" data-label="MS Agent Feed（outcome_unknown → 查询对账 → Reconcile / Escalate）" checked> MS Agent Feed（outcome_unknown → provider query → Evidence → 人工处置）· F</label>
-        <label><input type="radio" name="c9" value="anythingllm" data-label="AnythingLLM（Run History error status）"> AnythingLLM（Run History error status）· O</label>
-        <label><input type="radio" name="c9" value="chat" data-label="Chat 自建"> Chat 自建</label>
-      </fieldset>
-    </div>
-  </details>
-
-  <!-- Phase 4 -->
-  <details class="phase">
-    <summary>Phase 4 · Review → Continue（C10–C12）</summary>
-    <div class="phase-evidence">
-      <figure>
-        <div class="shot"><img src="./evidence/orca-v0.1/screenshots/03-diff-annotation.png" alt="Orca diff 行级批注：审阅意见锚定在具体行并持久化，可批量交回指定 Agent" loading="lazy"></div>
-        <figcaption>C10 证据：Orca diff 行级批注（F · evidence card）。</figcaption>
-      </figure>
-      <figure>
-        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/16-scheduled-job-files.webp" alt="AnythingLLM Run 的 Files 区：展示本次运行生成的文件，只有结果展示" loading="lazy"></div>
-        <figcaption>C10 补充：Run Files 区（O · ACW-16）。只有结果展示，不能替代锚定评论与正式 Evidence 完成门。</figcaption>
-      </figure>
-      <figure>
-        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/11-scheduled-job-run-history.webp" alt="AnythingLLM Run History：列出 status、started、duration 与 error" loading="lazy"></div>
-        <figcaption>C12 证据：Run History（O · ACW-11）。Trigger → Run → History 可见路径，不是完整生命周期。</figcaption>
-      </figure>
-      <figure>
-        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/14-scheduled-job-run-detail-sections.webp" alt="AnythingLLM Run 详情底部的 Continue in Thread：从运行结果明确返回对话" loading="lazy"></div>
-        <figcaption>C11–C12 证据：Continue in Thread 返回路径（O · ACW-14）。</figcaption>
-      </figure>
-    </div>
-
-    <div class="stage">
-      <h3>C10 · Artifact / file / diff / Evidence review</h3>
-      <p class="status" data-status="c10">状态：未选</p>
-      <p class="stage-note">审阅结果先是 candidate，需正式 Evidence 验证；不限制在 coding；不把 terminal 当 Agent。</p>
-      <fieldset class="choice">
-        <legend>C10 参考方向</legend>
-        <label><input type="radio" name="c10" value="orca" data-label="Orca（diff 行级批注 → 批量交回指定 Agent）" checked> Orca（diff 行级批注 → 批量交回）· F</label>
-        <label><input type="radio" name="c10" value="heptabase" data-label="Heptabase（Artifact + context/provenance）"> Heptabase（context/provenance）· F</label>
-        <label><input type="radio" name="c10" value="anythingllm" data-label="AnythingLLM Files（仅结果展示）"> AnythingLLM Files（仅结果展示）· O</label>
-        <label><input type="radio" name="c10" value="chat" data-label="Chat 自建"> Chat 自建</label>
-      </fieldset>
-    </div>
-
-    <div class="stage">
-      <h3>C11 · Delivery / writeback / notification</h3>
-      <p class="status" data-status="c11">状态：未选</p>
-      <p class="stage-note">正式 Delivery 需 Chat Decision + Evidence 绑定；不让 Agent 摘要冒充负责人 Update。</p>
-      <fieldset class="choice">
-        <legend>C11 参考方向</legend>
-        <label><input type="radio" name="c11" value="linear-continue" data-label="Linear 署名 Update + AnythingLLM Continue in Thread" checked> Linear 署名 Update + AnythingLLM Continue in Thread · F/O</label>
-        <label><input type="radio" name="c11" value="plane" data-label="Plane（对象写回）"> Plane（对象写回）· F</label>
-        <label><input type="radio" name="c11" value="chat" data-label="Chat 自建"> Chat 自建</label>
-      </fieldset>
-    </div>
-
-    <div class="stage">
-      <h3>C12 · Run history / Continue in Thread / reuse / next schedule</h3>
-      <p class="status" data-status="c12">状态：未选</p>
-      <p class="stage-note">Chat 需要 Run 复用与 next schedule 的产品合同（自建）；History 可见不等于完整生命周期。</p>
-      <fieldset class="choice">
-        <legend>C12 参考方向</legend>
-        <label><input type="radio" name="c12" value="history" data-label="AnythingLLM Run History + Continue in Thread" checked> AnythingLLM Run History + Continue in Thread · O</label>
-        <label><input type="radio" name="c12" value="linear" data-label="Linear（Updates history / Pulse）"> Linear（Updates history / Pulse）· F</label>
-        <label><input type="radio" name="c12" value="chat" data-label="Chat 自建"> Chat 自建</label>
-      </fieldset>
-    </div>
-  </details>
+  </article>
 </section>
 
-<!-- ==================== 组合汇总 ==================== -->
+<!-- ==================== 第二步：选场景 ==================== -->
 <section class="panel" id="panel-s" role="tabpanel" aria-labelledby="tab-s" hidden>
-  <h2>组合汇总</h2>
-  <p class="lede">自动汇总当前三轴选择；未选参考的项明示“Chat 自建”，不留空白歧义。本页不保存状态，刷新即回默认推荐组合。</p>
-
-  <div class="summary-block">
-    <h3>A 轴 · 页面中心</h3>
-    <ul id="sum-a"></ul>
-  </div>
-  <div class="summary-block">
-    <h3>B 轴 · Agent Constitution</h3>
-    <ul id="sum-b"></ul>
-  </div>
-  <div class="summary-block">
-    <h3>C 轴 · Workflow Lifecycle（12 阶段）</h3>
-    <ul id="sum-c"></ul>
+  <h2>第二步 · 按场景选喜欢的做法（11 组，组内任意多选）</h2>
+  <div class="panel-note">
+    <p>每组是一个具体场景：勾出你喜欢的呈现方式（可全选、可只选一个、可不选）。现有参考都不合适时，勾“Chat 自建”。<b>什么都不选会显示“尚未选择”，它不等于都不喜欢。</b>前两组默认展开，其余点击标题展开。</p>
   </div>
 
+  <!-- S1 -->
+  <details class="scenario" open data-scenario="s1">
+    <summary>S1 · 对话、目标澄清与计划确认<span class="scen-state" data-scen-state="s1">尚未选择</span></summary>
+    <p class="scen-q">我把事交给 Chat 时，目标、追问和“准备怎么做”以哪种方式给我看、让我改？</p>
+    <div class="scards">
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/anythingllm-v0.1/screenshots/02-anythingllm-start-official-1240x720.png" alt="AnythingLLM 对话起点：目标与回答都在同一条消息流里" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>对话连续式 · AnythingLLM<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：目标、追问和回答都在同一条消息流里，直接继续输入就能改。</p>
+          <p class="gapline"><b>明显缺口：</b>没有显式的目标 / 假设 / 范围对象。</p>
+          <label class="pick"><input type="checkbox" name="s1" value="a" data-label="对话连续式（AnythingLLM）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/21-agent-survey-multiple-choice.webp" alt="AnythingLLM 对话内澄清卡片：带进度、选项、Other 与 Skip" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>对话内澄清卡片式 · AnythingLLM Survey<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：Agent 在对话里插入选择题卡片，有进度、选项、Other 和 Skip，不用跳设置页。</p>
+          <p class="gapline"><b>明显缺口：</b>回答是否进入版本化计划，未被证明。</p>
+          <label class="pick"><input type="checkbox" name="s1" value="b" data-label="对话内澄清卡片式（AnythingLLM Survey）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="../reference-implementations/microsoft-agent-feed-human-loop-v0.2/evidence/current-audit/02-decision-detail.png" alt="Agent Feed 决定详情：条目可编辑，批准与版本绑定" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>独立决定详情式 · Agent Feed<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-frozen">冻结原型画面</span> 看到 / 操作：一份可编辑的决定详情，逐条修改后批准或要求重做，决定与版本绑定。</p>
+          <p class="gapline"><b>明显缺口：</b>脱离对话流，要跳到独立详情面。</p>
+          <label class="pick"><input type="checkbox" name="s1" value="c" data-label="独立决定详情式（Agent Feed）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard self-card" data-cardfor>
+        <div class="scard-body">
+          <h4>现有参考都不合适 / Chat 自建<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="gapline"><span class="tag tag-gap">现有参考缺口</span> 自建要补：显式 Goal / 假设 / 范围对象；澄清回答进入版本化 Plan 的完整闭环。</p>
+          <label class="pick"><input type="checkbox" name="s1-self" value="self" data-label="Chat 自建"> 这个场景由 Chat 自建</label>
+        </div>
+      </article>
+    </div>
+  </details>
+
+  <!-- S2 -->
+  <details class="scenario" open data-scenario="s2">
+    <summary>S2 · 项目、工作列表与候选审核<span class="scen-state" data-scen-state="s2">尚未选择</span></summary>
+    <p class="scen-q">多个项目、工作项和“要不要收进来”的候选，用哪种面貌管理？</p>
+    <div class="scards">
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="../combination-prototypes/evidence/stage1/visual-compare/basecamp-project-room-final-raw.png" alt="Basecamp 项目房间：每个项目是一个按工具分区的房间" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>房间式 · Basecamp<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-frozen">冻结原型画面</span> 看到 / 操作：每个项目是一个固定房间，事务与资料按工具分区归位。</p>
+          <p class="gapline"><b>明显缺口：</b>无候选审核队列与 Agent 概念。</p>
+          <label class="pick"><input type="checkbox" name="s2" value="a" data-label="房间式（Basecamp）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="../combination-prototypes/evidence/stage1/visual-compare/linear-list-peek-final-raw.png" alt="Linear 列表与快速预览：扫描、预览、深入三档阅读" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>List→Peek→Detail 三档式 · Linear<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-frozen">冻结原型画面</span> 看到 / 操作：先扫列表，快速预览，再深入详情；同一对象身份连续。</p>
+          <p class="gapline"><b>明显缺口：</b>工作项层级单一，不等于完整项目对象链。</p>
+          <label class="pick"><input type="checkbox" name="s2" value="b" data-label="List→Peek→Detail 三档式（Linear）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/plane-v0.1/screenshots/03a-github-overview.webp" alt="Plane 多布局看板：同一批工作对象切换看板、列表、日历等布局" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>多布局看板式 · Plane<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：同一批工作对象切看板 / 列表 / 日历等布局，身份与筛选保持连续。</p>
+          <p class="gapline"><b>明显缺口：</b>不证明 Agent 计划与运行。</p>
+          <label class="pick"><input type="checkbox" name="s2" value="c" data-label="多布局看板式（Plane）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/plane-v0.1/screenshots/04-detailed-intake-work-item.webp" alt="Plane Intake：候选工作项在独立队列中等待接受或拒绝" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>Intake 候选审核队列式 · Plane<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：候选先进入独立审核队列，展示关键属性后再接受或拒绝。</p>
+          <p class="gapline"><b>明显缺口：</b>接受 / 拒绝不等于完整人工决定合同。</p>
+          <label class="pick"><input type="checkbox" name="s2" value="d" data-label="Intake 候选审核队列式（Plane）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard self-card" data-cardfor>
+        <div class="scard-body">
+          <h4>现有参考都不合适 / Chat 自建<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="gapline"><span class="tag tag-gap">现有参考缺口</span> 自建要补：完整 Project 对象链（Stage / Milestone / Iteration / Work / Scope / Action / Update / Gate / Decision）无单一参考画面。</p>
+          <label class="pick"><input type="checkbox" name="s2-self" value="self" data-label="Chat 自建"> 这个场景由 Chat 自建</label>
+        </div>
+      </article>
+    </div>
+  </details>
+
+  <!-- S3 -->
+  <details class="scenario" data-scenario="s3">
+    <summary>S3 · Agent 执行现场<span class="scen-state" data-scen-state="s3">尚未选择</span></summary>
+    <p class="scen-q">Agent 正在干活时，我希望看到哪种工作现场？</p>
+    <div class="scards">
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/anythingllm-v0.1/screenshots/06-open-computer-active-run-official-1280x720.png" alt="Open Computer 电脑桌面式现场：桌面居中，对话与日志在边车" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>电脑桌面式 · Open Computer<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：Agent 操作的真实桌面居中，对话、子 Agent、日志在右侧边车。</p>
+          <p class="gapline"><b>明显缺口：</b>不证明计划修改、批准与暂停恢复。</p>
+          <label class="pick"><input type="checkbox" name="s3" value="a" data-label="电脑桌面式（Open Computer）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/orca-v0.1/screenshots/04-terminal-splits.png" alt="Orca 任务隔离工作间：终端、文件树等窗格自由分屏" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>任务隔离工作间式 · Orca<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：每个任务一间隔离工作间，终端 / 编辑器 / 浏览器 / Diff 自由分屏。</p>
+          <p class="gapline"><b>明显缺口：</b>偏 coding 现场，非 coding 执行未证明。</p>
+          <label class="pick"><input type="checkbox" name="s3" value="b" data-label="任务隔离工作间式（Orca）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/anythingllm-v0.1/screenshots/04-anythingllm-agent-progress-official-1240x720.png" alt="AnythingLLM 对话内嵌进度：Agent 进度以折叠状态条插入消息流" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>对话内嵌进度式 · AnythingLLM<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：Agent 进度以折叠状态条插入消息流，显示阶段与结果数，不离开对话。</p>
+          <p class="gapline"><b>明显缺口：</b>不证明暂停、恢复、失败与子任务归属。</p>
+          <label class="pick"><input type="checkbox" name="s3" value="c" data-label="对话内嵌进度式（AnythingLLM）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard self-card" data-cardfor>
+        <div class="scard-body">
+          <h4>现有参考都不合适 / Chat 自建<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="gapline"><span class="tag tag-gap">现有参考缺口</span> 自建要补：执行现场与 Chat 权威 Product Run / Attempt 的连接呈现。</p>
+          <label class="pick"><input type="checkbox" name="s3-self" value="self" data-label="Chat 自建"> 这个场景由 Chat 自建</label>
+        </div>
+      </article>
+    </div>
+  </details>
+
+  <!-- S4 -->
+  <details class="scenario" data-scenario="s4">
+    <summary>S4 · Agent 身份、团队、参与与权限边界<span class="scen-state" data-scen-state="s4">尚未选择</span></summary>
+    <p class="scen-q">Agent 是谁、和谁协作、能看什么、能写到哪里，怎样呈现？</p>
+    <div class="scards">
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="../reference-implementations/microsoft-agent-feed-human-loop-v0.2/evidence/browser-qa/15-delegated.jpg" alt="Agent Feed 委派画面：任务的参与者、当前负责人与委派关系可见" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>监督身份 + 委派式 · Agent Feed<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-frozen">冻结原型画面</span> 看到 / 操作：每个任务标明参与者、当前负责人与委派关系，回答“这个 Agent 是谁、现在归谁”。</p>
+          <p class="gapline"><b>明显缺口：</b>只有任务级身份，没有跨任务的耐久 Agent 主页。</p>
+          <label class="pick"><input type="checkbox" name="s4" value="a" data-label="监督身份 + 委派式（Agent Feed）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/orca-v0.1/screenshots/02-agent-statuses.png" alt="Orca 状态行：Agent 以 Working、Needs You、Done、Blocked 状态嵌在任务行中" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>对象内嵌 Agent 状态行式 · Orca<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：Agent 以 Working / Needs You / Done / Blocked 状态嵌在任务行里，一眼看到谁在跑。</p>
+          <p class="gapline"><b>明显缺口：</b>状态行不说明身份细节与权限边界。</p>
+          <label class="pick"><input type="checkbox" name="s4" value="b" data-label="对象内嵌 Agent 状态行式（Orca）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="../combination-prototypes/evidence/stage1/visual-compare/basecamp-project-room-final-raw.png" alt="Basecamp 成员参与：项目房间里的成员头像与人员目录" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>成员目录 / 项目参与式 · Basecamp<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-frozen">冻结原型画面</span> 看到 / 操作：项目房间里的成员头像与人员目录回答“谁在这个项目”。</p>
+          <p class="gapline"><b>明显缺口：</b>只覆盖人，不覆盖 Agent 身份与权限。</p>
+          <label class="pick"><input type="checkbox" name="s4" value="c" data-label="成员目录 / 项目参与式（Basecamp）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard self-card" data-cardfor>
+        <div class="scard-body">
+          <h4>现有参考都不合适 / Chat 自建<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="gapline"><span class="tag tag-gap">现有参考缺口</span> 自建要补：完整耐久 Agent Profile；写回范围、consent 与可见历史。</p>
+          <label class="pick"><input type="checkbox" name="s4-self" value="self" data-label="Chat 自建"> 这个场景由 Chat 自建</label>
+        </div>
+      </article>
+    </div>
+  </details>
+
+  <!-- S5 -->
+  <details class="scenario" data-scenario="s5">
+    <summary>S5 · Agent 能力、工具、记忆与上下文<span class="scen-state" data-scen-state="s5">尚未选择</span></summary>
+    <p class="scen-q">Agent 会什么、用什么工具、记得什么、这次读了哪些资料，怎样管理？</p>
+    <div class="scards">
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/10-mcp-management-ui.png" alt="AnythingLLM 能力管理页：技能、流程与 MCP 服务器同页，服务器显示状态与工具清单" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>能力 / MCP 同页管理式 · AnythingLLM<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：技能、自定义技能、流程、MCP 服务器同页管理，服务器显示状态与工具清单。</p>
+          <p class="gapline"><b>明显缺口：</b>不证明真实工具授权与调用结果。</p>
+          <label class="pick"><input type="checkbox" name="s5" value="a" data-label="能力 / MCP 同页管理式（AnythingLLM）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/23-workspace-agent-configuration.webp" alt="AnythingLLM Agent 配置面：模型与技能链接在独立配置面调整" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>Agent 配置独立面式 · AnythingLLM<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：Agent 的模型与技能链接在独立配置面调整。</p>
+          <p class="gapline"><b>明显缺口：</b>模型选择不等于身份、权限与记忆边界。</p>
+          <label class="pick"><input type="checkbox" name="s5" value="b" data-label="Agent 配置独立面式（AnythingLLM）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/02-memory-sidebar.webp" alt="AnythingLLM 记忆侧栏：记忆卡按工作区与全局分开，可见可管理" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>记忆副表面式 · AnythingLLM<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：记忆卡按工作区 / 全局分开，可见、可管理。</p>
+          <p class="gapline"><b>明显缺口：</b>自动提取流程与实际注入范围未证明。</p>
+          <label class="pick"><input type="checkbox" name="s5" value="c" data-label="记忆副表面式（AnythingLLM）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="../combination-prototypes/evidence/stage1/visual-compare/heptabase-whiteboard-final-raw.png" alt="Heptabase 显式上下文：AI 回答带上下文 chip 与来源记录" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>显式上下文 + 来源式 · Heptabase<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-frozen">冻结原型画面</span> 看到 / 操作：AI 回答带着显式上下文 chip 与来源记录，能区分搜过与看过。</p>
+          <p class="gapline"><b>明显缺口：</b>只覆盖知识场景，不覆盖工具与权限。</p>
+          <label class="pick"><input type="checkbox" name="s5" value="d" data-label="显式上下文 + 来源式（Heptabase）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard self-card" data-cardfor>
+        <div class="scard-body">
+          <h4>现有参考都不合适 / Chat 自建<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="gapline"><span class="tag tag-gap">现有参考缺口</span> 自建要补：工具授权和副作用对账界面；Memory 候选→接受门→失效传播。</p>
+          <label class="pick"><input type="checkbox" name="s5-self" value="self" data-label="Chat 自建"> 这个场景由 Chat 自建</label>
+        </div>
+      </article>
+    </div>
+  </details>
+
+  <!-- S6 -->
+  <details class="scenario" data-scenario="s6">
+    <summary>S6 · 多 Agent 动态、监督与人工介入<span class="scen-state" data-scen-state="s6">尚未选择</span></summary>
+    <p class="scen-q">多个 Agent 同时工作时，我在哪里看到“谁需要我”并介入？</p>
+    <div class="scards">
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="../reference-implementations/microsoft-agent-feed-human-loop-v0.2/evidence/current-audit/01-needs-attention.png" alt="Agent Feed 类型化监督队列：按是否需要介入分流，任务类型决定动作" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>类型化监督队列式 · Agent Feed<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-frozen">冻结原型画面</span> 看到 / 操作：按“是否需要我介入”分流，任务类型决定可用动作，风险优先。</p>
+          <p class="gapline"><b>明显缺口：</b>是监督队列，不是像真实团队一样的动态流。</p>
+          <label class="pick"><input type="checkbox" name="s6" value="a" data-label="类型化监督队列式（Agent Feed）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/orca-v0.1/screenshots/02-agent-statuses.png" alt="Orca 任务内多 Agent 状态：多个 Agent 状态嵌在任务列表中" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>任务内多 Agent 状态式 · Orca<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：多个 Agent 的状态嵌在任务行里，按任务看谁在跑、谁需要你。</p>
+          <p class="gapline"><b>明显缺口：</b>没有跨任务的统一介入队列与动态关系。</p>
+          <label class="pick"><input type="checkbox" name="s6" value="b" data-label="任务内多 Agent 状态式（Orca）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard self-card" data-cardfor>
+        <div class="scard-body">
+          <h4>现有参考都不合适 / Chat 自建<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="gapline"><span class="tag tag-gap">现有参考缺口</span> 自建要补：像真实团队一样的多人 + 多 Agent 工作动态流 / 评论关系——九项无合适参考。</p>
+          <label class="pick"><input type="checkbox" name="s6-self" value="self" data-label="Chat 自建"> 这个场景由 Chat 自建</label>
+        </div>
+      </article>
+    </div>
+  </details>
+
+  <!-- S7 -->
+  <details class="scenario" data-scenario="s7">
+    <summary>S7 · 工作流定义、配置与触发<span class="scen-state" data-scen-state="s7">尚未选择</span></summary>
+    <p class="scen-q">我怎样定义、配置和触发一个可重复使用的 Agent 工作流程？</p>
+    <p class="gap-note">红线：Basecamp / Linear / Plane 的业务工作流（工作项状态流）不得冒充 Agent 工作流，本组因此只列 Agent 工作流的真实画面。</p>
+    <div class="scards">
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/05-agent-flow-new.png" alt="AnythingLLM 流程画布：名称、变量、开始与结束节点、添加块与保存" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>Flow Builder 流程画布式 · AnythingLLM<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：在画布上编排名称、变量、节点与块并保存，定义是独立表面。</p>
+          <p class="gapline"><b>明显缺口：</b>无版本历史与发布审批。</p>
+          <label class="pick"><input type="checkbox" name="s7" value="a" data-label="Flow Builder 流程画布式（AnythingLLM）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/18-scheduled-job-create.webp" alt="AnythingLLM 定时任务创建：名称、提示词、周期与可用工具" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>Scheduled Job 定时触发式 · AnythingLLM<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：名称 + 提示词 + cron / 间隔 + 可用工具，可立即手动运行一次。</p>
+          <p class="gapline"><b>明显缺口：</b>只证明定时与手动触发，无事件与对象变化触发。</p>
+          <label class="pick"><input type="checkbox" name="s7" value="b" data-label="Scheduled Job 定时触发式（AnythingLLM）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/23-workspace-agent-configuration.webp" alt="AnythingLLM Agent 配置面板：模型与能力链接配置" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>Agent Configuration 配置面板式 · AnythingLLM<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：Agent 的模型与能力链接在配置面板中调整。</p>
+          <p class="gapline"><b>明显缺口：</b>配置可见，但版本与发布未证明。</p>
+          <label class="pick"><input type="checkbox" name="s7" value="c" data-label="Agent Configuration 配置面板式（AnythingLLM）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard self-card" data-cardfor>
+        <div class="scard-body">
+          <h4>现有参考都不合适 / Chat 自建<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="gapline"><span class="tag tag-gap">现有参考缺口</span> 自建要补：Definition 版本 / 发布 / 审批；事件触发与对象变化触发。</p>
+          <label class="pick"><input type="checkbox" name="s7-self" value="self" data-label="Chat 自建"> 这个场景由 Chat 自建</label>
+        </div>
+      </article>
+    </div>
+  </details>
+
+  <!-- S8 -->
+  <details class="scenario" data-scenario="s8">
+    <summary>S8 · 运行进度、暂停、失败与对账<span class="scen-state" data-scen-state="s8">尚未选择</span></summary>
+    <p class="scen-q">执行进行中、要暂停、失败了或结果未知时，我看到什么、能做什么？</p>
+    <p class="gap-note">注意：AnythingLLM 运行中只有 Stop 终止入口，<b>Stop ≠ Pause / Resume</b>；真正暂停后恢复在所有参考中都未被证明。</p>
+    <div class="scards">
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/14-scheduled-job-run-detail-sections.webp" alt="AnythingLLM 运行详情：提示词、工具调用、文件、结果与指标分节同屏" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>运行详情分节式 · AnythingLLM<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：一次运行的提示词、工具调用、文件、结果与指标分节同屏，可展开查看。</p>
+          <p class="gapline"><b>明显缺口：</b>只有 Stop，没有 Pause / Resume。</p>
+          <label class="pick"><input type="checkbox" name="s8" value="a" data-label="运行详情分节式（AnythingLLM）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="../reference-implementations/microsoft-agent-feed-human-loop-v0.2/evidence/browser-qa/06-decision-run-succeeded.png" alt="Agent Feed 等待到恢复：人工决定后运行恢复并成功" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>等待→决定→恢复成功式 · Agent Feed<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-frozen">冻结原型画面</span> 看到 / 操作：运行在等待人工决定，决定提交后运行恢复并成功。</p>
+          <p class="gapline"><b>明显缺口：</b>恢复的是“等待决定”，不是任意时刻的用户暂停。</p>
+          <label class="pick"><input type="checkbox" name="s8" value="b" data-label="等待→决定→恢复成功式（Agent Feed）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="../reference-implementations/microsoft-agent-feed-human-loop-v0.2/evidence/browser-qa/12-reconciling.png" alt="Agent Feed 结果未知对账：先查询对账再处置，不提供普通重试" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>outcome_unknown 对账式 · Agent Feed<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-frozen">冻结原型画面</span> 看到 / 操作：结果未知时先查询对账，再决定提交或人工处置，不提供普通重试。</p>
+          <p class="gapline"><b>明显缺口：</b>只覆盖“结果未知”一类失败。</p>
+          <label class="pick"><input type="checkbox" name="s8" value="c" data-label="outcome_unknown 对账式（Agent Feed）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard self-card" data-cardfor>
+        <div class="scard-body">
+          <h4>现有参考都不合适 / Chat 自建<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="gapline"><span class="tag tag-gap">现有参考缺口</span> 自建要补：真正 Pause / Resume（所有参考都只证明终止或等待，未证明暂停后恢复）。</p>
+          <label class="pick"><input type="checkbox" name="s8-self" value="self" data-label="Chat 自建"> 这个场景由 Chat 自建</label>
+        </div>
+      </article>
+    </div>
+  </details>
+
+  <!-- S9 -->
+  <details class="scenario" data-scenario="s9">
+    <summary>S9 · 文件、Diff、产物与证据审阅<span class="scen-state" data-scen-state="s9">尚未选择</span></summary>
+    <p class="scen-q">Agent 交付的文件、改动和证据，我怎样审阅、批注、接受或退回？</p>
+    <div class="scards">
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/orca-v0.1/screenshots/03-diff-annotation.png" alt="Orca Diff 行级批注：在代码差异的具体行上留下锚定评论" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>Diff 行级批注式 · Orca<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：在 Diff 具体行上留批注，批注锚定持久化，可批量交回指定 Agent。</p>
+          <p class="gapline"><b>明显缺口：</b>偏 coding 审阅，非 coding 产物未覆盖。</p>
+          <label class="pick"><input type="checkbox" name="s9" value="a" data-label="Diff 行级批注式（Orca）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/16-scheduled-job-files.webp" alt="AnythingLLM Run Files：本次运行生成的文件清单" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>Run Files 产物清单式 · AnythingLLM<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：本次运行生成的文件以清单展示。</p>
+          <p class="gapline"><b>明显缺口：</b>只有结果展示，无批注、接受或退回。</p>
+          <label class="pick"><input type="checkbox" name="s9" value="b" data-label="Run Files 产物清单式（AnythingLLM）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="../combination-prototypes/evidence/stage1/visual-compare/heptabase-whiteboard-final-raw.png" alt="Heptabase 上下文与来源卡片：内容卡片带显式上下文与来源" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>上下文 + 来源卡片式 · Heptabase<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-frozen">冻结原型画面</span> 看到 / 操作：内容卡片带显式上下文与来源，可追溯每个结论读了什么。</p>
+          <p class="gapline"><b>明显缺口：</b>不是审阅界面，无接受 / 退回与完成门。</p>
+          <label class="pick"><input type="checkbox" name="s9" value="c" data-label="上下文 + 来源卡片式（Heptabase）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard self-card" data-cardfor>
+        <div class="scard-body">
+          <h4>现有参考都不合适 / Chat 自建<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="gapline"><span class="tag tag-gap">现有参考缺口</span> 自建要补：正式 Evidence 验证、版本、贡献归属与完成门；非 coding 审阅闭环。</p>
+          <label class="pick"><input type="checkbox" name="s9-self" value="self" data-label="Chat 自建"> 这个场景由 Chat 自建</label>
+        </div>
+      </article>
+    </div>
+  </details>
+
+  <!-- S10 -->
+  <details class="scenario" data-scenario="s10">
+    <summary>S10 · 今天、待办与日历<span class="scen-state" data-scen-state="s10">尚未选择</span></summary>
+    <p class="scen-q">我今天要做什么、什么时间做，怎样从长期项目中浮现出来？</p>
+    <div class="scards">
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="../combination-prototypes/evidence/stage1/visual-compare/things-today-final-raw.png" alt="Things Today：今天承诺的清单，每条带来源项目" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>Today 注意力投影式 · Things<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-frozen">冻结原型画面</span> 看到 / 操作：今天承诺的事项聚成一张清单，每条标注来源项目，分“今天 / 今晚”。</p>
+          <p class="gapline"><b>明显缺口：</b>单人清单，与 Agent 工作无连接。</p>
+          <label class="pick"><input type="checkbox" name="s10" value="a" data-label="Today 注意力投影式（Things）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="../combination-prototypes/evidence/stage1/visual-compare/hey-day-final-raw.png" alt="HEY Calendar：连续时间尺度，创建事件时同屏判断冲突" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>连续时间尺度式 · HEY Calendar<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-frozen">冻结原型画面</span> 看到 / 操作：Day / Week / Year 连续尺度读时间，创建事件时同屏判断冲突。</p>
+          <p class="gapline"><b>明显缺口：</b>日程不拥有项目与工作状态。</p>
+          <label class="pick"><input type="checkbox" name="s10" value="b" data-label="连续时间尺度式（HEY Calendar）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard self-card" data-cardfor>
+        <div class="scard-body">
+          <h4>现有参考都不合适 / Chat 自建<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="gapline"><span class="tag tag-gap">现有参考缺口</span> 自建要补：Chat Action / Event 分离，与 Project 来源双向连接和跨表面连续性。</p>
+          <label class="pick"><input type="checkbox" name="s10-self" value="self" data-label="Chat 自建"> 这个场景由 Chat 自建</label>
+        </div>
+      </article>
+    </div>
+  </details>
+
+  <!-- S11 -->
+  <details class="scenario" data-scenario="s11">
+    <summary>S11 · 进展、动态、交付与历史<span class="scen-state" data-scen-state="s11">尚未选择</span></summary>
+    <p class="scen-q">项目和工作的进展、负责人的汇报、Agent 动态、交付和历史记录，怎样查看？</p>
+    <div class="scards">
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="../combination-prototypes/evidence/stage1/mobile-audit/work-linear-updates-391x844.png" alt="Linear 移动端 Updates：署名更新按时间列出，含健康度与叙述" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>负责人署名 Update 式 · Linear<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-frozen">冻结原型画面</span> 看到 / 操作：负责人署名的进展更新按时间列出，含健康度与叙述（移动端画面）。</p>
+          <p class="gapline"><b>明显缺口：</b>由人署名，Agent 动态与交付未覆盖。</p>
+          <label class="pick"><input type="checkbox" name="s11" value="a" data-label="负责人署名 Update 式（Linear）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="./evidence/anythingllm-agent-constitution-workflow-v0.1/screenshots/11-scheduled-job-run-history.webp" alt="AnythingLLM Run History：状态、开始时间、耗时与错误列表" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>Run History + Continue in Thread 式 · AnythingLLM<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-official">官方或一手界面</span> 看到 / 操作：运行历史列出状态 / 开始 / 耗时 / 错误，可从运行回到对话继续。</p>
+          <p class="gapline"><b>明显缺口：</b>只覆盖 Agent 运行，不覆盖项目级进展与汇报。</p>
+          <label class="pick"><input type="checkbox" name="s11" value="b" data-label="Run History + Continue in Thread 式（AnythingLLM）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard" data-cardfor>
+        <div class="shot"><img src="../combination-prototypes/evidence/stage1/visual-compare/basecamp-project-room-final-raw.png" alt="Basecamp 房间动态：项目房间里看到动态与分区入口" loading="lazy"></div>
+        <div class="scard-body">
+          <h4>房间 Activity 投影式 · Basecamp<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="seen"><span class="tag tag-frozen">冻结原型画面</span> 看到 / 操作：在项目房间里看到动态与分区入口，留在项目上下文里看进展。</p>
+          <p class="gapline"><b>明显缺口：</b>动态是投影，且不含 Agent 与正式交付。</p>
+          <label class="pick"><input type="checkbox" name="s11" value="c" data-label="房间 Activity 投影式（Basecamp）"> 喜欢这种做法</label>
+        </div>
+      </article>
+      <article class="scard self-card" data-cardfor>
+        <div class="scard-body">
+          <h4>现有参考都不合适 / Chat 自建<span class="chosen-badge" hidden>已选择</span></h4>
+          <p class="gapline"><span class="tag tag-gap">现有参考缺口</span> 自建要补：Agent 像团队成员一样发布动态并形成评论 / 贡献关系；Delivery 与 Decision + Evidence 绑定的正式写回；Stage / Milestone / Iteration 级进展。</p>
+          <label class="pick"><input type="checkbox" name="s11-self" value="self" data-label="Chat 自建"> 这个场景由 Chat 自建</label>
+        </div>
+      </article>
+    </div>
+  </details>
+</section>
+
+<!-- ==================== 第三步：查看汇总 ==================== -->
+<section class="panel" id="panel-r" role="tabpanel" aria-labelledby="tab-r" hidden>
+  <h2>第三步 · 查看汇总</h2>
+  <div class="panel-note">
+    <p>这里只如实列出你的选择：<b>不排名、不自动拼出最终方案、不替用户消解冲突</b>。多选只代表认可方向；你选择之后，下一步任务才汇总兼容 / 冲突并制作最终工作台参考原型。本页不保存任何选择，刷新即恢复为空。</p>
+  </div>
+
   <div class="summary-block">
-    <h3>共同缺口（无论怎样组合都存在 · U）</h3>
-    <ul>
-      <li>完整耐久 Agent Profile（身份 + 职责 + 能力 + 记忆 + 权限 + 当前工作 + 贡献历史）</li>
-      <li>真正 Pause / Resume（Stop 只证明终止入口）</li>
-      <li>Definition version / publish / approval</li>
-      <li>跨表面连续性（同一 Work 往返保持身份、revision、返回位置与未提交草稿）</li>
-      <li>正式 Evidence / Contribution（验证、版本、贡献归属与完成门）</li>
-      <li>移动端等价交互</li>
+    <h3>已选整体骨架</h3>
+    <ul id="sum-skel"></ul>
+  </div>
+
+  <div class="summary-block">
+    <h3>场景选择（11 组逐项）</h3>
+    <ul id="sum-scen"></ul>
+  </div>
+
+  <div class="summary-block">
+    <h3>选择 Chat 自建的场景</h3>
+    <ul id="sum-self"></ul>
+  </div>
+
+  <div class="summary-block">
+    <h3>仍未作答的场景</h3>
+    <ul id="sum-todo"></ul>
+  </div>
+
+  <div class="summary-block">
+    <h3>现有参考共同缺口（固定 12 项，无论怎样选择都需要 Chat 自建）</h3>
+    <ul id="sum-gaps">
+      <li>1. 完整耐久 Agent Profile。</li>
+      <li>2. 显式 Goal / 假设 / 范围对象。</li>
+      <li>3. 版本化 Plan 确认完整闭环。</li>
+      <li>4. 真正 Pause / Resume。</li>
+      <li>5. Workflow Definition 版本 / 发布 / 审批。</li>
+      <li>6. 事件触发与对象变化触发。</li>
+      <li>7. 权限 / 可见 / 写回范围 / consent 完整合同。</li>
+      <li>8. 正式 Evidence 验证、贡献归属与完成门。</li>
+      <li>9. 工具授权与外部副作用对账界面。</li>
+      <li>10. 跨表面连续性：同一 Work 保持 identity、revision、返回位置、草稿。</li>
+      <li>11. 多人 + 多 Agent 的工作动态流 / 社交互动形态。</li>
+      <li>12. 移动端等价交互路径。</li>
     </ul>
   </div>
 
-  <button type="button" class="reset-btn" id="reset-btn">恢复推荐组合</button>
-  <p class="feedback" id="reset-feedback" role="status" aria-live="polite"></p>
+  <div class="btn-row">
+    <button type="button" class="act-btn" id="copy-btn">复制选择结果</button>
+    <button type="button" class="act-btn secondary" id="clear-btn">清空选择</button>
+  </div>
+  <p class="feedback" id="sum-feedback" role="status" aria-live="polite"></p>
+  <textarea id="copy-fallback" hidden readonly aria-label="选择结果文本（复制失败时可手动全选复制）"></textarea>
 </section>
 
 </main>
 
 <footer>
   <div class="inner">
-    <p>本页是研究选型工具，不是 Chat 产品原型；不修改生产 UI，不部署，不构成实现承诺。截图全部为已登记证据的静态帧，只证明布局结构存在，不冒充完整交互路径。内容依据：chat-workbench-scenario-skeleton-selection-v0.1（v0.2 正文）、nine-workbench-study-report-v0.1（v0.2 正文）、anythingllm-workbench-study-v0.1（v0.2 正文）、reference-workbench-mechanism-matrix-v0.1。</p>
+    <p>本页是研究选型工具，不是 Chat 产品原型；不修改生产 UI，不部署，不构成实现承诺。截图全部为已登记证据的静态帧，只证明布局结构存在，不冒充完整交互路径；1–6 项参考（Basecamp / Things / Linear / HEY / Agent Feed / Heptabase）为 Chat 冻结参考原型或冻结参考实现的已验收画面，7–9 项（AnythingLLM 与 Open Computer / Orca / Plane）为官方或一手界面证据、非本地运行。内容依据：docs/design/references/ 下九项工作台研究、工作台机制矩阵与场景骨架选择文件。</p>
   </div>
 </footer>
 
@@ -972,7 +1123,7 @@
 (function () {
   "use strict";
 
-  /* ---------- 轴切换（tabs） ---------- */
+  /* ---------- 页签切换 ---------- */
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
   function activateTab(tab, moveFocus) {
     tabs.forEach(function (t) {
@@ -983,10 +1134,9 @@
       if (panel) panel.hidden = !selected;
     });
     if (moveFocus) tab.focus();
-    /* panel 显隐完成后，把新 panel 开头滚到 sticky tabs 下方（即时滚动，reduced-motion 安全） */
     var panel = document.getElementById(tab.getAttribute("aria-controls"));
     if (panel) {
-      var tabsBar = document.querySelector(".axis-tabs");
+      var tabsBar = document.querySelector(".page-tabs");
       var barH = tabsBar ? tabsBar.getBoundingClientRect().height : 0;
       var top = panel.getBoundingClientRect().top + window.pageYOffset - barH - 8;
       window.scrollTo({ top: Math.max(top, 0), behavior: "auto" });
@@ -1007,162 +1157,194 @@
   /* ---------- 工具 ---------- */
   function $(sel) { return document.querySelector(sel); }
   function $all(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
-  function checkedInput(name) { return document.querySelector('input[name="' + name + '"]:checked'); }
-  function labelOf(input) { return input ? input.getAttribute("data-label") : null; }
-  function setStatus(key, text, on) {
-    var el = document.querySelector('[data-status="' + key + '"]');
-    if (!el) return;
-    el.textContent = "状态：" + text;
-    el.classList.toggle("on", !!on);
+  function checkedOf(name) {
+    return $all('input[name="' + name + '"]:checked');
   }
+  function labelOf(input) { return input.getAttribute("data-label"); }
 
-  var A_IDS = ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"];
-  var B_NAMES = { b1: "B1 Identity / Role / Owner / Participant", b2: "B2 Capability / Skill / Tool / MCP / Model", b3: "B3 Memory / Context / Source / Provenance", b4: "B4 Permission / Visibility / Consent / Write scope" };
-  var C_NAMES = {
-    c1: "C1 Goal / Clarify / assumptions / scope",
-    c2: "C2 Editable Plan / confirmation",
-    c3: "C3 Flow definition",
-    c4: "C4 Configuration / version / publish",
-    c5: "C5 Trigger manual / event / schedule / object",
-    c6: "C6 Run / task / subtask / tool progress",
-    c7: "C7 Checkpoint / ask-user / HITL",
-    c8: "C8 Pause / resume / cancel / abort",
-    c9: "C9 Failure / timeout / retry / outcome_unknown / reconcile",
-    c10: "C10 Artifact / file / diff / Evidence review",
-    c11: "C11 Delivery / writeback / notification",
-    c12: "C12 History / Continue / reuse / next schedule"
+  var SCEN_IDS = ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11"];
+  var SCEN_NAMES = {
+    s1: "S1 对话、目标澄清与计划确认",
+    s2: "S2 项目、工作列表与候选审核",
+    s3: "S3 Agent 执行现场",
+    s4: "S4 Agent 身份、团队、参与与权限边界",
+    s5: "S5 Agent 能力、工具、记忆与上下文",
+    s6: "S6 多 Agent 动态、监督与人工介入",
+    s7: "S7 工作流定义、配置与触发",
+    s8: "S8 运行进度、暂停、失败与对账",
+    s9: "S9 文件、Diff、产物与证据审阅",
+    s10: "S10 今天、待办与日历",
+    s11: "S11 进展、动态、交付与历史"
   };
+  var FIXED_GAPS = [
+    "完整耐久 Agent Profile",
+    "显式 Goal / 假设 / 范围对象",
+    "版本化 Plan 确认完整闭环",
+    "真正 Pause / Resume",
+    "Workflow Definition 版本 / 发布 / 审批",
+    "事件触发与对象变化触发",
+    "权限 / 可见 / 写回范围 / consent 完整合同",
+    "正式 Evidence 验证、贡献归属与完成门",
+    "工具授权与外部副作用对账界面",
+    "跨表面连续性：同一 Work 保持 identity、revision、返回位置、草稿",
+    "多人 + 多 Agent 的工作动态流 / 社交互动形态",
+    "移动端等价交互路径"
+  ];
 
-  /* ---------- A 轴 ---------- */
-  var aFeedback = $("#a-feedback");
-  function auxChecked() { return $all('input[name="a-aux"]:checked'); }
-
-  function refreshA() {
-    var main = checkedInput("a-main");
-    var mainVal = main ? main.value : null;
-    var auxVals = auxChecked().map(function (i) { return i.value; });
-    A_IDS.forEach(function (id) {
-      var item = document.getElementById("item-" + id);
-      var isMain = id === mainVal;
-      var isAux = auxVals.indexOf(id) !== -1;
-      item.classList.toggle("is-primary", isMain);
-      item.classList.toggle("is-aux", !isMain && isAux);
-      setStatus(id, isMain ? "已选 · 唯一页面主中心" : (isAux ? "已选 · 辅助表面" : "未选"), isMain || isAux);
-    });
+  /* ---------- 卡片选中外观 ---------- */
+  function refreshCard(input) {
+    var card = input.closest("[data-cardfor]");
+    if (!card) return;
+    card.classList.toggle("is-picked", input.checked);
+    var badge = card.querySelector(".chosen-badge");
+    if (badge) badge.hidden = !input.checked;
   }
 
-  $all('input[name="a-main"]').forEach(function (r) {
-    r.addEventListener("change", function () {
-      /* 主中心变化时，取消其同名辅助勾选，避免主辅重叠 */
-      var dup = document.querySelector('input[name="a-aux"][value="' + r.value + '"]');
-      if (dup && dup.checked) {
-        dup.checked = false;
-        aFeedback.textContent = "主中心已拥有页面中心，已自动取消其辅助表面勾选。";
-      } else {
-        aFeedback.textContent = "已选主中心：" + labelOf(r) + "。";
-      }
-      refreshA(); renderSummary();
-    });
-  });
-
-  $all('input[name="a-aux"]').forEach(function (c) {
-    c.addEventListener("change", function () {
-      var main = checkedInput("a-main");
-      if (c.checked && main && c.value === main.value) {
-        c.checked = false;
-        aFeedback.textContent = "该表面已是唯一页面主中心，无需再选为辅助表面。";
-        return;
-      }
-      if (c.checked && auxChecked().length > 2) {
-        c.checked = false;
-        aFeedback.textContent = "辅助表面最多 2 个；请先取消一个已有辅助表面再选。";
-        return;
-      }
-      var names = auxChecked().map(function (i) { return labelOf(i); });
-      aFeedback.textContent = names.length ? "当前辅助表面（" + names.length + "/2）：" + names.join("、") + "。" : "当前未选辅助表面。";
-      refreshA(); renderSummary();
-    });
-  });
-
-  /* ---------- B / C 轴状态 ---------- */
-  Object.keys(B_NAMES).forEach(function (name) {
-    $all('input[name="' + name + '"]').forEach(function (r) {
-      r.addEventListener("change", function () { refreshBC(name); renderSummary(); });
-    });
-  });
-  Object.keys(C_NAMES).forEach(function (name) {
-    $all('input[name="' + name + '"]').forEach(function (r) {
-      r.addEventListener("change", function () { refreshBC(name); renderSummary(); });
-    });
-  });
-
-  function refreshBC(name) {
-    var input = checkedInput(name);
-    var isChat = input && input.value === "chat";
-    var text = input ? (isChat ? "Chat 自建（未选参考）" : "已选 · " + labelOf(input)) : "Chat 自建（未选参考）";
-    setStatus(name, text, !!input && !isChat);
-    var item = document.getElementById("item-" + name);
-    if (item) item.classList.toggle("is-picked", !!input && !isChat);
+  /* ---------- 场景标题实时状态 ---------- */
+  function refreshScenarioState(sid) {
+    var el = document.querySelector('[data-scen-state="' + sid + '"]');
+    if (!el) return;
+    var styles = checkedOf(sid);
+    var self = checkedOf(sid + "-self").length > 0;
+    var parts = [];
+    if (styles.length) parts.push("已选 " + styles.length + " 项");
+    if (self) parts.push("Chat 自建");
+    el.textContent = parts.length ? parts.join(" · ") : "尚未选择";
+    el.classList.toggle("on", styles.length > 0);
+    el.classList.toggle("self", styles.length === 0 && self);
   }
 
   /* ---------- 汇总 ---------- */
   function li(html) { var el = document.createElement("li"); el.innerHTML = html; return el; }
-  function selfSpan() { return '<span class="self">Chat 自建</span>'; }
+  function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 
   function renderSummary() {
-    var sumA = $("#sum-a"); sumA.innerHTML = "";
-    var main = checkedInput("a-main");
-    sumA.appendChild(li("主中心：" + (main ? labelOf(main) : selfSpan() + "（未选）")));
-    var aux = auxChecked();
-    sumA.appendChild(li("辅助表面：" + (aux.length ? aux.map(function (i) { return labelOf(i); }).join("、") : "无")));
+    var sumSkel = $("#sum-skel");
+    sumSkel.innerHTML = "";
+    var skels = checkedOf("skel");
+    if (skels.length) {
+      skels.forEach(function (i) { sumSkel.appendChild(li(esc(labelOf(i)))); });
+    } else {
+      sumSkel.appendChild(li('<span class="todo">尚未选择任何骨架（可以不选）。</span>'));
+    }
 
-    var sumB = $("#sum-b"); sumB.innerHTML = "";
-    Object.keys(B_NAMES).forEach(function (name) {
-      var input = checkedInput(name);
-      var isChat = !input || input.value === "chat";
-      sumB.appendChild(li(B_NAMES[name] + "：" + (isChat ? selfSpan() : labelOf(input))));
+    var sumScen = $("#sum-scen");
+    var sumSelf = $("#sum-self");
+    var sumTodo = $("#sum-todo");
+    sumScen.innerHTML = "";
+    sumSelf.innerHTML = "";
+    sumTodo.innerHTML = "";
+
+    SCEN_IDS.forEach(function (sid) {
+      var styles = checkedOf(sid);
+      var self = checkedOf(sid + "-self").length > 0;
+      var parts = styles.map(function (i) { return esc(labelOf(i)); });
+      if (self) parts.push('<span class="self">Chat 自建</span>');
+      if (parts.length) {
+        sumScen.appendChild(li("<b>" + esc(SCEN_NAMES[sid]) + "</b>：" + parts.join("、")));
+      } else {
+        sumScen.appendChild(li("<b>" + esc(SCEN_NAMES[sid]) + "</b>：" + '<span class="todo">尚未选择（未作答）</span>'));
+      }
+      if (self) sumSelf.appendChild(li(esc(SCEN_NAMES[sid])));
+      if (!styles.length && !self) sumTodo.appendChild(li(esc(SCEN_NAMES[sid])));
     });
 
-    var sumC = $("#sum-c"); sumC.innerHTML = "";
-    Object.keys(C_NAMES).forEach(function (name) {
-      var input = checkedInput(name);
-      var isChat = !input || input.value === "chat";
-      sumC.appendChild(li(C_NAMES[name] + "：" + (isChat ? selfSpan() : labelOf(input))));
-    });
+    if (!sumSelf.children.length) sumSelf.appendChild(li('<span class="todo">无。</span>'));
+    if (!sumTodo.children.length) sumTodo.appendChild(li('<span class="todo">无，11 个场景都已作答。</span>'));
   }
 
-  /* ---------- 恢复推荐组合 ---------- */
-  var DEFAULTS = {
-    "a-main": "a2",
-    b1: "agent-feed", b2: "anythingllm", b3: "anythingllm-heptabase", b4: "agent-feed",
-    c1: "survey", c2: "agent-feed", c3: "flow", c4: "config", c5: "scheduled",
-    c6: "run-feed", c7: "feed-survey", c8: "chat", c9: "agent-feed",
-    c10: "orca", c11: "linear-continue", c12: "history"
-  };
-  var DEFAULT_AUX = ["a3", "a5"];
-
-  function applyDefaults() {
-    Object.keys(DEFAULTS).forEach(function (name) {
-      var input = document.querySelector('input[name="' + name + '"][value="' + DEFAULTS[name] + '"]');
-      if (input) input.checked = true;
-    });
-    $all('input[name="a-aux"]').forEach(function (c) {
-      c.checked = DEFAULT_AUX.indexOf(c.value) !== -1;
-    });
-    aFeedback.textContent = "";
-    refreshA();
-    Object.keys(B_NAMES).forEach(refreshBC);
-    Object.keys(C_NAMES).forEach(refreshBC);
+  function refreshAll() {
+    $all('input[type="checkbox"]').forEach(refreshCard);
+    SCEN_IDS.forEach(refreshScenarioState);
     renderSummary();
   }
 
-  $("#reset-btn").addEventListener("click", function () {
-    applyDefaults();
-    $("#reset-feedback").textContent = "已恢复推荐组合：主中心 A2，辅助 A3 + A5；B1/B4 Agent Feed，B2 AnythingLLM，B3 AnythingLLM + Heptabase；C8 为 Chat 自建，其余按推荐参考。";
+  /* ---------- 事件 ---------- */
+  document.addEventListener("change", function (e) {
+    if (e.target.matches('input[type="checkbox"]')) refreshAll();
   });
 
-  /* ---------- 初始化 ---------- */
-  applyDefaults();
+  /* 整卡可点击：点击卡片空白区域等同于切换勾选；点在控件本身上时交给原生行为 */
+  $all("[data-cardfor]").forEach(function (card) {
+    card.addEventListener("click", function (e) {
+      if (e.target.closest("label") || e.target.closest("a") || e.target.closest("button")) return;
+      var input = card.querySelector('input[type="checkbox"]');
+      if (!input) return;
+      input.checked = !input.checked;
+      refreshAll();
+    });
+  });
+
+  /* ---------- 复制结果 ---------- */
+  function buildText() {
+    var lines = [];
+    lines.push("Chat 工作台选择结果（研究选型工具导出）");
+    lines.push("导出时间：" + new Date().toLocaleString("zh-CN"));
+    lines.push("");
+    lines.push("一、已选整体骨架（多选只代表认可方向，不是唯一默认骨架）");
+    var skels = checkedOf("skel");
+    if (skels.length) skels.forEach(function (i) { lines.push("- " + labelOf(i)); });
+    else lines.push("- （尚未选择）");
+    lines.push("");
+    lines.push("二、场景选择（11 组逐项）");
+    SCEN_IDS.forEach(function (sid) {
+      var styles = checkedOf(sid).map(labelOf);
+      var self = checkedOf(sid + "-self").length > 0;
+      var parts = styles.slice();
+      if (self) parts.push("Chat 自建");
+      lines.push("- " + SCEN_NAMES[sid] + "：" + (parts.length ? parts.join("；") : "尚未选择（未作答）"));
+    });
+    lines.push("");
+    lines.push("三、选择 Chat 自建的场景");
+    var selfList = SCEN_IDS.filter(function (sid) { return checkedOf(sid + "-self").length > 0; });
+    if (selfList.length) selfList.forEach(function (sid) { lines.push("- " + SCEN_NAMES[sid]); });
+    else lines.push("- 无");
+    lines.push("");
+    lines.push("四、仍未作答的场景");
+    var todoList = SCEN_IDS.filter(function (sid) {
+      return !checkedOf(sid).length && !checkedOf(sid + "-self").length;
+    });
+    if (todoList.length) todoList.forEach(function (sid) { lines.push("- " + SCEN_NAMES[sid]); });
+    else lines.push("- 无，11 个场景都已作答");
+    lines.push("");
+    lines.push("五、现有参考共同缺口（固定 12 项，无论怎样选择都需要 Chat 自建）");
+    FIXED_GAPS.forEach(function (g, i) { lines.push((i + 1) + ". " + g); });
+    lines.push("");
+    lines.push("说明：本结果不排名、不自动拼出最终方案；多选只代表认可方向，兼容与冲突由下一步任务处理。");
+    return lines.join("\n");
+  }
+
+  var feedback = $("#sum-feedback");
+  $("#copy-btn").addEventListener("click", function () {
+    var text = buildText();
+    var fallback = $("#copy-fallback");
+    function showFallback() {
+      fallback.hidden = false;
+      fallback.value = text;
+      fallback.focus();
+      fallback.select();
+      feedback.textContent = "自动复制失败，已在下方显示可选文本，请手动全选复制。";
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        fallback.hidden = true;
+        feedback.textContent = "已复制选择结果到剪贴板。";
+      }, showFallback);
+    } else {
+      showFallback();
+    }
+  });
+
+  /* ---------- 清空 ---------- */
+  $("#clear-btn").addEventListener("click", function () {
+    $all('input[type="checkbox"]').forEach(function (i) { i.checked = false; });
+    $("#copy-fallback").hidden = true;
+    refreshAll();
+    feedback.textContent = "已清空全部选择。";
+  });
+
+  /* ---------- 初始化：全部不选，刷新即空 ---------- */
+  refreshAll();
 })();
 </script>
 </body>
