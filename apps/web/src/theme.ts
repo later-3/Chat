@@ -8,16 +8,10 @@ export function readStoredTheme(storage: Pick<Storage, "getItem">): Theme | null
   return value === "light" || value === "dark" ? value : null;
 }
 
-/** 当前生效主题：手动偏好优先，否则跟随系统。 */
+/** 当前生效主题：手动偏好优先；首次使用默认采用产品的明亮主题。 */
 export function resolveTheme(storage: Pick<Storage, "getItem">): Theme {
   const stored = readStoredTheme(storage);
-  if (stored) {
-    return stored;
-  }
-  if (typeof window.matchMedia !== "function") {
-    return "light";
-  }
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return stored ?? "light";
 }
 
 /** 应用主题到根元素并保存手动偏好。 */

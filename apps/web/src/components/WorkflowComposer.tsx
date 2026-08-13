@@ -467,13 +467,13 @@ export function WorkflowPicker({
             key={definition.workflowDefinitionRevisionId}
             value={definition.workflowDefinitionRevisionId}
           >
-            {definition.title}（{definitionVersion(definition)}）
+            {definition.title}
           </option>
         ))}
       </select>
       {selected !== undefined && (
         <small>
-          {selected.description} · 发布于 {new Date(selected.updatedAt).toLocaleDateString("zh-CN")}
+          {selected.description}
           {selected.blueprintKey === "note"
             ? " · Note Capture 会先形成候选；人工确认或允许的策略确认后才成为正式笔记。"
             : ""}

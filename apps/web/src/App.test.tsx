@@ -65,11 +65,11 @@ afterEach(() => {
 });
 
 describe("P1.1 平铺工作空间", () => {
-  it("产品默认入口是真实规划会话，fixture只在显式查询参数下出现", async () => {
+  it("产品默认入口是规划工作台，fixture只在显式查询参数下出现", async () => {
     window.history.replaceState({}, "", "/");
     stubHealthzFail();
     renderApp();
-    expect(screen.getAllByText("真实规划会话").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("规划").length).toBeGreaterThan(0);
     expect(screen.queryByRole("main", { name: "今日" })).toBeNull();
     await screen.findByRole("alert");
   });

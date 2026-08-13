@@ -1,6 +1,6 @@
 import { serviceStatusSchema } from "@chat/contracts/public";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PwaUpdatePrompt } from "./components/PwaUpdatePrompt.js";
 import { RealWorkspace } from "./components/RealWorkspace.js";
 import { WorkspaceShell, type ConnectionState } from "./components/WorkspaceShell.js";
@@ -38,9 +38,7 @@ const INITIAL_MESSAGES = Object.fromEntries(
   SESSION_FIXTURES.map((session) => [session.id, session.messages]),
 ) as Record<SessionId, readonly ChatMessage[]>;
 
-/**
- * 真实规划会话是产品默认入口；P1.1 fixture仅保留在?view=fixture用于视觉回归。
- */
+/** 产品工作台是默认入口；P1.1 fixture仅保留在?view=fixture用于视觉回归。 */
 export function App() {
   const browserOnline = useOnlineState();
   const status = useQuery({
@@ -55,6 +53,10 @@ export function App() {
   const [view, setView] = useState<"fixture" | "real">(() =>
     new URLSearchParams(window.location.search).get("view") === "fixture" ? "fixture" : "real",
   );
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
 
   // 浏览器离线时直接判为未连接；在线时以 /api/healthz 投影为准。
   // Service Worker 不缓存 /api，健康检查失败永远来自真实网络。
@@ -87,12 +89,7 @@ export function App() {
   if (view === "real") {
     return (
       <>
-        <RealView
-          theme={theme}
-          connection={connection}
-          onToggleTheme={handleToggleTheme}
-          onBack={() => setView("fixture")}
-        />
+        <RealView theme={theme} connection={connection} onToggleTheme={handleToggleTheme} />
         <PwaUpdatePrompt />
       </>
     );
@@ -120,12 +117,10 @@ function RealView({
   theme,
   connection,
   onToggleTheme,
-  onBack,
 }: {
   theme: Theme;
   connection: ConnectionState;
   onToggleTheme: () => void;
-  onBack: () => void;
 }) {
   const chain = useRealChain(window.localStorage);
   return (
@@ -133,20 +128,31 @@ function RealView({
       <section className="workspace-stage">
         <header className="workspace-bar">
           <div className="rail-controls">
-            <button className="bar-button" onClick={onBack}>
-              查看演示工作区
-            </button>
+            <span className="real-app-brand">Chat</span>
           </div>
           <nav className="workspace-tabs" aria-label="打开的工作空间">
-            <span className="workspace-tab active">真实规划会话</span>
+            <span className="workspace-tab active">规划</span>
           </nav>
           <div className="bar-actions">
+            <span
+              className="connection-status"
+              data-state={connection}
+              aria-label={
+                connection === "online"
+                  ? "服务已连接"
+                  : connection === "connecting"
+                    ? "服务连接中"
+                    : "服务离线"
+              }
+            >
+              <span className="connection-dot" aria-hidden="true" />
+            </span>
             <button
               className="bar-button"
               aria-label={theme === "light" ? "切换到深色主题" : "切换到浅色主题"}
               onClick={onToggleTheme}
             >
-              {theme === "light" ? "深色" : "浅色"}
+              {theme === "light" ? "深色外观" : "浅色外观"}
             </button>
           </div>
         </header>

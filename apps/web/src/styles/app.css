@@ -66,7 +66,7 @@ a {
   transition: grid-template-columns 200ms ease-out;
 }
 
-/* 真实纵向链没有全局/会话侧栏，工作区必须占满唯一一列。 */
+/* 真实入口的会话导航由RealWorkspace内部拥有；外壳这里只保留单一应用舞台。 */
 .workspace-app.real-app {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -1991,6 +1991,289 @@ a {
 
 .real-grid {
   grid-template-columns: minmax(340px, 42%) minmax(380px, 1fr);
+}
+
+/* ---------- 真实桌面三栏工作台 ---------- */
+
+.real-workbench-grid {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns:
+    var(--real-navigation-track) var(--real-navigation-divider) var(--real-conversation-track)
+    var(--real-work-divider) var(--real-work-track);
+  overflow: hidden;
+  transition: grid-template-columns 200ms ease-out;
+}
+
+.real-session-navigation,
+.real-conversation-column,
+.real-workbench-grid > .work-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.real-session-navigation {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--separator);
+  background: var(--bg-secondary);
+}
+
+.real-session-navigation > header {
+  display: flex;
+  min-height: 62px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--separator);
+}
+
+.real-session-navigation > header > div,
+.real-session-row {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.real-session-navigation > header span,
+.real-session-row span,
+.real-navigation-label,
+.real-navigation-empty,
+.real-navigation-current,
+.real-navigation-shortcut small {
+  color: var(--text-tertiary);
+  font-size: var(--font-caption);
+}
+
+.real-session-navigation nav {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-2) 0;
+}
+
+.real-navigation-label {
+  padding: 0 var(--space-2);
+  font-weight: 600;
+}
+
+.real-session-row,
+.real-navigation-shortcut {
+  min-height: 56px;
+  justify-content: center;
+  gap: 2px;
+  overflow: hidden;
+  padding: var(--space-2);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.real-session-row:hover,
+.real-session-row:focus-visible,
+.real-session-row.active,
+.real-navigation-shortcut:hover,
+.real-navigation-shortcut:focus-visible {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.real-session-row strong,
+.real-session-row span,
+.real-navigation-shortcut span,
+.real-navigation-shortcut small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.real-session-row.active strong {
+  font-weight: 600;
+}
+
+.real-navigation-empty,
+.real-navigation-current {
+  padding: var(--space-2);
+}
+
+.real-navigation-spacer {
+  flex: 1;
+}
+
+.real-navigation-shortcut {
+  margin: var(--space-2);
+}
+
+.real-workbench-splitter {
+  position: relative;
+  z-index: 6;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.navigation-splitter {
+  grid-column: 2;
+}
+
+.work-splitter {
+  grid-column: 4;
+}
+
+.real-workbench-splitter::after {
+  position: absolute;
+  inset: 0 auto 0 3px;
+  width: 1px;
+  background: var(--separator);
+  content: "";
+}
+
+.real-workbench-splitter:hover,
+.real-workbench-splitter:focus-visible {
+  background: var(--bg-tertiary);
+}
+
+.real-conversation-column {
+  position: relative;
+  grid-column: 3;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+}
+
+.real-workbench-grid > .work-pane {
+  grid-column: 5;
+}
+
+.real-conversation-column > .chat-pane {
+  flex: 1;
+}
+
+.real-pane-collapse,
+.real-pane-restore,
+.work-surface-close {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+}
+
+.real-pane-collapse:hover,
+.real-pane-restore:hover,
+.work-surface-close:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.conversation-collapse {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 4;
+}
+
+.real-navigation-restore,
+.conversation-restore {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 8;
+}
+
+.real-pane-restore.work-restore {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 8;
+}
+
+.work-surface-tabbar {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  border-bottom: 1px solid var(--separator);
+}
+
+.work-surface-tabbar .work-surface-tabs {
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  border-bottom: 0;
+}
+
+.work-open-conversation {
+  flex: none;
+  margin-right: var(--space-1);
+}
+
+.work-surface-close {
+  flex: none;
+  margin: var(--space-1) var(--space-2) var(--space-1) 0;
+}
+
+.composer-configuration-trigger {
+  display: flex;
+  width: fit-content;
+  min-height: 36px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+}
+
+.composer-configuration-trigger:hover,
+.composer-configuration-trigger:focus-visible {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.composer-configuration-trigger span:first-child {
+  font-weight: 600;
+}
+
+.composer-configuration-trigger span:last-child::before {
+  margin-right: var(--space-2);
+  color: var(--separator);
+  content: "·";
+}
+
+.workflow-configuration-surface {
+  display: grid;
+  gap: var(--space-4);
+  width: min(100%, 760px);
+  margin: 0 auto;
+}
+
+.workflow-configuration-surface > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.workflow-configuration-surface > header h3 {
+  font-size: var(--font-title);
+}
+
+.workflow-configuration-surface > header p,
+.workflow-configuration-note {
+  color: var(--text-tertiary);
+  font-size: var(--font-caption);
+}
+
+.workflow-configuration-surface .run-config-panel {
+  max-height: none;
 }
 
 .model-fixed-label {
@@ -4008,5 +4291,571 @@ a {
   .designer-loop-wrap select {
     min-height: 44px;
     font-size: var(--font-input-mobile);
+  }
+}
+
+@media (max-width: 760px) {
+  .real-workbench-grid,
+  .real-workbench-grid[data-navigation-open="true"],
+  .real-workbench-grid[data-conversation-open="false"],
+  .real-workbench-grid[data-work-open="false"] {
+    display: block;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .mobile-pane-tabs {
+    grid-template-columns: auto 1fr 1fr;
+  }
+
+  .mobile-navigation-trigger {
+    min-width: 64px;
+  }
+
+  .real-session-navigation {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 80;
+    width: min(320px, 88vw);
+    pointer-events: none;
+    visibility: hidden;
+    opacity: 0;
+    transform: translateX(-100%);
+    transition:
+      transform 200ms ease-out,
+      opacity 150ms ease-out,
+      visibility 0s linear 200ms;
+  }
+
+  .real-session-navigation,
+  .real-conversation-column,
+  .real-workbench-grid > .work-pane {
+    grid-column: auto;
+  }
+
+  .real-workbench-grid[data-mobile-navigation-open="true"] .real-session-navigation {
+    pointer-events: auto;
+    visibility: visible;
+    opacity: 1;
+    transform: translateX(0);
+    transition-delay: 0s;
+  }
+
+  .real-workbench-splitter,
+  .real-pane-collapse,
+  .real-pane-restore,
+  .work-surface-close {
+    display: none;
+  }
+
+  .real-conversation-column,
+  .real-workbench-grid > .work-pane {
+    width: 100%;
+    height: 100%;
+  }
+
+  .real-workbench-grid[data-mobile-pane="chat"] > .work-pane,
+  .real-workbench-grid[data-mobile-pane="work"] > .real-conversation-column {
+    display: none;
+  }
+
+  .workflow-configuration-surface > header {
+    flex-direction: column;
+  }
+}
+
+/* ---------- K7 AnythingLLM 结构 × K2 Things 明亮配色 ---------- */
+
+.real-app {
+  background: var(--bg-primary);
+}
+
+.real-app .workspace-bar {
+  min-height: 52px;
+  padding: 0 var(--space-4);
+  background: var(--surface-raised);
+}
+
+.real-app-brand {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  padding: 0 var(--space-2);
+  color: var(--text-primary);
+  font-size: var(--font-title);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.real-app .workspace-tabs {
+  padding-left: var(--space-2);
+}
+
+.real-app .workspace-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.real-app .bar-button {
+  min-height: 34px;
+  padding: 0 var(--space-2);
+}
+
+.real-app .connection-status {
+  min-height: 34px;
+}
+
+.real-workbench-grid {
+  background: var(--work-surface);
+}
+
+.real-session-navigation {
+  border-right: 0;
+  background: var(--sidebar-surface);
+}
+
+.real-session-navigation > header {
+  min-height: 70px;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 0;
+}
+
+.real-session-navigation > header strong {
+  font-size: var(--font-title);
+  letter-spacing: -0.02em;
+}
+
+.real-session-navigation > header .small-button {
+  min-height: 34px;
+  padding: 0 var(--space-2);
+}
+
+.real-session-navigation nav {
+  gap: 3px;
+  padding: var(--space-2) var(--space-3) 0;
+}
+
+.real-navigation-label {
+  padding: var(--space-2);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+}
+
+.real-session-row,
+.real-navigation-shortcut {
+  min-height: 52px;
+  padding: 7px var(--space-3);
+  border: 1px solid transparent;
+  border-radius: 12px;
+}
+
+.real-session-row:hover,
+.real-session-row:focus-visible,
+.real-navigation-shortcut:hover,
+.real-navigation-shortcut:focus-visible {
+  background: var(--surface-hover);
+}
+
+.real-session-row.active {
+  border-color: var(--separator);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-subtle);
+}
+
+.real-session-row.active strong {
+  color: var(--accent);
+}
+
+.real-navigation-shortcut {
+  margin: var(--space-3);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.real-navigation-current {
+  margin: 0 var(--space-3) var(--space-3);
+}
+
+.real-workbench-splitter {
+  width: 7px;
+  background: var(--work-surface);
+}
+
+.real-workbench-splitter::after {
+  opacity: 0.55;
+}
+
+.real-workbench-splitter:hover,
+.real-workbench-splitter:focus-visible {
+  background: var(--accent-soft);
+}
+
+.real-conversation-column {
+  container-type: inline-size;
+  border-right: 0;
+  border-left: 0;
+  background: var(--bg-primary);
+}
+
+.real-conversation-column .pane-header {
+  min-height: 70px;
+  padding: var(--space-3) var(--space-5);
+  background: var(--surface-translucent);
+}
+
+.conversation-title-group,
+.conversation-header-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.conversation-title-copy {
+  min-width: 0;
+}
+
+.conversation-header-actions {
+  flex: none;
+}
+
+.real-conversation-column .pane-header h2 {
+  font-size: var(--font-title);
+  letter-spacing: -0.02em;
+}
+
+.real-conversation-column .pane-header .pane-button {
+  min-height: 34px;
+  padding: 0 var(--space-3);
+  background: var(--bg-secondary);
+}
+
+.real-pane-collapse,
+.real-pane-restore,
+.real-pane-inline-action,
+.work-surface-close {
+  min-height: 34px;
+  padding: 0 var(--space-2);
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+  white-space: nowrap;
+}
+
+.real-pane-inline-action:hover,
+.real-pane-inline-action:focus-visible {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.real-conversation-column .chat-stream {
+  padding: var(--space-8) var(--space-6) var(--space-4);
+}
+
+.real-conversation-column .chat-message-list {
+  width: min(100%, 760px);
+  min-height: 100%;
+  margin: 0 auto;
+}
+
+.real-conversation-column .chat-empty {
+  display: flex;
+  min-height: 100%;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-4) 12vh;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.real-conversation-column .chat-empty h3 {
+  color: var(--text-primary);
+  font-size: clamp(24px, 3vw, 32px);
+  font-weight: 650;
+  letter-spacing: -0.035em;
+}
+
+.real-conversation-column .chat-empty p {
+  max-width: 380px;
+  line-height: 1.65;
+}
+
+.real-conversation-column .chat-message {
+  max-width: min(88%, 620px);
+}
+
+.real-conversation-column .message-bubble {
+  border-radius: 16px;
+  background: var(--bg-secondary);
+}
+
+.real-conversation-column .composer {
+  padding: var(--space-3) var(--space-5) var(--space-5);
+}
+
+.real-conversation-column .composer-inner {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  padding: 7px;
+  border: 1px solid var(--separator-strong);
+  border-radius: 18px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-composer);
+}
+
+.real-conversation-column .composer-configuration-trigger {
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  color: var(--text-tertiary);
+}
+
+.real-conversation-column .composer-input {
+  min-height: 54px;
+  padding: var(--space-3);
+}
+
+.real-conversation-column .send-button {
+  min-width: 64px;
+  min-height: 42px;
+  margin: 0 2px 2px 0;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px var(--accent-soft-strong);
+}
+
+.real-workbench-grid > .work-pane {
+  border-left: 0;
+  background: var(--work-surface);
+}
+
+.work-surface-tabbar {
+  min-height: 58px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  background: var(--work-surface);
+}
+
+.work-surface-tabbar .work-surface-tabs {
+  gap: 2px;
+  padding: 0;
+}
+
+.work-surface-tabbar .work-surface-tabs button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+  white-space: nowrap;
+}
+
+.work-surface-tabbar .work-surface-tabs button:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.work-surface-tabbar .work-surface-tabs button.active {
+  border: 0;
+  background: var(--surface-raised);
+  color: var(--accent);
+  box-shadow: var(--shadow-control);
+  font-weight: 650;
+}
+
+.work-surface-close {
+  margin: 0 0 0 var(--space-1);
+}
+
+.real-work-body {
+  gap: var(--space-4);
+  padding: var(--space-6);
+}
+
+.workflow-configuration-surface {
+  gap: var(--space-5);
+}
+
+.workflow-configuration-surface > header {
+  padding-bottom: var(--space-2);
+}
+
+.workflow-configuration-surface > header h3 {
+  font-size: 22px;
+  letter-spacing: -0.03em;
+}
+
+.workflow-configuration-surface > header p {
+  max-width: 420px;
+  margin-top: var(--space-1);
+  line-height: 1.55;
+}
+
+.model-fixed-label {
+  padding: 5px 9px;
+  border: 1px solid var(--separator);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.workflow-configuration-surface .composer-mode {
+  gap: var(--space-1);
+  width: fit-content;
+  padding: 4px;
+  border: 1px solid var(--separator);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+}
+
+.workflow-configuration-surface .composer-mode .small-button {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: 9px;
+}
+
+.workflow-configuration-surface .composer-mode .small-button.active {
+  background: var(--surface-raised);
+  color: var(--accent);
+  box-shadow: var(--shadow-control);
+}
+
+.workflow-configuration-surface > .workflow-picker {
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised);
+}
+
+.workflow-configuration-surface > .workflow-picker select {
+  background: var(--bg-secondary);
+}
+
+.workflow-advanced-settings {
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised);
+}
+
+.workflow-advanced-settings > summary {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  list-style: none;
+}
+
+.workflow-advanced-settings > summary::-webkit-details-marker {
+  display: none;
+}
+
+.workflow-advanced-settings > summary > span:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.workflow-advanced-settings > summary small,
+.workflow-advanced-settings > summary > span:last-child {
+  color: var(--text-tertiary);
+  font-size: var(--font-caption);
+}
+
+.workflow-advanced-settings[open] > summary {
+  border-bottom: 1px solid var(--separator);
+}
+
+.workflow-advanced-settings > .run-config-panel {
+  max-height: min(58dvh, 620px);
+  overflow-y: auto;
+  border: 0;
+  border-radius: 0;
+  padding: var(--space-4);
+  background: var(--surface-raised);
+}
+
+.workflow-configuration-surface > .context-picker .context-picker-trigger {
+  min-height: 58px;
+  border-radius: var(--radius-panel);
+}
+
+.workflow-configuration-note {
+  padding: 0 var(--space-1);
+}
+
+.work-empty {
+  display: grid;
+  min-height: 50%;
+  place-content: center;
+  gap: var(--space-2);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.work-empty h3 {
+  color: var(--text-primary);
+  font-size: var(--font-title);
+}
+
+@media (max-width: 1040px) and (min-width: 761px) {
+  .real-app .connection-status {
+    display: none;
+  }
+
+  .real-conversation-column .pane-header .pane-button {
+    display: none;
+  }
+
+  .workflow-configuration-surface .composer-mode {
+    width: 100%;
+  }
+}
+
+@media (max-width: 760px) {
+  .real-app .workspace-bar {
+    display: none;
+  }
+
+  .real-conversation-column {
+    border: 0;
+  }
+
+  .real-conversation-column .pane-header {
+    min-height: 60px;
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .real-conversation-column .pane-header .pane-button {
+    margin-right: 0;
+  }
+
+  .real-conversation-column .chat-stream {
+    padding: var(--space-5) var(--space-4) var(--space-2);
+  }
+
+  .real-conversation-column .composer {
+    padding: var(--space-2) var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom));
+  }
+
+  .work-surface-tabbar {
+    min-height: 52px;
+  }
+
+  .real-work-body {
+    padding: var(--space-4);
+  }
+
+  .workflow-configuration-surface .composer-mode {
+    width: 100%;
   }
 }

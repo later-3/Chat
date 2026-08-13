@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -449,13 +449,54 @@ afterEach(() => {
 });
 
 describe("M3真实前端闭环", () => {
+  it("真实入口使用可折叠三栏并把工作流配置放进右侧标签页", async () => {
+    installFakeApi();
+    const user = userEvent.setup();
+    renderReal();
+
+    expect(await screen.findByRole("navigation", { name: "会话列表" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "持续对话" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "工作窗口" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "工作配置" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(await screen.findByRole("region", { name: "工作配置" })).toBeTruthy();
+    expect(
+      within(screen.getByRole("region", { name: "持续对话" })).queryByRole("region", {
+        name: "工作配置",
+      }),
+    ).toBeNull();
+
+    const workSplitter = screen.getByRole("separator", { name: "调整对话与工作区大小" });
+    expect(workSplitter.getAttribute("aria-valuenow")).toBe("560");
+    workSplitter.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(workSplitter.getAttribute("aria-valuenow")).toBe("584");
+
+    await user.click(screen.getByRole("button", { name: "收起会话导航" }));
+    expect(screen.queryByRole("navigation", { name: "会话列表" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "打开导航" }));
+    expect(screen.getByRole("navigation", { name: "会话列表" })).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "收起工作区" }));
+    expect(screen.queryByRole("region", { name: "工作窗口" })).toBeNull();
+    expect(screen.getByRole("region", { name: "持续对话" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "打开工作区" }));
+    expect(screen.getByRole("region", { name: "工作窗口" })).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "收起对话区域" }));
+    expect(screen.queryByRole("region", { name: "持续对话" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "打开对话" }));
+    expect(screen.getByRole("region", { name: "持续对话" })).toBeTruthy();
+  }, 30_000);
+
   it("完整链路：发送 -> 规划状态 -> Plan v1 -> 修改 -> v2 -> 批准 -> 正式结果", async () => {
     const state = installFakeApi();
     const user = userEvent.setup();
     renderReal();
 
     // 产品界面不绑定Provider/模型；真实模型由服务端Profile配置并在E2E取证。
-    expect((await screen.findByLabelText("模型配置")).textContent).toContain("服务端配置");
+    expect((await screen.findByLabelText("模型配置")).textContent).toContain("自动模型");
     await user.type(screen.getByLabelText("消息输入框"), "根据项目进展生成周报");
     await user.click(screen.getByRole("button", { name: "发送" }));
     await waitFor(() => expect(state.submitCalls).toHaveLength(1));
@@ -531,7 +572,9 @@ describe("M3真实前端闭环", () => {
 
     await waitFor(() => expect(state.submitCalls).toHaveLength(1));
     // Memory 是单轮选择：提交成功后，下一轮不得静默继承本轮配置。
+    await user.click(screen.getByRole("tab", { name: "工作配置" }));
     await waitFor(() => expect(screen.getByText("本轮不查询 Memory")).toBeTruthy());
+    await user.click(screen.getByRole("tab", { name: "运行" }));
     expect(state.submitCalls[0]?.payload).toMatchObject({
       text: "使用记忆生成周报",
       context: {
