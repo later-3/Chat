@@ -13,7 +13,7 @@ const HOSTNAME = "127.0.0.1";
 
 const repoRoot = process.env.CHAT_REPO_ROOT ?? process.cwd();
 const credential = await loadRuntimeCredential(repoRoot);
-const { app } = await createWorkflowRuntimeServer({
+const runtime = await createWorkflowRuntimeServer({
   repoRoot,
   bundleDir:
     process.env.CHAT_WORKFLOW_BUNDLE_DIR ?? `${repoRoot}/packages/workflows/.workflow-bundle`,
@@ -25,6 +25,35 @@ const { app } = await createWorkflowRuntimeServer({
   traceSink: createTraceSink(),
 });
 
-serve({ fetch: app.fetch, port: WORKFLOW_PORT, hostname: HOSTNAME }, (info) => {
-  console.log(`chat-workflow-runtime listening on http://${HOSTNAME}:${String(info.port)}`);
-});
+const server = serve(
+  { fetch: runtime.app.fetch, port: WORKFLOW_PORT, hostname: HOSTNAME },
+  (info) => {
+    console.log(`chat-workflow-runtime listening on http://${HOSTNAME}:${String(info.port)}`);
+  },
+);
+
+let shutdownPromise: Promise<void> | undefined;
+function shutdown(signal: "SIGINT" | "SIGTERM"): void {
+  shutdownPromise ??= (async () => {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error === undefined ? resolve() : reject(error)));
+      });
+    } finally {
+      await runtime.close();
+    }
+  })();
+  void shutdownPromise.catch((error: unknown) => {
+    console.error(
+      `chat-workflow-runtime shutdown failed signal=${signal} cause=${
+        typeof error === "object" && error !== null && "code" in error
+          ? String(error.code)
+          : "unknown"
+      }`,
+    );
+    process.exitCode = 1;
+  });
+}
+
+process.once("SIGINT", () => shutdown("SIGINT"));
+process.once("SIGTERM", () => shutdown("SIGTERM"));

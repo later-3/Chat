@@ -6,6 +6,7 @@ import {
   approvalDtoSchema,
   beginPlanningContextResponseSchema,
   decisionDtoSchema,
+  messageResponseSchema,
   messageDtoSchema,
   planDtoSchema,
   preparePlanningContextResponseSchema,
@@ -307,6 +308,32 @@ describe("公开产品API", () => {
     expect(messages.status).toBe(200);
     const page = cursorPageSchema(messageDtoSchema).parse(await messages.json());
     expect(page.items).toHaveLength(1);
+
+    const exactMessage = await app.request(
+      `/api/sessions/${sessionDto.sessionId}/messages/${message.messageId}`,
+    );
+    expect(exactMessage.status).toBe(200);
+    expect(messageResponseSchema.parse(await exactMessage.json()).message).toEqual(message);
+    const exactWithQuery = await app.request(
+      `/api/sessions/${sessionDto.sessionId}/messages/${message.messageId}?include=runtime`,
+    );
+    expect(exactWithQuery.status).toBe(400);
+    const missingMessage = await app.request(
+      `/api/sessions/${sessionDto.sessionId}/messages/msg_missing`,
+    );
+    expect(missingMessage.status).toBe(404);
+
+    const otherCreated = await postJson(app, "/api/sessions", {
+      commandId: nextCmd(),
+      payload: {},
+    });
+    const otherSession = sessionDtoSchema.parse(
+      ((await otherCreated.json()) as { session: unknown }).session,
+    );
+    const wrongSession = await app.request(
+      `/api/sessions/${otherSession.sessionId}/messages/${message.messageId}`,
+    );
+    expect(wrongSession.status).toBe(404);
 
     for (const query of [
       "limit=1junk",

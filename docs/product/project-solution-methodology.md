@@ -56,14 +56,14 @@ tag v4.44.3
 
 BMAD证明软件项目中Brief、PRD、UX、Architecture、Story、开发、QA与Correct Course的真实协作关系。它不拥有Chat的Project事实，也不证明这些Artifact适用于非软件项目。
 
-### 2.3 已审核交互输入
+### 2.3 已采用的交互结论
 
-1. [Basecamp交互审计](../design/references/basecamp-interaction-audit-v0.1.md)：Project是长期地点；Home、Project Room、Tool、Item层级稳定；Activity只是投影。
-2. [Linear交互审计](../design/references/linear-interaction-audit-v0.1.md)：Project Update是负责人署名的健康判断；系统事件不能冒充项目叙事。
-3. [Things Today交互审计](../design/references/things-today-interaction-audit-v0.1.md)：Project归属与个人Today/Next Action正交。
-4. [Chat Taste Contract](../design/references/taste-contract-v0.1.md)：Project、Conversation、Workbench、Today、Pulse与Agents保持对象连续。
+1. Project是长期地点；Activity只是投影。
+2. Project Update是负责人署名的健康判断；系统事件不能冒充项目叙事。
+3. Project归属与个人Today/Next Action正交。
+4. Project、Conversation、Workbench、Today、Pulse与Agents必须保持对象连续。
 
-这些材料只为交互和阅读层级背书，不替代领域状态机。
+这些结论只为交互和阅读层级背书，不替代领域状态机。原始研究材料已从当前树移除，需要时从Git历史读取。
 
 ### 2.4 技术输入
 

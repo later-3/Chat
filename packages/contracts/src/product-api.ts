@@ -631,6 +631,9 @@ export const messageDtoSchema = z
   })
   .strict();
 
+/** 精确Message Query响应；只返回已通过Session归属校验的公开产品事实。 */
+export const messageResponseSchema = z.object({ message: messageDtoSchema }).strict();
+
 export const planDtoSchema = z
   .object({
     schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
@@ -705,6 +708,7 @@ export const decisionDtoSchema = z
 
 export type SessionDto = z.infer<typeof sessionDtoSchema>;
 export type MessageDto = z.infer<typeof messageDtoSchema>;
+export type MessageResponse = z.infer<typeof messageResponseSchema>;
 export type PlanDto = z.infer<typeof planDtoSchema>;
 export type ApprovalDto = z.infer<typeof approvalDtoSchema>;
 export type RunDto = z.infer<typeof runDtoSchema>;

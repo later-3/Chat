@@ -85,7 +85,7 @@ describe("VS Code应用级调试配置", () => {
         type: "pwa-chrome",
         request: "launch",
         url: "http://127.0.0.1:43110/",
-        webRoot: "${workspaceFolder}/apps/web",
+        webRoot: "${workspaceFolder}",
         userDataDir: "${workspaceFolder}/.data/debug/browser-profile",
         cleanUp: "wholeBrowser",
         killBehavior: "forceful",

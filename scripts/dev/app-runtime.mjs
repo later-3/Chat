@@ -15,6 +15,7 @@ import {
 } from "../debug/lib.mjs";
 import { ensureFixedMemmy } from "../memory/fixed-memmy.mjs";
 import { ensureFixedMemoryCore } from "../memory/fixed-memorycore.mjs";
+import { dshWebEnvironment } from "../dsh/profile-runtime.mjs";
 import { cleanupOwnedDebugBrowser } from "./browser-lifecycle.mjs";
 
 export const MEMORY_PROFILES = Object.freeze(["all", "memmy", "memorycore"]);
@@ -50,7 +51,7 @@ export function devUsage() {
     "用法: pnpm dev [-- --memory=all|memmy|memorycore]",
     "      pnpm dev:debug [-- --memory=all|memmy|memorycore]",
     "",
-    "默认启动两套本地Memory依赖、Workflow、API和Web。",
+    "默认启动两套本地Memory依赖、Workflow、API和DSH Web。",
   ].join("\n");
 }
 
@@ -200,22 +201,13 @@ export function createServiceDefinitions({
     role: "web",
     port: FROZEN_PORTS.web,
     command: process.execPath,
-    args: [
-      join(repoRoot, "apps/web/node_modules/vite/bin/vite.js"),
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(FROZEN_PORTS.web),
-      "--strictPort",
-    ],
-    cwd: join(repoRoot, "apps/web"),
-    env: {
-      ...commonEnvironment(repoRoot, withoutVsCodeAutoAttach(environment)),
-      CHAT_API_PROXY_URL: `http://127.0.0.1:${FROZEN_PORTS.api}`,
-    },
+    args: [join(repoRoot, "scripts/dsh/start-web.mjs")],
+    cwd: repoRoot,
+    env: dshWebEnvironment(repoRoot, environment),
     readyUrl: `http://127.0.0.1:${FROZEN_PORTS.web}/`,
-    timeoutMs: 30_000,
-    stopTimeoutMs: 3_000,
+    timeoutMs: 60_000,
+    // rc.6为整棵Cordis应用保留5秒dispose窗口；监督器稍晚再升级SIGKILL。
+    stopTimeoutMs: 7_000,
   });
 
   return services;
@@ -311,6 +303,35 @@ export function runVersionRecoveryCommand({
   });
 }
 
+export function runDshPreparationCommand({
+  root,
+  signal,
+  spawnImpl = spawn,
+  environment = process.env,
+}) {
+  return new Promise((resolveRun, rejectRun) => {
+    const child = spawnImpl(pnpmExecutable(), ["--filter", "@chat/dsh-web", "prepare:profile"], {
+      cwd: root,
+      env: dshWebEnvironment(root, environment),
+      stdio: ["ignore", "pipe", "pipe"],
+      signal,
+    });
+    forwardLines(child.stdout, "prepare", process.stdout);
+    forwardLines(child.stderr, "prepare", process.stderr);
+    child.once("error", rejectRun);
+    child.once("close", (code, childSignal) => {
+      if (code === 0) resolveRun();
+      else {
+        rejectRun(
+          new Error(
+            `DSH Web Profile准备失败（code=${String(code)} signal=${childSignal ?? "none"}）`,
+          ),
+        );
+      }
+    });
+  });
+}
+
 /**
  * 回收登记丢失但仍可严格证明属于同一Git仓库的Chat固定端口进程。
  * 身份识别与最终发信号之间还会由terminateEntry再次校验命令和启动时间。
@@ -367,6 +388,9 @@ export async function prepareLocalRuntime({ root, memory, signal }) {
   if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
   console.log("[chat] 检查活动Workflow版本兼容性…");
   await runVersionRecoveryCommand({ root, signal });
+  if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
+  console.log("[chat] 准备DSH Web Profile与LifeOS Bridge…");
+  await runDshPreparationCommand({ root, signal });
 }
 
 export async function waitForServiceReady({
@@ -535,8 +559,9 @@ export class AppSupervisor {
 
 export function assertRuntimeFiles(root) {
   const required = [
-    "apps/web/node_modules/vite/bin/vite.js",
+    "apps/dsh-web/node_modules/@deepseek-ai/dsh/package.json",
     "apps/api/node_modules/tsx/dist/loader.mjs",
+    "packages/dsh-lifeos-bridge/package.json",
     "packages/workflows/node_modules/tsx/dist/loader.mjs",
   ];
   const missing = required.filter((path) => !existsSync(join(root, path)));

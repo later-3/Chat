@@ -15,7 +15,7 @@ import { findListenerPid, safeProcessName } from "../debug/lib.mjs";
 
 const repoRoot = chatRepoRoot();
 const runRoot = assertChatDataPath(
-  process.env.CHAT_MEMMY_RUN_ROOT ?? resolve(repoRoot, ".data/e2e/memory-planning-real/memmy"),
+  process.env.CHAT_MEMMY_RUN_ROOT ?? resolve(repoRoot, ".data/debug/memmy"),
   repoRoot,
   "memmy run root",
 );

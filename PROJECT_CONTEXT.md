@@ -2,109 +2,47 @@
 
 ## 1. 产品定义
 
-Chat 是一个以对话为入口、由用户持续看护、能够长期推进工作的 AI 协作产品。
+Chat 是以对话为入口的个人操作系统。用户与一个长期协作的Agent团队持续推进生活、工作、项目和兴趣；系统负责规划、人工决定、耐久执行、知识沉淀、证据、交付与治理。
 
-用户通过自然语言表达问题、目标和行动。系统负责把表达转化为可查看的上下文、意图、计划、人工决定、Agent/Tool执行、结果、证据和可恢复状态，并让用户能够随时修正。
+Chat不是一个聊天页面，也不是某个Agent Runtime的外壳。外部开源项目提供成熟界面或能力，Chat只维护自己的产品对象、Workflow和必要Adapter。
 
-用普通话说：用户不只是来问一句、拿一个回答，而是把一件事交给Chat持续推进；Chat要让用户一直知道“已经收到什么、准备做什么、正在做什么、哪里需要我决定、最后交付了什么”。
-
-## 2. 要解决的问题
-
-1. 对话中的目标和决定容易被困在单次聊天里。
-2. 跨天继续时，系统无法稳定恢复用户真正要推进的事项。
-3. 意图、计划、执行、结果和长期状态缺少统一生命周期。
-4. Agent可能在用户没有看清输入、权限和后果时开始行动。
-5. 模型候选容易被误写成正式事实或完成状态。
-6. 断线、进程退出、重复请求和外部结果未知后难以安全恢复。
-
-## 3. 用户实际怎样使用
-
-1. 用户在手机或电脑打开可安装的Chat，输入一句问题、想法或目标。
-2. Chat先保存用户原话，并显示已经接到这件事。
-3. 后台流程开始工作，网页持续显示当前状态和可见进度。
-4. 遇到高影响动作时，Chat先展示计划、输入、权限和后果，让用户修改、同意或拒绝。
-5. 网络中断、页面刷新或稍后回来时，用户从服务端恢复正式内容并继续原来的工作。
-6. 完成后，Chat提交正式消息、产物、证据和状态；模型自述不能代替这些事实。
-7. 有长期价值的知识、方法和反馈在下一次工作中被重新使用和检验。
-
-当前纵向闭环在PWA基础上交付发送消息、可选memmy/Tencent MemoryCore召回、规划、人工修改/批准/拒绝、执行、确定性验证、正式回复和显式Memory导入/对账，并支持API重启后从JSON Product Store恢复。SSE Cursor、跨主机多实例、长期Project/Work、用户规则、真实副作用Tool和多媒介能力仍由后续阶段交付。
-
-## 4. 产品闭环
+## 2. 当前产品链
 
 ```text
-用户输入
--> 保存原始表达
--> 召回并展示相关上下文
--> 形成可修订的目标与计划
--> 选择Workflow并生成执行合同
--> HITL策略决定人工、自动或禁止
--> Vercel Workflow耐久执行
--> pi Agent与受治理Tool完成步骤
--> 结果验证、证据和产品提交
--> 更新工作状态与记忆候选
--> 下一次交互继续推进
+DeepSeek Harness Web
+  -> LifeOS Bridge（展示与命令适配）
+  -> Chat Hono API（公开Query / Command）
+  -> Application + Product Store（权威产品事实）
+  -> Vercel Workflow（耐久流程与暂停恢复）
+  -> pi-agent-core（Planner / Executor节点）
+  -> Product Commit（正式结果）
 ```
 
-## 5. 核心用户保证
+DSH保存的会话日志只用于原生界面与运行恢复，不替代Chat Product Session、Message、Run、Plan、Approval或Decision。浏览器和DSH Client插件都不能直接调用Workflow或pi。
 
-1. 想法能留下：原始输入不会被摘要或模型解释覆盖。
-2. 事项有状态：项目、工作、行动、计划和阻塞可独立于聊天恢复。
-3. 工作可继续：刷新、断线和Worker变化后能回到权威状态。
-4. 执行可看护：用户能看到系统准备做什么、正在做什么和为何暂停。
-5. 结果有证据：完成必须对应可验证结果、来源和Trace。
-6. 高影响可控制：审批绑定当前版本、权限、Hash和后果。
+## 3. 开源复用原则
 
-## 6. 核心对象
+1. 优先使用质量高、持续维护、许可证可接受的完整产品或模块。
+2. 能作为独立服务运行的能力，不拆成自研React组件。
+3. Adapter只负责身份映射、生命周期、鉴权、协议和投影，不复制上游业务实现。
+4. 上游依赖必须固定版本，保留升级测试和退出路径；不在本仓库保存上游源码副本。
+5. Chat核心代码只拥有产品差异：Workflow、事实模型、人工决定、记忆/规则采用和治理。
 
-| 对象 | 责任 |
-|---|---|
-| Principal | 用户、服务或外部主体的身份与授权上下文 |
-| Product Session | 用户可打开、恢复和归档的协作容器 |
-| Interaction | 围绕一次用户输入发生的完整交互 |
-| Message | 已提交的用户、Assistant或Tool可见消息 |
-| Project / Stage / Iteration | 长期目标、阶段性结果与一次有限投入承诺 |
-| Work / Scope / Action | 可交付工作、执行中发现的结构与明确下一行动 |
-| Participant / Contribution / Decision | 谁在做、改了什么以及为什么这样决定 |
-| Resource / Observation / Evidence | 真实代码、文档、脚本、服务及其可验证状态 |
-| Context Package | 本次被采用、排除和裁剪的版本化上下文 |
-| Workflow Definition | 用户可选择的版本化执行图 |
-| Product Run | 用户长期看到的一次执行事实 |
-| Run Attempt | Product Run的一次实际执行尝试 |
-| Approval / Decision | 对特定对象版本、权限和后果的决定 |
-| Tool Execution | 一次Tool请求、副作用、幂等与对账生命周期 |
-| Artifact / Evidence | 可保存的产物及其验证依据 |
-| Memory | 经候选与接受门后可跨交互使用的信息 |
-| Trace | 可观察状态转换、关联、错误和证据引用 |
+## 4. 主要产品对象
 
-这些对象不等同于Workflow、pi、AG-UI或浏览器中的同名类型。
+Product Session、Interaction、Message、Product Run、Run Attempt、Project、Stage、Milestone、Work、Action、Resource、Observation、Evidence、Context Package、Workflow Definition、Plan、Approval、Decision、Tool Execution、Artifact、Memory与Trace。
 
-## 7. 技术边界
+这些对象不等同于DSH Session、Workflow Run、Checkpoint、pi Session或Provider请求。
 
-- React/PWA负责交互和投影，不拥有权威业务状态。
-- Hono API负责协议终止、身份上下文和DTO校验，不拥有产品事务。
-- Application层负责编排用例、权限、状态转换和事务。
+## 5. 已冻结边界
+
+- DeepSeek Harness Web是唯一前端；本仓库不维护第二套Chat UI。
+- Hono只终止协议、建立认证上下文和校验DTO。
+- Application拥有用例、权限、事务、幂等和状态转换。
 - Product Store拥有产品事实。
-- Vercel Workflow拥有耐久执行状态和Checkpoint。
-- pi拥有Agent loop、模型、Tool调用和Runtime事件。
-- Runtime Journal拥有有序、可重放的公开运行事件。
-- AG-UI提供Agent事件语义，不拥有产品资源和业务完成事实。
+- Vercel Workflow拥有耐久控制流与Checkpoint。
+- pi拥有Agent loop、模型和Tool运行，不拥有产品完成事实。
+- 高影响动作必须先形成可读、可修订、版本绑定的Decision。
+- 失败不能产生假成功；未知副作用必须查询、对账或人工处置。
 
-完整合同见[前后端技术选型与实施合同](./docs/architecture/technology-contract.md)。
-
-## 8. 产品范围
-
-目标产品覆盖：
-
-1. Web/PWA连续对话、会话、搜索、分支和恢复。
-2. Project、Stage/Milestone、Iteration、Work/Scope/Action、Resource、Participant、Contribution、Decision、Plan、Evidence与Context。
-3. Workflow选择、DIY、图/Loop、节点配置与运行看护。
-4. HITL、审批策略、Tool治理、取消、重试、恢复和结果未知处置。
-5. 文件、Markdown、HTML、Artifact、Evidence和未来Canvas。
-6. 语音交互、日历、提醒和跨设备通知。
-7. Memory候选、接受、来源、修订、删除和失效传播。
-8. 外部Channel与业务系统的受控集成。
-9. 超级管理员运营看护、隐私边界和审计。
-
-阶段只决定交付顺序，不缩小上述目标。
-
-重要概念的普通话解释见[Chat概念空间](./docs/product/concept-space.md)，项目推进怎样使用真实反馈见[Chat项目飞轮](./docs/product/flywheel.md)。
+当前实现与下一步分别见[PROJECT_STATE.md](./PROJECT_STATE.md)和[PROJECT_PLAN.md](./PROJECT_PLAN.md)。

@@ -1,0 +1,65 @@
+{
+  "name": "@chat/dsh-lifeos-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DeepSeek Harness bridge for Chat's authoritative planning and approval workflow",
+  "type": "module",
+  "main": "dist/dsh-bundle.js",
+  "exports": {
+    ".": {
+      "default": "./dist/dsh-bundle.js"
+    },
+    "./client": {
+      "default": "./dist/client.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "dist/dsh-bundle.js",
+    "dist/client.js",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "license": "UNLICENSED",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-workspace": "^0.1.0-rc.6",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@chat/contracts": "workspace:*",
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-host-webserver": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-llm": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-workspace": "0.1.0-rc.6",
+    "@types/node": "^22.20.0",
+    "@types/react": "^18.3.1",
+    "react": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "tsx": "^4.22.4",
+    "typescript": "^5.9.3",
+    "zod": "^4.4.3"
+  }
+}

@@ -58,7 +58,7 @@
 - Appetite：14天。
 - Payout：从真实前端发送消息并可在固定断点调试。
 - No-Gos：不重做UI、不换框架、不在服务器编译。
-- Rabbit Holes：端口清理、代理路径、PWA缓存、弱服务器。
+- Rabbit Holes：端口清理、DSH Host代理、插件升级、弱服务器。
 
 ### 对象
 
@@ -75,7 +75,7 @@ Project
 ### 压力测试
 
 1. 用户没有说“Shape Up”，Chat仍能生成Appetite/Payout/No-Gos候选。
-2. 开始前的Tasks只是imagined；真实调试发现PWA缓存问题时新增discovered Action。
+2. 开始前的Tasks只是imagined；真实调试发现DSH插件或代理问题时新增discovered Action。
 3. 10个Task完成8个不能表示80%；关键端口未知仍未解决时Scope保持`solving`。
 4. 到期仍存在未知代理问题，系统提出reshape/stop而不是自动延期。
 

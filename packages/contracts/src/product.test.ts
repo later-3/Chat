@@ -10,6 +10,7 @@ import {
 } from "./product.js";
 import { createEmptySnapshot, productSnapshotSchema } from "./product-store.js";
 import {
+  messageResponseSchema,
   runDtoSchema,
   submitDecisionPayloadSchema,
   submitMessagePayloadSchema,
@@ -353,5 +354,25 @@ describe("product api command payloads", () => {
     });
     expect(dto.allowedActions).toContain("approve");
     expect(() => runDtoSchema.parse({ ...dto, workflowRunId: "wfr_1" })).toThrow();
+  });
+
+  it("精确Message Query只接受公开Message envelope", () => {
+    const response = {
+      message: {
+        schemaVersion: "chat-product-api.v1",
+        messageId: "msg_1",
+        sessionId: "psn_1",
+        sessionSequence: 1,
+        role: "assistant",
+        content: { format: "markdown", text: "正式回复" },
+        sourceRunId: "run_1",
+        sha256: HASH_A,
+        createdAt: NOW,
+      },
+    };
+    expect(messageResponseSchema.parse(response)).toEqual(response);
+    expect(() =>
+      messageResponseSchema.parse({ ...response, workflowRunId: "private-runtime-id" }),
+    ).toThrow();
   });
 });

@@ -7,10 +7,10 @@ import { describe, expect, it } from "vitest";
  * 架构依赖方向测试（工程规范§2）。
  *
  * 固定依赖方向：
- *   Web/Hono/Vercel/pi Adapters → Application → Domain + Contracts
+ *   DSH Bridge/Hono/Vercel/pi Adapters → Application → Domain + Contracts
  *
  * Domain不得依赖React、Hono、数据库、Vercel Workflow、AG-UI或pi；
- * Web只依赖公开Contracts，不导入服务端实现。
+ * DSH Bridge只依赖公开Contracts，不导入Chat服务端实现。
  */
 
 const repoRoot = resolve(fileURLToPath(import.meta.url), "../../../..");
@@ -56,7 +56,9 @@ const rules: Record<
     ],
   },
   "packages/workflows": {
-    external: ["hono", "@hono/node-server", "zod", "workflow", "@workflow/world-local"],
+    // Runtime组合根用Undici显式装配Provider连接预算；它不进入Workflow定义、
+    // Product事实或pi适配器，且仍受每个Provider节点的总Abort预算约束。
+    external: ["hono", "@hono/node-server", "zod", "workflow", "@workflow/world-local", "undici"],
     internal: [
       "@chat/contracts",
       "@chat/application",
@@ -90,21 +92,31 @@ const rules: Record<
     internal: ["@chat/contracts", "@chat/application", "@chat/domain"],
     forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@ag-ui\//],
   },
-  "apps/web": {
-    // workbox-window 进入浏览器运行时bundle（PWA注册与更新提示），属于运行时依赖
+  "packages/dsh-lifeos-bridge": {
     external: [
       "react",
-      "react-dom",
-      "@tanstack/react-query",
-      "@xyflow/react",
-      "react-markdown",
-      "workbox-window",
       "zod",
+      "@deepseek-ai/cordis",
+      "@deepseek-ai/dsh-host-webserver",
+      "@deepseek-ai/dsh-llm",
+      "@deepseek-ai/dsh-workspace",
+      "@deepseek-ai/dsh-client-runtime",
+      "@deepseek-ai/dsh-client-ui-conversation",
+      "@deepseek-ai/dsh-client-ui-primitives",
+      "@deepseek-ai/dsh-client-ui-slots",
+      "@deepseek-ai/dsh-client-web-react",
     ],
     internal: ["@chat/contracts"],
-    // 仅测试文件可直接对照Domain纯变换器；生产Web仍只能导入公开Contracts。
-    devInternal: ["@chat/domain"],
-    forbidden: [/^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@ag-ui\//],
+    forbidden: [
+      /^hono$/,
+      /^@hono\//,
+      /^workflow$/,
+      /^@workflow\//,
+      /^@chat\/application(?:\/|$)/,
+      /^@chat\/product-store-json(?:\/|$)/,
+      /^@chat\/workflows(?:\/|$)/,
+      /^@chat\/pi-runtime(?:\/|$)/,
+    ],
   },
   "apps/api": {
     external: ["hono", "@hono/node-server", "zod"],
@@ -126,17 +138,14 @@ const rules: Record<
 /** 测试与构建配置等dev文件额外允许的dev依赖（Mock只能证明调用合同）。 */
 const devOnlyExternal = [
   "vitest",
-  "vite",
-  "@vitejs/plugin-react",
   "react",
   "react-dom",
   "@testing-library/react",
   "@testing-library/dom",
   "@testing-library/user-event",
   "jsdom",
-  // P1.2：PWA构建插件与真实浏览器E2E
-  "vite-plugin-pwa",
   "@playwright/test",
+  "tsdown",
   // B2：workflow bundle预构建脚本（仅开发期）
   "@workflow/builders",
 ];
@@ -181,6 +190,7 @@ describe("架构依赖方向", () => {
           /(^|\/)vitest(\.global-setup)?\.ts$/.test(file) ||
           /(^|\/)vitest(\.[a-z-]+)*\.config\.ts$/.test(file) ||
           /(^|\/)playwright(\.[a-z-]+)*\.config\.ts$/.test(file) ||
+          /(^|\/)tsdown\.config\.ts$/.test(file) ||
           // 构建/开发期脚本（如workflow bundle预构建），不进入运行时
           /(^|\/)scripts\/[^/]+\.ts$/.test(file);
         const source = readFileSync(file, "utf8");

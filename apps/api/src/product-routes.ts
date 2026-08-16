@@ -15,6 +15,7 @@ import {
   createMemoryImportPayloadSchema,
   reconcileMemoryImportPayloadSchema,
   memoryImportIntentIdSchema,
+  messageIdSchema,
   projectCandidateIdSchema,
   projectIdSchema,
   projectActionIdSchema,
@@ -72,6 +73,7 @@ import {
   getProductRun,
   getRunPlans,
   getSession,
+  getSessionMessage,
   getSessionMessages,
   getRunContext,
   listMemoryBackends,
@@ -1635,6 +1637,24 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
         limit,
       });
       return c.json(result.messages, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/sessions/:sessionId/messages/:messageId", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const sessionId = productSessionIdSchema.parse(c.req.param("sessionId"));
+      const messageId = messageIdSchema.parse(c.req.param("messageId"));
+      return c.json(
+        await getSessionMessage(ctx.deps, {
+          principalId: ctx.principalId,
+          sessionId,
+          messageId,
+        }),
+        200,
+      );
     } catch (error) {
       return mapError(c, error);
     }

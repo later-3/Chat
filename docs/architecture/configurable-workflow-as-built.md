@@ -1,8 +1,8 @@
 # Chat 可配置工作流 As-built
 
 > 日期：2026-08-10
-> 状态：P6核心实现已落地并进入发布收口；原始目标中的正式Research与Skill资源纵向明确延期，不能宣称全部原始目标完成
-> 范围：运行投影、受限定义内核、Planning、Note、Rules、Designer、迁移与验收
+> 状态：后端产品事实、运行内核与公开API已落地；旧Web展示层已删除，DSH表面按当前路线逐项接入
+> 范围：运行投影、受限定义内核、Planning、Note、Rules、Definition、迁移与验收
 
 ## 1. 用户结果
 
@@ -11,14 +11,16 @@
 1. **节点能力仍由代码和策略注册。** 浏览器不能上传代码、表达式、HTTP节点或任意Executor。
 2. **已有节点怎样组合、默认启停、选择哪些资源、使用哪个已发布版本，可以在运行前配置。** 发送消息时服务端把选择编译为不可变RunSpec；本次Run随后只读这个版本。
 
-用户现在可以：
+后端当前已经支持：
 
-- 从左到右查看真实Run图，打开节点查看Input、Output、Timeline、Evidence和受控Trace摘要；
-- 在发送前选择已发布Planning或Note流程，配置可选Memory、Project、Rules和审核方式；
-- 复制系统Definition，使用受限操作编辑Sequence、Choice和BoundedLoop，服务端校验后保存、发布、归档或恢复；
+- 查询真实Run、节点Input/Output/Timeline/Evidence和受控Trace摘要；
+- 为Run选择已发布Planning或Note流程以及Memory、Project、Rules和审核策略；
+- 通过严格Command复制、编辑、校验、发布、归档或恢复受限Definition；
 - 在Planning审核中要求修订、批准或拒绝；在Note审核中确认、编辑后确认、要求修订或拒绝；
 - 刷新、进程重启或重复提交后继续同一产品Run，不重复消费已经提交的决定或副作用；
 - 查询正式Note、历史Revision和来源，维护带Revision/Tag/Scope的规则并把精确Rule Revision注入规划。
+
+DSH首个桥接面只交付原生对话与Planning HITL。Run Viewer、Note、Rules和Definition编辑仍是已存在的Chat API能力，但在对应DSH Client插件完成前不能写成当前用户界面已经可操作。
 
 与原始目标对照，本次真正交付的是受限Kernel、运行观察、Memory/Project/Rules配置化Planning、人工审核循环、执行/验证/提交、Note、Rules和Designer。正式Research产品事实与正式Skill集合/授权/冻结/消费链尚未交付；它们保留为原始目标中的明确延期项，不用兼容节点、空资源目录或`optional_unavailable`冒充完成。
 
@@ -26,7 +28,7 @@
 
 ```mermaid
 flowchart LR
-  UI["React PWA\nComposer / Viewer / Designer"] -->|"REST Query / Command"| API["Hono\n认证、strict校验、ETag"]
+  UI["DeepSeek Harness Web\nLifeOS Client插件"] -->|"Bridge Host / REST Query / Command"| API["Hono\n认证、strict校验、ETag"]
   API --> APP["Application\n事务、CAS、权限、投影"]
   APP --> STORE["Product Store v10\n权威产品事实"]
   STORE --> OUTBOX["Outbox\nstart / resume"]
@@ -42,7 +44,7 @@ flowchart LR
 - Product Store拥有Definition、Revision、RunSpec、Run、Decision、Note、Rule和节点产品证据；
 - Workflow Store只拥有耐久步骤、Hook和Checkpoint；
 - pi只产生候选，不拥有审批、正式Note或Run成功事实；
-- 浏览器只保存未发送草稿和服务端查询缓存，不拥有历史与终态；
+- DSH与浏览器只保存会话轨迹、未发送草稿和查询缓存，不拥有产品历史与终态；
 - Trace只记录路径、版本、耗时、错误与对象引用，不保存隐藏推理或产品正文。
 
 Note Application按变化原因拆分：公开Query/DTO投影、普通Note维护、冻结Candidate/Policy纯规则和Node/Manifest投影分别在独立模块；`publishNoteCandidate`、`submitNoteDecision`与`commitConfirmedNote`仍各自保留完整Product Store事务，避免为了压缩函数行数把一个原子提交拆成多个Service调用。
@@ -114,9 +116,9 @@ Note流程为`bounded_loop(Extract -> Classify -> Review) -> Commit`。模型只
 - Note列表、详情、历史、修订、归档/恢复、Candidate审核；
 - Rule/Revision/Tag/Scope/lifecycle与安全Selection摘要。
 
-Query使用ETag/`If-None-Match`/304；Web Query传递AbortSignal并在切换Run时丢弃过期结果。公开DTO不包含Workflow Run ID、Hook Token、pi Session、Provider配置、完整Trace Payload或未授权正文。
+Query使用ETag/`If-None-Match`/304；Bridge Host在切换Run或取消请求时丢弃过期结果。公开DTO不包含Workflow Run ID、Hook Token、pi Session、Provider配置、完整Trace Payload或未授权正文。
 
-写命令使用Command Envelope、CAS revision和稳定commandId。浏览器在网络结果未知时保存pending command；Note修订、归档、恢复和Decision重试复用同一commandId与原payload，不能通过再次点击创建第二个业务事实。
+写命令使用Command Envelope、CAS revision和稳定commandId。Bridge在网络结果未知时保存pending command；Note修订、归档、恢复和Decision重试复用同一commandId与原payload，不能通过再次点击创建第二个业务事实。
 
 ## 7. Checkpoint、恢复与安全
 
@@ -140,25 +142,20 @@ Product Store当前为`chat-product-store.v10`：
 
 JSON Store仍是当前单实例Adapter，不宣称多实例数据库、备份或生产容量。未来替换Store不改变上述产品合同。
 
-## 9. 依赖与退出方式
+## 9. 表面退出方式
 
-| 依赖 | 版本/许可证 | 用途 | 退出方式 |
-| --- | --- | --- | --- |
-| `@xyflow/react` | 12.11.2 / MIT | 左到右只读画布和受控Designer渲染 | 回退现有线性列表/语义编辑器；产品Definition/View不依赖其类型 |
-| `react-markdown` | 10.1.0 / MIT | Note只读Markdown渲染 | 回退安全源码视图；Store/API不受影响 |
-
-Markdown渲染启用`skipHtml`、元素白名单、仅HTTP(S)链接和外链安全属性；不允许图片、iframe、相对URL或`dangerouslySetInnerHTML`。
+Workflow Definition/View、Note和Rules均不依赖具体前端渲染库。旧Web使用过的React Flow与Markdown渲染器已经随旧前端删除；DSH接入必须通过公开Slot/Surface消费现有DTO，不把DSH类型写回产品合同。
 
 ## 10. 验证与剩余边界
 
-自动门覆盖Contracts、Domain、Application、Store、Workflow、Runtime、Web、API、迁移、并发、权限、IDOR、容量、Checkpoint正文扫描和三视口浏览器场景。最终数字记录在`docs/testing/`与PR描述中。
+自动门覆盖Contracts、Domain、Application、Store、Workflow、Runtime、API、迁移、并发、权限、IDOR、容量和Checkpoint正文扫描。旧Web浏览器证据只存在于Git历史；当前用户界面必须重新通过DSH真实浏览器纵向，不能沿用旧UI结论。
 
-当前3条显式真实门均已使用用户已配置的`coding.dashscope.aliyuncs.com`与真实`qwen3.7-plus`通过。Planner、Executor与Note Capture各自保存HTTP 200、唯一请求、工具调用数、耗时和Token Usage的脱敏证据；最终clean HEAD浏览器组合为6/6，且Trace拒绝计数与未提交Workflow operation均为0：
+既有Planner、Executor与Note Capture真实Provider门已通过并保存脱敏证据。DSH切换后的浏览器门以当前根脚本为准；已删除的旧Web Playwright命令不再是当前完成门。
 
 ```text
 pnpm test:provider:bailian
 pnpm test:provider:bailian:note
-pnpm test:e2e:planning-note-designer:real
+pnpm test:e2e:dsh-real
 ```
 
-Research与Skill仍是产品范围延期，不是Provider问题。Designer的375/768/1440px与Choice/Loop同组合门一起走真实API/生产build完成。
+Research与Skill仍是产品范围延期，不是Provider问题。Definition和Run View的DSH表面尚待单独纵向接入。

@@ -1,6 +1,7 @@
 import type {
   ApprovalDto,
   CursorPage,
+  MessageId,
   MessageDto,
   PlanDto,
   PrincipalId,
@@ -118,6 +119,24 @@ export async function getSessionMessages(
       ...(hasMore && last !== undefined ? { nextCursor: encodeCursor(last.sessionSequence) } : {}),
     },
   };
+}
+
+/** 精确读取Run引用的正式Message，不要求调用方扫描或解释cursor。 */
+export async function getSessionMessage(
+  deps: ApplicationDeps,
+  input: {
+    principalId: PrincipalId;
+    sessionId: ProductSessionId;
+    messageId: MessageId;
+  },
+): Promise<{ message: MessageDto }> {
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  assertSessionAccess(deps, snapshot, input.sessionId, input.principalId);
+  const message = snapshot.entities.messages[input.messageId];
+  if (message === undefined || message.sessionId !== input.sessionId) {
+    throw notFound("Message不存在");
+  }
+  return { message: toMessageDto(message) };
 }
 
 function loadRunContext(

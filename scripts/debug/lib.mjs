@@ -38,7 +38,7 @@ export const ROLE_COMMAND_FRAGMENTS = Object.freeze({
   workflow: ["runtime-main.ts", "tsx"],
   memory: ["start-fixed-memmy.mjs"],
   memoryCore: ["start-fixed-memorycore.mjs"],
-  web: ["vite", "43110"],
+  web: ["scripts/dsh/start-web.mjs"],
 });
 
 /** 记录启动时间与ps lstart的允许偏差（防御PID复用）。 */

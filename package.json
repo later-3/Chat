@@ -24,8 +24,7 @@
     "debug:replay": "pnpm --filter @chat/api exec tsx src/replay-main.ts",
     "test:provider:bailian": "pnpm --filter @chat/pi-runtime test:provider:bailian",
     "test:provider:bailian:note": "pnpm --filter @chat/pi-runtime test:provider:bailian:note",
-    "test:e2e:planning-execution:real": "pnpm debug:preclean && node scripts/e2e/preflight-planning-real.mjs && pnpm --filter @chat/workflows build:bundles && node scripts/e2e/assert-clean-runtime-evidence.mjs && pnpm --filter @chat/web exec playwright test --config playwright.planning-real.config.ts",
-    "test:e2e:planning-note-designer:real": "pnpm --filter @chat/workflows exec tsx ../../scripts/e2e/preflight-planning-note-designer-real.ts && pnpm debug:preclean && pnpm --filter @chat/workflows build:bundles && node scripts/e2e/assert-clean-runtime-evidence.mjs && pnpm --filter @chat/web exec playwright test --config playwright.planning-note-designer-real.config.ts",
+    "test:e2e:dsh-real": "node scripts/e2e/assert-dsh-real-script.mjs && pnpm debug:preclean && pnpm --filter @chat/dsh-web exec pnpm run test:e2e:real",
     "memory:prepare:fixed": "node scripts/memory/prepare-fixed-memmy.mjs",
     "memory:prepare:memorycore-fixed": "node scripts/memory/prepare-fixed-memorycore.mjs",
     "test:memory:scripts": "node --test scripts/memory/fixed-memmy.test.mjs",
@@ -33,10 +32,7 @@
     "test:memory:memmy-real-import": "pnpm test:memory:memmy-real-http",
     "test:memory:memmy-response-drop": "pnpm --filter @chat/workflows build:bundles && pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-response-drop.ts",
     "test:memory:memorycore-real-http": "pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-fixed-memorycore-http.ts",
-    "test:e2e:memory-planning:real": "node scripts/e2e/run-memory-planning-real.mjs planning",
-    "test:e2e:memory-import:real": "node scripts/e2e/run-memory-planning-real.mjs import",
-    "test:e2e:memorycore:real": "node scripts/e2e/run-memory-planning-real.mjs tencent",
-    "test:e2e:project-intake:real": "node scripts/e2e/run-project-intake-real.mjs"
+    "test:e2e:planning-execution:real": "pnpm test:e2e:dsh-real"
   },
   "devDependencies": {
     "eslint": "^10.8.0",

@@ -19,8 +19,14 @@ const debugging = read("docs/debug/local-debug.md");
 const navigation = `${interaction}\n${debugging}`;
 
 const mainChainSymbols = [
-  { file: "apps/web/src/real/use-real-chain.ts", symbol: "sendMessage" },
-  { file: "apps/web/src/api/client.ts", symbol: "apiSubmitMessage" },
+  {
+    file: "packages/dsh-lifeos-bridge/src/adapter.ts",
+    symbol: "LifeosLlmAdapter",
+  },
+  {
+    file: "packages/dsh-lifeos-bridge/src/chat-client.ts",
+    symbol: "submitMessage",
+  },
   {
     file: "packages/application/src/session-message-use-cases.ts",
     symbol: "submitUserMessage",
@@ -30,7 +36,14 @@ const mainChainSymbols = [
     file: "packages/workflows/src/planning-execution-workflow.ts",
     symbol: "planningExecutionWorkflow",
   },
-  { file: "apps/web/src/api/client.ts", symbol: "apiSubmitDecision" },
+  {
+    file: "packages/dsh-lifeos-bridge/src/bridge-service.ts",
+    symbol: "LifeosBridgeService",
+  },
+  {
+    file: "packages/dsh-lifeos-bridge/src/chat-client.ts",
+    symbol: "submitDecision",
+  },
   {
     file: "packages/application/src/plan-decision-use-cases.ts",
     symbol: "submitPlanDecision",
@@ -62,10 +75,10 @@ describe("当前实现文档与调试导航", () => {
     expect(debugging).toContain("文件 + 函数/路由 + 观察变量");
   });
 
-  it("关键跨层源码保留中文调试导航注释", () => {
+  it("关键跨层源码保留事实边界注释", () => {
     const files = [
-      "apps/web/src/components/RealWorkspace.tsx",
-      "apps/web/src/real/use-real-chain.ts",
+      "packages/dsh-lifeos-bridge/src/adapter.ts",
+      "packages/dsh-lifeos-bridge/src/bridge-service.ts",
       "apps/api/src/product-routes.ts",
       "apps/api/src/outbox-dispatcher.ts",
       "apps/api/src/internal-runtime-router.ts",
@@ -73,7 +86,9 @@ describe("当前实现文档与调试导航", () => {
       "packages/workflows/src/workflow-result-steps.ts",
     ];
     for (const file of files) {
-      expect(read(file), `${file} 应解释关键调试边界`).toContain("调试导航");
+      expect(read(file), `${file} 应解释关键事实边界`).toMatch(
+        /(?:调试导航|Product Store|产品事实)/u,
+      );
     }
   });
 });

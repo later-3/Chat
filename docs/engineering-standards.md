@@ -5,8 +5,9 @@
 目标目录：
 
 ```text
-apps/web
+apps/dsh-web
 apps/api
+packages/dsh-lifeos-bridge
 packages/contracts
 packages/domain
 packages/application
@@ -23,7 +24,7 @@ packages/testing
 ## 2. 依赖方向
 
 ```text
-Web/Hono/Vercel/pi Adapters
+DSH Bridge/Hono/Vercel/pi Adapters
             ↓
        Application
             ↓
@@ -33,7 +34,7 @@ Web/Hono/Vercel/pi Adapters
 - Domain不依赖React、Hono、数据库、Vercel Workflow、AG-UI或pi。
 - Application不依赖具体Router和页面。
 - Workflow调用Application Port或Activity Adapter，不直接改产品表。
-- Web只依赖公开Contracts，不导入服务端实现。
+- DSH Client只依赖浏览器安全合同；Bridge Host只调用公开Chat API，不导入Application或Store实现。
 
 通过架构测试固定依赖方向。
 
@@ -64,7 +65,7 @@ Web/Hono/Vercel/pi Adapters
 
 ## 6. 实时事件
 
-以下条款约束目标Runtime Journal/SSE实现。当前仓库的`packages/realtime`只拥有严格Trace和Replay，Web仍使用受控Query轮询；在SSE纵向任务完成前不得把本节当作已交付事实。
+以下条款约束目标Runtime Journal/SSE实现。当前仓库的`packages/realtime`只拥有严格Trace和Replay，DSH Bridge仍使用受控Query轮询；在SSE纵向任务完成前不得把本节当作已交付事实。
 
 1. Runtime Journal是公开事件顺序的唯一Owner。
 2. 每个Product Run的sequence严格递增。
@@ -90,7 +91,7 @@ Web/Hono/Vercel/pi Adapters
 4. Workflow重放、Hook和Checkpoint测试。
 5. pi Adapter真实事件归一化测试。
 6. SSE断线、Cursor重放、缺口和重复测试。
-7. React加载、错误、空态、窄屏、键盘和可访问性测试。
+7. DSH Host/Client插件的加载、错误、窄屏、键盘和可访问性测试。
 8. Playwright端到端正常与恢复场景。
 
 Mock只能证明调用合同；真实Workflow、真实pi和真实浏览器证据不能被Mock代替。
@@ -100,7 +101,7 @@ Mock只能证明调用合同；真实Workflow、真实pi和真实浏览器证据
 以下只触发责任审查，不机械拆文件：
 
 - TypeScript模块超过800行。
-- React组件或Hook超过500行。
+- Client插件组件或Hook超过500行。
 - 函数超过80行。
 
 拆分必须依据状态所有权、事务边界、失败恢复和变化原因。禁止万能`utils`、Repository-per-table和Service-per-method。
@@ -115,7 +116,7 @@ Mock只能证明调用合同；真实Workflow、真实pi和真实浏览器证据
 - 许可证与维护状态。
 - 退出或替换方式。
 
-升级AG-UI、Vercel Workflow或pi之前，必须先运行对应事件、Hook、Checkpoint、Tool和恢复合同测试。
+升级DeepSeek Harness、code-server、Vercel Workflow或pi之前，必须先运行对应插件、代理、事件、Hook、Checkpoint、Tool和恢复合同测试。
 
 ## 11. 中文注释与当前实现文档
 

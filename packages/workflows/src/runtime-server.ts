@@ -19,6 +19,7 @@ import {
   loadRuntimeBuildEvidence,
 } from "./runtime-version-evidence.js";
 import { isSupportedProductWorkflowRunnerFamily } from "./planning-runner-dispatch.js";
+import { installWorkflowNetworkPolicy } from "./workflow-network-policy.js";
 
 /**
  * Workflow Runtime进程（固定端口43112）。
@@ -66,108 +67,135 @@ export interface WorkflowRuntimeServerOptions {
 }
 
 export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServerOptions) {
-  const hasWorkflowData = await directoryContainsFiles(options.workflowDataDir);
-  const bindings = await RuntimeBindingStore.open(options.bindingsPath, {
-    allowCreate: !hasWorkflowData,
-  });
-  if (!hasWorkflowData && bindings.hasDurableBindings()) {
-    throw new Error("Runtime Binding存在但Workflow耐久数据缺失，拒绝用陈旧映射启动");
-  }
-  const buildEvidence = await loadRuntimeBuildEvidence(options.bundleDir);
-  let traceEmitFailures = 0;
-  const trace =
-    options.traceSink !== undefined
-      ? (event: TraceEventInput) => {
-          try {
-            options.traceSink?.emit(event);
-          } catch (error) {
-            traceEmitFailures += 1;
-            console.error(
-              `[trace] emit_failed code=trace.emit_failed owner=workflow event=${event.eventName} cause=${traceFailureCause(error)} total=${String(traceEmitFailures)}`,
-            );
+  // Provider可能在world.start恢复活动Run时立即发请求，因此必须在读取/恢复任何
+  // Runtime状态之前装配连接策略。策略属于进程网络边界，不进入Product Store。
+  const networkPolicy = installWorkflowNetworkPolicy();
+  let openedWorld: Awaited<ReturnType<typeof setupWorkflowWorld>> | undefined;
+  try {
+    const hasWorkflowData = await directoryContainsFiles(options.workflowDataDir);
+    const bindings = await RuntimeBindingStore.open(options.bindingsPath, {
+      allowCreate: !hasWorkflowData,
+    });
+    if (!hasWorkflowData && bindings.hasDurableBindings()) {
+      throw new Error("Runtime Binding存在但Workflow耐久数据缺失，拒绝用陈旧映射启动");
+    }
+    const buildEvidence = await loadRuntimeBuildEvidence(options.bundleDir);
+    let traceEmitFailures = 0;
+    const trace =
+      options.traceSink !== undefined
+        ? (event: TraceEventInput) => {
+            try {
+              options.traceSink?.emit(event);
+            } catch (error) {
+              traceEmitFailures += 1;
+              console.error(
+                `[trace] emit_failed code=trace.emit_failed owner=workflow event=${event.eventName} cause=${traceFailureCause(error)} total=${String(traceEmitFailures)}`,
+              );
+            }
+          }
+        : () => undefined;
+
+    const memoryRegistry = createMemoryBackendRegistry(process.env);
+    setWorkflowRuntimeContext({
+      api: createRuntimeApiClient({ baseUrl: options.apiBaseUrl, credential: options.credential }),
+      bindings,
+      memoryBackends: memoryRegistry,
+      memoryImportBackends: memoryRegistry,
+      trace,
+      now: () => new Date().toISOString(),
+      bailian: loadBailianConfig(process.env),
+      planner: runPiPlanner,
+      noteCapture: runPiNoteCapture,
+      executor: runPiExecutor,
+      ...options.runtimeOverrides,
+    });
+
+    const baseWorld = await setupWorkflowWorld({
+      dataDir: options.workflowDataDir,
+      bundleDir: options.bundleDir,
+      recoverActiveRuns: true,
+      beforeStart: async () => {
+        for (const { productRunId, binding } of bindings.listWorkflowBindings()) {
+          const run = getRun(binding.workflowRunId);
+          if (!(await run.exists)) {
+            throw new Error("Runtime Binding引用的Workflow Run不存在，拒绝恢复");
+          }
+          const status = String(await run.status);
+          if (["completed", "failed", "cancelled"].includes(status)) continue;
+          if (!isSupportedProductWorkflowRunnerFamily(binding.runnerFamily)) {
+            throw new Error("活动Product Workflow的Runner family不受当前构建支持，拒绝恢复");
+          }
+          await assertRunVersionMatchesBuild({
+            workflowDataDir: options.workflowDataDir,
+            productRunId,
+            buildEvidence,
+          });
+        }
+        for (const { binding } of bindings.listMemoryImportBindings()) {
+          const run = getRun(binding.workflowRunId);
+          if (!(await run.exists)) {
+            throw new Error("Memory Import Binding引用的Workflow Run不存在，拒绝恢复");
+          }
+          const status = String(await run.status);
+          if (["completed", "failed", "cancelled"].includes(status)) continue;
+          if (
+            binding.workflowDefinitionVersion !== MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION ||
+            !buildEvidence.workflowDefinitionVersions.includes(binding.workflowDefinitionVersion)
+          ) {
+            throw new Error("活动Memory Import Workflow版本与当前构建不一致，拒绝恢复");
           }
         }
-      : () => undefined;
+        for (const { binding } of bindings.listProjectIntakeBindings()) {
+          const run = getRun(binding.workflowRunId);
+          if (!(await run.exists)) {
+            throw new Error("Project Intake Binding引用的Workflow Run不存在，拒绝恢复");
+          }
+          const status = String(await run.status);
+          if (["completed", "failed", "cancelled"].includes(status)) continue;
+          const supportedProjectVersion =
+            binding.workflowDefinitionVersion === PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION ||
+            binding.workflowDefinitionVersion === PROJECT_ADVANCEMENT_WORKFLOW_DEFINITION_VERSION;
+          if (
+            !supportedProjectVersion ||
+            !buildEvidence.workflowDefinitionVersions.includes(binding.workflowDefinitionVersion)
+          ) {
+            throw new Error("活动Project Candidate Workflow版本与当前构建不一致，拒绝恢复");
+          }
+        }
+      },
+    });
+    openedWorld = baseWorld;
 
-  const memoryRegistry = createMemoryBackendRegistry(process.env);
-  setWorkflowRuntimeContext({
-    api: createRuntimeApiClient({ baseUrl: options.apiBaseUrl, credential: options.credential }),
-    bindings,
-    memoryBackends: memoryRegistry,
-    memoryImportBackends: memoryRegistry,
-    trace,
-    now: () => new Date().toISOString(),
-    bailian: loadBailianConfig(process.env),
-    planner: runPiPlanner,
-    noteCapture: runPiNoteCapture,
-    executor: runPiExecutor,
-    ...options.runtimeOverrides,
-  });
+    let closePromise: Promise<void> | undefined;
+    const close = () => {
+      closePromise ??= (async () => {
+        try {
+          await baseWorld.close();
+        } finally {
+          await networkPolicy.close();
+        }
+      })();
+      return closePromise;
+    };
+    const world = { ...baseWorld, close };
 
-  const world = await setupWorkflowWorld({
-    dataDir: options.workflowDataDir,
-    bundleDir: options.bundleDir,
-    recoverActiveRuns: true,
-    beforeStart: async () => {
-      for (const { productRunId, binding } of bindings.listWorkflowBindings()) {
-        const run = getRun(binding.workflowRunId);
-        if (!(await run.exists)) {
-          throw new Error("Runtime Binding引用的Workflow Run不存在，拒绝恢复");
-        }
-        const status = String(await run.status);
-        if (["completed", "failed", "cancelled"].includes(status)) continue;
-        if (!isSupportedProductWorkflowRunnerFamily(binding.runnerFamily)) {
-          throw new Error("活动Product Workflow的Runner family不受当前构建支持，拒绝恢复");
-        }
-        await assertRunVersionMatchesBuild({
-          workflowDataDir: options.workflowDataDir,
-          productRunId,
-          buildEvidence,
-        });
-      }
-      for (const { binding } of bindings.listMemoryImportBindings()) {
-        const run = getRun(binding.workflowRunId);
-        if (!(await run.exists)) {
-          throw new Error("Memory Import Binding引用的Workflow Run不存在，拒绝恢复");
-        }
-        const status = String(await run.status);
-        if (["completed", "failed", "cancelled"].includes(status)) continue;
-        if (
-          binding.workflowDefinitionVersion !== MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION ||
-          !buildEvidence.workflowDefinitionVersions.includes(binding.workflowDefinitionVersion)
-        ) {
-          throw new Error("活动Memory Import Workflow版本与当前构建不一致，拒绝恢复");
-        }
-      }
-      for (const { binding } of bindings.listProjectIntakeBindings()) {
-        const run = getRun(binding.workflowRunId);
-        if (!(await run.exists)) {
-          throw new Error("Project Intake Binding引用的Workflow Run不存在，拒绝恢复");
-        }
-        const status = String(await run.status);
-        if (["completed", "failed", "cancelled"].includes(status)) continue;
-        const supportedProjectVersion =
-          binding.workflowDefinitionVersion === PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION ||
-          binding.workflowDefinitionVersion === PROJECT_ADVANCEMENT_WORKFLOW_DEFINITION_VERSION;
-        if (
-          !supportedProjectVersion ||
-          !buildEvidence.workflowDefinitionVersions.includes(binding.workflowDefinitionVersion)
-        ) {
-          throw new Error("活动Project Candidate Workflow版本与当前构建不一致，拒绝恢复");
-        }
-      }
-    },
-  });
-
-  const app = createWorkflowRuntimeHttpApp({
-    workflowDataDir: options.workflowDataDir,
-    credential: options.credential,
-    bindings,
-    world,
-    buildEvidence,
-    trace,
-  });
-  return { app, world, bindings };
+    const app = createWorkflowRuntimeHttpApp({
+      workflowDataDir: options.workflowDataDir,
+      credential: options.credential,
+      bindings,
+      world,
+      buildEvidence,
+      trace,
+    });
+    return { app, world, bindings, close };
+  } catch (error) {
+    try {
+      await openedWorld?.close();
+    } finally {
+      await networkPolicy.close();
+    }
+    throw error;
+  }
 }
 
 /**

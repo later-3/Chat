@@ -26,8 +26,8 @@ jobs:
       - run: pnpm test
       - run: pnpm audit --prod
 
-  pwa-e2e:
-    # P1.2完成门：从生产构建启动vite preview，用真实Chromium验证Service Worker离线场景
+  dsh-smoke:
+    # 唯一前端完成门：真实准备固定DSH profile，启动Host并确认LifeOS插件路由已挂载。
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,17 +40,22 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @chat/web exec playwright install --with-deps chromium
-      - run: pnpm --filter @chat/web test:e2e:pwa
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-report
-          path: apps/web/playwright-report/
-          retention-days: 7
+      - run: pnpm --filter @chat/dsh-lifeos-bridge build
+      - run: pnpm --filter @chat/dsh-web prepare:profile
+      - name: dsh host and bridge start
+        run: |
+          pnpm --filter @chat/dsh-web start > /tmp/chat-dsh-web.log 2>&1 &
+          dsh_pid=$!
+          trap 'kill "$dsh_pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do
+            sleep 1
+            if curl -fsS http://127.0.0.1:43110/ | grep -q "DeepSeek Harness"; then break; fi
+            if [ "$i" = "60" ]; then cat /tmp/chat-dsh-web.log; exit 1; fi
+          done
+          curl -fsS http://127.0.0.1:43110/lifeos/sessions/ci-probe | grep -q '"schemaVersion":"chat-dsh-lifeos-bridge.v1"'
 
   dev-smoke:
-    # 完成门：干净检出、不构建dist时，Web/API dev均可启动。
+    # 完成门：干净检出、不预建全仓dist时，API与DSH Web均可启动。
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -73,13 +78,14 @@ jobs:
           done
           exit 1
 
-      - name: web dev starts without build
+      - name: dsh web dev starts from managed profile
         run: |
-          (cd apps/web && pnpm dev --port 5299 --strictPort &)
-          for i in $(seq 1 30); do
+          CHAT_API_BASE_URL=http://127.0.0.1:3210 pnpm --filter @chat/dsh-web dev > /tmp/chat-dsh-dev.log 2>&1 &
+          dsh_pid=$!
+          trap 'kill "$dsh_pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do
             sleep 1
-            if curl -fsS localhost:5299/ | grep -q "<title>Chat</title>"; then break; fi
-            if [ "$i" = "30" ]; then exit 1; fi
+            if curl -fsS localhost:43110/ | grep -q "DeepSeek Harness"; then break; fi
+            if [ "$i" = "60" ]; then cat /tmp/chat-dsh-dev.log; exit 1; fi
           done
-          # Web必须从显式public入口消费合同，避免Trace/Runtime私有Schema进入浏览器bundle。
-          curl -fsS "localhost:5299/src/App.tsx" | grep -q "packages/contracts/src/public.ts"
+          curl -fsS localhost:43110/lifeos/sessions/dev-smoke | grep -q '"run":null'

@@ -1,213 +1,37 @@
 # Chat 项目计划
 
-## 1. 整体目标
+## 目标
 
-让用户在手机或电脑上打开一个可安装的 Chat，把一句想法交给系统后，能够：
+把Chat建设成用户长期使用的个人Agent操作系统：对话是入口，项目、工作流、记忆、规则、文件、开发工具、浏览器和多Agent协作都是同一产品事实链上的能力。
 
-1. 保留自己的原始表达。
-2. 看见系统已经接到、正在处理还是遇到问题。
-3. 在重要动作前查看并修改系统准备做的事。
-4. 刷新、断线或稍后回来时继续原来的工作。
-5. 得到有来源、有结果、有状态的正式交付，而不只是模型说“完成了”。
-6. 让这次工作中有复用价值的知识、方法和反馈帮助下一次工作。
+## 当前路线
 
-## 2. 用户场景与阶段对应
+### F1 · DSH唯一前端
 
-| 用户场景 | 用户看到的结果 | 交付阶段 |
-|---|---|---|
-| 我用手机或电脑打开 Chat | 页面适配屏幕，可以安装到桌面；离线时仍能打开外壳和编辑草稿 | P1 |
-| 我发送一条消息 | 消息被服务端接收，网页显示后台工作状态，最后出现正式回复 | P1 |
-| 页面刷新或网络短暂中断 | 已提交消息从服务端恢复，正在运行的进度可以重新接上 | P1 |
-| 系统准备执行重要动作 | 我能看懂、修改、同意或拒绝，旧决定和重复点击不会误执行 | P2 |
-| 服务或Worker退出 | 工作不会因为某个进程退出就丢失，可以从耐久状态继续 | P3 |
-| 我跨天推进一件长期事项 | Chat能恢复Project、Work、计划和本轮真正需要的上下文 | P4 |
-| 系统调用真实工具并交付文件或结果 | 副作用不重复，结果有证据，未知结果会进入对账或人工处理 | P5 |
-| 我查看或组合工作流程 | 可以理解运行路径，安全发布新版本，历史运行不被新定义污染 | P6 |
-| 我使用文件、语音、日历、通知或Canvas | 不同媒介进入同一个受治理的工作闭环 | P7 |
-| 产品对外运营 | 身份、权限、外部入口、审计、备份和运营看护完整 | P8 |
+交付固定版本的DeepSeek Harness Web、LifeOS桥接插件和统一启动器；保留DSH原生侧栏、会话、Composer、模型/权限入口与插件机制。删除旧`apps/web`、Agent Canvas副本和过期UI原型/归档。
 
-阶段编号表示产品能力逐步完整，不代表一次开发任务。
+完成门：DSH原生页面真实启动；发送创建Chat Session/Message/Run；Plan与Approval来自Chat Query；决定通过Chat Command提交；正式Assistant Message来自Product Store；刷新不会重复命令。
 
-## 3. 开发任务怎样控制大小
+### F2 · Code Workbench
 
-1. 一个开发任务对应一个独立、可合并的PR。
-2. 一个任务只证明一个主要结果；正常流程和它直接相关的失败或恢复一起验收。
-3. 默认按单人`0.5～2`个开发日拆分，这只是拆分尺度，不是工期承诺；预计超过2日就继续拆。
-4. 一次最多引入一个新的运行时依赖家族；无关的依赖升级单独处理。
-5. 技术决定放到真正需要它的子任务中，不再用几个抽象“入口决定”阻塞整个阶段。
-6. 每个任务都写清楚：用户场景、交付结果、不做什么、完成门和当前保证边界。
+把固定版本code-server作为独立Hosted Workbench运行。DSH只提供全屏入口与返回动作；LifeOS Host负责生命周期、Workspace映射、鉴权边界、HTTP/WebSocket代理和健康检查。
 
-## 4. P0：工程与合同骨架
+首期能力：Files、Editor、Terminal、Git状态、Diff和VS Code扩展。首期不拆code-server UI，也不让code-server拥有Chat产品Session/Run。
 
-状态：已完成并通过PR #1合并，合并提交`f1274c769bf97dca8834a5d42ff57d1883f01b02`。
+完成门：真实Workspace可读写；Terminal命令在受控Workspace/UID下执行；Git状态与Diff可见；DSH返回后保留原会话；停止应用后进程与端口全部回收。
 
-已交付pnpm TypeScript Workspace、共享合同、React/Hono空应用、架构依赖测试、CI和版本证据。P0只证明工程骨架可运行，不代表已经有Chat业务能力。
+### F3 · Browser Provider
 
-## 5. P1：第一次可用的Chat闭环
+选择带实时人机共用视图的独立Browser Provider；Agent工具与用户界面必须绑定同一浏览器Session。浏览器运行在Local Host或远程Sandbox，DSH只挂载表面。
 
-> 2026-08-07调整：用户批准B2纵向任务书后，P1.3～P1.8不再按旧顺序小PR执行；B2一次打通JSON Store、Workflow、pi、HITL、Product Commit和最小前端。下列P1.3～P1.8保留为历史拆分依据，其中SSE Cursor仍未实现。
+### F4 · 长期个人系统
 
-### 5.1 阶段目标
+继续交付Project/Stage/Milestone/Iteration/Work、长期Memory、规则、日历、提醒、Artifact/Evidence、多个Agent角色和跨设备恢复。
 
-用户可以安装并打开 Chat，发送一条消息，看见后台处理进度，得到一条正式回复；刷新页面或短暂断线后，仍能从服务端恢复已提交内容和当前状态。
+## 开发原则
 
-P1是一个阶段目标，拆成下面8个独立开发任务，不作为一个大PR交付。
-
-### P1.1 响应式Chat与工作流界面
-
-**用户场景**：我第一次用手机或电脑打开Chat，希望一边对话，一边看见当前工作流正在做什么、走到哪一步。
-
-**交付结果**：建立响应式对话区和工作流运行区。桌面同时显示两个区域；手机通过“对话 / 工作流”切换。工作流区使用本地fixture验证等待、运行、完成和失败状态。
-
-**本任务不做**：不新增或修改后端，不运行真实Workflow，不读取真实消息或运行状态，不生成AI回复，不做离线缓存。完整任务边界见[P1.1任务书](./docs/tasks/p1.1-responsive-chat-workflow-shell.md)。
-
-**完成门**：桌面能同时看见对话区和工作流区；375px手机能切换两个完整视图；默认显示真实空态，不把fixture伪装成运行结果；键盘、可访问名称和基本页面测试通过。
-
-### P1.2 可安装PWA与离线边界
-
-**用户场景**：我希望把 Chat 安装到桌面或手机；断网时还能打开页面并继续编辑未发送草稿。
-
-**交付结果**：加入Manifest、图标、Service Worker和离线外壳；草稿按本地页面保存。
-
-**本任务不做**：不缓存正式审批，不假装离线发送成功，不做推送通知和后台同步。
-
-**完成门**：应用可安装；离线可打开外壳和编辑草稿；离线发送被明确阻止或提示失败，不出现假成功；前端在开发机或CI构建后作为静态产物上传，弱服务器不执行编译。完整执行边界见[P1.2任务书](./docs/tasks/p1.2-installable-pwa-offline-boundary.md)。
-
-### P1.3 消息由服务端保存并可读回
-
-**用户场景**：我发送一条消息后刷新网页，希望消息仍从服务端出现，而不是只留在当前页面内存里。
-
-**交付结果**：实现最小Session、Message和Run规则，提供发送命令与查询接口，并用可替换、版本化的JSON Product Store保存本阶段事实。现有聊天输入框通过正式Message Command发送，不再用本地成功消息冒充服务端事实。
-
-**本任务不做**：不启动Workflow、不生成Assistant回复，不宣称JSON Store支持多实例、生产级并发、备份或灾难恢复。
-
-**完成门**：发送后可查询；浏览器刷新和API正常重启后重新读取；相同`commandId`重复发送不产生第二条消息或第二次运行；损坏JSON失败关闭且不覆盖原文件。
-
-### P1.4 后台Workflow能独立跑通
-
-**用户场景**：消息提交后，系统能启动一次真正的后台流程，而不是在HTTP请求里假装做完。
-
-**交付结果**：用确定性步骤跑通一次Vercel Workflow，把Product Run与后台运行私下关联；流程产生一条固定回答候选，并通过Application提交为正式消息。
-
-**本任务开始前要说清楚**：本地和CI运行真实的Vercel Workflow接入，流程内容使用无私有凭据的确定性步骤，避免把Mock调用误当成真实接入已经可运行。
-
-**本任务不做**：不接pi、不调用模型、不做SSE实时推送。
-
-**完成门**：一次Product Run只启动一次后台流程；重复命令不重复启动；只有固定候选提交成功后才产生Assistant Message和Product Run成功，Workflow或产品提交失败都不产生假回复。
-
-### P1.5 网页显示后台状态
-
-**用户场景**：我发送消息后，希望页面明确显示“已接收、处理中、已回复或失败”。
-
-**交付结果**：Web通过服务端Query把运行状态、正式结果和可执行错误提示接入P1.1已经建立的工作流运行区。
-
-**本任务不做**：暂不追求逐字输出和断线事件重放；可以先用受控刷新读取状态。
-
-**完成门**：正常、失败、页面刷新三种场景的状态都来自服务端；浏览器不从超时或本地缓存猜测成功。
-
-### P1.6 实时进度与断线续接
-
-**用户场景**：后台工作有进展时页面自动更新；网络短暂断开后，不会重新执行工作，也不会从头重复显示全部进度。
-
-**交付结果**：加入Chat自己的有序事件记录、SSE和Cursor续接，Web使用同一条公开事件流更新P1.1工作流区域中的当前步骤和活动投影。
-
-**本任务不做**：不暴露Vercel Workflow或pi的内部身份，不建立第二条Agent专用前端通道。
-
-**完成门**：SSE断开不取消工作；使用Cursor重连后按序续接；重连不重复启动Workflow。
-
-### P1.7 接入一次无工具的Agent回答
-
-**用户场景**：后台流程能够让Agent根据用户消息生成一条回答候选。
-
-**交付结果**：在Workflow中接入一个无Tool能力的pi Agent节点，把可见事件转换成Chat采用的AG-UI兼容事件，并投影到工作流区域的Agent步骤中。
-
-**本任务开始前要说清楚**：本地开发和CI实际使用同一份经过确认的pi代码。纯规则测试不产生付费调用，但真实完成门必须使用百炼按量付费或业务空间API与真实`qwen3.7-plus`；凭据不进入仓库、Trace或普通测试输出。这是本任务的技术验收项，不再阻塞P1.1～P1.6。
-
-**本任务不做**：不开放编码Tool、不执行外部副作用、不把Agent说“完成了”当成产品成功。
-
-**完成门**：一次Run只调用一次pi/模型；真实百炼`qwen3.7-plus`脱敏证据通过；公开事件不泄漏pi会话、Provider内部身份或隐藏推理；失败不会生成正式回复。
-
-### P1.8 整条链验收与失败加固
-
-**用户场景**：我希望整条链在重复提交、页面刷新、网络断线和内部失败时都不会重复执行、丢消息或显示假成功。
-
-**交付结果**：完成发送、Workflow、Agent候选、正式提交、Query恢复、SSE续接和浏览器投影的整条场景测试，并补齐发现的直接失败边界。
-
-**本任务不做**：不加入HITL、外部Tool、Memory、Workflow编辑器、语音、日历或Canvas。
-
-**完成门**：发送、处理中、正式回复、刷新恢复、SSE重连和重复提交全链通过；Workflow或Agent成功但产品提交失败时不显示假消息或假成功；公开响应不泄漏内部Runtime身份。
-
-### 5.2 P1完成后已经保证什么
-
-1. 一个可安装、响应式的PWA入口。
-2. 一条消息能够触发后台Workflow和无Tool Agent回答。
-3. 用户能看见服务端状态与实时进度。
-4. 页面刷新、API正常重启和SSE短暂断线不会重复执行；已提交Session和Message可以从版本化JSON Store恢复。
-5. 正式回复只由产品提交产生，内部Runtime身份不会泄漏给浏览器。
-
-### 5.3 P1仍不保证什么
-
-1. 多API实例、数据库级事务、备份和机器故障后的产品数据恢复。
-2. Workflow Worker退出后的完整Checkpoint恢复与生产接管。
-3. 人工审批、外部副作用Tool、结果未知对账。
-4. 长期Project/Work、Memory、文件、语音、日历、Canvas和推送通知。
-
-这些能力分别由后续阶段交付，不能在P1任务中顺手扩张。
-
-## 6. 后续阶段目标
-
-### P2 人工决定
-
-系统在重要动作前暂停，让用户查看、修改、同意或拒绝；重复、过期、旧版本和越权决定安全失败。
-
-任务规划场景采用[单Workflow任务规划与执行设计](./docs/architecture/planning-execution-workflow.md)：pi规划、Plan Revision、人工决定循环和pi执行位于同一个Vercel Workflow Run中；浏览器只提交Chat Decision Command。
-
-该场景固定分为两个交付步骤：先实现并调通JSON Product Store、Trace、固定端口VS Code调试、后端API、Workflow、pi与Product Commit，同时只把现有聊天输入框最小接到Message Command以触发Workflow；后端合同和真实百炼`qwen3.7-plus`完整场景通过后，再把计划审核和执行进度接入Web。详细拆分见[工作流后端闭环任务书](./docs/tasks/planning-execution-backend-closure.md)。
-
-### P3 耐久恢复
-
-选择并实现持久Product Store，补齐Checkpoint、Worker接管、Attempt血缘、取消、重试、重启和结果未知处置，证明服务或Worker退出后仍可恢复。
-
-### P4 长期工作与上下文
-
-交付Project、Work、Action、Plan、Context Package和Workflow版本选择，使用户能够跨Session继续同一件事。
-
-### P5 Tool、Artifact与Evidence
-
-受治理地执行真实动作，保存产物和证据；外部副作用具有幂等、查询、对账和人工处理边界。
-
-### P6 Workflow工厂与可视化
-
-在P1已有工作流运行区之外，交付稳定节点、组合结构、定义版本、发布校验和Workflow定义图/编辑能力；图只投影真实定义或运行事实。
-
-2026-08-10已完成实现前审核包：[技术研究](./docs/architecture/configurable-workflow-research.md)、[阶段总纲与验证闭包](./docs/tasks/configurable-workflow-stage-program.md)、[详细架构与方案](./docs/architecture/configurable-workflow-design.md)、[42项全任务地图](./docs/tasks/configurable-workflow-task-map.md)、S1～S7逐任务方案/测试书及[整体自审](./docs/tasks/configurable-workflow-self-review.md)。用户已批准整套设计并授权连续完成开发、测试、自检和最终单一PR；实现必须如实处理尚未具备的Project Context/Rules依赖，不能用假数据绕过。
-
-2026-08-10已按批准顺序落地P6核心实现，实际边界见[可配置工作流As-built](./docs/architecture/configurable-workflow-as-built.md)：Store v10、运行投影/Viewer、受限Definition Kernel、Memory/Project/Rules配置化Planning、Note、Rules、Choice/BoundedLoop Designer和v1→v10验收已落地。原始G3中的正式Research产品事实与正式Skill集合/授权/冻结/Runner消费尚未交付，明确延期且不计入“全部目标完成”；最终PR前需要用户验收该范围处置。用户已配置并授权的Coding Endpoint通过精确HTTPS Host安全门；真实`qwen3.7-plus` Provider、Note Provider及Planning + Note + Designer组合门均已在clean HEAD通过，不能再写成环境阻断。
-
-### P7 多媒介与PWA增强
-
-在P1已有PWA基础上增加推送通知、允许缓存的只读内容和跨设备恢复，并逐步加入文件、语音、日历、提醒和Canvas。
-
-### P8 身份、外部入口与运营
-
-补齐身份、权限、外部Channel、运营后台、访问审计、备份、保留、SLO、告警和灾难恢复。
-
-## 7. 当前唯一下一任务
-
-PR #23已经合入`main`。当前即时下一任务不是启动新的生产纵向，而是从已归档的人—Agent工作台研究中选择一个具体场景，继续做可视化交互优化与用户审核；用户明确授权前不修改生产UI。若后续进入生产适配，第一项候选任务是统一现有`WorkspaceShell`与`RealWorkspace`壳层，并把右侧工作区改为按需打开；完整范围见[当前前端工作台适配审计](./docs/design/references/current-chat-frontend-workbench-adaptation-audit-v0.1.md)。
-
-以下内容保留为此前Project Solution路线的历史依据；与当前P6收口冲突时，以上述当前任务和`PROJECT_STATE.md`为准。
-
-B2已经通过PR #7合入，M1真实memmy查询通过PR #10合入，M2真实显式导入通过PR #11合入；M3腾讯MemoryCore第二真实后端和VS Code调试收口也已合入。下一阶段仍围绕三个用户结果推进：
-
-1. 用户可以在Workflow中按配置从真实Memory服务查询或导入记忆，并看见来源、选择和结果。
-2. 用户使用Chat推进项目时，系统能够结合Shape Up、BMAD及既有Project产品研究，持续维护长期Project、阶段目标、Milestone、Iteration、Work/Scope/Action、真实资源、参与者、贡献、决定、证据和下一步，同时允许不同规模与类型选择不同方法。
-3. 用户可以维护带标签和场景范围的个人规则，在对话中主动选择或由系统合理召回，并把最终采用的规则带入规划节点。
-
-M3合入后的下一阶段是Project Solution，先完成[方法论](./docs/product/project-solution-methodology.md)、[架构](./docs/architecture/project-solution.md)与[场景验证](./docs/product/project-solution-scenario-validation.md)，再依次交付：PS1对话建项/真实Resource/项目账本，PS2 Stage/Milestone/Iteration/任务管理，PS3 Project Context/真实Resource推进，PS4维护/Correct Course/多项目注意力。Shape Up控制小团队的投入、边界、未知和Circuit Breaker；BMAD控制软件Artifact、Story准备度、开发、QA与Correct Course；不复制任一项目的产品形态。
-
-PS1已经完成对话建项、真实Resource、项目账本和最小管理候选闭环；PS2.1又完成Stage Goal / Milestone、Work / Action推进与负责人Project Update，并由PR #22合入`main`。完整PS1范围与证据见[PS1 Project Intake](./docs/tasks/ps1-project-intake-ledger-vertical-slice.md)。当前唯一下一实现任务是已批准的PS2.2 Shaping Proposal / Iteration Commitment；随后由PS2.3推进Scope / Gate / Review。Rules按R1→R2在Project Solution完成后的下一个Store版本推进。
-
-统一应用启动与调试属于进入P1前的工程维护任务：仓库级`pnpm dev/dev:debug`和单一VS Code入口已完成本地实现与真实F5验收，待独立PR；它不改变上述产品任务顺序。
-
-这三个结果形成若干0.5～2日、可独立合并的纵向任务。不得把整个阶段塞进一个大PR，也不得只交付孤立Schema或假服务；每个外部集成必须有真实服务测试，每个面向用户的里程碑必须有真实模型和浏览器E2E。
+1. 一次只交付一个可体验纵向；前端切换与Workbench是两个独立提交。
+2. 外部项目优先以固定版本服务或插件使用，不复制上游源码。
+3. 每个Adapter写清所有权、权限、幂等、故障恢复、升级与退出路径。
+4. 面向用户的纵向必须用真实服务和浏览器E2E证明，不能用截图或Mock代替。
+5. Git历史就是删除内容的归档，不在当前树保留“old”“archive”“legacy”目录。

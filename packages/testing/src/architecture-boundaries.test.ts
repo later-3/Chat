@@ -20,8 +20,8 @@ describe("跨层依赖与事实所有权架构门", () => {
     expect(violations).toEqual([]);
   });
 
-  it("Web只依赖公开合同，不导入Application、Store、Workflow或pi Runtime", async () => {
-    const files = await productionTypescriptFiles("apps/web/src");
+  it("DSH Bridge只依赖公开合同，不导入Application、Store、Workflow或pi Runtime", async () => {
+    const files = await productionTypescriptFiles("packages/dsh-lifeos-bridge/src");
     const violations = await findImportViolations(files, [
       /^@chat\/contracts$/u,
       /^@chat\/application(?:\/|$)/u,
@@ -57,8 +57,8 @@ describe("跨层依赖与事实所有权架构门", () => {
     expect(violations).toEqual([]);
   });
 
-  it("公开Web源码不出现私有Runtime身份字段", async () => {
-    const files = await productionTypescriptFiles("apps/web/src");
+  it("DSH Bridge源码不出现私有Runtime身份字段", async () => {
+    const files = await productionTypescriptFiles("packages/dsh-lifeos-bridge/src");
     const violations = await findTextViolations(files, [
       /workflowRunId/u,
       /hookToken/u,

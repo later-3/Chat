@@ -11,6 +11,7 @@ import {
   createServiceDefinitions,
   parseDevArgs,
   reclaimOwnedPortOccupants,
+  runDshPreparationCommand,
   runPreparationCommand,
   runVersionRecoveryCommand,
   sharedCacheRootFromGitCommonDir,
@@ -19,6 +20,7 @@ import {
 import {
   findOwnedChatPortProcesses,
   findOwnedChatProcessForPort,
+  roleForFrozenPort,
   sharedDebugDirFromGitCommonDir,
 } from "../debug/lib.mjs";
 import {
@@ -66,6 +68,30 @@ test("debug只为Chat拥有的API与Workflow开放Inspector", () => {
   assert.doesNotMatch(args.memmy, /--inspect/u);
   assert.doesNotMatch(args.memorycore, /--inspect/u);
   assert.doesNotMatch(args.web, /--inspect/u);
+});
+
+test("Web角色使用受管DSH Node Host且私有Bridge状态不进入命令与探针", () => {
+  const services = createServiceDefinitions({
+    root: ROOT,
+    memory: "all",
+    environment: {
+      CHAT_DSH_STATE_PATH: "/private/state.json",
+      VSCODE_INSPECTOR_OPTIONS: "private-attach-options",
+      NODE_OPTIONS: "--require /vscode/bootloader.js",
+    },
+  });
+  const web = services.find((service) => service.id === "web");
+  assert.equal(web.command, process.execPath);
+  assert.deepEqual(web.args, ["/workspace/chat/scripts/dsh/start-web.mjs"]);
+  assert.equal(web.cwd, ROOT);
+  assert.equal(web.env.DSH_HOME, "/workspace/chat/.data/dsh-home");
+  assert.equal(web.env.DSH_WEB_PORT, "43110");
+  assert.equal(web.env.CHAT_API_BASE_URL, "http://127.0.0.1:43111");
+  assert.equal(web.env.CHAT_DSH_STATE_PATH, "/private/state.json");
+  assert.equal(web.stopTimeoutMs, 7_000);
+  assert.equal(web.env.VSCODE_INSPECTOR_OPTIONS, undefined);
+  assert.equal(web.env.NODE_OPTIONS, undefined);
+  assert.doesNotMatch(`${web.args.join(" ")} ${web.readyUrl}`, /private|state\.json|43111/u);
 });
 
 test("同一Git仓库的worktree共享固定源码缓存", () => {
@@ -132,6 +158,42 @@ test("登记丢失时只识别同仓库且命令与固定端口角色匹配的Ch
     },
   );
   assert.equal(wrongCommand, null);
+});
+
+test("未知端口即使命中DSH wrapper签名也不参与自动回收", () => {
+  assert.equal(roleForFrozenPort(43999), null);
+  const owned = findOwnedChatProcessForPort(
+    ROOT,
+    { port: 43999, pid: 88 },
+    {
+      describe: () => ({
+        startedAtMs: Date.parse("2026-08-09T08:00:00.000Z"),
+        command: "node /workspace/chat/scripts/dsh/start-web.mjs",
+      }),
+      workingDirectory: () => ROOT,
+      findParentPid: () => 1,
+      findGitCommonDir: () => "/workspace/chat-main/.git",
+    },
+  );
+  assert.equal(owned, null);
+});
+
+test("登记丢失时DSH Node Host仍可按固定Web端口与仓库归属识别", () => {
+  const owned = findOwnedChatProcessForPort(
+    ROOT,
+    { port: 43110, pid: 89 },
+    {
+      describe: () => ({
+        startedAtMs: Date.parse("2026-08-09T08:00:00.000Z"),
+        command: "node /workspace/chat/scripts/dsh/start-web.mjs",
+      }),
+      workingDirectory: () => ROOT,
+      findParentPid: () => 1,
+      findGitCommonDir: () => "/workspace/chat-main/.git",
+    },
+  );
+  assert.equal(owned?.role, "web");
+  assert.equal(owned?.pid, 89);
 });
 
 test("监听子进程没有角色签名时可回溯到同仓库Memory包装器", () => {
@@ -246,6 +308,36 @@ test("版本恢复检查复用仓库入口且不继承VS Code自动附加环境"
   assert.equal(receivedEnvironment.VSCODE_INSPECTOR_OPTIONS, undefined);
   assert.equal(receivedEnvironment.NODE_OPTIONS, undefined);
   assert.equal(receivedEnvironment.CHAT_REPO_ROOT, ROOT);
+});
+
+test("DSH准备命令复用workspace入口并固定worktree私有Home", async () => {
+  let receivedArgs;
+  let receivedEnvironment;
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  await runDshPreparationCommand({
+    root: ROOT,
+    environment: {
+      DSH_HOME: "/Users/example/.dsh",
+      NODE_OPTIONS: "--require /vscode/bootloader.js",
+      VSCODE_INSPECTOR_OPTIONS: "attach-options",
+    },
+    spawnImpl(_command, args, options) {
+      receivedArgs = args;
+      receivedEnvironment = options.env;
+      queueMicrotask(() => child.emit("close", 0, null));
+      return child;
+    },
+  });
+  assert.deepEqual(receivedArgs, ["--filter", "@chat/dsh-web", "prepare:profile"]);
+  assert.equal(receivedEnvironment.DSH_HOME, "/workspace/chat/.data/dsh-home");
+  assert.equal(
+    receivedEnvironment.CHAT_DSH_STATE_PATH,
+    "/workspace/chat/.data/dsh-lifeos-bridge/state.json",
+  );
+  assert.equal(receivedEnvironment.VSCODE_INSPECTOR_OPTIONS, undefined);
+  assert.equal(receivedEnvironment.NODE_OPTIONS, undefined);
 });
 
 test("浏览器身份必须同时命中可执行文件与worktree专属profile", () => {

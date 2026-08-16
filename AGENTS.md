@@ -8,9 +8,9 @@ Chat 是独立开发、独立运行、独立运营并持续演进的完整产品
 
 ## 2. 当前阶段
 
-前端、后端、Workflow 与 Agent Runtime 技术基线已经冻结。P0、P1.1、P1.2及B1调试/Trace基线均已合并；仓库已有TypeScript Workspace、响应式PWA、严格Trace与固定端口调试能力。
+Chat的产品后端、Workflow与Agent Runtime基线已经冻结。唯一产品前端是固定版本的DeepSeek Harness Web，由本仓库维护的LifeOS桥接插件接入Chat公开Query/Command；仓库不再维护第二套自研Chat页面，也不包含Agent Canvas/OpenHands前端。
 
-P1响应式PWA与B2真实规划—确认—执行纵向闭环已经完成并合入`main`。当前进入“长期上下文与知识复用”阶段：真实接入多个Memory项目；结合Shape Up、BMAD及已审核Project产品研究，建设Chat自己的Project Solution，包括长期目标、Stage/Milestone、Iteration、Work/Scope/Action、真实Resource、Participant/Contribution/Decision/Evidence和推进/维护Workflow；随后实现带标签的用户规则集并注入规划Workflow。实现前必须先复核固定参考证据，形成可审核的方法论、架构、场景验证和纵向任务书；每个实现任务使用独立worktree、分支和PR，并以真实服务、真实模型和浏览器E2E证明用户结果。
+当前优先完成并验证DSH前端切换与Code Workbench。随后继续长期上下文、Project Solution、规则与Memory纵向。每个实现任务使用独立worktree、分支和PR，并以真实服务、真实模型和浏览器E2E证明用户结果。
 
 当前事实以[PROJECT_STATE.md](./PROJECT_STATE.md)为准，技术边界以[技术合同](./docs/architecture/technology-contract.md)为准。
 
@@ -30,12 +30,12 @@ P1响应式PWA与B2真实规划—确认—执行纵向闭环已经完成并合�
 
 ## 4. 已冻结架构规则
 
-1. 前端使用 React + TypeScript + Vite，目标形态为响应式 PWA。
+1. 唯一前端使用固定版本DeepSeek Harness Web；`packages/dsh-lifeos-bridge`是唯一Chat前端集成面。不得另建自研Chat壳或复制DSH源码。
 2. 后端使用 Node.js + TypeScript；Hono只负责HTTP、认证上下文、校验和流式传输，不拥有产品事务。
 3. Vercel Workflow负责耐久步骤、暂停、恢复、重放和运行时Checkpoint。
 4. `pi-agent-core`作为Workflow中的Agent节点；它不拥有产品会话、产品运行、审批、记忆或完成事实。
 5. 产品资源通过REST Query/Command访问；写命令必须携带幂等身份和预期revision。
-6. 活动运行通过一条Chat拥有的SSE事件流投影；Agent事件使用AG-UI兼容类型，不再建立第二套竞争的Agent事件协议。
+6. 当前活动运行由桥接插件通过Chat公开Query恢复；未来SSE仍只能是Chat拥有的事件投影，不能建立第二套产品事实。
 7. Product Store拥有权威产品事实；Workflow Store、pi Session、事件Journal和浏览器缓存分别只拥有自己的运行责任。
 8. 浏览器不得直接调用Workflow或pi，不得把Workflow Run ID、Hook Token或pi Session ID作为授权或产品身份。
 9. HITL决定先经过Chat权限、版本、Hash和幂等校验并提交产品事实，再由后端恢复Workflow Hook。
@@ -46,8 +46,9 @@ P1响应式PWA与B2真实规划—确认—执行纵向闭环已经完成并合�
 目标代码按以下责任拆分：
 
 ```text
-apps/web           React交互与服务端状态投影
+apps/dsh-web       固定DSH Web启动、Profile与运行编排
 apps/api           Hono协议入口与组合根
+packages/dsh-lifeos-bridge DSH Host/Client桥接、HITL投影与Workbench表面
 packages/contracts 网络合同与事件类型
 packages/domain    产品对象、状态机与不变量
 packages/application 用例协调与事务边界
@@ -74,7 +75,7 @@ packages/testing   合同、Fixture与测试工具
 ## 7. 工程规则
 
 1. TypeScript开启`strict`，网络边界和外部结果必须运行时校验。
-2. Router、React页面和Workflow Step不直接写产品数据库；Application Coordinator拥有用例事务。
+2. Router、DSH Client插件和Workflow Step不直接写产品数据库；Application Coordinator拥有用例事务。
 3. 不建立万能Service、Repository-per-table、Service-per-method或无真实替换价值的接口。
 4. 日志放在命令入口、状态转换、外部调用、暂停/恢复、对账和失败边界；不得记录密钥、完整Provider Payload或隐藏推理。
 5. 修改行为同时更新合同测试、状态机测试和端到端场景。
@@ -86,7 +87,7 @@ packages/testing   合同、Fixture与测试工具
 
 ## 8. 源码证据
 
-涉及pi能力时，优先读取固定本地源码`/Users/xulater/Code/opc-os/pi`及其`AGENTS.md`、类型、测试和示例。涉及Vercel Workflow、AG-UI、Hono、React和Vite时使用匹配版本官方文档或源码，不凭模型记忆猜API。
+涉及pi能力时，优先读取固定本地源码`/Users/xulater/Code/opc-os/pi`及其`AGENTS.md`、类型、测试和示例。涉及DeepSeek Harness、Vercel Workflow、Hono、React和Vite时使用匹配版本官方文档或固定源码，不凭模型记忆猜API。
 
 参考项目只为真实覆盖范围背书，不决定Chat的产品对象和事实所有权。
 

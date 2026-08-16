@@ -1,7 +1,0 @@
-# Official Heptabase screenshots are external, local-only research evidence.
-source-official-*
-comparison-*
-
-# Browser captures are generated during QA. Own-work final captures are copied
-# to docs/design/screenshots when they are intentionally frozen.
-implementation-*

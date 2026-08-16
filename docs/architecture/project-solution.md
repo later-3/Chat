@@ -506,7 +506,7 @@ Application按用例拆分：
 - Decision/Update/Change Commands
 - Project Context Builder
 
-Router、Workflow Step、pi Adapter和React不能直接修改Project Store。所有写命令携带commandId与expected revision；高影响Candidate绑定全部相关对象版本和Hash。
+Router、Workflow Step、pi Adapter和DSH Client插件不能直接修改Project Store。所有写命令携带commandId与expected revision；高影响Candidate绑定全部相关对象版本和Hash。
 
 ## 12. UI信息架构
 

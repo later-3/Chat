@@ -233,7 +233,7 @@ Memory Import Command
 
 ### 7.2 管理页
 
-在现有响应式 PWA 内增加一致的侧栏/抽屉页面：
+在DSH原生界面内通过公开Slot或顶级Surface增加一致的入口：
 
 1. Memory 后端：只展示配置状态、能力和健康，不编辑密钥。
 2. Projects：项目组合、Stage Goal/Milestone、当前Iteration、真实资源、参与者、Work/Scope/待办、负责人Update、贡献、决定、观察、证据和变更候选。
