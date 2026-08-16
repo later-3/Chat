@@ -5,7 +5,7 @@
 1. DeepSeek Harness Web是唯一前端，不再维护旧`apps/web`或Agent Canvas。
 2. `@chat/dsh-lifeos-bridge`是DSH与Chat公开Query/Command之间的唯一适配层。
 3. DSH Session仅是UI/运行缓存；Chat Product Store仍拥有Session、Message、Run、Plan、Approval和Decision。
-4. 当前实施顺序是：DSH切换完成并提交，再完成Code Workbench并单独提交。
+4. DSH切换与Code Workbench已分别完成；下一纵向是Browser Provider。
 
 ## 开始工作前
 
@@ -22,4 +22,4 @@
 
 ## 下一完成门
 
-运行`pnpm dev`后，固定端口上的DSH原生页面能够完成Chat消息、Plan/HITL与正式结果；随后从DSH打开Code Workbench，真实验证Files、Terminal、Git和Diff。两步分别形成独立提交。
+运行`pnpm dev`后，`127.0.0.1:43110`上的DSH原生页面能够完成Chat消息、Plan/HITL与正式结果；从侧边栏底部的全局入口打开Code Workbench，即使停留在空白新会话也可真实使用Files、Editor、Terminal、Git和Diff。下一完成门是把实时人机共用Browser Provider以同样的服务/Adapter方式接入。

@@ -6,7 +6,8 @@
 
 ```text
 Browser
-  -> DSH Web Host
+  -> LifeOS Web Gateway（127.0.0.1:43110）
+  -> DSH Web Host（内部43114）
      -> DSH原生Client插件图
      -> LifeOS Client插件（Plan/HITL/Workbench表面）
      -> LifeOS Host插件（LLM Adapter、同源桥接路由）
@@ -64,12 +65,17 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 
 ## 6. Workbench边界
 
-Code Workbench不是Chat API的一部分。DSH Host负责启动和代理固定版本code-server；Client插件只打开全屏Surface。code-server拥有编辑器临时状态和Workspace内进程，不拥有Chat Session、Run或完成事实。
+Code Workbench不是Chat API或某个Chat Session的一部分。Client插件把唯一入口注册到DSH公开的`sidebar.footer.action` root list slot，因此空白Hero也可直接打开全屏Surface；不得再在Session Header注册第二个入口。统一启动器管理固定版本code-server。code-server只监听受管0700临时根内的0600 Unix socket；Web Gateway把`localhost:43110/workbench/code/`的HTTP与任意WebSocket代理到该socket，并拒绝该虚拟Host访问DSH与`/lifeos`。浏览器没有可直连的code-server TCP地址，因此DNS rebinding不能绕过Gateway取得Files或Terminal。返回对话只隐藏Surface，不卸载iframe和终端连接。
+
+code-server拥有编辑器临时状态和Workspace内进程，不拥有Chat Session、Run或完成事实。当前是本机单用户能力：清洗环境和隔离HOME不等于OS沙箱，Terminal与扩展仍拥有当前用户的主机权限；第三方扩展必须视为高权限代码，远程或多用户场景必须改用容器/独立UID Provider。
+
+真实完成门无条件记录浏览器全部WebSocket，不能在监听阶段先过滤。白名单只有两类固定源码路径：DSH主源`127.0.0.1:43110`的`/api/events.mux`或`/api/events.host`，以及Workbench隔离源`localhost:43110/workbench/code/stable-<固定commit>`；两类必须分别至少出现一条，其他origin/path一律失败。Terminal生命周期证据是当前用户拥有的`0600`文件，包含唯一argv canary、PID、完整命令、OS启动时间、cwd、code-server child与`instanceId`，任何PID复用或身份偏差都失败关闭，且不向无法证明身份的进程发送信号。
 
 ## 7. 调试入口
 
 - DSH Host/Client桥接：`packages/dsh-lifeos-bridge`
 - DSH启动与Profile：`apps/dsh-web`、`scripts/dsh`
+- Workbench运行：`scripts/workbench`
 - Chat公开路由：`apps/api/src/product-routes.ts`
 - Message用例：`packages/application/src/session-message-use-cases.ts`
 - Decision用例：`packages/application/src/planning-use-cases.ts`

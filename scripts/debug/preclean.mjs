@@ -1,4 +1,5 @@
 import {
+  assertRetiredPortsEmpty,
   checkPorts,
   frozenPortList,
   loadPidEntries,
@@ -6,6 +7,7 @@ import {
   terminateOwnedChatPortProcesses,
   terminateRecorded,
 } from "./lib.mjs";
+import { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
 
 /**
  * chat-debug:preclean（任务书§8.2）。
@@ -19,10 +21,16 @@ import {
  * 6. 端口全部释放才退出码0。
  */
 
+// 退役43113即使属于旧受管wrapper也不自动终止，必须先于任何清理失败关闭。
+await assertRetiredPortsEmpty();
 const entries = loadPidEntries();
 const results = terminateRecorded(entries);
 for (const result of results) {
   console.log(`[preclean] ${result.role} pid=${result.pid}: ${result.action}`);
+}
+const workbenchRecovery = await reconcileManagedWorkbench(repoRoot());
+if (workbenchRecovery.action !== "no-evidence") {
+  console.log(`[preclean] Workbench transport=unix-socket: ${workbenchRecovery.action}`);
 }
 
 let occupied = checkPorts();

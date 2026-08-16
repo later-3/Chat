@@ -17,6 +17,8 @@ test("manifest exposes the native DSH bundle patch and client factory contract",
   assert.deepEqual(dsh.client?.inject, [
     "@deepseek-ai/dsh-client-runtime",
     "@deepseek-ai/dsh-client-ui-conversation",
+    "@deepseek-ai/dsh-client-ui-layout",
+    "@deepseek-ai/dsh-client-ui-sidebar",
   ]);
 });
 

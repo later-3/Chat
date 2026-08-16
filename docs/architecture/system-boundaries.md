@@ -28,3 +28,7 @@
 5. HITL先提交Chat Decision，再由后端私下恢复Workflow Hook。
 6. code-server命令成功不自动成为Chat交付；需要产品事实时必须通过受治理Command/Evidence进入Chat。
 7. 外部副作用结果未知时进入查询、对账或人工处置，不能普通重试。
+
+## Workbench权限边界
+
+当前code-server是本机可信用户的Hosted App，不是安全沙箱。隔离HOME、清洗环境、固定Workspace入口和不同Browser Origin用于减少意外耦合与凭据泄漏，但不能撤销当前OS用户本来拥有的文件、进程和网络权限。安装扩展等同于运行高权限本地代码；远程或多人使用前必须引入容器/独立UID、认证、Workspace grant和审计。

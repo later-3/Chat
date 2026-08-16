@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import {
   FROZEN_PORTS,
   ROLE_COMMAND_FRAGMENTS,
+  assertRetiredPortsEmpty,
   checkPorts,
   frozenPortList,
   loadPidEntries,
@@ -15,15 +16,24 @@ import {
 } from "../debug/lib.mjs";
 import { ensureFixedMemmy } from "../memory/fixed-memmy.mjs";
 import { ensureFixedMemoryCore } from "../memory/fixed-memorycore.mjs";
-import { dshWebEnvironment } from "../dsh/profile-runtime.mjs";
+import { assertDshCliRuntimeClosure, dshWebEnvironment } from "../dsh/profile-runtime.mjs";
+import {
+  codeServerRunRoot,
+  ensureFixedCodeServer,
+  probeCodeServerSocketReady,
+  resolveCodeServerTemporaryParent,
+} from "../workbench/fixed-code-server.mjs";
+import { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
+export { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
 import { cleanupOwnedDebugBrowser } from "./browser-lifecycle.mjs";
 
 export const MEMORY_PROFILES = Object.freeze(["all", "memmy", "memorycore"]);
+export const WORKBENCH_PROFILES = Object.freeze(["off", "code-server"]);
 const READY_POLL_INTERVAL_MS = 250;
 const READY_REQUEST_TIMEOUT_MS = 1_500;
 
 export function parseDevArgs(argv) {
-  const options = { debug: false, help: false, memory: "all" };
+  const options = { debug: false, help: false, memory: "all", workbench: "code-server" };
   for (const argument of argv) {
     if (argument === "--debug") {
       options.debug = true;
@@ -41,6 +51,14 @@ export function parseDevArgs(argv) {
       options.memory = value;
       continue;
     }
+    if (argument.startsWith("--workbench=")) {
+      const value = argument.slice("--workbench=".length);
+      if (!WORKBENCH_PROFILES.includes(value)) {
+        throw new Error(`--workbench只支持 ${WORKBENCH_PROFILES.join("、")}`);
+      }
+      options.workbench = value;
+      continue;
+    }
     throw new Error(`未知参数：${argument}`);
   }
   return options;
@@ -48,10 +66,10 @@ export function parseDevArgs(argv) {
 
 export function devUsage() {
   return [
-    "用法: pnpm dev [-- --memory=all|memmy|memorycore]",
-    "      pnpm dev:debug [-- --memory=all|memmy|memorycore]",
+    "用法: pnpm dev [-- --memory=all|memmy|memorycore] [--workbench=off|code-server]",
+    "      pnpm dev:debug [-- --memory=all|memmy|memorycore] [--workbench=off|code-server]",
     "",
-    "默认启动两套本地Memory依赖、Workflow、API和DSH Web。",
+    "默认启动两套本地Memory依赖、Workflow、API、code-server Workbench和DSH Web。",
   ].join("\n");
 }
 
@@ -77,6 +95,19 @@ export function resolveSharedFixedCacheRoot(root, environment = process.env) {
   }
 }
 
+/**
+ * 本地launcher、独立status与prepare必须各自从同一repo/env确定合同，不能依赖launcher
+ * 曾经临时改写自身process.env。显式配置仍可用；默认cache按Git common-dir共享。
+ */
+export function resolveLocalWorkbenchRuntimeContract(root, environment = process.env) {
+  const repoRoot = resolve(root);
+  return Object.freeze({
+    CHAT_CODE_WORKBENCH_RUN_ROOT: codeServerRunRoot(repoRoot, environment),
+    CHAT_CODE_WORKBENCH_TEMP_PARENT: resolveCodeServerTemporaryParent(environment),
+    CHAT_FIXED_SOURCE_CACHE_ROOT: resolveSharedFixedCacheRoot(repoRoot, environment),
+  });
+}
+
 function withoutVsCodeAutoAttach(environment) {
   const isolated = { ...environment };
   if (isolated.VSCODE_INSPECTOR_OPTIONS !== undefined) {
@@ -97,10 +128,15 @@ export function createServiceDefinitions({
   root,
   debug = false,
   memory = "all",
+  workbench = "code-server",
   environment = process.env,
 }) {
   if (!MEMORY_PROFILES.includes(memory)) throw new Error(`未知Memory Profile：${memory}`);
+  if (!WORKBENCH_PROFILES.includes(workbench)) {
+    throw new Error(`未知Workbench Profile：${workbench}`);
+  }
   const repoRoot = resolve(root);
+  const workbenchRuntime = resolveLocalWorkbenchRuntimeContract(repoRoot, environment);
   const memoryCoreEnvironment = join(repoRoot, "scripts/debug/load-memorycore-debug-env.mjs");
   const providerEnvironment = join(repoRoot, "scripts/debug/load-provider-env.mjs");
   const services = [];
@@ -196,6 +232,46 @@ export function createServiceDefinitions({
     stopTimeoutMs: 3_000,
   });
 
+  if (workbench === "code-server") {
+    const workbenchEnvironment = {};
+    for (const name of [
+      "PATH",
+      "LANG",
+      "LC_ALL",
+      "LC_CTYPE",
+      "TZ",
+      "SHELL",
+      "TERM",
+      "TMPDIR",
+      "TMP",
+      "TEMP",
+    ]) {
+      const value = environment[name];
+      if (typeof value === "string" && value !== "") workbenchEnvironment[name] = value;
+    }
+    services.push({
+      id: "workbench",
+      role: "workbench",
+      command: process.execPath,
+      args: [join(repoRoot, "scripts/workbench/start-fixed-code-server.mjs")],
+      cwd: repoRoot,
+      env: {
+        ...workbenchEnvironment,
+        CHAT_REPO_ROOT: repoRoot,
+        CHAT_CODE_WORKBENCH_ROOT: repoRoot,
+        ...workbenchRuntime,
+      },
+      readyDescription: "受管0600 Unix socket /healthz",
+      readyProbe: ({ timeoutMs }) =>
+        probeCodeServerSocketReady(repoRoot, {
+          environment: workbenchRuntime,
+          timeoutMs,
+        }),
+      timeoutMs: 30_000,
+      stopTimeoutMs: 7_000,
+    });
+  }
+
   services.push({
     id: "web",
     role: "web",
@@ -203,7 +279,11 @@ export function createServiceDefinitions({
     command: process.execPath,
     args: [join(repoRoot, "scripts/dsh/start-web.mjs")],
     cwd: repoRoot,
-    env: dshWebEnvironment(repoRoot, environment),
+    env: dshWebEnvironment(repoRoot, {
+      ...environment,
+      CHAT_CODE_WORKBENCH_ENABLED: workbench === "code-server" ? "1" : "0",
+      ...workbenchRuntime,
+    }),
     readyUrl: `http://127.0.0.1:${FROZEN_PORTS.web}/`,
     timeoutMs: 60_000,
     // rc.6为整棵Cordis应用保留5秒dispose窗口；监督器稍晚再升级SIGKILL。
@@ -340,19 +420,36 @@ export function reclaimOwnedPortOccupants(root, occupied, dependencies) {
   return terminateOwnedChatPortProcesses(root, occupied, dependencies);
 }
 
-export async function preflightLocalRuntime(root) {
+export async function preflightLocalRuntime(
+  root,
+  { workbench = "code-server" } = {},
+  { retiredPortGuard = assertRetiredPortsEmpty } = {},
+) {
+  if (!WORKBENCH_PROFILES.includes(workbench)) {
+    throw new Error(`未知Workbench Profile：${workbench}`);
+  }
+  // 退役43113永远只检查不回收，且必须发生在PID登记/legacy evidence清理之前。
+  await retiredPortGuard();
+  const activePorts = frozenPortList();
   const entries = loadPidEntries();
   for (const result of terminateRecorded(entries)) {
     console.log(`[chat] 清理 ${result.role} pid=${result.pid}: ${result.action}`);
   }
   if (entries.length > 0) await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+  const workbenchRecovery = await reconcileManagedWorkbench(root);
+  if (
+    workbenchRecovery.action !== "no-evidence" &&
+    workbenchRecovery.action !== "already-stopped"
+  ) {
+    console.log(`[chat] 清理Unix socket Workbench：${workbenchRecovery.action}`);
+  }
   const browserCleanup = await cleanupOwnedDebugBrowser(root);
   if (browserCleanup.terminatedPids.length > 0 || browserCleanup.removedLocks.length > 0) {
     console.log(
       `[chat] 清理专属调试浏览器：processes=${browserCleanup.terminatedPids.length}, locks=${browserCleanup.removedLocks.length}`,
     );
   }
-  let occupied = checkPorts();
+  let occupied = checkPorts(activePorts);
   if (occupied.length > 0) {
     const recovered = reclaimOwnedPortOccupants(root, occupied);
     for (const result of recovered) {
@@ -360,11 +457,11 @@ export async function preflightLocalRuntime(root) {
     }
     if (recovered.length > 0) {
       await new Promise((resolveWait) => setTimeout(resolveWait, 500));
-      occupied = checkPorts();
+      occupied = checkPorts(activePorts);
     }
   }
   if (occupied.length === 0) {
-    console.log(`[chat] 固定端口可用：${frozenPortList().join(", ")}`);
+    console.log(`[chat] 固定端口可用：${activePorts.join(", ")}`);
     return;
   }
   const details = occupied
@@ -373,15 +470,19 @@ export async function preflightLocalRuntime(root) {
   throw new Error(`固定端口被未登记进程占用，已拒绝清理：${details}`);
 }
 
-export async function prepareLocalRuntime({ root, memory, signal }) {
-  await preflightLocalRuntime(root);
+export async function prepareLocalRuntime({ root, memory, workbench = "code-server", signal }) {
+  await preflightLocalRuntime(root, { workbench });
   if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
-  const sharedCacheRoot = resolveSharedFixedCacheRoot(root);
-  process.env.CHAT_FIXED_SOURCE_CACHE_ROOT = sharedCacheRoot;
-  console.log(`[chat] 固定源码缓存：${sharedCacheRoot}`);
+  const workbenchRuntime = resolveLocalWorkbenchRuntimeContract(root);
+  console.log(`[chat] 固定源码缓存：${workbenchRuntime.CHAT_FIXED_SOURCE_CACHE_ROOT}`);
   if (memory === "all" || memory === "memmy") ensureFixedMemmy(root);
   if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
   if (memory === "all" || memory === "memorycore") ensureFixedMemoryCore(root);
+  if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
+  if (workbench === "code-server") {
+    console.log("[chat] 准备固定code-server Workbench…");
+    await ensureFixedCodeServer(root, { environment: workbenchRuntime });
+  }
   if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
   console.log("[chat] 构建Workflow Bundles…");
   await runPreparationCommand({ root, signal });
@@ -414,10 +515,17 @@ export async function waitForServiceReady({
     const remaining = deadline - now();
     if (remaining <= 0) {
       throw new Error(
-        `${definition.id}启动超时（${definition.timeoutMs}ms，${definition.readyUrl}）`,
+        `${definition.id}启动超时（${definition.timeoutMs}ms，${definition.readyDescription ?? definition.readyUrl}）`,
       );
     }
     try {
+      if (definition.readyProbe !== undefined) {
+        await definition.readyProbe({
+          timeoutMs: Math.min(READY_REQUEST_TIMEOUT_MS, remaining),
+          signal,
+        });
+        return now() - startedAt;
+      }
       const response = await fetchImpl(definition.readyUrl, {
         signal: AbortSignal.timeout(Math.min(READY_REQUEST_TIMEOUT_MS, remaining)),
       });
@@ -570,4 +678,5 @@ export function assertRuntimeFiles(root) {
       `依赖未安装或Workspace链接缺失：${missing.join("、")}；请先运行 pnpm install --frozen-lockfile`,
     );
   }
+  assertDshCliRuntimeClosure(root);
 }

@@ -25,7 +25,7 @@ Plan和Approval应出现在对话输入区附近，不另造竞争页面。界�
 
 ## 4. Hosted Workbench
 
-Files、Editor、Terminal、Git和Diff由code-server完整提供。DSH使用全屏工作台Surface承载，不拆其React组件；关闭工作台后原会话、草稿和滚动位置保持。Workbench不能拥有Chat Session/Run，也不能绕过Workspace授权边界。
+Files、Editor、Terminal、Git和Diff由code-server完整提供。Workbench是全局Workspace能力，入口使用DSH公开的侧边栏底部root slot，在空白Hero和已物化会话中都必须可达，不依赖先发送一条消息。DSH使用全屏工作台Surface承载，不拆其React组件；关闭工作台后原会话、草稿和滚动位置保持。Workbench不能拥有Chat Session/Run，也不能绕过Workspace授权边界。
 
 ## 5. 可访问与响应式
 

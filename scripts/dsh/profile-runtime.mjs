@@ -1,11 +1,32 @@
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { createRequire } from "node:module";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { dirname, join, resolve, sep } from "node:path";
+import {
+  DSH_INTERNAL_WEB_HOST,
+  DSH_INTERNAL_WEB_PORT,
+  PUBLIC_WEB_HOST,
+  PUBLIC_WEB_PORT,
+} from "./web-gateway.mjs";
 
-export const DSH_WEB_HOST = "127.0.0.1";
-export const DSH_WEB_PORT = 43110;
+export const DSH_WEB_HOST = DSH_INTERNAL_WEB_HOST;
+export const DSH_WEB_PORT = DSH_INTERNAL_WEB_PORT;
 export const BRIDGE_PACKAGE_NAME = "@chat/dsh-lifeos-bridge";
 export const BRIDGE_BUNDLE_RELATIVE_PATH = "packages/dsh-lifeos-bridge/dist/dsh-bundle.js";
+export const DSH_CLI_RUNTIME_IMPORTS = Object.freeze([
+  "@deepseek-ai/dsh-app-boot",
+  "@deepseek-ai/dsh-cmdline",
+  "@deepseek-ai/dsh-home-paths",
+  "@deepseek-ai/dsh-launch-environment",
+  "commander",
+]);
+const DSH_CLI_RUNTIME_VERSIONS = Object.freeze({
+  "@deepseek-ai/dsh-app-boot": "0.1.0-rc.6",
+  "@deepseek-ai/dsh-cmdline": "0.1.0-rc.6",
+  "@deepseek-ai/dsh-home-paths": "0.1.0-rc.6",
+  "@deepseek-ai/dsh-launch-environment": "0.1.0-rc.6",
+  commander: "15.0.0",
+});
 const DSH_SAFE_HOST_ENV_NAMES = [
   "PATH",
   "LANG",
@@ -66,6 +87,8 @@ export function resolveDshWebRuntime(root, environment = process.env) {
     ),
     host: DSH_WEB_HOST,
     port: DSH_WEB_PORT,
+    publicHost: PUBLIC_WEB_HOST,
+    publicPort: PUBLIC_WEB_PORT,
   });
 }
 
@@ -93,6 +116,15 @@ export function dshWebEnvironment(root, environment = process.env) {
     CHAT_REPO_ROOT: runtime.root,
     CHAT_API_BASE_URL: runtime.apiBaseUrl,
     CHAT_DSH_STATE_PATH: runtime.statePath,
+    CHAT_PUBLIC_WEB_PORT: String(runtime.publicPort),
+    CHAT_CODE_WORKBENCH_ENABLED: environment.CHAT_CODE_WORKBENCH_ENABLED === "0" ? "0" : "1",
+    ...(environment.CHAT_CODE_WORKBENCH_RUN_ROOT === undefined
+      ? {}
+      : { CHAT_CODE_WORKBENCH_RUN_ROOT: environment.CHAT_CODE_WORKBENCH_RUN_ROOT }),
+    CHAT_CODE_WORKBENCH_TEMP_PARENT: environment.CHAT_CODE_WORKBENCH_TEMP_PARENT ?? temporary,
+    ...(environment.CHAT_FIXED_SOURCE_CACHE_ROOT === undefined
+      ? {}
+      : { CHAT_FIXED_SOURCE_CACHE_ROOT: environment.CHAT_FIXED_SOURCE_CACHE_ROOT }),
     DSH_HOME: runtime.dshHome,
     DSH_WEB_PORT: String(runtime.port),
     DSH_TELEMETRY_DISABLED: "1",
@@ -149,13 +181,111 @@ export function resolveDshBin(root) {
   }
   const executable = resolve(dirname(manifestPath), declared);
   if (!existsSync(executable)) throw new Error(`DSH命令入口不存在：${executable}`);
-  return executable;
+  // CLI通过动态import进入同一Node Host。显式冻结virtual-store中的真实工件路径，避免
+  // pnpm逻辑链接路径成为ESM parent URL后从apps/dsh-web错误解析上游内部依赖。
+  return realpathSync(executable);
+}
+
+function bareRuntimeImports(source) {
+  const imports = new Set();
+  for (const pattern of [
+    /\bfrom\s+["']([^"']+)["']/gu,
+    /\bimport\s*\(\s*["']([^"']+)["']\s*\)/gu,
+    /^\s*import\s+["']([^"']+)["']/gmu,
+  ]) {
+    for (const match of source.matchAll(pattern)) {
+      const specifier = match[1];
+      if (specifier && !specifier.startsWith(".") && !specifier.startsWith("node:")) {
+        imports.add(specifier);
+      }
+    }
+  }
+  return imports;
+}
+
+function resolvedPackageManifest(entry, packageName) {
+  let directory = dirname(entry);
+  for (;;) {
+    const manifestPath = join(directory, "package.json");
+    if (existsSync(manifestPath)) {
+      const manifest = readJson(manifestPath, `DSH CLI依赖${packageName}清单`);
+      if (manifest.name === packageName) return Object.freeze({ manifest, manifestPath });
+    }
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  throw new Error(`无法定位DSH CLI运行依赖清单：${packageName}`);
+}
+
+/**
+ * 校验Chat直接嵌入的rc.6 CLI完整运行闭包。依赖必须由DSH自己的virtual-store快照
+ * 解析；不能从用户目录、private hoist或apps/dsh-web的偶然依赖补洞。
+ */
+export function assertDshCliRuntimeClosure(root) {
+  const repoRoot = resolve(root);
+  const dshRoot = realpathSync(dirname(dshPackageManifestPath(repoRoot)));
+  const libDir = join(dshRoot, "lib");
+  const importers = [];
+  const imports = new Set();
+  for (const filename of readdirSync(libDir)
+    .filter((name) => name.endsWith(".js"))
+    .sort()) {
+    const importer = join(libDir, filename);
+    const fileImports = [...bareRuntimeImports(readFileSync(importer, "utf8"))].sort();
+    if (fileImports.length === 0) continue;
+    importers.push(Object.freeze({ importer, imports: Object.freeze(fileImports) }));
+    for (const specifier of fileImports) imports.add(specifier);
+  }
+  const runtimeImports = [...imports].sort();
+  if (JSON.stringify(runtimeImports) !== JSON.stringify([...DSH_CLI_RUNTIME_IMPORTS])) {
+    throw new Error(
+      `DSH CLI裸运行依赖与rc.6固定合同不一致：${runtimeImports.join("、") || "none"}`,
+    );
+  }
+
+  const virtualStoreRoot = join(repoRoot, "node_modules", ".pnpm") + sep;
+  const resolutions = new Map();
+  for (const { importer, imports: fileImports } of importers) {
+    const importerRequire = createRequire(importer);
+    for (const specifier of fileImports) {
+      let entry;
+      try {
+        entry = realpathSync(importerRequire.resolve(specifier));
+      } catch {
+        throw new Error(`DSH CLI工件依赖不可解析：${specifier}（importer=${importer}）`);
+      }
+      if (!entry.startsWith(virtualStoreRoot)) {
+        throw new Error(`DSH CLI运行依赖越出仓库virtual-store：${specifier}`);
+      }
+      const { manifest } = resolvedPackageManifest(entry, specifier);
+      if (manifest.version !== DSH_CLI_RUNTIME_VERSIONS[specifier]) {
+        throw new Error(
+          `DSH CLI运行依赖版本漂移：${specifier}@${String(manifest.version)}，期望${DSH_CLI_RUNTIME_VERSIONS[specifier]}`,
+        );
+      }
+      resolutions.set(specifier, entry);
+    }
+  }
+  return Object.freeze({
+    dshRoot,
+    dshBin: resolveDshBin(repoRoot),
+    imports: Object.freeze(runtimeImports),
+    importers: Object.freeze(importers),
+    resolutions: Object.freeze(
+      Object.fromEntries([...resolutions].sort(([a], [b]) => a.localeCompare(b))),
+    ),
+  });
 }
 
 /** 普通build只核对已安装Distribution，不创建profile或任何本地运行状态。 */
-export function assertDshDistribution(root, environment = process.env) {
+export function assertDshDistribution(
+  root,
+  environment = process.env,
+  { inspectCliRuntime = assertDshCliRuntimeClosure } = {},
+) {
   const runtime = resolveDshWebRuntime(root, environment);
-  const dshBin = resolveDshBin(root);
+  const { dshBin } = inspectCliRuntime(root);
   assertBridgeBundleContract(runtime);
   if (!existsSync(runtime.bridgeBundlePath)) {
     throw new Error(`DSH LifeOS Bridge固定入口不存在：${runtime.bridgeBundlePath}`);

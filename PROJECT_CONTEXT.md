@@ -16,6 +16,9 @@ DeepSeek Harness Web
   -> Vercel Workflow（耐久流程与暂停恢复）
   -> pi-agent-core（Planner / Executor节点）
   -> Product Commit（正式结果）
+
+Code Workbench（独立code-server）
+  <- LifeOS Web Gateway（虚拟Host隔离、HTTP/WebSocket代理）
 ```
 
 DSH保存的会话日志只用于原生界面与运行恢复，不替代Chat Product Session、Message、Run、Plan、Approval或Decision。浏览器和DSH Client插件都不能直接调用Workflow或pi。
@@ -37,6 +40,7 @@ Product Session、Interaction、Message、Product Run、Run Attempt、Project、
 ## 5. 已冻结边界
 
 - DeepSeek Harness Web是唯一前端；本仓库不维护第二套Chat UI。
+- code-server是可替换Hosted App；它拥有编辑器/终端运行状态，不拥有Chat产品事实。
 - Hono只终止协议、建立认证上下文和校验DTO。
 - Application拥有用例、权限、事务、幂等和状态转换。
 - Product Store拥有产品事实。

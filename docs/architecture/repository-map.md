@@ -22,6 +22,7 @@ scripts/
   dsh/                    DSH Profile准备与Host启动
   debug/                  固定端口、PID身份与停止/状态
   memory/                 固定Memory依赖准备与验证
+  workbench/              固定code-server准备、运行、回收与真实验证
   e2e/                    真实纵向预检和服务编排
 docs/
   architecture/           当前合同与as-built
@@ -36,14 +37,14 @@ docs/
 
 | 行为 | 入口 | 权威边界 |
 |---|---|---|
-| 打开页面 | `apps/dsh-web`、`scripts/dsh/start-web.mjs` | DSH Host与Client插件图 |
+| 打开页面 | `apps/dsh-web`、`scripts/dsh/start-web.mjs` | 43110 Gateway、内部DSH Host与Client插件图 |
 | 发送消息 | `packages/dsh-lifeos-bridge` Host LLM Adapter | Chat Message Command |
 | 创建Message/Run | `apps/api/src/product-routes.ts` | Application事务与Product Store |
 | 规划 | `packages/workflows` -> `packages/pi-runtime` | Plan候选经Application提交 |
 | 查看Plan/Approval | Bridge Host Query + Client Slot | Product Store投影 |
 | 修订/批准/拒绝 | Bridge Client -> Host -> Chat Decision Command | Application校验后提交Decision |
 | 执行与正式回复 | Workflow -> pi -> Product Commit | 正式Assistant Message来自Product Store |
-| 打开开发工作台 | Bridge Client Workbench Surface | Host代理固定code-server |
+| 打开开发工作台 | Bridge Client Workbench Surface | 独立Origin经Gateway代理固定code-server |
 
 ## 依赖方向
 

@@ -17,6 +17,7 @@
 |---|---:|---|---|---|
 | `@deepseek-ai/dsh` | `0.1.0-rc.6` | MIT | 唯一Web Host、原生会话/Composer/插件图；不拥有Chat产品事实 | 替换前端Host与Bridge Adapter；Chat API/Domain/Store不变 |
 | `@chat/dsh-lifeos-bridge` | workspace `0.1.0` | 私有 | DSH Host/Client到Chat公开Query/Command的唯一集成面 | 删除bundle/profile层；Chat后端不变 |
+| `code-server`官方发行工件 | `4.132.0` / commit `313bf0359b4d391ba18f1fa131aad8a583bc2919` | MIT | 独立Hosted Workbench；不进入pnpm运行依赖、不拥有Chat产品事实 | 替换Workbench Provider；DSH与Chat后端不变 |
 | `hono` | `^4.13.0` | MIT | HTTP协议入口，不拥有事务 | 替换Router Adapter |
 | `@hono/node-server` | `^2.1.0` | MIT | Node HTTP服务器 | 替换组合根服务器 |
 | `workflow` | `4.8.0` | Apache-2.0 | 耐久Workflow API | 通过Workflow Port/Runner迁移 |
@@ -44,6 +45,18 @@ DSH的React、Client UI、Cordis、Host Webserver等传递包由`@deepseek-ai/ds
 6. 升级DSH必须通过bundle构建、profile安装、config dump、真实Host、Client插件加载和Planning/HITL浏览器E2E。
 
 官方来源：<https://github.com/deepseek-ai/deepseek-harness>；npm包：<https://www.npmjs.com/package/@deepseek-ai/dsh>。
+
+## code-server固定证据
+
+1. `scripts/workbench/fixed-code-server.mjs`固定`4.132.0`、上游commit、macOS/Linux的x64/arm64资产大小与SHA-256；不下载`latest`，不执行`curl | sh`。
+2. 下载、解压和运行时目录都有完整Hash证据；共享缓存不进入Git，漂移时拒绝启动。
+3. 运行时只绑定受管0700临时根内的0600 Unix socket；退役端口`43113`必须无监听，preflight以Node独占bind并成功close为权威空闲门，occupied、EACCES或其他unknown错误全部失败关闭，lsof/ss只补安全诊断且绝不决定放行或自动终止。关闭telemetry、update check、自动端口转发与code-server proxy，固定`EXTENSIONS_GALLERY={}`使扩展市场默认离线，Provider、GitHub和SSH凭据不进入子进程。固定工件校验必须确认`server-main.js`仍支持该官方环境hook，升级漂移时失败关闭。
+4. user-data与extensions独立持久化；Chat受管安全设置覆盖，其他用户编辑器偏好保留。
+5. 浏览器通过`localhost:43110/workbench/code/`的隔离Origin访问；Gateway在校验受管process evidence、0700目录和0600 socket后，剥离前缀、重写内部Host/Origin并通过`socketPath`代理动态WebSocket，Service Worker不得越过该子路径。
+6. `43119`是准备与运行共同持有的内核互斥租约；收到连接立即断开，不提供HTTP、健康检查或Workbench内容。每次运行用唯一`instanceId`贯穿starting/running/stopped evidence；wrapper确认进程组与socket退出、原子发布最小stopped tombstone后才释放租约。PID登记丢失时，preflight与`dev:stop`先按evidence、启动时间、命令、cwd和Git Common Directory复核并回收wrapper/child，再取得租约、复读同一`instanceId`后才允许清目录或发布tombstone。
+7. 升级必须更新版本、commit、四个平台资产证据，并重跑供应链、Files/Terminal/Git-Diff、WebSocket、Origin隔离和进程回收门。
+
+官方来源：<https://github.com/coder/code-server>；运行工件内`package.json`与`LICENSE`均声明MIT。
 
 ## 构建与测试依赖
 

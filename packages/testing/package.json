@@ -12,7 +12,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run && node --test ../../scripts/dev/app-runtime.test.mjs"
+    "test": "vitest run && node --test ../../scripts/dev/app-runtime.test.mjs ../../scripts/workbench/fixed-code-server.test.mjs"
   },
   "dependencies": {
     "@chat/api": "workspace:*",

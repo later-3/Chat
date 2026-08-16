@@ -1,14 +1,25 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
 import {
   assertBridgeBundleContract,
+  assertDshCliRuntimeClosure,
   assertDshDistribution,
   assertDshWebCutoverConfig,
   assertManagedWebProfileReady,
+  DSH_CLI_RUNTIME_IMPORTS,
   dshBridgeInstallArgs,
   dshWebArgs,
   dshWebEnvironment,
@@ -18,6 +29,7 @@ import {
 } from "./profile-runtime.mjs";
 
 const ROOT = "/workspace/chat-feature";
+const REPO_ROOT = resolve(import.meta.dirname, "../..");
 
 test("DSH_HOME固定在当前worktree且Bridge私有状态不进入启动参数", () => {
   const runtime = resolveDshWebRuntime(ROOT, {
@@ -26,7 +38,8 @@ test("DSH_HOME固定在当前worktree且Bridge私有状态不进入启动参数"
   });
   assert.equal(runtime.dshHome, "/workspace/chat-feature/.data/dsh-home");
   assert.equal(runtime.statePath, "/private/chat-state.json");
-  assert.deepEqual(dshWebArgs(runtime), ["web", "--host", "127.0.0.1", "--port", "43110"]);
+  assert.deepEqual(dshWebArgs(runtime), ["web", "--host", "127.0.0.1", "--port", "43114"]);
+  assert.equal(runtime.publicPort, 43110);
   assert.deepEqual(dshBridgeInstallArgs(runtime), [
     "plugin",
     "--profile",
@@ -51,6 +64,7 @@ test("DSH进程显式接收Chat API与Bridge状态且剥离VS Code自动附加",
     GITHUB_TOKEN: "source-secret",
     HOME: "/Users/example",
     PATH: "/usr/bin:/bin",
+    CHAT_CODE_WORKBENCH_RUN_ROOT: "/workspace/chat-feature/.data/workbench/code-server",
   });
   assert.equal(environment.CHAT_API_BASE_URL, "http://127.0.0.1:43111");
   assert.equal(
@@ -58,7 +72,12 @@ test("DSH进程显式接收Chat API与Bridge状态且剥离VS Code自动附加",
     "/workspace/chat-feature/.data/dsh-lifeos-bridge/state.json",
   );
   assert.equal(environment.DSH_HOME, "/workspace/chat-feature/.data/dsh-home");
-  assert.equal(environment.DSH_WEB_PORT, "43110");
+  assert.equal(environment.DSH_WEB_PORT, "43114");
+  assert.equal(environment.CHAT_PUBLIC_WEB_PORT, "43110");
+  assert.equal(
+    environment.CHAT_CODE_WORKBENCH_RUN_ROOT,
+    "/workspace/chat-feature/.data/workbench/code-server",
+  );
   assert.equal(environment.NODE_OPTIONS, undefined);
   assert.equal(environment.VSCODE_INSPECTOR_OPTIONS, undefined);
   assert.equal(environment.DSH_TELEMETRY_DISABLED, "1");
@@ -207,7 +226,7 @@ test("DSH入口只接受精确rc.6并从bin声明解析", () => {
       `${JSON.stringify({ version: "0.1.0-rc.6", bin: { dsh: "lib/bin.js" } })}\n`,
     );
     writeFileSync(join(packageDir, "lib/bin.js"), "");
-    assert.equal(resolveDshBin(root), join(packageDir, "lib/bin.js"));
+    assert.equal(resolveDshBin(root), realpathSync(join(packageDir, "lib/bin.js")));
 
     writeFileSync(
       join(packageDir, "package.json"),
@@ -216,6 +235,44 @@ test("DSH入口只接受精确rc.6并从bin声明解析", () => {
     assert.throws(() => resolveDshBin(root), /版本必须是0\.1\.0-rc\.6/u);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("rc.6 CLI从canonical virtual-store解析完整运行闭包", () => {
+  const closure = assertDshCliRuntimeClosure(REPO_ROOT);
+  const installedDshBin = join(REPO_ROOT, "apps/dsh-web/node_modules/@deepseek-ai/dsh/lib/bin.js");
+  assert.deepEqual(closure.imports, DSH_CLI_RUNTIME_IMPORTS);
+  assert.equal(closure.dshBin, realpathSync(installedDshBin));
+  assert.equal(closure.dshBin, realpathSync(closure.dshBin));
+  assert.match(closure.dshBin, /node_modules\/\.pnpm\/@deepseek-ai\+dsh@0\.1\.0-rc\.6_/u);
+  assert.ok(closure.resolutions["@deepseek-ai/dsh-app-boot"]);
+  for (const resolved of Object.values(closure.resolutions)) {
+    assert.match(resolved, /node_modules\/\.pnpm\//u);
+    assert.doesNotMatch(resolved, /^\/Users\/xulater\/node_modules/u);
+  }
+
+  const home = mkdtempSync(join(tmpdir(), "chat-dsh-cli-home-"));
+  try {
+    const result = spawnSync(
+      process.execPath,
+      ["--preserve-symlinks", closure.dshBin, "web", "--dump-default-config"],
+      {
+        cwd: REPO_ROOT,
+        env: {
+          PATH: process.env.PATH,
+          HOME: home,
+          DSH_HOME: join(home, "dsh-home"),
+          DSH_TELEMETRY_DISABLED: "1",
+          DSH_TELEMETRY_MODE: "DISABLED",
+        },
+        encoding: "utf8",
+        maxBuffer: 2 * 1024 * 1024,
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /agent-default-model/u);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
   }
 });
 
@@ -243,10 +300,15 @@ test("Distribution build校验固定DSH与Bridge产物但不创建运行profile"
     mkdirSync(join(runtime.bridgeBundlePath, ".."), { recursive: true });
     writeFileSync(runtime.bridgeBundlePath, "");
 
-    assert.deepEqual(assertDshDistribution(root), {
-      dshBin: join(dshDir, "lib/bin.js"),
-      bridgeBundlePath: runtime.bridgeBundlePath,
-    });
+    assert.deepEqual(
+      assertDshDistribution(root, process.env, {
+        inspectCliRuntime: () => ({ dshBin: join(dshDir, "lib/bin.js") }),
+      }),
+      {
+        dshBin: join(dshDir, "lib/bin.js"),
+        bridgeBundlePath: runtime.bridgeBundlePath,
+      },
+    );
     assert.equal(existsSync(join(root, ".data")), false);
   } finally {
     rmSync(root, { recursive: true, force: true });

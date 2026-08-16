@@ -10,7 +10,7 @@ Chat 是独立开发、独立运行、独立运营并持续演进的完整产品
 
 Chat的产品后端、Workflow与Agent Runtime基线已经冻结。唯一产品前端是固定版本的DeepSeek Harness Web，由本仓库维护的LifeOS桥接插件接入Chat公开Query/Command；仓库不再维护第二套自研Chat页面，也不包含Agent Canvas/OpenHands前端。
 
-当前优先完成并验证DSH前端切换与Code Workbench。随后继续长期上下文、Project Solution、规则与Memory纵向。每个实现任务使用独立worktree、分支和PR，并以真实服务、真实模型和浏览器E2E证明用户结果。
+DSH前端切换与Code Workbench已经完成。当前优先交付Browser Provider，随后继续长期上下文、Project Solution、规则与Memory纵向。每个实现任务使用独立worktree、分支和PR，并以真实服务、真实模型和浏览器E2E证明用户结果。
 
 当前事实以[PROJECT_STATE.md](./PROJECT_STATE.md)为准，技术边界以[技术合同](./docs/architecture/technology-contract.md)为准。
 
@@ -49,6 +49,7 @@ Chat的产品后端、Workflow与Agent Runtime基线已经冻结。唯一产品�
 apps/dsh-web       固定DSH Web启动、Profile与运行编排
 apps/api           Hono协议入口与组合根
 packages/dsh-lifeos-bridge DSH Host/Client桥接、HITL投影与Workbench表面
+scripts/workbench  固定code-server供应链、生命周期与真实验证
 packages/contracts 网络合同与事件类型
 packages/domain    产品对象、状态机与不变量
 packages/application 用例协调与事务边界

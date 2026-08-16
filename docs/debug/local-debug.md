@@ -4,10 +4,13 @@
 
 | 服务 | 地址 |
 |---|---|
-| DSH Web | `http://127.0.0.1:43110` |
+| LifeOS Web Gateway / DSH入口 | `http://127.0.0.1:43110` |
 | Chat API | `http://127.0.0.1:43111` |
 | Workflow | `http://127.0.0.1:43112` |
-| Code Workbench | `http://127.0.0.1:43113`（启用时） |
+| code-server内部服务 | 受管0700临时根内的0600 Unix socket（不监听TCP） |
+| DSH内部Host | `http://127.0.0.1:43114` |
+| Workbench浏览器入口 | `http://localhost:43110/workbench/code/` |
+| code-server准备/运行租约 | `127.0.0.1:43119`（只做内核互斥，连接立即断开，不提供HTTP） |
 | API Inspector | `127.0.0.1:43120`（`dev:debug`） |
 | Workflow Inspector | `127.0.0.1:43121`（`dev:debug`） |
 
@@ -23,7 +26,7 @@ pnpm dev:status
 pnpm dev:stop
 ```
 
-`pnpm dev`依次准备固定Memory、Workflow兼容性、DSH Bridge/Profile，再启动Memory、Workflow、API和DSH Host。终端SIGINT或`pnpm dev:stop`必须反向停止并释放端口。
+`pnpm dev`依次准备固定Memory、code-server、Workflow兼容性与DSH Bridge/Profile，再启动Memory、Workflow、API、code-server和DSH/Gateway。默认启用Workbench；`--workbench=off`只用于不需要IDE的临时调试。终端SIGINT或`pnpm dev:stop`必须反向停止并释放端口与Terminal子进程。
 
 ## DSH调试
 
@@ -32,7 +35,7 @@ pnpm dev:stop
 | 目标 | 文件/入口 | 观察内容 |
 |---|---|---|
 | Profile准备 | `scripts/dsh/prepare-web-profile.mjs` | 固定DSH版本、Bridge bundle、worktree私有`DSH_HOME` |
-| Host启动 | `scripts/dsh/start-web.mjs` | `127.0.0.1:43110`、Boot Manifest、插件加载失败 |
+| Host启动 | `scripts/dsh/start-web.mjs` | 43110 Gateway、内部43114 DSH、Boot Manifest、插件加载失败 |
 | Session映射 | `AtomicBridgeStateStore`、`LifeosLlmAdapter.ensureChatSession` | `dshSessionId -> productSessionId`、原子状态、稳定Command |
 | 消息发送 | `LifeosLlmAdapter.stream`、`ChatProductClient.submitMessage` | 只处理正常会话请求；title/compaction无产品写入 |
 | Plan/HITL | `LifeosBridgeService.projection/decide`、Client Slot | Run revision、Plan/Approval版本与Hash、Decision Command |
@@ -64,4 +67,13 @@ Trace只保存可观察事件、对象引用、版本、耗时和安全错误，
 
 ## Workbench调试
 
-启用后检查：code-server固定版本与SHA、Workspace挂载、独立用户数据目录、HTTP与WebSocket代理、Terminal子进程回收、DSH关闭/重开Surface后的状态保持。Workbench端口不能直接暴露给非本机客户端。
+检查：侧边栏底部全局入口在空白Hero直接可达；code-server固定版本与SHA、精确Chat Workspace、独立用户数据目录、0700临时根与0600 Unix socket、Gateway HTTP与动态WebSocket代理、`localhost`虚拟Host隔离、Service Worker子路径、Terminal子进程回收，以及DSH关闭/重开Surface后的状态保持。受管child必须显示`EXTENSIONS_GALLERY={}`，真实浏览器全量HTTP/WS不得出现Open VSX、Copilot、telemetry或其他外部目标。launcher、独立`dev:status`与prepare各自从同一repo/env重建runRoot、受信tempParent和Git common-dir共享cacheRoot，不依赖launcher临时改写的`process.env`，也不从evidence反向信任路径；running status必须显示`healthy`、transport、instanceId及wrapper/child PID。退役`43113`必须始终无监听；preflight使用Node对`127.0.0.1:43113`独占bind并成功close作为唯一空闲证据，lsof/ss只补PID与安全进程摘要。occupied或unknown均拒绝启动且绝不自动终止；`pnpm dev:status`明确显示该端口的`free/occupied/unknown`。43114只允许DSH loopback内部Host；43119只承担准备/运行互斥，绝不返回Workbench或健康内容；停止时必须先发布同`instanceId`最小tombstone再释放租约。
+
+```bash
+pnpm workbench:prepare:code-server
+pnpm test:workbench-runtime
+pnpm test:workbench-runtime:real
+pnpm test:e2e:dsh-workbench-real
+```
+
+最后一条是无模型完成门：从空白 Hero 的全局侧边栏入口进入，真实修改隔离 Git fixture，验证 SCM/Diff/Terminal、全部 WebSocket 白名单、Service Worker scope 和零外部 Telemetry。Terminal 使用唯一长寿命 argv canary；隐藏 Surface 和关闭浏览器后它仍存活，Playwright 全部服务退出后的外层 `finally` 再通过正式 reconcile 证明 canary 退出且 `43110/43113/43114/43119` 全部释放。

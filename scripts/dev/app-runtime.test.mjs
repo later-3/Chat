@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -10,7 +18,9 @@ import {
   AppSupervisor,
   createServiceDefinitions,
   parseDevArgs,
+  preflightLocalRuntime,
   reclaimOwnedPortOccupants,
+  resolveLocalWorkbenchRuntimeContract,
   runDshPreparationCommand,
   runPreparationCommand,
   runVersionRecoveryCommand,
@@ -18,10 +28,15 @@ import {
   waitForServiceReady,
 } from "./app-runtime.mjs";
 import {
+  RETIRED_MUST_BE_EMPTY_PORTS,
+  assertRetiredPortsEmpty,
   findOwnedChatPortProcesses,
   findOwnedChatProcessForPort,
+  formatRetiredPortStatus,
+  probeRetiredPort,
   roleForFrozenPort,
   sharedDebugDirFromGitCommonDir,
+  termWaitMsForEntry,
 } from "../debug/lib.mjs";
 import {
   cleanupOwnedDebugBrowser,
@@ -29,30 +44,248 @@ import {
   isOwnedDebugBrowserCommand,
   ownedDebugBrowserPidsFromPsOutput,
 } from "./browser-lifecycle.mjs";
+import { collectLocalRuntimeStatus } from "./status.mjs";
 
 const ROOT = "/workspace/chat";
 
 test("参数默认启动两套Memory，debug模式显式开启", () => {
-  assert.deepEqual(parseDevArgs([]), { debug: false, help: false, memory: "all" });
-  assert.deepEqual(parseDevArgs(["--debug", "--memory=memmy"]), {
+  assert.deepEqual(parseDevArgs([]), {
+    debug: false,
+    help: false,
+    memory: "all",
+    workbench: "code-server",
+  });
+  assert.deepEqual(parseDevArgs(["--debug", "--memory=memmy", "--workbench=off"]), {
     debug: true,
     help: false,
     memory: "memmy",
+    workbench: "off",
   });
   assert.throws(() => parseDevArgs(["--memory=unknown"]), /只支持/u);
+  assert.throws(() => parseDevArgs(["--workbench=unknown"]), /只支持/u);
 });
 
-test("服务图按Memory -> Workflow -> API -> Web排序", () => {
+test("服务图按Memory -> Workflow -> API -> Workbench -> Web排序", () => {
   const all = createServiceDefinitions({ root: ROOT, memory: "all", environment: {} });
   assert.deepEqual(
     all.map((service) => service.id),
-    ["memmy", "memorycore", "workflow", "api", "web"],
+    ["memmy", "memorycore", "workflow", "api", "workbench", "web"],
   );
-  const memmy = createServiceDefinitions({ root: ROOT, memory: "memmy", environment: {} });
+  const memmy = createServiceDefinitions({
+    root: ROOT,
+    memory: "memmy",
+    workbench: "off",
+    environment: {},
+  });
   assert.deepEqual(
     memmy.map((service) => service.id),
     ["memmy", "workflow", "api", "web"],
   );
+});
+
+test("Workbench只接收显式安全环境并把唯一仓库根映射给code-server", () => {
+  const services = createServiceDefinitions({
+    root: ROOT,
+    memory: "memmy",
+    environment: {
+      PATH: "/usr/bin",
+      DASHSCOPE_API_KEY: "must-not-leak",
+      CHAT_CODE_WORKBENCH_ROOT: "/private/other-workspace",
+      CHAT_FIXED_SOURCE_CACHE_ROOT: "/workspace/cache",
+    },
+  });
+  const workbench = services.find((service) => service.id === "workbench");
+  assert.equal(workbench.env.PATH, "/usr/bin");
+  assert.equal(workbench.env.CHAT_REPO_ROOT, ROOT);
+  assert.equal(workbench.env.CHAT_CODE_WORKBENCH_ROOT, ROOT);
+  assert.equal(workbench.env.CHAT_FIXED_SOURCE_CACHE_ROOT, "/workspace/cache");
+  assert.equal(
+    workbench.env.CHAT_CODE_WORKBENCH_RUN_ROOT,
+    "/workspace/chat/.data/workbench/code-server",
+  );
+  assert.equal(workbench.env.DASHSCOPE_API_KEY, undefined);
+  assert.equal(workbench.readyUrl, undefined);
+  assert.equal(workbench.readyDescription, "受管0600 Unix socket /healthz");
+  assert.equal(typeof workbench.readyProbe, "function");
+  assert.equal(workbench.port, undefined);
+});
+
+test("launcher与独立status从同一输入重建Workbench run/temp/cache合同", () => {
+  const environment = {
+    CHAT_CODE_WORKBENCH_RUN_ROOT: "/workspace/run/code-server",
+    CHAT_CODE_WORKBENCH_TEMP_PARENT: "/tmp",
+    CHAT_FIXED_SOURCE_CACHE_ROOT: "/workspace/shared-cache",
+  };
+  const contract = resolveLocalWorkbenchRuntimeContract(ROOT, environment);
+  assert.deepEqual(contract, {
+    CHAT_CODE_WORKBENCH_RUN_ROOT: "/workspace/run/code-server",
+    CHAT_CODE_WORKBENCH_TEMP_PARENT: realpathSync("/tmp"),
+    CHAT_FIXED_SOURCE_CACHE_ROOT: "/workspace/shared-cache",
+  });
+  const workbench = createServiceDefinitions({
+    root: ROOT,
+    memory: "memmy",
+    environment,
+  }).find((service) => service.id === "workbench");
+  assert.deepEqual(
+    Object.fromEntries(Object.keys(contract).map((name) => [name, workbench.env[name]])),
+    contract,
+  );
+});
+
+test("running status复用严格合同并显示Unix transport、instance、PID与healthy", async () => {
+  const contract = Object.freeze({
+    CHAT_CODE_WORKBENCH_RUN_ROOT: "/workspace/run/code-server",
+    CHAT_CODE_WORKBENCH_TEMP_PARENT: realpathSync("/tmp"),
+    CHAT_FIXED_SOURCE_CACHE_ROOT: "/workspace/shared-cache",
+  });
+  const evidence = Object.freeze({
+    status: "running",
+    instanceId: "55555555-5555-4555-8555-555555555555",
+    wrapperPid: 501,
+    childPid: 502,
+  });
+  const lines = await collectLocalRuntimeStatus({
+    root: ROOT,
+    environment: {},
+    loadEntries: () => [],
+    check: () => [],
+    probeRetired: async () => [{ port: 43113, state: "free" }],
+    resolveWorkbenchContract: () => contract,
+    readWorkbenchEvidence(root, environment) {
+      assert.equal(root, ROOT);
+      assert.equal(environment, contract);
+      return evidence;
+    },
+    async probeWorkbench(root, options) {
+      assert.equal(root, ROOT);
+      assert.equal(options.environment, contract);
+    },
+  });
+  assert.deepEqual(lines, [
+    "[chat] 退役端口 43113 free",
+    "[chat] healthy workbench transport=unix-socket instanceId=55555555-5555-4555-8555-555555555555 wrapperPid=501 childPid=502",
+  ]);
+});
+
+test("running probe失败且无其他entry时显示unhealthy但绝不声称本地未运行", async () => {
+  const lines = await collectLocalRuntimeStatus({
+    root: ROOT,
+    loadEntries: () => [],
+    check: () => [],
+    probeRetired: async () => [{ port: 43113, state: "free" }],
+    resolveWorkbenchContract: () => ({}),
+    readWorkbenchEvidence: () => ({
+      status: "running",
+      instanceId: "77777777-7777-4777-8777-777777777777",
+      wrapperPid: 701,
+      childPid: 702,
+    }),
+    probeWorkbench: async () => {
+      throw new Error("socket probe failed");
+    },
+  });
+  assert.deepEqual(lines, [
+    "[chat] 退役端口 43113 free",
+    "[chat] unhealthy workbench transport=unix-socket instanceId=77777777-7777-4777-8777-777777777777 wrapperPid=701 childPid=702",
+  ]);
+  assert.equal(
+    lines.some((line) => line.includes("本地开发环境未运行")),
+    false,
+  );
+});
+
+test("starting evidence显示uncertain且不被误报为已停止或本地未运行", async () => {
+  let probeCalled = false;
+  const lines = await collectLocalRuntimeStatus({
+    root: ROOT,
+    loadEntries: () => [],
+    check: () => [],
+    probeRetired: async () => [{ port: 43113, state: "free" }],
+    resolveWorkbenchContract: () => ({}),
+    readWorkbenchEvidence: () => ({
+      status: "starting",
+      instanceId: "88888888-8888-4888-8888-888888888888",
+      wrapperPid: 801,
+      childPid: null,
+    }),
+    probeWorkbench: async () => {
+      probeCalled = true;
+    },
+  });
+  assert.equal(probeCalled, false);
+  assert.deepEqual(lines, [
+    "[chat] 退役端口 43113 free",
+    "[chat] uncertain(starting) workbench transport=unix-socket instanceId=88888888-8888-4888-8888-888888888888 wrapperPid=801 childPid=null",
+  ]);
+});
+
+test("legacy-running evidence显示uncertain且不被误报为已停止或本地未运行", async () => {
+  const lines = await collectLocalRuntimeStatus({
+    root: ROOT,
+    loadEntries: () => [],
+    check: () => [],
+    probeRetired: async () => [{ port: 43113, state: "free" }],
+    resolveWorkbenchContract: () => ({}),
+    readWorkbenchEvidence: () => ({
+      status: "legacy-running",
+      wrapperPid: 901,
+      childPid: 902,
+    }),
+    probeWorkbench: async () => {
+      throw new Error("legacy-running不得冒充v2 socket ready probe");
+    },
+  });
+  assert.deepEqual(lines, [
+    "[chat] 退役端口 43113 free",
+    "[chat] uncertain(legacy-running) workbench transport=unix-socket instanceId=legacy wrapperPid=901 childPid=902",
+  ]);
+});
+
+test("status对corrupt或合同不匹配的running evidence保持失败关闭", async () => {
+  for (const message of ["进程证据损坏", "进程证据不符合受管Unix socket合同"]) {
+    await assert.rejects(
+      collectLocalRuntimeStatus({
+        root: ROOT,
+        loadEntries: () => [],
+        check: () => [],
+        probeRetired: async () => [{ port: 43113, state: "free" }],
+        resolveWorkbenchContract: () => ({
+          CHAT_CODE_WORKBENCH_RUN_ROOT: "/workspace/run/code-server",
+          CHAT_CODE_WORKBENCH_TEMP_PARENT: realpathSync("/tmp"),
+          CHAT_FIXED_SOURCE_CACHE_ROOT: "/workspace/shared-cache",
+        }),
+        readWorkbenchEvidence() {
+          throw new Error(message);
+        },
+      }),
+      new RegExp(message, "u"),
+    );
+  }
+});
+
+test("stopped status仍读取同一合同并明确显示停止状态", async () => {
+  let probeCalled = false;
+  const lines = await collectLocalRuntimeStatus({
+    root: ROOT,
+    loadEntries: () => [],
+    check: () => [],
+    probeRetired: async () => [{ port: 43113, state: "free" }],
+    resolveWorkbenchContract: () => ({}),
+    readWorkbenchEvidence: () => ({
+      status: "stopped",
+      instanceId: "66666666-6666-4666-8666-666666666666",
+    }),
+    probeWorkbench: async () => {
+      probeCalled = true;
+    },
+  });
+  assert.equal(probeCalled, false);
+  assert.deepEqual(lines, [
+    "[chat] 退役端口 43113 free",
+    "[chat] 已停止 workbench transport=unix-socket instanceId=66666666-6666-4666-8666-666666666666",
+    "[chat] 本地开发环境未运行，固定端口全部空闲。",
+  ]);
 });
 
 test("debug只为Chat拥有的API与Workflow开放Inspector", () => {
@@ -67,6 +300,7 @@ test("debug只为Chat拥有的API与Workflow开放Inspector", () => {
   assert.match(args.api, /--inspect=127\.0\.0\.1:43120/u);
   assert.doesNotMatch(args.memmy, /--inspect/u);
   assert.doesNotMatch(args.memorycore, /--inspect/u);
+  assert.doesNotMatch(args.workbench, /--inspect/u);
   assert.doesNotMatch(args.web, /--inspect/u);
 });
 
@@ -85,7 +319,8 @@ test("Web角色使用受管DSH Node Host且私有Bridge状态不进入命令与�
   assert.deepEqual(web.args, ["/workspace/chat/scripts/dsh/start-web.mjs"]);
   assert.equal(web.cwd, ROOT);
   assert.equal(web.env.DSH_HOME, "/workspace/chat/.data/dsh-home");
-  assert.equal(web.env.DSH_WEB_PORT, "43110");
+  assert.equal(web.env.DSH_WEB_PORT, "43114");
+  assert.equal(web.readyUrl, "http://127.0.0.1:43110/");
   assert.equal(web.env.CHAT_API_BASE_URL, "http://127.0.0.1:43111");
   assert.equal(web.env.CHAT_DSH_STATE_PATH, "/private/state.json");
   assert.equal(web.stopTimeoutMs, 7_000);
@@ -105,6 +340,177 @@ test("同一Git仓库的worktree共享固定端口PID登记", () => {
   assert.equal(
     sharedDebugDirFromGitCommonDir("/workspace/chat-feature", "/workspace/chat-main/.git"),
     "/workspace/chat-main/.data/debug",
+  );
+});
+
+test("code-server不占固定TCP端口但wrapper仍获得完整退出时间", () => {
+  assert.equal(roleForFrozenPort(43113), null);
+  assert.equal(roleForFrozenPort(43119), "workbench");
+  assert.deepEqual(RETIRED_MUST_BE_EMPTY_PORTS, [43113]);
+  assert.equal(termWaitMsForEntry({ role: "workbench" }, 3_000), 7_000);
+});
+
+test("退役43113对未知或旧受管监听者都只拒绝且先于任何preflight清理", async () => {
+  const simulateProbeError = async (code) => {
+    const failedServer = new EventEmitter();
+    failedServer.listening = false;
+    failedServer.listen = () => {
+      queueMicrotask(() =>
+        failedServer.emit("error", Object.assign(new Error(`simulated ${code}`), { code })),
+      );
+    };
+    failedServer.close = () => {
+      throw new Error("bind失败时不应把未监听server误报为已成功close");
+    };
+    return probeRetiredPort(43113, { createServer: () => failedServer });
+  };
+  const occupiedProbe = await simulateProbeError("EADDRINUSE");
+  const unknownProbe = await simulateProbeError("EACCES");
+  assert.deepEqual(occupiedProbe, {
+    port: 43113,
+    state: "occupied",
+    errorCode: "EADDRINUSE",
+  });
+  assert.deepEqual(unknownProbe, { port: 43113, state: "unknown", errorCode: "EACCES" });
+
+  await assert.rejects(
+    assertRetiredPortsEmpty({
+      probePorts: async ({ ports }) => {
+        assert.deepEqual(ports, [43113]);
+        return [occupiedProbe];
+      },
+      // 模拟lsof/ss都不可用或无法解析PID；Node bind结果仍必须拒绝。
+      diagnose: () => [],
+    }),
+    /不会自动终止.*43113 occupied.*EADDRINUSE/u,
+  );
+
+  await assert.rejects(
+    assertRetiredPortsEmpty({
+      probePorts: async () => [unknownProbe],
+      diagnose: () => [],
+    }),
+    /43113 unknown.*EACCES/u,
+  );
+
+  const server = new EventEmitter();
+  server.listening = false;
+  let closeCount = 0;
+  let acceptedSocketDestroyCount = 0;
+  let acceptConnection;
+  const acceptedSocket = new EventEmitter();
+  acceptedSocket.destroy = () => {
+    acceptedSocketDestroyCount += 1;
+    // 模拟客户端不主动结束，也不发close；probe仍必须主动destroy且不能被其阻塞。
+  };
+  server.listen = (options) => {
+    assert.deepEqual(options, { host: "127.0.0.1", port: 43113, exclusive: true });
+    server.listening = true;
+    queueMicrotask(() => {
+      server.emit("listening");
+      acceptConnection(acceptedSocket);
+    });
+  };
+  server.close = (callback) => {
+    closeCount += 1;
+    assert.ok(acceptedSocketDestroyCount > 0, "close前必须先destroy已accept socket");
+    server.listening = false;
+    queueMicrotask(() => callback());
+  };
+  assert.deepEqual(
+    await probeRetiredPort(43113, {
+      createServer: (connectionHandler) => {
+        acceptConnection = connectionHandler;
+        return server;
+      },
+    }),
+    { port: 43113, state: "free" },
+  );
+  assert.equal(closeCount, 1, "free必须在成功close后才能返回");
+  assert.ok(acceptedSocketDestroyCount >= 1);
+
+  const hangingCloseServer = new EventEmitter();
+  hangingCloseServer.listening = false;
+  hangingCloseServer.listen = () => {
+    hangingCloseServer.listening = true;
+    queueMicrotask(() => hangingCloseServer.emit("listening"));
+  };
+  hangingCloseServer.close = () => {
+    hangingCloseServer.listening = false;
+    // 故意永不调用callback；注入timer必须让production路径有界返回unknown。
+  };
+  let scheduledTimeoutMs;
+  let timeoutCancelled = false;
+  const closeTimeoutProbe = await probeRetiredPort(43113, {
+    createServer: () => hangingCloseServer,
+    scheduleTimeout(callback, timeoutMs) {
+      scheduledTimeoutMs = timeoutMs;
+      queueMicrotask(callback);
+      return Symbol("test-close-timeout");
+    },
+    cancelTimeout() {
+      timeoutCancelled = true;
+    },
+  });
+  assert.deepEqual(closeTimeoutProbe, {
+    port: 43113,
+    state: "unknown",
+    errorCode: "CLOSE_TIMEOUT",
+  });
+  assert.equal(scheduledTimeoutMs, 1_000);
+  assert.equal(timeoutCancelled, true);
+  await assert.rejects(
+    assertRetiredPortsEmpty({
+      probePorts: async () => [closeTimeoutProbe],
+      diagnose: () => [],
+    }),
+    /43113 unknown.*CLOSE_TIMEOUT/u,
+  );
+
+  await assert.rejects(
+    preflightLocalRuntime(
+      ROOT,
+      { workbench: "off" },
+      {
+        retiredPortGuard() {
+          throw new Error("retired-port-blocked-before-cleanup");
+        },
+      },
+    ),
+    /retired-port-blocked-before-cleanup/u,
+  );
+  const source = preflightLocalRuntime.toString();
+  assert.ok(source.indexOf("await retiredPortGuard();") < source.indexOf("loadPidEntries()"));
+  assert.ok(
+    source.indexOf("await retiredPortGuard();") < source.indexOf("reconcileManagedWorkbench"),
+  );
+  const dshPreflightSource = readFileSync(
+    new URL("../e2e/preflight-dsh-real.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    dshPreflightSource.indexOf("await assertRetiredPortsEmpty();") <
+      dshPreflightSource.indexOf("await cleanupDshRealWorkbench"),
+  );
+  const debugPrecleanSource = readFileSync(
+    new URL("../debug/preclean.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    debugPrecleanSource.indexOf("await assertRetiredPortsEmpty();") <
+      debugPrecleanSource.indexOf("loadPidEntries()"),
+  );
+
+  assert.equal(
+    formatRetiredPortStatus({ port: 43113, state: "free" }),
+    "[chat] 退役端口 43113 free",
+  );
+  assert.match(
+    formatRetiredPortStatus(
+      { port: 43113, state: "occupied", errorCode: "EADDRINUSE" },
+      { port: 43113, pid: 91, processName: "node" },
+    ),
+    /43113 occupied pid=91 process=node error=EADDRINUSE/u,
   );
 });
 
@@ -194,6 +600,44 @@ test("登记丢失时DSH Node Host仍可按固定Web端口与仓库归属识别"
   );
   assert.equal(owned?.role, "web");
   assert.equal(owned?.pid, 89);
+  assert.equal(roleForFrozenPort(43114), "web");
+  const unknownInternal = findOwnedChatProcessForPort(
+    ROOT,
+    { port: 43114, pid: 90 },
+    {
+      describe: () => ({
+        startedAtMs: Date.parse("2026-08-09T08:00:00.000Z"),
+        command: "node unrelated-internal-server.mjs",
+      }),
+      workingDirectory: () => ROOT,
+      findParentPid: () => 1,
+      findGitCommonDir: () => "/workspace/chat-main/.git",
+    },
+  );
+  assert.equal(unknownInternal, null);
+});
+
+test("DSH Gateway与内部Host由同一wrapper监听时只回收一次", () => {
+  const dependencies = {
+    describe: () => ({
+      startedAtMs: 1_000,
+      command: "node /workspace/chat/scripts/dsh/start-web.mjs",
+    }),
+    workingDirectory: () => ROOT,
+    findParentPid: () => 1,
+    findGitCommonDir: () => "/workspace/chat-main/.git",
+  };
+  const entries = findOwnedChatPortProcesses(
+    ROOT,
+    [
+      { port: 43110, pid: 91 },
+      { port: 43114, pid: 91 },
+    ],
+    dependencies,
+  );
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]?.role, "web");
+  assert.equal(entries[0]?.pid, 91);
 });
 
 test("监听子进程没有角色签名时可回溯到同仓库Memory包装器", () => {

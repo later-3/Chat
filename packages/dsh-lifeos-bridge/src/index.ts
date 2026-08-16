@@ -19,10 +19,10 @@ function requiredStatePath(raw: string | undefined): string {
   return raw;
 }
 
-function requiredWebPort(raw: string | undefined): number {
+function requiredPublicWebPort(raw: string | undefined): number {
   const value = raw === undefined ? Number.NaN : Number(raw);
   if (!Number.isSafeInteger(value) || value < 1 || value > 65_535) {
-    throw new Error("DSH_WEB_PORT must be an integer from 1 to 65535");
+    throw new Error("CHAT_PUBLIC_WEB_PORT must be an integer from 1 to 65535");
   }
   return value;
 }
@@ -42,7 +42,7 @@ export async function apply(ctx: Context): Promise<void> {
   const repoRoot = requiredRepoRoot(process.env.CHAT_REPO_ROOT);
   const statePath = requiredStatePath(process.env.CHAT_DSH_STATE_PATH);
   const apiBaseUrl = parseChatApiBaseUrl(process.env.CHAT_API_BASE_URL);
-  const webPort = requiredWebPort(process.env.DSH_WEB_PORT);
+  const webPort = requiredPublicWebPort(process.env.CHAT_PUBLIC_WEB_PORT);
   await ctx.workspaceRegistry.create(repoRoot, "Chat");
   const state = new AtomicBridgeStateStore(statePath);
   await state.ready();

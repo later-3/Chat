@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { createServer as createNetServer } from "node:net";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -24,13 +25,19 @@ import { fileURLToPath } from "node:url";
 
 export const FROZEN_PORTS = Object.freeze({
   web: 43110,
+  webInternal: 43114,
   api: 43111,
   workflow: 43112,
+  workbenchLease: 43119,
   memory: 18960,
   memoryCore: 18970,
   apiInspector: 43120,
   workflowInspector: 43121,
 });
+
+// 43113曾经暴露无认证code-server。它不再是可回收服务端口：任何监听者（即使看似
+// 属于旧Chat wrapper）都必须在启动清理发生前失败关闭，由维护者显式处置。
+export const RETIRED_MUST_BE_EMPTY_PORTS = Object.freeze([43113]);
 
 /** 各调试角色的命令行身份片段（用于PID复用复核）。 */
 export const ROLE_COMMAND_FRAGMENTS = Object.freeze({
@@ -38,12 +45,14 @@ export const ROLE_COMMAND_FRAGMENTS = Object.freeze({
   workflow: ["runtime-main.ts", "tsx"],
   memory: ["start-fixed-memmy.mjs"],
   memoryCore: ["start-fixed-memorycore.mjs"],
+  workbench: ["start-fixed-code-server.mjs"],
   web: ["scripts/dsh/start-web.mjs"],
 });
 
 /** 记录启动时间与ps lstart的允许偏差（防御PID复用）。 */
 const START_TIME_TOLERANCE_MS = 120_000;
 const MEMORY_WRAPPER_TERM_WAIT_MS = 7_000;
+const WORKBENCH_WRAPPER_TERM_WAIT_MS = 7_000;
 
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -326,13 +335,17 @@ function signal(entry, sig) {
 }
 
 /**
- * memmy包装进程收到SIGTERM后最多用5秒向真实服务子进程转发并等待退出。
+ * Memory/code-server包装进程收到SIGTERM后最多用5秒向真实服务子进程转发并等待退出。
  * 调试清理必须比该上限更长，避免先杀包装器而遗留未登记的子进程。
  */
 export function termWaitMsForEntry(entry, requestedTermWaitMs = 3000) {
-  return entry.role === "memory" || entry.role === "memoryCore"
-    ? Math.max(requestedTermWaitMs, MEMORY_WRAPPER_TERM_WAIT_MS)
-    : requestedTermWaitMs;
+  if (entry.role === "memory" || entry.role === "memoryCore") {
+    return Math.max(requestedTermWaitMs, MEMORY_WRAPPER_TERM_WAIT_MS);
+  }
+  if (entry.role === "workbench") {
+    return Math.max(requestedTermWaitMs, WORKBENCH_WRAPPER_TERM_WAIT_MS);
+  }
+  return requestedTermWaitMs;
 }
 
 /**
@@ -390,15 +403,167 @@ export function checkPorts(ports = frozenPortList()) {
   return occupied;
 }
 
+function destroyProbeSockets(sockets) {
+  for (const socket of sockets) socket.destroy();
+}
+
+async function closeProbeServer(
+  server,
+  sockets,
+  { closeTimeoutMs, scheduleTimeout, cancelTimeout },
+) {
+  // close只停止新accept，已accept连接仍会阻塞callback；必须先主动销毁。
+  destroyProbeSockets(sockets);
+  await new Promise((resolveClose, rejectClose) => {
+    let settled = false;
+    let timer;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      cancelTimeout(timer);
+      if (error === undefined) resolveClose();
+      else rejectClose(error);
+    };
+    timer = scheduleTimeout(() => {
+      finish(
+        Object.assign(new Error("retired port probe close timeout"), { code: "CLOSE_TIMEOUT" }),
+      );
+    }, closeTimeoutMs);
+    try {
+      server.close((error) => finish(error));
+    } catch (error) {
+      finish(error);
+    }
+  });
+}
+
+/** 只有Node成功独占bind并成功close才证明端口为空；进程查询工具不参与安全判断。 */
+export async function probeRetiredPort(
+  port,
+  {
+    createServer = createNetServer,
+    closeTimeoutMs = 1_000,
+    scheduleTimeout = setTimeout,
+    cancelTimeout = clearTimeout,
+  } = {},
+) {
+  const sockets = new Set();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+    socket.destroy();
+  });
+  const closeOptions = { closeTimeoutMs, scheduleTimeout, cancelTimeout };
+  try {
+    await new Promise((resolveListen, rejectListen) => {
+      const onError = (error) => {
+        server.off("listening", onListening);
+        rejectListen(error);
+      };
+      const onListening = () => {
+        server.off("error", onError);
+        server.unref?.();
+        resolveListen();
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      try {
+        server.listen({ host: "127.0.0.1", port, exclusive: true });
+      } catch (error) {
+        server.off("error", onError);
+        server.off("listening", onListening);
+        rejectListen(error);
+      }
+    });
+  } catch (error) {
+    if (server.listening) {
+      try {
+        await closeProbeServer(server, sockets, closeOptions);
+      } catch (closeError) {
+        return Object.freeze({
+          port,
+          state: "unknown",
+          errorCode: typeof closeError?.code === "string" ? closeError.code : "CLOSE_FAILED",
+        });
+      } finally {
+        destroyProbeSockets(sockets);
+      }
+    }
+    destroyProbeSockets(sockets);
+    return Object.freeze({
+      port,
+      state: error?.code === "EADDRINUSE" ? "occupied" : "unknown",
+      errorCode: typeof error?.code === "string" ? error.code : "UNKNOWN",
+    });
+  }
+
+  try {
+    await closeProbeServer(server, sockets, closeOptions);
+    return Object.freeze({ port, state: "free" });
+  } catch (error) {
+    return Object.freeze({
+      port,
+      state: "unknown",
+      errorCode: typeof error?.code === "string" ? error.code : "CLOSE_FAILED",
+    });
+  } finally {
+    destroyProbeSockets(sockets);
+  }
+}
+
+export async function probeRetiredPorts({
+  ports = RETIRED_MUST_BE_EMPTY_PORTS,
+  probe = probeRetiredPort,
+} = {}) {
+  const results = [];
+  for (const port of ports) results.push(await probe(port));
+  return Object.freeze(results);
+}
+
+export function formatRetiredPortStatus(result, diagnostic) {
+  const identity =
+    diagnostic === undefined
+      ? ""
+      : ` pid=${String(diagnostic.pid)} process=${diagnostic.processName}`;
+  const reason = result.errorCode === undefined ? "" : ` error=${result.errorCode}`;
+  return `[chat] 退役端口 ${String(result.port)} ${result.state}${identity}${reason}`;
+}
+
+export async function assertRetiredPortsEmpty({
+  ports = RETIRED_MUST_BE_EMPTY_PORTS,
+  probePorts = probeRetiredPorts,
+  diagnose = checkPorts,
+} = {}) {
+  const results = await probePorts({ ports });
+  const failures = results.filter((result) => result.state !== "free");
+  if (failures.length === 0) return results;
+  let diagnostics = [];
+  try {
+    diagnostics = diagnose(failures.map((result) => result.port));
+  } catch {
+    // lsof/ss只补诊断；缺失或失败不能把Node权威探针降级成free。
+  }
+  const details = failures
+    .map((result) => {
+      const diagnostic = diagnostics.find((item) => item.port === result.port);
+      return formatRetiredPortStatus(result, diagnostic).replace(/^\[chat\] /u, "");
+    })
+    .join("、");
+  throw new Error(
+    `退役Workbench TCP端口未被权威证明为空，且不会自动终止任何占用者：${details}；请人工确认并释放后重试`,
+  );
+}
+
 /** 固定端口到Chat服务角色的唯一映射；未知端口永远不参与自动回收。 */
 export function roleForFrozenPort(port) {
-  if (port === FROZEN_PORTS.web) return "web";
+  if (port === FROZEN_PORTS.web || port === FROZEN_PORTS.webInternal) return "web";
   if (port === FROZEN_PORTS.api || port === FROZEN_PORTS.apiInspector) return "api";
   if (port === FROZEN_PORTS.workflow || port === FROZEN_PORTS.workflowInspector) {
     return "workflow";
   }
   if (port === FROZEN_PORTS.memory) return "memory";
   if (port === FROZEN_PORTS.memoryCore) return "memoryCore";
+  if (port === FROZEN_PORTS.workbenchLease) return "workbench";
   return null;
 }
 

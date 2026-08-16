@@ -6,21 +6,21 @@
 
 ## 当前路线
 
-### F1 · DSH唯一前端
+### F1 · DSH唯一前端（已完成）
 
 交付固定版本的DeepSeek Harness Web、LifeOS桥接插件和统一启动器；保留DSH原生侧栏、会话、Composer、模型/权限入口与插件机制。删除旧`apps/web`、Agent Canvas副本和过期UI原型/归档。
 
 完成门：DSH原生页面真实启动；发送创建Chat Session/Message/Run；Plan与Approval来自Chat Query；决定通过Chat Command提交；正式Assistant Message来自Product Store；刷新不会重复命令。
 
-### F2 · Code Workbench
+### F2 · Code Workbench（已完成）
 
-把固定版本code-server作为独立Hosted Workbench运行。DSH只提供全屏入口与返回动作；LifeOS Host负责生命周期、Workspace映射、鉴权边界、HTTP/WebSocket代理和健康检查。
+把固定版本code-server作为独立Hosted Workbench运行。DSH只提供全屏入口与返回动作；统一启动器负责生命周期与Workspace映射，Web Gateway负责虚拟Host隔离、HTTP/WebSocket代理和健康边界。
 
 首期能力：Files、Editor、Terminal、Git状态、Diff和VS Code扩展。首期不拆code-server UI，也不让code-server拥有Chat产品Session/Run。
 
-完成门：真实Workspace可读写；Terminal命令在受控Workspace/UID下执行；Git状态与Diff可见；DSH返回后保留原会话；停止应用后进程与端口全部回收。
+完成门：真实Workspace可读写；Terminal、Git状态与Diff可见；DSH返回后保留原会话；停止应用后Terminal子进程与端口全部回收。当前本地纵向不是OS沙箱，远程/多用户部署前必须换成容器或独立UID Provider。
 
-### F3 · Browser Provider
+### F3 · Browser Provider（下一步）
 
 选择带实时人机共用视图的独立Browser Provider；Agent工具与用户界面必须绑定同一浏览器Session。浏览器运行在Local Host或远程Sandbox，DSH只挂载表面。
 

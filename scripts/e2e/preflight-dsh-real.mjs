@@ -1,6 +1,4 @@
-import "../debug/load-provider-env.mjs";
-
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import {
@@ -11,19 +9,42 @@ import {
   runCommand,
   runCommandOutput,
 } from "../dsh/profile-runtime.mjs";
-import { dshRealWebEnvironment } from "./dsh-real-environment.mjs";
+import {
+  dshRealWebEnvironment,
+  resolveDshRealSharedCacheRoot,
+  resolveDshRealWorkbenchFixtureRoot,
+} from "./dsh-real-environment.mjs";
+import { cleanupDshRealWorkbench } from "./dsh-real-workbench-lifecycle.mjs";
+import { assertRetiredPortsEmpty } from "../debug/lib.mjs";
+import {
+  FIXED_CODE_SERVER_VERSION,
+  codeServerPlatformKey,
+  fixedCodeServerAsset,
+  validateCodeServerCache,
+} from "../workbench/fixed-code-server.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const dataRoot = resolve(repoRoot, ".data/e2e/dsh-real");
 const expectedRoot = resolve(repoRoot, ".data/e2e/dsh-real");
+const workbenchOnly = process.argv.slice(2).includes("--workbench-only");
+
+if (process.argv.slice(2).some((argument) => argument !== "--workbench-only")) {
+  throw new Error("DSH真实E2E preflight收到未知参数");
+}
+if (!workbenchOnly) await import("../debug/load-provider-env.mjs");
 
 if (dataRoot !== expectedRoot || !dataRoot.endsWith("/.data/e2e/dsh-real")) {
   throw new Error("拒绝清理未通过精确校验的DSH真实E2E目录");
 }
-if (!process.env.DASHSCOPE_API_KEY?.trim()) {
+if (!workbenchOnly && !process.env.DASHSCOPE_API_KEY?.trim()) {
   throw new Error("真实DSH E2E缺少百炼凭据（本门失败关闭，不会Skip或切换替身）");
 }
 
+// 必须先用仍存在的受管evidence回收上轮wrapper/child/socket，再删除可再生目录；
+// 反过来会永久丢失Unix socket进程身份，Ctrl-C后的PTY child将无法安全识别。
+// 退役43113必须在legacy evidence回收前失败关闭；旧受管监听者也不自动终止。
+await assertRetiredPortsEmpty();
+await cleanupDshRealWorkbench(repoRoot, { environment: process.env });
 rmSync(dataRoot, { recursive: true, force: true });
 mkdirSync(dataRoot, { recursive: true });
 
@@ -46,6 +67,49 @@ const environment = {
       : join(toolHome, ".local/share/pnpm/store/v10")),
 };
 
+const workbenchFixtureRoot = resolveDshRealWorkbenchFixtureRoot(repoRoot);
+mkdirSync(workbenchFixtureRoot, { recursive: true });
+writeFileSync(join(workbenchFixtureRoot, ".gitignore"), ".data/\n", "utf8");
+writeFileSync(join(workbenchFixtureRoot, "fixture.txt"), "baseline from Workbench E2E\n", "utf8");
+await runCommand("git", ["init", "--quiet"], {
+  cwd: workbenchFixtureRoot,
+  env: environment,
+  label: "Workbench E2E fixture Git初始化",
+});
+await runCommand("git", ["config", "user.name", "Chat Workbench E2E"], {
+  cwd: workbenchFixtureRoot,
+  env: environment,
+  label: "Workbench E2E fixture Git用户",
+});
+await runCommand("git", ["config", "user.email", "workbench-e2e@invalid.local"], {
+  cwd: workbenchFixtureRoot,
+  env: environment,
+  label: "Workbench E2E fixture Git邮箱",
+});
+await runCommand("git", ["add", ".gitignore", "fixture.txt"], {
+  cwd: workbenchFixtureRoot,
+  env: environment,
+  label: "Workbench E2E fixture暂存",
+});
+await runCommand("git", ["commit", "--quiet", "-m", "baseline"], {
+  cwd: workbenchFixtureRoot,
+  env: environment,
+  label: "Workbench E2E fixture基线提交",
+});
+
+const codeServerAsset = fixedCodeServerAsset();
+const codeServerCacheRoot = join(
+  resolveDshRealSharedCacheRoot(repoRoot),
+  "code-server",
+  `v${FIXED_CODE_SERVER_VERSION}`,
+  codeServerPlatformKey(),
+);
+if (!validateCodeServerCache({ cacheRoot: codeServerCacheRoot, asset: codeServerAsset })) {
+  throw new Error(
+    "真实DSH E2E缺少已验证的固定code-server缓存；请先运行 pnpm workbench:prepare:code-server",
+  );
+}
+
 // E2E profile和Workflow bundle都是测试专用可再生产物。先准备再交给
 // Playwright监督真实服务，避免旧dist/profile让完成门假通过。
 await runCommand(
@@ -53,11 +117,13 @@ await runCommand(
   ["--filter", "@chat/dsh-lifeos-bridge", "build"],
   { cwd: repoRoot, env: environment, label: "DSH E2E Bridge构建" },
 );
-await runCommand(
-  process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-  ["--filter", "@chat/workflows", "build:bundles"],
-  { cwd: repoRoot, env: environment, label: "DSH E2E Workflow Bundle构建" },
-);
+if (!workbenchOnly) {
+  await runCommand(
+    process.platform === "win32" ? "pnpm.cmd" : "pnpm",
+    ["--filter", "@chat/workflows", "build:bundles"],
+    { cwd: repoRoot, env: environment, label: "DSH E2E Workflow Bundle构建" },
+  );
+}
 
 const dshBin = resolveDshBin(repoRoot);
 await runCommand(process.execPath, [dshBin, ...dshBridgeInstallArgs(runtime)], {
@@ -72,4 +138,8 @@ const dump = await runCommandOutput(process.execPath, [dshBin, "web", "--dump-co
 });
 assertDshWebCutoverConfig(dump);
 
-console.log("[e2e-preflight] rc.6 DSH profile、真实Provider与隔离数据目录已就绪");
+console.log(
+  workbenchOnly
+    ? "[e2e-preflight] rc.6 DSH profile、隔离Git Workbench fixture与固定code-server已就绪（未加载Provider，未构建Workflow）"
+    : "[e2e-preflight] rc.6 DSH profile、真实Provider、隔离Git Workbench fixture与固定code-server已就绪",
+);

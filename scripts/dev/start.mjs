@@ -35,13 +35,19 @@ try {
   } else {
     assertRuntimeFiles(root);
     console.log(
-      `[chat] 启动Chat开发环境（web=dsh, memory=${options.memory}, debug=${String(options.debug)}）`,
+      `[chat] 启动Chat开发环境（web=dsh, memory=${options.memory}, workbench=${options.workbench}, debug=${String(options.debug)}）`,
     );
-    await prepareLocalRuntime({ root, memory: options.memory, signal: abortController.signal });
+    await prepareLocalRuntime({
+      root,
+      memory: options.memory,
+      workbench: options.workbench,
+      signal: abortController.signal,
+    });
     const definitions = createServiceDefinitions({
       root,
       debug: options.debug,
       memory: options.memory,
+      workbench: options.workbench,
     });
     supervisor = new AppSupervisor(definitions, { signal: abortController.signal });
     await supervisor.start();

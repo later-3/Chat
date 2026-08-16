@@ -6,6 +6,7 @@ import {
   terminateRecorded,
 } from "./lib.mjs";
 import { cleanupOwnedDebugBrowser } from "../dev/browser-lifecycle.mjs";
+import { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
 
 /**
  * Chat本地开发环境的显式停止入口。
@@ -16,11 +17,23 @@ import { cleanupOwnedDebugBrowser } from "../dev/browser-lifecycle.mjs";
 
 const entries = loadPidEntries();
 const results = terminateRecorded(entries);
+let workbenchRecovery;
+try {
+  workbenchRecovery = await reconcileManagedWorkbench(repoRoot());
+} catch (error) {
+  console.error(
+    `[stop] Workbench Unix socket回收失败：${error instanceof Error ? error.message : String(error)}`,
+  );
+  process.exitCode = 1;
+}
 const browserCleanup = await cleanupOwnedDebugBrowser(repoRoot());
-let failed = false;
+let failed = process.exitCode === 1;
 for (const result of results) {
   console.log(`[stop] ${result.role} pid=${result.pid}: ${result.action}`);
   if (result.action === "kill-failed") failed = true;
+}
+if (workbenchRecovery !== undefined && workbenchRecovery.action !== "no-evidence") {
+  console.log(`[stop] Workbench transport=unix-socket: ${workbenchRecovery.action}`);
 }
 if (browserCleanup.terminatedPids.length > 0 || browserCleanup.removedLocks.length > 0) {
   console.log(

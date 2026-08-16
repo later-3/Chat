@@ -1,8 +1,12 @@
 import type { ClientContext, SessionId } from "@deepseek-ai/dsh-client-runtime/client";
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
+import type {} from "@deepseek-ai/dsh-client-ui-layout/client";
+import type {} from "@deepseek-ai/dsh-client-ui-sidebar/client";
+import { CodeWorkbenchSidebarAction, CodeWorkbenchSurface } from "./CodeWorkbench.tsx";
 import { LifeosDock, type LifeosDockInjected } from "./LifeosDock.tsx";
 import { LifeosProjectionController } from "./controller.ts";
 import { installStyles } from "./styles.ts";
+import { WorkbenchSurfaceController } from "./workbench-controller.ts";
 
 export const name = "chat-dsh-lifeos-bridge-client";
 export const inject = ["slots"];
@@ -10,6 +14,7 @@ export const inject = ["slots"];
 /** Additive Plan/HITL dock; the native ChatView and Composer remain owners. */
 export function apply(ctx: ClientContext): void {
   installStyles(ctx);
+  const workbench = new WorkbenchSurfaceController();
   const controllers = new Map<SessionId, LifeosProjectionController>();
   const controllerFor = (sessionId: SessionId): LifeosProjectionController => {
     let controller = controllers.get(sessionId);
@@ -19,6 +24,30 @@ export function apply(ctx: ClientContext): void {
     }
     return controller;
   };
+
+  ctx.slots.inject("sidebar.footer.action", () =>
+    ctx.slots.register(
+      {
+        name: "sidebar.footer.action",
+        id: "lifeos-code-workbench",
+        order: 30,
+        inject: () => ({ workbench }),
+      },
+      CodeWorkbenchSidebarAction,
+    ),
+  );
+
+  ctx.slots.inject("shell.overlay", () =>
+    ctx.slots.register(
+      {
+        name: "shell.overlay",
+        id: "lifeos-code-workbench-surface",
+        order: 30,
+        inject: () => ({ workbench }),
+      },
+      CodeWorkbenchSurface,
+    ),
+  );
 
   ctx.slots.inject("conversation.input.dock", () => {
     const dispose = ctx.slots.register(

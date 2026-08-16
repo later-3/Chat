@@ -21,13 +21,14 @@
 
 ```text
 Browser
-  -> DSH Web Host
+  -> LifeOS Web Gateway (127.0.0.1:43110)
+     -> DSH Web Host (internal 43114)
      -> DSH Client Plugin Graph
      -> LifeOS Bridge Host
         -> Chat Hono API
            -> Application -> Product Store
                          -> Transactional Outbox -> Vercel Workflow -> pi
-     -> Hosted Workbench proxy -> code-server
+     -> localhost-only Workbench origin -> Gateway -> code-server (private Unix socket)
 ```
 
 DSH和code-server是可替换Adapter/Hosted App，不拥有Chat产品对象。Chat API不依赖DSH类型；Domain/Application不依赖Hono、DSH、Vercel Workflow或pi。
@@ -99,11 +100,14 @@ Query读取资源并返回revision/ETag/cursor；Command表达一次用户意图
 
 ## 7. Workbench合同
 
-- code-server作为独立进程/容器运行，不拆UI组件。
-- 只挂载获准Workspace，使用独立UID、清洗后的环境和独立user-data/extensions目录。
-- 仅绑定loopback/internal网络；DSH Host负责鉴权、健康、HTTP与WebSocket代理。
+- code-server作为独立进程运行，不拆UI组件，也不复制上游源码。
+- 当前只打开精确`CHAT_REPO_ROOT`，使用清洗后的环境、隔离HOME和独立user-data/extensions目录。
+- code-server仅绑定受管0600 Unix socket且不监听TCP；Web Gateway代理HTTP与全部动态WebSocket，并将Workbench放在与DSH不同的虚拟Host Origin。
+- 受管child固定`EXTENSIONS_GALLERY={}`，默认没有扩展市场serviceUrl，不得连接Open VSX、查询Copilot或从父进程继承Gallery配置；后续扩展Provider必须作为显式能力另行设计。
+- `localhost`虚拟Host只允许`/workbench/code/**`，不得访问DSH或`/lifeos`；code-server Service Worker作用域只能是该子路径。
 - DSH用顶级Surface打开，关闭后原聊天Session、草稿和滚动保持。
 - code-server写文件或执行命令不自动成为Chat产品完成事实。
+- 当前本地模式不是OS沙箱；Terminal与扩展以本机用户权限运行，只适用于可信单用户。远程/多用户部署必须换成容器或独立UID Provider。
 
 ## 8. 实时与恢复
 
