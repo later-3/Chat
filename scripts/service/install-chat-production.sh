@@ -34,6 +34,10 @@ done
 
 node_bin="$(command -v node)" || { echo "node 不在 PATH" >&2; exit 1; }
 node_dir="$(dirname "$node_bin")"
+cloudflared_bin="$(command -v cloudflared || true)"
+# 隧道凭据只引用路径（与 pi-web 共用 Cloudflare 隧道），绝不复制或打印内容。
+tunnel_credentials="${CHAT_TUNNEL_CREDENTIALS_FILE:-$HOME/Code/pi-web/deploy/secrets/cloudflared-pi-web-mac.json}"
+tunnel_config="$repo_root/.data/tunnel/cloudflared-chat-mac.yml"
 
 render() {
   local template="$1" target="$2"
@@ -49,7 +53,7 @@ render() {
     "$template" > "$target"
 }
 
-labels=(com.later.chat.production com.later.chat.cloud-relay)
+labels=(com.later.chat.production com.later.chat.cloud-relay com.later.chat.tunnel)
 
 case "$action" in
   install)
@@ -64,8 +68,24 @@ case "$action" in
       || { echo "缺少 .data/web-auth/session-secret，先运行 init-chat-web-auth.mjs" >&2; exit 1; }
     mkdir -p "$log_dir" "$launch_agents"
     chmod +x "$repo_root/scripts/service/run-chat-cloud-relay.sh"
+    # Mac 直连隧道：渲染 cloudflared 配置（当前实际公网入口）。
+    [[ -n "$cloudflared_bin" ]] || { echo "cloudflared 不在 PATH" >&2; exit 1; }
+    [[ -f "$tunnel_credentials" ]] || { echo "隧道凭据文件不存在：$tunnel_credentials" >&2; exit 1; }
+    mkdir -p "$(dirname "$tunnel_config")"
+    sed -e "s|__TUNNEL_CREDENTIALS_FILE__|$tunnel_credentials|g" \
+      "$repo_root/deploy/cloudflared/chat-mac.yml.in" > "$tunnel_config"
+    chmod 600 "$tunnel_config"
     for label in "${labels[@]}"; do
-      render "$repo_root/deploy/macos/$label.plist.in" "$launch_agents/$label.plist"
+      if [[ "$label" == "com.later.chat.tunnel" ]]; then
+        sed \
+          -e "s|__CLOUDFLARED_BIN__|$cloudflared_bin|g" \
+          -e "s|__TUNNEL_CONFIG__|$tunnel_config|g" \
+          -e "s|__USER_HOME__|$HOME|g" \
+          -e "s|__LOG_DIR__|$log_dir|g" \
+          "$repo_root/deploy/macos/$label.plist.in" > "$launch_agents/$label.plist"
+      else
+        render "$repo_root/deploy/macos/$label.plist.in" "$launch_agents/$label.plist"
+      fi
       launchctl bootstrap "gui/$uid" "$launch_agents/$label.plist" 2>/dev/null \
         || launchctl kickstart -k "gui/$uid/$label"
       echo "已安装并启动 $label"
@@ -76,6 +96,7 @@ case "$action" in
       launchctl bootout "gui/$uid/$label" 2>/dev/null && echo "已停止 $label" || true
       rm -f "$launch_agents/$label.plist"
     done
+    rm -f "$tunnel_config"
     ;;
   status)
     for label in "${labels[@]}"; do
