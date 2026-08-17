@@ -17,6 +17,7 @@
 | Memory | memmy与Tencent MemoryCore代码、合同和历史事实保留；当前默认不启动服务，也不向API/Workflow装配Adapter |
 | 调试 | `pnpm dev/dev:debug`只启动Workflow、API、code-server与Web Gateway/DSH；当前没有Memory启用Profile |
 | PWA | DSH Web可安装PWA：Bridge覆盖manifest/sw.js并注入图标与注册脚本；SW只缓存同源静态外壳，/api//lifeos永不缓存 |
+| 移动端布局 | tapIndex注入`/pwa/mobile.css|js`：≤768px时Composer底行防重叠（Access mode隐藏、模型/工作流选择器截断）、侧边栏全屏抽屉+遮罩点按关闭、viewport-fit/软键盘合同；桌面不变。合同测试`dsh-mobile-real.spec.ts` |
 | 远程部署 | 拓扑A：Chat常驻Mac（LaunchAgent），云端只做Nginx+Cloudflare网关；公网入口强制App签名Cookie认证；Workbench不进远程部署。见[远程部署合同](./docs/deployment/remote-pwa-gateway.md) |
 
 ## 当前实施顺序

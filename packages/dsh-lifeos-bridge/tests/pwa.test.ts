@@ -110,17 +110,37 @@ test("unknown pwa paths are rejected and traversal is impossible", () => {
   assert.equal(resolvePwaAsset("/api/sessions"), undefined);
 });
 
-test("index tap injects PWA tags exactly once before </head>", () => {
+test("index tap upgrades viewport and injects PWA+mobile tags exactly once", () => {
   const tap = createPwaIndexTap();
   const html =
-    '<html><head><link rel="manifest" href="/manifest.webmanifest" /></head><body></body></html>';
+    '<html><head><meta name="viewport" content="width=device-width, initial-scale=1" /><link rel="manifest" href="/manifest.webmanifest" /></head><body></body></html>';
   const injected = tap(html);
   assert.match(injected, /apple-mobile-web-app-capable/u);
   assert.match(injected, /apple-touch-icon/u);
   assert.match(injected, /\/pwa\/register\.js/u);
+  assert.match(injected, /\/pwa\/mobile\.css/u);
+  assert.match(injected, /\/pwa\/mobile\.js/u);
+  // 视口合同升级：刘海安全区 + 软键盘缩放。
+  assert.match(injected, /viewport-fit=cover/u);
+  assert.match(injected, /interactive-widget=resizes-content/u);
+  assert.doesNotMatch(injected, /content="width=device-width, initial-scale=1"/u);
   assert.ok(injected.indexOf("/pwa/register.js") < injected.indexOf("</head>"));
   assert.throws(() => tap(injected), /already injected/u);
   assert.throws(() => tap("<html><body></body></html>"), /missing <\/head>/u);
+});
+
+test("mobile assets are served with revalidation and enter the offline shell set", () => {
+  const css = resolvePwaAsset("/pwa/mobile.css");
+  const script = resolvePwaAsset("/pwa/mobile.js");
+  assert.ok(css !== undefined && script !== undefined);
+  assert.equal(css.contentType, "text/css; charset=utf-8");
+  assert.equal(script.contentType, "application/javascript; charset=utf-8");
+  assert.equal(css.immutable, false);
+  // 移动端样式/脚本属于离线外壳的一部分。
+  assert.match(PWA_SERVICE_WORKER_SCRIPT, /\/pwa\/mobile\.css/u);
+  assert.match(PWA_SERVICE_WORKER_SCRIPT, /\/pwa\/mobile\.js/u);
+  // 移动端 CSS 只在小视口生效，不影响桌面布局。
+  assert.match(String(css.body), /@media \(max-width: 768px\)/u);
 });
 
 test("register script only registers /sw.js after load", () => {
