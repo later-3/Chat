@@ -10,11 +10,7 @@ import {
   sha256Schema,
 } from "@chat/contracts/public";
 import { z } from "zod";
-import {
-  decisionRequestSchema,
-  dshSessionIdSchema,
-  workflowSelectionSchema,
-} from "./contracts.ts";
+import { decisionRequestSchema, dshSessionIdSchema, workflowSelectionSchema } from "./contracts.ts";
 
 const pendingDecisionSchema = z
   .object({

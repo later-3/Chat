@@ -117,7 +117,13 @@ export class LifeosProjectionController {
       const json = await responseJson(response);
       if (!response.ok) throw new Error(problemMessage(json, response.status));
       const projection = lifeosProjectionSchema.parse(json);
-      this.publish({ ...this.snapshot, status: "ready", projection, submitting: false, error: null });
+      this.publish({
+        ...this.snapshot,
+        status: "ready",
+        projection,
+        submitting: false,
+        error: null,
+      });
       return true;
     } catch (error) {
       this.publish({

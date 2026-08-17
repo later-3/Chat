@@ -304,9 +304,15 @@ test("workflow selection draft is frozen per request and submitted with the next
         json(res, { run: run(true) });
       } else if (req.method === "GET" && url.pathname === "/api/runs/run_bridge1/plans") {
         json(res, { items: [] });
-      } else if (req.method === "GET" && url.pathname === "/api/runs/run_bridge1/approvals/current") {
+      } else if (
+        req.method === "GET" &&
+        url.pathname === "/api/runs/run_bridge1/approvals/current"
+      ) {
         json(res, { approval: null });
-      } else if (req.method === "GET" && url.pathname === `/api/sessions/${session.sessionId}/messages/${assistantMessage.messageId}`) {
+      } else if (
+        req.method === "GET" &&
+        url.pathname === `/api/sessions/${session.sessionId}/messages/${assistantMessage.messageId}`
+      ) {
         json(res, { message: assistantMessage });
       } else {
         res.statusCode = 404;
@@ -378,10 +384,12 @@ test("workflow selection draft is frozen per request and submitted with the next
     assert.ok(second.length > 0);
 
     assert.equal(messageSubmissions.length, 2);
-    const firstPayload = (messageSubmissions[0]?.body as { payload?: { workflowSelection?: unknown } })
-      ?.payload?.workflowSelection;
-    const secondPayload = (messageSubmissions[1]?.body as { payload?: { workflowSelection?: unknown } })
-      ?.payload?.workflowSelection;
+    const firstPayload = (
+      messageSubmissions[0]?.body as { payload?: { workflowSelection?: unknown } }
+    )?.payload?.workflowSelection;
+    const secondPayload = (
+      messageSubmissions[1]?.body as { payload?: { workflowSelection?: unknown } }
+    )?.payload?.workflowSelection;
     assert.deepEqual(firstPayload, {
       kind: "published_revision",
       workflowDefinitionRevisionId: "wfr_systemnotev1",
