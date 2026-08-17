@@ -11,8 +11,8 @@
   │ HTTPS 443（Cloudflare edge）
   ▼
 Cloudflare Tunnel db7544a7（chat.ai4child.asia）
-  ├─ 当前实际入口：mac-main cloudflared（com.later.chat.tunnel）
-  │    → 127.0.0.1:43110 直连
+  ├─ 当前实际入口：mac-main 的 pi-web cloudflare-direct LaunchAgent，
+  │    其 ingress 携带 chat.ai4child.asia → 127.0.0.1:43110
   └─ 云端链路（已部署，阿里云→CF edge 7844 恢复后自动生效）：
        cloud cloudflared → 127.0.0.1:33052（Nginx，deploy/nginx/chat.conf）
        → 127.0.0.1:33051（SSH 反向隧道 listener）
@@ -24,10 +24,18 @@ mac-main: 127.0.0.1:43114（DSH Host，--trusted-host chat.ai4child.asia）
   → Chat API 43111 → Workflow 43112 → pi
 ```
 
-2026-08-17 部署事实：阿里云到 Cloudflare edge 的 7844（QUIC 与部分 TCP edge
-IP）当前不可达，云端 cloudflared 无法注册隧道连接（pi-web 同日也改由
-Mac 直连隧道承载）；因此 Chat 的当前实际入口与 pi-web 一致——Mac 直连
-cloudflared。两条链路汇聚到同一个 43110 网关，产品行为无差异。
+2026-08-17 部署事实：
+
+1. 阿里云到 Cloudflare edge 的 7844（QUIC 与部分 TCP edge IP）当前不可达，
+   云端 cloudflared 无法注册隧道连接；pi-web 当时已改由 Mac 直连隧道承载。
+   Chat 跟随同一现实：Mac 直连是当前实际入口，云端链路已部署、网络恢复后
+   自动分担。
+2. 同一隧道 id 的所有 cloudflared 实例共享入口流量，每个实例独立应用自己的
+   ingress，因此**每个实例都必须携带全部主机名的并集路由**。Chat 的 Mac 入口
+   由 pi-web 的 `deploy/state/cloudflared-mac-direct.yml` 承载
+   （chat.ai4child.asia → 127.0.0.1:43110）；Chat 仓库不另跑 Mac 隧道实例。
+   云端 `/etc/cloudflared/config.yml` 同样携带 chat ingress（→33052）。
+3. 两条链路汇聚到同一个 43110 网关，产品行为无差异。
 
 端口分配（全 inventory 唯一，云端只绑 loopback）：
 
@@ -108,6 +116,20 @@ ssh later-cloud-admin 'cloudflared tunnel route dns <tunnel-id> chat.ai4child.as
 
 # 3. 确认 cloudflared 服务 active（若原为 inactive，启用它会同时恢复 pi-web 入口）
 ```
+
+## 5.1 2026-08-17 首次部署遗留处置
+
+1. 旧 apps/web 时代的 4 个 LaunchAgent 已停止并归档（文件移至
+   `~/.local/share/chat-pwa/legacy-launchagents-disabled-20260817T170003/`，未删除）：
+   `com.later.chat-pwa-api`、`com.later.chat-pwa-web`、`com.later.chat-pwa-tunnel`、
+   `com.later.chat.backend`。它们服务的是已删除的自研前端与 Python 后端。
+2. `chat.ai4child.asia` 的 DNS 从旧 Mac 隧道 6dc99792 迁移到共享隧道
+   db7544a7（`cloudflared tunnel route dns --overwrite-dns`）。
+3. 云端 cloudflared 由 inactive/disabled 恢复为 enabled/active（pi-web 云端
+   链路同时恢复）；`protocol` 从 `auto` 固定为 `http2`（QUIC 拨号超时）。
+4. Cloudflare edge 对 `.js` 响应的浏览器 cache-control 显示为 `max-age=14400`：
+   SW 更新最坏滞后 4 小时（浏览器 24h 后绕过 HTTP 缓存检查更新）。如需严格
+   no-cache，后续在 Cloudflare 加 Cache Rule。
 
 ## 6. 发布后 Smoke
 
