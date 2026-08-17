@@ -39,11 +39,11 @@ export const MOBILE_CSS = `
   /* 模型选择器：文本截断。 */
   [class*="_7KE1Ra_root"] {
     min-width: 0 !important;
-    max-width: 104px !important;
+    max-width: 88px !important;
   }
   [class*="_7KE1Ra_trigger"] {
     min-width: 0 !important;
-    max-width: 104px !important;
+    max-width: 88px !important;
   }
   [class*="_7KE1Ra_triggerLabel"] {
     min-width: 0 !important;
@@ -58,7 +58,7 @@ export const MOBILE_CSS = `
   }
   .lifeos-workflow-toggle {
     min-width: 0 !important;
-    max-width: 112px !important;
+    max-width: 96px !important;
   }
   /* 侧边栏：桌面是文档流列（收起 56px / 展开 280px 挤压主区）。
      移动端展开态改为全屏抽屉浮层；遮罩由 mobile.js 注入。
