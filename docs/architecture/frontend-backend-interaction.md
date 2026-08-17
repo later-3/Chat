@@ -80,9 +80,15 @@ Plan/HITL Dock是临时命令表面，不是Run状态看板：只有当前Plan�
 NodeRun保留在Trajectory中，不用常驻卡片重复展示历史。
 执行轨迹不创建第二个页面：Host把公开快照写成DSH Session的log-only事件，Client注册
 `lifeos-execution-trace` Conversation Definition并直接贡献到原生`trajectory` target。
-每一层使用原生可展开Tool/Subtool行。Pi行使用角色限定的`规划/执行 Agent`标签；终态摘要直接显示
-模型/工具次数、模型输入/输出/总Token和耗时，不再以空结果呈现。展开原生详情可查看ISO开始/完成时间、
-DSH本地化Timing、审核决定、状态和严格白名单Payload。
+每一层继续使用原生`ToolCallBlock.subCalls`。固定rc.6的Ledger会把所有后代统一渲染为`SUBTOOL`，
+因此Bridge只在自己贡献的Tool名称中增加`├─/└─/│`树线，恢复`Workflow节点 → Agent → 模型/工具`
+的可见深度；它不读取、选择或修改DSH DOM，也不覆盖Trajectory组件。Pi行使用角色限定的
+`规划/执行 Agent`标签；终态摘要直接显示模型/工具次数、模型输入/输出/总Token和耗时，不再以空结果呈现。
+
+时间戳默认保持紧凑。Client插件通过公开`conversation.session.header.utilities`加法Slot注册“时间”开关，
+偏好由DSH公开Snapshot Store保存在浏览器本地；开关只让Conversation Definition按同一Trace重新投影，
+不追加Session事件、不改Chat事实。开启后每行结果显示浏览器本地开始/结束时间，运行中行显示开始时间；
+无论开关状态，展开原生详情始终可查看ISO开始/完成时间、DSH本地化Timing、审核决定、状态和严格白名单Payload。
 不得修改或复制DSH源码来插入这些能力，也不得把完整Hosted App拆成自研React组件。
 
 ## 7. Workbench边界

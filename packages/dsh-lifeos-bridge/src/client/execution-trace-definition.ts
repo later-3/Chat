@@ -31,6 +31,11 @@ interface BlockInput {
   readonly seq: number;
 }
 
+export interface ExecutionTraceViewOptions {
+  /** 在每一行结果摘要中显示浏览器本地时间范围；默认保持紧凑。 */
+  readonly showTimestamps?: boolean;
+}
+
 const STATUS_LABEL: Record<string, string> = {
   pending: "等待中",
   queued: "已排队",
@@ -140,6 +145,79 @@ function callStart(value: ToolCallBlock): number {
 
 function ordered(values: readonly ToolCallBlock[]): ToolCallBlock[] {
   return [...values].sort((left, right) => callStart(left) - callStart(right));
+}
+
+const TREE_NBSP = "\u00a0";
+
+function treePrefix(ancestorLast: readonly boolean[], last: boolean): string {
+  const rails = ancestorLast
+    .map((ancestorWasLast) => (ancestorWasLast ? TREE_NBSP.repeat(3) : `│${TREE_NBSP.repeat(2)}`))
+    .join("");
+  return `${rails}${last ? "└─" : "├─"}${TREE_NBSP}`;
+}
+
+function localDateTime(value: number): string {
+  const date = new Date(value);
+  const pad = (part: number, length = 2): string => String(part).padStart(length, "0");
+  return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`;
+}
+
+function localTime(value: number): string {
+  const date = new Date(value);
+  const pad = (part: number, length = 2): string => String(part).padStart(length, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`;
+}
+
+function localTimeRange(startedAt: number, completedAt?: number): string {
+  if (completedAt === undefined) return `[${localDateTime(startedAt)} → 进行中]`;
+  const start = new Date(startedAt);
+  const end = new Date(completedAt);
+  const sameDay =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate();
+  return `[${localDateTime(startedAt)} → ${sameDay ? localTime(completedAt) : localDateTime(completedAt)}]`;
+}
+
+/**
+ * DSH rc.6会递归读取subCalls，但原生Ledger把所有深度统一画成SUBTOOL。
+ * 插件只改自己贡献的Tool名称，使用树线保留可见深度；不查询或修改DSH DOM。
+ */
+function decorateTreeBlock(
+  value: ToolCallBlock,
+  ancestorLast: readonly boolean[],
+  last: boolean,
+  showTimestamps: boolean,
+  root = false,
+): ToolCallBlock {
+  const childAncestors = root ? ancestorLast : [...ancestorLast, last];
+  const children = value.subCalls.map((child, index, siblings) =>
+    decorateTreeBlock(child, childAncestors, index === siblings.length - 1, showTimestamps),
+  );
+  const prefix = root ? "" : treePrefix(ancestorLast, last);
+  if (!("kind" in value)) {
+    return {
+      ...value,
+      name: `${prefix}${value.name}${showTimestamps ? ` · ${localTimeRange(value.time)}` : ""}`,
+      subCalls: children,
+    };
+  }
+  const startedAt = value.callTime ?? value.time;
+  const range = localTimeRange(startedAt, value.time);
+  const content = showTimestamps
+    ? value.content.length > 0 && value.content[0]?.type === "text"
+      ? [
+          { ...value.content[0], text: `${range} ${value.content[0].text}` },
+          ...value.content.slice(1),
+        ]
+      : [{ type: "text" as const, text: range }, ...value.content]
+    : value.content;
+  return {
+    ...value,
+    call: value.call === null ? null : { ...value.call, name: `${prefix}${value.call.name}` },
+    content,
+    subCalls: children,
+  };
 }
 
 function activityName(activity: PiTraceActivityDto): string {
@@ -370,9 +448,13 @@ function runtimeBlock(trace: ExecutionTraceDto, seq: number): ToolCallBlock | un
   });
 }
 
-export function executionTraceRoot(trace: ExecutionTraceDto, seq: number): ToolCallBlock {
+export function executionTraceRoot(
+  trace: ExecutionTraceDto,
+  seq: number,
+  options: ExecutionTraceViewOptions = {},
+): ToolCallBlock {
   const runtime = runtimeBlock(trace, seq);
-  return block({
+  const root = block({
     callId: `lifeos-workflow-${String(trace.productRunId)}`,
     name: `Chat Workflow · ${trace.workflow.title}`,
     status: trace.run.status,
@@ -395,40 +477,53 @@ export function executionTraceRoot(trace: ExecutionTraceDto, seq: number): ToolC
     ]),
     seq,
   });
+  return decorateTreeBlock(root, [], true, options.showTimestamps === true, true);
 }
 
-export const executionTraceDefinition: ConversationNodeDefinition<ExecutionTraceDto> = {
-  kind: "lifeos-execution-trace",
-  target: "trajectory",
-  match: (event) =>
-    event.type === LIFEOS_EXECUTION_TRACE_EVENT
-      ? { id: String(event.data.trace.productRunId), role: event.data.eventKind }
-      : null,
-  start: (_context, match) => {
-    if (match.event.type !== LIFEOS_EXECUTION_TRACE_EVENT) {
-      throw new Error("lifeos execution trace start requires its session event");
-    }
-    return match.event.data.trace;
-  },
-  update: (context, match) =>
-    match.event.type === LIFEOS_EXECUTION_TRACE_EVENT ? match.event.data.trace : context.state,
-  buildViewNode: (context: ConversationNodeContext<ExecutionTraceDto>) => {
-    const last = context.matches.at(-1);
-    if (last === undefined || context.state === undefined) return null;
-    return {
-      key: context.key,
-      kind: context.kind,
-      id: context.id,
-      target: "trajectory",
-      anchorSeq: context.start?.event.seq ?? last.event.seq,
-      location: context.start?.location ?? { kind: "unresolved" },
-      data: { kind: "tool", root: executionTraceRoot(context.state, last.event.seq) },
-    };
-  },
-};
+export function createExecutionTraceDefinition(
+  options: ExecutionTraceViewOptions = {},
+): ConversationNodeDefinition<ExecutionTraceDto> {
+  return {
+    kind: "lifeos-execution-trace",
+    target: "trajectory",
+    match: (event) =>
+      event.type === LIFEOS_EXECUTION_TRACE_EVENT
+        ? { id: String(event.data.trace.productRunId), role: event.data.eventKind }
+        : null,
+    start: (_context, match) => {
+      if (match.event.type !== LIFEOS_EXECUTION_TRACE_EVENT) {
+        throw new Error("lifeos execution trace start requires its session event");
+      }
+      return match.event.data.trace;
+    },
+    update: (context, match) =>
+      match.event.type === LIFEOS_EXECUTION_TRACE_EVENT ? match.event.data.trace : context.state,
+    buildViewNode: (context: ConversationNodeContext<ExecutionTraceDto>) => {
+      const last = context.matches.at(-1);
+      if (last === undefined || context.state === undefined) return null;
+      return {
+        key: context.key,
+        kind: context.kind,
+        id: context.id,
+        target: "trajectory",
+        anchorSeq: context.start?.event.seq ?? last.event.seq,
+        location: context.start?.location ?? { kind: "unresolved" },
+        data: {
+          kind: "tool",
+          root: executionTraceRoot(context.state, last.event.seq, options),
+        },
+      };
+    },
+  };
+}
 
-export function registerExecutionTraceDefinition(ctx: {
-  conversationEvents: { register(definition: ConversationNodeDefinition): () => void };
-}): () => void {
-  return ctx.conversationEvents.register(executionTraceDefinition);
+export const executionTraceDefinition = createExecutionTraceDefinition();
+
+export function registerExecutionTraceDefinition(
+  ctx: {
+    conversationEvents: { register(definition: ConversationNodeDefinition): () => void };
+  },
+  options: ExecutionTraceViewOptions = {},
+): () => void {
+  return ctx.conversationEvents.register(createExecutionTraceDefinition(options));
 }

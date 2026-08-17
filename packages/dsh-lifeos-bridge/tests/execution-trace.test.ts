@@ -228,22 +228,28 @@ function assertTerminalSummaries(value: ToolCallBlock): void {
   for (const child of value.subCalls) assertTerminalSummaries(child);
 }
 
+function blockName(value: ToolCallBlock): string {
+  return "kind" in value ? (value.call?.name ?? value.callId) : value.name;
+}
+
 test("execution trace becomes a recursive native trajectory tool tree", () => {
   const root = executionTraceRoot(trace(), 12);
   assert.equal("kind" in root && root.kind, "tool-result");
   assert.equal(root.subCalls.length, 4);
-  const planning = root.subCalls.find(
-    (item) => ("kind" in item ? item.call?.name : item.name) === "任务规划",
-  );
+  const planning = root.subCalls.find((item) => blockName(item).endsWith("任务规划"));
   assert.ok(planning !== undefined);
   assert.equal(planning.subCalls.length, 1);
   assert.equal(planning.subCalls[0]?.subCalls.length, 2);
-  const execution = root.subCalls.find(
-    (item) => ("kind" in item ? item.call?.name : item.name) === "执行计划",
-  );
+  assert.match(blockName(planning), /├─.*任务规划/u);
+  assert.match(blockName(planning.subCalls[0]!), /│.*└─.*规划 Agent/u);
+  assert.match(blockName(planning.subCalls[0]!.subCalls[0]!), /│.*├─.*规划 Agent · 模型/u);
+  assert.match(blockName(planning.subCalls[0]!.subCalls[1]!), /│.*└─.*规划 Agent · 工具/u);
+  const execution = root.subCalls.find((item) => blockName(item).endsWith("执行计划"));
   assert.ok(execution !== undefined);
   assert.equal(execution.subCalls.length, 1);
   assert.equal(execution.subCalls[0]?.subCalls.length, 2);
+  assert.match(blockName(execution), /└─.*执行计划/u);
+  assert.match(blockName(execution.subCalls[0]!), /└─.*执行 Agent/u);
   assertTerminalSummaries(root);
   const serialized = JSON.stringify(root);
   assert.match(serialized, /submit_plan_candidate/u);
@@ -260,6 +266,21 @@ test("execution trace becomes a recursive native trajectory tool tree", () => {
     serialized,
     /workflowRunId|hookToken|piSessionId|providerRequestId|"prompt"|"payload"/u,
   );
+});
+
+test("execution trace timestamps are a projection-only optional preference", () => {
+  const compact = executionTraceRoot(trace(), 12);
+  const timestamped = executionTraceRoot(trace(), 12, { showTimestamps: true });
+  const compactText = JSON.stringify(compact);
+  const timestampedText = JSON.stringify(timestamped);
+  assert.doesNotMatch(compactText, /\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} →/u);
+  assert.match(
+    timestampedText,
+    /\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} → \d{2}:\d{2}:\d{2}\.\d{3}\]/u,
+  );
+  assert.match(timestampedText, /规划 Agent/u);
+  assert.match(timestampedText, /执行 Agent/u);
+  assert.equal(trace().updatedAt, "2026-08-17T08:00:04.000Z");
 });
 
 test("recorder appends start/update once per trace revision", async () => {

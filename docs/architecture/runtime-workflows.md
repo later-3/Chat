@@ -274,6 +274,9 @@ Bridge Host轮询该DTO，只在`traceRevision`变化时向当前DSH Session追�
 投影到原生`trajectory` target，形成`Chat Workflow → 业务节点 → Pi Agent → 模型/工具`
 层级，并列保留Vercel Runtime子树。Planner/Executor的终态行摘要包含模型/工具次数、模型
 Token Usage与耗时；每一层的安全详情包含开始/完成时间，Human Review包含已提交决定。
+由于固定DSH rc.6会递归读取`subCalls`后把所有深度统一铺成`SUBTOOL`，Bridge在自己的Tool名称中
+投影Unicode树线以保留可见父子深度，仍不修改上游组件。浏览器本地“时间”偏好通过公开Session
+utility Slot控制；开启时只重投影同一Trace的本地时间范围，不写Session事件或产品事实。
 Plan/HITL Composer Dock只承载当前可操作审核或结果未知重试，决定确认后退出，历史由Human Review
 NodeRun继续留在Trajectory。DSH Session只是可重建展示缓存，不拥有任何运行终态。
 

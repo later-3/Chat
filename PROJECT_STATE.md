@@ -14,7 +14,7 @@
 | Product Store | 版本化JSON Adapter；拥有Session、Message、Run、Plan、Approval、Decision、Memory和Project事实 |
 | Workflow | Vercel Workflow解释不可变RunSpec，承担耐久步骤、暂停、恢复与Checkpoint |
 | Agent Runtime | `pi-agent-core`作为Planner/Executor节点，不拥有产品会话或完成事实 |
-| 执行轨迹 | DSH原生Trajectory展示实际Workflow NodeRun、Vercel Run/Step/Hook/Sleep与Pi Agent/模型/工具层级；终态摘要含角色、Token、耗时，详情含时间；DSH Session仅为投影缓存 |
+| 执行轨迹 | DSH原生Trajectory展示实际Workflow NodeRun、Vercel Run/Step/Hook/Sleep与Pi Agent/模型/工具层级；插件贡献树线恢复可见父子深度，公开Session utility可选显示本地时间范围；终态摘要含角色、Token、耗时，DSH Session仅为投影缓存 |
 | Memory | memmy与Tencent MemoryCore代码、合同和历史事实保留；当前默认不启动服务，也不向API/Workflow装配Adapter |
 | 调试 | `pnpm dev/dev:debug`只启动Workflow、API、code-server与Web Gateway/DSH；当前没有Memory启用Profile |
 | PWA | DSH Web可安装PWA：Bridge覆盖manifest/sw.js并注入图标与注册脚本；SW只缓存同源静态外壳，/api//lifeos永不缓存 |

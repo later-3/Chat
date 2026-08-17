@@ -1,4 +1,8 @@
-import type { ClientContext, SessionId } from "@deepseek-ai/dsh-client-runtime/client";
+import {
+  createSnapshotStore,
+  type ClientContext,
+  type SessionId,
+} from "@deepseek-ai/dsh-client-runtime/client";
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
 import type {} from "@deepseek-ai/dsh-client-ui-layout/client";
 import type {} from "@deepseek-ai/dsh-client-ui-sidebar/client";
@@ -7,6 +11,10 @@ import { LifeosDock, type LifeosDockInjected } from "./LifeosDock.tsx";
 import { WorkflowPicker, type WorkflowPickerInjected } from "./WorkflowPicker.tsx";
 import { LifeosProjectionController } from "./controller.ts";
 import { installStyles } from "./styles.ts";
+import {
+  TraceTimestampToggle,
+  type TraceTimestampToggleInjected,
+} from "./TraceTimestampToggle.tsx";
 import { WorkbenchSurfaceController } from "./workbench-controller.ts";
 import { registerExecutionTraceDefinition } from "./execution-trace-definition.ts";
 
@@ -16,10 +24,26 @@ export const inject = ["slots", "conversationEvents"];
 /** Additive Workflow/Plan/HITL/Workbench surfaces; native ChatView and Composer remain owners. */
 export function apply(ctx: ClientContext): void {
   installStyles(ctx);
-  ctx.effect(
-    () => registerExecutionTraceDefinition(ctx),
-    "lifeos bridge: execution trace trajectory",
-  );
+  const traceTimestamps = createSnapshotStore(false, {
+    persist: { name: "chat.lifeos.trace-timestamps.v1" },
+  });
+  ctx.effect(() => {
+    let disposeDefinition = registerExecutionTraceDefinition(ctx, {
+      showTimestamps: traceTimestamps.getSnapshot(),
+    });
+    const unsubscribe = traceTimestamps.subscribe(() => {
+      // Conversation Definition Registry是DSH公开的低频重投影边界。
+      // 先释放旧Definition再按新偏好注册；Session事实与事件日志均不变化。
+      disposeDefinition();
+      disposeDefinition = registerExecutionTraceDefinition(ctx, {
+        showTimestamps: traceTimestamps.getSnapshot(),
+      });
+    });
+    return () => {
+      unsubscribe();
+      disposeDefinition();
+    };
+  }, "lifeos bridge: execution trace trajectory");
   const workbench = new WorkbenchSurfaceController();
   const controllers = new Map<SessionId, LifeosProjectionController>();
   const controllerFor = (sessionId: SessionId): LifeosProjectionController => {
@@ -74,6 +98,21 @@ export function apply(ctx: ClientContext): void {
     );
     return disposePicker;
   });
+
+  ctx.slots.inject("conversation.session.header.utilities", () =>
+    ctx.slots.register(
+      {
+        name: "conversation.session.header.utilities",
+        id: "lifeos-trace-timestamps",
+        order: 20,
+        inject: (): TraceTimestampToggleInjected => ({
+          hooks: { traceTimestamps },
+          setTraceTimestamps: (visible) => traceTimestamps.set(visible),
+        }),
+      },
+      TraceTimestampToggle,
+    ),
+  );
 
   ctx.slots.inject("conversation.input.dock", () => {
     const dispose = ctx.slots.register(

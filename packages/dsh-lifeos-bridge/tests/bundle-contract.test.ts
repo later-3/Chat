@@ -42,6 +42,26 @@ test("workflow selector uses the additive DSH composer tool-row slot", async () 
   assert.match(picker, /@deepseek-ai\/dsh-client-ui-primitives/);
 });
 
+test("trace display options use public additive DSH contracts without touching trajectory DOM", async () => {
+  const client = await readFile(new URL("../src/client/index.tsx", import.meta.url), "utf8");
+  const toggle = await readFile(
+    new URL("../src/client/TraceTimestampToggle.tsx", import.meta.url),
+    "utf8",
+  );
+  const projection = await readFile(
+    new URL("../src/client/execution-trace-definition.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(client, /createSnapshotStore/);
+  assert.match(client, /ctx\.slots\.inject\("conversation\.session\.header\.utilities"/);
+  assert.match(client, /registerExecutionTraceDefinition/);
+  assert.match(toggle, /PropsRuntime<"conversation\.session\.header\.utilities">/);
+  assert.match(toggle, /aria-pressed=\{visible\}/);
+  assert.match(projection, /target: "trajectory"/);
+  assert.match(projection, /subCalls/);
+  assert.doesNotMatch(`${client}\n${toggle}\n${projection}`, /data-trajectory|MutationObserver/);
+});
+
 test("bundle patch makes Chat workflow the only enabled product model route", async () => {
   const patch = await readFile(new URL("../cordis.patch.yml", import.meta.url), "utf8");
   assert.match(patch, /id: agent-default-model[\s\S]*provider: lifeos[\s\S]*model: workflow/);
