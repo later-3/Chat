@@ -57,9 +57,13 @@ if (!/^[a-zA-Z0-9_.-]{1,64}$/u.test(username)) {
 }
 const password = await question("[chat-auth] 密码: ", { hidden: true });
 const confirm = await question("[chat-auth] 确认密码: ", { hidden: true });
-if (password.length < 12) {
-  console.error("[chat-auth] 密码至少 12 个字符");
+if (password.length < 6) {
+  console.error("[chat-auth] 密码至少 6 个字符");
   process.exit(1);
+}
+if (password.length < 12) {
+  // 不阻断：这是单用户个人部署，口令强度由用户自行决定（2026-08-17 用户明确要求）。
+  console.warn("[chat-auth] 警告：密码少于 12 个字符，强度较低");
 }
 if (password !== confirm) {
   console.error("[chat-auth] 两次输入的密码不一致");
