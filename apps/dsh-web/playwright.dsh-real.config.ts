@@ -6,8 +6,9 @@ import {
 } from "../../scripts/e2e/dsh-real-environment.mjs";
 
 const workbenchOnly = process.env.CHAT_DSH_E2E_MODE === "workbench-only";
+const pwaOnly = process.env.CHAT_DSH_E2E_MODE === "pwa-only";
 const providerEnvironmentModule = "../../scripts/debug/load-provider-env.mjs";
-if (!workbenchOnly) await import(providerEnvironmentModule);
+if (!workbenchOnly && !pwaOnly) await import(providerEnvironmentModule);
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const dataRoot = resolve(repoRoot, ".data/e2e/dsh-real");
@@ -62,6 +63,14 @@ const dsh = {
   timeout: 120_000,
   env: dshRealWebEnvironment(repoRoot, process.env),
 } as const;
+const dshPwa = {
+  command: "node scripts/e2e/start-dsh-pwa-real.mjs",
+  cwd: repoRoot,
+  url: "http://127.0.0.1:43110/healthz",
+  reuseExistingServer: false,
+  timeout: 120_000,
+  env: dshRealWebEnvironment(repoRoot, process.env),
+} as const;
 
 /**
  * 默认付费门使用真实JSON Product Store、Workflow World、pi与百炼；显式
@@ -69,7 +78,11 @@ const dsh = {
  */
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: workbenchOnly ? "dsh-workbench-real.spec.ts" : "dsh-planning-real.spec.ts",
+  testMatch: workbenchOnly
+    ? "dsh-workbench-real.spec.ts"
+    : pwaOnly
+      ? "dsh-pwa-real.spec.ts"
+      : "dsh-planning-real.spec.ts",
   globalTeardown: resolve(repoRoot, "scripts/e2e/dsh-real-workbench-lifecycle.mjs"),
   fullyParallel: false,
   workers: 1,
@@ -83,6 +96,10 @@ export default defineConfig({
     screenshot: "off",
     video: "off",
   },
-  webServer: workbenchOnly ? [codeServer, dsh] : [codeServer, workflow, api, dsh],
+  webServer: workbenchOnly
+    ? [codeServer, dsh]
+    : pwaOnly
+      ? [dshPwa]
+      : [codeServer, workflow, api, dsh],
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });

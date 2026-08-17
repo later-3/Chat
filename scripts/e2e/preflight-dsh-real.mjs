@@ -26,17 +26,21 @@ import {
 const repoRoot = resolve(import.meta.dirname, "../..");
 const dataRoot = resolve(repoRoot, ".data/e2e/dsh-real");
 const expectedRoot = resolve(repoRoot, ".data/e2e/dsh-real");
-const workbenchOnly = process.argv.slice(2).includes("--workbench-only");
+const args = process.argv.slice(2);
+const workbenchOnly = args.includes("--workbench-only");
+// pwa-only 与 workbench-only 一样不装配付费Provider门；PWA 验证只覆盖
+// Gateway/DSH 与公开静态资产。
+const pwaOnly = args.includes("--pwa-only");
 
-if (process.argv.slice(2).some((argument) => argument !== "--workbench-only")) {
+if (args.some((argument) => argument !== "--workbench-only" && argument !== "--pwa-only")) {
   throw new Error("DSH真实E2E preflight收到未知参数");
 }
-if (!workbenchOnly) await import("../debug/load-provider-env.mjs");
+if (!workbenchOnly && !pwaOnly) await import("../debug/load-provider-env.mjs");
 
 if (dataRoot !== expectedRoot || !dataRoot.endsWith("/.data/e2e/dsh-real")) {
   throw new Error("拒绝清理未通过精确校验的DSH真实E2E目录");
 }
-if (!workbenchOnly && !process.env.DASHSCOPE_API_KEY?.trim()) {
+if (!workbenchOnly && !pwaOnly && !process.env.DASHSCOPE_API_KEY?.trim()) {
   throw new Error("真实DSH E2E缺少百炼凭据（本门失败关闭，不会Skip或切换替身）");
 }
 
@@ -66,6 +70,10 @@ const environment = {
       ? join(toolHome, "Library/pnpm/store/v10")
       : join(toolHome, ".local/share/pnpm/store/v10")),
 };
+// 独立版 pnpm（pkg 快照）在 TMPDIR/HOME 不存在时直接 ENOENT 崩溃；先落目录。
+for (const dir of [environment.TMPDIR, environment.HOME, environment.XDG_CACHE_HOME]) {
+  if (typeof dir === "string" && dir !== "") mkdirSync(dir, { recursive: true });
+}
 
 const workbenchFixtureRoot = resolveDshRealWorkbenchFixtureRoot(repoRoot);
 mkdirSync(workbenchFixtureRoot, { recursive: true });

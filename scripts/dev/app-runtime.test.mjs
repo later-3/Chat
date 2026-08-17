@@ -439,11 +439,15 @@ test("Web角色使用受管DSH Node Host且私有Bridge状态不进入命令与�
   });
   const web = services.find((service) => service.id === "web");
   assert.equal(web.command, process.execPath);
-  assert.deepEqual(web.args, ["/workspace/chat/scripts/dsh/start-web.mjs"]);
+  assert.deepEqual(web.args, [
+    "--import",
+    "/workspace/chat/scripts/load-env.mjs",
+    "/workspace/chat/scripts/dsh/start-web.mjs",
+  ]);
   assert.equal(web.cwd, ROOT);
   assert.equal(web.env.DSH_HOME, "/workspace/chat/.data/dsh-home");
   assert.equal(web.env.DSH_WEB_PORT, "43114");
-  assert.equal(web.readyUrl, "http://127.0.0.1:43110/");
+  assert.equal(web.readyUrl, "http://127.0.0.1:43110/healthz");
   assert.equal(web.env.CHAT_API_BASE_URL, "http://127.0.0.1:43111");
   assert.equal(web.env.CHAT_DSH_STATE_PATH, "/private/state.json");
   assert.equal(web.stopTimeoutMs, 7_000);

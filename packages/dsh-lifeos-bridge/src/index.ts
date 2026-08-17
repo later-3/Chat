@@ -6,7 +6,8 @@ import { isAbsolute, resolve } from "node:path";
 import { LifeosLlmAdapter, LIFEOS_PROVIDER } from "./adapter.ts";
 import { LifeosBridgeService } from "./bridge-service.ts";
 import { ChatProductClient, parseChatApiBaseUrl } from "./chat-client.ts";
-import { createLifeosRouteHandler, createServiceWorkerRetirementHandler } from "./http-route.ts";
+import { assertSameOriginRequest, createLifeosRouteHandler, sendRouteError } from "./http-route.ts";
+import { createPwaAssetHandler, createPwaIndexTap } from "./pwa.ts";
 import { AtomicBridgeStateStore } from "./state-store.ts";
 
 export const name = "chat-dsh-lifeos-bridge";
@@ -27,6 +28,19 @@ function requiredPublicWebPort(raw: string | undefined): number {
   return value;
 }
 
+/**
+ * 公开主机名（服务器部署模式）。仅接受小写主机名，不带 scheme/端口/路径；
+ * 未设置时所有路由只接受 loopback，与本地开发姿态一致。
+ */
+function optionalPublicHostname(raw: string | undefined): string | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const value = raw.trim();
+  if (!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/u.test(value) || value.includes("..")) {
+    throw new Error("CHAT_PUBLIC_WEB_HOSTNAME must be a bare lowercase hostname");
+  }
+  return value;
+}
+
 function requiredRepoRoot(raw: string | undefined): string {
   if (raw === undefined || raw.trim() === "") {
     throw new Error("CHAT_REPO_ROOT is required for @chat/dsh-lifeos-bridge");
@@ -43,6 +57,7 @@ export async function apply(ctx: Context): Promise<void> {
   const statePath = requiredStatePath(process.env.CHAT_DSH_STATE_PATH);
   const apiBaseUrl = parseChatApiBaseUrl(process.env.CHAT_API_BASE_URL);
   const webPort = requiredPublicWebPort(process.env.CHAT_PUBLIC_WEB_PORT);
+  const publicHostname = optionalPublicHostname(process.env.CHAT_PUBLIC_WEB_HOSTNAME);
   await ctx.workspaceRegistry.create(repoRoot, "Chat");
   const state = new AtomicBridgeStateStore(statePath);
   await state.ready();
@@ -61,19 +76,52 @@ export async function apply(ctx: Context): Promise<void> {
       ctx.webServer.register({
         kind: "prefix",
         path: "/lifeos",
-        handler: createLifeosRouteHandler(bridge, webPort, (error) => {
-          ctx.logger.warn("lifeos bridge route failed", error);
-        }),
+        handler: createLifeosRouteHandler(
+          bridge,
+          webPort,
+          (error) => {
+            ctx.logger.warn("lifeos bridge route failed", error);
+          },
+          publicHostname,
+        ),
       }),
     "lifeos bridge: same-origin routes",
   );
+  // PWA：具名路由优先于 DSH fallback dist 服务，因此 /manifest.webmanifest 与
+  // /sw.js 在不修改上游 dist 的前提下被 Chat 版本覆盖；tapIndex 是上游公开的
+  // index 转换接缝。历史 apps/web PWA 的 workbox 缓存由新 SW 的 activate 清理。
+  const pwaHandler = createPwaAssetHandler();
+  const guardedPwaHandler: typeof pwaHandler = (req, res) => {
+    try {
+      assertSameOriginRequest(req, webPort, publicHostname);
+    } catch (error) {
+      if (!res.headersSent) sendRouteError(res, error);
+      else res.destroy();
+      return;
+    }
+    try {
+      pwaHandler(req, res);
+    } catch (error) {
+      if (!res.headersSent) sendRouteError(res, error);
+      else res.destroy();
+    }
+  };
+  ctx.effect(() => ctx.webServer.tapIndex(createPwaIndexTap()), "lifeos bridge: pwa index tags");
   ctx.effect(
     () =>
       ctx.webServer.register({
         kind: "exact",
-        path: "/sw.js",
-        handler: createServiceWorkerRetirementHandler(webPort),
+        path: "/manifest.webmanifest",
+        handler: guardedPwaHandler,
       }),
-    "lifeos bridge: retire legacy service worker",
+    "lifeos bridge: pwa manifest",
+  );
+  ctx.effect(
+    () => ctx.webServer.register({ kind: "exact", path: "/sw.js", handler: guardedPwaHandler }),
+    "lifeos bridge: pwa service worker",
+  );
+  ctx.effect(
+    () => ctx.webServer.register({ kind: "prefix", path: "/pwa", handler: guardedPwaHandler }),
+    "lifeos bridge: pwa assets",
   );
 }

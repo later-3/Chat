@@ -303,3 +303,163 @@ test("Gateway隔离DSH与Workbench虚拟Host并代理HTTP和任意upgrade路径"
     rmSync(socketRoot, { recursive: true, force: true });
   }
 });
+
+test("服务器模式：公开主机名+认证门+healthz，未认证导航302、API 401、公开PWA资产直通", async () => {
+  const { randomBytes } = await import("node:crypto");
+  const { hashWebAuthPassword } = await import("./web-auth.mjs");
+  const salt = randomBytes(16).toString("hex");
+  const auth = Object.freeze({
+    users: new Map([["later", { salt, hash: hashWebAuthPassword("correct-horse", salt) }]]),
+    secret: randomBytes(32).toString("hex"),
+    sessionTtlMs: 30 * 24 * 60 * 60 * 1000,
+  });
+  const dsh = createServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ url: req.url, host: req.headers.host }));
+  });
+  const dshPort = await listen(dsh);
+  const gateway = await startWebGateway({
+    publicPort: 0,
+    publicHostname: "chat.ai4child.asia",
+    auth,
+    targets: { dsh: { host: "127.0.0.1", port: dshPort } },
+  });
+  try {
+    // healthz 对 loopback 与公开主机名都可用，供 relay 预检与 Nginx 健康检查。
+    const healthLocal = await get(gateway.port, "/healthz", { host: "127.0.0.1:43110" });
+    assert.equal(healthLocal.status, 200);
+    const healthPublic = await get(gateway.port, "/healthz", { host: "chat.ai4child.asia" });
+    assert.equal(healthPublic.status, 200);
+
+    // 未认证导航 → 302 /login；API → 401 JSON；PWA 公开资产直通上游。
+    const nav = await get(gateway.port, "/", {
+      host: "chat.ai4child.asia",
+      accept: "text/html",
+    });
+    assert.equal(nav.status, 302);
+    assert.equal(nav.headers.location, "/login");
+    const api = await get(gateway.port, "/lifeos/sessions/one", {
+      host: "chat.ai4child.asia",
+    });
+    assert.equal(api.status, 401);
+    const manifest = await get(gateway.port, "/manifest.webmanifest", {
+      host: "chat.ai4child.asia",
+    });
+    assert.equal(manifest.status, 200);
+    assert.equal(JSON.parse(manifest.body).url, "/manifest.webmanifest");
+
+    // 登录页公开可达；错误密码 401；正确密码 302 + 签名 Cookie。
+    const loginPage = await get(gateway.port, "/login", { host: "chat.ai4child.asia" });
+    assert.equal(loginPage.status, 200);
+    assert.match(loginPage.body, /登录 Chat/u);
+    const login = (body) =>
+      new Promise((resolve, reject) => {
+        const request = httpRequest(
+          {
+            hostname: "127.0.0.1",
+            port: gateway.port,
+            path: "/login",
+            method: "POST",
+            headers: {
+              host: "chat.ai4child.asia",
+              origin: "https://chat.ai4child.asia",
+              "content-type": "application/x-www-form-urlencoded",
+              "content-length": Buffer.byteLength(body),
+            },
+          },
+          (response) => {
+            response.resume();
+            response.on("end", () =>
+              resolve({ status: response.statusCode, headers: response.headers }),
+            );
+          },
+        );
+        request.once("error", reject);
+        request.end(body);
+      });
+    const bad = await login("username=later&password=wrong");
+    assert.equal(bad.status, 401);
+    const good = await login("username=later&password=correct-horse");
+    assert.equal(good.status, 302);
+    const setCookie = good.headers["set-cookie"];
+    assert.ok(setCookie !== undefined);
+    const cookieHeader = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+    assert.match(cookieHeader, /Secure/u);
+    const cookie = cookieHeader.split(";")[0];
+
+    // 持 Cookie 的导航与 API 直通上游 DSH。
+    const authed = await get(gateway.port, "/lifeos/sessions/one", {
+      host: "chat.ai4child.asia",
+      cookie,
+    });
+    assert.equal(authed.status, 200);
+    assert.equal(JSON.parse(authed.body).host, "chat.ai4child.asia");
+
+    // 未认证 WebSocket 升级被拒绝；认证后允许进入代理流程。
+    const rawUpgrade = (cookieLine) =>
+      new Promise((resolve, reject) => {
+        const socket = connect(gateway.port, "127.0.0.1");
+        let data = "";
+        socket.setEncoding("utf8");
+        socket.once("error", reject);
+        socket.on("data", (chunk) => {
+          data += chunk;
+        });
+        socket.once("end", () => resolve(data));
+        socket.once("connect", () => {
+          socket.write(
+            [
+              "GET /ws HTTP/1.1",
+              "Host: chat.ai4child.asia",
+              "Connection: Upgrade",
+              "Upgrade: websocket",
+              "Sec-WebSocket-Version: 13",
+              "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+              ...(cookieLine === undefined ? [] : [`Cookie: ${cookieLine}`]),
+              "",
+              "",
+            ].join("\r\n"),
+          );
+        });
+      });
+    assert.match(await rawUpgrade(undefined), /^HTTP\/1\.1 403/u);
+
+    // 伪造 Host 一律拒绝；loopback 主源在服务器模式下依然可用（本机管理面）。
+    const forged = await get(gateway.port, "/", { host: "evil.example.com" });
+    assert.equal(forged.status, 403);
+    const local = await get(gateway.port, "/lifeos/sessions/one", {
+      host: "127.0.0.1:43110",
+      cookie,
+    });
+    assert.equal(local.status, 200);
+  } finally {
+    await gateway.close();
+    await close(dsh);
+  }
+});
+
+test("服务器模式启动防线：公开主机名必须配合认证，且拒绝携带Workbench", async () => {
+  const saved = {
+    host: process.env.CHAT_PUBLIC_WEB_HOSTNAME,
+    auth: process.env.CHAT_WEB_AUTH_REQUIRED,
+    workbench: process.env.CHAT_CODE_WORKBENCH_ENABLED,
+  };
+  try {
+    process.env.CHAT_PUBLIC_WEB_HOSTNAME = "chat.ai4child.asia";
+    delete process.env.CHAT_WEB_AUTH_REQUIRED;
+    process.env.CHAT_CODE_WORKBENCH_ENABLED = "0";
+    await assert.rejects(() => startWebGateway({ publicPort: 0 }), /CHAT_WEB_AUTH_REQUIRED/u);
+    process.env.CHAT_WEB_AUTH_REQUIRED = "0";
+    delete process.env.CHAT_CODE_WORKBENCH_ENABLED;
+    await assert.rejects(() => startWebGateway({ publicPort: 0 }), /Workbench must be disabled/u);
+  } finally {
+    for (const [key, value] of Object.entries({
+      CHAT_PUBLIC_WEB_HOSTNAME: saved.host,
+      CHAT_WEB_AUTH_REQUIRED: saved.auth,
+      CHAT_CODE_WORKBENCH_ENABLED: saved.workbench,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});

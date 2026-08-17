@@ -1,18 +1,9 @@
 import assert from "node:assert/strict";
-import {
-  createServer,
-  request as httpRequest,
-  type IncomingHttpHeaders,
-  type IncomingMessage,
-} from "node:http";
+import { createServer, request as httpRequest, type IncomingMessage } from "node:http";
 import test from "node:test";
 import { BridgeRequestError } from "../src/bridge-service.ts";
 import { ChatProductApiError } from "../src/chat-client.ts";
-import {
-  assertSameOriginRequest,
-  createLifeosRouteHandler,
-  createServiceWorkerRetirementHandler,
-} from "../src/http-route.ts";
+import { assertSameOriginRequest, createLifeosRouteHandler } from "../src/http-route.ts";
 import type { LifeosBridgeService } from "../src/bridge-service.ts";
 
 function request(headers: IncomingMessage["headers"]): IncomingMessage {
@@ -66,63 +57,50 @@ test("same-origin guard accepts only loopback on the exact managed port", () => 
   );
 });
 
-async function getRetirementWorker(): Promise<{
-  status: number | undefined;
-  headers: IncomingHttpHeaders;
-  body: string;
-}> {
-  const server = createServer(createServiceWorkerRetirementHandler(43_110));
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  assert.ok(address !== null && typeof address === "object");
-  try {
-    return await new Promise((resolve, reject) => {
-      const request = httpRequest(
-        {
-          hostname: "127.0.0.1",
-          port: address.port,
-          path: "/sw.js",
-          method: "GET",
-          headers: {
-            host: "127.0.0.1:43110",
-            origin: "http://127.0.0.1:43110",
-            "sec-fetch-site": "same-origin",
-          },
-        },
-        (response) => {
-          const chunks: Buffer[] = [];
-          response.on("data", (chunk: Buffer) => chunks.push(chunk));
-          response.on("end", () => {
-            resolve({
-              status: response.statusCode,
-              headers: response.headers,
-              body: Buffer.concat(chunks).toString("utf8"),
-            });
-          });
-        },
-      );
-      request.on("error", reject);
-      request.end();
-    });
-  } finally {
-    await new Promise<void>((resolve, reject) =>
-      server.close((error) => (error === undefined ? resolve() : reject(error))),
-    );
-  }
-}
-
-test("/sw.js retires only this origin's legacy PWA worker without caching", async () => {
-  const response = await getRetirementWorker();
-  assert.equal(response.status, 200);
-  assert.equal(response.headers["content-type"], "application/javascript; charset=utf-8");
-  assert.equal(response.headers["cache-control"], "no-store");
-  assert.equal(response.headers["service-worker-allowed"], "/");
-  assert.match(response.body, /skipWaiting/);
-  assert.match(response.body, /caches\.keys/);
-  assert.match(response.body, /clients\.claim/);
-  assert.match(response.body, /registration\.unregister/);
-  assert.match(response.body, /client\.navigate\(client\.url\)/);
-  assert.doesNotMatch(response.body, /indexedDB|localStorage|sessionStorage|cookie/);
+test("public hostname is accepted only in server mode with https Origin", () => {
+  assert.equal(
+    assertSameOriginRequest(
+      request({
+        host: "chat.ai4child.asia",
+        origin: "https://chat.ai4child.asia",
+        "sec-fetch-site": "same-origin",
+      }),
+      43_110,
+      "chat.ai4child.asia",
+    ),
+    "chat.ai4child.asia",
+  );
+  // 未配置公开主机名时同样的请求必须被拒绝（本地开发姿态不变）。
+  expectRejected(
+    { host: "chat.ai4child.asia", origin: "https://chat.ai4child.asia" },
+    403,
+    "lifeos_host_forbidden",
+  );
+  // 公网入口不接受 http Origin 或伪造端口。
+  assert.throws(
+    () =>
+      assertSameOriginRequest(
+        request({ host: "chat.ai4child.asia", origin: "http://chat.ai4child.asia" }),
+        43_110,
+        "chat.ai4child.asia",
+      ),
+    (error) =>
+      error instanceof BridgeRequestError &&
+      error.status === 403 &&
+      error.code === "lifeos_origin_forbidden",
+  );
+  assert.throws(
+    () =>
+      assertSameOriginRequest(
+        request({ host: "chat.ai4child.asia:43110" }),
+        43_110,
+        "chat.ai4child.asia",
+      ),
+    (error) =>
+      error instanceof BridgeRequestError &&
+      error.status === 403 &&
+      error.code === "lifeos_host_forbidden",
+  );
 });
 
 test("a known Chat 4xx is returned as a safe same-origin Problem instead of a false 502", async () => {
