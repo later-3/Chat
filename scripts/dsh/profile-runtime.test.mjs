@@ -17,6 +17,7 @@ import {
   assertBridgeBundleContract,
   assertDshCliRuntimeClosure,
   assertDshDistribution,
+  assertDshTrajectoryExtension,
   assertDshWebCutoverConfig,
   assertManagedWebProfileReady,
   DSH_CLI_RUNTIME_IMPORTS,
@@ -247,6 +248,13 @@ test("Bridge原生bundle patch不包含API与私有状态路径", () => {
   }
 });
 
+test("安装的DSH Trajectory包含固定窄扩展且补丁Hash未漂移", () => {
+  const evidence = assertDshTrajectoryExtension(REPO_ROOT);
+  assert.match(evidence.packageRoot, /dsh-client-ui-trajectory/u);
+  assert.match(evidence.patchPath, /patches\/.*ui-trajectory/u);
+  assert.equal(evidence.patchHash.length, 64);
+});
+
 test("DSH入口只接受精确rc.6并从bin声明解析", () => {
   const root = mkdtempSync(join(tmpdir(), "chat-dsh-bin-"));
   try {
@@ -334,6 +342,7 @@ test("Distribution build校验固定DSH与Bridge产物但不创建运行profile"
     assert.deepEqual(
       assertDshDistribution(root, process.env, {
         inspectCliRuntime: () => ({ dshBin: join(dshDir, "lib/bin.js") }),
+        inspectTrajectory: () => ({}),
       }),
       {
         dshBin: join(dshDir, "lib/bin.js"),

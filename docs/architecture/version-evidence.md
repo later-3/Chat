@@ -15,7 +15,7 @@
 
 | 依赖 | 版本 | 许可证 | 用途与边界 | 退出方式 |
 |---|---:|---|---|---|
-| `@deepseek-ai/dsh` | `0.1.0-rc.6` | MIT | 唯一Web Host、原生会话/Composer/插件图；不拥有Chat产品事实 | 替换前端Host与Bridge Adapter；Chat API/Domain/Store不变 |
+| `@deepseek-ai/dsh` | `0.1.0-rc.6` + 固定Trajectory补丁 | MIT | 唯一Web Host、原生会话/Composer/插件图；窄扩展只保留调用Location与语义标签；不拥有Chat产品事实 | 删除补丁或替换前端Host与Bridge Adapter；Chat API/Domain/Store不变 |
 | `@chat/dsh-lifeos-bridge` | workspace `0.1.0` | 私有 | DSH Host/Client到Chat公开Query/Command的唯一集成面 | 删除bundle/profile层；Chat后端不变 |
 | `code-server`官方发行工件 | `4.132.0` / commit `313bf0359b4d391ba18f1fa131aad8a583bc2919` | MIT | 独立Hosted Workbench；不进入pnpm运行依赖、不拥有Chat产品事实 | 替换Workbench Provider；DSH与Chat后端不变 |
 | `hono` | `^4.13.0` | MIT | HTTP协议入口，不拥有事务 | 替换Router Adapter |
@@ -29,6 +29,12 @@
 
 DSH的React、Client UI、Cordis、Host Webserver等传递包由`@deepseek-ai/dsh@0.1.0-rc.6`的锁文件闭包提供。本仓库的Bridge只把DSH Host服务列为peer，并将Chat公开Schema和Zod内联到发布bundle；profile运行时不得解析`workspace:*`依赖。
 
+Trajectory窄派生的源码位于独立DSH分支`codex/chat-trajectory-location-rc6`：上游rc.6基点
+`15148dbd9a1d1f1ef1a26e5749b32af0cd663935`，当前提交
+`708cca1ed78995b986c3400493809ee06d1c3b0e`。Chat不复制该源码，只提交
+`patches/@deepseek-ai__dsh-client-ui-trajectory@0.1.0-rc.6.patch`；补丁SHA-256与pnpm patch hash均为
+`83b6aff34c02dc54862e93ebc0b5bc5d955e46b77e255aa9129bacda49a8749b`。
+
 ### pi运行工件与能力对照源码
 
 - 实际运行工件是锁文件固定的npm `@earendil-works/pi-agent-core@0.82.1`与`@earendil-works/pi-ai@0.82.1`，发布基点为`b4f293684bba718d59cc1157679bcf6157b3a7f5`。
@@ -37,12 +43,13 @@ DSH的React、Client UI、Cordis、Host Webserver等传递包由`@deepseek-ai/ds
 
 ## DSH固定证据
 
-1. 运行依赖精确写为`0.1.0-rc.6`，不使用caret、tag或Git浮动分支。
+1. 运行依赖精确写为`0.1.0-rc.6`，不使用caret、tag或Git浮动分支；Trajectory补丁由lock中的`patch_hash`固定。
 2. Profile只安装本仓库Bridge的绝对`link:`；Bridge通过`dsh.bundle.patch`由DSH CLI原生加入profile bundles。
 3. `DSH_HOME`固定在当前worktree的`.data/dsh-home`，不读取或污染用户全局`~/.dsh`。
 4. 有效配置必须只有一个LifeOS row，默认模型为`lifeos/workflow`，DSH直接DeepSeek/pi-ai路由禁用，避免绕过Chat产品事实。
 5. Boot Manifest、插件Inventory、URL和日志不得包含Chat API私有地址以外的秘密、Bridge状态路径或Runtime身份。
-6. 升级DSH必须通过bundle构建、profile安装、config dump、真实Host、Client插件加载和Planning/HITL浏览器E2E。
+6. `assertDshTrajectoryExtension`在构建与启动前同时验证安装包版本、3个运行标记和补丁SHA-256；源码分支、补丁或安装包任一漂移都失败关闭。
+7. 升级DSH必须先在独立源码分支重放并运行Trajectory测试、typecheck、bundle、lint与doc-sync，再更新固定补丁，并通过profile安装、config dump、真实Host、Client插件加载和Planning/HITL浏览器E2E。
 
 官方来源：<https://github.com/deepseek-ai/deepseek-harness>；npm包：<https://www.npmjs.com/package/@deepseek-ai/dsh>。
 

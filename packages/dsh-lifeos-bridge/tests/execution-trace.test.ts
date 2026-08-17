@@ -3,7 +3,9 @@ import test from "node:test";
 import type { ToolCallBlock } from "@deepseek-ai/dsh-client-runtime/client";
 import { executionTraceDtoSchema, type ExecutionTraceDto } from "@chat/contracts/public";
 import {
+  createExecutionTraceBindingDefinition,
   createExecutionTraceDefinition,
+  executionTraceCallLabels,
   executionTraceRoot,
 } from "../src/client/execution-trace-definition.ts";
 
@@ -232,7 +234,8 @@ function blockName(value: ToolCallBlock): string {
 }
 
 test("execution trace becomes a recursive native trajectory tool tree", () => {
-  const root = executionTraceRoot(trace(), 12);
+  const current = trace();
+  const root = executionTraceRoot(current, 12);
   assert.equal("kind" in root && root.kind, "tool-result");
   assert.equal(root.subCalls.length, 3);
   assert.match(blockName(root), /^Workflow · 生存计划$/u);
@@ -268,6 +271,12 @@ test("execution trace becomes a recursive native trajectory tool tree", () => {
     serialized,
     /workflowRunId|hookToken|piSessionId|providerRequestId|"prompt"|"payload"/u,
   );
+  const labels = executionTraceCallLabels(current);
+  assert.equal(labels.get("lifeos-workflow-run_trace1"), "WORKFLOW");
+  assert.equal(labels.get("lifeos-node-wnr_plan1"), "NODE");
+  assert.equal(labels.get("lifeos-pi-agent-1"), "AGENT");
+  assert.equal(labels.get("lifeos-pi-model-1"), "MODEL");
+  assert.equal(labels.get("lifeos-pi-tool-1"), "TOOL");
 });
 
 test("execution trace timestamps are a projection-only optional preference", () => {
@@ -285,12 +294,12 @@ test("execution trace timestamps are a projection-only optional preference", () 
   assert.equal(trace().updatedAt, "2026-08-17T08:00:04.000Z");
 });
 
-test("definition anchors an external trace to the real user message without custom log events", () => {
+test("definitions bind the user message but publish the trace at the following request Step", () => {
   const current = trace();
-  const definition = createExecutionTraceDefinition((messageId) =>
+  const binding = createExecutionTraceBindingDefinition((messageId) =>
     messageId === "msg_dsh_trace1" ? current : undefined,
   );
-  const matched = definition.match({
+  const userEvent = {
     type: "user/message",
     seq: 7,
     time: Date.parse("2026-08-17T08:00:00.000Z"),
@@ -301,10 +310,11 @@ test("definition anchors an external trace to the real user message without cust
       content: [{ type: "text", text: "执行工作流" }],
     },
     surfaceOp: "append",
-  } as never);
+  } as const;
+  const matched = binding.match(userEvent as never);
   assert.deepEqual(matched, { id: "run_trace1", role: "start" });
   assert.equal(
-    definition.match({
+    binding.match({
       type: "user/message",
       seq: 8,
       time: Date.now(),
@@ -318,4 +328,65 @@ test("definition anchors an external trace to the real user message without cust
     } as never),
     null,
   );
+
+  const stepLocation = {
+    kind: "step",
+    turn: { turn: 1 },
+    step: { step: 1 },
+  } as const;
+  const userMatch = { event: userEvent, location: stepLocation };
+  const requestEvent = {
+    type: "request/header",
+    seq: 11,
+    time: Date.parse("2026-08-17T08:00:00.100Z"),
+    data: {
+      header: { config: { provider: "lifeos", model: "workflow" } },
+      reason: "initial",
+    },
+    surfaceOp: "append",
+  } as const;
+  const requestMatch = { event: requestEvent, location: stepLocation };
+  const definition = createExecutionTraceDefinition();
+  assert.deepEqual(definition.match(requestEvent as never), { id: "11", role: "start" });
+  const state = definition.start(
+    {} as never,
+    requestMatch as never,
+    {
+      previous: (kind: string) =>
+        kind === "lifeos-execution-trace-binding"
+          ? {
+              key: "lifeos-execution-trace-binding:run_trace1",
+              kind,
+              id: "run_trace1",
+              startSeq: 7,
+              state: current,
+              matches: [userMatch],
+            }
+          : undefined,
+    } as never,
+  );
+  const node = definition.buildViewNode?.({
+    key: "lifeos-execution-trace:11",
+    kind: "lifeos-execution-trace",
+    id: "11",
+    matches: [requestMatch],
+    start: requestMatch,
+    state,
+    current: new Map(),
+  } as never);
+  assert.ok(node !== null && node !== undefined && "data" in node);
+  const trajectoryNode = node as typeof node & {
+    readonly anchorSeq: number;
+    readonly location: unknown;
+    readonly data: {
+      readonly kind: "tool";
+      readonly root: ToolCallBlock;
+      readonly callLabels?: ReadonlyMap<string, string>;
+    };
+  };
+  assert.equal(trajectoryNode.anchorSeq, 11);
+  assert.equal(trajectoryNode.location, stepLocation);
+  assert.equal(trajectoryNode.data.kind, "tool");
+  assert.equal(trajectoryNode.data.root.callId, "lifeos-workflow-run_trace1");
+  assert.equal(trajectoryNode.data.callLabels?.get("lifeos-workflow-run_trace1"), "WORKFLOW");
 });

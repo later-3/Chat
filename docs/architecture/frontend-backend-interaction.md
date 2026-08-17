@@ -79,11 +79,15 @@ Plan/HITL Dock是临时命令表面，不是Run状态看板：只有当前Plan�
 决定被Chat确认后Dock立即退出Composer；已完成、修订或拒绝的决定继续作为实际Human Review
 NodeRun保留在Trajectory中，不用常驻卡片重复展示历史。
 执行轨迹不创建第二个页面：Bridge保存真实的`DSH user/message ID → Product Run`绑定，Client
-从同源Query读取公开轨迹，再注册`lifeos-execution-trace` Conversation Definition并以该原生
-`user/message`为锚点直接贡献到`trajectory` target。整个过程不追加自定义DSH Session事件。
-每一层继续使用原生`ToolCallBlock.subCalls`。固定rc.6的Ledger会把所有后代统一渲染为`SUBTOOL`，
-因此Bridge只在自己贡献的Tool名称中增加`├─/└─/│`树线，恢复`Workflow节点 → Agent → 模型/工具`
-的可见深度；它不读取、选择或修改DSH DOM，也不覆盖Trajectory组件。Pi行使用角色限定的
+从同源Query读取公开轨迹。State-only Definition在原生`user/message`处恢复绑定；可见的
+`lifeos-execution-trace` Definition在随后同一轮的`request/header`处读取该绑定，并把调用树贡献到
+`trajectory` target的真实Step Location。DSH的原始顺序因此保持为
+`SYSTEM/USER/CONTEXT → WORKFLOW → ASSISTANT`，整个过程不追加或伪造DSH Session事件。
+每一层继续使用原生`ToolCallBlock.subCalls`。固定rc.6窄扩展只保留独立Tool contribution的
+Conversation Location，并允许贡献方提供表现标签；底层仍是原生`TOOL/SUBTOOL`种类、颜色、折叠、
+计时和检查器。Bridge显示`WORKFLOW/NODE/AGENT/MODEL/TOOL`标签，并在自己贡献的Tool名称中增加
+`├─/└─/│`树线，恢复`Workflow节点 → Agent → 模型/工具`的可见深度；它不读取、选择或修改DSH DOM，
+也不复制或替换Trajectory组件。Pi行使用角色限定的
 `规划/执行 Agent`标签；终态摘要直接显示模型/工具次数、模型输入/输出/总Token和耗时，不再以空结果呈现。
 DSH Trajectory只投影这一套实际Workflow NodeRun及其Pi子过程。公开DTO仍保留脱敏Vercel
 Run/Step/Hook/Sleep运行时证据供后续诊断或证据表面使用，但Bridge不把它与Workflow节点混排，
@@ -93,7 +97,8 @@ Run/Step/Hook/Sleep运行时证据供后续诊断或证据表面使用，但Brid
 偏好由DSH公开Snapshot Store保存在浏览器本地；开关只让Conversation Definition按同一Trace重新投影，
 不追加Session事件、不改Chat事实。开启后每行结果显示浏览器本地开始/结束时间，运行中行显示开始时间；
 无论开关状态，展开原生详情始终可查看ISO开始/完成时间、DSH本地化Timing、审核决定、状态和严格白名单Payload。
-不得修改或复制DSH源码来插入这些能力，也不得把完整Hosted App拆成自研React组件。
+DSH派生改动只允许存在于单独固定分支和仓库内可审核的pnpm补丁：当前仅涉及Contribution Location与
+语义标签两个通用字段。不得复制DSH源码、重写Trajectory页面，或把完整Hosted App拆成自研React组件。
 
 ## 7. Workbench边界
 

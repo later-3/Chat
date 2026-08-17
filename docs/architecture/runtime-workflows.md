@@ -270,14 +270,17 @@ Replay Assembler按产品对象ID、revision和SHA-256组合：
 3. 严格JSONL Trace中的Pi Agent、模型调用、Token Usage与工具生命周期。
 
 Bridge把真实触发消息的`DSH user/message ID → Product Run`绑定保存在私有原子状态中；Client通过
-同源Query恢复各Run的公开轨迹，再使用固定DSH rc.6公开的`ConversationNodeDefinition`，以原生
-`user/message`为触发锚点投影到`trajectory` target。Bridge不向DSH Session追加自定义事件，也不
-伪装成原生工具事件。最终形成`Workflow → Workflow NodeRun → Pi Agent → 模型/工具`
+同源Query恢复各Run的公开轨迹。State-only Definition在原生`user/message`处保存绑定，可见Definition
+在其后的`request/header`处严格向前读取绑定，并使用该事件已解析的Step Location投影到
+`trajectory` target。Bridge不向DSH Session追加自定义事件，也不伪装成原生工具或Assistant事件。
+最终形成`Workflow → Workflow NodeRun → Pi Agent → 模型/工具`
 这一条实际执行主线。Vercel Runtime投影继续作为后端脱敏运行时证据保留，但不在DSH Trajectory
 中与Workflow节点混排；后续证据或诊断表面可以独立消费。Planner/Executor的终态行摘要包含模型/工具次数、模型
 Token Usage与耗时；每一层的安全详情包含开始/完成时间，Human Review包含已提交决定。
-由于固定DSH rc.6会递归读取`subCalls`后把所有深度统一铺成`SUBTOOL`，Bridge在自己的Tool名称中
-投影Unicode树线以保留可见父子深度，仍不修改上游组件。浏览器本地“时间”偏好通过公开Session
+固定DSH rc.6的窄派生扩展保留独立Tool contribution的Conversation Location，因此终态树不会再回到
+Turn序言；可选`callLabels`只把标签显示为`WORKFLOW/NODE/AGENT/MODEL/TOOL`，底层仍保持原生
+Tool/Subtool行为。Bridge同时在自己的Tool名称中投影Unicode树线以保留可见父子深度，不查询或改写DOM。
+浏览器本地“时间”偏好通过公开Session
 utility Slot控制；开启时只重投影同一Trace的本地时间范围，不写Session事件或产品事实。
 Plan/HITL Composer Dock只承载当前可操作审核或结果未知重试，决定确认后退出，历史由Human Review
 NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Query恢复，不拥有任何运行终态。

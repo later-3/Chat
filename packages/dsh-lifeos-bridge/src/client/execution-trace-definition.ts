@@ -37,6 +37,12 @@ export interface ExecutionTraceViewOptions {
 
 export type ExecutionTraceForMessage = (dshMessageId: string) => ExecutionTraceDto | undefined;
 
+interface ExecutionTracePlacementState {
+  readonly trace?: ExecutionTraceDto;
+}
+
+const EXECUTION_TRACE_BINDING_KIND = "lifeos-execution-trace-binding";
+
 const STATUS_LABEL: Record<string, string> = {
   pending: "等待中",
   queued: "已排队",
@@ -430,15 +436,38 @@ export function executionTraceRoot(
   return decorateTreeBlock(root, [], true, options.showTimestamps === true, true);
 }
 
-export function createExecutionTraceDefinition(
+/**
+ * DSH只认识Tool/Subtool行为；标签只解释Chat领域角色，不改变原生层级与交互。
+ */
+export function executionTraceCallLabels(trace: ExecutionTraceDto): ReadonlyMap<string, string> {
+  const labels = new Map<string, string>([
+    [`lifeos-workflow-${String(trace.productRunId)}`, "WORKFLOW"],
+  ]);
+  for (const node of trace.workflow.nodeRuns) {
+    labels.set(`lifeos-node-${String(node.workflowNodeRunId)}`, "NODE");
+  }
+  for (const activity of trace.piActivities) {
+    labels.set(
+      `lifeos-${activity.activityKey}`,
+      activity.kind === "agent" ? "AGENT" : activity.kind === "model" ? "MODEL" : "TOOL",
+    );
+  }
+  return labels;
+}
+
+function locationTurn(
+  location: ConversationNodeContext["matches"][number]["location"],
+): number | undefined {
+  if (location.kind === "step" || location.kind === "turn") return location.turn.turn;
+  return undefined;
+}
+
+/** 保存真实user/message到Product Run的绑定，不产生可见Trajectory节点。 */
+export function createExecutionTraceBindingDefinition(
   traceForMessage: ExecutionTraceForMessage,
-  options: ExecutionTraceViewOptions = {},
 ): ConversationNodeDefinition<ExecutionTraceDto> {
   return {
-    kind: "lifeos-execution-trace",
-    target: "trajectory",
-    // user/message是Product Run的真实触发点。外部轨迹通过Bridge保存的消息绑定
-    // 查询得到，不向DSH Session追加自定义事件，也不伪装成任何原生工具事件。
+    kind: EXECUTION_TRACE_BINDING_KIND,
     match: (event) => {
       if (event.type !== "user/message" || event.data.source.kind !== "user") return null;
       const trace = traceForMessage(String(event.data.id));
@@ -455,9 +484,37 @@ export function createExecutionTraceDefinition(
       return trace;
     },
     update: (context) => context.state,
-    buildViewNode: (context: ConversationNodeContext<ExecutionTraceDto>) => {
+  };
+}
+
+/**
+ * request/header发生在本轮User/Context之后、Assistant之前，并携带DSH解析的Step
+ * Location。通过严格向前读取消息绑定，Workflow树进入真实Step而不是Turn序言。
+ */
+export function createExecutionTraceDefinition(
+  options: ExecutionTraceViewOptions = {},
+): ConversationNodeDefinition<ExecutionTracePlacementState> {
+  return {
+    kind: "lifeos-execution-trace",
+    target: "trajectory",
+    match: (event) =>
+      event.type === "request/header" ? { id: String(event.seq), role: "start" } : null,
+    start: (_context, match, reader) => {
+      const binding = reader.previous<ExecutionTraceDto>(EXECUTION_TRACE_BINDING_KIND);
+      if (binding === undefined) return {};
+      const bindingLocation = binding.matches.at(-1)?.location;
+      const bindingTurn = bindingLocation === undefined ? undefined : locationTurn(bindingLocation);
+      const requestTurn = locationTurn(match.location);
+      if (bindingTurn !== undefined && requestTurn !== undefined && bindingTurn !== requestTurn) {
+        return {};
+      }
+      return { trace: binding.state };
+    },
+    update: (context) => context.state,
+    buildViewNode: (context: ConversationNodeContext<ExecutionTracePlacementState>) => {
       const last = context.matches.at(-1);
-      if (last === undefined || context.state === undefined) return null;
+      const trace = context.state?.trace;
+      if (last === undefined || trace === undefined) return null;
       return {
         key: context.key,
         kind: context.kind,
@@ -467,7 +524,8 @@ export function createExecutionTraceDefinition(
         location: context.start?.location ?? { kind: "unresolved" },
         data: {
           kind: "tool",
-          root: executionTraceRoot(context.state, last.event.seq, options),
+          root: executionTraceRoot(trace, last.event.seq, options),
+          callLabels: executionTraceCallLabels(trace),
         },
       };
     },
@@ -481,5 +539,12 @@ export function registerExecutionTraceDefinition(
   traceForMessage: ExecutionTraceForMessage,
   options: ExecutionTraceViewOptions = {},
 ): () => void {
-  return ctx.conversationEvents.register(createExecutionTraceDefinition(traceForMessage, options));
+  const disposeBinding = ctx.conversationEvents.register(
+    createExecutionTraceBindingDefinition(traceForMessage),
+  );
+  const disposeVisible = ctx.conversationEvents.register(createExecutionTraceDefinition(options));
+  return () => {
+    disposeVisible();
+    disposeBinding();
+  };
 }

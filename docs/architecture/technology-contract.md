@@ -6,7 +6,7 @@
 
 | 层 | 选择 | 责任 |
 |---|---|---|
-| 唯一主前端 | DeepSeek Harness Web（固定版本） | 原生会话、消息、Composer、布局、主题和Client插件宿主 |
+| 唯一主前端 | DeepSeek Harness Web rc.6（固定窄派生） | 原生会话、消息、Composer、布局、主题和Client插件宿主；仅Trajectory Location/标签扩展 |
 | 前端集成 | `@chat/dsh-lifeos-bridge` | DSH Host/Client插件、Chat Query/Command适配、HITL与Workbench表面 |
 | HTTP | Node.js + Hono | 认证上下文、运行时校验、REST和未来SSE协议终止 |
 | Product Core | TypeScript Domain + Application | 状态机、权限、用例、事务、幂等和产品提交 |
@@ -118,7 +118,7 @@ Query读取资源并返回revision/ETag/cursor；Command表达一次用户意图
 
 ## 9. 依赖与升级
 
-每个外部依赖记录精确版本、来源、integrity、许可证、运行边界、升级测试和退出方式。DSH/code-server不以源码副本进入仓库；升级只替换固定版本并通过合同与真实浏览器E2E。需要长期维护上游补丁时必须重新审核其成本，不能静默形成Fork。
+每个外部依赖记录精确版本、来源、integrity、许可证、运行边界、升级测试和退出方式。DSH/code-server不以源码副本进入仓库。DSH当前有且只有一个显式批准的窄派生：单独分支维护源码事实，仓库以固定Hash的pnpm补丁消费Trajectory Location/标签扩展；它不复制UI，也不改变Host、Session或产品事实边界。升级必须把该窄差异重放到新固定版本，并通过DSH源码测试、补丁漂移门、合同与真实浏览器E2E；任何扩大修改面都需要重新审核。
 
 ## 10. 完成门
 
