@@ -40,7 +40,7 @@
     "test:e2e:planning-execution:real": "pnpm test:e2e:dsh-real"
   },
   "devDependencies": {
-    "eslint": "^10.8.0",
+    "eslint": "^9.39.5",
     "prettier": "^3.9.6",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.66.0"
