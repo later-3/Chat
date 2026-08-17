@@ -1,0 +1,15 @@
+# Chat Mac 直连 Cloudflare Tunnel（当前实际公网入口）。
+# 与 pi-web 共用隧道 db7544a7；凭据文件只引用路径，不复制内容。
+# 云端 cloudflared（chat.ai4child.asia → 33052 → SSH relay → Mac:43110）是同一
+# 隧道的第二条入口，阿里云到 Cloudflare edge 的 7844 恢复后自动分担流量。
+tunnel: db7544a7-e16c-43cb-8c47-9f7a3c083798
+credentials-file: __TUNNEL_CREDENTIALS_FILE__
+
+protocol: http2
+no-autoupdate: true
+metrics: 127.0.0.1:20244
+
+ingress:
+  - hostname: chat.ai4child.asia
+    service: http://127.0.0.1:43110
+  - service: http_status:404

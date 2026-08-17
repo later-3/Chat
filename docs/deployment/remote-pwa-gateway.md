@@ -10,17 +10,24 @@
 手机 / 桌面 PWA
   │ HTTPS 443（Cloudflare edge）
   ▼
-Cloudflare Tunnel（cloudflared，chat.ai4child.asia）
+Cloudflare Tunnel db7544a7（chat.ai4child.asia）
+  ├─ 当前实际入口：mac-main cloudflared（com.later.chat.tunnel）
+  │    → 127.0.0.1:43110 直连
+  └─ 云端链路（已部署，阿里云→CF edge 7844 恢复后自动生效）：
+       cloud cloudflared → 127.0.0.1:33052（Nginx，deploy/nginx/chat.conf）
+       → 127.0.0.1:33051（SSH 反向隧道 listener）
+       → SSH -R（com.later.chat.cloud-relay LaunchAgent）→ Mac:43110
   ▼
-cloud-relay: 127.0.0.1:33052（Nginx，deploy/nginx/chat.conf）
-  ▼
-cloud-relay: 127.0.0.1:33051（SSH 反向隧道 listener，owner=sshd）
-  ▼ SSH -R（com.later.chat.cloud-relay LaunchAgent）
 mac-main: 127.0.0.1:43110（Chat Web 网关，认证 + Host 校验）
   ▼
 mac-main: 127.0.0.1:43114（DSH Host，--trusted-host chat.ai4child.asia）
   → Chat API 43111 → Workflow 43112 → pi
 ```
+
+2026-08-17 部署事实：阿里云到 Cloudflare edge 的 7844（QUIC 与部分 TCP edge
+IP）当前不可达，云端 cloudflared 无法注册隧道连接（pi-web 同日也改由
+Mac 直连隧道承载）；因此 Chat 的当前实际入口与 pi-web 一致——Mac 直连
+cloudflared。两条链路汇聚到同一个 43110 网关，产品行为无差异。
 
 端口分配（全 inventory 唯一，云端只绑 loopback）：
 
