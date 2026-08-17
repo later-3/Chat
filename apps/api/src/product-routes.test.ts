@@ -380,10 +380,6 @@ describe("公开产品API", () => {
     expect(workflowEtag).toMatch(/^"[a-f0-9]{64}"$/u);
     const workflowView = workflowRunViewDtoSchema.parse(await workflowViewResponse.json());
     expect(workflowView.definitionNodes.map((node) => node.definitionNodeId)).toEqual([
-      "planning.memory",
-      "planning.project",
-      "planning.rules",
-      "planning.skills",
       "planning.plan",
       "planning.review",
       "planning.execute",

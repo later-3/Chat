@@ -11,6 +11,8 @@ import type {
   ProductRunId,
   RevisionInputId,
   RunAttemptId,
+  TraceEvent,
+  WorkflowRuntimeTraceDto,
 } from "@chat/contracts";
 
 /**
@@ -39,6 +41,19 @@ export type StartDispatchResult =
 
 export interface WorkflowResumePort {
   resume(input: ResumeCommittedDecisionInput): Promise<ResumeDispatchResult>;
+}
+
+/**
+ * 运行时轨迹只读Port。实现可以读取Vercel World，但Application只接收已经
+ * 去除Workflow Run ID、Hook Token、输入输出正文后的公开投影。
+ */
+export interface WorkflowRuntimeTraceReaderPort {
+  read(input: { readonly productRunId: ProductRunId }): Promise<WorkflowRuntimeTraceDto>;
+}
+
+/** 严格Trace事件只读Port；事件合同本身不含Prompt、工具参数或工具结果正文。 */
+export interface ProductRunTraceReaderPort {
+  read(input: { readonly productRunId: ProductRunId }): Promise<readonly TraceEvent[]>;
 }
 
 export interface ResumeCommittedDecisionInput {

@@ -1,5 +1,10 @@
 import { expect, test, type APIRequestContext, type Page, type Response } from "@playwright/test";
-import { cursorPageSchema, messageDtoSchema, runDtoSchema } from "@chat/contracts/public";
+import {
+  cursorPageSchema,
+  executionTraceDtoSchema,
+  messageDtoSchema,
+  runDtoSchema,
+} from "@chat/contracts/public";
 import { z } from "zod";
 import { exerciseDshWorkbench, observeWorkbenchTraffic } from "./dsh-workbench-real-helper.js";
 
@@ -173,6 +178,38 @@ test("rc.6 DSH：发送 -> Plan等待人工 -> 刷新 -> 批准 -> 正式Assista
   expect(assistants).toHaveLength(1);
   expect(assistants[0]?.sourceRunId).toBe(runId);
   expect(assistants[0]?.content.text).toContain(COMPLETION_MARKER);
+
+  const executionTrace = executionTraceDtoSchema.parse(
+    await apiJson(request, `/api/runs/${encodeURIComponent(runId)}/execution-trace`),
+  );
+  expect(executionTrace.runtime.availability).toBe("available");
+  if (executionTrace.runtime.availability !== "available") {
+    throw new Error("真实完成Run缺少Vercel Workflow Runtime轨迹");
+  }
+  expect(executionTrace.runtime.runtimeStatus).toBe("completed");
+  expect(executionTrace.runtime.spans.some((span) => span.kind === "step")).toBe(true);
+  expect(executionTrace.workflow.nodeRuns.length).toBeGreaterThan(0);
+  expect(executionTrace.workflow.nodeRuns.every((node) => node.status !== "skipped")).toBe(true);
+  expect(JSON.stringify(executionTrace.workflow.nodeRuns)).not.toMatch(/memory|记忆/iu);
+  expect(executionTrace.piActivities.some((activity) => activity.kind === "agent")).toBe(true);
+  expect(
+    executionTrace.piActivities.some(
+      (activity) => activity.kind === "model" && activity.tokenUsage !== undefined,
+    ),
+  ).toBe(true);
+  expect(
+    executionTrace.piActivities.some(
+      (activity) => activity.kind === "tool" && activity.toolName === "submit_plan_candidate",
+    ),
+  ).toBe(true);
+
+  await page.getByRole("tab", { name: /轨迹|Trajectory/u }).click();
+  await expect(page.getByText(/Chat Workflow/u).first()).toBeVisible();
+  const expandCalls = page.getByRole("button", { name: /展开调用|Expand calls/u });
+  if (await expandCalls.isVisible().catch(() => false)) await expandCalls.click();
+  await expect(page.getByText(/Vercel Workflow Runtime/u).first()).toBeVisible();
+  await expect(page.getByText(/submit_plan_candidate/u).first()).toBeVisible();
+  await expect(page.getByText(/读取记忆|memory query/iu)).toHaveCount(0);
 
   await page.reload();
   await expect(page.getByText(COMPLETION_MARKER, { exact: true })).toBeVisible();

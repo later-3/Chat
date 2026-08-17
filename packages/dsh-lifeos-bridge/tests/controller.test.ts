@@ -102,6 +102,7 @@ test("loadWorkflows fills the picker list and keeps run polling untouched", asyn
       description: "读取上下文、生成计划、人工审核、执行、验证并提交结果的系统内置流程。",
       blueprintKey: "planning",
       ownerKind: "system",
+      isDefault: false,
     },
     {
       workflowDefinitionRevisionId: "wfr_systemnotev1",
@@ -110,6 +111,7 @@ test("loadWorkflows fills the picker list and keeps run polling untouched", asyn
       description: "从本次消息或选区抽取笔记、分类、人工审核并保存为正式Note。",
       blueprintKey: "note",
       ownerKind: "system",
+      isDefault: false,
     },
   ];
   const controller = new LifeosProjectionController("dsh-session-1", async () => {

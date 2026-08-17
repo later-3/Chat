@@ -1,7 +1,11 @@
 import { FatalError, getStepMetadata } from "workflow";
 import { sha256Hex } from "@chat/domain";
 import { WORKFLOW_DEFINITION_VERSION, type PlanningInputDto } from "@chat/contracts";
-import type { CandidateValidationDiagnostics, ProviderCallMeta } from "@chat/pi-runtime";
+import type {
+  CandidateValidationDiagnostics,
+  PiAgentActivityEvent,
+  ProviderCallMeta,
+} from "@chat/pi-runtime";
 import { ApiClientError } from "./api-client.js";
 import { PiStepFailure } from "./workflow-error.js";
 import {
@@ -302,5 +306,42 @@ export function emitPiNodeTrace(
       ? { candidateValidation: details.candidateValidation }
       : {}),
     ...(details.durationMs !== undefined ? { durationMs: details.durationMs } : {}),
+  } as never);
+}
+
+/** pi原生工具生命周期进入Chat Trace的唯一接缝；正文已在pi-runtime边界裁掉。 */
+export function emitPiToolTrace(
+  scope: ProviderEventScope | PlanningInputDto,
+  nodeKind: "planner" | "executor" | "note_capture",
+  activity: PiAgentActivityEvent,
+): void {
+  const eventName =
+    activity.kind === "tool.started"
+      ? "pi.tool.started"
+      : activity.kind === "tool.completed"
+        ? "pi.tool.completed"
+        : "pi.tool.failed";
+  getWorkflowRuntimeContext().trace({
+    traceId: workflowRunTraceId(scope.productRunId),
+    spanId: workflowSpanId(),
+    productRunId: scope.productRunId as never,
+    attemptId: scope.attemptId as never,
+    promptTemplateVersion: scope.promptTemplateVersion,
+    modelConfigVersion: scope.modelConfigVersion,
+    nodeKind,
+    toolActivityId: activity.toolActivityId,
+    toolName: activity.toolName,
+    level: activity.kind === "tool.failed" ? "warn" : "info",
+    eventName,
+    outcome:
+      activity.kind === "tool.started"
+        ? "unknown"
+        : activity.kind === "tool.completed"
+          ? "success"
+          : "failure",
+    ...(activity.kind === "tool.started" ? {} : { durationMs: activity.durationMs }),
+    ...(activity.kind === "tool.failed"
+      ? { error: { code: "pi.tool_failed", type: "PiToolError" } }
+      : {}),
   } as never);
 }

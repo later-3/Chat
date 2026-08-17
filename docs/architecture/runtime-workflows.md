@@ -5,15 +5,19 @@
 > 当前Workflow Definition：`planning-execution-workflow.v2`、`memory-import-workflow.v1`、`project-intake-workflow.v1`、`project-advancement-workflow.v1`
 >
 > 产品事实源：Product Store；Workflow返回值和Runtime状态不是产品终态。
+>
+> 当前默认产品Profile选择独立的“规划执行工作流”，其Definition只含“规划—审核—执行—验证—提交”，
+> 不包含Memory节点。带Memory/Project/Rules的完整上下文Planning Workflow、Memory代码、合同和历史Workflow继续保留；统一启动器不启动Memory服务，API/Workflow组合根也不装配Memory Adapter。
 
-## 1. 为什么有四套Workflow
+## 1. 为什么有多套Workflow
 
-当前有四个独立的用户结果，因此有四套耐久生命周期：
+当前有多个独立用户结果和两种Planning配置，因此分别冻结耐久生命周期与Definition：
 
-1. `PlanningExecutionWorkflow`：一条消息的Memory召回、规划、人工修订/批准、执行、验证和正式提交。
-2. `MemoryImportWorkflow`：一次显式Memory外部写入或一次只读对账。
-3. `ProjectIntakeWorkflow`：一次真实资源建项理解、候选审核和确认。
-4. `ProjectAdvancementWorkflow`：现有Project的一次Stage/Milestone/负责人Update理解、候选修订和确认。
+1. 默认“规划执行工作流”：一条消息的规划、人工修订/批准、执行、验证和正式提交；冻结Definition不含Memory。
+2. 完整上下文Planning Workflow：显式选择时可编排Memory、Project、Rules等可选上下文节点；当前默认Profile不选择它。
+3. `MemoryImportWorkflow`：一次显式Memory外部写入或一次只读对账。
+4. `ProjectIntakeWorkflow`：一次真实资源建项理解、候选审核和确认。
+5. `ProjectAdvancementWorkflow`：现有Project的一次Stage/Milestone/负责人Update理解、候选修订和确认。
 
 “规划必须在同一个Workflow中完成”指的是规划、修订循环和执行不能拆成多个竞争的规划Run；它不要求把所有独立业务塞进这一条Workflow。Memory导入拥有外部写入/对账生命周期；Project Intake与Advancement都以Project Candidate而不是Plan Approval为暂停对象，但分别承担“创建Project”和“推进既有Project”两个独立用户结果，因此各自拥有Definition与恢复生命周期。
 
@@ -99,7 +103,10 @@ for planRevision 1..5:
 
 ### 4.2 Memory上下文
 
-Memory节点位于Plan修订循环之前。同一Product Run最多准备一次不可变ContextPackage；Plan v2～v5复用同一版本和Hash，不重复查询外部Memory，也不让后续外部变化静默污染审核内容。
+以下是完整上下文Planning Workflow的保留能力边界，不是当前默认产品路径。当前默认“规划执行工作流”的Definition没有Memory节点；因此不会产生Memory NodeRun、Vercel Step或前端轨迹。完整上下文Workflow只有被显式选择时才会解释其Memory节点，而当前Profile仍没有Memory Registry或服务。
+若未来重新启用，必须重新经过产品授权并修改组合根、Profile、合同与真实验证。
+
+保留实现中，Memory节点位于Plan修订循环之前。同一Product Run最多准备一次不可变ContextPackage；Plan v2～v5复用同一版本和Hash，不重复查询外部Memory，也不让后续外部变化静默污染审核内容。
 
 - `required`查询失败：先保存失败结果，再让Run失败关闭。
 - `optional`查询失败：保存排除原因，规划可继续。
@@ -238,7 +245,9 @@ Runtime Binding保存以下私有关系：
 
 ## 9. Trace与回放
 
-Trace记录：命令入口、事务、Outbox、Workflow Start/Resume、Step、Provider/Memory Attempt、状态转换、耗时、错误和产品对象引用。
+Trace记录：命令入口、事务、Outbox、Workflow Start/Resume、Step、Provider/Memory Attempt、
+Pi Agent节点与工具生命周期、状态转换、耗时、错误和产品对象引用。Pi工具事件只记录哈希化调用身份、
+工具名、终态与耗时，不记录参数、partial update或结果正文。
 
 Trace不保存：用户消息、Plan正文、Decision正文、Prompt、Provider完整Payload、Memory正文、密钥和隐藏推理。
 
@@ -250,6 +259,20 @@ Replay Assembler按产品对象ID、revision和SHA-256组合：
 4. Runtime Binding的安全存在性证据。
 
 缺少revision或Hash不一致必须显式报告，不能生成“看起来完整”的假回放。
+
+### 9.1 DSH执行轨迹投影
+
+`GET /api/runs/:productRunId/execution-trace`是DSH使用的公开只读投影。Application在Principal校验后组合：
+
+1. Product Store中的实际`WorkflowNodeRun`；`skipped`节点和静态Definition节点不进入执行轨迹。
+2. Vercel Workflow World的Run/Step/Hook/Sleep事件；Runtime私有路由先把Workflow Run ID、
+   correlation ID、Hook Token、原始I/O和错误正文删除。
+3. 严格JSONL Trace中的Pi Agent、模型调用、Token Usage与工具生命周期。
+
+Bridge Host轮询该DTO，只在`traceRevision`变化时向当前DSH Session追加
+`lifeos/execution-trace`日志事件。Client通过固定DSH rc.6的`ConversationNodeDefinition`
+投影到原生`trajectory` target，形成`Chat Workflow → 业务节点 → Pi Agent → 模型/工具`
+层级，并列保留Vercel Runtime子树。DSH Session只是可重建展示缓存，不拥有任何运行终态。
 
 ## 10. 关键源码地图
 

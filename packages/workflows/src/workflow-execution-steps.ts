@@ -11,6 +11,7 @@ import {
   cmdId,
   emitCompletedProviderCall,
   emitPiNodeTrace,
+  emitPiToolTrace,
   emitProviderTrace,
   PiStepFailure,
   providerResultTraceDetails,
@@ -206,6 +207,7 @@ async function runExecutorWithinStep(input: {
       })),
       onProviderRequestStart: () =>
         emitProviderTrace(scoped, "provider.request.started", { inputManifestSha256 }),
+      onAgentActivity: (activity) => emitPiToolTrace(scoped, "executor", activity),
     });
     if (result.kind === "candidate") {
       if (!emitCompletedProviderCall(scoped, inputManifestSha256, result)) {

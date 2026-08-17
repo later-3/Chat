@@ -229,11 +229,15 @@ function fauxStreamFn(
 describe("runPiPlanner（真实pi Agent loop + faux流）", () => {
   it("模型调用一次submit_plan_candidate且Schema合法时产生候选", async () => {
     let providerRequestStarts = 0;
+    const agentActivities: Array<{ kind: string; toolActivityId: string; toolName: string }> = [];
     const result = await runPiPlanner({
       config,
       planningInput,
       onProviderRequestStart: () => {
         providerRequestStarts += 1;
+      },
+      onAgentActivity: (event) => {
+        agentActivities.push(event);
       },
       streamFnOverride: fauxStreamFn([
         fauxAssistantMessage([fauxToolCall("submit_plan_candidate", validPlanParams)]),
@@ -247,6 +251,13 @@ describe("runPiPlanner（真实pi Agent loop + faux流）", () => {
       expect(result.providerCallCount).toBe(1);
     }
     expect(providerRequestStarts).toBe(1);
+    expect(agentActivities.map((event) => event.kind)).toEqual(["tool.started", "tool.completed"]);
+    expect(agentActivities[0]).toMatchObject({
+      toolName: "submit_plan_candidate",
+      toolActivityId: expect.stringMatching(/^pit_[a-f0-9]{24}$/u),
+    });
+    expect(agentActivities[1]?.toolActivityId).toBe(agentActivities[0]?.toolActivityId);
+    expect(JSON.stringify(agentActivities)).not.toContain("objective");
   });
 
   it("把冻结Memory条目与精确引用写入Planner Prompt", () => {

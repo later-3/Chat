@@ -26,6 +26,7 @@ import {
   cmdId,
   emitCompletedProviderCall,
   emitPiNodeTrace,
+  emitPiToolTrace,
   emitProviderTrace,
   PiStepFailure,
   providerResultTraceDetails,
@@ -561,6 +562,7 @@ async function runPlannerWithinStep(planningInput: PlanningInputDto): Promise<Pl
         emitProviderTrace(planningInput, "provider.request.started", {
           inputManifestSha256,
         }),
+      onAgentActivity: (activity) => emitPiToolTrace(planningInput, "planner", activity),
     });
     if (result.kind === "candidate") {
       if (!emitCompletedProviderCall(planningInput, inputManifestSha256, result)) {

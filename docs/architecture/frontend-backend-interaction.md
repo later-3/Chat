@@ -9,8 +9,8 @@ Browser
   -> LifeOS Web Gateway（127.0.0.1:43110）
   -> DSH Web Host（内部43114）
      -> DSH原生Client插件图
-     -> LifeOS Client插件（Workflow选择、Plan/HITL、Workbench表面）
-     -> LifeOS Host插件（LLM Adapter、同源桥接路由）
+     -> LifeOS Client插件（Workflow选择、Plan/HITL、原生Trajectory、Workbench表面）
+     -> LifeOS Host插件（LLM Adapter、Execution Trace记录、同源桥接路由）
         -> Chat Hono API
            -> Application
               -> Product Store + Outbox
@@ -39,6 +39,7 @@ DSH原生界面创建自己的`dshSessionId`。Host插件把它映射到一个`p
 5. Adapter取得或幂等创建Product Session，以稳定`commandId`提交`POST /api/sessions/:id/messages`。
 6. Chat在Command边界重新校验Workflow仍是已发布、active、当前Principal可用且Hash一致，再原子提交User Message、Product Run、Receipt和Workflow Start Outbox。
 7. Adapter轮询公开Run、Messages、Plans和Current Approval Query；它不从HTTP超时推断成功。
+   同一轮询周期读取公开Execution Trace；只在版本变化时追加DSH log-only事件。
 8. Run需要人工决定时，Client插件展示当前Plan/Approval；用户的修订、批准或拒绝经Host桥接为Chat Decision Command。
 9. Run成功后，Adapter读取Product Store中的正式Assistant Message，并作为DSH文本流返回。DSH将它写入原生会话轨迹。
 
@@ -55,6 +56,7 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 | `GET` | `/api/workflow/definitions` | 读取当前Principal可用的active published Workflow |
 | `GET` | `/api/sessions/:sessionId/messages` | 读取正式Message |
 | `GET` | `/api/runs/:productRunId` | 读取Run状态、阶段与revision |
+| `GET` | `/api/runs/:productRunId/execution-trace` | 读取业务节点、Vercel Runtime与Pi活动的脱敏层级轨迹 |
 | `GET` | `/api/runs/:productRunId/plans` | 读取Plan revisions |
 | `GET` | `/api/runs/:productRunId/approvals/current` | 读取当前可操作Approval |
 | `POST` | `/api/runs/:productRunId/decisions` | 提交版本/Hash绑定的决定 |
@@ -72,6 +74,9 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 LifeOS Bridge是仓库内唯一DSH插件包，所有新增前端表面使用固定rc.6公开合同：Workflow选择器注册在
 `conversation.input.left`，与权限、模型等原生Composer工具同一行；Plan/HITL使用
 `conversation.input.dock`；Workbench入口使用`sidebar.footer.action`，Surface使用`shell.overlay`。
+执行轨迹不创建第二个页面：Host把公开快照写成DSH Session的log-only事件，Client注册
+`lifeos-execution-trace` Conversation Definition并直接贡献到原生`trajectory` target。
+每一层使用原生可展开Tool/Subtool行，因此节点详情、耗时、状态、模型Token和工具名都在DSH轨迹内查看。
 不得修改或复制DSH源码来插入这些能力，也不得把完整Hosted App拆成自研React组件。
 
 ## 7. Workbench边界
@@ -85,6 +90,8 @@ code-server拥有编辑器临时状态和Workspace内进程，不拥有Chat Sess
 ## 8. 调试入口
 
 - DSH Host/Client桥接：`packages/dsh-lifeos-bridge`
+- Execution Trace聚合：`packages/application/src/execution-trace-use-cases.ts`
+- Vercel World脱敏投影：`packages/workflows/src/runtime-trace-projection.ts`
 - DSH启动与Profile：`apps/dsh-web`、`scripts/dsh`
 - Workbench运行：`scripts/workbench`
 - Chat公开路由：`apps/api/src/product-routes.ts`

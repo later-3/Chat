@@ -14,6 +14,7 @@
 | Product Store | 版本化JSON Adapter；拥有Session、Message、Run、Plan、Approval、Decision、Memory和Project事实 |
 | Workflow | Vercel Workflow解释不可变RunSpec，承担耐久步骤、暂停、恢复与Checkpoint |
 | Agent Runtime | `pi-agent-core`作为Planner/Executor节点，不拥有产品会话或完成事实 |
+| 执行轨迹 | DSH原生Trajectory展示实际Workflow NodeRun、Vercel Run/Step/Hook/Sleep与Pi Agent/模型/工具层级；DSH Session仅为投影缓存 |
 | Memory | memmy与Tencent MemoryCore代码、合同和历史事实保留；当前默认不启动服务，也不向API/Workflow装配Adapter |
 | 调试 | `pnpm dev/dev:debug`只启动Workflow、API、code-server与Web Gateway/DSH；当前没有Memory启用Profile |
 | PWA | DSH Web可安装PWA：Bridge覆盖manifest/sw.js并注入图标与注册脚本；SW只缓存同源静态外壳，/api//lifeos永不缓存 |
@@ -35,7 +36,8 @@
 3. 没有浏览器到Workflow、Hook或pi的直连。
 4. 没有多实例生产数据库、完整SSE Cursor Journal或通用插件市场。
 5. 没有把本地code-server包装成多用户远程沙箱；当前Terminal与扩展仍以本机用户权限运行。
-6. 没有在当前默认服务图中启动或连接memmy/MemoryCore；默认Planning只会跳过未选择的可选Memory节点。
+6. 当前默认选择独立的“规划执行工作流”，其冻结Definition只有规划、审核、执行、验证和提交，根本不声明Memory节点；带Memory/Project/Rules的完整上下文Planning Definition继续保留，但Memory服务与Adapter在默认服务图中不启动、不装配。
+7. 没有把静态Workflow Definition节点、Workflow Run ID、Hook Token或Pi Session ID伪装成公开执行轨迹事实。
 
 ## 当前仓库基线门
 
@@ -43,5 +45,6 @@
 - 全仓build、typecheck、test、lint和依赖审计通过。
 - 真实DSH Host启动，原生界面不是临时Adapter页。
 - 浏览器真实完成发送、Plan/HITL、执行结果与刷新恢复。
+- 浏览器在DSH原生Trajectory真实展开Workflow、Pi与Vercel Runtime层级；默认Run因Definition不含Memory而没有任何Memory轨迹，不靠前端过滤。
 - Workbench真实打开同一Workspace，并验证Files、Terminal、Git与Diff。
 - Workbench与DSH使用不同浏览器Origin；WebSocket、Service Worker作用域和停止后的子进程回收通过。

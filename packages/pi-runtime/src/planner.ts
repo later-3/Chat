@@ -8,7 +8,11 @@ import {
   type PlanContent,
   type PlanningInputDto,
 } from "@chat/contracts";
-import { runAgentWithTool, type AgentRunResult } from "./agent-runner.js";
+import {
+  runAgentWithTool,
+  type AgentRunResult,
+  type PiAgentActivityEvent,
+} from "./agent-runner.js";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { BailianConfig } from "./config.js";
 
@@ -224,6 +228,7 @@ export interface RunPiPlannerInput {
   /** 确定性测试注入；生产必须缺省。 */
   readonly streamFnOverride?: StreamFn;
   readonly onProviderRequestStart?: () => void;
+  readonly onAgentActivity?: (event: PiAgentActivityEvent) => void;
 }
 
 /** 缺少API Key时抛出；调用方映射为provider.pre_request.no_api_key，绝不切换假Provider。 */
@@ -272,6 +277,7 @@ export async function runPiPlanner(input: RunPiPlannerInput): Promise<AgentRunRe
     ...(input.onProviderRequestStart !== undefined
       ? { onProviderRequestStart: input.onProviderRequestStart }
       : {}),
+    ...(input.onAgentActivity !== undefined ? { onAgentActivity: input.onAgentActivity } : {}),
     ...(input.streamFnOverride !== undefined ? { streamFnOverride: input.streamFnOverride } : {}),
   });
 }

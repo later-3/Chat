@@ -26,7 +26,13 @@ import {
   type IdFactory,
   type NoteIdFactory,
 } from "@chat/application";
-import { SYSTEM_NOTE_WORKFLOW_REVISION_ID } from "@chat/application/workflow-system-definitions";
+import {
+  SYSTEM_NOTE_WORKFLOW_REVISION_ID,
+  SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID,
+} from "@chat/application/workflow-system-definitions";
 import { hashCanonical } from "@chat/domain";
 import {
   JsonProductStore,
@@ -39,7 +45,10 @@ import {
   migrateProductSnapshotV7ToV8,
   migrateProductSnapshotV8ToV9,
   migrateProductSnapshotV9ToV10,
+  migrateProductSnapshotV10ToV11,
   productSnapshotV1Schema,
+  productSnapshotV10Schema,
+  type ProductSnapshotV10,
   type ProductSnapshotV1,
 } from "@chat/product-store-json";
 
@@ -80,6 +89,7 @@ export type S7VersionedFixtureSnapshot =
   | ProductSnapshotV7Fixture
   | ProductSnapshotV8Fixture
   | ProductSnapshotV9Fixture
+  | ProductSnapshotV10
   | ProductSnapshot;
 
 export interface S7VersionedFixtureManifestEntry {
@@ -232,11 +242,11 @@ export async function buildS7VersionedFixture(
   if (entry.schemaVersion !== "chat-product-store.v10") {
     throw new Error("new planning/note fixture只由当前v10合同生成");
   }
-  return currentFixture(entry.workload, entry.lifecycle);
+  return toV10Fixture(await currentFixture(entry.workload, entry.lifecycle));
 }
 
 export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot): ProductSnapshot {
-  if (snapshot.schemaVersion === "chat-product-store.v10") return structuredClone(snapshot);
+  if (snapshot.schemaVersion === "chat-product-store.v11") return structuredClone(snapshot);
   const v2 =
     snapshot.schemaVersion === "chat-product-store.v1"
       ? migrateProductSnapshotV1ToV2(snapshot)
@@ -248,9 +258,20 @@ export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot):
   const v7 = v6.schemaVersion === "chat-product-store.v6" ? migrateProductSnapshotV6ToV7(v6) : v6;
   const v8 = v7.schemaVersion === "chat-product-store.v7" ? migrateProductSnapshotV7ToV8(v7) : v7;
   const v9 = v8.schemaVersion === "chat-product-store.v8" ? migrateProductSnapshotV8ToV9(v8) : v8;
-  return v9.schemaVersion === "chat-product-store.v9"
-    ? migrateProductSnapshotV9ToV10(v9)
-    : productSnapshotSchema.parse(v9);
+  const v10 = v9.schemaVersion === "chat-product-store.v9" ? migrateProductSnapshotV9ToV10(v9) : v9;
+  return v10.schemaVersion === "chat-product-store.v10"
+    ? migrateProductSnapshotV10ToV11(v10)
+    : productSnapshotSchema.parse(v10);
+}
+
+function toV10Fixture(snapshot: ProductSnapshot): ProductSnapshotV10 {
+  const downgraded = structuredClone(snapshot) as unknown as Record<string, unknown>;
+  downgraded["schemaVersion"] = "chat-product-store.v10";
+  const entities = downgraded["entities"] as Record<string, Record<string, unknown>>;
+  delete entities["workflowDefinitions"]?.[SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID];
+  delete entities["workflowDefinitionRevisions"]?.[SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID];
+  delete entities["workflowViewDefinitions"]?.[SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID];
+  return productSnapshotV10Schema.parse(downgraded);
 }
 
 export function fixtureObjectCount(snapshot: S7VersionedFixtureSnapshot): number {
@@ -348,35 +369,35 @@ async function currentFixture(
     commandId: fixture.command(),
     payload: {},
   });
-  let definitionSha256: string | undefined;
-  if (workload === "note_capture") {
-    const seeded = await fixture.deps.store.read({ kind: "committedSnapshot" });
-    definitionSha256 =
-      seeded.snapshot.entities.workflowDefinitionRevisions[SYSTEM_NOTE_WORKFLOW_REVISION_ID]
-        ?.definitionSha256;
-    if (definitionSha256 === undefined) throw new Error("S7 Fixture缺少Note系统Definition");
-  }
+  const seeded = await fixture.deps.store.read({ kind: "committedSnapshot" });
+  const definitionRevisionId =
+    workload === "note_capture"
+      ? SYSTEM_NOTE_WORKFLOW_REVISION_ID
+      : SYSTEM_PLANNING_WORKFLOW_REVISION_ID;
+  const definitionSha256 =
+    seeded.snapshot.entities.workflowDefinitionRevisions[definitionRevisionId]?.definitionSha256;
+  if (definitionSha256 === undefined) throw new Error("S7 Fixture缺少系统Definition");
   const submitted = await submitUserMessage(fixture.deps, {
     principalId: OWNER,
     sessionId: session.sessionId,
     commandId: fixture.command(),
     payload: {
       text: workload === "new_planning" ? "生成脱敏兼容计划" : "沉淀脱敏兼容笔记",
-      ...(workload === "note_capture"
-        ? {
-            workflowSelection: {
-              kind: "published_revision" as const,
-              workflowDefinitionRevisionId: SYSTEM_NOTE_WORKFLOW_REVISION_ID as never,
-              definitionSha256: definitionSha256!,
+      workflowSelection: {
+        kind: "published_revision" as const,
+        workflowDefinitionRevisionId: definitionRevisionId as never,
+        definitionSha256,
+        ...(workload === "note_capture"
+          ? {
               businessInput: {
                 kind: "note_capture" as const,
                 source: { kind: "full_message" as const },
                 defaultKind: "general" as const,
                 suggestedTagLabels: [],
               },
-            },
-          }
-        : {}),
+            }
+          : {}),
+      },
     },
   });
   if (lifecycle === "active") {

@@ -139,6 +139,9 @@ export const TRACE_EVENT_NAMES = {
   piNodeStarted: "pi.node.started",
   piNodeCompleted: "pi.node.completed",
   piNodeFailed: "pi.node.failed",
+  piToolStarted: "pi.tool.started",
+  piToolCompleted: "pi.tool.completed",
+  piToolFailed: "pi.tool.failed",
   executionValidated: "execution.validated",
   executionRejected: "execution.rejected",
   productCommitStarted: "product_commit.started",
@@ -1355,6 +1358,31 @@ const piNodeFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piNodeFailed, "fai
   ...durationMsOptional,
 });
 
+// pi工具事件只保存调用身份、工具名和终态，不保存参数、结果正文或partial update。
+const piToolActivityIdSchema = z.string().regex(/^pit_[a-f0-9]{24}$/u);
+const piToolNameSchema = z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/u);
+const piToolFields = {
+  ...modelScopedFields,
+  nodeKind: piNodeKindSchema,
+  toolActivityId: piToolActivityIdSchema,
+  toolName: piToolNameSchema,
+};
+
+const piToolStartedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piToolStarted, "unknown", {
+  ...piToolFields,
+});
+
+const piToolCompletedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piToolCompleted, "success", {
+  ...piToolFields,
+  ...durationMsRequired,
+});
+
+const piToolFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piToolFailed, "failure", {
+  ...piToolFields,
+  error: traceErrorSchema,
+  ...durationMsRequired,
+});
+
 // 执行验证：Run + Attempt。
 const executionValidatedSchema = defineTraceEvent(TRACE_EVENT_NAMES.executionValidated, "success", {
   ...runScopedFields,
@@ -1499,6 +1527,9 @@ export const traceEventSchema = z.discriminatedUnion("eventName", [
   piNodeStartedSchema,
   piNodeCompletedSchema,
   piNodeFailedSchema,
+  piToolStartedSchema,
+  piToolCompletedSchema,
+  piToolFailedSchema,
   executionValidatedSchema,
   executionRejectedSchema,
   productCommitStartedSchema,

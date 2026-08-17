@@ -385,11 +385,26 @@ describe("Store v10 Planning Memory Selection", () => {
       commandId: test.command(),
       payload: {},
     });
+    const seeded = (await test.store.read({ kind: "committedSnapshot" })).snapshot;
+    const definition =
+      seeded.entities.workflowDefinitionRevisions[SYSTEM_PLANNING_WORKFLOW_REVISION_ID];
+    if (definition === undefined) throw new Error("fixture缺少完整Planning Definition");
     const target = await submitUserMessage(test.deps, {
       principalId: attacker,
       sessionId: session.sessionId,
       commandId: test.command(),
-      payload: { text: "攻击者自己的Planning Run。" },
+      payload: {
+        text: "攻击者自己的Planning Run。",
+        workflowSelection: {
+          kind: "published_revision",
+          workflowDefinitionRevisionId: definition.workflowDefinitionRevisionId,
+          definitionSha256: definition.definitionSha256,
+          runConfiguration: {
+            schemaVersion: "workflow-run-configuration.v1",
+            overrides: [],
+          },
+        },
+      },
     });
     const before = (await test.store.read({ kind: "committedSnapshot" })).snapshot;
     const workflowRunSpecId = runSpecIdFor(before, target.run.productRunId);

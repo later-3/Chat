@@ -18,6 +18,8 @@ export type {
 } from "./project.js";
 export * from "./project-api.js";
 export * from "./workflow-api.js";
+export * from "./workflow-runtime-trace-api.js";
+export * from "./execution-trace-api.js";
 export * from "./workflow-designer-api.js";
 export * from "./rules-api.js";
 export * from "./note-api.js";

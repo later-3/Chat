@@ -8,13 +8,18 @@ import { WorkflowPicker, type WorkflowPickerInjected } from "./WorkflowPicker.ts
 import { LifeosProjectionController } from "./controller.ts";
 import { installStyles } from "./styles.ts";
 import { WorkbenchSurfaceController } from "./workbench-controller.ts";
+import { registerExecutionTraceDefinition } from "./execution-trace-definition.ts";
 
 export const name = "chat-dsh-lifeos-bridge-client";
-export const inject = ["slots"];
+export const inject = ["slots", "conversationEvents"];
 
 /** Additive Workflow/Plan/HITL/Workbench surfaces; native ChatView and Composer remain owners. */
 export function apply(ctx: ClientContext): void {
   installStyles(ctx);
+  ctx.effect(
+    () => registerExecutionTraceDefinition(ctx),
+    "lifeos bridge: execution trace trajectory",
+  );
   const workbench = new WorkbenchSurfaceController();
   const controllers = new Map<SessionId, LifeosProjectionController>();
   const controllerFor = (sessionId: SessionId): LifeosProjectionController => {

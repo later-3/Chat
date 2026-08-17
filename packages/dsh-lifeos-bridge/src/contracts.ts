@@ -107,6 +107,7 @@ export const lifeosWorkflowOptionSchema = z
     description: z.string().min(1).max(1000),
     blueprintKey: z.enum(["planning", "note"]),
     ownerKind: z.enum(["system", "principal"]),
+    isDefault: z.boolean(),
   })
   .strict();
 

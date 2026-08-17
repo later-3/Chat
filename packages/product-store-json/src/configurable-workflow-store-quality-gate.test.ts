@@ -17,6 +17,9 @@ import {
   SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
   SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_PLANNING_WORKFLOW_VIEW_ID,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID,
   SYSTEM_NOTE_WORKFLOW_DEFINITION_ID,
   SYSTEM_NOTE_WORKFLOW_REVISION_ID,
   SYSTEM_NOTE_WORKFLOW_VIEW_ID,
@@ -27,6 +30,7 @@ import { migrateProductSnapshotV6ToV7 } from "./migrate-v6-to-v7.js";
 import { migrateProductSnapshotV7ToV8 } from "./migrate-v7-to-v8.js";
 import { migrateProductSnapshotV8ToV9 } from "./migrate-v8-to-v9.js";
 import { migrateProductSnapshotV9ToV10 } from "./migrate-v9-to-v10.js";
+import { migrateProductSnapshotV10ToV11 } from "./migrate-v10-to-v11.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-10T12:00:00.000Z";
@@ -123,8 +127,10 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     expect(first.entities.workflowViewDefinitions[LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID]).toEqual(
       second.entities.workflowViewDefinitions[LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID],
     );
-    const current = migrateProductSnapshotV9ToV10(
-      migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(first)),
+    const current = migrateProductSnapshotV10ToV11(
+      migrateProductSnapshotV9ToV10(
+        migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(first)),
+      ),
     );
     expect(
       current.entities.workflowDefinitionRevisions[SYSTEM_NOTE_WORKFLOW_REVISION_ID]?.state,
@@ -168,16 +174,20 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     expect(() => migrateProductSnapshotV7ToV8(conflicting)).toThrow("固定ID已被异语义对象占用");
   });
 
-  it("v9→v10保留legacy Planning并确定性发布v2，新增集合只能显式为空", () => {
+  it("v9→v11保留完整Planning并新增独立无Memory的Simple Planning", () => {
     const v7 = migrateProductSnapshotV6ToV7(emptyV6());
     const v9 = migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(v7));
     expect(
       v9.entities.workflowDefinitionRevisions[LEGACY_SYSTEM_PLANNING_WORKFLOW_REVISION_ID],
     ).toMatchObject({ definitionRevision: 1, state: "published" });
-    const first = migrateProductSnapshotV9ToV10(v9);
-    const second = migrateProductSnapshotV9ToV10(structuredClone(v9));
+    const v10 = migrateProductSnapshotV9ToV10(v9);
+    const first = migrateProductSnapshotV10ToV11(v10);
+    const second = migrateProductSnapshotV10ToV11(
+      migrateProductSnapshotV9ToV10(structuredClone(v9)),
+    );
     expect(first).toEqual(second);
-    expect(first.schemaVersion).toBe("chat-product-store.v10");
+    expect(v10.schemaVersion).toBe("chat-product-store.v10");
+    expect(first.schemaVersion).toBe("chat-product-store.v11");
     expect(first.entities.planningMemorySelections).toEqual({});
     expect(first.entities.workflowPolicyResolutions).toEqual({});
     expect(
@@ -185,17 +195,39 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     ).toMatchObject({ definitionRevision: 1, state: "superseded" });
     expect(
       first.entities.workflowDefinitionRevisions[SYSTEM_PLANNING_WORKFLOW_REVISION_ID],
-    ).toMatchObject({
-      definitionRevision: 2,
-      state: "published",
-    });
+    ).toMatchObject({ definitionRevision: 2, state: "published" });
+    expect(
+      first.entities.workflowDefinitionRevisions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID],
+    ).toMatchObject({ definitionRevision: 1, state: "published" });
+    expect(
+      first.entities.workflowDefinitionRevisions[
+        SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID
+      ]?.semanticRoot.elements.some(
+        (element) => element.kind === "task" && element.nodeType === "context.memory",
+      ),
+    ).toBe(false);
     expect(
       first.entities.workflowDefinitions[SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID]
         ?.publishedRevisionId,
     ).toBe(SYSTEM_PLANNING_WORKFLOW_REVISION_ID);
+    expect(
+      first.entities.workflowDefinitions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID]
+        ?.publishedRevisionId,
+    ).toBe(SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID);
     expect(first.entities.workflowViewDefinitions[LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID]).toEqual(
       v9.entities.workflowViewDefinitions[LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID],
     );
+    expect(
+      first.entities.workflowViewDefinitions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID]?.nodes.map(
+        (node) => node.nodeType,
+      ),
+    ).toEqual([
+      "agent.plan",
+      "human.plan_review",
+      "execute.plan",
+      "result.validate",
+      "product.commit",
+    ]);
     expect(() => assertSnapshotIntegrity(first)).not.toThrow();
   });
 

@@ -68,6 +68,15 @@ describe("traceEventSchema：pi节点类型与正式Runner一致", () => {
   });
 });
 
+describe("traceEventSchema：pi工具事件不接受正文", () => {
+  it("只接受工具身份与耗时", () => {
+    const valid = fixtureOf(TRACE_EVENT_NAMES.piToolCompleted);
+    expect(traceEventSchema.safeParse(valid).success).toBe(true);
+    expect(traceEventSchema.safeParse({ ...valid, args: CONTENT_MARKER }).success).toBe(false);
+    expect(traceEventSchema.safeParse({ ...valid, result: CONTENT_MARKER }).success).toBe(false);
+  });
+});
+
 describe("traceEventSchema：事件族关联字段强制", () => {
   it("Product Run事件缺productRunId被拒绝", () => {
     for (const name of [

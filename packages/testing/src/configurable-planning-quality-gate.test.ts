@@ -20,7 +20,9 @@ import {
 import { type ApplicationDeps, type IdFactory } from "@chat/application";
 import {
   createSystemPlanningDefinition,
+  createSystemSimplePlanningDefinition,
   SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
 } from "@chat/application/workflow-system-definitions";
 import {
   compileProjectMethodSnapshotPolicies,
@@ -64,6 +66,7 @@ interface QualityFixture {
   readonly appA: ApiApp;
   readonly appB: ApiApp;
   readonly systemDefinitionSha256: string;
+  readonly simpleDefinitionSha256: string;
   command(): CommandId;
 }
 
@@ -75,6 +78,7 @@ async function qualityFixture(): Promise<QualityFixture> {
   const store = await JsonProductStore.open({ filePath: join(directory, "product.json"), now });
   const deps: ApplicationDeps = { store, now, ids: testIds() };
   const system = createSystemPlanningDefinition(NOW);
+  const simple = createSystemSimplePlanningDefinition(NOW);
   const methodPolicies = compileProjectMethodSnapshotPolicies("small-project.v1");
   const methodSha256 = computeProjectMethodSnapshotSha256({
     profileId: "small-project.v1",
@@ -178,6 +182,7 @@ async function qualityFixture(): Promise<QualityFixture> {
     appA: makeApp(PRINCIPAL_A),
     appB: makeApp(PRINCIPAL_B),
     systemDefinitionSha256: system.revision.definitionSha256,
+    simpleDefinitionSha256: simple.revision.definitionSha256,
     command: () => `cmd_quality${(++commandSequence).toString(36)}` as CommandId,
   };
 }
@@ -217,6 +222,18 @@ function explicitSystemSelection(fixture: QualityFixture) {
     kind: "published_revision" as const,
     workflowDefinitionRevisionId: SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
     definitionSha256: fixture.systemDefinitionSha256,
+    runConfiguration: {
+      schemaVersion: "workflow-run-configuration.v1" as const,
+      overrides: [],
+    },
+  };
+}
+
+function explicitDefaultSelection(fixture: QualityFixture) {
+  return {
+    kind: "published_revision" as const,
+    workflowDefinitionRevisionId: SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+    definitionSha256: fixture.simpleDefinitionSha256,
     runConfiguration: {
       schemaVersion: "workflow-run-configuration.v1" as const,
       overrides: [],
@@ -268,7 +285,7 @@ describe("S4 configured message黑盒质量门", () => {
       fixture,
       firstSession.sessionId,
       commandId,
-      explicitSystemSelection(fixture),
+      explicitDefaultSelection(fixture),
     );
     expect(replay.status, await replay.clone().text()).toBe(201);
     const replayed = (await replay.json()) as {
@@ -281,7 +298,7 @@ describe("S4 configured message黑盒质量门", () => {
       fixture,
       secondSession.sessionId,
       fixture.command(),
-      explicitSystemSelection(fixture),
+      explicitDefaultSelection(fixture),
     );
     expect(explicitResponse.status, await explicitResponse.clone().text()).toBe(201);
     const explicit = (await explicitResponse.json()) as {
@@ -636,7 +653,12 @@ describe("S4公开Workflow Query黑盒质量门", () => {
   it("config-summary为strict DTO、支持ETag/304且跨用户不可读", async () => {
     const fixture = await qualityFixture();
     const session = await createSession(fixture);
-    const sent = await submitMessage(fixture, session.sessionId, fixture.command());
+    const sent = await submitMessage(
+      fixture,
+      session.sessionId,
+      fixture.command(),
+      explicitSystemSelection(fixture),
+    );
     expect(sent.status).toBe(201);
     const run = ((await sent.json()) as { run: { productRunId: string } }).run;
     const path = `/api/runs/${run.productRunId}/workflow-config-summary`;
@@ -706,7 +728,12 @@ describe("S4私有Runtime身份、篡改与幂等质量门", () => {
   it("transition派生Node身份、command replay幂等并拒绝伪造Node ID和RunSpec错绑", async () => {
     const fixture = await qualityFixture();
     const session = await createSession(fixture);
-    const sent = await submitMessage(fixture, session.sessionId, fixture.command());
+    const sent = await submitMessage(
+      fixture,
+      session.sessionId,
+      fixture.command(),
+      explicitSystemSelection(fixture),
+    );
     const { run } = (await sent.json()) as { run: { productRunId: string } };
     const snapshot = await snapshotOf(fixture);
     const storedRun = snapshot.entities.runs[run.productRunId];

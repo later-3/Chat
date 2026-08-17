@@ -1,11 +1,13 @@
 import "../../../scripts/load-env.mjs";
 import { serve } from "@hono/node-server";
-import { createTraceSink } from "@chat/realtime";
+import { createTraceSink, readTraceEvents } from "@chat/realtime";
+import type { ApplicationDeps } from "@chat/application";
 import { isBailianReady, loadBailianConfig } from "@chat/pi-runtime";
 import { loadRuntimeCredential } from "@chat/workflows";
 import { createApiApp } from "./app.js";
 import { createApplicationDeps, DEBUG_PRINCIPAL_ID } from "./composition.js";
 import { OutboxDispatcher } from "./outbox-dispatcher.js";
+import { WorkflowRuntimeTraceHttpClient } from "./workflow-runtime-trace-client.js";
 
 /**
  * Chat API入口。本地调试固定端口43111（任务书§8.1），可用PORT覆盖；
@@ -22,7 +24,7 @@ const hostname = process.env.CHAT_API_HOST ?? "127.0.0.1";
 const repoRoot = process.env.CHAT_REPO_ROOT ?? process.cwd();
 const traceSink = createTraceSink();
 let applicationTraceFailures = 0;
-const deps = await createApplicationDeps(undefined, (event) => {
+const baseDeps = await createApplicationDeps(undefined, (event) => {
   try {
     traceSink.emit(event);
   } catch {
@@ -33,11 +35,22 @@ const deps = await createApplicationDeps(undefined, (event) => {
   }
 });
 const credential = await loadRuntimeCredential(repoRoot);
+const workflowRuntimeBaseUrl = process.env.CHAT_WORKFLOW_BASE_URL ?? "http://127.0.0.1:43112";
+const deps: ApplicationDeps = {
+  ...baseDeps,
+  workflowRuntimeTrace: new WorkflowRuntimeTraceHttpClient({
+    workflowRuntimeBaseUrl,
+    credential,
+  }),
+  productRunTrace: {
+    read: async ({ productRunId }) => readTraceEvents({ productRunId }),
+  },
+};
 const bailian = loadBailianConfig(process.env);
 
 const dispatcher = new OutboxDispatcher({
   deps,
-  workflowRuntimeBaseUrl: process.env.CHAT_WORKFLOW_BASE_URL ?? "http://127.0.0.1:43112",
+  workflowRuntimeBaseUrl,
   credential,
 });
 dispatcher.start();

@@ -5,6 +5,7 @@ import {
 } from "./runtime-http-route-context.js";
 import { registerOperationalWorkflowHttpRoutes } from "./runtime-operation-http-routes.js";
 import { registerProductWorkflowHttpRoutes } from "./runtime-product-http-routes.js";
+import { registerWorkflowRuntimeTraceHttpRoutes } from "./runtime-trace-http-routes.js";
 
 export type { WorkflowRuntimeHttpAppInput } from "./runtime-http-route-context.js";
 
@@ -28,5 +29,6 @@ export function createWorkflowRuntimeHttpApp(input: WorkflowRuntimeHttpAppInput)
   const context: WorkflowRuntimeHttpRouteContext = { ...input, app };
   registerProductWorkflowHttpRoutes(context);
   registerOperationalWorkflowHttpRoutes(context);
+  registerWorkflowRuntimeTraceHttpRoutes(context);
   return app;
 }

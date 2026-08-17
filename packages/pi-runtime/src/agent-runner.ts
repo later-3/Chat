@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { runAgentLoop } from "@earendil-works/pi-agent-core";
-import type { AgentMessage, AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
+import type { AgentEvent, AgentMessage, AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import {
   streamSimple,
   type OpenAICompletionsOptions,
@@ -37,6 +38,23 @@ export interface CandidateValidationDiagnostics {
   readonly fields: readonly string[];
   readonly issueCodes: readonly string[];
 }
+
+/**
+ * pi原生AgentEvent的脱敏子集。工具参数、partial result和结果正文不会离开pi边界；
+ * Workflow只能观察稳定调用身份、工具名、终态与耗时。
+ */
+export type PiAgentActivityEvent =
+  | {
+      readonly kind: "tool.started";
+      readonly toolActivityId: string;
+      readonly toolName: string;
+    }
+  | {
+      readonly kind: "tool.completed" | "tool.failed";
+      readonly toolActivityId: string;
+      readonly toolName: string;
+      readonly durationMs: number;
+    };
 
 export type AgentRunResult<TCandidate> =
   | {
@@ -92,6 +110,8 @@ export interface RunAgentWithToolOptions<TCandidate> {
   readonly maxTokens: number;
   /** 首个真实Provider流即将创建时触发；用于精确Trace/费用计数。 */
   readonly onProviderRequestStart?: () => void;
+  /** pi工具生命周期的脱敏观察口；观察失败不能改变Agent执行结果。 */
+  readonly onAgentActivity?: (event: PiAgentActivityEvent) => void;
   /** 确定性测试注入：替代真实百炼流；生产必须缺省，不得用于伪造真实验收。 */
   readonly streamFnOverride?: StreamFn;
 }
@@ -254,6 +274,38 @@ export async function runAgentWithTool<TCandidate>(
   let candidate: TCandidate | undefined;
   let candidateDiagnostics: CandidateValidationDiagnostics | undefined;
   const executedToolCallIds = new Set<string>();
+  const toolStartedAt = new Map<string, number>();
+
+  const toolActivityId = (toolCallId: string): string =>
+    `pit_${createHash("sha256").update(toolCallId).digest("hex").slice(0, 24)}`;
+  const safeToolName = (toolName: string): string =>
+    /^[A-Za-z][A-Za-z0-9_.-]{0,127}$/u.test(toolName) ? toolName : "tool";
+  const observeAgentEvent = (event: AgentEvent): void => {
+    if (options.onAgentActivity === undefined) return;
+    try {
+      if (event.type === "tool_execution_start") {
+        const activityId = toolActivityId(event.toolCallId);
+        toolStartedAt.set(activityId, performance.now());
+        options.onAgentActivity({
+          kind: "tool.started",
+          toolActivityId: activityId,
+          toolName: safeToolName(event.toolName),
+        });
+      } else if (event.type === "tool_execution_end") {
+        const activityId = toolActivityId(event.toolCallId);
+        const started = toolStartedAt.get(activityId) ?? performance.now();
+        options.onAgentActivity({
+          kind: event.isError ? "tool.failed" : "tool.completed",
+          toolActivityId: activityId,
+          toolName: safeToolName(event.toolName),
+          durationMs: Math.max(0, Math.round(performance.now() - started)),
+        });
+        toolStartedAt.delete(activityId);
+      }
+    } catch {
+      // Trace/观察是旁路证据；失败不能改变Provider费用、候选或Product终态。
+    }
+  };
 
   const tool: AgentTool = {
     ...options.tool,
@@ -345,7 +397,7 @@ export async function runAgentWithTool<TCandidate>(
           return true;
         },
       },
-      async () => undefined,
+      observeAgentEvent,
       abortController.signal,
       streamFn,
     );

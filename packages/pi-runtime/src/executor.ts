@@ -7,7 +7,11 @@ import {
   type ExecutionContract,
 } from "@chat/contracts";
 import { z } from "zod";
-import { runAgentWithTool, type AgentRunResult } from "./agent-runner.js";
+import {
+  runAgentWithTool,
+  type AgentRunResult,
+  type PiAgentActivityEvent,
+} from "./agent-runner.js";
 import { BailianNotReadyError } from "./planner.js";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { BailianConfig } from "./config.js";
@@ -207,6 +211,7 @@ export interface RunPiExecutorInput {
   /** 确定性测试注入；生产必须缺省。 */
   readonly streamFnOverride?: StreamFn;
   readonly onProviderRequestStart?: () => void;
+  readonly onAgentActivity?: (event: PiAgentActivityEvent) => void;
 }
 
 export async function runPiExecutor(
@@ -274,6 +279,7 @@ export async function runPiExecutor(
     ...(input.onProviderRequestStart !== undefined
       ? { onProviderRequestStart: input.onProviderRequestStart }
       : {}),
+    ...(input.onAgentActivity !== undefined ? { onAgentActivity: input.onAgentActivity } : {}),
     ...(input.streamFnOverride !== undefined ? { streamFnOverride: input.streamFnOverride } : {}),
   });
 }
