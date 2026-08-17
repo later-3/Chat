@@ -31,6 +31,30 @@ interface BlockInput {
   readonly seq: number;
 }
 
+const STATUS_LABEL: Record<string, string> = {
+  pending: "等待中",
+  queued: "已排队",
+  running: "运行中",
+  waiting_human: "等待审核",
+  retrying: "正在重试",
+  waiting: "等待中",
+  received: "已接收",
+  sleeping: "休眠中",
+  succeeded: "成功",
+  completed: "完成",
+  skipped: "已跳过",
+  disposed: "已结束",
+  failed: "失败",
+  cancelled: "已取消",
+  outcome_unknown: "结果未知",
+};
+
+const AGENT_ROLE_LABEL: Record<PiTraceActivityDto["nodeKind"], string> = {
+  planner: "规划",
+  executor: "执行",
+  note_capture: "笔记",
+};
+
 function instant(value: string): number {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -53,6 +77,29 @@ function isError(status: PublicStatus): boolean {
   return ["failed", "cancelled", "outcome_unknown"].includes(status);
 }
 
+function statusLabel(status: PublicStatus): string {
+  return STATUS_LABEL[status] ?? status;
+}
+
+function formatDuration(durationMs: number | undefined): string | undefined {
+  if (durationMs === undefined) return undefined;
+  if (durationMs < 1_000) return `${String(durationMs)}ms`;
+  const seconds = durationMs / 1_000;
+  return `${seconds.toFixed(seconds >= 10 ? 1 : 2)}s`;
+}
+
+function formatTokens(tokens: number): string {
+  return `${tokens.toLocaleString("en-US")} tokens`;
+}
+
+function joinedSummary(parts: readonly (string | undefined)[]): string {
+  return parts.filter((part): part is string => part !== undefined && part !== "").join(" · ");
+}
+
+function terminalSummary(status: PublicStatus, durationMs?: number, errorCode?: string): string {
+  return joinedSummary([statusLabel(status), errorCode, formatDuration(durationMs)]);
+}
+
 function block(input: BlockInput): ToolCallBlock {
   const startedAt = instant(input.startedAt);
   const subCalls = input.subCalls ?? [];
@@ -70,6 +117,7 @@ function block(input: BlockInput): ToolCallBlock {
     };
   }
   const errored = isError(input.status);
+  const summary = input.summary?.trim() || statusLabel(input.status);
   return {
     kind: "tool-result",
     seq: input.seq,
@@ -77,10 +125,7 @@ function block(input: BlockInput): ToolCallBlock {
     callId: input.callId,
     call: { name: input.name, argsRaw },
     callTime: startedAt,
-    content:
-      input.summary === undefined || input.summary.trim() === ""
-        ? []
-        : [{ type: "text", text: input.summary }],
+    content: [{ type: "text", text: summary }],
     isError: errored,
     ...(errored ? { error: { name: "ExecutionFailed", code: input.status } } : {}),
     callView: null,
@@ -97,6 +142,50 @@ function ordered(values: readonly ToolCallBlock[]): ToolCallBlock[] {
   return [...values].sort((left, right) => callStart(left) - callStart(right));
 }
 
+function activityName(activity: PiTraceActivityDto): string {
+  const role = `${AGENT_ROLE_LABEL[activity.nodeKind]} Agent`;
+  if (activity.kind === "model") {
+    const model =
+      activity.provider !== undefined && activity.model !== undefined
+        ? `${activity.provider}/${activity.model}`
+        : (activity.model ?? activity.provider ?? "未知模型");
+    return `${role} · 模型：${model}`;
+  }
+  if (activity.kind === "tool") return `${role} · 工具：${activity.toolName ?? "未知工具"}`;
+  return role;
+}
+
+function activitySummary(
+  activity: PiTraceActivityDto,
+  children: readonly PiTraceActivityDto[],
+): string {
+  if (activity.kind === "model" && activity.tokenUsage !== undefined) {
+    return joinedSummary([
+      statusLabel(activity.status),
+      `${formatTokens(activity.tokenUsage.totalTokens)}（输入 ${activity.tokenUsage.promptTokens.toLocaleString("en-US")} / 输出 ${activity.tokenUsage.completionTokens.toLocaleString("en-US")}）`,
+      activity.errorCode,
+      formatDuration(activity.durationMs),
+    ]);
+  }
+  if (activity.kind === "agent") {
+    const modelCount = children.filter((child) => child.kind === "model").length;
+    const toolCount = children.filter((child) => child.kind === "tool").length;
+    const totalTokens = children.reduce(
+      (sum, child) => sum + (child.tokenUsage?.totalTokens ?? 0),
+      activity.tokenUsage?.totalTokens ?? 0,
+    );
+    return joinedSummary([
+      statusLabel(activity.status),
+      `${String(modelCount)} 次模型`,
+      `${String(toolCount)} 次工具`,
+      totalTokens > 0 ? formatTokens(totalTokens) : undefined,
+      activity.errorCode,
+      formatDuration(activity.durationMs),
+    ]);
+  }
+  return terminalSummary(activity.status, activity.durationMs, activity.errorCode);
+}
+
 function activityBlock(
   activity: PiTraceActivityDto,
   children: readonly PiTraceActivityDto[],
@@ -105,7 +194,9 @@ function activityBlock(
   const details: Record<string, string | number | boolean> = {
     kind: activity.kind,
     status: activity.status,
+    startedAt: activity.startedAt,
   };
+  if (activity.completedAt !== undefined) details.completedAt = activity.completedAt;
   if (activity.provider !== undefined) details.provider = activity.provider;
   if (activity.model !== undefined) details.model = activity.model;
   if (activity.toolName !== undefined) details.tool = activity.toolName;
@@ -118,14 +209,30 @@ function activityBlock(
   if (activity.errorCode !== undefined) details.errorCode = activity.errorCode;
   return block({
     callId: `lifeos-${activity.activityKey}`,
-    name: activity.label,
+    name: activityName(activity),
     status: activity.status,
     startedAt: activity.startedAt,
     ...(activity.completedAt === undefined ? {} : { completedAt: activity.completedAt }),
     details,
+    summary: activitySummary(activity, children),
     subCalls: ordered(children.map((child) => activityBlock(child, [], seq))),
     seq,
   });
+}
+
+function reviewDecisionLabel(
+  nodeType: string,
+  outcomeCode: string | undefined,
+): string | undefined {
+  if (!nodeType.startsWith("human.") || outcomeCode === undefined) return undefined;
+  const labels: Record<string, string> = {
+    approve: "批准",
+    approved: "批准",
+    request_revision: "要求修订",
+    reject: "拒绝",
+    rejected: "拒绝",
+  };
+  return labels[outcomeCode] ?? outcomeCode;
 }
 
 function nodeKind(nodeType: string): PiTraceActivityDto["nodeKind"] | undefined {
@@ -149,9 +256,13 @@ function workflowNodeBlocks(trace: ExecutionTraceDto, seq: number): ToolCallBloc
       nodeType: node.nodeType,
       status: node.status,
       attempt: node.attemptNumber,
+      startedAt: node.startedAt ?? node.updatedAt,
     };
+    if (node.finishedAt !== undefined) details.completedAt = node.finishedAt;
     if (node.durationMs !== undefined) details.durationMs = node.durationMs;
     if (node.outcomeCode !== undefined) details.outcome = node.outcomeCode;
+    const decision = reviewDecisionLabel(node.nodeType, node.outcomeCode);
+    if (decision !== undefined) details.decision = decision;
     if (node.error !== undefined) details.errorCode = node.error.code;
     return block({
       callId: `lifeos-node-${String(node.workflowNodeRunId)}`,
@@ -160,7 +271,8 @@ function workflowNodeBlocks(trace: ExecutionTraceDto, seq: number): ToolCallBloc
       startedAt: node.startedAt ?? node.updatedAt,
       ...(node.finishedAt === undefined ? {} : { completedAt: node.finishedAt }),
       details,
-      ...(node.publicSummary === undefined ? {} : { summary: node.publicSummary }),
+      summary:
+        node.publicSummary ?? terminalSummary(node.status, node.durationMs, node.error?.code),
       subCalls: ordered(children),
       seq,
     });
@@ -224,8 +336,11 @@ function runtimeBlock(trace: ExecutionTraceDto, seq: number): ToolCallBlock | un
           kind: span.kind,
           status: span.status,
           durationMs: span.durationMs,
+          startedAt: span.startedAt ?? span.createdAt,
+          ...(span.completedAt === undefined ? {} : { completedAt: span.completedAt }),
           ...(span.attempt === undefined ? {} : { attempt: span.attempt }),
         },
+        summary: terminalSummary(span.status, span.durationMs),
         seq,
       }),
     );
@@ -240,7 +355,16 @@ function runtimeBlock(trace: ExecutionTraceDto, seq: number): ToolCallBlock | un
       events: trace.runtime.eventCount,
       durationMs: trace.runtime.durationMs,
       truncated: trace.runtime.truncated,
+      startedAt: trace.runtime.startedAt ?? trace.runtime.createdAt,
+      ...(trace.runtime.completedAt === undefined
+        ? {}
+        : { completedAt: trace.runtime.completedAt }),
     },
+    summary: joinedSummary([
+      statusLabel(trace.runtime.runtimeStatus),
+      `${String(trace.runtime.eventCount)} 个事件`,
+      formatDuration(trace.runtime.durationMs),
+    ]),
     subCalls: ordered(spans),
     seq,
   });
@@ -254,7 +378,17 @@ export function executionTraceRoot(trace: ExecutionTraceDto, seq: number): ToolC
     status: trace.run.status,
     startedAt: trace.run.createdAt,
     ...(isRunning(trace.run.status) ? {} : { completedAt: trace.run.updatedAt }),
-    details: { status: trace.run.status, phase: trace.run.phase },
+    details: {
+      status: trace.run.status,
+      phase: trace.run.phase,
+      startedAt: trace.run.createdAt,
+      updatedAt: trace.run.updatedAt,
+    },
+    summary: joinedSummary([
+      statusLabel(trace.run.status),
+      `${String(trace.workflow.nodeRuns.length)} 个业务节点`,
+      formatDuration(instant(trace.run.updatedAt) - instant(trace.run.createdAt)),
+    ]),
     subCalls: ordered([
       ...workflowNodeBlocks(trace, seq),
       ...(runtime === undefined ? [] : [runtime]),

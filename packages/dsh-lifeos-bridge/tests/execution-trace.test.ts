@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Session, SessionId } from "@deepseek-ai/dsh-session";
+import type { ToolCallBlock } from "@deepseek-ai/dsh-client-runtime/client";
 import { executionTraceDtoSchema, type ExecutionTraceDto } from "@chat/contracts/public";
 import { ChatProductClient } from "../src/chat-client.ts";
 import { executionTraceRoot } from "../src/client/execution-trace-definition.ts";
@@ -38,6 +39,43 @@ function trace(revision = "a".repeat(64)): ExecutionTraceDto {
           durationMs: 2_000,
           revision: 2,
           updatedAt: "2026-08-17T08:00:03.000Z",
+          allowedActions: ["inspect"],
+        },
+        {
+          workflowNodeRunId: "wnr_review1",
+          definitionNodeId: "review",
+          nodeType: "human.plan_review",
+          title: "审核计划",
+          kind: "human_review",
+          optional: false,
+          executionPath: [],
+          attemptNumber: 1,
+          status: "succeeded",
+          publicSummary: "计划已批准",
+          outcomeCode: "approve",
+          startedAt: "2026-08-17T08:00:03.050Z",
+          finishedAt: "2026-08-17T08:00:03.100Z",
+          durationMs: 50,
+          revision: 2,
+          updatedAt: "2026-08-17T08:00:03.100Z",
+          allowedActions: ["inspect"],
+        },
+        {
+          workflowNodeRunId: "wnr_execute1",
+          definitionNodeId: "execute",
+          nodeType: "execute.plan_step",
+          title: "执行计划",
+          kind: "task",
+          optional: false,
+          executionPath: [],
+          attemptNumber: 1,
+          status: "succeeded",
+          publicSummary: "计划执行完成",
+          startedAt: "2026-08-17T08:00:03.200Z",
+          finishedAt: "2026-08-17T08:00:03.900Z",
+          durationMs: 700,
+          revision: 2,
+          updatedAt: "2026-08-17T08:00:03.900Z",
           allowedActions: ["inspect"],
         },
       ],
@@ -141,23 +179,81 @@ function trace(revision = "a".repeat(64)): ExecutionTraceDto {
         completedAt: "2026-08-17T08:00:02.200Z",
         durationMs: 100,
       },
+      {
+        activityKey: "pi-agent-2",
+        sequence: 4,
+        kind: "agent",
+        label: "执行 Agent",
+        status: "succeeded",
+        nodeKind: "executor",
+        startedAt: "2026-08-17T08:00:03.250Z",
+        completedAt: "2026-08-17T08:00:03.850Z",
+        durationMs: 600,
+      },
+      {
+        activityKey: "pi-model-2",
+        parentActivityKey: "pi-agent-2",
+        sequence: 5,
+        kind: "model",
+        label: "模型调用：bailian/qwen3.7-plus",
+        status: "succeeded",
+        nodeKind: "executor",
+        provider: "bailian",
+        model: "qwen3.7-plus",
+        startedAt: "2026-08-17T08:00:03.300Z",
+        completedAt: "2026-08-17T08:00:03.700Z",
+        durationMs: 400,
+        tokenUsage: { promptTokens: 180, completionTokens: 40, totalTokens: 220 },
+      },
+      {
+        activityKey: "pi-tool-2",
+        parentActivityKey: "pi-agent-2",
+        sequence: 6,
+        kind: "tool",
+        label: "工具：submit_execution_result",
+        status: "succeeded",
+        nodeKind: "executor",
+        toolName: "submit_execution_result",
+        startedAt: "2026-08-17T08:00:03.720Z",
+        completedAt: "2026-08-17T08:00:03.750Z",
+        durationMs: 30,
+      },
     ],
     truncated: false,
   });
 }
 
+function assertTerminalSummaries(value: ToolCallBlock): void {
+  if ("kind" in value) assert.ok(value.content.length > 0);
+  for (const child of value.subCalls) assertTerminalSummaries(child);
+}
+
 test("execution trace becomes a recursive native trajectory tool tree", () => {
   const root = executionTraceRoot(trace(), 12);
   assert.equal("kind" in root && root.kind, "tool-result");
-  assert.equal(root.subCalls.length, 2);
+  assert.equal(root.subCalls.length, 4);
   const planning = root.subCalls.find(
     (item) => ("kind" in item ? item.call?.name : item.name) === "任务规划",
   );
   assert.ok(planning !== undefined);
   assert.equal(planning.subCalls.length, 1);
   assert.equal(planning.subCalls[0]?.subCalls.length, 2);
+  const execution = root.subCalls.find(
+    (item) => ("kind" in item ? item.call?.name : item.name) === "执行计划",
+  );
+  assert.ok(execution !== undefined);
+  assert.equal(execution.subCalls.length, 1);
+  assert.equal(execution.subCalls[0]?.subCalls.length, 2);
+  assertTerminalSummaries(root);
   const serialized = JSON.stringify(root);
   assert.match(serialized, /submit_plan_candidate/u);
+  assert.match(serialized, /submit_execution_result/u);
+  assert.match(serialized, /规划 Agent · 模型/u);
+  assert.match(serialized, /执行 Agent · 工具/u);
+  assert.match(serialized, /120 tokens（输入 100 \/ 输出 20）/u);
+  assert.match(serialized, /成功 · 1 次模型 · 1 次工具 · 220 tokens/u);
+  assert.match(serialized, /decision.*批准/u);
+  assert.match(serialized, /startedAt.*2026-08-17T08:00:01.100Z/u);
   assert.match(serialized, /promptTokens/u);
   assert.match(serialized, /Vercel Workflow Runtime/u);
   assert.doesNotMatch(

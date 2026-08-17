@@ -74,9 +74,15 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 LifeOS Bridge是仓库内唯一DSH插件包，所有新增前端表面使用固定rc.6公开合同：Workflow选择器注册在
 `conversation.input.left`，与权限、模型等原生Composer工具同一行；Plan/HITL使用
 `conversation.input.dock`；Workbench入口使用`sidebar.footer.action`，Surface使用`shell.overlay`。
+Plan/HITL Dock是临时命令表面，不是Run状态看板：只有当前Plan、开放Approval和
+`waiting_human/plan_review`三者版本/Hash一致，或存在结果未知且必须原样重试的Decision时才显示。
+决定被Chat确认后Dock立即退出Composer；已完成、修订或拒绝的决定继续作为实际Human Review
+NodeRun保留在Trajectory中，不用常驻卡片重复展示历史。
 执行轨迹不创建第二个页面：Host把公开快照写成DSH Session的log-only事件，Client注册
 `lifeos-execution-trace` Conversation Definition并直接贡献到原生`trajectory` target。
-每一层使用原生可展开Tool/Subtool行，因此节点详情、耗时、状态、模型Token和工具名都在DSH轨迹内查看。
+每一层使用原生可展开Tool/Subtool行。Pi行使用角色限定的`规划/执行 Agent`标签；终态摘要直接显示
+模型/工具次数、模型输入/输出/总Token和耗时，不再以空结果呈现。展开原生详情可查看ISO开始/完成时间、
+DSH本地化Timing、审核决定、状态和严格白名单Payload。
 不得修改或复制DSH源码来插入这些能力，也不得把完整Hosted App拆成自研React组件。
 
 ## 7. Workbench边界

@@ -272,7 +272,10 @@ Replay Assembler按产品对象ID、revision和SHA-256组合：
 Bridge Host轮询该DTO，只在`traceRevision`变化时向当前DSH Session追加
 `lifeos/execution-trace`日志事件。Client通过固定DSH rc.6的`ConversationNodeDefinition`
 投影到原生`trajectory` target，形成`Chat Workflow → 业务节点 → Pi Agent → 模型/工具`
-层级，并列保留Vercel Runtime子树。DSH Session只是可重建展示缓存，不拥有任何运行终态。
+层级，并列保留Vercel Runtime子树。Planner/Executor的终态行摘要包含模型/工具次数、模型
+Token Usage与耗时；每一层的安全详情包含开始/完成时间，Human Review包含已提交决定。
+Plan/HITL Composer Dock只承载当前可操作审核或结果未知重试，决定确认后退出，历史由Human Review
+NodeRun继续留在Trajectory。DSH Session只是可重建展示缓存，不拥有任何运行终态。
 
 ## 10. 关键源码地图
 

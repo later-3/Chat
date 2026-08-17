@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { HostObservable, InjectFace, PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots";
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
 import type { DecisionRequest } from "../contracts.ts";
+import type { LifeosProjection } from "../contracts.ts";
 import type { LifeosClientState } from "./controller.ts";
 
 export interface LifeosDockInjected {
@@ -13,32 +14,39 @@ export type LifeosDockProps = PropsRuntime<"conversation.input.dock"> &
   InjectFace<LifeosDockInjected>;
 
 const PHASE_LABEL: Record<string, string> = {
-  queued: "已接收",
-  planning: "正在规划",
   plan_review: "等待你审核",
-  executing: "正在执行",
-  validating: "正在验证",
-  completed: "已完成",
-  rejected: "已拒绝",
 };
 
-export function LifeosDock({ useLifeos, decide }: LifeosDockProps) {
-  const state = useLifeos((value) => value);
-  const [explanation, setExplanation] = useState("");
-  const projection = state.projection;
-  if ((projection === null || projection.run === null) && state.error === null) return null;
-
+/** 审核Dock是临时命令表面，不是Run状态看板；终态历史只进入Trajectory。 */
+export function hasActionableReview(projection: LifeosProjection | null): boolean {
   const run = projection?.run;
   const plan = projection?.plan;
   const approval = projection?.approval;
-  const canReview =
+  return (
     approval?.status === "open" &&
     run?.status === "waiting_human" &&
     plan !== null &&
     plan !== undefined &&
     plan.planId === approval.planId &&
     plan.planRevision === approval.planRevision &&
-    plan.sha256 === approval.planSha256;
+    plan.sha256 === approval.planSha256
+  );
+}
+
+export function shouldShowLifeosReviewDock(projection: LifeosProjection | null): boolean {
+  return hasActionableReview(projection) || projection?.pendingDecision != null;
+}
+
+export function LifeosDock({ useLifeos, decide }: LifeosDockProps) {
+  const state = useLifeos((value) => value);
+  const [explanation, setExplanation] = useState("");
+  const projection = state.projection;
+  const canReview = hasActionableReview(projection);
+  if (!shouldShowLifeosReviewDock(projection)) return null;
+
+  const run = projection?.run;
+  const plan = projection?.plan;
+  const approval = projection?.approval;
   const submit = async (kind: DecisionRequest["kind"]): Promise<void> => {
     if (
       !canReview ||
