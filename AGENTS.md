@@ -92,6 +92,8 @@ packages/testing   合同、Fixture与测试工具
 
 涉及pi能力时，优先读取固定本地源码`/Users/xulater/Code/opc-os/pi`及其`AGENTS.md`、类型、测试和示例。涉及DeepSeek Harness、Vercel Workflow、Hono、React和Vite时使用匹配版本官方文档或固定源码，不凭模型记忆猜API。
 
+把开发、调研或复核任务委派给外部Pi Agent时，使用已安装的`pi-delegate` Skill和`/Users/xulater/Code/pi-taskd`共享服务；Pi源码仍只负责能力证据。Pi必须先读取受管worktree内的本文件和任务相关项目合同，不能直接写Chat主checkout，其结果必须由当前Codex按Chat完成门验证后才可采用。
+
 参考项目只为真实覆盖范围背书，不决定Chat的产品对象和事实所有权。
 
 ## 9. 变更与安全
