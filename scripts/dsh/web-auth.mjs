@@ -1,0 +1,379 @@
+import { createHmac, scryptSync, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
+
+/**
+ * Chat Web 网关认证（服务器部署模式）。
+ *
+ * 是什么：网关唯一的浏览器入口认证——App 自有登录页 + scrypt 口令校验 +
+ * HMAC 签名 HttpOnly 会话 Cookie。
+ *
+ * 为什么：公网暴露前置 blocker 是认证；Nginx auth_basic 在已安装 iOS PWA 中
+ * 会弹出浏览器原生框且没有可恢复登录面（pi-web 已验证），所以登录面必须由
+ * App 拥有。口令散列与会话密钥只存在于 Mac 本机文件，绝不进入环境变量值、
+ * 日志或 Git；环境变量只携带文件路径。
+ *
+ * 怎样失败：配置缺失或文件不可读时启动直接失败（失败关闭）；口令校验使用
+ * 恒时间比较；Cookie 签名或过期无效一律视为未登录，导航 302 到 /login，
+ * API 与 WebSocket 返回 401/403，绝不降级为放行。
+ */
+
+export const SESSION_COOKIE_NAME = "chat_session";
+const SCRYPT_KEY_LENGTH = 64;
+const MAX_SESSION_DAYS = 90;
+const DEFAULT_SESSION_DAYS = 30;
+const MAX_LOGIN_BODY_BYTES = 4 * 1024;
+
+function requiredPath(value, name) {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`${name} is required when CHAT_WEB_AUTH_REQUIRED=1`);
+  }
+  return value;
+}
+
+function base64url(buffer) {
+  return Buffer.from(buffer).toString("base64url");
+}
+
+/** 从环境装配认证配置；未启用时返回 undefined。文件只在此刻读取一次。 */
+export function loadWebAuthConfig(environment = process.env) {
+  if (environment.CHAT_WEB_AUTH_REQUIRED !== "1") return undefined;
+  const credentialsFile = requiredPath(
+    environment.CHAT_WEB_AUTH_CREDENTIALS_FILE,
+    "CHAT_WEB_AUTH_CREDENTIALS_FILE",
+  );
+  const secretFile = requiredPath(
+    environment.CHAT_WEB_AUTH_SESSION_SECRET_FILE,
+    "CHAT_WEB_AUTH_SESSION_SECRET_FILE",
+  );
+  const daysRaw = environment.CHAT_WEB_AUTH_SESSION_DAYS;
+  let sessionDays = DEFAULT_SESSION_DAYS;
+  if (daysRaw !== undefined && daysRaw.trim() !== "") {
+    sessionDays = Number(daysRaw);
+    if (!Number.isSafeInteger(sessionDays) || sessionDays < 1 || sessionDays > MAX_SESSION_DAYS) {
+      throw new Error(
+        `CHAT_WEB_AUTH_SESSION_DAYS must be an integer from 1 to ${MAX_SESSION_DAYS}`,
+      );
+    }
+  }
+  let credentials;
+  try {
+    credentials = JSON.parse(readFileSync(credentialsFile, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `Chat web auth credentials file is unreadable: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const users = new Map();
+  if (!Array.isArray(credentials?.users) || credentials.users.length === 0) {
+    throw new Error("Chat web auth credentials file must contain a non-empty users array");
+  }
+  for (const entry of credentials.users) {
+    const username = entry?.username;
+    const salt = entry?.scrypt?.salt;
+    const hash = entry?.scrypt?.hash;
+    if (
+      typeof username !== "string" ||
+      username === "" ||
+      typeof salt !== "string" ||
+      typeof hash !== "string" ||
+      !/^[0-9a-f]+$/u.test(salt) ||
+      !/^[0-9a-f]+$/u.test(hash) ||
+      hash.length !== SCRYPT_KEY_LENGTH * 2
+    ) {
+      throw new Error("Chat web auth credentials entry is malformed");
+    }
+    users.set(username, { salt, hash });
+  }
+  const secret = readFileSync(secretFile, "utf8").trim();
+  if (secret.length < 32) {
+    throw new Error("Chat web auth session secret must be at least 32 characters");
+  }
+  return Object.freeze({
+    users,
+    secret,
+    sessionTtlMs: sessionDays * 24 * 60 * 60 * 1000,
+  });
+}
+
+/** 生成一个口令散列条目（供初始化脚本使用；口令值绝不落日志）。 */
+export function hashWebAuthPassword(password, salt) {
+  const derived = scryptSync(password, Buffer.from(salt, "hex"), SCRYPT_KEY_LENGTH);
+  return derived.toString("hex");
+}
+
+export function verifyWebAuthPassword(config, username, password) {
+  const entry = config.users.get(username);
+  if (entry === undefined) {
+    // 对不存在的用户也执行一次等长比较，避免用户枚举的时间侧信道。
+    scryptSync(password, Buffer.alloc(16, 1), SCRYPT_KEY_LENGTH);
+    return false;
+  }
+  const derived = scryptSync(password, Buffer.from(entry.salt, "hex"), SCRYPT_KEY_LENGTH);
+  const expected = Buffer.from(entry.hash, "hex");
+  return derived.length === expected.length && timingSafeEqual(derived, expected);
+}
+
+function sign(config, payload) {
+  return createHmac("sha256", config.secret).update(payload).digest();
+}
+
+export function issueSessionCookieValue(config, username, now = Date.now()) {
+  const payload = base64url(JSON.stringify({ u: username, exp: now + config.sessionTtlMs }));
+  return `${payload}.${base64url(sign(config, payload))}`;
+}
+
+export function verifySessionCookieValue(config, value, now = Date.now()) {
+  if (typeof value !== "string") return undefined;
+  const dot = value.lastIndexOf(".");
+  if (dot <= 0) return undefined;
+  const payload = value.slice(0, dot);
+  const signature = value.slice(dot + 1);
+  let expected;
+  try {
+    expected = base64url(sign(config, payload));
+  } catch {
+    return undefined;
+  }
+  const givenBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (
+    givenBuffer.length !== expectedBuffer.length ||
+    !timingSafeEqual(givenBuffer, expectedBuffer)
+  ) {
+    return undefined;
+  }
+  try {
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (
+      typeof claims?.u !== "string" ||
+      !config.users.has(claims.u) ||
+      typeof claims?.exp !== "number" ||
+      claims.exp < now
+    ) {
+      return undefined;
+    }
+    return claims.u;
+  } catch {
+    return undefined;
+  }
+}
+
+export function sessionCookieFromRequest(req) {
+  const header = req.headers.cookie;
+  if (typeof header !== "string") return undefined;
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === SESSION_COOKIE_NAME) {
+      return part.slice(eq + 1).trim();
+    }
+  }
+  return undefined;
+}
+
+export function buildSessionSetCookie(config, username, secure) {
+  const parts = [
+    `${SESSION_COOKIE_NAME}=${issueSessionCookieValue(config, username)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${String(Math.floor(config.sessionTtlMs / 1000))}`,
+  ];
+  if (secure) parts.push("Secure");
+  return parts.join("; ");
+}
+
+export function buildSessionClearCookie(secure) {
+  const parts = [`${SESSION_COOKIE_NAME}=`, "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=0"];
+  if (secure) parts.push("Secure");
+  return parts.join("; ");
+}
+
+/** 认证放行的公开路径：登录页、健康检查与 PWA 安装所需的静态资产。 */
+export function isPublicAuthPath(pathname) {
+  return (
+    pathname === "/login" ||
+    pathname === "/healthz" ||
+    pathname === "/manifest.webmanifest" ||
+    pathname === "/sw.js" ||
+    pathname === "/favicon.svg" ||
+    pathname.startsWith("/pwa/")
+  );
+}
+
+const LOGIN_PAGE = `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#FFFFFF" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/pwa/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/pwa/icons/apple-touch-icon.png" />
+    <title>登录 · Chat</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #fff; }
+      main { width: 100%; max-width: 320px; padding: 24px; }
+      h1 { font-size: 20px; margin: 0 0 24px; }
+      label { display: block; font-size: 13px; color: #555; margin: 12px 0 4px; }
+      input { width: 100%; box-sizing: border-box; font-size: 16px; padding: 10px; border: 1px solid #ccc; border-radius: 8px; }
+      button { width: 100%; margin-top: 20px; min-height: 44px; font-size: 16px; border: 0; border-radius: 8px; background: #1d1d1f; color: #fff; }
+      .error { color: #b00020; font-size: 13px; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>登录 Chat</h1>
+      <form method="post" action="/login">
+        <label for="username">账号</label>
+        <input id="username" name="username" autocomplete="username" required />
+        <label for="password">密码</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+        <button type="submit">登录</button>
+        __ERROR__
+      </form>
+    </main>
+  </body>
+</html>
+`;
+
+function loginPage(failed) {
+  return LOGIN_PAGE.replace("__ERROR__", failed ? '<p class="error">账号或密码不正确。</p>' : "");
+}
+
+function sendHtml(res, status, body, extraHeaders = {}) {
+  res.writeHead(status, {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    "content-length": Buffer.byteLength(body),
+    ...extraHeaders,
+  });
+  res.end(body);
+}
+
+function readFormBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    req.on("data", (chunk) => {
+      total += chunk.length;
+      if (total > MAX_LOGIN_BODY_BYTES) {
+        reject(new Error("login body too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+function assertLoginOrigin(req) {
+  const origin = req.headers.origin;
+  if (origin === undefined) return;
+  const host = req.headers.host;
+  let parsed;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    throw new Error("Origin header is invalid");
+  }
+  // 公网入口是 HTTPS；同源提交只允许 https://<host> 或 loopback http://<host>。
+  const expected = [`https://${host}`, `http://${host}`];
+  if (parsed.origin === "/" || !expected.includes(parsed.origin)) {
+    throw new Error("Origin must match Host");
+  }
+}
+
+/**
+ * 处理 /login 与 /logout。已处理返回 true；其他路径返回 false 继续走认证门。
+ * secure 由部署模式决定：公网主机名配置后 Cookie 始终带 Secure。
+ */
+export function createAuthRouteHandler(config, { secure }) {
+  return async (req, res, pathname) => {
+    if (pathname === "/logout" && req.method === "POST") {
+      res.writeHead(302, {
+        location: "/login",
+        "set-cookie": buildSessionClearCookie(secure),
+        "cache-control": "no-store",
+      });
+      res.end();
+      return true;
+    }
+    if (pathname !== "/login") return false;
+    if (req.method === "GET" || req.method === "HEAD") {
+      sendHtml(res, 200, loginPage(false));
+      return true;
+    }
+    if (req.method !== "POST") {
+      res.writeHead(405, { allow: "GET, POST" });
+      res.end();
+      return true;
+    }
+    try {
+      assertLoginOrigin(req);
+      const contentType = req.headers["content-type"];
+      if (
+        typeof contentType !== "string" ||
+        !contentType.toLowerCase().startsWith("application/x-www-form-urlencoded")
+      ) {
+        throw new Error("login form must be urlencoded");
+      }
+      const params = new URLSearchParams(await readFormBody(req));
+      const username = params.get("username") ?? "";
+      const password = params.get("password") ?? "";
+      if (!verifyWebAuthPassword(config, username, password)) {
+        sendHtml(res, 401, loginPage(true));
+        return true;
+      }
+      res.writeHead(302, {
+        location: "/",
+        "set-cookie": buildSessionSetCookie(config, username, secure),
+        "cache-control": "no-store",
+      });
+      res.end();
+      return true;
+    } catch {
+      sendHtml(res, 400, loginPage(true));
+      return true;
+    }
+  };
+}
+
+/** 认证门：返回放行用户名；未放行时直接写出 302/401 并返回 undefined。 */
+export function gateAuthenticatedRequest(req, res, config, pathname) {
+  const username = verifySessionCookieValue(config, sessionCookieFromRequest(req));
+  if (username !== undefined) return username;
+  const acceptsHtml = String(req.headers.accept ?? "").includes("text/html");
+  if (
+    (req.method === "GET" || req.method === "HEAD") &&
+    acceptsHtml &&
+    !pathname.startsWith("/lifeos")
+  ) {
+    res.writeHead(302, { location: "/login", "cache-control": "no-store" });
+    res.end();
+    return undefined;
+  }
+  const body = `${JSON.stringify({
+    type: "about:blank",
+    title: "Authentication required",
+    status: 401,
+    code: "chat_web_auth_required",
+    retryable: false,
+  })}\n`;
+  res.writeHead(401, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    "content-length": Buffer.byteLength(body),
+  });
+  res.end(body);
+  return undefined;
+}
+
+/** WebSocket 升级门：只校验 Cookie，由调用方在失败时销毁 socket。 */
+export function authenticateUpgrade(req, config) {
+  return verifySessionCookieValue(config, sessionCookieFromRequest(req));
+}

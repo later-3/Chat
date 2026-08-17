@@ -89,6 +89,7 @@ export function resolveDshWebRuntime(root, environment = process.env) {
     port: DSH_WEB_PORT,
     publicHost: PUBLIC_WEB_HOST,
     publicPort: PUBLIC_WEB_PORT,
+    publicHostname: environment.CHAT_PUBLIC_WEB_HOSTNAME?.trim() || undefined,
   });
 }
 
@@ -117,6 +118,24 @@ export function dshWebEnvironment(root, environment = process.env) {
     CHAT_API_BASE_URL: runtime.apiBaseUrl,
     CHAT_DSH_STATE_PATH: runtime.statePath,
     CHAT_PUBLIC_WEB_PORT: String(runtime.publicPort),
+    // 服务器部署模式：公开主机名与认证文件路径（路径不是凭据；口令散列与
+    // 会话密钥只存在于文件内容中，绝不进入环境变量值）。未设置时这些键不存在，
+    // 网关与 bridge 保持纯 loopback 姿态。
+    ...(environment.CHAT_PUBLIC_WEB_HOSTNAME === undefined
+      ? {}
+      : { CHAT_PUBLIC_WEB_HOSTNAME: environment.CHAT_PUBLIC_WEB_HOSTNAME }),
+    ...(environment.CHAT_WEB_AUTH_REQUIRED === undefined
+      ? {}
+      : { CHAT_WEB_AUTH_REQUIRED: environment.CHAT_WEB_AUTH_REQUIRED }),
+    ...(environment.CHAT_WEB_AUTH_CREDENTIALS_FILE === undefined
+      ? {}
+      : { CHAT_WEB_AUTH_CREDENTIALS_FILE: environment.CHAT_WEB_AUTH_CREDENTIALS_FILE }),
+    ...(environment.CHAT_WEB_AUTH_SESSION_SECRET_FILE === undefined
+      ? {}
+      : { CHAT_WEB_AUTH_SESSION_SECRET_FILE: environment.CHAT_WEB_AUTH_SESSION_SECRET_FILE }),
+    ...(environment.CHAT_WEB_AUTH_SESSION_DAYS === undefined
+      ? {}
+      : { CHAT_WEB_AUTH_SESSION_DAYS: environment.CHAT_WEB_AUTH_SESSION_DAYS }),
     CHAT_CODE_WORKBENCH_ENABLED: environment.CHAT_CODE_WORKBENCH_ENABLED === "0" ? "0" : "1",
     ...(environment.CHAT_CODE_WORKBENCH_RUN_ROOT === undefined
       ? {}
@@ -144,7 +163,14 @@ export function installDshWebEnvironment(target, environment) {
 }
 
 export function dshWebArgs(runtime) {
-  return ["web", "--host", runtime.host, "--port", String(runtime.port)];
+  const args = ["web", "--host", runtime.host, "--port", String(runtime.port)];
+  // 服务器部署模式：DSH 的 /api Host 信任栅只放行 loopback 与显式声明的
+  // 部署主机名（DNS rebinding 防线）。公开主机名来自组合期环境变量，
+  // 由 web-app 的 --trusted-host 公开参数声明，不修改上游。
+  if (typeof runtime.publicHostname === "string" && runtime.publicHostname !== "") {
+    args.push("--trusted-host", runtime.publicHostname);
+  }
+  return args;
 }
 
 export function dshBridgeInstallArgs(runtime) {
