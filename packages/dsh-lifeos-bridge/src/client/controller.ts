@@ -2,6 +2,7 @@ import {
   lifeosProjectionSchema,
   workflowListResponseSchema,
   type DecisionRequest,
+  type LifeosExecutionTrace,
   type LifeosProjection,
   type LifeosWorkflowOption,
   type WorkflowSelection,
@@ -56,15 +57,19 @@ export class LifeosProjectionController {
   private refreshing: Promise<void> | undefined;
   private disposed = false;
   private readonly fetchImpl: typeof fetch;
+  private readonly onExecutionTraces:
+    ((traces: readonly LifeosExecutionTrace[]) => void) | undefined;
 
   constructor(
     readonly sessionId: string,
     fetchImpl?: typeof fetch,
+    onExecutionTraces?: (traces: readonly LifeosExecutionTrace[]) => void,
   ) {
     const request = fetchImpl ?? globalThis.fetch.bind(globalThis);
     // Keep the callable in a lexical closure: invoking a native Window.fetch
     // as `this.fetchImpl(...)` otherwise supplies the controller as receiver.
     this.fetchImpl = (...args) => request(...args);
+    this.onExecutionTraces = onExecutionTraces;
   }
 
   getSnapshot = (): LifeosClientState => this.snapshot;
@@ -198,6 +203,7 @@ export class LifeosProjectionController {
     this.disposed = true;
     this.stop();
     this.listeners.clear();
+    this.onExecutionTraces?.([]);
   }
 
   private async performRefresh(): Promise<void> {
@@ -231,6 +237,9 @@ export class LifeosProjectionController {
   private publish(next: LifeosClientState): void {
     if (this.disposed) return;
     this.snapshot = next;
+    if (next.projection !== null) {
+      this.onExecutionTraces?.(next.projection.executionTraces);
+    }
     for (const listener of this.listeners) listener();
   }
 }

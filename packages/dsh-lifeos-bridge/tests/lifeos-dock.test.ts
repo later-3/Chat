@@ -8,7 +8,7 @@ const planSha256 = "a".repeat(64);
 
 function reviewProjection() {
   return lifeosProjectionSchema.parse({
-    schemaVersion: "chat-dsh-lifeos-bridge.v2",
+    schemaVersion: "chat-dsh-lifeos-bridge.v3",
     dshSessionId: "dsh-session-review",
     run: {
       productRunId: "run_review1",
@@ -61,6 +61,7 @@ function reviewProjection() {
     },
     pendingDecision: null,
     workflowSelection: null,
+    executionTraces: [],
   });
 }
 

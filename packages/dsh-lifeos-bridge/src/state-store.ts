@@ -10,7 +10,12 @@ import {
   sha256Schema,
 } from "@chat/contracts/public";
 import { z } from "zod";
-import { decisionRequestSchema, dshSessionIdSchema, workflowSelectionSchema } from "./contracts.ts";
+import {
+  decisionRequestSchema,
+  dshMessageIdSchema,
+  dshSessionIdSchema,
+  workflowSelectionSchema,
+} from "./contracts.ts";
 
 const pendingDecisionSchema = z
   .object({
@@ -28,6 +33,8 @@ const pendingDecisionSchema = z
 
 const requestSchema = z
   .object({
+    /** 触发本请求的DSH user/message身份；旧v1/v2记录迁移后可能暂时缺失。 */
+    dshMessageId: dshMessageIdSchema.optional(),
     userTextSha256: sha256Schema,
     messageCommandId: commandIdSchema.transform(String),
     productRunId: productRunIdSchema.transform(String).optional(),
@@ -57,14 +64,14 @@ const sessionBindingSchema = z
  */
 const legacyBridgeStateSchema = z
   .object({
-    schemaVersion: z.literal("chat-dsh-lifeos-state.v1"),
+    schemaVersion: z.enum(["chat-dsh-lifeos-state.v1", "chat-dsh-lifeos-state.v2"]),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
   .strict();
 
 const bridgeStateSchema = z
   .object({
-    schemaVersion: z.literal("chat-dsh-lifeos-state.v2"),
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v3"),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
   .strict();
@@ -75,7 +82,7 @@ export type RequestBinding = z.infer<typeof requestSchema>;
 export type PendingDecision = z.infer<typeof pendingDecisionSchema>;
 
 const emptyState = (): BridgeState => ({
-  schemaVersion: "chat-dsh-lifeos-state.v2",
+  schemaVersion: "chat-dsh-lifeos-state.v3",
   sessions: {},
 });
 
@@ -178,7 +185,7 @@ export class AtomicBridgeStateStore {
       return this.state;
     }
     const migrated = bridgeStateSchema.parse({
-      schemaVersion: "chat-dsh-lifeos-state.v2",
+      schemaVersion: "chat-dsh-lifeos-state.v3",
       sessions: legacy.data.sessions,
     });
     await this.writeAtomic(migrated);

@@ -4,7 +4,6 @@ import type {
   ConversationNodeDefinition,
   ToolCallBlock,
 } from "@deepseek-ai/dsh-client-runtime/client";
-import { LIFEOS_EXECUTION_TRACE_EVENT } from "../execution-trace-events.ts";
 
 type PublicStatus =
   | ExecutionTraceDto["run"]["status"]
@@ -35,6 +34,8 @@ export interface ExecutionTraceViewOptions {
   /** 在每一行结果摘要中显示浏览器本地时间范围；默认保持紧凑。 */
   readonly showTimestamps?: boolean;
 }
+
+export type ExecutionTraceForMessage = (dshMessageId: string) => ExecutionTraceDto | undefined;
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "等待中",
@@ -399,64 +400,14 @@ function assignAgents(
   return assignments;
 }
 
-function runtimeBlock(trace: ExecutionTraceDto, seq: number): ToolCallBlock | undefined {
-  if (trace.runtime.availability !== "available") return undefined;
-  const spans = trace.runtime.spans
-    .filter((span) => span.kind !== "run")
-    .map((span) =>
-      block({
-        callId: `lifeos-${span.spanKey}`,
-        name: span.name,
-        status: span.status,
-        startedAt: span.startedAt ?? span.createdAt,
-        ...(span.completedAt === undefined ? {} : { completedAt: span.completedAt }),
-        details: {
-          kind: span.kind,
-          status: span.status,
-          durationMs: span.durationMs,
-          startedAt: span.startedAt ?? span.createdAt,
-          ...(span.completedAt === undefined ? {} : { completedAt: span.completedAt }),
-          ...(span.attempt === undefined ? {} : { attempt: span.attempt }),
-        },
-        summary: terminalSummary(span.status, span.durationMs),
-        seq,
-      }),
-    );
-  return block({
-    callId: "lifeos-vercel-workflow-runtime",
-    name: "Vercel Workflow Runtime",
-    status: trace.runtime.runtimeStatus,
-    startedAt: trace.runtime.startedAt ?? trace.runtime.createdAt,
-    ...(trace.runtime.completedAt === undefined ? {} : { completedAt: trace.runtime.completedAt }),
-    details: {
-      status: trace.runtime.runtimeStatus,
-      events: trace.runtime.eventCount,
-      durationMs: trace.runtime.durationMs,
-      truncated: trace.runtime.truncated,
-      startedAt: trace.runtime.startedAt ?? trace.runtime.createdAt,
-      ...(trace.runtime.completedAt === undefined
-        ? {}
-        : { completedAt: trace.runtime.completedAt }),
-    },
-    summary: joinedSummary([
-      statusLabel(trace.runtime.runtimeStatus),
-      `${String(trace.runtime.eventCount)} 个事件`,
-      formatDuration(trace.runtime.durationMs),
-    ]),
-    subCalls: ordered(spans),
-    seq,
-  });
-}
-
 export function executionTraceRoot(
   trace: ExecutionTraceDto,
   seq: number,
   options: ExecutionTraceViewOptions = {},
 ): ToolCallBlock {
-  const runtime = runtimeBlock(trace, seq);
   const root = block({
     callId: `lifeos-workflow-${String(trace.productRunId)}`,
-    name: `Chat Workflow · ${trace.workflow.title}`,
+    name: `Workflow · ${trace.workflow.title}`,
     status: trace.run.status,
     startedAt: trace.run.createdAt,
     ...(isRunning(trace.run.status) ? {} : { completedAt: trace.run.updatedAt }),
@@ -468,36 +419,42 @@ export function executionTraceRoot(
     },
     summary: joinedSummary([
       statusLabel(trace.run.status),
-      `${String(trace.workflow.nodeRuns.length)} 个业务节点`,
+      `${String(trace.workflow.nodeRuns.length)} 个 Workflow 节点`,
       formatDuration(instant(trace.run.updatedAt) - instant(trace.run.createdAt)),
     ]),
-    subCalls: ordered([
-      ...workflowNodeBlocks(trace, seq),
-      ...(runtime === undefined ? [] : [runtime]),
-    ]),
+    // DSH Trajectory只呈现这一套实际Workflow执行。Vercel World事件仍由后端保留为
+    // 运行时证据，但不与Workflow NodeRun混排成第二条用户可见流程。
+    subCalls: ordered(workflowNodeBlocks(trace, seq)),
     seq,
   });
   return decorateTreeBlock(root, [], true, options.showTimestamps === true, true);
 }
 
 export function createExecutionTraceDefinition(
+  traceForMessage: ExecutionTraceForMessage,
   options: ExecutionTraceViewOptions = {},
 ): ConversationNodeDefinition<ExecutionTraceDto> {
   return {
     kind: "lifeos-execution-trace",
     target: "trajectory",
-    match: (event) =>
-      event.type === LIFEOS_EXECUTION_TRACE_EVENT
-        ? { id: String(event.data.trace.productRunId), role: event.data.eventKind }
-        : null,
-    start: (_context, match) => {
-      if (match.event.type !== LIFEOS_EXECUTION_TRACE_EVENT) {
-        throw new Error("lifeos execution trace start requires its session event");
-      }
-      return match.event.data.trace;
+    // user/message是Product Run的真实触发点。外部轨迹通过Bridge保存的消息绑定
+    // 查询得到，不向DSH Session追加自定义事件，也不伪装成任何原生工具事件。
+    match: (event) => {
+      if (event.type !== "user/message" || event.data.source.kind !== "user") return null;
+      const trace = traceForMessage(String(event.data.id));
+      return trace === undefined ? null : { id: String(trace.productRunId), role: "start" };
     },
-    update: (context, match) =>
-      match.event.type === LIFEOS_EXECUTION_TRACE_EVENT ? match.event.data.trace : context.state,
+    start: (_context, match) => {
+      if (match.event.type !== "user/message") {
+        throw new Error("lifeos execution trace requires its triggering user message");
+      }
+      const trace = traceForMessage(String(match.event.data.id));
+      if (trace === undefined) {
+        throw new Error("lifeos execution trace binding disappeared during projection");
+      }
+      return trace;
+    },
+    update: (context) => context.state,
     buildViewNode: (context: ConversationNodeContext<ExecutionTraceDto>) => {
       const last = context.matches.at(-1);
       if (last === undefined || context.state === undefined) return null;
@@ -517,13 +474,12 @@ export function createExecutionTraceDefinition(
   };
 }
 
-export const executionTraceDefinition = createExecutionTraceDefinition();
-
 export function registerExecutionTraceDefinition(
   ctx: {
     conversationEvents: { register(definition: ConversationNodeDefinition): () => void };
   },
+  traceForMessage: ExecutionTraceForMessage,
   options: ExecutionTraceViewOptions = {},
 ): () => void {
-  return ctx.conversationEvents.register(createExecutionTraceDefinition(options));
+  return ctx.conversationEvents.register(createExecutionTraceDefinition(traceForMessage, options));
 }

@@ -50,8 +50,8 @@ Memory源码与独立测试保留，但统一安装、VS Code F5和开发启动�
 | 决定提交 | `ChatProductClient.submitDecision` | 同一pending command、Run CAS、Plan/Approval版本与Hash |
 | 正式回复 | Bridge LLM Adapter | 只从Chat Message Query选择正式Assistant Message |
 | 执行轨迹Query | `GET /api/runs/:productRunId/execution-trace`、`getExecutionTrace` | 实际NodeRun、Runtime可用性、Pi活动、稳定`traceRevision` |
-| DSH轨迹记录 | `ExecutionTraceRecorder.record` | 同一Run首次`start`、后续`update`、相同revision不重复追加 |
-| 原生轨迹折叠 | `executionTraceDefinition`、`executionTraceRoot` | Workflow→业务节点→Pi Agent→模型/工具及Vercel Runtime子树 |
+| DSH轨迹绑定 | `LifeosLlmAdapter.ensureRequest`、`LifeosBridgeService.executionTraces` | 真实`user/message ID → Product Run`、Query失败不阻断Plan/HITL |
+| 原生轨迹折叠 | `ExecutionTraceProjection`、`executionTraceDefinition`、`executionTraceRoot` | 原生消息锚点→Workflow→NodeRun→Pi Agent→模型/工具；不写自定义Session事件 |
 
 不要在日志/Watch中展示完整用户正文、密钥、Hook Token、Workflow Run ID或pi Session ID。
 
@@ -78,10 +78,9 @@ Trace只保存可观察事件、对象引用、版本、耗时和安全错误，
 
 真实页面验证时，在DSH发送一条Planning消息后切换到“轨迹”：
 
-1. 根行应为`Chat Workflow`，子行必须来自实际`WorkflowNodeRun`，不能把静态Definition画成已执行。
+1. 根行应为`Workflow · <当前工作流标题>`，子行必须来自实际`WorkflowNodeRun`，不能把静态Definition画成已执行。
 2. `任务规划`或执行节点可展开Pi Agent；其下显示模型、Token与`submit_*`工具生命周期。
-3. `Vercel Workflow Runtime`可展开Run/Step/Hook/Sleep记录，但页面和网络响应不得出现
-   Workflow Run ID、Hook Token、Pi Session ID、Provider Request ID、Prompt或工具参数/结果正文。
+3. Trajectory不得出现`Vercel Workflow Runtime`、Run/Step/Hook/Sleep行；这些脱敏数据只保留为后端证据，后续由独立诊断/证据表面消费。页面不得出现Workflow Run ID、Hook Token、Pi Session ID、Provider Request ID、Prompt或工具参数/结果正文。
 4. 默认Profile选择“规划执行工作流”，该Definition不含Memory节点，因此轨迹不得出现Memory；这不是展示过滤。完整上下文Planning Workflow仍保留，只有显式选择时才会解释其资源节点；当前统一启动器仍不会启动Memory服务或装配Adapter。
 
 ## Workbench调试

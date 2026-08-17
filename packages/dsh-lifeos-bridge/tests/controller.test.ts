@@ -4,13 +4,14 @@ import { LifeosProjectionController } from "../src/client/controller.ts";
 import { workflowSelectionSchema } from "../src/contracts.ts";
 
 const projection = {
-  schemaVersion: "chat-dsh-lifeos-bridge.v2",
+  schemaVersion: "chat-dsh-lifeos-bridge.v3",
   dshSessionId: "dsh-session-1",
   run: null,
   plan: null,
   approval: null,
   pendingDecision: null,
   workflowSelection: null,
+  executionTraces: [],
 };
 
 const projectionWithSelection = {

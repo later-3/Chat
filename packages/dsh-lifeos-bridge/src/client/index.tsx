@@ -16,7 +16,7 @@ import {
   type TraceTimestampToggleInjected,
 } from "./TraceTimestampToggle.tsx";
 import { WorkbenchSurfaceController } from "./workbench-controller.ts";
-import { registerExecutionTraceDefinition } from "./execution-trace-definition.ts";
+import { ExecutionTraceProjection } from "./execution-trace-projection.ts";
 
 export const name = "chat-dsh-lifeos-bridge-client";
 export const inject = ["slots", "conversationEvents"];
@@ -27,21 +27,18 @@ export function apply(ctx: ClientContext): void {
   const traceTimestamps = createSnapshotStore(false, {
     persist: { name: "chat.lifeos.trace-timestamps.v1" },
   });
+  const executionTraces = new ExecutionTraceProjection(ctx, {
+    showTimestamps: traceTimestamps.getSnapshot(),
+  });
   ctx.effect(() => {
-    let disposeDefinition = registerExecutionTraceDefinition(ctx, {
-      showTimestamps: traceTimestamps.getSnapshot(),
-    });
     const unsubscribe = traceTimestamps.subscribe(() => {
-      // Conversation Definition Registry是DSH公开的低频重投影边界。
-      // 先释放旧Definition再按新偏好注册；Session事实与事件日志均不变化。
-      disposeDefinition();
-      disposeDefinition = registerExecutionTraceDefinition(ctx, {
+      executionTraces.setOptions({
         showTimestamps: traceTimestamps.getSnapshot(),
       });
     });
     return () => {
       unsubscribe();
-      disposeDefinition();
+      executionTraces.dispose();
     };
   }, "lifeos bridge: execution trace trajectory");
   const workbench = new WorkbenchSurfaceController();
@@ -49,7 +46,10 @@ export function apply(ctx: ClientContext): void {
   const controllerFor = (sessionId: SessionId): LifeosProjectionController => {
     let controller = controllers.get(sessionId);
     if (controller === undefined) {
-      controller = new LifeosProjectionController(String(sessionId));
+      controller = new LifeosProjectionController(String(sessionId), undefined, (traces) => {
+        if (traces.length === 0) executionTraces.remove(String(sessionId));
+        else executionTraces.replace(String(sessionId), traces);
+      });
       controllers.set(sessionId, controller);
     }
     return controller;

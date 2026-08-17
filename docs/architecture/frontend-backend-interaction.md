@@ -56,7 +56,7 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 | `GET` | `/api/workflow/definitions` | 读取当前Principal可用的active published Workflow |
 | `GET` | `/api/sessions/:sessionId/messages` | 读取正式Message |
 | `GET` | `/api/runs/:productRunId` | 读取Run状态、阶段与revision |
-| `GET` | `/api/runs/:productRunId/execution-trace` | 读取业务节点、Vercel Runtime与Pi活动的脱敏层级轨迹 |
+| `GET` | `/api/runs/:productRunId/execution-trace` | 读取Workflow节点、Vercel Runtime证据与Pi活动的脱敏只读投影 |
 | `GET` | `/api/runs/:productRunId/plans` | 读取Plan revisions |
 | `GET` | `/api/runs/:productRunId/approvals/current` | 读取当前可操作Approval |
 | `POST` | `/api/runs/:productRunId/decisions` | 提交版本/Hash绑定的决定 |
@@ -78,12 +78,16 @@ Plan/HITL Dock是临时命令表面，不是Run状态看板：只有当前Plan�
 `waiting_human/plan_review`三者版本/Hash一致，或存在结果未知且必须原样重试的Decision时才显示。
 决定被Chat确认后Dock立即退出Composer；已完成、修订或拒绝的决定继续作为实际Human Review
 NodeRun保留在Trajectory中，不用常驻卡片重复展示历史。
-执行轨迹不创建第二个页面：Host把公开快照写成DSH Session的log-only事件，Client注册
-`lifeos-execution-trace` Conversation Definition并直接贡献到原生`trajectory` target。
+执行轨迹不创建第二个页面：Bridge保存真实的`DSH user/message ID → Product Run`绑定，Client
+从同源Query读取公开轨迹，再注册`lifeos-execution-trace` Conversation Definition并以该原生
+`user/message`为锚点直接贡献到`trajectory` target。整个过程不追加自定义DSH Session事件。
 每一层继续使用原生`ToolCallBlock.subCalls`。固定rc.6的Ledger会把所有后代统一渲染为`SUBTOOL`，
 因此Bridge只在自己贡献的Tool名称中增加`├─/└─/│`树线，恢复`Workflow节点 → Agent → 模型/工具`
 的可见深度；它不读取、选择或修改DSH DOM，也不覆盖Trajectory组件。Pi行使用角色限定的
 `规划/执行 Agent`标签；终态摘要直接显示模型/工具次数、模型输入/输出/总Token和耗时，不再以空结果呈现。
+DSH Trajectory只投影这一套实际Workflow NodeRun及其Pi子过程。公开DTO仍保留脱敏Vercel
+Run/Step/Hook/Sleep运行时证据供后续诊断或证据表面使用，但Bridge不把它与Workflow节点混排，
+也不使用`Chat Workflow`或“业务节点”制造第二套流程概念。
 
 时间戳默认保持紧凑。Client插件通过公开`conversation.session.header.utilities`加法Slot注册“时间”开关，
 偏好由DSH公开Snapshot Store保存在浏览器本地；开关只让Conversation Definition按同一Trace重新投影，

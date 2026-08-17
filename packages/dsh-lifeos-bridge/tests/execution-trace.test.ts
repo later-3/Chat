@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Session, SessionId } from "@deepseek-ai/dsh-session";
 import type { ToolCallBlock } from "@deepseek-ai/dsh-client-runtime/client";
 import { executionTraceDtoSchema, type ExecutionTraceDto } from "@chat/contracts/public";
-import { ChatProductClient } from "../src/chat-client.ts";
-import { executionTraceRoot } from "../src/client/execution-trace-definition.ts";
-import { LIFEOS_EXECUTION_TRACE_EVENT } from "../src/execution-trace-events.ts";
-import { ExecutionTraceRecorder } from "../src/execution-trace-recorder.ts";
+import {
+  createExecutionTraceDefinition,
+  executionTraceRoot,
+} from "../src/client/execution-trace-definition.ts";
 
 function trace(revision = "a".repeat(64)): ExecutionTraceDto {
   return executionTraceDtoSchema.parse({
@@ -235,7 +234,8 @@ function blockName(value: ToolCallBlock): string {
 test("execution trace becomes a recursive native trajectory tool tree", () => {
   const root = executionTraceRoot(trace(), 12);
   assert.equal("kind" in root && root.kind, "tool-result");
-  assert.equal(root.subCalls.length, 4);
+  assert.equal(root.subCalls.length, 3);
+  assert.match(blockName(root), /^Workflow · 生存计划$/u);
   const planning = root.subCalls.find((item) => blockName(item).endsWith("任务规划"));
   assert.ok(planning !== undefined);
   assert.equal(planning.subCalls.length, 1);
@@ -261,7 +261,9 @@ test("execution trace becomes a recursive native trajectory tool tree", () => {
   assert.match(serialized, /decision.*批准/u);
   assert.match(serialized, /startedAt.*2026-08-17T08:00:01.100Z/u);
   assert.match(serialized, /promptTokens/u);
-  assert.match(serialized, /Vercel Workflow Runtime/u);
+  assert.match(serialized, /3 个 Workflow 节点/u);
+  assert.doesNotMatch(serialized, /Vercel Workflow Runtime|invokePlanner|runtime-step/u);
+  assert.equal(trace().runtime.availability, "available");
   assert.doesNotMatch(
     serialized,
     /workflowRunId|hookToken|piSessionId|providerRequestId|"prompt"|"payload"/u,
@@ -283,20 +285,37 @@ test("execution trace timestamps are a projection-only optional preference", () 
   assert.equal(trace().updatedAt, "2026-08-17T08:00:04.000Z");
 });
 
-test("recorder appends start/update once per trace revision", async () => {
-  const session = Session.create(SessionId("session-trace-test"));
-  let current = trace();
-  const client = new ChatProductClient(
-    new URL("http://127.0.0.1:43111"),
-    async () => new Response(JSON.stringify(current), { status: 200 }),
+test("definition anchors an external trace to the real user message without custom log events", () => {
+  const current = trace();
+  const definition = createExecutionTraceDefinition((messageId) =>
+    messageId === "msg_dsh_trace1" ? current : undefined,
   );
-  const recorder = new ExecutionTraceRecorder(client, { get: () => session } as never);
-  await recorder.record(String(session.id), String(current.productRunId));
-  await recorder.record(String(session.id), String(current.productRunId));
-  current = trace("b".repeat(64));
-  await recorder.record(String(session.id), String(current.productRunId));
-  const events = session.events.filter((event) => event.type === LIFEOS_EXECUTION_TRACE_EVENT);
-  assert.equal(events.length, 2);
-  assert.equal(events[0]?.data.eventKind, "start");
-  assert.equal(events[1]?.data.eventKind, "update");
+  const matched = definition.match({
+    type: "user/message",
+    seq: 7,
+    time: Date.parse("2026-08-17T08:00:00.000Z"),
+    data: {
+      id: "msg_dsh_trace1",
+      role: "user",
+      source: { kind: "user" },
+      content: [{ type: "text", text: "执行工作流" }],
+    },
+    surfaceOp: "append",
+  } as never);
+  assert.deepEqual(matched, { id: "run_trace1", role: "start" });
+  assert.equal(
+    definition.match({
+      type: "user/message",
+      seq: 8,
+      time: Date.now(),
+      data: {
+        id: "msg_unbound",
+        role: "user",
+        source: { kind: "user" },
+        content: [{ type: "text", text: "普通DSH消息" }],
+      },
+      surfaceOp: "append",
+    } as never),
+    null,
+  );
 });

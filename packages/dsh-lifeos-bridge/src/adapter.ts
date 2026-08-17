@@ -170,11 +170,6 @@ export class LifeosLlmAdapter extends LlmAdapter {
     private readonly chat: ChatProductClient,
     private readonly state: AtomicBridgeStateStore,
     private readonly lifetimeSignal?: AbortSignal,
-    private readonly recordExecutionTrace?: (
-      dshSessionId: string,
-      productRunId: string,
-      signal?: AbortSignal,
-    ) => Promise<void>,
   ) {
     super();
   }
@@ -237,12 +232,9 @@ export class LifeosLlmAdapter extends LlmAdapter {
       } else {
         run = await this.chat.getRun(request.productRunId, signal);
       }
-      await this.safeRecordExecutionTrace(dshSessionId, run.productRunId, signal);
-
       while (!TERMINAL_STATUSES.has(run.status)) {
         await delay(signal);
         run = await this.chat.getRun(run.productRunId, signal);
-        await this.safeRecordExecutionTrace(dshSessionId, run.productRunId, signal);
       }
       if (run.status !== "succeeded" || run.finalMessageId === undefined) {
         const summary = run.failure?.summary ?? `Chat Product Run ended as ${run.status}`;
@@ -260,18 +252,6 @@ export class LifeosLlmAdapter extends LlmAdapter {
       yield* textStream(text);
     } catch (error) {
       throw asLlmError(error);
-    }
-  }
-
-  private async safeRecordExecutionTrace(
-    dshSessionId: string,
-    productRunId: string,
-    signal: AbortSignal | undefined,
-  ): Promise<void> {
-    try {
-      await this.recordExecutionTrace?.(dshSessionId, productRunId, signal);
-    } catch {
-      // 轨迹是可恢复展示投影；读取或追加失败不能反向污染Chat Product Run。
     }
   }
 
@@ -299,6 +279,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
       stableCommandId("create-session", dshSessionId),
       (binding) => {
         const request = (binding.requests[prompt.requestKey] ??= {
+          dshMessageId: prompt.messageId,
           userTextSha256: prompt.textSha256,
           messageCommandId: stableCommandId(
             "submit-message",
@@ -314,6 +295,10 @@ export class LifeosLlmAdapter extends LlmAdapter {
         if (request.userTextSha256 !== prompt.textSha256) {
           throw new Error("lifeos bridge request key collision");
         }
+        if (request.dshMessageId !== undefined && request.dshMessageId !== prompt.messageId) {
+          throw new Error("lifeos bridge request message identity mismatch");
+        }
+        request.dshMessageId = prompt.messageId;
         binding.currentRequestKey = prompt.requestKey;
         return structuredClone(request);
       },

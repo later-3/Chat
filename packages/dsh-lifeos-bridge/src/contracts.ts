@@ -2,6 +2,7 @@ import {
   approvalDtoSchema,
   approvalRequestIdSchema,
   decisionDtoSchema,
+  executionTraceDtoSchema,
   messageDtoSchema,
   messageResponseSchema,
   planIdSchema,
@@ -20,11 +21,12 @@ import {
 } from "@chat/contracts/public";
 import { z } from "zod";
 
-export const BRIDGE_SCHEMA_VERSION = "chat-dsh-lifeos-bridge.v2" as const;
+export const BRIDGE_SCHEMA_VERSION = "chat-dsh-lifeos-bridge.v3" as const;
 export const dshSessionIdSchema = z
   .string()
   .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/)
   .refine((value) => !["__proto__", "prototype", "constructor"].includes(value));
+export const dshMessageIdSchema = z.string().min(1).max(256);
 
 // Aliases keep the adapter vocabulary concise while the runtime authority stays
 // in @chat/contracts/public and is inlined into the deployable bridge bundle.
@@ -136,6 +138,19 @@ export const workflowSelectionRequestSchema = z
 export type LifeosWorkflowOption = z.infer<typeof lifeosWorkflowOptionSchema>;
 export type WorkflowSelection = z.infer<typeof workflowSelectionSchema>;
 
+/**
+ * 一次Product Run的公开执行轨迹及其真实DSH触发消息。消息ID只负责把外部
+ * Workflow投影锚定到原生Trajectory；它不是产品身份，也不会写回DSH日志。
+ */
+export const lifeosExecutionTraceSchema = z
+  .object({
+    dshMessageId: dshMessageIdSchema,
+    trace: executionTraceDtoSchema,
+  })
+  .strict();
+
+export type LifeosExecutionTrace = z.infer<typeof lifeosExecutionTraceSchema>;
+
 export const publicRunSchema = runDtoSchema.pick({
   productRunId: true,
   status: true,
@@ -146,7 +161,7 @@ export const publicRunSchema = runDtoSchema.pick({
   updatedAt: true,
 });
 
-/** Same-origin Client read model; no Workflow/pi/runtime-private identity exists. */
+/** Same-origin Client read model；不暴露Workflow/pi的运行时私有身份。 */
 export const lifeosProjectionSchema = z
   .object({
     schemaVersion: z.literal(BRIDGE_SCHEMA_VERSION),
@@ -156,6 +171,7 @@ export const lifeosProjectionSchema = z
     approval: approvalDtoSchema.nullable(),
     pendingDecision: decisionRequestSchema.nullable(),
     workflowSelection: workflowSelectionSchema.nullable(),
+    executionTraces: z.array(lifeosExecutionTraceSchema).max(100),
   })
   .strict();
 

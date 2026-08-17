@@ -18,6 +18,7 @@ test("bridge mapping survives reload in a private atomic JSON file", async () =>
       binding.chatSessionId = "psn_session1";
       binding.currentRequestKey = "request-1";
       binding.requests["request-1"] = {
+        dshMessageId: "msg_dsh1",
         userTextSha256: "b".repeat(64),
         messageCommandId: command("c"),
         productRunId: "run_run1",
@@ -49,11 +50,12 @@ test("bridge mapping survives reload in a private atomic JSON file", async () =>
     assert.equal((await stat(path)).mode & 0o777, 0o600);
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
-      "chat-dsh-lifeos-state.v2",
+      "chat-dsh-lifeos-state.v3",
     );
     const reloaded = new AtomicBridgeStateStore(path);
     const binding = await reloaded.readSession("dsh-session-1");
     assert.equal(binding?.chatSessionId, "psn_session1");
+    assert.equal(binding?.requests["request-1"]?.dshMessageId, "msg_dsh1");
     assert.deepEqual(binding?.requests["request-1"]?.pendingDecision?.request, {
       kind: "request_revision",
       explanation: "保留原样重试",
@@ -75,7 +77,7 @@ test("bridge mapping survives reload in a private atomic JSON file", async () =>
   }
 });
 
-test("v1 bridge state migrates atomically to v2 before workflow drafts are written", async () => {
+test("v1/v2 bridge state migrates atomically to v3 before trace anchors are written", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-state-v1-"));
   const path = join(directory, "bridge.json");
   try {
@@ -97,7 +99,7 @@ test("v1 bridge state migrates atomically to v2 before workflow drafts are writt
     assert.equal((await store.readSession("dsh-session-1"))?.createSessionCommandId, command("a"));
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
-      "chat-dsh-lifeos-state.v2",
+      "chat-dsh-lifeos-state.v3",
     );
     assert.equal((await stat(path)).mode & 0o777, 0o600);
   } finally {

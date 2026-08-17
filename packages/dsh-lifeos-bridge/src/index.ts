@@ -1,7 +1,6 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-host-webserver";
 import type {} from "@deepseek-ai/dsh-llm";
-import type {} from "@deepseek-ai/dsh-session";
 import type {} from "@deepseek-ai/dsh-workspace";
 import { isAbsolute, resolve } from "node:path";
 import { LifeosLlmAdapter, LIFEOS_PROVIDER } from "./adapter.ts";
@@ -10,10 +9,9 @@ import { ChatProductClient, parseChatApiBaseUrl } from "./chat-client.ts";
 import { assertSameOriginRequest, createLifeosRouteHandler, sendRouteError } from "./http-route.ts";
 import { createPwaAssetHandler, createPwaIndexTap } from "./pwa.ts";
 import { AtomicBridgeStateStore } from "./state-store.ts";
-import { ExecutionTraceRecorder } from "./execution-trace-recorder.ts";
 
 export const name = "chat-dsh-lifeos-bridge";
-export const inject = ["llm", "webServer", "workspaceRegistry", "sessions"];
+export const inject = ["llm", "webServer", "workspaceRegistry"];
 
 function requiredStatePath(raw: string | undefined): string {
   if (raw === undefined || raw.trim() === "") {
@@ -64,26 +62,6 @@ export async function apply(ctx: Context): Promise<void> {
   const state = new AtomicBridgeStateStore(statePath);
   await state.ready();
   const chat = new ChatProductClient(apiBaseUrl);
-  const executionTrace = new ExecutionTraceRecorder(chat, ctx.sessions);
-  let executionTraceFailures = 0;
-  const recordExecutionTrace = async (
-    dshSessionId: string,
-    productRunId: string,
-    signal?: AbortSignal,
-  ): Promise<void> => {
-    try {
-      await executionTrace.record(dshSessionId, productRunId, signal);
-      executionTraceFailures = 0;
-    } catch (error) {
-      executionTraceFailures += 1;
-      if (executionTraceFailures === 1 || executionTraceFailures % 20 === 0) {
-        ctx.logger.warn(
-          `lifeos execution trace projection failed count=${String(executionTraceFailures)}`,
-        );
-      }
-      throw error;
-    }
-  };
   const bridge = new LifeosBridgeService(chat, state);
   const lifetime = new AbortController();
   ctx.effect(
@@ -92,10 +70,7 @@ export async function apply(ctx: Context): Promise<void> {
     },
     "lifeos bridge: stream lifetime",
   );
-  ctx.llm.registerAdapter(
-    [LIFEOS_PROVIDER],
-    new LifeosLlmAdapter(chat, state, lifetime.signal, recordExecutionTrace),
-  );
+  ctx.llm.registerAdapter([LIFEOS_PROVIDER], new LifeosLlmAdapter(chat, state, lifetime.signal));
   ctx.effect(
     () =>
       ctx.webServer.register({

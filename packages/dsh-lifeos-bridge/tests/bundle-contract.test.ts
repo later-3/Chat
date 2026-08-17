@@ -24,9 +24,9 @@ test("manifest exposes the native DSH bundle patch and client factory contract",
   ]);
   const host = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");
   const client = await readFile(new URL("../src/client/index.tsx", import.meta.url), "utf8");
-  assert.match(host, /"sessions"/);
+  assert.doesNotMatch(host, /ExecutionTraceRecorder|lifeos\/execution-trace/);
   assert.match(client, /"conversationEvents"/);
-  assert.match(client, /registerExecutionTraceDefinition/);
+  assert.match(client, /ExecutionTraceProjection/);
 });
 
 test("workflow selector uses the additive DSH composer tool-row slot", async () => {
@@ -54,7 +54,8 @@ test("trace display options use public additive DSH contracts without touching t
   );
   assert.match(client, /createSnapshotStore/);
   assert.match(client, /ctx\.slots\.inject\("conversation\.session\.header\.utilities"/);
-  assert.match(client, /registerExecutionTraceDefinition/);
+  assert.match(client, /ExecutionTraceProjection/);
+  assert.match(projection, /registerExecutionTraceDefinition/);
   assert.match(toggle, /PropsRuntime<"conversation\.session\.header\.utilities">/);
   assert.match(toggle, /aria-pressed=\{visible\}/);
   assert.match(projection, /target: "trajectory"/);

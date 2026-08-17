@@ -14,7 +14,7 @@
 | Product Store | 版本化JSON Adapter；拥有Session、Message、Run、Plan、Approval、Decision、Memory和Project事实 |
 | Workflow | Vercel Workflow解释不可变RunSpec，承担耐久步骤、暂停、恢复与Checkpoint |
 | Agent Runtime | `pi-agent-core`作为Planner/Executor节点，不拥有产品会话或完成事实 |
-| 执行轨迹 | DSH原生Trajectory展示实际Workflow NodeRun、Vercel Run/Step/Hook/Sleep与Pi Agent/模型/工具层级；插件贡献树线恢复可见父子深度，公开Session utility可选显示本地时间范围；终态摘要含角色、Token、耗时，DSH Session仅为投影缓存 |
+| 执行轨迹 | DSH原生Trajectory只展示实际Workflow NodeRun及其Pi Agent/模型/工具子过程；Vercel Run/Step/Hook/Sleep继续保留为后端运行时证据但不混入该轨迹；Bridge以真实DSH user/message绑定查询Chat轨迹并通过公开Conversation Definition投影，不向DSH Session追加自定义事件；插件贡献树线恢复可见父子深度，公开Session utility可选显示本地时间范围；终态摘要含角色、Token、耗时 |
 | Memory | memmy与Tencent MemoryCore代码、合同和历史事实保留；当前默认不启动服务，也不向API/Workflow装配Adapter |
 | 调试 | `pnpm dev/dev:debug`只启动Workflow、API、code-server与Web Gateway/DSH；当前没有Memory启用Profile |
 | PWA | DSH Web可安装PWA：Bridge覆盖manifest/sw.js并注入图标与注册脚本；SW只缓存同源静态外壳，/api//lifeos永不缓存 |
@@ -45,6 +45,6 @@
 - 全仓build、typecheck、test、lint和依赖审计通过。
 - 真实DSH Host启动，原生界面不是临时Adapter页。
 - 浏览器真实完成发送、Plan/HITL、执行结果与刷新恢复。
-- 浏览器在DSH原生Trajectory真实展开Workflow、Pi与Vercel Runtime层级；默认Run因Definition不含Memory而没有任何Memory轨迹，不靠前端过滤。
+- 浏览器在DSH原生Trajectory真实展开唯一Workflow主线及其Pi子过程；Vercel Runtime证据不混入该表面，默认Run因Definition不含Memory而没有任何Memory轨迹，不靠前端过滤。
 - Workbench真实打开同一Workspace，并验证Files、Terminal、Git与Diff。
 - Workbench与DSH使用不同浏览器Origin；WebSocket、Service Worker作用域和停止后的子进程回收通过。
