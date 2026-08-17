@@ -100,6 +100,21 @@ Run/Step/Hook/Sleep运行时证据供后续诊断或证据表面使用，但Brid
 DSH派生改动只允许存在于单独固定分支和仓库内可审核的pnpm补丁：当前仅涉及Contribution Location与
 语义标签两个通用字段。不得复制DSH源码、重写Trajectory页面，或把完整Hosted App拆成自研React组件。
 
+插件优先不等于插件能够改写全部宿主语义。rc.6公开Contribution已经携带Location，却没有在Trajectory
+快照与layout中保留、消费独立根调用的Location；标签也固定为`TOOL/SUBTOOL`。LifeOS插件因此不能在不伪造
+Assistant事件、不操作DOM、不复制Trajectory组件的条件下同时得到真实Step顺序与业务标签。Chat据此批准
+独立私有DSH窄派生；修改仍是通用Contribution能力，Chat业务对象和产品事实继续全部留在Bridge与Chat后端。
+详细决策、私有仓库与上游汇合流程见[DSH前端派生与维护](./dsh-frontend-maintenance.md)。
+
+### 6.1 DSH注入的Context
+
+DSH仍提供Host、Session、事件日志、Agent loop请求组装与插件运行时；Chat只替换了模型/业务执行出口，不能笼统
+描述为“完全不用DSH后端”。默认base bundle会在真实User之后依次记录工作区`AGENTS.md`指令、DSH沙箱/审批
+运行快照和Skill Catalog三类Context。它们分别来自`dsh-agent-instructions`、`dsh-system-prompt`与
+`dsh-tool-skill`，不是PWA插件或Chat Workflow节点。LifeOS Adapter只提取`source.kind === "user"`的真实用户消息，
+三类Context不会提交Chat Message、不会进入Planner/Executor，也不会产生第二套执行。精确来源和去向见
+[DSH前端派生与维护](./dsh-frontend-maintenance.md#5-user之后的三条context)。
+
 ## 7. Workbench边界
 
 Code Workbench不是Chat API或某个Chat Session的一部分。Client插件把唯一入口注册到DSH公开的`sidebar.footer.action` root list slot，因此空白Hero也可直接打开全屏Surface；不得再在Session Header注册第二个入口。统一启动器管理固定版本code-server。code-server只监听受管0700临时根内的0600 Unix socket；Web Gateway把`localhost:43110/workbench/code/`的HTTP与任意WebSocket代理到该socket，并拒绝该虚拟Host访问DSH与`/lifeos`。浏览器没有可直连的code-server TCP地址，因此DNS rebinding不能绕过Gateway取得Files或Terminal。返回对话只隐藏Surface，不卸载iframe和终端连接。
