@@ -149,7 +149,29 @@ describe("wait-ready", () => {
   });
 });
 
-describe("VS Code Provider preload", () => {
+describe("Chat本地Workflow Provider preload", () => {
+  it("普通启动脚本不包含个人绝对路径或隐式pi配置依赖", () => {
+    const source = readFileSync(join(scriptsDir, "load-provider-env.mjs"), "utf8");
+    expect(source).not.toMatch(/\/Users\/xulater/u);
+    expect(source).not.toMatch(/backend\/config\.json/u);
+    expect(source).toContain("CHAT_DEBUG_PI_KEY_READER");
+    expect(source).toContain("CHAT_DEBUG_PI_PROVIDER_CONFIG");
+  });
+
+  it("陌生机器没有Key或pi本地配置时仍可启动为Provider not ready", () => {
+    const fixtureDir = tempDebugDir();
+    const result = runProviderPreload({
+      ...makeEnv(fixtureDir),
+      CHAT_DEBUG_PI_KEY_READER: "",
+      CHAT_DEBUG_PI_PROVIDER_CONFIG: "",
+      DASHSCOPE_API_KEY: "",
+      DASHSCOPE_BASE_URL: "",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("PROVIDER_READY");
+    expect(result.stderr).toBe("");
+  });
+
   it("环境/.env中的Provider配置优先，且stdout/stderr不泄漏Key", () => {
     const fixtureDir = tempDebugDir();
     const configPath = join(fixtureDir, "pi-config.json");
@@ -223,6 +245,19 @@ describe("VS Code Provider preload", () => {
     expect(result.stderr).toContain("Base URL");
     expect(result.stdout).not.toContain(fallbackKey);
     expect(result.stderr).not.toContain(fallbackKey);
+  });
+
+  it("本地pi复用只配置一条路径时失败关闭", () => {
+    const fixtureDir = tempDebugDir();
+    const result = runProviderPreload({
+      ...makeEnv(fixtureDir),
+      CHAT_DEBUG_PI_KEY_READER: join(fixtureDir, "reader.mjs"),
+      CHAT_DEBUG_PI_PROVIDER_CONFIG: "",
+      DASHSCOPE_API_KEY: "",
+      DASHSCOPE_BASE_URL: "",
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("必须同时配置");
   });
 });
 

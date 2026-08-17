@@ -25,6 +25,7 @@ scripts/
   workbench/              固定code-server准备、运行、回收与真实验证
   e2e/                    真实纵向预检和服务编排
 docs/
+  getting-started/        全新克隆、固定工件准备与本地安装
   architecture/           当前合同与as-built
   product/                稳定产品原则
   debug/                  当前调试入口

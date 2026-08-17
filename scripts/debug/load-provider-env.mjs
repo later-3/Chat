@@ -3,16 +3,13 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
 /**
- * VS Code Workflow调试专用的百炼Provider预加载。
+ * Chat本地Workflow运行专用的百炼Provider预加载。
  *
- * 已有环境或仓库.env始终优先；只有缺失时，才在当前本地Node进程中调用用户已有的
- * pi reader并读取其dashscope配置。凭据不打印、不落盘、不作为子命令参数传递。
+ * 已有环境或仓库.env始终优先。普通安装没有Provider凭据时仍可启动，由pi-runtime
+ * 明确报告not ready；只有调用方同时显式给出pi reader与Provider配置路径时，才在
+ * 当前本地Node进程中复用该配置。凭据不打印、不落盘、不作为子命令参数传递。
  */
 
-const PI_KEY_READER =
-  process.env.CHAT_DEBUG_PI_KEY_READER ?? "/Users/xulater/.pi/agent/read-chat-provider-key.mjs";
-const PI_PROVIDER_CONFIG =
-  process.env.CHAT_DEBUG_PI_PROVIDER_CONFIG ?? "/Users/xulater/Code/Chat/backend/config.json";
 const PI_PROVIDER_ID = "dashscope";
 
 function configured(name) {
@@ -20,14 +17,24 @@ function configured(name) {
   return value === undefined || value === "" ? undefined : value;
 }
 
+const PI_KEY_READER = configured("CHAT_DEBUG_PI_KEY_READER");
+const PI_PROVIDER_CONFIG = configured("CHAT_DEBUG_PI_PROVIDER_CONFIG");
+const piFallbackConfigured = PI_KEY_READER !== undefined || PI_PROVIDER_CONFIG !== undefined;
+
+if (piFallbackConfigured && (PI_KEY_READER === undefined || PI_PROVIDER_CONFIG === undefined)) {
+  throw new Error(
+    "本地pi Provider复用必须同时配置CHAT_DEBUG_PI_KEY_READER和CHAT_DEBUG_PI_PROVIDER_CONFIG",
+  );
+}
+
 function requirePiConfig() {
-  if (!existsSync(PI_PROVIDER_CONFIG)) {
+  if (PI_PROVIDER_CONFIG === undefined || !existsSync(PI_PROVIDER_CONFIG)) {
     throw new Error("百炼配置缺失，且找不到本地 pi Provider 配置");
   }
 }
 
 function readPiKey() {
-  if (!existsSync(PI_KEY_READER)) {
+  if (PI_KEY_READER === undefined || !existsSync(PI_KEY_READER)) {
     throw new Error("百炼凭据缺失，且找不到本地 pi Key reader");
   }
   requirePiConfig();
@@ -73,10 +80,17 @@ function readPiBaseUrl() {
 }
 
 const existingKey = configured("DASHSCOPE_API_KEY");
-if (existingKey === undefined) process.env.DASHSCOPE_API_KEY = readPiKey();
+if (existingKey === undefined && piFallbackConfigured) {
+  process.env.DASHSCOPE_API_KEY = readPiKey();
+} else if (existingKey === undefined) {
+  delete process.env.DASHSCOPE_API_KEY;
+}
 
 const existingBaseUrl = configured("DASHSCOPE_BASE_URL");
-process.env.DASHSCOPE_BASE_URL =
-  existingBaseUrl === undefined
-    ? readPiBaseUrl()
-    : validateBaseUrl(existingBaseUrl, "DASHSCOPE_BASE_URL ");
+if (existingBaseUrl !== undefined) {
+  process.env.DASHSCOPE_BASE_URL = validateBaseUrl(existingBaseUrl, "DASHSCOPE_BASE_URL ");
+} else if (piFallbackConfigured) {
+  process.env.DASHSCOPE_BASE_URL = readPiBaseUrl();
+} else {
+  delete process.env.DASHSCOPE_BASE_URL;
+}

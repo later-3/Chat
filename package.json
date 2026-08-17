@@ -4,9 +4,10 @@
   "type": "module",
   "packageManager": "pnpm@10.13.1",
   "engines": {
-    "node": ">=22.19"
+    "node": ">=24 <25"
   },
   "scripts": {
+    "setup": "node scripts/dev/setup.mjs",
     "dev": "node scripts/dev/start.mjs",
     "dev:debug": "node scripts/dev/start.mjs --debug",
     "dev:status": "node scripts/dev/status.mjs",

@@ -266,7 +266,7 @@ Trace 是不阻断产品事务的可观察证据：写入故障或进程在产�
 
 1. Memory 后端配置是服务端文件或环境变量；配置对象引用环境变量名，不把密钥值写入 JSON Product Store。
 2. API 与 Workflow 分别装配 Registry，因此冻结的后端描述和配置指纹必须包含 `authMode + credentialRevision`。启用 Bearer 时必须显式提供同一个非秘密凭据版本/keyId；禁止把 Token 本身或 Token Hash 用作漂移证据。两进程描述不一致时在外部查询前失败关闭。
-3. Agent Provider和模型使用服务端Model Profile配置，产品合同不得写死Provider或模型。当前真实验收Profile使用百炼`qwen3.7-plus`；本地测试优先复用`/Users/xulater/.pi/agent/read-chat-provider-key.mjs`从pi配置读取到子进程环境，不打印、不写入Git，也不再次要求用户手工提供已存在的Key。切换Profile必须重跑同一合同测试和真实E2E，不能修改Domain/API合同来迁就模型。
+3. Agent Provider和模型使用服务端Model Profile配置，产品合同不得写死Provider或模型。当前真实验收Profile使用百炼`qwen3.7-plus`；普通安装只读取环境或仓库`.env`，缺Key时以Provider not ready启动。需要复用既有pi配置时，维护者必须同时显式提供reader与Provider配置路径，凭据只进入服务端子进程且不打印、不写入Git。切换Profile必须重跑同一合同测试和真实E2E，不能修改Domain/API合同来迁就模型。
 4. Memory 服务固定到独立调试端口；启动前使用现有安全 preclean 机制，只清理自己登记且身份匹配的进程，未知占用只报告不杀。
 5. 弱服务器只接收本地构建产物；本阶段不在服务器编译，也不自动部署。
 

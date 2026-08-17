@@ -15,7 +15,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -36,7 +36,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -54,9 +54,10 @@ jobs:
           done
           curl -fsS http://127.0.0.1:43110/lifeos/sessions/ci-probe | grep -q '"schemaVersion":"chat-dsh-lifeos-bridge.v1"'
 
-  dev-smoke:
-    # 完成门：干净检出、不预建全仓dist时，API与DSH Web均可启动。
+  fresh-clone-smoke:
+    # 完成门：陌生机器只凭仓库与公开固定源即可完成安装、全服务启动和安全停止。
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -64,28 +65,50 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
 
-      - name: api dev starts without build
-        run: |
-          (cd apps/api && PORT=3210 pnpm dev &)
-          for i in $(seq 1 30); do
-            sleep 1
-            if curl -fsS localhost:3210/api/healthz; then exit 0; fi
-          done
-          exit 1
+      - name: prepare pinned local runtime from an empty cache
+        env:
+          DASHSCOPE_API_KEY: ""
+          DASHSCOPE_BASE_URL: ""
+          CHAT_DEBUG_PI_KEY_READER: ""
+          CHAT_DEBUG_PI_PROVIDER_CONFIG: ""
+        run: pnpm run setup
 
-      - name: dsh web dev starts from managed profile
+      - name: full graph starts without a Provider key and stops cleanly
+        env:
+          DASHSCOPE_API_KEY: ""
+          DASHSCOPE_BASE_URL: ""
+          CHAT_DEBUG_PI_KEY_READER: ""
+          CHAT_DEBUG_PI_PROVIDER_CONFIG: ""
         run: |
-          CHAT_API_BASE_URL=http://127.0.0.1:3210 pnpm --filter @chat/dsh-web dev > /tmp/chat-dsh-dev.log 2>&1 &
-          dsh_pid=$!
-          trap 'kill "$dsh_pid" 2>/dev/null || true' EXIT
-          for i in $(seq 1 60); do
+          # 直接持有仓库启动器PID，SIGINT会进入其受管反向停止路径并以0退出；
+          # 若把pnpm包装器PID当启动器，预期SIGINT会返回130并让bash -e跳过清理断言。
+          node scripts/dev/start.mjs > /tmp/chat-fresh-clone.log 2>&1 &
+          chat_pid=$!
+          cleanup() {
+            kill -INT "$chat_pid" 2>/dev/null || true
+            wait "$chat_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          for i in $(seq 1 180); do
             sleep 1
-            if curl -fsS localhost:43110/ | grep -q "DeepSeek Harness"; then break; fi
-            if [ "$i" = "60" ]; then cat /tmp/chat-dsh-dev.log; exit 1; fi
+            if curl -fsS http://127.0.0.1:43110/ | grep -q "DeepSeek Harness"; then break; fi
+            if ! kill -0 "$chat_pid" 2>/dev/null; then cat /tmp/chat-fresh-clone.log; exit 1; fi
+            if [ "$i" = "180" ]; then cat /tmp/chat-fresh-clone.log; exit 1; fi
           done
-          curl -fsS localhost:43110/lifeos/sessions/dev-smoke | grep -q '"run":null'
+          curl -fsS http://127.0.0.1:43111/api/readyz
+          curl -fsS http://127.0.0.1:43112/healthz
+          curl -fsS http://127.0.0.1:18960/api/v1/health
+          curl -fsS http://127.0.0.1:18970/health
+          curl -fsS http://127.0.0.1:43110/lifeos/sessions/fresh-clone | grep -q '"run":null'
+          curl -fsS http://localhost:43110/workbench/code/ | grep -qi '<!doctype html>'
+          pnpm dev:status | grep -q 'healthy workbench transport=unix-socket'
+          kill -INT "$chat_pid"
+          wait "$chat_pid"
+          trap - EXIT
+          pnpm dev:status | tee /tmp/chat-stopped-status.log
+          grep -q '本地开发环境未运行' /tmp/chat-stopped-status.log

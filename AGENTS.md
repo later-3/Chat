@@ -13,6 +13,8 @@ Chat的产品后端、Workflow与Agent Runtime基线已经冻结。唯一产品�
 DSH前端切换与Code Workbench已经完成。当前优先交付Browser Provider，随后继续长期上下文、Project Solution、规则与Memory纵向。每个实现任务使用独立worktree、分支和PR，并以真实服务、真实模型和浏览器E2E证明用户结果。
 
 当前事实以[PROJECT_STATE.md](./PROJECT_STATE.md)为准，技术边界以[技术合同](./docs/architecture/technology-contract.md)为准。
+全新克隆、工具链、配置和统一启动以[本地安装指南](./docs/getting-started/local-install.md)为准；
+不得继续引用历史`apps/web`、个人绝对路径或额外手工克隆上游仓库的安装方式。
 
 ## 3. 每次项目回复前的读取顺序
 

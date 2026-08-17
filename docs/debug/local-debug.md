@@ -18,15 +18,22 @@
 
 ## 命令
 
+首次克隆先按[本地安装指南](../getting-started/local-install.md)完成工具链与固定工件准备。
+
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
+pnpm run setup
 pnpm dev
 pnpm dev:debug
 pnpm dev:status
 pnpm dev:stop
 ```
 
-`pnpm dev`依次准备固定Memory、code-server、Workflow兼容性与DSH Bridge/Profile，再启动Memory、Workflow、API、code-server和DSH/Gateway。默认启用Workbench；`--workbench=off`只用于不需要IDE的临时调试。终端SIGINT或`pnpm dev:stop`必须反向停止并释放端口与Terminal子进程。
+`pnpm run setup`幂等准备固定Memory、code-server、Workflow Bundle与DSH Bridge/Profile但不启动服务；
+检测到本仓库已有服务时只失败关闭，不执行preclean或Workflow版本收敛；
+`pnpm dev`会复核同一批证据后启动Memory、Workflow、API、code-server和DSH/Gateway。
+默认启用Workbench；`--workbench=off`只用于不需要IDE的临时调试。终端SIGINT或
+`pnpm dev:stop`必须反向停止并释放端口与Terminal子进程。
 
 ## DSH调试
 

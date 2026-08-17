@@ -6,7 +6,7 @@
 
 | 项目 | 固定值 |
 |---|---|
-| Node.js | `>=22.19` |
+| Node.js | `>=24 <25`；本地`.node-version`固定`24.8.0`，原生工件ABI固定`137` |
 | pnpm | `10.13.1` |
 | TypeScript | `5.9.3` |
 | 模块 | ESM，TypeScript strict |
@@ -57,6 +57,32 @@ DSH的React、Client UI、Cordis、Host Webserver等传递包由`@deepseek-ai/ds
 7. 升级必须更新版本、commit、四个平台资产证据，并重跑供应链、Files/Terminal/Git-Diff、WebSocket、Origin隔离和进程回收门。
 
 官方来源：<https://github.com/coder/code-server>；运行工件内`package.json`与`LICENSE`均声明MIT。
+
+## 固定Memory源码证据
+
+1. memmy固定为公开仓库`MemTensor/memmy-agent`的commit
+   `211d521b310fc23c63dd3d9ca848941173981c5e`与tree
+   `c4b1e78046f10011dc28b0408fb1bb3b61a5c3a1`；只从受管HTTPS Git mirror对该对象
+   `archive`，再使用上游lock执行限定workspace的`npm ci --ignore-scripts`与构建。安装过程
+   不执行第三方lifecycle；`onnxruntime-node@1.21.0`的四个平台CPU运行库由npm包integrity
+   覆盖，额外CUDA下载显式禁用；`better-sqlite3@12.10.0`只安装Chat按
+   macOS/glibc ≥ 2.29 Linux × arm64/x64固定大小、归档SHA-256与解压后二进制SHA-256的
+   Node ABI 137上游Release工件；glibc 2.28及musl在下载前失败关闭。缓存证据同时覆盖
+   源码、`Memory/dist`与完整`node_modules`运行闭包。
+2. Tencent MemoryCore固定为`later-3/TencentDB-Agent-Memory`的commit
+   `3a9748d3c61c2a2feb38237c9b28992250c1804e`与tree
+   `3b41130cd6f716112c1e357d86d4dc6f494cb52f`。该提交没有跟踪
+   `MemoryCore/package-lock.json`，因此Chat保存一份SHA-256为
+   `906c9bc6fec5fd08599cc9cfc8a1ddf9a1eb336d993bf9212bcd0ee4281a6aaf`、逐依赖
+   具有npm registry HTTPS来源和SHA-512 integrity的审核lock；准备时复制到隔离archive并
+   执行`npm ci --omit=dev --ignore-scripts --legacy-peer-deps`，不链接任何个人仓库的
+   `node_modules`。lock生成与ci使用同一legacy peer策略，以固定上游optional peer冲突的
+   解析结果；运行依赖仍由lock中的resolved与integrity约束。
+3. 两套源码的默认来源都是固定HTTPS URL；本地mirror只有通过显式环境变量选择后才可用，
+   但仍必须通过同一commit/tree门。缓存证据记录来源模式、源码清单Hash与运行工件或安装lock
+   Hash，漂移时原子重建。
+4. `pnpm run setup`在不启动服务的情况下统一准备Memory、code-server、Workflow Bundle与DSH
+   Profile；CI的fresh-clone smoke从空`.data`执行同一命令，再验证完整服务图启动与停止。
 
 ## 构建与测试依赖
 

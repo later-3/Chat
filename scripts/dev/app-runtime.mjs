@@ -9,18 +9,24 @@ import {
   checkPorts,
   frozenPortList,
   loadPidEntries,
+  probeRetiredPort,
   recordPidEntry,
   removePidEntry,
   terminateOwnedChatPortProcesses,
   terminateRecorded,
 } from "../debug/lib.mjs";
-import { ensureFixedMemmy } from "../memory/fixed-memmy.mjs";
+import {
+  assertSupportedRuntimeLibc,
+  detectRuntimeLibc,
+  ensureFixedMemmy,
+} from "../memory/fixed-memmy.mjs";
 import { ensureFixedMemoryCore } from "../memory/fixed-memorycore.mjs";
 import { assertDshCliRuntimeClosure, dshWebEnvironment } from "../dsh/profile-runtime.mjs";
 import {
   codeServerRunRoot,
   ensureFixedCodeServer,
   probeCodeServerSocketReady,
+  readCodeServerProcessEvidence,
   resolveCodeServerTemporaryParent,
 } from "../workbench/fixed-code-server.mjs";
 import { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
@@ -29,8 +35,77 @@ import { cleanupOwnedDebugBrowser } from "./browser-lifecycle.mjs";
 
 export const MEMORY_PROFILES = Object.freeze(["all", "memmy", "memorycore"]);
 export const WORKBENCH_PROFILES = Object.freeze(["off", "code-server"]);
+export const LOCAL_SETUP_NODE_MAJOR = 24;
+export const LOCAL_SETUP_NODE_ABI = "137";
+export const LOCAL_SETUP_PNPM_VERSION = "10.13.1";
 const READY_POLL_INTERVAL_MS = 250;
 const READY_REQUEST_TIMEOUT_MS = 1_500;
+
+function nodeMajor(version) {
+  const [major = 0] = String(version)
+    .replace(/^v/u, "")
+    .split(".")
+    .map((part) => Number.parseInt(part, 10));
+  return major;
+}
+
+/**
+ * `pnpm run setup`的机器边界。第三方固定工件目前只发布macOS/Linux的x64/arm64，
+ * 因此未知平台必须在下载或改写`.data`前失败，而不是准备到一半才报错。
+ */
+export function assertLocalSetupPrerequisites({
+  platform = process.platform,
+  arch = process.arch,
+  nodeVersion = process.versions.node,
+  nodeModuleAbi = process.versions.modules,
+  libc = detectRuntimeLibc(platform),
+  commandVersion = (command, args) =>
+    execFileSync(command, args, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim(),
+} = {}) {
+  if (!(["darwin", "linux"].includes(platform) && ["arm64", "x64"].includes(arch))) {
+    throw new Error(`本地一键安装暂不支持 ${platform}/${arch}；仅支持macOS/Linux的arm64/x64`);
+  }
+  assertSupportedRuntimeLibc(platform, libc);
+  if (nodeMajor(nodeVersion) !== LOCAL_SETUP_NODE_MAJOR || nodeModuleAbi !== LOCAL_SETUP_NODE_ABI) {
+    throw new Error(
+      `Node.js运行时不匹配：${nodeVersion} / ABI ${String(nodeModuleAbi)}；本地安装固定要求Node 24 / ABI ${LOCAL_SETUP_NODE_ABI}`,
+    );
+  }
+
+  let pnpmVersion;
+  try {
+    pnpmVersion = commandVersion("pnpm", ["--version"]);
+  } catch {
+    throw new Error("缺少本地安装工具：pnpm；请先启用Corepack");
+  }
+  if (pnpmVersion !== LOCAL_SETUP_PNPM_VERSION) {
+    throw new Error(
+      `pnpm版本不匹配：${pnpmVersion || "unknown"}；请通过Corepack使用${LOCAL_SETUP_PNPM_VERSION}`,
+    );
+  }
+  for (const [command, args] of [
+    ["git", ["--version"]],
+    ["tar", ["--version"]],
+    ["npm", ["--version"]],
+  ]) {
+    try {
+      commandVersion(command, args);
+    } catch {
+      throw new Error(`缺少本地安装工具：${command}`);
+    }
+  }
+  return Object.freeze({
+    platform,
+    arch,
+    libc,
+    nodeVersion,
+    nodeModuleAbi,
+    pnpmVersion,
+  });
+}
 
 export function parseDevArgs(argv) {
   const options = { debug: false, help: false, memory: "all", workbench: "code-server" };
@@ -70,6 +145,14 @@ export function devUsage() {
     "      pnpm dev:debug [-- --memory=all|memmy|memorycore] [--workbench=off|code-server]",
     "",
     "默认启动两套本地Memory依赖、Workflow、API、code-server Workbench和DSH Web。",
+  ].join("\n");
+}
+
+export function setupUsage() {
+  return [
+    "用法: pnpm run setup [--memory=all|memmy|memorycore] [--workbench=off|code-server]",
+    "",
+    "默认准备两套固定Memory源码、Workflow Bundle、DSH Profile与code-server工件，但不启动服务。",
   ].join("\n");
 }
 
@@ -149,7 +232,10 @@ export function createServiceDefinitions({
       command: process.execPath,
       args: [join(repoRoot, "scripts/memory/start-fixed-memmy.mjs")],
       cwd: repoRoot,
-      env: commonEnvironment(repoRoot, withoutVsCodeAutoAttach(environment)),
+      env: {
+        ...commonEnvironment(repoRoot, withoutVsCodeAutoAttach(environment)),
+        CHAT_FIXED_SOURCE_CACHE_ROOT: workbenchRuntime.CHAT_FIXED_SOURCE_CACHE_ROOT,
+      },
       readyUrl: `http://127.0.0.1:${FROZEN_PORTS.memory}/api/v1/health`,
       timeoutMs: 180_000,
       stopTimeoutMs: 7_000,
@@ -170,6 +256,7 @@ export function createServiceDefinitions({
       cwd: repoRoot,
       env: {
         ...commonEnvironment(repoRoot, withoutVsCodeAutoAttach(environment)),
+        CHAT_FIXED_SOURCE_CACHE_ROOT: workbenchRuntime.CHAT_FIXED_SOURCE_CACHE_ROOT,
         CHAT_TENCENT_MEMORYCORE_RUN_ROOT: join(repoRoot, ".data/debug/memorycore"),
       },
       readyUrl: `http://127.0.0.1:${FROZEN_PORTS.memoryCore}/health`,
@@ -470,14 +557,57 @@ export async function preflightLocalRuntime(
   throw new Error(`固定端口被未登记进程占用，已拒绝清理：${details}`);
 }
 
-export async function prepareLocalRuntime({ root, memory, workbench = "code-server", signal }) {
-  await preflightLocalRuntime(root, { workbench });
-  if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
+/**
+ * 安装准备只能读取活动状态并失败关闭，不能终止进程、清理浏览器或修改Product Run。
+ * 端口使用Node独占bind作为权威证据；PID/进程名只属于dev preflight的诊断与回收。
+ */
+export async function assertLocalSetupIdle(
+  root,
+  {
+    environment = process.env,
+    probePort = probeRetiredPort,
+    readWorkbenchEvidence = readCodeServerProcessEvidence,
+  } = {},
+) {
+  const results = await Promise.all(frozenPortList().map((port) => probePort(port)));
+  const unavailable = results.filter((result) => result.state !== "free");
+  if (unavailable.length > 0) {
+    const details = unavailable
+      .map(
+        (result) =>
+          `${result.port} ${result.state}${result.errorCode ? `(${result.errorCode})` : ""}`,
+      )
+      .join("、");
+    throw new Error(
+      `本地服务仍在运行或端口状态未知：${details}；setup不会自动停止，请先运行 pnpm dev:stop`,
+    );
+  }
+  const workbenchEnvironment = resolveLocalWorkbenchRuntimeContract(root, environment);
+  const evidence = readWorkbenchEvidence(root, workbenchEnvironment);
+  if (
+    evidence !== undefined &&
+    ["starting", "running", "legacy-running"].includes(evidence.status)
+  ) {
+    throw new Error(`Workbench仍处于${evidence.status}；setup不会回收进程，请先运行 pnpm dev:stop`);
+  }
+  console.log(`[setup] 固定端口空闲：${frozenPortList().join(", ")}`);
+}
+
+async function preparePinnedRuntimeArtifacts({ root, memory, workbench = "code-server", signal }) {
+  if (!MEMORY_PROFILES.includes(memory)) throw new Error(`未知Memory Profile：${memory}`);
+  if (!WORKBENCH_PROFILES.includes(workbench)) {
+    throw new Error(`未知Workbench Profile：${workbench}`);
+  }
   const workbenchRuntime = resolveLocalWorkbenchRuntimeContract(root);
+  const fixedSourceEnvironment = { ...process.env, ...workbenchRuntime };
   console.log(`[chat] 固定源码缓存：${workbenchRuntime.CHAT_FIXED_SOURCE_CACHE_ROOT}`);
-  if (memory === "all" || memory === "memmy") ensureFixedMemmy(root);
+  if (memory === "all" || memory === "memmy") {
+    await ensureFixedMemmy(root, fixedSourceEnvironment);
+  }
   if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
-  if (memory === "all" || memory === "memorycore") ensureFixedMemoryCore(root);
+  if (memory === "all" || memory === "memorycore") {
+    ensureFixedMemoryCore(root, fixedSourceEnvironment);
+  }
   if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
   if (workbench === "code-server") {
     console.log("[chat] 准备固定code-server Workbench…");
@@ -486,6 +616,20 @@ export async function prepareLocalRuntime({ root, memory, workbench = "code-serv
   if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
   console.log("[chat] 构建Workflow Bundles…");
   await runPreparationCommand({ root, signal });
+}
+
+/** 只准备可重建工件，不清理运行进程，也不读取或收敛活动Product Run。 */
+export async function prepareLocalArtifacts({ root, memory, workbench = "code-server", signal }) {
+  await preparePinnedRuntimeArtifacts({ root, memory, workbench, signal });
+  if (signal?.aborted) throw signal.reason ?? new Error("准备已取消");
+  console.log("[chat] 准备DSH Web Profile与LifeOS Bridge…");
+  await runDshPreparationCommand({ root, signal });
+}
+
+export async function prepareLocalRuntime({ root, memory, workbench = "code-server", signal }) {
+  await preflightLocalRuntime(root, { workbench });
+  if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
+  await preparePinnedRuntimeArtifacts({ root, memory, workbench, signal });
   if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
   console.log("[chat] 检查活动Workflow版本兼容性…");
   await runVersionRecoveryCommand({ root, signal });

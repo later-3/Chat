@@ -16,6 +16,8 @@ import test from "node:test";
 
 import {
   AppSupervisor,
+  assertLocalSetupIdle,
+  assertLocalSetupPrerequisites,
   createServiceDefinitions,
   parseDevArgs,
   preflightLocalRuntime,
@@ -25,6 +27,7 @@ import {
   runPreparationCommand,
   runVersionRecoveryCommand,
   sharedCacheRootFromGitCommonDir,
+  setupUsage,
   waitForServiceReady,
 } from "./app-runtime.mjs";
 import {
@@ -33,6 +36,7 @@ import {
   findOwnedChatPortProcesses,
   findOwnedChatProcessForPort,
   formatRetiredPortStatus,
+  frozenPortList,
   probeRetiredPort,
   roleForFrozenPort,
   sharedDebugDirFromGitCommonDir,
@@ -63,6 +67,128 @@ test("参数默认启动两套Memory，debug模式显式开启", () => {
   });
   assert.throws(() => parseDevArgs(["--memory=unknown"]), /只支持/u);
   assert.throws(() => parseDevArgs(["--workbench=unknown"]), /只支持/u);
+});
+
+test("本地setup在写入运行缓存前锁定平台、Node、pnpm与系统工具", () => {
+  const calls = [];
+  const evidence = assertLocalSetupPrerequisites({
+    platform: "linux",
+    arch: "x64",
+    nodeVersion: "24.8.0",
+    nodeModuleAbi: "137",
+    libc: "glibc-2.35",
+    commandVersion(command, args) {
+      calls.push([command, args]);
+      return command === "pnpm" ? "10.13.1" : `${command} available`;
+    },
+  });
+  assert.deepEqual(evidence, {
+    platform: "linux",
+    arch: "x64",
+    libc: "glibc-2.35",
+    nodeVersion: "24.8.0",
+    nodeModuleAbi: "137",
+    pnpmVersion: "10.13.1",
+  });
+  assert.deepEqual(
+    calls.map(([command]) => command),
+    ["pnpm", "git", "tar", "npm"],
+  );
+  assert.match(setupUsage(), /pnpm run setup/u);
+
+  assert.throws(
+    () =>
+      assertLocalSetupPrerequisites({
+        platform: "win32",
+        arch: "x64",
+        nodeVersion: "24.8.0",
+        nodeModuleAbi: "137",
+        commandVersion: () => "10.13.1",
+      }),
+    /暂不支持/u,
+  );
+  assert.throws(
+    () =>
+      assertLocalSetupPrerequisites({
+        platform: "linux",
+        arch: "x64",
+        nodeVersion: "22.18.0",
+        nodeModuleAbi: "127",
+        libc: "glibc-2.35",
+        commandVersion: () => "10.13.1",
+      }),
+    /Node 24.*ABI 137/u,
+  );
+  assert.throws(
+    () =>
+      assertLocalSetupPrerequisites({
+        platform: "linux",
+        arch: "x64",
+        libc: "glibc-2.28",
+        nodeVersion: "24.8.0",
+        nodeModuleAbi: "137",
+        commandVersion: () => "10.13.1",
+      }),
+    /glibc>=2\.29/u,
+  );
+  assert.throws(
+    () =>
+      assertLocalSetupPrerequisites({
+        platform: "darwin",
+        arch: "arm64",
+        nodeVersion: "24.8.0",
+        nodeModuleAbi: "137",
+        commandVersion: (command) => (command === "pnpm" ? "10.14.0" : "available"),
+      }),
+    /pnpm版本不匹配/u,
+  );
+});
+
+test("本地setup只读检查活动运行，任何占用都失败且不调用回收逻辑", async () => {
+  const probed = [];
+  let evidenceEnvironment;
+  await assert.doesNotReject(
+    assertLocalSetupIdle(ROOT, {
+      environment: { CHAT_FIXED_SOURCE_CACHE_ROOT: "/workspace/shared-cache" },
+      async probePort(port) {
+        probed.push(port);
+        return { port, state: "free" };
+      },
+      readWorkbenchEvidence(_root, environment) {
+        evidenceEnvironment = environment;
+        return { status: "stopped" };
+      },
+    }),
+  );
+  assert.deepEqual(probed, frozenPortList());
+  assert.equal(evidenceEnvironment.CHAT_FIXED_SOURCE_CACHE_ROOT, "/workspace/shared-cache");
+
+  let evidenceRead = false;
+  await assert.rejects(
+    assertLocalSetupIdle(ROOT, {
+      probePort: async (port) =>
+        port === 43110
+          ? { port, state: "occupied", errorCode: "EADDRINUSE" }
+          : { port, state: "free" },
+      readWorkbenchEvidence() {
+        evidenceRead = true;
+      },
+    }),
+    /setup不会自动停止.*pnpm dev:stop/u,
+  );
+  assert.equal(evidenceRead, false);
+
+  await assert.rejects(
+    assertLocalSetupIdle(ROOT, {
+      probePort: async (port) => ({ port, state: "free" }),
+      readWorkbenchEvidence: () => ({ status: "running" }),
+    }),
+    /Workbench仍处于running.*不会回收/u,
+  );
+  const setupSource = readFileSync(join(import.meta.dirname, "setup.mjs"), "utf8");
+  assert.match(setupSource, /prepareLocalArtifacts/u);
+  assert.match(setupSource, /assertLocalSetupIdle/u);
+  assert.doesNotMatch(setupSource, /prepareLocalRuntime|preflightLocalRuntime/u);
 });
 
 test("服务图按Memory -> Workflow -> API -> Workbench -> Web排序", () => {
@@ -131,6 +257,15 @@ test("launcher与独立status从同一输入重建Workbench run/temp/cache合同
     Object.fromEntries(Object.keys(contract).map((name) => [name, workbench.env[name]])),
     contract,
   );
+  const memoryServices = createServiceDefinitions({
+    root: ROOT,
+    memory: "all",
+    environment,
+  }).filter((service) => service.id === "memmy" || service.id === "memorycore");
+  assert.equal(memoryServices.length, 2);
+  for (const service of memoryServices) {
+    assert.equal(service.env.CHAT_FIXED_SOURCE_CACHE_ROOT, "/workspace/shared-cache");
+  }
 });
 
 test("running status复用严格合同并显示Unix transport、instance、PID与healthy", async () => {

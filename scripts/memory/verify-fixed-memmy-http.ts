@@ -31,7 +31,7 @@ const runRoot = assertChatDataPath(
 );
 rmSync(runRoot, { recursive: true, force: true });
 mkdirSync(runRoot, { recursive: true });
-ensureFixedMemmy(repoRoot);
+await ensureFixedMemmy(repoRoot);
 if (findListenerPid(FIXED_MEMMY_PORT) !== null) {
   throw new Error(`端口 ${FIXED_MEMMY_PORT} 已被未知进程占用；真实 HTTP 门拒绝复用或终止`);
 }

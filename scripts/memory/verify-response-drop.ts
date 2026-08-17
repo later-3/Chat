@@ -41,7 +41,7 @@ const canary = "M2-RESPONSE-DROP-7319";
 
 rmSync(runRoot, { recursive: true, force: true });
 mkdirSync(runRoot, { recursive: true });
-ensureFixedMemmy(repoRoot);
+await ensureFixedMemmy(repoRoot);
 for (const port of [FIXED_MEMMY_PORT, FIXED_MEMMY_PORT + 1, apiPort, workflowPort]) {
   if (findListenerPid(port) !== null) throw new Error(`端口${String(port)}被未知进程占用`);
 }
