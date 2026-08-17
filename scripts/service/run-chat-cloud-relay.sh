@@ -52,7 +52,9 @@ set +e
   set -eu
   port=$remote_port
   for attempt in 1 2 3; do
-    if curl --fail --silent --max-time 2 http://127.0.0.1:\$port$health_path >/dev/null 2>&1; then
+    # 云端侧只验证“listener 能把 HTTP 送达 Mac 网关”。Chat 网关对非公开
+    # Host 一律 4xx，这是预期的健康信号，不能用 --fail。
+    if curl --silent --max-time 2 -o /dev/null http://127.0.0.1:\$port$health_path 2>/dev/null; then
       exit 10
     fi
     sleep 1
