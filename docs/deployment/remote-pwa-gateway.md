@@ -50,6 +50,14 @@ mac-main: 127.0.0.1:43114（DSH Host，--trusted-host chat.ai4child.asia）
 - DSH 上游 dist 自带占位 manifest（fullscreen、仅 SVG 图标、无 SW）。Chat 通过
   bridge 具名路由覆盖 `/manifest.webmanifest` 与 `/sw.js`，用 `tapIndex` 注入
   apple/mobile meta、图标与 `/pwa/register.js` 注册脚本；不修改上游 dist。
+- 移动端外壳由固定 `dsh-mobile-hanui@0.2.4`（MIT）以 profile bundle 提供：
+  ≤1023px 生效，侧边栏/详情抽屉、弹窗全屏、可拖动 FAB、Composer 修复；桌面
+  零影响。Chat 唯一自建 Composer 控件是 workflow 选择器。运行时可用
+  `?mobileShell=0` 临时关闭。
+- DSH 上游安全边界：`settings.*`、`credentials.*`、`agentPreset.*`、`host.*`、
+  `llm.discoverModels` 属于 PRIVILEGED_METHODS，**只允许 loopback**，
+  `--trusted-host` 也不放行。因此公网入口的设置面板会显示 403，这是上游有意
+  设计；设置只能在 Mac 本机 `http://127.0.0.1:43110` 修改。不绕过。
 - 图标位于 `packages/dsh-lifeos-bridge/assets/icons/`（沿用 P1.2 品牌资产），
   `immutable` 长缓存；manifest 与 SW 每次 `no-cache` 重验证。
 - Service Worker（`chat-pwa-shell-<version>`）只缓存同源版本化静态外壳
