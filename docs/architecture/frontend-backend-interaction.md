@@ -9,7 +9,7 @@ Browser
   -> LifeOS Web Gateway（127.0.0.1:43110）
   -> DSH Web Host（内部43114）
      -> DSH原生Client插件图
-     -> LifeOS Client插件（Plan/HITL/Workbench表面）
+     -> LifeOS Client插件（Workflow选择、Plan/HITL、Workbench表面）
      -> LifeOS Host插件（LLM Adapter、同源桥接路由）
         -> Chat Hono API
            -> Application
@@ -30,14 +30,17 @@ DSH原生界面创建自己的`dshSessionId`。Host插件把它映射到一个`p
 
 ## 3. 发送链
 
-1. 用户在DSH原生Composer提交消息。
-2. DSH用固定`lifeos/workflow`模型调用LifeOS `LlmAdapter`，传入DSH Session和消息历史。
-3. Adapter从本轮请求提取最新用户文本；`session-title`和`compaction`用途绝不写入Chat。
-4. Adapter取得或幂等创建Product Session，以稳定`commandId`提交`POST /api/sessions/:id/messages`。
-5. Chat原子提交User Message、Product Run、Receipt和Workflow Start Outbox。
-6. Adapter轮询公开Run、Messages、Plans和Current Approval Query；它不从HTTP超时推断成功。
-7. Run需要人工决定时，Client插件展示当前Plan/Approval；用户的修订、批准或拒绝经Host桥接为Chat Decision Command。
-8. Run成功后，Adapter读取Product Store中的正式Assistant Message，并作为DSH文本流返回。DSH将它写入原生会话轨迹。
+1. 用户可在DSH原生Composer工具行的`conversation.input.left`公开Slot选择已发布Workflow；
+   选择只是会话草稿，不创建Run，也不把Workflow Runtime身份暴露给浏览器。
+2. 用户在DSH原生Composer提交消息。Bridge把该次发送冻结到选择的Definition revision与SHA；
+   没有显式选择时使用Chat系统默认Planning Workflow。
+3. DSH用固定`lifeos/workflow`模型调用LifeOS `LlmAdapter`，传入DSH Session和消息历史。
+4. Adapter从本轮请求提取最新用户文本；`session-title`和`compaction`用途绝不写入Chat。
+5. Adapter取得或幂等创建Product Session，以稳定`commandId`提交`POST /api/sessions/:id/messages`。
+6. Chat在Command边界重新校验Workflow仍是已发布、active、当前Principal可用且Hash一致，再原子提交User Message、Product Run、Receipt和Workflow Start Outbox。
+7. Adapter轮询公开Run、Messages、Plans和Current Approval Query；它不从HTTP超时推断成功。
+8. Run需要人工决定时，Client插件展示当前Plan/Approval；用户的修订、批准或拒绝经Host桥接为Chat Decision Command。
+9. Run成功后，Adapter读取Product Store中的正式Assistant Message，并作为DSH文本流返回。DSH将它写入原生会话轨迹。
 
 DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直接输出。Run失败、拒绝或结果未知必须返回明确状态，不能生成假交付。
 
@@ -49,6 +52,7 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 |---|---|---|
 | `POST` | `/api/sessions` | 幂等创建Product Session |
 | `POST` | `/api/sessions/:sessionId/messages` | 幂等提交Message并创建Product Run |
+| `GET` | `/api/workflow/definitions` | 读取当前Principal可用的active published Workflow |
 | `GET` | `/api/sessions/:sessionId/messages` | 读取正式Message |
 | `GET` | `/api/runs/:productRunId` | 读取Run状态、阶段与revision |
 | `GET` | `/api/runs/:productRunId/plans` | 读取Plan revisions |
@@ -63,7 +67,14 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 
 桥接状态至少记录DSH Session映射、当前Product Run、发送/决定Command身份及最后已确认阶段。写状态使用原子替换。发生请求已发但响应丢失时，使用相同命令重试或Query恢复，不生成新身份。
 
-## 6. Workbench边界
+## 6. DSH插件表面边界
+
+LifeOS Bridge是仓库内唯一DSH插件包，所有新增前端表面使用固定rc.6公开合同：Workflow选择器注册在
+`conversation.input.left`，与权限、模型等原生Composer工具同一行；Plan/HITL使用
+`conversation.input.dock`；Workbench入口使用`sidebar.footer.action`，Surface使用`shell.overlay`。
+不得修改或复制DSH源码来插入这些能力，也不得把完整Hosted App拆成自研React组件。
+
+## 7. Workbench边界
 
 Code Workbench不是Chat API或某个Chat Session的一部分。Client插件把唯一入口注册到DSH公开的`sidebar.footer.action` root list slot，因此空白Hero也可直接打开全屏Surface；不得再在Session Header注册第二个入口。统一启动器管理固定版本code-server。code-server只监听受管0700临时根内的0600 Unix socket；Web Gateway把`localhost:43110/workbench/code/`的HTTP与任意WebSocket代理到该socket，并拒绝该虚拟Host访问DSH与`/lifeos`。浏览器没有可直连的code-server TCP地址，因此DNS rebinding不能绕过Gateway取得Files或Terminal。返回对话只隐藏Surface，不卸载iframe和终端连接。
 
@@ -71,14 +82,14 @@ code-server拥有编辑器临时状态和Workspace内进程，不拥有Chat Sess
 
 真实完成门无条件记录浏览器全部WebSocket，不能在监听阶段先过滤。白名单只有两类固定源码路径：DSH主源`127.0.0.1:43110`的`/api/events.mux`或`/api/events.host`，以及Workbench隔离源`localhost:43110/workbench/code/stable-<固定commit>`；两类必须分别至少出现一条，其他origin/path一律失败。Terminal生命周期证据是当前用户拥有的`0600`文件，包含唯一argv canary、PID、完整命令、OS启动时间、cwd、code-server child与`instanceId`，任何PID复用或身份偏差都失败关闭，且不向无法证明身份的进程发送信号。
 
-## 7. 调试入口
+## 8. 调试入口
 
 - DSH Host/Client桥接：`packages/dsh-lifeos-bridge`
 - DSH启动与Profile：`apps/dsh-web`、`scripts/dsh`
 - Workbench运行：`scripts/workbench`
 - Chat公开路由：`apps/api/src/product-routes.ts`
 - Message用例：`packages/application/src/session-message-use-cases.ts`
-- Decision用例：`packages/application/src/planning-use-cases.ts`
+- Decision用例：`packages/application/src/plan-decision-use-cases.ts`
 - Workflow：`packages/workflows`
 - pi Adapter：`packages/pi-runtime`
 

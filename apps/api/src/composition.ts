@@ -53,7 +53,6 @@ import type {
   RuleIdFactory,
 } from "@chat/application";
 import { JsonProductStore } from "@chat/product-store-json";
-import { createMemoryBackendRegistry } from "@chat/memory-runtime";
 import { createProjectResourceRegistry } from "@chat/project-runtime";
 import {
   loadProjectModelProfile,
@@ -159,7 +158,6 @@ export async function createApplicationDeps(
   trace?: ApplicationDeps["trace"],
 ): Promise<ApplicationDeps> {
   const store = await openProductStore(filePath, trace);
-  const memoryRegistry = createMemoryBackendRegistry(process.env);
   const projectRoots = await createProjectResourceRegistry(process.env);
   const projectModelProfile = loadProjectModelProfile(process.env);
   const projectUnderstanding = new PiProjectIntakeUnderstandingAdapter(projectModelProfile);
@@ -170,8 +168,7 @@ export async function createApplicationDeps(
     store,
     now: () => new Date().toISOString(),
     ids: createIdFactory(),
-    memoryBackends: memoryRegistry,
-    memoryImportBackends: memoryRegistry,
+    // Memory代码保留但当前产品组合根冻结关闭；恢复时必须重新经过明确的产品授权。
     projectRoots,
     projectIntakeUnderstanding: projectUnderstanding,
     projectAdvancementUnderstanding: advancementUnderstanding,

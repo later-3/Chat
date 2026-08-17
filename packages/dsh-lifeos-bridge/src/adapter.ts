@@ -225,6 +225,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
           request.messageCommandId,
           prompt.text,
           signal,
+          request.workflowSelection,
         );
         await this.rememberRun(dshSessionId, prompt.requestKey, submitted.run.productRunId);
         run = submitted.run;
@@ -286,6 +287,10 @@ export class LifeosLlmAdapter extends LlmAdapter {
             prompt.messageId,
             prompt.textSha256,
           ),
+          // 首次创建时冻结会话当前的选择草稿；之后用户再改草稿不影响本请求。
+          ...(binding.workflowSelection !== undefined
+            ? { workflowSelection: binding.workflowSelection }
+            : {}),
         });
         if (request.userTextSha256 !== prompt.textSha256) {
           throw new Error("lifeos bridge request key collision");

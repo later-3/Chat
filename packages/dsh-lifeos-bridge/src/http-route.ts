@@ -1,11 +1,17 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { decisionRequestSchema, dshSessionIdSchema } from "./contracts.ts";
+import {
+  decisionRequestSchema,
+  dshSessionIdSchema,
+  workflowSelectionRequestSchema,
+} from "./contracts.ts";
 import { BridgeRequestError, LifeosBridgeService } from "./bridge-service.ts";
 import { ChatProductApiError } from "./chat-client.ts";
 
 const MAX_REQUEST_BODY_BYTES = 16 * 1024;
 const SESSION_PATH = /^\/lifeos\/sessions\/([^/]+)$/;
 const DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/decisions$/;
+const WORKFLOW_SELECTION_PATH = /^\/lifeos\/sessions\/([^/]+)\/workflow-selection$/;
+const WORKFLOWS_PATH = /^\/lifeos\/workflows$/;
 
 export const SERVICE_WORKER_RETIREMENT_SCRIPT = `
 self.addEventListener("install", (event) => {
@@ -220,6 +226,31 @@ export function createLifeosRouteHandler(
           throw new BridgeRequestError(400, "lifeos_decision_invalid", "Decision body is invalid");
         }
         sendJson(res, 200, await service.decide(sessionIdFrom(decisionMatch), parsed.data));
+        return;
+      }
+      const workflowsMatch = WORKFLOWS_PATH.exec(url.pathname);
+      if (req.method === "GET" && workflowsMatch !== null) {
+        sendJson(res, 200, await service.workflows());
+        return;
+      }
+      const workflowSelectionMatch = WORKFLOW_SELECTION_PATH.exec(url.pathname);
+      if (req.method === "PUT" && workflowSelectionMatch !== null) {
+        const parsed = workflowSelectionRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_workflow_selection_invalid",
+            "Workflow selection body is invalid",
+          );
+        }
+        sendJson(
+          res,
+          200,
+          await service.selectWorkflow(
+            sessionIdFrom(workflowSelectionMatch),
+            parsed.data.workflowSelection,
+          ),
+        );
         return;
       }
       throw new BridgeRequestError(404, "lifeos_route_not_found", "LifeOS route not found");

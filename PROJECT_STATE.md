@@ -8,14 +8,14 @@
 |---|---|
 | 产品身份 | 独立、完整、持续演进的个人Agent协作产品 |
 | 唯一前端 | 固定版本DeepSeek Harness Web；旧`apps/web`与Agent Canvas均不属于当前架构 |
-| 前端桥接 | `@chat/dsh-lifeos-bridge`把DSH原生会话、Composer与HITL表面接到Chat公开API |
+| 前端桥接 | `@chat/dsh-lifeos-bridge`通过DSH公开Slot把原生会话、Composer行内Workflow选择与HITL表面接到Chat公开API |
 | 开发工作台 | 固定`code-server@4.132.0`；DSH全屏Surface打开Files、Editor、Terminal、Git/Diff与扩展系统 |
 | 后端 | Node.js + TypeScript；Hono协议入口；Application拥有用例事务 |
 | Product Store | 版本化JSON Adapter；拥有Session、Message、Run、Plan、Approval、Decision、Memory和Project事实 |
 | Workflow | Vercel Workflow解释不可变RunSpec，承担耐久步骤、暂停、恢复与Checkpoint |
 | Agent Runtime | `pi-agent-core`作为Planner/Executor节点，不拥有产品会话或完成事实 |
-| Memory | 已接memmy与Tencent MemoryCore，Chat保存采用、来源与导入/对账事实 |
-| 调试 | `pnpm dev/dev:debug`统一启动Memory、Workflow、API、code-server与Web Gateway/DSH，使用固定端口和安全回收 |
+| Memory | memmy与Tencent MemoryCore代码、合同和历史事实保留；当前默认不启动服务，也不向API/Workflow装配Adapter |
+| 调试 | `pnpm dev/dev:debug`只启动Workflow、API、code-server与Web Gateway/DSH；当前没有Memory启用Profile |
 
 ## 当前实施顺序
 
@@ -31,6 +31,7 @@
 3. 没有浏览器到Workflow、Hook或pi的直连。
 4. 没有多实例生产数据库、完整SSE Cursor Journal或通用插件市场。
 5. 没有把本地code-server包装成多用户远程沙箱；当前Terminal与扩展仍以本机用户权限运行。
+6. 没有在当前默认服务图中启动或连接memmy/MemoryCore；默认Planning只会跳过未选择的可选Memory节点。
 
 ## 完成门
 

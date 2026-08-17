@@ -37,7 +37,7 @@ API Product Command
 | Runtime Binding Store | 私下关联Product Run/Outbox/Approval与Workflow Run/Hook Token |
 | Workflow Store | Step结果、Hook等待、Checkpoint和重放 |
 | pi Runtime | 真实百炼Planner/Executor调用及结构化候选 |
-| Memory Registry | 根据服务端配置提供memmy/MemoryCore窄Adapter |
+| Memory Registry | 当前固定为空且不实例化Adapter；恢复memmy/MemoryCore必须重新修改组合根并经过评审 |
 | Trace/Replay | 记录系统路径并组合Product事实、版本证据进行回放 |
 
 Workflow进程不得打开Product JSON文件；所有产品读写都通过API私有Application Command完成。

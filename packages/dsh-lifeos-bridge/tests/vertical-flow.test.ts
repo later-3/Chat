@@ -8,6 +8,7 @@ import { createUserMessage, type GenerateOptions, type StreamChunk } from "@deep
 import { LifeosLlmAdapter } from "../src/adapter.ts";
 import { LifeosBridgeService } from "../src/bridge-service.ts";
 import { ChatProductClient } from "../src/chat-client.ts";
+import { workflowSelectionSchema } from "../src/contracts.ts";
 import { AtomicBridgeStateStore } from "../src/state-store.ts";
 
 const schemaVersion = "chat-product-api.v1";
@@ -277,6 +278,126 @@ test("native DSH generation crosses Chat Plan/HITL and returns only the committe
         "/api/runs/run_bridge1/decisions",
       ],
     );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error === undefined ? resolve() : reject(error))),
+    );
+  }
+});
+
+test("workflow selection draft is frozen per request and submitted with the next message", async () => {
+  const messageSubmissions: Array<{ body: unknown } | undefined> = [];
+  const server = createServer((req, res) => {
+    void (async () => {
+      const url = new URL(req.url ?? "/", "http://127.0.0.1");
+      const requestBody = req.method === "POST" ? await body(req) : undefined;
+      if (req.method === "POST" && url.pathname === "/api/sessions") {
+        json(res, { session });
+      } else if (
+        req.method === "POST" &&
+        url.pathname === `/api/sessions/${session.sessionId}/messages`
+      ) {
+        messageSubmissions.push({ body: requestBody });
+        json(res, { message: userMessage, run: run(true) });
+      } else if (req.method === "GET" && url.pathname === "/api/runs/run_bridge1") {
+        json(res, { run: run(true) });
+      } else if (req.method === "GET" && url.pathname === "/api/runs/run_bridge1/plans") {
+        json(res, { items: [] });
+      } else if (req.method === "GET" && url.pathname === "/api/runs/run_bridge1/approvals/current") {
+        json(res, { approval: null });
+      } else if (req.method === "GET" && url.pathname === `/api/sessions/${session.sessionId}/messages/${assistantMessage.messageId}`) {
+        json(res, { message: assistantMessage });
+      } else {
+        res.statusCode = 404;
+        res.end();
+      }
+    })().catch((error: unknown) => {
+      res.statusCode = 500;
+      res.end(error instanceof Error ? error.message : "fixture failed");
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address !== null && typeof address === "object");
+  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-workflow-"));
+  try {
+    const state = new AtomicBridgeStateStore(join(directory, "state.json"));
+    await state.ready();
+    const chat = new ChatProductClient(new URL(`http://127.0.0.1:${address.port}`));
+    const adapter = new LifeosLlmAdapter(chat, state);
+    const bridge = new LifeosBridgeService(chat, state);
+
+    const projected = await bridge.selectWorkflow(
+      "dsh-session-1",
+      workflowSelectionSchema.parse({
+        workflowDefinitionRevisionId: "wfr_systemnotev1",
+        definitionSha256: "d".repeat(64),
+        title: "默认笔记工作流",
+      }),
+    );
+    assert.equal(projected.workflowSelection?.workflowDefinitionRevisionId, "wfr_systemnotev1");
+
+    const first = await collect(
+      adapter.stream({
+        provider: "lifeos",
+        model: "workflow",
+        sessionId: "dsh-session-1" as never,
+        messages: [
+          createUserMessage({
+            source: { kind: "user" },
+            content: [{ type: "text", text: "请把这段整理成笔记" }],
+          }),
+        ],
+      }),
+    );
+    assert.ok(first.length > 0);
+
+    // 发送前更换草稿：已提交请求保持原选择，下一次消息才使用新草稿。
+    await bridge.selectWorkflow(
+      "dsh-session-1",
+      workflowSelectionSchema.parse({
+        workflowDefinitionRevisionId: "wfr_systemplanningv2",
+        definitionSha256: "e".repeat(64),
+        title: "默认规划工作流",
+      }),
+    );
+    const second = await collect(
+      adapter.stream({
+        provider: "lifeos",
+        model: "workflow",
+        sessionId: "dsh-session-1" as never,
+        messages: [
+          createUserMessage({
+            source: { kind: "user" },
+            content: [{ type: "text", text: "请制定并执行新的发布计划" }],
+          }),
+        ],
+      }),
+    );
+    assert.ok(second.length > 0);
+
+    assert.equal(messageSubmissions.length, 2);
+    const firstPayload = (messageSubmissions[0]?.body as { payload?: { workflowSelection?: unknown } })
+      ?.payload?.workflowSelection;
+    const secondPayload = (messageSubmissions[1]?.body as { payload?: { workflowSelection?: unknown } })
+      ?.payload?.workflowSelection;
+    assert.deepEqual(firstPayload, {
+      kind: "published_revision",
+      workflowDefinitionRevisionId: "wfr_systemnotev1",
+      definitionSha256: "d".repeat(64),
+    });
+    assert.deepEqual(secondPayload, {
+      kind: "published_revision",
+      workflowDefinitionRevisionId: "wfr_systemplanningv2",
+      definitionSha256: "e".repeat(64),
+    });
+
+    const binding = await state.readSession("dsh-session-1");
+    const snapshots = Object.values(binding?.requests ?? {}).map(
+      (request) => request.workflowSelection?.workflowDefinitionRevisionId ?? null,
+    );
+    assert.deepEqual(snapshots.sort(), ["wfr_systemnotev1", "wfr_systemplanningv2"]);
   } finally {
     await rm(directory, { recursive: true, force: true });
     await new Promise<void>((resolve, reject) =>

@@ -1,7 +1,10 @@
 import {
   lifeosProjectionSchema,
+  workflowListResponseSchema,
   type DecisionRequest,
   type LifeosProjection,
+  type LifeosWorkflowOption,
+  type WorkflowSelection,
 } from "../contracts.ts";
 
 const POLL_INTERVAL_MS = 1_000;
@@ -11,6 +14,10 @@ export interface LifeosClientState {
   readonly projection: LifeosProjection | null;
   readonly submitting: boolean;
   readonly error: string | null;
+  /** 选择表面按需加载的Workflow列表；null表示尚未加载。 */
+  readonly workflows: readonly LifeosWorkflowOption[] | null;
+  readonly workflowError: string | null;
+  readonly selectingWorkflow: boolean;
 }
 
 const INITIAL_STATE: LifeosClientState = {
@@ -18,6 +25,9 @@ const INITIAL_STATE: LifeosClientState = {
   projection: null,
   submitting: false,
   error: null,
+  workflows: null,
+  workflowError: null,
+  selectingWorkflow: false,
 };
 
 interface ProblemLike {
@@ -107,7 +117,7 @@ export class LifeosProjectionController {
       const json = await responseJson(response);
       if (!response.ok) throw new Error(problemMessage(json, response.status));
       const projection = lifeosProjectionSchema.parse(json);
-      this.publish({ status: "ready", projection, submitting: false, error: null });
+      this.publish({ ...this.snapshot, status: "ready", projection, submitting: false, error: null });
       return true;
     } catch (error) {
       this.publish({
@@ -115,6 +125,64 @@ export class LifeosProjectionController {
         status: this.snapshot.projection === null ? "error" : this.snapshot.status,
         submitting: false,
         error: error instanceof Error ? error.message : "LifeOS 决定提交失败",
+      });
+      return false;
+    }
+  }
+
+  /** 打开选择表面时按需拉取一次Workflow列表；失败只影响选择表面，不打扰运行投影。 */
+  async loadWorkflows(): Promise<readonly LifeosWorkflowOption[] | null> {
+    if (this.disposed) return null;
+    try {
+      const response = await this.fetchImpl("/lifeos/workflows", {
+        credentials: "same-origin",
+        headers: { accept: "application/json" },
+      });
+      const json = await responseJson(response);
+      if (!response.ok) throw new Error(problemMessage(json, response.status));
+      const parsed = workflowListResponseSchema.parse(json);
+      this.publish({ ...this.snapshot, workflows: parsed.items, workflowError: null });
+      return parsed.items;
+    } catch (error) {
+      this.publish({
+        ...this.snapshot,
+        workflowError: error instanceof Error ? error.message : "Workflow 列表读取失败",
+      });
+      return null;
+    }
+  }
+
+  /** 提交选择草稿；成功后以返回的投影刷新本地状态。 */
+  async selectWorkflow(selection: WorkflowSelection | null): Promise<boolean> {
+    if (this.disposed || this.snapshot.selectingWorkflow) return false;
+    this.publish({ ...this.snapshot, selectingWorkflow: true, workflowError: null });
+    try {
+      const response = await this.fetchImpl(
+        `/lifeos/sessions/${encodeURIComponent(this.sessionId)}/workflow-selection`,
+        {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { accept: "application/json", "content-type": "application/json" },
+          body: JSON.stringify({ workflowSelection: selection }),
+        },
+      );
+      const json = await responseJson(response);
+      if (!response.ok) throw new Error(problemMessage(json, response.status));
+      const projection = lifeosProjectionSchema.parse(json);
+      this.publish({
+        ...this.snapshot,
+        status: "ready",
+        projection,
+        selectingWorkflow: false,
+        workflowError: null,
+      });
+      return true;
+    } catch (error) {
+      this.publish({
+        ...this.snapshot,
+        workflows: null,
+        selectingWorkflow: false,
+        workflowError: error instanceof Error ? error.message : "Workflow 选择提交失败",
       });
       return false;
     }
@@ -139,6 +207,7 @@ export class LifeosProjectionController {
       if (!response.ok) throw new Error(problemMessage(json, response.status));
       const projection = lifeosProjectionSchema.parse(json);
       this.publish({
+        ...this.snapshot,
         status: "ready",
         projection,
         submitting: this.snapshot.submitting,

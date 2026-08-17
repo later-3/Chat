@@ -11,6 +11,10 @@ Chat只使用固定版本DeepSeek Harness Web作为主界面。侧栏、会话�
 3. 能力运行在Host/Sidecar，Client只展示投影并提交意图。
 4. 只有上游没有稳定接缝且价值被真实场景证明时，才维护最小补丁。
 
+当前Workflow选择是这一原则的基准实现：使用DSH公开`conversation.input.left` Slot和公开
+Menu primitive，作为Composer工具行上的紧凑控件，与原生权限/模型入口并排；不得退回
+`conversation.input.dock`另造整行面板，也不得复制DSH内部Composer实现。
+
 ## 2. 产品事实与界面状态
 
 - Chat Product Store拥有Message、Run、Plan、Approval、Decision和完成事实。

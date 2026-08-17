@@ -18,8 +18,22 @@ test("manifest exposes the native DSH bundle patch and client factory contract",
     "@deepseek-ai/dsh-client-runtime",
     "@deepseek-ai/dsh-client-ui-conversation",
     "@deepseek-ai/dsh-client-ui-layout",
+    "@deepseek-ai/dsh-client-ui-primitives",
     "@deepseek-ai/dsh-client-ui-sidebar",
   ]);
+});
+
+test("workflow selector uses the additive DSH composer tool-row slot", async () => {
+  const client = await readFile(new URL("../src/client/index.tsx", import.meta.url), "utf8");
+  const picker = await readFile(
+    new URL("../src/client/WorkflowPicker.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(client, /ctx\.slots\.inject\("conversation\.input\.left"/);
+  assert.match(client, /name: "conversation\.input\.left"/);
+  assert.doesNotMatch(picker, /PropsRuntime<"conversation\.input\.dock">/);
+  assert.match(picker, /PropsRuntime<"conversation\.input\.left">/);
+  assert.match(picker, /@deepseek-ai\/dsh-client-ui-primitives/);
 });
 
 test("bundle patch makes Chat workflow the only enabled product model route", async () => {

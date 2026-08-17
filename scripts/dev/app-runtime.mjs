@@ -15,12 +15,7 @@ import {
   terminateOwnedChatPortProcesses,
   terminateRecorded,
 } from "../debug/lib.mjs";
-import {
-  assertSupportedRuntimeLibc,
-  detectRuntimeLibc,
-  ensureFixedMemmy,
-} from "../memory/fixed-memmy.mjs";
-import { ensureFixedMemoryCore } from "../memory/fixed-memorycore.mjs";
+import { assertSupportedRuntimeLibc, detectRuntimeLibc } from "../memory/fixed-memmy.mjs";
 import { assertDshCliRuntimeClosure, dshWebEnvironment } from "../dsh/profile-runtime.mjs";
 import {
   codeServerRunRoot,
@@ -33,7 +28,8 @@ import { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
 export { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
 import { cleanupOwnedDebugBrowser } from "./browser-lifecycle.mjs";
 
-export const MEMORY_PROFILES = Object.freeze(["all", "memmy", "memorycore"]);
+/** Memory当前冻结关闭；保留字段只为旧命令给出明确失败，而不是保留隐式启用入口。 */
+export const MEMORY_PROFILES = Object.freeze(["off"]);
 export const WORKBENCH_PROFILES = Object.freeze(["off", "code-server"]);
 export const LOCAL_SETUP_NODE_MAJOR = 24;
 export const LOCAL_SETUP_NODE_ABI = "137";
@@ -108,7 +104,7 @@ export function assertLocalSetupPrerequisites({
 }
 
 export function parseDevArgs(argv) {
-  const options = { debug: false, help: false, memory: "all", workbench: "code-server" };
+  const options = { debug: false, help: false, memory: "off", workbench: "code-server" };
   for (const argument of argv) {
     if (argument === "--debug") {
       options.debug = true;
@@ -121,7 +117,7 @@ export function parseDevArgs(argv) {
     if (argument.startsWith("--memory=")) {
       const value = argument.slice("--memory=".length);
       if (!MEMORY_PROFILES.includes(value)) {
-        throw new Error(`--memory只支持 ${MEMORY_PROFILES.join("、")}`);
+        throw new Error("Memory当前冻结关闭；统一启动器只接受--memory=off");
       }
       options.memory = value;
       continue;
@@ -141,18 +137,19 @@ export function parseDevArgs(argv) {
 
 export function devUsage() {
   return [
-    "用法: pnpm dev [-- --memory=all|memmy|memorycore] [--workbench=off|code-server]",
-    "      pnpm dev:debug [-- --memory=all|memmy|memorycore] [--workbench=off|code-server]",
+    "用法: pnpm dev [-- --workbench=off|code-server]",
+    "      pnpm dev:debug [-- --workbench=off|code-server]",
     "",
-    "默认启动两套本地Memory依赖、Workflow、API、code-server Workbench和DSH Web。",
+    "默认不启动或装配Memory；只启动Workflow、API、code-server Workbench和DSH Web。",
+    "Memory代码与独立测试保留；当前统一启动器不提供启用入口。",
   ].join("\n");
 }
 
 export function setupUsage() {
   return [
-    "用法: pnpm run setup [--memory=all|memmy|memorycore] [--workbench=off|code-server]",
+    "用法: pnpm run setup [--workbench=off|code-server]",
     "",
-    "默认准备两套固定Memory源码、Workflow Bundle、DSH Profile与code-server工件，但不启动服务。",
+    "默认只准备Workflow Bundle、DSH Profile与code-server工件，不准备或启动Memory。",
   ].join("\n");
 }
 
@@ -210,7 +207,7 @@ function commonEnvironment(root, environment) {
 export function createServiceDefinitions({
   root,
   debug = false,
-  memory = "all",
+  memory = "off",
   workbench = "code-server",
   environment = process.env,
 }) {
@@ -220,58 +217,13 @@ export function createServiceDefinitions({
   }
   const repoRoot = resolve(root);
   const workbenchRuntime = resolveLocalWorkbenchRuntimeContract(repoRoot, environment);
-  const memoryCoreEnvironment = join(repoRoot, "scripts/debug/load-memorycore-debug-env.mjs");
   const providerEnvironment = join(repoRoot, "scripts/debug/load-provider-env.mjs");
   const services = [];
 
-  if (memory === "all" || memory === "memmy") {
-    services.push({
-      id: "memmy",
-      role: "memory",
-      port: FROZEN_PORTS.memory,
-      command: process.execPath,
-      args: [join(repoRoot, "scripts/memory/start-fixed-memmy.mjs")],
-      cwd: repoRoot,
-      env: {
-        ...commonEnvironment(repoRoot, withoutVsCodeAutoAttach(environment)),
-        CHAT_FIXED_SOURCE_CACHE_ROOT: workbenchRuntime.CHAT_FIXED_SOURCE_CACHE_ROOT,
-      },
-      readyUrl: `http://127.0.0.1:${FROZEN_PORTS.memory}/api/v1/health`,
-      timeoutMs: 180_000,
-      stopTimeoutMs: 7_000,
-    });
-  }
-
-  if (memory === "all" || memory === "memorycore") {
-    services.push({
-      id: "memorycore",
-      role: "memoryCore",
-      port: FROZEN_PORTS.memoryCore,
-      command: process.execPath,
-      args: [
-        "--import",
-        memoryCoreEnvironment,
-        join(repoRoot, "scripts/memory/start-fixed-memorycore.mjs"),
-      ],
-      cwd: repoRoot,
-      env: {
-        ...commonEnvironment(repoRoot, withoutVsCodeAutoAttach(environment)),
-        CHAT_FIXED_SOURCE_CACHE_ROOT: workbenchRuntime.CHAT_FIXED_SOURCE_CACHE_ROOT,
-        CHAT_TENCENT_MEMORYCORE_RUN_ROOT: join(repoRoot, ".data/debug/memorycore"),
-      },
-      readyUrl: `http://127.0.0.1:${FROZEN_PORTS.memoryCore}/health`,
-      timeoutMs: 180_000,
-      stopTimeoutMs: 7_000,
-    });
-  }
-
   const workflowArgs = [];
   if (debug) workflowArgs.push(`--inspect=127.0.0.1:${FROZEN_PORTS.workflowInspector}`);
+  workflowArgs.push("--import", providerEnvironment);
   workflowArgs.push(
-    "--import",
-    providerEnvironment,
-    "--import",
-    memoryCoreEnvironment,
     "--import",
     join(repoRoot, "packages/workflows/node_modules/tsx/dist/loader.mjs"),
     join(repoRoot, "packages/workflows/src/runtime-main.ts"),
@@ -285,6 +237,7 @@ export function createServiceDefinitions({
     cwd: repoRoot,
     env: {
       ...commonEnvironment(repoRoot, environment),
+      CHAT_MEMORY_ENABLED: "0",
       CHAT_WORKFLOW_PORT: String(FROZEN_PORTS.workflow),
     },
     readyUrl: `http://127.0.0.1:${FROZEN_PORTS.workflow}/healthz`,
@@ -294,11 +247,8 @@ export function createServiceDefinitions({
 
   const apiArgs = [];
   if (debug) apiArgs.push(`--inspect=127.0.0.1:${FROZEN_PORTS.apiInspector}`);
+  apiArgs.push("--import", join(repoRoot, "scripts/load-env.mjs"));
   apiArgs.push(
-    "--import",
-    join(repoRoot, "scripts/load-env.mjs"),
-    "--import",
-    memoryCoreEnvironment,
     "--import",
     join(repoRoot, "apps/api/node_modules/tsx/dist/loader.mjs"),
     join(repoRoot, "apps/api/src/index.ts"),
@@ -312,6 +262,7 @@ export function createServiceDefinitions({
     cwd: join(repoRoot, "apps/api"),
     env: {
       ...commonEnvironment(repoRoot, environment),
+      CHAT_MEMORY_ENABLED: "0",
       PORT: String(FROZEN_PORTS.api),
     },
     readyUrl: `http://127.0.0.1:${FROZEN_PORTS.api}/api/readyz`,
@@ -599,16 +550,7 @@ async function preparePinnedRuntimeArtifacts({ root, memory, workbench = "code-s
     throw new Error(`未知Workbench Profile：${workbench}`);
   }
   const workbenchRuntime = resolveLocalWorkbenchRuntimeContract(root);
-  const fixedSourceEnvironment = { ...process.env, ...workbenchRuntime };
   console.log(`[chat] 固定源码缓存：${workbenchRuntime.CHAT_FIXED_SOURCE_CACHE_ROOT}`);
-  if (memory === "all" || memory === "memmy") {
-    await ensureFixedMemmy(root, fixedSourceEnvironment);
-  }
-  if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
-  if (memory === "all" || memory === "memorycore") {
-    ensureFixedMemoryCore(root, fixedSourceEnvironment);
-  }
-  if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
   if (workbench === "code-server") {
     console.log("[chat] 准备固定code-server Workbench…");
     await ensureFixedCodeServer(root, { environment: workbenchRuntime });

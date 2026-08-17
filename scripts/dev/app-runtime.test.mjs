@@ -52,20 +52,21 @@ import { collectLocalRuntimeStatus } from "./status.mjs";
 
 const ROOT = "/workspace/chat";
 
-test("参数默认启动两套Memory，debug模式显式开启", () => {
+test("统一启动器固定关闭Memory且拒绝重新启用", () => {
   assert.deepEqual(parseDevArgs([]), {
     debug: false,
     help: false,
-    memory: "all",
+    memory: "off",
     workbench: "code-server",
   });
-  assert.deepEqual(parseDevArgs(["--debug", "--memory=memmy", "--workbench=off"]), {
+  assert.deepEqual(parseDevArgs(["--debug", "--memory=off", "--workbench=off"]), {
     debug: true,
     help: false,
-    memory: "memmy",
+    memory: "off",
     workbench: "off",
   });
-  assert.throws(() => parseDevArgs(["--memory=unknown"]), /只支持/u);
+  assert.throws(() => parseDevArgs(["--memory=memmy"]), /冻结关闭/u);
+  assert.throws(() => parseDevArgs(["--memory=all"]), /冻结关闭/u);
   assert.throws(() => parseDevArgs(["--workbench=unknown"]), /只支持/u);
 });
 
@@ -191,28 +192,27 @@ test("本地setup只读检查活动运行，任何占用都失败且不调用回
   assert.doesNotMatch(setupSource, /prepareLocalRuntime|preflightLocalRuntime/u);
 });
 
-test("服务图按Memory -> Workflow -> API -> Workbench -> Web排序", () => {
-  const all = createServiceDefinitions({ root: ROOT, memory: "all", environment: {} });
+test("服务图永远不启动或装配Memory", () => {
+  const disabled = createServiceDefinitions({ root: ROOT, environment: {} });
   assert.deepEqual(
-    all.map((service) => service.id),
-    ["memmy", "memorycore", "workflow", "api", "workbench", "web"],
+    disabled.map((service) => service.id),
+    ["workflow", "api", "workbench", "web"],
   );
-  const memmy = createServiceDefinitions({
-    root: ROOT,
-    memory: "memmy",
-    workbench: "off",
-    environment: {},
-  });
-  assert.deepEqual(
-    memmy.map((service) => service.id),
-    ["memmy", "workflow", "api", "web"],
+  const disabledById = Object.fromEntries(disabled.map((service) => [service.id, service]));
+  assert.equal(disabledById.workflow.env.CHAT_MEMORY_ENABLED, "0");
+  assert.equal(disabledById.api.env.CHAT_MEMORY_ENABLED, "0");
+  assert.doesNotMatch(disabledById.workflow.args.join(" "), /load-memorycore-debug-env/u);
+  assert.doesNotMatch(disabledById.api.args.join(" "), /load-memorycore-debug-env/u);
+
+  assert.throws(
+    () => createServiceDefinitions({ root: ROOT, memory: "all", environment: {} }),
+    /未知Memory Profile/u,
   );
 });
 
 test("Workbench只接收显式安全环境并把唯一仓库根映射给code-server", () => {
   const services = createServiceDefinitions({
     root: ROOT,
-    memory: "memmy",
     environment: {
       PATH: "/usr/bin",
       DASHSCOPE_API_KEY: "must-not-leak",
@@ -250,22 +250,12 @@ test("launcher与独立status从同一输入重建Workbench run/temp/cache合同
   });
   const workbench = createServiceDefinitions({
     root: ROOT,
-    memory: "memmy",
     environment,
   }).find((service) => service.id === "workbench");
   assert.deepEqual(
     Object.fromEntries(Object.keys(contract).map((name) => [name, workbench.env[name]])),
     contract,
   );
-  const memoryServices = createServiceDefinitions({
-    root: ROOT,
-    memory: "all",
-    environment,
-  }).filter((service) => service.id === "memmy" || service.id === "memorycore");
-  assert.equal(memoryServices.length, 2);
-  for (const service of memoryServices) {
-    assert.equal(service.env.CHAT_FIXED_SOURCE_CACHE_ROOT, "/workspace/shared-cache");
-  }
 });
 
 test("running status复用严格合同并显示Unix transport、instance、PID与healthy", async () => {
@@ -427,14 +417,13 @@ test("debug只为Chat拥有的API与Workflow开放Inspector", () => {
   const services = createServiceDefinitions({
     root: ROOT,
     debug: true,
-    memory: "all",
     environment: {},
   });
   const args = Object.fromEntries(services.map((service) => [service.id, service.args.join(" ")]));
   assert.match(args.workflow, /--inspect=127\.0\.0\.1:43121/u);
   assert.match(args.api, /--inspect=127\.0\.0\.1:43120/u);
-  assert.doesNotMatch(args.memmy, /--inspect/u);
-  assert.doesNotMatch(args.memorycore, /--inspect/u);
+  assert.equal(args.memmy, undefined);
+  assert.equal(args.memorycore, undefined);
   assert.doesNotMatch(args.workbench, /--inspect/u);
   assert.doesNotMatch(args.web, /--inspect/u);
 });
@@ -442,7 +431,6 @@ test("debug只为Chat拥有的API与Workflow开放Inspector", () => {
 test("Web角色使用受管DSH Node Host且私有Bridge状态不进入命令与探针", () => {
   const services = createServiceDefinitions({
     root: ROOT,
-    memory: "all",
     environment: {
       CHAT_DSH_STATE_PATH: "/private/state.json",
       VSCODE_INSPECTOR_OPTIONS: "private-attach-options",

@@ -81,8 +81,9 @@ DSH的React、Client UI、Cordis、Host Webserver等传递包由`@deepseek-ai/ds
 3. 两套源码的默认来源都是固定HTTPS URL；本地mirror只有通过显式环境变量选择后才可用，
    但仍必须通过同一commit/tree门。缓存证据记录来源模式、源码清单Hash与运行工件或安装lock
    Hash，漂移时原子重建。
-4. `pnpm run setup`在不启动服务的情况下统一准备Memory、code-server、Workflow Bundle与DSH
-   Profile；CI的fresh-clone smoke从空`.data`执行同一命令，再验证完整服务图启动与停止。
+4. Memory固定证据与准备代码继续保留，但`pnpm run setup`、VS Code F5、`pnpm dev`和
+   `pnpm dev:debug`当前都固定为`memory=off`：不下载Memory工件、不启动服务，也不向
+   API/Workflow装配Adapter。统一启动器没有重新启用参数；未来恢复时复用上述固定证据并重新评审组合根。
 
 ## 构建与测试依赖
 

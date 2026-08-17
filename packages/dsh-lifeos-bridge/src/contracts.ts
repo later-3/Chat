@@ -10,6 +10,7 @@ import {
   runDtoSchema,
   sessionDtoSchema,
   sha256Schema,
+  workflowDefinitionRevisionIdSchema,
   type ApprovalDto,
   type DecisionDto,
   type MessageDto,
@@ -19,7 +20,7 @@ import {
 } from "@chat/contracts/public";
 import { z } from "zod";
 
-export const BRIDGE_SCHEMA_VERSION = "chat-dsh-lifeos-bridge.v1" as const;
+export const BRIDGE_SCHEMA_VERSION = "chat-dsh-lifeos-bridge.v2" as const;
 export const dshSessionIdSchema = z
   .string()
   .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/)
@@ -94,6 +95,46 @@ export type ChatDecision = DecisionDto;
 export type DecisionKind = z.infer<typeof decisionKindSchema>;
 export type DecisionRequest = z.infer<typeof decisionRequestSchema>;
 
+/**
+ * 选择表面可见的已发布Workflow投影。只暴露选择所需的字段；
+ * 节点图、Executor与Runtime身份不进入浏览器。
+ */
+export const lifeosWorkflowOptionSchema = z
+  .object({
+    workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+    definitionSha256: sha256Schema,
+    title: z.string().min(1).max(160),
+    description: z.string().min(1).max(1000),
+    blueprintKey: z.enum(["planning", "note"]),
+    ownerKind: z.enum(["system", "principal"]),
+  })
+  .strict();
+
+export const workflowListResponseSchema = z
+  .object({ items: z.array(lifeosWorkflowOptionSchema).max(100) })
+  .strict();
+
+/**
+ * 会话级Workflow选择草稿。revisionId+definitionSha256是提交给Chat的
+ * 唯一权威内容；title只是选择表面的标签缓存，服务端提交时仍会重新校验
+ * published/active/所有权，草稿过期只会得到可重试的definition_stale失败。
+ */
+export const workflowSelectionSchema = z
+  .object({
+    workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+    definitionSha256: sha256Schema,
+    title: z.string().min(1).max(160),
+  })
+  .strict();
+
+/** Browser-to-bridge command：null表示恢复系统默认规划工作流。 */
+export const workflowSelectionRequestSchema = z
+  .object({ workflowSelection: workflowSelectionSchema.nullable() })
+  .strict();
+
+export type LifeosWorkflowOption = z.infer<typeof lifeosWorkflowOptionSchema>;
+export type WorkflowSelection = z.infer<typeof workflowSelectionSchema>;
+
 export const publicRunSchema = runDtoSchema.pick({
   productRunId: true,
   status: true,
@@ -113,6 +154,7 @@ export const lifeosProjectionSchema = z
     plan: planDtoSchema.nullable(),
     approval: approvalDtoSchema.nullable(),
     pendingDecision: decisionRequestSchema.nullable(),
+    workflowSelection: workflowSelectionSchema.nullable(),
   })
   .strict();
 

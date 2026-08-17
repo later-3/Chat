@@ -7,7 +7,7 @@ import {
   type TraceEventInput,
 } from "@chat/contracts";
 import { loadBailianConfig, runPiExecutor, runPiNoteCapture, runPiPlanner } from "@chat/pi-runtime";
-import { createMemoryBackendRegistry } from "@chat/memory-runtime";
+import { createEmptyMemoryBackendRegistry } from "@chat/memory-runtime";
 import { ZodError } from "zod";
 import { createRuntimeApiClient } from "./api-client.js";
 import { RuntimeBindingStore } from "./runtime-bindings.js";
@@ -95,12 +95,12 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
           }
         : () => undefined;
 
-    const memoryRegistry = createMemoryBackendRegistry(process.env);
+    // Workflow合同仍需要Registry Port，但当前统一运行图冻结为空，不实例化任何外部Adapter。
+    const memoryRegistry = createEmptyMemoryBackendRegistry();
     setWorkflowRuntimeContext({
       api: createRuntimeApiClient({ baseUrl: options.apiBaseUrl, credential: options.credential }),
       bindings,
       memoryBackends: memoryRegistry,
-      memoryImportBackends: memoryRegistry,
       trace,
       now: () => new Date().toISOString(),
       bailian: loadBailianConfig(process.env),

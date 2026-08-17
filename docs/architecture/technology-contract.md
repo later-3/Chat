@@ -13,7 +13,7 @@
 | Product Store | 当前版本化JSON Adapter | 权威产品事实；未来可替换生产Store |
 | Durable Workflow | Vercel Workflow | 耐久步骤、暂停、恢复、重放和Checkpoint |
 | Agent Runtime | `pi-agent-core` | Workflow中的Planner/Executor与Tool节点 |
-| Memory | Port + memmy / Tencent MemoryCore Adapter | 外部Memory查询、导入与对账 |
+| Memory | Port + memmy / Tencent MemoryCore Adapter（代码保留，当前未装配） | 外部Memory查询、导入与对账；统一启动器没有启用入口 |
 | Hosted Workbench | code-server（固定版本） | Files、Editor、Terminal、Git、Diff和VS Code扩展 |
 | 验证 | Vitest/Node Test + Playwright | 单元、合同、集成和真实浏览器纵向 |
 
@@ -53,6 +53,7 @@ DSH和code-server是可替换Adapter/Hosted App，不拥有Chat产品对象。Ch
 - 固定DSH Session与Product Session的Adapter映射。
 - 将DSH正常对话请求变成Chat公开Command/Query。
 - 保留稳定`commandId`，处理网络结果未知和刷新恢复。
+- 用`conversation.input.left`公开Slot显示可用Workflow；选择只是会话草稿，发送时由Chat重新校验并冻结Definition revision/Hash。
 - 在DSH公开Slot中展示Plan/HITL；决定仍走Chat Command。
 - 将Chat正式Assistant Message以DSH文本流投影回原生轨迹。
 - 为完整Hosted App提供窄Surface与受控Host代理。

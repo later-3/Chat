@@ -12,9 +12,15 @@ import {
 import { computeMemoryImportRequestSha256 } from "@chat/domain";
 import { describe, expect, it } from "vitest";
 import { MEMMY_BACKEND_ID, MemmyMemoryAdapter, type MemmyAdapterOptions } from "./memmy-adapter.js";
-import { createMemoryBackendRegistry } from "./registry.js";
+import { createEmptyMemoryBackendRegistry, createMemoryBackendRegistry } from "./registry.js";
 
 const TEST_TIME = "2026-08-08T00:00:00.000Z";
+
+describe("Memory runtime activation", () => {
+  it("provides an empty Registry without instantiating external adapters", () => {
+    expect(createEmptyMemoryBackendRegistry().list()).toEqual([]);
+  });
+});
 
 function queryInput(overrides: Partial<MemoryQueryInput> = {}): MemoryQueryInput {
   return {

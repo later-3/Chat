@@ -42,6 +42,11 @@ export class MemoryBackendRegistry
   }
 }
 
+/** Workflow仍需要一个Registry Port；关闭时用真正的空Registry，不实例化Adapter。 */
+export function createEmptyMemoryBackendRegistry(): MemoryBackendRegistry {
+  return new MemoryBackendRegistry([]);
+}
+
 export function createMemoryBackendRegistry(
   env: NodeJS.ProcessEnv,
   overrides: {

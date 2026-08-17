@@ -1,9 +1,12 @@
 import type { ZodType } from "zod";
+import { workflowDefinitionsDtoSchema } from "@chat/contracts/public";
+import { z } from "zod";
 import {
   approvalResponseSchema,
   createSessionResponseSchema,
   decisionResponseSchema,
   exactMessageResponseSchema,
+  lifeosWorkflowOptionSchema,
   plansResponseSchema,
   problemSchema,
   runResponseSchema,
@@ -14,10 +17,17 @@ import {
   type ChatRun,
   type ChatSession,
   type DecisionRequest,
+  type LifeosWorkflowOption,
+  type WorkflowSelection,
 } from "./contracts.ts";
 import type { PendingDecision } from "./state-store.ts";
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+
+/** GET /api/workflow/definitions 的外层信封；内层DTO权威在@chat/contracts/public。 */
+const workflowDefinitionsResponseSchema = z
+  .object({ definitions: workflowDefinitionsDtoSchema })
+  .strict();
 
 function withSignal(signal: AbortSignal | undefined): Pick<RequestInit, "signal"> | object {
   return signal === undefined ? {} : { signal };
@@ -104,15 +114,48 @@ export class ChatProductClient {
     commandId: string,
     text: string,
     signal?: AbortSignal,
+    workflowSelection?: WorkflowSelection,
   ): Promise<{ message: ChatMessage; run: ChatRun }> {
     return await this.request(
       `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
       submitMessageResponseSchema,
       {
         method: "POST",
-        body: JSON.stringify({ commandId, payload: { text } }),
+        body: JSON.stringify({
+          commandId,
+          payload: {
+            text,
+            ...(workflowSelection !== undefined
+              ? {
+                  workflowSelection: {
+                    kind: "published_revision",
+                    workflowDefinitionRevisionId: workflowSelection.workflowDefinitionRevisionId,
+                    definitionSha256: workflowSelection.definitionSha256,
+                  },
+                }
+              : {}),
+          },
+        }),
         ...withSignal(signal),
       },
+    );
+  }
+
+  async listWorkflows(signal?: AbortSignal): Promise<readonly LifeosWorkflowOption[]> {
+    const value = await this.request(
+      "/api/workflow/definitions",
+      workflowDefinitionsResponseSchema,
+      withSignal(signal),
+    );
+    return value.definitions.definitions.map((definition) =>
+      lifeosWorkflowOptionSchema.parse({
+        workflowDefinitionRevisionId: definition.workflowDefinitionRevisionId,
+        definitionSha256: definition.definitionSha256,
+        title: definition.title,
+        description: definition.description,
+        blueprintKey: definition.blueprintKey,
+        ownerKind: definition.ownerKind,
+      }),
     );
   }
 

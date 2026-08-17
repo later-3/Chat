@@ -4,6 +4,7 @@ import type {} from "@deepseek-ai/dsh-client-ui-layout/client";
 import type {} from "@deepseek-ai/dsh-client-ui-sidebar/client";
 import { CodeWorkbenchSidebarAction, CodeWorkbenchSurface } from "./CodeWorkbench.tsx";
 import { LifeosDock, type LifeosDockInjected } from "./LifeosDock.tsx";
+import { WorkflowPicker, type WorkflowPickerInjected } from "./WorkflowPicker.tsx";
 import { LifeosProjectionController } from "./controller.ts";
 import { installStyles } from "./styles.ts";
 import { WorkbenchSurfaceController } from "./workbench-controller.ts";
@@ -11,7 +12,7 @@ import { WorkbenchSurfaceController } from "./workbench-controller.ts";
 export const name = "chat-dsh-lifeos-bridge-client";
 export const inject = ["slots"];
 
-/** Additive Plan/HITL dock; the native ChatView and Composer remain owners. */
+/** Additive Workflow/Plan/HITL/Workbench surfaces; native ChatView and Composer remain owners. */
 export function apply(ctx: ClientContext): void {
   installStyles(ctx);
   const workbench = new WorkbenchSurfaceController();
@@ -48,6 +49,26 @@ export function apply(ctx: ClientContext): void {
       CodeWorkbenchSurface,
     ),
   );
+
+  ctx.slots.inject("conversation.input.left", () => {
+    const disposePicker = ctx.slots.register(
+      {
+        name: "conversation.input.left",
+        id: "lifeos-workflow-picker",
+        order: 14,
+        inject: (sessionId: SessionId): WorkflowPickerInjected => {
+          const controller = controllerFor(sessionId);
+          return {
+            hooks: { lifeos: controller },
+            loadWorkflows: () => controller.loadWorkflows(),
+            selectWorkflow: (selection) => controller.selectWorkflow(selection),
+          };
+        },
+      },
+      WorkflowPicker,
+    );
+    return disposePicker;
+  });
 
   ctx.slots.inject("conversation.input.dock", () => {
     const dispose = ctx.slots.register(

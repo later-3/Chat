@@ -1,7 +1,7 @@
 # Chat 本地安装
 
 本文是全新克隆后的唯一安装入口。当前产品前端是固定DeepSeek Harness Web，后端由
-Chat API、Vercel Workflow、本地Memory Provider与可选Code Workbench组成；不要再安装
+Chat API、Vercel Workflow与可选Code Workbench组成；Memory Provider代码暂时保留但默认关闭。不要再安装
 旧`apps/web`、Agent Canvas，也不要手工克隆DSH或其他上游源码到固定个人目录。
 
 ## 1. 支持范围
@@ -16,8 +16,8 @@ Chat API、Vercel Workflow、本地Memory Provider与可选Code Workbench组成�
 | 网络 | 首次准备需要访问GitHub和npm registry |
 
 Windows与其他CPU架构目前不属于本地一键安装范围，`pnpm run setup`会在写入运行缓存前
-失败关闭。首次准备会下载约211–239MB的固定code-server压缩包，并拉取两套固定Memory
-源码及其npm依赖；请预留至少3GB可用空间。工件缓存、运行数据和私有配置都位于Git忽略
+失败关闭。首次默认准备会下载约211–239MB的固定code-server压缩包，不再拉取两套Memory
+源码及其npm依赖；请预留至少1GB可用空间。工件缓存、运行数据和私有配置都位于Git忽略
 的`.data`或`.env`中。
 
 ## 2. 克隆与工具链
@@ -43,12 +43,12 @@ pnpm run setup
 `pnpm run setup`是幂等准备命令，它会：
 
 1. 校验平台、Node、pnpm、Git、tar与npm；
-2. 从固定HTTPS来源取得memmy与Tencent MemoryCore的精确Git对象，校验commit/tree，
-   再使用固定lock安装依赖；第三方生命周期脚本不会执行，memmy所需原生工件按平台用
-   Chat固定的大小与SHA-256校验后安装；
-3. 下载并校验固定`code-server@4.132.0`工件；
-4. 构建Workflow Bundle和LifeOS Bridge，准备固定DSH Web Profile；
-5. 只生成可重建缓存，不启动任何服务。
+2. 下载并校验固定`code-server@4.132.0`工件；
+3. 构建Workflow Bundle和LifeOS Bridge，准备固定DSH Web Profile；
+4. 只生成可重建缓存，不启动任何服务。
+
+当前不准备Memory；统一setup没有启用参数。固定commit/tree、lock和原生工件Hash代码继续
+保留，未来决定恢复Memory时再重新接入组合根与启动图。
 
 如果同一仓库已有本地服务或Workbench在运行，setup只报告占用并失败，不会替用户停止
 进程，也不会修改活动Product Run；先显式运行`pnpm dev:stop`后再准备。
@@ -82,7 +82,10 @@ pnpm dev:stop
 pnpm dev -- --workbench=off
 ```
 
-`dev:stop`完成后，43110、43111、43112、43114、43119、18960与18970都应释放，
+当前不启动或装配Memory。`18960`与`18970`在整个运行期间都应保持空闲；统一启动器
+拒绝`--memory=all|memmy|memorycore`，避免环境变量或历史命令静默恢复Memory。
+
+`dev:stop`完成后，43110、43111、43112、43114与43119都应释放，18960与18970应始终未被默认服务图占用，
 code-server的Unix socket和Terminal子进程也应被受管回收。不要用`killall`、`pkill`或
 直接删除`.data`替代停止命令；`.data`还可能包含产品数据和运行证据。
 

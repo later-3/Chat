@@ -1,14 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LifeosProjectionController } from "../src/client/controller.ts";
+import { workflowSelectionSchema } from "../src/contracts.ts";
 
 const projection = {
-  schemaVersion: "chat-dsh-lifeos-bridge.v1",
+  schemaVersion: "chat-dsh-lifeos-bridge.v2",
   dshSessionId: "dsh-session-1",
   run: null,
   plan: null,
   approval: null,
   pendingDecision: null,
+  workflowSelection: null,
+};
+
+const projectionWithSelection = {
+  ...projection,
+  workflowSelection: {
+    workflowDefinitionRevisionId: "wfr_systemnotev1",
+    definitionSha256: "a".repeat(64),
+    title: "默认笔记工作流",
+  },
 };
 
 const settle = async (): Promise<void> => {
@@ -79,5 +90,84 @@ test("projection fetch is invoked without the controller as receiver", async () 
   await controller.refresh();
   assert.equal(calls, 1);
   assert.equal(controller.getSnapshot().status, "ready");
+  controller.dispose();
+});
+
+test("loadWorkflows fills the picker list and keeps run polling untouched", async () => {
+  const items = [
+    {
+      workflowDefinitionRevisionId: "wfr_systemplanningv2",
+      definitionSha256: "b".repeat(64),
+      title: "默认规划工作流",
+      description: "读取上下文、生成计划、人工审核、执行、验证并提交结果的系统内置流程。",
+      blueprintKey: "planning",
+      ownerKind: "system",
+    },
+    {
+      workflowDefinitionRevisionId: "wfr_systemnotev1",
+      definitionSha256: "c".repeat(64),
+      title: "默认笔记工作流",
+      description: "从本次消息或选区抽取笔记、分类、人工审核并保存为正式Note。",
+      blueprintKey: "note",
+      ownerKind: "system",
+    },
+  ];
+  const controller = new LifeosProjectionController("dsh-session-1", async () => {
+    return new Response(JSON.stringify({ items }), { status: 200 });
+  });
+  const loaded = await controller.loadWorkflows();
+  assert.deepEqual(loaded, items);
+  assert.deepEqual(controller.getSnapshot().workflows, items);
+  assert.equal(controller.getSnapshot().workflowError, null);
+  controller.dispose();
+});
+
+test("selectWorkflow submits the draft and adopts the returned projection", async () => {
+  const requests: { method?: string | undefined; body?: string | undefined }[] = [];
+  const controller = new LifeosProjectionController(
+    "dsh-session-1",
+    async (input: URL | RequestInfo, init?: RequestInit) => {
+      requests.push({
+        method: init?.method,
+        body: init?.body === undefined ? undefined : String(init.body),
+      });
+      return new Response(JSON.stringify(projectionWithSelection), { status: 200 });
+    },
+  );
+  const accepted = await controller.selectWorkflow(
+    workflowSelectionSchema.parse({
+      workflowDefinitionRevisionId: "wfr_systemnotev1",
+      definitionSha256: "a".repeat(64),
+      title: "默认笔记工作流",
+    }),
+  );
+  assert.equal(accepted, true);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.method, "PUT");
+  assert.deepEqual(JSON.parse(requests[0]?.body ?? "{}"), {
+    workflowSelection: {
+      workflowDefinitionRevisionId: "wfr_systemnotev1",
+      definitionSha256: "a".repeat(64),
+      title: "默认笔记工作流",
+    },
+  });
+  assert.deepEqual(
+    controller.getSnapshot().projection?.workflowSelection?.workflowDefinitionRevisionId,
+    "wfr_systemnotev1",
+  );
+  controller.dispose();
+});
+
+test("selectWorkflow surfaces bridge failures without clobbering the projection", async () => {
+  const controller = new LifeosProjectionController("dsh-session-1", async () => {
+    return new Response(
+      JSON.stringify({ title: "选项目前不可用", status: 409, code: "lifeos_workflow_stale" }),
+      { status: 409 },
+    );
+  });
+  const accepted = await controller.selectWorkflow(null);
+  assert.equal(accepted, false);
+  assert.equal(controller.getSnapshot().selectingWorkflow, false);
+  assert.match(controller.getSnapshot().workflowError ?? "", /lifeos_workflow_stale/);
   controller.dispose();
 });

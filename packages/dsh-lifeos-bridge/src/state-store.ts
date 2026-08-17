@@ -10,7 +10,11 @@ import {
   sha256Schema,
 } from "@chat/contracts/public";
 import { z } from "zod";
-import { decisionRequestSchema, dshSessionIdSchema } from "./contracts.ts";
+import {
+  decisionRequestSchema,
+  dshSessionIdSchema,
+  workflowSelectionSchema,
+} from "./contracts.ts";
 
 const pendingDecisionSchema = z
   .object({
@@ -32,6 +36,11 @@ const requestSchema = z
     messageCommandId: commandIdSchema.transform(String),
     productRunId: productRunIdSchema.transform(String).optional(),
     pendingDecision: pendingDecisionSchema.optional(),
+    /**
+     * 请求创建时冻结的Workflow选择快照。发送中途修改会话草稿不影响
+     * 已创建请求；同一请求的幂等重放始终携带同一选择。
+     */
+    workflowSelection: workflowSelectionSchema.optional(),
   })
   .strict();
 
@@ -41,12 +50,25 @@ const sessionBindingSchema = z
     chatSessionId: productSessionIdSchema.transform(String).optional(),
     currentRequestKey: z.string().min(1).max(256).optional(),
     requests: z.record(z.string().min(1).max(256), requestSchema),
+    /** 会话级Workflow选择草稿；undefined表示使用系统默认规划工作流。 */
+    workflowSelection: workflowSelectionSchema.optional(),
+  })
+  .strict();
+
+/**
+ * rc.6切换时已经存在的Bridge状态。迁移读取也接受短暂开发版本写入的
+ * optional workflow字段，随后立即改写为v2；不能在同一个v1标记下扩展strict格式。
+ */
+const legacyBridgeStateSchema = z
+  .object({
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v1"),
+    sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
   .strict();
 
 const bridgeStateSchema = z
   .object({
-    schemaVersion: z.literal("chat-dsh-lifeos-state.v1"),
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v2"),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
   .strict();
@@ -57,7 +79,7 @@ export type RequestBinding = z.infer<typeof requestSchema>;
 export type PendingDecision = z.infer<typeof pendingDecisionSchema>;
 
 const emptyState = (): BridgeState => ({
-  schemaVersion: "chat-dsh-lifeos-state.v1",
+  schemaVersion: "chat-dsh-lifeos-state.v2",
   sessions: {},
 });
 
@@ -149,7 +171,22 @@ export class AtomicBridgeStateStore {
     } catch (error) {
       throw new Error(`lifeos bridge state is not valid JSON: ${this.path}`, { cause: error });
     }
-    this.state = bridgeStateSchema.parse(parsed);
+    const current = bridgeStateSchema.safeParse(parsed);
+    if (current.success) {
+      this.state = current.data;
+      return this.state;
+    }
+    const legacy = legacyBridgeStateSchema.safeParse(parsed);
+    if (!legacy.success) {
+      this.state = bridgeStateSchema.parse(parsed);
+      return this.state;
+    }
+    const migrated = bridgeStateSchema.parse({
+      schemaVersion: "chat-dsh-lifeos-state.v2",
+      sessions: legacy.data.sessions,
+    });
+    await this.writeAtomic(migrated);
+    this.state = migrated;
     return this.state;
   }
 

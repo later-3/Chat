@@ -6,6 +6,8 @@ import {
   type ChatRun,
   type DecisionRequest,
   type LifeosProjection,
+  type LifeosWorkflowOption,
+  type WorkflowSelection,
 } from "./contracts.ts";
 import { ChatProductApiError, ChatProductClient } from "./chat-client.ts";
 import { sha256, stableCommandId } from "./adapter.ts";
@@ -105,6 +107,7 @@ export class LifeosBridgeService {
         plan: null,
         approval: null,
         pendingDecision: current?.pendingDecision?.request ?? null,
+        workflowSelection: binding?.workflowSelection ?? null,
       };
     }
     const [run, plans, approval] = await Promise.all([
@@ -127,7 +130,34 @@ export class LifeosBridgeService {
       plan: planForProjection(run, plans, approval),
       approval,
       pendingDecision: current.pendingDecision?.request ?? null,
+      workflowSelection: binding?.workflowSelection ?? null,
     };
+  }
+
+  /** 选择表面可用的已发布Workflow列表；权威过滤（active/published/所有权）在Chat侧完成。 */
+  async workflows(signal?: AbortSignal): Promise<{ items: readonly LifeosWorkflowOption[] }> {
+    return { items: await this.chat.listWorkflows(signal) };
+  }
+
+  /**
+   * 写入或清除会话级Workflow选择草稿。它只是发送前草稿：真正的
+   * published/active/Hash校验发生在下一次消息提交的Chat命令边界；
+   * 草稿过期只会让该次发送得到可处理的definition_stale失败。
+   */
+  async selectWorkflow(
+    dshSessionId: string,
+    selection: WorkflowSelection | null,
+    signal?: AbortSignal,
+  ): Promise<LifeosProjection> {
+    const createCommandId = stableCommandId("create-session", dshSessionId);
+    await this.state.mutateSession(dshSessionId, createCommandId, (binding) => {
+      if (selection === null) {
+        delete binding.workflowSelection;
+      } else {
+        binding.workflowSelection = selection;
+      }
+    });
+    return await this.projection(dshSessionId, signal);
   }
 
   async decide(

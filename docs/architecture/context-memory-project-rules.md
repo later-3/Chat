@@ -2,7 +2,7 @@
 
 > 文档类型：分阶段架构。Memory M1～M3已经实现；Project与Rules章节仍是后续目标，不能当成已交付能力。当前Memory运行节点见[Workflow运行设计](./runtime-workflows.md)，当前能力与缺口见根目录[PROJECT_STATE.md](../../PROJECT_STATE.md)。
 
-> 状态：Memory M1～M3与调试收口已经合入；Project与Rules尚未实现
+> 状态：Memory M1～M3代码与历史事实已经合入，但当前启动和产品装配均冻结关闭；统一启动器没有启用Profile。Project与Rules状态以`PROJECT_STATE.md`为准。
 >
 > 适用基线：当前`main`；精确提交以`origin/main`为准
 > 目标：在现有“对话 → 规划 → 人工确认 → 执行 → Product Commit”闭环上，增加可追溯、可选择、可回放的长期上下文能力。

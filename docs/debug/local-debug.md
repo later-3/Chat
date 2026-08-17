@@ -29,9 +29,10 @@ pnpm dev:status
 pnpm dev:stop
 ```
 
-`pnpm run setup`幂等准备固定Memory、code-server、Workflow Bundle与DSH Bridge/Profile但不启动服务；
+`pnpm run setup`默认只准备code-server、Workflow Bundle与DSH Bridge/Profile，不准备或启动Memory；
 检测到本仓库已有服务时只失败关闭，不执行preclean或Workflow版本收敛；
-`pnpm dev`会复核同一批证据后启动Memory、Workflow、API、code-server和DSH/Gateway。
+`pnpm dev`会复核同一批证据后启动Workflow、API、code-server和DSH/Gateway；API与Workflow也不会实例化Memory Adapter。
+Memory源码与独立测试保留，但统一安装、VS Code F5和开发启动器当前都没有启用入口。
 默认启用Workbench；`--workbench=off`只用于不需要IDE的临时调试。终端SIGINT或
 `pnpm dev:stop`必须反向停止并释放端口与Terminal子进程。
 
