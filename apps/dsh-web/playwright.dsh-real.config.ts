@@ -81,7 +81,7 @@ export default defineConfig({
   testMatch: workbenchOnly
     ? "dsh-workbench-real.spec.ts"
     : pwaOnly
-      ? ["dsh-pwa-real.spec.ts", "dsh-mobile-real.spec.ts"]
+      ? ["dsh-pwa-real.spec.ts", "dsh-mobile-hanui-real.spec.ts"]
       : "dsh-planning-real.spec.ts",
   globalTeardown: resolve(repoRoot, "scripts/e2e/dsh-real-workbench-lifecycle.mjs"),
   fullyParallel: false,

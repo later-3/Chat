@@ -6,6 +6,7 @@ import {
   assertDshWebCutoverConfig,
   assertManagedWebProfileReady,
   dshBridgeInstallArgs,
+  dshMobileShellInstallArgs,
   dshWebEnvironment,
   resolveDshBin,
   resolveDshWebRuntime,
@@ -33,6 +34,12 @@ await runCommand(process.execPath, [resolveDshBin(root), ...dshBridgeInstallArgs
   cwd: root,
   env: environment,
   label: "DSH Web Profile Bridge安装",
+});
+// 移动端外壳与Bridge同属profile固定组合：npm registry精确版本，--save-exact。
+await runCommand(process.execPath, [resolveDshBin(root), ...dshMobileShellInstallArgs()], {
+  cwd: root,
+  env: environment,
+  label: "DSH Web Profile 移动端外壳安装",
 });
 assertManagedWebProfileReady(runtime);
 

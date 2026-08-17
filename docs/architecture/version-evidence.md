@@ -17,6 +17,7 @@
 |---|---:|---|---|---|
 | `@deepseek-ai/dsh` | `0.1.0-rc.6` | MIT | 唯一Web Host、原生会话/Composer/插件图；不拥有Chat产品事实 | 替换前端Host与Bridge Adapter；Chat API/Domain/Store不变 |
 | `@chat/dsh-lifeos-bridge` | workspace `0.1.0` | 私有 | DSH Host/Client到Chat公开Query/Command的唯一集成面 | 删除bundle/profile层；Chat后端不变 |
+| `dsh-mobile-hanui` | `0.2.4`（profile固定，`--save-exact`） | MIT | 移动端外壳：≤1023px抽屉/FAB/弹窗全屏/Composer修复；仅客户端DOM/CSS，零运行时依赖，无网络外发；桌面零影响 | 从profile bundles移除即退出；运行时可用`?mobileShell=0`关闭 |
 | `code-server`官方发行工件 | `4.132.0` / commit `313bf0359b4d391ba18f1fa131aad8a583bc2919` | MIT | 独立Hosted Workbench；不进入pnpm运行依赖、不拥有Chat产品事实 | 替换Workbench Provider；DSH与Chat后端不变 |
 | `hono` | `^4.13.0` | MIT | HTTP协议入口，不拥有事务 | 替换Router Adapter |
 | `@hono/node-server` | `^2.1.0` | MIT | Node HTTP服务器 | 替换组合根服务器 |

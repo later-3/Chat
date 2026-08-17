@@ -110,7 +110,7 @@ test("unknown pwa paths are rejected and traversal is impossible", () => {
   assert.equal(resolvePwaAsset("/api/sessions"), undefined);
 });
 
-test("index tap upgrades viewport and injects PWA+mobile tags exactly once", () => {
+test("index tap upgrades viewport and injects PWA tags exactly once", () => {
   const tap = createPwaIndexTap();
   const html =
     '<html><head><meta name="viewport" content="width=device-width, initial-scale=1" /><link rel="manifest" href="/manifest.webmanifest" /></head><body></body></html>';
@@ -118,8 +118,6 @@ test("index tap upgrades viewport and injects PWA+mobile tags exactly once", () 
   assert.match(injected, /apple-mobile-web-app-capable/u);
   assert.match(injected, /apple-touch-icon/u);
   assert.match(injected, /\/pwa\/register\.js/u);
-  assert.match(injected, /\/pwa\/mobile\.css/u);
-  assert.match(injected, /\/pwa\/mobile\.js/u);
   // 视口合同升级：刘海安全区 + 软键盘缩放。
   assert.match(injected, /viewport-fit=cover/u);
   assert.match(injected, /interactive-widget=resizes-content/u);
@@ -129,18 +127,29 @@ test("index tap upgrades viewport and injects PWA+mobile tags exactly once", () 
   assert.throws(() => tap("<html><body></body></html>"), /missing <\/head>/u);
 });
 
-test("mobile assets are served with revalidation and enter the offline shell set", () => {
-  const css = resolvePwaAsset("/pwa/mobile.css");
-  const script = resolvePwaAsset("/pwa/mobile.js");
-  assert.ok(css !== undefined && script !== undefined);
-  assert.equal(css.contentType, "text/css; charset=utf-8");
-  assert.equal(script.contentType, "application/javascript; charset=utf-8");
-  assert.equal(css.immutable, false);
-  // 移动端样式/脚本属于离线外壳的一部分。
-  assert.match(PWA_SERVICE_WORKER_SCRIPT, /\/pwa\/mobile\.css/u);
-  assert.match(PWA_SERVICE_WORKER_SCRIPT, /\/pwa\/mobile\.js/u);
-  // 移动端 CSS 只在小视口生效，不影响桌面布局。
-  assert.match(String(css.body), /@media \(max-width: 768px\)/u);
+test("index tap preserves HTML integrity around the injection point (2026-08-17 regression)", () => {
+  // 事故回归：viewport 替换改变字符串长度后，用替换前下标切割会把注入点插进
+  // 主样式表标签内部，导致上游 CSS 丢失。这里用与上游 dist 同构的尾部结构验证。
+  const tap = createPwaIndexTap();
+  const html = [
+    "<html><head>",
+    '<meta charset="utf-8" />',
+    '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+    '<link rel="stylesheet" crossorigin href="/assets/vendor-aaa.css">',
+    '<link rel="stylesheet" crossorigin href="/assets/index-bbb.css">',
+    "</head><body></body></html>",
+  ].join("\n");
+  const injected = tap(html);
+  // 两个上游 stylesheet 链接必须完整存活，注入点只能在 </head> 紧邻之前。
+  assert.match(injected, /<link rel="stylesheet" crossorigin href="\/assets\/vendor-aaa\.css">/u);
+  assert.match(injected, /<link rel="stylesheet" crossorigin href="\/assets\/index-bbb\.css">/u);
+  const stylesheetPos = injected.indexOf("/assets/index-bbb.css");
+  const registerPos = injected.indexOf("/pwa/register.js");
+  const headEnd = injected.indexOf("</head>");
+  assert.ok(stylesheetPos < registerPos && registerPos < headEnd);
+  assert.ok(injected.slice(stylesheetPos, registerPos).includes("</head>") === false);
+  // 注入不能截断任何上游标签：注入块之后必须紧跟完整的 </head>。
+  assert.match(injected.slice(registerPos), /<\/script>\s*<\/head>/u);
 });
 
 test("register script only registers /sw.js after load", () => {

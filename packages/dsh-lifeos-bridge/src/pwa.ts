@@ -4,7 +4,6 @@ import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { BridgeRequestError } from "./bridge-service.ts";
-import { MOBILE_CSS, MOBILE_INDEX_TAGS, MOBILE_SCRIPT, MOBILE_VIEWPORT_CONTENT } from "./mobile.ts";
 
 /**
  * Chat PWA 模块。
@@ -29,13 +28,7 @@ export const PWA_CACHE_VERSION = "chat-pwa-v1";
 export const PWA_SERVICE_WORKER_SCRIPT = `
 const CACHE = ${JSON.stringify(`chat-pwa-shell-${PWA_CACHE_VERSION}`)};
 const RUNTIME_PREFIXES = ["/assets/", "/pwa/icons/"];
-const RUNTIME_EXACT = new Set([
-  "/favicon.svg",
-  "/manifest.webmanifest",
-  "/pwa/register.js",
-  "/pwa/mobile.css",
-  "/pwa/mobile.js",
-]);
+const RUNTIME_EXACT = new Set(["/favicon.svg", "/manifest.webmanifest", "/pwa/register.js"]);
 const OFFLINE_PAGE = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Chat - 离线</title></head><body style="font-family:system-ui;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0"><main style="text-align:center"><h1>当前离线</h1><p>Chat 需要连接才能继续。恢复网络后请刷新。</p></main></body></html>';
 
 self.addEventListener("install", (event) => {
@@ -145,28 +138,40 @@ export function pwaManifestBody(): string {
 }
 
 /**
- * webserver tapIndex 转换：收紧视口合同（刘海安全区+软键盘缩放），并在
- * </head> 前注入一次 PWA/移动端标签；重复注入直接抛错防呆。
+ * 视口合同：viewport-fit=cover 让布局延伸到刘海区（配合 safe-area-inset），
+ * interactive-widget=resizes-content 让软键盘弹出时缩小可视区域而不是推走 Composer。
+ */
+export const MOBILE_VIEWPORT_CONTENT =
+  "width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content";
+
+/**
+ * webserver tapIndex 转换：先升级视口合同，再在 </head> 前注入一次 PWA 标签；
+ * 重复注入直接抛错防呆。
+ * 事故教训（2026-08-17）：closing 必须在 viewport 替换之后的结果串上计算——
+ * 替换改变字符串长度，用替换前下标切割会把注入点插进主样式表标签内部，
+ * 导致上游 CSS 整体丢失。单元测试必须校验 HTML 完整性，不能只断言标签存在。
  */
 export function createPwaIndexTap(): (html: string) => string {
   return (html) => {
     if (html.includes("/pwa/register.js")) {
       throw new Error("PWA index tags already injected");
     }
-    const closing = html.indexOf("</head>");
-    if (closing === -1) {
+    if (html.indexOf("</head>") === -1) {
       throw new Error("index.html is missing </head>");
     }
     // 上游 viewport 只有 width/initial-scale；移动端需要 viewport-fit 与键盘合同。
-    let result = html.replace(
+    const result = html.replace(
       /<meta name="viewport" content="[^"]*" \/>/u,
       `<meta name="viewport" content="${MOBILE_VIEWPORT_CONTENT}" />`,
     );
     if (!result.includes(MOBILE_VIEWPORT_CONTENT)) {
       throw new Error("index.html viewport meta not upgraded");
     }
-    result = `${result.slice(0, closing)}    ${PWA_INDEX_TAGS}\n    ${MOBILE_INDEX_TAGS}\n  ${result.slice(closing)}`;
-    return result;
+    const closing = result.indexOf("</head>");
+    if (closing === -1) {
+      throw new Error("index.html is missing </head>");
+    }
+    return `${result.slice(0, closing)}    ${PWA_INDEX_TAGS}\n  ${result.slice(closing)}`;
   };
 }
 
@@ -222,22 +227,6 @@ export function resolvePwaAsset(pathname: string): PwaResponse | undefined {
       body: PWA_REGISTER_SCRIPT,
       contentType: "application/javascript; charset=utf-8",
       etag: etagOf(PWA_REGISTER_SCRIPT),
-      immutable: false,
-    };
-  }
-  if (pathname === "/pwa/mobile.css") {
-    return {
-      body: MOBILE_CSS,
-      contentType: "text/css; charset=utf-8",
-      etag: etagOf(MOBILE_CSS),
-      immutable: false,
-    };
-  }
-  if (pathname === "/pwa/mobile.js") {
-    return {
-      body: MOBILE_SCRIPT,
-      contentType: "application/javascript; charset=utf-8",
-      etag: etagOf(MOBILE_SCRIPT),
       immutable: false,
     };
   }
