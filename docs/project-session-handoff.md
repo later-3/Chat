@@ -9,7 +9,7 @@
 
 ## 开始工作前
 
-依次读取`AGENTS.md`、`PROJECT_LESSONS.md`、`PROJECT_CONTEXT.md`、`PROJECT_STATE.md`、`PROJECT_PLAN.md`、`docs/architecture/technology-contract.md`和与任务直接相关的文档。
+以`AGENTS.md`的“上下文恢复顺序”和“Agent开工与交付闭环”为唯一入口，本文件不复制另一套读取顺序。阶段目标和历史任务书都不是开工授权；只能依据当前对话中用户的明确请求开始实现。
 
 ## 不能回退的决定
 

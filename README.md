@@ -59,16 +59,19 @@ DeepSeek Harness、memmy、Tencent MemoryCore或code-server。没有配置
 
 ## 文档入口
 
-1. [项目上下文](./PROJECT_CONTEXT.md)
-2. [当前状态](./PROJECT_STATE.md)
-3. [当前计划](./PROJECT_PLAN.md)
-4. [技术与所有权合同](./docs/architecture/technology-contract.md)
-5. [DSH前端与Chat后端交互](./docs/architecture/frontend-backend-interaction.md)
-6. [仓库地图](./docs/architecture/repository-map.md)
-7. [Workflow运行设计](./docs/architecture/runtime-workflows.md)
-8. [状态与运行时边界](./docs/architecture/system-boundaries.md)
-9. [产品设计准则](./docs/product/design-guidelines.md)
-10. [工程规范](./docs/engineering-standards.md)
-11. [本地安装指南](./docs/getting-started/local-install.md)
+编码Agent必须先从[项目协作规则](./AGENTS.md)开始；阶段计划不是自动开工授权，非核心能力在实现前必须先完成“直接复用、窄Adapter、拒绝或自研”的证据化选择。
+
+1. [项目协作规则](./AGENTS.md)
+2. [项目上下文](./PROJECT_CONTEXT.md)
+3. [当前状态](./PROJECT_STATE.md)
+4. [当前计划](./PROJECT_PLAN.md)
+5. [技术与所有权合同](./docs/architecture/technology-contract.md)
+6. [DSH前端与Chat后端交互](./docs/architecture/frontend-backend-interaction.md)
+7. [仓库地图](./docs/architecture/repository-map.md)
+8. [Workflow运行设计](./docs/architecture/runtime-workflows.md)
+9. [状态与运行时边界](./docs/architecture/system-boundaries.md)
+10. [产品设计准则](./docs/product/design-guidelines.md)
+11. [工程规范](./docs/engineering-standards.md)
+12. [本地安装指南](./docs/getting-started/local-install.md)
 
 当前树不保存旧前端、上游源码副本、历史UI原型或归档目录；需要历史时直接使用Git。

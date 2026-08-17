@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
  * 架构依赖方向测试（工程规范§2）。
  *
  * 固定依赖方向：
- *   DSH Bridge/Hono/Vercel/pi Adapters → Application → Domain + Contracts
+ *   Hono与服务端Store/Workflow/Memory/Project Adapter → Application → Domain + Contracts
+ *   DSH Bridge → public Contracts；pi Adapter → stable runtime Contracts
  *
  * Domain不得依赖React、Hono、数据库、Vercel Workflow、AG-UI或pi；
  * DSH Bridge只依赖公开Contracts，不导入Chat服务端实现。

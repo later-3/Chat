@@ -24,14 +24,16 @@
 
 选择带实时人机共用视图的独立Browser Provider；Agent工具与用户界面必须绑定同一浏览器Session。浏览器运行在Local Host或远程Sandbox，DSH只挂载表面。
 
+这是阶段目标，不是已批准实现任务。开工前仍要先完成候选上游源码/许可证/接缝/安全审核，形成用户确认的选型、最小Port、失败语义和真实验收任务书；任务书本身不能替代当前用户授权。
+
 ### F4 · 长期个人系统
 
-继续交付Project/Stage/Milestone/Iteration/Work、长期Memory、规则、日历、提醒、Artifact/Evidence、多个Agent角色和跨设备恢复。
+在现有Product Store、Project与Memory基础事实之上，继续交付Stage/Milestone/Iteration/Work、规则、日历、提醒、Artifact/Evidence、多个Agent角色和跨设备恢复。当前已交付范围以`PROJECT_STATE.md`和源码为准，不能把本阶段标题当成“全部尚未实现”或“全部已经实现”。
 
 ## 开发原则
 
 1. 一次只交付一个可体验纵向；前端切换与Workbench是两个独立提交。
 2. 外部项目优先以固定版本服务或插件使用，不复制上游源码。
 3. 每个Adapter写清所有权、权限、幂等、故障恢复、升级与退出路径。
-4. 面向用户的纵向必须用真实服务和浏览器E2E证明，不能用截图或Mock代替。
+4. 面向用户的纵向必须用真实服务和适用的浏览器E2E证明，不能用截图或Mock代替；真实付费模型只用于Provider/模型接入或明确需要证明模型链路的任务。
 5. Git历史就是删除内容的归档，不在当前树保留“old”“archive”“legacy”目录。

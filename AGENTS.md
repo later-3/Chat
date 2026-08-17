@@ -10,13 +10,67 @@ Chat 是独立开发、独立运行、独立运营并持续演进的完整产品
 
 Chat的产品后端、Workflow与Agent Runtime基线已经冻结。唯一产品前端是固定版本的DeepSeek Harness Web，由本仓库维护的LifeOS桥接插件接入Chat公开Query/Command；仓库不再维护第二套自研Chat页面，也不包含Agent Canvas/OpenHands前端。
 
-DSH前端切换与Code Workbench已经完成。当前优先交付Browser Provider，随后继续长期上下文、Project Solution、规则与Memory纵向。每个实现任务使用独立worktree、分支和PR，并以真实服务、真实模型和浏览器E2E证明用户结果。
+DSH前端切换与Code Workbench已经完成。当前阶段顺序是Browser Provider优先，随后继续长期上下文、Project Solution、规则与Memory纵向；阶段顺序和历史任务书都不是实现授权，Agent只能依据当前对话中用户的明确请求开工。任务书只约束已授权任务的范围和完成门。
+
+每个实现任务默认使用独立worktree和`codex/`分支。本地分支是默认交付单元；push、PR、部署和其他外部副作用仅在用户明确授权后执行。验证按风险选择：确定性合同测试是每个任务的基础；用户可见纵向使用真实服务和浏览器E2E；只有Provider/模型接入任务或用户明确要求时才运行显式的真实模型付费门。
 
 当前事实以[PROJECT_STATE.md](./PROJECT_STATE.md)为准，技术边界以[技术合同](./docs/architecture/technology-contract.md)为准。
 全新克隆、工具链、配置和统一启动以[本地安装指南](./docs/getting-started/local-install.md)为准；
 不得继续引用历史`apps/web`、个人绝对路径或额外手工克隆上游仓库的安装方式。
 
-## 3. 每次项目回复前的读取顺序
+## 3. 开发边界：核心自研、能力复用
+
+Chat的核心是“产品责任”，不是“代码量必须最大”。整个系统可以很大，但Chat自研代码应集中在最小、最关键的产品差异上；文件、编辑器、Terminal、Git、Browser、Memory、前端宿主等成熟能力默认复用高质量上游。
+
+### 3.1 Chat必须自研的核心
+
+1. **产品内核**：Contracts、Domain、Application、Product Store事实、权限、版本、幂等、Decision、Evidence和Product Commit。
+2. **Workflow编排**：Chat的步骤、产品级暂停/恢复命令、Binding、Outbox、对账与终态政策，以及规划—审核—执行—验证—提交链路；Checkpoint、重放和Worker恢复机制仍由Vercel Workflow拥有。
+3. **规划层与执行层**：Planner/Executor属于Workflow内的Chat业务节点。Chat自研Prompt、上下文组装、Tool白名单、Candidate Schema、验证和事实提交；底层Agent loop、模型调用和通用Tool运行复用`pi-agent-core`/`pi-ai`。
+4. **产品后端**：公开Query/Command、认证上下文、事务、Outbox、Runtime绑定与收敛政策、Trace和对账语义。
+5. **窄集成面**：为上述产品责任编写必要的Port、Provider、Adapter、Gateway和投影，但不在其中复制上游产品。
+
+### 3.2 默认从高质量上游复用的能力
+
+- 主前端、会话与插件宿主：DeepSeek Harness。
+- Files、Editor、Terminal、Git/Diff与扩展系统：code-server/Code OSS。
+- Agent loop与通用模型调用：`pi-agent-core`/`pi-ai`。
+- Memory引擎：memmy、Tencent MemoryCore等；Chat只拥有选择、采用、来源、对账和产品事实。
+- Browser、Calendar、Obsidian/VS Code生态等后续能力：先寻找可持续维护的Provider、Service或插件宿主，不默认自研。
+
+复用形式可以是固定依赖、Hosted App、Sidecar、远程Service、REST/WebSocket/SSE/MCP Provider或DSH公开Slot插件。**不要把所有能力强行塞进DSH插件层**；前端表面、Host能力和产品事实可以分属不同组件。
+
+### 3.3 最小适配原则
+
+1. 优先使用上游公开API、Slot、插件、协议和进程边界；默认不拆源码、不复制UI、不改造成仓库内Fork。
+2. Adapter只做身份/namespace映射、外部Credential与资源Scope、Principal传递、生命周期、协议转换、严格校验、失败归一、产品投影和升级隔离；产品对象访问权与高影响动作授权只能由Application决定。Adapter不重写上游已成熟的业务实现，也不编排产品用例、直接写Product Store或拥有产品终态。
+   “最小”指最小上游修改面和最窄稳定边界，不是最少代码。每个边界逐项记录适用的鉴权、运行时校验、生命周期、审计和合同测试；外部写副作用必须有幂等、`outcome_unknown`和对账，持久格式变化必须有迁移，只读Adapter不制造无意义的写入语义。
+3. 上游暂时不用的功能可以禁用或不挂载，只要不绕过Chat产品边界；不为了“代码看起来少”去拆除上游内部模块。
+4. 上游必须固定版本/工件、记录许可证和来源，拥有升级合同测试和可退出的Provider/Adapter边界。
+5. 代码总量不等于改造成本。评估时分开生产代码、测试/资产、实际需要的模块、稳定接缝、文档、升级成本和故障边界。
+
+### 3.4 新能力的强制决策顺序
+
+1. 先用普通话写清用户结果、高风险动作和恢复场景。
+2. 判断它是Chat核心产品责任，还是可替换的通用能力。
+3. 若是通用能力，先审核真实上游源码/工件：覆盖范围、维护活性、许可证、安全、文档、接缝、测试和退出路径。
+4. 在实现前明确写出“直接使用 / 窄Adapter / 明确拒绝 / Chat自研”的结论和证据。
+5. 候选能力或接缝存在实质不确定性时，先取得用户对PoC范围、临时代码/下载和外部调用的明确授权，再做不Fork上游的最小真实PoC；已固定且合同充分的低风险Package不重复做仪式性PoC。
+6. 只有证明没有可用的高质量上游或稳定接缝，并得到用户确认后，才能从零开发非核心能力。
+
+### 3.5 明确禁止
+
+- 不得再写一套Chat前端、文件树、编辑器、Terminal、Git Diff、Browser或Memory引擎，只因为自研看起来更易定制。
+- 不得引入与Product Store、Application、Workflow或pi责任重复的第二套控制面。
+- 不得把DSH Session、code-server Workspace、外部Memory ID或Provider Session当成Chat产品事实。
+- 不得为了统一视觉而给完整上游应用大规模换皮；先保留能力和升级路径，只在Chat自有表面上使用Chat交互规则。
+- 不得用“先抄过来再说”代替依赖、协议、许可证、权限和升级审核。
+- 不得只凭Star、README、功能数量或“少写代码”批准依赖，也不得为一个小能力引入无法隔离的整套平台。
+- 不得为未来阶段提前安装依赖；研究证据通过并获得当前纵向授权后才进入生产依赖。
+
+## 4. 上下文恢复顺序
+
+新Session、接手现有任务或用户说“继续Chat项目”时，按顺序读取：
 
 1. `AGENTS.md`
 2. `PROJECT_LESSONS.md`
@@ -26,11 +80,20 @@ DSH前端切换与Code Workbench已经完成。当前优先交付Browser Provide
 6. `PROJECT_PLAN.md`
 7. `docs/product/flywheel.md`
 8. `docs/product/design-guidelines.md`
-9. 与任务直接相关的 `docs/`
+9. 与任务直接相关的`docs/`
 
-新 Session 或用户说“继续 Chat 项目”时，再读取`docs/project-session-handoff.md`。
+随后读取`docs/project-session-handoff.md`和当前任务书（若存在）。任务书不授予实现、下载、外部调用、push或PR权限。同一Session后续回复不机械重复全文；每次开始新任务或边界变化时，重新读取直接相关的合同、as-built文档和测试。
 
-## 4. 已冻结架构规则
+## 5. Agent开工与交付闭环
+
+1. **确认授权与范围**：把用户当前请求写成用户结果、不做事项、事实所有者和完成门。`PROJECT_PLAN.md`中的“下一阶段”和任何历史任务书都不能替代当前用户授权；范围仍不明确时先停下来报告。
+2. **隔离工作区**：从用户指定基线或当前`main`创建独立worktree与`codex/`分支；先检查并保留已有改动。不得直接在用户主checkout叠加实现。
+3. **恢复源码事实**：读取任务相关Schema、状态机、Application用例、组合根、测试和as-built文档。源码描述已实现事实，`AGENTS.md`和技术合同描述规范边界；二者冲突时停止并报告，不能让偶然实现静默覆盖冻结合同。
+4. **作出复用决策**：非核心能力在编码前完成上游源码/工件审核，明确“直接使用 / Hosted App或Sidecar / 窄Adapter / 明确拒绝 / Chat自研”及退出路径。没有这个结论不得先加依赖或复制源码。
+5. **交付最小纵向**：只实现当前用户结果，保持Product Store、Application、Workflow和外部Provider所有权分离；行为变化同步更新合同测试、中文代码导航与唯一as-built事实源。
+6. **分层验证并交付**：文档/注释改动至少运行格式、链接或相关架构测试；代码改动先跑受影响包的build、typecheck与test；跨层纵向在交付前运行根级`pnpm build`、`pnpm lint`、`pnpm format:check`、`pnpm typecheck`和`pnpm test`；依赖或运行工件变化再运行`pnpm audit --prod`及供应链门。用户界面运行适用的真实浏览器E2E；Provider/模型接入才运行显式真实Provider/付费模型门。所有报告都列出实际运行与未运行项，授权push/PR前必须满足CI同等根级门；未经授权不push、不建PR。
+
+## 6. 已冻结架构规则
 
 1. 唯一前端使用固定版本DeepSeek Harness Web；`packages/dsh-lifeos-bridge`是唯一Chat前端集成面。不得另建自研Chat壳或复制DSH源码。
 2. 后端使用 Node.js + TypeScript；Hono只负责HTTP、认证上下文、校验和流式传输，不拥有产品事务。
@@ -43,7 +106,7 @@ DSH前端切换与Code Workbench已经完成。当前优先交付Browser Provide
 9. HITL决定先经过Chat权限、版本、Hash和幂等校验并提交产品事实，再由后端恢复Workflow Hook。
 10. 外部副作用必须有幂等、结果未知、查询对账和人工处置语义；不得把普通异常重试用于未知副作用。
 
-## 5. 模块与依赖
+## 7. 模块与依赖
 
 目标代码按以下责任拆分：
 
@@ -57,15 +120,16 @@ packages/domain    产品对象、状态机与不变量
 packages/application 用例协调与事务边界
 packages/product-store-json 当前JSON Product Store Adapter与迁移
 packages/memory-runtime Memory Port的memmy与Tencent MemoryCore Adapter
+packages/project-runtime 受权Project/Workspace资源观察Adapter
 packages/realtime  当前Trace与Replay；未来Runtime Journal与SSE投影
 packages/workflows Vercel Workflow定义与活动
 packages/pi-runtime pi适配与Agent节点
 packages/testing   合同、Fixture与测试工具
 ```
 
-依赖方向必须指向内部：Adapter依赖Application，Application依赖Domain/Port；Domain不能依赖Hono、React、Vercel Workflow、AG-UI或pi。
+依赖方向必须指向内部：服务端Store、Workflow、Memory和Project Adapter实现Application Port；DSH Bridge只依赖公开Contracts；pi Adapter只依赖稳定运行合同；Application依赖Domain/Port。Domain不能依赖Hono、React、DSH、Vercel Workflow、AG-UI或pi。
 
-## 6. 产品不变量
+## 8. 产品不变量
 
 1. 模型输出只是候选，不自动成为长期事实。
 2. 高影响动作执行前必须经过可读、可修订、版本绑定的决定。
@@ -75,7 +139,7 @@ packages/testing   合同、Fixture与测试工具
 6. Trace只保存可观察事件和证据，不保存模型隐藏推理。
 7. Product Session、Product Run、Run Attempt、Workflow Run、Workflow Checkpoint、pi Runtime Session和Realtime Connection不能合并。
 
-## 7. 工程规则
+## 9. 工程规则
 
 1. TypeScript开启`strict`，网络边界和外部结果必须运行时校验。
 2. Router、DSH Client插件和Workflow Step不直接写产品数据库；Application Coordinator拥有用例事务。
@@ -88,15 +152,15 @@ packages/testing   合同、Fixture与测试工具
 
 详细标准见[工程规范](./docs/engineering-standards.md)。
 
-## 8. 源码证据
+## 10. 源码证据
 
-涉及pi能力时，优先读取固定本地源码`/Users/xulater/Code/opc-os/pi`及其`AGENTS.md`、类型、测试和示例。涉及DeepSeek Harness、Vercel Workflow、Hono、React和Vite时使用匹配版本官方文档或固定源码，不凭模型记忆猜API。
+涉及pi能力时，Later本机可优先读取`/Users/xulater/Code/opc-os/pi`及其`AGENTS.md`、类型、测试和示例；该目录不是全新克隆或CI的前提，不存在时使用锁文件对应的安装工件、固定来源或官方源码。涉及DeepSeek Harness、Vercel Workflow、Hono、React和Vite时使用匹配版本官方文档或固定源码，不凭模型记忆猜API。
 
 把开发、调研或复核任务委派给外部Pi Agent时，使用已安装的`pi-delegate` Skill和`/Users/xulater/Code/pi-taskd`共享服务；Pi源码仍只负责能力证据。Pi必须先读取受管worktree内的本文件和任务相关项目合同，不能直接写Chat主checkout，其结果必须由当前Codex按Chat完成门验证后才可采用。
 
 参考项目只为真实覆盖范围背书，不决定Chat的产品对象和事实所有权。
 
-## 9. 变更与安全
+## 11. 变更与安全
 
 1. 保留用户已有改动；不重置、不覆盖、不删除任务范围外的数据。
 2. 删除、迁移、推送、部署和外部副作用必须在用户授权范围内执行。

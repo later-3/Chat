@@ -15,6 +15,7 @@ packages/
   workflows/              Vercel Workflow定义与活动
   pi-runtime/             pi Planner/Executor Adapter
   memory-runtime/         memmy与Tencent MemoryCore Adapter
+  project-runtime/        受权本地Git/文档/脚本资源的只读Project Adapter
   realtime/               Trace与Replay
   testing/                合同、架构与测试工具
 scripts/
@@ -29,7 +30,6 @@ docs/
   architecture/           当前合同与as-built
   product/                稳定产品原则
   debug/                  当前调试入口
-  tasks/                  尚有长期价值的实现任务书
 ```
 
 仓库不包含旧自研Web、Agent Canvas、DeepSeek Harness源码副本或UI原型归档。删除内容需要时从Git历史读取。
@@ -52,17 +52,19 @@ docs/
 ```text
 DSH Client/Host Adapter ──> contracts/public
 Hono Router ──────────────> application ──> domain + ports
-Store/Workflow/pi/Memory ─> application/domain ports
+Store/Workflow/Memory/Project Adapter ─> application/domain ports
+pi Adapter ───────────────> contracts中的稳定运行合同
 domain ───────────────────> TypeScript标准能力
 ```
 
 禁止：Domain导入React/Hono/DSH/Workflow/pi；Client插件导入服务端实现；Router或Workflow Step直接写Product Store；Workbench绕过Chat事务写产品事实。
 
-## 文档优先级
+## 事实与规范的关系
 
-1. 运行时Schema、状态机和测试。
-2. `PROJECT_STATE.md`与as-built架构文档。
-3. `AGENTS.md`与技术合同。
-4. 任务书和研究只解释意图，不覆盖当前源码事实。
+1. 源码、运行时Schema、状态机和测试描述“当前实际实现了什么”。
+2. `PROJECT_STATE.md`与as-built架构文档汇总当前交付事实。
+3. `AGENTS.md`与技术合同规定“允许怎样演进”，不能被偶然实现静默覆盖。
+4. `PROJECT_PLAN.md`描述阶段顺序，不是开工授权；任务书和研究只解释已审核范围与意图。
+5. 实现事实与冻结规范冲突时必须停止并报告，由用户决定修实现还是修合同。
 
 当前树不保留archive/legacy目录；Git历史是唯一历史档案。
