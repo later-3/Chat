@@ -194,6 +194,8 @@ test("Bridge原生bundle patch不包含API与私有状态路径", () => {
       "  disabled: true",
       "- id: lifeos-bridge",
       "  name: '@chat/dsh-lifeos-bridge'",
+      "- id: dsh-mobile-hanui-shell",
+      "  name: 'dsh-mobile-hanui'",
       "- id: webserver",
       "",
     ].join("\n");
