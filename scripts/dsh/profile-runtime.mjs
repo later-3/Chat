@@ -177,6 +177,25 @@ export function dshBridgeInstallArgs(runtime) {
   return ["plugin", "--profile", "web", "add", "--save-exact", `link:${runtime.bridgePackageDir}`];
 }
 
+/**
+ * 移动端外壳：固定 dsh-mobile-hanui@0.2.4（MIT，零运行时依赖，仅客户端DOM/CSS
+ * 适配，无网络外发）。复用决定见 docs/deployment/remote-pwa-gateway.md；升级只
+ * 改这里并由 dsh-mobile-hanui E2E 合同验收。运行时可用 ?mobileShell=0 关闭。
+ */
+export const DSH_MOBILE_SHELL_PACKAGE = "dsh-mobile-hanui";
+export const DSH_MOBILE_SHELL_VERSION = "0.2.4";
+
+export function dshMobileShellInstallArgs() {
+  return [
+    "plugin",
+    "--profile",
+    "web",
+    "add",
+    "--save-exact",
+    `${DSH_MOBILE_SHELL_PACKAGE}@${DSH_MOBILE_SHELL_VERSION}`,
+  ];
+}
+
 export function dshPackageManifestPath(root) {
   return join(
     resolve(root),
@@ -449,6 +468,11 @@ export function assertDshWebCutoverConfig(dump) {
   const bridge = assertOneYamlRow(dump, "lifeos-bridge");
   if (!hasYamlScalar(bridge, "name", BRIDGE_PACKAGE_NAME)) {
     throw new Error(`lifeos-bridge必须加载${BRIDGE_PACKAGE_NAME}`);
+  }
+
+  const mobileShell = assertOneYamlRow(dump, "dsh-mobile-hanui-shell");
+  if (!hasYamlScalar(mobileShell, "name", DSH_MOBILE_SHELL_PACKAGE)) {
+    throw new Error(`dsh-mobile-hanui-shell必须加载${DSH_MOBILE_SHELL_PACKAGE}`);
   }
 }
 

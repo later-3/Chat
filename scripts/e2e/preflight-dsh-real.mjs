@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import {
   assertDshWebCutoverConfig,
   dshBridgeInstallArgs,
+  dshMobileShellInstallArgs,
   resolveDshBin,
   resolveDshWebRuntime,
   runCommand,
@@ -138,6 +139,11 @@ await runCommand(process.execPath, [dshBin, ...dshBridgeInstallArgs(runtime)], {
   cwd: repoRoot,
   env: environment,
   label: "DSH E2E Profile Bridge安装",
+});
+await runCommand(process.execPath, [dshBin, ...dshMobileShellInstallArgs()], {
+  cwd: repoRoot,
+  env: environment,
+  label: "DSH E2E Profile 移动端外壳安装",
 });
 const dump = await runCommandOutput(process.execPath, [dshBin, "web", "--dump-config"], {
   cwd: repoRoot,
