@@ -44,7 +44,8 @@ pnpm run setup
 
 1. 校验平台、Node、pnpm、Git、tar与npm；
 2. 下载并校验固定`code-server@4.132.0`工件；
-3. 构建Workflow Bundle和LifeOS Bridge，准备固定DSH Web Profile；
+3. 校验[DSH插件登记表](../../config/dsh-plugins.json)、锁定工件和许可证，构建Workflow
+   Bundle与LifeOS Bridge，再准备固定DSH Web Profile；
 4. 只生成可重建缓存，不启动任何服务。
 
 当前不准备Memory；统一setup没有启用参数。固定commit/tree、lock和原生工件Hash代码继续
@@ -57,6 +58,16 @@ pnpm run setup
 Git mirror只有通过`CHAT_MEMMY_SOURCE_REPO`或
 `CHAT_TENCENT_MEMORYCORE_SOURCE_REPO`显式指定绝对路径时才会使用，默认安装绝不依赖
 个人目录；mirror也必须通过同一commit/tree校验。
+
+查看、校验或人工检查DSH插件更新使用：
+
+```bash
+pnpm dsh:plugins:list
+pnpm dsh:plugins:verify
+pnpm dsh:plugins:check-updates
+```
+
+最后一项只查询上游最新发布并报告，不修改依赖、profile或生产运行时，也不自动合并。
 
 `.env`中的`DASHSCOPE_API_KEY`只在真实规划/执行时需要。Key为空时安装和服务启动仍应
 成功，模型能力会明确报告`Provider not ready`，不会切换假模型。若要复用本机已有pi

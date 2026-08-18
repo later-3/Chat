@@ -63,15 +63,18 @@ mac-main: 127.0.0.1:43114（DSH Host，--trusted-host chat.ai4child.asia）
 - Service Worker（`chat-pwa-shell-<version>`）只缓存同源版本化静态外壳
   （`/assets/*`、`/pwa/*`、`/favicon.svg`、manifest）与导航外壳；`/api`、
   `/lifeos` 与 WebSocket 永不进入缓存，离线时产品 API 明确失败，导航回退到
-  缓存外壳或内置离线页。activate 清理所有非当前缓存，含历史 apps/web 的
-  workbox 缓存（保留旧退役语义）。
+  缓存外壳或内置离线页。activate 只清理`chat-pwa-shell-*`与历史apps/web的
+  `workbox-precache-*`，不得删除DSH或其他插件拥有的同源Cache。
 - 登录页与重定向不进入外壳缓存。
 
 ## 3. 认证事实
 
-- 公网入口强制认证：App 自有登录页 + scrypt 口令散列 + HMAC 签名 HttpOnly
+- 公网入口强制认证：App 自有登录页 + 版本化scrypt口令散列 + HMAC签名HttpOnly
   Cookie（`chat_session`，SameSite=Lax，公网模式下带 Secure，默认 30 天）。
   不用 Nginx auth_basic（已安装 iOS PWA 中浏览器原生认证框没有可恢复登录面）。
+- 凭据schema固定为`chat-web-auth.v2`：scrypt `N=2^17/r=8/p=1`，校验通过
+  libuv线程池异步执行；登录在昂贵派生前使用账号与客户端双桶、5次/15分钟失败窗口和
+  2个全局并发上限。达到门槛返回通用429，不泄露具体桶或剩余次数。
 - 口令散列与会话密钥只存 Mac 本机文件（0600）：`.data/web-auth/credentials.json`
   与 `.data/web-auth/session-secret`，由 `scripts/service/init-chat-web-auth.mjs`
   交互生成，不进 Git、日志或环境变量值；`.env` 只携带路径。
@@ -97,6 +100,10 @@ CHAT_WEB_AUTH_SESSION_SECRET_FILE=<仓库根>/.data/web-auth/session-secret
 scripts/service/install-chat-production.sh install
 scripts/service/install-chat-production.sh status
 ```
+
+若凭据由2026-08-17旧版本生成，升级代码前先在停止production服务后执行
+`node scripts/service/init-chat-web-auth.mjs --rotate`；v1凭据缺少明确派生参数，
+新Gateway会失败关闭而不是继续以旧参数登录。轮换同时使既有Cookie失效。
 
 服务管理：
 

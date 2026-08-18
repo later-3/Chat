@@ -24,9 +24,10 @@ import { BridgeRequestError } from "./bridge-service.ts";
 
 export const PWA_CACHE_VERSION = "chat-pwa-v1";
 
-/** Service Worker 脚本。activate 清掉所有非当前缓存（含历史 workbox 缓存），保留旧退役语义。 */
+/** Service Worker 脚本。activate 只清理Chat拥有的当前/历史PWA缓存命名空间。 */
 export const PWA_SERVICE_WORKER_SCRIPT = `
 const CACHE = ${JSON.stringify(`chat-pwa-shell-${PWA_CACHE_VERSION}`)};
+const OWNED_CACHE_PREFIXES = ["chat-pwa-shell-", "workbox-precache-"];
 const RUNTIME_PREFIXES = ["/assets/", "/pwa/icons/"];
 const RUNTIME_EXACT = new Set(["/favicon.svg", "/manifest.webmanifest", "/pwa/register.js"]);
 const OFFLINE_PAGE = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Chat - 离线</title></head><body style="font-family:system-ui;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0"><main style="text-align:center"><h1>当前离线</h1><p>Chat 需要连接才能继续。恢复网络后请刷新。</p></main></body></html>';
@@ -38,7 +39,11 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await self.caches.keys();
-    await Promise.all(keys.filter((key) => key !== CACHE).map((key) => self.caches.delete(key)));
+    // 只清理Chat当前/历史PWA拥有的命名空间。DSH或未来插件的同源Cache
+    // 不属于本Service Worker，不能因Chat版本升级被越界删除。
+    await Promise.all(keys
+      .filter((key) => key !== CACHE && OWNED_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix)))
+      .map((key) => self.caches.delete(key)));
     await self.clients.claim();
   })());
 });

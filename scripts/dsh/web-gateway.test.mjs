@@ -309,7 +309,7 @@ test("服务器模式：公开主机名+认证门+healthz，未认证导航302�
   const { hashWebAuthPassword } = await import("./web-auth.mjs");
   const salt = randomBytes(16).toString("hex");
   const auth = Object.freeze({
-    users: new Map([["later", { salt, hash: hashWebAuthPassword("correct-horse", salt) }]]),
+    users: new Map([["later", hashWebAuthPassword("correct-horse", salt)]]),
     secret: randomBytes(32).toString("hex"),
     sessionTtlMs: 30 * 24 * 60 * 60 * 1000,
   });

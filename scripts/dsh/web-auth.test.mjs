@@ -1,18 +1,22 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
   buildSessionSetCookie,
+  createAuthRouteHandler,
+  createLoginThrottle,
   gateAuthenticatedRequest,
   hashWebAuthPassword,
   isPublicAuthPath,
   loadWebAuthConfig,
   sessionCookieFromRequest,
   SESSION_COOKIE_NAME,
+  WEB_AUTH_CREDENTIAL_SCHEMA_VERSION,
+  WEB_AUTH_SCRYPT_PARAMS,
   verifySessionCookieValue,
   verifyWebAuthPassword,
 } from "./web-auth.mjs";
@@ -25,9 +29,8 @@ function writeAuthFixture() {
   writeFileSync(
     credentialsFile,
     JSON.stringify({
-      users: [
-        { username: "later", scrypt: { salt, hash: hashWebAuthPassword("correct-horse", salt) } },
-      ],
+      schemaVersion: WEB_AUTH_CREDENTIAL_SCHEMA_VERSION,
+      users: [{ username: "later", scrypt: hashWebAuthPassword("correct-horse", salt) }],
     }),
     { mode: 0o600 },
   );
@@ -63,7 +66,7 @@ test("enabled auth fails closed on missing files or weak secret", () => {
         }),
       /unreadable|ENOENT/u,
     );
-    writeFileSync(join(fixture.dir, "weak"), "short");
+    writeFileSync(join(fixture.dir, "weak"), "short", { mode: 0o600 });
     assert.throws(
       () =>
         loadWebAuthConfig({
@@ -78,13 +81,94 @@ test("enabled auth fails closed on missing files or weak secret", () => {
   }
 });
 
-test("password verification uses scrypt with constant-time compare", () => {
+test("password verification uses the versioned scrypt contract with constant-time compare", async () => {
   const fixture = writeAuthFixture();
   try {
     const config = loadWebAuthConfig(fixture.env);
-    assert.ok(verifyWebAuthPassword(config, "later", "correct-horse"));
-    assert.equal(verifyWebAuthPassword(config, "later", "wrong"), false);
-    assert.equal(verifyWebAuthPassword(config, "nobody", "correct-horse"), false);
+    assert.deepEqual(config.users.get("later"), {
+      salt: config.users.get("later").salt,
+      hash: config.users.get("later").hash,
+      ...WEB_AUTH_SCRYPT_PARAMS,
+    });
+    assert.ok(await verifyWebAuthPassword(config, "later", "correct-horse"));
+    assert.equal(await verifyWebAuthPassword(config, "later", "wrong"), false);
+    assert.equal(await verifyWebAuthPassword(config, "nobody", "correct-horse"), false);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("legacy credentials and permissive credential files fail closed", () => {
+  const fixture = writeAuthFixture();
+  try {
+    const legacy = fixture.env.CHAT_WEB_AUTH_CREDENTIALS_FILE;
+    writeFileSync(
+      legacy,
+      JSON.stringify({ users: [{ username: "later", scrypt: { salt: "00", hash: "00" } }] }),
+      { mode: 0o600 },
+    );
+    assert.throws(() => loadWebAuthConfig(fixture.env), /--rotate/u);
+    writeFileSync(
+      legacy,
+      JSON.stringify({ schemaVersion: WEB_AUTH_CREDENTIAL_SCHEMA_VERSION, users: [] }),
+    );
+    chmodSync(legacy, 0o644);
+    assert.throws(() => loadWebAuthConfig(fixture.env), /permissions/u);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("login throttle limits account and client failures before expensive verification", () => {
+  let now = 1_000;
+  const throttle = createLoginThrottle({ failureLimit: 2, windowMs: 60_000, now: () => now });
+  const req = { headers: { "cf-connecting-ip": "203.0.113.9" }, socket: {} };
+  const first = throttle.begin(req, "later");
+  assert.ok(first !== undefined);
+  first.settle(false);
+  const second = throttle.begin(req, "later");
+  assert.ok(second !== undefined);
+  second.settle(false);
+  assert.equal(throttle.begin(req, "later"), undefined);
+  assert.equal(throttle.begin(req, "another"), undefined, "client bucket must also be limited");
+  now += 60_001;
+  const recovered = throttle.begin(req, "later");
+  assert.ok(recovered !== undefined);
+  recovered.settle(true);
+});
+
+test("login route returns generic 429 without invoking password verification", async () => {
+  const fixture = writeAuthFixture();
+  try {
+    const config = loadWebAuthConfig(fixture.env);
+    const handler = createAuthRouteHandler(config, {
+      secure: true,
+      throttle: { begin: () => undefined },
+    });
+    const body = "username=later&password=correct-horse";
+    const req = new (await import("node:stream")).PassThrough();
+    req.method = "POST";
+    req.headers = {
+      host: "chat.example.com",
+      origin: "https://chat.example.com",
+      "content-type": "application/x-www-form-urlencoded",
+    };
+    req.socket = {};
+    const response = {};
+    const res = {
+      writeHead(status, headers) {
+        response.status = status;
+        response.headers = headers;
+      },
+      end(value = "") {
+        response.body = String(value);
+      },
+    };
+    const handled = handler(req, res, "/login");
+    req.end(body);
+    assert.equal(await handled, true);
+    assert.equal(response.status, 429);
+    assert.match(response.body, /登录尝试过多/u);
   } finally {
     fixture.cleanup();
   }

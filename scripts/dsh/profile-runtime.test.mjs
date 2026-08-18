@@ -21,6 +21,7 @@ import {
   assertManagedWebProfileReady,
   DSH_CLI_RUNTIME_IMPORTS,
   dshBridgeInstallArgs,
+  dshMobileShellInstallArgs,
   dshWebArgs,
   dshWebEnvironment,
   installDshWebEnvironment,
@@ -47,6 +48,14 @@ test("DSH_HOME固定在当前worktree且Bridge私有状态不进入启动参数"
     "add",
     "--save-exact",
     "link:/workspace/chat-feature/packages/dsh-lifeos-bridge",
+  ]);
+  assert.deepEqual(dshMobileShellInstallArgs(runtime), [
+    "plugin",
+    "--profile",
+    "web",
+    "add",
+    "--save-exact",
+    "link:/workspace/chat-feature/apps/dsh-web/node_modules/dsh-mobile-hanui",
   ]);
   assert.doesNotMatch(dshWebArgs(runtime).join(" "), /chat-state|43111/u);
 });
@@ -165,13 +174,19 @@ test("Bridge原生bundle patch不包含API与私有状态路径", () => {
     mkdirSync(join(runtime.profileDir, "node_modules/@chat/dsh-lifeos-bridge"), {
       recursive: true,
     });
+    mkdirSync(join(runtime.profileDir, "node_modules/dsh-mobile-hanui"), {
+      recursive: true,
+    });
     writeFileSync(
       join(runtime.profileDir, "package.json"),
       `${JSON.stringify({
         dependencies: {
           "@chat/dsh-lifeos-bridge": "link:../../../../../packages/dsh-lifeos-bridge",
+          "dsh-mobile-hanui": "link:../../../../../apps/dsh-web/node_modules/dsh-mobile-hanui",
         },
-        dsh: { profile: { bundles: ["@chat/dsh-lifeos-bridge"] } },
+        dsh: {
+          profile: { bundles: ["@chat/dsh-lifeos-bridge", "dsh-mobile-hanui"] },
+        },
       })}\n`,
     );
     writeFileSync(join(runtime.profileDir, "cordis.patch.yml"), "[]\n");
@@ -179,6 +194,7 @@ test("Bridge原生bundle patch不包含API与私有状态路径", () => {
       join(runtime.profileDir, "node_modules/@chat/dsh-lifeos-bridge/package.json"),
       "{}\n",
     );
+    writeFileSync(join(runtime.profileDir, "node_modules/dsh-mobile-hanui/package.json"), "{}\n");
     mkdirSync(join(runtime.bridgeBundlePath, ".."), { recursive: true });
     writeFileSync(runtime.bridgeBundlePath, "");
     assert.doesNotThrow(() => assertManagedWebProfileReady(runtime));
@@ -235,10 +251,11 @@ test("Bridge原生bundle patch不包含API与私有状态路径", () => {
       `${JSON.stringify({
         dependencies: {
           "@chat/dsh-lifeos-bridge": "link:../../../../../packages/dsh-lifeos-bridge",
+          "dsh-mobile-hanui": "link:../../../../../apps/dsh-web/node_modules/dsh-mobile-hanui",
         },
         dsh: {
           profile: {
-            bundles: ["@chat/dsh-lifeos-bridge", "@chat/dsh-lifeos-bridge"],
+            bundles: ["@chat/dsh-lifeos-bridge", "@chat/dsh-lifeos-bridge", "dsh-mobile-hanui"],
           },
         },
       })}\n`,

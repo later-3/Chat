@@ -54,7 +54,9 @@ export function assertAllowedBailianHost(hostname: string): void {
 }
 
 export function loadBailianConfig(env: BailianEnv): BailianConfig {
-  const baseUrl = env.DASHSCOPE_BASE_URL ?? BAILIAN_DEFAULT_BASE_URL;
+  // CI、LaunchAgent与跨平台部署经常显式传空字符串表达“未配置”。它与缺少键
+  // 语义相同；只有非空值才进入HTTPS/Host合同校验。
+  const baseUrl = env.DASHSCOPE_BASE_URL?.trim() || BAILIAN_DEFAULT_BASE_URL;
   let url: URL;
   try {
     url = new URL(baseUrl);
