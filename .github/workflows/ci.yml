@@ -51,11 +51,13 @@ jobs:
           pnpm --filter @chat/dsh-web start > /tmp/chat-dsh-web.log 2>&1 &
           dsh_pid=$!
           trap 'kill "$dsh_pid" 2>/dev/null || true' EXIT
+          # GitHub bash启用pipefail；grep -q命中大HTML后提前关管会让curl返23。
+          # 这里让grep消费完整响应，只将匹配输出丢弃。
           for i in $(seq 1 90); do
             sleep 1
             if ! kill -0 "$dsh_pid" 2>/dev/null; then cat /tmp/chat-dsh-web.log; exit 1; fi
-            if curl -fsS http://127.0.0.1:43110/ | grep -q "DeepSeek Harness" && \
-              curl -fsS http://127.0.0.1:43110/pwa/register.js | grep -q 'serviceWorker.register("/sw.js")'; then
+            if curl -fsS http://127.0.0.1:43110/ | grep "DeepSeek Harness" > /dev/null && \
+              curl -fsS http://127.0.0.1:43110/pwa/register.js | grep 'serviceWorker.register("/sw.js")' > /dev/null; then
               break
             fi
             if [ "$i" = "90" ]; then cat /tmp/chat-dsh-web.log; exit 1; fi
@@ -122,11 +124,11 @@ jobs:
           for i in $(seq 1 180); do
             sleep 1
             if ! kill -0 "$chat_pid" 2>/dev/null; then cat /tmp/chat-fresh-clone.log; exit 1; fi
-            if curl -fsS http://127.0.0.1:43110/ | grep -q "DeepSeek Harness" && \
+            if curl -fsS http://127.0.0.1:43110/ | grep "DeepSeek Harness" > /dev/null && \
               curl -fsS -o /dev/null http://127.0.0.1:43111/api/readyz && \
               curl -fsS -o /dev/null http://127.0.0.1:43112/healthz && \
-              curl -fsS http://127.0.0.1:43110/lifeos/sessions/fresh-clone | grep -q '"run":null' && \
-              curl -fsS http://localhost:43110/workbench/code/ | grep -qi '<!doctype html>'; then
+              curl -fsS http://127.0.0.1:43110/lifeos/sessions/fresh-clone | grep '"run":null' > /dev/null && \
+              curl -fsS http://localhost:43110/workbench/code/ | grep -i '<!doctype html>' > /dev/null; then
               break
             fi
             if [ "$i" = "180" ]; then cat /tmp/chat-fresh-clone.log; exit 1; fi
@@ -135,8 +137,8 @@ jobs:
           curl -fsS http://127.0.0.1:43112/healthz
           if curl -fsS --max-time 1 http://127.0.0.1:18960/api/v1/health; then exit 1; fi
           if curl -fsS --max-time 1 http://127.0.0.1:18970/health; then exit 1; fi
-          curl -fsS http://127.0.0.1:43110/lifeos/sessions/fresh-clone | grep -q '"run":null'
-          curl -fsS http://localhost:43110/workbench/code/ | grep -qi '<!doctype html>'
+          curl -fsS http://127.0.0.1:43110/lifeos/sessions/fresh-clone | grep '"run":null' > /dev/null
+          curl -fsS http://localhost:43110/workbench/code/ | grep -i '<!doctype html>' > /dev/null
           pnpm dev:status | tee /tmp/chat-running-status.log
           grep -q 'healthy workbench transport=unix-socket' /tmp/chat-running-status.log
           if grep -Eq 'healthy (memory|memoryCore)' /tmp/chat-running-status.log; then exit 1; fi
