@@ -105,6 +105,7 @@ const CAPACITY_BLUEPRINT: WorkflowBlueprint = {
   runnerFamily: "configurable-planning.v1",
   allowedNodeTypes: ["agent.research", "product.commit"],
   optionalNodeTypes: [],
+  repeatableNodeTypes: [],
   requiredRoles: [],
   loopRules: [],
   perRunOverrides: [],

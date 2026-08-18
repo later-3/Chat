@@ -235,7 +235,7 @@ const publicConfigFieldSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.union([
-        z.literal("resource_selector"),
+        z.enum(["resource_selector", "memory_provider_selector"]),
         z.literal("rule_selector"),
         z.literal("skill_selector"),
         z.literal("note_source_selector"),
@@ -268,7 +268,8 @@ export const workflowNodeCatalogItemDtoSchema = z
     riskPolicy: workflowRiskLevelSchema,
     /** 仅公开是否允许默认跳过，不公开默认outcome/value等执行细节。 */
     canDefaultSkip: z.boolean(),
-    supportedBlueprints: z.array(workflowBlueprintKeySchema).min(1).max(4),
+    // Provider写节点首期由独立耐久Workflow承载，尚未开放给通用Blueprint时为空。
+    supportedBlueprints: z.array(workflowBlueprintKeySchema).max(4),
     publicConfigFields: z.array(publicConfigFieldSchema).max(16),
     outcomes: z.array(z.string().min(1).max(64)).min(1).max(32),
   })

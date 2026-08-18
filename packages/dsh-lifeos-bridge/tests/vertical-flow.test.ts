@@ -337,12 +337,15 @@ test("workflow selection draft is frozen per request and submitted with the next
     const projected = await bridge.selectWorkflow(
       "dsh-session-1",
       workflowSelectionSchema.parse({
-        workflowDefinitionRevisionId: "wfr_systemnotev1",
+        workflowDefinitionRevisionId: "wfr_systemmemoryplanningv1",
         definitionSha256: "d".repeat(64),
-        title: "默认笔记工作流",
+        title: "Memory 增强规划与执行",
       }),
     );
-    assert.equal(projected.workflowSelection?.workflowDefinitionRevisionId, "wfr_systemnotev1");
+    assert.equal(
+      projected.workflowSelection?.workflowDefinitionRevisionId,
+      "wfr_systemmemoryplanningv1",
+    );
 
     const first = await collect(
       adapter.stream({
@@ -392,7 +395,7 @@ test("workflow selection draft is frozen per request and submitted with the next
     )?.payload?.workflowSelection;
     assert.deepEqual(firstPayload, {
       kind: "published_revision",
-      workflowDefinitionRevisionId: "wfr_systemnotev1",
+      workflowDefinitionRevisionId: "wfr_systemmemoryplanningv1",
       definitionSha256: "d".repeat(64),
     });
     assert.deepEqual(secondPayload, {
@@ -405,7 +408,7 @@ test("workflow selection draft is frozen per request and submitted with the next
     const snapshots = Object.values(binding?.requests ?? {}).map(
       (request) => request.workflowSelection?.workflowDefinitionRevisionId ?? null,
     );
-    assert.deepEqual(snapshots.sort(), ["wfr_systemnotev1", "wfr_systemplanningv2"]);
+    assert.deepEqual(snapshots.sort(), ["wfr_systemmemoryplanningv1", "wfr_systemplanningv2"]);
   } finally {
     await rm(directory, { recursive: true, force: true });
     await new Promise<void>((resolve, reject) =>

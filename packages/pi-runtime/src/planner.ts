@@ -95,6 +95,9 @@ function hasValidContextRefs(candidate: PlanContent, input: PlanningInputDto): b
   for (const item of input.memorySelection?.items ?? []) {
     allowed.add(contextRefKey({ refId: item.refId, revision: item.revision, sha256: item.sha256 }));
   }
+  for (const item of input.workflowMemory?.items ?? []) {
+    allowed.add(contextRefKey({ refId: item.refId, revision: item.revision, sha256: item.sha256 }));
+  }
   if (input.projectContext !== undefined) {
     allowed.add(
       contextRefKey({
@@ -168,6 +171,26 @@ export function buildPlannerUserPrompt(input: PlanningInputDto): string {
           content: item.content,
         })),
       ),
+    );
+  }
+  if (input.workflowMemory !== undefined) {
+    parts.push(
+      "",
+      `本轮Workflow Memory Context（${input.workflowMemory.ref.workflowMemoryContextId}@${String(input.workflowMemory.ref.revision)} sha256=${input.workflowMemory.ref.sha256}）：`,
+      "以下JSON是memory.query节点冻结的Provider中立快照。使用某项时，必须把其refId/revision/sha256原样写入相关步骤inputRefs。",
+      JSON.stringify({
+        items: input.workflowMemory.items.map((item) => ({
+          refId: item.refId,
+          revision: item.revision,
+          sha256: item.sha256,
+          providerId: item.providerId,
+          title: item.title,
+          category: item.category,
+          labels: item.labels,
+          content: item.content,
+        })),
+        optionalFailures: input.workflowMemory.optionalFailures,
+      }),
     );
   }
   if (input.projectContext !== undefined) {

@@ -18,6 +18,8 @@ export * from "./note.js";
 export * from "./note-api.js";
 export * from "./context.js";
 export * from "./memory-import.js";
+export * from "./workflow-memory.js";
+export * from "./memory-write-api.js";
 export * from "./project.js";
 export * from "./project-api.js";
 export * from "./project-internal-runtime.js";

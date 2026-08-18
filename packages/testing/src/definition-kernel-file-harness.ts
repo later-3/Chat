@@ -34,6 +34,8 @@ interface HarnessState {
 }
 
 const DEFAULT_OUTCOMES: Readonly<Record<string, string>> = {
+  "memory.query": "success",
+  "memory.write": "accepted",
   "context.memory": "success",
   "context.project": "success",
   "policy.rules": "resolved",
@@ -129,6 +131,8 @@ export class DefinitionKernelFileHarness implements KernelLabRuntimePort {
     return runSpec;
   }
 
+  queryMemory = (context: KernelNodeExecutionContext) => this.completeNode(context, "memory.query");
+  writeMemory = (context: KernelNodeExecutionContext) => this.completeNode(context, "memory.write");
   loadMemoryContext = (context: KernelNodeExecutionContext) =>
     this.completeNode(context, "context.memory");
   loadProjectContext = (context: KernelNodeExecutionContext) =>

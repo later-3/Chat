@@ -21,6 +21,10 @@ import {
   validateRunSpecResourcesCurrent,
   validateWorkflowRunSpecIntegrity,
 } from "./workflow-run-spec-compiler.js";
+import {
+  createSystemMemoryPlanningDefinition,
+  createSystemPlanningDefinition,
+} from "./workflow-system-definitions.js";
 
 const fixtureKeys = [
   "sequence",
@@ -32,8 +36,8 @@ const fixtureKeys = [
 ] as const;
 
 describe("Node Catalog与Blueprint一致性", () => {
-  it("首批14种能力全部使用strict parser且默认配置/公开默认值一致", () => {
-    expect(DEFAULT_NODE_CATALOG.list()).toHaveLength(14);
+  it("当前16种能力全部使用strict parser且默认配置/公开默认值一致", () => {
+    expect(DEFAULT_NODE_CATALOG.list()).toHaveLength(16);
     for (const descriptor of DEFAULT_NODE_CATALOG.list()) {
       expect(
         DEFAULT_NODE_CATALOG.parseConfig(
@@ -117,6 +121,38 @@ describe("Node Catalog与Blueprint一致性", () => {
         (diagnostic) => diagnostic.code,
       ),
     ).toContain("blueprint.mandatory_manual_review");
+  });
+
+  it("普通Planning与Memory增强Planning是两个独立发布定义，普通流程绝不含Memory节点", () => {
+    const createdAt = "2026-08-18T00:00:00.000Z";
+    const ordinary = createSystemPlanningDefinition(createdAt);
+    const memory = createSystemMemoryPlanningDefinition(createdAt);
+    const taskTypes = (root: WorkflowSequence) => {
+      const types: string[] = [];
+      const visit = (sequence: WorkflowSequence): void => {
+        for (const element of sequence.elements) {
+          if (element.kind === "task") types.push(element.nodeType);
+          else if (element.kind === "bounded_loop") visit(element.body);
+        }
+      };
+      visit(root);
+      return types;
+    };
+
+    expect(ordinary.definition.workflowDefinitionId).not.toBe(
+      memory.definition.workflowDefinitionId,
+    );
+    expect(ordinary.definition.key).toBe("system.planning");
+    expect(memory.definition.key).toBe("system.memory-planning");
+    expect(taskTypes(ordinary.revision.semanticRoot)).not.toContain("memory.query");
+    expect(taskTypes(ordinary.revision.semanticRoot)).not.toContain("memory.write");
+    expect(taskTypes(memory.revision.semanticRoot)).toEqual(
+      expect.arrayContaining(["memory.query", "memory.write"]),
+    );
+    expect(ordinary.view.nodes.map((node) => node.nodeType)).not.toContain("memory.query");
+    expect(memory.view.nodes.map((node) => node.nodeType)).toEqual(
+      expect.arrayContaining(["memory.query", "memory.write"]),
+    );
   });
 });
 

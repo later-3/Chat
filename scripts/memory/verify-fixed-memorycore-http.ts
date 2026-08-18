@@ -3,9 +3,11 @@ import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import {
+  memoryWriteIntentIdSchema,
   memoryImportIntentIdSchema,
   productRunIdSchema,
   productSessionIdSchema,
+  workflowMemoryQueryIdSchema,
 } from "../../packages/contracts/src/index.ts";
 import { computeMemoryImportRequestSha256 } from "../../packages/domain/src/index.ts";
 import {
@@ -29,6 +31,8 @@ const USER_ID = "chat-memorycore-user";
 const AGENT_ID = "chat-memorycore-agent";
 const IMPORT_CONTENT = "M3-MEMORYCORE-REAL-7319：服务器只接收在本地编译完成的产物。";
 const QUERY_CONTENT = "M3-MEMORYCORE-BM25-4821：发布前必须完成真实模型与浏览器端到端测试。";
+const WORKFLOW_WRITE_CONTENT =
+  "WORKFLOW-MEMORY-REAL-9184：Memory Provider保持独立服务，Chat只冻结产品事实。";
 
 const repoRoot = chatRepoRoot();
 const runRoot = fixedMemoryCoreRunRoot(repoRoot);
@@ -246,6 +250,23 @@ try {
   ) {
     throw new Error("真实MemoryCore BM25 atomic/search未命中固定L1");
   }
+  const workflowQuery = await memory.queryMemory({
+    operationId: workflowMemoryQueryIdSchema.parse("wmq_m3memorycoreworkflow"),
+    productRunId: productRunIdSchema.parse("run_m3memorycoreworkflow"),
+    productSessionId: productSessionIdSchema.parse("psn_m3memorycoreworkflow"),
+    principalId: "usr_m3memorycoreworkflow" as never,
+    query: "真实模型 浏览器 端到端测试",
+    maxResults: 5,
+    maxContextCharacters: 8_000,
+  });
+  if (
+    workflowQuery.hitCount < 1 ||
+    workflowQuery.sections.length !== 1 ||
+    workflowQuery.sections[0]?.category !== "procedure" ||
+    !workflowQuery.sections[0]?.content.includes("M3-MEMORYCORE-BM25-4821")
+  ) {
+    throw new Error("Workflow Memory通用Query Port未归一化真实MemoryCore L1");
+  }
   const materialized = await memory.reconcile({
     ...input,
     externalObjectId: accepted.externalObjectId,
@@ -258,6 +279,33 @@ try {
   }
   if ((await countImportSession(accepted.externalObjectId)) !== 1) {
     throw new Error("重复对账产生了第二条L0");
+  }
+
+  const workflowWriteInput = {
+    operationId: memoryWriteIntentIdSchema.parse("mwi_m3memorycoreworkflow"),
+    requestSha256: "d".repeat(64),
+    content: WORKFLOW_WRITE_CONTENT,
+    contentType: "conversation_turn" as const,
+    productSessionId: productSessionIdSchema.parse("psn_m3memorycoreworkflowwrite"),
+    principalId: "usr_m3memorycoreworkflow" as never,
+    sourceMessageId: "msg_m3memorycoreworkflow",
+  };
+  const workflowAccepted = await memory.writeMemory(workflowWriteInput);
+  if (
+    workflowAccepted.externalObjectId !== `chat-import:${workflowWriteInput.operationId}` ||
+    workflowAccepted.externalStatus !== "l0_accepted"
+  ) {
+    throw new Error("Workflow Memory通用Write Port未返回稳定L0身份");
+  }
+  const workflowReconciled = await memory.reconcileMemoryWrite({
+    ...workflowWriteInput,
+    externalObjectId: workflowAccepted.externalObjectId,
+  });
+  if (workflowReconciled.status !== "accepted") {
+    throw new Error(`Workflow Memory只读对账未保持accepted，实际=${workflowReconciled.status}`);
+  }
+  if ((await countImportSession(workflowAccepted.externalObjectId)) !== 1) {
+    throw new Error("Workflow Memory Write或对账重复产生L0");
   }
 
   await adapter({ token: "wrong-memorycore-token" })
@@ -295,7 +343,7 @@ try {
   }
 
   console.log(
-    "[memorycore-real-http] 固定源码、真实L0 accepted、只读对账、BM25 L1查询、materialized与隔离门通过",
+    "[memorycore-real-http] 固定源码、Workflow Query/Write Port、真实L0 accepted、只读对账、BM25 L1查询、materialized与隔离门通过",
   );
 } finally {
   await stopService();

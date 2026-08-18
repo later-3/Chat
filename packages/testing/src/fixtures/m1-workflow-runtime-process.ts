@@ -10,6 +10,7 @@ import { planContentSchema } from "@chat/contracts";
 import type { MemoryBackendPort, MemoryBackendRegistryPort } from "@chat/application";
 import type { AgentRunResult, ExecutorStepCandidate } from "@chat/pi-runtime";
 import { createWorkflowRuntimeServer, setWorkflowRuntimeContext } from "@chat/workflows";
+import { createDeterministicWorkflowMemoryRegistry } from "./workflow-memory-test-provider.js";
 
 interface ProcessOptions {
   readonly repoRoot: string;
@@ -75,9 +76,40 @@ const memoryBackends: MemoryBackendRegistryPort = {
   get: (backendId) => (backendId === "mbk_memmy" ? backend : undefined),
 };
 
+const workflowMemoryProviders = createDeterministicWorkflowMemoryRegistry(
+  async (input) => {
+    await appendFile(options.memoryCallsPath, `query:${input.operationId}\n`, "utf8");
+    return {
+      externalQueryId: "workflow-memory-query-recovery-1",
+      hitCount: 1,
+      sections: [
+        {
+          externalObjectIds: ["memory-recovery-1"],
+          title: "恢复测试事实",
+          category: "fact",
+          content: "Aurora 的恢复校验色是 heliotrope。",
+          labels: ["recovery"],
+          score: 0.99,
+        },
+      ],
+    };
+  },
+  {
+    writeMemory: async (input) => {
+      await appendFile(options.memoryCallsPath, `write:${input.operationId}\n`, "utf8");
+      return {
+        externalObjectId: `memory-write:${input.operationId}`,
+        externalObjectVersion: "v1",
+        externalStatus: "accepted",
+        responseSha256: "a".repeat(64),
+      };
+    },
+  },
+);
+
 function planFor(input: PlanningInputDto): PlanContent {
-  const memoryRef = input.contextPackage?.memory.items[0];
-  if (memoryRef === undefined) throw new Error("确定性Planner没有收到Memory ContextPackage");
+  const memoryRef = input.workflowMemory?.items[0];
+  if (memoryRef === undefined) throw new Error("确定性Planner没有收到Workflow Memory Context");
   return planContentSchema.parse({
     objective: "根据恢复测试记忆生成计划",
     summary:
@@ -114,7 +146,7 @@ const planner = async (input: {
     options.plannerCallsPath,
     `${JSON.stringify({
       planRevision: planningInput.planRevision,
-      contextPackageRef: planningInput.contextPackage?.ref,
+      workflowMemoryContextRef: planningInput.workflowMemory?.ref,
     })}\n`,
     "utf8",
   );
@@ -159,6 +191,7 @@ const runtime = await createWorkflowRuntimeServer({
   credential: options.credential,
   runtimeOverrides: {
     memoryBackends,
+    workflowMemoryProviders,
     bailian: {
       apiKey: "fake",
       baseUrl: "http://127.0.0.1:1/v1",

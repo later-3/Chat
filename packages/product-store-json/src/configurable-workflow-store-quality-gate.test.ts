@@ -20,6 +20,9 @@ import {
   SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID,
   SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID,
+  SYSTEM_MEMORY_PLANNING_WORKFLOW_DEFINITION_ID,
+  SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID,
   SYSTEM_NOTE_WORKFLOW_DEFINITION_ID,
   SYSTEM_NOTE_WORKFLOW_REVISION_ID,
   SYSTEM_NOTE_WORKFLOW_VIEW_ID,
@@ -31,6 +34,7 @@ import { migrateProductSnapshotV7ToV8 } from "./migrate-v7-to-v8.js";
 import { migrateProductSnapshotV8ToV9 } from "./migrate-v8-to-v9.js";
 import { migrateProductSnapshotV9ToV10 } from "./migrate-v9-to-v10.js";
 import { migrateProductSnapshotV10ToV11 } from "./migrate-v10-to-v11.js";
+import { migrateProductSnapshotV11ToV12 } from "./migrate-v11-to-v12.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-10T12:00:00.000Z";
@@ -75,6 +79,11 @@ function emptyV6() {
     "planningProjectContexts",
     "planningMemorySelections",
     "workflowPolicyResolutions",
+    "workflowMemoryQueries",
+    "workflowMemorySnapshots",
+    "workflowMemoryContexts",
+    "memoryWriteIntents",
+    "memoryWriteResults",
   ]) {
     delete entities[key];
   }
@@ -127,9 +136,11 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     expect(first.entities.workflowViewDefinitions[LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID]).toEqual(
       second.entities.workflowViewDefinitions[LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID],
     );
-    const current = migrateProductSnapshotV10ToV11(
-      migrateProductSnapshotV9ToV10(
-        migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(first)),
+    const current = migrateProductSnapshotV11ToV12(
+      migrateProductSnapshotV10ToV11(
+        migrateProductSnapshotV9ToV10(
+          migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(first)),
+        ),
       ),
     );
     expect(
@@ -228,6 +239,45 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
       "result.validate",
       "product.commit",
     ]);
+    expect(() => assertSnapshotIntegrity(migrateProductSnapshotV11ToV12(first))).not.toThrow();
+  });
+
+  it("v11→v12保留Simple Planning并新增完全独立的Memory Planning和空Memory事实", () => {
+    const v7 = migrateProductSnapshotV6ToV7(emptyV6());
+    const v9 = migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(v7));
+    const v11 = migrateProductSnapshotV10ToV11(migrateProductSnapshotV9ToV10(v9));
+    const first = migrateProductSnapshotV11ToV12(v11);
+    const second = migrateProductSnapshotV11ToV12(structuredClone(v11));
+
+    expect(first).toEqual(second);
+    expect(first.schemaVersion).toBe("chat-product-store.v12");
+    expect(
+      first.entities.workflowDefinitions[SYSTEM_MEMORY_PLANNING_WORKFLOW_DEFINITION_ID],
+    ).toMatchObject({
+      key: "system.memory-planning",
+      publishedRevisionId: SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
+    });
+    expect(
+      first.entities.workflowDefinitionRevisions[
+        SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID
+      ]?.semanticRoot.elements.slice(0, 2),
+    ).toMatchObject([
+      { kind: "task", nodeType: "memory.query" },
+      { kind: "task", nodeType: "memory.write" },
+    ]);
+    expect(
+      first.entities.workflowViewDefinitions[SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID],
+    ).toBeDefined();
+    expect(first.entities.workflowMemoryQueries).toEqual({});
+    expect(first.entities.workflowMemorySnapshots).toEqual({});
+    expect(first.entities.workflowMemoryContexts).toEqual({});
+    expect(first.entities.memoryWriteIntents).toEqual({});
+    expect(first.entities.memoryWriteResults).toEqual({});
+    expect(
+      first.entities.workflowDefinitionRevisions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID],
+    ).toEqual(
+      v11.entities.workflowDefinitionRevisions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID],
+    );
     expect(() => assertSnapshotIntegrity(first)).not.toThrow();
   });
 

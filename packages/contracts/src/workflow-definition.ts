@@ -20,6 +20,8 @@ import {
  */
 
 export const workflowDefinitionNodeTypeSchema = z.enum([
+  "memory.query",
+  "memory.write",
   "context.memory",
   "context.project",
   "policy.rules",

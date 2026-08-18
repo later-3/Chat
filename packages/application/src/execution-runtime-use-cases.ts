@@ -125,6 +125,18 @@ function resolveExecutionStepContext(
   ) {
     throw revisionConflict("Approved Plan绑定的Memory Selection不存在或Hash不一致");
   }
+  const workflowMemoryContext =
+    planningAttempt.workflowMemoryContextId === undefined
+      ? undefined
+      : snapshot.entities.workflowMemoryContexts[planningAttempt.workflowMemoryContextId];
+  if (
+    planningAttempt.workflowMemoryContextId !== undefined &&
+    (workflowMemoryContext === undefined ||
+      workflowMemoryContext.productRunId !== contract.productRunId ||
+      workflowMemoryContext.sha256 !== planningAttempt.workflowMemoryContextSha256)
+  ) {
+    throw revisionConflict("Approved Plan绑定的Workflow Memory Context不存在或Hash不一致");
+  }
   const projectContext =
     planningAttempt.planningProjectContextId === undefined
       ? undefined
@@ -206,6 +218,34 @@ function resolveExecutionStepContext(
         kind: memory.kind,
         layer: memory.memoryLayer,
         tags: memory.tags,
+        content: memory.content,
+      };
+    }
+    const selectedWorkflowMemory = workflowMemoryContext?.items.find(
+      (candidate) =>
+        candidate.workflowMemorySnapshotId === ref.refId &&
+        candidate.revision === ref.revision &&
+        candidate.sha256 === ref.sha256,
+    );
+    if (selectedWorkflowMemory !== undefined) {
+      const memory =
+        snapshot.entities.workflowMemorySnapshots[selectedWorkflowMemory.workflowMemorySnapshotId];
+      if (
+        memory === undefined ||
+        memory.revision !== ref.revision ||
+        memory.sha256 !== ref.sha256
+      ) {
+        throw revisionConflict("Execution Step的Workflow Memory Snapshot证据不一致");
+      }
+      return {
+        contextKind: "memory",
+        refId: memory.workflowMemorySnapshotId,
+        revision: memory.revision,
+        sha256: memory.sha256,
+        providerId: memory.providerId,
+        title: memory.title,
+        category: memory.category,
+        labels: memory.labels,
         content: memory.content,
       };
     }

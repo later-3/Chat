@@ -29,6 +29,7 @@ export interface WorkflowWorldHandle {
   /** 兼容现有调用方：始终是PlanningExecutionWorkflow。 */
   readonly workflowId: string;
   readonly memoryImportWorkflowId: string;
+  readonly memoryWriteWorkflowId: string;
   readonly projectIntakeWorkflowId: string;
   readonly projectAdvancementWorkflowId: string;
   /** S3实验室入口；Runtime Server不公开分发路由，不影响活动产品Run。 */
@@ -47,6 +48,7 @@ interface WorkflowManifestFile {
 async function resolveWorkflowIds(bundleDir: string): Promise<{
   planningExecution: string;
   memoryImport: string;
+  memoryWrite: string;
   projectIntake: string;
   projectAdvancement: string;
   definitionKernelLab: string;
@@ -57,6 +59,7 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
   const manifest = JSON.parse(raw) as WorkflowManifestFile;
   let planningExecution: string | undefined;
   let memoryImport: string | undefined;
+  let memoryWrite: string | undefined;
   let projectIntake: string | undefined;
   let projectAdvancement: string | undefined;
   let definitionKernelLab: string | undefined;
@@ -70,6 +73,10 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
     if (filePath.includes("memory-import-workflow")) {
       const entry = entries["memoryImportWorkflow"];
       if (entry !== undefined) memoryImport = entry.workflowId;
+    }
+    if (filePath.includes("memory-write-workflow")) {
+      const entry = entries["memoryWriteWorkflow"];
+      if (entry !== undefined) memoryWrite = entry.workflowId;
     }
     if (filePath.includes("project-intake-workflow")) {
       const entry = entries["projectIntakeWorkflow"];
@@ -95,6 +102,7 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
   if (
     planningExecution === undefined ||
     memoryImport === undefined ||
+    memoryWrite === undefined ||
     projectIntake === undefined ||
     projectAdvancement === undefined ||
     definitionKernelLab === undefined ||
@@ -106,6 +114,7 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
   return {
     planningExecution,
     memoryImport,
+    memoryWrite,
     projectIntake,
     projectAdvancement,
     definitionKernelLab,
@@ -161,6 +170,7 @@ export async function setupWorkflowWorld(
     world,
     workflowId: workflowIds.planningExecution,
     memoryImportWorkflowId: workflowIds.memoryImport,
+    memoryWriteWorkflowId: workflowIds.memoryWrite,
     projectIntakeWorkflowId: workflowIds.projectIntake,
     projectAdvancementWorkflowId: workflowIds.projectAdvancement,
     definitionKernelLabWorkflowId: workflowIds.definitionKernelLab,

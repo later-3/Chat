@@ -19,8 +19,10 @@ import {
 } from "@chat/contracts";
 import { type ApplicationDeps, type IdFactory } from "@chat/application";
 import {
+  createSystemMemoryPlanningDefinition,
   createSystemPlanningDefinition,
   createSystemSimplePlanningDefinition,
+  SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
 } from "@chat/application/workflow-system-definitions";
@@ -66,6 +68,7 @@ interface QualityFixture {
   readonly appA: ApiApp;
   readonly appB: ApiApp;
   readonly systemDefinitionSha256: string;
+  readonly memoryDefinitionSha256: string;
   readonly simpleDefinitionSha256: string;
   command(): CommandId;
 }
@@ -78,7 +81,8 @@ async function qualityFixture(): Promise<QualityFixture> {
   const store = await JsonProductStore.open({ filePath: join(directory, "product.json"), now });
   const deps: ApplicationDeps = { store, now, ids: testIds() };
   const system = createSystemPlanningDefinition(NOW);
-  const simple = createSystemSimplePlanningDefinition(NOW);
+  const memorySystem = createSystemMemoryPlanningDefinition(NOW);
+  const simpleSystem = createSystemSimplePlanningDefinition(NOW);
   const methodPolicies = compileProjectMethodSnapshotPolicies("small-project.v1");
   const methodSha256 = computeProjectMethodSnapshotSha256({
     profileId: "small-project.v1",
@@ -182,7 +186,8 @@ async function qualityFixture(): Promise<QualityFixture> {
     appA: makeApp(PRINCIPAL_A),
     appB: makeApp(PRINCIPAL_B),
     systemDefinitionSha256: system.revision.definitionSha256,
-    simpleDefinitionSha256: simple.revision.definitionSha256,
+    memoryDefinitionSha256: memorySystem.revision.definitionSha256,
+    simpleDefinitionSha256: simpleSystem.revision.definitionSha256,
     command: () => `cmd_quality${(++commandSequence).toString(36)}` as CommandId,
   };
 }
@@ -222,6 +227,18 @@ function explicitSystemSelection(fixture: QualityFixture) {
     kind: "published_revision" as const,
     workflowDefinitionRevisionId: SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
     definitionSha256: fixture.systemDefinitionSha256,
+    runConfiguration: {
+      schemaVersion: "workflow-run-configuration.v1" as const,
+      overrides: [],
+    },
+  };
+}
+
+function explicitMemorySelection(fixture: QualityFixture) {
+  return {
+    kind: "published_revision" as const,
+    workflowDefinitionRevisionId: SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
+    definitionSha256: fixture.memoryDefinitionSha256,
     runConfiguration: {
       schemaVersion: "workflow-run-configuration.v1" as const,
       overrides: [],
@@ -374,8 +391,8 @@ describe("S4 configured message黑盒质量门", () => {
         runConfiguration: {
           schemaVersion: "workflow-run-configuration.v1",
           overrides: [
-            { kind: "node_enabled", definitionNodeId: "planning.memory", enabled: false },
-            { kind: "node_enabled", definitionNodeId: "planning.memory", enabled: true },
+            { kind: "node_enabled", definitionNodeId: "planning.memory-query", enabled: false },
+            { kind: "node_enabled", definitionNodeId: "planning.memory-query", enabled: true },
           ],
         },
       },
@@ -732,7 +749,7 @@ describe("S4私有Runtime身份、篡改与幂等质量门", () => {
       fixture,
       session.sessionId,
       fixture.command(),
-      explicitSystemSelection(fixture),
+      explicitMemorySelection(fixture),
     );
     const { run } = (await sent.json()) as { run: { productRunId: string } };
     const snapshot = await snapshotOf(fixture);
@@ -747,11 +764,11 @@ describe("S4私有Runtime身份、篡改与幂等质量门", () => {
       commandId,
       productRunId: run.productRunId,
       workflowRunSpecId: storedRun.workflowRunSpecId,
-      definitionNodeId: "planning.memory",
+      definitionNodeId: "memory-planning.query",
       executionPath: [],
       attemptNumber: 1,
       toStatus: "running",
-      publicSummary: "正在读取记忆",
+      publicSummary: "正在查询记忆",
     };
     const first = await postInternal(fixture.appA, path, body);
     expect(first.status, await first.clone().text()).toBe(200);

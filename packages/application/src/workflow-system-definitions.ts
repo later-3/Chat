@@ -23,6 +23,9 @@ export const SYSTEM_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemplanningv2" as const;
 export const SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID = "wfd_systemsimpleplanningv1" as const;
 export const SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID = "wfr_systemsimpleplanningv1" as const;
 export const SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemsimpleplanningv1" as const;
+export const SYSTEM_MEMORY_PLANNING_WORKFLOW_DEFINITION_ID = "wfd_systemmemoryplanningv1" as const;
+export const SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID = "wfr_systemmemoryplanningv1" as const;
+export const SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemmemoryplanningv1" as const;
 export const SYSTEM_NOTE_WORKFLOW_DEFINITION_ID = "wfd_systemnotev1" as const;
 export const SYSTEM_NOTE_WORKFLOW_REVISION_ID = "wfr_systemnotev1" as const;
 export const SYSTEM_NOTE_WORKFLOW_VIEW_ID = "wvd_systemnotev1" as const;
@@ -99,6 +102,54 @@ export function systemSimplePlanningSemanticRoot(): WorkflowSequence {
       },
       systemTask("planning.validate", "result.validate"),
       systemTask("planning.commit", "product.commit"),
+    ],
+  };
+}
+
+/** Memory增强流程是独立发布的选择项，绝不修改或隐式包裹常规Simple Planning。 */
+export function systemMemoryPlanningSemanticRoot(): WorkflowSequence {
+  return {
+    kind: "sequence",
+    elements: [
+      systemTask("memory-planning.query", "memory.query", {
+        providerId: "mbk_tencentmemorycore",
+        required: true,
+        querySource: "source_message",
+        maxResults: 8,
+        maxContextCharacters: 8_000,
+      }),
+      systemTask("memory-planning.write", "memory.write", {
+        providerId: "mbk_tencentmemorycore",
+        source: "source_message",
+        contentType: "conversation_turn",
+      }),
+      systemTask("memory-planning.project", "context.project"),
+      systemTask("memory-planning.rules", "policy.rules"),
+      systemTask("memory-planning.skills", "capability.skills"),
+      {
+        kind: "bounded_loop",
+        body: {
+          kind: "sequence",
+          elements: [
+            systemTask("memory-planning.plan", "agent.plan"),
+            systemTask("memory-planning.review", "human.plan_review"),
+          ],
+        },
+        outcomeFromDefinitionNodeId: "memory-planning.review",
+        continueOutcomes: ["request_revision"],
+        exitOutcomes: ["approved", "rejected"],
+        maxIterations: 5,
+        exceededPolicy: "fail",
+      },
+      {
+        kind: "composite",
+        definitionNodeId: "memory-planning.execute",
+        nodeType: "execute.plan",
+        schemaVersion: 1,
+        config: {},
+      },
+      systemTask("memory-planning.validate", "result.validate"),
+      systemTask("memory-planning.commit", "product.commit"),
     ],
   };
 }
@@ -234,6 +285,63 @@ export function createSystemSimplePlanningDefinition(createdAt: string): {
     definition,
     revision,
     view: createSystemSimplePlanningWorkflowView({
+      createdAt,
+      definitionSha256: revision.definitionSha256,
+    }),
+  };
+}
+
+export function createSystemMemoryPlanningDefinition(createdAt: string): {
+  readonly definition: WorkflowDefinition;
+  readonly revision: WorkflowDefinitionRevision;
+  readonly view: WorkflowViewDefinition;
+} {
+  const normalized = normalizeWorkflowDefinition(
+    systemMemoryPlanningSemanticRoot(),
+    DEFAULT_NODE_CATALOG,
+  );
+  if (!normalized.success) {
+    throw new Error(
+      `system memory planning definition invalid:${normalized.diagnostics
+        .map((item) => item.code)
+        .join(",")}`,
+    );
+  }
+  const definition = workflowDefinitionSchema.parse({
+    schemaVersion: "workflow-definition.v1",
+    workflowDefinitionId: SYSTEM_MEMORY_PLANNING_WORKFLOW_DEFINITION_ID,
+    ownerKind: "system",
+    key: "system.memory-planning",
+    title: "Memory 增强规划与执行",
+    description: "显式查询既有记忆、保存本次用户输入，再规划、审核、执行并提交结果。",
+    blueprintKey: "planning",
+    blueprintVersion: 1,
+    status: "active",
+    publishedRevisionId: SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
+    revision: 1,
+    createdAt,
+    updatedAt: createdAt,
+  });
+  const revision = workflowDefinitionRevisionSchema.parse({
+    schemaVersion: "workflow-definition-revision.v1",
+    workflowDefinitionRevisionId: SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
+    workflowDefinitionId: SYSTEM_MEMORY_PLANNING_WORKFLOW_DEFINITION_ID,
+    definitionRevision: 1,
+    state: "published",
+    blueprintKey: "planning",
+    blueprintVersion: 1,
+    title: definition.title,
+    semanticRoot: normalized.normalized.semanticRoot,
+    definitionSha256: normalized.normalized.definitionSha256,
+    revision: 1,
+    createdAt,
+    updatedAt: createdAt,
+    publishedAt: createdAt,
+  });
+  return {
+    definition,
+    revision,
+    view: createSystemMemoryPlanningWorkflowView({
       createdAt,
       definitionSha256: revision.definitionSha256,
     }),
@@ -384,6 +492,58 @@ function createSystemSimplePlanningWorkflowView(input: {
   });
 }
 
+function createSystemMemoryPlanningWorkflowView(input: {
+  readonly createdAt: string;
+  readonly definitionSha256: string;
+}): WorkflowViewDefinition {
+  const nodes: readonly WorkflowViewNodeShape[] = [
+    viewNode("memory-planning.query", "memory.query", "查询记忆", "task", false),
+    viewNode("memory-planning.write", "memory.write", "保存本次输入", "task", false),
+    viewNode("memory-planning.project", "context.project", "读取项目上下文", "task", true),
+    viewNode("memory-planning.rules", "policy.rules", "解析规则", "task", true),
+    viewNode("memory-planning.skills", "capability.skills", "解析技能", "task", true),
+    viewNode("memory-planning.plan", "agent.plan", "生成计划", "task", false),
+    viewNode("memory-planning.review", "human.plan_review", "审核计划", "human_review", false),
+    viewNode("memory-planning.execute", "execute.plan", "执行计划", "composite", false),
+    viewNode("memory-planning.validate", "result.validate", "验证结果", "task", false),
+    viewNode("memory-planning.commit", "product.commit", "提交结果", "product_commit", false),
+  ];
+  const edges: readonly WorkflowViewEdgeShape[] = [
+    edge("memory-planning.query", "memory-planning.write", "control"),
+    edge("memory-planning.write", "memory-planning.project", "control"),
+    edge("memory-planning.project", "memory-planning.rules", "control"),
+    edge("memory-planning.rules", "memory-planning.skills", "control"),
+    edge("memory-planning.skills", "memory-planning.plan", "control"),
+    edge("memory-planning.plan", "memory-planning.review", "control"),
+    edge("memory-planning.review", "memory-planning.plan", "loop_back", "request_revision"),
+    edge("memory-planning.review", "memory-planning.execute", "outcome", "approved"),
+    edge("memory-planning.execute", "memory-planning.validate", "control"),
+    edge("memory-planning.validate", "memory-planning.commit", "control"),
+  ];
+  const content = {
+    title: "Memory 增强规划与执行",
+    source: {
+      kind: "published_definition" as const,
+      workflowDefinitionId: SYSTEM_MEMORY_PLANNING_WORKFLOW_DEFINITION_ID,
+      definitionRevision: 1,
+      definitionSha256: input.definitionSha256,
+      blueprintKey: "planning",
+      blueprintVersion: "1",
+    },
+    nodes,
+    edges,
+  };
+  return workflowViewDefinitionSchema.parse({
+    schemaVersion: "workflow-view-definition.v1",
+    workflowViewDefinitionId: SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID,
+    ...content,
+    sha256: computeWorkflowViewDefinitionSha256(content),
+    revision: 1,
+    createdAt: input.createdAt,
+    updatedAt: input.createdAt,
+  });
+}
+
 function createSystemNoteWorkflowView(input: {
   readonly createdAt: string;
   readonly definitionSha256: string;
@@ -446,6 +606,8 @@ function edge(
 function systemTask(
   definitionNodeId: string,
   nodeType:
+    | "memory.query"
+    | "memory.write"
     | "context.memory"
     | "context.project"
     | "policy.rules"
@@ -459,6 +621,7 @@ function systemTask(
     | "note.classify"
     | "human.note_review"
     | "note.commit",
+  config: Record<string, unknown> = {},
 ) {
-  return { kind: "task" as const, definitionNodeId, nodeType, schemaVersion: 1, config: {} };
+  return { kind: "task" as const, definitionNodeId, nodeType, schemaVersion: 1, config };
 }

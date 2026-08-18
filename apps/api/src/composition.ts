@@ -54,6 +54,7 @@ import type {
 } from "@chat/application";
 import { JsonProductStore } from "@chat/product-store-json";
 import { createProjectResourceRegistry } from "@chat/project-runtime";
+import { createWorkflowMemoryProviderRegistry } from "@chat/memory-runtime";
 import {
   loadProjectModelProfile,
   PiProjectAdvancementUnderstandingAdapter,
@@ -164,11 +165,12 @@ export async function createApplicationDeps(
   const advancementUnderstanding = new PiProjectAdvancementUnderstandingAdapter(
     projectModelProfile,
   );
+  const workflowMemoryProviders = createWorkflowMemoryProviderRegistry(process.env);
   return {
     store,
     now: () => new Date().toISOString(),
     ids: createIdFactory(),
-    // Memory代码保留但当前产品组合根冻结关闭；恢复时必须重新经过明确的产品授权。
+    workflowMemoryProviders,
     projectRoots,
     projectIntakeUnderstanding: projectUnderstanding,
     projectAdvancementUnderstanding: advancementUnderstanding,

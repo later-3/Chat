@@ -107,6 +107,41 @@ function lifecycle(
 
 function project(event: TraceEvent, sequence: number): ExecutionTraceItem | undefined {
   switch (event.eventName) {
+    case TRACE_EVENT_NAMES.workflowMemoryNodeStarted:
+      return {
+        sequence,
+        timestamp: event.timestamp,
+        type: "tool_call",
+        toolCallId: `memory-node:${event.workflowNodeRunId}`,
+        toolName: event.nodeType === "memory.query" ? "memory_query" : "memory_write",
+        input: JSON.stringify({
+          operation: event.nodeType,
+          summary: event.publicSummary ?? "Memory节点已开始",
+        }),
+        inputTruncated: false,
+      };
+    case TRACE_EVENT_NAMES.workflowMemoryNodeCompleted:
+    case TRACE_EVENT_NAMES.workflowMemoryNodeFailed:
+    case TRACE_EVENT_NAMES.workflowMemoryNodeOutcomeUnknown:
+      return {
+        sequence,
+        timestamp: event.timestamp,
+        type: "tool_result",
+        toolCallId: `memory-node:${event.workflowNodeRunId}`,
+        toolName: event.nodeType === "memory.query" ? "memory_query" : "memory_write",
+        outcome:
+          event.eventName === TRACE_EVENT_NAMES.workflowMemoryNodeCompleted
+            ? "success"
+            : event.eventName === TRACE_EVENT_NAMES.workflowMemoryNodeFailed
+              ? "failure"
+              : "unknown",
+        output: event.publicSummary ?? `Memory节点结束：${event.outcomeCode}`,
+        outputTruncated: false,
+        ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
+        ...(event.eventName !== TRACE_EVENT_NAMES.workflowMemoryNodeCompleted
+          ? { errorCode: event.error.code }
+          : {}),
+      };
     case TRACE_EVENT_NAMES.piMessageCompleted:
       return event.messageRole === "assistant" && event.visibleText !== undefined
         ? {

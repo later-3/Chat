@@ -21,6 +21,8 @@ export const executionTraceToolNameSchema = z.enum([
   "edit",
   "write",
   "bash",
+  "memory_query",
+  "memory_write",
 ]);
 const displaySchema = z.string().max(32_000);
 const sequenceSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);

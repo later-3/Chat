@@ -205,7 +205,7 @@ describe("RuntimeBindingStore", () => {
     });
     expect(store.getHookBinding("apr_legacy1" as never)?.hookToken).toBe("pdh-run_legacy1-1");
     expect(JSON.parse(await readFile(filePath, "utf8"))).toMatchObject({
-      schemaVersion: "runtime-bindings.v5",
+      schemaVersion: "runtime-bindings.v6",
     });
   });
 

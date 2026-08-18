@@ -40,6 +40,7 @@ export interface CompilePlanningInputCommand {
   readonly contextPackageRef?: CompilePlanningInputRequest["contextPackageRef"] | undefined;
   readonly planningMemorySelectionRef?:
     CompilePlanningInputRequest["planningMemorySelectionRef"] | undefined;
+  readonly workflowMemoryContextRef?: CompilePlanningInputRequest["workflowMemoryContextRef"];
   readonly planningProjectContextRef?:
     CompilePlanningInputRequest["planningProjectContextRef"] | undefined;
   readonly ruleSelectionRef?: CompilePlanningInputRequest["ruleSelectionRef"] | undefined;
@@ -75,6 +76,9 @@ export async function compilePlanningInput(
       : {}),
     ...(input.planningMemorySelectionRef !== undefined
       ? { planningMemorySelectionRef: input.planningMemorySelectionRef }
+      : {}),
+    ...(input.workflowMemoryContextRef !== undefined
+      ? { workflowMemoryContextRef: input.workflowMemoryContextRef }
       : {}),
     ...(input.planningProjectContextRef !== undefined
       ? { planningProjectContextRef: input.planningProjectContextRef }
@@ -150,6 +154,34 @@ export async function compilePlanningInput(
       }
       if (memorySelection !== undefined && contextPackage !== undefined) {
         throw revisionConflict("显式Memory Selection不能附加查询ContextPackage");
+      }
+
+      const workflowMemoryContextsForRun = Object.values(
+        draft.entities.workflowMemoryContexts,
+      ).filter((candidate) => candidate.productRunId === input.productRunId);
+      if (workflowMemoryContextsForRun.length > 1) {
+        throw revisionConflict("同一Planning Run存在多个Workflow Memory Context");
+      }
+      const workflowMemoryContext =
+        input.workflowMemoryContextRef === undefined
+          ? undefined
+          : draft.entities.workflowMemoryContexts[
+              input.workflowMemoryContextRef.workflowMemoryContextId
+            ];
+      if (input.workflowMemoryContextRef === undefined) {
+        if (workflowMemoryContextsForRun.length > 0) {
+          throw revisionConflict("Planning Input遗漏已冻结的Workflow Memory Context");
+        }
+      } else if (
+        workflowMemoryContext === undefined ||
+        workflowMemoryContext.productRunId !== input.productRunId ||
+        workflowMemoryContext.revision !== input.workflowMemoryContextRef.revision ||
+        workflowMemoryContext.sha256 !== input.workflowMemoryContextRef.sha256 ||
+        workflowMemoryContextsForRun[0]?.workflowMemoryContextId !==
+          workflowMemoryContext.workflowMemoryContextId ||
+        workflowMemoryContext.workflowRunSpecId !== planningRun.workflowRunSpecId
+      ) {
+        throw revisionConflict("Workflow Memory Context引用不存在或Hash不一致");
       }
       if (memorySelection === undefined && contextRequest?.memory !== undefined) {
         if (
@@ -264,6 +296,9 @@ export async function compilePlanningInput(
             input.planningMemorySelectionRef?.planningMemorySelectionId ||
           priorAttempt?.planningMemorySelectionSha256 !==
             input.planningMemorySelectionRef?.sha256 ||
+          priorAttempt?.workflowMemoryContextId !==
+            input.workflowMemoryContextRef?.workflowMemoryContextId ||
+          priorAttempt?.workflowMemoryContextSha256 !== input.workflowMemoryContextRef?.sha256 ||
           priorAttempt?.planningProjectContextId !==
             input.planningProjectContextRef?.planningProjectContextId ||
           priorAttempt?.planningProjectContextSha256 !== input.planningProjectContextRef?.sha256 ||
@@ -307,6 +342,15 @@ export async function compilePlanningInput(
                 planningMemorySelectionId: memorySelection.planningMemorySelectionId,
                 revision: memorySelection.revision,
                 sha256: memorySelection.sha256,
+              },
+            }
+          : {}),
+        ...(workflowMemoryContext !== undefined
+          ? {
+              workflowMemoryContextRef: {
+                workflowMemoryContextId: workflowMemoryContext.workflowMemoryContextId,
+                revision: workflowMemoryContext.revision,
+                sha256: workflowMemoryContext.sha256,
               },
             }
           : {}),
@@ -375,6 +419,12 @@ export async function compilePlanningInput(
               planningMemorySelectionSha256: memorySelection.sha256,
             }
           : {}),
+        ...(workflowMemoryContext !== undefined
+          ? {
+              workflowMemoryContextId: workflowMemoryContext.workflowMemoryContextId,
+              workflowMemoryContextSha256: workflowMemoryContext.sha256,
+            }
+          : {}),
         ...(projectContext !== undefined
           ? {
               planningProjectContextId: projectContext.planningProjectContextId,
@@ -422,6 +472,10 @@ export async function compilePlanningInput(
     attempt.planningMemorySelectionId === undefined
       ? undefined
       : snapshot.entities.planningMemorySelections[attempt.planningMemorySelectionId];
+  const workflowMemoryContext =
+    attempt.workflowMemoryContextId === undefined
+      ? undefined
+      : snapshot.entities.workflowMemoryContexts[attempt.workflowMemoryContextId];
   const projectContext =
     attempt.planningProjectContextId === undefined
       ? undefined
@@ -458,6 +512,14 @@ export async function compilePlanningInput(
       memorySelection.sha256 !== attempt.planningMemorySelectionSha256)
   ) {
     throw revisionConflict("Planning Attempt引用的Memory Selection不存在或Hash不一致");
+  }
+  if (
+    attempt.workflowMemoryContextId !== undefined &&
+    (workflowMemoryContext === undefined ||
+      workflowMemoryContext.productRunId !== input.productRunId ||
+      workflowMemoryContext.sha256 !== attempt.workflowMemoryContextSha256)
+  ) {
+    throw revisionConflict("Planning Attempt引用的Workflow Memory Context不存在或Hash不一致");
   }
   if (
     attempt.planningProjectContextId !== undefined &&
@@ -577,6 +639,44 @@ export async function compilePlanningInput(
                 tags: memorySnapshot.tags,
               };
             }),
+          },
+        }
+      : {}),
+    ...(workflowMemoryContext !== undefined
+      ? {
+          workflowMemory: {
+            ref: {
+              workflowMemoryContextId: workflowMemoryContext.workflowMemoryContextId,
+              revision: workflowMemoryContext.revision,
+              sha256: workflowMemoryContext.sha256,
+            },
+            items: workflowMemoryContext.items.map((item) => {
+              const memorySnapshot =
+                snapshot.entities.workflowMemorySnapshots[item.workflowMemorySnapshotId];
+              if (
+                memorySnapshot === undefined ||
+                memorySnapshot.revision !== item.revision ||
+                memorySnapshot.sha256 !== item.sha256
+              ) {
+                throw revisionConflict("Workflow Memory Context引用的Snapshot不存在或已损坏");
+              }
+              return {
+                refId: memorySnapshot.workflowMemorySnapshotId,
+                revision: memorySnapshot.revision,
+                sha256: memorySnapshot.sha256,
+                providerId: memorySnapshot.providerId,
+                title: memorySnapshot.title,
+                category: memorySnapshot.category,
+                content: memorySnapshot.content,
+                labels: memorySnapshot.labels,
+              };
+            }),
+            optionalFailures: workflowMemoryContext.queries.flatMap((query) =>
+              query.outcome === "optional_failed" && query.errorCode !== undefined
+                ? [{ providerId: query.providerId, errorCode: query.errorCode }]
+                : [],
+            ),
+            totalContentCharacters: workflowMemoryContext.totalContentCharacters,
           },
         }
       : {}),

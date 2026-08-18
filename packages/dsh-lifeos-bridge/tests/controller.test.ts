@@ -19,9 +19,9 @@ const projection = {
 const projectionWithSelection = {
   ...projection,
   workflowSelection: {
-    workflowDefinitionRevisionId: "wfr_systemnotev1",
+    workflowDefinitionRevisionId: "wfr_systemmemoryplanningv1",
     definitionSha256: "a".repeat(64),
-    title: "默认笔记工作流",
+    title: "Memory 增强规划与执行",
   },
 };
 
@@ -99,10 +99,28 @@ test("projection fetch is invoked without the controller as receiver", async () 
 test("loadWorkflows fills the picker list and keeps run polling untouched", async () => {
   const items = [
     {
+      workflowDefinitionRevisionId: "wfr_systemsimpleplanningv1",
+      definitionSha256: "a".repeat(64),
+      title: "规划执行工作流",
+      description: "生成计划、人工审核、执行、验证并提交结果的系统内置流程。",
+      blueprintKey: "planning",
+      ownerKind: "system",
+      isDefault: true,
+    },
+    {
       workflowDefinitionRevisionId: "wfr_systemplanningv2",
       definitionSha256: "b".repeat(64),
       title: "默认规划工作流",
       description: "读取上下文、生成计划、人工审核、执行、验证并提交结果的系统内置流程。",
+      blueprintKey: "planning",
+      ownerKind: "system",
+      isDefault: false,
+    },
+    {
+      workflowDefinitionRevisionId: "wfr_systemmemoryplanningv1",
+      definitionSha256: "d".repeat(64),
+      title: "Memory 增强规划与执行",
+      description: "显式查询既有记忆、保存本次用户输入，再规划、审核、执行并提交结果。",
       blueprintKey: "planning",
       ownerKind: "system",
       isDefault: false,
@@ -141,9 +159,9 @@ test("selectWorkflow submits the draft and adopts the returned projection", asyn
   );
   const accepted = await controller.selectWorkflow(
     workflowSelectionSchema.parse({
-      workflowDefinitionRevisionId: "wfr_systemnotev1",
+      workflowDefinitionRevisionId: "wfr_systemmemoryplanningv1",
       definitionSha256: "a".repeat(64),
-      title: "默认笔记工作流",
+      title: "Memory 增强规划与执行",
     }),
   );
   assert.equal(accepted, true);
@@ -151,14 +169,14 @@ test("selectWorkflow submits the draft and adopts the returned projection", asyn
   assert.equal(requests[0]?.method, "PUT");
   assert.deepEqual(JSON.parse(requests[0]?.body ?? "{}"), {
     workflowSelection: {
-      workflowDefinitionRevisionId: "wfr_systemnotev1",
+      workflowDefinitionRevisionId: "wfr_systemmemoryplanningv1",
       definitionSha256: "a".repeat(64),
-      title: "默认笔记工作流",
+      title: "Memory 增强规划与执行",
     },
   });
   assert.deepEqual(
     controller.getSnapshot().projection?.workflowSelection?.workflowDefinitionRevisionId,
-    "wfr_systemnotev1",
+    "wfr_systemmemoryplanningv1",
   );
   controller.dispose();
 });

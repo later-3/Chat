@@ -6,6 +6,7 @@ import type { TraceEventInput } from "@chat/contracts";
 import type { ApplicationDeps, IdFactory } from "@chat/application";
 import {
   commitMemoryImportAccepted,
+  createMemoryWrite,
   createMemoryImport,
   createProductSession,
   markMemoryImportDispatching,
@@ -60,9 +61,39 @@ const importBackend = {
   reconcile: vi.fn(),
 };
 
+const workflowMemoryProvider = {
+  describeProvider: () => ({
+    schemaVersion: "memory-provider-descriptor.v1" as const,
+    providerId: "mbk_tencentmemorycore" as never,
+    displayName: "Tencent MemoryCore",
+    providerKind: "tencent_memorycore",
+    transport: "http" as const,
+    adapterContractVersion: "tencent-memorycore-http.v2",
+    configured: true,
+    configurationFingerprint: "c".repeat(64) as never,
+    capabilities: {
+      query: { maxResults: 20, maxContextCharacters: 32_000 },
+      write: {
+        maxContentCharacters: 8_192,
+        materialization: "asynchronous" as const,
+        idempotency: "chat_reconcile" as const,
+      },
+      reconcile: true,
+      management: { list: false, get: false, update: false, delete: false, history: false },
+    },
+    authMode: "bearer" as const,
+    credentialRevision: "dispatcher-memorycore-v1",
+  }),
+  health: async () => ({ status: "ready" as const }),
+  queryMemory: vi.fn(),
+  writeMemory: vi.fn(),
+  reconcileMemoryWrite: vi.fn(),
+};
+
 async function seed(): Promise<{
   deps: ApplicationDeps;
   productRunId: string;
+  sessionId: string;
   messageId: string;
   messageSha256: string;
   traces: TraceEventInput[];
@@ -85,6 +116,13 @@ async function seed(): Promise<{
       list: () => [importBackend],
       get: (backendId) => (backendId === "mbk_memmy" ? importBackend : undefined),
     },
+    workflowMemoryProviders: {
+      list: () => [workflowMemoryProvider.describeProvider()],
+      getQuery: (providerId) =>
+        providerId === "mbk_tencentmemorycore" ? workflowMemoryProvider : undefined,
+      getWrite: (providerId) =>
+        providerId === "mbk_tencentmemorycore" ? workflowMemoryProvider : undefined,
+    },
   };
   const { session } = await createProductSession(deps, {
     principalId: "usr_dispatchtest" as never,
@@ -101,6 +139,7 @@ async function seed(): Promise<{
   return {
     deps,
     productRunId: run.productRunId,
+    sessionId: session.sessionId,
     messageId: message.messageId,
     messageSha256: message.sha256,
     traces,
@@ -108,6 +147,38 @@ async function seed(): Promise<{
       timestamp += milliseconds;
     },
   };
+}
+
+async function seedMemoryWrite() {
+  const seeded = await seed();
+  const snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+  const planningOutbox = Object.values(snapshot.outbox).find(
+    (entry) => entry.kind === "workflow_start",
+  );
+  const session = snapshot.entities.sessions[seeded.sessionId];
+  if (planningOutbox === undefined || session === undefined) {
+    throw new Error("缺少规划Outbox或Session");
+  }
+  await updateOutboxStatus(seeded.deps, {
+    commandId: "cmd_disableplanningwrite" as never,
+    outboxId: planningOutbox.outboxId,
+    status: "failed_terminal",
+  });
+  const { memoryWrite } = await createMemoryWrite(seeded.deps, {
+    principalId: "usr_dispatchtest" as never,
+    commandId: "cmd_memorywrite1" as never,
+    payload: {
+      productSessionId: session.sessionId,
+      providerId: "mbk_tencentmemorycore" as never,
+      sourceSelection: {
+        kind: "full_message",
+        sourceMessageId: seeded.messageId as never,
+        sourceMessageSha256: seeded.messageSha256 as never,
+      },
+      expectedSessionRevision: session.revision,
+    },
+  });
+  return { ...seeded, memoryWrite };
 }
 
 async function seedMemoryImport() {
@@ -364,5 +435,58 @@ describe("Outbox结果未知栅栏", () => {
         (entry) => entry.kind === "memory_import_reconcile" && entry.status === "pending",
       ),
     ).toHaveLength(0);
+  });
+
+  it("Memory Write启动响应未知时不重复Start，超时后收敛产品Result等待人工对账", async () => {
+    const { deps, memoryWrite, advance } = await seedMemoryWrite();
+    let startCalls = 0;
+    let reconcileCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes("/memory-write/start")) {
+          startCalls += 1;
+          return new Response("not-json", { status: 201 });
+        }
+        if (url.includes("/memory-write/reconcile")) {
+          reconcileCalls += 1;
+          return Response.json({
+            schemaVersion: "chat-workflow-dispatch.v1",
+            outboxId: new URL(url).searchParams.get("outboxId"),
+            startBinding: "outcome_unknown",
+          });
+        }
+        throw new Error(`unexpected fetch:${url}`);
+      }),
+    );
+    const dispatcher = new OutboxDispatcher({
+      deps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+
+    await dispatcher.tick();
+    await dispatcher.tick();
+    let snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const startOutbox = Object.values(snapshot.outbox).find(
+      (entry) => entry.kind === "memory_write_start",
+    );
+    expect(startOutbox).toMatchObject({ status: "outcome_unknown", dispatchAttempts: 1 });
+    expect(startCalls).toBe(1);
+    expect(reconcileCalls).toBe(1);
+
+    advance(61_000);
+    await dispatcher.tick();
+    snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.memoryWriteResults[memoryWrite.memoryWriteResultId]).toMatchObject({
+      status: "outcome_unknown",
+      errorCode: "memory.write.workflow_dispatch_unknown",
+    });
+    expect(snapshot.outbox[startOutbox!.outboxId]).toMatchObject({
+      status: "failed_terminal",
+      dispatchAttempts: 1,
+    });
+    expect(startCalls).toBe(1);
   });
 });

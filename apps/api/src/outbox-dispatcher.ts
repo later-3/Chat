@@ -9,6 +9,9 @@ import {
   memoryImportWorkflowDispatchResponseSchema,
   memoryImportWorkflowReconcileResponseSchema,
   MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
+  memoryWriteWorkflowDispatchResponseSchema,
+  memoryWriteWorkflowReconcileResponseSchema,
+  MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION,
   type CommandId,
   type OutboxEntry,
   type ProductSnapshot,
@@ -17,6 +20,8 @@ import {
   commitRunOutcomeUnknown,
   commitMemoryImportFailed,
   commitMemoryImportOutcomeUnknown,
+  commitMemoryWriteFailed,
+  commitMemoryWriteOutcomeUnknown,
   emitMemoryImportEvent,
   emitRunEvent,
   failOutboxAndRun,
@@ -64,6 +69,10 @@ type WorkflowEntry = WorkflowStartEntry | WorkflowResumeEntry;
 type MemoryImportEntry = Extract<
   OutboxEntry,
   { kind: "memory_import_start" | "memory_import_reconcile" }
+>;
+type MemoryWriteEntry = Extract<
+  OutboxEntry,
+  { kind: "memory_write_start" | "memory_write_reconcile" }
 >;
 type ProjectIntakeEntry = Extract<
   OutboxEntry,
@@ -443,6 +452,106 @@ async function dispatchMemoryImport(
   await markStatus(options, entry, "acknowledged", undefined, true);
 }
 
+function writeResult(snapshot: Snapshot, entry: MemoryWriteEntry) {
+  const intent = snapshot.entities.memoryWriteIntents[entry.memoryWriteIntentId];
+  const result = snapshot.entities.memoryWriteResults[entry.memoryWriteResultId];
+  return intent !== undefined && result?.memoryWriteIntentId === intent.memoryWriteIntentId
+    ? { intent, result }
+    : undefined;
+}
+
+async function failMemoryWriteDispatch(
+  options: OutboxDispatcherOptions,
+  snapshot: Snapshot,
+  entry: MemoryWriteEntry,
+  errorCode: string,
+): Promise<void> {
+  const current = writeResult(snapshot, entry);
+  if (current !== undefined && current.result.status === "queued") {
+    await commitMemoryWriteFailed(options.deps, {
+      commandId: dispatchCommandId("fail-memory-write-dispatch", entry.outboxId),
+      memoryWriteIntentId: current.intent.memoryWriteIntentId,
+      memoryWriteResultId: current.result.memoryWriteResultId,
+      requestSha256: current.intent.requestSha256,
+      expectedRevision: current.result.revision,
+      errorCode,
+      summary: "Memory Write Workflow无法安全启动",
+    });
+  }
+  await markStatus(options, entry, "failed_terminal", errorCode, true);
+}
+
+async function dispatchMemoryWrite(
+  options: OutboxDispatcherOptions,
+  snapshot: Snapshot,
+  entry: MemoryWriteEntry,
+): Promise<void> {
+  const current = writeResult(snapshot, entry);
+  if (current === undefined) {
+    await markStatus(options, entry, "failed_terminal", "outbox.missing_memory_write", false);
+    return;
+  }
+  if (
+    (entry.kind === "memory_write_start" && current.result.status !== "queued") ||
+    (entry.kind === "memory_write_reconcile" &&
+      (!["dispatching", "accepted", "outcome_unknown"].includes(current.result.status) ||
+        current.result.revision !== entry.expectedResultRevision))
+  ) {
+    await markStatus(options, entry, "acknowledged");
+    return;
+  }
+  const response = await postToWorkflowRuntime(
+    options,
+    "/internal/workflow/v1/memory-write/start",
+    {
+      schemaVersion: "chat-workflow-dispatch.v1",
+      memoryWriteIntentId: entry.memoryWriteIntentId,
+      memoryWriteResultId: entry.memoryWriteResultId,
+      expectedResultRevision: entry.expectedResultRevision,
+      mode: entry.kind === "memory_write_start" ? "write" : "reconcile",
+      workflowDefinitionVersion: MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION,
+      outboxId: entry.outboxId,
+    },
+  );
+  if (response === "unknown") {
+    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
+    return;
+  }
+  if (!response.ok) {
+    if (response.status >= 500) {
+      await markStatus(
+        options,
+        entry,
+        "outcome_unknown",
+        `dispatch.http_${String(response.status)}`,
+        true,
+      );
+    } else if (entry.kind === "memory_write_start") {
+      await failMemoryWriteDispatch(
+        options,
+        snapshot,
+        entry,
+        `dispatch.http_${String(response.status)}`,
+      );
+    } else {
+      await markStatus(
+        options,
+        entry,
+        "failed_terminal",
+        `dispatch.http_${String(response.status)}`,
+        true,
+      );
+    }
+    return;
+  }
+  const parsed = memoryWriteWorkflowDispatchResponseSchema.safeParse(response.json);
+  if (!parsed.success || parsed.data.status === "outcome_unknown") {
+    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
+    return;
+  }
+  await markStatus(options, entry, "acknowledged", undefined, true);
+}
+
 async function dispatchProjectIntake(
   options: OutboxDispatcherOptions,
   entry: ProjectIntakeEntry,
@@ -610,6 +719,70 @@ async function reconcileImportUnknown(
     });
   } else {
     await settleImportDispatchUnknown(options, snapshot, entry);
+  }
+}
+
+async function settleMemoryWriteDispatchUnknown(
+  options: OutboxDispatcherOptions,
+  snapshot: Snapshot,
+  entry: MemoryWriteEntry,
+): Promise<void> {
+  if (Date.parse(options.deps.now()) - Date.parse(entry.updatedAt) < OUTCOME_UNKNOWN_SETTLE_MS) {
+    return;
+  }
+  const current = writeResult(snapshot, entry);
+  if (current?.result.status === "queued") {
+    await commitMemoryWriteOutcomeUnknown(options.deps, {
+      commandId: dispatchCommandId("settle-memory-write-dispatch", entry.outboxId),
+      memoryWriteIntentId: current.intent.memoryWriteIntentId,
+      memoryWriteResultId: current.result.memoryWriteResultId,
+      requestSha256: current.intent.requestSha256,
+      expectedRevision: current.result.revision,
+      errorCode: "memory.write.workflow_dispatch_unknown",
+    });
+  }
+  await markStatus(options, entry, "failed_terminal", "memory.write.workflow_dispatch_unknown");
+}
+
+async function reconcileMemoryWriteUnknown(
+  options: OutboxDispatcherOptions,
+  snapshot: Snapshot,
+  entry: MemoryWriteEntry,
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${options.workflowRuntimeBaseUrl}/internal/workflow/v1/memory-write/reconcile?${new URLSearchParams({ outboxId: entry.outboxId }).toString()}`,
+      {
+        headers: { "x-chat-runtime-key": options.credential },
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+  } catch {
+    await settleMemoryWriteDispatchUnknown(options, snapshot, entry);
+    return;
+  }
+  if (!response.ok) {
+    await settleMemoryWriteDispatchUnknown(options, snapshot, entry);
+    return;
+  }
+  const parsed = memoryWriteWorkflowReconcileResponseSchema.safeParse(
+    await response.json().catch(() => undefined),
+  );
+  if (!parsed.success) {
+    await settleMemoryWriteDispatchUnknown(options, snapshot, entry);
+    return;
+  }
+  if (parsed.data.startBinding === "exists") {
+    await markStatus(options, entry, "acknowledged");
+  } else if (parsed.data.startBinding === "missing") {
+    await updateOutboxStatus(options.deps, {
+      commandId: dispatchCommandId("requeue-memory-write-outbox", entry.outboxId),
+      outboxId: entry.outboxId,
+      status: "pending",
+    });
+  } else {
+    await settleMemoryWriteDispatchUnknown(options, snapshot, entry);
   }
 }
 
@@ -823,6 +996,8 @@ export class OutboxDispatcher {
           await dispatchResume(this.options, snapshot, entry);
         else if (entry.kind === "memory_import_start" || entry.kind === "memory_import_reconcile")
           await dispatchMemoryImport(this.options, snapshot, entry);
+        else if (entry.kind === "memory_write_start" || entry.kind === "memory_write_reconcile")
+          await dispatchMemoryWrite(this.options, snapshot, entry);
         else if (entry.kind === "project_intake_start" || entry.kind === "project_intake_resume")
           await dispatchProjectIntake(this.options, entry);
         else await dispatchProjectAdvancement(this.options, entry);
@@ -838,6 +1013,8 @@ export class OutboxDispatcher {
           entry.kind === "memory_import_reconcile"
         ) {
           await reconcileImportUnknown(this.options, snapshot, entry);
+        } else if (entry.kind === "memory_write_start" || entry.kind === "memory_write_reconcile") {
+          await reconcileMemoryWriteUnknown(this.options, snapshot, entry);
         } else if (
           Date.parse(this.options.deps.now()) - Date.parse(entry.updatedAt) >=
           OUTCOME_UNKNOWN_SETTLE_MS

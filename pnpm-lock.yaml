@@ -408,6 +408,9 @@ importers:
       '@chat/domain':
         specifier: workspace:*
         version: link:../domain
+      '@chat/memory-runtime':
+        specifier: workspace:*
+        version: link:../memory-runtime
       '@chat/pi-runtime':
         specifier: workspace:*
         version: link:../pi-runtime

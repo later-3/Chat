@@ -27,8 +27,19 @@ import {
   commitMemoryImportMaterializedRequestSchema,
   commitMemoryImportFailedRequestSchema,
   commitMemoryImportOutcomeUnknownRequestSchema,
+  loadMemoryWriteResponseSchema,
+  beginWorkflowMemoryWriteRequestSchema,
+  beginWorkflowMemoryWriteResponseSchema,
+  memoryWriteResultResponseSchema,
+  loadMemoryWriteRequestSchema,
+  markMemoryWriteDispatchingRequestSchema,
+  commitMemoryWriteAcceptedRequestSchema,
+  commitMemoryWriteMaterializedRequestSchema,
+  commitMemoryWriteFailedRequestSchema,
+  commitMemoryWriteOutcomeUnknownRequestSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
+  MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION,
   type CompilePlanningInputRequest,
   type AuthorizeExecutorOperationRequest,
   type CommitExecutionResultRequest,
@@ -40,6 +51,7 @@ import {
   type PersistPlanningContextResultRequest,
   type PublishPlanReviewRequest,
   type LoadMemoryImportRequest,
+  type LoadMemoryWriteRequest,
   prepareProjectCandidateRequestSchema,
   prepareProjectAdvancementCandidateRequestSchema,
   projectCandidateDtoSchema,
@@ -61,6 +73,12 @@ import {
   loadNoteDecisionRuntimeResponseSchema,
   commitConfirmedNoteRuntimeRequestSchema,
   commitConfirmedNoteRuntimeResponseSchema,
+  beginWorkflowMemoryQueryRequestSchema,
+  beginWorkflowMemoryQueryResponseSchema,
+  persistWorkflowMemoryQueryResultRequestSchema,
+  persistWorkflowMemoryQueryResultResponseSchema,
+  freezeWorkflowMemoryContextRequestSchema,
+  freezeWorkflowMemoryContextResponseSchema,
   type LoadWorkflowRunSpecRequest,
   type TransitionConfigurablePlanningNodeRequest,
   type PreparePlanningMemoryContextRequest,
@@ -70,6 +88,10 @@ import {
   type PrepareNoteCaptureInputRuntimeRequest,
   type LoadNoteDecisionRuntimeRequest,
   type CommitConfirmedNoteRuntimeRequest,
+  type BeginWorkflowMemoryQueryRequest,
+  type BeginWorkflowMemoryWriteRequest,
+  type PersistWorkflowMemoryQueryResultRequest,
+  type FreezeWorkflowMemoryContextRequest,
 } from "@chat/contracts";
 import { z, type ZodType } from "zod";
 
@@ -179,6 +201,56 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
           ...input,
         }),
         loadWorkflowRunSpecResponseSchema,
+      );
+    },
+    /** 冻结可组合memory.query节点意图；不越过外部Provider边界。 */
+    beginWorkflowMemoryQuery(input: Omit<BeginWorkflowMemoryQueryRequest, "schemaVersion">) {
+      return call(
+        options,
+        "/internal/runtime/v1/begin-workflow-memory-query",
+        beginWorkflowMemoryQueryRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        beginWorkflowMemoryQueryResponseSchema,
+      );
+    },
+    /** 独立Memory Planning中的write节点创建稳定Intent；普通Planning永远不会调用。 */
+    beginWorkflowMemoryWrite(input: Omit<BeginWorkflowMemoryWriteRequest, "schemaVersion">) {
+      return call(
+        options,
+        "/internal/runtime/v1/memory-write/begin-workflow-node",
+        beginWorkflowMemoryWriteRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        beginWorkflowMemoryWriteResponseSchema,
+      );
+    },
+    /** 提交已checkpoint的Provider结果，并原子完成query节点。 */
+    persistWorkflowMemoryQueryResult(
+      input: Omit<PersistWorkflowMemoryQueryResultRequest, "schemaVersion">,
+    ) {
+      return call(
+        options,
+        "/internal/runtime/v1/persist-workflow-memory-query-result",
+        persistWorkflowMemoryQueryResultRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        persistWorkflowMemoryQueryResultResponseSchema,
+      );
+    },
+    /** 在Planner前冻结本轮所有query为唯一Workflow Memory Context。 */
+    freezeWorkflowMemoryContext(input: Omit<FreezeWorkflowMemoryContextRequest, "schemaVersion">) {
+      return call(
+        options,
+        "/internal/runtime/v1/freeze-workflow-memory-context",
+        freezeWorkflowMemoryContextRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        freezeWorkflowMemoryContextResponseSchema,
       );
     },
     /** 准备规划Memory上下文：为可配置规划工作流预读Memory层上下文。 */
@@ -570,6 +642,131 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
           ...input,
         },
         loadMemoryImportResponseSchema,
+      );
+    },
+    loadMemoryWrite(
+      input: Omit<LoadMemoryWriteRequest, "schemaVersion" | "workflowDefinitionVersion">,
+    ) {
+      return call(
+        options,
+        "/internal/runtime/v1/memory-write/load",
+        loadMemoryWriteRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          workflowDefinitionVersion: MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION,
+          ...input,
+        }),
+        loadMemoryWriteResponseSchema,
+      );
+    },
+    markMemoryWriteDispatching(input: {
+      commandId: string;
+      memoryWriteIntentId: string;
+      memoryWriteResultId: string;
+      requestSha256: string;
+      expectedRevision: number;
+    }) {
+      return call(
+        options,
+        "/internal/runtime/v1/memory-write/mark-dispatching",
+        markMemoryWriteDispatchingRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          workflowDefinitionVersion: MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION,
+          ...input,
+        }),
+        memoryWriteResultResponseSchema,
+      );
+    },
+    commitMemoryWriteAccepted(input: {
+      commandId: string;
+      memoryWriteIntentId: string;
+      memoryWriteResultId: string;
+      requestSha256: string;
+      expectedRevision: number;
+      accepted: {
+        externalObjectId: string;
+        externalObjectVersion?: string;
+        externalStatus?: string;
+        responseSha256: string;
+      };
+      reconciled?: boolean;
+    }) {
+      return call(
+        options,
+        "/internal/runtime/v1/memory-write/commit-accepted",
+        commitMemoryWriteAcceptedRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          workflowDefinitionVersion: MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION,
+          ...input,
+        }),
+        memoryWriteResultResponseSchema,
+      );
+    },
+    commitMemoryWriteMaterialized(input: {
+      commandId: string;
+      memoryWriteIntentId: string;
+      memoryWriteResultId: string;
+      requestSha256: string;
+      expectedRevision: number;
+      accepted: {
+        externalObjectId: string;
+        externalObjectVersion?: string;
+        externalStatus?: string;
+        responseSha256: string;
+      };
+      verificationKind: string;
+      verificationSha256: string;
+      reconciled?: boolean;
+    }) {
+      return call(
+        options,
+        "/internal/runtime/v1/memory-write/commit-materialized",
+        commitMemoryWriteMaterializedRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          workflowDefinitionVersion: MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION,
+          ...input,
+        }),
+        memoryWriteResultResponseSchema,
+      );
+    },
+    commitMemoryWriteFailed(input: {
+      commandId: string;
+      memoryWriteIntentId: string;
+      memoryWriteResultId: string;
+      requestSha256: string;
+      expectedRevision: number;
+      errorCode: string;
+      summary: string;
+      reconciled?: boolean;
+    }) {
+      return call(
+        options,
+        "/internal/runtime/v1/memory-write/commit-failed",
+        commitMemoryWriteFailedRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          workflowDefinitionVersion: MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION,
+          ...input,
+        }),
+        memoryWriteResultResponseSchema,
+      );
+    },
+    commitMemoryWriteOutcomeUnknown(input: {
+      commandId: string;
+      memoryWriteIntentId: string;
+      memoryWriteResultId: string;
+      requestSha256: string;
+      expectedRevision: number;
+      errorCode: string;
+      reconciled?: boolean;
+    }) {
+      return call(
+        options,
+        "/internal/runtime/v1/memory-write/commit-outcome-unknown",
+        commitMemoryWriteOutcomeUnknownRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          workflowDefinitionVersion: MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION,
+          ...input,
+        }),
+        memoryWriteResultResponseSchema,
       );
     },
     /** 标记记忆导入派发中：记录外部Memory请求已发出（结果未知，等待对账）。 */

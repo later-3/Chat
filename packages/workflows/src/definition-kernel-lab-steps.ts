@@ -142,6 +142,12 @@ export async function executeDefinitionKernelNodeStep(input: {
   const context = withCommand(input.context, registration.operation);
   let raw: KernelNodeControlResult;
   switch (registration.operation) {
+    case "query_memory":
+      raw = await port.queryMemory(context);
+      break;
+    case "write_memory":
+      raw = await port.writeMemory(context);
+      break;
     case "load_memory_context":
       raw = await port.loadMemoryContext(context);
       break;

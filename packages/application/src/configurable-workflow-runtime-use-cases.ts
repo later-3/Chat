@@ -17,6 +17,7 @@ import type { ApplicationDeps } from "./deps.js";
 import { ApplicationError, notFound } from "./errors.js";
 import { validateWorkflowRunSpecIntegrity } from "./workflow-run-spec-compiler.js";
 import { DEFAULT_NODE_CATALOG } from "./workflow-node-catalog.js";
+import { emitWorkflowMemoryNodeTrace } from "./workflow-memory-trace.js";
 
 export async function getWorkflowRunSpecForRuntime(
   deps: ApplicationDeps,
@@ -62,6 +63,7 @@ export async function transitionConfigurablePlanningNode(
 ): Promise<{ readonly workflowNodeRunId: string; readonly revision: number }> {
   const now = deps.now();
   const requestSha256 = hashCanonical("command.transition-configurable-planning-node.v1", input);
+  let didTransition = false;
   const result = await deps.store.transact({
     commandId: input.commandId,
     commandType: "TransitionConfigurablePlanningNode",
@@ -198,12 +200,16 @@ export async function transitionConfigurablePlanningNode(
       );
       draft.entities.nodeRunTransitions[transitioned.transition.nodeRunTransitionId] =
         nodeRunTransitionSchema.parse(transitioned.transition);
+      didTransition = true;
       return { resultRefs: { workflowNodeRunId } };
     },
   });
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
   const node = snapshot.entities.workflowNodeRuns[result.resultRefs["workflowNodeRunId"] ?? ""];
   if (node === undefined) throw notFound("Workflow Node不存在");
+  // 同command receipt重放，或新command重复声明相同状态，都没有产生新Transition；
+  // 此时重复发射会在DSH轨迹中制造第二条同ID的Memory call/result。
+  if (didTransition) emitWorkflowMemoryNodeTrace(deps, snapshot, node);
   return { workflowNodeRunId: node.workflowNodeRunId, revision: node.revision };
 }
 

@@ -7,6 +7,8 @@
  */
 
 export const WORKFLOW_NODE_TYPES = [
+  "memory.query",
+  "memory.write",
   "context.memory",
   "context.project",
   "policy.rules",
@@ -67,6 +69,8 @@ export type WorkflowReviewMode = "manual" | "auto_continue_if_policy_allows" | "
 
 export type WorkflowSlotValueKind =
   | "message_ref"
+  | "memory_snapshot_ref"
+  | "memory_write_ref"
   | "context_package_ref"
   | "project_context_ref"
   | "rule_resolution_ref"

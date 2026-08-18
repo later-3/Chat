@@ -62,6 +62,13 @@ import {
 import { planningProjectContextSchema } from "./planning-project-context.js";
 import { planningMemorySelectionSchema } from "./planning-memory-selection.js";
 import { workflowPolicyResolutionSchema } from "./workflow-policy-resolution.js";
+import {
+  memoryWriteIntentSchema,
+  memoryWriteResultSchema,
+  workflowMemoryContextSchema,
+  workflowMemoryQuerySchema,
+  workflowMemorySnapshotSchema,
+} from "./workflow-memory.js";
 
 /**
  * Product Snapshot顶层合同（任务书§8.3）。
@@ -73,7 +80,7 @@ import { workflowPolicyResolutionSchema } from "./workflow-policy-resolution.js"
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v11";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v12";
 
 const idKeySchema = z.string().min(1).max(200);
 
@@ -137,6 +144,11 @@ export const productSnapshotSchema = z
         planningProjectContexts: z.record(idKeySchema, planningProjectContextSchema),
         planningMemorySelections: z.record(idKeySchema, planningMemorySelectionSchema),
         workflowPolicyResolutions: z.record(idKeySchema, workflowPolicyResolutionSchema),
+        workflowMemoryQueries: z.record(idKeySchema, workflowMemoryQuerySchema),
+        workflowMemorySnapshots: z.record(idKeySchema, workflowMemorySnapshotSchema),
+        workflowMemoryContexts: z.record(idKeySchema, workflowMemoryContextSchema),
+        memoryWriteIntents: z.record(idKeySchema, memoryWriteIntentSchema),
+        memoryWriteResults: z.record(idKeySchema, memoryWriteResultSchema),
       })
       .strict(),
     commandReceipts: z.record(idKeySchema, commandReceiptSchema),
@@ -206,6 +218,11 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       planningProjectContexts: {},
       planningMemorySelections: {},
       workflowPolicyResolutions: {},
+      workflowMemoryQueries: {},
+      workflowMemorySnapshots: {},
+      workflowMemoryContexts: {},
+      memoryWriteIntents: {},
+      memoryWriteResults: {},
     },
     commandReceipts: {},
     outbox: {},

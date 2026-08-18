@@ -13,8 +13,23 @@ import {
   type MemoryQueryInput,
   type MemoryQueryOutput,
   type MemoryQuerySection,
+  WorkflowMemoryProviderError,
+  WorkflowMemoryWriteProviderError,
+  type WorkflowMemoryQueryInput,
+  type WorkflowMemoryQueryOutput,
+  type WorkflowMemoryQueryProviderPort,
+  type WorkflowMemoryWriteAccepted,
+  type WorkflowMemoryWriteInput,
+  type WorkflowMemoryWriteProviderPort,
+  type WorkflowMemoryWriteReconcileInput,
+  type WorkflowMemoryWriteReconcileOutput,
 } from "@chat/application";
-import { memoryBackendIdSchema, type MemoryBackendId } from "@chat/contracts";
+import {
+  memoryBackendIdSchema,
+  memoryProviderDescriptorSchema,
+  type MemoryBackendId,
+  type MemoryProviderDescriptor,
+} from "@chat/contracts";
 import {
   computeMemoryImportRequestSha256,
   estimateMemorySectionTokens,
@@ -310,6 +325,48 @@ function mappedKind(type: string): MemoryQuerySection["kind"] {
   return "trace";
 }
 
+/** 固定Tencent协议仍按conversation/L0收口；该转换不泄漏到新Port。 */
+function legacyWriteInput(
+  input: WorkflowMemoryWriteInput | WorkflowMemoryWriteReconcileInput,
+): MemoryImportInput {
+  const shape = {
+    kind: "tencent_conversation_capture" as const,
+    content: input.content,
+    layer: "L0" as const,
+    turnId: input.sourceMessageId,
+  };
+  return {
+    // 旧Port的品牌只约束旧产品ID；网络协议实际接受稳定字符串。新operationId保持原样，
+    // 因而响应丢失后的session仍可由mwi_*确定性找回。
+    operationId: input.operationId as never,
+    requestSha256: computeMemoryImportRequestSha256(shape),
+    content: input.content,
+    layer: "L0",
+    title: "conversation_turn",
+    tags: [],
+    source: "chat.explicit_import",
+    sessionId: input.productSessionId,
+    turnId: input.sourceMessageId,
+  };
+}
+
+function wrapWriteAccepted(
+  requestSha256: string,
+  accepted: MemoryImportAccepted,
+): WorkflowMemoryWriteAccepted {
+  return {
+    externalObjectId: accepted.externalObjectId,
+    ...(accepted.externalObjectVersion !== undefined
+      ? { externalObjectVersion: accepted.externalObjectVersion }
+      : {}),
+    ...(accepted.externalStatus !== undefined ? { externalStatus: accepted.externalStatus } : {}),
+    responseSha256: hashCanonical("memory-write-tencent-accepted.v1", {
+      requestSha256,
+      providerResponseSha256: accepted.responseSha256,
+    }),
+  };
+}
+
 /**
  * Tencent MemoryCore 的信任边界 Adapter。
  *
@@ -317,7 +374,13 @@ function mappedKind(type: string): MemoryQuerySection["kind"] {
  * L0/L1对象。Adapter不缓存产品状态，只把严格校验后的外部结果归一化为两个窄Port。
  * endpoint、Bearer与隔离身份只存在于本进程，绝不进入公开DTO或Trace。
  */
-export class TencentMemoryCoreAdapter implements MemoryBackendPort, MemoryImportBackendPort {
+export class TencentMemoryCoreAdapter
+  implements
+    MemoryBackendPort,
+    MemoryImportBackendPort,
+    WorkflowMemoryQueryProviderPort,
+    WorkflowMemoryWriteProviderPort
+{
   private readonly baseUrl: string;
   private readonly configuration: ResolvedConfiguration | undefined;
   private readonly configurationFingerprint: string;
@@ -387,6 +450,146 @@ export class TencentMemoryCoreAdapter implements MemoryBackendPort, MemoryImport
         },
       },
     };
+  }
+
+  /**
+   * 新Workflow Memory合同只声明通用能力；L0/L1与Tencent隔离头仍留在本Adapter。
+   * 同一个Provider描述同时供API冻结与Workflow调用前复核。
+   */
+  describeProvider(): MemoryProviderDescriptor {
+    return memoryProviderDescriptorSchema.parse({
+      schemaVersion: "memory-provider-descriptor.v1",
+      providerId: TENCENT_MEMORYCORE_BACKEND_ID,
+      displayName: "Tencent MemoryCore",
+      providerKind: "tencent_memorycore",
+      transport: "http",
+      adapterContractVersion: "tencent-memorycore-http.v2",
+      configured: this.configuration !== undefined,
+      authMode: "bearer",
+      credentialRevision: this.configuration?.credentialRevision ?? "unconfigured",
+      configurationFingerprint: this.configurationFingerprint,
+      capabilities: {
+        query: { maxResults: 20, maxContextCharacters: 32_000 },
+        write: {
+          maxContentCharacters: 8_192,
+          materialization: "asynchronous",
+          // 固定版本没有调用方幂等Key；Chat用稳定session做只读对账。
+          idempotency: "chat_reconcile",
+        },
+        reconcile: true,
+        management: { list: false, get: false, update: false, delete: false, history: false },
+      },
+    });
+  }
+
+  async queryMemory(input: WorkflowMemoryQueryInput): Promise<WorkflowMemoryQueryOutput> {
+    const capability = this.describeProvider().capabilities.query;
+    if (
+      capability === null ||
+      input.maxResults > capability.maxResults ||
+      input.maxContextCharacters > capability.maxContextCharacters
+    ) {
+      throw new WorkflowMemoryProviderError({
+        code: "memory.provider.capability_unsupported",
+        message: "Tencent MemoryCore查询超出已声明能力",
+        retryable: false,
+      });
+    }
+    try {
+      const output = await this.query({
+        operationId: input.operationId,
+        productRunId: input.productRunId,
+        productSessionId: input.productSessionId,
+        query: input.query,
+        tags: [],
+        layers: ["L1"],
+        limit: input.maxResults,
+        // 旧Adapter内部仍使用保守token门；新Application会再按字符预算裁剪。
+        contextBudget: 8_192,
+      });
+      return {
+        externalQueryId: output.externalQueryId,
+        hitCount: output.hitCount,
+        sections: output.sections.map((section) => ({
+          externalObjectIds: section.externalObjectIds,
+          title: section.title,
+          category:
+            section.kind === "policy"
+              ? "procedure"
+              : section.kind === "world_model"
+                ? "preference"
+                : section.kind === "skill"
+                  ? "skill"
+                  : "episode",
+          content: section.content,
+          labels: section.tags,
+          ...(section.score !== undefined ? { score: section.score } : {}),
+          ...(section.sourceUpdatedAt !== undefined
+            ? { sourceUpdatedAt: section.sourceUpdatedAt }
+            : {}),
+        })),
+      };
+    } catch (error) {
+      if (error instanceof MemoryBackendError) {
+        throw new WorkflowMemoryProviderError({
+          code: error.code.replace(/^memory\.backend/u, "memory.provider"),
+          message: error.message,
+          retryable: error.retryable,
+        });
+      }
+      throw error;
+    }
+  }
+
+  async writeMemory(input: WorkflowMemoryWriteInput): Promise<WorkflowMemoryWriteAccepted> {
+    const legacy = legacyWriteInput(input);
+    try {
+      const accepted = await this.import(legacy);
+      return wrapWriteAccepted(input.requestSha256, accepted);
+    } catch (error) {
+      if (error instanceof MemoryImportBackendError) {
+        throw new WorkflowMemoryWriteProviderError({
+          code: error.code.replace(/^memory\.import/u, "memory.write"),
+          message: error.message,
+          phase: error.phase,
+        });
+      }
+      throw error;
+    }
+  }
+
+  async reconcileMemoryWrite(
+    input: WorkflowMemoryWriteReconcileInput,
+  ): Promise<WorkflowMemoryWriteReconcileOutput> {
+    const result = await this.reconcile({
+      ...legacyWriteInput(input),
+      ...(input.externalObjectId !== undefined ? { externalObjectId: input.externalObjectId } : {}),
+    });
+    if (result.status === "outcome_unknown") {
+      return {
+        status: "outcome_unknown",
+        errorCode: result.errorCode.replace(/^memory\.import/u, "memory.write"),
+      };
+    }
+    if (result.status === "failed") {
+      return {
+        status: "failed",
+        errorCode: result.errorCode.replace(/^memory\.import/u, "memory.write"),
+        summary: result.summary,
+      };
+    }
+    const accepted = wrapWriteAccepted(input.requestSha256, result.accepted);
+    return result.status === "accepted"
+      ? { status: "accepted", accepted }
+      : {
+          status: "materialized",
+          accepted,
+          verificationKind: result.verificationKind,
+          verificationSha256: hashCanonical("memory-write-tencent-verification.v1", {
+            requestSha256: input.requestSha256,
+            providerVerificationSha256: result.verificationSha256,
+          }),
+        };
   }
 
   async health(): Promise<MemoryBackendHealth> {

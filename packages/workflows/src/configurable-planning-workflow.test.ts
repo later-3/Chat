@@ -9,6 +9,10 @@ const mocked = vi.hoisted(() => ({
   prepareMemoryContext: vi.fn(),
   prepareProjectContext: vi.fn(),
   prepareRulesContext: vi.fn(),
+  beginWorkflowMemoryQuery: vi.fn(),
+  queryWorkflowMemoryProvider: vi.fn(),
+  persistWorkflowMemoryQueryResult: vi.fn(),
+  freezeWorkflowMemoryContext: vi.fn(),
   generatePlan: vi.fn(),
   claimDecisionHook: vi.fn(),
   expireApproval: vi.fn(),
@@ -37,6 +41,13 @@ vi.mock("./workflow-planning-steps.js", () => ({
   preparePlanningProjectContextStep: mocked.prepareProjectContext,
   preparePlanningRulesContextStep: mocked.prepareRulesContext,
   generateAndPublishPlanStep: mocked.generatePlan,
+}));
+
+vi.mock("./workflow-memory-steps.js", () => ({
+  beginWorkflowMemoryQueryStep: mocked.beginWorkflowMemoryQuery,
+  queryWorkflowMemoryProviderStep: mocked.queryWorkflowMemoryProvider,
+  persistWorkflowMemoryQueryResultStep: mocked.persistWorkflowMemoryQueryResult,
+  freezeWorkflowMemoryContextStep: mocked.freezeWorkflowMemoryContext,
 }));
 
 vi.mock("./workflow-decision-steps.js", () => ({
@@ -150,6 +161,41 @@ function runSpecFixture() {
   } as never;
 }
 
+function workflowMemoryRunSpecFixture(required = false) {
+  const fixture = structuredClone(runSpecFixture()) as {
+    semanticRoot: { elements: Array<Record<string, unknown>> };
+    nodeResolutions: Array<Record<string, unknown>>;
+    resourceResolutions: Array<Record<string, unknown>>;
+  };
+  const config = {
+    providerId: "mbk_tencentmemorycore",
+    required,
+    querySource: "source_message",
+    maxResults: 8,
+    maxContextCharacters: 8_000,
+  };
+  fixture.semanticRoot.elements = fixture.semanticRoot.elements.map((element) =>
+    element["definitionNodeId"] === "planning.memory"
+      ? task("planning.memory-query", "memory.query", config)
+      : element,
+  );
+  fixture.nodeResolutions = fixture.nodeResolutions.map((resolution) =>
+    resolution["definitionNodeId"] === "planning.memory"
+      ? {
+          definitionNodeId: "planning.memory-query",
+          nodeType: "memory.query",
+          schemaVersion: 1,
+          config,
+          activation: "enabled",
+        }
+      : resolution,
+  );
+  fixture.resourceResolutions = fixture.resourceResolutions.filter(
+    (resolution) => resolution["definitionNodeId"] !== "planning.memory",
+  );
+  return fixture as never;
+}
+
 describe("Configurable Planning固定Runner", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -166,6 +212,21 @@ describe("Configurable Planning固定Runner", () => {
     });
     mocked.prepareProjectContext.mockResolvedValue({ status: "none" });
     mocked.prepareRulesContext.mockResolvedValue({ status: "none" });
+    mocked.beginWorkflowMemoryQuery.mockResolvedValue({
+      status: "dispatch_required",
+      workflowMemoryQueryId: "wmq_configurable1",
+      query: { operationId: "wmq_configurable1" },
+    });
+    mocked.queryWorkflowMemoryProvider.mockResolvedValue({
+      outcome: "success",
+      resultSetSha256: SHA_A,
+      sections: [],
+    });
+    mocked.persistWorkflowMemoryQueryResult.mockResolvedValue({
+      status: "completed",
+      snapshotCount: 1,
+    });
+    mocked.freezeWorkflowMemoryContext.mockResolvedValue({ status: "none" });
     mocked.sleep.mockImplementation(() => new Promise(() => undefined));
     let hookIndex = 0;
     mocked.createHook.mockImplementation(() => {
@@ -258,6 +319,89 @@ describe("Configurable Planning固定Runner", () => {
       1,
       expect.objectContaining({ approvalRequestId: "apr_configurable1" }),
     );
+  });
+
+  it("memory.query按独立耐久边界执行，并在第一个Planner前冻结唯一Context", async () => {
+    mocked.loadRunSpec.mockResolvedValue(workflowMemoryRunSpecFixture());
+    mocked.freezeWorkflowMemoryContext.mockResolvedValue({
+      status: "ready",
+      contextRef: {
+        workflowMemoryContextId: "wmc_configurable1",
+        revision: 1,
+        sha256: SHA_A,
+      },
+    });
+
+    const result = await configurablePlanningWorkflow({
+      schemaVersion: "configurable-planning-workflow-input.v1",
+      productRunId: "run_configurabletest1",
+      attemptId: "att_workflow1",
+      workflowRunSpecId: "wrs_configurabletest1",
+    });
+
+    expect(result.outcome).toBe("product_committed");
+    expect(mocked.beginWorkflowMemoryQuery).toHaveBeenCalledTimes(1);
+    expect(mocked.queryWorkflowMemoryProvider).toHaveBeenCalledTimes(1);
+    expect(mocked.persistWorkflowMemoryQueryResult).toHaveBeenCalledTimes(1);
+    expect(mocked.freezeWorkflowMemoryContext).toHaveBeenCalledTimes(1);
+    expect(mocked.generatePlan).toHaveBeenCalledTimes(2);
+    for (const [call] of mocked.generatePlan.mock.calls) {
+      expect(call).toMatchObject({
+        workflowMemoryContextRef: {
+          workflowMemoryContextId: "wmc_configurable1",
+          revision: 1,
+          sha256: SHA_A,
+        },
+      });
+    }
+  });
+
+  it("可选memory.query失败继续规划，必需失败则在Planner前关闭", async () => {
+    mocked.loadRunSpec.mockResolvedValue(workflowMemoryRunSpecFixture());
+    mocked.persistWorkflowMemoryQueryResult.mockResolvedValueOnce({
+      status: "optional_failed",
+      snapshotCount: 0,
+    });
+    mocked.freezeWorkflowMemoryContext.mockResolvedValueOnce({
+      status: "ready",
+      contextRef: {
+        workflowMemoryContextId: "wmc_optionalfailed1",
+        revision: 1,
+        sha256: SHA_A,
+      },
+    });
+    await expect(
+      configurablePlanningWorkflow({
+        schemaVersion: "configurable-planning-workflow-input.v1",
+        productRunId: "run_configurabletest1",
+        attemptId: "att_workflow1",
+        workflowRunSpecId: "wrs_configurabletest1",
+      }),
+    ).resolves.toMatchObject({ outcome: "product_committed" });
+
+    vi.clearAllMocks();
+    mocked.loadRunSpec.mockResolvedValue(workflowMemoryRunSpecFixture(true));
+    mocked.recordNode.mockResolvedValue(undefined);
+    mocked.beginWorkflowMemoryQuery.mockResolvedValue({
+      status: "required_failed",
+      workflowMemoryQueryId: "wmq_requiredfailed1",
+    });
+    mocked.commitRunFailure.mockResolvedValue(undefined);
+    await expect(
+      configurablePlanningWorkflow({
+        schemaVersion: "configurable-planning-workflow-input.v1",
+        productRunId: "run_configurabletest1",
+        attemptId: "att_workflow1",
+        workflowRunSpecId: "wrs_configurabletest1",
+      }),
+    ).resolves.toMatchObject({
+      outcome: "failed",
+      errorCode: "configurable_planning.required_unavailable",
+    });
+    expect(mocked.queryWorkflowMemoryProvider).not.toHaveBeenCalled();
+    expect(mocked.freezeWorkflowMemoryContext).not.toHaveBeenCalled();
+    expect(mocked.generatePlan).not.toHaveBeenCalled();
+    expect(mocked.commitRunFailure).toHaveBeenCalledTimes(1);
   });
 
   it("Composite结果未知不重试Executor，写Node与Product Run unknown且不进入验证/提交", async () => {

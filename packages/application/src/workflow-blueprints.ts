@@ -38,6 +38,10 @@ export interface WorkflowBlueprint {
   readonly runnerFamily: "configurable-planning.v1" | "note-capture.v1";
   readonly allowedNodeTypes: readonly WorkflowNodeTypeKey[];
   readonly optionalNodeTypes: readonly WorkflowNodeTypeKey[];
+  readonly repeatableNodeTypes: readonly {
+    readonly nodeType: WorkflowNodeTypeKey;
+    readonly maxCount: number;
+  }[];
   readonly requiredRoles: readonly WorkflowRequiredRole[];
   readonly loopRules: readonly WorkflowLoopRule[];
   readonly perRunOverrides: readonly WorkflowRunOverrideRule[];
@@ -78,6 +82,8 @@ export function workflowBlueprintRef(key: WorkflowBlueprintKey, version: number)
 }
 
 const PLANNING_NODE_TYPES: readonly WorkflowNodeTypeKey[] = [
+  "memory.query",
+  "memory.write",
   "context.memory",
   "context.project",
   "policy.rules",
@@ -103,7 +109,14 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
     blueprintVersion: 1,
     runnerFamily: "configurable-planning.v1",
     allowedNodeTypes: PLANNING_NODE_TYPES,
-    optionalNodeTypes: ["context.memory", "context.project", "policy.rules", "capability.skills"],
+    optionalNodeTypes: [
+      "memory.query",
+      "context.memory",
+      "context.project",
+      "policy.rules",
+      "capability.skills",
+    ],
+    repeatableNodeTypes: [{ nodeType: "memory.query", maxCount: 8 }],
     requiredRoles: [
       { role: "planner", nodeType: "agent.plan", exactlyOnce: true },
       { role: "plan_reviewer", nodeType: "human.plan_review", exactlyOnce: true },
@@ -120,6 +133,7 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
       },
     ],
     perRunOverrides: [
+      { nodeType: "memory.query", fields: ["enabled"] },
       { nodeType: "context.memory", fields: ["enabled", "selection"] },
       { nodeType: "context.project", fields: ["enabled", "selection"] },
       { nodeType: "policy.rules", fields: ["enabled", "selection"] },
@@ -139,6 +153,7 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
     runnerFamily: "note-capture.v1",
     allowedNodeTypes: NOTE_NODE_TYPES,
     optionalNodeTypes: ["human.note_review"],
+    repeatableNodeTypes: [],
     requiredRoles: [
       { role: "extractor", nodeType: "note.extract", exactlyOnce: true },
       { role: "classifier", nodeType: "note.classify", exactlyOnce: true },
@@ -255,7 +270,11 @@ export function validateDefinitionAgainstBlueprint(
   }
   for (const nodeType of blueprint.optionalNodeTypes) {
     const count = nodes.filter((node) => node.nodeType === nodeType).length;
-    if (count > 1) {
+    const repeatable = blueprint.repeatableNodeTypes.find(
+      (candidate) => candidate.nodeType === nodeType,
+    );
+    const maxCount = repeatable?.maxCount ?? 1;
+    if (count > maxCount) {
       diagnostics.push(invalid("blueprint.optional_node_duplicated", "$", { nodeType, count }));
     }
   }
@@ -303,6 +322,17 @@ function assertBlueprintConformance(blueprint: WorkflowBlueprint, catalog: NodeC
   }
   if (new Set(blueprint.allowedNodeTypes).size !== blueprint.allowedNodeTypes.length) {
     throw new Error(`workflow.blueprint.duplicate_allowed_type:${blueprint.blueprintKey}`);
+  }
+  for (const repeatable of blueprint.repeatableNodeTypes) {
+    if (
+      !blueprint.optionalNodeTypes.includes(repeatable.nodeType) ||
+      !Number.isInteger(repeatable.maxCount) ||
+      repeatable.maxCount < 2
+    ) {
+      throw new Error(
+        `workflow.blueprint.invalid_repeatable_type:${blueprint.blueprintKey}:${repeatable.nodeType}`,
+      );
+    }
   }
   const roles = new Set<string>();
   for (const role of blueprint.requiredRoles) {

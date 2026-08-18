@@ -13,6 +13,7 @@ import {
   type IdFactory,
 } from "@chat/application";
 import {
+  SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
   SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
 } from "@chat/application/workflow-system-definitions";
@@ -62,21 +63,24 @@ async function fixture() {
   const { snapshot } = await store.read({ kind: "committedSnapshot" });
   const system =
     snapshot.entities.workflowDefinitionRevisions[SYSTEM_PLANNING_WORKFLOW_REVISION_ID];
+  const memorySystem =
+    snapshot.entities.workflowDefinitionRevisions[SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID];
   if (system === undefined) throw new Error("system seed missing");
-  return { deps, store, filePath, system, app };
+  if (memorySystem === undefined) throw new Error("memory system seed missing");
+  return { deps, store, filePath, system, memorySystem, app };
 }
 
 const command = (value: string) => value as CommandId;
 
 describe("S6 Workflow Definition生命周期", () => {
   it("copy→save→validate→publish→archive/restore保留不可变Revision与Published View", async () => {
-    const { deps, store, system } = await fixture();
+    const { deps, store, memorySystem } = await fixture();
     const copied = await createWorkflowDefinitionCopy(deps, {
       principalId: OWNER,
       commandId: command("cmd_designercopy1"),
       payload: {
-        sourceWorkflowDefinitionRevisionId: system.workflowDefinitionRevisionId,
-        sourceDefinitionSha256: system.definitionSha256,
+        sourceWorkflowDefinitionRevisionId: memorySystem.workflowDefinitionRevisionId,
+        sourceDefinitionSha256: memorySystem.definitionSha256,
         title: "我的规划流程",
         description: "受约束的个人Planning Definition",
       },
@@ -91,7 +95,7 @@ describe("S6 Workflow Definition生命周期", () => {
     if (copied.definition.compatibility !== "editable") throw new Error("copy不可编辑");
     const root = structuredClone(copied.definition.semanticRoot);
     const memory = root.elements.find(
-      (element) => element.kind === "task" && element.nodeType === "context.memory",
+      (element) => element.kind === "task" && element.nodeType === "memory.query",
     );
     if (memory?.kind !== "task") throw new Error("memory node missing");
     memory.defaultActivation = "skipped";
@@ -214,13 +218,13 @@ describe("S6 Workflow Definition生命周期", () => {
   });
 
   it("CAS过期和非法Definition均零写入失败", async () => {
-    const { deps, store, system } = await fixture();
+    const { deps, store, memorySystem } = await fixture();
     const copied = await createWorkflowDefinitionCopy(deps, {
       principalId: OWNER,
       commandId: command("cmd_designercopyinvalid1"),
       payload: {
-        sourceWorkflowDefinitionRevisionId: system.workflowDefinitionRevisionId,
-        sourceDefinitionSha256: system.definitionSha256,
+        sourceWorkflowDefinitionRevisionId: memorySystem.workflowDefinitionRevisionId,
+        sourceDefinitionSha256: memorySystem.definitionSha256,
         title: "校验失败副本",
         description: "非法结构不能保存",
       },
@@ -389,13 +393,13 @@ describe("S6 Workflow Definition生命周期", () => {
   });
 
   it("发布B只把A标为superseded，A的不可变View继续可读", async () => {
-    const { deps, store, system } = await fixture();
+    const { deps, store, memorySystem } = await fixture();
     const copied = await createWorkflowDefinitionCopy(deps, {
       principalId: OWNER,
       commandId: command("cmd_designerabcopy1"),
       payload: {
-        sourceWorkflowDefinitionRevisionId: system.workflowDefinitionRevisionId,
-        sourceDefinitionSha256: system.definitionSha256,
+        sourceWorkflowDefinitionRevisionId: memorySystem.workflowDefinitionRevisionId,
+        sourceDefinitionSha256: memorySystem.definitionSha256,
         title: "A/B流程",
         description: "验证历史View不漂移",
       },
@@ -415,7 +419,7 @@ describe("S6 Workflow Definition生命周期", () => {
     if (publishedA.definition.compatibility !== "editable") throw new Error("A不可编辑");
     const rootB = structuredClone(publishedA.definition.semanticRoot);
     const memory = rootB.elements.find(
-      (element) => element.kind === "task" && element.nodeType === "context.memory",
+      (element) => element.kind === "task" && element.nodeType === "memory.query",
     );
     if (memory?.kind !== "task") throw new Error("memory node missing");
     memory.defaultActivation = "skipped";

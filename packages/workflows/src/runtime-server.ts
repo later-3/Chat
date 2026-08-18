@@ -2,6 +2,7 @@ import { readdir } from "node:fs/promises";
 import { getRun } from "workflow/api";
 import {
   MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
+  MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION,
   PROJECT_ADVANCEMENT_WORKFLOW_DEFINITION_VERSION,
   PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION,
   type TraceEventInput,
@@ -12,7 +13,10 @@ import {
   runPiNoteCapture,
   runPiPlanner,
 } from "@chat/pi-runtime";
-import { createEmptyMemoryBackendRegistry } from "@chat/memory-runtime";
+import {
+  createEmptyMemoryBackendRegistry,
+  createWorkflowMemoryProviderRegistry,
+} from "@chat/memory-runtime";
 import { ZodError } from "zod";
 import { createRuntimeApiClient } from "./api-client.js";
 import { RuntimeBindingStore } from "./runtime-bindings.js";
@@ -63,6 +67,7 @@ export interface WorkflowRuntimeServerOptions {
       WorkflowRuntimeContext,
       | "memoryBackends"
       | "memoryImportBackends"
+      | "workflowMemoryProviders"
       | "bailian"
       | "planner"
       | "noteCapture"
@@ -103,6 +108,7 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
 
     // Workflow合同仍需要Registry Port，但当前统一运行图冻结为空，不实例化任何外部Adapter。
     const memoryRegistry = createEmptyMemoryBackendRegistry();
+    const workflowMemoryProviders = createWorkflowMemoryProviderRegistry(process.env);
     const executorClient = createPiExecutorServiceClient({
       baseUrl: options.executorBaseUrl ?? "http://127.0.0.1:43115",
       credential: options.credential,
@@ -111,6 +117,7 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       api: createRuntimeApiClient({ baseUrl: options.apiBaseUrl, credential: options.credential }),
       bindings,
       memoryBackends: memoryRegistry,
+      workflowMemoryProviders,
       trace,
       now: () => new Date().toISOString(),
       bailian: loadBailianConfig(process.env),
@@ -153,6 +160,20 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
             !buildEvidence.workflowDefinitionVersions.includes(binding.workflowDefinitionVersion)
           ) {
             throw new Error("活动Memory Import Workflow版本与当前构建不一致，拒绝恢复");
+          }
+        }
+        for (const { binding } of bindings.listMemoryWriteBindings()) {
+          const run = getRun(binding.workflowRunId);
+          if (!(await run.exists)) {
+            throw new Error("Memory Write Binding引用的Workflow Run不存在，拒绝恢复");
+          }
+          const status = String(await run.status);
+          if (["completed", "failed", "cancelled"].includes(status)) continue;
+          if (
+            binding.workflowDefinitionVersion !== MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION ||
+            !buildEvidence.workflowDefinitionVersions.includes(binding.workflowDefinitionVersion)
+          ) {
+            throw new Error("活动Memory Write Workflow版本与当前构建不一致，拒绝恢复");
           }
         }
         for (const { binding } of bindings.listProjectIntakeBindings()) {

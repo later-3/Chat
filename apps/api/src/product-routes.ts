@@ -15,6 +15,10 @@ import {
   createMemoryImportPayloadSchema,
   reconcileMemoryImportPayloadSchema,
   memoryImportIntentIdSchema,
+  createMemoryWritePayloadSchema,
+  reconcileMemoryWritePayloadSchema,
+  memoryWriteIntentIdSchema,
+  listMemoryProvidersResponseSchema,
   messageIdSchema,
   projectCandidateIdSchema,
   projectIdSchema,
@@ -86,6 +90,10 @@ import {
   getMemoryImport,
   listSessionMemoryImports,
   requestMemoryImportReconciliation,
+  createMemoryWrite,
+  getMemoryWrite,
+  listMemoryWrites,
+  requestMemoryWriteReconciliation,
   listProjectRoots,
   beginProjectIntake,
   beginProjectManagementCandidate,
@@ -1054,6 +1062,83 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
     }
   });
 
+  router.get("/memory/providers", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      return c.json(
+        listMemoryProvidersResponseSchema.parse({
+          providers: ctx.deps.workflowMemoryProviders?.list() ?? [],
+        }),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/memory-writes", async (c) => {
+    try {
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const payload = createMemoryWritePayloadSchema.parse(envelope.payload);
+      const result = await createMemoryWrite(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/memory-writes",
+        statusCode: 201,
+        productSessionId: payload.productSessionId,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/memory-writes/:memoryWriteIntentId", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const memoryWriteIntentId = memoryWriteIntentIdSchema.parse(
+        c.req.param("memoryWriteIntentId"),
+      );
+      return c.json(
+        await getMemoryWrite(ctx.deps, {
+          principalId: ctx.principalId,
+          memoryWriteIntentId,
+        }),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/memory-writes/:memoryWriteIntentId/reconcile", async (c) => {
+    try {
+      const memoryWriteIntentId = memoryWriteIntentIdSchema.parse(
+        c.req.param("memoryWriteIntentId"),
+      );
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const payload = reconcileMemoryWritePayloadSchema.parse(envelope.payload);
+      const result = await requestMemoryWriteReconciliation(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        memoryWriteIntentId,
+        expectedResultRevision: payload.expectedResultRevision,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/memory-writes/:memoryWriteIntentId/reconcile",
+        statusCode: 202,
+      });
+      return c.json(result, 202);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
   router.get("/memory-imports/:memoryImportIntentId", async (c) => {
     try {
       assertNoQuery(c.req.url);
@@ -1695,6 +1780,48 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
           ...(rawLimit !== null ? { limit: Number(rawLimit) } : {}),
           ...(params.get("cursor") !== null
             ? { cursor: memoryImportIntentIdSchema.parse(params.get("cursor")) }
+            : {}),
+        }),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/sessions/:sessionId/memory-writes", async (c) => {
+    try {
+      const productSessionId = productSessionIdSchema.parse(c.req.param("sessionId"));
+      const params = new URL(c.req.url).searchParams;
+      if (
+        [...params.keys()].some((key) => key !== "limit" && key !== "cursor") ||
+        params.getAll("limit").length > 1 ||
+        params.getAll("cursor").length > 1
+      ) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Memory Write列表包含未知或重复参数",
+        });
+      }
+      const rawLimit = params.get("limit");
+      if (
+        rawLimit !== null &&
+        (!/^[0-9]+$/u.test(rawLimit) || Number(rawLimit) < 1 || Number(rawLimit) > 100)
+      ) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "limit必须是1到100的整数",
+        });
+      }
+      return c.json(
+        await listMemoryWrites(ctx.deps, {
+          principalId: ctx.principalId,
+          productSessionId,
+          limit: rawLimit === null ? 50 : Number(rawLimit),
+          ...(params.get("cursor") !== null
+            ? { cursor: memoryWriteIntentIdSchema.parse(params.get("cursor")) }
             : {}),
         }),
         200,

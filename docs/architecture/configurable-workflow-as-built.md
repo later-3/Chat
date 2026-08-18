@@ -30,7 +30,7 @@ DSH桥接面已经交付原生对话、Planning HITL与Note Candidate审核。No
 flowchart LR
   UI["DeepSeek Harness Web\nLifeOS Client插件"] -->|"Bridge Host / REST Query / Command"| API["Hono\n认证、strict校验、ETag"]
   API --> APP["Application\n事务、CAS、权限、投影"]
-  APP --> STORE["Product Store v11\n权威产品事实"]
+  APP --> STORE["Product Store v12\n权威产品事实"]
   STORE --> OUTBOX["Outbox\nstart / resume"]
   OUTBOX --> RUNTIME["Vercel Workflow Runtime\n固定Runner解释RunSpec"]
   RUNTIME -->|"私有strict命令"| APP
@@ -71,7 +71,9 @@ Note Application按变化原因拆分：公开Query/DTO投影、普通Note维护
 
 | 节点 | 字段 | 权威执行位置 |
 | --- | --- | --- |
-| `context.memory` | `required`、`maxItems`、选择的`mrs_*` | Compiler + `PlanningMemorySelection`原子事实；Planning/Execution按Selection精确重读 |
+| `memory.query` | `providerId`、`required`、`maxResults`、`maxContextCharacters` | Workflow只读Provider Step + `WorkflowMemoryQuery/Snapshot/Context`原子事实；同类节点最多8个 |
+| `memory.write` | `providerId`、来源Message、`conversation_turn` | Memory Planning父Workflow复用统一写入状态机并唯一执行；直接Write Command才由Outbox启动独立`MemoryWriteWorkflow` |
+| `context.memory` | 历史`required`、`maxItems`、选择的`mrs_*` | 旧完整上下文Planning兼容能力；Compiler + `PlanningMemorySelection`原子事实 |
 | `context.project` | `required`、Project选择 | `PlanningProjectContext`与Node终态/Manifest同事务 |
 | `policy.rules` | `required`、Rule选择 | `RuleSelection`与Node终态/Manifest同事务；正文只经私有Runtime边界 |
 | `agent.plan` | `maxSteps` | Application发布Plan前再次校验 |
@@ -89,15 +91,25 @@ Planning包含执行和产品提交，因此`human.plan_review`始终是manual�
 
 ### 5.1 Planning
 
-新系统Planning顺序为：
+当前有3个互相独立、身份不同的系统Planning Definition：
+
+1. 默认Simple Planning：
 
 ```text
-Memory -> Project -> Rules -> Skills（当前仅合同槽位，无正式Skill资源）
-       -> bounded_loop(Plan -> Human Review)
-       -> Execute -> Validate -> Product Commit
+bounded_loop(Plan -> Human Review) -> Execute -> Validate -> Product Commit
 ```
 
-Memory、Project、Rules先各自形成不可变选择/上下文事实；这些事实与对应Node终态和Manifest同一Product Store事务提交。Plan修订必须复用上一版全部冻结上下文；批准后Execution只解析Approved Step明确引用的三元组。
+2. 独立Memory Planning（仅在DSH显式选择后运行）：
+
+```text
+Memory Query -> Memory Write（本次用户输入） -> Project -> Rules -> Skills
+             -> bounded_loop(Plan -> Human Review)
+             -> Execute -> Validate -> Product Commit
+```
+
+3. 历史完整上下文Planning v2：继续保留`context.memory -> context.project -> policy.rules -> capability.skills`，只用于兼容已有选择和RunSpec；它不是默认，也没有被改写成新Memory方案。
+
+Simple Planning不是Memory流程的前置、后继或被包装子图。Memory Query冻结Provider描述、来源与结果Snapshot，再聚合为唯一`WorkflowMemoryContext`；Memory Write先提交Intent/Result，由同一父Workflow唯一执行，不创建竞争的start Outbox。Plan修订复用同一冻结Memory Context；批准后Execution只解析Approved Step明确引用的三元组。
 
 Plan、Review、Execute、Validate和Commit由各自业务Application用例拥有running/terminal投影；Runner不再用通用命令二次补写不同摘要或outcome。外部执行结果未知进入`outcome_unknown`，不降级成普通失败或自动重试。
 
@@ -131,7 +143,7 @@ Query使用ETag/`If-None-Match`/304；Bridge Host在切换Run或取消请求时�
 
 ## 8. Store与迁移
 
-Product Store当前为`chat-product-store.v11`：
+Product Store当前为`chat-product-store.v12`：
 
 - v6：Workflow View/Node/Transition/Manifest；
 - v7：Definition/Revision/RunSpec；
@@ -139,6 +151,7 @@ Product Store当前为`chat-product-store.v11`：
 - v9：Rules与Planning Project Context；
 - v10：Planning Memory Selection与Workflow Policy Resolution。
 - v11：保留完整上下文Planning Definition，新增独立且默认的“规划执行工作流”；它不声明Memory/Project/Rules/Skills资源节点，历史RunSpec继续引用原冻结Definition。
+- v12：新增Provider中立的Workflow Memory Query/Snapshot/Context与Memory Write Intent/Result，并发布独立Memory Planning Definition；v11的Simple Planning仍是默认且内容不变。
 
 迁移按版本串行、可重复打开，并对非空历史Fixture执行Zod、生产完整性、只读Auditor和故障注入。v5→v6使用迁移专用冻结投影，不调用会继续演进的当前Application projector。
 

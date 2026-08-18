@@ -3,6 +3,8 @@ import {
   approvalRequestIdSchema,
   memoryImportIntentIdSchema,
   memoryImportResultIdSchema,
+  memoryWriteIntentIdSchema,
+  memoryWriteResultIdSchema,
   noteCandidateIdSchema,
   outboxEntryIdSchema,
   productRunIdSchema,
@@ -21,7 +23,7 @@ import {
   type ProductWorkflowRunnerFamily,
 } from "./definition-kernel-executor-registry.js";
 
-export const RUNTIME_BINDINGS_SCHEMA_VERSION = "runtime-bindings.v5";
+export const RUNTIME_BINDINGS_SCHEMA_VERSION = "runtime-bindings.v6";
 
 const legacyStartIntentSchema = z
   .object({
@@ -164,6 +166,30 @@ const memoryImportWorkflowBindingSchema = z
   })
   .strict();
 
+const memoryWriteStartIntentSchema = z
+  .object({
+    memoryWriteIntentId: memoryWriteIntentIdSchema,
+    memoryWriteResultId: memoryWriteResultIdSchema,
+    mode: z.enum(["write", "reconcile"]),
+    workflowDefinitionVersion: z.string().min(1).max(100),
+    state: z.enum(["starting", "outcome_unknown"]),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+
+const memoryWriteWorkflowBindingSchema = z
+  .object({
+    memoryWriteIntentId: memoryWriteIntentIdSchema,
+    memoryWriteResultId: memoryWriteResultIdSchema,
+    mode: z.enum(["write", "reconcile"]),
+    workflowRunId: z.string().min(1).max(200),
+    workflowDefinitionVersion: z.string().min(1).max(100),
+    startDispatchState: z.literal("started"),
+    createdAt: z.iso.datetime(),
+  })
+  .strict();
+
 /**
  * v3落盘字段沿用PS1的projectIntake命名以保持兼容；其语义已经是通用Project
  * Candidate Workflow绑定，Definition Version区分Intake与Advancement。
@@ -242,9 +268,9 @@ const runtimeBindingsFileV4Schema = z
   })
   .strict();
 
-export const runtimeBindingsFileSchema = z
+const runtimeBindingsFileV5Schema = z
   .object({
-    schemaVersion: z.literal(RUNTIME_BINDINGS_SCHEMA_VERSION),
+    schemaVersion: z.literal("runtime-bindings.v5"),
     startIntents: z.record(productRunIdSchema, startIntentSchema),
     workflows: z.record(productRunIdSchema, workflowBindingSchema),
     hooks: z.record(approvalRequestIdSchema, hookBindingSchema),
@@ -256,11 +282,28 @@ export const runtimeBindingsFileSchema = z
   })
   .strict();
 
+export const runtimeBindingsFileSchema = z
+  .object({
+    schemaVersion: z.literal(RUNTIME_BINDINGS_SCHEMA_VERSION),
+    startIntents: z.record(productRunIdSchema, startIntentSchema),
+    workflows: z.record(productRunIdSchema, workflowBindingSchema),
+    hooks: z.record(approvalRequestIdSchema, hookBindingSchema),
+    noteHooks: z.record(noteCandidateIdSchema, noteHookBindingSchema),
+    memoryImportStartIntents: z.record(outboxEntryIdSchema, memoryImportStartIntentSchema),
+    memoryImportWorkflows: z.record(outboxEntryIdSchema, memoryImportWorkflowBindingSchema),
+    memoryWriteStartIntents: z.record(outboxEntryIdSchema, memoryWriteStartIntentSchema),
+    memoryWriteWorkflows: z.record(outboxEntryIdSchema, memoryWriteWorkflowBindingSchema),
+    projectIntakeStartIntents: z.record(projectCandidateIdSchema, projectIntakeStartIntentSchema),
+    projectIntakeWorkflows: z.record(projectCandidateIdSchema, projectIntakeWorkflowBindingSchema),
+  })
+  .strict();
+
 export type RuntimeBindingsFile = z.infer<typeof runtimeBindingsFileSchema>;
 export type WorkflowBinding = z.infer<typeof workflowBindingSchema>;
 export type HookBinding = z.infer<typeof hookBindingSchema>;
 export type NoteHookBinding = z.infer<typeof noteHookBindingSchema>;
 export type MemoryImportWorkflowBinding = z.infer<typeof memoryImportWorkflowBindingSchema>;
+export type MemoryWriteWorkflowBinding = z.infer<typeof memoryWriteWorkflowBindingSchema>;
 export type ProjectIntakeWorkflowBinding = z.infer<typeof projectIntakeWorkflowBindingSchema>;
 
 export class RuntimeBindingError extends Error {
@@ -280,6 +323,8 @@ export function emptyBindings(): RuntimeBindingsFile {
     noteHooks: {},
     memoryImportStartIntents: {},
     memoryImportWorkflows: {},
+    memoryWriteStartIntents: {},
+    memoryWriteWorkflows: {},
     projectIntakeStartIntents: {},
     projectIntakeWorkflows: {},
   };
@@ -347,57 +392,71 @@ export function parseRuntimeBindingsFile(parsed: unknown): {
     assertRuntimeBindingsIntegrity(validated.data);
     return { bindings: validated.data, migrationRequired: false };
   }
-  const legacyV4 = runtimeBindingsFileV4Schema.safeParse(parsed);
-  const legacyV3 = legacyV4.success ? undefined : runtimeBindingsFileV3Schema.safeParse(parsed);
+  const legacyV5 = runtimeBindingsFileV5Schema.safeParse(parsed);
+  const legacyV4 = legacyV5.success ? undefined : runtimeBindingsFileV4Schema.safeParse(parsed);
+  const legacyV3 =
+    legacyV5.success || legacyV4?.success === true
+      ? undefined
+      : runtimeBindingsFileV3Schema.safeParse(parsed);
   const legacyV2 =
-    legacyV4.success || legacyV3?.success === true
+    legacyV5.success || legacyV4?.success === true || legacyV3?.success === true
       ? undefined
       : runtimeBindingsFileV2Schema.safeParse(parsed);
   const legacyV1 =
-    legacyV4.success || legacyV3?.success === true || legacyV2?.success === true
+    legacyV5.success ||
+    legacyV4?.success === true ||
+    legacyV3?.success === true ||
+    legacyV2?.success === true
       ? undefined
       : runtimeBindingsFileV1Schema.safeParse(parsed);
   if (
-    !legacyV4.success &&
+    !legacyV5.success &&
+    legacyV4?.success !== true &&
     legacyV3?.success !== true &&
     legacyV2?.success !== true &&
     legacyV1?.success !== true
   ) {
     throw new RuntimeBindingError("Runtime Binding Store版本未知或内容非法，已保留原文件");
   }
-  const source = legacyV4.success
-    ? legacyV4.data
-    : legacyV3?.success === true
-      ? legacyV3.data
-      : legacyV2?.success === true
-        ? {
-            ...legacyV2.data,
-            projectIntakeStartIntents: {},
-            projectIntakeWorkflows: {},
-          }
-        : {
-            ...legacyV1!.data,
-            memoryImportStartIntents: {},
-            memoryImportWorkflows: {},
-            projectIntakeStartIntents: {},
-            projectIntakeWorkflows: {},
-          };
-  const migratedStartIntents: RuntimeBindingsFile["startIntents"] = legacyV4.success
-    ? legacyV4.data.startIntents
-    : Object.fromEntries(
-        Object.entries(source.startIntents ?? {}).map(([productRunId, intent]) => [
-          productRunId,
-          withLegacyRunnerEvidence(intent),
-        ]),
-      );
-  const migratedWorkflows: RuntimeBindingsFile["workflows"] = legacyV4.success
-    ? legacyV4.data.workflows
-    : Object.fromEntries(
-        Object.entries(source.workflows ?? {}).map(([productRunId, binding]) => [
-          productRunId,
-          withLegacyRunnerEvidence(binding),
-        ]),
-      );
+  const source = legacyV5.success
+    ? legacyV5.data
+    : legacyV4?.success === true
+      ? legacyV4.data
+      : legacyV3?.success === true
+        ? legacyV3.data
+        : legacyV2?.success === true
+          ? {
+              ...legacyV2.data,
+              projectIntakeStartIntents: {},
+              projectIntakeWorkflows: {},
+            }
+          : {
+              ...legacyV1!.data,
+              memoryImportStartIntents: {},
+              memoryImportWorkflows: {},
+              projectIntakeStartIntents: {},
+              projectIntakeWorkflows: {},
+            };
+  const migratedStartIntents: RuntimeBindingsFile["startIntents"] = legacyV5.success
+    ? legacyV5.data.startIntents
+    : legacyV4?.success === true
+      ? legacyV4.data.startIntents
+      : Object.fromEntries(
+          Object.entries(source.startIntents ?? {}).map(([productRunId, intent]) => [
+            productRunId,
+            withLegacyRunnerEvidence(intent),
+          ]),
+        );
+  const migratedWorkflows: RuntimeBindingsFile["workflows"] = legacyV5.success
+    ? legacyV5.data.workflows
+    : legacyV4?.success === true
+      ? legacyV4.data.workflows
+      : Object.fromEntries(
+          Object.entries(source.workflows ?? {}).map(([productRunId, binding]) => [
+            productRunId,
+            withLegacyRunnerEvidence(binding),
+          ]),
+        );
   const bindings: RuntimeBindingsFile = {
     schemaVersion: RUNTIME_BINDINGS_SCHEMA_VERSION,
     startIntents: migratedStartIntents,
@@ -406,6 +465,8 @@ export function parseRuntimeBindingsFile(parsed: unknown): {
     noteHooks: {},
     memoryImportStartIntents: source.memoryImportStartIntents,
     memoryImportWorkflows: source.memoryImportWorkflows,
+    memoryWriteStartIntents: {},
+    memoryWriteWorkflows: {},
     projectIntakeStartIntents: source.projectIntakeStartIntents,
     projectIntakeWorkflows: source.projectIntakeWorkflows,
   };
@@ -423,7 +484,14 @@ export function assertRuntimeBindingsIntegrity(bindings: RuntimeBindingsFile): v
   const importWorkflowRunIds = Object.values(bindings.memoryImportWorkflows).map(
     (binding) => binding.workflowRunId,
   );
-  const allWorkflowRunIds = [...workflowRunIds, ...importWorkflowRunIds];
+  const memoryWriteWorkflowRunIds = Object.values(bindings.memoryWriteWorkflows).map(
+    (binding) => binding.workflowRunId,
+  );
+  const allWorkflowRunIds = [
+    ...workflowRunIds,
+    ...importWorkflowRunIds,
+    ...memoryWriteWorkflowRunIds,
+  ];
   if (new Set(allWorkflowRunIds).size !== allWorkflowRunIds.length) {
     throw new RuntimeBindingError("多个产品操作不能共享同一Workflow Run映射");
   }
@@ -446,6 +514,11 @@ export function assertRuntimeBindingsIntegrity(bindings: RuntimeBindingsFile): v
   for (const outboxId of Object.keys(bindings.memoryImportStartIntents) as OutboxEntryId[]) {
     if (bindings.memoryImportWorkflows[outboxId] !== undefined) {
       throw new RuntimeBindingError("同一Import Outbox不能同时存在start意图与Workflow映射");
+    }
+  }
+  for (const outboxId of Object.keys(bindings.memoryWriteStartIntents) as OutboxEntryId[]) {
+    if (bindings.memoryWriteWorkflows[outboxId] !== undefined) {
+      throw new RuntimeBindingError("同一Memory Write Outbox不能同时存在start意图与Workflow映射");
     }
   }
   for (const projectCandidateId of Object.keys(

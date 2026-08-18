@@ -7,6 +7,10 @@ import {
   type WorkflowSkipPolicy,
   type WorkflowSlotDescriptor,
 } from "@chat/domain";
+import {
+  workflowMemoryQueryNodeConfigSchema,
+  workflowMemoryWriteNodeConfigSchema,
+} from "@chat/contracts";
 
 export type PublicConfigField =
   | {
@@ -46,7 +50,11 @@ export type PublicConfigField =
     }
   | {
       readonly type:
-        "resource_selector" | "rule_selector" | "skill_selector" | "note_source_selector";
+        | "resource_selector"
+        | "memory_provider_selector"
+        | "rule_selector"
+        | "skill_selector"
+        | "note_source_selector";
       readonly name: string;
       readonly label: string;
       readonly multiple: boolean;
@@ -191,10 +199,74 @@ const REVIEW_CONFIG = z.strictObject({
 
 export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
   {
+    nodeType: "memory.query",
+    schemaVersion: 1,
+    displayName: "查询记忆",
+    description: "从服务端配置的Memory Provider查询，并冻结可供后续节点消费的快照",
+    category: "context",
+    configSchema: workflowMemoryQueryNodeConfigSchema,
+    defaultConfig: {
+      providerId: "mbk_tencentmemorycore",
+      required: false,
+      querySource: "source_message",
+      maxResults: 8,
+      maxContextCharacters: 8_000,
+    },
+    publicConfigFields: [
+      {
+        type: "memory_provider_selector",
+        name: "providerId",
+        label: "Memory服务",
+        multiple: false,
+        required: true,
+      },
+      booleanField("required", "查询失败时停止工作流", false),
+      integerField("maxResults", "最多采用条数", 8, 1, 20),
+      integerField("maxContextCharacters", "最多上下文字符", 8_000, 128, 50_000),
+    ],
+    inputSlots: [slot("message", "message_ref", true)],
+    outputSlots: [slot("snapshots", "memory_snapshot_ref", false, true)],
+    outcomes: ["success", "empty", "optional_unavailable", "required_unavailable"],
+    skipPolicy: { kind: "allowed_with_default_outcome", defaultOutcome: "optional_unavailable" },
+    riskPolicy: "read_context",
+    executorKind: "step",
+    supportedBlueprints: ["planning"],
+  },
+  {
+    nodeType: "memory.write",
+    schemaVersion: 1,
+    displayName: "写入记忆",
+    description: "把经过明确选择的Chat内容写入Memory Provider，并保留对账终态",
+    category: "commit",
+    configSchema: workflowMemoryWriteNodeConfigSchema,
+    defaultConfig: {
+      providerId: "mbk_tencentmemorycore",
+      source: "source_message",
+      contentType: "conversation_turn",
+    },
+    publicConfigFields: [
+      {
+        type: "memory_provider_selector",
+        name: "providerId",
+        label: "Memory服务",
+        multiple: false,
+        required: true,
+      },
+    ],
+    inputSlots: [slot("message", "message_ref", true)],
+    outputSlots: [slot("write", "memory_write_ref", true)],
+    outcomes: ["accepted", "materialized", "failed", "outcome_unknown"],
+    skipPolicy: { kind: "never" },
+    riskPolicy: "external_effect",
+    executorKind: "step",
+    // 只允许显式发布的独立Memory Planning Definition使用；普通Planning种子不包含它。
+    supportedBlueprints: ["planning"],
+  },
+  {
     nodeType: "context.memory",
     schemaVersion: 1,
     displayName: "读取记忆",
-    description: "按冻结选择读取长期Memory引用",
+    description: "历史定义兼容节点；新定义使用memory.query",
     category: "context",
     configSchema: z.strictObject({
       required: z.boolean().default(false),
@@ -506,7 +578,10 @@ function assertDescriptorConformance(descriptor: NodeCatalogDescriptor): void {
         `workflow.catalog.duplicate_public_field:${descriptor.nodeType}:${field.name}`,
       );
     fields.add(field.name);
-    if (/secret|token|credential|password|api[_-]?key|provider|endpoint/i.test(field.name)) {
+    if (
+      /secret|token|credential|password|api[_-]?key|endpoint/i.test(field.name) ||
+      (/provider/i.test(field.name) && field.type !== "memory_provider_selector")
+    ) {
       throw new Error(
         `workflow.catalog.forbidden_public_field:${descriptor.nodeType}:${field.name}`,
       );

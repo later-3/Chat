@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   traceEventSchema,
+  definitionNodeIdSchema,
+  workflowNodeTypeSchema,
   productRunIdSchema,
   requestIdSchema,
   runAttemptIdSchema,
@@ -202,6 +204,101 @@ describe("readTraceEvents", () => {
 });
 
 describe("createExecutionTraceReader", () => {
+  it("Memory读写节点投影为浏览器可见tool call/result且不携带记忆正文", () => {
+    const dir = tempDir();
+    const sink = createTraceSink({ dir });
+    const common = {
+      level: "info" as const,
+      traceId: "trace_memorynode1",
+      spanId: "span_memorynode1",
+      productRunId: RUN_A,
+      attemptId: ATT_A,
+      workflowNodeRunId: "wnr_memorynode1" as never,
+      definitionNodeId: definitionNodeIdSchema.parse("memory-planning.query"),
+      nodeType: workflowNodeTypeSchema.parse("memory.query"),
+    };
+    sink.emit({
+      ...common,
+      eventName: "workflow.memory_node.started",
+      outcome: "unknown",
+      publicSummary: "正在查询Memory",
+    });
+    sink.emit({
+      ...common,
+      eventName: "workflow.memory_node.completed",
+      outcome: "success",
+      outcomeCode: "success",
+      publicSummary: "Memory查询完成，冻结2条快照",
+      durationMs: 12,
+    });
+    const writeCommon = {
+      ...common,
+      traceId: "trace_memorynode2",
+      spanId: "span_memorynode2",
+      workflowNodeRunId: "wnr_memorywrite1" as never,
+      definitionNodeId: definitionNodeIdSchema.parse("memory-planning.write"),
+      nodeType: workflowNodeTypeSchema.parse("memory.write"),
+    };
+    sink.emit({
+      ...writeCommon,
+      eventName: "workflow.memory_node.started",
+      outcome: "unknown",
+      publicSummary: "正在保存本次输入到Memory Provider",
+    });
+    sink.emit({
+      ...writeCommon,
+      eventName: "workflow.memory_node.completed",
+      outcome: "success",
+      outcomeCode: "materialized",
+      publicSummary: "本次输入已写入并可查询",
+      durationMs: 20,
+    });
+
+    const page = createExecutionTraceReader({ dir }).read({
+      productRunId: RUN_A,
+      afterSequence: 0,
+      limit: 100,
+    });
+    expect(page.items).toEqual([
+      expect.objectContaining({
+        sequence: 1,
+        type: "tool_call",
+        toolCallId: "memory-node:wnr_memorynode1",
+        toolName: "memory_query",
+        input: JSON.stringify({ operation: "memory.query", summary: "正在查询Memory" }),
+      }),
+      expect.objectContaining({
+        sequence: 2,
+        type: "tool_result",
+        toolCallId: "memory-node:wnr_memorynode1",
+        toolName: "memory_query",
+        outcome: "success",
+        output: "Memory查询完成，冻结2条快照",
+        durationMs: 12,
+      }),
+      expect.objectContaining({
+        sequence: 3,
+        type: "tool_call",
+        toolCallId: "memory-node:wnr_memorywrite1",
+        toolName: "memory_write",
+        input: JSON.stringify({
+          operation: "memory.write",
+          summary: "正在保存本次输入到Memory Provider",
+        }),
+      }),
+      expect.objectContaining({
+        sequence: 4,
+        type: "tool_result",
+        toolCallId: "memory-node:wnr_memorywrite1",
+        toolName: "memory_write",
+        outcome: "success",
+        output: "本次输入已写入并可查询",
+        durationMs: 20,
+      }),
+    ]);
+    expect(JSON.stringify(page)).not.toContain(CONTENT_MARKER);
+  });
+
   it("公开投影保留Pi工具输入、结果和耗时，并使用单调cursor", () => {
     const dir = tempDir();
     const sink = createTraceSink({ dir });

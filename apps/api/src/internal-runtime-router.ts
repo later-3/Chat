@@ -26,6 +26,14 @@ import {
   commitMemoryImportMaterializedRequestSchema,
   commitMemoryImportFailedRequestSchema,
   commitMemoryImportOutcomeUnknownRequestSchema,
+  loadMemoryWriteRequestSchema,
+  beginWorkflowMemoryWriteRequestSchema,
+  beginWorkflowMemoryWriteResponseSchema,
+  markMemoryWriteDispatchingRequestSchema,
+  commitMemoryWriteAcceptedRequestSchema,
+  commitMemoryWriteMaterializedRequestSchema,
+  commitMemoryWriteFailedRequestSchema,
+  commitMemoryWriteOutcomeUnknownRequestSchema,
   loadNoteDecisionRuntimeRequestSchema,
   loadNoteDecisionRuntimeResponseSchema,
   prepareNoteCaptureInputRuntimeRequestSchema,
@@ -41,6 +49,12 @@ import {
   preparePlanningProjectContextResponseSchema,
   preparePlanningRulesContextRequestSchema,
   preparePlanningRulesContextResponseSchema,
+  beginWorkflowMemoryQueryRequestSchema,
+  beginWorkflowMemoryQueryResponseSchema,
+  persistWorkflowMemoryQueryResultRequestSchema,
+  persistWorkflowMemoryQueryResultResponseSchema,
+  freezeWorkflowMemoryContextRequestSchema,
+  freezeWorkflowMemoryContextResponseSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   prepareProjectCandidateRequestSchema,
   prepareProjectAdvancementCandidateRequestSchema,
@@ -74,6 +88,13 @@ import {
   commitMemoryImportMaterialized,
   commitMemoryImportFailed,
   commitMemoryImportOutcomeUnknown,
+  loadMemoryWriteForRuntime,
+  beginWorkflowMemoryWrite,
+  markMemoryWriteDispatching,
+  commitMemoryWriteAccepted,
+  commitMemoryWriteMaterialized,
+  commitMemoryWriteFailed,
+  commitMemoryWriteOutcomeUnknown,
   prepareProjectCandidateForReview,
   prepareProjectAdvancementCandidate,
   getWorkflowRunSpecForRuntime,
@@ -84,6 +105,9 @@ import {
   preparePlanningMemoryContext,
   preparePlanningProjectContext,
   preparePlanningRulesContext,
+  beginWorkflowMemoryQuery,
+  persistWorkflowMemoryQueryResult,
+  freezeWorkflowMemoryContext,
   type ApplicationDeps,
 } from "@chat/application";
 
@@ -240,6 +264,38 @@ export function createInternalRuntimeRouter(
         workflowDefinitionRevisionId: runSpec.definitionRef.workflowDefinitionRevisionId,
         runSpec,
       });
+    }),
+  );
+
+  router.post(
+    "/begin-workflow-memory-query",
+    handle(200, async (c) => {
+      const request = beginWorkflowMemoryQueryRequestSchema.parse(await parseInternalBody(c));
+      return beginWorkflowMemoryQueryResponseSchema.parse(
+        await beginWorkflowMemoryQuery(options.deps, request),
+      );
+    }),
+  );
+
+  router.post(
+    "/persist-workflow-memory-query-result",
+    handle(200, async (c) => {
+      const request = persistWorkflowMemoryQueryResultRequestSchema.parse(
+        await parseInternalBody(c),
+      );
+      return persistWorkflowMemoryQueryResultResponseSchema.parse(
+        await persistWorkflowMemoryQueryResult(options.deps, request),
+      );
+    }),
+  );
+
+  router.post(
+    "/freeze-workflow-memory-context",
+    handle(200, async (c) => {
+      const request = freezeWorkflowMemoryContextRequestSchema.parse(await parseInternalBody(c));
+      return freezeWorkflowMemoryContextResponseSchema.parse(
+        await freezeWorkflowMemoryContext(options.deps, request),
+      );
     }),
   );
 
@@ -574,6 +630,125 @@ export function createInternalRuntimeRouter(
       const request = commitRunFailureRequestSchema.parse(await parseInternalBody(c));
       const result = await commitRunFailure(options.deps, request);
       return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, revision: result.revision };
+    }),
+  );
+
+  router.post(
+    "/memory-write/begin-workflow-node",
+    handle(200, async (c) => {
+      const request = beginWorkflowMemoryWriteRequestSchema.parse(await parseInternalBody(c));
+      return beginWorkflowMemoryWriteResponseSchema.parse(
+        await beginWorkflowMemoryWrite(options.deps, request),
+      );
+    }),
+  );
+
+  router.post(
+    "/memory-write/load",
+    handle(200, async (c) => {
+      const request = loadMemoryWriteRequestSchema.parse(await parseInternalBody(c));
+      const loaded = await loadMemoryWriteForRuntime(options.deps, request);
+      return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, ...loaded };
+    }),
+  );
+
+  router.post(
+    "/memory-write/mark-dispatching",
+    handle(200, async (c) => {
+      const request = markMemoryWriteDispatchingRequestSchema.parse(await parseInternalBody(c));
+      const result = await markMemoryWriteDispatching(options.deps, request);
+      return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, result };
+    }),
+  );
+
+  router.post(
+    "/memory-write/commit-accepted",
+    handle(200, async (c) => {
+      const request = commitMemoryWriteAcceptedRequestSchema.parse(await parseInternalBody(c));
+      const result = await commitMemoryWriteAccepted(options.deps, {
+        commandId: request.commandId,
+        memoryWriteIntentId: request.memoryWriteIntentId,
+        memoryWriteResultId: request.memoryWriteResultId,
+        requestSha256: request.requestSha256,
+        expectedRevision: request.expectedRevision,
+        accepted: {
+          externalObjectId: request.accepted.externalObjectId,
+          responseSha256: request.accepted.responseSha256,
+          ...(request.accepted.externalObjectVersion !== undefined
+            ? { externalObjectVersion: request.accepted.externalObjectVersion }
+            : {}),
+          ...(request.accepted.externalStatus !== undefined
+            ? { externalStatus: request.accepted.externalStatus }
+            : {}),
+        },
+        ...(request.reconciled !== undefined ? { reconciled: request.reconciled } : {}),
+      });
+      return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, result };
+    }),
+  );
+
+  router.post(
+    "/memory-write/commit-materialized",
+    handle(200, async (c) => {
+      const request = commitMemoryWriteMaterializedRequestSchema.parse(await parseInternalBody(c));
+      const result = await commitMemoryWriteMaterialized(options.deps, {
+        commandId: request.commandId,
+        memoryWriteIntentId: request.memoryWriteIntentId,
+        memoryWriteResultId: request.memoryWriteResultId,
+        requestSha256: request.requestSha256,
+        expectedRevision: request.expectedRevision,
+        verificationKind: request.verificationKind,
+        verificationSha256: request.verificationSha256,
+        accepted: {
+          externalObjectId: request.accepted.externalObjectId,
+          responseSha256: request.accepted.responseSha256,
+          ...(request.accepted.externalObjectVersion !== undefined
+            ? { externalObjectVersion: request.accepted.externalObjectVersion }
+            : {}),
+          ...(request.accepted.externalStatus !== undefined
+            ? { externalStatus: request.accepted.externalStatus }
+            : {}),
+        },
+        ...(request.reconciled !== undefined ? { reconciled: request.reconciled } : {}),
+      });
+      return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, result };
+    }),
+  );
+
+  router.post(
+    "/memory-write/commit-failed",
+    handle(200, async (c) => {
+      const request = commitMemoryWriteFailedRequestSchema.parse(await parseInternalBody(c));
+      const result = await commitMemoryWriteFailed(options.deps, {
+        commandId: request.commandId,
+        memoryWriteIntentId: request.memoryWriteIntentId,
+        memoryWriteResultId: request.memoryWriteResultId,
+        requestSha256: request.requestSha256,
+        expectedRevision: request.expectedRevision,
+        errorCode: request.errorCode,
+        summary: request.summary,
+        ...(request.reconciled !== undefined ? { reconciled: request.reconciled } : {}),
+      });
+      return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, result };
+    }),
+  );
+
+  router.post(
+    "/memory-write/commit-outcome-unknown",
+    handle(200, async (c) => {
+      const request = commitMemoryWriteOutcomeUnknownRequestSchema.parse(
+        await parseInternalBody(c),
+      );
+      const result = await commitMemoryWriteOutcomeUnknown(options.deps, {
+        commandId: request.commandId,
+        memoryWriteIntentId: request.memoryWriteIntentId,
+        memoryWriteResultId: request.memoryWriteResultId,
+        requestSha256: request.requestSha256,
+        expectedRevision: request.expectedRevision,
+        errorCode: request.errorCode,
+        ...(request.reconciled !== undefined ? { reconciled: request.reconciled } : {}),
+      });
+      return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, result };
     }),
   );
 

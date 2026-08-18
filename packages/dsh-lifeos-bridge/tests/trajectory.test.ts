@@ -114,6 +114,160 @@ test("Pi tool intent/result becomes a native DSH tool call with durable display 
         : binding.requests[binding.currentRequestKey];
     assert.equal(request?.traceCursor, 1);
     assert.equal(tool.presentCall?.(args)?.card, "terminal");
+    assert.deepEqual(
+      tool.presentCall?.({
+        ...args,
+        toolCallId: "memory-node:wnr_memoryquery1",
+        toolName: "memory_query",
+        input: '{"operation":"memory.query","summary":"正在查询Memory"}',
+      }),
+      {
+        card: "generic",
+        title: "Memory · 查询",
+        kind: "read",
+        description: "Chat Workflow · 可审计节点",
+      },
+    );
+    assert.deepEqual(
+      tool.presentResult?.(
+        {
+          ...args,
+          toolCallId: "memory-node:wnr_memoryquery1",
+          toolName: "memory_query",
+          input: '{"operation":"memory.query","summary":"正在查询Memory"}',
+        },
+        { content: [{ type: "text", text: "Memory查询完成，冻结2条快照" }] } as never,
+      ),
+      {
+        card: "generic",
+        title: "Memory · 查询结果",
+        content: [{ type: "text", text: "Memory查询完成，冻结2条快照" }],
+      },
+    );
+    assert.deepEqual(
+      tool.presentCall?.({
+        ...args,
+        toolCallId: "memory-node:wnr_memorywrite1",
+        toolName: "memory_write",
+        input: '{"operation":"memory.write","summary":"正在写入Memory"}',
+      }),
+      {
+        card: "generic",
+        title: "Memory · 写入",
+        kind: "edit",
+        description: "Chat Workflow · 可审计节点",
+      },
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Memory write execution trace becomes a native DSH tool call and safe result", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-memory-trajectory-"));
+  const productRunId = "run_memorytrajectory1";
+  const running = { productRunId, status: "executing" } as unknown as ChatRun;
+  const chat = {
+    createSession: async () => ({ sessionId: "psn_memorytrajectory1" }),
+    submitMessage: async () => ({ message: {}, run: running }),
+    getRun: async () => running,
+    getExecutionTrace: async (_runId: string, afterSequence: number) =>
+      afterSequence === 0
+        ? {
+            schemaVersion: "chat-execution-trace.v1",
+            productRunId,
+            items: [
+              {
+                sequence: 1,
+                timestamp: "2026-08-19T00:00:00.000Z",
+                type: "tool_call",
+                toolCallId: "memory-node:wnr_memorywrite1",
+                toolName: "memory_write",
+                input: '{"operation":"memory.write","summary":"正在保存本次输入到Memory Provider"}',
+                inputTruncated: false,
+              },
+            ],
+            nextCursor: 1,
+            hasMore: false,
+          }
+        : {
+            schemaVersion: "chat-execution-trace.v1",
+            productRunId,
+            items: [
+              {
+                sequence: 2,
+                timestamp: "2026-08-19T00:00:01.000Z",
+                type: "tool_result",
+                toolCallId: "memory-node:wnr_memorywrite1",
+                toolName: "memory_write",
+                outcome: "success",
+                output: "本次输入已写入并可查询",
+                outputTruncated: false,
+                durationMs: 20,
+              },
+            ],
+            nextCursor: 2,
+            hasMore: false,
+          },
+  } as unknown as ChatProductClient;
+  try {
+    const state = new AtomicBridgeStateStore(join(directory, "state.json"));
+    await state.ready();
+    const adapter = new LifeosLlmAdapter(chat, state);
+    const chunks = await collect(
+      adapter.stream({
+        provider: "lifeos",
+        model: "workflow",
+        sessionId: "dsh-memory-trajectory" as never,
+        tools: [{ name: LIFEOS_TRACE_TOOL, description: "display", parameters: {} }],
+        messages: [
+          createUserMessage({
+            source: { kind: "user" },
+            content: [{ type: "text", text: "写入并展示Memory节点" }],
+          }),
+        ],
+      }),
+    );
+    const end = chunks.find((chunk) => chunk.type === "block-end");
+    if (end?.type !== "block-end" || end.block.type !== "tool-call") {
+      throw new Error("missing memory trajectory tool call");
+    }
+    const args = JSON.parse(end.block.arguments) as Record<string, unknown>;
+    assert.equal(end.block.name, LIFEOS_TRACE_TOOL);
+    assert.equal(args.toolName, "memory_write");
+    assert.equal(args.toolCallId, "memory-node:wnr_memorywrite1");
+    assert.doesNotMatch(JSON.stringify(args), /Memory正文绝不能进入Trajectory/u);
+
+    const tool = createLifeosTraceTool(chat, state);
+    assert.deepEqual(
+      await tool.execute(args, {
+        agent: { id: "dsh-memory-trajectory" },
+        signal: new AbortController().signal,
+      } as never),
+      {
+        toolName: "memory_write",
+        outcome: "success",
+        output: "本次输入已写入并可查询",
+        outputTruncated: false,
+        durationMs: 20,
+      },
+    );
+    assert.deepEqual(tool.presentCall?.(args), {
+      card: "generic",
+      title: "Memory · 写入",
+      kind: "edit",
+      description: "Chat Workflow · 可审计节点",
+    });
+    assert.deepEqual(
+      tool.presentResult?.(args, {
+        content: [{ type: "text", text: "本次输入已写入并可查询" }],
+      } as never),
+      {
+        card: "generic",
+        title: "Memory · 写入结果",
+        content: [{ type: "text", text: "本次输入已写入并可查询" }],
+      },
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

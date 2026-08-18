@@ -42,6 +42,8 @@ import {
   CONFIGURABLE_PLANNING_RUNNER_FAMILY,
   NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
   NOTE_CAPTURE_RUNNER_FAMILY,
+  SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID,
   SYSTEM_NOTE_WORKFLOW_REVISION_ID,
   SYSTEM_NOTE_WORKFLOW_VIEW_ID,
   SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
@@ -153,11 +155,16 @@ export async function submitUserMessage(
   const selectedView =
     selectedRevision.workflowDefinitionRevisionId === SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID
       ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID]
-      : selectedRevision.workflowDefinitionRevisionId === SYSTEM_PLANNING_WORKFLOW_REVISION_ID
-        ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_PLANNING_WORKFLOW_VIEW_ID]
-        : selectedRevision.workflowDefinitionRevisionId === SYSTEM_NOTE_WORKFLOW_REVISION_ID
-          ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_NOTE_WORKFLOW_VIEW_ID]
-          : createPublishedWorkflowView({ revision: selectedRevision, createdAt: now });
+      : selectedRevision.workflowDefinitionRevisionId ===
+          SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID
+        ? preflightSnapshot.entities.workflowViewDefinitions[
+            SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID
+          ]
+        : selectedRevision.workflowDefinitionRevisionId === SYSTEM_PLANNING_WORKFLOW_REVISION_ID
+          ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_PLANNING_WORKFLOW_VIEW_ID]
+          : selectedRevision.workflowDefinitionRevisionId === SYSTEM_NOTE_WORKFLOW_REVISION_ID
+            ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_NOTE_WORKFLOW_VIEW_ID]
+            : createPublishedWorkflowView({ revision: selectedRevision, createdAt: now });
   if (selectedView === undefined) {
     throw new ApplicationError({
       code: "store_corrupted",

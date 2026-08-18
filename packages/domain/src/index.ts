@@ -8,6 +8,7 @@ export * from "./context-package.js";
 export * from "./execution-manifest.js";
 export * from "./plan-validation.js";
 export * from "./memory-import.js";
+export * from "./workflow-memory.js";
 export * from "./project.js";
 export * from "./workflow-view.js";
 export * from "./workflow-node-run.js";

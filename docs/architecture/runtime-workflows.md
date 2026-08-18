@@ -2,24 +2,25 @@
 
 > 文档类型：当前实现（as-built）
 >
-> 当前Workflow Definition：`planning-execution-workflow.v3`、`memory-import-workflow.v1`、`project-intake-workflow.v1`、`project-advancement-workflow.v1`
+> 当前Workflow Definition：`planning-execution-workflow.v3`、`memory-write-workflow.v1`、历史兼容`memory-import-workflow.v1`、`project-intake-workflow.v1`、`project-advancement-workflow.v1`
 >
 > 产品事实源：Product Store；Workflow返回值和Runtime状态不是产品终态。
 >
-> 当前默认产品Profile选择独立的“规划执行工作流”，其Definition只含“规划—审核—执行—验证—提交”，
-> 不包含Memory节点。带Memory/Project/Rules的完整上下文Planning Workflow、Memory代码、合同和历史Workflow继续保留；统一启动器不启动Memory服务，API/Workflow组合根也不装配Memory Adapter。
+> 当前默认产品Profile选择独立的“规划执行工作流”，其Definition只含“规划—审核—执行—验证—提交”，不包含Memory节点。另有用户显式选择的“Memory 增强规划与执行”和历史完整上下文Planning；三者身份、RunSpec和轨迹完全隔离。Chat装配Tencent MemoryCore窄Adapter，但不自动启动第三方服务。
 
 ## 1. 为什么有多套Workflow
 
-当前有多个独立用户结果和两种Planning配置，因此分别冻结耐久生命周期与Definition：
+当前有多个独立用户结果和3种Planning配置，因此分别冻结耐久生命周期与Definition：
 
 1. 默认“规划执行工作流”：一条消息的规划、人工修订/批准、执行、验证和正式提交；冻结Definition不含Memory。
-2. 完整上下文Planning Workflow：显式选择时可编排Memory、Project、Rules等可选上下文节点；当前默认Profile不选择它。
-3. `MemoryImportWorkflow`：一次显式Memory外部写入或一次只读对账。
-4. `ProjectIntakeWorkflow`：一次真实资源建项理解、候选审核和确认。
-5. `ProjectAdvancementWorkflow`：现有Project的一次Stage/Milestone/负责人Update理解、候选修订和确认。
+2. “Memory 增强规划与执行”：用户显式选择后，在同一个父Workflow中执行`memory.query → memory.write →`完整Planning链。
+3. 历史完整上下文Planning：继续支持冻结选择式`context.memory`，但不是新Memory方案，也不是默认。
+4. `MemoryWriteWorkflow`：直接Memory Write Command产生的一次外部写入或一次只读对账；Memory Planning节点只复用其Application状态机，不启动第二个Workflow。
+5. 历史`MemoryImportWorkflow`：只保留旧事实兼容。
+6. `ProjectIntakeWorkflow`：一次真实资源建项理解、候选审核和确认。
+7. `ProjectAdvancementWorkflow`：现有Project的一次Stage/Milestone/负责人Update理解、候选修订和确认。
 
-“规划必须在同一个Workflow中完成”指的是规划、修订循环和执行不能拆成多个竞争的规划Run；它不要求把所有独立业务塞进这一条Workflow。Memory导入拥有外部写入/对账生命周期；Project Intake与Advancement都以Project Candidate而不是Plan Approval为暂停对象，但分别承担“创建Project”和“推进既有Project”两个独立用户结果，因此各自拥有Definition与恢复生命周期。
+“规划必须在同一个Workflow中完成”指的是选择Memory流程后，查询、写入、规划、修订循环和执行都由同一个父Workflow顺序驱动，不能拆成多个竞争的规划Run。Memory Write仍拥有独立的产品意图、结果未知与对账状态机；只有直接Write Command才通过Outbox启动独立`MemoryWriteWorkflow`。
 
 ## 2. 运行时组件
 
@@ -37,19 +38,19 @@ API Product Command
 | 组件 | 当前责任 |
 |---|---|
 | API进程 | 唯一Product Store Owner、公开Command/Query、Outbox Dispatcher |
-| Workflow Runtime进程 | Local World、bundle、Hook、Runtime Binding、四套Workflow启动/恢复 |
+| Workflow Runtime进程 | Local World、bundle、Hook、Runtime Binding、各固定Workflow启动/恢复 |
 | Runtime Binding Store | 私下关联Product Run/Outbox/Approval与Workflow Run/Hook Token |
 | Workflow Store | Step结果、Hook等待、Checkpoint和重放 |
 | pi Runtime | Planner与Pi Adapter；Executor通过私有Client访问独立AgentSession服务 |
 | Pi Executor Service | Operation幂等、AgentSession、Workspace工具、Session与安全Journal |
-| Memory Registry | 当前固定为空且不实例化Adapter；恢复memmy/MemoryCore必须重新修改组合根并经过评审 |
+| Workflow Memory Registry | API与Workflow装配同一Tencent MemoryCore Adapter合同；无凭据时描述为未配置。memmy不进入新Workflow的活动Registry |
 | Trace/Replay | 记录系统路径并组合Product事实、版本证据进行回放 |
 
 Workflow进程不得打开Product JSON文件；所有产品读写都通过API私有Application Command完成。
 
 ## 3. Outbox分发边界
 
-当前Outbox有八种事件：
+Memory纵向新增两种Outbox事件：
 
 | kind | 产生位置 | 分发结果 |
 |---|---|---|
@@ -57,6 +58,8 @@ Workflow进程不得打开Product JSON文件；所有产品读写都通过API私
 | `workflow_resume` | Decision Command事务 | 恢复对应Approval的Hook |
 | `memory_import_start` | Memory Import Command事务 | 启动一次外部导入Workflow |
 | `memory_import_reconcile` | Reconcile Command事务 | 启动一次只读对账Workflow |
+| `memory_write_start` | Memory Write Command事务 | 启动一次新方案外部写入Workflow |
+| `memory_write_reconcile` | Memory Write Reconcile事务 | 启动一次只读Provider对账Workflow |
 | `project_intake_start` | Project Intake Command事务 | 启动一次建项Workflow |
 | `project_intake_resume` | Candidate Decision事务 | 恢复对应Project Candidate Hook |
 | `project_advancement_start` | Project Advancement Command事务 | 启动一次现有Project推进Workflow |
@@ -75,12 +78,16 @@ Workflow进程不得打开Product JSON文件；所有产品读写都通过API私
 ### 4.1 总体节点
 
 ```text
-beginPlanningContextStep
-├─ no_query / already_prepared ───────────────────┐
-└─ dispatch_required                              │
-   → queryMemoryContextStep                       │
-   → persistPlanningContextResultStep             │
-                                                  ↓
+[仅Memory Planning]
+for each memory.query（当前内置1个，自建Definition最多8个）:
+  beginWorkflowMemoryQueryStep
+  → queryWorkflowMemoryProviderStep
+  → persistWorkflowMemoryQueryResultStep
+→ freezeWorkflowMemoryContextStep
+→ beginWorkflowMemoryWriteNodeStep
+  → 提交Intent/Result（不创建start Outbox）
+  → 当前父Workflow唯一执行write与只读reconcile
+
 for planRevision 1..5:
   compilePlanningInputStep
   → runPiPlannerStep
@@ -106,14 +113,12 @@ for planRevision 1..5:
 
 ### 4.2 Memory上下文
 
-以下是完整上下文Planning Workflow的保留能力边界，不是当前默认产品路径。当前默认“规划执行工作流”的Definition没有Memory节点；因此不会产生Memory NodeRun、Vercel Step或前端轨迹。完整上下文Workflow只有被显式选择时才会解释其Memory节点，而当前Profile仍没有Memory Registry或服务。
-若未来重新启用，必须重新经过产品授权并修改组合根、Profile、合同与真实验证。
-
-保留实现中，Memory节点位于Plan修订循环之前。同一Product Run最多准备一次不可变ContextPackage；Plan v2～v5复用同一版本和Hash，不重复查询外部Memory，也不让后续外部变化静默污染审核内容。
+`memory.query`和`memory.write`只存在于显式选择的Memory Planning Definition，并位于Plan修订循环之前。Query以RunSpec节点身份、executionPath和attemptNumber派生稳定`wmq_*`；Query、Snapshots与Node终态在同一Product Store事务提交。所有Query终态随后聚合成唯一`WorkflowMemoryContext`，Plan v2～v5复用同一版本和Hash。Write以稳定`mwi_*`冻结来源Message和Provider描述；外部结果通过Node终态投影，正文不进入Trace。
 
 - `required`查询失败：先保存失败结果，再让Run失败关闭。
 - `optional`查询失败：保存排除原因，规划可继续。
-- 没有选择Memory：不调用外部服务，仍形成可解释的上下文结果。
+- 默认Simple Planning没有Query/Write节点：不调用外部服务、不制造空Context，也不产生Memory轨迹。
+- Provider内部L0/L1只在Tencent Adapter内映射；Planner只看通用category、正文与三元引用。
 
 ### 4.3 规划和修订
 
@@ -152,30 +157,31 @@ Executor Operation使用稳定`pio_*`身份和请求Hash。Workflow断线后按�
 
 Operation Start在进入Journal前还有独立授权门：Executor用`executionAttemptId + Contract ID/Hash + Step + Manifest`向Application回查Product Store，只使用API返回的权威Contract、Context和依赖引用。Runtime Key只是进程身份，不能单独授予文件或Shell能力。
 
-## 5. MemoryImportWorkflow
+## 5. MemoryWriteWorkflow
 
-### 5.1 普通导入
+### 5.1 普通写入
 
 ```text
-loadMemoryImportStep
-→ markMemoryImportDispatchingStep
-→ callMemoryImportStep（唯一外部写入，maxRetries=0）
+loadMemoryWriteStep
+→ markMemoryWriteDispatchingStep
+→ callMemoryWriteProviderStep（唯一外部写入，maxRetries=0）
    ├─ failed → commitFailed
    ├─ outcome_unknown → commitUnknown → 只读reconcile
    └─ accepted → commitAccepted → 只读reconcile
 → materialized / accepted / failed / outcome_unknown
 ```
 
-`dispatching`是外部写入前的耐久栅栏。跨过fetch边界后的断连、超时、5xx或非法成功响应都可能意味着外部已经写入，因此不能回到`callMemoryImportStep`盲目重试。
+`dispatching`是外部写入前的耐久栅栏。跨过fetch边界后的断连、超时、5xx或非法成功响应都可能意味着外部已经写入，因此不能回到写入Step盲目重试。
 
 ### 5.2 只读对账
 
 `mode=reconcile`只允许从`dispatching/accepted/outcome_unknown`进入，只调用Adapter的读取/搜索能力，不再次执行外部写入。
 
-- memmy：按已知external ID读取并搜索，或使用完全相同operationId/request Hash验证原生幂等结果。
 - Tencent MemoryCore：用稳定映射读取L0并检查L1；L0存在可以收敛为`accepted`，L1可查后才是`materialized`。
 
 `accepted`是合法非失败终态。Dispatcher监督器和页面都不得把它自动降级成未知结果，也不得为了追求`materialized`重复写入。
+
+旧`MemoryImportWorkflow`、`MemoryImportIntent/Result`和对应API只为历史兼容保留；新功能不得继续向旧对象写入。
 
 ## 6. ProjectIntakeWorkflow
 
@@ -224,6 +230,7 @@ Runtime Binding保存以下私有关系：
 - Product Run/Start Outbox → Workflow Run。
 - Approval Request → Hook Token和Resume状态。
 - Memory Import Outbox → Memory Import Workflow Run。
+- Memory Write Outbox → Memory Write Workflow Run。
 - Project Candidate/Outbox → Project Intake或Advancement Workflow Run和Hook恢复状态。
 
 约束：
@@ -231,7 +238,7 @@ Runtime Binding保存以下私有关系：
 1. Runtime数据存在但Binding文件缺失时拒绝创建空映射。
 2. Binding存在但对应Workflow Run不存在时启动失败关闭。
 3. 活动Planning Run恢复前核对Workflow Definition、bundle和版本证据。
-4. 活动Memory Import Run核对其独立Definition Version。
+4. 活动Memory Import/Write Run分别核对各自独立Definition Version。
 5. 活动Project Intake/Advancement Run核对各自Definition Version、Candidate身份和Start/Resume状态。
 6. Runtime ID只用于后端诊断，不进入浏览器、公开API和Product Store身份模型。
 
@@ -244,6 +251,7 @@ Runtime Binding保存以下私有关系：
 | 纯确定性Step | 可由Workflow按耐久语义重放 |
 | Planner/Executor付费模型调用 | `maxRetries=0`；Executor通过同一Operation查询，不猜测性重启AgentSession |
 | Project Understanding付费模型调用 | `FatalError`终止Step；Candidate记录failed，不自动再次扣费 |
+| Memory只读查询 | Provider标记retryable时最多重试2次；最终失败先提交Query/Node证据再决定是否终止父Workflow |
 | Memory外部写入 | `maxRetries=0`；发出后失联进入`outcome_unknown` |
 | Product Commit | 使用稳定Command ID幂等重试，不重新生成候选 |
 | Workflow Start/Resume | 先记录Binding意图，失联后对账，不盲目重复 |
@@ -303,12 +311,13 @@ NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Quer
 | 关注点 | 文件 |
 |---|---|
 | Planning主编排 | `packages/workflows/src/planning-execution-workflow.ts` |
-| Planning/Memory Step | `workflow-planning-steps.ts` |
+| Workflow Memory Query Step | `workflow-memory-steps.ts`、`configurable-planning-resource-executors.ts` |
 | Hook与Decision Step | `workflow-decision-steps.ts` |
 | 执行Step | `workflow-execution-steps.ts` |
 | 验证和Product Commit Step | `workflow-result-steps.ts` |
 | Memory Import主编排 | `memory-import-workflow.ts` |
 | Memory Import Step | `memory-import-workflow-steps.ts` |
+| Memory Write主编排/Step | `memory-write-workflow.ts`、`memory-write-workflow-steps.ts` |
 | Project Intake主编排/Step | `project-intake-workflow.ts`、`project-intake-workflow-steps.ts` |
 | Project Advancement主编排/Step | `project-advancement-workflow.ts`、`project-advancement-workflow-steps.ts` |
 | Runtime HTTP与Local World | `runtime-server.ts`、`workflow-world.ts` |
@@ -328,8 +337,8 @@ NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Quer
 已经实现：
 
 1. 同一Planning Workflow内的规划、反复修订、批准/拒绝、执行与正式提交。
-2. memmy和Tencent MemoryCore可选规划召回。
-3. 独立Memory导入/对账Workflow及结果未知语义。
+2. Provider中立、可重复的`memory.query`节点和唯一`WorkflowMemoryContext`；首个活动Provider为Tencent MemoryCore。
+3. `memory.write`节点与独立Memory Write/对账Workflow及结果未知语义；旧Import链只做历史兼容。
 4. 真实百炼`qwen3.7-plus`、真实Memory服务和真实浏览器E2E。
 5. 固定端口F5调试、严格Trace和多源Replay。
 6. 独立Project Intake耐久链、真实Git/文档/脚本观察、候选确认与Project账本。
@@ -353,9 +362,7 @@ pnpm --filter @chat/workflows test
 pnpm --filter @chat/testing test
 pnpm test:provider:bailian
 pnpm test:e2e:planning-execution:real
-pnpm test:memory:memmy-response-drop
-pnpm test:e2e:memory-import:real
-pnpm test:e2e:memorycore:real
+CHAT_FIXED_SOURCE_CACHE_ROOT=/path/to/shared/cache pnpm test:memory:memorycore-real-http
 pnpm test:e2e:project-intake:real
 ```
 

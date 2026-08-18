@@ -9,6 +9,8 @@ import {
   messageIdSchema,
   memoryImportIntentIdSchema,
   memoryImportResultIdSchema,
+  memoryWriteIntentIdSchema,
+  memoryWriteResultIdSchema,
   noteCandidateIdSchema,
   noteDecisionIdSchema,
   outboxEntryIdSchema,
@@ -29,6 +31,7 @@ import {
   validationResultIdSchema,
   workflowViewDefinitionIdSchema,
   workflowRunSpecIdSchema,
+  workflowMemoryContextIdSchema,
 } from "./ids.js";
 import { sha256Schema } from "./hash.js";
 import { B2_MAX_PLAN_STEPS } from "./versions.js";
@@ -283,6 +286,8 @@ export const runAttemptSchema = z
     contextPackageSha256: sha256Schema.optional(),
     planningMemorySelectionId: planningMemorySelectionIdSchema.optional(),
     planningMemorySelectionSha256: sha256Schema.optional(),
+    workflowMemoryContextId: workflowMemoryContextIdSchema.optional(),
+    workflowMemoryContextSha256: sha256Schema.optional(),
     planningProjectContextId: planningProjectContextIdSchema.optional(),
     planningProjectContextSha256: sha256Schema.optional(),
     ruleSelectionId: ruleSelectionIdSchema.optional(),
@@ -611,6 +616,8 @@ export const outboxEntryKindSchema = z.enum([
   "workflow_resume",
   "memory_import_start",
   "memory_import_reconcile",
+  "memory_write_start",
+  "memory_write_reconcile",
   "project_intake_start",
   "project_intake_resume",
   "project_advancement_start",
@@ -718,6 +725,24 @@ export const outboxEntrySchema = z.discriminatedUnion("kind", [
       kind: z.literal("memory_import_reconcile"),
       memoryImportIntentId: memoryImportIntentIdSchema,
       memoryImportResultId: memoryImportResultIdSchema,
+      expectedResultRevision: z.number().int().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      ...outboxCommonFields,
+      kind: z.literal("memory_write_start"),
+      memoryWriteIntentId: memoryWriteIntentIdSchema,
+      memoryWriteResultId: memoryWriteResultIdSchema,
+      expectedResultRevision: z.number().int().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      ...outboxCommonFields,
+      kind: z.literal("memory_write_reconcile"),
+      memoryWriteIntentId: memoryWriteIntentIdSchema,
+      memoryWriteResultId: memoryWriteResultIdSchema,
       expectedResultRevision: z.number().int().positive(),
     })
     .strict(),

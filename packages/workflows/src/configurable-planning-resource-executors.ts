@@ -11,6 +11,87 @@ import type {
   PlanningInterpreterState,
   PlanningNodeIdentity,
 } from "./configurable-planning-types.js";
+import {
+  beginWorkflowMemoryQueryStep,
+  persistWorkflowMemoryQueryResultStep,
+  queryWorkflowMemoryProviderStep,
+} from "./workflow-memory-steps.js";
+import { beginWorkflowMemoryWriteNodeStep } from "./memory-write-workflow-steps.js";
+import { executeLoadedMemoryWrite } from "./memory-write-workflow.js";
+
+export async function executeWorkflowMemoryQuery(
+  input: ConfigurablePlanningWorkflowInput,
+  nodeIdentity: PlanningNodeIdentity,
+): Promise<"success" | "empty" | "optional_unavailable" | "required_unavailable"> {
+  await recordConfigurablePlanningNodeStep({
+    ...nodeIdentity,
+    toStatus: "running",
+    publicSummary: "正在查询Memory Provider",
+  });
+  const identity = { ...nodeIdentity, workflowAttemptId: input.attemptId };
+  const begun = await beginWorkflowMemoryQueryStep(identity);
+  if (begun.status !== "dispatch_required") {
+    if (begun.status === "completed") return "success";
+    return begun.status === "required_failed" ? "required_unavailable" : "optional_unavailable";
+  }
+  const result = await queryWorkflowMemoryProviderStep({
+    query: begun.query,
+    workflowAttemptId: input.attemptId,
+  });
+  const persisted = await persistWorkflowMemoryQueryResultStep({
+    identity,
+    workflowMemoryQueryId: begun.workflowMemoryQueryId,
+    result,
+  });
+  if (persisted.status === "required_failed") return "required_unavailable";
+  if (persisted.status === "optional_failed") return "optional_unavailable";
+  return persisted.snapshotCount === 0 ? "empty" : "success";
+}
+
+export async function executeWorkflowMemoryWrite(
+  input: ConfigurablePlanningWorkflowInput,
+  nodeIdentity: PlanningNodeIdentity,
+): Promise<"accepted" | "materialized" | "failed" | "outcome_unknown"> {
+  await recordConfigurablePlanningNodeStep({
+    ...nodeIdentity,
+    toStatus: "running",
+    publicSummary: "正在保存本次输入到Memory Provider",
+  });
+  try {
+    const loaded = await beginWorkflowMemoryWriteNodeStep({
+      ...nodeIdentity,
+      workflowAttemptId: input.attemptId,
+    });
+    const result = await executeLoadedMemoryWrite(loaded, loaded.result.revision);
+    const succeeded = result.status === "accepted" || result.status === "materialized";
+    await recordConfigurablePlanningNodeStep({
+      ...nodeIdentity,
+      toStatus: succeeded
+        ? "succeeded"
+        : result.status === "outcome_unknown"
+          ? "outcome_unknown"
+          : "failed",
+      outcomeCode: result.status,
+      publicSummary:
+        result.status === "materialized"
+          ? "本次输入已写入并可查询"
+          : result.status === "accepted"
+            ? "Memory Provider已接收本次输入"
+            : result.status === "outcome_unknown"
+              ? "Memory写入结果未知，已停止重复写入"
+              : "Memory Provider写入失败",
+    });
+    return result.status;
+  } catch {
+    await recordConfigurablePlanningNodeStep({
+      ...nodeIdentity,
+      toStatus: "failed",
+      outcomeCode: "failed",
+      publicSummary: "Memory写入未能安全开始",
+    });
+    return "failed";
+  }
+}
 
 export async function executeMemoryContext(
   input: ConfigurablePlanningWorkflowInput,

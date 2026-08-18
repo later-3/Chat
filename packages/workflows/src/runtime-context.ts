@@ -1,5 +1,9 @@
 import type { TraceEventInput } from "@chat/contracts";
-import type { MemoryBackendRegistryPort, MemoryImportBackendRegistryPort } from "@chat/application";
+import type {
+  MemoryBackendRegistryPort,
+  MemoryImportBackendRegistryPort,
+  WorkflowMemoryProviderRegistryPort,
+} from "@chat/application";
 import type {
   AgentRunResult,
   BailianConfig,
@@ -28,6 +32,7 @@ export interface WorkflowRuntimeContext {
   /** 外部Memory调用只允许由Workflow Step通过本服务端Registry执行。 */
   readonly memoryBackends: MemoryBackendRegistryPort;
   readonly memoryImportBackends?: MemoryImportBackendRegistryPort;
+  readonly workflowMemoryProviders: WorkflowMemoryProviderRegistryPort;
   readonly trace: (event: TraceEventInput) => void;
   readonly now: () => string;
   readonly bailian: BailianConfig;

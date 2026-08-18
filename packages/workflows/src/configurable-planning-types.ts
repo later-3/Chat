@@ -52,6 +52,11 @@ export interface PlanningInterpreterState {
     revision: 1;
     sha256: string;
   };
+  workflowMemoryContextRef?: {
+    workflowMemoryContextId: string;
+    revision: 1;
+    sha256: string;
+  };
   planningProjectContextRef?: {
     planningProjectContextId: string;
     revision: 1;

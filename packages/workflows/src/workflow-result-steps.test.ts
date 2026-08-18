@@ -21,6 +21,11 @@ describe("Configurable validation策略", () => {
       api: { persistValidationResult } as never,
       bindings: {} as never,
       memoryBackends: { list: () => [], get: () => undefined },
+      workflowMemoryProviders: {
+        list: () => [],
+        getQuery: () => undefined,
+        getWrite: () => undefined,
+      },
       trace: vi.fn(),
       now: () => "2026-08-10T00:00:00.000Z",
       bailian: {} as never,

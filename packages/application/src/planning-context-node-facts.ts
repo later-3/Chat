@@ -21,7 +21,8 @@ import { revisionConflict } from "./errors.js";
 import type { PlanningProductRun } from "./product-run-kind.js";
 
 type DraftSnapshot = ProductSnapshot;
-type PlanningContextNodeType = "context.memory" | "context.project" | "policy.rules";
+type PlanningContextNodeType =
+  "memory.query" | "context.memory" | "context.project" | "policy.rules";
 
 const deriveNodeRunId = (input: {
   readonly productRunId: string;
@@ -94,7 +95,7 @@ export function commitPlanningContextNodeFact(
     readonly nodeType: PlanningContextNodeType;
     readonly executionPath: WorkflowNodeRun["executionPath"];
     readonly attemptNumber: number;
-    readonly terminal: "succeeded" | "skipped";
+    readonly terminal: "succeeded" | "skipped" | "failed";
     readonly outcomeCode: string;
     readonly publicSummary: string;
     readonly inputSlots: readonly NodeValueManifestSlot[];
@@ -150,19 +151,33 @@ export function commitPlanningContextNodeFact(
       throw revisionConflict("Planning Context Node终态证据与已提交事实不一致");
     }
   } else {
-    const apply = (toStatus: "running" | "succeeded" | "skipped") => {
+    const apply = (toStatus: "running" | "succeeded" | "skipped" | "failed") => {
       const sequence = transitionCount(draft, workflowNodeRunId) + 1;
       const transitioned = transitionWorkflowNodeRun(nodeRun!, {
         transitionId: deriveTransitionId(workflowNodeRunId, sequence),
         nodeSequence: sequence,
         toStatus,
         reasonKind:
-          toStatus === "running" ? "started" : toStatus === "succeeded" ? "completed" : "skipped",
+          toStatus === "running"
+            ? "started"
+            : toStatus === "succeeded"
+              ? "completed"
+              : toStatus === "failed"
+                ? "failed"
+                : "skipped",
         at: input.at,
         ...(toStatus === input.terminal
           ? {
               outcomeCode: input.outcomeCode,
               publicSummary: input.publicSummary,
+              ...(toStatus === "failed"
+                ? {
+                    error: {
+                      code: input.outcomeCode,
+                      summary: input.publicSummary,
+                    },
+                  }
+                : {}),
               ...(input.relatedProductRef !== undefined
                 ? { relatedProductRef: input.relatedProductRef }
                 : {}),
@@ -174,10 +189,10 @@ export function commitPlanningContextNodeFact(
       nodeRun = workflowNodeRunSchema.parse(transitioned.nodeRun);
       draft.entities.workflowNodeRuns[workflowNodeRunId] = nodeRun;
     };
-    if (nodeRun.status !== "queued") {
+    if (nodeRun.status !== "queued" && nodeRun.status !== "running") {
       throw revisionConflict("Planning Context Node已被其他命令推进");
     }
-    if (input.terminal === "succeeded") apply("running");
+    if (nodeRun.status === "queued" && input.terminal !== "skipped") apply("running");
     apply(input.terminal);
   }
 

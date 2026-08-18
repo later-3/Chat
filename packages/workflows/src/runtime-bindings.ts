@@ -5,6 +5,8 @@ import {
   type ApprovalRequestId,
   type MemoryImportIntentId,
   type MemoryImportResultId,
+  type MemoryWriteIntentId,
+  type MemoryWriteResultId,
   type NoteCandidateId,
   type OutboxEntryId,
   type ProductRunId,
@@ -23,6 +25,7 @@ import {
   runtimeBindingsFileSchema,
   type HookBinding,
   type MemoryImportWorkflowBinding,
+  type MemoryWriteWorkflowBinding,
   type NoteHookBinding,
   type ProjectIntakeWorkflowBinding,
   type RuntimeBindingsFile,
@@ -34,6 +37,7 @@ export {
   runtimeBindingsFileSchema,
   type HookBinding,
   type MemoryImportWorkflowBinding,
+  type MemoryWriteWorkflowBinding,
   type NoteHookBinding,
   type ProjectIntakeWorkflowBinding,
   type RuntimeBindingsFile,
@@ -109,6 +113,8 @@ export class RuntimeBindingStore {
       Object.keys(this.bindings.noteHooks).length > 0 ||
       Object.keys(this.bindings.memoryImportStartIntents).length > 0 ||
       Object.keys(this.bindings.memoryImportWorkflows).length > 0 ||
+      Object.keys(this.bindings.memoryWriteStartIntents).length > 0 ||
+      Object.keys(this.bindings.memoryWriteWorkflows).length > 0 ||
       Object.keys(this.bindings.projectIntakeStartIntents).length > 0 ||
       Object.keys(this.bindings.projectIntakeWorkflows).length > 0
     );
@@ -275,6 +281,139 @@ export class RuntimeBindingStore {
       if (existing.state === "outcome_unknown") return;
       const next = structuredClone(this.bindings);
       next.memoryImportStartIntents[outboxId] = {
+        ...existing,
+        state: "outcome_unknown",
+        updatedAt: now,
+      };
+      await this.commit(next);
+    });
+  }
+
+  listMemoryWriteBindings(): readonly {
+    outboxId: OutboxEntryId;
+    binding: MemoryWriteWorkflowBinding;
+  }[] {
+    this.assertAvailable();
+    return Object.entries(this.bindings.memoryWriteWorkflows).map(([outboxId, binding]) => ({
+      outboxId: outboxId as OutboxEntryId,
+      binding: structuredClone(binding),
+    }));
+  }
+
+  getMemoryWriteStartState(outboxId: OutboxEntryId): "missing" | "outcome_unknown" | "exists" {
+    this.assertAvailable();
+    if (this.bindings.memoryWriteWorkflows[outboxId] !== undefined) return "exists";
+    return this.bindings.memoryWriteStartIntents[outboxId] !== undefined
+      ? "outcome_unknown"
+      : "missing";
+  }
+
+  getMemoryWriteWorkflowBinding(outboxId: OutboxEntryId): MemoryWriteWorkflowBinding | undefined {
+    this.assertAvailable();
+    const value = this.bindings.memoryWriteWorkflows[outboxId];
+    return value === undefined ? undefined : structuredClone(value);
+  }
+
+  async claimMemoryWriteStartIntent(input: {
+    outboxId: OutboxEntryId;
+    memoryWriteIntentId: MemoryWriteIntentId;
+    memoryWriteResultId: MemoryWriteResultId;
+    mode: "write" | "reconcile";
+    workflowDefinitionVersion: string;
+    now: string;
+  }): Promise<"claimed" | "already_started" | "outcome_unknown"> {
+    return this.enqueue(async () => {
+      this.assertAvailable();
+      if (this.bindings.memoryWriteWorkflows[input.outboxId] !== undefined) {
+        return "already_started";
+      }
+      const existing = this.bindings.memoryWriteStartIntents[input.outboxId];
+      if (existing !== undefined) {
+        if (
+          existing.memoryWriteIntentId !== input.memoryWriteIntentId ||
+          existing.memoryWriteResultId !== input.memoryWriteResultId ||
+          existing.mode !== input.mode ||
+          existing.workflowDefinitionVersion !== input.workflowDefinitionVersion
+        ) {
+          throw new RuntimeBindingError("Memory Write Workflow start意图冲突");
+        }
+        return "outcome_unknown";
+      }
+      const next = structuredClone(this.bindings);
+      next.memoryWriteStartIntents[input.outboxId] = {
+        memoryWriteIntentId: input.memoryWriteIntentId,
+        memoryWriteResultId: input.memoryWriteResultId,
+        mode: input.mode,
+        workflowDefinitionVersion: input.workflowDefinitionVersion,
+        state: "starting",
+        createdAt: input.now,
+        updatedAt: input.now,
+      };
+      await this.commit(next);
+      return "claimed";
+    });
+  }
+
+  async claimMemoryWriteWorkflowBinding(input: {
+    outboxId: OutboxEntryId;
+    memoryWriteIntentId: MemoryWriteIntentId;
+    memoryWriteResultId: MemoryWriteResultId;
+    mode: "write" | "reconcile";
+    workflowRunId: string;
+    workflowDefinitionVersion: string;
+    now: string;
+  }): Promise<{ alreadyExisted: boolean }> {
+    return this.enqueue(async () => {
+      this.assertAvailable();
+      const existing = this.bindings.memoryWriteWorkflows[input.outboxId];
+      if (existing !== undefined) {
+        if (
+          existing.workflowRunId !== input.workflowRunId ||
+          existing.memoryWriteIntentId !== input.memoryWriteIntentId ||
+          existing.memoryWriteResultId !== input.memoryWriteResultId ||
+          existing.mode !== input.mode
+        ) {
+          throw new RuntimeBindingError("Memory Write Workflow映射冲突");
+        }
+        return { alreadyExisted: true };
+      }
+      const intent = this.bindings.memoryWriteStartIntents[input.outboxId];
+      if (
+        intent === undefined ||
+        intent.memoryWriteIntentId !== input.memoryWriteIntentId ||
+        intent.memoryWriteResultId !== input.memoryWriteResultId ||
+        intent.mode !== input.mode ||
+        intent.workflowDefinitionVersion !== input.workflowDefinitionVersion
+      ) {
+        throw new RuntimeBindingError("Memory Write Workflow结果缺少匹配的持久化意图");
+      }
+      const next = structuredClone(this.bindings);
+      next.memoryWriteWorkflows[input.outboxId] = {
+        memoryWriteIntentId: input.memoryWriteIntentId,
+        memoryWriteResultId: input.memoryWriteResultId,
+        mode: input.mode,
+        workflowRunId: input.workflowRunId,
+        workflowDefinitionVersion: input.workflowDefinitionVersion,
+        startDispatchState: "started",
+        createdAt: input.now,
+      };
+      delete next.memoryWriteStartIntents[input.outboxId];
+      await this.commit(next);
+      return { alreadyExisted: false };
+    });
+  }
+
+  async markMemoryWriteStartOutcomeUnknown(outboxId: OutboxEntryId, now: string): Promise<void> {
+    await this.enqueue(async () => {
+      this.assertAvailable();
+      const existing = this.bindings.memoryWriteStartIntents[outboxId];
+      if (existing === undefined) {
+        if (this.bindings.memoryWriteWorkflows[outboxId] !== undefined) return;
+        throw new RuntimeBindingError("Memory Write start结果未知但意图缺失");
+      }
+      if (existing.state === "outcome_unknown") return;
+      const next = structuredClone(this.bindings);
+      next.memoryWriteStartIntents[outboxId] = {
         ...existing,
         state: "outcome_unknown",
         updatedAt: now,

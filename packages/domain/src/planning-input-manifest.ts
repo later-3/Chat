@@ -30,6 +30,11 @@ export interface PlanningInputManifestInput {
     readonly revision: number;
     readonly sha256: string;
   };
+  readonly workflowMemoryContextRef?: {
+    readonly workflowMemoryContextId: string;
+    readonly revision: number;
+    readonly sha256: string;
+  };
   readonly planningProjectContextRef?: {
     readonly planningProjectContextId: string;
     readonly revision: number;
@@ -53,13 +58,15 @@ export function computePlanningInputManifestSha256(input: PlanningInputManifestI
   const hasVersion3Context =
     input.planningProjectContextRef !== undefined || input.ruleSelectionRef !== undefined;
   const hashDomain =
-    input.planningMemorySelectionRef !== undefined
-      ? "planning-input-manifest.v4"
-      : hasVersion3Context
-        ? "planning-input-manifest.v3"
-        : input.contextPackageRef === undefined
-          ? "planning-input-manifest.v1"
-          : "planning-input-manifest.v2";
+    input.workflowMemoryContextRef !== undefined
+      ? "planning-input-manifest.v5"
+      : input.planningMemorySelectionRef !== undefined
+        ? "planning-input-manifest.v4"
+        : hasVersion3Context
+          ? "planning-input-manifest.v3"
+          : input.contextPackageRef === undefined
+            ? "planning-input-manifest.v1"
+            : "planning-input-manifest.v2";
   return hashCanonical(hashDomain, {
     productRunId: input.productRunId,
     planRevision: input.planRevision,
@@ -71,6 +78,9 @@ export function computePlanningInputManifestSha256(input: PlanningInputManifestI
       : {}),
     ...(input.planningMemorySelectionRef !== undefined
       ? { planningMemorySelectionRef: input.planningMemorySelectionRef }
+      : {}),
+    ...(input.workflowMemoryContextRef !== undefined
+      ? { workflowMemoryContextRef: input.workflowMemoryContextRef }
       : {}),
     ...(input.planningProjectContextRef !== undefined
       ? { planningProjectContextRef: input.planningProjectContextRef }

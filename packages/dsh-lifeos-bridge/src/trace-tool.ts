@@ -40,7 +40,7 @@ function inputObject(input: string): Record<string, unknown> | undefined {
 }
 
 function toolKind(toolName: string): ToolCallKind {
-  if (toolName === "read" || toolName === "ls") return "read";
+  if (toolName === "read" || toolName === "ls" || toolName === "memory_query") return "read";
   if (toolName === "grep" || toolName === "find") return "search";
   if (toolName === "edit" || toolName === "write") return "edit";
   if (toolName === "bash") return "execute";
@@ -62,7 +62,17 @@ export function createLifeosTraceTool(chat: ChatProductClient, state: AtomicBrid
       toolCallId: { type: "string", required: true },
       toolName: {
         type: "string",
-        enum: ["read", "grep", "find", "ls", "edit", "write", "bash"],
+        enum: [
+          "read",
+          "grep",
+          "find",
+          "ls",
+          "edit",
+          "write",
+          "bash",
+          "memory_query",
+          "memory_write",
+        ],
         required: true,
       },
       input: { type: "string", required: true },
@@ -128,6 +138,14 @@ export function createLifeosTraceTool(chat: ChatProductClient, state: AtomicBrid
           ...(cwd !== undefined ? { cwd } : {}),
         };
       }
+      if (args.toolName === "memory_query" || args.toolName === "memory_write") {
+        return {
+          card: "generic",
+          title: args.toolName === "memory_query" ? "Memory · 查询" : "Memory · 写入",
+          kind: args.toolName === "memory_query" ? "read" : "edit",
+          description: "Chat Workflow · 可审计节点",
+        };
+      }
       const path = typeof parsed?.path === "string" ? parsed.path : undefined;
       return {
         card: "generic",
@@ -140,6 +158,13 @@ export function createLifeosTraceTool(chat: ChatProductClient, state: AtomicBrid
     presentResult(args, result) {
       const content = result.content.find((block) => block.type === "text");
       const text = content?.type === "text" ? content.text : undefined;
+      if (args.toolName === "memory_query" || args.toolName === "memory_write") {
+        return {
+          card: "generic",
+          title: args.toolName === "memory_query" ? "Memory · 查询结果" : "Memory · 写入结果",
+          ...(text !== undefined ? { content: [{ type: "text", text }] } : {}),
+        };
+      }
       return args.toolName === "bash"
         ? { card: "terminal", ...(text !== undefined ? { output: text } : {}) }
         : {

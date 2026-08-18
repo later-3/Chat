@@ -9,5 +9,7 @@ export * from "./migrate-v7-to-v8.js";
 export * from "./migrate-v8-to-v9.js";
 export * from "./migrate-v9-to-v10.js";
 export * from "./migrate-v10-to-v11.js";
+export * from "./migrate-v11-to-v12.js";
 export * from "./legacy-v10.js";
+export * from "./legacy-v11.js";
 export * from "./snapshot-integrity.js";

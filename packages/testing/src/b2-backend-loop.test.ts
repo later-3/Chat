@@ -31,6 +31,7 @@ import {
   hashCanonical,
 } from "@chat/domain";
 import { JsonProductStore } from "@chat/product-store-json";
+import { createWorkflowMemoryProviderRegistry } from "@chat/memory-runtime";
 import { createApiApp } from "@chat/api";
 import { OutboxDispatcher } from "@chat/api/outbox-dispatcher";
 import {
@@ -278,6 +279,7 @@ async function startStack(fakePi: FakePi): Promise<TestStack> {
     now: () => new Date().toISOString(),
     ids: testIds(),
     ruleIds: testRuleIds(),
+    workflowMemoryProviders: createWorkflowMemoryProviderRegistry({}),
     trace,
   };
 
@@ -300,6 +302,7 @@ async function startStack(fakePi: FakePi): Promise<TestStack> {
     traceSink: { emit: trace },
     runtimeOverrides: {
       memoryBackends: EMPTY_MEMORY_BACKENDS,
+      workflowMemoryProviders: createWorkflowMemoryProviderRegistry({}),
       now: () => new Date().toISOString(),
       bailian: {
         apiKey: "fake",

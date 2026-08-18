@@ -157,6 +157,18 @@ export async function publishPlanForReview(
       ) {
         throw revisionConflict("Planning Attempt的Memory Selection证据不完整");
       }
+      const workflowMemoryContext =
+        attempt.workflowMemoryContextId === undefined
+          ? undefined
+          : draft.entities.workflowMemoryContexts[attempt.workflowMemoryContextId];
+      if (
+        attempt.workflowMemoryContextId !== undefined &&
+        (workflowMemoryContext === undefined ||
+          workflowMemoryContext.productRunId !== input.productRunId ||
+          workflowMemoryContext.sha256 !== attempt.workflowMemoryContextSha256)
+      ) {
+        throw revisionConflict("Planning Attempt的Workflow Memory Context证据不完整");
+      }
       const projectContext =
         attempt.planningProjectContextId === undefined
           ? undefined
@@ -198,6 +210,19 @@ export async function publishPlanForReview(
         }
         allowedContextRefs.add(
           `${snapshot.memoryResultSnapshotId}:${String(snapshot.revision)}:${snapshot.sha256}`,
+        );
+      }
+      for (const selected of workflowMemoryContext?.items ?? []) {
+        const snapshot = draft.entities.workflowMemorySnapshots[selected.workflowMemorySnapshotId];
+        if (
+          snapshot === undefined ||
+          snapshot.revision !== selected.revision ||
+          snapshot.sha256 !== selected.sha256
+        ) {
+          throw revisionConflict("Workflow Memory Context引用的Snapshot证据不完整");
+        }
+        allowedContextRefs.add(
+          `${snapshot.workflowMemorySnapshotId}:${String(snapshot.revision)}:${snapshot.sha256}`,
         );
       }
       if (projectContext !== undefined) {

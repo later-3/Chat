@@ -102,7 +102,11 @@ export type WorkflowDesignerConfigFieldShape =
     }
   | {
       readonly type:
-        "resource_selector" | "rule_selector" | "skill_selector" | "note_source_selector";
+        | "resource_selector"
+        | "memory_provider_selector"
+        | "rule_selector"
+        | "skill_selector"
+        | "note_source_selector";
       readonly name: string;
     };
 
@@ -339,6 +343,7 @@ function updateNodeConfig(
   if (field === undefined) return "config_field_unknown";
   if (
     field.type === "resource_selector" ||
+    field.type === "memory_provider_selector" ||
     field.type === "rule_selector" ||
     field.type === "skill_selector" ||
     field.type === "note_source_selector"

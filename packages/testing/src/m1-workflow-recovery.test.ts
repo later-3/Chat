@@ -20,12 +20,13 @@ import {
   type MemoryBackendRegistryPort,
   type ProjectIdFactory,
 } from "@chat/application";
+import { SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID } from "@chat/application/workflow-system-definitions";
 import { createApiApp } from "@chat/api";
 import { OutboxDispatcher } from "@chat/api/outbox-dispatcher";
 import { JsonProductStore } from "@chat/product-store-json";
 import { RuntimeBindingStore } from "@chat/workflows";
 import { createProjectResourceRegistry } from "@chat/project-runtime";
-import { SYSTEM_PLANNING_WORKFLOW_REVISION_ID } from "@chat/application/workflow-system-definitions";
+import { createDeterministicWorkflowMemoryRegistry } from "./fixtures/workflow-memory-test-provider.js";
 
 /**
  * M1 免费恢复门：真实Hono、JSON Store、Runtime Binding、预构建bundle、
@@ -379,10 +380,11 @@ async function waitForRun(
       })),
       outbox,
       entityCounts: {
-        memoryQueries: Object.keys(current.snapshot.entities.memoryQueries).length,
-        memoryResultSnapshots: Object.keys(current.snapshot.entities.memoryResultSnapshots).length,
-        memoryAdoptions: Object.keys(current.snapshot.entities.memoryAdoptions).length,
-        contextPackages: Object.keys(current.snapshot.entities.contextPackages).length,
+        workflowMemoryQueries: Object.keys(current.snapshot.entities.workflowMemoryQueries).length,
+        workflowMemorySnapshots: Object.keys(current.snapshot.entities.workflowMemorySnapshots)
+          .length,
+        workflowMemoryContexts: Object.keys(current.snapshot.entities.workflowMemoryContexts)
+          .length,
       },
       workflowNodeRuns: Object.values(current.snapshot.entities.workflowNodeRuns)
         .filter((node) => node.productRunId === productRunId)
@@ -426,7 +428,7 @@ async function reviewCheckpointReady(
 }
 
 describe("M1真实Local World恢复", () => {
-  it("等待Hook时关闭并恢复同一Workflow，Plan修订复用唯一Memory快照", async () => {
+  it("等待Hook时关闭并恢复同一Workflow，Plan修订复用唯一Workflow Memory快照", async () => {
     const root = await mkdtemp(join(tmpdir(), "chat-m1-world-recovery-"));
     const productPath = join(root, "product.json");
     const workflowDataDir = join(root, "workflow-data");
@@ -441,11 +443,22 @@ describe("M1真实Local World恢复", () => {
         filePath: productPath,
         now: () => new Date().toISOString(),
       });
+      const initialSnapshot = (await store.read({ kind: "committedSnapshot" })).snapshot;
+      const memoryWorkflowRevision =
+        initialSnapshot.entities.workflowDefinitionRevisions[
+          SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID
+        ];
+      if (memoryWorkflowRevision === undefined) {
+        throw new Error("M1恢复夹具缺少独立Memory Workflow");
+      }
       const deps: ApplicationDeps = {
         store,
         now: () => new Date().toISOString(),
         ids: testIds(),
         memoryBackends: createApplicationMemoryRegistry(),
+        workflowMemoryProviders: createDeterministicWorkflowMemoryRegistry(async () => {
+          throw new Error("Workflow Memory查询只能由Workflow Runtime执行");
+        }),
       };
       const apiApp = createApiApp({
         traceSink: null,
@@ -478,10 +491,6 @@ describe("M1真实Local World恢复", () => {
         payload: {},
       })) as { session: unknown };
       const session = sessionDtoSchema.parse(sessionResponse.session);
-      const seeded = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
-      const fullPlanning =
-        seeded.entities.workflowDefinitionRevisions[SYSTEM_PLANNING_WORKFLOW_REVISION_ID];
-      if (fullPlanning === undefined) throw new Error("M1 Fixture缺少完整Planning Definition");
       const messageResponse = (await postJson(
         apiBaseUrl,
         `/api/sessions/${session.sessionId}/messages`,
@@ -491,22 +500,8 @@ describe("M1真实Local World恢复", () => {
             text: "Aurora 的恢复校验色是什么？",
             workflowSelection: {
               kind: "published_revision",
-              workflowDefinitionRevisionId: fullPlanning.workflowDefinitionRevisionId,
-              definitionSha256: fullPlanning.definitionSha256,
-              runConfiguration: {
-                schemaVersion: "workflow-run-configuration.v1",
-                overrides: [],
-              },
-            },
-            context: {
-              memory: {
-                backendId: "mbk_memmy",
-                requirement: "required",
-                tags: ["recovery"],
-                layers: ["L2"],
-                limit: 3,
-                contextBudget: 512,
-              },
+              workflowDefinitionRevisionId: memoryWorkflowRevision.workflowDefinitionRevisionId,
+              definitionSha256: memoryWorkflowRevision.definitionSha256,
             },
           },
         },
@@ -523,14 +518,15 @@ describe("M1真实Local World恢复", () => {
           candidate.plans.length === 1 &&
           (await reviewCheckpointReady(candidate, productRunId, bindingsPath)),
       );
-      expect(await readLines(memoryCallsPath)).toHaveLength(1);
+      expect(await readLines(memoryCallsPath)).toHaveLength(2);
       expect(await readLines(plannerCallsPath)).toHaveLength(1);
-      expect(Object.keys(current.snapshot.entities.memoryQueries)).toHaveLength(1);
-      expect(Object.keys(current.snapshot.entities.memoryResultSnapshots)).toHaveLength(1);
-      expect(Object.keys(current.snapshot.entities.contextPackages)).toHaveLength(1);
-      expect(Object.keys(current.snapshot.entities.memoryAdoptions)).toHaveLength(1);
-      const contextPackage = Object.values(current.snapshot.entities.contextPackages)[0];
-      expect(contextPackage).toBeDefined();
+      expect(Object.keys(current.snapshot.entities.workflowMemoryQueries)).toHaveLength(1);
+      expect(Object.keys(current.snapshot.entities.workflowMemorySnapshots)).toHaveLength(1);
+      expect(Object.keys(current.snapshot.entities.workflowMemoryContexts)).toHaveLength(1);
+      const workflowMemoryContext = Object.values(
+        current.snapshot.entities.workflowMemoryContexts,
+      )[0];
+      expect(workflowMemoryContext).toBeDefined();
       const bindingsV1 = await RuntimeBindingStore.open(bindingsPath, { allowCreate: false });
       const workflowBindingV1 = bindingsV1.getWorkflowBinding(productRunId);
       expect(workflowBindingV1).toBeDefined();
@@ -579,34 +575,37 @@ describe("M1真实Local World恢复", () => {
           (await reviewCheckpointReady(candidate, productRunId, bindingsPath)),
       );
 
-      expect(await readLines(memoryCallsPath)).toHaveLength(1);
+      expect(await readLines(memoryCallsPath)).toHaveLength(2);
       const plannerCalls = (await readLines(plannerCallsPath)).map(
-        (line) => JSON.parse(line) as { planRevision: number; contextPackageRef: unknown },
+        (line) => JSON.parse(line) as { planRevision: number; workflowMemoryContextRef: unknown },
       );
       expect(plannerCalls).toHaveLength(2);
-      expect(plannerCalls[0]?.contextPackageRef).toEqual(plannerCalls[1]?.contextPackageRef);
-      expect(Object.keys(current.snapshot.entities.memoryQueries)).toHaveLength(1);
-      expect(Object.keys(current.snapshot.entities.memoryResultSnapshots)).toHaveLength(1);
-      expect(Object.keys(current.snapshot.entities.contextPackages)).toHaveLength(1);
-      expect(Object.keys(current.snapshot.entities.memoryAdoptions)).toHaveLength(1);
-      expect(Object.values(current.snapshot.entities.contextPackages)[0]).toEqual(contextPackage);
+      expect(plannerCalls[0]?.workflowMemoryContextRef).toEqual(
+        plannerCalls[1]?.workflowMemoryContextRef,
+      );
+      expect(Object.keys(current.snapshot.entities.workflowMemoryQueries)).toHaveLength(1);
+      expect(Object.keys(current.snapshot.entities.workflowMemorySnapshots)).toHaveLength(1);
+      expect(Object.keys(current.snapshot.entities.workflowMemoryContexts)).toHaveLength(1);
+      expect(Object.values(current.snapshot.entities.workflowMemoryContexts)[0]).toEqual(
+        workflowMemoryContext,
+      );
       const planningAttempts = Object.values(current.snapshot.entities.attempts)
         .filter((attempt) => attempt.productRunId === productRunId && attempt.kind === "planning")
         .sort((left, right) => (left.planRevision ?? 0) - (right.planRevision ?? 0));
       expect(planningAttempts).toHaveLength(2);
       expect(
         planningAttempts.map((attempt) => ({
-          contextPackageId: attempt.contextPackageId,
-          contextPackageSha256: attempt.contextPackageSha256,
+          workflowMemoryContextId: attempt.workflowMemoryContextId,
+          workflowMemoryContextSha256: attempt.workflowMemoryContextSha256,
         })),
       ).toEqual([
         {
-          contextPackageId: contextPackage?.contextPackageId,
-          contextPackageSha256: contextPackage?.sha256,
+          workflowMemoryContextId: workflowMemoryContext?.workflowMemoryContextId,
+          workflowMemoryContextSha256: workflowMemoryContext?.sha256,
         },
         {
-          contextPackageId: contextPackage?.contextPackageId,
-          contextPackageSha256: contextPackage?.sha256,
+          workflowMemoryContextId: workflowMemoryContext?.workflowMemoryContextId,
+          workflowMemoryContextSha256: workflowMemoryContext?.sha256,
         },
       ]);
       const workflowRunFiles = (await readdir(join(workflowDataDir, "runs"))).filter((name) =>
@@ -637,13 +636,12 @@ describe("M1真实Local World恢复", () => {
         (candidate) => candidate.run?.status === "cancelled",
       );
       expect(current.run?.phase).toBe("rejected");
-      expect(await readLines(memoryCallsPath)).toHaveLength(1);
+      expect(await readLines(memoryCallsPath)).toHaveLength(2);
       expect([
-        Object.keys(current.snapshot.entities.memoryQueries).length,
-        Object.keys(current.snapshot.entities.memoryResultSnapshots).length,
-        Object.keys(current.snapshot.entities.contextPackages).length,
-        Object.keys(current.snapshot.entities.memoryAdoptions).length,
-      ]).toEqual([1, 1, 1, 1]);
+        Object.keys(current.snapshot.entities.workflowMemoryQueries).length,
+        Object.keys(current.snapshot.entities.workflowMemorySnapshots).length,
+        Object.keys(current.snapshot.entities.workflowMemoryContexts).length,
+      ]).toEqual([1, 1, 1]);
       const runOutbox = Object.values(current.snapshot.outbox).filter(
         (entry) => "productRunId" in entry && entry.productRunId === productRunId,
       );
@@ -784,6 +782,9 @@ describe("M1真实Local World恢复", () => {
         now,
         ids: applicationIds,
         memoryBackends: createApplicationMemoryRegistry(),
+        workflowMemoryProviders: createDeterministicWorkflowMemoryRegistry(async () => {
+          throw new Error("Workflow Memory查询只能由Workflow Runtime执行");
+        }),
         projectRoots,
         projectIntakeUnderstanding,
         projectAdvancementUnderstanding,

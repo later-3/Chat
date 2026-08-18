@@ -32,6 +32,11 @@ import {
   ruleIdSchema,
   ruleRevisionIdSchema,
   workflowPolicyResolutionIdSchema,
+  workflowMemoryQueryIdSchema,
+  workflowMemorySnapshotIdSchema,
+  workflowMemoryContextIdSchema,
+  memoryWriteIntentIdSchema,
+  memoryWriteResultIdSchema,
 } from "./ids.js";
 import {
   decisionKindSchema,
@@ -60,11 +65,20 @@ import {
   noteDecisionDtoSchema,
   noteRevisionInputSchema,
 } from "./note-api.js";
-import { MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION } from "./versions.js";
+import {
+  MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
+  MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION,
+} from "./versions.js";
 import { workflowRunSpecSchema, workflowRunnerFamilySchema } from "./workflow-definition.js";
 import { workflowExecutionPathSegmentSchema } from "./workflow-run.js";
 import { planningProjectSnapshotSchema } from "./planning-project-context.js";
 import { ruleSelectionSourceSchema } from "./rules.js";
+import {
+  memoryProviderDescriptorSchema,
+  memoryWriteIntentSchema,
+  memoryWriteResultSchema,
+  workflowMemoryCategorySchema,
+} from "./workflow-memory.js";
 
 /**
  * 后端私有Runtime合同（任务书§12.4）。
@@ -107,6 +121,13 @@ const internalRuleSelectionRefSchema = z
     sha256: sha256Schema,
   })
   .strict();
+export const internalWorkflowMemoryContextRefSchema = z
+  .object({
+    workflowMemoryContextId: workflowMemoryContextIdSchema,
+    revision: z.literal(1),
+    sha256: sha256Schema,
+  })
+  .strict();
 
 /* ---------- compilePlanningInput ---------- */
 
@@ -118,6 +139,7 @@ export const compilePlanningInputRequestSchema = z
     planRevision: z.number().int().positive(),
     contextPackageRef: internalContextPackageRefSchema.optional(),
     planningMemorySelectionRef: internalPlanningMemorySelectionRefSchema.optional(),
+    workflowMemoryContextRef: internalWorkflowMemoryContextRefSchema.optional(),
     planningProjectContextRef: internalPlanningProjectContextRefSchema.optional(),
     ruleSelectionRef: internalRuleSelectionRefSchema.optional(),
   })
@@ -163,6 +185,39 @@ export const planningInputDtoSchema = z
           )
           .min(1)
           .max(20),
+      })
+      .strict()
+      .optional(),
+    workflowMemory: z
+      .object({
+        ref: internalWorkflowMemoryContextRefSchema,
+        items: z
+          .array(
+            z
+              .object({
+                refId: workflowMemorySnapshotIdSchema,
+                revision: z.literal(1),
+                sha256: sha256Schema,
+                providerId: memoryBackendIdSchema,
+                title: z.string().min(1).max(200),
+                category: workflowMemoryCategorySchema,
+                content: z.string().min(1).max(50_000),
+                labels: z.array(z.string().min(1).max(64)).max(50),
+              })
+              .strict(),
+          )
+          .max(100),
+        optionalFailures: z
+          .array(
+            z
+              .object({
+                providerId: memoryBackendIdSchema,
+                errorCode: z.string().min(1).max(96),
+              })
+              .strict(),
+          )
+          .max(16),
+        totalContentCharacters: z.number().int().nonnegative().max(200_000),
       })
       .strict()
       .optional(),
@@ -361,6 +416,147 @@ export const preparePlanningContextResponseSchema = z.discriminatedUnion("status
     })
     .strict(),
   z.object({ ...versioned, status: z.literal("required_failed") }).strict(),
+]);
+
+/* ---------- Workflow Memory：可组合query节点与聚合Context ---------- */
+
+const workflowMemoryNodeIdentityFields = {
+  productRunId: productRunIdSchema,
+  workflowRunSpecId: workflowRunSpecIdSchema,
+  definitionNodeId: z.string().min(1).max(100),
+  executionPath: z.array(workflowExecutionPathSegmentSchema).max(8),
+  attemptNumber: z.number().int().positive().max(100),
+};
+
+export const beginWorkflowMemoryQueryRequestSchema = z
+  .object({ ...versioned, commandId: commandIdSchema, ...workflowMemoryNodeIdentityFields })
+  .strict();
+
+export const workflowMemoryQueryDispatchDtoSchema = z
+  .object({
+    workflowMemoryQueryId: workflowMemoryQueryIdSchema,
+    operationId: workflowMemoryQueryIdSchema,
+    productRunId: productRunIdSchema,
+    productSessionId: productSessionIdSchema,
+    principalId: principalIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+    definitionNodeId: z.string().min(1).max(100),
+    providerId: memoryBackendIdSchema,
+    providerDescriptor: memoryProviderDescriptorSchema,
+    providerDescriptorSha256: sha256Schema,
+    requirement: z.enum(["required", "optional"]),
+    sourceMessageId: messageIdSchema,
+    sourceMessageSha256: sha256Schema,
+    querySha256: sha256Schema,
+    queryText: z.string().min(1).max(50_000),
+    maxResults: z.number().int().min(1).max(20),
+    maxContextCharacters: z.number().int().min(128).max(50_000),
+  })
+  .strict();
+
+const workflowMemoryQuerySectionResultSchema = z
+  .object({
+    externalObjectIds: z.array(z.string().min(1).max(200)).min(1).max(50),
+    title: z.string().trim().min(1).max(200),
+    category: workflowMemoryCategorySchema,
+    content: z.string().min(1).max(50_000),
+    labels: z.array(z.string().trim().min(1).max(64)).max(50),
+    score: z.number().finite().optional(),
+    sourceUpdatedAt: z.iso.datetime().optional(),
+  })
+  .strict();
+
+export const workflowMemoryQueryExecutionResultSchema = z.discriminatedUnion("outcome", [
+  z
+    .object({
+      outcome: z.literal("success"),
+      externalQueryId: z.string().min(1).max(200),
+      hitCount: z.number().int().nonnegative(),
+      resultSetSha256: sha256Schema,
+      sections: z.array(workflowMemoryQuerySectionResultSchema).max(20),
+    })
+    .strict(),
+  z
+    .object({
+      outcome: z.literal("failure"),
+      errorCode: z
+        .string()
+        .regex(/^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*$/u)
+        .max(96),
+    })
+    .strict(),
+]);
+
+const workflowMemoryQueryTerminalFields = {
+  workflowMemoryQueryId: workflowMemoryQueryIdSchema,
+  productRunId: productRunIdSchema,
+  workflowRunSpecId: workflowRunSpecIdSchema,
+};
+
+export const beginWorkflowMemoryQueryResponseSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      ...versioned,
+      ...workflowMemoryQueryTerminalFields,
+      status: z.literal("dispatch_required"),
+      query: workflowMemoryQueryDispatchDtoSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...versioned,
+      ...workflowMemoryQueryTerminalFields,
+      status: z.enum(["completed", "optional_failed", "required_failed"]),
+    })
+    .strict(),
+]);
+
+export const persistWorkflowMemoryQueryResultRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    ...workflowMemoryNodeIdentityFields,
+    workflowMemoryQueryId: workflowMemoryQueryIdSchema,
+    result: workflowMemoryQueryExecutionResultSchema,
+  })
+  .strict();
+
+export const persistWorkflowMemoryQueryResultResponseSchema = z
+  .object({
+    ...versioned,
+    ...workflowMemoryQueryTerminalFields,
+    status: z.enum(["completed", "optional_failed", "required_failed"]),
+    snapshotCount: z.number().int().nonnegative().max(20),
+  })
+  .strict();
+
+export const freezeWorkflowMemoryContextRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+  })
+  .strict();
+
+export const freezeWorkflowMemoryContextResponseSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      ...versioned,
+      productRunId: productRunIdSchema,
+      workflowRunSpecId: workflowRunSpecIdSchema,
+      status: z.literal("none"),
+    })
+    .strict(),
+  z
+    .object({
+      ...versioned,
+      productRunId: productRunIdSchema,
+      workflowRunSpecId: workflowRunSpecIdSchema,
+      status: z.literal("ready"),
+      contextRef: internalWorkflowMemoryContextRefSchema,
+    })
+    .strict(),
 ]);
 
 /* ---------- publishPlanReview ---------- */
@@ -595,6 +791,20 @@ const executionMemoryContextItemDtoSchema = z
   })
   .strict();
 
+const executionWorkflowMemoryContextItemDtoSchema = z
+  .object({
+    contextKind: z.literal("memory"),
+    refId: workflowMemorySnapshotIdSchema,
+    revision: z.literal(1),
+    sha256: sha256Schema,
+    providerId: memoryBackendIdSchema,
+    title: z.string().trim().min(1).max(200),
+    category: workflowMemoryCategorySchema,
+    labels: z.array(z.string().trim().min(1).max(64)).max(50),
+    content: z.string().min(1).max(50_000),
+  })
+  .strict();
+
 const executionProjectContextItemDtoSchema = z
   .object({
     contextKind: z.literal("project"),
@@ -621,6 +831,7 @@ const executionRuleContextItemDtoSchema = z
 
 export const executionContextItemDtoSchema = z.union([
   executionMemoryContextItemDtoSchema,
+  executionWorkflowMemoryContextItemDtoSchema,
   executionProjectContextItemDtoSchema,
   executionRuleContextItemDtoSchema,
 ]);
@@ -1233,6 +1444,152 @@ export const memoryImportWorkflowReconcileResponseSchema = z.discriminatedUnion(
     .strict(),
 ]);
 
+/* ---------- Workflow Memory Write 私有合同 ---------- */
+
+export const memoryWriteAdapterInputSchema = z
+  .object({
+    operationId: memoryWriteIntentIdSchema,
+    requestSha256: sha256Schema,
+    content: z.string().min(1).max(200_000),
+    contentType: z.literal("conversation_turn"),
+    productSessionId: productSessionIdSchema,
+    principalId: principalIdSchema,
+    sourceMessageId: messageIdSchema,
+  })
+  .strict();
+
+export const loadMemoryWriteRequestSchema = z
+  .object({
+    ...versioned,
+    workflowDefinitionVersion: z.literal(MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION),
+    memoryWriteIntentId: memoryWriteIntentIdSchema,
+    memoryWriteResultId: memoryWriteResultIdSchema,
+  })
+  .strict();
+
+export const loadMemoryWriteResponseSchema = z
+  .object({
+    ...versioned,
+    intent: memoryWriteIntentSchema,
+    result: memoryWriteResultSchema,
+    adapterInput: memoryWriteAdapterInputSchema,
+  })
+  .strict();
+
+export const beginWorkflowMemoryWriteRequestSchema = z
+  .object({ ...versioned, commandId: commandIdSchema, ...workflowMemoryNodeIdentityFields })
+  .strict();
+
+export const beginWorkflowMemoryWriteResponseSchema = loadMemoryWriteResponseSchema;
+
+const memoryWriteResultCommandBase = {
+  ...versioned,
+  workflowDefinitionVersion: z.literal(MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION),
+  commandId: commandIdSchema,
+  memoryWriteIntentId: memoryWriteIntentIdSchema,
+  memoryWriteResultId: memoryWriteResultIdSchema,
+  requestSha256: sha256Schema,
+  expectedRevision: z.number().int().positive(),
+};
+
+export const markMemoryWriteDispatchingRequestSchema = z
+  .object(memoryWriteResultCommandBase)
+  .strict();
+
+export const memoryWriteAcceptedSchema = z
+  .object({
+    externalObjectId: z.string().min(1).max(200),
+    externalObjectVersion: z.string().min(1).max(200).optional(),
+    externalStatus: z.string().min(1).max(100).optional(),
+    responseSha256: sha256Schema,
+  })
+  .strict();
+
+export const commitMemoryWriteAcceptedRequestSchema = z
+  .object({
+    ...memoryWriteResultCommandBase,
+    accepted: memoryWriteAcceptedSchema,
+    reconciled: z.boolean().optional(),
+  })
+  .strict();
+
+export const commitMemoryWriteMaterializedRequestSchema = z
+  .object({
+    ...memoryWriteResultCommandBase,
+    accepted: memoryWriteAcceptedSchema,
+    verificationKind: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/u),
+    verificationSha256: sha256Schema,
+    reconciled: z.boolean().optional(),
+  })
+  .strict();
+
+export const commitMemoryWriteFailedRequestSchema = z
+  .object({
+    ...memoryWriteResultCommandBase,
+    errorCode: z
+      .string()
+      .regex(/^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*$/u)
+      .max(96),
+    summary: z.string().min(1).max(500),
+    reconciled: z.boolean().optional(),
+  })
+  .strict();
+
+export const commitMemoryWriteOutcomeUnknownRequestSchema = z
+  .object({
+    ...memoryWriteResultCommandBase,
+    errorCode: z
+      .string()
+      .regex(/^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*$/u)
+      .max(96),
+    reconciled: z.boolean().optional(),
+  })
+  .strict();
+
+export const memoryWriteResultResponseSchema = z
+  .object({ ...versioned, result: memoryWriteResultSchema })
+  .strict();
+
+export const memoryWriteWorkflowDispatchRequestSchema = z
+  .object({
+    schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
+    memoryWriteIntentId: memoryWriteIntentIdSchema,
+    memoryWriteResultId: memoryWriteResultIdSchema,
+    expectedResultRevision: z.number().int().positive(),
+    mode: z.enum(["write", "reconcile"]),
+    workflowDefinitionVersion: z.literal(MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION),
+    outboxId: outboxEntryIdSchema,
+  })
+  .strict();
+
+export const memoryWriteWorkflowDispatchResponseSchema = z
+  .object({
+    schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
+    status: z.enum(["started", "already_started", "outcome_unknown"]),
+  })
+  .strict();
+
+const memoryWriteWorkflowReconcileResponseBase = {
+  schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
+  outboxId: outboxEntryIdSchema,
+};
+
+export const memoryWriteWorkflowReconcileResponseSchema = z.discriminatedUnion("startBinding", [
+  z
+    .object({
+      ...memoryWriteWorkflowReconcileResponseBase,
+      startBinding: z.literal("exists"),
+      runStatus: z.enum(["active", "completed", "failed", "cancelled", "missing"]),
+    })
+    .strict(),
+  z
+    .object({
+      ...memoryWriteWorkflowReconcileResponseBase,
+      startBinding: z.enum(["missing", "outcome_unknown"]),
+    })
+    .strict(),
+]);
+
 /* ---------- 类型 ---------- */
 
 export type CompilePlanningInputRequest = z.infer<typeof compilePlanningInputRequestSchema>;
@@ -1243,6 +1600,26 @@ export type MemoryQueryDispatchDto = z.infer<typeof memoryQueryDispatchDtoSchema
 export type MemoryQueryExecutionResult = z.infer<typeof memoryQueryExecutionResultSchema>;
 export type PersistPlanningContextResultRequest = z.infer<
   typeof persistPlanningContextResultRequestSchema
+>;
+export type BeginWorkflowMemoryQueryRequest = z.infer<typeof beginWorkflowMemoryQueryRequestSchema>;
+export type BeginWorkflowMemoryQueryResponse = z.infer<
+  typeof beginWorkflowMemoryQueryResponseSchema
+>;
+export type WorkflowMemoryQueryDispatchDto = z.infer<typeof workflowMemoryQueryDispatchDtoSchema>;
+export type WorkflowMemoryQueryExecutionResult = z.infer<
+  typeof workflowMemoryQueryExecutionResultSchema
+>;
+export type PersistWorkflowMemoryQueryResultRequest = z.infer<
+  typeof persistWorkflowMemoryQueryResultRequestSchema
+>;
+export type PersistWorkflowMemoryQueryResultResponse = z.infer<
+  typeof persistWorkflowMemoryQueryResultResponseSchema
+>;
+export type FreezeWorkflowMemoryContextRequest = z.infer<
+  typeof freezeWorkflowMemoryContextRequestSchema
+>;
+export type FreezeWorkflowMemoryContextResponse = z.infer<
+  typeof freezeWorkflowMemoryContextResponseSchema
 >;
 export type PlanningInputDto = z.infer<typeof planningInputDtoSchema>;
 export type PublishPlanReviewRequest = z.infer<typeof publishPlanReviewRequestSchema>;
@@ -1258,6 +1635,25 @@ export type CommitExecutionResultRequest = z.infer<typeof commitExecutionResultR
 export type CommitRejectedRunRequest = z.infer<typeof commitRejectedRunRequestSchema>;
 export type LoadMemoryImportRequest = z.infer<typeof loadMemoryImportRequestSchema>;
 export type LoadMemoryImportResponse = z.infer<typeof loadMemoryImportResponseSchema>;
+export type LoadMemoryWriteRequest = z.infer<typeof loadMemoryWriteRequestSchema>;
+export type LoadMemoryWriteResponse = z.infer<typeof loadMemoryWriteResponseSchema>;
+export type BeginWorkflowMemoryWriteRequest = z.infer<typeof beginWorkflowMemoryWriteRequestSchema>;
+export type BeginWorkflowMemoryWriteResponse = z.infer<
+  typeof beginWorkflowMemoryWriteResponseSchema
+>;
+export type MarkMemoryWriteDispatchingRequest = z.infer<
+  typeof markMemoryWriteDispatchingRequestSchema
+>;
+export type CommitMemoryWriteAcceptedRequest = z.infer<
+  typeof commitMemoryWriteAcceptedRequestSchema
+>;
+export type CommitMemoryWriteMaterializedRequest = z.infer<
+  typeof commitMemoryWriteMaterializedRequestSchema
+>;
+export type CommitMemoryWriteFailedRequest = z.infer<typeof commitMemoryWriteFailedRequestSchema>;
+export type CommitMemoryWriteOutcomeUnknownRequest = z.infer<
+  typeof commitMemoryWriteOutcomeUnknownRequestSchema
+>;
 export type CommitRunFailureRequest = z.infer<typeof commitRunFailureRequestSchema>;
 export type CommitRunOutcomeUnknownRuntimeRequest = z.infer<
   typeof commitRunOutcomeUnknownRuntimeRequestSchema

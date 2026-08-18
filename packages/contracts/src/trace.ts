@@ -9,6 +9,7 @@ import {
   requestIdSchema,
   runAttemptIdSchema,
   workflowDefinitionIdSchema,
+  workflowNodeRunIdSchema,
   contextRequestIdSchema,
   memoryBackendIdSchema,
   memoryImportIntentIdSchema,
@@ -29,6 +30,7 @@ import {
   projectUpdateIdSchema,
   projectWorkIdSchema,
 } from "./ids.js";
+import { definitionNodeIdSchema, workflowNodeTypeSchema } from "./workflow-run.js";
 
 /**
  * 结构化Trace合同（任务书§7）。
@@ -122,6 +124,10 @@ export const TRACE_EVENT_NAMES = {
   workflowStepCompleted: "workflow.step.completed",
   workflowStepFailed: "workflow.step.failed",
   workflowStepReplayed: "workflow.step.replayed",
+  workflowMemoryNodeStarted: "workflow.memory_node.started",
+  workflowMemoryNodeCompleted: "workflow.memory_node.completed",
+  workflowMemoryNodeFailed: "workflow.memory_node.failed",
+  workflowMemoryNodeOutcomeUnknown: "workflow.memory_node.outcome_unknown",
   planCandidateReceived: "plan.candidate.received",
   planCandidateRejected: "plan.candidate.rejected",
   planCandidatePublished: "plan.candidate.published",
@@ -1142,6 +1148,51 @@ const workflowStepReplayedSchema = defineTraceEvent(
   },
 );
 
+const workflowMemoryNodeFields = {
+  ...runScopedFields,
+  workflowNodeRunId: workflowNodeRunIdSchema,
+  definitionNodeId: definitionNodeIdSchema,
+  nodeType: workflowNodeTypeSchema.refine(
+    (value) => value === "memory.query" || value === "memory.write",
+  ),
+  publicSummary: z.string().min(1).max(500).optional(),
+};
+
+const workflowMemoryNodeStartedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.workflowMemoryNodeStarted,
+  "unknown",
+  workflowMemoryNodeFields,
+);
+const workflowMemoryNodeCompletedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.workflowMemoryNodeCompleted,
+  "success",
+  {
+    ...workflowMemoryNodeFields,
+    outcomeCode: stableErrorCodeSchema,
+    ...durationMsOptional,
+  },
+);
+const workflowMemoryNodeFailedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.workflowMemoryNodeFailed,
+  "failure",
+  {
+    ...workflowMemoryNodeFields,
+    outcomeCode: stableErrorCodeSchema,
+    error: traceErrorSchema,
+    ...durationMsOptional,
+  },
+);
+const workflowMemoryNodeOutcomeUnknownSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.workflowMemoryNodeOutcomeUnknown,
+  "unknown",
+  {
+    ...workflowMemoryNodeFields,
+    outcomeCode: stableErrorCodeSchema,
+    error: traceErrorSchema,
+    ...durationMsOptional,
+  },
+);
+
 // Plan候选：Run + Attempt（候选来自pi规划Attempt）。
 const planCandidateReceivedSchema = defineTraceEvent(
   TRACE_EVENT_NAMES.planCandidateReceived,
@@ -1704,6 +1755,10 @@ export const traceEventSchema = z.discriminatedUnion("eventName", [
   workflowStepCompletedSchema,
   workflowStepFailedSchema,
   workflowStepReplayedSchema,
+  workflowMemoryNodeStartedSchema,
+  workflowMemoryNodeCompletedSchema,
+  workflowMemoryNodeFailedSchema,
+  workflowMemoryNodeOutcomeUnknownSchema,
   planCandidateReceivedSchema,
   planCandidateRejectedSchema,
   planCandidatePublishedSchema,

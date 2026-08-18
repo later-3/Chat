@@ -18,6 +18,7 @@ import type {
   PlanningInterpreterState,
   PlanningNodeIdentity,
 } from "./configurable-planning-types.js";
+import { freezeWorkflowMemoryContextStep } from "./workflow-memory-steps.js";
 
 const planDecisionHook = defineHook({
   schema: z
@@ -40,6 +41,10 @@ export async function executePlanningNode(input: {
   readonly state: PlanningInterpreterState;
 }): Promise<string> {
   switch (input.nodeType) {
+    case "memory.query":
+      throw new Error("configurable_planning.memory_query_requires_specialized_boundary");
+    case "memory.write":
+      throw new Error("configurable_planning.memory_write_requires_specialized_boundary");
     case "context.memory":
       throw new Error("configurable_planning.memory_requires_specialized_boundary");
     case "context.project":
@@ -94,6 +99,14 @@ async function executePlan(
   state: PlanningInterpreterState,
   config: Readonly<Record<string, unknown>>,
 ): Promise<"planned" | "needs_input"> {
+  if (state.workflowMemoryContextRef === undefined) {
+    const frozen = await freezeWorkflowMemoryContextStep({
+      productRunId: input.productRunId,
+      workflowRunSpecId: input.workflowRunSpecId,
+      workflowAttemptId: input.attemptId,
+    });
+    if (frozen.status === "ready") state.workflowMemoryContextRef = frozen.contextRef;
+  }
   state.planRevision += 1;
   const maxSteps = config["maxSteps"];
   if (typeof maxSteps !== "number") {
@@ -112,6 +125,9 @@ async function executePlan(
       : {}),
     ...(state.planningMemorySelectionRef !== undefined
       ? { planningMemorySelectionRef: state.planningMemorySelectionRef }
+      : {}),
+    ...(state.workflowMemoryContextRef !== undefined
+      ? { workflowMemoryContextRef: state.workflowMemoryContextRef }
       : {}),
     ...(state.planningProjectContextRef !== undefined
       ? { planningProjectContextRef: state.planningProjectContextRef }

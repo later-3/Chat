@@ -17,11 +17,15 @@ import {
   memoryBackendProfileDtoSchema,
   memoryImportDtoSchema,
   memoryImportResultResponseSchema,
+  listMemoryProvidersResponseSchema,
+  listMemoryWritesResponseSchema,
+  memoryWriteResponseSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
   runContextDtoSchema,
   workflowRunViewDtoSchema,
   workflowNodeDetailDtoSchema,
+  workflowDefinitionsDtoSchema,
   type CommandId,
   type PlanContent,
   type ProductRunId,
@@ -29,12 +33,17 @@ import {
 import {
   compilePlanningInput,
   normalizeMemoryQueryResult,
+  markMemoryWriteDispatching,
   updateOutboxStatus,
   publishPlanForReview as publishPlanForReviewUseCase,
   type ApplicationDeps,
   type IdFactory,
   type RuleIdFactory,
 } from "@chat/application";
+import {
+  SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+} from "@chat/application/workflow-system-definitions";
 import { JsonProductStore } from "@chat/product-store-json";
 import { z } from "zod";
 import { createApiApp, type ApiApp } from "./app.js";
@@ -146,6 +155,28 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     }),
   };
   const tencentBackend = {
+    describeProvider: () => ({
+      schemaVersion: "memory-provider-descriptor.v1" as const,
+      providerId: "mbk_tencentmemorycore" as never,
+      displayName: "Tencent MemoryCore",
+      providerKind: "tencent_memorycore",
+      transport: "http" as const,
+      adapterContractVersion: "tencent-memorycore-http.v2",
+      configured: true,
+      configurationFingerprint: "e".repeat(64) as never,
+      capabilities: {
+        query: { maxResults: 20, maxContextCharacters: 32_000 },
+        write: {
+          maxContentCharacters: 8_192,
+          materialization: "asynchronous" as const,
+          idempotency: "chat_reconcile" as const,
+        },
+        reconcile: true,
+        management: { list: false, get: false, update: false, delete: false, history: false },
+      },
+      authMode: "bearer" as const,
+      credentialRevision: "api-test-memorycore-key-1",
+    }),
     describe: () => ({
       backendId: "mbk_tencentmemorycore" as never,
       displayName: "Tencent MemoryCore",
@@ -170,6 +201,24 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
       tokenEstimate: 0,
       sections: [],
     }),
+    queryMemory: async () => ({
+      externalQueryId: "memorycore-workflow-query-1",
+      hitCount: 0,
+      sections: [],
+    }),
+    writeMemory: async (input: { operationId: string; requestSha256: string }) => ({
+      externalObjectId: `chat-import:${input.operationId}`,
+      externalStatus: "l0_accepted",
+      responseSha256: input.requestSha256,
+    }),
+    reconcileMemoryWrite: async (input: { operationId: string; requestSha256: string }) => ({
+      status: "accepted" as const,
+      accepted: {
+        externalObjectId: `chat-import:${input.operationId}`,
+        externalStatus: "l0_accepted",
+        responseSha256: input.requestSha256,
+      },
+    }),
   };
   const deps: ApplicationDeps = {
     store,
@@ -187,6 +236,13 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     memoryImportBackends: {
       list: () => [backend],
       get: (backendId) => (backendId === "mbk_memmy" ? backend : undefined),
+    },
+    workflowMemoryProviders: {
+      list: () => [tencentBackend.describeProvider()],
+      getQuery: (providerId) =>
+        providerId === "mbk_tencentmemorycore" ? tencentBackend : undefined,
+      getWrite: (providerId) =>
+        providerId === "mbk_tencentmemorycore" ? tencentBackend : undefined,
     },
     executionTraceReader: {
       read: ({ productRunId, afterSequence }) => ({
@@ -270,6 +326,65 @@ async function publishPlanForReview(
 }
 
 describe("公开产品API", () => {
+  it("普通Planning与Memory Planning作为两个独立选项发布，选择Memory后Run绑定独立轨迹", async () => {
+    const { app } = await testApp();
+    const definitionsResponse = await app.request("/api/workflow/definitions");
+    expect(definitionsResponse.status).toBe(200);
+    const definitionsEnvelope = z
+      .object({ definitions: workflowDefinitionsDtoSchema })
+      .strict()
+      .parse(await definitionsResponse.json());
+    const ordinary = definitionsEnvelope.definitions.definitions.find(
+      (definition) =>
+        definition.workflowDefinitionRevisionId === SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+    );
+    const memory = definitionsEnvelope.definitions.definitions.find(
+      (definition) =>
+        definition.workflowDefinitionRevisionId === SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
+    );
+    expect(ordinary?.nodes.map((node) => node.nodeType)).not.toContain("memory.query");
+    expect(ordinary?.nodes.map((node) => node.nodeType)).not.toContain("memory.write");
+    expect(memory).toMatchObject({
+      title: "Memory 增强规划与执行",
+      blueprintKey: "planning",
+      ownerKind: "system",
+    });
+    expect(memory?.nodes.map((node) => node.nodeType)).toEqual(
+      expect.arrayContaining(["memory.query", "memory.write"]),
+    );
+    if (memory === undefined) throw new Error("缺少独立Memory Workflow公开选项");
+
+    const sessionResponse = await postJson(app, "/api/sessions", {
+      commandId: nextCmd(),
+      payload: {},
+    });
+    const session = sessionDtoSchema.parse(
+      ((await sessionResponse.json()) as { session: unknown }).session,
+    );
+    const submitResponse = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
+      commandId: nextCmd(),
+      payload: {
+        text: "使用独立Memory Workflow处理本次请求",
+        workflowSelection: {
+          kind: "published_revision",
+          workflowDefinitionRevisionId: memory.workflowDefinitionRevisionId,
+          definitionSha256: memory.definitionSha256,
+        },
+      },
+    });
+    expect(submitResponse.status).toBe(201);
+    const submitted = z
+      .object({ message: messageDtoSchema, run: runDtoSchema })
+      .strict()
+      .parse(await submitResponse.json());
+    const viewResponse = await app.request(`/api/runs/${submitted.run.productRunId}/workflow-view`);
+    const view = workflowRunViewDtoSchema.parse(await viewResponse.json());
+    expect(view.definitionNodes.map((node) => node.definitionNodeId).slice(0, 2)).toEqual([
+      "memory-planning.query",
+      "memory-planning.write",
+    ]);
+  });
+
   it("完整链路：建Session -> 发消息 -> 查消息/运行 -> 决定", async () => {
     const { app, deps } = await testApp();
 
@@ -744,6 +859,103 @@ describe("公开产品API", () => {
       revision: 4,
       reconcileAttempts: 1,
     });
+  });
+
+  it("Workflow Memory公开面只暴露Provider能力与显式Write事实，不泄漏服务配置", async () => {
+    const { app, deps } = await testApp();
+    const providersResponse = await app.request("/api/memory/providers");
+    expect(providersResponse.status).toBe(200);
+    const providers = listMemoryProvidersResponseSchema.parse(await providersResponse.json());
+    expect(providers.providers).toHaveLength(1);
+    expect(providers.providers[0]).toMatchObject({
+      providerId: "mbk_tencentmemorycore",
+      providerKind: "tencent_memorycore",
+      transport: "http",
+      configured: true,
+      capabilities: { query: { maxResults: 20 }, write: { materialization: "asynchronous" } },
+    });
+    expect(JSON.stringify(providers)).not.toMatch(/token|serviceId|teamId|baseUrl|L0|L1/u);
+    expect((await app.request("/api/memory/providers?debug=1")).status).toBe(400);
+
+    const created = await postJson(app, "/api/sessions", {
+      commandId: nextCmd(),
+      payload: {},
+    });
+    const session = sessionDtoSchema.parse(
+      ((await created.json()) as { session: unknown }).session,
+    );
+    const sent = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
+      commandId: nextCmd(),
+      payload: { text: "发布前必须完成真实端到端测试。" },
+    });
+    const message = messageDtoSchema.parse(((await sent.json()) as { message: unknown }).message);
+    const beforeWrite = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const currentSession = beforeWrite.entities.sessions[session.sessionId];
+    if (currentSession === undefined) throw new Error("测试Session不存在");
+    const payload = {
+      productSessionId: session.sessionId,
+      providerId: "mbk_tencentmemorycore",
+      sourceSelection: {
+        kind: "full_message",
+        sourceMessageId: message.messageId,
+        sourceMessageSha256: message.sha256,
+      },
+      expectedSessionRevision: currentSession.revision,
+    };
+    const writeResponse = await postJson(app, "/api/memory-writes", {
+      commandId: nextCmd(),
+      payload,
+    });
+    expect(writeResponse.status, await writeResponse.clone().text()).toBe(201);
+    const createdWrite = memoryWriteResponseSchema.parse(await writeResponse.json()).memoryWrite;
+    expect(createdWrite).toMatchObject({
+      productSessionId: session.sessionId,
+      providerId: "mbk_tencentmemorycore",
+      result: { status: "queued", revision: 1 },
+      canReconcile: false,
+    });
+    expect(JSON.stringify(createdWrite)).not.toContain("发布前必须完成");
+
+    const exact = memoryWriteResponseSchema.parse(
+      await (await app.request(`/api/memory-writes/${createdWrite.memoryWriteIntentId}`)).json(),
+    );
+    expect(exact.memoryWrite.memoryWriteIntentId).toBe(createdWrite.memoryWriteIntentId);
+    const listed = listMemoryWritesResponseSchema.parse(
+      await (await app.request(`/api/sessions/${session.sessionId}/memory-writes`)).json(),
+    );
+    expect(listed.memoryWrites.map((item) => item.memoryWriteIntentId)).toEqual([
+      createdWrite.memoryWriteIntentId,
+    ]);
+
+    const snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const intent = snapshot.entities.memoryWriteIntents[createdWrite.memoryWriteIntentId];
+    if (intent === undefined) throw new Error("Memory Write Intent不存在");
+    const dispatching = await markMemoryWriteDispatching(deps, {
+      commandId: nextCmd(),
+      memoryWriteIntentId: intent.memoryWriteIntentId,
+      memoryWriteResultId: createdWrite.memoryWriteResultId,
+      requestSha256: intent.requestSha256,
+      expectedRevision: createdWrite.result.revision,
+    });
+    const reconcile = await postJson(
+      app,
+      `/api/memory-writes/${createdWrite.memoryWriteIntentId}/reconcile`,
+      {
+        commandId: nextCmd(),
+        payload: { expectedResultRevision: dispatching.revision },
+      },
+    );
+    expect(reconcile.status).toBe(202);
+    expect(memoryWriteResponseSchema.parse(await reconcile.json()).memoryWrite.canReconcile).toBe(
+      false,
+    );
+    const after = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(
+      Object.values(after.outbox).filter((entry) => entry.kind === "memory_write_start"),
+    ).toHaveLength(1);
+    expect(
+      Object.values(after.outbox).filter((entry) => entry.kind === "memory_write_reconcile"),
+    ).toHaveLength(1);
   });
 
   it("浏览器不能向Memory Import注入layer、endpoint、operationId、状态或凭据", async () => {

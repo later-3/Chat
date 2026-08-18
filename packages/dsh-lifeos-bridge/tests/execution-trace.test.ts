@@ -329,6 +329,80 @@ function trace(revision = "a".repeat(64)): WorkflowExecutionTraceDto {
   });
 }
 
+function traceWithMemory(): WorkflowExecutionTraceDto {
+  const value = structuredClone(trace()) as unknown as Record<string, unknown>;
+  const workflow = value["workflow"] as Record<string, unknown>;
+  const nodeRuns = workflow["nodeRuns"] as unknown[];
+  const nodeDetails = workflow["nodeDetails"] as unknown[];
+  nodeRuns.unshift(
+    {
+      workflowNodeRunId: "wnr_memoryquery1",
+      definitionNodeId: "memory-planning.query",
+      nodeType: "memory.query",
+      title: "查询记忆",
+      kind: "task",
+      optional: false,
+      executionPath: [],
+      attemptNumber: 1,
+      status: "succeeded",
+      publicSummary: "Memory查询完成，冻结2条快照",
+      outcomeCode: "success",
+      startedAt: "2026-08-17T08:00:00.100Z",
+      finishedAt: "2026-08-17T08:00:00.300Z",
+      durationMs: 200,
+      revision: 2,
+      updatedAt: "2026-08-17T08:00:00.300Z",
+      allowedActions: ["inspect"],
+    },
+    {
+      workflowNodeRunId: "wnr_memorywrite1",
+      definitionNodeId: "memory-planning.write",
+      nodeType: "memory.write",
+      title: "保存本次输入",
+      kind: "task",
+      optional: false,
+      executionPath: [],
+      attemptNumber: 1,
+      status: "succeeded",
+      publicSummary: "本次输入已写入并可查询",
+      outcomeCode: "materialized",
+      startedAt: "2026-08-17T08:00:00.400Z",
+      finishedAt: "2026-08-17T08:00:00.700Z",
+      durationMs: 300,
+      revision: 2,
+      updatedAt: "2026-08-17T08:00:00.700Z",
+      allowedActions: ["inspect"],
+    },
+  );
+  nodeDetails.unshift(
+    {
+      workflowNodeRunId: "wnr_memoryquery1",
+      input: [],
+      output: [
+        {
+          label: "snapshots · 冻结引用",
+          format: "json",
+          text: '{"count":2}',
+          truncated: false,
+        },
+      ],
+    },
+    {
+      workflowNodeRunId: "wnr_memorywrite1",
+      input: [],
+      output: [
+        {
+          label: "result · 写入状态",
+          format: "json",
+          text: '{"status":"materialized"}',
+          truncated: false,
+        },
+      ],
+    },
+  );
+  return workflowExecutionTraceDtoSchema.parse(value);
+}
+
 function assertTerminalSummaries(value: ToolCallBlock): void {
   if ("kind" in value) assert.ok(value.content.length > 0);
   for (const child of value.subCalls) assertTerminalSummaries(child);
@@ -392,6 +466,21 @@ test("execution trace becomes a recursive native trajectory tool tree", () => {
   assert.equal(labels.get("lifeos-pi-agent-1"), "AGENT");
   assert.equal(labels.get("lifeos-pi-model-1"), "MODEL");
   assert.equal(labels.get("lifeos-pi-tool-1"), "TOOL");
+});
+
+test("Memory query/write node runs remain first-class nodes in the recursive DSH trajectory", () => {
+  const current = traceWithMemory();
+  const root = executionTraceRoot(current, 12);
+  assert.equal(root.subCalls.length, 5);
+  assert.match(blockName(root.subCalls[0]!), /查询记忆/u);
+  assert.match(blockName(root.subCalls[1]!), /保存本次输入/u);
+  assert.equal(root.subCalls[0]?.callId, "lifeos-node-wnr_memoryquery1");
+  assert.equal(root.subCalls[1]?.callId, "lifeos-node-wnr_memorywrite1");
+  const serialized = JSON.stringify(root);
+  assert.match(serialized, /Memory查询完成，冻结2条快照/u);
+  assert.match(serialized, /本次输入已写入并可查询/u);
+  assert.match(serialized, /materialized/u);
+  assert.doesNotMatch(serialized, /serviceId|teamId|bearer|Memory正文绝不能进入Trajectory/u);
 });
 
 test("execution trace timestamps are a projection-only optional preference", () => {

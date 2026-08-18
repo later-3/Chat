@@ -477,6 +477,11 @@ interface PlanningGenerationStepInput {
     revision: 1;
     sha256: string;
   };
+  workflowMemoryContextRef?: {
+    workflowMemoryContextId: string;
+    revision: 1;
+    sha256: string;
+  };
   planningProjectContextRef?: {
     planningProjectContextId: string;
     revision: 1;
@@ -509,6 +514,9 @@ async function compilePlanningInputWithinStep(
         : {}),
       ...(input.planningMemorySelectionRef !== undefined
         ? { planningMemorySelectionRef: input.planningMemorySelectionRef as never }
+        : {}),
+      ...(input.workflowMemoryContextRef !== undefined
+        ? { workflowMemoryContextRef: input.workflowMemoryContextRef as never }
         : {}),
       ...(input.planningProjectContextRef !== undefined
         ? { planningProjectContextRef: input.planningProjectContextRef as never }

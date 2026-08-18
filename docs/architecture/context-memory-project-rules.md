@@ -1,8 +1,8 @@
 # 长期上下文架构：Memory、Project 与用户规则
 
-> 文档类型：分阶段架构。Memory M1～M3已经实现；Project与Rules章节仍是后续目标，不能当成已交付能力。当前Memory运行节点见[Workflow运行设计](./runtime-workflows.md)，当前能力与缺口见根目录[PROJECT_STATE.md](../../PROJECT_STATE.md)。
+> 文档类型：当前架构与后续演进。Workflow Memory v1与Tencent MemoryCore首个Provider纵向已经实现；旧M1～M3对象只承担历史兼容。Project与Rules状态以根目录[PROJECT_STATE.md](../../PROJECT_STATE.md)为准。
 
-> 状态：Memory M1～M3代码与历史事实已经合入，但当前启动和产品装配均冻结关闭；统一启动器没有启用Profile。Project与Rules状态以`PROJECT_STATE.md`为准。
+> 状态：API与Workflow组合根只装配Tencent Workflow Memory Adapter；普通Planning不含Memory。独立Memory Planning由用户显式选择，查询为必需节点，无完整配置或查询失败时在Planner前安全停止。统一启动器仍不自动拉起第三方服务；真实门复用固定源码缓存显式启动loopback服务。
 >
 > 适用基线：当前`main`；精确提交以`origin/main`为准
 > 目标：在现有“对话 → 规划 → 人工确认 → 执行 → Product Commit”闭环上，增加可追溯、可选择、可回放的长期上下文能力。
@@ -99,16 +99,16 @@ ContextPackage
 
 Workflow 为保证 Worker 重启后不重复付费调用或丢失外部查询结果，会耐久保存当前节点经过 Schema 校验且受预算限制的输入/输出；这份运行中 Checkpoint 不是第二份产品事实，也不参与历史正文回放。生产部署必须为 Workflow Store 配置访问控制、静态加密和运行保留期，不能把它当成无限期会话归档。
 
-### 4.2 Memory 对象
+### 4.2 Workflow Memory对象
 
-1. `MemoryBackendProfile`：浏览器可见的安全元数据，只含 backendId、显示名、类型、能力和健康状态；endpoint、Token、serviceId、tenant 映射只在服务端配置。
-2. `MemoryQuery`：本次查询、后端选择、过滤条件、预算和生命周期。
-3. `MemoryResultSnapshot`：外部命中的规范化、不可变快照；保存一个或多个 externalObjectId、可用的源更新时间、正文、Hash、分数、标签、时间和 backendId；外部没有版本时不伪造。
-4. `MemoryAdoption`：哪些快照真正进入哪个 ContextPackage，以及采用/排除原因。
-5. `MemoryImportIntent`：用户明确选择的正文引用、目标后端、标签、稳定 operationId、请求 Hash 和状态。
-6. `MemoryImportResult`：`queued | dispatching | accepted | materialized | failed | outcome_unknown`；记录派发/对账次数、外部ID/版本和验证结果；未知结果不能伪造外部ID或自动换身份重写。
+1. `MemoryProviderDescriptor`：可持久化的安全能力描述，只含providerId、transport、Adapter合同版本、配置指纹和query/write/reconcile/management能力；endpoint、Token、serviceId与tenant映射永不进入该对象。
+2. `WorkflowMemoryQuery`：一个`memory.query`节点的稳定`wmq_*`身份；冻结RunSpec、执行路径、来源Message Hash、Provider Descriptor Hash、required/optional与预算。
+3. `WorkflowMemorySnapshot`：Provider输出经Chat去重、稳定排序和字符预算裁剪后形成的不可变快照。公开分类只有`episode | fact | preference | procedure | skill | other`，不包含腾讯L0/L1或其他项目的内部层级。
+4. `WorkflowMemoryContext`：同一Planning Run全部Query终态和被采用Snapshot引用的唯一聚合事实；在第一个Planner前冻结，Plan修订与Execution都绑定同一ID/revision/Hash。
+5. `MemoryWriteIntent`：用户明确选择的完整Message或UTF-16选区、目标Provider、稳定`mwi_*` operationId、Provider Descriptor Hash、请求Hash与语义去重Hash。
+6. `MemoryWriteResult`：`queued | dispatching | accepted | materialized | failed | outcome_unknown`；记录write和reconcile次数、外部身份与验证证据。`accepted`是合法状态，不等于腾讯L1已物化。
 
-查询快照只在结果被规划采用时保留正文；未采用结果只保留数量、状态和诊断证据，避免 Product Store 无限制膨胀。
+旧`MemoryBackendProfile/MemoryQuery/MemoryResultSnapshot/ContextPackage/MemoryImportIntent`集合继续保留，用于读取和迁移v10以前的历史事实；默认Simple Planning revision v1和独立Memory Planning revision v1都不创建这些旧式查询对象，历史完整上下文Planning revision v2仍按原冻结合同读取它们。
 
 ### 4.3 Project 对象
 
@@ -138,15 +138,23 @@ Project方法是推进策略，不是脚手架监狱。轻量和持续运维项�
 
 ## 5. Port 与 Adapter
 
-### 5.1 MemoryBackendPort
+### 5.1 Workflow Memory Provider Ports
 
-公共 Port 只表达两个真实后端已共同证明的语义：
+公共Port表达Chat实际消费的稳定语义，而不是多个项目功能的最小交集：
 
 ```ts
-interface MemoryBackendPort {
-  describe(): MemoryBackendCapabilities;
+interface WorkflowMemoryQueryProviderPort {
+  describeProvider(): MemoryProviderDescriptor;
   health(): Promise<MemoryBackendHealth>;
-  query(input: MemoryQueryInput): Promise<MemoryQueryOutput>;
+  queryMemory(input: WorkflowMemoryQueryInput): Promise<WorkflowMemoryQueryOutput>;
+}
+
+interface WorkflowMemoryWriteProviderPort {
+  describeProvider(): MemoryProviderDescriptor;
+  writeMemory(input: WorkflowMemoryWriteInput): Promise<WorkflowMemoryWriteAccepted>;
+  reconcileMemoryWrite(
+    input: WorkflowMemoryWriteReconcileInput,
+  ): Promise<WorkflowMemoryWriteReconcileOutput>;
 }
 ```
 
@@ -154,20 +162,12 @@ interface MemoryBackendPort {
 
 1. 输入输出均为 strict Schema；Adapter 负责验证外部响应并转换稳定错误码。
 2. 不提供 `Record<string, unknown>` 元数据口袋；后端差异通过能力判别联合表达。
-3. Query Port只冻结真实memmy查询证明的最小语义；M2把`import/reconcile`实现为独立`MemoryImportBackendPort`，不塞进查询接口。查询可有限重试；导入发送后失联必须进入`outcome_unknown`，只用同一身份对账。
-4. Registry 在 API/Workflow 服务端组合根构建。浏览器提交 backendId，无法提交 endpoint、Token、模型或 tenant。
+3. Query与Write分Port，避免只读Provider被迫伪造写能力，也避免调用方忽略write的`outcome_unknown`。只读Query最多重试2次，最后一次失败必须返回结果供Application持久化；Write与Reconcile的Workflow SDK重试均为0。
+4. Registry在API/Workflow服务端组合根构建。浏览器只能提交providerId和明确的来源选择，无法提交endpoint、Token、模型、L层级或tenant。
 
-`@chat/memory-runtime` 是 Chat 自有的内部 Adapter 包，只依赖 Workspace Port、合同、Domain 和仓库已有的 Zod，没有引入 Memory SDK。真实验收启动固定提交的 memmy HTTP 服务；该参考项目为 MIT License。退出时删除 Registry 中的 memmy 注册和该 Adapter 即可，Product Store 中已经冻结的 backendId、快照、revision 与 Hash 仍可回放，不要求继续运行 memmy，也不污染 Domain。
+`@chat/memory-runtime`是窄Adapter包。首期活动Registry只有Tencent MemoryCore HTTP Adapter；退出时移除该注册或替换Adapter即可，已经冻结的providerId、快照、revision与Hash仍可回放。未来项目可用HTTP、SDK或MCP实现同一Port，但Chat不会因为transport不同改变Product Store或Workflow合同。
 
-```ts
-interface MemoryImportBackendPort {
-  describeImport(): MemoryImportCapabilities;
-  import(input: MemoryImportInput): Promise<MemoryImportAccepted>;
-  reconcile(input: MemoryImportReconcileInput): Promise<MemoryImportReconcileOutput>;
-}
-```
-
-`import`一旦跨过fetch边界，断连、超时、5xx或非法成功响应都按`write_outcome_unknown`处理；`reconcile`不是普通重试。有external ID时执行GET+Search验证，没有ID时memmy只能用相同adapterId、requestId和相同规范化正文触发原生幂等对账。
+`writeMemory`一旦可能跨过fetch边界，断连、超时、5xx或非法成功响应都按`write_outcome_unknown`处理；`reconcileMemoryWrite`是只读验证，不是普通重试。Tencent Adapter以稳定`chat-import:mwi_*` session查询L0和同session L1，绝不再次调用`conversation/add`。
 
 固定 memmy 提交首次执行 `npm ci` 时，npm 审计报告 8 项已知问题（1 low、1 moderate、5 high、1 critical）。M1 不修改第三方固定提交来伪造“已修复”：它只允许在本地测试/调试中以 loopback、物理隔离 SQLite、最小子进程环境运行，不进入 Chat 生产依赖、不上传服务器、也不作为服务器部署产物。后续升级必须先固定新的 commit/tree，复跑合同、真实 HTTP、供应链审计与退出兼容门，再决定是否扩大使用范围。
 
@@ -183,36 +183,41 @@ interface MemoryImportBackendPort {
 
 ## 6. Workflow 拓扑
 
-### 6.1 规划链
+### 6.1 规划查询链
 
 ```text
-Message Command
-  → 单一 PlanningExecutionWorkflow
-  → beginPlanningContextStep（冻结查询意图）
-  → queryMemoryContextStep（仅用户选择/策略要求时）
-  → persistPlanningContextResultStep（原子提交Query终态与ContextPackage）
-  → compilePlanningInputStep
+Message Command（显式选择Memory增强流程）
+  → 独立Memory Planning Definition
+  → memory.query（当前内置流程1次；自建Definition最多8次）
+     → beginWorkflowMemoryQueryStep（冻结节点、来源与Provider合同）
+     → queryWorkflowMemoryProviderStep（只读外部边界）
+     → persistWorkflowMemoryQueryResultStep（Query + Snapshot + Node终态同事务）
+  → freezeWorkflowMemoryContextStep（聚合全部Query终态）
+  → memory.write（保存本次用户输入；父Workflow唯一执行）
+  → compilePlanningInputStep（只传Context ref）
   → pi.plan
   → 用户修订/批准
   → pi.execute
   → Product Commit
 ```
 
-Memory 查询是现有 Workflow 的一个可选节点，不另起竞争的规划 Workflow。项目状态、文档和规则在 `assembleContextRequestStep` 选择；外部查询在专门 Step 执行；最终由 API Application 用例原子提交 ContextPackage。
+Memory Query/Write属于独立发布、前端可选择的Memory Planning Definition，不注入普通Planning。节点仍由同一Configurable Planning Runner解释，因此不另起竞争的产品Run。自建Definition可把Query设为可选或必需；内置Memory流程固定为必需，失败在Planner前关闭。Provider正文只在外部Step和Application提交边界出现，Workflow作用域随后只保留引用。
 
-### 6.2 导入链
+### 6.2 显式写入链
 
 ```text
-Memory Import Command
-  → 原子提交 MemoryImportIntent + Outbox
-  → MemoryImportWorkflow
-  → loadImportIntentStep
-  → callMemoryImportStep（maxRetries=0）
-  → commitImportResultStep
-  → outcome_unknown 时 reconcileMemoryImportStep / 人工处置
+Memory Write Command
+  → 原子提交 MemoryWriteIntent + MemoryWriteResult + Outbox
+  → MemoryWriteWorkflow
+  → loadMemoryWriteStep
+  → markMemoryWriteDispatchingStep
+  → callMemoryWriteProviderStep（唯一write，maxRetries=0）
+  → commit accepted / failed / outcome_unknown
+  → reconcileMemoryWriteProviderStep（只读，maxRetries=0）
+  → materialized / accepted / failed / outcome_unknown
 ```
 
-导入使用独立耐久 Workflow，因为它有自己的用户结果和外部副作用生命周期；它不改变 `PlanningExecutionWorkflow` 的唯一性。
+直接从公开Memory Write Command发起的写入使用独立耐久Workflow，因为它有自己的用户结果和外部副作用生命周期。Memory Planning中的`memory.write`节点复用同一Intent/Result与write/reconcile状态机，但由当前父Workflow唯一执行且不创建`memory_write_start` Outbox，避免两个Workflow争抢同一副作用。旧`MemoryImportWorkflow`只为历史对象与兼容API保留。
 
 ### 6.3 Project 管理与推进链
 
@@ -243,7 +248,7 @@ Memory Import Command
 
 ## 8. 存储与迁移
 
-1. Product Store每次增加新事实集合都升级显式Schema版本：M1提供v1→v2，M2提供v2→v3，Project PS1计划提供v3→v4；后续Project阶段如增加新事实集合继续顺序升级，Rules使用Project Solution完成后的下一个可用版本，不提前抢占v5。迁移必须确定性、可测试并有字节级失败保护，不让Zod默认值悄悄改写历史。
+1. Product Store当前为v12；v10→v11只发布独立且默认的Simple Planning revision v1，v11→v12新增Workflow Memory Query/Snapshot/Context、Memory Write Intent/Result并发布独立Memory Planning revision v1。历史完整上下文Planning revision v2及更早事实保持不变；迁移必须确定性、可测试并有字节级失败保护。
 2. 新集合仍使用 ID → Entity 映射；跨对象引用、revision、Hash 和状态机在启动时完整校验。
 3. Memory 服务数据库、Token、本地配置、Trace、E2E 数据和构建产物都在 `.gitignore` 范围内。
 4. 当前仍是单 API 写者 JSON Store，不宣称多实例；外部 Memory 调用不得发生在 Product Store `transact` 内。
@@ -253,8 +258,8 @@ Memory Import Command
 新增事件只允许严格、事件级 Schema，例如：
 
 1. `context.assembly.started/completed/failed`
-2. `memory.query.started/completed/failed`
-3. `memory.import.started/accepted/materialized/outcome_unknown/failed`
+2. `workflow.memory_node.started/completed/failed/outcome_unknown`：只保存节点身份、安全摘要、outcome和耗时，并投影为DSH原生Trajectory中的`memory_query`/`memory_write`
+3. Memory Write的细粒度生命周期以`MemoryWriteIntent/Result`产品事实和Node终态回放；不另造一套含Provider载荷的Trace事件。旧`memory.import.*`只用于历史兼容链
 4. `project.intake/resource_observe/stage/iteration/work/decision/contribution`对应的严格候选、提交与拒绝事件
 5. `rule.selection.completed/failed`
 
@@ -275,13 +280,13 @@ Trace 是不阻断产品事务的可观察证据：写入故障或进程在产�
 | 场景 | 产品结果 |
 |---|---|
 | Memory 查询超时 | 若用户标记 required，则先持久化Query失败再让Run失败关闭；optional 则提交排除包后继续 |
-| 外部响应合同损坏 | `memory.backend.contract_invalid`，不采用任何命中 |
-| 导入发送前失败 | `failed`，允许用户重试同一 Intent |
-| 导入发送后失联 | `outcome_unknown`，只对账，不自动重复写 |
+| 外部响应合同损坏 | `memory.provider.contract_invalid`，不采用任何命中 |
+| Write发送前失败 | `failed`，允许用户基于明确失败发起新意图 |
+| Write可能发送后失联 | `outcome_unknown`，只用同一Intent对账，不自动重复写 |
 | Project 版本冲突 | 409，保留候选，不覆盖新状态 |
 | 规则被禁用但客户端仍选择 | 409/422，要求刷新，不静默使用旧 revision |
 | Context 超预算 | 按固定优先级裁剪，并保存 excluded + reason；不让模型临时决定 |
-| Provider 失败 | 沿用 B2 失败关闭；不能退回假模型或无上下文规划 |
+| Provider 失败 | required查询失败关闭；optional查询保存失败证据后继续；不能退回假Provider或伪造正文 |
 
 ## 12. 明确不做
 

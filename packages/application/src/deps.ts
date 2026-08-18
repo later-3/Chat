@@ -44,6 +44,7 @@ import type { TraceEventInput } from "@chat/contracts";
 import type { ProductStorePort } from "./product-store-port.js";
 import type { MemoryBackendRegistryPort } from "./memory-ports.js";
 import type { MemoryImportBackendRegistryPort } from "./memory-import-ports.js";
+import type { WorkflowMemoryProviderRegistryPort } from "./workflow-memory-ports.js";
 import type {
   ProjectIntakeUnderstandingPort,
   ProjectAdvancementUnderstandingPort,
@@ -138,6 +139,8 @@ export interface ApplicationDeps {
   readonly memoryBackends?: MemoryBackendRegistryPort;
   /** 外部写入能力与Query分离，避免调用方忽略outcome_unknown。 */
   readonly memoryImportBackends?: MemoryImportBackendRegistryPort;
+  /** 当前Workflow Memory稳定边界；首期活动Provider只有Tencent MemoryCore。 */
+  readonly workflowMemoryProviders?: WorkflowMemoryProviderRegistryPort;
   readonly projectRoots?: ProjectResourceRootRegistryPort;
   readonly projectIntakeUnderstanding?: ProjectIntakeUnderstandingPort;
   readonly projectAdvancementUnderstanding?: ProjectAdvancementUnderstandingPort;

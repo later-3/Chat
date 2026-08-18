@@ -55,6 +55,8 @@ export interface KernelLabRuntimePort {
     readonly workflowRunSpecId: string;
     readonly productRunId: string;
   }): Promise<unknown>;
+  queryMemory(context: KernelNodeExecutionContext): Promise<KernelNodeControlResult>;
+  writeMemory(context: KernelNodeExecutionContext): Promise<KernelNodeControlResult>;
   loadMemoryContext(context: KernelNodeExecutionContext): Promise<KernelNodeControlResult>;
   loadProjectContext(context: KernelNodeExecutionContext): Promise<KernelNodeControlResult>;
   resolveRules(context: KernelNodeExecutionContext): Promise<KernelNodeControlResult>;

@@ -6,6 +6,8 @@ import {
 import { executePlanningNode } from "./configurable-planning-node-executors.js";
 import {
   executeMemoryContext,
+  executeWorkflowMemoryWrite,
+  executeWorkflowMemoryQuery,
   executeProjectContext,
   executeRulesContext,
 } from "./configurable-planning-resource-executors.js";
@@ -89,6 +91,11 @@ async function interpretPlanningRunSpec(
           outcomeCode: outcome,
           publicSummary: nodeSummary(element.nodeType, outcome),
         });
+      } else if (element.nodeType === "memory.query") {
+        // query业务事实与terminal Node证据由Application在同一事务提交；Runner只先标记running。
+        outcome = await executeWorkflowMemoryQuery(input, nodeIdentity);
+      } else if (element.nodeType === "memory.write") {
+        outcome = await executeWorkflowMemoryWrite(input, nodeIdentity);
       } else if (element.nodeType === "context.memory") {
         // Memory是否有旧式ContextRequest只能由Application权威边界判断。none必须从queued
         // 直接skipped；真实查询才进入running，避免制造S1不允许的running→skipped。
@@ -284,6 +291,7 @@ const FAIL_CLOSED_OUTCOMES = new Set(["failed", "invalid", "required_unavailable
 // 下一轮agent.plan/running。任何同状态但不同summary的Runner补写都会破坏可审计重放。
 const APPLICATION_OWNS_NODE_TYPES: ReadonlySet<string> = new Set([
   "agent.plan",
+  "memory.query",
   "execute.plan",
   "result.validate",
 ]);

@@ -26,6 +26,9 @@ import {
   workflowDefinitionIdSchema,
   workflowNodeRunIdSchema,
   workflowViewDefinitionIdSchema,
+  workflowMemoryContextIdSchema,
+  workflowMemorySnapshotIdSchema,
+  memoryWriteResultIdSchema,
 } from "./ids.js";
 
 /**
@@ -163,6 +166,27 @@ export const nodeProductRefSchema = z.discriminatedUnion("kind", [
       ...productRefBase,
       kind: z.literal("planning_memory_selection"),
       id: planningMemorySelectionIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...productRefBase,
+      kind: z.literal("workflow_memory_snapshot"),
+      id: workflowMemorySnapshotIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...productRefBase,
+      kind: z.literal("workflow_memory_context"),
+      id: workflowMemoryContextIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...productRefBase,
+      kind: z.literal("memory_write_result"),
+      id: memoryWriteResultIdSchema,
     })
     .strict(),
   z.object({ ...productRefBase, kind: z.literal("project"), id: projectIdSchema }).strict(),

@@ -52,6 +52,16 @@ export const memoryBackendIdSchema = prefixedId("mbk");
 export const memoryImportIntentIdSchema = prefixedId("mii");
 export const memoryImportResultIdSchema = prefixedId("mir");
 
+/*
+ * Workflow Memory v1 使用独立身份，避免把旧 context.memory/Memory Import 对象
+ * 冒充成新节点事实。旧对象继续只为历史回放保留。
+ */
+export const workflowMemoryQueryIdSchema = prefixedId("wmq");
+export const workflowMemorySnapshotIdSchema = prefixedId("wms");
+export const workflowMemoryContextIdSchema = prefixedId("wmc");
+export const memoryWriteIntentIdSchema = prefixedId("mwi");
+export const memoryWriteResultIdSchema = prefixedId("mwr");
+
 /* PS1 Project Solution新增身份；与Git、Workflow和pi私有身份严格分离。 */
 export const projectMethodSnapshotIdSchema = prefixedId("pms");
 export const projectStageIdSchema = prefixedId("pst");
@@ -129,6 +139,11 @@ export type ContextPackageId = z.infer<typeof contextPackageIdSchema>;
 export type MemoryBackendId = z.infer<typeof memoryBackendIdSchema>;
 export type MemoryImportIntentId = z.infer<typeof memoryImportIntentIdSchema>;
 export type MemoryImportResultId = z.infer<typeof memoryImportResultIdSchema>;
+export type WorkflowMemoryQueryId = z.infer<typeof workflowMemoryQueryIdSchema>;
+export type WorkflowMemorySnapshotId = z.infer<typeof workflowMemorySnapshotIdSchema>;
+export type WorkflowMemoryContextId = z.infer<typeof workflowMemoryContextIdSchema>;
+export type MemoryWriteIntentId = z.infer<typeof memoryWriteIntentIdSchema>;
+export type MemoryWriteResultId = z.infer<typeof memoryWriteResultIdSchema>;
 export type ProjectMethodSnapshotId = z.infer<typeof projectMethodSnapshotIdSchema>;
 export type ProjectStageId = z.infer<typeof projectStageIdSchema>;
 export type ProjectResourceId = z.infer<typeof projectResourceIdSchema>;

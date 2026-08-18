@@ -94,6 +94,11 @@ function installContext(
     api: api as never,
     bindings: {} as never,
     memoryBackends: { list: () => [], get: () => undefined },
+    workflowMemoryProviders: {
+      list: () => [],
+      getQuery: () => undefined,
+      getWrite: () => undefined,
+    },
     trace: (event) => events.push(event),
     now: () => "2026-08-08T00:00:00.000Z",
     bailian: {
