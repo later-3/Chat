@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { randomBytes, scryptSync } from "node:crypto";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -98,7 +98,36 @@ test("password verification uses the versioned scrypt contract with constant-tim
   }
 });
 
-test("legacy credentials and permissive credential files fail closed", () => {
+test("a valid single-user legacy credential upgrades atomically after successful login", async () => {
+  const fixture = writeAuthFixture();
+  try {
+    const legacy = fixture.env.CHAT_WEB_AUTH_CREDENTIALS_FILE;
+    const salt = randomBytes(16).toString("hex");
+    const hash = scryptSync("correct-horse", Buffer.from(salt, "hex"), 64).toString("hex");
+    writeFileSync(
+      legacy,
+      JSON.stringify({ users: [{ username: "later", scrypt: { salt, hash } }] }),
+      { mode: 0o600 },
+    );
+    const config = loadWebAuthConfig(fixture.env);
+    assert.equal(config.users.get("later").legacy, true);
+    assert.equal(await verifyWebAuthPassword(config, "later", "wrong"), false);
+    assert.equal(JSON.parse(readFileSync(legacy, "utf8")).schemaVersion, undefined);
+    assert.equal(await verifyWebAuthPassword(config, "later", "correct-horse"), true);
+    const upgraded = JSON.parse(readFileSync(legacy, "utf8"));
+    assert.equal(upgraded.schemaVersion, WEB_AUTH_CREDENTIAL_SCHEMA_VERSION);
+    assert.deepEqual(upgraded.users[0].scrypt, {
+      salt: upgraded.users[0].scrypt.salt,
+      hash: upgraded.users[0].scrypt.hash,
+      ...WEB_AUTH_SCRYPT_PARAMS,
+    });
+    assert.equal(config.users.get("later").legacy, undefined);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("malformed legacy credentials and permissive credential files fail closed", () => {
   const fixture = writeAuthFixture();
   try {
     const legacy = fixture.env.CHAT_WEB_AUTH_CREDENTIALS_FILE;
@@ -107,7 +136,7 @@ test("legacy credentials and permissive credential files fail closed", () => {
       JSON.stringify({ users: [{ username: "later", scrypt: { salt: "00", hash: "00" } }] }),
       { mode: 0o600 },
     );
-    assert.throws(() => loadWebAuthConfig(fixture.env), /--rotate/u);
+    assert.throws(() => loadWebAuthConfig(fixture.env), /malformed/u);
     writeFileSync(
       legacy,
       JSON.stringify({ schemaVersion: WEB_AUTH_CREDENTIAL_SCHEMA_VERSION, users: [] }),

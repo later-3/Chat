@@ -1,5 +1,5 @@
-import { createHmac, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { createHmac, randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
+import { chmodSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isIP } from "node:net";
 import { promisify } from "node:util";
 
@@ -72,6 +72,30 @@ function validScryptRecord(value) {
   );
 }
 
+function validLegacyScryptRecord(value) {
+  return (
+    typeof value?.salt === "string" &&
+    typeof value?.hash === "string" &&
+    /^[0-9a-f]{32}$/u.test(value.salt) &&
+    /^[0-9a-f]{128}$/u.test(value.hash)
+  );
+}
+
+function writeCredentialsAtomically(path, credentials) {
+  const temporary = `${path}.${String(process.pid)}.${randomBytes(6).toString("hex")}.tmp`;
+  try {
+    writeFileSync(temporary, `${JSON.stringify(credentials, null, 2)}\n`, {
+      flag: "wx",
+      mode: 0o600,
+    });
+    chmodSync(temporary, 0o600);
+    renameSync(temporary, path);
+  } catch (error) {
+    rmSync(temporary, { force: true });
+    throw error;
+  }
+}
+
 /** 从环境装配认证配置；未启用时返回 undefined。文件只在此刻读取一次。 */
 export function loadWebAuthConfig(environment = process.env) {
   if (environment.CHAT_WEB_AUTH_REQUIRED !== "1") return undefined;
@@ -102,21 +126,33 @@ export function loadWebAuthConfig(environment = process.env) {
     );
   }
   assertPrivateFile(credentialsFile, "Chat web auth credentials file");
-  if (credentials?.schemaVersion !== WEB_AUTH_CREDENTIAL_SCHEMA_VERSION) {
-    throw new Error(
-      `Chat web auth credentials must use ${WEB_AUTH_CREDENTIAL_SCHEMA_VERSION}; run init-chat-web-auth.mjs --rotate`,
-    );
+  const isCurrentSchema = credentials?.schemaVersion === WEB_AUTH_CREDENTIAL_SCHEMA_VERSION;
+  const isLegacySchema = credentials?.schemaVersion === undefined;
+  if (!isCurrentSchema && !isLegacySchema) {
+    throw new Error(`Chat web auth credentials must use ${WEB_AUTH_CREDENTIAL_SCHEMA_VERSION}`);
   }
   const users = new Map();
   if (!Array.isArray(credentials?.users) || credentials.users.length === 0) {
     throw new Error("Chat web auth credentials file must contain a non-empty users array");
   }
+  // v1没有记录派生参数，不能在无明文口令时离线重算。只允许既有的单用户精确
+  // 形状进入一次性过渡：下一次成功登录会用当次表单口令原子重写为v2。多用户、
+  // 畸形或未知schema继续失败关闭，避免把兼容入口变成长期的宽松解析器。
+  if (isLegacySchema && credentials.users.length !== 1) {
+    throw new Error("Legacy Chat web auth credentials must contain exactly one user");
+  }
   for (const entry of credentials.users) {
     const username = entry?.username;
-    if (typeof username !== "string" || username === "" || !validScryptRecord(entry?.scrypt)) {
+    const validRecord = isCurrentSchema
+      ? validScryptRecord(entry?.scrypt)
+      : validLegacyScryptRecord(entry?.scrypt);
+    if (typeof username !== "string" || username === "" || !validRecord) {
       throw new Error("Chat web auth credentials entry is malformed");
     }
-    users.set(username, Object.freeze({ ...entry.scrypt }));
+    users.set(
+      username,
+      Object.freeze(isCurrentSchema ? { ...entry.scrypt } : { ...entry.scrypt, legacy: true }),
+    );
   }
   const secret = readFileSync(secretFile, "utf8").trim();
   assertPrivateFile(secretFile, "Chat web auth session secret file");
@@ -127,6 +163,7 @@ export function loadWebAuthConfig(environment = process.env) {
     users,
     secret,
     sessionTtlMs: sessionDays * 24 * 60 * 60 * 1000,
+    credentialsFile,
   });
 }
 
@@ -149,11 +186,26 @@ export async function verifyWebAuthPassword(config, username, password) {
   const entry = config.users.get(username);
   // 对不存在的用户也执行同参数派生与等长比较，避免用户枚举的时间侧信道。
   const salt = entry === undefined ? Buffer.alloc(16, 1) : Buffer.from(entry.salt, "hex");
-  const derived = await scryptAsync(password, salt, SCRYPT_KEY_LENGTH, scryptOptions());
+  const derived = await scryptAsync(
+    password,
+    salt,
+    SCRYPT_KEY_LENGTH,
+    entry?.legacy === true ? undefined : scryptOptions(),
+  );
   const expected =
     entry === undefined ? Buffer.alloc(SCRYPT_KEY_LENGTH) : Buffer.from(entry.hash, "hex");
   const matches = derived.length === expected.length && timingSafeEqual(derived, expected);
-  return entry !== undefined && matches;
+  if (entry === undefined || !matches) return false;
+  if (entry.legacy === true) {
+    const upgraded = hashWebAuthPassword(password, randomBytes(16).toString("hex"));
+    writeCredentialsAtomically(config.credentialsFile, {
+      schemaVersion: WEB_AUTH_CREDENTIAL_SCHEMA_VERSION,
+      users: [{ username, scrypt: upgraded }],
+    });
+    // 同一进程立即改用强参数记录，后续校验与Cookie用户存在性无需重启。
+    config.users.set(username, upgraded);
+  }
+  return true;
 }
 
 function loginClientKey(req) {

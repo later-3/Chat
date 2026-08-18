@@ -101,9 +101,10 @@ scripts/service/install-chat-production.sh install
 scripts/service/install-chat-production.sh status
 ```
 
-若凭据由2026-08-17旧版本生成，升级代码前先在停止production服务后执行
-`node scripts/service/init-chat-web-auth.mjs --rotate`；v1凭据缺少明确派生参数，
-新Gateway会失败关闭而不是继续以旧参数登录。轮换同时使既有Cookie失效。
+若凭据由2026-08-17旧版本生成，Gateway只允许精确的单用户v1形状进入一次性过渡：
+下一次成功网页登录先按旧参数校验当次口令，再原子重写为`chat-web-auth.v2`；错误口令、
+多用户、畸形文件和未知schema仍失败关闭。部署者可以轮换`session-secret`强制既有Cookie
+重新登录，也可以执行`node scripts/service/init-chat-web-auth.mjs --rotate`主动更换账号口令。
 
 服务管理：
 

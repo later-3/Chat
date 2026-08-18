@@ -6,8 +6,8 @@
  *   .data/web-auth/credentials.json   v2 scrypt参数+口令散列（0600）
  *   .data/web-auth/session-secret     随机会话签名密钥（0600）
  * 两个文件只留在本机，绝不进入 Git（.data/ 已忽略）。重复运行会拒绝覆盖，
- * 除非显式传入 --rotate（轮换后既有会话 Cookie 全部失效）。v1凭据不会被
- * Gateway静默接受；升级后必须用本命令显式轮换到当前参数。
+ * 除非显式传入 --rotate（轮换后既有会话 Cookie 全部失效）。既有单用户v1
+ * 凭据会在下一次成功网页登录时用当次口令原子升级；本命令仍用于主动轮换账号。
  */
 import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
