@@ -7,12 +7,14 @@
 | LifeOS Web Gateway / DSH入口 | `http://127.0.0.1:43110` |
 | Chat API | `http://127.0.0.1:43111` |
 | Workflow | `http://127.0.0.1:43112` |
+| Pi Coding Executor | `http://127.0.0.1:43115`（私有Runtime Key） |
 | code-server内部服务 | 受管0700临时根内的0600 Unix socket（不监听TCP） |
 | DSH内部Host | `http://127.0.0.1:43114` |
 | Workbench浏览器入口 | `http://localhost:43110/workbench/code/` |
 | code-server准备/运行租约 | `127.0.0.1:43119`（只做内核互斥，连接立即断开，不提供HTTP） |
 | API Inspector | `127.0.0.1:43120`（`dev:debug`） |
 | Workflow Inspector | `127.0.0.1:43121`（`dev:debug`） |
+| Pi Executor Inspector | `127.0.0.1:43122`（`dev:debug`） |
 
 所有服务只使用固定端口；冲突时失败关闭或在四重身份校验后回收同一Git仓库的旧进程，不能自动换号。
 
@@ -31,7 +33,7 @@ pnpm dev:stop
 
 `pnpm run setup`默认只准备code-server、Workflow Bundle与DSH Bridge/Profile，不准备或启动Memory；
 检测到本仓库已有服务时只失败关闭，不执行preclean或Workflow版本收敛；
-`pnpm dev`会复核同一批证据后启动Workflow、API、code-server和DSH/Gateway；API与Workflow也不会实例化Memory Adapter。
+`pnpm dev`会复核同一批证据后启动Pi Executor、Workflow、API、code-server和DSH/Gateway；API与Workflow也不会实例化Memory Adapter。
 Memory源码与独立测试保留，但统一安装、VS Code F5和开发启动器当前都没有启用入口。
 Workbench当前为Beta，不属于通用CI/CD完成门；`--workbench=off`用于当前不需要IDE的日常调试和CI。
 启用Beta Workbench时，终端SIGINT或
@@ -62,8 +64,9 @@ Workbench当前为Beta，不属于通用CI/CD完成门；`--workbench=off`用于
 4. `packages/workflows/src/planning-execution-workflow.ts`的`planningExecutionWorkflow`：Planning/HITL/Execution耐久步骤。
 5. `packages/application/src/plan-decision-use-cases.ts`的`submitPlanDecision`：Decision的权限、CAS、Plan版本与Hash边界。
 6. `packages/workflows/src/workflow-result-steps.ts`的`commitExecutionResultStep`与`packages/application/src/commit-runtime-use-cases.ts`的`commitExecutionResult`：候选验证后提交正式Message和Run终态。
-7. `packages/pi-runtime`：Planner/Executor模型与工具边界。
-8. `packages/product-store-json`：revision、迁移、原子替换与完整性校验。
+7. `packages/pi-runtime/src/executor-service.ts`、`coding-agent-executor.ts`与`executor-operation-store.ts`：Operation、AgentSession、工具前栅栏和安全事件。
+8. `packages/pi-runtime/src/planner.ts`：Planner模型候选边界。
+9. `packages/product-store-json`：revision、迁移、原子替换与完整性校验。
 
 ## Trace
 

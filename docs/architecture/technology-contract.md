@@ -12,7 +12,7 @@
 | Product Core | TypeScript Domain + Application | 状态机、权限、用例、事务、幂等和产品提交 |
 | Product Store | 当前版本化JSON Adapter | 权威产品事实；未来可替换生产Store |
 | Durable Workflow | Vercel Workflow | 耐久步骤、暂停、恢复、重放和Checkpoint |
-| Agent Runtime | `pi-agent-core` | Workflow中的Planner/Executor与Tool节点 |
+| Agent Runtime | `pi-agent-core` + `pi-coding-agent AgentSession` | Planner仍是Workflow内受限节点；完整Executor运行在独立服务中 |
 | Memory | Port + memmy / Tencent MemoryCore Adapter（代码保留，当前未装配） | 外部Memory查询、导入与对账；统一启动器没有启用入口 |
 | Hosted Workbench | code-server（固定版本） | Files、Editor、Terminal、Git、Diff和VS Code扩展 |
 | 验证 | Vitest/Node Test + Playwright | 单元、合同、集成和真实浏览器纵向 |
@@ -27,7 +27,8 @@ Browser
      -> LifeOS Bridge Host
         -> Chat Hono API
            -> Application -> Product Store
-                         -> Transactional Outbox -> Vercel Workflow -> pi
+                         -> Transactional Outbox -> Vercel Workflow
+                            -> Pi Coding Executor Service -> AgentSession
      -> localhost-only Workbench origin -> Gateway -> code-server (private Unix socket)
 ```
 
@@ -86,8 +87,15 @@ Query读取资源并返回revision/ETag/cursor；Command表达一次用户意图
 - Workflow只接收不可变输入和产品引用；通过私有Application活动读取/提交事实。
 - Step必须可重放；非确定性值、模型调用和外部I/O进入Step边界。
 - pi是Agent节点，不创建Product Session、Approval、Memory或完成事实。
+- 完整Executor通过私有幂等Operation协议访问独立AgentSession服务；Workflow不把Pi Session当Checkpoint或产品身份。
+- Runtime Key不等于产品授权；Executor在创建Operation和触达Workspace前必须经Application回查运行中Attempt、Contract、Manifest、Context与依赖血缘。
+- Tool能力来自Approved Plan编译的Capability白名单；非文本能力必须绑定服务端Workspace Root。
+- 文件工具拒绝Workspace Root逃逸；`shell_execute`是显式high-risk Host能力而非沙箱，并使用秘密清洗后的环境。
+- Provider与Tool调用先写安全Operation Journal；未闭合副作用在恢复时进入`outcome_unknown`，不自动重放。
 - 模型输出先成为候选；确定性校验与Product Commit之后才是正式结果。
 - 付费模型失败默认不盲目自动重试；外部副作用必须有幂等、结果未知与对账。
+
+完整执行服务、身份、Trace和恢复语义见[Pi Coding Executor Service As-built](./pi-coding-executor-service.md)。
 
 ## 6. HITL合同
 

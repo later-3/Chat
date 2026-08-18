@@ -6,7 +6,12 @@ import {
   PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION,
   type TraceEventInput,
 } from "@chat/contracts";
-import { loadBailianConfig, runPiExecutor, runPiNoteCapture, runPiPlanner } from "@chat/pi-runtime";
+import {
+  createPiExecutorServiceClient,
+  loadBailianConfig,
+  runPiNoteCapture,
+  runPiPlanner,
+} from "@chat/pi-runtime";
 import { createEmptyMemoryBackendRegistry } from "@chat/memory-runtime";
 import { ZodError } from "zod";
 import { createRuntimeApiClient } from "./api-client.js";
@@ -45,6 +50,7 @@ export interface WorkflowRuntimeServerOptions {
   readonly workflowDataDir: string;
   readonly bindingsPath: string;
   readonly apiBaseUrl: string;
+  readonly executorBaseUrl?: string;
   readonly credential: string;
   readonly traceSink?: { emit: (event: TraceEventInput) => void };
   /**
@@ -97,6 +103,10 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
 
     // Workflow合同仍需要Registry Port，但当前统一运行图冻结为空，不实例化任何外部Adapter。
     const memoryRegistry = createEmptyMemoryBackendRegistry();
+    const executorClient = createPiExecutorServiceClient({
+      baseUrl: options.executorBaseUrl ?? "http://127.0.0.1:43115",
+      credential: options.credential,
+    });
     setWorkflowRuntimeContext({
       api: createRuntimeApiClient({ baseUrl: options.apiBaseUrl, credential: options.credential }),
       bindings,
@@ -106,7 +116,7 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       bailian: loadBailianConfig(process.env),
       planner: runPiPlanner,
       noteCapture: runPiNoteCapture,
-      executor: runPiExecutor,
+      executor: ({ config: _config, ...input }) => executorClient(input),
       ...options.runtimeOverrides,
     });
 

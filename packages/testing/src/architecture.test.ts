@@ -73,9 +73,18 @@ const rules: Record<
     forbidden: [/^react/, /^@ag-ui\//, /^pi-/],
   },
   "packages/pi-runtime": {
-    external: ["zod", "@earendil-works/pi-ai", "@earendil-works/pi-agent-core"],
-    internal: ["@chat/contracts"],
-    forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/],
+    // 包根入口仍是Workflow/API使用的轻量Pi Adapter；Hono与Coding Agent只从
+    // `@chat/pi-runtime/coding-executor`被独立Executor进程加载。Domain只用于
+    // 重算Chat冻结Contract/Manifest/Step Result哈希，不获得产品写入权。
+    external: [
+      "zod",
+      "hono",
+      "@earendil-works/pi-ai",
+      "@earendil-works/pi-agent-core",
+      "@earendil-works/pi-coding-agent",
+    ],
+    internal: ["@chat/contracts", "@chat/domain"],
+    forbidden: [/^react/, /^@hono\//, /^workflow$/],
   },
   "packages/product-store-json": {
     external: ["zod"],

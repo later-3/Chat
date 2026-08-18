@@ -87,7 +87,7 @@ function evidenceFromOutput(criterion: string, output: string): string {
  * 这样避免把Provider对复杂工具数组的偶然序列化行为变成产品合同，同时每条证据都绑定
  * 实际输出而不是相信模型自报的“已满足”。
  */
-function projectExecutorCandidate(
+export function projectExecutorStepCandidate(
   providerCandidate: z.infer<typeof executorProviderCandidateSchema>,
   step: ExecutionContract["steps"][number],
   completionCriteria: readonly string[],
@@ -259,7 +259,7 @@ export async function runPiExecutor(
       }
       return {
         ok: true,
-        candidate: projectExecutorCandidate(
+        candidate: projectExecutorStepCandidate(
           parsed.data,
           step,
           input.contract.completionCriteria,

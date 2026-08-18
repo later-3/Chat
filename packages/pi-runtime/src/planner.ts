@@ -2,7 +2,7 @@ import { Type } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
   B2_PLANNER_TOKEN_BUDGET,
-  EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
+  EXECUTION_CAPABILITIES,
   planContentSchema,
   PLANNER_PROMPT_TEMPLATE_VERSION,
   type PlanContent,
@@ -70,7 +70,7 @@ const PLANNER_SYSTEM_PROMPT = [
   "2. 计划必须包含：objective、summary、assumptions、openQuestions、steps、completionCriteria、warnings。",
   "3. 每个step包含stepId、title、purpose、dependsOn、inputRefs、expectedOutput、successCriteria、requestedCapabilities、risk。",
   "4. steps按执行顺序排列，dependsOn只能引用排在前面的stepId。",
-  "5. 你只能请求markdown_text_compose这一种无外部副作用能力；不得请求Shell、Git、文件、网络、邮件、日历、删除或支付能力。",
+  "5. requestedCapabilities只能从markdown_text_compose、workspace_read、workspace_write、shell_execute中选择。只整理文字用markdown_text_compose；查看项目用workspace_read；改文件再请求workspace_write；确需命令行或Git才请求shell_execute，且该步骤risk必须是high。工具能力与风险会由用户随计划一起审核，不得请求网络、邮件、日历、支付或未列出的能力。",
   "6. 你只能引用“本轮冻结上下文”列出的refId/revision/sha256精确三元组；使用某条上下文的步骤必须在inputRefs中引用它，未使用则不得引用。没有上下文条目时inputRefs必须为空。",
   "7. 计划是候选，需要用户审核后才会执行；不要声称已经完成任何工作。",
   "8. successCriteria与completionCriteria必须是可由服务端逐条核对证据的明确陈述。",
@@ -253,11 +253,15 @@ export async function runPiPlanner(input: RunPiPlannerInput): Promise<AgentRunRe
     parseCandidate: (params) => {
       const parsed = planContentSchema.safeParse(params);
       if (!parsed.success) return { ok: false, errorCode: "schema_invalid" };
+      const allowedCapabilities = new Set<string>(EXECUTION_CAPABILITIES);
       for (const step of parsed.data.steps) {
         for (const capability of step.requestedCapabilities) {
-          if (capability !== EXECUTION_CAPABILITY_MARKDOWN_COMPOSE) {
+          if (!allowedCapabilities.has(capability)) {
             return { ok: false, errorCode: "capability_violation" };
           }
+        }
+        if (step.requestedCapabilities.includes("shell_execute") && step.risk !== "high") {
+          return { ok: false, errorCode: "capability_violation" };
         }
       }
       if (!hasValidContextRefs(parsed.data, input.planningInput)) {

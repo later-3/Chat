@@ -105,13 +105,14 @@ pnpm dev -- --workbench=off
 当前不启动或装配Memory。`18960`与`18970`在整个运行期间都应保持空闲；统一启动器
 拒绝`--memory=all|memmy|memorycore`，避免环境变量或历史命令静默恢复Memory。
 
-`dev:stop`完成后，43110、43111、43112、43114与43119都应释放，18960与18970应始终未被默认服务图占用，
+`dev:stop`完成后，43110、43111、43112、43114、43115与43119都应释放，18960与18970应始终未被默认服务图占用，
 code-server的Unix socket和Terminal子进程也应被受管回收。不要用`killall`、`pkill`或
 直接删除`.data`替代停止命令；`.data`还可能包含产品数据和运行证据。
 
 ## 5. 常见问题
 
 - `Provider not ready`：安装成功但未配置`DASHSCOPE_API_KEY`；填入`.env`后重启。
+- `executor.workspace_not_allowed`：批准计划请求了Workspace工具，但Contract中的`rootId`不在服务端`CHAT_PROJECT_ROOTS_JSON`；修正Root配置后发起新Run，不要把绝对路径放进请求。
 - 端口占用：先运行`pnpm dev:status`，再用`pnpm dev:stop`回收身份匹配的旧Chat进程。
   未知进程不会被自动终止。
 - `43113`占用：这是已退役的无认证code-server端口，启动器只报告、绝不自动清理；

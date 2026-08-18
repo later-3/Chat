@@ -1,6 +1,9 @@
 import { computeExecutionInputManifestSha256, hashCanonical } from "@chat/domain";
 import {
-  B2_EXECUTOR_TOKEN_BUDGET_PER_STEP,
+  CODING_EXECUTOR_MAX_TURNS_PER_STEP,
+  CODING_EXECUTOR_TIMEOUT_MS_PER_STEP,
+  CODING_EXECUTOR_TOKEN_BUDGET_PER_STEP,
+  EXECUTION_CAPABILITIES,
   EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
   type CommandId,
   type DecisionId,
@@ -10,6 +13,8 @@ import {
   type ProductSnapshot,
   type ProductRunId,
   type RunAttemptId,
+  type AuthorizeExecutorOperationRequest,
+  type AuthorizeExecutorOperationResponse,
 } from "@chat/contracts";
 import { type ApplicationDeps } from "./deps.js";
 import { notFound, revisionConflict } from "./errors.js";
@@ -27,10 +32,12 @@ import { requirePlanningRun } from "./product-run-kind.js";
  */
 
 export const EXECUTOR_LIMITS = {
-  maxTurnsPerStep: 1,
-  timeoutMsPerStep: 120_000,
-  tokenBudgetPerStep: B2_EXECUTOR_TOKEN_BUDGET_PER_STEP,
+  maxTurnsPerStep: CODING_EXECUTOR_MAX_TURNS_PER_STEP,
+  timeoutMsPerStep: CODING_EXECUTOR_TIMEOUT_MS_PER_STEP,
+  tokenBudgetPerStep: CODING_EXECUTOR_TOKEN_BUDGET_PER_STEP,
 } as const;
+
+const ALLOWED_EXECUTION_CAPABILITIES = new Set<string>(EXECUTION_CAPABILITIES);
 
 export interface BeginRunAttemptCommand {
   readonly commandId: CommandId;
@@ -304,6 +311,8 @@ export async function beginRunAttempt(
         productRunId: input.productRunId,
         kind: "execution",
         stepId: input.stepId,
+        executionContractId: input.executionContractId,
+        dependencyRefs: [...input.dependencyRefs],
         inputManifestSha256,
         promptTemplateVersion: input.promptTemplateVersion,
         modelConfigVersion: input.modelConfigVersion,
@@ -357,6 +366,47 @@ export interface CompleteRunAttemptCommand {
   readonly attemptId: RunAttemptId;
   readonly outcome: "success" | "failure";
   readonly errorCode?: string;
+}
+
+/**
+ * 只读授权门：Executor Service不能把Runtime Key或Workflow请求正文当成产品授权。
+ * 它按已提交Execution Attempt回查Contract、Step、Manifest和权威Context正文；任何
+ * 偏差都在AgentSession和Workspace工具创建前失败关闭。
+ */
+export async function authorizeExecutorOperation(
+  deps: ApplicationDeps,
+  input: Omit<AuthorizeExecutorOperationRequest, "schemaVersion">,
+): Promise<AuthorizeExecutorOperationResponse> {
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const attempt = snapshot.entities.attempts[input.executionAttemptId];
+  if (attempt === undefined || attempt.kind !== "execution") {
+    throw notFound("Execution Attempt不存在");
+  }
+  if (
+    attempt.outcome !== "running" ||
+    attempt.executionContractId !== input.executionContractId ||
+    attempt.stepId !== input.stepId ||
+    attempt.inputManifestSha256 !== input.inputManifestSha256
+  ) {
+    throw revisionConflict("Execution Attempt授权证据不一致或已终止");
+  }
+  const contract = snapshot.entities.executionContracts[input.executionContractId];
+  if (
+    contract === undefined ||
+    contract.productRunId !== attempt.productRunId ||
+    contract.sha256 !== input.executionContractSha256
+  ) {
+    throw revisionConflict("Execution Contract授权证据不一致");
+  }
+  const resolved = resolveExecutionStepContext(snapshot, contract, input.stepId);
+  return {
+    schemaVersion: "chat-internal-runtime.v1",
+    productRunId: attempt.productRunId,
+    executionAttemptId: attempt.attemptId,
+    contract,
+    contextItems: [...resolved.contextItems],
+    dependencyRefs: [...(attempt.dependencyRefs ?? [])],
+  };
 }
 
 export async function completeRunAttempt(
@@ -476,10 +526,43 @@ export async function compileExecutionContract(
       const capabilityRefs = [
         ...new Set(plan.content.steps.flatMap((step) => step.requestedCapabilities)),
       ];
-      if (
-        capabilityRefs.some((capability) => capability !== EXECUTION_CAPABILITY_MARKDOWN_COMPOSE)
-      ) {
+      if (capabilityRefs.some((capability) => !ALLOWED_EXECUTION_CAPABILITIES.has(capability))) {
         throw revisionConflict("Approved Plan包含未允许的Capability");
+      }
+      const requiresWorkspace = capabilityRefs.some(
+        (capability) => capability !== EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
+      );
+      let workspaceRef: ExecutionContract["workspaceRef"];
+      if (requiresWorkspace) {
+        const planningAttempt = draft.entities.attempts[plan.planningAttemptId];
+        const projectContext =
+          planningAttempt?.planningProjectContextId === undefined
+            ? undefined
+            : draft.entities.planningProjectContexts[planningAttempt.planningProjectContextId];
+        if (
+          planningAttempt?.kind !== "planning" ||
+          projectContext === undefined ||
+          projectContext.productRunId !== input.productRunId ||
+          projectContext.sha256 !== planningAttempt.planningProjectContextSha256
+        ) {
+          throw revisionConflict("Coding Capability必须绑定已冻结的Project Context");
+        }
+        const workspaces = Object.values(draft.entities.projectResources).filter(
+          (resource) =>
+            resource.projectId === projectContext.projectId &&
+            resource.kind === "workspace" &&
+            resource.status === "active",
+        );
+        if (workspaces.length !== 1 || workspaces[0] === undefined) {
+          throw revisionConflict("Coding Capability必须绑定唯一活动Workspace资源");
+        }
+        const workspace = workspaces[0];
+        workspaceRef = {
+          projectId: workspace.projectId,
+          projectResourceId: workspace.projectResourceId,
+          rootId: workspace.rootId,
+          revision: workspace.revision,
+        };
       }
       const contract: ExecutionContract = {
         schemaVersion: "execution-contract.v1",
@@ -491,6 +574,7 @@ export async function compileExecutionContract(
         approvalDecisionId: decision.decisionId,
         steps,
         completionCriteria: plan.content.completionCriteria,
+        ...(workspaceRef !== undefined ? { workspaceRef } : {}),
         capabilityRefs,
         limits: { ...EXECUTOR_LIMITS },
         sha256: hashCanonical("execution-contract.v1", {
@@ -501,6 +585,7 @@ export async function compileExecutionContract(
           approvalDecisionId: decision.decisionId,
           steps,
           completionCriteria: plan.content.completionCriteria,
+          ...(workspaceRef !== undefined ? { workspaceRef } : {}),
           capabilityRefs,
           limits: EXECUTOR_LIMITS,
         }),

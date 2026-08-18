@@ -26,7 +26,7 @@ Chat的核心是“产品责任”，不是“代码量必须最大”。整个�
 
 1. **产品内核**：Contracts、Domain、Application、Product Store事实、权限、版本、幂等、Decision、Evidence和Product Commit。
 2. **Workflow编排**：Chat的步骤、产品级暂停/恢复命令、Binding、Outbox、对账与终态政策，以及规划—审核—执行—验证—提交链路；Checkpoint、重放和Worker恢复机制仍由Vercel Workflow拥有。
-3. **规划层与执行层**：Planner/Executor属于Workflow内的Chat业务节点。Chat自研Prompt、上下文组装、Tool白名单、Candidate Schema、验证和事实提交；底层Agent loop、模型调用和通用Tool运行复用`pi-agent-core`/`pi-ai`。
+3. **规划层与执行层**：Planner/Executor属于Workflow内的Chat业务节点。Chat自研Prompt、上下文组装、Tool白名单、Candidate Schema、验证和事实提交；Planner底层loop复用`pi-agent-core`/`pi-ai`，完整Executor通过Chat私有Operation Port复用独立`pi-coding-agent AgentSession`服务。
 4. **产品后端**：公开Query/Command、认证上下文、事务、Outbox、Runtime绑定与收敛政策、Trace和对账语义。
 5. **窄集成面**：为上述产品责任编写必要的Port、Provider、Adapter、Gateway和投影，但不在其中复制上游产品。
 
@@ -98,7 +98,7 @@ Chat的核心是“产品责任”，不是“代码量必须最大”。整个�
 1. 唯一前端使用固定版本DeepSeek Harness Web；`packages/dsh-lifeos-bridge`是唯一Chat前端集成面。不得另建自研Chat壳或复制DSH源码。
 2. 后端使用 Node.js + TypeScript；Hono只负责HTTP、认证上下文、校验和流式传输，不拥有产品事务。
 3. Vercel Workflow负责耐久步骤、暂停、恢复、重放和运行时Checkpoint。
-4. `pi-agent-core`作为Workflow中的Agent节点；它不拥有产品会话、产品运行、审批、记忆或完成事实。
+4. Planner使用`pi-agent-core`作为Workflow中的Agent节点；完整Executor由独立Pi Coding Executor Service承载`AgentSession`、Pi Session和Tool Journal。两者都不拥有产品会话、产品运行、审批、记忆或完成事实。
 5. 产品资源通过REST Query/Command访问；写命令必须携带幂等身份和预期revision。
 6. 当前活动运行由桥接插件通过Chat公开Query恢复；未来SSE仍只能是Chat拥有的事件投影，不能建立第二套产品事实。
 7. Product Store拥有权威产品事实；Workflow Store、pi Session、事件Journal和浏览器缓存分别只拥有自己的运行责任。
@@ -113,6 +113,7 @@ Chat的核心是“产品责任”，不是“代码量必须最大”。整个�
 ```text
 apps/dsh-web       固定DSH Web启动、Profile与运行编排
 apps/api           Hono协议入口与组合根
+apps/pi-executor   私有Pi Coding Executor Service进程入口
 packages/dsh-lifeos-bridge DSH Host/Client桥接、HITL投影与Workbench表面
 scripts/workbench  固定code-server供应链、生命周期与真实验证
 packages/contracts 网络合同与事件类型
@@ -123,7 +124,7 @@ packages/memory-runtime Memory Port的memmy与Tencent MemoryCore Adapter
 packages/project-runtime 受权Project/Workspace资源观察Adapter
 packages/realtime  当前Trace与Replay；未来Runtime Journal与SSE投影
 packages/workflows Vercel Workflow定义与活动
-packages/pi-runtime pi适配与Agent节点
+packages/pi-runtime pi适配、AgentSession、Operation Journal与Executor Client
 packages/testing   合同、Fixture与测试工具
 ```
 

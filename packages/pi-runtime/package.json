@@ -7,6 +7,10 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./coding-executor": {
+      "types": "./src/coding-executor.ts",
+      "import": "./src/coding-executor.ts"
     }
   },
   "scripts": {
@@ -14,12 +18,16 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "test:provider:bailian": "vitest run --config vitest.provider.config.ts",
+    "test:provider:bailian:coding": "vitest run --config vitest.provider-coding.config.ts",
     "test:provider:bailian:note": "vitest run --config vitest.provider-note.config.ts"
   },
   "dependencies": {
     "@chat/contracts": "workspace:*",
-    "@earendil-works/pi-agent-core": "0.82.1",
-    "@earendil-works/pi-ai": "0.82.1",
+    "@chat/domain": "workspace:*",
+    "@earendil-works/pi-agent-core": "0.84.2",
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "hono": "^4.13.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

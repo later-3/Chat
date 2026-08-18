@@ -2,6 +2,8 @@ import { Hono, type Context } from "hono";
 import { ZodError } from "zod";
 import {
   compileExecutionContractRequestSchema,
+  authorizeExecutorOperationRequestSchema,
+  authorizeExecutorOperationResponseSchema,
   beginRunAttemptRequestSchema,
   commitConfirmedNoteRuntimeRequestSchema,
   commitConfirmedNoteRuntimeResponseSchema,
@@ -50,6 +52,7 @@ import {
   CommandIdReusedError,
   StoreCorruptedError,
   compileExecutionContract,
+  authorizeExecutorOperation,
   compilePlanningInput,
   commitExecutionResult,
   commitConfirmedNote,
@@ -479,6 +482,16 @@ export function createInternalRuntimeRouter(
         inputManifestSha256: result.inputManifestSha256,
         contextItems: result.contextItems,
       };
+    }),
+  );
+
+  router.post(
+    "/authorize-executor-operation",
+    handle(200, async (c) => {
+      const request = authorizeExecutorOperationRequestSchema.parse(await parseInternalBody(c));
+      return authorizeExecutorOperationResponseSchema.parse(
+        await authorizeExecutorOperation(options.deps, request),
+      );
     }),
   );
 

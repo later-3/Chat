@@ -6,6 +6,7 @@
 apps/
   api/                    Hono公开/私有协议入口与组合根
   dsh-web/                固定DeepSeek Harness依赖与受管启动入口
+  pi-executor/             私有Pi Coding Executor Service进程入口
 packages/
   dsh-lifeos-bridge/      DSH Host/Client插件与Chat适配
   contracts/              公开/内部网络合同与事件类型
@@ -13,7 +14,7 @@ packages/
   application/            用例、事务、权限、幂等与Outbox
   product-store-json/     当前Product Store Adapter与迁移
   workflows/              Vercel Workflow定义与活动
-  pi-runtime/             pi Planner/Executor Adapter
+  pi-runtime/             pi Planner、AgentSession、Operation Journal与Executor Client
   memory-runtime/         memmy与Tencent MemoryCore Adapter
   project-runtime/        受权本地Git/文档/脚本资源的只读Project Adapter
   realtime/               Trace与Replay

@@ -20,6 +20,8 @@ import {
   productRunIdSchema,
   productSessionIdSchema,
   projectCandidateIdSchema,
+  projectIdSchema,
+  projectResourceIdSchema,
   revisionInputIdSchema,
   ruleSelectionIdSchema,
   runAttemptIdSchema,
@@ -255,6 +257,20 @@ export const runAttemptSchema = z
     planRevision: z.number().int().positive().optional(),
     /** execution Attempt绑定Approved Plan Step。 */
     stepId: z.string().min(1).max(100).optional(),
+    /** execution Attempt绑定不可变Execution Contract及已成功依赖血缘。 */
+    executionContractId: executionContractIdSchema.optional(),
+    dependencyRefs: z
+      .array(
+        z
+          .object({
+            stepId: z.string().min(1).max(100),
+            executionAttemptId: runAttemptIdSchema,
+            sha256: sha256Schema,
+          })
+          .strict(),
+      )
+      .max(B2_MAX_PLAN_STEPS)
+      .optional(),
     /** planning Attempt固定编译输入时的Run CAS与全部版本证据。 */
     inputRunRevision: z.number().int().positive().optional(),
     sourceMessageSha256: sha256Schema.optional(),
@@ -440,7 +456,21 @@ export const executionContractSchema = z
     steps: z.array(approvedExecutionStepSchema).min(1).max(B2_MAX_PLAN_STEPS),
     /** 从Approved Plan确定性拷贝的完成条件；验证时必须逐条有证据。 */
     completionCriteria: z.array(z.string().min(1).max(500)).min(1).max(20),
-    /** 第一版只允许无外部副作用能力；创建后不可修改。 */
+    /**
+     * Coding能力所绑定的产品Workspace。rootId只是一段服务端配置别名；
+     * 绝不把canonical path写入Product Store、Workflow checkpoint或Trace。
+     * 纯文本Contract可以没有Workspace；任何workspace/shell能力都必须有它。
+     */
+    workspaceRef: z
+      .object({
+        projectId: projectIdSchema,
+        projectResourceId: projectResourceIdSchema,
+        rootId: z.string().regex(/^root_[A-Za-z0-9]+$/u),
+        revision: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
+    /** 从Approved Plan汇总的工具能力白名单；创建后不可修改。 */
     capabilityRefs: z.array(z.string().min(1).max(100)).max(20),
     limits: z
       .object({

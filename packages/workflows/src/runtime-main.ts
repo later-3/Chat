@@ -21,6 +21,7 @@ const runtime = await createWorkflowRuntimeServer({
   bindingsPath:
     process.env.CHAT_RUNTIME_BINDINGS_PATH ?? `${repoRoot}/.data/runtime/runtime-bindings.v1.json`,
   apiBaseUrl: process.env.CHAT_API_INTERNAL_BASE_URL ?? "http://127.0.0.1:43111",
+  executorBaseUrl: process.env.CHAT_PI_EXECUTOR_INTERNAL_BASE_URL ?? "http://127.0.0.1:43115",
   credential,
   traceSink: createTraceSink(),
 });

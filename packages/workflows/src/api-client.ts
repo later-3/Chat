@@ -5,6 +5,8 @@ import {
   completeRunAttemptRequestSchema,
   beginRunAttemptRequestSchema,
   beginRunAttemptResponseSchema,
+  authorizeExecutorOperationRequestSchema,
+  authorizeExecutorOperationResponseSchema,
   expireApprovalRequestSchema,
   expireApprovalResponseSchema,
   compileExecutionContractResponseSchema,
@@ -28,6 +30,7 @@ import {
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
   type CompilePlanningInputRequest,
+  type AuthorizeExecutorOperationRequest,
   type CommitExecutionResultRequest,
   type CompileExecutionContractRequest,
   type LoadCommittedDecisionRequest,
@@ -450,6 +453,18 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
           ...input,
         }),
         beginRunAttemptResponseSchema,
+      );
+    },
+    /** Executor开工前回查Product Store权威Contract、Context和依赖血缘。 */
+    authorizeExecutorOperation(input: Omit<AuthorizeExecutorOperationRequest, "schemaVersion">) {
+      return call(
+        options,
+        "/internal/runtime/v1/authorize-executor-operation",
+        authorizeExecutorOperationRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        authorizeExecutorOperationResponseSchema,
       );
     },
     /** 完成运行尝试：标记单个plan step的attempt成功或失败（阶段C，每个step执行完调）。 */

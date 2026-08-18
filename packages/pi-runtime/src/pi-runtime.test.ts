@@ -672,7 +672,7 @@ const contract: ExecutionContract = {
 
 describe("runPiExecutor（真实pi Agent loop + faux流）", () => {
   it("Memory执行提示词使用独立v2版本证据", () => {
-    expect(EXECUTOR_VERSION).toBe("executor-prompt.v3");
+    expect(EXECUTOR_VERSION).toBe("executor-coding-agent-prompt.v1");
   });
 
   it("系统提示词把Memory限定为只读参考并由服务端确定性投影结果结构", () => {

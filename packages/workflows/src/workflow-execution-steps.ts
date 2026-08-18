@@ -5,8 +5,13 @@ import {
   type ExecutionContextItemDto,
   type ExecutionContract,
 } from "@chat/contracts";
-import type { ExecutorDependencyResult, ExecutorStepCandidate } from "@chat/pi-runtime";
+import {
+  PiExecutorRemoteError,
+  type ExecutorDependencyResult,
+  type ExecutorStepCandidate,
+} from "@chat/pi-runtime";
 import { getWorkflowRuntimeContext } from "./runtime-context.js";
+import { emitPiExecutorTrace } from "./pi-executor-trace.js";
 import {
   cmdId,
   emitCompletedProviderCall,
@@ -197,16 +202,32 @@ async function runExecutorWithinStep(input: {
       config: ctx.bailian,
       contract: input.contract,
       stepId: input.stepId,
+      executionAttemptId: input.executionAttemptId,
+      inputManifestSha256,
       contextItems: input.contextItems,
-      dependencyResults: input.dependencyResults.map(({ stepId, sha256, output, sections }) => ({
-        stepId,
-        sha256,
-        output,
-        sections,
-      })),
-      onProviderRequestStart: () =>
-        emitProviderTrace(scoped, "provider.request.started", { inputManifestSha256 }),
+      dependencyResults: input.dependencyResults.map((dependency) => dependency),
+      onEvent: (event) => emitPiExecutorTrace({ ...scoped, bailian: ctx.bailian }, event),
     });
+    if (!("kind" in result)) {
+      emitPiNodeTrace(scoped, "pi.node.completed", "executor", {
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+      const dependencyRefs = input.dependencyResults.map((dependency) => ({
+        stepId: dependency.stepId,
+        executionAttemptId: dependency.executionAttemptId,
+        sha256: dependency.sha256,
+      }));
+      const durable = {
+        ...result,
+        executionAttemptId: input.executionAttemptId,
+        inputManifestSha256,
+        dependencyRefs,
+      };
+      return {
+        ...durable,
+        sha256: hashCanonical("execution-step-result.v1", durable),
+      };
+    }
     if (result.kind === "candidate") {
       if (!emitCompletedProviderCall(scoped, inputManifestSha256, result)) {
         const errorCode = "provider.evidence_missing";
@@ -297,6 +318,14 @@ async function runExecutorWithinStep(input: {
     throw new PiStepFailure(errorCode, `pi.execute失败:${errorCode}`);
   } catch (error) {
     if (error instanceof PiStepFailure) throw error;
+    if (error instanceof PiExecutorRemoteError) {
+      const code = error.outcomeUnknown ? "executor.outcome_unknown" : error.code;
+      emitPiNodeTrace(scoped, "pi.node.failed", "executor", {
+        durationMs: Math.round(performance.now() - startedAt),
+        errorCode: code,
+      });
+      throw new PiStepFailure(code, `pi.execute服务失败:${code}`);
+    }
     const code =
       error instanceof Error && "code" in error && error.code === "provider.pre_request.no_api_key"
         ? "provider.pre_request.no_api_key"

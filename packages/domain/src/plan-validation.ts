@@ -6,6 +6,7 @@ export interface PlanSemanticStep {
   readonly stepId: string;
   readonly dependsOn: readonly string[];
   readonly requestedCapabilities: readonly string[];
+  readonly risk?: "low" | "medium" | "high";
   readonly inputRefs: readonly {
     readonly refId: string;
     readonly revision: number;
@@ -20,6 +21,7 @@ export interface PlanSemanticIssue {
     | "duplicate_dependency"
     | "dependency_not_previous"
     | "capability_not_allowed"
+    | "capability_risk_mismatch"
     | "context_ref_not_allowed";
   readonly detail: string;
 }
@@ -73,6 +75,12 @@ export function validatePlanSemantics(
         });
       }
       capabilities.add(capability);
+    }
+    if (capabilities.has("shell_execute") && step.risk !== "high") {
+      issues.push({
+        code: "capability_risk_mismatch",
+        detail: `步骤${step.stepId}请求shell_execute时风险必须标记为high`,
+      });
     }
     const contextRefs = new Set<string>();
     for (const ref of step.inputRefs) {

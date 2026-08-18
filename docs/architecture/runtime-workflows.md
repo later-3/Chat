@@ -2,7 +2,7 @@
 
 > 文档类型：当前实现（as-built）
 >
-> 当前Workflow Definition：`planning-execution-workflow.v2`、`memory-import-workflow.v1`、`project-intake-workflow.v1`、`project-advancement-workflow.v1`
+> 当前Workflow Definition：`planning-execution-workflow.v3`、`memory-import-workflow.v1`、`project-intake-workflow.v1`、`project-advancement-workflow.v1`
 >
 > 产品事实源：Product Store；Workflow返回值和Runtime状态不是产品终态。
 
@@ -26,7 +26,7 @@ API Product Command
 → Workflow Runtime私有HTTP
 → Vercel Workflow Local World / Checkpoint
 → Workflow Step
-→ API私有Application Command / pi / Memory Adapter
+→ API私有Application Command / Pi Executor Service / Memory Adapter
 → Product Commit
 ```
 
@@ -36,7 +36,8 @@ API Product Command
 | Workflow Runtime进程 | Local World、bundle、Hook、Runtime Binding、四套Workflow启动/恢复 |
 | Runtime Binding Store | 私下关联Product Run/Outbox/Approval与Workflow Run/Hook Token |
 | Workflow Store | Step结果、Hook等待、Checkpoint和重放 |
-| pi Runtime | 真实百炼Planner/Executor调用及结构化候选 |
+| pi Runtime | Planner与Pi Adapter；Executor通过私有Client访问独立AgentSession服务 |
+| Pi Executor Service | Operation幂等、AgentSession、Workspace工具、Session与安全Journal |
 | Memory Registry | 当前固定为空且不实例化Adapter；恢复memmy/MemoryCore必须重新修改组合根并经过评审 |
 | Trace/Replay | 记录系统路径并组合Product事实、版本证据进行回放 |
 
@@ -90,6 +91,8 @@ for planRevision 1..5:
         → 对每个Plan Step：
            beginExecutionAttemptStep
            → runPiExecutorStep
+              → start/reconcile Pi Operation
+              → AgentSession多轮Provider/Tool loop
            → completeRunAttemptStep
         → persistExecutionCandidateStep
         → validateExecutionStep
@@ -129,7 +132,7 @@ Hook Payload只携带产品Decision引用；Workflow不能信任浏览器原始�
 
 批准后编译不可变Execution Contract。执行按Plan依赖顺序逐步进行，每步有独立Attempt、输入Manifest Hash、依赖结果引用和候选Hash。
 
-pi Executor完成只产生候选。Workflow必须：
+Pi Coding Executor完成只产生候选。Approved Step的Capability决定可见工具；非文本能力绑定唯一活动Project Workspace。Workflow必须：
 
 1. 持久化完整Execution Candidate引用。
 2. 运行确定性Validation。
@@ -137,6 +140,10 @@ pi Executor完成只产生候选。Workflow必须：
 4. Product Store原子提交正式Assistant Message和Run终态。
 
 候选已经生成但Product Commit失败时，只重试幂等提交，不重新调用付费Executor。
+
+Executor Operation使用稳定`pio_*`身份和请求Hash。Workflow断线后按事件cursor与终态Snapshot查询同一Operation，不重新创建AgentSession。Tool调用前已耐久保存意图；进程重启发现未闭合Tool时收敛为`outcome_unknown`。完整事件与正文隔离规则见[Pi Coding Executor Service As-built](./pi-coding-executor-service.md)。
+
+Operation Start在进入Journal前还有独立授权门：Executor用`executionAttemptId + Contract ID/Hash + Step + Manifest`向Application回查Product Store，只使用API返回的权威Contract、Context和依赖引用。Runtime Key只是进程身份，不能单独授予文件或Shell能力。
 
 ## 5. MemoryImportWorkflow
 
@@ -228,7 +235,7 @@ Runtime Binding保存以下私有关系：
 | 边界 | 当前策略 |
 |---|---|
 | 纯确定性Step | 可由Workflow按耐久语义重放 |
-| Planner/Executor付费模型调用 | `maxRetries=0`；失败形成稳定错误，不自动再次扣费 |
+| Planner/Executor付费模型调用 | `maxRetries=0`；Executor通过同一Operation查询，不猜测性重启AgentSession |
 | Project Understanding付费模型调用 | `FatalError`终止Step；Candidate记录failed，不自动再次扣费 |
 | Memory外部写入 | `maxRetries=0`；发出后失联进入`outcome_unknown` |
 | Product Commit | 使用稳定Command ID幂等重试，不重新生成候选 |
@@ -238,7 +245,7 @@ Runtime Binding保存以下私有关系：
 
 ## 9. Trace与回放
 
-Trace记录：命令入口、事务、Outbox、Workflow Start/Resume、Step、Provider/Memory Attempt、状态转换、耗时、错误和产品对象引用。
+Trace记录：命令入口、事务、Outbox、Workflow Start/Resume、Step、Pi Operation/Session/Turn/Message Hash/Tool/Compaction、Provider/Memory Attempt、状态转换、耗时、错误和产品对象引用。
 
 Trace不保存：用户消息、Plan正文、Decision正文、Prompt、Provider完整Payload、Memory正文、密钥和隐藏推理。
 
@@ -269,7 +276,9 @@ Replay Assembler按产品对象ID、revision和SHA-256组合：
 | Workflow→API私有客户端 | `api-client.ts` |
 | API私有Application Router | `apps/api/src/internal-runtime-router.ts` |
 | Outbox分发与监督 | `apps/api/src/outbox-dispatcher.ts` |
-| pi Planner/Executor | `packages/pi-runtime/src/planner.ts`、`executor.ts` |
+| pi Planner / Executor Client | `packages/pi-runtime/src/planner.ts`、`executor-service-client.ts` |
+| Pi AgentSession与Operation Journal | `coding-agent-executor.ts`、`executor-operation-store.ts`、`executor-service.ts` |
+| Pi Executor进程入口 | `apps/pi-executor/src/index.ts` |
 | Project Understanding/Model Profile | `packages/pi-runtime/src/project-intake-understanding.ts`、`project-advancement-understanding.ts`、`project-model-profile.ts` |
 | Memory Adapter | `packages/memory-runtime/src/*-adapter.ts` |
 | Project Resource Adapter | `packages/project-runtime/src/registry.ts` |

@@ -28,11 +28,13 @@ export const FROZEN_PORTS = Object.freeze({
   webInternal: 43114,
   api: 43111,
   workflow: 43112,
+  piExecutor: 43115,
   workbenchLease: 43119,
   memory: 18960,
   memoryCore: 18970,
   apiInspector: 43120,
   workflowInspector: 43121,
+  piExecutorInspector: 43122,
 });
 
 // 43113曾经暴露无认证code-server。它不再是可回收服务端口：任何监听者（即使看似
@@ -43,6 +45,7 @@ export const RETIRED_MUST_BE_EMPTY_PORTS = Object.freeze([43113]);
 export const ROLE_COMMAND_FRAGMENTS = Object.freeze({
   api: ["src/index.ts", "tsx"],
   workflow: ["runtime-main.ts", "tsx"],
+  piExecutor: ["apps/pi-executor/src/index.ts", "tsx"],
   memory: ["start-fixed-memmy.mjs"],
   memoryCore: ["start-fixed-memorycore.mjs"],
   workbench: ["start-fixed-code-server.mjs"],
@@ -53,6 +56,7 @@ export const ROLE_COMMAND_FRAGMENTS = Object.freeze({
 const START_TIME_TOLERANCE_MS = 120_000;
 const MEMORY_WRAPPER_TERM_WAIT_MS = 7_000;
 const WORKBENCH_WRAPPER_TERM_WAIT_MS = 7_000;
+const PI_EXECUTOR_TERM_WAIT_MS = 10_000;
 
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -345,6 +349,9 @@ export function termWaitMsForEntry(entry, requestedTermWaitMs = 3000) {
   if (entry.role === "workbench") {
     return Math.max(requestedTermWaitMs, WORKBENCH_WRAPPER_TERM_WAIT_MS);
   }
+  if (entry.role === "piExecutor") {
+    return Math.max(requestedTermWaitMs, PI_EXECUTOR_TERM_WAIT_MS);
+  }
   return requestedTermWaitMs;
 }
 
@@ -560,6 +567,9 @@ export function roleForFrozenPort(port) {
   if (port === FROZEN_PORTS.api || port === FROZEN_PORTS.apiInspector) return "api";
   if (port === FROZEN_PORTS.workflow || port === FROZEN_PORTS.workflowInspector) {
     return "workflow";
+  }
+  if (port === FROZEN_PORTS.piExecutor || port === FROZEN_PORTS.piExecutorInspector) {
+    return "piExecutor";
   }
   if (port === FROZEN_PORTS.memory) return "memory";
   if (port === FROZEN_PORTS.memoryCore) return "memoryCore";

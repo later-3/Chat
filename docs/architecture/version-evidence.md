@@ -23,8 +23,9 @@
 | `@hono/node-server` | `^2.1.0` | MIT | Node HTTP服务器 | 替换组合根服务器 |
 | `workflow` | `4.8.0` | Apache-2.0 | 耐久Workflow API | 通过Workflow Port/Runner迁移 |
 | `@workflow/world-local` | `4.2.4` | Apache-2.0 | 本地Workflow运行 | 生产World Adapter替换 |
-| `@earendil-works/pi-agent-core` | `0.82.1` | MIT | Workflow内Agent loop | 替换`PiRuntimePort` Adapter |
-| `@earendil-works/pi-ai` | `0.82.1` | MIT | Provider/模型调用 | 替换pi Adapter |
+| `@earendil-works/pi-agent-core` | `0.84.2` | MIT | Planner与AgentSession底层loop | 替换`PiRuntimePort` Adapter |
+| `@earendil-works/pi-ai` | `0.84.2` | MIT | Provider/模型调用 | 替换pi Adapter |
+| `@earendil-works/pi-coding-agent` | `0.84.2` | MIT | 完整AgentSession、Session、工具、Skills与Compaction；外部Extension按Chat安全政策关闭，不拥有产品事实 | 替换`AgentSessionPiCodingAgentRunner`，保留Chat Operation Port |
 | `zod` | `^4.4.3` | MIT | 网络、存储和外部结果运行时校验 | 迁移全部Schema边界 |
 | `@ag-ui/core` | `0.0.57` | MIT | 公开Agent事件语义 | 保持Chat Event合同后替换 |
 
@@ -43,8 +44,8 @@ Linux构建DSH subprocess所需的`pty.node`，后者只恢复`spawn-helper`可�
 
 ### pi运行工件与能力对照源码
 
-- 实际运行工件是锁文件固定的npm `@earendil-works/pi-agent-core@0.82.1`与`@earendil-works/pi-ai@0.82.1`，发布基点为`b4f293684bba718d59cc1157679bcf6157b3a7f5`。
-- 本地能力对照源码是`/Users/xulater/Code/opc-os/pi`的`10e99ae9914cd34f622633fac42f9a90714e9cf4`；它不是运行时依赖来源。
+- 实际运行工件是锁文件固定的npm `@earendil-works/pi-agent-core@0.84.2`、`@earendil-works/pi-ai@0.84.2`与`@earendil-works/pi-coding-agent@0.84.2`。
+- 本地能力对照源码是`/Users/xulater/Code/opc-os/pi`的commit `1f2b9ff53c0adefff454f02bdcf60aeaf4d28684`、tree `a6e2c157c8ce5c225d64a9779c233d90fc28b942`（分支`codex/later-custom`）；它不是运行时依赖来源，新克隆和CI不能要求该目录存在。
 - 升级pi必须同时更新精确npm版本、lock integrity，并重跑事件、Tool、恢复和真实Provider合同门；不能用本地源码提交替代安装工件证据。
 
 ## DSH固定证据

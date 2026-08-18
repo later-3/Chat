@@ -92,4 +92,21 @@ describe("Plan语义校验", () => {
       ),
     ).toContainEqual(expect.objectContaining({ code: "context_ref_not_allowed" }));
   });
+
+  it("shell_execute必须显式标记high risk", () => {
+    expect(
+      validatePlanSemantics(
+        [
+          {
+            stepId: "shell",
+            dependsOn: [],
+            requestedCapabilities: ["shell_execute"],
+            risk: "medium",
+            inputRefs: [],
+          },
+        ],
+        { ...options, allowedCapabilities: new Set(["shell_execute"]) },
+      ),
+    ).toContainEqual(expect.objectContaining({ code: "capability_risk_mismatch" }));
+  });
 });

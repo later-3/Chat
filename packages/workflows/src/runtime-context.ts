@@ -1,8 +1,10 @@
 import type { TraceEventInput } from "@chat/contracts";
 import type { MemoryBackendRegistryPort, MemoryImportBackendRegistryPort } from "@chat/application";
 import type {
+  AgentRunResult,
   BailianConfig,
-  runPiExecutor,
+  ExecutorStepCandidate,
+  RunPiExecutorServiceInput,
   runPiNoteCapture,
   runPiPlanner,
 } from "@chat/pi-runtime";
@@ -31,7 +33,13 @@ export interface WorkflowRuntimeContext {
   readonly bailian: BailianConfig;
   readonly planner: typeof runPiPlanner;
   readonly noteCapture: typeof runPiNoteCapture;
-  readonly executor: typeof runPiExecutor;
+  /**
+   * 生产为独立Pi Executor Service Client；测试可继续注入旧单轮Executor结果，
+   * 直到旧测试fixture完成迁移。两者只在本组合根Port兼容，不形成第二套产品事实。
+   */
+  readonly executor: (
+    input: RunPiExecutorServiceInput & { readonly config: BailianConfig },
+  ) => Promise<ExecutorStepCandidate | AgentRunResult<ExecutorStepCandidate>>;
 }
 
 const CONTEXT_KEY = Symbol.for("chat.workflowRuntimeContext");

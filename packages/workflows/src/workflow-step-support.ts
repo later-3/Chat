@@ -90,10 +90,16 @@ export function providerResultTraceDetails(meta: ProviderCallMeta): {
   readonly providerStopReason?: "stop" | "length" | "toolUse" | "error" | "aborted";
   readonly toolCallCount?: number;
 } {
+  const providerStopReason =
+    meta.providerStopReason === "stop" ||
+    meta.providerStopReason === "length" ||
+    meta.providerStopReason === "toolUse" ||
+    meta.providerStopReason === "error" ||
+    meta.providerStopReason === "aborted"
+      ? meta.providerStopReason
+      : undefined;
   return {
-    ...(meta.providerStopReason !== undefined
-      ? { providerStopReason: meta.providerStopReason }
-      : {}),
+    ...(providerStopReason !== undefined ? { providerStopReason } : {}),
     ...(meta.toolCallCount !== undefined ? { toolCallCount: meta.toolCallCount } : {}),
   };
 }

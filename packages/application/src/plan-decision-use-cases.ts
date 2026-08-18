@@ -25,7 +25,11 @@ import type {
   RunDto,
   SubmitDecisionPayload,
 } from "@chat/contracts";
-import { B2_MAX_PLAN_STEPS, EXECUTION_CAPABILITY_MARKDOWN_COMPOSE } from "@chat/contracts";
+import {
+  B2_MAX_PLAN_STEPS,
+  EXECUTION_CAPABILITIES,
+  EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
+} from "@chat/contracts";
 import { DEFAULT_APPROVAL_TTL_MS, type ApplicationDeps } from "./deps.js";
 import { toApprovalDto, toDecisionDto, toPlanDto, toRunDto } from "./dto.js";
 import { ApplicationError, forbidden, notFound, revisionConflict } from "./errors.js";
@@ -240,7 +244,7 @@ export async function publishPlanForReview(
           typeof frozenMaxSteps === "number" && Number.isInteger(frozenMaxSteps)
             ? frozenMaxSteps
             : B2_MAX_PLAN_STEPS,
-        allowedCapabilities: new Set([EXECUTION_CAPABILITY_MARKDOWN_COMPOSE]),
+        allowedCapabilities: new Set(EXECUTION_CAPABILITIES),
         allowedContextRefs,
       });
       if (semanticIssues.length !== 0) {
@@ -249,6 +253,29 @@ export async function publishPlanForReview(
           httpStatus: 400,
           message: semanticIssues[0]?.detail ?? "Plan语义校验失败",
         });
+      }
+      const requiresWorkspace = input.content.steps.some((step) =>
+        step.requestedCapabilities.some(
+          (capability) => capability !== EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
+        ),
+      );
+      if (requiresWorkspace) {
+        const workspaces =
+          projectContext === undefined
+            ? []
+            : Object.values(draft.entities.projectResources).filter(
+                (resource) =>
+                  resource.projectId === projectContext.projectId &&
+                  resource.kind === "workspace" &&
+                  resource.status === "active",
+              );
+        if (projectContext === undefined || workspaces.length !== 1) {
+          throw new ApplicationError({
+            code: "validation_failed",
+            httpStatus: 400,
+            message: "Workspace/Shell Capability必须绑定唯一活动Project Workspace",
+          });
+        }
       }
 
       // 生命周期：允许从pending/queued或running/planning进入审核中

@@ -648,6 +648,32 @@ export const beginRunAttemptResponseSchema = z
   })
   .strict();
 
+/**
+ * Executor Service在接触Workspace前回查Application权威事实。Workflow提交的Contract/
+ * Context正文不能仅凭Runtime Key被信任；API按Execution Attempt返回权威副本。
+ */
+export const authorizeExecutorOperationRequestSchema = z
+  .object({
+    ...versioned,
+    executionAttemptId: runAttemptIdSchema,
+    executionContractId: executionContractIdSchema,
+    executionContractSha256: sha256Schema,
+    stepId: z.string().min(1).max(100),
+    inputManifestSha256: sha256Schema,
+  })
+  .strict();
+
+export const authorizeExecutorOperationResponseSchema = z
+  .object({
+    ...versioned,
+    productRunId: productRunIdSchema,
+    executionAttemptId: runAttemptIdSchema,
+    contract: executionContractSchema,
+    contextItems: z.array(executionContextItemDtoSchema).max(50),
+    dependencyRefs: z.array(executionDependencyRefSchema).max(50),
+  })
+  .strict();
+
 export const completeRunAttemptRequestSchema = z.discriminatedUnion("outcome", [
   z
     .object({
@@ -1239,6 +1265,12 @@ export type CommitRunOutcomeUnknownRuntimeRequest = z.infer<
 export type ExpireApprovalRequest = z.infer<typeof expireApprovalRequestSchema>;
 export type BeginRunAttemptRequest = z.infer<typeof beginRunAttemptRequestSchema>;
 export type BeginRunAttemptResponse = z.infer<typeof beginRunAttemptResponseSchema>;
+export type AuthorizeExecutorOperationRequest = z.infer<
+  typeof authorizeExecutorOperationRequestSchema
+>;
+export type AuthorizeExecutorOperationResponse = z.infer<
+  typeof authorizeExecutorOperationResponseSchema
+>;
 export type CompleteRunAttemptRequest = z.infer<typeof completeRunAttemptRequestSchema>;
 export type LoadWorkflowRunSpecRequest = z.infer<typeof loadWorkflowRunSpecRequestSchema>;
 export type LoadWorkflowRunSpecResponse = z.infer<typeof loadWorkflowRunSpecResponseSchema>;

@@ -220,6 +220,30 @@ export function createServiceDefinitions({
   const providerEnvironment = join(repoRoot, "scripts/debug/load-provider-env.mjs");
   const services = [];
 
+  const executorArgs = [];
+  if (debug) executorArgs.push(`--inspect=127.0.0.1:${FROZEN_PORTS.piExecutorInspector}`);
+  executorArgs.push("--import", providerEnvironment);
+  executorArgs.push(
+    "--import",
+    join(repoRoot, "apps/pi-executor/node_modules/tsx/dist/loader.mjs"),
+    join(repoRoot, "apps/pi-executor/src/index.ts"),
+  );
+  services.push({
+    id: "piExecutor",
+    role: "piExecutor",
+    port: FROZEN_PORTS.piExecutor,
+    command: process.execPath,
+    args: executorArgs,
+    cwd: repoRoot,
+    env: {
+      ...commonEnvironment(repoRoot, environment),
+      CHAT_PI_EXECUTOR_PORT: String(FROZEN_PORTS.piExecutor),
+    },
+    readyUrl: `http://127.0.0.1:${FROZEN_PORTS.piExecutor}/healthz`,
+    timeoutMs: 30_000,
+    stopTimeoutMs: 10_000,
+  });
+
   const workflowArgs = [];
   if (debug) workflowArgs.push(`--inspect=127.0.0.1:${FROZEN_PORTS.workflowInspector}`);
   workflowArgs.push("--import", providerEnvironment);
@@ -239,6 +263,7 @@ export function createServiceDefinitions({
       ...commonEnvironment(repoRoot, environment),
       CHAT_MEMORY_ENABLED: "0",
       CHAT_WORKFLOW_PORT: String(FROZEN_PORTS.workflow),
+      CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${FROZEN_PORTS.piExecutor}`,
     },
     readyUrl: `http://127.0.0.1:${FROZEN_PORTS.workflow}/healthz`,
     timeoutMs: 30_000,

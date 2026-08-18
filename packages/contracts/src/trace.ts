@@ -139,6 +139,23 @@ export const TRACE_EVENT_NAMES = {
   piNodeStarted: "pi.node.started",
   piNodeCompleted: "pi.node.completed",
   piNodeFailed: "pi.node.failed",
+  piOperationAccepted: "pi.operation.accepted",
+  piOperationStarted: "pi.operation.started",
+  piOperationCompleted: "pi.operation.completed",
+  piOperationFailed: "pi.operation.failed",
+  piOperationOutcomeUnknown: "pi.operation.outcome_unknown",
+  piSessionStarted: "pi.session.started",
+  piSessionSettled: "pi.session.settled",
+  piTurnStarted: "pi.turn.started",
+  piTurnCompleted: "pi.turn.completed",
+  piMessageCompleted: "pi.message.completed",
+  piToolIntentPersisted: "pi.tool.intent_persisted",
+  piToolBlocked: "pi.tool.blocked",
+  piToolCompleted: "pi.tool.completed",
+  piToolFailed: "pi.tool.failed",
+  piToolOutcomeUnknown: "pi.tool.outcome_unknown",
+  piCompactionStarted: "pi.compaction.started",
+  piCompactionCompleted: "pi.compaction.completed",
   executionValidated: "execution.validated",
   executionRejected: "execution.rejected",
   productCommitStarted: "product_commit.started",
@@ -1246,7 +1263,14 @@ const providerSharedFields = {
 };
 
 /** Provider终止原因与工具调用计数只描述代码路径，不包含请求/响应正文。 */
-export const providerStopReasonSchema = z.enum(["stop", "length", "toolUse", "error", "aborted"]);
+export const providerStopReasonSchema = z.enum([
+  "stop",
+  "length",
+  "toolUse",
+  "error",
+  "aborted",
+  "deferred",
+]);
 const providerResultDiagnostics = {
   providerStopReason: providerStopReasonSchema.optional(),
   toolCallCount: z.number().int().nonnegative().max(64).optional(),
@@ -1259,6 +1283,13 @@ const providerRequestStartedSchema = defineTraceEvent(
     ...modelScopedFields,
     ...providerSharedFields,
     inputManifestSha256: sha256Schema,
+    piOperationId: z
+      .string()
+      .regex(/^pio_[A-Za-z0-9]+$/u)
+      .optional(),
+    operationEventSequence: z.number().int().positive().optional(),
+    providerRequestIndex: z.number().int().positive().max(1000).optional(),
+    sourceTimestamp: z.iso.datetime().optional(),
     ...durationMsOptional,
   },
 );
@@ -1273,6 +1304,13 @@ const providerRequestCompletedSchema = defineTraceEvent(
     providerRequestId: providerRequestIdSchema,
     tokenUsage: tokenUsageSchema,
     inputManifestSha256: sha256Schema,
+    piOperationId: z
+      .string()
+      .regex(/^pio_[A-Za-z0-9]+$/u)
+      .optional(),
+    operationEventSequence: z.number().int().positive().optional(),
+    providerRequestIndex: z.number().int().positive().max(1000).optional(),
+    sourceTimestamp: z.iso.datetime().optional(),
     ...providerResultDiagnostics,
     ...durationMsRequired,
   },
@@ -1288,6 +1326,13 @@ const providerRequestFailedSchema = defineTraceEvent(
     httpStatus: httpStatusCodeSchema.optional(),
     providerRequestId: providerRequestIdSchema.optional(),
     inputManifestSha256: sha256Schema.optional(),
+    piOperationId: z
+      .string()
+      .regex(/^pio_[A-Za-z0-9]+$/u)
+      .optional(),
+    operationEventSequence: z.number().int().positive().optional(),
+    providerRequestIndex: z.number().int().positive().max(1000).optional(),
+    sourceTimestamp: z.iso.datetime().optional(),
     ...providerResultDiagnostics,
     ...durationMsRequired,
   },
@@ -1355,6 +1400,168 @@ const piNodeFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piNodeFailed, "fai
   ...durationMsOptional,
 });
 
+/* ---------- 完整Pi Coding Agent可观察执行事件 ---------- */
+
+const piOperationIdSchema = z.string().regex(/^pio_[A-Za-z0-9]+$/u);
+const piRuntimeSessionIdSchema = z
+  .string()
+  .regex(/^pis_[A-Za-z0-9-]+$/u)
+  .max(128);
+const operationEventSequenceSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+const piTurnIndexSchema = z.number().int().nonnegative().max(1000);
+const piToolNameSchema = z.enum(["read", "grep", "find", "ls", "edit", "write", "bash"]);
+const piOperationFields = {
+  ...modelScopedFields,
+  piOperationId: piOperationIdSchema,
+  operationEventSequence: operationEventSequenceSchema,
+  sourceTimestamp: z.iso.datetime(),
+};
+const piSessionFields = { ...piOperationFields, piRuntimeSessionId: piRuntimeSessionIdSchema };
+
+const piOperationAcceptedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.piOperationAccepted,
+  "unknown",
+  {
+    ...piOperationFields,
+    requestSha256: sha256Schema,
+    workspaceRootId: z
+      .string()
+      .regex(/^root_[A-Za-z0-9]+$/u)
+      .optional(),
+    ...durationMsOptional,
+  },
+);
+const piOperationStartedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piOperationStarted, "unknown", {
+  ...piOperationFields,
+  requestSha256: sha256Schema,
+  ...durationMsOptional,
+});
+const piOperationCompletedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.piOperationCompleted,
+  "success",
+  {
+    ...piOperationFields,
+    requestSha256: sha256Schema,
+    resultSha256: sha256Schema,
+    ...durationMsRequired,
+  },
+);
+const piOperationFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piOperationFailed, "failure", {
+  ...piOperationFields,
+  requestSha256: sha256Schema,
+  error: traceErrorSchema,
+  ...durationMsRequired,
+});
+const piOperationOutcomeUnknownSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.piOperationOutcomeUnknown,
+  "unknown",
+  {
+    ...piOperationFields,
+    requestSha256: sha256Schema,
+    error: traceErrorSchema,
+    ...durationMsRequired,
+  },
+);
+const piSessionStartedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piSessionStarted, "unknown", {
+  ...piSessionFields,
+  enabledTools: z.array(piToolNameSchema).max(7),
+  ...durationMsOptional,
+});
+const piSessionSettledSchema = defineTraceEvent(TRACE_EVENT_NAMES.piSessionSettled, "success", {
+  ...piSessionFields,
+  turnCount: z.number().int().nonnegative().max(1000),
+  providerRequestCount: z.number().int().nonnegative().max(1000),
+  ...durationMsOptional,
+});
+const piTurnStartedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piTurnStarted, "unknown", {
+  ...piSessionFields,
+  turnIndex: piTurnIndexSchema,
+  ...durationMsOptional,
+});
+const piTurnCompletedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piTurnCompleted, "success", {
+  ...piSessionFields,
+  turnIndex: piTurnIndexSchema,
+  ...durationMsRequired,
+});
+const piMessageCompletedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piMessageCompleted, "success", {
+  ...piSessionFields,
+  messageIndex: z.number().int().nonnegative().max(100_000),
+  messageRole: z.enum(["user", "assistant", "toolResult", "custom"]),
+  contentSha256: sha256Schema,
+  providerStopReason: providerStopReasonSchema.optional(),
+  tokenUsage: tokenUsageSchema.optional(),
+  ...durationMsOptional,
+});
+const piToolIntentPersistedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.piToolIntentPersisted,
+  "unknown",
+  {
+    ...piSessionFields,
+    turnIndex: piTurnIndexSchema,
+    toolCallId: z.string().min(1).max(160),
+    toolName: piToolNameSchema,
+    inputSha256: sha256Schema,
+    ...durationMsOptional,
+  },
+);
+const piToolBlockedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piToolBlocked, "rejected", {
+  ...piSessionFields,
+  turnIndex: piTurnIndexSchema,
+  toolCallId: z.string().min(1).max(160),
+  toolName: piToolNameSchema,
+  inputSha256: sha256Schema,
+  error: traceErrorSchema,
+  ...durationMsOptional,
+});
+const piToolCompletedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piToolCompleted, "success", {
+  ...piSessionFields,
+  turnIndex: piTurnIndexSchema,
+  toolCallId: z.string().min(1).max(160),
+  toolName: piToolNameSchema,
+  resultSha256: sha256Schema,
+  ...durationMsRequired,
+});
+const piToolFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piToolFailed, "failure", {
+  ...piSessionFields,
+  turnIndex: piTurnIndexSchema,
+  toolCallId: z.string().min(1).max(160),
+  toolName: piToolNameSchema,
+  resultSha256: sha256Schema,
+  error: traceErrorSchema,
+  ...durationMsRequired,
+});
+const piToolOutcomeUnknownSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.piToolOutcomeUnknown,
+  "unknown",
+  {
+    ...piSessionFields,
+    turnIndex: piTurnIndexSchema,
+    toolCallId: z.string().min(1).max(160),
+    toolName: piToolNameSchema,
+    inputSha256: sha256Schema,
+    ...durationMsOptional,
+  },
+);
+const piCompactionStartedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.piCompactionStarted,
+  "unknown",
+  {
+    ...piSessionFields,
+    reason: z.enum(["manual", "threshold", "overflow"]),
+    ...durationMsOptional,
+  },
+);
+const piCompactionCompletedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.piCompactionCompleted,
+  "success",
+  {
+    ...piSessionFields,
+    reason: z.enum(["manual", "threshold", "overflow"]),
+    aborted: z.boolean(),
+    ...durationMsOptional,
+  },
+);
+
 // 执行验证：Run + Attempt。
 const executionValidatedSchema = defineTraceEvent(TRACE_EVENT_NAMES.executionValidated, "success", {
   ...runScopedFields,
@@ -1398,7 +1605,7 @@ const productCommitFailedSchema = defineTraceEvent(
 );
 
 // 本地调试生命周期。
-const debugRoleSchema = z.enum(["api", "web", "workflow"]);
+const debugRoleSchema = z.enum(["api", "web", "workflow", "pi_executor"]);
 const debugPortSchema = z.number().int().min(1).max(65535);
 
 const serviceDebugStartedSchema = defineTraceEvent(
@@ -1499,6 +1706,23 @@ export const traceEventSchema = z.discriminatedUnion("eventName", [
   piNodeStartedSchema,
   piNodeCompletedSchema,
   piNodeFailedSchema,
+  piOperationAcceptedSchema,
+  piOperationStartedSchema,
+  piOperationCompletedSchema,
+  piOperationFailedSchema,
+  piOperationOutcomeUnknownSchema,
+  piSessionStartedSchema,
+  piSessionSettledSchema,
+  piTurnStartedSchema,
+  piTurnCompletedSchema,
+  piMessageCompletedSchema,
+  piToolIntentPersistedSchema,
+  piToolBlockedSchema,
+  piToolCompletedSchema,
+  piToolFailedSchema,
+  piToolOutcomeUnknownSchema,
+  piCompactionStartedSchema,
+  piCompactionCompletedSchema,
   executionValidatedSchema,
   executionRejectedSchema,
   productCommitStartedSchema,

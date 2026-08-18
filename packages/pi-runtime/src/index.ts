@@ -3,6 +3,8 @@ export * from "./errors.js";
 export * from "./agent-runner.js";
 export * from "./planner.js";
 export * from "./executor.js";
+export * from "./executor-service-contract.js";
+export * from "./executor-service-client.js";
 export * from "./project-intake-understanding.js";
 export * from "./project-advancement-understanding.js";
 export * from "./project-model-profile.js";

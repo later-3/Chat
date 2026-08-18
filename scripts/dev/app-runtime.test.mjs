@@ -196,7 +196,7 @@ test("服务图永远不启动或装配Memory", () => {
   const disabled = createServiceDefinitions({ root: ROOT, environment: {} });
   assert.deepEqual(
     disabled.map((service) => service.id),
-    ["workflow", "api", "workbench", "web"],
+    ["piExecutor", "workflow", "api", "workbench", "web"],
   );
   const disabledById = Object.fromEntries(disabled.map((service) => [service.id, service]));
   assert.equal(disabledById.workflow.env.CHAT_MEMORY_ENABLED, "0");
@@ -413,7 +413,7 @@ test("stopped status仍读取同一合同并明确显示停止状态", async () 
   ]);
 });
 
-test("debug只为Chat拥有的API与Workflow开放Inspector", () => {
+test("debug只为Chat拥有的API、Workflow与Pi Executor开放Inspector", () => {
   const services = createServiceDefinitions({
     root: ROOT,
     debug: true,
@@ -421,6 +421,7 @@ test("debug只为Chat拥有的API与Workflow开放Inspector", () => {
   });
   const args = Object.fromEntries(services.map((service) => [service.id, service.args.join(" ")]));
   assert.match(args.workflow, /--inspect=127\.0\.0\.1:43121/u);
+  assert.match(args.piExecutor, /--inspect=127\.0\.0\.1:43122/u);
   assert.match(args.api, /--inspect=127\.0\.0\.1:43120/u);
   assert.equal(args.memmy, undefined);
   assert.equal(args.memorycore, undefined);
