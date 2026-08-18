@@ -7,20 +7,24 @@ import {
   decisionResponseSchema,
   exactMessageResponseSchema,
   lifeosWorkflowOptionSchema,
+  noteCandidateResponseSchema,
+  noteDecisionResponseSchema,
   plansResponseSchema,
   problemSchema,
   runResponseSchema,
   submitMessageResponseSchema,
   type ChatApproval,
   type ChatMessage,
+  type ChatNoteCandidate,
   type ChatPlan,
   type ChatRun,
   type ChatSession,
   type DecisionRequest,
+  type NoteDecisionRequest,
   type LifeosWorkflowOption,
   type WorkflowSelection,
 } from "./contracts.ts";
-import type { PendingDecision } from "./state-store.ts";
+import type { PendingDecision, PendingNoteDecision } from "./state-store.ts";
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
@@ -186,6 +190,22 @@ export class ChatProductClient {
     return value.approval;
   }
 
+  async getNoteCandidate(
+    productRunId: string,
+    signal?: AbortSignal,
+  ): Promise<ChatNoteCandidate | null> {
+    try {
+      return await this.request(
+        `/api/runs/${encodeURIComponent(productRunId)}/note-candidates/current`,
+        noteCandidateResponseSchema,
+        withSignal(signal),
+      );
+    } catch (error) {
+      if (error instanceof ChatProductApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
   async getMessage(
     sessionId: string,
     messageId: string,
@@ -230,6 +250,39 @@ export class ChatProductClient {
       },
     );
     return value.run;
+  }
+
+  async submitNoteDecision(
+    pending: PendingNoteDecision,
+    request: NoteDecisionRequest,
+    signal?: AbortSignal,
+  ): Promise<ChatNoteCandidate> {
+    const payload = {
+      productRunId: pending.productRunId,
+      noteCandidateId: pending.noteCandidateId,
+      candidateRevision: pending.candidateRevision,
+      candidateSha256: pending.candidateSha256,
+      kind: pending.request.kind,
+      ...(pending.request.kind === "request_revision"
+        ? { revisionInstruction: request.explanation }
+        : pending.request.kind === "reject" && request.explanation !== undefined
+          ? { reason: request.explanation }
+          : {}),
+    };
+    const value = await this.request(
+      `/api/runs/${encodeURIComponent(pending.productRunId)}/note-decisions`,
+      noteDecisionResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          commandId: pending.commandId,
+          expectedRevision: pending.expectedRunRevision,
+          payload,
+        }),
+        ...withSignal(signal),
+      },
+    );
+    return value.candidate;
   }
 
   private async request<T>(path: string, schema: ZodType<T>, init: RequestInit = {}): Promise<T> {

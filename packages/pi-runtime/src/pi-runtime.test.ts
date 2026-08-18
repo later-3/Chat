@@ -945,6 +945,9 @@ describe("Provider配置与错误归一化", () => {
     expect(ok.endpointHost).toBe("dashscope.aliyuncs.com");
     expect(isBailianReady(ok)).toBe(true);
     expect(isBailianReady(loadBailianConfig({}))).toBe(false);
+    expect(loadBailianConfig({ DASHSCOPE_BASE_URL: "" }).baseUrl).toBe(
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    );
   });
 
   it("错误特征映射到稳定错误族", () => {

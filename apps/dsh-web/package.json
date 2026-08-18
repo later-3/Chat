@@ -8,7 +8,7 @@
     "dev": "pnpm prepare:profile && node ../../scripts/dsh/start-web.mjs",
     "prepare:profile": "node ../../scripts/dsh/prepare-web-profile.mjs",
     "start": "pnpm prepare:profile && node ../../scripts/dsh/start-web.mjs",
-    "test": "node --test ../../scripts/dsh/profile-runtime.test.mjs ../../scripts/dsh/web-gateway.test.mjs ../../scripts/dsh/web-auth.test.mjs ../../scripts/e2e/dsh-real-environment.test.mjs ../../scripts/e2e/dsh-real-terminal-canary.test.mjs",
+    "test": "node --test ../../scripts/dsh/plugin-registry.test.mjs ../../scripts/dsh/profile-runtime.test.mjs ../../scripts/dsh/web-gateway.test.mjs ../../scripts/dsh/web-auth.test.mjs ../../scripts/e2e/dsh-real-environment.test.mjs ../../scripts/e2e/dsh-real-terminal-canary.test.mjs && TSX_TSCONFIG_PATH=../../packages/dsh-lifeos-bridge/tsconfig.json node --import tsx --test tests/*.test.mjs",
     "test:e2e:real": "node ../../scripts/e2e/preflight-dsh-real.mjs && playwright test --config playwright.dsh-real.config.ts",
     "test:e2e:workbench-real": "node ../../scripts/e2e/run-dsh-workbench-real.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -16,6 +16,7 @@
   "dependencies": {
     "@chat/dsh-lifeos-bridge": "workspace:*",
     "@deepseek-ai/dsh": "0.1.0-rc.6",
+    "dsh-mobile-hanui": "0.2.4",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },
@@ -23,6 +24,7 @@
     "@chat/contracts": "workspace:*",
     "@playwright/test": "1.62.1",
     "@types/node": "^22.20.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.9.3",
     "zod": "^4.4.3"
   }

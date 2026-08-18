@@ -4,6 +4,9 @@
 Chat API、Vercel Workflow与可选Code Workbench组成；Memory Provider代码暂时保留但默认关闭。不要再安装
 旧`apps/web`、Agent Canvas，也不要手工克隆DSH或其他上游源码到固定个人目录。
 
+Code Workbench当前为Beta：本地实现与固定工件继续保留，但不进入通用CI/CD，也不进入远程部署。
+只使用Chat/PWA时，可在setup和启动阶段都传入`--workbench=off`，避免下载和运行code-server。
+
 ## 1. 支持范围
 
 | 项目 | 要求 |
@@ -40,11 +43,18 @@ cp .env.example .env
 pnpm run setup
 ```
 
+仅准备当前稳定核心服务时使用：
+
+```bash
+pnpm run setup --workbench=off
+```
+
 `pnpm run setup`是幂等准备命令，它会：
 
 1. 校验平台、Node、pnpm、Git、tar与npm；
 2. 下载并校验固定`code-server@4.132.0`工件；
-3. 构建Workflow Bundle和LifeOS Bridge，准备固定DSH Web Profile；
+3. 校验[DSH插件登记表](../../config/dsh-plugins.json)、锁定工件和许可证，构建Workflow
+   Bundle与LifeOS Bridge，再准备固定DSH Web Profile；
 4. 只生成可重建缓存，不启动任何服务。
 
 当前不准备Memory；统一setup没有启用参数。固定commit/tree、lock和原生工件Hash代码继续
@@ -57,6 +67,16 @@ pnpm run setup
 Git mirror只有通过`CHAT_MEMMY_SOURCE_REPO`或
 `CHAT_TENCENT_MEMORYCORE_SOURCE_REPO`显式指定绝对路径时才会使用，默认安装绝不依赖
 个人目录；mirror也必须通过同一commit/tree校验。
+
+查看、校验或人工检查DSH插件更新使用：
+
+```bash
+pnpm dsh:plugins:list
+pnpm dsh:plugins:verify
+pnpm dsh:plugins:check-updates
+```
+
+最后一项只查询上游最新发布并报告，不修改依赖、profile或生产运行时，也不自动合并。
 
 `.env`中的`DASHSCOPE_API_KEY`只在真实规划/执行时需要。Key为空时安装和服务启动仍应
 成功，模型能力会明确报告`Provider not ready`，不会切换假模型。若要复用本机已有pi
@@ -76,7 +96,7 @@ pnpm dev:status
 pnpm dev:stop
 ```
 
-默认同时启用Code Workbench；临时不需要时使用：
+默认命令仍可启用Beta Code Workbench；当前只使用Chat/PWA时建议关闭：
 
 ```bash
 pnpm dev -- --workbench=off

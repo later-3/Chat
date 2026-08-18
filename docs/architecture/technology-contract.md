@@ -91,16 +91,17 @@ Query读取资源并返回revision/ETag/cursor；Command表达一次用户意图
 
 ## 6. HITL合同
 
-1. Workflow创建私有Hook并请求Application创建Approval事实。
-2. 用户通过DSH Client表面读取Plan/Approval。
-3. Client把意图交给Bridge Host；Host提交Chat Decision Command。
-4. Application校验Principal、Run revision、Plan/Approval版本与Hash，并原子提交Decision和Resume Outbox。
+1. Workflow创建私有Hook并请求Application创建Approval或Note Candidate事实。
+2. 用户通过DSH Client表面读取Plan/Approval或安全Note Candidate审核DTO。
+3. Client把意图交给Bridge Host；Host提交Chat Plan Decision或Note Decision Command。
+4. Application校验Principal、Run revision以及Plan/Approval或Candidate的版本与Hash，并原子提交Decision和Resume Outbox。
 5. 后端Dispatcher私下恢复Hook。
 
 浏览器永远不持有Hook Token。
 
 ## 7. Workbench合同
 
+- 当前状态是Beta：实现保留，但不进入通用CI/CD或远程部署；只有单独启用、修改或准备提升为稳定能力时才执行真实Workbench完成门。
 - code-server作为独立进程运行，不拆UI组件，也不复制上游源码。
 - 当前只打开精确`CHAT_REPO_ROOT`，使用清洗后的环境、隔离HOME和独立user-data/extensions目录。
 - code-server仅绑定受管0600 Unix socket且不监听TCP；Web Gateway代理HTTP与全部动态WebSocket，并将Workbench放在与DSH不同的虚拟Host Origin。
@@ -112,7 +113,7 @@ Query读取资源并返回revision/ETag/cursor；Command表达一次用户意图
 
 ## 8. 实时与恢复
 
-当前Bridge使用公开Query恢复Run、Messages、Plan和Approval。未来加入Chat拥有的SSE Cursor Journal时，它只提供有序事件和资源失效通知，不成为产品事实源，也不改变Query/Command合同。
+当前Bridge使用公开Query恢复Run、Messages、Plan/Approval和Note Candidate。未来加入Chat拥有的SSE Cursor Journal时，它只提供有序事件和资源失效通知，不成为产品事实源，也不改变Query/Command合同。
 
 必须覆盖：浏览器刷新、DSH Host重启、API重启、Workflow Worker恢复、重复Command、响应丢失、过期Decision、Provider结果未知和Workbench进程崩溃。
 
@@ -126,4 +127,4 @@ Query读取资源并返回revision/ETag/cursor；Command表达一次用户意图
 2. DSH原生Host与Client插件真实启动，不是旁路Adapter页面。
 3. 真实浏览器完成发送、Plan、修订/批准/拒绝、执行、正式回复与刷新恢复。
 4. 浏览器Bundle/响应/日志不泄漏凭据或Runtime私有身份。
-5. Workbench真实验证Files、Terminal、Git与Diff，WebSocket和停止回收通过。
+5. Workbench不属于当前通用CI/CD完成门；单独启用、修改或准备提升为稳定能力时，必须真实验证Files、Terminal、Git与Diff，以及WebSocket和停止回收。

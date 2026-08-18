@@ -1,7 +1,7 @@
 # Chat 可配置工作流 As-built
 
 > 日期：2026-08-10
-> 状态：后端产品事实、运行内核与公开API已落地；旧Web展示层已删除，DSH表面按当前路线逐项接入
+> 状态：后端产品事实、运行内核与公开API已落地；旧Web展示层已删除，DSH已接入Planning与Note人工审核表面
 > 范围：运行投影、受限定义内核、Planning、Note、Rules、Definition、迁移与验收
 
 ## 1. 用户结果
@@ -20,7 +20,7 @@
 - 刷新、进程重启或重复提交后继续同一产品Run，不重复消费已经提交的决定或副作用；
 - 查询正式Note、历史Revision和来源，维护带Revision/Tag/Scope的规则并把精确Rule Revision注入规划。
 
-DSH首个桥接面只交付原生对话与Planning HITL。Run Viewer、Note、Rules和Definition编辑仍是已存在的Chat API能力，但在对应DSH Client插件完成前不能写成当前用户界面已经可操作。
+DSH桥接面已经交付原生对话、Planning HITL与Note Candidate审核。Note审核读取安全DTO并支持确认、要求修订和拒绝；Candidate正文、标签、类型和来源数量在手机/桌面同一卡片中可见。Note列表/历史编辑、Run Viewer、Rules和Definition编辑仍是已存在的Chat API能力，但在对应DSH Client插件完成前不能写成当前用户界面已经可操作。
 
 与原始目标对照，本次真正交付的是受限Kernel、运行观察、Memory/Project/Rules配置化Planning、人工审核循环、执行/验证/提交、Note、Rules和Designer。正式Research产品事实与正式Skill集合/授权/冻结/消费链尚未交付；它们保留为原始目标中的明确延期项，不用兼容节点、空资源目录或`optional_unavailable`冒充完成。
 
@@ -148,7 +148,7 @@ Workflow Definition/View、Note和Rules均不依赖具体前端渲染库。旧We
 
 ## 10. 验证与剩余边界
 
-自动门覆盖Contracts、Domain、Application、Store、Workflow、Runtime、API、迁移、并发、权限、IDOR、容量和Checkpoint正文扫描。旧Web浏览器证据只存在于Git历史；当前用户界面必须重新通过DSH真实浏览器纵向，不能沿用旧UI结论。
+自动门覆盖Contracts、Domain、Application、Store、Workflow、Runtime、API、迁移、并发、权限、IDOR、容量和Checkpoint正文扫描。旧Web浏览器证据只存在于Git历史；当前用户界面必须重新通过DSH真实浏览器纵向，不能沿用旧UI结论。Note Bridge的确定性纵向覆盖Candidate投影、版本/Hash绑定决定、断网原样重试和正式Assistant Message收敛；部署前仍须补真实手机浏览器证据。
 
 既有Planner、Executor与Note Capture真实Provider门已通过并保存脱敏证据。DSH切换后的浏览器门以当前根脚本为准；已删除的旧Web Playwright命令不再是当前完成门。
 
@@ -158,4 +158,4 @@ pnpm test:provider:bailian:note
 pnpm test:e2e:dsh-real
 ```
 
-Research与Skill仍是产品范围延期，不是Provider问题。Definition和Run View的DSH表面尚待单独纵向接入。
+Research与Skill仍是产品范围延期，不是Provider问题。Note列表/历史编辑、Definition和Run View的DSH表面尚待单独纵向接入。

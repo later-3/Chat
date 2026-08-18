@@ -78,6 +78,7 @@ export function resolveDshWebRuntime(root, environment = process.env) {
     dshHome: join(repoRoot, ".data", "dsh-home"),
     profileDir: join(repoRoot, ".data", "dsh-home", "profiles", "web"),
     bridgePackageDir: join(repoRoot, "packages", "dsh-lifeos-bridge"),
+    mobileShellPackageDir: join(repoRoot, "apps", "dsh-web", "node_modules", "dsh-mobile-hanui"),
     bridgeBundlePath: join(repoRoot, BRIDGE_BUNDLE_RELATIVE_PATH),
     apiBaseUrl: configuredUrl(environment, "CHAT_API_BASE_URL", "http://127.0.0.1:43111"),
     statePath: resolve(
@@ -179,20 +180,21 @@ export function dshBridgeInstallArgs(runtime) {
 
 /**
  * 移动端外壳：固定 dsh-mobile-hanui@0.2.4（MIT，零运行时依赖，仅客户端DOM/CSS
- * 适配，无网络外发）。复用决定见 docs/deployment/remote-pwa-gateway.md；升级只
- * 改这里并由 dsh-mobile-hanui E2E 合同验收。运行时可用 ?mobileShell=0 关闭。
+ * 适配，无网络外发）。根workspace的精确依赖与pnpm-lock拥有下载/integrity事实，
+ * DSH profile只link已验证工件，不在可重建.data中二次解析npm。运行时可用
+ * ?mobileShell=0关闭。
  */
 export const DSH_MOBILE_SHELL_PACKAGE = "dsh-mobile-hanui";
 export const DSH_MOBILE_SHELL_VERSION = "0.2.4";
 
-export function dshMobileShellInstallArgs() {
+export function dshMobileShellInstallArgs(runtime) {
   return [
     "plugin",
     "--profile",
     "web",
     "add",
     "--save-exact",
-    `${DSH_MOBILE_SHELL_PACKAGE}@${DSH_MOBILE_SHELL_VERSION}`,
+    `link:${runtime.mobileShellPackageDir}`,
   ];
 }
 
@@ -387,6 +389,7 @@ export function assertManagedWebProfileReady(runtime) {
     profileManifestPath,
     join(runtime.profileDir, "cordis.patch.yml"),
     join(runtime.profileDir, "node_modules", "@chat", "dsh-lifeos-bridge", "package.json"),
+    join(runtime.profileDir, "node_modules", DSH_MOBILE_SHELL_PACKAGE, "package.json"),
   ];
   const missing = required.filter((path) => !existsSync(path));
   if (missing.length > 0) {
@@ -398,12 +401,23 @@ export function assertManagedWebProfileReady(runtime) {
   if (profile.dependencies?.[BRIDGE_PACKAGE_NAME] === undefined) {
     throw new Error(`DSH Web Profile未安装${BRIDGE_PACKAGE_NAME}`);
   }
+  if (profile.dependencies?.[DSH_MOBILE_SHELL_PACKAGE] === undefined) {
+    throw new Error(`DSH Web Profile未安装${DSH_MOBILE_SHELL_PACKAGE}`);
+  }
   const bridgeBundles = (profile.dsh?.profile?.bundles ?? []).filter(
     (bundle) => bundle === BRIDGE_PACKAGE_NAME,
   );
   if (bridgeBundles.length !== 1) {
     throw new Error(
       `DSH Web Profile必须且只能启用一次${BRIDGE_PACKAGE_NAME} bundle，实际为${String(bridgeBundles.length)}`,
+    );
+  }
+  const mobileBundles = (profile.dsh?.profile?.bundles ?? []).filter(
+    (bundle) => bundle === DSH_MOBILE_SHELL_PACKAGE,
+  );
+  if (mobileBundles.length !== 1) {
+    throw new Error(
+      `DSH Web Profile必须且只能启用一次${DSH_MOBILE_SHELL_PACKAGE} bundle，实际为${String(mobileBundles.length)}`,
     );
   }
   assertBridgeBundleContract(runtime);

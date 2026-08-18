@@ -17,7 +17,7 @@
 |---|---:|---|---|---|
 | `@deepseek-ai/dsh` | `0.1.0-rc.6` | MIT | 唯一Web Host、原生会话/Composer/插件图；不拥有Chat产品事实 | 替换前端Host与Bridge Adapter；Chat API/Domain/Store不变 |
 | `@chat/dsh-lifeos-bridge` | workspace `0.1.0` | 私有 | DSH Host/Client到Chat公开Query/Command的唯一集成面 | 删除bundle/profile层；Chat后端不变 |
-| `dsh-mobile-hanui` | `0.2.4`（profile固定，`--save-exact`） | MIT | 移动端外壳：≤1023px抽屉/FAB/弹窗全屏/Composer修复；仅客户端DOM/CSS，零运行时依赖，无网络外发；桌面零影响 | 从profile bundles移除即退出；运行时可用`?mobileShell=0`关闭 |
+| `dsh-mobile-hanui` | `0.2.4`（workspace精确依赖，profile link） | MIT | 移动端外壳：≤1023px抽屉/FAB/弹窗全屏/Composer修复；仅客户端DOM/CSS，零运行时依赖，无网络外发；桌面零影响 | 从profile bundles移除即退出；运行时可用`?mobileShell=0`关闭 |
 | `code-server`官方发行工件 | `4.132.0` / commit `313bf0359b4d391ba18f1fa131aad8a583bc2919` | MIT | 独立Hosted Workbench；不进入pnpm运行依赖、不拥有Chat产品事实 | 替换Workbench Provider；DSH与Chat后端不变 |
 | `hono` | `^4.13.0` | MIT | HTTP协议入口，不拥有事务 | 替换Router Adapter |
 | `@hono/node-server` | `^2.1.0` | MIT | Node HTTP服务器 | 替换组合根服务器 |
@@ -29,6 +29,17 @@
 | `@ag-ui/core` | `0.0.57` | MIT | 公开Agent事件语义 | 保持Chat Event合同后替换 |
 
 DSH的React、Client UI、Cordis、Host Webserver等传递包由`@deepseek-ai/dsh@0.1.0-rc.6`的锁文件闭包提供。本仓库的Bridge只把DSH Host服务列为peer，并将Chat公开Schema和Zod内联到发布bundle；profile运行时不得解析`workspace:*`依赖。
+
+pnpm生命周期脚本白名单只包含`node-pty`与`@deepseek-ai/dsh-subprocess-local`：前者在
+Linux构建DSH subprocess所需的`pty.node`，后者只恢复`spawn-helper`可执行位。其他传递包不得
+因插件采用而获得构建脚本权限。
+
+`dsh-mobile-hanui@0.2.4`的npm integrity为
+`sha512-NSnQbZGPOeXXOOOKMyTBSrxLJec4iMB7ktPO5fePmR1d+7AzmMJZyl9c2Gg8muiO2zI/KQ8+dlEOF9XoYJPiNQ==`，
+发布`gitHead`为`1022f058050d676cfea17ed88c1794386860a407`，tag为`v0.2.4`。完整所有权、
+能力、兼容与人工更新政策由[DSH插件登记表](../../config/dsh-plugins.json)和
+[插件治理合同](./dsh-plugin-governance.md)共同约束；`.data/dsh-home`中的profile lock只是
+可重建投影，不拥有供应链事实。
 
 ### pi运行工件与能力对照源码
 

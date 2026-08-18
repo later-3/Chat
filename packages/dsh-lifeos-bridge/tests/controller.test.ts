@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LifeosProjectionController } from "../src/client/controller.ts";
-import { workflowSelectionSchema } from "../src/contracts.ts";
+import { noteDecisionRequestSchema, workflowSelectionSchema } from "../src/contracts.ts";
 
 const projection = {
-  schemaVersion: "chat-dsh-lifeos-bridge.v2",
+  schemaVersion: "chat-dsh-lifeos-bridge.v3",
   dshSessionId: "dsh-session-1",
   run: null,
   plan: null,
   approval: null,
   pendingDecision: null,
+  noteCandidate: null,
+  pendingNoteDecision: null,
   workflowSelection: null,
 };
 
@@ -169,5 +171,40 @@ test("selectWorkflow surfaces bridge failures without clobbering the projection"
   assert.equal(accepted, false);
   assert.equal(controller.getSnapshot().selectingWorkflow, false);
   assert.match(controller.getSnapshot().workflowError ?? "", /lifeos_workflow_stale/);
+  controller.dispose();
+});
+
+test("decideNote submits the observed candidate binding to the dedicated same-origin route", async () => {
+  const requests: Array<{ path: string; method?: string; body?: unknown }> = [];
+  const controller = new LifeosProjectionController(
+    "dsh-session-1",
+    async (input: URL | RequestInfo, init?: RequestInit) => {
+      requests.push({
+        path: String(input),
+        ...(init?.method === undefined ? {} : { method: init.method }),
+        ...(init?.body === undefined ? {} : { body: JSON.parse(String(init.body)) }),
+      });
+      return new Response(JSON.stringify(projection), { status: 200 });
+    },
+  );
+  const request = noteDecisionRequestSchema.parse({
+    kind: "request_revision",
+    explanation: "补充来源边界",
+    binding: {
+      productRunId: "run_note1",
+      runRevision: 2,
+      noteCandidateId: "ntc_note1",
+      candidateRevision: 1,
+      candidateSha256: "d".repeat(64),
+    },
+  });
+  assert.equal(await controller.decideNote(request), true);
+  assert.deepEqual(requests, [
+    {
+      path: "/lifeos/sessions/dsh-session-1/note-decisions",
+      method: "POST",
+      body: request,
+    },
+  ]);
   controller.dispose();
 });

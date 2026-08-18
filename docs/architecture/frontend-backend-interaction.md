@@ -9,7 +9,7 @@ Browser
   -> LifeOS Web Gateway（127.0.0.1:43110）
   -> DSH Web Host（内部43114）
      -> DSH原生Client插件图
-     -> LifeOS Client插件（Workflow选择、Plan/HITL、Workbench表面）
+     -> LifeOS Client插件（Workflow选择、Plan/HITL、Note审核、Workbench表面）
      -> LifeOS Host插件（LLM Adapter、同源桥接路由）
         -> Chat Hono API
            -> Application
@@ -24,7 +24,7 @@ Browser
 DSH原生界面创建自己的`dshSessionId`。Host插件把它映射到一个`productSessionId`，映射只保存在本地Adapter状态中：
 
 - DSH Session负责原生会话选择、消息轨迹和Composer体验。
-- Product Session负责权威消息、Run、Plan、Approval、Decision和恢复。
+- Product Session负责权威消息、Run、Plan、Approval、Note Candidate/Decision和恢复。
 - 映射不能作为授权；每次Chat请求仍经过API认证与合同校验。
 - 映射或响应结果未知时，桥接层必须保留稳定命令身份并查询恢复，不能静默创建第二个Product Session或Message。
 
@@ -38,8 +38,8 @@ DSH原生界面创建自己的`dshSessionId`。Host插件把它映射到一个`p
 4. Adapter从本轮请求提取最新用户文本；`session-title`和`compaction`用途绝不写入Chat。
 5. Adapter取得或幂等创建Product Session，以稳定`commandId`提交`POST /api/sessions/:id/messages`。
 6. Chat在Command边界重新校验Workflow仍是已发布、active、当前Principal可用且Hash一致，再原子提交User Message、Product Run、Receipt和Workflow Start Outbox。
-7. Adapter轮询公开Run、Messages、Plans和Current Approval Query；它不从HTTP超时推断成功。
-8. Run需要人工决定时，Client插件展示当前Plan/Approval；用户的修订、批准或拒绝经Host桥接为Chat Decision Command。
+7. Adapter轮询公开Run和正式Message；Bridge投影按Run阶段读取Plan/Approval或Current Note Candidate，它们都不从HTTP超时推断成功。
+8. Run需要人工决定时，Client插件展示当前Plan/Approval或Note Candidate；用户的修订、批准、确认或拒绝经Host桥接为版本/Hash绑定的Chat Command。
 9. Run成功后，Adapter读取Product Store中的正式Assistant Message，并作为DSH文本流返回。DSH将它写入原生会话轨迹。
 
 DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直接输出。Run失败、拒绝或结果未知必须返回明确状态，不能生成假交付。
@@ -58,19 +58,21 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 | `GET` | `/api/runs/:productRunId/plans` | 读取Plan revisions |
 | `GET` | `/api/runs/:productRunId/approvals/current` | 读取当前可操作Approval |
 | `POST` | `/api/runs/:productRunId/decisions` | 提交版本/Hash绑定的决定 |
+| `GET` | `/api/runs/:productRunId/note-candidates/current` | 读取当前安全Note Candidate审核DTO |
+| `POST` | `/api/runs/:productRunId/note-decisions` | 提交Candidate版本/Hash绑定的Note决定 |
 
 字段真相以`@chat/contracts/public`的Zod Schema为准。Host插件必须运行时解析外部响应，不能用TypeScript断言跳过校验。
 
 ## 5. Command与恢复
 
-所有写请求使用稳定`commandId`；修改已有事实时还携带`expectedRevision`。Decision绑定Approval、Plan ID、Plan revision和SHA-256。
+所有写请求使用稳定`commandId`；修改已有事实时还携带`expectedRevision`。Plan Decision绑定Approval、Plan ID、Plan revision和SHA-256；Note Decision绑定Candidate ID、revision和SHA-256。
 
-桥接状态至少记录DSH Session映射、当前Product Run、发送/决定Command身份及最后已确认阶段。写状态使用原子替换。发生请求已发但响应丢失时，使用相同命令重试或Query恢复，不生成新身份。
+桥接状态至少记录DSH Session映射、当前Product Run、发送/决定Command身份及最后已确认阶段。v3状态分别保存Plan与Note的pending command且禁止二者并存。写状态使用原子替换。发生请求已发但响应丢失时，只允许相同命令和内容原样重试或Query恢复，不生成新身份。
 
 ## 6. DSH插件表面边界
 
 LifeOS Bridge是仓库内唯一DSH插件包，所有新增前端表面使用固定rc.6公开合同：Workflow选择器注册在
-`conversation.input.left`，与权限、模型等原生Composer工具同一行；Plan/HITL使用
+`conversation.input.left`，与权限、模型等原生Composer工具同一行；Plan/HITL与Note Candidate审核使用
 `conversation.input.dock`；Workbench入口使用`sidebar.footer.action`，Surface使用`shell.overlay`。
 不得修改或复制DSH源码来插入这些能力，也不得把完整Hosted App拆成自研React组件。
 

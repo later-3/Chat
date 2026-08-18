@@ -3,17 +3,18 @@
  * 初始化 Chat Web 网关认证凭据（服务器部署模式）。
  *
  * 交互式读取账号与密码（不回显、不进 argv/日志），写入：
- *   .data/web-auth/credentials.json   scrypt 口令散列（0600）
+ *   .data/web-auth/credentials.json   v2 scrypt参数+口令散列（0600）
  *   .data/web-auth/session-secret     随机会话签名密钥（0600）
  * 两个文件只留在本机，绝不进入 Git（.data/ 已忽略）。重复运行会拒绝覆盖，
- * 除非显式传入 --rotate（轮换后既有会话 Cookie 全部失效）。
+ * 除非显式传入 --rotate（轮换后既有会话 Cookie 全部失效）。v1凭据不会被
+ * Gateway静默接受；升级后必须用本命令显式轮换到当前参数。
  */
 import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
-import { hashWebAuthPassword } from "../dsh/web-auth.mjs";
+import { hashWebAuthPassword, WEB_AUTH_CREDENTIAL_SCHEMA_VERSION } from "../dsh/web-auth.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const rotate = process.argv.includes("--rotate");
@@ -76,7 +77,10 @@ chmodSync(dir, 0o700);
 writeFileSync(
   credentialsFile,
   `${JSON.stringify(
-    { users: [{ username, scrypt: { salt, hash: hashWebAuthPassword(password, salt) } }] },
+    {
+      schemaVersion: WEB_AUTH_CREDENTIAL_SCHEMA_VERSION,
+      users: [{ username, scrypt: hashWebAuthPassword(password, salt) }],
+    },
     null,
     2,
   )}\n`,

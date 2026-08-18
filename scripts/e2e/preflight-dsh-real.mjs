@@ -1,6 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { assertDshPluginRegistry } from "../dsh/plugin-registry.mjs";
 import {
   assertDshWebCutoverConfig,
   dshBridgeInstallArgs,
@@ -25,6 +26,7 @@ import {
 } from "../workbench/fixed-code-server.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
+assertDshPluginRegistry(repoRoot);
 const dataRoot = resolve(repoRoot, ".data/e2e/dsh-real");
 const expectedRoot = resolve(repoRoot, ".data/e2e/dsh-real");
 const args = process.argv.slice(2);
@@ -76,47 +78,51 @@ for (const dir of [environment.TMPDIR, environment.HOME, environment.XDG_CACHE_H
   if (typeof dir === "string" && dir !== "") mkdirSync(dir, { recursive: true });
 }
 
-const workbenchFixtureRoot = resolveDshRealWorkbenchFixtureRoot(repoRoot);
-mkdirSync(workbenchFixtureRoot, { recursive: true });
-writeFileSync(join(workbenchFixtureRoot, ".gitignore"), ".data/\n", "utf8");
-writeFileSync(join(workbenchFixtureRoot, "fixture.txt"), "baseline from Workbench E2E\n", "utf8");
-await runCommand("git", ["init", "--quiet"], {
-  cwd: workbenchFixtureRoot,
-  env: environment,
-  label: "Workbench E2E fixture Git初始化",
-});
-await runCommand("git", ["config", "user.name", "Chat Workbench E2E"], {
-  cwd: workbenchFixtureRoot,
-  env: environment,
-  label: "Workbench E2E fixture Git用户",
-});
-await runCommand("git", ["config", "user.email", "workbench-e2e@invalid.local"], {
-  cwd: workbenchFixtureRoot,
-  env: environment,
-  label: "Workbench E2E fixture Git邮箱",
-});
-await runCommand("git", ["add", ".gitignore", "fixture.txt"], {
-  cwd: workbenchFixtureRoot,
-  env: environment,
-  label: "Workbench E2E fixture暂存",
-});
-await runCommand("git", ["commit", "--quiet", "-m", "baseline"], {
-  cwd: workbenchFixtureRoot,
-  env: environment,
-  label: "Workbench E2E fixture基线提交",
-});
+// PWA-only只验证DSH/Gateway/浏览器表面，不能因为没有下载数百MB的
+// code-server或没有Workbench Git fixture而失败。其他两种真实门仍保留原完整合同。
+if (!pwaOnly) {
+  const workbenchFixtureRoot = resolveDshRealWorkbenchFixtureRoot(repoRoot);
+  mkdirSync(workbenchFixtureRoot, { recursive: true });
+  writeFileSync(join(workbenchFixtureRoot, ".gitignore"), ".data/\n", "utf8");
+  writeFileSync(join(workbenchFixtureRoot, "fixture.txt"), "baseline from Workbench E2E\n", "utf8");
+  await runCommand("git", ["init", "--quiet"], {
+    cwd: workbenchFixtureRoot,
+    env: environment,
+    label: "Workbench E2E fixture Git初始化",
+  });
+  await runCommand("git", ["config", "user.name", "Chat Workbench E2E"], {
+    cwd: workbenchFixtureRoot,
+    env: environment,
+    label: "Workbench E2E fixture Git用户",
+  });
+  await runCommand("git", ["config", "user.email", "workbench-e2e@invalid.local"], {
+    cwd: workbenchFixtureRoot,
+    env: environment,
+    label: "Workbench E2E fixture Git邮箱",
+  });
+  await runCommand("git", ["add", ".gitignore", "fixture.txt"], {
+    cwd: workbenchFixtureRoot,
+    env: environment,
+    label: "Workbench E2E fixture暂存",
+  });
+  await runCommand("git", ["commit", "--quiet", "-m", "baseline"], {
+    cwd: workbenchFixtureRoot,
+    env: environment,
+    label: "Workbench E2E fixture基线提交",
+  });
 
-const codeServerAsset = fixedCodeServerAsset();
-const codeServerCacheRoot = join(
-  resolveDshRealSharedCacheRoot(repoRoot),
-  "code-server",
-  `v${FIXED_CODE_SERVER_VERSION}`,
-  codeServerPlatformKey(),
-);
-if (!validateCodeServerCache({ cacheRoot: codeServerCacheRoot, asset: codeServerAsset })) {
-  throw new Error(
-    "真实DSH E2E缺少已验证的固定code-server缓存；请先运行 pnpm workbench:prepare:code-server",
+  const codeServerAsset = fixedCodeServerAsset();
+  const codeServerCacheRoot = join(
+    resolveDshRealSharedCacheRoot(repoRoot),
+    "code-server",
+    `v${FIXED_CODE_SERVER_VERSION}`,
+    codeServerPlatformKey(),
   );
+  if (!validateCodeServerCache({ cacheRoot: codeServerCacheRoot, asset: codeServerAsset })) {
+    throw new Error(
+      "真实DSH E2E缺少已验证的固定code-server缓存；请先运行 pnpm workbench:prepare:code-server",
+    );
+  }
 }
 
 // E2E profile和Workflow bundle都是测试专用可再生产物。先准备再交给
@@ -126,7 +132,7 @@ await runCommand(
   ["--filter", "@chat/dsh-lifeos-bridge", "build"],
   { cwd: repoRoot, env: environment, label: "DSH E2E Bridge构建" },
 );
-if (!workbenchOnly) {
+if (!workbenchOnly && !pwaOnly) {
   await runCommand(
     process.platform === "win32" ? "pnpm.cmd" : "pnpm",
     ["--filter", "@chat/workflows", "build:bundles"],
@@ -140,7 +146,7 @@ await runCommand(process.execPath, [dshBin, ...dshBridgeInstallArgs(runtime)], {
   env: environment,
   label: "DSH E2E Profile Bridge安装",
 });
-await runCommand(process.execPath, [dshBin, ...dshMobileShellInstallArgs()], {
+await runCommand(process.execPath, [dshBin, ...dshMobileShellInstallArgs(runtime)], {
   cwd: repoRoot,
   env: environment,
   label: "DSH E2E Profile 移动端外壳安装",
@@ -155,5 +161,7 @@ assertDshWebCutoverConfig(dump);
 console.log(
   workbenchOnly
     ? "[e2e-preflight] rc.6 DSH profile、隔离Git Workbench fixture与固定code-server已就绪（未加载Provider，未构建Workflow）"
-    : "[e2e-preflight] rc.6 DSH profile、真实Provider、隔离Git Workbench fixture与固定code-server已就绪",
+    : pwaOnly
+      ? "[e2e-preflight] rc.6 DSH profile与PWA浏览器表面已就绪（未加载Provider/Workflow/Workbench）"
+      : "[e2e-preflight] rc.6 DSH profile、真实Provider、隔离Git Workbench fixture与固定code-server已就绪",
 );

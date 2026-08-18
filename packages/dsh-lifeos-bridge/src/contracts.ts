@@ -4,6 +4,9 @@ import {
   decisionDtoSchema,
   messageDtoSchema,
   messageResponseSchema,
+  noteCandidateIdSchema,
+  noteCandidateReviewDtoSchema,
+  noteDecisionDtoSchema,
   planIdSchema,
   planDtoSchema,
   productRunIdSchema,
@@ -14,13 +17,15 @@ import {
   type ApprovalDto,
   type DecisionDto,
   type MessageDto,
+  type NoteCandidateReviewDto,
+  type NoteDecisionDto,
   type PlanDto,
   type RunDto,
   type SessionDto,
 } from "@chat/contracts/public";
 import { z } from "zod";
 
-export const BRIDGE_SCHEMA_VERSION = "chat-dsh-lifeos-bridge.v2" as const;
+export const BRIDGE_SCHEMA_VERSION = "chat-dsh-lifeos-bridge.v3" as const;
 export const dshSessionIdSchema = z
   .string()
   .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/)
@@ -59,6 +64,10 @@ export const exactMessageResponseSchema = messageResponseSchema;
 export const decisionResponseSchema = z
   .object({ decision: decisionDtoSchema, run: runDtoSchema })
   .strict();
+export const noteCandidateResponseSchema = noteCandidateReviewDtoSchema;
+export const noteDecisionResponseSchema = z
+  .object({ decision: noteDecisionDtoSchema, candidate: noteCandidateReviewDtoSchema })
+  .strict();
 
 /** Browser-to-bridge command. Product binding fields are resolved Host-side. */
 export const decisionRequestSchema = z
@@ -92,8 +101,37 @@ export type ChatPlan = PlanDto;
 export type ChatApproval = ApprovalDto;
 export type ChatRun = RunDto;
 export type ChatDecision = DecisionDto;
+export type ChatNoteCandidate = NoteCandidateReviewDto;
+export type ChatNoteDecision = NoteDecisionDto;
 export type DecisionKind = z.infer<typeof decisionKindSchema>;
 export type DecisionRequest = z.infer<typeof decisionRequestSchema>;
+
+/** Browser-to-bridge Note审核命令；产品身份全部绑定到浏览器刚观察到的候选版本。 */
+export const noteDecisionRequestSchema = z
+  .object({
+    kind: z.enum(["confirm", "request_revision", "reject"]),
+    explanation: z.string().trim().min(1).max(2_000).optional(),
+    binding: z
+      .object({
+        productRunId: productRunIdSchema,
+        runRevision: z.number().int().positive(),
+        noteCandidateId: noteCandidateIdSchema,
+        candidateRevision: z.number().int().positive(),
+        candidateSha256: sha256Schema,
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.kind === "request_revision" && value.explanation === undefined) {
+      ctx.addIssue({ code: "custom", path: ["explanation"], message: "修订请求必须填写说明" });
+    }
+    if (value.kind === "confirm" && value.explanation !== undefined) {
+      ctx.addIssue({ code: "custom", path: ["explanation"], message: "确认不接受额外说明" });
+    }
+  });
+
+export type NoteDecisionRequest = z.infer<typeof noteDecisionRequestSchema>;
 
 /**
  * 选择表面可见的已发布Workflow投影。只暴露选择所需的字段；
@@ -154,6 +192,8 @@ export const lifeosProjectionSchema = z
     plan: planDtoSchema.nullable(),
     approval: approvalDtoSchema.nullable(),
     pendingDecision: decisionRequestSchema.nullable(),
+    noteCandidate: noteCandidateReviewDtoSchema.nullable(),
+    pendingNoteDecision: noteDecisionRequestSchema.nullable(),
     workflowSelection: workflowSelectionSchema.nullable(),
   })
   .strict();

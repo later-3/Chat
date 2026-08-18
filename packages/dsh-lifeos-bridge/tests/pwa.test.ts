@@ -74,9 +74,13 @@ test("/sw.js is a versioned shell-cache worker that never caches api or lifeos",
   assert.equal(response.headers["service-worker-allowed"], "/");
   const body = response.body.toString("utf8");
   assert.match(body, /chat-pwa-shell-/u);
-  // activate 清理所有非当前缓存，保留旧 apps/web workbox 的退役语义。
+  // activate 只清理Chat自有命名空间与旧 apps/web workbox precache。
   assert.match(body, /caches\.keys/u);
   assert.match(body, /caches\.delete/u);
+  assert.match(body, /chat-pwa-shell-/u);
+  assert.match(body, /workbox-precache-/u);
+  assert.match(body, /OWNED_CACHE_PREFIXES/u);
+  assert.doesNotMatch(body, /keys\.filter\(\(key\) => key !== CACHE\)\.map/u);
   assert.match(body, /clients\.claim/u);
   // 产品 API、bridge 路由与凭据永不进入 Service Worker。
   assert.match(body, /startsWith\("\/api"\)/u);

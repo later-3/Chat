@@ -170,3 +170,77 @@ test("a known Chat 4xx is returned as a safe same-origin Problem instead of a fa
     );
   }
 });
+
+test("same-origin Note decision route validates and forwards the observed candidate binding", async () => {
+  const calls: unknown[] = [];
+  const projection = {
+    schemaVersion: "chat-dsh-lifeos-bridge.v3",
+    dshSessionId: "dsh-session-1",
+    run: null,
+    plan: null,
+    approval: null,
+    pendingDecision: null,
+    noteCandidate: null,
+    pendingNoteDecision: null,
+    workflowSelection: null,
+  } as const;
+  const service = {
+    decideNote: async (sessionId: string, request: unknown) => {
+      calls.push({ sessionId, request });
+      return projection;
+    },
+  } as unknown as LifeosBridgeService;
+  const server = createServer(createLifeosRouteHandler(service, 43_110));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address !== null && typeof address === "object");
+  const body = {
+    kind: "confirm",
+    binding: {
+      productRunId: "run_note1",
+      runRevision: 2,
+      noteCandidateId: "ntc_note1",
+      candidateRevision: 1,
+      candidateSha256: "a".repeat(64),
+    },
+  };
+  try {
+    const response = await new Promise<{ status: number | undefined; body: string }>(
+      (resolve, reject) => {
+        const request = httpRequest(
+          {
+            hostname: "127.0.0.1",
+            port: address.port,
+            path: "/lifeos/sessions/dsh-session-1/note-decisions",
+            method: "POST",
+            headers: {
+              host: "localhost:43110",
+              origin: "http://localhost:43110",
+              "sec-fetch-site": "same-origin",
+              "content-type": "application/json",
+            },
+          },
+          (incoming) => {
+            const chunks: Buffer[] = [];
+            incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+            incoming.on("end", () =>
+              resolve({
+                status: incoming.statusCode,
+                body: Buffer.concat(chunks).toString("utf8"),
+              }),
+            );
+          },
+        );
+        request.on("error", reject);
+        request.end(JSON.stringify(body));
+      },
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(JSON.parse(response.body), projection);
+    assert.deepEqual(calls, [{ sessionId: "dsh-session-1", request: body }]);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error === undefined ? resolve() : reject(error))),
+    );
+  }
+});

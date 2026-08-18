@@ -1,5 +1,7 @@
-import { createHmac, scryptSync, timingSafeEqual } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { createHmac, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
+import { isIP } from "node:net";
+import { promisify } from "node:util";
 
 /**
  * Chat Web 网关认证（服务器部署模式）。
@@ -18,10 +20,22 @@ import { readFileSync } from "node:fs";
  */
 
 export const SESSION_COOKIE_NAME = "chat_session";
+export const WEB_AUTH_CREDENTIAL_SCHEMA_VERSION = "chat-web-auth.v2";
 const SCRYPT_KEY_LENGTH = 64;
+export const WEB_AUTH_SCRYPT_PARAMS = Object.freeze({
+  cost: 2 ** 17,
+  blockSize: 8,
+  parallelization: 1,
+});
+const SCRYPT_MAXMEM = 256 * 1024 * 1024;
 const MAX_SESSION_DAYS = 90;
 const DEFAULT_SESSION_DAYS = 30;
 const MAX_LOGIN_BODY_BYTES = 4 * 1024;
+const LOGIN_FAILURE_LIMIT = 5;
+const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_IN_FLIGHT = 2;
+const LOGIN_BUCKET_LIMIT = 1_024;
+const scryptAsync = promisify(scrypt);
 
 function requiredPath(value, name) {
   if (typeof value !== "string" || value.trim() === "") {
@@ -32,6 +46,30 @@ function requiredPath(value, name) {
 
 function base64url(buffer) {
   return Buffer.from(buffer).toString("base64url");
+}
+
+function assertPrivateFile(path, label) {
+  const mode = statSync(path).mode & 0o777;
+  if ((mode & 0o077) !== 0) {
+    throw new Error(`${label} permissions must deny group and other access`);
+  }
+}
+
+function scryptOptions() {
+  return { ...WEB_AUTH_SCRYPT_PARAMS, maxmem: SCRYPT_MAXMEM };
+}
+
+function validScryptRecord(value) {
+  return (
+    typeof value?.salt === "string" &&
+    typeof value?.hash === "string" &&
+    /^[0-9a-f]+$/u.test(value.salt) &&
+    /^[0-9a-f]+$/u.test(value.hash) &&
+    value.hash.length === SCRYPT_KEY_LENGTH * 2 &&
+    value.cost === WEB_AUTH_SCRYPT_PARAMS.cost &&
+    value.blockSize === WEB_AUTH_SCRYPT_PARAMS.blockSize &&
+    value.parallelization === WEB_AUTH_SCRYPT_PARAMS.parallelization
+  );
 }
 
 /** 从环境装配认证配置；未启用时返回 undefined。文件只在此刻读取一次。 */
@@ -63,28 +101,25 @@ export function loadWebAuthConfig(environment = process.env) {
       `Chat web auth credentials file is unreadable: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+  assertPrivateFile(credentialsFile, "Chat web auth credentials file");
+  if (credentials?.schemaVersion !== WEB_AUTH_CREDENTIAL_SCHEMA_VERSION) {
+    throw new Error(
+      `Chat web auth credentials must use ${WEB_AUTH_CREDENTIAL_SCHEMA_VERSION}; run init-chat-web-auth.mjs --rotate`,
+    );
+  }
   const users = new Map();
   if (!Array.isArray(credentials?.users) || credentials.users.length === 0) {
     throw new Error("Chat web auth credentials file must contain a non-empty users array");
   }
   for (const entry of credentials.users) {
     const username = entry?.username;
-    const salt = entry?.scrypt?.salt;
-    const hash = entry?.scrypt?.hash;
-    if (
-      typeof username !== "string" ||
-      username === "" ||
-      typeof salt !== "string" ||
-      typeof hash !== "string" ||
-      !/^[0-9a-f]+$/u.test(salt) ||
-      !/^[0-9a-f]+$/u.test(hash) ||
-      hash.length !== SCRYPT_KEY_LENGTH * 2
-    ) {
+    if (typeof username !== "string" || username === "" || !validScryptRecord(entry?.scrypt)) {
       throw new Error("Chat web auth credentials entry is malformed");
     }
-    users.set(username, { salt, hash });
+    users.set(username, Object.freeze({ ...entry.scrypt }));
   }
   const secret = readFileSync(secretFile, "utf8").trim();
+  assertPrivateFile(secretFile, "Chat web auth session secret file");
   if (secret.length < 32) {
     throw new Error("Chat web auth session secret must be at least 32 characters");
   }
@@ -97,20 +132,93 @@ export function loadWebAuthConfig(environment = process.env) {
 
 /** 生成一个口令散列条目（供初始化脚本使用；口令值绝不落日志）。 */
 export function hashWebAuthPassword(password, salt) {
-  const derived = scryptSync(password, Buffer.from(salt, "hex"), SCRYPT_KEY_LENGTH);
-  return derived.toString("hex");
+  const derived = scryptSync(
+    password,
+    Buffer.from(salt, "hex"),
+    SCRYPT_KEY_LENGTH,
+    scryptOptions(),
+  );
+  return Object.freeze({
+    salt,
+    hash: derived.toString("hex"),
+    ...WEB_AUTH_SCRYPT_PARAMS,
+  });
 }
 
-export function verifyWebAuthPassword(config, username, password) {
+export async function verifyWebAuthPassword(config, username, password) {
   const entry = config.users.get(username);
-  if (entry === undefined) {
-    // 对不存在的用户也执行一次等长比较，避免用户枚举的时间侧信道。
-    scryptSync(password, Buffer.alloc(16, 1), SCRYPT_KEY_LENGTH);
-    return false;
+  // 对不存在的用户也执行同参数派生与等长比较，避免用户枚举的时间侧信道。
+  const salt = entry === undefined ? Buffer.alloc(16, 1) : Buffer.from(entry.salt, "hex");
+  const derived = await scryptAsync(password, salt, SCRYPT_KEY_LENGTH, scryptOptions());
+  const expected =
+    entry === undefined ? Buffer.alloc(SCRYPT_KEY_LENGTH) : Buffer.from(entry.hash, "hex");
+  const matches = derived.length === expected.length && timingSafeEqual(derived, expected);
+  return entry !== undefined && matches;
+}
+
+function loginClientKey(req) {
+  const forwarded = req.headers["cf-connecting-ip"];
+  if (typeof forwarded === "string" && isIP(forwarded.trim()) !== 0) {
+    return `client:${forwarded.trim()}`;
   }
-  const derived = scryptSync(password, Buffer.from(entry.salt, "hex"), SCRYPT_KEY_LENGTH);
-  const expected = Buffer.from(entry.hash, "hex");
-  return derived.length === expected.length && timingSafeEqual(derived, expected);
+  return `client:${req.socket?.remoteAddress ?? "unknown"}`;
+}
+
+function loginAccountKey(username) {
+  return `account:${/^[a-zA-Z0-9_.-]{1,64}$/u.test(username) ? username : "invalid"}`;
+}
+
+/**
+ * 进程内登录节流。公网入口只有单个受管Gateway，账号桶阻止分布式猜测，客户端桶
+ * 限制单一来源；并发上限先于昂贵scrypt，避免一次突发占满libuv线程池。重启只会
+ * 清空短期防护状态，不影响凭据与会话事实。
+ */
+export function createLoginThrottle({
+  failureLimit = LOGIN_FAILURE_LIMIT,
+  windowMs = LOGIN_FAILURE_WINDOW_MS,
+  maxInFlight = LOGIN_MAX_IN_FLIGHT,
+  now = () => Date.now(),
+} = {}) {
+  const failures = new Map();
+  let inFlight = 0;
+
+  const prune = (at) => {
+    for (const [key, values] of failures) {
+      const recent = values.filter((value) => at - value < windowMs);
+      if (recent.length === 0) failures.delete(key);
+      else failures.set(key, recent);
+    }
+    while (failures.size > LOGIN_BUCKET_LIMIT) failures.delete(failures.keys().next().value);
+  };
+
+  return Object.freeze({
+    begin(req, username) {
+      const at = now();
+      prune(at);
+      const keys = [loginAccountKey(username), loginClientKey(req)];
+      if (
+        inFlight >= maxInFlight ||
+        keys.some((key) => (failures.get(key)?.length ?? 0) >= failureLimit)
+      ) {
+        return undefined;
+      }
+      inFlight += 1;
+      let settled = false;
+      return Object.freeze({
+        settle(success) {
+          if (settled) return;
+          settled = true;
+          inFlight -= 1;
+          if (success) {
+            for (const key of keys) failures.delete(key);
+            return;
+          }
+          const failedAt = now();
+          for (const key of keys) failures.set(key, [...(failures.get(key) ?? []), failedAt]);
+        },
+      });
+    },
+  });
 }
 
 function sign(config, payload) {
@@ -237,8 +345,17 @@ const LOGIN_PAGE = `<!doctype html>
 </html>
 `;
 
-function loginPage(failed) {
-  return LOGIN_PAGE.replace("__ERROR__", failed ? '<p class="error">账号或密码不正确。</p>' : "");
+function loginPage(error) {
+  const message =
+    error === "invalid"
+      ? "账号或密码不正确。"
+      : error === "throttled"
+        ? "登录尝试过多，请稍后重试。"
+        : undefined;
+  return LOGIN_PAGE.replace(
+    "__ERROR__",
+    message === undefined ? "" : `<p class="error">${message}</p>`,
+  );
 }
 
 function sendHtml(res, status, body, extraHeaders = {}) {
@@ -291,7 +408,7 @@ function assertLoginOrigin(req) {
  * 处理 /login 与 /logout。已处理返回 true；其他路径返回 false 继续走认证门。
  * secure 由部署模式决定：公网主机名配置后 Cookie 始终带 Secure。
  */
-export function createAuthRouteHandler(config, { secure }) {
+export function createAuthRouteHandler(config, { secure, throttle = createLoginThrottle() }) {
   return async (req, res, pathname) => {
     if (pathname === "/logout" && req.method === "POST") {
       res.writeHead(302, {
@@ -304,7 +421,7 @@ export function createAuthRouteHandler(config, { secure }) {
     }
     if (pathname !== "/login") return false;
     if (req.method === "GET" || req.method === "HEAD") {
-      sendHtml(res, 200, loginPage(false));
+      sendHtml(res, 200, loginPage());
       return true;
     }
     if (req.method !== "POST") {
@@ -324,8 +441,19 @@ export function createAuthRouteHandler(config, { secure }) {
       const params = new URLSearchParams(await readFormBody(req));
       const username = params.get("username") ?? "";
       const password = params.get("password") ?? "";
-      if (!verifyWebAuthPassword(config, username, password)) {
-        sendHtml(res, 401, loginPage(true));
+      const permit = throttle.begin(req, username);
+      if (permit === undefined) {
+        sendHtml(res, 429, loginPage("throttled"));
+        return true;
+      }
+      let valid = false;
+      try {
+        valid = await verifyWebAuthPassword(config, username, password);
+      } finally {
+        permit.settle(valid);
+      }
+      if (!valid) {
+        sendHtml(res, 401, loginPage("invalid"));
         return true;
       }
       res.writeHead(302, {
@@ -336,7 +464,7 @@ export function createAuthRouteHandler(config, { secure }) {
       res.end();
       return true;
     } catch {
-      sendHtml(res, 400, loginPage(true));
+      sendHtml(res, 400, loginPage("invalid"));
       return true;
     }
   };
