@@ -6,6 +6,7 @@ export * from "./query.js";
 export * from "./events.js";
 export * from "./service-status.js";
 export * from "./trace.js";
+export * from "./execution-trace-api.js";
 export * from "./product.js";
 export * from "./workflow-run.js";
 export * from "./workflow-definition.js";

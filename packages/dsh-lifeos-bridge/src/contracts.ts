@@ -14,6 +14,7 @@ import {
   sessionDtoSchema,
   sha256Schema,
   workflowDefinitionRevisionIdSchema,
+  executionTracePageSchema,
   type ApprovalDto,
   type DecisionDto,
   type MessageDto,
@@ -58,6 +59,7 @@ export const submitMessageResponseSchema = z
   .object({ message: messageDtoSchema, run: runDtoSchema })
   .strict();
 export const runResponseSchema = z.object({ run: runDtoSchema }).strict();
+export const executionTraceResponseSchema = executionTracePageSchema;
 export const plansResponseSchema = z.object({ items: z.array(planDtoSchema) }).strict();
 export const approvalResponseSchema = z.object({ approval: approvalDtoSchema.nullable() }).strict();
 export const exactMessageResponseSchema = messageResponseSchema;

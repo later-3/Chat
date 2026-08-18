@@ -284,6 +284,8 @@ export class PiExecutorOperationStore {
             toolCallId: intent.toolCallId,
             toolName: intent.toolName,
             inputSha256: intent.inputSha256,
+            inputDisplay: intent.inputDisplay,
+            inputDisplayTruncated: intent.inputDisplayTruncated,
           });
         }
         const startedAt = current.events.find(

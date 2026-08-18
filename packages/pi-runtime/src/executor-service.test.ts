@@ -13,6 +13,7 @@ import { computeExecutionInputManifestSha256, hashCanonical } from "@chat/domain
 import {
   assertExecutorWorkspacePath,
   executorShellEnvironment,
+  toObservableTraceDisplay,
   type PiCodingAgentRunInput,
   type PiCodingAgentRunner,
 } from "./coding-agent-executor.js";
@@ -151,6 +152,8 @@ describe("PiExecutorOperationStore", () => {
       toolCallId: "call_1",
       toolName: "bash",
       inputSha256: hashExecutorValue({ command: CONTENT_MARKER }),
+      inputDisplay: JSON.stringify({ command: CONTENT_MARKER }),
+      inputDisplayTruncated: false,
     });
 
     const recovered = await PiExecutorOperationStore.open(directory);
@@ -158,11 +161,34 @@ describe("PiExecutorOperationStore", () => {
     expect(recovered.getEvents("pio_test1").map((event) => event.type)).toContain(
       "tool.outcome_unknown",
     );
-    expect(JSON.stringify(recovered.getEvents("pio_test1"))).not.toContain(CONTENT_MARKER);
+    const recoveredToolEvents = recovered
+      .getEvents("pio_test1")
+      .filter(
+        (event) => event.type === "tool.intent_persisted" || event.type === "tool.outcome_unknown",
+      );
+    expect(recoveredToolEvents).toHaveLength(2);
+    expect(recoveredToolEvents.every((event) => event.inputDisplay.includes(CONTENT_MARKER))).toBe(
+      true,
+    );
   });
 });
 
 describe("Executor Workspace与Shell环境边界", () => {
+  it("可见Trace保留命令与路径，但在Journal前脱敏密钥", () => {
+    const display = toObservableTraceDisplay({
+      command: "DASHSCOPE_API_KEY=secret-value pnpm test",
+      path: "src/index.ts",
+      authorization: "Bearer very-secret-token",
+      apiKey: "sk-abcdefghijklmnop",
+    });
+    expect(display.text).toContain("pnpm test");
+    expect(display.text).toContain("src/index.ts");
+    expect(display.text).not.toContain("secret-value");
+    expect(display.text).not.toContain("very-secret-token");
+    expect(display.text).not.toContain("sk-abcdefghijklmnop");
+    expect(display.truncated).toBe(false);
+  });
+
   it("拒绝..、绝对路径和symlink越过批准Root", async () => {
     const root = await temporaryRoot();
     const workspace = join(root, "workspace");
@@ -249,11 +275,6 @@ describe("Pi Executor Service + Client", () => {
     const runtime = createPiExecutorService({
       credential: "rtk_1234567890abcdef",
       store,
-      bailian: {
-        apiKey: "test-only-key",
-        baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        endpointHost: "dashscope.aliyuncs.com",
-      },
       workspaceRoots: new Map(),
       emptyWorkspaceRoot: join(root, "empty"),
       agentDir: join(root, "agent"),
@@ -289,11 +310,6 @@ describe("Pi Executor Service + Client", () => {
     const runtime = createPiExecutorService({
       credential: "rtk_1234567890abcdef",
       store,
-      bailian: {
-        apiKey: "test-only-key",
-        baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        endpointHost: "dashscope.aliyuncs.com",
-      },
       workspaceRoots: new Map(),
       emptyWorkspaceRoot: join(root, "empty"),
       agentDir: join(root, "agent"),

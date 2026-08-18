@@ -247,7 +247,7 @@ Runtime Binding保存以下私有关系：
 
 Trace记录：命令入口、事务、Outbox、Workflow Start/Resume、Step、Pi Operation/Session/Turn/Message Hash/Tool/Compaction、Provider/Memory Attempt、状态转换、耗时、错误和产品对象引用。
 
-Trace不保存：用户消息、Plan正文、Decision正文、Prompt、Provider完整Payload、Memory正文、密钥和隐藏推理。
+Trace不保存：用户消息、Plan正文、Decision正文、Prompt、Provider完整Payload、Memory正文、密钥和隐藏推理。Pi Executor例外保存已经脱敏且有长度上限的Assistant可见文本、Tool输入/结果，用于复核实际命令、模型可见路径和执行输出；它们不是产品事实。
 
 Replay Assembler按产品对象ID、revision和SHA-256组合：
 

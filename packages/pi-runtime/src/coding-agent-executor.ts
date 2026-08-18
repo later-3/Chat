@@ -1,5 +1,5 @@
 import { lstat, mkdir, readlink, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
 import {
@@ -19,10 +19,8 @@ import {
   EXECUTION_CAPABILITY_SHELL_EXECUTE,
   EXECUTION_CAPABILITY_WORKSPACE_READ,
   EXECUTION_CAPABILITY_WORKSPACE_WRITE,
-  PROVIDER_MODEL,
-  PROVIDER_NAME,
 } from "@chat/contracts";
-import type { BailianConfig } from "./config.js";
+import { assertAllowedBailianHost } from "./config.js";
 import { projectExecutorStepCandidate, type ExecutorStepCandidate } from "./executor.js";
 import {
   hashExecutorValue,
@@ -52,15 +50,19 @@ interface ToolInFlight {
   readonly toolName: PiToolName;
   readonly startedAtMs: number;
   readonly inputSha256: string;
+  readonly inputDisplay: string;
+  readonly inputDisplayTruncated: boolean;
   readonly turnIndex: number;
 }
+
+const PI_CODING_PROVIDER = "dashscope-coding";
+const PI_CODING_MODEL = "qwen3.7-plus";
 
 export interface PiCodingAgentRunInput {
   readonly request: StartPiExecutorOperationRequest;
   readonly cwd: string;
   readonly agentDir: string;
   readonly sessionsDir: string;
-  readonly config: BailianConfig;
   readonly store: PiExecutorOperationStore;
   readonly signal: AbortSignal;
 }
@@ -145,6 +147,60 @@ function toolResultHash(event: ToolResultEvent): string {
     isError: event.isError,
     usage: event.usage,
   });
+}
+
+const TRACE_DISPLAY_MAX_CHARACTERS = 32_000;
+
+function redactObservableText(value: string): string {
+  return value
+    .replace(
+      /((?:authorization|proxy-authorization)\s*[:=]\s*(?:bearer\s+)?)[^\s"',}]+/giu,
+      "$1[REDACTED]",
+    )
+    .replace(
+      /("(?:authorization|proxy[_-]?authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|private[_-]?key)"\s*:\s*")[^"]*(")/giu,
+      "$1[REDACTED]$2",
+    )
+    .replace(
+      /\b([A-Z][A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|PRIVATE_KEY))=([^\s]+)/gu,
+      "$1=[REDACTED]",
+    )
+    .replace(/\bsk-[A-Za-z0-9_-]{12,}\b/gu, "[REDACTED_API_KEY]");
+}
+
+/** Pi CLI/Web同类的可见执行文本：有界且在进入Journal前脱敏。 */
+export function toObservableTraceDisplay(value: unknown): {
+  readonly text: string;
+  readonly truncated: boolean;
+} {
+  let serialized: string;
+  if (typeof value === "string") serialized = value;
+  else {
+    try {
+      serialized = JSON.stringify(value, undefined, 2) ?? String(value);
+    } catch {
+      serialized = "[UNSERIALIZABLE_OBSERVABLE_VALUE]";
+    }
+  }
+  const redacted = redactObservableText(serialized);
+  const characters = Array.from(redacted);
+  if (characters.length <= TRACE_DISPLAY_MAX_CHARACTERS) {
+    return { text: redacted, truncated: false };
+  }
+  return {
+    text: `${characters.slice(0, TRACE_DISPLAY_MAX_CHARACTERS - 1).join("")}…`,
+    truncated: true,
+  };
+}
+
+function toolResultDisplay(event: ToolResultEvent): {
+  readonly text: string;
+  readonly truncated: boolean;
+} {
+  const content = event.content.map((part) =>
+    part.type === "text" ? part.text : `[image:${part.mimeType}]`,
+  );
+  return toObservableTraceDisplay(content.join("\n"));
 }
 
 function isWithinRoot(root: string, target: string): boolean {
@@ -267,6 +323,7 @@ function createJournalExtension(input: {
   readonly request: StartPiExecutorOperationRequest;
   readonly sessionId: string;
   readonly workspaceRoot: string;
+  readonly endpointHost: string;
   readonly store: PiExecutorOperationStore;
   readonly state: {
     turnIndex: number;
@@ -323,6 +380,7 @@ function createJournalExtension(input: {
         type: "provider.started",
         sessionId,
         requestIndex: provider.requestIndex,
+        endpointHost: input.endpointHost,
         inputSha256: provider.inputSha256,
       });
     });
@@ -344,6 +402,8 @@ function createJournalExtension(input: {
         message.role === "compactionSummary"
           ? "custom"
           : message.role;
+      const visible = message.role === "assistant" ? assistantText(message) : undefined;
+      const visibleDisplay = visible === undefined ? undefined : toObservableTraceDisplay(visible);
       await append({
         operationId,
         type: "message.completed",
@@ -351,6 +411,12 @@ function createJournalExtension(input: {
         messageIndex,
         role: eventRole,
         contentSha256: hashExecutorValue(message),
+        ...(visibleDisplay !== undefined
+          ? {
+              visibleText: visibleDisplay.text,
+              visibleTextTruncated: visibleDisplay.truncated,
+            }
+          : {}),
         ...(message.role === "assistant"
           ? {
               stopReason: message.stopReason === "pending" ? "error" : message.stopReason,
@@ -370,6 +436,7 @@ function createJournalExtension(input: {
           type: "provider.failed",
           sessionId,
           requestIndex: provider.requestIndex,
+          endpointHost: input.endpointHost,
           inputSha256: provider.inputSha256,
           ...(provider.httpStatus !== undefined ? { httpStatus: provider.httpStatus } : {}),
           providerRequestId: safeProviderRequestId(message, provider, operationId),
@@ -384,6 +451,7 @@ function createJournalExtension(input: {
         type: "provider.completed",
         sessionId,
         requestIndex: provider.requestIndex,
+        endpointHost: input.endpointHost,
         inputSha256: provider.inputSha256,
         httpStatus: provider.httpStatus ?? 200,
         providerRequestId: safeProviderRequestId(message, provider, operationId),
@@ -396,6 +464,7 @@ function createJournalExtension(input: {
     pi.on("tool_call", async (event: ToolCallEvent) => {
       const toolName = event.toolName as PiToolName;
       const inputSha256 = hashExecutorValue(event.input);
+      const inputDisplay = toObservableTraceDisplay(event.input);
       try {
         await assertToolScope(event, input.workspaceRoot);
       } catch (error) {
@@ -409,6 +478,8 @@ function createJournalExtension(input: {
           toolCallId: event.toolCallId,
           toolName,
           inputSha256,
+          inputDisplay: inputDisplay.text,
+          inputDisplayTruncated: inputDisplay.truncated,
           errorCode,
         });
         throw error;
@@ -417,6 +488,8 @@ function createJournalExtension(input: {
         toolName,
         startedAtMs: Date.now(),
         inputSha256,
+        inputDisplay: inputDisplay.text,
+        inputDisplayTruncated: inputDisplay.truncated,
         turnIndex: input.state.turnIndex,
       };
       input.state.tools.set(event.toolCallId, tool);
@@ -428,12 +501,15 @@ function createJournalExtension(input: {
         toolCallId: event.toolCallId,
         toolName,
         inputSha256: tool.inputSha256,
+        inputDisplay: tool.inputDisplay,
+        inputDisplayTruncated: tool.inputDisplayTruncated,
       });
     });
     pi.on("tool_result", async (event: ToolResultEvent) => {
       const tool = input.state.tools.get(event.toolCallId);
       if (tool === undefined) throw new PiCodingAgentExecutionError("executor.tool_intent_missing");
       input.state.tools.delete(event.toolCallId);
+      const resultDisplay = toolResultDisplay(event);
       const common = {
         operationId,
         sessionId,
@@ -441,6 +517,8 @@ function createJournalExtension(input: {
         toolCallId: event.toolCallId,
         toolName: tool.toolName,
         resultSha256: toolResultHash(event),
+        resultDisplay: resultDisplay.text,
+        resultDisplayTruncated: resultDisplay.truncated,
         durationMs: Math.max(0, Date.now() - tool.startedAtMs),
       } as const;
       await append(
@@ -471,9 +549,6 @@ function createJournalExtension(input: {
 
 export class AgentSessionPiCodingAgentRunner implements PiCodingAgentRunner {
   async run(input: PiCodingAgentRunInput): Promise<ExecutorStepCandidate> {
-    if (input.config.apiKey === undefined) {
-      throw new PiCodingAgentExecutionError("provider.pre_request.no_api_key");
-    }
     const step = input.request.contract.steps.find(
       (candidate) => candidate.stepId === input.request.stepId,
     );
@@ -485,41 +560,23 @@ export class AgentSessionPiCodingAgentRunner implements PiCodingAgentRunner {
     await mkdir(input.sessionsDir, { recursive: true, mode: 0o700 });
 
     const modelRuntime = await ModelRuntime.create({
-      authPath: join(input.agentDir, "auth.json"),
-      modelsPath: null,
       refreshOnCreate: false,
     });
-    modelRuntime.registerProvider(PROVIDER_NAME, {
-      name: "Alibaba Bailian",
-      baseUrl: input.config.baseUrl,
-      api: "openai-completions",
-      models: [
-        {
-          id: PROVIDER_MODEL,
-          name: "Qwen3.7 Plus",
-          reasoning: true,
-          input: ["text"],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 131_072,
-          maxTokens: 8_192,
-          compat: {
-            supportsStore: false,
-            supportsDeveloperRole: false,
-            supportsReasoningEffort: false,
-            supportsUsageInStreaming: true,
-            maxTokensField: "max_tokens",
-            thinkingFormat: "qwen",
-            supportsStrictMode: false,
-            supportsOpenAIGrammarTools: false,
-            supportsLongCacheRetention: false,
-          },
-        },
-      ],
-    });
-    await modelRuntime.setRuntimeApiKey(PROVIDER_NAME, input.config.apiKey);
-    const model = modelRuntime.getModel(PROVIDER_NAME, PROVIDER_MODEL);
+    // 执行层直接使用Pi标准models.json/auth.json。命令型apiKey由ModelRuntime
+    // 在Provider请求边界解析，Chat不读取、复制或持久密钥正文。
+    const model = modelRuntime.getModel(PI_CODING_PROVIDER, PI_CODING_MODEL);
     if (model === undefined)
       throw new PiCodingAgentExecutionError("provider.pre_request.model_missing");
+    let modelUrl: URL;
+    try {
+      modelUrl = new URL(model.baseUrl);
+    } catch {
+      throw new PiCodingAgentExecutionError("provider.pre_request.model_endpoint_invalid");
+    }
+    if (modelUrl.protocol !== "https:") {
+      throw new PiCodingAgentExecutionError("provider.pre_request.model_endpoint_invalid");
+    }
+    assertAllowedBailianHost(modelUrl.hostname);
 
     const settingsManager = SettingsManager.inMemory({
       retry: { enabled: false },
@@ -538,6 +595,7 @@ export class AgentSessionPiCodingAgentRunner implements PiCodingAgentRunner {
       request: input.request,
       sessionId,
       workspaceRoot: input.cwd,
+      endpointHost: modelUrl.hostname,
       store: input.store,
       state,
     });

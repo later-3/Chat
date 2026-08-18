@@ -49,7 +49,7 @@ test("bridge mapping survives reload in a private atomic JSON file", async () =>
     assert.equal((await stat(path)).mode & 0o777, 0o600);
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
-      "chat-dsh-lifeos-state.v3",
+      "chat-dsh-lifeos-state.v4",
     );
     const reloaded = new AtomicBridgeStateStore(path);
     const binding = await reloaded.readSession("dsh-session-1");
@@ -75,7 +75,7 @@ test("bridge mapping survives reload in a private atomic JSON file", async () =>
   }
 });
 
-test("v1 bridge state migrates atomically to v3 before workflow drafts are written", async () => {
+test("v1 bridge state migrates atomically to v4 before workflow drafts are written", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-state-v1-"));
   const path = join(directory, "bridge.json");
   try {
@@ -97,7 +97,7 @@ test("v1 bridge state migrates atomically to v3 before workflow drafts are writt
     assert.equal((await store.readSession("dsh-session-1"))?.createSessionCommandId, command("a"));
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
-      "chat-dsh-lifeos-state.v3",
+      "chat-dsh-lifeos-state.v4",
     );
     assert.equal((await stat(path)).mode & 0o777, 0o600);
   } finally {
@@ -105,7 +105,7 @@ test("v1 bridge state migrates atomically to v3 before workflow drafts are writt
   }
 });
 
-test("v2 bridge state migrates atomically to v3 before Note decisions are written", async () => {
+test("v2 bridge state migrates atomically to v4 before Note decisions are written", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-state-v2-"));
   const path = join(directory, "bridge.json");
   try {
@@ -126,9 +126,48 @@ test("v2 bridge state migrates atomically to v3 before Note decisions are writte
     await store.ready();
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
-      "chat-dsh-lifeos-state.v3",
+      "chat-dsh-lifeos-state.v4",
     );
     assert.equal((await stat(path)).mode & 0o777, 0o600);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("v3 bridge state migrates to v4 and starts trajectory cursor at zero", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-state-v3-"));
+  const path = join(directory, "bridge.json");
+  try {
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        schemaVersion: "chat-dsh-lifeos-state.v3",
+        sessions: {
+          "dsh-session-1": {
+            createSessionCommandId: command("a"),
+            currentRequestKey: "request-1",
+            requests: {
+              "request-1": {
+                userTextSha256: "b".repeat(64),
+                messageCommandId: command("c"),
+                productRunId: "run_run1",
+              },
+            },
+          },
+        },
+      })}\n`,
+      { mode: 0o600 },
+    );
+    const store = new AtomicBridgeStateStore(path);
+    await store.ready();
+    const binding = await store.readSession("dsh-session-1");
+    assert.equal(binding?.requests["request-1"]?.traceCursor, undefined);
+    await store.advanceTraceCursor("dsh-session-1", "run_run1", 3);
+    assert.equal((await store.readSession("dsh-session-1"))?.requests["request-1"]?.traceCursor, 3);
+    assert.equal(
+      JSON.parse(await readFile(path, "utf8")).schemaVersion,
+      "chat-dsh-lifeos-state.v4",
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

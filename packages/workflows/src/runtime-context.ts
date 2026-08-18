@@ -38,7 +38,7 @@ export interface WorkflowRuntimeContext {
    * 直到旧测试fixture完成迁移。两者只在本组合根Port兼容，不形成第二套产品事实。
    */
   readonly executor: (
-    input: RunPiExecutorServiceInput & { readonly config: BailianConfig },
+    input: RunPiExecutorServiceInput,
   ) => Promise<ExecutorStepCandidate | AgentRunResult<ExecutorStepCandidate>>;
 }
 

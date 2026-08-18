@@ -55,9 +55,9 @@ Planner只能从以下四种Capability请求能力，用户批准Plan后Applicat
 | `workspace_write` | 读工具 + `edit`、`write` |
 | `shell_execute` | 读工具 + `bash`；必须标记`high`风险 |
 
-任何非纯文本能力都必须绑定Planning时冻结的Project Context，并解析出唯一活动`ProjectResource`。Product Store只保存`projectId/projectResourceId/rootId/revision`；Executor Service用服务端`CHAT_PROJECT_ROOTS_JSON`把`rootId`解析为canonical path。路径不会进入Product Store、Workflow checkpoint、Operation HTTP请求或Trace。
+任何非纯文本能力都必须绑定Planning时冻结的Project Context，并解析出唯一活动`ProjectResource`。Product Store只保存`projectId/projectResourceId/rootId/revision`；Executor Service用服务端`CHAT_PROJECT_ROOTS_JSON`把`rootId`解析为canonical path。canonical Host路径不会进入Product Store、Workflow checkpoint或Operation HTTP请求；Pi工具实际使用的模型可见相对路径会作为已脱敏、有界执行证据进入Journal/Trace。
 
-`read/grep/find/ls/edit/write`在awaited `tool_call`栅栏中拒绝`..`、Root外绝对路径与symlink逃逸；被拒绝的调用只记录参数Hash和稳定错误码。`bash`与Pi CLI一样是本机用户权限下的高影响能力，不是文件系统或网络沙箱：它固定以Workspace为`cwd`，但命令本身仍可访问Host。为避免把Provider/Runtime秘密暴露给Shell，Executor只传递PATH、Locale、时区、终端和临时目录等白名单环境，并使用独立HOME；需要SSH、Git Credential或其他外部凭据时必须再引入显式Credential Provider，不能继承父进程秘密。
+`read/grep/find/ls/edit/write`在awaited `tool_call`栅栏中拒绝`..`、Root外绝对路径与symlink逃逸；被拒绝的调用记录参数Hash、已脱敏显示输入和稳定错误码。`bash`与Pi CLI一样是本机用户权限下的高影响能力，不是文件系统或网络沙箱：它固定以Workspace为`cwd`，但命令本身仍可访问Host。为避免把Provider/Runtime秘密暴露给Shell，Executor只传递PATH、Locale、时区、终端和临时目录等白名单环境，并使用独立HOME；需要SSH、Git Credential或其他外部凭据时必须再引入显式Credential Provider，不能继承父进程秘密。
 
 Pi外部Extension本质是任意本机代码，能绕过Tool白名单并读取进程秘密；当前`noExtensions=true`，只加载Chat内联Journal Extension。Project/Agent Skills和AGENTS上下文仍按Pi规则加载，但只能使用已批准工具。若要开放第三方Extension，必须先交付独立进程凭据隔离、固定来源/Hash和Extension Capability审核；不能把“完整AgentSession”偷换成无条件执行本地插件。
 
@@ -68,16 +68,20 @@ Pi外部Extension本质是任意本机代码，能绕过Tool白名单并读取�
 Chat内联Extension注册在`DefaultResourceLoader`中。以下Pi hook由AgentSession等待，因此Journal提交失败会阻止真实边界继续：
 
 - `before_provider_request`：先保存请求序号和Payload Hash，再发Provider请求；
-- `message_end`：保存消息角色、正文Hash、Stop Reason和Token Usage，不保存正文；
-- `tool_call`：先耐久保存Tool名称、Call ID和参数Hash，再执行工具；
-- `tool_result`：保存结果Hash、成功/失败和耗时；
+- `message_end`：保存消息角色、正文Hash、Stop Reason和Token Usage；Assistant可见文本经脱敏和32K上限后保存，隐藏推理不保存；
+- `tool_call`：先耐久保存Tool名称、Call ID、参数Hash及脱敏/有界显示输入，再执行工具；
+- `tool_result`：保存结果Hash、脱敏/有界显示结果、成功/失败和耗时；
 - `turn_start/end`、`session_before_compact/session_compact`：保存Turn和Compaction边界。
 
 Operation Journal事件有从1开始连续递增的`sequence`。Workflow按`afterSequence`轮询；发现序号缺口即进入`outcome_unknown`，不会用不完整Trace宣布成功。终态Snapshot只有在客户端取完终态前的全部事件后才可返回Candidate。
 
 Chat Trace新增Operation、Session、Turn、Message、Tool、Compaction事件，并把多次Provider请求分别投影为既有`provider.request.*`事件。Trace保存原事件`sourceTimestamp`，同时保留Sink写入时间。
 
-Trace和Operation事件都不保存Prompt、消息正文、Tool参数/结果、Provider Payload、API Key或隐藏推理。完整正文分别留在受限Operation请求/结果、Pi Session、Workspace与Product Store；Trace只保存引用、Hash、枚举和统计。
+Trace和Operation事件不保存Prompt、Provider Payload、API Key或隐藏推理。为满足Pi CLI/Web同等级执行可观察性，它们保存经过边界脱敏且最多32K的Assistant可见文本、Tool输入和Tool结果；命令、模型可见文件路径、输出、状态与耗时因此可复核。完整Provider正文、Pi隐藏上下文和未裁剪Workspace内容仍分别留在Pi Session、Workspace与Product Store。旧v1 Trace没有显示字段时Reader继续兼容，并明确投影为legacy缺失，而不伪造内容。
+
+### 4.1 DSH原生轨迹
+
+API公开`GET /api/runs/:productRunId/execution-trace`。Application先用Product Store校验Principal对Run的访问权，再由Realtime Reader把内部Trace裁剪为无Runtime凭据的cursor页。LifeOS Adapter遇到新的Pi `tool_call`时向DSH流式发出确定性的`lifeos_trace`显示调用；该工具不重跑命令，只轮询同一`toolCallId`的真实结果。DSH Agent loop因此原生落下`tool/call`和`tool/result`，固定rc.6 Trajectory可以显示pending/running、输入、输出和耗时。Bridge v4状态只保存单调显示cursor，DSH Session仍不是产品事实或授权身份。
 
 ## 5. 故障与恢复
 
@@ -91,10 +95,11 @@ Trace和Operation事件都不保存Prompt、消息正文、Tool参数/结果、P
 ## 6. 上游采用与退出路径
 
 - 直接依赖固定npm `@earendil-works/pi-coding-agent@0.84.2`，使用公开`createAgentSession`、`DefaultResourceLoader`、`SessionManager`、`ModelRuntime`和Extension API。
+- ModelRuntime直接读取Pi标准`models.json/auth.json`配置链；当前固定选择`dashscope-coding/qwen3.7-plus`并校验百炼HTTPS Host。命令型`apiKey`只在Pi Provider边界解析，Chat不读取、复制或持久化密钥明文。
 - 本机`/Users/xulater/Code/opc-os/pi`只用于对应版本的源码、类型和测试证据；全新克隆与CI不依赖该绝对路径。
 - 当前不需要修改Pi fork。若未来缺少通用awaited hook，只向Pi分支补通用观测接缝；Chat Product ID、权限和终态继续留在Chat Adapter。
 - 替换Pi时保留Operation协议、Capability政策、Journal、Trace投影和Candidate Port，替换`AgentSessionPiCodingAgentRunner`即可。
 
 ## 7. 当前完成门
 
-自动测试覆盖Operation幂等冲突、cursor事件完整性、正文隔离、Tool未闭合的重启收敛、Service Client以及现有Workflow Candidate→Validation→Product Commit链。完整AgentSession真实百炼门为`pnpm test:provider:bailian:coding`，会在临时Workspace中验证`read/write/bash`；它属于显式付费门，本次实现没有在未授权情况下执行。
+自动测试覆盖Operation幂等冲突、cursor事件完整性、脱敏显示证据、Tool未闭合的重启收敛、Service Client以及现有Workflow Candidate→Validation→Product Commit链。完整AgentSession真实百炼门`pnpm test:provider:bailian:coding`已于2026-08-18经用户明确授权通过：从Pi标准配置链调用`dashscope-coding/qwen3.7-plus`，在临时Workspace真实验证`read/write/bash`和连续Journal。`pnpm --filter @chat/dsh-web test:e2e:trajectory-real`同时通过真实rc.6 DSH Host/Session/Agent loop的intent先到、result后到和最终回复恢复。

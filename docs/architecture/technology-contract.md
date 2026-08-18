@@ -56,6 +56,7 @@ DSH和code-server是可替换Adapter/Hosted App，不拥有Chat产品对象。Ch
 - 保留稳定`commandId`，处理网络结果未知和刷新恢复。
 - 用`conversation.input.left`公开Slot显示可用Workflow；选择只是会话草稿，发送时由Chat重新校验并冻结Definition revision/Hash。
 - 在DSH公开Slot中展示Plan/HITL；决定仍走Chat Command。
+- 把Chat安全执行轨迹投影为DSH原生显示工具调用；显示工具只等待同一Pi结果，不重跑命令。
 - 将Chat正式Assistant Message以DSH文本流投影回原生轨迹。
 - 为完整Hosted App提供窄Surface与受控Host代理。
 
@@ -121,7 +122,7 @@ Query读取资源并返回revision/ETag/cursor；Command表达一次用户意图
 
 ## 8. 实时与恢复
 
-当前Bridge使用公开Query恢复Run、Messages、Plan/Approval和Note Candidate。未来加入Chat拥有的SSE Cursor Journal时，它只提供有序事件和资源失效通知，不成为产品事实源，也不改变Query/Command合同。
+当前Bridge使用公开Query恢复Run、Messages、Plan/Approval、Note Candidate和安全执行轨迹；执行轨迹先以cursor轮询接入DSH原生Trajectory。未来加入Chat拥有的SSE Cursor Journal时，它只把轮询升级为有序实时投影和资源失效通知，不成为产品事实源，也不改变Query/Command合同。
 
 必须覆盖：浏览器刷新、DSH Host重启、API重启、Workflow Worker恢复、重复Command、响应丢失、过期Decision、Provider结果未知和Workbench进程崩溃。
 

@@ -7,6 +7,7 @@ import {
 
 const workbenchOnly = process.env.CHAT_DSH_E2E_MODE === "workbench-only";
 const pwaOnly = process.env.CHAT_DSH_E2E_MODE === "pwa-only";
+const trajectoryOnly = process.env.CHAT_DSH_E2E_MODE === "trajectory-only";
 const providerEnvironmentModule = "../../scripts/debug/load-provider-env.mjs";
 if (!workbenchOnly && !pwaOnly) await import(providerEnvironmentModule);
 
@@ -38,6 +39,20 @@ const workflow = {
     CHAT_WORKFLOW_PORT: "43112",
     CHAT_WORKFLOW_DATA_DIR: resolve(dataRoot, "workflow"),
     CHAT_RUNTIME_BINDINGS_PATH: resolve(dataRoot, "runtime-bindings.v1.json"),
+    CHAT_API_INTERNAL_BASE_URL: "http://127.0.0.1:43111",
+    CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: "http://127.0.0.1:43115",
+  },
+} as const;
+const piExecutor = {
+  command: "pnpm --filter @chat/pi-executor start",
+  cwd: repoRoot,
+  url: "http://127.0.0.1:43115/healthz",
+  reuseExistingServer: false,
+  timeout: 180_000,
+  env: {
+    ...sharedEnvironment,
+    CHAT_PI_EXECUTOR_PORT: "43115",
+    CHAT_PI_EXECUTOR_DATA_DIR: resolve(dataRoot, "pi-executor"),
     CHAT_API_INTERNAL_BASE_URL: "http://127.0.0.1:43111",
   },
 } as const;
@@ -71,6 +86,14 @@ const dshPwa = {
   timeout: 120_000,
   env: dshRealWebEnvironment(repoRoot, process.env),
 } as const;
+const trajectoryApi = {
+  command: "node scripts/e2e/start-dsh-trajectory-api.mjs",
+  cwd: repoRoot,
+  url: "http://127.0.0.1:43111/api/readyz",
+  reuseExistingServer: false,
+  timeout: 30_000,
+  env: sharedEnvironment,
+} as const;
 
 /**
  * 默认付费门使用真实JSON Product Store、Workflow World、pi与百炼；显式
@@ -82,7 +105,9 @@ export default defineConfig({
     ? "dsh-workbench-real.spec.ts"
     : pwaOnly
       ? ["dsh-pwa-real.spec.ts", "dsh-mobile-hanui-real.spec.ts"]
-      : "dsh-planning-real.spec.ts",
+      : trajectoryOnly
+        ? "dsh-trajectory-real.spec.ts"
+        : "dsh-planning-real.spec.ts",
   globalTeardown: resolve(repoRoot, "scripts/e2e/dsh-real-workbench-lifecycle.mjs"),
   fullyParallel: false,
   workers: 1,
@@ -100,6 +125,8 @@ export default defineConfig({
     ? [codeServer, dsh]
     : pwaOnly
       ? [dshPwa]
-      : [codeServer, workflow, api, dsh],
+      : trajectoryOnly
+        ? [trajectoryApi, dshPwa]
+        : [codeServer, piExecutor, workflow, api, dsh],
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });

@@ -10,7 +10,8 @@ import { TRACE_FILE_PATTERN, resolveTraceDir } from "./trace-paths.js";
  * - 只打开文件读取，绝不修改、重排或清理原始JSONL；
  * - 任一行JSON解析失败或严格联合校验失败（包括旧版任意attributes事件）
  *   即失败关闭并报告文件与行号；
- * - Trace本身不含正文与密钥，输出即为合同事件本身。
+ * - Trace不含Prompt、Provider正文、密钥或隐藏推理；Pi工具显示证据已在写入前
+ *   完成脱敏和长度限制，Reader不做事后清洗。
  */
 export interface TraceQuery {
   dir?: string;

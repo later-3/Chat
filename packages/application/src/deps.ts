@@ -38,6 +38,7 @@ import type {
   RuleScopeId,
   RuleDecisionId,
   RuleSelectionId,
+  ExecutionTracePage,
 } from "@chat/contracts";
 import type { TraceEventInput } from "@chat/contracts";
 import type { ProductStorePort } from "./product-store-port.js";
@@ -51,6 +52,15 @@ import type {
 
 /** Trace发射器：由组合根提供（@chat/realtime Sink）；Application不依赖具体Sink。 */
 export type TraceEmitter = (event: TraceEventInput) => void;
+
+/** Runtime Trace只读Port；Application先校验Product Run所有权，再允许读取投影。 */
+export interface ExecutionTraceReaderPort {
+  read(input: {
+    readonly productRunId: ProductRunId;
+    readonly afterSequence: number;
+    readonly limit: number;
+  }): ExecutionTracePage;
+}
 
 /**
  * Application用例的外部能力依赖。
@@ -117,6 +127,8 @@ export interface ApplicationDeps {
   readonly ids: IdFactory;
   /** 可选Trace发射；缺省时用例不产生Trace（骨架模式与部分纯规则测试）。 */
   readonly trace?: TraceEmitter;
+  /** 可观察执行证据的只读投影；不拥有Product Run或终态。 */
+  readonly executionTraceReader?: ExecutionTraceReaderPort;
   /** 配置在服务端组合根；浏览器只能选择公开 backendId。 */
   readonly memoryBackends?: MemoryBackendRegistryPort;
   /** 外部写入能力与Query分离，避免调用方忽略outcome_unknown。 */

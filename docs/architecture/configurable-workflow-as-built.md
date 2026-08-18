@@ -151,7 +151,7 @@ Workflow Definition/View、Note和Rules均不依赖具体前端渲染库。旧We
 
 自动门覆盖Contracts、Domain、Application、Store、Workflow、Runtime、API、迁移、并发、权限、IDOR、容量和Checkpoint正文扫描。旧Web浏览器证据只存在于Git历史；当前用户界面必须重新通过DSH真实浏览器纵向，不能沿用旧UI结论。Note Bridge的确定性纵向覆盖Candidate投影、版本/Hash绑定决定、断网原样重试和正式Assistant Message收敛；部署前仍须补真实手机浏览器证据。
 
-既有Planner、旧单轮Executor与Note Capture真实Provider门已通过并保存脱敏证据。完整AgentSession Executor已通过确定性Service/Journal/Workflow合同门；它的真实Provider付费门必须单独显式运行，不能沿用旧单轮Executor证据。DSH切换后的浏览器门以当前根脚本为准；已删除的旧Web Playwright命令不再是当前完成门。
+既有Planner、旧单轮Executor与Note Capture真实Provider门已通过并保存脱敏证据。完整AgentSession Executor的确定性Service/Journal/Workflow合同门和单独真实Provider付费门均已通过；DSH原生Trajectory另有不付费的真实Host/Session浏览器门。DSH切换后的浏览器门以当前根脚本为准；已删除的旧Web Playwright命令不再是当前完成门。
 
 ```text
 pnpm test:provider:bailian

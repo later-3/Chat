@@ -971,6 +971,8 @@ export const validTraceFixtures: ReadonlyArray<Record<string, unknown>> = [
     messageIndex: 1,
     messageRole: "assistant",
     contentSha256: SHA256_C,
+    visibleText: "正在执行已批准步骤",
+    visibleTextTruncated: false,
     providerStopReason: "toolUse",
     tokenUsage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
   },
@@ -983,6 +985,8 @@ export const validTraceFixtures: ReadonlyArray<Record<string, unknown>> = [
     toolCallId: "call_1",
     toolName: "edit",
     inputSha256: SHA256_A,
+    inputDisplay: '{"path":"src/index.ts"}',
+    inputDisplayTruncated: false,
   },
   {
     ...base,
@@ -993,6 +997,8 @@ export const validTraceFixtures: ReadonlyArray<Record<string, unknown>> = [
     toolCallId: "call_blocked",
     toolName: "read",
     inputSha256: SHA256_A,
+    inputDisplay: '{"path":"../secret"}',
+    inputDisplayTruncated: false,
     error: { code: "executor.tool_path_outside_workspace", type: "PiToolError" },
   },
   {
@@ -1004,6 +1010,8 @@ export const validTraceFixtures: ReadonlyArray<Record<string, unknown>> = [
     toolCallId: "call_1",
     toolName: "edit",
     resultSha256: SHA256_B,
+    resultDisplay: "Updated src/index.ts",
+    resultDisplayTruncated: false,
     durationMs: 20,
   },
   {
@@ -1015,6 +1023,8 @@ export const validTraceFixtures: ReadonlyArray<Record<string, unknown>> = [
     toolCallId: "call_2",
     toolName: "bash",
     resultSha256: SHA256_B,
+    resultDisplay: "command exited 1",
+    resultDisplayTruncated: false,
     error: { code: "executor.tool_failed", type: "PiToolError" },
     durationMs: 20,
   },
@@ -1027,6 +1037,8 @@ export const validTraceFixtures: ReadonlyArray<Record<string, unknown>> = [
     toolCallId: "call_3",
     toolName: "bash",
     inputSha256: SHA256_A,
+    inputDisplay: '{"command":"pnpm test"}',
+    inputDisplayTruncated: false,
   },
   {
     ...base,

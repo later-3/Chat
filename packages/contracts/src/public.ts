@@ -1,7 +1,8 @@
 /**
  * 浏览器唯一允许的合同入口。
  *
- * 不导出Product Store、Trace、Workflow私有Runtime、版本证据或Provider身份；
+ * 不导出Product Store、内部Trace原文、Workflow私有Runtime、版本证据或Provider身份；
+ * `execution-trace-api`只是经授权、脱敏和长度限制的公开执行证据投影；
  * 避免仅因根barrel的模块初始化就把私有Schema打进前端bundle。
  */
 export * from "./ids.js";
@@ -21,6 +22,7 @@ export * from "./workflow-api.js";
 export * from "./workflow-designer-api.js";
 export * from "./rules-api.js";
 export * from "./note-api.js";
+export * from "./execution-trace-api.js";
 export { memoryBackendIdSchema, type MemoryBackendId } from "./ids.js";
 export {
   memoryContextSelectionSchema,

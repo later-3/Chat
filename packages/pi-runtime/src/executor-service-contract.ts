@@ -23,6 +23,12 @@ const stableErrorCodeSchema = z
   .string()
   .regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/u)
   .max(80);
+const observableDisplaySchema = z.string().max(32_000);
+const endpointHostSchema = z
+  .string()
+  .regex(
+    /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/u,
+  );
 
 export const piToolNameSchema = z.enum(["read", "grep", "find", "ls", "edit", "write", "bash"]);
 export type PiToolName = z.infer<typeof piToolNameSchema>;
@@ -67,8 +73,8 @@ const operationIdentity = {
 };
 
 /**
- * Executor Journal事件永远不存prompt、消息、tool参数或tool结果正文。
- * 正文只存在于受限Operation请求/结果和Pi自己的Session JSONL；事件只保留Hash与统计。
+ * Executor Journal不存Prompt、Provider Payload或隐藏推理。工具输入/结果和可见
+ * Assistant文本作为用户要求的执行证据，只经有界、密钥脱敏的display字段进入。
  */
 export const piExecutorEventSchema = z.discriminatedUnion("type", [
   z
@@ -126,6 +132,7 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       type: z.literal("provider.started"),
       sessionId: piRuntimeSessionIdSchema,
       requestIndex: z.number().int().positive().max(1000),
+      endpointHost: endpointHostSchema,
       inputSha256: sha256Schema,
     })
     .strict(),
@@ -139,6 +146,8 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       toolCallId: z.string().min(1).max(160),
       toolName: piToolNameSchema,
       inputSha256: sha256Schema,
+      inputDisplay: observableDisplaySchema,
+      inputDisplayTruncated: z.boolean(),
       errorCode: stableErrorCodeSchema,
     })
     .strict(),
@@ -149,6 +158,7 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       type: z.literal("provider.completed"),
       sessionId: piRuntimeSessionIdSchema,
       requestIndex: z.number().int().positive().max(1000),
+      endpointHost: endpointHostSchema,
       inputSha256: sha256Schema,
       httpStatus: z.number().int().min(100).max(599),
       providerRequestId: z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/u),
@@ -165,6 +175,7 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       type: z.literal("provider.failed"),
       sessionId: piRuntimeSessionIdSchema,
       requestIndex: z.number().int().positive().max(1000),
+      endpointHost: endpointHostSchema,
       inputSha256: sha256Schema.optional(),
       httpStatus: z.number().int().min(100).max(599).optional(),
       providerRequestId: z
@@ -184,6 +195,8 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       messageIndex: z.number().int().nonnegative().max(100_000),
       role: z.enum(["user", "assistant", "toolResult", "custom"]),
       contentSha256: sha256Schema,
+      visibleText: observableDisplaySchema.optional(),
+      visibleTextTruncated: z.boolean().optional(),
       stopReason: z.enum(["stop", "length", "toolUse", "error", "aborted", "deferred"]).optional(),
       usage: usageSchema.optional(),
     })
@@ -198,6 +211,8 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       toolCallId: z.string().min(1).max(160),
       toolName: piToolNameSchema,
       inputSha256: sha256Schema,
+      inputDisplay: observableDisplaySchema,
+      inputDisplayTruncated: z.boolean(),
     })
     .strict(),
   z
@@ -210,6 +225,8 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       toolCallId: z.string().min(1).max(160),
       toolName: piToolNameSchema,
       resultSha256: sha256Schema,
+      resultDisplay: observableDisplaySchema,
+      resultDisplayTruncated: z.boolean(),
       durationMs: z.number().nonnegative().max(3_600_000),
     })
     .strict(),
@@ -223,6 +240,8 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       toolCallId: z.string().min(1).max(160),
       toolName: piToolNameSchema,
       resultSha256: sha256Schema,
+      resultDisplay: observableDisplaySchema,
+      resultDisplayTruncated: z.boolean(),
       errorCode: stableErrorCodeSchema,
       durationMs: z.number().nonnegative().max(3_600_000),
     })
@@ -237,6 +256,8 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       toolCallId: z.string().min(1).max(160),
       toolName: piToolNameSchema,
       inputSha256: sha256Schema,
+      inputDisplay: observableDisplaySchema,
+      inputDisplayTruncated: z.boolean(),
     })
     .strict(),
   z

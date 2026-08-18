@@ -71,6 +71,7 @@ import {
   createProductSession,
   getCurrentApproval,
   getProductRun,
+  getRunExecutionTrace,
   getRunPlans,
   getSession,
   getSessionMessage,
@@ -1713,6 +1714,43 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
       const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
       const result = await getProductRun(ctx.deps, { principalId: ctx.principalId, productRunId });
       return c.json(result, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/runs/:productRunId/execution-trace", async (c) => {
+    try {
+      const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
+      const params = strictQueryParams(c.req.url, ["afterSequence", "limit"], "执行轨迹查询");
+      const rawAfter = params.get("afterSequence") ?? "0";
+      const rawLimit = params.get("limit") ?? "100";
+      if (!/^(?:0|[1-9][0-9]*)$/u.test(rawAfter) || !/^[1-9][0-9]*$/u.test(rawLimit)) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "执行轨迹cursor或limit非法",
+        });
+      }
+      const afterSequence = Number(rawAfter);
+      const limit = Number(rawLimit);
+      if (!Number.isSafeInteger(afterSequence) || limit > 100 || !Number.isSafeInteger(limit)) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "执行轨迹cursor或limit超出范围",
+        });
+      }
+      c.header("Cache-Control", "private, no-store");
+      return c.json(
+        await getRunExecutionTrace(ctx.deps, {
+          principalId: ctx.principalId,
+          productRunId,
+          afterSequence,
+          limit,
+        }),
+        200,
+      );
     } catch (error) {
       return mapError(c, error);
     }

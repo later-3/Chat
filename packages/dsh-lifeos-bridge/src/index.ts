@@ -1,6 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-host-webserver";
 import type {} from "@deepseek-ai/dsh-llm";
+import type {} from "@deepseek-ai/dsh-tools";
 import type {} from "@deepseek-ai/dsh-workspace";
 import { isAbsolute, resolve } from "node:path";
 import { LifeosLlmAdapter, LIFEOS_PROVIDER } from "./adapter.ts";
@@ -9,9 +10,10 @@ import { ChatProductClient, parseChatApiBaseUrl } from "./chat-client.ts";
 import { assertSameOriginRequest, createLifeosRouteHandler, sendRouteError } from "./http-route.ts";
 import { createPwaAssetHandler, createPwaIndexTap } from "./pwa.ts";
 import { AtomicBridgeStateStore } from "./state-store.ts";
+import { createLifeosTraceTool } from "./trace-tool.ts";
 
 export const name = "chat-dsh-lifeos-bridge";
-export const inject = ["llm", "webServer", "workspaceRegistry"];
+export const inject = ["llm", "tools", "webServer", "workspaceRegistry"];
 
 function requiredStatePath(raw: string | undefined): string {
   if (raw === undefined || raw.trim() === "") {
@@ -71,6 +73,10 @@ export async function apply(ctx: Context): Promise<void> {
     "lifeos bridge: stream lifetime",
   );
   ctx.llm.registerAdapter([LIFEOS_PROVIDER], new LifeosLlmAdapter(chat, state, lifetime.signal));
+  ctx.effect(
+    () => ctx.tools.register(createLifeosTraceTool(chat, state)),
+    "lifeos bridge: Pi execution trajectory tool",
+  );
   ctx.effect(
     () =>
       ctx.webServer.register({

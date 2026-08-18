@@ -116,7 +116,7 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       bailian: loadBailianConfig(process.env),
       planner: runPiPlanner,
       noteCapture: runPiNoteCapture,
-      executor: ({ config: _config, ...input }) => executorClient(input),
+      executor: executorClient,
       ...options.runtimeOverrides,
     });
 

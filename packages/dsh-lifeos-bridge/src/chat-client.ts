@@ -1,11 +1,13 @@
 import type { ZodType } from "zod";
 import { workflowDefinitionsDtoSchema } from "@chat/contracts/public";
+import type { ExecutionTracePage } from "@chat/contracts/public";
 import { z } from "zod";
 import {
   approvalResponseSchema,
   createSessionResponseSchema,
   decisionResponseSchema,
   exactMessageResponseSchema,
+  executionTraceResponseSchema,
   lifeosWorkflowOptionSchema,
   noteCandidateResponseSchema,
   noteDecisionResponseSchema,
@@ -170,6 +172,18 @@ export class ChatProductClient {
       withSignal(signal),
     );
     return value.run;
+  }
+
+  async getExecutionTrace(
+    productRunId: string,
+    afterSequence: number,
+    signal?: AbortSignal,
+  ): Promise<ExecutionTracePage> {
+    return await this.request(
+      `/api/runs/${encodeURIComponent(productRunId)}/execution-trace?afterSequence=${String(afterSequence)}&limit=100`,
+      executionTraceResponseSchema,
+      withSignal(signal),
+    );
   }
 
   async getPlans(productRunId: string, signal?: AbortSignal): Promise<ChatPlan[]> {

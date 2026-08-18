@@ -109,6 +109,8 @@ const rules: Record<
       "@deepseek-ai/cordis",
       "@deepseek-ai/dsh-host-webserver",
       "@deepseek-ai/dsh-llm",
+      // 将远端Pi事件投影成DSH原生tool/call + tool/result，供Trajectory消费。
+      "@deepseek-ai/dsh-tools",
       "@deepseek-ai/dsh-workspace",
       "@deepseek-ai/dsh-client-runtime",
       "@deepseek-ai/dsh-client-ui-conversation",

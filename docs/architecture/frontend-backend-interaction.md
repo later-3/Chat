@@ -38,9 +38,10 @@ DSH原生界面创建自己的`dshSessionId`。Host插件把它映射到一个`p
 4. Adapter从本轮请求提取最新用户文本；`session-title`和`compaction`用途绝不写入Chat。
 5. Adapter取得或幂等创建Product Session，以稳定`commandId`提交`POST /api/sessions/:id/messages`。
 6. Chat在Command边界重新校验Workflow仍是已发布、active、当前Principal可用且Hash一致，再原子提交User Message、Product Run、Receipt和Workflow Start Outbox。
-7. Adapter轮询公开Run和正式Message；Bridge投影按Run阶段读取Plan/Approval或Current Note Candidate，它们都不从HTTP超时推断成功。
+7. Adapter轮询公开Run、正式Message和安全执行轨迹；Bridge投影按Run阶段读取Plan/Approval或Current Note Candidate，它们都不从HTTP超时推断成功。
 8. Run需要人工决定时，Client插件展示当前Plan/Approval或Note Candidate；用户的修订、批准、确认或拒绝经Host桥接为版本/Hash绑定的Chat Command。
-9. Run成功后，Adapter读取Product Store中的正式Assistant Message，并作为DSH文本流返回。DSH将它写入原生会话轨迹。
+9. 执行中出现Pi工具intent时，Adapter先发出`lifeos_trace`显示调用；DSH原生Trajectory立即显示running，显示工具等待同一`toolCallId`的Trace结果后落下输入、输出和耗时，绝不再次执行命令。
+10. Run成功后，Adapter读取Product Store中的正式Assistant Message，并作为DSH文本流返回。DSH将它写入原生会话轨迹。
 
 DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直接输出。Run失败、拒绝或结果未知必须返回明确状态，不能生成假交付。
 
@@ -55,6 +56,7 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 | `GET` | `/api/workflow/definitions` | 读取当前Principal可用的active published Workflow |
 | `GET` | `/api/sessions/:sessionId/messages` | 读取正式Message |
 | `GET` | `/api/runs/:productRunId` | 读取Run状态、阶段与revision |
+| `GET` | `/api/runs/:productRunId/execution-trace` | 读取Principal授权且脱敏的Pi执行轨迹cursor页 |
 | `GET` | `/api/runs/:productRunId/plans` | 读取Plan revisions |
 | `GET` | `/api/runs/:productRunId/approvals/current` | 读取当前可操作Approval |
 | `POST` | `/api/runs/:productRunId/decisions` | 提交版本/Hash绑定的决定 |
@@ -67,7 +69,7 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 
 所有写请求使用稳定`commandId`；修改已有事实时还携带`expectedRevision`。Plan Decision绑定Approval、Plan ID、Plan revision和SHA-256；Note Decision绑定Candidate ID、revision和SHA-256。
 
-桥接状态至少记录DSH Session映射、当前Product Run、发送/决定Command身份及最后已确认阶段。v3状态分别保存Plan与Note的pending command且禁止二者并存。写状态使用原子替换。发生请求已发但响应丢失时，只允许相同命令和内容原样重试或Query恢复，不生成新身份。
+桥接状态至少记录DSH Session映射、当前Product Run、发送/决定Command身份及最后已确认阶段。v4状态分别保存Plan与Note的pending command、原生轨迹显示cursor且禁止两个pending决定并存。写状态使用原子替换。发生请求已发但响应丢失时，只允许相同命令和内容原样重试或Query恢复，不生成新身份。
 
 ## 6. DSH插件表面边界
 

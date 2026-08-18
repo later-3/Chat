@@ -6,7 +6,7 @@ import {
   runAttemptIdSchema,
   type TraceEventInput,
 } from "@chat/contracts";
-import type { BailianConfig, PiExecutorEvent } from "@chat/pi-runtime";
+import type { PiExecutorEvent } from "@chat/pi-runtime";
 import {
   getWorkflowRuntimeContext,
   workflowRunTraceId,
@@ -18,7 +18,6 @@ interface PiExecutorTraceScope {
   readonly attemptId: string;
   readonly promptTemplateVersion: string;
   readonly modelConfigVersion: string;
-  readonly bailian: BailianConfig;
 }
 
 function error<Type extends "PiExecutorError" | "PiToolError" | "ProviderError">(
@@ -148,7 +147,7 @@ export function emitPiExecutorTrace(scope: PiExecutorTraceScope, event: PiExecut
         outcome: "unknown",
         provider: PROVIDER_NAME,
         model: PROVIDER_MODEL,
-        endpointHost: scope.bailian.endpointHost,
+        endpointHost: event.endpointHost,
         operation: "chat_completion",
         providerRequestIndex: event.requestIndex,
         inputManifestSha256: event.inputSha256,
@@ -161,7 +160,7 @@ export function emitPiExecutorTrace(scope: PiExecutorTraceScope, event: PiExecut
         outcome: "success",
         provider: PROVIDER_NAME,
         model: PROVIDER_MODEL,
-        endpointHost: scope.bailian.endpointHost,
+        endpointHost: event.endpointHost,
         operation: "chat_completion",
         providerRequestIndex: event.requestIndex,
         inputManifestSha256: event.inputSha256,
@@ -180,7 +179,7 @@ export function emitPiExecutorTrace(scope: PiExecutorTraceScope, event: PiExecut
         outcome: "failure",
         provider: PROVIDER_NAME,
         model: PROVIDER_MODEL,
-        endpointHost: scope.bailian.endpointHost,
+        endpointHost: event.endpointHost,
         operation: "chat_completion",
         providerRequestIndex: event.requestIndex,
         ...(event.inputSha256 !== undefined ? { inputManifestSha256: event.inputSha256 } : {}),
@@ -200,6 +199,10 @@ export function emitPiExecutorTrace(scope: PiExecutorTraceScope, event: PiExecut
         messageIndex: event.messageIndex,
         messageRole: event.role,
         contentSha256: event.contentSha256,
+        ...(event.visibleText !== undefined ? { visibleText: event.visibleText } : {}),
+        ...(event.visibleTextTruncated !== undefined
+          ? { visibleTextTruncated: event.visibleTextTruncated }
+          : {}),
         ...(event.stopReason !== undefined ? { providerStopReason: event.stopReason } : {}),
         ...(event.usage !== undefined ? { tokenUsage: event.usage } : {}),
       };
@@ -213,6 +216,8 @@ export function emitPiExecutorTrace(scope: PiExecutorTraceScope, event: PiExecut
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         inputSha256: event.inputSha256,
+        inputDisplay: event.inputDisplay,
+        inputDisplayTruncated: event.inputDisplayTruncated,
       };
       break;
     case "tool.blocked":
@@ -224,6 +229,8 @@ export function emitPiExecutorTrace(scope: PiExecutorTraceScope, event: PiExecut
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         inputSha256: event.inputSha256,
+        inputDisplay: event.inputDisplay,
+        inputDisplayTruncated: event.inputDisplayTruncated,
         error: error(event.errorCode, "PiToolError"),
       };
       break;
@@ -236,6 +243,8 @@ export function emitPiExecutorTrace(scope: PiExecutorTraceScope, event: PiExecut
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         resultSha256: event.resultSha256,
+        resultDisplay: event.resultDisplay,
+        resultDisplayTruncated: event.resultDisplayTruncated,
         durationMs: event.durationMs,
       };
       break;
@@ -248,6 +257,8 @@ export function emitPiExecutorTrace(scope: PiExecutorTraceScope, event: PiExecut
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         resultSha256: event.resultSha256,
+        resultDisplay: event.resultDisplay,
+        resultDisplayTruncated: event.resultDisplayTruncated,
         error: error(event.errorCode, "PiToolError"),
         durationMs: event.durationMs,
       };
@@ -261,6 +272,8 @@ export function emitPiExecutorTrace(scope: PiExecutorTraceScope, event: PiExecut
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         inputSha256: event.inputSha256,
+        inputDisplay: event.inputDisplay,
+        inputDisplayTruncated: event.inputDisplayTruncated,
       };
       break;
     case "compaction.started":

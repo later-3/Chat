@@ -1,5 +1,7 @@
 import { expect, test, type APIRequestContext, type Page, type Response } from "@playwright/test";
+import { resolve } from "node:path";
 import { cursorPageSchema, messageDtoSchema, runDtoSchema } from "@chat/contracts/public";
+import { createTraceSink } from "@chat/realtime";
 import { z } from "zod";
 import { exerciseDshWorkbench, observeWorkbenchTraffic } from "./dsh-workbench-real-helper.js";
 
@@ -30,6 +32,51 @@ const PRIVATE_MARKERS = [
   "x-chat-runtime-key",
   "DASHSCOPE_API_KEY",
 ] as const;
+const TRACE_UI_RESULT = "TRACE_UI_RESULT_OK";
+
+function emitTrajectoryTool(productRunId: string, phase: "intent" | "result"): void {
+  const sink = createTraceSink({
+    dir: resolve(import.meta.dirname, "../../../.data/e2e/dsh-real/traces"),
+  });
+  const timestamp = new Date().toISOString();
+  const common = {
+    level: "info" as const,
+    traceId: "tr_dshtrajectory1",
+    spanId: "sp_dshtrajectory1",
+    productRunId: productRunId as never,
+    attemptId: "att_dshtrajectory1" as never,
+    promptTemplateVersion: "executor-trajectory-e2e",
+    modelConfigVersion: "bailian-qwen-trajectory-e2e",
+    piOperationId: "pio_dshtrajectory1",
+    piRuntimeSessionId: "pis_dshtrajectory1",
+    sourceTimestamp: timestamp,
+    turnIndex: 0,
+    toolCallId: "call_dshtrajectory1",
+    toolName: "bash" as const,
+  };
+  sink.emit(
+    phase === "intent"
+      ? {
+          ...common,
+          eventName: "pi.tool.intent_persisted",
+          outcome: "unknown",
+          operationEventSequence: 1,
+          inputSha256: "d".repeat(64),
+          inputDisplay: '{"command":"node --version","path":"."}',
+          inputDisplayTruncated: false,
+        }
+      : {
+          ...common,
+          eventName: "pi.tool.completed",
+          outcome: "success",
+          operationEventSequence: 2,
+          resultSha256: "e".repeat(64),
+          resultDisplay: TRACE_UI_RESULT,
+          resultDisplayTruncated: false,
+          durationMs: 750,
+        },
+  );
+}
 
 type Projection = z.infer<typeof projectionSchema>;
 
@@ -137,6 +184,28 @@ test("rc.6 DSH：发送 -> Plan等待人工 -> 刷新 -> 批准 -> 正式Assista
   await expect(page.getByTestId("lifeos-run-status")).toHaveText("等待你审核");
   const beforeRefresh = await waitingProjection;
   if (beforeRefresh.run === null) throw new Error("Plan审核投影缺少Product Run");
+
+  // 真实DSH Host + Session + Agent loop：先只落intent，确认原生Trajectory出现
+  // running工具记录；再落result，显示工具通过公开Trace Query完成同一call。
+  emitTrajectoryTool(beforeRefresh.run.productRunId, "intent");
+  const trajectoryTab = page.getByRole("tab", { name: /轨迹|Trajectory/u });
+  await expect(trajectoryTab).toBeVisible();
+  await trajectoryTab.click();
+  await expect(page.getByText(/lifeos_trace|node --version/u).first()).toBeVisible();
+  await expect(page.getByText(TRACE_UI_RESULT)).toHaveCount(0);
+  emitTrajectoryTool(beforeRefresh.run.productRunId, "result");
+  await expect(page.getByText(TRACE_UI_RESULT).first()).toBeVisible();
+  const publicTrace = (await apiJson(
+    request,
+    `/api/runs/${encodeURIComponent(beforeRefresh.run.productRunId)}/execution-trace?afterSequence=0&limit=100`,
+  )) as { items?: unknown[] };
+  expect(publicTrace.items).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ type: "tool_call", toolName: "bash" }),
+      expect.objectContaining({ type: "tool_result", output: TRACE_UI_RESULT }),
+    ]),
+  );
+  await page.getByRole("tab", { name: /对话|Chat/u }).click();
 
   await page.reload();
   await expect(page.getByTestId("lifeos-plan-card")).toBeVisible();

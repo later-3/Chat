@@ -53,6 +53,7 @@ Workbench当前为Beta，不属于通用CI/CD完成门；`--workbench=off`用于
 | Note审核 | `LifeosBridgeService.projection/decideNote`、`LifeosDock` | Candidate ID/revision/Hash、pending原样重试、Confirm/修订/拒绝 |
 | 决定提交 | `ChatProductClient.submitDecision` | 同一pending command、Run CAS、Plan/Approval版本与Hash |
 | 正式回复 | Bridge LLM Adapter | 只从Chat Message Query选择正式Assistant Message |
+| Pi执行轨迹 | `LifeosLlmAdapter.nextTraceTool`、`createLifeosTraceTool` | cursor、toolCallId、input/result、DSH running/completed |
 
 不要在日志/Watch中展示完整用户正文、密钥、Hook Token、Workflow Run ID或pi Session ID。
 
@@ -76,7 +77,9 @@ pnpm debug:trace -- inspect-run <productRunId>
 pnpm debug:replay -- --run <productRunId>
 ```
 
-Trace只保存可观察事件、对象引用、版本、耗时和安全错误，不保存模型隐藏推理或完整Provider Payload。
+Trace保存可观察事件、对象引用、版本、耗时、安全错误，以及边界前已脱敏且有32K上限的Pi可见回复、工具输入和结果；不保存模型隐藏推理、密钥或完整Provider Payload。
+
+真实门：`pnpm test:provider:bailian:coding`验证Pi标准配置链和`read/write/bash`；`pnpm --filter @chat/dsh-web test:e2e:trajectory-real`验证固定rc.6原生Trajectory的running→result投影，不调用付费Provider。
 
 ## Workbench调试
 

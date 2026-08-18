@@ -15,7 +15,7 @@ import { resolveTraceDir, traceFileName } from "./trace-paths.js";
  * 写入语义：
  * - 每次emit先通过严格判别联合完成Schema校验，再追加一行JSON；
  * - 合同不存在任意内容通道：未声明字段（含body/prompt/payload等）直接失败，
- *   不做“写入后脱敏”；正文只存Product Store，Trace只持对象引用与Hash；
+ *   不做“写入后脱敏”；只有Pi Executor明确声明的有界、已脱敏工具显示证据可写入；
  * - 校验失败抛错（属于调用方编程错误），不产生半行写入；
  * - 文件按UTC日期切分，目录缺失时自动创建；
  * - 崩溃耐久性不属于B1边界（B2 Product Store提供原子提交语义）。

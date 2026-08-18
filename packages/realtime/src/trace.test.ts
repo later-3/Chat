@@ -13,6 +13,7 @@ import { describe, expect, it, vi } from "vitest";
 import { runTraceCli } from "./trace-cli.js";
 import { TraceReadError, readTraceEvents } from "./trace-reader.js";
 import { createTraceSink } from "./trace-sink.js";
+import { createExecutionTraceReader } from "./execution-trace-reader.js";
 
 /** 合成泄漏标记：证明正文根本无法写入，而不是写入后变成[redacted]。 */
 const CONTENT_MARKER = "TRACE_CONTENT_MUST_NEVER_BE_WRITTEN";
@@ -197,6 +198,111 @@ describe("readTraceEvents", () => {
 
   it("目录不存在时返回空结果", () => {
     expect(readTraceEvents({ dir: join(tempDir(), "missing") })).toEqual([]);
+  });
+});
+
+describe("createExecutionTraceReader", () => {
+  it("公开投影保留Pi工具输入、结果和耗时，并使用单调cursor", () => {
+    const dir = tempDir();
+    const sink = createTraceSink({ dir });
+    const common = {
+      level: "info" as const,
+      traceId: "trace_pi1",
+      spanId: "span_pi1",
+      productRunId: RUN_A,
+      attemptId: ATT_A,
+      promptTemplateVersion: "executor-1.0.0",
+      modelConfigVersion: "bailian-qwen-1.0.0",
+      piOperationId: "pio_trace1",
+      piRuntimeSessionId: "pis_trace1",
+      sourceTimestamp: "2026-08-07T00:00:00.000Z",
+    };
+    sink.emit({
+      ...common,
+      eventName: "pi.tool.intent_persisted",
+      outcome: "unknown",
+      operationEventSequence: 1,
+      turnIndex: 0,
+      toolCallId: "call_read_1",
+      toolName: "read",
+      inputSha256: SHA256_A,
+      inputDisplay: '{"path":"src/index.ts"}',
+      inputDisplayTruncated: false,
+    });
+    sink.emit({
+      ...common,
+      eventName: "pi.tool.completed",
+      outcome: "success",
+      operationEventSequence: 2,
+      turnIndex: 0,
+      toolCallId: "call_read_1",
+      toolName: "read",
+      resultSha256: SHA256_A,
+      resultDisplay: "1: export const ready = true;",
+      resultDisplayTruncated: false,
+      durationMs: 12,
+    });
+    const reader = createExecutionTraceReader({ dir });
+    const first = reader.read({ productRunId: RUN_A, afterSequence: 0, limit: 1 });
+    expect(first.items).toEqual([
+      expect.objectContaining({
+        sequence: 1,
+        type: "tool_call",
+        toolName: "read",
+        input: '{"path":"src/index.ts"}',
+      }),
+    ]);
+    expect(first.hasMore).toBe(true);
+    const second = reader.read({
+      productRunId: RUN_A,
+      afterSequence: first.nextCursor,
+      limit: 100,
+    });
+    expect(second.items).toEqual([
+      expect.objectContaining({
+        sequence: 2,
+        type: "tool_result",
+        output: "1: export const ready = true;",
+        durationMs: 12,
+      }),
+    ]);
+    expect(second.nextCursor).toBe(2);
+    expect(second.hasMore).toBe(false);
+  });
+
+  it("旧v1 Pi事件缺少显示字段时仍可读取且明确标记缺失", () => {
+    const dir = tempDir();
+    const sink = createTraceSink({ dir });
+    sink.emit({
+      level: "info",
+      eventName: "pi.tool.intent_persisted",
+      traceId: "trace_legacypi",
+      spanId: "span_legacypi",
+      productRunId: RUN_A,
+      attemptId: ATT_A,
+      promptTemplateVersion: "executor-legacy",
+      modelConfigVersion: "bailian-legacy",
+      outcome: "unknown",
+      piOperationId: "pio_legacytrace1",
+      operationEventSequence: 1,
+      sourceTimestamp: "2026-08-07T00:00:00.000Z",
+      piRuntimeSessionId: "pis_legacytrace1",
+      turnIndex: 0,
+      toolCallId: "call_legacy_1",
+      toolName: "read",
+      inputSha256: SHA256_A,
+    });
+    const page = createExecutionTraceReader({ dir }).read({
+      productRunId: RUN_A,
+      afterSequence: 0,
+      limit: 100,
+    });
+    expect(page.items).toEqual([
+      expect.objectContaining({
+        type: "tool_call",
+        input: "Legacy trace did not retain observable tool input.",
+      }),
+    ]);
   });
 });
 

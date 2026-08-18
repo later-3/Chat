@@ -188,6 +188,15 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
       list: () => [backend],
       get: (backendId) => (backendId === "mbk_memmy" ? backend : undefined),
     },
+    executionTraceReader: {
+      read: ({ productRunId, afterSequence }) => ({
+        schemaVersion: "chat-execution-trace.v1",
+        productRunId,
+        items: [],
+        nextCursor: afterSequence,
+        hasMore: false,
+      }),
+    },
   };
   const app = createApiApp({
     traceSink: null,
@@ -363,6 +372,24 @@ describe("公开产品API", () => {
     expect(runDetail.phase).toBe("plan_review");
     expect(runDetail.allowedActions).toEqual(["request_revision", "approve", "reject"]);
     expect(runDetail.currentPlan?.planRevision).toBe(1);
+
+    const traceRes = await app.request(
+      `/api/runs/${run.productRunId}/execution-trace?afterSequence=0&limit=100`,
+    );
+    expect(traceRes.status).toBe(200);
+    expect(await traceRes.json()).toEqual({
+      schemaVersion: "chat-execution-trace.v1",
+      productRunId: run.productRunId,
+      items: [],
+      nextCursor: 0,
+      hasMore: false,
+    });
+    for (const query of ["afterSequence=-1", "limit=0", "limit=101", "unknown=1"]) {
+      const invalidTrace = await app.request(
+        `/api/runs/${run.productRunId}/execution-trace?${query}`,
+      );
+      expect(invalidTrace.status, query).toBe(400);
+    }
 
     const plansRes = await app.request(`/api/runs/${run.productRunId}/plans`);
     const plans = z.object({ items: z.array(planDtoSchema) }).parse(await plansRes.json());

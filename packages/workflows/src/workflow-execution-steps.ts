@@ -186,27 +186,16 @@ async function runExecutorWithinStep(input: {
     promptTemplateVersion: EXECUTOR_PROMPT_TEMPLATE_VERSION,
     modelConfigVersion: MODEL_CONFIG_VERSION,
   };
-  if (ctx.bailian.apiKey === undefined) {
-    const code = "provider.pre_request.no_api_key";
-    emitProviderTrace(scoped, "provider.request.failed", {
-      durationMs: 0,
-      errorCode: code,
-      preRequest: true,
-    });
-    emitPiNodeTrace(scoped, "pi.node.failed", "executor", { errorCode: code });
-    throw new PiStepFailure(code, "pi.execute预请求失败:未配置Provider凭据");
-  }
   emitPiNodeTrace(scoped, "pi.node.started", "executor");
   try {
     const result = await ctx.executor({
-      config: ctx.bailian,
       contract: input.contract,
       stepId: input.stepId,
       executionAttemptId: input.executionAttemptId,
       inputManifestSha256,
       contextItems: input.contextItems,
       dependencyResults: input.dependencyResults.map((dependency) => dependency),
-      onEvent: (event) => emitPiExecutorTrace({ ...scoped, bailian: ctx.bailian }, event),
+      onEvent: (event) => emitPiExecutorTrace(scoped, event),
     });
     if (!("kind" in result)) {
       emitPiNodeTrace(scoped, "pi.node.completed", "executor", {

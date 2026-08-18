@@ -2,7 +2,6 @@ import "../../../scripts/load-env.mjs";
 import { serve } from "@hono/node-server";
 import {
   createPiExecutorService,
-  loadBailianConfig,
   loadPiExecutorWorkspaceRoots,
   PiExecutorOperationStore,
 } from "@chat/pi-runtime/coding-executor";
@@ -25,7 +24,6 @@ const api = createRuntimeApiClient({
 const runtime = createPiExecutorService({
   credential,
   store,
-  bailian: loadBailianConfig(process.env),
   workspaceRoots: await loadPiExecutorWorkspaceRoots(process.env),
   emptyWorkspaceRoot: `${dataRoot}/empty-workspaces`,
   agentDir: process.env.CHAT_PI_EXECUTOR_AGENT_DIR ?? `${dataRoot}/agent`,

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { LlmAdapter, LlmError } from "@deepseek-ai/dsh-llm";
+import { CallId, LlmAdapter, LlmError } from "@deepseek-ai/dsh-llm";
+import type { ExecutionTraceItem } from "@chat/contracts/public";
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -10,6 +11,7 @@ import type {
 import { ChatProductApiError, ChatProductClient } from "./chat-client.ts";
 import { dshSessionIdSchema, type ChatRun } from "./contracts.ts";
 import { AtomicBridgeStateStore, type RequestBinding } from "./state-store.ts";
+import { LIFEOS_TRACE_TOOL } from "./trace-tool.ts";
 
 export const LIFEOS_PROVIDER = "lifeos";
 export const LIFEOS_MODEL = "workflow";
@@ -86,6 +88,32 @@ async function* textStream(text: string): AsyncIterable<StreamChunk> {
   yield { type: "text-delta", index: 0, text };
   yield { type: "block-end", index: 0, block: { type: "text", text } };
   yield { type: "finish", reason: { kind: "stop" } };
+}
+
+async function* traceToolStream(
+  productRunId: string,
+  item: Extract<ExecutionTraceItem, { type: "tool_call" }>,
+): AsyncIterable<StreamChunk> {
+  const id = CallId(`lifeos_${sha256(`${productRunId}\u0000${item.toolCallId}`).slice(0, 48)}`);
+  const args = JSON.stringify({
+    productRunId,
+    sourceSequence: item.sequence,
+    toolCallId: item.toolCallId,
+    toolName: item.toolName,
+    input: item.input,
+    inputTruncated: item.inputTruncated,
+  });
+  const block = { type: "tool-call" as const, id, name: LIFEOS_TRACE_TOOL, arguments: args };
+  yield { type: "block-start", index: 0, blockType: "tool-call" };
+  yield {
+    type: "tool-call-delta",
+    index: 0,
+    id,
+    name: LIFEOS_TRACE_TOOL,
+    argumentsDelta: args,
+  };
+  yield { type: "block-end", index: 0, block };
+  yield { type: "finish", reason: { kind: "tool-calls" } };
 }
 
 export function lastUserPrompt(messages: readonly Message[]): UserPrompt {
@@ -233,7 +261,22 @@ export class LifeosLlmAdapter extends LlmAdapter {
         run = await this.chat.getRun(request.productRunId, signal);
       }
 
-      while (!TERMINAL_STATUSES.has(run.status)) {
+      const trajectoryEnabled =
+        options.tools?.some((tool) => tool.name === LIFEOS_TRACE_TOOL) === true;
+      while (true) {
+        if (trajectoryEnabled) {
+          const traceCall = await this.nextTraceTool(
+            dshSessionId,
+            prompt.requestKey,
+            run.productRunId,
+            signal,
+          );
+          if (traceCall !== undefined) {
+            yield* traceToolStream(run.productRunId, traceCall);
+            return;
+          }
+        }
+        if (TERMINAL_STATUSES.has(run.status)) break;
         await delay(signal);
         run = await this.chat.getRun(run.productRunId, signal);
       }
@@ -287,6 +330,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
             prompt.messageId,
             prompt.textSha256,
           ),
+          traceCursor: 0,
           // 首次创建时冻结会话当前的选择草稿；之后用户再改草稿不影响本请求。
           ...(binding.workflowSelection !== undefined
             ? { workflowSelection: binding.workflowSelection }
@@ -299,6 +343,42 @@ export class LifeosLlmAdapter extends LlmAdapter {
         return structuredClone(request);
       },
     );
+  }
+
+  /**
+   * 读取下一条尚未镜像的Pi工具intent。非工具事件仍推进cursor；遇到intent时停住，
+   * 由lifeos_trace工具在匹配result到达后越过它，保证DSH显示真实运行态。
+   */
+  private async nextTraceTool(
+    dshSessionId: string,
+    requestKey: string,
+    productRunId: string,
+    signal: AbortSignal | undefined,
+  ): Promise<Extract<ExecutionTraceItem, { type: "tool_call" }> | undefined> {
+    const binding = await this.state.readSession(dshSessionId);
+    const request = binding?.requests[requestKey];
+    if (request?.productRunId !== productRunId) {
+      throw new Error("lifeos trace request is not bound to the Product Run");
+    }
+    let cursor = request.traceCursor ?? 0;
+    while (true) {
+      const page = await this.chat.getExecutionTrace(productRunId, cursor, signal);
+      const next = page.items.find(
+        (item): item is Extract<ExecutionTraceItem, { type: "tool_call" }> =>
+          item.type === "tool_call",
+      );
+      if (next !== undefined) {
+        if (next.sequence > cursor + 1) {
+          await this.state.advanceTraceCursor(dshSessionId, productRunId, next.sequence - 1);
+        }
+        return next;
+      }
+      if (page.nextCursor > cursor) {
+        await this.state.advanceTraceCursor(dshSessionId, productRunId, page.nextCursor);
+      }
+      cursor = page.nextCursor;
+      if (!page.hasMore) return undefined;
+    }
   }
 
   private async rememberRun(

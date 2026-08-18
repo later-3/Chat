@@ -11,7 +11,6 @@ import {
   type AuthorizeExecutorOperationResponse,
 } from "@chat/contracts";
 import { computeExecutionInputManifestSha256, hashCanonical } from "@chat/domain";
-import type { BailianConfig } from "./config.js";
 import {
   AgentSessionPiCodingAgentRunner,
   PiCodingAgentExecutionError,
@@ -70,7 +69,6 @@ export async function loadPiExecutorWorkspaceRoots(
 export interface PiExecutorServiceOptions {
   readonly credential: string;
   readonly store: PiExecutorOperationStore;
-  readonly bailian: BailianConfig;
   readonly workspaceRoots: ReadonlyMap<string, PiExecutorWorkspaceRoot>;
   readonly emptyWorkspaceRoot: string;
   readonly agentDir: string;
@@ -249,7 +247,6 @@ export function createPiExecutorService(options: PiExecutorServiceOptions) {
         cwd,
         agentDir: options.agentDir,
         sessionsDir: options.sessionsDir,
-        config: options.bailian,
         store: options.store,
         signal: controller.signal,
       });

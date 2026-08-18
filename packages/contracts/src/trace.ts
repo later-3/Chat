@@ -36,7 +36,8 @@ import {
  * 职责边界：
  * - Trace记录系统边界、状态转换、调用关系、错误、耗时与统计；
  * - 用户正文、Plan正文、模型候选正文、Prompt、Provider请求/响应正文只保存在
- *   Product Store，Trace通过`对象ID + revision + sha256`引用它们；
+ *   Product Store，Trace通过`对象ID + revision + sha256`引用它们；Pi工具调用/结果
+ *   例外地保存Executor边界前已脱敏且有界的可观察显示证据；
  * - Trace不是第二份产品事实源，永远不保存模型隐藏推理；
  * - 合同是以eventName为判别字段的严格联合：未声明字段（含body/content/
  *   message/prompt/payload等任意正文入口）在根部与嵌套层都失败关闭，
@@ -1410,6 +1411,8 @@ const piRuntimeSessionIdSchema = z
 const operationEventSequenceSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const piTurnIndexSchema = z.number().int().nonnegative().max(1000);
 const piToolNameSchema = z.enum(["read", "grep", "find", "ls", "edit", "write", "bash"]);
+/** 只容纳Executor在边界前已脱敏、有界的可见执行证据。 */
+const piObservableDisplaySchema = z.string().max(32_000);
 const piOperationFields = {
   ...modelScopedFields,
   piOperationId: piOperationIdSchema,
@@ -1488,6 +1491,8 @@ const piMessageCompletedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piMessageCom
   messageIndex: z.number().int().nonnegative().max(100_000),
   messageRole: z.enum(["user", "assistant", "toolResult", "custom"]),
   contentSha256: sha256Schema,
+  visibleText: piObservableDisplaySchema.optional(),
+  visibleTextTruncated: z.boolean().optional(),
   providerStopReason: providerStopReasonSchema.optional(),
   tokenUsage: tokenUsageSchema.optional(),
   ...durationMsOptional,
@@ -1501,6 +1506,9 @@ const piToolIntentPersistedSchema = defineTraceEvent(
     toolCallId: z.string().min(1).max(160),
     toolName: piToolNameSchema,
     inputSha256: sha256Schema,
+    /** v1历史事件可能没有显示字段；新Executor Operation合同强制产生。 */
+    inputDisplay: piObservableDisplaySchema.optional(),
+    inputDisplayTruncated: z.boolean().optional(),
     ...durationMsOptional,
   },
 );
@@ -1510,6 +1518,8 @@ const piToolBlockedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piToolBlocked, "r
   toolCallId: z.string().min(1).max(160),
   toolName: piToolNameSchema,
   inputSha256: sha256Schema,
+  inputDisplay: piObservableDisplaySchema.optional(),
+  inputDisplayTruncated: z.boolean().optional(),
   error: traceErrorSchema,
   ...durationMsOptional,
 });
@@ -1519,6 +1529,8 @@ const piToolCompletedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piToolCompleted
   toolCallId: z.string().min(1).max(160),
   toolName: piToolNameSchema,
   resultSha256: sha256Schema,
+  resultDisplay: piObservableDisplaySchema.optional(),
+  resultDisplayTruncated: z.boolean().optional(),
   ...durationMsRequired,
 });
 const piToolFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piToolFailed, "failure", {
@@ -1527,6 +1539,8 @@ const piToolFailedSchema = defineTraceEvent(TRACE_EVENT_NAMES.piToolFailed, "fai
   toolCallId: z.string().min(1).max(160),
   toolName: piToolNameSchema,
   resultSha256: sha256Schema,
+  resultDisplay: piObservableDisplaySchema.optional(),
+  resultDisplayTruncated: z.boolean().optional(),
   error: traceErrorSchema,
   ...durationMsRequired,
 });
@@ -1539,6 +1553,8 @@ const piToolOutcomeUnknownSchema = defineTraceEvent(
     toolCallId: z.string().min(1).max(160),
     toolName: piToolNameSchema,
     inputSha256: sha256Schema,
+    inputDisplay: piObservableDisplaySchema.optional(),
+    inputDisplayTruncated: z.boolean().optional(),
     ...durationMsOptional,
   },
 );

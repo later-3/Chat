@@ -12,6 +12,7 @@ import type {
   MemoryQuery,
   RunContextDto,
   SessionDto,
+  ExecutionTracePage,
 } from "@chat/contracts";
 import { type ApplicationDeps } from "./deps.js";
 import { toApprovalDto, toMessageDto, toPlanDto, toRunDto, toSessionDto } from "./dto.js";
@@ -180,6 +181,37 @@ export async function getProductRun(
     input.principalId,
   );
   return { run: toRunDto(run, currentPlan, currentApproval) };
+}
+
+/**
+ * 公开执行轨迹Query：Product Store只负责授权，Runtime Trace Reader负责证据投影。
+ * 两者不会合并为第二套Run事实；缺少Reader时失败关闭。
+ */
+export async function getRunExecutionTrace(
+  deps: ApplicationDeps,
+  input: {
+    principalId: PrincipalId;
+    productRunId: ProductRunId;
+    afterSequence?: number;
+    limit?: number;
+  },
+): Promise<ExecutionTracePage> {
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  loadRunContext(deps, snapshot, input.productRunId, input.principalId);
+  if (deps.executionTraceReader === undefined) {
+    throw new ApplicationError({
+      code: "internal_error",
+      httpStatus: 503,
+      message: "执行轨迹Reader未配置",
+      retryable: true,
+      recoveryAction: "retry_same_command",
+    });
+  }
+  return deps.executionTraceReader.read({
+    productRunId: input.productRunId,
+    afterSequence: input.afterSequence ?? 0,
+    limit: input.limit ?? 100,
+  });
 }
 
 export async function getRunPlans(

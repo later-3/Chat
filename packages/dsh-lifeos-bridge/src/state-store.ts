@@ -50,6 +50,8 @@ const requestSchema = z
     userTextSha256: sha256Schema,
     messageCommandId: commandIdSchema.transform(String),
     productRunId: productRunIdSchema.transform(String).optional(),
+    /** 已经投影进DSH原生Trajectory的Run内Trace位置；只用于显示幂等。 */
+    traceCursor: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
     pendingDecision: pendingDecisionSchema.optional(),
     pendingNoteDecision: pendingNoteDecisionSchema.optional(),
     /**
@@ -82,7 +84,7 @@ const sessionBindingSchema = z
 
 /**
  * rc.6切换时已经存在的Bridge状态。迁移读取接受v1/v2中的Workflow选择和Plan pending，
- * 随后立即改写为v3；不能在旧schema标记下静默扩展strict持久格式。
+ * 随后立即改写为当前版本；不能在旧schema标记下静默扩展strict持久格式。
  */
 const legacyBridgeStateSchema = z
   .object({
@@ -100,7 +102,7 @@ const legacyBridgeStateV2Schema = z
 
 const bridgeStateSchema = z
   .object({
-    schemaVersion: z.literal("chat-dsh-lifeos-state.v3"),
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v4"),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
   .strict();
@@ -112,7 +114,7 @@ export type PendingDecision = z.infer<typeof pendingDecisionSchema>;
 export type PendingNoteDecision = z.infer<typeof pendingNoteDecisionSchema>;
 
 const emptyState = (): BridgeState => ({
-  schemaVersion: "chat-dsh-lifeos-state.v3",
+  schemaVersion: "chat-dsh-lifeos-state.v4",
   sessions: {},
 });
 
@@ -209,18 +211,58 @@ export class AtomicBridgeStateStore {
       this.state = current.data;
       return this.state;
     }
-    const legacy = z.union([legacyBridgeStateSchema, legacyBridgeStateV2Schema]).safeParse(parsed);
+    const legacyBridgeStateV3Schema = z
+      .object({
+        schemaVersion: z.literal("chat-dsh-lifeos-state.v3"),
+        sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
+      })
+      .strict();
+    const legacy = z
+      .union([legacyBridgeStateSchema, legacyBridgeStateV2Schema, legacyBridgeStateV3Schema])
+      .safeParse(parsed);
     if (!legacy.success) {
       this.state = bridgeStateSchema.parse(parsed);
       return this.state;
     }
     const migrated = bridgeStateSchema.parse({
-      schemaVersion: "chat-dsh-lifeos-state.v3",
+      schemaVersion: "chat-dsh-lifeos-state.v4",
       sessions: legacy.data.sessions,
     });
     await this.writeAtomic(migrated);
     this.state = migrated;
     return this.state;
+  }
+
+  /** 校验DSH Session当前请求确实绑定该Product Run，避免展示工具成为越权Query。 */
+  async assertCurrentTraceBinding(dshSessionId: string, productRunId: string): Promise<void> {
+    const binding = await this.readSession(dshSessionId);
+    const request =
+      binding?.currentRequestKey === undefined
+        ? undefined
+        : binding.requests[binding.currentRequestKey];
+    if (request?.productRunId !== productRunId) {
+      throw new Error("lifeos trace tool is not bound to the current Product Run");
+    }
+  }
+
+  /** 单调推进展示cursor；重复执行同一显示工具不会回退或制造第二条事实链。 */
+  async advanceTraceCursor(
+    dshSessionId: string,
+    productRunId: string,
+    sequence: number,
+  ): Promise<void> {
+    const existing = await this.readSession(dshSessionId);
+    if (existing === undefined) throw new Error("lifeos trace session is not bound");
+    await this.mutateSession(dshSessionId, existing.createSessionCommandId, (binding) => {
+      const request =
+        binding.currentRequestKey === undefined
+          ? undefined
+          : binding.requests[binding.currentRequestKey];
+      if (request?.productRunId !== productRunId) {
+        throw new Error("lifeos trace cursor Product Run mismatch");
+      }
+      request.traceCursor = Math.max(request.traceCursor ?? 0, sequence);
+    });
   }
 
   private async writeAtomic(next: BridgeState): Promise<void> {

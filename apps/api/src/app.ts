@@ -9,7 +9,7 @@ import {
   type TraceEventInput,
 } from "@chat/contracts";
 import type { ApplicationDeps } from "@chat/application";
-import { createTraceSink, type TraceSink } from "@chat/realtime";
+import { createExecutionTraceReader, createTraceSink, type TraceSink } from "@chat/realtime";
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import { createProductRouter } from "./product-routes.js";
@@ -165,9 +165,16 @@ export function createApiApp(options: ApiAppOptions = {}) {
   });
 
   if (options.product !== undefined) {
+    const productDeps =
+      traceSink === null
+        ? options.product.deps
+        : {
+            ...options.product.deps,
+            executionTraceReader: createExecutionTraceReader({ dir: traceSink.dir }),
+          };
     app.route(
       "/api",
-      createProductRouter({ deps: options.product.deps, principalId: options.product.principalId }),
+      createProductRouter({ deps: productDeps, principalId: options.product.principalId }),
     );
   }
 

@@ -1,4 +1,5 @@
 import "../../../scripts/load-env.mjs";
+import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +14,6 @@ import {
   executionContractSchema,
 } from "@chat/contracts";
 import { AgentSessionPiCodingAgentRunner } from "./coding-agent-executor.js";
-import { isBailianReady, loadBailianConfig } from "./config.js";
 import { PiExecutorOperationStore } from "./executor-operation-store.js";
 import {
   PI_EXECUTOR_PROTOCOL_VERSION,
@@ -21,10 +21,10 @@ import {
 } from "./executor-service-contract.js";
 
 /**
- * 显式真实门：在临时Workspace中要求完整AgentSession读取、写入并用bash验证文件。
- * 不记录Prompt、文件正文、Tool参数/结果或隐藏推理；只输出事件类型、Tool名、Hash和统计。
+ * 显式真实门：在临时Workspace中要求完整AgentSession观察、写入并用bash验证文件。
+ * 输出已在Journal边界脱敏且有界的命令、路径和工具结果证据；不输出Prompt、
+ * Provider Payload、凭据或隐藏推理。
  */
-const config = loadBailianConfig(process.env);
 let root: string | undefined;
 
 afterAll(async () => {
@@ -32,18 +32,21 @@ afterAll(async () => {
 });
 
 describe("真实百炼Pi Coding Agent（付费，显式运行）", () => {
-  it("AgentSession完成read/write/bash工具链并留下连续Journal", async () => {
-    if (!isBailianReady(config)) {
-      throw new Error(
-        "缺少DASHSCOPE_API_KEY：配置后显式运行 pnpm test:provider:bailian:coding（本测试不Skip）",
-      );
-    }
+  it("AgentSession开放完整工具集并留下真实文件与bash Journal", async () => {
     root = await mkdtemp(join(tmpdir(), "chat-pi-coding-real-"));
     const workspace = join(root, "workspace");
+    const marker = `PI_TRACE_GATE_${randomUUID().replaceAll("-", "")}`;
     await mkdir(workspace);
     await writeFile(
       join(workspace, "TASK.md"),
-      "Create result.txt and verify it with the shell.\n",
+      [
+        "Inspect this TASK.md with an available Pi workspace tool; the required marker is not present in the execution contract.",
+        "Copy only the marker from the final line into result.txt. Prefer the Pi write tool for this edit.",
+        "Then use the Pi bash tool to verify result.txt exists and exactly matches the discovered marker.",
+        "Then report completion.",
+        `MARKER=${marker}`,
+        "",
+      ].join("\n"),
       "utf8",
     );
     const store = await PiExecutorOperationStore.open(join(root, "operations"));
@@ -59,11 +62,15 @@ describe("真实百炼Pi Coding Agent（付费，显式运行）", () => {
         {
           stepId: "step-1",
           title: "完成临时Workspace任务",
-          purpose: "读取TASK.md，创建result.txt，并使用bash验证文件存在且非空",
+          purpose: "从TASK.md发现未在合同中提供的marker，写入result.txt，并用Pi bash做最终验证",
           dependsOn: [],
           inputRefs: [],
-          expectedOutput: "result.txt存在，并报告实际工具与验证结果",
-          successCriteria: ["读取TASK.md", "创建result.txt", "使用bash验证result.txt非空"],
+          expectedOutput: "result.txt只包含从TASK.md读取的marker，并报告实际工具与验证结果",
+          successCriteria: [
+            "从TASK.md读取合同中没有提供的marker",
+            "创建只包含该marker的result.txt",
+            "使用bash工具验证result.txt与marker精确一致",
+          ],
           capabilityRefs: [
             EXECUTION_CAPABILITY_WORKSPACE_READ,
             EXECUTION_CAPABILITY_WORKSPACE_WRITE,
@@ -111,15 +118,12 @@ describe("真实百炼Pi Coding Agent（付费，显式运行）", () => {
       cwd: workspace,
       agentDir: join(root, "agent"),
       sessionsDir: join(root, "sessions"),
-      config,
       store,
       signal: AbortSignal.timeout(CODING_EXECUTOR_TIMEOUT_MS_PER_STEP),
     });
     await store.complete(request.operationId, result, 0);
 
-    expect((await readFile(join(workspace, "result.txt"), "utf8")).trim().length).toBeGreaterThan(
-      0,
-    );
+    expect((await readFile(join(workspace, "result.txt"), "utf8")).trim()).toBe(marker);
     const events = store.getEvents(request.operationId);
     expect(events.map((event) => event.sequence)).toEqual(
       Array.from({ length: events.length }, (_item, index) => index + 1),
@@ -127,17 +131,75 @@ describe("真实百炼Pi Coding Agent（付费，显式运行）", () => {
     const tools = events.flatMap((event) =>
       event.type === "tool.intent_persisted" ? [event.toolName] : [],
     );
-    expect(tools).toContain("read");
-    expect(tools.some((tool) => tool === "write" || tool === "edit")).toBe(true);
+    const sessionStarted = events.find((event) => event.type === "session.started");
+    expect(sessionStarted?.type).toBe("session.started");
+    if (sessionStarted?.type !== "session.started") throw new Error("missing session.started");
+    expect(sessionStarted.enabledTools).toEqual(
+      expect.arrayContaining(["read", "grep", "find", "ls", "edit", "write", "bash"]),
+    );
+    // 具体选择read/write还是等价bash是Provider行为，不冻结成产品合同；完成门验证
+    // AgentSession确实开放全部批准工具，并且实际工具调用的输入/结果完整成对进入Journal。
     expect(tools).toContain("bash");
+    const intents = events.filter((event) => event.type === "tool.intent_persisted");
+    const terminalToolCallIds = new Set(
+      events.flatMap((event) =>
+        event.type === "tool.completed" || event.type === "tool.failed" ? [event.toolCallId] : [],
+      ),
+    );
+    expect(intents.length).toBeGreaterThanOrEqual(2);
+    expect(intents.every((event) => terminalToolCallIds.has(event.toolCallId))).toBe(true);
+    expect(events.some((event) => event.type === "provider.started")).toBe(true);
+    expect(events.some((event) => event.type === "provider.completed")).toBe(true);
+    expect(events.some((event) => event.type === "session.settled")).toBe(true);
+    const observable: Array<{
+      sequence: number;
+      phase: "call" | "result";
+      toolName: (typeof tools)[number];
+      display: string;
+      truncated: boolean;
+      durationMs?: number;
+    }> = [];
+    for (const event of events) {
+      if (event.type === "tool.intent_persisted") {
+        observable.push({
+          sequence: event.sequence,
+          phase: "call",
+          toolName: event.toolName,
+          display: event.inputDisplay.slice(0, 800),
+          truncated: event.inputDisplayTruncated,
+        });
+      }
+      if (event.type === "tool.completed" || event.type === "tool.failed") {
+        observable.push({
+          sequence: event.sequence,
+          phase: "result",
+          toolName: event.toolName,
+          display: event.resultDisplay.slice(0, 800),
+          truncated: event.resultDisplayTruncated,
+          durationMs: event.durationMs,
+        });
+      }
+    }
+    const displays = observable.map((item) => item.display).join("\n");
+    expect(displays).toContain("TASK.md");
+    expect(displays).toContain("result.txt");
+    expect(displays).toContain(marker);
+    expect(
+      observable.some(
+        (item) => item.phase === "result" && item.toolName === "bash" && item.display.length > 0,
+      ),
+    ).toBe(true);
+    expect(displays).not.toMatch(/(?:api[_-]?key|authorization)\s*[:=]\s*(?!\[REDACTED\])/iu);
     console.log(
       JSON.stringify({
         provider: "bailian",
         model: "qwen3.7-plus",
         operationId: request.operationId,
+        enabledTools: sessionStarted.enabledTools,
         eventCount: events.length,
         toolNames: tools,
         eventTypes: events.map((event) => event.type),
+        observable,
       }),
     );
   });
