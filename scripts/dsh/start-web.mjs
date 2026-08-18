@@ -22,7 +22,7 @@ installDshWebEnvironment(process.env, dshWebEnvironment(root));
 process.chdir(root);
 process.argv = [process.execPath, executable, ...dshWebArgs(runtime)];
 
-// Gateway、DSH Host同属一个受监督PID；浏览器永远只接触43110，内部端口不会进入页面配置。
+// Gateway、DSH Host同属一个受监督PID；浏览器只接触当前实例公开端口，内部端口不会进入页面配置。
 const gateway = await startWebGateway({
   logger(error) {
     console.error(`[dsh-gateway] ${error instanceof Error ? error.message : String(error)}`);

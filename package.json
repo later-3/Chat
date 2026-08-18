@@ -9,7 +9,9 @@
   "scripts": {
     "setup": "node scripts/dev/setup.mjs",
     "dev": "node scripts/dev/start.mjs",
-    "dev:debug": "node scripts/dev/start.mjs --debug",
+    "dev:debug": "node scripts/dev/start.mjs --debug --instance=debug --workbench=off",
+    "dev:debug:status": "node scripts/dev/status.mjs --instance=debug",
+    "dev:debug:stop": "node scripts/debug/stop.mjs --instance=debug",
     "dev:status": "node scripts/dev/status.mjs",
     "dev:stop": "node scripts/debug/stop.mjs",
     "test:dev-runtime": "node --test scripts/dev/app-runtime.test.mjs",

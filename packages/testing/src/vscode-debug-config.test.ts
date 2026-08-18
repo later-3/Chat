@@ -60,7 +60,7 @@ describe("VS Code应用级调试配置", () => {
       request: "launch",
       cwd: "${workspaceFolder}",
       program: "${workspaceFolder}/scripts/dev/start.mjs",
-      args: ["--debug"],
+      args: ["--debug", "--instance=debug", "--workbench=off"],
       autoAttachChildProcesses: true,
       console: "internalConsole",
       outputCapture: "std",
@@ -70,23 +70,31 @@ describe("VS Code应用级调试配置", () => {
       scripts: Record<string, string>;
     };
     expect(packageJson.scripts.dev).toBe("node scripts/dev/start.mjs");
-    expect(packageJson.scripts["dev:debug"]).toBe("node scripts/dev/start.mjs --debug");
+    expect(packageJson.scripts["dev:debug"]).toBe(
+      "node scripts/dev/start.mjs --debug --instance=debug --workbench=off",
+    );
+    expect(packageJson.scripts["dev:debug:status"]).toBe(
+      "node scripts/dev/status.mjs --instance=debug",
+    );
+    expect(packageJson.scripts["dev:debug:stop"]).toBe(
+      "node scripts/debug/stop.mjs --instance=debug",
+    );
     expect(packageJson.scripts["dev:status"]).toBe("node scripts/dev/status.mjs");
     expect(packageJson.scripts["dev:stop"]).toBe("node scripts/debug/stop.mjs");
   });
 
   it("应用Ready后才启动Chrome前端调试", () => {
     expect(appDebug?.serverReadyAction).toEqual({
-      pattern: "\\[chat\\] ready: (http://127\\.0\\.0\\.1:43110/)",
+      pattern: "\\[chat\\] ready: (http://127\\.0\\.0\\.1:44110/)",
       action: "startDebugging",
       killOnServerStop: true,
       config: {
         name: "Chat：前端浏览器（内部）",
         type: "pwa-chrome",
         request: "launch",
-        url: "http://127.0.0.1:43110/",
+        url: "http://127.0.0.1:44110/",
         webRoot: "${workspaceFolder}",
-        userDataDir: "${workspaceFolder}/.data/debug/browser-profile",
+        userDataDir: "${workspaceFolder}/.data/instances/vscode-debug/browser-profile",
         cleanUp: "wholeBrowser",
         killBehavior: "forceful",
       },
@@ -95,7 +103,9 @@ describe("VS Code应用级调试配置", () => {
 
   it("浏览器使用worktree专属profile并随父会话停止", () => {
     const browser = appDebug?.serverReadyAction?.config;
-    expect(browser?.userDataDir).toBe("${workspaceFolder}/.data/debug/browser-profile");
+    expect(browser?.userDataDir).toBe(
+      "${workspaceFolder}/.data/instances/vscode-debug/browser-profile",
+    );
     expect(browser?.cleanUp).toBe("wholeBrowser");
     expect(browser?.killBehavior).toBe("forceful");
     expect(appDebug?.serverReadyAction?.killOnServerStop).toBe(true);

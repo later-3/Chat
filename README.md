@@ -47,13 +47,24 @@ pnpm dev:status
 pnpm dev:stop
 ```
 
+本机production由LaunchAgent常驻时，VS Code F5与命令行调试使用独立实例，不需要停服：
+
+```bash
+pnpm dev:debug          # http://127.0.0.1:44110/
+pnpm dev:debug:status
+pnpm dev:debug:stop
+```
+
+debug的端口、Product Store、Workflow、Runtime、Trace、DSH状态、PID与浏览器Profile均位于
+当前worktree的隔离边界；为避免源码和构建产物互相影响，应在独立worktree中打开VS Code。
+
 `pnpm run setup`会按仓库固定证据自动准备DSH Profile、Workflow Bundle和code-server；
 当前默认不下载或准备Memory工件。以后显式恢复Memory专项调试时，也不需要另外克隆
 DeepSeek Harness、memmy、Tencent MemoryCore或code-server。没有配置
 `DASHSCOPE_API_KEY`时服务仍可启动和浏览，但真实规划/执行会明确显示Provider not ready。
 支持平台、工具链、首次下载、配置与故障处理以[本地安装指南](./docs/getting-started/local-install.md)为唯一入口。
 
-`pnpm dev`默认启动Workflow、API、Code Workbench与DSH，不启动memmy/MemoryCore，也不在API或Workflow中注册Memory Adapter；默认Planning的可选Memory节点因此只会安全跳过。Memory代码与独立测试保留，但统一安装、VS Code F5、`pnpm dev`和`pnpm dev:debug`当前都没有启用入口，后续恢复必须另行评审。Code Workbench从DSH侧边栏底部的全局入口打开；临时不需要时可用`pnpm dev -- --workbench=off`。code-server只监听受管0600 Unix socket，浏览器只能经43110 Gateway访问；43114是DSH loopback内部端口。扩展市场默认离线，不连接Open VSX或自动查询Copilot；未来若接入扩展Provider，必须另行建立显式网络与权限合同。
+`pnpm dev`默认启动Workflow、API、Code Workbench与DSH，不启动memmy/MemoryCore，也不在API或Workflow中注册Memory Adapter；默认Planning的可选Memory节点因此只会安全跳过。Memory代码与独立测试保留，但统一安装、VS Code F5、`pnpm dev`和`pnpm dev:debug`当前都没有启用入口，后续恢复必须另行评审。debug实例同时固定关闭Beta Workbench；production中的Code Workbench从DSH侧边栏底部全局入口打开，临时不需要时可用`pnpm dev -- --workbench=off`。code-server只监听受管0600 Unix socket，浏览器只能经43110 Gateway访问；43114是production的DSH loopback内部端口。扩展市场默认离线，不连接Open VSX或自动查询Copilot；未来若接入扩展Provider，必须另行建立显式网络与权限合同。
 
 完整固定端口与断点入口见[本地调试](./docs/debug/local-debug.md)。
 

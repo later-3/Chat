@@ -88,6 +88,8 @@ code-server拥有编辑器临时状态和Workspace内进程，不拥有Chat Sess
 
 ## 8. 调试入口
 
+- 实例、端口与数据隔离：`scripts/dev/runtime-instance.mjs`
+- 服务图与生命周期：`scripts/dev/app-runtime.mjs`
 - DSH Host/Client桥接：`packages/dsh-lifeos-bridge`
 - DSH启动与Profile：`apps/dsh-web`、`scripts/dsh`
 - Workbench运行：`scripts/workbench`
@@ -97,4 +99,4 @@ code-server拥有编辑器临时状态和Workspace内进程，不拥有Chat Sess
 - Workflow：`packages/workflows`
 - pi Adapter：`packages/pi-runtime`
 
-本地固定端口与命令见[本地调试](../debug/local-debug.md)。
+production与VS Code debug的固定端口、独立事实路径和命令见[本地调试](../debug/local-debug.md)。

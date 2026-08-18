@@ -3,11 +3,9 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import {
-  FROZEN_PORTS,
   ROLE_COMMAND_FRAGMENTS,
   assertRetiredPortsEmpty,
   checkPorts,
-  frozenPortList,
   loadPidEntries,
   probeRetiredPort,
   recordPidEntry,
@@ -27,6 +25,7 @@ import {
 import { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
 export { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
 import { cleanupOwnedDebugBrowser } from "./browser-lifecycle.mjs";
+import { resolveRuntimeInstance } from "./runtime-instance.mjs";
 
 /** Memory当前冻结关闭；保留字段只为旧命令给出明确失败，而不是保留隐式启用入口。 */
 export const MEMORY_PROFILES = Object.freeze(["off"]);
@@ -104,7 +103,14 @@ export function assertLocalSetupPrerequisites({
 }
 
 export function parseDevArgs(argv) {
-  const options = { debug: false, help: false, memory: "off", workbench: "code-server" };
+  const options = {
+    debug: false,
+    help: false,
+    instance: "production",
+    memory: "off",
+    workbench: "code-server",
+  };
+  let workbenchExplicit = false;
   for (const argument of argv) {
     if (argument === "--debug") {
       options.debug = true;
@@ -112,6 +118,14 @@ export function parseDevArgs(argv) {
     }
     if (argument === "--help" || argument === "-h") {
       options.help = true;
+      continue;
+    }
+    if (argument.startsWith("--instance=")) {
+      const value = argument.slice("--instance=".length);
+      if (!["production", "debug"].includes(value)) {
+        throw new Error("--instance只支持 production、debug");
+      }
+      options.instance = value;
       continue;
     }
     if (argument.startsWith("--memory=")) {
@@ -128,9 +142,19 @@ export function parseDevArgs(argv) {
         throw new Error(`--workbench只支持 ${WORKBENCH_PROFILES.join("、")}`);
       }
       options.workbench = value;
+      workbenchExplicit = true;
       continue;
     }
     throw new Error(`未知参数：${argument}`);
+  }
+  if (options.debug && options.instance !== "debug") {
+    throw new Error("--debug必须配合--instance=debug，避免附加或停止production实例");
+  }
+  if (options.instance === "debug") {
+    if (workbenchExplicit && options.workbench !== "off") {
+      throw new Error("debug实例当前只支持--workbench=off；Workbench Beta仍属于production本地纵向");
+    }
+    options.workbench = "off";
   }
   return options;
 }
@@ -138,16 +162,17 @@ export function parseDevArgs(argv) {
 export function devUsage() {
   return [
     "用法: pnpm dev [-- --workbench=off|code-server]",
-    "      pnpm dev:debug [-- --workbench=off|code-server]",
+    "      pnpm dev:debug",
     "",
-    "默认不启动或装配Memory；只启动Workflow、API、code-server Workbench和DSH Web。",
+    "pnpm dev使用production实例；pnpm dev:debug使用隔离端口与独立数据的debug实例。",
+    "默认不启动或装配Memory；debug实例固定关闭Beta Code Workbench。",
     "Memory代码与独立测试保留；当前统一启动器不提供启用入口。",
   ].join("\n");
 }
 
 export function setupUsage() {
   return [
-    "用法: pnpm run setup [--workbench=off|code-server]",
+    "用法: pnpm run setup [--workbench=off|code-server] [--instance=production|debug]",
     "",
     "默认只准备Workflow Bundle、DSH Profile与code-server工件，不准备或启动Memory。",
   ].join("\n");
@@ -204,9 +229,19 @@ function commonEnvironment(root, environment) {
   };
 }
 
+function assertRuntimeProfile(instance, workbench, debug = false) {
+  if (debug && instance !== "debug") {
+    throw new Error("Inspector调试只能运行在隔离debug实例");
+  }
+  if (instance === "debug" && workbench !== "off") {
+    throw new Error("debug实例当前固定关闭Beta Code Workbench");
+  }
+}
+
 export function createServiceDefinitions({
   root,
   debug = false,
+  instance = "production",
   memory = "off",
   workbench = "code-server",
   environment = process.env,
@@ -215,13 +250,17 @@ export function createServiceDefinitions({
   if (!WORKBENCH_PROFILES.includes(workbench)) {
     throw new Error(`未知Workbench Profile：${workbench}`);
   }
+  assertRuntimeProfile(instance, workbench, debug);
   const repoRoot = resolve(root);
-  const workbenchRuntime = resolveLocalWorkbenchRuntimeContract(repoRoot, environment);
+  const runtime = resolveRuntimeInstance(repoRoot, instance, environment);
+  const managedEnvironment = { ...environment, ...runtime.environment };
+  const ports = runtime.ports;
+  const workbenchRuntime = resolveLocalWorkbenchRuntimeContract(repoRoot, managedEnvironment);
   const providerEnvironment = join(repoRoot, "scripts/debug/load-provider-env.mjs");
   const services = [];
 
   const executorArgs = [];
-  if (debug) executorArgs.push(`--inspect=127.0.0.1:${FROZEN_PORTS.piExecutorInspector}`);
+  if (debug) executorArgs.push(`--inspect=127.0.0.1:${ports.piExecutorInspector}`);
   executorArgs.push("--import", providerEnvironment);
   executorArgs.push(
     "--import",
@@ -231,21 +270,21 @@ export function createServiceDefinitions({
   services.push({
     id: "piExecutor",
     role: "piExecutor",
-    port: FROZEN_PORTS.piExecutor,
+    port: ports.piExecutor,
     command: process.execPath,
     args: executorArgs,
     cwd: repoRoot,
     env: {
-      ...commonEnvironment(repoRoot, environment),
-      CHAT_PI_EXECUTOR_PORT: String(FROZEN_PORTS.piExecutor),
+      ...commonEnvironment(repoRoot, managedEnvironment),
+      CHAT_PI_EXECUTOR_PORT: String(ports.piExecutor),
     },
-    readyUrl: `http://127.0.0.1:${FROZEN_PORTS.piExecutor}/healthz`,
+    readyUrl: `http://127.0.0.1:${ports.piExecutor}/healthz`,
     timeoutMs: 30_000,
     stopTimeoutMs: 10_000,
   });
 
   const workflowArgs = [];
-  if (debug) workflowArgs.push(`--inspect=127.0.0.1:${FROZEN_PORTS.workflowInspector}`);
+  if (debug) workflowArgs.push(`--inspect=127.0.0.1:${ports.workflowInspector}`);
   workflowArgs.push("--import", providerEnvironment);
   workflowArgs.push(
     "--import",
@@ -255,23 +294,23 @@ export function createServiceDefinitions({
   services.push({
     id: "workflow",
     role: "workflow",
-    port: FROZEN_PORTS.workflow,
+    port: ports.workflow,
     command: process.execPath,
     args: workflowArgs,
     cwd: repoRoot,
     env: {
-      ...commonEnvironment(repoRoot, environment),
+      ...commonEnvironment(repoRoot, managedEnvironment),
       CHAT_MEMORY_ENABLED: "0",
-      CHAT_WORKFLOW_PORT: String(FROZEN_PORTS.workflow),
-      CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${FROZEN_PORTS.piExecutor}`,
+      CHAT_WORKFLOW_PORT: String(ports.workflow),
+      CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${ports.piExecutor}`,
     },
-    readyUrl: `http://127.0.0.1:${FROZEN_PORTS.workflow}/healthz`,
+    readyUrl: `http://127.0.0.1:${ports.workflow}/healthz`,
     timeoutMs: 30_000,
     stopTimeoutMs: 3_000,
   });
 
   const apiArgs = [];
-  if (debug) apiArgs.push(`--inspect=127.0.0.1:${FROZEN_PORTS.apiInspector}`);
+  if (debug) apiArgs.push(`--inspect=127.0.0.1:${ports.apiInspector}`);
   apiArgs.push("--import", join(repoRoot, "scripts/load-env.mjs"));
   apiArgs.push(
     "--import",
@@ -281,16 +320,16 @@ export function createServiceDefinitions({
   services.push({
     id: "api",
     role: "api",
-    port: FROZEN_PORTS.api,
+    port: ports.api,
     command: process.execPath,
     args: apiArgs,
     cwd: join(repoRoot, "apps/api"),
     env: {
-      ...commonEnvironment(repoRoot, environment),
+      ...commonEnvironment(repoRoot, managedEnvironment),
       CHAT_MEMORY_ENABLED: "0",
-      PORT: String(FROZEN_PORTS.api),
+      PORT: String(ports.api),
     },
-    readyUrl: `http://127.0.0.1:${FROZEN_PORTS.api}/api/readyz`,
+    readyUrl: `http://127.0.0.1:${ports.api}/api/readyz`,
     timeoutMs: 30_000,
     stopTimeoutMs: 3_000,
   });
@@ -309,7 +348,7 @@ export function createServiceDefinitions({
       "TMP",
       "TEMP",
     ]) {
-      const value = environment[name];
+      const value = managedEnvironment[name];
       if (typeof value === "string" && value !== "") workbenchEnvironment[name] = value;
     }
     services.push({
@@ -338,7 +377,7 @@ export function createServiceDefinitions({
   services.push({
     id: "web",
     role: "web",
-    port: FROZEN_PORTS.web,
+    port: ports.web,
     command: process.execPath,
     // load-env 让服务器部署模式的公开主机名/认证文件路径与 API 共用同一
     // .env 配置源；它不覆盖已有环境变量，也不打印任何值。
@@ -349,12 +388,12 @@ export function createServiceDefinitions({
     ],
     cwd: repoRoot,
     env: dshWebEnvironment(repoRoot, {
-      ...environment,
+      ...managedEnvironment,
       CHAT_CODE_WORKBENCH_ENABLED: workbench === "code-server" ? "1" : "0",
       ...workbenchRuntime,
     }),
     // /healthz 由网关本地回答：认证模式下 / 会 302 到登录页，不能作就绪证据。
-    readyUrl: `http://127.0.0.1:${FROZEN_PORTS.web}/healthz`,
+    readyUrl: `http://127.0.0.1:${ports.web}/healthz`,
     timeoutMs: 60_000,
     // rc.6为整棵Cordis应用保留5秒dispose窗口；监督器稍晚再升级SIGKILL。
     stopTimeoutMs: 7_000,
@@ -492,15 +531,17 @@ export function reclaimOwnedPortOccupants(root, occupied, dependencies) {
 
 export async function preflightLocalRuntime(
   root,
-  { workbench = "code-server" } = {},
+  { instance = "production", workbench = "code-server", environment = process.env } = {},
   { retiredPortGuard = assertRetiredPortsEmpty } = {},
 ) {
   if (!WORKBENCH_PROFILES.includes(workbench)) {
     throw new Error(`未知Workbench Profile：${workbench}`);
   }
+  assertRuntimeProfile(instance, workbench);
+  const runtime = resolveRuntimeInstance(root, instance, environment);
   // 退役43113永远只检查不回收，且必须发生在PID登记/legacy evidence清理之前。
   await retiredPortGuard();
-  const activePorts = frozenPortList();
+  const activePorts = runtime.portList;
   const entries = loadPidEntries();
   for (const result of terminateRecorded(entries)) {
     console.log(`[chat] 清理 ${result.role} pid=${result.pid}: ${result.action}`);
@@ -513,7 +554,9 @@ export async function preflightLocalRuntime(
   ) {
     console.log(`[chat] 清理Unix socket Workbench：${workbenchRecovery.action}`);
   }
-  const browserCleanup = await cleanupOwnedDebugBrowser(root);
+  const browserCleanup = await cleanupOwnedDebugBrowser(root, {
+    profileRoot: runtime.browserProfile,
+  });
   if (browserCleanup.terminatedPids.length > 0 || browserCleanup.removedLocks.length > 0) {
     console.log(
       `[chat] 清理专属调试浏览器：processes=${browserCleanup.terminatedPids.length}, locks=${browserCleanup.removedLocks.length}`,
@@ -547,12 +590,16 @@ export async function preflightLocalRuntime(
 export async function assertLocalSetupIdle(
   root,
   {
+    instance = "production",
     environment = process.env,
     probePort = probeRetiredPort,
     readWorkbenchEvidence = readCodeServerProcessEvidence,
   } = {},
 ) {
-  const results = await Promise.all(frozenPortList().map((port) => probePort(port)));
+  const runtime = resolveRuntimeInstance(root, instance, environment);
+  const managedEnvironment = { ...environment, ...runtime.environment };
+  const stopCommand = runtime.name === "debug" ? "pnpm dev:debug:stop" : "pnpm dev:stop";
+  const results = await Promise.all(runtime.portList.map((port) => probePort(port)));
   const unavailable = results.filter((result) => result.state !== "free");
   if (unavailable.length > 0) {
     const details = unavailable
@@ -562,26 +609,38 @@ export async function assertLocalSetupIdle(
       )
       .join("、");
     throw new Error(
-      `本地服务仍在运行或端口状态未知：${details}；setup不会自动停止，请先运行 pnpm dev:stop`,
+      `本地服务仍在运行或端口状态未知：${details}；setup不会自动停止，请先运行 ${stopCommand}`,
     );
   }
-  const workbenchEnvironment = resolveLocalWorkbenchRuntimeContract(root, environment);
+  const workbenchEnvironment = resolveLocalWorkbenchRuntimeContract(root, managedEnvironment);
   const evidence = readWorkbenchEvidence(root, workbenchEnvironment);
   if (
     evidence !== undefined &&
     ["starting", "running", "legacy-running"].includes(evidence.status)
   ) {
-    throw new Error(`Workbench仍处于${evidence.status}；setup不会回收进程，请先运行 pnpm dev:stop`);
+    throw new Error(
+      `Workbench仍处于${evidence.status}；setup不会回收进程，请先运行 ${stopCommand}`,
+    );
   }
-  console.log(`[setup] 固定端口空闲：${frozenPortList().join(", ")}`);
+  console.log(`[setup] ${runtime.name}实例固定端口空闲：${runtime.portList.join(", ")}`);
 }
 
-async function preparePinnedRuntimeArtifacts({ root, memory, workbench = "code-server", signal }) {
+async function preparePinnedRuntimeArtifacts({
+  root,
+  instance = "production",
+  memory,
+  workbench = "code-server",
+  signal,
+  environment = process.env,
+}) {
   if (!MEMORY_PROFILES.includes(memory)) throw new Error(`未知Memory Profile：${memory}`);
   if (!WORKBENCH_PROFILES.includes(workbench)) {
     throw new Error(`未知Workbench Profile：${workbench}`);
   }
-  const workbenchRuntime = resolveLocalWorkbenchRuntimeContract(root);
+  assertRuntimeProfile(instance, workbench);
+  const runtime = resolveRuntimeInstance(root, instance, environment);
+  const managedEnvironment = { ...environment, ...runtime.environment };
+  const workbenchRuntime = resolveLocalWorkbenchRuntimeContract(root, managedEnvironment);
   console.log(`[chat] 固定源码缓存：${workbenchRuntime.CHAT_FIXED_SOURCE_CACHE_ROOT}`);
   if (workbench === "code-server") {
     console.log("[chat] 准备固定code-server Workbench…");
@@ -589,27 +648,59 @@ async function preparePinnedRuntimeArtifacts({ root, memory, workbench = "code-s
   }
   if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
   console.log("[chat] 构建Workflow Bundles…");
-  await runPreparationCommand({ root, signal });
+  await runPreparationCommand({ root, signal, environment: managedEnvironment });
 }
 
 /** 只准备可重建工件，不清理运行进程，也不读取或收敛活动Product Run。 */
-export async function prepareLocalArtifacts({ root, memory, workbench = "code-server", signal }) {
-  await preparePinnedRuntimeArtifacts({ root, memory, workbench, signal });
+export async function prepareLocalArtifacts({
+  root,
+  instance = "production",
+  memory,
+  workbench = "code-server",
+  signal,
+  environment = process.env,
+}) {
+  const runtime = resolveRuntimeInstance(root, instance, environment);
+  const managedEnvironment = { ...environment, ...runtime.environment };
+  await preparePinnedRuntimeArtifacts({
+    root,
+    instance,
+    memory,
+    workbench,
+    signal,
+    environment: managedEnvironment,
+  });
   if (signal?.aborted) throw signal.reason ?? new Error("准备已取消");
   console.log("[chat] 准备DSH Web Profile与LifeOS Bridge…");
-  await runDshPreparationCommand({ root, signal });
+  await runDshPreparationCommand({ root, signal, environment: managedEnvironment });
 }
 
-export async function prepareLocalRuntime({ root, memory, workbench = "code-server", signal }) {
-  await preflightLocalRuntime(root, { workbench });
+export async function prepareLocalRuntime({
+  root,
+  instance = "production",
+  memory,
+  workbench = "code-server",
+  signal,
+  environment = process.env,
+}) {
+  const runtime = resolveRuntimeInstance(root, instance, environment);
+  const managedEnvironment = { ...environment, ...runtime.environment };
+  await preflightLocalRuntime(root, { instance, workbench, environment: managedEnvironment });
   if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
-  await preparePinnedRuntimeArtifacts({ root, memory, workbench, signal });
+  await preparePinnedRuntimeArtifacts({
+    root,
+    instance,
+    memory,
+    workbench,
+    signal,
+    environment: managedEnvironment,
+  });
   if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
   console.log("[chat] 检查活动Workflow版本兼容性…");
-  await runVersionRecoveryCommand({ root, signal });
+  await runVersionRecoveryCommand({ root, signal, environment: managedEnvironment });
   if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
   console.log("[chat] 准备DSH Web Profile与LifeOS Bridge…");
-  await runDshPreparationCommand({ root, signal });
+  await runDshPreparationCommand({ root, signal, environment: managedEnvironment });
 }
 
 export async function waitForServiceReady({
@@ -787,6 +878,7 @@ export function assertRuntimeFiles(root) {
   const required = [
     "apps/dsh-web/node_modules/@deepseek-ai/dsh/package.json",
     "apps/api/node_modules/tsx/dist/loader.mjs",
+    "apps/pi-executor/node_modules/tsx/dist/loader.mjs",
     "packages/dsh-lifeos-bridge/package.json",
     "packages/workflows/node_modules/tsx/dist/loader.mjs",
   ];

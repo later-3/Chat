@@ -5,7 +5,7 @@ import { loadRuntimeCredential } from "./runtime-credential.js";
 import { createWorkflowRuntimeServer } from "./runtime-server.js";
 
 /**
- * Workflow Runtime进程入口（固定端口43112，任务书§17）。
+ * Workflow Runtime进程入口（production 43112；隔离debug实例44112）。
  * 端口被占用时@hono/node-server直接失败关闭，不自动换号。
  */
 const WORKFLOW_PORT = Number.parseInt(process.env.CHAT_WORKFLOW_PORT ?? "43112", 10);

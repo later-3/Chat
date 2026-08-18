@@ -100,12 +100,12 @@ async function waitForNoOwnedBrowser(findPids, timeoutMs, sleep) {
 export async function cleanupOwnedDebugBrowser(
   root,
   {
+    profileRoot = debugBrowserProfileRoot(root),
     findPids,
     kill = (pid, signal) => process.kill(pid, signal),
     sleep = (ms) => new Promise((resolveWait) => setTimeout(resolveWait, ms)),
   } = {},
 ) {
-  const profileRoot = debugBrowserProfileRoot(root);
   const findOwned = findPids ?? (() => findOwnedDebugBrowserPids(profileRoot));
   const initialPids = findOwned();
   for (const pid of initialPids) {

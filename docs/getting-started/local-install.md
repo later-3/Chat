@@ -96,6 +96,19 @@ pnpm dev:status
 pnpm dev:stop
 ```
 
+若本机已经通过LaunchAgent常驻production，VS Code F5和命令行调试不需要停止它；使用隔离实例：
+
+```bash
+pnpm run setup --instance=debug # 独立worktree首次准备
+pnpm dev:debug
+pnpm dev:debug:status
+pnpm dev:debug:stop
+```
+
+debug入口固定为`http://127.0.0.1:44110/`，数据位于当前worktree的
+`.data/instances/vscode-debug`。为同时隔离源码与构建产物，应在独立worktree中打开VS Code。
+不要在LaunchAgent常驻时再运行普通`pnpm dev`，因为它仍是production实例。
+
 默认命令仍可启用Beta Code Workbench；当前只使用Chat/PWA时建议关闭：
 
 ```bash
@@ -105,7 +118,9 @@ pnpm dev -- --workbench=off
 当前不启动或装配Memory。`18960`与`18970`在整个运行期间都应保持空闲；统一启动器
 拒绝`--memory=all|memmy|memorycore`，避免环境变量或历史命令静默恢复Memory。
 
-`dev:stop`完成后，43110、43111、43112、43114、43115与43119都应释放，18960与18970应始终未被默认服务图占用，
+`dev:stop`完成后，production的43110、43111、43112、43114、43115与43119都应释放；
+`dev:debug:stop`只释放debug的44110、44111、44112、44114、44115、44120、44121与44122，不影响production。
+18960/18970与19960/19970应始终未被默认服务图占用，
 code-server的Unix socket和Terminal子进程也应被受管回收。不要用`killall`、`pkill`或
 直接删除`.data`替代停止命令；`.data`还可能包含产品数据和运行证据。
 

@@ -1,13 +1,14 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 
 /**
  * 仅服务端持有的Runtime凭据（任务书§10、§12.4）。
  *
  * 用途：API私有Runtime Router与Workflow Runtime分发端点的共享凭据。
  * - 优先读取CHAT_RUNTIME_KEY环境变量（.env，不入库）。
- * - 缺省时在<repoRoot>/.data/runtime/runtime-key原子创建随机凭据（0600），
+ * - 缺省时在<repoRoot>/.data/runtime/runtime-key原子创建随机凭据（0600）；
+ *   隔离调试实例通过CHAT_RUNTIME_CREDENTIAL_PATH使用自己的文件，
  *   API与Workflow进程读取同一文件；.data已gitignore。
  * - 浏览器CORS、公开Router和前端Bundle都不能获得该凭据。
  * - 不打印、不进入Trace、不写入任何提交。
@@ -31,8 +32,10 @@ export async function loadRuntimeCredential(repoRoot: string): Promise<string> {
     }
     return fromEnv;
   }
-  const dir = `${repoRoot}/.data/runtime`;
-  const filePath = `${dir}/runtime-key`;
+  const filePath = resolve(
+    process.env.CHAT_RUNTIME_CREDENTIAL_PATH ?? `${repoRoot}/.data/runtime/runtime-key`,
+  );
+  const dir = dirname(filePath);
   try {
     const existing = (await readFile(filePath, "utf8")).trim();
     if (CREDENTIAL_PATTERN.test(existing)) return existing;
@@ -43,7 +46,7 @@ export async function loadRuntimeCredential(repoRoot: string): Promise<string> {
     }
     if (error instanceof RuntimeCredentialError) throw error;
   }
-  await mkdir(dirname(filePath), { recursive: true });
+  await mkdir(dir, { recursive: true });
   const credential = `rtk_${randomUUID().replaceAll("-", "")}`;
   try {
     await writeFile(filePath, credential, { encoding: "utf8", mode: 0o600, flag: "wx" });

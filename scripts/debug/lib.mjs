@@ -12,30 +12,22 @@ import { dirname, join, resolve } from "node:path";
 import { createServer as createNetServer } from "node:net";
 import { fileURLToPath } from "node:url";
 
+import { DEBUG_RUNTIME_PORTS, PRODUCTION_RUNTIME_PORTS } from "../dev/runtime-instance.mjs";
+
 /**
  * Chat本地调试进程管理共享库（任务书§8）。
  *
  * 安全规则：
- * - PID登记由同一Git仓库的所有worktree共享，因为固定端口本来就是仓库级排他资源；
+ * - production PID登记由同一Git仓库的所有worktree共享；VS Code debug使用另一组端口
+ *   和worktree私有CHAT_DEBUG_DIR，使production的launchd恢复不会清理调试进程；
  * - 优先终止登记过且通过身份复核（命令片段+启动时间）的进程；
  * - 登记丢失时，只回收“固定端口角色+命令签名+进程cwd+Git Common Directory”四重匹配的Chat进程；
  * - 端口被其他应用占用时安全失败并报告端口/PID/进程名，绝不杀未知进程；
  * - 禁止使用pkill、killall或按模糊名称终止进程。
  */
 
-export const FROZEN_PORTS = Object.freeze({
-  web: 43110,
-  webInternal: 43114,
-  api: 43111,
-  workflow: 43112,
-  piExecutor: 43115,
-  workbenchLease: 43119,
-  memory: 18960,
-  memoryCore: 18970,
-  apiInspector: 43120,
-  workflowInspector: 43121,
-  piExecutorInspector: 43122,
-});
+export const FROZEN_PORTS = PRODUCTION_RUNTIME_PORTS;
+export { DEBUG_RUNTIME_PORTS };
 
 // 43113曾经暴露无认证code-server。它不再是可回收服务端口：任何监听者（即使看似
 // 属于旧Chat wrapper）都必须在启动清理发生前失败关闭，由维护者显式处置。
@@ -561,19 +553,20 @@ export async function assertRetiredPortsEmpty({
   );
 }
 
-/** 固定端口到Chat服务角色的唯一映射；未知端口永远不参与自动回收。 */
+/**
+ * production/debug两组受管端口到Chat服务角色的唯一映射；未知端口永远不参与自动回收。
+ * 实际清理仍只遍历当前实例自己的端口，因此这里只识别另一组端口不会造成跨实例终止。
+ */
 export function roleForFrozenPort(port) {
-  if (port === FROZEN_PORTS.web || port === FROZEN_PORTS.webInternal) return "web";
-  if (port === FROZEN_PORTS.api || port === FROZEN_PORTS.apiInspector) return "api";
-  if (port === FROZEN_PORTS.workflow || port === FROZEN_PORTS.workflowInspector) {
-    return "workflow";
+  for (const ports of [FROZEN_PORTS, DEBUG_RUNTIME_PORTS]) {
+    if (port === ports.web || port === ports.webInternal) return "web";
+    if (port === ports.api || port === ports.apiInspector) return "api";
+    if (port === ports.workflow || port === ports.workflowInspector) return "workflow";
+    if (port === ports.piExecutor || port === ports.piExecutorInspector) return "piExecutor";
+    if (port === ports.memory) return "memory";
+    if (port === ports.memoryCore) return "memoryCore";
+    if (port === ports.workbenchLease) return "workbench";
   }
-  if (port === FROZEN_PORTS.piExecutor || port === FROZEN_PORTS.piExecutorInspector) {
-    return "piExecutor";
-  }
-  if (port === FROZEN_PORTS.memory) return "memory";
-  if (port === FROZEN_PORTS.memoryCore) return "memoryCore";
-  if (port === FROZEN_PORTS.workbenchLease) return "workbench";
   return null;
 }
 

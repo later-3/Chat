@@ -228,13 +228,15 @@ Memory、项目管理和规则系统不能只凭抽象接口或模型直觉设�
 
 检查：代码变化后再次F5，旧Run是否形成可解释终态且当前应用Ready；是否没有删除`.data`、重放Provider/外部副作用或用新Bundle续跑旧Checkpoint？
 
-## 35. 固定调试端口的所有权属于Git仓库，不能被worktree局部登记割裂
+## 35. 固定端口所有权必须同时绑定Git仓库与运行实例
 
 标签：`debug`、`process-lifecycle`、`worktree`、`ports`
 
-多个worktree共享固定端口，却各自保存PID登记，会让一个worktree留下的Chat孤儿进程在另一个worktree中被误判为未知占用者，最终把“一键F5”退化为人工找PID。固定端口登记必须由Git Common Directory锚定为仓库级运行投影。登记因旧方案或IDE强停而丢失时，可以自动收敛的充分条件不是“进程名叫node”，而是固定端口角色、角色命令签名、进程cwd和Git Common Directory四重一致；发信号前还要再次校验命令与启动时间。任何一项不成立都继续失败关闭，不能用`pkill`、端口号或模糊路径误杀其他应用。
+同一组端口被多个worktree使用时，PID登记必须由Git Common Directory锚定为仓库级运行投影；否则一个worktree留下的孤儿进程会被另一个误判为未知占用者。但production与VS Code debug不能继续共用端口和登记：production拥有`431xx`与共享登记，debug拥有`441xx`、worktree私有登记和独立数据根。端口、PID、Product Store、Workflow、Runtime Binding/Key、Trace、DSH状态和浏览器Profile必须作为一个实例合同整体切换，不能只改其中一项。
 
-检查：另一个worktree留下无登记Chat服务后能否直接F5；换成相同端口上的其他仓库Node进程时是否仍拒绝清理；同一监听PID同时占服务端口和Inspector时是否只终止一次？
+登记丢失时，可以自动收敛的充分条件不是“进程名叫node”，而是当前实例固定端口角色、角色命令签名、进程cwd和Git Common Directory四重一致；发信号前还要再次校验命令与启动时间。任何一项不成立都继续失败关闭，不能用`pkill`、端口号或模糊路径误杀其他应用。不同实例的端口集合与PID目录不相交，production的launchd恢复不得扫描或终止debug进程。
+
+检查：production运行时能否直接F5并保持原PID、端口和数据不变；debug再次F5能否只收敛上一次debug进程；换成当前实例端口上的其他仓库Node进程时是否仍拒绝清理；同一监听PID同时占服务端口和Inspector时是否只终止一次？
 ## 36. Project Solution不能退化为阶段、任务和文档CRUD
 
 标签：`project`、`methodology`、`shape-up`、`bmad`、`domain-model`

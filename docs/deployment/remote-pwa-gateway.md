@@ -110,9 +110,10 @@ scripts/service/install-chat-production.sh status
 
 - 停止/恢复：`install-chat-production.sh uninstall|install`。
 - 日志：`~/Library/Logs/chat/`。
-- 注意：production 服务占用冻结端口 43110–43119；本地 `pnpm dev` 前必须先
-  uninstall（或接受端口冲突报错）。`pnpm dev:stop` 停掉进程后 launchd 会按
-  KeepAlive 自动拉起，这不是异常。
+- production服务占用`431xx`；直接运行`pnpm dev`仍属于production实例，会与LaunchAgent冲突。
+  VS Code F5与`pnpm dev:debug`使用隔离的`441xx`和独立数据，可以在production常驻时运行，
+  不需要uninstall。`pnpm dev:stop`停止production后launchd仍会按KeepAlive自动拉起；
+  停止debug应使用`pnpm dev:debug:stop`。
 - 数据主权：Product Store 在主 checkout 的 `.data/`；production 运行根就是
   主 checkout（与 pi-web 同一原则），切分支/升级前应先 uninstall。
 

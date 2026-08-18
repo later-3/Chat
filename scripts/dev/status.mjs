@@ -13,6 +13,11 @@ import {
   readCodeServerProcessEvidence,
 } from "../workbench/fixed-code-server.mjs";
 import { resolveLocalWorkbenchRuntimeContract } from "./app-runtime.mjs";
+import {
+  installRuntimeInstanceEnvironment,
+  parseRuntimeInstanceArgs,
+  resolveRuntimeInstance,
+} from "./runtime-instance.mjs";
 
 const ACTIVE_OR_UNCERTAIN_WORKBENCH_STATUSES = new Set(["starting", "running", "legacy-running"]);
 const STOPPED_WORKBENCH_STATUSES = new Set(["stopped", "legacy-stopped"]);
@@ -105,7 +110,14 @@ export async function collectLocalRuntimeStatus({
 }
 
 export async function main() {
-  for (const line of await collectLocalRuntimeStatus()) console.log(line);
+  const root = repoRoot();
+  const instance = parseRuntimeInstanceArgs(process.argv.slice(2));
+  const runtime = resolveRuntimeInstance(root, instance, process.env);
+  installRuntimeInstanceEnvironment(process.env, runtime);
+  console.log(`[chat] instance=${runtime.name} data=${runtime.dataRoot}`);
+  for (const line of await collectLocalRuntimeStatus({ root, environment: process.env })) {
+    console.log(line);
+  }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

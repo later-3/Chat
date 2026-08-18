@@ -8,6 +8,7 @@ import {
   parseDevArgs,
   prepareLocalRuntime,
 } from "./app-runtime.mjs";
+import { installRuntimeInstanceEnvironment, resolveRuntimeInstance } from "./runtime-instance.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 let exitCode = 0;
@@ -33,25 +34,31 @@ try {
   if (options.help) {
     console.log(devUsage());
   } else {
+    const runtime = resolveRuntimeInstance(root, options.instance, process.env);
+    installRuntimeInstanceEnvironment(process.env, runtime);
     assertRuntimeFiles(root);
     console.log(
-      `[chat] 启动Chat开发环境（web=dsh, memory=${options.memory}, workbench=${options.workbench}, debug=${String(options.debug)}）`,
+      `[chat] 启动Chat开发环境（instance=${runtime.name}, web=dsh, memory=${options.memory}, workbench=${options.workbench}, debug=${String(options.debug)}）`,
     );
     await prepareLocalRuntime({
       root,
+      instance: options.instance,
       memory: options.memory,
       workbench: options.workbench,
       signal: abortController.signal,
+      environment: process.env,
     });
     const definitions = createServiceDefinitions({
       root,
       debug: options.debug,
+      instance: options.instance,
       memory: options.memory,
       workbench: options.workbench,
+      environment: process.env,
     });
     supervisor = new AppSupervisor(definitions, { signal: abortController.signal });
     await supervisor.start();
-    const url = "http://127.0.0.1:43110/";
+    const url = `http://127.0.0.1:${String(runtime.ports.web)}/`;
     console.log(`[chat] ready: ${url}`);
     const outcome = await Promise.race([
       receivedSignal.then((signal) => ({ type: "signal", signal })),

@@ -8,6 +8,11 @@ import {
   terminateRecorded,
 } from "./lib.mjs";
 import { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
+import {
+  installRuntimeInstanceEnvironment,
+  parseRuntimeInstanceArgs,
+  resolveRuntimeInstance,
+} from "../dev/runtime-instance.mjs";
 
 /**
  * chat-debug:preclean（任务书§8.2）。
@@ -21,6 +26,11 @@ import { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
  * 6. 端口全部释放才退出码0。
  */
 
+const root = repoRoot();
+const instance = parseRuntimeInstanceArgs(process.argv.slice(2));
+const runtime = resolveRuntimeInstance(root, instance, process.env);
+installRuntimeInstanceEnvironment(process.env, runtime);
+
 // 退役43113即使属于旧受管wrapper也不自动终止，必须先于任何清理失败关闭。
 await assertRetiredPortsEmpty();
 const entries = loadPidEntries();
@@ -28,13 +38,13 @@ const results = terminateRecorded(entries);
 for (const result of results) {
   console.log(`[preclean] ${result.role} pid=${result.pid}: ${result.action}`);
 }
-const workbenchRecovery = await reconcileManagedWorkbench(repoRoot());
+const workbenchRecovery = await reconcileManagedWorkbench(root);
 if (workbenchRecovery.action !== "no-evidence") {
   console.log(`[preclean] Workbench transport=unix-socket: ${workbenchRecovery.action}`);
 }
 
 let occupied = checkPorts();
-const recovered = terminateOwnedChatPortProcesses(repoRoot(), occupied);
+const recovered = terminateOwnedChatPortProcesses(root, occupied);
 for (const result of recovered) {
   console.log(`[preclean] 同仓库遗留 ${result.role} pid=${result.pid}: ${result.action}`);
 }

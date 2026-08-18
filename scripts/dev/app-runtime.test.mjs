@@ -49,6 +49,7 @@ import {
   ownedDebugBrowserPidsFromPsOutput,
 } from "./browser-lifecycle.mjs";
 import { collectLocalRuntimeStatus } from "./status.mjs";
+import { DEBUG_RUNTIME_PORTS, resolveRuntimeInstance } from "./runtime-instance.mjs";
 
 const ROOT = "/workspace/chat";
 
@@ -56,15 +57,32 @@ test("统一启动器固定关闭Memory且拒绝重新启用", () => {
   assert.deepEqual(parseDevArgs([]), {
     debug: false,
     help: false,
+    instance: "production",
     memory: "off",
     workbench: "code-server",
   });
-  assert.deepEqual(parseDevArgs(["--debug", "--memory=off", "--workbench=off"]), {
-    debug: true,
+  assert.deepEqual(
+    parseDevArgs(["--debug", "--instance=debug", "--memory=off", "--workbench=off"]),
+    {
+      debug: true,
+      help: false,
+      instance: "debug",
+      memory: "off",
+      workbench: "off",
+    },
+  );
+  assert.deepEqual(parseDevArgs(["--instance=debug"]), {
+    debug: false,
     help: false,
+    instance: "debug",
     memory: "off",
     workbench: "off",
   });
+  assert.throws(() => parseDevArgs(["--debug"]), /必须配合--instance=debug/u);
+  assert.throws(
+    () => parseDevArgs(["--instance=debug", "--workbench=code-server"]),
+    /debug实例当前只支持/u,
+  );
   assert.throws(() => parseDevArgs(["--memory=memmy"]), /冻结关闭/u);
   assert.throws(() => parseDevArgs(["--memory=all"]), /冻结关闭/u);
   assert.throws(() => parseDevArgs(["--workbench=unknown"]), /只支持/u);
@@ -178,6 +196,18 @@ test("本地setup只读检查活动运行，任何占用都失败且不调用回
     /setup不会自动停止.*pnpm dev:stop/u,
   );
   assert.equal(evidenceRead, false);
+
+  await assert.rejects(
+    assertLocalSetupIdle(ROOT, {
+      instance: "debug",
+      probePort: async (port) =>
+        port === 44115
+          ? { port, state: "occupied", errorCode: "EADDRINUSE" }
+          : { port, state: "free" },
+      readWorkbenchEvidence: () => undefined,
+    }),
+    /44115.*pnpm dev:debug:stop/u,
+  );
 
   await assert.rejects(
     assertLocalSetupIdle(ROOT, {
@@ -417,16 +447,87 @@ test("debug只为Chat拥有的API、Workflow与Pi Executor开放Inspector", () =
   const services = createServiceDefinitions({
     root: ROOT,
     debug: true,
+    instance: "debug",
+    workbench: "off",
     environment: {},
   });
   const args = Object.fromEntries(services.map((service) => [service.id, service.args.join(" ")]));
-  assert.match(args.workflow, /--inspect=127\.0\.0\.1:43121/u);
-  assert.match(args.piExecutor, /--inspect=127\.0\.0\.1:43122/u);
-  assert.match(args.api, /--inspect=127\.0\.0\.1:43120/u);
+  assert.match(args.workflow, /--inspect=127\.0\.0\.1:44121/u);
+  assert.match(args.piExecutor, /--inspect=127\.0\.0\.1:44122/u);
+  assert.match(args.api, /--inspect=127\.0\.0\.1:44120/u);
   assert.equal(args.memmy, undefined);
   assert.equal(args.memorycore, undefined);
-  assert.doesNotMatch(args.workbench, /--inspect/u);
+  assert.equal(args.workbench, undefined);
   assert.doesNotMatch(args.web, /--inspect/u);
+});
+
+test("debug实例同时隔离端口、产品事实、Workflow、Runtime、Trace与DSH投影", () => {
+  const runtime = resolveRuntimeInstance(ROOT, "debug", {
+    CHAT_PUBLIC_WEB_HOSTNAME: "chat.example.com",
+    CHAT_PRODUCT_STORE_PATH: "/private/production-store.json",
+  });
+  assert.deepEqual(runtime.ports, DEBUG_RUNTIME_PORTS);
+  assert.equal(runtime.dataRoot, "/workspace/chat/.data/instances/vscode-debug");
+  assert.equal(runtime.environment.CHAT_PUBLIC_WEB_HOSTNAME, "");
+  assert.equal(runtime.environment.CHAT_WEB_AUTH_REQUIRED, "0");
+  assert.equal(
+    runtime.environment.CHAT_PRODUCT_STORE_PATH,
+    "/workspace/chat/.data/instances/vscode-debug/product/chat-product-store.v1.json",
+  );
+  assert.equal(
+    runtime.environment.CHAT_WORKFLOW_DATA_DIR,
+    "/workspace/chat/.data/instances/vscode-debug/workflow",
+  );
+  assert.equal(
+    runtime.environment.CHAT_PI_EXECUTOR_DATA_DIR,
+    "/workspace/chat/.data/instances/vscode-debug/pi-executor",
+  );
+  assert.equal(
+    runtime.environment.CHAT_WORKFLOW_BUNDLE_DIR,
+    "/workspace/chat/packages/workflows/.debug/.workflow-bundle",
+  );
+  assert.equal(
+    runtime.environment.CHAT_RUNTIME_CREDENTIAL_PATH,
+    "/workspace/chat/.data/instances/vscode-debug/runtime/runtime-key",
+  );
+  assert.equal(
+    runtime.environment.CHAT_DSH_HOME,
+    "/workspace/chat/.data/instances/vscode-debug/dsh-home",
+  );
+  assert.equal(
+    runtime.browserProfile,
+    "/workspace/chat/.data/instances/vscode-debug/browser-profile",
+  );
+  assert.equal(runtime.debugDir, "/workspace/chat/.data/instances/vscode-debug/processes");
+
+  const services = createServiceDefinitions({
+    root: ROOT,
+    debug: true,
+    instance: "debug",
+    workbench: "off",
+    environment: { CHAT_PUBLIC_WEB_HOSTNAME: "chat.example.com" },
+  });
+  const byId = Object.fromEntries(services.map((service) => [service.id, service]));
+  assert.deepEqual(
+    services.map((service) => service.id),
+    ["piExecutor", "workflow", "api", "web"],
+  );
+  assert.equal(byId.piExecutor.port, 44115);
+  assert.equal(
+    byId.piExecutor.env.CHAT_PI_EXECUTOR_DATA_DIR,
+    "/workspace/chat/.data/instances/vscode-debug/pi-executor",
+  );
+  assert.equal(byId.piExecutor.env.CHAT_API_INTERNAL_BASE_URL, "http://127.0.0.1:44111");
+  assert.equal(byId.workflow.port, 44112);
+  assert.equal(byId.workflow.env.CHAT_API_INTERNAL_BASE_URL, "http://127.0.0.1:44111");
+  assert.equal(byId.workflow.env.CHAT_PI_EXECUTOR_INTERNAL_BASE_URL, "http://127.0.0.1:44115");
+  assert.equal(byId.api.port, 44111);
+  assert.equal(byId.api.env.CHAT_WORKFLOW_BASE_URL, "http://127.0.0.1:44112");
+  assert.equal(byId.web.port, 44110);
+  assert.equal(byId.web.env.DSH_WEB_PORT, "44114");
+  assert.equal(byId.web.env.CHAT_PUBLIC_WEB_PORT, "44110");
+  assert.equal(byId.web.env.CHAT_PUBLIC_WEB_HOSTNAME, "");
+  assert.equal(byId.web.readyUrl, "http://127.0.0.1:44110/healthz");
 });
 
 test("Web角色使用受管DSH Node Host且私有Bridge状态不进入命令与探针", () => {
@@ -474,6 +575,11 @@ test("同一Git仓库的worktree共享固定端口PID登记", () => {
 test("code-server不占固定TCP端口但wrapper仍获得完整退出时间", () => {
   assert.equal(roleForFrozenPort(43113), null);
   assert.equal(roleForFrozenPort(43119), "workbench");
+  assert.equal(roleForFrozenPort(44110), "web");
+  assert.equal(roleForFrozenPort(44111), "api");
+  assert.equal(roleForFrozenPort(44112), "workflow");
+  assert.equal(roleForFrozenPort(44115), "piExecutor");
+  assert.equal(roleForFrozenPort(44122), "piExecutor");
   assert.deepEqual(RETIRED_MUST_BE_EMPTY_PORTS, [43113]);
   assert.equal(termWaitMsForEntry({ role: "workbench" }, 3_000), 7_000);
 });

@@ -304,6 +304,33 @@ test("Gateway隔离DSH与Workbench虚拟Host并代理HTTP和任意upgrade路径"
   }
 });
 
+test("隔离debug实例只接受自己的公开端口并代理到自己的DSH内部端口", async () => {
+  const dsh = createServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ url: req.url, host: req.headers.host }));
+  });
+  const dshPort = await listen(dsh);
+  const gateway = await startWebGateway({
+    publicPort: 0,
+    publicAuthorityPort: 44110,
+    targets: { dsh: { host: "127.0.0.1", port: dshPort } },
+  });
+  try {
+    const debug = await get(gateway.port, "/healthz", { host: "127.0.0.1:44110" });
+    assert.equal(debug.status, 200);
+    const production = await get(gateway.port, "/healthz", { host: "127.0.0.1:43110" });
+    assert.equal(production.status, 403);
+    const proxied = await get(gateway.port, "/lifeos/sessions/debug", {
+      host: "127.0.0.1:44110",
+    });
+    assert.equal(proxied.status, 200);
+    assert.equal(JSON.parse(proxied.body).url, "/lifeos/sessions/debug");
+  } finally {
+    await gateway.close();
+    await close(dsh);
+  }
+});
+
 test("服务器模式：公开主机名+认证门+healthz，未认证导航302、API 401、公开PWA资产直通", async () => {
   const { randomBytes } = await import("node:crypto");
   const { hashWebAuthPassword } = await import("./web-auth.mjs");

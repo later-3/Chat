@@ -7,6 +7,11 @@ import {
 } from "./lib.mjs";
 import { cleanupOwnedDebugBrowser } from "../dev/browser-lifecycle.mjs";
 import { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
+import {
+  installRuntimeInstanceEnvironment,
+  parseRuntimeInstanceArgs,
+  resolveRuntimeInstance,
+} from "../dev/runtime-instance.mjs";
 
 /**
  * Chat本地开发环境的显式停止入口。
@@ -15,18 +20,25 @@ import { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
  * 端口被其他进程占用只警告不清理。
  */
 
+const root = repoRoot();
+const instance = parseRuntimeInstanceArgs(process.argv.slice(2));
+const runtime = resolveRuntimeInstance(root, instance, process.env);
+installRuntimeInstanceEnvironment(process.env, runtime);
+
 const entries = loadPidEntries();
 const results = terminateRecorded(entries);
 let workbenchRecovery;
 try {
-  workbenchRecovery = await reconcileManagedWorkbench(repoRoot());
+  workbenchRecovery = await reconcileManagedWorkbench(root);
 } catch (error) {
   console.error(
     `[stop] Workbench Unix socket回收失败：${error instanceof Error ? error.message : String(error)}`,
   );
   process.exitCode = 1;
 }
-const browserCleanup = await cleanupOwnedDebugBrowser(repoRoot());
+const browserCleanup = await cleanupOwnedDebugBrowser(root, {
+  profileRoot: runtime.browserProfile,
+});
 let failed = process.exitCode === 1;
 for (const result of results) {
   console.log(`[stop] ${result.role} pid=${result.pid}: ${result.action}`);
@@ -42,7 +54,7 @@ if (browserCleanup.terminatedPids.length > 0 || browserCleanup.removedLocks.leng
 }
 
 let occupied = checkPorts();
-const recovered = terminateOwnedChatPortProcesses(repoRoot(), occupied);
+const recovered = terminateOwnedChatPortProcesses(root, occupied);
 for (const result of recovered) {
   console.log(`[stop] 同仓库遗留 ${result.role} pid=${result.pid}: ${result.action}`);
   if (result.action === "kill-failed") failed = true;

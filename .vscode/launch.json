@@ -7,22 +7,22 @@
       "request": "launch",
       "cwd": "${workspaceFolder}",
       "program": "${workspaceFolder}/scripts/dev/start.mjs",
-      "args": ["--debug"],
+      "args": ["--debug", "--instance=debug", "--workbench=off"],
       "autoAttachChildProcesses": true,
       "console": "internalConsole",
       "outputCapture": "std",
       "skipFiles": ["<node_internals>/**"],
       "serverReadyAction": {
-        "pattern": "\\[chat\\] ready: (http://127\\.0\\.0\\.1:43110/)",
+        "pattern": "\\[chat\\] ready: (http://127\\.0\\.0\\.1:44110/)",
         "action": "startDebugging",
         "killOnServerStop": true,
         "config": {
           "name": "Chat：前端浏览器（内部）",
           "type": "pwa-chrome",
           "request": "launch",
-          "url": "http://127.0.0.1:43110/",
+          "url": "http://127.0.0.1:44110/",
           "webRoot": "${workspaceFolder}",
-          "userDataDir": "${workspaceFolder}/.data/debug/browser-profile",
+          "userDataDir": "${workspaceFolder}/.data/instances/vscode-debug/browser-profile",
           "cleanUp": "wholeBrowser",
           "killBehavior": "forceful"
         }

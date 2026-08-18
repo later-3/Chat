@@ -8,7 +8,7 @@ import { createApplicationDeps, DEBUG_PRINCIPAL_ID } from "./composition.js";
 import { OutboxDispatcher } from "./outbox-dispatcher.js";
 
 /**
- * Chat API入口。本地调试固定端口43111（任务书§8.1），可用PORT覆盖；
+ * Chat API入口。production固定43111，隔离debug实例固定44111；端口由受管启动器通过PORT传入；
  * 端口被占用时@hono/node-server直接失败关闭，不自动换号。
  *
  * Product Store路径用CHAT_PRODUCT_STORE_PATH覆盖，默认仓库.data/product/；

@@ -280,10 +280,19 @@ describe("VS Code MemoryCore preload", () => {
 describe("preclean", () => {
   it("固定memmy与MemoryCore端口纳入统一未知占用保护", () => {
     const debugLibrary = readFileSync(join(scriptsDir, "lib.mjs"), "utf8");
-    expect(debugLibrary).toMatch(/memory:\s*18960/u);
-    expect(debugLibrary).toMatch(/memoryCore:\s*18970/u);
-    expect(debugLibrary).toMatch(/apiInspector:\s*43120/u);
-    expect(debugLibrary).toMatch(/workflowInspector:\s*43121/u);
+    const runtimeInstances = readFileSync(join(scriptsDir, "../dev/runtime-instance.mjs"), "utf8");
+    expect(runtimeInstances).toMatch(/memory:\s*18960/u);
+    expect(runtimeInstances).toMatch(/memoryCore:\s*18970/u);
+    expect(runtimeInstances).toMatch(/apiInspector:\s*43120/u);
+    expect(runtimeInstances).toMatch(/workflowInspector:\s*43121/u);
+    expect(runtimeInstances).toMatch(/piExecutor:\s*43115/u);
+    expect(runtimeInstances).toMatch(/piExecutorInspector:\s*43122/u);
+    expect(runtimeInstances).toMatch(/memory:\s*19960/u);
+    expect(runtimeInstances).toMatch(/memoryCore:\s*19970/u);
+    expect(runtimeInstances).toMatch(/apiInspector:\s*44120/u);
+    expect(runtimeInstances).toMatch(/workflowInspector:\s*44121/u);
+    expect(runtimeInstances).toMatch(/piExecutor:\s*44115/u);
+    expect(runtimeInstances).toMatch(/piExecutorInspector:\s*44122/u);
     expect(debugLibrary).not.toMatch(/memoryCoreInspector/u);
     // 下方“未知应用占用端口”黑盒用例通过CHAT_DEBUG_PORTS复用同一preclean逻辑，
     // 证明冻结端口（包括18960）遇到未登记监听者均只报告、不终止。

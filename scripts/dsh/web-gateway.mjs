@@ -32,7 +32,7 @@ function headerValue(value) {
   return typeof value === "string" ? value : undefined;
 }
 
-function publicAuthority(headers, publicHostname) {
+function publicAuthority(headers, publicHostname, publicPort = PUBLIC_WEB_PORT) {
   const host = headerValue(headers.host);
   if (host === undefined)
     throw Object.assign(new Error("Host header is required"), { status: 400 });
@@ -52,7 +52,7 @@ function publicAuthority(headers, publicHostname) {
     throw Object.assign(new Error("Host header is invalid"), { status: 400 });
   }
   const isLoopback =
-    authority.port === String(PUBLIC_WEB_PORT) &&
+    authority.port === String(publicPort) &&
     ["127.0.0.1", "localhost"].includes(authority.hostname);
   // 服务器部署模式：Nginx 以原始 Host 转发，公开主机名只来自组合期环境变量，
   // 绝不来自请求或 X-Forwarded-* 头。
@@ -67,8 +67,8 @@ function publicAuthority(headers, publicHostname) {
 }
 
 /** Workbench无独立浏览器凭据；必须在Gateway保留原始同源边界后才可改写Origin。 */
-export function assertPublicWorkbenchRequest(req, publicHostname) {
-  const authority = publicAuthority(req.headers, publicHostname);
+export function assertPublicWorkbenchRequest(req, publicHostname, publicPort = PUBLIC_WEB_PORT) {
+  const authority = publicAuthority(req.headers, publicHostname, publicPort);
   if (authority.hostname !== "localhost") {
     throw Object.assign(new Error("Workbench must use the isolated localhost origin"), {
       status: 403,
@@ -86,7 +86,7 @@ export function assertPublicWorkbenchRequest(req, publicHostname) {
       try {
         const parsed = new URL(referer);
         trustedBootstrapReferer =
-          parsed.origin === `http://${PUBLIC_WEB_HOST}:${String(PUBLIC_WEB_PORT)}`;
+          parsed.origin === `http://${PUBLIC_WEB_HOST}:${String(publicPort)}`;
       } catch {
         trustedBootstrapReferer = false;
       }
@@ -155,14 +155,14 @@ function cleanHeaders(source, keepUpgrade) {
 }
 
 function upstreamFor(req, targets) {
-  const authority = publicAuthority(req.headers, targets.publicHostname);
+  const authority = publicAuthority(req.headers, targets.publicHostname, targets.publicPort);
   if (authority.hostname === "localhost") {
     if (!isWorkbenchPath(req.url)) {
       throw Object.assign(new Error("localhost origin is reserved for Code Workbench"), {
         status: 403,
       });
     }
-    assertPublicWorkbenchRequest(req, targets.publicHostname);
+    assertPublicWorkbenchRequest(req, targets.publicHostname, targets.publicPort);
     if (targets.workbench === undefined) {
       throw Object.assign(new Error("Code Workbench is disabled"), { status: 503 });
     }
@@ -175,7 +175,7 @@ function upstreamFor(req, targets) {
   if (isWorkbenchPath(req.url)) {
     throw Object.assign(new Error("Use the isolated localhost Workbench origin"), {
       status: 421,
-      redirect: `http://localhost:${String(PUBLIC_WEB_PORT)}${req.url ?? `${CODE_WORKBENCH_PUBLIC_PREFIX}/`}`,
+      redirect: `http://localhost:${String(targets.publicPort)}${req.url ?? `${CODE_WORKBENCH_PUBLIC_PREFIX}/`}`,
     });
   }
   return {
@@ -246,7 +246,7 @@ function upstreamConnection(upstream) {
     : { hostname: upstream.host, port: upstream.port };
 }
 
-function responseHeaders(headers, kind) {
+function responseHeaders(headers, kind, publicPort = PUBLIC_WEB_PORT) {
   const result = cleanHeaders(headers, false);
   if (kind === "workbench") {
     if (result.location !== undefined) result.location = rewriteLocation(result.location);
@@ -261,7 +261,7 @@ function responseHeaders(headers, kind) {
         .split(";")
         .map((directive) => directive.trim())
         .filter((directive) => directive !== "" && !/^frame-ancestors(?:\s|$)/iu.test(directive));
-      directives.push(`frame-ancestors http://${PUBLIC_WEB_HOST}:${String(PUBLIC_WEB_PORT)}`);
+      directives.push(`frame-ancestors http://${PUBLIC_WEB_HOST}:${String(publicPort)}`);
       // 上游升级即使把frame-ancestors放宽为*，Gateway仍无条件收紧到DSH主Origin。
       result["content-security-policy"] = directives.join("; ");
     }
@@ -285,7 +285,7 @@ function handleHttp(req, res, logger, targets) {
   // Relay 预检与云端 Nginx 健康检查只依赖网关本地证据，不触达上游。
   if (pathname === "/healthz" && (req.method === "GET" || req.method === "HEAD")) {
     try {
-      publicAuthority(req.headers, targets.publicHostname);
+      publicAuthority(req.headers, targets.publicHostname, targets.publicPort);
     } catch (error) {
       writeGatewayError(res, Number(error?.status) || 400, "Bad request");
       return;
@@ -297,7 +297,7 @@ function handleHttp(req, res, logger, targets) {
     void (async () => {
       try {
         // Host 校验先于认证门：伪造 Host 永远 403，不能先拿到 302/401 信号。
-        publicAuthority(req.headers, targets.publicHostname);
+        publicAuthority(req.headers, targets.publicHostname, targets.publicPort);
         // 登录/登出由网关自有页面承担；公开路径（PWA 安装资产）直接放行。
         if (await targets.authRoute(req, res, pathname)) return;
         if (!isPublicAuthPath(pathname)) {
@@ -351,7 +351,7 @@ function proxyHttp(req, res, logger, targets) {
       res.writeHead(
         incoming.statusCode ?? 502,
         incoming.statusMessage,
-        responseHeaders(incoming.headers, upstream.kind),
+        responseHeaders(incoming.headers, upstream.kind, targets.publicPort),
       );
       incoming.once("aborted", () => res.destroy());
       incoming.once("error", () => res.destroy());
@@ -459,7 +459,12 @@ function handleUpgrade(req, socket, head, logger, targets) {
   proxy.once("response", (response) => {
     if (settled) return;
     settled = true;
-    socket.write(rawResponseHead(response, responseHeaders(response.headers, upstream.kind)));
+    socket.write(
+      rawResponseHead(
+        response,
+        responseHeaders(response.headers, upstream.kind, targets.publicPort),
+      ),
+    );
     response.pipe(socket);
   });
   proxy.once("error", fail);
@@ -477,15 +482,29 @@ function readPublicHostname(environment) {
   return value;
 }
 
+function readManagedPort(environment, name, fallback) {
+  const raw = environment[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1 || value > 65_535) {
+    throw new Error(`${name} must be an integer from 1 to 65535`);
+  }
+  return value;
+}
+
 /**
- * 唯一浏览器端口由本进程Gateway拥有。DSH只监听固定loopback内部端口，code-server只
+ * 当前实例的唯一浏览器端口由本进程Gateway拥有。DSH只监听受管loopback内部端口，code-server只
  * 监听0600 Unix socket；
  * Gateway不生成目标地址，也不接受用户指定upstream，避免成为开放代理。
  */
 export async function startWebGateway(options = {}) {
   const logger = options.logger ?? (() => undefined);
-  // targets/publicPort/publicHostname/auth只是模块级测试接缝；生产launcher不传入，
-  // 目标端口与公开主机名绝不来自请求。
+  // targets/publicPort/publicHostname/auth只是模块级测试接缝；正式launcher只通过
+  // 受管实例环境传入端口，目标地址与公开主机名绝不来自请求。
+  const publicPort =
+    options.publicPort ?? readManagedPort(process.env, "CHAT_PUBLIC_WEB_PORT", PUBLIC_WEB_PORT);
+  const publicAuthorityPort =
+    options.publicAuthorityPort ?? (publicPort === 0 ? PUBLIC_WEB_PORT : publicPort);
   const publicHostname = options.publicHostname ?? readPublicHostname(process.env);
   const auth = options.auth !== undefined ? options.auth : loadWebAuthConfig(process.env);
   let targets = options.targets;
@@ -504,21 +523,24 @@ export async function startWebGateway(options = {}) {
       ? Object.freeze({ socketPath: validateCodeServerSocketEvidence().socketPath })
       : undefined;
     targets = Object.freeze({
-      dsh: Object.freeze({ host: DSH_INTERNAL_WEB_HOST, port: DSH_INTERNAL_WEB_PORT }),
+      dsh: Object.freeze({
+        host: DSH_INTERNAL_WEB_HOST,
+        port: readManagedPort(process.env, "CHAT_DSH_INTERNAL_WEB_PORT", DSH_INTERNAL_WEB_PORT),
+      }),
       workbench,
     });
   }
   if (auth !== undefined) {
     targets = Object.freeze({
       ...targets,
+      publicPort: publicAuthorityPort,
       publicHostname,
       auth,
       authRoute: createAuthRouteHandler(auth, { secure: publicHostname !== undefined }),
     });
   } else {
-    targets = Object.freeze({ ...targets, publicHostname, auth });
+    targets = Object.freeze({ ...targets, publicPort: publicAuthorityPort, publicHostname, auth });
   }
-  const publicPort = options.publicPort ?? PUBLIC_WEB_PORT;
   const sockets = new Set();
   const server = createServer((req, res) => handleHttp(req, res, logger, targets));
   server.on("connection", (socket) => {

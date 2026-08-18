@@ -20,7 +20,7 @@ packages/
   realtime/               Trace与Replay
   testing/                合同、架构与测试工具
 scripts/
-  dev/                    统一应用监督器
+  dev/                    统一应用监督器与production/debug实例合同
   dsh/                    DSH Profile准备与Host启动
   debug/                  固定端口、PID身份与停止/状态
   memory/                 固定Memory依赖准备与验证
@@ -39,7 +39,7 @@ docs/
 
 | 行为 | 入口 | 权威边界 |
 |---|---|---|
-| 打开页面 | `apps/dsh-web`、`scripts/dsh/start-web.mjs` | 43110 Gateway、内部DSH Host与Client插件图 |
+| 打开页面 | `apps/dsh-web`、`scripts/dsh/start-web.mjs` | production 43110 / debug 44110 Gateway、内部DSH Host与Client插件图 |
 | 发送消息 | `packages/dsh-lifeos-bridge` Host LLM Adapter | Chat Message Command |
 | 创建Message/Run | `apps/api/src/product-routes.ts` | Application事务与Product Store |
 | 规划 | `packages/workflows` -> `packages/pi-runtime` | Plan候选经Application提交 |

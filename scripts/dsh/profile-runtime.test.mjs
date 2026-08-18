@@ -60,6 +60,39 @@ test("DSH_HOME固定在当前worktree且Bridge私有状态不进入启动参数"
   assert.doesNotMatch(dshWebArgs(runtime).join(" "), /chat-state|43111/u);
 });
 
+test("debug实例可以整体迁移DSH投影与两层Web端口", () => {
+  const runtime = resolveDshWebRuntime(ROOT, {
+    CHAT_DSH_HOME: "/workspace/chat-feature/.data/instances/vscode-debug/dsh-home",
+    CHAT_DSH_STATE_PATH:
+      "/workspace/chat-feature/.data/instances/vscode-debug/dsh-lifeos/state.json",
+    CHAT_API_BASE_URL: "http://127.0.0.1:44111",
+    CHAT_PUBLIC_WEB_PORT: "44110",
+    CHAT_DSH_INTERNAL_WEB_PORT: "44114",
+  });
+  assert.equal(runtime.dshHome, "/workspace/chat-feature/.data/instances/vscode-debug/dsh-home");
+  assert.equal(runtime.profileDir, `${runtime.dshHome}/profiles/web`);
+  assert.equal(
+    runtime.statePath,
+    "/workspace/chat-feature/.data/instances/vscode-debug/dsh-lifeos/state.json",
+  );
+  assert.equal(runtime.apiBaseUrl, "http://127.0.0.1:44111");
+  assert.equal(runtime.publicPort, 44110);
+  assert.equal(runtime.port, 44114);
+  assert.deepEqual(dshWebArgs(runtime), ["web", "--host", "127.0.0.1", "--port", "44114"]);
+  const environment = dshWebEnvironment(ROOT, {
+    CHAT_DSH_HOME: runtime.dshHome,
+    CHAT_DSH_STATE_PATH: runtime.statePath,
+    CHAT_API_BASE_URL: runtime.apiBaseUrl,
+    CHAT_PUBLIC_WEB_PORT: "44110",
+    CHAT_DSH_INTERNAL_WEB_PORT: "44114",
+    CHAT_CODE_WORKBENCH_ENABLED: "0",
+  });
+  assert.equal(environment.CHAT_DSH_HOME, runtime.dshHome);
+  assert.equal(environment.DSH_HOME, runtime.dshHome);
+  assert.equal(environment.DSH_WEB_PORT, "44114");
+  assert.equal(environment.CHAT_PUBLIC_WEB_PORT, "44110");
+});
+
 test("服务器部署模式向DSH声明trusted-host并透传公开主机名与认证路径", () => {
   const runtime = resolveDshWebRuntime(ROOT, {
     CHAT_PUBLIC_WEB_HOSTNAME: "chat.ai4child.asia",

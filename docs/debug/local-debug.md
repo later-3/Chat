@@ -1,22 +1,26 @@
 # Chat 本地调试
 
-## 固定端口
+## 运行实例与固定端口
 
-| 服务 | 地址 |
-|---|---|
-| LifeOS Web Gateway / DSH入口 | `http://127.0.0.1:43110` |
-| Chat API | `http://127.0.0.1:43111` |
-| Workflow | `http://127.0.0.1:43112` |
-| Pi Coding Executor | `http://127.0.0.1:43115`（私有Runtime Key） |
-| code-server内部服务 | 受管0700临时根内的0600 Unix socket（不监听TCP） |
-| DSH内部Host | `http://127.0.0.1:43114` |
-| Workbench浏览器入口 | `http://localhost:43110/workbench/code/` |
-| code-server准备/运行租约 | `127.0.0.1:43119`（只做内核互斥，连接立即断开，不提供HTTP） |
-| API Inspector | `127.0.0.1:43120`（`dev:debug`） |
-| Workflow Inspector | `127.0.0.1:43121`（`dev:debug`） |
-| Pi Executor Inspector | `127.0.0.1:43122`（`dev:debug`） |
+| 服务 | production | VS Code debug |
+|---|---|---|
+| LifeOS Web Gateway / DSH入口 | `http://127.0.0.1:43110` | `http://127.0.0.1:44110` |
+| Chat API | `127.0.0.1:43111` | `127.0.0.1:44111` |
+| Workflow | `127.0.0.1:43112` | `127.0.0.1:44112` |
+| Pi Coding Executor | `127.0.0.1:43115` | `127.0.0.1:44115` |
+| DSH内部Host | `127.0.0.1:43114` | `127.0.0.1:44114` |
+| API Inspector | `127.0.0.1:43120`（production不启用） | `127.0.0.1:44120` |
+| Workflow Inspector | `127.0.0.1:43121`（production不启用） | `127.0.0.1:44121` |
+| Pi Executor Inspector | `127.0.0.1:43122`（production不启用） | `127.0.0.1:44122` |
+| Code Workbench | 受管Unix socket；浏览器入口`localhost:43110` | 固定关闭 |
 
-所有服务只使用固定端口；冲突时失败关闭或在四重身份校验后回收同一Git仓库的旧进程，不能自动换号。
+production使用主checkout的`.data`；F5/debug使用当前worktree的
+`.data/instances/vscode-debug`。Product Store、Workflow Store、Runtime Binding/Key、Trace、
+DSH Profile/Bridge状态、PID登记和浏览器Profile均不共享。两组端口分别固定；当前实例冲突时
+失败关闭或在四重身份校验后只回收同实例旧进程，不能自动换号或跨实例发信号。
+
+源码与构建产物也要完全隔离时，应在独立worktree中打开VS Code。production可以继续从主
+checkout由LaunchAgent运行；不要在同一个主checkout中一边改源码、一边把它当作稳定production来源。
 
 ## 命令
 
@@ -29,13 +33,27 @@ pnpm dev
 pnpm dev:debug
 pnpm dev:status
 pnpm dev:stop
+pnpm dev:debug:status
+pnpm dev:debug:stop
 ```
+
+production已由LaunchAgent占用`431xx`时，在独立debug worktree首次准备应使用：
+
+```bash
+pnpm install --frozen-lockfile
+pnpm run setup --instance=debug
+```
+
+该命令只检查debug端口并准备debug Workflow Bundle/DSH Profile，不停止或读取production运行数据。
 
 `pnpm run setup`默认只准备code-server、Workflow Bundle与DSH Bridge/Profile，不准备或启动Memory；
 检测到本仓库已有服务时只失败关闭，不执行preclean或Workflow版本收敛；
-`pnpm dev`会复核同一批证据后启动Pi Executor、Workflow、API、code-server和DSH/Gateway；API与Workflow也不会实例化Memory Adapter。
+`pnpm dev`属于production实例，会复核同一批证据后启动Pi Executor、Workflow、API、code-server和DSH/Gateway；
+若LaunchAgent已常驻，不要再运行它。`pnpm dev:debug`与VS Code F5属于debug实例，可在production
+继续服务PWA时并行启动相同的Pi Executor、Workflow、API和DSH服务图；API与Workflow同样不会实例化Memory Adapter。
 Memory源码与独立测试保留，但统一安装、VS Code F5和开发启动器当前都没有启用入口。
-Workbench当前为Beta，不属于通用CI/CD完成门；`--workbench=off`用于当前不需要IDE的日常调试和CI。
+Workbench当前为Beta，不属于通用CI/CD完成门；debug实例强制`--workbench=off`，避免本机权限工作台
+跨进程边界进入公网或调试实例。
 启用Beta Workbench时，终端SIGINT或
 `pnpm dev:stop`必须反向停止并释放端口与Terminal子进程。
 
@@ -45,8 +63,8 @@ Workbench当前为Beta，不属于通用CI/CD完成门；`--workbench=off`用于
 
 | 目标 | 文件/入口 | 观察内容 |
 |---|---|---|
-| Profile准备 | `scripts/dsh/prepare-web-profile.mjs` | 固定DSH版本、Bridge bundle、worktree私有`DSH_HOME` |
-| Host启动 | `scripts/dsh/start-web.mjs` | 43110 Gateway、内部43114 DSH、Boot Manifest、插件加载失败 |
+| Profile准备 | `scripts/dsh/prepare-web-profile.mjs` | 固定DSH版本、Bridge bundle、debug实例私有`DSH_HOME` |
+| Host启动 | `scripts/dsh/start-web.mjs` | debug的44110 Gateway、内部44114 DSH、Boot Manifest、插件加载失败 |
 | Session映射 | `AtomicBridgeStateStore`、`LifeosLlmAdapter.ensureChatSession` | `dshSessionId -> productSessionId`、原子状态、稳定Command |
 | 消息发送 | `LifeosLlmAdapter.stream`、`ChatProductClient.submitMessage` | 只处理正常会话请求；title/compaction无产品写入 |
 | Plan/HITL | `LifeosBridgeService.projection/decide`、Client Slot | Run revision、Plan/Approval版本与Hash、Decision Command |

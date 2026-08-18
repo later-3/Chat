@@ -67,16 +67,29 @@ function configuredUrl(environment, name, fallback) {
   return parsed.href.replace(/\/$/u, "");
 }
 
+function configuredPort(environment, name, fallback) {
+  const raw = environment[name]?.trim();
+  const value = raw === undefined || raw === "" ? fallback : Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1 || value > 65_535) {
+    throw new Error(`${name}必须是1到65535之间的整数`);
+  }
+  return value;
+}
+
 /**
  * DSH_HOME 是可重建的本地运行投影，固定在当前worktree而不是用户全局 ~/.dsh。
  * Bridge状态文件只通过Node进程环境传递，不进入浏览器URL、命令参数或就绪日志。
  */
 export function resolveDshWebRuntime(root, environment = process.env) {
   const repoRoot = resolve(root);
+  const dshHome = resolve(
+    repoRoot,
+    environment.CHAT_DSH_HOME?.trim() || join(repoRoot, ".data", "dsh-home"),
+  );
   return Object.freeze({
     root: repoRoot,
-    dshHome: join(repoRoot, ".data", "dsh-home"),
-    profileDir: join(repoRoot, ".data", "dsh-home", "profiles", "web"),
+    dshHome,
+    profileDir: join(dshHome, "profiles", "web"),
     bridgePackageDir: join(repoRoot, "packages", "dsh-lifeos-bridge"),
     mobileShellPackageDir: join(repoRoot, "apps", "dsh-web", "node_modules", "dsh-mobile-hanui"),
     bridgeBundlePath: join(repoRoot, BRIDGE_BUNDLE_RELATIVE_PATH),
@@ -87,9 +100,9 @@ export function resolveDshWebRuntime(root, environment = process.env) {
         join(repoRoot, ".data", "dsh-lifeos-bridge", "state.json"),
     ),
     host: DSH_WEB_HOST,
-    port: DSH_WEB_PORT,
+    port: configuredPort(environment, "CHAT_DSH_INTERNAL_WEB_PORT", DSH_WEB_PORT),
     publicHost: PUBLIC_WEB_HOST,
-    publicPort: PUBLIC_WEB_PORT,
+    publicPort: configuredPort(environment, "CHAT_PUBLIC_WEB_PORT", PUBLIC_WEB_PORT),
     publicHostname: environment.CHAT_PUBLIC_WEB_HOSTNAME?.trim() || undefined,
   });
 }
@@ -116,9 +129,11 @@ export function dshWebEnvironment(root, environment = process.env) {
     XDG_CONFIG_HOME: isolated.XDG_CONFIG_HOME ?? join(runtime.dshHome, "xdg-config"),
     XDG_CACHE_HOME: isolated.XDG_CACHE_HOME ?? join(runtime.dshHome, "xdg-cache"),
     CHAT_REPO_ROOT: runtime.root,
+    CHAT_DSH_HOME: runtime.dshHome,
     CHAT_API_BASE_URL: runtime.apiBaseUrl,
     CHAT_DSH_STATE_PATH: runtime.statePath,
     CHAT_PUBLIC_WEB_PORT: String(runtime.publicPort),
+    CHAT_DSH_INTERNAL_WEB_PORT: String(runtime.port),
     // 服务器部署模式：公开主机名与认证文件路径（路径不是凭据；口令散列与
     // 会话密钥只存在于文件内容中，绝不进入环境变量值）。未设置时这些键不存在，
     // 网关与 bridge 保持纯 loopback 姿态。

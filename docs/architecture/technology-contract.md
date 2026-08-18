@@ -34,6 +34,13 @@ Browser
 
 DSH和code-server是可替换Adapter/Hosted App，不拥有Chat产品对象。Chat API不依赖DSH类型；Domain/Application不依赖Hono、DSH、Vercel Workflow或pi。
 
+### 2.1 本机运行实例隔离
+
+- production实例固定使用`43110/43111/43112/43114`及主checkout的`.data`，由LaunchAgent常驻并承载正常PWA使用。
+- VS Code F5与`pnpm dev:debug`固定使用`44110/44111/44112/44114`、Inspector `44120/44121`及当前worktree的`.data/instances/vscode-debug`。
+- 两套实例不共享Product Store、Workflow Store、Runtime Binding/Key、Trace、DSH Profile/Bridge状态、PID登记或浏览器Profile；只有固定源码缓存和只读依赖工件可以共享。
+- debug事实只是开发数据，不是production副本，也不建立多实例生产Store。debug启动、停止或遗留进程收敛不得向production PID发信号。
+
 ## 3. 前端合同
 
 ### 3.1 DSH负责
