@@ -14,6 +14,7 @@ export const PRODUCTION_RUNTIME_PORTS = Object.freeze({
   apiInspector: 43120,
   workflowInspector: 43121,
   piExecutorInspector: 43122,
+  webInspector: 43123,
 });
 
 export const DEBUG_RUNTIME_PORTS = Object.freeze({
@@ -28,6 +29,7 @@ export const DEBUG_RUNTIME_PORTS = Object.freeze({
   apiInspector: 44120,
   workflowInspector: 44121,
   piExecutorInspector: 44122,
+  webInspector: 44123,
 });
 
 function assertInstanceName(instance) {

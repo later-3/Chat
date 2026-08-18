@@ -12,6 +12,13 @@ test("manifest exposes the native DSH bundle patch and client factory contract",
   };
   assert.equal(manifest.name, "@chat/dsh-lifeos-bridge");
   assert.equal(manifest.main, "dist/dsh-bundle.js");
+  assert.deepEqual(manifest.files, [
+    "dist/dsh-bundle.js",
+    "dist/dsh-bundle.js.map",
+    "dist/client.js",
+    "dist/client.js.map",
+    "cordis.patch.yml",
+  ]);
   assert.equal(dsh.bundle?.patch, "./cordis.patch.yml");
   assert.equal(dsh.client?.platform, "web");
   assert.deepEqual(dsh.client?.inject, [
@@ -21,6 +28,11 @@ test("manifest exposes the native DSH bundle patch and client factory contract",
     "@deepseek-ai/dsh-client-ui-primitives",
     "@deepseek-ai/dsh-client-ui-sidebar",
   ]);
+});
+
+test("host and browser bundles emit source maps for stable TypeScript breakpoints", async () => {
+  const config = await readFile(new URL("../tsdown.config.ts", import.meta.url), "utf8");
+  assert.equal((config.match(/sourcemap:\s*true/g) ?? []).length, 2);
 });
 
 test("workflow selector uses the additive DSH composer tool-row slot", async () => {

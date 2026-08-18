@@ -12,6 +12,7 @@
 | API Inspector | `127.0.0.1:43120`（production不启用） | `127.0.0.1:44120` |
 | Workflow Inspector | `127.0.0.1:43121`（production不启用） | `127.0.0.1:44121` |
 | Pi Executor Inspector | `127.0.0.1:43122`（production不启用） | `127.0.0.1:44122` |
+| DSH Host / LifeOS Bridge Inspector | `127.0.0.1:43123`（production不启用） | `127.0.0.1:44123` |
 | Code Workbench | 受管Unix socket；浏览器入口`localhost:43110` | 固定关闭 |
 
 production使用主checkout的`.data`；F5/debug使用当前worktree的
@@ -65,6 +66,8 @@ Workbench当前为Beta，不属于通用CI/CD完成门；debug实例强制`--wor
 |---|---|---|
 | Profile准备 | `scripts/dsh/prepare-web-profile.mjs` | 固定DSH版本、Bridge bundle、debug实例私有`DSH_HOME` |
 | Host启动 | `scripts/dsh/start-web.mjs` | debug的44110 Gateway、内部44114 DSH、Boot Manifest、插件加载失败 |
+| Bridge输入取舍 | `packages/dsh-lifeos-bridge/src/adapter.ts`的`LifeosLlmAdapter.stream`、`lastUserPrompt` | 原始`options`、最后一条真实用户文本、稳定request key、冻结的Workflow选择 |
+| Bridge请求正文 | `packages/dsh-lifeos-bridge/src/chat-client.ts`的`ChatProductClient.submitMessage` | `commandId`、`payload.text`、已发布Workflow Revision与Hash；不会把整段DSH消息历史提交给Chat API |
 | Session映射 | `AtomicBridgeStateStore`、`LifeosLlmAdapter.ensureChatSession` | `dshSessionId -> productSessionId`、原子状态、稳定Command |
 | 消息发送 | `LifeosLlmAdapter.stream`、`ChatProductClient.submitMessage` | 只处理正常会话请求；title/compaction无产品写入 |
 | Plan/HITL | `LifeosBridgeService.projection/decide`、Client Slot | Run revision、Plan/Approval版本与Hash、Decision Command |
@@ -74,6 +77,11 @@ Workbench当前为Beta，不属于通用CI/CD完成门；debug实例强制`--wor
 | Pi执行轨迹 | `LifeosLlmAdapter.nextTraceTool`、`createLifeosTraceTool` | cursor、toolCallId、input/result、DSH running/completed |
 
 不要在日志/Watch中展示完整用户正文、密钥、Hook Token、Workflow Run ID或pi Session ID。
+
+F5会让DSH Host在`44123`开放固定Inspector，并只在进程创建瞬间传递VS Code自动附加握手；
+Host安装受管环境后会删除这些调试变量，Bridge插件不会重新获得Provider、云账号或SSH环境。
+Bridge Host与Client bundle都生成source map，因此断点应优先下在`src/adapter.ts`与
+`src/chat-client.ts`，不要依赖每次构建都会漂移的`dist/dsh-bundle.js`行号。
 
 ## 后端主链断点
 

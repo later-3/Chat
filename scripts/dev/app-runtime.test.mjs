@@ -443,22 +443,28 @@ test("stopped status仍读取同一合同并明确显示停止状态", async () 
   ]);
 });
 
-test("debug只为Chat拥有的API、Workflow与Pi Executor开放Inspector", () => {
+test("debug只为Chat拥有的API、Workflow、Pi Executor与DSH Host开放Inspector", () => {
   const services = createServiceDefinitions({
     root: ROOT,
     debug: true,
     instance: "debug",
     workbench: "off",
-    environment: {},
+    environment: {
+      VSCODE_INSPECTOR_OPTIONS: "private-attach-options",
+      NODE_OPTIONS: "--require /vscode/bootloader.js",
+    },
   });
   const args = Object.fromEntries(services.map((service) => [service.id, service.args.join(" ")]));
+  const web = services.find((service) => service.id === "web");
   assert.match(args.workflow, /--inspect=127\.0\.0\.1:44121/u);
   assert.match(args.piExecutor, /--inspect=127\.0\.0\.1:44122/u);
   assert.match(args.api, /--inspect=127\.0\.0\.1:44120/u);
+  assert.match(args.web, /--inspect=127\.0\.0\.1:44123/u);
+  assert.equal(web.env.VSCODE_INSPECTOR_OPTIONS, "private-attach-options");
+  assert.equal(web.env.NODE_OPTIONS, "--require /vscode/bootloader.js");
   assert.equal(args.memmy, undefined);
   assert.equal(args.memorycore, undefined);
   assert.equal(args.workbench, undefined);
-  assert.doesNotMatch(args.web, /--inspect/u);
 });
 
 test("debug实例同时隔离端口、产品事实、Workflow、Runtime、Trace与DSH投影", () => {
@@ -527,6 +533,7 @@ test("debug实例同时隔离端口、产品事实、Workflow、Runtime、Trace�
   assert.equal(byId.web.env.DSH_WEB_PORT, "44114");
   assert.equal(byId.web.env.CHAT_PUBLIC_WEB_PORT, "44110");
   assert.equal(byId.web.env.CHAT_PUBLIC_WEB_HOSTNAME, "");
+  assert.match(byId.web.args.join(" "), /--inspect=127\.0\.0\.1:44123/u);
   assert.equal(byId.web.readyUrl, "http://127.0.0.1:44110/healthz");
 });
 
@@ -580,6 +587,7 @@ test("code-server不占固定TCP端口但wrapper仍获得完整退出时间", ()
   assert.equal(roleForFrozenPort(44112), "workflow");
   assert.equal(roleForFrozenPort(44115), "piExecutor");
   assert.equal(roleForFrozenPort(44122), "piExecutor");
+  assert.equal(roleForFrozenPort(44123), "web");
   assert.deepEqual(RETIRED_MUST_BE_EMPTY_PORTS, [43113]);
   assert.equal(termWaitMsForEntry({ role: "workbench" }, 3_000), 7_000);
 });

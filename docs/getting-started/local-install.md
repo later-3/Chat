@@ -119,7 +119,7 @@ pnpm dev -- --workbench=off
 拒绝`--memory=all|memmy|memorycore`，避免环境变量或历史命令静默恢复Memory。
 
 `dev:stop`完成后，production的43110、43111、43112、43114、43115与43119都应释放；
-`dev:debug:stop`只释放debug的44110、44111、44112、44114、44115、44120、44121与44122，不影响production。
+`dev:debug:stop`只释放debug的44110、44111、44112、44114、44115、44120、44121、44122与44123，不影响production。
 18960/18970与19960/19970应始终未被默认服务图占用，
 code-server的Unix socket和Terminal子进程也应被受管回收。不要用`killall`、`pkill`或
 直接删除`.data`替代停止命令；`.data`还可能包含产品数据和运行证据。

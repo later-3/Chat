@@ -29,6 +29,7 @@ export default defineConfig([
     platform: "node",
     target: "node22",
     dts: false,
+    sourcemap: true,
     clean: true,
     deps: { neverBundle: HOST_EXTERNALS, onlyBundle: false },
     outputOptions: { entryFileNames: "dsh-bundle.js" },
@@ -41,6 +42,7 @@ export default defineConfig([
     platform: "browser",
     target: "es2022",
     dts: false,
+    sourcemap: true,
     clean: false,
     deps: { neverBundle: CLIENT_EXTERNALS, onlyBundle: false },
     define: {

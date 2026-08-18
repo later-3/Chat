@@ -287,12 +287,14 @@ describe("preclean", () => {
     expect(runtimeInstances).toMatch(/workflowInspector:\s*43121/u);
     expect(runtimeInstances).toMatch(/piExecutor:\s*43115/u);
     expect(runtimeInstances).toMatch(/piExecutorInspector:\s*43122/u);
+    expect(runtimeInstances).toMatch(/webInspector:\s*43123/u);
     expect(runtimeInstances).toMatch(/memory:\s*19960/u);
     expect(runtimeInstances).toMatch(/memoryCore:\s*19970/u);
     expect(runtimeInstances).toMatch(/apiInspector:\s*44120/u);
     expect(runtimeInstances).toMatch(/workflowInspector:\s*44121/u);
     expect(runtimeInstances).toMatch(/piExecutor:\s*44115/u);
     expect(runtimeInstances).toMatch(/piExecutorInspector:\s*44122/u);
+    expect(runtimeInstances).toMatch(/webInspector:\s*44123/u);
     expect(debugLibrary).not.toMatch(/memoryCoreInspector/u);
     // 下方“未知应用占用端口”黑盒用例通过CHAT_DEBUG_PORTS复用同一preclean逻辑，
     // 证明冻结端口（包括18960）遇到未登记监听者均只报告、不终止。

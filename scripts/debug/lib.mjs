@@ -559,7 +559,8 @@ export async function assertRetiredPortsEmpty({
  */
 export function roleForFrozenPort(port) {
   for (const ports of [FROZEN_PORTS, DEBUG_RUNTIME_PORTS]) {
-    if (port === ports.web || port === ports.webInternal) return "web";
+    if (port === ports.web || port === ports.webInternal || port === ports.webInspector)
+      return "web";
     if (port === ports.api || port === ports.apiInspector) return "api";
     if (port === ports.workflow || port === ports.workflowInspector) return "workflow";
     if (port === ports.piExecutor || port === ports.piExecutorInspector) return "piExecutor";

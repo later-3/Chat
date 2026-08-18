@@ -32,7 +32,9 @@
   },
   "files": [
     "dist/dsh-bundle.js",
+    "dist/dsh-bundle.js.map",
     "dist/client.js",
+    "dist/client.js.map",
     "cordis.patch.yml"
   ],
   "scripts": {
