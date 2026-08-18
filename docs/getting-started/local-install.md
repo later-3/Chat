@@ -4,6 +4,9 @@
 Chat API、Vercel Workflow与可选Code Workbench组成；Memory Provider代码暂时保留但默认关闭。不要再安装
 旧`apps/web`、Agent Canvas，也不要手工克隆DSH或其他上游源码到固定个人目录。
 
+Code Workbench当前为Beta：本地实现与固定工件继续保留，但不进入通用CI/CD，也不进入远程部署。
+只使用Chat/PWA时，可在setup和启动阶段都传入`--workbench=off`，避免下载和运行code-server。
+
 ## 1. 支持范围
 
 | 项目 | 要求 |
@@ -38,6 +41,12 @@ Corepack，或直接安装精确`pnpm@10.13.1`；不要使用浮动`latest`替�
 pnpm install --frozen-lockfile
 cp .env.example .env
 pnpm run setup
+```
+
+仅准备当前稳定核心服务时使用：
+
+```bash
+pnpm run setup --workbench=off
 ```
 
 `pnpm run setup`是幂等准备命令，它会：
@@ -87,7 +96,7 @@ pnpm dev:status
 pnpm dev:stop
 ```
 
-默认同时启用Code Workbench；临时不需要时使用：
+默认命令仍可启用Beta Code Workbench；当前只使用Chat/PWA时建议关闭：
 
 ```bash
 pnpm dev -- --workbench=off

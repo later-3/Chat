@@ -12,13 +12,13 @@
 
 完成门：DSH原生页面真实启动；发送创建Chat Session/Message/Run；Plan与Approval来自Chat Query；决定通过Chat Command提交；正式Assistant Message来自Product Store；刷新不会重复命令。
 
-### F2 · Code Workbench（已完成）
+### F2 · Code Workbench（Beta，暂停进入CI/CD）
 
 把固定版本code-server作为独立Hosted Workbench运行。DSH只提供全屏入口与返回动作；统一启动器负责生命周期与Workspace映射，Web Gateway负责虚拟Host隔离、HTTP/WebSocket代理和健康边界。
 
 首期能力：Files、Editor、Terminal、Git状态、Diff和VS Code扩展。首期不拆code-server UI，也不让code-server拥有Chat产品Session/Run。
 
-完成门：真实Workspace可读写；Terminal、Git状态与Diff可见；DSH返回后保留原会话；停止应用后Terminal子进程与端口全部回收。当前本地纵向不是OS沙箱，远程/多用户部署前必须换成容器或独立UID Provider。
+首期纵向已经完成，但当前产品不依赖它，暂按Beta保留且不进入通用CI/CD。需要单独启用、修改或提升为稳定能力时，完成门仍是：真实Workspace可读写；Terminal、Git状态与Diff可见；DSH返回后保留原会话；停止应用后Terminal子进程与端口全部回收。当前本地纵向不是OS沙箱，远程/多用户部署前必须换成容器或独立UID Provider。
 
 ### F3 · Browser Provider（下一步）
 
@@ -32,7 +32,7 @@
 
 ## 开发原则
 
-1. 一次只交付一个可体验纵向；前端切换与Workbench是两个独立提交。
+1. 一次只交付一个可体验纵向；Workbench Beta不阻塞当前PWA与插件纵向。
 2. 外部项目优先以固定版本服务或插件使用，不复制上游源码。
 3. 每个Adapter写清所有权、权限、幂等、故障恢复、升级与退出路径。
 4. 面向用户的纵向必须用真实服务和适用的浏览器E2E证明，不能用截图或Mock代替；真实付费模型只用于Provider/模型接入或明确需要证明模型链路的任务。

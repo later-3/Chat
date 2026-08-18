@@ -33,7 +33,8 @@ pnpm dev:stop
 检测到本仓库已有服务时只失败关闭，不执行preclean或Workflow版本收敛；
 `pnpm dev`会复核同一批证据后启动Workflow、API、code-server和DSH/Gateway；API与Workflow也不会实例化Memory Adapter。
 Memory源码与独立测试保留，但统一安装、VS Code F5和开发启动器当前都没有启用入口。
-默认启用Workbench；`--workbench=off`只用于不需要IDE的临时调试。终端SIGINT或
+Workbench当前为Beta，不属于通用CI/CD完成门；`--workbench=off`用于当前不需要IDE的日常调试和CI。
+启用Beta Workbench时，终端SIGINT或
 `pnpm dev:stop`必须反向停止并释放端口与Terminal子进程。
 
 ## DSH调试
@@ -84,4 +85,4 @@ pnpm test:workbench-runtime:real
 pnpm test:e2e:dsh-workbench-real
 ```
 
-最后一条是无模型完成门：从空白 Hero 的全局侧边栏入口进入，真实修改隔离 Git fixture，验证 SCM/Diff/Terminal、全部 WebSocket 白名单、Service Worker scope 和零外部 Telemetry。Terminal 使用唯一长寿命 argv canary；隐藏 Surface 和关闭浏览器后它仍存活，Playwright 全部服务退出后的外层 `finally` 再通过正式 reconcile 证明 canary 退出且 `43110/43113/43114/43119` 全部释放。
+最后一条是Workbench单独启用、修改或准备提升为稳定能力时的人工完成门，不属于当前通用CI/CD：从空白 Hero 的全局侧边栏入口进入，真实修改隔离 Git fixture，验证 SCM/Diff/Terminal、全部 WebSocket 白名单、Service Worker scope 和零外部 Telemetry。Terminal 使用唯一长寿命 argv canary；隐藏 Surface 和关闭浏览器后它仍存活，Playwright 全部服务退出后的外层 `finally` 再通过正式 reconcile 证明 canary 退出且 `43110/43113/43114/43119` 全部释放。
