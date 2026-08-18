@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 export const DSH_PLUGIN_REGISTRY_SCHEMA_VERSION = "chat-dsh-plugin-registry.v1";
 export const DSH_PLUGIN_REGISTRY_RELATIVE_PATH = "config/dsh-plugins.json";
 const LIFECYCLE_SCRIPTS = ["preinstall", "install", "postinstall", "prepare"];
+const DSH_APPROVED_BUILD_DEPENDENCIES = ["@deepseek-ai/dsh-subprocess-local", "node-pty"];
 
 function readJson(path, label) {
   try {
@@ -129,6 +130,20 @@ function assertNpmPlugin(repoRoot, plugin, lock) {
  */
 export function assertDshPluginRegistry(root) {
   const { repoRoot, registry } = loadDshPluginRegistry(root);
+  const workspace = readFileSync(join(repoRoot, "pnpm-workspace.yaml"), "utf8");
+  const allowlistMatches = [
+    ...workspace.matchAll(/(?:^|\n)onlyBuiltDependencies:\n((?:  - [^\n]+\n?)*)/gu),
+  ];
+  const actualBuildDependencies = (allowlistMatches[0]?.[1] ?? "")
+    .split(/\r?\n/u)
+    .filter((line) => line.trim() !== "")
+    .map((line) => line.replace(/^\s*-\s*/u, "").replace(/^["']|["']$/gu, ""));
+  if (
+    allowlistMatches.length !== 1 ||
+    JSON.stringify(actualBuildDependencies) !== JSON.stringify(DSH_APPROVED_BUILD_DEPENDENCIES)
+  ) {
+    throw new Error(`DSH原生构建脚本白名单必须精确为${DSH_APPROVED_BUILD_DEPENDENCIES.join("、")}`);
+  }
   const dshManifest = readJson(
     join(repoRoot, "apps/dsh-web/node_modules/@deepseek-ai/dsh/package.json"),
     "DSH依赖清单",

@@ -30,6 +30,10 @@
 
 DSH的React、Client UI、Cordis、Host Webserver等传递包由`@deepseek-ai/dsh@0.1.0-rc.6`的锁文件闭包提供。本仓库的Bridge只把DSH Host服务列为peer，并将Chat公开Schema和Zod内联到发布bundle；profile运行时不得解析`workspace:*`依赖。
 
+pnpm生命周期脚本白名单只包含`node-pty`与`@deepseek-ai/dsh-subprocess-local`：前者在
+Linux构建DSH subprocess所需的`pty.node`，后者只恢复`spawn-helper`可执行位。其他传递包不得
+因插件采用而获得构建脚本权限。
+
 `dsh-mobile-hanui@0.2.4`的npm integrity为
 `sha512-NSnQbZGPOeXXOOOKMyTBSrxLJec4iMB7ktPO5fePmR1d+7AzmMJZyl9c2Gg8muiO2zI/KQ8+dlEOF9XoYJPiNQ==`，
 发布`gitHead`为`1022f058050d676cfea17ed88c1794386860a407`，tag为`v0.2.4`。完整所有权、

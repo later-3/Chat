@@ -121,8 +121,14 @@ jobs:
           trap cleanup EXIT
           for i in $(seq 1 180); do
             sleep 1
-            if curl -fsS http://127.0.0.1:43110/ | grep -q "DeepSeek Harness"; then break; fi
             if ! kill -0 "$chat_pid" 2>/dev/null; then cat /tmp/chat-fresh-clone.log; exit 1; fi
+            if curl -fsS http://127.0.0.1:43110/ | grep -q "DeepSeek Harness" && \
+              curl -fsS -o /dev/null http://127.0.0.1:43111/api/readyz && \
+              curl -fsS -o /dev/null http://127.0.0.1:43112/healthz && \
+              curl -fsS http://127.0.0.1:43110/lifeos/sessions/fresh-clone | grep -q '"run":null' && \
+              curl -fsS http://localhost:43110/workbench/code/ | grep -qi '<!doctype html>'; then
+              break
+            fi
             if [ "$i" = "180" ]; then cat /tmp/chat-fresh-clone.log; exit 1; fi
           done
           curl -fsS http://127.0.0.1:43111/api/readyz

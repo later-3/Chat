@@ -81,6 +81,11 @@ preflight都复用同一校验。
 DSH插件运行在同一Host或浏览器Origin内，不是安全沙箱。Client插件即使读不到HttpOnly
 Cookie，也能调用同源接口；因此新增插件默认视为高信任代码，必须审查网络与注入能力。
 
+DSH Host的Linux终端支持需要构建锁文件中的`node-pty@1.1.0`；pnpm只允许
+`node-pty`的本地模块构建脚本和`@deepseek-ai/dsh-subprocess-local`的spawn-helper权限修复。
+移动插件本身没有安装/构建脚本，也不因此获得白名单权限；白名单漂移会使插件校验、
+构建和profile准备失败。
+
 ## 5. 二次开发决策
 
 ### 5.1 通用改进
