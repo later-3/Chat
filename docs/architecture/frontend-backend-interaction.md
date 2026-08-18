@@ -83,12 +83,17 @@ NodeRun保留在Trajectory中，不用常驻卡片重复展示历史。
 `lifeos-execution-trace` Definition在随后同一轮的`request/header`处读取该绑定，并把调用树贡献到
 `trajectory` target的真实Step Location。DSH的原始顺序因此保持为
 `SYSTEM/USER/CONTEXT → WORKFLOW → ASSISTANT`，整个过程不追加或伪造DSH Session事件。
-每一层继续使用原生`ToolCallBlock.subCalls`。固定rc.6窄扩展只保留独立Tool contribution的
-Conversation Location，并允许贡献方提供表现标签；底层仍是原生`TOOL/SUBTOOL`种类、颜色、折叠、
-计时和检查器。Bridge显示`WORKFLOW/NODE/AGENT/MODEL/TOOL`标签，并在自己贡献的Tool名称中增加
+每一层继续使用原生`ToolCallBlock.subCalls`。固定rc.6窄扩展保留独立Tool contribution的
+Conversation Location，并允许贡献方提供表现标签和紧凑行预览；原始`argsRaw`与Tool Result仍进入
+DSH原生检查器，底层仍是原生`TOOL/SUBTOOL`种类、颜色、折叠、计时和检查器。Bridge显示
+`WORKFLOW/NODE/STEP/AGENT/MODEL/TOOL`标签，并在自己贡献的Tool名称中增加
 `├─/└─/│`树线，恢复`Workflow节点 → Agent → 模型/工具`的可见深度；它不读取、选择或修改DSH DOM，
 也不复制或替换Trajectory组件。Pi行使用角色限定的
 `规划/执行 Agent`标签；终态摘要直接显示模型/工具次数、模型输入/输出/总Token和耗时，不再以空结果呈现。
+节点详情来自Product Store和严格Trace已经保存的事实：真实用户消息、Plan/Approval/Decision、Execution
+Contract/Candidate、Validation与正式结果按Manifest引用解析；动态Execution Step由既有Contract、Attempt和
+Candidate组合。列表只显示摘要，点击原生行后查看完整输入/输出；它不新增Prompt快照，也不声称这些事实是
+Provider原始Payload。Pi Attempt通过既有Attempt ID显式绑定Workflow NodeRun和Execution Step，不按时间猜父子关系。
 DSH Trajectory只投影这一套实际Workflow NodeRun及其Pi子过程。公开DTO仍保留脱敏Vercel
 Run/Step/Hook/Sleep运行时证据供后续诊断或证据表面使用，但Bridge不把它与Workflow节点混排，
 也不使用`Chat Workflow`或“业务节点”制造第二套流程概念。
@@ -97,12 +102,13 @@ Run/Step/Hook/Sleep运行时证据供后续诊断或证据表面使用，但Brid
 偏好由DSH公开Snapshot Store保存在浏览器本地；开关只让Conversation Definition按同一Trace重新投影，
 不追加Session事件、不改Chat事实。开启后每行结果显示浏览器本地开始/结束时间，运行中行显示开始时间；
 无论开关状态，展开原生详情始终可查看ISO开始/完成时间、DSH本地化Timing、审核决定、状态和严格白名单Payload。
-DSH派生改动只允许存在于单独固定分支和仓库内可审核的pnpm补丁：当前仅涉及Contribution Location与
-语义标签两个通用字段。不得复制DSH源码、重写Trajectory页面，或把完整Hosted App拆成自研React组件。
+DSH派生改动只允许存在于单独固定分支和仓库内可审核的pnpm补丁：当前仅涉及Contribution Location、
+语义标签与紧凑行预览三个通用字段。不得复制DSH源码、重写Trajectory页面，或把完整Hosted App拆成自研React组件。
 
 插件优先不等于插件能够改写全部宿主语义。rc.6公开Contribution已经携带Location，却没有在Trajectory
-快照与layout中保留、消费独立根调用的Location；标签也固定为`TOOL/SUBTOOL`。LifeOS插件因此不能在不伪造
-Assistant事件、不操作DOM、不复制Trajectory组件的条件下同时得到真实Step顺序与业务标签。Chat据此批准
+快照与layout中保留、消费独立根调用的Location；标签也固定为`TOOL/SUBTOOL`，完整Payload还会占满列表行。
+LifeOS插件因此不能在不伪造Assistant事件、不操作DOM、不复制Trajectory组件的条件下同时得到真实Step顺序、
+业务标签与“摘要列表/完整详情”的分层展示。Chat据此批准
 独立私有DSH窄派生；修改仍是通用Contribution能力，Chat业务对象和产品事实继续全部留在Bridge与Chat后端。
 详细决策、私有仓库与上游汇合流程见[DSH前端派生与维护](./dsh-frontend-maintenance.md)。
 

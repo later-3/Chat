@@ -4,9 +4,9 @@
 
 Chat的唯一产品前端是由Chat维护的DeepSeek Harness窄派生，不再承诺“永远只安装上游发布包且完全不改上游源码”。插件优先仍是默认决策：LifeOS Bridge继续通过公开Host/Client插件、Slot、Conversation Definition和LLM Adapter接入Chat；只有公开扩展点无法表达DSH原生表面的必要语义时，才允许修改DSH宿主。
 
-当前唯一例外是Trajectory。rc.6允许插件向`trajectory` target贡献独立Tool tree，也把Conversation Location交给Contribution；但快照和layout没有保留、消费这项Location，完成后的独立根调用只能落到Turn序言。rc.6同时把标签固定为`TOOL/SUBTOOL`，插件不能在不复制Trajectory组件、不修改DOM、不伪造Assistant事件的前提下显示`WORKFLOW/NODE/AGENT/MODEL/TOOL`。因此单靠LifeOS插件无法同时满足真实时序、原生树形交互和业务语义标签。
+当前唯一例外是Trajectory。rc.6允许插件向`trajectory` target贡献独立Tool tree，也把Conversation Location交给Contribution；但快照和layout没有保留、消费这项Location，完成后的独立根调用只能落到Turn序言。rc.6同时把标签固定为`TOOL/SUBTOOL`，并把完整调用参数与结果直接用作列表预览。插件不能在不复制Trajectory组件、不修改DOM、不伪造Assistant事件的前提下显示`WORKFLOW/NODE/STEP/AGENT/MODEL/TOOL`，同时把完整Payload留在检查器。因此单靠LifeOS插件无法同时满足真实时序、原生树形交互、业务语义标签和摘要/详情分层。
 
-窄派生只补齐两个通用宿主能力：保留独立Contribution的Step Location，以及允许Contribution提供表现标签。底层记录仍是DSH原生`tool/subtool`，折叠、计时、详情、颜色、无障碍语义和搜索仍由原生Trajectory拥有；DSH不知道Chat Workflow对象，也没有第二套历史或执行。
+窄派生只补齐三个通用宿主能力：保留独立Contribution的Step Location、允许Contribution提供表现标签，以及允许Contribution覆盖紧凑的输入/输出行预览。原始调用参数和结果仍由原生检查器读取；底层记录仍是DSH原生`tool/subtool`，折叠、计时、详情、颜色、无障碍语义和搜索仍由原生Trajectory拥有；DSH不知道Chat Workflow对象，也没有第二套历史或执行。
 
 ## 2. 仓库与分支
 
@@ -26,7 +26,7 @@ Chat主仓库不复制DSH源码。运行安装仍固定`@deepseek-ai/dsh@0.1.0-r
 
 1. 从`origin/main`建立独立`codex/dsh-upstream-<version>` worktree和分支，获取`upstream`的新tag与提交。
 2. 先审阅上游是否已经提供等价公开扩展点；若已经提供，优先删除本地差异并让Bridge改用上游合同。
-3. 若仍需派生，把新的固定上游版本汇合到维护分支，只重放Contribution Location和表现标签两项差异；不得顺便换皮、复制页面或加入Chat业务对象。
+3. 若仍需派生，把新的固定上游版本汇合到维护分支，只重放Contribution Location、表现标签和紧凑行预览三项差异；不得顺便换皮、复制页面或加入Chat业务对象。
 4. 在DSH源码仓库运行受影响测试、`pnpm run typecheck`、bundle、lint和`pnpm run doc-sync`。
 5. 从已验证源码重新生成Chat仓库的pnpm补丁，更新版本、补丁SHA-256、lock patch hash、派生提交和运行时漂移标记。
 6. 在Chat仓库通过Bridge合同、根级门和真实浏览器Planning/HITL/Trajectory E2E后，才更新私有`main`与Chat固定依赖。

@@ -264,10 +264,16 @@ Replay Assembler按产品对象ID、revision和SHA-256组合：
 
 `GET /api/runs/:productRunId/execution-trace`是DSH使用的公开只读投影。Application在Principal校验后组合：
 
-1. Product Store中的实际`WorkflowNodeRun`；`skipped`节点和静态Definition节点不进入执行轨迹。
+1. Product Store中的实际`WorkflowNodeRun`及其Manifest已引用的现有输入/输出事实；`skipped`节点和静态
+   Definition节点不进入执行轨迹。Application按引用解析真实User Message、Plan/Approval/Decision、
+   Execution Contract/Candidate、Validation与正式Message，未知引用只显示不可变引用，不猜测正文。
 2. Vercel Workflow World的Run/Step/Hook/Sleep事件；Runtime私有路由先把Workflow Run ID、
    correlation ID、Hook Token、原始I/O和错误正文删除。
 3. 严格JSONL Trace中的Pi Agent、模型调用、Token Usage与工具生命周期。
+
+动态Execution Step由既有Execution Contract、Execution Attempt和Execution Candidate组合；Pi Attempt用
+已有Attempt ID显式绑定所属Workflow NodeRun与Step。该投影没有增加Product Store字段、Provider Prompt快照或
+新的执行日志，因此只能展示当前已经保存的事实；详情中的Planner输入证据会明确标注“不是Provider原始Payload”。
 
 Bridge把真实触发消息的`DSH user/message ID → Product Run`绑定保存在私有原子状态中；Client通过
 同源Query恢复各Run的公开轨迹。State-only Definition在原生`user/message`处保存绑定，可见Definition
@@ -278,8 +284,9 @@ Bridge把真实触发消息的`DSH user/message ID → Product Run`绑定保存�
 中与Workflow节点混排；后续证据或诊断表面可以独立消费。Planner/Executor的终态行摘要包含模型/工具次数、模型
 Token Usage与耗时；每一层的安全详情包含开始/完成时间，Human Review包含已提交决定。
 固定DSH rc.6的窄派生扩展保留独立Tool contribution的Conversation Location，因此终态树不会再回到
-Turn序言；可选`callLabels`只把标签显示为`WORKFLOW/NODE/AGENT/MODEL/TOOL`，底层仍保持原生
-Tool/Subtool行为。Bridge同时在自己的Tool名称中投影Unicode树线以保留可见父子深度，不查询或改写DOM。
+Turn序言；可选`callLabels`把标签显示为`WORKFLOW/NODE/STEP/AGENT/MODEL/TOOL`，可选`callPreviews`
+让列表只显示稳定摘要，同时保留原始调用参数和完整结果供原生检查器查看；底层仍保持原生Tool/Subtool行为。
+Bridge同时在自己的Tool名称中投影Unicode树线以保留可见父子深度，不查询或改写DOM。
 浏览器本地“时间”偏好通过公开Session
 utility Slot控制；开启时只重投影同一Trace的本地时间范围，不写Session事件或产品事实。
 Plan/HITL Composer Dock只承载当前可操作审核或结果未知重试，决定确认后退出，历史由Human Review

@@ -1,4 +1,9 @@
-import type { ExecutionTraceDto, PiTraceActivityDto } from "@chat/contracts/public";
+import type {
+  ExecutionStepTraceDto,
+  ExecutionTraceDto,
+  ExecutionTraceValueDto,
+  PiTraceActivityDto,
+} from "@chat/contracts/public";
 import type {
   ConversationNodeContext,
   ConversationNodeDefinition,
@@ -24,8 +29,9 @@ interface BlockInput {
   readonly status: PublicStatus;
   readonly startedAt: string;
   readonly completedAt?: string;
-  readonly details: Record<string, string | number | boolean>;
+  readonly details: Record<string, unknown>;
   readonly summary?: string;
+  readonly output?: string;
   readonly subCalls?: readonly ToolCallBlock[];
   readonly seq: number;
 }
@@ -112,6 +118,38 @@ function terminalSummary(status: PublicStatus, durationMs?: number, errorCode?: 
   return joinedSummary([statusLabel(status), errorCode, formatDuration(durationMs)]);
 }
 
+function parsedTraceValue(value: ExecutionTraceValueDto): unknown {
+  if (value.format !== "json") return value.text;
+  try {
+    return JSON.parse(value.text) as unknown;
+  } catch {
+    return value.text;
+  }
+}
+
+function factPayload(values: readonly ExecutionTraceValueDto[]): readonly unknown[] {
+  return values.map((value) => ({
+    label: value.label,
+    format: value.format,
+    value: parsedTraceValue(value),
+    truncated: value.truncated,
+    ...(value.source === undefined ? {} : { source: value.source }),
+  }));
+}
+
+function factOutput(
+  summary: string,
+  values: readonly ExecutionTraceValueDto[],
+): string | undefined {
+  if (values.length === 0) return undefined;
+  return [summary, ...values.flatMap((value) => ["", `### ${value.label}`, value.text])].join("\n");
+}
+
+interface ActivityFactScope {
+  readonly input: readonly ExecutionTraceValueDto[];
+  readonly output: readonly ExecutionTraceValueDto[];
+}
+
 function block(input: BlockInput): ToolCallBlock {
   const startedAt = instant(input.startedAt);
   const subCalls = input.subCalls ?? [];
@@ -137,7 +175,7 @@ function block(input: BlockInput): ToolCallBlock {
     callId: input.callId,
     call: { name: input.name, argsRaw },
     callTime: startedAt,
-    content: [{ type: "text", text: summary }],
+    content: [{ type: "text", text: input.output?.trim() || summary }],
     isError: errored,
     ...(errored ? { error: { name: "ExecutionFailed", code: input.status } } : {}),
     callView: null,
@@ -275,12 +313,20 @@ function activityBlock(
   activity: PiTraceActivityDto,
   children: readonly PiTraceActivityDto[],
   seq: number,
+  facts: ActivityFactScope,
 ): ToolCallBlock {
-  const details: Record<string, string | number | boolean> = {
+  const visibleInput = activity.kind === "tool" ? facts.output : facts.input;
+  const details: Record<string, unknown> = {
     kind: activity.kind,
     status: activity.status,
+    attemptId: activity.attemptId,
     startedAt: activity.startedAt,
+    inputNotice: "以下为Chat已保存的输入事实，不是Provider原始Payload。",
+    inputFacts: factPayload(visibleInput),
   };
+  if (activity.workflowNodeRunId !== undefined)
+    details.workflowNodeRunId = activity.workflowNodeRunId;
+  if (activity.executionStepId !== undefined) details.executionStepId = activity.executionStepId;
   if (activity.completedAt !== undefined) details.completedAt = activity.completedAt;
   if (activity.provider !== undefined) details.provider = activity.provider;
   if (activity.model !== undefined) details.model = activity.model;
@@ -292,6 +338,8 @@ function activityBlock(
   }
   if (activity.durationMs !== undefined) details.durationMs = activity.durationMs;
   if (activity.errorCode !== undefined) details.errorCode = activity.errorCode;
+  const summary = activitySummary(activity, children);
+  const output = activity.kind === "agent" ? factOutput(summary, facts.output) : undefined;
   return block({
     callId: `lifeos-${activity.activityKey}`,
     name: activityName(activity),
@@ -299,8 +347,9 @@ function activityBlock(
     startedAt: activity.startedAt,
     ...(activity.completedAt === undefined ? {} : { completedAt: activity.completedAt }),
     details,
-    summary: activitySummary(activity, children),
-    subCalls: ordered(children.map((child) => activityBlock(child, [], seq))),
+    summary,
+    ...(output === undefined ? {} : { output }),
+    subCalls: ordered(children.map((child) => activityBlock(child, [], seq, facts))),
     seq,
   });
 }
@@ -320,28 +369,128 @@ function reviewDecisionLabel(
   return labels[outcomeCode] ?? outcomeCode;
 }
 
-function nodeKind(nodeType: string): PiTraceActivityDto["nodeKind"] | undefined {
-  if (nodeType === "agent.plan") return "planner";
-  if (nodeType.startsWith("execute.")) return "executor";
-  if (nodeType.includes("note") && nodeType.startsWith("agent.")) return "note_capture";
-  return undefined;
+function runtimeSpansForNode(trace: ExecutionTraceDto, nodeType: string): readonly unknown[] {
+  if (trace.runtime.availability !== "available") return [];
+  const belongs = (name: string, kind: string): boolean => {
+    if (nodeType === "agent.plan") return /Plan|PlanningInput/u.test(name);
+    if (nodeType === "human.plan_review")
+      return kind === "hook" || kind === "sleep" || /Decision|Approval/u.test(name);
+    if (nodeType === "execute.plan") return /Execut|ApprovedPlan|RunAttempt/u.test(name);
+    if (nodeType === "result.validate") return /Validat/u.test(name);
+    if (nodeType === "product.commit") return /CommitExecutionResult/u.test(name);
+    return false;
+  };
+  return trace.runtime.spans
+    .filter((span) => span.kind !== "run" && belongs(span.name, span.kind))
+    .map((span) => ({
+      kind: span.kind,
+      name: span.name,
+      status: span.status,
+      createdAt: span.createdAt,
+      startedAt: span.startedAt ?? null,
+      completedAt: span.completedAt ?? null,
+      durationMs: span.durationMs,
+    }));
 }
 
-function workflowNodeBlocks(trace: ExecutionTraceDto, seq: number): ToolCallBlock[] {
-  const assignments = assignAgents(trace);
-  return trace.workflow.nodeRuns.map((node) => {
-    const children = (assignments.get(String(node.workflowNodeRunId)) ?? []).map((agent) =>
+function rootRuntimeSpans(trace: ExecutionTraceDto): readonly unknown[] {
+  if (trace.runtime.availability !== "available") return [];
+  return trace.runtime.spans
+    .filter((span) => span.kind !== "run" && /Load.*RunSpec/u.test(span.name))
+    .map((span) => ({
+      kind: span.kind,
+      name: span.name,
+      status: span.status,
+      createdAt: span.createdAt,
+      startedAt: span.startedAt ?? null,
+      completedAt: span.completedAt ?? null,
+      durationMs: span.durationMs,
+    }));
+}
+
+function scopedAgentBlocks(
+  trace: ExecutionTraceDto,
+  seq: number,
+  facts: ActivityFactScope,
+  predicate: (activity: PiTraceActivityDto) => boolean,
+): ToolCallBlock[] {
+  return trace.piActivities
+    .filter((activity) => activity.kind === "agent" && predicate(activity))
+    .map((agent) =>
       activityBlock(
         agent,
         trace.piActivities.filter((activity) => activity.parentActivityKey === agent.activityKey),
         seq,
+        facts,
       ),
     );
-    const details: Record<string, string | number | boolean> = {
+}
+
+function executionStepCallId(step: ExecutionStepTraceDto): string {
+  return `lifeos-step-${String(step.parentWorkflowNodeRunId)}-${step.stepId}`;
+}
+
+function executionStepBlock(
+  trace: ExecutionTraceDto,
+  step: ExecutionStepTraceDto,
+  seq: number,
+): ToolCallBlock {
+  const facts = { input: step.input, output: step.output };
+  const children = scopedAgentBlocks(
+    trace,
+    seq,
+    facts,
+    (activity) =>
+      activity.workflowNodeRunId === step.parentWorkflowNodeRunId &&
+      activity.executionStepId === step.stepId,
+  );
+  const summary = terminalSummary(step.status, step.durationMs);
+  const output = factOutput(summary, step.output);
+  return block({
+    callId: executionStepCallId(step),
+    name: step.title,
+    status: step.status,
+    startedAt: step.startedAt ?? trace.run.createdAt,
+    ...(step.completedAt === undefined ? {} : { completedAt: step.completedAt }),
+    details: {
+      stepId: step.stepId,
+      status: step.status,
+      startedAt: step.startedAt ?? null,
+      completedAt: step.completedAt ?? null,
+      durationMs: step.durationMs ?? null,
+      inputFacts: factPayload(step.input),
+    },
+    summary,
+    ...(output === undefined ? {} : { output }),
+    subCalls: ordered(children),
+    seq,
+  });
+}
+
+function workflowNodeBlocks(trace: ExecutionTraceDto, seq: number): ToolCallBlock[] {
+  const detailByNode = new Map(
+    trace.workflow.nodeDetails.map((detail) => [String(detail.workflowNodeRunId), detail] as const),
+  );
+  return trace.workflow.nodeRuns.map((node) => {
+    const facts = detailByNode.get(String(node.workflowNodeRunId)) ?? { input: [], output: [] };
+    const directAgents = scopedAgentBlocks(
+      trace,
+      seq,
+      facts,
+      (activity) =>
+        activity.workflowNodeRunId === node.workflowNodeRunId &&
+        activity.executionStepId === undefined,
+    );
+    const steps = trace.workflow.executionSteps
+      .filter((step) => step.parentWorkflowNodeRunId === node.workflowNodeRunId)
+      .map((step) => executionStepBlock(trace, step, seq));
+    const details: Record<string, unknown> = {
       nodeType: node.nodeType,
       status: node.status,
       attempt: node.attemptNumber,
       startedAt: node.startedAt ?? node.updatedAt,
+      inputFacts: factPayload(facts.input),
+      runtimeSpans: runtimeSpansForNode(trace, node.nodeType),
     };
     if (node.finishedAt !== undefined) details.completedAt = node.finishedAt;
     if (node.durationMs !== undefined) details.durationMs = node.durationMs;
@@ -349,6 +498,9 @@ function workflowNodeBlocks(trace: ExecutionTraceDto, seq: number): ToolCallBloc
     const decision = reviewDecisionLabel(node.nodeType, node.outcomeCode);
     if (decision !== undefined) details.decision = decision;
     if (node.error !== undefined) details.errorCode = node.error.code;
+    const summary =
+      node.publicSummary ?? terminalSummary(node.status, node.durationMs, node.error?.code);
+    const output = factOutput(summary, facts.output);
     return block({
       callId: `lifeos-node-${String(node.workflowNodeRunId)}`,
       name: node.title,
@@ -356,54 +508,12 @@ function workflowNodeBlocks(trace: ExecutionTraceDto, seq: number): ToolCallBloc
       startedAt: node.startedAt ?? node.updatedAt,
       ...(node.finishedAt === undefined ? {} : { completedAt: node.finishedAt }),
       details,
-      summary:
-        node.publicSummary ?? terminalSummary(node.status, node.durationMs, node.error?.code),
-      subCalls: ordered(children),
+      summary,
+      ...(output === undefined ? {} : { output }),
+      subCalls: ordered([...directAgents, ...steps]),
       seq,
     });
   });
-}
-
-function assignAgents(
-  trace: ExecutionTraceDto,
-): ReadonlyMap<string, readonly PiTraceActivityDto[]> {
-  const assignments = new Map<string, PiTraceActivityDto[]>();
-  const agents = trace.piActivities.filter((activity) => activity.kind === "agent");
-  for (const agent of agents) {
-    const agentStartedAt = instant(agent.startedAt);
-    const candidates = trace.workflow.nodeRuns
-      .map((node, index) => ({ node, index }))
-      .filter(({ node }) => nodeKind(node.nodeType) === agent.nodeKind)
-      .map(({ node, index }) => {
-        const start = instant(node.startedAt ?? node.updatedAt);
-        const end = instant(node.finishedAt ?? node.updatedAt);
-        return {
-          node,
-          index,
-          contains:
-            agentStartedAt >= Math.min(start, end) && agentStartedAt <= Math.max(start, end),
-          duration: Math.abs(end - start),
-          distance: Math.abs(agentStartedAt - start),
-          // Executor优先落到实际Plan Step，不被外层execute.plan容器吞掉。
-          specificity: node.nodeType === "execute.plan_step" ? 0 : 1,
-        };
-      })
-      .sort(
-        (left, right) =>
-          Number(right.contains) - Number(left.contains) ||
-          left.specificity - right.specificity ||
-          left.duration - right.duration ||
-          left.distance - right.distance ||
-          left.index - right.index,
-      );
-    const selected = candidates[0]?.node;
-    if (selected === undefined) continue;
-    const key = String(selected.workflowNodeRunId);
-    const assigned = assignments.get(key) ?? [];
-    assigned.push(agent);
-    assignments.set(key, assigned);
-  }
-  return assignments;
 }
 
 export function executionTraceRoot(
@@ -411,6 +521,8 @@ export function executionTraceRoot(
   seq: number,
   options: ExecutionTraceViewOptions = {},
 ): ToolCallBlock {
+  const firstInput =
+    trace.workflow.nodeDetails.find((detail) => detail.input.length > 0)?.input ?? [];
   const root = block({
     callId: `lifeos-workflow-${String(trace.productRunId)}`,
     name: `Workflow · ${trace.workflow.title}`,
@@ -422,6 +534,8 @@ export function executionTraceRoot(
       phase: trace.run.phase,
       startedAt: trace.run.createdAt,
       updatedAt: trace.run.updatedAt,
+      requestFacts: factPayload(firstInput),
+      runtimeStartup: rootRuntimeSpans(trace),
     },
     summary: joinedSummary([
       statusLabel(trace.run.status),
@@ -446,6 +560,9 @@ export function executionTraceCallLabels(trace: ExecutionTraceDto): ReadonlyMap<
   for (const node of trace.workflow.nodeRuns) {
     labels.set(`lifeos-node-${String(node.workflowNodeRunId)}`, "NODE");
   }
+  for (const step of trace.workflow.executionSteps) {
+    labels.set(executionStepCallId(step), "STEP");
+  }
   for (const activity of trace.piActivities) {
     labels.set(
       `lifeos-${activity.activityKey}`,
@@ -453,6 +570,38 @@ export function executionTraceCallLabels(trace: ExecutionTraceDto): ReadonlyMap<
     );
   }
   return labels;
+}
+
+interface ExecutionTraceCallPreview {
+  readonly input?: string;
+  readonly output?: string;
+}
+
+/**
+ * 列表只显示稳定摘要；原始argsRaw与完整ToolResult仍由DSH放在点击后的Payload/Result。
+ * 这是显示投影，不删除或改写任何Chat运行事实。
+ */
+export function executionTraceCallPreviews(
+  root: ToolCallBlock,
+): ReadonlyMap<string, ExecutionTraceCallPreview> {
+  const previews = new Map<string, ExecutionTraceCallPreview>();
+  const visit = (value: ToolCallBlock): void => {
+    let output: string | undefined;
+    if ("kind" in value) {
+      for (const item of value.content) {
+        if (item.type !== "text" || item.text.trim() === "") continue;
+        output = item.text.split(/\r?\n/u, 1)[0];
+        break;
+      }
+    }
+    previews.set(value.callId, {
+      input: "",
+      ...(output === undefined ? {} : { output }),
+    });
+    for (const child of value.subCalls) visit(child);
+  };
+  visit(root);
+  return previews;
 }
 
 function locationTurn(
@@ -515,6 +664,7 @@ export function createExecutionTraceDefinition(
       const last = context.matches.at(-1);
       const trace = context.state?.trace;
       if (last === undefined || trace === undefined) return null;
+      const root = executionTraceRoot(trace, last.event.seq, options);
       return {
         key: context.key,
         kind: context.kind,
@@ -524,8 +674,9 @@ export function createExecutionTraceDefinition(
         location: context.start?.location ?? { kind: "unresolved" },
         data: {
           kind: "tool",
-          root: executionTraceRoot(trace, last.event.seq, options),
+          root,
           callLabels: executionTraceCallLabels(trace),
+          callPreviews: executionTraceCallPreviews(root),
         },
       };
     },

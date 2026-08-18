@@ -1,11 +1,44 @@
 import { z } from "zod";
-import { productRunIdSchema } from "./ids.js";
+import { productRunIdSchema, runAttemptIdSchema, workflowNodeRunIdSchema } from "./ids.js";
 import { productRunPhaseSchema, productRunStatusSchema } from "./product.js";
 import { sha256Schema } from "./hash.js";
 import { workflowNodeRunSummaryDtoSchema } from "./workflow-api.js";
 import { workflowRuntimeTraceDtoSchema } from "./workflow-runtime-trace-api.js";
+import { nodeProductRefSchema } from "./workflow-run.js";
 
-export const EXECUTION_TRACE_SCHEMA_VERSION = "chat-execution-trace.v1";
+export const EXECUTION_TRACE_SCHEMA_VERSION = "chat-execution-trace.v2";
+
+const executionTraceValueDtoSchema = z
+  .object({
+    label: z.string().min(1).max(240),
+    format: z.enum(["text", "markdown", "json"]),
+    text: z.string().max(64_000),
+    truncated: z.boolean(),
+    source: nodeProductRefSchema.optional(),
+  })
+  .strict();
+
+const workflowNodeTraceDetailDtoSchema = z
+  .object({
+    workflowNodeRunId: workflowNodeRunIdSchema,
+    input: z.array(executionTraceValueDtoSchema).max(100),
+    output: z.array(executionTraceValueDtoSchema).max(100),
+  })
+  .strict();
+
+const executionStepTraceDtoSchema = z
+  .object({
+    parentWorkflowNodeRunId: workflowNodeRunIdSchema,
+    stepId: z.string().min(1).max(100),
+    title: z.string().min(1).max(200),
+    status: z.enum(["running", "succeeded", "failed"]),
+    startedAt: z.iso.datetime().optional(),
+    completedAt: z.iso.datetime().optional(),
+    durationMs: z.number().int().nonnegative().max(3_600_000).optional(),
+    input: z.array(executionTraceValueDtoSchema).max(20),
+    output: z.array(executionTraceValueDtoSchema).max(20),
+  })
+  .strict();
 
 export const piTraceActivityStatusSchema = z.enum(["running", "succeeded", "failed", "cancelled"]);
 
@@ -19,11 +52,17 @@ const tokenUsageSchema = z
   })
   .strict();
 
-/** Pi内部事件的公开摘要；不携带Prompt、工具参数/结果正文、Provider Request ID或pi Session。 */
+/**
+ * Pi内部事件的公开活动。模型原始Payload仍不出边界；所属Chat Attempt、Workflow Node与
+ * Execution Step只用于把已有产品输入/输出投影到正确的DSH树节点。
+ */
 export const piTraceActivityDtoSchema = z
   .object({
     activityKey: piTraceActivityKeySchema,
     parentActivityKey: piTraceActivityKeySchema.optional(),
+    attemptId: runAttemptIdSchema,
+    workflowNodeRunId: workflowNodeRunIdSchema.optional(),
+    executionStepId: z.string().min(1).max(100).optional(),
     sequence: z.number().int().positive().max(10_000),
     kind: piTraceActivityKindSchema,
     label: z.string().min(1).max(160),
@@ -72,6 +111,10 @@ export const executionTraceDtoSchema = z
         title: z.string().min(1).max(160),
         /** 只包含实际NodeRun；静态Definition节点不进入执行轨迹。 */
         nodeRuns: z.array(workflowNodeRunSummaryDtoSchema).max(500),
+        /** Manifest引用解析后的既有产品事实；不包含模型原始Payload或隐藏推理。 */
+        nodeDetails: z.array(workflowNodeTraceDetailDtoSchema).max(500),
+        /** execute.plan内部真正执行过的Approved Plan Step。 */
+        executionSteps: z.array(executionStepTraceDtoSchema).max(500),
       })
       .strict(),
     runtime: workflowRuntimeTraceDtoSchema,
@@ -82,3 +125,6 @@ export const executionTraceDtoSchema = z
 
 export type PiTraceActivityDto = z.infer<typeof piTraceActivityDtoSchema>;
 export type ExecutionTraceDto = z.infer<typeof executionTraceDtoSchema>;
+export type ExecutionTraceValueDto = z.infer<typeof executionTraceValueDtoSchema>;
+export type WorkflowNodeTraceDetailDto = z.infer<typeof workflowNodeTraceDetailDtoSchema>;
+export type ExecutionStepTraceDto = z.infer<typeof executionStepTraceDtoSchema>;

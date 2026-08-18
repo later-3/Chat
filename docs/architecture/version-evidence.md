@@ -15,7 +15,7 @@
 
 | 依赖 | 版本 | 许可证 | 用途与边界 | 退出方式 |
 |---|---:|---|---|---|
-| `@deepseek-ai/dsh` | `0.1.0-rc.6` + 固定Trajectory补丁 | MIT | 唯一Web Host、原生会话/Composer/插件图；窄扩展只保留调用Location与语义标签；不拥有Chat产品事实 | 删除补丁或替换前端Host与Bridge Adapter；Chat API/Domain/Store不变 |
+| `@deepseek-ai/dsh` | `0.1.0-rc.6` + 固定Trajectory补丁 | MIT | 唯一Web Host、原生会话/Composer/插件图；窄扩展只保留调用Location、语义标签与紧凑行预览；不拥有Chat产品事实 | 删除补丁或替换前端Host与Bridge Adapter；Chat API/Domain/Store不变 |
 | `@chat/dsh-lifeos-bridge` | workspace `0.1.0` | 私有 | DSH Host/Client到Chat公开Query/Command的唯一集成面 | 删除bundle/profile层；Chat后端不变 |
 | `code-server`官方发行工件 | `4.132.0` / commit `313bf0359b4d391ba18f1fa131aad8a583bc2919` | MIT | 独立Hosted Workbench；不进入pnpm运行依赖、不拥有Chat产品事实 | 替换Workbench Provider；DSH与Chat后端不变 |
 | `hono` | `^4.13.0` | MIT | HTTP协议入口，不拥有事务 | 替换Router Adapter |
@@ -34,9 +34,9 @@ Trajectory窄派生的源码位于Private仓库<https://github.com/later-3/deeps
 <https://github.com/deepseek-ai/deepseek-harness>仅作为本地`upstream`。上游rc.6基点
 `15148dbd9a1d1f1ef1a26e5749b32af0cd663935`，Trajectory实现提交
 `708cca1ed78995b986c3400493809ee06d1c3b0e`，当前私有分支头
-`bcca246a5e4ab4e002e9caa0e4e20160a8bd06e8`。Chat不复制该源码，只提交
+`2606877ed5e5dbe690459368bf88f769b04ab235`。Chat不复制该源码，只提交
 `patches/@deepseek-ai__dsh-client-ui-trajectory@0.1.0-rc.6.patch`；补丁SHA-256与pnpm patch hash均为
-`83b6aff34c02dc54862e93ebc0b5bc5d955e46b77e255aa9129bacda49a8749b`。
+`9e10e608d36dd364b9f972954c2625b8dc795f216c1a54401a740dc9ed42ee08`。
 
 ### pi运行工件与能力对照源码
 

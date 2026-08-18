@@ -7,14 +7,14 @@
 | 领域 | 当前状态 |
 |---|---|
 | 产品身份 | 独立、完整、持续演进的个人Agent协作产品 |
-| 唯一前端 | Chat私有仓库`later-3/deepseek-harness-chat`维护固定`DeepSeek Harness Web rc.6`窄派生；当前只维护Trajectory Location/标签扩展，Chat仓库以固定pnpm补丁消费；旧`apps/web`与Agent Canvas均不属于当前架构 |
+| 唯一前端 | Chat私有仓库`later-3/deepseek-harness-chat`维护固定`DeepSeek Harness Web rc.6`窄派生；当前只维护Trajectory Location/标签/紧凑预览扩展，Chat仓库以固定pnpm补丁消费；旧`apps/web`与Agent Canvas均不属于当前架构 |
 | 前端桥接 | `@chat/dsh-lifeos-bridge`通过DSH公开Slot把原生会话、Composer行内Workflow选择与HITL表面接到Chat公开API |
 | 开发工作台 | 固定`code-server@4.132.0`；DSH全屏Surface打开Files、Editor、Terminal、Git/Diff与扩展系统 |
 | 后端 | Node.js + TypeScript；Hono协议入口；Application拥有用例事务 |
 | Product Store | 版本化JSON Adapter；拥有Session、Message、Run、Plan、Approval、Decision、Memory和Project事实 |
 | Workflow | Vercel Workflow解释不可变RunSpec，承担耐久步骤、暂停、恢复与Checkpoint |
 | Agent Runtime | `pi-agent-core`作为Planner/Executor节点，不拥有产品会话或完成事实 |
-| 执行轨迹 | DSH Trajectory只展示实际Workflow NodeRun及其Pi Agent/模型/工具子过程；Vercel Run/Step/Hook/Sleep继续保留为后端证据但不混入；Bridge以真实DSH user/message保存Run绑定，再把树贡献到随后同一原生Step的request/header位置；DSH窄扩展保留Contribution Location并显示WORKFLOW/NODE/AGENT/MODEL/TOOL语义标签，原生Tool/Subtool行为不变；树线恢复可见深度，Session utility可选显示本地时间范围；终态摘要含角色、Token、耗时 |
+| 执行轨迹 | DSH Trajectory只展示实际Workflow NodeRun、动态Execution Step及其Pi Agent/模型/工具子过程；节点输入/输出由Product Store现有Manifest引用与严格Trace组合，不新增Prompt存储；Vercel Run/Step/Hook/Sleep继续保留为后端证据但不混入；Bridge以真实DSH user/message保存Run绑定，再把树贡献到随后同一原生Step的request/header位置；DSH窄扩展保留Contribution Location，显示WORKFLOW/NODE/STEP/AGENT/MODEL/TOOL语义标签，并让列表显示摘要、原生检查器保留完整详情；树线恢复可见深度，Session utility可选显示本地时间范围；终态摘要含角色、Token、耗时 |
 | Memory | memmy与Tencent MemoryCore代码、合同和历史事实保留；当前默认不启动服务，也不向API/Workflow装配Adapter |
 | 调试 | `pnpm dev/dev:debug`只启动Workflow、API、code-server与Web Gateway/DSH；当前没有Memory启用Profile |
 | PWA | DSH Web可安装PWA：Bridge覆盖manifest/sw.js并注入图标与注册脚本；SW只缓存同源静态外壳，/api//lifeos永不缓存 |

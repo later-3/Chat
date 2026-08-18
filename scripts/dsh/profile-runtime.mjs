@@ -17,7 +17,7 @@ export const BRIDGE_BUNDLE_RELATIVE_PATH = "packages/dsh-lifeos-bridge/dist/dsh-
 export const DSH_TRAJECTORY_PATCH_RELATIVE_PATH =
   "patches/@deepseek-ai__dsh-client-ui-trajectory@0.1.0-rc.6.patch";
 export const DSH_TRAJECTORY_PATCH_SHA256 =
-  "83b6aff34c02dc54862e93ebc0b5bc5d955e46b77e255aa9129bacda49a8749b";
+  "9e10e608d36dd364b9f972954c2625b8dc795f216c1a54401a740dc9ed42ee08";
 export const DSH_CLI_RUNTIME_IMPORTS = Object.freeze([
   "@deepseek-ai/dsh-app-boot",
   "@deepseek-ai/dsh-cmdline",
@@ -218,7 +218,7 @@ export function resolveDshBin(root) {
 }
 
 /**
- * Chat只维护rc.6 Trajectory的极窄派生补丁：Contribution Location与语义标签。
+ * Chat只维护rc.6 Trajectory的极窄派生补丁：Contribution Location、语义标签与紧凑行预览。
  * 运行包、补丁内容和本地DSH分支证据任一漂移，都在启动前失败关闭。
  */
 export function assertDshTrajectoryExtension(root) {
