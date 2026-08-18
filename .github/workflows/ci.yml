@@ -51,12 +51,15 @@ jobs:
           pnpm --filter @chat/dsh-web start > /tmp/chat-dsh-web.log 2>&1 &
           dsh_pid=$!
           trap 'kill "$dsh_pid" 2>/dev/null || true' EXIT
-          for i in $(seq 1 60); do
+          for i in $(seq 1 90); do
             sleep 1
-            if curl -fsS http://127.0.0.1:43110/ | grep -q "DeepSeek Harness"; then break; fi
-            if [ "$i" = "60" ]; then cat /tmp/chat-dsh-web.log; exit 1; fi
+            if ! kill -0 "$dsh_pid" 2>/dev/null; then cat /tmp/chat-dsh-web.log; exit 1; fi
+            if curl -fsS http://127.0.0.1:43110/ | grep -q "DeepSeek Harness" && \
+              curl -fsS http://127.0.0.1:43110/lifeos/sessions/ci-probe | grep -q '"schemaVersion":"chat-dsh-lifeos-bridge.v1"'; then
+              break
+            fi
+            if [ "$i" = "90" ]; then cat /tmp/chat-dsh-web.log; exit 1; fi
           done
-          curl -fsS http://127.0.0.1:43110/lifeos/sessions/ci-probe | grep -q '"schemaVersion":"chat-dsh-lifeos-bridge.v1"'
 
   dsh-pwa-e2e:
     # 用真实Chromium守护PWA安装/离线边界、手机外壳与桌面零影响。
