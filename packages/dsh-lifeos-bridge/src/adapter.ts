@@ -260,7 +260,6 @@ export class LifeosLlmAdapter extends LlmAdapter {
       } else {
         run = await this.chat.getRun(request.productRunId, signal);
       }
-
       const trajectoryEnabled =
         options.tools?.some((tool) => tool.name === LIFEOS_TRACE_TOOL) === true;
       while (true) {
@@ -323,6 +322,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
       stableCommandId("create-session", dshSessionId),
       (binding) => {
         const request = (binding.requests[prompt.requestKey] ??= {
+          dshMessageId: prompt.messageId,
           userTextSha256: prompt.textSha256,
           messageCommandId: stableCommandId(
             "submit-message",
@@ -339,6 +339,10 @@ export class LifeosLlmAdapter extends LlmAdapter {
         if (request.userTextSha256 !== prompt.textSha256) {
           throw new Error("lifeos bridge request key collision");
         }
+        if (request.dshMessageId !== undefined && request.dshMessageId !== prompt.messageId) {
+          throw new Error("lifeos bridge request message identity mismatch");
+        }
+        request.dshMessageId = prompt.messageId;
         binding.currentRequestKey = prompt.requestKey;
         return structuredClone(request);
       },

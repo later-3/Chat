@@ -5,7 +5,10 @@ import {
   submitUserMessage,
   transitionConfigurablePlanningNode,
 } from "@chat/application";
-import { SYSTEM_NOTE_WORKFLOW_REVISION_ID } from "@chat/application/workflow-system-definitions";
+import {
+  SYSTEM_NOTE_WORKFLOW_REVISION_ID,
+  SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
+} from "@chat/application/workflow-system-definitions";
 import { createApiApp } from "@chat/api";
 import { auditProductIntegrity } from "./product-integrity-auditor.js";
 import { createS7ApplicationFixture } from "./fixtures/s7-versioned-fixtures.js";
@@ -168,11 +171,26 @@ describe("S7并发、IDOR、敏感数据与unknown字段代表矩阵", () => {
       commandId: fixture.command(),
       payload: {},
     });
+    const seeded = (await fixture.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const definition =
+      seeded.entities.workflowDefinitionRevisions[SYSTEM_PLANNING_WORKFLOW_REVISION_ID];
+    if (definition === undefined) throw new Error("S7 Fixture缺少完整Planning Definition");
     const submitted = await submitUserMessage(fixture.deps, {
       principalId: OWNER,
       sessionId: session.sessionId,
       commandId: fixture.command(),
-      payload: { text: "验证相同终态的证据不能被覆盖" },
+      payload: {
+        text: "验证相同终态的证据不能被覆盖",
+        workflowSelection: {
+          kind: "published_revision",
+          workflowDefinitionRevisionId: definition.workflowDefinitionRevisionId,
+          definitionSha256: definition.definitionSha256,
+          runConfiguration: {
+            schemaVersion: "workflow-run-configuration.v1",
+            overrides: [],
+          },
+        },
+      },
     });
     const before = (await fixture.deps.store.read({ kind: "committedSnapshot" })).snapshot;
     const run = before.entities.runs[submitted.run.productRunId];

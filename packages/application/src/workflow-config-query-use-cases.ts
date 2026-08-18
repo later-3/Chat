@@ -15,6 +15,7 @@ import type { ApplicationDeps } from "./deps.js";
 import { forbidden, notFound } from "./errors.js";
 import { DEFAULT_WORKFLOW_BLUEPRINTS } from "./workflow-blueprints.js";
 import { DEFAULT_NODE_CATALOG } from "./workflow-node-catalog.js";
+import { SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID } from "./workflow-system-definitions.js";
 import {
   listAuthorizedWorkflowResources,
   toWorkflowResourceRefDto,
@@ -186,6 +187,8 @@ function toPublishedDefinitionDto(
     blueprintVersion: revision.blueprintVersion,
     definitionSha256: revision.definitionSha256,
     ownerKind: definition.ownerKind,
+    isDefault:
+      revision.workflowDefinitionRevisionId === SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
     nodes: flattenNodes(revision.semanticRoot).map((node) => {
       const descriptor = DEFAULT_NODE_CATALOG.get(node.nodeType, node.schemaVersion);
       return {

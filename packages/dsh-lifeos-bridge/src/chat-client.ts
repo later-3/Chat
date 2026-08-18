@@ -1,6 +1,10 @@
 import type { ZodType } from "zod";
-import { workflowDefinitionsDtoSchema } from "@chat/contracts/public";
-import type { ExecutionTracePage } from "@chat/contracts/public";
+import {
+  workflowExecutionTraceDtoSchema,
+  workflowDefinitionsDtoSchema,
+  type ExecutionTracePage,
+  type WorkflowExecutionTraceDto,
+} from "@chat/contracts/public";
 import { z } from "zod";
 import {
   approvalResponseSchema,
@@ -161,6 +165,7 @@ export class ChatProductClient {
         description: definition.description,
         blueprintKey: definition.blueprintKey,
         ownerKind: definition.ownerKind,
+        isDefault: definition.isDefault,
       }),
     );
   }
@@ -182,6 +187,17 @@ export class ChatProductClient {
     return await this.request(
       `/api/runs/${encodeURIComponent(productRunId)}/execution-trace?afterSequence=${String(afterSequence)}&limit=100`,
       executionTraceResponseSchema,
+      withSignal(signal),
+    );
+  }
+
+  async getWorkflowExecutionTrace(
+    productRunId: string,
+    signal?: AbortSignal,
+  ): Promise<WorkflowExecutionTraceDto> {
+    return await this.request(
+      `/api/runs/${encodeURIComponent(productRunId)}/workflow-execution-trace`,
+      workflowExecutionTraceDtoSchema,
       withSignal(signal),
     );
   }

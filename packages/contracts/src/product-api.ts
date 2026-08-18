@@ -343,6 +343,7 @@ export const workflowDefinitionPublishedDtoSchema = z
     blueprintVersion: z.number().int().positive().max(32),
     definitionSha256: sha256Schema,
     ownerKind: z.enum(["system", "principal"]),
+    isDefault: z.boolean(),
     nodes: z
       .array(
         z

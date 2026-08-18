@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 import {
   decisionRequestSchema,
+  dshMessageIdSchema,
   dshSessionIdSchema,
   noteDecisionRequestSchema,
   workflowSelectionSchema,
@@ -47,6 +48,8 @@ const pendingNoteDecisionSchema = z
 
 const requestSchema = z
   .object({
+    /** 触发本请求的DSH user/message身份；旧v1/v2记录迁移后可能暂时缺失。 */
+    dshMessageId: dshMessageIdSchema.optional(),
     userTextSha256: sha256Schema,
     messageCommandId: commandIdSchema.transform(String),
     productRunId: productRunIdSchema.transform(String).optional(),
@@ -88,14 +91,14 @@ const sessionBindingSchema = z
  */
 const legacyBridgeStateSchema = z
   .object({
-    schemaVersion: z.literal("chat-dsh-lifeos-state.v1"),
+    schemaVersion: z.enum(["chat-dsh-lifeos-state.v1", "chat-dsh-lifeos-state.v2"]),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
   .strict();
 
 const legacyBridgeStateV2Schema = z
   .object({
-    schemaVersion: z.literal("chat-dsh-lifeos-state.v2"),
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v3"),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
   .strict();

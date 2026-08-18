@@ -109,6 +109,7 @@ import {
   recordProjectContribution,
   observeProjectResource,
   getWorkflowRunView,
+  getWorkflowExecutionTrace,
   getWorkflowNodeDetail,
   getWorkflowBlueprints,
   getWorkflowCatalog,
@@ -1778,6 +1779,23 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
       assertNoQuery(c.req.url);
       const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
       const result = await getWorkflowRunView(ctx.deps, {
+        principalId: ctx.principalId,
+        productRunId,
+      });
+      c.header("ETag", result.etag);
+      c.header("Cache-Control", "private, no-cache");
+      if (matchesEtag(c.req.header("If-None-Match"), result.etag)) return c.body(null, 304);
+      return c.json(result.value, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/runs/:productRunId/workflow-execution-trace", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
+      const result = await getWorkflowExecutionTrace(ctx.deps, {
         principalId: ctx.principalId,
         productRunId,
       });

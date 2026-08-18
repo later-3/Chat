@@ -75,6 +75,9 @@ Workbench当前为Beta，不属于通用CI/CD完成门；debug实例强制`--wor
 | 决定提交 | `ChatProductClient.submitDecision` | 同一pending command、Run CAS、Plan/Approval版本与Hash |
 | 正式回复 | Bridge LLM Adapter | 只从Chat Message Query选择正式Assistant Message |
 | Pi执行轨迹 | `LifeosLlmAdapter.nextTraceTool`、`createLifeosTraceTool` | cursor、toolCallId、input/result、DSH running/completed |
+| Workflow轨迹Query | `GET /api/runs/:productRunId/workflow-execution-trace`、`getWorkflowExecutionTrace` | 实际NodeRun、Runtime可用性、Pi活动、稳定`traceRevision` |
+| DSH轨迹绑定 | `LifeosLlmAdapter.ensureRequest`、`LifeosBridgeService.executionTraces` | 真实`user/message ID → Product Run`、Query失败不阻断Plan/HITL |
+| 原生轨迹折叠 | `ExecutionTraceProjection`、`executionTraceDefinition`、`executionTraceRoot` | 原生消息锚点→Workflow→NodeRun→Pi Agent→模型/工具；不写自定义Session事件 |
 
 不要在日志/Watch中展示完整用户正文、密钥、Hook Token、Workflow Run ID或pi Session ID。
 
@@ -106,6 +109,13 @@ pnpm debug:replay -- --run <productRunId>
 Trace保存可观察事件、对象引用、版本、耗时、安全错误，以及边界前已脱敏且有32K上限的Pi可见回复、工具输入和结果；不保存模型隐藏推理、密钥或完整Provider Payload。
 
 真实门：`pnpm test:provider:bailian:coding`验证Pi标准配置链和`read/write/bash`；`pnpm --filter @chat/dsh-web test:e2e:trajectory-real`验证固定rc.6原生Trajectory的running→result投影，不调用付费Provider。
+
+真实页面验证时，在DSH发送一条Planning消息后切换到“轨迹”：
+
+1. 根行应为`Workflow · <当前工作流标题>`，子行必须来自实际`WorkflowNodeRun`，不能把静态Definition画成已执行。
+2. `任务规划`或执行节点可展开Pi Agent；其下显示模型、Token与`submit_*`工具生命周期。
+3. Trajectory不得出现`Vercel Workflow Runtime`、Run/Step/Hook/Sleep行；这些脱敏数据只保留为后端证据，后续由独立诊断/证据表面消费。页面不得出现Workflow Run ID、Hook Token、Pi Session ID、Provider Request ID、Prompt或工具参数/结果正文。
+4. 默认Profile选择“规划执行工作流”，该Definition不含Memory节点，因此轨迹不得出现Memory；这不是展示过滤。完整上下文Planning Workflow仍保留，只有显式选择时才会解释其资源节点；当前统一启动器仍不会启动Memory服务或装配Adapter。
 
 ## Workbench调试
 

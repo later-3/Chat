@@ -67,6 +67,7 @@ function planReviewProjection() {
     noteCandidate: null,
     pendingNoteDecision: null,
     workflowSelection: null,
+    executionTraces: [],
   });
 }
 
@@ -112,6 +113,7 @@ function noteReviewProjection() {
     },
     pendingNoteDecision: null,
     workflowSelection: null,
+    executionTraces: [],
   });
 }
 

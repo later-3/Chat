@@ -33,6 +33,7 @@ export * from "./planning-workflow-projection.js";
 export * from "./workflow-node-catalog.js";
 export * from "./workflow-blueprints.js";
 export * from "./workflow-query-use-cases.js";
+export * from "./execution-trace-use-cases.js";
 export * from "./workflow-config-query-use-cases.js";
 export * from "./workflow-resource-catalog.js";
 export * from "./configurable-workflow-runtime-use-cases.js";

@@ -18,6 +18,7 @@ test("bridge mapping survives reload in a private atomic JSON file", async () =>
       binding.chatSessionId = "psn_session1";
       binding.currentRequestKey = "request-1";
       binding.requests["request-1"] = {
+        dshMessageId: "msg_dsh1",
         userTextSha256: "b".repeat(64),
         messageCommandId: command("c"),
         productRunId: "run_run1",
@@ -54,6 +55,7 @@ test("bridge mapping survives reload in a private atomic JSON file", async () =>
     const reloaded = new AtomicBridgeStateStore(path);
     const binding = await reloaded.readSession("dsh-session-1");
     assert.equal(binding?.chatSessionId, "psn_session1");
+    assert.equal(binding?.requests["request-1"]?.dshMessageId, "msg_dsh1");
     assert.deepEqual(binding?.requests["request-1"]?.pendingDecision?.request, {
       kind: "request_revision",
       explanation: "保留原样重试",

@@ -27,7 +27,13 @@ test("manifest exposes the native DSH bundle patch and client factory contract",
     "@deepseek-ai/dsh-client-ui-layout",
     "@deepseek-ai/dsh-client-ui-primitives",
     "@deepseek-ai/dsh-client-ui-sidebar",
+    "@deepseek-ai/dsh-client-ui-trajectory",
   ]);
+  const host = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");
+  const client = await readFile(new URL("../src/client/index.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(host, /ExecutionTraceRecorder|lifeos\/execution-trace/);
+  assert.match(client, /"conversationEvents"/);
+  assert.match(client, /ExecutionTraceProjection/);
 });
 
 test("host and browser bundles emit source maps for stable TypeScript breakpoints", async () => {
@@ -56,6 +62,27 @@ test("LifeOS dock exposes a mobile-safe Note review surface and all product deci
   assert.match(dock, /data-testid="lifeos-request-note-revision"/);
   assert.match(dock, /data-testid="lifeos-reject-note"/);
   assert.match(styles, /@media\(max-width:600px\)[\s\S]*\.lifeos-note-content/);
+});
+
+test("trace display options use public additive DSH contracts without touching trajectory DOM", async () => {
+  const client = await readFile(new URL("../src/client/index.tsx", import.meta.url), "utf8");
+  const toggle = await readFile(
+    new URL("../src/client/TraceTimestampToggle.tsx", import.meta.url),
+    "utf8",
+  );
+  const projection = await readFile(
+    new URL("../src/client/execution-trace-definition.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(client, /createSnapshotStore/);
+  assert.match(client, /ctx\.slots\.inject\("conversation\.session\.header\.utilities"/);
+  assert.match(client, /ExecutionTraceProjection/);
+  assert.match(projection, /registerExecutionTraceDefinition/);
+  assert.match(toggle, /PropsRuntime<"conversation\.session\.header\.utilities">/);
+  assert.match(toggle, /aria-pressed=\{visible\}/);
+  assert.match(projection, /target: "trajectory"/);
+  assert.match(projection, /subCalls/);
+  assert.doesNotMatch(`${client}\n${toggle}\n${projection}`, /data-trajectory|MutationObserver/);
 });
 
 test("bundle patch makes Chat workflow the only enabled product model route", async () => {

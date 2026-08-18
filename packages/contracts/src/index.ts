@@ -12,6 +12,8 @@ export * from "./workflow-run.js";
 export * from "./workflow-definition.js";
 export * from "./workflow-designer-api.js";
 export * from "./workflow-api.js";
+export * from "./workflow-runtime-trace-api.js";
+export * from "./workflow-execution-trace-api.js";
 export * from "./note.js";
 export * from "./note-api.js";
 export * from "./context.js";

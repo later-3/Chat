@@ -43,6 +43,16 @@ test("rc.6 DSH原生轨迹实时呈现远端Pi工具输入、运行态和结果"
   await trajectoryTab.click();
   const toolRecord = page.getByText(/lifeos_trace|node --version/u).first();
   await expect(toolRecord).toBeVisible({ timeout: 30_000 });
+  // DSH的Trajectory可访问文本会折叠名称中的装饰分隔符“·”；
+  // 用语义上稳定的Workflow标签和标题校验，不绑定具体排版字符。
+  const workflowRecord = page.getByText(/Workflow.*轨迹验证工作流/u).first();
+  await expect(workflowRecord).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("WORKFLOW", { exact: true }).first()).toBeVisible();
+  const expandCalls = page.getByRole("button", { name: /展开调用|Expand calls/u });
+  if (await expandCalls.isVisible().catch(() => false)) await expandCalls.click();
+  for (const label of ["NODE", "STEP", "AGENT", "MODEL", "TOOL"]) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
   await expect(page.getByText("TRACE_UI_RESULT_OK")).toHaveCount(0);
 
   const result = await request.post(`${API}/__trajectory/result`);

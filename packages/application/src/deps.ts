@@ -49,6 +49,7 @@ import type {
   ProjectAdvancementUnderstandingPort,
   ProjectResourceRootRegistryPort,
 } from "./project-ports.js";
+import type { ProductRunTraceReaderPort, WorkflowRuntimeTraceReaderPort } from "./runtime-ports.js";
 
 /** Trace发射器：由组合根提供（@chat/realtime Sink）；Application不依赖具体Sink。 */
 export type TraceEmitter = (event: TraceEventInput) => void;
@@ -129,6 +130,10 @@ export interface ApplicationDeps {
   readonly trace?: TraceEmitter;
   /** 可观察执行证据的只读投影；不拥有Product Run或终态。 */
   readonly executionTraceReader?: ExecutionTraceReaderPort;
+  /** Vercel Workflow World的脱敏只读投影；不暴露任何Runtime私有身份。 */
+  readonly workflowRuntimeTrace?: WorkflowRuntimeTraceReaderPort;
+  /** 本地严格JSONL Trace的只读投影，用于聚合Pi Agent公开活动。 */
+  readonly productRunTrace?: ProductRunTraceReaderPort;
   /** 配置在服务端组合根；浏览器只能选择公开 backendId。 */
   readonly memoryBackends?: MemoryBackendRegistryPort;
   /** 外部写入能力与Query分离，避免调用方忽略outcome_unknown。 */

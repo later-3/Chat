@@ -73,7 +73,7 @@ import { workflowPolicyResolutionSchema } from "./workflow-policy-resolution.js"
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v10";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v11";
 
 const idKeySchema = z.string().min(1).max(200);
 

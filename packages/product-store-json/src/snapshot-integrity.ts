@@ -3,10 +3,14 @@ import { computePlanSha256, StoreCorruptedError } from "@chat/application";
 import { validateWorkflowRunSpecIntegrity } from "@chat/application/workflow-run-spec-compiler";
 import {
   createSystemPlanningDefinition,
+  createSystemSimplePlanningDefinition,
   createSystemNoteDefinition,
   SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
   SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_PLANNING_WORKFLOW_VIEW_ID,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID,
   SYSTEM_NOTE_WORKFLOW_DEFINITION_ID,
   SYSTEM_NOTE_WORKFLOW_REVISION_ID,
   SYSTEM_NOTE_WORKFLOW_VIEW_ID,
@@ -367,6 +371,13 @@ function assertWorkflowDefinitions(snapshot: ProductSnapshot, fail: Fail): void 
     workflowDefinitionRevisionId: SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
     workflowViewDefinitionId: SYSTEM_PLANNING_WORKFLOW_VIEW_ID,
     create: createSystemPlanningDefinition,
+  });
+  assertPinnedSystemDefinition(snapshot, fail, {
+    label: "simple planning",
+    workflowDefinitionId: SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID,
+    workflowDefinitionRevisionId: SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+    workflowViewDefinitionId: SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID,
+    create: createSystemSimplePlanningDefinition,
   });
   assertPinnedSystemDefinition(snapshot, fail, {
     label: "note",

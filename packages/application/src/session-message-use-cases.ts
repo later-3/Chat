@@ -46,6 +46,8 @@ import {
   SYSTEM_NOTE_WORKFLOW_VIEW_ID,
   SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_PLANNING_WORKFLOW_VIEW_ID,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID,
 } from "./workflow-system-definitions.js";
 import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
 import { listAuthorizedWorkflowResources } from "./workflow-resource-catalog.js";
@@ -149,11 +151,13 @@ export async function submitUserMessage(
     input.principalId,
   );
   const selectedView =
-    selectedRevision.workflowDefinitionRevisionId === SYSTEM_PLANNING_WORKFLOW_REVISION_ID
-      ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_PLANNING_WORKFLOW_VIEW_ID]
-      : selectedRevision.workflowDefinitionRevisionId === SYSTEM_NOTE_WORKFLOW_REVISION_ID
-        ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_NOTE_WORKFLOW_VIEW_ID]
-        : createPublishedWorkflowView({ revision: selectedRevision, createdAt: now });
+    selectedRevision.workflowDefinitionRevisionId === SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID
+      ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID]
+      : selectedRevision.workflowDefinitionRevisionId === SYSTEM_PLANNING_WORKFLOW_REVISION_ID
+        ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_PLANNING_WORKFLOW_VIEW_ID]
+        : selectedRevision.workflowDefinitionRevisionId === SYSTEM_NOTE_WORKFLOW_REVISION_ID
+          ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_NOTE_WORKFLOW_VIEW_ID]
+          : createPublishedWorkflowView({ revision: selectedRevision, createdAt: now });
   if (selectedView === undefined) {
     throw new ApplicationError({
       code: "store_corrupted",
@@ -616,7 +620,8 @@ function resolvePublishedWorkflowRevision(
   principalId: PrincipalId,
 ): WorkflowDefinitionRevision {
   const revisionId =
-    payload.workflowSelection?.workflowDefinitionRevisionId ?? SYSTEM_PLANNING_WORKFLOW_REVISION_ID;
+    payload.workflowSelection?.workflowDefinitionRevisionId ??
+    SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID;
   const revision = snapshot.entities.workflowDefinitionRevisions[revisionId];
   if (revision === undefined || revision.state !== "published") {
     throw new ApplicationError({

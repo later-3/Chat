@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
@@ -13,6 +14,10 @@ export const DSH_WEB_HOST = DSH_INTERNAL_WEB_HOST;
 export const DSH_WEB_PORT = DSH_INTERNAL_WEB_PORT;
 export const BRIDGE_PACKAGE_NAME = "@chat/dsh-lifeos-bridge";
 export const BRIDGE_BUNDLE_RELATIVE_PATH = "packages/dsh-lifeos-bridge/dist/dsh-bundle.js";
+export const DSH_TRAJECTORY_PATCH_RELATIVE_PATH =
+  "patches/@deepseek-ai__dsh-client-ui-trajectory@0.1.0-rc.6.patch";
+export const DSH_TRAJECTORY_PATCH_SHA256 =
+  "9e10e608d36dd364b9f972954c2625b8dc795f216c1a54401a740dc9ed42ee08";
 export const DSH_CLI_RUNTIME_IMPORTS = Object.freeze([
   "@deepseek-ai/dsh-app-boot",
   "@deepseek-ai/dsh-cmdline",
@@ -248,6 +253,43 @@ export function resolveDshBin(root) {
   return realpathSync(executable);
 }
 
+/**
+ * Chat只维护rc.6 Trajectory的极窄派生补丁：Contribution Location、语义标签与紧凑行预览。
+ * 运行包、补丁内容和本地DSH分支证据任一漂移，都在启动前失败关闭。
+ */
+export function assertDshTrajectoryExtension(root) {
+  const repoRoot = resolve(root);
+  const packageRoot = realpathSync(
+    join(
+      repoRoot,
+      "packages",
+      "dsh-lifeos-bridge",
+      "node_modules",
+      "@deepseek-ai",
+      "dsh-client-ui-trajectory",
+    ),
+  );
+  const manifest = readJson(join(packageRoot, "package.json"), "DSH Trajectory依赖清单");
+  if (manifest.version !== "0.1.0-rc.6") {
+    throw new Error(`DSH Trajectory版本必须是0.1.0-rc.6，实际为${String(manifest.version)}`);
+  }
+  const clientPath = join(packageRoot, "lib", "client.js");
+  const client = readFileSync(clientPath, "utf8");
+  for (const marker of [
+    "callLocations.set(data.root.callId, contribution.location)",
+    "cell.kindLabel ?? KIND_LABEL[cell.kind]",
+    "callLocations?.get(node.callId)",
+  ]) {
+    if (!client.includes(marker)) throw new Error(`DSH Trajectory窄扩展缺失：${marker}`);
+  }
+  const patchPath = join(repoRoot, DSH_TRAJECTORY_PATCH_RELATIVE_PATH);
+  const patchHash = createHash("sha256").update(readFileSync(patchPath)).digest("hex");
+  if (patchHash !== DSH_TRAJECTORY_PATCH_SHA256) {
+    throw new Error(`DSH Trajectory补丁漂移：${patchHash}，期望${DSH_TRAJECTORY_PATCH_SHA256}`);
+  }
+  return Object.freeze({ packageRoot, clientPath, patchPath, patchHash });
+}
+
 function bareRuntimeImports(source) {
   const imports = new Set();
   for (const pattern of [
@@ -344,10 +386,14 @@ export function assertDshCliRuntimeClosure(root) {
 export function assertDshDistribution(
   root,
   environment = process.env,
-  { inspectCliRuntime = assertDshCliRuntimeClosure } = {},
+  {
+    inspectCliRuntime = assertDshCliRuntimeClosure,
+    inspectTrajectory = assertDshTrajectoryExtension,
+  } = {},
 ) {
   const runtime = resolveDshWebRuntime(root, environment);
   const { dshBin } = inspectCliRuntime(root);
+  inspectTrajectory(root);
   assertBridgeBundleContract(runtime);
   if (!existsSync(runtime.bridgeBundlePath)) {
     throw new Error(`DSH LifeOS Bridge固定入口不存在：${runtime.bridgeBundlePath}`);

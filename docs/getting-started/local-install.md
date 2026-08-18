@@ -63,7 +63,7 @@ pnpm run setup --workbench=off
 如果同一仓库已有本地服务或Workbench在运行，setup只报告占用并失败，不会替用户停止
 进程，也不会修改活动Product Run；先显式运行`pnpm dev:stop`后再准备。
 
-不需要另外克隆DeepSeek Harness、memmy、Tencent MemoryCore或code-server。本机已有
+普通Chat安装不需要另外克隆DeepSeek Harness、memmy、Tencent MemoryCore或code-server；DSH派生仓库只供维护者跟踪与汇合上游，流程见[DSH前端派生与维护](../architecture/dsh-frontend-maintenance.md)。本机已有
 Git mirror只有通过`CHAT_MEMMY_SOURCE_REPO`或
 `CHAT_TENCENT_MEMORYCORE_SOURCE_REPO`显式指定绝对路径时才会使用，默认安装绝不依赖
 个人目录；mirror也必须通过同一commit/tree校验。

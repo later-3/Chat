@@ -33,7 +33,7 @@ docs/
   debug/                  当前调试入口
 ```
 
-仓库不包含旧自研Web、Agent Canvas、DeepSeek Harness源码副本或UI原型归档。删除内容需要时从Git历史读取。
+仓库不包含旧自研Web、Agent Canvas、DeepSeek Harness源码副本或UI原型归档。DSH派生源码由独立Private仓库`later-3/deepseek-harness-chat`维护，本仓库只保存固定补丁与版本证据；删除内容需要时从Git历史读取。
 
 ## 用户主链定位
 

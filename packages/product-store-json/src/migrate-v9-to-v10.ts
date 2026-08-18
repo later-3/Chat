@@ -1,4 +1,3 @@
-import { productSnapshotSchema, type ProductSnapshot } from "@chat/contracts";
 import {
   LEGACY_SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
@@ -7,13 +6,14 @@ import {
   createSystemPlanningDefinition,
 } from "@chat/application/workflow-system-definitions";
 import type { ProductSnapshotV9 } from "./legacy-v9.js";
+import { productSnapshotV10Schema, type ProductSnapshotV10 } from "./legacy-v10.js";
 
 /**
  * v9→v10新增Memory Selection与Workflow Policy Resolution产品事实。
  * 历史快照没有足够证据反推二者，因此集合必须为空；同时把系统Planning发布指针
  * 推进到移除装饰性research节点的revision 2，保留旧revision供已冻结RunSpec继续引用。
  */
-export function migrateProductSnapshotV9ToV10(snapshot: ProductSnapshotV9): ProductSnapshot {
+export function migrateProductSnapshotV9ToV10(snapshot: ProductSnapshotV9): ProductSnapshotV10 {
   const definitions = { ...snapshot.entities.workflowDefinitions };
   const revisions = { ...snapshot.entities.workflowDefinitionRevisions };
   const views = { ...snapshot.entities.workflowViewDefinitions };
@@ -41,7 +41,7 @@ export function migrateProductSnapshotV9ToV10(snapshot: ProductSnapshotV9): Prod
     views[SYSTEM_PLANNING_WORKFLOW_VIEW_ID] = seed.view;
   }
 
-  return productSnapshotSchema.parse({
+  return productSnapshotV10Schema.parse({
     ...snapshot,
     schemaVersion: "chat-product-store.v10",
     entities: {

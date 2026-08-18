@@ -106,16 +106,15 @@ export function WorkflowPicker({
     if (option !== undefined) void choose(option);
   };
 
+  const defaultPlanning = workflows?.find((option) => option.isDefault);
+  const defaultTitle = defaultPlanning?.title ?? "规划执行工作流";
   const visualLabel =
     selection === null
-      ? "规划"
+      ? defaultTitle
       : (workflows?.find(
           (option) =>
             option.workflowDefinitionRevisionId === selection.workflowDefinitionRevisionId,
         )?.title ?? selection.title);
-  const defaultPlanning = workflows?.find(
-    (option) => option.blueprintKey === "planning" && option.ownerKind === "system",
-  );
   const selectedId = `${WORKFLOW_ID_PREFIX}${
     selection?.workflowDefinitionRevisionId ?? defaultPlanning?.workflowDefinitionRevisionId ?? ""
   }`;
@@ -138,10 +137,10 @@ export function WorkflowPicker({
             type="button"
             className="lifeos-workflow-toggle"
             data-testid="lifeos-workflow-current"
-            aria-label={`选择工作流，当前：${selection?.title ?? "默认规划工作流"}`}
+            aria-label={`选择工作流，当前：${selection?.title ?? defaultTitle}`}
             aria-haspopup="menu"
             aria-expanded={open}
-            title={selection?.title ?? "默认规划工作流"}
+            title={selection?.title ?? defaultTitle}
             disabled={locked}
             onClick={() => setOpen((value) => !value)}
           >

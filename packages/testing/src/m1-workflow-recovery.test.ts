@@ -25,6 +25,7 @@ import { OutboxDispatcher } from "@chat/api/outbox-dispatcher";
 import { JsonProductStore } from "@chat/product-store-json";
 import { RuntimeBindingStore } from "@chat/workflows";
 import { createProjectResourceRegistry } from "@chat/project-runtime";
+import { SYSTEM_PLANNING_WORKFLOW_REVISION_ID } from "@chat/application/workflow-system-definitions";
 
 /**
  * M1 免费恢复门：真实Hono、JSON Store、Runtime Binding、预构建bundle、
@@ -477,6 +478,10 @@ describe("M1真实Local World恢复", () => {
         payload: {},
       })) as { session: unknown };
       const session = sessionDtoSchema.parse(sessionResponse.session);
+      const seeded = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+      const fullPlanning =
+        seeded.entities.workflowDefinitionRevisions[SYSTEM_PLANNING_WORKFLOW_REVISION_ID];
+      if (fullPlanning === undefined) throw new Error("M1 Fixture缺少完整Planning Definition");
       const messageResponse = (await postJson(
         apiBaseUrl,
         `/api/sessions/${session.sessionId}/messages`,
@@ -484,6 +489,15 @@ describe("M1真实Local World恢复", () => {
           commandId: nextCommandId(),
           payload: {
             text: "Aurora 的恢复校验色是什么？",
+            workflowSelection: {
+              kind: "published_revision",
+              workflowDefinitionRevisionId: fullPlanning.workflowDefinitionRevisionId,
+              definitionSha256: fullPlanning.definitionSha256,
+              runConfiguration: {
+                schemaVersion: "workflow-run-configuration.v1",
+                overrides: [],
+              },
+            },
             context: {
               memory: {
                 backendId: "mbk_memmy",

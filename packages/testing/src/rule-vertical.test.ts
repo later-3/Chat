@@ -83,11 +83,26 @@ async function fixture() {
 describe("Rule正式纵向", () => {
   it("未选择Rule时Selection集合保持空且policy.rules原子skipped", async () => {
     const { deps, store, command, sessionId } = await fixture();
+    const seeded = (await store.read({ kind: "committedSnapshot" })).snapshot;
+    const definition =
+      seeded.entities.workflowDefinitionRevisions[SYSTEM_PLANNING_WORKFLOW_REVISION_ID];
+    if (definition === undefined) throw new Error("fixture缺少完整Planning Definition");
     const submitted = await submitUserMessage(deps, {
       principalId: OWNER,
       sessionId,
       commandId: command(),
-      payload: { text: "本轮不选择Project Rules。" },
+      payload: {
+        text: "本轮不选择Project Rules。",
+        workflowSelection: {
+          kind: "published_revision",
+          workflowDefinitionRevisionId: definition.workflowDefinitionRevisionId,
+          definitionSha256: definition.definitionSha256,
+          runConfiguration: {
+            schemaVersion: "workflow-run-configuration.v1",
+            overrides: [],
+          },
+        },
+      },
     });
     const before = (await store.read({ kind: "committedSnapshot" })).snapshot;
     const run = before.entities.runs[submitted.run.productRunId];

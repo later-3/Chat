@@ -1,6 +1,11 @@
 import { expect, test, type APIRequestContext, type Page, type Response } from "@playwright/test";
 import { resolve } from "node:path";
-import { cursorPageSchema, messageDtoSchema, runDtoSchema } from "@chat/contracts/public";
+import {
+  cursorPageSchema,
+  messageDtoSchema,
+  runDtoSchema,
+  workflowExecutionTraceDtoSchema,
+} from "@chat/contracts/public";
 import { createTraceSink } from "@chat/realtime";
 import { z } from "zod";
 import { exerciseDshWorkbench, observeWorkbenchTraffic } from "./dsh-workbench-real-helper.js";
@@ -167,9 +172,8 @@ test("rc.6 DSH：发送 -> Plan等待人工 -> 刷新 -> 批准 -> 正式Assista
     await page.getByRole("menuitem", { name: "Chat", exact: true }).click();
   }
   await expect(composer).toBeEnabled();
-  await composer.fill(
-    `请先给出一个只有一步的可审核计划。批准后只输出 ${COMPLETION_MARKER}，不要添加其他文字。`,
-  );
+  const userPrompt = `请先给出一个只有一步的可审核计划。批准后只输出 ${COMPLETION_MARKER}，不要添加其他文字。`;
+  await composer.fill(userPrompt);
 
   const waitingProjection = waitForProjection(
     page,
@@ -243,6 +247,53 @@ test("rc.6 DSH：发送 -> Plan等待人工 -> 刷新 -> 批准 -> 正式Assista
   expect(assistants).toHaveLength(1);
   expect(assistants[0]?.sourceRunId).toBe(runId);
   expect(assistants[0]?.content.text).toContain(COMPLETION_MARKER);
+
+  const executionTrace = workflowExecutionTraceDtoSchema.parse(
+    await apiJson(request, `/api/runs/${encodeURIComponent(runId)}/workflow-execution-trace`),
+  );
+  expect(executionTrace.runtime.availability).toBe("available");
+  if (executionTrace.runtime.availability !== "available") {
+    throw new Error("真实完成Run缺少Vercel Workflow Runtime轨迹");
+  }
+  expect(executionTrace.runtime.runtimeStatus).toBe("completed");
+  expect(executionTrace.runtime.spans.some((span) => span.kind === "step")).toBe(true);
+  expect(executionTrace.workflow.nodeRuns.length).toBeGreaterThan(0);
+  expect(executionTrace.workflow.nodeRuns.every((node) => node.status !== "skipped")).toBe(true);
+  expect(JSON.stringify(executionTrace.workflow.nodeRuns)).not.toMatch(/memory|记忆/iu);
+  expect(
+    executionTrace.workflow.nodeDetails.some((detail) =>
+      detail.input.some((value) => value.text.includes(userPrompt)),
+    ),
+  ).toBe(true);
+  expect(executionTrace.workflow.executionSteps).toHaveLength(1);
+  expect(executionTrace.workflow.executionSteps[0]?.input[0]?.text).toContain(
+    '"selectedContextRefs": []',
+  );
+  expect(executionTrace.piActivities.some((activity) => activity.kind === "agent")).toBe(true);
+  expect(
+    executionTrace.piActivities
+      .filter((activity) => activity.kind === "agent")
+      .every((activity) => activity.workflowNodeRunId !== undefined),
+  ).toBe(true);
+  expect(
+    executionTrace.piActivities.some(
+      (activity) => activity.kind === "model" && activity.tokenUsage !== undefined,
+    ),
+  ).toBe(true);
+  expect(
+    executionTrace.piActivities.some(
+      (activity) => activity.kind === "tool" && activity.toolName === "bash",
+    ),
+  ).toBe(true);
+
+  await page.getByRole("tab", { name: /轨迹|Trajectory/u }).click();
+  await expect(page.getByText(/Workflow ·/u).first()).toBeVisible();
+  const expandCalls = page.getByRole("button", { name: /展开调用|Expand calls/u });
+  if (await expandCalls.isVisible().catch(() => false)) await expandCalls.click();
+  await expect(page.getByText(/Vercel Workflow Runtime/u)).toHaveCount(0);
+  await expect(page.getByText(/bash|node --version/u).first()).toBeVisible();
+  await expect(page.getByText(/STEP/u).first()).toBeVisible();
+  await expect(page.getByText(/读取记忆|memory query/iu)).toHaveCount(0);
 
   await page.reload();
   await expect(page.getByTestId("lifeos-plan-card")).toHaveCount(0);

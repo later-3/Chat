@@ -7,13 +7,14 @@
 | 领域 | 当前状态 |
 |---|---|
 | 产品身份 | 独立、完整、持续演进的个人Agent协作产品 |
-| 唯一前端 | 固定版本DeepSeek Harness Web；旧`apps/web`与Agent Canvas均不属于当前架构 |
-| 前端桥接 | `@chat/dsh-lifeos-bridge`通过DSH公开Slot把原生会话、Composer行内Workflow选择、Plan审批与Note Candidate审核接到Chat公开API；Pi工具Trace通过无副作用显示工具进入DSH原生Trajectory，手机和桌面共用同一产品投影与Command |
+| 唯一前端 | Chat私有仓库`later-3/deepseek-harness-chat`维护固定`DeepSeek Harness Web rc.6`窄派生；当前只维护Trajectory Location/标签/紧凑预览扩展，Chat仓库以固定pnpm补丁消费；旧`apps/web`与Agent Canvas均不属于当前架构 |
+| 前端桥接 | `@chat/dsh-lifeos-bridge`通过DSH公开Slot把原生会话、Composer行内Workflow选择、Plan审批与Note Candidate审核接到Chat公开API；实时Pi工具调用与完整Workflow执行树共同进入DSH原生Trajectory，手机和桌面共用同一产品投影与Command |
 | 开发工作台 | Beta、可选、当前暂停进入CI/CD；固定`code-server@4.132.0`与DSH全屏Surface实现继续保留，供需要时人工验证Files、Editor、Terminal、Git/Diff与扩展系统 |
 | 后端 | Node.js + TypeScript；Hono协议入口；Application拥有用例事务 |
 | Product Store | 版本化JSON Adapter；拥有Session、Message、Run、Plan、Approval、Decision、Memory和Project事实 |
 | Workflow | Vercel Workflow解释不可变RunSpec，承担耐久步骤、暂停、恢复与Checkpoint |
 | Agent Runtime | Planner复用`pi-agent-core`；完整Executor由独立Pi Coding Executor Service承载真实`AgentSession`、多轮Tool loop、Session与安全Journal，直接使用Pi标准模型/凭据配置链，不拥有产品会话或完成事实 |
+| 执行轨迹 | DSH Trajectory同时保留实时Pi工具调用，并展示实际Workflow NodeRun、动态Execution Step及其Pi Agent/模型/工具子过程；节点输入/输出由Product Store现有Manifest引用与当前严格Trace组合，不新增Prompt存储；Vercel Run/Step/Hook/Sleep只作为后端证据。Bridge以真实DSH user/message保存Run绑定，把Workflow树贡献到随后同一原生Step；DSH窄扩展保留Location、语义标签和紧凑预览，Session utility可选显示时间范围 |
 | Memory | memmy与Tencent MemoryCore代码、合同和历史事实保留；当前默认不启动服务，也不向API/Workflow装配Adapter |
 | 调试 | `pnpm dev`用`431xx`与主`.data`启动Pi Executor、Workflow、API、可选code-server与Web Gateway/DSH；VS Code F5/`pnpm dev:debug`用`441xx`与worktree私有`.data/instances/vscode-debug`启动同一服务图，并为API、Workflow、Pi Executor和DSH Host/LifeOS Bridge开放固定Inspector；Bridge bundle带source map，可直接在TypeScript源码断点；debug可与LaunchAgent常驻实例并行，且固定关闭Workbench与Memory |
 | PWA | DSH Web可安装PWA：Bridge覆盖manifest/sw.js并注入图标与注册脚本；SW只缓存同源静态外壳，/api//lifeos永不缓存 |
@@ -36,7 +37,8 @@
 3. 没有浏览器到Workflow、Hook或pi的直连。
 4. 没有多实例生产数据库、完整SSE Cursor Journal或通用插件市场。
 5. 没有把本地code-server包装成多用户远程沙箱；当前Terminal与扩展仍以本机用户权限运行。
-6. 没有在当前默认服务图中启动或连接memmy/MemoryCore；默认Planning只会跳过未选择的可选Memory节点。
+6. 当前默认选择独立的“规划执行工作流”，其冻结Definition只有规划、审核、执行、验证和提交，根本不声明Memory节点；带Memory/Project/Rules的完整上下文Planning Definition继续保留，但Memory服务与Adapter在默认服务图中不启动、不装配。
+7. 没有把静态Workflow Definition节点、Workflow Run ID、Hook Token或Pi Session ID伪装成公开执行轨迹事实。
 
 ## 当前仓库基线门
 
@@ -44,4 +46,6 @@
 - 全仓build、typecheck、test、lint和依赖审计通过。
 - 真实DSH Host启动，原生界面不是临时Adapter页。
 - 浏览器真实完成发送、Plan/HITL、Note审核、执行结果与刷新恢复。
-- Workbench处于Beta，不属于当前通用CI/CD基线门；单独启用、修改或准备发布时，仍须人工运行其真实浏览器与生命周期验证。
+- 浏览器在DSH原生Trajectory真实展开唯一Workflow主线及其Pi子过程；Vercel Runtime证据不混入该表面，默认Run因Definition不含Memory而没有任何Memory轨迹，不靠前端过滤。
+- DSH私有仓库保持Private，`origin/main`与当前维护分支保存派生源码，官方仓库作为只读`upstream`；升级按[DSH前端派生与维护](./docs/architecture/dsh-frontend-maintenance.md)汇合并重跑门。
+- Workbench处于Beta，不属于当前通用CI/CD基线门；单独启用、修改或准备发布时，仍须人工运行Files、Terminal、Git/Diff、浏览器Origin、WebSocket和子进程生命周期验证。

@@ -78,6 +78,202 @@ function tracePage(afterSequence) {
   };
 }
 
+function workflowTrace() {
+  const status = completed ? "succeeded" : "running";
+  const runtimeStatus = completed ? "completed" : "running";
+  const updatedAt = completed ? "2026-08-18T00:00:03.000Z" : timestamp;
+  const completedFields = completed ? { completedAt: updatedAt, durationMs: 3_000 } : {};
+  const nodeCompletedFields = completed ? { finishedAt: updatedAt, durationMs: 3_000 } : {};
+  const activityCompletedFields = completed ? { completedAt: updatedAt, durationMs: 2_000 } : {};
+  const toolActivities =
+    tracePhase === 0
+      ? []
+      : [
+          {
+            activityKey: "pi-tool-1",
+            parentActivityKey: "pi-agent-1",
+            attemptId: "att_trajectory1",
+            workflowNodeRunId: "wnr_trajectory1",
+            executionStepId: "step_trajectory1",
+            sequence: 3,
+            kind: "tool",
+            label: "工具：bash",
+            status: tracePhase >= 2 ? "succeeded" : "running",
+            nodeKind: "executor",
+            toolName: "bash",
+            startedAt: timestamp,
+            ...(tracePhase >= 2
+              ? { completedAt: "2026-08-18T00:00:01.000Z", durationMs: 750 }
+              : {}),
+          },
+        ];
+  return {
+    schemaVersion: "chat-workflow-execution-trace.v1",
+    productRunId,
+    traceRevision: (completed ? "3" : tracePhase >= 2 ? "2" : "1").repeat(64),
+    updatedAt,
+    run: {
+      status,
+      phase: completed ? "completed" : "executing",
+      createdAt: timestamp,
+      updatedAt,
+    },
+    workflow: {
+      title: "轨迹验证工作流",
+      nodeRuns: [
+        {
+          workflowNodeRunId: "wnr_trajectory1",
+          definitionNodeId: "planning.execute",
+          nodeType: "execute.plan",
+          title: "执行轨迹验证",
+          kind: "composite",
+          optional: false,
+          executionPath: [],
+          attemptNumber: 1,
+          status,
+          publicSummary: completed ? "轨迹验证完成" : "正在验证轨迹",
+          startedAt: timestamp,
+          ...nodeCompletedFields,
+          revision: completed ? 2 : 1,
+          updatedAt,
+          allowedActions: ["inspect"],
+        },
+      ],
+      nodeDetails: [
+        {
+          workflowNodeRunId: "wnr_trajectory1",
+          input: [
+            {
+              label: "用户请求",
+              format: "markdown",
+              text: "验证Pi执行轨迹实时显示",
+              truncated: false,
+            },
+          ],
+          output: completed
+            ? [
+                {
+                  label: "执行结果",
+                  format: "text",
+                  text: "TRAJECTORY_E2E_COMPLETED",
+                  truncated: false,
+                },
+              ]
+            : [],
+        },
+      ],
+      executionSteps: [
+        {
+          parentWorkflowNodeRunId: "wnr_trajectory1",
+          stepId: "step_trajectory1",
+          title: "运行node --version",
+          status,
+          startedAt: timestamp,
+          ...completedFields,
+          input: [
+            {
+              label: "执行步骤输入",
+              format: "json",
+              text: '{"command":"node --version"}',
+              truncated: false,
+            },
+          ],
+          output: completed
+            ? [
+                {
+                  label: "执行步骤输出",
+                  format: "text",
+                  text: "TRACE_UI_RESULT_OK",
+                  truncated: false,
+                },
+              ]
+            : [],
+        },
+      ],
+    },
+    runtime: {
+      schemaVersion: "chat-workflow-runtime-trace.v1",
+      productRunId,
+      sourceKind: "vercel_workflow",
+      availability: "available",
+      workflowName: "trajectoryFixtureWorkflow",
+      runtimeStatus,
+      isLive: !completed,
+      refreshAfterMs: completed ? null : 350,
+      refreshedAt: updatedAt,
+      createdAt: timestamp,
+      startedAt: timestamp,
+      ...completedFields,
+      durationMs: completed ? 3_000 : 0,
+      knownDurationMs: completed ? 3_000 : 0,
+      eventCount: 1,
+      truncated: false,
+      spans: [
+        {
+          spanKey: "runtime-run-0",
+          sequence: 0,
+          kind: "run",
+          name: "trajectoryFixtureWorkflow",
+          status: runtimeStatus,
+          createdAt: timestamp,
+          startedAt: timestamp,
+          ...completedFields,
+          offsetMs: 0,
+          durationMs: completed ? 3_000 : 0,
+          segments: [],
+          eventSequences: [1],
+        },
+      ],
+      events: [
+        {
+          sequence: 1,
+          type: "run_started",
+          resourceKind: "run",
+          spanKey: "runtime-run-0",
+          recordedAt: timestamp,
+          offsetMs: 0,
+        },
+      ],
+    },
+    piActivities: [
+      {
+        activityKey: "pi-agent-1",
+        attemptId: "att_trajectory1",
+        workflowNodeRunId: "wnr_trajectory1",
+        executionStepId: "step_trajectory1",
+        sequence: 1,
+        kind: "agent",
+        label: "执行 Agent",
+        status,
+        nodeKind: "executor",
+        startedAt: timestamp,
+        ...activityCompletedFields,
+      },
+      {
+        activityKey: "pi-model-1",
+        parentActivityKey: "pi-agent-1",
+        attemptId: "att_trajectory1",
+        workflowNodeRunId: "wnr_trajectory1",
+        executionStepId: "step_trajectory1",
+        sequence: 2,
+        kind: "model",
+        label: "模型调用：fixture/model",
+        status,
+        nodeKind: "executor",
+        provider: "fixture",
+        model: "model",
+        startedAt: timestamp,
+        ...activityCompletedFields,
+        ...(completed
+          ? { tokenUsage: { promptTokens: 10, completionTokens: 2, totalTokens: 12 } }
+          : {}),
+      },
+      ...toolActivities,
+    ],
+    truncated: false,
+  };
+}
+
 const server = createServer((request, response) => {
   void (async () => {
     const url = new URL(request.url ?? "/", `http://${host}:${String(port)}`);
@@ -144,6 +340,13 @@ const server = createServer((request, response) => {
     if (request.method === "GET" && url.pathname === `/api/runs/${productRunId}/execution-trace`) {
       const raw = url.searchParams.get("afterSequence") ?? "0";
       json(response, 200, tracePage(Number(raw)));
+      return;
+    }
+    if (
+      request.method === "GET" &&
+      url.pathname === `/api/runs/${productRunId}/workflow-execution-trace`
+    ) {
+      json(response, 200, workflowTrace());
       return;
     }
     if (request.method === "GET" && url.pathname === `/api/runs/${productRunId}/plans`) {

@@ -215,7 +215,22 @@ async function fixture() {
   if (run?.runKind !== "planning" || workflowRunSpecId === undefined) {
     throw new Error("RunSpec missing");
   }
-  return { deps, store, command, run, workflowRunSpecId };
+  return {
+    deps,
+    store,
+    command,
+    run,
+    workflowRunSpecId,
+    fullWorkflowSelection: {
+      kind: "published_revision" as const,
+      workflowDefinitionRevisionId: definition.workflowDefinitionRevisionId,
+      definitionSha256: definition.definitionSha256,
+      runConfiguration: {
+        schemaVersion: "workflow-run-configuration.v1" as const,
+        overrides: [],
+      },
+    },
+  };
 }
 
 describe("Planning Project Context", () => {
@@ -225,7 +240,10 @@ describe("Planning Project Context", () => {
       principalId: PRINCIPAL,
       sessionId: SESSION_ID,
       commandId: test.command(),
-      payload: { text: "本轮不选择Project。" },
+      payload: {
+        text: "本轮不选择Project。",
+        workflowSelection: test.fullWorkflowSelection,
+      },
     });
     const before = (await test.store.read({ kind: "committedSnapshot" })).snapshot;
     const run = before.entities.runs[submitted.run.productRunId];

@@ -8,6 +8,7 @@ import {
   type ChatRun,
   type DecisionRequest,
   type NoteDecisionRequest,
+  type LifeosExecutionTrace,
   type LifeosProjection,
   type LifeosWorkflowOption,
   type WorkflowSelection,
@@ -18,6 +19,7 @@ import {
   AtomicBridgeStateStore,
   type PendingDecision,
   type PendingNoteDecision,
+  type SessionBinding,
 } from "./state-store.ts";
 
 export class BridgeRequestError extends Error {
@@ -75,6 +77,23 @@ function decisionBodySha256(request: DecisionRequest): string {
   return sha256(JSON.stringify({ kind: request.kind, explanation: request.explanation ?? null }));
 }
 
+function isStableExecutionTrace(trace: LifeosExecutionTrace["trace"]): boolean {
+  const runTerminal = ["succeeded", "failed", "cancelled", "outcome_unknown"].includes(
+    trace.run.status,
+  );
+  const nodesTerminal = trace.workflow.nodeRuns.every(
+    (node) => !["pending", "running", "waiting_human"].includes(node.status),
+  );
+  const piTerminal = trace.piActivities.every((activity) => activity.status !== "running");
+  return (
+    runTerminal &&
+    nodesTerminal &&
+    piTerminal &&
+    trace.runtime.availability === "available" &&
+    !trace.runtime.isLive
+  );
+}
+
 function pendingFrom(dshSessionId: string, request: DecisionRequest): PendingDecision {
   const bodySha256 = decisionBodySha256(request);
   const observed = request.binding;
@@ -127,6 +146,8 @@ function pendingNoteFrom(dshSessionId: string, request: NoteDecisionRequest): Pe
  * Run、Plan、Approval和Decision的权威版本始终由Chat Product Store提交。
  */
 export class LifeosBridgeService {
+  private readonly stableExecutionTraces = new Map<string, LifeosExecutionTrace["trace"]>();
+
   constructor(
     private readonly chat: ChatProductClient,
     private readonly state: AtomicBridgeStateStore,
@@ -134,6 +155,7 @@ export class LifeosBridgeService {
 
   async projection(dshSessionId: string, signal?: AbortSignal): Promise<LifeosProjection> {
     const binding = await this.state.readSession(dshSessionId);
+    const executionTracesPromise = this.executionTraces(binding, signal);
     const current =
       binding?.currentRequestKey === undefined
         ? undefined
@@ -149,9 +171,13 @@ export class LifeosBridgeService {
         noteCandidate: null,
         pendingNoteDecision: current?.pendingNoteDecision?.request ?? null,
         workflowSelection: binding?.workflowSelection ?? null,
+        executionTraces: await executionTracesPromise,
       };
     }
-    const run = await this.chat.getRun(current.productRunId, signal);
+    const [run, executionTraces] = await Promise.all([
+      this.chat.getRun(current.productRunId, signal),
+      executionTracesPromise,
+    ]);
     let plan: ChatPlan | null = null;
     let approval: ChatApproval | null = null;
     let noteCandidate: ChatNoteCandidate | null = null;
@@ -188,7 +214,44 @@ export class LifeosBridgeService {
       noteCandidate,
       pendingNoteDecision: current.pendingNoteDecision?.request ?? null,
       workflowSelection: binding?.workflowSelection ?? null,
+      executionTraces,
     };
+  }
+
+  /**
+   * 按Bridge中真实的DSH user/message → Product Run绑定恢复轨迹。单条轨迹暂时
+   * 不可读时只缺席本轮展示，不能让Plan/HITL投影一起失败；下一次轮询会重试。
+   */
+  private async executionTraces(
+    binding: SessionBinding | undefined,
+    signal?: AbortSignal,
+  ): Promise<LifeosExecutionTrace[]> {
+    if (binding === undefined) return [];
+    const requests = Object.values(binding.requests)
+      .filter(
+        (
+          request,
+        ): request is typeof request & {
+          dshMessageId: string;
+          productRunId: string;
+        } => request.dshMessageId !== undefined && request.productRunId !== undefined,
+      )
+      .slice(-100);
+    const settled = await Promise.allSettled(
+      requests.map(async (request): Promise<LifeosExecutionTrace> => {
+        const trace =
+          this.stableExecutionTraces.get(request.productRunId) ??
+          (await this.chat.getWorkflowExecutionTrace(request.productRunId, signal));
+        if (String(trace.productRunId) !== request.productRunId) {
+          throw new Error("lifeos execution trace run identity mismatch");
+        }
+        if (isStableExecutionTrace(trace)) {
+          this.stableExecutionTraces.set(request.productRunId, trace);
+        }
+        return { dshMessageId: request.dshMessageId, trace };
+      }),
+    );
+    return settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
   }
 
   /** 选择表面可用的已发布Workflow列表；权威过滤（active/published/所有权）在Chat侧完成。 */

@@ -15,8 +15,6 @@ export type LifeosDockProps = PropsRuntime<"conversation.input.dock"> &
   InjectFace<LifeosDockInjected>;
 
 const PHASE_LABEL: Record<string, string> = {
-  queued: "已接收",
-  planning: "正在规划",
   plan_review: "等待你审核",
   note_review: "等待你审核笔记",
   executing: "正在执行",
