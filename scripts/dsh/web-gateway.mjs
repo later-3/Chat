@@ -1,6 +1,13 @@
 import { createServer, request as httpRequest } from "node:http";
 
 import { validateCodeServerSocketEvidence } from "../workbench/fixed-code-server.mjs";
+import {
+  authenticateUpgrade,
+  createAuthRouteHandler,
+  gateAuthenticatedRequest,
+  isPublicAuthPath,
+  loadWebAuthConfig,
+} from "./web-auth.mjs";
 
 export const PUBLIC_WEB_HOST = "127.0.0.1";
 export const PUBLIC_WEB_PORT = 43110;
@@ -25,7 +32,7 @@ function headerValue(value) {
   return typeof value === "string" ? value : undefined;
 }
 
-function publicAuthority(headers) {
+function publicAuthority(headers, publicHostname) {
   const host = headerValue(headers.host);
   if (host === undefined)
     throw Object.assign(new Error("Host header is required"), { status: 400 });
@@ -36,22 +43,32 @@ function publicAuthority(headers) {
     throw Object.assign(new Error("Host header is invalid"), { status: 400 });
   }
   if (
-    authority.port !== String(PUBLIC_WEB_PORT) ||
-    !["127.0.0.1", "localhost"].includes(authority.hostname) ||
     authority.username !== "" ||
     authority.password !== "" ||
     authority.pathname !== "/" ||
     authority.search !== "" ||
     authority.hash !== ""
   ) {
+    throw Object.assign(new Error("Host header is invalid"), { status: 400 });
+  }
+  const isLoopback =
+    authority.port === String(PUBLIC_WEB_PORT) &&
+    ["127.0.0.1", "localhost"].includes(authority.hostname);
+  // 服务器部署模式：Nginx 以原始 Host 转发，公开主机名只来自组合期环境变量，
+  // 绝不来自请求或 X-Forwarded-* 头。
+  const isPublic =
+    publicHostname !== undefined &&
+    authority.hostname === publicHostname &&
+    (authority.port === "" || authority.port === "443");
+  if (!isLoopback && !isPublic) {
     throw Object.assign(new Error("Workbench is loopback-only"), { status: 403 });
   }
   return authority;
 }
 
 /** Workbench无独立浏览器凭据；必须在Gateway保留原始同源边界后才可改写Origin。 */
-export function assertPublicWorkbenchRequest(req) {
-  const authority = publicAuthority(req.headers);
+export function assertPublicWorkbenchRequest(req, publicHostname) {
+  const authority = publicAuthority(req.headers, publicHostname);
   if (authority.hostname !== "localhost") {
     throw Object.assign(new Error("Workbench must use the isolated localhost origin"), {
       status: 403,
@@ -138,14 +155,14 @@ function cleanHeaders(source, keepUpgrade) {
 }
 
 function upstreamFor(req, targets) {
-  const authority = publicAuthority(req.headers);
+  const authority = publicAuthority(req.headers, targets.publicHostname);
   if (authority.hostname === "localhost") {
     if (!isWorkbenchPath(req.url)) {
       throw Object.assign(new Error("localhost origin is reserved for Code Workbench"), {
         status: 403,
       });
     }
-    assertPublicWorkbenchRequest(req);
+    assertPublicWorkbenchRequest(req, targets.publicHostname);
     if (targets.workbench === undefined) {
       throw Object.assign(new Error("Code Workbench is disabled"), { status: 503 });
     }
@@ -252,7 +269,61 @@ function responseHeaders(headers, kind) {
   return result;
 }
 
+function writeHealthz(res) {
+  const body = '{"status":"ok"}\n';
+  res.writeHead(200, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    "content-length": Buffer.byteLength(body),
+  });
+  res.end(body);
+}
+
 function handleHttp(req, res, logger, targets) {
+  const pathname = new URL(req.url ?? "/", "http://gateway.invalid").pathname;
+  // Relay 预检与云端 Nginx 健康检查只依赖网关本地证据，不触达上游。
+  if (pathname === "/healthz" && (req.method === "GET" || req.method === "HEAD")) {
+    try {
+      publicAuthority(req.headers, targets.publicHostname);
+    } catch (error) {
+      writeGatewayError(res, Number(error?.status) || 400, "Bad request");
+      return;
+    }
+    writeHealthz(res);
+    return;
+  }
+  if (targets.auth !== undefined) {
+    void (async () => {
+      try {
+        // Host 校验先于认证门：伪造 Host 永远 403，不能先拿到 302/401 信号。
+        publicAuthority(req.headers, targets.publicHostname);
+        // 登录/登出由网关自有页面承担；公开路径（PWA 安装资产）直接放行。
+        if (await targets.authRoute(req, res, pathname)) return;
+        if (!isPublicAuthPath(pathname)) {
+          const username = gateAuthenticatedRequest(req, res, targets.auth, pathname);
+          if (username === undefined) return;
+        }
+        proxyHttp(req, res, logger, targets);
+      } catch (error) {
+        if (!res.headersSent) {
+          writeGatewayError(
+            res,
+            Number(error?.status) || 400,
+            error instanceof Error ? error.message : "Bad request",
+          );
+        } else {
+          logger(error);
+          res.destroy();
+        }
+      }
+    })();
+    return;
+  }
+  proxyHttp(req, res, logger, targets);
+}
+
+function proxyHttp(req, res, logger, targets) {
   let upstream;
   try {
     upstream = upstreamFor(req, targets);
@@ -337,6 +408,10 @@ function handleUpgrade(req, socket, head, logger, targets) {
     logger(error);
     socket.destroy();
   });
+  if (targets.auth !== undefined && authenticateUpgrade(req, targets.auth) === undefined) {
+    writeSocketError(socket, 403, "Authentication required");
+    return;
+  }
   let upstream;
   try {
     upstream = upstreamFor(req, targets);
@@ -392,6 +467,16 @@ function handleUpgrade(req, socket, head, logger, targets) {
   proxy.end();
 }
 
+function readPublicHostname(environment) {
+  const raw = environment.CHAT_PUBLIC_WEB_HOSTNAME;
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const value = raw.trim();
+  if (!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/u.test(value) || value.includes("..")) {
+    throw new Error("CHAT_PUBLIC_WEB_HOSTNAME must be a bare lowercase hostname");
+  }
+  return value;
+}
+
 /**
  * 唯一浏览器端口由本进程Gateway拥有。DSH只监听固定loopback内部端口，code-server只
  * 监听0600 Unix socket；
@@ -399,10 +484,22 @@ function handleUpgrade(req, socket, head, logger, targets) {
  */
 export async function startWebGateway(options = {}) {
   const logger = options.logger ?? (() => undefined);
-  // targets/publicPort只是模块级测试接缝；生产launcher不传入，目标端口绝不来自环境或请求。
+  // targets/publicPort/publicHostname/auth只是模块级测试接缝；生产launcher不传入，
+  // 目标端口与公开主机名绝不来自请求。
+  const publicHostname = options.publicHostname ?? readPublicHostname(process.env);
+  const auth = options.auth !== undefined ? options.auth : loadWebAuthConfig(process.env);
   let targets = options.targets;
   if (targets === undefined) {
     const workbenchEnabled = process.env.CHAT_CODE_WORKBENCH_ENABLED !== "0";
+    if (publicHostname !== undefined && workbenchEnabled) {
+      // 技术合同：远程/多用户部署必须换成容器或独立UID Provider；服务器模式下
+      // 本地权限的 code-server 绝不随公网入口一起暴露。
+      throw new Error("Code Workbench must be disabled when CHAT_PUBLIC_WEB_HOSTNAME is set");
+    }
+    if (publicHostname !== undefined && auth === undefined) {
+      // 公网入口没有认证即失败关闭，绝不静默以零认证姿态对外。
+      throw new Error("CHAT_WEB_AUTH_REQUIRED=1 is required when CHAT_PUBLIC_WEB_HOSTNAME is set");
+    }
     const workbench = workbenchEnabled
       ? Object.freeze({ socketPath: validateCodeServerSocketEvidence().socketPath })
       : undefined;
@@ -410,6 +507,16 @@ export async function startWebGateway(options = {}) {
       dsh: Object.freeze({ host: DSH_INTERNAL_WEB_HOST, port: DSH_INTERNAL_WEB_PORT }),
       workbench,
     });
+  }
+  if (auth !== undefined) {
+    targets = Object.freeze({
+      ...targets,
+      publicHostname,
+      auth,
+      authRoute: createAuthRouteHandler(auth, { secure: publicHostname !== undefined }),
+    });
+  } else {
+    targets = Object.freeze({ ...targets, publicHostname, auth });
   }
   const publicPort = options.publicPort ?? PUBLIC_WEB_PORT;
   const sockets = new Set();

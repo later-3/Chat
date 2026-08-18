@@ -1,11 +1,13 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { assertDshPluginRegistry } from "./plugin-registry.mjs";
 import {
   assertBridgeBundleContract,
   assertDshWebCutoverConfig,
   assertManagedWebProfileReady,
   dshBridgeInstallArgs,
+  dshMobileShellInstallArgs,
   dshWebEnvironment,
   resolveDshBin,
   resolveDshWebRuntime,
@@ -16,6 +18,7 @@ import {
 const root = resolve(import.meta.dirname, "../..");
 const runtime = resolveDshWebRuntime(root);
 const environment = dshWebEnvironment(root);
+assertDshPluginRegistry(root);
 
 await runCommand(
   process.platform === "win32" ? "pnpm.cmd" : "pnpm",
@@ -33,6 +36,13 @@ await runCommand(process.execPath, [resolveDshBin(root), ...dshBridgeInstallArgs
   cwd: root,
   env: environment,
   label: "DSH Web Profile Bridge安装",
+});
+// 移动端外壳与Bridge同属profile固定组合：workspace精确依赖和
+// pnpm lock拥有下载事实，profile只链接已验证的安装工件。
+await runCommand(process.execPath, [resolveDshBin(root), ...dshMobileShellInstallArgs(runtime)], {
+  cwd: root,
+  env: environment,
+  label: "DSH Web Profile 移动端外壳安装",
 });
 assertManagedWebProfileReady(runtime);
 

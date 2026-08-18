@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.later.chat.production</string>
+
+  <!-- Chat 完整栈（API + Workflow + DSH Web 网关），Workbench 关闭。
+       服务器模式配置（公开主机名、认证文件路径、Provider Key）全部来自
+       仓库根目录 .env，不在 plist 中重复。 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE_BIN__</string>
+    <string>__PROJECT_ROOT__/scripts/dev/start.mjs</string>
+    <string>--workbench=off</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__PROJECT_ROOT__</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>__USER_HOME__</string>
+    <key>PATH</key>
+    <string>__NODE_DIR__:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>__LOG_DIR__/chat-production.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_DIR__/chat-production.stderr.log</string>
+</dict>
+</plist>

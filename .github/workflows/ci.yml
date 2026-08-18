@@ -43,19 +43,47 @@ jobs:
       - run: pnpm --filter @chat/dsh-lifeos-bridge build
       - run: pnpm --filter @chat/dsh-web prepare:profile
       - name: dsh host and bridge start
+        env:
+          # 本job只验证DSH Host与Bridge，不启动code-server；显式关闭Workbench，
+          # 避免Gateway要求不存在的受管Unix socket evidence。
+          CHAT_CODE_WORKBENCH_ENABLED: "0"
         run: |
           pnpm --filter @chat/dsh-web start > /tmp/chat-dsh-web.log 2>&1 &
           dsh_pid=$!
           trap 'kill "$dsh_pid" 2>/dev/null || true' EXIT
-          for i in $(seq 1 60); do
+          # GitHub bash启用pipefail；grep -q命中大HTML后提前关管会让curl返23。
+          # 这里让grep消费完整响应，只将匹配输出丢弃。
+          for i in $(seq 1 90); do
             sleep 1
-            if curl -fsS http://127.0.0.1:43110/ | grep -q "DeepSeek Harness"; then break; fi
-            if [ "$i" = "60" ]; then cat /tmp/chat-dsh-web.log; exit 1; fi
+            if ! kill -0 "$dsh_pid" 2>/dev/null; then cat /tmp/chat-dsh-web.log; exit 1; fi
+            if curl -fsS http://127.0.0.1:43110/ | grep "DeepSeek Harness" > /dev/null && \
+              curl -fsS http://127.0.0.1:43110/pwa/register.js | grep 'serviceWorker.register("/sw.js")' > /dev/null; then
+              break
+            fi
+            if [ "$i" = "90" ]; then cat /tmp/chat-dsh-web.log; exit 1; fi
           done
-          curl -fsS http://127.0.0.1:43110/lifeos/sessions/ci-probe | grep -q '"schemaVersion":"chat-dsh-lifeos-bridge.v1"'
+
+  dsh-pwa-e2e:
+    # 用真实Chromium守护PWA安装/离线边界、手机外壳与桌面零影响。
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @chat/dsh-web exec playwright install --with-deps chromium
+      - run: pnpm test:e2e:dsh-pwa-real
 
   fresh-clone-smoke:
-    # 完成门：陌生机器只凭仓库与公开固定源即可完成安装、全服务启动和安全停止。
+    # 完成门：陌生机器只凭仓库与公开固定源即可完成核心Chat服务启动和安全停止。
+    # Workbench当前是Beta，不下载、不启动，也不作为通用CI/CD合入门。
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -76,9 +104,9 @@ jobs:
           DASHSCOPE_BASE_URL: ""
           CHAT_DEBUG_PI_KEY_READER: ""
           CHAT_DEBUG_PI_PROVIDER_CONFIG: ""
-        run: pnpm run setup
+        run: pnpm run setup --workbench=off
 
-      - name: default graph starts without Provider or Memory and stops cleanly
+      - name: core graph starts without Provider, Memory, or Workbench and stops cleanly
         env:
           DASHSCOPE_API_KEY: ""
           DASHSCOPE_BASE_URL: ""
@@ -87,7 +115,7 @@ jobs:
         run: |
           # 直接持有仓库启动器PID，SIGINT会进入其受管反向停止路径并以0退出；
           # 若把pnpm包装器PID当启动器，预期SIGINT会返回130并让bash -e跳过清理断言。
-          node scripts/dev/start.mjs > /tmp/chat-fresh-clone.log 2>&1 &
+          node scripts/dev/start.mjs --workbench=off > /tmp/chat-fresh-clone.log 2>&1 &
           chat_pid=$!
           cleanup() {
             kill -INT "$chat_pid" 2>/dev/null || true
@@ -96,18 +124,28 @@ jobs:
           trap cleanup EXIT
           for i in $(seq 1 180); do
             sleep 1
-            if curl -fsS http://127.0.0.1:43110/ | grep -q "DeepSeek Harness"; then break; fi
             if ! kill -0 "$chat_pid" 2>/dev/null; then cat /tmp/chat-fresh-clone.log; exit 1; fi
-            if [ "$i" = "180" ]; then cat /tmp/chat-fresh-clone.log; exit 1; fi
+            chat_root_body=$(curl --noproxy '*' -fsS http://127.0.0.1:43110/ 2>/dev/null || true)
+            chat_lifeos_body=$(curl --noproxy '*' -fsS http://127.0.0.1:43110/lifeos/sessions/fresh-clone 2>/dev/null || true)
+            if [[ "$chat_root_body" == *"DeepSeek Harness"* ]] && \
+              [[ "$chat_lifeos_body" == *'"run":null'* ]] && \
+              curl --noproxy '*' -fsS -o /dev/null http://127.0.0.1:43111/api/readyz && \
+              curl --noproxy '*' -fsS -o /dev/null http://127.0.0.1:43112/healthz; then
+              break
+            fi
+            if [ "$i" = "180" ]; then
+              printf '[fresh-clone] probe lengths root=%s lifeos=%s\n' "${#chat_root_body}" "${#chat_lifeos_body}"
+              printf '[fresh-clone] lifeos response: %.500s\n' "$chat_lifeos_body"
+              cat /tmp/chat-fresh-clone.log
+              exit 1
+            fi
           done
           curl -fsS http://127.0.0.1:43111/api/readyz
           curl -fsS http://127.0.0.1:43112/healthz
           if curl -fsS --max-time 1 http://127.0.0.1:18960/api/v1/health; then exit 1; fi
           if curl -fsS --max-time 1 http://127.0.0.1:18970/health; then exit 1; fi
-          curl -fsS http://127.0.0.1:43110/lifeos/sessions/fresh-clone | grep -q '"run":null'
-          curl -fsS http://localhost:43110/workbench/code/ | grep -qi '<!doctype html>'
           pnpm dev:status | tee /tmp/chat-running-status.log
-          grep -q 'healthy workbench transport=unix-socket' /tmp/chat-running-status.log
+          if grep -Eq 'healthy workbench' /tmp/chat-running-status.log; then exit 1; fi
           if grep -Eq 'healthy (memory|memoryCore)' /tmp/chat-running-status.log; then exit 1; fi
           kill -INT "$chat_pid"
           wait "$chat_pid"

@@ -315,14 +315,21 @@ export function createServiceDefinitions({
     role: "web",
     port: FROZEN_PORTS.web,
     command: process.execPath,
-    args: [join(repoRoot, "scripts/dsh/start-web.mjs")],
+    // load-env 让服务器部署模式的公开主机名/认证文件路径与 API 共用同一
+    // .env 配置源；它不覆盖已有环境变量，也不打印任何值。
+    args: [
+      "--import",
+      join(repoRoot, "scripts/load-env.mjs"),
+      join(repoRoot, "scripts/dsh/start-web.mjs"),
+    ],
     cwd: repoRoot,
     env: dshWebEnvironment(repoRoot, {
       ...environment,
       CHAT_CODE_WORKBENCH_ENABLED: workbench === "code-server" ? "1" : "0",
       ...workbenchRuntime,
     }),
-    readyUrl: `http://127.0.0.1:${FROZEN_PORTS.web}/`,
+    // /healthz 由网关本地回答：认证模式下 / 会 302 到登录页，不能作就绪证据。
+    readyUrl: `http://127.0.0.1:${FROZEN_PORTS.web}/healthz`,
     timeoutMs: 60_000,
     // rc.6为整棵Cordis应用保留5秒dispose窗口；监督器稍晚再升级SIGKILL。
     stopTimeoutMs: 7_000,

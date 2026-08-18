@@ -78,6 +78,7 @@ export function resolveDshWebRuntime(root, environment = process.env) {
     dshHome: join(repoRoot, ".data", "dsh-home"),
     profileDir: join(repoRoot, ".data", "dsh-home", "profiles", "web"),
     bridgePackageDir: join(repoRoot, "packages", "dsh-lifeos-bridge"),
+    mobileShellPackageDir: join(repoRoot, "apps", "dsh-web", "node_modules", "dsh-mobile-hanui"),
     bridgeBundlePath: join(repoRoot, BRIDGE_BUNDLE_RELATIVE_PATH),
     apiBaseUrl: configuredUrl(environment, "CHAT_API_BASE_URL", "http://127.0.0.1:43111"),
     statePath: resolve(
@@ -89,6 +90,7 @@ export function resolveDshWebRuntime(root, environment = process.env) {
     port: DSH_WEB_PORT,
     publicHost: PUBLIC_WEB_HOST,
     publicPort: PUBLIC_WEB_PORT,
+    publicHostname: environment.CHAT_PUBLIC_WEB_HOSTNAME?.trim() || undefined,
   });
 }
 
@@ -117,6 +119,24 @@ export function dshWebEnvironment(root, environment = process.env) {
     CHAT_API_BASE_URL: runtime.apiBaseUrl,
     CHAT_DSH_STATE_PATH: runtime.statePath,
     CHAT_PUBLIC_WEB_PORT: String(runtime.publicPort),
+    // 服务器部署模式：公开主机名与认证文件路径（路径不是凭据；口令散列与
+    // 会话密钥只存在于文件内容中，绝不进入环境变量值）。未设置时这些键不存在，
+    // 网关与 bridge 保持纯 loopback 姿态。
+    ...(environment.CHAT_PUBLIC_WEB_HOSTNAME === undefined
+      ? {}
+      : { CHAT_PUBLIC_WEB_HOSTNAME: environment.CHAT_PUBLIC_WEB_HOSTNAME }),
+    ...(environment.CHAT_WEB_AUTH_REQUIRED === undefined
+      ? {}
+      : { CHAT_WEB_AUTH_REQUIRED: environment.CHAT_WEB_AUTH_REQUIRED }),
+    ...(environment.CHAT_WEB_AUTH_CREDENTIALS_FILE === undefined
+      ? {}
+      : { CHAT_WEB_AUTH_CREDENTIALS_FILE: environment.CHAT_WEB_AUTH_CREDENTIALS_FILE }),
+    ...(environment.CHAT_WEB_AUTH_SESSION_SECRET_FILE === undefined
+      ? {}
+      : { CHAT_WEB_AUTH_SESSION_SECRET_FILE: environment.CHAT_WEB_AUTH_SESSION_SECRET_FILE }),
+    ...(environment.CHAT_WEB_AUTH_SESSION_DAYS === undefined
+      ? {}
+      : { CHAT_WEB_AUTH_SESSION_DAYS: environment.CHAT_WEB_AUTH_SESSION_DAYS }),
     CHAT_CODE_WORKBENCH_ENABLED: environment.CHAT_CODE_WORKBENCH_ENABLED === "0" ? "0" : "1",
     ...(environment.CHAT_CODE_WORKBENCH_RUN_ROOT === undefined
       ? {}
@@ -144,11 +164,38 @@ export function installDshWebEnvironment(target, environment) {
 }
 
 export function dshWebArgs(runtime) {
-  return ["web", "--host", runtime.host, "--port", String(runtime.port)];
+  const args = ["web", "--host", runtime.host, "--port", String(runtime.port)];
+  // 服务器部署模式：DSH 的 /api Host 信任栅只放行 loopback 与显式声明的
+  // 部署主机名（DNS rebinding 防线）。公开主机名来自组合期环境变量，
+  // 由 web-app 的 --trusted-host 公开参数声明，不修改上游。
+  if (typeof runtime.publicHostname === "string" && runtime.publicHostname !== "") {
+    args.push("--trusted-host", runtime.publicHostname);
+  }
+  return args;
 }
 
 export function dshBridgeInstallArgs(runtime) {
   return ["plugin", "--profile", "web", "add", "--save-exact", `link:${runtime.bridgePackageDir}`];
+}
+
+/**
+ * 移动端外壳：固定 dsh-mobile-hanui@0.2.4（MIT，零运行时依赖，仅客户端DOM/CSS
+ * 适配，无网络外发）。根workspace的精确依赖与pnpm-lock拥有下载/integrity事实，
+ * DSH profile只link已验证工件，不在可重建.data中二次解析npm。运行时可用
+ * ?mobileShell=0关闭。
+ */
+export const DSH_MOBILE_SHELL_PACKAGE = "dsh-mobile-hanui";
+export const DSH_MOBILE_SHELL_VERSION = "0.2.4";
+
+export function dshMobileShellInstallArgs(runtime) {
+  return [
+    "plugin",
+    "--profile",
+    "web",
+    "add",
+    "--save-exact",
+    `link:${runtime.mobileShellPackageDir}`,
+  ];
 }
 
 export function dshPackageManifestPath(root) {
@@ -342,6 +389,7 @@ export function assertManagedWebProfileReady(runtime) {
     profileManifestPath,
     join(runtime.profileDir, "cordis.patch.yml"),
     join(runtime.profileDir, "node_modules", "@chat", "dsh-lifeos-bridge", "package.json"),
+    join(runtime.profileDir, "node_modules", DSH_MOBILE_SHELL_PACKAGE, "package.json"),
   ];
   const missing = required.filter((path) => !existsSync(path));
   if (missing.length > 0) {
@@ -353,12 +401,23 @@ export function assertManagedWebProfileReady(runtime) {
   if (profile.dependencies?.[BRIDGE_PACKAGE_NAME] === undefined) {
     throw new Error(`DSH Web Profile未安装${BRIDGE_PACKAGE_NAME}`);
   }
+  if (profile.dependencies?.[DSH_MOBILE_SHELL_PACKAGE] === undefined) {
+    throw new Error(`DSH Web Profile未安装${DSH_MOBILE_SHELL_PACKAGE}`);
+  }
   const bridgeBundles = (profile.dsh?.profile?.bundles ?? []).filter(
     (bundle) => bundle === BRIDGE_PACKAGE_NAME,
   );
   if (bridgeBundles.length !== 1) {
     throw new Error(
       `DSH Web Profile必须且只能启用一次${BRIDGE_PACKAGE_NAME} bundle，实际为${String(bridgeBundles.length)}`,
+    );
+  }
+  const mobileBundles = (profile.dsh?.profile?.bundles ?? []).filter(
+    (bundle) => bundle === DSH_MOBILE_SHELL_PACKAGE,
+  );
+  if (mobileBundles.length !== 1) {
+    throw new Error(
+      `DSH Web Profile必须且只能启用一次${DSH_MOBILE_SHELL_PACKAGE} bundle，实际为${String(mobileBundles.length)}`,
     );
   }
   assertBridgeBundleContract(runtime);
@@ -423,6 +482,11 @@ export function assertDshWebCutoverConfig(dump) {
   const bridge = assertOneYamlRow(dump, "lifeos-bridge");
   if (!hasYamlScalar(bridge, "name", BRIDGE_PACKAGE_NAME)) {
     throw new Error(`lifeos-bridge必须加载${BRIDGE_PACKAGE_NAME}`);
+  }
+
+  const mobileShell = assertOneYamlRow(dump, "dsh-mobile-hanui-shell");
+  if (!hasYamlScalar(mobileShell, "name", DSH_MOBILE_SHELL_PACKAGE)) {
+    throw new Error(`dsh-mobile-hanui-shell必须加载${DSH_MOBILE_SHELL_PACKAGE}`);
   }
 }
 

@@ -21,6 +21,7 @@ import {
   assertManagedWebProfileReady,
   DSH_CLI_RUNTIME_IMPORTS,
   dshBridgeInstallArgs,
+  dshMobileShellInstallArgs,
   dshWebArgs,
   dshWebEnvironment,
   installDshWebEnvironment,
@@ -48,7 +49,46 @@ test("DSH_HOME固定在当前worktree且Bridge私有状态不进入启动参数"
     "--save-exact",
     "link:/workspace/chat-feature/packages/dsh-lifeos-bridge",
   ]);
+  assert.deepEqual(dshMobileShellInstallArgs(runtime), [
+    "plugin",
+    "--profile",
+    "web",
+    "add",
+    "--save-exact",
+    "link:/workspace/chat-feature/apps/dsh-web/node_modules/dsh-mobile-hanui",
+  ]);
   assert.doesNotMatch(dshWebArgs(runtime).join(" "), /chat-state|43111/u);
+});
+
+test("服务器部署模式向DSH声明trusted-host并透传公开主机名与认证路径", () => {
+  const runtime = resolveDshWebRuntime(ROOT, {
+    CHAT_PUBLIC_WEB_HOSTNAME: "chat.ai4child.asia",
+  });
+  assert.deepEqual(dshWebArgs(runtime), [
+    "web",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "43114",
+    "--trusted-host",
+    "chat.ai4child.asia",
+  ]);
+  const environment = dshWebEnvironment(ROOT, {
+    CHAT_PUBLIC_WEB_HOSTNAME: "chat.ai4child.asia",
+    CHAT_WEB_AUTH_REQUIRED: "1",
+    CHAT_WEB_AUTH_CREDENTIALS_FILE: "/private/credentials.json",
+    CHAT_WEB_AUTH_SESSION_SECRET_FILE: "/private/session-secret",
+    CHAT_WEB_AUTH_SESSION_DAYS: "30",
+  });
+  assert.equal(environment.CHAT_PUBLIC_WEB_HOSTNAME, "chat.ai4child.asia");
+  assert.equal(environment.CHAT_WEB_AUTH_REQUIRED, "1");
+  assert.equal(environment.CHAT_WEB_AUTH_CREDENTIALS_FILE, "/private/credentials.json");
+  assert.equal(environment.CHAT_WEB_AUTH_SESSION_SECRET_FILE, "/private/session-secret");
+  assert.equal(environment.CHAT_WEB_AUTH_SESSION_DAYS, "30");
+  // 本地默认姿态不透传任何服务器模式配置。
+  const local = dshWebEnvironment(ROOT, {});
+  assert.equal(local.CHAT_PUBLIC_WEB_HOSTNAME, undefined);
+  assert.equal(local.CHAT_WEB_AUTH_REQUIRED, undefined);
 });
 
 test("DSH进程显式接收Chat API与Bridge状态且剥离VS Code自动附加", () => {
@@ -134,13 +174,19 @@ test("Bridge原生bundle patch不包含API与私有状态路径", () => {
     mkdirSync(join(runtime.profileDir, "node_modules/@chat/dsh-lifeos-bridge"), {
       recursive: true,
     });
+    mkdirSync(join(runtime.profileDir, "node_modules/dsh-mobile-hanui"), {
+      recursive: true,
+    });
     writeFileSync(
       join(runtime.profileDir, "package.json"),
       `${JSON.stringify({
         dependencies: {
           "@chat/dsh-lifeos-bridge": "link:../../../../../packages/dsh-lifeos-bridge",
+          "dsh-mobile-hanui": "link:../../../../../apps/dsh-web/node_modules/dsh-mobile-hanui",
         },
-        dsh: { profile: { bundles: ["@chat/dsh-lifeos-bridge"] } },
+        dsh: {
+          profile: { bundles: ["@chat/dsh-lifeos-bridge", "dsh-mobile-hanui"] },
+        },
       })}\n`,
     );
     writeFileSync(join(runtime.profileDir, "cordis.patch.yml"), "[]\n");
@@ -148,6 +194,7 @@ test("Bridge原生bundle patch不包含API与私有状态路径", () => {
       join(runtime.profileDir, "node_modules/@chat/dsh-lifeos-bridge/package.json"),
       "{}\n",
     );
+    writeFileSync(join(runtime.profileDir, "node_modules/dsh-mobile-hanui/package.json"), "{}\n");
     mkdirSync(join(runtime.bridgeBundlePath, ".."), { recursive: true });
     writeFileSync(runtime.bridgeBundlePath, "");
     assert.doesNotThrow(() => assertManagedWebProfileReady(runtime));
@@ -163,6 +210,8 @@ test("Bridge原生bundle patch不包含API与私有状态路径", () => {
       "  disabled: true",
       "- id: lifeos-bridge",
       "  name: '@chat/dsh-lifeos-bridge'",
+      "- id: dsh-mobile-hanui-shell",
+      "  name: 'dsh-mobile-hanui'",
       "- id: webserver",
       "",
     ].join("\n");
@@ -202,10 +251,11 @@ test("Bridge原生bundle patch不包含API与私有状态路径", () => {
       `${JSON.stringify({
         dependencies: {
           "@chat/dsh-lifeos-bridge": "link:../../../../../packages/dsh-lifeos-bridge",
+          "dsh-mobile-hanui": "link:../../../../../apps/dsh-web/node_modules/dsh-mobile-hanui",
         },
         dsh: {
           profile: {
-            bundles: ["@chat/dsh-lifeos-bridge", "@chat/dsh-lifeos-bridge"],
+            bundles: ["@chat/dsh-lifeos-bridge", "@chat/dsh-lifeos-bridge", "dsh-mobile-hanui"],
           },
         },
       })}\n`,

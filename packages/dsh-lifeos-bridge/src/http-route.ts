@@ -13,27 +13,21 @@ const DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/decisions$/;
 const WORKFLOW_SELECTION_PATH = /^\/lifeos\/sessions\/([^/]+)\/workflow-selection$/;
 const WORKFLOWS_PATH = /^\/lifeos\/workflows$/;
 
-export const SERVICE_WORKER_RETIREMENT_SCRIPT = `
-self.addEventListener("install", (event) => {
-  event.waitUntil(self.skipWaiting());
-});
-self.addEventListener("activate", (event) => {
-  event.waitUntil((async () => {
-    const keys = await self.caches.keys();
-    await Promise.all(keys.map((key) => self.caches.delete(key)));
-    await self.clients.claim();
-    await self.registration.unregister();
-    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    await Promise.allSettled(windows.map((client) => client.navigate(client.url)));
-  })());
-});
-`.trimStart();
-
 function headerValue(value: string | string[] | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-export function assertSameOriginRequest(req: IncomingMessage, expectedPort: number): string {
+/**
+ * 同源守卫。默认只接受受管 loopback 端口；服务器部署模式下额外接受配置的
+ * 公开主机名（Cloudflare→Nginx 终结 TLS 后以 `Host: <publicHostname>` 到达，
+ * Origin 必须是 `https://<publicHostname>`）。公开主机名绝不来自请求或上行
+ * 头，只能来自组合期环境变量。
+ */
+export function assertSameOriginRequest(
+  req: IncomingMessage,
+  expectedPort: number,
+  publicHostname?: string,
+): string {
   const host = headerValue(req.headers.host);
   if (host === undefined) {
     throw new BridgeRequestError(400, "lifeos_host_required", "Host header is required");
@@ -53,10 +47,14 @@ export function assertSameOriginRequest(req: IncomingMessage, expectedPort: numb
   ) {
     throw new BridgeRequestError(400, "lifeos_host_invalid", "Host header is invalid");
   }
-  if (
-    authority.port !== String(expectedPort) ||
-    !["127.0.0.1", "localhost", "[::1]"].includes(authority.hostname)
-  ) {
+  const isLoopback =
+    authority.port === String(expectedPort) &&
+    ["127.0.0.1", "localhost", "[::1]"].includes(authority.hostname);
+  const isPublic =
+    publicHostname !== undefined &&
+    authority.hostname === publicHostname &&
+    (authority.port === "" || authority.port === "443");
+  if (!isLoopback && !isPublic) {
     throw new BridgeRequestError(403, "lifeos_host_forbidden", "LifeOS route is loopback-only");
   }
   const fetchSite = headerValue(req.headers["sec-fetch-site"]);
@@ -71,13 +69,17 @@ export function assertSameOriginRequest(req: IncomingMessage, expectedPort: numb
     } catch {
       throw new BridgeRequestError(403, "lifeos_origin_forbidden", "Origin header is invalid");
     }
+    // 公网主机名以 HTTPS 到达，Origin 使用 https scheme；loopback 保持 http。
+    const expectedOrigin = isPublic
+      ? `https://${authority.hostname}${authority.port === "" ? "" : `:${authority.port}`}`
+      : authority.origin;
     if (
       parsed.username !== "" ||
       parsed.password !== "" ||
       parsed.pathname !== "/" ||
       parsed.search !== "" ||
       parsed.hash !== "" ||
-      parsed.origin !== authority.origin
+      parsed.origin !== expectedOrigin
     ) {
       throw new BridgeRequestError(403, "lifeos_origin_forbidden", "Origin must match Host");
     }
@@ -141,6 +143,10 @@ function sendJson(res: ServerResponse, status: number, value: unknown): void {
   res.end(body);
 }
 
+export function sendRouteError(res: ServerResponse, error: unknown): void {
+  sendError(res, error);
+}
+
 function sendError(res: ServerResponse, error: unknown): void {
   if (error instanceof BridgeRequestError) {
     sendJson(res, error.status, {
@@ -173,39 +179,15 @@ function sendError(res: ServerResponse, error: unknown): void {
   });
 }
 
-export function createServiceWorkerRetirementHandler(
-  expectedPort: number,
-): (req: IncomingMessage, res: ServerResponse) => void {
-  return (req, res) => {
-    try {
-      assertSameOriginRequest(req, expectedPort);
-      if (req.method !== "GET") {
-        res.setHeader("allow", "GET");
-        throw new BridgeRequestError(405, "lifeos_method_not_allowed", "Method not allowed");
-      }
-      const body = SERVICE_WORKER_RETIREMENT_SCRIPT;
-      res.statusCode = 200;
-      res.setHeader("content-type", "application/javascript; charset=utf-8");
-      res.setHeader("cache-control", "no-store");
-      res.setHeader("service-worker-allowed", "/");
-      res.setHeader("x-content-type-options", "nosniff");
-      res.setHeader("content-length", Buffer.byteLength(body));
-      res.end(body);
-    } catch (error) {
-      if (!res.headersSent) sendError(res, error);
-      else res.destroy();
-    }
-  };
-}
-
 export function createLifeosRouteHandler(
   service: LifeosBridgeService,
   expectedPort: number,
   reportError: (error: unknown) => void = () => undefined,
+  publicHostname?: string,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return async (req, res) => {
     try {
-      const host = assertSameOriginRequest(req, expectedPort);
+      const host = assertSameOriginRequest(req, expectedPort, publicHostname);
       const url = new URL(req.url ?? "", `http://${host}`);
       if (url.search !== "") {
         throw new BridgeRequestError(

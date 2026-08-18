@@ -101,6 +101,7 @@ Query读取资源并返回revision/ETag/cursor；Command表达一次用户意图
 
 ## 7. Workbench合同
 
+- 当前状态是Beta：实现保留，但不进入通用CI/CD或远程部署；只有单独启用、修改或准备提升为稳定能力时才执行真实Workbench完成门。
 - code-server作为独立进程运行，不拆UI组件，也不复制上游源码。
 - 当前只打开精确`CHAT_REPO_ROOT`，使用清洗后的环境、隔离HOME和独立user-data/extensions目录。
 - code-server仅绑定受管0600 Unix socket且不监听TCP；Web Gateway代理HTTP与全部动态WebSocket，并将Workbench放在与DSH不同的虚拟Host Origin。
@@ -126,4 +127,4 @@ Query读取资源并返回revision/ETag/cursor；Command表达一次用户意图
 2. DSH原生Host与Client插件真实启动，不是旁路Adapter页面。
 3. 真实浏览器完成发送、Plan、修订/批准/拒绝、执行、正式回复与刷新恢复。
 4. 浏览器Bundle/响应/日志不泄漏凭据或Runtime私有身份。
-5. Workbench真实验证Files、Terminal、Git与Diff，WebSocket和停止回收通过。
+5. Workbench不属于当前通用CI/CD完成门；单独启用、修改或准备提升为稳定能力时，必须真实验证Files、Terminal、Git与Diff，以及WebSocket和停止回收。
