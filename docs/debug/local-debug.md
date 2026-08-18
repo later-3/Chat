@@ -48,6 +48,7 @@ Workbench当前为Beta，不属于通用CI/CD完成门；`--workbench=off`用于
 | Session映射 | `AtomicBridgeStateStore`、`LifeosLlmAdapter.ensureChatSession` | `dshSessionId -> productSessionId`、原子状态、稳定Command |
 | 消息发送 | `LifeosLlmAdapter.stream`、`ChatProductClient.submitMessage` | 只处理正常会话请求；title/compaction无产品写入 |
 | Plan/HITL | `LifeosBridgeService.projection/decide`、Client Slot | Run revision、Plan/Approval版本与Hash、Decision Command |
+| Note审核 | `LifeosBridgeService.projection/decideNote`、`LifeosDock` | Candidate ID/revision/Hash、pending原样重试、Confirm/修订/拒绝 |
 | 决定提交 | `ChatProductClient.submitDecision` | 同一pending command、Run CAS、Plan/Approval版本与Hash |
 | 正式回复 | Bridge LLM Adapter | 只从Chat Message Query选择正式Assistant Message |
 

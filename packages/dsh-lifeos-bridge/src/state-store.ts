@@ -4,13 +4,19 @@ import { dirname } from "node:path";
 import {
   approvalRequestIdSchema,
   commandIdSchema,
+  noteCandidateIdSchema,
   planIdSchema,
   productRunIdSchema,
   productSessionIdSchema,
   sha256Schema,
 } from "@chat/contracts/public";
 import { z } from "zod";
-import { decisionRequestSchema, dshSessionIdSchema, workflowSelectionSchema } from "./contracts.ts";
+import {
+  decisionRequestSchema,
+  dshSessionIdSchema,
+  noteDecisionRequestSchema,
+  workflowSelectionSchema,
+} from "./contracts.ts";
 
 const pendingDecisionSchema = z
   .object({
@@ -26,19 +32,42 @@ const pendingDecisionSchema = z
   })
   .strict();
 
+const pendingNoteDecisionSchema = z
+  .object({
+    bodySha256: sha256Schema,
+    commandId: commandIdSchema.transform(String),
+    productRunId: productRunIdSchema.transform(String),
+    expectedRunRevision: z.number().int().positive(),
+    noteCandidateId: noteCandidateIdSchema.transform(String),
+    candidateRevision: z.number().int().positive(),
+    candidateSha256: sha256Schema,
+    request: noteDecisionRequestSchema,
+  })
+  .strict();
+
 const requestSchema = z
   .object({
     userTextSha256: sha256Schema,
     messageCommandId: commandIdSchema.transform(String),
     productRunId: productRunIdSchema.transform(String).optional(),
     pendingDecision: pendingDecisionSchema.optional(),
+    pendingNoteDecision: pendingNoteDecisionSchema.optional(),
     /**
      * 请求创建时冻结的Workflow选择快照。发送中途修改会话草稿不影响
      * 已创建请求；同一请求的幂等重放始终携带同一选择。
      */
     workflowSelection: workflowSelectionSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.pendingDecision !== undefined && value.pendingNoteDecision !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["pendingNoteDecision"],
+        message: "同一请求不能同时等待Plan和Note决定",
+      });
+    }
+  });
 
 const sessionBindingSchema = z
   .object({
@@ -52,8 +81,8 @@ const sessionBindingSchema = z
   .strict();
 
 /**
- * rc.6切换时已经存在的Bridge状态。迁移读取也接受短暂开发版本写入的
- * optional workflow字段，随后立即改写为v2；不能在同一个v1标记下扩展strict格式。
+ * rc.6切换时已经存在的Bridge状态。迁移读取接受v1/v2中的Workflow选择和Plan pending，
+ * 随后立即改写为v3；不能在旧schema标记下静默扩展strict持久格式。
  */
 const legacyBridgeStateSchema = z
   .object({
@@ -62,9 +91,16 @@ const legacyBridgeStateSchema = z
   })
   .strict();
 
-const bridgeStateSchema = z
+const legacyBridgeStateV2Schema = z
   .object({
     schemaVersion: z.literal("chat-dsh-lifeos-state.v2"),
+    sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
+  })
+  .strict();
+
+const bridgeStateSchema = z
+  .object({
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v3"),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
   .strict();
@@ -73,9 +109,10 @@ export type BridgeState = z.infer<typeof bridgeStateSchema>;
 export type SessionBinding = z.infer<typeof sessionBindingSchema>;
 export type RequestBinding = z.infer<typeof requestSchema>;
 export type PendingDecision = z.infer<typeof pendingDecisionSchema>;
+export type PendingNoteDecision = z.infer<typeof pendingNoteDecisionSchema>;
 
 const emptyState = (): BridgeState => ({
-  schemaVersion: "chat-dsh-lifeos-state.v2",
+  schemaVersion: "chat-dsh-lifeos-state.v3",
   sessions: {},
 });
 
@@ -172,13 +209,13 @@ export class AtomicBridgeStateStore {
       this.state = current.data;
       return this.state;
     }
-    const legacy = legacyBridgeStateSchema.safeParse(parsed);
+    const legacy = z.union([legacyBridgeStateSchema, legacyBridgeStateV2Schema]).safeParse(parsed);
     if (!legacy.success) {
       this.state = bridgeStateSchema.parse(parsed);
       return this.state;
     }
     const migrated = bridgeStateSchema.parse({
-      schemaVersion: "chat-dsh-lifeos-state.v2",
+      schemaVersion: "chat-dsh-lifeos-state.v3",
       sessions: legacy.data.sessions,
     });
     await this.writeAtomic(migrated);

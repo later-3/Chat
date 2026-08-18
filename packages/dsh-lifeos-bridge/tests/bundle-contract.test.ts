@@ -36,6 +36,16 @@ test("workflow selector uses the additive DSH composer tool-row slot", async () 
   assert.match(picker, /@deepseek-ai\/dsh-client-ui-primitives/);
 });
 
+test("LifeOS dock exposes a mobile-safe Note review surface and all product decisions", async () => {
+  const dock = await readFile(new URL("../src/client/LifeosDock.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../src/client/styles.ts", import.meta.url), "utf8");
+  assert.match(dock, /data-testid="lifeos-note-candidate"/);
+  assert.match(dock, /data-testid="lifeos-confirm-note"/);
+  assert.match(dock, /data-testid="lifeos-request-note-revision"/);
+  assert.match(dock, /data-testid="lifeos-reject-note"/);
+  assert.match(styles, /@media\(max-width:600px\)[\s\S]*\.lifeos-note-content/);
+});
+
 test("bundle patch makes Chat workflow the only enabled product model route", async () => {
   const patch = await readFile(new URL("../cordis.patch.yml", import.meta.url), "utf8");
   assert.match(patch, /id: agent-default-model[\s\S]*provider: lifeos[\s\S]*model: workflow/);

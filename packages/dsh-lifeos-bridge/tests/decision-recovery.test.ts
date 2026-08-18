@@ -6,7 +6,7 @@ import test from "node:test";
 import { stableCommandId } from "../src/adapter.ts";
 import { LifeosBridgeService } from "../src/bridge-service.ts";
 import { ChatProductApiError, type ChatProductClient } from "../src/chat-client.ts";
-import type { ChatApproval, ChatRun } from "../src/contracts.ts";
+import type { ChatApproval, ChatNoteCandidate, ChatRun } from "../src/contracts.ts";
 import { AtomicBridgeStateStore } from "../src/state-store.ts";
 
 const dshSessionId = "dsh-decision-recovery";
@@ -32,6 +32,45 @@ const binding = {
   planRevision: approval.planRevision,
   planSha256: approval.planSha256,
 };
+const noteRun = {
+  ...run,
+  productRunId: "run_noterecovery1",
+  status: "waiting_human",
+  phase: "note_review",
+  revision: 2,
+} as ChatRun;
+const noteCandidate = {
+  schemaVersion: "chat-note-api.v1",
+  noteCandidateId: "ntc_recovery1",
+  productRunId: noteRun.productRunId,
+  candidateSequence: 1,
+  proposed: {
+    title: "候选笔记",
+    kind: "general",
+    contentMarkdown: "需要人工确认的正文。",
+    tags: [{ key: "review", label: "审核" }],
+  },
+  sourceRefs: [
+    {
+      kind: "full_message",
+      sourceMessageId: "msg_recovery1",
+      sourceMessageSha256: "c".repeat(64),
+    },
+  ],
+  sha256: "d".repeat(64),
+  revision: 1,
+  status: "under_review",
+  allowedActions: ["confirm", "request_revision", "reject"],
+  createdAt: "2026-08-18T00:00:00.000Z",
+  updatedAt: "2026-08-18T00:00:00.000Z",
+} as ChatNoteCandidate;
+const noteBinding = {
+  productRunId: noteRun.productRunId,
+  runRevision: noteRun.revision,
+  noteCandidateId: noteCandidate.noteCandidateId,
+  candidateRevision: noteCandidate.revision,
+  candidateSha256: noteCandidate.sha256,
+};
 
 async function seededStore(path: string): Promise<AtomicBridgeStateStore> {
   const state = new AtomicBridgeStateStore(path);
@@ -46,6 +85,25 @@ async function seededStore(path: string): Promise<AtomicBridgeStateStore> {
         userTextSha256: "b".repeat(64),
         messageCommandId: stableCommandId("message", dshSessionId),
         productRunId: run.productRunId,
+      };
+    },
+  );
+  return state;
+}
+
+async function seededNoteStore(path: string): Promise<AtomicBridgeStateStore> {
+  const state = new AtomicBridgeStateStore(path);
+  await state.ready();
+  await state.mutateSession(
+    dshSessionId,
+    stableCommandId("create-session", dshSessionId),
+    (binding) => {
+      binding.chatSessionId = "psn_recovery1";
+      binding.currentRequestKey = requestKey;
+      binding.requests[requestKey] = {
+        userTextSha256: "b".repeat(64),
+        messageCommandId: stableCommandId("message", dshSessionId),
+        productRunId: noteRun.productRunId,
       };
     },
   );
@@ -145,6 +203,74 @@ test("a stale observed binding cannot approve a newer unseen Run revision", asyn
     assert.equal(submissions, 0);
     assert.equal(
       (await state.readSession(dshSessionId))?.requests[requestKey]?.pendingDecision,
+      undefined,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a retryable Note failure keeps the normalized candidate decision for verbatim retry", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-note-decision-unknown-"));
+  try {
+    const state = await seededNoteStore(join(directory, "state.json"));
+    const chat = {
+      getRun: async () => noteRun,
+      getNoteCandidate: async () => noteCandidate,
+      submitNoteDecision: async () => {
+        throw new ChatProductApiError(
+          503,
+          "chat_api_unreachable",
+          true,
+          "retry_same_command",
+          "Chat API is unreachable",
+        );
+      },
+    } as unknown as ChatProductClient;
+    const service = new LifeosBridgeService(chat, state);
+    await assert.rejects(
+      service.decideNote(dshSessionId, {
+        kind: "request_revision",
+        explanation: "  补充来源边界  ",
+        binding: noteBinding,
+      }),
+      { name: "ChatProductApiError" },
+    );
+    assert.deepEqual(
+      (await state.readSession(dshSessionId))?.requests[requestKey]?.pendingNoteDecision?.request,
+      {
+        kind: "request_revision",
+        explanation: "补充来源边界",
+        binding: noteBinding,
+      },
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a stale observed candidate cannot confirm a newer unseen Note revision", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-note-decision-stale-"));
+  let submissions = 0;
+  try {
+    const state = await seededNoteStore(join(directory, "state.json"));
+    const chat = {
+      getRun: async () => noteRun,
+      getNoteCandidate: async () => ({ ...noteCandidate, revision: 2 }),
+      submitNoteDecision: async () => {
+        submissions += 1;
+        return noteCandidate;
+      },
+    } as unknown as ChatProductClient;
+    const service = new LifeosBridgeService(chat, state);
+    await assert.rejects(
+      service.decideNote(dshSessionId, { kind: "confirm", binding: noteBinding }),
+      (error) =>
+        error instanceof Error && "code" in error && error.code === "lifeos_note_decision_stale",
+    );
+    assert.equal(submissions, 0);
+    assert.equal(
+      (await state.readSession(dshSessionId))?.requests[requestKey]?.pendingNoteDecision,
       undefined,
     );
   } finally {

@@ -49,7 +49,7 @@ test("bridge mapping survives reload in a private atomic JSON file", async () =>
     assert.equal((await stat(path)).mode & 0o777, 0o600);
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
-      "chat-dsh-lifeos-state.v2",
+      "chat-dsh-lifeos-state.v3",
     );
     const reloaded = new AtomicBridgeStateStore(path);
     const binding = await reloaded.readSession("dsh-session-1");
@@ -75,7 +75,7 @@ test("bridge mapping survives reload in a private atomic JSON file", async () =>
   }
 });
 
-test("v1 bridge state migrates atomically to v2 before workflow drafts are written", async () => {
+test("v1 bridge state migrates atomically to v3 before workflow drafts are written", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-state-v1-"));
   const path = join(directory, "bridge.json");
   try {
@@ -97,7 +97,36 @@ test("v1 bridge state migrates atomically to v2 before workflow drafts are writt
     assert.equal((await store.readSession("dsh-session-1"))?.createSessionCommandId, command("a"));
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
-      "chat-dsh-lifeos-state.v2",
+      "chat-dsh-lifeos-state.v3",
+    );
+    assert.equal((await stat(path)).mode & 0o777, 0o600);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("v2 bridge state migrates atomically to v3 before Note decisions are written", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-state-v2-"));
+  const path = join(directory, "bridge.json");
+  try {
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        schemaVersion: "chat-dsh-lifeos-state.v2",
+        sessions: {
+          "dsh-session-1": {
+            createSessionCommandId: command("a"),
+            requests: {},
+          },
+        },
+      })}\n`,
+      { mode: 0o600 },
+    );
+    const store = new AtomicBridgeStateStore(path);
+    await store.ready();
+    assert.equal(
+      JSON.parse(await readFile(path, "utf8")).schemaVersion,
+      "chat-dsh-lifeos-state.v3",
     );
     assert.equal((await stat(path)).mode & 0o777, 0o600);
   } finally {

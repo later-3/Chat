@@ -91,10 +91,10 @@ Query读取资源并返回revision/ETag/cursor；Command表达一次用户意图
 
 ## 6. HITL合同
 
-1. Workflow创建私有Hook并请求Application创建Approval事实。
-2. 用户通过DSH Client表面读取Plan/Approval。
-3. Client把意图交给Bridge Host；Host提交Chat Decision Command。
-4. Application校验Principal、Run revision、Plan/Approval版本与Hash，并原子提交Decision和Resume Outbox。
+1. Workflow创建私有Hook并请求Application创建Approval或Note Candidate事实。
+2. 用户通过DSH Client表面读取Plan/Approval或安全Note Candidate审核DTO。
+3. Client把意图交给Bridge Host；Host提交Chat Plan Decision或Note Decision Command。
+4. Application校验Principal、Run revision以及Plan/Approval或Candidate的版本与Hash，并原子提交Decision和Resume Outbox。
 5. 后端Dispatcher私下恢复Hook。
 
 浏览器永远不持有Hook Token。
@@ -113,7 +113,7 @@ Query读取资源并返回revision/ETag/cursor；Command表达一次用户意图
 
 ## 8. 实时与恢复
 
-当前Bridge使用公开Query恢复Run、Messages、Plan和Approval。未来加入Chat拥有的SSE Cursor Journal时，它只提供有序事件和资源失效通知，不成为产品事实源，也不改变Query/Command合同。
+当前Bridge使用公开Query恢复Run、Messages、Plan/Approval和Note Candidate。未来加入Chat拥有的SSE Cursor Journal时，它只提供有序事件和资源失效通知，不成为产品事实源，也不改变Query/Command合同。
 
 必须覆盖：浏览器刷新、DSH Host重启、API重启、Workflow Worker恢复、重复Command、响应丢失、过期Decision、Provider结果未知和Workbench进程崩溃。
 

@@ -81,6 +81,7 @@ export function apply(ctx: ClientContext): void {
           return {
             hooks: { lifeos: controller },
             decide: (request) => controller.decide(request),
+            decideNote: (request) => controller.decideNote(request),
           };
         },
       },

@@ -2,7 +2,7 @@
   "name": "@chat/dsh-lifeos-bridge",
   "version": "0.1.0",
   "private": true,
-  "description": "DeepSeek Harness bridge for Chat's authoritative planning and approval workflow",
+  "description": "DeepSeek Harness bridge for Chat's authoritative planning and note review workflows",
   "type": "module",
   "main": "dist/dsh-bundle.js",
   "exports": {

@@ -1,12 +1,13 @@
 import { useState } from "react";
 import type { HostObservable, InjectFace, PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots";
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
-import type { DecisionRequest } from "../contracts.ts";
+import type { DecisionRequest, NoteDecisionRequest } from "../contracts.ts";
 import type { LifeosClientState } from "./controller.ts";
 
 export interface LifeosDockInjected {
   hooks: { lifeos: HostObservable<LifeosClientState> };
   decide: (request: DecisionRequest) => Promise<boolean>;
+  decideNote: (request: NoteDecisionRequest) => Promise<boolean>;
 }
 
 export type LifeosDockProps = PropsRuntime<"conversation.input.dock"> &
@@ -16,13 +17,21 @@ const PHASE_LABEL: Record<string, string> = {
   queued: "已接收",
   planning: "正在规划",
   plan_review: "等待你审核",
+  note_review: "等待你审核笔记",
   executing: "正在执行",
   validating: "正在验证",
   completed: "已完成",
   rejected: "已拒绝",
 };
 
-export function LifeosDock({ useLifeos, decide }: LifeosDockProps) {
+const NOTE_KIND_LABEL: Record<string, string> = {
+  idea: "想法",
+  project_idea: "项目想法",
+  learning: "学习",
+  general: "通用",
+};
+
+export function LifeosDock({ useLifeos, decide, decideNote }: LifeosDockProps) {
   const state = useLifeos((value) => value);
   const [explanation, setExplanation] = useState("");
   const projection = state.projection;
@@ -31,7 +40,8 @@ export function LifeosDock({ useLifeos, decide }: LifeosDockProps) {
   const run = projection?.run;
   const plan = projection?.plan;
   const approval = projection?.approval;
-  const canReview =
+  const noteCandidate = projection?.noteCandidate;
+  const canReviewPlan =
     approval?.status === "open" &&
     run?.status === "waiting_human" &&
     plan !== null &&
@@ -39,9 +49,14 @@ export function LifeosDock({ useLifeos, decide }: LifeosDockProps) {
     plan.planId === approval.planId &&
     plan.planRevision === approval.planRevision &&
     plan.sha256 === approval.planSha256;
-  const submit = async (kind: DecisionRequest["kind"]): Promise<void> => {
+  const canReviewNote =
+    noteCandidate?.status === "under_review" &&
+    run?.status === "waiting_human" &&
+    run.phase === "note_review" &&
+    noteCandidate.productRunId === run.productRunId;
+  const submitPlan = async (kind: DecisionRequest["kind"]): Promise<void> => {
     if (
-      !canReview ||
+      !canReviewPlan ||
       run === null ||
       run === undefined ||
       approval === null ||
@@ -64,12 +79,42 @@ export function LifeosDock({ useLifeos, decide }: LifeosDockProps) {
     };
     if (await decide(request)) setExplanation("");
   };
+  const submitNote = async (kind: NoteDecisionRequest["kind"]): Promise<void> => {
+    if (!canReviewNote || run === null || run === undefined || noteCandidate === undefined) return;
+    const trimmed = explanation.trim();
+    const request: NoteDecisionRequest = {
+      kind,
+      ...(kind !== "confirm" && trimmed !== "" ? { explanation: trimmed } : {}),
+      binding: {
+        productRunId: run.productRunId,
+        runRevision: run.revision,
+        noteCandidateId: noteCandidate.noteCandidateId,
+        candidateRevision: noteCandidate.revision,
+        candidateSha256: noteCandidate.sha256,
+      },
+    };
+    if (await decideNote(request)) setExplanation("");
+  };
 
   return (
-    <section className="lifeos-card" data-testid="lifeos-plan-card" aria-label="LifeOS 计划与审批">
+    <section
+      className="lifeos-card"
+      data-testid={
+        noteCandidate === null || noteCandidate === undefined
+          ? "lifeos-plan-card"
+          : "lifeos-note-card"
+      }
+      aria-label={
+        noteCandidate === null || noteCandidate === undefined
+          ? "LifeOS 计划与审批"
+          : "LifeOS 笔记候选审核"
+      }
+    >
       <header className="lifeos-header">
         <strong>
-          LifeOS 计划{plan === null || plan === undefined ? "" : ` v${plan.planRevision}`}
+          {noteCandidate === null || noteCandidate === undefined
+            ? `LifeOS 计划${plan === null || plan === undefined ? "" : ` v${plan.planRevision}`}`
+            : `LifeOS 笔记候选 v${noteCandidate.revision}`}
         </strong>
         <span className="lifeos-status" aria-live="polite" data-testid="lifeos-run-status">
           {run === null || run === undefined ? "连接失败" : (PHASE_LABEL[run.phase] ?? run.phase)}
@@ -91,6 +136,26 @@ export function LifeosDock({ useLifeos, decide }: LifeosDockProps) {
         </div>
       ) : null}
 
+      {noteCandidate !== null && noteCandidate !== undefined ? (
+        <article className="lifeos-note" data-testid="lifeos-note-candidate">
+          <div className="lifeos-note-heading">
+            <strong>{noteCandidate.proposed.title}</strong>
+            <span>
+              {NOTE_KIND_LABEL[noteCandidate.proposed.kind] ?? noteCandidate.proposed.kind}
+            </span>
+          </div>
+          {noteCandidate.proposed.tags.length > 0 ? (
+            <div className="lifeos-note-tags" aria-label="笔记标签">
+              {noteCandidate.proposed.tags.map((tag) => (
+                <span key={tag.key}>{tag.label}</span>
+              ))}
+            </div>
+          ) : null}
+          <div className="lifeos-note-content">{noteCandidate.proposed.contentMarkdown}</div>
+          <small className="lifeos-note-sources">来源 {noteCandidate.sourceRefs.length} 项</small>
+        </article>
+      ) : null}
+
       {projection?.pendingDecision !== null && projection?.pendingDecision !== undefined ? (
         <div className="lifeos-warning" data-testid="lifeos-pending-decision">
           <p>上一决定结果仍未知；只能原样重试。</p>
@@ -105,7 +170,21 @@ export function LifeosDock({ useLifeos, decide }: LifeosDockProps) {
         </div>
       ) : null}
 
-      {canReview && projection?.pendingDecision === null ? (
+      {projection?.pendingNoteDecision !== null && projection?.pendingNoteDecision !== undefined ? (
+        <div className="lifeos-warning" data-testid="lifeos-pending-note-decision">
+          <p>上一笔记决定结果仍未知；只能原样重试。</p>
+          <button
+            type="button"
+            data-testid="lifeos-retry-note-decision"
+            disabled={state.submitting}
+            onClick={() => void decideNote(projection.pendingNoteDecision!)}
+          >
+            重试上一决定
+          </button>
+        </div>
+      ) : null}
+
+      {canReviewPlan && projection?.pendingDecision === null ? (
         <div className="lifeos-review" data-testid="lifeos-approval-card">
           <textarea
             aria-label="修订要求或拒绝原因"
@@ -127,7 +206,7 @@ export function LifeosDock({ useLifeos, decide }: LifeosDockProps) {
                 run === undefined ||
                 !run.allowedActions.includes("request_revision")
               }
-              onClick={() => void submit("request_revision")}
+              onClick={() => void submitPlan("request_revision")}
             >
               要求修订
             </button>
@@ -140,7 +219,7 @@ export function LifeosDock({ useLifeos, decide }: LifeosDockProps) {
                 run === undefined ||
                 !run.allowedActions.includes("reject")
               }
-              onClick={() => void submit("reject")}
+              onClick={() => void submitPlan("reject")}
             >
               拒绝
             </button>
@@ -154,9 +233,54 @@ export function LifeosDock({ useLifeos, decide }: LifeosDockProps) {
                 run === undefined ||
                 !run.allowedActions.includes("approve")
               }
-              onClick={() => void submit("approve")}
+              onClick={() => void submitPlan("approve")}
             >
               批准并执行
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {canReviewNote && projection?.pendingNoteDecision === null ? (
+        <div className="lifeos-review" data-testid="lifeos-note-review-card">
+          <textarea
+            aria-label="笔记修订要求或拒绝原因"
+            value={explanation}
+            maxLength={2_000}
+            placeholder="要求修订时填写说明；拒绝时可填写原因"
+            onChange={(event) => {
+              setExplanation(event.currentTarget.value);
+            }}
+          />
+          <div className="lifeos-actions">
+            <button
+              type="button"
+              data-testid="lifeos-request-note-revision"
+              disabled={
+                state.submitting ||
+                explanation.trim() === "" ||
+                !noteCandidate.allowedActions.includes("request_revision")
+              }
+              onClick={() => void submitNote("request_revision")}
+            >
+              要求修订
+            </button>
+            <button
+              type="button"
+              data-testid="lifeos-reject-note"
+              disabled={state.submitting || !noteCandidate.allowedActions.includes("reject")}
+              onClick={() => void submitNote("reject")}
+            >
+              拒绝
+            </button>
+            <button
+              type="button"
+              className="lifeos-primary"
+              data-testid="lifeos-confirm-note"
+              disabled={state.submitting || !noteCandidate.allowedActions.includes("confirm")}
+              onClick={() => void submitNote("confirm")}
+            >
+              确认笔记
             </button>
           </div>
         </div>

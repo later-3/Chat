@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   decisionRequestSchema,
   dshSessionIdSchema,
+  noteDecisionRequestSchema,
   workflowSelectionRequestSchema,
 } from "./contracts.ts";
 import { BridgeRequestError, LifeosBridgeService } from "./bridge-service.ts";
@@ -10,6 +11,7 @@ import { ChatProductApiError } from "./chat-client.ts";
 const MAX_REQUEST_BODY_BYTES = 16 * 1024;
 const SESSION_PATH = /^\/lifeos\/sessions\/([^/]+)$/;
 const DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/decisions$/;
+const NOTE_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/note-decisions$/;
 const WORKFLOW_SELECTION_PATH = /^\/lifeos\/sessions\/([^/]+)\/workflow-selection$/;
 const WORKFLOWS_PATH = /^\/lifeos\/workflows$/;
 
@@ -208,6 +210,19 @@ export function createLifeosRouteHandler(
           throw new BridgeRequestError(400, "lifeos_decision_invalid", "Decision body is invalid");
         }
         sendJson(res, 200, await service.decide(sessionIdFrom(decisionMatch), parsed.data));
+        return;
+      }
+      const noteDecisionMatch = NOTE_DECISION_PATH.exec(url.pathname);
+      if (req.method === "POST" && noteDecisionMatch !== null) {
+        const parsed = noteDecisionRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_note_decision_invalid",
+            "Note Decision body is invalid",
+          );
+        }
+        sendJson(res, 200, await service.decideNote(sessionIdFrom(noteDecisionMatch), parsed.data));
         return;
       }
       const workflowsMatch = WORKFLOWS_PATH.exec(url.pathname);
