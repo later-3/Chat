@@ -55,7 +55,7 @@ jobs:
             sleep 1
             if ! kill -0 "$dsh_pid" 2>/dev/null; then cat /tmp/chat-dsh-web.log; exit 1; fi
             if curl -fsS http://127.0.0.1:43110/ | grep -q "DeepSeek Harness" && \
-              curl -fsS http://127.0.0.1:43110/lifeos/sessions/ci-probe | grep -q '"schemaVersion":"chat-dsh-lifeos-bridge.v1"'; then
+              curl -fsS http://127.0.0.1:43110/pwa/register.js | grep -q 'serviceWorker.register("/sw.js")'; then
               break
             fi
             if [ "$i" = "90" ]; then cat /tmp/chat-dsh-web.log; exit 1; fi
