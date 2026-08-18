@@ -124,21 +124,27 @@ jobs:
           for i in $(seq 1 180); do
             sleep 1
             if ! kill -0 "$chat_pid" 2>/dev/null; then cat /tmp/chat-fresh-clone.log; exit 1; fi
-            if curl -fsS http://127.0.0.1:43110/ | grep "DeepSeek Harness" > /dev/null && \
-              curl -fsS -o /dev/null http://127.0.0.1:43111/api/readyz && \
-              curl -fsS -o /dev/null http://127.0.0.1:43112/healthz && \
-              curl -fsS http://127.0.0.1:43110/lifeos/sessions/fresh-clone | grep '"run":null' > /dev/null && \
-              curl -fsS http://localhost:43110/workbench/code/ | grep -i '<!doctype html>' > /dev/null; then
+            chat_root_body=$(curl --noproxy '*' -fsS http://127.0.0.1:43110/ 2>/dev/null || true)
+            chat_lifeos_body=$(curl --noproxy '*' -fsS http://127.0.0.1:43110/lifeos/sessions/fresh-clone 2>/dev/null || true)
+            chat_workbench_body=$(curl --noproxy '*' -fsS -H 'Host: localhost:43110' http://127.0.0.1:43110/workbench/code/ 2>/dev/null || true)
+            if [[ "$chat_root_body" == *"DeepSeek Harness"* ]] && \
+              [[ "$chat_lifeos_body" == *'"run":null'* ]] && \
+              [[ "$chat_workbench_body" == *'<html>'* ]] && \
+              curl --noproxy '*' -fsS -o /dev/null http://127.0.0.1:43111/api/readyz && \
+              curl --noproxy '*' -fsS -o /dev/null http://127.0.0.1:43112/healthz; then
               break
             fi
-            if [ "$i" = "180" ]; then cat /tmp/chat-fresh-clone.log; exit 1; fi
+            if [ "$i" = "180" ]; then
+              printf '[fresh-clone] probe lengths root=%s lifeos=%s workbench=%s\n' "${#chat_root_body}" "${#chat_lifeos_body}" "${#chat_workbench_body}"
+              printf '[fresh-clone] lifeos response: %.500s\n' "$chat_lifeos_body"
+              cat /tmp/chat-fresh-clone.log
+              exit 1
+            fi
           done
           curl -fsS http://127.0.0.1:43111/api/readyz
           curl -fsS http://127.0.0.1:43112/healthz
           if curl -fsS --max-time 1 http://127.0.0.1:18960/api/v1/health; then exit 1; fi
           if curl -fsS --max-time 1 http://127.0.0.1:18970/health; then exit 1; fi
-          curl -fsS http://127.0.0.1:43110/lifeos/sessions/fresh-clone | grep '"run":null' > /dev/null
-          curl -fsS http://localhost:43110/workbench/code/ | grep -i '<!doctype html>' > /dev/null
           pnpm dev:status | tee /tmp/chat-running-status.log
           grep -q 'healthy workbench transport=unix-socket' /tmp/chat-running-status.log
           if grep -Eq 'healthy (memory|memoryCore)' /tmp/chat-running-status.log; then exit 1; fi
