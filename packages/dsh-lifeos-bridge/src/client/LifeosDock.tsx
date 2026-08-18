@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { HostObservable, InjectFace, PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots";
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
 import type { DecisionRequest, NoteDecisionRequest } from "../contracts.ts";
+import type { LifeosProjection } from "../contracts.ts";
 import type { LifeosClientState } from "./controller.ts";
 
 export interface LifeosDockInjected {
@@ -31,29 +32,58 @@ const NOTE_KIND_LABEL: Record<string, string> = {
   general: "通用",
 };
 
-export function LifeosDock({ useLifeos, decide, decideNote }: LifeosDockProps) {
-  const state = useLifeos((value) => value);
-  const [explanation, setExplanation] = useState("");
-  const projection = state.projection;
-  if ((projection === null || projection.run === null) && state.error === null) return null;
-
+/** 审核Dock是临时命令表面；只有当前版本仍可决定时才展示计划审核。 */
+export function hasActionablePlanReview(projection: LifeosProjection | null): boolean {
   const run = projection?.run;
   const plan = projection?.plan;
   const approval = projection?.approval;
-  const noteCandidate = projection?.noteCandidate;
-  const canReviewPlan =
+  return (
     approval?.status === "open" &&
     run?.status === "waiting_human" &&
+    run.phase === "plan_review" &&
     plan !== null &&
     plan !== undefined &&
     plan.planId === approval.planId &&
     plan.planRevision === approval.planRevision &&
-    plan.sha256 === approval.planSha256;
-  const canReviewNote =
+    plan.sha256 === approval.planSha256
+  );
+}
+
+/** Note审核同样只展示当前仍可操作的候选，终态历史由对话和Trajectory承载。 */
+export function hasActionableNoteReview(projection: LifeosProjection | null): boolean {
+  const run = projection?.run;
+  const noteCandidate = projection?.noteCandidate;
+  return (
     noteCandidate?.status === "under_review" &&
     run?.status === "waiting_human" &&
     run.phase === "note_review" &&
-    noteCandidate.productRunId === run.productRunId;
+    noteCandidate.productRunId === run.productRunId
+  );
+}
+
+export function shouldShowLifeosReviewDock(projection: LifeosProjection | null): boolean {
+  return (
+    hasActionablePlanReview(projection) ||
+    hasActionableNoteReview(projection) ||
+    projection?.pendingDecision != null ||
+    projection?.pendingNoteDecision != null
+  );
+}
+
+export function LifeosDock({ useLifeos, decide, decideNote }: LifeosDockProps) {
+  const state = useLifeos((value) => value);
+  const [explanation, setExplanation] = useState("");
+  const projection = state.projection;
+  const run = projection?.run;
+  const plan = projection?.plan;
+  const approval = projection?.approval;
+  const noteCandidate = projection?.noteCandidate;
+  const canReviewPlan = hasActionablePlanReview(projection);
+  const canReviewNote = hasActionableNoteReview(projection);
+  const reviewableNoteCandidate =
+    canReviewNote && noteCandidate?.status === "under_review" ? noteCandidate : null;
+  if (!shouldShowLifeosReviewDock(projection)) return null;
+
   const submitPlan = async (kind: DecisionRequest["kind"]): Promise<void> => {
     if (
       !canReviewPlan ||
@@ -80,7 +110,7 @@ export function LifeosDock({ useLifeos, decide, decideNote }: LifeosDockProps) {
     if (await decide(request)) setExplanation("");
   };
   const submitNote = async (kind: NoteDecisionRequest["kind"]): Promise<void> => {
-    if (!canReviewNote || run === null || run === undefined || noteCandidate === undefined) return;
+    if (reviewableNoteCandidate === null || run === null || run === undefined) return;
     const trimmed = explanation.trim();
     const request: NoteDecisionRequest = {
       kind,
@@ -88,9 +118,9 @@ export function LifeosDock({ useLifeos, decide, decideNote }: LifeosDockProps) {
       binding: {
         productRunId: run.productRunId,
         runRevision: run.revision,
-        noteCandidateId: noteCandidate.noteCandidateId,
-        candidateRevision: noteCandidate.revision,
-        candidateSha256: noteCandidate.sha256,
+        noteCandidateId: reviewableNoteCandidate.noteCandidateId,
+        candidateRevision: reviewableNoteCandidate.revision,
+        candidateSha256: reviewableNoteCandidate.sha256,
       },
     };
     if (await decideNote(request)) setExplanation("");
@@ -241,7 +271,7 @@ export function LifeosDock({ useLifeos, decide, decideNote }: LifeosDockProps) {
         </div>
       ) : null}
 
-      {canReviewNote && projection?.pendingNoteDecision === null ? (
+      {reviewableNoteCandidate !== null && projection?.pendingNoteDecision === null ? (
         <div className="lifeos-review" data-testid="lifeos-note-review-card">
           <textarea
             aria-label="笔记修订要求或拒绝原因"
@@ -259,7 +289,7 @@ export function LifeosDock({ useLifeos, decide, decideNote }: LifeosDockProps) {
               disabled={
                 state.submitting ||
                 explanation.trim() === "" ||
-                !noteCandidate.allowedActions.includes("request_revision")
+                !reviewableNoteCandidate.allowedActions.includes("request_revision")
               }
               onClick={() => void submitNote("request_revision")}
             >
@@ -268,7 +298,9 @@ export function LifeosDock({ useLifeos, decide, decideNote }: LifeosDockProps) {
             <button
               type="button"
               data-testid="lifeos-reject-note"
-              disabled={state.submitting || !noteCandidate.allowedActions.includes("reject")}
+              disabled={
+                state.submitting || !reviewableNoteCandidate.allowedActions.includes("reject")
+              }
               onClick={() => void submitNote("reject")}
             >
               拒绝
@@ -277,7 +309,9 @@ export function LifeosDock({ useLifeos, decide, decideNote }: LifeosDockProps) {
               type="button"
               className="lifeos-primary"
               data-testid="lifeos-confirm-note"
-              disabled={state.submitting || !noteCandidate.allowedActions.includes("confirm")}
+              disabled={
+                state.submitting || !reviewableNoteCandidate.allowedActions.includes("confirm")
+              }
               onClick={() => void submitNote("confirm")}
             >
               确认笔记

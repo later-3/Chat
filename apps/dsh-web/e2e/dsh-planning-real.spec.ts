@@ -223,6 +223,7 @@ test("rc.6 DSH：发送 -> Plan等待人工 -> 刷新 -> 批准 -> 正式Assista
   );
   await page.getByTestId("lifeos-approve").click();
   const completed = await completedProjection;
+  await expect(page.getByTestId("lifeos-plan-card")).toHaveCount(0);
   await expect(page.getByText(COMPLETION_MARKER, { exact: true })).toBeVisible({
     timeout: 8 * 60_000,
   });
@@ -244,6 +245,7 @@ test("rc.6 DSH：发送 -> Plan等待人工 -> 刷新 -> 批准 -> 正式Assista
   expect(assistants[0]?.content.text).toContain(COMPLETION_MARKER);
 
   await page.reload();
+  await expect(page.getByTestId("lifeos-plan-card")).toHaveCount(0);
   await expect(page.getByText(COMPLETION_MARKER, { exact: true })).toBeVisible();
   const publicBrowserSurface = await page.evaluate(() => ({
     html: document.documentElement.innerHTML,

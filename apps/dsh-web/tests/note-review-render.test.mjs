@@ -73,3 +73,57 @@ test("Note waiting_human projection renders the readable review card and three a
   assert.match(html, /data-testid="lifeos-reject-note"/u);
   assert.match(html, /data-testid="lifeos-confirm-note"/u);
 });
+
+test("confirmed Plan and Note projections retire the temporary review dock", () => {
+  const baseState = {
+    status: "ready",
+    submitting: false,
+    error: null,
+    workflows: null,
+    workflowError: null,
+    selectingWorkflow: false,
+  };
+  const completedRun = {
+    productRunId: "run_render1",
+    status: "succeeded",
+    phase: "completed",
+    allowedActions: [],
+    revision: 4,
+    updatedAt: timestamp,
+  };
+  const sharedProjection = {
+    schemaVersion: "chat-dsh-lifeos-bridge.v3",
+    dshSessionId: "dsh-render-1",
+    run: completedRun,
+    pendingDecision: null,
+    pendingNoteDecision: null,
+    workflowSelection: null,
+  };
+  const render = (projection) =>
+    renderToStaticMarkup(
+      createElement(LifeosDock, {
+        useLifeos: (selector) => selector({ ...baseState, projection }),
+        decide: async () => true,
+        decideNote: async () => true,
+      }),
+    );
+
+  assert.equal(
+    render({
+      ...sharedProjection,
+      plan: { status: "approved" },
+      approval: { status: "decided" },
+      noteCandidate: null,
+    }),
+    "",
+  );
+  assert.equal(
+    render({
+      ...sharedProjection,
+      plan: null,
+      approval: null,
+      noteCandidate,
+    }),
+    "",
+  );
+});

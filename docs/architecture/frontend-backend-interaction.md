@@ -76,6 +76,9 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 LifeOS Bridge是仓库内唯一DSH插件包，所有新增前端表面使用固定rc.6公开合同：Workflow选择器注册在
 `conversation.input.left`，与权限、模型等原生Composer工具同一行；Plan/HITL与Note Candidate审核使用
 `conversation.input.dock`；Workbench入口使用`sidebar.footer.action`，Surface使用`shell.overlay`。
+审核Dock是临时命令表面，不是Run状态看板：只有当前Plan与开放Approval版本/Hash一致且Run正在等待
+计划审核、当前Note Candidate仍可审核，或存在结果未知且必须原样重试的决定时才显示。决定被Chat确认后
+Dock立即退出Composer；已批准、确认、修订或拒绝的历史由正式消息和Trajectory承载，不用常驻卡片重复展示。
 不得修改或复制DSH源码来插入这些能力，也不得把完整Hosted App拆成自研React组件。
 
 ## 7. Workbench边界
