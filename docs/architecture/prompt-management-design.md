@@ -5,6 +5,8 @@
 > 调研基线：Chat `main@f1315ef`；Pi `later-3/pi@1f2b9ff`（npm 基底 `0.84.2`）；DeepSeek Harness `0.1.0-rc.6@15148dbd9a`。DSH 后续窄派生提交只涉及 Trajectory，不改变本文引用的 Prompt 与 Session 机制。
 >
 > 本文只确定提示词的所有权、组成、来源、连续会话和预算方向。用户审核后再拆实现任务；本轮不修改 Planner、Executor、Direct Agent 或 DSH 的运行行为。
+>
+> 三个真实 Agent 的逐请求实验、宿主预注入与模型 Tool Call 的因果区分，以及真实压缩请求证据见[《Pi、DeepSeek Harness 与 Hermes 的真实上下文组装实验》](./prompt-context-real-experiment.md)。若本文的概括与实验报告冲突，以固定源码和实验报告中的真实请求为准。
 
 ## 1. 结论先行
 
