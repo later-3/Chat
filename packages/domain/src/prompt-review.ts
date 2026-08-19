@@ -142,7 +142,7 @@ export function renderPromptReviewReadable(
     string,
     unknown
   >;
-  const sections: string[] = ["# 模型请求提示词"];
+  const sections: string[] = [];
   const messages = payload["messages"];
   if (Array.isArray(messages)) {
     sections.push("## 消息");
@@ -181,7 +181,7 @@ export function renderPromptReviewReadable(
   // 保存完整canonical正文且不截断，保证公开DTO的2MiB字符上限不会变成运行时500。
   return readable.length <= 2 * 1024 * 1024
     ? readable
-    : `# 模型请求提示词\n\n## 完整请求\n\n\`\`\`json\n${canonicalPayloadJson}\n\`\`\``;
+    : `\`\`\`json\n${canonicalPayloadJson}\n\`\`\``;
 }
 
 function formatReadableValue(value: unknown): string {

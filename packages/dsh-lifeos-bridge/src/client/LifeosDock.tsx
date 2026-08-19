@@ -210,13 +210,44 @@ export function LifeosDock({ useLifeos, decide, decideNote, decidePromptReview }
               <div className="lifeos-prompt-caption">
                 {promptView === "raw"
                   ? "发送前冻结的原始请求正文（凭据不会进入审核数据）"
-                  : "同一请求的字段映射与结构化解释；内容没有经过第二个模型改写"}
+                  : "每段正文都来自原始请求；来源定位是审核界面注释，不会发送给模型"}
               </div>
-              <pre data-testid={`lifeos-prompt-${promptView}`}>
-                {promptView === "raw"
-                  ? promptReview.canonicalPayloadJson
-                  : promptReview.readablePrompt}
-              </pre>
+              {promptView === "raw" ? (
+                <pre data-testid="lifeos-prompt-raw">{promptReview.canonicalPayloadJson}</pre>
+              ) : (
+                <div className="lifeos-prompt-sections" data-testid="lifeos-prompt-readable">
+                  {promptReview.readableSections.map((section) => (
+                    <section key={section.sectionId} className="lifeos-prompt-section">
+                      <header>
+                        <strong>{section.title}</strong>
+                        <code>{section.payloadJsonPointer}</code>
+                      </header>
+                      <aside aria-label={`${section.title}来源定位`}>
+                        <strong>来源定位 · 仅界面注释，不发送</strong>
+                        {section.sources.map((source, index) => (
+                          <div key={`${section.sectionId}-source-${String(index)}`}>
+                            <span>{source.addedBy}</span>
+                            <p>{source.explanation}</p>
+                            <div>
+                              {source.sourceFiles.map((file) => (
+                                <code key={file}>{file}</code>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </aside>
+                      <div className="lifeos-prompt-real-label">真实请求内容</div>
+                      <pre>{section.content}</pre>
+                      {section.otherFieldsJson === undefined ? null : (
+                        <>
+                          <div className="lifeos-prompt-real-label">该区域的其他真实字段</div>
+                          <pre>{section.otherFieldsJson}</pre>
+                        </>
+                      )}
+                    </section>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         ) : null}

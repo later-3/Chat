@@ -342,6 +342,7 @@ describe("product api command payloads", () => {
       productRunId: "run_1",
       sessionId: "psn_1",
       sourceMessageId: "msg_1",
+      runKind: "planning",
       status: "waiting_human",
       phase: "plan_review",
       currentPlan: { planId: "pln_1", planRevision: 1, status: "under_review", sha256: HASH_A },

@@ -278,6 +278,7 @@ describe("Direct Agent Workflow Steps", () => {
       attemptNumber: 1,
       toStatus: "running",
     });
+    expect(calls[2]?.commandId).not.toBe(calls[0]?.commandId);
     expect(JSON.stringify(calls)).not.toContain("canonicalPayloadJson");
     expect(JSON.stringify(calls)).not.toContain("readablePrompt");
   });

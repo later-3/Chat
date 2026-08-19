@@ -120,6 +120,7 @@ export function toRunDto(
     productRunId: run.productRunId,
     sessionId: run.sessionId,
     sourceMessageId: run.sourceMessageId,
+    runKind: run.runKind,
     status: run.status,
     phase: run.phase,
     ...(currentPlan !== undefined

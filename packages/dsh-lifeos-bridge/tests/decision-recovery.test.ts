@@ -210,6 +210,42 @@ test("a stale observed binding cannot approve a newer unseen Run revision", asyn
   }
 });
 
+test("an executing Direct Run never falls through to Planning queries after prompt approval", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-direct-projection-"));
+  let planningQueries = 0;
+  try {
+    const state = await seededStore(join(directory, "state.json"));
+    const directRun = {
+      ...run,
+      runKind: "direct_agent",
+      status: "running",
+      phase: "executing",
+      currentPlan: undefined,
+      currentApprovalRequestId: undefined,
+      allowedActions: [],
+    } as ChatRun;
+    const chat = {
+      getRun: async () => directRun,
+      getPlans: async () => {
+        planningQueries += 1;
+        throw new Error("Direct Run must not query Plans");
+      },
+      getApproval: async () => {
+        planningQueries += 1;
+        throw new Error("Direct Run must not query Approval");
+      },
+    } as unknown as ChatProductClient;
+
+    const projection = await new LifeosBridgeService(chat, state).projection(dshSessionId);
+    assert.equal(projection.run?.phase, "executing");
+    assert.equal(projection.plan, null);
+    assert.equal(projection.approval, null);
+    assert.equal(planningQueries, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("a retryable Note failure keeps the normalized candidate decision for verbatim retry", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-note-decision-unknown-"));
   try {

@@ -47,6 +47,7 @@ describe("Prompt Review领域规则", () => {
     const readable = renderPromptReviewReadable(canonicalPayloadJson, "prompt-readable.v1");
     expect(readable).toContain("1 · USER");
     expect(readable).toContain("hello");
+    expect(readable).not.toContain("模型请求提示词");
     expect(readable).toBe(renderPromptReviewReadable(canonicalPayloadJson, "prompt-readable.v1"));
   });
 

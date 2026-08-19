@@ -682,6 +682,8 @@ export const runDtoSchema = z
     productRunId: productRunIdSchema,
     sessionId: productSessionIdSchema,
     sourceMessageId: messageIdSchema,
+    /** 客户端按运行类型选择互斥Query，不能仅凭共享phase猜测。 */
+    runKind: z.enum(["planning", "note_capture", "direct_agent"]),
     status: productRunStatusSchema,
     phase: productRunPhaseSchema,
     currentPlan: z

@@ -93,6 +93,7 @@ function run(approved: boolean) {
         productRunId: "run_bridge1",
         sessionId: session.sessionId,
         sourceMessageId: userMessage.messageId,
+        runKind: "planning",
         status: "succeeded",
         phase: "completed",
         currentPlan: {
@@ -112,6 +113,7 @@ function run(approved: boolean) {
         productRunId: "run_bridge1",
         sessionId: session.sessionId,
         sourceMessageId: userMessage.messageId,
+        runKind: "planning",
         status: "waiting_human",
         phase: "plan_review",
         currentPlan: {

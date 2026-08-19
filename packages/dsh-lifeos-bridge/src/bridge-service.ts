@@ -372,10 +372,11 @@ export class LifeosBridgeService {
     } else if (run.phase === "note_review" || current.pendingNoteDecision !== undefined) {
       noteCandidate = await this.chat.getNoteCandidate(current.productRunId, signal);
     } else if (
-      PLANNING_PROJECTION_PHASES.has(run.phase) ||
-      run.currentPlan !== undefined ||
-      run.currentApprovalRequestId !== undefined ||
-      current.pendingDecision !== undefined
+      run.runKind === "planning" &&
+      (PLANNING_PROJECTION_PHASES.has(run.phase) ||
+        run.currentPlan !== undefined ||
+        run.currentApprovalRequestId !== undefined ||
+        current.pendingDecision !== undefined)
     ) {
       const [plans, currentApproval] = await Promise.all([
         this.chat.getPlans(current.productRunId, signal),

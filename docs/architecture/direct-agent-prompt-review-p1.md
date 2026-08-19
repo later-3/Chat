@@ -30,7 +30,7 @@ P1包含：
 
 P1不包含：
 
-1. 更精细的DSH字段说明、差异对比与编辑能力；首版已提供原始请求/易读视图、批准/拒绝和刷新恢复。
+1. Prompt差异对比与编辑能力；当前已提供原始请求、按区域拆分且带源码来源定位的易读视图、批准/拒绝和刷新恢复。
 2. 真实百炼/付费模型端到端；这些属于P3并需要届时明确授权。
 3. Workspace写入、Shell、第三方Extension、Memory或Workspace Instructions。V1固定`read_only`，使用隔离空Workspace。
 
@@ -44,9 +44,12 @@ P1不包含：
 - `payloadSha256`由Application与Executor分别重算；
 - Product Store只保存一份正文，Workflow Checkpoint、Runtime Binding、Trace和Pi Journal只保存ID、revision和Hash。
 
-`prompt-readable.v1`由Domain对同一canonical JSON作确定性投影，按消息、消息附加字段
-（包括Tool Call/Tool Result身份）、工具定义和请求参数分节。它不调用模型、不概括或省略字段，
-也不是第二份持久化正文。同一renderer版本只有一个实现。
+`prompt-readable.v1`由Domain对同一canonical JSON作确定性投影；公开Query另按消息、消息附加字段
+（包括Tool Call/Tool Result身份）、工具定义和请求参数生成结构化区块。每个区块的`content`只来自原始
+Payload，来源定位独立放在`sources`，明确标记为审核界面注释且不会发送。来源覆盖Pi基础System Prompt、
+Chat Direct追加指令、DSH用户输入链、Pi AgentSession历史、工具Schema和Pi AI Provider Adapter的源码路径。
+投影不调用模型、不概括或省略字段，也不是第二份持久化正文；易读正文不再加入“模型请求提示词”等容易
+被误认为真实发送内容的装饰标题。
 
 ## 4. 运行时序
 

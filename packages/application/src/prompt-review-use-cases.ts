@@ -33,6 +33,7 @@ import type { ApplicationDeps, DirectAgentIdFactory } from "./deps.js";
 import { ApplicationError, forbidden, notFound, revisionConflict } from "./errors.js";
 import { requireDirectAgentRun } from "./product-run-kind.js";
 import { toRunDto } from "./dto.js";
+import { projectPromptReviewReadableSections } from "./prompt-review-readable.js";
 
 /**
  * Provider Payload正文只在PromptReviewRequest中保存一次。公开Query的可读版由这里
@@ -66,6 +67,7 @@ function toPromptReviewDto(request: PromptReviewRequest): PromptReviewRequestDto
     status: request.status,
     canonicalPayloadJson: request.canonicalPayloadJson,
     readablePrompt: renderPromptReviewReadable(request),
+    readableSections: projectPromptReviewReadableSections(request.canonicalPayloadJson),
     rendererVersion: request.rendererVersion,
     payloadSha256: request.payloadSha256,
     reviewSha256: request.reviewSha256,

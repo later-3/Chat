@@ -105,6 +105,24 @@ function promptReviewProjection() {
         messages: [{ role: "user", content: "请审核我" }],
       }),
       readablePrompt: "# 请求内容\n\n用户消息：请审核我",
+      readableSections: [
+        {
+          sectionId: "message-1",
+          kind: "user_message",
+          title: "1 · 用户输入",
+          payloadJsonPointer: "/messages/0",
+          content: "请审核我",
+          contentFormat: "text",
+          otherFieldsJson: JSON.stringify({ role: "user" }, null, 2),
+          sources: [
+            {
+              addedBy: "用户输入 → DSH Bridge → Chat Product Message",
+              sourceFiles: ["packages/dsh-lifeos-bridge/src/adapter.ts"],
+              explanation: "来自当前DSH用户消息。",
+            },
+          ],
+        },
+      ],
       rendererVersion: "prompt-readable.v1",
       payloadSha256: "e".repeat(64),
       reviewSha256: "f".repeat(64),

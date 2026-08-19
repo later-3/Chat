@@ -279,6 +279,7 @@ async function recordDirectNodeTransition(
           String(input.iteration),
           input.toStatus,
           input.outcomeCode ?? "",
+          input.publicSummary,
         ) as never,
         productRunId: input.productRunId as never,
         workflowRunSpecId: input.workflowRunSpecId as never,
