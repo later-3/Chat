@@ -86,6 +86,14 @@ Host安装受管环境后会删除这些调试变量，Bridge插件不会重新�
 Bridge Host与Client bundle都生成source map，因此断点应优先下在`src/adapter.ts`与
 `src/chat-client.ts`，不要依赖每次构建都会漂移的`dist/dsh-bundle.js`行号。
 
+F5同时为API、Workflow、Pi Executor和DSH Host启用Node Source Map，并把Workflow VM中
+`src/*`映射回`packages/workflows/src/*`。Workflow Builder的编排与Step bundle使用内联Map
+（VM执行的是workflowCode字符串，不能改成只依赖外置`.map`）；构建器会验证Map及
+`sourcesContent`完整存在。因此`configurable-planning-workflow.ts`、`workflow-*-steps.ts`、
+`pi-runtime`和Bridge都应直接在TypeScript源码断点，不再打开`.workflow-bundle`或`dist`。
+断点在对应子进程加载前可能暂时显示为空心：等待`workflow ready`或`web ready`后再发送新消息；
+若加载后仍未绑定，先用`pnpm dev:debug:stop`收敛旧debug实例，再从唯一F5入口重启。
+
 ## 后端主链断点
 
 1. `apps/api/src/product-routes.ts`：Message/Decision路由，只做协议和认证边界。

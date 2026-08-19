@@ -282,7 +282,9 @@ export function createServiceDefinitions({
   const services = [];
 
   const executorArgs = [];
-  if (debug) executorArgs.push(`--inspect=127.0.0.1:${ports.piExecutorInspector}`);
+  if (debug) {
+    executorArgs.push("--enable-source-maps", `--inspect=127.0.0.1:${ports.piExecutorInspector}`);
+  }
   executorArgs.push("--import", providerEnvironment);
   executorArgs.push(
     "--import",
@@ -306,7 +308,9 @@ export function createServiceDefinitions({
   });
 
   const workflowArgs = [];
-  if (debug) workflowArgs.push(`--inspect=127.0.0.1:${ports.workflowInspector}`);
+  if (debug) {
+    workflowArgs.push("--enable-source-maps", `--inspect=127.0.0.1:${ports.workflowInspector}`);
+  }
   workflowArgs.push("--import", providerEnvironment);
   workflowArgs.push(
     "--import",
@@ -332,7 +336,9 @@ export function createServiceDefinitions({
   });
 
   const apiArgs = [];
-  if (debug) apiArgs.push(`--inspect=127.0.0.1:${ports.apiInspector}`);
+  if (debug) {
+    apiArgs.push("--enable-source-maps", `--inspect=127.0.0.1:${ports.apiInspector}`);
+  }
   apiArgs.push("--import", join(repoRoot, "scripts/load-env.mjs"));
   apiArgs.push(
     "--import",
@@ -397,7 +403,9 @@ export function createServiceDefinitions({
   }
 
   const webArgs = [];
-  if (debug) webArgs.push(`--inspect=127.0.0.1:${ports.webInspector}`);
+  if (debug) {
+    webArgs.push("--enable-source-maps", `--inspect=127.0.0.1:${ports.webInspector}`);
+  }
   webArgs.push(
     "--import",
     join(repoRoot, "scripts/load-env.mjs"),

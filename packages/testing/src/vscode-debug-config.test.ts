@@ -17,7 +17,11 @@ interface LaunchConfig {
   cwd?: string;
   program?: string;
   args?: string[];
+  runtimeArgs?: string[];
   autoAttachChildProcesses?: boolean;
+  sourceMaps?: boolean;
+  outFiles?: string[];
+  sourceMapPathOverrides?: Record<string, string>;
   console?: string;
   outputCapture?: string;
   preLaunchTask?: string;
@@ -32,6 +36,8 @@ interface LaunchConfig {
       request?: string;
       url?: string;
       webRoot?: string;
+      sourceMaps?: boolean;
+      sourceMapPathOverrides?: Record<string, string>;
       userDataDir?: string;
       cleanUp?: string;
       killBehavior?: string;
@@ -61,7 +67,9 @@ describe("VS Code应用级调试配置", () => {
       cwd: "${workspaceFolder}",
       program: "${workspaceFolder}/scripts/dev/start.mjs",
       args: ["--debug", "--instance=debug", "--workbench=off"],
+      runtimeArgs: ["--enable-source-maps"],
       autoAttachChildProcesses: true,
+      sourceMaps: true,
       console: "internalConsole",
       outputCapture: "std",
     });
@@ -83,6 +91,18 @@ describe("VS Code应用级调试配置", () => {
     expect(packageJson.scripts["dev:stop"]).toBe("node scripts/debug/stop.mjs");
   });
 
+  it("所有自有Bundle都映射回TypeScript而不是要求在生成文件断点", () => {
+    expect(appDebug?.outFiles).toEqual([
+      "${workspaceFolder}/packages/dsh-lifeos-bridge/dist/**/*.js",
+      "${workspaceFolder}/packages/workflows/.debug/.workflow-bundle/**/*.mjs",
+      "${workspaceFolder}/packages/workflows/.workflow-bundle/**/*.mjs",
+    ]);
+    expect(appDebug?.sourceMapPathOverrides).toEqual({
+      "src/*": "${workspaceFolder}/packages/workflows/src/*",
+      "../contracts/src/*": "${workspaceFolder}/packages/contracts/src/*",
+    });
+  });
+
   it("应用Ready后才启动Chrome前端调试", () => {
     expect(appDebug?.serverReadyAction).toEqual({
       pattern: "\\[chat\\] ready: (http://127\\.0\\.0\\.1:44110/)",
@@ -94,6 +114,10 @@ describe("VS Code应用级调试配置", () => {
         request: "launch",
         url: "http://127.0.0.1:44110/",
         webRoot: "${workspaceFolder}",
+        sourceMaps: true,
+        sourceMapPathOverrides: {
+          "../src/*": "${workspaceFolder}/packages/dsh-lifeos-bridge/src/*",
+        },
         userDataDir: "${workspaceFolder}/.data/instances/vscode-debug/browser-profile",
         cleanUp: "wholeBrowser",
         killBehavior: "forceful",

@@ -460,6 +460,9 @@ test("debug只为Chat拥有的API、Workflow、Pi Executor与DSH Host开放Inspe
   assert.match(args.piExecutor, /--inspect=127\.0\.0\.1:44122/u);
   assert.match(args.api, /--inspect=127\.0\.0\.1:44120/u);
   assert.match(args.web, /--inspect=127\.0\.0\.1:44123/u);
+  for (const id of ["workflow", "piExecutor", "api", "web"]) {
+    assert.match(args[id], /--enable-source-maps/u);
+  }
   assert.equal(web.env.VSCODE_INSPECTOR_OPTIONS, "private-attach-options");
   assert.equal(web.env.NODE_OPTIONS, "--require /vscode/bootloader.js");
   assert.equal(args.memmy, undefined);
@@ -534,6 +537,9 @@ test("debug实例同时隔离端口、产品事实、Workflow、Runtime、Trace�
   assert.equal(byId.web.env.CHAT_PUBLIC_WEB_PORT, "44110");
   assert.equal(byId.web.env.CHAT_PUBLIC_WEB_HOSTNAME, "");
   assert.match(byId.web.args.join(" "), /--inspect=127\.0\.0\.1:44123/u);
+  for (const id of ["workflow", "piExecutor", "api", "web"]) {
+    assert.ok(byId[id].args.includes("--enable-source-maps"));
+  }
   assert.equal(byId.web.readyUrl, "http://127.0.0.1:44110/healthz");
 });
 

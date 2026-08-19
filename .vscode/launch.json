@@ -8,7 +8,18 @@
       "cwd": "${workspaceFolder}",
       "program": "${workspaceFolder}/scripts/dev/start.mjs",
       "args": ["--debug", "--instance=debug", "--workbench=off"],
+      "runtimeArgs": ["--enable-source-maps"],
       "autoAttachChildProcesses": true,
+      "sourceMaps": true,
+      "outFiles": [
+        "${workspaceFolder}/packages/dsh-lifeos-bridge/dist/**/*.js",
+        "${workspaceFolder}/packages/workflows/.debug/.workflow-bundle/**/*.mjs",
+        "${workspaceFolder}/packages/workflows/.workflow-bundle/**/*.mjs"
+      ],
+      "sourceMapPathOverrides": {
+        "src/*": "${workspaceFolder}/packages/workflows/src/*",
+        "../contracts/src/*": "${workspaceFolder}/packages/contracts/src/*"
+      },
       "console": "internalConsole",
       "outputCapture": "std",
       "skipFiles": ["<node_internals>/**"],
@@ -22,6 +33,10 @@
           "request": "launch",
           "url": "http://127.0.0.1:44110/",
           "webRoot": "${workspaceFolder}",
+          "sourceMaps": true,
+          "sourceMapPathOverrides": {
+            "../src/*": "${workspaceFolder}/packages/dsh-lifeos-bridge/src/*"
+          },
           "userDataDir": "${workspaceFolder}/.data/instances/vscode-debug/browser-profile",
           "cleanUp": "wholeBrowser",
           "killBehavior": "forceful"

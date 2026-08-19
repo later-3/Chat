@@ -20,6 +20,7 @@ import {
   LEGACY_PLANNING_RUNNER_BUNDLE_VERSION,
   NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
 } from "../src/definition-kernel-executor-registry.js";
+import { assertWorkflowBundleSourceMaps } from "./source-map-contract.js";
 
 /**
  * 预构建Workflow/Step bundle（任务书§17：真实Vercel Workflow运行时）。
@@ -99,6 +100,8 @@ class ChatWorkflowBuilder extends BaseBuilder {
       format: "esm",
       inputFiles,
     });
+    // Builder升级若丢失VM/Step内联Map，VS Code会静默退回生成Bundle；构建时直接失败关闭。
+    await assertWorkflowBundleSourceMaps(this.#outDir);
     await writeFile(join(this.#outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
     const gitSha =
       process.env.CHAT_GIT_SHA ??
