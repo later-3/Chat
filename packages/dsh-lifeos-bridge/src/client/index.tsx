@@ -19,6 +19,10 @@ import { WorkbenchSurfaceController } from "./workbench-controller.ts";
 import { ExecutionTraceProjection } from "./execution-trace-projection.ts";
 import { SessionRecordsController } from "./session-records-controller.ts";
 import { SessionRecordsView, type SessionRecordsInjected } from "./SessionRecordsView.tsx";
+import {
+  ContextInjectionManager,
+  type ContextInjectionManagerInjected,
+} from "./ContextInjectionManager.tsx";
 
 export const name = "chat-dsh-lifeos-bridge-client";
 export const inject = ["slots", "conversationEvents"];
@@ -151,6 +155,24 @@ export function apply(ctx: ClientContext): void {
         }),
       },
       TraceTimestampToggle,
+    ),
+  );
+
+  ctx.slots.inject("conversation.input.left", () =>
+    ctx.slots.register(
+      {
+        name: "conversation.input.left",
+        id: "lifeos-context-injections",
+        order: 15,
+        inject: (sessionId: SessionId): ContextInjectionManagerInjected => {
+          const controller = controllerFor(sessionId);
+          return {
+            hooks: { lifeos: controller },
+            loadContextInjections: () => controller.loadContextInjections(),
+          };
+        },
+      },
+      ContextInjectionManager,
     ),
   );
 

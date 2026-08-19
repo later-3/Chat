@@ -11,6 +11,7 @@ import { DshSessionHistoryAccessError } from "./dsh-session-history.ts";
 
 const MAX_REQUEST_BODY_BYTES = 16 * 1024;
 const SESSION_PATH = /^\/lifeos\/sessions\/([^/]+)$/;
+const CONTEXT_INJECTIONS_PATH = /^\/lifeos\/sessions\/([^/]+)\/context-injections$/;
 const DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/decisions$/;
 const NOTE_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/note-decisions$/;
 const WORKFLOW_SELECTION_PATH = /^\/lifeos\/sessions\/([^/]+)\/workflow-selection$/;
@@ -348,6 +349,11 @@ export function createLifeosRouteHandler(
       const getMatch = SESSION_PATH.exec(url.pathname);
       if (req.method === "GET" && getMatch !== null) {
         sendJson(res, 200, await service.projection(sessionIdFrom(getMatch)));
+        return;
+      }
+      const contextInjectionsMatch = CONTEXT_INJECTIONS_PATH.exec(url.pathname);
+      if (req.method === "GET" && contextInjectionsMatch !== null) {
+        sendJson(res, 200, service.contextInjections(sessionIdFrom(contextInjectionsMatch)));
         return;
       }
       const decisionMatch = DECISION_PATH.exec(url.pathname);

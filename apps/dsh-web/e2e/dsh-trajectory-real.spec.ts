@@ -14,7 +14,7 @@ async function waitForSubmitted(request: APIRequestContext): Promise<void> {
   throw new Error("trajectory fixture did not receive the DSH message");
 }
 
-async function openReadyConversation(page: Page): Promise<void> {
+async function openReadyConversation(page: Page) {
   await page.goto("/");
   const continueButton = page.getByRole("button", { name: "Continue", exact: true });
   if (
@@ -31,13 +31,35 @@ async function openReadyConversation(page: Page): Promise<void> {
     await page.getByRole("menuitem", { name: "Chat", exact: true }).click();
   }
   await expect(composer).toBeEnabled();
-  await composer.fill(FULL_PROMPT);
-  await page.getByRole("button", { name: /发送消息|Send message/u }).click();
+  return composer;
 }
 
-test("rc.6 DSH原生轨迹与双源会话记录保留完整过程", async ({ page, request }) => {
-  await openReadyConversation(page);
+test("rc.6 DSH原生轨迹、双源会话记录与上下文注入保留完整过程", async ({ page, request }) => {
+  const composer = await openReadyConversation(page);
+
+  // 空会话没有纯预演合同：管理面板必须如实显示尚未组装，而不是复制
+  // AGENTS/权限/Skill的上游逻辑来猜测首次请求内容。
+  await page.getByTestId("lifeos-context-injections-open").click();
+  const contextDialog = page.getByRole("dialog", { name: "上下文注入" });
+  await expect(contextDialog).toBeVisible();
+  await expect(page.getByTestId("lifeos-context-not-assembled")).toBeVisible();
+  await page.getByRole("button", { name: "关闭上下文注入" }).click();
+
+  await composer.fill(FULL_PROMPT);
+  await page.getByRole("button", { name: /发送消息|Send message/u }).click();
   await waitForSubmitted(request);
+
+  // 首次pre-step完成后读取真实Session.deriveMessages surface；当前隔离Profile
+  // 实际生成的Context均可追溯，且面板明确声明LifeOS只取最新直接User输入。
+  await page.getByTestId("lifeos-context-injections-open").click();
+  await expect(contextDialog).toBeVisible();
+  await expect(contextDialog.getByText("工作区指令", { exact: true })).toBeVisible();
+  await expect(contextDialog.getByText("运行时上下文", { exact: true })).toBeVisible();
+  await expect(contextDialog).toContainText("LifeOS Workflow 只接收最新一条用户直接输入");
+  const workspaceInstructions = contextDialog.locator("details", { hasText: "工作区指令" });
+  await workspaceInstructions.locator("summary").click();
+  await expect(workspaceInstructions).toContainText("Chat 项目协作规则");
+  await page.getByRole("button", { name: "关闭上下文注入" }).click();
 
   const intent = await request.post(`${API}/__trajectory/intent`);
   expect(intent.status()).toBe(200);

@@ -145,6 +145,79 @@ test("loadWorkflows fills the picker list and keeps run polling untouched", asyn
   controller.dispose();
 });
 
+test("context manager loads its bounded DSH projection from the dedicated on-demand route", async () => {
+  const requests: string[] = [];
+  const contextProjection = {
+    schemaVersion: "chat-dsh-context-injections.v1",
+    dshSessionId: "dsh-session-1",
+    status: "ready",
+    revision: "f".repeat(64),
+    chatForwarding: "latest_direct_user_message_only",
+    items: [
+      {
+        messageId: "context-1",
+        sourceKind: "agent-instructions",
+        sourceName: null,
+        form: "instructions",
+        sourceDetails: ["/repo/AGENTS.md"],
+        sourceDetailsTruncated: false,
+        text: "workspace rules",
+        contentCharacters: 15,
+        truncated: false,
+        unsupportedContentBlockCount: 0,
+      },
+    ],
+    totalItems: 1,
+    omittedItems: 0,
+    totalContentCharacters: 15,
+  };
+  const controller = new LifeosProjectionController(
+    "dsh-session-1",
+    async (input: URL | RequestInfo) => {
+      requests.push(String(input));
+      return new Response(JSON.stringify(contextProjection), { status: 200 });
+    },
+  );
+
+  assert.deepEqual(await controller.loadContextInjections(), contextProjection);
+  assert.deepEqual(requests, ["/lifeos/sessions/dsh-session-1/context-injections"]);
+  assert.deepEqual(controller.getSnapshot().contextInjections, contextProjection);
+  assert.equal(controller.getSnapshot().contextInjectionsLoading, false);
+  assert.equal(controller.getSnapshot().contextInjectionsError, null);
+  controller.dispose();
+});
+
+test("context manager keeps the last good projection when a refresh fails", async () => {
+  let succeeds = true;
+  const contextProjection = {
+    schemaVersion: "chat-dsh-context-injections.v1",
+    dshSessionId: "dsh-session-1",
+    status: "not_assembled",
+    revision: "e".repeat(64),
+    chatForwarding: "latest_direct_user_message_only",
+    items: [],
+    totalItems: 0,
+    omittedItems: 0,
+    totalContentCharacters: 0,
+  };
+  const controller = new LifeosProjectionController("dsh-session-1", async () => {
+    if (succeeds) return new Response(JSON.stringify(contextProjection), { status: 200 });
+    return new Response(
+      JSON.stringify({ title: "会话未恢复", code: "lifeos_dsh_session_not_found" }),
+      { status: 404 },
+    );
+  });
+  assert.ok((await controller.loadContextInjections()) !== null);
+  succeeds = false;
+  assert.equal(await controller.loadContextInjections(), null);
+  assert.deepEqual(controller.getSnapshot().contextInjections, contextProjection);
+  assert.match(
+    controller.getSnapshot().contextInjectionsError ?? "",
+    /lifeos_dsh_session_not_found/u,
+  );
+  controller.dispose();
+});
+
 test("selectWorkflow submits the draft and adopts the returned projection", async () => {
   const requests: { method?: string | undefined; body?: string | undefined }[] = [];
   const controller = new LifeosProjectionController(
