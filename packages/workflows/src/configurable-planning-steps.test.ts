@@ -127,8 +127,8 @@ describe("Configurable Planning RunSpec运行时门", () => {
       }),
       rehash({
         ...valid,
-        executorManifest: valid.executorManifest.map((entry, index) =>
-          index === 0 ? { ...entry, executorVersion: "future.v99" } : entry,
+        executorManifest: valid.executorManifest.map((entry) =>
+          entry.nodeType === "agent.plan" ? { ...entry, executorVersion: "future.v99" } : entry,
         ),
       }),
       rehash({

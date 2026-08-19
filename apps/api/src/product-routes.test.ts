@@ -26,24 +26,31 @@ import {
   workflowRunViewDtoSchema,
   workflowNodeDetailDtoSchema,
   workflowDefinitionsDtoSchema,
+  currentPromptReviewResponseSchema,
+  promptReviewDecisionDtoSchema,
   type CommandId,
   type PlanContent,
   type ProductRunId,
 } from "@chat/contracts";
 import {
+  beginDirectAgentAttempt,
   compilePlanningInput,
   normalizeMemoryQueryResult,
   markMemoryWriteDispatching,
+  publishPromptReviewRequest,
   updateOutboxStatus,
   publishPlanForReview as publishPlanForReviewUseCase,
   type ApplicationDeps,
+  type DirectAgentIdFactory,
   type IdFactory,
   type RuleIdFactory,
 } from "@chat/application";
 import {
+  SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
   SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
 } from "@chat/application/workflow-system-definitions";
+import { canonicalJsonStringify, computePromptReviewPayloadSha256 } from "@chat/domain";
 import { JsonProductStore } from "@chat/product-store-json";
 import { z } from "zod";
 import { createApiApp, type ApiApp } from "./app.js";
@@ -90,6 +97,11 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     decision: () => gen("rde"),
     selection: () => gen("rsl"),
   } as RuleIdFactory;
+  const directAgentIds = {
+    promptReviewRequest: () => gen("prr"),
+    promptReviewDecision: () => gen("prd"),
+    candidate: () => gen("drc"),
+  } as DirectAgentIdFactory;
   const backend = {
     describe: () => ({
       backendId: "mbk_memmy" as never,
@@ -225,6 +237,7 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     now,
     ids: idFactory,
     ruleIds,
+    directAgentIds,
     memoryBackends: {
       list: () => [backend, tencentBackend],
       get: (backendId) => {
@@ -344,7 +357,7 @@ describe("公开产品API", () => {
     );
     expect(
       definitionsEnvelope.definitions.definitions.map((definition) => definition.title),
-    ).toEqual(["规划执行工作流", "Memory 增强规划与执行"]);
+    ).toEqual(["规划执行工作流", "Memory 增强规划与执行", "执行 Agent（逐次提示词审核）"]);
     expect(ordinary?.nodes.map((node) => node.nodeType)).not.toContain("memory.query");
     expect(ordinary?.nodes.map((node) => node.nodeType)).not.toContain("memory.write");
     expect(memory).toMatchObject({
@@ -386,6 +399,157 @@ describe("公开产品API", () => {
       "memory-planning.query",
       "memory-planning.write",
     ]);
+  });
+
+  it("Direct Prompt Review公开Query/Decision校验权限、no-store与revision", async () => {
+    const { app, deps } = await testApp();
+    const created = await postJson(app, "/api/sessions", {
+      commandId: nextCmd(),
+      payload: {},
+    });
+    const session = sessionDtoSchema.parse(
+      ((await created.json()) as { session: unknown }).session,
+    );
+    const { snapshot: seeded } = await deps.store.read({ kind: "committedSnapshot" });
+    const directRevision =
+      seeded.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
+    if (directRevision === undefined) throw new Error("缺少Direct Agent系统Definition");
+    const sent = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
+      commandId: nextCmd(),
+      payload: {
+        text: "只读检查项目并报告结论",
+        workflowSelection: {
+          kind: "published_revision",
+          workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
+          definitionSha256: directRevision.definitionSha256,
+        },
+      },
+    });
+    expect(sent.status).toBe(201);
+    const submitted = z
+      .object({ message: messageDtoSchema, run: runDtoSchema })
+      .strict()
+      .parse(await sent.json());
+    expect(submitted.run).toMatchObject({ status: "pending", phase: "queued" });
+
+    const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+    expect(snapshot.entities.runs[submitted.run.productRunId]?.runKind).toBe("direct_agent");
+    const workflowAttempt = Object.values(snapshot.entities.attempts).find(
+      (attempt) =>
+        attempt.productRunId === submitted.run.productRunId && attempt.kind === "workflow",
+    );
+    if (workflowAttempt === undefined) throw new Error("缺少Direct Workflow Attempt");
+    const begun = await beginDirectAgentAttempt(deps, {
+      commandId: nextCmd(),
+      productRunId: submitted.run.productRunId,
+      workflowAttemptId: workflowAttempt.attemptId,
+    });
+    const canonicalPayloadJson = canonicalJsonStringify({
+      messages: [
+        { content: "只读检查项目并报告结论", role: "user" },
+        {
+          content: "",
+          role: "assistant",
+          tool_calls: [{ id: "tool_1", type: "function" }],
+        },
+      ],
+      model: "qwen3.7-plus",
+    });
+    const published = await publishPromptReviewRequest(deps, {
+      commandId: nextCmd(),
+      productRunId: submitted.run.productRunId,
+      directAgentAttemptId: begun.directAgentAttemptId,
+      expectedRunRevision: begun.runRevision,
+      requestIndex: 1,
+      requestKind: "agent_turn",
+      providerId: "dashscope-coding",
+      modelId: "qwen3.7-plus",
+      endpointHost: "dashscope.aliyuncs.com",
+      canonicalPayloadJson,
+      payloadSha256: computePromptReviewPayloadSha256(canonicalPayloadJson),
+    });
+
+    const current = await app.request(
+      `/api/runs/${submitted.run.productRunId}/prompt-reviews/current`,
+    );
+    expect(current.status).toBe(200);
+    expect(current.headers.get("cache-control")).toBe("private, no-store");
+    const currentBody = currentPromptReviewResponseSchema.parse(await current.json());
+    expect(currentBody.promptReview?.canonicalPayloadJson).toBe(canonicalPayloadJson);
+    expect(currentBody.promptReview?.readablePrompt).toContain("tool_calls");
+    expect(currentBody.promptReview?.allowedActions).toEqual(["approve", "reject"]);
+    const queryRejected = await app.request(
+      `/api/runs/${submitted.run.productRunId}/prompt-reviews/current?include=runtime`,
+    );
+    expect(queryRejected.status).toBe(400);
+
+    const otherPrincipalApp = createApiApp({
+      traceSink: null,
+      product: { deps, principalId: "usr_other" as never },
+      internalRuntime: { credential: "rtk_test" },
+    });
+    const unauthorizedRead = await otherPrincipalApp.request(
+      `/api/runs/${submitted.run.productRunId}/prompt-reviews/current`,
+    );
+    expect(unauthorizedRead.status).toBe(403);
+
+    const decisionPath = `/api/runs/${submitted.run.productRunId}/prompt-review-decisions`;
+    const decisionPayload = {
+      promptReviewRequestId: published.promptReview.promptReviewRequestId,
+      requestRevision: published.promptReview.requestRevision,
+      reviewSha256: published.promptReview.reviewSha256,
+      payloadSha256: published.promptReview.payloadSha256,
+      kind: "approve" as const,
+    };
+    const missingRevision = await postJson(app, decisionPath, {
+      commandId: nextCmd(),
+      payload: decisionPayload,
+    });
+    expect(missingRevision.status).toBe(400);
+    const unauthorizedDecision = await postJson(otherPrincipalApp, decisionPath, {
+      commandId: nextCmd(),
+      expectedRevision: published.runRevision,
+      payload: decisionPayload,
+    });
+    expect(unauthorizedDecision.status).toBe(403);
+
+    const decisionCommandId = nextCmd();
+    const approved = await postJson(app, decisionPath, {
+      commandId: decisionCommandId,
+      expectedRevision: published.runRevision,
+      payload: decisionPayload,
+    });
+    expect(approved.status).toBe(201);
+    const approvedBody = z
+      .object({ decision: promptReviewDecisionDtoSchema, run: runDtoSchema })
+      .strict()
+      .parse(await approved.json());
+    expect(approvedBody.decision.kind).toBe("approve");
+    expect(approvedBody.run).toMatchObject({ status: "running", phase: "executing" });
+    const replay = await postJson(app, decisionPath, {
+      commandId: decisionCommandId,
+      expectedRevision: published.runRevision,
+      payload: decisionPayload,
+    });
+    expect(replay.status).toBe(201);
+    expect(
+      z
+        .object({ decision: promptReviewDecisionDtoSchema, run: runDtoSchema })
+        .strict()
+        .parse(await replay.json()).decision.promptReviewDecisionId,
+    ).toBe(approvedBody.decision.promptReviewDecisionId);
+    const stale = await postJson(app, decisionPath, {
+      commandId: nextCmd(),
+      expectedRevision: published.runRevision,
+      payload: decisionPayload,
+    });
+    expect(stale.status).toBe(409);
+    const noCurrent = currentPromptReviewResponseSchema.parse(
+      await (
+        await app.request(`/api/runs/${submitted.run.productRunId}/prompt-reviews/current`)
+      ).json(),
+    );
+    expect(noCurrent.promptReview).toBeNull();
   });
 
   it("完整链路：建Session -> 发消息 -> 查消息/运行 -> 决定", async () => {

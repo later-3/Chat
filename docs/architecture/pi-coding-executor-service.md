@@ -9,7 +9,7 @@
 
 Chat不再用单轮`pi-agent-core + submit_execution_result`模拟Executor。批准后的每个Execution Step由独立`apps/pi-executor`进程中的真实`AgentSession`执行，具备Pi的多轮Provider/Tool loop、Session JSONL、上下文文件、Skills、Compaction以及`read/grep/find/ls/edit/write/bash`内建工具。
 
-没有使用`pi` CLI做进程协议，也没有采用仍缺少operation幂等、cursor replay和Tool执行前栅栏的实验性`pi-server`。集成面是Chat拥有的窄HTTP Operation协议；Pi上游保持可升级依赖，Chat产品身份和终态不写入Pi源码。
+没有使用`pi` CLI做进程协议，也没有采用仍缺少operation幂等、cursor replay和Tool执行前栅栏的实验性`pi-server`。集成面是Chat拥有的窄HTTP Operation协议；Pi由`later-3/pi`受管分支维护通用运行接缝，Chat产品身份和终态仍不写入Pi源码。
 
 ## 2. 进程与所有权
 
@@ -68,7 +68,9 @@ Pi外部Extension本质是任意本机代码，能绕过Tool白名单并读取�
 Chat内联Extension注册在`DefaultResourceLoader`中。执行前的`tool_call` hook失败会传播回Agent loop并阻止真实Tool边界；
 固定Pi `0.84.2`会捕获`before_provider_request`、`tool_result`、`message_end`、Turn与Compaction等其他handler异常并继续。
 因此除Tool Intent外的当前Journal只能作为观察证据，不能作为fail-closed授权栅栏，也不能保证限额或Journal失败时一定阻止请求。
-[Prompt Review P0](./pi-prompt-review-p0.md)已经用Extension链外的`Agent.onPayload`包装证明了可行栅栏方向，正式接入前必须完成生产实现与合同测试：
+[Prompt Review P0](./pi-prompt-review-p0.md)用Extension链外的`Agent.onPayload`包装证明了可行方向；
+[Direct Agent Prompt Review P1](./direct-agent-prompt-review-p1.md)已经把该接缝接入独立Direct Operation。
+Planning Executor原有事件仍保持以下观察语义，不能因Direct Gate已经交付而把旧hook描述成安全栅栏：
 
 - `before_provider_request`：当前先尝试保存请求序号和Payload Hash；该hook异常会被上游吞掉，不能据此宣称请求一定被阻止；
 - `message_end`：保存消息角色、正文Hash、Stop Reason和Token Usage；Assistant可见文本经脱敏和32K上限后保存，隐藏推理不保存；
@@ -98,12 +100,16 @@ API公开`GET /api/runs/:productRunId/execution-trace`。Application先用Produc
 5. Product Commit仍使用稳定Command ID幂等重试，绝不因为提交失败再次调用Pi。
 6. 正常关闭会停止接受HTTP、Abort活动AgentSession并等待Operation收敛；异常退出由下一次启动执行结果未知收敛。
 
+Direct Operation另有一条更窄的恢复政策：`preparing_prompt_review/waiting_prompt_review`尚未越过Provider边界，
+可以从审核前checkpoint恢复同一未完成Turn；`dispatching`重启一律收敛为`outcome_unknown`。批准正文只由Application
+一次性交付，重放返回`already_claimed`且不再返回正文。
+
 ## 6. 上游采用与退出路径
 
-- 直接依赖固定npm `@earendil-works/pi-coding-agent@0.84.2`，使用公开`createAgentSession`、`DefaultResourceLoader`、`SessionManager`、`ModelRuntime`和Extension API。
+- 当前以固定npm `@earendil-works/pi-coding-agent@0.84.2`为基底，并用lock固定的受管分支窄补丁消费公开`providerRequestGate`与`resumePendingTurn()`；其余继续使用`createAgentSession`、`DefaultResourceLoader`、`SessionManager`、`ModelRuntime`和Extension API。
 - ModelRuntime直接读取Pi标准`models.json/auth.json`配置链；当前固定选择`dashscope-coding/qwen3.7-plus`并校验百炼HTTPS Host。命令型`apiKey`只在Pi Provider边界解析，Chat不读取、复制或持久化密钥明文。
-- 本机`/Users/xulater/Code/opc-os/pi`只用于对应版本的源码、类型和测试证据；全新克隆与CI不依赖该绝对路径。
-- 当前不需要修改Pi fork。若未来缺少通用awaited hook，只向Pi分支补通用观测接缝；Chat Product ID、权限和终态继续留在Chat Adapter。
+- Pi源码权威维护面是公开`later-3/pi`的`codex/later-custom`及需求分支；官方remote只读。全新克隆与CI通过Git内补丁消费相同差异，不依赖本机绝对路径。
+- 两个窄接缝都保持通用：Gate只传最终Payload/Model并传播拒绝，Resume只恢复AgentSession生命周期；补丁不包含Chat Product ID、审核、权限或UI。later-3发布等价固定Artifact后删除补丁。
 - 替换Pi时保留Operation协议、Capability政策、Journal、Trace投影和Candidate Port，替换`AgentSessionPiCodingAgentRunner`即可。
 
 ## 7. 当前完成门

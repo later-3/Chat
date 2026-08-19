@@ -25,7 +25,7 @@
 | `@workflow/world-local` | `4.2.4` | Apache-2.0 | 本地Workflow运行 | 生产World Adapter替换 |
 | `@earendil-works/pi-agent-core` | `0.84.2` | MIT | Planner与AgentSession底层loop | 替换`PiRuntimePort` Adapter |
 | `@earendil-works/pi-ai` | `0.84.2` | MIT | Provider/模型调用 | 替换pi Adapter |
-| `@earendil-works/pi-coding-agent` | `0.84.2` | MIT | 完整AgentSession、Session、工具、Skills与Compaction；外部Extension按Chat安全政策关闭，不拥有产品事实 | 替换`AgentSessionPiCodingAgentRunner`，保留Chat Operation Port |
+| `@earendil-works/pi-coding-agent` | `0.84.2` + managed-fork窄补丁 | MIT | 完整AgentSession与通用fail-closed Provider Request Gate；外部Extension按Chat安全政策关闭，不拥有产品事实 | 切换later-3/pi发布工件或替换Runner，保留Chat Operation Port |
 | `zod` | `^4.4.3` | MIT | 网络、存储和外部结果运行时校验 | 迁移全部Schema边界 |
 | `@ag-ui/core` | `0.0.57` | MIT | 公开Agent事件语义 | 保持Chat Event合同后替换 |
 
@@ -51,11 +51,12 @@ Trajectory窄派生的源码位于Public仓库<https://github.com/later-3/deepse
 `patches/@deepseek-ai__dsh-client-ui-trajectory@0.1.0-rc.6.patch`；补丁SHA-256与pnpm patch hash均为
 `9e10e608d36dd364b9f972954c2625b8dc795f216c1a54401a740dc9ed42ee08`。
 
-### pi运行工件与能力对照源码
+### Pi受管分支与运行工件
 
-- 实际运行工件是锁文件固定的npm `@earendil-works/pi-agent-core@0.84.2`、`@earendil-works/pi-ai@0.84.2`与`@earendil-works/pi-coding-agent@0.84.2`。
-- 本地能力对照源码是`/Users/xulater/Code/opc-os/pi`的commit `1f2b9ff53c0adefff454f02bdcf60aeaf4d28684`、tree `a6e2c157c8ce5c225d64a9779c233d90fc28b942`（分支`codex/later-custom`）；它不是运行时依赖来源，新克隆和CI不能要求该目录存在。
-- 升级pi必须同时更新精确npm版本、lock integrity，并重跑事件、Tool、恢复和真实Provider合同门；不能用本地源码提交替代安装工件证据。
+- Pi源码所有权位于公开受管分支`https://github.com/later-3/pi`；本地`origin`指向该仓库，官方`earendil-works/pi`只读命名为`upstream`。当前基点commit为`1f2b9ff53c0adefff454f02bdcf60aeaf4d28684`、tree为`a6e2c157c8ce5c225d64a9779c233d90fc28b942`，开发分支为`codex/later-custom`。
+- 当前lock仍以官方`0.84.2`工件为基底，通过`patches/@earendil-works__pi-coding-agent@0.84.2.patch`精确消费受管分支中的两个通用接缝：`providerRequestGate`与`resumePendingTurn()`。补丁hash由`pnpm-lock.yaml`固定，不含Chat产品身份、Decision或UI逻辑。
+- 这是受管分支正式发布固定npm Artifact前的过渡消费方式，不再把本地Pi仓库描述为“只读能力对照”。新克隆和CI只需要Git中的补丁与lock，不依赖个人绝对路径；发布later-3固定Artifact后应删除等价补丁。
+- 升级Pi必须同时更新受管分支基点、精确工件/补丁hash，并重跑Extension变换顺序、Gate fail-closed、Tool、恢复和真实Provider合同门。
 
 ## DSH固定证据
 

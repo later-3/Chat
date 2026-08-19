@@ -3,16 +3,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TraceEventInput } from "@chat/contracts";
-import type { ApplicationDeps, IdFactory } from "@chat/application";
+import type { ApplicationDeps, DirectAgentIdFactory, IdFactory } from "@chat/application";
 import {
+  beginDirectAgentAttempt,
   commitMemoryImportAccepted,
   createMemoryWrite,
   createMemoryImport,
   createProductSession,
   markMemoryImportDispatching,
+  publishPromptReviewRequest,
+  submitPromptReviewDecision,
   submitUserMessage,
   updateOutboxStatus,
 } from "@chat/application";
+import { SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID } from "@chat/application/workflow-system-definitions";
+import { canonicalJsonStringify, computePromptReviewPayloadSha256 } from "@chat/domain";
 import { JsonProductStore } from "@chat/product-store-json";
 import { OutboxDispatcher } from "./outbox-dispatcher.js";
 
@@ -34,6 +39,18 @@ function ids(): IdFactory {
     validationResult: () => next("val") as ReturnType<IdFactory["validationResult"]>,
     artifact: () => next("art") as ReturnType<IdFactory["artifact"]>,
     outbox: () => next("obx") as ReturnType<IdFactory["outbox"]>,
+  };
+}
+
+function directAgentIds(): DirectAgentIdFactory {
+  let value = 0;
+  const next = (prefix: string) => `${prefix}_dispatch${(++value).toString(36)}`;
+  return {
+    promptReviewRequest: () =>
+      next("prr") as ReturnType<DirectAgentIdFactory["promptReviewRequest"]>,
+    promptReviewDecision: () =>
+      next("prd") as ReturnType<DirectAgentIdFactory["promptReviewDecision"]>,
+    candidate: () => next("drc") as ReturnType<DirectAgentIdFactory["candidate"]>,
   };
 }
 
@@ -111,6 +128,7 @@ async function seed(): Promise<{
     store,
     now,
     ids: ids(),
+    directAgentIds: directAgentIds(),
     trace: (event) => traces.push(event),
     memoryImportBackends: {
       list: () => [importBackend],
@@ -208,6 +226,100 @@ async function seedMemoryImport() {
     },
   });
   return { ...seeded, memoryImport };
+}
+
+/** 只通过正式Application命令形成Prompt Review Decision及其workflow_resume Outbox。 */
+async function seedPromptReviewResume() {
+  const seeded = await seed();
+  const initial = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+  const directRevision =
+    initial.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
+  if (directRevision === undefined) throw new Error("缺少Direct Agent系统Definition");
+  const submitted = await submitUserMessage(seeded.deps, {
+    principalId: "usr_dispatchtest" as never,
+    sessionId: seeded.sessionId as never,
+    commandId: "cmd_promptreviewsubmit" as never,
+    payload: {
+      text: "只读检查Prompt Review Resume派发边界",
+      workflowSelection: {
+        kind: "published_revision",
+        workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
+        definitionSha256: directRevision.definitionSha256,
+      },
+    },
+  });
+  const afterSubmit = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+  const run = afterSubmit.entities.runs[submitted.run.productRunId];
+  const workflowAttempt = Object.values(afterSubmit.entities.attempts).find(
+    (attempt) => attempt.productRunId === submitted.run.productRunId && attempt.kind === "workflow",
+  );
+  if (run?.runKind !== "direct_agent" || workflowAttempt === undefined) {
+    throw new Error("没有形成完整Direct Agent Run");
+  }
+  const startOutboxes = Object.values(afterSubmit.outbox).filter(
+    (entry) => entry.kind === "workflow_start" && entry.status === "pending",
+  );
+  for (const [index, entry] of startOutboxes.entries()) {
+    await updateOutboxStatus(seeded.deps, {
+      commandId: `cmd_disablepromptstart${String(index + 1)}` as never,
+      outboxId: entry.outboxId,
+      status: "failed_terminal",
+    });
+  }
+  const begun = await beginDirectAgentAttempt(seeded.deps, {
+    commandId: "cmd_promptreviewbegin" as never,
+    productRunId: run.productRunId,
+    workflowAttemptId: workflowAttempt.attemptId,
+  });
+  const canonicalPayloadJson = canonicalJsonStringify({
+    messages: [{ content: "只读检查Prompt Review Resume派发边界", role: "user" }],
+    model: "qwen3.7-plus",
+  });
+  const published = await publishPromptReviewRequest(seeded.deps, {
+    commandId: "cmd_promptreviewpublish" as never,
+    productRunId: run.productRunId,
+    directAgentAttemptId: begun.directAgentAttemptId,
+    expectedRunRevision: begun.runRevision,
+    requestIndex: 1,
+    requestKind: "agent_turn",
+    providerId: "bailian",
+    modelId: "qwen3.7-plus",
+    endpointHost: "dashscope.aliyuncs.com",
+    canonicalPayloadJson,
+    payloadSha256: computePromptReviewPayloadSha256(canonicalPayloadJson),
+  });
+  const approved = await submitPromptReviewDecision(seeded.deps, {
+    principalId: "usr_dispatchtest" as never,
+    productRunId: run.productRunId,
+    commandId: "cmd_promptreviewapprove" as never,
+    expectedRunRevision: published.runRevision,
+    payload: {
+      promptReviewRequestId: published.promptReview.promptReviewRequestId,
+      requestRevision: published.promptReview.requestRevision,
+      reviewSha256: published.promptReview.reviewSha256,
+      payloadSha256: published.promptReview.payloadSha256,
+      kind: "approve",
+    },
+  });
+  const committed = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+  const resumeOutbox = Object.values(committed.outbox).find(
+    (entry) =>
+      entry.kind === "workflow_resume" &&
+      entry.promptReviewRequestId === published.promptReview.promptReviewRequestId &&
+      entry.promptReviewDecisionId === approved.decision.promptReviewDecisionId,
+  );
+  if (resumeOutbox?.kind !== "workflow_resume") {
+    throw new Error("Prompt Review Decision没有产生workflow_resume Outbox");
+  }
+  return {
+    ...seeded,
+    approved,
+    begun,
+    canonicalPayloadJson,
+    published,
+    resumeOutbox,
+    workflowAttemptId: workflowAttempt.attemptId,
+  };
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -488,5 +600,126 @@ describe("Outbox结果未知栅栏", () => {
       dispatchAttempts: 1,
     });
     expect(startCalls).toBe(1);
+  });
+});
+
+describe("Prompt Review Resume Outbox最小披露与对账", () => {
+  it("只派发产品引用，成功即ack；响应损坏后按prr对账且不重复resume", async () => {
+    const successful = await seedPromptReviewResume();
+    const successfulBodies: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (!url.endsWith("/internal/workflow/v1/resume")) {
+          throw new Error(`unexpected fetch:${url}`);
+        }
+        successfulBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return Response.json({
+          schemaVersion: "chat-workflow-dispatch.v1",
+          status: "resumed",
+        });
+      }),
+    );
+    const successfulDispatcher = new OutboxDispatcher({
+      deps: successful.deps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+
+    await successfulDispatcher.tick();
+    const successfulSnapshot = (await successful.deps.store.read({ kind: "committedSnapshot" }))
+      .snapshot;
+    const successfulBody = successfulBodies[0];
+    expect(successfulBodies).toHaveLength(1);
+    expect(Object.keys(successfulBody ?? {}).sort()).toEqual(
+      [
+        "attemptId",
+        "outboxId",
+        "payloadSha256",
+        "productRunId",
+        "promptReviewDecisionId",
+        "promptReviewRequestId",
+        "requestRevision",
+        "reviewSha256",
+        "schemaVersion",
+      ].sort(),
+    );
+    expect(successfulBody).toEqual({
+      schemaVersion: "chat-workflow-dispatch.v1",
+      productRunId: successful.resumeOutbox.productRunId,
+      attemptId: successful.workflowAttemptId,
+      promptReviewRequestId: successful.published.promptReview.promptReviewRequestId,
+      promptReviewDecisionId: successful.approved.decision.promptReviewDecisionId,
+      requestRevision: successful.published.promptReview.requestRevision,
+      reviewSha256: successful.published.promptReview.reviewSha256,
+      payloadSha256: successful.published.promptReview.payloadSha256,
+      outboxId: successful.resumeOutbox.outboxId,
+    });
+    expect(successfulBody).not.toHaveProperty("canonicalPayloadJson");
+    expect(successfulBody).not.toHaveProperty("hookToken");
+    expect(successfulBody).not.toHaveProperty("piSessionId");
+    expect(successfulSnapshot.outbox[successful.resumeOutbox.outboxId]).toMatchObject({
+      status: "acknowledged",
+      dispatchAttempts: 1,
+    });
+
+    vi.unstubAllGlobals();
+    const uncertain = await seedPromptReviewResume();
+    const uncertainBodies: Record<string, unknown>[] = [];
+    const reconcileUrls: string[] = [];
+    let resumeCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/internal/workflow/v1/resume")) {
+          resumeCalls += 1;
+          uncertainBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+          return new Response("not-json", { status: 200 });
+        }
+        if (url.includes("/internal/workflow/v1/reconcile?")) {
+          reconcileUrls.push(url);
+          return Response.json({
+            schemaVersion: "chat-workflow-dispatch.v1",
+            productRunId: uncertain.resumeOutbox.productRunId,
+            startBinding: "exists",
+            hookResumeState: "dispatched",
+          });
+        }
+        throw new Error(`unexpected fetch:${url}`);
+      }),
+    );
+    const uncertainDispatcher = new OutboxDispatcher({
+      deps: uncertain.deps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+
+    await uncertainDispatcher.tick();
+    let uncertainSnapshot = (await uncertain.deps.store.read({ kind: "committedSnapshot" }))
+      .snapshot;
+    expect(uncertainSnapshot.outbox[uncertain.resumeOutbox.outboxId]).toMatchObject({
+      status: "outcome_unknown",
+      dispatchAttempts: 1,
+    });
+
+    await uncertainDispatcher.tick();
+    await uncertainDispatcher.tick();
+    uncertainSnapshot = (await uncertain.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(uncertainSnapshot.outbox[uncertain.resumeOutbox.outboxId]).toMatchObject({
+      status: "acknowledged",
+      dispatchAttempts: 1,
+    });
+    expect(resumeCalls).toBe(1);
+    expect(uncertainBodies).toHaveLength(1);
+    expect(reconcileUrls).toHaveLength(1);
+    const reconcileUrl = new URL(reconcileUrls[0]!);
+    expect(reconcileUrl.searchParams.get("productRunId")).toBe(uncertain.resumeOutbox.productRunId);
+    expect(reconcileUrl.searchParams.get("promptReviewRequestId")).toBe(
+      uncertain.published.promptReview.promptReviewRequestId,
+    );
+    expect(reconcileUrl.searchParams.has("approvalRequestId")).toBe(false);
+    expect(reconcileUrl.searchParams.has("hookNoteCandidateId")).toBe(false);
   });
 });

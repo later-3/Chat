@@ -93,19 +93,49 @@ describe("Workflow Definition纯领域结构", () => {
           outcomeFromDefinitionNodeId: "review",
           continueOutcomes: ["request_revision", "approved"],
           exitOutcomes: ["approved", "rejected"],
-          maxIterations: 6,
+          maxIterations: 18,
           exceededPolicy: "fail",
         },
       ],
     };
     const result = validateWorkflowStructure(root, lookup);
-    expect(result.facts.maximumNodeExecutions).toBe(6);
+    expect(result.facts.maximumNodeExecutions).toBe(18);
     expect(result.diagnostics.map((entry) => entry.code)).toEqual(
       expect.arrayContaining([
         "definition.loop_iterations_invalid",
         "definition.loop_outcome_overlap",
       ]),
     );
+  });
+
+  it("全局允许Direct使用17轮结构收尾，但第18轮失败关闭", () => {
+    const makeLoop = (maxIterations: number): WorkflowSequence => ({
+      kind: "sequence",
+      elements: [
+        {
+          kind: "bounded_loop",
+          body: {
+            kind: "sequence",
+            elements: [task("review", "human.note_review")],
+          },
+          outcomeFromDefinitionNodeId: "review",
+          continueOutcomes: ["request_revision"],
+          exitOutcomes: ["approved", "rejected"],
+          maxIterations,
+          exceededPolicy: "fail",
+        },
+      ],
+    });
+    expect(
+      validateWorkflowStructure(makeLoop(17), lookup).diagnostics.some(
+        (entry) => entry.code === "definition.loop_iterations_invalid",
+      ),
+    ).toBe(false);
+    expect(
+      validateWorkflowStructure(makeLoop(18), lookup).diagnostics.some(
+        (entry) => entry.code === "definition.loop_iterations_invalid",
+      ),
+    ).toBe(true);
   });
 
   it.each([4, 5, 6])("节点预算limit边界=%i", (count) => {

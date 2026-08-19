@@ -3,6 +3,7 @@ import {
   decisionRequestSchema,
   dshSessionIdSchema,
   noteDecisionRequestSchema,
+  promptReviewDecisionRequestSchema,
   workflowSelectionRequestSchema,
 } from "./contracts.ts";
 import { BridgeRequestError, LifeosBridgeService } from "./bridge-service.ts";
@@ -14,6 +15,7 @@ const SESSION_PATH = /^\/lifeos\/sessions\/([^/]+)$/;
 const CONTEXT_INJECTIONS_PATH = /^\/lifeos\/sessions\/([^/]+)\/context-injections$/;
 const DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/decisions$/;
 const NOTE_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/note-decisions$/;
+const PROMPT_REVIEW_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/prompt-review-decisions$/;
 const WORKFLOW_SELECTION_PATH = /^\/lifeos\/sessions\/([^/]+)\/workflow-selection$/;
 const SESSION_RECORDS_PATH = /^\/lifeos\/sessions\/([^/]+)\/records$/;
 const SESSION_RECORDS_CHAT_PATH = /^\/lifeos\/sessions\/([^/]+)\/records\/chat$/;
@@ -376,6 +378,23 @@ export function createLifeosRouteHandler(
           );
         }
         sendJson(res, 200, await service.decideNote(sessionIdFrom(noteDecisionMatch), parsed.data));
+        return;
+      }
+      const promptReviewDecisionMatch = PROMPT_REVIEW_DECISION_PATH.exec(url.pathname);
+      if (req.method === "POST" && promptReviewDecisionMatch !== null) {
+        const parsed = promptReviewDecisionRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_prompt_review_decision_invalid",
+            "Prompt Review Decision body is invalid",
+          );
+        }
+        sendJson(
+          res,
+          200,
+          await service.decidePromptReview(sessionIdFrom(promptReviewDecisionMatch), parsed.data),
+        );
         return;
       }
       const workflowsMatch = WORKFLOWS_PATH.exec(url.pathname);

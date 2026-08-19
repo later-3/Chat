@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   readSafeMemoryImportRuntimeEvidence,
+  readSafePromptReviewRuntimeEvidence,
   RuntimeBindingError,
   RuntimeBindingStore,
 } from "./runtime-bindings.js";
@@ -36,6 +37,44 @@ async function claimWorkflow(store: RuntimeBindingStore, workflowRunId = "wrun_a
     workflowDefinitionVersion: "planning-execution-workflow.v1",
     now: NOW,
   });
+}
+
+async function claimDirectWorkflow(
+  store: RuntimeBindingStore,
+  input: {
+    readonly productRunId?: string;
+    readonly workflowRunId?: string;
+    readonly outboxId?: string;
+    readonly workflowRunSpecId?: string;
+  } = {},
+) {
+  const productRunId = input.productRunId ?? "run_directbinding1";
+  const workflowRunId = input.workflowRunId ?? "wrun_directbinding1";
+  const outboxId = input.outboxId ?? "obx_directbinding1";
+  const workflowRunSpecId = input.workflowRunSpecId ?? "wrs_directbinding1";
+  const evidence = {
+    runnerFamily: "direct-agent.v1" as never,
+    runnerBundleVersion: "direct-agent.bundle.v1",
+    workflowRunSpecId,
+  } as const;
+  expect(
+    await store.claimStartIntent({
+      productRunId: productRunId as never,
+      outboxId: outboxId as never,
+      workflowDefinitionVersion: "direct-agent.bundle.v1",
+      ...evidence,
+      now: NOW,
+    }),
+  ).toBe("claimed");
+  await store.claimWorkflowBinding({
+    productRunId: productRunId as never,
+    outboxId: outboxId as never,
+    workflowRunId,
+    workflowDefinitionVersion: "direct-agent.bundle.v1",
+    ...evidence,
+    now: NOW,
+  });
+  return { productRunId, workflowRunId };
 }
 
 describe("RuntimeBindingStore", () => {
@@ -205,7 +244,34 @@ describe("RuntimeBindingStore", () => {
     });
     expect(store.getHookBinding("apr_legacy1" as never)?.hookToken).toBe("pdh-run_legacy1-1");
     expect(JSON.parse(await readFile(filePath, "utf8"))).toMatchObject({
-      schemaVersion: "runtime-bindings.v6",
+      schemaVersion: "runtime-bindings.v7",
+    });
+  });
+
+  it("v6 Binding原样迁移既有映射并初始化空Prompt Review第三族", async () => {
+    const filePath = await tempPath();
+    const store = await RuntimeBindingStore.open(filePath);
+    await claimWorkflow(store);
+    await store.claimHookBinding({
+      approvalRequestId: "apr_v6migration1" as never,
+      productRunId: "run_1" as never,
+      planRevision: 1,
+      hookToken: "pdh-v6migration1",
+      now: NOW,
+    });
+    const legacy = JSON.parse(await readFile(filePath, "utf8")) as Record<string, unknown>;
+    legacy["schemaVersion"] = "runtime-bindings.v6";
+    delete legacy["promptReviewHooks"];
+    await writeFile(filePath, JSON.stringify(legacy));
+
+    const reopened = await RuntimeBindingStore.open(filePath);
+    expect(reopened.getWorkflowBinding("run_1" as never)?.workflowRunId).toBe("wrun_a");
+    expect(reopened.getHookBinding("apr_v6migration1" as never)?.hookToken).toBe(
+      "pdh-v6migration1",
+    );
+    expect(JSON.parse(await readFile(filePath, "utf8"))).toMatchObject({
+      schemaVersion: "runtime-bindings.v7",
+      promptReviewHooks: {},
     });
   });
 
@@ -304,6 +370,183 @@ describe("RuntimeBindingStore", () => {
     expect(reopened.getHookBinding("apr_unknown" as never)?.resumeDispatchState).toBe(
       "dispatching",
     );
+  });
+
+  it("Prompt Review按Request独立认领Hook，原子绑定Decision并抵抗并发、重启与冲突", async () => {
+    const filePath = await tempPath();
+    const store = await RuntimeBindingStore.open(filePath);
+    const workflow = await claimDirectWorkflow(store);
+    const firstReview = {
+      promptReviewRequestId: "prr_bindingreview1" as never,
+      productRunId: workflow.productRunId as never,
+      startWorkflowRunId: workflow.workflowRunId,
+      requestRevision: 1,
+      reviewSha256: "a".repeat(64),
+      hookToken: "prh-bindingreview1",
+      now: NOW,
+    } as const;
+    expect(await store.claimPromptReviewHookBinding(firstReview)).toEqual({
+      alreadyExisted: false,
+    });
+    expect(await store.claimPromptReviewHookBinding(firstReview)).toEqual({
+      alreadyExisted: true,
+    });
+    await expect(
+      store.claimPromptReviewHookBinding({ ...firstReview, reviewSha256: "b".repeat(64) }),
+    ).rejects.toBeInstanceOf(RuntimeBindingError);
+    await expect(
+      store.claimPromptReviewHookBinding({
+        ...firstReview,
+        startWorkflowRunId: "wrun_different",
+      }),
+    ).rejects.toBeInstanceOf(RuntimeBindingError);
+
+    const decision = {
+      promptReviewRequestId: firstReview.promptReviewRequestId,
+      promptReviewDecisionId: "prd_bindingdecision1" as never,
+      requestRevision: 1,
+      reviewSha256: firstReview.reviewSha256,
+      now: NOW,
+    } as const;
+    const concurrent = await Promise.all([
+      store.claimPromptReviewResumeDispatch(decision),
+      store.claimPromptReviewResumeDispatch(decision),
+    ]);
+    expect([...concurrent].sort()).toEqual(["claimed", "outcome_unknown"]);
+    expect(store.getPromptReviewHookBinding(firstReview.promptReviewRequestId)).toMatchObject({
+      promptReviewDecisionId: decision.promptReviewDecisionId,
+      resumeDispatchState: "dispatching",
+    });
+    await expect(
+      store.claimPromptReviewResumeDispatch({
+        ...decision,
+        promptReviewDecisionId: "prd_differentdecision" as never,
+      }),
+    ).rejects.toBeInstanceOf(RuntimeBindingError);
+    await expect(
+      store.claimPromptReviewResumeDispatch({ ...decision, reviewSha256: "b".repeat(64) }),
+    ).rejects.toBeInstanceOf(RuntimeBindingError);
+    await expect(
+      store.markPromptReviewResumeDispatched({
+        promptReviewRequestId: firstReview.promptReviewRequestId,
+        promptReviewDecisionId: "prd_differentdecision" as never,
+        now: NOW,
+      }),
+    ).rejects.toBeInstanceOf(RuntimeBindingError);
+    await store.markPromptReviewResumeDispatched({
+      promptReviewRequestId: firstReview.promptReviewRequestId,
+      promptReviewDecisionId: decision.promptReviewDecisionId,
+      now: NOW,
+    });
+    expect(await store.claimPromptReviewResumeDispatch(decision)).toBe("already_dispatched");
+    expect(await store.claimPromptReviewHookBinding(firstReview)).toEqual({
+      alreadyExisted: true,
+    });
+
+    const secondReview = {
+      ...firstReview,
+      promptReviewRequestId: "prr_bindingreview2" as never,
+      requestRevision: 2,
+      reviewSha256: "c".repeat(64),
+      hookToken: "prh-bindingreview2",
+    } as const;
+    await expect(
+      store.claimPromptReviewHookBinding({
+        ...secondReview,
+        promptReviewRequestId: "prr_reusedhook" as never,
+        hookToken: firstReview.hookToken,
+      }),
+    ).rejects.toBeInstanceOf(RuntimeBindingError);
+    expect(await store.claimPromptReviewHookBinding(secondReview)).toEqual({
+      alreadyExisted: false,
+    });
+    const secondDecision = {
+      promptReviewRequestId: secondReview.promptReviewRequestId,
+      promptReviewDecisionId: "prd_bindingdecision2" as never,
+      requestRevision: secondReview.requestRevision,
+      reviewSha256: secondReview.reviewSha256,
+      now: NOW,
+    } as const;
+    expect(await store.claimPromptReviewResumeDispatch(secondDecision)).toBe("claimed");
+    await store.markPromptReviewResumeOutcomeUnknown({
+      promptReviewRequestId: secondReview.promptReviewRequestId,
+      promptReviewDecisionId: secondDecision.promptReviewDecisionId,
+      now: NOW,
+    });
+
+    const reopened = await RuntimeBindingStore.open(filePath);
+    expect(reopened.getPromptReviewHookBinding(firstReview.promptReviewRequestId)).toMatchObject({
+      resumeDispatchState: "dispatched",
+      promptReviewDecisionId: decision.promptReviewDecisionId,
+    });
+    expect(reopened.getPromptReviewHookBinding(secondReview.promptReviewRequestId)).toMatchObject({
+      resumeDispatchState: "outcome_unknown",
+      promptReviewDecisionId: secondDecision.promptReviewDecisionId,
+    });
+    expect(await reopened.claimPromptReviewResumeDispatch(secondDecision)).toBe("outcome_unknown");
+
+    const safeEvidence = readSafePromptReviewRuntimeEvidence({
+      path: filePath,
+      promptReviewRequestId: firstReview.promptReviewRequestId,
+      productRunId: workflow.productRunId,
+      requestRevision: firstReview.requestRevision,
+      reviewSha256: firstReview.reviewSha256,
+    });
+    expect(safeEvidence).toMatchObject({
+      status: "ok",
+      entry: {
+        promptReviewRequestId: firstReview.promptReviewRequestId,
+        resumeDispatchState: "dispatched",
+      },
+    });
+    expect(JSON.stringify(safeEvidence)).not.toContain(firstReview.hookToken);
+    expect(JSON.stringify(safeEvidence)).not.toContain(workflow.workflowRunId);
+  });
+
+  it("Prompt Review Binding严格拒绝正文，并持久化failed_terminal终态", async () => {
+    const filePath = await tempPath();
+    const store = await RuntimeBindingStore.open(filePath);
+    const workflow = await claimDirectWorkflow(store, {
+      productRunId: "run_directbinding2",
+      workflowRunId: "wrun_directbinding2",
+      outboxId: "obx_directbinding2",
+      workflowRunSpecId: "wrs_directbinding2",
+    });
+    const review = {
+      promptReviewRequestId: "prr_bindingreview3" as never,
+      productRunId: workflow.productRunId as never,
+      startWorkflowRunId: workflow.workflowRunId,
+      requestRevision: 1,
+      reviewSha256: "d".repeat(64),
+      hookToken: "prh-bindingreview3",
+      now: NOW,
+    } as const;
+    await store.claimPromptReviewHookBinding(review);
+    const decision = {
+      promptReviewRequestId: review.promptReviewRequestId,
+      promptReviewDecisionId: "prd_bindingdecision3" as never,
+      requestRevision: review.requestRevision,
+      reviewSha256: review.reviewSha256,
+      now: NOW,
+    } as const;
+    await store.claimPromptReviewResumeDispatch(decision);
+    await store.markPromptReviewResumeFailedTerminal({
+      promptReviewRequestId: review.promptReviewRequestId,
+      promptReviewDecisionId: decision.promptReviewDecisionId,
+      now: NOW,
+    });
+    expect(await store.claimPromptReviewResumeDispatch(decision)).toBe("failed_terminal");
+
+    const raw = JSON.parse(await readFile(filePath, "utf8")) as {
+      promptReviewHooks: Record<string, Record<string, unknown>>;
+    };
+    expect(raw.promptReviewHooks[review.promptReviewRequestId]).not.toHaveProperty(
+      "canonicalPayloadJson",
+    );
+    raw.promptReviewHooks[review.promptReviewRequestId]!["canonicalPayloadJson"] =
+      '{"secret":"must-not-enter-binding"}';
+    await writeFile(filePath, JSON.stringify(raw));
+    await expect(RuntimeBindingStore.open(filePath)).rejects.toBeInstanceOf(RuntimeBindingError);
   });
 
   it("Memory Import回放复用严格Binding Schema且安全投影不暴露Workflow Run ID", async () => {

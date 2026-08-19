@@ -30,7 +30,7 @@ DSH桥接面已经交付原生对话、Planning HITL与Note Candidate审核。No
 flowchart LR
   UI["DeepSeek Harness Web\nLifeOS Client插件"] -->|"Bridge Host / REST Query / Command"| API["Hono\n认证、strict校验、ETag"]
   API --> APP["Application\n事务、CAS、权限、投影"]
-  APP --> STORE["Product Store v12\n权威产品事实"]
+  APP --> STORE["Product Store v13\n权威产品事实"]
   STORE --> OUTBOX["Outbox\nstart / resume"]
   OUTBOX --> RUNTIME["Vercel Workflow Runtime\n固定Runner解释RunSpec"]
   RUNTIME -->|"私有strict命令"| APP
@@ -143,7 +143,7 @@ Query使用ETag/`If-None-Match`/304；Bridge Host在切换Run或取消请求时�
 
 ## 8. Store与迁移
 
-Product Store当前为`chat-product-store.v12`：
+Product Store当前为`chat-product-store.v13`：
 
 - v6：Workflow View/Node/Transition/Manifest；
 - v7：Definition/Revision/RunSpec；
@@ -152,6 +152,7 @@ Product Store当前为`chat-product-store.v12`：
 - v10：Planning Memory Selection与Workflow Policy Resolution。
 - v11：保留完整上下文Planning Definition，新增独立且默认的“规划执行工作流”；它不声明Memory/Project/Rules/Skills资源节点，历史RunSpec继续引用原冻结Definition。
 - v12：新增Provider中立的Workflow Memory Query/Snapshot/Context与Memory Write Intent/Result，并发布独立Memory Planning Definition；v11的Simple Planning仍是默认且内容不变。
+- v13：新增独立Direct Agent Run、Prompt Review Request/Decision、Direct Candidate与单个Execution Agent系统Definition；Prompt Review是该节点内部状态，原始Provider请求正文只保存在Product Store一次。
 
 迁移按版本串行、可重复打开，并对非空历史Fixture执行Zod、生产完整性、只读Auditor和故障注入。v5→v6使用迁移专用冻结投影，不调用会继续演进的当前Application projector。
 

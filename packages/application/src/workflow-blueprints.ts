@@ -12,7 +12,7 @@ import {
   type NodeCatalogDescriptor,
 } from "./workflow-node-catalog.js";
 
-export type WorkflowBlueprintKey = "planning" | "note";
+export type WorkflowBlueprintKey = "planning" | "note" | "direct";
 
 export interface WorkflowRequiredRole {
   readonly role: string;
@@ -35,7 +35,7 @@ export interface WorkflowRunOverrideRule {
 export interface WorkflowBlueprint {
   readonly blueprintKey: WorkflowBlueprintKey;
   readonly blueprintVersion: number;
-  readonly runnerFamily: "configurable-planning.v1" | "note-capture.v1";
+  readonly runnerFamily: "configurable-planning.v1" | "note-capture.v1" | "direct-agent.v1";
   readonly allowedNodeTypes: readonly WorkflowNodeTypeKey[];
   readonly optionalNodeTypes: readonly WorkflowNodeTypeKey[];
   readonly repeatableNodeTypes: readonly {
@@ -102,6 +102,8 @@ const NOTE_NODE_TYPES: readonly WorkflowNodeTypeKey[] = [
   "human.note_review",
   "note.commit",
 ];
+
+const DIRECT_NODE_TYPES: readonly WorkflowNodeTypeKey[] = ["agent.direct"];
 
 export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
   {
@@ -174,6 +176,25 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
     },
     mandatoryManualReviewTypes: [],
     terminalNodeType: "note.commit",
+  },
+  {
+    blueprintKey: "direct",
+    blueprintVersion: 1,
+    runnerFamily: "direct-agent.v1",
+    allowedNodeTypes: DIRECT_NODE_TYPES,
+    optionalNodeTypes: [],
+    repeatableNodeTypes: [],
+    requiredRoles: [{ role: "direct_agent", nodeType: "agent.direct", exactlyOnce: true }],
+    // Prompt Review是Execution Agent节点内部的Provider Gate状态，不是第二个业务节点。
+    loopRules: [],
+    perRunOverrides: [],
+    immutableMinimumRisk: {
+      "agent.direct": "generate_candidate",
+    },
+    mandatoryManualReviewTypes: [],
+    // Direct流程没有独立product.commit图节点；Agent完成候选后仍由Application提交正式Message。
+    // 结构终点就是唯一的agent.direct；审核等待与恢复均投影为该NodeRun的内部状态。
+    terminalNodeType: "agent.direct",
   },
 ] satisfies readonly WorkflowBlueprint[];
 
@@ -393,6 +414,32 @@ function lastTopLevelNodeType(root: WorkflowSequence): WorkflowNodeTypeKey | und
     if (element === undefined) break;
     if (element.kind === "task" || element.kind === "composite") return element.nodeType;
     if (element.kind === "sequence") stack.unshift(...[...element.elements].reverse());
+    if (element.kind === "bounded_loop") {
+      // Loop本身是顶层终点时，以控制其正常退出的叶子节点作为结构终点。
+      // Direct Agent的审核分支可能提前返回reject终态，但正常完成只由agent.direct产生。
+      return nodeTypeById(element.body, element.outcomeFromDefinitionNodeId);
+    }
+  }
+  return undefined;
+}
+
+function nodeTypeById(
+  root: WorkflowSequence,
+  definitionNodeId: string,
+): WorkflowNodeTypeKey | undefined {
+  const stack = [...root.elements];
+  while (stack.length > 0) {
+    const element = stack.pop();
+    if (element === undefined) break;
+    if (element.kind === "task" || element.kind === "composite") {
+      if (element.definitionNodeId === definitionNodeId) return element.nodeType;
+    } else if (element.kind === "sequence") {
+      stack.push(...element.elements);
+    } else if (element.kind === "choice") {
+      for (const branch of element.branches) stack.push(...branch.body.elements);
+    } else {
+      stack.push(...element.body.elements);
+    }
   }
   return undefined;
 }

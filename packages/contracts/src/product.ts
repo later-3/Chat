@@ -28,6 +28,9 @@ import {
   ruleSelectionIdSchema,
   runAttemptIdSchema,
   contextPackageIdSchema,
+  directAgentCandidateIdSchema,
+  promptReviewDecisionIdSchema,
+  promptReviewRequestIdSchema,
   validationResultIdSchema,
   workflowViewDefinitionIdSchema,
   workflowRunSpecIdSchema,
@@ -47,7 +50,8 @@ import { workflowRunnerFamilySchema } from "./workflow-definition.js";
  *   与对象级`revision`是两个不同概念，不得混用。
  * - 实体Schema全部strict：持久化层不存在Record<string, unknown>扩展口袋。
  * - 正文只存在于Product Store；Trace、API响应和事件只允许引用ID/revision/Hash。
- * - 这里不保存API Key、Cookie、完整Provider Payload、隐藏推理或Workflow私有ID。
+ * - 这里不保存API Key、Cookie、HTTP Header、隐藏推理或Workflow私有ID；Prompt Review
+ *   只在独立实体中保存一次经安全收敛、即将实际发送的canonical JSON正文。
  */
 
 const isoDateTimeSchema = z.iso.datetime();
@@ -132,7 +136,18 @@ export const noteCaptureRunPhaseSchema = z.enum([
   "completed",
   "rejected",
 ]);
-export const productRunPhaseSchema = z.union([planningRunPhaseSchema, noteCaptureRunPhaseSchema]);
+export const directAgentRunPhaseSchema = z.enum([
+  "queued",
+  "executing",
+  "prompt_review",
+  "completed",
+  "rejected",
+]);
+export const productRunPhaseSchema = z.union([
+  planningRunPhaseSchema,
+  noteCaptureRunPhaseSchema,
+  directAgentRunPhaseSchema,
+]);
 
 /** 用户可读的安全失败摘要；不携带Provider Payload、Stack或内部诊断。 */
 export const runFailureSchema = z
@@ -240,14 +255,46 @@ export const noteCaptureProductRunSchema = z
   })
   .strict();
 
+/**
+ * Direct Agent绕过Plan/Execution Contract，直接运行一个受Prompt Review约束的Pi Session。
+ * `currentPromptReviewRequestId`只在waiting_human/prompt_review存在；历史审核事实独立保存。
+ */
+export const directAgentProductRunSchema = z
+  .object({
+    schemaVersion: z.literal("product-run.v3"),
+    runKind: z.literal("direct_agent"),
+    productRunId: productRunIdSchema,
+    sessionId: productSessionIdSchema,
+    sourceMessageId: messageIdSchema,
+    workflowViewDefinitionId: workflowViewDefinitionIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+    runnerFamily: z.literal("direct-agent.v1"),
+    runnerBundleVersion: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[A-Za-z0-9._-]+$/),
+    status: productRunStatusSchema,
+    phase: directAgentRunPhaseSchema,
+    currentPromptReviewRequestId: promptReviewRequestIdSchema.optional(),
+    /** 最新候选与最终采用候选分开，避免模型输出自动成为正式Message。 */
+    currentDirectAgentCandidateId: directAgentCandidateIdSchema.optional(),
+    finalDirectAgentCandidateId: directAgentCandidateIdSchema.optional(),
+    finalMessageId: messageIdSchema.optional(),
+    failure: runFailureSchema.optional(),
+    ...entityBaseFields,
+  })
+  .strict();
+
 export const productRunSchema = z.discriminatedUnion("runKind", [
   planningProductRunSchema,
   noteCaptureProductRunSchema,
+  directAgentProductRunSchema,
 ]);
 
 /* ---------- Run Attempt ---------- */
 
-export const runAttemptKindSchema = z.enum(["workflow", "planning", "execution"]);
+export const runAttemptKindSchema = z.enum(["workflow", "planning", "execution", "direct_agent"]);
 export const runAttemptOutcomeSchema = z.enum(["running", "success", "failure"]);
 
 export const runAttemptSchema = z
@@ -676,6 +723,8 @@ export const outboxEntrySchema = z.discriminatedUnion("kind", [
       hookNoteCandidateId: noteCandidateIdSchema.optional(),
       noteCandidateId: noteCandidateIdSchema.optional(),
       noteDecisionId: noteDecisionIdSchema.optional(),
+      promptReviewRequestId: promptReviewRequestIdSchema.optional(),
+      promptReviewDecisionId: promptReviewDecisionIdSchema.optional(),
       workflowRunSpecId: workflowRunSpecIdSchema.optional(),
       runnerFamily: workflowRunnerFamilySchema.optional(),
       runnerBundleVersion: z
@@ -693,19 +742,23 @@ export const outboxEntrySchema = z.discriminatedUnion("kind", [
         value.hookNoteCandidateId !== undefined ||
         value.noteCandidateId !== undefined ||
         value.noteDecisionId !== undefined;
+      const hasPromptReview =
+        value.promptReviewRequestId !== undefined || value.promptReviewDecisionId !== undefined;
       if (
-        hasPlanning === hasNote ||
+        Number(hasPlanning) + Number(hasNote) + Number(hasPromptReview) !== 1 ||
         (hasPlanning &&
           (value.approvalRequestId === undefined || value.decisionId === undefined)) ||
         (hasNote &&
           (value.hookNoteCandidateId === undefined ||
             value.noteCandidateId === undefined ||
-            value.noteDecisionId === undefined))
+            value.noteDecisionId === undefined)) ||
+        (hasPromptReview &&
+          (value.promptReviewRequestId === undefined || value.promptReviewDecisionId === undefined))
       ) {
         ctx.issues.push({
           code: "custom",
           input: value,
-          message: "workflow_resume必须且只能携带Planning或Note决定引用",
+          message: "workflow_resume必须且只能携带Planning、Note或Prompt Review决定引用",
           path: ["kind"],
         });
       }

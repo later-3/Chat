@@ -166,7 +166,11 @@ function loadRunContext(
     Date.parse(deps.now()) >= Date.parse(persistedApproval.expiresAt)
       ? { ...persistedApproval, status: "expired" as const }
       : persistedApproval;
-  return { run, currentPlan, currentApproval };
+  const currentPromptReview =
+    run.runKind === "direct_agent" && run.currentPromptReviewRequestId !== undefined
+      ? snapshot.entities.promptReviewRequests[run.currentPromptReviewRequestId]
+      : undefined;
+  return { run, currentPlan, currentApproval, currentPromptReview };
 }
 
 export async function getProductRun(
@@ -174,13 +178,13 @@ export async function getProductRun(
   input: { principalId: PrincipalId; productRunId: ProductRunId },
 ): Promise<{ run: RunDto }> {
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
-  const { run, currentPlan, currentApproval } = loadRunContext(
+  const { run, currentPlan, currentApproval, currentPromptReview } = loadRunContext(
     deps,
     snapshot,
     input.productRunId,
     input.principalId,
   );
-  return { run: toRunDto(run, currentPlan, currentApproval) };
+  return { run: toRunDto(run, currentPlan, currentApproval, currentPromptReview) };
 }
 
 /**

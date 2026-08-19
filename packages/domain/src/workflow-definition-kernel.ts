@@ -15,7 +15,9 @@ export const WORKFLOW_NODE_TYPES = [
   "capability.skills",
   "agent.research",
   "agent.plan",
+  "agent.direct",
   "human.plan_review",
+  "human.prompt_review",
   "execute.plan",
   "result.validate",
   "product.commit",
@@ -78,6 +80,8 @@ export type WorkflowSlotValueKind =
   | "evidence_ref"
   | "plan_revision_ref"
   | "decision_ref"
+  | "prompt_review_ref"
+  | "direct_agent_candidate_ref"
   | "execution_candidate_ref"
   | "validation_result_ref"
   | "artifact_ref"
@@ -150,8 +154,9 @@ export type WorkflowElement =
 
 /**
  * 这组数字是S3实验室的单一服务端基线，不接受Definition或浏览器覆盖。
- * 64个语义节点可覆盖最大Planning Fixture（14节点、5轮审核预算）与Note，
- * 同时让最坏运行展开保持在256次以内；具体测量由Kernel基准测试记录。
+ * 64个语义节点可覆盖最大Planning Fixture（14节点、5轮审核预算）、Note与Direct。
+ * Direct最多16次Provider审核后还需1次无新请求的完成收敛，因此结构Loop上限为17；
+ * 实际人工等待仍由maxWaits=16限制。最坏运行展开保持在256次以内。
  */
 export const WORKFLOW_KERNEL_LIMITS = Object.freeze({
   request: {
@@ -163,7 +168,7 @@ export const WORKFLOW_KERNEL_LIMITS = Object.freeze({
     maxBranches: 24,
     maxLoops: 8,
     maxNestedLoops: 2,
-    maxLoopIterations: 5,
+    maxLoopIterations: 17,
   },
   runtime: {
     maxNodeExecutions: 256,

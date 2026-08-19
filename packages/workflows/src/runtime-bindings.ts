@@ -11,8 +11,11 @@ import {
   type OutboxEntryId,
   type ProductRunId,
   type ProjectCandidateId,
+  type PromptReviewDecisionId,
+  type PromptReviewRequestId,
 } from "@chat/contracts";
 import {
+  DIRECT_AGENT_RUNNER_FAMILY,
   NOTE_CAPTURE_RUNNER_FAMILY,
   type ProductWorkflowRunnerFamily,
 } from "./definition-kernel-executor-registry.js";
@@ -27,6 +30,7 @@ import {
   type MemoryImportWorkflowBinding,
   type MemoryWriteWorkflowBinding,
   type NoteHookBinding,
+  type PromptReviewHookBinding,
   type ProjectIntakeWorkflowBinding,
   type RuntimeBindingsFile,
   type WorkflowBinding,
@@ -39,14 +43,20 @@ export {
   type MemoryImportWorkflowBinding,
   type MemoryWriteWorkflowBinding,
   type NoteHookBinding,
+  type PromptReviewHookBinding,
   type ProjectIntakeWorkflowBinding,
   type RuntimeBindingsFile,
   type WorkflowBinding,
 } from "./runtime-bindings-schema.js";
 export {
   readSafeMemoryImportRuntimeEvidence,
+  readSafePromptReviewRuntimeEvidence,
   type SafeMemoryImportRuntimeEvidence,
+  type SafePromptReviewRuntimeEvidence,
 } from "./runtime-bindings-evidence.js";
+
+export type PromptReviewResumeDispatchClaim =
+  "claimed" | "already_dispatched" | "outcome_unknown" | "failed_terminal";
 
 /**
  * Runtime Binding Store：产品身份到Workflow私有身份的单机映射与派发栅栏。
@@ -111,6 +121,7 @@ export class RuntimeBindingStore {
       Object.keys(this.bindings.workflows).length > 0 ||
       Object.keys(this.bindings.hooks).length > 0 ||
       Object.keys(this.bindings.noteHooks).length > 0 ||
+      Object.keys(this.bindings.promptReviewHooks).length > 0 ||
       Object.keys(this.bindings.memoryImportStartIntents).length > 0 ||
       Object.keys(this.bindings.memoryImportWorkflows).length > 0 ||
       Object.keys(this.bindings.memoryWriteStartIntents).length > 0 ||
@@ -146,6 +157,14 @@ export class RuntimeBindingStore {
   getNoteHookBinding(noteCandidateId: NoteCandidateId): NoteHookBinding | undefined {
     this.assertAvailable();
     const value = this.bindings.noteHooks[noteCandidateId];
+    return value === undefined ? undefined : structuredClone(value);
+  }
+
+  getPromptReviewHookBinding(
+    promptReviewRequestId: PromptReviewRequestId,
+  ): PromptReviewHookBinding | undefined {
+    this.assertAvailable();
+    const value = this.bindings.promptReviewHooks[promptReviewRequestId];
     return value === undefined ? undefined : structuredClone(value);
   }
 
@@ -787,6 +806,183 @@ export class RuntimeBindingStore {
       };
       await this.commit(next);
     });
+  }
+
+  /**
+   * 每个Prompt Review Request只能认领自己的Hook；相同Request完整重放幂等，
+   * 任一Workflow、revision、Hash或Token漂移都失败关闭。
+   */
+  async claimPromptReviewHookBinding(input: {
+    promptReviewRequestId: PromptReviewRequestId;
+    productRunId: ProductRunId;
+    startWorkflowRunId: string;
+    requestRevision: number;
+    reviewSha256: string;
+    hookToken: string;
+    now: string;
+  }): Promise<{ readonly alreadyExisted: boolean }> {
+    return this.enqueue(async () => {
+      this.assertAvailable();
+      const existing = this.bindings.promptReviewHooks[input.promptReviewRequestId];
+      if (existing !== undefined) {
+        if (
+          existing.hookToken !== input.hookToken ||
+          existing.productRunId !== input.productRunId ||
+          existing.startWorkflowRunId !== input.startWorkflowRunId ||
+          existing.requestRevision !== input.requestRevision ||
+          existing.reviewSha256 !== input.reviewSha256
+        ) {
+          throw new RuntimeBindingError("promptReviewRequestId的Hook映射冲突，失败关闭");
+        }
+        this.assertPromptReviewStartBinding(existing);
+        return { alreadyExisted: true };
+      }
+      const workflow = this.bindings.workflows[input.productRunId];
+      if (
+        workflow === undefined ||
+        workflow.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY ||
+        workflow.workflowRunId !== input.startWorkflowRunId
+      ) {
+        throw new RuntimeBindingError("Prompt Review Hook缺少对应Direct Agent Workflow start映射");
+      }
+      const next = structuredClone(this.bindings);
+      next.promptReviewHooks[input.promptReviewRequestId] = {
+        hookToken: input.hookToken,
+        productRunId: input.productRunId,
+        startWorkflowRunId: input.startWorkflowRunId,
+        requestRevision: input.requestRevision,
+        reviewSha256: input.reviewSha256,
+        hookClaimState: "claimed",
+        resumeDispatchState: "none",
+        createdAt: input.now,
+        updatedAt: input.now,
+      };
+      await this.commit(next);
+      return { alreadyExisted: false };
+    });
+  }
+
+  /**
+   * Decision身份与Resume派发栅栏在一次原子提交中绑定。并发重复调用只会有一个
+   * claimed；看到dispatching的一方按结果未知处理，绝不再次调用Workflow Hook。
+   */
+  async claimPromptReviewResumeDispatch(input: {
+    promptReviewRequestId: PromptReviewRequestId;
+    promptReviewDecisionId: PromptReviewDecisionId;
+    requestRevision: number;
+    reviewSha256: string;
+    now: string;
+  }): Promise<PromptReviewResumeDispatchClaim> {
+    return this.enqueue(async () => {
+      this.assertAvailable();
+      const existing = this.bindings.promptReviewHooks[input.promptReviewRequestId];
+      if (existing === undefined) {
+        throw new RuntimeBindingError("Prompt Review Resume的Hook映射缺失，失败关闭");
+      }
+      this.assertPromptReviewStartBinding(existing);
+      if (
+        existing.requestRevision !== input.requestRevision ||
+        existing.reviewSha256 !== input.reviewSha256 ||
+        (existing.promptReviewDecisionId !== undefined &&
+          existing.promptReviewDecisionId !== input.promptReviewDecisionId)
+      ) {
+        throw new RuntimeBindingError("Prompt Review Resume的Decision或审核Hash冲突，失败关闭");
+      }
+      switch (existing.resumeDispatchState) {
+        case "none": {
+          const next = structuredClone(this.bindings);
+          next.promptReviewHooks[input.promptReviewRequestId] = {
+            ...existing,
+            promptReviewDecisionId: input.promptReviewDecisionId,
+            resumeDispatchState: "dispatching",
+            updatedAt: input.now,
+          };
+          await this.commit(next);
+          return "claimed";
+        }
+        case "dispatched":
+          return "already_dispatched";
+        case "dispatching":
+        case "outcome_unknown":
+          return "outcome_unknown";
+        case "failed_terminal":
+          return "failed_terminal";
+      }
+    });
+  }
+
+  async markPromptReviewResumeDispatched(input: {
+    promptReviewRequestId: PromptReviewRequestId;
+    promptReviewDecisionId: PromptReviewDecisionId;
+    now: string;
+  }): Promise<void> {
+    await this.setPromptReviewResumeState(input, "dispatched", ["dispatching", "dispatched"]);
+  }
+
+  async markPromptReviewResumeOutcomeUnknown(input: {
+    promptReviewRequestId: PromptReviewRequestId;
+    promptReviewDecisionId: PromptReviewDecisionId;
+    now: string;
+  }): Promise<void> {
+    await this.setPromptReviewResumeState(input, "outcome_unknown", [
+      "dispatching",
+      "outcome_unknown",
+    ]);
+  }
+
+  async markPromptReviewResumeFailedTerminal(input: {
+    promptReviewRequestId: PromptReviewRequestId;
+    promptReviewDecisionId: PromptReviewDecisionId;
+    now: string;
+  }): Promise<void> {
+    await this.setPromptReviewResumeState(input, "failed_terminal", [
+      "dispatching",
+      "failed_terminal",
+    ]);
+  }
+
+  private async setPromptReviewResumeState(
+    input: {
+      readonly promptReviewRequestId: PromptReviewRequestId;
+      readonly promptReviewDecisionId: PromptReviewDecisionId;
+      readonly now: string;
+    },
+    state: PromptReviewHookBinding["resumeDispatchState"],
+    allowedFrom: readonly PromptReviewHookBinding["resumeDispatchState"][],
+  ): Promise<void> {
+    await this.enqueue(async () => {
+      this.assertAvailable();
+      const existing = this.bindings.promptReviewHooks[input.promptReviewRequestId];
+      if (existing === undefined) {
+        throw new RuntimeBindingError("Prompt Review Resume的Hook映射缺失，失败关闭");
+      }
+      this.assertPromptReviewStartBinding(existing);
+      if (existing.promptReviewDecisionId !== input.promptReviewDecisionId) {
+        throw new RuntimeBindingError("Prompt Review Resume的Decision绑定冲突，失败关闭");
+      }
+      if (!allowedFrom.includes(existing.resumeDispatchState)) {
+        throw new RuntimeBindingError(`Prompt Review Hook Resume状态不允许转换到${state}`);
+      }
+      if (existing.resumeDispatchState === state) return;
+      const next = structuredClone(this.bindings);
+      next.promptReviewHooks[input.promptReviewRequestId] = {
+        ...existing,
+        resumeDispatchState: state,
+        updatedAt: input.now,
+      };
+      await this.commit(next);
+    });
+  }
+
+  private assertPromptReviewStartBinding(binding: PromptReviewHookBinding): void {
+    const workflow = this.bindings.workflows[binding.productRunId];
+    if (
+      workflow === undefined ||
+      workflow.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY ||
+      workflow.workflowRunId !== binding.startWorkflowRunId
+    ) {
+      throw new RuntimeBindingError("Prompt Review Hook对应的Direct Agent Workflow不再有效");
+    }
   }
 
   async markNoteResumeDispatching(noteCandidateId: NoteCandidateId, now: string): Promise<void> {

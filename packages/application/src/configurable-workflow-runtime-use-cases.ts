@@ -8,6 +8,8 @@ import {
   type WorkflowNodeRunStatus,
 } from "@chat/contracts";
 import {
+  computePromptReviewDecisionSha256,
+  computePromptReviewSha256,
   createWorkflowNodeRun,
   hashCanonical,
   transitionWorkflowNodeRun,
@@ -114,13 +116,43 @@ export async function transitionConfigurablePlanningNode(
           message: "人工审核节点状态不允许通过该命令转换",
         });
       }
+      if (
+        node.nodeType === "human.prompt_review" &&
+        !["waiting_human", "succeeded", "cancelled", "failed"].includes(input.toStatus)
+      ) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 422,
+          message: "Prompt Review节点状态不允许通过该命令转换",
+        });
+      }
       const workflowNodeRunId = derivedWorkflowNodeRunId(input);
       const existing = draft.entities.workflowNodeRuns[workflowNodeRunId];
       if (existing?.status === input.toStatus) {
         assertEquivalentRepeatedTransition(existing, input);
         return { resultRefs: { workflowNodeRunId } };
       }
-      if (["succeeded", "failed", "cancelled", "outcome_unknown"].includes(run.status)) {
+      const closesRejectedPromptReview =
+        run.status === "cancelled" &&
+        (node.nodeType === "human.prompt_review" || node.nodeType === "agent.direct") &&
+        existing?.status === "waiting_human" &&
+        input.toStatus === "cancelled" &&
+        input.outcomeCode === "rejected";
+      const closesFailedPromptReview =
+        (node.nodeType === "human.prompt_review" || node.nodeType === "agent.direct") &&
+        existing?.status === "waiting_human" &&
+        input.toStatus === "failed";
+      const closesUnknownDirectAgent =
+        run.status === "outcome_unknown" &&
+        node.nodeType === "agent.direct" &&
+        existing?.status === "running" &&
+        input.toStatus === "outcome_unknown";
+      if (
+        ["succeeded", "failed", "cancelled", "outcome_unknown"].includes(run.status) &&
+        !closesRejectedPromptReview &&
+        !closesFailedPromptReview &&
+        !closesUnknownDirectAgent
+      ) {
         throw new ApplicationError({
           code: "revision_conflict",
           httpStatus: 409,
@@ -169,19 +201,40 @@ export async function transitionConfigurablePlanningNode(
         draft.entities.nodeRunTransitions[initial.transition.nodeRunTransitionId] =
           nodeRunTransitionSchema.parse(initial.transition);
       }
-      const current = draft.entities.workflowNodeRuns[workflowNodeRunId] ?? created;
+      let current = draft.entities.workflowNodeRuns[workflowNodeRunId] ?? created;
+      if (
+        existing === undefined &&
+        (node.nodeType === "human.prompt_review" || node.nodeType === "agent.direct") &&
+        input.toStatus === "waiting_human"
+      ) {
+        // Domain保持通用queued→running→waiting_human状态机；Prompt Review首轮在同一
+        // Product事务内补齐内部started证据，外部只能观察到带PRR Hash的waiting_human。
+        const started = transitionWorkflowNodeRun(current, {
+          transitionId: derivedTransitionId(workflowNodeRunId, 2),
+          nodeSequence: 2,
+          toStatus: "running",
+          reasonKind: "started",
+          at: now,
+        });
+        draft.entities.workflowNodeRuns[workflowNodeRunId] = workflowNodeRunSchema.parse(
+          started.nodeRun,
+        );
+        draft.entities.nodeRunTransitions[started.transition.nodeRunTransitionId] =
+          nodeRunTransitionSchema.parse(started.transition);
+        current = draft.entities.workflowNodeRuns[workflowNodeRunId] ?? started.nodeRun;
+      }
       // Plan/Decision用例会在同一权威事务中先同步S1投影；随后到达的Workflow命令
       // 仍需留下幂等Receipt，但不得为同一目标状态制造重复Transition。
       const nodeSequence =
         Object.values(draft.entities.nodeRunTransitions).filter(
           (transition) => transition.workflowNodeRunId === workflowNodeRunId,
         ).length + 1;
-      const relatedProductRef = transitionEvidenceRef(draft, input, current.status);
+      const relatedProductRef = transitionEvidenceRef(draft, input, current.status, node.nodeType);
       const transitioned = transitionWorkflowNodeRun(current, {
         transitionId: derivedTransitionId(workflowNodeRunId, nodeSequence),
         nodeSequence,
         toStatus: input.toStatus,
-        reasonKind: reasonForStatus(input.toStatus),
+        reasonKind: reasonForStatus(input.toStatus, current.status),
         at: now,
         ...(input.outcomeCode !== undefined ? { outcomeCode: input.outcomeCode } : {}),
         ...(input.publicSummary !== undefined ? { publicSummary: input.publicSummary } : {}),
@@ -256,12 +309,16 @@ function assertRuntimeNodeCommand(
   if (
     input.toStatus === "waiting_human" &&
     node.nodeType !== "human.plan_review" &&
-    node.nodeType !== "human.note_review"
+    node.nodeType !== "human.note_review" &&
+    node.nodeType !== "human.prompt_review" &&
+    node.nodeType !== "agent.direct"
   ) {
     throw invalidRuntimeTransition("非人工节点不能进入waiting_human");
   }
   if (
-    (node.nodeType === "human.plan_review" || node.nodeType === "human.note_review") &&
+    (node.nodeType === "human.plan_review" ||
+      node.nodeType === "human.note_review" ||
+      node.nodeType === "human.prompt_review") &&
     input.toStatus === "running"
   ) {
     throw invalidRuntimeTransition("人工审核由产品Hook事实直接进入waiting_human");
@@ -281,6 +338,13 @@ function assertRuntimeNodeCommand(
     if (input.outcomeCode === undefined || !outcomes.includes(input.outcomeCode)) {
       throw invalidRuntimeTransition("Workflow节点完成outcome不在冻结Catalog中");
     }
+  }
+  if (
+    node.nodeType === "human.prompt_review" &&
+    ((input.toStatus === "succeeded" && input.outcomeCode !== "approved") ||
+      (input.toStatus === "cancelled" && input.outcomeCode !== "rejected"))
+  ) {
+    throw invalidRuntimeTransition("Prompt Review终态与决定outcome不匹配");
   }
   if (
     (input.toStatus === "running" || input.toStatus === "waiting_human") &&
@@ -418,8 +482,11 @@ function derivedTransitionId(workflowNodeRunId: string, sequence: number): strin
   return `wnt_${hashCanonical("id.node-transition.v1", { workflowNodeRunId, sequence }).slice(0, 32)}`;
 }
 
-function reasonForStatus(status: TransitionConfigurablePlanningNodeInput["toStatus"]) {
-  if (status === "running") return "started" as const;
+function reasonForStatus(
+  status: TransitionConfigurablePlanningNodeInput["toStatus"],
+  currentStatus: WorkflowNodeRunStatus,
+) {
+  if (status === "running") return currentStatus === "waiting_human" ? "resumed" : "started";
   if (status === "waiting_human") return "waiting_human" as const;
   if (status === "succeeded") return "completed" as const;
   if (status === "skipped") return "skipped" as const;
@@ -432,8 +499,46 @@ function transitionEvidenceRef(
   draft: Parameters<Parameters<ApplicationDeps["store"]["transact"]>[0]["mutate"]>[0],
   input: TransitionConfigurablePlanningNodeInput,
   currentStatus: WorkflowNodeRunStatus,
+  nodeType: WorkflowRunSpec["nodeResolutions"][number]["nodeType"],
 ): NodeProductRef | undefined {
   if (input.toStatus === "waiting_human") {
+    if (nodeType === "human.prompt_review" || nodeType === "agent.direct") {
+      const run = draft.entities.runs[input.productRunId];
+      const review =
+        run?.runKind === "direct_agent" && run.currentPromptReviewRequestId !== undefined
+          ? draft.entities.promptReviewRequests[run.currentPromptReviewRequestId]
+          : undefined;
+      if (
+        review === undefined ||
+        review.productRunId !== input.productRunId ||
+        review.status !== "open"
+      ) {
+        throw invalidRuntimeTransition("Prompt Review等待节点缺少当前open Request");
+      }
+      const recomputedReviewSha256 = computePromptReviewSha256({
+        promptReviewRequestId: review.promptReviewRequestId,
+        productRunId: review.productRunId,
+        directAgentAttemptId: review.directAgentAttemptId,
+        requestIndex: review.requestIndex,
+        requestKind: review.requestKind,
+        providerId: review.providerId,
+        modelId: review.modelId,
+        endpointHost: review.endpointHost,
+        requestRevision: review.requestRevision,
+        payloadSha256: review.payloadSha256,
+        rendererVersion: review.rendererVersion,
+      });
+      if (recomputedReviewSha256 !== review.reviewSha256) {
+        throw invalidRuntimeTransition("Prompt Review Request Hash已漂移");
+      }
+      return {
+        kind: "prompt_review_request",
+        id: review.promptReviewRequestId,
+        revision: review.requestRevision,
+        sha256: review.reviewSha256,
+        label: `提示词审核 #${String(review.requestIndex)}`,
+      };
+    }
     const approval = Object.values(draft.entities.approvalRequests)
       .filter((candidate) => candidate.productRunId === input.productRunId)
       .sort((left, right) => right.planRevision - left.planRevision)[0];
@@ -450,6 +555,54 @@ function transitionEvidenceRef(
         expiresAt: approval.expiresAt,
       }),
       label: `计划 v${String(approval.planRevision)} 审核`,
+    };
+  }
+  if (
+    (nodeType === "human.prompt_review" || nodeType === "agent.direct") &&
+    currentStatus === "waiting_human" &&
+    (input.toStatus === "running" ||
+      input.toStatus === "succeeded" ||
+      input.toStatus === "cancelled")
+  ) {
+    const review = Object.values(draft.entities.promptReviewRequests)
+      .filter((candidate) => candidate.productRunId === input.productRunId)
+      .sort((left, right) => right.requestIndex - left.requestIndex)[0];
+    const decision =
+      review?.decidedByPromptReviewDecisionId === undefined
+        ? undefined
+        : draft.entities.promptReviewDecisions[review.decidedByPromptReviewDecisionId];
+    const expectedKind = input.toStatus === "cancelled" ? "reject" : "approve";
+    const expectedReviewStatus = expectedKind === "approve" ? "approved" : "rejected";
+    if (
+      review === undefined ||
+      decision === undefined ||
+      review.status !== expectedReviewStatus ||
+      decision.kind !== expectedKind ||
+      decision.productRunId !== input.productRunId ||
+      decision.promptReviewRequestId !== review.promptReviewRequestId ||
+      decision.requestRevision !== review.requestRevision ||
+      decision.reviewSha256 !== review.reviewSha256 ||
+      decision.payloadSha256 !== review.payloadSha256
+    ) {
+      throw invalidRuntimeTransition("Prompt Review Decision绑定或Hash已漂移");
+    }
+    return {
+      kind: "prompt_review_decision",
+      id: decision.promptReviewDecisionId,
+      revision: decision.revision,
+      sha256: computePromptReviewDecisionSha256({
+        promptReviewDecisionId: decision.promptReviewDecisionId,
+        promptReviewRequestId: decision.promptReviewRequestId,
+        productRunId: decision.productRunId,
+        requestRevision: decision.requestRevision,
+        reviewSha256: decision.reviewSha256,
+        payloadSha256: decision.payloadSha256,
+        kind: decision.kind,
+        ...(decision.reason === undefined ? {} : { reason: decision.reason }),
+        principalId: decision.principalId,
+        commandId: decision.commandId,
+      }),
+      label: decision.kind === "approve" ? "提示词已批准" : "提示词已拒绝",
     };
   }
   if (currentStatus !== "waiting_human" || input.toStatus !== "succeeded") {

@@ -4,6 +4,7 @@ import { lifeosProjectionSchema } from "../src/contracts.ts";
 import {
   hasActionableNoteReview,
   hasActionablePlanReview,
+  hasActionablePromptReview,
   shouldShowLifeosReviewDock,
 } from "../src/client/LifeosDock.tsx";
 
@@ -66,6 +67,53 @@ function planReviewProjection() {
     pendingDecision: null,
     noteCandidate: null,
     pendingNoteDecision: null,
+    workflowSelection: null,
+    executionTraces: [],
+  });
+}
+
+function promptReviewProjection() {
+  return lifeosProjectionSchema.parse({
+    schemaVersion: "chat-dsh-lifeos-bridge.v3",
+    dshSessionId: "dsh-session-prompt-review",
+    run: {
+      productRunId: "run_promptreview1",
+      status: "waiting_human",
+      phase: "prompt_review",
+      allowedActions: ["approve", "reject"],
+      revision: 3,
+      updatedAt: timestamp,
+    },
+    plan: null,
+    approval: null,
+    pendingDecision: null,
+    noteCandidate: null,
+    pendingNoteDecision: null,
+    promptReview: {
+      schemaVersion: "chat-product-api.v1",
+      promptReviewRequestId: "prr_promptreview1",
+      productRunId: "run_promptreview1",
+      requestIndex: 1,
+      requestKind: "agent_turn",
+      providerId: "bailian",
+      modelId: "qwen3.7-plus",
+      endpointHost: "dashscope.aliyuncs.com",
+      requestRevision: 1,
+      status: "open",
+      canonicalPayloadJson: JSON.stringify({
+        model: "qwen3.7-plus",
+        messages: [{ role: "user", content: "请审核我" }],
+      }),
+      readablePrompt: "# 请求内容\n\n用户消息：请审核我",
+      rendererVersion: "prompt-readable.v1",
+      payloadSha256: "e".repeat(64),
+      reviewSha256: "f".repeat(64),
+      allowedActions: ["approve", "reject"],
+      revision: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    pendingPromptReviewDecision: null,
     workflowSelection: null,
     executionTraces: [],
   });
@@ -153,6 +201,22 @@ test("review dock applies the same transient lifecycle to note candidates", () =
     },
   });
   assert.equal(hasActionableNoteReview(completed), false);
+  assert.equal(shouldShowLifeosReviewDock(completed), false);
+});
+
+test("执行Agent的同一节点在Provider边界展示原始与易读Prompt Review", () => {
+  const waiting = promptReviewProjection();
+  assert.equal(hasActionablePromptReview(waiting), true);
+  assert.equal(shouldShowLifeosReviewDock(waiting), true);
+  assert.match(waiting.promptReview?.canonicalPayloadJson ?? "", /qwen3\.7-plus/);
+  assert.match(waiting.promptReview?.readablePrompt ?? "", /用户消息/);
+
+  const completed = lifeosProjectionSchema.parse({
+    ...waiting,
+    run: { ...waiting.run, status: "running", phase: "executing", revision: 4 },
+    promptReview: { ...waiting.promptReview, status: "approved", allowedActions: [] },
+  });
+  assert.equal(hasActionablePromptReview(completed), false);
   assert.equal(shouldShowLifeosReviewDock(completed), false);
 });
 

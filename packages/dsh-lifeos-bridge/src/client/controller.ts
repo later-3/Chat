@@ -8,6 +8,7 @@ import {
   type LifeosProjection,
   type LifeosWorkflowOption,
   type NoteDecisionRequest,
+  type PromptReviewDecisionRequest,
   type WorkflowSelection,
 } from "../contracts.ts";
 
@@ -182,6 +183,41 @@ export class LifeosProjectionController {
         status: this.snapshot.projection === null ? "error" : this.snapshot.status,
         submitting: false,
         error: error instanceof Error ? error.message : "LifeOS 笔记决定提交失败",
+      });
+      return false;
+    }
+  }
+
+  async decidePromptReview(request: PromptReviewDecisionRequest): Promise<boolean> {
+    if (this.disposed || this.snapshot.submitting) return false;
+    this.publish({ ...this.snapshot, submitting: true, error: null });
+    try {
+      const response = await this.fetchImpl(
+        `/lifeos/sessions/${encodeURIComponent(this.sessionId)}/prompt-review-decisions`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { accept: "application/json", "content-type": "application/json" },
+          body: JSON.stringify(request),
+        },
+      );
+      const json = await responseJson(response);
+      if (!response.ok) throw new Error(problemMessage(json, response.status));
+      const projection = lifeosProjectionSchema.parse(json);
+      this.publish({
+        ...this.snapshot,
+        status: "ready",
+        projection,
+        submitting: false,
+        error: null,
+      });
+      return true;
+    } catch (error) {
+      this.publish({
+        ...this.snapshot,
+        status: this.snapshot.projection === null ? "error" : this.snapshot.status,
+        submitting: false,
+        error: error instanceof Error ? error.message : "LifeOS 提示词决定提交失败",
       });
       return false;
     }

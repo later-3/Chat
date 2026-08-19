@@ -28,7 +28,9 @@ export const workflowDefinitionNodeTypeSchema = z.enum([
   "capability.skills",
   "agent.research",
   "agent.plan",
+  "agent.direct",
   "human.plan_review",
+  "human.prompt_review",
   "execute.plan",
   "result.validate",
   "product.commit",
@@ -38,7 +40,7 @@ export const workflowDefinitionNodeTypeSchema = z.enum([
   "note.commit",
 ]);
 
-export const workflowBlueprintKeySchema = z.enum(["planning", "note"]);
+export const workflowBlueprintKeySchema = z.enum(["planning", "note", "direct"]);
 export const workflowDefinitionStateSchema = z.enum(["active", "archived"]);
 export const workflowDefinitionRevisionStateSchema = z.enum(["draft", "published", "superseded"]);
 export const workflowExecutorKindSchema = z.enum(["step", "human_review", "composite"]);
@@ -61,6 +63,7 @@ export const workflowRunnerFamilySchema = z.enum([
   "definition-kernel-lab.v1",
   "configurable-planning.v1",
   "note-capture.v1",
+  "direct-agent.v1",
 ]);
 
 export const workflowRunnerEvidenceSchema = z
@@ -82,7 +85,8 @@ export const WORKFLOW_DEFINITION_CONTRACT_LIMITS = Object.freeze({
     maxBranches: 24,
     maxLoops: 8,
     maxNestedLoops: 2,
-    maxLoopIterations: 5,
+    // 16次Direct Provider审核 + 1次不产生新请求的最终收敛。
+    maxLoopIterations: 17,
   },
   runtime: {
     maxNodeExecutions: 256,
@@ -471,6 +475,11 @@ export const workflowRunBusinessInputSchema = z.discriminatedUnion("kind", [
       source: noteSourceRefSchema,
       defaultKind: noteKindSchema,
       suggestedTags: noteTagsSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("direct_agent_message"),
     })
     .strict(),
 ]);

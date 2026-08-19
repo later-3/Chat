@@ -3,12 +3,15 @@ import {
   SESSION_RECORDS_SCHEMA_VERSION,
   decisionRequestSchema,
   noteDecisionRequestSchema,
+  promptReviewDecisionRequestSchema,
   type ChatApproval,
   type ChatNoteCandidate,
   type ChatPlan,
+  type ChatPromptReview,
   type ChatRun,
   type DecisionRequest,
   type NoteDecisionRequest,
+  type PromptReviewDecisionRequest,
   type LifeosExecutionTrace,
   type LifeosProjection,
   type LifeosWorkflowOption,
@@ -27,6 +30,7 @@ import {
   AtomicBridgeStateStore,
   type PendingDecision,
   type PendingNoteDecision,
+  type PendingPromptReviewDecision,
   type SessionBinding,
 } from "./state-store.ts";
 import type { DshSessionHistoryPort } from "./dsh-session-history.ts";
@@ -147,6 +151,35 @@ function pendingNoteFrom(dshSessionId: string, request: NoteDecisionRequest): Pe
     noteCandidateId: observed.noteCandidateId,
     candidateRevision: observed.candidateRevision,
     candidateSha256: observed.candidateSha256,
+    request,
+  };
+}
+
+function promptReviewDecisionBodySha256(request: PromptReviewDecisionRequest): string {
+  return sha256(JSON.stringify({ kind: request.kind, explanation: request.explanation ?? null }));
+}
+
+function pendingPromptReviewFrom(
+  dshSessionId: string,
+  request: PromptReviewDecisionRequest,
+): PendingPromptReviewDecision {
+  const bodySha256 = promptReviewDecisionBodySha256(request);
+  const observed = request.binding;
+  return {
+    bodySha256,
+    commandId: stableCommandId(
+      "submit-prompt-review-decision",
+      dshSessionId,
+      observed.promptReviewRequestId,
+      request.kind,
+      bodySha256,
+    ),
+    productRunId: observed.productRunId,
+    expectedRunRevision: observed.runRevision,
+    promptReviewRequestId: observed.promptReviewRequestId,
+    requestRevision: observed.requestRevision,
+    reviewSha256: observed.reviewSha256,
+    payloadSha256: observed.payloadSha256,
     request,
   };
 }
@@ -319,6 +352,8 @@ export class LifeosBridgeService {
         pendingDecision: current?.pendingDecision?.request ?? null,
         noteCandidate: null,
         pendingNoteDecision: current?.pendingNoteDecision?.request ?? null,
+        promptReview: null,
+        pendingPromptReviewDecision: current?.pendingPromptReviewDecision?.request ?? null,
         workflowSelection: binding?.workflowSelection ?? null,
         executionTraces: await executionTracesPromise,
       };
@@ -330,7 +365,10 @@ export class LifeosBridgeService {
     let plan: ChatPlan | null = null;
     let approval: ChatApproval | null = null;
     let noteCandidate: ChatNoteCandidate | null = null;
-    if (run.phase === "note_review" || current.pendingNoteDecision !== undefined) {
+    let promptReview: ChatPromptReview | null = null;
+    if (run.phase === "prompt_review" || current.pendingPromptReviewDecision !== undefined) {
+      promptReview = await this.chat.getCurrentPromptReview(current.productRunId, signal);
+    } else if (run.phase === "note_review" || current.pendingNoteDecision !== undefined) {
       noteCandidate = await this.chat.getNoteCandidate(current.productRunId, signal);
     } else if (
       PLANNING_PROJECTION_PHASES.has(run.phase) ||
@@ -362,6 +400,8 @@ export class LifeosBridgeService {
       pendingDecision: current.pendingDecision?.request ?? null,
       noteCandidate,
       pendingNoteDecision: current.pendingNoteDecision?.request ?? null,
+      promptReview,
+      pendingPromptReviewDecision: current.pendingPromptReviewDecision?.request ?? null,
       workflowSelection: binding?.workflowSelection ?? null,
       executionTraces,
     };
@@ -661,6 +701,132 @@ export class LifeosBridgeService {
       const target = binding.requests[requestKey];
       if (target?.pendingNoteDecision?.commandId === decision.commandId) {
         delete target.pendingNoteDecision;
+      }
+    });
+    return await this.projection(dshSessionId, signal);
+  }
+
+  async decidePromptReview(
+    dshSessionId: string,
+    request: PromptReviewDecisionRequest,
+    signal?: AbortSignal,
+  ): Promise<LifeosProjection> {
+    const normalizedRequest = promptReviewDecisionRequestSchema.parse(request);
+    const createCommandId = stableCommandId("create-session", dshSessionId);
+    const existing = await this.state.readSession(dshSessionId);
+    const requestKey = existing?.currentRequestKey;
+    if (existing === undefined || requestKey === undefined) {
+      throw new BridgeRequestError(404, "lifeos_run_not_found", "当前 DSH 会话没有 LifeOS Run");
+    }
+    const requestBinding = existing.requests[requestKey];
+    if (requestBinding?.productRunId === undefined) {
+      throw new BridgeRequestError(409, "lifeos_run_not_ready", "LifeOS Run 尚未建立");
+    }
+    if (requestBinding.productRunId !== normalizedRequest.binding.productRunId) {
+      throw new BridgeRequestError(409, "lifeos_prompt_review_stale", "Run 已变化，请刷新后重试");
+    }
+    if (
+      requestBinding.pendingDecision !== undefined ||
+      requestBinding.pendingNoteDecision !== undefined
+    ) {
+      throw new BridgeRequestError(
+        409,
+        "lifeos_decision_outcome_unknown",
+        "上一产品决定结果仍未知，不能提交提示词决定",
+      );
+    }
+    const bodySha256 = promptReviewDecisionBodySha256(normalizedRequest);
+    let pending = requestBinding.pendingPromptReviewDecision;
+    if (pending !== undefined && pending.bodySha256 !== bodySha256) {
+      throw new BridgeRequestError(
+        409,
+        "lifeos_prompt_review_decision_outcome_unknown",
+        "上一提示词决定结果仍未知；只能用相同内容重试",
+      );
+    }
+    if (pending === undefined) {
+      const [run, review] = await Promise.all([
+        this.chat.getRun(requestBinding.productRunId, signal),
+        this.chat.getCurrentPromptReview(requestBinding.productRunId, signal),
+      ]);
+      const observed = normalizedRequest.binding;
+      if (
+        review === null ||
+        review.status !== "open" ||
+        run.productRunId !== observed.productRunId ||
+        run.revision !== observed.runRevision ||
+        run.status !== "waiting_human" ||
+        run.phase !== "prompt_review" ||
+        review.productRunId !== observed.productRunId ||
+        review.promptReviewRequestId !== observed.promptReviewRequestId ||
+        review.requestRevision !== observed.requestRevision ||
+        review.reviewSha256 !== observed.reviewSha256 ||
+        review.payloadSha256 !== observed.payloadSha256
+      ) {
+        throw new BridgeRequestError(
+          409,
+          "lifeos_prompt_review_stale",
+          "Run 或提示词请求已变化，请查看当前版本后重试",
+        );
+      }
+      if (!review.allowedActions.includes(normalizedRequest.kind)) {
+        throw new BridgeRequestError(
+          409,
+          "lifeos_prompt_review_decision_not_allowed",
+          "当前提示词请求不允许该决定",
+        );
+      }
+      const next = pendingPromptReviewFrom(dshSessionId, normalizedRequest);
+      pending = await this.state.mutateSession(dshSessionId, createCommandId, (binding) => {
+        const target = binding.requests[requestKey];
+        if (target?.productRunId === undefined) {
+          throw new BridgeRequestError(409, "lifeos_run_changed", "当前 Run 已变化，请刷新后重试");
+        }
+        if (target.pendingDecision !== undefined || target.pendingNoteDecision !== undefined) {
+          throw new BridgeRequestError(
+            409,
+            "lifeos_decision_outcome_unknown",
+            "上一产品决定结果仍未知，不能提交提示词决定",
+          );
+        }
+        if (target.pendingPromptReviewDecision !== undefined) {
+          if (target.pendingPromptReviewDecision.bodySha256 !== bodySha256) {
+            throw new BridgeRequestError(
+              409,
+              "lifeos_prompt_review_decision_outcome_unknown",
+              "上一提示词决定结果仍未知；只能用相同内容重试",
+            );
+          }
+          return structuredClone(target.pendingPromptReviewDecision);
+        }
+        target.pendingPromptReviewDecision = next;
+        return structuredClone(next);
+      });
+    }
+    if (pending === undefined) {
+      throw new BridgeRequestError(
+        409,
+        "lifeos_prompt_review_decision_missing",
+        "提示词决定绑定未建立",
+      );
+    }
+    try {
+      await this.chat.submitPromptReviewDecision(pending, pending.request, signal);
+    } catch (error) {
+      if (isDeterministicDecisionRejection(error)) {
+        await this.state.mutateSession(dshSessionId, createCommandId, (binding) => {
+          const target = binding.requests[requestKey];
+          if (target?.pendingPromptReviewDecision?.commandId === pending?.commandId) {
+            delete target.pendingPromptReviewDecision;
+          }
+        });
+      }
+      throw error;
+    }
+    await this.state.mutateSession(dshSessionId, createCommandId, (binding) => {
+      const target = binding.requests[requestKey];
+      if (target?.pendingPromptReviewDecision?.commandId === pending?.commandId) {
+        delete target.pendingPromptReviewDecision;
       }
     });
     return await this.projection(dshSessionId, signal);

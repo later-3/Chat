@@ -347,13 +347,15 @@ function parseCompilerBoundaries(
     };
   }
   if (businessInput.data !== undefined) {
-    const expectedInputKind =
-      definition.blueprintKey === "note" ? "note_capture" : "planning_message";
-    const expectedRunnerFamily =
-      definition.blueprintKey === "note" ? "note-capture.v1" : "configurable-planning.v1";
+    const expected =
+      definition.blueprintKey === "note"
+        ? { inputKind: "note_capture", runnerFamily: "note-capture.v1" }
+        : definition.blueprintKey === "direct"
+          ? { inputKind: "direct_agent_message", runnerFamily: "direct-agent.v1" }
+          : { inputKind: "planning_message", runnerFamily: "configurable-planning.v1" };
     if (
-      businessInput.data.kind !== expectedInputKind ||
-      runner.data.runnerFamily !== expectedRunnerFamily
+      businessInput.data.kind !== expected.inputKind ||
+      runner.data.runnerFamily !== expected.runnerFamily
     ) {
       return {
         success: false,

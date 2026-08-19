@@ -38,6 +38,9 @@ import type {
   RuleScopeId,
   RuleDecisionId,
   RuleSelectionId,
+  PromptReviewRequestId,
+  PromptReviewDecisionId,
+  DirectAgentCandidateId,
   ExecutionTracePage,
 } from "@chat/contracts";
 import type { TraceEventInput } from "@chat/contracts";
@@ -123,6 +126,13 @@ export interface RuleIdFactory {
   selection(): RuleSelectionId;
 }
 
+/** Direct Agent独立身份空间，避免让既有Planning测试Fixture被新流程强制扩张。 */
+export interface DirectAgentIdFactory {
+  promptReviewRequest(): PromptReviewRequestId;
+  promptReviewDecision(): PromptReviewDecisionId;
+  candidate(): DirectAgentCandidateId;
+}
+
 export interface ApplicationDeps {
   readonly store: ProductStorePort;
   readonly now: () => string;
@@ -147,6 +157,7 @@ export interface ApplicationDeps {
   readonly projectIds?: ProjectIdFactory;
   readonly noteIds?: NoteIdFactory;
   readonly ruleIds?: RuleIdFactory;
+  readonly directAgentIds?: DirectAgentIdFactory;
 }
 
 /** 规划修订默认上限（任务书§9.2.7）。 */

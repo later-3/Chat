@@ -4,6 +4,8 @@
 > 状态：P0能力证据，不是生产实现
 > 付费Provider：未调用
 
+后续生产纵向见[Direct Agent逐次提示词审核 P1](./direct-agent-prompt-review-p1.md)。本文件继续保留P0时点的能力边界与证据，不回写成生产完成说明。
+
 ## 1. 用户结果
 
 本P0回答一个问题：Chat能否在真实Pi `AgentSession`每次即将调用模型时取得最终Provider Payload、暂停，

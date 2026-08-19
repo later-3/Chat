@@ -15,6 +15,8 @@ import {
   workflowDefinitionIdSchema,
   workflowDefinitionRevisionIdSchema,
   workflowRunSpecIdSchema,
+  promptReviewRequestIdSchema,
+  directAgentCandidateIdSchema,
 } from "./ids.js";
 import {
   approvalRequestStatusSchema,
@@ -692,6 +694,9 @@ export const runDtoSchema = z
       .strict()
       .optional(),
     currentApprovalRequestId: approvalRequestIdSchema.optional(),
+    currentPromptReviewRequestId: promptReviewRequestIdSchema.optional(),
+    currentDirectAgentCandidateId: directAgentCandidateIdSchema.optional(),
+    finalDirectAgentCandidateId: directAgentCandidateIdSchema.optional(),
     finalMessageId: messageIdSchema.optional(),
     failure: runFailureSchema.optional(),
     maxPlanRevisions: z.number().int().positive().optional(),

@@ -44,6 +44,10 @@ import {
   CONFIGURABLE_PLANNING_RUNNER_FAMILY,
   NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
   NOTE_CAPTURE_RUNNER_FAMILY,
+  DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+  DIRECT_AGENT_RUNNER_FAMILY,
+  SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+  SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID,
   SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID,
   SYSTEM_NOTE_WORKFLOW_REVISION_ID,
@@ -154,6 +158,14 @@ export async function submitUserMessage(
     input.payload,
     input.principalId,
   );
+  if (selectedRevision.blueprintKey === "direct" && input.payload.context !== undefined) {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 422,
+      message: "Direct Agent V1只接受当前消息，暂不接受Memory或Workspace Instructions上下文",
+      recoveryAction: "none",
+    });
+  }
   const selectedView =
     selectedRevision.workflowDefinitionRevisionId === SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID
       ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID]
@@ -162,11 +174,13 @@ export async function submitUserMessage(
         ? preflightSnapshot.entities.workflowViewDefinitions[
             SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID
           ]
-        : selectedRevision.workflowDefinitionRevisionId === SYSTEM_PLANNING_WORKFLOW_REVISION_ID
-          ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_PLANNING_WORKFLOW_VIEW_ID]
-          : selectedRevision.workflowDefinitionRevisionId === SYSTEM_NOTE_WORKFLOW_REVISION_ID
-            ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_NOTE_WORKFLOW_VIEW_ID]
-            : createPublishedWorkflowView({ revision: selectedRevision, createdAt: now });
+        : selectedRevision.workflowDefinitionRevisionId === SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID
+          ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID]
+          : selectedRevision.workflowDefinitionRevisionId === SYSTEM_PLANNING_WORKFLOW_REVISION_ID
+            ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_PLANNING_WORKFLOW_VIEW_ID]
+            : selectedRevision.workflowDefinitionRevisionId === SYSTEM_NOTE_WORKFLOW_REVISION_ID
+              ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_NOTE_WORKFLOW_VIEW_ID]
+              : createPublishedWorkflowView({ revision: selectedRevision, createdAt: now });
   if (selectedView === undefined) {
     throw new ApplicationError({
       code: "store_corrupted",
@@ -194,10 +208,15 @@ export async function submitUserMessage(
           runnerFamily: NOTE_CAPTURE_RUNNER_FAMILY,
           runnerBundleVersion: NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
         }
-      : {
-          runnerFamily: CONFIGURABLE_PLANNING_RUNNER_FAMILY,
-          runnerBundleVersion: CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
-        };
+      : selectedRevision.blueprintKey === "direct"
+        ? {
+            runnerFamily: DIRECT_AGENT_RUNNER_FAMILY,
+            runnerBundleVersion: DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+          }
+        : {
+            runnerFamily: CONFIGURABLE_PLANNING_RUNNER_FAMILY,
+            runnerBundleVersion: CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
+          };
   assertWorkflowResourceSelectionsAuthorized(
     preflightSnapshot,
     input.principalId,
@@ -312,23 +331,40 @@ export async function submitUserMessage(
               createdAt: now,
               updatedAt: now,
             }
-          : {
-              schemaVersion: "product-run.v3",
-              runKind: "planning",
-              productRunId,
-              sessionId: input.sessionId,
-              sourceMessageId: messageId,
-              workflowViewDefinitionId: selectedView.workflowViewDefinitionId,
-              workflowRunSpecId,
-              runnerFamily: CONFIGURABLE_PLANNING_RUNNER_FAMILY,
-              runnerBundleVersion: CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
-              status: "pending",
-              phase: "queued",
-              maxPlanRevisions: DEFAULT_MAX_PLAN_REVISIONS,
-              revision: 1,
-              createdAt: now,
-              updatedAt: now,
-            };
+          : selectedRevision.blueprintKey === "direct"
+            ? {
+                schemaVersion: "product-run.v3",
+                runKind: "direct_agent",
+                productRunId,
+                sessionId: input.sessionId,
+                sourceMessageId: messageId,
+                workflowViewDefinitionId: selectedView.workflowViewDefinitionId,
+                workflowRunSpecId,
+                runnerFamily: DIRECT_AGENT_RUNNER_FAMILY,
+                runnerBundleVersion: DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+                status: "pending",
+                phase: "queued",
+                revision: 1,
+                createdAt: now,
+                updatedAt: now,
+              }
+            : {
+                schemaVersion: "product-run.v3",
+                runKind: "planning",
+                productRunId,
+                sessionId: input.sessionId,
+                sourceMessageId: messageId,
+                workflowViewDefinitionId: selectedView.workflowViewDefinitionId,
+                workflowRunSpecId,
+                runnerFamily: CONFIGURABLE_PLANNING_RUNNER_FAMILY,
+                runnerBundleVersion: CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
+                status: "pending",
+                phase: "queued",
+                maxPlanRevisions: DEFAULT_MAX_PLAN_REVISIONS,
+                revision: 1,
+                createdAt: now,
+                updatedAt: now,
+              };
       const selectedMemory = input.payload.context?.memory;
       const normalizedMemory =
         selectedMemory === undefined
@@ -524,6 +560,17 @@ function resolveSubmitBusinessInput(input: {
       });
     }
     return { runSpecBusinessInput: { kind: "planning_message" } };
+  }
+
+  if (input.revision.blueprintKey === "direct") {
+    if (input.submitInput !== undefined) {
+      throw new ApplicationError({
+        code: "validation_failed",
+        httpStatus: 422,
+        message: "Direct Agent Workflow不得携带Note Capture输入",
+      });
+    }
+    return { runSpecBusinessInput: { kind: "direct_agent_message" } };
   }
 
   if (input.revision.blueprintKey !== "note") {

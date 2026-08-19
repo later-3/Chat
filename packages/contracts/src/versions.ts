@@ -12,6 +12,7 @@ export const MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION = "memory-write-workflow.v
 
 export const PLANNER_PROMPT_TEMPLATE_VERSION = "planner-prompt.v3";
 export const EXECUTOR_PROMPT_TEMPLATE_VERSION = "executor-coding-agent-prompt.v1";
+export const DIRECT_AGENT_PROMPT_TEMPLATE_VERSION = "direct-agent-prompt.v1";
 export const MODEL_CONFIG_VERSION = "bailian.qwen3.7-plus.v1";
 
 /** Provider与模型冻结（任务书§14）：变更需合同PR。 */
@@ -45,3 +46,8 @@ export const B2_EXECUTOR_TOKEN_BUDGET_PER_STEP = 2_048;
 export const CODING_EXECUTOR_MAX_TURNS_PER_STEP = 24;
 export const CODING_EXECUTOR_TIMEOUT_MS_PER_STEP = 20 * 60_000;
 export const CODING_EXECUTOR_TOKEN_BUDGET_PER_STEP = 64_000;
+
+/** Direct Agent每次Provider请求都必须经Prompt Review；预算与Workflow 16轮上限一致。 */
+export const DIRECT_AGENT_MAX_PROVIDER_REQUESTS = 16;
+export const DIRECT_AGENT_ACTIVE_TIMEOUT_MS = 20 * 60_000;
+export const DIRECT_AGENT_TOKEN_BUDGET = 64_000;

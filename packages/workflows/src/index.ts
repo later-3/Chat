@@ -33,5 +33,8 @@ export * from "./configurable-planning-workflow.js";
 export * from "./restricted-run-spec-interpreter.js";
 export * from "./note-capture-steps.js";
 export * from "./note-capture-workflow.js";
+export * from "./direct-agent-workflow-input.js";
+export * from "./direct-agent-workflow-steps.js";
+export * from "./direct-agent-workflow.js";
 // Workflow Adapter边界的底层恢复原语；只能由本Adapter内的分发路径使用
 export { resumeHook, getHookByToken } from "workflow/api";

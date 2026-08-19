@@ -42,6 +42,12 @@ export const validationResultIdSchema = prefixedId("val");
 export const artifactIdSchema = prefixedId("art");
 export const outboxEntryIdSchema = prefixedId("obx");
 
+/* Prompt Review产品身份；与Pi Operation、Provider Request及Workflow Hook严格分离。 */
+export const promptReviewRequestIdSchema = prefixedId("prr");
+export const promptReviewDecisionIdSchema = prefixedId("prd");
+/** Direct Agent候选产品身份；不能复用Plan或Execution Candidate身份。 */
+export const directAgentCandidateIdSchema = prefixedId("drc");
+
 /* C1 长期上下文新增身份。均由服务端根据已提交产品身份确定性派生。 */
 export const contextRequestIdSchema = prefixedId("ctxr");
 export const memoryQueryIdSchema = prefixedId("mqy");
@@ -131,6 +137,9 @@ export type ExecutionCandidateId = z.infer<typeof executionCandidateIdSchema>;
 export type ValidationResultId = z.infer<typeof validationResultIdSchema>;
 export type ArtifactId = z.infer<typeof artifactIdSchema>;
 export type OutboxEntryId = z.infer<typeof outboxEntryIdSchema>;
+export type PromptReviewRequestId = z.infer<typeof promptReviewRequestIdSchema>;
+export type PromptReviewDecisionId = z.infer<typeof promptReviewDecisionIdSchema>;
+export type DirectAgentCandidateId = z.infer<typeof directAgentCandidateIdSchema>;
 export type ContextRequestId = z.infer<typeof contextRequestIdSchema>;
 export type MemoryQueryId = z.infer<typeof memoryQueryIdSchema>;
 export type MemoryResultSnapshotId = z.infer<typeof memoryResultSnapshotIdSchema>;

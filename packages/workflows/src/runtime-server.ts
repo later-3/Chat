@@ -8,6 +8,7 @@ import {
   type TraceEventInput,
 } from "@chat/contracts";
 import {
+  createPiDirectExecutorServiceClient,
   createPiExecutorServiceClient,
   loadBailianConfig,
   runPiNoteCapture,
@@ -72,6 +73,7 @@ export interface WorkflowRuntimeServerOptions {
       | "planner"
       | "noteCapture"
       | "executor"
+      | "directExecutor"
       | "now"
     >
   >;
@@ -113,6 +115,10 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       baseUrl: options.executorBaseUrl ?? "http://127.0.0.1:43115",
       credential: options.credential,
     });
+    const directExecutorClient = createPiDirectExecutorServiceClient({
+      baseUrl: options.executorBaseUrl ?? "http://127.0.0.1:43115",
+      credential: options.credential,
+    });
     setWorkflowRuntimeContext({
       api: createRuntimeApiClient({ baseUrl: options.apiBaseUrl, credential: options.credential }),
       bindings,
@@ -124,6 +130,7 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       planner: runPiPlanner,
       noteCapture: runPiNoteCapture,
       executor: executorClient,
+      directExecutor: directExecutorClient,
       ...options.runtimeOverrides,
     });
 

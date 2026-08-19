@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LifeosProjectionController } from "../src/client/controller.ts";
-import { noteDecisionRequestSchema, workflowSelectionSchema } from "../src/contracts.ts";
+import {
+  noteDecisionRequestSchema,
+  promptReviewDecisionRequestSchema,
+  workflowSelectionSchema,
+} from "../src/contracts.ts";
 
 const projection = {
   schemaVersion: "chat-dsh-lifeos-bridge.v3",
@@ -296,6 +300,41 @@ test("decideNote submits the observed candidate binding to the dedicated same-or
   assert.deepEqual(requests, [
     {
       path: "/lifeos/sessions/dsh-session-1/note-decisions",
+      method: "POST",
+      body: request,
+    },
+  ]);
+  controller.dispose();
+});
+
+test("decidePromptReview submits the exact observed request hashes to its same-origin route", async () => {
+  const requests: Array<{ path: string; method?: string; body?: unknown }> = [];
+  const controller = new LifeosProjectionController(
+    "dsh-session-1",
+    async (input: URL | RequestInfo, init?: RequestInit) => {
+      requests.push({
+        path: String(input),
+        ...(init?.method === undefined ? {} : { method: init.method }),
+        ...(init?.body === undefined ? {} : { body: JSON.parse(String(init.body)) }),
+      });
+      return new Response(JSON.stringify(projection), { status: 200 });
+    },
+  );
+  const request = promptReviewDecisionRequestSchema.parse({
+    kind: "approve",
+    binding: {
+      productRunId: "run_prompt1",
+      runRevision: 3,
+      promptReviewRequestId: "prr_prompt1",
+      requestRevision: 1,
+      reviewSha256: "e".repeat(64),
+      payloadSha256: "f".repeat(64),
+    },
+  });
+  assert.equal(await controller.decidePromptReview(request), true);
+  assert.deepEqual(requests, [
+    {
+      path: "/lifeos/sessions/dsh-session-1/prompt-review-decisions",
       method: "POST",
       body: request,
     },

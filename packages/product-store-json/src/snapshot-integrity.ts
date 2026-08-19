@@ -1,4 +1,10 @@
-import { EXECUTION_CAPABILITY_MARKDOWN_COMPOSE, type ProductSnapshot } from "@chat/contracts";
+import {
+  DIRECT_AGENT_ACTIVE_TIMEOUT_MS,
+  DIRECT_AGENT_MAX_PROVIDER_REQUESTS,
+  DIRECT_AGENT_TOKEN_BUDGET,
+  EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
+  type ProductSnapshot,
+} from "@chat/contracts";
 import { computePlanSha256, StoreCorruptedError } from "@chat/application";
 import { validateWorkflowRunSpecIntegrity } from "@chat/application/workflow-run-spec-compiler";
 import {
@@ -6,6 +12,7 @@ import {
   createSystemPlanningDefinition,
   createSystemSimplePlanningDefinition,
   createSystemNoteDefinition,
+  createSystemDirectAgentDefinition,
   SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
   SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_PLANNING_WORKFLOW_VIEW_ID,
@@ -18,9 +25,14 @@ import {
   SYSTEM_NOTE_WORKFLOW_DEFINITION_ID,
   SYSTEM_NOTE_WORKFLOW_REVISION_ID,
   SYSTEM_NOTE_WORKFLOW_VIEW_ID,
+  SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID,
+  SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+  SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID,
 } from "@chat/application/workflow-system-definitions";
 import {
   assertSingleOpenApproval,
+  assertSingleOpenPromptReview,
+  assertPromptReviewRequestIndexes,
   assertSinglePlanUnderReview,
   computeExecutionInputManifestSha256,
   computeContextPackageSha256,
@@ -76,6 +88,11 @@ import {
   computeWorkflowMemorySnapshotSha256,
   resolveMemoryWriteContent,
   sha256Hex,
+  computePromptReviewPayloadSha256,
+  computePromptReviewSha256,
+  computePromptReviewDecisionSha256,
+  computeDirectAgentCandidateSha256,
+  computeDirectAgentInputManifestSha256,
 } from "@chat/domain";
 
 /**
@@ -98,6 +115,7 @@ export function assertSnapshotIntegrity(snapshot: ProductSnapshot): void {
   assertWorkflowDefinitions(snapshot, fail);
   assertWorkflowProjection(snapshot, fail);
   assertPlansAndReviews(snapshot, fail);
+  assertPromptReviews(snapshot, fail);
   assertLongTermContext(snapshot, fail);
   assertMemoryImports(snapshot, fail);
   assertProjects(snapshot, fail);
@@ -108,6 +126,7 @@ export function assertSnapshotIntegrity(snapshot: ProductSnapshot): void {
   assertNotes(snapshot, fail);
   assertWorkflowPolicyResolutions(snapshot, fail);
   assertExecution(snapshot, fail);
+  assertDirectAgentCandidates(snapshot, fail);
   assertReceiptsAndOutbox(snapshot, fail);
 
   for (const runId of Object.keys(entities.runs)) {
@@ -118,6 +137,11 @@ export function assertSnapshotIntegrity(snapshot: ProductSnapshot): void {
       assertSingleOpenApproval(
         Object.values(entities.approvalRequests).filter(
           (approval) => approval.productRunId === runId,
+        ),
+      );
+      assertSingleOpenPromptReview(
+        Object.values(entities.promptReviewRequests).filter(
+          (request) => request.productRunId === runId,
         ),
       );
     } catch (error) {
@@ -142,6 +166,9 @@ function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
     ["candidate", snapshot.entities.executionCandidates, "executionCandidateId"],
     ["validation", snapshot.entities.validationResults, "validationResultId"],
     ["artifact", snapshot.entities.artifacts, "artifactId"],
+    ["directAgentCandidate", snapshot.entities.directAgentCandidates, "directAgentCandidateId"],
+    ["promptReviewRequest", snapshot.entities.promptReviewRequests, "promptReviewRequestId"],
+    ["promptReviewDecision", snapshot.entities.promptReviewDecisions, "promptReviewDecisionId"],
     ["contextRequest", snapshot.entities.contextRequests, "contextRequestId"],
     ["memoryQuery", snapshot.entities.memoryQueries, "memoryQueryId"],
     ["memorySnapshot", snapshot.entities.memoryResultSnapshots, "memoryResultSnapshotId"],
@@ -418,6 +445,13 @@ function assertWorkflowDefinitions(snapshot: ProductSnapshot, fail: Fail): void 
     workflowDefinitionRevisionId: SYSTEM_NOTE_WORKFLOW_REVISION_ID,
     workflowViewDefinitionId: SYSTEM_NOTE_WORKFLOW_VIEW_ID,
     create: createSystemNoteDefinition,
+  });
+  assertPinnedSystemDefinition(snapshot, fail, {
+    label: "direct agent",
+    workflowDefinitionId: SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID,
+    workflowDefinitionRevisionId: SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+    workflowViewDefinitionId: SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID,
+    create: createSystemDirectAgentDefinition,
   });
 }
 
@@ -712,6 +746,30 @@ function assertNodeProductRef(
         }),
       };
     }
+  } else if (ref.kind === "prompt_review_request") {
+    const target = entities.promptReviewRequests[ref.id];
+    if (target !== undefined) {
+      expected = { revision: target.requestRevision, sha256: target.reviewSha256 };
+    }
+  } else if (ref.kind === "prompt_review_decision") {
+    const target = entities.promptReviewDecisions[ref.id];
+    if (target !== undefined) {
+      expected = {
+        revision: target.revision,
+        sha256: computePromptReviewDecisionSha256({
+          promptReviewDecisionId: target.promptReviewDecisionId,
+          promptReviewRequestId: target.promptReviewRequestId,
+          productRunId: target.productRunId,
+          requestRevision: target.requestRevision,
+          reviewSha256: target.reviewSha256,
+          payloadSha256: target.payloadSha256,
+          kind: target.kind,
+          ...(target.reason !== undefined ? { reason: target.reason } : {}),
+          principalId: target.principalId,
+          commandId: target.commandId,
+        }),
+      };
+    }
   } else if (ref.kind === "note_candidate") {
     const target = entities.noteCandidates[ref.id];
     if (
@@ -757,6 +815,9 @@ function assertNodeProductRef(
     if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
   } else if (ref.kind === "execution_candidate") {
     const target = entities.executionCandidates[ref.id];
+    if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
+  } else if (ref.kind === "direct_agent_candidate") {
+    const target = entities.directAgentCandidates[ref.id];
     if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
   } else if (ref.kind === "validation_result") {
     const target = entities.validationResults[ref.id];
@@ -2603,6 +2664,75 @@ function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
       ) {
         fail(`execution attempt ${attempt.attemptId} 不允许planning输入证据`);
       }
+    } else if (attempt.kind === "direct_agent") {
+      const source = run === undefined ? undefined : entities.messages[run.sourceMessageId];
+      const runSpec =
+        run?.runKind === "direct_agent"
+          ? entities.workflowRunSpecs[run.workflowRunSpecId]
+          : undefined;
+      const promptTemplateVersion = attempt.promptTemplateVersion;
+      const modelConfigVersion = attempt.modelConfigVersion;
+      if (
+        run?.runKind !== "direct_agent" ||
+        source === undefined ||
+        runSpec === undefined ||
+        attempt.inputRunRevision === undefined ||
+        attempt.sourceMessageSha256 === undefined ||
+        attempt.inputManifestSha256 === undefined ||
+        promptTemplateVersion === undefined ||
+        modelConfigVersion === undefined
+      ) {
+        fail(`direct_agent attempt ${attempt.attemptId} 缺少Run、源消息或版本证据`);
+      }
+      if (
+        attempt.stepId !== undefined ||
+        attempt.planRevision !== undefined ||
+        attempt.executionContractId !== undefined ||
+        attempt.dependencyRefs !== undefined ||
+        attempt.priorPlanRevisionId !== undefined ||
+        attempt.revisionInputId !== undefined ||
+        attempt.contextPackageId !== undefined ||
+        attempt.contextPackageSha256 !== undefined ||
+        attempt.planningMemorySelectionId !== undefined ||
+        attempt.planningMemorySelectionSha256 !== undefined ||
+        attempt.workflowMemoryContextId !== undefined ||
+        attempt.workflowMemoryContextSha256 !== undefined ||
+        attempt.planningProjectContextId !== undefined ||
+        attempt.planningProjectContextSha256 !== undefined ||
+        attempt.ruleSelectionId !== undefined ||
+        attempt.ruleSelectionSha256 !== undefined
+      ) {
+        fail(`direct_agent attempt ${attempt.attemptId} 不允许Plan/Execution Contract证据`);
+      }
+      const sourceSha256 = hashCanonical("message.v1", {
+        messageId: source.messageId,
+        sessionId: source.sessionId,
+        sessionSequence: source.sessionSequence,
+        role: source.role,
+        content: source.content,
+      });
+      if (sourceSha256 !== attempt.sourceMessageSha256) {
+        fail(`direct_agent attempt ${attempt.attemptId} sourceMessageSha256不一致`);
+      }
+      const inputManifestSha256 = computeDirectAgentInputManifestSha256({
+        productRunId: attempt.productRunId,
+        inputRunRevision: attempt.inputRunRevision,
+        workflowRunSpecId: runSpec.workflowRunSpecId,
+        workflowRunSpecSha256: runSpec.sha256,
+        sourceMessageId: source.messageId,
+        sourceMessageSha256: sourceSha256,
+        capabilityMode: "read_only",
+        promptTemplateVersion,
+        modelConfigVersion,
+        limits: {
+          maxProviderRequests: DIRECT_AGENT_MAX_PROVIDER_REQUESTS,
+          activeTimeoutMs: DIRECT_AGENT_ACTIVE_TIMEOUT_MS,
+          tokenBudget: DIRECT_AGENT_TOKEN_BUDGET,
+        },
+      });
+      if (inputManifestSha256 !== attempt.inputManifestSha256) {
+        fail(`direct_agent attempt ${attempt.attemptId} inputManifestSha256不一致`);
+      }
     } else if (
       attempt.stepId !== undefined ||
       attempt.planRevision !== undefined ||
@@ -3185,8 +3315,27 @@ function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
     "outcome_unknown/classifying",
     "outcome_unknown/committing",
   ]);
+  const directAgentLegal = new Set([
+    "pending/queued",
+    "running/executing",
+    "waiting_human/prompt_review",
+    "succeeded/completed",
+    "failed/queued",
+    "failed/executing",
+    "failed/prompt_review",
+    "cancelled/queued",
+    "cancelled/executing",
+    "cancelled/rejected",
+    "outcome_unknown/queued",
+    "outcome_unknown/executing",
+  ]);
   for (const run of Object.values(entities.runs)) {
-    const legal = run.runKind === "note_capture" ? noteCaptureLegal : planningLegal;
+    const legal =
+      run.runKind === "note_capture"
+        ? noteCaptureLegal
+        : run.runKind === "direct_agent"
+          ? directAgentLegal
+          : planningLegal;
     if (!legal.has(`${run.status}/${run.phase}`)) fail(`run ${run.productRunId} 生命周期组合非法`);
     const session = entities.sessions[run.sessionId];
     const source = entities.messages[run.sourceMessageId];
@@ -3199,6 +3348,109 @@ function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
       fail(`run ${run.productRunId} 悬空workflowViewDefinitionId`);
     }
     const view = entities.workflowViewDefinitions[run.workflowViewDefinitionId];
+    if (run.runKind === "direct_agent") {
+      const runSpec = entities.workflowRunSpecs[run.workflowRunSpecId];
+      if (
+        run.runnerFamily !== "direct-agent.v1" ||
+        runSpec?.productRunId !== run.productRunId ||
+        runSpec.definitionRef.blueprintKey !== "direct" ||
+        runSpec.businessInput?.kind !== "direct_agent_message" ||
+        view?.source.kind !== "published_definition"
+      ) {
+        fail(`run ${run.productRunId} direct_agent runner/RunSpec/View绑定不一致`);
+      }
+      const currentReview =
+        run.currentPromptReviewRequestId === undefined
+          ? undefined
+          : entities.promptReviewRequests[run.currentPromptReviewRequestId];
+      if (run.status === "waiting_human") {
+        if (
+          run.phase !== "prompt_review" ||
+          currentReview === undefined ||
+          currentReview.productRunId !== run.productRunId ||
+          currentReview.status !== "open"
+        ) {
+          fail(`run ${run.productRunId} waiting_human缺少open Prompt Review`);
+        }
+      } else if (run.currentPromptReviewRequestId !== undefined) {
+        fail(`run ${run.productRunId} 非waiting_human仍保留活动Prompt Review引用`);
+      }
+
+      const candidates = Object.values(entities.directAgentCandidates).filter(
+        (candidate) => candidate.productRunId === run.productRunId,
+      );
+      if (candidates.length > 1) {
+        fail(`run ${run.productRunId} P1不允许多个Direct Agent Candidate`);
+      }
+      const currentCandidate =
+        run.currentDirectAgentCandidateId === undefined
+          ? undefined
+          : entities.directAgentCandidates[run.currentDirectAgentCandidateId];
+      const finalCandidate =
+        run.finalDirectAgentCandidateId === undefined
+          ? undefined
+          : entities.directAgentCandidates[run.finalDirectAgentCandidateId];
+      if (
+        (run.currentDirectAgentCandidateId !== undefined &&
+          currentCandidate?.productRunId !== run.productRunId) ||
+        (run.finalDirectAgentCandidateId !== undefined &&
+          finalCandidate?.productRunId !== run.productRunId)
+      ) {
+        fail(`run ${run.productRunId} Direct Agent Candidate引用悬空或跨Run`);
+      }
+      const finalMessage =
+        run.finalMessageId === undefined ? undefined : entities.messages[run.finalMessageId];
+      if (run.status === "succeeded") {
+        if (
+          currentCandidate === undefined ||
+          finalCandidate === undefined ||
+          currentCandidate.directAgentCandidateId !== finalCandidate.directAgentCandidateId ||
+          finalMessage === undefined ||
+          finalMessage.role !== "assistant" ||
+          finalMessage.sourceRunId !== run.productRunId ||
+          finalMessage.content.text !== finalCandidate.output.text
+        ) {
+          fail(`run ${run.productRunId} succeeded缺少候选到正式Message的确定性提交`);
+        }
+      } else if (
+        run.finalDirectAgentCandidateId !== undefined ||
+        run.finalMessageId !== undefined
+      ) {
+        fail(`run ${run.productRunId} 非succeeded不允许最终Candidate或Message引用`);
+      }
+      if (run.status === "failed" || run.status === "outcome_unknown") {
+        if (run.failure === undefined) fail(`run ${run.productRunId} 失败终态缺少failure`);
+      } else if (run.failure !== undefined) {
+        fail(`run ${run.productRunId} 非失败终态不允许failure`);
+      }
+      const promptReviews = Object.values(entities.promptReviewRequests).filter(
+        (request) => request.productRunId === run.productRunId,
+      );
+      if (
+        ["succeeded", "failed", "cancelled", "outcome_unknown"].includes(run.status) &&
+        promptReviews.some((request) =>
+          ["open", "approved", "dispatching"].includes(request.status),
+        )
+      ) {
+        fail(`run ${run.productRunId} 终态遗留未闭合Prompt Review`);
+      }
+      const workflowAttempts = Object.values(entities.attempts).filter(
+        (attempt) => attempt.productRunId === run.productRunId && attempt.kind === "workflow",
+      );
+      if (workflowAttempts.length !== 1) {
+        fail(`run ${run.productRunId} 必须恰有一个workflow Attempt`);
+      }
+      const directAttempts = Object.values(entities.attempts).filter(
+        (attempt) => attempt.productRunId === run.productRunId && attempt.kind === "direct_agent",
+      );
+      if (run.status === "pending" ? directAttempts.length > 1 : directAttempts.length !== 1) {
+        fail(`run ${run.productRunId} Direct Agent Attempt数量无效`);
+      }
+      if (run.status === "succeeded" && directAttempts[0]?.outcome !== "success") {
+        fail(`run ${run.productRunId} succeeded必须绑定成功Direct Agent Attempt`);
+      }
+      continue;
+    }
     if (run.runKind === "note_capture") {
       if (
         run.runnerFamily !== "note-capture.v1" ||
@@ -3439,6 +3691,153 @@ function assertPlansAndReviews(snapshot: ProductSnapshot, fail: Fail): void {
   }
 }
 
+function assertPromptReviews(snapshot: ProductSnapshot, fail: Fail): void {
+  const { entities } = snapshot;
+  const byAttempt = new Map<string, (typeof entities.promptReviewRequests)[string][]>();
+
+  for (const request of Object.values(entities.promptReviewRequests)) {
+    const run = entities.runs[request.productRunId];
+    const attempt = entities.attempts[request.directAgentAttemptId];
+    if (
+      run?.runKind !== "direct_agent" ||
+      attempt === undefined ||
+      attempt.kind !== "direct_agent" ||
+      attempt.productRunId !== request.productRunId
+    ) {
+      fail(`promptReviewRequest ${request.promptReviewRequestId} Run/Attempt绑定不一致`);
+    }
+    let payloadSha256: string;
+    try {
+      payloadSha256 = computePromptReviewPayloadSha256(request.canonicalPayloadJson);
+    } catch (error) {
+      fail(
+        `promptReviewRequest ${request.promptReviewRequestId} ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    if (payloadSha256 !== request.payloadSha256) {
+      fail(`promptReviewRequest ${request.promptReviewRequestId} Payload Hash不一致`);
+    }
+    const reviewSha256 = computePromptReviewSha256({
+      promptReviewRequestId: request.promptReviewRequestId,
+      productRunId: request.productRunId,
+      directAgentAttemptId: request.directAgentAttemptId,
+      requestIndex: request.requestIndex,
+      requestKind: request.requestKind,
+      providerId: request.providerId,
+      modelId: request.modelId,
+      endpointHost: request.endpointHost,
+      requestRevision: request.requestRevision,
+      payloadSha256: request.payloadSha256,
+      rendererVersion: request.rendererVersion,
+    });
+    if (reviewSha256 !== request.reviewSha256) {
+      fail(`promptReviewRequest ${request.promptReviewRequestId} Review Hash不一致`);
+    }
+
+    const decision =
+      request.decidedByPromptReviewDecisionId === undefined
+        ? undefined
+        : entities.promptReviewDecisions[request.decidedByPromptReviewDecisionId];
+    if (request.status === "open") {
+      if (decision !== undefined || request.decidedByPromptReviewDecisionId !== undefined) {
+        fail(`promptReviewRequest ${request.promptReviewRequestId} open不得绑定Decision`);
+      }
+    } else if (request.status === "cancelled") {
+      if (
+        (request.decidedByPromptReviewDecisionId === undefined) !== (decision === undefined) ||
+        (decision !== undefined &&
+          (decision.kind !== "approve" ||
+            decision.promptReviewRequestId !== request.promptReviewRequestId ||
+            decision.productRunId !== request.productRunId ||
+            decision.requestRevision !== request.requestRevision ||
+            decision.reviewSha256 !== request.reviewSha256 ||
+            decision.payloadSha256 !== request.payloadSha256))
+      ) {
+        fail(`promptReviewRequest ${request.promptReviewRequestId} cancelled Decision绑定不完整`);
+      }
+    } else {
+      if (
+        decision === undefined ||
+        decision.promptReviewRequestId !== request.promptReviewRequestId ||
+        decision.productRunId !== request.productRunId ||
+        decision.requestRevision !== request.requestRevision ||
+        decision.reviewSha256 !== request.reviewSha256 ||
+        decision.payloadSha256 !== request.payloadSha256
+      ) {
+        fail(`promptReviewRequest ${request.promptReviewRequestId} Decision绑定不完整`);
+      }
+      if (
+        (request.status === "rejected" && decision.kind !== "reject") ||
+        (request.status !== "rejected" && decision.kind !== "approve")
+      ) {
+        fail(`promptReviewRequest ${request.promptReviewRequestId} 状态与Decision不一致`);
+      }
+    }
+
+    const requests = byAttempt.get(request.directAgentAttemptId) ?? [];
+    requests.push(request);
+    byAttempt.set(request.directAgentAttemptId, requests);
+  }
+
+  for (const [attemptId, requests] of byAttempt) {
+    try {
+      assertPromptReviewRequestIndexes(requests);
+    } catch (error) {
+      fail(
+        `directAgentAttempt ${attemptId} ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  for (const decision of Object.values(entities.promptReviewDecisions)) {
+    const request = entities.promptReviewRequests[decision.promptReviewRequestId];
+    const session =
+      request === undefined
+        ? undefined
+        : entities.sessions[entities.runs[request.productRunId]?.sessionId ?? ""];
+    if (
+      request === undefined ||
+      request.decidedByPromptReviewDecisionId !== decision.promptReviewDecisionId ||
+      request.status === "open" ||
+      decision.productRunId !== request.productRunId ||
+      decision.requestRevision !== request.requestRevision ||
+      decision.reviewSha256 !== request.reviewSha256 ||
+      decision.payloadSha256 !== request.payloadSha256 ||
+      session?.ownerPrincipalId !== decision.principalId
+    ) {
+      fail(`promptReviewDecision ${decision.promptReviewDecisionId} Request/Principal绑定不完整`);
+    }
+  }
+}
+
+function assertDirectAgentCandidates(snapshot: ProductSnapshot, fail: Fail): void {
+  const { entities } = snapshot;
+  for (const candidate of Object.values(entities.directAgentCandidates)) {
+    const run = entities.runs[candidate.productRunId];
+    const attempt = entities.attempts[candidate.directAgentAttemptId];
+    if (
+      run?.runKind !== "direct_agent" ||
+      attempt === undefined ||
+      attempt.kind !== "direct_agent" ||
+      attempt.productRunId !== candidate.productRunId ||
+      attempt.outcome !== "success"
+    ) {
+      fail(`directAgentCandidate ${candidate.directAgentCandidateId} Run/Attempt绑定不一致`);
+    }
+    const sha256 = computeDirectAgentCandidateSha256({
+      directAgentCandidateId: candidate.directAgentCandidateId,
+      productRunId: candidate.productRunId,
+      directAgentAttemptId: candidate.directAgentAttemptId,
+      output: candidate.output,
+    });
+    if (sha256 !== candidate.sha256) {
+      fail(`directAgentCandidate ${candidate.directAgentCandidateId} Hash不一致`);
+    }
+  }
+}
+
 function assertExecution(snapshot: ProductSnapshot, fail: Fail): void {
   const { entities } = snapshot;
   for (const contract of Object.values(entities.executionContracts)) {
@@ -3670,6 +4069,14 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
     PersistExecutionCandidate: ["executionCandidateId"],
     PersistValidationResult: ["validationResultId"],
     CommitExecutionResult: ["finalMessageId", "productRunId", "messageSha256"],
+    BeginDirectAgentAttempt: ["attemptId"],
+    PublishPromptReviewRequest: ["productRunId", "promptReviewRequestId"],
+    SubmitPromptReviewDecision: ["productRunId", "promptReviewDecisionId", "promptReviewRequestId"],
+    MarkPromptReviewDispatching: ["promptReviewRequestId"],
+    CommitPromptReviewDispatched: ["promptReviewRequestId"],
+    CommitPromptReviewOutcomeUnknown: ["promptReviewRequestId"],
+    PersistDirectAgentCandidate: ["directAgentCandidateId"],
+    CommitDirectAgentResult: ["directAgentCandidateId", "messageId", "productRunId"],
     CommitRejectedRun: ["productRunId"],
     ExpireApproval: ["status"],
     CommitRunFailure: ["productRunId"],
@@ -3819,176 +4226,193 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
                           ? entities.approvalRequests[value] !== undefined
                           : key === "decisionId"
                             ? entities.decisions[value] !== undefined
-                            : key === "executionContractId"
-                              ? entities.executionContracts[value] !== undefined
-                              : key === "executionCandidateId"
-                                ? entities.executionCandidates[value] !== undefined
-                                : key === "validationResultId"
-                                  ? entities.validationResults[value] !== undefined
-                                  : key === "workflowNodeRunId"
-                                    ? entities.workflowNodeRuns[value] !== undefined
-                                    : key === "memoryQueryId"
-                                      ? entities.memoryQueries[value] !== undefined
-                                      : key === "contextRequestId"
-                                        ? entities.contextRequests[value] !== undefined
-                                        : key === "contextPackageId"
-                                          ? entities.contextPackages[value] !== undefined
-                                          : key === "memoryImportIntentId"
-                                            ? entities.memoryImportIntents[value] !== undefined
-                                            : key === "memoryImportResultId"
-                                              ? entities.memoryImportResults[value] !== undefined
-                                              : key === "workflowMemoryQueryId"
-                                                ? entities.workflowMemoryQueries[value] !==
-                                                  undefined
-                                                : key === "workflowMemoryContextId"
-                                                  ? entities.workflowMemoryContexts[value] !==
+                            : key === "promptReviewRequestId"
+                              ? entities.promptReviewRequests[value] !== undefined
+                              : key === "promptReviewDecisionId"
+                                ? entities.promptReviewDecisions[value] !== undefined
+                                : key === "directAgentCandidateId"
+                                  ? entities.directAgentCandidates[value] !== undefined
+                                  : key === "executionContractId"
+                                    ? entities.executionContracts[value] !== undefined
+                                    : key === "executionCandidateId"
+                                      ? entities.executionCandidates[value] !== undefined
+                                      : key === "validationResultId"
+                                        ? entities.validationResults[value] !== undefined
+                                        : key === "workflowNodeRunId"
+                                          ? entities.workflowNodeRuns[value] !== undefined
+                                          : key === "memoryQueryId"
+                                            ? entities.memoryQueries[value] !== undefined
+                                            : key === "contextRequestId"
+                                              ? entities.contextRequests[value] !== undefined
+                                              : key === "contextPackageId"
+                                                ? entities.contextPackages[value] !== undefined
+                                                : key === "memoryImportIntentId"
+                                                  ? entities.memoryImportIntents[value] !==
                                                     undefined
-                                                  : key === "memoryWriteIntentId"
-                                                    ? entities.memoryWriteIntents[value] !==
+                                                  : key === "memoryImportResultId"
+                                                    ? entities.memoryImportResults[value] !==
                                                       undefined
-                                                    : key === "memoryWriteResultId"
-                                                      ? entities.memoryWriteResults[value] !==
+                                                    : key === "workflowMemoryQueryId"
+                                                      ? entities.workflowMemoryQueries[value] !==
                                                         undefined
-                                                      : key === "outboxId" ||
-                                                          key === "recoveryOutboxId"
-                                                        ? snapshot.outbox[value] !== undefined
-                                                        : key === "projectId"
-                                                          ? entities.projects[value] !== undefined
-                                                          : key === "projectCandidateId"
-                                                            ? entities.projectCandidates[value] !==
+                                                      : key === "workflowMemoryContextId"
+                                                        ? entities.workflowMemoryContexts[value] !==
+                                                          undefined
+                                                        : key === "memoryWriteIntentId"
+                                                          ? entities.memoryWriteIntents[value] !==
+                                                            undefined
+                                                          : key === "memoryWriteResultId"
+                                                            ? entities.memoryWriteResults[value] !==
                                                               undefined
-                                                            : key === "projectStageId"
-                                                              ? entities.projectStages[value] !==
-                                                                undefined
-                                                              : key === "projectMilestoneId"
-                                                                ? entities.projectMilestones[
-                                                                    value
-                                                                  ] !== undefined
-                                                                : key === "projectActionId"
-                                                                  ? entities.projectActions[
+                                                            : key === "outboxId" ||
+                                                                key === "recoveryOutboxId"
+                                                              ? snapshot.outbox[value] !== undefined
+                                                              : key === "projectId"
+                                                                ? entities.projects[value] !==
+                                                                  undefined
+                                                                : key === "projectCandidateId"
+                                                                  ? entities.projectCandidates[
                                                                       value
                                                                     ] !== undefined
-                                                                  : key === "projectDecisionId"
-                                                                    ? entities.projectDecisions[
+                                                                  : key === "projectStageId"
+                                                                    ? entities.projectStages[
                                                                         value
                                                                       ] !== undefined
-                                                                    : key ===
-                                                                        "projectStateTransitionId"
-                                                                      ? entities
-                                                                          .projectStateTransitions[
+                                                                    : key === "projectMilestoneId"
+                                                                      ? entities.projectMilestones[
                                                                           value
                                                                         ] !== undefined
-                                                                      : key ===
-                                                                          "projectContributionId"
-                                                                        ? entities
-                                                                            .projectContributions[
+                                                                      : key === "projectActionId"
+                                                                        ? entities.projectActions[
                                                                             value
                                                                           ] !== undefined
                                                                         : key ===
-                                                                            "projectObservationId"
+                                                                            "projectDecisionId"
                                                                           ? entities
-                                                                              .projectObservations[
+                                                                              .projectDecisions[
                                                                               value
                                                                             ] !== undefined
-                                                                          : key === "noteId"
-                                                                            ? entities.notes[
+                                                                          : key ===
+                                                                              "projectStateTransitionId"
+                                                                            ? entities
+                                                                                .projectStateTransitions[
                                                                                 value
                                                                               ] !== undefined
                                                                             : key ===
-                                                                                "noteRevisionId"
+                                                                                "projectContributionId"
                                                                               ? entities
-                                                                                  .noteRevisions[
+                                                                                  .projectContributions[
                                                                                   value
                                                                                 ] !== undefined
                                                                               : key ===
-                                                                                  "noteCandidateId"
+                                                                                  "projectObservationId"
                                                                                 ? entities
-                                                                                    .noteCandidates[
+                                                                                    .projectObservations[
                                                                                     value
                                                                                   ] !== undefined
-                                                                                : key ===
-                                                                                    "noteDecisionId"
-                                                                                  ? entities
-                                                                                      .noteDecisions[
+                                                                                : key === "noteId"
+                                                                                  ? entities.notes[
                                                                                       value
                                                                                     ] !== undefined
-                                                                                  : key === "ruleId"
+                                                                                  : key ===
+                                                                                      "noteRevisionId"
                                                                                     ? entities
-                                                                                        .rules[
+                                                                                        .noteRevisions[
                                                                                         value
                                                                                       ] !==
                                                                                       undefined
                                                                                     : key ===
-                                                                                        "ruleRevisionId"
+                                                                                        "noteCandidateId"
                                                                                       ? entities
-                                                                                          .ruleRevisions[
+                                                                                          .noteCandidates[
                                                                                           value
                                                                                         ] !==
                                                                                         undefined
                                                                                       : key ===
-                                                                                          "ruleTagId"
+                                                                                          "noteDecisionId"
                                                                                         ? entities
-                                                                                            .ruleTags[
+                                                                                            .noteDecisions[
                                                                                             value
                                                                                           ] !==
                                                                                           undefined
                                                                                         : key ===
-                                                                                            "ruleDecisionId"
+                                                                                            "ruleId"
                                                                                           ? entities
-                                                                                              .ruleDecisions[
+                                                                                              .rules[
                                                                                               value
                                                                                             ] !==
                                                                                             undefined
                                                                                           : key ===
-                                                                                              "ruleSelectionId"
+                                                                                              "ruleRevisionId"
                                                                                             ? entities
-                                                                                                .ruleSelections[
+                                                                                                .ruleRevisions[
                                                                                                 value
                                                                                               ] !==
                                                                                               undefined
                                                                                             : key ===
-                                                                                                "planningProjectContextId"
+                                                                                                "ruleTagId"
                                                                                               ? entities
-                                                                                                  .planningProjectContexts[
+                                                                                                  .ruleTags[
                                                                                                   value
                                                                                                 ] !==
                                                                                                 undefined
                                                                                               : key ===
-                                                                                                  "planningMemorySelectionId"
+                                                                                                  "ruleDecisionId"
                                                                                                 ? entities
-                                                                                                    .planningMemorySelections[
+                                                                                                    .ruleDecisions[
                                                                                                     value
                                                                                                   ] !==
                                                                                                   undefined
                                                                                                 : key ===
-                                                                                                    "workflowPolicyResolutionId"
+                                                                                                    "ruleSelectionId"
                                                                                                   ? entities
-                                                                                                      .workflowPolicyResolutions[
+                                                                                                      .ruleSelections[
                                                                                                       value
                                                                                                     ] !==
                                                                                                     undefined
                                                                                                   : key ===
-                                                                                                      "contextStatus"
-                                                                                                    ? value ===
-                                                                                                        "none" ||
-                                                                                                      value ===
-                                                                                                        "ready"
+                                                                                                      "planningProjectContextId"
+                                                                                                    ? entities
+                                                                                                        .planningProjectContexts[
+                                                                                                        value
+                                                                                                      ] !==
+                                                                                                      undefined
                                                                                                     : key ===
-                                                                                                        "messageSha256"
-                                                                                                      ? /^[a-f0-9]{64}$/.test(
-                                                                                                          value,
-                                                                                                        )
+                                                                                                        "planningMemorySelectionId"
+                                                                                                      ? entities
+                                                                                                          .planningMemorySelections[
+                                                                                                          value
+                                                                                                        ] !==
+                                                                                                        undefined
                                                                                                       : key ===
-                                                                                                          "approvalExpired"
-                                                                                                        ? value ===
-                                                                                                          "true"
+                                                                                                          "workflowPolicyResolutionId"
+                                                                                                        ? entities
+                                                                                                            .workflowPolicyResolutions[
+                                                                                                            value
+                                                                                                          ] !==
+                                                                                                          undefined
                                                                                                         : key ===
-                                                                                                            "status"
+                                                                                                            "contextStatus"
                                                                                                           ? value ===
-                                                                                                              "expired" ||
+                                                                                                              "none" ||
                                                                                                             value ===
-                                                                                                              "already_decided"
-                                                                                                          : false;
+                                                                                                              "ready"
+                                                                                                          : key ===
+                                                                                                              "messageSha256"
+                                                                                                            ? /^[a-f0-9]{64}$/.test(
+                                                                                                                value,
+                                                                                                              )
+                                                                                                            : key ===
+                                                                                                                "approvalExpired"
+                                                                                                              ? value ===
+                                                                                                                "true"
+                                                                                                              : key ===
+                                                                                                                  "status"
+                                                                                                                ? value ===
+                                                                                                                    "expired" ||
+                                                                                                                  value ===
+                                                                                                                    "already_decided"
+                                                                                                                : false;
       if (!exists) fail(`receipt ${receipt.commandId} 的${key}引用无效`);
     }
     const receiptDefinitionId = receipt.resultRefs["workflowDefinitionId"];
@@ -4083,6 +4507,63 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
         fail(`receipt ${receipt.commandId} 的Decision/Run绑定不一致`);
       }
     }
+    if (receipt.commandType === "PublishPromptReviewRequest") {
+      const request =
+        entities.promptReviewRequests[receipt.resultRefs["promptReviewRequestId"] ?? ""];
+      const run = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
+      if (
+        request === undefined ||
+        run?.runKind !== "direct_agent" ||
+        request.productRunId !== run.productRunId
+      ) {
+        fail(`receipt ${receipt.commandId} 的Prompt Review Request/Run绑定不一致`);
+      }
+    }
+    if (receipt.commandType === "SubmitPromptReviewDecision") {
+      const request =
+        entities.promptReviewRequests[receipt.resultRefs["promptReviewRequestId"] ?? ""];
+      const decision =
+        entities.promptReviewDecisions[receipt.resultRefs["promptReviewDecisionId"] ?? ""];
+      const run = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
+      if (
+        request === undefined ||
+        decision === undefined ||
+        run?.runKind !== "direct_agent" ||
+        request.productRunId !== run.productRunId ||
+        decision.productRunId !== run.productRunId ||
+        decision.promptReviewRequestId !== request.promptReviewRequestId
+      ) {
+        fail(`receipt ${receipt.commandId} 的Prompt Review Decision/Request/Run绑定不一致`);
+      }
+    }
+    if (receipt.commandType === "PersistDirectAgentCandidate") {
+      const candidate =
+        entities.directAgentCandidates[receipt.resultRefs["directAgentCandidateId"] ?? ""];
+      if (
+        candidate === undefined ||
+        entities.runs[candidate.productRunId]?.runKind !== "direct_agent"
+      ) {
+        fail(`receipt ${receipt.commandId} 的Direct Agent Candidate绑定不一致`);
+      }
+    }
+    if (receipt.commandType === "CommitDirectAgentResult") {
+      const candidate =
+        entities.directAgentCandidates[receipt.resultRefs["directAgentCandidateId"] ?? ""];
+      const message = entities.messages[receipt.resultRefs["messageId"] ?? ""];
+      const run = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
+      if (
+        candidate === undefined ||
+        message === undefined ||
+        run?.runKind !== "direct_agent" ||
+        candidate.productRunId !== run.productRunId ||
+        run.finalDirectAgentCandidateId !== candidate.directAgentCandidateId ||
+        run.finalMessageId !== message.messageId ||
+        message.sourceRunId !== run.productRunId ||
+        message.content.text !== candidate.output.text
+      ) {
+        fail(`receipt ${receipt.commandId} 的Direct Agent Candidate/Message/Run绑定不一致`);
+      }
+    }
     if (receipt.commandType === "CommitExecutionResult") {
       const message = entities.messages[receipt.resultRefs["finalMessageId"] ?? ""];
       const run = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
@@ -4134,7 +4615,25 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
         fail(`outbox ${entry.outboxId} 悬空productRunId`);
       }
       if (entry.kind === "workflow_start") continue;
-      if (entry.approvalRequestId !== undefined || entry.decisionId !== undefined) {
+      if (entry.promptReviewRequestId !== undefined || entry.promptReviewDecisionId !== undefined) {
+        const request =
+          entry.promptReviewRequestId === undefined
+            ? undefined
+            : entities.promptReviewRequests[entry.promptReviewRequestId];
+        const decision =
+          entry.promptReviewDecisionId === undefined
+            ? undefined
+            : entities.promptReviewDecisions[entry.promptReviewDecisionId];
+        if (
+          request === undefined ||
+          decision === undefined ||
+          request.productRunId !== entry.productRunId ||
+          decision.productRunId !== entry.productRunId ||
+          decision.promptReviewRequestId !== request.promptReviewRequestId
+        ) {
+          fail(`outbox ${entry.outboxId} Prompt Review workflow_resume绑定不完整`);
+        }
+      } else if (entry.approvalRequestId !== undefined || entry.decisionId !== undefined) {
         const approval =
           entry.approvalRequestId === undefined
             ? undefined

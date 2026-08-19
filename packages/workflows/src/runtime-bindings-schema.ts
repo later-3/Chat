@@ -9,6 +9,9 @@ import {
   outboxEntryIdSchema,
   productRunIdSchema,
   projectCandidateIdSchema,
+  promptReviewDecisionIdSchema,
+  promptReviewRequestIdSchema,
+  sha256Schema,
   type OutboxEntryId,
   type ProductRunId,
   type ProjectCandidateId,
@@ -16,6 +19,8 @@ import {
 import {
   CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
   CONFIGURABLE_PLANNING_RUNNER_FAMILY,
+  DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+  DIRECT_AGENT_RUNNER_FAMILY,
   LEGACY_PLANNING_RUNNER_BUNDLE_VERSION,
   LEGACY_PLANNING_RUNNER_FAMILY,
   NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
@@ -23,7 +28,7 @@ import {
   type ProductWorkflowRunnerFamily,
 } from "./definition-kernel-executor-registry.js";
 
-export const RUNTIME_BINDINGS_SCHEMA_VERSION = "runtime-bindings.v6";
+export const RUNTIME_BINDINGS_SCHEMA_VERSION = "runtime-bindings.v7";
 
 const legacyStartIntentSchema = z
   .object({
@@ -48,6 +53,7 @@ const productWorkflowRunnerFamilySchema = z.enum([
   LEGACY_PLANNING_RUNNER_FAMILY,
   CONFIGURABLE_PLANNING_RUNNER_FAMILY,
   NOTE_CAPTURE_RUNNER_FAMILY,
+  DIRECT_AGENT_RUNNER_FAMILY,
 ]);
 
 const startIntentSchema = legacyStartIntentSchema
@@ -88,7 +94,9 @@ function assertProductRunnerEvidence(
       ? LEGACY_PLANNING_RUNNER_BUNDLE_VERSION
       : value.runnerFamily === CONFIGURABLE_PLANNING_RUNNER_FAMILY
         ? CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION
-        : NOTE_CAPTURE_RUNNER_BUNDLE_VERSION;
+        : value.runnerFamily === NOTE_CAPTURE_RUNNER_FAMILY
+          ? NOTE_CAPTURE_RUNNER_BUNDLE_VERSION
+          : DIRECT_AGENT_RUNNER_BUNDLE_VERSION;
   const bundleMatches = value.runnerBundleVersion === expectedBundle;
   if (!bundleMatches) {
     context.addIssue({
@@ -141,6 +149,41 @@ const noteHookBindingSchema = z
     updatedAt: z.iso.datetime(),
   })
   .strict();
+
+/**
+ * 每个Prompt Review Request拥有独立Hook与恢复栅栏。这里只保存产品身份、版本、
+ * Hash和Workflow私有绑定；Provider Payload正文只能存在于Product Store。
+ */
+const promptReviewHookBindingSchema = z
+  .object({
+    hookToken: z.string().min(1).max(300),
+    productRunId: productRunIdSchema,
+    startWorkflowRunId: z.string().min(1).max(200),
+    requestRevision: z.number().int().positive(),
+    reviewSha256: sha256Schema,
+    promptReviewDecisionId: promptReviewDecisionIdSchema.optional(),
+    hookClaimState: z.literal("claimed"),
+    resumeDispatchState: z.enum([
+      "none",
+      "dispatching",
+      "dispatched",
+      "outcome_unknown",
+      "failed_terminal",
+    ]),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const decisionRequired = value.resumeDispatchState !== "none";
+    if (decisionRequired !== (value.promptReviewDecisionId !== undefined)) {
+      context.addIssue({
+        code: "custom",
+        path: ["promptReviewDecisionId"],
+        message: "Prompt Review Resume状态与Decision绑定不一致",
+      });
+    }
+  });
 
 const memoryImportStartIntentSchema = z
   .object({
@@ -282,9 +325,9 @@ const runtimeBindingsFileV5Schema = z
   })
   .strict();
 
-export const runtimeBindingsFileSchema = z
+const runtimeBindingsFileV6Schema = z
   .object({
-    schemaVersion: z.literal(RUNTIME_BINDINGS_SCHEMA_VERSION),
+    schemaVersion: z.literal("runtime-bindings.v6"),
     startIntents: z.record(productRunIdSchema, startIntentSchema),
     workflows: z.record(productRunIdSchema, workflowBindingSchema),
     hooks: z.record(approvalRequestIdSchema, hookBindingSchema),
@@ -298,10 +341,28 @@ export const runtimeBindingsFileSchema = z
   })
   .strict();
 
+export const runtimeBindingsFileSchema = z
+  .object({
+    schemaVersion: z.literal(RUNTIME_BINDINGS_SCHEMA_VERSION),
+    startIntents: z.record(productRunIdSchema, startIntentSchema),
+    workflows: z.record(productRunIdSchema, workflowBindingSchema),
+    hooks: z.record(approvalRequestIdSchema, hookBindingSchema),
+    noteHooks: z.record(noteCandidateIdSchema, noteHookBindingSchema),
+    promptReviewHooks: z.record(promptReviewRequestIdSchema, promptReviewHookBindingSchema),
+    memoryImportStartIntents: z.record(outboxEntryIdSchema, memoryImportStartIntentSchema),
+    memoryImportWorkflows: z.record(outboxEntryIdSchema, memoryImportWorkflowBindingSchema),
+    memoryWriteStartIntents: z.record(outboxEntryIdSchema, memoryWriteStartIntentSchema),
+    memoryWriteWorkflows: z.record(outboxEntryIdSchema, memoryWriteWorkflowBindingSchema),
+    projectIntakeStartIntents: z.record(projectCandidateIdSchema, projectIntakeStartIntentSchema),
+    projectIntakeWorkflows: z.record(projectCandidateIdSchema, projectIntakeWorkflowBindingSchema),
+  })
+  .strict();
+
 export type RuntimeBindingsFile = z.infer<typeof runtimeBindingsFileSchema>;
 export type WorkflowBinding = z.infer<typeof workflowBindingSchema>;
 export type HookBinding = z.infer<typeof hookBindingSchema>;
 export type NoteHookBinding = z.infer<typeof noteHookBindingSchema>;
+export type PromptReviewHookBinding = z.infer<typeof promptReviewHookBindingSchema>;
 export type MemoryImportWorkflowBinding = z.infer<typeof memoryImportWorkflowBindingSchema>;
 export type MemoryWriteWorkflowBinding = z.infer<typeof memoryWriteWorkflowBindingSchema>;
 export type ProjectIntakeWorkflowBinding = z.infer<typeof projectIntakeWorkflowBindingSchema>;
@@ -321,6 +382,7 @@ export function emptyBindings(): RuntimeBindingsFile {
     workflows: {},
     hooks: {},
     noteHooks: {},
+    promptReviewHooks: {},
     memoryImportStartIntents: {},
     memoryImportWorkflows: {},
     memoryWriteStartIntents: {},
@@ -361,7 +423,9 @@ export function normalizeProductRunnerEvidence(input: ProductRunnerEvidenceInput
       ? LEGACY_PLANNING_RUNNER_BUNDLE_VERSION
       : runnerFamily === CONFIGURABLE_PLANNING_RUNNER_FAMILY
         ? CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION
-        : NOTE_CAPTURE_RUNNER_BUNDLE_VERSION);
+        : runnerFamily === NOTE_CAPTURE_RUNNER_FAMILY
+          ? NOTE_CAPTURE_RUNNER_BUNDLE_VERSION
+          : DIRECT_AGENT_RUNNER_BUNDLE_VERSION);
   const parsed = z
     .object({
       runnerFamily: productWorkflowRunnerFamilySchema,
@@ -392,25 +456,34 @@ export function parseRuntimeBindingsFile(parsed: unknown): {
     assertRuntimeBindingsIntegrity(validated.data);
     return { bindings: validated.data, migrationRequired: false };
   }
-  const legacyV5 = runtimeBindingsFileV5Schema.safeParse(parsed);
-  const legacyV4 = legacyV5.success ? undefined : runtimeBindingsFileV4Schema.safeParse(parsed);
+  const legacyV6 = runtimeBindingsFileV6Schema.safeParse(parsed);
+  const legacyV5 = legacyV6.success ? undefined : runtimeBindingsFileV5Schema.safeParse(parsed);
+  const legacyV4 =
+    legacyV6.success || legacyV5?.success === true
+      ? undefined
+      : runtimeBindingsFileV4Schema.safeParse(parsed);
   const legacyV3 =
-    legacyV5.success || legacyV4?.success === true
+    legacyV6.success || legacyV5?.success === true || legacyV4?.success === true
       ? undefined
       : runtimeBindingsFileV3Schema.safeParse(parsed);
   const legacyV2 =
-    legacyV5.success || legacyV4?.success === true || legacyV3?.success === true
+    legacyV6.success ||
+    legacyV5?.success === true ||
+    legacyV4?.success === true ||
+    legacyV3?.success === true
       ? undefined
       : runtimeBindingsFileV2Schema.safeParse(parsed);
   const legacyV1 =
-    legacyV5.success ||
+    legacyV6.success ||
+    legacyV5?.success === true ||
     legacyV4?.success === true ||
     legacyV3?.success === true ||
     legacyV2?.success === true
       ? undefined
       : runtimeBindingsFileV1Schema.safeParse(parsed);
   if (
-    !legacyV5.success &&
+    !legacyV6.success &&
+    legacyV5?.success !== true &&
     legacyV4?.success !== true &&
     legacyV3?.success !== true &&
     legacyV2?.success !== true &&
@@ -418,55 +491,67 @@ export function parseRuntimeBindingsFile(parsed: unknown): {
   ) {
     throw new RuntimeBindingError("Runtime Binding Store版本未知或内容非法，已保留原文件");
   }
-  const source = legacyV5.success
-    ? legacyV5.data
-    : legacyV4?.success === true
-      ? legacyV4.data
-      : legacyV3?.success === true
-        ? legacyV3.data
-        : legacyV2?.success === true
-          ? {
-              ...legacyV2.data,
-              projectIntakeStartIntents: {},
-              projectIntakeWorkflows: {},
-            }
-          : {
-              ...legacyV1!.data,
-              memoryImportStartIntents: {},
-              memoryImportWorkflows: {},
-              projectIntakeStartIntents: {},
-              projectIntakeWorkflows: {},
-            };
-  const migratedStartIntents: RuntimeBindingsFile["startIntents"] = legacyV5.success
-    ? legacyV5.data.startIntents
-    : legacyV4?.success === true
-      ? legacyV4.data.startIntents
-      : Object.fromEntries(
-          Object.entries(source.startIntents ?? {}).map(([productRunId, intent]) => [
-            productRunId,
-            withLegacyRunnerEvidence(intent),
-          ]),
-        );
-  const migratedWorkflows: RuntimeBindingsFile["workflows"] = legacyV5.success
-    ? legacyV5.data.workflows
-    : legacyV4?.success === true
-      ? legacyV4.data.workflows
-      : Object.fromEntries(
-          Object.entries(source.workflows ?? {}).map(([productRunId, binding]) => [
-            productRunId,
-            withLegacyRunnerEvidence(binding),
-          ]),
-        );
+  const source = legacyV6.success
+    ? legacyV6.data
+    : legacyV5?.success === true
+      ? legacyV5.data
+      : legacyV4?.success === true
+        ? legacyV4.data
+        : legacyV3?.success === true
+          ? legacyV3.data
+          : legacyV2?.success === true
+            ? {
+                ...legacyV2.data,
+                projectIntakeStartIntents: {},
+                projectIntakeWorkflows: {},
+              }
+            : {
+                ...legacyV1!.data,
+                memoryImportStartIntents: {},
+                memoryImportWorkflows: {},
+                projectIntakeStartIntents: {},
+                projectIntakeWorkflows: {},
+              };
+  const migratedStartIntents: RuntimeBindingsFile["startIntents"] = legacyV6.success
+    ? legacyV6.data.startIntents
+    : legacyV5?.success === true
+      ? legacyV5.data.startIntents
+      : legacyV4?.success === true
+        ? legacyV4.data.startIntents
+        : Object.fromEntries(
+            Object.entries(source.startIntents ?? {}).map(([productRunId, intent]) => [
+              productRunId,
+              withLegacyRunnerEvidence(intent),
+            ]),
+          );
+  const migratedWorkflows: RuntimeBindingsFile["workflows"] = legacyV6.success
+    ? legacyV6.data.workflows
+    : legacyV5?.success === true
+      ? legacyV5.data.workflows
+      : legacyV4?.success === true
+        ? legacyV4.data.workflows
+        : Object.fromEntries(
+            Object.entries(source.workflows ?? {}).map(([productRunId, binding]) => [
+              productRunId,
+              withLegacyRunnerEvidence(binding),
+            ]),
+          );
   const bindings: RuntimeBindingsFile = {
     schemaVersion: RUNTIME_BINDINGS_SCHEMA_VERSION,
     startIntents: migratedStartIntents,
     workflows: migratedWorkflows,
     hooks: source.hooks ?? {},
-    noteHooks: {},
+    noteHooks:
+      legacyV6.success === true
+        ? legacyV6.data.noteHooks
+        : legacyV5?.success === true
+          ? legacyV5.data.noteHooks
+          : {},
+    promptReviewHooks: {},
     memoryImportStartIntents: source.memoryImportStartIntents,
     memoryImportWorkflows: source.memoryImportWorkflows,
-    memoryWriteStartIntents: {},
-    memoryWriteWorkflows: {},
+    memoryWriteStartIntents: legacyV6.success ? legacyV6.data.memoryWriteStartIntents : {},
+    memoryWriteWorkflows: legacyV6.success ? legacyV6.data.memoryWriteWorkflows : {},
     projectIntakeStartIntents: source.projectIntakeStartIntents,
     projectIntakeWorkflows: source.projectIntakeWorkflows,
   };
@@ -511,6 +596,21 @@ export function assertRuntimeBindingsIntegrity(bindings: RuntimeBindingsFile): v
       throw new RuntimeBindingError("Note Hook映射缺少对应Note Workflow映射");
     }
   }
+  const promptReviewHookTokens = Object.values(bindings.promptReviewHooks).map(
+    (binding) => binding.hookToken,
+  );
+  for (const hook of Object.values(bindings.promptReviewHooks)) {
+    const workflow = bindings.workflows[hook.productRunId];
+    if (
+      workflow === undefined ||
+      workflow.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY ||
+      workflow.workflowRunId !== hook.startWorkflowRunId
+    ) {
+      throw new RuntimeBindingError(
+        "Prompt Review Hook映射缺少对应Direct Agent Workflow start映射",
+      );
+    }
+  }
   for (const outboxId of Object.keys(bindings.memoryImportStartIntents) as OutboxEntryId[]) {
     if (bindings.memoryImportWorkflows[outboxId] !== undefined) {
       throw new RuntimeBindingError("同一Import Outbox不能同时存在start意图与Workflow映射");
@@ -538,7 +638,12 @@ export function assertRuntimeBindingsIntegrity(bindings: RuntimeBindingsFile): v
   const projectHookTokens = Object.values(bindings.projectIntakeWorkflows).map(
     (binding) => binding.hookToken,
   );
-  const everyHookToken = [...hookTokens, ...noteHookTokens, ...projectHookTokens];
+  const everyHookToken = [
+    ...hookTokens,
+    ...noteHookTokens,
+    ...promptReviewHookTokens,
+    ...projectHookTokens,
+  ];
   if (new Set(everyHookToken).size !== everyHookToken.length) {
     throw new RuntimeBindingError("多个产品操作不能共享同一Hook Token");
   }

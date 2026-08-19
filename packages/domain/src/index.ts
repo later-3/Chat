@@ -21,3 +21,6 @@ export * from "./planning-memory-selection.js";
 export * from "./workflow-policy-resolution.js";
 export * from "./planning-input-manifest.js";
 export * from "./note.js";
+export * from "./prompt-review.js";
+export * from "./direct-agent-run-lifecycle.js";
+export * from "./direct-agent.js";

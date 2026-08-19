@@ -16,15 +16,22 @@ import {
   NODE_CATALOG_DESCRIPTORS,
   NodeCatalog,
 } from "./workflow-node-catalog.js";
+import { BUILTIN_WORKFLOW_EXECUTOR_MANIFEST } from "./workflow-executor-manifest.js";
 import {
   compileWorkflowRunSpec,
   validateRunSpecResourcesCurrent,
   validateWorkflowRunSpecIntegrity,
 } from "./workflow-run-spec-compiler.js";
 import {
+  createSystemDirectAgentDefinition,
   createSystemMemoryPlanningDefinition,
   createSystemPlanningDefinition,
+  DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+  DIRECT_AGENT_RUNNER_FAMILY,
+  systemDirectAgentSemanticRoot,
+  systemSimplePlanningSemanticRoot,
 } from "./workflow-system-definitions.js";
+import { getWorkflowBlueprints, getWorkflowCatalog } from "./workflow-config-query-use-cases.js";
 
 const fixtureKeys = [
   "sequence",
@@ -36,8 +43,8 @@ const fixtureKeys = [
 ] as const;
 
 describe("Node Catalog与Blueprint一致性", () => {
-  it("当前16种能力全部使用strict parser且默认配置/公开默认值一致", () => {
-    expect(DEFAULT_NODE_CATALOG.list()).toHaveLength(16);
+  it("当前18种能力全部使用strict parser且默认配置/公开默认值一致", () => {
+    expect(DEFAULT_NODE_CATALOG.list()).toHaveLength(18);
     for (const descriptor of DEFAULT_NODE_CATALOG.list()) {
       expect(
         DEFAULT_NODE_CATALOG.parseConfig(
@@ -89,10 +96,162 @@ describe("Node Catalog与Blueprint一致性", () => {
     );
   });
 
-  it("Planning与Note Blueprint都能从权威Registry按版本读取", () => {
+  it("Planning、Note与Direct Blueprint都能从权威Registry按版本读取", () => {
     expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("planning", 1)?.terminalNodeType).toBe("product.commit");
     expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("note", 1)?.terminalNodeType).toBe("note.commit");
+    expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("direct", 1)).toMatchObject({
+      runnerFamily: "direct-agent.v1",
+      terminalNodeType: "agent.direct",
+      allowedNodeTypes: ["agent.direct"],
+      optionalNodeTypes: [],
+      repeatableNodeTypes: [],
+      mandatoryManualReviewTypes: [],
+    });
     expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("planning", 99)).toBeUndefined();
+  });
+
+  it("Direct Blueprint、节点默认值与Executor版本进入安全公开目录", async () => {
+    const { catalog } = await getWorkflowCatalog(undefined as never);
+    const { blueprints } = await getWorkflowBlueprints(undefined as never);
+    const directNodes = catalog.nodes.filter((node) => node.supportedBlueprints.includes("direct"));
+
+    expect(directNodes).toMatchObject([
+      {
+        nodeType: "agent.direct",
+        executorKind: "composite",
+        riskPolicy: "generate_candidate",
+        publicConfigFields: [
+          {
+            name: "capabilityMode",
+            defaultValue: "read_only",
+            options: ["read_only"],
+          },
+          {
+            name: "promptReviewMode",
+            defaultValue: "manual",
+            options: ["manual", "off"],
+          },
+        ],
+        outcomes: ["completed"],
+      },
+    ]);
+    expect(
+      blueprints.blueprints.find((blueprint) => blueprint.blueprintKey === "direct"),
+    ).toMatchObject({
+      title: "执行 Agent（逐次提示词审核）",
+      runnerFamily: "direct-agent.v1",
+      terminalNodeType: "agent.direct",
+      reviewModes: ["manual", "auto_continue_if_policy_allows"],
+    });
+    expect(
+      BUILTIN_WORKFLOW_EXECUTOR_MANIFEST.filter((entry) => entry.nodeType === "agent.direct"),
+    ).toEqual([
+      {
+        nodeType: "agent.direct",
+        schemaVersion: 1,
+        executorVersion: "agent.direct.v1",
+      },
+    ]);
+  });
+
+  it("Direct系统定义固定为一个带内部Provider审核Hook的执行节点", () => {
+    const createdAt = "2026-08-19T00:00:00.000Z";
+    const direct = createSystemDirectAgentDefinition(createdAt);
+    const blueprint = DEFAULT_WORKFLOW_BLUEPRINTS.get("direct", 1);
+    if (blueprint === undefined) throw new Error("Direct Blueprint不存在");
+
+    expect(direct.definition).toMatchObject({
+      key: "system.direct-agent",
+      title: "执行 Agent（逐次提示词审核）",
+      blueprintKey: "direct",
+      status: "active",
+    });
+    expect(
+      validateDefinitionAgainstBlueprint(
+        direct.revision.semanticRoot,
+        blueprint,
+        DEFAULT_NODE_CATALOG,
+      ),
+    ).toEqual([]);
+    expect(direct.view.nodes.map((node) => node.nodeType)).toEqual(["agent.direct"]);
+    expect(direct.view.edges).toEqual([]);
+
+    const directNode = systemDirectAgentSemanticRoot().elements[0];
+    const planningLoop = systemSimplePlanningSemanticRoot().elements[0];
+    if (directNode?.kind !== "composite" || planningLoop?.kind !== "bounded_loop") {
+      throw new Error("系统Definition结构缺失");
+    }
+    expect(directNode.config).toEqual({ capabilityMode: "read_only", promptReviewMode: "manual" });
+    expect(planningLoop.maxIterations).toBe(5);
+
+    const compiled = compileWorkflowRunSpec({
+      workflowRunSpecId: "wrs_systemdirectagentv1",
+      productRunId: "run_systemdirectagentv1",
+      createdAt,
+      definition: {
+        schemaVersion: "workflow-definition-revision-input.v1",
+        workflowDefinitionRevisionId: direct.revision.workflowDefinitionRevisionId,
+        definitionRevision: direct.revision.definitionRevision,
+        blueprintKey: direct.revision.blueprintKey,
+        blueprintVersion: direct.revision.blueprintVersion,
+        semanticRoot: direct.revision.semanticRoot,
+        expectedSha256: direct.revision.definitionSha256,
+      },
+      runConfiguration: { schemaVersion: "workflow-run-configuration.v1", overrides: [] },
+      principal: { principalId: "usr_systemdirectagent", capabilities: [] },
+      availableResources: [],
+      executorManifest: BUILTIN_WORKFLOW_EXECUTOR_MANIFEST,
+      runner: {
+        runnerFamily: DIRECT_AGENT_RUNNER_FAMILY,
+        runnerBundleVersion: DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+      },
+      businessInput: { kind: "direct_agent_message" },
+    });
+    expect(compiled.success).toBe(true);
+    if (!compiled.success) return;
+    expect(validateWorkflowRunSpecIntegrity(compiled.runSpec)).toEqual({
+      success: true,
+      runSpec: compiled.runSpec,
+    });
+  });
+
+  it("Direct Blueprint拒绝复制固定节点，并允许独立Workflow关闭审核Hook", () => {
+    const blueprint = DEFAULT_WORKFLOW_BLUEPRINTS.get("direct", 1);
+    if (blueprint === undefined) throw new Error("Direct Blueprint不存在");
+    const root = systemDirectAgentSemanticRoot();
+    const duplicated: WorkflowSequence = {
+      ...root,
+      elements: [
+        ...root.elements,
+        {
+          kind: "composite",
+          definitionNodeId: "direct.agent.second",
+          nodeType: "agent.direct",
+          schemaVersion: 1,
+          config: { capabilityMode: "read_only", promptReviewMode: "manual" },
+        },
+      ],
+    };
+    expect(
+      validateDefinitionAgainstBlueprint(duplicated, blueprint, DEFAULT_NODE_CATALOG).map(
+        (diagnostic) => diagnostic.code,
+      ),
+    ).toContain("blueprint.required_role_mismatch");
+
+    const directNode = root.elements[0];
+    if (directNode?.kind !== "composite") throw new Error("Direct节点缺失");
+    const automatic: WorkflowSequence = {
+      kind: "sequence",
+      elements: [
+        {
+          ...directNode,
+          config: { capabilityMode: "read_only", promptReviewMode: "off" },
+        },
+      ],
+    };
+    expect(validateDefinitionAgainstBlueprint(automatic, blueprint, DEFAULT_NODE_CATALOG)).toEqual(
+      [],
+    );
   });
 
   it("Planning发布定义不能把强制人工审核配置成自动继续", () => {

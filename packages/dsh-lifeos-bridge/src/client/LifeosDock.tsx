@@ -1,7 +1,11 @@
 import { useState } from "react";
 import type { HostObservable, InjectFace, PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots";
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
-import type { DecisionRequest, NoteDecisionRequest } from "../contracts.ts";
+import type {
+  DecisionRequest,
+  NoteDecisionRequest,
+  PromptReviewDecisionRequest,
+} from "../contracts.ts";
 import type { LifeosProjection } from "../contracts.ts";
 import type { LifeosClientState } from "./controller.ts";
 
@@ -9,6 +13,7 @@ export interface LifeosDockInjected {
   hooks: { lifeos: HostObservable<LifeosClientState> };
   decide: (request: DecisionRequest) => Promise<boolean>;
   decideNote: (request: NoteDecisionRequest) => Promise<boolean>;
+  decidePromptReview: (request: PromptReviewDecisionRequest) => Promise<boolean>;
 }
 
 export type LifeosDockProps = PropsRuntime<"conversation.input.dock"> &
@@ -17,6 +22,7 @@ export type LifeosDockProps = PropsRuntime<"conversation.input.dock"> &
 const PHASE_LABEL: Record<string, string> = {
   plan_review: "等待你审核",
   note_review: "等待你审核笔记",
+  prompt_review: "等待你审核发送内容",
   executing: "正在执行",
   validating: "正在验证",
   completed: "已完成",
@@ -59,18 +65,33 @@ export function hasActionableNoteReview(projection: LifeosProjection | null): bo
   );
 }
 
+/** 执行Agent的Provider请求只有在当前Product Review仍open时才可批准或拒绝。 */
+export function hasActionablePromptReview(projection: LifeosProjection | null): boolean {
+  const run = projection?.run;
+  const review = projection?.promptReview;
+  return (
+    review?.status === "open" &&
+    run?.status === "waiting_human" &&
+    run.phase === "prompt_review" &&
+    review.productRunId === run.productRunId
+  );
+}
+
 export function shouldShowLifeosReviewDock(projection: LifeosProjection | null): boolean {
   return (
     hasActionablePlanReview(projection) ||
     hasActionableNoteReview(projection) ||
+    hasActionablePromptReview(projection) ||
     projection?.pendingDecision != null ||
-    projection?.pendingNoteDecision != null
+    projection?.pendingNoteDecision != null ||
+    projection?.pendingPromptReviewDecision != null
   );
 }
 
-export function LifeosDock({ useLifeos, decide, decideNote }: LifeosDockProps) {
+export function LifeosDock({ useLifeos, decide, decideNote, decidePromptReview }: LifeosDockProps) {
   const state = useLifeos((value) => value);
   const [explanation, setExplanation] = useState("");
+  const [promptView, setPromptView] = useState<"readable" | "raw">("readable");
   const projection = state.projection;
   const run = projection?.run;
   const plan = projection?.plan;
@@ -78,6 +99,8 @@ export function LifeosDock({ useLifeos, decide, decideNote }: LifeosDockProps) {
   const noteCandidate = projection?.noteCandidate;
   const canReviewPlan = hasActionablePlanReview(projection);
   const canReviewNote = hasActionableNoteReview(projection);
+  const canReviewPrompt = hasActionablePromptReview(projection);
+  const promptReview = projection?.promptReview ?? null;
   const reviewableNoteCandidate =
     canReviewNote && noteCandidate?.status === "under_review" ? noteCandidate : null;
   if (!shouldShowLifeosReviewDock(projection)) return null;
@@ -123,6 +146,135 @@ export function LifeosDock({ useLifeos, decide, decideNote }: LifeosDockProps) {
     };
     if (await decideNote(request)) setExplanation("");
   };
+  const submitPromptReview = async (kind: PromptReviewDecisionRequest["kind"]): Promise<void> => {
+    if (!canReviewPrompt || promptReview === null || run === null || run === undefined) return;
+    const trimmed = explanation.trim();
+    const request: PromptReviewDecisionRequest = {
+      kind,
+      ...(kind === "reject" && trimmed !== "" ? { explanation: trimmed } : {}),
+      binding: {
+        productRunId: run.productRunId,
+        runRevision: run.revision,
+        promptReviewRequestId: promptReview.promptReviewRequestId,
+        requestRevision: promptReview.requestRevision,
+        reviewSha256: promptReview.reviewSha256,
+        payloadSha256: promptReview.payloadSha256,
+      },
+    };
+    if (await decidePromptReview(request)) setExplanation("");
+  };
+
+  if (promptReview !== null || projection?.pendingPromptReviewDecision != null) {
+    return (
+      <section
+        className="lifeos-card lifeos-prompt-review-card"
+        data-testid="lifeos-prompt-review-card"
+        aria-label="执行 Agent 发送前提示词审核"
+      >
+        <header className="lifeos-header">
+          <strong>执行 Agent · 第 {promptReview?.requestIndex ?? "—"} 次发送审核</strong>
+          <span className="lifeos-status" aria-live="polite" data-testid="lifeos-run-status">
+            {run === null || run === undefined ? "连接失败" : (PHASE_LABEL[run.phase] ?? run.phase)}
+          </span>
+        </header>
+
+        {promptReview !== null ? (
+          <>
+            <div className="lifeos-prompt-meta" aria-label="模型请求摘要">
+              <span>Provider：{promptReview.providerId}</span>
+              <span>模型：{promptReview.modelId}</span>
+              <span>目标：{promptReview.endpointHost}</span>
+              <span>类型：{promptReview.requestKind}</span>
+            </div>
+            <div className="lifeos-prompt-tabs" role="tablist" aria-label="提示词展示方式">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={promptView === "readable"}
+                className={promptView === "readable" ? "lifeos-prompt-tab-active" : undefined}
+                onClick={() => setPromptView("readable")}
+              >
+                易读视图
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={promptView === "raw"}
+                className={promptView === "raw" ? "lifeos-prompt-tab-active" : undefined}
+                onClick={() => setPromptView("raw")}
+              >
+                原始请求
+              </button>
+            </div>
+            <div className="lifeos-prompt-body" role="tabpanel">
+              <div className="lifeos-prompt-caption">
+                {promptView === "raw"
+                  ? "发送前冻结的原始请求正文（凭据不会进入审核数据）"
+                  : "同一请求的字段映射与结构化解释；内容没有经过第二个模型改写"}
+              </div>
+              <pre data-testid={`lifeos-prompt-${promptView}`}>
+                {promptView === "raw"
+                  ? promptReview.canonicalPayloadJson
+                  : promptReview.readablePrompt}
+              </pre>
+            </div>
+          </>
+        ) : null}
+
+        {projection?.pendingPromptReviewDecision != null ? (
+          <div className="lifeos-warning" data-testid="lifeos-pending-prompt-review-decision">
+            <p>上一提示词决定结果仍未知；只能原样重试。</p>
+            <button
+              type="button"
+              disabled={state.submitting}
+              onClick={() => void decidePromptReview(projection.pendingPromptReviewDecision!)}
+            >
+              重试上一决定
+            </button>
+          </div>
+        ) : null}
+
+        {canReviewPrompt &&
+        promptReview !== null &&
+        projection?.pendingPromptReviewDecision === null ? (
+          <div className="lifeos-review" data-testid="lifeos-prompt-review-actions">
+            <textarea
+              aria-label="拒绝原因"
+              value={explanation}
+              maxLength={2_000}
+              placeholder="拒绝时可填写原因（可选）"
+              onChange={(event) => setExplanation(event.currentTarget.value)}
+            />
+            <div className="lifeos-actions">
+              <button
+                type="button"
+                data-testid="lifeos-reject-prompt"
+                disabled={state.submitting || !promptReview.allowedActions.includes("reject")}
+                onClick={() => void submitPromptReview("reject")}
+              >
+                拒绝并停止
+              </button>
+              <button
+                type="button"
+                className="lifeos-primary"
+                data-testid="lifeos-approve-prompt"
+                disabled={state.submitting || !promptReview.allowedActions.includes("approve")}
+                onClick={() => void submitPromptReview("approve")}
+              >
+                批准并发送
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {state.error !== null ? (
+          <p className="lifeos-error" role="alert" data-testid="lifeos-error">
+            {state.error}
+          </p>
+        ) : null}
+      </section>
+    );
+  }
 
   return (
     <section

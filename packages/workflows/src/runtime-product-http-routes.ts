@@ -8,10 +8,12 @@ import {
   type TraceEventInput,
 } from "@chat/contracts";
 import { configurablePlanningWorkflowInputSchema } from "./configurable-planning-workflow.js";
+import { directAgentWorkflowInputSchema } from "./direct-agent-workflow-input.js";
 import { noteCaptureWorkflowInputSchema } from "./note-capture-workflow.js";
 import { planningExecutionWorkflowInputSchema } from "./workflow-input.js";
 import {
   CONFIGURABLE_PLANNING_RUNNER_FAMILY,
+  DIRECT_AGENT_RUNNER_FAMILY,
   LEGACY_PLANNING_RUNNER_FAMILY,
   NOTE_CAPTURE_RUNNER_FAMILY,
 } from "./definition-kernel-executor-registry.js";
@@ -94,14 +96,23 @@ export function registerProductWorkflowHttpRoutes(context: WorkflowRuntimeHttpRo
                   workflowRunSpecId: runnerDispatch.workflowRunSpecId,
                 }),
               ])
-            : await start({ workflowId: world.workflowId }, [
-                planningExecutionWorkflowInputSchema.parse({
-                  schemaVersion: "planning-execution-workflow-input.v1",
-                  productRunId: request.productRunId,
-                  attemptId: request.attemptId,
-                  maxPlanRevisions: 5,
-                }),
-              ]);
+            : runnerDispatch.runnerFamily === DIRECT_AGENT_RUNNER_FAMILY
+              ? await start({ workflowId: world.directAgentWorkflowId }, [
+                  directAgentWorkflowInputSchema.parse({
+                    schemaVersion: "direct-agent-workflow-input.v1",
+                    productRunId: request.productRunId,
+                    workflowAttemptId: request.attemptId,
+                    workflowRunSpecId: runnerDispatch.workflowRunSpecId,
+                  }),
+                ])
+              : await start({ workflowId: world.workflowId }, [
+                  planningExecutionWorkflowInputSchema.parse({
+                    schemaVersion: "planning-execution-workflow-input.v1",
+                    productRunId: request.productRunId,
+                    attemptId: request.attemptId,
+                    maxPlanRevisions: 5,
+                  }),
+                ]);
       await bindings.claimWorkflowBinding({
         productRunId: request.productRunId,
         outboxId: request.outboxId as never,
@@ -148,18 +159,23 @@ export function registerProductWorkflowHttpRoutes(context: WorkflowRuntimeHttpRo
     }
     const request = parsed.data;
     const isNoteResume = "hookNoteCandidateId" in request;
+    const isPromptReviewResume = "promptReviewRequestId" in request;
     // 产品Decision先成为可见事实，Workflow随后提交Hook绑定；Decision可能落在这段窄窗口。
     // 只等待绑定出现，不把超时猜成终态；Hook注册已由getConflict在绑定Step之前耐久提交。
     let binding = isNoteResume
       ? bindings.getNoteHookBinding(request.hookNoteCandidateId)
-      : bindings.getHookBinding(request.approvalRequestId);
+      : isPromptReviewResume
+        ? bindings.getPromptReviewHookBinding(request.promptReviewRequestId)
+        : bindings.getHookBinding(request.approvalRequestId);
     if (binding === undefined) {
       const deadline = Date.now() + 5_000;
       while (binding === undefined && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 50));
         binding = isNoteResume
           ? bindings.getNoteHookBinding(request.hookNoteCandidateId)
-          : bindings.getHookBinding(request.approvalRequestId);
+          : isPromptReviewResume
+            ? bindings.getPromptReviewHookBinding(request.promptReviewRequestId)
+            : bindings.getHookBinding(request.approvalRequestId);
       }
     }
     if (binding === undefined || binding.productRunId !== request.productRunId) {
@@ -171,7 +187,9 @@ export function registerProductWorkflowHttpRoutes(context: WorkflowRuntimeHttpRo
       workflowBinding === undefined ||
       (isNoteResume
         ? workflowBinding.runnerFamily !== NOTE_CAPTURE_RUNNER_FAMILY
-        : !isSupportedPlanningRunnerFamily(workflowBinding.runnerFamily))
+        : isPromptReviewResume
+          ? workflowBinding.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY
+          : !isSupportedPlanningRunnerFamily(workflowBinding.runnerFamily))
     ) {
       return c.json({ code: "revision_conflict", title: "Workflow Runner绑定缺失" }, 409);
     }
@@ -198,8 +216,36 @@ export function registerProductWorkflowHttpRoutes(context: WorkflowRuntimeHttpRo
         request.hookNoteCandidateId,
         new Date().toISOString(),
       );
-    } else {
+    } else if (!isPromptReviewResume) {
       await bindings.markResumeDispatching(request.approvalRequestId, new Date().toISOString());
+    } else {
+      let claim;
+      try {
+        claim = await bindings.claimPromptReviewResumeDispatch({
+          promptReviewRequestId: request.promptReviewRequestId,
+          promptReviewDecisionId: request.promptReviewDecisionId,
+          requestRevision: request.requestRevision,
+          reviewSha256: request.reviewSha256,
+          now: new Date().toISOString(),
+        });
+      } catch {
+        return c.json({ code: "revision_conflict", title: "Prompt Review Hook绑定冲突" }, 409);
+      }
+      if (claim === "already_dispatched") {
+        return c.json(
+          { schemaVersion: "chat-workflow-dispatch.v1", status: "already_resumed" },
+          200,
+        );
+      }
+      if (claim === "outcome_unknown") {
+        return c.json(
+          { schemaVersion: "chat-workflow-dispatch.v1", status: "outcome_unknown" },
+          202,
+        );
+      }
+      if (claim === "failed_terminal") {
+        return c.json({ code: "workflow_resume_unknown", title: "Hook恢复已终止" }, 409);
+      }
     }
     try {
       const payload = isNoteResume
@@ -210,23 +256,34 @@ export function registerProductWorkflowHttpRoutes(context: WorkflowRuntimeHttpRo
             noteCandidateId: request.noteCandidateId,
             noteDecisionId: request.noteDecisionId,
           }
-        : {
-            schemaVersion: "plan-decision-hook-payload.v1",
-            productRunId: request.productRunId,
-            approvalRequestId: request.approvalRequestId,
-            decisionId: request.decisionId,
-          };
+        : isPromptReviewResume
+          ? {
+              schemaVersion: "prompt-review-decision-hook-payload.v1",
+              productRunId: request.productRunId,
+              promptReviewRequestId: request.promptReviewRequestId,
+              promptReviewDecisionId: request.promptReviewDecisionId,
+              requestRevision: request.requestRevision,
+              reviewSha256: request.reviewSha256,
+              payloadSha256: request.payloadSha256,
+            }
+          : {
+              schemaVersion: "plan-decision-hook-payload.v1",
+              productRunId: request.productRunId,
+              approvalRequestId: request.approvalRequestId,
+              decisionId: request.decisionId,
+            };
       // Hook Token已经绑定创建它的Workflow；family分支在这里仍显式穷尽，禁止恢复时
       // 根据当前默认开关猜Runner。两代Planning暂时共享最小decision-ref payload合同。
       if (
         !isNoteResume &&
+        !isPromptReviewResume &&
         workflowBinding.runnerFamily !== LEGACY_PLANNING_RUNNER_FAMILY &&
         workflowBinding.runnerFamily !== CONFIGURABLE_PLANNING_RUNNER_FAMILY
       ) {
         return c.json({ code: "revision_conflict", title: "Planning Runner版本不受支持" }, 409);
       }
       await resumeHook(binding.hookToken, payload);
-      if (!isNoteResume) {
+      if (!isNoteResume && !isPromptReviewResume) {
         // Plan审核同时耐久等待Hook与到期sleep。Hook事件已先写入SDK事件日志后，唤醒
         // 同一Run的sleep，既保持确定的“决定优先”顺序，也避免每轮审核留下悬空操作。
         await getRun(workflowBinding.workflowRunId).wakeUp();
@@ -236,6 +293,12 @@ export function registerProductWorkflowHttpRoutes(context: WorkflowRuntimeHttpRo
           request.hookNoteCandidateId,
           new Date().toISOString(),
         );
+      } else if (isPromptReviewResume) {
+        await bindings.markPromptReviewResumeDispatched({
+          promptReviewRequestId: request.promptReviewRequestId,
+          promptReviewDecisionId: request.promptReviewDecisionId,
+          now: new Date().toISOString(),
+        });
       } else {
         await bindings.markResumeDispatched(request.approvalRequestId, new Date().toISOString());
       }
@@ -258,6 +321,12 @@ export function registerProductWorkflowHttpRoutes(context: WorkflowRuntimeHttpRo
           request.hookNoteCandidateId,
           new Date().toISOString(),
         );
+      } else if (isPromptReviewResume) {
+        await bindings.markPromptReviewResumeOutcomeUnknown({
+          promptReviewRequestId: request.promptReviewRequestId,
+          promptReviewDecisionId: request.promptReviewDecisionId,
+          now: new Date().toISOString(),
+        });
       } else {
         await bindings.markResumeOutcomeUnknown(
           request.approvalRequestId,
@@ -286,12 +355,14 @@ export function registerProductWorkflowHttpRoutes(context: WorkflowRuntimeHttpRo
       productRunId: z.string().min(1),
       approvalRequestId: z.string().min(1).optional(),
       hookNoteCandidateId: z.string().min(1).optional(),
+      promptReviewRequestId: z.string().min(1).optional(),
     })
     .strict()
     .refine(
       (value) =>
-        (value.approvalRequestId === undefined) !== (value.hookNoteCandidateId === undefined) ||
-        (value.approvalRequestId === undefined && value.hookNoteCandidateId === undefined),
+        [value.approvalRequestId, value.hookNoteCandidateId, value.promptReviewRequestId].filter(
+          (item) => item !== undefined,
+        ).length <= 1,
       { message: "只能提供一种Hook身份" },
     );
   app.get("/internal/workflow/v1/reconcile", async (c) => {
@@ -305,12 +376,16 @@ export function registerProductWorkflowHttpRoutes(context: WorkflowRuntimeHttpRo
         ? bindings.getHookBinding(query.data.approvalRequestId as never)
         : query.data.hookNoteCandidateId !== undefined
           ? bindings.getNoteHookBinding(query.data.hookNoteCandidateId as never)
-          : undefined;
+          : query.data.promptReviewRequestId !== undefined
+            ? bindings.getPromptReviewHookBinding(query.data.promptReviewRequestId as never)
+            : undefined;
     return c.json({
       schemaVersion: "chat-workflow-dispatch.v1",
       productRunId: query.data.productRunId,
       startBinding,
-      ...(query.data.approvalRequestId !== undefined || query.data.hookNoteCandidateId !== undefined
+      ...(query.data.approvalRequestId !== undefined ||
+      query.data.hookNoteCandidateId !== undefined ||
+      query.data.promptReviewRequestId !== undefined
         ? {
             hookResumeState:
               hookBinding === undefined ? "missing" : hookBinding.resumeDispatchState,

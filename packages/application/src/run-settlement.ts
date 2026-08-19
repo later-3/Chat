@@ -1,4 +1,8 @@
-import { transitionRunLifecycle } from "@chat/domain";
+import {
+  transitionDirectAgentRunLifecycle,
+  transitionPromptReviewStatus,
+  transitionRunLifecycle,
+} from "@chat/domain";
 import type { ProductRun, ProductRunId, ProductSnapshot } from "@chat/contracts";
 import type { ApplicationDeps } from "./deps.js";
 import { notFound } from "./errors.js";
@@ -34,6 +38,65 @@ export function settleRunWithoutSuccess(
       revision: run.revision + 1,
       updatedAt: now,
     };
+    failRunningAttempts(draft, productRunId, now, errorCode);
+    return;
+  }
+  if (run.runKind === "direct_agent") {
+    const promptReviews = Object.values(draft.entities.promptReviewRequests).filter(
+      (review) => review.productRunId === productRunId,
+    );
+    const providerBoundaryCrossed = promptReviews.some((review) => review.status === "dispatching");
+    // dispatching表示一次性permit已交付，Provider fetch是否发生已无法由普通异常证明。
+    // 即使调用方报告failed，也必须保守收敛为outcome_unknown，禁止自动重发。
+    const effectiveStatus = providerBoundaryCrossed ? "outcome_unknown" : status;
+    const current =
+      run.status === "pending" && run.phase === "queued"
+        ? ({ status: "pending", phase: "queued" } as const)
+        : run.status === "running" && run.phase === "executing"
+          ? ({ status: "running", phase: "executing" } as const)
+          : run.status === "waiting_human" && run.phase === "prompt_review"
+            ? ({ status: "waiting_human", phase: "prompt_review" } as const)
+            : undefined;
+    if (current === undefined) throw new Error("Direct Agent Run生命周期事实损坏");
+    const lifecycle =
+      effectiveStatus === "failed"
+        ? transitionDirectAgentRunLifecycle(current, {
+            status: "failed",
+            phase: current.phase,
+          })
+        : current.phase === "prompt_review"
+          ? (() => {
+              throw new Error("Prompt Review尚未越过Provider边界，不能收敛为outcome_unknown");
+            })()
+          : transitionDirectAgentRunLifecycle(current, {
+              status: "outcome_unknown",
+              phase: current.phase,
+            });
+    const settled = {
+      ...run,
+      status: lifecycle.status,
+      phase: lifecycle.phase,
+      failure: { code: errorCode, summary },
+      revision: run.revision + 1,
+      updatedAt: now,
+    };
+    delete settled.currentPromptReviewRequestId;
+    draft.entities.runs[productRunId] = settled;
+    for (const review of promptReviews) {
+      const terminalStatus =
+        review.status === "open" || review.status === "approved"
+          ? "cancelled"
+          : review.status === "dispatching"
+            ? "outcome_unknown"
+            : undefined;
+      if (terminalStatus === undefined) continue;
+      draft.entities.promptReviewRequests[review.promptReviewRequestId] = {
+        ...review,
+        status: transitionPromptReviewStatus(review.status, terminalStatus),
+        revision: review.revision + 1,
+        updatedAt: now,
+      };
+    }
     failRunningAttempts(draft, productRunId, now, errorCode);
     return;
   }

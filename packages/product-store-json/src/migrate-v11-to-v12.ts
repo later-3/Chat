@@ -1,4 +1,3 @@
-import { productSnapshotSchema, type ProductSnapshot } from "@chat/contracts";
 import {
   SYSTEM_MEMORY_PLANNING_WORKFLOW_DEFINITION_ID,
   SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
@@ -6,12 +5,13 @@ import {
   createSystemMemoryPlanningDefinition,
 } from "@chat/application/workflow-system-definitions";
 import type { ProductSnapshotV11 } from "./legacy-v11.js";
+import { productSnapshotV12Schema, type ProductSnapshotV12 } from "./legacy-v12.js";
 
 /**
  * v11→v12新增Provider中立Workflow Memory事实和独立Memory Planning Definition。
  * v11已经发布的Simple Planning以及历史context.memory Definition全部原样保留。
  */
-export function migrateProductSnapshotV11ToV12(snapshot: ProductSnapshotV11): ProductSnapshot {
+export function migrateProductSnapshotV11ToV12(snapshot: ProductSnapshotV11): ProductSnapshotV12 {
   const definitions = { ...snapshot.entities.workflowDefinitions };
   const revisions = { ...snapshot.entities.workflowDefinitionRevisions };
   const views = { ...snapshot.entities.workflowViewDefinitions };
@@ -29,7 +29,7 @@ export function migrateProductSnapshotV11ToV12(snapshot: ProductSnapshotV11): Pr
   revisions[SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID] = seed.revision;
   views[SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID] = seed.view;
 
-  return productSnapshotSchema.parse({
+  return productSnapshotV12Schema.parse({
     ...snapshot,
     schemaVersion: "chat-product-store.v12",
     entities: {

@@ -279,7 +279,26 @@ async function dispatchResume(
     entry.hookNoteCandidateId !== undefined &&
     entry.noteCandidateId !== undefined &&
     entry.noteDecisionId !== undefined;
-  if (attemptId === undefined || isPlanningResume === isNoteResume) {
+  const isPromptReviewResume =
+    entry.promptReviewRequestId !== undefined && entry.promptReviewDecisionId !== undefined;
+  const promptReview =
+    entry.promptReviewRequestId === undefined
+      ? undefined
+      : snapshot.entities.promptReviewRequests[entry.promptReviewRequestId];
+  const promptDecision =
+    entry.promptReviewDecisionId === undefined
+      ? undefined
+      : snapshot.entities.promptReviewDecisions[entry.promptReviewDecisionId];
+  if (
+    attemptId === undefined ||
+    [isPlanningResume, isNoteResume, isPromptReviewResume].filter(Boolean).length !== 1 ||
+    (isPromptReviewResume &&
+      (promptReview === undefined ||
+        promptDecision === undefined ||
+        promptReview.productRunId !== entry.productRunId ||
+        promptDecision.productRunId !== entry.productRunId ||
+        promptDecision.promptReviewRequestId !== promptReview.promptReviewRequestId))
+  ) {
     await failDispatch(options, entry, "outbox.missing_refs", false);
     return;
   }
@@ -289,11 +308,19 @@ async function dispatchResume(
     attemptId,
     ...(isPlanningResume
       ? { approvalRequestId: entry.approvalRequestId, decisionId: entry.decisionId }
-      : {
-          hookNoteCandidateId: entry.hookNoteCandidateId,
-          noteCandidateId: entry.noteCandidateId,
-          noteDecisionId: entry.noteDecisionId,
-        }),
+      : isNoteResume
+        ? {
+            hookNoteCandidateId: entry.hookNoteCandidateId,
+            noteCandidateId: entry.noteCandidateId,
+            noteDecisionId: entry.noteDecisionId,
+          }
+        : {
+            promptReviewRequestId: promptReview?.promptReviewRequestId,
+            promptReviewDecisionId: promptDecision?.promptReviewDecisionId,
+            requestRevision: promptReview?.requestRevision,
+            reviewSha256: promptReview?.reviewSha256,
+            payloadSha256: promptReview?.payloadSha256,
+          }),
     outboxId: entry.outboxId,
   });
   if (result === "unknown") {
@@ -878,6 +905,9 @@ async function reconcileUnknown(
   }
   if (entry.kind === "workflow_resume" && entry.hookNoteCandidateId !== undefined) {
     params.set("hookNoteCandidateId", entry.hookNoteCandidateId);
+  }
+  if (entry.kind === "workflow_resume" && entry.promptReviewRequestId !== undefined) {
+    params.set("promptReviewRequestId", entry.promptReviewRequestId);
   }
   let response: Response;
   try {

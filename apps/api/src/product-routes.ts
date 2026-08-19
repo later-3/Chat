@@ -12,6 +12,7 @@ import {
   productSessionIdSchema,
   submitDecisionPayloadSchema,
   submitMessagePayloadSchema,
+  submitPromptReviewDecisionPayloadSchema,
   createMemoryImportPayloadSchema,
   reconcileMemoryImportPayloadSchema,
   memoryImportIntentIdSchema,
@@ -86,6 +87,8 @@ import {
   runTraceId,
   submitPlanDecision,
   submitUserMessage,
+  getCurrentPromptReview,
+  submitPromptReviewDecision,
   createMemoryImport,
   getMemoryImport,
   listSessionMemoryImports,
@@ -1987,6 +1990,57 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
         productRunId,
       });
       return c.json(result, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/runs/:productRunId/prompt-reviews/current", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
+      c.header("Cache-Control", "private, no-store");
+      return c.json(
+        await getCurrentPromptReview(ctx.deps, {
+          principalId: ctx.principalId,
+          productRunId,
+        }),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  /** 浏览器只提交产品Decision；Workflow Hook与Pi Operation身份永不进入公开面。 */
+  router.post("/runs/:productRunId/prompt-review-decisions", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Prompt Review Decision必须携带expectedRevision",
+        });
+      }
+      const payload = submitPromptReviewDecisionPayloadSchema.parse(envelope.payload);
+      const result = await submitPromptReviewDecision(ctx.deps, {
+        principalId: ctx.principalId,
+        productRunId,
+        commandId: envelope.commandId,
+        expectedRunRevision: envelope.expectedRevision,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/runs/:productRunId/prompt-review-decisions",
+        statusCode: 201,
+        productRunId,
+        productSessionId: result.run.sessionId,
+      });
+      return c.json(result, 201);
     } catch (error) {
       return mapError(c, error);
     }

@@ -79,6 +79,14 @@ import {
   persistWorkflowMemoryQueryResultResponseSchema,
   freezeWorkflowMemoryContextRequestSchema,
   freezeWorkflowMemoryContextResponseSchema,
+  DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+  DIRECT_AGENT_RUNTIME_PATHS,
+  beginDirectAgentAttemptRuntimeRequestSchema,
+  beginDirectAgentAttemptRuntimeResponseSchema,
+  loadPromptReviewDecisionRuntimeRequestSchema,
+  loadPromptReviewDecisionRuntimeResponseSchema,
+  commitDirectAgentResultRuntimeRequestSchema,
+  commitDirectAgentResultRuntimeResponseSchema,
   type LoadWorkflowRunSpecRequest,
   type TransitionConfigurablePlanningNodeRequest,
   type PreparePlanningMemoryContextRequest,
@@ -92,6 +100,9 @@ import {
   type BeginWorkflowMemoryWriteRequest,
   type PersistWorkflowMemoryQueryResultRequest,
   type FreezeWorkflowMemoryContextRequest,
+  type BeginDirectAgentAttemptRuntimeRequest,
+  type LoadPromptReviewDecisionRuntimeRequest,
+  type CommitDirectAgentResultRuntimeRequest,
 } from "@chat/contracts";
 import { z, type ZodType } from "zod";
 
@@ -201,6 +212,45 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
           ...input,
         }),
         loadWorkflowRunSpecResponseSchema,
+      );
+    },
+    /**
+     * Direct Workflow创建唯一Direct Attempt。正文不进入请求；Application从冻结的
+     * Product Run/Message/RunSpec重建并返回仅含Attempt与Manifest Hash的引用。
+     */
+    beginDirectAgentAttempt(input: Omit<BeginDirectAgentAttemptRuntimeRequest, "schemaVersion">) {
+      return call(
+        options,
+        `/internal/runtime/v1${DIRECT_AGENT_RUNTIME_PATHS.beginAttempt}`,
+        beginDirectAgentAttemptRuntimeRequestSchema.parse({
+          schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        beginDirectAgentAttemptRuntimeResponseSchema,
+      );
+    },
+    /** Hook恢复后只读校验已提交Decision；该响应永远不包含Provider Payload正文。 */
+    loadPromptReviewDecision(input: Omit<LoadPromptReviewDecisionRuntimeRequest, "schemaVersion">) {
+      return call(
+        options,
+        `/internal/runtime/v1${DIRECT_AGENT_RUNTIME_PATHS.loadPromptReviewDecision}`,
+        loadPromptReviewDecisionRuntimeRequestSchema.parse({
+          schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        loadPromptReviewDecisionRuntimeResponseSchema,
+      );
+    },
+    /** Executor已持久化Candidate后，由Workflow提交正式Assistant Message与Run终态。 */
+    commitDirectAgentResult(input: Omit<CommitDirectAgentResultRuntimeRequest, "schemaVersion">) {
+      return call(
+        options,
+        `/internal/runtime/v1${DIRECT_AGENT_RUNTIME_PATHS.commitResult}`,
+        commitDirectAgentResultRuntimeRequestSchema.parse({
+          schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        commitDirectAgentResultRuntimeResponseSchema,
       );
     },
     /** 冻结可组合memory.query节点意图；不越过外部Provider边界。 */

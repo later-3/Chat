@@ -53,11 +53,8 @@ export async function getWorkflowBlueprints(_deps: ApplicationDeps) {
         schemaVersion: PRODUCT_API_SCHEMA_VERSION,
         blueprintKey: blueprint.blueprintKey,
         blueprintVersion: blueprint.blueprintVersion,
-        title: blueprint.blueprintKey === "planning" ? "规划工作流" : "笔记工作流",
-        description:
-          blueprint.blueprintKey === "planning"
-            ? "读取上下文、生成计划、审核、执行、验证并提交。"
-            : "抽取、分类并提交笔记。",
+        title: workflowBlueprintCopy(blueprint.blueprintKey).title,
+        description: workflowBlueprintCopy(blueprint.blueprintKey).description,
         runnerFamily: blueprint.runnerFamily,
         terminalNodeType: blueprint.terminalNodeType,
         optionalNodeTypes: blueprint.optionalNodeTypes,
@@ -70,6 +67,26 @@ export async function getWorkflowBlueprints(_deps: ApplicationDeps) {
       })),
     }),
   };
+}
+
+function workflowBlueprintCopy(blueprintKey: "planning" | "note" | "direct"): {
+  readonly title: string;
+  readonly description: string;
+} {
+  switch (blueprintKey) {
+    case "planning":
+      return {
+        title: "规划工作流",
+        description: "读取上下文、生成计划、审核、执行、验证并提交。",
+      };
+    case "note":
+      return { title: "笔记工作流", description: "抽取、分类并提交笔记。" };
+    case "direct":
+      return {
+        title: "执行 Agent（逐次提示词审核）",
+        description: "单节点推进Execution Agent，并在每次Provider请求发送前进入人工审核。",
+      };
+  }
 }
 
 export async function getWorkflowDefinitions(

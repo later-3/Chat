@@ -26,13 +26,15 @@ describe("pi运行工件证据", () => {
     );
   });
 
-  it("文档明确区分能力对照提交与实际运行工件", async () => {
+  it("文档明确记录later-3受管分支与固定补丁的过渡运行方式", async () => {
     const evidence = await readFile(
       resolve(repoRoot, "docs/architecture/version-evidence.md"),
       "utf8",
     );
     expect(evidence).toContain("1f2b9ff53c0adefff454f02bdcf60aeaf4d28684");
     expect(evidence).toContain("a6e2c157c8ce5c225d64a9779c233d90fc28b942");
-    expect(evidence).toContain("它不是运行时依赖来源");
+    expect(evidence).toContain("https://github.com/later-3/pi");
+    expect(evidence).toContain("providerRequestGate");
+    expect(evidence).toContain("受管分支正式发布固定npm Artifact前的过渡消费方式");
   });
 });

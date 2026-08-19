@@ -10,6 +10,7 @@ import { z } from "zod";
 import {
   approvalResponseSchema,
   createSessionResponseSchema,
+  currentPromptReviewResponseSchema,
   decisionResponseSchema,
   exactMessageResponseSchema,
   executionTraceResponseSchema,
@@ -17,6 +18,7 @@ import {
   messagesPageResponseSchema,
   noteCandidateResponseSchema,
   noteDecisionResponseSchema,
+  promptReviewDecisionResponseSchema,
   plansResponseSchema,
   problemSchema,
   runResponseSchema,
@@ -26,13 +28,19 @@ import {
   type ChatNoteCandidate,
   type ChatPlan,
   type ChatRun,
+  type ChatPromptReview,
   type ChatSession,
   type DecisionRequest,
   type NoteDecisionRequest,
+  type PromptReviewDecisionRequest,
   type LifeosWorkflowOption,
   type WorkflowSelection,
 } from "./contracts.ts";
-import type { PendingDecision, PendingNoteDecision } from "./state-store.ts";
+import type {
+  PendingDecision,
+  PendingNoteDecision,
+  PendingPromptReviewDecision,
+} from "./state-store.ts";
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
@@ -175,7 +183,9 @@ export class ChatProductClient {
                   },
                 }
               : {}),
-            ...(workspaceInstructions !== undefined ? { context: { workspaceInstructions } } : {}),
+            ...(workspaceInstructions !== undefined && workflowSelection?.blueprintKey !== "direct"
+              ? { context: { workspaceInstructions } }
+              : {}),
           },
         }),
         ...withSignal(signal),
@@ -268,6 +278,18 @@ export class ChatProductClient {
     }
   }
 
+  async getCurrentPromptReview(
+    productRunId: string,
+    signal?: AbortSignal,
+  ): Promise<ChatPromptReview | null> {
+    const value = await this.request(
+      `/api/runs/${encodeURIComponent(productRunId)}/prompt-reviews/current`,
+      currentPromptReviewResponseSchema,
+      withSignal(signal),
+    );
+    return value.promptReview;
+  }
+
   async getMessage(
     sessionId: string,
     messageId: string,
@@ -345,6 +367,36 @@ export class ChatProductClient {
       },
     );
     return value.candidate;
+  }
+
+  async submitPromptReviewDecision(
+    pending: PendingPromptReviewDecision,
+    request: PromptReviewDecisionRequest,
+    signal?: AbortSignal,
+  ): Promise<ChatRun> {
+    const value = await this.request(
+      `/api/runs/${encodeURIComponent(pending.productRunId)}/prompt-review-decisions`,
+      promptReviewDecisionResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          commandId: pending.commandId,
+          expectedRevision: pending.expectedRunRevision,
+          payload: {
+            promptReviewRequestId: pending.promptReviewRequestId,
+            requestRevision: pending.requestRevision,
+            reviewSha256: pending.reviewSha256,
+            payloadSha256: pending.payloadSha256,
+            kind: pending.request.kind,
+            ...(pending.request.kind === "reject" && request.explanation !== undefined
+              ? { reason: request.explanation }
+              : {}),
+          },
+        }),
+        ...withSignal(signal),
+      },
+    );
+    return value.run;
   }
 
   private async request<T>(path: string, schema: ZodType<T>, init: RequestInit = {}): Promise<T> {

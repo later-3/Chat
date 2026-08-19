@@ -35,6 +35,9 @@ import {
   SYSTEM_MEMORY_PLANNING_WORKFLOW_DEFINITION_ID,
   SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID,
+  SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID,
+  SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+  SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID,
 } from "@chat/application/workflow-system-definitions";
 import { hashCanonical } from "@chat/domain";
 import {
@@ -50,6 +53,7 @@ import {
   migrateProductSnapshotV9ToV10,
   migrateProductSnapshotV10ToV11,
   migrateProductSnapshotV11ToV12,
+  migrateProductSnapshotV12ToV13,
   productSnapshotV1Schema,
   productSnapshotV10Schema,
   type ProductSnapshotV10,
@@ -83,6 +87,8 @@ type ProductSnapshotV6Fixture = ReturnType<typeof migrateProductSnapshotV5ToV6>;
 type ProductSnapshotV7Fixture = ReturnType<typeof migrateProductSnapshotV6ToV7>;
 type ProductSnapshotV8Fixture = ReturnType<typeof migrateProductSnapshotV7ToV8>;
 type ProductSnapshotV9Fixture = ReturnType<typeof migrateProductSnapshotV8ToV9>;
+type ProductSnapshotV11Fixture = ReturnType<typeof migrateProductSnapshotV10ToV11>;
+type ProductSnapshotV12Fixture = ReturnType<typeof migrateProductSnapshotV11ToV12>;
 export type S7VersionedFixtureSnapshot =
   | ProductSnapshotV1
   | ProductSnapshotV2Fixture
@@ -94,6 +100,8 @@ export type S7VersionedFixtureSnapshot =
   | ProductSnapshotV8Fixture
   | ProductSnapshotV9Fixture
   | ProductSnapshotV10
+  | ProductSnapshotV11Fixture
+  | ProductSnapshotV12Fixture
   | ProductSnapshot;
 
 export interface S7VersionedFixtureManifestEntry {
@@ -178,7 +186,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "active",
     compatibility: "current",
     objectCount: 33,
-    contentSha256: "ce73791c54d4d0a5382b243d4dacc1fab883e258e4c79b667e0bb62f6cfc1bc0",
+    contentSha256: "145ef0348dec97042fbba593f20aa0e083ae5e0135044f440900185a02366443",
   },
   {
     fixtureId: "v10-new-planning-waiting",
@@ -189,7 +197,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "waiting",
     compatibility: "resumable",
     objectCount: 45,
-    contentSha256: "aaf9cdb988015eed190256cb78482e8b0d0fdb15521da04f77052c57215a1adc",
+    contentSha256: "4abaa4b1eb0174376a43c3944d0a88506f30c58e48cf1d6879f1b37e3bc9d651",
   },
   {
     fixtureId: "v10-new-planning-terminal",
@@ -200,7 +208,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "terminal",
     compatibility: "read_only_history",
     objectCount: 51,
-    contentSha256: "2e8f52f8f5a1618374f52ca78588da03da45ccaacf76ea1526860cc4865ecc39",
+    contentSha256: "290aece7a7d3d7e80e3e23c2130067e4818850a3a91a82b0c66c60a468902064",
   },
   {
     fixtureId: "v10-note-capture-active",
@@ -211,7 +219,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "active",
     compatibility: "current",
     objectCount: 15,
-    contentSha256: "f6fdc148a6279398cb468ff571041a8e6e0dfec0ceb096ea3e56896541238981",
+    contentSha256: "86f74b404d03e5e97d21e0e2dddf06ef567779a138b8cfe4f03c4c78e677c9c1",
   },
   {
     fixtureId: "v10-note-capture-waiting",
@@ -222,7 +230,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "waiting",
     compatibility: "resumable",
     objectCount: 22,
-    contentSha256: "c0ecbbab541de51346d3aeda9f12483945b73e64939f31cc9d7a7aa237b3d414",
+    contentSha256: "a48fc18afb45a5f022650ce73103371e38dac1b423527873c385301e7dded6c5",
   },
   {
     fixtureId: "v10-note-capture-terminal",
@@ -233,7 +241,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "terminal",
     compatibility: "read_only_history",
     objectCount: 38,
-    contentSha256: "873df89e93f32c29d7f59b04b10321615c0afffae89438fe59498c57694957e9",
+    contentSha256: "c8d30c2f5150563a48902f34b032d8abb2db258d1d0b1b3fc0b57db9924d14dc",
   },
 ];
 
@@ -250,7 +258,7 @@ export async function buildS7VersionedFixture(
 }
 
 export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot): ProductSnapshot {
-  if (snapshot.schemaVersion === "chat-product-store.v12") return structuredClone(snapshot);
+  if (snapshot.schemaVersion === "chat-product-store.v13") return structuredClone(snapshot);
   const v2 =
     snapshot.schemaVersion === "chat-product-store.v1"
       ? migrateProductSnapshotV1ToV2(snapshot)
@@ -264,12 +272,12 @@ export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot):
   const v9 = v8.schemaVersion === "chat-product-store.v8" ? migrateProductSnapshotV8ToV9(v8) : v8;
   const v10 = v9.schemaVersion === "chat-product-store.v9" ? migrateProductSnapshotV9ToV10(v9) : v9;
   const v11 =
-    v10.schemaVersion === "chat-product-store.v10"
-      ? migrateProductSnapshotV10ToV11(v10)
-      : productSnapshotSchema.parse(v10);
-  return v11.schemaVersion === "chat-product-store.v11"
-    ? migrateProductSnapshotV11ToV12(v11)
-    : productSnapshotSchema.parse(v11);
+    v10.schemaVersion === "chat-product-store.v10" ? migrateProductSnapshotV10ToV11(v10) : v10;
+  const v12 =
+    v11.schemaVersion === "chat-product-store.v11" ? migrateProductSnapshotV11ToV12(v11) : v11;
+  const v13 =
+    v12.schemaVersion === "chat-product-store.v12" ? migrateProductSnapshotV12ToV13(v12) : v12;
+  return productSnapshotSchema.parse(v13);
 }
 
 function toV10Fixture(snapshot: ProductSnapshot): ProductSnapshotV10 {
@@ -282,11 +290,17 @@ function toV10Fixture(snapshot: ProductSnapshot): ProductSnapshotV10 {
   delete entities["workflowDefinitions"]?.[SYSTEM_MEMORY_PLANNING_WORKFLOW_DEFINITION_ID];
   delete entities["workflowDefinitionRevisions"]?.[SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID];
   delete entities["workflowViewDefinitions"]?.[SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID];
+  delete entities["workflowDefinitions"]?.[SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID];
+  delete entities["workflowDefinitionRevisions"]?.[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
+  delete entities["workflowViewDefinitions"]?.[SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID];
   delete entities["workflowMemoryQueries"];
   delete entities["workflowMemorySnapshots"];
   delete entities["workflowMemoryContexts"];
   delete entities["memoryWriteIntents"];
   delete entities["memoryWriteResults"];
+  delete entities["directAgentCandidates"];
+  delete entities["promptReviewRequests"];
+  delete entities["promptReviewDecisions"];
   return productSnapshotV10Schema.parse(downgraded);
 }
 

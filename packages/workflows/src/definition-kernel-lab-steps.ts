@@ -184,6 +184,8 @@ export async function executeDefinitionKernelNodeStep(input: {
     case "review_plan":
     case "review_note":
     case "execute_plan":
+    case "advance_direct_agent":
+    case "review_prompt":
       throw new FatalError("executor_registry.wrong_dispatch_kind");
     default: {
       const exhaustive: never = registration.operation;

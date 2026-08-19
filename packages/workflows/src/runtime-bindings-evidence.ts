@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { OutboxEntryId } from "@chat/contracts";
+import type { OutboxEntryId, PromptReviewRequestId } from "@chat/contracts";
 import {
   assertRuntimeBindingsIntegrity,
   runtimeBindingsFileSchema,
@@ -14,6 +14,21 @@ export interface SafeMemoryImportRuntimeEvidence {
     readonly state: "started" | "outcome_unknown" | "missing";
     readonly workflowDefinitionVersion: string | null;
   }[];
+}
+
+export interface SafePromptReviewRuntimeEvidence {
+  readonly status: "ok" | "missing" | "invalid" | "mismatch";
+  readonly entry?:
+    | {
+        readonly promptReviewRequestId: string;
+        readonly productRunId: string;
+        readonly requestRevision: number;
+        readonly reviewSha256: string;
+        readonly promptReviewDecisionId: string | null;
+        readonly resumeDispatchState:
+          "none" | "dispatching" | "dispatched" | "outcome_unknown" | "failed_terminal";
+      }
+    | undefined;
 }
 
 /** 严格解析包含私有身份的Binding文件，只返回不含Workflow Run ID/Token的安全投影。 */
@@ -72,4 +87,48 @@ export function readSafeMemoryImportRuntimeEvidence(input: {
     };
   });
   return { status: mismatch ? "mismatch" : "ok", entries };
+}
+
+/**
+ * Prompt Review恢复证据只公开产品引用、revision、Hash与有限状态；Hook Token、
+ * Workflow Run ID和Provider Payload正文始终留在私有边界之外。
+ */
+export function readSafePromptReviewRuntimeEvidence(input: {
+  readonly path: string | undefined;
+  readonly promptReviewRequestId: string;
+  readonly productRunId: string;
+  readonly requestRevision: number;
+  readonly reviewSha256: string;
+}): SafePromptReviewRuntimeEvidence {
+  if (input.path === undefined) return { status: "missing" };
+  let parsed: RuntimeBindingsFile;
+  try {
+    parsed = runtimeBindingsFileSchema.parse(JSON.parse(readFileSync(input.path, "utf8")));
+    assertRuntimeBindingsIntegrity(parsed);
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "ENOENT"
+    ) {
+      return { status: "missing" };
+    }
+    return { status: "invalid" };
+  }
+  const binding = parsed.promptReviewHooks[input.promptReviewRequestId as PromptReviewRequestId];
+  if (binding === undefined) return { status: "missing" };
+  const entry = {
+    promptReviewRequestId: input.promptReviewRequestId,
+    productRunId: binding.productRunId,
+    requestRevision: binding.requestRevision,
+    reviewSha256: binding.reviewSha256,
+    promptReviewDecisionId: binding.promptReviewDecisionId ?? null,
+    resumeDispatchState: binding.resumeDispatchState,
+  };
+  const mismatch =
+    binding.productRunId !== input.productRunId ||
+    binding.requestRevision !== input.requestRevision ||
+    binding.reviewSha256 !== input.reviewSha256;
+  return { status: mismatch ? "mismatch" : "ok", entry };
 }

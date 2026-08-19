@@ -322,7 +322,16 @@ function assertTransitionEvidence(
   }
   if (
     input.toStatus === "waiting_human" &&
+    (current.nodeType === "human.prompt_review" || current.nodeType === "agent.direct") &&
+    input.relatedProductRef?.kind !== "prompt_review_request"
+  ) {
+    throw new Error("Prompt Review节点等待必须关联Prompt Review Request");
+  }
+  if (
+    input.toStatus === "waiting_human" &&
     current.nodeType !== "human.note_review" &&
+    current.nodeType !== "human.prompt_review" &&
+    current.nodeType !== "agent.direct" &&
     input.relatedProductRef?.kind !== "approval_request"
   ) {
     throw new Error("Workflow Node waiting_human必须关联Approval Request");
@@ -338,7 +347,17 @@ function assertTransitionEvidence(
   if (
     current.status === "waiting_human" &&
     (input.toStatus === "running" || input.toStatus === "succeeded") &&
+    (current.nodeType === "human.prompt_review" || current.nodeType === "agent.direct") &&
+    input.relatedProductRef?.kind !== "prompt_review_decision"
+  ) {
+    throw new Error("Prompt Review节点恢复或完成必须关联Prompt Review Decision");
+  }
+  if (
+    current.status === "waiting_human" &&
+    (input.toStatus === "running" || input.toStatus === "succeeded") &&
     current.nodeType !== "human.note_review" &&
+    current.nodeType !== "human.prompt_review" &&
+    current.nodeType !== "agent.direct" &&
     input.relatedProductRef?.kind !== "decision"
   ) {
     throw new Error("Workflow Node恢复或完成必须关联已提交Decision");
@@ -351,7 +370,19 @@ function assertTransitionEvidence(
   ) {
     throw new Error("Workflow Node取消必须关联已提交Note Decision事实");
   }
-  if (input.toStatus === "outcome_unknown" && !current.nodeType.startsWith("execute.")) {
+  if (
+    current.status === "waiting_human" &&
+    input.toStatus === "cancelled" &&
+    (current.nodeType === "human.prompt_review" || current.nodeType === "agent.direct") &&
+    input.relatedProductRef?.kind !== "prompt_review_decision"
+  ) {
+    throw new Error("Prompt Review节点取消必须关联已提交Prompt Review Decision事实");
+  }
+  if (
+    input.toStatus === "outcome_unknown" &&
+    !current.nodeType.startsWith("execute.") &&
+    current.nodeType !== "agent.direct"
+  ) {
     throw new Error("outcome_unknown只允许用于无法确认的外部执行节点");
   }
 }

@@ -7,6 +7,8 @@ import { hashCanonical } from "@chat/domain";
 import {
   JsonProductStore,
   assertSnapshotIntegrity,
+  migrateProductSnapshotV10ToV11,
+  migrateProductSnapshotV11ToV12,
   productSnapshotV1Schema,
 } from "@chat/product-store-json";
 import {
@@ -108,6 +110,29 @@ describe("S7 versioned fixture与v1→最终兼容矩阵", () => {
       }
     },
   );
+
+  it("v12旧输入升级到v13且再次读取当前格式保持确定", async () => {
+    const entry = S7_VERSIONED_FIXTURE_MANIFEST.find(
+      (candidate) => candidate.fixtureId === "v10-new-planning-active",
+    );
+    if (entry === undefined) throw new Error("Manifest缺少v10 active Planning Fixture");
+    const v10 = await buildS7VersionedFixture(entry);
+    if (v10.schemaVersion !== "chat-product-store.v10") {
+      throw new Error("v10 active Fixture schema错误");
+    }
+    const v12 = migrateProductSnapshotV11ToV12(migrateProductSnapshotV10ToV11(v10));
+    const sourceBefore = structuredClone(v12);
+
+    const migrated = migrateS7FixtureToCurrent(v12);
+
+    expect(v12).toEqual(sourceBefore);
+    expect(migrated.schemaVersion).toBe("chat-product-store.v13");
+    expect(migrated.entities.runs).toEqual(v12.entities.runs);
+    expect(migrated.entities.directAgentCandidates).toEqual({});
+    expect(migrated.entities.promptReviewRequests).toEqual({});
+    expect(migrated.entities.promptReviewDecisions).toEqual({});
+    expect(migrateS7FixtureToCurrent(migrated)).toEqual(migrated);
+  });
 
   it("v10 active Fixture不为queued Planner伪造输入Manifest", async () => {
     const entry = S7_VERSIONED_FIXTURE_MANIFEST.find(

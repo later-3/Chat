@@ -29,11 +29,16 @@ export const SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemmemoryplanning
 export const SYSTEM_NOTE_WORKFLOW_DEFINITION_ID = "wfd_systemnotev1" as const;
 export const SYSTEM_NOTE_WORKFLOW_REVISION_ID = "wfr_systemnotev1" as const;
 export const SYSTEM_NOTE_WORKFLOW_VIEW_ID = "wvd_systemnotev1" as const;
+export const SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID = "wfd_systemdirectagentv1" as const;
+export const SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID = "wfr_systemdirectagentv1" as const;
+export const SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID = "wvd_systemdirectagentv1" as const;
 export const CONFIGURABLE_PLANNING_RUNNER_FAMILY = "configurable-planning.v1" as const;
 export const CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION =
   "configurable-planning.bundle.v1" as const;
 export const NOTE_CAPTURE_RUNNER_FAMILY = "note-capture.v1" as const;
 export const NOTE_CAPTURE_RUNNER_BUNDLE_VERSION = "note-capture.bundle.v1" as const;
+export const DIRECT_AGENT_RUNNER_FAMILY = "direct-agent.v1" as const;
+export const DIRECT_AGENT_RUNNER_BUNDLE_VERSION = "direct-agent.bundle.v1" as const;
 export const LEGACY_PLANNING_RUNNER_FAMILY = "legacy-planning.v1" as const;
 export const LEGACY_PLANNING_RUNNER_BUNDLE_VERSION = "legacy-planning.bundle.v1" as const;
 
@@ -184,6 +189,22 @@ export function systemNoteSemanticRoot(): WorkflowSequence {
         exceededPolicy: "fail",
       },
       systemTask("note.commit", "note.commit"),
+    ],
+  };
+}
+
+/** Direct Execution Agent只有一个业务节点；Prompt Review是节点内部可选Provider Gate。 */
+export function systemDirectAgentSemanticRoot(): WorkflowSequence {
+  return {
+    kind: "sequence",
+    elements: [
+      {
+        kind: "composite",
+        definitionNodeId: "direct.agent",
+        nodeType: "agent.direct",
+        schemaVersion: 1,
+        config: { capabilityMode: "read_only", promptReviewMode: "manual" },
+      },
     ],
   };
 }
@@ -409,6 +430,63 @@ export function createSystemNoteDefinition(createdAt: string): {
   };
 }
 
+export function createSystemDirectAgentDefinition(createdAt: string): {
+  readonly definition: WorkflowDefinition;
+  readonly revision: WorkflowDefinitionRevision;
+  readonly view: WorkflowViewDefinition;
+} {
+  const normalized = normalizeWorkflowDefinition(
+    systemDirectAgentSemanticRoot(),
+    DEFAULT_NODE_CATALOG,
+  );
+  if (!normalized.success) {
+    throw new Error(
+      `system direct agent definition invalid:${normalized.diagnostics
+        .map((item) => item.code)
+        .join(",")}`,
+    );
+  }
+  const definition = workflowDefinitionSchema.parse({
+    schemaVersion: "workflow-definition.v1",
+    workflowDefinitionId: SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID,
+    ownerKind: "system",
+    key: "system.direct-agent",
+    title: "执行 Agent（逐次提示词审核）",
+    description: "单节点推进Pi AgentSession，并在每次Provider请求发送前进入节点内人工审核。",
+    blueprintKey: "direct",
+    blueprintVersion: 1,
+    status: "active",
+    publishedRevisionId: SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+    revision: 1,
+    createdAt,
+    updatedAt: createdAt,
+  });
+  const revision = workflowDefinitionRevisionSchema.parse({
+    schemaVersion: "workflow-definition-revision.v1",
+    workflowDefinitionRevisionId: SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+    workflowDefinitionId: SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID,
+    definitionRevision: 1,
+    state: "published",
+    blueprintKey: "direct",
+    blueprintVersion: 1,
+    title: definition.title,
+    semanticRoot: normalized.normalized.semanticRoot,
+    definitionSha256: normalized.normalized.definitionSha256,
+    revision: 1,
+    createdAt,
+    updatedAt: createdAt,
+    publishedAt: createdAt,
+  });
+  return {
+    definition,
+    revision,
+    view: createSystemDirectAgentWorkflowView({
+      createdAt,
+      definitionSha256: revision.definitionSha256,
+    }),
+  };
+}
+
 function createSystemPlanningWorkflowView(input: {
   readonly createdAt: string;
   readonly definitionSha256: string;
@@ -593,6 +671,38 @@ function createSystemNoteWorkflowView(input: {
   });
 }
 
+function createSystemDirectAgentWorkflowView(input: {
+  readonly createdAt: string;
+  readonly definitionSha256: string;
+}): WorkflowViewDefinition {
+  const nodes: readonly WorkflowViewNodeShape[] = [
+    viewNode("direct.agent", "agent.direct", "执行 Agent · 提示词审核", "composite", false),
+  ];
+  const edges: readonly WorkflowViewEdgeShape[] = [];
+  const content = {
+    title: "执行 Agent（逐次提示词审核）",
+    source: {
+      kind: "published_definition" as const,
+      workflowDefinitionId: SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID,
+      definitionRevision: 1,
+      definitionSha256: input.definitionSha256,
+      blueprintKey: "direct",
+      blueprintVersion: "1",
+    },
+    nodes,
+    edges,
+  };
+  return workflowViewDefinitionSchema.parse({
+    schemaVersion: "workflow-view-definition.v1",
+    workflowViewDefinitionId: SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID,
+    ...content,
+    sha256: computeWorkflowViewDefinitionSha256(content),
+    revision: 1,
+    createdAt: input.createdAt,
+    updatedAt: input.createdAt,
+  });
+}
+
 function viewNode(
   definitionNodeId: string,
   nodeType: string,
@@ -624,6 +734,7 @@ function systemTask(
     | "agent.research"
     | "agent.plan"
     | "human.plan_review"
+    | "human.prompt_review"
     | "result.validate"
     | "product.commit"
     | "note.extract"

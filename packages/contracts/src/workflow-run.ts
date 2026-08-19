@@ -5,6 +5,7 @@ import {
   approvalRequestIdSchema,
   artifactIdSchema,
   decisionIdSchema,
+  directAgentCandidateIdSchema,
   executionCandidateIdSchema,
   executionContractIdSchema,
   messageIdSchema,
@@ -17,6 +18,8 @@ import {
   planRevisionIdSchema,
   planningMemorySelectionIdSchema,
   planningProjectContextIdSchema,
+  promptReviewDecisionIdSchema,
+  promptReviewRequestIdSchema,
   projectIdSchema,
   ruleRevisionIdSchema,
   ruleSelectionIdSchema,
@@ -229,6 +232,20 @@ export const nodeProductRefSchema = z.discriminatedUnion("kind", [
   z
     .object({
       ...productRefBase,
+      kind: z.literal("prompt_review_request"),
+      id: promptReviewRequestIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...productRefBase,
+      kind: z.literal("prompt_review_decision"),
+      id: promptReviewDecisionIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...productRefBase,
       kind: z.literal("note_candidate"),
       id: noteCandidateIdSchema,
     })
@@ -266,6 +283,13 @@ export const nodeProductRefSchema = z.discriminatedUnion("kind", [
       ...productRefBase,
       kind: z.literal("execution_candidate"),
       id: executionCandidateIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...productRefBase,
+      kind: z.literal("direct_agent_candidate"),
+      id: directAgentCandidateIdSchema,
     })
     .strict(),
   z

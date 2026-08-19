@@ -28,6 +28,8 @@ import {
   planningProjectContextIdSchema,
   planningMemorySelectionIdSchema,
   projectIdSchema,
+  promptReviewDecisionIdSchema,
+  promptReviewRequestIdSchema,
   ruleSelectionIdSchema,
   ruleIdSchema,
   ruleRevisionIdSchema,
@@ -1240,7 +1242,8 @@ export const workflowStartRequestSchema = z
     }
     if (
       (value.runnerFamily === "configurable-planning.v1" ||
-        value.runnerFamily === "note-capture.v1") &&
+        value.runnerFamily === "note-capture.v1" ||
+        value.runnerFamily === "direct-agent.v1") &&
       value.workflowRunSpecId === undefined
     ) {
       ctx.issues.push({
@@ -1299,9 +1302,21 @@ export const workflowNoteResumeRequestSchema = z
   })
   .strict();
 
+export const workflowPromptReviewResumeRequestSchema = z
+  .object({
+    ...workflowDispatchBase,
+    promptReviewRequestId: promptReviewRequestIdSchema,
+    promptReviewDecisionId: promptReviewDecisionIdSchema,
+    requestRevision: z.number().int().positive(),
+    reviewSha256: sha256Schema,
+    payloadSha256: sha256Schema,
+  })
+  .strict();
+
 export const workflowResumeRequestSchema = z.union([
   workflowPlanningResumeRequestSchema,
   workflowNoteResumeRequestSchema,
+  workflowPromptReviewResumeRequestSchema,
 ]);
 
 export const workflowResumeResponseSchema = z

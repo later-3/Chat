@@ -58,6 +58,24 @@ import {
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   prepareProjectCandidateRequestSchema,
   prepareProjectAdvancementCandidateRequestSchema,
+  DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+  DIRECT_AGENT_RUNTIME_PATHS,
+  beginDirectAgentAttemptRuntimeRequestSchema,
+  beginDirectAgentAttemptRuntimeResponseSchema,
+  authorizeDirectAgentOperationRuntimeRequestSchema,
+  authorizeDirectAgentOperationRuntimeResponseSchema,
+  publishPromptReviewRuntimeRequestSchema,
+  publishPromptReviewRuntimeResponseSchema,
+  loadPromptReviewDecisionRuntimeRequestSchema,
+  loadPromptReviewDecisionRuntimeResponseSchema,
+  consumePromptReviewDecisionRuntimeRequestSchema,
+  consumePromptReviewDecisionRuntimeResponseSchema,
+  commitPromptReviewDispatchOutcomeRuntimeRequestSchema,
+  commitPromptReviewDispatchOutcomeRuntimeResponseSchema,
+  persistDirectAgentCandidateRuntimeRequestSchema,
+  persistDirectAgentCandidateRuntimeResponseSchema,
+  commitDirectAgentResultRuntimeRequestSchema,
+  commitDirectAgentResultRuntimeResponseSchema,
   type ProblemDetail,
   type RequestId,
 } from "@chat/contracts";
@@ -108,6 +126,14 @@ import {
   beginWorkflowMemoryQuery,
   persistWorkflowMemoryQueryResult,
   freezeWorkflowMemoryContext,
+  beginDirectAgentAttempt,
+  authorizeDirectAgentOperation,
+  publishPromptReviewRequest,
+  loadPromptReviewDecisionForRuntime,
+  consumePromptReviewDecision,
+  commitPromptReviewDispatchOutcome,
+  persistDirectAgentCandidate,
+  commitDirectAgentResult,
   type ApplicationDeps,
 } from "@chat/application";
 
@@ -263,6 +289,122 @@ export function createInternalRuntimeRouter(
         workflowRunSpecId: request.workflowRunSpecId,
         workflowDefinitionRevisionId: runSpec.definitionRef.workflowDefinitionRevisionId,
         runSpec,
+      });
+    }),
+  );
+
+  router.post(
+    DIRECT_AGENT_RUNTIME_PATHS.beginAttempt,
+    handle(201, async (c) => {
+      const request = beginDirectAgentAttemptRuntimeRequestSchema.parse(await parseInternalBody(c));
+      const result = await beginDirectAgentAttempt(options.deps, request);
+      return beginDirectAgentAttemptRuntimeResponseSchema.parse({
+        schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+        ...result,
+      });
+    }),
+  );
+
+  router.post(
+    DIRECT_AGENT_RUNTIME_PATHS.authorizeOperation,
+    handle(200, async (c) => {
+      const request = authorizeDirectAgentOperationRuntimeRequestSchema.parse(
+        await parseInternalBody(c),
+      );
+      return authorizeDirectAgentOperationRuntimeResponseSchema.parse({
+        schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+        ...(await authorizeDirectAgentOperation(options.deps, request)),
+      });
+    }),
+  );
+
+  router.post(
+    DIRECT_AGENT_RUNTIME_PATHS.publishPromptReview,
+    handle(201, async (c) => {
+      const request = publishPromptReviewRuntimeRequestSchema.parse(await parseInternalBody(c));
+      const result = await publishPromptReviewRequest(options.deps, request);
+      return publishPromptReviewRuntimeResponseSchema.parse({
+        schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+        promptReviewRequestId: result.promptReview.promptReviewRequestId,
+        productRunId: result.promptReview.productRunId,
+        requestRevision: result.promptReview.requestRevision,
+        requestIndex: result.promptReview.requestIndex,
+        payloadSha256: result.promptReview.payloadSha256,
+        reviewSha256: result.promptReview.reviewSha256,
+        status: result.promptReview.status,
+        revision: result.promptReview.revision,
+        runRevision: result.runRevision,
+      });
+    }),
+  );
+
+  router.post(
+    DIRECT_AGENT_RUNTIME_PATHS.consumePromptReviewDecision,
+    handle(200, async (c) => {
+      const request = consumePromptReviewDecisionRuntimeRequestSchema.parse(
+        await parseInternalBody(c),
+      );
+      return consumePromptReviewDecisionRuntimeResponseSchema.parse(
+        await consumePromptReviewDecision(options.deps, request),
+      );
+    }),
+  );
+
+  router.post(
+    DIRECT_AGENT_RUNTIME_PATHS.loadPromptReviewDecision,
+    handle(200, async (c) => {
+      const request = loadPromptReviewDecisionRuntimeRequestSchema.parse(
+        await parseInternalBody(c),
+      );
+      return loadPromptReviewDecisionRuntimeResponseSchema.parse({
+        schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+        ...(await loadPromptReviewDecisionForRuntime(options.deps, request)),
+      });
+    }),
+  );
+
+  router.post(
+    DIRECT_AGENT_RUNTIME_PATHS.commitPromptReviewDispatchOutcome,
+    handle(200, async (c) => {
+      const request = commitPromptReviewDispatchOutcomeRuntimeRequestSchema.parse(
+        await parseInternalBody(c),
+      );
+      const result = await commitPromptReviewDispatchOutcome(options.deps, request);
+      return commitPromptReviewDispatchOutcomeRuntimeResponseSchema.parse({
+        schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+        promptReviewRequestId: result.promptReview.promptReviewRequestId,
+        productRunId: result.promptReview.productRunId,
+        status: result.promptReview.status,
+        revision: result.promptReview.revision,
+      });
+    }),
+  );
+
+  router.post(
+    DIRECT_AGENT_RUNTIME_PATHS.persistCandidate,
+    handle(201, async (c) => {
+      const request = persistDirectAgentCandidateRuntimeRequestSchema.parse(
+        await parseInternalBody(c),
+      );
+      const result = await persistDirectAgentCandidate(options.deps, request);
+      return persistDirectAgentCandidateRuntimeResponseSchema.parse({
+        schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+        productRunId: request.productRunId,
+        ...result,
+      });
+    }),
+  );
+
+  router.post(
+    DIRECT_AGENT_RUNTIME_PATHS.commitResult,
+    handle(200, async (c) => {
+      const request = commitDirectAgentResultRuntimeRequestSchema.parse(await parseInternalBody(c));
+      const result = await commitDirectAgentResult(options.deps, request);
+      return commitDirectAgentResultRuntimeResponseSchema.parse({
+        schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+        productRunId: request.productRunId,
+        directAgentCandidateId: request.directAgentCandidateId,
+        messageId: result.message.messageId,
       });
     }),
   );

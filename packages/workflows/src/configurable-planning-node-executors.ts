@@ -71,6 +71,9 @@ export async function executePlanningNode(input: {
     case "human.note_review":
     case "note.commit":
       throw new Error("configurable_planning.note_node_not_allowed");
+    case "agent.direct":
+    case "human.prompt_review":
+      throw new Error("configurable_planning.direct_node_not_allowed");
     default: {
       const exhaustive: never = input.nodeType;
       throw new Error(`configurable_planning.unknown_node:${exhaustive}`);

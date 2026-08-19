@@ -23,6 +23,7 @@ const WORKFLOW_ID_PREFIX = "lifeos-workflow:";
 const BLUEPRINT_LABEL: Record<LifeosWorkflowOption["blueprintKey"], string> = {
   planning: "规划",
   note: "笔记",
+  direct: "执行 Agent",
 };
 
 /**
@@ -88,6 +89,7 @@ export function WorkflowPicker({
         workflowDefinitionRevisionId: option.workflowDefinitionRevisionId,
         definitionSha256: option.definitionSha256,
         title: option.title,
+        blueprintKey: option.blueprintKey,
       })
     ) {
       setOpen(false);

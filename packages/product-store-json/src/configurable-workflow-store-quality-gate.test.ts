@@ -26,6 +26,10 @@ import {
   SYSTEM_NOTE_WORKFLOW_DEFINITION_ID,
   SYSTEM_NOTE_WORKFLOW_REVISION_ID,
   SYSTEM_NOTE_WORKFLOW_VIEW_ID,
+  SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID,
+  SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+  SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID,
+  createSystemDirectAgentDefinition,
 } from "@chat/application/workflow-system-definitions";
 import { JsonProductStore } from "./json-product-store.js";
 import { productSnapshotV6Schema } from "./legacy-v6.js";
@@ -35,6 +39,7 @@ import { migrateProductSnapshotV8ToV9 } from "./migrate-v8-to-v9.js";
 import { migrateProductSnapshotV9ToV10 } from "./migrate-v9-to-v10.js";
 import { migrateProductSnapshotV10ToV11 } from "./migrate-v10-to-v11.js";
 import { migrateProductSnapshotV11ToV12 } from "./migrate-v11-to-v12.js";
+import { migrateProductSnapshotV12ToV13 } from "./migrate-v12-to-v13.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-10T12:00:00.000Z";
@@ -84,6 +89,9 @@ function emptyV6() {
     "workflowMemoryContexts",
     "memoryWriteIntents",
     "memoryWriteResults",
+    "directAgentCandidates",
+    "promptReviewRequests",
+    "promptReviewDecisions",
   ]) {
     delete entities[key];
   }
@@ -136,10 +144,12 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     expect(first.entities.workflowViewDefinitions[LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID]).toEqual(
       second.entities.workflowViewDefinitions[LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID],
     );
-    const current = migrateProductSnapshotV11ToV12(
-      migrateProductSnapshotV10ToV11(
-        migrateProductSnapshotV9ToV10(
-          migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(first)),
+    const current = migrateProductSnapshotV12ToV13(
+      migrateProductSnapshotV11ToV12(
+        migrateProductSnapshotV10ToV11(
+          migrateProductSnapshotV9ToV10(
+            migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(first)),
+          ),
         ),
       ),
     );
@@ -239,7 +249,11 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
       "result.validate",
       "product.commit",
     ]);
-    expect(() => assertSnapshotIntegrity(migrateProductSnapshotV11ToV12(first))).not.toThrow();
+    expect(() =>
+      assertSnapshotIntegrity(
+        migrateProductSnapshotV12ToV13(migrateProductSnapshotV11ToV12(first)),
+      ),
+    ).not.toThrow();
   });
 
   it("v11→v12保留Simple Planning并新增完全独立的Memory Planning和空Memory事实", () => {
@@ -278,7 +292,57 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     ).toEqual(
       v11.entities.workflowDefinitionRevisions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID],
     );
+    expect(() => assertSnapshotIntegrity(migrateProductSnapshotV12ToV13(first))).not.toThrow();
+  });
+
+  it("v12→v13保留旧事实、种入单节点/16次审核预算的Direct Agent并只新增空集合", () => {
+    const v7 = migrateProductSnapshotV6ToV7(emptyV6());
+    const v9 = migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(v7));
+    const v11 = migrateProductSnapshotV10ToV11(migrateProductSnapshotV9ToV10(v9));
+    const v12 = migrateProductSnapshotV11ToV12(v11);
+    const first = migrateProductSnapshotV12ToV13(v12);
+    const second = migrateProductSnapshotV12ToV13(structuredClone(v12));
+
+    expect(first).toEqual(second);
+    expect(first.schemaVersion).toBe("chat-product-store.v13");
+    expect(first.entities.directAgentCandidates).toEqual({});
+    expect(first.entities.promptReviewRequests).toEqual({});
+    expect(first.entities.promptReviewDecisions).toEqual({});
+    expect(
+      first.entities.workflowDefinitions[SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID],
+    ).toMatchObject({
+      key: "system.direct-agent",
+      blueprintKey: "direct",
+      publishedRevisionId: SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+    });
+    expect(
+      first.entities.workflowViewDefinitions[SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID]?.nodes.map(
+        (node) => node.nodeType,
+      ),
+    ).toEqual(["agent.direct"]);
+    const directNode =
+      first.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID]
+        ?.semanticRoot.elements[0];
+    expect(directNode).toMatchObject({
+      kind: "composite",
+      nodeType: "agent.direct",
+      config: { capabilityMode: "read_only", promptReviewMode: "manual" },
+    });
     expect(() => assertSnapshotIntegrity(first)).not.toThrow();
+  });
+
+  it("v12→v13遇到Direct系统固定ID异语义对象时失败关闭", () => {
+    const v7 = migrateProductSnapshotV6ToV7(emptyV6());
+    const v9 = migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(v7));
+    const v11 = migrateProductSnapshotV10ToV11(migrateProductSnapshotV9ToV10(v9));
+    const v12 = migrateProductSnapshotV11ToV12(v11);
+    const conflicting = structuredClone(v12);
+    const seed = createSystemDirectAgentDefinition(NOW);
+    conflicting.entities.workflowDefinitions[SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID] = {
+      ...seed.definition,
+      title: "伪造Direct Agent流程",
+    };
+    expect(() => migrateProductSnapshotV12ToV13(conflicting)).toThrow("固定ID已被异语义对象占用");
   });
 
   it.each([

@@ -78,7 +78,7 @@ export interface NodeCatalogDescriptor {
   readonly skipPolicy: WorkflowSkipPolicy;
   readonly riskPolicy: WorkflowRiskLevel;
   readonly executorKind: WorkflowExecutorKind;
-  readonly supportedBlueprints: readonly ("planning" | "note")[];
+  readonly supportedBlueprints: readonly ("planning" | "note" | "direct")[];
 }
 
 export function nodeExecutorKey(nodeType: WorkflowNodeTypeKey, schemaVersion: number): string {
@@ -182,6 +182,22 @@ const noteKindField = (): PublicConfigField => ({
   label: "默认笔记类型",
   defaultValue: "general",
   options: ["idea", "project_idea", "learning", "general"],
+});
+
+const directCapabilityModeField = (): PublicConfigField => ({
+  type: "enum_select",
+  name: "capabilityMode",
+  label: "能力模式",
+  defaultValue: "read_only",
+  options: ["read_only"],
+});
+
+const directPromptReviewModeField = (): PublicConfigField => ({
+  type: "enum_select",
+  name: "promptReviewMode",
+  label: "发送前审核提示词",
+  defaultValue: "manual",
+  options: ["manual", "off"],
 });
 
 const slot = (
@@ -393,6 +409,29 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
     supportedBlueprints: ["planning"],
   },
   {
+    nodeType: "agent.direct",
+    schemaVersion: 1,
+    displayName: "执行 Agent",
+    description: "推进同一个Pi AgentSession；可在每次Provider发送前进入节点内部人工审核",
+    category: "agent",
+    configSchema: z.strictObject({
+      capabilityMode: z.enum(["read_only"]).default("read_only"),
+      promptReviewMode: z.enum(["manual", "off"]).default("manual"),
+    }),
+    defaultConfig: { capabilityMode: "read_only", promptReviewMode: "manual" },
+    publicConfigFields: [directCapabilityModeField(), directPromptReviewModeField()],
+    inputSlots: [slot("message", "message_ref", true)],
+    outputSlots: [
+      slot("promptReview", "prompt_review_ref", false),
+      slot("candidate", "direct_agent_candidate_ref", false),
+    ],
+    outcomes: ["completed"],
+    skipPolicy: { kind: "never" },
+    riskPolicy: "generate_candidate",
+    executorKind: "composite",
+    supportedBlueprints: ["direct"],
+  },
+  {
     nodeType: "human.plan_review",
     schemaVersion: 1,
     displayName: "审核计划",
@@ -408,6 +447,23 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
     riskPolicy: "human_decision",
     executorKind: "human_review",
     supportedBlueprints: ["planning"],
+  },
+  {
+    nodeType: "human.prompt_review",
+    schemaVersion: 1,
+    displayName: "审核提示词",
+    description: "审核Provider发送前冻结的原始Payload及固定Renderer生成的可读投影",
+    category: "human",
+    configSchema: REVIEW_CONFIG,
+    defaultConfig: { reviewMode: "manual" },
+    publicConfigFields: [reviewModeField("manual", ["manual"])],
+    inputSlots: [slot("promptReview", "prompt_review_ref", true)],
+    outputSlots: [slot("decision", "decision_ref", true)],
+    outcomes: ["approved", "rejected"],
+    skipPolicy: { kind: "never" },
+    riskPolicy: "human_decision",
+    executorKind: "human_review",
+    supportedBlueprints: [],
   },
   {
     nodeType: "execute.plan",

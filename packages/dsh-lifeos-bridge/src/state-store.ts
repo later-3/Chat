@@ -7,6 +7,7 @@ import {
   messageIdSchema,
   noteCandidateIdSchema,
   planIdSchema,
+  promptReviewRequestIdSchema,
   productRunIdSchema,
   productSessionIdSchema,
   sha256Schema,
@@ -18,6 +19,7 @@ import {
   dshMessageIdSchema,
   dshSessionIdSchema,
   noteDecisionRequestSchema,
+  promptReviewDecisionRequestSchema,
   workflowSelectionSchema,
 } from "./contracts.ts";
 
@@ -48,6 +50,20 @@ const pendingNoteDecisionSchema = z
   })
   .strict();
 
+const pendingPromptReviewDecisionSchema = z
+  .object({
+    bodySha256: sha256Schema,
+    commandId: commandIdSchema.transform(String),
+    productRunId: productRunIdSchema.transform(String),
+    expectedRunRevision: z.number().int().positive(),
+    promptReviewRequestId: promptReviewRequestIdSchema.transform(String),
+    requestRevision: z.number().int().positive(),
+    reviewSha256: sha256Schema,
+    payloadSha256: sha256Schema,
+    request: promptReviewDecisionRequestSchema,
+  })
+  .strict();
+
 const requestSchema = z
   .object({
     /** 触发本请求的DSH user/message身份；旧v1/v2记录迁移后可能暂时缺失。 */
@@ -63,6 +79,7 @@ const requestSchema = z
     traceCursor: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
     pendingDecision: pendingDecisionSchema.optional(),
     pendingNoteDecision: pendingNoteDecisionSchema.optional(),
+    pendingPromptReviewDecision: pendingPromptReviewDecisionSchema.optional(),
     /**
      * 请求创建时冻结的Workflow选择快照。发送中途修改会话草稿不影响
      * 已创建请求；同一请求的幂等重放始终携带同一选择。
@@ -73,11 +90,16 @@ const requestSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
-    if (value.pendingDecision !== undefined && value.pendingNoteDecision !== undefined) {
+    const pendingCount = [
+      value.pendingDecision,
+      value.pendingNoteDecision,
+      value.pendingPromptReviewDecision,
+    ].filter((entry) => entry !== undefined).length;
+    if (pendingCount > 1) {
       ctx.addIssue({
         code: "custom",
-        path: ["pendingNoteDecision"],
-        message: "同一请求不能同时等待Plan和Note决定",
+        path: ["pendingPromptReviewDecision"],
+        message: "同一请求不能同时等待多个产品决定",
       });
     }
   });
@@ -106,6 +128,7 @@ const legacyBridgeStateSchema = z
       "chat-dsh-lifeos-state.v3",
       "chat-dsh-lifeos-state.v4",
       "chat-dsh-lifeos-state.v5",
+      "chat-dsh-lifeos-state.v6",
     ]),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
@@ -113,7 +136,7 @@ const legacyBridgeStateSchema = z
 
 const bridgeStateSchema = z
   .object({
-    schemaVersion: z.literal("chat-dsh-lifeos-state.v6"),
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v7"),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
   .strict();
@@ -123,9 +146,10 @@ export type SessionBinding = z.infer<typeof sessionBindingSchema>;
 export type RequestBinding = z.infer<typeof requestSchema>;
 export type PendingDecision = z.infer<typeof pendingDecisionSchema>;
 export type PendingNoteDecision = z.infer<typeof pendingNoteDecisionSchema>;
+export type PendingPromptReviewDecision = z.infer<typeof pendingPromptReviewDecisionSchema>;
 
 const emptyState = (): BridgeState => ({
-  schemaVersion: "chat-dsh-lifeos-state.v6",
+  schemaVersion: "chat-dsh-lifeos-state.v7",
   sessions: {},
 });
 
@@ -229,7 +253,7 @@ export class AtomicBridgeStateStore {
       return this.state;
     }
     const migrated = bridgeStateSchema.parse({
-      schemaVersion: "chat-dsh-lifeos-state.v6",
+      schemaVersion: "chat-dsh-lifeos-state.v7",
       sessions: legacy.data.sessions,
     });
     await this.writeAtomic(migrated);

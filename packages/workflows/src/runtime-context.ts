@@ -7,6 +7,7 @@ import type {
 import type {
   AgentRunResult,
   BailianConfig,
+  createPiDirectExecutorServiceClient,
   ExecutorStepCandidate,
   RunPiExecutorServiceInput,
   runPiNoteCapture,
@@ -45,6 +46,11 @@ export interface WorkflowRuntimeContext {
   readonly executor: (
     input: RunPiExecutorServiceInput,
   ) => Promise<ExecutorStepCandidate | AgentRunResult<ExecutorStepCandidate>>;
+  /**
+   * Direct Agent使用独立、耐久的Pi Operation Port；它只向Workflow返回审核/候选引用，
+   * Provider Payload正文由Executor与Application之间的一次性permit边界持有。
+   */
+  readonly directExecutor?: ReturnType<typeof createPiDirectExecutorServiceClient>;
 }
 
 const CONTEXT_KEY = Symbol.for("chat.workflowRuntimeContext");

@@ -42,10 +42,14 @@ import {
   ruleScopeIdSchema,
   ruleDecisionIdSchema,
   ruleSelectionIdSchema,
+  promptReviewRequestIdSchema,
+  promptReviewDecisionIdSchema,
+  directAgentCandidateIdSchema,
   type PrincipalId,
 } from "@chat/contracts";
 import type {
   ApplicationDeps,
+  DirectAgentIdFactory,
   IdFactory,
   NoteIdFactory,
   ProductStorePort,
@@ -134,6 +138,14 @@ export function createRuleIdFactory(): RuleIdFactory {
   };
 }
 
+export function createDirectAgentIdFactory(): DirectAgentIdFactory {
+  return {
+    promptReviewRequest: () => promptReviewRequestIdSchema.parse(`prr_${randomSuffix()}`),
+    promptReviewDecision: () => promptReviewDecisionIdSchema.parse(`prd_${randomSuffix()}`),
+    candidate: () => directAgentCandidateIdSchema.parse(`drc_${randomSuffix()}`),
+  };
+}
+
 export function defaultProductStorePath(): string {
   return (
     process.env.CHAT_PRODUCT_STORE_PATH ??
@@ -177,6 +189,7 @@ export async function createApplicationDeps(
     projectIds: createProjectIdFactory(),
     noteIds: createNoteIdFactory(),
     ruleIds: createRuleIdFactory(),
+    directAgentIds: createDirectAgentIdFactory(),
     ...(trace !== undefined ? { trace } : {}),
   };
 }

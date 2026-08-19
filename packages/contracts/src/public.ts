@@ -12,6 +12,7 @@ export * from "./command.js";
 export * from "./query.js";
 export * from "./service-status.js";
 export * from "./product-api.js";
+export * from "./prompt-review-api.js";
 export type {
   ProjectIntakeProposal,
   ProjectManagementProposal,

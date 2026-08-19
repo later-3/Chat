@@ -300,7 +300,8 @@ describe("Workflow Designer语义结构操作", () => {
       },
       planningPolicy,
     );
-    expect(firstCode(tooLarge)).toBe("designer.operation_contract_invalid");
+    // 全局合同为Direct Agent容纳16轮；Planning仍由自身Blueprint限制为5轮。
+    expect(firstCode(tooLarge)).toBe("designer.loop_policy_not_allowed");
 
     const flattened = expectSuccess(
       applyWorkflowStructureOperation(

@@ -38,6 +38,8 @@ export interface WorkflowWorldHandle {
   readonly configurablePlanningWorkflowId: string;
   /** S5正式Note入口；与Planning共用受限IR解释器。 */
   readonly noteCaptureWorkflowId: string;
+  /** P1 Direct Agent入口；每个Provider请求前以独立Hook暂停。 */
+  readonly directAgentWorkflowId: string;
   close(): Promise<void>;
 }
 
@@ -54,6 +56,7 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
   definitionKernelLab: string;
   configurablePlanning: string;
   noteCapture: string;
+  directAgent: string;
 }> {
   const raw = await readFile(join(bundleDir, "manifest.json"), "utf8");
   const manifest = JSON.parse(raw) as WorkflowManifestFile;
@@ -65,6 +68,7 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
   let definitionKernelLab: string | undefined;
   let configurablePlanning: string | undefined;
   let noteCapture: string | undefined;
+  let directAgent: string | undefined;
   for (const [filePath, entries] of Object.entries(manifest.workflows)) {
     if (filePath.includes("planning-execution-workflow")) {
       const entry = entries["planningExecutionWorkflow"];
@@ -98,6 +102,10 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
       const entry = entries["noteCaptureWorkflow"];
       if (entry !== undefined) noteCapture = entry.workflowId;
     }
+    if (filePath.includes("direct-agent-workflow")) {
+      const entry = entries["directAgentWorkflow"];
+      if (entry !== undefined) directAgent = entry.workflowId;
+    }
   }
   if (
     planningExecution === undefined ||
@@ -107,7 +115,8 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
     projectAdvancement === undefined ||
     definitionKernelLab === undefined ||
     configurablePlanning === undefined ||
-    noteCapture === undefined
+    noteCapture === undefined ||
+    directAgent === undefined
   ) {
     throw new Error("manifest.json缺少活动Workflow或Definition Kernel Lab Workflow");
   }
@@ -120,6 +129,7 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
     definitionKernelLab,
     configurablePlanning,
     noteCapture,
+    directAgent,
   };
 }
 
@@ -176,6 +186,7 @@ export async function setupWorkflowWorld(
     definitionKernelLabWorkflowId: workflowIds.definitionKernelLab,
     configurablePlanningWorkflowId: workflowIds.configurablePlanning,
     noteCaptureWorkflowId: workflowIds.noteCapture,
+    directAgentWorkflowId: workflowIds.directAgent,
     close: async () => {
       setWorld(undefined);
       await world.close?.();

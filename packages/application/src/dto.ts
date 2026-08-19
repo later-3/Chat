@@ -13,6 +13,7 @@ import {
   type SessionDto,
   type Decision,
   type DecisionDto,
+  type PromptReviewRequest,
 } from "@chat/contracts";
 import { computeMessageSha256 } from "@chat/domain";
 
@@ -93,7 +94,15 @@ export function toDecisionDto(decision: Decision): DecisionDto {
 export function runAllowedActions(
   run: ProductRun,
   currentApproval: ApprovalRequest | undefined,
+  currentPromptReview?: PromptReviewRequest | undefined,
 ): RunAllowedAction[] {
+  if (
+    run.runKind === "direct_agent" &&
+    run.status === "waiting_human" &&
+    currentPromptReview?.status === "open"
+  ) {
+    return ["approve", "reject"];
+  }
   if (run.status === "waiting_human" && currentApproval?.status === "open") {
     return ["request_revision", "approve", "reject"];
   }
@@ -104,6 +113,7 @@ export function toRunDto(
   run: ProductRun,
   currentPlan: PlanRevision | undefined,
   currentApproval: ApprovalRequest | undefined,
+  currentPromptReview?: PromptReviewRequest | undefined,
 ): RunDto {
   return {
     schemaVersion: PRODUCT_API_SCHEMA_VERSION,
@@ -125,10 +135,19 @@ export function toRunDto(
     ...(run.runKind === "planning" && run.currentApprovalRequestId !== undefined
       ? { currentApprovalRequestId: run.currentApprovalRequestId }
       : {}),
+    ...(run.runKind === "direct_agent" && run.currentPromptReviewRequestId !== undefined
+      ? { currentPromptReviewRequestId: run.currentPromptReviewRequestId }
+      : {}),
+    ...(run.runKind === "direct_agent" && run.currentDirectAgentCandidateId !== undefined
+      ? { currentDirectAgentCandidateId: run.currentDirectAgentCandidateId }
+      : {}),
+    ...(run.runKind === "direct_agent" && run.finalDirectAgentCandidateId !== undefined
+      ? { finalDirectAgentCandidateId: run.finalDirectAgentCandidateId }
+      : {}),
     ...(run.finalMessageId !== undefined ? { finalMessageId: run.finalMessageId } : {}),
     ...(run.failure !== undefined ? { failure: run.failure } : {}),
     ...(run.runKind === "planning" ? { maxPlanRevisions: run.maxPlanRevisions } : {}),
-    allowedActions: runAllowedActions(run, currentApproval),
+    allowedActions: runAllowedActions(run, currentApproval, currentPromptReview),
     revision: run.revision,
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,

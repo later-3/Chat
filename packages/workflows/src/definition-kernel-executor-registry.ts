@@ -19,10 +19,13 @@ export const LEGACY_PLANNING_RUNNER_FAMILY = "legacy-planning.v1" as const;
 export const LEGACY_PLANNING_RUNNER_BUNDLE_VERSION = "legacy-planning.bundle.v1" as const;
 export const NOTE_CAPTURE_RUNNER_FAMILY = "note-capture.v1" as const;
 export const NOTE_CAPTURE_RUNNER_BUNDLE_VERSION = "note-capture.bundle.v1" as const;
+export const DIRECT_AGENT_RUNNER_FAMILY = "direct-agent.v1" as const;
+export const DIRECT_AGENT_RUNNER_BUNDLE_VERSION = "direct-agent.bundle.v1" as const;
 
 export type PlanningRunnerFamily =
   typeof LEGACY_PLANNING_RUNNER_FAMILY | typeof CONFIGURABLE_PLANNING_RUNNER_FAMILY;
-export type ProductWorkflowRunnerFamily = PlanningRunnerFamily | typeof NOTE_CAPTURE_RUNNER_FAMILY;
+export type ProductWorkflowRunnerFamily =
+  PlanningRunnerFamily | typeof NOTE_CAPTURE_RUNNER_FAMILY | typeof DIRECT_AGENT_RUNNER_FAMILY;
 
 export interface KernelExecutorRegistration extends WorkflowExecutorManifestEntry {
   readonly executorKind: WorkflowExecutorKind;
@@ -43,7 +46,9 @@ export interface KernelExecutorRegistration extends WorkflowExecutorManifestEntr
     | "extract_note"
     | "classify_note"
     | "review_note"
-    | "commit_note";
+    | "commit_note"
+    | "advance_direct_agent"
+    | "review_prompt";
 }
 
 const REGISTRATIONS: readonly KernelExecutorRegistration[] = [
@@ -63,6 +68,8 @@ const REGISTRATIONS: readonly KernelExecutorRegistration[] = [
   entry("note.classify", "step", "classify_note"),
   entry("human.note_review", "human_review", "review_note"),
   entry("note.commit", "step", "commit_note"),
+  entry("agent.direct", "composite", "advance_direct_agent"),
+  entry("human.prompt_review", "human_review", "review_prompt"),
 ] satisfies readonly KernelExecutorRegistration[];
 
 export class KernelExecutorRegistry {
@@ -105,9 +112,9 @@ export class KernelExecutorRegistry {
 export const DEFINITION_KERNEL_EXECUTORS = new KernelExecutorRegistry(REGISTRATIONS);
 
 // 静态表同时被Workflow函数解释器引用，不能为一个key helper拉入Application或
-// Domain运行时代码（其中含Node crypto，Workflow sandbox不允许）。16是冻结内置集合，
+// Domain运行时代码（其中含Node crypto，Workflow sandbox不允许）。18是冻结内置集合，
 // Catalog/Compiler的完整集合一致性另由definition-kernel conformance测试逐项证明。
-if (DEFINITION_KERNEL_EXECUTORS.list().length !== 16) {
+if (DEFINITION_KERNEL_EXECUTORS.list().length !== 18) {
   throw new Error("workflow.executor_registry.incomplete_builtin_set");
 }
 
