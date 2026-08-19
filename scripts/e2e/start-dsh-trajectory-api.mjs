@@ -11,6 +11,8 @@ const schemaVersion = "chat-product-api.v1";
 let submitted = false;
 let tracePhase = 0;
 let completed = false;
+let productSessionTitle = "未创建";
+let submittedText = "";
 
 function json(response, status, value) {
   const body = JSON.stringify(value);
@@ -40,6 +42,45 @@ function run() {
     revision: completed ? 2 : 1,
     createdAt: timestamp,
     updatedAt: timestamp,
+  };
+}
+
+function productSession() {
+  return {
+    schemaVersion,
+    sessionId,
+    status: "active",
+    title: productSessionTitle,
+    revision: completed ? 2 : 1,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+function userMessage() {
+  return {
+    schemaVersion,
+    messageId: userMessageId,
+    sessionId,
+    sessionSequence: 1,
+    role: "user",
+    content: { format: "markdown", text: submittedText },
+    sha256: "a".repeat(64),
+    createdAt: timestamp,
+  };
+}
+
+function assistantMessage() {
+  return {
+    schemaVersion,
+    messageId: assistantMessageId,
+    sessionId,
+    sessionSequence: 2,
+    role: "assistant",
+    content: { format: "markdown", text: "TRAJECTORY_E2E_COMPLETED" },
+    sourceRunId: productRunId,
+    sha256: "b".repeat(64),
+    createdAt: timestamp,
   };
 }
 
@@ -146,7 +187,7 @@ function workflowTrace() {
             {
               label: "用户请求",
               format: "markdown",
-              text: "验证Pi执行轨迹实时显示",
+              text: submittedText || "验证Pi执行轨迹实时显示",
               truncated: false,
             },
           ],
@@ -301,35 +342,32 @@ const server = createServer((request, response) => {
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/sessions") {
-      json(response, 201, {
-        session: {
-          schemaVersion,
-          sessionId,
-          status: "active",
-          title: "DeepSeek Harness",
-          revision: 1,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        },
-      });
+      const body = await requestBody(request);
+      productSessionTitle = body?.payload?.title;
+      if (typeof productSessionTitle !== "string" || productSessionTitle.trim() === "") {
+        throw new Error("Product Session title was not derived from the first prompt");
+      }
+      json(response, 201, { session: productSession() });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === `/api/sessions/${sessionId}`) {
+      json(response, submitted ? 200 : 404, submitted ? { session: productSession() } : {});
       return;
     }
     if (request.method === "POST" && url.pathname === `/api/sessions/${sessionId}/messages`) {
       const body = await requestBody(request);
       const text = body?.payload?.text;
+      submittedText = typeof text === "string" ? text : "trajectory";
       submitted = true;
       json(response, 202, {
-        message: {
-          schemaVersion,
-          messageId: userMessageId,
-          sessionId,
-          sessionSequence: 1,
-          role: "user",
-          content: { format: "markdown", text: typeof text === "string" ? text : "trajectory" },
-          sha256: "a".repeat(64),
-          createdAt: timestamp,
-        },
+        message: userMessage(),
         run: run(),
+      });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === `/api/sessions/${sessionId}/messages`) {
+      json(response, 200, {
+        items: submitted ? [userMessage(), ...(completed ? [assistantMessage()] : [])] : [],
       });
       return;
     }
@@ -364,19 +402,7 @@ const server = createServer((request, response) => {
       request.method === "GET" &&
       url.pathname === `/api/sessions/${sessionId}/messages/${assistantMessageId}`
     ) {
-      json(response, 200, {
-        message: {
-          schemaVersion,
-          messageId: assistantMessageId,
-          sessionId,
-          sessionSequence: 2,
-          role: "assistant",
-          content: { format: "markdown", text: "TRAJECTORY_E2E_COMPLETED" },
-          sourceRunId: productRunId,
-          sha256: "b".repeat(64),
-          createdAt: timestamp,
-        },
-      });
+      json(response, 200, { message: assistantMessage() });
       return;
     }
     json(response, 404, {

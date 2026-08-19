@@ -13,6 +13,7 @@ import {
   exactMessageResponseSchema,
   executionTraceResponseSchema,
   lifeosWorkflowOptionSchema,
+  messagesPageResponseSchema,
   noteCandidateResponseSchema,
   noteDecisionResponseSchema,
   plansResponseSchema,
@@ -110,13 +111,41 @@ export class ChatProductClient {
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
-  async createSession(commandId: string, signal?: AbortSignal): Promise<ChatSession> {
+  async createSession(
+    commandId: string,
+    title: string,
+    signal?: AbortSignal,
+  ): Promise<ChatSession> {
     const value = await this.request("/api/sessions", createSessionResponseSchema, {
       method: "POST",
-      body: JSON.stringify({ commandId, payload: { title: "DeepSeek Harness" } }),
+      body: JSON.stringify({ commandId, payload: { title } }),
       ...withSignal(signal),
     });
     return value.session;
+  }
+
+  async getSession(sessionId: string, signal?: AbortSignal): Promise<ChatSession> {
+    const value = await this.request(
+      `/api/sessions/${encodeURIComponent(sessionId)}`,
+      createSessionResponseSchema,
+      withSignal(signal),
+    );
+    return value.session;
+  }
+
+  async getMessages(
+    sessionId: string,
+    cursor: string | undefined,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<{ items: ChatMessage[]; nextCursor?: string | undefined }> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor !== undefined) params.set("cursor", cursor);
+    return await this.request(
+      `/api/sessions/${encodeURIComponent(sessionId)}/messages?${params.toString()}`,
+      messagesPageResponseSchema,
+      withSignal(signal),
+    );
   }
 
   async submitMessage(

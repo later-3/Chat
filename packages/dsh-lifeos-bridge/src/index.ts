@@ -1,6 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-host-webserver";
 import type {} from "@deepseek-ai/dsh-llm";
+import type {} from "@deepseek-ai/dsh-session-query";
 import type {} from "@deepseek-ai/dsh-tools";
 import type {} from "@deepseek-ai/dsh-workspace";
 import { isAbsolute, resolve } from "node:path";
@@ -11,9 +12,10 @@ import { assertSameOriginRequest, createLifeosRouteHandler, sendRouteError } fro
 import { createPwaAssetHandler, createPwaIndexTap } from "./pwa.ts";
 import { AtomicBridgeStateStore } from "./state-store.ts";
 import { createLifeosTraceTool } from "./trace-tool.ts";
+import { DshSessionQueryHistory } from "./dsh-session-history.ts";
 
 export const name = "chat-dsh-lifeos-bridge";
-export const inject = ["llm", "tools", "webServer", "workspaceRegistry"];
+export const inject = ["llm", "tools", "webServer", "workspaceRegistry", "sessionQuery"];
 
 function requiredStatePath(raw: string | undefined): string {
   if (raw === undefined || raw.trim() === "") {
@@ -60,11 +62,14 @@ export async function apply(ctx: Context): Promise<void> {
   const apiBaseUrl = parseChatApiBaseUrl(process.env.CHAT_API_BASE_URL);
   const webPort = requiredPublicWebPort(process.env.CHAT_PUBLIC_WEB_PORT);
   const publicHostname = optionalPublicHostname(process.env.CHAT_PUBLIC_WEB_HOSTNAME);
-  await ctx.workspaceRegistry.create(repoRoot, "Chat");
+  const workspace = await ctx.workspaceRegistry.create(repoRoot, "Chat");
   const state = new AtomicBridgeStateStore(statePath);
   await state.ready();
   const chat = new ChatProductClient(apiBaseUrl);
-  const bridge = new LifeosBridgeService(chat, state);
+  const dshHistory = new DshSessionQueryHistory(ctx.sessionQuery, workspace.path, () =>
+    ctx.workspaceRegistry.archivedSessionIds.map(String),
+  );
+  const bridge = new LifeosBridgeService(chat, state, dshHistory);
   const lifetime = new AbortController();
   ctx.effect(
     () => () => {

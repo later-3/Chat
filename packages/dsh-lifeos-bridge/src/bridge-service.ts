@@ -1,5 +1,6 @@
 import {
   BRIDGE_SCHEMA_VERSION,
+  SESSION_RECORDS_SCHEMA_VERSION,
   decisionRequestSchema,
   noteDecisionRequestSchema,
   type ChatApproval,
@@ -11,6 +12,12 @@ import {
   type LifeosExecutionTrace,
   type LifeosProjection,
   type LifeosWorkflowOption,
+  type SessionRecordsChatPage,
+  type SessionRecordsDshPage,
+  type SessionRecordsOverview,
+  sessionRecordsChatPageSchema,
+  sessionRecordsDshPageSchema,
+  sessionRecordsOverviewSchema,
   type WorkflowSelection,
 } from "./contracts.ts";
 import { ChatProductApiError, ChatProductClient } from "./chat-client.ts";
@@ -21,6 +28,7 @@ import {
   type PendingNoteDecision,
   type SessionBinding,
 } from "./state-store.ts";
+import type { DshSessionHistoryPort } from "./dsh-session-history.ts";
 
 export class BridgeRequestError extends Error {
   constructor(
@@ -151,7 +159,132 @@ export class LifeosBridgeService {
   constructor(
     private readonly chat: ChatProductClient,
     private readonly state: AtomicBridgeStateStore,
+    private readonly dshHistory?: DshSessionHistoryPort,
   ) {}
+
+  private history(): DshSessionHistoryPort {
+    if (this.dshHistory === undefined) {
+      throw new BridgeRequestError(
+        503,
+        "lifeos_session_history_unavailable",
+        "DSH Session历史服务不可用",
+      );
+    }
+    return this.dshHistory;
+  }
+
+  /**
+   * DSH专属统一会话读模型：只在查询时组合两侧事实。Product Session和DSH
+   * Session仍各自持久化、各自拥有revision/lifecycle，不生成第三个会话实体。
+   */
+  async sessionRecordsOverview(
+    dshSessionId: string,
+    signal?: AbortSignal,
+  ): Promise<SessionRecordsOverview> {
+    const [dsh, binding] = await Promise.all([
+      this.history().describe(dshSessionId, signal),
+      this.state.readSession(dshSessionId),
+    ]);
+    const chat =
+      binding?.chatSessionId === undefined
+        ? null
+        : await this.chat.getSession(binding.chatSessionId, signal);
+    const requests = Object.values(binding?.requests ?? {});
+    const current =
+      binding?.currentRequestKey === undefined
+        ? undefined
+        : binding.requests[binding.currentRequestKey];
+    return sessionRecordsOverviewSchema.parse({
+      schemaVersion: SESSION_RECORDS_SCHEMA_VERSION,
+      dsh,
+      chat,
+      binding: {
+        status: binding?.chatSessionId === undefined ? "draft" : "bound",
+        productSessionId: binding?.chatSessionId ?? null,
+        requestCount: requests.length,
+        linkedUserMessageCount: requests.filter(
+          (request) => request.productUserMessageId !== undefined,
+        ).length,
+        linkedAssistantMessageCount: requests.filter(
+          (request) => request.productAssistantMessageId !== undefined,
+        ).length,
+        currentProductRunId: current?.productRunId ?? null,
+      },
+      capabilities: {
+        continueConversation: !dsh.archived && (chat === null || chat.status === "active"),
+        archiveKeepsData: true,
+        permanentDelete: false,
+      },
+    });
+  }
+
+  /** Chat正式Message的完整cursor页；link只是Bridge身份投影，不复制Message正文。 */
+  async sessionRecordsChatPage(
+    dshSessionId: string,
+    cursor: string | undefined,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<SessionRecordsChatPage> {
+    const [, binding] = await Promise.all([
+      this.history().assertAccessible(dshSessionId, signal),
+      this.state.readSession(dshSessionId),
+    ]);
+    if (binding?.chatSessionId === undefined) {
+      return sessionRecordsChatPageSchema.parse({
+        schemaVersion: SESSION_RECORDS_SCHEMA_VERSION,
+        dshSessionId,
+        productSessionId: null,
+        messages: { items: [] },
+      });
+    }
+    const page = await this.chat.getMessages(binding.chatSessionId, cursor, limit, signal);
+    const linksByMessageId = new Map<string, { dshMessageId?: string; productRunId?: string }>();
+    for (const request of Object.values(binding.requests)) {
+      if (request.productUserMessageId !== undefined) {
+        linksByMessageId.set(request.productUserMessageId, {
+          ...(request.dshMessageId === undefined ? {} : { dshMessageId: request.dshMessageId }),
+          ...(request.productRunId === undefined ? {} : { productRunId: request.productRunId }),
+        });
+      }
+      if (request.productAssistantMessageId !== undefined) {
+        linksByMessageId.set(request.productAssistantMessageId, {
+          ...(request.productRunId === undefined ? {} : { productRunId: request.productRunId }),
+        });
+      }
+    }
+    return sessionRecordsChatPageSchema.parse({
+      schemaVersion: SESSION_RECORDS_SCHEMA_VERSION,
+      dshSessionId,
+      productSessionId: binding.chatSessionId,
+      messages: {
+        items: page.items.map((message) => ({
+          message,
+          link:
+            linksByMessageId.get(message.messageId) ??
+            (message.sourceRunId === undefined ? {} : { productRunId: message.sourceRunId }),
+        })),
+        ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+      },
+    });
+  }
+
+  /** DSH Session完整原始事件的seq页；只分页，不裁剪任何单条事件。 */
+  async sessionRecordsDshPage(
+    dshSessionId: string,
+    afterSeq: number | undefined,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<SessionRecordsDshPage> {
+    const page = await this.history().readEvents(dshSessionId, afterSeq, limit, signal);
+    return sessionRecordsDshPageSchema.parse({
+      schemaVersion: SESSION_RECORDS_SCHEMA_VERSION,
+      dshSessionId,
+      header: page.header,
+      items: page.items,
+      hasMore: page.hasMore,
+      ...(page.nextAfterSeq === undefined ? {} : { nextAfterSeq: page.nextAfterSeq }),
+    });
+  }
 
   async projection(dshSessionId: string, signal?: AbortSignal): Promise<LifeosProjection> {
     const binding = await this.state.readSession(dshSessionId);

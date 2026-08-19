@@ -8,6 +8,10 @@ Chat的唯一产品前端是由Chat维护的DeepSeek Harness窄派生，不再�
 
 窄派生只补齐三个通用宿主能力：保留独立Contribution的Step Location、允许Contribution提供表现标签，以及允许Contribution覆盖紧凑的输入/输出行预览。原始调用参数和结果仍由原生检查器读取；底层记录仍是DSH原生`tool/subtool`，折叠、计时、详情、颜色、无障碍语义和搜索仍由原生Trajectory拥有；DSH不知道Chat Workflow对象，也没有第二套历史或执行。
 
+统一会话显示不增加派生例外：原生侧栏继续拥有DSH Session的新建、历史选择和归档；LifeOS Bridge直接
+使用rc.6公开`SessionQuery`读取live/persisted日志，并通过公开`conversation.view`加法注册“会话记录”。
+双方只在Bridge查询时按身份组合，DSH源码不认识Product Session，Chat也不接管DSH日志或归档集合。
+
 ## 2. 仓库与分支
 
 - 官方只读上游：<https://github.com/deepseek-ai/deepseek-harness>，本地remote名为`upstream`。

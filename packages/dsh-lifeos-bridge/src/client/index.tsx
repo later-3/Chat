@@ -17,6 +17,8 @@ import {
 } from "./TraceTimestampToggle.tsx";
 import { WorkbenchSurfaceController } from "./workbench-controller.ts";
 import { ExecutionTraceProjection } from "./execution-trace-projection.ts";
+import { SessionRecordsController } from "./session-records-controller.ts";
+import { SessionRecordsView, type SessionRecordsInjected } from "./SessionRecordsView.tsx";
 
 export const name = "chat-dsh-lifeos-bridge-client";
 export const inject = ["slots", "conversationEvents"];
@@ -43,6 +45,7 @@ export function apply(ctx: ClientContext): void {
   }, "lifeos bridge: execution trace trajectory");
   const workbench = new WorkbenchSurfaceController();
   const controllers = new Map<SessionId, LifeosProjectionController>();
+  const recordControllers = new Map<SessionId, SessionRecordsController>();
   const controllerFor = (sessionId: SessionId): LifeosProjectionController => {
     let controller = controllers.get(sessionId);
     if (controller === undefined) {
@@ -54,6 +57,43 @@ export function apply(ctx: ClientContext): void {
     }
     return controller;
   };
+  const recordsFor = (sessionId: SessionId): SessionRecordsController => {
+    let controller = recordControllers.get(sessionId);
+    if (controller === undefined) {
+      controller = new SessionRecordsController(String(sessionId));
+      recordControllers.set(sessionId, controller);
+    }
+    return controller;
+  };
+
+  ctx.effect(
+    () => () => {
+      for (const controller of recordControllers.values()) controller.dispose();
+      recordControllers.clear();
+    },
+    "lifeos bridge: session records controllers",
+  );
+
+  ctx.slots.inject("conversation.view", () =>
+    ctx.slots.register(
+      {
+        name: "conversation.view",
+        id: "lifeos-session-records",
+        order: 20,
+        label: () => "会话记录",
+        inject: (sessionId: SessionId): SessionRecordsInjected => {
+          const controller = recordsFor(sessionId);
+          return {
+            hooks: { sessionRecords: controller },
+            refresh: () => controller.refresh(),
+            loadMoreChat: () => controller.loadMoreChat(),
+            loadMoreDsh: () => controller.loadMoreDsh(),
+          };
+        },
+      },
+      SessionRecordsView,
+    ),
+  );
 
   ctx.slots.inject("sidebar.footer.action", () =>
     ctx.slots.register(

@@ -17,6 +17,7 @@ export const LIFEOS_PROVIDER = "lifeos";
 export const LIFEOS_MODEL = "workflow";
 const POLL_INTERVAL_MS = 750;
 const TITLE_MAX_CHARACTERS = 72;
+const PRODUCT_SESSION_TITLE_MAX_CHARACTERS = 200;
 const COMPACTION_MAX_CHARACTERS = 6_000;
 const COMPACTION_MESSAGE_LIMIT = 12;
 const COMPACTION_ITEM_MAX_CHARACTERS = 600;
@@ -81,6 +82,14 @@ export function localAuxiliaryText(options: GenerateOptions): string {
     ...(visible.length === 0 ? ["- 此会话尚无可见文本。"] : visible),
   ].join("\n");
   return boundedCharacters(summary, COMPACTION_MAX_CHARACTERS);
+}
+
+/** Product Session标题取首条真实Prompt的单行全文边界，不再写入无信息的宿主名。 */
+export function productSessionTitle(prompt: string): string {
+  return boundedCharacters(
+    prompt.replace(/\s+/gu, " ").trim(),
+    PRODUCT_SESSION_TITLE_MAX_CHARACTERS,
+  );
 }
 
 async function* textStream(text: string): AsyncIterable<StreamChunk> {
@@ -243,7 +252,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
     try {
       const dshSessionId = requireSessionId(options);
       const prompt = lastUserPrompt(options.messages);
-      const chatSessionId = await this.ensureChatSession(dshSessionId, signal);
+      const chatSessionId = await this.ensureChatSession(dshSessionId, prompt.text, signal);
       const request = await this.ensureRequest(dshSessionId, prompt);
 
       let run: ChatRun;
@@ -255,10 +264,21 @@ export class LifeosLlmAdapter extends LlmAdapter {
           signal,
           request.workflowSelection,
         );
-        await this.rememberRun(dshSessionId, prompt.requestKey, submitted.run.productRunId);
+        await this.rememberRun(
+          dshSessionId,
+          prompt.requestKey,
+          submitted.run.productRunId,
+          submitted.message.messageId,
+        );
         run = submitted.run;
       } else {
         run = await this.chat.getRun(request.productRunId, signal);
+        await this.rememberRun(
+          dshSessionId,
+          prompt.requestKey,
+          run.productRunId,
+          run.sourceMessageId,
+        );
       }
       const trajectoryEnabled =
         options.tools?.some((tool) => tool.name === LIFEOS_TRACE_TOOL) === true;
@@ -291,6 +311,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
           "LIFEOS_FINAL_MESSAGE_MISSING",
         );
       }
+      await this.rememberAssistantMessage(dshSessionId, prompt.requestKey, final.messageId);
       const text = final.content.text;
       yield* textStream(text);
     } catch (error) {
@@ -300,13 +321,18 @@ export class LifeosLlmAdapter extends LlmAdapter {
 
   private async ensureChatSession(
     dshSessionId: string,
+    firstPrompt: string,
     signal: AbortSignal | undefined,
   ): Promise<string> {
     const createCommandId = stableCommandId("create-session", dshSessionId);
     await this.state.mutateSession(dshSessionId, createCommandId, () => undefined);
     const existing = await this.state.readSession(dshSessionId);
     if (existing?.chatSessionId !== undefined) return existing.chatSessionId;
-    const created = await this.chat.createSession(createCommandId, signal);
+    const created = await this.chat.createSession(
+      createCommandId,
+      productSessionTitle(firstPrompt),
+      signal,
+    );
     return await this.state.mutateSession(dshSessionId, createCommandId, (binding) => {
       if (binding.chatSessionId !== undefined && binding.chatSessionId !== created.sessionId) {
         throw new Error(`lifeos bridge observed two Chat sessions for DSH session ${dshSessionId}`);
@@ -389,6 +415,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
     dshSessionId: string,
     requestKey: string,
     productRunId: string,
+    productUserMessageId: string,
   ): Promise<void> {
     await this.state.mutateSession(
       dshSessionId,
@@ -400,7 +427,38 @@ export class LifeosLlmAdapter extends LlmAdapter {
         if (request.productRunId !== undefined && request.productRunId !== productRunId) {
           throw new Error("lifeos bridge observed two Product Runs for one DSH message");
         }
+        if (
+          request.productUserMessageId !== undefined &&
+          request.productUserMessageId !== productUserMessageId
+        ) {
+          throw new Error("lifeos bridge observed two Product User Messages for one DSH message");
+        }
         request.productRunId = productRunId;
+        request.productUserMessageId = productUserMessageId;
+      },
+    );
+  }
+
+  private async rememberAssistantMessage(
+    dshSessionId: string,
+    requestKey: string,
+    productAssistantMessageId: string,
+  ): Promise<void> {
+    await this.state.mutateSession(
+      dshSessionId,
+      stableCommandId("create-session", dshSessionId),
+      (binding) => {
+        const request = binding.requests[requestKey];
+        if (request?.productRunId === undefined) {
+          throw new Error("lifeos bridge Run binding disappeared before Assistant Message");
+        }
+        if (
+          request.productAssistantMessageId !== undefined &&
+          request.productAssistantMessageId !== productAssistantMessageId
+        ) {
+          throw new Error("lifeos bridge observed two Product Assistant Messages for one Run");
+        }
+        request.productAssistantMessageId = productAssistantMessageId;
       },
     );
   }

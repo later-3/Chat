@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createUserMessage, type GenerateOptions, type StreamChunk } from "@deepseek-ai/dsh-llm";
-import { LifeosLlmAdapter } from "../src/adapter.ts";
+import { LifeosLlmAdapter, productSessionTitle } from "../src/adapter.ts";
 import type { ChatProductClient } from "../src/chat-client.ts";
 import type { AtomicBridgeStateStore } from "../src/state-store.ts";
 
@@ -81,4 +81,12 @@ test("compaction summarizes bounded visible text locally with zero Chat access",
   assert.match(summary, /仅整理当前可见文本/);
   assert.match(summary, /不包含隐藏推理/);
   assert.match(summary, /用户可见内容/);
+});
+
+test("Product Session title is a normalized, contract-bounded first-prompt projection", () => {
+  const title = productSessionTitle(`  设计\n统一会话   ${"长期内容".repeat(100)}  `);
+  assert.match(title, /^设计 统一会话/u);
+  assert.doesNotMatch(title, /\n/u);
+  assert.ok(Array.from(title).length <= 200);
+  assert.match(title, /…$/u);
 });

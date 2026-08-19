@@ -31,7 +31,7 @@ test("plugin lifetime abort stops a waiting_human stream before another poll", a
     createSession: async () => ({ sessionId: "psn_lifetime1" }),
     submitMessage: async () => {
       submittedResolve();
-      return { message: {}, run: waitingRun };
+      return { message: { messageId: "msg_lifetimeuser1" }, run: waitingRun };
     },
     getRun: async () => {
       runPolls += 1;
@@ -128,7 +128,7 @@ test("rc.6 retry of the same turn reuses command identity and returns the commit
         return { sessionId: "psn_retryturn1" };
       },
       submitMessage: async () => ({
-        message: {},
+        message: { messageId: "msg_retryturnuser1" },
         run: {
           productRunId: "run_retryturn1",
           status: "succeeded",

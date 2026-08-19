@@ -34,6 +34,24 @@ test("manifest exposes the native DSH bundle patch and client factory contract",
   assert.doesNotMatch(host, /ExecutionTraceRecorder|lifeos\/execution-trace/);
   assert.match(client, /"conversationEvents"/);
   assert.match(client, /ExecutionTraceProjection/);
+  assert.match(host, /"sessionQuery"/);
+  assert.match(client, /ctx\.slots\.inject\("conversation\.view"/);
+  assert.match(client, /id: "lifeos-session-records"/);
+});
+
+test("unified session records stay an additive DSH view with two independent sources", async () => {
+  const client = await readFile(new URL("../src/client/index.tsx", import.meta.url), "utf8");
+  const view = await readFile(
+    new URL("../src/client/SessionRecordsView.tsx", import.meta.url),
+    "utf8",
+  );
+  const history = await readFile(new URL("../src/dsh-session-history.ts", import.meta.url), "utf8");
+  assert.match(client, /name: "conversation\.view"/);
+  assert.match(view, /Chat 正式消息/);
+  assert.match(view, /DSH 原始日志/);
+  assert.match(view, /不会把归档伪装成删除/);
+  assert.match(history, /SessionQuery/);
+  assert.doesNotMatch(`${client}\n${view}`, /conversation\.session["']\s*,/u);
 });
 
 test("host and browser bundles emit source maps for stable TypeScript breakpoints", async () => {

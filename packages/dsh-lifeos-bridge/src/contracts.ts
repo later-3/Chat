@@ -11,11 +11,13 @@ import {
   planIdSchema,
   planDtoSchema,
   productRunIdSchema,
+  productSessionIdSchema,
   runDtoSchema,
   sessionDtoSchema,
   sha256Schema,
   workflowDefinitionRevisionIdSchema,
   executionTracePageSchema,
+  cursorPageSchema,
   type ApprovalDto,
   type DecisionDto,
   type MessageDto,
@@ -65,6 +67,7 @@ export const executionTraceResponseSchema = executionTracePageSchema;
 export const plansResponseSchema = z.object({ items: z.array(planDtoSchema) }).strict();
 export const approvalResponseSchema = z.object({ approval: approvalDtoSchema.nullable() }).strict();
 export const exactMessageResponseSchema = messageResponseSchema;
+export const messagesPageResponseSchema = cursorPageSchema(messageDtoSchema);
 export const decisionResponseSchema = z
   .object({ decision: decisionDtoSchema, run: runDtoSchema })
   .strict();
@@ -190,6 +193,204 @@ export const lifeosExecutionTraceSchema = z
   .strict();
 
 export type LifeosExecutionTrace = z.infer<typeof lifeosExecutionTraceSchema>;
+
+export const SESSION_RECORDS_SCHEMA_VERSION = "chat-dsh-session-records.v1" as const;
+
+/** DSH持久化Header的公开子集；cwd只用于向当前用户解释Workspace归属。 */
+export const dshSessionHeaderSchema = z
+  .object({
+    version: z.number().int().nonnegative(),
+    id: dshSessionIdSchema,
+    createdAt: z.number().int().nonnegative(),
+    cwd: z.string().min(1).optional(),
+    parentSession: dshSessionIdSchema.optional(),
+    seedLength: z.number().int().nonnegative().optional(),
+    origin: z.literal("subagent").optional(),
+    delegationDepth: z.number().int().nonnegative().optional(),
+    agentPreset: z.string().min(1).optional(),
+  })
+  .strict();
+
+/**
+ * 完整DSH原始事件。只对事件数分页；data、surfaceOp和来源关系不做字符串裁剪。
+ * z.json()同时阻止undefined、NaN等非JSON值跨越Browser边界。
+ */
+export const dshSessionEventSchema = z
+  .object({
+    type: z.string().min(1),
+    seq: z.number().int().nonnegative(),
+    time: z.number().int().nonnegative(),
+    data: z.json(),
+    ignorable: z.literal(true).optional(),
+    surfaceOp: z.json().optional(),
+    sourceEventSeqs: z.array(z.number().int().nonnegative()).optional(),
+  })
+  .strict();
+
+export const sessionRecordsOverviewSchema = z
+  .object({
+    schemaVersion: z.literal(SESSION_RECORDS_SCHEMA_VERSION),
+    dsh: z
+      .object({
+        header: dshSessionHeaderSchema,
+        title: z.string().min(1).optional(),
+        live: z.boolean(),
+        persisted: z.boolean(),
+        archived: z.boolean(),
+        eventCount: z.number().int().nonnegative(),
+        lastEventSeq: z.number().int().nonnegative().nullable(),
+        lastEventAt: z.number().int().nonnegative().nullable(),
+      })
+      .strict(),
+    chat: sessionDtoSchema.nullable(),
+    binding: z
+      .object({
+        status: z.enum(["draft", "bound"]),
+        productSessionId: productSessionIdSchema.nullable(),
+        requestCount: z.number().int().nonnegative(),
+        linkedUserMessageCount: z.number().int().nonnegative(),
+        linkedAssistantMessageCount: z.number().int().nonnegative(),
+        currentProductRunId: productRunIdSchema.nullable(),
+      })
+      .strict(),
+    capabilities: z
+      .object({
+        continueConversation: z.boolean(),
+        archiveKeepsData: z.literal(true),
+        permanentDelete: z.literal(false),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.binding.status === "draft" && value.binding.productSessionId !== null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["binding", "productSessionId"],
+        message: "draft binding cannot carry a Product Session",
+      });
+    }
+    if (value.binding.status === "bound" && value.binding.productSessionId === null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["binding", "productSessionId"],
+        message: "bound binding requires a Product Session",
+      });
+    }
+    if (value.binding.status === "draft" && value.chat !== null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["chat"],
+        message: "draft binding cannot resolve a Product Session",
+      });
+    }
+    if (
+      value.binding.status === "bound" &&
+      (value.chat === null || value.chat.sessionId !== value.binding.productSessionId)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["chat"],
+        message: "bound Product Session must match the binding",
+      });
+    }
+    if (
+      value.binding.linkedUserMessageCount > value.binding.requestCount ||
+      value.binding.linkedAssistantMessageCount > value.binding.requestCount
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["binding"],
+        message: "linked Message counts cannot exceed request count",
+      });
+    }
+  });
+
+export const sessionRecordsMessageItemSchema = z
+  .object({
+    message: messageDtoSchema,
+    link: z
+      .object({
+        dshMessageId: dshMessageIdSchema.optional(),
+        productRunId: productRunIdSchema.optional(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const sessionRecordsChatPageSchema = z
+  .object({
+    schemaVersion: z.literal(SESSION_RECORDS_SCHEMA_VERSION),
+    dshSessionId: dshSessionIdSchema,
+    productSessionId: productSessionIdSchema.nullable(),
+    messages: cursorPageSchema(sessionRecordsMessageItemSchema),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      value.productSessionId === null &&
+      (value.messages.items.length > 0 || value.messages.nextCursor !== undefined)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["messages"],
+        message: "unbound DSH Session cannot expose Product Messages",
+      });
+    }
+    if (
+      value.productSessionId !== null &&
+      value.messages.items.some((item) => item.message.sessionId !== value.productSessionId)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["messages", "items"],
+        message: "Product Message belongs to another Session",
+      });
+    }
+  });
+
+export const sessionRecordsDshPageSchema = z
+  .object({
+    schemaVersion: z.literal(SESSION_RECORDS_SCHEMA_VERSION),
+    dshSessionId: dshSessionIdSchema,
+    header: dshSessionHeaderSchema,
+    items: z.array(dshSessionEventSchema).max(100),
+    hasMore: z.boolean(),
+    nextAfterSeq: z.number().int().nonnegative().optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.header.id !== value.dshSessionId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["header", "id"],
+        message: "DSH Session header identity mismatch",
+      });
+    }
+    if (
+      (value.hasMore && (value.nextAfterSeq === undefined || value.items.length === 0)) ||
+      (!value.hasMore && value.nextAfterSeq !== undefined)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["nextAfterSeq"],
+        message: "DSH pagination continuation is inconsistent",
+      });
+    }
+    const last = value.items.at(-1);
+    if (value.nextAfterSeq !== undefined && last?.seq !== value.nextAfterSeq) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["nextAfterSeq"],
+        message: "DSH pagination continuation must name the last event",
+      });
+    }
+  });
+
+export type SessionRecordsOverview = z.infer<typeof sessionRecordsOverviewSchema>;
+export type SessionRecordsMessageItem = z.infer<typeof sessionRecordsMessageItemSchema>;
+export type SessionRecordsChatPage = z.infer<typeof sessionRecordsChatPageSchema>;
+export type SessionRecordsDshPage = z.infer<typeof sessionRecordsDshPageSchema>;
 
 export const publicRunSchema = runDtoSchema.pick({
   productRunId: true,

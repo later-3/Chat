@@ -9,8 +9,8 @@ Browser
   -> LifeOS Web Gateway（127.0.0.1:43110）
   -> DSH Web Host（内部43114）
      -> DSH原生Client插件图
-     -> LifeOS Client插件（Workflow选择、Plan/HITL、Note审核、原生Trajectory、Workbench表面）
-     -> LifeOS Host插件（LLM Adapter、同源桥接路由）
+     -> LifeOS Client插件（Workflow选择、Plan/HITL、Note审核、原生Trajectory、会话记录、Workbench表面）
+     -> LifeOS Host插件（LLM Adapter、SessionQuery窄Adapter、同源桥接路由）
         -> Chat Hono API
            -> Application
               -> Product Store + Outbox
@@ -21,12 +21,20 @@ Browser
 
 ## 2. 会话身份
 
-DSH原生界面创建自己的`dshSessionId`。Host插件把它映射到一个`productSessionId`，映射只保存在本地Adapter状态中：
+DSH原生侧栏是唯一会话入口，创建自己的`dshSessionId`并负责列出、切换和归档历史。新建后先是只有
+DSH身份的草稿；用户发送第一条真实消息时，Host插件才以该消息正文生成标题并幂等创建
+`productSessionId`。映射只保存在本地Adapter状态中：
 
 - DSH Session负责原生会话选择、消息轨迹和Composer体验。
 - Product Session负责权威消息、Run、Plan、Approval、Note Candidate/Decision和恢复。
 - 映射不能作为授权；每次Chat请求仍经过API认证与合同校验。
 - 映射或响应结果未知时，桥接层必须保留稳定命令身份并查询恢复，不能静默创建第二个Product Session或Message。
+
+这里的“合一”只是一套入口和读模型，不是合并存储或生命周期。DSH Session与Product Session仍有各自的
+ID、revision、日志和事实所有者；Bridge不创建第三种Session。重新打开未归档的历史DSH Session时，固定
+DSH持久化日志与Bridge映射共同恢复原会话，用户可以继续发送，不能另建Product Session。DSH原生归档当前
+只把入口从侧栏隐藏并保留日志，不得顺带归档Product Session；固定rc.6没有永久删除或恢复归档的公开能力，
+因此Bridge不提供伪删除、级联删除或伪恢复按钮。
 
 ## 3. 发送链
 
@@ -36,7 +44,8 @@ DSH原生界面创建自己的`dshSessionId`。Host插件把它映射到一个`p
    没有显式选择时使用Chat系统默认Planning Workflow。
 3. DSH用固定`lifeos/workflow`模型调用LifeOS `LlmAdapter`，传入DSH Session和消息历史。
 4. Adapter从本轮请求提取最新用户文本；`session-title`和`compaction`用途绝不写入Chat。
-5. Adapter取得或幂等创建Product Session，以稳定`commandId`提交`POST /api/sessions/:id/messages`。
+5. Adapter按`dshSessionId`恢复已有映射；首条真实消息才以其正文生成Product Session标题并幂等创建，
+   随后以稳定`commandId`提交`POST /api/sessions/:id/messages`。
 6. Chat在Command边界重新校验Workflow仍是已发布、active、当前Principal可用且Hash一致，再原子提交User Message、Product Run、Receipt和Workflow Start Outbox。
 7. Adapter轮询公开Run、正式Message和安全Pi执行轨迹；Bridge投影按Run阶段读取Plan/Approval或Current Note Candidate，并读取完整Workflow执行轨迹。所有读模型都不从HTTP超时推断成功。
 8. Run需要人工决定时，Client插件展示当前Plan/Approval或Note Candidate；用户的修订、批准、确认或拒绝经Host桥接为版本/Hash绑定的Chat Command。
@@ -66,17 +75,35 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 
 字段真相以`@chat/contracts/public`的Zod Schema为准。Host插件必须运行时解析外部响应，不能用TypeScript断言跳过校验。
 
+Host还提供3个仅供当前DSH表面使用的同源读路由，它们不是Chat核心公开API：
+
+| 方法 | 路径 | 作用 |
+|---|---|---|
+| `GET` | `/lifeos/sessions/:dshSessionId/records` | 组合两侧概况、绑定状态与可继续能力 |
+| `GET` | `/lifeos/sessions/:dshSessionId/records/chat` | 以Chat不透明cursor分页读取正式Message及身份关联 |
+| `GET` | `/lifeos/sessions/:dshSessionId/records/dsh` | 以DSH event seq分页读取原始Session事件 |
+
+三条路由先验证目标DSH Session属于当前Chat Workspace；Chat消息页只做轻量Header授权，不回放整份DSH
+日志。原始事件分页受固定SessionQuery合同限制，每页读取时会校验完整日志后再按seq切片。分页只限制记录
+数量，绝不截断单条Message正文、事件Payload、工具参数或结果；Client把两个来源独立加载，任一来源失败
+不会清空另一来源已经读到的记录。
+
 ## 5. Command与恢复
 
 所有写请求使用稳定`commandId`；修改已有事实时还携带`expectedRevision`。Plan Decision绑定Approval、Plan ID、Plan revision和SHA-256；Note Decision绑定Candidate ID、revision和SHA-256。
 
-桥接状态至少记录DSH Session映射、当前Product Run、发送/决定Command身份及最后已确认阶段。v4状态分别保存Plan与Note的pending command、原生轨迹显示cursor且禁止两个pending决定并存。写状态使用原子替换。发生请求已发但响应丢失时，只允许相同命令和内容原样重试或Query恢复，不生成新身份。
+桥接状态至少记录DSH Session映射、当前Product Run、发送/决定Command身份及最后已确认阶段。v5状态分别保存
+Plan与Note的pending command、原生轨迹显示cursor，以及每轮已确认的DSH Message、Product User Message、
+Product Run和Product Assistant Message身份；它不复制任何Message正文。状态禁止两个pending决定并存，
+写入使用原子替换，v1-v4读取后立即迁移为v5。发生请求已发但响应丢失时，只允许相同命令和内容原样重试
+或Query恢复，不生成新身份。
 
 ## 6. DSH插件表面边界
 
 LifeOS Bridge是仓库内唯一DSH插件包，所有新增前端表面使用固定rc.6公开合同：Workflow选择器注册在
 `conversation.input.left`，与权限、模型等原生Composer工具同一行；Plan/HITL与Note Candidate审核使用
-`conversation.input.dock`；Workbench入口使用`sidebar.footer.action`，Surface使用`shell.overlay`。
+`conversation.input.dock`；“会话记录”通过加法`conversation.view`注册；Workbench入口使用
+`sidebar.footer.action`，Surface使用`shell.overlay`。
 审核Dock是临时命令表面，不是Run状态看板：只有当前Plan与开放Approval版本/Hash一致且Run正在等待
 计划审核、当前Note Candidate仍可审核，或存在结果未知且必须原样重试的决定时才显示。决定被Chat确认后
 Dock立即退出Composer；已批准、确认、修订或拒绝的历史由正式消息和Trajectory承载，不用常驻卡片重复展示。
@@ -99,6 +126,11 @@ Provider原始Payload。Pi Attempt通过既有Attempt ID显式绑定Workflow Nod
 DSH Trajectory只投影这一套实际Workflow NodeRun及其Pi子过程。公开DTO仍保留脱敏Vercel
 Run/Step/Hook/Sleep运行时证据供后续诊断或证据表面使用，但Bridge不把它与Workflow节点混排，
 也不使用`Chat Workflow`或“业务节点”制造第二套流程概念。
+
+同一个DSH侧栏入口打开后有3个互补表面：原生“对话”保留可继续发送的用户消息与Chat正式回复副本；
+原生“轨迹”已经展示该轮Chat Workflow的NodeRun、动态Execution Step及Pi/模型/工具过程；新增“会话记录”
+只做双源完整检查，分别展示Product Store中的正式Message和DSH SessionQuery中的原始事件。记录页显示双方
+身份、标题、状态、计数和时间，不把Workflow再复制成第四套时间线，也不从DSH日志反推Chat事实。
 
 时间戳默认保持紧凑。Client插件通过公开`conversation.session.header.utilities`加法Slot注册“时间”开关，
 偏好由DSH公开Snapshot Store保存在浏览器本地；开关只让Conversation Definition按同一Trace重新投影，

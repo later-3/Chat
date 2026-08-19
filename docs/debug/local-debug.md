@@ -69,6 +69,8 @@ Workbench当前为Beta，不属于通用CI/CD完成门；debug实例强制`--wor
 | Bridge输入取舍 | `packages/dsh-lifeos-bridge/src/adapter.ts`的`LifeosLlmAdapter.stream`、`lastUserPrompt` | 原始`options`、最后一条真实用户文本、稳定request key、冻结的Workflow选择 |
 | Bridge请求正文 | `packages/dsh-lifeos-bridge/src/chat-client.ts`的`ChatProductClient.submitMessage` | `commandId`、`payload.text`、已发布Workflow Revision与Hash；不会把整段DSH消息历史提交给Chat API |
 | Session映射 | `AtomicBridgeStateStore`、`LifeosLlmAdapter.ensureChatSession` | `dshSessionId -> productSessionId`、原子状态、稳定Command |
+| 历史会话授权 | `DshSessionQueryHistory.assertAccessible/describe/readEvents` | 当前Chat Workspace、live/persisted/archived、完整事件、seq分页；跨Workspace失败关闭 |
+| 双源会话记录 | `LifeosBridgeService.sessionRecords*`、`SessionRecordsController`、`SessionRecordsView` | Bridge v5 Message身份关联、Chat不透明cursor、DSH seq、来源独立失败、正文/Payload不裁剪 |
 | 消息发送 | `LifeosLlmAdapter.stream`、`ChatProductClient.submitMessage` | 只处理正常会话请求；title/compaction无产品写入 |
 | Plan/HITL | `LifeosBridgeService.projection/decide`、Client Slot | Run revision、Plan/Approval版本与Hash、Decision Command |
 | Note审核 | `LifeosBridgeService.projection/decideNote`、`LifeosDock` | Candidate ID/revision/Hash、pending原样重试、Confirm/修订/拒绝 |
@@ -83,8 +85,9 @@ Workbench当前为Beta，不属于通用CI/CD完成门；debug实例强制`--wor
 
 F5会让DSH Host在`44123`开放固定Inspector，并只在进程创建瞬间传递VS Code自动附加握手；
 Host安装受管环境后会删除这些调试变量，Bridge插件不会重新获得Provider、云账号或SSH环境。
-Bridge Host与Client bundle都生成source map，因此断点应优先下在`src/adapter.ts`与
-`src/chat-client.ts`，不要依赖每次构建都会漂移的`dist/dsh-bundle.js`行号。
+Bridge Host与Client bundle都生成source map，因此发送链断点应优先下在`src/adapter.ts`与
+`src/chat-client.ts`；历史读取断点下在`src/dsh-session-history.ts`、`src/bridge-service.ts`和
+`src/client/session-records-controller.ts`，不要依赖每次构建都会漂移的`dist/dsh-bundle.js`行号。
 
 F5同时为API、Workflow、Pi Executor和DSH Host启用Node Source Map，并把Workflow VM中
 `src/*`映射回`packages/workflows/src/*`。Workflow Builder的编排与Step bundle使用内联Map
@@ -116,7 +119,7 @@ pnpm debug:replay -- --run <productRunId>
 
 Trace保存可观察事件、对象引用、版本、耗时、安全错误，以及边界前已脱敏且有32K上限的Pi可见回复、工具输入和结果；不保存模型隐藏推理、密钥或完整Provider Payload。
 
-真实门：`pnpm test:provider:bailian:coding`验证Pi标准配置链和`read/write/bash`；`pnpm --filter @chat/dsh-web test:e2e:trajectory-real`验证固定rc.6原生Trajectory的running→result投影，不调用付费Provider。
+真实门：`pnpm test:provider:bailian:coding`验证Pi标准配置链和`read/write/bash`；`pnpm --filter @chat/dsh-web test:e2e:trajectory-real`验证固定rc.6原生Trajectory的running→result投影与双源完整会话记录，不调用付费Provider。
 
 真实页面验证时，在DSH发送一条Planning消息后切换到“轨迹”：
 
@@ -124,6 +127,16 @@ Trace保存可观察事件、对象引用、版本、耗时、安全错误，以
 2. `任务规划`或执行节点可展开Pi Agent；其下显示模型、Token与`submit_*`工具生命周期。
 3. Trajectory不得出现`Vercel Workflow Runtime`、Run/Step/Hook/Sleep行；这些脱敏数据只保留为后端证据，后续由独立诊断/证据表面消费。页面不得出现Workflow Run ID、Hook Token、Pi Session ID、Provider Request ID、Prompt或工具参数/结果正文。
 4. 默认Profile选择“规划执行工作流”，该Definition不含Memory节点，因此轨迹不得出现Memory；这不是展示过滤。完整上下文Planning Workflow仍保留，只有显式选择时才会解释其资源节点；当前统一启动器仍不会启动Memory服务或装配Adapter。
+
+同一会话切换到“会话记录”时再检查：
+
+1. Product Session与DSH Session的ID、标题和状态必须分开显示；空白草稿显示“首条消息后创建”，不得访问Chat Session API。
+2. “Chat 正式消息”按`sessionSequence`显示完整用户正文与正式Assistant Message；“DSH 原始日志”展开后显示单条完整JSON事件，两边均可继续分页。
+3. 任一来源Query失败只能在该来源显示错误，不能清空另一来源；刷新会取消前一代请求，Chat cursor不得由Client解析或猜测。
+4. 未归档历史会话从原生侧栏重开后仍绑定同一Product Session并可继续对话；DSH原生归档只隐藏入口并保留两侧记录，当前界面不得声称永久删除成功。
+
+对应同源路由为`/lifeos/sessions/:dshSessionId/records`、`records/chat`与`records/dsh`。它们必须返回
+`Cache-Control: no-store`，拒绝跨站、未知/重复分页参数、跨Workspace Session和超过100条的页大小。
 
 ## Workbench调试
 

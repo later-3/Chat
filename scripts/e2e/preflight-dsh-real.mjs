@@ -172,6 +172,6 @@ console.log(
     : pwaOnly
       ? "[e2e-preflight] rc.6 DSH profile与PWA浏览器表面已就绪（未加载Provider/Workflow/Workbench）"
       : trajectoryOnly
-        ? "[e2e-preflight] rc.6 DSH profile与原生Trajectory浏览器表面已就绪（使用测试Trace Provider，不加载Provider/Workflow/Workbench）"
+        ? "[e2e-preflight] rc.6 DSH profile与原生Trajectory/会话记录表面已就绪（使用测试Trace Provider，不加载Provider/Workflow/Workbench）"
         : "[e2e-preflight] rc.6 DSH profile、真实Provider、隔离Git Workbench fixture与固定code-server已就绪",
 );

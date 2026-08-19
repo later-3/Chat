@@ -3,7 +3,13 @@ import { createServer, request as httpRequest, type IncomingMessage } from "node
 import test from "node:test";
 import { BridgeRequestError } from "../src/bridge-service.ts";
 import { ChatProductApiError } from "../src/chat-client.ts";
-import { assertSameOriginRequest, createLifeosRouteHandler } from "../src/http-route.ts";
+import { DshSessionHistoryAccessError } from "../src/dsh-session-history.ts";
+import {
+  assertSameOriginRequest,
+  createLifeosRouteHandler,
+  parseSessionRecordsChatQuery,
+  parseSessionRecordsDshQuery,
+} from "../src/http-route.ts";
 import type { LifeosBridgeService } from "../src/bridge-service.ts";
 
 function request(headers: IncomingMessage["headers"]): IncomingMessage {
@@ -101,6 +107,42 @@ test("public hostname is accepted only in server mode with https Origin", () => 
       error.status === 403 &&
       error.code === "lifeos_host_forbidden",
   );
+});
+
+test("session-record queries accept only bounded, non-repeated source cursors", () => {
+  assert.deepEqual(
+    parseSessionRecordsChatQuery(
+      new URL("http://localhost/lifeos/sessions/dsh-1/records/chat?limit=100&cursor=opaque"),
+    ),
+    { cursor: "opaque", limit: 100 },
+  );
+  assert.deepEqual(
+    parseSessionRecordsDshQuery(
+      new URL("http://localhost/lifeos/sessions/dsh-1/records/dsh?afterSeq=0"),
+    ),
+    { afterSeq: 0, limit: 50 },
+  );
+  for (const url of [
+    "http://localhost/x?limit=0",
+    "http://localhost/x?limit=101",
+    "http://localhost/x?limit=1&limit=2",
+    "http://localhost/x?cursor=",
+    "http://localhost/x?unknown=1",
+  ]) {
+    assert.throws(() => parseSessionRecordsChatQuery(new URL(url)), {
+      code: "lifeos_session_records_query_invalid",
+    });
+  }
+  for (const url of [
+    "http://localhost/x?afterSeq=-1",
+    "http://localhost/x?afterSeq=01",
+    "http://localhost/x?afterSeq=9007199254740992",
+    "http://localhost/x?afterSeq=1&afterSeq=2",
+  ]) {
+    assert.throws(() => parseSessionRecordsDshQuery(new URL(url)), {
+      code: "lifeos_session_records_query_invalid",
+    });
+  }
 });
 
 test("a known Chat 4xx is returned as a safe same-origin Problem instead of a false 502", async () => {
@@ -238,6 +280,133 @@ test("same-origin Note decision route validates and forwards the observed candid
     assert.equal(response.status, 200);
     assert.deepEqual(JSON.parse(response.body), projection);
     assert.deepEqual(calls, [{ sessionId: "dsh-session-1", request: body }]);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error === undefined ? resolve() : reject(error))),
+    );
+  }
+});
+
+test("same-origin session-record routes forward typed pagination without relaxing other routes", async () => {
+  const calls: unknown[] = [];
+  const service = {
+    sessionRecordsChatPage: async (
+      sessionId: string,
+      cursor: string | undefined,
+      limit: number,
+    ) => {
+      calls.push({ source: "chat", sessionId, cursor, limit });
+      return {
+        schemaVersion: "chat-dsh-session-records.v1",
+        dshSessionId: sessionId,
+        productSessionId: null,
+        messages: { items: [] },
+      };
+    },
+    sessionRecordsDshPage: async (
+      sessionId: string,
+      afterSeq: number | undefined,
+      limit: number,
+    ) => {
+      calls.push({ source: "dsh", sessionId, afterSeq, limit });
+      return {
+        schemaVersion: "chat-dsh-session-records.v1",
+        dshSessionId: sessionId,
+        header: { version: 0, id: sessionId, createdAt: 1, cwd: "/workspace/chat" },
+        items: [],
+        hasMore: false,
+      };
+    },
+  } as unknown as LifeosBridgeService;
+  const server = createServer(createLifeosRouteHandler(service, 43_110));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address !== null && typeof address === "object");
+  const get = async (path: string): Promise<number | undefined> =>
+    await new Promise((resolve, reject) => {
+      const outgoing = httpRequest(
+        {
+          hostname: "127.0.0.1",
+          port: address.port,
+          path,
+          method: "GET",
+          headers: {
+            host: "localhost:43110",
+            origin: "http://localhost:43110",
+            "sec-fetch-site": "same-origin",
+          },
+        },
+        (incoming) => {
+          incoming.resume();
+          incoming.on("end", () => resolve(incoming.statusCode));
+        },
+      );
+      outgoing.on("error", reject);
+      outgoing.end();
+    });
+  try {
+    assert.equal(
+      await get("/lifeos/sessions/dsh-session-1/records/chat?cursor=opaque&limit=25"),
+      200,
+    );
+    assert.equal(await get("/lifeos/sessions/dsh-session-1/records/dsh?afterSeq=9&limit=10"), 200);
+    assert.equal(await get("/lifeos/sessions/dsh-session-1?limit=1"), 400);
+    assert.deepEqual(calls, [
+      { source: "chat", sessionId: "dsh-session-1", cursor: "opaque", limit: 25 },
+      { source: "dsh", sessionId: "dsh-session-1", afterSeq: 9, limit: 10 },
+    ]);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error === undefined ? resolve() : reject(error))),
+    );
+  }
+});
+
+test("DSH history authorization failures remain explicit safe Problems", async () => {
+  const service = {
+    sessionRecordsOverview: async () => {
+      throw new DshSessionHistoryAccessError(
+        403,
+        "lifeos_dsh_session_forbidden",
+        "DSH Session不属于Chat Workspace",
+      );
+    },
+  } as unknown as LifeosBridgeService;
+  const server = createServer(createLifeosRouteHandler(service, 43_110));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address !== null && typeof address === "object");
+  try {
+    const response = await new Promise<{ status: number | undefined; body: string }>(
+      (resolve, reject) => {
+        const outgoing = httpRequest(
+          {
+            hostname: "127.0.0.1",
+            port: address.port,
+            path: "/lifeos/sessions/dsh-session-1/records",
+            method: "GET",
+            headers: { host: "localhost:43110" },
+          },
+          (incoming) => {
+            const chunks: Buffer[] = [];
+            incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+            incoming.on("end", () =>
+              resolve({ status: incoming.statusCode, body: Buffer.concat(chunks).toString() }),
+            );
+          },
+        );
+        outgoing.on("error", reject);
+        outgoing.end();
+      },
+    );
+    assert.equal(response.status, 403);
+    assert.deepEqual(JSON.parse(response.body), {
+      type: "about:blank",
+      title: "DSH Session不属于Chat Workspace",
+      status: 403,
+      code: "lifeos_dsh_session_forbidden",
+      retryable: false,
+    });
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error === undefined ? resolve() : reject(error))),

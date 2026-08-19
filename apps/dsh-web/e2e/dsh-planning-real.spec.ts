@@ -248,6 +248,28 @@ test("rc.6 DSH：发送 -> Plan等待人工 -> 刷新 -> 批准 -> 正式Assista
   expect(assistants[0]?.sourceRunId).toBe(runId);
   expect(assistants[0]?.content.text).toContain(COMPLETION_MARKER);
 
+  // 同一原生Session内的第三个View组合两侧事实：Chat正式Message保持全文，
+  // DSH原始事件独立分页且可展开全文；它不是第二个聊天页面或第三份Session。
+  const recordsResponse = page.waitForResponse((response) =>
+    /\/lifeos\/sessions\/[^/]+\/records$/u.test(new URL(response.url()).pathname),
+  );
+  await page.getByRole("tab", { name: "会话记录", exact: true }).click();
+  expect((await recordsResponse).status()).toBe(200);
+  await expect(page.getByTestId("lifeos-session-records")).toBeVisible();
+  await expect(page.getByText("Product Session", { exact: true })).toBeVisible();
+  await expect(page.getByText(finalRun.sessionId, { exact: true })).toBeVisible();
+  await expect(page.getByText(userPrompt, { exact: true })).toBeVisible();
+  await expect(page.getByText(COMPLETION_MARKER, { exact: true })).toBeVisible();
+
+  await page.getByRole("tab", { name: "DSH 原始日志", exact: true }).click();
+  const userEvent = page
+    .locator(".lifeos-event-record")
+    .filter({ hasText: "user/message" })
+    .first();
+  await expect(userEvent).toBeVisible();
+  await userEvent.locator("summary").click();
+  await expect(userEvent.locator("pre")).toContainText(userPrompt);
+
   const executionTrace = workflowExecutionTraceDtoSchema.parse(
     await apiJson(request, `/api/runs/${encodeURIComponent(runId)}/workflow-execution-trace`),
   );

@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import {
   approvalRequestIdSchema,
   commandIdSchema,
+  messageIdSchema,
   noteCandidateIdSchema,
   planIdSchema,
   productRunIdSchema,
@@ -52,7 +53,11 @@ const requestSchema = z
     dshMessageId: dshMessageIdSchema.optional(),
     userTextSha256: sha256Schema,
     messageCommandId: commandIdSchema.transform(String),
+    /** Chat正式User Message；只保存身份，用于双源记录关联，不复制正文。 */
+    productUserMessageId: messageIdSchema.transform(String).optional(),
     productRunId: productRunIdSchema.transform(String).optional(),
+    /** Chat正式Assistant Message；Run终态读取后补记，旧记录可按Run Query恢复。 */
+    productAssistantMessageId: messageIdSchema.transform(String).optional(),
     /** 已经投影进DSH原生Trajectory的Run内Trace位置；只用于显示幂等。 */
     traceCursor: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
     pendingDecision: pendingDecisionSchema.optional(),
@@ -86,26 +91,24 @@ const sessionBindingSchema = z
   .strict();
 
 /**
- * rc.6切换时已经存在的Bridge状态。迁移读取接受v1/v2中的Workflow选择和Plan pending，
- * 随后立即改写为当前版本；不能在旧schema标记下静默扩展strict持久格式。
+ * rc.6切换后已经存在的Bridge状态。新增字段均为可恢复的外部身份；迁移读取
+ * 接受v1-v4，随后立即改写为当前版本，不能在旧schema标记下静默扩展strict格式。
  */
 const legacyBridgeStateSchema = z
   .object({
-    schemaVersion: z.enum(["chat-dsh-lifeos-state.v1", "chat-dsh-lifeos-state.v2"]),
-    sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
-  })
-  .strict();
-
-const legacyBridgeStateV2Schema = z
-  .object({
-    schemaVersion: z.literal("chat-dsh-lifeos-state.v3"),
+    schemaVersion: z.enum([
+      "chat-dsh-lifeos-state.v1",
+      "chat-dsh-lifeos-state.v2",
+      "chat-dsh-lifeos-state.v3",
+      "chat-dsh-lifeos-state.v4",
+    ]),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
   .strict();
 
 const bridgeStateSchema = z
   .object({
-    schemaVersion: z.literal("chat-dsh-lifeos-state.v4"),
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v5"),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
   .strict();
@@ -117,7 +120,7 @@ export type PendingDecision = z.infer<typeof pendingDecisionSchema>;
 export type PendingNoteDecision = z.infer<typeof pendingNoteDecisionSchema>;
 
 const emptyState = (): BridgeState => ({
-  schemaVersion: "chat-dsh-lifeos-state.v4",
+  schemaVersion: "chat-dsh-lifeos-state.v5",
   sessions: {},
 });
 
@@ -214,21 +217,13 @@ export class AtomicBridgeStateStore {
       this.state = current.data;
       return this.state;
     }
-    const legacyBridgeStateV3Schema = z
-      .object({
-        schemaVersion: z.literal("chat-dsh-lifeos-state.v3"),
-        sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
-      })
-      .strict();
-    const legacy = z
-      .union([legacyBridgeStateSchema, legacyBridgeStateV2Schema, legacyBridgeStateV3Schema])
-      .safeParse(parsed);
+    const legacy = legacyBridgeStateSchema.safeParse(parsed);
     if (!legacy.success) {
       this.state = bridgeStateSchema.parse(parsed);
       return this.state;
     }
     const migrated = bridgeStateSchema.parse({
-      schemaVersion: "chat-dsh-lifeos-state.v4",
+      schemaVersion: "chat-dsh-lifeos-state.v5",
       sessions: legacy.data.sessions,
     });
     await this.writeAtomic(migrated);

@@ -146,6 +146,11 @@ async function collect(stream: AsyncIterable<StreamChunk>): Promise<StreamChunk[
   return chunks;
 }
 
+function textDelta(chunks: readonly StreamChunk[]): string | undefined {
+  const delta = chunks.find((chunk) => chunk.type === "text-delta");
+  return delta?.type === "text-delta" ? delta.text : undefined;
+}
+
 test("native DSH generation crosses Chat Plan/HITL and returns only the committed assistant message", async () => {
   let approved = false;
   let submittedResolve!: () => void;
@@ -269,6 +274,14 @@ test("native DSH generation crosses Chat Plan/HITL and returns only the committe
       delta?.type === "text-delta" ? delta.text : undefined,
       assistantMessage.content.text,
     );
+    const persistedBinding = await state.readSession("dsh-session-1");
+    const persistedRequest =
+      persistedBinding?.currentRequestKey === undefined
+        ? undefined
+        : persistedBinding.requests[persistedBinding.currentRequestKey];
+    assert.equal(persistedRequest?.productUserMessageId, userMessage.messageId);
+    assert.equal(persistedRequest?.productAssistantMessageId, assistantMessage.messageId);
+    assert.equal(persistedRequest?.productRunId, "run_bridge1");
 
     assert.deepEqual(
       requests.filter((request) => request.method === "POST").map((request) => request.path),
@@ -278,11 +291,139 @@ test("native DSH generation crosses Chat Plan/HITL and returns only the committe
         "/api/runs/run_bridge1/decisions",
       ],
     );
+    assert.deepEqual(
+      (
+        requests.find((request) => request.path === "/api/sessions")?.body as {
+          payload?: unknown;
+        }
+      )?.payload,
+      { title: userMessage.content.text },
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error === undefined ? resolve() : reject(error))),
     );
+  }
+});
+
+test("reopening a persisted DSH history continues in the same Product Session", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-history-resume-"));
+  const statePath = join(directory, "state.json");
+  const interactions = [
+    {
+      text: "第一轮：建立长期会话",
+      userMessageId: "msg_resumeuser1",
+      assistantMessageId: "msg_resumeassistant1",
+      productRunId: "run_resume1",
+      answer: "第一轮完成",
+    },
+    {
+      text: "第二轮：重开后继续",
+      userMessageId: "msg_resumeuser2",
+      assistantMessageId: "msg_resumeassistant2",
+      productRunId: "run_resume2",
+      answer: "第二轮完成",
+    },
+  ] as const;
+  let createCount = 0;
+  const submissions: Array<{ sessionId: string; text: string }> = [];
+  const chat = {
+    createSession: async (_commandId: string, title: string) => {
+      createCount += 1;
+      assert.equal(title, interactions[0].text);
+      return { ...session, title };
+    },
+    submitMessage: async (sessionId: string, _commandId: string, text: string) => {
+      const item = interactions.find((candidate) => candidate.text === text);
+      assert.ok(item !== undefined);
+      submissions.push({ sessionId, text });
+      return {
+        message: {
+          schemaVersion,
+          messageId: item.userMessageId,
+          sessionId,
+          sessionSequence: item === interactions[0] ? 1 : 3,
+          role: "user" as const,
+          content: { format: "markdown" as const, text },
+          sha256: "d".repeat(64),
+          createdAt: timestamp,
+        },
+        run: {
+          schemaVersion,
+          productRunId: item.productRunId,
+          sessionId,
+          sourceMessageId: item.userMessageId,
+          status: "succeeded" as const,
+          phase: "completed" as const,
+          finalMessageId: item.assistantMessageId,
+          allowedActions: [],
+          revision: 1,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      };
+    },
+    getMessage: async (_sessionId: string, messageId: string) => {
+      const item = interactions.find((candidate) => candidate.assistantMessageId === messageId);
+      assert.ok(item !== undefined);
+      return {
+        schemaVersion,
+        messageId: item.assistantMessageId,
+        sessionId: session.sessionId,
+        sessionSequence: item === interactions[0] ? 2 : 4,
+        role: "assistant" as const,
+        content: { format: "markdown" as const, text: item.answer },
+        sourceRunId: item.productRunId,
+        sha256: "e".repeat(64),
+        createdAt: timestamp,
+      };
+    },
+  } as unknown as ChatProductClient;
+  const input = (text: string): GenerateOptions => ({
+    provider: "lifeos",
+    model: "workflow",
+    sessionId: "dsh-history-1" as never,
+    messages: [
+      createUserMessage({
+        source: { kind: "user" },
+        content: [{ type: "text", text }],
+      }),
+    ],
+  });
+
+  try {
+    const initialState = new AtomicBridgeStateStore(statePath);
+    await initialState.ready();
+    const first = await collect(
+      new LifeosLlmAdapter(chat, initialState).stream(input(interactions[0].text)),
+    );
+    assert.equal(textDelta(first), interactions[0].answer);
+
+    // 用全新的Store与Adapter实例模拟进程重启后从DSH历史侧栏重新打开同一会话。
+    const reloadedState = new AtomicBridgeStateStore(statePath);
+    await reloadedState.ready();
+    const second = await collect(
+      new LifeosLlmAdapter(chat, reloadedState).stream(input(interactions[1].text)),
+    );
+    assert.equal(textDelta(second), interactions[1].answer);
+
+    assert.equal(createCount, 1);
+    assert.deepEqual(submissions, [
+      { sessionId: session.sessionId, text: interactions[0].text },
+      { sessionId: session.sessionId, text: interactions[1].text },
+    ]);
+    const binding = await reloadedState.readSession("dsh-history-1");
+    assert.equal(binding?.chatSessionId, session.sessionId);
+    assert.equal(Object.keys(binding?.requests ?? {}).length, 2);
+    assert.deepEqual(
+      Object.values(binding?.requests ?? {})
+        .map((request) => request.productRunId)
+        .sort(),
+      ["run_resume1", "run_resume2"],
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

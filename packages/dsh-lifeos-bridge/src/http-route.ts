@@ -7,13 +7,19 @@ import {
 } from "./contracts.ts";
 import { BridgeRequestError, LifeosBridgeService } from "./bridge-service.ts";
 import { ChatProductApiError } from "./chat-client.ts";
+import { DshSessionHistoryAccessError } from "./dsh-session-history.ts";
 
 const MAX_REQUEST_BODY_BYTES = 16 * 1024;
 const SESSION_PATH = /^\/lifeos\/sessions\/([^/]+)$/;
 const DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/decisions$/;
 const NOTE_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/note-decisions$/;
 const WORKFLOW_SELECTION_PATH = /^\/lifeos\/sessions\/([^/]+)\/workflow-selection$/;
+const SESSION_RECORDS_PATH = /^\/lifeos\/sessions\/([^/]+)\/records$/;
+const SESSION_RECORDS_CHAT_PATH = /^\/lifeos\/sessions\/([^/]+)\/records\/chat$/;
+const SESSION_RECORDS_DSH_PATH = /^\/lifeos\/sessions\/([^/]+)\/records\/dsh$/;
 const WORKFLOWS_PATH = /^\/lifeos\/workflows$/;
+const SESSION_RECORDS_DEFAULT_LIMIT = 50;
+const SESSION_RECORDS_MAX_LIMIT = 100;
 
 function headerValue(value: string | string[] | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
@@ -102,6 +108,97 @@ function sessionIdFrom(match: RegExpExecArray): string {
   return decoded;
 }
 
+function singleQueryValue(params: URLSearchParams, key: string): string | undefined {
+  const values = params.getAll(key);
+  if (values.length > 1) {
+    throw new BridgeRequestError(
+      400,
+      "lifeos_session_records_query_invalid",
+      `Query参数${key}不得重复`,
+    );
+  }
+  return values[0];
+}
+
+function recordsLimit(params: URLSearchParams): number {
+  const raw = singleQueryValue(params, "limit");
+  if (raw === undefined) return SESSION_RECORDS_DEFAULT_LIMIT;
+  if (!/^[1-9][0-9]*$/u.test(raw)) {
+    throw new BridgeRequestError(
+      400,
+      "lifeos_session_records_query_invalid",
+      `limit必须是1到${String(SESSION_RECORDS_MAX_LIMIT)}的整数`,
+    );
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value > SESSION_RECORDS_MAX_LIMIT) {
+    throw new BridgeRequestError(
+      400,
+      "lifeos_session_records_query_invalid",
+      `limit必须是1到${String(SESSION_RECORDS_MAX_LIMIT)}的整数`,
+    );
+  }
+  return value;
+}
+
+function assertOnlyQueryKeys(params: URLSearchParams, allowed: ReadonlySet<string>): void {
+  for (const key of params.keys()) {
+    if (!allowed.has(key)) {
+      throw new BridgeRequestError(
+        400,
+        "lifeos_session_records_query_invalid",
+        `未知Query参数：${key}`,
+      );
+    }
+  }
+}
+
+export function parseSessionRecordsChatQuery(url: URL): {
+  cursor?: string;
+  limit: number;
+} {
+  assertOnlyQueryKeys(url.searchParams, new Set(["cursor", "limit"]));
+  const cursor = singleQueryValue(url.searchParams, "cursor");
+  if (cursor !== undefined && (cursor.length === 0 || cursor.length > 512)) {
+    throw new BridgeRequestError(
+      400,
+      "lifeos_session_records_query_invalid",
+      "cursor必须是非空的不透明分页标记",
+    );
+  }
+  return {
+    ...(cursor === undefined ? {} : { cursor }),
+    limit: recordsLimit(url.searchParams),
+  };
+}
+
+export function parseSessionRecordsDshQuery(url: URL): {
+  afterSeq?: number;
+  limit: number;
+} {
+  assertOnlyQueryKeys(url.searchParams, new Set(["afterSeq", "limit"]));
+  const raw = singleQueryValue(url.searchParams, "afterSeq");
+  if (raw !== undefined && !/^(?:0|[1-9][0-9]*)$/u.test(raw)) {
+    throw new BridgeRequestError(
+      400,
+      "lifeos_session_records_query_invalid",
+      "afterSeq必须是非负安全整数",
+    );
+  }
+  const afterSeq = raw === undefined ? undefined : Number(raw);
+  if (afterSeq !== undefined && !Number.isSafeInteger(afterSeq)) {
+    throw new BridgeRequestError(
+      400,
+      "lifeos_session_records_query_invalid",
+      "afterSeq必须是非负安全整数",
+    );
+  }
+  return {
+    ...(afterSeq === undefined ? {} : { afterSeq }),
+    limit: recordsLimit(url.searchParams),
+  };
+}
+
 async function readJson(req: IncomingMessage): Promise<unknown> {
   const contentType = headerValue(req.headers["content-type"]);
   if (contentType?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
@@ -172,6 +269,16 @@ function sendError(res: ServerResponse, error: unknown): void {
     });
     return;
   }
+  if (error instanceof DshSessionHistoryAccessError) {
+    sendJson(res, error.status, {
+      type: "about:blank",
+      title: error.message,
+      status: error.status,
+      code: error.code,
+      retryable: false,
+    });
+    return;
+  }
   sendJson(res, 502, {
     type: "about:blank",
     title: "LifeOS bridge request failed",
@@ -191,6 +298,46 @@ export function createLifeosRouteHandler(
     try {
       const host = assertSameOriginRequest(req, expectedPort, publicHostname);
       const url = new URL(req.url ?? "", `http://${host}`);
+      const recordsMatch = SESSION_RECORDS_PATH.exec(url.pathname);
+      if (req.method === "GET" && recordsMatch !== null) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        sendJson(res, 200, await service.sessionRecordsOverview(sessionIdFrom(recordsMatch)));
+        return;
+      }
+      const chatRecordsMatch = SESSION_RECORDS_CHAT_PATH.exec(url.pathname);
+      if (req.method === "GET" && chatRecordsMatch !== null) {
+        const query = parseSessionRecordsChatQuery(url);
+        sendJson(
+          res,
+          200,
+          await service.sessionRecordsChatPage(
+            sessionIdFrom(chatRecordsMatch),
+            query.cursor,
+            query.limit,
+          ),
+        );
+        return;
+      }
+      const dshRecordsMatch = SESSION_RECORDS_DSH_PATH.exec(url.pathname);
+      if (req.method === "GET" && dshRecordsMatch !== null) {
+        const query = parseSessionRecordsDshQuery(url);
+        sendJson(
+          res,
+          200,
+          await service.sessionRecordsDshPage(
+            sessionIdFrom(dshRecordsMatch),
+            query.afterSeq,
+            query.limit,
+          ),
+        );
+        return;
+      }
       if (url.search !== "") {
         throw new BridgeRequestError(
           400,
@@ -252,7 +399,11 @@ export function createLifeosRouteHandler(
       }
       throw new BridgeRequestError(404, "lifeos_route_not_found", "LifeOS route not found");
     } catch (error) {
-      if (!(error instanceof BridgeRequestError) && !(error instanceof ChatProductApiError)) {
+      if (
+        !(error instanceof BridgeRequestError) &&
+        !(error instanceof ChatProductApiError) &&
+        !(error instanceof DshSessionHistoryAccessError)
+      ) {
         reportError(error);
       }
       if (!res.headersSent) sendError(res, error);

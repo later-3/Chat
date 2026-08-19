@@ -111,6 +111,10 @@ const rules: Record<
       "@deepseek-ai/dsh-llm",
       // 将远端Pi事件投影成DSH原生tool/call + tool/result，供Trajectory消费。
       "@deepseek-ai/dsh-tools",
+      // 通过公开SessionQuery读取live/persisted原始日志；Bridge只做Workspace授权、
+      // 分页与双侧身份投影，不接管DSH持久化或把日志写入Product Store。
+      "@deepseek-ai/dsh-session",
+      "@deepseek-ai/dsh-session-query",
       "@deepseek-ai/dsh-workspace",
       "@deepseek-ai/dsh-client-runtime",
       "@deepseek-ai/dsh-client-ui-conversation",

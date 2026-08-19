@@ -8,7 +8,7 @@
 |---|---|
 | 产品身份 | 独立、完整、持续演进的个人Agent协作产品 |
 | 唯一前端 | Chat公开仓库`later-3/deepseek-harness-chat`维护固定`DeepSeek Harness Web rc.6`窄派生；当前只维护Trajectory Location/标签/紧凑预览扩展，Chat仓库以固定pnpm补丁消费；旧`apps/web`与Agent Canvas均不属于当前架构 |
-| 前端桥接 | `@chat/dsh-lifeos-bridge`通过DSH公开Slot把原生会话、Composer行内Workflow选择、Plan审批与Note Candidate审核接到Chat公开API；实时Pi工具调用与完整Workflow执行树共同进入DSH原生Trajectory，手机和桌面共用同一产品投影与Command |
+| 前端桥接 | `@chat/dsh-lifeos-bridge`通过DSH公开Slot把原生会话、Composer行内Workflow选择、Plan审批与Note Candidate审核接到Chat公开API；原生侧栏作为唯一会话入口，首条真实消息懒创建Product Session，Bridge v5只保存双侧身份关联；“会话记录”以独立分页完整展示Chat正式Message与DSH原始事件，实时Pi工具调用与完整Workflow执行树继续进入原生Trajectory |
 | 开发工作台 | Beta、可选、当前暂停进入CI/CD；固定`code-server@4.132.0`与DSH全屏Surface实现继续保留，供需要时人工验证Files、Editor、Terminal、Git/Diff与扩展系统 |
 | 后端 | Node.js + TypeScript；Hono协议入口；Application拥有用例事务 |
 | Product Store | `chat-product-store.v12`版本化JSON Adapter；拥有Session、Message、Run、Plan、Approval、Decision、Workflow Memory和Project事实 |
@@ -24,6 +24,8 @@
 ## 当前实施顺序
 
 1. DSH已经成为唯一前端，原生对话已通过Session、Message、Plan/HITL、Note Candidate审核、执行、正式结果和刷新恢复合同纵向。
+   DSH侧栏统一承载新建、历史切换与原生归档；Product Session仍是独立产品事实。归档仅隐藏DSH入口并保留
+   双侧记录，不级联修改Product Session；固定rc.6没有永久删除/恢复归档公开能力，当前不伪造这两项语义。
 2. Code Workbench首期纵向已经作为独立Hosted App接入，但当前标记为Beta，不参与通用CI/CD；不复制或拆分code-server UI。
 3. 下一纵向是带实时人机共用视图的Browser Provider。
 4. 随后继续长期Project/Memory/Rules和更多受治理插件能力。
@@ -48,5 +50,7 @@
 - 真实DSH Host启动，原生界面不是临时Adapter页。
 - 浏览器真实完成发送、Plan/HITL、Note审核、执行结果与刷新恢复。
 - 浏览器在DSH原生Trajectory真实展开唯一Workflow主线及其Pi子过程；Vercel Runtime证据不混入该表面，默认Run因Definition不含Memory而没有任何Memory轨迹，不靠前端过滤。
+- 浏览器可从同一DSH会话切换到“会话记录”，分页查看未裁剪的Chat正式Message与DSH原始事件；刷新或重开
+  未归档历史会话后仍恢复同一Product Session并可继续发送，空白草稿不得提前创建Product Session。
 - DSH派生仓库保持Public，`origin/main`与当前维护分支保存派生源码，官方仓库作为只读`upstream`；升级按[DSH前端派生与维护](./docs/architecture/dsh-frontend-maintenance.md)汇合并重跑门。
 - Workbench处于Beta，不属于当前通用CI/CD基线门；单独启用、修改或准备发布时，仍须人工运行Files、Terminal、Git/Diff、浏览器Origin、WebSocket和子进程生命周期验证。

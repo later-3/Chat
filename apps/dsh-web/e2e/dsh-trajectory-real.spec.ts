@@ -1,6 +1,9 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 const API = "http://127.0.0.1:43111";
+const FULL_PROMPT = `验证Pi执行轨迹实时显示\n${"完整会话正文-".repeat(
+  600,
+)}END_OF_UNTRUNCATED_SESSION_MESSAGE`;
 
 async function waitForSubmitted(request: APIRequestContext): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -28,11 +31,11 @@ async function openReadyConversation(page: Page): Promise<void> {
     await page.getByRole("menuitem", { name: "Chat", exact: true }).click();
   }
   await expect(composer).toBeEnabled();
-  await composer.fill("验证Pi执行轨迹实时显示");
+  await composer.fill(FULL_PROMPT);
   await page.getByRole("button", { name: /发送消息|Send message/u }).click();
 }
 
-test("rc.6 DSH原生轨迹实时呈现远端Pi工具输入、运行态和结果", async ({ page, request }) => {
+test("rc.6 DSH原生轨迹与双源会话记录保留完整过程", async ({ page, request }) => {
   await openReadyConversation(page);
   await waitForSubmitted(request);
 
@@ -74,6 +77,19 @@ test("rc.6 DSH原生轨迹实时呈现远端Pi工具输入、运行态和结果"
   await expect(page.getByText("TRAJECTORY_E2E_COMPLETED", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
+
+  await page.getByRole("tab", { name: "会话记录", exact: true }).click();
+  const records = page.getByTestId("lifeos-session-records");
+  await expect(records).toBeVisible();
+  await expect(records.getByText("Product Session", { exact: true })).toBeVisible();
+  await expect(records.getByText("DSH Session", { exact: true })).toBeVisible();
+  await expect(records.getByText(FULL_PROMPT, { exact: true })).toBeVisible();
+  await expect(records.getByText("TRAJECTORY_E2E_COMPLETED", { exact: true })).toBeVisible();
+
+  await records.getByRole("tab", { name: "DSH 原始日志", exact: true }).click();
+  const userEvent = records.locator("details", { hasText: "user/message" }).first();
+  await userEvent.locator("summary").click();
+  await expect(userEvent).toContainText("END_OF_UNTRUNCATED_SESSION_MESSAGE");
 
   const browserSurface = await page.evaluate(() => document.documentElement.innerHTML);
   for (const marker of ["DASHSCOPE_API_KEY", "hookToken", "piRuntimeSessionId"]) {
