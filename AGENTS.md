@@ -8,7 +8,7 @@ Chat 是独立开发、独立运行、独立运营并持续演进的完整产品
 
 ## 2. 当前阶段
 
-Chat的产品后端、Workflow与Agent Runtime基线已经冻结。唯一产品前端是Chat私有仓库维护的固定DeepSeek Harness Web窄派生，由本仓库维护的LifeOS桥接插件接入Chat公开Query/Command；仓库不再维护第二套自研Chat页面，也不包含Agent Canvas/OpenHands前端。插件优先但不是绝对限制：公开扩展点无法表达必要的原生宿主语义时，经源码证据和用户确认可以在单独私有DSH分支做最小通用扩展，Chat仓库仍以固定补丁和漂移门消费。
+Chat的产品后端、Workflow与Agent Runtime基线已经冻结。唯一产品前端是Chat公开派生仓库维护的固定DeepSeek Harness Web窄派生，由本仓库维护的LifeOS桥接插件接入Chat公开Query/Command；仓库不再维护第二套自研Chat页面，也不包含Agent Canvas/OpenHands前端。插件优先但不是绝对限制：公开扩展点无法表达必要的原生宿主语义时，经源码证据和用户确认可以在单独公开DSH派生分支做最小通用扩展，Chat仓库仍以固定补丁和漂移门消费。
 
 DSH前端切换与Code Workbench已经完成。当前阶段顺序是Browser Provider优先，随后继续长期上下文、Project Solution、规则与Memory纵向；阶段顺序和历史任务书都不是实现授权，Agent只能依据当前对话中用户的明确请求开工。任务书只约束已授权任务的范围和完成门。
 
@@ -42,7 +42,7 @@ Chat的核心是“产品责任”，不是“代码量必须最大”。整个�
 
 ### 3.3 最小适配原则
 
-1. 优先使用上游公开API、Slot、插件、协议和进程边界；默认不拆源码、不复制UI、不改造成仓库内Fork。若公开扩展点不能表达必要的原生宿主语义，只有在源码证据、窄差异、退出路径与用户授权齐全时，才允许在独立私有上游派生仓库维护通用宿主扩展；不得把派生源码复制进Chat仓库。
+1. 优先使用上游公开API、Slot、插件、协议和进程边界；默认不拆源码、不复制UI、不改造成仓库内Fork。若公开扩展点不能表达必要的原生宿主语义，只有在源码证据、窄差异、退出路径与用户授权齐全时，才允许在独立公开派生仓库维护通用宿主扩展；不得把派生源码复制进Chat仓库。
 2. Adapter只做身份/namespace映射、外部Credential与资源Scope、Principal传递、生命周期、协议转换、严格校验、失败归一、产品投影和升级隔离；产品对象访问权与高影响动作授权只能由Application决定。Adapter不重写上游已成熟的业务实现，也不编排产品用例、直接写Product Store或拥有产品终态。
    “最小”指最小上游修改面和最窄稳定边界，不是最少代码。每个边界逐项记录适用的鉴权、运行时校验、生命周期、审计和合同测试；外部写副作用必须有幂等、`outcome_unknown`和对账，持久格式变化必须有迁移，只读Adapter不制造无意义的写入语义。
 3. 上游暂时不用的功能可以禁用或不挂载，只要不绕过Chat产品边界；不为了“代码看起来少”去拆除上游内部模块。
@@ -155,7 +155,7 @@ packages/testing   合同、Fixture与测试工具
 
 ## 10. 源码证据
 
-涉及pi能力时，Later本机可优先读取`/Users/xulater/Code/opc-os/pi`及其`AGENTS.md`、类型、测试和示例；该目录不是全新克隆或CI的前提，不存在时使用锁文件对应的安装工件、固定来源或官方源码。涉及DeepSeek Harness时，派生源码以私有`later-3/deepseek-harness-chat`的固定提交为准，官方`deepseek-ai/deepseek-harness`作为只读`upstream`；维护与汇合规则见`docs/architecture/dsh-frontend-maintenance.md`。涉及Vercel Workflow、Hono、React和Vite时使用匹配版本官方文档或固定源码，不凭模型记忆猜API。
+涉及pi能力时，Later本机可优先读取`/Users/xulater/Code/opc-os/pi`及其`AGENTS.md`、类型、测试和示例；该目录不是全新克隆或CI的前提，不存在时使用锁文件对应的安装工件、固定来源或官方源码。涉及DeepSeek Harness时，派生源码以公开`later-3/deepseek-harness-chat`的固定提交为准，官方`deepseek-ai/deepseek-harness`作为只读`upstream`；维护与汇合规则见`docs/architecture/dsh-frontend-maintenance.md`。涉及Vercel Workflow、Hono、React和Vite时使用匹配版本官方文档或固定源码，不凭模型记忆猜API。
 
 把开发、调研或复核任务委派给外部Pi Agent时，使用已安装的`pi-delegate` Skill和`/Users/xulater/Code/pi-taskd`共享服务；Pi源码仍只负责能力证据。Pi必须先读取受管worktree内的本文件和任务相关项目合同，不能直接写Chat主checkout，其结果必须由当前Codex按Chat完成门验证后才可采用。
 

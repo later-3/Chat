@@ -111,8 +111,8 @@ DSH派生改动只允许存在于单独固定分支和仓库内可审核的pnpm�
 快照与layout中保留、消费独立根调用的Location；标签也固定为`TOOL/SUBTOOL`，完整Payload还会占满列表行。
 LifeOS插件因此不能在不伪造Assistant事件、不操作DOM、不复制Trajectory组件的条件下同时得到真实Step顺序、
 业务标签与“摘要列表/完整详情”的分层展示。Chat据此批准
-独立私有DSH窄派生；修改仍是通用Contribution能力，Chat业务对象和产品事实继续全部留在Bridge与Chat后端。
-详细决策、私有仓库与上游汇合流程见[DSH前端派生与维护](./dsh-frontend-maintenance.md)。
+独立公开DSH窄派生；修改仍是通用Contribution能力，Chat业务对象和产品事实继续全部留在Bridge与Chat后端。
+详细决策、公开派生仓库与上游汇合流程见[DSH前端派生与维护](./dsh-frontend-maintenance.md)。
 
 ### 6.1 DSH注入的Context
 

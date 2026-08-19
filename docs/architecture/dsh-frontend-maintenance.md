@@ -11,14 +11,14 @@ Chat的唯一产品前端是由Chat维护的DeepSeek Harness窄派生，不再�
 ## 2. 仓库与分支
 
 - 官方只读上游：<https://github.com/deepseek-ai/deepseek-harness>，本地remote名为`upstream`。
-- Chat私有派生：<https://github.com/later-3/deepseek-harness-chat>，本地remote名为`origin`，仓库可见性必须为Private。
-- 私有默认分支：`main`。
+- Chat公开派生：<https://github.com/later-3/deepseek-harness-chat>，本地remote名为`origin`，仓库可见性保持Public。
+- 公开派生的默认分支：`main`。
 - 当前维护分支：`codex/chat-trajectory-location-rc6`。
 - rc.6上游基点：`15148dbd9a1d1f1ef1a26e5749b32af0cd663935`。
 - Trajectory实现提交：`708cca1ed78995b986c3400493809ee06d1c3b0e`。
-- 当前私有分支头：`bcca246a5e4ab4e002e9caa0e4e20160a8bd06e8`，在实现提交之上记录维护规则，不改变运行代码。
+- 当前公开派生分支头：`bcca246a5e4ab4e002e9caa0e4e20160a8bd06e8`，在实现提交之上记录维护规则，不改变运行代码。
 
-Chat主仓库不复制DSH源码。运行安装仍固定`@deepseek-ai/dsh@0.1.0-rc.6`，并以可审核pnpm补丁消费同一差异；私有DSH仓库拥有派生源码与上游汇合历史，Chat仓库拥有固定版本、补丁、Hash、Bridge和运行时漂移门。
+Chat主仓库不复制DSH源码。运行安装仍固定`@deepseek-ai/dsh@0.1.0-rc.6`，并以可审核pnpm补丁消费同一差异；公开DSH派生仓库拥有派生源码与上游汇合历史，Chat仓库拥有固定版本、补丁、Hash、Bridge和运行时漂移门。
 
 ## 3. 上游跟踪与汇合
 
@@ -29,9 +29,9 @@ Chat主仓库不复制DSH源码。运行安装仍固定`@deepseek-ai/dsh@0.1.0-r
 3. 若仍需派生，把新的固定上游版本汇合到维护分支，只重放Contribution Location、表现标签和紧凑行预览三项差异；不得顺便换皮、复制页面或加入Chat业务对象。
 4. 在DSH源码仓库运行受影响测试、`pnpm run typecheck`、bundle、lint和`pnpm run doc-sync`。
 5. 从已验证源码重新生成Chat仓库的pnpm补丁，更新版本、补丁SHA-256、lock patch hash、派生提交和运行时漂移标记。
-6. 在Chat仓库通过Bridge合同、根级门和真实浏览器Planning/HITL/Trajectory E2E后，才更新私有`main`与Chat固定依赖。
+6. 在Chat仓库通过Bridge合同、根级门和真实浏览器Planning/HITL/Trajectory E2E后，才更新公开派生`main`与Chat固定依赖。
 
-私有`main`不直接在共享checkout上开发，不强推覆盖远端历史。任何超出上述两项能力的DSH源码改动都必须重新说明插件为何不能完成、修改面、退出方式和升级成本，并取得用户确认。
+公开派生`main`不直接在共享checkout上开发，不强推覆盖远端历史。任何超出上述三项能力的DSH源码改动都必须重新说明插件为何不能完成、修改面、退出方式和升级成本，并取得用户确认。
 
 ## 4. DSH运行时与Chat后端边界
 
