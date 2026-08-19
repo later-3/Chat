@@ -189,7 +189,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "waiting",
     compatibility: "resumable",
     objectCount: 45,
-    contentSha256: "adb6307d1c6ce96d60b2c940d6538cf4a3c1456e977ec02c0e872cc032eaf675",
+    contentSha256: "aaf9cdb988015eed190256cb78482e8b0d0fdb15521da04f77052c57215a1adc",
   },
   {
     fixtureId: "v10-new-planning-terminal",
@@ -200,7 +200,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "terminal",
     compatibility: "read_only_history",
     objectCount: 51,
-    contentSha256: "78ce3a50731c0653ac40e9bbbfdb3bb1d31ae58b2ac21fb3a8a171184796e301",
+    contentSha256: "2e8f52f8f5a1618374f52ca78588da03da45ccaacf76ea1526860cc4865ecc39",
   },
   {
     fixtureId: "v10-note-capture-active",

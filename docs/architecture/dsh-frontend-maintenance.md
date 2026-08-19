@@ -41,7 +41,11 @@ Chat主仓库不复制DSH源码。运行安装仍固定`@deepseek-ai/dsh@0.1.0-r
 
 “不使用DSH后端”只能理解为“不使用DSH自带模型Provider和Agent业务执行作为Chat产品执行”。当前产品仍使用DSH Host侧的Session、事件日志、Agent loop请求组装、插件生命周期、Trajectory投影和Web服务；`lifeos/workflow` LLM Adapter取代模型执行入口，将真实用户命令提交给Chat Workflow，等待Product Run终态，再把Product Store中的正式Assistant Message流回DSH。
 
-Bridge的`lastUserPrompt`只接受`role === "user" && source.kind === "user"`的最后一条非空消息。DSH注入的Context虽然保留在DSH Session与Trajectory中，但不会作为Chat Message提交，也不会进入Planner/Executor上下文，更不会产生第二套Workflow执行。
+Bridge的`lastUserPrompt`只接受`role === "user" && source.kind === "user"`的最后一条非空消息。另由
+`workspaceInstructionsOf`只选择当前surface中的`source.kind === "agent-instructions"`正文，随同命令提交并冻结为
+Run级`ContextRequest v2`；它不会成为Chat Message。DSH原生Workspace负责目录选择、`AGENTS.md`发现和层级组装，
+Bridge不绑定目录、不做Project映射，也不自行读文件。运行权限快照、Skill Catalog与其他producer Context仍只留在
+DSH，不进入Planner/Executor。
 
 ## 5. User之后的三类Context
 
@@ -55,11 +59,11 @@ Bridge的`lastUserPrompt`只接受`role === "user" && source.kind === "user"`的
 
 | Trajectory内容 | DSH来源 | 作用 | 是否进入Chat Workflow |
 |---|---|---|---|
-| `The following workspace instructions...` | `@deepseek-ai/dsh-agent-instructions`，`source.kind = agent-instructions` | 从`AGENTS.md`等文件装配工作区指令基线 | 否 |
+| `The following workspace instructions...` | `@deepseek-ai/dsh-agent-instructions`，`source.kind = agent-instructions` | 从当前原生Workspace的`AGENTS.md`等文件装配工作区指令基线 | 是，仅Planner的冻结Workspace指令 |
 | `Current runtime context...` | `@deepseek-ai/dsh-system-prompt`，plugin snapshot | 声明DSH文件沙箱、审批和运行权限快照 | 否 |
 | `A skill is a reusable...` | `@deepseek-ai/dsh-tool-skill`，`source.kind = skill-catalog` | 有可发现Skill时，告知DSH Agent当前目录 | 否 |
 
-它们来自DSH Host的基础插件图，与LifeOS PWA manifest、Service Worker和安装能力无关。它们之所以出现在Trajectory，是因为DSH坚持“模型可见输入必须可从Session日志重建”；对当前LifeOS路由而言，Adapter会忽略这些注入，只保留其DSH会话审计价值。是否在未来精简默认DSH profile或调整其Trajectory呈现，需要单独评估，不能把它们误认成Chat业务Context后直接删除或改名。
+它们来自DSH Host的基础插件图，与LifeOS PWA manifest、Service Worker和安装能力无关。它们之所以出现在Trajectory，是因为DSH坚持“模型可见输入必须可从Session日志重建”。对当前LifeOS路由而言，Adapter只转发`agent-instructions`；其余注入只保留DSH会话审计价值。Workspace指令在首次提交成功前作为Bridge v6有界重试材料短暂保存，Product Run确认后删除本地副本；权威快照属于Chat Product Store。是否在未来精简默认DSH profile或调整其Trajectory呈现，需要单独评估，不能直接删除或改名。
 
 LifeOS Bridge通过公开`SessionStore.get(SessionId)`和`Session.deriveMessages()`提供同源只读
 `GET /lifeos/sessions/:dshSessionId/context-injections`。Client把“上下文”入口注册到空白Hero与活动会话都存在的
@@ -67,4 +71,5 @@ LifeOS Bridge通过公开`SessionStore.get(SessionId)`和`Session.deriveMessages
 compaction替换后的下一次请求输入，不从Transcript DOM反推，也不写DSH事件。空会话明确显示“尚未组装”：
 rc.6没有无副作用执行全部`pre-step`中间件的纯预演合同，Bridge不会复制AGENTS、权限和Skill组装规则来伪造
 首次发送前的精确内容。正文按需读取，不进入每秒Product Run轮询；单项最多显示50000字符、最多64项，截断或
-省略都会在面板标明。当前版本是查看/刷新管理面，不提供启停或编辑生产者Context的写能力。
+省略都会在面板标明。面板明确说明只有Workspace指令进入Chat规划上下文；当前版本仍不提供启停或编辑生产者
+Context的写能力。

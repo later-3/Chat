@@ -11,7 +11,7 @@ const base = {
 };
 
 describe("Planning Input Manifest", () => {
-  it("保留v1/v2/v3 Hash域并在显式Memory Selection出现时升级到v4", () => {
+  it("保留旧Hash域并在Workspace指令出现时升级到v6", () => {
     expect(computePlanningInputManifestSha256(base)).toBe(
       hashCanonical("planning-input-manifest.v1", base),
     );
@@ -63,6 +63,21 @@ describe("Planning Input Manifest", () => {
     };
     expect(computePlanningInputManifestSha256(explicitMemory)).toBe(
       hashCanonical("planning-input-manifest.v4", expectedV4),
+    );
+    const workspaceInstructions = {
+      ...explicitMemory,
+      workspaceInstructionsRef: {
+        contextRequestId: "ctxr_manifest1",
+        revision: 1 as const,
+        sha256: "f".repeat(64),
+      },
+    };
+    const expectedV6 = {
+      ...expectedV4,
+      workspaceInstructionsRef: workspaceInstructions.workspaceInstructionsRef,
+    };
+    expect(computePlanningInputManifestSha256(workspaceInstructions)).toBe(
+      hashCanonical("planning-input-manifest.v6", expectedV6),
     );
   });
 });

@@ -1,5 +1,7 @@
 import {
   computeRunContextRequestSha256,
+  computeWorkspaceInstructionItemSha256,
+  computeWorkspaceInstructionsSha256,
   hashCanonical,
   NOTE_LOW_RISK_AUTO_POLICY_RESOURCE_ID,
   NOTE_LOW_RISK_AUTO_POLICY_REVISION,
@@ -338,14 +340,37 @@ export async function submitUserMessage(
                 selectedMemory.layers.includes(layer),
               ),
             };
+      const workspaceInstructions =
+        input.payload.context?.workspaceInstructions === undefined
+          ? undefined
+          : (() => {
+              const items = input.payload.context.workspaceInstructions.items.map((item) => ({
+                content: item.content,
+                sha256: computeWorkspaceInstructionItemSha256(item.content),
+              }));
+              const totalContentCharacters = items.reduce(
+                (total, item) => total + item.content.length,
+                0,
+              );
+              return {
+                schemaVersion: "workspace-instructions-snapshot.v1" as const,
+                items,
+                totalContentCharacters,
+                sha256: computeWorkspaceInstructionsSha256({
+                  items,
+                  totalContentCharacters,
+                }),
+              };
+            })();
       // ContextRequest保存“本轮请求了什么”及来源Message Hash，不保存外部Memory查询结果；
-      // 后续Workflow会据此生成不可变ContextPackage，避免修订Plan时重新召回导致上下文漂移。
+      // Workspace指令也在这里冻结，避免同一请求重试或Plan修订时因文件变化而漂移。
       const contextRequestShape = {
         productRunId,
         requestedByPrincipalId: input.principalId,
         sourceMessageId: messageId,
         sourceMessageSha256,
         ...(normalizedMemory !== undefined ? { memory: normalizedMemory } : {}),
+        ...(workspaceInstructions !== undefined ? { workspaceInstructions } : {}),
       };
       draft.entities.messages[messageId] = message;
       draft.entities.runs[productRunId] = run;
@@ -389,15 +414,36 @@ export async function submitUserMessage(
       if (resourceDrift.length > 0) throw compilerDiagnosticsToError(resourceDrift);
       draft.entities.workflowRunSpecs[workflowRunSpecId] = compiled.runSpec;
       // 即使本轮没有选择Memory也保存ContextRequest，明确区分“未选择”与事实丢失。
-      draft.entities.contextRequests[contextRequestId] = {
-        schemaVersion: "run-context-request.v1",
-        contextRequestId,
-        ...contextRequestShape,
-        sha256: computeRunContextRequestSha256(contextRequestShape),
-        revision: 1,
-        createdAt: now,
-        updatedAt: now,
-      };
+      const contextRequestSha256 = computeRunContextRequestSha256(contextRequestShape);
+      draft.entities.contextRequests[contextRequestId] =
+        workspaceInstructions === undefined
+          ? {
+              schemaVersion: "run-context-request.v1",
+              contextRequestId,
+              productRunId,
+              requestedByPrincipalId: input.principalId,
+              sourceMessageId: messageId,
+              sourceMessageSha256,
+              ...(normalizedMemory !== undefined ? { memory: normalizedMemory } : {}),
+              sha256: contextRequestSha256,
+              revision: 1,
+              createdAt: now,
+              updatedAt: now,
+            }
+          : {
+              schemaVersion: "run-context-request.v2",
+              contextRequestId,
+              productRunId,
+              requestedByPrincipalId: input.principalId,
+              sourceMessageId: messageId,
+              sourceMessageSha256,
+              ...(normalizedMemory !== undefined ? { memory: normalizedMemory } : {}),
+              workspaceInstructions,
+              sha256: contextRequestSha256,
+              revision: 1,
+              createdAt: now,
+              updatedAt: now,
+            };
       // 一个Product Run对应一个Workflow执行Attempt（Trace关联与生命周期看护）
       draft.entities.attempts[workflowAttemptId] = {
         schemaVersion: "run-attempt.v1",

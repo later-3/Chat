@@ -56,20 +56,40 @@ export function computeMemoryBackendDescriptorSha256(input: {
 }
 
 export function computeRunContextRequestSha256(input: {
-  productRunId: string;
-  requestedByPrincipalId: string;
-  sourceMessageId: string;
-  sourceMessageSha256: string;
-  memory?: {
-    backendId: string;
-    requirement: string;
-    tags: readonly string[];
-    layers: readonly string[];
-    limit: number;
-    contextBudget: number;
+  readonly productRunId: string;
+  readonly requestedByPrincipalId: string;
+  readonly sourceMessageId: string;
+  readonly sourceMessageSha256: string;
+  readonly memory?: {
+    readonly backendId: string;
+    readonly requirement: string;
+    readonly tags: readonly string[];
+    readonly layers: readonly string[];
+    readonly limit: number;
+    readonly contextBudget: number;
+  };
+  readonly workspaceInstructions?: {
+    readonly schemaVersion: "workspace-instructions-snapshot.v1";
+    readonly items: readonly { readonly content: string; readonly sha256: string }[];
+    readonly totalContentCharacters: number;
+    readonly sha256: string;
   };
 }): string {
-  return hashCanonical("run-context-request.v1", input);
+  return hashCanonical(
+    input.workspaceInstructions === undefined ? "run-context-request.v1" : "run-context-request.v2",
+    input,
+  );
+}
+
+export function computeWorkspaceInstructionItemSha256(content: string): string {
+  return hashCanonical("workspace-instruction-item.v1", { content });
+}
+
+export function computeWorkspaceInstructionsSha256(input: {
+  readonly items: readonly { readonly content: string; readonly sha256: string }[];
+  readonly totalContentCharacters: number;
+}): string {
+  return hashCanonical("workspace-instructions-snapshot.v1", input);
 }
 
 /** 被采用 Memory section 的内容 Hash；不包含 Chat 分配的实体 ID 与时间。 */

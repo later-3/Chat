@@ -51,6 +51,7 @@ import {
   memoryLayerSchema,
   memoryRequirementSchema,
   memoryResultSnapshotSchema,
+  workspaceInstructionsSnapshotSchema,
 } from "./context.js";
 import { memoryImportIntentSchema, memoryImportResultSchema } from "./memory-import.js";
 import {
@@ -114,6 +115,13 @@ const internalPlanningMemorySelectionRefSchema = z
     sha256: sha256Schema,
   })
   .strict();
+const internalWorkspaceInstructionsRefSchema = z
+  .object({
+    contextRequestId: contextRequestIdSchema,
+    revision: z.literal(1),
+    sha256: sha256Schema,
+  })
+  .strict();
 const internalRuleSelectionRefSchema = z
   .object({
     ruleSelectionId: ruleSelectionIdSchema,
@@ -155,6 +163,13 @@ export const planningInputDtoSchema = z
     inputManifestSha256: sha256Schema,
     sourceMessageRef: z.object({ messageId: messageIdSchema, sha256: sha256Schema }).strict(),
     sourceMessageText: z.string().min(1),
+    workspaceInstructions: z
+      .object({
+        ref: internalWorkspaceInstructionsRefSchema,
+        snapshot: workspaceInstructionsSnapshotSchema,
+      })
+      .strict()
+      .optional(),
     priorPlan: z
       .object({
         planId: planIdSchema,

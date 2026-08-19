@@ -220,7 +220,7 @@ test("same-origin context injection route reads the validated DSH session id", a
     dshSessionId: "dsh-session-1",
     status: "not_assembled",
     revision: "a".repeat(64),
-    chatForwarding: "latest_direct_user_message_only",
+    chatForwarding: "latest_direct_user_message_and_workspace_instructions",
     items: [],
     totalItems: 0,
     omittedItems: 0,

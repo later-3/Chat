@@ -99,12 +99,12 @@ export function ContextInjectionManager({
         onClose={() => setOpen(false)}
         title="上下文注入"
         closeLabel="关闭上下文注入"
-        description="这里展示 DSH 下一次模型请求仍会携带的生产者上下文；LifeOS Workflow 只接收最新一条用户直接输入。"
+        description="这里展示 DSH 下一次模型请求仍会携带的生产者上下文；LifeOS Workflow 接收最新用户输入和当前 Workspace 指令。"
         className="lifeos-context-modal"
         contentClassName="lifeos-context-modal-content"
         footer={
           <div className="lifeos-context-footer">
-            <span>只读 · 不进入 Chat 产品上下文</span>
+            <span>只读 · 仅 Workspace 指令进入 Chat 规划上下文</span>
             <button
               type="button"
               data-testid="lifeos-context-injections-refresh"

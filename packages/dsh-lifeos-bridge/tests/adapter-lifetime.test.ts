@@ -166,3 +166,93 @@ test("rc.6 retry of the same turn reuses command identity and returns the commit
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("unknown submit outcome retries with the originally frozen Workspace instructions", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-retry-instructions-"));
+  const submittedInstructions: unknown[] = [];
+  let submitAttempts = 0;
+  try {
+    const state = new AtomicBridgeStateStore(join(directory, "state.json"));
+    await state.ready();
+    const chat = {
+      createSession: async () => ({ sessionId: "psn_retryinstructions1" }),
+      submitMessage: async (
+        _sessionId: string,
+        _commandId: string,
+        _text: string,
+        _signal: AbortSignal | undefined,
+        _workflowSelection: unknown,
+        workspaceInstructions: unknown,
+      ) => {
+        submittedInstructions.push(workspaceInstructions);
+        submitAttempts += 1;
+        if (submitAttempts === 1) {
+          throw new ChatProductApiError(
+            503,
+            "chat_api_unreachable",
+            true,
+            "retry_same_command",
+            "response lost after submit",
+          );
+        }
+        return {
+          message: { messageId: "msg_retryinstructionsuser1" },
+          run: {
+            productRunId: "run_retryinstructions1",
+            status: "succeeded",
+            finalMessageId: "msg_retryinstructionsassistant1",
+          } as ChatRun,
+        };
+      },
+      getMessage: async () => ({
+        messageId: "msg_retryinstructionsassistant1",
+        role: "assistant",
+        content: { format: "markdown", text: "已按原指令恢复" },
+      }),
+    } as unknown as ChatProductClient;
+    const adapter = new LifeosLlmAdapter(chat, state);
+    const directUser = createUserMessage({
+      source: { kind: "user" },
+      content: [{ type: "text", text: "执行同一请求" }],
+    });
+    const input = (instructions: string): GenerateOptions => ({
+      provider: "lifeos",
+      model: "workflow",
+      sessionId: "dsh-retry-instructions" as never,
+      messages: [
+        createUserMessage({
+          source: { kind: "agent-instructions", form: "instructions" } as never,
+          content: [{ type: "text", text: instructions }],
+        }),
+        directUser,
+      ],
+    });
+
+    const first = adapter.stream(input("ORIGINAL_AGENTS_CANARY"))[Symbol.asyncIterator]().next();
+    await assert.rejects(first, (error) => error instanceof LlmError && error.code === "TRANSPORT");
+    const replayChunks: StreamChunk[] = [];
+    for await (const chunk of adapter.stream(input("CHANGED_AGENTS_MUST_NOT_REPLACE"))) {
+      replayChunks.push(chunk);
+    }
+    assert.ok(replayChunks.some((chunk) => chunk.type === "finish"));
+
+    assert.deepEqual(submittedInstructions, [
+      {
+        schemaVersion: "workspace-instructions-input.v1",
+        items: [{ content: "ORIGINAL_AGENTS_CANARY" }],
+      },
+      {
+        schemaVersion: "workspace-instructions-input.v1",
+        items: [{ content: "ORIGINAL_AGENTS_CANARY" }],
+      },
+    ]);
+    const binding = await state.readSession("dsh-retry-instructions");
+    const request =
+      binding?.currentRequestKey === undefined
+        ? undefined
+        : binding.requests[binding.currentRequestKey];
+    assert.equal(request?.workspaceInstructions, undefined);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

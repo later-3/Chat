@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { CallId, LlmAdapter, LlmError } from "@deepseek-ai/dsh-llm";
-import type { ExecutionTraceItem } from "@chat/contracts/public";
+import {
+  workspaceInstructionsInputSchema,
+  type ExecutionTraceItem,
+  type WorkspaceInstructionsInput,
+} from "@chat/contracts/public";
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -143,6 +147,43 @@ export function lastUserPrompt(messages: readonly Message[]): UserPrompt {
   throw new LlmError("lifeos workflow requires a final user text message", "LIFEOS_NO_USER_TEXT");
 }
 
+/**
+ * DSH已经按原生Workspace语义完成AGENTS.md发现与层级组装；Bridge只转发
+ * 仍在本次模型surface中的agent-instructions正文，不再猜目录或读取文件。
+ */
+export function workspaceInstructionsOf(
+  messages: readonly Message[],
+): WorkspaceInstructionsInput | undefined {
+  const items = messages.flatMap((message) => {
+    if (
+      message.role !== "user" ||
+      (message.source as { readonly kind: string }).kind !== "agent-instructions"
+    )
+      return [];
+    const content = message.content
+      .filter(
+        (block): block is Extract<(typeof message.content)[number], { type: "text" }> =>
+          block.type === "text",
+      )
+      .map((block) => block.text)
+      .join("\n");
+    return content.trim() === "" ? [] : [{ content }];
+  });
+  if (items.length === 0) return undefined;
+  const parsed = workspaceInstructionsInputSchema.safeParse({
+    schemaVersion: "workspace-instructions-input.v1",
+    items,
+  });
+  if (!parsed.success) {
+    throw new LlmError(
+      "当前Workspace的AGENTS.md上下文超过Chat可接受边界",
+      "LIFEOS_WORKSPACE_INSTRUCTIONS_INVALID",
+      { cause: parsed.error },
+    );
+  }
+  return parsed.data;
+}
+
 function requireSessionId(options: GenerateOptions): string {
   const sessionId = options.sessionId === undefined ? "" : String(options.sessionId).trim();
   if (!dshSessionIdSchema.safeParse(sessionId).success) {
@@ -252,8 +293,9 @@ export class LifeosLlmAdapter extends LlmAdapter {
     try {
       const dshSessionId = requireSessionId(options);
       const prompt = lastUserPrompt(options.messages);
+      const workspaceInstructions = workspaceInstructionsOf(options.messages);
       const chatSessionId = await this.ensureChatSession(dshSessionId, prompt.text, signal);
-      const request = await this.ensureRequest(dshSessionId, prompt);
+      const request = await this.ensureRequest(dshSessionId, prompt, workspaceInstructions);
 
       let run: ChatRun;
       if (request.productRunId === undefined) {
@@ -263,6 +305,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
           prompt.text,
           signal,
           request.workflowSelection,
+          request.workspaceInstructions,
         );
         await this.rememberRun(
           dshSessionId,
@@ -342,7 +385,11 @@ export class LifeosLlmAdapter extends LlmAdapter {
     });
   }
 
-  private async ensureRequest(dshSessionId: string, prompt: UserPrompt): Promise<RequestBinding> {
+  private async ensureRequest(
+    dshSessionId: string,
+    prompt: UserPrompt,
+    workspaceInstructions: WorkspaceInstructionsInput | undefined,
+  ): Promise<RequestBinding> {
     return await this.state.mutateSession(
       dshSessionId,
       stableCommandId("create-session", dshSessionId),
@@ -361,6 +408,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
           ...(binding.workflowSelection !== undefined
             ? { workflowSelection: binding.workflowSelection }
             : {}),
+          ...(workspaceInstructions !== undefined ? { workspaceInstructions } : {}),
         });
         if (request.userTextSha256 !== prompt.textSha256) {
           throw new Error("lifeos bridge request key collision");
@@ -435,6 +483,8 @@ export class LifeosLlmAdapter extends LlmAdapter {
         }
         request.productRunId = productRunId;
         request.productUserMessageId = productUserMessageId;
+        // Product Store已经冻结正式ContextRequest，Bridge不再长期复制AGENTS正文。
+        delete request.workspaceInstructions;
       },
     );
   }

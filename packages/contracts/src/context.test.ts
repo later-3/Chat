@@ -6,6 +6,8 @@ import {
   memoryQuerySchema,
   memoryResultSnapshotSchema,
   runContextRequestSchema,
+  workspaceInstructionsInputSchema,
+  workspaceInstructionsSnapshotSchema,
 } from "./context.js";
 import { memoryImportBackendDescriptorSchema } from "./memory-import.js";
 import {
@@ -180,6 +182,58 @@ describe("Context 产品合同", () => {
     expect(runContextRequestSchema.safeParse({ ...request, provider: "bailian" }).success).toBe(
       false,
     );
+  });
+
+  it("Workspace指令输入有界，冻结后只能进入v2 ContextRequest", () => {
+    const input = {
+      schemaVersion: "workspace-instructions-input.v1",
+      items: [{ content: "# AGENTS.md\n中文回复" }],
+    };
+    expect(workspaceInstructionsInputSchema.safeParse(input).success).toBe(true);
+    expect(
+      workspaceInstructionsInputSchema.safeParse({
+        ...input,
+        items: [{ content: " ".repeat(3) }],
+      }).success,
+    ).toBe(false);
+
+    const snapshot = {
+      schemaVersion: "workspace-instructions-snapshot.v1",
+      items: [{ content: input.items[0]!.content, sha256: SHA_A }],
+      totalContentCharacters: input.items[0]!.content.length,
+      sha256: SHA_B,
+    };
+    expect(workspaceInstructionsSnapshotSchema.safeParse(snapshot).success).toBe(true);
+    expect(
+      runContextRequestSchema.safeParse({
+        schemaVersion: "run-context-request.v2",
+        contextRequestId: "ctxr_contract2",
+        productRunId: "run_contract2",
+        requestedByPrincipalId: "usr_contract1",
+        sourceMessageId: "msg_contract2",
+        sourceMessageSha256: SHA_A,
+        workspaceInstructions: snapshot,
+        sha256: SHA_B,
+        revision: 1,
+        createdAt: NOW,
+        updatedAt: NOW,
+      }).success,
+    ).toBe(true);
+    expect(
+      runContextRequestSchema.safeParse({
+        schemaVersion: "run-context-request.v1",
+        contextRequestId: "ctxr_contract2",
+        productRunId: "run_contract2",
+        requestedByPrincipalId: "usr_contract1",
+        sourceMessageId: "msg_contract2",
+        sourceMessageSha256: SHA_A,
+        workspaceInstructions: snapshot,
+        sha256: SHA_B,
+        revision: 1,
+        createdAt: NOW,
+        updatedAt: NOW,
+      }).success,
+    ).toBe(false);
   });
 
   it("MemoryQuery 用状态判别联合绑定 revision 与终态证据", () => {

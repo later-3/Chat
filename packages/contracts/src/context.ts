@@ -101,19 +101,91 @@ export const memoryContextSelectionSchema = z
   })
   .strict();
 
-export const runContextRequestSchema = z
+export const WORKSPACE_INSTRUCTIONS_MAX_ITEMS = 16;
+export const WORKSPACE_INSTRUCTION_MAX_CHARACTERS = 50_000;
+export const WORKSPACE_INSTRUCTIONS_MAX_TOTAL_CHARACTERS = 100_000;
+
+const workspaceInstructionContentSchema = z
+  .string()
+  .min(1)
+  .max(WORKSPACE_INSTRUCTION_MAX_CHARACTERS)
+  .refine((value) => value.trim().length > 0, "Workspace指令不能为空白文本");
+
+/** DSH Host提交的当前Workspace指令；正文来自它已组装的agent-instructions消息。 */
+export const workspaceInstructionsInputSchema = z
   .object({
-    schemaVersion: z.literal("run-context-request.v1"),
-    contextRequestId: contextRequestIdSchema,
-    productRunId: productRunIdSchema,
-    requestedByPrincipalId: principalIdSchema,
-    sourceMessageId: messageIdSchema,
-    sourceMessageSha256: sha256Schema,
-    memory: memoryContextSelectionSchema.optional(),
+    schemaVersion: z.literal("workspace-instructions-input.v1"),
+    items: z
+      .array(z.object({ content: workspaceInstructionContentSchema }).strict())
+      .min(1)
+      .max(WORKSPACE_INSTRUCTIONS_MAX_ITEMS),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const total = value.items.reduce((sum, item) => sum + item.content.length, 0);
+    if (total > WORKSPACE_INSTRUCTIONS_MAX_TOTAL_CHARACTERS) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["items"],
+        message: `Workspace指令总长度不能超过${String(WORKSPACE_INSTRUCTIONS_MAX_TOTAL_CHARACTERS)}`,
+      });
+    }
+  });
+
+/** Product Run冻结后的指令快照；内容Hash使Planner输入可以完整回放。 */
+export const workspaceInstructionsSnapshotSchema = z
+  .object({
+    schemaVersion: z.literal("workspace-instructions-snapshot.v1"),
+    items: z
+      .array(
+        z
+          .object({
+            content: workspaceInstructionContentSchema,
+            sha256: sha256Schema,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(WORKSPACE_INSTRUCTIONS_MAX_ITEMS),
+    totalContentCharacters: z
+      .number()
+      .int()
+      .positive()
+      .max(WORKSPACE_INSTRUCTIONS_MAX_TOTAL_CHARACTERS),
     sha256: sha256Schema,
-    ...immutableEntityFields,
   })
   .strict();
+
+const runContextRequestFields = {
+  contextRequestId: contextRequestIdSchema,
+  productRunId: productRunIdSchema,
+  requestedByPrincipalId: principalIdSchema,
+  sourceMessageId: messageIdSchema,
+  sourceMessageSha256: sha256Schema,
+  memory: memoryContextSelectionSchema.optional(),
+  sha256: sha256Schema,
+  ...immutableEntityFields,
+};
+
+const runContextRequestV1Schema = z
+  .object({
+    schemaVersion: z.literal("run-context-request.v1"),
+    ...runContextRequestFields,
+  })
+  .strict();
+
+const runContextRequestV2Schema = z
+  .object({
+    schemaVersion: z.literal("run-context-request.v2"),
+    ...runContextRequestFields,
+    workspaceInstructions: workspaceInstructionsSnapshotSchema,
+  })
+  .strict();
+
+export const runContextRequestSchema = z.discriminatedUnion("schemaVersion", [
+  runContextRequestV1Schema,
+  runContextRequestV2Schema,
+]);
 
 export const memoryQueryStatusSchema = z.enum(["pending", "completed", "failed"]);
 const stableMemoryErrorCodeSchema = z
@@ -242,6 +314,8 @@ export type MemoryLayer = z.infer<typeof memoryLayerSchema>;
 export type MemoryRequirement = z.infer<typeof memoryRequirementSchema>;
 export type MemoryBackendDescriptor = z.infer<typeof memoryBackendDescriptorSchema>;
 export type MemoryContextSelection = z.infer<typeof memoryContextSelectionSchema>;
+export type WorkspaceInstructionsInput = z.infer<typeof workspaceInstructionsInputSchema>;
+export type WorkspaceInstructionsSnapshot = z.infer<typeof workspaceInstructionsSnapshotSchema>;
 export type RunContextRequest = z.infer<typeof runContextRequestSchema>;
 export type MemoryQuery = z.infer<typeof memoryQuerySchema>;
 export type MemoryResultSnapshot = z.infer<typeof memoryResultSnapshotSchema>;

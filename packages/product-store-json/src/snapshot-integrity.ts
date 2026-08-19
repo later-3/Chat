@@ -31,6 +31,8 @@ import {
   computeMemoryQueryResultSha256,
   computeMemoryResultSnapshotSha256,
   computeRunContextRequestSha256,
+  computeWorkspaceInstructionItemSha256,
+  computeWorkspaceInstructionsSha256,
   estimateMemorySectionTokens,
   hashCanonical,
   resolveMemoryImportContent,
@@ -2414,6 +2416,9 @@ function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
         attempt.revisionInputId === undefined
           ? undefined
           : entities.revisionInputs[attempt.revisionInputId];
+      const contextRequest = Object.values(entities.contextRequests).find(
+        (candidate) => candidate.productRunId === attempt.productRunId,
+      );
       const contextPackage =
         attempt.contextPackageId === undefined
           ? undefined
@@ -2514,6 +2519,15 @@ function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
           : {}),
         ...(revisionInput !== undefined
           ? { revisionInputRef: { revisionInputId: revisionInput.revisionInputId } }
+          : {}),
+        ...(contextRequest?.schemaVersion === "run-context-request.v2"
+          ? {
+              workspaceInstructionsRef: {
+                contextRequestId: contextRequest.contextRequestId,
+                revision: 1 as const,
+                sha256: contextRequest.workspaceInstructions.sha256,
+              },
+            }
           : {}),
         ...(contextPackage !== undefined
           ? {
@@ -2752,12 +2766,37 @@ function assertContextRequests(
     if (sourceMessageSha256 !== request.sourceMessageSha256) {
       fail(`contextRequest ${request.contextRequestId} sourceMessageSha256不一致`);
     }
+    if (request.schemaVersion === "run-context-request.v2") {
+      const totalContentCharacters = request.workspaceInstructions.items.reduce(
+        (total, item) => total + item.content.length,
+        0,
+      );
+      if (totalContentCharacters !== request.workspaceInstructions.totalContentCharacters) {
+        fail(`contextRequest ${request.contextRequestId} Workspace指令长度证据不一致`);
+      }
+      for (const item of request.workspaceInstructions.items) {
+        if (computeWorkspaceInstructionItemSha256(item.content) !== item.sha256) {
+          fail(`contextRequest ${request.contextRequestId} Workspace指令内容Hash不一致`);
+        }
+      }
+      if (
+        computeWorkspaceInstructionsSha256({
+          items: request.workspaceInstructions.items,
+          totalContentCharacters,
+        }) !== request.workspaceInstructions.sha256
+      ) {
+        fail(`contextRequest ${request.contextRequestId} Workspace指令快照Hash不一致`);
+      }
+    }
     const requestSha256 = computeRunContextRequestSha256({
       productRunId: request.productRunId,
       requestedByPrincipalId: request.requestedByPrincipalId,
       sourceMessageId: request.sourceMessageId,
       sourceMessageSha256: request.sourceMessageSha256,
       ...(request.memory !== undefined ? { memory: request.memory } : {}),
+      ...(request.schemaVersion === "run-context-request.v2"
+        ? { workspaceInstructions: request.workspaceInstructions }
+        : {}),
     });
     if (requestSha256 !== request.sha256) {
       fail(`contextRequest ${request.contextRequestId} Hash不一致`);

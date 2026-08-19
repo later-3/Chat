@@ -453,7 +453,7 @@ export const dshContextInjectionProjectionSchema = z
     dshSessionId: dshSessionIdSchema,
     status: z.enum(["not_assembled", "ready"]),
     revision: sha256Schema,
-    chatForwarding: z.literal("latest_direct_user_message_only"),
+    chatForwarding: z.literal("latest_direct_user_message_and_workspace_instructions"),
     items: z.array(dshContextInjectionItemSchema).max(MAX_DSH_CONTEXT_INJECTION_ITEMS),
     totalItems: z.number().int().nonnegative().safe(),
     omittedItems: z.number().int().nonnegative().safe(),

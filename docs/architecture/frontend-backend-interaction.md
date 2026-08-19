@@ -152,12 +152,17 @@ DSH仍提供Host、Session、事件日志、Agent loop请求组装与插件运�
 描述为“完全不用DSH后端”。base bundle会在首个模型`pre-step`按当时实际环境记录工作区`AGENTS.md`指令、
 DSH沙箱/审批运行快照，以及有可发现Skill时的Skill Catalog；后续每个`pre-step`重新检查，只有内容变化或
 compaction需要恢复可见快照时才追加更新。它们分别来自`dsh-agent-instructions`、`dsh-system-prompt`与
-`dsh-tool-skill`，不是PWA插件或Chat Workflow节点。LifeOS Adapter只提取`source.kind === "user"`的最新一条
-非空真实用户消息，这些Context不会提交Chat Message、不会进入Planner/Executor，也不会产生第二套执行。
+`dsh-tool-skill`，不是PWA插件或Chat Workflow节点。LifeOS Adapter仍只把`source.kind === "user"`的最新一条
+非空真实用户消息提交为Chat Message；同时把当前model surface中全部`source.kind === "agent-instructions"`
+正文按DSH顺序作为有界Workspace指令提交。Chat在Run的`ContextRequest v2`中冻结正文与Hash，Planner修订复用
+同一快照。Bridge不读取目录、不建立Project/Workspace映射，也不重新实现`AGENTS.md`发现；Workspace选择与指令
+层级继续完全由DSH原生Workspace和pre-step负责。DSH运行权限快照、Skill Catalog及其他producer Context仍不进入
+Chat Planner/Executor，因而不会把DSH宿主能力误报成Chat执行能力。
 
 Bridge的同源只读`context-injections` Query直接投影`Session.deriveMessages()`；Client通过blank-safe的
 `conversation.input.left`公开Slot提供“上下文”管理面，按需展示当前来源、类型与正文。尚未发生首个Step的会话
-只显示“尚未组装”，不以重复实现上游中间件的方式猜测未来内容；面板也不拥有启停、编辑或Product Context事实。
+只显示“尚未组装”，不以重复实现上游中间件的方式猜测未来内容；面板也不拥有启停或编辑能力。面板会明确标出
+只有Workspace指令进入Chat规划上下文，其余项目仅保留DSH会话审计价值。
 精确生命周期、边界和显示上限见
 [DSH前端派生与维护](./dsh-frontend-maintenance.md#5-user之后的三类context)。
 

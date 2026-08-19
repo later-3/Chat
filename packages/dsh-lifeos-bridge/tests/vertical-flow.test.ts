@@ -232,6 +232,10 @@ test("native DSH generation crosses Chat Plan/HITL and returns only the committe
       sessionId: "dsh-session-1" as never,
       messages: [
         createUserMessage({
+          source: { kind: "agent-instructions", form: "instructions" } as never,
+          content: [{ type: "text", text: "# AGENTS.md\n中文回复，并运行相关测试。" }],
+        }),
+        createUserMessage({
           source: { kind: "user" },
           content: [{ type: "text", text: userMessage.content.text }],
         }),
@@ -282,6 +286,7 @@ test("native DSH generation crosses Chat Plan/HITL and returns only the committe
     assert.equal(persistedRequest?.productUserMessageId, userMessage.messageId);
     assert.equal(persistedRequest?.productAssistantMessageId, assistantMessage.messageId);
     assert.equal(persistedRequest?.productRunId, "run_bridge1");
+    assert.equal(persistedRequest?.workspaceInstructions, undefined);
 
     assert.deepEqual(
       requests.filter((request) => request.method === "POST").map((request) => request.path),
@@ -298,6 +303,21 @@ test("native DSH generation crosses Chat Plan/HITL and returns only the committe
         }
       )?.payload,
       { title: userMessage.content.text },
+    );
+    assert.deepEqual(
+      (
+        requests.find((request) => request.path === `/api/sessions/${session.sessionId}/messages`)
+          ?.body as { payload?: unknown }
+      )?.payload,
+      {
+        text: userMessage.content.text,
+        context: {
+          workspaceInstructions: {
+            schemaVersion: "workspace-instructions-input.v1",
+            items: [{ content: "# AGENTS.md\n中文回复，并运行相关测试。" }],
+          },
+        },
+      },
     );
   } finally {
     await rm(directory, { recursive: true, force: true });

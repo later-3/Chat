@@ -20,6 +20,11 @@ export interface PlanningInputManifestInput {
     readonly sha256: string;
   };
   readonly revisionInputRef?: { readonly revisionInputId: string };
+  readonly workspaceInstructionsRef?: {
+    readonly contextRequestId: string;
+    readonly revision: 1;
+    readonly sha256: string;
+  };
   readonly contextPackageRef?: {
     readonly contextPackageId: string;
     readonly revision: number;
@@ -51,28 +56,33 @@ export interface PlanningInputManifestInput {
 
 /**
  * Planning Input Manifest是模型调用的完整版本证据，不含任何正文。
- * v1仅Message/Plan，v2加入查询Memory，v3加入Project/Rules，v4加入显式Memory选择；
- * 旧Attempt继续按原Hash域验证。
+ * v1仅Message/Plan，v2加入查询Memory，v3加入Project/Rules，v4加入显式Memory选择，
+ * v5加入Workflow Memory，v6加入Workspace指令；旧Attempt继续按原Hash域验证。
  */
 export function computePlanningInputManifestSha256(input: PlanningInputManifestInput): string {
   const hasVersion3Context =
     input.planningProjectContextRef !== undefined || input.ruleSelectionRef !== undefined;
   const hashDomain =
-    input.workflowMemoryContextRef !== undefined
-      ? "planning-input-manifest.v5"
-      : input.planningMemorySelectionRef !== undefined
-        ? "planning-input-manifest.v4"
-        : hasVersion3Context
-          ? "planning-input-manifest.v3"
-          : input.contextPackageRef === undefined
-            ? "planning-input-manifest.v1"
-            : "planning-input-manifest.v2";
+    input.workspaceInstructionsRef !== undefined
+      ? "planning-input-manifest.v6"
+      : input.workflowMemoryContextRef !== undefined
+        ? "planning-input-manifest.v5"
+        : input.planningMemorySelectionRef !== undefined
+          ? "planning-input-manifest.v4"
+          : hasVersion3Context
+            ? "planning-input-manifest.v3"
+            : input.contextPackageRef === undefined
+              ? "planning-input-manifest.v1"
+              : "planning-input-manifest.v2";
   return hashCanonical(hashDomain, {
     productRunId: input.productRunId,
     planRevision: input.planRevision,
     sourceMessageRef: input.sourceMessageRef,
     ...(input.priorPlanRef !== undefined ? { priorPlanRef: input.priorPlanRef } : {}),
     ...(input.revisionInputRef !== undefined ? { revisionInputRef: input.revisionInputRef } : {}),
+    ...(input.workspaceInstructionsRef !== undefined
+      ? { workspaceInstructionsRef: input.workspaceInstructionsRef }
+      : {}),
     ...(input.contextPackageRef !== undefined
       ? { contextPackageRef: input.contextPackageRef }
       : {}),

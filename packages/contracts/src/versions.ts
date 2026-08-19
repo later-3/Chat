@@ -10,7 +10,7 @@ export const WORKFLOW_DEFINITION_VERSION = "planning-execution-workflow.v3";
 export const MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION = "memory-import-workflow.v1";
 export const MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION = "memory-write-workflow.v1";
 
-export const PLANNER_PROMPT_TEMPLATE_VERSION = "planner-prompt.v2";
+export const PLANNER_PROMPT_TEMPLATE_VERSION = "planner-prompt.v3";
 export const EXECUTOR_PROMPT_TEMPLATE_VERSION = "executor-coding-agent-prompt.v1";
 export const MODEL_CONFIG_VERSION = "bailian.qwen3.7-plus.v1";
 

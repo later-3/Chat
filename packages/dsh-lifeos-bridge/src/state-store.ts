@@ -10,6 +10,7 @@ import {
   productRunIdSchema,
   productSessionIdSchema,
   sha256Schema,
+  workspaceInstructionsInputSchema,
 } from "@chat/contracts/public";
 import { z } from "zod";
 import {
@@ -67,6 +68,8 @@ const requestSchema = z
      * 已创建请求；同一请求的幂等重放始终携带同一选择。
      */
     workflowSelection: workflowSelectionSchema.optional(),
+    /** Chat确认Product Run前保留的有界重试快照；确认后立即删除。 */
+    workspaceInstructions: workspaceInstructionsInputSchema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -91,8 +94,9 @@ const sessionBindingSchema = z
   .strict();
 
 /**
- * rc.6切换后已经存在的Bridge状态。新增字段均为可恢复的外部身份；迁移读取
- * 接受v1-v4，随后立即改写为当前版本，不能在旧schema标记下静默扩展strict格式。
+ * rc.6切换后已经存在的Bridge状态。除可恢复的外部身份外，v6只增加提交结果未知期间
+ * 的有界Workspace指令重试正文；迁移读取接受v1-v5，随后立即改写为当前版本，不能在
+ * 旧schema标记下静默扩展strict格式。
  */
 const legacyBridgeStateSchema = z
   .object({
@@ -101,6 +105,7 @@ const legacyBridgeStateSchema = z
       "chat-dsh-lifeos-state.v2",
       "chat-dsh-lifeos-state.v3",
       "chat-dsh-lifeos-state.v4",
+      "chat-dsh-lifeos-state.v5",
     ]),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
@@ -108,7 +113,7 @@ const legacyBridgeStateSchema = z
 
 const bridgeStateSchema = z
   .object({
-    schemaVersion: z.literal("chat-dsh-lifeos-state.v5"),
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v6"),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
   .strict();
@@ -120,13 +125,14 @@ export type PendingDecision = z.infer<typeof pendingDecisionSchema>;
 export type PendingNoteDecision = z.infer<typeof pendingNoteDecisionSchema>;
 
 const emptyState = (): BridgeState => ({
-  schemaVersion: "chat-dsh-lifeos-state.v5",
+  schemaVersion: "chat-dsh-lifeos-state.v6",
   sessions: {},
 });
 
 /**
- * Bridge-local identity projection. It never stores message/Plan bodies and never
- * decides product state; Chat Product Store remains authoritative for every fact.
+ * Bridge-local identity projection. It不保存Chat Message/Plan正文；唯一临时正文是
+ * Product Run确认前的Workspace指令重试快照。它不决定产品状态，Chat Product Store
+ * 仍拥有所有权威事实。
  */
 export class AtomicBridgeStateStore {
   private state: BridgeState | undefined;
@@ -223,7 +229,7 @@ export class AtomicBridgeStateStore {
       return this.state;
     }
     const migrated = bridgeStateSchema.parse({
-      schemaVersion: "chat-dsh-lifeos-state.v5",
+      schemaVersion: "chat-dsh-lifeos-state.v6",
       sessions: legacy.data.sessions,
     });
     await this.writeAtomic(migrated);

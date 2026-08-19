@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createUserMessage, type GenerateOptions, type StreamChunk } from "@deepseek-ai/dsh-llm";
-import { LifeosLlmAdapter, productSessionTitle } from "../src/adapter.ts";
+import { LifeosLlmAdapter, productSessionTitle, workspaceInstructionsOf } from "../src/adapter.ts";
 import type { ChatProductClient } from "../src/chat-client.ts";
 import type { AtomicBridgeStateStore } from "../src/state-store.ts";
 
@@ -89,4 +89,30 @@ test("Product Session title is a normalized, contract-bounded first-prompt proje
   assert.doesNotMatch(title, /\n/u);
   assert.ok(Array.from(title).length <= 200);
   assert.match(title, /…$/u);
+});
+
+test("only DSH agent-instructions are forwarded as current Workspace instructions", () => {
+  const messages = [
+    createUserMessage({
+      source: { kind: "plugin", plugin: "runtime", form: "snapshot", sections: [] },
+      content: [{ type: "text", text: "DSH runtime context must stay local" }],
+    }),
+    createUserMessage({
+      source: { kind: "agent-instructions", form: "instructions" } as never,
+      content: [{ type: "text", text: "# Root AGENTS\n中文回复" }],
+    }),
+    createUserMessage({
+      source: { kind: "agent-instructions", form: "instructions" } as never,
+      content: [{ type: "text", text: "# Nested AGENTS\n先运行测试" }],
+    }),
+    createUserMessage({
+      source: { kind: "user" },
+      content: [{ type: "text", text: "实现功能" }],
+    }),
+  ];
+
+  assert.deepEqual(workspaceInstructionsOf(messages), {
+    schemaVersion: "workspace-instructions-input.v1",
+    items: [{ content: "# Root AGENTS\n中文回复" }, { content: "# Nested AGENTS\n先运行测试" }],
+  });
 });

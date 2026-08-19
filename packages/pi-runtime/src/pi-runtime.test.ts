@@ -48,6 +48,28 @@ const planningInput: PlanningInputDto = {
   modelConfigVersion: "bailian.qwen3.7-plus.v1",
 };
 
+const planningInputWithWorkspaceInstructions: PlanningInputDto = {
+  ...planningInput,
+  workspaceInstructions: {
+    ref: {
+      contextRequestId: "ctxr_workspace1" as never,
+      revision: 1,
+      sha256: "9".repeat(64),
+    },
+    snapshot: {
+      schemaVersion: "workspace-instructions-snapshot.v1",
+      items: [
+        {
+          content: "# AGENTS.md\n中文回复。完成后运行相关测试。",
+          sha256: "8".repeat(64),
+        },
+      ],
+      totalContentCharacters: "# AGENTS.md\n中文回复。完成后运行相关测试。".length,
+      sha256: "9".repeat(64),
+    },
+  },
+};
+
 const validPlanParams = {
   objective: "整理项目进展并生成Markdown周报",
   summary: "先归纳进展，再生成周报",
@@ -256,6 +278,22 @@ describe("runPiPlanner（真实pi Agent loop + faux流）", () => {
     expect(prompt).toContain(memoryRef.sha256);
     expect(prompt).toContain("M1_CANARY_7F4C");
     expect(prompt).toContain('"backendId":"mbk_memmy"');
+  });
+
+  it("把DSH当前Workspace的AGENTS指令置于用户需求之前", async () => {
+    const prompt = buildPlannerUserPrompt(planningInputWithWorkspaceInstructions);
+    expect(prompt).toContain("ctxr_workspace1@1");
+    expect(prompt).toContain("中文回复。完成后运行相关测试。");
+    expect(prompt.indexOf("当前Workspace指令")).toBeLessThan(prompt.indexOf("用户原始需求"));
+
+    const result = await runPiPlanner({
+      config,
+      planningInput: planningInputWithWorkspaceInstructions,
+      streamFnOverride: fauxStreamFn([
+        fauxAssistantMessage([fauxToolCall("submit_plan_candidate", validPlanParams)]),
+      ]),
+    });
+    expect(result.kind).toBe("candidate");
   });
 
   it("有冻结Memory时只接受完全匹配的inputRefs", async () => {

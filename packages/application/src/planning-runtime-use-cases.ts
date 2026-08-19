@@ -327,6 +327,15 @@ export async function compilePlanningInput(
         ...(revisionInput !== undefined
           ? { revisionInputRef: { revisionInputId: revisionInput.revisionInputId } }
           : {}),
+        ...(contextRequest?.schemaVersion === "run-context-request.v2"
+          ? {
+              workspaceInstructionsRef: {
+                contextRequestId: contextRequest.contextRequestId,
+                revision: 1 as const,
+                sha256: contextRequest.workspaceInstructions.sha256,
+              },
+            }
+          : {}),
         ...(contextPackage !== undefined
           ? {
               contextPackageRef: {
@@ -456,6 +465,10 @@ export async function compilePlanningInput(
 
   const message = snapshot.entities.messages[run.sourceMessageId];
   if (message === undefined) throw notFound("源消息不存在");
+  const contextRequest = Object.values(snapshot.entities.contextRequests).find(
+    (candidate) => candidate.productRunId === input.productRunId,
+  );
+  if (contextRequest === undefined) throw notFound("Context Request不存在");
   const priorPlan =
     attempt.priorPlanRevisionId === undefined
       ? undefined
@@ -599,6 +612,18 @@ export async function compilePlanningInput(
       sha256: attempt.sourceMessageSha256,
     },
     sourceMessageText: message.content.text,
+    ...(contextRequest.schemaVersion === "run-context-request.v2"
+      ? {
+          workspaceInstructions: {
+            ref: {
+              contextRequestId: contextRequest.contextRequestId,
+              revision: 1 as const,
+              sha256: contextRequest.workspaceInstructions.sha256,
+            },
+            snapshot: contextRequest.workspaceInstructions,
+          },
+        }
+      : {}),
     ...(priorPlan !== undefined
       ? {
           priorPlan: {

@@ -3,6 +3,7 @@ import {
   workflowExecutionTraceDtoSchema,
   workflowDefinitionsDtoSchema,
   type ExecutionTracePage,
+  type WorkspaceInstructionsInput,
   type WorkflowExecutionTraceDto,
 } from "@chat/contracts/public";
 import { z } from "zod";
@@ -154,6 +155,7 @@ export class ChatProductClient {
     text: string,
     signal?: AbortSignal,
     workflowSelection?: WorkflowSelection,
+    workspaceInstructions?: WorkspaceInstructionsInput,
   ): Promise<{ message: ChatMessage; run: ChatRun }> {
     return await this.request(
       `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
@@ -173,6 +175,7 @@ export class ChatProductClient {
                   },
                 }
               : {}),
+            ...(workspaceInstructions !== undefined ? { context: { workspaceInstructions } } : {}),
           },
         }),
         ...withSignal(signal),

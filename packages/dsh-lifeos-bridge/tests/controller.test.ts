@@ -152,7 +152,7 @@ test("context manager loads its bounded DSH projection from the dedicated on-dem
     dshSessionId: "dsh-session-1",
     status: "ready",
     revision: "f".repeat(64),
-    chatForwarding: "latest_direct_user_message_only",
+    chatForwarding: "latest_direct_user_message_and_workspace_instructions",
     items: [
       {
         messageId: "context-1",
@@ -194,7 +194,7 @@ test("context manager keeps the last good projection when a refresh fails", asyn
     dshSessionId: "dsh-session-1",
     status: "not_assembled",
     revision: "e".repeat(64),
-    chatForwarding: "latest_direct_user_message_only",
+    chatForwarding: "latest_direct_user_message_and_workspace_instructions",
     items: [],
     totalItems: 0,
     omittedItems: 0,

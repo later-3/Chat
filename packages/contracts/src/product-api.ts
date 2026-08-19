@@ -29,7 +29,11 @@ import {
 } from "./product.js";
 import { NOTE_TAG_LABEL_MAX_CHARACTERS, NOTE_TAG_MAX_COUNT, noteKindSchema } from "./note.js";
 import { sha256Schema } from "./hash.js";
-import { memoryContextSelectionSchema, memoryLayerSchema } from "./context.js";
+import {
+  memoryContextSelectionSchema,
+  memoryLayerSchema,
+  workspaceInstructionsInputSchema,
+} from "./context.js";
 import {
   memoryImportCapabilitiesSchema,
   memoryImportSourceSelectionSchema,
@@ -104,9 +108,14 @@ export const submitMessagePayloadSchema = z
     text: z.string().min(1).max(4000),
     context: z
       .object({
-        memory: memoryContextSelectionSchema,
+        memory: memoryContextSelectionSchema.optional(),
+        workspaceInstructions: workspaceInstructionsInputSchema.optional(),
       })
       .strict()
+      .refine(
+        (value) => value.memory !== undefined || value.workspaceInstructions !== undefined,
+        "context至少包含一种上下文",
+      )
       .optional(),
     /**
      * S4兼容期：旧客户端不传时，服务端显式映射到system Planning已发布Revision。

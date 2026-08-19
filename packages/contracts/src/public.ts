@@ -30,7 +30,9 @@ export {
   memoryContextSelectionSchema,
   memoryLayerSchema,
   memoryRequirementSchema,
+  workspaceInstructionsInputSchema,
   type MemoryContextSelection,
   type MemoryLayer,
   type MemoryRequirement,
+  type WorkspaceInstructionsInput,
 } from "./context.js";

@@ -223,6 +223,58 @@ describe("CreateProductSession + SubmitUserMessage", () => {
     ).rejects.toBeInstanceOf(CommandIdReusedError);
   });
 
+  it("冻结DSH Workspace指令并把同一快照交给Planner", async () => {
+    const { deps } = await testDeps();
+    const { session } = await createProductSession(deps, {
+      principalId: PRINCIPAL,
+      commandId: cmd(),
+      payload: {},
+    });
+    const submitted = await submitUserMessage(deps, {
+      principalId: PRINCIPAL,
+      sessionId: session.sessionId,
+      commandId: cmd(),
+      payload: {
+        text: "继续当前项目",
+        context: {
+          workspaceInstructions: {
+            schemaVersion: "workspace-instructions-input.v1",
+            items: [
+              { content: "# Root AGENTS\n中文回复" },
+              { content: "# Project AGENTS\n完成后运行测试" },
+            ],
+          },
+        },
+      },
+    });
+
+    const planning = await compilePlanningInput(deps, {
+      commandId: cmd(),
+      productRunId: submitted.run.productRunId,
+      planRevision: 1,
+    });
+    expect(planning.workspaceInstructions?.snapshot.items.map((item) => item.content)).toEqual([
+      "# Root AGENTS\n中文回复",
+      "# Project AGENTS\n完成后运行测试",
+    ]);
+    expect(planning.workspaceInstructions?.ref.sha256).toBe(
+      planning.workspaceInstructions?.snapshot.sha256,
+    );
+
+    const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+    const request = Object.values(snapshot.entities.contextRequests).find(
+      (candidate) => candidate.productRunId === submitted.run.productRunId,
+    );
+    expect(request?.schemaVersion).toBe("run-context-request.v2");
+    expect(request).toMatchObject({
+      workspaceInstructions: {
+        schemaVersion: "workspace-instructions-snapshot.v1",
+        totalContentCharacters:
+          "# Root AGENTS\n中文回复".length + "# Project AGENTS\n完成后运行测试".length,
+      },
+    });
+  });
+
   it("同一Session允许Planning与Note各自形成独立未终态Run和Outbox", async () => {
     const { deps } = await testDeps();
     const { session } = await createProductSession(deps, {

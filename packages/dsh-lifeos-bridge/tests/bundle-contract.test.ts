@@ -119,7 +119,8 @@ test("context manager uses public Session and blank-safe composer contracts with
   assert.match(client, /id: "lifeos-context-injections"/u);
   assert.match(manager, /PropsRuntime<"conversation\.input\.left">/u);
   assert.match(manager, /<Modal/u);
-  assert.match(manager, /最新一条用户直接输入/u);
+  assert.match(manager, /最新用户输入和当前 Workspace 指令/u);
+  assert.match(manager, /仅 Workspace 指令进入 Chat 规划上下文/u);
   assert.doesNotMatch(`${client}\n${manager}`, /querySelector|MutationObserver/u);
 });
 

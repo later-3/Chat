@@ -152,7 +152,7 @@ export class DshContextInjectionReader {
       schemaVersion: DSH_CONTEXT_INJECTION_SCHEMA_VERSION,
       dshSessionId,
       status: assembled ? ("ready" as const) : ("not_assembled" as const),
-      chatForwarding: "latest_direct_user_message_only" as const,
+      chatForwarding: "latest_direct_user_message_and_workspace_instructions" as const,
       items,
       totalItems: allItems.length,
       omittedItems: allItems.length - items.length,
