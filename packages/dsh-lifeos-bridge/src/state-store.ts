@@ -117,7 +117,7 @@ const sessionBindingSchema = z
 
 /**
  * rc.6切换后已经存在的Bridge状态。除可恢复的外部身份外，v6只增加提交结果未知期间
- * 的有界Workspace指令重试正文；迁移读取接受v1-v5，随后立即改写为当前版本，不能在
+ * 的有界Workspace指令重试正文；迁移读取接受v1-v7，随后立即改写为当前版本，不能在
  * 旧schema标记下静默扩展strict格式。
  */
 const legacyBridgeStateSchema = z
@@ -129,6 +129,7 @@ const legacyBridgeStateSchema = z
       "chat-dsh-lifeos-state.v4",
       "chat-dsh-lifeos-state.v5",
       "chat-dsh-lifeos-state.v6",
+      "chat-dsh-lifeos-state.v7",
     ]),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
@@ -136,7 +137,9 @@ const legacyBridgeStateSchema = z
 
 const bridgeStateSchema = z
   .object({
-    schemaVersion: z.literal("chat-dsh-lifeos-state.v7"),
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v8"),
+    /** 新DSH会话继承的用户级Workflow选择；null表示系统默认规划工作流。 */
+    preferredWorkflowSelection: workflowSelectionSchema.nullable(),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
   })
   .strict();
@@ -149,7 +152,8 @@ export type PendingNoteDecision = z.infer<typeof pendingNoteDecisionSchema>;
 export type PendingPromptReviewDecision = z.infer<typeof pendingPromptReviewDecisionSchema>;
 
 const emptyState = (): BridgeState => ({
-  schemaVersion: "chat-dsh-lifeos-state.v7",
+  schemaVersion: "chat-dsh-lifeos-state.v8",
+  preferredWorkflowSelection: null,
   sessions: {},
 });
 
@@ -181,6 +185,27 @@ export class AtomicBridgeStateStore {
     });
   }
 
+  /**
+   * 尚未建立Bridge绑定的新DSH会话读取最近一次用户选择；已经建立的会话仍使用
+   * 自己冻结的草稿，避免在另一个标签页切换Workflow时改写已有会话语义。
+   */
+  async readWorkflowSelection(
+    dshSessionId: string,
+  ): Promise<z.infer<typeof workflowSelectionSchema> | null> {
+    dshSessionIdSchema.parse(dshSessionId);
+    return await this.serial(async () => {
+      const state = await this.load();
+      const binding = Object.hasOwn(state.sessions, dshSessionId)
+        ? state.sessions[dshSessionId]
+        : undefined;
+      return structuredClone(
+        binding === undefined
+          ? state.preferredWorkflowSelection
+          : (binding.workflowSelection ?? null),
+      );
+    });
+  }
+
   async mutateSession<T>(
     dshSessionId: string,
     createSessionCommandId: string,
@@ -188,6 +213,42 @@ export class AtomicBridgeStateStore {
   ): Promise<T> {
     dshSessionIdSchema.parse(dshSessionId);
     return await this.serial(async () => {
+      const current = await this.load();
+      const next = structuredClone(current);
+      let binding = Object.hasOwn(next.sessions, dshSessionId)
+        ? next.sessions[dshSessionId]
+        : undefined;
+      if (binding === undefined) {
+        binding = {
+          createSessionCommandId,
+          requests: {},
+          ...(next.preferredWorkflowSelection === null
+            ? {}
+            : { workflowSelection: next.preferredWorkflowSelection }),
+        };
+        next.sessions[dshSessionId] = binding;
+      }
+      if (binding.createSessionCommandId !== createSessionCommandId) {
+        throw new Error(
+          `lifeos bridge state command identity mismatch for session ${dshSessionId}`,
+        );
+      }
+      const result = mutate(binding);
+      bridgeStateSchema.parse(next);
+      await this.writeAtomic(next);
+      this.state = next;
+      return result;
+    });
+  }
+
+  /** 原子更新当前会话草稿与后续新会话默认值，避免二者在进程崩溃时分叉。 */
+  async selectWorkflow(
+    dshSessionId: string,
+    createSessionCommandId: string,
+    selection: z.infer<typeof workflowSelectionSchema> | null,
+  ): Promise<void> {
+    dshSessionIdSchema.parse(dshSessionId);
+    await this.serial(async () => {
       const current = await this.load();
       const next = structuredClone(current);
       let binding = Object.hasOwn(next.sessions, dshSessionId)
@@ -202,11 +263,15 @@ export class AtomicBridgeStateStore {
           `lifeos bridge state command identity mismatch for session ${dshSessionId}`,
         );
       }
-      const result = mutate(binding);
+      if (selection === null) {
+        delete binding.workflowSelection;
+      } else {
+        binding.workflowSelection = selection;
+      }
+      next.preferredWorkflowSelection = selection;
       bridgeStateSchema.parse(next);
       await this.writeAtomic(next);
       this.state = next;
-      return result;
     });
   }
 
@@ -253,7 +318,11 @@ export class AtomicBridgeStateStore {
       return this.state;
     }
     const migrated = bridgeStateSchema.parse({
-      schemaVersion: "chat-dsh-lifeos-state.v7",
+      schemaVersion: "chat-dsh-lifeos-state.v8",
+      preferredWorkflowSelection:
+        Object.values(legacy.data.sessions).reduce<
+          z.infer<typeof workflowSelectionSchema> | undefined
+        >((latest, binding) => binding.workflowSelection ?? latest, undefined) ?? null,
       sessions: legacy.data.sessions,
     });
     await this.writeAtomic(migrated);

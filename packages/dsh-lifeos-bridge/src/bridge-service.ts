@@ -337,6 +337,7 @@ export class LifeosBridgeService {
 
   async projection(dshSessionId: string, signal?: AbortSignal): Promise<LifeosProjection> {
     const binding = await this.state.readSession(dshSessionId);
+    const workflowSelection = await this.state.readWorkflowSelection(dshSessionId);
     const executionTracesPromise = this.executionTraces(binding, signal);
     const current =
       binding?.currentRequestKey === undefined
@@ -354,7 +355,7 @@ export class LifeosBridgeService {
         pendingNoteDecision: current?.pendingNoteDecision?.request ?? null,
         promptReview: null,
         pendingPromptReviewDecision: current?.pendingPromptReviewDecision?.request ?? null,
-        workflowSelection: binding?.workflowSelection ?? null,
+        workflowSelection,
         executionTraces: await executionTracesPromise,
       };
     }
@@ -402,7 +403,7 @@ export class LifeosBridgeService {
       pendingNoteDecision: current.pendingNoteDecision?.request ?? null,
       promptReview,
       pendingPromptReviewDecision: current.pendingPromptReviewDecision?.request ?? null,
-      workflowSelection: binding?.workflowSelection ?? null,
+      workflowSelection,
       executionTraces,
     };
   }
@@ -459,13 +460,7 @@ export class LifeosBridgeService {
     signal?: AbortSignal,
   ): Promise<LifeosProjection> {
     const createCommandId = stableCommandId("create-session", dshSessionId);
-    await this.state.mutateSession(dshSessionId, createCommandId, (binding) => {
-      if (selection === null) {
-        delete binding.workflowSelection;
-      } else {
-        binding.workflowSelection = selection;
-      }
-    });
+    await this.state.selectWorkflow(dshSessionId, createCommandId, selection);
     return await this.projection(dshSessionId, signal);
   }
 

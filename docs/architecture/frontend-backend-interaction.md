@@ -92,11 +92,12 @@ Host还提供3个仅供当前DSH表面使用的同源读路由，它们不是Cha
 
 所有写请求使用稳定`commandId`；修改已有事实时还携带`expectedRevision`。Plan Decision绑定Approval、Plan ID、Plan revision和SHA-256；Note Decision绑定Candidate ID、revision和SHA-256。
 
-桥接状态至少记录DSH Session映射、当前Product Run、发送/决定Command身份及最后已确认阶段。v5状态分别保存
-Plan与Note的pending command、原生轨迹显示cursor，以及每轮已确认的DSH Message、Product User Message、
-Product Run和Product Assistant Message身份；它不复制任何Message正文。状态禁止两个pending决定并存，
-写入使用原子替换，v1-v4读取后立即迁移为v5。发生请求已发但响应丢失时，只允许相同命令和内容原样重试
-或Query恢复，不生成新身份。
+桥接状态至少记录DSH Session映射、当前Product Run、发送/决定Command身份及最后已确认阶段。v8状态分别保存
+Plan、Note与Prompt Review的pending command、原生轨迹显示cursor，以及每轮已确认的DSH Message、Product User
+Message、Product Run和Product Assistant Message身份；它不复制任何Message或Provider Payload正文。状态禁止
+多个pending决定并存，写入使用原子替换，v1-v7读取后立即迁移为v8。Workflow选择仍按会话冻结；用户最新选择
+同时成为后续新DSH会话的偏好，选择系统默认会原子清除该偏好，避免新会话静默回退到Planning。发生请求已发
+但响应丢失时，只允许相同命令和内容原样重试或Query恢复，不生成新身份。
 
 ## 6. DSH插件表面边界
 
@@ -105,7 +106,9 @@ LifeOS Bridge是仓库内唯一DSH插件包，所有新增前端表面使用固�
 `conversation.input.dock`；“会话记录”通过加法`conversation.view`注册；Workbench入口使用
 `sidebar.footer.action`，Surface使用`shell.overlay`。
 审核Dock是临时命令表面，不是Run状态看板：只有当前Plan与开放Approval版本/Hash一致且Run正在等待
-计划审核、当前Note Candidate仍可审核，或存在结果未知且必须原样重试的决定时才显示。决定被Chat确认后
+计划审核、当前Note Candidate仍可审核、执行Agent正在等待Prompt Review，或存在结果未知且必须原样重试的决定时
+才显示。Prompt Review在同一个`agent.direct`节点内部暂停，易读视图是原始Provider请求的确定性字段映射，原始
+请求页展示同一份待发送正文；审核卡片不是第二个Workflow节点。决定被Chat确认后
 Dock立即退出Composer；已批准、确认、修订或拒绝的历史由正式消息和Trajectory承载，不用常驻卡片重复展示。
 执行轨迹不创建第二个页面：Bridge保存真实的`DSH user/message ID → Product Run`绑定，Client
 从同源Query读取公开轨迹。State-only Definition在原生`user/message`处恢复绑定；可见的
