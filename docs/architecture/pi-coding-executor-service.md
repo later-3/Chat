@@ -65,15 +65,21 @@ Pi外部Extension本质是任意本机代码，能绕过Tool白名单并读取�
 
 ## 4. 完整可观察事件
 
-Chat内联Extension注册在`DefaultResourceLoader`中。以下Pi hook由AgentSession等待，因此Journal提交失败会阻止真实边界继续：
+Chat内联Extension注册在`DefaultResourceLoader`中。执行前的`tool_call` hook失败会传播回Agent loop并阻止真实Tool边界；
+固定Pi `0.84.2`会捕获`before_provider_request`、`tool_result`、`message_end`、Turn与Compaction等其他handler异常并继续。
+因此除Tool Intent外的当前Journal只能作为观察证据，不能作为fail-closed授权栅栏，也不能保证限额或Journal失败时一定阻止请求。
+[Prompt Review P0](./pi-prompt-review-p0.md)已经用Extension链外的`Agent.onPayload`包装证明了可行栅栏方向，正式接入前必须完成生产实现与合同测试：
 
-- `before_provider_request`：先保存请求序号和Payload Hash，再发Provider请求；
+- `before_provider_request`：当前先尝试保存请求序号和Payload Hash；该hook异常会被上游吞掉，不能据此宣称请求一定被阻止；
 - `message_end`：保存消息角色、正文Hash、Stop Reason和Token Usage；Assistant可见文本经脱敏和32K上限后保存，隐藏推理不保存；
 - `tool_call`：先耐久保存Tool名称、Call ID、参数Hash及脱敏/有界显示输入，再执行工具；
-- `tool_result`：保存结果Hash、脱敏/有界显示结果、成功/失败和耗时；
+- `tool_result`：尝试保存结果Hash、脱敏/有界显示结果、成功/失败和耗时；handler失败会被上游吞掉；
 - `turn_start/end`、`session_before_compact/session_compact`：保存Turn和Compaction边界。
 
-Operation Journal事件有从1开始连续递增的`sequence`。Workflow按`afterSequence`轮询；发现序号缺口即进入`outcome_unknown`，不会用不完整Trace宣布成功。终态Snapshot只有在客户端取完终态前的全部事件后才可返回Candidate。
+Operation Journal中已经成功持久化的事件使用从1开始连续递增的`sequence`。Workflow按`afterSequence`轮询；
+发现传输或读取造成的序号缺口会进入`outcome_unknown`。但被Extension Runner吞掉的handler写入失败不会占用sequence，
+所以不能依靠序号缺口发现这类缺失事件。终态Snapshot仍只会在客户端取完已持久化事件后返回Candidate；
+正式fail-closed保证必须由独立Provider Gate和适用的执行前意图栅栏提供。
 
 Chat Trace新增Operation、Session、Turn、Message、Tool、Compaction事件，并把多次Provider请求分别投影为既有`provider.request.*`事件。Trace保存原事件`sourceTimestamp`，同时保留Sink写入时间。
 

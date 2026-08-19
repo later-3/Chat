@@ -316,8 +316,10 @@ export function executorShellEnvironment(agentDir: string): NodeJS.ProcessEnv {
 }
 
 /**
- * AgentSession公开Extension hook是关键审计缝：provider请求和tool执行前的hook会被await。
- * 因而Journal失败会阻止真实Provider/Tool边界继续，避免“先副作用、后补Trace”。
+ * AgentSession公开Extension hook是当前审计接缝。只有执行前的tool_call hook会把失败
+ * 传播回Tool边界；固定Pi 0.84.2会捕获before_provider_request、tool_result、message_end
+ * 等其他handler异常并继续。因此除Tool Intent外的Journal目前只是观察证据，不能冒充
+ * fail-closed授权栅栏。Prompt Review P0已证明必须在Extension链外包装Agent.onPayload。
  */
 function createJournalExtension(input: {
   readonly request: StartPiExecutorOperationRequest;
