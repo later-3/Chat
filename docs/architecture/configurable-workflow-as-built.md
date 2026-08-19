@@ -30,7 +30,7 @@ DSH桥接面已经交付原生对话、Planning HITL与Note Candidate审核。No
 flowchart LR
   UI["DeepSeek Harness Web\nLifeOS Client插件"] -->|"Bridge Host / REST Query / Command"| API["Hono\n认证、strict校验、ETag"]
   API --> APP["Application\n事务、CAS、权限、投影"]
-  APP --> STORE["Product Store v13\n权威产品事实"]
+  APP --> STORE["Product Store v14\n权威产品事实"]
   STORE --> OUTBOX["Outbox\nstart / resume"]
   OUTBOX --> RUNTIME["Vercel Workflow Runtime\n固定Runner解释RunSpec"]
   RUNTIME -->|"私有strict命令"| APP
@@ -143,7 +143,7 @@ Query使用ETag/`If-None-Match`/304；Bridge Host在切换Run或取消请求时�
 
 ## 8. Store与迁移
 
-Product Store当前为`chat-product-store.v13`：
+Product Store当前为`chat-product-store.v14`：
 
 - v6：Workflow View/Node/Transition/Manifest；
 - v7：Definition/Revision/RunSpec；

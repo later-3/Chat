@@ -5,6 +5,20 @@ import {
   type ExecutionTracePage,
   type WorkspaceInstructionsInput,
   type WorkflowExecutionTraceDto,
+  promptRegionsDtoSchema,
+  promptFragmentPageDtoSchema,
+  promptFragmentDetailDtoSchema,
+  promptFragmentRevisionDetailDtoSchema,
+  promptFragmentCommandResultDtoSchema,
+  type PromptRegionsDto,
+  type PromptFragmentPageDto,
+  type PromptFragmentDetailDto,
+  type PromptFragmentRevisionDetailDto,
+  type PromptFragmentCommandResultDto,
+  type CreatePromptFragmentPayload,
+  type CopyPromptFragmentPayload,
+  type RevisePromptFragmentPayload,
+  type ChangePromptFragmentArchiveStatusPayload,
 } from "@chat/contracts/public";
 import { z } from "zod";
 import {
@@ -397,6 +411,116 @@ export class ChatProductClient {
       },
     );
     return value.run;
+  }
+
+  async getPromptRegions(signal?: AbortSignal): Promise<PromptRegionsDto> {
+    return this.request("/api/prompt-regions", promptRegionsDtoSchema, withSignal(signal));
+  }
+
+  async listPromptFragments(
+    query: {
+      cursor?: string;
+      limit?: number;
+      regionKey?: string;
+      ownerKind?: string;
+      status?: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<PromptFragmentPageDto> {
+    const params = new URLSearchParams();
+    if (query.cursor !== undefined) params.set("cursor", query.cursor);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.regionKey !== undefined) params.set("regionKey", query.regionKey);
+    if (query.ownerKind !== undefined) params.set("ownerKind", query.ownerKind);
+    if (query.status !== undefined) params.set("status", query.status);
+    const suffix = params.size === 0 ? "" : `?${params.toString()}`;
+    return this.request(
+      `/api/prompt-fragments${suffix}`,
+      promptFragmentPageDtoSchema,
+      withSignal(signal),
+    );
+  }
+
+  async getPromptFragment(
+    promptFragmentId: string,
+    signal?: AbortSignal,
+  ): Promise<PromptFragmentDetailDto> {
+    return this.request(
+      `/api/prompt-fragments/${encodeURIComponent(promptFragmentId)}`,
+      promptFragmentDetailDtoSchema,
+      withSignal(signal),
+    );
+  }
+
+  async getPromptFragmentRevision(
+    promptFragmentRevisionId: string,
+    signal?: AbortSignal,
+  ): Promise<PromptFragmentRevisionDetailDto> {
+    return this.request(
+      `/api/prompt-fragment-revisions/${encodeURIComponent(promptFragmentRevisionId)}`,
+      promptFragmentRevisionDetailDtoSchema,
+      withSignal(signal),
+    );
+  }
+
+  async createPromptFragment(
+    commandId: string,
+    payload: CreatePromptFragmentPayload,
+    signal?: AbortSignal,
+  ): Promise<PromptFragmentCommandResultDto> {
+    return this.request("/api/prompt-fragments", promptFragmentCommandResultDtoSchema, {
+      method: "POST",
+      body: JSON.stringify({ commandId, payload }),
+      ...withSignal(signal),
+    });
+  }
+
+  async copyPromptFragment(
+    commandId: string,
+    payload: CopyPromptFragmentPayload,
+    signal?: AbortSignal,
+  ): Promise<PromptFragmentCommandResultDto> {
+    return this.request("/api/prompt-fragments/copies", promptFragmentCommandResultDtoSchema, {
+      method: "POST",
+      body: JSON.stringify({ commandId, payload }),
+      ...withSignal(signal),
+    });
+  }
+
+  async revisePromptFragment(
+    promptFragmentId: string,
+    commandId: string,
+    expectedRevision: number,
+    payload: RevisePromptFragmentPayload,
+    signal?: AbortSignal,
+  ): Promise<PromptFragmentCommandResultDto> {
+    return this.request(
+      `/api/prompt-fragments/${encodeURIComponent(promptFragmentId)}/revisions`,
+      promptFragmentCommandResultDtoSchema,
+      {
+        method: "POST",
+        body: JSON.stringify({ commandId, expectedRevision, payload }),
+        ...withSignal(signal),
+      },
+    );
+  }
+
+  async changePromptFragmentArchiveStatus(
+    promptFragmentId: string,
+    commandId: string,
+    expectedRevision: number,
+    payload: ChangePromptFragmentArchiveStatusPayload,
+    signal?: AbortSignal,
+  ): Promise<PromptFragmentCommandResultDto> {
+    return this.request(
+      `/api/prompt-fragments/${encodeURIComponent(promptFragmentId)}/archive-status`,
+      promptFragmentCommandResultDtoSchema,
+      {
+        method: "POST",
+        body: JSON.stringify({ commandId, expectedRevision, payload }),
+        ...withSignal(signal),
+      },
+    );
   }
 
   private async request<T>(path: string, schema: ZodType<T>, init: RequestInit = {}): Promise<T> {

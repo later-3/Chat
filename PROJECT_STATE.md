@@ -8,10 +8,10 @@
 |---|---|
 | 产品身份 | 独立、完整、持续演进的个人Agent协作产品 |
 | 唯一前端 | Chat公开仓库`later-3/deepseek-harness-chat`维护固定`DeepSeek Harness Web rc.6`窄派生；当前只维护Trajectory Location/标签/紧凑预览扩展，Chat仓库以固定pnpm补丁消费；旧`apps/web`与Agent Canvas均不属于当前架构 |
-| 前端桥接 | `@chat/dsh-lifeos-bridge`通过DSH公开Slot把原生会话、Composer行内Workflow选择、只读上下文注入管理面、Plan审批与Note Candidate审核接到Chat公开API；原生侧栏作为唯一会话入口，首条真实消息懒创建Product Session；Bridge v6除双侧身份关联外，只在提交结果未知期间短暂保存当前DSH `agent-instructions`重试快照，Run确认后删除；“会话记录”以独立分页完整展示Chat正式Message与DSH原始事件；上下文管理面按需投影`Session.deriveMessages()`，其中仅当前原生Workspace的`AGENTS.md`指令进入Chat Planner冻结上下文，运行权限与Skill Catalog仍为DSH本地审计；实时Pi工具调用与完整Workflow执行树继续进入原生Trajectory，手机和桌面共用同一产品投影与Command |
+| 前端桥接 | `@chat/dsh-lifeos-bridge`通过DSH公开Slot把原生会话、Composer行内Workflow选择、只读上下文注入、Prompt Studio、Plan审批与Note Candidate审核接到Chat公开API；Prompt Studio位于DSH根级“设置 → 提示词”，管理Git内置组件来源与用户不可变Revision，不进入Session轮询或Workflow；原生侧栏作为唯一会话入口，首条真实消息懒创建Product Session；“会话记录”以独立分页完整展示Chat正式Message与DSH原始事件；实时Pi工具调用与完整Workflow执行树继续进入原生Trajectory，手机和桌面共用同一产品投影与Command |
 | 开发工作台 | Beta、可选、当前暂停进入CI/CD；固定`code-server@4.132.0`与DSH全屏Surface实现继续保留，供需要时人工验证Files、Editor、Terminal、Git/Diff与扩展系统 |
 | 后端 | Node.js + TypeScript；Hono协议入口；Application拥有用例事务 |
-| Product Store | `chat-product-store.v13`版本化JSON Adapter；拥有Session、Message、Run、Plan、Approval、Decision、Prompt Review、Direct Agent Candidate、Workflow Memory和Project事实 |
+| Product Store | `chat-product-store.v14`版本化JSON Adapter；新增用户PromptFragment/Revision事实，Git内置Prompt仍由只读Catalog拥有 |
 | Workflow | Vercel Workflow解释不可变RunSpec，承担耐久步骤、暂停、恢复与Checkpoint；系统目录新增单节点“执行 Agent（逐次提示词审核）”，Prompt Review是该节点的内部等待状态；它与“规划执行工作流”和“Memory 增强规划与执行”并存 |
 | Agent Runtime | Planner复用`pi-agent-core`；完整Executor由独立Pi Coding Executor Service承载真实`AgentSession`、多轮Tool loop、Session与安全Journal，直接使用Pi标准模型/凭据配置链，不拥有产品会话或完成事实；Direct Agent以Extension链外Provider Gate逐次暂停，V1固定只读、关闭重试/Compaction并从审核前checkpoint恢复 |
 | 执行轨迹 | DSH Trajectory同时保留实时Pi工具调用，并展示实际Workflow NodeRun、动态Execution Step及其Pi Agent/模型/工具子过程；节点输入/输出由Product Store现有Manifest引用与当前严格Trace组合，不新增Prompt存储；Vercel Run/Step/Hook/Sleep只作为后端证据。Bridge以真实DSH user/message保存Run绑定，把Workflow树贡献到随后同一原生Step；DSH窄扩展保留Location、语义标签和紧凑预览，Session utility可选显示时间范围 |
@@ -28,8 +28,9 @@
    双侧记录，不级联修改Product Session；固定rc.6没有永久删除/恢复归档公开能力，当前不伪造这两项语义。
 2. Code Workbench首期纵向已经作为独立Hosted App接入，但当前标记为Beta，不参与通用CI/CD；不复制或拆分code-server UI。
 3. “执行 Agent（逐次提示词审核）”单节点纵向已经实现；DSH首版可选择该Workflow，并在Pi真实发送前展示原始请求/易读视图与批准/拒绝。
-4. 既有长期路线中的下一纵向仍是带实时人机共用视图的Browser Provider。
-5. 随后继续长期Project/Memory/Rules和更多受治理插件能力。
+4. Prompt Studio管理纵向已经实现：用户可查看Region、Git来源、创建副本、追加Revision和归档恢复；当前尚不组装Prompt、不绑定Workflow、不调用模型。
+5. 下一步按本轮产品决策进入Prompt Assembly：选择Profile/组件、冻结运行快照并把来源证据带入审核视图。
+6. Browser Provider与长期Project/Memory/Rules路线继续保留，但不是本轮自动授权。
 
 以上是阶段顺序，不是Agent可自行领取的任务。当前实现只能来自当前对话中用户的明确请求；历史任务书只约束范围，不能替代授权。在授权前允许做只读源码审计和方案收敛，不得先添加依赖、下载PoC工件、调用外部服务或开始编码。
 

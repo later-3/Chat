@@ -48,6 +48,10 @@ export const promptReviewDecisionIdSchema = prefixedId("prd");
 /** Direct Agent候选产品身份；不能复用Plan或Execution Candidate身份。 */
 export const directAgentCandidateIdSchema = prefixedId("drc");
 
+/* Prompt Studio用户资产与内置Catalog使用同一公开身份形状，事实所有权由ownerKind区分。 */
+export const promptFragmentIdSchema = prefixedId("pfg");
+export const promptFragmentRevisionIdSchema = prefixedId("pfr");
+
 /* C1 长期上下文新增身份。均由服务端根据已提交产品身份确定性派生。 */
 export const contextRequestIdSchema = prefixedId("ctxr");
 export const memoryQueryIdSchema = prefixedId("mqy");
@@ -140,6 +144,8 @@ export type OutboxEntryId = z.infer<typeof outboxEntryIdSchema>;
 export type PromptReviewRequestId = z.infer<typeof promptReviewRequestIdSchema>;
 export type PromptReviewDecisionId = z.infer<typeof promptReviewDecisionIdSchema>;
 export type DirectAgentCandidateId = z.infer<typeof directAgentCandidateIdSchema>;
+export type PromptFragmentId = z.infer<typeof promptFragmentIdSchema>;
+export type PromptFragmentRevisionId = z.infer<typeof promptFragmentRevisionIdSchema>;
 export type ContextRequestId = z.infer<typeof contextRequestIdSchema>;
 export type MemoryQueryId = z.infer<typeof memoryQueryIdSchema>;
 export type MemoryResultSnapshotId = z.infer<typeof memoryResultSnapshotIdSchema>;

@@ -32,6 +32,8 @@ export * from "./product-store.js";
 export * from "./product-api.js";
 export * from "./prompt-review.js";
 export * from "./prompt-review-api.js";
+export * from "./prompt-fragment.js";
+export * from "./prompt-studio-api.js";
 export * from "./direct-agent.js";
 export * from "./direct-agent-runtime.js";
 export * from "./internal-runtime.js";

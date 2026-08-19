@@ -35,23 +35,32 @@ const workbenchOnly = args.includes("--workbench-only");
 // Gateway/DSH 与公开静态资产。
 const pwaOnly = args.includes("--pwa-only");
 const trajectoryOnly = args.includes("--trajectory-only");
+const promptStudioOnly = args.includes("--prompt-studio-only");
 
 if (
   args.some(
     (argument) =>
       argument !== "--workbench-only" &&
       argument !== "--pwa-only" &&
-      argument !== "--trajectory-only",
+      argument !== "--trajectory-only" &&
+      argument !== "--prompt-studio-only",
   )
 ) {
   throw new Error("DSH真实E2E preflight收到未知参数");
 }
-if (!workbenchOnly && !pwaOnly && !trajectoryOnly) await import("../debug/load-provider-env.mjs");
+if (!workbenchOnly && !pwaOnly && !trajectoryOnly && !promptStudioOnly)
+  await import("../debug/load-provider-env.mjs");
 
 if (dataRoot !== expectedRoot || !dataRoot.endsWith("/.data/e2e/dsh-real")) {
   throw new Error("拒绝清理未通过精确校验的DSH真实E2E目录");
 }
-if (!workbenchOnly && !pwaOnly && !trajectoryOnly && !process.env.DASHSCOPE_API_KEY?.trim()) {
+if (
+  !workbenchOnly &&
+  !pwaOnly &&
+  !trajectoryOnly &&
+  !promptStudioOnly &&
+  !process.env.DASHSCOPE_API_KEY?.trim()
+) {
   throw new Error("真实DSH E2E缺少百炼凭据（本门失败关闭，不会Skip或切换替身）");
 }
 
@@ -88,7 +97,7 @@ for (const dir of [environment.TMPDIR, environment.HOME, environment.XDG_CACHE_H
 
 // PWA-only只验证DSH/Gateway/浏览器表面，不能因为没有下载数百MB的
 // code-server或没有Workbench Git fixture而失败。其他两种真实门仍保留原完整合同。
-if (!pwaOnly && !trajectoryOnly) {
+if (!pwaOnly && !trajectoryOnly && !promptStudioOnly) {
   const workbenchFixtureRoot = resolveDshRealWorkbenchFixtureRoot(repoRoot);
   mkdirSync(workbenchFixtureRoot, { recursive: true });
   writeFileSync(join(workbenchFixtureRoot, ".gitignore"), ".data/\n", "utf8");
@@ -140,7 +149,7 @@ await runCommand(
   ["--filter", "@chat/dsh-lifeos-bridge", "build"],
   { cwd: repoRoot, env: environment, label: "DSH E2E Bridge构建" },
 );
-if (!workbenchOnly && !pwaOnly && !trajectoryOnly) {
+if (!workbenchOnly && !pwaOnly && !trajectoryOnly && !promptStudioOnly) {
   await runCommand(
     process.platform === "win32" ? "pnpm.cmd" : "pnpm",
     ["--filter", "@chat/workflows", "build:bundles"],
@@ -171,7 +180,9 @@ console.log(
     ? "[e2e-preflight] rc.6 DSH profile、隔离Git Workbench fixture与固定code-server已就绪（未加载Provider，未构建Workflow）"
     : pwaOnly
       ? "[e2e-preflight] rc.6 DSH profile与PWA浏览器表面已就绪（未加载Provider/Workflow/Workbench）"
-      : trajectoryOnly
-        ? "[e2e-preflight] rc.6 DSH profile与原生Trajectory/会话记录表面已就绪（使用测试Trace Provider，不加载Provider/Workflow/Workbench）"
-        : "[e2e-preflight] rc.6 DSH profile、真实Provider、隔离Git Workbench fixture与固定code-server已就绪",
+      : promptStudioOnly
+        ? "[e2e-preflight] rc.6 DSH Prompt Studio已就绪（未加载Provider/Pi/Workflow/Workbench）"
+        : trajectoryOnly
+          ? "[e2e-preflight] rc.6 DSH profile与原生Trajectory/会话记录表面已就绪（使用测试Trace Provider，不加载Provider/Workflow/Workbench）"
+          : "[e2e-preflight] rc.6 DSH profile、真实Provider、隔离Git Workbench fixture与固定code-server已就绪",
 );

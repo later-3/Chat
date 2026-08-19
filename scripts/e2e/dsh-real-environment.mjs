@@ -82,7 +82,7 @@ export function dshRealWebEnvironment(root, environment = process.env) {
   const dshHome = join(dataRoot, "dsh-home");
   const safe = dshWebEnvironment(repoRoot, {
     ...environment,
-    CHAT_API_BASE_URL: "http://127.0.0.1:43111",
+    CHAT_API_BASE_URL: environment.CHAT_API_BASE_URL?.trim() || "http://127.0.0.1:43111",
     CHAT_DSH_STATE_PATH: join(dataRoot, "bridge", "state.json"),
   });
   const hostHome = join(dshHome, "host-home");

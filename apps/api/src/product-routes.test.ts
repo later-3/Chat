@@ -44,6 +44,7 @@ import {
   type DirectAgentIdFactory,
   type IdFactory,
   type RuleIdFactory,
+  type PromptFragmentIdFactory,
 } from "@chat/application";
 import {
   SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
@@ -55,6 +56,7 @@ import { JsonProductStore } from "@chat/product-store-json";
 import { z } from "zod";
 import { createApiApp, type ApiApp } from "./app.js";
 import { DEBUG_PRINCIPAL_ID } from "./composition.js";
+import { createFilePromptCatalog } from "./prompt-catalog.js";
 
 /**
  * 公开产品API合同测试。
@@ -102,6 +104,11 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     promptReviewDecision: () => gen("prd"),
     candidate: () => gen("drc"),
   } as DirectAgentIdFactory;
+  const promptFragmentIds = {
+    fragment: () => gen("pfg"),
+    revision: () => gen("pfr"),
+  } as PromptFragmentIdFactory;
+  const promptCatalog = await createFilePromptCatalog();
   const backend = {
     describe: () => ({
       backendId: "mbk_memmy" as never,
@@ -238,6 +245,8 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     ids: idFactory,
     ruleIds,
     directAgentIds,
+    promptFragmentIds,
+    promptCatalog,
     memoryBackends: {
       list: () => [backend, tencentBackend],
       get: (backendId) => {
@@ -1421,5 +1430,109 @@ describe("公开产品API", () => {
     const app = createApiApp({ traceSink: null });
     const res = await app.request("/api/runs/run_1");
     expect(res.status).toBe(404);
+  });
+
+  it("Prompt Studio公开区域和Builtin来源，并以CAS追加用户Revision", async () => {
+    const { app } = await testApp();
+    const regions = await app.request("/api/prompt-regions");
+    expect(regions.status).toBe(200);
+    const regionsBody = (await regions.json()) as {
+      items: { regionKey: string; userManageable: boolean; sourceRelativePath: string }[];
+    };
+    expect(regionsBody.items).toContainEqual(
+      expect.objectContaining({
+        regionKey: "agent_identity",
+        userManageable: true,
+        sourceRelativePath: "prompts/regions/catalog.md",
+      }),
+    );
+    expect(regionsBody.items).toContainEqual(
+      expect.objectContaining({ regionKey: "tools", userManageable: false }),
+    );
+
+    const list = await app.request("/api/prompt-fragments?ownerKind=system");
+    expect(list.status).toBe(200);
+    const listBody = (await list.json()) as {
+      items: {
+        promptFragmentId: string;
+        currentRevisionId: string;
+        currentRevisionSha256: string;
+        sourceRelativePath: string;
+      }[];
+    };
+    const builtin = listBody.items.find(
+      (item) => item.promptFragmentId === "pfg_builtinagentidentity",
+    );
+    expect(builtin?.sourceRelativePath).toBe(
+      "prompts/fragments/agent-identity/general-chat-agent.md",
+    );
+
+    const copy = await postJson(app, "/api/prompt-fragments/copies", {
+      commandId: nextCmd(),
+      payload: {
+        sourcePromptFragmentRevisionId: builtin?.currentRevisionId,
+        sourceSha256: builtin?.currentRevisionSha256,
+        title: "我的任务 Agent",
+      },
+    });
+    expect(copy.status, await copy.clone().text()).toBe(201);
+    const copied = (await copy.json()) as {
+      promptFragment: {
+        fragment: {
+          promptFragmentId: string;
+          revision: number;
+          currentRevisionId: string;
+          currentRevisionSha256: string;
+        };
+        currentRevision: { content: { kind: "markdown"; bodyMarkdown: string } };
+      };
+    };
+    expect(copied.promptFragment.currentRevision.content.bodyMarkdown).toContain(
+      "通用 Chat Agent 身份",
+    );
+
+    const fragment = copied.promptFragment.fragment;
+    const revised = await postJson(
+      app,
+      `/api/prompt-fragments/${fragment.promptFragmentId}/revisions`,
+      {
+        commandId: nextCmd(),
+        expectedRevision: fragment.revision,
+        payload: {
+          currentRevisionId: fragment.currentRevisionId,
+          currentRevisionSha256: fragment.currentRevisionSha256,
+          revision: {
+            regionKey: "agent_identity",
+            title: "我的任务 Agent v2",
+            content: { kind: "markdown", bodyMarkdown: "# 身份\n\n你是我的任务 Agent。" },
+          },
+        },
+      },
+    );
+    expect(revised.status).toBe(201);
+    const revisedBody = (await revised.json()) as {
+      promptFragment: { fragment: { currentRevisionNumber: number }; revisions: unknown[] };
+    };
+    expect(revisedBody.promptFragment.fragment.currentRevisionNumber).toBe(2);
+    expect(revisedBody.promptFragment.revisions).toHaveLength(2);
+
+    const stale = await postJson(
+      app,
+      `/api/prompt-fragments/${fragment.promptFragmentId}/revisions`,
+      {
+        commandId: nextCmd(),
+        expectedRevision: fragment.revision,
+        payload: {
+          currentRevisionId: fragment.currentRevisionId,
+          currentRevisionSha256: fragment.currentRevisionSha256,
+          revision: {
+            regionKey: "agent_identity",
+            title: "冲突版本",
+            content: { kind: "markdown", bodyMarkdown: "不会覆盖成功版本" },
+          },
+        },
+      },
+    );
+    expect(stale.status).toBe(409);
   });
 });

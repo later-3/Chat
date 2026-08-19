@@ -1,0 +1,257 @@
+{
+  "schemaVersion": "chat-prompt-catalog.v1",
+  "catalogRevision": 1,
+  "publishedAt": "2026-08-19T00:00:00.000Z",
+  "regionSource": {
+    "relativePath": "prompts/regions/catalog.md",
+    "sourceSha256": "2561e3376c26e4f7d33e16e9389500f3d9f983cb92c424cfaf3dcaa1b3998744"
+  },
+  "regions": [
+    {
+      "regionKey": "agent_identity",
+      "title": "Agent 身份",
+      "description": "模型在当前节点扮演的身份；这是唯一由用户管理并计划进入 System 的语义区域。",
+      "category": "identity",
+      "plannedPlacement": "system",
+      "contentKind": "markdown",
+      "cardinality": "single",
+      "userManageable": true,
+      "availability": "active",
+      "stableOrder": 10
+    },
+    {
+      "regionKey": "user_context",
+      "title": "用户上下文",
+      "description": "完成当前任务确实需要知道的用户资料和偏好。",
+      "category": "context",
+      "plannedPlacement": "messages",
+      "contentKind": "markdown",
+      "cardinality": "multiple",
+      "userManageable": true,
+      "availability": "active",
+      "stableOrder": 20
+    },
+    {
+      "regionKey": "background",
+      "title": "背景",
+      "description": "任务发生的背景、现状和边界。",
+      "category": "context",
+      "plannedPlacement": "messages",
+      "contentKind": "markdown",
+      "cardinality": "multiple",
+      "userManageable": true,
+      "availability": "active",
+      "stableOrder": 30
+    },
+    {
+      "regionKey": "objective",
+      "title": "目标",
+      "description": "本次运行希望达成的结果。",
+      "category": "context",
+      "plannedPlacement": "messages",
+      "contentKind": "markdown",
+      "cardinality": "single",
+      "userManageable": true,
+      "availability": "active",
+      "stableOrder": 40
+    },
+    {
+      "regionKey": "requirements",
+      "title": "要求",
+      "description": "必须满足的交付要求。",
+      "category": "context",
+      "plannedPlacement": "messages",
+      "contentKind": "markdown",
+      "cardinality": "multiple",
+      "userManageable": true,
+      "availability": "active",
+      "stableOrder": 50
+    },
+    {
+      "regionKey": "rules",
+      "title": "规则与规范",
+      "description": "本次运行必须遵守的规则和规范。",
+      "category": "context",
+      "plannedPlacement": "messages",
+      "contentKind": "markdown",
+      "cardinality": "multiple",
+      "userManageable": true,
+      "availability": "active",
+      "stableOrder": 60
+    },
+    {
+      "regionKey": "experience",
+      "title": "经验",
+      "description": "可复用的方法、经验和注意事项。",
+      "category": "context",
+      "plannedPlacement": "messages",
+      "contentKind": "markdown",
+      "cardinality": "multiple",
+      "userManageable": true,
+      "availability": "active",
+      "stableOrder": 70
+    },
+    {
+      "regionKey": "examples",
+      "title": "正向案例",
+      "description": "希望模型参考的正确案例。",
+      "category": "context",
+      "plannedPlacement": "messages",
+      "contentKind": "markdown",
+      "cardinality": "multiple",
+      "userManageable": true,
+      "availability": "active",
+      "stableOrder": 80
+    },
+    {
+      "regionKey": "counterexamples",
+      "title": "反例",
+      "description": "需要避免的错误做法和反例。",
+      "category": "context",
+      "plannedPlacement": "messages",
+      "contentKind": "markdown",
+      "cardinality": "multiple",
+      "userManageable": true,
+      "availability": "active",
+      "stableOrder": 90
+    },
+    {
+      "regionKey": "output_contract",
+      "title": "输出约定",
+      "description": "输出格式、结构和验收约定。",
+      "category": "context",
+      "plannedPlacement": "messages",
+      "contentKind": "markdown",
+      "cardinality": "multiple",
+      "userManageable": true,
+      "availability": "active",
+      "stableOrder": 100
+    },
+    {
+      "regionKey": "custom_context",
+      "title": "自定义上下文",
+      "description": "用户临时扩展的命名 Key/Value 上下文。",
+      "category": "context",
+      "plannedPlacement": "messages",
+      "contentKind": "key_value",
+      "cardinality": "multiple",
+      "userManageable": true,
+      "availability": "active",
+      "stableOrder": 110
+    },
+    {
+      "regionKey": "runtime_contract",
+      "title": "运行时契约",
+      "description": "Chat、Workflow 和 Agent Runtime 强制执行的节点边界。",
+      "category": "runtime",
+      "plannedPlacement": "system",
+      "contentKind": "runtime",
+      "cardinality": "automatic",
+      "userManageable": false,
+      "availability": "planned",
+      "stableOrder": 200
+    },
+    {
+      "regionKey": "current_input",
+      "title": "当前输入",
+      "description": "当前 Product Message 或前序节点传入的真实输入。",
+      "category": "runtime",
+      "plannedPlacement": "messages",
+      "contentKind": "runtime",
+      "cardinality": "automatic",
+      "userManageable": false,
+      "availability": "planned",
+      "stableOrder": 210
+    },
+    {
+      "regionKey": "conversation",
+      "title": "会话历史",
+      "description": "本次明确选入的正式历史与 Agent Tool Loop 消息。",
+      "category": "runtime",
+      "plannedPlacement": "messages",
+      "contentKind": "runtime",
+      "cardinality": "automatic",
+      "userManageable": false,
+      "availability": "planned",
+      "stableOrder": 220
+    },
+    {
+      "regionKey": "memory",
+      "title": "记忆",
+      "description": "未来由 Memory Provider 选择并冻结的内容。",
+      "category": "runtime",
+      "plannedPlacement": "messages",
+      "contentKind": "runtime",
+      "cardinality": "automatic",
+      "userManageable": false,
+      "availability": "planned",
+      "stableOrder": 230
+    },
+    {
+      "regionKey": "tools",
+      "title": "工具",
+      "description": "本次可见的工具 Schema、说明和能力边界。",
+      "category": "runtime",
+      "plannedPlacement": "tools",
+      "contentKind": "runtime",
+      "cardinality": "automatic",
+      "userManageable": false,
+      "availability": "planned",
+      "stableOrder": 240
+    },
+    {
+      "regionKey": "request_options",
+      "title": "模型请求参数",
+      "description": "Provider、Model、Thinking、Token 等非自然语言参数。",
+      "category": "runtime",
+      "plannedPlacement": "request_options",
+      "contentKind": "runtime",
+      "cardinality": "automatic",
+      "userManageable": false,
+      "availability": "planned",
+      "stableOrder": 250
+    }
+  ],
+  "fragments": [
+    {
+      "promptFragmentId": "pfg_builtinagentidentity",
+      "promptFragmentRevisionId": "pfr_builtinagentidentityv1",
+      "revision": 1,
+      "regionKey": "agent_identity",
+      "title": "通用 Chat Agent 身份",
+      "description": "Chat 自有的通用任务协作身份；当前仅在 Prompt Studio 管理，尚未接入运行时组装。",
+      "relativePath": "prompts/fragments/agent-identity/general-chat-agent.md",
+      "sourceSha256": "781a997a9c1d24c3aca2523e2b467e7025bb58600d5513dd5dfaf0b00f5dd441"
+    },
+    {
+      "promptFragmentId": "pfg_builtintransparentdelivery",
+      "promptFragmentRevisionId": "pfr_builtintransparentdeliveryv1",
+      "revision": 1,
+      "regionKey": "requirements",
+      "title": "透明交付要求",
+      "description": "要求结果可核验，并明确风险和未完成项。",
+      "relativePath": "prompts/fragments/requirements/transparent-delivery.md",
+      "sourceSha256": "c838235679c278b52229f22fdbe8b3fe2fe9b4a6af118a284885af3ecd02dd09"
+    },
+    {
+      "promptFragmentId": "pfg_builtinevidencefirst",
+      "promptFragmentRevisionId": "pfr_builtinevidencefirstv1",
+      "revision": 1,
+      "regionKey": "rules",
+      "title": "基于证据工作",
+      "description": "优先读取权威来源，不把推断冒充事实。",
+      "relativePath": "prompts/fragments/rules/evidence-first.md",
+      "sourceSha256": "ee78c58ab404560b72f709f0b5ac971a84814c87f49b759b3cf66146e1c8583a"
+    },
+    {
+      "promptFragmentId": "pfg_builtinincrementaldelivery",
+      "promptFragmentRevisionId": "pfr_builtinincrementaldeliveryv1",
+      "revision": 1,
+      "regionKey": "experience",
+      "title": "小纵向交付经验",
+      "description": "用可真实体验的小纵向推进复杂产品能力。",
+      "relativePath": "prompts/fragments/experience/incremental-delivery.md",
+      "sourceSha256": "c9a80a54065a81918df5fa038734a06e7f192ac5071e593980a5df29d1854f99"
+    }
+  ]
+}

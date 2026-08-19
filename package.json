@@ -31,6 +31,7 @@
     "test:e2e:dsh-real": "node scripts/e2e/assert-dsh-real-script.mjs && node scripts/e2e/preflight-dsh-real.mjs && pnpm debug:preclean && pnpm --filter @chat/dsh-web exec playwright test --config playwright.dsh-real.config.ts",
     "test:e2e:dsh-workbench-real": "node scripts/e2e/run-dsh-workbench-real.mjs",
     "test:e2e:dsh-pwa-real": "node scripts/e2e/preflight-dsh-real.mjs --pwa-only && pnpm debug:preclean && pnpm --filter @chat/dsh-web exec env CHAT_DSH_E2E_MODE=pwa-only playwright test --config playwright.dsh-real.config.ts",
+    "test:e2e:dsh-prompt-studio-real": "node scripts/e2e/preflight-dsh-real.mjs --prompt-studio-only && pnpm --filter @chat/dsh-web exec env CHAT_DSH_E2E_MODE=prompt-studio-only playwright test --config playwright.dsh-real.config.ts",
     "dsh:plugins:list": "node scripts/dsh/manage-plugins.mjs list",
     "dsh:plugins:verify": "node scripts/dsh/manage-plugins.mjs verify",
     "dsh:plugins:check-updates": "node scripts/dsh/manage-plugins.mjs check-updates",

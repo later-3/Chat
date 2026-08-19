@@ -8,8 +8,10 @@ import {
 const workbenchOnly = process.env.CHAT_DSH_E2E_MODE === "workbench-only";
 const pwaOnly = process.env.CHAT_DSH_E2E_MODE === "pwa-only";
 const trajectoryOnly = process.env.CHAT_DSH_E2E_MODE === "trajectory-only";
+const promptStudioOnly = process.env.CHAT_DSH_E2E_MODE === "prompt-studio-only";
+const promptStudioWebPort = 45_110;
 const providerEnvironmentModule = "../../scripts/debug/load-provider-env.mjs";
-if (!workbenchOnly && !pwaOnly) await import(providerEnvironmentModule);
+if (!workbenchOnly && !pwaOnly && !promptStudioOnly) await import(providerEnvironmentModule);
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const dataRoot = resolve(repoRoot, ".data/e2e/dsh-real");
@@ -94,6 +96,14 @@ const trajectoryApi = {
   timeout: 30_000,
   env: sharedEnvironment,
 } as const;
+const promptStudioRuntime = {
+  command: "node scripts/e2e/start-dsh-prompt-studio-real.mjs",
+  cwd: repoRoot,
+  url: `http://127.0.0.1:${String(promptStudioWebPort)}/healthz`,
+  reuseExistingServer: false,
+  timeout: 180_000,
+  env: sharedEnvironment,
+} as const;
 
 /**
  * 默认付费门使用真实JSON Product Store、Workflow World、pi与百炼；显式
@@ -105,9 +115,11 @@ export default defineConfig({
     ? "dsh-workbench-real.spec.ts"
     : pwaOnly
       ? ["dsh-pwa-real.spec.ts", "dsh-mobile-hanui-real.spec.ts"]
-      : trajectoryOnly
-        ? "dsh-trajectory-real.spec.ts"
-        : "dsh-planning-real.spec.ts",
+      : promptStudioOnly
+        ? "dsh-prompt-studio-real.spec.ts"
+        : trajectoryOnly
+          ? "dsh-trajectory-real.spec.ts"
+          : "dsh-planning-real.spec.ts",
   globalTeardown: resolve(repoRoot, "scripts/e2e/dsh-real-workbench-lifecycle.mjs"),
   fullyParallel: false,
   workers: 1,
@@ -116,7 +128,7 @@ export default defineConfig({
   timeout: 12 * 60_000,
   expect: { timeout: 5 * 60_000 },
   use: {
-    baseURL: "http://127.0.0.1:43110",
+    baseURL: `http://127.0.0.1:${String(promptStudioOnly ? promptStudioWebPort : 43_110)}`,
     trace: "off",
     screenshot: "off",
     video: "off",
@@ -125,8 +137,10 @@ export default defineConfig({
     ? [codeServer, dsh]
     : pwaOnly
       ? [dshPwa]
-      : trajectoryOnly
-        ? [trajectoryApi, dshPwa]
-        : [codeServer, piExecutor, workflow, api, dsh],
+      : promptStudioOnly
+        ? [promptStudioRuntime]
+        : trajectoryOnly
+          ? [trajectoryApi, dshPwa]
+          : [codeServer, piExecutor, workflow, api, dsh],
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });

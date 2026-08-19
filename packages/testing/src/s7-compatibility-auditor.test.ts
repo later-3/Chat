@@ -111,7 +111,7 @@ describe("S7 versioned fixture与v1→最终兼容矩阵", () => {
     },
   );
 
-  it("v12旧输入升级到v13且再次读取当前格式保持确定", async () => {
+  it("v12旧输入升级到当前格式且再次读取保持确定", async () => {
     const entry = S7_VERSIONED_FIXTURE_MANIFEST.find(
       (candidate) => candidate.fixtureId === "v10-new-planning-active",
     );
@@ -126,7 +126,7 @@ describe("S7 versioned fixture与v1→最终兼容矩阵", () => {
     const migrated = migrateS7FixtureToCurrent(v12);
 
     expect(v12).toEqual(sourceBefore);
-    expect(migrated.schemaVersion).toBe("chat-product-store.v13");
+    expect(migrated.schemaVersion).toBe("chat-product-store.v14");
     expect(migrated.entities.runs).toEqual(v12.entities.runs);
     expect(migrated.entities.directAgentCandidates).toEqual({});
     expect(migrated.entities.promptReviewRequests).toEqual({});

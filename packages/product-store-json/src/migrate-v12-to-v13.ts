@@ -1,4 +1,4 @@
-import { productSnapshotSchema, type ProductSnapshot } from "@chat/contracts";
+import { productSnapshotV13Schema, type ProductSnapshotV13 } from "./legacy-v13.js";
 import {
   SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID,
   SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
@@ -11,7 +11,7 @@ import type { ProductSnapshotV12 } from "./legacy-v12.js";
  * v12→v13新增Direct Agent候选、Prompt Review事实与固定Direct系统Definition。
  * 旧Run及所有历史事实原样保留；迁移不伪造审核、Decision、Candidate或运行终态。
  */
-export function migrateProductSnapshotV12ToV13(snapshot: ProductSnapshotV12): ProductSnapshot {
+export function migrateProductSnapshotV12ToV13(snapshot: ProductSnapshotV12): ProductSnapshotV13 {
   const definitions = { ...snapshot.entities.workflowDefinitions };
   const revisions = { ...snapshot.entities.workflowDefinitionRevisions };
   const views = { ...snapshot.entities.workflowViewDefinitions };
@@ -29,7 +29,7 @@ export function migrateProductSnapshotV12ToV13(snapshot: ProductSnapshotV12): Pr
   revisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID] = seed.revision;
   views[SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID] = seed.view;
 
-  return productSnapshotSchema.parse({
+  return productSnapshotV13Schema.parse({
     ...snapshot,
     schemaVersion: "chat-product-store.v13",
     entities: {

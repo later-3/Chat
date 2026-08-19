@@ -15,6 +15,7 @@ import { AtomicBridgeStateStore } from "./state-store.ts";
 import { createLifeosTraceTool } from "./trace-tool.ts";
 import { DshSessionQueryHistory } from "./dsh-session-history.ts";
 import { DshContextInjectionReader } from "./context-injection-reader.ts";
+import { PromptStudioBridgeService } from "./prompt-studio-bridge-service.ts";
 
 export const name = "chat-dsh-lifeos-bridge";
 export const inject = [
@@ -82,6 +83,7 @@ export async function apply(ctx: Context): Promise<void> {
     get: (dshSessionId) => ctx.sessions.get(SessionId(dshSessionId)),
   });
   const bridge = new LifeosBridgeService(chat, state, dshHistory, contextInjectionReader);
+  const promptStudio = new PromptStudioBridgeService(chat);
   const lifetime = new AbortController();
   ctx.effect(
     () => () => {
@@ -106,6 +108,7 @@ export async function apply(ctx: Context): Promise<void> {
             ctx.logger.warn("lifeos bridge route failed", error);
           },
           publicHostname,
+          promptStudio,
         ),
       }),
     "lifeos bridge: same-origin routes",

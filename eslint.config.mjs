@@ -11,6 +11,8 @@ export default tseslint.config(
       "**/test-results/**",
       "**/playwright-report/**",
       "**/.data/**",
+      // 与.gitignore对齐：真实Provider实验与本地研究捕获不属于仓库源码。
+      "**/.artifacts/**",
       // 与.gitignore对齐：本地测试产物不参与lint
       "**/.test-artifacts/**",
     ],

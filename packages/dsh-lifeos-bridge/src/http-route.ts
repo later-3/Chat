@@ -9,8 +9,16 @@ import {
 import { BridgeRequestError, LifeosBridgeService } from "./bridge-service.ts";
 import { ChatProductApiError } from "./chat-client.ts";
 import { DshSessionHistoryAccessError } from "./dsh-session-history.ts";
+import {
+  PromptStudioBridgeService,
+  promptStudioArchiveRequestSchema,
+  promptStudioCopyRequestSchema,
+  promptStudioCreateRequestSchema,
+  promptStudioReviseRequestSchema,
+} from "./prompt-studio-bridge-service.ts";
 
 const MAX_REQUEST_BODY_BYTES = 16 * 1024;
+const MAX_PROMPT_REQUEST_BODY_BYTES = 96 * 1024;
 const SESSION_PATH = /^\/lifeos\/sessions\/([^/]+)$/;
 const CONTEXT_INJECTIONS_PATH = /^\/lifeos\/sessions\/([^/]+)\/context-injections$/;
 const DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/decisions$/;
@@ -21,6 +29,13 @@ const SESSION_RECORDS_PATH = /^\/lifeos\/sessions\/([^/]+)\/records$/;
 const SESSION_RECORDS_CHAT_PATH = /^\/lifeos\/sessions\/([^/]+)\/records\/chat$/;
 const SESSION_RECORDS_DSH_PATH = /^\/lifeos\/sessions\/([^/]+)\/records\/dsh$/;
 const WORKFLOWS_PATH = /^\/lifeos\/workflows$/;
+const PROMPT_REGIONS_PATH = /^\/lifeos\/prompts\/regions$/;
+const PROMPT_FRAGMENTS_PATH = /^\/lifeos\/prompts\/fragments$/;
+const PROMPT_COPIES_PATH = /^\/lifeos\/prompts\/copies$/;
+const PROMPT_FRAGMENT_PATH = /^\/lifeos\/prompts\/fragments\/([^/]+)$/;
+const PROMPT_REVISION_PATH = /^\/lifeos\/prompts\/revisions\/([^/]+)$/;
+const PROMPT_FRAGMENT_REVISIONS_PATH = /^\/lifeos\/prompts\/fragments\/([^/]+)\/revisions$/;
+const PROMPT_FRAGMENT_ARCHIVE_PATH = /^\/lifeos\/prompts\/fragments\/([^/]+)\/archive-status$/;
 const SESSION_RECORDS_DEFAULT_LIMIT = 50;
 const SESSION_RECORDS_MAX_LIMIT = 100;
 
@@ -202,7 +217,10 @@ export function parseSessionRecordsDshQuery(url: URL): {
   };
 }
 
-async function readJson(req: IncomingMessage): Promise<unknown> {
+async function readJson(
+  req: IncomingMessage,
+  maxBytes: number = MAX_REQUEST_BODY_BYTES,
+): Promise<unknown> {
   const contentType = headerValue(req.headers["content-type"]);
   if (contentType?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
     throw new BridgeRequestError(
@@ -214,7 +232,7 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   const length = headerValue(req.headers["content-length"]);
   if (length !== undefined) {
     const parsed = Number(length);
-    if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > MAX_REQUEST_BODY_BYTES) {
+    if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > maxBytes) {
       throw new BridgeRequestError(413, "lifeos_body_too_large", "Request body is too large");
     }
   }
@@ -223,7 +241,7 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   for await (const chunk of req) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
     total += buffer.byteLength;
-    if (total > MAX_REQUEST_BODY_BYTES) {
+    if (total > maxBytes) {
       throw new BridgeRequestError(413, "lifeos_body_too_large", "Request body is too large");
     }
     chunks.push(buffer);
@@ -296,11 +314,183 @@ export function createLifeosRouteHandler(
   expectedPort: number,
   reportError: (error: unknown) => void = () => undefined,
   publicHostname?: string,
+  promptStudio?: PromptStudioBridgeService,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return async (req, res) => {
     try {
       const host = assertSameOriginRequest(req, expectedPort, publicHostname);
       const url = new URL(req.url ?? "", `http://${host}`);
+      if (
+        promptStudio !== undefined &&
+        req.method === "GET" &&
+        PROMPT_REGIONS_PATH.test(url.pathname)
+      ) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        sendJson(res, 200, await promptStudio.regions());
+        return;
+      }
+      if (
+        promptStudio !== undefined &&
+        req.method === "GET" &&
+        PROMPT_FRAGMENTS_PATH.test(url.pathname)
+      ) {
+        assertOnlyQueryKeys(
+          url.searchParams,
+          new Set(["cursor", "limit", "regionKey", "ownerKind", "status"]),
+        );
+        const rawLimit = singleQueryValue(url.searchParams, "limit");
+        const limit = rawLimit === undefined ? undefined : Number(rawLimit);
+        if (
+          limit !== undefined &&
+          (!/^[1-9][0-9]*$/u.test(rawLimit ?? "") || !Number.isSafeInteger(limit) || limit > 100)
+        ) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_prompt_query_invalid",
+            "limit必须是1到100的整数",
+          );
+        }
+        const cursor = singleQueryValue(url.searchParams, "cursor");
+        const regionKey = singleQueryValue(url.searchParams, "regionKey");
+        const ownerKind = singleQueryValue(url.searchParams, "ownerKind");
+        const status = singleQueryValue(url.searchParams, "status");
+        sendJson(
+          res,
+          200,
+          await promptStudio.fragments({
+            ...(cursor !== undefined ? { cursor } : {}),
+            ...(limit !== undefined ? { limit } : {}),
+            ...(regionKey !== undefined ? { regionKey } : {}),
+            ...(ownerKind !== undefined ? { ownerKind } : {}),
+            ...(status !== undefined ? { status } : {}),
+          }),
+        );
+        return;
+      }
+      const promptFragmentMatch = PROMPT_FRAGMENT_PATH.exec(url.pathname);
+      if (promptStudio !== undefined && req.method === "GET" && promptFragmentMatch !== null) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        sendJson(
+          res,
+          200,
+          await promptStudio.fragment(decodeURIComponent(promptFragmentMatch[1] ?? "")),
+        );
+        return;
+      }
+      const promptRevisionMatch = PROMPT_REVISION_PATH.exec(url.pathname);
+      if (promptStudio !== undefined && req.method === "GET" && promptRevisionMatch !== null) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        sendJson(
+          res,
+          200,
+          await promptStudio.revision(decodeURIComponent(promptRevisionMatch[1] ?? "")),
+        );
+        return;
+      }
+      if (
+        promptStudio !== undefined &&
+        req.method === "POST" &&
+        PROMPT_FRAGMENTS_PATH.test(url.pathname)
+      ) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        const parsed = promptStudioCreateRequestSchema.safeParse(
+          await readJson(req, MAX_PROMPT_REQUEST_BODY_BYTES),
+        );
+        if (!parsed.success) {
+          throw new BridgeRequestError(400, "lifeos_prompt_create_invalid", "Prompt创建请求非法");
+        }
+        sendJson(res, 201, await promptStudio.create(parsed.data));
+        return;
+      }
+      if (
+        promptStudio !== undefined &&
+        req.method === "POST" &&
+        PROMPT_COPIES_PATH.test(url.pathname)
+      ) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        const parsed = promptStudioCopyRequestSchema.safeParse(
+          await readJson(req, MAX_PROMPT_REQUEST_BODY_BYTES),
+        );
+        if (!parsed.success) {
+          throw new BridgeRequestError(400, "lifeos_prompt_copy_invalid", "Prompt复制请求非法");
+        }
+        sendJson(res, 201, await promptStudio.copy(parsed.data));
+        return;
+      }
+      const promptReviseMatch = PROMPT_FRAGMENT_REVISIONS_PATH.exec(url.pathname);
+      if (promptStudio !== undefined && req.method === "POST" && promptReviseMatch !== null) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        const parsed = promptStudioReviseRequestSchema.safeParse(
+          await readJson(req, MAX_PROMPT_REQUEST_BODY_BYTES),
+        );
+        if (!parsed.success) {
+          throw new BridgeRequestError(400, "lifeos_prompt_revise_invalid", "Prompt修订请求非法");
+        }
+        sendJson(
+          res,
+          201,
+          await promptStudio.revise(decodeURIComponent(promptReviseMatch[1] ?? ""), parsed.data),
+        );
+        return;
+      }
+      const promptArchiveMatch = PROMPT_FRAGMENT_ARCHIVE_PATH.exec(url.pathname);
+      if (promptStudio !== undefined && req.method === "POST" && promptArchiveMatch !== null) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        const parsed = promptStudioArchiveRequestSchema.safeParse(
+          await readJson(req, MAX_PROMPT_REQUEST_BODY_BYTES),
+        );
+        if (!parsed.success) {
+          throw new BridgeRequestError(400, "lifeos_prompt_archive_invalid", "Prompt归档请求非法");
+        }
+        sendJson(
+          res,
+          200,
+          await promptStudio.archive(decodeURIComponent(promptArchiveMatch[1] ?? ""), parsed.data),
+        );
+        return;
+      }
       const recordsMatch = SESSION_RECORDS_PATH.exec(url.pathname);
       if (req.method === "GET" && recordsMatch !== null) {
         if (url.search !== "") {

@@ -45,6 +45,8 @@ import {
   promptReviewRequestIdSchema,
   promptReviewDecisionIdSchema,
   directAgentCandidateIdSchema,
+  promptFragmentIdSchema,
+  promptFragmentRevisionIdSchema,
   type PrincipalId,
 } from "@chat/contracts";
 import type {
@@ -55,6 +57,7 @@ import type {
   ProductStorePort,
   ProjectIdFactory,
   RuleIdFactory,
+  PromptFragmentIdFactory,
 } from "@chat/application";
 import { JsonProductStore } from "@chat/product-store-json";
 import { createProjectResourceRegistry } from "@chat/project-runtime";
@@ -64,6 +67,7 @@ import {
   PiProjectAdvancementUnderstandingAdapter,
   PiProjectIntakeUnderstandingAdapter,
 } from "@chat/pi-runtime";
+import { createFilePromptCatalog } from "./prompt-catalog.js";
 
 /**
  * API组合根。
@@ -146,6 +150,13 @@ export function createDirectAgentIdFactory(): DirectAgentIdFactory {
   };
 }
 
+export function createPromptFragmentIdFactory(): PromptFragmentIdFactory {
+  return {
+    fragment: () => promptFragmentIdSchema.parse(`pfg_${randomSuffix()}`),
+    revision: () => promptFragmentRevisionIdSchema.parse(`pfr_${randomSuffix()}`),
+  };
+}
+
 export function defaultProductStorePath(): string {
   return (
     process.env.CHAT_PRODUCT_STORE_PATH ??
@@ -178,6 +189,7 @@ export async function createApplicationDeps(
     projectModelProfile,
   );
   const workflowMemoryProviders = createWorkflowMemoryProviderRegistry(process.env);
+  const promptCatalog = await createFilePromptCatalog();
   return {
     store,
     now: () => new Date().toISOString(),
@@ -190,6 +202,8 @@ export async function createApplicationDeps(
     noteIds: createNoteIdFactory(),
     ruleIds: createRuleIdFactory(),
     directAgentIds: createDirectAgentIdFactory(),
+    promptCatalog,
+    promptFragmentIds: createPromptFragmentIdFactory(),
     ...(trace !== undefined ? { trace } : {}),
   };
 }

@@ -123,6 +123,7 @@ const rules: Record<
       "@deepseek-ai/dsh-client-ui-layout",
       "@deepseek-ai/dsh-client-ui-primitives",
       "@deepseek-ai/dsh-client-ui-sidebar",
+      "@deepseek-ai/dsh-client-ui-settings",
       "@deepseek-ai/dsh-client-ui-slots",
       "@deepseek-ai/dsh-client-ui-trajectory",
       "@deepseek-ai/dsh-client-web-react",

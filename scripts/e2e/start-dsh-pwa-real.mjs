@@ -1,12 +1,12 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { installDshWebEnvironment, resolveDshBin } from "../dsh/profile-runtime.mjs";
 import {
-  DSH_INTERNAL_WEB_HOST,
-  DSH_INTERNAL_WEB_PORT,
-  startWebGateway,
-} from "../dsh/web-gateway.mjs";
+  installDshWebEnvironment,
+  resolveDshBin,
+  resolveDshWebRuntime,
+} from "../dsh/profile-runtime.mjs";
+import { startWebGateway } from "../dsh/web-gateway.mjs";
 import { dshRealWebEnvironment } from "./dsh-real-environment.mjs";
 
 /**
@@ -31,20 +31,21 @@ installDshWebEnvironment(process.env, {
   ...dshRealWebEnvironment(repoRoot, process.env),
   CHAT_CODE_WORKBENCH_ENABLED: "0",
 });
+const runtime = resolveDshWebRuntime(repoRoot, process.env);
 process.chdir(repoRoot);
 process.argv = [
   process.execPath,
   executable,
   "web",
   "--host",
-  DSH_INTERNAL_WEB_HOST,
+  runtime.host,
   "--port",
-  String(DSH_INTERNAL_WEB_PORT),
+  String(runtime.port),
 ];
 
 const gateway = await startWebGateway({
   targets: {
-    dsh: { host: DSH_INTERNAL_WEB_HOST, port: DSH_INTERNAL_WEB_PORT },
+    dsh: { host: runtime.host, port: runtime.port },
   },
   logger(error) {
     console.error(
@@ -53,7 +54,7 @@ const gateway = await startWebGateway({
   },
 });
 const closeGateway = () => {
-  void gateway.close();
+  void gateway.close().finally(() => process.exit(0));
 };
 process.once("SIGINT", closeGateway);
 process.once("SIGTERM", closeGateway);

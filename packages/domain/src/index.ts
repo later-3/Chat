@@ -15,6 +15,7 @@ export * from "./workflow-node-run.js";
 export * from "./workflow-definition-kernel.js";
 export * from "./workflow-designer-operations.js";
 export * from "./rule-revision.js";
+export * from "./prompt-fragment.js";
 export * from "./rule-selection.js";
 export * from "./planning-project-context.js";
 export * from "./planning-memory-selection.js";

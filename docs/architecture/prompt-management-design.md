@@ -1,10 +1,10 @@
 # Chat 提示词管理：上游事实与设计草案
 
-> 状态：待产品审核的设计草案，不是已实现合同。
+> 状态：Prompt 管理三模块架构已获产品确认；Prompt Studio 管理纵向已实现，Prompt Assembly 与 Runtime Review 编辑仍按本文后续阶段推进。
 >
 > 调研基线：Chat `main@f1315ef`；Pi `later-3/pi@1f2b9ff`（npm 基底 `0.84.2`）；DeepSeek Harness `0.1.0-rc.6@15148dbd9a`。DSH 后续窄派生提交只涉及 Trajectory，不改变本文引用的 Prompt 与 Session 机制。
 >
-> 本文只确定提示词的所有权、组成、来源、连续会话和预算方向。用户审核后再拆实现任务；本轮不修改 Planner、Executor、Direct Agent 或 DSH 的运行行为。
+> 本文确定提示词的所有权、组成、来源、连续会话和预算方向，并记录已交付的 Prompt Studio 管理纵向；本轮不修改 Planner、Executor、Direct Agent 或 DSH 的模型运行行为。
 >
 > 三个真实 Agent 的逐请求实验、宿主预注入与模型 Tool Call 的因果区分，以及真实压缩请求证据见[《Pi、DeepSeek Harness 与 Hermes 的真实上下文组装实验》](./prompt-context-real-experiment.md)。若本文的概括与实验报告冲突，以固定源码和实验报告中的真实请求为准。
 
@@ -17,6 +17,16 @@ Later 对现状的判断基本正确，但需要补一层边界：
 3. Chat 不是完全没有提示词逻辑。Planner、Executor、Direct Agent、Memory/Rule/Workspace Context 和 Prompt Review 已各自实现了一部分；问题是它们散落在不同 TypeScript 文件和上游默认行为里，没有统一的区域、来源、优先级、预算、跨 Run 历史和压缩合同。
 4. Chat 不应复制 Pi Agent Loop，也不应让 DSH Session 成为 Chat Prompt 的权威来源。推荐保留 Pi 负责一次 Agent 运行内部的循环和 Provider 适配，让 Chat 新增一个产品级 `Prompt Profile + Prompt Compiler + Assembly Manifest`，管理“这一节点为什么把哪些事实交给模型”。
 5. 同一个 Product Session 可以逐条消息选择不同 Workflow。连续会话上下文必须从 Chat Product Store 的正式 Message/Context 事实编译，而不是复用 DSH 隐藏上下文或默认继承某个 Pi Session。
+
+### 1.1 三个相互独立、按顺序交付的模块
+
+Chat 的 Prompt 能力固定拆成 3 个模块，不能再把“保存一段文字”“组装 Provider 请求”和“发送前人工审核”混成一个对象：
+
+1. **Prompt 模型与组装基础**：定义 Region、版本化 Fragment、未来的 Profile、Compiler 和 Assembly Manifest。Git 拥有内置 Markdown，Product Store 拥有用户创建/派生的版本事实。
+2. **Prompt 管理工作台**：DSH「设置 → 提示词」只管理区域、组件和版本。内置组件只读，修改必须创建用户副本；用户组件通过 CAS 追加不可变 Revision。本模块不调用模型、不启动 Workflow。
+3. **Workflow Runtime 控制**：每个 Pi Agent 节点可配置 `reviewMode=off|manual`。`manual` 在真实 Provider 请求边界暂停，显示 Raw 与基于 Assembly Manifest 的可读来源，并允许批准、拒绝；以后若允许编辑，编辑结果必须成为新的待审 Revision/Hash。
+
+这三个模块的依赖方向是：管理事实 → 组装选择 → Runtime 冻结/审核。Prompt Studio 不是 Workflow 节点；Prompt Review 是 Agent 节点内部能力，也不需要额外画成人工节点。
 
 ## 2. 术语
 
@@ -278,20 +288,35 @@ Application 已经能冻结 Workspace、Memory、Project 和 Rule 等产品事�
 - **Chat 自研**：Product Fact 选择、跨 Run 会话上下文、节点 Prompt Profile、预算、压缩决定、来源 Manifest 和 Prompt Review 投影。
 - **明确拒绝**：从 DSH Transcript DOM 或 Pi Session 文件反推 Chat 的长期上下文；让 Workflow Checkpoint、DSH Session 或 Pi Session 成为第二套 Product Store。
 
-### 6.2 六个顶层区域
+### 6.2 语义区与 Provider 物理区分开
 
-第一版只定义 6 个用户可理解的 Region，避免一开始制造过多概念：
+Provider 最终物理结构仍只有 `system + messages[] + tools[] + request options`。Prompt Studio 管理的是更细的**语义区**，以后由 Compiler 映射到这些物理字段；Region 不是 Provider 新字段。
 
-| Region | 内容 | 典型子来源 |
-|---|---|---|
-| `system` | 不能被普通上下文覆盖的节点身份、边界和行为规则 | Chat 产品规则、Agent 类型、Workflow/Node 指令 |
-| `current_input` | 本轮明确要处理的输入 | 当前 Product User Message、前序节点输出 |
-| `conversation` | 为理解连续对话选入的已提交历史 | Conversation Summary、近期 User/Assistant 成功对 |
-| `reference_context` | 可采用但不自动授权的背景材料 | Workspace、Memory、Project、Rule、文件片段 |
-| `tools` | 可调用能力及模型可见 Schema/说明 | Capability Profile、Tool Schema、调用约束 |
-| `request_options` | 非自然语言请求控制 | Provider、Model、Thinking、Token、Temperature、Stop |
+第一版目录共 17 个区域：
 
-Tool Result 和 Assistant Tool Call 属于 `conversation` 的运行中消息；工具定义属于 `tools`。这样既符合 Provider 结构，也不会把“工具是什么”和“工具刚刚返回了什么”混在一起。
+| Region | 用户可编辑 | 计划位置 | 含义 |
+|---|---:|---|---|
+| `agent_identity` | 是 | system | 模型在当前节点扮演的身份；唯一计划进入 System 的普通可编辑语义区 |
+| `user_context` | 是 | messages | 完成任务确实需要知道的用户资料和偏好 |
+| `background` | 是 | messages | 背景、现状和边界 |
+| `objective` | 是 | messages | 本次运行希望达成的结果 |
+| `requirements` | 是 | messages | 必须满足的交付要求 |
+| `rules` | 是 | messages | 本次运行必须遵守的规则和规范 |
+| `experience` | 是 | messages | 可复用的方法、经验和注意事项 |
+| `examples` | 是 | messages | 希望模型参考的正向案例 |
+| `counterexamples` | 是 | messages | 需要避免的错误做法和反例 |
+| `output_contract` | 是 | messages | 输出格式、结构和验收约定 |
+| `custom_context` | 是 | messages | 用户扩展的命名 Key/Value 上下文 |
+| `runtime_contract` | 否 | system | Chat、Workflow 和 Agent Runtime 强制执行的节点边界 |
+| `current_input` | 否 | messages | 当前 Product Message 或前序节点输入 |
+| `conversation` | 否 | messages | 明确选入的正式历史与同 Run Tool Loop 消息 |
+| `memory` | 否 | messages | 未来由 Memory Provider 选择并冻结的事实 |
+| `tools` | 否 | tools | Tool Schema、说明和能力边界 |
+| `request_options` | 否 | request_options | Provider、Model、Thinking、Token 等参数 |
+
+用户说的背景、目标、规则、经验和案例都属于带来源的上下文，而不是因为“重要”就全部塞进 System。Tool Result 和 Assistant Tool Call 属于 `conversation` 的运行中消息；工具定义属于 `tools`。
+
+Region key 是受限稳定字符串，不是封闭 enum。增加新区域只需发布 Catalog 新版本；已有 Prompt Revision 无需 Store schema 迁移。
 
 ### 6.3 Prompt Fragment
 
@@ -480,19 +505,21 @@ Readable 页以后不再按 `message.role` 静态猜来源，而是读取 Assemb
 
 所有标题、解释、来源标签都明确标记为 UI Metadata，不进入模型请求；区域正文必须能通过 JSON Pointer 回到 Raw 的真实字段。若某个 Raw 字段无法映射，Readable 页新增“未归类原始字段”，不能丢失或自作解释。
 
-## 10. 建议实施顺序
+## 10. 实施顺序
 
-在本设计审核通过后，建议按 3 个小纵向推进：
+按产品确认后的顺序推进：
 
-1. **来源先行**：定义 Prompt Region、Fragment、Profile 和 Assembly Manifest；先接 Direct Agent。Raw 不变，Readable 改为消费真实 Manifest，修正当前错误来源说明。
-2. **连续会话**：Direct Agent 在每个新 Product Run 中从正式 Product Message 选择近期成功对；前端展示采用/排除历史。暂不启用模型摘要。
-3. **压缩与统一**：增加 Conversation Summary Candidate 和预算策略，再把 Planner、Execution Agent 迁移到同一 Compiler。
+1. **Prompt Studio 管理纵向（本次已实现）**：Git Region/Builtin Catalog、用户 PromptFragment/Revision、Store v14、公开 Query/Command、DSH 设置页。明确不组装、不调用模型、不绑定 Workflow。
+2. **Prompt Assembly 纵向**：增加版本化 Profile、每次发送前的选择/临时覆盖、Compiler 和 Assembly Manifest；先接 Direct Agent，并在现有 Prompt Review 可读页展示真实 Region/来源/JSON Pointer。
+3. **Runtime 编辑与连续会话**：在 Agent 节点内部支持发送前编辑后重新冻结；再接近期正式历史、Conversation Summary Candidate、预算和压缩，最后迁移 Planner/Executor。
 
-每一步都能独立在 DSH 前端体验，不要求先完成一个巨大的 Prompt 平台。
+每一步都是用户可独立验证的小纵向，不为了未来阶段提前建立第二套控制面。
 
-## 11. 需要 Later 审核的 4 个产品选择
+## 11. 已冻结的产品选择
 
-1. 历史默认是否只纳入成功提交的 `User → Assistant` 对；本文建议“是”。
-2. Prompt Profile 的用户配置第一版是否只开放 `reviewMode`、历史深度、Context 开关和预算，而不开放安全 System 正文；本文建议“是”。
-3. 跨 Run 压缩摘要是否必须先成为可追溯 Candidate 再提交；本文建议“是”。
-4. 首个实现是否只改 Direct Agent，体验稳定后再迁移 Planner/Executor；本文建议“是”。
+1. Prompt Studio 先管理、后组装；第一纵向不进入 Workflow。
+2. 内置 Markdown 由 Git Catalog 唯一拥有，用户修改通过“创建副本”进入 Product Store。
+3. 普通可编辑内容只有 Agent 身份进入 System；背景、目标、要求、规则和经验作为带来源 Context。
+4. Prompt Review 是 Pi Agent 节点内部开关，不再为它制造第二个图节点。
+5. 历史默认只纳入成功提交的 `User → Assistant` 对；失败证据保留但不自动激活。
+6. 跨 Run 压缩摘要必须先成为可追溯 Candidate 再提交。

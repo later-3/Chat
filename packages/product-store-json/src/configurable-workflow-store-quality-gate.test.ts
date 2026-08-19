@@ -40,6 +40,8 @@ import { migrateProductSnapshotV9ToV10 } from "./migrate-v9-to-v10.js";
 import { migrateProductSnapshotV10ToV11 } from "./migrate-v10-to-v11.js";
 import { migrateProductSnapshotV11ToV12 } from "./migrate-v11-to-v12.js";
 import { migrateProductSnapshotV12ToV13 } from "./migrate-v12-to-v13.js";
+import { migrateProductSnapshotV13ToV14 } from "./migrate-v13-to-v14.js";
+import { productSnapshotV13Schema } from "./legacy-v13.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-10T12:00:00.000Z";
@@ -92,6 +94,8 @@ function emptyV6() {
     "directAgentCandidates",
     "promptReviewRequests",
     "promptReviewDecisions",
+    "promptFragments",
+    "promptFragmentRevisions",
   ]) {
     delete entities[key];
   }
@@ -144,11 +148,13 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     expect(first.entities.workflowViewDefinitions[LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID]).toEqual(
       second.entities.workflowViewDefinitions[LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID],
     );
-    const current = migrateProductSnapshotV12ToV13(
-      migrateProductSnapshotV11ToV12(
-        migrateProductSnapshotV10ToV11(
-          migrateProductSnapshotV9ToV10(
-            migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(first)),
+    const current = migrateProductSnapshotV13ToV14(
+      migrateProductSnapshotV12ToV13(
+        migrateProductSnapshotV11ToV12(
+          migrateProductSnapshotV10ToV11(
+            migrateProductSnapshotV9ToV10(
+              migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(first)),
+            ),
           ),
         ),
       ),
@@ -251,7 +257,9 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     ]);
     expect(() =>
       assertSnapshotIntegrity(
-        migrateProductSnapshotV12ToV13(migrateProductSnapshotV11ToV12(first)),
+        migrateProductSnapshotV13ToV14(
+          migrateProductSnapshotV12ToV13(migrateProductSnapshotV11ToV12(first)),
+        ),
       ),
     ).not.toThrow();
   });
@@ -292,7 +300,11 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     ).toEqual(
       v11.entities.workflowDefinitionRevisions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID],
     );
-    expect(() => assertSnapshotIntegrity(migrateProductSnapshotV12ToV13(first))).not.toThrow();
+    expect(() =>
+      assertSnapshotIntegrity(
+        migrateProductSnapshotV13ToV14(migrateProductSnapshotV12ToV13(first)),
+      ),
+    ).not.toThrow();
   });
 
   it("v12→v13保留旧事实、种入单节点/16次审核预算的Direct Agent并只新增空集合", () => {
@@ -328,7 +340,7 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
       nodeType: "agent.direct",
       config: { capabilityMode: "read_only", promptReviewMode: "manual" },
     });
-    expect(() => assertSnapshotIntegrity(first)).not.toThrow();
+    expect(() => assertSnapshotIntegrity(migrateProductSnapshotV13ToV14(first))).not.toThrow();
   });
 
   it("v12→v13遇到Direct系统固定ID异语义对象时失败关闭", () => {
@@ -343,6 +355,26 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
       title: "伪造Direct Agent流程",
     };
     expect(() => migrateProductSnapshotV12ToV13(conflicting)).toThrow("固定ID已被异语义对象占用");
+  });
+
+  it("v13→v14只新增空Prompt Studio集合并保持全部旧事实逐项不变", () => {
+    const v7 = migrateProductSnapshotV6ToV7(emptyV6());
+    const v9 = migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(v7));
+    const v11 = migrateProductSnapshotV10ToV11(migrateProductSnapshotV9ToV10(v9));
+    const v13 = productSnapshotV13Schema.parse(
+      migrateProductSnapshotV12ToV13(migrateProductSnapshotV11ToV12(v11)),
+    );
+    const migrated = migrateProductSnapshotV13ToV14(v13);
+    expect(migrated.schemaVersion).toBe("chat-product-store.v14");
+    expect(migrated.entities.promptFragments).toEqual({});
+    expect(migrated.entities.promptFragmentRevisions).toEqual({});
+    expect(migrated.entities).toEqual({
+      ...v13.entities,
+      promptFragments: {},
+      promptFragmentRevisions: {},
+    });
+    expect(migrated.storeRevision).toBe(v13.storeRevision);
+    expect(migrated.committedAt).toBe(v13.committedAt);
   });
 
   it.each([

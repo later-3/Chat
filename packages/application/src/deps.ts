@@ -43,6 +43,8 @@ import type {
   DirectAgentCandidateId,
   ExecutionTracePage,
 } from "@chat/contracts";
+import type { PromptFragmentId, PromptFragmentRevisionId } from "@chat/contracts";
+import type { PromptCatalogPort } from "./prompt-catalog-port.js";
 import type { TraceEventInput } from "@chat/contracts";
 import type { ProductStorePort } from "./product-store-port.js";
 import type { MemoryBackendRegistryPort } from "./memory-ports.js";
@@ -133,6 +135,11 @@ export interface DirectAgentIdFactory {
   candidate(): DirectAgentCandidateId;
 }
 
+export interface PromptFragmentIdFactory {
+  fragment(): PromptFragmentId;
+  revision(): PromptFragmentRevisionId;
+}
+
 export interface ApplicationDeps {
   readonly store: ProductStorePort;
   readonly now: () => string;
@@ -158,6 +165,9 @@ export interface ApplicationDeps {
   readonly noteIds?: NoteIdFactory;
   readonly ruleIds?: RuleIdFactory;
   readonly directAgentIds?: DirectAgentIdFactory;
+  /** Prompt Studio的Git Catalog与用户产品身份；旧用例不被迫依赖。 */
+  readonly promptCatalog?: PromptCatalogPort;
+  readonly promptFragmentIds?: PromptFragmentIdFactory;
 }
 
 /** 规划修订默认上限（任务书§9.2.7）。 */

@@ -27,6 +27,7 @@ test("manifest exposes the native DSH bundle patch and client factory contract",
     "@deepseek-ai/dsh-client-ui-layout",
     "@deepseek-ai/dsh-client-ui-primitives",
     "@deepseek-ai/dsh-client-ui-sidebar",
+    "@deepseek-ai/dsh-client-ui-settings",
     "@deepseek-ai/dsh-client-ui-trajectory",
   ]);
   const host = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");

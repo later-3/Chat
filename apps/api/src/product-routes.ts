@@ -64,6 +64,13 @@ import {
   createRuleTagPayloadSchema,
   updateRuleTagPayloadSchema,
   archiveRuleTagPayloadSchema,
+  promptFragmentIdSchema,
+  promptFragmentRevisionIdSchema,
+  listPromptFragmentsQuerySchema,
+  createPromptFragmentPayloadSchema,
+  copyPromptFragmentPayloadSchema,
+  revisePromptFragmentPayloadSchema,
+  changePromptFragmentArchiveStatusPayloadSchema,
   type PrincipalId,
   type ProblemDetail,
   type RequestId,
@@ -150,6 +157,14 @@ import {
   createRuleTag,
   updateRuleTag,
   archiveRuleTag,
+  listPromptRegions,
+  listPromptFragments,
+  getPromptFragment,
+  getPromptFragmentRevision,
+  createPromptFragment,
+  copyPromptFragment,
+  revisePromptFragment,
+  changePromptFragmentArchiveStatus,
   type ApplicationDeps,
 } from "@chat/application";
 import { hashCanonical } from "@chat/domain";
@@ -643,6 +658,173 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
           ...query,
         }),
       );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/prompt-regions", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      return privateEtagJson(c, "prompt-regions", await listPromptRegions(ctx.deps));
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/prompt-fragments", async (c) => {
+    try {
+      const params = strictQueryParams(
+        c.req.url,
+        ["cursor", "limit", "regionKey", "ownerKind", "status"],
+        "Prompt Fragment列表查询",
+      );
+      const limit = parseOptionalPositiveInteger(params, "limit", "Prompt Fragment列表limit");
+      const query = listPromptFragmentsQuerySchema.parse({
+        ...(params.get("cursor") !== null ? { cursor: params.get("cursor") } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+        ...(params.get("regionKey") !== null ? { regionKey: params.get("regionKey") } : {}),
+        ...(params.get("ownerKind") !== null ? { ownerKind: params.get("ownerKind") } : {}),
+        ...(params.get("status") !== null ? { status: params.get("status") } : {}),
+      });
+      return privateEtagJson(
+        c,
+        "prompt-fragments-list",
+        await listPromptFragments(ctx.deps, { principalId: ctx.principalId, query }),
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/prompt-fragments/:promptFragmentId", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const promptFragmentId = promptFragmentIdSchema.parse(c.req.param("promptFragmentId"));
+      return privateEtagJson(
+        c,
+        "prompt-fragment-detail",
+        await getPromptFragment(ctx.deps, { principalId: ctx.principalId, promptFragmentId }),
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/prompt-fragment-revisions/:promptFragmentRevisionId", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const promptFragmentRevisionId = promptFragmentRevisionIdSchema.parse(
+        c.req.param("promptFragmentRevisionId"),
+      );
+      return privateEtagJson(
+        c,
+        "prompt-fragment-revision-detail",
+        await getPromptFragmentRevision(ctx.deps, {
+          principalId: ctx.principalId,
+          promptFragmentRevisionId,
+        }),
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/prompt-fragments", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const result = await createPromptFragment(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        payload: createPromptFragmentPayloadSchema.parse(envelope.payload),
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/prompt-fragments",
+        statusCode: 201,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/prompt-fragments/copies", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const result = await copyPromptFragment(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        payload: copyPromptFragmentPayloadSchema.parse(envelope.payload),
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/prompt-fragments/copies",
+        statusCode: 201,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/prompt-fragments/:promptFragmentId/revisions", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const promptFragmentId = promptFragmentIdSchema.parse(c.req.param("promptFragmentId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "修订Prompt Fragment必须携带expectedRevision",
+        });
+      }
+      const result = await revisePromptFragment(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        promptFragmentId,
+        expectedRevision: envelope.expectedRevision,
+        payload: revisePromptFragmentPayloadSchema.parse(envelope.payload),
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/prompt-fragments/:promptFragmentId/revisions",
+        statusCode: 201,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/prompt-fragments/:promptFragmentId/archive-status", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const promptFragmentId = promptFragmentIdSchema.parse(c.req.param("promptFragmentId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Prompt归档命令必须携带expectedRevision",
+        });
+      }
+      const result = await changePromptFragmentArchiveStatus(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        promptFragmentId,
+        expectedRevision: envelope.expectedRevision,
+        payload: changePromptFragmentArchiveStatusPayloadSchema.parse(envelope.payload),
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/prompt-fragments/:promptFragmentId/archive-status",
+        statusCode: 200,
+      });
+      return c.json(result, 200);
     } catch (error) {
       return mapError(c, error);
     }

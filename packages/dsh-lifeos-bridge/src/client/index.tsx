@@ -6,6 +6,7 @@ import {
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
 import type {} from "@deepseek-ai/dsh-client-ui-layout/client";
 import type {} from "@deepseek-ai/dsh-client-ui-sidebar/client";
+import type {} from "@deepseek-ai/dsh-client-ui-settings/client";
 import { CodeWorkbenchSidebarAction, CodeWorkbenchSurface } from "./CodeWorkbench.tsx";
 import { LifeosDock, type LifeosDockInjected } from "./LifeosDock.tsx";
 import { WorkflowPicker, type WorkflowPickerInjected } from "./WorkflowPicker.tsx";
@@ -23,6 +24,9 @@ import {
   ContextInjectionManager,
   type ContextInjectionManagerInjected,
 } from "./ContextInjectionManager.tsx";
+import { PromptStudio, type PromptStudioInjected } from "./PromptStudio.tsx";
+import { PromptStudioController } from "./prompt-studio-controller.ts";
+import { installPromptStudioStyles } from "./prompt-studio-styles.ts";
 
 export const name = "chat-dsh-lifeos-bridge-client";
 export const inject = ["slots", "conversationEvents"];
@@ -30,6 +34,7 @@ export const inject = ["slots", "conversationEvents"];
 /** Additive Workflow/Plan/HITL/Workbench surfaces; native ChatView and Composer remain owners. */
 export function apply(ctx: ClientContext): void {
   installStyles(ctx);
+  installPromptStudioStyles(ctx);
   const traceTimestamps = createSnapshotStore(false, {
     persist: { name: "chat.lifeos.trace-timestamps.v1" },
   });
@@ -48,6 +53,7 @@ export function apply(ctx: ClientContext): void {
     };
   }, "lifeos bridge: execution trace trajectory");
   const workbench = new WorkbenchSurfaceController();
+  const promptStudio = new PromptStudioController();
   const controllers = new Map<SessionId, LifeosProjectionController>();
   const recordControllers = new Map<SessionId, SessionRecordsController>();
   const controllerFor = (sessionId: SessionId): LifeosProjectionController => {
@@ -76,6 +82,32 @@ export function apply(ctx: ClientContext): void {
       recordControllers.clear();
     },
     "lifeos bridge: session records controllers",
+  );
+
+  ctx.effect(() => () => promptStudio.dispose(), "lifeos bridge: prompt studio controller");
+
+  ctx.slots.inject("settings.section", () =>
+    ctx.slots.register(
+      {
+        name: "settings.section",
+        id: "lifeos-prompts",
+        order: 30,
+        label: "提示词",
+        inject: (): PromptStudioInjected => ({
+          hooks: { promptStudio },
+          refresh: () => promptStudio.refresh(),
+          select: (promptFragmentId) => promptStudio.select(promptFragmentId),
+          closeDetail: () => promptStudio.closeDetail(),
+          viewRevision: (promptFragmentRevisionId) =>
+            promptStudio.viewRevision(promptFragmentRevisionId),
+          create: (payload) => promptStudio.create(payload),
+          copy: (payload) => promptStudio.copy(payload),
+          revise: (payload) => promptStudio.revise(payload),
+          archive: (payload) => promptStudio.archive(payload),
+        }),
+      },
+      PromptStudio,
+    ),
   );
 
   ctx.slots.inject("conversation.view", () =>
