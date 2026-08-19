@@ -91,7 +91,7 @@ Planning包含执行和产品提交，因此`human.plan_review`始终是manual�
 
 ### 5.1 Planning
 
-当前有3个互相独立、身份不同的系统Planning Definition：
+当前公开目录有2个互相独立、身份不同的系统Planning Definition：
 
 1. 默认Simple Planning：
 
@@ -107,7 +107,7 @@ Memory Query -> Memory Write（本次用户输入） -> Project -> Rules -> Skil
              -> Execute -> Validate -> Product Commit
 ```
 
-3. 历史完整上下文Planning v2：继续保留`context.memory -> context.project -> policy.rules -> capability.skills`，只用于兼容已有选择和RunSpec；它不是默认，也没有被改写成新Memory方案。
+历史完整上下文Planning v2（旧标题“默认规划工作流”）已从公开目录移除；其Revision、View和Runner为既有Run恢复、兼容调用与证据读取保留。旧“默认笔记工作流”同样不再出现在产品选择器中。
 
 Simple Planning不是Memory流程的前置、后继或被包装子图。Memory Query冻结Provider描述、来源与结果Snapshot，再聚合为唯一`WorkflowMemoryContext`；Memory Write先提交Intent/Result，由同一父Workflow唯一执行，不创建竞争的start Outbox。Plan修订复用同一冻结Memory Context；批准后Execution只解析Approved Step明确引用的三元组。
 

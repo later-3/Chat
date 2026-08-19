@@ -37,6 +37,15 @@ export const NOTE_CAPTURE_RUNNER_BUNDLE_VERSION = "note-capture.bundle.v1" as co
 export const LEGACY_PLANNING_RUNNER_FAMILY = "legacy-planning.v1" as const;
 export const LEGACY_PLANNING_RUNNER_BUNDLE_VERSION = "legacy-planning.bundle.v1" as const;
 
+/**
+ * 已退役的系统Definition只为历史Run、迁移与证据解析保留稳定身份。
+ * 它们不得再进入公开目录；底层身份继续支持历史恢复与兼容调用。
+ */
+export const RETIRED_SYSTEM_WORKFLOW_DEFINITION_IDS = new Set<string>([
+  SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
+  SYSTEM_NOTE_WORKFLOW_DEFINITION_ID,
+]);
+
 export function systemPlanningSemanticRoot(): WorkflowSequence {
   return {
     kind: "sequence",

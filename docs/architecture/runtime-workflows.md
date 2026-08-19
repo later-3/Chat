@@ -2,7 +2,7 @@
 
 > 文档类型：当前实现（as-built）
 >
-> 当前Workflow Definition：`planning-execution-workflow.v3`、`memory-write-workflow.v1`、历史兼容`memory-import-workflow.v1`、`project-intake-workflow.v1`、`project-advancement-workflow.v1`
+> 当前公开系统Definition只有“规划执行工作流”和“Memory 增强规划与执行”。旧“默认规划工作流”和“默认笔记工作流”不再进入产品选择器；对应Runner与稳定证据为历史恢复及兼容调用保留。其他内部耐久流程包括`memory-write-workflow.v1`、历史兼容`memory-import-workflow.v1`、`project-intake-workflow.v1`、`project-advancement-workflow.v1`。
 >
 > 产品事实源：Product Store；Workflow返回值和Runtime状态不是产品终态。
 >
@@ -14,11 +14,13 @@
 
 1. 默认“规划执行工作流”：一条消息的规划、人工修订/批准、执行、验证和正式提交；冻结Definition不含Memory。
 2. “Memory 增强规划与执行”：用户显式选择后，在同一个父Workflow中执行`memory.query → memory.write →`完整Planning链。
-3. 历史完整上下文Planning：继续支持冻结选择式`context.memory`，但不是新Memory方案，也不是默认。
+3. 历史完整上下文Planning：已从公开目录移除；底层仅保留兼容和既有冻结RunSpec恢复能力。
 4. `MemoryWriteWorkflow`：直接Memory Write Command产生的一次外部写入或一次只读对账；Memory Planning节点只复用其Application状态机，不启动第二个Workflow。
 5. 历史`MemoryImportWorkflow`：只保留旧事实兼容。
 6. `ProjectIntakeWorkflow`：一次真实资源建项理解、候选审核和确认。
 7. `ProjectAdvancementWorkflow`：现有Project的一次Stage/Milestone/负责人Update理解、候选修订和确认。
+
+旧`NoteCaptureWorkflow`不再由产品选择器提供；实现与绑定解析暂留，避免已有等待审核、兼容调用或恢复中的Run失去证据链。
 
 “规划必须在同一个Workflow中完成”指的是选择Memory流程后，查询、写入、规划、修订循环和执行都由同一个父Workflow顺序驱动，不能拆成多个竞争的规划Run。Memory Write仍拥有独立的产品意图、结果未知与对账状态机；只有直接Write Command才通过Outbox启动独立`MemoryWriteWorkflow`。
 

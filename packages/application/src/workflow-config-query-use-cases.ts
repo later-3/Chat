@@ -15,7 +15,10 @@ import type { ApplicationDeps } from "./deps.js";
 import { forbidden, notFound } from "./errors.js";
 import { DEFAULT_WORKFLOW_BLUEPRINTS } from "./workflow-blueprints.js";
 import { DEFAULT_NODE_CATALOG } from "./workflow-node-catalog.js";
-import { SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID } from "./workflow-system-definitions.js";
+import {
+  RETIRED_SYSTEM_WORKFLOW_DEFINITION_IDS,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+} from "./workflow-system-definitions.js";
 import {
   listAuthorizedWorkflowResources,
   toWorkflowResourceRefDto,
@@ -78,6 +81,10 @@ export async function getWorkflowDefinitions(
     definitions: workflowDefinitionsDtoSchema.parse({
       schemaVersion: PRODUCT_API_SCHEMA_VERSION,
       definitions: Object.values(snapshot.entities.workflowDefinitions)
+        .filter(
+          (definition) =>
+            !RETIRED_SYSTEM_WORKFLOW_DEFINITION_IDS.has(definition.workflowDefinitionId),
+        )
         .filter((definition) =>
           definition.ownerKind === "system"
             ? definition.status === "active"

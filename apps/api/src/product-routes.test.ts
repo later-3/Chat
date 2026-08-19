@@ -342,6 +342,9 @@ describe("公开产品API", () => {
       (definition) =>
         definition.workflowDefinitionRevisionId === SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
     );
+    expect(
+      definitionsEnvelope.definitions.definitions.map((definition) => definition.title),
+    ).toEqual(["规划执行工作流", "Memory 增强规划与执行"]);
     expect(ordinary?.nodes.map((node) => node.nodeType)).not.toContain("memory.query");
     expect(ordinary?.nodes.map((node) => node.nodeType)).not.toContain("memory.write");
     expect(memory).toMatchObject({
