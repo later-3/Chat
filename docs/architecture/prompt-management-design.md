@@ -292,7 +292,7 @@ Application 已经能冻结 Workspace、Memory、Project 和 Rule 等产品事�
 
 Provider 最终物理结构仍只有 `system + messages[] + tools[] + request options`。Prompt Studio 管理的是更细的**语义区**，以后由 Compiler 映射到这些物理字段；Region 不是 Provider 新字段。
 
-第一版目录共 17 个区域：
+第一版目录共 19 个区域：
 
 | Region | 用户可编辑 | 计划位置 | 含义 |
 |---|---:|---|---|
@@ -310,6 +310,8 @@ Provider 最终物理结构仍只有 `system + messages[] + tools[] + request op
 | `runtime_contract` | 否 | system | Chat、Workflow 和 Agent Runtime 强制执行的节点边界 |
 | `current_input` | 否 | messages | 当前 Product Message 或前序节点输入 |
 | `conversation` | 否 | messages | 明确选入的正式历史与同 Run Tool Loop 消息 |
+| `platform_workspace` | 否 | messages | Chat 自身的只读基础 Workspace 引用；模型自行读取其中生效的 `AGENTS.md` |
+| `target_workspace` | 否 | messages | 用户在 DSH 选择的工作对象 Workspace；作为 Agent 主要工作目录 |
 | `memory` | 否 | messages | 未来由 Memory Provider 选择并冻结的事实 |
 | `tools` | 否 | tools | Tool Schema、说明和能力边界 |
 | `request_options` | 否 | request_options | Provider、Model、Thinking、Token 等参数 |
@@ -317,6 +319,24 @@ Provider 最终物理结构仍只有 `system + messages[] + tools[] + request op
 用户说的背景、目标、规则、经验和案例都属于带来源的上下文，而不是因为“重要”就全部塞进 System。Tool Result 和 Assistant Tool Call 属于 `conversation` 的运行中消息；工具定义属于 `tools`。
 
 Region key 是受限稳定字符串，不是封闭 enum。增加新区域只需发布 Catalog 新版本；已有 Prompt Revision 无需 Store schema 迁移。
+
+### 6.2.1 双 Workspace 合同
+
+Workspace 上下文不再设计成“DSH 或 Chat 先读取 `AGENTS.md`，再把整篇正文塞进 User Message”，而是两条有类型、有权限的引用：
+
+1. `platform_workspace`：Chat 自身源码 Workspace，提供 Chat 产品、架构和工程规则的基础环境。默认只读。
+2. `target_workspace`：用户在 DSH 当前会话明确选择的工作对象。它是 Agent 的主要 `cwd`，写入能力由节点 Capability Profile 冻结。
+
+Prompt Compiler 只把逻辑名称、受权 Workspace Ref、能力和发现入口交给 Agent；模型随后通过受控 Workspace Tool 自行发现并读取该 Root 下生效的 `AGENTS.md`。Provider 请求中不会因为“选择了 Workspace”就自动携带整份文件正文；读取发生后，Tool Result 才进入同一 Agent Run 的下一次请求。若目标 Workspace 就是 Chat，Compiler 按规范 Root 身份去重，不能把同一个目录暴露两次。
+
+安全边界：
+
+- 浏览器提交的 DSH Workspace ID 只是选择证据，不是文件系统权限；服务端必须把它映射到已登记的 Chat `rootId`。
+- Provider Payload 不暴露本机绝对路径。Tool 使用 `platform|target + relativePath`，Executor 再解析到受权 Root，并拒绝越界路径和 symlink 逃逸。
+- `platform_workspace` 默认只读；只有当用户也把 Chat 选作目标 Workspace 且节点能力允许时，才获得目标侧写权限。
+- 每次 Run 冻结两个 Workspace Ref 的 revision/hash。Prompt Assembly Manifest 记录采用、去重和权限，Prompt Review 显示来源，但不复制文件正文。
+
+当前源码尚未达到该合同：`LifeosLlmAdapter.workspaceInstructionsOf()` 会从 DSH Message Surface 取出已预读的 `agent-instructions` 正文；Planner 会再把正文拼进提示词，而 Direct Agent 配置 `noContextFiles: true`，完全不读取 Workspace Context。DSH 的 `GenerateOptions` 又只有 `sessionId`，没有显式 `workspaceId`。因此下一纵向必须先打通 `DSH session → workspaceId → Chat rootId` 的服务端映射和双 Root Tool 边界，再原子移除旧的正文透传；不能先删除旧逻辑，让 Planning 静默失去现有 Workspace 上下文。
 
 ### 6.3 Prompt Fragment
 
@@ -523,3 +543,4 @@ Readable 页以后不再按 `message.role` 静态猜来源，而是读取 Assemb
 4. Prompt Review 是 Pi Agent 节点内部开关，不再为它制造第二个图节点。
 5. 历史默认只纳入成功提交的 `User → Assistant` 对；失败证据保留但不自动激活。
 6. 跨 Run 压缩摘要必须先成为可追溯 Candidate 再提交。
+7. Workspace 使用 `platform_workspace + target_workspace` 双引用；Chat 不预读 `AGENTS.md`，由模型在受权 Tool 边界内自行读取。

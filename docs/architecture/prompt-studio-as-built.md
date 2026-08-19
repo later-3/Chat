@@ -6,7 +6,7 @@
 
 用户可以在 DSH「设置 → 提示词」中：
 
-1. 查看 17 个 Prompt Region 的含义、计划位置、可编辑性、Catalog 来源和 Hash；
+1. 查看 19 个 Prompt Region 的含义、计划位置、可编辑性、Catalog 来源和 Hash；区域卡显示当前组件数，并可直接筛选该区域的组件；
 2. 查看 4 个 Git 内置 Markdown 组件的完整正文、相对路径、Revision 和 Hash；
 3. 从内置组件创建自己的副本，内置正文保持不变；
 4. 新建用户组件，修改标题或正文时保存为新的不可变 Revision；
@@ -94,6 +94,8 @@ PromptStudio.tsx
 
 列表不携带正文；详情和精确 Revision 按需读取。Prompt 写路由单独使用 96 KiB 有界请求体，其他 LifeOS 命令仍保持 16 KiB。浏览器编辑草稿保存在本机 `localStorage`，只用于防止 Settings 关闭时丢稿；正式版本仍只由 Product Store 拥有。
 
+组件通过 `regionKey` 与区域目录严格关联。组件卡和详情同时显示区域名称与稳定 Key；区域卡的“查看 N 个组件”会切换到组件页并应用对应筛选。内置组件详情中的来源文件路径是可点击控件，展开后显示 Catalog Adapter 从该 Git 文件读取、并通过 Manifest SHA 校验的只读原文。它不调用 VS Code，也不允许浏览器凭任意路径读取仓库文件。
+
 真实浏览器门只启动 API 与 DSH，并使用隔离的 `45111`、`45110/45114` 端口和专用 Product Store；它不清理或争抢正在运行的正式 `431xx` 开发实例。
 
 ## 7. 尚未实现
@@ -105,3 +107,4 @@ PromptStudio.tsx
 - Assembly Manifest 与 Prompt Review 的真实来源/JSON Pointer；
 - Workflow 节点配置、跨 Run 历史、预算、摘要和压缩；
 - 在 Provider 前编辑并重新审核新的 Payload Revision。
+- 把 DSH 所选 Workspace 映射成 Chat 受权 Root，并让模型通过工具自行读取 `AGENTS.md`；当前管理页只展示 `platform_workspace` 与 `target_workspace` 两个已规划的运行时区域。

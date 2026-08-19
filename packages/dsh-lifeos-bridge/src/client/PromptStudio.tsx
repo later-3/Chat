@@ -5,6 +5,7 @@ import type {
   PromptFragmentContent,
   PromptFragmentDetailDto,
   PromptFragmentSummaryDto,
+  PromptRegionDefinitionDto,
   CreatePromptFragmentPayload,
   CopyPromptFragmentPayload,
   RevisePromptFragmentPayload,
@@ -70,9 +71,11 @@ function loadDraft(detail: PromptFragmentDetailDto): EditorDraft {
 
 function FragmentCard({
   fragment,
+  region,
   open,
 }: {
   fragment: PromptFragmentSummaryDto;
+  region: PromptRegionDefinitionDto | undefined;
   open: () => void;
 }) {
   return (
@@ -85,6 +88,7 @@ function FragmentCard({
       </span>
       <span>{fragment.description ?? "没有描述"}</span>
       <span className="lifeos-prompt-library-meta">
+        <span>{region?.title ?? "未知区域"}</span>
         <code>{fragment.regionKey}</code>
         <code>v{fragment.currentRevisionNumber}</code>
         {fragment.status === "archived" ? <code>已归档</code> : null}
@@ -108,10 +112,13 @@ function PromptDetail({
   const isCurrent =
     viewed.promptFragmentRevisionId === detail.currentRevision.promptFragmentRevisionId;
   const [editing, setEditing] = useState(false);
+  const [sourceExpanded, setSourceExpanded] = useState(false);
   const [draft, setDraft] = useState<EditorDraft>(() => loadDraft(detail));
+  const region = state.regions.find((item) => item.regionKey === viewed.regionKey);
 
   useEffect(() => {
     setEditing(false);
+    setSourceExpanded(false);
     setDraft(loadDraft(detail));
   }, [detail.fragment.promptFragmentId, detail.fragment.currentRevisionSha256]);
 
@@ -166,7 +173,10 @@ function PromptDetail({
       <dl className="lifeos-prompt-studio-facts">
         <div>
           <dt>区域</dt>
-          <dd>{viewed.regionKey}</dd>
+          <dd className="lifeos-prompt-region-reference">
+            <strong>{region?.title ?? "未知区域"}</strong>
+            <code>{viewed.regionKey}</code>
+          </dd>
         </div>
         <div>
           <dt>版本</dt>
@@ -188,7 +198,16 @@ function PromptDetail({
           <div>
             <dt>来源文件</dt>
             <dd>
-              <code>{viewed.sourceRelativePath}</code>
+              <button
+                type="button"
+                className="lifeos-prompt-source-link"
+                aria-label={`查看来源文件 ${viewed.sourceRelativePath}`}
+                aria-expanded={sourceExpanded}
+                onClick={() => setSourceExpanded((value) => !value)}
+              >
+                <code>{viewed.sourceRelativePath}</code>
+                <span>{sourceExpanded ? "收起原文" : "在网页查看"}</span>
+              </button>
             </dd>
           </div>
         )}
@@ -209,6 +228,19 @@ function PromptDetail({
           ))}
         </div>
       </section>
+
+      {viewed.sourceRelativePath !== undefined && sourceExpanded ? (
+        <section className="lifeos-prompt-source-file" aria-label="来源文件原文">
+          <header>
+            <div>
+              <strong>来源文件原文</strong>
+              <p>后端从这个 Git 文件读取并校验 SHA；这里是只读展示。</p>
+            </div>
+            <code>{viewed.sourceRelativePath}</code>
+          </header>
+          <pre>{contentText(viewed.content)}</pre>
+        </section>
+      ) : null}
 
       {editing ? (
         <section className="lifeos-prompt-studio-editor">
@@ -263,12 +295,12 @@ function PromptDetail({
             </button>
           </div>
         </section>
-      ) : (
+      ) : viewed.sourceRelativePath === undefined ? (
         <section className="lifeos-prompt-studio-content">
           {viewed.content.kind === "key_value" ? <strong>{viewed.content.key}</strong> : null}
           <pre>{contentText(viewed.content)}</pre>
         </section>
-      )}
+      ) : null}
 
       <div className="lifeos-prompt-studio-actions">
         {detail.fragment.ownerKind === "system" ? (
@@ -355,6 +387,17 @@ export function PromptStudio({
       state.fragments.filter((item) => regionFilter === "all" || item.regionKey === regionFilter),
     [regionFilter, state.fragments],
   );
+  const fragmentCountByRegion = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const fragment of state.fragments) {
+      counts.set(fragment.regionKey, (counts.get(fragment.regionKey) ?? 0) + 1);
+    }
+    return counts;
+  }, [state.fragments]);
+  const regionByKey = useMemo(
+    () => new Map(state.regions.map((region) => [region.regionKey, region])),
+    [state.regions],
+  );
 
   if (state.selected !== null) {
     return (
@@ -411,10 +454,23 @@ export function PromptStudio({
               </header>
               <p>{region.description}</p>
               <footer>
-                <span>{region.userManageable ? "可管理" : "运行时只读"}</span>
-                <span>→ {region.plannedPlacement}</span>
-                <span>{region.availability === "active" ? "管理已启用" : "组装待接入"}</span>
-                <code>{region.sourceRelativePath}</code>
+                <div>
+                  <span>{region.userManageable ? "可管理" : "运行时只读"}</span>
+                  <span>→ {region.plannedPlacement}</span>
+                  <span>{region.availability === "active" ? "管理已启用" : "组装待接入"}</span>
+                  <code>{region.sourceRelativePath}</code>
+                </div>
+                <button
+                  type="button"
+                  disabled={(fragmentCountByRegion.get(region.regionKey) ?? 0) === 0}
+                  aria-label={`查看${region.title}区域的组件`}
+                  onClick={() => {
+                    setRegionFilter(region.regionKey);
+                    setTab("fragments");
+                  }}
+                >
+                  查看 {fragmentCountByRegion.get(region.regionKey) ?? 0} 个组件
+                </button>
               </footer>
             </article>
           ))}
@@ -532,6 +588,7 @@ export function PromptStudio({
               <FragmentCard
                 key={fragment.promptFragmentId}
                 fragment={fragment}
+                region={regionByKey.get(fragment.regionKey)}
                 open={() => void select(fragment.promptFragmentId)}
               />
             ))}

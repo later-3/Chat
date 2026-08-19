@@ -23,8 +23,12 @@
 - `runtime_contract`：Chat/Workflow/Agent Runtime 强制执行的节点边界。
 - `current_input`：当前 Product Message 或前序节点传入的真实输入。
 - `conversation`：本次明确选入的正式会话历史和 Tool Loop 消息。
+- `platform_workspace`：Chat 自身的基础 Workspace 引用。只提供受权根、读取策略和入口文件信息，不预读或复制 `AGENTS.md` 正文。
+- `target_workspace`：用户在 DSH 为当前工作选择的对象 Workspace。它是 Agent 的主要工作目录，模型通过受控工具自行发现并读取生效的 `AGENTS.md`。
 - `memory`：未来由 Memory Provider 选择并冻结的内容。
 - `tools`：本次可见的工具 Schema、说明和能力边界。
 - `request_options`：Provider、Model、Thinking、Token 等非自然语言参数。
 
 这些区域在 Prompt Studio 中可查看设计和来源，但不作为普通 Markdown 组件直接编辑。
+
+两个 Workspace 区域保存的是引用和权限证据，不是浏览器提交的本机路径。DSH Workspace 身份必须在服务端映射为 Chat 已授权的 Workspace Root；若工作对象就是 Chat，本轮组装去重为一个 Root。Chat 基础 Workspace 默认只读，工作对象 Workspace 的写入能力由节点 Capability Profile 决定。

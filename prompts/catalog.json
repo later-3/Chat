@@ -1,10 +1,10 @@
 {
   "schemaVersion": "chat-prompt-catalog.v1",
-  "catalogRevision": 1,
-  "publishedAt": "2026-08-19T00:00:00.000Z",
+  "catalogRevision": 2,
+  "publishedAt": "2026-08-20T00:00:00.000Z",
   "regionSource": {
     "relativePath": "prompts/regions/catalog.md",
-    "sourceSha256": "2561e3376c26e4f7d33e16e9389500f3d9f983cb92c424cfaf3dcaa1b3998744"
+    "sourceSha256": "7385d93b50eef989584099a9d4417545f799e1264d08d58baba83f7ed4c0144e"
   },
   "regions": [
     {
@@ -176,6 +176,30 @@
       "stableOrder": 220
     },
     {
+      "regionKey": "platform_workspace",
+      "title": "Chat 基础 Workspace",
+      "description": "Chat 自身的只读基础 Workspace 引用；模型通过受控工具自行读取其中生效的 AGENTS.md，Chat 不预读正文。",
+      "category": "runtime",
+      "plannedPlacement": "messages",
+      "contentKind": "runtime",
+      "cardinality": "automatic",
+      "userManageable": false,
+      "availability": "planned",
+      "stableOrder": 230
+    },
+    {
+      "regionKey": "target_workspace",
+      "title": "工作对象 Workspace",
+      "description": "用户在 DSH 为本次工作选择的 Workspace；服务端映射到受权 Root，并作为 Agent 主要工作目录。",
+      "category": "runtime",
+      "plannedPlacement": "messages",
+      "contentKind": "runtime",
+      "cardinality": "automatic",
+      "userManageable": false,
+      "availability": "planned",
+      "stableOrder": 240
+    },
+    {
       "regionKey": "memory",
       "title": "记忆",
       "description": "未来由 Memory Provider 选择并冻结的内容。",
@@ -185,7 +209,7 @@
       "cardinality": "automatic",
       "userManageable": false,
       "availability": "planned",
-      "stableOrder": 230
+      "stableOrder": 250
     },
     {
       "regionKey": "tools",
@@ -197,7 +221,7 @@
       "cardinality": "automatic",
       "userManageable": false,
       "availability": "planned",
-      "stableOrder": 240
+      "stableOrder": 260
     },
     {
       "regionKey": "request_options",
@@ -209,7 +233,7 @@
       "cardinality": "automatic",
       "userManageable": false,
       "availability": "planned",
-      "stableOrder": 250
+      "stableOrder": 270
     }
   ],
   "fragments": [
