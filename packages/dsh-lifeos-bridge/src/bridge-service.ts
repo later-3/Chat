@@ -12,6 +12,7 @@ import {
   type LifeosProjection,
   type LifeosWorkflowOption,
   type WorkflowSelection,
+  type DshContextInjectionProjection,
 } from "./contracts.ts";
 import { ChatProductApiError, ChatProductClient } from "./chat-client.ts";
 import { sha256, stableCommandId } from "./adapter.ts";
@@ -21,6 +22,7 @@ import {
   type PendingNoteDecision,
   type SessionBinding,
 } from "./state-store.ts";
+import type { DshContextInjectionReader } from "./context-injection-reader.ts";
 
 export class BridgeRequestError extends Error {
   constructor(
@@ -151,7 +153,21 @@ export class LifeosBridgeService {
   constructor(
     private readonly chat: ChatProductClient,
     private readonly state: AtomicBridgeStateStore,
+    private readonly contextInjectionReader?: Pick<DshContextInjectionReader, "read">,
   ) {}
+
+  /** DSH 自己的模型上下文只读投影；它不是 Chat Product Store 事实。 */
+  contextInjections(dshSessionId: string): DshContextInjectionProjection {
+    const projection = this.contextInjectionReader?.read(dshSessionId) ?? null;
+    if (projection === null) {
+      throw new BridgeRequestError(
+        404,
+        "lifeos_dsh_session_not_found",
+        "当前 DSH 会话不存在或尚未恢复",
+      );
+    }
+    return projection;
+  }
 
   async projection(dshSessionId: string, signal?: AbortSignal): Promise<LifeosProjection> {
     const binding = await this.state.readSession(dshSessionId);

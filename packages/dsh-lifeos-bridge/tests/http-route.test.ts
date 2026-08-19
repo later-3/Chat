@@ -171,6 +171,69 @@ test("a known Chat 4xx is returned as a safe same-origin Problem instead of a fa
   }
 });
 
+test("same-origin context injection route reads the validated DSH session id", async () => {
+  const calls: string[] = [];
+  const projection = {
+    schemaVersion: "chat-dsh-context-injections.v1",
+    dshSessionId: "dsh-session-1",
+    status: "not_assembled",
+    revision: "a".repeat(64),
+    chatForwarding: "latest_direct_user_message_only",
+    items: [],
+    totalItems: 0,
+    omittedItems: 0,
+    totalContentCharacters: 0,
+  } as const;
+  const service = {
+    contextInjections: (sessionId: string) => {
+      calls.push(sessionId);
+      return projection;
+    },
+  } as unknown as LifeosBridgeService;
+  const server = createServer(createLifeosRouteHandler(service, 43_110));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address !== null && typeof address === "object");
+  try {
+    const response = await new Promise<{ status: number | undefined; body: string }>(
+      (resolve, reject) => {
+        const request = httpRequest(
+          {
+            hostname: "127.0.0.1",
+            port: address.port,
+            path: "/lifeos/sessions/dsh-session-1/context-injections",
+            method: "GET",
+            headers: {
+              host: "localhost:43110",
+              origin: "http://localhost:43110",
+              "sec-fetch-site": "same-origin",
+            },
+          },
+          (incoming) => {
+            const chunks: Buffer[] = [];
+            incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+            incoming.on("end", () =>
+              resolve({
+                status: incoming.statusCode,
+                body: Buffer.concat(chunks).toString("utf8"),
+              }),
+            );
+          },
+        );
+        request.on("error", reject);
+        request.end();
+      },
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(JSON.parse(response.body), projection);
+    assert.deepEqual(calls, ["dsh-session-1"]);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error === undefined ? resolve() : reject(error))),
+    );
+  }
+});
+
 test("same-origin Note decision route validates and forwards the observed candidate binding", async () => {
   const calls: unknown[] = [];
   const projection = {

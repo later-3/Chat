@@ -39,14 +39,28 @@ Chat主仓库不复制DSH源码。运行安装仍固定`@deepseek-ai/dsh@0.1.0-r
 
 Bridge的`lastUserPrompt`只接受`role === "user" && source.kind === "user"`的最后一条非空消息。DSH注入的Context虽然保留在DSH Session与Trajectory中，但不会作为Chat Message提交，也不会进入Planner/Executor上下文，更不会产生第二套Workflow执行。
 
-## 5. User之后的三条Context
+## 5. User之后的三类Context
 
-当前默认DSH base bundle在每次真实用户消息之后、`request/header`之前组装三类可见输入：
+当前DSH base bundle在模型每个`pre-step`重新检查生产者Context。会话第一次发送消息时尚无既有快照，
+因此首个模型Step会在真实User之后、`request/header`之前生成当时实际可用的Context；后续Step只有在
+工作区指令、运行权限或Skill目录发生变化，或者compaction已经替换旧快照时，才追加新的耐久Context，
+内容没有变化时不会机械重复写入。已落入Session surface的Context仍会随后续请求继续发送，并非只在首轮生效。
+
+当前可见输入来自三类生产者；“三类”不代表每个Profile固定产生三条，例如没有可发现Skill的隔离Profile
+可以没有Skill Catalog：
 
 | Trajectory内容 | DSH来源 | 作用 | 是否进入Chat Workflow |
 |---|---|---|---|
 | `The following workspace instructions...` | `@deepseek-ai/dsh-agent-instructions`，`source.kind = agent-instructions` | 从`AGENTS.md`等文件装配工作区指令基线 | 否 |
 | `Current runtime context...` | `@deepseek-ai/dsh-system-prompt`，plugin snapshot | 声明DSH文件沙箱、审批和运行权限快照 | 否 |
-| `A skill is a reusable...` | `@deepseek-ai/dsh-tool-skill`，`source.kind = skill-catalog` | 告知DSH Agent当前可发现的Skill目录 | 否 |
+| `A skill is a reusable...` | `@deepseek-ai/dsh-tool-skill`，`source.kind = skill-catalog` | 有可发现Skill时，告知DSH Agent当前目录 | 否 |
 
-它们来自DSH Host的基础插件图，与LifeOS PWA manifest、Service Worker和安装能力无关。它们之所以出现在Trajectory，是因为DSH坚持“模型可见输入必须可从Session日志重建”；对当前LifeOS路由而言，Adapter会忽略这三类注入，只保留其DSH会话审计价值。是否在未来精简默认DSH profile或调整其Trajectory呈现，需要单独评估，不能把它们误认成Chat业务Context后直接删除或改名。
+它们来自DSH Host的基础插件图，与LifeOS PWA manifest、Service Worker和安装能力无关。它们之所以出现在Trajectory，是因为DSH坚持“模型可见输入必须可从Session日志重建”；对当前LifeOS路由而言，Adapter会忽略这些注入，只保留其DSH会话审计价值。是否在未来精简默认DSH profile或调整其Trajectory呈现，需要单独评估，不能把它们误认成Chat业务Context后直接删除或改名。
+
+LifeOS Bridge通过公开`SessionStore.get(SessionId)`和`Session.deriveMessages()`提供同源只读
+`GET /lifeos/sessions/:dshSessionId/context-injections`。Client把“上下文”入口注册到空白Hero与活动会话都存在的
+`conversation.input.left` Slot，打开后显示当前surface中的来源、form、结构化来源提示和有界正文；它读取的是
+compaction替换后的下一次请求输入，不从Transcript DOM反推，也不写DSH事件。空会话明确显示“尚未组装”：
+rc.6没有无副作用执行全部`pre-step`中间件的纯预演合同，Bridge不会复制AGENTS、权限和Skill组装规则来伪造
+首次发送前的精确内容。正文按需读取，不进入每秒Product Run轮询；单项最多显示50000字符、最多64项，截断或
+省略都会在面板标明。当前版本是查看/刷新管理面，不提供启停或编辑生产者Context的写能力。

@@ -28,6 +28,10 @@ import {
 import { z } from "zod";
 
 export const BRIDGE_SCHEMA_VERSION = "chat-dsh-lifeos-bridge.v3" as const;
+export const DSH_CONTEXT_INJECTION_SCHEMA_VERSION = "chat-dsh-context-injections.v1" as const;
+export const MAX_DSH_CONTEXT_INJECTION_ITEMS = 64;
+export const MAX_DSH_CONTEXT_INJECTION_TEXT_CHARS = 50_000;
+export const MAX_DSH_CONTEXT_SOURCE_DETAILS = 32;
 export const dshSessionIdSchema = z
   .string()
   .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/)
@@ -218,3 +222,43 @@ export const lifeosProjectionSchema = z
   .strict();
 
 export type LifeosProjection = z.infer<typeof lifeosProjectionSchema>;
+
+/**
+ * DSH 当前模型输入中的单条生产者上下文。这里保留模型实际看到的文本，
+ * 但只投影有界、可展示的来源元数据；任意插件私有 source payload 不穿透到浏览器。
+ */
+export const dshContextInjectionItemSchema = z
+  .object({
+    messageId: z.string().min(1).max(256),
+    sourceKind: z.string().min(1).max(160),
+    sourceName: z.string().min(1).max(512).nullable(),
+    form: z.enum(["instructions", "catalog", "snapshot", "notice", "relay", "recall"]).nullable(),
+    sourceDetails: z.array(z.string().min(1).max(512)).max(MAX_DSH_CONTEXT_SOURCE_DETAILS),
+    sourceDetailsTruncated: z.boolean(),
+    text: z.string().max(MAX_DSH_CONTEXT_INJECTION_TEXT_CHARS),
+    contentCharacters: z.number().int().nonnegative().safe(),
+    truncated: z.boolean(),
+    unsupportedContentBlockCount: z.number().int().nonnegative().safe(),
+  })
+  .strict();
+
+/**
+ * 独立按需读取合同，不并入每秒轮询的 LifeosProjection。`ready` 表示至少完成过
+ * 一次 DSH pre-step 组装；ready + 空 items 是合法的“当前没有生产者上下文”。
+ */
+export const dshContextInjectionProjectionSchema = z
+  .object({
+    schemaVersion: z.literal(DSH_CONTEXT_INJECTION_SCHEMA_VERSION),
+    dshSessionId: dshSessionIdSchema,
+    status: z.enum(["not_assembled", "ready"]),
+    revision: sha256Schema,
+    chatForwarding: z.literal("latest_direct_user_message_only"),
+    items: z.array(dshContextInjectionItemSchema).max(MAX_DSH_CONTEXT_INJECTION_ITEMS),
+    totalItems: z.number().int().nonnegative().safe(),
+    omittedItems: z.number().int().nonnegative().safe(),
+    totalContentCharacters: z.number().int().nonnegative().safe(),
+  })
+  .strict();
+
+export type DshContextInjectionItem = z.infer<typeof dshContextInjectionItemSchema>;
+export type DshContextInjectionProjection = z.infer<typeof dshContextInjectionProjectionSchema>;

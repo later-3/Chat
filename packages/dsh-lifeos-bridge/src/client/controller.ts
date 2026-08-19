@@ -1,7 +1,9 @@
 import {
+  dshContextInjectionProjectionSchema,
   lifeosProjectionSchema,
   workflowListResponseSchema,
   type DecisionRequest,
+  type DshContextInjectionProjection,
   type LifeosExecutionTrace,
   type LifeosProjection,
   type LifeosWorkflowOption,
@@ -20,6 +22,10 @@ export interface LifeosClientState {
   readonly workflows: readonly LifeosWorkflowOption[] | null;
   readonly workflowError: string | null;
   readonly selectingWorkflow: boolean;
+  /** 按需读取的 DSH 当前模型上下文；null 表示本页尚未读取。 */
+  readonly contextInjections: DshContextInjectionProjection | null;
+  readonly contextInjectionsLoading: boolean;
+  readonly contextInjectionsError: string | null;
 }
 
 const INITIAL_STATE: LifeosClientState = {
@@ -30,6 +36,9 @@ const INITIAL_STATE: LifeosClientState = {
   workflows: null,
   workflowError: null,
   selectingWorkflow: false,
+  contextInjections: null,
+  contextInjectionsLoading: false,
+  contextInjectionsError: null,
 };
 
 interface ProblemLike {
@@ -56,6 +65,7 @@ export class LifeosProjectionController {
   private readonly listeners = new Set<() => void>();
   private interval: ReturnType<typeof setInterval> | undefined;
   private refreshing: Promise<void> | undefined;
+  private contextInjectionsRequest: Promise<DshContextInjectionProjection | null> | undefined;
   private disposed = false;
   private readonly fetchImpl: typeof fetch;
   private readonly onExecutionTraces:
@@ -194,6 +204,53 @@ export class LifeosProjectionController {
       this.publish({
         ...this.snapshot,
         workflowError: error instanceof Error ? error.message : "Workflow 列表读取失败",
+      });
+      return null;
+    }
+  }
+
+  /**
+   * 上下文正文只在管理面板打开或用户刷新时拉取，不进入 1 秒 Product Run 轮询。
+   * 并发读取合并为同一个请求，避免 Session 事件更新时重复传输大段提示词。
+   */
+  async loadContextInjections(): Promise<DshContextInjectionProjection | null> {
+    if (this.disposed) return null;
+    if (this.contextInjectionsRequest !== undefined) return await this.contextInjectionsRequest;
+    this.publish({
+      ...this.snapshot,
+      contextInjectionsLoading: true,
+      contextInjectionsError: null,
+    });
+    this.contextInjectionsRequest = this.performContextInjectionsLoad().finally(() => {
+      this.contextInjectionsRequest = undefined;
+    });
+    return await this.contextInjectionsRequest;
+  }
+
+  private async performContextInjectionsLoad(): Promise<DshContextInjectionProjection | null> {
+    try {
+      const response = await this.fetchImpl(
+        `/lifeos/sessions/${encodeURIComponent(this.sessionId)}/context-injections`,
+        {
+          credentials: "same-origin",
+          headers: { accept: "application/json" },
+        },
+      );
+      const json = await responseJson(response);
+      if (!response.ok) throw new Error(problemMessage(json, response.status));
+      const contextInjections = dshContextInjectionProjectionSchema.parse(json);
+      this.publish({
+        ...this.snapshot,
+        contextInjections,
+        contextInjectionsLoading: false,
+        contextInjectionsError: null,
+      });
+      return contextInjections;
+    } catch (error) {
+      this.publish({
+        ...this.snapshot,
+        contextInjectionsLoading: false,
+        contextInjectionsError: error instanceof Error ? error.message : "DSH 上下文注入读取失败",
       });
       return null;
     }

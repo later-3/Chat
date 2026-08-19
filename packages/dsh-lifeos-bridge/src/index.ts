@@ -1,6 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-host-webserver";
 import type {} from "@deepseek-ai/dsh-llm";
+import { SessionId } from "@deepseek-ai/dsh-session";
 import type {} from "@deepseek-ai/dsh-tools";
 import type {} from "@deepseek-ai/dsh-workspace";
 import { isAbsolute, resolve } from "node:path";
@@ -11,9 +12,10 @@ import { assertSameOriginRequest, createLifeosRouteHandler, sendRouteError } fro
 import { createPwaAssetHandler, createPwaIndexTap } from "./pwa.ts";
 import { AtomicBridgeStateStore } from "./state-store.ts";
 import { createLifeosTraceTool } from "./trace-tool.ts";
+import { DshContextInjectionReader } from "./context-injection-reader.ts";
 
 export const name = "chat-dsh-lifeos-bridge";
-export const inject = ["llm", "tools", "webServer", "workspaceRegistry"];
+export const inject = ["llm", "tools", "webServer", "workspaceRegistry", "sessions"];
 
 function requiredStatePath(raw: string | undefined): string {
   if (raw === undefined || raw.trim() === "") {
@@ -64,7 +66,10 @@ export async function apply(ctx: Context): Promise<void> {
   const state = new AtomicBridgeStateStore(statePath);
   await state.ready();
   const chat = new ChatProductClient(apiBaseUrl);
-  const bridge = new LifeosBridgeService(chat, state);
+  const contextInjectionReader = new DshContextInjectionReader({
+    get: (dshSessionId) => ctx.sessions.get(SessionId(dshSessionId)),
+  });
+  const bridge = new LifeosBridgeService(chat, state, contextInjectionReader);
   const lifetime = new AbortController();
   ctx.effect(
     () => () => {

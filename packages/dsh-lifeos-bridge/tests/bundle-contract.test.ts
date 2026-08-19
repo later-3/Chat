@@ -85,6 +85,26 @@ test("trace display options use public additive DSH contracts without touching t
   assert.doesNotMatch(`${client}\n${toggle}\n${projection}`, /data-trajectory|MutationObserver/);
 });
 
+test("context manager uses public Session and blank-safe composer contracts without DOM scraping", async () => {
+  const manifest = JSON.parse(
+    await readFile(new URL("../package.json", import.meta.url), "utf8"),
+  ) as { peerDependencies?: Record<string, unknown> };
+  const host = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");
+  const client = await readFile(new URL("../src/client/index.tsx", import.meta.url), "utf8");
+  const manager = await readFile(
+    new URL("../src/client/ContextInjectionManager.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.equal(manifest.peerDependencies?.["@deepseek-ai/dsh-session"], "^0.1.0-rc.6");
+  assert.match(host, /"sessions"/u);
+  assert.match(host, /ctx\.sessions\.get\(SessionId\(dshSessionId\)\)/u);
+  assert.match(client, /id: "lifeos-context-injections"/u);
+  assert.match(manager, /PropsRuntime<"conversation\.input\.left">/u);
+  assert.match(manager, /<Modal/u);
+  assert.match(manager, /最新一条用户直接输入/u);
+  assert.doesNotMatch(`${client}\n${manager}`, /querySelector|MutationObserver/u);
+});
+
 test("bundle patch makes Chat workflow the only enabled product model route", async () => {
   const patch = await readFile(new URL("../cordis.patch.yml", import.meta.url), "utf8");
   assert.match(patch, /id: agent-default-model[\s\S]*provider: lifeos[\s\S]*model: workflow/);

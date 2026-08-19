@@ -117,11 +117,17 @@ LifeOS插件因此不能在不伪造Assistant事件、不操作DOM、不复制Tr
 ### 6.1 DSH注入的Context
 
 DSH仍提供Host、Session、事件日志、Agent loop请求组装与插件运行时；Chat只替换了模型/业务执行出口，不能笼统
-描述为“完全不用DSH后端”。默认base bundle会在真实User之后依次记录工作区`AGENTS.md`指令、DSH沙箱/审批
-运行快照和Skill Catalog三类Context。它们分别来自`dsh-agent-instructions`、`dsh-system-prompt`与
-`dsh-tool-skill`，不是PWA插件或Chat Workflow节点。LifeOS Adapter只提取`source.kind === "user"`的真实用户消息，
-三类Context不会提交Chat Message、不会进入Planner/Executor，也不会产生第二套执行。精确来源和去向见
-[DSH前端派生与维护](./dsh-frontend-maintenance.md#5-user之后的三条context)。
+描述为“完全不用DSH后端”。base bundle会在首个模型`pre-step`按当时实际环境记录工作区`AGENTS.md`指令、
+DSH沙箱/审批运行快照，以及有可发现Skill时的Skill Catalog；后续每个`pre-step`重新检查，只有内容变化或
+compaction需要恢复可见快照时才追加更新。它们分别来自`dsh-agent-instructions`、`dsh-system-prompt`与
+`dsh-tool-skill`，不是PWA插件或Chat Workflow节点。LifeOS Adapter只提取`source.kind === "user"`的最新一条
+非空真实用户消息，这些Context不会提交Chat Message、不会进入Planner/Executor，也不会产生第二套执行。
+
+Bridge的同源只读`context-injections` Query直接投影`Session.deriveMessages()`；Client通过blank-safe的
+`conversation.input.left`公开Slot提供“上下文”管理面，按需展示当前来源、类型与正文。尚未发生首个Step的会话
+只显示“尚未组装”，不以重复实现上游中间件的方式猜测未来内容；面板也不拥有启停、编辑或Product Context事实。
+精确生命周期、边界和显示上限见
+[DSH前端派生与维护](./dsh-frontend-maintenance.md#5-user之后的三类context)。
 
 ## 7. Workbench边界
 

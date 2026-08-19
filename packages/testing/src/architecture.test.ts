@@ -109,6 +109,8 @@ const rules: Record<
       "@deepseek-ai/cordis",
       "@deepseek-ai/dsh-host-webserver",
       "@deepseek-ai/dsh-llm",
+      // 只读投影当前模型上下文；使用公开SessionStore/deriveMessages，不写DSH历史。
+      "@deepseek-ai/dsh-session",
       // 将远端Pi事件投影成DSH原生tool/call + tool/result，供Trajectory消费。
       "@deepseek-ai/dsh-tools",
       "@deepseek-ai/dsh-workspace",
