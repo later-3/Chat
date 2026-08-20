@@ -11,7 +11,9 @@ import {
   promptReviewDecisionDtoSchema,
   promptReviewRequestDtoSchema,
   promptReviewRequestIdSchema,
+  promptConfigurationPreviewDtoSchema,
   promptTurnSelectionInputSchema,
+  workspaceInstructionsInputSchema,
   planIdSchema,
   planDtoSchema,
   productRunIdSchema,
@@ -38,6 +40,7 @@ import { z } from "zod";
 
 export const BRIDGE_SCHEMA_VERSION = "chat-dsh-lifeos-bridge.v3" as const;
 export const DSH_CONTEXT_INJECTION_SCHEMA_VERSION = "chat-dsh-context-injections.v1" as const;
+export const DSH_BRIDGE_SEND_PREVIEW_SCHEMA_VERSION = "chat-dsh-bridge-send-preview.v1" as const;
 export const MAX_DSH_CONTEXT_INJECTION_ITEMS = 64;
 export const MAX_DSH_CONTEXT_INJECTION_TEXT_CHARS = 50_000;
 export const MAX_DSH_CONTEXT_SOURCE_DETAILS = 32;
@@ -535,3 +538,58 @@ export const dshContextInjectionProjectionSchema = z
 
 export type DshContextInjectionItem = z.infer<typeof dshContextInjectionItemSchema>;
 export type DshContextInjectionProjection = z.infer<typeof dshContextInjectionProjectionSchema>;
+
+export const dshBridgeSendPreviewRequestSchema = z
+  .object({ text: z.string().trim().min(1).max(4_000) })
+  .strict();
+
+const bridgeChatWorkflowSelectionSchema = z
+  .object({
+    kind: z.literal("published_revision"),
+    workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+    definitionSha256: sha256Schema,
+  })
+  .strict();
+
+const bridgeChatSubmitPayloadSchema = z
+  .object({
+    text: z.string().min(1).max(4_000),
+    workflowSelection: bridgeChatWorkflowSelectionSchema.optional(),
+    context: z
+      .object({ workspaceInstructions: workspaceInstructionsInputSchema })
+      .strict()
+      .optional(),
+    promptSelection: promptTurnSelectionInputSchema.optional(),
+  })
+  .strict();
+
+/**
+ * 发送前边界投影：DSH→Bridge展示当前用户输入与DSH生产者上下文；Bridge→Chat
+ * 展示按当前Workflow政策真正形成的Command payload。它不是Provider HTTP请求。
+ */
+export const dshBridgeSendPreviewSchema = z
+  .object({
+    schemaVersion: z.literal(DSH_BRIDGE_SEND_PREVIEW_SCHEMA_VERSION),
+    boundary: z.literal("dsh_to_lifeos_bridge"),
+    status: z.literal("pre_send_projection"),
+    workspace: promptSelectionProjectionSchema.shape.workspace,
+    workflowSelection: workflowSelectionSchema.nullable(),
+    promptSelection: promptTurnSelectionInputSchema,
+    promptConfiguration: promptConfigurationPreviewDtoSchema.nullable(),
+    dshToBridge: z
+      .object({
+        userInput: z.object({ text: z.string().min(1).max(4_000), sha256: sha256Schema }).strict(),
+        contextInjections: dshContextInjectionProjectionSchema,
+      })
+      .strict(),
+    bridgeToChat: z
+      .object({
+        policy: z.enum(["direct_prompt_selection", "non_direct_workspace_instructions"]),
+        payload: bridgeChatSubmitPayloadSchema,
+      })
+      .strict(),
+  })
+  .strict();
+
+export type DshBridgeSendPreviewRequest = z.infer<typeof dshBridgeSendPreviewRequestSchema>;
+export type DshBridgeSendPreview = z.infer<typeof dshBridgeSendPreviewSchema>;

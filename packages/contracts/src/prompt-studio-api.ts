@@ -206,6 +206,23 @@ export const previewPromptAssemblyPayloadSchema = z
   })
   .strict();
 
+/** 只预览Region配置，不要求或伪造本轮用户输入。 */
+export const previewPromptConfigurationPayloadSchema = z
+  .object({ selection: promptTurnSelectionInputSchema })
+  .strict();
+
+export const promptConfigurationPreviewDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PROMPT_STUDIO_API_SCHEMA_VERSION),
+    profileVersion: z.literal(DIRECT_PROMPT_PROFILE_VERSION),
+    compilerVersion: z.literal(DIRECT_PROMPT_COMPILER_VERSION),
+    regions: z.array(promptAssemblyRegionSchema).max(32),
+    systemPromptAppend: z.string().max(512_000),
+    messageContext: z.string().max(512_000),
+    sha256: sha256Schema,
+  })
+  .strict();
+
 export const promptAssemblyPreviewDtoSchema = z
   .object({
     schemaVersion: z.literal(PROMPT_STUDIO_API_SCHEMA_VERSION),
@@ -240,3 +257,7 @@ export type ChangePromptFragmentArchiveStatusPayload = z.infer<
 export type PromptFragmentCommandResultDto = z.infer<typeof promptFragmentCommandResultDtoSchema>;
 export type PreviewPromptAssemblyPayload = z.infer<typeof previewPromptAssemblyPayloadSchema>;
 export type PromptAssemblyPreviewDto = z.infer<typeof promptAssemblyPreviewDtoSchema>;
+export type PreviewPromptConfigurationPayload = z.infer<
+  typeof previewPromptConfigurationPayloadSchema
+>;
+export type PromptConfigurationPreviewDto = z.infer<typeof promptConfigurationPreviewDtoSchema>;

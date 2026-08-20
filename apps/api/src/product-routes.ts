@@ -72,6 +72,7 @@ import {
   revisePromptFragmentPayloadSchema,
   changePromptFragmentArchiveStatusPayloadSchema,
   previewPromptAssemblyPayloadSchema,
+  previewPromptConfigurationPayloadSchema,
   type PrincipalId,
   type ProblemDetail,
   type RequestId,
@@ -168,6 +169,7 @@ import {
   revisePromptFragment,
   changePromptFragmentArchiveStatus,
   previewDirectPromptAssembly,
+  previewDirectPromptConfiguration,
   type ApplicationDeps,
 } from "@chat/application";
 import { hashCanonical } from "@chat/domain";
@@ -692,6 +694,22 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
         await previewDirectPromptAssembly(ctx.deps, {
           principalId: ctx.principalId,
           text: payload.text,
+          selection: payload.selection,
+        }),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/prompt-configuration-previews", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const payload = previewPromptConfigurationPayloadSchema.parse(await parseJsonBody(c));
+      return c.json(
+        await previewDirectPromptConfiguration(ctx.deps, {
+          principalId: ctx.principalId,
           selection: payload.selection,
         }),
         200,

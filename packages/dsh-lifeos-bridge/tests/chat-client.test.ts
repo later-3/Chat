@@ -122,6 +122,20 @@ test("Prompt Studio forwards workspace, scope filters, and semantic preview cont
         { status: 200 },
       );
     }
+    if (url.pathname === "/api/prompt-configuration-previews") {
+      return new Response(
+        JSON.stringify({
+          schemaVersion: "chat-prompt-studio-api.v1",
+          profileVersion: "direct-agent-prompt-profile.v1",
+          compilerVersion: "direct-agent-prompt-compiler.v1",
+          regions: [],
+          systemPromptAppend: "",
+          messageContext: "配置正文",
+          sha256: "a".repeat(64),
+        }),
+        { status: 200 },
+      );
+    }
     return new Response(
       JSON.stringify({
         schemaVersion: "chat-prompt-studio-api.v1",
@@ -151,6 +165,7 @@ test("Prompt Studio forwards workspace, scope filters, and semantic preview cont
     (await client.previewPromptAssembly({ text: "测试", selection })).userPrompt,
     "# 当前输入\n测试",
   );
+  assert.equal((await client.previewPromptConfiguration({ selection })).messageContext, "配置正文");
 
   assert.equal(requests[1]?.url.searchParams.get("scopeKind"), "workspace");
   assert.equal(requests[1]?.url.searchParams.get("workspaceRootId"), "root_chat");
@@ -158,6 +173,11 @@ test("Prompt Studio forwards workspace, scope filters, and semantic preview cont
     url: new URL("http://127.0.0.1:1/api/prompt-assembly-previews"),
     method: "POST",
     body: { text: "测试", selection },
+  });
+  assert.deepEqual(requests[3], {
+    url: new URL("http://127.0.0.1:1/api/prompt-configuration-previews"),
+    method: "POST",
+    body: { selection },
   });
 });
 

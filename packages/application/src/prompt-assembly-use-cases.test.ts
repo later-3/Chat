@@ -2,7 +2,10 @@ import { createEmptySnapshot, type PromptFragmentRevision } from "@chat/contract
 import { computePromptFragmentRevisionSha256 } from "@chat/domain";
 import { describe, expect, it } from "vitest";
 import type { ApplicationDeps } from "./deps.js";
-import { previewDirectPromptAssembly } from "./prompt-assembly-use-cases.js";
+import {
+  previewDirectPromptAssembly,
+  previewDirectPromptConfiguration,
+} from "./prompt-assembly-use-cases.js";
 
 const NOW = "2026-08-20T00:00:00.000Z";
 const SHA = "a".repeat(64);
@@ -200,6 +203,18 @@ describe("Direct Prompt Assembly", () => {
       kind: "workspace",
       rootId: "root_chat",
     });
+
+    const configuration = await previewDirectPromptConfiguration(deps, {
+      principalId: "usr_promptassembly" as never,
+      selection: {
+        schemaVersion: "prompt-turn-selection-input.v1",
+        workspaceRootId: "root_chat",
+        regions: [],
+      },
+    });
+    expect(configuration.systemPromptAppend).toContain("你是Chat Agent");
+    expect(configuration.messageContext).toBe("");
+    expect(JSON.stringify(configuration)).not.toContain("当前输入");
   });
 
   it("拒绝把其他Workspace组件选入当前会话", async () => {

@@ -374,6 +374,10 @@ test("same-origin Prompt selection and Studio scope routes forward only typed id
       calls.push({ kind: "write-selection", sessionId, selection });
       return selectionProjection;
     },
+    bridgeSendPreview: async (sessionId: string, text: string) => {
+      calls.push({ kind: "bridge-send-preview", sessionId, text });
+      return { schemaVersion: "chat-dsh-bridge-send-preview.v1", text };
+    },
   } as unknown as LifeosBridgeService;
   const studio = {
     workspaces: async () => ({
@@ -393,6 +397,18 @@ test("same-origin Prompt selection and Studio scope routes forward only typed id
         regions: [],
         systemPromptAppend: "",
         userPrompt: "# 当前输入\n测试",
+        sha256: "a".repeat(64),
+      };
+    },
+    previewConfiguration: async (request: unknown) => {
+      calls.push({ kind: "configuration-preview", request });
+      return {
+        schemaVersion: "chat-prompt-studio-api.v1",
+        profileVersion: "direct-agent-prompt-profile.v1",
+        compilerVersion: "direct-agent-prompt-compiler.v1",
+        regions: [],
+        systemPromptAppend: "",
+        messageContext: "",
         sha256: "a".repeat(64),
       };
     },
@@ -460,6 +476,22 @@ test("same-origin Prompt selection and Studio scope routes forward only typed id
       ).status,
       200,
     );
+    assert.equal(
+      (
+        await call("POST", "/lifeos/prompts/configuration-previews", {
+          selection: selectionProjection.promptSelection,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await call("POST", "/lifeos/sessions/dsh-session-1/bridge-send-previews", {
+          text: "测试Bridge边界",
+        })
+      ).status,
+      200,
+    );
     assert.deepEqual(calls, [
       {
         kind: "fragments",
@@ -474,6 +506,15 @@ test("same-origin Prompt selection and Studio scope routes forward only typed id
       {
         kind: "preview",
         request: { text: "测试", selection: selectionProjection.promptSelection },
+      },
+      {
+        kind: "configuration-preview",
+        request: { selection: selectionProjection.promptSelection },
+      },
+      {
+        kind: "bridge-send-preview",
+        sessionId: "dsh-session-1",
+        text: "测试Bridge边界",
       },
     ]);
     assert.doesNotMatch(JSON.stringify(calls), /\/Users\//u);

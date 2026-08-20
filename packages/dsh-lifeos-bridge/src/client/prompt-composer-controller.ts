@@ -1,11 +1,11 @@
 import type { ZodType } from "zod";
 import {
-  promptAssemblyPreviewDtoSchema,
+  promptConfigurationPreviewDtoSchema,
   promptFragmentPageDtoSchema,
   promptRegionsDtoSchema,
   promptTurnSelectionInputSchema,
   promptWorkspacesDtoSchema,
-  type PromptAssemblyPreviewDto,
+  type PromptConfigurationPreviewDto,
   type PromptCompositionMode,
   type PromptFragmentSummaryDto,
   type PromptRegionDefinitionDto,
@@ -13,7 +13,12 @@ import {
   type PromptTurnSelectionInput,
   type PromptWorkspaceDto,
 } from "@chat/contracts/public";
-import { promptSelectionProjectionSchema, type PromptSelectionProjection } from "../contracts.ts";
+import {
+  dshBridgeSendPreviewSchema,
+  promptSelectionProjectionSchema,
+  type DshBridgeSendPreview,
+  type PromptSelectionProjection,
+} from "../contracts.ts";
 
 export interface PromptComposerState {
   readonly status: "idle" | "loading" | "ready" | "error";
@@ -24,7 +29,8 @@ export interface PromptComposerState {
   readonly selection: PromptTurnSelectionInput;
   readonly saving: boolean;
   readonly previewing: boolean;
-  readonly preview: PromptAssemblyPreviewDto | null;
+  readonly configurationPreview: PromptConfigurationPreviewDto | null;
+  readonly bridgeSendPreview: DshBridgeSendPreview | null;
   readonly error: string | null;
 }
 
@@ -135,7 +141,8 @@ export class PromptComposerController {
       selection: readSelection(sessionId, this.storage),
       saving: false,
       previewing: false,
-      preview: null,
+      configurationPreview: null,
+      bridgeSendPreview: null,
       error: null,
     };
   }
@@ -187,7 +194,8 @@ export class PromptComposerController {
         selection: projection.promptSelection,
         saving: false,
         previewing: false,
-        preview: null,
+        configurationPreview: null,
+        bridgeSendPreview: null,
         error: null,
       });
     } catch (error) {
@@ -276,37 +284,87 @@ export class PromptComposerController {
     this.commit(selection);
   }
 
-  async preview(text: string): Promise<PromptAssemblyPreviewDto | null> {
-    const normalized = text.trim();
-    if (normalized === "" || this.disposed) {
-      this.publish({ ...this.snapshot, error: "请先输入本轮消息，再预览组装结果" });
-      return null;
-    }
-    this.publish({ ...this.snapshot, previewing: true, preview: null, error: null });
+  async previewConfiguration(): Promise<PromptConfigurationPreviewDto | null> {
+    if (this.disposed) return null;
+    this.publish({
+      ...this.snapshot,
+      previewing: true,
+      configurationPreview: null,
+      error: null,
+    });
     try {
-      const preview = await this.request(
-        "/lifeos/prompts/assembly-previews",
-        promptAssemblyPreviewDtoSchema,
+      const configurationPreview = await this.request(
+        "/lifeos/prompts/configuration-previews",
+        promptConfigurationPreviewDtoSchema,
         {
           method: "POST",
-          body: JSON.stringify({ text: normalized, selection: this.snapshot.selection }),
+          body: JSON.stringify({ selection: this.snapshot.selection }),
         },
       );
-      this.publish({ ...this.snapshot, previewing: false, preview, error: null });
-      return preview;
+      this.publish({
+        ...this.snapshot,
+        previewing: false,
+        configurationPreview,
+        error: null,
+      });
+      return configurationPreview;
     } catch (error) {
       this.publish({
         ...this.snapshot,
         previewing: false,
-        preview: null,
-        error: error instanceof Error ? error.message : "提示词语义预览失败",
+        configurationPreview: null,
+        error: error instanceof Error ? error.message : "提示词配置预览失败",
       });
       return null;
     }
   }
 
-  clearPreview(): void {
-    this.publish({ ...this.snapshot, preview: null, error: null });
+  async previewBridgeSend(text: string): Promise<DshBridgeSendPreview | null> {
+    const normalized = text.trim();
+    if (normalized === "" || this.disposed) {
+      this.publish({ ...this.snapshot, error: "请先输入本轮消息，再预览组装结果" });
+      return null;
+    }
+    this.publish({
+      ...this.snapshot,
+      previewing: true,
+      bridgeSendPreview: null,
+      error: null,
+    });
+    try {
+      const bridgeSendPreview = await this.request(
+        `/lifeos/sessions/${encodeURIComponent(this.sessionId)}/bridge-send-previews`,
+        dshBridgeSendPreviewSchema,
+        {
+          method: "POST",
+          body: JSON.stringify({ text: normalized }),
+        },
+      );
+      this.publish({
+        ...this.snapshot,
+        previewing: false,
+        bridgeSendPreview,
+        error: null,
+      });
+      return bridgeSendPreview;
+    } catch (error) {
+      this.publish({
+        ...this.snapshot,
+        previewing: false,
+        bridgeSendPreview: null,
+        error: error instanceof Error ? error.message : "DSH Bridge发送预览失败",
+      });
+      return null;
+    }
+  }
+
+  clearPreviews(): void {
+    this.publish({
+      ...this.snapshot,
+      configurationPreview: null,
+      bridgeSendPreview: null,
+      error: null,
+    });
   }
 
   dispose(): void {
@@ -336,7 +394,8 @@ export class PromptComposerController {
       ...this.snapshot,
       selection: normalized,
       saving: true,
-      preview: null,
+      configurationPreview: null,
+      bridgeSendPreview: null,
       error: null,
     });
     this.staging ??= this.flushSelection().finally(() => {

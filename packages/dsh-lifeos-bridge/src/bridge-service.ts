@@ -2,6 +2,7 @@ import {
   BRIDGE_SCHEMA_VERSION,
   SESSION_RECORDS_SCHEMA_VERSION,
   decisionRequestSchema,
+  dshBridgeSendPreviewSchema,
   noteDecisionRequestSchema,
   PROMPT_SELECTION_SCHEMA_VERSION,
   promptSelectionProjectionSchema,
@@ -203,7 +204,10 @@ export class LifeosBridgeService {
     private readonly chat: ChatProductClient,
     private readonly state: AtomicBridgeStateStore,
     private readonly dshHistory?: DshSessionHistoryPort,
-    private readonly contextInjectionReader?: Pick<DshContextInjectionReader, "read">,
+    private readonly contextInjectionReader?: Pick<
+      DshContextInjectionReader,
+      "read" | "workspaceInstructions"
+    >,
     private readonly promptWorkspaceResolver?: PromptWorkspaceResolver,
   ) {}
 
@@ -342,6 +346,65 @@ export class LifeosBridgeService {
       );
     }
     return projection;
+  }
+
+  /**
+   * 发送前只读投影。它复用Adapter的Workspace指令提取函数和ChatClient的Workflow
+   * 分流政策，不创建Request Binding，也不提前提交Product Message。
+   */
+  async bridgeSendPreview(dshSessionId: string, text: string) {
+    const workspace = this.promptWorkspaceResolver?.resolve(dshSessionId) ?? null;
+    const [workflowSelection, storedPromptSelection] = await Promise.all([
+      this.state.readWorkflowSelection(dshSessionId),
+      this.state.readPromptSelection(dshSessionId),
+    ]);
+    const promptSelection = promptSelectionForWorkspace(storedPromptSelection, workspace);
+    const contextInjections = this.contextInjections(dshSessionId);
+    const workspaceInstructions = this.contextInjectionReader?.workspaceInstructions(dshSessionId);
+    if (workspaceInstructions === null) {
+      throw new BridgeRequestError(
+        404,
+        "lifeos_dsh_session_not_found",
+        "当前 DSH 会话不存在或尚未恢复",
+      );
+    }
+    const direct = workflowSelection?.blueprintKey === "direct";
+    const promptConfiguration = direct
+      ? await this.chat.previewPromptConfiguration({ selection: promptSelection })
+      : null;
+    const payload = {
+      text,
+      ...(workflowSelection === null
+        ? {}
+        : {
+            workflowSelection: {
+              kind: "published_revision" as const,
+              workflowDefinitionRevisionId: workflowSelection.workflowDefinitionRevisionId,
+              definitionSha256: workflowSelection.definitionSha256,
+            },
+          }),
+      ...(!direct && workspaceInstructions !== undefined
+        ? { context: { workspaceInstructions } }
+        : {}),
+      ...(direct ? { promptSelection } : {}),
+    };
+    return dshBridgeSendPreviewSchema.parse({
+      schemaVersion: "chat-dsh-bridge-send-preview.v1",
+      boundary: "dsh_to_lifeos_bridge",
+      status: "pre_send_projection",
+      workspace,
+      workflowSelection,
+      promptSelection,
+      promptConfiguration,
+      dshToBridge: {
+        userInput: { text, sha256: sha256(text) },
+        contextInjections,
+      },
+      bridgeToChat: {
+        policy: direct ? "direct_prompt_selection" : "non_direct_workspace_instructions",
+        payload,
+      },
+    });
   }
 
   async projection(dshSessionId: string, signal?: AbortSignal): Promise<LifeosProjection> {

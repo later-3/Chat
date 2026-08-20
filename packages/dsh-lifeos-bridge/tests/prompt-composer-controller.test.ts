@@ -168,8 +168,9 @@ test("每个Region独立选择模式并把精确Revision按顺序PUT到Bridge", 
   controller.dispose();
 });
 
-test("语义预览携带当前输入和当前Region选择，但明确不伪装成Provider原始请求", async () => {
-  let previewRequest: { text?: unknown; selection?: unknown } | undefined;
+test("提示词配置预览与DSH Bridge发送预览保持两个独立边界", async () => {
+  let configurationRequest: { selection?: unknown } | undefined;
+  let bridgeRequest: { text?: unknown } | undefined;
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = String(input);
     if (url === "/lifeos/prompts/regions") {
@@ -192,25 +193,79 @@ test("语义预览携带当前输入和当前Region选择，但明确不伪装�
         promptSelection: emptySelection,
       });
     }
-    if (url === "/lifeos/prompts/assembly-previews") {
-      previewRequest = JSON.parse(String(init?.body)) as typeof previewRequest;
+    if (url === "/lifeos/prompts/configuration-previews") {
+      configurationRequest = JSON.parse(String(init?.body)) as typeof configurationRequest;
       return json({
         schemaVersion: "chat-prompt-studio-api.v1",
         profileVersion: "direct-agent-prompt-profile.v1",
         compilerVersion: "direct-agent-prompt-compiler.v1",
         regions: [],
         systemPromptAppend: "",
-        userPrompt: "# 当前输入 [current_input]\n\n这是一个什么项目？",
+        messageContext: "",
         sha256: SHA,
+      });
+    }
+    if (url.endsWith("/bridge-send-previews")) {
+      bridgeRequest = JSON.parse(String(init?.body)) as typeof bridgeRequest;
+      return json({
+        schemaVersion: "chat-dsh-bridge-send-preview.v1",
+        boundary: "dsh_to_lifeos_bridge",
+        status: "pre_send_projection",
+        workspace: { rootId: ROOT_ID, title: "Chat" },
+        workflowSelection: {
+          workflowDefinitionRevisionId: "wfr_systemdirectagentv1",
+          definitionSha256: SHA,
+          title: "执行 Agent（逐次提示词审核）",
+          blueprintKey: "direct",
+        },
+        promptSelection: emptySelection,
+        promptConfiguration: {
+          schemaVersion: "chat-prompt-studio-api.v1",
+          profileVersion: "direct-agent-prompt-profile.v1",
+          compilerVersion: "direct-agent-prompt-compiler.v1",
+          regions: [],
+          systemPromptAppend: "",
+          messageContext: "",
+          sha256: SHA,
+        },
+        dshToBridge: {
+          userInput: { text: "这是一个什么项目？", sha256: SHA },
+          contextInjections: {
+            schemaVersion: "chat-dsh-context-injections.v1",
+            dshSessionId: SESSION_ID,
+            status: "not_assembled",
+            revision: SHA,
+            chatForwarding: "latest_direct_user_message_and_workspace_instructions",
+            items: [],
+            totalItems: 0,
+            omittedItems: 0,
+            totalContentCharacters: 0,
+          },
+        },
+        bridgeToChat: {
+          policy: "direct_prompt_selection",
+          payload: {
+            text: "这是一个什么项目？",
+            workflowSelection: {
+              kind: "published_revision",
+              workflowDefinitionRevisionId: "wfr_systemdirectagentv1",
+              definitionSha256: SHA,
+            },
+            promptSelection: emptySelection,
+          },
+        },
       });
     }
     return json({ code: "not_found", title: "not found" }, 404);
   };
   const controller = new PromptComposerController(SESSION_ID, fetchImpl, new MemoryStorage());
   await controller.load();
-  const preview = await controller.preview("这是一个什么项目？");
-  assert.equal(preview?.userPrompt.includes("这是一个什么项目？"), true);
-  assert.equal(previewRequest?.text, "这是一个什么项目？");
-  assert.deepEqual(previewRequest?.selection, emptySelection);
+  const configuration = await controller.previewConfiguration();
+  assert.equal(configuration?.messageContext, "");
+  assert.deepEqual(configurationRequest?.selection, emptySelection);
+  const bridge = await controller.previewBridgeSend("这是一个什么项目？");
+  assert.equal(bridge?.dshToBridge.userInput.text, "这是一个什么项目？");
+  assert.equal(bridge?.bridgeToChat.policy, "direct_prompt_selection");
+  assert.equal(bridgeRequest?.text, "这是一个什么项目？");
   controller.dispose();
 });

@@ -135,13 +135,27 @@ test("Prompt Studio mobile 390×844保持单列且无横向溢出", async ({ pag
   await expect(page.getByRole("button", { name: "新建组件", exact: true })).toBeVisible();
 });
 
-test("会话发送前按Region选择并预览Direct Prompt Assembly", async ({ page }) => {
+test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边界", async ({ page }) => {
   const composer = await openReadyConversation(page);
+  await page.getByTestId("lifeos-workflow-current").click();
+  await page.getByRole("menuitem", { name: /执行 Agent（逐次提示词审核）/u }).click();
   await page.getByTestId("lifeos-prompt-composer-open").click();
   const blankDialog = page.getByRole("dialog", { name: "本轮提示词" });
-  const blankPreview = blankDialog.getByRole("button", { name: "预览本轮组装", exact: true });
-  await expect(blankPreview).toBeEnabled();
-  await blankPreview.click();
+  const configurationPreview = blankDialog.getByRole("button", {
+    name: "预览提示词配置",
+    exact: true,
+  });
+  await expect(configurationPreview).toBeEnabled();
+  await configurationPreview.click();
+  const blankConfiguration = blankDialog.getByTestId("lifeos-prompt-configuration-preview");
+  await expect(blankConfiguration).toBeVisible();
+  await expect(blankConfiguration).toContainText("不包含用户输入或 DSH 上下文注入");
+  const blankBridgePreview = blankDialog.getByRole("button", {
+    name: "预览 DSH 发送",
+    exact: true,
+  });
+  await expect(blankBridgePreview).toBeEnabled();
+  await blankBridgePreview.click();
   await expect(blankDialog.getByRole("alert")).toContainText("请先输入本轮消息");
   await blankDialog.getByRole("button", { name: "关闭本轮提示词", exact: true }).click();
 
@@ -180,12 +194,23 @@ test("会话发送前按Region选择并预览Direct Prompt Assembly", async ({ p
   await expect(createDialog.getByRole("textbox", { name: "名称", exact: true })).toBeVisible();
   await createDialog.getByRole("button", { name: "关闭提示词组件管理", exact: true }).click();
 
-  await page.getByRole("button", { name: "预览本轮组装", exact: true }).click();
-  const preview = page.getByTestId("lifeos-prompt-preview");
-  await expect(preview).toBeVisible();
-  await expect(preview).toContainText("前端发送前语义预览");
-  await expect(preview).toContainText("不是最终 Provider HTTP 请求");
-  await expect(preview).toContainText("agent_identity");
-  await preview.getByText("查看编译后的 User Prompt", { exact: true }).click();
-  await expect(preview).toContainText(currentInput);
+  await page.getByRole("button", { name: "预览提示词配置", exact: true }).click();
+  const promptPreview = page.getByTestId("lifeos-prompt-configuration-preview");
+  await expect(promptPreview).toBeVisible();
+  await expect(promptPreview).toContainText("提示词配置预览");
+  await expect(promptPreview).toContainText("agent_identity");
+  await expect(promptPreview).not.toContainText(currentInput);
+
+  await page.getByRole("button", { name: "预览 DSH 发送", exact: true }).click();
+  const bridgePreview = page.getByTestId("lifeos-dsh-bridge-send-preview");
+  await expect(bridgePreview).toBeVisible();
+  await expect(bridgePreview).toContainText("DSH 前端发送预览");
+  await expect(bridgePreview).toContainText("不是最终 Provider HTTP 请求");
+  await expect(bridgePreview).toContainText("Direct · 发送Prompt Selection");
+  await expect(bridgePreview).toContainText("本轮将采用的提示词配置");
+  await expect(bridgePreview).toContainText("内容与“提示词配置预览”一致");
+  await expect(bridgePreview).toContainText("DSH上下文注入");
+  await expect(bridgePreview).toContainText("Bridge → Chat 实际命令 Payload");
+  await expect(bridgePreview).toContainText(currentInput);
+  await expect(bridgePreview).toContainText("promptSelection");
 });

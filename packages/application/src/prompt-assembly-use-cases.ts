@@ -2,6 +2,7 @@ import {
   DIRECT_PROMPT_COMPILER_VERSION,
   DIRECT_PROMPT_PROFILE_VERSION,
   PROMPT_ASSEMBLY_SCHEMA_VERSION,
+  promptConfigurationPreviewDtoSchema,
   promptAssemblyIdSchema,
   promptAssemblyPreviewDtoSchema,
   promptAssemblySchema,
@@ -41,7 +42,6 @@ export const DIRECT_PROMPT_PROFILE_DEFAULT_REVISION_IDS = [
 
 interface CompileContext {
   readonly principalId: PrincipalId;
-  readonly text: string;
   readonly selection: PromptTurnSelectionInput;
 }
 
@@ -144,7 +144,7 @@ function regionDefaults(
     .map((fragment) => ({ ...builtinFragment(fragment), selectionKind: "profile_default" }));
 }
 
-async function compileDraft(deps: ApplicationDeps, context: CompileContext) {
+async function compileRegions(deps: ApplicationDeps, context: CompileContext) {
   assertWorkspace(deps, context.selection);
   const catalog = await requireCatalog(deps).load();
   const sources = await sourcesFor(deps, catalog, context);
@@ -214,16 +214,44 @@ async function compileDraft(deps: ApplicationDeps, context: CompileContext) {
     .filter((region) => region.placement === "messages" && region.renderedText !== "")
     .map((region) => region.renderedText)
     .join("\n\n");
-  const userPrompt = [
-    ...(messageContext === "" ? [] : ["# Chat 提示词上下文", messageContext]),
-    "# 当前输入 [current_input]",
-    context.text,
-  ].join("\n\n");
-  return { regions, systemPromptAppend, userPrompt };
+  return { regions, systemPromptAppend, messageContext };
 }
 
-export async function previewDirectPromptAssembly(deps: ApplicationDeps, input: CompileContext) {
-  const draft = await compileDraft(deps, input);
+function userPromptFor(messageContext: string, text: string): string {
+  return [
+    ...(messageContext === "" ? [] : ["# Chat 提示词上下文", messageContext]),
+    "# 当前输入 [current_input]",
+    text,
+  ].join("\n\n");
+}
+
+export async function previewDirectPromptConfiguration(
+  deps: ApplicationDeps,
+  input: CompileContext,
+) {
+  const configuration = await compileRegions(deps, input);
+  return promptConfigurationPreviewDtoSchema.parse({
+    schemaVersion: "chat-prompt-studio-api.v1",
+    profileVersion: DIRECT_PROMPT_PROFILE_VERSION,
+    compilerVersion: DIRECT_PROMPT_COMPILER_VERSION,
+    ...configuration,
+    sha256: hashCanonical("prompt-configuration-preview.v1", {
+      selection: input.selection,
+      ...configuration,
+    }),
+  });
+}
+
+export async function previewDirectPromptAssembly(
+  deps: ApplicationDeps,
+  input: CompileContext & { readonly text: string },
+) {
+  const configuration = await compileRegions(deps, input);
+  const draft = {
+    regions: configuration.regions,
+    systemPromptAppend: configuration.systemPromptAppend,
+    userPrompt: userPromptFor(configuration.messageContext, input.text),
+  };
   return promptAssemblyPreviewDtoSchema.parse({
     schemaVersion: "chat-prompt-studio-api.v1",
     profileVersion: DIRECT_PROMPT_PROFILE_VERSION,
@@ -240,6 +268,7 @@ export async function previewDirectPromptAssembly(deps: ApplicationDeps, input: 
 export async function compileDirectPromptAssembly(
   deps: ApplicationDeps,
   input: CompileContext & {
+    readonly text: string;
     readonly productSessionId: ProductSessionId;
     readonly productRunId: ProductRunId;
     readonly sourceMessageId: MessageId;
@@ -247,7 +276,12 @@ export async function compileDirectPromptAssembly(
     readonly createdAt: string;
   },
 ): Promise<PromptAssembly> {
-  const draft = await compileDraft(deps, input);
+  const configuration = await compileRegions(deps, input);
+  const draft = {
+    regions: configuration.regions,
+    systemPromptAppend: configuration.systemPromptAppend,
+    userPrompt: userPromptFor(configuration.messageContext, input.text),
+  };
   const promptAssemblyId = promptAssemblyIdSchema.parse(
     `pma_${hashCanonical("id.prompt-assembly.v1", { productRunId: input.productRunId }).slice(0, 32)}`,
   );

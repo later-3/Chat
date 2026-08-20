@@ -8,6 +8,8 @@ import {
   type DshContextInjectionItem,
   type DshContextInjectionProjection,
 } from "./contracts.ts";
+import { workspaceInstructionsOf } from "./adapter.ts";
+import type { WorkspaceInstructionsInput } from "@chat/contracts/public";
 
 interface DshMessageLike {
   readonly id: string;
@@ -132,6 +134,12 @@ function safeTotal(current: number, addition: number): number {
  */
 export class DshContextInjectionReader {
   constructor(private readonly sessions: DshContextSessionSource) {}
+
+  /** 与真实LifeOS Adapter复用同一个提取函数，供发送预览展示实际转发子集。 */
+  workspaceInstructions(dshSessionId: string): WorkspaceInstructionsInput | undefined | null {
+    const session = this.sessions.get(dshSessionId);
+    return session === undefined ? null : workspaceInstructionsOf(session.deriveMessages());
+  }
 
   read(dshSessionId: string): DshContextInjectionProjection | null {
     const session = this.sessions.get(dshSessionId);

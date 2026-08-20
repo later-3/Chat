@@ -12,6 +12,7 @@ import {
   promptFragmentCommandResultDtoSchema,
   promptWorkspacesDtoSchema,
   promptAssemblyPreviewDtoSchema,
+  promptConfigurationPreviewDtoSchema,
   type PromptRegionsDto,
   type PromptFragmentPageDto,
   type PromptFragmentDetailDto,
@@ -19,6 +20,8 @@ import {
   type PromptFragmentCommandResultDto,
   type PromptWorkspacesDto,
   type PromptAssemblyPreviewDto,
+  type PromptConfigurationPreviewDto,
+  type PreviewPromptConfigurationPayload,
   type PreviewPromptAssemblyPayload,
   type PromptTurnSelectionInput,
   type CreatePromptFragmentPayload,
@@ -436,6 +439,17 @@ export class ChatProductClient {
     signal?: AbortSignal,
   ): Promise<PromptAssemblyPreviewDto> {
     return this.request("/api/prompt-assembly-previews", promptAssemblyPreviewDtoSchema, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      ...withSignal(signal),
+    });
+  }
+
+  async previewPromptConfiguration(
+    payload: PreviewPromptConfigurationPayload,
+    signal?: AbortSignal,
+  ): Promise<PromptConfigurationPreviewDto> {
+    return this.request("/api/prompt-configuration-previews", promptConfigurationPreviewDtoSchema, {
       method: "POST",
       body: JSON.stringify(payload),
       ...withSignal(signal),

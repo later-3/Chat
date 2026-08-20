@@ -155,21 +155,31 @@ export function lastUserPrompt(messages: readonly Message[]): UserPrompt {
  * DSH已经按原生Workspace语义完成AGENTS.md发现与层级组装；Bridge只转发
  * 仍在本次模型surface中的agent-instructions正文，不再猜目录或读取文件。
  */
+export interface WorkspaceInstructionMessageLike {
+  readonly role: string;
+  readonly source: unknown;
+  readonly content: readonly unknown[];
+}
+
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 export function workspaceInstructionsOf(
-  messages: readonly Message[],
+  messages: readonly WorkspaceInstructionMessageLike[],
 ): WorkspaceInstructionsInput | undefined {
   const items = messages.flatMap((message) => {
-    if (
-      message.role !== "user" ||
-      (message.source as { readonly kind: string }).kind !== "agent-instructions"
-    )
+    if (message.role !== "user" || recordOf(message.source)?.["kind"] !== "agent-instructions")
       return [];
     const content = message.content
-      .filter(
-        (block): block is Extract<(typeof message.content)[number], { type: "text" }> =>
-          block.type === "text",
-      )
-      .map((block) => block.text)
+      .flatMap((block) => {
+        const record = recordOf(block);
+        return record?.["type"] === "text" && typeof record["text"] === "string"
+          ? [record["text"]]
+          : [];
+      })
       .join("\n");
     return content.trim() === "" ? [] : [{ content }];
   });

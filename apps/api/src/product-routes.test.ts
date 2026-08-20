@@ -28,6 +28,7 @@ import {
   workflowDefinitionsDtoSchema,
   currentPromptReviewResponseSchema,
   promptAssemblyPreviewDtoSchema,
+  promptConfigurationPreviewDtoSchema,
   promptWorkspacesDtoSchema,
   promptReviewDecisionDtoSchema,
   type CommandId,
@@ -1495,6 +1496,24 @@ describe("公开产品API", () => {
         expect.objectContaining({ regionKey: "agent_identity", mode: "default" }),
       ]),
     );
+
+    const configurationResponse = await postJson(app, "/api/prompt-configuration-previews", {
+      selection: {
+        schemaVersion: "prompt-turn-selection-input.v1",
+        workspaceRootId: "root_chat",
+        regions: [],
+      },
+    });
+    expect(configurationResponse.status, await configurationResponse.clone().text()).toBe(200);
+    const configuration = promptConfigurationPreviewDtoSchema.parse(
+      await configurationResponse.json(),
+    );
+    expect(configuration.regions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ regionKey: "agent_identity", mode: "default" }),
+      ]),
+    );
+    expect(configuration).not.toHaveProperty("userPrompt");
 
     const list = await app.request("/api/prompt-fragments?ownerKind=system");
     expect(list.status).toBe(200);

@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   decisionRequestSchema,
+  dshBridgeSendPreviewRequestSchema,
   dshSessionIdSchema,
   noteDecisionRequestSchema,
   promptSelectionRequestSchema,
@@ -14,6 +15,7 @@ import {
   PromptStudioBridgeService,
   promptStudioArchiveRequestSchema,
   promptStudioCopyRequestSchema,
+  promptStudioConfigurationPreviewRequestSchema,
   promptStudioCreateRequestSchema,
   promptStudioPreviewRequestSchema,
   promptStudioReviseRequestSchema,
@@ -28,6 +30,7 @@ const MAX_REQUEST_BODY_BYTES = 16 * 1024;
 const MAX_PROMPT_REQUEST_BODY_BYTES = 96 * 1024;
 const SESSION_PATH = /^\/lifeos\/sessions\/([^/]+)$/;
 const CONTEXT_INJECTIONS_PATH = /^\/lifeos\/sessions\/([^/]+)\/context-injections$/;
+const BRIDGE_SEND_PREVIEWS_PATH = /^\/lifeos\/sessions\/([^/]+)\/bridge-send-previews$/;
 const DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/decisions$/;
 const NOTE_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/note-decisions$/;
 const PROMPT_REVIEW_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/prompt-review-decisions$/;
@@ -40,6 +43,7 @@ const WORKFLOWS_PATH = /^\/lifeos\/workflows$/;
 const PROMPT_REGIONS_PATH = /^\/lifeos\/prompts\/regions$/;
 const PROMPT_WORKSPACES_PATH = /^\/lifeos\/prompts\/workspaces$/;
 const PROMPT_ASSEMBLY_PREVIEWS_PATH = /^\/lifeos\/prompts\/assembly-previews$/;
+const PROMPT_CONFIGURATION_PREVIEWS_PATH = /^\/lifeos\/prompts\/configuration-previews$/;
 const PROMPT_FRAGMENTS_PATH = /^\/lifeos\/prompts\/fragments$/;
 const PROMPT_COPIES_PATH = /^\/lifeos\/prompts\/copies$/;
 const PROMPT_FRAGMENT_PATH = /^\/lifeos\/prompts\/fragments\/([^/]+)$/;
@@ -440,6 +444,31 @@ export function createLifeosRouteHandler(
       }
       if (
         promptStudio !== undefined &&
+        req.method === "POST" &&
+        PROMPT_CONFIGURATION_PREVIEWS_PATH.test(url.pathname)
+      ) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        const parsed = promptStudioConfigurationPreviewRequestSchema.safeParse(
+          await readJson(req, MAX_PROMPT_REQUEST_BODY_BYTES),
+        );
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_prompt_configuration_preview_invalid",
+            "Prompt配置预览请求非法",
+          );
+        }
+        sendJson(res, 200, await promptStudio.previewConfiguration(parsed.data));
+        return;
+      }
+      if (
+        promptStudio !== undefined &&
         req.method === "GET" &&
         PROMPT_FRAGMENTS_PATH.test(url.pathname)
       ) {
@@ -661,6 +690,23 @@ export function createLifeosRouteHandler(
       const contextInjectionsMatch = CONTEXT_INJECTIONS_PATH.exec(url.pathname);
       if (req.method === "GET" && contextInjectionsMatch !== null) {
         sendJson(res, 200, service.contextInjections(sessionIdFrom(contextInjectionsMatch)));
+        return;
+      }
+      const bridgeSendPreviewMatch = BRIDGE_SEND_PREVIEWS_PATH.exec(url.pathname);
+      if (req.method === "POST" && bridgeSendPreviewMatch !== null) {
+        const parsed = dshBridgeSendPreviewRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_bridge_send_preview_invalid",
+            "DSH Bridge发送预览请求无效",
+          );
+        }
+        sendJson(
+          res,
+          200,
+          await service.bridgeSendPreview(sessionIdFrom(bridgeSendPreviewMatch), parsed.data.text),
+        );
         return;
       }
       const decisionMatch = DECISION_PATH.exec(url.pathname);

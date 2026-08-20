@@ -141,11 +141,13 @@ test("prompt composer keeps every Region independent and stages exact revisions 
   assert.match(composer, /覆盖/u);
   assert.match(composer, /追加/u);
   assert.match(composer, /当前 Workspace/u);
-  assert.match(composer, /前端发送前语义预览/u);
+  assert.match(composer, /提示词配置预览/u);
+  assert.match(composer, /DSH 前端发送预览/u);
   assert.match(composer, /不是最终 Provider HTTP 请求/u);
   assert.match(controller, /chat\.prompt-composer\.selection\.v1\./u);
   assert.match(controller, /method: "PUT"/u);
-  assert.match(controller, /\/lifeos\/prompts\/assembly-previews/u);
+  assert.match(controller, /\/lifeos\/prompts\/configuration-previews/u);
+  assert.match(controller, /\/bridge-send-previews/u);
   assert.doesNotMatch(`${composer}\n${controller}`, /querySelector|MutationObserver/u);
 });
 
