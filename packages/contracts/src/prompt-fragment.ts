@@ -13,6 +13,22 @@ export const promptRegionKeySchema = z
   .max(80)
   .regex(/^[a-z][a-z0-9_]*$/u);
 
+/**
+ * Prompt Workspace只保存Chat服务端配置的rootId。DSH Workspace ID和本机绝对路径
+ * 都不是产品身份，必须先在Bridge/Root Registry边界完成映射。
+ */
+export const promptWorkspaceRootIdSchema = z.string().regex(/^root_[A-Za-z0-9]+$/u);
+
+export const promptFragmentScopeSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("global") }).strict(),
+  z
+    .object({
+      kind: z.literal("workspace"),
+      rootId: promptWorkspaceRootIdSchema,
+    })
+    .strict(),
+]);
+
 export const promptFragmentContentSchema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -81,6 +97,7 @@ export const promptFragmentSchema = z
     schemaVersion: z.literal("prompt-fragment.v1"),
     promptFragmentId: promptFragmentIdSchema,
     ownerPrincipalId: principalIdSchema,
+    scope: promptFragmentScopeSchema,
     status: z.enum(["active", "archived"]),
     currentRevisionId: promptFragmentRevisionIdSchema,
     currentRevisionNumber: z.number().int().positive(),
@@ -92,6 +109,8 @@ export const promptFragmentSchema = z
   .strict();
 
 export type PromptRegionKey = z.infer<typeof promptRegionKeySchema>;
+export type PromptWorkspaceRootId = z.infer<typeof promptWorkspaceRootIdSchema>;
+export type PromptFragmentScope = z.infer<typeof promptFragmentScopeSchema>;
 export type PromptFragmentContent = z.infer<typeof promptFragmentContentSchema>;
 export type PromptFragmentDerivedFrom = z.infer<typeof promptFragmentDerivedFromSchema>;
 export type PromptFragmentRevision = z.infer<typeof promptFragmentRevisionSchema>;

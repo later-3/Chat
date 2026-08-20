@@ -33,6 +33,7 @@ import {
   type DirectPromptReviewProductPort,
 } from "./prompt-review-gate.js";
 import { hashExecutorValue } from "./executor-operation-store.js";
+import type { PiExecutorWorkspaceRoot } from "./executor-service.js";
 
 export interface AuthorizedDirectAgentInput {
   readonly productRunId: string;
@@ -42,6 +43,13 @@ export interface AuthorizedDirectAgentInput {
     readonly messageId: string;
     readonly text: string;
     readonly sha256: string;
+  };
+  readonly promptAssembly: {
+    readonly promptAssemblyId: string;
+    readonly sha256: string;
+    readonly systemPromptAppend: string;
+    readonly userPrompt: string;
+    readonly workspaceRootId?: string | undefined;
   };
   readonly capabilityMode: "read_only";
   readonly limits: AuthorizedDirectAgentProfile["limits"];
@@ -57,6 +65,7 @@ export interface PublishDirectAgentResultInput {
 export interface PiDirectExecutorServiceOptions {
   readonly credential: string;
   readonly store: PiDirectExecutorOperationStore;
+  readonly workspaceRoots: ReadonlyMap<string, PiExecutorWorkspaceRoot>;
   readonly emptyWorkspaceRoot: string;
   readonly agentDir: string;
   readonly sessionsDir: string;
@@ -306,9 +315,9 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
     });
     try {
       if (!resume) await options.store.markRunning(operationId);
+      const authorizedInput = await loadAuthorizedInput(request);
       let prompt = "";
       if (!resume) {
-        const authorizedInput = await loadAuthorizedInput(request);
         const currentProfile = profileFrom(authorizedInput);
         if (
           authorizedInput.runRevision !== options.store.getProductRunRevision(operationId) ||
@@ -317,12 +326,23 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
         ) {
           throw new DirectAgentExecutionError("direct_executor.authorization_mismatch");
         }
-        prompt = authorizedInput.sourceMessage.text;
+        prompt = authorizedInput.promptAssembly.userPrompt;
       }
-      const cwd = resolve(options.emptyWorkspaceRoot, operationId);
+      const configuredRoot =
+        authorizedInput.promptAssembly.workspaceRootId === undefined
+          ? undefined
+          : options.workspaceRoots.get(authorizedInput.promptAssembly.workspaceRootId);
+      if (
+        authorizedInput.promptAssembly.workspaceRootId !== undefined &&
+        configuredRoot === undefined
+      ) {
+        throw new DirectAgentExecutionError("direct_executor.workspace_root_not_allowed");
+      }
+      const cwd = configuredRoot?.canonicalPath ?? resolve(options.emptyWorkspaceRoot, operationId);
       const output = await runner.run({
         request,
         prompt,
+        systemPromptAppend: authorizedInput.promptAssembly.systemPromptAppend,
         cwd,
         agentDir: options.agentDir,
         sessionsDir: options.sessionsDir,

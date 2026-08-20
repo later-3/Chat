@@ -13,6 +13,7 @@ import {
   type PromptReviewRequest,
   type PromptReviewRequestDto,
   type PromptReviewRequestId,
+  type PromptAssembly,
   type RunAttemptId,
   type SubmitPromptReviewDecisionPayload,
 } from "@chat/contracts";
@@ -53,7 +54,10 @@ function requireDirectAgentIds(deps: ApplicationDeps): DirectAgentIdFactory {
   return deps.directAgentIds;
 }
 
-function toPromptReviewDto(request: PromptReviewRequest): PromptReviewRequestDto {
+function toPromptReviewDto(
+  request: PromptReviewRequest,
+  assembly: PromptAssembly | undefined,
+): PromptReviewRequestDto {
   return promptReviewRequestDtoSchema.parse({
     schemaVersion: PRODUCT_API_SCHEMA_VERSION,
     promptReviewRequestId: request.promptReviewRequestId,
@@ -67,7 +71,7 @@ function toPromptReviewDto(request: PromptReviewRequest): PromptReviewRequestDto
     status: request.status,
     canonicalPayloadJson: request.canonicalPayloadJson,
     readablePrompt: renderPromptReviewReadable(request),
-    readableSections: projectPromptReviewReadableSections(request.canonicalPayloadJson),
+    readableSections: projectPromptReviewReadableSections(request.canonicalPayloadJson, assembly),
     rendererVersion: request.rendererVersion,
     payloadSha256: request.payloadSha256,
     reviewSha256: request.reviewSha256,
@@ -250,7 +254,10 @@ export async function publishPromptReviewRequest(
     snapshot.entities.promptReviewRequests[result.resultRefs["promptReviewRequestId"] ?? ""];
   const run = snapshot.entities.runs[input.productRunId];
   if (review === undefined || run === undefined) throw notFound("Prompt Review或Run不存在");
-  return { promptReview: toPromptReviewDto(review), runRevision: run.revision };
+  const assembly = Object.values(snapshot.entities.promptAssemblies).find(
+    (candidate) => candidate.productRunId === input.productRunId,
+  );
+  return { promptReview: toPromptReviewDto(review, assembly), runRevision: run.revision };
 }
 
 export async function getCurrentPromptReview(
@@ -274,7 +281,10 @@ export async function getCurrentPromptReview(
       recoveryAction: "contact_support",
     });
   }
-  return { promptReview: toPromptReviewDto(review) };
+  const assembly = Object.values(snapshot.entities.promptAssemblies).find(
+    (candidate) => candidate.productRunId === input.productRunId,
+  );
+  return { promptReview: toPromptReviewDto(review, assembly) };
 }
 
 export interface SubmitPromptReviewDecisionInput {
@@ -743,7 +753,10 @@ export async function commitPromptReviewDispatchOutcome(
   const review =
     snapshot.entities.promptReviewRequests[result.resultRefs["promptReviewRequestId"] ?? ""];
   if (review === undefined) throw notFound("Prompt Review不存在");
-  return { promptReview: toPromptReviewDto(review) };
+  const assembly = Object.values(snapshot.entities.promptAssemblies).find(
+    (candidate) => candidate.productRunId === review.productRunId,
+  );
+  return { promptReview: toPromptReviewDto(review, assembly) };
 }
 
 function mapPromptInvariant<T>(operation: () => T): T {

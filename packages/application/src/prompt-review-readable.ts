@@ -1,9 +1,14 @@
-import type { PromptReviewReadableSection, PromptReviewReadableSource } from "@chat/contracts";
+import type {
+  PromptAssembly,
+  PromptReviewReadableSection,
+  PromptReviewReadableSource,
+} from "@chat/contracts";
 import { parseCanonicalPromptReviewPayload } from "@chat/domain";
 
 const CHAT_DIRECT_EXECUTOR = "packages/pi-runtime/src/direct-agent-executor.ts";
 const CHAT_BRIDGE_ADAPTER = "packages/dsh-lifeos-bridge/src/adapter.ts";
 const CHAT_MESSAGE_USE_CASE = "packages/application/src/session-message-use-cases.ts";
+const CHAT_PROMPT_COMPILER = "packages/application/src/prompt-assembly-use-cases.ts";
 const PI_SYSTEM_PROMPT = "pi/packages/coding-agent/src/core/system-prompt.ts";
 const PI_AGENT_SESSION = "pi/packages/coding-agent/src/core/agent-session.ts";
 const PI_PROVIDER_GATE = "pi/packages/coding-agent/src/core/sdk.ts";
@@ -82,9 +87,49 @@ function messageTitle(role: string, index: number): string {
   return `${String(index + 1)} · ${label}`;
 }
 
-function messageSources(role: string): readonly PromptReviewReadableSource[] {
-  if (role === "system") return SYSTEM_SOURCES;
-  if (role === "user") return USER_SOURCES;
+function assemblySource(
+  assembly: PromptAssembly | undefined,
+  placement: "system" | "messages",
+): PromptReviewReadableSource | undefined {
+  const fragments =
+    assembly?.regions
+      .filter((region) => region.placement === placement)
+      .flatMap((region) => region.fragments.map((fragment) => ({ region, fragment }))) ?? [];
+  if (fragments.length === 0) return undefined;
+  const sourceFiles = [
+    CHAT_PROMPT_COMPILER,
+    ...fragments.flatMap(({ fragment }) =>
+      fragment.sourceRelativePath === undefined ? [] : [fragment.sourceRelativePath],
+    ),
+  ].filter((value, index, all) => all.indexOf(value) === index);
+  const refs = fragments
+    .map(
+      ({ region, fragment }) =>
+        `${region.title}/${fragment.title}=${fragment.promptFragmentRevisionId}@${fragment.sha256.slice(0, 12)}(${fragment.scope.kind === "global" ? "全局" : fragment.scope.rootId})`,
+    )
+    .join("；");
+  return source(
+    `Chat Prompt Assembly · ${placement === "system" ? "System区域" : "Messages区域"}`,
+    sourceFiles.slice(0, 16),
+    `由${assembly?.compilerVersion ?? "未知Compiler"}按区域顺序组装；精确来源：${refs}`.slice(
+      0,
+      1_000,
+    ),
+  );
+}
+
+function messageSources(
+  role: string,
+  assembly: PromptAssembly | undefined,
+): readonly PromptReviewReadableSource[] {
+  if (role === "system") {
+    const compiled = assemblySource(assembly, "system");
+    return compiled === undefined ? SYSTEM_SOURCES : [...SYSTEM_SOURCES, compiled];
+  }
+  if (role === "user") {
+    const compiled = assemblySource(assembly, "messages");
+    return compiled === undefined ? USER_SOURCES : [...USER_SOURCES, compiled];
+  }
   return SESSION_SOURCES;
 }
 
@@ -111,6 +156,7 @@ function toolSourceFiles(tools: unknown): string[] {
  */
 export function projectPromptReviewReadableSections(
   canonicalPayloadJson: string,
+  assembly?: PromptAssembly,
 ): readonly PromptReviewReadableSection[] {
   const payload = parseCanonicalPromptReviewPayload(canonicalPayloadJson) as Record<
     string,
@@ -135,7 +181,7 @@ export function projectPromptReviewReadableSections(
         payloadJsonPointer: `/messages/${String(index)}`,
         ...format(record["content"]),
         otherFieldsJson: JSON.stringify(fields, null, 2),
-        sources: [...messageSources(role)],
+        sources: [...messageSources(role, assembly)],
       });
     });
   }

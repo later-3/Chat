@@ -19,6 +19,7 @@ import {
   dshMessageIdSchema,
   dshSessionIdSchema,
   noteDecisionRequestSchema,
+  promptSelectionRequestSchema,
   promptReviewDecisionRequestSchema,
   workflowSelectionSchema,
 } from "./contracts.ts";
@@ -85,6 +86,8 @@ const requestSchema = z
      * 已创建请求；同一请求的幂等重放始终携带同一选择。
      */
     workflowSelection: workflowSelectionSchema.optional(),
+    /** 请求创建时冻结的Prompt选择；仅Direct Workflow会把它提交给Chat。 */
+    promptSelection: promptSelectionRequestSchema.shape.promptSelection.optional(),
     /** Chat确认Product Run前保留的有界重试快照；确认后立即删除。 */
     workspaceInstructions: workspaceInstructionsInputSchema.optional(),
   })
@@ -112,15 +115,26 @@ const sessionBindingSchema = z
     requests: z.record(z.string().min(1).max(256), requestSchema),
     /** 会话级Workflow选择草稿；undefined表示使用系统默认规划工作流。 */
     workflowSelection: workflowSelectionSchema.optional(),
+    /** 会话级Prompt选择草稿；Workspace rootId已经由Host解析并校验。 */
+    promptSelection: promptSelectionRequestSchema.shape.promptSelection.optional(),
   })
+  .strict();
+
+const { promptSelection: legacyPromptSelection, ...legacyRequestShape } = requestSchema.shape;
+// 解构只用于从旧状态合同中移除v9新增字段；显式读取避免Lint把它误判为遗漏。
+void legacyPromptSelection;
+const legacyRequestSchema = z.object(legacyRequestShape).strict();
+const legacySessionBindingSchema = sessionBindingSchema
+  .omit({ requests: true, promptSelection: true })
+  .extend({ requests: z.record(z.string().min(1).max(256), legacyRequestSchema) })
   .strict();
 
 /**
  * rc.6切换后已经存在的Bridge状态。除可恢复的外部身份外，v6只增加提交结果未知期间
- * 的有界Workspace指令重试正文；迁移读取接受v1-v7，随后立即改写为当前版本，不能在
+ * 的有界Workspace指令重试正文；迁移读取接受v1-v8，随后立即改写为当前版本，不能在
  * 旧schema标记下静默扩展strict格式。
  */
-const legacyBridgeStateSchema = z
+const legacyBridgeStateBeforePreferenceSchema = z
   .object({
     schemaVersion: z.enum([
       "chat-dsh-lifeos-state.v1",
@@ -131,13 +145,30 @@ const legacyBridgeStateSchema = z
       "chat-dsh-lifeos-state.v6",
       "chat-dsh-lifeos-state.v7",
     ]),
-    sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
+    sessions: z.record(dshSessionIdSchema, legacySessionBindingSchema),
   })
   .strict();
 
-const bridgeStateSchema = z
+/**
+ * v8已经把最近一次Workflow选择提升成了顶层偏好。v9只新增Prompt选择，迁移必须
+ * 精确保留这个v8字段；不能把v8套进v1-v7的strict结构，也不能靠删除旧状态启动。
+ */
+const legacyBridgeStateWithPreferenceSchema = z
   .object({
     schemaVersion: z.literal("chat-dsh-lifeos-state.v8"),
+    preferredWorkflowSelection: workflowSelectionSchema.nullable(),
+    sessions: z.record(dshSessionIdSchema, legacySessionBindingSchema),
+  })
+  .strict();
+
+const legacyBridgeStateSchema = z.union([
+  legacyBridgeStateBeforePreferenceSchema,
+  legacyBridgeStateWithPreferenceSchema,
+]);
+
+const bridgeStateSchema = z
+  .object({
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v9"),
     /** 新DSH会话继承的用户级Workflow选择；null表示系统默认规划工作流。 */
     preferredWorkflowSelection: workflowSelectionSchema.nullable(),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
@@ -152,7 +183,7 @@ export type PendingNoteDecision = z.infer<typeof pendingNoteDecisionSchema>;
 export type PendingPromptReviewDecision = z.infer<typeof pendingPromptReviewDecisionSchema>;
 
 const emptyState = (): BridgeState => ({
-  schemaVersion: "chat-dsh-lifeos-state.v8",
+  schemaVersion: "chat-dsh-lifeos-state.v9",
   preferredWorkflowSelection: null,
   sessions: {},
 });
@@ -203,6 +234,21 @@ export class AtomicBridgeStateStore {
           ? state.preferredWorkflowSelection
           : (binding.workflowSelection ?? null),
       );
+    });
+  }
+
+  async readPromptSelection(
+    dshSessionId: string,
+  ): Promise<z.infer<typeof promptSelectionRequestSchema>["promptSelection"] | undefined> {
+    dshSessionIdSchema.parse(dshSessionId);
+    return await this.serial(async () => {
+      const state = await this.load();
+      const binding = Object.hasOwn(state.sessions, dshSessionId)
+        ? state.sessions[dshSessionId]
+        : undefined;
+      return binding?.promptSelection === undefined
+        ? undefined
+        : structuredClone(binding.promptSelection);
     });
   }
 
@@ -275,6 +321,35 @@ export class AtomicBridgeStateStore {
     });
   }
 
+  /** Prompt草稿只属于当前DSH会话，不像Workflow选择那样成为新会话偏好。 */
+  async selectPrompt(
+    dshSessionId: string,
+    createSessionCommandId: string,
+    selection: z.infer<typeof promptSelectionRequestSchema>["promptSelection"],
+  ): Promise<void> {
+    dshSessionIdSchema.parse(dshSessionId);
+    await this.serial(async () => {
+      const current = await this.load();
+      const next = structuredClone(current);
+      let binding = Object.hasOwn(next.sessions, dshSessionId)
+        ? next.sessions[dshSessionId]
+        : undefined;
+      if (binding === undefined) {
+        binding = { createSessionCommandId, requests: {} };
+        next.sessions[dshSessionId] = binding;
+      }
+      if (binding.createSessionCommandId !== createSessionCommandId) {
+        throw new Error(
+          `lifeos bridge state command identity mismatch for session ${dshSessionId}`,
+        );
+      }
+      binding.promptSelection = selection;
+      bridgeStateSchema.parse(next);
+      await this.writeAtomic(next);
+      this.state = next;
+    });
+  }
+
   private async serial<T>(task: () => Promise<T>): Promise<T> {
     const previous = this.queue;
     let release!: () => void;
@@ -318,11 +393,13 @@ export class AtomicBridgeStateStore {
       return this.state;
     }
     const migrated = bridgeStateSchema.parse({
-      schemaVersion: "chat-dsh-lifeos-state.v8",
+      schemaVersion: "chat-dsh-lifeos-state.v9",
       preferredWorkflowSelection:
-        Object.values(legacy.data.sessions).reduce<
-          z.infer<typeof workflowSelectionSchema> | undefined
-        >((latest, binding) => binding.workflowSelection ?? latest, undefined) ?? null,
+        legacy.data.schemaVersion === "chat-dsh-lifeos-state.v8"
+          ? legacy.data.preferredWorkflowSelection
+          : (Object.values(legacy.data.sessions).reduce<
+              z.infer<typeof workflowSelectionSchema> | undefined
+            >((latest, binding) => binding.workflowSelection ?? latest, undefined) ?? null),
       sessions: legacy.data.sessions,
     });
     await this.writeAtomic(migrated);

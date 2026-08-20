@@ -71,6 +71,7 @@ import {
   copyPromptFragmentPayloadSchema,
   revisePromptFragmentPayloadSchema,
   changePromptFragmentArchiveStatusPayloadSchema,
+  previewPromptAssemblyPayloadSchema,
   type PrincipalId,
   type ProblemDetail,
   type RequestId,
@@ -158,6 +159,7 @@ import {
   updateRuleTag,
   archiveRuleTag,
   listPromptRegions,
+  listPromptWorkspaces,
   listPromptFragments,
   getPromptFragment,
   getPromptFragmentRevision,
@@ -165,6 +167,7 @@ import {
   copyPromptFragment,
   revisePromptFragment,
   changePromptFragmentArchiveStatus,
+  previewDirectPromptAssembly,
   type ApplicationDeps,
 } from "@chat/application";
 import { hashCanonical } from "@chat/domain";
@@ -672,11 +675,37 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
     }
   });
 
+  router.get("/prompt-workspaces", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      return privateEtagJson(c, "prompt-workspaces", await listPromptWorkspaces(ctx.deps));
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/prompt-assembly-previews", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const payload = previewPromptAssemblyPayloadSchema.parse(await parseJsonBody(c));
+      return c.json(
+        await previewDirectPromptAssembly(ctx.deps, {
+          principalId: ctx.principalId,
+          text: payload.text,
+          selection: payload.selection,
+        }),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
   router.get("/prompt-fragments", async (c) => {
     try {
       const params = strictQueryParams(
         c.req.url,
-        ["cursor", "limit", "regionKey", "ownerKind", "status"],
+        ["cursor", "limit", "regionKey", "ownerKind", "status", "scopeKind", "workspaceRootId"],
         "Prompt Fragment列表查询",
       );
       const limit = parseOptionalPositiveInteger(params, "limit", "Prompt Fragment列表limit");
@@ -686,6 +715,10 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
         ...(params.get("regionKey") !== null ? { regionKey: params.get("regionKey") } : {}),
         ...(params.get("ownerKind") !== null ? { ownerKind: params.get("ownerKind") } : {}),
         ...(params.get("status") !== null ? { status: params.get("status") } : {}),
+        ...(params.get("scopeKind") !== null ? { scopeKind: params.get("scopeKind") } : {}),
+        ...(params.get("workspaceRootId") !== null
+          ? { workspaceRootId: params.get("workspaceRootId") }
+          : {}),
       });
       return privateEtagJson(
         c,

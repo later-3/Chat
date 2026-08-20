@@ -7,6 +7,7 @@ import {
   promptFragmentRevisionSchema,
   promptFragmentSchema,
   promptRegionsDtoSchema,
+  promptWorkspacesDtoSchema,
   type ChangePromptFragmentArchiveStatusPayload,
   type CommandId,
   type CopyPromptFragmentPayload,
@@ -76,6 +77,12 @@ function assertDraftAllowed(
   assertPromptFragmentContent(draft.content);
 }
 
+function assertScopeAllowed(deps: ApplicationDeps, scope: PromptFragment["scope"]): void {
+  if (scope.kind === "global") return;
+  const root = deps.projectRoots?.list().find((item) => item.rootId === scope.rootId);
+  if (root === undefined) throw forbidden("Workspace未配置或不允许用于Prompt");
+}
+
 function ownedFragment(
   entities: { readonly promptFragments: Record<string, PromptFragment> },
   promptFragmentId: PromptFragmentId,
@@ -105,6 +112,7 @@ function builtinSummary(fragment: BuiltinPromptFragmentRevision) {
     schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
     promptFragmentId: fragment.promptFragmentId,
     ownerKind: "system" as const,
+    scope: { kind: "global" as const },
     status: "builtin" as const,
     regionKey: fragment.regionKey,
     title: fragment.title,
@@ -125,6 +133,7 @@ function userSummary(fragment: PromptFragment, revision: PromptFragmentRevision)
     schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
     promptFragmentId: fragment.promptFragmentId,
     ownerKind: "principal" as const,
+    scope: fragment.scope,
     status: fragment.status,
     regionKey: revision.regionKey,
     title: revision.title,
@@ -143,12 +152,14 @@ function userSummary(fragment: PromptFragment, revision: PromptFragmentRevision)
 function revisionDetail(
   revision: PromptFragmentRevision | BuiltinPromptFragmentRevision,
   ownerKind: "system" | "principal",
+  scope: PromptFragment["scope"],
 ) {
   return promptFragmentRevisionDetailDtoSchema.parse({
     schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
     promptFragmentId: revision.promptFragmentId,
     promptFragmentRevisionId: revision.promptFragmentRevisionId,
     ownerKind,
+    scope,
     revision: revision.revision,
     regionKey: revision.regionKey,
     title: revision.title,
@@ -175,7 +186,7 @@ function builtinDetail(fragment: BuiltinPromptFragmentRevision) {
   return promptFragmentDetailDtoSchema.parse({
     schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
     fragment: builtinSummary(fragment),
-    currentRevision: revisionDetail(fragment, "system"),
+    currentRevision: revisionDetail(fragment, "system", { kind: "global" }),
     revisions: [
       {
         schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
@@ -202,7 +213,7 @@ function userDetail(
   return promptFragmentDetailDtoSchema.parse({
     schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
     fragment: userSummary(fragment, revision),
-    currentRevision: revisionDetail(revision, "principal"),
+    currentRevision: revisionDetail(revision, "principal", fragment.scope),
     revisions: revisions.map((item) => ({
       schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
       promptFragmentRevisionId: item.promptFragmentRevisionId,
@@ -220,6 +231,17 @@ export async function listPromptRegions(deps: ApplicationDeps) {
     schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
     catalogSha256: catalog.catalogSha256,
     items: catalog.regions,
+  });
+}
+
+export async function listPromptWorkspaces(deps: ApplicationDeps) {
+  return promptWorkspacesDtoSchema.parse({
+    schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
+    items: (deps.projectRoots?.list() ?? []).map((root) => ({
+      schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
+      rootId: root.rootId,
+      title: root.displayName,
+    })),
   });
 }
 
@@ -246,6 +268,14 @@ export async function listPromptFragments(
       (item) =>
         input.query.status === undefined ||
         (item.ownerKind === "principal" && item.status === input.query.status),
+    )
+    .filter(
+      (item) => input.query.scopeKind === undefined || item.scope.kind === input.query.scopeKind,
+    )
+    .filter(
+      (item) =>
+        input.query.workspaceRootId === undefined ||
+        (item.scope.kind === "workspace" && item.scope.rootId === input.query.workspaceRootId),
     )
     .sort((left, right) => {
       const order = left.regionKey.localeCompare(right.regionKey);
@@ -297,12 +327,13 @@ export async function getPromptFragmentRevision(
   const builtin = catalog.builtinFragments.find(
     (item) => item.promptFragmentRevisionId === input.promptFragmentRevisionId,
   );
-  if (builtin !== undefined) return revisionDetail(builtin, "system");
+  if (builtin !== undefined) return revisionDetail(builtin, "system", { kind: "global" });
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
   const revision = snapshot.entities.promptFragmentRevisions[input.promptFragmentRevisionId];
   if (revision === undefined) throw notFound("Prompt Fragment Revision不存在");
   ownedFragment(snapshot.entities, revision.promptFragmentId, input.principalId);
-  return revisionDetail(revision, "principal");
+  const aggregate = ownedFragment(snapshot.entities, revision.promptFragmentId, input.principalId);
+  return revisionDetail(revision, "principal", aggregate.scope);
 }
 
 function buildRevision(input: {
@@ -375,6 +406,7 @@ export async function createPromptFragment(
   const ids = requireIds(deps);
   const catalog = await requireCatalog(deps).load();
   assertDraftAllowed(catalog, input.payload);
+  assertScopeAllowed(deps, input.payload.scope);
   const now = deps.now();
   const promptFragmentId = ids.fragment();
   const revision = buildRevision({
@@ -401,6 +433,7 @@ export async function createPromptFragment(
         schemaVersion: "prompt-fragment.v1",
         promptFragmentId,
         ownerPrincipalId: input.principalId,
+        scope: input.payload.scope,
         status: "active",
         currentRevisionId: revision.promptFragmentRevisionId,
         currentRevisionNumber: 1,
@@ -476,6 +509,7 @@ export async function copyPromptFragment(
     input.principalId,
     input.payload,
   );
+  assertScopeAllowed(deps, input.payload.destinationScope);
   const draft = {
     regionKey: source.regionKey,
     title: input.payload.title ?? `${source.title}（副本）`,
@@ -504,6 +538,7 @@ export async function copyPromptFragment(
         schemaVersion: "prompt-fragment.v1",
         promptFragmentId,
         ownerPrincipalId: input.principalId,
+        scope: input.payload.destinationScope,
         status: "active",
         currentRevisionId: revision.promptFragmentRevisionId,
         currentRevisionNumber: 1,

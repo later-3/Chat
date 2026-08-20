@@ -61,6 +61,7 @@ export class DirectAgentSuspendedError extends Error {
 export interface DirectAgentRunInput {
   readonly request: StartPiDirectExecutorOperationRequest;
   readonly prompt: string;
+  readonly systemPromptAppend: string;
   readonly cwd: string;
   readonly agentDir: string;
   readonly sessionsDir: string;
@@ -184,7 +185,10 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       noPromptTemplates: true,
       noContextFiles: true,
       systemPrompt: "",
-      appendSystemPrompt: [DIRECT_AGENT_APPEND_SYSTEM_PROMPT],
+      appendSystemPrompt: [
+        DIRECT_AGENT_APPEND_SYSTEM_PROMPT,
+        ...(input.systemPromptAppend === "" ? [] : [input.systemPromptAppend]),
+      ],
       noThemes: true,
     });
     await resourceLoader.reload();

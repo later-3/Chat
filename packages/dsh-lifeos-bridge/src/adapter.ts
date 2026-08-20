@@ -15,6 +15,10 @@ import type {
 import { ChatProductApiError, ChatProductClient } from "./chat-client.ts";
 import { dshSessionIdSchema, type ChatRun } from "./contracts.ts";
 import { AtomicBridgeStateStore, type RequestBinding } from "./state-store.ts";
+import {
+  promptSelectionForWorkspace,
+  type PromptWorkspaceResolver,
+} from "./prompt-workspace-resolver.ts";
 import { LIFEOS_TRACE_TOOL } from "./trace-tool.ts";
 
 export const LIFEOS_PROVIDER = "lifeos";
@@ -248,6 +252,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
     private readonly chat: ChatProductClient,
     private readonly state: AtomicBridgeStateStore,
     private readonly lifetimeSignal?: AbortSignal,
+    private readonly promptWorkspaceResolver?: PromptWorkspaceResolver,
   ) {
     super();
   }
@@ -306,6 +311,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
           signal,
           request.workflowSelection,
           request.workspaceInstructions,
+          request.promptSelection,
         );
         await this.rememberRun(
           dshSessionId,
@@ -390,10 +396,13 @@ export class LifeosLlmAdapter extends LlmAdapter {
     prompt: UserPrompt,
     workspaceInstructions: WorkspaceInstructionsInput | undefined,
   ): Promise<RequestBinding> {
+    const workspace = this.promptWorkspaceResolver?.resolve(dshSessionId) ?? null;
     return await this.state.mutateSession(
       dshSessionId,
       stableCommandId("create-session", dshSessionId),
       (binding) => {
+        const promptSelection = promptSelectionForWorkspace(binding.promptSelection, workspace);
+        binding.promptSelection = promptSelection;
         const request = (binding.requests[prompt.requestKey] ??= {
           dshMessageId: prompt.messageId,
           userTextSha256: prompt.textSha256,
@@ -408,6 +417,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
           ...(binding.workflowSelection !== undefined
             ? { workflowSelection: binding.workflowSelection }
             : {}),
+          promptSelection,
           ...(workspaceInstructions !== undefined ? { workspaceInstructions } : {}),
         });
         if (request.userTextSha256 !== prompt.textSha256) {

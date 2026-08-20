@@ -3,6 +3,7 @@ import {
   commandIdSchema,
   copyPromptFragmentPayloadSchema,
   createPromptFragmentPayloadSchema,
+  previewPromptAssemblyPayloadSchema,
   revisePromptFragmentPayloadSchema,
 } from "@chat/contracts/public";
 import { z } from "zod";
@@ -28,6 +29,7 @@ export const promptStudioArchiveRequestSchema = z
     payload: changePromptFragmentArchiveStatusPayloadSchema,
   })
   .strict();
+export const promptStudioPreviewRequestSchema = previewPromptAssemblyPayloadSchema;
 
 /** DSH Host只做同源协议转换；Prompt Catalog、Revision和CAS仍由Chat公开API拥有。 */
 export class PromptStudioBridgeService {
@@ -37,12 +39,22 @@ export class PromptStudioBridgeService {
     return this.chat.getPromptRegions();
   }
 
+  workspaces() {
+    return this.chat.getPromptWorkspaces();
+  }
+
+  preview(request: z.infer<typeof promptStudioPreviewRequestSchema>) {
+    return this.chat.previewPromptAssembly(request);
+  }
+
   fragments(query: {
     cursor?: string;
     limit?: number;
     regionKey?: string;
     ownerKind?: string;
     status?: string;
+    scopeKind?: string;
+    workspaceRootId?: string;
   }) {
     return this.chat.listPromptFragments(query);
   }

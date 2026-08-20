@@ -81,11 +81,26 @@ export function resolveRuntimeInstance(root, instance = "production", environmen
     ? join(dataRoot, "browser-profile")
     : join(dataRoot, "debug", "browser-profile");
   const debugDir = debug ? join(dataRoot, "processes") : undefined;
+  const projectRootsJson =
+    environment.CHAT_PROJECT_ROOTS_JSON?.trim() ||
+    JSON.stringify([
+      {
+        rootId: "root_chat",
+        displayName: "Chat 工作区",
+        canonicalPath: repoRoot,
+        enabledAdapters: [
+          "local-git-workspace.v1",
+          "project-document-manifest.v1",
+          "package-script-catalog.v1",
+        ],
+      },
+    ]);
   const environmentOverrides = {
     CHAT_RUNTIME_INSTANCE: name,
     CHAT_REPO_ROOT: repoRoot,
     CHAT_PUBLIC_WEB_PORT: String(ports.web),
     CHAT_DSH_INTERNAL_WEB_PORT: String(ports.webInternal),
+    CHAT_PROJECT_ROOTS_JSON: projectRootsJson,
     ...(debug
       ? {
           CHAT_PRODUCT_STORE_PATH: join(dataRoot, "product", "chat-product-store.v1.json"),

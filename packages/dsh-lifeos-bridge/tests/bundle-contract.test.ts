@@ -125,6 +125,30 @@ test("context manager uses public Session and blank-safe composer contracts with
   assert.doesNotMatch(`${client}\n${manager}`, /querySelector|MutationObserver/u);
 });
 
+test("prompt composer keeps every Region independent and stages exact revisions before send", async () => {
+  const client = await readFile(new URL("../src/client/index.tsx", import.meta.url), "utf8");
+  const composer = await readFile(
+    new URL("../src/client/PromptComposer.tsx", import.meta.url),
+    "utf8",
+  );
+  const controller = await readFile(
+    new URL("../src/client/prompt-composer-controller.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(client, /id: "lifeos-prompt-composer"/u);
+  assert.match(composer, /提示词/u);
+  assert.match(composer, /默认/u);
+  assert.match(composer, /覆盖/u);
+  assert.match(composer, /追加/u);
+  assert.match(composer, /当前 Workspace/u);
+  assert.match(composer, /前端发送前语义预览/u);
+  assert.match(composer, /不是最终 Provider HTTP 请求/u);
+  assert.match(controller, /chat\.prompt-composer\.selection\.v1\./u);
+  assert.match(controller, /method: "PUT"/u);
+  assert.match(controller, /\/lifeos\/prompts\/assembly-previews/u);
+  assert.doesNotMatch(`${composer}\n${controller}`, /querySelector|MutationObserver/u);
+});
+
 test("bundle patch makes Chat workflow the only enabled product model route", async () => {
   const patch = await readFile(new URL("../cordis.patch.yml", import.meta.url), "utf8");
   assert.match(patch, /id: agent-default-model[\s\S]*provider: lifeos[\s\S]*model: workflow/);

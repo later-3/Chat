@@ -25,10 +25,11 @@ const api = createRuntimeApiClient({
   baseUrl: process.env.CHAT_API_INTERNAL_BASE_URL ?? "http://127.0.0.1:43111",
   credential,
 });
+const workspaceRoots = await loadPiExecutorWorkspaceRoots(process.env);
 const runtime = createPiExecutorService({
   credential,
   store,
-  workspaceRoots: await loadPiExecutorWorkspaceRoots(process.env),
+  workspaceRoots,
   emptyWorkspaceRoot: `${dataRoot}/empty-workspaces`,
   agentDir: process.env.CHAT_PI_EXECUTOR_AGENT_DIR ?? `${dataRoot}/agent`,
   sessionsDir: `${dataRoot}/sessions`,
@@ -41,6 +42,7 @@ const directCallbacks = createDirectAgentRuntimeApiCallbacks({
 const directRuntime = createPiDirectExecutorService({
   credential,
   store: directStore,
+  workspaceRoots,
   emptyWorkspaceRoot: `${dataRoot}/direct-empty-workspaces`,
   agentDir: process.env.CHAT_PI_EXECUTOR_AGENT_DIR ?? `${dataRoot}/agent`,
   sessionsDir: `${dataRoot}/direct-sessions`,

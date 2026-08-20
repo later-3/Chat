@@ -7,7 +7,12 @@ import {
   DIRECT_AGENT_MAX_PROVIDER_REQUESTS,
   DIRECT_AGENT_PROMPT_TEMPLATE_VERSION,
   DIRECT_AGENT_TOKEN_BUDGET,
+  LEGACY_DIRECT_PROMPT_COMPILER_VERSION,
+  LEGACY_DIRECT_PROMPT_PROFILE_VERSION,
   MODEL_CONFIG_VERSION,
+  PROMPT_ASSEMBLY_SCHEMA_VERSION,
+  promptAssemblySchema,
+  type PromptAssembly,
   type ProductSnapshot,
 } from "@chat/contracts";
 import { BUILTIN_WORKFLOW_EXECUTOR_MANIFEST, StoreCorruptedError } from "@chat/application";
@@ -23,16 +28,37 @@ import {
   canonicalJsonStringify,
   computeDirectAgentCandidateSha256,
   computeDirectAgentInputManifestSha256,
+  computePromptAssemblySha256,
   computePromptReviewPayloadSha256,
   computePromptReviewSha256,
   computeRunContextRequestSha256,
   hashCanonical,
 } from "@chat/domain";
 import { JsonProductStore } from "./json-product-store.js";
+import { productSnapshotV14Schema } from "./legacy-v14.js";
+import { migrateProductSnapshotV14ToV15 } from "./migrate-v14-to-v15.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-19T12:00:00.000Z";
 const PRINCIPAL = "usr_promptreview" as const;
+
+function rehashPromptAssembly(assembly: PromptAssembly): void {
+  assembly.sha256 = computePromptAssemblySha256({
+    promptAssemblyId: assembly.promptAssemblyId,
+    productSessionId: assembly.productSessionId,
+    productRunId: assembly.productRunId,
+    sourceMessageId: assembly.sourceMessageId,
+    workflowDefinitionRevisionId: assembly.workflowDefinitionRevisionId,
+    profileVersion: assembly.profileVersion,
+    compilerVersion: assembly.compilerVersion,
+    ...(assembly.workspaceRootId === undefined
+      ? {}
+      : { workspaceRootId: assembly.workspaceRootId }),
+    regions: assembly.regions,
+    systemPromptAppend: assembly.systemPromptAppend,
+    userPrompt: assembly.userPrompt,
+  }) as never;
+}
 
 async function validDirectReviewSnapshot(): Promise<{
   readonly snapshot: ProductSnapshot;
@@ -79,6 +105,24 @@ async function validDirectReviewSnapshot(): Promise<{
     role: "user",
     content: { format: "markdown", text: "执行只读检查" },
   });
+  const promptAssemblyBody = {
+    promptAssemblyId: "pma_promptreview1",
+    productSessionId: "psn_promptreview1",
+    productRunId: "run_promptreview1",
+    sourceMessageId: "msg_promptreview1",
+    workflowDefinitionRevisionId: seed.revision.workflowDefinitionRevisionId,
+    profileVersion: LEGACY_DIRECT_PROMPT_PROFILE_VERSION,
+    compilerVersion: LEGACY_DIRECT_PROMPT_COMPILER_VERSION,
+    regions: [],
+    systemPromptAppend: "",
+    userPrompt: "执行只读检查",
+  };
+  const promptAssembly = promptAssemblySchema.parse({
+    schemaVersion: PROMPT_ASSEMBLY_SCHEMA_VERSION,
+    ...promptAssemblyBody,
+    sha256: computePromptAssemblySha256(promptAssemblyBody),
+    createdAt: NOW,
+  });
   const inputManifestSha256 = computeDirectAgentInputManifestSha256({
     productRunId: "run_promptreview1",
     inputRunRevision: 1,
@@ -86,6 +130,7 @@ async function validDirectReviewSnapshot(): Promise<{
     workflowRunSpecSha256: compiled.runSpec.sha256,
     sourceMessageId: "msg_promptreview1",
     sourceMessageSha256,
+    promptAssemblySha256: promptAssembly.sha256,
     capabilityMode: "read_only",
     promptTemplateVersion: DIRECT_AGENT_PROMPT_TEMPLATE_VERSION,
     modelConfigVersion: MODEL_CONFIG_VERSION,
@@ -136,6 +181,7 @@ async function validDirectReviewSnapshot(): Promise<{
     updatedAt: NOW,
   };
   snapshot.entities.workflowRunSpecs[compiled.runSpec.workflowRunSpecId] = compiled.runSpec;
+  snapshot.entities.promptAssemblies[promptAssembly.promptAssemblyId] = promptAssembly;
   const contextRequestShape = {
     productRunId: "run_promptreview1",
     requestedByPrincipalId: PRINCIPAL,
@@ -220,12 +266,103 @@ async function validDirectReviewSnapshot(): Promise<{
 }
 
 describe("Prompt Review Product Snapshot完整性", () => {
+  it.each(["waiting", "terminal"] as const)(
+    "v14→v15为%s历史Direct Run回填legacy Assembly并升级Attempt Manifest",
+    async (state) => {
+      const { snapshot } = await validDirectReviewSnapshot();
+      const run = snapshot.entities.runs["run_promptreview1"]!;
+      if (run.runKind !== "direct_agent") throw new Error("fixture必须是Direct Run");
+      if (state === "terminal") {
+        delete run.currentPromptReviewRequestId;
+        run.status = "failed";
+        run.phase = "executing";
+        run.failure = { code: "direct_executor.failed", summary: "历史执行失败" };
+        const review = snapshot.entities.promptReviewRequests["prr_promptreview1"]!;
+        review.status = "cancelled";
+        review.revision += 1;
+        const directAttempt = snapshot.entities.attempts["att_promptreview1"]!;
+        directAttempt.outcome = "failure";
+        directAttempt.errorCode = "direct_executor.failed";
+        const workflowAttempt = snapshot.entities.attempts["att_workflowpromptreview1"]!;
+        workflowAttempt.outcome = "failure";
+        workflowAttempt.errorCode = "direct_executor.failed";
+      }
+      const oldManifest = snapshot.entities.attempts["att_promptreview1"]!.inputManifestSha256;
+      const legacyEntities = structuredClone(snapshot.entities) as unknown as Record<
+        string,
+        unknown
+      >;
+      delete legacyEntities["promptAssemblies"];
+      const legacy = productSnapshotV14Schema.parse({
+        ...snapshot,
+        schemaVersion: "chat-product-store.v14",
+        entities: legacyEntities,
+      });
+
+      const migrated = migrateProductSnapshotV14ToV15(legacy);
+      const migratedAgain = migrateProductSnapshotV14ToV15(structuredClone(legacy));
+      expect(migrated).toEqual(migratedAgain);
+      const assemblies = Object.values(migrated.entities.promptAssemblies);
+      expect(assemblies).toHaveLength(1);
+      expect(assemblies[0]).toMatchObject({
+        productRunId: run.productRunId,
+        productSessionId: run.sessionId,
+        sourceMessageId: run.sourceMessageId,
+        profileVersion: LEGACY_DIRECT_PROMPT_PROFILE_VERSION,
+        compilerVersion: LEGACY_DIRECT_PROMPT_COMPILER_VERSION,
+        regions: [],
+        systemPromptAppend: "",
+        userPrompt: "执行只读检查",
+      });
+      expect(migrated.entities.attempts["att_promptreview1"]!.inputManifestSha256).not.toBe(
+        oldManifest,
+      );
+      expect(() => assertSnapshotIntegrity(migrated)).not.toThrow();
+    },
+  );
+
+  it("v14历史Direct缺少Message或RunSpec时迁移失败关闭", async () => {
+    const { snapshot } = await validDirectReviewSnapshot();
+    const legacyEntities = structuredClone(snapshot.entities) as unknown as Record<string, unknown>;
+    delete legacyEntities["promptAssemblies"];
+    const legacy = productSnapshotV14Schema.parse({
+      ...snapshot,
+      schemaVersion: "chat-product-store.v14",
+      entities: legacyEntities,
+    });
+    delete legacy.entities.messages["msg_promptreview1"];
+    expect(() => migrateProductSnapshotV14ToV15(legacy)).toThrow(/Message或RunSpec绑定非法/u);
+  });
+
   it("接受Direct Run→Attempt→唯一open Review的完整Hash链", async () => {
     const { snapshot } = await validDirectReviewSnapshot();
     expect(
       snapshot.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID],
     ).toBeDefined();
     expect(() => assertSnapshotIntegrity(snapshot)).not.toThrow();
+  });
+
+  it("拒绝Prompt Assembly Hash篡改、悬空关系与Direct Run非唯一Assembly", async () => {
+    const { snapshot: hashBroken } = await validDirectReviewSnapshot();
+    hashBroken.entities.promptAssemblies["pma_promptreview1"]!.sha256 = "0".repeat(64) as never;
+    expect(() => assertSnapshotIntegrity(hashBroken)).toThrow(/Assembly Hash不一致/u);
+
+    const { snapshot: relationBroken } = await validDirectReviewSnapshot();
+    const relationAssembly = relationBroken.entities.promptAssemblies["pma_promptreview1"]!;
+    relationAssembly.sourceMessageId = "msg_missingpromptassembly" as never;
+    rehashPromptAssembly(relationAssembly);
+    expect(() => assertSnapshotIntegrity(relationBroken)).toThrow(/绑定不一致/u);
+
+    const { snapshot: missing } = await validDirectReviewSnapshot();
+    delete missing.entities.promptAssemblies["pma_promptreview1"];
+    expect(() => assertSnapshotIntegrity(missing)).toThrow(/Assembly数量无效/u);
+
+    const { snapshot: duplicate } = await validDirectReviewSnapshot();
+    const second = structuredClone(duplicate.entities.promptAssemblies["pma_promptreview1"]!);
+    second.promptAssemblyId = "pma_promptreview2" as never;
+    rehashPromptAssembly(second);
+    duplicate.entities.promptAssemblies[second.promptAssemblyId] = second;
+    expect(() => assertSnapshotIntegrity(duplicate)).toThrow(/Assembly数量无效/u);
   });
 
   it("拒绝Payload/Review Hash篡改、多个open与requestIndex断号", async () => {

@@ -72,7 +72,18 @@ async function createHarness() {
     now,
   });
   const factories = createIdFactories();
-  const deps: ApplicationDeps = { store, now, ...factories };
+  const deps: ApplicationDeps = {
+    store,
+    now,
+    ...factories,
+    promptCatalog: {
+      load: async () => ({
+        catalogSha256: "a".repeat(64),
+        regions: [],
+        builtinFragments: [],
+      }),
+    },
+  };
   const { session } = await createProductSession(deps, {
     principalId: PRINCIPAL,
     commandId: command(),

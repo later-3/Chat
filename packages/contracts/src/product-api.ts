@@ -51,6 +51,7 @@ import {
   workflowRunConfigurationSchema,
   workflowRunnerFamilySchema,
 } from "./workflow-definition.js";
+import { promptTurnSelectionInputSchema } from "./prompt-assembly.js";
 
 /**
  * B2公开Query/Command网络DTO（任务书§12）。
@@ -108,6 +109,8 @@ export const noteCaptureSubmitInputSchema = z
 export const submitMessagePayloadSchema = z
   .object({
     text: z.string().min(1).max(4000),
+    /** Direct Agent首个接入；服务端在Message事务内解析并冻结精确Prompt Assembly。 */
+    promptSelection: promptTurnSelectionInputSchema.optional(),
     context: z
       .object({
         memory: memoryContextSelectionSchema.optional(),

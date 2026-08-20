@@ -10,11 +10,17 @@ import {
   promptFragmentDetailDtoSchema,
   promptFragmentRevisionDetailDtoSchema,
   promptFragmentCommandResultDtoSchema,
+  promptWorkspacesDtoSchema,
+  promptAssemblyPreviewDtoSchema,
   type PromptRegionsDto,
   type PromptFragmentPageDto,
   type PromptFragmentDetailDto,
   type PromptFragmentRevisionDetailDto,
   type PromptFragmentCommandResultDto,
+  type PromptWorkspacesDto,
+  type PromptAssemblyPreviewDto,
+  type PreviewPromptAssemblyPayload,
+  type PromptTurnSelectionInput,
   type CreatePromptFragmentPayload,
   type CopyPromptFragmentPayload,
   type RevisePromptFragmentPayload,
@@ -178,6 +184,7 @@ export class ChatProductClient {
     signal?: AbortSignal,
     workflowSelection?: WorkflowSelection,
     workspaceInstructions?: WorkspaceInstructionsInput,
+    promptSelection?: PromptTurnSelectionInput,
   ): Promise<{ message: ChatMessage; run: ChatRun }> {
     return await this.request(
       `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
@@ -199,6 +206,9 @@ export class ChatProductClient {
               : {}),
             ...(workspaceInstructions !== undefined && workflowSelection?.blueprintKey !== "direct"
               ? { context: { workspaceInstructions } }
+              : {}),
+            ...(promptSelection !== undefined && workflowSelection?.blueprintKey === "direct"
+              ? { promptSelection }
               : {}),
           },
         }),
@@ -417,6 +427,21 @@ export class ChatProductClient {
     return this.request("/api/prompt-regions", promptRegionsDtoSchema, withSignal(signal));
   }
 
+  async getPromptWorkspaces(signal?: AbortSignal): Promise<PromptWorkspacesDto> {
+    return this.request("/api/prompt-workspaces", promptWorkspacesDtoSchema, withSignal(signal));
+  }
+
+  async previewPromptAssembly(
+    payload: PreviewPromptAssemblyPayload,
+    signal?: AbortSignal,
+  ): Promise<PromptAssemblyPreviewDto> {
+    return this.request("/api/prompt-assembly-previews", promptAssemblyPreviewDtoSchema, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      ...withSignal(signal),
+    });
+  }
+
   async listPromptFragments(
     query: {
       cursor?: string;
@@ -424,6 +449,8 @@ export class ChatProductClient {
       regionKey?: string;
       ownerKind?: string;
       status?: string;
+      scopeKind?: string;
+      workspaceRootId?: string;
     },
     signal?: AbortSignal,
   ): Promise<PromptFragmentPageDto> {
@@ -433,6 +460,8 @@ export class ChatProductClient {
     if (query.regionKey !== undefined) params.set("regionKey", query.regionKey);
     if (query.ownerKind !== undefined) params.set("ownerKind", query.ownerKind);
     if (query.status !== undefined) params.set("status", query.status);
+    if (query.scopeKind !== undefined) params.set("scopeKind", query.scopeKind);
+    if (query.workspaceRootId !== undefined) params.set("workspaceRootId", query.workspaceRootId);
     const suffix = params.size === 0 ? "" : `?${params.toString()}`;
     return this.request(
       `/api/prompt-fragments${suffix}`,

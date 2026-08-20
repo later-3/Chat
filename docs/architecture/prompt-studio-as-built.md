@@ -1,19 +1,16 @@
-# Prompt Studio 管理纵向 As-built
+# Prompt Studio 与 Direct Prompt Assembly As-built
 
-> 状态：`codex/prompt-management-design` 已实现。本文是管理纵向的唯一实现说明；Prompt Assembly 与 Runtime Prompt 编辑尚未接入。
+> 状态：`codex/prompt-management-design` 已实现管理、会话选择、语义预览和 Direct Agent 运行冻结纵向。Provider 前编辑、跨 Run 历史和压缩仍未实现。
 
 ## 1. 用户结果
 
-用户可以在 DSH「设置 → 提示词」中：
+用户现在有两个彼此独立的入口：
 
-1. 查看 19 个 Prompt Region 的含义、计划位置、可编辑性、Catalog 来源和 Hash；区域卡显示当前组件数，并可直接筛选该区域的组件；
-2. 在版本区下方直接查看 4 个 Git 内置 Markdown 组件的完整正文、相对路径、Revision 和 Hash；来源正文使用独立色块，不能再隐藏到一次额外点击之后；
-3. 从内置组件创建自己的副本，内置正文保持不变；
-4. 新建用户组件，修改标题或正文时保存为新的不可变 Revision；
-5. 查看任意历史 Revision，使用精确 Revision/Hash 做并发控制；
-6. 归档与恢复用户组件。
-
-本纵向不会调用 Provider、不会启动 Workflow，也不会改变 Planner、Executor 或 Direct Agent 的现有 Prompt。
+1. DSH「设置 → 提示词」是长期管理面。它展示 19 个 Region、Git 内置 Markdown 原文和来源，支持创建全局或指定 Workspace 的用户组件、派生副本、追加不可变 Revision、归档与恢复。
+2. 每个会话的 Composer 工具行有「提示词」入口。发送前可按 Region 分别选择`默认 / 覆盖 / 追加`，在每个 Region 内勾选全局组件或当前 Workspace 组件，并用当前输入生成语义预览。
+3. 首版选择只进入“执行 Agent（逐次提示词审核）”Direct Workflow。Planning/Memory Workflow 不接收该选择，界面明确说明这一点。
+4. Direct Message Command 在启动 Workflow 的同一事务中冻结 Prompt Assembly。后续组件修改、归档或页面刷新都不能改变已经启动的 Run。
+5. Prompt Review 的 Raw 仍是 Provider Adapter 生成的真实完整请求；易读页在不修改真实正文的前提下增加 Assembly Region、精确 Revision、Hash、Scope 和 Git 文件来源。
 
 ## 2. 事实所有权
 
@@ -21,15 +18,16 @@
 prompts/catalog.json + prompts/**/*.md
   └── Git PromptCatalog（Builtin唯一事实源，只读）
 
-Product Store v14
-  ├── PromptFragment（owner/status/current/CAS）
-  └── PromptFragmentRevision（不可变title/region/content/source/hash）
+Product Store v15
+  ├── PromptFragment（owner/scope/status/current/CAS）
+  ├── PromptFragmentRevision（不可变title/region/content/source/hash）
+  └── PromptAssembly（一次Direct Run冻结的选择、正文投影与Hash）
 
-DSH Prompt Studio
-  └── Query/Command投影与浏览器草稿，不拥有正式Prompt事实
+DSH Bridge State v9
+  └── 每个DSH Session的未发送选择草稿与请求冻结副本，不拥有正式Prompt事实
 ```
 
-Builtin 不写入 Product Store。复制命令只提交精确 Source Revision ID/Hash；Application 从服务端 Catalog 读取真实正文并写入新用户 Revision，浏览器不能提交任意仓库路径或伪造来源正文。
+Builtin 不写入 Product Store。用户组件属于`global`或某个已登记`workspace rootId`；浏览器不能提交本机路径、DSH Workspace ID、owner或来源正文。
 
 ## 3. Catalog
 
@@ -42,12 +40,12 @@ Adapter 使用 `import.meta.url` 推导仓库根，与进程 cwd 无关；加载
 
 ## 4. Product Store 与并发
 
-`chat-product-store.v13 → v14` 只新增两张空表：
+`chat-product-store.v13 → v14` 新增两张 Prompt 管理表：
 
 - `promptFragments`
 - `promptFragmentRevisions`
 
-迁移不 seed Git Builtin，也不修改旧事实、Store Revision 或提交时间。
+`v14 → v15`为已有用户组件补`global` Scope，新增`promptAssemblies`。历史 Direct Run 回填`legacy-v0` Assembly，并重算包含 Assembly Hash 的 Direct Attempt Input Manifest；它不会伪造当时不存在的自定义 Region。迁移不 seed Git Builtin。
 
 Revision 规则：
 
@@ -65,6 +63,7 @@ Queries：
 - `GET /api/prompt-fragments`
 - `GET /api/prompt-fragments/:promptFragmentId`
 - `GET /api/prompt-fragment-revisions/:promptFragmentRevisionId`
+- `GET /api/prompt-workspaces`
 
 Commands：
 
@@ -72,6 +71,7 @@ Commands：
 - `POST /api/prompt-fragments/copies`
 - `POST /api/prompt-fragments/:promptFragmentId/revisions`
 - `POST /api/prompt-fragments/:promptFragmentId/archive-status`
+- `POST /api/prompt-assembly-previews`
 
 写命令使用 Command Receipt；revision/archive 必须同时携带 Aggregate expectedRevision、current Revision ID 和 current Revision Hash。旧页面保存返回 `revision_conflict`，不能覆盖新版本。
 
@@ -79,7 +79,7 @@ Commands：
 
 ## 6. DSH 边界
 
-继续使用唯一集成包 `packages/dsh-lifeos-bridge`，通过 DSH 公开 root-scope `settings.section` 注册 `lifeos-prompts`。没有新建插件、没有修改 DSH 派生、没有把 Prompt 放进 DSH local settings。
+继续使用唯一集成包 `packages/dsh-lifeos-bridge`，通过 DSH 公开 root-scope `settings.section` 注册长期管理面，并通过`conversation.input.left`注册每轮 Composer。没有新建插件、没有修改 DSH 派生、没有把正式 Prompt 放进 DSH local settings。
 
 数据流：
 
@@ -92,6 +92,17 @@ PromptStudio.tsx
 → Chat公开Prompt API
 ```
 
+会话选择链路是：
+
+```text
+PromptComposer.tsx（直接读取DSH真实input.draft）
+→ PromptComposerController
+→ GET/PUT /lifeos/sessions/:id/prompt-selection
+→ Bridge State v9按DSH Session保存草稿并按请求冻结
+→ Direct Submit Message携带promptSelection
+→ Application编译并原子提交Prompt Assembly
+```
+
 列表不携带正文；详情和精确 Revision 按需读取。Prompt 写路由单独使用 96 KiB 有界请求体，其他 LifeOS 命令仍保持 16 KiB。浏览器编辑草稿保存在本机 `localStorage`，只用于防止 Settings 关闭时丢稿；正式版本仍只由 Product Store 拥有。
 
 组件通过 `regionKey` 与区域目录严格关联。组件卡和详情同时显示区域名称与稳定 Key；区域卡的“查看 N 个组件”会切换到组件页并应用对应筛选。内置组件详情在版本区下方始终显示 Catalog Adapter 从 Git 文件读取、并通过 Manifest SHA 校验的只读原文，独立来源色块明确区分文件正文与 UI 解释。
@@ -100,13 +111,20 @@ PromptStudio.tsx
 
 真实浏览器门只启动 API 与 DSH，并使用隔离的 `45111`、`45110/45114` 端口和专用 Product Store；它不清理或争抢正在运行的正式 `431xx` 开发实例。
 
-## 7. 尚未实现
+## 7. Region选择、Workspace与运行冻结
 
-以下内容属于后续 Prompt Assembly 纵向：
+每个 Region 独立选择`default / replace / append`：默认采用固定 Direct Profile；覆盖只用显式组件；追加先放默认组件再放显式组件。选择冻结精确 Revision ID 与 Hash。全局组件对所有 Workspace 可见，Workspace组件只有在当前DSH Session映射为同一个Chat `rootId`时可见；Workspace变化会清掉旧Root的显式选择。
 
-- Prompt Profile、选择器和“仅本次使用”的冻结快照；
-- 把 Region 编译进 `system/messages/tools/options`；
-- Assembly Manifest 与 Prompt Review 的真实来源/JSON Pointer；
-- Workflow 节点配置、跨 Run 历史、预算、摘要和压缩；
-- 在 Provider 前编辑并重新审核新的 Payload Revision。
-- 把 DSH 所选 Workspace 映射成 Chat 受权 Root，并让模型通过工具自行读取 `AGENTS.md`；当前管理页只展示 `platform_workspace` 与 `target_workspace` 两个已规划的运行时区域。
+发送前语义预览与正式提交调用同一个`direct-agent-prompt-compiler.v1`。System Region编译为`systemPromptAppend`，Messages Region与真实当前输入编译为`userPrompt`。语义预览明确不是Provider HTTP请求；真实请求仍只在Provider Gate的Prompt Review中出现。
+
+Direct Message Command在Product Store事务内再次校验用户Revision的owner、状态、Scope和Hash，然后原子写入Message、Run、RunSpec、Outbox与Assembly。Direct Run与Assembly强制1:1；Input Manifest绑定Assembly Hash；Executor只从Application授权响应取得冻结的System/User文本和可选Workspace rootId。
+
+当前 Workspace Runtime 是单一目标Root，模型通过只读工具自行决定是否读取其中的`AGENTS.md`，Chat不会预读正文。文档设计中的`platform_workspace + target_workspace`双Root工具边界尚未实现；当目标是Chat时，`root_chat`同时承担平台与目标Workspace。目标为其他项目时，当前Agent只获得目标Root，不能声称同时可读Chat基础Root。
+
+## 8. 尚未实现
+
+- 在Provider前编辑Raw Payload并生成新的审核Revision；
+- Planner、Planning Executor和Memory Workflow接入统一Prompt Profile；
+- 双Root Workspace Tool边界、跨Product Run历史、预算、摘要和压缩；
+- 临时未保存正文直接用于一次发送；当前必须先保存为组件Revision再选择；
+- Prompt Profile的用户自定义、命名和版本管理；当前Direct Profile由代码固定版本拥有。

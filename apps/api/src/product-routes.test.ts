@@ -27,6 +27,8 @@ import {
   workflowNodeDetailDtoSchema,
   workflowDefinitionsDtoSchema,
   currentPromptReviewResponseSchema,
+  promptAssemblyPreviewDtoSchema,
+  promptWorkspacesDtoSchema,
   promptReviewDecisionDtoSchema,
   type CommandId,
   type PlanContent,
@@ -247,6 +249,18 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     directAgentIds,
     promptFragmentIds,
     promptCatalog,
+    projectRoots: {
+      list: () => [
+        {
+          rootId: "root_chat",
+          displayName: "Chat",
+          enabledAdapters: [] as const,
+        },
+      ],
+      observe: async () => {
+        throw new Error("本API合同测试不读取真实Workspace");
+      },
+    },
     memoryBackends: {
       list: () => [backend, tencentBackend],
       get: (backendId) => {
@@ -443,6 +457,15 @@ describe("公开产品API", () => {
 
     const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
     expect(snapshot.entities.runs[submitted.run.productRunId]?.runKind).toBe("direct_agent");
+    const assembly = Object.values(snapshot.entities.promptAssemblies).find(
+      (candidate) => candidate.productRunId === submitted.run.productRunId,
+    );
+    expect(assembly?.regions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ regionKey: "agent_identity", mode: "default" }),
+      ]),
+    );
+    expect(assembly?.userPrompt).toContain("只读检查项目并报告结论");
     const workflowAttempt = Object.values(snapshot.entities.attempts).find(
       (attempt) =>
         attempt.productRunId === submitted.run.productRunId && attempt.kind === "workflow",
@@ -1450,6 +1473,29 @@ describe("公开产品API", () => {
       expect.objectContaining({ regionKey: "tools", userManageable: false }),
     );
 
+    const workspaces = await app.request("/api/prompt-workspaces");
+    expect(workspaces.status).toBe(200);
+    expect(promptWorkspacesDtoSchema.parse(await workspaces.json()).items).toEqual([
+      expect.objectContaining({ rootId: "root_chat", title: "Chat" }),
+    ]);
+
+    const previewResponse = await postJson(app, "/api/prompt-assembly-previews", {
+      text: "检查Prompt管理纵向",
+      selection: {
+        schemaVersion: "prompt-turn-selection-input.v1",
+        workspaceRootId: "root_chat",
+        regions: [],
+      },
+    });
+    expect(previewResponse.status, await previewResponse.clone().text()).toBe(200);
+    const preview = promptAssemblyPreviewDtoSchema.parse(await previewResponse.json());
+    expect(preview.userPrompt).toContain("检查Prompt管理纵向");
+    expect(preview.regions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ regionKey: "agent_identity", mode: "default" }),
+      ]),
+    );
+
     const list = await app.request("/api/prompt-fragments?ownerKind=system");
     expect(list.status).toBe(200);
     const listBody = (await list.json()) as {
@@ -1473,6 +1519,7 @@ describe("公开产品API", () => {
         sourcePromptFragmentRevisionId: builtin?.currentRevisionId,
         sourceSha256: builtin?.currentRevisionSha256,
         title: "我的任务 Agent",
+        destinationScope: { kind: "global" },
       },
     });
     expect(copy.status, await copy.clone().text()).toBe(201);

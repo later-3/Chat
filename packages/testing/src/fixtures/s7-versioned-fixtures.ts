@@ -55,6 +55,7 @@ import {
   migrateProductSnapshotV11ToV12,
   migrateProductSnapshotV12ToV13,
   migrateProductSnapshotV13ToV14,
+  migrateProductSnapshotV14ToV15,
   productSnapshotV1Schema,
   productSnapshotV10Schema,
   type ProductSnapshotV10,
@@ -259,7 +260,7 @@ export async function buildS7VersionedFixture(
 }
 
 export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot): ProductSnapshot {
-  if (snapshot.schemaVersion === "chat-product-store.v14") return structuredClone(snapshot);
+  if (snapshot.schemaVersion === "chat-product-store.v15") return structuredClone(snapshot);
   const v2 =
     snapshot.schemaVersion === "chat-product-store.v1"
       ? migrateProductSnapshotV1ToV2(snapshot)
@@ -280,7 +281,9 @@ export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot):
     v12.schemaVersion === "chat-product-store.v12" ? migrateProductSnapshotV12ToV13(v12) : v12;
   const v14 =
     v13.schemaVersion === "chat-product-store.v13" ? migrateProductSnapshotV13ToV14(v13) : v13;
-  return productSnapshotSchema.parse(v14);
+  const v15 =
+    v14.schemaVersion === "chat-product-store.v14" ? migrateProductSnapshotV14ToV15(v14) : v14;
+  return productSnapshotSchema.parse(v15);
 }
 
 function toV10Fixture(snapshot: ProductSnapshot): ProductSnapshotV10 {
@@ -306,6 +309,7 @@ function toV10Fixture(snapshot: ProductSnapshot): ProductSnapshotV10 {
   delete entities["promptReviewDecisions"];
   delete entities["promptFragments"];
   delete entities["promptFragmentRevisions"];
+  delete entities["promptAssemblies"];
   return productSnapshotV10Schema.parse(downgraded);
 }
 

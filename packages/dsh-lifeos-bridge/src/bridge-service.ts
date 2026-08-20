@@ -3,6 +3,8 @@ import {
   SESSION_RECORDS_SCHEMA_VERSION,
   decisionRequestSchema,
   noteDecisionRequestSchema,
+  PROMPT_SELECTION_SCHEMA_VERSION,
+  promptSelectionProjectionSchema,
   promptReviewDecisionRequestSchema,
   type ChatApproval,
   type ChatNoteCandidate,
@@ -11,6 +13,8 @@ import {
   type ChatRun,
   type DecisionRequest,
   type NoteDecisionRequest,
+  type PromptSelection,
+  type PromptSelectionProjection,
   type PromptReviewDecisionRequest,
   type LifeosExecutionTrace,
   type LifeosProjection,
@@ -35,6 +39,10 @@ import {
 } from "./state-store.ts";
 import type { DshSessionHistoryPort } from "./dsh-session-history.ts";
 import type { DshContextInjectionReader } from "./context-injection-reader.ts";
+import {
+  promptSelectionForWorkspace,
+  type PromptWorkspaceResolver,
+} from "./prompt-workspace-resolver.ts";
 
 export class BridgeRequestError extends Error {
   constructor(
@@ -196,6 +204,7 @@ export class LifeosBridgeService {
     private readonly state: AtomicBridgeStateStore,
     private readonly dshHistory?: DshSessionHistoryPort,
     private readonly contextInjectionReader?: Pick<DshContextInjectionReader, "read">,
+    private readonly promptWorkspaceResolver?: PromptWorkspaceResolver,
   ) {}
 
   private history(): DshSessionHistoryPort {
@@ -463,6 +472,43 @@ export class LifeosBridgeService {
     const createCommandId = stableCommandId("create-session", dshSessionId);
     await this.state.selectWorkflow(dshSessionId, createCommandId, selection);
     return await this.projection(dshSessionId, signal);
+  }
+
+  /** 会话Prompt草稿的Workspace身份每次都由Host重新解析，Browser不能指定别的项目。 */
+  async promptSelection(dshSessionId: string): Promise<PromptSelectionProjection> {
+    const workspace = this.promptWorkspaceResolver?.resolve(dshSessionId) ?? null;
+    const stored = await this.state.readPromptSelection(dshSessionId);
+    const promptSelection = promptSelectionForWorkspace(stored, workspace);
+    return promptSelectionProjectionSchema.parse({
+      schemaVersion: PROMPT_SELECTION_SCHEMA_VERSION,
+      workspace,
+      promptSelection,
+    });
+  }
+
+  async selectPrompt(
+    dshSessionId: string,
+    selection: PromptSelection,
+  ): Promise<PromptSelectionProjection> {
+    const workspace = this.promptWorkspaceResolver?.resolve(dshSessionId) ?? null;
+    if (selection.workspaceRootId !== workspace?.rootId) {
+      throw new BridgeRequestError(
+        409,
+        "lifeos_prompt_workspace_stale",
+        "当前会话Workspace已变化，请刷新提示词选择后重试",
+      );
+    }
+    const normalized = promptSelectionForWorkspace(selection, workspace);
+    await this.state.selectPrompt(
+      dshSessionId,
+      stableCommandId("create-session", dshSessionId),
+      normalized,
+    );
+    return promptSelectionProjectionSchema.parse({
+      schemaVersion: PROMPT_SELECTION_SCHEMA_VERSION,
+      workspace,
+      promptSelection: normalized,
+    });
   }
 
   async decide(

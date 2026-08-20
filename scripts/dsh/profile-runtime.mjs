@@ -139,6 +139,9 @@ export function dshWebEnvironment(root, environment = process.env) {
     CHAT_DSH_STATE_PATH: runtime.statePath,
     CHAT_PUBLIC_WEB_PORT: String(runtime.publicPort),
     CHAT_DSH_INTERNAL_WEB_PORT: String(runtime.port),
+    ...(environment.CHAT_PROJECT_ROOTS_JSON === undefined
+      ? {}
+      : { CHAT_PROJECT_ROOTS_JSON: environment.CHAT_PROJECT_ROOTS_JSON }),
     // 服务器部署模式：公开主机名与认证文件路径（路径不是凭据；口令散列与
     // 会话密钥只存在于文件内容中，绝不进入环境变量值）。未设置时这些键不存在，
     // 网关与 bridge 保持纯 loopback 姿态。

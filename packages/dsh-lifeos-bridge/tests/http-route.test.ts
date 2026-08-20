@@ -12,6 +12,7 @@ import {
 } from "../src/http-route.ts";
 import type { LifeosBridgeService } from "../src/bridge-service.ts";
 import type { PromptSourceFileOpener } from "../src/prompt-source-file-opener.ts";
+import type { PromptStudioBridgeService } from "../src/prompt-studio-bridge-service.ts";
 
 function request(headers: IncomingMessage["headers"]): IncomingMessage {
   return { headers } as IncomingMessage;
@@ -346,6 +347,136 @@ test("same-origin context injection route reads the validated DSH session id", a
     assert.equal(response.status, 200);
     assert.deepEqual(JSON.parse(response.body), projection);
     assert.deepEqual(calls, ["dsh-session-1"]);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error === undefined ? resolve() : reject(error))),
+    );
+  }
+});
+
+test("same-origin Prompt selection and Studio scope routes forward only typed identities", async () => {
+  const calls: unknown[] = [];
+  const selectionProjection = {
+    schemaVersion: "chat-dsh-prompt-selection.v1",
+    workspace: { rootId: "root_chat", title: "Chat" },
+    promptSelection: {
+      schemaVersion: "prompt-turn-selection-input.v1",
+      workspaceRootId: "root_chat",
+      regions: [],
+    },
+  } as const;
+  const service = {
+    promptSelection: async (sessionId: string) => {
+      calls.push({ kind: "read-selection", sessionId });
+      return selectionProjection;
+    },
+    selectPrompt: async (sessionId: string, selection: unknown) => {
+      calls.push({ kind: "write-selection", sessionId, selection });
+      return selectionProjection;
+    },
+  } as unknown as LifeosBridgeService;
+  const studio = {
+    workspaces: async () => ({
+      schemaVersion: "chat-prompt-studio-api.v1",
+      items: [{ schemaVersion: "chat-prompt-studio-api.v1", rootId: "root_chat", title: "Chat" }],
+    }),
+    fragments: async (query: unknown) => {
+      calls.push({ kind: "fragments", query });
+      return { schemaVersion: "chat-prompt-studio-api.v1", items: [] };
+    },
+    preview: async (request: unknown) => {
+      calls.push({ kind: "preview", request });
+      return {
+        schemaVersion: "chat-prompt-studio-api.v1",
+        profileVersion: "direct-agent-prompt-profile.v1",
+        compilerVersion: "direct-agent-prompt-compiler.v1",
+        regions: [],
+        systemPromptAppend: "",
+        userPrompt: "# 当前输入\n测试",
+        sha256: "a".repeat(64),
+      };
+    },
+  } as unknown as PromptStudioBridgeService;
+  const server = createServer(
+    createLifeosRouteHandler(service, 43_110, () => undefined, undefined, studio),
+  );
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address !== null && typeof address === "object");
+  const call = async (method: "GET" | "POST" | "PUT", path: string, value?: unknown) =>
+    await new Promise<{ status: number | undefined; body: unknown }>((resolve, reject) => {
+      const outgoing = httpRequest(
+        {
+          hostname: "127.0.0.1",
+          port: address.port,
+          path,
+          method,
+          headers: {
+            host: "localhost:43110",
+            origin: "http://localhost:43110",
+            "sec-fetch-site": "same-origin",
+            ...(value === undefined ? {} : { "content-type": "application/json" }),
+          },
+        },
+        (incoming) => {
+          const chunks: Buffer[] = [];
+          incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+          incoming.on("end", () =>
+            resolve({
+              status: incoming.statusCode,
+              body: JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown,
+            }),
+          );
+        },
+      );
+      outgoing.on("error", reject);
+      outgoing.end(value === undefined ? undefined : JSON.stringify(value));
+    });
+  try {
+    assert.equal((await call("GET", "/lifeos/prompts/workspaces")).status, 200);
+    assert.equal(
+      (await call("GET", "/lifeos/prompts/fragments?scopeKind=workspace&workspaceRootId=root_chat"))
+        .status,
+      200,
+    );
+    assert.equal(
+      (await call("GET", "/lifeos/sessions/dsh-session-1/prompt-selection")).status,
+      200,
+    );
+    assert.equal(
+      (
+        await call("PUT", "/lifeos/sessions/dsh-session-1/prompt-selection", {
+          promptSelection: selectionProjection.promptSelection,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await call("POST", "/lifeos/prompts/assembly-previews", {
+          text: "测试",
+          selection: selectionProjection.promptSelection,
+        })
+      ).status,
+      200,
+    );
+    assert.deepEqual(calls, [
+      {
+        kind: "fragments",
+        query: { scopeKind: "workspace", workspaceRootId: "root_chat" },
+      },
+      { kind: "read-selection", sessionId: "dsh-session-1" },
+      {
+        kind: "write-selection",
+        sessionId: "dsh-session-1",
+        selection: selectionProjection.promptSelection,
+      },
+      {
+        kind: "preview",
+        request: { text: "测试", selection: selectionProjection.promptSelection },
+      },
+    ]);
+    assert.doesNotMatch(JSON.stringify(calls), /\/Users\//u);
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error === undefined ? resolve() : reject(error))),

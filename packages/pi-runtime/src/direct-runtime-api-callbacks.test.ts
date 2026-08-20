@@ -34,6 +34,12 @@ describe("Direct Agent Runtime Fetch callbacks", () => {
             text: "review me",
             sha256: "3".repeat(64),
           },
+          promptAssembly: {
+            promptAssemblyId: "pma_callbacktest",
+            sha256: "7".repeat(64),
+            systemPromptAppend: "# Agent 身份",
+            userPrompt: "review me",
+          },
           capabilityMode: "read_only",
           limits: {
             maxProviderRequests: 16,
@@ -123,6 +129,7 @@ describe("Direct Agent Runtime Fetch callbacks", () => {
     };
     await expect(callbacks.authorizeOperation(request)).resolves.toMatchObject({
       sourceMessage: { text: "review me" },
+      promptAssembly: { userPrompt: "review me" },
       capabilityMode: "read_only",
     });
     const published = await callbacks.promptReviewProduct.publish({

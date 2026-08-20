@@ -4,7 +4,7 @@
 
 ## 可编辑语义区域
 
-- `agent_identity`：模型在当前节点扮演的身份。未来组装到 System。
+- `agent_identity`：模型在当前节点扮演的身份。Direct Agent 首版组装到 System。
 - `user_context`：与当前用户有关、完成任务确实需要知道的资料。
 - `background`：任务发生的背景、现状和边界。
 - `objective`：本次运行希望达成的结果。

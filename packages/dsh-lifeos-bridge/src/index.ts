@@ -19,6 +19,7 @@ import { DshSessionQueryHistory } from "./dsh-session-history.ts";
 import { DshContextInjectionReader } from "./context-injection-reader.ts";
 import { PromptStudioBridgeService } from "./prompt-studio-bridge-service.ts";
 import { PromptSourceFileOpener } from "./prompt-source-file-opener.ts";
+import { createPromptWorkspaceResolver } from "./prompt-workspace-resolver.ts";
 
 export const name = "chat-dsh-lifeos-bridge";
 export const inject = [
@@ -85,7 +86,17 @@ export async function apply(ctx: Context): Promise<void> {
   const contextInjectionReader = new DshContextInjectionReader({
     get: (dshSessionId) => ctx.sessions.get(SessionId(dshSessionId)),
   });
-  const bridge = new LifeosBridgeService(chat, state, dshHistory, contextInjectionReader);
+  const promptWorkspaceResolver = await createPromptWorkspaceResolver(
+    ctx.workspaceRegistry,
+    process.env,
+  );
+  const bridge = new LifeosBridgeService(
+    chat,
+    state,
+    dshHistory,
+    contextInjectionReader,
+    promptWorkspaceResolver,
+  );
   const promptStudio = new PromptStudioBridgeService(chat);
   // 公网部署绝不能让远端浏览器启动服务器本机应用；只在无公开主机名的本地模式装配。
   // Prompt来源属于Chat代码Catalog，不跟随未来可切换的工作对象Workspace。
@@ -101,7 +112,10 @@ export async function apply(ctx: Context): Promise<void> {
     },
     "lifeos bridge: stream lifetime",
   );
-  ctx.llm.registerAdapter([LIFEOS_PROVIDER], new LifeosLlmAdapter(chat, state, lifetime.signal));
+  ctx.llm.registerAdapter(
+    [LIFEOS_PROVIDER],
+    new LifeosLlmAdapter(chat, state, lifetime.signal, promptWorkspaceResolver),
+  );
   ctx.effect(
     () => ctx.tools.register(createLifeosTraceTool(chat, state)),
     "lifeos bridge: Pi execution trajectory tool",

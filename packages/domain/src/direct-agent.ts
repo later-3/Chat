@@ -21,6 +21,7 @@ export function computeDirectAgentInputManifestSha256(input: {
   readonly workflowRunSpecSha256: string;
   readonly sourceMessageId: string;
   readonly sourceMessageSha256: string;
+  readonly promptAssemblySha256: string;
   readonly capabilityMode: "read_only";
   readonly promptTemplateVersion: string;
   readonly modelConfigVersion: string;

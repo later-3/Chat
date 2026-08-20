@@ -1,7 +1,7 @@
 # Direct Agent逐次提示词审核 P1
 
-> 日期：2026-08-19  
-> 状态：单节点P1纵向与DSH首版审核界面已实现  
+> 日期：2026-08-19
+> 状态：单节点P1纵向、DSH审核界面与Direct Prompt Assembly首版已实现
 > 真实付费Provider：未调用
 
 ## 1. 用户结果
@@ -32,7 +32,7 @@ P1不包含：
 
 1. Prompt差异对比与编辑能力；当前已提供原始请求、按区域拆分且带源码来源定位的易读视图、批准/拒绝和刷新恢复。
 2. 真实百炼/付费模型端到端；这些属于P3并需要届时明确授权。
-3. Workspace写入、Shell、第三方Extension、Memory或Workspace Instructions。V1固定`read_only`，使用隔离空Workspace。
+3. Workspace写入、Shell、第三方Extension、Memory或双Root Workspace。V1固定`read_only`；可使用DSH当前会话映射出的单一目标Root，未映射时使用隔离空Workspace。
 
 ## 3. 最终请求与可读投影
 
@@ -51,13 +51,15 @@ Chat Direct追加指令、DSH用户输入链、Pi AgentSession历史、工具Sch
 投影不调用模型、不概括或省略字段，也不是第二份持久化正文；易读正文不再加入“模型请求提示词”等容易
 被误认为真实发送内容的装饰标题。
 
+Direct Prompt Assembly接入后，易读投影还会读取同一Product Run的冻结Assembly，为System与User区块标注实际采用的Region、Prompt Fragment Revision、Hash、global/workspace Scope和Git来源文件。来源说明仍是UI Metadata，绝不写进`canonicalPayloadJson`。Raw内容、JSON Pointer和Payload Hash仍是判断“模型真正收到什么”的唯一事实。
+
 ## 4. 运行时序
 
 ```text
 Message Command
   → 原子提交Message + direct_agent Run + Workflow Attempt + RunSpec + workflow_start Outbox
 Workflow
-  → BeginDirectAgentAttempt（冻结Message/RunSpec/read_only/版本/预算Hash）
+  → BeginDirectAgentAttempt（冻结Message/RunSpec/Prompt Assembly/read_only/版本/预算Hash）
   → 启动唯一Pi Direct Operation
 Executor AgentSession.providerRequestGate（Pi公开fail-closed接缝）
   → 规范化Payload + 导出0600 Session checkpoint
@@ -117,6 +119,8 @@ V1显式关闭thinking、Provider自动重试、Compaction、Branch Summary和�
 
 每个Attempt最多允许16个Prompt Review和16次Provider发送。循环是同一个Execution Agent节点的
 内部运行状态，不创建第17个Workflow节点或额外人工节点。
+
+V1 Direct Runtime从Application授权响应取得同一Assembly的`systemPromptAppend`、`userPrompt`和可选`workspaceRootId`；Workflow与Journal只保存引用/Hash，不复制正文。当前Workspace是单一只读目标Root，模型可通过read/grep/find/ls自行读取`AGENTS.md`；Chat不把该文件预读后塞进Prompt。
 
 ## 7. 故障政策
 

@@ -1,7 +1,18 @@
 import { z } from "zod";
 import { sha256Schema } from "./hash.js";
 import { promptFragmentIdSchema, promptFragmentRevisionIdSchema } from "./ids.js";
-import { promptFragmentContentSchema, promptRegionKeySchema } from "./prompt-fragment.js";
+import {
+  promptFragmentContentSchema,
+  promptFragmentScopeSchema,
+  promptRegionKeySchema,
+  promptWorkspaceRootIdSchema,
+} from "./prompt-fragment.js";
+import {
+  DIRECT_PROMPT_COMPILER_VERSION,
+  DIRECT_PROMPT_PROFILE_VERSION,
+  promptAssemblyRegionSchema,
+  promptTurnSelectionInputSchema,
+} from "./prompt-assembly.js";
 
 export const PROMPT_STUDIO_API_SCHEMA_VERSION = "chat-prompt-studio-api.v1";
 
@@ -34,6 +45,21 @@ export const promptRegionsDtoSchema = z
 
 export const promptFragmentOwnerKindSchema = z.enum(["system", "principal"]);
 
+export const promptWorkspaceDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PROMPT_STUDIO_API_SCHEMA_VERSION),
+    rootId: promptWorkspaceRootIdSchema,
+    title: z.string().min(1).max(160),
+  })
+  .strict();
+
+export const promptWorkspacesDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PROMPT_STUDIO_API_SCHEMA_VERSION),
+    items: z.array(promptWorkspaceDtoSchema).max(100),
+  })
+  .strict();
+
 export const promptFragmentRevisionSummaryDtoSchema = z
   .object({
     schemaVersion: z.literal(PROMPT_STUDIO_API_SCHEMA_VERSION),
@@ -50,6 +76,7 @@ export const promptFragmentSummaryDtoSchema = z
     schemaVersion: z.literal(PROMPT_STUDIO_API_SCHEMA_VERSION),
     promptFragmentId: promptFragmentIdSchema,
     ownerKind: promptFragmentOwnerKindSchema,
+    scope: promptFragmentScopeSchema,
     status: z.enum(["active", "archived", "builtin"]),
     regionKey: promptRegionKeySchema,
     title: z.string().min(1).max(160),
@@ -71,6 +98,7 @@ export const promptFragmentRevisionDetailDtoSchema = z
     promptFragmentId: promptFragmentIdSchema,
     promptFragmentRevisionId: promptFragmentRevisionIdSchema,
     ownerKind: promptFragmentOwnerKindSchema,
+    scope: promptFragmentScopeSchema,
     revision: z.number().int().positive(),
     regionKey: promptRegionKeySchema,
     title: z.string().min(1).max(160),
@@ -117,6 +145,8 @@ export const listPromptFragmentsQuerySchema = z
     regionKey: promptRegionKeySchema.optional(),
     ownerKind: promptFragmentOwnerKindSchema.optional(),
     status: z.enum(["active", "archived"]).optional(),
+    scopeKind: z.enum(["global", "workspace"]).optional(),
+    workspaceRootId: promptWorkspaceRootIdSchema.optional(),
     cursor: z.string().min(1).max(500).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(50),
   })
@@ -131,13 +161,16 @@ export const promptFragmentDraftPayloadSchema = z
   })
   .strict();
 
-export const createPromptFragmentPayloadSchema = promptFragmentDraftPayloadSchema;
+export const createPromptFragmentPayloadSchema = promptFragmentDraftPayloadSchema.extend({
+  scope: promptFragmentScopeSchema,
+});
 
 export const copyPromptFragmentPayloadSchema = z
   .object({
     sourcePromptFragmentRevisionId: promptFragmentRevisionIdSchema,
     sourceSha256: sha256Schema,
     title: z.string().trim().min(1).max(160).optional(),
+    destinationScope: promptFragmentScopeSchema,
   })
   .strict();
 
@@ -165,8 +198,30 @@ export const promptFragmentCommandResultDtoSchema = z
   })
   .strict();
 
+/** 发送前语义预览；它不是Provider Payload，最终原始请求仍由Prompt Review展示。 */
+export const previewPromptAssemblyPayloadSchema = z
+  .object({
+    text: z.string().min(1).max(4_000),
+    selection: promptTurnSelectionInputSchema,
+  })
+  .strict();
+
+export const promptAssemblyPreviewDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PROMPT_STUDIO_API_SCHEMA_VERSION),
+    profileVersion: z.literal(DIRECT_PROMPT_PROFILE_VERSION),
+    compilerVersion: z.literal(DIRECT_PROMPT_COMPILER_VERSION),
+    regions: z.array(promptAssemblyRegionSchema).max(32),
+    systemPromptAppend: z.string().max(512_000),
+    userPrompt: z.string().min(1).max(1_000_000),
+    sha256: sha256Schema,
+  })
+  .strict();
+
 export type PromptRegionDefinitionDto = z.infer<typeof promptRegionDefinitionDtoSchema>;
 export type PromptRegionsDto = z.infer<typeof promptRegionsDtoSchema>;
+export type PromptWorkspaceDto = z.infer<typeof promptWorkspaceDtoSchema>;
+export type PromptWorkspacesDto = z.infer<typeof promptWorkspacesDtoSchema>;
 export type PromptFragmentRevisionSummaryDto = z.infer<
   typeof promptFragmentRevisionSummaryDtoSchema
 >;
@@ -183,3 +238,5 @@ export type ChangePromptFragmentArchiveStatusPayload = z.infer<
   typeof changePromptFragmentArchiveStatusPayloadSchema
 >;
 export type PromptFragmentCommandResultDto = z.infer<typeof promptFragmentCommandResultDtoSchema>;
+export type PreviewPromptAssemblyPayload = z.infer<typeof previewPromptAssemblyPayloadSchema>;
+export type PromptAssemblyPreviewDto = z.infer<typeof promptAssemblyPreviewDtoSchema>;

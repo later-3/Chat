@@ -3,6 +3,7 @@ import {
   decisionRequestSchema,
   dshSessionIdSchema,
   noteDecisionRequestSchema,
+  promptSelectionRequestSchema,
   promptReviewDecisionRequestSchema,
   workflowSelectionRequestSchema,
 } from "./contracts.ts";
@@ -14,6 +15,7 @@ import {
   promptStudioArchiveRequestSchema,
   promptStudioCopyRequestSchema,
   promptStudioCreateRequestSchema,
+  promptStudioPreviewRequestSchema,
   promptStudioReviseRequestSchema,
 } from "./prompt-studio-bridge-service.ts";
 import {
@@ -30,11 +32,14 @@ const DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/decisions$/;
 const NOTE_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/note-decisions$/;
 const PROMPT_REVIEW_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/prompt-review-decisions$/;
 const WORKFLOW_SELECTION_PATH = /^\/lifeos\/sessions\/([^/]+)\/workflow-selection$/;
+const PROMPT_SELECTION_PATH = /^\/lifeos\/sessions\/([^/]+)\/prompt-selection$/;
 const SESSION_RECORDS_PATH = /^\/lifeos\/sessions\/([^/]+)\/records$/;
 const SESSION_RECORDS_CHAT_PATH = /^\/lifeos\/sessions\/([^/]+)\/records\/chat$/;
 const SESSION_RECORDS_DSH_PATH = /^\/lifeos\/sessions\/([^/]+)\/records\/dsh$/;
 const WORKFLOWS_PATH = /^\/lifeos\/workflows$/;
 const PROMPT_REGIONS_PATH = /^\/lifeos\/prompts\/regions$/;
+const PROMPT_WORKSPACES_PATH = /^\/lifeos\/prompts\/workspaces$/;
+const PROMPT_ASSEMBLY_PREVIEWS_PATH = /^\/lifeos\/prompts\/assembly-previews$/;
 const PROMPT_FRAGMENTS_PATH = /^\/lifeos\/prompts\/fragments$/;
 const PROMPT_COPIES_PATH = /^\/lifeos\/prompts\/copies$/;
 const PROMPT_FRAGMENT_PATH = /^\/lifeos\/prompts\/fragments\/([^/]+)$/;
@@ -400,11 +405,55 @@ export function createLifeosRouteHandler(
       if (
         promptStudio !== undefined &&
         req.method === "GET" &&
+        PROMPT_WORKSPACES_PATH.test(url.pathname)
+      ) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        sendJson(res, 200, await promptStudio.workspaces());
+        return;
+      }
+      if (
+        promptStudio !== undefined &&
+        req.method === "POST" &&
+        PROMPT_ASSEMBLY_PREVIEWS_PATH.test(url.pathname)
+      ) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        const parsed = promptStudioPreviewRequestSchema.safeParse(
+          await readJson(req, MAX_PROMPT_REQUEST_BODY_BYTES),
+        );
+        if (!parsed.success) {
+          throw new BridgeRequestError(400, "lifeos_prompt_preview_invalid", "Prompt预览请求非法");
+        }
+        sendJson(res, 200, await promptStudio.preview(parsed.data));
+        return;
+      }
+      if (
+        promptStudio !== undefined &&
+        req.method === "GET" &&
         PROMPT_FRAGMENTS_PATH.test(url.pathname)
       ) {
         assertOnlyQueryKeys(
           url.searchParams,
-          new Set(["cursor", "limit", "regionKey", "ownerKind", "status"]),
+          new Set([
+            "cursor",
+            "limit",
+            "regionKey",
+            "ownerKind",
+            "status",
+            "scopeKind",
+            "workspaceRootId",
+          ]),
         );
         const rawLimit = singleQueryValue(url.searchParams, "limit");
         const limit = rawLimit === undefined ? undefined : Number(rawLimit);
@@ -422,6 +471,8 @@ export function createLifeosRouteHandler(
         const regionKey = singleQueryValue(url.searchParams, "regionKey");
         const ownerKind = singleQueryValue(url.searchParams, "ownerKind");
         const status = singleQueryValue(url.searchParams, "status");
+        const scopeKind = singleQueryValue(url.searchParams, "scopeKind");
+        const workspaceRootId = singleQueryValue(url.searchParams, "workspaceRootId");
         sendJson(
           res,
           200,
@@ -431,6 +482,8 @@ export function createLifeosRouteHandler(
             ...(regionKey !== undefined ? { regionKey } : {}),
             ...(ownerKind !== undefined ? { ownerKind } : {}),
             ...(status !== undefined ? { status } : {}),
+            ...(scopeKind !== undefined ? { scopeKind } : {}),
+            ...(workspaceRootId !== undefined ? { workspaceRootId } : {}),
           }),
         );
         return;
@@ -652,6 +705,32 @@ export function createLifeosRouteHandler(
       const workflowsMatch = WORKFLOWS_PATH.exec(url.pathname);
       if (req.method === "GET" && workflowsMatch !== null) {
         sendJson(res, 200, await service.workflows());
+        return;
+      }
+      const promptSelectionMatch = PROMPT_SELECTION_PATH.exec(url.pathname);
+      if (req.method === "GET" && promptSelectionMatch !== null) {
+        sendJson(res, 200, await service.promptSelection(sessionIdFrom(promptSelectionMatch)));
+        return;
+      }
+      if (req.method === "PUT" && promptSelectionMatch !== null) {
+        const parsed = promptSelectionRequestSchema.safeParse(
+          await readJson(req, MAX_PROMPT_REQUEST_BODY_BYTES),
+        );
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_prompt_selection_invalid",
+            "Prompt selection body is invalid",
+          );
+        }
+        sendJson(
+          res,
+          200,
+          await service.selectPrompt(
+            sessionIdFrom(promptSelectionMatch),
+            parsed.data.promptSelection,
+          ),
+        );
         return;
       }
       const workflowSelectionMatch = WORKFLOW_SELECTION_PATH.exec(url.pathname);

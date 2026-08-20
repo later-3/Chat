@@ -37,6 +37,7 @@ import { memoryImportIntentSchema, memoryImportResultSchema } from "./memory-imp
 import { directAgentCandidateSchema } from "./direct-agent.js";
 import { promptReviewDecisionSchema, promptReviewRequestSchema } from "./prompt-review.js";
 import { promptFragmentRevisionSchema, promptFragmentSchema } from "./prompt-fragment.js";
+import { promptAssemblySchema } from "./prompt-assembly.js";
 import {
   projectActionSchema,
   projectCandidateSchema,
@@ -83,7 +84,7 @@ import {
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v14";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v15";
 
 const idKeySchema = z.string().min(1).max(200);
 
@@ -111,6 +112,7 @@ export const productSnapshotSchema = z
         promptReviewDecisions: z.record(idKeySchema, promptReviewDecisionSchema),
         promptFragments: z.record(idKeySchema, promptFragmentSchema),
         promptFragmentRevisions: z.record(idKeySchema, promptFragmentRevisionSchema),
+        promptAssemblies: z.record(idKeySchema, promptAssemblySchema),
         contextRequests: z.record(idKeySchema, runContextRequestSchema),
         memoryQueries: z.record(idKeySchema, memoryQuerySchema),
         memoryResultSnapshots: z.record(idKeySchema, memoryResultSnapshotSchema),
@@ -190,6 +192,7 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       promptReviewDecisions: {},
       promptFragments: {},
       promptFragmentRevisions: {},
+      promptAssemblies: {},
       contextRequests: {},
       memoryQueries: {},
       memoryResultSnapshots: {},

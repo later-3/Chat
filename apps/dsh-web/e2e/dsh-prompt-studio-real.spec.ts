@@ -27,6 +27,26 @@ async function enterPromptStudio(page: Page): Promise<void> {
   await expect(page.getByTestId("lifeos-prompt-studio")).toBeVisible();
 }
 
+async function openReadyConversation(page: Page) {
+  await page.goto("/");
+  const continueButton = page.getByRole("button", { name: "Continue", exact: true });
+  if (
+    await continueButton
+      .waitFor({ state: "visible", timeout: 3_000 })
+      .then(() => true)
+      .catch(() => false)
+  ) {
+    await continueButton.click();
+  }
+  const composer = page.locator("textarea:visible").last();
+  if (!(await composer.isEnabled())) {
+    await page.getByRole("button", { name: /选择工作区|Choose workspace/u }).click();
+    await page.getByRole("menuitem", { name: "Chat", exact: true }).click();
+  }
+  await expect(composer).toBeEnabled();
+  return composer;
+}
+
 test.beforeAll(async ({ request }) => {
   await expect(async () => {
     const response = await request.get("http://127.0.0.1:45111/api/readyz");
@@ -59,11 +79,17 @@ test("DSH Prompt Studio：查看Git来源、派生副本、保存新Revision并�
   await expect(page.getByRole("button", { name: /通用 Chat Agent 身份/u })).toBeVisible();
   await page.getByLabel("按区域筛选").selectOption("all");
   await page.getByRole("button", { name: "新建组件", exact: true }).click();
-  await page.locator(".lifeos-prompt-studio-editor select").first().selectOption("custom_context");
-  await page.getByLabel("名称").fill("E2E 自定义上下文");
-  await page.getByLabel("Key").fill("target_audience");
-  await page.getByLabel("Markdown").fill("面向需要审阅 Prompt 来源的设计者。");
-  await page.getByRole("button", { name: "创建", exact: true }).click();
+  const createForm = page.locator("form.lifeos-prompt-studio-editor");
+  await expect(createForm).toBeVisible();
+  await createForm
+    .getByRole("combobox", { name: "区域", exact: true })
+    .selectOption("custom_context");
+  await createForm.getByRole("textbox", { name: "名称", exact: true }).fill("E2E 自定义上下文");
+  await createForm.getByRole("textbox", { name: "Key", exact: true }).fill("target_audience");
+  await createForm
+    .getByRole("textbox", { name: "Markdown", exact: true })
+    .fill("面向需要审阅 Prompt 来源的设计者。");
+  await createForm.getByRole("button", { name: "创建", exact: true }).click();
   await expect(page.getByText("target_audience", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "← 返回组件列表", exact: true }).click();
 
@@ -77,7 +103,7 @@ test("DSH Prompt Studio：查看Git来源、派生副本、保存新Revision并�
     sourceBody.getByRole("button", { name: "Visual Studio Code", exact: true }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "创建我的副本", exact: true }).click();
+  await page.getByRole("button", { name: /基于 v\d+ 创建副本/u }).click();
   await expect(page.getByText("我的版本化组件", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "编辑当前版本", exact: true }).click();
   await page.getByLabel("名称").fill("E2E 任务 Agent");
@@ -107,4 +133,30 @@ test("Prompt Studio mobile 390×844保持单列且无横向溢出", async ({ pag
   );
   expect(overflow).toBe(false);
   await expect(page.getByRole("button", { name: "新建组件", exact: true })).toBeVisible();
+});
+
+test("会话发送前按Region选择并预览Direct Prompt Assembly", async ({ page }) => {
+  const composer = await openReadyConversation(page);
+  const currentInput = "检查Prompt Assembly是否按区域组装";
+  await composer.fill(currentInput);
+  await page.getByTestId("lifeos-prompt-composer-open").click();
+
+  const dialog = page.getByRole("dialog", { name: "本轮提示词" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Chat 工作区");
+  await expect(dialog).toContainText("当前首版只在“执行 Agent（逐次提示词审核）”工作流发送时生效");
+
+  const identity = page.getByTestId("lifeos-prompt-region-agent_identity");
+  await expect(identity).toBeVisible();
+  await identity.getByRole("button", { name: "追加", exact: true }).click();
+  await expect(identity.getByRole("checkbox").first()).toBeChecked();
+
+  await page.getByRole("button", { name: "预览本轮组装", exact: true }).click();
+  const preview = page.getByTestId("lifeos-prompt-preview");
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText("前端发送前语义预览");
+  await expect(preview).toContainText("不是最终 Provider HTTP 请求");
+  await expect(preview).toContainText("agent_identity");
+  await preview.getByText("查看编译后的 User Prompt", { exact: true }).click();
+  await expect(preview).toContainText(currentInput);
 });

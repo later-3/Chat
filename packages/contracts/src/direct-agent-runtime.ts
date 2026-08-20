@@ -8,6 +8,7 @@ import {
   productRunIdSchema,
   promptReviewDecisionIdSchema,
   promptReviewRequestIdSchema,
+  promptAssemblyIdSchema,
   runAttemptIdSchema,
   workflowRunSpecIdSchema,
 } from "./ids.js";
@@ -25,6 +26,7 @@ import {
   DIRECT_AGENT_MAX_PROVIDER_REQUESTS,
   DIRECT_AGENT_TOKEN_BUDGET,
 } from "./versions.js";
+import { promptWorkspaceRootIdSchema } from "./prompt-fragment.js";
 
 /**
  * Direct Agent私有Runtime合同。它只挂在loopback Runtime Router，不进入public导出：
@@ -100,6 +102,15 @@ export const authorizeDirectAgentOperationRuntimeResponseSchema = z
         text: z.string().min(1).max(100_000),
         /** 与Input Manifest中同一冻结Message Hash一致。 */
         sha256: sha256Schema,
+      })
+      .strict(),
+    promptAssembly: z
+      .object({
+        promptAssemblyId: promptAssemblyIdSchema,
+        sha256: sha256Schema,
+        systemPromptAppend: z.string().max(512_000),
+        userPrompt: z.string().min(1).max(1_000_000),
+        workspaceRootId: promptWorkspaceRootIdSchema.optional(),
       })
       .strict(),
     capabilityMode: z.literal("read_only"),

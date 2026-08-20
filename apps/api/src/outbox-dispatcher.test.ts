@@ -20,6 +20,7 @@ import { SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID } from "@chat/application/work
 import { canonicalJsonStringify, computePromptReviewPayloadSha256 } from "@chat/domain";
 import { JsonProductStore } from "@chat/product-store-json";
 import { OutboxDispatcher } from "./outbox-dispatcher.js";
+import { createFilePromptCatalog } from "./prompt-catalog.js";
 
 function ids(): IdFactory {
   let value = 0;
@@ -129,6 +130,7 @@ async function seed(): Promise<{
     now,
     ids: ids(),
     directAgentIds: directAgentIds(),
+    promptCatalog: await createFilePromptCatalog(),
     trace: (event) => traces.push(event),
     memoryImportBackends: {
       list: () => [importBackend],

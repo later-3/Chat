@@ -27,6 +27,8 @@ import {
 import { PromptStudio, type PromptStudioInjected } from "./PromptStudio.tsx";
 import { PromptStudioController } from "./prompt-studio-controller.ts";
 import { installPromptStudioStyles } from "./prompt-studio-styles.ts";
+import { PromptComposer, type PromptComposerInjected } from "./PromptComposer.tsx";
+import { PromptComposerController } from "./prompt-composer-controller.ts";
 
 export const name = "chat-dsh-lifeos-bridge-client";
 export const inject = ["slots", "conversationEvents"];
@@ -56,6 +58,7 @@ export function apply(ctx: ClientContext): void {
   const promptStudio = new PromptStudioController();
   const controllers = new Map<SessionId, LifeosProjectionController>();
   const recordControllers = new Map<SessionId, SessionRecordsController>();
+  const promptComposerControllers = new Map<SessionId, PromptComposerController>();
   const controllerFor = (sessionId: SessionId): LifeosProjectionController => {
     let controller = controllers.get(sessionId);
     if (controller === undefined) {
@@ -75,11 +78,21 @@ export function apply(ctx: ClientContext): void {
     }
     return controller;
   };
+  const promptComposerFor = (sessionId: SessionId): PromptComposerController => {
+    let controller = promptComposerControllers.get(sessionId);
+    if (controller === undefined) {
+      controller = new PromptComposerController(String(sessionId));
+      promptComposerControllers.set(sessionId, controller);
+    }
+    return controller;
+  };
 
   ctx.effect(
     () => () => {
       for (const controller of recordControllers.values()) controller.dispose();
       recordControllers.clear();
+      for (const controller of promptComposerControllers.values()) controller.dispose();
+      promptComposerControllers.clear();
     },
     "lifeos bridge: session records controllers",
   );
@@ -207,6 +220,29 @@ export function apply(ctx: ClientContext): void {
         },
       },
       ContextInjectionManager,
+    ),
+  );
+
+  ctx.slots.inject("conversation.input.left", () =>
+    ctx.slots.register(
+      {
+        name: "conversation.input.left",
+        id: "lifeos-prompt-composer",
+        order: 16,
+        inject: (sessionId: SessionId): PromptComposerInjected => {
+          const controller = promptComposerFor(sessionId);
+          return {
+            hooks: { promptComposer: controller },
+            load: () => controller.load(),
+            setMode: (regionKey, mode) => controller.setMode(regionKey, mode),
+            toggleRevision: (fragment) => controller.toggleRevision(fragment),
+            reset: () => controller.reset(),
+            preview: (text) => controller.preview(text),
+            clearPreview: () => controller.clearPreview(),
+          };
+        },
+      },
+      PromptComposer,
     ),
   );
 

@@ -5,6 +5,7 @@ import {
   promptFragmentPageDtoSchema,
   promptFragmentRevisionDetailDtoSchema,
   promptRegionsDtoSchema,
+  promptWorkspacesDtoSchema,
   type ChangePromptFragmentArchiveStatusPayload,
   type CopyPromptFragmentPayload,
   type CreatePromptFragmentPayload,
@@ -12,6 +13,7 @@ import {
   type PromptFragmentRevisionDetailDto,
   type PromptFragmentSummaryDto,
   type PromptRegionDefinitionDto,
+  type PromptWorkspaceDto,
   type RevisePromptFragmentPayload,
 } from "@chat/contracts/public";
 
@@ -19,6 +21,7 @@ export interface PromptStudioState {
   readonly status: "idle" | "loading" | "ready" | "error";
   readonly regions: readonly PromptRegionDefinitionDto[];
   readonly fragments: readonly PromptFragmentSummaryDto[];
+  readonly workspaces: readonly PromptWorkspaceDto[];
   readonly selected: PromptFragmentDetailDto | null;
   readonly viewedRevision: PromptFragmentRevisionDetailDto | null;
   readonly sourceOpeners: readonly PromptSourceOpener[];
@@ -67,6 +70,7 @@ const INITIAL_STATE: PromptStudioState = {
   status: "idle",
   regions: [],
   fragments: [],
+  workspaces: [],
   selected: null,
   viewedRevision: null,
   sourceOpeners: [],
@@ -172,11 +176,17 @@ export class PromptStudioController {
     this.abort = abort;
     this.publish({ ...this.snapshot, status: "loading", error: null });
     try {
-      const [regions, fragments, sourceOpeners] = await Promise.all([
+      const [regions, fragments, workspaces, sourceOpeners] = await Promise.all([
         this.request("/lifeos/prompts/regions", promptRegionsDtoSchema, undefined, abort.signal),
         this.request(
           "/lifeos/prompts/fragments?limit=100",
           promptFragmentPageDtoSchema,
+          undefined,
+          abort.signal,
+        ),
+        this.request(
+          "/lifeos/prompts/workspaces",
+          promptWorkspacesDtoSchema,
           undefined,
           abort.signal,
         ),
@@ -191,6 +201,7 @@ export class PromptStudioController {
         status: "ready",
         regions: regions.items,
         fragments: fragments.items,
+        workspaces: workspaces.items,
         selected: this.snapshot.selected,
         viewedRevision: this.snapshot.viewedRevision,
         sourceOpeners: sourceOpeners.items,

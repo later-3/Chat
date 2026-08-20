@@ -9,6 +9,7 @@ import {
   type DirectAgentCandidateOutput,
   type DirectAgentCandidateId,
   type Message,
+  type PromptAssembly,
   type ProductRunId,
   type RunAttemptId,
   type WorkflowRunSpecId,
@@ -55,6 +56,24 @@ function directNodeConfig(
   return { capabilityMode: "read_only", promptReviewMode: "manual" };
 }
 
+function directPromptAssembly(
+  entities: Awaited<ReturnType<ApplicationDeps["store"]["read"]>>["snapshot"]["entities"],
+  productRunId: ProductRunId,
+): PromptAssembly {
+  const matches = Object.values(entities.promptAssemblies).filter(
+    (assembly) => assembly.productRunId === productRunId,
+  );
+  if (matches.length !== 1) {
+    throw new ApplicationError({
+      code: "store_corrupted",
+      httpStatus: 500,
+      message: "Direct Agent缺少唯一Prompt Assembly",
+      recoveryAction: "contact_support",
+    });
+  }
+  return matches[0]!;
+}
+
 export async function beginDirectAgentAttempt(
   deps: ApplicationDeps,
   input: {
@@ -93,6 +112,7 @@ export async function beginDirectAgentAttempt(
       }
       const sourceMessage = draft.entities.messages[run.sourceMessageId];
       const runSpec = draft.entities.workflowRunSpecs[run.workflowRunSpecId];
+      const promptAssembly = directPromptAssembly(draft.entities, input.productRunId);
       if (sourceMessage === undefined || runSpec === undefined) {
         throw new ApplicationError({
           code: "store_corrupted",
@@ -115,6 +135,7 @@ export async function beginDirectAgentAttempt(
         inputRunRevision: run.revision,
         sourceMessageId: sourceMessage.messageId,
         sourceMessageSha256,
+        promptAssemblySha256: promptAssembly.sha256,
         workflowRunSpecId: runSpec.workflowRunSpecId,
         workflowRunSpecSha256: runSpec.sha256,
         capabilityMode: config.capabilityMode,
@@ -191,6 +212,13 @@ export async function authorizeDirectAgentOperation(
     readonly text: string;
     readonly sha256: string;
   };
+  readonly promptAssembly: {
+    readonly promptAssemblyId: PromptAssembly["promptAssemblyId"];
+    readonly sha256: string;
+    readonly systemPromptAppend: string;
+    readonly userPrompt: string;
+    readonly workspaceRootId?: string | undefined;
+  };
   readonly capabilityMode: "read_only";
   readonly limits: {
     readonly maxProviderRequests: number;
@@ -202,12 +230,16 @@ export async function authorizeDirectAgentOperation(
   const found = snapshot.entities.runs[input.productRunId];
   if (found === undefined) throw notFound("Product Run不存在");
   const run = requireDirectAgentRun(found);
-  if (run.status !== "running" || run.phase !== "executing") {
+  if (!(
+    (run.status === "running" && run.phase === "executing") ||
+    (run.status === "waiting_human" && run.phase === "prompt_review")
+  )) {
     throw revisionConflict("Direct Agent不在可授权执行状态");
   }
   const attempt = snapshot.entities.attempts[input.directAgentAttemptId];
   const runSpec = snapshot.entities.workflowRunSpecs[input.workflowRunSpecId];
   const message = snapshot.entities.messages[run.sourceMessageId];
+  const promptAssembly = directPromptAssembly(snapshot.entities, input.productRunId);
   if (
     attempt === undefined ||
     attempt.productRunId !== input.productRunId ||
@@ -233,6 +265,7 @@ export async function authorizeDirectAgentOperation(
     inputRunRevision: attempt.inputRunRevision,
     sourceMessageId: message.messageId,
     sourceMessageSha256: computeMessageSha256(message),
+    promptAssemblySha256: promptAssembly.sha256,
     workflowRunSpecId: runSpec.workflowRunSpecId,
     workflowRunSpecSha256: runSpec.sha256,
     capabilityMode: config.capabilityMode,
@@ -255,6 +288,15 @@ export async function authorizeDirectAgentOperation(
       messageId: message.messageId,
       text: message.content.text,
       sha256: attempt.sourceMessageSha256,
+    },
+    promptAssembly: {
+      promptAssemblyId: promptAssembly.promptAssemblyId,
+      sha256: promptAssembly.sha256,
+      systemPromptAppend: promptAssembly.systemPromptAppend,
+      userPrompt: promptAssembly.userPrompt,
+      ...(promptAssembly.workspaceRootId === undefined
+        ? {}
+        : { workspaceRootId: promptAssembly.workspaceRootId }),
     },
     capabilityMode: config.capabilityMode,
     limits: {

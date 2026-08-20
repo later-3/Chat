@@ -11,6 +11,7 @@ import {
   promptReviewDecisionDtoSchema,
   promptReviewRequestDtoSchema,
   promptReviewRequestIdSchema,
+  promptTurnSelectionInputSchema,
   planIdSchema,
   planDtoSchema,
   productRunIdSchema,
@@ -28,6 +29,7 @@ import {
   type NoteDecisionDto,
   type PromptReviewDecisionDto,
   type PromptReviewRequestDto,
+  type PromptTurnSelectionInput,
   type PlanDto,
   type RunDto,
   type SessionDto,
@@ -224,6 +226,34 @@ export const workflowSelectionRequestSchema = z
 
 export type LifeosWorkflowOption = z.infer<typeof lifeosWorkflowOptionSchema>;
 export type WorkflowSelection = z.infer<typeof workflowSelectionSchema>;
+
+export const PROMPT_SELECTION_SCHEMA_VERSION = "chat-dsh-prompt-selection.v1" as const;
+
+/**
+ * Browser可以修改Region选择，但Workspace身份只能由Host依据DSH Session归属解析。
+ * PUT仍携带完整草稿，便于客户端做CAS式回显；Host会拒绝伪造或过期的rootId。
+ */
+export const promptSelectionRequestSchema = z
+  .object({ promptSelection: promptTurnSelectionInputSchema })
+  .strict();
+
+export const promptSelectionProjectionSchema = z
+  .object({
+    schemaVersion: z.literal(PROMPT_SELECTION_SCHEMA_VERSION),
+    workspace: z
+      .object({
+        rootId: z.string().regex(/^root_[A-Za-z0-9]+$/u),
+        title: z.string().min(1).max(160),
+      })
+      .strict()
+      .nullable(),
+    promptSelection: promptTurnSelectionInputSchema,
+  })
+  .strict();
+
+export type PromptSelectionRequest = z.infer<typeof promptSelectionRequestSchema>;
+export type PromptSelectionProjection = z.infer<typeof promptSelectionProjectionSchema>;
+export type PromptSelection = PromptTurnSelectionInput;
 
 /**
  * 一次Product Run的公开执行轨迹及其真实DSH触发消息。消息ID只负责把外部

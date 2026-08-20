@@ -10,9 +10,13 @@ import {
   type GenerateOptions,
   type StreamChunk,
 } from "@deepseek-ai/dsh-llm";
-import { LifeosLlmAdapter } from "../src/adapter.ts";
+import { LifeosLlmAdapter, stableCommandId } from "../src/adapter.ts";
 import { ChatProductApiError, type ChatProductClient } from "../src/chat-client.ts";
-import type { ChatRun } from "../src/contracts.ts";
+import {
+  promptSelectionRequestSchema,
+  workflowSelectionSchema,
+  type ChatRun,
+} from "../src/contracts.ts";
 import { AtomicBridgeStateStore } from "../src/state-store.ts";
 
 test("plugin lifetime abort stops a waiting_human stream before another poll", async () => {
@@ -252,6 +256,119 @@ test("unknown submit outcome retries with the originally frozen Workspace instru
         ? undefined
         : binding.requests[binding.currentRequestKey];
     assert.equal(request?.workspaceInstructions, undefined);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("unknown Direct submit outcome retries with the request-frozen Prompt selection", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-retry-prompt-"));
+  const submittedSelections: unknown[] = [];
+  let submitAttempts = 0;
+  const firstSelection = promptSelectionRequestSchema.shape.promptSelection.parse({
+    schemaVersion: "prompt-turn-selection-input.v1" as const,
+    workspaceRootId: "root_chat",
+    regions: [
+      {
+        regionKey: "rules",
+        mode: "append" as const,
+        selected: [{ promptFragmentRevisionId: "pfr_customrulesv1", sha256: "a".repeat(64) }],
+      },
+    ],
+  });
+  const secondSelection = promptSelectionRequestSchema.shape.promptSelection.parse({
+    ...firstSelection,
+    regions: [
+      {
+        regionKey: "rules",
+        mode: "replace" as const,
+        selected: [{ promptFragmentRevisionId: "pfr_customrulesv2", sha256: "b".repeat(64) }],
+      },
+    ],
+  });
+  try {
+    const state = new AtomicBridgeStateStore(join(directory, "state.json"));
+    await state.ready();
+    const createSessionCommandId = stableCommandId("create-session", "dsh-retry-prompt");
+    await state.selectWorkflow(
+      "dsh-retry-prompt",
+      createSessionCommandId,
+      workflowSelectionSchema.parse({
+        workflowDefinitionRevisionId: "wfr_systemdirectagentv1",
+        definitionSha256: "c".repeat(64),
+        title: "执行 Agent",
+        blueprintKey: "direct",
+      }),
+    );
+    await state.selectPrompt("dsh-retry-prompt", createSessionCommandId, firstSelection);
+    const chat = {
+      createSession: async () => ({ sessionId: "psn_retryprompt1" }),
+      submitMessage: async (
+        _sessionId: string,
+        _commandId: string,
+        _text: string,
+        _signal: AbortSignal | undefined,
+        _workflowSelection: unknown,
+        _workspaceInstructions: unknown,
+        promptSelection: unknown,
+      ) => {
+        submittedSelections.push(promptSelection);
+        submitAttempts += 1;
+        if (submitAttempts === 1) {
+          throw new ChatProductApiError(
+            503,
+            "chat_api_unreachable",
+            true,
+            "retry_same_command",
+            "response lost after submit",
+          );
+        }
+        return {
+          message: { messageId: "msg_retrypromptuser1" },
+          run: {
+            productRunId: "run_retryprompt1",
+            status: "succeeded",
+            finalMessageId: "msg_retrypromptassistant1",
+          } as ChatRun,
+        };
+      },
+      getMessage: async () => ({
+        messageId: "msg_retrypromptassistant1",
+        role: "assistant",
+        content: { format: "markdown", text: "已按冻结选择恢复" },
+      }),
+    } as unknown as ChatProductClient;
+    const adapter = new LifeosLlmAdapter(chat, state, undefined, {
+      resolve: () => ({ rootId: "root_chat", title: "Chat" }),
+    });
+    const directUser = createUserMessage({
+      source: { kind: "user" },
+      content: [{ type: "text", text: "执行同一请求" }],
+    });
+    const input: GenerateOptions = {
+      provider: "lifeos",
+      model: "workflow",
+      sessionId: "dsh-retry-prompt" as never,
+      messages: [directUser],
+    };
+
+    await assert.rejects(
+      adapter.stream(input)[Symbol.asyncIterator]().next(),
+      (error) => error instanceof LlmError && error.code === "TRANSPORT",
+    );
+    await state.selectPrompt("dsh-retry-prompt", createSessionCommandId, secondSelection);
+    const replayChunks: StreamChunk[] = [];
+    for await (const chunk of adapter.stream(input)) replayChunks.push(chunk);
+    assert.ok(replayChunks.some((chunk) => chunk.type === "finish"));
+    assert.deepEqual(submittedSelections, [firstSelection, firstSelection]);
+
+    const binding = await state.readSession("dsh-retry-prompt");
+    const request =
+      binding?.currentRequestKey === undefined
+        ? undefined
+        : binding.requests[binding.currentRequestKey];
+    assert.deepEqual(request?.promptSelection, firstSelection);
+    assert.deepEqual(binding?.promptSelection, secondSelection);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -3,6 +3,7 @@ import type { InjectFace, HostObservable } from "@deepseek-ai/dsh-client-ui-slot
 import type { SettingsSectionOwnerProps } from "@deepseek-ai/dsh-client-ui-settings/client";
 import type {
   PromptFragmentContent,
+  PromptFragmentScope,
   PromptFragmentDetailDto,
   PromptFragmentSummaryDto,
   PromptRegionDefinitionDto,
@@ -37,6 +38,23 @@ interface EditorDraft {
   description: string;
   key: string;
   body: string;
+}
+
+function scopeValue(scope: PromptFragmentScope): string {
+  return scope.kind === "global" ? "global" : `workspace:${scope.rootId}`;
+}
+
+function scopeFromValue(value: string): PromptFragmentScope {
+  return value === "global"
+    ? { kind: "global" }
+    : { kind: "workspace", rootId: value.slice("workspace:".length) as never };
+}
+
+function scopeLabel(scope: PromptFragmentScope, state: PromptStudioState): string {
+  if (scope.kind === "global") return "全局";
+  return (
+    state.workspaces.find((workspace) => workspace.rootId === scope.rootId)?.title ?? scope.rootId
+  );
 }
 
 function contentText(content: PromptFragmentContent): string {
@@ -76,10 +94,12 @@ function loadDraft(detail: PromptFragmentDetailDto): EditorDraft {
 function FragmentCard({
   fragment,
   region,
+  scope,
   open,
 }: {
   fragment: PromptFragmentSummaryDto;
   region: PromptRegionDefinitionDto | undefined;
+  scope: string;
   open: () => void;
 }) {
   return (
@@ -95,6 +115,7 @@ function FragmentCard({
         <span>{region?.title ?? "未知区域"}</span>
         <code>{fragment.regionKey}</code>
         <code>v{fragment.currentRevisionNumber}</code>
+        <code>{scope}</code>
         {fragment.status === "archived" ? <code>已归档</code> : null}
       </span>
     </button>
@@ -153,11 +174,13 @@ function PromptDetail({
     viewed.promptFragmentRevisionId === detail.currentRevision.promptFragmentRevisionId;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<EditorDraft>(() => loadDraft(detail));
+  const [copyScope, setCopyScope] = useState(() => scopeValue(detail.fragment.scope));
   const region = state.regions.find((item) => item.regionKey === viewed.regionKey);
 
   useEffect(() => {
     setEditing(false);
     setDraft(loadDraft(detail));
+    setCopyScope(scopeValue(detail.fragment.scope));
   }, [detail.fragment.promptFragmentId, detail.fragment.currentRevisionSha256]);
 
   useEffect(() => {
@@ -219,6 +242,10 @@ function PromptDetail({
         <div>
           <dt>版本</dt>
           <dd>v{viewed.revision}</dd>
+        </div>
+        <div>
+          <dt>作用域</dt>
+          <dd>{scopeLabel(detail.fragment.scope, state)}</dd>
         </div>
         <div>
           <dt>Revision</dt>
@@ -340,21 +367,31 @@ function PromptDetail({
       ) : null}
 
       <div className="lifeos-prompt-studio-actions">
-        {detail.fragment.ownerKind === "system" ? (
-          <button
-            type="button"
-            className="lifeos-primary"
-            disabled={state.saving}
-            onClick={() =>
-              void copy({
-                sourcePromptFragmentRevisionId: detail.currentRevision.promptFragmentRevisionId,
-                sourceSha256: detail.currentRevision.sha256,
-              }).catch(() => undefined)
-            }
-          >
-            创建我的副本
-          </button>
-        ) : detail.fragment.status === "active" ? (
+        <label className="lifeos-prompt-copy-scope">
+          副本保存到
+          <select value={copyScope} onChange={(event) => setCopyScope(event.target.value)}>
+            <option value="global">全局</option>
+            {state.workspaces.map((workspace) => (
+              <option key={workspace.rootId} value={`workspace:${workspace.rootId}`}>
+                Workspace · {workspace.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={state.saving}
+          onClick={() =>
+            void copy({
+              sourcePromptFragmentRevisionId: viewed.promptFragmentRevisionId,
+              sourceSha256: viewed.sha256,
+              destinationScope: scopeFromValue(copyScope),
+            }).catch(() => undefined)
+          }
+        >
+          基于 v{viewed.revision} 创建副本
+        </button>
+        {detail.fragment.ownerKind === "system" ? null : detail.fragment.status === "active" ? (
           <>
             <button
               type="button"
@@ -414,6 +451,7 @@ export function PromptStudio({
   const [regionFilter, setRegionFilter] = useState("all");
   const [creating, setCreating] = useState(false);
   const [createDraft, setCreateDraft] = useState({
+    scope: "global",
     regionKey: "background",
     title: "",
     key: "",
@@ -456,7 +494,10 @@ export function PromptStudio({
       <header className="lifeos-prompt-studio-header">
         <div>
           <h1>提示词</h1>
-          <p>查看来源、创建副本并管理不可变版本。本阶段只管理，不改变模型运行。</p>
+          <p>
+            按区域查看来源、创建全局或 Workspace
+            副本并管理不可变版本；本轮采用哪些组件，在会话输入区选择。
+          </p>
         </div>
         <button type="button" disabled={state.status === "loading"} onClick={() => void refresh()}>
           刷新
@@ -549,6 +590,7 @@ export function PromptStudio({
               onSubmit={(event) => {
                 event.preventDefault();
                 void create({
+                  scope: scopeFromValue(createDraft.scope),
                   regionKey: createDraft.regionKey,
                   title: createDraft.title,
                   content:
@@ -562,11 +604,33 @@ export function PromptStudio({
                 })
                   .then(() => {
                     setCreating(false);
-                    setCreateDraft({ regionKey: "background", title: "", key: "", body: "" });
+                    setCreateDraft({
+                      scope: "global",
+                      regionKey: "background",
+                      title: "",
+                      key: "",
+                      body: "",
+                    });
                   })
                   .catch(() => undefined);
               }}
             >
+              <label>
+                保存到
+                <select
+                  value={createDraft.scope}
+                  onChange={(event) =>
+                    setCreateDraft({ ...createDraft, scope: event.target.value })
+                  }
+                >
+                  <option value="global">全局 · 所有 Workspace 可用</option>
+                  {state.workspaces.map((workspace) => (
+                    <option key={workspace.rootId} value={`workspace:${workspace.rootId}`}>
+                      Workspace · {workspace.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label>
                 区域
                 <select
@@ -636,6 +700,7 @@ export function PromptStudio({
                 key={fragment.promptFragmentId}
                 fragment={fragment}
                 region={regionByKey.get(fragment.regionKey)}
+                scope={scopeLabel(fragment.scope, state)}
                 open={() => void select(fragment.promptFragmentId)}
               />
             ))}

@@ -155,6 +155,12 @@ describe("Direct Agent私有Runtime合同", () => {
       directAgentAttemptId: "att_1",
       runRevision: 2,
       sourceMessage: { messageId: "msg_1", text: "检查仓库", sha256: HASH_A },
+      promptAssembly: {
+        promptAssemblyId: "pma_1",
+        sha256: HASH_B,
+        systemPromptAppend: "# 身份\n\n你是Chat执行Agent。",
+        userPrompt: "# 当前输入 [current_input]\n\n检查仓库",
+      },
       capabilityMode: "read_only",
       limits: {
         maxProviderRequests: 16,
@@ -163,6 +169,7 @@ describe("Direct Agent私有Runtime合同", () => {
       },
     });
     expect(response.capabilityMode).toBe("read_only");
-    expect("workspaceRootId" in response).toBe(false);
+    expect(response.promptAssembly.userPrompt).toContain("检查仓库");
+    expect("workspaceRootId" in response.promptAssembly).toBe(false);
   });
 });

@@ -173,6 +173,7 @@ describe("Pi Direct Executor Service + Client", () => {
     const runtime = createPiDirectExecutorService({
       credential: "rtk_directservice123",
       store,
+      workspaceRoots: new Map(),
       emptyWorkspaceRoot: join(root, "empty"),
       agentDir: join(root, "agent"),
       sessionsDir: join(root, "sessions"),
@@ -187,6 +188,12 @@ describe("Pi Direct Executor Service + Client", () => {
             messageId: "msg_directservice",
             text: PRIVATE_SOURCE,
             sha256: "3".repeat(64),
+          },
+          promptAssembly: {
+            promptAssemblyId: "pma_directservice",
+            sha256: "7".repeat(64),
+            systemPromptAppend: "",
+            userPrompt: PRIVATE_SOURCE,
           },
           capabilityMode: "read_only",
           limits: {
@@ -223,8 +230,8 @@ describe("Pi Direct Executor Service + Client", () => {
       kind: "succeeded",
       result: { directAgentCandidateId: "drc_directservice" },
     });
-    // 创建Operation与首次创建Session各自回查；checkpoint恢复不再第三次读取正文。
-    expect(authorizeCalls).toBe(2);
+    // 创建Operation、首次Session和checkpoint恢复都重新读取权威Assembly；正文不进Journal。
+    expect(authorizeCalls).toBe(3);
     expect(consumeCalls).toBe(1);
     expect(dispatchOutcomes).toEqual(["dispatched"]);
     const operationFile = await readFile(
@@ -243,6 +250,7 @@ describe("Pi Direct Executor Service + Client", () => {
     const runtime = createPiDirectExecutorService({
       credential: "rtk_directservice123",
       store,
+      workspaceRoots: new Map(),
       emptyWorkspaceRoot: join(root, "empty"),
       agentDir: join(root, "agent"),
       sessionsDir: join(root, "sessions"),
@@ -331,6 +339,7 @@ describe("Pi Direct Executor Service + Client", () => {
     const runtime = createPiDirectExecutorService({
       credential: "rtk_directservice123",
       store,
+      workspaceRoots: new Map(),
       emptyWorkspaceRoot: join(root, "empty"),
       agentDir: join(root, "agent"),
       sessionsDir: join(root, "sessions"),
@@ -442,6 +451,7 @@ describe("Pi Direct Executor Service + Client", () => {
     const runtime = createPiDirectExecutorService({
       credential: "rtk_directservice123",
       store: recoveredStore,
+      workspaceRoots: new Map(),
       emptyWorkspaceRoot: join(root, "empty"),
       agentDir: join(root, "agent"),
       sessionsDir: join(root, "sessions"),

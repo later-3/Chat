@@ -62,6 +62,10 @@ import { listAuthorizedWorkflowResources } from "./workflow-resource-catalog.js"
 import { assertWorkflowResourceSelectionsAuthorized } from "./workflow-resource-catalog.js";
 import { createPublishedWorkflowView } from "./workflow-view-builder.js";
 import { DEFAULT_NODE_CATALOG } from "./workflow-node-catalog.js";
+import {
+  assertPromptAssemblySourcesCurrent,
+  compileDirectPromptAssembly,
+} from "./prompt-assembly-use-cases.js";
 
 /**
  * CreateProductSession / SubmitUserMessage用例。
@@ -166,6 +170,14 @@ export async function submitUserMessage(
       recoveryAction: "none",
     });
   }
+  if (selectedRevision.blueprintKey !== "direct" && input.payload.promptSelection !== undefined) {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 422,
+      message: "当前仅Direct Agent Workflow支持Prompt区域选择",
+      recoveryAction: "none",
+    });
+  }
   const selectedView =
     selectedRevision.workflowDefinitionRevisionId === SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID
       ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID]
@@ -265,6 +277,22 @@ export async function submitUserMessage(
       : {}),
   });
   if (!compiled.success) throw compilerDiagnosticsToError(compiled.diagnostics);
+  const promptAssembly =
+    selectedRevision.blueprintKey === "direct"
+      ? await compileDirectPromptAssembly(deps, {
+          principalId: input.principalId,
+          text: input.payload.text,
+          selection: input.payload.promptSelection ?? {
+            schemaVersion: "prompt-turn-selection-input.v1",
+            regions: [],
+          },
+          productSessionId: input.sessionId,
+          productRunId,
+          sourceMessageId: messageId,
+          workflowDefinitionRevisionId: selectedRevision.workflowDefinitionRevisionId,
+          createdAt: now,
+        })
+      : undefined;
   const requestSha256 = hashCanonical("command.submit-user-message.v1", {
     principalId: input.principalId,
     sessionId: input.sessionId,
@@ -410,6 +438,10 @@ export async function submitUserMessage(
       };
       draft.entities.messages[messageId] = message;
       draft.entities.runs[productRunId] = run;
+      if (promptAssembly !== undefined) {
+        assertPromptAssemblySourcesCurrent(draft, promptAssembly, input.principalId);
+        draft.entities.promptAssemblies[promptAssembly.promptAssemblyId] = promptAssembly;
+      }
       const currentRevision = resolvePublishedWorkflowRevision(
         draft,
         input.payload,

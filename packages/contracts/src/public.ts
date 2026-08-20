@@ -14,7 +14,18 @@ export * from "./service-status.js";
 export * from "./product-api.js";
 export * from "./prompt-review-api.js";
 export * from "./prompt-studio-api.js";
-export type { PromptFragmentContent } from "./prompt-fragment.js";
+export {
+  promptTurnSelectionInputSchema,
+  promptCompositionModeSchema,
+  type PromptTurnSelectionInput,
+  type PromptCompositionMode,
+  type PromptRegionCompositionInput,
+} from "./prompt-assembly.js";
+export type {
+  PromptFragmentContent,
+  PromptFragmentScope,
+  PromptWorkspaceRootId,
+} from "./prompt-fragment.js";
 export type {
   ProjectIntakeProposal,
   ProjectManagementProposal,

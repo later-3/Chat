@@ -24,6 +24,7 @@ const summary = {
   schemaVersion: "chat-prompt-studio-api.v1",
   promptFragmentId: "pfg_testfragment",
   ownerKind: "principal",
+  scope: { kind: "global" },
   status: "active",
   regionKey: "rules",
   title: "我的规则",
@@ -41,6 +42,7 @@ const revision = {
   promptFragmentId: "pfg_testfragment",
   promptFragmentRevisionId: "pfr_testfragmentv1",
   ownerKind: "principal",
+  scope: { kind: "global" },
   revision: 1,
   regionKey: "rules",
   title: "我的规则",
@@ -86,6 +88,9 @@ test("Prompt Studio按需读取区域/组件，并用当前CAS保存新版本", 
     }
     if (url === "/lifeos/prompts/fragments?limit=100") {
       return json({ schemaVersion: "chat-prompt-studio-api.v1", items: [summary] });
+    }
+    if (url === "/lifeos/prompts/workspaces") {
+      return json({ schemaVersion: "chat-prompt-studio-api.v1", items: [] });
     }
     if (url === "/lifeos/prompts/source-openers") {
       return json({
@@ -149,6 +154,9 @@ test("Prompt Studio写响应丢失后只用同一commandId原样重试", async (
     }
     if (url === "/lifeos/prompts/fragments?limit=100") {
       return json({ schemaVersion: "chat-prompt-studio-api.v1", items: [summary] });
+    }
+    if (url === "/lifeos/prompts/workspaces") {
+      return json({ schemaVersion: "chat-prompt-studio-api.v1", items: [] });
     }
     if (url === "/lifeos/prompts/source-openers") {
       return json({ schemaVersion: "chat-prompt-source-openers.v1", items: [] });
