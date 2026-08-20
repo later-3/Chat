@@ -508,6 +508,39 @@ export class PiDirectExecutorOperationStore {
     });
   }
 
+  /** 审核关闭时直接越过人工等待，但仍先耐久写入Provider dispatching栅栏。 */
+  async markProviderDispatchingWithoutReview(operationId: string): Promise<void> {
+    await this.mutate(operationId, async (loaded) => {
+      const current = this.requireMutableRecord(loaded);
+      const active = this.requireActiveReview(current);
+      if (
+        current.status !== "preparing_prompt_review" ||
+        active.review !== undefined ||
+        active.decision !== undefined ||
+        active.permitConsumedAt !== undefined
+      ) {
+        throw new PiDirectExecutorOperationConflictError("当前Provider请求不能免审派发");
+      }
+      const permitConsumedAt = this.now().toISOString();
+      const next = this.appendToRecord(current, {
+        operationId,
+        type: "provider.started",
+        requestIndex: active.requestIndex,
+        payloadSha256: active.payloadSha256,
+        endpointHost: active.endpointHost,
+      });
+      return {
+        record: {
+          ...next,
+          status: "dispatching",
+          providerRequestCount: current.providerRequestCount + 1,
+          activePromptReview: { ...active, permitConsumedAt },
+        },
+        value: undefined,
+      };
+    });
+  }
+
   async recordProviderCompleted(input: {
     readonly operationId: string;
     readonly completionTokens: number;

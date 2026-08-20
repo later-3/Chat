@@ -8,12 +8,12 @@
 |---|---|
 | 产品身份 | 独立、完整、持续演进的个人Agent协作产品 |
 | 唯一前端 | Chat公开仓库`later-3/deepseek-harness-chat`维护固定`DeepSeek Harness Web rc.6`窄派生；当前只维护Trajectory Location/标签/紧凑预览扩展，Chat仓库以固定pnpm补丁消费；旧`apps/web`与Agent Canvas均不属于当前架构 |
-| 前端桥接 | `@chat/dsh-lifeos-bridge`通过DSH公开Slot把原生会话、Composer行内Workflow选择、Prompt Region选择/语义预览、只读上下文注入、Prompt Studio与人工审核接到Chat公开API；Prompt Studio管理Git内置来源及全局/Workspace用户Revision，Composer按会话和Region选择默认/覆盖/追加；原生侧栏作为唯一会话入口，首条真实消息懒创建Product Session；“会话记录”以独立分页完整展示Chat正式Message与DSH原始事件；实时Pi工具调用与完整Workflow执行树继续进入原生Trajectory |
+| 前端桥接 | `@chat/dsh-lifeos-bridge`通过DSH公开Slot把原生会话、Composer行内Workflow选择与服务端描述的发送级配置、Prompt Region选择/语义预览、只读上下文注入、Prompt Studio与人工审核接到Chat公开API；当前Direct Workflow可按会话配置是否逐次审核Provider提示词；原生侧栏作为唯一会话入口，首条真实消息懒创建Product Session；“会话记录”以独立分页完整展示Chat正式Message与DSH原始事件；实时Pi工具调用与完整Workflow执行树继续进入原生Trajectory |
 | 开发工作台 | Beta、可选、当前暂停进入CI/CD；固定`code-server@4.132.0`与DSH全屏Surface实现继续保留，供需要时人工验证Files、Editor、Terminal、Git/Diff与扩展系统 |
 | 后端 | Node.js + TypeScript；Hono协议入口；Application拥有用例事务 |
 | Product Store | `chat-product-store.v15`版本化JSON Adapter；拥有用户PromptFragment/Revision与每个Direct Run唯一Prompt Assembly，Git内置Prompt仍由只读Catalog拥有 |
-| Workflow | Vercel Workflow解释不可变RunSpec，承担耐久步骤、暂停、恢复与Checkpoint；系统目录新增单节点“执行 Agent（逐次提示词审核）”，Prompt Review是该节点的内部等待状态；它与“规划执行工作流”和“Memory 增强规划与执行”并存 |
-| Agent Runtime | Planner复用`pi-agent-core`；完整Executor由独立Pi Coding Executor Service承载真实`AgentSession`、多轮Tool loop、Session与安全Journal，直接使用Pi标准模型/凭据配置链，不拥有产品会话或完成事实；Direct Agent以Extension链外Provider Gate逐次暂停，V1固定只读、关闭重试/Compaction并从审核前checkpoint恢复 |
+| Workflow | Vercel Workflow解释不可变RunSpec，承担耐久步骤、暂停、恢复与Checkpoint；发送级节点配置由Node Catalog字段、Blueprint白名单和具体Definition默认值共同描述，并由Compiler冻结；系统目录的单节点“执行 Agent（逐次提示词审核）”当前开放`promptReviewMode` |
+| Agent Runtime | Planner复用`pi-agent-core`；完整Executor由独立Pi Coding Executor Service承载真实`AgentSession`、多轮Tool loop、Session与安全Journal，直接使用Pi标准模型/凭据配置链，不拥有产品会话或完成事实；Direct Agent以Extension链外Provider Gate执行`manual/off`，两种模式都保留派发栅栏、禁用自动重试并按结果未知政策收敛 |
 | 执行轨迹 | DSH Trajectory同时保留实时Pi工具调用，并展示实际Workflow NodeRun、动态Execution Step及其Pi Agent/模型/工具子过程；节点输入/输出由Product Store现有Manifest引用与当前严格Trace组合，不新增Prompt存储；Vercel Run/Step/Hook/Sleep只作为后端证据。Bridge以真实DSH user/message保存Run绑定，把Workflow树贡献到随后同一原生Step；DSH窄扩展保留Location、语义标签和紧凑预览，Session utility可选显示时间范围 |
 | Memory | Workflow Memory v1以独立“Memory 增强规划与执行”Definition交付：只有用户显式选择后才执行`memory.query → memory.write →`规划链，普通默认Simple Planning完全没有Memory节点。首个活动Adapter为Tencent MemoryCore；Chat不实现Memory引擎，也不自动启动第三方服务。Query/Write节点及安全结果进入DSH原生Trajectory |
 | 调试 | `pnpm dev`用`431xx`与主`.data`启动Pi Executor、Workflow、API、可选code-server与Web Gateway/DSH；VS Code F5/`pnpm dev:debug`用`441xx`与worktree私有`.data/instances/vscode-debug`启动同一服务图，并为API、Workflow、Pi Executor和DSH Host/LifeOS Bridge开放固定Inspector；Bridge Host/Client使用外置source map，Workflow VM/Step bundle使用带完整源码的内联source map，4个Node调试进程统一启用Source Map并由VS Code映射回TypeScript源码；debug可与LaunchAgent常驻实例并行，且固定关闭Workbench与Memory |
@@ -27,7 +27,7 @@
    DSH侧栏统一承载新建、历史切换与原生归档；Product Session仍是独立产品事实。归档仅隐藏DSH入口并保留
    双侧记录，不级联修改Product Session；固定rc.6没有永久删除/恢复归档公开能力，当前不伪造这两项语义。
 2. Code Workbench首期纵向已经作为独立Hosted App接入，但当前标记为Beta，不参与通用CI/CD；不复制或拆分code-server UI。
-3. “执行 Agent（逐次提示词审核）”单节点纵向已经实现；DSH首版可选择该Workflow，并在Pi真实发送前展示原始请求/易读视图与批准/拒绝。
+3. “执行 Agent（逐次提示词审核）”单节点纵向已经实现；DSH可选择并配置该Workflow。审核开启时在Pi真实发送前展示原始请求/易读视图与批准/拒绝，关闭时直接发送但仍保留派发与结果未知安全边界。
 4. Prompt管理与Direct Assembly纵向已经实现：用户可管理全局/Workspace组件；每轮按Region选择默认/覆盖/追加并预览；Direct提交原子冻结Assembly，审核易读页关联精确来源。
 5. 当前只接Direct固定Profile；下一步仍需用户另行授权Provider前编辑、双Root Workspace、跨Run历史/压缩或Planning/Executor迁移。
 6. Browser Provider与长期Project/Memory/Rules路线继续保留，但不是本轮自动授权。

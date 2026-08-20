@@ -379,6 +379,9 @@ describe("公开产品API", () => {
       (definition) =>
         definition.workflowDefinitionRevisionId === SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
     );
+    const direct = definitionsEnvelope.definitions.definitions.find(
+      (definition) => definition.blueprintKey === "direct",
+    );
     expect(
       definitionsEnvelope.definitions.definitions.map((definition) => definition.title),
     ).toEqual(["规划执行工作流", "Memory 增强规划与执行", "执行 Agent（逐次提示词审核）"]);
@@ -392,6 +395,21 @@ describe("公开产品API", () => {
     expect(memory?.nodes.map((node) => node.nodeType)).toEqual(
       expect.arrayContaining(["memory.query", "memory.write"]),
     );
+    expect(direct?.nodes).toMatchObject([
+      {
+        definitionNodeId: "direct.agent",
+        displayName: "执行 Agent",
+        runConfigFields: [
+          {
+            name: "promptReviewMode",
+            type: "enum_select",
+            label: "发送前审核提示词",
+            defaultValue: "manual",
+            options: ["manual", "off"],
+          },
+        ],
+      },
+    ]);
     if (memory === undefined) throw new Error("缺少独立Memory Workflow公开选项");
 
     const sessionResponse = await postJson(app, "/api/sessions", {

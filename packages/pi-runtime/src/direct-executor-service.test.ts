@@ -196,6 +196,7 @@ describe("Pi Direct Executor Service + Client", () => {
             userPrompt: PRIVATE_SOURCE,
           },
           capabilityMode: "read_only",
+          promptReviewMode: "manual",
           limits: {
             maxProviderRequests: 16,
             activeTimeoutMs: 1_200_000,

@@ -162,6 +162,7 @@ describe("Direct Agent私有Runtime合同", () => {
         userPrompt: "# 当前输入 [current_input]\n\n检查仓库",
       },
       capabilityMode: "read_only",
+      promptReviewMode: "manual",
       limits: {
         maxProviderRequests: 16,
         activeTimeoutMs: 1_200_000,

@@ -111,6 +111,7 @@ test("loadWorkflows fills the picker list and keeps run polling untouched", asyn
       blueprintKey: "planning",
       ownerKind: "system",
       isDefault: true,
+      configurableNodes: [],
     },
     {
       workflowDefinitionRevisionId: "wfr_systemplanningv2",
@@ -120,6 +121,7 @@ test("loadWorkflows fills the picker list and keeps run polling untouched", asyn
       blueprintKey: "planning",
       ownerKind: "system",
       isDefault: false,
+      configurableNodes: [],
     },
     {
       workflowDefinitionRevisionId: "wfr_systemmemoryplanningv1",
@@ -129,6 +131,7 @@ test("loadWorkflows fills the picker list and keeps run polling untouched", asyn
       blueprintKey: "planning",
       ownerKind: "system",
       isDefault: false,
+      configurableNodes: [],
     },
     {
       workflowDefinitionRevisionId: "wfr_systemnotev1",
@@ -138,6 +141,7 @@ test("loadWorkflows fills the picker list and keeps run polling untouched", asyn
       blueprintKey: "note",
       ownerKind: "system",
       isDefault: false,
+      configurableNodes: [],
     },
   ];
   const controller = new LifeosProjectionController("dsh-session-1", async () => {
@@ -240,6 +244,17 @@ test("selectWorkflow submits the draft and adopts the returned projection", asyn
       workflowDefinitionRevisionId: "wfr_systemmemoryplanningv1",
       definitionSha256: "a".repeat(64),
       title: "Memory 增强规划与执行",
+      runConfiguration: {
+        schemaVersion: "workflow-run-configuration.v1",
+        overrides: [
+          {
+            kind: "node_config",
+            definitionNodeId: "direct.agent",
+            field: "promptReviewMode",
+            value: "off",
+          },
+        ],
+      },
     }),
   );
   assert.equal(accepted, true);
@@ -250,6 +265,17 @@ test("selectWorkflow submits the draft and adopts the returned projection", asyn
       workflowDefinitionRevisionId: "wfr_systemmemoryplanningv1",
       definitionSha256: "a".repeat(64),
       title: "Memory 增强规划与执行",
+      runConfiguration: {
+        schemaVersion: "workflow-run-configuration.v1",
+        overrides: [
+          {
+            kind: "node_config",
+            definitionNodeId: "direct.agent",
+            field: "promptReviewMode",
+            value: "off",
+          },
+        ],
+      },
     },
   });
   assert.deepEqual(

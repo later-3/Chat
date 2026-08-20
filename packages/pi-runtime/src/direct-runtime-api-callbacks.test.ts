@@ -41,6 +41,7 @@ describe("Direct Agent Runtime Fetch callbacks", () => {
             userPrompt: "review me",
           },
           capabilityMode: "read_only",
+          promptReviewMode: "manual",
           limits: {
             maxProviderRequests: 16,
             activeTimeoutMs: 1_200_000,
@@ -131,6 +132,7 @@ describe("Direct Agent Runtime Fetch callbacks", () => {
       sourceMessage: { text: "review me" },
       promptAssembly: { userPrompt: "review me" },
       capabilityMode: "read_only",
+      promptReviewMode: "manual",
     });
     const published = await callbacks.promptReviewProduct.publish({
       commandId: "cmd_callbackpublish",

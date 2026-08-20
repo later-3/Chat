@@ -67,6 +67,7 @@ export interface DirectAgentRunInput {
   readonly sessionsDir: string;
   readonly store: PiDirectExecutorOperationStore;
   readonly promptReview: DirectPromptReviewCoordinator;
+  readonly promptReviewMode: "manual" | "off";
   readonly signal: AbortSignal;
   readonly resume: boolean;
   readonly pauseExecutionTimeout?: () => void;
@@ -243,6 +244,7 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
           endpointHost: requestUrl.hostname,
           payload,
           session: activeSession,
+          promptReviewMode: input.promptReviewMode,
           signal: input.signal,
           ...(input.pauseExecutionTimeout === undefined
             ? {}

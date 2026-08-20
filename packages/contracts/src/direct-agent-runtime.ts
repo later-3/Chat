@@ -114,6 +114,7 @@ export const authorizeDirectAgentOperationRuntimeResponseSchema = z
       })
       .strict(),
     capabilityMode: z.literal("read_only"),
+    promptReviewMode: z.enum(["manual", "off"]),
     limits: z
       .object({
         maxProviderRequests: z.literal(DIRECT_AGENT_MAX_PROVIDER_REQUESTS),

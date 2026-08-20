@@ -217,6 +217,17 @@ test("submitMessage sends Prompt selection only for the Direct workflow", async 
     definitionSha256: "c".repeat(64),
     title: "执行 Agent",
     blueprintKey: "direct",
+    runConfiguration: {
+      schemaVersion: "workflow-run-configuration.v1",
+      overrides: [
+        {
+          kind: "node_config",
+          definitionNodeId: "direct.agent",
+          field: "promptReviewMode",
+          value: "off",
+        },
+      ],
+    },
   });
   const planning = workflowSelectionSchema.parse({
     workflowDefinitionRevisionId: "wfr_systemplanningv2",
@@ -251,6 +262,11 @@ test("submitMessage sends Prompt selection only for the Direct workflow", async 
   assert.deepEqual(
     (bodies[0] as { payload?: { promptSelection?: unknown } }).payload?.promptSelection,
     selection,
+  );
+  assert.deepEqual(
+    (bodies[0] as { payload?: { workflowSelection?: { runConfiguration?: unknown } } }).payload
+      ?.workflowSelection?.runConfiguration,
+    direct.runConfiguration,
   );
   assert.equal(
     (bodies[1] as { payload?: { promptSelection?: unknown } }).payload?.promptSelection,

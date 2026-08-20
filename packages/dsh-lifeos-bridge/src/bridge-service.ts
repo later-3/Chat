@@ -393,6 +393,7 @@ export class LifeosBridgeService {
               kind: "published_revision" as const,
               workflowDefinitionRevisionId: workflowSelection.workflowDefinitionRevisionId,
               definitionSha256: workflowSelection.definitionSha256,
+              runConfiguration: workflowSelection.runConfiguration,
             },
           }),
       ...(!direct && workspaceInstructions !== undefined

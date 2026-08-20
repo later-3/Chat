@@ -146,6 +146,41 @@ test("Prompt Studio mobile 390×844保持单列且无横向溢出", async ({ pag
   await expect(page.getByRole("button", { name: "新建组件", exact: true })).toBeVisible();
 });
 
+test("Direct Workflow可配置是否逐次审核提示词并在刷新后恢复", async ({ page }) => {
+  await openReadyConversation(page);
+  await page.getByTestId("lifeos-workflow-current").click();
+  await page.getByRole("menuitem", { name: /执行 Agent（逐次提示词审核）/u }).click();
+
+  const openConfiguration = page.getByTestId("lifeos-workflow-config-open");
+  await expect(openConfiguration).toBeVisible();
+  await openConfiguration.click();
+  let dialog = page.getByRole("dialog", { name: /配置 · 执行 Agent/u });
+  await expect(dialog).toContainText("配置只影响后续发送");
+  await dialog.getByRole("button", { name: "恢复默认", exact: true }).click();
+  const reviewSwitch = dialog.getByRole("switch", {
+    name: "发送前审核提示词，当前开启",
+  });
+  await expect(reviewSwitch).toHaveAttribute("aria-checked", "true");
+  await reviewSwitch.click();
+  await expect(dialog.getByRole("switch", { name: "发送前审核提示词，当前关闭" })).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  await dialog.getByRole("button", { name: "应用", exact: true }).click();
+
+  await page.reload();
+  await expect(page.getByTestId("lifeos-workflow-config-open")).toBeVisible();
+  await page.getByTestId("lifeos-workflow-config-open").click();
+  dialog = page.getByRole("dialog", { name: /配置 · 执行 Agent/u });
+  await expect(dialog.getByRole("switch", { name: "发送前审核提示词，当前关闭" })).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+
+  await dialog.getByRole("button", { name: "恢复默认", exact: true }).click();
+  await dialog.getByRole("button", { name: "应用", exact: true }).click();
+});
+
 test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边界", async ({ page }) => {
   const composer = await openReadyConversation(page);
   const controlBar = page.getByTestId("lifeos-prompt-control-bar");

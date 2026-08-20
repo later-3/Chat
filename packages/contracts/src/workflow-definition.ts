@@ -369,10 +369,33 @@ const reviewModeOverrideSchema = z
   })
   .strict();
 
+/**
+ * 运行前只允许覆盖Catalog已经公开、Blueprint再次放行的标量字段。
+ * 对象、数组和任意metadata继续留在Definition作者侧，避免Composer变成
+ * 一个可以向Executor注入任意JSON的旁路配置面。
+ */
+const nodeConfigOverrideSchema = z
+  .object({
+    kind: z.literal("node_config"),
+    definitionNodeId: workflowDefinitionNodeIdSchema,
+    field: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[A-Za-z][A-Za-z0-9]*$/),
+    value: z.union([
+      z.boolean(),
+      z.string().max(2_000),
+      z.number().int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),
+    ]),
+  })
+  .strict();
+
 export const workflowRunOverrideSchema = z.discriminatedUnion("kind", [
   nodeEnabledOverrideSchema,
   resourceSelectionOverrideSchema,
   reviewModeOverrideSchema,
+  nodeConfigOverrideSchema,
 ]);
 
 export const workflowRunConfigurationSchema = z

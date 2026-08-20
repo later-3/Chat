@@ -24,6 +24,16 @@ import {
   workflowSelectionSchema,
 } from "./contracts.ts";
 
+/** v1-v10的Workflow草稿还没有发送级Run Configuration。 */
+const legacyWorkflowSelectionSchema = z
+  .object({
+    workflowDefinitionRevisionId: workflowSelectionSchema.shape.workflowDefinitionRevisionId,
+    definitionSha256: workflowSelectionSchema.shape.definitionSha256,
+    title: workflowSelectionSchema.shape.title,
+    blueprintKey: workflowSelectionSchema.shape.blueprintKey,
+  })
+  .strict();
+
 const pendingDecisionSchema = z
   .object({
     bodySha256: sha256Schema,
@@ -122,16 +132,51 @@ const sessionBindingSchema = z
   })
   .strict();
 
-const { promptSelection: legacyPromptSelection, ...legacyRequestShape } = requestSchema.shape;
+const {
+  promptSelection: legacyPromptSelection,
+  workflowSelection: currentRequestWorkflowSelection,
+  ...legacyRequestShape
+} = requestSchema.shape;
 // 解构只用于从v1-v8旧状态合同中移除v9新增字段；显式读取避免Lint把它误判为遗漏。
 void legacyPromptSelection;
-const legacyRequestSchema = z.object(legacyRequestShape).strict();
+void currentRequestWorkflowSelection;
+const legacyRequestSchema = z
+  .object(legacyRequestShape)
+  .extend({ workflowSelection: legacyWorkflowSelectionSchema.optional() })
+  .strict();
 const legacySessionBindingSchema = sessionBindingSchema
-  .omit({ requests: true, promptSelection: true, dshSendReviewEnabled: true })
-  .extend({ requests: z.record(z.string().min(1).max(256), legacyRequestSchema) })
+  .omit({
+    requests: true,
+    workflowSelection: true,
+    promptSelection: true,
+    dshSendReviewEnabled: true,
+  })
+  .extend({
+    requests: z.record(z.string().min(1).max(256), legacyRequestSchema),
+    workflowSelection: legacyWorkflowSelectionSchema.optional(),
+  })
   .strict();
 
-const legacyV9SessionBindingSchema = sessionBindingSchema.omit({ dshSendReviewEnabled: true });
+const legacyV9RequestSchema = z
+  .object({
+    ...requestSchema.shape,
+    workflowSelection: legacyWorkflowSelectionSchema.optional(),
+  })
+  .strict();
+const legacyV9SessionBindingSchema = sessionBindingSchema
+  .omit({ requests: true, workflowSelection: true, dshSendReviewEnabled: true })
+  .extend({
+    requests: z.record(z.string().min(1).max(256), legacyV9RequestSchema),
+    workflowSelection: legacyWorkflowSelectionSchema.optional(),
+  })
+  .strict();
+const legacyV10SessionBindingSchema = sessionBindingSchema
+  .omit({ requests: true, workflowSelection: true })
+  .extend({
+    requests: z.record(z.string().min(1).max(256), legacyV9RequestSchema),
+    workflowSelection: legacyWorkflowSelectionSchema.optional(),
+  })
+  .strict();
 
 /**
  * rc.6切换后已经存在的Bridge状态。除可恢复的外部身份外，v6只增加提交结果未知期间
@@ -155,12 +200,13 @@ const legacyBridgeStateBeforePreferenceSchema = z
 
 /**
  * v8已经把最近一次Workflow选择提升成了顶层偏好，v9增加Prompt选择，v10增加
- * DSH发送审核开关。迁移必须精确保留旧字段；不能靠删除旧状态启动。
+ * DSH发送审核开关，v11为Workflow选择补充Run Configuration。迁移必须精确保留旧字段；
+ * 不能靠删除旧状态启动。
  */
 const legacyBridgeStateWithPreferenceSchema = z
   .object({
     schemaVersion: z.literal("chat-dsh-lifeos-state.v8"),
-    preferredWorkflowSelection: workflowSelectionSchema.nullable(),
+    preferredWorkflowSelection: legacyWorkflowSelectionSchema.nullable(),
     sessions: z.record(dshSessionIdSchema, legacySessionBindingSchema),
   })
   .strict();
@@ -168,8 +214,16 @@ const legacyBridgeStateWithPreferenceSchema = z
 const legacyBridgeStateV9Schema = z
   .object({
     schemaVersion: z.literal("chat-dsh-lifeos-state.v9"),
-    preferredWorkflowSelection: workflowSelectionSchema.nullable(),
+    preferredWorkflowSelection: legacyWorkflowSelectionSchema.nullable(),
     sessions: z.record(dshSessionIdSchema, legacyV9SessionBindingSchema),
+  })
+  .strict();
+
+const legacyBridgeStateV10Schema = z
+  .object({
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v10"),
+    preferredWorkflowSelection: legacyWorkflowSelectionSchema.nullable(),
+    sessions: z.record(dshSessionIdSchema, legacyV10SessionBindingSchema),
   })
   .strict();
 
@@ -177,11 +231,12 @@ const legacyBridgeStateSchema = z.union([
   legacyBridgeStateBeforePreferenceSchema,
   legacyBridgeStateWithPreferenceSchema,
   legacyBridgeStateV9Schema,
+  legacyBridgeStateV10Schema,
 ]);
 
 const bridgeStateSchema = z
   .object({
-    schemaVersion: z.literal("chat-dsh-lifeos-state.v10"),
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v11"),
     /** 新DSH会话继承的用户级Workflow选择；null表示系统默认规划工作流。 */
     preferredWorkflowSelection: workflowSelectionSchema.nullable(),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
@@ -196,7 +251,7 @@ export type PendingNoteDecision = z.infer<typeof pendingNoteDecisionSchema>;
 export type PendingPromptReviewDecision = z.infer<typeof pendingPromptReviewDecisionSchema>;
 
 const emptyState = (): BridgeState => ({
-  schemaVersion: "chat-dsh-lifeos-state.v10",
+  schemaVersion: "chat-dsh-lifeos-state.v11",
   preferredWorkflowSelection: null,
   sessions: {},
 });
@@ -428,18 +483,24 @@ export class AtomicBridgeStateStore {
       return this.state;
     }
     const migrated = bridgeStateSchema.parse({
-      schemaVersion: "chat-dsh-lifeos-state.v10",
+      schemaVersion: "chat-dsh-lifeos-state.v11",
       preferredWorkflowSelection:
         legacy.data.schemaVersion === "chat-dsh-lifeos-state.v8" ||
-        legacy.data.schemaVersion === "chat-dsh-lifeos-state.v9"
+        legacy.data.schemaVersion === "chat-dsh-lifeos-state.v9" ||
+        legacy.data.schemaVersion === "chat-dsh-lifeos-state.v10"
           ? legacy.data.preferredWorkflowSelection
           : (Object.values(legacy.data.sessions).reduce<
-              z.infer<typeof workflowSelectionSchema> | undefined
+              z.infer<typeof legacyWorkflowSelectionSchema> | undefined
             >((latest, binding) => binding.workflowSelection ?? latest, undefined) ?? null),
       sessions: Object.fromEntries(
         Object.entries(legacy.data.sessions).map(([sessionId, binding]) => [
           sessionId,
-          { ...binding, dshSendReviewEnabled: false },
+          {
+            ...binding,
+            ...(legacy.data.schemaVersion === "chat-dsh-lifeos-state.v10"
+              ? {}
+              : { dshSendReviewEnabled: false }),
+          },
         ]),
       ),
     });

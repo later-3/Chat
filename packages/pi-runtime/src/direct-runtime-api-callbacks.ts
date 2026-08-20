@@ -116,6 +116,7 @@ export function createDirectAgentRuntimeApiCallbacks(
       sourceMessage: response.sourceMessage,
       promptAssembly: response.promptAssembly,
       capabilityMode: response.capabilityMode,
+      promptReviewMode: response.promptReviewMode,
       limits: response.limits,
     };
   };
