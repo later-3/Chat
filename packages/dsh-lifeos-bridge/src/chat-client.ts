@@ -28,6 +28,15 @@ import {
   type CopyPromptFragmentPayload,
   type RevisePromptFragmentPayload,
   type ChangePromptFragmentArchiveStatusPayload,
+  projectBootstrapConfigurationSchema,
+  currentProjectBootstrapResponseSchema,
+  projectBootstrapDecisionResponseSchema,
+  projectBootstrapReviewResponseSchema,
+  projectBootstrapOperationSchema,
+  type ProjectBootstrapConfiguration,
+  type ProjectBootstrapCandidate,
+  type ProjectBootstrapOperation,
+  type ProjectBootstrapReviewResponse,
 } from "@chat/contracts/public";
 import { z } from "zod";
 import {
@@ -163,6 +172,99 @@ export class ChatProductClient {
       withSignal(signal),
     );
     return value.session;
+  }
+
+  async getProjectBootstrapConfiguration(
+    signal?: AbortSignal,
+  ): Promise<ProjectBootstrapConfiguration> {
+    return this.request(
+      "/api/project-bootstrap/configuration",
+      projectBootstrapConfigurationSchema,
+      withSignal(signal),
+    );
+  }
+
+  async getCurrentProjectBootstrap(
+    sessionId: string,
+    signal?: AbortSignal,
+  ): Promise<z.infer<typeof currentProjectBootstrapResponseSchema>["projectBootstrap"]> {
+    try {
+      const response = await this.request(
+        `/api/sessions/${encodeURIComponent(sessionId)}/project-bootstrap/current`,
+        currentProjectBootstrapResponseSchema,
+        withSignal(signal),
+      );
+      return response.projectBootstrap;
+    } catch (error) {
+      if (error instanceof ChatProductApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async decideProjectBootstrap(
+    candidate: {
+      readonly projectBootstrapCandidateId: string;
+      readonly revision: number;
+      readonly sha256: string;
+    },
+    commandId: string,
+    kind: "confirm" | "reject",
+    reason?: string,
+    signal?: AbortSignal,
+  ): Promise<{ candidate: ProjectBootstrapCandidate; operation?: ProjectBootstrapOperation }> {
+    const response = await this.request(
+      `/api/project-bootstrap/candidates/${encodeURIComponent(candidate.projectBootstrapCandidateId)}/decision`,
+      projectBootstrapDecisionResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          commandId,
+          payload: {
+            projectBootstrapCandidateId: candidate.projectBootstrapCandidateId,
+            candidateRevision: candidate.revision,
+            candidateSha256: candidate.sha256,
+            kind,
+            ...(reason === undefined ? {} : { reason }),
+          },
+        }),
+        ...withSignal(signal),
+      },
+    );
+    return {
+      candidate: response.candidate,
+      ...(response.operation === undefined ? {} : { operation: response.operation }),
+    };
+  }
+
+  async executeProjectBootstrap(
+    operationId: string,
+    commandId: string,
+    signal?: AbortSignal,
+  ): Promise<ProjectBootstrapOperation> {
+    const response = await this.request(
+      `/api/project-bootstrap/operations/${encodeURIComponent(operationId)}/execute`,
+      z.object({ operation: projectBootstrapOperationSchema }).strict(),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          commandId,
+          payload: { projectBootstrapOperationId: operationId },
+        }),
+        ...withSignal(signal),
+      },
+    );
+    return response.operation;
+  }
+
+  async getProjectBootstrapReview(
+    operationId: string,
+    signal?: AbortSignal,
+  ): Promise<ProjectBootstrapReviewResponse> {
+    return this.request(
+      `/api/project-bootstrap/operations/${encodeURIComponent(operationId)}`,
+      projectBootstrapReviewResponseSchema,
+      withSignal(signal),
+    );
   }
 
   async getMessages(

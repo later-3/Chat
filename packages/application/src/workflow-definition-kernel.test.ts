@@ -124,7 +124,7 @@ describe("Node Catalog与Blueprint一致性", () => {
           {
             name: "capabilityMode",
             defaultValue: "read_only",
-            options: ["read_only"],
+            options: ["read_only", "project_bootstrap"],
           },
           {
             name: "promptReviewMode",

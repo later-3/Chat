@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { Type } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
+  defineTool,
   DefaultResourceLoader,
   ModelRuntime,
   SessionManager,
@@ -15,6 +18,7 @@ import { assertAllowedBailianHost } from "./config.js";
 import { assertExecutorWorkspacePath } from "./coding-agent-executor.js";
 import type { PiDirectExecutorOperationStore } from "./direct-executor-operation-store.js";
 import type { StartPiDirectExecutorOperationRequest } from "./direct-executor-service-contract.js";
+import type { ProjectBootstrapProductPort } from "./direct-executor-service.js";
 import { hashExecutorValue } from "./executor-operation-store.js";
 import {
   DirectPromptReviewCoordinator,
@@ -40,6 +44,7 @@ const DIRECT_AGENT_APPEND_SYSTEM_PROMPT = [
   "你只能读取当前Workspace，不能写文件、执行Shell或扩大任务范围。",
   "完成后给出完整可读结果；不要声称Product Run已经正式提交。",
 ].join("\n");
+const PROJECT_BOOTSTRAP_TOOL = "project_bootstrap_prepare";
 
 export class DirectAgentExecutionError extends Error {
   constructor(readonly code: string) {
@@ -66,6 +71,14 @@ export interface DirectAgentRunInput {
   readonly agentDir: string;
   readonly sessionsDir: string;
   readonly store: PiDirectExecutorOperationStore;
+  readonly capabilityMode: "read_only" | "project_bootstrap";
+  readonly projectBootstrapContext?: {
+    readonly providerKind: "plane_ce";
+    readonly providerVersion: string;
+    readonly planeWorkspaceSlugs: readonly string[];
+    readonly creationRoots: readonly { readonly rootId: string; readonly displayName: string }[];
+  };
+  readonly projectBootstrapProduct?: ProjectBootstrapProductPort;
   readonly promptReview: DirectPromptReviewCoordinator;
   readonly promptReviewMode: "manual" | "off";
   readonly signal: AbortSignal;
@@ -87,23 +100,22 @@ function assistantText(message: AgentMessage | undefined): string | undefined {
   return text === "" ? undefined : text;
 }
 
-function createReadOnlyJournalExtension(input: {
+function createControlledJournalExtension(input: {
   readonly operationId: string;
   readonly sessionId: string;
   readonly workspaceRoot: string;
   readonly store: PiDirectExecutorOperationStore;
+  readonly allowedTools: readonly string[];
 }): ExtensionFactory {
   return (pi) => {
     pi.on("tool_call", async (event: ToolCallEvent) => {
-      if (
-        !P1_DIRECT_AGENT_PROFILE.enabledTools.includes(
-          event.toolName as (typeof P1_DIRECT_AGENT_PROFILE.enabledTools)[number],
-        )
-      ) {
+      if (!input.allowedTools.includes(event.toolName)) {
         throw new DirectAgentExecutionError("direct_executor.tool_not_allowed");
       }
-      const path = "path" in event.input ? event.input.path : undefined;
-      await assertExecutorWorkspacePath(path ?? ".", input.workspaceRoot);
+      if (P1_DIRECT_AGENT_PROFILE.enabledTools.includes(event.toolName as never)) {
+        const path = "path" in event.input ? event.input.path : undefined;
+        await assertExecutorWorkspacePath(path ?? ".", input.workspaceRoot);
+      }
       await input.store.appendToolIntent({
         operationId: input.operationId,
         sessionId: input.sessionId,
@@ -127,6 +139,81 @@ function createReadOnlyJournalExtension(input: {
         failed: event.isError,
       });
     });
+  };
+}
+
+function createProjectBootstrapExtension(input: {
+  readonly productRunId: string;
+  readonly product: ProjectBootstrapProductPort;
+}): ExtensionFactory {
+  return (pi) => {
+    pi.registerTool(
+      defineTool({
+        name: PROJECT_BOOTSTRAP_TOOL,
+        label: "准备项目初始化",
+        description:
+          "预检本地Workspace与Plane CE名称，生成需要用户确认的项目初始化候选；不会直接创建目录或Plane项目。",
+        promptSnippet: "准备受控的Plane CE + Git Workspace项目初始化候选",
+        promptGuidelines: [
+          "先确认项目目标、Plane标识、本地目录和初始模块，再调用一次。",
+          "工具返回prepared只表示候选已落盘；必须明确告诉用户仍需审核确认，不能声称项目已创建。",
+        ],
+        executionMode: "sequential",
+        parameters: Type.Object(
+          {
+            name: Type.String({ minLength: 1, maxLength: 160 }),
+            objective: Type.String({ minLength: 1, maxLength: 4000 }),
+            planeWorkspaceSlug: Type.String({ minLength: 1, maxLength: 80 }),
+            planeProjectIdentifier: Type.String({ minLength: 1, maxLength: 12 }),
+            workspaceRootId: Type.String({ minLength: 1, maxLength: 120 }),
+            directoryName: Type.String({ minLength: 1, maxLength: 120 }),
+            initializerProfile: Type.Union([Type.Literal("blank"), Type.Literal("ai_learning")]),
+            initialModules: Type.Array(Type.String({ minLength: 1, maxLength: 120 }), {
+              maxItems: 8,
+            }),
+          },
+          { additionalProperties: false },
+        ),
+        async execute(toolCallId, params, signal) {
+          if (signal?.aborted === true)
+            throw new DirectAgentExecutionError("direct_executor.timeout");
+          const commandId = `cmd_${createHash("sha256")
+            .update(`${input.productRunId}\n${toolCallId}`, "utf8")
+            .digest("hex")
+            .slice(0, 48)}`;
+          const candidate = await input.product.prepare({
+            commandId,
+            productRunId: input.productRunId,
+            proposal: {
+              name: params.name,
+              objective: params.objective,
+              planeWorkspaceSlug: params.planeWorkspaceSlug,
+              planeProjectIdentifier: params.planeProjectIdentifier,
+              workspaceRootId: params.workspaceRootId,
+              directoryName: params.directoryName,
+              initializerProfile: params.initializerProfile,
+              initialModules: params.initialModules,
+            },
+          });
+          const summary = {
+            projectBootstrapCandidateId: candidate.projectBootstrapCandidateId,
+            candidateRevision: candidate.revision,
+            candidateSha256: candidate.sha256,
+            status: candidate.status,
+            preview: candidate.preview,
+          };
+          return {
+            content: [
+              {
+                type: "text",
+                text: `${JSON.stringify(summary)}\n候选已准备，尚未创建任何外部资源；请让用户审核确认。`,
+              },
+            ],
+            details: summary,
+          };
+        },
+      }),
+    );
   };
 }
 
@@ -168,18 +255,57 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       defaultThinkingLevel: P1_DIRECT_AGENT_PROFILE.thinkingLevel,
     });
     const sessionId = `pis_${input.request.operationId.slice(4)}`;
-    const journalExtension = createReadOnlyJournalExtension({
+    const allowedTools = [
+      ...P1_DIRECT_AGENT_PROFILE.enabledTools,
+      ...(input.capabilityMode === "project_bootstrap" ? [PROJECT_BOOTSTRAP_TOOL] : []),
+    ];
+    if (
+      input.capabilityMode === "project_bootstrap" &&
+      (input.projectBootstrapContext === undefined || input.projectBootstrapProduct === undefined)
+    ) {
+      throw new DirectAgentExecutionError("direct_executor.project_bootstrap_context_missing");
+    }
+    const journalExtension = createControlledJournalExtension({
       operationId: input.request.operationId,
       sessionId,
       workspaceRoot: input.cwd,
       store: input.store,
+      allowedTools,
     });
+    const projectBootstrapExtension =
+      input.capabilityMode === "project_bootstrap"
+        ? createProjectBootstrapExtension({
+            productRunId: input.request.productRunId,
+            product: input.projectBootstrapProduct!,
+          })
+        : undefined;
+    const projectBootstrapPrompt =
+      input.projectBootstrapContext === undefined
+        ? undefined
+        : [
+            "你还可以准备一个受控的Plane CE项目初始化候选。",
+            `Plane CE版本:${input.projectBootstrapContext.providerVersion}`,
+            `允许的Plane Workspace:${input.projectBootstrapContext.planeWorkspaceSlugs.join(", ")}`,
+            `允许的本地创建Root:${input.projectBootstrapContext.creationRoots
+              .map((root) => `${root.rootId}(${root.displayName})`)
+              .join(", ")}`,
+            "project_bootstrap_prepare只预检并保存候选；候选必须由用户确认后，Chat Application才会创建Git Workspace和Plane项目。",
+          ].join("\n");
     const resourceLoader = new DefaultResourceLoader({
       cwd: input.cwd,
       agentDir: input.agentDir,
       settingsManager,
       extensionFactories: [
         { name: "chat-direct-operation-journal", factory: journalExtension, hidden: true },
+        ...(projectBootstrapExtension === undefined
+          ? []
+          : [
+              {
+                name: "chat-project-bootstrap-tools",
+                factory: projectBootstrapExtension,
+                hidden: true,
+              },
+            ]),
       ],
       noExtensions: P1_DIRECT_AGENT_PROFILE.noExtensions,
       noSkills: true,
@@ -188,6 +314,7 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       systemPrompt: "",
       appendSystemPrompt: [
         DIRECT_AGENT_APPEND_SYSTEM_PROMPT,
+        ...(projectBootstrapPrompt === undefined ? [] : [projectBootstrapPrompt]),
         ...(input.systemPromptAppend === "" ? [] : [input.systemPromptAppend]),
       ],
       noThemes: true,
@@ -218,7 +345,7 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       modelRuntime,
       model,
       thinkingLevel: P1_DIRECT_AGENT_PROFILE.thinkingLevel,
-      tools: [...P1_DIRECT_AGENT_PROFILE.enabledTools],
+      tools: allowedTools,
       resourceLoader,
       sessionManager,
       settingsManager,
@@ -259,7 +386,7 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
     await input.store.setSession({
       operationId: input.request.operationId,
       sessionId: session.sessionId,
-      enabledTools: [...P1_DIRECT_AGENT_PROFILE.enabledTools],
+      enabledTools: allowedTools,
       ...(resumedCheckpointSha256 === undefined
         ? {}
         : { resumedFromCheckpointSha256: resumedCheckpointSha256 }),

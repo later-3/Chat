@@ -37,6 +37,7 @@ import {
 import { JsonProductStore } from "./json-product-store.js";
 import { productSnapshotV14Schema } from "./legacy-v14.js";
 import { migrateProductSnapshotV14ToV15 } from "./migrate-v14-to-v15.js";
+import { migrateProductSnapshotV15ToV16 } from "./migrate-v15-to-v16.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-19T12:00:00.000Z";
@@ -293,6 +294,10 @@ describe("Prompt Review Product Snapshot完整性", () => {
         unknown
       >;
       delete legacyEntities["promptAssemblies"];
+      delete legacyEntities["projectBootstrapCandidates"];
+      delete legacyEntities["projectBootstrapDecisions"];
+      delete legacyEntities["projectBootstrapOperations"];
+      delete legacyEntities["projectWorkspaceBindings"];
       const legacy = productSnapshotV14Schema.parse({
         ...snapshot,
         schemaVersion: "chat-product-store.v14",
@@ -317,7 +322,7 @@ describe("Prompt Review Product Snapshot完整性", () => {
       expect(migrated.entities.attempts["att_promptreview1"]!.inputManifestSha256).not.toBe(
         oldManifest,
       );
-      expect(() => assertSnapshotIntegrity(migrated)).not.toThrow();
+      expect(() => assertSnapshotIntegrity(migrateProductSnapshotV15ToV16(migrated))).not.toThrow();
     },
   );
 
@@ -325,6 +330,10 @@ describe("Prompt Review Product Snapshot完整性", () => {
     const { snapshot } = await validDirectReviewSnapshot();
     const legacyEntities = structuredClone(snapshot.entities) as unknown as Record<string, unknown>;
     delete legacyEntities["promptAssemblies"];
+    delete legacyEntities["projectBootstrapCandidates"];
+    delete legacyEntities["projectBootstrapDecisions"];
+    delete legacyEntities["projectBootstrapOperations"];
+    delete legacyEntities["projectWorkspaceBindings"];
     const legacy = productSnapshotV14Schema.parse({
       ...snapshot,
       schemaVersion: "chat-product-store.v14",

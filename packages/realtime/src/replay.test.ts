@@ -76,7 +76,7 @@ function minimalSnapshot(
     sourceMessageSha256,
   } as const;
   return productSnapshotSchema.parse({
-    schemaVersion: "chat-product-store.v15",
+    schemaVersion: "chat-product-store.v16",
     storeRevision: 1,
     committedAt: NOW,
     entities: {
@@ -187,6 +187,10 @@ function minimalSnapshot(
       projectDecisions: {},
       projectObservations: {},
       projectCandidates: {},
+      projectBootstrapCandidates: {},
+      projectBootstrapDecisions: {},
+      projectBootstrapOperations: {},
+      projectWorkspaceBindings: {},
       workflowViewDefinitions: {
         [WORKFLOW_VIEW_ID]: workflowViewDefinitionSchema.parse(
           createLegacyPlanningWorkflowView(NOW),

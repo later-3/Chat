@@ -401,6 +401,18 @@ export class AtomicBridgeStateStore {
     });
   }
 
+  /** 专属入口只配置目标会话，不污染普通“新会话”的偏好Workflow。 */
+  async selectWorkflowForSession(
+    dshSessionId: string,
+    createSessionCommandId: string,
+    selection: z.infer<typeof workflowSelectionSchema>,
+  ): Promise<void> {
+    dshSessionIdSchema.parse(dshSessionId);
+    await this.mutateSession(dshSessionId, createSessionCommandId, (binding) => {
+      binding.workflowSelection = selection;
+    });
+  }
+
   /** Prompt草稿只属于当前DSH会话，不像Workflow选择那样成为新会话偏好。 */
   async selectPrompt(
     dshSessionId: string,

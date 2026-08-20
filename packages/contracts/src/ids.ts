@@ -91,6 +91,12 @@ export const projectMilestoneIdSchema = prefixedId("pml");
 export const projectUpdateIdSchema = prefixedId("pup");
 export const projectStateTransitionIdSchema = prefixedId("ptr");
 
+/* Plane CE项目初始化身份；不是旧Project聚合、Plane UUID或本地目录身份。 */
+export const projectBootstrapCandidateIdSchema = prefixedId("pbc");
+export const projectBootstrapDecisionIdSchema = prefixedId("pbd");
+export const projectBootstrapOperationIdSchema = prefixedId("pbo");
+export const projectWorkspaceBindingIdSchema = prefixedId("pwb");
+
 /* R1/R2 用户规则身份；Revision与Selection必须能独立冻结、回放和审计。 */
 export const ruleIdSchema = prefixedId("rul");
 export const ruleRevisionIdSchema = prefixedId("rrv");
@@ -176,6 +182,10 @@ export type ProjectCandidateId = z.infer<typeof projectCandidateIdSchema>;
 export type ProjectMilestoneId = z.infer<typeof projectMilestoneIdSchema>;
 export type ProjectUpdateId = z.infer<typeof projectUpdateIdSchema>;
 export type ProjectStateTransitionId = z.infer<typeof projectStateTransitionIdSchema>;
+export type ProjectBootstrapCandidateId = z.infer<typeof projectBootstrapCandidateIdSchema>;
+export type ProjectBootstrapDecisionId = z.infer<typeof projectBootstrapDecisionIdSchema>;
+export type ProjectBootstrapOperationId = z.infer<typeof projectBootstrapOperationIdSchema>;
+export type ProjectWorkspaceBindingId = z.infer<typeof projectWorkspaceBindingIdSchema>;
 export type RuleId = z.infer<typeof ruleIdSchema>;
 export type RuleRevisionId = z.infer<typeof ruleRevisionIdSchema>;
 export type RuleTagId = z.infer<typeof ruleTagIdSchema>;

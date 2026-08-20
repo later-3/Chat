@@ -23,6 +23,8 @@ export * from "./memory-write-api.js";
 export * from "./project.js";
 export * from "./project-api.js";
 export * from "./project-internal-runtime.js";
+export * from "./project-bootstrap.js";
+export * from "./project-bootstrap-api.js";
 export * from "./rules.js";
 export * from "./rules-api.js";
 export * from "./planning-project-context.js";

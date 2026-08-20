@@ -13,6 +13,7 @@ export * from "./migrate-v11-to-v12.js";
 export * from "./migrate-v12-to-v13.js";
 export * from "./migrate-v13-to-v14.js";
 export * from "./migrate-v14-to-v15.js";
+export * from "./migrate-v15-to-v16.js";
 export * from "./legacy-v10.js";
 export * from "./legacy-v11.js";
 export * from "./legacy-v12.js";

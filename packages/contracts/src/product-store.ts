@@ -73,6 +73,12 @@ import {
   workflowMemoryQuerySchema,
   workflowMemorySnapshotSchema,
 } from "./workflow-memory.js";
+import {
+  projectBootstrapCandidateSchema,
+  projectBootstrapDecisionSchema,
+  projectBootstrapOperationSchema,
+  projectWorkspaceBindingSchema,
+} from "./project-bootstrap.js";
 
 /**
  * Product Snapshot顶层合同（任务书§8.3）。
@@ -84,81 +90,101 @@ import {
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v15";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v16";
 
 const idKeySchema = z.string().min(1).max(200);
+
+const productEntitiesV15Schema = z
+  .object({
+    sessions: z.record(idKeySchema, productSessionSchema),
+    messages: z.record(idKeySchema, messageSchema),
+    runs: z.record(idKeySchema, productRunSchema),
+    attempts: z.record(idKeySchema, runAttemptSchema),
+    plans: z.record(idKeySchema, planRevisionSchema),
+    revisionInputs: z.record(idKeySchema, revisionInputSchema),
+    approvalRequests: z.record(idKeySchema, approvalRequestSchema),
+    decisions: z.record(idKeySchema, decisionSchema),
+    executionContracts: z.record(idKeySchema, executionContractSchema),
+    executionCandidates: z.record(idKeySchema, executionCandidateSchema),
+    validationResults: z.record(idKeySchema, validationResultSchema),
+    artifacts: z.record(idKeySchema, artifactSchema),
+    directAgentCandidates: z.record(idKeySchema, directAgentCandidateSchema),
+    promptReviewRequests: z.record(idKeySchema, promptReviewRequestSchema),
+    promptReviewDecisions: z.record(idKeySchema, promptReviewDecisionSchema),
+    promptFragments: z.record(idKeySchema, promptFragmentSchema),
+    promptFragmentRevisions: z.record(idKeySchema, promptFragmentRevisionSchema),
+    promptAssemblies: z.record(idKeySchema, promptAssemblySchema),
+    contextRequests: z.record(idKeySchema, runContextRequestSchema),
+    memoryQueries: z.record(idKeySchema, memoryQuerySchema),
+    memoryResultSnapshots: z.record(idKeySchema, memoryResultSnapshotSchema),
+    memoryAdoptions: z.record(idKeySchema, memoryAdoptionSchema),
+    contextPackages: z.record(idKeySchema, contextPackageSchema),
+    memoryImportIntents: z.record(idKeySchema, memoryImportIntentSchema),
+    memoryImportResults: z.record(idKeySchema, memoryImportResultSchema),
+    projects: z.record(idKeySchema, projectSchema),
+    projectMethodSnapshots: z.record(idKeySchema, projectMethodSnapshotSchema),
+    projectStages: z.record(idKeySchema, projectStageSchema),
+    projectMilestones: z.record(idKeySchema, projectMilestoneSchema),
+    projectUpdates: z.record(idKeySchema, projectUpdateSchema),
+    projectStateTransitions: z.record(idKeySchema, projectStateTransitionSchema),
+    projectResources: z.record(idKeySchema, projectResourceSchema),
+    projectParticipants: z.record(idKeySchema, projectParticipantSchema),
+    projectWorks: z.record(idKeySchema, projectWorkSchema),
+    projectActions: z.record(idKeySchema, projectActionSchema),
+    projectContributions: z.record(idKeySchema, projectContributionSchema),
+    projectEvidence: z.record(idKeySchema, projectEvidenceSchema),
+    projectDecisions: z.record(idKeySchema, projectDecisionSchema),
+    projectObservations: z.record(idKeySchema, projectObservationSchema),
+    projectCandidates: z.record(idKeySchema, projectCandidateSchema),
+    workflowViewDefinitions: z.record(idKeySchema, workflowViewDefinitionSchema),
+    workflowDefinitions: z.record(idKeySchema, workflowDefinitionSchema),
+    workflowDefinitionRevisions: z.record(idKeySchema, workflowDefinitionRevisionSchema),
+    workflowRunSpecs: z.record(idKeySchema, workflowRunSpecSchema),
+    workflowNodeRuns: z.record(idKeySchema, workflowNodeRunSchema),
+    nodeRunTransitions: z.record(idKeySchema, nodeRunTransitionSchema),
+    nodeValueManifests: z.record(idKeySchema, nodeValueManifestSchema),
+    notes: z.record(idKeySchema, noteSchema),
+    noteRevisions: z.record(idKeySchema, noteRevisionSchema),
+    noteCandidates: z.record(idKeySchema, noteCandidateSchema),
+    noteDecisions: z.record(idKeySchema, noteDecisionSchema),
+    rules: z.record(idKeySchema, ruleSchema),
+    ruleRevisions: z.record(idKeySchema, ruleRevisionSchema),
+    ruleTags: z.record(idKeySchema, ruleTagSchema),
+    ruleDecisions: z.record(idKeySchema, ruleDecisionSchema),
+    ruleSelections: z.record(idKeySchema, ruleSelectionSchema),
+    planningProjectContexts: z.record(idKeySchema, planningProjectContextSchema),
+    planningMemorySelections: z.record(idKeySchema, planningMemorySelectionSchema),
+    workflowPolicyResolutions: z.record(idKeySchema, workflowPolicyResolutionSchema),
+    workflowMemoryQueries: z.record(idKeySchema, workflowMemoryQuerySchema),
+    workflowMemorySnapshots: z.record(idKeySchema, workflowMemorySnapshotSchema),
+    workflowMemoryContexts: z.record(idKeySchema, workflowMemoryContextSchema),
+    memoryWriteIntents: z.record(idKeySchema, memoryWriteIntentSchema),
+    memoryWriteResults: z.record(idKeySchema, memoryWriteResultSchema),
+  })
+  .strict();
+
+export const productSnapshotV15Schema = z
+  .object({
+    schemaVersion: z.literal("chat-product-store.v15"),
+    storeRevision: z.number().int().nonnegative(),
+    committedAt: z.iso.datetime(),
+    entities: productEntitiesV15Schema,
+    commandReceipts: z.record(idKeySchema, commandReceiptSchema),
+    outbox: z.record(idKeySchema, outboxEntrySchema),
+  })
+  .strict();
 
 export const productSnapshotSchema = z
   .object({
     schemaVersion: z.literal(PRODUCT_STORE_SCHEMA_VERSION),
     storeRevision: z.number().int().nonnegative(),
     committedAt: z.iso.datetime(),
-    entities: z
-      .object({
-        sessions: z.record(idKeySchema, productSessionSchema),
-        messages: z.record(idKeySchema, messageSchema),
-        runs: z.record(idKeySchema, productRunSchema),
-        attempts: z.record(idKeySchema, runAttemptSchema),
-        plans: z.record(idKeySchema, planRevisionSchema),
-        revisionInputs: z.record(idKeySchema, revisionInputSchema),
-        approvalRequests: z.record(idKeySchema, approvalRequestSchema),
-        decisions: z.record(idKeySchema, decisionSchema),
-        executionContracts: z.record(idKeySchema, executionContractSchema),
-        executionCandidates: z.record(idKeySchema, executionCandidateSchema),
-        validationResults: z.record(idKeySchema, validationResultSchema),
-        artifacts: z.record(idKeySchema, artifactSchema),
-        directAgentCandidates: z.record(idKeySchema, directAgentCandidateSchema),
-        promptReviewRequests: z.record(idKeySchema, promptReviewRequestSchema),
-        promptReviewDecisions: z.record(idKeySchema, promptReviewDecisionSchema),
-        promptFragments: z.record(idKeySchema, promptFragmentSchema),
-        promptFragmentRevisions: z.record(idKeySchema, promptFragmentRevisionSchema),
-        promptAssemblies: z.record(idKeySchema, promptAssemblySchema),
-        contextRequests: z.record(idKeySchema, runContextRequestSchema),
-        memoryQueries: z.record(idKeySchema, memoryQuerySchema),
-        memoryResultSnapshots: z.record(idKeySchema, memoryResultSnapshotSchema),
-        memoryAdoptions: z.record(idKeySchema, memoryAdoptionSchema),
-        contextPackages: z.record(idKeySchema, contextPackageSchema),
-        memoryImportIntents: z.record(idKeySchema, memoryImportIntentSchema),
-        memoryImportResults: z.record(idKeySchema, memoryImportResultSchema),
-        projects: z.record(idKeySchema, projectSchema),
-        projectMethodSnapshots: z.record(idKeySchema, projectMethodSnapshotSchema),
-        projectStages: z.record(idKeySchema, projectStageSchema),
-        projectMilestones: z.record(idKeySchema, projectMilestoneSchema),
-        projectUpdates: z.record(idKeySchema, projectUpdateSchema),
-        projectStateTransitions: z.record(idKeySchema, projectStateTransitionSchema),
-        projectResources: z.record(idKeySchema, projectResourceSchema),
-        projectParticipants: z.record(idKeySchema, projectParticipantSchema),
-        projectWorks: z.record(idKeySchema, projectWorkSchema),
-        projectActions: z.record(idKeySchema, projectActionSchema),
-        projectContributions: z.record(idKeySchema, projectContributionSchema),
-        projectEvidence: z.record(idKeySchema, projectEvidenceSchema),
-        projectDecisions: z.record(idKeySchema, projectDecisionSchema),
-        projectObservations: z.record(idKeySchema, projectObservationSchema),
-        projectCandidates: z.record(idKeySchema, projectCandidateSchema),
-        workflowViewDefinitions: z.record(idKeySchema, workflowViewDefinitionSchema),
-        workflowDefinitions: z.record(idKeySchema, workflowDefinitionSchema),
-        workflowDefinitionRevisions: z.record(idKeySchema, workflowDefinitionRevisionSchema),
-        workflowRunSpecs: z.record(idKeySchema, workflowRunSpecSchema),
-        workflowNodeRuns: z.record(idKeySchema, workflowNodeRunSchema),
-        nodeRunTransitions: z.record(idKeySchema, nodeRunTransitionSchema),
-        nodeValueManifests: z.record(idKeySchema, nodeValueManifestSchema),
-        notes: z.record(idKeySchema, noteSchema),
-        noteRevisions: z.record(idKeySchema, noteRevisionSchema),
-        noteCandidates: z.record(idKeySchema, noteCandidateSchema),
-        noteDecisions: z.record(idKeySchema, noteDecisionSchema),
-        rules: z.record(idKeySchema, ruleSchema),
-        ruleRevisions: z.record(idKeySchema, ruleRevisionSchema),
-        ruleTags: z.record(idKeySchema, ruleTagSchema),
-        ruleDecisions: z.record(idKeySchema, ruleDecisionSchema),
-        ruleSelections: z.record(idKeySchema, ruleSelectionSchema),
-        planningProjectContexts: z.record(idKeySchema, planningProjectContextSchema),
-        planningMemorySelections: z.record(idKeySchema, planningMemorySelectionSchema),
-        workflowPolicyResolutions: z.record(idKeySchema, workflowPolicyResolutionSchema),
-        workflowMemoryQueries: z.record(idKeySchema, workflowMemoryQuerySchema),
-        workflowMemorySnapshots: z.record(idKeySchema, workflowMemorySnapshotSchema),
-        workflowMemoryContexts: z.record(idKeySchema, workflowMemoryContextSchema),
-        memoryWriteIntents: z.record(idKeySchema, memoryWriteIntentSchema),
-        memoryWriteResults: z.record(idKeySchema, memoryWriteResultSchema),
+    entities: productEntitiesV15Schema
+      .extend({
+        projectBootstrapCandidates: z.record(idKeySchema, projectBootstrapCandidateSchema),
+        projectBootstrapDecisions: z.record(idKeySchema, projectBootstrapDecisionSchema),
+        projectBootstrapOperations: z.record(idKeySchema, projectBootstrapOperationSchema),
+        projectWorkspaceBindings: z.record(idKeySchema, projectWorkspaceBindingSchema),
       })
       .strict(),
     commandReceipts: z.record(idKeySchema, commandReceiptSchema),
@@ -167,6 +193,7 @@ export const productSnapshotSchema = z
   .strict();
 
 export type ProductSnapshot = z.infer<typeof productSnapshotSchema>;
+export type ProductSnapshotV15 = z.infer<typeof productSnapshotV15Schema>;
 export type ProductEntities = ProductSnapshot["entities"];
 
 export function createEmptySnapshot(committedAt: string): ProductSnapshot {
@@ -239,6 +266,10 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       workflowMemoryContexts: {},
       memoryWriteIntents: {},
       memoryWriteResults: {},
+      projectBootstrapCandidates: {},
+      projectBootstrapDecisions: {},
+      projectBootstrapOperations: {},
+      projectWorkspaceBindings: {},
     },
     commandReceipts: {},
     outbox: {},

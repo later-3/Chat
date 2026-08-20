@@ -26,3 +26,4 @@ export * from "./note.js";
 export * from "./prompt-review.js";
 export * from "./direct-agent-run-lifecycle.js";
 export * from "./direct-agent.js";
+export * from "./project-bootstrap.js";

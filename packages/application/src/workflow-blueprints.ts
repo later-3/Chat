@@ -189,7 +189,13 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
     requiredRoles: [{ role: "direct_agent", nodeType: "agent.direct", exactlyOnce: true }],
     // Prompt Review是Execution Agent节点内部的Provider Gate状态，不是第二个业务节点。
     loopRules: [],
-    perRunOverrides: [{ nodeType: "agent.direct", fields: [], configFields: ["promptReviewMode"] }],
+    perRunOverrides: [
+      {
+        nodeType: "agent.direct",
+        fields: [],
+        configFields: ["capabilityMode", "promptReviewMode"],
+      },
+    ],
     immutableMinimumRisk: {
       "agent.direct": "generate_candidate",
     },

@@ -2,7 +2,10 @@
 
 > 文档类型：目标架构。本文描述Project Solution最终边界和分阶段实现，不代表能力已经交付。当前事实以根目录 `PROJECT_STATE.md` 为准。
 >
-> 状态：待用户审核
+> 状态：历史目标架构。2026-08-21起，新建Plane CE项目采用
+> [Plane CE项目初始化纵向](./plane-ce-project-bootstrap-as-built.md)：Plane拥有项目管理事实与
+> 方法配置，Chat不再为该路径创建或双写本章的原生Project聚合。本章只描述既有原生Project
+> 对象和历史兼容边界，不能作为继续扩展第二套项目管理机制的授权。
 
 ## 1. 架构目标
 

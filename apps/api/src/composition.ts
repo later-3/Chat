@@ -47,6 +47,10 @@ import {
   directAgentCandidateIdSchema,
   promptFragmentIdSchema,
   promptFragmentRevisionIdSchema,
+  projectBootstrapCandidateIdSchema,
+  projectBootstrapDecisionIdSchema,
+  projectBootstrapOperationIdSchema,
+  projectWorkspaceBindingIdSchema,
   type PrincipalId,
 } from "@chat/contracts";
 import type {
@@ -58,9 +62,14 @@ import type {
   ProjectIdFactory,
   RuleIdFactory,
   PromptFragmentIdFactory,
+  ProjectBootstrapIdFactory,
 } from "@chat/application";
 import { JsonProductStore } from "@chat/product-store-json";
-import { createProjectResourceRegistry } from "@chat/project-runtime";
+import {
+  createPlaneCeProjectBootstrap,
+  createProjectResourceRegistry,
+  createProjectWorkspaceProvisioner,
+} from "@chat/project-runtime";
 import { createWorkflowMemoryProviderRegistry } from "@chat/memory-runtime";
 import {
   loadProjectModelProfile,
@@ -157,6 +166,15 @@ export function createPromptFragmentIdFactory(): PromptFragmentIdFactory {
   };
 }
 
+export function createProjectBootstrapIdFactory(): ProjectBootstrapIdFactory {
+  return {
+    candidate: () => projectBootstrapCandidateIdSchema.parse(`pbc_${randomSuffix()}`),
+    decision: () => projectBootstrapDecisionIdSchema.parse(`pbd_${randomSuffix()}`),
+    operation: () => projectBootstrapOperationIdSchema.parse(`pbo_${randomSuffix()}`),
+    binding: () => projectWorkspaceBindingIdSchema.parse(`pwb_${randomSuffix()}`),
+  };
+}
+
 export function defaultProductStorePath(): string {
   return (
     process.env.CHAT_PRODUCT_STORE_PATH ??
@@ -183,6 +201,13 @@ export async function createApplicationDeps(
 ): Promise<ApplicationDeps> {
   const store = await openProductStore(filePath, trace);
   const projectRoots = await createProjectResourceRegistry(process.env);
+  const projectWorkspaceProvisioner = await createProjectWorkspaceProvisioner(process.env);
+  const projectManagementBootstrap = createPlaneCeProjectBootstrap(process.env);
+  if ((projectWorkspaceProvisioner === undefined) !== (projectManagementBootstrap === undefined)) {
+    throw new Error(
+      "Project Bootstrap配置不完整：CHAT_PROJECT_CREATION_ROOTS_JSON与Plane CE配置必须同时提供",
+    );
+  }
   const projectModelProfile = loadProjectModelProfile(process.env);
   const projectUnderstanding = new PiProjectIntakeUnderstandingAdapter(projectModelProfile);
   const advancementUnderstanding = new PiProjectAdvancementUnderstandingAdapter(
@@ -204,6 +229,13 @@ export async function createApplicationDeps(
     directAgentIds: createDirectAgentIdFactory(),
     promptCatalog,
     promptFragmentIds: createPromptFragmentIdFactory(),
+    ...(projectWorkspaceProvisioner === undefined
+      ? {}
+      : {
+          projectWorkspaceProvisioner,
+          projectManagementBootstrap: projectManagementBootstrap!,
+          projectBootstrapIds: createProjectBootstrapIdFactory(),
+        }),
     ...(trace !== undefined ? { trace } : {}),
   };
 }

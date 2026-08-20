@@ -1,7 +1,13 @@
 import { open, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { createEmptySnapshot, productSnapshotSchema, type ProductSnapshot } from "@chat/contracts";
+import {
+  createEmptySnapshot,
+  productSnapshotSchema,
+  productSnapshotV15Schema,
+  type ProductSnapshot,
+  type ProductSnapshotV15,
+} from "@chat/contracts";
 import {
   ApplicationError,
   CommandIdReusedError,
@@ -61,6 +67,7 @@ import { migrateProductSnapshotV11ToV12 } from "./migrate-v11-to-v12.js";
 import { migrateProductSnapshotV12ToV13 } from "./migrate-v12-to-v13.js";
 import { migrateProductSnapshotV13ToV14 } from "./migrate-v13-to-v14.js";
 import { migrateProductSnapshotV14ToV15 } from "./migrate-v14-to-v15.js";
+import { migrateProductSnapshotV15ToV16 } from "./migrate-v15-to-v16.js";
 
 /**
  * 版本化JSON Product Store Adapter（任务书§8）。
@@ -201,6 +208,15 @@ export class JsonProductStore implements ProductStorePort {
       return new JsonProductStore(options, current.data);
     }
 
+    const legacyV15 = productSnapshotV15Schema.safeParse(parsedJson);
+    if (legacyV15.success) {
+      const migrated = migrateProductSnapshotV15ToV16(legacyV15.data);
+      assertSnapshotIntegrity(migrated);
+      const store = new JsonProductStore(options, migrated);
+      await store.persist(migrated);
+      return store;
+    }
+
     const legacyV14 = productSnapshotV14Schema.safeParse(parsedJson);
     let v14: ProductSnapshotV14;
     if (legacyV14.success) {
@@ -298,7 +314,8 @@ export class JsonProductStore implements ProductStorePort {
       }
       v14 = migrateProductSnapshotV13ToV14(v13);
     }
-    const migrated = migrateProductSnapshotV14ToV15(v14);
+    const migratedV15: ProductSnapshotV15 = migrateProductSnapshotV14ToV15(v14);
+    const migrated = migrateProductSnapshotV15ToV16(migratedV15);
     assertSnapshotIntegrity(migrated);
     const store = new JsonProductStore(options, migrated);
     // 成功迁移使用与普通事务相同的原子替换；rename 前失败时旧文件逐字节不变。

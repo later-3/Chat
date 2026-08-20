@@ -32,6 +32,8 @@ export type {
   ProjectAdvancementProposal,
 } from "./project.js";
 export * from "./project-api.js";
+export * from "./project-bootstrap.js";
+export * from "./project-bootstrap-api.js";
 export * from "./workflow-api.js";
 export * from "./workflow-runtime-trace-api.js";
 export * from "./execution-trace-api.js";

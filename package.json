@@ -45,7 +45,14 @@
     "test:memory:memmy-real-import": "pnpm test:memory:memmy-real-http",
     "test:memory:memmy-response-drop": "pnpm --filter @chat/workflows build:bundles && pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-response-drop.ts",
     "test:memory:memorycore-real-http": "pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-fixed-memorycore-http.ts",
-    "test:e2e:planning-execution:real": "pnpm test:e2e:dsh-real"
+    "test:e2e:planning-execution:real": "pnpm test:e2e:dsh-real",
+    "plane-ce:prepare": "node scripts/plane-ce/manage.mjs prepare",
+    "plane-ce:config": "node scripts/plane-ce/manage.mjs config",
+    "plane-ce:up": "node scripts/plane-ce/manage.mjs up",
+    "plane-ce:down": "node scripts/plane-ce/manage.mjs down",
+    "plane-ce:status": "node scripts/plane-ce/manage.mjs status",
+    "test:plane-ce:scripts": "node --test scripts/plane-ce/manage.test.mjs",
+    "test:provider:plane-ce": "node --env-file-if-exists=.env --import tsx scripts/plane-ce/verify-real-bootstrap.ts"
   },
   "devDependencies": {
     "eslint": "^9.39.5",

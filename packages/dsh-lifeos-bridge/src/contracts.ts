@@ -26,6 +26,9 @@ import {
   workflowDefinitionRevisionIdSchema,
   executionTracePageSchema,
   cursorPageSchema,
+  projectBootstrapSessionProjectionSchema,
+  projectBootstrapCandidateIdSchema,
+  projectBootstrapConfigurationSchema,
   type ApprovalDto,
   type DecisionDto,
   type MessageDto,
@@ -637,6 +640,36 @@ export const dshSendReviewDecisionRequestSchema = z
 export type DshSendReview = z.infer<typeof dshSendReviewSchema>;
 export type DshSendReviewDecisionRequest = z.infer<typeof dshSendReviewDecisionRequestSchema>;
 
+export const projectBootstrapDecisionRequestSchema = z
+  .object({
+    kind: z.enum(["confirm", "reject", "retry"]),
+    explanation: z.string().trim().min(1).max(1_000).optional(),
+    binding: z
+      .object({
+        projectBootstrapCandidateId: projectBootstrapCandidateIdSchema,
+        candidateRevision: z.number().int().positive(),
+        candidateSha256: sha256Schema,
+      })
+      .strict(),
+  })
+  .strict();
+
+export type ProjectBootstrapDecisionRequest = z.infer<typeof projectBootstrapDecisionRequestSchema>;
+
+export const projectBootstrapPresetSchema = z.discriminatedUnion("enabled", [
+  z.object({ enabled: z.literal(false) }).strict(),
+  z
+    .object({
+      enabled: z.literal(true),
+      configuration: projectBootstrapConfigurationSchema,
+      workflowSelection: workflowSelectionSchema,
+      promptSelection: promptTurnSelectionInputSchema,
+    })
+    .strict(),
+]);
+
+export type ProjectBootstrapPreset = z.infer<typeof projectBootstrapPresetSchema>;
+
 /** Same-origin Client read model；不暴露Workflow/pi的运行时私有身份。 */
 export const lifeosProjectionSchema = z
   .object({
@@ -652,6 +685,15 @@ export const lifeosProjectionSchema = z
     pendingPromptReviewDecision: promptReviewDecisionRequestSchema.nullable().default(null),
     dshSendReviewEnabled: z.boolean().default(false),
     dshSendReview: dshSendReviewSchema.nullable().default(null),
+    projectBootstrap: projectBootstrapSessionProjectionSchema.nullable().default(null),
+    projectBootstrapTargets: z
+      .object({
+        workspaceCwd: z.string().min(1).max(2_000).optional(),
+        planeUrl: z.url().optional(),
+      })
+      .strict()
+      .nullable()
+      .default(null),
     workflowSelection: workflowSelectionSchema.nullable(),
     executionTraces: z.array(lifeosExecutionTraceSchema).max(100),
   })

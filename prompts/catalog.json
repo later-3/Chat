@@ -1,7 +1,7 @@
 {
   "schemaVersion": "chat-prompt-catalog.v1",
-  "catalogRevision": 3,
-  "publishedAt": "2026-08-20T00:00:00.000Z",
+  "catalogRevision": 4,
+  "publishedAt": "2026-08-21T00:00:00.000Z",
   "regionSource": {
     "relativePath": "prompts/regions/catalog.md",
     "sourceSha256": "ecefef6572f8366a2357a406191a382863ad607f5e13e98b8d581d405cb83504"
@@ -246,6 +246,16 @@
       "description": "Direct Agent 默认采用的通用任务协作身份；可按Region覆盖或追加其他身份组件。",
       "relativePath": "prompts/fragments/agent-identity/general-chat-agent.md",
       "sourceSha256": "781a997a9c1d24c3aca2523e2b467e7025bb58600d5513dd5dfaf0b00f5dd441"
+    },
+    {
+      "promptFragmentId": "pfg_builtinprojectbootstrap",
+      "promptFragmentRevisionId": "pfr_builtinprojectbootstrapv1",
+      "revision": 1,
+      "regionKey": "agent_identity",
+      "title": "项目创建协作 Agent",
+      "description": "配合受控Plane CE项目初始化工具收集信息、准备候选并等待用户确认。",
+      "relativePath": "prompts/fragments/agent-identity/project-bootstrap-agent.md",
+      "sourceSha256": "4e9108f97a86d355efd2c8cd543a95d10b7faee6769f4b0cf086675517712986"
     },
     {
       "promptFragmentId": "pfg_builtintransparentdelivery",

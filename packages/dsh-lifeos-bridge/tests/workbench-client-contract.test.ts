@@ -12,7 +12,8 @@ test("DSH Client用公开加法Slot承载隔离且不卸载的Hosted Workbench",
     devDependencies?: Record<string, string>;
   };
 
-  assert.equal((client.match(/sidebar\.footer\.action/g) ?? []).length, 2);
+  assert.equal((client.match(/sidebar\.footer\.action/g) ?? []).length, 4);
+  assert.match(client, /lifeos-project-bootstrap/u);
   assert.doesNotMatch(client, /conversation\.session\.header\.actions/u);
   assert.match(client, /shell\.overlay/u);
   assert.match(surface, /@deepseek-ai\/dsh-client-ui-sidebar\/client/u);

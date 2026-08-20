@@ -83,6 +83,63 @@ pnpm dsh:plugins:check-updates
 配置，必须同时显式设置`CHAT_DEBUG_PI_KEY_READER`和
 `CHAT_DEBUG_PI_PROVIDER_CONFIG`；配置一半会失败关闭。
 
+### 3.1 可选：Plane CE项目管理
+
+项目创建纵向只支持Plane Community Edition 1.4.1，不需要也不使用Cloud/Business功能。
+本机首次启动固定CE：
+
+```bash
+pnpm plane-ce:prepare
+pnpm plane-ce:config
+pnpm plane-ce:up
+pnpm plane-ce:status
+```
+
+打开`http://127.0.0.1:8088`，完成Plane首次管理员设置，创建一个Workspace，并在Plane中
+创建仅供Chat服务端使用的API Token。然后把以下4项一起写入`.env`：
+
+```dotenv
+CHAT_PLANE_CE_BASE_URL=http://127.0.0.1:8088
+CHAT_PLANE_CE_API_TOKEN=<只保存在本机.env中的Token>
+CHAT_PLANE_CE_WORKSPACES_JSON=[{"slug":"learning","displayName":"学习项目"}]
+CHAT_PROJECT_CREATION_ROOTS_JSON=[{"rootId":"root_code","displayName":"Code","canonicalPath":"/absolute/path/to/Code"}]
+```
+
+`canonicalPath`必须预先存在，Chat只会在其下创建一个一级子目录。配置生效后重启Chat，DSH
+侧栏出现“创建项目”。Agent先准备可读候选；用户确认前不会创建Plane Project或目录。成功
+后可从同一会话进入新Workspace并打开Plane项目面板。
+
+在其他机器或服务器上，可独立部署同一固定版本Plane CE，把Base URL改为其HTTPS Origin，
+其余合同不变。不要把API Token写进Git、浏览器配置或`CHAT_PLANE_CE_BASE_URL`。完整边界和
+故障恢复见[Plane CE项目初始化纵向](../architecture/plane-ce-project-bootstrap-as-built.md)。
+
+停止本机CE：
+
+```bash
+pnpm plane-ce:down
+```
+
+该命令只停止容器，不删除Plane数据。
+
+需要验收真实创建/对账时，先为一个专用测试Project和空目录名设置以下临时环境变量，再运行
+真实门。它会留下Plane Project和Git目录作为验收证据，不会自动删除；相同operation重跑时
+增加`CHAT_PLANE_CE_REAL_TEST_REUSE=1`，Adapter会按marker和Plane external ID对账。
+
+```bash
+export CHAT_PLANE_CE_REAL_TEST=1
+export CHAT_PLANE_CE_REAL_TEST_OPERATION_ID=pbo_planeceacceptance1
+export CHAT_PLANE_CE_REAL_TEST_PROJECT_NAME='Plane CE验收项目'
+export CHAT_PLANE_CE_REAL_TEST_OBJECTIVE='验证Chat受控创建、Git初始化与Plane对账。'
+export CHAT_PLANE_CE_REAL_TEST_WORKSPACE_SLUG=learning
+export CHAT_PLANE_CE_REAL_TEST_PROJECT_IDENTIFIER=CEPOC1
+export CHAT_PLANE_CE_REAL_TEST_ROOT_ID=root_code
+export CHAT_PLANE_CE_REAL_TEST_DIRECTORY_NAME=plane-ce-acceptance
+export CHAT_PLANE_CE_REAL_TEST_MODULES_JSON='["课程","论文","开源项目"]'
+pnpm test:provider:plane-ce
+```
+
+不要对已有目录或正式Plane项目复用这个真实门。
+
 ## 4. 启动、检查与停止
 
 ```bash

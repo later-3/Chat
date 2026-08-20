@@ -34,6 +34,7 @@ import {
 } from "./prompt-review-gate.js";
 import { hashExecutorValue } from "./executor-operation-store.js";
 import type { PiExecutorWorkspaceRoot } from "./executor-service.js";
+import type { ProjectBootstrapCandidate, ProjectBootstrapProposal } from "@chat/contracts";
 
 export interface AuthorizedDirectAgentInput {
   readonly productRunId: string;
@@ -51,7 +52,13 @@ export interface AuthorizedDirectAgentInput {
     readonly userPrompt: string;
     readonly workspaceRootId?: string | undefined;
   };
-  readonly capabilityMode: "read_only";
+  readonly capabilityMode: "read_only" | "project_bootstrap";
+  readonly projectBootstrapContext?: {
+    readonly providerKind: "plane_ce";
+    readonly providerVersion: string;
+    readonly planeWorkspaceSlugs: readonly string[];
+    readonly creationRoots: readonly { readonly rootId: string; readonly displayName: string }[];
+  };
   readonly promptReviewMode: "manual" | "off";
   readonly limits: AuthorizedDirectAgentProfile["limits"];
 }
@@ -61,6 +68,14 @@ export interface PublishDirectAgentResultInput {
   readonly productRunId: string;
   readonly directAgentAttemptId: string;
   readonly output: { readonly format: "markdown"; readonly text: string };
+}
+
+export interface ProjectBootstrapProductPort {
+  prepare(input: {
+    readonly commandId: string;
+    readonly productRunId: string;
+    readonly proposal: ProjectBootstrapProposal;
+  }): Promise<ProjectBootstrapCandidate>;
 }
 
 export interface PiDirectExecutorServiceOptions {
@@ -76,6 +91,7 @@ export interface PiDirectExecutorServiceOptions {
   ) => Promise<AuthorizedDirectAgentInput>;
   readonly promptReviewProduct: DirectPromptReviewProductPort;
   readonly publishResult: (input: PublishDirectAgentResultInput) => Promise<DirectAgentResultRef>;
+  readonly projectBootstrapProduct?: ProjectBootstrapProductPort;
   readonly runner?: DirectAgentRunner;
 }
 
@@ -348,6 +364,13 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
         agentDir: options.agentDir,
         sessionsDir: options.sessionsDir,
         store: options.store,
+        capabilityMode: authorizedInput.capabilityMode,
+        ...(authorizedInput.projectBootstrapContext === undefined
+          ? {}
+          : { projectBootstrapContext: authorizedInput.projectBootstrapContext }),
+        ...(options.projectBootstrapProduct === undefined
+          ? {}
+          : { projectBootstrapProduct: options.projectBootstrapProduct }),
         promptReview,
         promptReviewMode: authorizedInput.promptReviewMode,
         signal: controller.signal,
