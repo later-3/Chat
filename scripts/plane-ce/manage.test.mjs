@@ -24,6 +24,8 @@ test("manager rejects moving image references after applying the audited upstrea
   assert.match(source, /locked\.includes\(":latest"\)/u);
   assert.match(source, /--env-file/u);
   assert.match(source, /\.data\/plane-ce/u);
+  assert.match(source, /CERT_ACME_CA=\$\{defaultAcmeCa\}/u);
+  assert.match(source, /current\.replace\(\/\^CERT_ACME_CA=/u);
 });
 
 test("real bootstrap gate requires explicit persistent-write authority and reconciles both providers", async () => {

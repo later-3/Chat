@@ -11,6 +11,7 @@ const dataDirectory = resolve(process.env.PLANE_CE_DATA_DIR ?? resolve(repoRoot,
 const composePath = resolve(dataDirectory, "docker-compose.locked.yml");
 const envPath = resolve(dataDirectory, "plane.env");
 const command = process.argv[2] ?? "status";
+const defaultAcmeCa = "https://acme-v02.api.letsencrypt.org/directory";
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -101,11 +102,23 @@ async function ensureEnvironment() {
       "AWS_S3_ENDPOINT_URL=http://plane-minio:9000",
       "AWS_S3_BUCKET_NAME=uploads",
       "CERT_EMAIL=",
-      "CERT_ACME_CA=",
+      `CERT_ACME_CA=${defaultAcmeCa}`,
       "CERT_ACME_DNS=",
       "",
     ];
     await writeFile(envPath, lines.join("\n"), { encoding: "utf8", mode: 0o600, flag: "wx" });
+    return;
+  }
+
+  // Plane CE 1.4.1 的 Compose 会把空 CERT_ACME_CA 显式传给 Caddy，
+  // 从而覆盖镜像 Caddyfile 中的默认值并导致代理循环重启。这里仅迁移该公开配置，
+  // 保留现有密钥和其余环境项，也不把私有环境内容写入日志。
+  const current = await readFile(envPath, "utf8");
+  const next = /^CERT_ACME_CA=.*$/mu.test(current)
+    ? current.replace(/^CERT_ACME_CA=.*$/mu, `CERT_ACME_CA=${defaultAcmeCa}`)
+    : `${current.replace(/\n?$/u, "\n")}CERT_ACME_CA=${defaultAcmeCa}\n`;
+  if (next !== current) {
+    await writeFile(envPath, next, { encoding: "utf8", mode: 0o600 });
   }
 }
 
