@@ -2,6 +2,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   decisionRequestSchema,
   dshBridgeSendPreviewRequestSchema,
+  dshSendReviewDecisionRequestSchema,
+  dshSendReviewSettingRequestSchema,
   dshSessionIdSchema,
   noteDecisionRequestSchema,
   promptSelectionRequestSchema,
@@ -31,6 +33,8 @@ const MAX_PROMPT_REQUEST_BODY_BYTES = 96 * 1024;
 const SESSION_PATH = /^\/lifeos\/sessions\/([^/]+)$/;
 const CONTEXT_INJECTIONS_PATH = /^\/lifeos\/sessions\/([^/]+)\/context-injections$/;
 const BRIDGE_SEND_PREVIEWS_PATH = /^\/lifeos\/sessions\/([^/]+)\/bridge-send-previews$/;
+const DSH_SEND_REVIEW_SETTING_PATH = /^\/lifeos\/sessions\/([^/]+)\/dsh-send-review-setting$/;
+const DSH_SEND_REVIEW_DECISIONS_PATH = /^\/lifeos\/sessions\/([^/]+)\/dsh-send-review-decisions$/;
 const DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/decisions$/;
 const NOTE_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/note-decisions$/;
 const PROMPT_REVIEW_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/prompt-review-decisions$/;
@@ -706,6 +710,43 @@ export function createLifeosRouteHandler(
           res,
           200,
           await service.bridgeSendPreview(sessionIdFrom(bridgeSendPreviewMatch), parsed.data.text),
+        );
+        return;
+      }
+      const dshSendReviewSettingMatch = DSH_SEND_REVIEW_SETTING_PATH.exec(url.pathname);
+      if (req.method === "PUT" && dshSendReviewSettingMatch !== null) {
+        const parsed = dshSendReviewSettingRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_dsh_send_review_setting_invalid",
+            "DSH发送审核开关请求无效",
+          );
+        }
+        sendJson(
+          res,
+          200,
+          await service.setDshSendReviewEnabled(
+            sessionIdFrom(dshSendReviewSettingMatch),
+            parsed.data.enabled,
+          ),
+        );
+        return;
+      }
+      const dshSendReviewDecisionMatch = DSH_SEND_REVIEW_DECISIONS_PATH.exec(url.pathname);
+      if (req.method === "POST" && dshSendReviewDecisionMatch !== null) {
+        const parsed = dshSendReviewDecisionRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_dsh_send_review_decision_invalid",
+            "DSH发送审核决定无效",
+          );
+        }
+        sendJson(
+          res,
+          200,
+          await service.decideDshSendReview(sessionIdFrom(dshSendReviewDecisionMatch), parsed.data),
         );
         return;
       }

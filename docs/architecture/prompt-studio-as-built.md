@@ -9,9 +9,10 @@
 1. DSH「设置 → 提示词」是长期管理面。它展示 19 个 Region、Git 内置 Markdown 原文和来源，支持创建全局或指定 Workspace 的用户组件、派生副本、追加不可变 Revision、归档与恢复。
 2. 每个会话的 Composer 工具行有「提示词」入口。发送前可按 Region 分别选择`默认 / 覆盖 / 追加`，在每个 Region 内勾选全局组件或当前 Workspace 组件。默认模式下直接勾选会自动切换为追加；组件可就地查看正文、来源与版本，空作用域可直接新建，用户组件可就地编辑，Git 内置组件可创建副本后编辑。
 3. Composer 提供两个不同边界的预览：「提示词配置预览」不依赖本轮输入，只展示 Region、模式、精确 Revision、来源与编译后的 System/Messages 配置；「DSH 前端发送预览」加入当前用户输入、DSH 当前上下文注入投影、Workflow 选择，并显示 Bridge 真正提交给 Chat 的命令 Payload。
-4. 首版选择只进入“执行 Agent（逐次提示词审核）”Direct Workflow。Planning/Memory Workflow 不接收该选择，界面明确说明这一点。
-5. Direct Message Command 在启动 Workflow 的同一事务中冻结 Prompt Assembly。后续组件修改、归档或页面刷新都不能改变已经启动的 Run。
-6. 上述两个预览都不是 Provider HTTP 请求。Prompt Review 的 Raw 才是 Provider Adapter 生成的真实完整请求；易读页在不修改真实正文的前提下增加 Assembly Region、精确 Revision、Hash、Scope 和 Git 文件来源。
+4. 原生发送按钮左侧有会话级「发送审核」开关，默认关闭。关闭时保持DSH原生发送；开启后DSH完成本轮`pre-step`组装，LifeOS Adapter在任何Chat Session/Message写入前暂停并显示同一份发送预览。批准才进入Bridge；取消不会调用Chat，关闭开关会立即放行已经等待的发送。
+5. 首版Prompt选择只进入“执行 Agent（逐次提示词审核）”Direct Workflow。Planning/Memory Workflow 不接收该选择，界面明确说明这一点；DSH发送审核开关对所有LifeOS Workflow生效。
+6. Direct Message Command 在启动 Workflow 的同一事务中冻结 Prompt Assembly。后续组件修改、归档或页面刷新都不能改变已经启动的 Run。
+7. 上述两个预览都不是 Provider HTTP 请求。Prompt Review 的 Raw 才是 Provider Adapter 生成的真实完整请求；易读页在不修改真实正文的前提下增加 Assembly Region、精确 Revision、Hash、Scope 和 Git 文件来源。
 
 ## 2. 事实所有权
 
@@ -24,8 +25,11 @@ Product Store v15
   ├── PromptFragmentRevision（不可变title/region/content/source/hash）
   └── PromptAssembly（一次Direct Run冻结的选择、正文投影与Hash）
 
-DSH Bridge State v9
-  └── 每个DSH Session的未发送选择草稿与请求冻结副本，不拥有正式Prompt事实
+DSH Bridge State v10
+  └── 每个DSH Session的未发送选择草稿、发送审核开关与请求冻结副本，不拥有正式Prompt事实
+
+DSH Host进程内存
+  └── 当前等待中的DSH发送审核与完整预览；Host退出即随原模型调用一起失效，不复制进状态文件
 ```
 
 Builtin 不写入 Product Store。用户组件属于`global`或某个已登记`workspace rootId`；浏览器不能提交本机路径、DSH Workspace ID、owner或来源正文。
@@ -119,6 +123,21 @@ DSH真实input.draft + 当前Session producer context + Workflow/Prompt Selectio
 → /lifeos/sessions/:id/bridge-send-previews
 → BridgeService按实际Submit政策投影Bridge→Chat命令Payload
 ```
+
+真正发送时的可选审核链路是：
+
+```text
+DSH原生Send / Enter
+→ DSH pre-step完成当轮Context组装
+→ LifeOS LLM Adapter冻结Request Binding
+→ 发送审核关闭：直接继续
+→ 发送审核开启：Host内存创建Review并暂停（Chat写入数=0）
+   ├── 批准：创建/恢复Chat Product Session并提交Message Command
+   ├── 取消：终止本次Adapter调用，Chat写入数仍为0
+   └── 关闭开关：放行当前Review并继续发送
+```
+
+公开DSH Composer Slot不能拦截原生发送，Slash adjudication也只处理`/`或`@`输入；因此暂停位于既有LifeOS Adapter，而不是DOM劫持、复制输入栏或扩大DSH派生。完整Review正文只存在于Host内存；Bridge State v10只持久化布尔开关，v1-v9迁移后默认关闭。
 
 DSH 到 Bridge 的预览读取与真实发送相同的当前输入和`agent-instructions`提取逻辑。Bridge 到 Chat 的政策也与真实发送一致：Direct携带`promptSelection`且不携带DSH `workspaceInstructions`；非Direct携带DSH `workspaceInstructions`且不携带`promptSelection`。Prompt正文不会在Bridge命令中重复传输，Chat后端会按冻结的Revision ID与Hash重新读取并编译。
 

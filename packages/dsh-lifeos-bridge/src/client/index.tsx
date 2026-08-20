@@ -29,6 +29,7 @@ import { PromptStudioController } from "./prompt-studio-controller.ts";
 import { installPromptStudioStyles } from "./prompt-studio-styles.ts";
 import { PromptComposer, type PromptComposerInjected } from "./PromptComposer.tsx";
 import { PromptComposerController } from "./prompt-composer-controller.ts";
+import { DshSendReviewToggle, type DshSendReviewToggleInjected } from "./DshSendReviewToggle.tsx";
 
 export const name = "chat-dsh-lifeos-bridge-client";
 export const inject = ["slots", "conversationEvents"];
@@ -223,6 +224,24 @@ export function apply(ctx: ClientContext): void {
     ),
   );
 
+  ctx.slots.inject("conversation.input.right", () =>
+    ctx.slots.register(
+      {
+        name: "conversation.input.right",
+        id: "lifeos-dsh-send-review-toggle",
+        order: 20,
+        inject: (sessionId: SessionId): DshSendReviewToggleInjected => {
+          const controller = controllerFor(sessionId);
+          return {
+            hooks: { lifeos: controller },
+            setEnabled: (enabled) => controller.setDshSendReviewEnabled(enabled),
+          };
+        },
+      },
+      DshSendReviewToggle,
+    ),
+  );
+
   ctx.slots.inject("conversation.input.left", () =>
     ctx.slots.register(
       {
@@ -285,6 +304,7 @@ export function apply(ctx: ClientContext): void {
             decide: (request) => controller.decide(request),
             decideNote: (request) => controller.decideNote(request),
             decidePromptReview: (request) => controller.decidePromptReview(request),
+            decideDshSendReview: (request) => controller.decideDshSendReview(request),
           };
         },
       },

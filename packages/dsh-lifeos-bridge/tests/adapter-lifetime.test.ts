@@ -13,11 +13,25 @@ import {
 import { LifeosLlmAdapter, stableCommandId } from "../src/adapter.ts";
 import { ChatProductApiError, type ChatProductClient } from "../src/chat-client.ts";
 import {
+  dshBridgeSendPreviewSchema,
   promptSelectionRequestSchema,
   workflowSelectionSchema,
   type ChatRun,
 } from "../src/contracts.ts";
 import { AtomicBridgeStateStore } from "../src/state-store.ts";
+import { DshSendReviewCoordinator } from "../src/dsh-send-review.ts";
+
+async function waitForReview(
+  coordinator: DshSendReviewCoordinator,
+  dshSessionId: string,
+): Promise<NonNullable<ReturnType<DshSendReviewCoordinator["current"]>>> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const review = coordinator.current(dshSessionId);
+    if (review !== null) return review;
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("DSH send review did not open");
+}
 
 test("plugin lifetime abort stops a waiting_human stream before another poll", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-lifetime-"));
@@ -63,6 +77,104 @@ test("plugin lifetime abort stops a waiting_human stream before another poll", a
     await assert.rejects(first, (error) => error instanceof LlmError && error.code === "ABORTED");
     await new Promise<void>((resolve) => setTimeout(resolve, 800));
     assert.equal(runPolls, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("enabled DSH send review blocks every Chat write until approve and reject writes nothing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-send-review-adapter-"));
+  let createCalls = 0;
+  let submitCalls = 0;
+  try {
+    const state = new AtomicBridgeStateStore(join(directory, "state.json"));
+    await state.ready();
+    for (const sessionId of ["dsh-review-approve", "dsh-review-reject"]) {
+      await state.setDshSendReviewEnabled(
+        sessionId,
+        stableCommandId("create-session", sessionId),
+        true,
+      );
+    }
+    const coordinator = new DshSendReviewCoordinator(state, async (dshSessionId, text) =>
+      dshBridgeSendPreviewSchema.parse({
+        schemaVersion: "chat-dsh-bridge-send-preview.v1",
+        boundary: "dsh_to_lifeos_bridge",
+        status: "pre_send_projection",
+        workspace: null,
+        workflowSelection: null,
+        promptSelection: { schemaVersion: "prompt-turn-selection-input.v1", regions: [] },
+        promptConfiguration: null,
+        dshToBridge: {
+          userInput: { text, sha256: "a".repeat(64) },
+          contextInjections: {
+            schemaVersion: "chat-dsh-context-injections.v1",
+            dshSessionId,
+            status: "ready",
+            revision: "b".repeat(64),
+            chatForwarding: "latest_direct_user_message_and_workspace_instructions",
+            items: [],
+            totalItems: 0,
+            omittedItems: 0,
+            totalContentCharacters: 0,
+          },
+        },
+        bridgeToChat: { policy: "non_direct_workspace_instructions", payload: { text } },
+      }),
+    );
+    const chat = {
+      createSession: async () => {
+        createCalls += 1;
+        return { sessionId: "psn_dshreview1" };
+      },
+      submitMessage: async () => {
+        submitCalls += 1;
+        return {
+          message: { messageId: "msg_dshreviewuser1" },
+          run: {
+            productRunId: "run_dshreview1",
+            status: "succeeded",
+            finalMessageId: "msg_dshreviewassistant1",
+          } as ChatRun,
+        };
+      },
+      getMessage: async () => ({
+        messageId: "msg_dshreviewassistant1",
+        role: "assistant",
+        content: { format: "markdown", text: "已发送" },
+      }),
+    } as unknown as ChatProductClient;
+    const adapter = new LifeosLlmAdapter(chat, state, undefined, undefined, coordinator);
+    const input = (sessionId: string): GenerateOptions => ({
+      provider: "lifeos",
+      model: "workflow",
+      sessionId: sessionId as never,
+      messages: [
+        createUserMessage({
+          source: { kind: "user" },
+          content: [{ type: "text", text: "审核真实发送" }],
+        }),
+      ],
+    });
+
+    const approvedNext = adapter.stream(input("dsh-review-approve"))[Symbol.asyncIterator]().next();
+    const approvedReview = await waitForReview(coordinator, "dsh-review-approve");
+    assert.equal(createCalls, 0);
+    assert.equal(submitCalls, 0);
+    coordinator.decide("dsh-review-approve", approvedReview.reviewId, "approve");
+    await approvedNext;
+    assert.equal(createCalls, 1);
+    assert.equal(submitCalls, 1);
+
+    const rejectedNext = adapter.stream(input("dsh-review-reject"))[Symbol.asyncIterator]().next();
+    const rejectedReview = await waitForReview(coordinator, "dsh-review-reject");
+    coordinator.decide("dsh-review-reject", rejectedReview.reviewId, "reject");
+    await assert.rejects(
+      rejectedNext,
+      (error) => error instanceof LlmError && error.code === "LIFEOS_DSH_SEND_REJECTED",
+    );
+    assert.equal(createCalls, 1);
+    assert.equal(submitCalls, 1);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

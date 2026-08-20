@@ -4,6 +4,7 @@ import {
   workflowListResponseSchema,
   type DecisionRequest,
   type DshContextInjectionProjection,
+  type DshSendReviewDecisionRequest,
   type LifeosExecutionTrace,
   type LifeosProjection,
   type LifeosWorkflowOption,
@@ -151,6 +152,24 @@ export class LifeosProjectionController {
       });
       return false;
     }
+  }
+
+  async setDshSendReviewEnabled(enabled: boolean): Promise<boolean> {
+    return await this.submitProjectionCommand(
+      `/lifeos/sessions/${encodeURIComponent(this.sessionId)}/dsh-send-review-setting`,
+      "PUT",
+      { enabled },
+      "DSH发送审核开关提交失败",
+    );
+  }
+
+  async decideDshSendReview(request: DshSendReviewDecisionRequest): Promise<boolean> {
+    return await this.submitProjectionCommand(
+      `/lifeos/sessions/${encodeURIComponent(this.sessionId)}/dsh-send-review-decisions`,
+      "POST",
+      request,
+      "DSH发送审核决定提交失败",
+    );
   }
 
   async decideNote(request: NoteDecisionRequest): Promise<boolean> {
@@ -333,6 +352,43 @@ export class LifeosProjectionController {
     this.stop();
     this.listeners.clear();
     this.onExecutionTraces?.([]);
+  }
+
+  private async submitProjectionCommand(
+    path: string,
+    method: "POST" | "PUT",
+    body: unknown,
+    fallbackMessage: string,
+  ): Promise<boolean> {
+    if (this.disposed || this.snapshot.submitting) return false;
+    this.publish({ ...this.snapshot, submitting: true, error: null });
+    try {
+      const response = await this.fetchImpl(path, {
+        method,
+        credentials: "same-origin",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await responseJson(response);
+      if (!response.ok) throw new Error(problemMessage(json, response.status));
+      const projection = lifeosProjectionSchema.parse(json);
+      this.publish({
+        ...this.snapshot,
+        status: "ready",
+        projection,
+        submitting: false,
+        error: null,
+      });
+      return true;
+    } catch (error) {
+      this.publish({
+        ...this.snapshot,
+        status: this.snapshot.projection === null ? "error" : this.snapshot.status,
+        submitting: false,
+        error: error instanceof Error ? error.message : fallbackMessage,
+      });
+      return false;
+    }
   }
 
   private async performRefresh(): Promise<void> {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { LifeosProjectionController } from "../src/client/controller.ts";
 import {
+  dshSendReviewDecisionRequestSchema,
   noteDecisionRequestSchema,
   promptReviewDecisionRequestSchema,
   workflowSelectionSchema,
@@ -337,6 +338,40 @@ test("decidePromptReview submits the exact observed request hashes to its same-o
       path: "/lifeos/sessions/dsh-session-1/prompt-review-decisions",
       method: "POST",
       body: request,
+    },
+  ]);
+  controller.dispose();
+});
+
+test("DSH send review toggle and decision use dedicated same-origin routes", async () => {
+  const requests: Array<{ path: string; method?: string; body?: unknown }> = [];
+  const controller = new LifeosProjectionController(
+    "dsh-session-1",
+    async (input: URL | RequestInfo, init?: RequestInit) => {
+      requests.push({
+        path: String(input),
+        ...(init?.method === undefined ? {} : { method: init.method }),
+        ...(init?.body === undefined ? {} : { body: JSON.parse(String(init.body)) }),
+      });
+      return new Response(JSON.stringify(projection), { status: 200 });
+    },
+  );
+  const decision = dshSendReviewDecisionRequestSchema.parse({
+    reviewId: `dsr_${"a".repeat(32)}`,
+    kind: "approve",
+  });
+  assert.equal(await controller.setDshSendReviewEnabled(true), true);
+  assert.equal(await controller.decideDshSendReview(decision), true);
+  assert.deepEqual(requests, [
+    {
+      path: "/lifeos/sessions/dsh-session-1/dsh-send-review-setting",
+      method: "PUT",
+      body: { enabled: true },
+    },
+    {
+      path: "/lifeos/sessions/dsh-session-1/dsh-send-review-decisions",
+      method: "POST",
+      body: decision,
     },
   ]);
   controller.dispose();

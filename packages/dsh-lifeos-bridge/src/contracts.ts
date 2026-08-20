@@ -479,26 +479,6 @@ export const publicRunSchema = runDtoSchema.pick({
   updatedAt: true,
 });
 
-/** Same-origin Client read model；不暴露Workflow/pi的运行时私有身份。 */
-export const lifeosProjectionSchema = z
-  .object({
-    schemaVersion: z.literal(BRIDGE_SCHEMA_VERSION),
-    dshSessionId: dshSessionIdSchema,
-    run: publicRunSchema.nullable(),
-    plan: planDtoSchema.nullable(),
-    approval: approvalDtoSchema.nullable(),
-    pendingDecision: decisionRequestSchema.nullable(),
-    noteCandidate: noteCandidateReviewDtoSchema.nullable(),
-    pendingNoteDecision: noteDecisionRequestSchema.nullable(),
-    promptReview: promptReviewRequestDtoSchema.nullable().default(null),
-    pendingPromptReviewDecision: promptReviewDecisionRequestSchema.nullable().default(null),
-    workflowSelection: workflowSelectionSchema.nullable(),
-    executionTraces: z.array(lifeosExecutionTraceSchema).max(100),
-  })
-  .strict();
-
-export type LifeosProjection = z.infer<typeof lifeosProjectionSchema>;
-
 /**
  * DSH 当前模型输入中的单条生产者上下文。这里保留模型实际看到的文本，
  * 但只投影有界、可展示的来源元数据；任意插件私有 source payload 不穿透到浏览器。
@@ -593,3 +573,46 @@ export const dshBridgeSendPreviewSchema = z
 
 export type DshBridgeSendPreviewRequest = z.infer<typeof dshBridgeSendPreviewRequestSchema>;
 export type DshBridgeSendPreview = z.infer<typeof dshBridgeSendPreviewSchema>;
+
+export const dshSendReviewIdSchema = z.string().regex(/^dsr_[a-f0-9]{32}$/u);
+export const dshSendReviewSchema = z
+  .object({
+    schemaVersion: z.literal("chat-dsh-send-review.v1"),
+    reviewId: dshSendReviewIdSchema,
+    status: z.literal("open"),
+    preview: dshBridgeSendPreviewSchema,
+  })
+  .strict();
+
+export const dshSendReviewSettingRequestSchema = z.object({ enabled: z.boolean() }).strict();
+export const dshSendReviewDecisionRequestSchema = z
+  .object({
+    reviewId: dshSendReviewIdSchema,
+    kind: z.enum(["approve", "reject"]),
+  })
+  .strict();
+
+export type DshSendReview = z.infer<typeof dshSendReviewSchema>;
+export type DshSendReviewDecisionRequest = z.infer<typeof dshSendReviewDecisionRequestSchema>;
+
+/** Same-origin Client read model；不暴露Workflow/pi的运行时私有身份。 */
+export const lifeosProjectionSchema = z
+  .object({
+    schemaVersion: z.literal(BRIDGE_SCHEMA_VERSION),
+    dshSessionId: dshSessionIdSchema,
+    run: publicRunSchema.nullable(),
+    plan: planDtoSchema.nullable(),
+    approval: approvalDtoSchema.nullable(),
+    pendingDecision: decisionRequestSchema.nullable(),
+    noteCandidate: noteCandidateReviewDtoSchema.nullable(),
+    pendingNoteDecision: noteDecisionRequestSchema.nullable(),
+    promptReview: promptReviewRequestDtoSchema.nullable().default(null),
+    pendingPromptReviewDecision: promptReviewDecisionRequestSchema.nullable().default(null),
+    dshSendReviewEnabled: z.boolean().default(false),
+    dshSendReview: dshSendReviewSchema.nullable().default(null),
+    workflowSelection: workflowSelectionSchema.nullable(),
+    executionTraces: z.array(lifeosExecutionTraceSchema).max(100),
+  })
+  .strict();
+
+export type LifeosProjection = z.infer<typeof lifeosProjectionSchema>;

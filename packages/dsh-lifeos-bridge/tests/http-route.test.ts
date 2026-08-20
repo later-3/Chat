@@ -378,6 +378,14 @@ test("same-origin Prompt selection and Studio scope routes forward only typed id
       calls.push({ kind: "bridge-send-preview", sessionId, text });
       return { schemaVersion: "chat-dsh-bridge-send-preview.v1", text };
     },
+    setDshSendReviewEnabled: async (sessionId: string, enabled: boolean) => {
+      calls.push({ kind: "send-review-setting", sessionId, enabled });
+      return { schemaVersion: "chat-dsh-lifeos-bridge.v3", dshSessionId: sessionId };
+    },
+    decideDshSendReview: async (sessionId: string, request: unknown) => {
+      calls.push({ kind: "send-review-decision", sessionId, request });
+      return { schemaVersion: "chat-dsh-lifeos-bridge.v3", dshSessionId: sessionId };
+    },
   } as unknown as LifeosBridgeService;
   const studio = {
     workspaces: async () => ({
@@ -492,6 +500,23 @@ test("same-origin Prompt selection and Studio scope routes forward only typed id
       ).status,
       200,
     );
+    assert.equal(
+      (
+        await call("PUT", "/lifeos/sessions/dsh-session-1/dsh-send-review-setting", {
+          enabled: true,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await call("POST", "/lifeos/sessions/dsh-session-1/dsh-send-review-decisions", {
+          reviewId: `dsr_${"a".repeat(32)}`,
+          kind: "approve",
+        })
+      ).status,
+      200,
+    );
     assert.deepEqual(calls, [
       {
         kind: "fragments",
@@ -515,6 +540,12 @@ test("same-origin Prompt selection and Studio scope routes forward only typed id
         kind: "bridge-send-preview",
         sessionId: "dsh-session-1",
         text: "测试Bridge边界",
+      },
+      { kind: "send-review-setting", sessionId: "dsh-session-1", enabled: true },
+      {
+        kind: "send-review-decision",
+        sessionId: "dsh-session-1",
+        request: { reviewId: `dsr_${"a".repeat(32)}`, kind: "approve" },
       },
     ]);
     assert.doesNotMatch(JSON.stringify(calls), /\/Users\//u);

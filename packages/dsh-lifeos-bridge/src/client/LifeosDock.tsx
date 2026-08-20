@@ -3,17 +3,20 @@ import type { HostObservable, InjectFace, PropsRuntime } from "@deepseek-ai/dsh-
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
 import type {
   DecisionRequest,
+  DshSendReviewDecisionRequest,
   NoteDecisionRequest,
   PromptReviewDecisionRequest,
 } from "../contracts.ts";
 import type { LifeosProjection } from "../contracts.ts";
 import type { LifeosClientState } from "./controller.ts";
+import { BridgeSendPreview } from "./DshBridgeSendPreview.tsx";
 
 export interface LifeosDockInjected {
   hooks: { lifeos: HostObservable<LifeosClientState> };
   decide: (request: DecisionRequest) => Promise<boolean>;
   decideNote: (request: NoteDecisionRequest) => Promise<boolean>;
   decidePromptReview: (request: PromptReviewDecisionRequest) => Promise<boolean>;
+  decideDshSendReview: (request: DshSendReviewDecisionRequest) => Promise<boolean>;
 }
 
 export type LifeosDockProps = PropsRuntime<"conversation.input.dock"> &
@@ -82,13 +85,20 @@ export function shouldShowLifeosReviewDock(projection: LifeosProjection | null):
     hasActionablePlanReview(projection) ||
     hasActionableNoteReview(projection) ||
     hasActionablePromptReview(projection) ||
+    projection?.dshSendReview != null ||
     projection?.pendingDecision != null ||
     projection?.pendingNoteDecision != null ||
     projection?.pendingPromptReviewDecision != null
   );
 }
 
-export function LifeosDock({ useLifeos, decide, decideNote, decidePromptReview }: LifeosDockProps) {
+export function LifeosDock({
+  useLifeos,
+  decide,
+  decideNote,
+  decidePromptReview,
+  decideDshSendReview,
+}: LifeosDockProps) {
   const state = useLifeos((value) => value);
   const [explanation, setExplanation] = useState("");
   const [promptView, setPromptView] = useState<"readable" | "raw">("readable");
@@ -101,6 +111,7 @@ export function LifeosDock({ useLifeos, decide, decideNote, decidePromptReview }
   const canReviewNote = hasActionableNoteReview(projection);
   const canReviewPrompt = hasActionablePromptReview(projection);
   const promptReview = projection?.promptReview ?? null;
+  const dshSendReview = projection?.dshSendReview ?? null;
   const reviewableNoteCandidate =
     canReviewNote && noteCandidate?.status === "under_review" ? noteCandidate : null;
   if (!shouldShowLifeosReviewDock(projection)) return null;
@@ -163,6 +174,50 @@ export function LifeosDock({ useLifeos, decide, decideNote, decidePromptReview }
     };
     if (await decidePromptReview(request)) setExplanation("");
   };
+
+  if (dshSendReview !== null) {
+    return (
+      <section
+        className="lifeos-card lifeos-dsh-send-review-card"
+        data-testid="lifeos-dsh-send-review-card"
+        aria-label="DSH发送前审核"
+      >
+        <header className="lifeos-header">
+          <strong>DSH → Bridge 发送前审核</strong>
+          <span className="lifeos-status">等待你确认</span>
+        </header>
+        <BridgeSendPreview preview={dshSendReview.preview} />
+        <div className="lifeos-review" data-testid="lifeos-dsh-send-review-actions">
+          <div className="lifeos-actions">
+            <button
+              type="button"
+              disabled={state.submitting}
+              onClick={() =>
+                void decideDshSendReview({ reviewId: dshSendReview.reviewId, kind: "reject" })
+              }
+            >
+              取消本次发送
+            </button>
+            <button
+              type="button"
+              className="lifeos-primary"
+              disabled={state.submitting}
+              onClick={() =>
+                void decideDshSendReview({ reviewId: dshSendReview.reviewId, kind: "approve" })
+              }
+            >
+              批准并进入 Bridge
+            </button>
+          </div>
+        </div>
+        {state.error === null ? null : (
+          <p className="lifeos-error" role="alert">
+            {state.error}
+          </p>
+        )}
+      </section>
+    );
+  }
 
   if (promptReview !== null || projection?.pendingPromptReviewDecision != null) {
     return (

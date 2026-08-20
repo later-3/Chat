@@ -20,6 +20,7 @@ import { DshContextInjectionReader } from "./context-injection-reader.ts";
 import { PromptStudioBridgeService } from "./prompt-studio-bridge-service.ts";
 import { PromptSourceFileOpener } from "./prompt-source-file-opener.ts";
 import { createPromptWorkspaceResolver } from "./prompt-workspace-resolver.ts";
+import { DshSendReviewCoordinator } from "./dsh-send-review.ts";
 
 export const name = "chat-dsh-lifeos-bridge";
 export const inject = [
@@ -90,13 +91,22 @@ export async function apply(ctx: Context): Promise<void> {
     ctx.workspaceRegistry,
     process.env,
   );
+  const bridgeRef: { current?: LifeosBridgeService } = {};
+  const dshSendReview = new DshSendReviewCoordinator(state, async (dshSessionId, text) => {
+    if (bridgeRef.current === undefined) {
+      throw new Error("LifeOS Bridge 尚未完成初始化，不能生成 DSH 发送预览");
+    }
+    return await bridgeRef.current.bridgeSendPreview(dshSessionId, text);
+  });
   const bridge = new LifeosBridgeService(
     chat,
     state,
     dshHistory,
     contextInjectionReader,
     promptWorkspaceResolver,
+    dshSendReview,
   );
+  bridgeRef.current = bridge;
   const promptStudio = new PromptStudioBridgeService(chat);
   // 公网部署绝不能让远端浏览器启动服务器本机应用；只在无公开主机名的本地模式装配。
   // Prompt来源属于Chat代码Catalog，不跟随未来可切换的工作对象Workspace。
@@ -108,13 +118,14 @@ export async function apply(ctx: Context): Promise<void> {
   const lifetime = new AbortController();
   ctx.effect(
     () => () => {
+      dshSendReview.close();
       lifetime.abort(new DOMException("lifeos bridge unloaded", "AbortError"));
     },
     "lifeos bridge: stream lifetime",
   );
   ctx.llm.registerAdapter(
     [LIFEOS_PROVIDER],
-    new LifeosLlmAdapter(chat, state, lifetime.signal, promptWorkspaceResolver),
+    new LifeosLlmAdapter(chat, state, lifetime.signal, promptWorkspaceResolver, dshSendReview),
   );
   ctx.effect(
     () => ctx.tools.register(createLifeosTraceTool(chat, state)),

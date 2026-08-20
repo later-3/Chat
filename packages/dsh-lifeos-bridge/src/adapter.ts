@@ -19,6 +19,7 @@ import {
   promptSelectionForWorkspace,
   type PromptWorkspaceResolver,
 } from "./prompt-workspace-resolver.ts";
+import type { DshSendReviewCoordinator } from "./dsh-send-review.ts";
 import { LIFEOS_TRACE_TOOL } from "./trace-tool.ts";
 
 export const LIFEOS_PROVIDER = "lifeos";
@@ -263,6 +264,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
     private readonly state: AtomicBridgeStateStore,
     private readonly lifetimeSignal?: AbortSignal,
     private readonly promptWorkspaceResolver?: PromptWorkspaceResolver,
+    private readonly dshSendReview?: DshSendReviewCoordinator,
   ) {
     super();
   }
@@ -309,8 +311,21 @@ export class LifeosLlmAdapter extends LlmAdapter {
       const dshSessionId = requireSessionId(options);
       const prompt = lastUserPrompt(options.messages);
       const workspaceInstructions = workspaceInstructionsOf(options.messages);
-      const chatSessionId = await this.ensureChatSession(dshSessionId, prompt.text, signal);
       const request = await this.ensureRequest(dshSessionId, prompt, workspaceInstructions);
+
+      if (request.productRunId === undefined && this.dshSendReview !== undefined) {
+        const decision = await this.dshSendReview.waitForDecision({
+          dshSessionId,
+          requestKey: prompt.requestKey,
+          text: prompt.text,
+          ...(signal === undefined ? {} : { signal }),
+        });
+        if (decision === "reject") {
+          throw new LlmError("用户取消了本次DSH发送", "LIFEOS_DSH_SEND_REJECTED");
+        }
+      }
+
+      const chatSessionId = await this.ensureChatSession(dshSessionId, prompt.text, signal);
 
       let run: ChatRun;
       if (request.productRunId === undefined) {

@@ -13,6 +13,7 @@ import {
   type ChatPromptReview,
   type ChatRun,
   type DecisionRequest,
+  type DshSendReviewDecisionRequest,
   type NoteDecisionRequest,
   type PromptSelection,
   type PromptSelectionProjection,
@@ -40,6 +41,7 @@ import {
 } from "./state-store.ts";
 import type { DshSessionHistoryPort } from "./dsh-session-history.ts";
 import type { DshContextInjectionReader } from "./context-injection-reader.ts";
+import type { DshSendReviewCoordinator } from "./dsh-send-review.ts";
 import {
   promptSelectionForWorkspace,
   type PromptWorkspaceResolver,
@@ -209,6 +211,7 @@ export class LifeosBridgeService {
       "read" | "workspaceInstructions"
     >,
     private readonly promptWorkspaceResolver?: PromptWorkspaceResolver,
+    private readonly dshSendReview?: DshSendReviewCoordinator,
   ) {}
 
   private history(): DshSessionHistoryPort {
@@ -410,6 +413,8 @@ export class LifeosBridgeService {
   async projection(dshSessionId: string, signal?: AbortSignal): Promise<LifeosProjection> {
     const binding = await this.state.readSession(dshSessionId);
     const workflowSelection = await this.state.readWorkflowSelection(dshSessionId);
+    const dshSendReviewEnabled = await this.state.readDshSendReviewEnabled(dshSessionId);
+    const dshSendReview = this.dshSendReview?.current(dshSessionId) ?? null;
     const executionTracesPromise = this.executionTraces(binding, signal);
     const current =
       binding?.currentRequestKey === undefined
@@ -427,6 +432,8 @@ export class LifeosBridgeService {
         pendingNoteDecision: current?.pendingNoteDecision?.request ?? null,
         promptReview: null,
         pendingPromptReviewDecision: current?.pendingPromptReviewDecision?.request ?? null,
+        dshSendReviewEnabled,
+        dshSendReview,
         workflowSelection,
         executionTraces: await executionTracesPromise,
       };
@@ -476,6 +483,8 @@ export class LifeosBridgeService {
       pendingNoteDecision: current.pendingNoteDecision?.request ?? null,
       promptReview,
       pendingPromptReviewDecision: current.pendingPromptReviewDecision?.request ?? null,
+      dshSendReviewEnabled,
+      dshSendReview,
       workflowSelection,
       executionTraces,
     };
@@ -572,6 +581,35 @@ export class LifeosBridgeService {
       workspace,
       promptSelection: normalized,
     });
+  }
+
+  async setDshSendReviewEnabled(
+    dshSessionId: string,
+    enabled: boolean,
+    signal?: AbortSignal,
+  ): Promise<LifeosProjection> {
+    await this.state.setDshSendReviewEnabled(
+      dshSessionId,
+      stableCommandId("create-session", dshSessionId),
+      enabled,
+    );
+    if (!enabled) this.dshSendReview?.approveCurrent(dshSessionId);
+    return await this.projection(dshSessionId, signal);
+  }
+
+  async decideDshSendReview(
+    dshSessionId: string,
+    request: DshSendReviewDecisionRequest,
+    signal?: AbortSignal,
+  ): Promise<LifeosProjection> {
+    if (this.dshSendReview?.decide(dshSessionId, request.reviewId, request.kind) !== true) {
+      throw new BridgeRequestError(
+        409,
+        "lifeos_dsh_send_review_stale",
+        "该DSH发送审核已处理或不再有效",
+      );
+    }
+    return await this.projection(dshSessionId, signal);
   }
 
   async decide(

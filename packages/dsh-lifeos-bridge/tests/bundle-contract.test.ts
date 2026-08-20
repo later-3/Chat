@@ -135,6 +135,14 @@ test("prompt composer keeps every Region independent and stages exact revisions 
     new URL("../src/client/prompt-composer-controller.ts", import.meta.url),
     "utf8",
   );
+  const sendPreview = await readFile(
+    new URL("../src/client/DshBridgeSendPreview.tsx", import.meta.url),
+    "utf8",
+  );
+  const sendReviewToggle = await readFile(
+    new URL("../src/client/DshSendReviewToggle.tsx", import.meta.url),
+    "utf8",
+  );
   assert.match(client, /id: "lifeos-prompt-composer"/u);
   assert.match(composer, /提示词/u);
   assert.match(composer, /默认/u);
@@ -142,12 +150,15 @@ test("prompt composer keeps every Region independent and stages exact revisions 
   assert.match(composer, /追加/u);
   assert.match(composer, /当前 Workspace/u);
   assert.match(composer, /提示词配置预览/u);
-  assert.match(composer, /DSH 前端发送预览/u);
-  assert.match(composer, /不是最终 Provider HTTP 请求/u);
+  assert.match(sendPreview, /DSH 前端发送预览/u);
+  assert.match(sendPreview, /不是最终 Provider HTTP 请求/u);
   assert.match(controller, /chat\.prompt-composer\.selection\.v1\./u);
   assert.match(controller, /method: "PUT"/u);
   assert.match(controller, /\/lifeos\/prompts\/configuration-previews/u);
   assert.match(controller, /\/bridge-send-previews/u);
+  assert.match(client, /id: "lifeos-dsh-send-review-toggle"/u);
+  assert.match(sendReviewToggle, /role="switch"/u);
+  assert.match(sendReviewToggle, /发送审核/u);
   assert.doesNotMatch(`${composer}\n${controller}`, /querySelector|MutationObserver/u);
 });
 

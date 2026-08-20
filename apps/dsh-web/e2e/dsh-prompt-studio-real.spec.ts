@@ -213,4 +213,29 @@ test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边�
   await expect(bridgePreview).toContainText("Bridge → Chat 实际命令 Payload");
   await expect(bridgePreview).toContainText(currentInput);
   await expect(bridgePreview).toContainText("promptSelection");
+
+  await dialog.getByRole("button", { name: "关闭本轮提示词", exact: true }).click();
+  const sendReviewSwitch = page.getByRole("switch", { name: "DSH发送前审核，当前关闭" });
+  await expect(sendReviewSwitch).toBeVisible();
+  await sendReviewSwitch.click();
+  await expect(page.getByRole("switch", { name: "DSH发送前审核，当前开启" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  const sendReview = page.getByTestId("lifeos-dsh-send-review-card");
+  await expect(sendReview).toBeVisible({ timeout: 15_000 });
+  await expect(sendReview).toContainText("DSH → Bridge 发送前审核");
+  await expect(sendReview).toContainText(currentInput);
+  await expect(sendReview).toContainText("Bridge → Chat 实际命令 Payload");
+  await sendReview.getByRole("button", { name: "取消本次发送", exact: true }).click();
+  await expect(sendReview).toBeHidden();
+
+  const enabledSwitch = page.getByRole("switch", { name: "DSH发送前审核，当前开启" });
+  await enabledSwitch.click();
+  await expect(page.getByRole("switch", { name: "DSH发送前审核，当前关闭" })).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
 });
