@@ -11,8 +11,8 @@ export function computeDirectAgentCandidateSha256(input: {
 
 /**
  * Direct Agent授权只绑定Product Run、冻结RunSpec、源Message、只读能力与部署预算，
- * 不伪造Plan/Execution Contract。Application与Store必须共同调用本函数，避免各自
- * 拼接Manifest后产生“能写入、不能重开”的漂移。
+ * 不伪造Plan/Execution Contract。审核模式已经包含在冻结RunSpec Hash里，不在这里重复
+ * 编码；Application与Store必须共同调用本函数，避免“能写入、不能重开”的漂移。
  */
 export function computeDirectAgentInputManifestSha256(input: {
   readonly productRunId: string;

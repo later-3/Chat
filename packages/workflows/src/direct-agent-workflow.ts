@@ -149,7 +149,7 @@ export async function directAgentWorkflow(
       ...prepared,
     });
   } catch (error) {
-    // 首次启动在任何Provider请求前必然先停在Prompt Review Gate，因而这里是确定失败。
+    // manual会先停在Prompt Review；off仍先写Provider派发栅栏，错误按Executor事实收敛。
     const code = failureCode(error, "direct_agent.start_failed");
     try {
       await recordDirectAgentNodeStep({

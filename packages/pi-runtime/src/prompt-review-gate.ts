@@ -125,6 +125,7 @@ export interface PromptReviewGateInterceptInput {
   readonly endpointHost: string;
   readonly payload: unknown;
   readonly session: AgentSession;
+  readonly promptReviewMode: "manual" | "off";
   readonly signal: AbortSignal;
   readonly pauseExecutionTimeout?: () => void;
   readonly resumeExecutionTimeout?: () => void;
@@ -171,8 +172,9 @@ export function hashPromptReviewEnvelope(input: {
 }
 
 /**
- * Extension链外的不可绕过Gate。它先冻结Pi最终Payload和Session checkpoint，再发布
- * Product Review；批准permit在Operation Store落为dispatching后才返回冻结Payload。
+ * Extension链外的不可绕过Provider Gate。它先冻结Pi最终Payload和Session checkpoint；
+ * manual模式发布Product Review并等待批准，off模式跳过Product事实，但两者都必须先在
+ * Operation Store落为dispatching才返回冻结Payload。
  */
 export class DirectPromptReviewCoordinator {
   private readonly waiters = new Map<string, PendingWaiter>();
@@ -229,6 +231,10 @@ export class DirectPromptReviewCoordinator {
     }
 
     if (active.review === undefined) {
+      if (input.promptReviewMode === "off") {
+        await this.store.markProviderDispatchingWithoutReview(input.operationId);
+        return structuredClone(payload);
+      }
       const request = this.store.getRequest(input.operationId);
       let published: PublishedDirectPromptReview;
       try {
@@ -412,9 +418,8 @@ export class DirectPromptReviewCoordinator {
   private async commitProviderDispatched(operationId: string): Promise<void> {
     const request = this.store.getRequest(operationId);
     const active = this.store.getActivePromptReview(operationId);
-    if (active?.review === undefined) {
-      throw new PiDirectExecutorOperationConflictError("Provider派发缺少Prompt Review引用");
-    }
+    // `off`仍使用同一个Provider边界Journal，但不会伪造Prompt Review或Decision产品事实。
+    if (active?.review === undefined) return;
     await this.product.commitDispatchOutcome({
       commandId: `cmd_${hashExecutorValue({
         kind: "commit-direct-provider-dispatched",

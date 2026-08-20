@@ -31,6 +31,7 @@ export function bridgeChatSubmitPayload(input: {
             kind: "published_revision" as const,
             workflowDefinitionRevisionId: input.workflowSelection.workflowDefinitionRevisionId,
             definitionSha256: input.workflowSelection.definitionSha256,
+            runConfiguration: input.workflowSelection.runConfiguration,
           },
         }),
     ...(input.workspaceInstructions !== undefined && !direct

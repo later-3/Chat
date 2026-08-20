@@ -37,23 +37,23 @@ function directNodeConfig(
   runSpec: Awaited<
     ReturnType<ApplicationDeps["store"]["read"]>
   >["snapshot"]["entities"]["workflowRunSpecs"][string],
-): { readonly capabilityMode: "read_only"; readonly promptReviewMode: "manual" } {
+): { readonly capabilityMode: "read_only"; readonly promptReviewMode: "manual" | "off" } {
   const node = runSpec.nodeResolutions.find(
     (candidate) => candidate.nodeType === "agent.direct" && candidate.activation === "enabled",
   );
   if (
     node === undefined ||
     node.config["capabilityMode"] !== "read_only" ||
-    node.config["promptReviewMode"] !== "manual"
+    (node.config["promptReviewMode"] !== "manual" && node.config["promptReviewMode"] !== "off")
   ) {
     throw new ApplicationError({
       code: "revision_conflict",
       httpStatus: 409,
-      message: "Direct Agent RunSpec缺少受支持的只读能力或人工Prompt Gate配置",
+      message: "Direct Agent RunSpec缺少受支持的只读能力或Prompt Gate配置",
       recoveryAction: "contact_support",
     });
   }
-  return { capabilityMode: "read_only", promptReviewMode: "manual" };
+  return { capabilityMode: "read_only", promptReviewMode: node.config["promptReviewMode"] };
 }
 
 function directPromptAssembly(
@@ -231,6 +231,7 @@ export async function authorizeDirectAgentOperation(
     readonly workspaceRootId?: string | undefined;
   };
   readonly capabilityMode: "read_only";
+  readonly promptReviewMode: "manual" | "off";
   readonly limits: {
     readonly maxProviderRequests: number;
     readonly activeTimeoutMs: number;
@@ -318,6 +319,7 @@ export async function authorizeDirectAgentOperation(
         : { workspaceRootId: promptAssembly.workspaceRootId }),
     },
     capabilityMode: config.capabilityMode,
+    promptReviewMode: config.promptReviewMode,
     limits: {
       maxProviderRequests: DIRECT_AGENT_MAX_PROVIDER_REQUESTS,
       activeTimeoutMs: DIRECT_AGENT_ACTIVE_TIMEOUT_MS,

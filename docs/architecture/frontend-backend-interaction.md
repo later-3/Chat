@@ -9,7 +9,7 @@ Browser
   -> LifeOS Web Gateway（127.0.0.1:43110）
   -> DSH Web Host（内部43114）
      -> DSH原生Client插件图
-     -> LifeOS Client插件（Workflow选择、Plan/HITL、Note审核、原生Trajectory、会话记录、Workbench表面）
+     -> LifeOS Client插件（Workflow选择/配置、Plan/HITL、Note审核、原生Trajectory、会话记录、Workbench表面）
      -> LifeOS Host插件（LLM Adapter、SessionQuery窄Adapter、同源桥接路由）
         -> Chat Hono API
            -> Application
@@ -40,9 +40,10 @@ DSH持久化日志与Bridge映射共同恢复原会话，用户可以继续发�
 ## 3. 发送链
 
 1. 用户可在DSH原生Composer工具行的`conversation.input.left`公开Slot选择已发布Workflow；
-   选择只是会话草稿，不创建Run，也不把Workflow Runtime身份暴露给浏览器。
+   选择只是会话草稿，不创建Run，也不把Workflow Runtime身份暴露给浏览器。若Published Definition的节点
+   含`runConfigFields`，同一表面提供“配置”入口；浏览器不会渲染Catalog虽公开但Blueprint未放行的字段。
 2. 用户在DSH原生Composer提交消息。Bridge把该次发送冻结到选择的Definition revision与SHA；
-   没有显式选择时使用Chat系统默认Planning Workflow。
+   同时提交完整`WorkflowRunConfiguration`；没有显式选择时使用Chat系统默认Planning Workflow及默认配置。
 3. DSH用固定`lifeos/workflow`模型调用LifeOS `LlmAdapter`，传入DSH Session和消息历史。
 4. Adapter从本轮请求提取最新用户文本；`session-title`和`compaction`用途绝不写入Chat。
 5. Adapter按`dshSessionId`恢复已有映射。首轮以稳定Message `commandId`只提交
@@ -97,17 +98,18 @@ Host还提供3个仅供当前DSH表面使用的同源读路由，它们不是Cha
 
 所有写请求使用稳定`commandId`；修改已有事实时还携带`expectedRevision`。Plan Decision绑定Approval、Plan ID、Plan revision和SHA-256；Note Decision绑定Candidate ID、revision和SHA-256。
 
-桥接状态至少记录DSH Session映射、当前Product Run、发送/决定Command身份及最后已确认阶段。v8状态分别保存
+桥接状态至少记录DSH Session映射、当前Product Run、发送/决定Command身份及最后已确认阶段。当前v11状态分别保存
 Plan、Note与Prompt Review的pending command、原生轨迹显示cursor，以及每轮已确认的DSH Message、Product User
 Message、Product Run和Product Assistant Message身份；它不复制任何Message或Provider Payload正文。状态禁止
-多个pending决定并存，写入使用原子替换，v1-v7读取后立即迁移为v8。Workflow选择仍按会话冻结；用户最新选择
+多个pending决定并存，写入使用原子替换，v1-v10读取后立即迁移为v11，并为旧Workflow草稿补空配置。Workflow选择仍按会话冻结；用户最新选择
 同时成为后续新DSH会话的偏好，选择系统默认会原子清除该偏好，避免新会话静默回退到Planning。发生请求已发
 但响应丢失时，只允许相同命令和内容原样重试或Query恢复，不生成新身份。
 
 ## 6. DSH插件表面边界
 
-LifeOS Bridge是仓库内唯一DSH插件包，所有新增前端表面使用固定rc.6公开合同：Workflow选择器注册在
-`conversation.input.left`，与权限、模型等原生Composer工具同一行；Plan/HITL与Note Candidate审核使用
+LifeOS Bridge是仓库内唯一DSH插件包，所有新增前端表面使用固定rc.6公开合同：Workflow选择器和配置入口注册在
+`conversation.input.left`，与权限、模型等原生Composer工具同一行；配置Modal只解释服务端标量字段，不包含
+Workflow设计器、任意JSON或执行代码；Plan/HITL与Note Candidate审核使用
 `conversation.input.dock`；“会话记录”通过加法`conversation.view`注册；Workbench入口使用
 `sidebar.footer.action`，Surface使用`shell.overlay`。
 审核Dock是临时命令表面，不是Run状态看板：只有当前Plan与开放Approval版本/Hash一致且Run正在等待

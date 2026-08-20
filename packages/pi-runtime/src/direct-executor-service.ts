@@ -82,6 +82,7 @@ export interface AuthorizedDirectAgentInput {
         readonly workspaceRootId?: string | undefined;
       };
   readonly capabilityMode: "read_only";
+  readonly promptReviewMode: "manual" | "off";
   readonly limits: AuthorizedDirectAgentProfile["limits"];
 }
 
@@ -412,6 +413,7 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
         sessionsDir: options.sessionsDir,
         store: options.store,
         promptReview,
+        promptReviewMode: authorizedInput.promptReviewMode,
         signal: controller.signal,
         resume,
         pauseExecutionTimeout: timeout.pause,

@@ -67,7 +67,8 @@ export async function prepareDirectAgentOperationStep(
         if (
           runSpec.nodeResolutions.length !== 1 ||
           directNode?.config["capabilityMode"] !== "read_only" ||
-          directNode.config["promptReviewMode"] !== "manual"
+          (directNode.config["promptReviewMode"] !== "manual" &&
+            directNode.config["promptReviewMode"] !== "off")
         ) {
           throw new FatalError("run_spec.direct_agent_nodes_incompatible");
         }

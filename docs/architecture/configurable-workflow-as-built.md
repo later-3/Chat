@@ -1,8 +1,8 @@
 # Chat 可配置工作流 As-built
 
-> 日期：2026-08-10
-> 状态：后端产品事实、运行内核与公开API已落地；旧Web展示层已删除，DSH已接入Planning与Note人工审核表面
-> 范围：运行投影、受限定义内核、Planning、Note、Rules、Definition、迁移与验收
+> 日期：2026-08-20
+> 状态：后端产品事实、运行内核与公开API已落地；DSH已接入Workflow选择、发送级配置与人工审核表面
+> 范围：运行投影、受限定义内核、发送级配置、Planning、Note、Direct Agent、Rules、Definition、迁移与验收
 
 ## 1. 用户结果
 
@@ -30,7 +30,7 @@ DSH桥接面已经交付原生对话、Planning HITL与Note Candidate审核。No
 flowchart LR
   UI["DeepSeek Harness Web\nLifeOS Client插件"] -->|"Bridge Host / REST Query / Command"| API["Hono\n认证、strict校验、ETag"]
   API --> APP["Application\n事务、CAS、权限、投影"]
-  APP --> STORE["Product Store v14\n权威产品事实"]
+  APP --> STORE["Product Store v15\n权威产品事实"]
   STORE --> OUTBOX["Outbox\nstart / resume"]
   OUTBOX --> RUNTIME["Vercel Workflow Runtime\n固定Runner解释RunSpec"]
   RUNTIME -->|"私有strict命令"| APP
@@ -82,8 +82,14 @@ Note Application按变化原因拆分：公开Query/DTO投影、普通Note维护
 | `note.extract` | `maxCharacters`、默认kind、建议tags | Definition默认值与本次输入按字段合并后进入RunSpec |
 | `note.classify` | `allowCustomTags` | Workflow早失败 + Application发布Candidate权威复核 |
 | `human.note_review` | manual / policy允许时自动继续 | 低风险固定策略产生`WorkflowPolicyResolution`；超界回到真实人工审核 |
+| `agent.direct` | `promptReviewMode: manual / off` | Direct Runner从冻结RunSpec授权Pi Operation；`manual`逐次创建Product Prompt Review，`off`直接越过人工等待 |
 
 Planning包含执行和产品提交，因此`human.plan_review`始终是manual；公开Catalog、Blueprint和Composer不再展示不可达的自动继续。`always_auto`仅保留为历史合同可识别值，Compiler明确拒绝。
+
+发送级节点配置不是任意JSON：Node Catalog声明可理解的字段及类型，Blueprint只放行当前流程允许覆盖的
+`configFields`，Published Definition再给出该具体节点的真实默认值。浏览器只渲染这三层交集；Command边界
+接收boolean/string/integer标量，Compiler重新走Catalog strict schema并把结果冻结进RunSpec。新增Workflow
+若没有声明`configFields`，前端不会出现配置入口，也不需要修改通用配置组件。
 
 `agent.research`只为旧Definition兼容：新系统Planning已移除，配置为空，运行时固定`skipped/no_evidence`，不会把“没调研”投影成成功。`capability.skills`在没有正式Skill产品集合时只能安全形成`optional_unavailable`，不会伪造Skill已加载。这两项是未交付边界，不计入P6原始G3完成度。
 
@@ -124,6 +130,7 @@ Note流程为`bounded_loop(Extract -> Classify -> Review) -> Commit`。模型只
 公开面提供：
 
 - Workflow Catalog、Blueprint、Published Definition和安全Resource目录；
+- Published Definition节点的`runConfigFields`，只描述当前Workflow实际可覆盖的字段；
 - Definition detail/validate/copy/save/publish/archive/restore；
 - Run View、Node Detail、Run Configuration Summary；
 - Note列表、详情、历史、修订、归档/恢复、Candidate审核；
@@ -132,6 +139,11 @@ Note流程为`bounded_loop(Extract -> Classify -> Review) -> Commit`。模型只
 Query使用ETag/`If-None-Match`/304；Bridge Host在切换Run或取消请求时丢弃过期结果。公开DTO不包含Workflow Run ID、Hook Token、pi Session、Provider配置、完整Trace Payload或未授权正文。
 
 写命令使用Command Envelope、CAS revision和稳定commandId。Bridge在网络结果未知时保存pending command；Note修订、归档、恢复和Decision重试复用同一commandId与原payload，不能通过再次点击创建第二个业务事实。
+
+DSH Workflow选择旁的“配置”入口按服务端描述渲染当前Workflow。配置是会话级发送草稿；下一条消息创建请求时
+冻结Definition revision、SHA与完整`WorkflowRunConfiguration`，之后切换开关不会改写已创建Run。当前首个字段是
+Direct Agent的“发送前审核提示词”：开启保持逐次审核，关闭后不创建Prompt Review/Decision/Hook，但仍在Pi
+Operation Journal中先提交`provider.started`派发栅栏；派发后结果未知仍禁止自动重发。
 
 ## 7. Checkpoint、恢复与安全
 
@@ -153,6 +165,8 @@ Product Store当前为`chat-product-store.v14`：
 - v11：保留完整上下文Planning Definition，新增独立且默认的“规划执行工作流”；它不声明Memory/Project/Rules/Skills资源节点，历史RunSpec继续引用原冻结Definition。
 - v12：新增Provider中立的Workflow Memory Query/Snapshot/Context与Memory Write Intent/Result，并发布独立Memory Planning Definition；v11的Simple Planning仍是默认且内容不变。
 - v13：新增独立Direct Agent Run、Prompt Review Request/Decision、Direct Candidate与单个Execution Agent系统Definition；Prompt Review是该节点内部状态，原始Provider请求正文只保存在Product Store一次。
+- v14：新增用户Prompt Fragment/Revision产品事实。
+- v15：新增每个Direct Run唯一Prompt Assembly；本次发送级Workflow配置继续复用既有RunSpec，不增加Store版本。
 
 迁移按版本串行、可重复打开，并对非空历史Fixture执行Zod、生产完整性、只读Auditor和故障注入。v5→v6使用迁移专用冻结投影，不调用会继续演进的当前Application projector。
 

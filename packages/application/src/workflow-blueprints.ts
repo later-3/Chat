@@ -30,6 +30,8 @@ export interface WorkflowLoopRule {
 export interface WorkflowRunOverrideRule {
   readonly nodeType: WorkflowNodeTypeKey;
   readonly fields: readonly ("enabled" | "selection" | "reviewMode")[];
+  /** 具体节点config字段；字段本身仍必须由Node Catalog公开并通过其Schema。 */
+  readonly configFields?: readonly string[];
 }
 
 export interface WorkflowBlueprint {
@@ -187,7 +189,7 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
     requiredRoles: [{ role: "direct_agent", nodeType: "agent.direct", exactlyOnce: true }],
     // Prompt Review是Execution Agent节点内部的Provider Gate状态，不是第二个业务节点。
     loopRules: [],
-    perRunOverrides: [],
+    perRunOverrides: [{ nodeType: "agent.direct", fields: [], configFields: ["promptReviewMode"] }],
     immutableMinimumRisk: {
       "agent.direct": "generate_candidate",
     },
@@ -384,6 +386,14 @@ function assertBlueprintConformance(blueprint: WorkflowBlueprint, catalog: NodeC
       if (projectedName !== undefined && !publicNames.has(projectedName)) {
         throw new Error(`workflow.blueprint.override_not_public:${rule.nodeType}:${field}`);
       }
+    }
+    for (const field of rule.configFields ?? []) {
+      if (!publicNames.has(field)) {
+        throw new Error(`workflow.blueprint.override_not_public:${rule.nodeType}:${field}`);
+      }
+    }
+    if (rule.fields.length === 0 && (rule.configFields?.length ?? 0) === 0) {
+      throw new Error(`workflow.blueprint.override_fields_empty:${rule.nodeType}`);
     }
   }
 }

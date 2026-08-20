@@ -217,6 +217,10 @@ test("提示词配置预览与DSH Bridge发送预览保持两个独立边界", a
           definitionSha256: SHA,
           title: "执行 Agent（逐次提示词审核）",
           blueprintKey: "direct",
+          runConfiguration: {
+            schemaVersion: "workflow-run-configuration.v1",
+            overrides: [],
+          },
         },
         promptSelection: emptySelection,
         promptConfiguration: {
@@ -254,6 +258,10 @@ test("提示词配置预览与DSH Bridge发送预览保持两个独立边界", a
               kind: "published_revision",
               workflowDefinitionRevisionId: "wfr_systemdirectagentv1",
               definitionSha256: SHA,
+              runConfiguration: {
+                schemaVersion: "workflow-run-configuration.v1",
+                overrides: [],
+              },
             },
             promptSelection: emptySelection,
           },

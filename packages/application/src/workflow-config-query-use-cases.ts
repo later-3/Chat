@@ -14,7 +14,7 @@ import type { WorkflowElement, WorkflowSequence } from "@chat/domain";
 import type { ApplicationDeps } from "./deps.js";
 import { forbidden, notFound } from "./errors.js";
 import { DEFAULT_WORKFLOW_BLUEPRINTS } from "./workflow-blueprints.js";
-import { DEFAULT_NODE_CATALOG } from "./workflow-node-catalog.js";
+import { DEFAULT_NODE_CATALOG, type PublicConfigField } from "./workflow-node-catalog.js";
 import {
   RETIRED_SYSTEM_WORKFLOW_DEFINITION_IDS,
   SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
@@ -59,7 +59,10 @@ export async function getWorkflowBlueprints(_deps: ApplicationDeps) {
         terminalNodeType: blueprint.terminalNodeType,
         optionalNodeTypes: blueprint.optionalNodeTypes,
         loopRules: blueprint.loopRules,
-        perRunOverrides: blueprint.perRunOverrides,
+        perRunOverrides: blueprint.perRunOverrides.map((rule) => ({
+          ...rule,
+          configFields: rule.configFields ?? [],
+        })),
         reviewModes:
           blueprint.mandatoryManualReviewTypes.length > 0
             ? ["manual"]
@@ -215,6 +218,10 @@ function toPublishedDefinitionDto(
       revision.workflowDefinitionRevisionId === SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
     nodes: flattenNodes(revision.semanticRoot).map((node) => {
       const descriptor = DEFAULT_NODE_CATALOG.get(node.nodeType, node.schemaVersion);
+      const overrideRule = blueprint?.perRunOverrides.find(
+        (rule) => rule.nodeType === node.nodeType,
+      );
+      const publicConfigFields = descriptor?.publicConfigFields ?? [];
       return {
         definitionNodeId: node.definitionNodeId,
         nodeType: node.nodeType,
@@ -222,14 +229,53 @@ function toPublishedDefinitionDto(
         displayName: descriptor?.displayName ?? node.definitionNodeId,
         optional: blueprint?.optionalNodeTypes.includes(node.nodeType) ?? false,
         defaultActivation: node.defaultActivation ?? "enabled",
-        publicConfigFields: (descriptor?.publicConfigFields ?? []).map((field) =>
+        publicConfigFields: publicConfigFields.map((field) =>
           "options" in field ? { ...field, options: [...field.options] } : { ...field },
         ),
+        runConfigFields: publicConfigFields
+          .filter((field) => (overrideRule?.configFields ?? []).includes(field.name))
+          .map((field) => configuredPublicField(field, node.config[field.name])),
       };
     }),
     publishedAt: revision.publishedAt ?? revision.createdAt,
     updatedAt: revision.updatedAt,
   };
+}
+
+/** Definition节点的真实默认值优先于Catalog模板；类型不一致表示部署代码自身漂移。 */
+function configuredPublicField(
+  field: PublicConfigField,
+  configuredDefault: unknown,
+): WorkflowDefinitionPublishedDto["nodes"][number]["runConfigFields"][number] {
+  if (field.type === "boolean") {
+    if (configuredDefault !== undefined && typeof configuredDefault !== "boolean") {
+      throw new Error(`Workflow节点配置默认值类型错误:${field.name}`);
+    }
+    return { ...field, defaultValue: configuredDefault ?? field.defaultValue };
+  }
+  if (field.type === "enum_select" || field.type === "review_mode") {
+    if (configuredDefault !== undefined && typeof configuredDefault !== "string") {
+      throw new Error(`Workflow节点配置默认值类型错误:${field.name}`);
+    }
+    return {
+      ...field,
+      options: [...field.options],
+      defaultValue: configuredDefault ?? field.defaultValue,
+    };
+  }
+  if (field.type === "bounded_integer") {
+    if (configuredDefault !== undefined && typeof configuredDefault !== "number") {
+      throw new Error(`Workflow节点配置默认值类型错误:${field.name}`);
+    }
+    return { ...field, defaultValue: configuredDefault ?? field.defaultValue };
+  }
+  if (field.type === "short_text") {
+    if (configuredDefault !== undefined && typeof configuredDefault !== "string") {
+      throw new Error(`Workflow节点配置默认值类型错误:${field.name}`);
+    }
+    return { ...field, defaultValue: configuredDefault ?? field.defaultValue };
+  }
+  return "options" in field ? { ...field, options: [...field.options] } : { ...field };
 }
 
 function flattenNodes(root: WorkflowSequence) {

@@ -549,11 +549,19 @@ test("workflow selection draft is frozen per request and submitted with the next
       kind: "published_revision",
       workflowDefinitionRevisionId: "wfr_systemmemoryplanningv1",
       definitionSha256: "d".repeat(64),
+      runConfiguration: {
+        schemaVersion: "workflow-run-configuration.v1",
+        overrides: [],
+      },
     });
     assert.deepEqual(secondPayload, {
       kind: "published_revision",
       workflowDefinitionRevisionId: "wfr_systemplanningv2",
       definitionSha256: "e".repeat(64),
+      runConfiguration: {
+        schemaVersion: "workflow-run-configuration.v1",
+        overrides: [],
+      },
     });
 
     const binding = await state.readSession("dsh-session-1");

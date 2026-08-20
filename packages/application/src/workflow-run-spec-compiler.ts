@@ -467,6 +467,7 @@ function resolvePolicyAndNodes(
   const overrideKeys = new Set<string>();
   const enabled = new Map<string, boolean>();
   const reviewModes = new Map<string, WorkflowReviewMode>();
+  const nodeConfigValues = new Map<string, Map<string, boolean | string | number>>();
   for (const override of context.configuration.overrides) {
     const key = overrideIdentity(override);
     if (overrideKeys.has(key)) {
@@ -491,9 +492,26 @@ function resolvePolicyAndNodes(
       );
       continue;
     }
-    const allowed =
-      context.blueprint.perRunOverrides.find((rule) => rule.nodeType === node.nodeType)?.fields ??
-      [];
+    const overrideRule = context.blueprint.perRunOverrides.find(
+      (rule) => rule.nodeType === node.nodeType,
+    );
+    if (override.kind === "node_config") {
+      if (!(overrideRule?.configFields ?? []).includes(override.field)) {
+        diagnostics.push(
+          policyDiagnostic(
+            "run_configuration.override_not_allowed",
+            `$.overrides.${override.definitionNodeId}.${override.field}`,
+            { field: override.field },
+          ),
+        );
+        continue;
+      }
+      const values = nodeConfigValues.get(override.definitionNodeId) ?? new Map();
+      values.set(override.field, override.value);
+      nodeConfigValues.set(override.definitionNodeId, values);
+      continue;
+    }
+    const allowed = overrideRule?.fields ?? [];
     const field =
       override.kind === "node_enabled"
         ? "enabled"
@@ -522,6 +540,23 @@ function resolvePolicyAndNodes(
   )) {
     const descriptor = catalog.get(node.nodeType, node.schemaVersion);
     if (descriptor === undefined) continue;
+    const configCandidate: Record<string, unknown> = { ...node.config };
+    for (const [field, value] of nodeConfigValues.get(node.definitionNodeId) ?? []) {
+      configCandidate[field] = value;
+    }
+    const parsedConfig = catalog.parseConfig(node.nodeType, node.schemaVersion, configCandidate);
+    if (!parsedConfig.success) {
+      diagnostics.push(
+        ...parsedConfig.issues.map((issue) =>
+          policyDiagnostic(
+            "run_configuration.node_config_invalid",
+            `${node.path}.config${issue.path === "$" ? "" : issue.path.slice(1)}`,
+            { nodeType: node.nodeType },
+          ),
+        ),
+      );
+    }
+    const resolvedConfig = parsedConfig.success ? parsedConfig.data : node.config;
     const requestedEnabled = enabled.get(node.definitionNodeId);
     // agent.research v1没有受治理的调研底座；历史Definition仍可读取，但新Run固定跳过，
     // 不能用装饰性maxSources配置制造“已调研”假象。
@@ -558,15 +593,15 @@ function resolvePolicyAndNodes(
       definitionNodeId: node.definitionNodeId,
       nodeType: node.nodeType,
       schemaVersion: node.schemaVersion,
-      config: node.config,
+      config: resolvedConfig,
       activation,
       ...(skipOutcome !== undefined ? { skipOutcome } : {}),
     });
 
     if (descriptor.executorKind === "human_review") {
       const configuredMode =
-        typeof node.config.reviewMode === "string"
-          ? (node.config.reviewMode as WorkflowReviewMode)
+        typeof resolvedConfig.reviewMode === "string"
+          ? (resolvedConfig.reviewMode as WorkflowReviewMode)
           : "manual";
       const mode = reviewModes.get(node.definitionNodeId) ?? configuredMode;
       if (mode === "always_auto") {
@@ -809,7 +844,9 @@ function validateExecutorManifest(
 function overrideIdentity(override: WorkflowRunOverride): string {
   // 一个节点每类override只能出现一次；resourceKind是该节点类型的服务端派生属性，
   // 不能被客户端用来制造两个selection并让后一个被find()静默忽略。
-  return `${override.kind}\0${override.definitionNodeId}`;
+  return `${override.kind}\0${override.definitionNodeId}${
+    override.kind === "node_config" ? `\0${override.field}` : ""
+  }`;
 }
 
 function resourceKindForNode(nodeType: WorkflowNodeTypeKey): WorkflowResourceKind | undefined {

@@ -213,6 +213,47 @@ describe("Node Catalog与Blueprint一致性", () => {
       success: true,
       runSpec: compiled.runSpec,
     });
+
+    const withoutReview = compileWorkflowRunSpec({
+      ...kernelCompilerInputFixture("sequence"),
+      workflowRunSpecId: "wrs_systemdirectagentoff1",
+      productRunId: "run_systemdirectagentoff1",
+      definition: {
+        schemaVersion: "workflow-definition-revision-input.v1",
+        workflowDefinitionRevisionId: direct.revision.workflowDefinitionRevisionId,
+        definitionRevision: direct.revision.definitionRevision,
+        blueprintKey: direct.revision.blueprintKey,
+        blueprintVersion: direct.revision.blueprintVersion,
+        semanticRoot: direct.revision.semanticRoot,
+        expectedSha256: direct.revision.definitionSha256,
+      },
+      runConfiguration: {
+        schemaVersion: "workflow-run-configuration.v1",
+        overrides: [
+          {
+            kind: "node_config",
+            definitionNodeId: "direct.agent",
+            field: "promptReviewMode",
+            value: "off",
+          },
+        ],
+      },
+      principal: { principalId: "usr_systemdirectagent", capabilities: [] },
+      availableResources: [],
+      executorManifest: BUILTIN_WORKFLOW_EXECUTOR_MANIFEST,
+      runner: {
+        runnerFamily: DIRECT_AGENT_RUNNER_FAMILY,
+        runnerBundleVersion: DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+      },
+      businessInput: { kind: "direct_agent_message" },
+    });
+    expect(withoutReview.success).toBe(true);
+    if (withoutReview.success) {
+      expect(withoutReview.runSpec.nodeResolutions[0]?.config).toMatchObject({
+        capabilityMode: "read_only",
+        promptReviewMode: "off",
+      });
+    }
   });
 
   it("Direct Blueprint拒绝复制固定节点，并允许独立Workflow关闭审核Hook", () => {

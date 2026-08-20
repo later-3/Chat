@@ -200,7 +200,7 @@ export type ReconcileMemoryImportPayload = z.infer<typeof reconcileMemoryImportP
 
 /* ---------- Configurable Workflow公开Query DTO ---------- */
 
-const publicConfigFieldSchema = z.discriminatedUnion("type", [
+export const publicConfigFieldSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("boolean"),
@@ -327,12 +327,22 @@ export const workflowBlueprintDtoSchema = z
         z
           .object({
             nodeType: workflowDefinitionNodeTypeSchema,
-            fields: z
-              .array(z.enum(["enabled", "selection", "reviewMode"]))
-              .min(1)
-              .max(8),
+            fields: z.array(z.enum(["enabled", "selection", "reviewMode"])).max(8),
+            configFields: z
+              .array(
+                z
+                  .string()
+                  .min(1)
+                  .max(64)
+                  .regex(/^[A-Za-z][A-Za-z0-9]*$/),
+              )
+              .max(16)
+              .default([]),
           })
-          .strict(),
+          .strict()
+          .refine((value) => value.fields.length > 0 || value.configFields.length > 0, {
+            message: "每个per-run override规则至少开放一个字段",
+          }),
       )
       .max(32),
     reviewModes: z.array(workflowReviewModeSchema).min(1).max(3),
@@ -370,6 +380,8 @@ export const workflowDefinitionPublishedDtoSchema = z
             optional: z.boolean(),
             defaultActivation: z.enum(["enabled", "skipped"]),
             publicConfigFields: z.array(publicConfigFieldSchema).max(16),
+            /** 当前Workflow真正允许在发送前覆盖的节点config字段。 */
+            runConfigFields: z.array(publicConfigFieldSchema).max(16).default([]),
           })
           .strict(),
       )

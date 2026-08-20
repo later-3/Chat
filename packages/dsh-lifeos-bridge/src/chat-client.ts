@@ -193,6 +193,7 @@ export class ChatProductClient {
                     kind: "published_revision",
                     workflowDefinitionRevisionId: workflowSelection.workflowDefinitionRevisionId,
                     definitionSha256: workflowSelection.definitionSha256,
+                    runConfiguration: workflowSelection.runConfiguration,
                   },
                 }
               : {}),
@@ -254,6 +255,17 @@ export class ChatProductClient {
         blueprintKey: definition.blueprintKey,
         ownerKind: definition.ownerKind,
         isDefault: definition.isDefault,
+        configurableNodes: definition.nodes.flatMap((node) =>
+          node.runConfigFields.length === 0
+            ? []
+            : [
+                {
+                  definitionNodeId: node.definitionNodeId,
+                  title: node.displayName,
+                  fields: node.runConfigFields,
+                },
+              ],
+        ),
       }),
     );
   }

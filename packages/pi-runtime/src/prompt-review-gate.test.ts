@@ -169,6 +169,7 @@ class InMemoryPromptReviewProduct implements DirectPromptReviewProductPort {
   private readonly decisions = new Map<string, LoadedDirectPromptReviewDecision>();
   private readonly consumedApprovals = new Set<string>();
   private productRunRevision = 1;
+  publishCalls = 0;
   consumeCalls = 0;
   publishOutcomeUnknownOnce = false;
   publishOutcomeUnknownAfterCommitOnce = false;
@@ -178,6 +179,7 @@ class InMemoryPromptReviewProduct implements DirectPromptReviewProductPort {
   readonly dispatchOutcomes: Array<"dispatched" | "outcome_unknown"> = [];
 
   async publish(input: PublishDirectPromptReviewInput) {
+    this.publishCalls += 1;
     if (this.publishOutcomeUnknownOnce) {
       this.publishOutcomeUnknownOnce = false;
       throw Object.assign(new Error("publish response lost"), { outcomeUnknown: true as const });
@@ -331,6 +333,7 @@ async function createHarness(input: {
   readonly coordinator: DirectPromptReviewCoordinator;
   readonly store: PiDirectExecutorOperationStore;
   readonly operationId: string;
+  readonly promptReviewMode?: "manual" | "off";
   readonly sessionManager?: SessionManager;
   readonly tool?: ToolDefinition;
 }): Promise<Harness> {
@@ -413,6 +416,7 @@ async function createHarness(input: {
       endpointHost: "127.0.0.1",
       payload: transformed,
       session,
+      promptReviewMode: input.promptReviewMode ?? "manual",
       signal: abortController.signal,
     });
   };
@@ -456,6 +460,52 @@ async function approve(
 }
 
 describe("Direct Prompt Review Gate P1", () => {
+  it("关闭审核时不创建Product审核，仍通过派发围栏且只发送一次", async () => {
+    const root = await temporaryRoot();
+    const provider = new LocalCountingProvider();
+    await provider.start();
+    provider.enqueue({ kind: "text", text: "sent without review" });
+    try {
+      const store = await PiDirectExecutorOperationStore.open(join(root, "operations"));
+      await store.createOrGet(request(), authorizedProfile);
+      await store.markRunning("pio_directtest1");
+      const product = new InMemoryPromptReviewProduct();
+      const coordinator = new DirectPromptReviewCoordinator(
+        store,
+        product,
+        join(root, "checkpoints"),
+      );
+      const harness = await createHarness({
+        root,
+        provider,
+        coordinator,
+        store,
+        operationId: "pio_directtest1",
+        promptReviewMode: "off",
+      });
+
+      await harness.session.prompt(PRIVATE_PROMPT, {
+        expandPromptTemplates: false,
+        source: "extension",
+      });
+
+      expect(product.publishCalls).toBe(0);
+      expect(product.consumeCalls).toBe(0);
+      expect(product.dispatchOutcomes).toEqual([]);
+      expect(provider.requestBodies).toHaveLength(1);
+      expect(store.getSnapshot("pio_directtest1")).toMatchObject({
+        status: "running",
+      });
+      expect(
+        store.getEvents("pio_directtest1").filter((event) => event.type === "provider.started"),
+      ).toHaveLength(1);
+      expect(harness.session.getLastAssistantText()).toBe("sent without review");
+      harness.session.dispose();
+    } finally {
+      await provider.close();
+    }
+  });
+
   it("批准一次只发送一次，实际HTTP body与Product Store冻结Payload Hash一致", async () => {
     const root = await temporaryRoot();
     const provider = new LocalCountingProvider();

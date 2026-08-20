@@ -13,7 +13,9 @@ import {
   promptReviewRequestDtoSchema,
   promptReviewRequestIdSchema,
   promptConfigurationPreviewDtoSchema,
+  publicConfigFieldSchema,
   promptTurnSelectionInputSchema,
+  workflowRunConfigurationSchema,
   workspaceInstructionsInputSchema,
   planIdSchema,
   planDtoSchema,
@@ -204,6 +206,18 @@ export const lifeosWorkflowOptionSchema = z
     blueprintKey: z.enum(["planning", "note", "direct"]),
     ownerKind: z.enum(["system", "principal"]),
     isDefault: z.boolean(),
+    configurableNodes: z
+      .array(
+        z
+          .object({
+            definitionNodeId: z.string().min(1).max(80),
+            title: z.string().min(1).max(120),
+            fields: z.array(publicConfigFieldSchema).min(1).max(16),
+          })
+          .strict(),
+      )
+      .max(64)
+      .default([]),
   })
   .strict();
 
@@ -223,6 +237,11 @@ export const workflowSelectionSchema = z
     title: z.string().min(1).max(160),
     /** Bridge-local发送策略；不会进入Chat WorkflowSelection产品合同。 */
     blueprintKey: z.enum(["planning", "note", "direct"]).optional(),
+    /** 会话级发送草稿；Chat命令边界仍会按Definition和Blueprint重新校验。 */
+    runConfiguration: workflowRunConfigurationSchema.default({
+      schemaVersion: "workflow-run-configuration.v1",
+      overrides: [],
+    }),
   })
   .strict();
 
@@ -532,6 +551,7 @@ const bridgeChatWorkflowSelectionSchema = z
     kind: z.literal("published_revision"),
     workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
     definitionSha256: sha256Schema,
+    runConfiguration: workflowRunConfigurationSchema,
   })
   .strict();
 

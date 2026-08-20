@@ -1,7 +1,7 @@
 # Direct Agent逐次提示词审核 P1
 
 > 日期：2026-08-19
-> 状态：单节点P1纵向、DSH审核界面与Direct Prompt Assembly首版已实现
+> 状态：单节点P1纵向、可配置审核模式、DSH审核界面与Direct Prompt Assembly首版已实现
 > 真实付费Provider：未调用
 
 ## 1. 用户结果
@@ -10,13 +10,15 @@ Chat新增独立系统Workflow“执行 Agent（逐次提示词审核）”。�
 Approval或Execution Contract，用户可见结构固定为一个Execution Agent节点：
 
 ```text
-agent.direct（Provider Request Review Hook：manual）
-    running ⇄ waiting_human
+agent.direct（promptReviewMode：manual / off）
+    manual：running ⇄ waiting_human
+    off：running → Provider dispatch
 ```
 
-每次Pi即将向Provider发送模型请求时，执行层先停止并把最终请求发布为Prompt Review产品事实。
+`manual`时，每次Pi即将向Provider发送模型请求，执行层先停止并把最终请求发布为Prompt Review产品事实。
 用户批准后只允许发送这一个冻结版本；拒绝时该次Provider调用数为0。Tool Result产生下一次模型请求时，
-必须创建新的Review和新的Workflow Hook，不能复用上一轮批准。
+必须创建新的Review和新的Workflow Hook，不能复用上一轮批准。`off`时不创建Review、Decision或Hook，
+但仍先冻结最终Payload并耐久提交Provider派发栅栏，不能绕开结果未知保护。
 
 ## 2. P1边界
 
@@ -27,6 +29,7 @@ P1包含：
 3. 独立Pi Direct Executor Operation、真实`AgentSession`、Extension链外fail-closed Provider Gate、等待态进程恢复。
 4. 公开Prompt Review Query/Decision Command与私有Application/Executor合同。
 5. 不调用真实Provider的确定性合同、状态机、Store、Workflow和Executor测试。
+6. DSH按Published Definition描述渲染会话级开关，并把配置随下一次Workflow选择冻结到RunSpec。
 
 P1不包含：
 
@@ -63,7 +66,8 @@ Workflow
   → 启动唯一Pi Direct Operation
 Executor AgentSession.providerRequestGate（Pi公开fail-closed接缝）
   → 规范化Payload + 导出0600 Session checkpoint
-  → Application发布PromptReviewRequest，Run进入waiting_human/prompt_review
+  ├ manual：Application发布PromptReviewRequest，Run进入waiting_human/prompt_review
+  └ off：不创建产品审核事实，先落provider.started派发栅栏后发送
 Workflow
   → 为该prr创建并绑定唯一Hook，等待Product Decision
 User Decision Command
@@ -119,6 +123,10 @@ V1显式关闭thinking、Provider自动重试、Compaction、Branch Summary和�
 
 每个Attempt最多允许16个Prompt Review和16次Provider发送。循环是同一个Execution Agent节点的
 内部运行状态，不创建第17个Workflow节点或额外人工节点。
+
+审核模式来自不可变RunSpec中`agent.direct.config.promptReviewMode`。Input Manifest已经绑定RunSpec Hash，
+因此无需改变历史Manifest合同或增加Product Store迁移；Application授权响应把解析后的模式传给Pi Service，
+浏览器、Workflow Hook和Pi Session都不能自行改写。
 
 V1 Direct Runtime从Application授权响应取得同一Assembly的`systemPromptAppend`、`userPrompt`和可选`workspaceRootId`；Workflow与Journal只保存引用/Hash，不复制正文。当前Workspace是单一只读目标Root，模型可通过read/grep/find/ls自行读取`AGENTS.md`；Chat不把该文件预读后塞进Prompt。
 
