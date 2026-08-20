@@ -96,31 +96,39 @@ test("enabled DSH send review blocks every Chat write until approve and reject w
         true,
       );
     }
-    const coordinator = new DshSendReviewCoordinator(state, async (dshSessionId, text) =>
-      dshBridgeSendPreviewSchema.parse({
-        schemaVersion: "chat-dsh-bridge-send-preview.v1",
-        boundary: "dsh_to_lifeos_bridge",
-        status: "pre_send_projection",
-        workspace: null,
-        workflowSelection: null,
-        promptSelection: { schemaVersion: "prompt-turn-selection-input.v1", regions: [] },
-        promptConfiguration: null,
-        dshToBridge: {
-          userInput: { text, sha256: "a".repeat(64) },
-          contextInjections: {
-            schemaVersion: "chat-dsh-context-injections.v1",
-            dshSessionId,
-            status: "ready",
-            revision: "b".repeat(64),
-            chatForwarding: "latest_direct_user_message_and_workspace_instructions",
-            items: [],
-            totalItems: 0,
-            omittedItems: 0,
-            totalContentCharacters: 0,
+    const coordinator = new DshSendReviewCoordinator(
+      state,
+      async (dshSessionId, text, adapterRequest) =>
+        dshBridgeSendPreviewSchema.parse({
+          schemaVersion: "chat-dsh-bridge-send-preview.v2",
+          boundary: "dsh_to_lifeos_bridge",
+          status: "pre_send_projection",
+          workspace: null,
+          workflowSelection: null,
+          promptSelection: { schemaVersion: "prompt-turn-selection-input.v1", regions: [] },
+          promptConfiguration: null,
+          dshToBridge: {
+            adapterRequest,
+            userInput: { text, sha256: "a".repeat(64) },
+            contextInjections: {
+              schemaVersion: "chat-dsh-context-injections.v1",
+              dshSessionId,
+              status: "ready",
+              revision: "b".repeat(64),
+              chatForwarding: "latest_direct_user_message_and_workspace_instructions",
+              items: [],
+              totalItems: 0,
+              omittedItems: 0,
+              totalContentCharacters: 0,
+            },
           },
-        },
-        bridgeToChat: { policy: "non_direct_workspace_instructions", payload: { text } },
-      }),
+          bridgeToChat: {
+            policy: "non_direct_workspace_instructions",
+            payload: { text },
+            payloadJson: JSON.stringify({ text }, null, 2),
+            payloadSha256: "c".repeat(64),
+          },
+        }),
     );
     const chat = {
       createSession: async () => {
@@ -159,6 +167,12 @@ test("enabled DSH send review blocks every Chat write until approve and reject w
 
     const approvedNext = adapter.stream(input("dsh-review-approve"))[Symbol.asyncIterator]().next();
     const approvedReview = await waitForReview(coordinator, "dsh-review-approve");
+    assert.equal(approvedReview.preview.dshToBridge.adapterRequest.status, "captured");
+    if (approvedReview.preview.dshToBridge.adapterRequest.status !== "captured") {
+      throw new Error("expected captured DSH request");
+    }
+    assert.match(approvedReview.preview.dshToBridge.adapterRequest.requestJson, /"messages"/u);
+    assert.match(approvedReview.preview.dshToBridge.adapterRequest.requestJson, /审核真实发送/u);
     assert.equal(createCalls, 0);
     assert.equal(submitCalls, 0);
     coordinator.decide("dsh-review-approve", approvedReview.reviewId, "approve");

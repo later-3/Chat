@@ -92,12 +92,15 @@ export async function apply(ctx: Context): Promise<void> {
     process.env,
   );
   const bridgeRef: { current?: LifeosBridgeService } = {};
-  const dshSendReview = new DshSendReviewCoordinator(state, async (dshSessionId, text) => {
-    if (bridgeRef.current === undefined) {
-      throw new Error("LifeOS Bridge 尚未完成初始化，不能生成 DSH 发送预览");
-    }
-    return await bridgeRef.current.bridgeSendPreview(dshSessionId, text);
-  });
+  const dshSendReview = new DshSendReviewCoordinator(
+    state,
+    async (dshSessionId, text, adapterRequest) => {
+      if (bridgeRef.current === undefined) {
+        throw new Error("LifeOS Bridge 尚未完成初始化，不能生成 DSH 发送预览");
+      }
+      return await bridgeRef.current.bridgeSendPreview(dshSessionId, text, adapterRequest);
+    },
+  );
   const bridge = new LifeosBridgeService(
     chat,
     state,

@@ -40,9 +40,10 @@ import { z } from "zod";
 
 export const BRIDGE_SCHEMA_VERSION = "chat-dsh-lifeos-bridge.v3" as const;
 export const DSH_CONTEXT_INJECTION_SCHEMA_VERSION = "chat-dsh-context-injections.v1" as const;
-export const DSH_BRIDGE_SEND_PREVIEW_SCHEMA_VERSION = "chat-dsh-bridge-send-preview.v1" as const;
+export const DSH_BRIDGE_SEND_PREVIEW_SCHEMA_VERSION = "chat-dsh-bridge-send-preview.v2" as const;
 export const MAX_DSH_CONTEXT_INJECTION_ITEMS = 64;
 export const MAX_DSH_CONTEXT_INJECTION_TEXT_CHARS = 50_000;
+export const MAX_DSH_ADAPTER_REQUEST_JSON_CHARS = 4_000_000;
 export const MAX_DSH_CONTEXT_SOURCE_DETAILS = 32;
 export const dshSessionIdSchema = z
   .string()
@@ -543,6 +544,24 @@ const bridgeChatSubmitPayloadSchema = z
   })
   .strict();
 
+export const dshAdapterRequestCaptureSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("captured"),
+      requestJson: z.string().min(2).max(MAX_DSH_ADAPTER_REQUEST_JSON_CHARS),
+      requestSha256: sha256Schema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("not_captured"),
+      reason: z.literal("native_send_not_started"),
+    })
+    .strict(),
+]);
+
+export type DshAdapterRequestCapture = z.infer<typeof dshAdapterRequestCaptureSchema>;
+
 /**
  * 发送前边界投影：DSH→Bridge展示当前用户输入与DSH生产者上下文；Bridge→Chat
  * 展示按当前Workflow政策真正形成的Command payload。它不是Provider HTTP请求。
@@ -558,6 +577,7 @@ export const dshBridgeSendPreviewSchema = z
     promptConfiguration: promptConfigurationPreviewDtoSchema.nullable(),
     dshToBridge: z
       .object({
+        adapterRequest: dshAdapterRequestCaptureSchema,
         userInput: z.object({ text: z.string().min(1).max(4_000), sha256: sha256Schema }).strict(),
         contextInjections: dshContextInjectionProjectionSchema,
       })
@@ -566,6 +586,8 @@ export const dshBridgeSendPreviewSchema = z
       .object({
         policy: z.enum(["direct_prompt_selection", "non_direct_workspace_instructions"]),
         payload: bridgeChatSubmitPayloadSchema,
+        payloadJson: z.string().min(2).max(1_000_000),
+        payloadSha256: sha256Schema,
       })
       .strict(),
   })

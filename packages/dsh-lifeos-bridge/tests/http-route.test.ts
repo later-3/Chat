@@ -376,7 +376,7 @@ test("same-origin Prompt selection and Studio scope routes forward only typed id
     },
     bridgeSendPreview: async (sessionId: string, text: string) => {
       calls.push({ kind: "bridge-send-preview", sessionId, text });
-      return { schemaVersion: "chat-dsh-bridge-send-preview.v1", text };
+      return { schemaVersion: "chat-dsh-bridge-send-preview.v2", text };
     },
     setDshSendReviewEnabled: async (sessionId: string, enabled: boolean) => {
       calls.push({ kind: "send-review-setting", sessionId, enabled });

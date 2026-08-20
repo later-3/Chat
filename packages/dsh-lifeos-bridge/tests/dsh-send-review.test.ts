@@ -9,7 +9,7 @@ import { AtomicBridgeStateStore } from "../src/state-store.ts";
 
 const commandId = `cmd_${"a".repeat(48)}`;
 const preview = dshBridgeSendPreviewSchema.parse({
-  schemaVersion: "chat-dsh-bridge-send-preview.v1",
+  schemaVersion: "chat-dsh-bridge-send-preview.v2",
   boundary: "dsh_to_lifeos_bridge",
   status: "pre_send_projection",
   workspace: null,
@@ -17,6 +17,11 @@ const preview = dshBridgeSendPreviewSchema.parse({
   promptSelection: { schemaVersion: "prompt-turn-selection-input.v1", regions: [] },
   promptConfiguration: null,
   dshToBridge: {
+    adapterRequest: {
+      status: "captured",
+      requestJson: '{"provider":"lifeos"}',
+      requestSha256: "d".repeat(64),
+    },
     userInput: { text: "审核后发送", sha256: "b".repeat(64) },
     contextInjections: {
       schemaVersion: "chat-dsh-context-injections.v1",
@@ -33,8 +38,12 @@ const preview = dshBridgeSendPreviewSchema.parse({
   bridgeToChat: {
     policy: "non_direct_workspace_instructions",
     payload: { text: "审核后发送" },
+    payloadJson: '{"text":"审核后发送"}',
+    payloadSha256: "e".repeat(64),
   },
 });
+
+const adapterRequest = preview.dshToBridge.adapterRequest;
 
 test("DSH send review is disabled by default and pauses only while enabled", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-send-review-"));
@@ -52,6 +61,7 @@ test("DSH send review is disabled by default and pauses only while enabled", asy
         dshSessionId: "dsh-review",
         requestKey: "request-1",
         text: "审核后发送",
+        adapterRequest,
       }),
       "disabled",
     );
@@ -62,6 +72,7 @@ test("DSH send review is disabled by default and pauses only while enabled", asy
       dshSessionId: "dsh-review",
       requestKey: "request-1",
       text: "审核后发送",
+      adapterRequest,
     });
     await new Promise<void>((resolve) => setImmediate(resolve));
     const review = coordinator.current("dsh-review");
@@ -91,6 +102,7 @@ test("turning the switch off releases an already waiting send", async () => {
       dshSessionId: "dsh-review",
       requestKey: "request-2",
       text: "审核后发送",
+      adapterRequest,
     });
     await new Promise<void>((resolve) => setImmediate(resolve));
     coordinator.approveCurrent("dsh-review");

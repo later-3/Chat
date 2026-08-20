@@ -228,14 +228,21 @@ test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边�
   const bridgePreview = page.getByTestId("lifeos-dsh-bridge-send-preview");
   await expect(bridgePreview).toBeVisible();
   await expect(bridgePreview).toContainText("DSH 前端发送预览");
-  await expect(bridgePreview).toContainText("不是最终 Provider HTTP 请求");
+  await expect(bridgePreview).toContainText("不是最终Provider HTTP请求");
   await expect(bridgePreview).toContainText("Direct · 发送Prompt Selection");
-  await expect(bridgePreview).toContainText("本轮将采用的提示词配置");
-  await expect(bridgePreview).toContainText("内容与“提示词配置预览”一致");
-  await expect(bridgePreview).toContainText("DSH上下文注入");
-  await expect(bridgePreview).toContainText("Bridge → Chat 实际命令 Payload");
+  await expect(bridgePreview).toContainText("本轮提示词配置");
+  await expect(bridgePreview).toContainText("来源定位 · 仅界面注释，不发送");
+  await expect(bridgePreview).toContainText("DSH 上下文注入");
+  await expect(bridgePreview).toContainText("Bridge → Chat 命令");
   await expect(bridgePreview).toContainText(currentInput);
   await expect(bridgePreview).toContainText("promptSelection");
+  await bridgePreview.getByRole("tab", { name: "原始请求", exact: true }).click();
+  await expect(bridgePreview.getByTestId("lifeos-dsh-adapter-request-pending")).toContainText(
+    "尚未被Agent Loop组装",
+  );
+  await expect(bridgePreview.getByTestId("lifeos-bridge-chat-payload-raw")).toContainText(
+    "promptSelection",
+  );
 
   await dialog.getByRole("button", { name: "关闭本轮提示词", exact: true }).click();
   const sendReviewSwitch = page.getByRole("switch", { name: "DSH发送前审核，当前关闭" });
@@ -251,7 +258,16 @@ test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边�
   await expect(sendReview).toBeVisible({ timeout: 15_000 });
   await expect(sendReview).toContainText("DSH → Bridge 发送前审核");
   await expect(sendReview).toContainText(currentInput);
-  await expect(sendReview).toContainText("Bridge → Chat 实际命令 Payload");
+  await expect(sendReview).toContainText("来源定位 · 仅界面注释，不发送");
+  await sendReview.getByRole("tab", { name: "原始请求", exact: true }).click();
+  const adapterRaw = sendReview.getByTestId("lifeos-dsh-adapter-request-raw");
+  await expect(adapterRaw).toContainText('"provider": "lifeos"');
+  await expect(adapterRaw).toContainText('"model": "workflow"');
+  await expect(adapterRaw).toContainText('"messages"');
+  await expect(adapterRaw).toContainText(currentInput);
+  await expect(sendReview.getByTestId("lifeos-bridge-chat-payload-raw")).toContainText(
+    "promptSelection",
+  );
   await sendReview.getByRole("button", { name: "取消本次发送", exact: true }).click();
   await expect(sendReview).toBeHidden();
 

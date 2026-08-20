@@ -124,12 +124,19 @@ DSH真实input.draft + 当前Session producer context + Workflow/Prompt Selectio
 → BridgeService按实际Submit政策投影Bridge→Chat命令Payload
 ```
 
+DSH前端发送预览分为两个视图：
+
+- **友好展示**按DSH请求边界、Prompt配置、用户输入、DSH上下文和Bridge→Chat命令分区。每区的来源文件、生产者与说明都是UI注释，和真实正文视觉分离，绝不加入发送内容。
+- **原始请求**展示两段JSON事实：DSH Agent Loop交给LifeOS Adapter的完整可序列化`GenerateOptions`，以及Bridge按当前Workflow政策形成的Chat命令Payload。前者包含`provider/model/system/messages/tools/模型参数/sessionId`等实际存在字段；只排除负责本地取消且不可序列化的`AbortSignal`。两段分别保存SHA-256用于核对。
+
+手动点击“预览 DSH 发送”发生在DSH原生Send之前，此时Agent Loop尚未形成完整`GenerateOptions`，所以原始视图明确显示“尚未捕获”，不会根据旧Session或当前草稿伪造请求。只有开启“发送审核”并实际点击DSH发送后，Adapter入口才冻结真实请求，随后在任何Chat写入发生前暂停。
+
 真正发送时的可选审核链路是：
 
 ```text
 DSH原生Send / Enter
 → DSH pre-step完成当轮Context组装
-→ LifeOS LLM Adapter冻结Request Binding
+→ LifeOS LLM Adapter冻结完整可序列化GenerateOptions及Request Binding
 → 发送审核关闭：直接继续
 → 发送审核开启：Host内存创建Review并暂停（Chat写入数=0）
    ├── 批准：创建/恢复Chat Product Session并提交Message Command

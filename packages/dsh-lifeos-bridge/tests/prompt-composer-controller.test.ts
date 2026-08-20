@@ -208,7 +208,7 @@ test("提示词配置预览与DSH Bridge发送预览保持两个独立边界", a
     if (url.endsWith("/bridge-send-previews")) {
       bridgeRequest = JSON.parse(String(init?.body)) as typeof bridgeRequest;
       return json({
-        schemaVersion: "chat-dsh-bridge-send-preview.v1",
+        schemaVersion: "chat-dsh-bridge-send-preview.v2",
         boundary: "dsh_to_lifeos_bridge",
         status: "pre_send_projection",
         workspace: { rootId: ROOT_ID, title: "Chat" },
@@ -229,6 +229,10 @@ test("提示词配置预览与DSH Bridge发送预览保持两个独立边界", a
           sha256: SHA,
         },
         dshToBridge: {
+          adapterRequest: {
+            status: "not_captured",
+            reason: "native_send_not_started",
+          },
           userInput: { text: "这是一个什么项目？", sha256: SHA },
           contextInjections: {
             schemaVersion: "chat-dsh-context-injections.v1",
@@ -253,6 +257,8 @@ test("提示词配置预览与DSH Bridge发送预览保持两个独立边界", a
             },
             promptSelection: emptySelection,
           },
+          payloadJson: JSON.stringify({ text: "这是一个什么项目？" }),
+          payloadSha256: SHA,
         },
       });
     }
@@ -266,6 +272,7 @@ test("提示词配置预览与DSH Bridge发送预览保持两个独立边界", a
   const bridge = await controller.previewBridgeSend("这是一个什么项目？");
   assert.equal(bridge?.dshToBridge.userInput.text, "这是一个什么项目？");
   assert.equal(bridge?.bridgeToChat.policy, "direct_prompt_selection");
+  assert.equal(bridge?.dshToBridge.adapterRequest.status, "not_captured");
   assert.equal(bridgeRequest?.text, "这是一个什么项目？");
   controller.dispose();
 });

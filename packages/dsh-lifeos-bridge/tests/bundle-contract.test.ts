@@ -170,7 +170,11 @@ test("prompt composer keeps every Region independent and stages exact revisions 
   assert.match(composer, /当前 Workspace/u);
   assert.match(composer, /提示词配置预览/u);
   assert.match(sendPreview, /DSH 前端发送预览/u);
-  assert.match(sendPreview, /不是最终 Provider HTTP 请求/u);
+  assert.match(sendPreview, /不是最终Provider HTTP请求/u);
+  assert.match(sendPreview, /友好展示/u);
+  assert.match(sendPreview, /原始请求/u);
+  assert.match(sendPreview, /来源定位 · 仅界面注释，不发送/u);
+  assert.match(sendPreview, /lifeos-dsh-adapter-request-raw/u);
   assert.match(controller, /chat\.prompt-composer\.selection\.v1\./u);
   assert.match(controller, /method: "PUT"/u);
   assert.match(controller, /\/lifeos\/prompts\/configuration-previews/u);

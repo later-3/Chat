@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import { dshSendReviewSchema, type DshBridgeSendPreview, type DshSendReview } from "./contracts.ts";
+import {
+  dshSendReviewSchema,
+  type DshAdapterRequestCapture,
+  type DshBridgeSendPreview,
+  type DshSendReview,
+} from "./contracts.ts";
 import type { AtomicBridgeStateStore } from "./state-store.ts";
 
 interface PendingReview {
@@ -24,7 +29,11 @@ export class DshSendReviewCoordinator {
 
   constructor(
     private readonly state: AtomicBridgeStateStore,
-    private readonly preview: (dshSessionId: string, text: string) => Promise<DshBridgeSendPreview>,
+    private readonly preview: (
+      dshSessionId: string,
+      text: string,
+      adapterRequest: DshAdapterRequestCapture,
+    ) => Promise<DshBridgeSendPreview>,
   ) {}
 
   current(dshSessionId: string): DshSendReview | null {
@@ -36,6 +45,7 @@ export class DshSendReviewCoordinator {
     readonly dshSessionId: string;
     readonly requestKey: string;
     readonly text: string;
+    readonly adapterRequest: DshAdapterRequestCapture;
     readonly signal?: AbortSignal;
   }): Promise<"approve" | "reject" | "disabled"> {
     if (!(await this.state.readDshSendReviewEnabled(input.dshSessionId))) return "disabled";
@@ -48,7 +58,7 @@ export class DshSendReviewCoordinator {
       return await this.withAbort(input.dshSessionId, existing, input.signal);
     }
 
-    const projected = await this.preview(input.dshSessionId, input.text);
+    const projected = await this.preview(input.dshSessionId, input.text, input.adapterRequest);
     if (!(await this.state.readDshSendReviewEnabled(input.dshSessionId))) return "disabled";
     let settle!: (kind: "approve" | "reject") => void;
     const promise = new Promise<"approve" | "reject">((resolve) => {

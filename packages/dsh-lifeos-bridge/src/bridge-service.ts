@@ -29,6 +29,7 @@ import {
   sessionRecordsOverviewSchema,
   type WorkflowSelection,
   type DshContextInjectionProjection,
+  type DshAdapterRequestCapture,
 } from "./contracts.ts";
 import { ChatProductApiError, ChatProductClient } from "./chat-client.ts";
 import { sha256, stableCommandId } from "./adapter.ts";
@@ -355,7 +356,14 @@ export class LifeosBridgeService {
    * 发送前只读投影。它复用Adapter的Workspace指令提取函数和ChatClient的Workflow
    * 分流政策，不创建Request Binding，也不提前提交Product Message。
    */
-  async bridgeSendPreview(dshSessionId: string, text: string) {
+  async bridgeSendPreview(
+    dshSessionId: string,
+    text: string,
+    adapterRequest: DshAdapterRequestCapture = {
+      status: "not_captured",
+      reason: "native_send_not_started",
+    },
+  ) {
     const workspace = this.promptWorkspaceResolver?.resolve(dshSessionId) ?? null;
     const [workflowSelection, storedPromptSelection] = await Promise.all([
       this.state.readWorkflowSelection(dshSessionId),
@@ -391,8 +399,9 @@ export class LifeosBridgeService {
         : {}),
       ...(direct ? { promptSelection } : {}),
     };
+    const payloadJson = JSON.stringify(payload, null, 2);
     return dshBridgeSendPreviewSchema.parse({
-      schemaVersion: "chat-dsh-bridge-send-preview.v1",
+      schemaVersion: "chat-dsh-bridge-send-preview.v2",
       boundary: "dsh_to_lifeos_bridge",
       status: "pre_send_projection",
       workspace,
@@ -400,12 +409,15 @@ export class LifeosBridgeService {
       promptSelection,
       promptConfiguration,
       dshToBridge: {
+        adapterRequest,
         userInput: { text, sha256: sha256(text) },
         contextInjections,
       },
       bridgeToChat: {
         policy: direct ? "direct_prompt_selection" : "non_direct_workspace_instructions",
         payload,
+        payloadJson,
+        payloadSha256: sha256(payloadJson),
       },
     });
   }

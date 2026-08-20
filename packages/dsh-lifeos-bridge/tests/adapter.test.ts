@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createUserMessage, type GenerateOptions, type StreamChunk } from "@deepseek-ai/dsh-llm";
-import { LifeosLlmAdapter, productSessionTitle, workspaceInstructionsOf } from "../src/adapter.ts";
+import {
+  captureDshAdapterRequest,
+  LifeosLlmAdapter,
+  productSessionTitle,
+  sha256,
+  workspaceInstructionsOf,
+} from "../src/adapter.ts";
 import type { ChatProductClient } from "../src/chat-client.ts";
 import type { AtomicBridgeStateStore } from "../src/state-store.ts";
 
@@ -60,6 +66,40 @@ function streamedText(chunks: readonly StreamChunk[]): string {
   assert.equal(delta.text, end.block.text);
   return delta.text;
 }
+
+test("DSH adapter request capture freezes the fully assembled request but excludes AbortSignal", () => {
+  const signal = new AbortController().signal;
+  const captured = captureDshAdapterRequest({
+    provider: "lifeos",
+    model: "workflow",
+    reasoningEffort: "off" as never,
+    sessionId: "dsh-capture" as never,
+    system: "真实 System Prompt",
+    messages: [
+      createUserMessage({
+        source: { kind: "user" },
+        content: [{ type: "text", text: "真实用户输入" }],
+      }),
+    ],
+    tools: [{ name: "read", description: "读取文件", parameters: { type: "object" } }],
+    temperature: 0.2,
+    maxTokens: 4_096,
+    stop: ["<END>"],
+    signal,
+  });
+  assert.equal(captured.status, "captured");
+  if (captured.status !== "captured") throw new Error("expected captured request");
+  assert.equal(captured.requestSha256, sha256(captured.requestJson));
+  const raw = JSON.parse(captured.requestJson) as Record<string, unknown>;
+  assert.equal(raw["system"], "真实 System Prompt");
+  assert.deepEqual(raw["tools"], [
+    { name: "read", description: "读取文件", parameters: { type: "object" } },
+  ]);
+  assert.equal(raw["temperature"], 0.2);
+  assert.equal(raw["maxTokens"], 4_096);
+  assert.equal(raw["signal"], undefined);
+  assert.match(captured.requestJson, /真实用户输入/u);
+});
 
 test("session-title is a bounded local StreamChunk sequence with zero Chat access", async () => {
   const { adapter, accesses } = auxiliaryAdapter();

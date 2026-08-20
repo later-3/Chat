@@ -13,7 +13,12 @@ import type {
   StreamChunk,
 } from "@deepseek-ai/dsh-llm";
 import { ChatProductApiError, ChatProductClient } from "./chat-client.ts";
-import { dshSessionIdSchema, type ChatRun } from "./contracts.ts";
+import {
+  dshAdapterRequestCaptureSchema,
+  dshSessionIdSchema,
+  type ChatRun,
+  type DshAdapterRequestCapture,
+} from "./contracts.ts";
 import { AtomicBridgeStateStore, type RequestBinding } from "./state-store.ts";
 import {
   promptSelectionForWorkspace,
@@ -43,6 +48,40 @@ export function sha256(value: string): string {
 
 export function stableCommandId(purpose: string, ...parts: string[]): string {
   return `cmd_${sha256(["chat-dsh-lifeos-bridge.v1", purpose, ...parts].join("\u0000")).slice(0, 48)}`;
+}
+
+/**
+ * DSH Agent Loop 已完成 system/messages/tools/模型参数组装后，Adapter 收到的
+ * GenerateOptions 才是 DSH→Bridge 的真实内容边界。AbortSignal 只控制本地调用
+ * 生命周期且无法序列化，因此原始视图明确排除它；其余可枚举字段按收到的值冻结。
+ */
+export function captureDshAdapterRequest(options: GenerateOptions): DshAdapterRequestCapture {
+  const serializableRequest = Object.fromEntries(
+    Object.entries(options).filter(([field]) => field !== "signal"),
+  );
+  let requestJson: string;
+  try {
+    requestJson = JSON.stringify(serializableRequest, null, 2);
+  } catch (error) {
+    throw new LlmError(
+      "DSH发送请求包含无法序列化的字段，不能在审核前形成真实原始请求",
+      "LIFEOS_DSH_REQUEST_NOT_SERIALIZABLE",
+      { cause: error },
+    );
+  }
+  const parsed = dshAdapterRequestCaptureSchema.safeParse({
+    status: "captured",
+    requestJson,
+    requestSha256: sha256(requestJson),
+  });
+  if (!parsed.success) {
+    throw new LlmError(
+      "DSH发送请求超过审核边界，不能用截断内容代替真实原始请求",
+      "LIFEOS_DSH_REQUEST_TOO_LARGE",
+      { cause: parsed.error },
+    );
+  }
+  return parsed.data;
 }
 
 interface UserPrompt {
@@ -318,6 +357,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
           dshSessionId,
           requestKey: prompt.requestKey,
           text: prompt.text,
+          adapterRequest: captureDshAdapterRequest(options),
           ...(signal === undefined ? {} : { signal }),
         });
         if (decision === "reject") {
