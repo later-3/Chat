@@ -7,7 +7,7 @@ export interface DshSendReviewToggleInjected {
   setEnabled: (enabled: boolean) => Promise<boolean>;
 }
 
-export type DshSendReviewToggleProps = PropsRuntime<"conversation.input.right"> &
+export type DshSendReviewToggleProps = Pick<PropsRuntime<"conversation.input.dock">, "input"> &
   InjectFace<DshSendReviewToggleInjected>;
 
 /** 原生发送按钮前的会话级审核开关；真正暂停发生在Host侧LifeOS Adapter。 */

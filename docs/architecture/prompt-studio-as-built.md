@@ -85,7 +85,7 @@ Commands：
 
 ## 6. DSH 边界
 
-继续使用唯一集成包 `packages/dsh-lifeos-bridge`，通过 DSH 公开 root-scope `settings.section` 注册长期管理面，并通过`conversation.input.left`注册每轮 Composer。没有新建插件、没有修改 DSH 派生、没有把正式 Prompt 放进 DSH local settings。
+继续使用唯一集成包 `packages/dsh-lifeos-bridge`，通过 DSH 公开 root-scope `settings.section` 注册长期管理面，并通过 `conversation.input.dock` 在输入框上方注册每轮 Chat 配置栏。工作流、上下文、提示词和 DSH 发送审核共享这一条全宽配置栏；输入框内部只保留 DSH 原生的命令、权限、模型和发送控件。没有新建插件、没有修改 DSH 派生、没有把正式 Prompt 放进 DSH local settings。
 
 数据流：
 

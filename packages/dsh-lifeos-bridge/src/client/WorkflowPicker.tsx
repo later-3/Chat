@@ -15,7 +15,7 @@ export interface WorkflowPickerInjected {
   selectWorkflow: (selection: WorkflowSelection | null) => Promise<boolean>;
 }
 
-export type WorkflowPickerProps = PropsRuntime<"conversation.input.left"> &
+export type WorkflowPickerProps = Pick<PropsRuntime<"conversation.input.dock">, "input"> &
   InjectFace<WorkflowPickerInjected>;
 
 const WORKFLOW_ID_PREFIX = "lifeos-workflow:";

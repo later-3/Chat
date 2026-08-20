@@ -60,16 +60,25 @@ test("host and browser bundles emit source maps for stable TypeScript breakpoint
   assert.equal((config.match(/sourcemap:\s*true/g) ?? []).length, 2);
 });
 
-test("workflow selector uses the additive DSH composer tool-row slot", async () => {
+test("Chat turn controls share the additive full-width dock above the DSH composer", async () => {
   const client = await readFile(new URL("../src/client/index.tsx", import.meta.url), "utf8");
+  const controlBar = await readFile(
+    new URL("../src/client/PromptControlBar.tsx", import.meta.url),
+    "utf8",
+  );
   const picker = await readFile(
     new URL("../src/client/WorkflowPicker.tsx", import.meta.url),
     "utf8",
   );
-  assert.match(client, /ctx\.slots\.inject\("conversation\.input\.left"/);
-  assert.match(client, /name: "conversation\.input\.left"/);
-  assert.doesNotMatch(picker, /PropsRuntime<"conversation\.input\.dock">/);
-  assert.match(picker, /PropsRuntime<"conversation\.input\.left">/);
+  assert.match(client, /id: "lifeos-prompt-control-bar"/);
+  assert.match(client, /name: "conversation\.input\.dock"/);
+  assert.doesNotMatch(client, /conversation\.input\.(?:left|right)/);
+  assert.match(controlBar, /PropsRuntime<"conversation\.input\.dock">/);
+  assert.match(controlBar, /<WorkflowPicker/);
+  assert.match(controlBar, /<ContextInjectionManager/);
+  assert.match(controlBar, /<PromptComposer/);
+  assert.match(controlBar, /<DshSendReviewToggle/);
+  assert.match(picker, /Pick<PropsRuntime<"conversation\.input\.dock">, "input">/);
   assert.match(picker, /@deepseek-ai\/dsh-client-ui-primitives/);
 });
 
@@ -114,11 +123,16 @@ test("context manager uses public Session and blank-safe composer contracts with
     new URL("../src/client/ContextInjectionManager.tsx", import.meta.url),
     "utf8",
   );
+  const controlBar = await readFile(
+    new URL("../src/client/PromptControlBar.tsx", import.meta.url),
+    "utf8",
+  );
   assert.equal(manifest.peerDependencies?.["@deepseek-ai/dsh-session"], "^0.1.0-rc.6");
   assert.match(host, /"sessions"/u);
   assert.match(host, /ctx\.sessions\.get\(SessionId\(dshSessionId\)\)/u);
-  assert.match(client, /id: "lifeos-context-injections"/u);
-  assert.match(manager, /PropsRuntime<"conversation\.input\.left">/u);
+  assert.match(client, /id: "lifeos-prompt-control-bar"/u);
+  assert.match(controlBar, /<ContextInjectionManager/u);
+  assert.match(manager, /PropsRuntime<"conversation\.input\.dock">/u);
   assert.match(manager, /<Modal/u);
   assert.match(manager, /最新用户输入和当前 Workspace 指令/u);
   assert.match(manager, /仅 Workspace 指令进入 Chat 规划上下文/u);
@@ -143,7 +157,12 @@ test("prompt composer keeps every Region independent and stages exact revisions 
     new URL("../src/client/DshSendReviewToggle.tsx", import.meta.url),
     "utf8",
   );
-  assert.match(client, /id: "lifeos-prompt-composer"/u);
+  const controlBar = await readFile(
+    new URL("../src/client/PromptControlBar.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(client, /id: "lifeos-prompt-control-bar"/u);
+  assert.match(controlBar, /<PromptComposer/u);
   assert.match(composer, /提示词/u);
   assert.match(composer, /默认/u);
   assert.match(composer, /覆盖/u);
@@ -156,7 +175,7 @@ test("prompt composer keeps every Region independent and stages exact revisions 
   assert.match(controller, /method: "PUT"/u);
   assert.match(controller, /\/lifeos\/prompts\/configuration-previews/u);
   assert.match(controller, /\/bridge-send-previews/u);
-  assert.match(client, /id: "lifeos-dsh-send-review-toggle"/u);
+  assert.match(controlBar, /<DshSendReviewToggle/u);
   assert.match(sendReviewToggle, /role="switch"/u);
   assert.match(sendReviewToggle, /发送审核/u);
   assert.doesNotMatch(`${composer}\n${controller}`, /querySelector|MutationObserver/u);

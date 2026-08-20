@@ -9,7 +9,6 @@ import type {} from "@deepseek-ai/dsh-client-ui-sidebar/client";
 import type {} from "@deepseek-ai/dsh-client-ui-settings/client";
 import { CodeWorkbenchSidebarAction, CodeWorkbenchSurface } from "./CodeWorkbench.tsx";
 import { LifeosDock, type LifeosDockInjected } from "./LifeosDock.tsx";
-import { WorkflowPicker, type WorkflowPickerInjected } from "./WorkflowPicker.tsx";
 import { LifeosProjectionController } from "./controller.ts";
 import { installStyles } from "./styles.ts";
 import {
@@ -20,16 +19,11 @@ import { WorkbenchSurfaceController } from "./workbench-controller.ts";
 import { ExecutionTraceProjection } from "./execution-trace-projection.ts";
 import { SessionRecordsController } from "./session-records-controller.ts";
 import { SessionRecordsView, type SessionRecordsInjected } from "./SessionRecordsView.tsx";
-import {
-  ContextInjectionManager,
-  type ContextInjectionManagerInjected,
-} from "./ContextInjectionManager.tsx";
 import { PromptStudio, type PromptStudioInjected } from "./PromptStudio.tsx";
 import { PromptStudioController } from "./prompt-studio-controller.ts";
 import { installPromptStudioStyles } from "./prompt-studio-styles.ts";
-import { PromptComposer, type PromptComposerInjected } from "./PromptComposer.tsx";
 import { PromptComposerController } from "./prompt-composer-controller.ts";
-import { DshSendReviewToggle, type DshSendReviewToggleInjected } from "./DshSendReviewToggle.tsx";
+import { PromptControlBar, type PromptControlBarInjected } from "./PromptControlBar.tsx";
 
 export const name = "chat-dsh-lifeos-bridge-client";
 export const inject = ["slots", "conversationEvents"];
@@ -171,26 +165,6 @@ export function apply(ctx: ClientContext): void {
     ),
   );
 
-  ctx.slots.inject("conversation.input.left", () => {
-    const disposePicker = ctx.slots.register(
-      {
-        name: "conversation.input.left",
-        id: "lifeos-workflow-picker",
-        order: 14,
-        inject: (sessionId: SessionId): WorkflowPickerInjected => {
-          const controller = controllerFor(sessionId);
-          return {
-            hooks: { lifeos: controller },
-            loadWorkflows: () => controller.loadWorkflows(),
-            selectWorkflow: (selection) => controller.selectWorkflow(selection),
-          };
-        },
-      },
-      WorkflowPicker,
-    );
-    return disposePicker;
-  });
-
   ctx.slots.inject("conversation.session.header.utilities", () =>
     ctx.slots.register(
       {
@@ -206,52 +180,21 @@ export function apply(ctx: ClientContext): void {
     ),
   );
 
-  ctx.slots.inject("conversation.input.left", () =>
+  ctx.slots.inject("conversation.input.dock", () =>
     ctx.slots.register(
       {
-        name: "conversation.input.left",
-        id: "lifeos-context-injections",
-        order: 15,
-        inject: (sessionId: SessionId): ContextInjectionManagerInjected => {
-          const controller = controllerFor(sessionId);
-          return {
-            hooks: { lifeos: controller },
-            loadContextInjections: () => controller.loadContextInjections(),
-          };
-        },
-      },
-      ContextInjectionManager,
-    ),
-  );
-
-  ctx.slots.inject("conversation.input.right", () =>
-    ctx.slots.register(
-      {
-        name: "conversation.input.right",
-        id: "lifeos-dsh-send-review-toggle",
-        order: 20,
-        inject: (sessionId: SessionId): DshSendReviewToggleInjected => {
-          const controller = controllerFor(sessionId);
-          return {
-            hooks: { lifeos: controller },
-            setEnabled: (enabled) => controller.setDshSendReviewEnabled(enabled),
-          };
-        },
-      },
-      DshSendReviewToggle,
-    ),
-  );
-
-  ctx.slots.inject("conversation.input.left", () =>
-    ctx.slots.register(
-      {
-        name: "conversation.input.left",
-        id: "lifeos-prompt-composer",
-        order: 16,
-        inject: (sessionId: SessionId): PromptComposerInjected => {
+        name: "conversation.input.dock",
+        id: "lifeos-prompt-control-bar",
+        order: 14,
+        inject: (sessionId: SessionId): PromptControlBarInjected => {
           const controller = promptComposerFor(sessionId);
+          const lifeos = controllerFor(sessionId);
           return {
-            hooks: { promptComposer: controller, promptStudio },
+            hooks: { lifeos, promptComposer: controller, promptStudio },
+            loadWorkflows: () => lifeos.loadWorkflows(),
+            selectWorkflow: (selection) => lifeos.selectWorkflow(selection),
+            loadContextInjections: () => lifeos.loadContextInjections(),
+            setEnabled: (enabled) => lifeos.setDshSendReviewEnabled(enabled),
             load: async () => {
               await Promise.all([controller.load(), promptStudio.refresh()]);
             },
@@ -287,7 +230,7 @@ export function apply(ctx: ClientContext): void {
           };
         },
       },
-      PromptComposer,
+      PromptControlBar,
     ),
   );
 

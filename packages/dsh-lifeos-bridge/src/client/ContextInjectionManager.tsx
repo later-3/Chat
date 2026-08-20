@@ -10,7 +10,10 @@ export interface ContextInjectionManagerInjected {
   loadContextInjections: () => Promise<DshContextInjectionProjection | null>;
 }
 
-export type ContextInjectionManagerProps = PropsRuntime<"conversation.input.left"> &
+export type ContextInjectionManagerProps = Pick<
+  PropsRuntime<"conversation.input.dock">,
+  "useSession"
+> &
   InjectFace<ContextInjectionManagerInjected>;
 
 const FORM_LABEL: Record<NonNullable<DshContextInjectionItem["form"]>, string> = {

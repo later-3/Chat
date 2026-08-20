@@ -126,7 +126,18 @@ test("DSH Prompt Studio：查看Git来源、派生副本、保存新Revision并�
 
 test("Prompt Studio mobile 390×844保持单列且无横向溢出", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  const composer = await openReadyConversation(page);
+  const controlBar = page.getByTestId("lifeos-prompt-control-bar");
+  await expect(controlBar).toBeVisible();
+  const mobileBarBox = await controlBar.boundingBox();
+  const mobileComposerBox = await composer.boundingBox();
+  expect(mobileBarBox).not.toBeNull();
+  expect(mobileComposerBox).not.toBeNull();
+  expect(mobileBarBox!.y + mobileBarBox!.height).toBeLessThan(mobileComposerBox!.y);
+  expect(mobileBarBox!.width).toBeLessThanOrEqual(390);
+  await expect(controlBar.getByRole("switch")).toBeVisible();
+  await expect(controlBar.getByTestId("lifeos-workflow-current")).toBeVisible();
+  await expect(controlBar.getByTestId("lifeos-prompt-composer-open")).toBeVisible();
   await enterPromptStudio(page);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth > window.innerWidth,
@@ -137,6 +148,18 @@ test("Prompt Studio mobile 390×844保持单列且无横向溢出", async ({ pag
 
 test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边界", async ({ page }) => {
   const composer = await openReadyConversation(page);
+  const controlBar = page.getByTestId("lifeos-prompt-control-bar");
+  await expect(controlBar).toBeVisible();
+  const controlBarBox = await controlBar.boundingBox();
+  const composerBox = await composer.boundingBox();
+  expect(controlBarBox).not.toBeNull();
+  expect(composerBox).not.toBeNull();
+  expect(controlBarBox!.y + controlBarBox!.height).toBeLessThan(composerBox!.y);
+  expect(controlBarBox!.height).toBeLessThanOrEqual(44);
+  const composerCard = composer.locator("xpath=ancestor::*[@data-composer-card]");
+  await expect(composerCard.getByTestId("lifeos-workflow-current")).toHaveCount(0);
+  await expect(composerCard.getByTestId("lifeos-prompt-composer-open")).toHaveCount(0);
+  await expect(composerCard.getByRole("switch")).toHaveCount(0);
   await page.getByTestId("lifeos-workflow-current").click();
   await page.getByRole("menuitem", { name: /执行 Agent（逐次提示词审核）/u }).click();
   await page.getByTestId("lifeos-prompt-composer-open").click();

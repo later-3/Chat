@@ -27,7 +27,7 @@ export type PromptComposerInjected = Omit<PromptStudioInjected, "hooks"> & {
   clearPreviews: () => void;
 };
 
-export type PromptComposerProps = PropsRuntime<"conversation.input.left"> &
+export type PromptComposerProps = Pick<PropsRuntime<"conversation.input.dock">, "input"> &
   InjectFace<PromptComposerInjected>;
 
 const MODE_LABEL: Record<PromptCompositionMode, string> = {
