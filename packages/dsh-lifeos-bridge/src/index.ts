@@ -5,6 +5,8 @@ import type {} from "@deepseek-ai/dsh-session-query";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import type {} from "@deepseek-ai/dsh-tools";
 import type {} from "@deepseek-ai/dsh-workspace";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { isAbsolute, resolve } from "node:path";
 import { LifeosLlmAdapter, LIFEOS_PROVIDER } from "./adapter.ts";
 import { LifeosBridgeService } from "./bridge-service.ts";
@@ -16,6 +18,7 @@ import { createLifeosTraceTool } from "./trace-tool.ts";
 import { DshSessionQueryHistory } from "./dsh-session-history.ts";
 import { DshContextInjectionReader } from "./context-injection-reader.ts";
 import { PromptStudioBridgeService } from "./prompt-studio-bridge-service.ts";
+import { PromptSourceFileOpener } from "./prompt-source-file-opener.ts";
 
 export const name = "chat-dsh-lifeos-bridge";
 export const inject = [
@@ -84,6 +87,13 @@ export async function apply(ctx: Context): Promise<void> {
   });
   const bridge = new LifeosBridgeService(chat, state, dshHistory, contextInjectionReader);
   const promptStudio = new PromptStudioBridgeService(chat);
+  // 公网部署绝不能让远端浏览器启动服务器本机应用；只在无公开主机名的本地模式装配。
+  // Prompt来源属于Chat代码Catalog，不跟随未来可切换的工作对象Workspace。
+  const promptSourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+  const promptSourceFiles =
+    publicHostname === undefined
+      ? await PromptSourceFileOpener.create({ repoRoot: promptSourceRoot })
+      : undefined;
   const lifetime = new AbortController();
   ctx.effect(
     () => () => {
@@ -109,6 +119,7 @@ export async function apply(ctx: Context): Promise<void> {
           },
           publicHostname,
           promptStudio,
+          promptSourceFiles,
         ),
       }),
     "lifeos bridge: same-origin routes",

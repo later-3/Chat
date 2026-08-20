@@ -1,4 +1,4 @@
-import type { ZodType } from "zod";
+import { z, type ZodType } from "zod";
 import {
   promptFragmentCommandResultDtoSchema,
   promptFragmentDetailDtoSchema,
@@ -21,9 +21,47 @@ export interface PromptStudioState {
   readonly fragments: readonly PromptFragmentSummaryDto[];
   readonly selected: PromptFragmentDetailDto | null;
   readonly viewedRevision: PromptFragmentRevisionDetailDto | null;
+  readonly sourceOpeners: readonly PromptSourceOpener[];
   readonly saving: boolean;
   readonly error: string | null;
 }
+
+export interface PromptSourceOpener {
+  readonly id: "vscode" | "trae-cn" | "cursor" | "sublime-text" | "textedit" | "system-default";
+  readonly label: string;
+}
+
+const promptSourceOpenersResponseSchema = z
+  .object({
+    schemaVersion: z.literal("chat-prompt-source-openers.v1"),
+    items: z
+      .array(
+        z
+          .object({
+            id: z.enum([
+              "vscode",
+              "trae-cn",
+              "cursor",
+              "sublime-text",
+              "textedit",
+              "system-default",
+            ]),
+            label: z.string().min(1).max(100),
+          })
+          .strict(),
+      )
+      .max(12),
+  })
+  .strict();
+
+const promptSourceOpenResponseSchema = z
+  .object({
+    schemaVersion: z.literal("chat-prompt-source-open.v1"),
+    status: z.literal("launched"),
+    relativePath: z.string().min(1).max(500),
+    openerId: promptSourceOpenersResponseSchema.shape.items.element.shape.id,
+  })
+  .strict();
 
 const INITIAL_STATE: PromptStudioState = {
   status: "idle",
@@ -31,6 +69,7 @@ const INITIAL_STATE: PromptStudioState = {
   fragments: [],
   selected: null,
   viewedRevision: null,
+  sourceOpeners: [],
   saving: false,
   error: null,
 };
@@ -133,11 +172,17 @@ export class PromptStudioController {
     this.abort = abort;
     this.publish({ ...this.snapshot, status: "loading", error: null });
     try {
-      const [regions, fragments] = await Promise.all([
+      const [regions, fragments, sourceOpeners] = await Promise.all([
         this.request("/lifeos/prompts/regions", promptRegionsDtoSchema, undefined, abort.signal),
         this.request(
           "/lifeos/prompts/fragments?limit=100",
           promptFragmentPageDtoSchema,
+          undefined,
+          abort.signal,
+        ),
+        this.request(
+          "/lifeos/prompts/source-openers",
+          promptSourceOpenersResponseSchema,
           undefined,
           abort.signal,
         ),
@@ -148,6 +193,7 @@ export class PromptStudioController {
         fragments: fragments.items,
         selected: this.snapshot.selected,
         viewedRevision: this.snapshot.viewedRevision,
+        sourceOpeners: sourceOpeners.items,
         saving: false,
         error: null,
       });
@@ -221,6 +267,19 @@ export class PromptStudioController {
       `/lifeos/prompts/fragments/${encodeURIComponent(selected.fragment.promptFragmentId)}/archive-status`,
       { expectedRevision: selected.fragment.revision, payload },
     );
+  }
+
+  async openSourceFile(relativePath: string, openerId: PromptSourceOpener["id"]): Promise<void> {
+    try {
+      await this.request("/lifeos/prompts/source-files/open", promptSourceOpenResponseSchema, {
+        method: "POST",
+        body: JSON.stringify({ relativePath, openerId }),
+      });
+      this.publish({ ...this.snapshot, error: null });
+    } catch (error) {
+      this.fail(error);
+      throw error;
+    }
   }
 
   dispose(): void {

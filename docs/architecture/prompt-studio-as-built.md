@@ -7,7 +7,7 @@
 用户可以在 DSH「设置 → 提示词」中：
 
 1. 查看 19 个 Prompt Region 的含义、计划位置、可编辑性、Catalog 来源和 Hash；区域卡显示当前组件数，并可直接筛选该区域的组件；
-2. 查看 4 个 Git 内置 Markdown 组件的完整正文、相对路径、Revision 和 Hash；
+2. 在版本区下方直接查看 4 个 Git 内置 Markdown 组件的完整正文、相对路径、Revision 和 Hash；来源正文使用独立色块，不能再隐藏到一次额外点击之后；
 3. 从内置组件创建自己的副本，内置正文保持不变；
 4. 新建用户组件，修改标题或正文时保存为新的不可变 Revision；
 5. 查看任意历史 Revision，使用精确 Revision/Hash 做并发控制；
@@ -94,7 +94,9 @@ PromptStudio.tsx
 
 列表不携带正文；详情和精确 Revision 按需读取。Prompt 写路由单独使用 96 KiB 有界请求体，其他 LifeOS 命令仍保持 16 KiB。浏览器编辑草稿保存在本机 `localStorage`，只用于防止 Settings 关闭时丢稿；正式版本仍只由 Product Store 拥有。
 
-组件通过 `regionKey` 与区域目录严格关联。组件卡和详情同时显示区域名称与稳定 Key；区域卡的“查看 N 个组件”会切换到组件页并应用对应筛选。内置组件详情中的来源文件路径是可点击控件，展开后显示 Catalog Adapter 从该 Git 文件读取、并通过 Manifest SHA 校验的只读原文。它不调用 VS Code，也不允许浏览器凭任意路径读取仓库文件。
+组件通过 `regionKey` 与区域目录严格关联。组件卡和详情同时显示区域名称与稳定 Key；区域卡的“查看 N 个组件”会切换到组件页并应用对应筛选。内置组件详情在版本区下方始终显示 Catalog Adapter 从 Git 文件读取、并通过 Manifest SHA 校验的只读原文，独立来源色块明确区分文件正文与 UI 解释。
+
+本地模式还提供两类相同的“打开”菜单：组件详情的“打开文件”和区域卡的“打开配置文件”。DSH Host只投影本机实际安装的白名单应用；当前macOS实现支持Visual Studio Code、TRAE CN、Cursor、Sublime Text、文本编辑与系统默认应用。浏览器只提交Catalog登记的相对路径与应用ID；Host重新校验真实路径、普通文件和symlink边界后调用本机应用。公网部署不装配该能力，不能让远端浏览器启动服务器应用，也不能用任意路径读取或打开仓库文件。
 
 真实浏览器门只启动 API 与 DSH，并使用隔离的 `45111`、`45110/45114` 端口和专用 Product Store；它不清理或争抢正在运行的正式 `431xx` 开发实例。
 

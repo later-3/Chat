@@ -23,6 +23,10 @@ export interface PromptStudioInjected {
   copy: (payload: CopyPromptFragmentPayload) => Promise<void>;
   revise: (payload: RevisePromptFragmentPayload) => Promise<void>;
   archive: (payload: ChangePromptFragmentArchiveStatusPayload) => Promise<void>;
+  openSourceFile: (
+    relativePath: string,
+    openerId: PromptStudioState["sourceOpeners"][number]["id"],
+  ) => Promise<void>;
 }
 
 export type PromptStudioProps = SettingsSectionOwnerProps & InjectFace<PromptStudioInjected>;
@@ -97,6 +101,38 @@ function FragmentCard({
   );
 }
 
+function SourceOpenMenu({
+  relativePath,
+  openers,
+  label,
+  openSourceFile,
+}: {
+  relativePath: string;
+  openers: PromptStudioState["sourceOpeners"];
+  label: string;
+  openSourceFile: PromptStudioInjected["openSourceFile"];
+}) {
+  if (openers.length === 0) {
+    return <span className="lifeos-prompt-source-unavailable">本机打开不可用</span>;
+  }
+  return (
+    <details className="lifeos-prompt-source-open-menu">
+      <summary>{label}</summary>
+      <div>
+        {openers.map((opener) => (
+          <button
+            key={opener.id}
+            type="button"
+            onClick={() => void openSourceFile(relativePath, opener.id).catch(() => undefined)}
+          >
+            {opener.label}
+          </button>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function PromptDetail({
   state,
   closeDetail,
@@ -104,7 +140,11 @@ function PromptDetail({
   copy,
   revise,
   archive,
-}: Pick<PromptStudioProps, "closeDetail" | "viewRevision" | "copy" | "revise" | "archive"> & {
+  openSourceFile,
+}: Pick<
+  PromptStudioProps,
+  "closeDetail" | "viewRevision" | "copy" | "revise" | "archive" | "openSourceFile"
+> & {
   state: PromptStudioState;
 }) {
   const detail = state.selected!;
@@ -112,13 +152,11 @@ function PromptDetail({
   const isCurrent =
     viewed.promptFragmentRevisionId === detail.currentRevision.promptFragmentRevisionId;
   const [editing, setEditing] = useState(false);
-  const [sourceExpanded, setSourceExpanded] = useState(false);
   const [draft, setDraft] = useState<EditorDraft>(() => loadDraft(detail));
   const region = state.regions.find((item) => item.regionKey === viewed.regionKey);
 
   useEffect(() => {
     setEditing(false);
-    setSourceExpanded(false);
     setDraft(loadDraft(detail));
   }, [detail.fragment.promptFragmentId, detail.fragment.currentRevisionSha256]);
 
@@ -198,16 +236,7 @@ function PromptDetail({
           <div>
             <dt>来源文件</dt>
             <dd>
-              <button
-                type="button"
-                className="lifeos-prompt-source-link"
-                aria-label={`查看来源文件 ${viewed.sourceRelativePath}`}
-                aria-expanded={sourceExpanded}
-                onClick={() => setSourceExpanded((value) => !value)}
-              >
-                <code>{viewed.sourceRelativePath}</code>
-                <span>{sourceExpanded ? "收起原文" : "在网页查看"}</span>
-              </button>
+              <code>{viewed.sourceRelativePath}</code>
             </dd>
           </div>
         )}
@@ -229,14 +258,22 @@ function PromptDetail({
         </div>
       </section>
 
-      {viewed.sourceRelativePath !== undefined && sourceExpanded ? (
+      {viewed.sourceRelativePath !== undefined ? (
         <section className="lifeos-prompt-source-file" aria-label="来源文件原文">
           <header>
             <div>
-              <strong>来源文件原文</strong>
-              <p>后端从这个 Git 文件读取并校验 SHA；这里是只读展示。</p>
+              <span>Git 来源文件</span>
+              <strong>文件原文</strong>
+              <p>
+                <code>{viewed.sourceRelativePath}</code>
+              </p>
             </div>
-            <code>{viewed.sourceRelativePath}</code>
+            <SourceOpenMenu
+              relativePath={viewed.sourceRelativePath}
+              openers={state.sourceOpeners}
+              label="打开文件"
+              openSourceFile={openSourceFile}
+            />
           </header>
           <pre>{contentText(viewed.content)}</pre>
         </section>
@@ -370,6 +407,7 @@ export function PromptStudio({
   copy,
   revise,
   archive,
+  openSourceFile,
 }: PromptStudioProps) {
   const state = usePromptStudio((value) => value);
   const [tab, setTab] = useState<MainTab>("fragments");
@@ -408,6 +446,7 @@ export function PromptStudio({
         copy={copy}
         revise={revise}
         archive={archive}
+        openSourceFile={openSourceFile}
       />
     );
   }
@@ -454,23 +493,31 @@ export function PromptStudio({
               </header>
               <p>{region.description}</p>
               <footer>
-                <div>
+                <div className="lifeos-prompt-region-meta">
                   <span>{region.userManageable ? "可管理" : "运行时只读"}</span>
                   <span>→ {region.plannedPlacement}</span>
                   <span>{region.availability === "active" ? "管理已启用" : "组装待接入"}</span>
                   <code>{region.sourceRelativePath}</code>
                 </div>
-                <button
-                  type="button"
-                  disabled={(fragmentCountByRegion.get(region.regionKey) ?? 0) === 0}
-                  aria-label={`查看${region.title}区域的组件`}
-                  onClick={() => {
-                    setRegionFilter(region.regionKey);
-                    setTab("fragments");
-                  }}
-                >
-                  查看 {fragmentCountByRegion.get(region.regionKey) ?? 0} 个组件
-                </button>
+                <div className="lifeos-prompt-region-actions">
+                  <SourceOpenMenu
+                    relativePath={region.sourceRelativePath}
+                    openers={state.sourceOpeners}
+                    label="打开配置文件"
+                    openSourceFile={openSourceFile}
+                  />
+                  <button
+                    type="button"
+                    disabled={(fragmentCountByRegion.get(region.regionKey) ?? 0) === 0}
+                    aria-label={`查看${region.title}区域的组件`}
+                    onClick={() => {
+                      setRegionFilter(region.regionKey);
+                      setTab("fragments");
+                    }}
+                  >
+                    查看 {fragmentCountByRegion.get(region.regionKey) ?? 0} 个组件
+                  </button>
+                </div>
               </footer>
             </article>
           ))}

@@ -87,6 +87,12 @@ test("Prompt Studio按需读取区域/组件，并用当前CAS保存新版本", 
     if (url === "/lifeos/prompts/fragments?limit=100") {
       return json({ schemaVersion: "chat-prompt-studio-api.v1", items: [summary] });
     }
+    if (url === "/lifeos/prompts/source-openers") {
+      return json({
+        schemaVersion: "chat-prompt-source-openers.v1",
+        items: [{ id: "vscode", label: "Visual Studio Code" }],
+      });
+    }
     if (url === "/lifeos/prompts/fragments/pfg_testfragment" && init?.method === undefined) {
       return json(detail);
     }
@@ -102,6 +108,7 @@ test("Prompt Studio按需读取区域/组件，并用当前CAS保存新版本", 
   await controller.refresh();
   assert.equal(controller.getSnapshot().regions[0]?.regionKey, "rules");
   assert.equal(controller.getSnapshot().fragments[0]?.title, "我的规则");
+  assert.equal(controller.getSnapshot().sourceOpeners[0]?.id, "vscode");
 
   await controller.select("pfg_testfragment");
   assert.equal(controller.getSnapshot().selected?.currentRevision.content.kind, "markdown");
@@ -142,6 +149,9 @@ test("Prompt Studio写响应丢失后只用同一commandId原样重试", async (
     }
     if (url === "/lifeos/prompts/fragments?limit=100") {
       return json({ schemaVersion: "chat-prompt-studio-api.v1", items: [summary] });
+    }
+    if (url === "/lifeos/prompts/source-openers") {
+      return json({ schemaVersion: "chat-prompt-source-openers.v1", items: [] });
     }
     if (url === "/lifeos/prompts/fragments/pfg_testfragment" && init?.method === undefined) {
       return json(detail);

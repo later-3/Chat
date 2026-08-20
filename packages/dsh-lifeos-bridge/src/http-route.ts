@@ -16,6 +16,11 @@ import {
   promptStudioCreateRequestSchema,
   promptStudioReviseRequestSchema,
 } from "./prompt-studio-bridge-service.ts";
+import {
+  PromptSourceFileOpenError,
+  PromptSourceFileOpener,
+  promptSourceOpenRequestSchema,
+} from "./prompt-source-file-opener.ts";
 
 const MAX_REQUEST_BODY_BYTES = 16 * 1024;
 const MAX_PROMPT_REQUEST_BODY_BYTES = 96 * 1024;
@@ -36,6 +41,8 @@ const PROMPT_FRAGMENT_PATH = /^\/lifeos\/prompts\/fragments\/([^/]+)$/;
 const PROMPT_REVISION_PATH = /^\/lifeos\/prompts\/revisions\/([^/]+)$/;
 const PROMPT_FRAGMENT_REVISIONS_PATH = /^\/lifeos\/prompts\/fragments\/([^/]+)\/revisions$/;
 const PROMPT_FRAGMENT_ARCHIVE_PATH = /^\/lifeos\/prompts\/fragments\/([^/]+)\/archive-status$/;
+const PROMPT_SOURCE_OPENERS_PATH = /^\/lifeos\/prompts\/source-openers$/;
+const PROMPT_SOURCE_OPEN_PATH = /^\/lifeos\/prompts\/source-files\/open$/;
 const SESSION_RECORDS_DEFAULT_LIMIT = 50;
 const SESSION_RECORDS_MAX_LIMIT = 100;
 
@@ -300,6 +307,16 @@ function sendError(res: ServerResponse, error: unknown): void {
     });
     return;
   }
+  if (error instanceof PromptSourceFileOpenError) {
+    sendJson(res, error.status, {
+      type: "about:blank",
+      title: error.message,
+      status: error.status,
+      code: error.code,
+      retryable: false,
+    });
+    return;
+  }
   sendJson(res, 502, {
     type: "about:blank",
     title: "LifeOS bridge request failed",
@@ -315,11 +332,56 @@ export function createLifeosRouteHandler(
   reportError: (error: unknown) => void = () => undefined,
   publicHostname?: string,
   promptStudio?: PromptStudioBridgeService,
+  promptSourceFiles?: PromptSourceFileOpener,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return async (req, res) => {
     try {
       const host = assertSameOriginRequest(req, expectedPort, publicHostname);
       const url = new URL(req.url ?? "", `http://${host}`);
+      if (req.method === "GET" && PROMPT_SOURCE_OPENERS_PATH.test(url.pathname)) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        sendJson(
+          res,
+          200,
+          promptSourceFiles?.openers() ?? {
+            schemaVersion: "chat-prompt-source-openers.v1",
+            items: [],
+          },
+        );
+        return;
+      }
+      if (req.method === "POST" && PROMPT_SOURCE_OPEN_PATH.test(url.pathname)) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        if (promptSourceFiles === undefined) {
+          throw new BridgeRequestError(
+            409,
+            "lifeos_prompt_opener_unavailable",
+            "当前部署不支持打开本机应用",
+          );
+        }
+        const parsed = promptSourceOpenRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_prompt_source_open_invalid",
+            "Prompt来源文件打开请求非法",
+          );
+        }
+        sendJson(res, 202, await promptSourceFiles.open(parsed.data));
+        return;
+      }
       if (
         promptStudio !== undefined &&
         req.method === "GET" &&
@@ -617,7 +679,8 @@ export function createLifeosRouteHandler(
       if (
         !(error instanceof BridgeRequestError) &&
         !(error instanceof ChatProductApiError) &&
-        !(error instanceof DshSessionHistoryAccessError)
+        !(error instanceof DshSessionHistoryAccessError) &&
+        !(error instanceof PromptSourceFileOpenError)
       ) {
         reportError(error);
       }

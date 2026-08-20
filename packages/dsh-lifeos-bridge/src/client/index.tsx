@@ -104,6 +104,8 @@ export function apply(ctx: ClientContext): void {
           copy: (payload) => promptStudio.copy(payload),
           revise: (payload) => promptStudio.revise(payload),
           archive: (payload) => promptStudio.archive(payload),
+          openSourceFile: (relativePath, openerId) =>
+            promptStudio.openSourceFile(relativePath, openerId),
         }),
       },
       PromptStudio,

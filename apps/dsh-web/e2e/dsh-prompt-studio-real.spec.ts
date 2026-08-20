@@ -53,6 +53,7 @@ test("DSH Prompt Studio：查看Git来源、派生副本、保存新Revision并�
   await page.getByRole("button", { name: "区域说明", exact: true }).click();
   await expect(page.getByText("Chat 基础 Workspace", { exact: true })).toBeVisible();
   await expect(page.getByText("工作对象 Workspace", { exact: true })).toBeVisible();
+  await expect(page.getByText("打开配置文件", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "查看Agent 身份区域的组件", exact: true }).click();
   await expect(page.getByLabel("按区域筛选")).toHaveValue("agent_identity");
   await expect(page.getByRole("button", { name: /通用 Chat Agent 身份/u })).toBeVisible();
@@ -67,16 +68,14 @@ test("DSH Prompt Studio：查看Git来源、派生副本、保存新Revision并�
   await page.getByRole("button", { name: "← 返回组件列表", exact: true }).click();
 
   await page.getByRole("button", { name: /通用 Chat Agent 身份/u }).click();
-  const sourceFile = page.getByRole("button", {
-    name: "查看来源文件 prompts/fragments/agent-identity/general-chat-agent.md",
-    exact: true,
-  });
-  await expect(sourceFile).toBeVisible();
-  await expect(page.getByLabel("来源文件原文")).toHaveCount(0);
-  await sourceFile.click();
   const sourceBody = page.getByLabel("来源文件原文");
   await expect(sourceBody).toBeVisible();
+  await expect(sourceBody.getByText("Git 来源文件", { exact: true })).toBeVisible();
   await expect(sourceBody.getByText(/你是 Chat 产品中的任务协作 Agent/u)).toBeVisible();
+  await sourceBody.getByText("打开文件", { exact: true }).click();
+  await expect(
+    sourceBody.getByRole("button", { name: "Visual Studio Code", exact: true }),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "创建我的副本", exact: true }).click();
   await expect(page.getByText("我的版本化组件", { exact: true })).toBeVisible();

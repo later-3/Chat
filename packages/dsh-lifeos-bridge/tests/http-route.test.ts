@@ -11,6 +11,7 @@ import {
   parseSessionRecordsDshQuery,
 } from "../src/http-route.ts";
 import type { LifeosBridgeService } from "../src/bridge-service.ts";
+import type { PromptSourceFileOpener } from "../src/prompt-source-file-opener.ts";
 
 function request(headers: IncomingMessage["headers"]): IncomingMessage {
   return { headers } as IncomingMessage;
@@ -107,6 +108,82 @@ test("public hostname is accepted only in server mode with https Origin", () => 
       error.status === 403 &&
       error.code === "lifeos_host_forbidden",
   );
+});
+
+test("Prompt来源文件只通过同源白名单打开器路由", async () => {
+  const calls: unknown[] = [];
+  const sourceFiles = {
+    openers: () => ({
+      schemaVersion: "chat-prompt-source-openers.v1",
+      items: [{ id: "vscode", label: "Visual Studio Code" }],
+    }),
+    open: async (request: unknown) => {
+      calls.push(request);
+      return {
+        schemaVersion: "chat-prompt-source-open.v1",
+        status: "launched",
+        relativePath: "prompts/regions/catalog.md",
+        openerId: "vscode",
+      };
+    },
+  } as unknown as PromptSourceFileOpener;
+  const service = {} as LifeosBridgeService;
+  const server = createServer(
+    createLifeosRouteHandler(service, 43_110, () => undefined, undefined, undefined, sourceFiles),
+  );
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address !== null && typeof address === "object");
+  const call = async (method: "GET" | "POST", path: string, body?: unknown) =>
+    await new Promise<{ status: number | undefined; body: string }>((resolve, reject) => {
+      const outgoing = httpRequest(
+        {
+          hostname: "127.0.0.1",
+          port: address.port,
+          path,
+          method,
+          headers: {
+            host: "localhost:43110",
+            origin: "http://localhost:43110",
+            "sec-fetch-site": "same-origin",
+            ...(body === undefined ? {} : { "content-type": "application/json" }),
+          },
+        },
+        (incoming) => {
+          const chunks: Buffer[] = [];
+          incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+          incoming.on("end", () =>
+            resolve({ status: incoming.statusCode, body: Buffer.concat(chunks).toString("utf8") }),
+          );
+        },
+      );
+      outgoing.on("error", reject);
+      outgoing.end(body === undefined ? undefined : JSON.stringify(body));
+    });
+  try {
+    const openers = await call("GET", "/lifeos/prompts/source-openers");
+    assert.equal(openers.status, 200);
+    assert.match(openers.body, /Visual Studio Code/u);
+    const opened = await call("POST", "/lifeos/prompts/source-files/open", {
+      relativePath: "prompts/regions/catalog.md",
+      openerId: "vscode",
+    });
+    assert.equal(opened.status, 202);
+    assert.deepEqual(calls, [{ relativePath: "prompts/regions/catalog.md", openerId: "vscode" }]);
+    assert.equal(
+      (
+        await call("POST", "/lifeos/prompts/source-files/open", {
+          relativePath: "../AGENTS.md",
+          openerId: "vscode",
+        })
+      ).status,
+      400,
+    );
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error === undefined ? resolve() : reject(error))),
+    );
+  }
 });
 
 test("session-record queries accept only bounded, non-repeated source cursors", () => {
