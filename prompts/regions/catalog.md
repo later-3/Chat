@@ -5,6 +5,7 @@
 ## 可编辑语义区域
 
 - `agent_identity`：模型在当前节点扮演的身份。Direct Agent 首版组装到 System。
+- `workspace_instructions`：用户显式选择的Chat基础Workspace或当前目标Workspace指令文件；Chat只读取列出的精确文件，不递归发现。
 - `user_context`：与当前用户有关、完成任务确实需要知道的资料。
 - `background`：任务发生的背景、现状和边界。
 - `objective`：本次运行希望达成的结果。
@@ -16,7 +17,7 @@
 - `output_contract`：输出格式、结构和验收约定。
 - `custom_context`：用户临时扩展的命名 Key/Value 上下文。
 
-只有 `agent_identity` 进入 System。背景、目标、要求、规则、经验和案例属于带来源的上下文，不能因为它们“很重要”就全部塞进 System。
+Direct V2把所有用户显式选择的Prompt组件编译为命名System Section；真实用户输入和正式会话历史只进入Messages。Region表达内容用途、来源、选择和预算，不等同于Provider Role。
 
 ## 运行时只读区域
 

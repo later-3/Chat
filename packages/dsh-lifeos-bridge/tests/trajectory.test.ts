@@ -21,8 +21,11 @@ test("Pi tool intent/result becomes a native DSH tool call with durable display 
   const productRunId = "run_trajectory1";
   const running = { productRunId, status: "executing" } as unknown as ChatRun;
   const chat = {
-    createSession: async () => ({ sessionId: "psn_trajectory1" }),
-    submitMessage: async () => ({ message: { messageId: "msg_trajectoryuser1" }, run: running }),
+    submitFirstMessageFromDispatch: async () => ({
+      session: { sessionId: "psn_trajectory1" },
+      message: { messageId: "msg_trajectoryuser1", sessionId: "psn_trajectory1" },
+      run: running,
+    }),
     getRun: async () => running,
     getExecutionTrace: async (_runId: string, afterSequence: number) =>
       afterSequence === 0
@@ -168,9 +171,12 @@ test("Memory write execution trace becomes a native DSH tool call and safe resul
   const productRunId = "run_memorytrajectory1";
   const running = { productRunId, status: "executing" } as unknown as ChatRun;
   const chat = {
-    createSession: async () => ({ sessionId: "psn_memorytrajectory1" }),
-    submitMessage: async () => ({
-      message: { messageId: "msg_memorytrajectoryuser1" },
+    submitFirstMessageFromDispatch: async () => ({
+      session: { sessionId: "psn_memorytrajectory1" },
+      message: {
+        messageId: "msg_memorytrajectoryuser1",
+        sessionId: "psn_memorytrajectory1",
+      },
       run: running,
     }),
     getRun: async () => running,

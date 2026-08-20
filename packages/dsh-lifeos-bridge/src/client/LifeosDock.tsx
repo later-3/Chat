@@ -2,6 +2,8 @@ import { useState } from "react";
 import type { HostObservable, InjectFace, PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots";
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
 import type {
+  BridgeChatDispatchPlan,
+  BridgeChatDispatchReviewDecisionRequest,
   DecisionRequest,
   DshSendReviewDecisionRequest,
   NoteDecisionRequest,
@@ -17,6 +19,9 @@ export interface LifeosDockInjected {
   decideNote: (request: NoteDecisionRequest) => Promise<boolean>;
   decidePromptReview: (request: PromptReviewDecisionRequest) => Promise<boolean>;
   decideDshSendReview: (request: DshSendReviewDecisionRequest) => Promise<boolean>;
+  decideBridgeDispatchReview: (
+    request: BridgeChatDispatchReviewDecisionRequest,
+  ) => Promise<boolean>;
 }
 
 export type LifeosDockProps = PropsRuntime<"conversation.input.dock"> &
@@ -38,6 +43,167 @@ const NOTE_KIND_LABEL: Record<string, string> = {
   learning: "学习",
   general: "通用",
 };
+
+interface DispatchCommand {
+  readonly method: "POST";
+  readonly path: string;
+  readonly bodyJson: string;
+  readonly bodySha256: string;
+}
+
+function jsonRecord(value: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function prettyJson(value: unknown): string {
+  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
+
+function DispatchRawCommand({ title, command }: { title: string; command: DispatchCommand }) {
+  return (
+    <section className="lifeos-bridge-dispatch-command">
+      <header>
+        <strong>{title}</strong>
+        <code>
+          {command.method} {command.path}
+        </code>
+      </header>
+      <dl>
+        <div>
+          <dt>Body SHA-256</dt>
+          <dd>
+            <code>{command.bodySha256}</code>
+          </dd>
+        </div>
+      </dl>
+      <div className="lifeos-prompt-real-label">实际HTTP Request Body</div>
+      <pre>{command.bodyJson}</pre>
+    </section>
+  );
+}
+
+function BridgeDispatchRaw({ plan }: { plan: BridgeChatDispatchPlan }) {
+  return (
+    <div className="lifeos-bridge-dispatch-commands" data-testid="lifeos-bridge-dispatch-raw">
+      <DispatchRawCommand
+        title={
+          plan.productSessionId === null
+            ? "1 · 提交首轮用户消息（Chat后端创建Session）"
+            : "1 · 向已有Chat Session提交用户消息"
+        }
+        command={plan.submitMessage}
+      />
+    </div>
+  );
+}
+
+const PAYLOAD_FIELD: Record<string, { label: string; source: string }> = {
+  text: {
+    label: "用户输入",
+    source: "DSH当前用户Message，经Bridge提取并保留；对应原始Command /payload/text。",
+  },
+  workflowSelection: {
+    label: "Workflow选择",
+    source: "当前DSH会话在Bridge中冻结的Workflow Revision与Hash。",
+  },
+  promptSelection: {
+    label: "Prompt区域选择",
+    source: "Direct工作流下，由Prompt Composer冻结的Region模式与Revision选择。",
+  },
+  context: {
+    label: "Workspace上下文",
+    source: "非Direct工作流下，Bridge政策筛选后保留的Workspace instructions。",
+  },
+};
+
+function ReadableRawField({
+  title,
+  pointer,
+  source,
+  value,
+}: {
+  title: string;
+  pointer: string;
+  source: string;
+  value: unknown;
+}) {
+  return (
+    <section className="lifeos-prompt-section">
+      <header>
+        <strong>{title}</strong>
+        <code>{pointer}</code>
+      </header>
+      <aside aria-label={`${title}来源定位`}>
+        <strong>来源定位 · 仅界面注释，不发送</strong>
+        <div>
+          <span>Bridge发送计划</span>
+          <p>{source}</p>
+          <div>
+            <code>packages/dsh-lifeos-bridge/src/bridge-chat-dispatch.ts</code>
+          </div>
+        </div>
+      </aside>
+      <div className="lifeos-prompt-real-label">原始Command中的真实字段值</div>
+      <pre>{prettyJson(value)}</pre>
+    </section>
+  );
+}
+
+function BridgeDispatchReadable({ plan }: { plan: BridgeChatDispatchPlan }) {
+  const submitBody = jsonRecord(plan.submitMessage.bodyJson);
+  const submitPayload =
+    typeof submitBody?.payload === "object" && submitBody.payload !== null
+      ? (submitBody.payload as Record<string, unknown>)
+      : null;
+
+  return (
+    <div className="lifeos-prompt-sections" data-testid="lifeos-bridge-dispatch-readable">
+      <section className="lifeos-bridge-dispatch-ui-note">
+        <strong>审核界面元数据</strong>
+        <p>
+          requestKey、Product Session绑定、Plan SHA-256、字段标题、来源说明和JSON
+          Pointer只用于审核与一致性校验，均不在下面的HTTP bodyJson中，也不会发送给Chat后端。
+        </p>
+      </section>
+      {plan.productSessionId !== null ? null : (
+        <section className="lifeos-bridge-dispatch-ui-note" data-testid="lifeos-first-turn-note">
+          <strong>首轮只有1个Bridge → Chat命令</strong>
+          <p>
+            Bridge只提交submitMessage.payload。Chat Application在同一事务内创建Product
+            Session、从首条正式User Message派生标题，并提交Message、Run与Outbox。
+          </p>
+        </section>
+      )}
+      <ReadableRawField
+        title="提交消息 · 幂等命令身份"
+        pointer="submitMessage.bodyJson#/commandId"
+        source="Bridge为本次DSH请求生成并冻结；重试必须原样复用。"
+        value={submitBody?.commandId}
+      />
+      {submitPayload === null
+        ? null
+        : Object.entries(submitPayload).map(([key, value]) => {
+            const description = PAYLOAD_FIELD[key];
+            return (
+              <ReadableRawField
+                key={key}
+                title={description?.label ?? `提交消息 · ${key}`}
+                pointer={`submitMessage.bodyJson#/payload/${key}`}
+                source={description?.source ?? "Bridge发送政策保留的Command payload字段。"}
+                value={value}
+              />
+            );
+          })}
+    </div>
+  );
+}
 
 /** 审核Dock是临时命令表面；只有当前版本仍可决定时才展示计划审核。 */
 export function hasActionablePlanReview(projection: LifeosProjection | null): boolean {
@@ -86,6 +252,7 @@ export function shouldShowLifeosReviewDock(projection: LifeosProjection | null):
     hasActionableNoteReview(projection) ||
     hasActionablePromptReview(projection) ||
     projection?.dshSendReview != null ||
+    projection?.bridgeDispatchReview != null ||
     projection?.pendingDecision != null ||
     projection?.pendingNoteDecision != null ||
     projection?.pendingPromptReviewDecision != null
@@ -98,10 +265,12 @@ export function LifeosDock({
   decideNote,
   decidePromptReview,
   decideDshSendReview,
+  decideBridgeDispatchReview,
 }: LifeosDockProps) {
   const state = useLifeos((value) => value);
   const [explanation, setExplanation] = useState("");
   const [promptView, setPromptView] = useState<"readable" | "raw">("readable");
+  const [bridgeDispatchView, setBridgeDispatchView] = useState<"readable" | "raw">("readable");
   const projection = state.projection;
   const run = projection?.run;
   const plan = projection?.plan;
@@ -112,6 +281,7 @@ export function LifeosDock({
   const canReviewPrompt = hasActionablePromptReview(projection);
   const promptReview = projection?.promptReview ?? null;
   const dshSendReview = projection?.dshSendReview ?? null;
+  const bridgeDispatchReview = projection?.bridgeDispatchReview ?? null;
   const reviewableNoteCandidate =
     canReviewNote && noteCandidate?.status === "under_review" ? noteCandidate : null;
   if (!shouldShowLifeosReviewDock(projection)) return null;
@@ -178,7 +348,7 @@ export function LifeosDock({
   if (dshSendReview !== null) {
     return (
       <section
-        className="lifeos-card lifeos-dsh-send-review-card"
+        className="lifeos-card lifeos-scroll-review-card lifeos-dsh-send-review-card"
         data-testid="lifeos-dsh-send-review-card"
         aria-label="DSH发送前审核"
       >
@@ -219,10 +389,103 @@ export function LifeosDock({
     );
   }
 
+  if (bridgeDispatchReview !== null) {
+    const plan = bridgeDispatchReview.plan;
+    return (
+      <section
+        className="lifeos-card lifeos-scroll-review-card lifeos-bridge-dispatch-review-card"
+        data-testid="lifeos-bridge-dispatch-review-card"
+        aria-label="Bridge发送到Chat后端前审核"
+      >
+        <header className="lifeos-header">
+          <strong>Bridge → Chat后端 发送前审核</strong>
+          <span className="lifeos-status">等待你确认</span>
+        </header>
+        <div className="lifeos-prompt-meta" aria-label="Bridge发送计划摘要">
+          <span>请求：{plan.requestKey}</span>
+          <span>
+            Chat Product Session：
+            {plan.productSessionId ?? "批准后由Chat Application在首轮Message事务内创建"}
+          </span>
+          <span>HTTP操作：1</span>
+          <span>Plan SHA-256：{plan.planSha256}</span>
+        </div>
+        <div className="lifeos-prompt-tabs" role="tablist" aria-label="Bridge发送审核展示方式">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={bridgeDispatchView === "readable"}
+            className={bridgeDispatchView === "readable" ? "lifeos-prompt-tab-active" : undefined}
+            onClick={() => setBridgeDispatchView("readable")}
+          >
+            易读视图
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={bridgeDispatchView === "raw"}
+            className={bridgeDispatchView === "raw" ? "lifeos-prompt-tab-active" : undefined}
+            onClick={() => setBridgeDispatchView("raw")}
+          >
+            原始请求
+          </button>
+        </div>
+        <div className="lifeos-prompt-body lifeos-bridge-dispatch-body" role="tabpanel">
+          <div className="lifeos-prompt-caption">
+            {bridgeDispatchView === "raw"
+              ? "以下bodyJson就是批准后交给fetch的完整请求正文；认证Header不会进入审核数据。"
+              : "字段值全部从原始bodyJson解析；来源定位和Plan元数据仅供界面审核，不会发给Chat后端。"}
+          </div>
+          {bridgeDispatchView === "raw" ? (
+            <BridgeDispatchRaw plan={plan} />
+          ) : (
+            <BridgeDispatchReadable plan={plan} />
+          )}
+        </div>
+        <div className="lifeos-review" data-testid="lifeos-bridge-dispatch-review-actions">
+          <div className="lifeos-actions">
+            <button
+              type="button"
+              disabled={state.submitting}
+              onClick={() =>
+                void decideBridgeDispatchReview({
+                  reviewId: bridgeDispatchReview.reviewId,
+                  planSha256: plan.planSha256,
+                  kind: "reject",
+                })
+              }
+            >
+              取消本次发送
+            </button>
+            <button
+              type="button"
+              className="lifeos-primary"
+              disabled={state.submitting}
+              onClick={() =>
+                void decideBridgeDispatchReview({
+                  reviewId: bridgeDispatchReview.reviewId,
+                  planSha256: plan.planSha256,
+                  kind: "approve",
+                })
+              }
+            >
+              批准并发送到Chat后端
+            </button>
+          </div>
+        </div>
+        {state.error === null ? null : (
+          <p className="lifeos-error" role="alert">
+            {state.error}
+          </p>
+        )}
+      </section>
+    );
+  }
+
   if (promptReview !== null || projection?.pendingPromptReviewDecision != null) {
     return (
       <section
-        className="lifeos-card lifeos-prompt-review-card"
+        className="lifeos-card lifeos-scroll-review-card lifeos-prompt-review-card"
         data-testid="lifeos-prompt-review-card"
         aria-label="执行 Agent 发送前提示词审核"
       >

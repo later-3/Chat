@@ -119,6 +119,8 @@ const sessionBindingSchema = z
     promptSelection: promptSelectionRequestSchema.shape.promptSelection.optional(),
     /** DSH完成本轮组装后、Bridge提交Chat命令前是否等待用户审核。 */
     dshSendReviewEnabled: z.boolean(),
+    /** Bridge已经冻结Chat Command后、第一次Chat写入前是否等待用户审核。 */
+    bridgeDispatchReviewEnabled: z.boolean(),
   })
   .strict();
 
@@ -127,11 +129,22 @@ const { promptSelection: legacyPromptSelection, ...legacyRequestShape } = reques
 void legacyPromptSelection;
 const legacyRequestSchema = z.object(legacyRequestShape).strict();
 const legacySessionBindingSchema = sessionBindingSchema
-  .omit({ requests: true, promptSelection: true, dshSendReviewEnabled: true })
+  .omit({
+    requests: true,
+    promptSelection: true,
+    dshSendReviewEnabled: true,
+    bridgeDispatchReviewEnabled: true,
+  })
   .extend({ requests: z.record(z.string().min(1).max(256), legacyRequestSchema) })
   .strict();
 
-const legacyV9SessionBindingSchema = sessionBindingSchema.omit({ dshSendReviewEnabled: true });
+const legacyV9SessionBindingSchema = sessionBindingSchema.omit({
+  dshSendReviewEnabled: true,
+  bridgeDispatchReviewEnabled: true,
+});
+const legacyV10SessionBindingSchema = sessionBindingSchema.omit({
+  bridgeDispatchReviewEnabled: true,
+});
 
 /**
  * rc.6切换后已经存在的Bridge状态。除可恢复的外部身份外，v6只增加提交结果未知期间
@@ -173,15 +186,24 @@ const legacyBridgeStateV9Schema = z
   })
   .strict();
 
+const legacyBridgeStateV10Schema = z
+  .object({
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v10"),
+    preferredWorkflowSelection: workflowSelectionSchema.nullable(),
+    sessions: z.record(dshSessionIdSchema, legacyV10SessionBindingSchema),
+  })
+  .strict();
+
 const legacyBridgeStateSchema = z.union([
   legacyBridgeStateBeforePreferenceSchema,
   legacyBridgeStateWithPreferenceSchema,
   legacyBridgeStateV9Schema,
+  legacyBridgeStateV10Schema,
 ]);
 
 const bridgeStateSchema = z
   .object({
-    schemaVersion: z.literal("chat-dsh-lifeos-state.v10"),
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v11"),
     /** 新DSH会话继承的用户级Workflow选择；null表示系统默认规划工作流。 */
     preferredWorkflowSelection: workflowSelectionSchema.nullable(),
     sessions: z.record(dshSessionIdSchema, sessionBindingSchema),
@@ -196,7 +218,7 @@ export type PendingNoteDecision = z.infer<typeof pendingNoteDecisionSchema>;
 export type PendingPromptReviewDecision = z.infer<typeof pendingPromptReviewDecisionSchema>;
 
 const emptyState = (): BridgeState => ({
-  schemaVersion: "chat-dsh-lifeos-state.v10",
+  schemaVersion: "chat-dsh-lifeos-state.v11",
   preferredWorkflowSelection: null,
   sessions: {},
 });
@@ -276,6 +298,17 @@ export class AtomicBridgeStateStore {
     });
   }
 
+  async readBridgeDispatchReviewEnabled(dshSessionId: string): Promise<boolean> {
+    dshSessionIdSchema.parse(dshSessionId);
+    return await this.serial(async () => {
+      const state = await this.load();
+      const binding = Object.hasOwn(state.sessions, dshSessionId)
+        ? state.sessions[dshSessionId]
+        : undefined;
+      return binding?.bridgeDispatchReviewEnabled ?? false;
+    });
+  }
+
   async mutateSession<T>(
     dshSessionId: string,
     createSessionCommandId: string,
@@ -293,6 +326,7 @@ export class AtomicBridgeStateStore {
           createSessionCommandId,
           requests: {},
           dshSendReviewEnabled: false,
+          bridgeDispatchReviewEnabled: false,
           ...(next.preferredWorkflowSelection === null
             ? {}
             : { workflowSelection: next.preferredWorkflowSelection }),
@@ -326,7 +360,12 @@ export class AtomicBridgeStateStore {
         ? next.sessions[dshSessionId]
         : undefined;
       if (binding === undefined) {
-        binding = { createSessionCommandId, requests: {}, dshSendReviewEnabled: false };
+        binding = {
+          createSessionCommandId,
+          requests: {},
+          dshSendReviewEnabled: false,
+          bridgeDispatchReviewEnabled: false,
+        };
         next.sessions[dshSessionId] = binding;
       }
       if (binding.createSessionCommandId !== createSessionCommandId) {
@@ -360,7 +399,12 @@ export class AtomicBridgeStateStore {
         ? next.sessions[dshSessionId]
         : undefined;
       if (binding === undefined) {
-        binding = { createSessionCommandId, requests: {}, dshSendReviewEnabled: false };
+        binding = {
+          createSessionCommandId,
+          requests: {},
+          dshSendReviewEnabled: false,
+          bridgeDispatchReviewEnabled: false,
+        };
         next.sessions[dshSessionId] = binding;
       }
       if (binding.createSessionCommandId !== createSessionCommandId) {
@@ -382,6 +426,16 @@ export class AtomicBridgeStateStore {
   ): Promise<void> {
     await this.mutateSession(dshSessionId, createSessionCommandId, (binding) => {
       binding.dshSendReviewEnabled = enabled;
+    });
+  }
+
+  async setBridgeDispatchReviewEnabled(
+    dshSessionId: string,
+    createSessionCommandId: string,
+    enabled: boolean,
+  ): Promise<void> {
+    await this.mutateSession(dshSessionId, createSessionCommandId, (binding) => {
+      binding.bridgeDispatchReviewEnabled = enabled;
     });
   }
 
@@ -428,10 +482,11 @@ export class AtomicBridgeStateStore {
       return this.state;
     }
     const migrated = bridgeStateSchema.parse({
-      schemaVersion: "chat-dsh-lifeos-state.v10",
+      schemaVersion: "chat-dsh-lifeos-state.v11",
       preferredWorkflowSelection:
         legacy.data.schemaVersion === "chat-dsh-lifeos-state.v8" ||
-        legacy.data.schemaVersion === "chat-dsh-lifeos-state.v9"
+        legacy.data.schemaVersion === "chat-dsh-lifeos-state.v9" ||
+        legacy.data.schemaVersion === "chat-dsh-lifeos-state.v10"
           ? legacy.data.preferredWorkflowSelection
           : (Object.values(legacy.data.sessions).reduce<
               z.infer<typeof workflowSelectionSchema> | undefined
@@ -439,7 +494,12 @@ export class AtomicBridgeStateStore {
       sessions: Object.fromEntries(
         Object.entries(legacy.data.sessions).map(([sessionId, binding]) => [
           sessionId,
-          { ...binding, dshSendReviewEnabled: false },
+          {
+            ...binding,
+            dshSendReviewEnabled:
+              "dshSendReviewEnabled" in binding ? binding.dshSendReviewEnabled : false,
+            bridgeDispatchReviewEnabled: false,
+          },
         ]),
       ),
     });

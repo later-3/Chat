@@ -22,8 +22,9 @@ Browser
 ## 2. 会话身份
 
 DSH原生侧栏是唯一会话入口，创建自己的`dshSessionId`并负责列出、切换和归档历史。新建后先是只有
-DSH身份的草稿；用户发送第一条真实消息时，Host插件才以该消息正文生成标题并幂等创建
-`productSessionId`。映射只保存在本地Adapter状态中：
+DSH身份的草稿；用户发送第一条真实消息时，Bridge只提交该User Message。Chat
+Application在同一Product Store事务内创建`productSessionId`、从这条正式Message派生标题，
+并提交Run与Outbox。Bridge只把响应中的Product Session身份保存为本地映射：
 
 - DSH Session负责原生会话选择、消息轨迹和Composer体验。
 - Product Session负责权威消息、Run、Plan、Approval、Note Candidate/Decision和恢复。
@@ -44,9 +45,12 @@ DSH持久化日志与Bridge映射共同恢复原会话，用户可以继续发�
    没有显式选择时使用Chat系统默认Planning Workflow。
 3. DSH用固定`lifeos/workflow`模型调用LifeOS `LlmAdapter`，传入DSH Session和消息历史。
 4. Adapter从本轮请求提取最新用户文本；`session-title`和`compaction`用途绝不写入Chat。
-5. Adapter按`dshSessionId`恢复已有映射；首条真实消息才以其正文生成Product Session标题并幂等创建，
-   随后以稳定`commandId`提交`POST /api/sessions/:id/messages`。
-6. Chat在Command边界重新校验Workflow仍是已发布、active、当前Principal可用且Hash一致，再原子提交User Message、Product Run、Receipt和Workflow Start Outbox。
+5. Adapter按`dshSessionId`恢复已有映射。首轮以稳定Message `commandId`只提交
+   `POST /api/messages`；后端返回`productSessionId`后Bridge才保存映射。后续轮次提交
+   `POST /api/sessions/:id/messages`。
+6. Chat在Command边界重新校验Workflow仍是已发布、active、当前Principal可用且Hash一致。
+   首轮原子提交Product Session、标题、User Message、Product Run、Receipt和Workflow Start
+   Outbox；后续轮次不再创建Session。
 7. Adapter轮询公开Run、正式Message和安全Pi执行轨迹；Bridge投影按Run阶段读取Plan/Approval或Current Note Candidate，并读取完整Workflow执行轨迹。所有读模型都不从HTTP超时推断成功。
 8. Run需要人工决定时，Client插件展示当前Plan/Approval或Note Candidate；用户的修订、批准、确认或拒绝经Host桥接为版本/Hash绑定的Chat Command。
 9. 执行中出现Pi工具intent时，Adapter先发出`lifeos_trace`显示调用；DSH原生Trajectory立即显示running，显示工具等待同一`toolCallId`的Trace结果后落下输入、输出和耗时，绝不再次执行命令。
@@ -60,8 +64,9 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
-| `POST` | `/api/sessions` | 幂等创建Product Session |
+| `POST` | `/api/messages` | 首轮原子提交Message并由Application创建Product Session/Run/Outbox |
 | `POST` | `/api/sessions/:sessionId/messages` | 幂等提交Message并创建Product Run |
+| `POST` | `/api/sessions` | 非Bridge主链的显式Product Session管理入口 |
 | `GET` | `/api/workflow/definitions` | 读取当前Principal可用的active published Workflow |
 | `GET` | `/api/sessions/:sessionId/messages` | 读取正式Message |
 | `GET` | `/api/runs/:productRunId` | 读取Run状态、阶段与revision |

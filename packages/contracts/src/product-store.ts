@@ -84,7 +84,7 @@ import {
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v15";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v16";
 
 const idKeySchema = z.string().min(1).max(200);
 

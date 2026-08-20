@@ -4,8 +4,18 @@ import { join, resolve } from "node:path";
 import { dshWebEnvironment } from "../dsh/profile-runtime.mjs";
 import { resolveCodeServerTemporaryParent } from "../workbench/fixed-code-server.mjs";
 
-export function resolveDshRealDataRoot(root) {
-  return resolve(root, ".data/e2e/dsh-real");
+export function resolveDshRealDataRoot(root, environment = process.env) {
+  const repoRoot = resolve(root);
+  const configured = environment.CHAT_DSH_E2E_DATA_ROOT?.trim();
+  const dataRoot = resolve(repoRoot, configured || ".data/e2e/dsh-real");
+  const allowed = new Set([
+    resolve(repoRoot, ".data/e2e/dsh-real"),
+    resolve(repoRoot, ".data/e2e/dsh-prompt-three-gates-real"),
+  ]);
+  if (!allowed.has(dataRoot)) {
+    throw new Error("CHAT_DSH_E2E_DATA_ROOT只能指向受管的DSH E2E数据目录");
+  }
+  return dataRoot;
 }
 
 export function resolveDshRealWorkbenchFixtureRoot(root) {
@@ -78,7 +88,7 @@ export function dshRealWorkbenchEnvironment(root, environment = process.env) {
  */
 export function dshRealWebEnvironment(root, environment = process.env) {
   const repoRoot = resolve(root);
-  const dataRoot = resolveDshRealDataRoot(repoRoot);
+  const dataRoot = resolveDshRealDataRoot(repoRoot, environment);
   const dshHome = join(dataRoot, "dsh-home");
   const safe = dshWebEnvironment(repoRoot, {
     ...environment,
@@ -86,9 +96,23 @@ export function dshRealWebEnvironment(root, environment = process.env) {
     CHAT_DSH_STATE_PATH: join(dataRoot, "bridge", "state.json"),
   });
   const hostHome = join(dshHome, "host-home");
-  const temporary = join(dshHome, "tmp");
+  const configuredTemporary = environment.CHAT_DSH_E2E_TEMP_ROOT?.trim();
+  const temporary =
+    configuredTemporary === undefined || configuredTemporary === ""
+      ? join(dshHome, "tmp")
+      : resolve(repoRoot, configuredTemporary);
+  if (
+    configuredTemporary !== undefined &&
+    configuredTemporary !== "" &&
+    temporary !== resolve(repoRoot, ".data/e2e/dsh-t3-tmp")
+  ) {
+    throw new Error("CHAT_DSH_E2E_TEMP_ROOT只能指向受管的三闸门E2E临时目录");
+  }
   return {
     ...safe,
+    // 子进程启动器会再次执行同一受管目录校验；必须把已经校验过的根显式传下去，
+    // 否则三闸门模式会退回默认 dsh-real，并与下方 DSH_HOME 产生假冲突。
+    CHAT_DSH_E2E_DATA_ROOT: dataRoot,
     HOME: hostHome,
     USERPROFILE: hostHome,
     TMPDIR: temporary,
@@ -99,5 +123,8 @@ export function dshRealWebEnvironment(root, environment = process.env) {
     DSH_HOME: dshHome,
     CHAT_CODE_WORKBENCH_TEMP_PARENT: resolveDshRealWorkbenchTempParent(environment),
     CHAT_FIXED_SOURCE_CACHE_ROOT: resolveDshRealSharedCacheRoot(root),
+    ...(configuredTemporary === undefined || configuredTemporary === ""
+      ? {}
+      : { CHAT_DSH_E2E_TEMP_ROOT: temporary }),
   };
 }

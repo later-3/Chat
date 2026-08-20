@@ -37,12 +37,16 @@ import {
 import { JsonProductStore } from "./json-product-store.js";
 import { productSnapshotV14Schema } from "./legacy-v14.js";
 import { migrateProductSnapshotV14ToV15 } from "./migrate-v14-to-v15.js";
+import { migrateProductSnapshotV15ToV16 } from "./migrate-v15-to-v16.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-19T12:00:00.000Z";
 const PRINCIPAL = "usr_promptreview" as const;
 
 function rehashPromptAssembly(assembly: PromptAssembly): void {
+  if (assembly.schemaVersion !== "prompt-assembly.v1") {
+    throw new Error("该测试helper只修改Prompt Assembly V1 fixture");
+  }
   assembly.sha256 = computePromptAssemblySha256({
     promptAssemblyId: assembly.promptAssemblyId,
     productSessionId: assembly.productSessionId,
@@ -317,7 +321,7 @@ describe("Prompt Review Product Snapshot完整性", () => {
       expect(migrated.entities.attempts["att_promptreview1"]!.inputManifestSha256).not.toBe(
         oldManifest,
       );
-      expect(() => assertSnapshotIntegrity(migrated)).not.toThrow();
+      expect(() => assertSnapshotIntegrity(migrateProductSnapshotV15ToV16(migrated))).not.toThrow();
     },
   );
 

@@ -4,14 +4,14 @@ import {
   ContextInjectionManager,
   type ContextInjectionManagerInjected,
 } from "./ContextInjectionManager.tsx";
-import { DshSendReviewToggle, type DshSendReviewToggleInjected } from "./DshSendReviewToggle.tsx";
+import { DebugReviewControl, type DebugReviewControlInjected } from "./DebugReviewControl.tsx";
 import { PromptComposer, type PromptComposerInjected } from "./PromptComposer.tsx";
 import { WorkflowPicker, type WorkflowPickerInjected } from "./WorkflowPicker.tsx";
 
 export type PromptControlBarInjected = Omit<
   WorkflowPickerInjected &
     ContextInjectionManagerInjected &
-    DshSendReviewToggleInjected &
+    DebugReviewControlInjected &
     PromptComposerInjected,
   "hooks"
 > & {
@@ -65,10 +65,11 @@ export function PromptControlBar(props: PromptControlBarProps) {
         />
       </div>
       <div className="lifeos-prompt-control-review">
-        <DshSendReviewToggle
+        <DebugReviewControl
           input={props.input}
           useLifeos={props.useLifeos}
-          setEnabled={props.setEnabled}
+          setDshSendReviewEnabled={props.setDshSendReviewEnabled}
+          setBridgeDispatchReviewEnabled={props.setBridgeDispatchReviewEnabled}
         />
       </div>
     </section>

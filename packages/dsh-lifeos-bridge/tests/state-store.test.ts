@@ -54,7 +54,7 @@ test("bridge mapping survives reload in a private atomic JSON file", async () =>
     assert.equal((await stat(path)).mode & 0o777, 0o600);
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
-      "chat-dsh-lifeos-state.v10",
+      "chat-dsh-lifeos-state.v11",
     );
     const reloaded = new AtomicBridgeStateStore(path);
     const binding = await reloaded.readSession("dsh-session-1");
@@ -108,7 +108,7 @@ test("new DSH sessions inherit the last selected workflow until the user restore
   }
 });
 
-test("v7 bridge state migrates its latest explicit workflow choice to the v10 preference", async () => {
+test("v7 bridge state migrates its latest explicit workflow choice to the v11 preference", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-state-v7-"));
   const path = join(directory, "bridge.json");
   const direct = {
@@ -144,14 +144,14 @@ test("v7 bridge state migrates its latest explicit workflow choice to the v10 pr
       schemaVersion: string;
       preferredWorkflowSelection: unknown;
     };
-    assert.equal(persisted.schemaVersion, "chat-dsh-lifeos-state.v10");
+    assert.equal(persisted.schemaVersion, "chat-dsh-lifeos-state.v11");
     assert.deepEqual(persisted.preferredWorkflowSelection, direct);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
 
-test("v8 bridge state preserves its top-level workflow preference while migrating to v10", async () => {
+test("v8 bridge state preserves its top-level workflow preference while migrating to v11", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-state-v8-"));
   const path = join(directory, "bridge.json");
   const direct = workflowSelectionSchema.parse({
@@ -196,7 +196,7 @@ test("v8 bridge state preserves its top-level workflow preference while migratin
       schemaVersion: string;
       preferredWorkflowSelection: unknown;
     };
-    assert.equal(persisted.schemaVersion, "chat-dsh-lifeos-state.v10");
+    assert.equal(persisted.schemaVersion, "chat-dsh-lifeos-state.v11");
     assert.deepEqual(persisted.preferredWorkflowSelection, direct);
     assert.equal((await stat(path)).mode & 0o777, 0o600);
   } finally {
@@ -204,7 +204,7 @@ test("v8 bridge state preserves its top-level workflow preference while migratin
   }
 });
 
-test("v1 bridge state migrates atomically to v10 before workflow drafts are written", async () => {
+test("v1 bridge state migrates atomically to v11 before workflow drafts are written", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-state-v1-"));
   const path = join(directory, "bridge.json");
   try {
@@ -226,7 +226,7 @@ test("v1 bridge state migrates atomically to v10 before workflow drafts are writ
     assert.equal((await store.readSession("dsh-session-1"))?.createSessionCommandId, command("a"));
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
-      "chat-dsh-lifeos-state.v10",
+      "chat-dsh-lifeos-state.v11",
     );
     assert.equal((await stat(path)).mode & 0o777, 0o600);
   } finally {
@@ -234,7 +234,7 @@ test("v1 bridge state migrates atomically to v10 before workflow drafts are writ
   }
 });
 
-test("v2 bridge state migrates atomically to v10 before Note decisions are written", async () => {
+test("v2 bridge state migrates atomically to v11 before Note decisions are written", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-state-v2-"));
   const path = join(directory, "bridge.json");
   try {
@@ -255,7 +255,7 @@ test("v2 bridge state migrates atomically to v10 before Note decisions are writt
     await store.ready();
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
-      "chat-dsh-lifeos-state.v10",
+      "chat-dsh-lifeos-state.v11",
     );
     assert.equal((await stat(path)).mode & 0o777, 0o600);
   } finally {
@@ -263,7 +263,7 @@ test("v2 bridge state migrates atomically to v10 before Note decisions are writt
   }
 });
 
-test("v3 bridge state migrates to v10 and starts trajectory cursor at zero", async () => {
+test("v3 bridge state migrates to v11 and starts trajectory cursor at zero", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-state-v3-"));
   const path = join(directory, "bridge.json");
   try {
@@ -295,14 +295,14 @@ test("v3 bridge state migrates to v10 and starts trajectory cursor at zero", asy
     assert.equal((await store.readSession("dsh-session-1"))?.requests["request-1"]?.traceCursor, 3);
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
-      "chat-dsh-lifeos-state.v10",
+      "chat-dsh-lifeos-state.v11",
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
 
-test("v4 bridge state migrates to v10 with optional Product Message links absent", async () => {
+test("v4 bridge state migrates to v11 with optional Product Message links absent", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-state-v4-"));
   const path = join(directory, "bridge.json");
   try {
@@ -334,7 +334,7 @@ test("v4 bridge state migrates to v10 with optional Product Message links absent
     assert.equal(request?.productAssistantMessageId, undefined);
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
-      "chat-dsh-lifeos-state.v10",
+      "chat-dsh-lifeos-state.v11",
     );
     assert.equal((await stat(path)).mode & 0o777, 0o600);
   } finally {
@@ -342,7 +342,7 @@ test("v4 bridge state migrates to v10 with optional Product Message links absent
   }
 });
 
-test("v5 bridge state migrates to v10 before Workspace instructions are cached", async () => {
+test("v5 bridge state migrates to v11 before Workspace instructions are cached", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-state-v5-"));
   const path = join(directory, "bridge.json");
   try {
@@ -363,7 +363,7 @@ test("v5 bridge state migrates to v10 before Workspace instructions are cached",
     await store.ready();
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
-      "chat-dsh-lifeos-state.v10",
+      "chat-dsh-lifeos-state.v11",
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -400,7 +400,7 @@ test("prompt selection is session-local and survives an atomic reload", async ()
     assert.deepEqual(await reloaded.readPromptSelection("dsh-session-1"), selection);
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
-      "chat-dsh-lifeos-state.v10",
+      "chat-dsh-lifeos-state.v11",
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -436,8 +436,89 @@ test("DSH send review switch is session-local, durable, and v9 migrates disabled
     assert.equal(await reloaded.readDshSendReviewEnabled("dsh-session-1"), true);
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
-      "chat-dsh-lifeos-state.v10",
+      "chat-dsh-lifeos-state.v11",
     );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("v10 bridge state preserves all bindings while the Bridge dispatch gate migrates disabled", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-state-v10-dispatch-review-"));
+  const path = join(directory, "bridge.json");
+  const direct = workflowSelectionSchema.parse({
+    workflowDefinitionRevisionId: "wfr_systemdirectagentv1",
+    definitionSha256: "f".repeat(64),
+    title: "执行 Agent（逐次提示词审核）",
+    blueprintKey: "direct",
+  });
+  const promptSelection = promptSelectionRequestSchema.shape.promptSelection.parse({
+    schemaVersion: "prompt-turn-selection-input.v1",
+    workspaceRootId: "root_chat",
+    regions: [],
+  });
+  try {
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        schemaVersion: "chat-dsh-lifeos-state.v10",
+        preferredWorkflowSelection: direct,
+        sessions: {
+          "dsh-session-1": {
+            createSessionCommandId: command("a"),
+            chatSessionId: "psn_statev10",
+            currentRequestKey: "request-1",
+            requests: {
+              "request-1": {
+                dshMessageId: "msg_dshv10",
+                userTextSha256: "b".repeat(64),
+                messageCommandId: command("c"),
+                productUserMessageId: "msg_productuserv10",
+                productAssistantMessageId: "msg_productassistantv10",
+                productRunId: "run_statev10",
+                traceCursor: 7,
+                workflowSelection: direct,
+                promptSelection,
+              },
+            },
+            workflowSelection: direct,
+            promptSelection,
+            dshSendReviewEnabled: true,
+          },
+        },
+      })}\n`,
+      { mode: 0o600 },
+    );
+
+    const store = new AtomicBridgeStateStore(path);
+    await store.ready();
+    const binding = await store.readSession("dsh-session-1");
+    assert.equal(binding?.chatSessionId, "psn_statev10");
+    assert.equal(binding?.currentRequestKey, "request-1");
+    assert.deepEqual(binding?.workflowSelection, direct);
+    assert.deepEqual(binding?.promptSelection, promptSelection);
+    assert.equal(binding?.dshSendReviewEnabled, true);
+    assert.equal(binding?.bridgeDispatchReviewEnabled, false);
+    assert.deepEqual(binding?.requests["request-1"], {
+      dshMessageId: "msg_dshv10",
+      userTextSha256: "b".repeat(64),
+      messageCommandId: command("c"),
+      productUserMessageId: "msg_productuserv10",
+      productAssistantMessageId: "msg_productassistantv10",
+      productRunId: "run_statev10",
+      traceCursor: 7,
+      workflowSelection: direct,
+      promptSelection,
+    });
+    assert.deepEqual(await store.readWorkflowSelection("dsh-session-2"), direct);
+    assert.equal(await store.readBridgeDispatchReviewEnabled("dsh-session-1"), false);
+
+    const persisted = JSON.parse(await readFile(path, "utf8")) as {
+      schemaVersion: string;
+      sessions: Record<string, { bridgeDispatchReviewEnabled?: boolean }>;
+    };
+    assert.equal(persisted.schemaVersion, "chat-dsh-lifeos-state.v11");
+    assert.equal(persisted.sessions["dsh-session-1"]?.bridgeDispatchReviewEnabled, false);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

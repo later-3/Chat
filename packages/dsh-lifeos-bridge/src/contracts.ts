@@ -1,6 +1,7 @@
 import {
   approvalDtoSchema,
   approvalRequestIdSchema,
+  commandIdSchema,
   decisionDtoSchema,
   workflowExecutionTraceDtoSchema,
   messageDtoSchema,
@@ -20,6 +21,8 @@ import {
   productSessionIdSchema,
   runDtoSchema,
   sessionDtoSchema,
+  startSessionMessageResponseSchema,
+  submitMessageResponseSchema,
   sha256Schema,
   workflowDefinitionRevisionIdSchema,
   executionTracePageSchema,
@@ -41,6 +44,8 @@ import { z } from "zod";
 export const BRIDGE_SCHEMA_VERSION = "chat-dsh-lifeos-bridge.v3" as const;
 export const DSH_CONTEXT_INJECTION_SCHEMA_VERSION = "chat-dsh-context-injections.v1" as const;
 export const DSH_BRIDGE_SEND_PREVIEW_SCHEMA_VERSION = "chat-dsh-bridge-send-preview.v2" as const;
+export const BRIDGE_CHAT_DISPATCH_REVIEW_SCHEMA_VERSION =
+  "chat-bridge-chat-dispatch-review.v1" as const;
 export const MAX_DSH_CONTEXT_INJECTION_ITEMS = 64;
 export const MAX_DSH_CONTEXT_INJECTION_TEXT_CHARS = 50_000;
 export const MAX_DSH_ADAPTER_REQUEST_JSON_CHARS = 4_000_000;
@@ -74,9 +79,7 @@ export const problemSchema = z
   .loose();
 
 export const createSessionResponseSchema = z.object({ session: sessionDtoSchema }).strict();
-export const submitMessageResponseSchema = z
-  .object({ message: messageDtoSchema, run: runDtoSchema })
-  .strict();
+export { startSessionMessageResponseSchema, submitMessageResponseSchema };
 export const runResponseSchema = z.object({ run: runDtoSchema }).strict();
 export const executionTraceResponseSchema = executionTracePageSchema;
 export const plansResponseSchema = z.object({ items: z.array(planDtoSchema) }).strict();
@@ -532,7 +535,7 @@ const bridgeChatWorkflowSelectionSchema = z
   })
   .strict();
 
-const bridgeChatSubmitPayloadSchema = z
+export const bridgeChatSubmitPayloadSchema = z
   .object({
     text: z.string().min(1).max(4_000),
     workflowSelection: bridgeChatWorkflowSelectionSchema.optional(),
@@ -543,6 +546,56 @@ const bridgeChatSubmitPayloadSchema = z
     promptSelection: promptTurnSelectionInputSchema.optional(),
   })
   .strict();
+
+const bridgeHttpCommandSchema = z
+  .object({
+    method: z.literal("POST"),
+    path: z.string().min(1).max(500),
+    bodyJson: z.string().min(2).max(1_000_000),
+    bodySha256: sha256Schema,
+  })
+  .strict();
+
+export const bridgeChatDispatchPlanSchema = z
+  .object({
+    schemaVersion: z.literal("chat-bridge-chat-dispatch-plan.v2"),
+    requestKey: z.string().regex(/^[a-f0-9]{48}$/u),
+    productSessionId: productSessionIdSchema.nullable(),
+    submitMessage: bridgeHttpCommandSchema.extend({
+      commandId: commandIdSchema,
+      payload: bridgeChatSubmitPayloadSchema,
+    }),
+    planSha256: sha256Schema,
+  })
+  .strict();
+
+export type BridgeChatDispatchPlan = z.infer<typeof bridgeChatDispatchPlanSchema>;
+
+export const bridgeChatDispatchReviewIdSchema = z.string().regex(/^bdr_[a-f0-9]{32}$/u);
+export const bridgeChatDispatchReviewSchema = z
+  .object({
+    schemaVersion: z.literal(BRIDGE_CHAT_DISPATCH_REVIEW_SCHEMA_VERSION),
+    reviewId: bridgeChatDispatchReviewIdSchema,
+    status: z.literal("open"),
+    plan: bridgeChatDispatchPlanSchema,
+  })
+  .strict();
+
+export const bridgeChatDispatchReviewSettingRequestSchema = z
+  .object({ enabled: z.boolean() })
+  .strict();
+export const bridgeChatDispatchReviewDecisionRequestSchema = z
+  .object({
+    reviewId: bridgeChatDispatchReviewIdSchema,
+    planSha256: sha256Schema,
+    kind: z.enum(["approve", "reject"]),
+  })
+  .strict();
+
+export type BridgeChatDispatchReview = z.infer<typeof bridgeChatDispatchReviewSchema>;
+export type BridgeChatDispatchReviewDecisionRequest = z.infer<
+  typeof bridgeChatDispatchReviewDecisionRequestSchema
+>;
 
 export const dshAdapterRequestCaptureSchema = z.discriminatedUnion("status", [
   z
@@ -632,6 +685,8 @@ export const lifeosProjectionSchema = z
     pendingPromptReviewDecision: promptReviewDecisionRequestSchema.nullable().default(null),
     dshSendReviewEnabled: z.boolean().default(false),
     dshSendReview: dshSendReviewSchema.nullable().default(null),
+    bridgeDispatchReviewEnabled: z.boolean().default(false),
+    bridgeDispatchReview: bridgeChatDispatchReviewSchema.nullable().default(null),
     workflowSelection: workflowSelectionSchema.nullable(),
     executionTraces: z.array(lifeosExecutionTraceSchema).max(100),
   })

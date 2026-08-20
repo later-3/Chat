@@ -11,6 +11,7 @@ htmlcov/
 
 # local runtime state
 .data/
+.chat/
 .artifacts/
 .test-artifacts/
 .pi/

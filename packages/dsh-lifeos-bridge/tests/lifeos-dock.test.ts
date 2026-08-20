@@ -238,6 +238,60 @@ test("执行Agent的同一节点在Provider边界展示原始与易读Prompt Rev
   assert.equal(shouldShowLifeosReviewDock(completed), false);
 });
 
+test("Bridge出口审核以冻结的完整Command plan保持Dock可操作", () => {
+  const submitBody = JSON.stringify({
+    commandId: `cmd_${"c".repeat(48)}`,
+    payload: {
+      text: "第二道边界审核",
+      promptSelection: { schemaVersion: "prompt-turn-selection-input.v1", regions: [] },
+    },
+  });
+  const waiting = lifeosProjectionSchema.parse({
+    schemaVersion: "chat-dsh-lifeos-bridge.v3",
+    dshSessionId: "dsh-session-bridge-dispatch-review",
+    run: null,
+    plan: null,
+    approval: null,
+    pendingDecision: null,
+    noteCandidate: null,
+    pendingNoteDecision: null,
+    bridgeDispatchReviewEnabled: true,
+    bridgeDispatchReview: {
+      schemaVersion: "chat-bridge-chat-dispatch-review.v1",
+      reviewId: `bdr_${"b".repeat(32)}`,
+      status: "open",
+      plan: {
+        schemaVersion: "chat-bridge-chat-dispatch-plan.v2",
+        requestKey: "a".repeat(48),
+        productSessionId: "psn_bridgedispatchreview",
+        submitMessage: {
+          method: "POST",
+          path: "/api/sessions/psn_bridgedispatchreview/messages",
+          bodyJson: submitBody,
+          bodySha256: "c".repeat(64),
+          commandId: `cmd_${"c".repeat(48)}`,
+          payload: {
+            text: "第二道边界审核",
+            promptSelection: { schemaVersion: "prompt-turn-selection-input.v1", regions: [] },
+          },
+        },
+        planSha256: "d".repeat(64),
+      },
+    },
+    workflowSelection: null,
+    executionTraces: [],
+  });
+  assert.equal(shouldShowLifeosReviewDock(waiting), true);
+  assert.equal(waiting.bridgeDispatchReview?.plan.submitMessage.bodyJson, submitBody);
+  assert.equal(waiting.bridgeDispatchReview?.plan.planSha256, "d".repeat(64));
+
+  const released = lifeosProjectionSchema.parse({
+    ...waiting,
+    bridgeDispatchReview: null,
+  });
+  assert.equal(shouldShowLifeosReviewDock(released), false);
+});
+
 test("review dock remains visible only for an outcome-unknown decision that must be retried", () => {
   const plan = planReviewProjection();
   const pendingPlan = lifeosProjectionSchema.parse({

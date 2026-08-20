@@ -2,6 +2,7 @@ import type {
   PromptFragmentContent,
   PromptFragmentId,
   PromptFragmentRevisionId,
+  PromptFragmentScope,
   PromptRegionDefinitionDto,
 } from "@chat/contracts";
 
@@ -13,8 +14,10 @@ export interface BuiltinPromptFragmentRevision {
   readonly title: string;
   readonly description?: string | undefined;
   readonly content: PromptFragmentContent;
+  readonly scope: PromptFragmentScope;
   readonly sha256: string;
   readonly sourceRelativePath: string;
+  readonly sourceWorkspaceRootId?: string | undefined;
   readonly createdAt: string;
 }
 

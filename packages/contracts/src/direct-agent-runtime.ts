@@ -27,6 +27,12 @@ import {
   DIRECT_AGENT_TOKEN_BUDGET,
 } from "./versions.js";
 import { promptWorkspaceRootIdSchema } from "./prompt-fragment.js";
+import {
+  promptAssemblyBudgetSchema,
+  promptEnvelopeMessageSchema,
+  promptEnvelopeRequestOptionsSchema,
+  promptEnvelopeToolsSchema,
+} from "./prompt-assembly.js";
 
 /**
  * Direct Agent私有Runtime合同。它只挂在loopback Runtime Router，不进入public导出：
@@ -104,15 +110,31 @@ export const authorizeDirectAgentOperationRuntimeResponseSchema = z
         sha256: sha256Schema,
       })
       .strict(),
-    promptAssembly: z
-      .object({
-        promptAssemblyId: promptAssemblyIdSchema,
-        sha256: sha256Schema,
-        systemPromptAppend: z.string().max(512_000),
-        userPrompt: z.string().min(1).max(1_000_000),
-        workspaceRootId: promptWorkspaceRootIdSchema.optional(),
-      })
-      .strict(),
+    promptAssembly: z.union([
+      z
+        .object({
+          schemaVersion: z.literal("prompt-assembly.v1"),
+          promptAssemblyId: promptAssemblyIdSchema,
+          sha256: sha256Schema,
+          systemPromptAppend: z.string().max(512_000),
+          userPrompt: z.string().min(1).max(1_000_000),
+          workspaceRootId: promptWorkspaceRootIdSchema.optional(),
+        })
+        .strict(),
+      z
+        .object({
+          schemaVersion: z.literal("prompt-assembly.v2"),
+          promptAssemblyId: promptAssemblyIdSchema,
+          sha256: sha256Schema,
+          systemPromptAppend: z.string().max(512_000),
+          messages: z.array(promptEnvelopeMessageSchema).min(1).max(1_000),
+          tools: promptEnvelopeToolsSchema,
+          requestOptions: promptEnvelopeRequestOptionsSchema,
+          budget: promptAssemblyBudgetSchema,
+          workspaceRootId: promptWorkspaceRootIdSchema.optional(),
+        })
+        .strict(),
+    ]),
     capabilityMode: z.literal("read_only"),
     limits: z
       .object({

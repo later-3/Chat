@@ -2,8 +2,10 @@ import {
   PROMPT_STUDIO_API_SCHEMA_VERSION,
   promptFragmentCommandResultDtoSchema,
   promptFragmentDetailDtoSchema,
+  promptFragmentIdSchema,
   promptFragmentPageDtoSchema,
   promptFragmentRevisionDetailDtoSchema,
+  promptFragmentRevisionIdSchema,
   promptFragmentRevisionSchema,
   promptFragmentSchema,
   promptRegionsDtoSchema,
@@ -24,15 +26,21 @@ import {
 } from "@chat/contracts";
 import {
   assertPromptFragmentContent,
-  computePromptFragmentRevisionSha256,
+  computePromptFragmentRevisionV2Sha256,
   hashCanonical,
 } from "@chat/domain";
-import type { ApplicationDeps, PromptFragmentIdFactory } from "./deps.js";
+import type { ApplicationDeps } from "./deps.js";
 import type {
   BuiltinPromptFragmentRevision,
   PromptCatalogSnapshot,
 } from "./prompt-catalog-port.js";
-import { ApplicationError, forbidden, notFound, revisionConflict } from "./errors.js";
+import {
+  ApplicationError,
+  CommandIdReusedError,
+  forbidden,
+  notFound,
+  revisionConflict,
+} from "./errors.js";
 
 function requireCatalog(deps: ApplicationDeps) {
   if (deps.promptCatalog === undefined) {
@@ -45,17 +53,6 @@ function requireCatalog(deps: ApplicationDeps) {
     });
   }
   return deps.promptCatalog;
-}
-
-function requireIds(deps: ApplicationDeps): PromptFragmentIdFactory {
-  if (deps.promptFragmentIds === undefined) {
-    throw new ApplicationError({
-      code: "internal_error",
-      httpStatus: 503,
-      message: "Prompt Fragment ID工厂未配置",
-    });
-  }
-  return deps.promptFragmentIds;
 }
 
 function assertDraftAllowed(
@@ -107,12 +104,18 @@ function contentKind(content: PromptFragmentContent): "markdown" | "key_value" {
   return content.kind;
 }
 
+function revisionContentKind(revision: PromptFragmentRevision): "markdown" | "key_value" {
+  return revision.schemaVersion === "prompt-fragment-revision.v2"
+    ? revision.contentRef.contentKind
+    : contentKind(revision.content);
+}
+
 function builtinSummary(fragment: BuiltinPromptFragmentRevision) {
   return {
     schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
     promptFragmentId: fragment.promptFragmentId,
     ownerKind: "system" as const,
-    scope: { kind: "global" as const },
+    scope: fragment.scope,
     status: "builtin" as const,
     regionKey: fragment.regionKey,
     title: fragment.title,
@@ -128,7 +131,11 @@ function builtinSummary(fragment: BuiltinPromptFragmentRevision) {
   };
 }
 
-function userSummary(fragment: PromptFragment, revision: PromptFragmentRevision) {
+function userSummary(
+  fragment: PromptFragment,
+  revision: PromptFragmentRevision,
+  sourceRelativePath?: string,
+) {
   return {
     schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
     promptFragmentId: fragment.promptFragmentId,
@@ -138,12 +145,13 @@ function userSummary(fragment: PromptFragment, revision: PromptFragmentRevision)
     regionKey: revision.regionKey,
     title: revision.title,
     ...(revision.description !== undefined ? { description: revision.description } : {}),
-    contentKind: contentKind(revision.content),
+    contentKind: revisionContentKind(revision),
     currentRevisionId: revision.promptFragmentRevisionId,
     currentRevisionNumber: revision.revision,
     currentRevisionSha256: revision.sha256,
     revision: fragment.revision,
     updatedAt: fragment.updatedAt,
+    ...(sourceRelativePath === undefined ? {} : { sourceRelativePath }),
     allowedActions:
       fragment.status === "active" ? (["revise", "archive"] as const) : (["restore"] as const),
   };
@@ -153,6 +161,8 @@ function revisionDetail(
   revision: PromptFragmentRevision | BuiltinPromptFragmentRevision,
   ownerKind: "system" | "principal",
   scope: PromptFragment["scope"],
+  content: PromptFragmentContent,
+  sourceRelativePath?: string,
 ) {
   return promptFragmentRevisionDetailDtoSchema.parse({
     schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
@@ -164,7 +174,7 @@ function revisionDetail(
     regionKey: revision.regionKey,
     title: revision.title,
     ...(revision.description !== undefined ? { description: revision.description } : {}),
-    content: revision.content,
+    content,
     ...("supersedesRevisionId" in revision && revision.supersedesRevisionId !== undefined
       ? { supersedesRevisionId: revision.supersedesRevisionId }
       : {}),
@@ -176,9 +186,11 @@ function revisionDetail(
       : {}),
     sha256: revision.sha256,
     createdAt: revision.createdAt,
-    ...(ownerKind === "system" && "sourceRelativePath" in revision
-      ? { sourceRelativePath: revision.sourceRelativePath }
-      : {}),
+    ...(sourceRelativePath !== undefined
+      ? { sourceRelativePath }
+      : ownerKind === "system" && "sourceRelativePath" in revision
+        ? { sourceRelativePath: revision.sourceRelativePath }
+        : {}),
   });
 }
 
@@ -186,7 +198,13 @@ function builtinDetail(fragment: BuiltinPromptFragmentRevision) {
   return promptFragmentDetailDtoSchema.parse({
     schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
     fragment: builtinSummary(fragment),
-    currentRevision: revisionDetail(fragment, "system", { kind: "global" }),
+    currentRevision: revisionDetail(
+      fragment,
+      "system",
+      fragment.scope,
+      fragment.content,
+      fragment.sourceRelativePath,
+    ),
     revisions: [
       {
         schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
@@ -200,20 +218,93 @@ function builtinDetail(fragment: BuiltinPromptFragmentRevision) {
   });
 }
 
-function userDetail(
+function promptFileContentSha256(content: PromptFragmentContent): string {
+  return hashCanonical("prompt-file-content.v1", content);
+}
+
+function requirePromptFiles(deps: ApplicationDeps) {
+  if (deps.promptFiles === undefined) {
+    throw new ApplicationError({
+      code: "internal_error",
+      httpStatus: 503,
+      message: "Prompt Markdown文件库未配置",
+      retryable: true,
+      recoveryAction: "retry_same_command",
+    });
+  }
+  return deps.promptFiles;
+}
+
+async function readPromptFileProjection(
+  deps: ApplicationDeps,
+  fragment: PromptFragment,
+  revision: PromptFragmentRevision,
+) {
+  if (revision.schemaVersion === "prompt-fragment-revision.v1") {
+    if (deps.promptFiles === undefined) return undefined;
+    // 旧v1快照的正文仍在Store；首次详情读取时幂等迁入可见Markdown文件。
+    return deps.promptFiles.publishRevision({
+      promptFragmentId: revision.promptFragmentId,
+      promptFragmentRevisionId: revision.promptFragmentRevisionId,
+      revision: revision.revision,
+      regionKey: revision.regionKey,
+      title: revision.title,
+      ...(revision.description === undefined ? {} : { description: revision.description }),
+      scope: fragment.scope,
+      content: revision.content,
+      contentSha256: promptFileContentSha256(revision.content),
+      createdAt: revision.createdAt,
+    });
+  }
+  const file = await requirePromptFiles(deps).readRevision({
+    promptFragmentId: revision.promptFragmentId,
+    promptFragmentRevisionId: revision.promptFragmentRevisionId,
+    regionKey: revision.regionKey,
+    scope: fragment.scope,
+    expectedContentSha256: revision.contentRef.contentSha256,
+  });
+  if (
+    file.sourceRelativePath !== revision.contentRef.sourceRelativePath ||
+    file.sourceSha256 !== revision.contentRef.sourceSha256 ||
+    file.content.kind !== revision.contentRef.contentKind ||
+    (file.content.kind === "key_value" && file.content.key !== revision.contentRef.key)
+  ) {
+    throw new ApplicationError({
+      code: "store_corrupted",
+      httpStatus: 500,
+      message: "Prompt Markdown文件与产品版本引用不一致",
+      recoveryAction: "contact_support",
+    });
+  }
+  return file;
+}
+
+async function userDetail(
+  deps: ApplicationDeps,
   entities: {
     readonly promptFragmentRevisions: Record<string, PromptFragmentRevision>;
   },
   fragment: PromptFragment,
 ) {
   const revision = currentRevision(entities, fragment);
+  const file = await readPromptFileProjection(deps, fragment, revision);
+  const content =
+    file?.content ??
+    (revision.schemaVersion === "prompt-fragment-revision.v1" ? revision.content : undefined);
+  if (content === undefined) throw new Error("Prompt Revision正文不可用");
   const revisions = Object.values(entities.promptFragmentRevisions)
     .filter((item) => item.promptFragmentId === fragment.promptFragmentId)
     .sort((left, right) => right.revision - left.revision);
   return promptFragmentDetailDtoSchema.parse({
     schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
-    fragment: userSummary(fragment, revision),
-    currentRevision: revisionDetail(revision, "principal", fragment.scope),
+    fragment: userSummary(fragment, revision, file?.sourceRelativePath),
+    currentRevision: revisionDetail(
+      revision,
+      "principal",
+      fragment.scope,
+      content,
+      file?.sourceRelativePath,
+    ),
     revisions: revisions.map((item) => ({
       schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
       promptFragmentRevisionId: item.promptFragmentRevisionId,
@@ -254,9 +345,20 @@ export async function listPromptFragments(
     deps.store.read({ kind: "committedSnapshot" }),
   ]);
   const builtin = catalog.builtinFragments.map(builtinSummary);
-  const user = Object.values(snapshot.entities.promptFragments)
-    .filter((fragment) => fragment.ownerPrincipalId === input.principalId)
-    .map((fragment) => userSummary(fragment, currentRevision(snapshot.entities, fragment)));
+  const user = await Promise.all(
+    Object.values(snapshot.entities.promptFragments)
+      .filter((fragment) => fragment.ownerPrincipalId === input.principalId)
+      .map(async (fragment) => {
+        const revision = currentRevision(snapshot.entities, fragment);
+        return userSummary(
+          fragment,
+          revision,
+          revision.schemaVersion === "prompt-fragment-revision.v2"
+            ? revision.contentRef.sourceRelativePath
+            : undefined,
+        );
+      }),
+  );
   const rows = [...builtin, ...user]
     .filter(
       (item) => input.query.regionKey === undefined || item.regionKey === input.query.regionKey,
@@ -311,6 +413,7 @@ export async function getPromptFragment(
   if (builtin !== undefined) return builtinDetail(builtin);
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
   return userDetail(
+    deps,
     snapshot.entities,
     ownedFragment(snapshot.entities, input.promptFragmentId, input.principalId),
   );
@@ -327,25 +430,41 @@ export async function getPromptFragmentRevision(
   const builtin = catalog.builtinFragments.find(
     (item) => item.promptFragmentRevisionId === input.promptFragmentRevisionId,
   );
-  if (builtin !== undefined) return revisionDetail(builtin, "system", { kind: "global" });
+  if (builtin !== undefined)
+    return revisionDetail(
+      builtin,
+      "system",
+      builtin.scope,
+      builtin.content,
+      builtin.sourceRelativePath,
+    );
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
   const revision = snapshot.entities.promptFragmentRevisions[input.promptFragmentRevisionId];
   if (revision === undefined) throw notFound("Prompt Fragment Revision不存在");
   ownedFragment(snapshot.entities, revision.promptFragmentId, input.principalId);
   const aggregate = ownedFragment(snapshot.entities, revision.promptFragmentId, input.principalId);
-  return revisionDetail(revision, "principal", aggregate.scope);
+  const file = await readPromptFileProjection(deps, aggregate, revision);
+  const content =
+    file?.content ??
+    (revision.schemaVersion === "prompt-fragment-revision.v1" ? revision.content : undefined);
+  if (content === undefined) throw new Error("Prompt Revision正文不可用");
+  return revisionDetail(revision, "principal", aggregate.scope, content, file?.sourceRelativePath);
 }
 
-function buildRevision(input: {
-  readonly ids: PromptFragmentIdFactory;
-  readonly promptFragmentId: PromptFragmentId;
-  readonly revision: number;
-  readonly draft: PromptFragmentDraftPayload;
-  readonly principalId: PrincipalId;
-  readonly createdAt: string;
-  readonly supersedes?: PromptFragmentRevision | undefined;
-  readonly derivedFrom?: PromptFragmentRevision["derivedFrom"] | undefined;
-}): PromptFragmentRevision {
+async function buildRevision(
+  deps: ApplicationDeps,
+  input: {
+    readonly promptFragmentId: PromptFragmentId;
+    readonly promptFragmentRevisionId: PromptFragmentRevisionId;
+    readonly revision: number;
+    readonly draft: PromptFragmentDraftPayload;
+    readonly scope: PromptFragment["scope"];
+    readonly principalId: PrincipalId;
+    readonly createdAt: string;
+    readonly supersedes?: PromptFragmentRevision | undefined;
+    readonly derivedFrom?: PromptFragmentRevision["derivedFrom"] | undefined;
+  },
+): Promise<PromptFragmentRevision> {
   const normalizedContent =
     input.draft.content.kind === "markdown"
       ? { kind: "markdown" as const, bodyMarkdown: input.draft.content.bodyMarkdown.trim() }
@@ -354,6 +473,28 @@ function buildRevision(input: {
           key: input.draft.content.key.trim(),
           valueMarkdown: input.draft.content.valueMarkdown.trim(),
         };
+  const file = await requirePromptFiles(deps).publishRevision({
+    promptFragmentId: input.promptFragmentId,
+    promptFragmentRevisionId: input.promptFragmentRevisionId,
+    revision: input.revision,
+    regionKey: input.draft.regionKey,
+    title: input.draft.title.trim(),
+    ...(input.draft.description === undefined
+      ? {}
+      : { description: input.draft.description.trim() }),
+    scope: input.scope,
+    content: normalizedContent,
+    contentSha256: promptFileContentSha256(normalizedContent),
+    createdAt: input.createdAt,
+  });
+  const contentRef = {
+    kind: "managed_markdown" as const,
+    contentKind: normalizedContent.kind,
+    ...(normalizedContent.kind === "key_value" ? { key: normalizedContent.key } : {}),
+    contentSha256: promptFileContentSha256(normalizedContent),
+    sourceRelativePath: file.sourceRelativePath,
+    sourceSha256: file.sourceSha256,
+  };
   const body = {
     promptFragmentId: input.promptFragmentId,
     revision: input.revision,
@@ -362,7 +503,7 @@ function buildRevision(input: {
     ...(input.draft.description !== undefined
       ? { description: input.draft.description.trim() }
       : {}),
-    content: normalizedContent,
+    contentRef,
     ...(input.supersedes !== undefined
       ? {
           supersedesRevisionId: input.supersedes.promptFragmentRevisionId,
@@ -373,12 +514,30 @@ function buildRevision(input: {
     authoredByPrincipalId: input.principalId,
   };
   return promptFragmentRevisionSchema.parse({
-    schemaVersion: "prompt-fragment-revision.v1",
-    promptFragmentRevisionId: input.ids.revision(),
+    schemaVersion: "prompt-fragment-revision.v2",
+    promptFragmentRevisionId: input.promptFragmentRevisionId,
     ...body,
-    sha256: computePromptFragmentRevisionSha256(body),
+    sha256: computePromptFragmentRevisionV2Sha256(body),
     createdAt: input.createdAt,
   });
+}
+
+function commandFragmentId(commandId: CommandId): PromptFragmentId {
+  return promptFragmentIdSchema.parse(
+    `pfg_${hashCanonical("id.prompt-fragment.command.v1", { commandId }).slice(0, 40)}`,
+  );
+}
+
+function commandRevisionId(
+  commandId: CommandId,
+  promptFragmentId: PromptFragmentId,
+): PromptFragmentRevisionId {
+  return promptFragmentRevisionIdSchema.parse(
+    `pfr_${hashCanonical("id.prompt-fragment-revision.command.v1", {
+      commandId,
+      promptFragmentId,
+    }).slice(0, 40)}`,
+  );
 }
 
 async function readCommandResult(
@@ -395,6 +554,28 @@ async function readCommandResult(
   });
 }
 
+async function readCommandReplay(
+  deps: ApplicationDeps,
+  input: {
+    readonly commandId: CommandId;
+    readonly commandType: string;
+    readonly requestSha256: string;
+    readonly principalId: PrincipalId;
+  },
+): Promise<Awaited<ReturnType<typeof readCommandResult>> | undefined> {
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const receipt = snapshot.commandReceipts[input.commandId];
+  if (receipt === undefined) return undefined;
+  if (receipt.commandType !== input.commandType || receipt.requestSha256 !== input.requestSha256) {
+    throw new CommandIdReusedError(input.commandId);
+  }
+  return readCommandResult(
+    deps,
+    { resultRefs: receipt.resultRefs, replayed: true },
+    input.principalId,
+  );
+}
+
 export async function createPromptFragment(
   deps: ApplicationDeps,
   input: {
@@ -403,24 +584,32 @@ export async function createPromptFragment(
     readonly payload: CreatePromptFragmentPayload;
   },
 ) {
-  const ids = requireIds(deps);
+  const requestSha256 = hashCanonical("command.create-prompt-fragment.v1", input.payload);
+  const replay = await readCommandReplay(deps, {
+    commandId: input.commandId,
+    commandType: "CreatePromptFragment",
+    requestSha256,
+    principalId: input.principalId,
+  });
+  if (replay !== undefined) return replay;
   const catalog = await requireCatalog(deps).load();
   assertDraftAllowed(catalog, input.payload);
   assertScopeAllowed(deps, input.payload.scope);
   const now = deps.now();
-  const promptFragmentId = ids.fragment();
-  const revision = buildRevision({
-    ids,
+  const promptFragmentId = commandFragmentId(input.commandId);
+  const revision = await buildRevision(deps, {
     promptFragmentId,
+    promptFragmentRevisionId: commandRevisionId(input.commandId, promptFragmentId),
     revision: 1,
     draft: input.payload,
+    scope: input.payload.scope,
     principalId: input.principalId,
     createdAt: now,
   });
   const result = await deps.store.transact({
     commandId: input.commandId,
     commandType: "CreatePromptFragment",
-    requestSha256: hashCanonical("command.create-prompt-fragment.v1", input.payload),
+    requestSha256,
     mutate: (draft) => {
       if (
         draft.entities.promptFragments[promptFragmentId] !== undefined ||
@@ -466,6 +655,7 @@ async function resolveCopySource(
     if (builtin.sha256 !== payload.sourceSha256) throw revisionConflict("Builtin Prompt版本已变化");
     return {
       source: builtin,
+      content: builtin.content,
       derivedFrom: {
         kind: "builtin" as const,
         promptFragmentId: builtin.promptFragmentId,
@@ -479,10 +669,16 @@ async function resolveCopySource(
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
   const source = snapshot.entities.promptFragmentRevisions[payload.sourcePromptFragmentRevisionId];
   if (source === undefined) throw notFound("复制来源Prompt Revision不存在");
-  ownedFragment(snapshot.entities, source.promptFragmentId, principalId);
+  const aggregate = ownedFragment(snapshot.entities, source.promptFragmentId, principalId);
   if (source.sha256 !== payload.sourceSha256) throw revisionConflict("复制来源Prompt版本已变化");
+  const file = await readPromptFileProjection(deps, aggregate, source);
+  const content =
+    file?.content ??
+    (source.schemaVersion === "prompt-fragment-revision.v1" ? source.content : undefined);
+  if (content === undefined) throw new Error("复制来源Prompt正文不可用");
   return {
     source,
+    content,
     derivedFrom: {
       kind: "principal" as const,
       promptFragmentId: source.promptFragmentId,
@@ -501,9 +697,16 @@ export async function copyPromptFragment(
     readonly payload: CopyPromptFragmentPayload;
   },
 ) {
-  const ids = requireIds(deps);
+  const requestSha256 = hashCanonical("command.copy-prompt-fragment.v1", input.payload);
+  const replay = await readCommandReplay(deps, {
+    commandId: input.commandId,
+    commandType: "CopyPromptFragment",
+    requestSha256,
+    principalId: input.principalId,
+  });
+  if (replay !== undefined) return replay;
   const catalog = await requireCatalog(deps).load();
-  const { source, derivedFrom } = await resolveCopySource(
+  const { source, content, derivedFrom } = await resolveCopySource(
     deps,
     catalog,
     input.principalId,
@@ -514,16 +717,17 @@ export async function copyPromptFragment(
     regionKey: source.regionKey,
     title: input.payload.title ?? `${source.title}（副本）`,
     ...(source.description !== undefined ? { description: source.description } : {}),
-    content: source.content,
+    content,
   };
   assertDraftAllowed(catalog, draft);
   const now = deps.now();
-  const promptFragmentId = ids.fragment();
-  const revision = buildRevision({
-    ids,
+  const promptFragmentId = commandFragmentId(input.commandId);
+  const revision = await buildRevision(deps, {
     promptFragmentId,
+    promptFragmentRevisionId: commandRevisionId(input.commandId, promptFragmentId),
     revision: 1,
     draft,
+    scope: input.payload.destinationScope,
     principalId: input.principalId,
     createdAt: now,
     derivedFrom,
@@ -531,7 +735,7 @@ export async function copyPromptFragment(
   const result = await deps.store.transact({
     commandId: input.commandId,
     commandType: "CopyPromptFragment",
-    requestSha256: hashCanonical("command.copy-prompt-fragment.v1", input.payload),
+    requestSha256,
     mutate: (product) => {
       product.entities.promptFragmentRevisions[revision.promptFragmentRevisionId] = revision;
       product.entities.promptFragments[promptFragmentId] = promptFragmentSchema.parse({
@@ -568,18 +772,30 @@ export async function revisePromptFragment(
     readonly payload: RevisePromptFragmentPayload;
   },
 ) {
-  const ids = requireIds(deps);
+  const requestSha256 = hashCanonical("command.revise-prompt-fragment.v1", {
+    promptFragmentId: input.promptFragmentId,
+    expectedRevision: input.expectedRevision,
+    payload: input.payload,
+  });
+  const replay = await readCommandReplay(deps, {
+    commandId: input.commandId,
+    commandType: "RevisePromptFragment",
+    requestSha256,
+    principalId: input.principalId,
+  });
+  if (replay !== undefined) return replay;
   const catalog = await requireCatalog(deps).load();
   assertDraftAllowed(catalog, input.payload.revision);
   const preflight = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
   const aggregate = ownedFragment(preflight.entities, input.promptFragmentId, input.principalId);
   const previous = currentRevision(preflight.entities, aggregate);
   const now = deps.now();
-  const next = buildRevision({
-    ids,
+  const next = await buildRevision(deps, {
     promptFragmentId: input.promptFragmentId,
+    promptFragmentRevisionId: commandRevisionId(input.commandId, input.promptFragmentId),
     revision: previous.revision + 1,
     draft: input.payload.revision,
+    scope: aggregate.scope,
     principalId: input.principalId,
     createdAt: now,
     supersedes: previous,
@@ -587,11 +803,7 @@ export async function revisePromptFragment(
   const result = await deps.store.transact({
     commandId: input.commandId,
     commandType: "RevisePromptFragment",
-    requestSha256: hashCanonical("command.revise-prompt-fragment.v1", {
-      promptFragmentId: input.promptFragmentId,
-      expectedRevision: input.expectedRevision,
-      payload: input.payload,
-    }),
+    requestSha256,
     mutate: (draft) => {
       const current = ownedFragment(draft.entities, input.promptFragmentId, input.principalId);
       if (current.status !== "active") throw revisionConflict("已归档Prompt不能修订");

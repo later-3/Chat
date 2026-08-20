@@ -1918,6 +1918,33 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
   });
 
   /**
+   * 首轮只接收用户消息；Product Session的创建、标题派生、Message、Run和
+   * workflow_start Outbox由Application在同一Product Store事务内完成。
+   * Bridge不提交Session ID或标题，只保存响应中的DSH→Chat身份映射。
+   */
+  router.post("/messages", async (c) => {
+    try {
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const payload = submitMessagePayloadSchema.parse(envelope.payload);
+      const result = await submitUserMessage(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/messages",
+        statusCode: 201,
+        productRunId: result.run.productRunId,
+        productSessionId: result.session.sessionId,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  /**
    * 调试导航④：浏览器Message Command进入Chat后端的唯一公开入口。
    *
    * 三层校验分别回答：URL属于哪个Session、命令是否有幂等身份、业务Payload是否符合公开合同。
@@ -1943,7 +1970,7 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
         productRunId: result.run.productRunId,
         productSessionId: sessionId,
       });
-      return c.json(result, 201);
+      return c.json({ message: result.message, run: result.run }, 201);
     } catch (error) {
       return mapError(c, error);
     }

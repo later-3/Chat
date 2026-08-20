@@ -46,6 +46,7 @@ import {
   problemSchema,
   runResponseSchema,
   submitMessageResponseSchema,
+  startSessionMessageResponseSchema,
   type ChatApproval,
   type ChatMessage,
   type ChatNoteCandidate,
@@ -58,6 +59,7 @@ import {
   type PromptReviewDecisionRequest,
   type LifeosWorkflowOption,
   type WorkflowSelection,
+  type BridgeChatDispatchPlan,
 } from "./contracts.ts";
 import type {
   PendingDecision,
@@ -143,19 +145,6 @@ export class ChatProductClient {
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
-  async createSession(
-    commandId: string,
-    title: string,
-    signal?: AbortSignal,
-  ): Promise<ChatSession> {
-    const value = await this.request("/api/sessions", createSessionResponseSchema, {
-      method: "POST",
-      body: JSON.stringify({ commandId, payload: { title } }),
-      ...withSignal(signal),
-    });
-    return value.session;
-  }
-
   async getSession(sessionId: string, signal?: AbortSignal): Promise<ChatSession> {
     const value = await this.request(
       `/api/sessions/${encodeURIComponent(sessionId)}`,
@@ -218,6 +207,36 @@ export class ChatProductClient {
         ...withSignal(signal),
       },
     );
+  }
+
+  async submitMessageFromDispatch(
+    sessionId: string,
+    command: BridgeChatDispatchPlan["submitMessage"],
+    signal?: AbortSignal,
+  ): Promise<{ message: ChatMessage; run: ChatRun }> {
+    return await this.request(
+      `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
+      submitMessageResponseSchema,
+      {
+        method: command.method,
+        body: command.bodyJson,
+        ...withSignal(signal),
+      },
+    );
+  }
+
+  async submitFirstMessageFromDispatch(
+    command: BridgeChatDispatchPlan["submitMessage"],
+    signal?: AbortSignal,
+  ): Promise<{ session: ChatSession; message: ChatMessage; run: ChatRun }> {
+    if (command.path !== "/api/messages") {
+      throw new Error("Bridge dispatch first-message path mismatch");
+    }
+    return await this.request(command.path, startSessionMessageResponseSchema, {
+      method: command.method,
+      body: command.bodyJson,
+      ...withSignal(signal),
+    });
   }
 
   async listWorkflows(signal?: AbortSignal): Promise<readonly LifeosWorkflowOption[]> {

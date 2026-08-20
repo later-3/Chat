@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { LifeosProjectionController } from "../src/client/controller.ts";
 import {
+  bridgeChatDispatchReviewDecisionRequestSchema,
   dshSendReviewDecisionRequestSchema,
   noteDecisionRequestSchema,
   promptReviewDecisionRequestSchema,
@@ -343,7 +344,7 @@ test("decidePromptReview submits the exact observed request hashes to its same-o
   controller.dispose();
 });
 
-test("DSH send review toggle and decision use dedicated same-origin routes", async () => {
+test("two Bridge debug review gates use independent same-origin routes", async () => {
   const requests: Array<{ path: string; method?: string; body?: unknown }> = [];
   const controller = new LifeosProjectionController(
     "dsh-session-1",
@@ -360,8 +361,15 @@ test("DSH send review toggle and decision use dedicated same-origin routes", asy
     reviewId: `dsr_${"a".repeat(32)}`,
     kind: "approve",
   });
+  const bridgeDecision = bridgeChatDispatchReviewDecisionRequestSchema.parse({
+    reviewId: `bdr_${"b".repeat(32)}`,
+    planSha256: "c".repeat(64),
+    kind: "approve",
+  });
   assert.equal(await controller.setDshSendReviewEnabled(true), true);
   assert.equal(await controller.decideDshSendReview(decision), true);
+  assert.equal(await controller.setBridgeDispatchReviewEnabled(true), true);
+  assert.equal(await controller.decideBridgeDispatchReview(bridgeDecision), true);
   assert.deepEqual(requests, [
     {
       path: "/lifeos/sessions/dsh-session-1/dsh-send-review-setting",
@@ -372,6 +380,16 @@ test("DSH send review toggle and decision use dedicated same-origin routes", asy
       path: "/lifeos/sessions/dsh-session-1/dsh-send-review-decisions",
       method: "POST",
       body: decision,
+    },
+    {
+      path: "/lifeos/sessions/dsh-session-1/bridge-dispatch-review-setting",
+      method: "POST",
+      body: { enabled: true },
+    },
+    {
+      path: "/lifeos/sessions/dsh-session-1/bridge-dispatch-review-decisions",
+      method: "POST",
+      body: bridgeDecision,
     },
   ]);
   controller.dispose();

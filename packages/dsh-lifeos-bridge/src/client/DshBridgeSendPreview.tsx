@@ -178,6 +178,45 @@ function ExactSectionView({
   );
 }
 
+/**
+ * Tools仍然按原始 /tools/{index} 一对一解析；这里只改变展示密度，
+ * 不合并、摘要或重写任何Tool Schema。
+ */
+function ToolSectionsGroup({ sections }: { sections: readonly ExactJsonSection[] }) {
+  return (
+    <details className="lifeos-prompt-tool-group" data-testid="lifeos-dsh-tool-group">
+      <summary>
+        <span>
+          <strong>Tools</strong>
+          <small>默认折叠，展开后可逐个检查</small>
+        </span>
+        <span>
+          <strong>{sections.length} 个</strong>
+          <code>/tools/*</code>
+        </span>
+      </summary>
+      <div className="lifeos-prompt-tool-list">
+        {sections.map((section) => (
+          <details
+            key={section.sectionId}
+            className="lifeos-prompt-tool-item"
+            data-testid="lifeos-dsh-tool-item"
+            data-json-pointer={section.jsonPointer}
+          >
+            <summary>
+              <strong>{section.title}</strong>
+              <code>{section.jsonPointer}</code>
+            </summary>
+            <SourceNote {...dshSectionSource(section)} />
+            <div className="lifeos-prompt-real-label">该Pointer对应的完整原始JSON值</div>
+            <pre>{section.valueJson}</pre>
+          </details>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 export function PromptConfigurationDetails({
   preview,
 }: {
@@ -238,6 +277,8 @@ function FriendlyPreview({ preview }: { preview: DshBridgeSendPreview }) {
   const dshUserInput =
     captured.status === "captured" ? lastDshUserInputMapping(captured.requestJson) : null;
   const bridgeSections = exactSectionsFromJson(preview.bridgeToChat.payloadJson);
+  const dshToolSections = dshSections.filter((section) => section.kind === "tool");
+  const firstDshToolSectionId = dshToolSections[0]?.sectionId;
   const bridgePayload = JSON.parse(preview.bridgeToChat.payloadJson) as { readonly text?: unknown };
   return (
     <div className="lifeos-prompt-sections" data-testid="lifeos-dsh-bridge-readable">
@@ -248,7 +289,7 @@ function FriendlyPreview({ preview }: { preview: DshBridgeSendPreview }) {
         </header>
         <SourceNote
           addedBy="Bridge边界Trace"
-          explanation="友好视图不再读取Prompt配置正文或Session上下文正文。下方每个区域都只从同一份原始JSON按唯一Pointer取得；Bridge日志记录同一个整体Hash和各Pointer值Hash。"
+          explanation="易读视图不再读取Prompt配置正文或Session上下文正文。下方每个区域都只从同一份原始JSON按唯一Pointer取得；Bridge日志记录同一个整体Hash和各Pointer值Hash。"
           files={[
             "dsh/packages/core/agent-loop/src/agent.ts",
             "packages/dsh-lifeos-bridge/src/adapter.ts",
@@ -275,13 +316,20 @@ function FriendlyPreview({ preview }: { preview: DshBridgeSendPreview }) {
           <div className="lifeos-prompt-section-divider">
             DSH → Bridge · 同一原始请求逐Pointer解析
           </div>
-          {dshSections.map((section) => (
-            <ExactSectionView
-              key={`dsh-${section.sectionId}`}
-              section={section}
-              source={dshSectionSource(section)}
-            />
-          ))}
+          {dshSections.map((section) => {
+            if (section.kind === "tool") {
+              return section.sectionId === firstDshToolSectionId ? (
+                <ToolSectionsGroup key="dsh-tools" sections={dshToolSections} />
+              ) : null;
+            }
+            return (
+              <ExactSectionView
+                key={`dsh-${section.sectionId}`}
+                section={section}
+                source={dshSectionSource(section)}
+              />
+            );
+          })}
         </>
       ) : (
         <section className="lifeos-prompt-section">
@@ -394,7 +442,7 @@ export function BridgeSendPreview({ preview }: { preview: DshBridgeSendPreview }
           className={view === "readable" ? "lifeos-prompt-tab-active" : undefined}
           onClick={() => setView("readable")}
         >
-          友好展示
+          易读视图
         </button>
         <button
           type="button"

@@ -5,10 +5,9 @@ import {
   LEGACY_DIRECT_PROMPT_COMPILER_VERSION,
   LEGACY_DIRECT_PROMPT_PROFILE_VERSION,
   PROMPT_ASSEMBLY_SCHEMA_VERSION,
-  productSnapshotSchema,
   promptAssemblyIdSchema,
-  type ProductSnapshot,
   type PromptAssembly,
+  type PromptAssemblyV1,
 } from "@chat/contracts";
 import {
   computeDirectAgentInputManifestSha256,
@@ -16,13 +15,14 @@ import {
   hashCanonical,
 } from "@chat/domain";
 import type { ProductSnapshotV14 } from "./legacy-v14.js";
+import { productSnapshotV15Schema, type ProductSnapshotV15 } from "./legacy-v15.js";
 
 /**
  * v14→v15为已有用户Prompt补全global scope，并增加一次发送的Prompt Assembly表。
  * 历史Direct Run以legacy-v0快照准确表达“当时没有Chat自定义区域组装”，同时只重算
  * Direct Attempt的输入Manifest Hash以纳入该新快照；其他状态、版本和时间证据不变。
  */
-export function migrateProductSnapshotV14ToV15(snapshot: ProductSnapshotV14): ProductSnapshot {
+export function migrateProductSnapshotV14ToV15(snapshot: ProductSnapshotV14): ProductSnapshotV15 {
   const promptAssemblies = Object.fromEntries(
     Object.values(snapshot.entities.runs)
       .filter((run) => run.runKind === "direct_agent")
@@ -44,7 +44,7 @@ export function migrateProductSnapshotV14ToV15(snapshot: ProductSnapshotV14): Pr
         const promptAssemblyId = promptAssemblyIdSchema.parse(
           `pma_${hashCanonical("id.prompt-assembly.v1", { productRunId: run.productRunId }).slice(0, 32)}`,
         );
-        const body: Omit<PromptAssembly, "schemaVersion" | "sha256" | "createdAt"> = {
+        const body: Omit<PromptAssemblyV1, "schemaVersion" | "sha256" | "createdAt"> = {
           promptAssemblyId,
           productSessionId: run.sessionId,
           productRunId: run.productRunId,
@@ -122,7 +122,7 @@ export function migrateProductSnapshotV14ToV15(snapshot: ProductSnapshotV14): Pr
       ];
     }),
   );
-  return productSnapshotSchema.parse({
+  return productSnapshotV15Schema.parse({
     ...snapshot,
     schemaVersion: "chat-product-store.v15",
     entities: {

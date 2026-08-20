@@ -46,10 +46,13 @@ test("plugin lifetime abort stops a waiting_human stream before another poll", a
     status: "waiting_human",
   } as ChatRun;
   const chat = {
-    createSession: async () => ({ sessionId: "psn_lifetime1" }),
-    submitMessage: async () => {
+    submitFirstMessageFromDispatch: async () => {
       submittedResolve();
-      return { message: { messageId: "msg_lifetimeuser1" }, run: waitingRun };
+      return {
+        session: { sessionId: "psn_lifetime1" },
+        message: { messageId: "msg_lifetimeuser1", sessionId: "psn_lifetime1" },
+        run: waitingRun,
+      };
     },
     getRun: async () => {
       runPolls += 1;
@@ -84,8 +87,7 @@ test("plugin lifetime abort stops a waiting_human stream before another poll", a
 
 test("enabled DSH send review blocks every Chat write until approve and reject writes nothing", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-send-review-adapter-"));
-  let createCalls = 0;
-  let submitCalls = 0;
+  let firstMessageCalls = 0;
   try {
     const state = new AtomicBridgeStateStore(join(directory, "state.json"));
     await state.ready();
@@ -131,14 +133,11 @@ test("enabled DSH send review blocks every Chat write until approve and reject w
         }),
     );
     const chat = {
-      createSession: async () => {
-        createCalls += 1;
-        return { sessionId: "psn_dshreview1" };
-      },
-      submitMessage: async () => {
-        submitCalls += 1;
+      submitFirstMessageFromDispatch: async () => {
+        firstMessageCalls += 1;
         return {
-          message: { messageId: "msg_dshreviewuser1" },
+          session: { sessionId: "psn_dshreview1" },
+          message: { messageId: "msg_dshreviewuser1", sessionId: "psn_dshreview1" },
           run: {
             productRunId: "run_dshreview1",
             status: "succeeded",
@@ -173,12 +172,10 @@ test("enabled DSH send review blocks every Chat write until approve and reject w
     }
     assert.match(approvedReview.preview.dshToBridge.adapterRequest.requestJson, /"messages"/u);
     assert.match(approvedReview.preview.dshToBridge.adapterRequest.requestJson, /审核真实发送/u);
-    assert.equal(createCalls, 0);
-    assert.equal(submitCalls, 0);
+    assert.equal(firstMessageCalls, 0);
     coordinator.decide("dsh-review-approve", approvedReview.reviewId, "approve");
     await approvedNext;
-    assert.equal(createCalls, 1);
-    assert.equal(submitCalls, 1);
+    assert.equal(firstMessageCalls, 1);
 
     const rejectedNext = adapter.stream(input("dsh-review-reject"))[Symbol.asyncIterator]().next();
     const rejectedReview = await waitForReview(coordinator, "dsh-review-reject");
@@ -187,8 +184,7 @@ test("enabled DSH send review blocks every Chat write until approve and reject w
       rejectedNext,
       (error) => error instanceof LlmError && error.code === "LIFEOS_DSH_SEND_REJECTED",
     );
-    assert.equal(createCalls, 1);
-    assert.equal(submitCalls, 1);
+    assert.equal(firstMessageCalls, 1);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -200,7 +196,7 @@ test("retryable Chat transport failure maps to the rc.6 retry policy code", asyn
     const state = new AtomicBridgeStateStore(join(directory, "state.json"));
     await state.ready();
     const chat = {
-      createSession: async () => {
+      submitFirstMessageFromDispatch: async () => {
         throw new ChatProductApiError(
           503,
           "chat_api_unreachable",
@@ -237,14 +233,14 @@ test("retryable Chat transport failure maps to the rc.6 retry policy code", asyn
 
 test("rc.6 retry of the same turn reuses command identity and returns the committed message", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-retry-turn-"));
-  const createCommands: string[] = [];
+  const messageCommands: string[] = [];
   let attempts = 0;
   try {
     const state = new AtomicBridgeStateStore(join(directory, "state.json"));
     await state.ready();
     const chat = {
-      createSession: async (commandId: string) => {
-        createCommands.push(commandId);
+      submitFirstMessageFromDispatch: async (command: { commandId: string }) => {
+        messageCommands.push(command.commandId);
         attempts += 1;
         if (attempts === 1) {
           throw new ChatProductApiError(
@@ -255,16 +251,16 @@ test("rc.6 retry of the same turn reuses command identity and returns the commit
             "Chat API is unreachable",
           );
         }
-        return { sessionId: "psn_retryturn1" };
+        return {
+          session: { sessionId: "psn_retryturn1" },
+          message: { messageId: "msg_retryturnuser1", sessionId: "psn_retryturn1" },
+          run: {
+            productRunId: "run_retryturn1",
+            status: "succeeded",
+            finalMessageId: "msg_retryturn1",
+          } as ChatRun,
+        };
       },
-      submitMessage: async () => ({
-        message: { messageId: "msg_retryturnuser1" },
-        run: {
-          productRunId: "run_retryturn1",
-          status: "succeeded",
-          finalMessageId: "msg_retryturn1",
-        } as ChatRun,
-      }),
       getMessage: async () => ({
         messageId: "msg_retryturn1",
         role: "assistant",
@@ -288,8 +284,8 @@ test("rc.6 retry of the same turn reuses command identity and returns the commit
 
     const chunks: StreamChunk[] = [];
     for await (const chunk of adapter.stream(input)) chunks.push(chunk);
-    assert.equal(createCommands.length, 2);
-    assert.equal(createCommands[0], createCommands[1]);
+    assert.equal(messageCommands.length, 2);
+    assert.equal(messageCommands[0], messageCommands[1]);
     const delta = chunks.find((chunk) => chunk.type === "text-delta");
     assert.equal(delta?.type === "text-delta" ? delta.text : undefined, "恢复成功");
   } finally {
@@ -305,16 +301,10 @@ test("unknown submit outcome retries with the originally frozen Workspace instru
     const state = new AtomicBridgeStateStore(join(directory, "state.json"));
     await state.ready();
     const chat = {
-      createSession: async () => ({ sessionId: "psn_retryinstructions1" }),
-      submitMessage: async (
-        _sessionId: string,
-        _commandId: string,
-        _text: string,
-        _signal: AbortSignal | undefined,
-        _workflowSelection: unknown,
-        workspaceInstructions: unknown,
-      ) => {
-        submittedInstructions.push(workspaceInstructions);
+      submitFirstMessageFromDispatch: async (command: {
+        payload: { context?: { workspaceInstructions?: unknown } };
+      }) => {
+        submittedInstructions.push(command.payload.context?.workspaceInstructions);
         submitAttempts += 1;
         if (submitAttempts === 1) {
           throw new ChatProductApiError(
@@ -326,7 +316,11 @@ test("unknown submit outcome retries with the originally frozen Workspace instru
           );
         }
         return {
-          message: { messageId: "msg_retryinstructionsuser1" },
+          session: { sessionId: "psn_retryinstructions1" },
+          message: {
+            messageId: "msg_retryinstructionsuser1",
+            sessionId: "psn_retryinstructions1",
+          },
           run: {
             productRunId: "run_retryinstructions1",
             status: "succeeded",
@@ -428,17 +422,10 @@ test("unknown Direct submit outcome retries with the request-frozen Prompt selec
     );
     await state.selectPrompt("dsh-retry-prompt", createSessionCommandId, firstSelection);
     const chat = {
-      createSession: async () => ({ sessionId: "psn_retryprompt1" }),
-      submitMessage: async (
-        _sessionId: string,
-        _commandId: string,
-        _text: string,
-        _signal: AbortSignal | undefined,
-        _workflowSelection: unknown,
-        _workspaceInstructions: unknown,
-        promptSelection: unknown,
-      ) => {
-        submittedSelections.push(promptSelection);
+      submitFirstMessageFromDispatch: async (command: {
+        payload: { promptSelection?: unknown };
+      }) => {
+        submittedSelections.push(command.payload.promptSelection);
         submitAttempts += 1;
         if (submitAttempts === 1) {
           throw new ChatProductApiError(
@@ -450,7 +437,8 @@ test("unknown Direct submit outcome retries with the request-frozen Prompt selec
           );
         }
         return {
-          message: { messageId: "msg_retrypromptuser1" },
+          session: { sessionId: "psn_retryprompt1" },
+          message: { messageId: "msg_retrypromptuser1", sessionId: "psn_retryprompt1" },
           run: {
             productRunId: "run_retryprompt1",
             status: "succeeded",

@@ -5,7 +5,6 @@ import {
   captureDshAdapterRequest,
   dshAdapterRequestTraceOf,
   LifeosLlmAdapter,
-  productSessionTitle,
   sha256,
   workspaceInstructionsOf,
 } from "../src/adapter.ts";
@@ -156,14 +155,6 @@ test("compaction summarizes bounded visible text locally with zero Chat access",
   assert.match(summary, /仅整理当前可见文本/);
   assert.match(summary, /不包含隐藏推理/);
   assert.match(summary, /用户可见内容/);
-});
-
-test("Product Session title is a normalized, contract-bounded first-prompt projection", () => {
-  const title = productSessionTitle(`  设计\n统一会话   ${"长期内容".repeat(100)}  `);
-  assert.match(title, /^设计 统一会话/u);
-  assert.doesNotMatch(title, /\n/u);
-  assert.ok(Array.from(title).length <= 200);
-  assert.match(title, /…$/u);
 });
 
 test("only DSH agent-instructions are forwarded as current Workspace instructions", () => {

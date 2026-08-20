@@ -6,6 +6,8 @@ import {
   AgentSessionPiDirectAgentRunner,
   DirectAgentExecutionError,
   DirectAgentSuspendedError,
+  P1_DIRECT_AGENT_PROFILE,
+  type DirectAgentRunInput,
   type DirectAgentRunner,
 } from "./direct-agent-executor.js";
 import {
@@ -44,13 +46,41 @@ export interface AuthorizedDirectAgentInput {
     readonly text: string;
     readonly sha256: string;
   };
-  readonly promptAssembly: {
-    readonly promptAssemblyId: string;
-    readonly sha256: string;
-    readonly systemPromptAppend: string;
-    readonly userPrompt: string;
-    readonly workspaceRootId?: string | undefined;
-  };
+  readonly promptAssembly:
+    | {
+        readonly schemaVersion: "prompt-assembly.v1";
+        readonly promptAssemblyId: string;
+        readonly sha256: string;
+        readonly systemPromptAppend: string;
+        readonly userPrompt: string;
+        readonly workspaceRootId?: string | undefined;
+      }
+    | {
+        readonly schemaVersion: "prompt-assembly.v2";
+        readonly promptAssemblyId: string;
+        readonly sha256: string;
+        readonly systemPromptAppend: string;
+        readonly messages: readonly {
+          readonly role: "user" | "assistant";
+          readonly text: string;
+          readonly source: Readonly<Record<string, unknown>>;
+          readonly estimatedTokens: number;
+        }[];
+        readonly tools: {
+          readonly capabilityMode: "read_only";
+          readonly names: ("read" | "grep" | "find" | "ls")[];
+          readonly estimatedTokens: 8_000;
+        };
+        readonly requestOptions: {
+          readonly providerId: "dashscope-coding";
+          readonly modelId: "qwen3.7-plus";
+          readonly thinkingLevel: "off";
+          readonly retryEnabled: false;
+          readonly compactionEnabled: false;
+        };
+        readonly budget: Readonly<Record<string, unknown>>;
+        readonly workspaceRootId?: string | undefined;
+      };
   readonly capabilityMode: "read_only";
   readonly limits: AuthorizedDirectAgentProfile["limits"];
 }
@@ -317,6 +347,25 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
       if (!resume) await options.store.markRunning(operationId);
       const authorizedInput = await loadAuthorizedInput(request);
       let prompt = "";
+      let history: DirectAgentRunInput["history"] = [];
+      const tools =
+        authorizedInput.promptAssembly.schemaVersion === "prompt-assembly.v2"
+          ? authorizedInput.promptAssembly.tools
+          : {
+              capabilityMode: "read_only" as const,
+              names: [...P1_DIRECT_AGENT_PROFILE.enabledTools],
+              estimatedTokens: 8_000 as const,
+            };
+      const requestOptions =
+        authorizedInput.promptAssembly.schemaVersion === "prompt-assembly.v2"
+          ? authorizedInput.promptAssembly.requestOptions
+          : {
+              providerId: P1_DIRECT_AGENT_PROFILE.providerId,
+              modelId: P1_DIRECT_AGENT_PROFILE.modelId,
+              thinkingLevel: P1_DIRECT_AGENT_PROFILE.thinkingLevel,
+              retryEnabled: P1_DIRECT_AGENT_PROFILE.retryEnabled,
+              compactionEnabled: P1_DIRECT_AGENT_PROFILE.compactionEnabled,
+            };
       if (!resume) {
         const currentProfile = profileFrom(authorizedInput);
         if (
@@ -326,7 +375,19 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
         ) {
           throw new DirectAgentExecutionError("direct_executor.authorization_mismatch");
         }
-        prompt = authorizedInput.promptAssembly.userPrompt;
+        if (authorizedInput.promptAssembly.schemaVersion === "prompt-assembly.v1") {
+          prompt = authorizedInput.promptAssembly.userPrompt;
+        } else {
+          const current = authorizedInput.promptAssembly.messages.at(-1);
+          if (current?.role !== "user" || current.source["kind"] !== "current_input") {
+            throw new DirectAgentExecutionError("direct_executor.prompt_envelope_invalid");
+          }
+          prompt = current.text;
+          history = authorizedInput.promptAssembly.messages.slice(0, -1).map((message) => ({
+            role: message.role,
+            text: message.text,
+          }));
+        }
       }
       const configuredRoot =
         authorizedInput.promptAssembly.workspaceRootId === undefined
@@ -342,7 +403,10 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
       const output = await runner.run({
         request,
         prompt,
+        history,
         systemPromptAppend: authorizedInput.promptAssembly.systemPromptAppend,
+        tools,
+        requestOptions,
         cwd,
         agentDir: options.agentDir,
         sessionsDir: options.sessionsDir,

@@ -87,7 +87,7 @@ function fieldTitle(field: string): string {
 }
 
 /**
- * 友好视图的唯一正文输入是原始JSON。每个区域只对应一个JSON Pointer；调用方
+ * 易读视图的唯一正文输入是原始JSON。每个区域只对应一个JSON Pointer；调用方
  * 可以改变标题与来源注释，但不得替换valueJson或从Session重新读取另一份正文。
  */
 export function exactSectionsFromJson(requestJson: string): ExactJsonSection[] {

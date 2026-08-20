@@ -7,7 +7,7 @@ import {
   resolveDshWebRuntime,
 } from "../dsh/profile-runtime.mjs";
 import { startWebGateway } from "../dsh/web-gateway.mjs";
-import { dshRealWebEnvironment } from "./dsh-real-environment.mjs";
+import { dshRealWebEnvironment, resolveDshRealDataRoot } from "./dsh-real-environment.mjs";
 
 /**
  * PWA 真实浏览器 E2E 的 DSH 启动器：与正式启动器同构（同一受监督PID拥有
@@ -15,7 +15,7 @@ import { dshRealWebEnvironment } from "./dsh-real-environment.mjs";
  * Workbench，Gateway 以 workbench 未配置姿态运行（/workbench/* 明确 503）。
  */
 const repoRoot = resolve(import.meta.dirname, "../..");
-const dataRoot = resolve(repoRoot, ".data/e2e/dsh-real");
+const dataRoot = resolveDshRealDataRoot(repoRoot, process.env);
 const dshHome = resolve(process.env.DSH_HOME ?? "");
 const statePath = resolve(process.env.CHAT_DSH_STATE_PATH ?? "");
 

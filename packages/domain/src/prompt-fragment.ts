@@ -21,7 +21,8 @@ export type PromptFragmentDerivedFromShape =
       readonly sha256: string;
     };
 
-export interface PromptFragmentRevisionShape {
+export interface PromptFragmentRevisionV1Shape {
+  readonly schemaVersion?: "prompt-fragment-revision.v1";
   readonly promptFragmentRevisionId: string;
   readonly promptFragmentId: string;
   readonly revision: number;
@@ -35,6 +36,32 @@ export interface PromptFragmentRevisionShape {
   readonly authoredByPrincipalId: string;
   readonly sha256: string;
 }
+
+export interface PromptFragmentRevisionV2Shape {
+  readonly schemaVersion: "prompt-fragment-revision.v2";
+  readonly promptFragmentRevisionId: string;
+  readonly promptFragmentId: string;
+  readonly revision: number;
+  readonly regionKey: string;
+  readonly title: string;
+  readonly description?: string | undefined;
+  readonly contentRef: {
+    readonly kind: "managed_markdown";
+    readonly contentKind: "markdown" | "key_value";
+    readonly key?: string | undefined;
+    readonly contentSha256: string;
+    readonly sourceRelativePath: string;
+    readonly sourceSha256: string;
+  };
+  readonly supersedesRevisionId?: string | undefined;
+  readonly supersedesRevisionSha256?: string | undefined;
+  readonly derivedFrom?: PromptFragmentDerivedFromShape | undefined;
+  readonly authoredByPrincipalId: string;
+  readonly sha256: string;
+}
+
+export type PromptFragmentRevisionShape =
+  PromptFragmentRevisionV1Shape | PromptFragmentRevisionV2Shape;
 
 const FORBIDDEN_TEXT = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u2028\u2029]/u;
 
@@ -94,13 +121,55 @@ export function computePromptFragmentRevisionSha256(
   return hashCanonical("prompt-fragment-revision.v1", input);
 }
 
+export interface PromptFragmentRevisionV2HashInput {
+  readonly promptFragmentId: string;
+  readonly revision: number;
+  readonly regionKey: string;
+  readonly title: string;
+  readonly description?: string | undefined;
+  readonly contentRef: PromptFragmentRevisionV2Shape["contentRef"];
+  readonly supersedesRevisionId?: string | undefined;
+  readonly supersedesRevisionSha256?: string | undefined;
+  readonly derivedFrom?: PromptFragmentDerivedFromShape | undefined;
+  readonly authoredByPrincipalId: string;
+}
+
+export function computePromptFragmentRevisionV2Sha256(
+  input: PromptFragmentRevisionV2HashInput,
+): string {
+  return hashCanonical("prompt-fragment-revision.v2", input);
+}
+
 export function assertPromptFragmentRevision(revision: PromptFragmentRevisionShape): void {
   assertPromptRegionKey(revision.regionKey);
   assertPromptFragmentText("Prompt标题", revision.title, 160);
   if (revision.description !== undefined) {
     assertPromptFragmentText("Prompt描述", revision.description, 1_000);
   }
-  assertPromptFragmentContent(revision.content);
+  if (revision.schemaVersion === "prompt-fragment-revision.v2") {
+    if (
+      !/^[a-f0-9]{64}$/u.test(revision.contentRef.contentSha256) ||
+      !/^[a-f0-9]{64}$/u.test(revision.contentRef.sourceSha256) ||
+      revision.contentRef.sourceRelativePath.trim() === "" ||
+      revision.contentRef.sourceRelativePath.length > 500 ||
+      revision.contentRef.sourceRelativePath.split("/").includes("..") ||
+      (revision.contentRef.contentKind === "key_value") !== (revision.contentRef.key !== undefined)
+    ) {
+      throw new PromptFragmentDomainError(
+        "prompt.fragment_content_ref_invalid",
+        "Prompt Markdown正文引用非法",
+      );
+    }
+    if (revision.contentRef.key !== undefined) {
+      assertPromptFragmentContent({
+        kind: "key_value",
+        key: revision.contentRef.key,
+        valueMarkdown: "引用正文",
+      });
+    }
+  } else {
+    assertPromptFragmentContent(revision.content);
+  }
   if (revision.revision === 1) {
     if (
       revision.supersedesRevisionId !== undefined ||
@@ -120,13 +189,12 @@ export function assertPromptFragmentRevision(revision: PromptFragmentRevisionSha
       "Prompt后续版本必须绑定上一版ID和Hash",
     );
   }
-  const expected = computePromptFragmentRevisionSha256({
+  const common = {
     promptFragmentId: revision.promptFragmentId,
     revision: revision.revision,
     regionKey: revision.regionKey,
     title: revision.title,
     ...(revision.description !== undefined ? { description: revision.description } : {}),
-    content: revision.content,
     ...(revision.supersedesRevisionId !== undefined
       ? { supersedesRevisionId: revision.supersedesRevisionId }
       : {}),
@@ -135,7 +203,11 @@ export function assertPromptFragmentRevision(revision: PromptFragmentRevisionSha
       : {}),
     ...(revision.derivedFrom !== undefined ? { derivedFrom: revision.derivedFrom } : {}),
     authoredByPrincipalId: revision.authoredByPrincipalId,
-  });
+  };
+  const expected =
+    revision.schemaVersion === "prompt-fragment-revision.v2"
+      ? computePromptFragmentRevisionV2Sha256({ ...common, contentRef: revision.contentRef })
+      : computePromptFragmentRevisionSha256({ ...common, content: revision.content });
   if (revision.sha256 !== expected) {
     throw new PromptFragmentDomainError(
       "prompt.revision_hash_mismatch",

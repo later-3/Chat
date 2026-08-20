@@ -51,5 +51,6 @@ export * from "./planning-memory-context-use-cases.js";
 export * from "./prompt-review-use-cases.js";
 export * from "./direct-agent-runtime-use-cases.js";
 export * from "./prompt-catalog-port.js";
+export * from "./prompt-file-library-port.js";
 export * from "./prompt-studio-use-cases.js";
 export * from "./prompt-assembly-use-cases.js";

@@ -14,6 +14,7 @@ import {
   type ChatRun,
   type DecisionRequest,
   type DshSendReviewDecisionRequest,
+  type BridgeChatDispatchReviewDecisionRequest,
   type NoteDecisionRequest,
   type PromptSelection,
   type PromptSelectionProjection,
@@ -43,11 +44,13 @@ import {
 import type { DshSessionHistoryPort } from "./dsh-session-history.ts";
 import type { DshContextInjectionReader } from "./context-injection-reader.ts";
 import type { DshSendReviewCoordinator } from "./dsh-send-review.ts";
+import type { BridgeDispatchReviewCoordinator } from "./bridge-dispatch-review.ts";
 import {
   promptSelectionForWorkspace,
   type PromptWorkspaceResolver,
 } from "./prompt-workspace-resolver.ts";
 import { exactSectionsFromJson, lastDshUserInputMapping } from "./dsh-bridge-readable.ts";
+import { bridgeChatSubmitPayload } from "./bridge-chat-dispatch.ts";
 
 export class BridgeRequestError extends Error {
   constructor(
@@ -214,6 +217,7 @@ export class LifeosBridgeService {
     >,
     private readonly promptWorkspaceResolver?: PromptWorkspaceResolver,
     private readonly dshSendReview?: DshSendReviewCoordinator,
+    private readonly bridgeDispatchReview?: BridgeDispatchReviewCoordinator,
   ) {}
 
   private history(): DshSessionHistoryPort {
@@ -384,22 +388,12 @@ export class LifeosBridgeService {
     const promptConfiguration = direct
       ? await this.chat.previewPromptConfiguration({ selection: promptSelection })
       : null;
-    const payload = {
+    const payload = bridgeChatSubmitPayload({
       text,
-      ...(workflowSelection === null
-        ? {}
-        : {
-            workflowSelection: {
-              kind: "published_revision" as const,
-              workflowDefinitionRevisionId: workflowSelection.workflowDefinitionRevisionId,
-              definitionSha256: workflowSelection.definitionSha256,
-            },
-          }),
-      ...(!direct && workspaceInstructions !== undefined
-        ? { context: { workspaceInstructions } }
-        : {}),
+      ...(workflowSelection === null ? {} : { workflowSelection }),
+      ...(!direct && workspaceInstructions !== undefined ? { workspaceInstructions } : {}),
       ...(direct ? { promptSelection } : {}),
-    };
+    });
     const payloadJson = JSON.stringify(payload, null, 2);
     const payloadSha256 = sha256(payloadJson);
     if (adapterRequest.status === "captured") {
@@ -461,6 +455,9 @@ export class LifeosBridgeService {
     const workflowSelection = await this.state.readWorkflowSelection(dshSessionId);
     const dshSendReviewEnabled = await this.state.readDshSendReviewEnabled(dshSessionId);
     const dshSendReview = this.dshSendReview?.current(dshSessionId) ?? null;
+    const bridgeDispatchReviewEnabled =
+      await this.state.readBridgeDispatchReviewEnabled(dshSessionId);
+    const bridgeDispatchReview = this.bridgeDispatchReview?.current(dshSessionId) ?? null;
     const executionTracesPromise = this.executionTraces(binding, signal);
     const current =
       binding?.currentRequestKey === undefined
@@ -480,6 +477,8 @@ export class LifeosBridgeService {
         pendingPromptReviewDecision: current?.pendingPromptReviewDecision?.request ?? null,
         dshSendReviewEnabled,
         dshSendReview,
+        bridgeDispatchReviewEnabled,
+        bridgeDispatchReview,
         workflowSelection,
         executionTraces: await executionTracesPromise,
       };
@@ -531,6 +530,8 @@ export class LifeosBridgeService {
       pendingPromptReviewDecision: current.pendingPromptReviewDecision?.request ?? null,
       dshSendReviewEnabled,
       dshSendReview,
+      bridgeDispatchReviewEnabled,
+      bridgeDispatchReview,
       workflowSelection,
       executionTraces,
     };
@@ -653,6 +654,42 @@ export class LifeosBridgeService {
         409,
         "lifeos_dsh_send_review_stale",
         "该DSH发送审核已处理或不再有效",
+      );
+    }
+    return await this.projection(dshSessionId, signal);
+  }
+
+  async setBridgeDispatchReviewEnabled(
+    dshSessionId: string,
+    enabled: boolean,
+    signal?: AbortSignal,
+  ): Promise<LifeosProjection> {
+    await this.state.setBridgeDispatchReviewEnabled(
+      dshSessionId,
+      stableCommandId("create-session", dshSessionId),
+      enabled,
+    );
+    if (!enabled) this.bridgeDispatchReview?.approveCurrent(dshSessionId);
+    return await this.projection(dshSessionId, signal);
+  }
+
+  async decideBridgeDispatchReview(
+    dshSessionId: string,
+    request: BridgeChatDispatchReviewDecisionRequest,
+    signal?: AbortSignal,
+  ): Promise<LifeosProjection> {
+    if (
+      this.bridgeDispatchReview?.decide(
+        dshSessionId,
+        request.reviewId,
+        request.planSha256,
+        request.kind,
+      ) !== true
+    ) {
+      throw new BridgeRequestError(
+        409,
+        "lifeos_bridge_dispatch_review_stale",
+        "该Bridge出口审核已处理、正文已变化或不再有效",
       );
     }
     return await this.projection(dshSessionId, signal);

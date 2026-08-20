@@ -45,6 +45,7 @@ import type {
 } from "@chat/contracts";
 import type { PromptFragmentId, PromptFragmentRevisionId } from "@chat/contracts";
 import type { PromptCatalogPort } from "./prompt-catalog-port.js";
+import type { PromptFileLibraryPort } from "./prompt-file-library-port.js";
 import type { TraceEventInput } from "@chat/contracts";
 import type { ProductStorePort } from "./product-store-port.js";
 import type { MemoryBackendRegistryPort } from "./memory-ports.js";
@@ -167,6 +168,7 @@ export interface ApplicationDeps {
   readonly directAgentIds?: DirectAgentIdFactory;
   /** Prompt Studio的Git Catalog与用户产品身份；旧用例不被迫依赖。 */
   readonly promptCatalog?: PromptCatalogPort;
+  readonly promptFiles?: PromptFileLibraryPort;
   readonly promptFragmentIds?: PromptFragmentIdFactory;
 }
 

@@ -68,6 +68,7 @@ import {
   PiProjectIntakeUnderstandingAdapter,
 } from "@chat/pi-runtime";
 import { createFilePromptCatalog } from "./prompt-catalog.js";
+import { createPromptFileLibrary } from "./prompt-file-library.js";
 
 /**
  * API组合根。
@@ -190,6 +191,10 @@ export async function createApplicationDeps(
   );
   const workflowMemoryProviders = createWorkflowMemoryProviderRegistry(process.env);
   const promptCatalog = await createFilePromptCatalog();
+  const promptFiles = await createPromptFileLibrary({
+    repoRoot: process.env.CHAT_REPO_ROOT ?? resolve(process.cwd(), "../.."),
+    env: process.env,
+  });
   return {
     store,
     now: () => new Date().toISOString(),
@@ -203,6 +208,7 @@ export async function createApplicationDeps(
     ruleIds: createRuleIdFactory(),
     directAgentIds: createDirectAgentIdFactory(),
     promptCatalog,
+    promptFiles,
     promptFragmentIds: createPromptFragmentIdFactory(),
     ...(trace !== undefined ? { trace } : {}),
   };

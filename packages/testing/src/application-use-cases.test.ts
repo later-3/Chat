@@ -115,7 +115,7 @@ async function seedSessionWithMessage(deps: ApplicationDeps, text = "根据我�
     commandId: cmd(),
     payload: { text },
   });
-  return { session, ...submitted };
+  return submitted;
 }
 
 /** 测试也必须走正式Planning Input -> Attempt -> Plan发布绑定，禁止无Attempt捷径。 */
@@ -142,6 +142,36 @@ async function publishPlanForReview(
 }
 
 describe("CreateProductSession + SubmitUserMessage", () => {
+  it("首轮Message由Application原子创建Session、标题、Run与Outbox，响应丢失重放不重复", async () => {
+    const { deps } = await testDeps();
+    const commandId = cmd();
+    const first = await submitUserMessage(deps, {
+      principalId: PRINCIPAL,
+      commandId,
+      payload: { text: "  设计\n统一会话  " },
+    });
+    const replay = await submitUserMessage(deps, {
+      principalId: PRINCIPAL,
+      commandId,
+      payload: { text: "  设计\n统一会话  " },
+    });
+
+    expect(first.session.title).toBe("设计 统一会话");
+    expect(first.session.revision).toBe(1);
+    expect(first.message.sessionId).toBe(first.session.sessionId);
+    expect(first.run.sessionId).toBe(first.session.sessionId);
+    expect(replay.session.sessionId).toBe(first.session.sessionId);
+    expect(replay.message.messageId).toBe(first.message.messageId);
+    expect(replay.run.productRunId).toBe(first.run.productRunId);
+
+    const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+    expect(Object.values(snapshot.entities.sessions)).toHaveLength(1);
+    expect(Object.values(snapshot.entities.messages)).toHaveLength(1);
+    expect(Object.values(snapshot.entities.runs)).toHaveLength(1);
+    expect(Object.values(snapshot.outbox)).toHaveLength(1);
+    expect(Object.values(snapshot.commandReceipts)).toHaveLength(1);
+  });
+
   it("原子提交Message + Run + Receipt + Outbox，重启后恢复", async () => {
     const { deps, filePath } = await testDeps();
     const { message, run } = await seedSessionWithMessage(deps);

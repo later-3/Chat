@@ -56,6 +56,7 @@ import {
   migrateProductSnapshotV12ToV13,
   migrateProductSnapshotV13ToV14,
   migrateProductSnapshotV14ToV15,
+  migrateProductSnapshotV15ToV16,
   productSnapshotV1Schema,
   productSnapshotV10Schema,
   type ProductSnapshotV10,
@@ -260,7 +261,7 @@ export async function buildS7VersionedFixture(
 }
 
 export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot): ProductSnapshot {
-  if (snapshot.schemaVersion === "chat-product-store.v15") return structuredClone(snapshot);
+  if (snapshot.schemaVersion === "chat-product-store.v16") return structuredClone(snapshot);
   const v2 =
     snapshot.schemaVersion === "chat-product-store.v1"
       ? migrateProductSnapshotV1ToV2(snapshot)
@@ -283,7 +284,9 @@ export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot):
     v13.schemaVersion === "chat-product-store.v13" ? migrateProductSnapshotV13ToV14(v13) : v13;
   const v15 =
     v14.schemaVersion === "chat-product-store.v14" ? migrateProductSnapshotV14ToV15(v14) : v14;
-  return productSnapshotSchema.parse(v15);
+  const v16 =
+    v15.schemaVersion === "chat-product-store.v15" ? migrateProductSnapshotV15ToV16(v15) : v15;
+  return productSnapshotSchema.parse(v16);
 }
 
 function toV10Fixture(snapshot: ProductSnapshot): ProductSnapshotV10 {

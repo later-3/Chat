@@ -713,6 +713,15 @@ export const runDtoSchema = z
   })
   .strict();
 
+export const submitMessageResponseSchema = z
+  .object({ message: messageDtoSchema, run: runDtoSchema })
+  .strict();
+
+/** 首轮Message命令的响应；Session只能由Chat Application在同一事务内创建。 */
+export const startSessionMessageResponseSchema = z
+  .object({ session: sessionDtoSchema, message: messageDtoSchema, run: runDtoSchema })
+  .strict();
+
 export const decisionDtoSchema = z
   .object({
     schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
@@ -733,5 +742,7 @@ export type MessageResponse = z.infer<typeof messageResponseSchema>;
 export type PlanDto = z.infer<typeof planDtoSchema>;
 export type ApprovalDto = z.infer<typeof approvalDtoSchema>;
 export type RunDto = z.infer<typeof runDtoSchema>;
+export type SubmitMessageResponse = z.infer<typeof submitMessageResponseSchema>;
+export type StartSessionMessageResponse = z.infer<typeof startSessionMessageResponseSchema>;
 export type DecisionDto = z.infer<typeof decisionDtoSchema>;
 export type RunAllowedAction = z.infer<typeof runAllowedActionSchema>;

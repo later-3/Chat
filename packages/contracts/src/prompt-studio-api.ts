@@ -8,7 +8,9 @@ import {
   promptWorkspaceRootIdSchema,
 } from "./prompt-fragment.js";
 import {
+  DIRECT_PROMPT_COMPILER_V2_VERSION,
   DIRECT_PROMPT_COMPILER_VERSION,
+  DIRECT_PROMPT_PROFILE_V2_VERSION,
   DIRECT_PROMPT_PROFILE_VERSION,
   promptAssemblyRegionSchema,
   promptTurnSelectionInputSchema,
@@ -214,8 +216,8 @@ export const previewPromptConfigurationPayloadSchema = z
 export const promptConfigurationPreviewDtoSchema = z
   .object({
     schemaVersion: z.literal(PROMPT_STUDIO_API_SCHEMA_VERSION),
-    profileVersion: z.literal(DIRECT_PROMPT_PROFILE_VERSION),
-    compilerVersion: z.literal(DIRECT_PROMPT_COMPILER_VERSION),
+    profileVersion: z.enum([DIRECT_PROMPT_PROFILE_VERSION, DIRECT_PROMPT_PROFILE_V2_VERSION]),
+    compilerVersion: z.enum([DIRECT_PROMPT_COMPILER_VERSION, DIRECT_PROMPT_COMPILER_V2_VERSION]),
     regions: z.array(promptAssemblyRegionSchema).max(32),
     systemPromptAppend: z.string().max(512_000),
     messageContext: z.string().max(512_000),
@@ -226,8 +228,8 @@ export const promptConfigurationPreviewDtoSchema = z
 export const promptAssemblyPreviewDtoSchema = z
   .object({
     schemaVersion: z.literal(PROMPT_STUDIO_API_SCHEMA_VERSION),
-    profileVersion: z.literal(DIRECT_PROMPT_PROFILE_VERSION),
-    compilerVersion: z.literal(DIRECT_PROMPT_COMPILER_VERSION),
+    profileVersion: z.enum([DIRECT_PROMPT_PROFILE_VERSION, DIRECT_PROMPT_PROFILE_V2_VERSION]),
+    compilerVersion: z.enum([DIRECT_PROMPT_COMPILER_VERSION, DIRECT_PROMPT_COMPILER_V2_VERSION]),
     regions: z.array(promptAssemblyRegionSchema).max(32),
     systemPromptAppend: z.string().max(512_000),
     userPrompt: z.string().min(1).max(1_000_000),

@@ -169,14 +169,9 @@ test("native DSH generation crosses Chat Plan/HITL and returns only the committe
         path: url.pathname,
         ...(requestBody === undefined ? {} : { body: requestBody }),
       });
-      if (req.method === "POST" && url.pathname === "/api/sessions") {
-        json(res, { session });
-      } else if (
-        req.method === "POST" &&
-        url.pathname === `/api/sessions/${session.sessionId}/messages`
-      ) {
+      if (req.method === "POST" && url.pathname === "/api/messages") {
         submittedResolve();
-        json(res, { message: userMessage, run: run(false) });
+        json(res, { session, message: userMessage, run: run(false) });
       } else if (req.method === "GET" && url.pathname === "/api/runs/run_bridge1") {
         json(res, { run: run(approved) });
       } else if (req.method === "GET" && url.pathname === "/api/runs/run_bridge1/plans") {
@@ -292,24 +287,13 @@ test("native DSH generation crosses Chat Plan/HITL and returns only the committe
 
     assert.deepEqual(
       requests.filter((request) => request.method === "POST").map((request) => request.path),
-      [
-        "/api/sessions",
-        `/api/sessions/${session.sessionId}/messages`,
-        "/api/runs/run_bridge1/decisions",
-      ],
+      ["/api/messages", "/api/runs/run_bridge1/decisions"],
     );
     assert.deepEqual(
       (
-        requests.find((request) => request.path === "/api/sessions")?.body as {
+        requests.find((request) => request.path === "/api/messages")?.body as {
           payload?: unknown;
         }
-      )?.payload,
-      { title: userMessage.content.text },
-    );
-    assert.deepEqual(
-      (
-        requests.find((request) => request.path === `/api/sessions/${session.sessionId}/messages`)
-          ?.body as { payload?: unknown }
       )?.payload,
       {
         text: userMessage.content.text,
@@ -348,44 +332,48 @@ test("reopening a persisted DSH history continues in the same Product Session", 
       answer: "第二轮完成",
     },
   ] as const;
-  let createCount = 0;
+  let firstMessageCount = 0;
   const submissions: Array<{ sessionId: string; text: string }> = [];
+  const submitTurn = (sessionId: string, text: string) => {
+    const item = interactions.find((candidate) => candidate.text === text);
+    assert.ok(item !== undefined);
+    submissions.push({ sessionId, text });
+    return {
+      message: {
+        schemaVersion,
+        messageId: item.userMessageId,
+        sessionId,
+        sessionSequence: item === interactions[0] ? 1 : 3,
+        role: "user" as const,
+        content: { format: "markdown" as const, text },
+        sha256: "d".repeat(64),
+        createdAt: timestamp,
+      },
+      run: {
+        schemaVersion,
+        productRunId: item.productRunId,
+        sessionId,
+        sourceMessageId: item.userMessageId,
+        status: "succeeded" as const,
+        phase: "completed" as const,
+        finalMessageId: item.assistantMessageId,
+        allowedActions: [],
+        revision: 1,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    };
+  };
   const chat = {
-    createSession: async (_commandId: string, title: string) => {
-      createCount += 1;
-      assert.equal(title, interactions[0].text);
-      return { ...session, title };
-    },
-    submitMessage: async (sessionId: string, _commandId: string, text: string) => {
-      const item = interactions.find((candidate) => candidate.text === text);
-      assert.ok(item !== undefined);
-      submissions.push({ sessionId, text });
+    submitFirstMessageFromDispatch: async (command: { payload: { text: string } }) => {
+      firstMessageCount += 1;
       return {
-        message: {
-          schemaVersion,
-          messageId: item.userMessageId,
-          sessionId,
-          sessionSequence: item === interactions[0] ? 1 : 3,
-          role: "user" as const,
-          content: { format: "markdown" as const, text },
-          sha256: "d".repeat(64),
-          createdAt: timestamp,
-        },
-        run: {
-          schemaVersion,
-          productRunId: item.productRunId,
-          sessionId,
-          sourceMessageId: item.userMessageId,
-          status: "succeeded" as const,
-          phase: "completed" as const,
-          finalMessageId: item.assistantMessageId,
-          allowedActions: [],
-          revision: 1,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        },
+        session: { ...session, title: interactions[0].text },
+        ...submitTurn(session.sessionId, command.payload.text),
       };
     },
+    submitMessageFromDispatch: async (sessionId: string, command: { payload: { text: string } }) =>
+      submitTurn(sessionId, command.payload.text),
     getMessage: async (_sessionId: string, messageId: string) => {
       const item = interactions.find((candidate) => candidate.assistantMessageId === messageId);
       assert.ok(item !== undefined);
@@ -430,7 +418,7 @@ test("reopening a persisted DSH history continues in the same Product Session", 
     );
     assert.equal(textDelta(second), interactions[1].answer);
 
-    assert.equal(createCount, 1);
+    assert.equal(firstMessageCount, 1);
     assert.deepEqual(submissions, [
       { sessionId: session.sessionId, text: interactions[0].text },
       { sessionId: session.sessionId, text: interactions[1].text },
@@ -455,8 +443,9 @@ test("workflow selection draft is frozen per request and submitted with the next
     void (async () => {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
       const requestBody = req.method === "POST" ? await body(req) : undefined;
-      if (req.method === "POST" && url.pathname === "/api/sessions") {
-        json(res, { session });
+      if (req.method === "POST" && url.pathname === "/api/messages") {
+        messageSubmissions.push({ body: requestBody });
+        json(res, { session, message: userMessage, run: run(true) });
       } else if (
         req.method === "POST" &&
         url.pathname === `/api/sessions/${session.sessionId}/messages`

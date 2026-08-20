@@ -71,8 +71,8 @@ export const promptFragmentDerivedFromSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
-/** PromptFragmentRevision不可变；标题、描述、Region和正文的任何变化都追加Revision。 */
-export const promptFragmentRevisionSchema = z
+/** v1兼容旧快照；正文曾直接保存在Product Store。新写入必须使用v2文件引用。 */
+export const promptFragmentRevisionV1Schema = z
   .object({
     schemaVersion: z.literal("prompt-fragment-revision.v1"),
     promptFragmentRevisionId: promptFragmentRevisionIdSchema,
@@ -90,6 +90,51 @@ export const promptFragmentRevisionSchema = z
     createdAt: z.iso.datetime(),
   })
   .strict();
+
+export const promptFragmentContentReferenceSchema = z
+  .object({
+    kind: z.literal("managed_markdown"),
+    contentKind: z.enum(["markdown", "key_value"]),
+    key: z.string().trim().min(1).max(120).optional(),
+    contentSha256: sha256Schema,
+    sourceRelativePath: z.string().min(1).max(500),
+    sourceSha256: sha256Schema,
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if ((value.contentKind === "key_value") !== (value.key !== undefined)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["key"],
+        message: "key_value文件引用必须且只能携带key",
+      });
+    }
+  });
+
+/** v2只保存可见Markdown Revision的引用与Hash；正文由PromptFileLibrary读取。 */
+export const promptFragmentRevisionV2Schema = z
+  .object({
+    schemaVersion: z.literal("prompt-fragment-revision.v2"),
+    promptFragmentRevisionId: promptFragmentRevisionIdSchema,
+    promptFragmentId: promptFragmentIdSchema,
+    revision: z.number().int().positive(),
+    regionKey: promptRegionKeySchema,
+    title: z.string().trim().min(1).max(160),
+    description: z.string().trim().min(1).max(1_000).optional(),
+    contentRef: promptFragmentContentReferenceSchema,
+    supersedesRevisionId: promptFragmentRevisionIdSchema.optional(),
+    supersedesRevisionSha256: sha256Schema.optional(),
+    derivedFrom: promptFragmentDerivedFromSchema.optional(),
+    authoredByPrincipalId: principalIdSchema,
+    sha256: sha256Schema,
+    createdAt: z.iso.datetime(),
+  })
+  .strict();
+
+export const promptFragmentRevisionSchema = z.union([
+  promptFragmentRevisionV1Schema,
+  promptFragmentRevisionV2Schema,
+]);
 
 /** Aggregate只保存所有权、生命周期、CAS和当前精确Revision；正文仅存在Revision中。 */
 export const promptFragmentSchema = z
@@ -112,6 +157,7 @@ export type PromptRegionKey = z.infer<typeof promptRegionKeySchema>;
 export type PromptWorkspaceRootId = z.infer<typeof promptWorkspaceRootIdSchema>;
 export type PromptFragmentScope = z.infer<typeof promptFragmentScopeSchema>;
 export type PromptFragmentContent = z.infer<typeof promptFragmentContentSchema>;
+export type PromptFragmentContentReference = z.infer<typeof promptFragmentContentReferenceSchema>;
 export type PromptFragmentDerivedFrom = z.infer<typeof promptFragmentDerivedFromSchema>;
 export type PromptFragmentRevision = z.infer<typeof promptFragmentRevisionSchema>;
 export type PromptFragment = z.infer<typeof promptFragmentSchema>;

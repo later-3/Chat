@@ -42,6 +42,7 @@ import { migrateProductSnapshotV11ToV12 } from "./migrate-v11-to-v12.js";
 import { migrateProductSnapshotV12ToV13 } from "./migrate-v12-to-v13.js";
 import { migrateProductSnapshotV13ToV14 } from "./migrate-v13-to-v14.js";
 import { migrateProductSnapshotV14ToV15 } from "./migrate-v14-to-v15.js";
+import { migrateProductSnapshotV15ToV16 } from "./migrate-v15-to-v16.js";
 import { productSnapshotV13Schema } from "./legacy-v13.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 import { computePromptFragmentRevisionSha256 } from "@chat/domain";
@@ -151,13 +152,15 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     expect(first.entities.workflowViewDefinitions[LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID]).toEqual(
       second.entities.workflowViewDefinitions[LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID],
     );
-    const current = migrateProductSnapshotV14ToV15(
-      migrateProductSnapshotV13ToV14(
-        migrateProductSnapshotV12ToV13(
-          migrateProductSnapshotV11ToV12(
-            migrateProductSnapshotV10ToV11(
-              migrateProductSnapshotV9ToV10(
-                migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(first)),
+    const current = migrateProductSnapshotV15ToV16(
+      migrateProductSnapshotV14ToV15(
+        migrateProductSnapshotV13ToV14(
+          migrateProductSnapshotV12ToV13(
+            migrateProductSnapshotV11ToV12(
+              migrateProductSnapshotV10ToV11(
+                migrateProductSnapshotV9ToV10(
+                  migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(first)),
+                ),
               ),
             ),
           ),
@@ -262,9 +265,11 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     ]);
     expect(() =>
       assertSnapshotIntegrity(
-        migrateProductSnapshotV14ToV15(
-          migrateProductSnapshotV13ToV14(
-            migrateProductSnapshotV12ToV13(migrateProductSnapshotV11ToV12(first)),
+        migrateProductSnapshotV15ToV16(
+          migrateProductSnapshotV14ToV15(
+            migrateProductSnapshotV13ToV14(
+              migrateProductSnapshotV12ToV13(migrateProductSnapshotV11ToV12(first)),
+            ),
           ),
         ),
       ),
@@ -309,8 +314,10 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     );
     expect(() =>
       assertSnapshotIntegrity(
-        migrateProductSnapshotV14ToV15(
-          migrateProductSnapshotV13ToV14(migrateProductSnapshotV12ToV13(first)),
+        migrateProductSnapshotV15ToV16(
+          migrateProductSnapshotV14ToV15(
+            migrateProductSnapshotV13ToV14(migrateProductSnapshotV12ToV13(first)),
+          ),
         ),
       ),
     ).not.toThrow();
@@ -351,7 +358,9 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     });
     expect(() =>
       assertSnapshotIntegrity(
-        migrateProductSnapshotV14ToV15(migrateProductSnapshotV13ToV14(first)),
+        migrateProductSnapshotV15ToV16(
+          migrateProductSnapshotV14ToV15(migrateProductSnapshotV13ToV14(first)),
+        ),
       ),
     ).not.toThrow();
   });
@@ -435,14 +444,16 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     });
     expect(migrated.entities.promptFragmentRevisions).toEqual(v14.entities.promptFragmentRevisions);
     expect(migrated.entities.promptAssemblies).toEqual({});
-    expect(() => assertSnapshotIntegrity(migrated)).not.toThrow();
+    expect(() => assertSnapshotIntegrity(migrateProductSnapshotV15ToV16(migrated))).not.toThrow();
 
     const broken = structuredClone(migrated);
     broken.entities.promptFragments["pfg_migrationglobal1"]!.scope = {
       kind: "workspace",
       rootId: "not-a-root",
     } as never;
-    expect(() => assertSnapshotIntegrity(broken)).toThrow(/Scope非法/u);
+    expect(() => assertSnapshotIntegrity(migrateProductSnapshotV15ToV16(broken))).toThrow(
+      /root_|Scope非法/u,
+    );
   });
 
   it.each([

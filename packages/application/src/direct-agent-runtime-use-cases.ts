@@ -213,10 +213,21 @@ export async function authorizeDirectAgentOperation(
     readonly sha256: string;
   };
   readonly promptAssembly: {
+    readonly schemaVersion: "prompt-assembly.v1" | "prompt-assembly.v2";
     readonly promptAssemblyId: PromptAssembly["promptAssemblyId"];
     readonly sha256: string;
     readonly systemPromptAppend: string;
-    readonly userPrompt: string;
+    readonly userPrompt?: string | undefined;
+    readonly messages?: Extract<
+      PromptAssembly,
+      { schemaVersion: "prompt-assembly.v2" }
+    >["messages"];
+    readonly tools?: Extract<PromptAssembly, { schemaVersion: "prompt-assembly.v2" }>["tools"];
+    readonly requestOptions?: Extract<
+      PromptAssembly,
+      { schemaVersion: "prompt-assembly.v2" }
+    >["requestOptions"];
+    readonly budget?: Extract<PromptAssembly, { schemaVersion: "prompt-assembly.v2" }>["budget"];
     readonly workspaceRootId?: string | undefined;
   };
   readonly capabilityMode: "read_only";
@@ -290,10 +301,18 @@ export async function authorizeDirectAgentOperation(
       sha256: attempt.sourceMessageSha256,
     },
     promptAssembly: {
+      schemaVersion: promptAssembly.schemaVersion,
       promptAssemblyId: promptAssembly.promptAssemblyId,
       sha256: promptAssembly.sha256,
       systemPromptAppend: promptAssembly.systemPromptAppend,
-      userPrompt: promptAssembly.userPrompt,
+      ...(promptAssembly.schemaVersion === "prompt-assembly.v1"
+        ? { userPrompt: promptAssembly.userPrompt }
+        : {
+            messages: promptAssembly.messages,
+            tools: promptAssembly.tools,
+            requestOptions: promptAssembly.requestOptions,
+            budget: promptAssembly.budget,
+          }),
       ...(promptAssembly.workspaceRootId === undefined
         ? {}
         : { workspaceRootId: promptAssembly.workspaceRootId }),

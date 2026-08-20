@@ -1,68 +1,82 @@
 # Prompt Studio 与 Direct Prompt Assembly As-built
 
-> 状态：`codex/prompt-management-design` 已实现管理、会话选择、语义预览和 Direct Agent 运行冻结纵向。Provider 前编辑、跨 Run 历史和压缩仍未实现。
+> 状态：Prompt 管理、全局/Workspace Markdown 版本、会话级 Region 选择、DSH 两级预览、DSH→Bridge与Bridge→Chat调试审核、Direct Prompt Assembly v2、近期正式会话历史和 Provider 前逐次审核已打通。当前只接“执行 Agent（逐次提示词审核）”；Planning、Planning Executor 与 Memory Workflow 尚未迁移。
 
 ## 1. 用户结果
 
-用户现在有两个彼此独立的入口：
-
-1. DSH「设置 → 提示词」是长期管理面。它展示 19 个 Region、Git 内置 Markdown 原文和来源，支持创建全局或指定 Workspace 的用户组件、派生副本、追加不可变 Revision、归档与恢复。
-2. 每个会话的 Composer 工具行有「提示词」入口。发送前可按 Region 分别选择`默认 / 覆盖 / 追加`，在每个 Region 内勾选全局组件或当前 Workspace 组件。默认模式下直接勾选会自动切换为追加；组件可就地查看正文、来源与版本，空作用域可直接新建，用户组件可就地编辑，Git 内置组件可创建副本后编辑。
-3. Composer 提供两个不同边界的预览：「提示词配置预览」不依赖本轮输入，只展示 Region、模式、精确 Revision、来源与编译后的 System/Messages 配置；「DSH 前端发送预览」加入当前用户输入、DSH 当前上下文注入投影、Workflow 选择，并显示 Bridge 真正提交给 Chat 的命令 Payload。
-4. 原生发送按钮左侧有会话级「发送审核」开关，默认关闭。关闭时保持DSH原生发送；开启后DSH完成本轮`pre-step`组装，LifeOS Adapter在任何Chat Session/Message写入前暂停并显示同一份发送预览。批准才进入Bridge；取消不会调用Chat，关闭开关会立即放行已经等待的发送。
-5. 首版Prompt选择只进入“执行 Agent（逐次提示词审核）”Direct Workflow。Planning/Memory Workflow 不接收该选择，界面明确说明这一点；DSH发送审核开关对所有LifeOS Workflow生效。
-6. Direct Message Command 在启动 Workflow 的同一事务中冻结 Prompt Assembly。后续组件修改、归档或页面刷新都不能改变已经启动的 Run。
-7. 上述两个预览都不是 Provider HTTP 请求。Prompt Review 的 Raw 才是 Provider Adapter 生成的真实完整请求；易读页在不修改真实正文的前提下增加 Assembly Region、精确 Revision、Hash、Scope 和 Git 文件来源。
+1. DSH「设置 → 提示词」是长期管理面。它展示 Region、Git 内置 Markdown 与来源，支持创建全局或指定 Workspace 的组件、派生副本、追加不可变 Revision、归档与恢复。
+2. 每个会话的 Composer 配置栏有「提示词」入口。发送前可按 Region 分别选择`默认 / 覆盖 / 追加`，并在全局与当前 Workspace 两个 Scope 中选择精确 Revision。
+3. 「提示词配置预览」只回答当前选择将怎样组成 Prompt；「DSH 前端发送预览」还加入真实输入、DSH 请求和 Bridge→Chat 命令映射。二者都不是 Provider 请求。
+4. Composer的「调试审核」面板有两个独立开关：DSH→Bridge审核真实`GenerateOptions`；Bridge→Chat审核筛选后将实际交给`fetch`的完整Command Plan。两项关闭时自动发送；开启时必须依序批准。第二道批准前Chat Session/Message写入数为零。
+5. Direct Message Command 在创建 Run 的同一事务中冻结 Prompt Assembly v2。组件随后被修改、归档或页面刷新，都不能改变该 Run。
+6. Direct Executor 只使用冻结 Assembly：Chat 编译的 System 追加段、近期正式历史、当前 User Message、只读 Tool Profile 和 Request Options。
+7. Pi Coding Agent 仍负责单次 Run 内 Agent/Tool Loop，但自动加载 AGENTS、Skills、Prompt Templates 和 Extensions 已关闭。`AGENTS.md`只有被用户显式选择为 Prompt 组件时才进入请求。
+8. Provider Gate 在每次真实模型请求前暂停。Raw 是 Provider Adapter 将发送的 Canonical Payload；Friendly 只增加来源、区域、Revision、Hash、Scope 和 JSON Pointer，不添加模型可见正文。
 
 ## 2. 事实所有权
 
 ```text
 prompts/catalog.json + prompts/**/*.md
-  └── Git PromptCatalog（Builtin唯一事实源，只读）
+  └── Git PromptCatalog（内置组件唯一事实源，只读）
 
-Product Store v15
+<Chat>/.data/prompts/global/**/*.md
+<Workspace>/.chat/prompts/**/*.md
+  └── 用户Prompt正文与人可读版本文件
+
+Product Store v16
   ├── PromptFragment（owner/scope/status/current/CAS）
-  ├── PromptFragmentRevision（不可变title/region/content/source/hash）
-  └── PromptAssembly（一次Direct Run冻结的选择、正文投影与Hash）
+  ├── PromptFragmentRevision（不可变元数据、内容Hash、MD路径/文件Hash）
+  └── PromptAssembly（一次Direct Run冻结的正文投影、来源、预算与Hash）
 
-DSH Bridge State v10
-  └── 每个DSH Session的未发送选择草稿、发送审核开关与请求冻结副本，不拥有正式Prompt事实
+DSH Bridge State v11
+  └── 每个DSH Session的未发送选择草稿、两个调试审核开关与请求冻结引用
 
-DSH Host进程内存
-  └── 当前等待中的DSH发送审核与完整预览；Host退出即随原模型调用一起失效，不复制进状态文件
+Bridge进程内Review Coordinator
+  └── 两道调试审核的Raw正文与决定等待；关闭/重启不把正文变成长期事实
+
+PromptReviewRequest
+  └── 一次真实待发Provider Payload；Workflow/Trace/Pi Journal只保存Ref/Hash
 ```
 
-Builtin 不写入 Product Store。用户组件属于`global`或某个已登记`workspace rootId`；浏览器不能提交本机路径、DSH Workspace ID、owner或来源正文。
+Git 内置组件不复制进 Product Store。用户组件正文不隐藏在 Product Store JSON：全局版本位于 Chat 的`.data/prompts/global`，Workspace版本位于对应根的`.chat/prompts`。Product Store只拥有身份、权限、版本链、Scope、Hash、文件引用及每次运行的冻结证据。
 
-## 3. Catalog
+## 3. Catalog、Workspace 与文件边界
 
 - Manifest：`prompts/catalog.json`
 - Region说明：`prompts/regions/catalog.md`
 - 内置正文：`prompts/fragments/**/*.md`
-- Adapter：`apps/api/src/prompt-catalog.ts`
+- Catalog Adapter：`apps/api/src/prompt-catalog.ts`
+- 用户文件 Adapter：`apps/api/src/prompt-file-library.ts`
 
-Adapter 使用 `import.meta.url` 推导仓库根，与进程 cwd 无关；加载时拒绝绝对路径、`..`、越界 symlink、缺失文件、重复 ID/Region/Order 和 SHA-256 漂移。任一错误都会让 API 组合根启动失败关闭。
+Catalog Adapter从`import.meta.url`推导仓库根，拒绝绝对路径、`..`、越界symlink、缺失文件、重复ID/Region/Order和SHA-256漂移。
 
-## 4. Product Store 与并发
+Bridge按`CHAT_PROJECT_ROOTS_JSON`把DSH当前打开目录映射为Chat `rootId`。平台Chat根的精确`AGENTS.md`投影为全局`workspace_instructions`组件；目标Workspace根的精确`AGENTS.md`只在该Scope可见。系统不递归发现父级、子目录或其他Agent文件，也不自动选择这些组件。
 
-`chat-product-store.v13 → v14` 新增两张 Prompt 管理表：
+本地“打开文件”菜单支持白名单应用，并重新校验文件必须属于以下边界之一：Git Catalog、Chat全局Prompt目录、当前登记Workspace的`AGENTS.md`或`.chat/prompts`。公网部署不装配启动服务器本机应用的能力。
 
-- `promptFragments`
-- `promptFragmentRevisions`
+## 4. Product Store、Markdown版本与并发
 
-`v14 → v15`为已有用户组件补`global` Scope，新增`promptAssemblies`。历史 Direct Run 回填`legacy-v0` Assembly，并重算包含 Assembly Hash 的 Direct Attempt Input Manifest；它不会伪造当时不存在的自定义 Region。迁移不 seed Git Builtin。
+迁移链：
 
-Revision 规则：
+- `v13 → v14`：新增 Prompt Fragment 与 Revision；
+- `v14 → v15`：新增 Scope 与 Direct Prompt Assembly v1；
+- `v15 → v16`：用户新Revision改为Markdown内容引用，Direct Assembly升级为四路输入v2。
 
-- 版本号必须从 1 连续递增；
-- 第 2 版起必须绑定上一版 ID/Hash；
-- Aggregate current 必须指向最高版；
-- Hash 覆盖 region、title、description、content、revision 链、派生来源和作者；
-- 归档后不能 revise；restore 只改变 Aggregate 状态，不修改正文 Revision。
+历史v1用户正文仍可读取；首次读取时会生成一个可见的兼容Markdown文件，之后继续通过同一文件Port访问。历史Direct Run保留原Assembly语义，迁移不会把当时不存在的选择伪造成新上下文。
 
-## 5. 公开 API
+Revision规则：
 
-Queries：
+- 版本号从1连续递增；
+- 第2版起绑定上一版ID/Hash；
+- Aggregate current必须指向最高版；
+- 内容文件发布后不可变，正文Hash、文件Hash和Product Revision互相校验；
+- 归档后不能revise，restore只改变Aggregate状态；
+- 同一Command原样重放返回原结果，不同正文复用Command ID失败关闭；
+- 文件先落为不可变候选，Product事务失败时它只是未被引用的文件，不会成为产品事实。
+
+## 5. DSH 与公开API
+
+公开Queries：
 
 - `GET /api/prompt-regions`
 - `GET /api/prompt-fragments`
@@ -70,7 +84,7 @@ Queries：
 - `GET /api/prompt-fragment-revisions/:promptFragmentRevisionId`
 - `GET /api/prompt-workspaces`
 
-Commands：
+公开Commands：
 
 - `POST /api/prompt-fragments`
 - `POST /api/prompt-fragments/copies`
@@ -79,101 +93,84 @@ Commands：
 - `POST /api/prompt-configuration-previews`
 - `POST /api/prompt-assembly-previews`
 
-写命令使用 Command Receipt；revision/archive 必须同时携带 Aggregate expectedRevision、current Revision ID 和 current Revision Hash。旧页面保存返回 `revision_conflict`，不能覆盖新版本。
+Prompt Studio与Composer都通过`packages/dsh-lifeos-bridge`访问Chat公开Query/Command；浏览器不扫描本机目录、不提交权威路径、不直接调用Workflow或Pi。
 
-浏览器在发出写命令前保存 `path + request body + commandId`。如果响应丢失，界面只允许原样重试同一个命令；确定性 4xx 才清除待确认命令。该记录只是网络恢复凭据，正式结果仍由 Product Store 与 Command Receipt 决定。
-
-## 6. DSH 边界
-
-继续使用唯一集成包 `packages/dsh-lifeos-bridge`，通过 DSH 公开 root-scope `settings.section` 注册长期管理面，并通过 `conversation.input.dock` 在输入框上方注册每轮 Chat 配置栏。工作流、上下文、提示词和 DSH 发送审核共享这一条全宽配置栏；输入框内部只保留 DSH 原生的命令、权限、模型和发送控件。没有新建插件、没有修改 DSH 派生、没有把正式 Prompt 放进 DSH local settings。
-
-数据流：
+DSH同源路由保存会话选择：
 
 ```text
-PromptStudio.tsx
-→ PromptStudioController
-→ /lifeos/prompts/* 同源路由
-→ PromptStudioBridgeService
-→ ChatProductClient
-→ Chat公开Prompt API
-```
-
-会话选择链路是：
-
-```text
-PromptComposer.tsx（直接读取DSH真实input.draft）
-→ PromptComposerController
+PromptComposer（读取DSH真实input.draft）
 → GET/PUT /lifeos/sessions/:id/prompt-selection
-→ Bridge State v9按DSH Session保存草稿并按请求冻结
+→ Bridge按DSH Session保存草稿并在请求时冻结
 → Direct Submit Message携带promptSelection
-→ Application编译并原子提交Prompt Assembly
+→ Application重新读取精确Revision并编译Assembly
 ```
 
-两个预览故意使用不同数据源：
+DSH发送审核使用实际Adapter入口捕获的完整可序列化`GenerateOptions`。Bridge出口审核由同一个冻结Dispatch Builder生成审核`bodyJson`和实际`fetch body`，确定性测试逐字节证明两者相同；首次会话的Plan包含Create Session与Submit Message两条HTTP操作，已有会话只有Submit。Trace只记录整体Hash、JSON Pointer值Hash/长度及DSH User文本到Bridge Payload的映射；正文不进入日志。两端文本Hash不一致时，在Chat写入前以`lifeos_dsh_raw_mapping_mismatch`失败关闭。
+
+## 6. Direct Prompt Assembly v2
+
+Direct固定Profile为：
 
 ```text
-提示词配置预览
-Prompt Selection草稿
-→ /lifeos/prompts/configuration-previews
-→ /api/prompt-configuration-previews
-→ Application只编译Region配置（没有用户输入、没有DSH上下文）
-
-DSH前端发送预览
-DSH真实input.draft + 当前Session producer context + Workflow/Prompt Selection草稿
-→ /lifeos/sessions/:id/bridge-send-previews
-→ BridgeService按实际Submit政策投影Bridge→Chat命令Payload
+direct-agent-prompt-profile.v2
+├── Instructions / System
+│   ├── Pi固定默认基础System
+│   ├── Chat Direct运行约束
+│   └── 用户按Region选入的命名Markdown段
+├── Messages
+│   ├── 近期成功Product Run提交的user/assistant对
+│   └── 当前Product Message（原样role:user）
+├── Tools
+│   └── read-only: read / grep / find / ls
+├── Request Options
+│   └── 固定provider/model/thinking=off/retry=0/compaction=off
+└── Manifest（模型不可见）
+    └── 来源、Revision、Scope、顺序、采用/排除原因、预算与Hash
 ```
 
-DSH前端发送预览分为两个视图：
+用户管理的所有活动语义Region在Direct v2中都编译成带稳定标题的System追加段。`AGENTS.md`不是特殊旁路：它是`workspace_instructions` Region中的一个可选Markdown组件，选中时正文进入System，未选中时不会被Pi发现。
 
-- **友好展示**不再读取Prompt配置正文或Session上下文投影来“重新拼一份”。它只解析下面两份原始JSON，并为每个顶层字段、每条Message和每个Tool给出唯一JSON Pointer；区域正文就是该Pointer指向的完整JSON值。来源文件、生产者与说明只是UI注释，和真实正文视觉分离，绝不加入发送内容。
-- **原始请求**展示两段JSON事实：DSH Agent Loop交给LifeOS Adapter的完整可序列化`GenerateOptions`，以及Bridge按当前Workflow政策形成的Chat命令Payload。前者包含`provider/model/system/messages/tools/模型参数/sessionId`等实际存在字段；只排除负责本地取消且不可序列化的`AbortSignal`。两段分别保存SHA-256用于核对。
+历史只选择已形成正式Assistant Message的成功`User → Assistant`对，按最近优先、完整成对地加入；失败、取消、`outcome_unknown`或没有正式Assistant结果的User Message不自动重放。当前输入永远是最后一条原始User Message，不加`<history>`等伪文本包装。
 
-手动点击“预览 DSH 发送”发生在DSH原生Send之前，此时Agent Loop尚未形成完整`GenerateOptions`，所以原始视图明确显示“尚未捕获”，不会根据旧Session或当前草稿伪造请求。只有开启“发送审核”并实际点击DSH发送后，Adapter入口才冻结真实请求，随后在任何Chat写入发生前暂停。
+v2使用确定性首版预算：总输入上限64,000估算Token，固定为Tool Schema预留8,000；文本估算器为`ceil(UTF-8 bytes / 3)`。必需System与当前User超限时在Provider前失败；可选历史从旧到新稳定排除并在Manifest记录原因。当前不开启Pi重试和Compaction。
 
-Bridge在实际捕获时输出两条无正文Trace：`lifeos.dsh_adapter_request.captured`记录DSH请求整体Hash、每个JSON Pointer值的Hash/字符数，以及最后一条真实用户输入的Message/Text Pointer与文本Hash；`lifeos.dsh_to_chat_payload.projected`记录原DSH请求Hash、Bridge→Chat Payload Hash、每个Payload Pointer值Hash，并逐值验证DSH原始`/messages/N/content/M/text`与Bridge Payload `/text`。两者不一致时Bridge在任何Chat写入前以`lifeos_dsh_raw_mapping_mismatch`失败关闭。审核界面显示相同整体Hash、精确Pointer链和比较结果；完整System、Messages、Tool Schema和用户文本不会复制进日志、Bridge State或Product Store。
+Direct Run与Assembly强制1:1；Input Manifest绑定Assembly Hash。Executor授权响应只返回冻结内容和证据，不从DSH Session、当前文件或已被修改的Prompt组件重新推导。
 
-真正发送时的可选审核链路是：
+## 7. 三道审核与来源对应
 
 ```text
-DSH原生Send / Enter
-→ DSH pre-step完成当轮Context组装
-→ LifeOS LLM Adapter冻结完整可序列化GenerateOptions及Request Binding
-→ 发送审核关闭：直接继续
-→ 发送审核开启：Host内存创建Review并暂停（Chat写入数=0）
-   ├── 批准：创建/恢复Chat Product Session并提交Message Command
-   ├── 取消：终止本次Adapter调用，Chat写入数仍为0
-   └── 关闭开关：放行当前Review并继续发送
+DSH原生Send
+→ 可选DSH→Bridge审核：审核DSH真正交给LifeOS Adapter的GenerateOptions
+→ Bridge筛选最新真实User、显式Workspace指令和Prompt Region选择
+→ 可选Bridge→Chat审核：审核实际HTTP Command Plan/bodyJson
+→ Chat Direct Message Command冻结Assembly v2并启动Workflow
+→ Pi AgentSession组成真实Provider Context
+→ Provider Gate逐次冻结真实Payload
+→ Prompt Review Raw/Friendly
+→ 批准后才发送；拒绝则该次Provider调用数为0
 ```
 
-公开DSH Composer Slot不能拦截原生发送，Slash adjudication也只处理`/`或`@`输入；因此暂停位于既有LifeOS Adapter，而不是DOM劫持、复制输入栏或扩大DSH派生。完整Review正文只存在于Host内存；Bridge State v10只持久化布尔开关，v1-v9迁移后默认关闭。
+Friendly页按Raw JSON Pointer逐项对应：
 
-DSH 到 Bridge 的预览读取与真实发送相同的当前输入和`agent-instructions`提取逻辑。Bridge 到 Chat 的政策也与真实发送一致：Direct携带`promptSelection`且不携带DSH `workspaceInstructions`；非Direct携带DSH `workspaceInstructions`且不携带`promptSelection`。Prompt正文不会在Bridge命令中重复传输，Chat后端会按冻结的Revision ID与Hash重新读取并编译。
+- System段显示Git/全局/Workspace Markdown路径、Revision、Scope和Hash；
+- History显示正式Product Message与产生Assistant Message的成功Run；
+- Current User显示本轮Product Message来源；
+- Runtime Tool Call/Tool Result显示Pi AgentSession运行来源；
+- Tools与Request Options显示冻结Profile来源。
 
-列表不携带正文；详情和精确 Revision 按需读取。Prompt 写路由单独使用 96 KiB 有界请求体，其他 LifeOS 命令仍保持 16 KiB。浏览器编辑草稿保存在本机 `localStorage`，只用于防止 Settings 关闭时丢稿；正式版本仍只由 Product Store 拥有。
+所有中文标题和来源解释都是UI Metadata，不会进入模型请求；任何Raw字段无法映射时必须显示为“未归类原始字段”，不能丢弃或补写正文。
 
-组件通过 `regionKey` 与区域目录严格关联。组件卡和详情同时显示区域名称与稳定 Key；区域卡的“查看 N 个组件”会切换到组件页并应用对应筛选。会话 Composer 复用同一个 Prompt Studio Controller 和相同公开 API：每个 Scope 都有“新建”，每个组件都有“查看”，详情继续提供来源、历史版本、派生副本与用户版本编辑，不建立第二套 Prompt 事实或写入协议。内置组件详情在版本区下方始终显示 Catalog Adapter 从 Git 文件读取、并通过 Manifest SHA 校验的只读原文，独立来源色块明确区分文件正文与 UI 解释。
+2026-08-20真实付费E2E使用隔离端口连续执行两轮：每轮依次批准三道审核，Provider各只发送1次；Product Store最终形成1个Session、4条正式Message、2个成功Direct Run、2个Assembly、2个已dispatched Prompt Review和2个approve Decision。第一轮创建并编辑身份组件v2、创建规则组件并选择两个Region；第二轮证明DSH输入仍包含宿主历史、Bridge Command不复制该历史、Provider Raw/Friendly从Chat正式Message恢复上一轮`user/assistant`历史。测试命令为`pnpm test:e2e:dsh-prompt-three-gates-real:paid`。
 
-本地模式还提供两类相同的“打开”菜单：组件详情的“打开文件”和区域卡的“打开配置文件”。DSH Host只投影本机实际安装的白名单应用；当前macOS实现支持Visual Studio Code、TRAE CN、Cursor、Sublime Text、文本编辑与系统默认应用。浏览器只提交Catalog登记的相对路径与应用ID；Host重新校验真实路径、普通文件和symlink边界后调用本机应用。公网部署不装配该能力，不能让远端浏览器启动服务器应用，也不能用任意路径读取或打开仓库文件。
+## 8. 当前完成边界
 
-真实浏览器门只启动 API 与 DSH，并使用隔离的 `45111`、`45110/45114` 端口和专用 Product Store；它不清理或争抢正在运行的正式 `431xx` 开发实例。
+已完成并只应用于Direct审核工作流：Prompt管理、Workspace Scope、Markdown版本、会话选择、两个前端预览、正式历史选择、四路Assembly、Pi安全输入、逐请求Prompt Review和来源映射。
 
-## 7. Region选择、Workspace与运行冻结
+尚未实现：
 
-每个 Region 独立选择`default / replace / append`：默认采用固定 Direct Profile；覆盖只用显式组件；追加先放默认组件再放显式组件。在 default 状态直接勾选组件等价于“切换到 append 并勾选该版本”，避免出现可见但不可操作的组件。选择冻结精确 Revision ID 与 Hash。全局组件对所有 Workspace 可见，Workspace组件只有在当前DSH Session映射为同一个Chat `rootId`时可见；Workspace变化会清掉旧Root的显式选择。
-
-提示词配置预览不需要用户输入，System Region编译为`systemPromptAppend`，Messages Region编译为`messageContext`；它回答“目前配置了什么”。DSH发送预览需要真实的本轮用户输入；空输入时按钮仍可点击并明确提示用户先回到主输入框输入消息，不能用无解释的disabled状态伪装成系统故障。它回答“DSH现在会把什么交给Bridge，以及Bridge会怎样调用Chat”。
-
-正式Direct提交仍调用同一个`direct-agent-prompt-compiler.v1`，把Messages Region与真实当前输入编译为`userPrompt`。两个前端预览都明确不是Provider HTTP请求；真实请求仍只在Provider Gate的Prompt Review中出现。
-
-Direct Message Command在Product Store事务内再次校验用户Revision的owner、状态、Scope和Hash，然后原子写入Message、Run、RunSpec、Outbox与Assembly。Direct Run与Assembly强制1:1；Input Manifest绑定Assembly Hash；Executor只从Application授权响应取得冻结的System/User文本和可选Workspace rootId。
-
-当前 Workspace Runtime 是单一目标Root，模型通过只读工具自行决定是否读取其中的`AGENTS.md`，Chat不会预读正文。文档设计中的`platform_workspace + target_workspace`双Root工具边界尚未实现；当目标是Chat时，`root_chat`同时承担平台与目标Workspace。目标为其他项目时，当前Agent只获得目标Root，不能声称同时可读Chat基础Root。
-
-## 8. 尚未实现
-
-- 在Provider前编辑Raw Payload并生成新的审核Revision；
-- Planner、Planning Executor和Memory Workflow接入统一Prompt Profile；
-- 双Root Workspace Tool边界、跨Product Run历史、预算、摘要和压缩；
-- 临时未保存正文直接用于一次发送；当前必须先保存为组件Revision再选择；
-- Prompt Profile的用户自定义、命名和版本管理；当前Direct Profile由代码固定版本拥有。
+- 在Provider审核页直接编辑Raw Payload并产生新审核Revision；
+- 用户可命名、版本化的Prompt Profile；当前Direct Profile由代码固定；
+- Conversation Summary Candidate与跨Run压缩；
+- Planner、Planning Executor与Memory Workflow迁移；
+- Workspace写入/Shell能力；当前Direct固定`read_only`；
+- 临时未保存正文直接用于一次发送；当前必须先保存为Revision再选择。

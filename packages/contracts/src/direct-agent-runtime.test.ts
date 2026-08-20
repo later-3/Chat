@@ -156,6 +156,7 @@ describe("Direct Agent私有Runtime合同", () => {
       runRevision: 2,
       sourceMessage: { messageId: "msg_1", text: "检查仓库", sha256: HASH_A },
       promptAssembly: {
+        schemaVersion: "prompt-assembly.v1",
         promptAssemblyId: "pma_1",
         sha256: HASH_B,
         systemPromptAppend: "# 身份\n\n你是Chat执行Agent。",
@@ -169,7 +170,74 @@ describe("Direct Agent私有Runtime合同", () => {
       },
     });
     expect(response.capabilityMode).toBe("read_only");
+    expect(response.promptAssembly.schemaVersion).toBe("prompt-assembly.v1");
+    if (response.promptAssembly.schemaVersion !== "prompt-assembly.v1") {
+      throw new Error("测试Fixture必须解析为Prompt Assembly V1");
+    }
     expect(response.promptAssembly.userPrompt).toContain("检查仓库");
     expect("workspaceRootId" in response.promptAssembly).toBe(false);
+  });
+
+  it("Authorize V2把Messages、Tools、Request Options与预算作为四通道冻结输入", () => {
+    const response = authorizeDirectAgentOperationRuntimeResponseSchema.parse({
+      schemaVersion: "chat-internal-runtime.v1",
+      productRunId: "run_v2",
+      directAgentAttemptId: "att_v2",
+      runRevision: 1,
+      sourceMessage: { messageId: "msg_current", text: "当前问题", sha256: HASH_A },
+      promptAssembly: {
+        schemaVersion: "prompt-assembly.v2",
+        promptAssemblyId: "pma_v2",
+        sha256: HASH_B,
+        systemPromptAppend: "## 规则\n证据优先",
+        messages: [
+          {
+            role: "user",
+            text: "当前问题",
+            source: {
+              kind: "current_input",
+              messageId: "msg_current",
+              sessionSequence: 1,
+              sha256: HASH_A,
+            },
+            estimatedTokens: 2,
+          },
+        ],
+        tools: {
+          capabilityMode: "read_only",
+          names: ["read", "grep", "find", "ls"],
+          estimatedTokens: 8_000,
+        },
+        requestOptions: {
+          providerId: "dashscope-coding",
+          modelId: "qwen3.7-plus",
+          thinkingLevel: "off",
+          retryEnabled: false,
+          compactionEnabled: false,
+        },
+        budget: {
+          meterVersion: "utf8-bytes-div-3.v1",
+          inputTokenLimit: 64_000,
+          instructionsEstimatedTokens: 4,
+          messagesEstimatedTokens: 2,
+          toolsEstimatedTokens: 8_000,
+          totalEstimatedTokens: 8_006,
+          excludedHistoryMessageIds: [],
+        },
+      },
+      capabilityMode: "read_only",
+      limits: {
+        maxProviderRequests: 16,
+        activeTimeoutMs: 1_200_000,
+        tokenBudget: 64_000,
+      },
+    });
+    expect(response.promptAssembly.schemaVersion).toBe("prompt-assembly.v2");
+    if (response.promptAssembly.schemaVersion !== "prompt-assembly.v2") {
+      throw new Error("测试Fixture必须解析为Prompt Assembly V2");
+    }
+    expect(response.promptAssembly.messages.at(-1)?.source.kind).toBe("current_input");
+    expect(response.promptAssembly.tools.names).toEqual(["read", "grep", "find", "ls"]);
+    expect(response.promptAssembly.requestOptions.compactionEnabled).toBe(false);
   });
 });

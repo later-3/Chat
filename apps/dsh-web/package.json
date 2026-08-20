@@ -13,6 +13,7 @@
     "test:e2e:trajectory-real": "node ../../scripts/e2e/run-dsh-trajectory-real.mjs",
     "test:e2e:workbench-real": "node ../../scripts/e2e/run-dsh-workbench-real.mjs",
     "test:e2e:prompt-studio-real": "node ../../scripts/e2e/preflight-dsh-real.mjs --prompt-studio-only && env CHAT_DSH_E2E_MODE=prompt-studio-only playwright test --config playwright.dsh-real.config.ts",
+    "test:e2e:prompt-three-gates-real:paid": "node ../../scripts/e2e/preflight-dsh-real.mjs --prompt-three-gates-only && env CHAT_DSH_E2E_MODE=prompt-three-gates-only playwright test --config playwright.dsh-real.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

@@ -289,7 +289,9 @@ export function PromptFragmentDetail({
         <section className="lifeos-prompt-source-file" aria-label="来源文件原文">
           <header>
             <div>
-              <span>Git 来源文件</span>
+              <span>
+                {detail.fragment.ownerKind === "system" ? "Git 来源文件" : "受管 Markdown 文件"}
+              </span>
               <strong>文件原文</strong>
               <p>
                 <code>{viewed.sourceRelativePath}</code>
@@ -302,6 +304,7 @@ export function PromptFragmentDetail({
               openSourceFile={openSourceFile}
             />
           </header>
+          {viewed.content.kind === "key_value" ? <strong>{viewed.content.key}</strong> : null}
           <pre>{contentText(viewed.content)}</pre>
         </section>
       ) : null}

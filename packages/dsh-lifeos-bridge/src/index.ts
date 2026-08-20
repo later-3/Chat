@@ -21,6 +21,7 @@ import { PromptStudioBridgeService } from "./prompt-studio-bridge-service.ts";
 import { PromptSourceFileOpener } from "./prompt-source-file-opener.ts";
 import { createPromptWorkspaceResolver } from "./prompt-workspace-resolver.ts";
 import { DshSendReviewCoordinator } from "./dsh-send-review.ts";
+import { BridgeDispatchReviewCoordinator } from "./bridge-dispatch-review.ts";
 
 export const name = "chat-dsh-lifeos-bridge";
 export const inject = [
@@ -101,6 +102,7 @@ export async function apply(ctx: Context): Promise<void> {
       return await bridgeRef.current.bridgeSendPreview(dshSessionId, text, adapterRequest);
     },
   );
+  const bridgeDispatchReview = new BridgeDispatchReviewCoordinator(state);
   const bridge = new LifeosBridgeService(
     chat,
     state,
@@ -108,6 +110,7 @@ export async function apply(ctx: Context): Promise<void> {
     contextInjectionReader,
     promptWorkspaceResolver,
     dshSendReview,
+    bridgeDispatchReview,
   );
   bridgeRef.current = bridge;
   const promptStudio = new PromptStudioBridgeService(chat);
@@ -116,19 +119,27 @@ export async function apply(ctx: Context): Promise<void> {
   const promptSourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
   const promptSourceFiles =
     publicHostname === undefined
-      ? await PromptSourceFileOpener.create({ repoRoot: promptSourceRoot })
+      ? await PromptSourceFileOpener.create({ repoRoot: promptSourceRoot, env: process.env })
       : undefined;
   const lifetime = new AbortController();
   ctx.effect(
     () => () => {
       dshSendReview.close();
+      bridgeDispatchReview.close();
       lifetime.abort(new DOMException("lifeos bridge unloaded", "AbortError"));
     },
     "lifeos bridge: stream lifetime",
   );
   ctx.llm.registerAdapter(
     [LIFEOS_PROVIDER],
-    new LifeosLlmAdapter(chat, state, lifetime.signal, promptWorkspaceResolver, dshSendReview),
+    new LifeosLlmAdapter(
+      chat,
+      state,
+      lifetime.signal,
+      promptWorkspaceResolver,
+      dshSendReview,
+      bridgeDispatchReview,
+    ),
   );
   ctx.effect(
     () => ctx.tools.register(createLifeosTraceTool(chat, state)),

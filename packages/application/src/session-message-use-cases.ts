@@ -124,19 +124,29 @@ export async function createProductSession(
 
 export interface SubmitUserMessageInput {
   readonly principalId: PrincipalId;
-  readonly sessionId: ProductSessionId;
+  /** 首轮留空；Application在Message事务内创建Product Session。 */
+  readonly sessionId?: ProductSessionId;
   readonly commandId: Parameters<ApplicationDeps["store"]["transact"]>[0]["commandId"];
   readonly payload: SubmitMessagePayload;
+}
+
+/** 会话标题是Chat产品策略；只从首条已提交User Message派生。 */
+function productSessionTitleFromFirstMessage(text: string): string {
+  const normalized = text.replace(/\s+/gu, " ").trim();
+  const characters = Array.from(normalized);
+  return characters.length <= 200 ? normalized : `${characters.slice(0, 199).join("")}…`;
 }
 
 export async function submitUserMessage(
   deps: ApplicationDeps,
   input: SubmitUserMessageInput,
-): Promise<{ message: MessageDto; run: RunDto }> {
+): Promise<{ session: SessionDto; message: MessageDto; run: RunDto }> {
   const now = deps.now();
   // 调试导航⑤：先分配候选ID，再由commandId+requestSha256决定事务是首次提交还是幂等重放。
   // 重放时Store返回首次提交的resultRefs；本次新分配但未写入的候选ID不会成为产品事实。
   const messageId = deps.ids.message();
+  const creatingProductSession = input.sessionId === undefined;
+  const targetSessionId = input.sessionId ?? deps.ids.session();
   const productRunId = deps.ids.run();
   const outboxId = deps.ids.outbox();
   const workflowAttemptId = deps.ids.attempt();
@@ -144,15 +154,36 @@ export async function submitUserMessage(
     `wrs_${hashCanonical("id.workflow-run-spec.v1", { productRunId }).slice(0, 32)}`,
   );
   const { snapshot: preflightSnapshot } = await deps.store.read({ kind: "committedSnapshot" });
-  const preflightSession = preflightSnapshot.entities.sessions[input.sessionId];
-  if (preflightSession === undefined) throw notFound("Session不存在");
+  const persistedPreflightSession = preflightSnapshot.entities.sessions[targetSessionId];
+  if (!creatingProductSession && persistedPreflightSession === undefined) {
+    throw notFound("Session不存在");
+  }
+  if (creatingProductSession && persistedPreflightSession !== undefined) {
+    throw new ApplicationError({
+      code: "store_corrupted",
+      httpStatus: 500,
+      message: "Product Session ID冲突",
+      recoveryAction: "contact_support",
+    });
+  }
+  const preflightSession: ProductSession = persistedPreflightSession ?? {
+    schemaVersion: "product-session.v1",
+    sessionId: targetSessionId,
+    ownerPrincipalId: input.principalId,
+    status: "active",
+    title: productSessionTitleFromFirstMessage(input.payload.text),
+    lastMessageSequence: 0,
+    revision: 1,
+    createdAt: now,
+    updatedAt: now,
+  };
   if (preflightSession.ownerPrincipalId !== input.principalId) {
     throw forbidden("无权向该Session发送消息");
   }
   const preflightSessionSequence = preflightSession.lastMessageSequence + 1;
   const sourceMessageSha256 = hashCanonical("message.v1", {
     messageId,
-    sessionId: input.sessionId,
+    sessionId: targetSessionId,
     sessionSequence: preflightSessionSequence,
     role: "user",
     content: { format: "markdown" as const, text: input.payload.text },
@@ -166,7 +197,7 @@ export async function submitUserMessage(
     throw new ApplicationError({
       code: "validation_failed",
       httpStatus: 422,
-      message: "Direct Agent V1只接受当前消息，暂不接受Memory或Workspace Instructions上下文",
+      message: "Direct Agent上下文必须通过Prompt区域选择提交，不能同时提交旧Context字段",
       recoveryAction: "none",
     });
   }
@@ -209,7 +240,7 @@ export async function submitUserMessage(
     revision: selectedRevision,
     submitInput: input.payload.workflowSelection?.businessInput,
     messageId,
-    sessionId: input.sessionId,
+    sessionId: targetSessionId,
     sessionSequence: preflightSessionSequence,
     text: input.payload.text,
     sourceMessageSha256,
@@ -286,29 +317,36 @@ export async function submitUserMessage(
             schemaVersion: "prompt-turn-selection-input.v1",
             regions: [],
           },
-          productSessionId: input.sessionId,
+          productSessionId: targetSessionId,
           productRunId,
           sourceMessageId: messageId,
+          sourceMessageSequence: preflightSessionSequence,
+          sourceMessageSha256,
           workflowDefinitionRevisionId: selectedRevision.workflowDefinitionRevisionId,
           createdAt: now,
         })
       : undefined;
-  const requestSha256 = hashCanonical("command.submit-user-message.v1", {
-    principalId: input.principalId,
-    sessionId: input.sessionId,
-    payload: {
-      ...input.payload,
-      workflowSelection: {
-        kind: "published_revision",
-        workflowDefinitionRevisionId: selectedRevision.workflowDefinitionRevisionId,
-        definitionSha256: selectedRevision.definitionSha256,
-        runConfiguration,
-        ...(business.requestBusinessInput !== undefined
-          ? { businessInput: business.requestBusinessInput }
-          : {}),
+  const requestSha256 = hashCanonical(
+    creatingProductSession
+      ? "command.start-product-session-with-user-message.v1"
+      : "command.submit-user-message.v1",
+    {
+      principalId: input.principalId,
+      ...(creatingProductSession ? {} : { sessionId: targetSessionId }),
+      payload: {
+        ...input.payload,
+        workflowSelection: {
+          kind: "published_revision",
+          workflowDefinitionRevisionId: selectedRevision.workflowDefinitionRevisionId,
+          definitionSha256: selectedRevision.definitionSha256,
+          runConfiguration,
+          ...(business.requestBusinessInput !== undefined
+            ? { businessInput: business.requestBusinessInput }
+            : {}),
+        },
       },
     },
-  });
+  );
   const contextRequestId = contextRequestIdSchema.parse(
     `ctxr_${hashCanonical("id.run-context-request.v1", { productRunId }).slice(0, 32)}`,
   );
@@ -317,10 +355,32 @@ export async function submitUserMessage(
     commandId: input.commandId,
     commandType: "SubmitUserMessage",
     requestSha256,
-    traceContext: { productRunId, productSessionId: input.sessionId },
+    traceContext: { productRunId, productSessionId: targetSessionId },
     mutate: (draft) => {
-      const session = draft.entities.sessions[input.sessionId];
-      if (session === undefined) throw notFound("Session不存在");
+      const persistedSession = draft.entities.sessions[targetSessionId];
+      if (!creatingProductSession && persistedSession === undefined) {
+        throw notFound("Session不存在");
+      }
+      if (creatingProductSession && persistedSession !== undefined) {
+        throw new ApplicationError({
+          code: "store_corrupted",
+          httpStatus: 500,
+          message: "Product Session ID冲突",
+          recoveryAction: "contact_support",
+        });
+      }
+      const session: ProductSession = persistedSession ?? {
+        schemaVersion: "product-session.v1",
+        sessionId: targetSessionId,
+        ownerPrincipalId: input.principalId,
+        status: "active",
+        title: productSessionTitleFromFirstMessage(input.payload.text),
+        lastMessageSequence: 0,
+        // 该对象只是本事务的未提交基线；最终会话以revision 1与首条Message一起落盘。
+        revision: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
       if (session.ownerPrincipalId !== input.principalId) {
         throw forbidden("无权向该Session发送消息");
       }
@@ -333,7 +393,7 @@ export async function submitUserMessage(
       const message: Message = {
         schemaVersion: "message.v1",
         messageId,
-        sessionId: input.sessionId,
+        sessionId: targetSessionId,
         sessionSequence,
         role: "user",
         content: { format: "markdown", text: input.payload.text },
@@ -347,7 +407,7 @@ export async function submitUserMessage(
               schemaVersion: "product-run.v3",
               runKind: "note_capture",
               productRunId,
-              sessionId: input.sessionId,
+              sessionId: targetSessionId,
               sourceMessageId: messageId,
               workflowViewDefinitionId: selectedView.workflowViewDefinitionId,
               workflowRunSpecId,
@@ -364,7 +424,7 @@ export async function submitUserMessage(
                 schemaVersion: "product-run.v3",
                 runKind: "direct_agent",
                 productRunId,
-                sessionId: input.sessionId,
+                sessionId: targetSessionId,
                 sourceMessageId: messageId,
                 workflowViewDefinitionId: selectedView.workflowViewDefinitionId,
                 workflowRunSpecId,
@@ -380,7 +440,7 @@ export async function submitUserMessage(
                 schemaVersion: "product-run.v3",
                 runKind: "planning",
                 productRunId,
-                sessionId: input.sessionId,
+                sessionId: targetSessionId,
                 sourceMessageId: messageId,
                 workflowViewDefinitionId: selectedView.workflowViewDefinitionId,
                 workflowRunSpecId,
@@ -523,7 +583,7 @@ export async function submitUserMessage(
         createdAt: now,
         updatedAt: now,
       };
-      draft.entities.sessions[input.sessionId] = {
+      draft.entities.sessions[targetSessionId] = {
         ...session,
         lastMessageSequence: sessionSequence,
         revision: session.revision + 1,
@@ -555,7 +615,10 @@ export async function submitUserMessage(
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
   const message = snapshot.entities.messages[result.resultRefs["messageId"] ?? ""];
   const run = snapshot.entities.runs[result.resultRefs["productRunId"] ?? ""];
-  if (message === undefined || run === undefined) throw notFound("消息或运行不存在");
+  const session = run === undefined ? undefined : snapshot.entities.sessions[run.sessionId];
+  if (message === undefined || run === undefined || session === undefined) {
+    throw notFound("会话、消息或运行不存在");
+  }
   if (!result.replayed) {
     emitRunEvent(deps, run.productRunId, {
       level: "info",
@@ -568,7 +631,11 @@ export async function submitUserMessage(
       revision: run.revision,
     });
   }
-  return { message: toMessageDto(message), run: toRunDto(run, undefined, undefined) };
+  return {
+    session: toSessionDto(session),
+    message: toMessageDto(message),
+    run: toRunDto(run, undefined, undefined),
+  };
 }
 
 function resolveSubmitBusinessInput(input: {

@@ -9,6 +9,7 @@ const CHAT_DIRECT_EXECUTOR = "packages/pi-runtime/src/direct-agent-executor.ts";
 const CHAT_BRIDGE_ADAPTER = "packages/dsh-lifeos-bridge/src/adapter.ts";
 const CHAT_MESSAGE_USE_CASE = "packages/application/src/session-message-use-cases.ts";
 const CHAT_PROMPT_COMPILER = "packages/application/src/prompt-assembly-use-cases.ts";
+const CHAT_PRODUCT_STORE = "packages/product-store-json/src/json-product-store.ts";
 const PI_SYSTEM_PROMPT = "pi/packages/coding-agent/src/core/system-prompt.ts";
 const PI_AGENT_SESSION = "pi/packages/coding-agent/src/core/agent-session.ts";
 const PI_PROVIDER_GATE = "pi/packages/coding-agent/src/core/sdk.ts";
@@ -55,6 +56,17 @@ const SESSION_SOURCES: readonly PromptReviewReadableSource[] = [
     "来自同一Pi会话内已经发生的模型回复或工具结果，并在下一次Provider请求前重新进入最终Payload。",
   ),
 ];
+
+function payloadContentText(content: unknown): string | undefined {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return undefined;
+  const text = content.flatMap((part) => {
+    if (typeof part !== "object" || part === null || Array.isArray(part)) return [];
+    const record = part as Record<string, unknown>;
+    return record["type"] === "text" && typeof record["text"] === "string" ? [record["text"]] : [];
+  });
+  return text.length === 0 ? undefined : text.join("\n");
+}
 
 function format(value: unknown): {
   readonly content: string;
@@ -120,11 +132,46 @@ function assemblySource(
 
 function messageSources(
   role: string,
+  content: unknown,
   assembly: PromptAssembly | undefined,
+  matchedAssemblyMessageIndexes: Set<number>,
 ): readonly PromptReviewReadableSource[] {
   if (role === "system") {
     const compiled = assemblySource(assembly, "system");
     return compiled === undefined ? SYSTEM_SOURCES : [...SYSTEM_SOURCES, compiled];
+  }
+  if (assembly?.schemaVersion === "prompt-assembly.v2") {
+    const text = payloadContentText(content);
+    const index =
+      text === undefined
+        ? -1
+        : assembly.messages.findIndex(
+            (message, candidateIndex) =>
+              !matchedAssemblyMessageIndexes.has(candidateIndex) &&
+              message.role === role &&
+              message.text === text,
+          );
+    if (index >= 0) {
+      matchedAssemblyMessageIndexes.add(index);
+      const message = assembly.messages[index]!;
+      if (message.source.kind === "current_input") return USER_SOURCES;
+      if (message.source.kind === "product_message") {
+        return [
+          source(
+            "Chat Product Session · 已提交历史消息",
+            [CHAT_PRODUCT_STORE, CHAT_PROMPT_COMPILER, CHAT_DIRECT_EXECUTOR],
+            `来自正式Product Message ${message.source.messageId}@${message.source.sha256.slice(0, 12)}，保持原始${message.role}角色；不是本轮用户新输入。`,
+          ),
+        ];
+      }
+      return [
+        source(
+          "Chat Workflow · 前序节点输入",
+          [CHAT_PROMPT_COMPILER, CHAT_DIRECT_EXECUTOR],
+          `来自工作流节点 ${message.source.producerNodeId}@${message.source.sha256.slice(0, 12)}；Provider角色为${message.role}，生产者身份另行记录。`,
+        ),
+      ];
+    }
   }
   if (role === "user") {
     const compiled = assemblySource(assembly, "messages");
@@ -163,6 +210,7 @@ export function projectPromptReviewReadableSections(
     unknown
   >;
   const sections: PromptReviewReadableSection[] = [];
+  const matchedAssemblyMessageIndexes = new Set<number>();
   const messages = payload["messages"];
   if (Array.isArray(messages)) {
     messages.forEach((message, index) => {
@@ -181,7 +229,9 @@ export function projectPromptReviewReadableSections(
         payloadJsonPointer: `/messages/${String(index)}`,
         ...format(record["content"]),
         otherFieldsJson: JSON.stringify(fields, null, 2),
-        sources: [...messageSources(role, assembly)],
+        sources: [
+          ...messageSources(role, record["content"], assembly, matchedAssemblyMessageIndexes),
+        ],
       });
     });
   }

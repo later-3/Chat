@@ -2,8 +2,12 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DirectAgentRunner } from "./direct-agent-executor.js";
-import { DirectAgentSuspendedError, P1_DIRECT_AGENT_PROFILE } from "./direct-agent-executor.js";
+import type { DirectAgentRunInput, DirectAgentRunner } from "./direct-agent-executor.js";
+import {
+  applyDirectAgentRuntimeApiKey,
+  DirectAgentSuspendedError,
+  P1_DIRECT_AGENT_PROFILE,
+} from "./direct-agent-executor.js";
 import { operationIdForDirectAgentAttempt } from "./direct-executor-identity.js";
 import { PiDirectExecutorOperationStore } from "./direct-executor-operation-store.js";
 import { createPiDirectExecutorServiceClient } from "./direct-executor-service-client.js";
@@ -104,6 +108,31 @@ class WaitingThenCompleteRunner implements DirectAgentRunner {
 }
 
 describe("Pi Direct Executor Service + Client", () => {
+  it("Chat显式百炼Key只注册为Pi进程内runtime override", async () => {
+    const setRuntimeApiKey = vi.fn(async () => undefined);
+    const signal = new AbortController().signal;
+    await applyDirectAgentRuntimeApiKey({
+      modelRuntime: { setRuntimeApiKey },
+      environment: { DASHSCOPE_API_KEY: "  e2e-runtime-key  " },
+      providerId: "dashscope-coding",
+      signal,
+    });
+    expect(setRuntimeApiKey).toHaveBeenCalledWith("dashscope-coding", "e2e-runtime-key", {
+      signal,
+    });
+  });
+
+  it("未配置Chat百炼Key时保留Pi自己的认证链", async () => {
+    const setRuntimeApiKey = vi.fn(async () => undefined);
+    await applyDirectAgentRuntimeApiKey({
+      modelRuntime: { setRuntimeApiKey },
+      environment: { DASHSCOPE_API_KEY: "  " },
+      providerId: "dashscope-coding",
+      signal: new AbortController().signal,
+    });
+    expect(setRuntimeApiKey).not.toHaveBeenCalled();
+  });
+
   it("V1固定只读工具、关闭thinking/retry/compaction/外部扩展", () => {
     expect(P1_DIRECT_AGENT_PROFILE).toEqual({
       providerId: "dashscope-coding",
@@ -138,6 +167,134 @@ describe("Pi Direct Executor Service + Client", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("Prompt Assembly V2把正式历史保持原role交给同一个Pi Session", async () => {
+    const root = await temporaryRoot();
+    const store = await PiDirectExecutorOperationStore.open(join(root, "operations"));
+    let received: DirectAgentRunInput | undefined;
+    const runner: DirectAgentRunner = {
+      run: async (input) => {
+        received = input;
+        return "V2完成";
+      },
+    };
+    const runtime = createPiDirectExecutorService({
+      credential: "rtk_directservice123",
+      store,
+      workspaceRoots: new Map(),
+      emptyWorkspaceRoot: join(root, "empty"),
+      agentDir: join(root, "agent"),
+      sessionsDir: join(root, "sessions"),
+      checkpointsDir: join(root, "checkpoints"),
+      authorizeOperation: async (input) => ({
+        productRunId: input.productRunId,
+        directAgentAttemptId: input.directAgentAttemptId,
+        runRevision: 1,
+        sourceMessage: {
+          messageId: "msg_directservicecurrent",
+          text: "当前问题",
+          sha256: "3".repeat(64),
+        },
+        promptAssembly: {
+          schemaVersion: "prompt-assembly.v2",
+          promptAssemblyId: "pma_directservicev2",
+          sha256: "7".repeat(64),
+          systemPromptAppend: "## 规则\n只读检查",
+          messages: [
+            {
+              role: "user",
+              text: "上一问",
+              source: {
+                kind: "product_message",
+                messageId: "msg_directservicehistoryuser",
+                sessionSequence: 1,
+                sha256: "8".repeat(64),
+              },
+              estimatedTokens: 3,
+            },
+            {
+              role: "assistant",
+              text: "上一答",
+              source: {
+                kind: "product_message",
+                messageId: "msg_directservicehistoryassistant",
+                sessionSequence: 2,
+                sha256: "9".repeat(64),
+              },
+              estimatedTokens: 3,
+            },
+            {
+              role: "user",
+              text: "当前问题",
+              source: {
+                kind: "current_input",
+                messageId: "msg_directservicecurrent",
+                sessionSequence: 3,
+                sha256: "3".repeat(64),
+              },
+              estimatedTokens: 4,
+            },
+          ],
+          tools: {
+            capabilityMode: "read_only",
+            names: ["read", "grep", "find", "ls"],
+            estimatedTokens: 8_000,
+          },
+          requestOptions: {
+            providerId: "dashscope-coding",
+            modelId: "qwen3.7-plus",
+            thinkingLevel: "off",
+            retryEnabled: false,
+            compactionEnabled: false,
+          },
+          budget: {
+            meterVersion: "utf8-bytes-div-3.v1",
+            inputTokenLimit: 64_000,
+            instructionsEstimatedTokens: 5,
+            messagesEstimatedTokens: 10,
+            toolsEstimatedTokens: 8_000,
+            totalEstimatedTokens: 8_015,
+            excludedHistoryMessageIds: [],
+          },
+        },
+        capabilityMode: "read_only",
+        limits: {
+          maxProviderRequests: 16,
+          activeTimeoutMs: 1_200_000,
+          tokenBudget: 64_000,
+        },
+      }),
+      promptReviewProduct: {
+        publish: async () => {
+          throw new Error("Immediate runner不发布Review");
+        },
+        consumeDecision: async () => {
+          throw new Error("Immediate runner不消费Decision");
+        },
+        commitDispatchOutcome: async () => undefined,
+      },
+      publishResult: async () => ({
+        directAgentCandidateId: "drc_directservicev2" as never,
+        sha256: hashExecutorValue("V2完成"),
+      }),
+      runner,
+    });
+    const client = createPiDirectExecutorServiceClient({
+      baseUrl: "http://pi-direct.test",
+      credential: "rtk_directservice123",
+      pollIntervalMs: 1,
+      fetchFn: async (url, init) => runtime.app.request(url, init),
+    });
+    const response = await client.start(startIdentity());
+    expect(response.kind).toBe("succeeded");
+    expect(received?.prompt).toBe("当前问题");
+    expect(received?.history).toEqual([
+      { role: "user", text: "上一问" },
+      { role: "assistant", text: "上一答" },
+    ]);
+    expect(received?.systemPromptAppend).toBe("## 规则\n只读检查");
+    await runtime.close();
   });
 
   it("start只携Manifest证据，decision单次consume后恢复并回写dispatch outcome", async () => {
@@ -190,6 +347,7 @@ describe("Pi Direct Executor Service + Client", () => {
             sha256: "3".repeat(64),
           },
           promptAssembly: {
+            schemaVersion: "prompt-assembly.v1",
             promptAssemblyId: "pma_directservice",
             sha256: "7".repeat(64),
             systemPromptAppend: "",

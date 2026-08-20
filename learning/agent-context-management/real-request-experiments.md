@@ -1,6 +1,8 @@
 # Pi、DeepSeek Harness 与 Hermes 的真实上下文组装实验
 
-> 状态：源码事实与真实 Provider 实验报告。本文不是 Chat 提示词管理的已实现合同。
+> 文档类型：Later 的 AI Agent 学习与实验资料。本文不属于 Chat 产品合同、架构规范或实现授权。
+>
+> 四套系统只讨论区域划分的学习导读见[《DSH、Pi、Hermes、Codex 上下文区域剖析》](./context-regions.md)。
 >
 > 实验日期：2026-08-19。
 >

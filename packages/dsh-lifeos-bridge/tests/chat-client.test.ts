@@ -38,32 +38,6 @@ test("final message lookup uses the public exact query without scanning history"
   assert.equal(urls[0]?.search, "");
 });
 
-test("Product Session creation carries the first prompt title instead of a host placeholder", async () => {
-  const requests: Array<{ url: URL; body: unknown }> = [];
-  const session = {
-    schemaVersion: "chat-product-api.v1",
-    sessionId: "psn_history1",
-    status: "active",
-    title: "设计统一会话",
-    revision: 1,
-    createdAt: "2026-08-19T00:00:00.000Z",
-    updatedAt: "2026-08-19T00:00:00.000Z",
-  } as const;
-  const client = new ChatProductClient(new URL("http://127.0.0.1:1"), async (input, init) => {
-    requests.push({
-      url: new URL(String(input)),
-      body: JSON.parse(String(init?.body)),
-    });
-    return new Response(JSON.stringify({ session }), { status: 201 });
-  });
-  assert.deepEqual(await client.createSession(`cmd_${"a".repeat(48)}`, session.title), session);
-  assert.equal(requests[0]?.url.pathname, "/api/sessions");
-  assert.deepEqual(requests[0]?.body, {
-    commandId: `cmd_${"a".repeat(48)}`,
-    payload: { title: "设计统一会话" },
-  });
-});
-
 test("session records consume the public Product Session and opaque Message cursor queries", async () => {
   const urls: URL[] = [];
   const session = {

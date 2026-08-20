@@ -4,6 +4,8 @@ import {
   dshBridgeSendPreviewRequestSchema,
   dshSendReviewDecisionRequestSchema,
   dshSendReviewSettingRequestSchema,
+  bridgeChatDispatchReviewDecisionRequestSchema,
+  bridgeChatDispatchReviewSettingRequestSchema,
   dshSessionIdSchema,
   noteDecisionRequestSchema,
   promptSelectionRequestSchema,
@@ -35,6 +37,10 @@ const CONTEXT_INJECTIONS_PATH = /^\/lifeos\/sessions\/([^/]+)\/context-injection
 const BRIDGE_SEND_PREVIEWS_PATH = /^\/lifeos\/sessions\/([^/]+)\/bridge-send-previews$/;
 const DSH_SEND_REVIEW_SETTING_PATH = /^\/lifeos\/sessions\/([^/]+)\/dsh-send-review-setting$/;
 const DSH_SEND_REVIEW_DECISIONS_PATH = /^\/lifeos\/sessions\/([^/]+)\/dsh-send-review-decisions$/;
+const BRIDGE_DISPATCH_REVIEW_SETTING_PATH =
+  /^\/lifeos\/sessions\/([^/]+)\/bridge-dispatch-review-setting$/;
+const BRIDGE_DISPATCH_REVIEW_DECISIONS_PATH =
+  /^\/lifeos\/sessions\/([^/]+)\/bridge-dispatch-review-decisions$/;
 const DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/decisions$/;
 const NOTE_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/note-decisions$/;
 const PROMPT_REVIEW_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/prompt-review-decisions$/;
@@ -747,6 +753,50 @@ export function createLifeosRouteHandler(
           res,
           200,
           await service.decideDshSendReview(sessionIdFrom(dshSendReviewDecisionMatch), parsed.data),
+        );
+        return;
+      }
+      const bridgeDispatchReviewSettingMatch = BRIDGE_DISPATCH_REVIEW_SETTING_PATH.exec(
+        url.pathname,
+      );
+      if (req.method === "POST" && bridgeDispatchReviewSettingMatch !== null) {
+        const parsed = bridgeChatDispatchReviewSettingRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_bridge_dispatch_review_setting_invalid",
+            "Bridge出口审核开关请求无效",
+          );
+        }
+        sendJson(
+          res,
+          200,
+          await service.setBridgeDispatchReviewEnabled(
+            sessionIdFrom(bridgeDispatchReviewSettingMatch),
+            parsed.data.enabled,
+          ),
+        );
+        return;
+      }
+      const bridgeDispatchReviewDecisionMatch = BRIDGE_DISPATCH_REVIEW_DECISIONS_PATH.exec(
+        url.pathname,
+      );
+      if (req.method === "POST" && bridgeDispatchReviewDecisionMatch !== null) {
+        const parsed = bridgeChatDispatchReviewDecisionRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_bridge_dispatch_review_decision_invalid",
+            "Bridge出口审核决定无效",
+          );
+        }
+        sendJson(
+          res,
+          200,
+          await service.decideBridgeDispatchReview(
+            sessionIdFrom(bridgeDispatchReviewDecisionMatch),
+            parsed.data,
+          ),
         );
         return;
       }

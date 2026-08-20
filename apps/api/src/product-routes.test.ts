@@ -54,7 +54,11 @@ import {
   SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
 } from "@chat/application/workflow-system-definitions";
-import { canonicalJsonStringify, computePromptReviewPayloadSha256 } from "@chat/domain";
+import {
+  canonicalJsonStringify,
+  computePromptReviewPayloadSha256,
+  hashCanonical,
+} from "@chat/domain";
 import { JsonProductStore } from "@chat/product-store-json";
 import { z } from "zod";
 import { createApiApp, type ApiApp } from "./app.js";
@@ -111,6 +115,10 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     fragment: () => gen("pfg"),
     revision: () => gen("pfr"),
   } as PromptFragmentIdFactory;
+  const promptFiles = new Map<
+    string,
+    { sourceRelativePath: string; sourceSha256: string; content: never }
+  >();
   const promptCatalog = await createFilePromptCatalog();
   const backend = {
     describe: () => ({
@@ -250,6 +258,30 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     directAgentIds,
     promptFragmentIds,
     promptCatalog,
+    promptFiles: {
+      publishRevision: async (input) => {
+        const sourceRelativePath =
+          input.scope.kind === "global"
+            ? `.data/prompts/global/${input.regionKey}/${input.promptFragmentId}/${input.promptFragmentRevisionId}.md`
+            : `${input.scope.rootId}/.chat/prompts/${input.regionKey}/${input.promptFragmentId}/${input.promptFragmentRevisionId}.md`;
+        const projection = {
+          sourceRelativePath,
+          sourceSha256: hashCanonical("test.prompt-file.v1", input),
+          content: structuredClone(input.content) as never,
+        };
+        const current = promptFiles.get(input.promptFragmentRevisionId);
+        if (current !== undefined && JSON.stringify(current) !== JSON.stringify(projection)) {
+          throw new Error("测试Prompt文件冲突");
+        }
+        promptFiles.set(input.promptFragmentRevisionId, projection);
+        return projection;
+      },
+      readRevision: async (input) => {
+        const projection = promptFiles.get(input.promptFragmentRevisionId);
+        if (projection === undefined) throw new Error("测试Prompt文件不存在");
+        return projection;
+      },
+    },
     projectRoots: {
       list: () => [
         {
@@ -363,6 +395,41 @@ async function publishPlanForReview(
 }
 
 describe("公开产品API", () => {
+  it("首轮只提交Message，Chat后端原子创建Product Session并派生标题", async () => {
+    const { app, deps } = await testApp();
+    const commandId = nextCmd();
+    const response = await postJson(app, "/api/messages", {
+      commandId,
+      payload: { text: "  这是\n一个Chat项目  " },
+    });
+    expect(response.status).toBe(201);
+    const started = z
+      .object({ session: sessionDtoSchema, message: messageDtoSchema, run: runDtoSchema })
+      .strict()
+      .parse(await response.json());
+    expect(started.session.title).toBe("这是 一个Chat项目");
+    expect(started.message.sessionId).toBe(started.session.sessionId);
+    expect(started.run.sessionId).toBe(started.session.sessionId);
+
+    const replay = await postJson(app, "/api/messages", {
+      commandId,
+      payload: { text: "  这是\n一个Chat项目  " },
+    });
+    expect(replay.status).toBe(201);
+    const replayed = z
+      .object({ session: sessionDtoSchema, message: messageDtoSchema, run: runDtoSchema })
+      .strict()
+      .parse(await replay.json());
+    expect(replayed.session.sessionId).toBe(started.session.sessionId);
+    expect(replayed.message.messageId).toBe(started.message.messageId);
+    expect(replayed.run.productRunId).toBe(started.run.productRunId);
+
+    const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+    expect(Object.values(snapshot.entities.sessions)).toHaveLength(1);
+    expect(Object.values(snapshot.entities.messages)).toHaveLength(1);
+    expect(Object.values(snapshot.entities.runs)).toHaveLength(1);
+  });
+
   it("普通Planning与Memory Planning作为两个独立选项发布，选择Memory后Run绑定独立轨迹", async () => {
     const { app } = await testApp();
     const definitionsResponse = await app.request("/api/workflow/definitions");
@@ -466,7 +533,11 @@ describe("公开产品API", () => {
         expect.objectContaining({ regionKey: "agent_identity", mode: "default" }),
       ]),
     );
-    expect(assembly?.userPrompt).toContain("只读检查项目并报告结论");
+    expect(assembly?.schemaVersion).toBe("prompt-assembly.v2");
+    if (assembly?.schemaVersion !== "prompt-assembly.v2") {
+      throw new Error("Direct新Run必须冻结Prompt Assembly V2");
+    }
+    expect(assembly.messages.at(-1)?.text).toBe("只读检查项目并报告结论");
     const workflowAttempt = Object.values(snapshot.entities.attempts).find(
       (attempt) =>
         attempt.productRunId === submitted.run.productRunId && attempt.kind === "workflow",
@@ -1457,7 +1528,7 @@ describe("公开产品API", () => {
   });
 
   it("Prompt Studio公开区域和Builtin来源，并以CAS追加用户Revision", async () => {
-    const { app } = await testApp();
+    const { app, deps } = await testApp();
     const regions = await app.request("/api/prompt-regions");
     expect(regions.status).toBe(200);
     const regionsBody = (await regions.json()) as {
@@ -1577,10 +1648,90 @@ describe("公开产品API", () => {
     );
     expect(revised.status).toBe(201);
     const revisedBody = (await revised.json()) as {
-      promptFragment: { fragment: { currentRevisionNumber: number }; revisions: unknown[] };
+      promptFragment: {
+        fragment: {
+          promptFragmentId: string;
+          currentRevisionId: string;
+          currentRevisionSha256: string;
+          currentRevisionNumber: number;
+        };
+        revisions: unknown[];
+      };
     };
     expect(revisedBody.promptFragment.fragment.currentRevisionNumber).toBe(2);
     expect(revisedBody.promptFragment.revisions).toHaveLength(2);
+    const product = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const storedRevisions = Object.values(product.entities.promptFragmentRevisions).filter(
+      (revision) => revision.promptFragmentId === fragment.promptFragmentId,
+    );
+    expect(storedRevisions).toHaveLength(2);
+    expect(
+      storedRevisions.every((revision) => revision.schemaVersion === "prompt-fragment-revision.v2"),
+    ).toBe(true);
+    expect(JSON.stringify(storedRevisions)).not.toContain("你是我的任务 Agent");
+    expect(JSON.stringify(storedRevisions)).toContain("sourceRelativePath");
+
+    const directDefinitions = z
+      .object({ definitions: workflowDefinitionsDtoSchema })
+      .strict()
+      .parse(await (await app.request("/api/workflow/definitions")).json());
+    const direct = directDefinitions.definitions.definitions.find(
+      (definition) =>
+        definition.workflowDefinitionRevisionId === SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+    );
+    if (direct === undefined) throw new Error("缺少Direct Workflow");
+    const sessionResponse = await postJson(app, "/api/sessions", {
+      commandId: nextCmd(),
+      payload: { title: "Prompt V2 Direct体验" },
+    });
+    const session = sessionDtoSchema.parse(
+      ((await sessionResponse.json()) as { session: unknown }).session,
+    );
+    const sent = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
+      commandId: nextCmd(),
+      payload: {
+        text: "检查当前项目",
+        workflowSelection: {
+          kind: "published_revision",
+          workflowDefinitionRevisionId: direct.workflowDefinitionRevisionId,
+          definitionSha256: direct.definitionSha256,
+        },
+        promptSelection: {
+          schemaVersion: "prompt-turn-selection-input.v1",
+          workspaceRootId: "root_chat",
+          regions: [
+            {
+              regionKey: "agent_identity",
+              mode: "replace",
+              selected: [
+                {
+                  promptFragmentRevisionId: revisedBody.promptFragment.fragment.currentRevisionId,
+                  sha256: revisedBody.promptFragment.fragment.currentRevisionSha256,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    expect(sent.status, await sent.clone().text()).toBe(201);
+    const afterSend = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const assembly = Object.values(afterSend.entities.promptAssemblies).find(
+      (candidate) => candidate.productSessionId === session.sessionId,
+    );
+    expect(assembly?.schemaVersion).toBe("prompt-assembly.v2");
+    if (assembly?.schemaVersion !== "prompt-assembly.v2") {
+      throw new Error("Direct提交没有形成V2 Assembly");
+    }
+    expect(assembly.messages.at(-1)).toMatchObject({
+      role: "user",
+      text: "检查当前项目",
+      source: { kind: "current_input" },
+    });
+    expect(assembly.systemPromptAppend).toContain("你是我的任务 Agent");
+    expect(assembly.regions[0]?.fragments[0]?.sourceRelativePath).toContain(
+      ".data/prompts/global/agent_identity/",
+    );
 
     const stale = await postJson(
       app,

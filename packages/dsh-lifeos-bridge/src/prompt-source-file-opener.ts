@@ -21,6 +21,19 @@ const promptCatalogSourcesSchema = z
   })
   .passthrough();
 
+const promptWorkspaceRootsSchema = z
+  .array(
+    z
+      .object({
+        rootId: z.string().regex(/^root_[A-Za-z0-9]+$/u),
+        displayName: z.string().min(1).max(160),
+        canonicalPath: z.string().min(1).max(2_000),
+        enabledAdapters: z.array(z.string()),
+      })
+      .strict(),
+  )
+  .max(20);
+
 export const promptSourceOpenerIdSchema = z.enum([
   "vscode",
   "trae-cn",
@@ -93,6 +106,7 @@ export class PromptSourceFileOpenError extends Error {
 
 export interface PromptSourceFileOpenerOptions {
   readonly repoRoot: string;
+  readonly env?: NodeJS.ProcessEnv;
   readonly platform?: NodeJS.Platform;
   readonly applicationExists?: (path: string) => Promise<boolean>;
   readonly launch?: (opener: PromptSourceOpenerDefinition, absolutePath: string) => Promise<void>;
@@ -126,6 +140,7 @@ export class PromptSourceFileOpener {
   private constructor(
     private readonly repoRoot: string,
     private readonly allowedRelativePaths: ReadonlySet<string>,
+    private readonly workspaceRoots: ReadonlyMap<string, string>,
     private readonly available: readonly PromptSourceOpenerDefinition[],
     private readonly launch: (
       opener: PromptSourceOpenerDefinition,
@@ -147,6 +162,11 @@ export class PromptSourceFileOpener {
       parsed.data.regionSource.relativePath,
       ...parsed.data.fragments.map((fragment) => fragment.relativePath),
     ]);
+    const workspaceRoots = new Map<string, string>();
+    const rootsRaw = options.env?.CHAT_PROJECT_ROOTS_JSON?.trim();
+    for (const root of rootsRaw ? promptWorkspaceRootsSchema.parse(JSON.parse(rootsRaw)) : []) {
+      workspaceRoots.set(root.rootId, await realpath(root.canonicalPath));
+    }
     const platform = options.platform ?? process.platform;
     const exists = options.applicationExists ?? applicationExists;
     const available: PromptSourceOpenerDefinition[] = [];
@@ -160,6 +180,7 @@ export class PromptSourceFileOpener {
     return new PromptSourceFileOpener(
       repoRoot,
       allowedRelativePaths,
+      workspaceRoots,
       available,
       options.launch ?? launchOnMac,
     );
@@ -178,7 +199,30 @@ export class PromptSourceFileOpener {
     relativePath: string;
     openerId: z.infer<typeof promptSourceOpenerIdSchema>;
   }> {
-    if (!this.allowedRelativePaths.has(request.relativePath)) {
+    const resolveAllowedTarget = (): { root: string; candidate: string } | undefined => {
+      if (this.allowedRelativePaths.has(request.relativePath)) {
+        return { root: this.repoRoot, candidate: resolve(this.repoRoot, request.relativePath) };
+      }
+      if (request.relativePath.startsWith(".data/prompts/global/")) {
+        const managedRoot = resolve(this.repoRoot, ".data/prompts/global");
+        return { root: managedRoot, candidate: resolve(this.repoRoot, request.relativePath) };
+      }
+      const slash = request.relativePath.indexOf("/");
+      if (slash <= 0) return undefined;
+      const rootId = request.relativePath.slice(0, slash);
+      const child = request.relativePath.slice(slash + 1);
+      const workspaceRoot = this.workspaceRoots.get(rootId);
+      if (
+        workspaceRoot === undefined ||
+        (child !== "AGENTS.md" && !child.startsWith(".chat/prompts/")) ||
+        !child.endsWith(".md")
+      ) {
+        return undefined;
+      }
+      return { root: workspaceRoot, candidate: resolve(workspaceRoot, child) };
+    };
+    const target = resolveAllowedTarget();
+    if (target === undefined) {
       throw new PromptSourceFileOpenError(
         404,
         "lifeos_prompt_source_not_found",
@@ -193,14 +237,14 @@ export class PromptSourceFileOpener {
         "所选本机应用当前不可用",
       );
     }
-    const absolutePath = await realpath(resolve(this.repoRoot, request.relativePath)).catch(() => {
+    const absolutePath = await realpath(target.candidate).catch(() => {
       throw new PromptSourceFileOpenError(
         404,
         "lifeos_prompt_source_not_found",
         "Prompt来源文件不存在",
       );
     });
-    const relativeToRoot = relative(this.repoRoot, absolutePath);
+    const relativeToRoot = relative(target.root, absolutePath);
     if (relativeToRoot.startsWith("..") || isAbsolute(relativeToRoot)) {
       throw new PromptSourceFileOpenError(
         403,

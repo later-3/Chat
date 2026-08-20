@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFile, realpath } from "node:fs/promises";
-import { dirname, resolve, sep } from "node:path";
+import { readFile, realpath, stat } from "node:fs/promises";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   PROMPT_STUDIO_API_SCHEMA_VERSION,
@@ -22,6 +22,19 @@ const relativePathSchema = z
   .min(1)
   .max(500)
   .refine((value) => !value.startsWith("/") && !value.split(/[\\/]/u).includes(".."));
+
+const promptWorkspaceConfigSchema = z
+  .array(
+    z
+      .object({
+        rootId: z.string().regex(/^root_[A-Za-z0-9]+$/u),
+        displayName: z.string().min(1).max(160),
+        canonicalPath: z.string().min(1).max(2_000),
+        enabledAdapters: z.array(z.string()),
+      })
+      .strict(),
+  )
+  .max(20);
 
 const manifestSchema = z
   .object({
@@ -80,7 +93,10 @@ async function readCatalogFile(repoRoot: string, relativePath: string): Promise<
  * Git Prompt Catalog Adapter。启动时一次性加载并校验全部文件，任何路径越界、缺失、
  * 重复身份或Hash漂移都失败关闭；运行期只返回不可变内存投影。
  */
-export async function createFilePromptCatalog(repoRoot?: string): Promise<PromptCatalogPort> {
+export async function createFilePromptCatalog(
+  repoRoot?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<PromptCatalogPort> {
   const inferredRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
   const root = repoRoot === undefined ? inferredRoot : resolve(repoRoot);
   const manifestRaw = await readCatalogFile(root, "prompts/catalog.json");
@@ -143,6 +159,7 @@ export async function createFilePromptCatalog(repoRoot?: string): Promise<Prompt
       title: fragment.title,
       ...(fragment.description !== undefined ? { description: fragment.description } : {}),
       content: { kind: "markdown", bodyMarkdown },
+      scope: { kind: "global" },
       sha256: hashCanonical("builtin-prompt-fragment-revision.v1", {
         ...fragment,
         content: bodyMarkdown,
@@ -150,6 +167,59 @@ export async function createFilePromptCatalog(repoRoot?: string): Promise<Prompt
       sourceRelativePath: fragment.relativePath,
       createdAt: manifest.publishedAt,
     });
+  }
+
+  const workspaceInstructionsRegion = regions.find(
+    (item) => item.regionKey === "workspace_instructions",
+  );
+  if (workspaceInstructionsRegion !== undefined) {
+    let roots: z.infer<typeof promptWorkspaceConfigSchema> = [];
+    if (env.CHAT_PROJECT_ROOTS_JSON?.trim()) {
+      roots = promptWorkspaceConfigSchema.parse(JSON.parse(env.CHAT_PROJECT_ROOTS_JSON));
+    }
+    const platformRootId = env.CHAT_PLATFORM_WORKSPACE_ROOT_ID?.trim() || "root_chat";
+    for (const workspace of roots) {
+      const canonicalRoot = await realpath(workspace.canonicalPath);
+      const agentsPath = join(canonicalRoot, "AGENTS.md");
+      let bodyMarkdown: string;
+      try {
+        const metadata = await stat(agentsPath);
+        if (!metadata.isFile()) continue;
+        bodyMarkdown = await readFile(agentsPath, "utf8");
+      } catch {
+        continue;
+      }
+      if (bodyMarkdown.trim() === "") continue;
+      const identity = sha256(`${workspace.rootId}\u0000AGENTS.md`).slice(0, 24);
+      const promptFragmentId = promptFragmentIdSchema.parse(`pfg_workspaceagents${identity}`);
+      const promptFragmentRevisionId = promptFragmentRevisionIdSchema.parse(
+        `pfr_workspaceagents${identity}${sha256(bodyMarkdown).slice(0, 12)}`,
+      );
+      builtinFragments.push({
+        promptFragmentId,
+        promptFragmentRevisionId,
+        revision: 1,
+        regionKey: "workspace_instructions",
+        title:
+          workspace.rootId === platformRootId
+            ? `${workspace.displayName} · 基础AGENTS.md`
+            : `${workspace.displayName} · AGENTS.md`,
+        description: "仅在用户本轮显式选择后进入System；Chat不会递归发现其他指令文件。",
+        content: { kind: "markdown", bodyMarkdown },
+        scope:
+          workspace.rootId === platformRootId
+            ? { kind: "global" as const }
+            : { kind: "workspace" as const, rootId: workspace.rootId as never },
+        sha256: hashCanonical("workspace-prompt-fragment-revision.v1", {
+          rootId: workspace.rootId,
+          relativePath: "AGENTS.md",
+          content: bodyMarkdown,
+        }),
+        sourceRelativePath: `${workspace.rootId}/AGENTS.md`,
+        sourceWorkspaceRootId: workspace.rootId,
+        createdAt: manifest.publishedAt,
+      });
+    }
   }
   builtinFragments.sort((left, right) =>
     left.regionKey === right.regionKey

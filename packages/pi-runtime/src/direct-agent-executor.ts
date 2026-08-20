@@ -1,4 +1,5 @@
 import { mkdir } from "node:fs/promises";
+import type { PromptAssemblyV2 } from "@chat/contracts";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import {
   createAgentSession,
@@ -61,7 +62,10 @@ export class DirectAgentSuspendedError extends Error {
 export interface DirectAgentRunInput {
   readonly request: StartPiDirectExecutorOperationRequest;
   readonly prompt: string;
+  readonly history: readonly { readonly role: "user" | "assistant"; readonly text: string }[];
   readonly systemPromptAppend: string;
+  readonly tools: PromptAssemblyV2["tools"];
+  readonly requestOptions: PromptAssemblyV2["requestOptions"];
   readonly cwd: string;
   readonly agentDir: string;
   readonly sessionsDir: string;
@@ -75,6 +79,22 @@ export interface DirectAgentRunInput {
 
 export interface DirectAgentRunner {
   run(input: DirectAgentRunInput): Promise<string>;
+}
+
+/**
+ * Chat本地安装以仓库.env的DASHSCOPE_API_KEY作为Provider就绪事实；Pi仍负责
+ * 实际认证，但必须把该值注册为进程内runtime override。这样用户目录里过期的
+ * command型models.json认证不会覆盖Chat显式配置，密钥也不会写入Pi Session或Store。
+ */
+export async function applyDirectAgentRuntimeApiKey(input: {
+  readonly modelRuntime: Pick<ModelRuntime, "setRuntimeApiKey">;
+  readonly environment: Readonly<Record<string, string | undefined>>;
+  readonly providerId: string;
+  readonly signal: AbortSignal;
+}): Promise<void> {
+  const apiKey = input.environment.DASHSCOPE_API_KEY?.trim();
+  if (apiKey === undefined || apiKey === "") return;
+  await input.modelRuntime.setRuntimeApiKey(input.providerId, apiKey, { signal: input.signal });
 }
 
 function assistantText(message: AgentMessage | undefined): string | undefined {
@@ -91,14 +111,11 @@ function createReadOnlyJournalExtension(input: {
   readonly sessionId: string;
   readonly workspaceRoot: string;
   readonly store: PiDirectExecutorOperationStore;
+  readonly enabledTools: readonly string[];
 }): ExtensionFactory {
   return (pi) => {
     pi.on("tool_call", async (event: ToolCallEvent) => {
-      if (
-        !P1_DIRECT_AGENT_PROFILE.enabledTools.includes(
-          event.toolName as (typeof P1_DIRECT_AGENT_PROFILE.enabledTools)[number],
-        )
-      ) {
+      if (!input.enabledTools.includes(event.toolName)) {
         throw new DirectAgentExecutionError("direct_executor.tool_not_allowed");
       }
       const path = "path" in event.input ? event.input.path : undefined;
@@ -140,9 +157,15 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
     await mkdir(input.sessionsDir, { recursive: true, mode: 0o700 });
 
     const modelRuntime = await ModelRuntime.create({ refreshOnCreate: false });
+    await applyDirectAgentRuntimeApiKey({
+      modelRuntime,
+      environment: process.env,
+      providerId: input.requestOptions.providerId,
+      signal: input.signal,
+    });
     const model = modelRuntime.getModel(
-      P1_DIRECT_AGENT_PROFILE.providerId,
-      P1_DIRECT_AGENT_PROFILE.modelId,
+      input.requestOptions.providerId,
+      input.requestOptions.modelId,
     );
     if (model === undefined)
       throw new DirectAgentExecutionError("provider.pre_request.model_missing");
@@ -159,12 +182,12 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
 
     const settingsManager = SettingsManager.inMemory({
       retry: {
-        enabled: P1_DIRECT_AGENT_PROFILE.retryEnabled,
+        enabled: input.requestOptions.retryEnabled,
         provider: { maxRetries: 0 },
       },
-      compaction: { enabled: P1_DIRECT_AGENT_PROFILE.compactionEnabled },
+      compaction: { enabled: input.requestOptions.compactionEnabled },
       branchSummary: { skipPrompt: P1_DIRECT_AGENT_PROFILE.branchSummarySkipPrompt },
-      defaultThinkingLevel: P1_DIRECT_AGENT_PROFILE.thinkingLevel,
+      defaultThinkingLevel: input.requestOptions.thinkingLevel,
     });
     const sessionId = `pis_${input.request.operationId.slice(4)}`;
     const journalExtension = createReadOnlyJournalExtension({
@@ -172,6 +195,7 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       sessionId,
       workspaceRoot: input.cwd,
       store: input.store,
+      enabledTools: input.tools.names,
     });
     const resourceLoader = new DefaultResourceLoader({
       cwd: input.cwd,
@@ -184,7 +208,8 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       noSkills: true,
       noPromptTemplates: true,
       noContextFiles: true,
-      systemPrompt: "",
+      // 不传systemPrompt，明确复用固定Pi版本的默认基础Prompt；空字符串在Pi中会
+      // truthy回退，语义含混。AGENTS/Skill/Template仍由上面的fail-closed开关禁用。
       appendSystemPrompt: [
         DIRECT_AGENT_APPEND_SYSTEM_PROMPT,
         ...(input.systemPromptAppend === "" ? [] : [input.systemPromptAppend]),
@@ -208,6 +233,35 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       resumedCheckpointSha256 = active.checkpoint.fileSha256;
     } else {
       sessionManager = SessionManager.create(input.cwd, input.sessionsDir, { id: sessionId });
+      const historyStartedAt = Date.now() - input.history.length;
+      input.history.forEach((message, index) => {
+        const timestamp = historyStartedAt + index;
+        const seeded: AgentMessage =
+          message.role === "user"
+            ? {
+                role: "user",
+                content: [{ type: "text", text: message.text }],
+                timestamp,
+              }
+            : {
+                role: "assistant",
+                content: [{ type: "text", text: message.text }],
+                api: model.api,
+                provider: model.provider,
+                model: model.id,
+                usage: {
+                  input: 0,
+                  output: 0,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                  totalTokens: 0,
+                  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+                },
+                stopReason: "stop",
+                timestamp,
+              };
+        sessionManager.appendMessage(seeded);
+      });
     }
 
     const sessionForProviderGate: { current?: AgentSession } = {};
@@ -216,8 +270,8 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       agentDir: input.agentDir,
       modelRuntime,
       model,
-      thinkingLevel: P1_DIRECT_AGENT_PROFILE.thinkingLevel,
-      tools: [...P1_DIRECT_AGENT_PROFILE.enabledTools],
+      thinkingLevel: input.requestOptions.thinkingLevel,
+      tools: [...input.tools.names],
       resourceLoader,
       sessionManager,
       settingsManager,
@@ -257,7 +311,7 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
     await input.store.setSession({
       operationId: input.request.operationId,
       sessionId: session.sessionId,
-      enabledTools: [...P1_DIRECT_AGENT_PROFILE.enabledTools],
+      enabledTools: [...input.tools.names],
       ...(resumedCheckpointSha256 === undefined
         ? {}
         : { resumedFromCheckpointSha256: resumedCheckpointSha256 }),

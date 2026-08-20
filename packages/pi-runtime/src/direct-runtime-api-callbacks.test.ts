@@ -35,6 +35,7 @@ describe("Direct Agent Runtime Fetch callbacks", () => {
             sha256: "3".repeat(64),
           },
           promptAssembly: {
+            schemaVersion: "prompt-assembly.v1",
             promptAssemblyId: "pma_callbacktest",
             sha256: "7".repeat(64),
             systemPromptAppend: "# Agent 身份",

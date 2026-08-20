@@ -5,6 +5,7 @@ import {
   type DecisionRequest,
   type DshContextInjectionProjection,
   type DshSendReviewDecisionRequest,
+  type BridgeChatDispatchReviewDecisionRequest,
   type LifeosExecutionTrace,
   type LifeosProjection,
   type LifeosWorkflowOption,
@@ -169,6 +170,26 @@ export class LifeosProjectionController {
       "POST",
       request,
       "DSH发送审核决定提交失败",
+    );
+  }
+
+  async setBridgeDispatchReviewEnabled(enabled: boolean): Promise<boolean> {
+    return await this.submitProjectionCommand(
+      `/lifeos/sessions/${encodeURIComponent(this.sessionId)}/bridge-dispatch-review-setting`,
+      "POST",
+      { enabled },
+      "Bridge出口审核开关提交失败",
+    );
+  }
+
+  async decideBridgeDispatchReview(
+    request: BridgeChatDispatchReviewDecisionRequest,
+  ): Promise<boolean> {
+    return await this.submitProjectionCommand(
+      `/lifeos/sessions/${encodeURIComponent(this.sessionId)}/bridge-dispatch-review-decisions`,
+      "POST",
+      request,
+      "Bridge出口审核决定提交失败",
     );
   }
 

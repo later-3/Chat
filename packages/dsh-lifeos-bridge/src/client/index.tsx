@@ -194,7 +194,9 @@ export function apply(ctx: ClientContext): void {
             loadWorkflows: () => lifeos.loadWorkflows(),
             selectWorkflow: (selection) => lifeos.selectWorkflow(selection),
             loadContextInjections: () => lifeos.loadContextInjections(),
-            setEnabled: (enabled) => lifeos.setDshSendReviewEnabled(enabled),
+            setDshSendReviewEnabled: (enabled) => lifeos.setDshSendReviewEnabled(enabled),
+            setBridgeDispatchReviewEnabled: (enabled) =>
+              lifeos.setBridgeDispatchReviewEnabled(enabled),
             load: async () => {
               await Promise.all([controller.load(), promptStudio.refresh()]);
             },
@@ -248,6 +250,7 @@ export function apply(ctx: ClientContext): void {
             decideNote: (request) => controller.decideNote(request),
             decidePromptReview: (request) => controller.decidePromptReview(request),
             decideDshSendReview: (request) => controller.decideDshSendReview(request),
+            decideBridgeDispatchReview: (request) => controller.decideBridgeDispatchReview(request),
           };
         },
       },

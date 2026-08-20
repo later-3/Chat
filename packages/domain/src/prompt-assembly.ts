@@ -27,6 +27,7 @@ export interface PromptAssemblyRegionShape {
 }
 
 export interface PromptAssemblyShape {
+  readonly schemaVersion?: "prompt-assembly.v1";
   readonly promptAssemblyId: string;
   readonly productSessionId: string;
   readonly productRunId: string;
@@ -38,6 +39,38 @@ export interface PromptAssemblyShape {
   readonly regions: readonly PromptAssemblyRegionShape[];
   readonly systemPromptAppend: string;
   readonly userPrompt: string;
+  readonly sha256: string;
+}
+
+export interface PromptAssemblyV2Shape {
+  readonly schemaVersion: "prompt-assembly.v2";
+  readonly promptAssemblyId: string;
+  readonly productSessionId: string;
+  readonly productRunId: string;
+  readonly sourceMessageId: string;
+  readonly workflowDefinitionRevisionId: string;
+  readonly profileVersion: string;
+  readonly compilerVersion: string;
+  readonly workspaceRootId?: string | undefined;
+  readonly regions: readonly PromptAssemblyRegionShape[];
+  readonly systemPromptAppend: string;
+  readonly messages: readonly {
+    readonly role: "user" | "assistant";
+    readonly text: string;
+    readonly source: Readonly<Record<string, unknown>>;
+    readonly estimatedTokens: number;
+  }[];
+  readonly tools: Readonly<Record<string, unknown>>;
+  readonly requestOptions: Readonly<Record<string, unknown>>;
+  readonly budget: {
+    readonly meterVersion: string;
+    readonly inputTokenLimit: number;
+    readonly instructionsEstimatedTokens: number;
+    readonly messagesEstimatedTokens: number;
+    readonly toolsEstimatedTokens: number;
+    readonly totalEstimatedTokens: number;
+    readonly excludedHistoryMessageIds: readonly string[];
+  };
   readonly sha256: string;
 }
 
@@ -70,7 +103,13 @@ export function computePromptAssemblySha256(input: Omit<PromptAssemblyShape, "sh
   return hashCanonical("prompt-assembly.v1", input);
 }
 
-export function assertPromptAssembly(assembly: PromptAssemblyShape): void {
+export function computePromptAssemblyV2Sha256(
+  input: Omit<PromptAssemblyV2Shape, "sha256">,
+): string {
+  return hashCanonical("prompt-assembly.v2", input);
+}
+
+export function assertPromptAssembly(assembly: PromptAssemblyShape | PromptAssemblyV2Shape): void {
   const regionKeys = new Set<string>();
   for (const region of assembly.regions) {
     if (regionKeys.has(region.regionKey)) throw new Error("Prompt Assembly Region重复");
@@ -94,7 +133,7 @@ export function assertPromptAssembly(assembly: PromptAssemblyShape): void {
       throw new Error(`Prompt Assembly ${region.regionKey} Hash不一致`);
     }
   }
-  const expected = computePromptAssemblySha256({
+  const common = {
     promptAssemblyId: assembly.promptAssemblyId,
     productSessionId: assembly.productSessionId,
     productRunId: assembly.productRunId,
@@ -107,7 +146,17 @@ export function assertPromptAssembly(assembly: PromptAssemblyShape): void {
       : { workspaceRootId: assembly.workspaceRootId }),
     regions: assembly.regions,
     systemPromptAppend: assembly.systemPromptAppend,
-    userPrompt: assembly.userPrompt,
-  });
+  } as const;
+  const expected =
+    assembly.schemaVersion === "prompt-assembly.v2"
+      ? computePromptAssemblyV2Sha256({
+          schemaVersion: assembly.schemaVersion,
+          ...common,
+          messages: assembly.messages,
+          tools: assembly.tools,
+          requestOptions: assembly.requestOptions,
+          budget: assembly.budget,
+        })
+      : computePromptAssemblySha256({ ...common, userPrompt: assembly.userPrompt });
   if (expected !== assembly.sha256) throw new Error("Prompt Assembly Hash不一致");
 }

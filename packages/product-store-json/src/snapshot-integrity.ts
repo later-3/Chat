@@ -2,8 +2,13 @@ import {
   DIRECT_AGENT_ACTIVE_TIMEOUT_MS,
   DIRECT_AGENT_MAX_PROVIDER_REQUESTS,
   DIRECT_AGENT_TOKEN_BUDGET,
+  DIRECT_PROMPT_COMPILER_V2_VERSION,
   DIRECT_PROMPT_COMPILER_VERSION,
+  DIRECT_PROMPT_INPUT_TOKEN_LIMIT,
+  DIRECT_PROMPT_METER_VERSION,
+  DIRECT_PROMPT_PROFILE_V2_VERSION,
   DIRECT_PROMPT_PROFILE_VERSION,
+  DIRECT_PROMPT_TOOL_TOKEN_RESERVE,
   EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
   LEGACY_DIRECT_PROMPT_COMPILER_VERSION,
   LEGACY_DIRECT_PROMPT_PROFILE_VERSION,
@@ -1734,8 +1739,20 @@ function assertPromptFragments(snapshot: ProductSnapshot, fail: Fail): void {
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
-    if (entities.promptFragments[revision.promptFragmentId] === undefined) {
+    const aggregate = entities.promptFragments[revision.promptFragmentId];
+    if (aggregate === undefined) {
       fail(`promptFragmentRevision ${revision.promptFragmentRevisionId} 悬空Fragment`);
+    }
+    if (revision.schemaVersion === "prompt-fragment-revision.v2") {
+      const expectedPath =
+        aggregate.scope.kind === "global"
+          ? `.data/prompts/global/${revision.regionKey}/${revision.promptFragmentId}/${revision.promptFragmentRevisionId}.md`
+          : `${aggregate.scope.rootId}/.chat/prompts/${revision.regionKey}/${revision.promptFragmentId}/${revision.promptFragmentRevisionId}.md`;
+      if (revision.contentRef.sourceRelativePath !== expectedPath) {
+        fail(
+          `promptFragmentRevision ${revision.promptFragmentRevisionId} Markdown路径与Scope不一致`,
+        );
+      }
     }
     const list = revisionsByFragment.get(revision.promptFragmentId) ?? [];
     list.push(revision);
@@ -1840,9 +1857,14 @@ function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
     }
 
     const isLegacy = assembly.compilerVersion === LEGACY_DIRECT_PROMPT_COMPILER_VERSION;
+    const isV2 = assembly.schemaVersion === "prompt-assembly.v2";
     if (
       (isLegacy && assembly.profileVersion !== LEGACY_DIRECT_PROMPT_PROFILE_VERSION) ||
+      (isV2 &&
+        (assembly.compilerVersion !== DIRECT_PROMPT_COMPILER_V2_VERSION ||
+          assembly.profileVersion !== DIRECT_PROMPT_PROFILE_V2_VERSION)) ||
       (!isLegacy &&
+        !isV2 &&
         (assembly.compilerVersion !== DIRECT_PROMPT_COMPILER_VERSION ||
           assembly.profileVersion !== DIRECT_PROMPT_PROFILE_VERSION))
     ) {
@@ -1850,6 +1872,7 @@ function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
     }
     if (
       isLegacy &&
+      assembly.schemaVersion === "prompt-assembly.v1" &&
       (assembly.regions.length !== 0 ||
         assembly.workspaceRootId !== undefined ||
         assembly.systemPromptAppend !== "" ||
@@ -1889,7 +1912,7 @@ function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
           fail(`promptAssembly ${assembly.promptAssemblyId} 采用了其他Workspace的Prompt Fragment`);
         }
         if (fragment.ownerKind === "system") {
-          if (fragment.scope.kind !== "global" || fragment.sourceRelativePath === undefined) {
+          if (fragment.sourceRelativePath === undefined) {
             fail(`promptAssembly ${assembly.promptAssemblyId} System Prompt来源或Scope非法`);
           }
           if (fragment.selectionKind === "profile_default" && region.mode === "replace") {
@@ -1900,6 +1923,16 @@ function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
 
         const revision = entities.promptFragmentRevisions[fragment.promptFragmentRevisionId];
         const aggregate = entities.promptFragments[fragment.promptFragmentId];
+        const contentMatches =
+          revision?.schemaVersion === "prompt-fragment-revision.v2"
+            ? revision.contentRef.contentSha256 ===
+                hashCanonical("prompt-file-content.v1", fragment.content) &&
+              revision.contentRef.sourceRelativePath === fragment.sourceRelativePath &&
+              revision.contentRef.contentKind === fragment.content.kind &&
+              (fragment.content.kind !== "key_value" ||
+                revision.contentRef.key === fragment.content.key)
+            : revision !== undefined &&
+              JSON.stringify(revision.content) === JSON.stringify(fragment.content);
         if (
           revision === undefined ||
           aggregate === undefined ||
@@ -1909,9 +1942,8 @@ function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
           revision.sha256 !== fragment.sha256 ||
           revision.title !== fragment.title ||
           revision.regionKey !== fragment.regionKey ||
-          JSON.stringify(revision.content) !== JSON.stringify(fragment.content) ||
+          !contentMatches ||
           JSON.stringify(aggregate.scope) !== JSON.stringify(fragment.scope) ||
-          fragment.sourceRelativePath !== undefined ||
           fragment.selectionKind === "profile_default"
         ) {
           fail(`promptAssembly ${assembly.promptAssemblyId} Principal Prompt来源绑定不一致`);
@@ -1923,22 +1955,115 @@ function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
       .filter((region) => region.placement === "system" && region.renderedText !== "")
       .map((region) => region.renderedText)
       .join("\n\n");
-    const messageContext = assembly.regions
-      .filter((region) => region.placement === "messages" && region.renderedText !== "")
-      .map((region) => region.renderedText)
-      .join("\n\n");
-    const userPrompt = [
-      ...(messageContext === "" ? [] : ["# Chat 提示词上下文", messageContext]),
-      "# 当前输入 [current_input]",
-      sourceMessage.content.text,
-    ].join("\n\n");
-    if (
-      !isLegacy &&
-      (assembly.systemPromptAppend !== systemPromptAppend || assembly.userPrompt !== userPrompt)
-    ) {
-      fail(
-        `promptAssembly ${assembly.promptAssemblyId} 最终System/User Prompt不是Region与原始消息的确定性投影`,
-      );
+    if (assembly.schemaVersion === "prompt-assembly.v2") {
+      const current = assembly.messages.at(-1);
+      if (
+        assembly.systemPromptAppend !== systemPromptAppend ||
+        current?.role !== "user" ||
+        current.text !== sourceMessage.content.text ||
+        current.source.kind !== "current_input" ||
+        current.source.messageId !== sourceMessage.messageId ||
+        current.source.sessionSequence !== sourceMessage.sessionSequence ||
+        current.source.sha256 !==
+          hashCanonical("message.v1", {
+            messageId: sourceMessage.messageId,
+            sessionId: sourceMessage.sessionId,
+            sessionSequence: sourceMessage.sessionSequence,
+            role: sourceMessage.role,
+            content: sourceMessage.content,
+          })
+      ) {
+        fail(
+          `promptAssembly ${assembly.promptAssemblyId} V2最终Instructions/Current Message投影非法`,
+        );
+      }
+      const history = assembly.messages.slice(0, -1);
+      if (history.length % 2 !== 0) {
+        fail(`promptAssembly ${assembly.promptAssemblyId} V2历史没有保持完整问答对`);
+      }
+      for (const message of history) {
+        if (message.source.kind !== "product_message") {
+          fail(`promptAssembly ${assembly.promptAssemblyId} V2历史来源类型非法`);
+        }
+        const productMessage = entities.messages[message.source.messageId];
+        if (
+          productMessage === undefined ||
+          productMessage.sessionId !== assembly.productSessionId ||
+          productMessage.role !== message.role ||
+          productMessage.content.text !== message.text ||
+          productMessage.sessionSequence !== message.source.sessionSequence ||
+          productMessage.sessionSequence >= sourceMessage.sessionSequence ||
+          hashCanonical("message.v1", {
+            messageId: productMessage.messageId,
+            sessionId: productMessage.sessionId,
+            sessionSequence: productMessage.sessionSequence,
+            role: productMessage.role,
+            content: productMessage.content,
+          }) !== message.source.sha256
+        ) {
+          fail(`promptAssembly ${assembly.promptAssemblyId} V2历史Message来源绑定非法`);
+        }
+      }
+      for (let index = 0; index < history.length; index += 2) {
+        const user = history[index];
+        const assistant = history[index + 1];
+        if (
+          user?.role !== "user" ||
+          assistant?.role !== "assistant" ||
+          user.source.kind !== "product_message" ||
+          assistant.source.kind !== "product_message"
+        ) {
+          fail(`promptAssembly ${assembly.promptAssemblyId} V2历史角色顺序非法`);
+        }
+        const assistantMessage = entities.messages[assistant.source.messageId];
+        const historyRun =
+          assistantMessage?.sourceRunId === undefined
+            ? undefined
+            : entities.runs[assistantMessage.sourceRunId];
+        if (
+          historyRun === undefined ||
+          historyRun.sessionId !== assembly.productSessionId ||
+          historyRun.status !== "succeeded" ||
+          historyRun.sourceMessageId !== user.source.messageId ||
+          historyRun.finalMessageId !== assistant.source.messageId ||
+          user.source.sessionSequence >= assistant.source.sessionSequence
+        ) {
+          fail(`promptAssembly ${assembly.promptAssemblyId} V2历史不是正式提交的问答结果`);
+        }
+      }
+      const estimate = (text: string): number =>
+        Math.max(1, Math.ceil(Buffer.byteLength(text, "utf8") / 3));
+      if (
+        assembly.budget.meterVersion !== DIRECT_PROMPT_METER_VERSION ||
+        assembly.budget.inputTokenLimit !== DIRECT_PROMPT_INPUT_TOKEN_LIMIT ||
+        assembly.tools.estimatedTokens !== DIRECT_PROMPT_TOOL_TOKEN_RESERVE ||
+        assembly.budget.toolsEstimatedTokens !== DIRECT_PROMPT_TOOL_TOKEN_RESERVE ||
+        assembly.budget.instructionsEstimatedTokens !==
+          (assembly.systemPromptAppend === "" ? 0 : estimate(assembly.systemPromptAppend)) ||
+        assembly.messages.some((message) => message.estimatedTokens !== estimate(message.text)) ||
+        assembly.budget.messagesEstimatedTokens !==
+          assembly.messages.reduce((total, message) => total + message.estimatedTokens, 0)
+      ) {
+        fail(`promptAssembly ${assembly.promptAssemblyId} V2输入预算证据非法`);
+      }
+    } else {
+      const messageContext = assembly.regions
+        .filter((region) => region.placement === "messages" && region.renderedText !== "")
+        .map((region) => region.renderedText)
+        .join("\n\n");
+      const userPrompt = [
+        ...(messageContext === "" ? [] : ["# Chat 提示词上下文", messageContext]),
+        "# 当前输入 [current_input]",
+        sourceMessage.content.text,
+      ].join("\n\n");
+      if (
+        !isLegacy &&
+        (assembly.systemPromptAppend !== systemPromptAppend || assembly.userPrompt !== userPrompt)
+      ) {
+        fail(
+          `promptAssembly ${assembly.promptAssemblyId} 最终System/User Prompt不是Region与原始消息的确定性投影`,
+        );
+      }
     }
 
     const runAssemblies = assembliesByRun.get(assembly.productRunId) ?? [];

@@ -139,11 +139,9 @@ test("native DSH Note workflow exposes candidate review and resumes after confir
         path: url.pathname,
         ...(body === undefined ? {} : { body }),
       });
-      if (req.method === "POST" && url.pathname === "/api/sessions") {
-        json(res, { session });
-      } else if (req.method === "POST" && url.pathname === `/api/sessions/${sessionId}/messages`) {
+      if (req.method === "POST" && url.pathname === "/api/messages") {
         submittedResolve();
-        json(res, { message: userMessage, run: run(false) });
+        json(res, { session, message: userMessage, run: run(false) });
       } else if (req.method === "GET" && url.pathname === `/api/runs/${runId}`) {
         json(res, { run: run(confirmed) });
       } else if (req.method === "GET" && url.pathname === `/api/runs/${runId}/plans`) {
@@ -270,7 +268,7 @@ test("native DSH Note workflow exposes candidate review and resumes after confir
     );
     assert.deepEqual(
       requests.filter((request) => request.method === "POST").map((request) => request.path),
-      ["/api/sessions", `/api/sessions/${sessionId}/messages`, `/api/runs/${runId}/note-decisions`],
+      ["/api/messages", `/api/runs/${runId}/note-decisions`],
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
