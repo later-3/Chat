@@ -126,10 +126,12 @@ DSH真实input.draft + 当前Session producer context + Workflow/Prompt Selectio
 
 DSH前端发送预览分为两个视图：
 
-- **友好展示**按DSH请求边界、Prompt配置、用户输入、DSH上下文和Bridge→Chat命令分区。每区的来源文件、生产者与说明都是UI注释，和真实正文视觉分离，绝不加入发送内容。
+- **友好展示**不再读取Prompt配置正文或Session上下文投影来“重新拼一份”。它只解析下面两份原始JSON，并为每个顶层字段、每条Message和每个Tool给出唯一JSON Pointer；区域正文就是该Pointer指向的完整JSON值。来源文件、生产者与说明只是UI注释，和真实正文视觉分离，绝不加入发送内容。
 - **原始请求**展示两段JSON事实：DSH Agent Loop交给LifeOS Adapter的完整可序列化`GenerateOptions`，以及Bridge按当前Workflow政策形成的Chat命令Payload。前者包含`provider/model/system/messages/tools/模型参数/sessionId`等实际存在字段；只排除负责本地取消且不可序列化的`AbortSignal`。两段分别保存SHA-256用于核对。
 
 手动点击“预览 DSH 发送”发生在DSH原生Send之前，此时Agent Loop尚未形成完整`GenerateOptions`，所以原始视图明确显示“尚未捕获”，不会根据旧Session或当前草稿伪造请求。只有开启“发送审核”并实际点击DSH发送后，Adapter入口才冻结真实请求，随后在任何Chat写入发生前暂停。
+
+Bridge在实际捕获时输出两条无正文Trace：`lifeos.dsh_adapter_request.captured`记录DSH请求整体Hash、每个JSON Pointer值的Hash/字符数，以及最后一条真实用户输入的Message/Text Pointer与文本Hash；`lifeos.dsh_to_chat_payload.projected`记录原DSH请求Hash、Bridge→Chat Payload Hash、每个Payload Pointer值Hash，并逐值验证DSH原始`/messages/N/content/M/text`与Bridge Payload `/text`。两者不一致时Bridge在任何Chat写入前以`lifeos_dsh_raw_mapping_mismatch`失败关闭。审核界面显示相同整体Hash、精确Pointer链和比较结果；完整System、Messages、Tool Schema和用户文本不会复制进日志、Bridge State或Product Store。
 
 真正发送时的可选审核链路是：
 

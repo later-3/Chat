@@ -1,6 +1,12 @@
 import { useState } from "react";
 import type { PromptCompositionMode, PromptConfigurationPreviewDto } from "@chat/contracts/public";
 import type { DshBridgeSendPreview } from "../contracts.ts";
+import {
+  exactSectionsFromJson,
+  lastDshUserInputMapping,
+  type DshUserInputMapping,
+  type ExactJsonSection,
+} from "../dsh-bridge-readable.ts";
 
 const MODE_LABEL: Record<PromptCompositionMode, string> = {
   default: "默认",
@@ -48,6 +54,128 @@ function promptSourceFiles(preview: PromptConfigurationPreviewDto): string[] {
       ),
     ),
   ].filter((value, index, values) => values.indexOf(value) === index);
+}
+
+interface SectionSource {
+  readonly addedBy: string;
+  readonly explanation: string;
+  readonly files: readonly string[];
+}
+
+function dshSectionSource(section: ExactJsonSection): SectionSource {
+  const assembledAt = "dsh/packages/core/agent-loop/src/agent.ts";
+  if (section.kind === "system") {
+    return {
+      addedBy: "DSH System Prompt → Agent Loop",
+      explanation: `正文只取自原始请求 ${section.jsonPointer}；System Prompt服务组装文本，Agent Loop把它写入GenerateOptions.system。`,
+      files: ["dsh/packages/core/system-prompt/src/index.ts", assembledAt],
+    };
+  }
+  if (section.kind === "tool") {
+    return {
+      addedBy: "DSH Tool Registry → Agent Loop",
+      explanation: `正文只取自原始请求 ${section.jsonPointer}；工具注册表提供Schema，Agent Loop保持数组顺序写入GenerateOptions.tools。`,
+      files: ["dsh/packages/core/tools/src/index.ts", assembledAt],
+    };
+  }
+  if (section.kind === "message") {
+    const source = section.messageSource;
+    const sourceIdentity = [
+      source?.kind === undefined ? null : `kind=${source.kind}`,
+      source?.plugin === undefined ? null : `plugin=${source.plugin}`,
+      source?.name === undefined ? null : `name=${source.name}`,
+      source?.form === undefined ? null : `form=${source.form}`,
+    ]
+      .filter((value): value is string => value !== null)
+      .join(" · ");
+    const files = [assembledAt];
+    if (source?.kind === "user") {
+      files.unshift("dsh/packages/client/ui-conversation/src/client/skeleton/InputBar.tsx");
+    }
+    if (source?.kind === "agent-instructions") {
+      files.unshift("dsh/packages/context/agent-instructions/src/index.ts");
+    }
+    if (source?.plugin === "@deepseek-ai/dsh-system-prompt") {
+      files.unshift("dsh/packages/core/system-prompt/src/index.ts");
+    }
+    return {
+      addedBy: `DSH Message Producer${sourceIdentity === "" ? "" : ` · ${sourceIdentity}`}`,
+      explanation: `正文只取自原始请求 ${section.jsonPointer}，包括role、source和content；界面没有再次读取Session。`,
+      files,
+    };
+  }
+  return {
+    addedBy: "DSH Agent Loop请求组装",
+    explanation: `该值只取自原始请求 ${section.jsonPointer}；Agent Loop在调用LLM Adapter前冻结完整GenerateOptions。`,
+    files: [assembledAt, "packages/dsh-lifeos-bridge/src/adapter.ts"],
+  };
+}
+
+function bridgeSectionSource(
+  section: ExactJsonSection,
+  preview: DshBridgeSendPreview,
+  dshUserInput: DshUserInputMapping | null,
+): SectionSource {
+  const common = [
+    "packages/dsh-lifeos-bridge/src/bridge-service.ts",
+    "packages/dsh-lifeos-bridge/src/chat-client.ts",
+  ];
+  if (section.jsonPointer === "/text") {
+    const bridgeText: unknown = JSON.parse(section.valueJson);
+    const matches = dshUserInput !== null && bridgeText === dshUserInput.text;
+    return {
+      addedBy: "LifeOS Adapter用户输入提取",
+      explanation:
+        dshUserInput === null
+          ? "当前手动预览还没有DSH原始请求；/text来自输入框草稿，实际发送审核时才建立原始Pointer映射。"
+          : `Bridge /text 直接对应DSH原始请求 ${dshUserInput.textJsonPointers.join(" + ")}；逐值比较：${matches ? "一致" : "不一致，发送已失败关闭"}。`,
+      files: ["packages/dsh-lifeos-bridge/src/adapter.ts", ...common],
+    };
+  }
+  if (section.jsonPointer === "/promptSelection") {
+    return {
+      addedBy: "Prompt Composer会话选择",
+      explanation:
+        "该值只取自Bridge→Chat原始Payload /promptSelection；组件正文不会伪装成命令字段，Chat后端稍后按Revision ID与Hash解析。",
+      files:
+        preview.promptConfiguration === null
+          ? common
+          : [...common, ...promptSourceFiles(preview.promptConfiguration)],
+    };
+  }
+  if (section.jsonPointer === "/context") {
+    return {
+      addedBy: "DSH Workspace Instructions提取",
+      explanation:
+        "该值只取自Bridge→Chat原始Payload /context；仅非Direct工作流按真实发送政策携带。",
+      files: ["packages/dsh-lifeos-bridge/src/context-injection-reader.ts", ...common],
+    };
+  }
+  return {
+    addedBy: "LifeOS Bridge发送策略",
+    explanation: `该值只取自Bridge→Chat原始Payload ${section.jsonPointer}；没有从UI投影补写正文。`,
+    files: common,
+  };
+}
+
+function ExactSectionView({
+  section,
+  source,
+}: {
+  section: ExactJsonSection;
+  source: SectionSource;
+}) {
+  return (
+    <section className="lifeos-prompt-section" data-json-pointer={section.jsonPointer}>
+      <header>
+        <strong>{section.title}</strong>
+        <code>{section.jsonPointer}</code>
+      </header>
+      <SourceNote {...source} />
+      <div className="lifeos-prompt-real-label">该Pointer对应的完整原始JSON值</div>
+      <pre>{section.valueJson}</pre>
+    </section>
+  );
 }
 
 export function PromptConfigurationDetails({
@@ -104,130 +232,76 @@ export function PromptConfigurationDetails({
 }
 
 function FriendlyPreview({ preview }: { preview: DshBridgeSendPreview }) {
-  const context = preview.dshToBridge.contextInjections;
   const captured = preview.dshToBridge.adapterRequest;
+  const dshSections =
+    captured.status === "captured" ? exactSectionsFromJson(captured.requestJson) : [];
+  const dshUserInput =
+    captured.status === "captured" ? lastDshUserInputMapping(captured.requestJson) : null;
+  const bridgeSections = exactSectionsFromJson(preview.bridgeToChat.payloadJson);
+  const bridgePayload = JSON.parse(preview.bridgeToChat.payloadJson) as { readonly text?: unknown };
   return (
     <div className="lifeos-prompt-sections" data-testid="lifeos-dsh-bridge-readable">
       <section className="lifeos-prompt-section">
         <header>
-          <strong>DSH Agent 请求边界</strong>
-          <code>GenerateOptions</code>
+          <strong>一一对应证据</strong>
+          <code>JSON Pointer</code>
         </header>
         <SourceNote
-          addedBy="DSH Agent Loop → LifeOS LLM Adapter"
-          explanation="DSH 在原生发送流程中组装模型路由、System、Messages、Tools 和模型参数；Bridge Adapter 在 stream(options) 入口捕获同一对象。"
+          addedBy="Bridge边界Trace"
+          explanation="友好视图不再读取Prompt配置正文或Session上下文正文。下方每个区域都只从同一份原始JSON按唯一Pointer取得；Bridge日志记录同一个整体Hash和各Pointer值Hash。"
           files={[
-            "dsh/packages/core/agent-loop/src/index.ts",
+            "dsh/packages/core/agent-loop/src/agent.ts",
             "packages/dsh-lifeos-bridge/src/adapter.ts",
+            "packages/dsh-lifeos-bridge/src/dsh-bridge-readable.ts",
+            "packages/dsh-lifeos-bridge/src/bridge-service.ts",
           ]}
         />
-        <div className="lifeos-prompt-real-label">真实边界状态</div>
+        <div className="lifeos-prompt-real-label">可与Bridge日志核对的整体Hash</div>
         <pre>
-          {captured.status === "captured"
-            ? ["已捕获", `SHA-256: ${captured.requestSha256}`].join("\n")
-            : "尚未进入DSH原生发送流程，因此还没有真实GenerateOptions；这里不会伪造原始请求。"}
+          {[
+            `DSH → Bridge: ${captured.status === "captured" ? captured.requestSha256 : "尚未捕获"}`,
+            `Bridge → Chat: ${preview.bridgeToChat.payloadSha256}`,
+            ...(dshUserInput === null
+              ? []
+              : [
+                  `用户输入映射: ${dshUserInput.textJsonPointers.join(" + ")} → /text`,
+                  `逐值比较: ${bridgePayload.text === dshUserInput.text ? "一致" : "不一致（已失败关闭）"}`,
+                ]),
+          ].join("\n")}
         </pre>
       </section>
-
-      <section className="lifeos-prompt-section">
-        <header>
-          <strong>本轮提示词配置</strong>
-          <code>Prompt Selection → Chat Compiler</code>
-        </header>
-        <SourceNote
-          addedBy="Chat Prompt Studio / Prompt Assembly Compiler"
-          explanation="用户选择只传精确Revision ID与Hash；正文由Chat后端从Git内置文件或Product Store用户版本解析、按Region编译。"
-          files={
-            preview.promptConfiguration === null
-              ? ["packages/application/src/prompt-assembly-use-cases.ts"]
-              : promptSourceFiles(preview.promptConfiguration)
-          }
-        />
-        <div className="lifeos-prompt-real-label">真实配置内容</div>
-        {preview.promptConfiguration === null ? (
-          <p className="lifeos-bridge-preview-note">
-            当前不是 Direct 工作流；会话保存的 Prompt Region 配置不会进入本次Chat命令。
-          </p>
-        ) : (
-          <PromptConfigurationDetails preview={preview.promptConfiguration} />
-        )}
-      </section>
-
-      <section className="lifeos-prompt-section">
-        <header>
-          <strong>用户当前输入</strong>
-          <code>messages[user]</code>
-        </header>
-        <SourceNote
-          addedBy="DSH Composer / Agent Loop"
-          explanation="来自当前对话框的用户输入；Adapter只提取最后一条source.kind=user的真实文本作为Chat命令正文。"
-          files={[
-            "dsh/packages/client/ui-conversation/src/client/skeleton/InputBar.tsx",
-            "dsh/packages/core/agent-loop/src/index.ts",
-            "packages/dsh-lifeos-bridge/src/adapter.ts",
-          ]}
-        />
-        <div className="lifeos-prompt-real-label">真实输入内容</div>
-        <pre>{preview.dshToBridge.userInput.text}</pre>
-      </section>
-
-      <section className="lifeos-prompt-section">
-        <header>
-          <strong>DSH 上下文注入</strong>
-          <code>{context.status === "not_assembled" ? "尚未组装" : `${context.totalItems}项`}</code>
-        </header>
-        <SourceNote
-          addedBy="DSH Context Producers / Bridge只读投影"
-          explanation="这些消息由DSH在模型前组装阶段产生；每项下方保留其真实source kind、名称、form与message id。"
-          files={[
-            "dsh/packages/core/system-prompt/src/index.ts",
-            "dsh/packages/core/agent-loop/src/index.ts",
-            "packages/dsh-lifeos-bridge/src/context-injection-reader.ts",
-          ]}
-        />
-        {context.status === "not_assembled" ? (
-          <p className="lifeos-bridge-preview-note">
-            当前会话尚未完成过模型前组装；实际发送审核会以捕获的GenerateOptions为准。
-          </p>
-        ) : context.items.length === 0 ? (
-          <p className="lifeos-bridge-preview-note">当前没有额外的DSH生产者上下文。</p>
-        ) : (
-          <div className="lifeos-bridge-context-list">
-            {context.items.map((item) => (
-              <details key={item.messageId} open>
-                <summary>
-                  {item.sourceName ?? item.sourceKind} · {item.form} · {item.contentCharacters}字符
-                </summary>
-                <p className="lifeos-bridge-preview-note">
-                  source.kind={item.sourceKind} · messageId={item.messageId}
-                  {item.sourceDetails === undefined
-                    ? ""
-                    : ` · ${JSON.stringify(item.sourceDetails)}`}
-                </p>
-                <pre>{item.text === "" ? "（没有文本内容）" : item.text}</pre>
-              </details>
-            ))}
+      {captured.status === "captured" ? (
+        <>
+          <div className="lifeos-prompt-section-divider">
+            DSH → Bridge · 同一原始请求逐Pointer解析
           </div>
-        )}
-      </section>
-
-      <section className="lifeos-prompt-section">
-        <header>
-          <strong>Bridge → Chat 命令</strong>
-          <code>{shortHash(preview.bridgeToChat.payloadSha256)}</code>
-        </header>
-        <SourceNote
-          addedBy="LifeOS Bridge发送策略"
-          explanation="Bridge依据所选Workflow决定传Prompt Selection或Workspace Instructions，再由Chat公开Command接收。"
-          files={[
-            "packages/dsh-lifeos-bridge/src/bridge-service.ts",
-            "packages/dsh-lifeos-bridge/src/adapter.ts",
-            "packages/dsh-lifeos-bridge/src/chat-client.ts",
-          ]}
+          {dshSections.map((section) => (
+            <ExactSectionView
+              key={`dsh-${section.sectionId}`}
+              section={section}
+              source={dshSectionSource(section)}
+            />
+          ))}
+        </>
+      ) : (
+        <section className="lifeos-prompt-section">
+          <header>
+            <strong>DSH → Bridge</strong>
+            <code>尚未捕获</code>
+          </header>
+          <p className="lifeos-bridge-preview-note">
+            手动预览尚未进入Agent Loop，不能生成友好映射；实际发送审核时才从真实原始JSON解析。
+          </p>
+        </section>
+      )}
+      <div className="lifeos-prompt-section-divider">Bridge → Chat · 同一Payload逐Pointer解析</div>
+      {bridgeSections.map((section) => (
+        <ExactSectionView
+          key={`bridge-${section.sectionId}`}
+          section={section}
+          source={bridgeSectionSource(section, preview, dshUserInput)}
         />
-        <div className="lifeos-prompt-real-label">真实命令Payload</div>
-        <pre>{preview.bridgeToChat.payloadJson}</pre>
-      </section>
+      ))}
     </div>
   );
 }
@@ -247,7 +321,7 @@ function RawPreview({ preview }: { preview: DshBridgeSendPreview }) {
           addedBy="LifeOS LLM Adapter入口"
           explanation="这是Adapter实际收到的GenerateOptions JSON。AbortSignal只控制本地取消且不可序列化，明确不属于正文。"
           files={[
-            "dsh/packages/core/agent-loop/src/index.ts",
+            "dsh/packages/core/agent-loop/src/agent.ts",
             "packages/dsh-lifeos-bridge/src/adapter.ts",
           ]}
         />

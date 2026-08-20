@@ -3,12 +3,14 @@ import test from "node:test";
 import { createUserMessage, type GenerateOptions, type StreamChunk } from "@deepseek-ai/dsh-llm";
 import {
   captureDshAdapterRequest,
+  dshAdapterRequestTraceOf,
   LifeosLlmAdapter,
   productSessionTitle,
   sha256,
   workspaceInstructionsOf,
 } from "../src/adapter.ts";
 import type { ChatProductClient } from "../src/chat-client.ts";
+import { exactSectionsFromJson, valueAtJsonPointer } from "../src/dsh-bridge-readable.ts";
 import type { AtomicBridgeStateStore } from "../src/state-store.ts";
 
 function options(purpose: "session-title" | "compaction", text: string): GenerateOptions {
@@ -99,6 +101,39 @@ test("DSH adapter request capture freezes the fully assembled request but exclud
   assert.equal(raw["maxTokens"], 4_096);
   assert.equal(raw["signal"], undefined);
   assert.match(captured.requestJson, /真实用户输入/u);
+
+  const sections = exactSectionsFromJson(captured.requestJson);
+  assert.deepEqual(
+    sections.map((section) => section.jsonPointer),
+    [
+      "/provider",
+      "/model",
+      "/reasoningEffort",
+      "/sessionId",
+      "/system",
+      "/messages/0",
+      "/tools/0",
+      "/temperature",
+      "/maxTokens",
+      "/stop",
+    ],
+  );
+  for (const section of sections) {
+    assert.deepEqual(
+      JSON.parse(section.valueJson),
+      valueAtJsonPointer(captured.requestJson, section.jsonPointer),
+    );
+  }
+  const trace = dshAdapterRequestTraceOf(captured);
+  assert.equal(trace.requestSha256, captured.requestSha256);
+  assert.deepEqual(trace.lastUserInput?.textJsonPointers, ["/messages/0/content/0/text"]);
+  assert.equal(trace.lastUserInput?.textSha256, sha256("真实用户输入"));
+  assert.equal(trace.sections.length, sections.length);
+  assert.deepEqual(
+    trace.sections.map((section) => section.jsonPointer),
+    sections.map((section) => section.jsonPointer),
+  );
+  assert.doesNotMatch(JSON.stringify(trace), /真实 System Prompt|真实用户输入/u);
 });
 
 test("session-title is a bounded local StreamChunk sequence with zero Chat access", async () => {

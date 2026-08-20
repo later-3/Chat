@@ -230,10 +230,10 @@ test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边�
   await expect(bridgePreview).toContainText("DSH 前端发送预览");
   await expect(bridgePreview).toContainText("不是最终Provider HTTP请求");
   await expect(bridgePreview).toContainText("Direct · 发送Prompt Selection");
-  await expect(bridgePreview).toContainText("本轮提示词配置");
+  await expect(bridgePreview).toContainText("一一对应证据");
   await expect(bridgePreview).toContainText("来源定位 · 仅界面注释，不发送");
-  await expect(bridgePreview).toContainText("DSH 上下文注入");
-  await expect(bridgePreview).toContainText("Bridge → Chat 命令");
+  await expect(bridgePreview).toContainText("手动预览尚未进入Agent Loop");
+  await expect(bridgePreview).toContainText("/promptSelection");
   await expect(bridgePreview).toContainText(currentInput);
   await expect(bridgePreview).toContainText("promptSelection");
   await bridgePreview.getByRole("tab", { name: "原始请求", exact: true }).click();
@@ -259,6 +259,11 @@ test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边�
   await expect(sendReview).toContainText("DSH → Bridge 发送前审核");
   await expect(sendReview).toContainText(currentInput);
   await expect(sendReview).toContainText("来源定位 · 仅界面注释，不发送");
+  await expect(sendReview).toContainText("DSH → Bridge · 同一原始请求逐Pointer解析");
+  await expect(sendReview).toContainText("/messages/");
+  await expect(sendReview).toContainText("→ /text");
+  await expect(sendReview).toContainText("逐值比较: 一致");
+  await expect(sendReview).toContainText("dsh/packages/core/agent-loop/src/agent.ts");
   await sendReview.getByRole("tab", { name: "原始请求", exact: true }).click();
   const adapterRaw = sendReview.getByTestId("lifeos-dsh-adapter-request-raw");
   await expect(adapterRaw).toContainText('"provider": "lifeos"');

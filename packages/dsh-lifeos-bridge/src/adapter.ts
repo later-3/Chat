@@ -25,6 +25,7 @@ import {
   type PromptWorkspaceResolver,
 } from "./prompt-workspace-resolver.ts";
 import type { DshSendReviewCoordinator } from "./dsh-send-review.ts";
+import { exactSectionsFromJson, lastDshUserInputMapping } from "./dsh-bridge-readable.ts";
 import { LIFEOS_TRACE_TOOL } from "./trace-tool.ts";
 
 export const LIFEOS_PROVIDER = "lifeos";
@@ -55,7 +56,9 @@ export function stableCommandId(purpose: string, ...parts: string[]): string {
  * GenerateOptions 才是 DSH→Bridge 的真实内容边界。AbortSignal 只控制本地调用
  * 生命周期且无法序列化，因此原始视图明确排除它；其余可枚举字段按收到的值冻结。
  */
-export function captureDshAdapterRequest(options: GenerateOptions): DshAdapterRequestCapture {
+export function captureDshAdapterRequest(
+  options: GenerateOptions,
+): Extract<DshAdapterRequestCapture, { status: "captured" }> {
   const serializableRequest = Object.fromEntries(
     Object.entries(options).filter(([field]) => field !== "signal"),
   );
@@ -74,7 +77,7 @@ export function captureDshAdapterRequest(options: GenerateOptions): DshAdapterRe
     requestJson,
     requestSha256: sha256(requestJson),
   });
-  if (!parsed.success) {
+  if (!parsed.success || parsed.data.status !== "captured") {
     throw new LlmError(
       "DSH发送请求超过审核边界，不能用截断内容代替真实原始请求",
       "LIFEOS_DSH_REQUEST_TOO_LARGE",
@@ -82,6 +85,57 @@ export function captureDshAdapterRequest(options: GenerateOptions): DshAdapterRe
     );
   }
   return parsed.data;
+}
+
+export interface DshAdapterRequestTrace {
+  readonly event: "lifeos.dsh_adapter_request.captured";
+  readonly requestSha256: string;
+  readonly excludedRuntimeFields: readonly ["signal"];
+  readonly lastUserInput?: {
+    readonly messageJsonPointer: string;
+    readonly textJsonPointers: readonly string[];
+    readonly textSha256: string;
+  };
+  readonly sections: readonly {
+    readonly jsonPointer: string;
+    readonly valueSha256: string;
+    readonly valueCharacters: number;
+  }[];
+}
+
+/**
+ * Trace只记录原始请求和每个JSON Pointer值的Hash/长度。完整System、Messages和
+ * Tool正文只存在于内存审核投影，不复制到日志、Bridge State或Product Store。
+ */
+export function dshAdapterRequestTraceOf(
+  capture: Extract<DshAdapterRequestCapture, { status: "captured" }>,
+): DshAdapterRequestTrace {
+  const userInput = lastDshUserInputMapping(capture.requestJson);
+  return {
+    event: "lifeos.dsh_adapter_request.captured",
+    requestSha256: capture.requestSha256,
+    excludedRuntimeFields: ["signal"],
+    ...(userInput === null
+      ? {}
+      : {
+          lastUserInput: {
+            messageJsonPointer: userInput.messageJsonPointer,
+            textJsonPointers: userInput.textJsonPointers,
+            textSha256: sha256(userInput.text),
+          },
+        }),
+    sections: exactSectionsFromJson(capture.requestJson).map((section) => ({
+      jsonPointer: section.jsonPointer,
+      valueSha256: sha256(section.valueJson),
+      valueCharacters: section.valueJson.length,
+    })),
+  };
+}
+
+function emitDshAdapterRequestTrace(
+  capture: Extract<DshAdapterRequestCapture, { status: "captured" }>,
+): void {
+  console.info("[lifeos-bridge] dsh_adapter_request_captured", dshAdapterRequestTraceOf(capture));
 }
 
 interface UserPrompt {
@@ -353,11 +407,13 @@ export class LifeosLlmAdapter extends LlmAdapter {
       const request = await this.ensureRequest(dshSessionId, prompt, workspaceInstructions);
 
       if (request.productRunId === undefined && this.dshSendReview !== undefined) {
+        const adapterRequest = captureDshAdapterRequest(options);
+        emitDshAdapterRequestTrace(adapterRequest);
         const decision = await this.dshSendReview.waitForDecision({
           dshSessionId,
           requestKey: prompt.requestKey,
           text: prompt.text,
-          adapterRequest: captureDshAdapterRequest(options),
+          adapterRequest,
           ...(signal === undefined ? {} : { signal }),
         });
         if (decision === "reject") {

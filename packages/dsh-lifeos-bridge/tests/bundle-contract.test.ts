@@ -175,6 +175,8 @@ test("prompt composer keeps every Region independent and stages exact revisions 
   assert.match(sendPreview, /原始请求/u);
   assert.match(sendPreview, /来源定位 · 仅界面注释，不发送/u);
   assert.match(sendPreview, /lifeos-dsh-adapter-request-raw/u);
+  assert.match(sendPreview, /exactSectionsFromJson/u);
+  assert.match(sendPreview, /该Pointer对应的完整原始JSON值/u);
   assert.match(controller, /chat\.prompt-composer\.selection\.v1\./u);
   assert.match(controller, /method: "PUT"/u);
   assert.match(controller, /\/lifeos\/prompts\/configuration-previews/u);

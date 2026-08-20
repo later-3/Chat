@@ -47,6 +47,7 @@ import {
   promptSelectionForWorkspace,
   type PromptWorkspaceResolver,
 } from "./prompt-workspace-resolver.ts";
+import { exactSectionsFromJson, lastDshUserInputMapping } from "./dsh-bridge-readable.ts";
 
 export class BridgeRequestError extends Error {
   constructor(
@@ -400,6 +401,39 @@ export class LifeosBridgeService {
       ...(direct ? { promptSelection } : {}),
     };
     const payloadJson = JSON.stringify(payload, null, 2);
+    const payloadSha256 = sha256(payloadJson);
+    if (adapterRequest.status === "captured") {
+      const rawUserInput = lastDshUserInputMapping(adapterRequest.requestJson);
+      if (rawUserInput === null || rawUserInput.text !== text) {
+        throw new BridgeRequestError(
+          500,
+          "lifeos_dsh_raw_mapping_mismatch",
+          "DSH原始请求与Bridge提取的用户输入不一致，已停止发送",
+        );
+      }
+      console.info("[lifeos-bridge] dsh_to_chat_payload_projected", {
+        event: "lifeos.dsh_to_chat_payload.projected",
+        dshRequestSha256: adapterRequest.requestSha256,
+        bridgePayloadSha256: payloadSha256,
+        userInputSha256: sha256(text),
+        payloadTextMatchesExtractedUserInput: payload.text === text,
+        dshRawUserInput:
+          rawUserInput === null
+            ? null
+            : {
+                messageJsonPointer: rawUserInput.messageJsonPointer,
+                textJsonPointers: rawUserInput.textJsonPointers,
+                textSha256: sha256(rawUserInput.text),
+              },
+        payloadTextMatchesDshRawUserInput:
+          rawUserInput !== null && payload.text === rawUserInput.text,
+        sections: exactSectionsFromJson(payloadJson).map((section) => ({
+          jsonPointer: section.jsonPointer,
+          valueSha256: sha256(section.valueJson),
+          valueCharacters: section.valueJson.length,
+        })),
+      });
+    }
     return dshBridgeSendPreviewSchema.parse({
       schemaVersion: "chat-dsh-bridge-send-preview.v2",
       boundary: "dsh_to_lifeos_bridge",
@@ -417,7 +451,7 @@ export class LifeosBridgeService {
         policy: direct ? "direct_prompt_selection" : "non_direct_workspace_instructions",
         payload,
         payloadJson,
-        payloadSha256: sha256(payloadJson),
+        payloadSha256,
       },
     });
   }

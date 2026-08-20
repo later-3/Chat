@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { promptConfigurationPreviewDtoSchema } from "@chat/contracts/public";
+import { sha256 } from "../src/adapter.ts";
 import { LifeosBridgeService, BridgeRequestError } from "../src/bridge-service.ts";
 import type { ChatProductClient } from "../src/chat-client.ts";
 import { promptSelectionRequestSchema, workflowSelectionSchema } from "../src/contracts.ts";
@@ -131,12 +132,61 @@ test("DSH发送预览按Direct与非Direct政策投影真正的Bridge到Chat pay
         blueprintKey: "direct",
       }),
     );
-    const direct = await service.bridgeSendPreview("dsh-session-1", "检查项目");
+    const adapterRequestJson = JSON.stringify(
+      {
+        provider: "lifeos",
+        model: "workflow",
+        system: "DSH真实系统提示词",
+        messages: [
+          {
+            id: "msg-dsh-user",
+            role: "user",
+            source: { kind: "user" },
+            content: [{ type: "text", text: "检查项目" }],
+          },
+        ],
+      },
+      null,
+      2,
+    );
+    const traceLogs: unknown[] = [];
+    const originalConsoleInfo = console.info;
+    console.info = (...args: unknown[]) => {
+      traceLogs.push(args);
+    };
+    const direct = await (async () => {
+      try {
+        return await service.bridgeSendPreview("dsh-session-1", "检查项目", {
+          status: "captured",
+          requestJson: adapterRequestJson,
+          requestSha256: sha256(adapterRequestJson),
+        });
+      } finally {
+        console.info = originalConsoleInfo;
+      }
+    })();
     assert.equal(direct.bridgeToChat.policy, "direct_prompt_selection");
     assert.deepEqual(direct.promptConfiguration, promptConfiguration);
     assert.deepEqual(direct.bridgeToChat.payload.promptSelection, promptSelection);
     assert.equal(direct.bridgeToChat.payload.context, undefined);
     assert.equal(direct.dshToBridge.contextInjections.items[0]?.text, "# Workspace规则");
+    assert.equal(traceLogs.length, 1);
+    assert.match(JSON.stringify(traceLogs), /lifeos\.dsh_to_chat_payload\.projected/u);
+    assert.match(JSON.stringify(traceLogs), /"payloadTextMatchesExtractedUserInput":true/u);
+    assert.match(JSON.stringify(traceLogs), /"payloadTextMatchesDshRawUserInput":true/u);
+    assert.match(JSON.stringify(traceLogs), /\/messages\/0\/content\/0\/text/u);
+    assert.doesNotMatch(JSON.stringify(traceLogs), /检查项目|DSH真实系统提示词/u);
+
+    const mismatchedRequestJson = adapterRequestJson.replace("检查项目", "另一条原始输入");
+    await assert.rejects(
+      service.bridgeSendPreview("dsh-session-1", "检查项目", {
+        status: "captured",
+        requestJson: mismatchedRequestJson,
+        requestSha256: sha256(mismatchedRequestJson),
+      }),
+      (error) =>
+        error instanceof BridgeRequestError && error.code === "lifeos_dsh_raw_mapping_mismatch",
+    );
 
     await service.selectWorkflow(
       "dsh-session-1",
