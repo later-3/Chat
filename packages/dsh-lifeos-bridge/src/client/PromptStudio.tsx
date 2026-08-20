@@ -154,7 +154,7 @@ function SourceOpenMenu({
   );
 }
 
-function PromptDetail({
+export function PromptFragmentDetail({
   state,
   closeDetail,
   viewRevision,
@@ -477,7 +477,7 @@ export function PromptStudio({
 
   if (state.selected !== null) {
     return (
-      <PromptDetail
+      <PromptFragmentDetail
         state={state}
         closeDetail={closeDetail}
         viewRevision={viewRevision}

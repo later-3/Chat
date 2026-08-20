@@ -232,13 +232,38 @@ export function apply(ctx: ClientContext): void {
         inject: (sessionId: SessionId): PromptComposerInjected => {
           const controller = promptComposerFor(sessionId);
           return {
-            hooks: { promptComposer: controller },
-            load: () => controller.load(),
+            hooks: { promptComposer: controller, promptStudio },
+            load: async () => {
+              await Promise.all([controller.load(), promptStudio.refresh()]);
+            },
             setMode: (regionKey, mode) => controller.setMode(regionKey, mode),
             toggleRevision: (fragment) => controller.toggleRevision(fragment),
             reset: () => controller.reset(),
             preview: (text) => controller.preview(text),
             clearPreview: () => controller.clearPreview(),
+            refresh: () => promptStudio.refresh(),
+            select: (promptFragmentId) => promptStudio.select(promptFragmentId),
+            closeDetail: () => promptStudio.closeDetail(),
+            viewRevision: (promptFragmentRevisionId) =>
+              promptStudio.viewRevision(promptFragmentRevisionId),
+            create: async (payload) => {
+              await promptStudio.create(payload);
+              await controller.load();
+            },
+            copy: async (payload) => {
+              await promptStudio.copy(payload);
+              await controller.load();
+            },
+            revise: async (payload) => {
+              await promptStudio.revise(payload);
+              await controller.load();
+            },
+            archive: async (payload) => {
+              await promptStudio.archive(payload);
+              await controller.load();
+            },
+            openSourceFile: (relativePath, openerId) =>
+              promptStudio.openSourceFile(relativePath, openerId),
           };
         },
       },

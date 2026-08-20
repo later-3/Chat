@@ -137,6 +137,14 @@ test("Prompt Studio mobile 390×844保持单列且无横向溢出", async ({ pag
 
 test("会话发送前按Region选择并预览Direct Prompt Assembly", async ({ page }) => {
   const composer = await openReadyConversation(page);
+  await page.getByTestId("lifeos-prompt-composer-open").click();
+  const blankDialog = page.getByRole("dialog", { name: "本轮提示词" });
+  const blankPreview = blankDialog.getByRole("button", { name: "预览本轮组装", exact: true });
+  await expect(blankPreview).toBeEnabled();
+  await blankPreview.click();
+  await expect(blankDialog.getByRole("alert")).toContainText("请先输入本轮消息");
+  await blankDialog.getByRole("button", { name: "关闭本轮提示词", exact: true }).click();
+
   const currentInput = "检查Prompt Assembly是否按区域组装";
   await composer.fill(currentInput);
   await page.getByTestId("lifeos-prompt-composer-open").click();
@@ -148,8 +156,29 @@ test("会话发送前按Region选择并预览Direct Prompt Assembly", async ({ p
 
   const identity = page.getByTestId("lifeos-prompt-region-agent_identity");
   await expect(identity).toBeVisible();
-  await identity.getByRole("button", { name: "追加", exact: true }).click();
-  await expect(identity.getByRole("checkbox").first()).toBeChecked();
+  const builtinIdentity = identity
+    .locator(".lifeos-prompt-choice-row")
+    .filter({ hasText: "通用 Chat Agent 身份" });
+  await expect(builtinIdentity.getByRole("checkbox")).toBeEnabled();
+  await builtinIdentity.getByRole("checkbox").click();
+  await expect(identity.getByRole("button", { name: "追加", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(builtinIdentity.getByRole("checkbox")).toBeChecked();
+
+  await builtinIdentity.getByRole("button", { name: "查看", exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "查看或修改提示词组件" });
+  await expect(detail).toContainText("prompts/fragments/agent-identity/general-chat-agent.md");
+  await expect(detail.getByLabel("来源文件原文")).toContainText("你是 Chat 产品中的任务协作 Agent");
+  await detail.getByRole("button", { name: "关闭提示词组件管理", exact: true }).click();
+
+  await identity.getByRole("button", { name: "新建", exact: true }).nth(1).click();
+  const createDialog = page.getByRole("dialog", { name: "新建提示词组件" });
+  await expect(createDialog).toContainText("Chat 工作区");
+  await expect(createDialog).toContainText("Agent 身份");
+  await expect(createDialog.getByRole("textbox", { name: "名称", exact: true })).toBeVisible();
+  await createDialog.getByRole("button", { name: "关闭提示词组件管理", exact: true }).click();
 
   await page.getByRole("button", { name: "预览本轮组装", exact: true }).click();
   const preview = page.getByTestId("lifeos-prompt-preview");

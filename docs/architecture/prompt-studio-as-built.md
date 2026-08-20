@@ -7,7 +7,7 @@
 用户现在有两个彼此独立的入口：
 
 1. DSH「设置 → 提示词」是长期管理面。它展示 19 个 Region、Git 内置 Markdown 原文和来源，支持创建全局或指定 Workspace 的用户组件、派生副本、追加不可变 Revision、归档与恢复。
-2. 每个会话的 Composer 工具行有「提示词」入口。发送前可按 Region 分别选择`默认 / 覆盖 / 追加`，在每个 Region 内勾选全局组件或当前 Workspace 组件，并用当前输入生成语义预览。
+2. 每个会话的 Composer 工具行有「提示词」入口。发送前可按 Region 分别选择`默认 / 覆盖 / 追加`，在每个 Region 内勾选全局组件或当前 Workspace 组件，并用当前输入生成语义预览。默认模式下直接勾选会自动切换为追加；组件可就地查看正文、来源与版本，空作用域可直接新建，用户组件可就地编辑，Git 内置组件可创建副本后编辑。
 3. 首版选择只进入“执行 Agent（逐次提示词审核）”Direct Workflow。Planning/Memory Workflow 不接收该选择，界面明确说明这一点。
 4. Direct Message Command 在启动 Workflow 的同一事务中冻结 Prompt Assembly。后续组件修改、归档或页面刷新都不能改变已经启动的 Run。
 5. Prompt Review 的 Raw 仍是 Provider Adapter 生成的真实完整请求；易读页在不修改真实正文的前提下增加 Assembly Region、精确 Revision、Hash、Scope 和 Git 文件来源。
@@ -105,7 +105,7 @@ PromptComposer.tsx（直接读取DSH真实input.draft）
 
 列表不携带正文；详情和精确 Revision 按需读取。Prompt 写路由单独使用 96 KiB 有界请求体，其他 LifeOS 命令仍保持 16 KiB。浏览器编辑草稿保存在本机 `localStorage`，只用于防止 Settings 关闭时丢稿；正式版本仍只由 Product Store 拥有。
 
-组件通过 `regionKey` 与区域目录严格关联。组件卡和详情同时显示区域名称与稳定 Key；区域卡的“查看 N 个组件”会切换到组件页并应用对应筛选。内置组件详情在版本区下方始终显示 Catalog Adapter 从 Git 文件读取、并通过 Manifest SHA 校验的只读原文，独立来源色块明确区分文件正文与 UI 解释。
+组件通过 `regionKey` 与区域目录严格关联。组件卡和详情同时显示区域名称与稳定 Key；区域卡的“查看 N 个组件”会切换到组件页并应用对应筛选。会话 Composer 复用同一个 Prompt Studio Controller 和相同公开 API：每个 Scope 都有“新建”，每个组件都有“查看”，详情继续提供来源、历史版本、派生副本与用户版本编辑，不建立第二套 Prompt 事实或写入协议。内置组件详情在版本区下方始终显示 Catalog Adapter 从 Git 文件读取、并通过 Manifest SHA 校验的只读原文，独立来源色块明确区分文件正文与 UI 解释。
 
 本地模式还提供两类相同的“打开”菜单：组件详情的“打开文件”和区域卡的“打开配置文件”。DSH Host只投影本机实际安装的白名单应用；当前macOS实现支持Visual Studio Code、TRAE CN、Cursor、Sublime Text、文本编辑与系统默认应用。浏览器只提交Catalog登记的相对路径与应用ID；Host重新校验真实路径、普通文件和symlink边界后调用本机应用。公网部署不装配该能力，不能让远端浏览器启动服务器应用，也不能用任意路径读取或打开仓库文件。
 
@@ -113,7 +113,9 @@ PromptComposer.tsx（直接读取DSH真实input.draft）
 
 ## 7. Region选择、Workspace与运行冻结
 
-每个 Region 独立选择`default / replace / append`：默认采用固定 Direct Profile；覆盖只用显式组件；追加先放默认组件再放显式组件。选择冻结精确 Revision ID 与 Hash。全局组件对所有 Workspace 可见，Workspace组件只有在当前DSH Session映射为同一个Chat `rootId`时可见；Workspace变化会清掉旧Root的显式选择。
+每个 Region 独立选择`default / replace / append`：默认采用固定 Direct Profile；覆盖只用显式组件；追加先放默认组件再放显式组件。在 default 状态直接勾选组件等价于“切换到 append 并勾选该版本”，避免出现可见但不可操作的组件。选择冻结精确 Revision ID 与 Hash。全局组件对所有 Workspace 可见，Workspace组件只有在当前DSH Session映射为同一个Chat `rootId`时可见；Workspace变化会清掉旧Root的显式选择。
+
+预览需要真实的本轮用户输入，因为它与当前输入共同编译 User Prompt。空输入时按钮仍可点击并明确提示用户先回到主输入框输入消息，不能用无解释的 disabled 状态伪装成系统故障。
 
 发送前语义预览与正式提交调用同一个`direct-agent-prompt-compiler.v1`。System Region编译为`systemPromptAppend`，Messages Region与真实当前输入编译为`userPrompt`。语义预览明确不是Provider HTTP请求；真实请求仍只在Provider Gate的Prompt Review中出现。
 
