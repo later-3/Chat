@@ -52,7 +52,7 @@
     "plane-ce:down": "node scripts/plane-ce/manage.mjs down",
     "plane-ce:status": "node scripts/plane-ce/manage.mjs status",
     "test:plane-ce:scripts": "node --test scripts/plane-ce/manage.test.mjs",
-    "test:provider:plane-ce": "node --env-file-if-exists=.env --import tsx scripts/plane-ce/verify-real-bootstrap.ts"
+    "test:provider:plane-ce": "pnpm --filter @chat/api exec node --import tsx ../../scripts/plane-ce/verify-real-bootstrap.ts"
   },
   "devDependencies": {
     "eslint": "^9.39.5",

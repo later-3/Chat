@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   projectBootstrapOperationIdSchema,
   projectBootstrapProposalSchema,
@@ -9,6 +11,9 @@ import {
   createPlaneCeProjectBootstrap,
   createProjectWorkspaceProvisioner,
 } from "../../packages/project-runtime/src/index.ts";
+
+const repoEnvironmentPath = fileURLToPath(new URL("../../.env", import.meta.url));
+if (existsSync(repoEnvironmentPath)) process.loadEnvFile(repoEnvironmentPath);
 
 if (process.env.CHAT_PLANE_CE_REAL_TEST !== "1") {
   throw new Error("真实Plane CE门会创建持久Project和Git目录；请显式设置CHAT_PLANE_CE_REAL_TEST=1");

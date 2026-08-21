@@ -3,6 +3,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const lock = JSON.parse(await readFile(new URL("./lock.json", import.meta.url), "utf8"));
+const rootPackage = JSON.parse(
+  await readFile(new URL("../../package.json", import.meta.url), "utf8"),
+);
 
 test("Plane CE deployment lock fixes upstream source, version, license and every image", () => {
   assert.equal(lock.schemaVersion, "chat-plane-ce-lock.v1");
@@ -35,5 +38,13 @@ test("real bootstrap gate requires explicit persistent-write authority and recon
   assert.match(source, /plane\.reconcile/u);
   assert.match(source, /workspace\.provision/u);
   assert.match(source, /workspace\.reconcile/u);
+  assert.match(source, /process\.loadEnvFile\(repoEnvironmentPath\)/u);
   assert.doesNotMatch(source, /rmSync|rm\(|DELETE/u);
+});
+
+test("real bootstrap gate resolves tsx and project runtime from the API workspace", () => {
+  assert.equal(
+    rootPackage.scripts["test:provider:plane-ce"],
+    "pnpm --filter @chat/api exec node --import tsx ../../scripts/plane-ce/verify-real-bootstrap.ts",
+  );
 });
