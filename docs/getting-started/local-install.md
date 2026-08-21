@@ -2,7 +2,7 @@
 
 本文是全新克隆后的唯一安装入口。当前产品前端是固定DeepSeek Harness Web，后端由
 Chat API、Vercel Workflow与可选Code Workbench组成；Memory Provider代码暂时保留但默认关闭。不要再安装
-旧`apps/web`、Agent Canvas，也不要手工克隆DSH或其他上游源码到固定个人目录。
+旧`apps/web`或Agent Canvas。当前开发阶段必须同时检出Later维护的Pi与DSH Fork稳定分支；不要检出官方上游替代它们。
 
 Code Workbench当前为Beta：本地实现与固定工件继续保留，但不进入通用CI/CD，也不进入远程部署。
 只使用Chat/PWA时，可在setup和启动阶段都传入`--workbench=off`，避免下载和运行code-server。
@@ -28,9 +28,18 @@ Windows与其他CPU架构目前不属于本地一键安装范围，`pnpm run set
 ```bash
 git clone git@github.com:later-3/Chat.git
 cd Chat
+mkdir -p ../opc-os
+git clone git@github.com:later-3/pi.git ../opc-os/pi
+git -C ../opc-os/pi switch codex/later-custom
+git clone git@github.com:later-3/deepseek-harness-chat.git ../deepseek-harness-chat-trajectory
+git -C ../deepseek-harness-chat-trajectory switch codex/chat-trajectory-location-rc6
 corepack enable
 pnpm --version
 ```
+
+这两个路径是当前分支集成合同：任意Chat worktree都从同一个父目录解析`../opc-os/pi`和
+`../deepseek-harness-chat-trajectory`。Pi官方仓库`earendil-works/pi`与DSH官方仓库
+`deepseek-ai/deepseek-harness`只作为各Fork中的只读`upstream`，不能成为Chat运行依赖。
 
 `pnpm --version`必须输出`10.13.1`。如果机器没有Corepack，可先按Node官方方式安装
 Corepack，或直接安装精确`pnpm@10.13.1`；不要使用浮动`latest`替代锁定版本。
@@ -38,10 +47,18 @@ Corepack，或直接安装精确`pnpm@10.13.1`；不要使用浮动`latest`替�
 ## 3. 安装与配置
 
 ```bash
+npm --prefix ../opc-os/pi install --ignore-scripts
+npm --prefix ../opc-os/pi run build:offline
+pnpm -C ../deepseek-harness-chat-trajectory install --frozen-lockfile
+pnpm -C ../deepseek-harness-chat-trajectory run build:lib:client
 pnpm install --frozen-lockfile
 cp .env.example .env
 pnpm run setup
 ```
+
+前两组命令从Fork分支生成Pi `dist`与DSH `lib`，Chat随后通过`link:`直接消费这些源码构建。
+Fork没有检出、分支错误、构建缺失或能力标记不符时，安装、构建或服务启动必须失败关闭；不得用
+`pnpm patch`或官方npm包临时补洞。
 
 仅准备当前稳定核心服务时使用：
 
@@ -53,7 +70,7 @@ pnpm run setup --workbench=off
 
 1. 校验平台、Node、pnpm、Git、tar与npm；
 2. 下载并校验固定`code-server@4.132.0`工件；
-3. 校验[DSH插件登记表](../../config/dsh-plugins.json)、锁定工件和许可证，构建Workflow
+3. 校验[DSH插件登记表](../../config/dsh-plugins.json)、Fork分支、运行标记和许可证，构建Workflow
    Bundle与LifeOS Bridge，再准备固定DSH Web Profile；
 4. 只生成可重建缓存，不启动任何服务。
 
@@ -63,7 +80,7 @@ pnpm run setup --workbench=off
 如果同一仓库已有本地服务或Workbench在运行，setup只报告占用并失败，不会替用户停止
 进程，也不会修改活动Product Run；先显式运行`pnpm dev:stop`后再准备。
 
-普通Chat安装不需要另外克隆DeepSeek Harness、memmy、Tencent MemoryCore或code-server；DSH派生仓库只供维护者跟踪与汇合上游，流程见[DSH前端派生与维护](../architecture/dsh-frontend-maintenance.md)。本机已有
+普通Chat安装必须检出上文两个Later Fork，但不需要克隆官方DeepSeek Harness、memmy、Tencent MemoryCore或code-server；Fork维护与汇合流程见[DSH前端派生与维护](../architecture/dsh-frontend-maintenance.md)和[Pi Coding Executor](../architecture/pi-coding-executor-service.md)。本机已有
 Git mirror只有通过`CHAT_MEMMY_SOURCE_REPO`或
 `CHAT_TENCENT_MEMORYCORE_SOURCE_REPO`显式指定绝对路径时才会使用，默认安装绝不依赖
 个人目录；mirror也必须通过同一commit/tree校验。
@@ -184,6 +201,7 @@ code-server的Unix socket和Terminal子进程也应被受管回收。不要用`k
 ## 5. 常见问题
 
 - `Provider not ready`：安装成功但未配置`DASHSCOPE_API_KEY`；填入`.env`后重启。
+- `link:`目标不存在或Fork能力门失败：按第2、3节检出正确Fork稳定分支并重新构建；不要恢复package patch。
 - `executor.workspace_not_allowed`：批准计划请求了Workspace工具，但Contract中的`rootId`不在服务端`CHAT_PROJECT_ROOTS_JSON`；修正Root配置后发起新Run，不要把绝对路径放进请求。
 - 端口占用：先运行`pnpm dev:status`，再用`pnpm dev:stop`回收身份匹配的旧Chat进程。
   未知进程不会被自动终止。

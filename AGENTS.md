@@ -8,7 +8,7 @@ Chat 是独立开发、独立运行、独立运营并持续演进的完整产品
 
 ## 2. 当前阶段
 
-Chat的产品后端、Workflow与Agent Runtime基线已经冻结。唯一产品前端是Chat公开派生仓库维护的固定DeepSeek Harness Web窄派生，由本仓库维护的LifeOS桥接插件接入Chat公开Query/Command；仓库不再维护第二套自研Chat页面，也不包含Agent Canvas/OpenHands前端。插件优先但不是绝对限制：公开扩展点无法表达必要的原生宿主语义时，经源码证据和用户确认可以在单独公开DSH派生分支做最小通用扩展，Chat仓库仍以固定补丁和漂移门消费。
+Chat的产品后端、Workflow与Agent Runtime基线已经冻结。唯一产品前端是Chat公开派生仓库维护的固定DeepSeek Harness Web窄派生，由本仓库维护的LifeOS桥接插件接入Chat公开Query/Command；仓库不再维护第二套自研Chat页面，也不包含Agent Canvas/OpenHands前端。插件优先但不是绝对限制：公开扩展点无法表达必要的原生宿主语义时，经源码证据和用户确认可以在单独公开DSH派生分支做最小通用扩展，Chat直接链接该受管分支的源码构建并在启动前执行漂移门。
 
 DSH前端切换与Code Workbench已经完成。当前阶段顺序是Browser Provider优先，随后继续长期上下文、Project Solution、规则与Memory纵向；阶段顺序和历史任务书都不是实现授权，Agent只能依据当前对话中用户的明确请求开工。任务书只约束已授权任务的范围和完成门。
 
@@ -17,6 +17,15 @@ DSH前端切换与Code Workbench已经完成。当前阶段顺序是Browser Prov
 当前事实以[PROJECT_STATE.md](./PROJECT_STATE.md)为准，技术边界以[技术合同](./docs/architecture/technology-contract.md)为准。
 全新克隆、工具链、配置和统一启动以[本地安装指南](./docs/getting-started/local-install.md)为准；
 不得继续引用历史`apps/web`、个人绝对路径或额外手工克隆上游仓库的安装方式。
+
+### 2.1 Pi与DSH受管Fork（所有Agent必读）
+
+Chat当前开发阶段直接集成Later维护的Fork分支，不再对Pi或DSH发布包维护下游`pnpm patch`：
+
+- Pi Fork：<https://github.com/later-3/pi>，稳定集成分支`codex/later-custom`，官方只读上游<https://github.com/earendil-works/pi>；本机受管checkout为Chat同级目录`../opc-os/pi`。
+- DSH Fork：<https://github.com/later-3/deepseek-harness-chat>，稳定集成分支`codex/chat-trajectory-location-rc6`，官方只读上游<https://github.com/deepseek-ai/deepseek-harness>；本机受管checkout为Chat同级目录`../deepseek-harness-chat-trajectory`。
+
+Chat的`packages/pi-runtime`和`packages/dsh-lifeos-bridge`必须直接链接上述稳定分支的源码构建。修改Pi或DSH时，在对应Fork建立独立功能worktree和分支，提交源码与测试，通过Fork自己的质量门后合入稳定集成分支并重新构建；Chat业务对象、Decision、Workflow和UI不得写入Fork。每次启动与测试必须验证实际解析路径、Fork origin、分支和通用能力标记，缺失时失败关闭。不得重新添加等价Pi/DSH package patch、依赖官方包掩盖Fork缺失，或让未提交的Fork工作树成为运行来源。
 
 ## 3. 开发边界：核心自研、能力复用
 
@@ -155,7 +164,7 @@ packages/testing   合同、Fixture与测试工具
 
 ## 10. 源码证据
 
-涉及pi能力时，Later本机可优先读取`/Users/xulater/Code/opc-os/pi`及其`AGENTS.md`、类型、测试和示例；该目录不是全新克隆或CI的前提，不存在时使用锁文件对应的安装工件、固定来源或官方源码。涉及DeepSeek Harness时，派生源码以公开`later-3/deepseek-harness-chat`的固定提交为准，官方`deepseek-ai/deepseek-harness`作为只读`upstream`；维护与汇合规则见`docs/architecture/dsh-frontend-maintenance.md`。涉及Vercel Workflow、Hono、React和Vite时使用匹配版本官方文档或固定源码，不凭模型记忆猜API。
+涉及Pi或DeepSeek Harness能力时，先使用第2.1节登记的Later Fork稳定集成分支及其`AGENTS.md`、类型、测试和示例；Fork checkout是当前本地开发与测试的运行依赖，不得用官方npm包或本地patch替代。官方仓库只作为只读`upstream`和同步来源；维护与汇合规则见`docs/architecture/dsh-frontend-maintenance.md`及`docs/architecture/pi-coding-executor-service.md`。涉及Vercel Workflow、Hono、React和Vite时使用匹配版本官方文档或固定源码，不凭模型记忆猜API。
 
 把开发、调研或复核任务委派给外部Pi Agent时，使用已安装的`pi-delegate` Skill和`/Users/xulater/Code/pi-taskd`共享服务；Pi源码仍只负责能力证据。Pi必须先读取受管worktree内的本文件和任务相关项目合同，不能直接写Chat主checkout，其结果必须由当前Codex按Chat完成门验证后才可采用。
 

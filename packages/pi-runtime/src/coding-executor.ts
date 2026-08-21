@@ -16,3 +16,4 @@ export * from "./prompt-review-gate.js";
 export * from "./direct-agent-executor.js";
 export * from "./direct-executor-service.js";
 export * from "./direct-runtime-api-callbacks.js";
+export * from "./pi-fork-capabilities.js";

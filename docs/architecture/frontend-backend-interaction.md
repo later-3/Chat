@@ -146,7 +146,7 @@ Run/Step/Hook/Sleep运行时证据供后续诊断或证据表面使用，但Brid
 偏好由DSH公开Snapshot Store保存在浏览器本地；开关只让Conversation Definition按同一Trace重新投影，
 不追加Session事件、不改Chat事实。开启后每行结果显示浏览器本地开始/结束时间，运行中行显示开始时间；
 无论开关状态，展开原生详情始终可查看ISO开始/完成时间、DSH本地化Timing、审核决定、状态和严格白名单Payload。
-DSH派生改动只允许存在于单独固定分支和仓库内可审核的pnpm补丁：当前仅涉及Contribution Location、
+DSH派生改动只允许存在于公开Fork的稳定集成分支，Chat直接链接该分支源码构建：当前仅涉及Contribution Location、
 语义标签与紧凑行预览三个通用字段。不得复制DSH源码、重写Trajectory页面，或把完整Hosted App拆成自研React组件。
 
 插件优先不等于插件能够改写全部宿主语义。rc.6公开Contribution已经携带Location，却没有在Trajectory

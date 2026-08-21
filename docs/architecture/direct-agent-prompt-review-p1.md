@@ -109,10 +109,10 @@ Decision同时绑定：
 
 固定Pi `0.84.2`的Extension Runner会吞掉`before_provider_request`异常，因此它仍只用于观察，
 不能承担安全暂停。Chat维护的Pi分支在`createAgentSession()`公开`providerRequestGate`：它位于
-Extension变换之后，异常不被Extension Runner吞掉并直接阻止Provider fetch。Chat当前以固定pnpm窄补丁
-消费这份通用源码差异，待分支发布固定工件后可删除补丁并切换到同一来源的版本化Artifact。
+Extension变换之后，异常不被Extension Runner吞掉并直接阻止Provider fetch。该通用接缝由
+`later-3/pi`的`codex/later-custom`源码与测试拥有，Chat直接链接该Fork分支构建。
 
-P1通过pnpm窄补丁为固定工件增加通用`AgentSession.resumePendingTurn()`。它从恢复的User或Tool Result尾部继续，
+Later Pi Fork提供通用`AgentSession.resumePendingTurn()`。它从恢复的User或Tool Result尾部继续，
 并复用AgentSession的post-run、queue、retry/compaction处理、bash flush、settled和idle生命周期；补丁不包含Chat产品ID。
 每次审核前使用公开`exportToJsonl()`生成0600 checkpoint并记录文件Hash/Session/leaf身份。
 当前证据覆盖进程退出与重启；Pi导出没有提供显式文件/目录`fsync`合同，因此P1不宣称突然断电后的同等级耐久。

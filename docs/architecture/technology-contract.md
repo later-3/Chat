@@ -139,7 +139,7 @@ Query读取资源并返回revision/ETag/cursor；Command表达一次用户意图
 
 ## 9. 依赖与升级
 
-每个外部依赖记录精确版本、来源、integrity、许可证、运行边界、升级测试和退出方式。DSH/code-server不以源码副本进入Chat仓库。DSH当前有且只有一个显式批准的窄派生：公开`later-3/deepseek-harness-chat`保存派生源码与上游汇合历史，Chat仓库以固定Hash的pnpm补丁消费Trajectory Location、标签与紧凑预览扩展；它不复制UI，也不改变Host、Session或产品事实边界。升级必须先判断上游是否已提供等价插件合同，否则把该窄差异重放到新固定版本，并通过DSH源码测试、补丁漂移门、合同与真实浏览器E2E；任何扩大修改面都需要重新审核。完整维护规则见[DSH前端派生与维护](./dsh-frontend-maintenance.md)。
+每个外部依赖记录精确版本、来源、许可证、运行边界、升级测试和退出方式。DSH/code-server不以源码副本进入Chat仓库。DSH当前有且只有一个显式批准的窄派生：公开`later-3/deepseek-harness-chat`保存派生源码、测试与上游汇合历史，Chat直接链接稳定分支消费Trajectory Location、标签与紧凑预览扩展；它不复制UI，也不改变Host、Session或产品事实边界。升级必须先判断上游是否已提供等价插件合同，否则把该窄差异重放到Fork功能分支，并通过DSH源码测试、Fork分支漂移门、合同与真实浏览器E2E；任何扩大修改面都需要重新审核。完整维护规则见[DSH前端派生与维护](./dsh-frontend-maintenance.md)。
 
 ## 10. 完成门
 

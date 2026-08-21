@@ -34,6 +34,15 @@ DSH Session、Product Session、Product Run、Workflow Run、Checkpoint、pi Ses
 
 ```bash
 corepack enable
+mkdir -p ../opc-os
+git clone git@github.com:later-3/pi.git ../opc-os/pi
+git -C ../opc-os/pi switch codex/later-custom
+git clone git@github.com:later-3/deepseek-harness-chat.git ../deepseek-harness-chat-trajectory
+git -C ../deepseek-harness-chat-trajectory switch codex/chat-trajectory-location-rc6
+npm --prefix ../opc-os/pi install --ignore-scripts
+npm --prefix ../opc-os/pi run build:offline
+pnpm -C ../deepseek-harness-chat-trajectory install --frozen-lockfile
+pnpm -C ../deepseek-harness-chat-trajectory run build:lib:client
 pnpm install --frozen-lockfile
 cp .env.example .env
 pnpm run setup
@@ -58,9 +67,11 @@ pnpm dev:debug:stop
 debug的端口、Product Store、Workflow、Runtime、Trace、DSH状态、PID与浏览器Profile均位于
 当前worktree的隔离边界；为避免源码和构建产物互相影响，应在独立worktree中打开VS Code。
 
-`pnpm run setup`会按仓库固定证据自动准备DSH Profile、Workflow Bundle和code-server；
+`pnpm run setup`会按仓库固定证据自动准备DSH Profile、Workflow Bundle和code-server；Pi与DSH
+定制源码分别直接来自`later-3/pi@codex/later-custom`和
+`later-3/deepseek-harness-chat@codex/chat-trajectory-location-rc6`，不使用下游package patch。
 当前默认不下载或准备Memory工件。以后显式恢复Memory专项调试时，也不需要另外克隆
-DeepSeek Harness、memmy、Tencent MemoryCore或code-server。没有配置
+官方DeepSeek Harness、memmy、Tencent MemoryCore或code-server。没有配置
 `DASHSCOPE_API_KEY`时服务仍可启动和浏览，但真实规划/执行会明确显示Provider not ready。
 支持平台、工具链、首次下载、配置与故障处理以[本地安装指南](./docs/getting-started/local-install.md)为唯一入口。
 

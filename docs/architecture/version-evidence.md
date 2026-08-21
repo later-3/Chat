@@ -15,7 +15,7 @@
 
 | 依赖 | 版本 | 许可证 | 用途与边界 | 退出方式 |
 |---|---:|---|---|---|
-| `@deepseek-ai/dsh` | `0.1.0-rc.6` + 固定Trajectory补丁 | MIT | 唯一Web Host、原生会话/Composer/插件图；窄扩展只保留调用Location、语义标签与紧凑行预览；不拥有Chat产品事实 | 删除补丁或替换前端Host与Bridge Adapter；Chat API/Domain/Store不变 |
+| `@deepseek-ai/dsh` | `0.1.0-rc.6` + Later Fork `codex/chat-trajectory-location-rc6` | MIT | 唯一Web Host、原生会话/Composer/插件图；Trajectory直接链接Fork源码构建，只保留调用Location、语义标签与紧凑行预览；不拥有Chat产品事实 | 切换Fork分支或替换前端Host与Bridge Adapter；Chat API/Domain/Store不变 |
 | `@chat/dsh-lifeos-bridge` | workspace `0.1.0` | 私有 | DSH Host/Client到Chat公开Query/Command的唯一集成面 | 删除bundle/profile层；Chat后端不变 |
 | `dsh-mobile-hanui` | `0.2.4`（workspace精确依赖，profile link） | MIT | 移动端外壳：≤1023px抽屉/FAB/弹窗全屏/Composer修复；仅客户端DOM/CSS，零运行时依赖，无网络外发；桌面零影响 | 从profile bundles移除即退出；运行时可用`?mobileShell=0`关闭 |
 | `code-server`官方发行工件 | `4.132.0` / commit `313bf0359b4d391ba18f1fa131aad8a583bc2919` | MIT | 独立Hosted Workbench；不进入pnpm运行依赖、不拥有Chat产品事实 | 替换Workbench Provider；DSH与Chat后端不变 |
@@ -23,9 +23,9 @@
 | `@hono/node-server` | `^2.1.0` | MIT | Node HTTP服务器 | 替换组合根服务器 |
 | `workflow` | `4.8.0` | Apache-2.0 | 耐久Workflow API | 通过Workflow Port/Runner迁移 |
 | `@workflow/world-local` | `4.2.4` | Apache-2.0 | 本地Workflow运行 | 生产World Adapter替换 |
-| `@earendil-works/pi-agent-core` | `0.84.2` | MIT | Planner与AgentSession底层loop | 替换`PiRuntimePort` Adapter |
-| `@earendil-works/pi-ai` | `0.84.2` | MIT | Provider/模型调用 | 替换pi Adapter |
-| `@earendil-works/pi-coding-agent` | `0.84.2` + managed-fork窄补丁 | MIT | 完整AgentSession与通用fail-closed Provider Request Gate；外部Extension按Chat安全政策关闭，不拥有产品事实 | 切换later-3/pi发布工件或替换Runner，保留Chat Operation Port |
+| `@earendil-works/pi-agent-core` | Later Fork `codex/later-custom`（上游基线`0.84.2`） | MIT | Planner与AgentSession底层loop；与Coding Agent来自同一Fork构建，避免运行时类型实例分裂 | 替换`PiRuntimePort` Adapter |
+| `@earendil-works/pi-ai` | Later Fork `codex/later-custom`（上游基线`0.84.2`） | MIT | Provider/模型调用；与Coding Agent来自同一Fork构建 | 替换pi Adapter |
+| `@earendil-works/pi-coding-agent` | Later Fork `codex/later-custom`（上游基线`0.84.2`） | MIT | 完整AgentSession与通用fail-closed Provider Request Gate；直接链接Fork源码构建，外部Extension按Chat安全政策关闭，不拥有产品事实 | 切换Fork分支或替换Runner，保留Chat Operation Port |
 | `zod` | `^4.4.3` | MIT | 网络、存储和外部结果运行时校验 | 迁移全部Schema边界 |
 | `@ag-ui/core` | `0.0.57` | MIT | 公开Agent事件语义 | 保持Chat Event合同后替换 |
 
@@ -42,31 +42,28 @@ Linux构建DSH subprocess所需的`pty.node`，后者只恢复`spawn-helper`可�
 [插件治理合同](./dsh-plugin-governance.md)共同约束；`.data/dsh-home`中的profile lock只是
 可重建投影，不拥有供应链事实。
 
-Trajectory窄派生的源码位于Public仓库<https://github.com/later-3/deepseek-harness-chat>；`origin/main`与
-独立维护分支`codex/chat-trajectory-location-rc6`均保存当前源码，官方
-<https://github.com/deepseek-ai/deepseek-harness>仅作为本地`upstream`。上游rc.6基点
-`15148dbd9a1d1f1ef1a26e5749b32af0cd663935`，Trajectory实现提交
-`708cca1ed78995b986c3400493809ee06d1c3b0e`，当前公开派生分支头
-`bcca246a5e4ab4e002e9caa0e4e20160a8bd06e8`。Chat不复制该源码，只提交
-`patches/@deepseek-ai__dsh-client-ui-trajectory@0.1.0-rc.6.patch`；补丁SHA-256与pnpm patch hash均为
-`9e10e608d36dd364b9f972954c2625b8dc795f216c1a54401a740dc9ed42ee08`。
+Trajectory窄派生的源码位于Public仓库<https://github.com/later-3/deepseek-harness-chat>；当前稳定集成分支为
+`codex/chat-trajectory-location-rc6`，官方<https://github.com/deepseek-ai/deepseek-harness>仅作为只读
+`upstream`。上游rc.6基点为`15148dbd9a1d1f1ef1a26e5749b32af0cd663935`，当前本地分支头为
+`6a932cf9a594b02989085b6c280eeeb43d0fd681`。`packages/dsh-lifeos-bridge`直接链接同级受管checkout
+`../deepseek-harness-chat-trajectory/packages/client/ui-trajectory`；启动门同时校验真实解析路径、origin、分支和三个运行标记，不再生成或消费Trajectory package patch。
 
 ### Pi受管分支与运行工件
 
-- Pi源码所有权位于公开受管分支`https://github.com/later-3/pi`；本地`origin`指向该仓库，官方`earendil-works/pi`只读命名为`upstream`。当前基点commit为`1f2b9ff53c0adefff454f02bdcf60aeaf4d28684`、tree为`a6e2c157c8ce5c225d64a9779c233d90fc28b942`，开发分支为`codex/later-custom`。
-- 当前lock仍以官方`0.84.2`工件为基底，通过`patches/@earendil-works__pi-coding-agent@0.84.2.patch`精确消费受管分支中的两个通用接缝：`providerRequestGate`与`resumePendingTurn()`。补丁hash由`pnpm-lock.yaml`固定，不含Chat产品身份、Decision或UI逻辑。
-- 这是受管分支正式发布固定npm Artifact前的过渡消费方式，不再把本地Pi仓库描述为“只读能力对照”。新克隆和CI只需要Git中的补丁与lock，不依赖个人绝对路径；发布later-3固定Artifact后应删除等价补丁。
-- 升级Pi必须同时更新受管分支基点、精确工件/补丁hash，并重跑Extension变换顺序、Gate fail-closed、Tool、恢复和真实Provider合同门。
+- Pi源码所有权位于公开受管仓库<https://github.com/later-3/pi>；本地`origin`指向该仓库，官方<https://github.com/earendil-works/pi>只读命名为`upstream`。当前稳定集成分支为`codex/later-custom`，上游基点为`1f2b9ff53c0adefff454f02bdcf60aeaf4d28684`，当前本地分支头为`311d9e6da0d468bb9e07e6fdf4f76052f436c971`。
+- `packages/pi-runtime`直接链接同级受管checkout中的`packages/agent`、`packages/ai`与`packages/coding-agent`，运行时仍沿用包内上游版本`0.84.2`。三者必须来自同一个Fork工作树，避免带私有字段的运行时类型出现双实例。两个通用接缝`providerRequestGate`与`resumePendingTurn()`及其能力标记、源码测试全部属于Pi Fork；Chat不再生成或消费Pi package patch。
+- 修改Pi时从`codex/later-custom`建立独立功能worktree，通过Pi检查与测试后合回该稳定分支并执行`npm run build:offline`。Chat启动前读取运行时能力标记，错误分支、未构建源码或官方包替代Fork都会失败关闭。
+- 升级Pi必须先把官方正式版本汇合到Fork功能分支，再重跑Extension变换顺序、Gate fail-closed、Tool、恢复和真实Provider合同门；验证完成后才更新稳定集成分支。
 
 ## DSH固定证据
 
-1. 运行依赖精确写为`0.1.0-rc.6`，不使用caret、tag或Git浮动分支；Trajectory补丁由lock中的`patch_hash`固定。
+1. DSH Host基线保持`0.1.0-rc.6`；Trajectory通过本地`link:`直接消费受管Fork稳定分支，启动门验证origin、分支与运行标记。
 2. Profile只安装本仓库Bridge的绝对`link:`；Bridge通过`dsh.bundle.patch`由DSH CLI原生加入profile bundles。
 3. `DSH_HOME`固定在当前worktree的`.data/dsh-home`，不读取或污染用户全局`~/.dsh`。
 4. 有效配置必须只有一个LifeOS row，默认模型为`lifeos/workflow`，DSH直接DeepSeek/pi-ai路由禁用，避免绕过Chat产品事实。
 5. Boot Manifest、插件Inventory、URL和日志不得包含Chat API私有地址以外的秘密、Bridge状态路径或Runtime身份。
-6. `assertDshTrajectoryExtension`在构建与启动前同时验证安装包版本、3个运行标记和补丁SHA-256；源码分支、补丁或安装包任一漂移都失败关闭。
-7. 升级DSH必须先在独立源码分支重放并运行Trajectory测试、typecheck、bundle、lint与doc-sync，再更新固定补丁，并通过profile安装、config dump、真实Host、Client插件加载和Planning/HITL浏览器E2E。
+6. `assertDshTrajectoryExtension`在构建与启动前同时验证安装包版本、3个运行标记、Fork origin与稳定分支；任一漂移都失败关闭。
+7. 升级DSH必须先在独立Fork源码分支重放并运行Trajectory测试、typecheck、bundle、lint与doc-sync，合回稳定集成分支并重建后，再通过profile安装、config dump、真实Host、Client插件加载和Planning/HITL浏览器E2E。
 8. 公开派生的默认分支是`main`，官方remote必须命名为`upstream`；完整同步、差异预算与退出流程见[DSH前端派生与维护](./dsh-frontend-maintenance.md)。
 
 官方来源：<https://github.com/deepseek-ai/deepseek-harness>；npm包：<https://www.npmjs.com/package/@deepseek-ai/dsh>。
