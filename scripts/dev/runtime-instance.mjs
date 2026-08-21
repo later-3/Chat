@@ -100,6 +100,7 @@ export function resolveRuntimeInstance(root, instance = "production", environmen
     CHAT_REPO_ROOT: repoRoot,
     CHAT_PUBLIC_WEB_PORT: String(ports.web),
     CHAT_DSH_INTERNAL_WEB_PORT: String(ports.webInternal),
+    CHAT_CODE_WORKBENCH_LEASE_PORT: String(ports.workbenchLease),
     CHAT_PROJECT_ROOTS_JSON: projectRootsJson,
     ...(debug
       ? {

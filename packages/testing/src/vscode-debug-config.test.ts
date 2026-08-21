@@ -66,7 +66,7 @@ describe("VS Code应用级调试配置", () => {
       request: "launch",
       cwd: "${workspaceFolder}",
       program: "${workspaceFolder}/scripts/dev/start.mjs",
-      args: ["--debug", "--instance=debug", "--workbench=off"],
+      args: ["--debug", "--instance=debug", "--memory=off", "--workbench=off"],
       runtimeArgs: ["--enable-source-maps"],
       autoAttachChildProcesses: true,
       sourceMaps: true,
@@ -79,7 +79,7 @@ describe("VS Code应用级调试配置", () => {
     };
     expect(packageJson.scripts.dev).toBe("node scripts/dev/start.mjs");
     expect(packageJson.scripts["dev:debug"]).toBe(
-      "node scripts/dev/start.mjs --debug --instance=debug --workbench=off",
+      "node scripts/dev/start.mjs --debug --instance=debug --memory=off --workbench=off",
     );
     expect(packageJson.scripts["dev:debug:status"]).toBe(
       "node scripts/dev/status.mjs --instance=debug",

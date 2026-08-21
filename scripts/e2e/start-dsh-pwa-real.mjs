@@ -11,7 +11,7 @@ import { dshRealWebEnvironment, resolveDshRealDataRoot } from "./dsh-real-enviro
 
 /**
  * PWA 真实浏览器 E2E 的 DSH 启动器：与正式启动器同构（同一受监督PID拥有
- * 43110 Gateway 与 43114 DSH Host），但不启动 code-server——PWA 验证不需要
+ * E2E专属45310 Gateway 与45314 DSH Host），但不启动 code-server——PWA 验证不需要
  * Workbench，Gateway 以 workbench 未配置姿态运行（/workbench/* 明确 503）。
  */
 const repoRoot = resolve(import.meta.dirname, "../..");

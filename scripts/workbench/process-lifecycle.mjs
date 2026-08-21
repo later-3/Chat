@@ -13,6 +13,7 @@ import {
 import {
   acquireCodeServerPrepareLease,
   readCodeServerProcessEvidence,
+  resolveCodeServerPrepareLeasePort,
   writeCodeServerStoppedTombstone,
 } from "./fixed-code-server.mjs";
 
@@ -59,21 +60,22 @@ async function withRecoveryLease({ expected, root, readEvidence, acquireLease, o
  * Unix socket无法靠固定服务端口反查。这里用受管evidence、PID启动时间、完整命令、
  * cwd与Git Common Directory共同证明旧wrapper/child身份；任一不符都保留证据并失败关闭。
  *
- * 恢复者只能在旧进程退出后取得43119租约，并在租约内复读同一instance；这样新wrapper
+ * 恢复者只能在旧进程退出后取得当前实例自己的租约端口，并在租约内复读同一instance；这样新wrapper
  * 即使紧邻旧wrapper退出启动，也不会被旧恢复者删除socket或覆盖evidence。
  */
-export async function reconcileManagedWorkbench(
-  root,
-  {
+export async function reconcileManagedWorkbench(root, options = {}) {
+  const {
     readEvidence = readCodeServerProcessEvidence,
-    acquireLease = acquireCodeServerPrepareLease,
+    environment = process.env,
     isAlive = isEffectivelyAlive,
     describe = describeProcess,
     workingDirectory = processWorkingDirectory,
     findGitCommonDir = gitCommonDirForPath,
     terminate = terminateEntry,
-  } = {},
-) {
+  } = options;
+  const acquireLease =
+    options.acquireLease ??
+    (() => acquireCodeServerPrepareLease(resolveCodeServerPrepareLeasePort(environment)));
   const evidence = readEvidence(root);
   if (evidence === undefined) return { action: "no-evidence" };
   if (evidence.status === "legacy-stopped") {

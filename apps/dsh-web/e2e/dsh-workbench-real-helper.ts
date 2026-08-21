@@ -2,14 +2,21 @@ import { expect, type Frame, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { resolveDshRealWorkbenchFixtureRoot } from "../../../scripts/e2e/dsh-real-environment.mjs";
+import {
+  DSH_REAL_E2E_PORTS,
+  resolveDshRealWorkbenchFixtureRoot,
+} from "../../../scripts/e2e/dsh-real-environment.mjs";
 import {
   assertDshRealTerminalCanaryAlive,
   type DshRealTerminalCanaryEvidence,
   waitForAndRecordDshRealTerminalCanary,
 } from "../../../scripts/e2e/dsh-real-terminal-canary.mjs";
 
-export const WORKBENCH_ORIGIN = "http://localhost:43110";
+export const WORKBENCH_ORIGIN = `http://localhost:${String(DSH_REAL_E2E_PORTS.web)}`;
+const DSH_ORIGIN = `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.web)}`;
+const DSH_WS_ORIGIN = `ws://127.0.0.1:${String(DSH_REAL_E2E_PORTS.web)}`;
+const WORKBENCH_WS_ORIGIN = `ws://localhost:${String(DSH_REAL_E2E_PORTS.web)}`;
+const WORKBENCH_REMOTE_PREFIX = `vscode-remote://localhost:${String(DSH_REAL_E2E_PORTS.web)}/`;
 const WORKBENCH_EDIT_MARKER = "modified through DSH Workbench E2E";
 const REPO_ROOT = resolve(import.meta.dirname, "../../..");
 
@@ -185,16 +192,13 @@ export async function exerciseDshWorkbench(
   await page.getByTestId("lifeos-open-workbench").click();
   const workbenchFrameElement = page.getByTestId("lifeos-workbench-frame");
   await expect(workbenchFrameElement).toBeVisible();
-  await expect(workbenchFrameElement).toHaveAttribute(
-    "src",
-    "http://localhost:43110/workbench/code/",
-  );
+  await expect(workbenchFrameElement).toHaveAttribute("src", `${WORKBENCH_ORIGIN}/workbench/code/`);
   const workbenchFrame = await waitForWorkbenchFrame(page);
   await expect(workbenchFrame.locator(".monaco-workbench")).toBeVisible({ timeout: 60_000 });
   await trustWorkbenchWorkspace(workbenchFrame);
 
   expect(new URL(workbenchFrame.url()).origin).toBe(WORKBENCH_ORIGIN);
-  expect(new URL(page.url()).origin).toBe("http://127.0.0.1:43110");
+  expect(new URL(page.url()).origin).toBe(DSH_ORIGIN);
   expect(
     await workbenchFrame.evaluate(() => {
       try {
@@ -297,7 +301,7 @@ export async function exerciseDshWorkbench(
   };
   const diffDeadline = Date.now() + 20_000;
   while (Date.now() < diffDeadline) {
-    diffEvidence = await workbenchFrame.evaluate(() => {
+    diffEvidence = await workbenchFrame.evaluate((workbenchRemotePrefix) => {
       const diffEditors = [...document.querySelectorAll(".monaco-diff-editor")];
       const diffEditor = diffEditors[0];
       const editorInstance = diffEditor?.closest(".editor-instance");
@@ -314,12 +318,10 @@ export async function exerciseDshWorkbench(
           (uri) => uri.startsWith("git:") && /\/fixture\.txt(?:\?|$)/u.test(uri),
         ),
         workingUris: editorUris.filter(
-          (uri) =>
-            uri.startsWith("vscode-remote://localhost:43110/") &&
-            /\/fixture\.txt(?:\?|$)/u.test(uri),
+          (uri) => uri.startsWith(workbenchRemotePrefix) && /\/fixture\.txt(?:\?|$)/u.test(uri),
         ),
       };
-    });
+    }, WORKBENCH_REMOTE_PREFIX);
     if (
       diffEvidence.diffCount === 1 &&
       diffEvidence.diffVisible &&
@@ -372,13 +374,13 @@ export async function exerciseDshWorkbench(
     expect(parsed.username).toBe("");
     expect(parsed.password).toBe("");
     expect(parsed.hash).toBe("");
-    if (parsed.origin === "ws://127.0.0.1:43110") {
+    if (parsed.origin === DSH_WS_ORIGIN) {
       // 固定rc.6 @deepseek-ai/dsh-client-connection与Host仅共享并注册这两条Upgrade。
       expect(["/api/events.mux", "/api/events.host"]).toContain(parsed.pathname);
       dshSocketCount += 1;
       continue;
     }
-    if (parsed.origin === "ws://localhost:43110") {
+    if (parsed.origin === WORKBENCH_WS_ORIGIN) {
       expect(parsed.pathname).toMatch(/^\/workbench\/code\/stable-[a-f0-9]{40}$/u);
       workbenchSocketCount += 1;
       continue;
@@ -398,18 +400,21 @@ export async function exerciseDshWorkbench(
         ),
       { timeout: 15_000 },
     )
-    .toEqual(["http://localhost:43110/workbench/code/"]);
+    .toEqual([`${WORKBENCH_ORIGIN}/workbench/code/`]);
 
   const externalBrowserRequests = traffic.browserRequests.filter((url) => {
     const parsed = new URL(url);
     return (
       ["http:", "https:"].includes(parsed.protocol) &&
-      !["http://127.0.0.1:43110", WORKBENCH_ORIGIN].includes(parsed.origin)
+      ![DSH_ORIGIN, WORKBENCH_ORIGIN].includes(parsed.origin)
     );
   });
   expect(externalBrowserRequests).toEqual([]);
   expect(traffic.browserRequests.join("\n")).not.toMatch(
-    /telemetry\.coder\.com|vortex\.data\.microsoft\.com|43113|43114/iu,
+    new RegExp(
+      `telemetry\\.coder\\.com|vortex\\.data\\.microsoft\\.com|431\\d{2}|${String(DSH_REAL_E2E_PORTS.webInternal)}`,
+      "iu",
+    ),
   );
 
   const iframeIdentity = `workbench-frame-${String(Date.now())}`;

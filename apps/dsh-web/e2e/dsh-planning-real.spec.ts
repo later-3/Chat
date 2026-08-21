@@ -8,10 +8,13 @@ import {
 } from "@chat/contracts/public";
 import { createTraceSink } from "@chat/realtime";
 import { z } from "zod";
+import { DSH_REAL_E2E_PORTS } from "../../../scripts/e2e/dsh-real-environment.mjs";
 import { exerciseDshWorkbench, observeWorkbenchTraffic } from "./dsh-workbench-real-helper.js";
 
 const BRIDGE_PACKAGE = "@chat/dsh-lifeos-bridge";
 const COMPLETION_MARKER = "DSH_REAL_E2E_COMPLETED_20260816";
+const E2E_WEB_ORIGIN = `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.web)}`;
+const E2E_API_ORIGIN = `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.api)}`;
 const runResponseSchema = z.object({ run: runDtoSchema }).strict();
 const messagesResponseSchema = cursorPageSchema(messageDtoSchema);
 const projectionSchema = z
@@ -88,7 +91,7 @@ type Projection = z.infer<typeof projectionSchema>;
 function projectionResponse(response: Response): boolean {
   const url = new URL(response.url());
   return (
-    url.origin === "http://127.0.0.1:43110" &&
+    url.origin === E2E_WEB_ORIGIN &&
     /^\/lifeos\/sessions\/[^/]+$/u.test(url.pathname) &&
     response.request().method() === "GET"
   );
@@ -121,7 +124,7 @@ async function waitForProjection(
 }
 
 async function apiJson(request: APIRequestContext, path: string): Promise<unknown> {
-  const response = await request.get(`http://127.0.0.1:43111${path}`);
+  const response = await request.get(`${E2E_API_ORIGIN}${path}`);
   expect(response.status()).toBe(200);
   const text = await response.text();
   for (const marker of PRIVATE_MARKERS) expect(text).not.toContain(marker);

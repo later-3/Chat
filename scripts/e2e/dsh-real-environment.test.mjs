@@ -1,13 +1,57 @@
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import {
+  DSH_PROMPT_STUDIO_E2E_PORTS,
+  DSH_PROMPT_THREE_GATES_E2E_PORTS,
+  DSH_REAL_E2E_PORTS,
   dshRealWebEnvironment,
   dshRealWorkbenchEnvironment,
   resolveDshRealWorkbenchFixtureRoot,
   resolveDshRealWorkbenchRunRoot,
   resolveDshRealWorkbenchTempParent,
 } from "./dsh-real-environment.mjs";
+import { DEBUG_RUNTIME_PORTS, PRODUCTION_RUNTIME_PORTS } from "../dev/runtime-instance.mjs";
+
+test("真实浏览器门的45xxx端口族不与production或VS Code debug重叠", () => {
+  const applicationPorts = new Set([
+    ...Object.values(PRODUCTION_RUNTIME_PORTS),
+    ...Object.values(DEBUG_RUNTIME_PORTS),
+  ]);
+  for (const ports of [
+    DSH_PROMPT_STUDIO_E2E_PORTS,
+    DSH_PROMPT_THREE_GATES_E2E_PORTS,
+    DSH_REAL_E2E_PORTS,
+  ]) {
+    for (const port of Object.values(ports)) assert.equal(applicationPorts.has(port), false);
+  }
+});
+
+test("真实浏览器入口禁止硬编码production端口或调用production preclean", () => {
+  const repoRoot = resolve(import.meta.dirname, "../..");
+  const roots = [resolve(repoRoot, "scripts/e2e"), resolve(repoRoot, "apps/dsh-web/e2e")];
+  const files = roots.flatMap((root) =>
+    readdirSync(root, { recursive: true, withFileTypes: true })
+      .filter(
+        (entry) =>
+          entry.isFile() && /\.(?:mjs|ts)$/u.test(entry.name) && !entry.name.endsWith(".test.mjs"),
+      )
+      .map((entry) => resolve(entry.parentPath, entry.name)),
+  );
+  files.push(resolve(repoRoot, "apps/dsh-web/playwright.dsh-real.config.ts"));
+  for (const path of files) {
+    const source = readFileSync(path, "utf8");
+    assert.doesNotMatch(source, /\b431(?:10|11|12|13|14|15|19|20|21|22|23)\b/u, path);
+    assert.doesNotMatch(source, /debug:preclean/u, path);
+  }
+
+  const scripts = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "utf8")).scripts;
+  for (const [name, command] of Object.entries(scripts)) {
+    if (name.startsWith("test:e2e:")) assert.doesNotMatch(command, /debug:preclean/u, name);
+  }
+});
 
 test("真实DSH子进程使用统一白名单且不继承Provider、GitHub或SSH凭据", () => {
   const environment = dshRealWebEnvironment("/repo/chat", {
@@ -22,6 +66,9 @@ test("真实DSH子进程使用统一白名单且不继承Provider、GitHub或SSH
   assert.equal(environment.LANG, "zh_CN.UTF-8");
   assert.equal(environment.DSH_HOME, "/repo/chat/.data/e2e/dsh-real/dsh-home");
   assert.equal(environment.CHAT_DSH_STATE_PATH, "/repo/chat/.data/e2e/dsh-real/bridge/state.json");
+  assert.equal(environment.CHAT_PUBLIC_WEB_PORT, "45310");
+  assert.equal(environment.CHAT_DSH_INTERNAL_WEB_PORT, "45314");
+  assert.equal(environment.CHAT_API_BASE_URL, "http://127.0.0.1:45311");
   assert.equal("DASHSCOPE_API_KEY" in environment, false);
   assert.equal("GITHUB_TOKEN" in environment, false);
   assert.equal("SSH_AUTH_SOCK" in environment, false);
@@ -78,6 +125,7 @@ test("真实Workbench wrapper只接收隔离Git fixture、运行路径和基础�
     resolveDshRealWorkbenchRunRoot("/repo/chat"),
   );
   assert.equal(environment.CHAT_CODE_WORKBENCH_TEMP_PARENT, resolveDshRealWorkbenchTempParent());
+  assert.equal(environment.CHAT_CODE_WORKBENCH_LEASE_PORT, "45319");
   assert.equal(environment.PATH, "/bin");
   assert.equal(environment.HOME, "/Users/example");
   assert.equal("DASHSCOPE_API_KEY" in environment, false);

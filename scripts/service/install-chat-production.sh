@@ -88,5 +88,6 @@ case "$action" in
     done
     /usr/bin/curl --fail --silent --max-time 3 "http://127.0.0.1:$local_port/healthz" \
       && echo " <- gateway healthz" || echo "gateway healthz: unreachable"
+    "$node_bin" "$repo_root/scripts/dev/status.mjs"
     ;;
 esac

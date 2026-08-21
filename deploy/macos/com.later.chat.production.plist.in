@@ -13,6 +13,7 @@
   <array>
     <string>__NODE_BIN__</string>
     <string>__PROJECT_ROOT__/scripts/dev/start.mjs</string>
+    <string>--memory=off</string>
     <string>--workbench=off</string>
   </array>
 

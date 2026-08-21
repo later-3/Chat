@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { DSH_REAL_E2E_PORTS } from "../../../scripts/e2e/dsh-real-environment.mjs";
 
-const API = "http://127.0.0.1:43111";
+const API = `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.api)}`;
 const FULL_PROMPT = `验证Pi执行轨迹实时显示\n${"完整会话正文-".repeat(
   600,
 )}END_OF_UNTRUNCATED_SESSION_MESSAGE`;

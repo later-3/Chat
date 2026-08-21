@@ -54,7 +54,6 @@ try {
   await run(process.execPath, ["scripts/e2e/preflight-dsh-real.mjs", "--workbench-only"], {
     label: "Workbench-only preflight",
   });
-  await run(pnpm, ["debug:preclean"], { label: "固定端口preclean" });
   await run(
     pnpm,
     [

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { DSH_REAL_E2E_PORTS } from "../../../scripts/e2e/dsh-real-environment.mjs";
 
 /**
  * Chat PWA 真实浏览器门（Chromium，真实 DSH Host + Gateway）：
@@ -65,7 +66,7 @@ test("index 注入 PWA 标签且 Service Worker 真实激活", async ({ page }) 
     const registration = await navigator.serviceWorker.getRegistration("/");
     return registration?.scope ?? "";
   });
-  expect(scope).toBe("http://127.0.0.1:43110/");
+  expect(scope).toBe(`http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.web)}/`);
 });
 
 test("离线时导航回退到缓存外壳且 /lifeos 不被缓存", async ({ page, context }) => {

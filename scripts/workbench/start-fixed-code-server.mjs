@@ -29,6 +29,7 @@ import {
   mergeManagedCodeServerSettings,
   prepareIsolatedShellHome,
   resolveCodeServerTemporaryParent,
+  resolveCodeServerPrepareLeasePort,
   validateFixedCodeServerCache,
   writeCodeServerStoppedTombstone,
 } from "./fixed-code-server.mjs";
@@ -51,9 +52,11 @@ if (!validateFixedCodeServerCache(repoRoot)) {
   );
 }
 
-// 43119只是一把由内核回收的进程租约：收到任何TCP连接都会立即断开，绝不提供HTTP、
-// health或Workbench内容。它防止两个随机socket wrapper并发覆盖同一份evidence。
-const serviceLease = await acquireCodeServerPrepareLease();
+// 运行实例注入自己的租约端口：production=43119，debug=44119，E2E使用45319。
+// 收到任何TCP连接都会立即断开，绝不提供HTTP、health或Workbench内容。
+const serviceLease = await acquireCodeServerPrepareLease(
+  resolveCodeServerPrepareLeasePort(process.env),
+);
 
 const runRoot = assertChatDataPath(codeServerRunRoot(repoRoot), repoRoot, "code-server运行目录");
 const userDataRoot = resolve(runRoot, "user-data");

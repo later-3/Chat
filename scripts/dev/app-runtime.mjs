@@ -20,6 +20,7 @@ import {
   ensureFixedCodeServer,
   probeCodeServerSocketReady,
   readCodeServerProcessEvidence,
+  resolveCodeServerPrepareLeasePort,
   resolveCodeServerTemporaryParent,
 } from "../workbench/fixed-code-server.mjs";
 import { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
@@ -161,7 +162,7 @@ export function parseDevArgs(argv) {
 
 export function devUsage() {
   return [
-    "用法: pnpm dev [-- --workbench=off|code-server]",
+    "用法: pnpm dev [--memory=off] [--workbench=off|code-server]",
     "      pnpm dev:debug",
     "",
     "pnpm dev使用production实例；pnpm dev:debug使用隔离端口与独立数据的debug实例。",
@@ -172,7 +173,7 @@ export function devUsage() {
 
 export function setupUsage() {
   return [
-    "用法: pnpm run setup [--workbench=off|code-server] [--instance=production|debug]",
+    "用法: pnpm run setup [--memory=off] [--workbench=off|code-server] [--instance=production|debug]",
     "",
     "默认只准备Workflow Bundle、DSH Profile与code-server工件，不准备或启动Memory。",
   ].join("\n");
@@ -210,6 +211,7 @@ export function resolveLocalWorkbenchRuntimeContract(root, environment = process
     CHAT_CODE_WORKBENCH_RUN_ROOT: codeServerRunRoot(repoRoot, environment),
     CHAT_CODE_WORKBENCH_TEMP_PARENT: resolveCodeServerTemporaryParent(environment),
     CHAT_FIXED_SOURCE_CACHE_ROOT: resolveSharedFixedCacheRoot(repoRoot, environment),
+    CHAT_CODE_WORKBENCH_LEASE_PORT: String(resolveCodeServerPrepareLeasePort(environment)),
   });
 }
 

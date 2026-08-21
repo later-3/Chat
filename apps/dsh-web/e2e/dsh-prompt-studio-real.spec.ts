@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { DSH_PROMPT_STUDIO_E2E_PORTS } from "../../../scripts/e2e/dsh-real-environment.mjs";
 
 async function enterPromptStudio(page: Page): Promise<void> {
   // 首启Notice不是稳定必现状态：等它短暂挂载，出现则关闭，不出现就走正常设置入口。
@@ -49,7 +50,9 @@ async function openReadyConversation(page: Page) {
 
 test.beforeAll(async ({ request }) => {
   await expect(async () => {
-    const response = await request.get("http://127.0.0.1:45111/api/readyz");
+    const response = await request.get(
+      `http://127.0.0.1:${String(DSH_PROMPT_STUDIO_E2E_PORTS.api)}/api/readyz`,
+    );
     expect(response.status(), await response.text()).toBe(200);
   }).toPass({ timeout: 30_000, intervals: [500, 1_000] });
   await expect(async () => {

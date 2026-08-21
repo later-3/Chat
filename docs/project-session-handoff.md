@@ -22,4 +22,4 @@
 
 ## 下一完成门
 
-运行`pnpm dev -- --workbench=off`后，`127.0.0.1:43110`上的DSH原生页面能够完成Chat消息、Plan/HITL、Note Candidate审核与正式结果。Code Workbench当前是Beta，不阻塞这个基线；单独启用、修改或准备提升为稳定能力时再执行其Files、Editor、Terminal、Git、Diff和进程回收真实门。下一完成门是把实时人机共用Browser Provider以同样的服务/Adapter方式接入。
+运行`pnpm dev --memory=off --workbench=off`后，`127.0.0.1:43110`上的DSH原生页面能够完成Chat消息、Plan/HITL、Note Candidate审核与正式结果。Code Workbench当前是Beta，不阻塞这个基线；单独启用、修改或准备提升为稳定能力时再执行其Files、Editor、Terminal、Git、Diff和进程回收真实门。下一完成门是把实时人机共用Browser Provider以同样的服务/Adapter方式接入。

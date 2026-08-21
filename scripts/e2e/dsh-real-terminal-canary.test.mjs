@@ -90,8 +90,8 @@ test("Terminal canary对PID复用和任一身份偏差失败关闭", () => {
   );
 });
 
-test("Playwright外层完成门固定复核Gateway、退役端口、内部DSH与Workbench租约", async () => {
-  assert.deepEqual(DSH_REAL_RELEASED_PORTS, [43_110, 43_113, 43_114, 43_119]);
+test("Playwright外层完成门只复核E2E专属服务端口与Workbench租约", async () => {
+  assert.deepEqual(DSH_REAL_RELEASED_PORTS, [45_310, 45_311, 45_312, 45_314, 45_315, 45_319]);
   let firstPortAttempts = 0;
   const result = await waitForDshRealPortsReleased({
     timeoutMs: 1_000,

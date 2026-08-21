@@ -21,7 +21,6 @@ function run(command, args, options = {}) {
 }
 
 await run(process.execPath, ["scripts/e2e/preflight-dsh-real.mjs", "--trajectory-only"]);
-await run(pnpm, ["debug:preclean"]);
 await run(
   pnpm,
   [

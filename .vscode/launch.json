@@ -7,7 +7,7 @@
       "request": "launch",
       "cwd": "${workspaceFolder}",
       "program": "${workspaceFolder}/scripts/dev/start.mjs",
-      "args": ["--debug", "--instance=debug", "--workbench=off"],
+      "args": ["--debug", "--instance=debug", "--memory=off", "--workbench=off"],
       "runtimeArgs": ["--enable-source-maps"],
       "autoAttachChildProcesses": true,
       "sourceMaps": true,

@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { DSH_PROMPT_THREE_GATES_E2E_PORTS } from "../../../scripts/e2e/dsh-real-environment.mjs";
 
-const API_READY_URL = "http://127.0.0.1:45211/api/readyz";
+const API_READY_URL = `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.api)}/api/readyz`;
 const RUN_KEY = `three_gates_${Date.now().toString(36)}`;
 const IDENTITY_TITLE = `三闸门身份 ${RUN_KEY}`;
 const RULES_TITLE = `三闸门规则 ${RUN_KEY}`;

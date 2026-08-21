@@ -2,13 +2,11 @@ import { existsSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 
-import { FROZEN_PORTS, isEffectivelyAlive } from "../debug/lib.mjs";
-import {
-  FIXED_CODE_SERVER_PREPARE_LOCK_PORT,
-  readCodeServerProcessEvidence,
-} from "../workbench/fixed-code-server.mjs";
+import { isEffectivelyAlive } from "../debug/lib.mjs";
+import { readCodeServerProcessEvidence } from "../workbench/fixed-code-server.mjs";
 import { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
 import {
+  DSH_REAL_E2E_PORTS,
   dshRealWorkbenchEnvironment,
   resolveDshRealWorkbenchFixtureRoot,
 } from "./dsh-real-environment.mjs";
@@ -19,10 +17,12 @@ import {
 } from "./dsh-real-terminal-canary.mjs";
 
 export const DSH_REAL_RELEASED_PORTS = Object.freeze([
-  FROZEN_PORTS.web,
-  43_113,
-  FROZEN_PORTS.webInternal,
-  FROZEN_PORTS.workbenchLease,
+  DSH_REAL_E2E_PORTS.web,
+  DSH_REAL_E2E_PORTS.api,
+  DSH_REAL_E2E_PORTS.workflow,
+  DSH_REAL_E2E_PORTS.webInternal,
+  DSH_REAL_E2E_PORTS.piExecutor,
+  DSH_REAL_E2E_PORTS.workbenchLease,
 ]);
 
 async function canBindPort(port) {
@@ -36,9 +36,9 @@ async function canBindPort(port) {
 }
 
 async function assertLeasePortReleased() {
-  if (!(await canBindPort(FIXED_CODE_SERVER_PREPARE_LOCK_PORT))) {
+  if (!(await canBindPort(DSH_REAL_E2E_PORTS.workbenchLease))) {
     throw new Error(
-      `Workbench E2E清理后${String(FIXED_CODE_SERVER_PREPARE_LOCK_PORT)}租约仍不可绑定`,
+      `Workbench E2E清理后${String(DSH_REAL_E2E_PORTS.workbenchLease)}租约仍不可绑定`,
     );
   }
 }
@@ -82,7 +82,10 @@ export async function cleanupDshRealWorkbench(root, { environment = process.env 
       requireRunningWorkbench: before?.status === "running",
     });
   }
-  const result = await reconcileManagedWorkbench(fixtureRoot, { readEvidence });
+  const result = await reconcileManagedWorkbench(fixtureRoot, {
+    readEvidence,
+    environment: workbenchEnvironment,
+  });
 
   if (
     result.action === "stopped-historical-identity-mismatch" ||

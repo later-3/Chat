@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 
-import { dshRealWebEnvironment } from "./dsh-real-environment.mjs";
+import { DSH_PROMPT_STUDIO_E2E_PORTS, dshRealWebEnvironment } from "./dsh-real-environment.mjs";
 
 /**
  * Prompt Studio真实门只需要Chat API与DSH。二者由同一个Playwright webServer
@@ -9,7 +9,7 @@ import { dshRealWebEnvironment } from "./dsh-real-environment.mjs";
  */
 const repoRoot = resolve(import.meta.dirname, "../..");
 const dataRoot = resolve(repoRoot, ".data/e2e/dsh-real");
-const ports = Object.freeze({ web: 45_110, api: 45_111, webInternal: 45_114 });
+const ports = DSH_PROMPT_STUDIO_E2E_PORTS;
 const children = new Map();
 let stopping = false;
 
@@ -79,7 +79,7 @@ start(
     CHAT_API_HOST: "127.0.0.1",
     CHAT_PRODUCT_STORE_PATH: resolve(dataRoot, "product-store.v1.json"),
     // Prompt Studio没有Workflow动作；保留组合根要求的私有地址，但不启动Runtime。
-    CHAT_WORKFLOW_BASE_URL: "http://127.0.0.1:45112",
+    CHAT_WORKFLOW_BASE_URL: `http://127.0.0.1:${String(ports.workflowPlaceholder)}`,
   },
 );
 start("dsh", process.execPath, ["scripts/e2e/start-dsh-pwa-real.mjs"], {

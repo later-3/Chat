@@ -53,7 +53,7 @@ pnpm -C ../deepseek-harness-chat-trajectory install --frozen-lockfile
 pnpm -C ../deepseek-harness-chat-trajectory run build:lib:client
 pnpm install --frozen-lockfile
 cp .env.example .env
-pnpm run setup
+pnpm run setup --memory=off --workbench=off
 ```
 
 前两组命令从Fork分支生成Pi `dist`与DSH `lib`，Chat随后通过`link:`直接消费这些源码构建。
@@ -103,7 +103,8 @@ pnpm dsh:plugins:check-updates
 ### 3.1 可选：Plane CE项目管理
 
 项目创建纵向只支持Plane Community Edition 1.4.1，不需要也不使用Cloud/Business功能。
-本机首次启动固定CE：
+Plane是独立Docker Compose Provider，不是Chat统一启动器的子进程；普通对话不需要它，只有
+体验“创建项目”纵向时才需要先启动。确认Docker Engine/Docker Desktop可用后执行：
 
 ```bash
 pnpm plane-ce:prepare
@@ -111,6 +112,9 @@ pnpm plane-ce:config
 pnpm plane-ce:up
 pnpm plane-ce:status
 ```
+
+固定Compose声明13个服务，稳定运行时通常是12个长驻容器加1个一次性`migrator`；这些容器
+不计入Chat的5/7个本机Node进程，也不占用`431xx/441xx/45xxx`。Plane只暴露`8088/8443`。
 
 打开`http://127.0.0.1:8088`，完成Plane首次管理员设置，创建一个Workspace，并在Plane中
 创建仅供Chat服务端使用的API Token。然后把以下4项一起写入`.env`：
@@ -160,10 +164,13 @@ pnpm test:provider:plane-ce
 ## 4. 启动、检查与停止
 
 ```bash
-pnpm dev
+pnpm dev --memory=off --workbench=off
 ```
 
-看到`[chat] ready: http://127.0.0.1:43110/`后打开该地址。另一个终端可以检查或停止：
+参数直接跟在`pnpm dev`后面；当前pnpm不要额外插入一个`--`。看到
+`[chat] ready: http://127.0.0.1:43110/`后打开该地址。该推荐配置产生1个Supervisor和
+4个子进程（Pi Executor、Workflow、API、Web），共5个OS进程；Web进程同时监听Gateway
+`43110`与DSH内部Host `43114`，不是两套前端。另一个终端可以检查或停止：
 
 ```bash
 pnpm dev:status
@@ -173,7 +180,7 @@ pnpm dev:stop
 若本机已经通过LaunchAgent常驻production，VS Code F5和命令行调试不需要停止它；使用隔离实例：
 
 ```bash
-pnpm run setup --instance=debug # 独立worktree首次准备
+pnpm run setup --instance=debug --memory=off --workbench=off # 独立worktree首次准备
 pnpm dev:debug
 pnpm dev:debug:status
 pnpm dev:debug:stop
@@ -183,17 +190,24 @@ debug入口固定为`http://127.0.0.1:44110/`，数据位于当前worktree的
 `.data/instances/vscode-debug`。为同时隔离源码与构建产物，应在独立worktree中打开VS Code。
 不要在LaunchAgent常驻时再运行普通`pnpm dev`，因为它仍是production实例。
 
-默认命令仍可启用Beta Code Workbench；当前只使用Chat/PWA时建议关闭：
+默认`pnpm dev`仍兼容启用Beta Code Workbench；显式启用时使用：
 
 ```bash
-pnpm dev -- --workbench=off
+pnpm dev --memory=off --workbench=code-server
 ```
+
+这会增加code-server wrapper和child，基线共7个OS进程；每个Terminal另有子进程。
+当前只使用Chat/PWA时保持前文的`--workbench=off`。
 
 当前不启动或装配Memory。`18960`与`18970`在整个运行期间都应保持空闲；统一启动器
 拒绝`--memory=all|memmy|memorycore`，避免环境变量或历史命令静默恢复Memory。
 
+`431xx`只属于production；分支worktree、VS Code F5和测试不得占用。CLI/VS Code debug固定
+使用`441xx`，Playwright真实浏览器门固定使用`451xx/452xx/453xx`。测试专属端口被占用时
+失败关闭，不调用production的`debug:preclean`，也不停止LaunchAgent。
+
 `dev:stop`完成后，production的43110、43111、43112、43114、43115与43119都应释放；
-`dev:debug:stop`只释放debug的44110、44111、44112、44114、44115、44120、44121、44122与44123，不影响production。
+`dev:debug:stop`只释放debug的44110、44111、44112、44114、44115、44119、44120、44121、44122与44123，不影响production。
 18960/18970与19960/19970应始终未被默认服务图占用，
 code-server的Unix socket和Terminal子进程也应被受管回收。不要用`killall`、`pkill`或
 直接删除`.data`替代停止命令；`.data`还可能包含产品数据和运行证据。

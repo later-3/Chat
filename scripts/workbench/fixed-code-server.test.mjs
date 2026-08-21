@@ -34,6 +34,7 @@ import {
   parseReportedCodeServerVersion,
   prepareIsolatedShellHome,
   releasePrepareLock,
+  resolveCodeServerPrepareLeasePort,
   runtimeManifestSha256,
   runtimeSupportsManagedExtensionsGallery,
   sha256File,
@@ -276,6 +277,22 @@ describe("fixed code-server runtime contracts", () => {
     const replacement = await acquireCodeServerPrepareLease(first.port);
     assert.equal(replacement.port, first.port);
     await replacement.release();
+  });
+
+  it("keeps production lease fixed and allows isolated debug/E2E lease injection", () => {
+    assert.equal(resolveCodeServerPrepareLeasePort({}), 43_119);
+    assert.equal(
+      resolveCodeServerPrepareLeasePort({ CHAT_CODE_WORKBENCH_LEASE_PORT: "45319" }),
+      45_319,
+    );
+    assert.throws(
+      () => resolveCodeServerPrepareLeasePort({ CHAT_CODE_WORKBENCH_LEASE_PORT: "not-a-port" }),
+      /有效TCP端口/u,
+    );
+    assert.throws(
+      () => resolveCodeServerPrepareLeasePort({ CHAT_CODE_WORKBENCH_LEASE_PORT: "70000" }),
+      /1024\.\.65535/u,
+    );
   });
 
   it("recovers an abandoned preparation lock but refuses a live owner", async () => {

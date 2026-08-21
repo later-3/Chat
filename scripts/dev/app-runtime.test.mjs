@@ -19,6 +19,7 @@ import {
   assertLocalSetupIdle,
   assertLocalSetupPrerequisites,
   createServiceDefinitions,
+  devUsage,
   parseDevArgs,
   preflightLocalRuntime,
   reclaimOwnedPortOccupants,
@@ -86,6 +87,8 @@ test("统一启动器固定关闭Memory且拒绝重新启用", () => {
   assert.throws(() => parseDevArgs(["--memory=memmy"]), /冻结关闭/u);
   assert.throws(() => parseDevArgs(["--memory=all"]), /冻结关闭/u);
   assert.throws(() => parseDevArgs(["--workbench=unknown"]), /只支持/u);
+  assert.match(devUsage(), /pnpm dev \[--memory=off\] \[--workbench=off\|code-server\]/u);
+  assert.doesNotMatch(devUsage(), /pnpm dev \[-- --/u);
 });
 
 test("本地setup在写入运行缓存前锁定平台、Node、pnpm与系统工具", () => {
@@ -113,7 +116,7 @@ test("本地setup在写入运行缓存前锁定平台、Node、pnpm与系统工�
     calls.map(([command]) => command),
     ["pnpm", "git", "tar", "npm"],
   );
-  assert.match(setupUsage(), /pnpm run setup/u);
+  assert.match(setupUsage(), /pnpm run setup \[--memory=off\]/u);
 
   assert.throws(
     () =>
@@ -240,6 +243,37 @@ test("服务图永远不启动或装配Memory", () => {
   );
 });
 
+test("推荐启动图固定为1个Supervisor与4个子进程，Workbench只显式增加wrapper", () => {
+  const core = createServiceDefinitions({
+    root: ROOT,
+    memory: "off",
+    workbench: "off",
+    environment: {},
+  });
+  assert.deepEqual(
+    core.map((service) => service.id),
+    ["piExecutor", "workflow", "api", "web"],
+  );
+  const web = core.find((service) => service.id === "web");
+  assert.equal(web.port, 43_110);
+  assert.equal(web.env.DSH_WEB_PORT, "43114");
+
+  const withWorkbench = createServiceDefinitions({
+    root: ROOT,
+    memory: "off",
+    workbench: "code-server",
+    environment: {},
+  });
+  assert.deepEqual(
+    withWorkbench.map((service) => service.id),
+    ["piExecutor", "workflow", "api", "workbench", "web"],
+  );
+  assert.equal(
+    withWorkbench.find((service) => service.id === "workbench").env.CHAT_CODE_WORKBENCH_LEASE_PORT,
+    "43119",
+  );
+});
+
 test("Workbench只接收显式安全环境并把唯一仓库根映射给code-server", () => {
   const services = createServiceDefinitions({
     root: ROOT,
@@ -255,6 +289,7 @@ test("Workbench只接收显式安全环境并把唯一仓库根映射给code-ser
   assert.equal(workbench.env.CHAT_REPO_ROOT, ROOT);
   assert.equal(workbench.env.CHAT_CODE_WORKBENCH_ROOT, ROOT);
   assert.equal(workbench.env.CHAT_FIXED_SOURCE_CACHE_ROOT, "/workspace/cache");
+  assert.equal(workbench.env.CHAT_CODE_WORKBENCH_LEASE_PORT, "43119");
   assert.equal(
     workbench.env.CHAT_CODE_WORKBENCH_RUN_ROOT,
     "/workspace/chat/.data/workbench/code-server",
@@ -266,26 +301,33 @@ test("Workbench只接收显式安全环境并把唯一仓库根映射给code-ser
   assert.equal(workbench.port, undefined);
 });
 
-test("launcher与独立status从同一输入重建Workbench run/temp/cache合同", () => {
+test("launcher与独立status从同一输入重建Workbench run/temp/cache/lease合同", () => {
   const environment = {
     CHAT_CODE_WORKBENCH_RUN_ROOT: "/workspace/run/code-server",
     CHAT_CODE_WORKBENCH_TEMP_PARENT: "/tmp",
     CHAT_FIXED_SOURCE_CACHE_ROOT: "/workspace/shared-cache",
+    CHAT_CODE_WORKBENCH_LEASE_PORT: "45319",
   };
   const contract = resolveLocalWorkbenchRuntimeContract(ROOT, environment);
   assert.deepEqual(contract, {
     CHAT_CODE_WORKBENCH_RUN_ROOT: "/workspace/run/code-server",
     CHAT_CODE_WORKBENCH_TEMP_PARENT: realpathSync("/tmp"),
     CHAT_FIXED_SOURCE_CACHE_ROOT: "/workspace/shared-cache",
+    CHAT_CODE_WORKBENCH_LEASE_PORT: "45319",
   });
   const workbench = createServiceDefinitions({
     root: ROOT,
     environment,
   }).find((service) => service.id === "workbench");
-  assert.deepEqual(
-    Object.fromEntries(Object.keys(contract).map((name) => [name, workbench.env[name]])),
-    contract,
-  );
+  for (const name of [
+    "CHAT_CODE_WORKBENCH_RUN_ROOT",
+    "CHAT_CODE_WORKBENCH_TEMP_PARENT",
+    "CHAT_FIXED_SOURCE_CACHE_ROOT",
+  ]) {
+    assert.equal(workbench.env[name], contract[name]);
+  }
+  // createServiceDefinitions拥有production实例，不能让调用方把其租约改到E2E端口。
+  assert.equal(workbench.env.CHAT_CODE_WORKBENCH_LEASE_PORT, "43119");
 });
 
 test("running status复用严格合同并显示Unix transport、instance、PID与healthy", async () => {
@@ -508,6 +550,7 @@ test("debug实例同时隔离端口、产品事实、Workflow、Runtime、Trace�
     "/workspace/chat/.data/instances/vscode-debug/browser-profile",
   );
   assert.equal(runtime.debugDir, "/workspace/chat/.data/instances/vscode-debug/processes");
+  assert.equal(runtime.environment.CHAT_CODE_WORKBENCH_LEASE_PORT, "44119");
 
   const services = createServiceDefinitions({
     root: ROOT,

@@ -1,4 +1,5 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 
 import { assertDshPluginRegistry } from "../dsh/plugin-registry.mjs";
@@ -12,12 +13,14 @@ import {
   runCommandOutput,
 } from "../dsh/profile-runtime.mjs";
 import {
+  DSH_PROMPT_STUDIO_E2E_PORTS,
+  DSH_PROMPT_THREE_GATES_E2E_PORTS,
+  DSH_REAL_E2E_PORTS,
   dshRealWebEnvironment,
   resolveDshRealSharedCacheRoot,
   resolveDshRealWorkbenchFixtureRoot,
 } from "./dsh-real-environment.mjs";
 import { cleanupDshRealWorkbench } from "./dsh-real-workbench-lifecycle.mjs";
-import { assertRetiredPortsEmpty } from "../debug/lib.mjs";
 import {
   FIXED_CODE_SERVER_VERSION,
   codeServerPlatformKey,
@@ -43,6 +46,25 @@ const expectedRoot = resolve(
   repoRoot,
   promptThreeGatesOnly ? ".data/e2e/dsh-prompt-three-gates-real" : ".data/e2e/dsh-real",
 );
+
+async function assertE2ePortsFree(ports) {
+  for (const port of ports) {
+    const server = createServer();
+    await new Promise((resolvePort, rejectPort) => {
+      server.once("error", (error) => {
+        rejectPort(
+          new Error(
+            `DSH E2E专属端口${String(port)}已被占用；测试拒绝清理未知进程或借用production端口`,
+            { cause: error },
+          ),
+        );
+      });
+      server.listen({ host: "127.0.0.1", port, exclusive: true }, () => {
+        server.close((error) => (error === undefined ? resolvePort() : rejectPort(error)));
+      });
+    });
+  }
+}
 
 if (
   args.some(
@@ -79,11 +101,15 @@ if (
 
 // 必须先用仍存在的受管evidence回收上轮wrapper/child/socket，再删除可再生目录；
 // 反过来会永久丢失Unix socket进程身份，Ctrl-C后的PTY child将无法安全识别。
-// 退役43113必须在legacy evidence回收前失败关闭；旧受管监听者也不自动终止。
-if (!promptThreeGatesOnly) await assertRetiredPortsEmpty();
 if (!promptThreeGatesOnly) {
   await cleanupDshRealWorkbench(repoRoot, { environment: process.env });
 }
+const reservedPorts = promptStudioOnly
+  ? Object.values(DSH_PROMPT_STUDIO_E2E_PORTS)
+  : promptThreeGatesOnly
+    ? Object.values(DSH_PROMPT_THREE_GATES_E2E_PORTS)
+    : Object.values(DSH_REAL_E2E_PORTS);
+await assertE2ePortsFree(reservedPorts);
 rmSync(dataRoot, { recursive: true, force: true });
 mkdirSync(dataRoot, { recursive: true });
 const promptThreeGatesTempRoot = promptThreeGatesOnly

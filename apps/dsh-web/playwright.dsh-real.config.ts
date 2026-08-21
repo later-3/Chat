@@ -1,6 +1,9 @@
 import { resolve } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 import {
+  DSH_PROMPT_STUDIO_E2E_PORTS,
+  DSH_PROMPT_THREE_GATES_E2E_PORTS,
+  DSH_REAL_E2E_PORTS,
   dshRealWebEnvironment,
   dshRealWorkbenchEnvironment,
 } from "../../scripts/e2e/dsh-real-environment.mjs";
@@ -10,14 +13,6 @@ const pwaOnly = process.env.CHAT_DSH_E2E_MODE === "pwa-only";
 const trajectoryOnly = process.env.CHAT_DSH_E2E_MODE === "trajectory-only";
 const promptStudioOnly = process.env.CHAT_DSH_E2E_MODE === "prompt-studio-only";
 const promptThreeGatesOnly = process.env.CHAT_DSH_E2E_MODE === "prompt-three-gates-only";
-const promptStudioWebPort = 45_110;
-const promptThreeGatesPorts = Object.freeze({
-  web: 45_210,
-  api: 45_211,
-  workflow: 45_212,
-  webInternal: 45_214,
-  pi: 45_215,
-});
 const providerEnvironmentModule = "../../scripts/debug/load-provider-env.mjs";
 if (!workbenchOnly && !pwaOnly && !promptStudioOnly) await import(providerEnvironmentModule);
 
@@ -53,7 +48,7 @@ const promptThreeGatesEnvironment = {
 const codeServer = {
   command: "node scripts/workbench/start-fixed-code-server.mjs",
   cwd: repoRoot,
-  port: 43_119,
+  port: DSH_REAL_E2E_PORTS.workbenchLease,
   reuseExistingServer: false,
   timeout: 180_000,
   env: dshRealWorkbenchEnvironment(repoRoot, process.env),
@@ -61,49 +56,49 @@ const codeServer = {
 const workflow = {
   command: "pnpm --filter @chat/workflows start:runtime",
   cwd: repoRoot,
-  url: "http://127.0.0.1:43112/healthz",
+  url: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.workflow)}/healthz`,
   reuseExistingServer: false,
   timeout: 180_000,
   env: {
     ...sharedEnvironment,
-    CHAT_WORKFLOW_PORT: "43112",
+    CHAT_WORKFLOW_PORT: String(DSH_REAL_E2E_PORTS.workflow),
     CHAT_WORKFLOW_DATA_DIR: resolve(dataRoot, "workflow"),
     CHAT_RUNTIME_BINDINGS_PATH: resolve(dataRoot, "runtime-bindings.v1.json"),
-    CHAT_API_INTERNAL_BASE_URL: "http://127.0.0.1:43111",
-    CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: "http://127.0.0.1:43115",
+    CHAT_API_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.api)}`,
+    CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.piExecutor)}`,
   },
 } as const;
 const piExecutor = {
   command: "pnpm --filter @chat/pi-executor start",
   cwd: repoRoot,
-  url: "http://127.0.0.1:43115/healthz",
+  url: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.piExecutor)}/healthz`,
   reuseExistingServer: false,
   timeout: 180_000,
   env: {
     ...sharedEnvironment,
-    CHAT_PI_EXECUTOR_PORT: "43115",
+    CHAT_PI_EXECUTOR_PORT: String(DSH_REAL_E2E_PORTS.piExecutor),
     CHAT_PI_EXECUTOR_DATA_DIR: resolve(dataRoot, "pi-executor"),
-    CHAT_API_INTERNAL_BASE_URL: "http://127.0.0.1:43111",
+    CHAT_API_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.api)}`,
   },
 } as const;
 const api = {
   command: "pnpm --filter @chat/api start",
   cwd: repoRoot,
-  url: "http://127.0.0.1:43111/api/readyz",
+  url: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.api)}/api/readyz`,
   reuseExistingServer: false,
   timeout: 180_000,
   env: {
     ...sharedEnvironment,
-    PORT: "43111",
+    PORT: String(DSH_REAL_E2E_PORTS.api),
     CHAT_API_HOST: "127.0.0.1",
     CHAT_PRODUCT_STORE_PATH: resolve(dataRoot, "product-store.v1.json"),
-    CHAT_WORKFLOW_BASE_URL: "http://127.0.0.1:43112",
+    CHAT_WORKFLOW_BASE_URL: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.workflow)}`,
   },
 } as const;
 const dsh = {
   command: "node scripts/e2e/start-dsh-real.mjs",
   cwd: repoRoot,
-  url: "http://127.0.0.1:43110/",
+  url: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.web)}/`,
   reuseExistingServer: false,
   timeout: 120_000,
   env: dshRealWebEnvironment(repoRoot, process.env),
@@ -111,7 +106,7 @@ const dsh = {
 const dshPwa = {
   command: "node scripts/e2e/start-dsh-pwa-real.mjs",
   cwd: repoRoot,
-  url: "http://127.0.0.1:43110/healthz",
+  url: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.web)}/healthz`,
   reuseExistingServer: false,
   timeout: 120_000,
   env: dshRealWebEnvironment(repoRoot, process.env),
@@ -119,7 +114,7 @@ const dshPwa = {
 const trajectoryApi = {
   command: "node scripts/e2e/start-dsh-trajectory-api.mjs",
   cwd: repoRoot,
-  url: "http://127.0.0.1:43111/api/readyz",
+  url: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.api)}/api/readyz`,
   reuseExistingServer: false,
   timeout: 30_000,
   env: sharedEnvironment,
@@ -127,7 +122,7 @@ const trajectoryApi = {
 const promptStudioRuntime = {
   command: "node scripts/e2e/start-dsh-prompt-studio-real.mjs",
   cwd: repoRoot,
-  url: `http://127.0.0.1:${String(promptStudioWebPort)}/healthz`,
+  url: `http://127.0.0.1:${String(DSH_PROMPT_STUDIO_E2E_PORTS.web)}/healthz`,
   reuseExistingServer: false,
   timeout: 180_000,
   env: sharedEnvironment,
@@ -135,56 +130,56 @@ const promptStudioRuntime = {
 const promptThreeGatesPiExecutor = {
   command: "pnpm --filter @chat/pi-executor start",
   cwd: repoRoot,
-  url: `http://127.0.0.1:${String(promptThreeGatesPorts.pi)}/healthz`,
+  url: `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.piExecutor)}/healthz`,
   reuseExistingServer: false,
   timeout: 180_000,
   env: {
     ...promptThreeGatesEnvironment,
-    CHAT_PI_EXECUTOR_PORT: String(promptThreeGatesPorts.pi),
+    CHAT_PI_EXECUTOR_PORT: String(DSH_PROMPT_THREE_GATES_E2E_PORTS.piExecutor),
     CHAT_PI_EXECUTOR_DATA_DIR: resolve(dataRoot, "pi-executor"),
-    CHAT_API_INTERNAL_BASE_URL: `http://127.0.0.1:${String(promptThreeGatesPorts.api)}`,
+    CHAT_API_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.api)}`,
   },
 } as const;
 const promptThreeGatesWorkflow = {
   command: "pnpm --filter @chat/workflows start:runtime",
   cwd: repoRoot,
-  url: `http://127.0.0.1:${String(promptThreeGatesPorts.workflow)}/healthz`,
+  url: `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.workflow)}/healthz`,
   reuseExistingServer: false,
   timeout: 180_000,
   env: {
     ...promptThreeGatesEnvironment,
-    CHAT_WORKFLOW_PORT: String(promptThreeGatesPorts.workflow),
+    CHAT_WORKFLOW_PORT: String(DSH_PROMPT_THREE_GATES_E2E_PORTS.workflow),
     CHAT_WORKFLOW_DATA_DIR: resolve(dataRoot, "workflow"),
     CHAT_RUNTIME_BINDINGS_PATH: resolve(dataRoot, "runtime-bindings.v1.json"),
-    CHAT_API_INTERNAL_BASE_URL: `http://127.0.0.1:${String(promptThreeGatesPorts.api)}`,
-    CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${String(promptThreeGatesPorts.pi)}`,
+    CHAT_API_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.api)}`,
+    CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.piExecutor)}`,
   },
 } as const;
 const promptThreeGatesApi = {
   command: "pnpm --filter @chat/api start",
   cwd: repoRoot,
-  url: `http://127.0.0.1:${String(promptThreeGatesPorts.api)}/api/readyz`,
+  url: `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.api)}/api/readyz`,
   reuseExistingServer: false,
   timeout: 180_000,
   env: {
     ...promptThreeGatesEnvironment,
-    PORT: String(promptThreeGatesPorts.api),
+    PORT: String(DSH_PROMPT_THREE_GATES_E2E_PORTS.api),
     CHAT_API_HOST: "127.0.0.1",
     CHAT_PRODUCT_STORE_PATH: resolve(dataRoot, "product-store.v1.json"),
-    CHAT_WORKFLOW_BASE_URL: `http://127.0.0.1:${String(promptThreeGatesPorts.workflow)}`,
+    CHAT_WORKFLOW_BASE_URL: `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.workflow)}`,
   },
 } as const;
 const promptThreeGatesDsh = {
   command: "node scripts/e2e/start-dsh-pwa-real.mjs",
   cwd: repoRoot,
-  url: `http://127.0.0.1:${String(promptThreeGatesPorts.web)}/healthz`,
+  url: `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.web)}/healthz`,
   reuseExistingServer: false,
   timeout: 120_000,
   env: dshRealWebEnvironment(repoRoot, {
     ...promptThreeGatesEnvironment,
-    CHAT_API_BASE_URL: `http://127.0.0.1:${String(promptThreeGatesPorts.api)}`,
-    CHAT_PUBLIC_WEB_PORT: String(promptThreeGatesPorts.web),
-    CHAT_DSH_INTERNAL_WEB_PORT: String(promptThreeGatesPorts.webInternal),
+    CHAT_API_BASE_URL: `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.api)}`,
+    CHAT_PUBLIC_WEB_PORT: String(DSH_PROMPT_THREE_GATES_E2E_PORTS.web),
+    CHAT_DSH_INTERNAL_WEB_PORT: String(DSH_PROMPT_THREE_GATES_E2E_PORTS.webInternal),
     // 该门只监听隔离loopback端口，浏览器又使用全新无状态Context；不得继承
     // 正式部署的Web登录开关或读取用户凭据文件。Provider配置仍只给API/Pi进程。
     CHAT_PUBLIC_WEB_HOSTNAME: undefined,
@@ -221,10 +216,10 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${String(
       promptStudioOnly
-        ? promptStudioWebPort
+        ? DSH_PROMPT_STUDIO_E2E_PORTS.web
         : promptThreeGatesOnly
-          ? promptThreeGatesPorts.web
-          : 43_110,
+          ? DSH_PROMPT_THREE_GATES_E2E_PORTS.web
+          : DSH_REAL_E2E_PORTS.web,
     )}`,
     trace: "off",
     screenshot: "off",

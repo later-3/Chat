@@ -1,12 +1,12 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { installDshWebEnvironment, resolveDshBin } from "../dsh/profile-runtime.mjs";
 import {
-  DSH_INTERNAL_WEB_HOST,
-  DSH_INTERNAL_WEB_PORT,
-  startWebGateway,
-} from "../dsh/web-gateway.mjs";
+  installDshWebEnvironment,
+  resolveDshBin,
+  resolveDshWebRuntime,
+} from "../dsh/profile-runtime.mjs";
+import { startWebGateway } from "../dsh/web-gateway.mjs";
 import { probeCodeServerSocketReady } from "../workbench/fixed-code-server.mjs";
 import {
   dshRealWebEnvironment,
@@ -57,20 +57,21 @@ if (workbenchEvidence === undefined) {
 
 const executable = resolveDshBin(repoRoot);
 installDshWebEnvironment(process.env, dshRealWebEnvironment(repoRoot, process.env));
+const runtime = resolveDshWebRuntime(repoRoot, process.env);
 process.chdir(repoRoot);
 process.argv = [
   process.execPath,
   executable,
   "web",
   "--host",
-  DSH_INTERNAL_WEB_HOST,
+  runtime.host,
   "--port",
-  String(DSH_INTERNAL_WEB_PORT),
+  String(runtime.port),
 ];
 
 const gateway = await startWebGateway({
   targets: {
-    dsh: { host: DSH_INTERNAL_WEB_HOST, port: DSH_INTERNAL_WEB_PORT },
+    dsh: { host: runtime.host, port: runtime.port },
     workbench: { socketPath: workbenchEvidence.socketPath },
   },
   logger(error) {
@@ -84,7 +85,7 @@ process.once("SIGINT", closeGateway);
 process.once("SIGTERM", closeGateway);
 
 try {
-  // 与正式启动器相同：同一受监督PID拥有43110 Gateway与43114 DSH Host。
+  // 与正式启动器同构，但使用E2E专属45310 Gateway与45314 DSH Host。
   await import(pathToFileURL(executable).href);
 } catch (error) {
   await gateway.close();

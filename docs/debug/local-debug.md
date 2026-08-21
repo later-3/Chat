@@ -13,7 +13,14 @@
 | Workflow Inspector | `127.0.0.1:43121`（production不启用） | `127.0.0.1:44121` |
 | Pi Executor Inspector | `127.0.0.1:43122`（production不启用） | `127.0.0.1:44122` |
 | DSH Host / LifeOS Bridge Inspector | `127.0.0.1:43123`（production不启用） | `127.0.0.1:44123` |
-| Code Workbench | 受管Unix socket；浏览器入口`localhost:43110` | 固定关闭 |
+| Code Workbench | 受管Unix socket；租约`43119`；浏览器入口`localhost:43110` | 固定关闭；`44119`保留给debug实例 |
+
+端口所有权是失败关闭合同：`431xx`只允许LaunchAgent或显式前台production使用；任何分支、
+worktree、VS Code F5和测试都不能借用。VS Code“Chat：调试应用”与`pnpm dev:debug`只使用
+`441xx`，一个时刻只运行一个交互式debug worktree。Playwright真实门分别使用
+`451xx`（Prompt Studio）、`452xx`（三闸门）和`453xx`（通用DSH/E2E）；端口占用时只报告
+并失败，不运行production `debug:preclean`或终止未知进程。Memory保留位`18960/18970`和
+`19960/19970`当前必须空闲。
 
 production使用主checkout的`.data`；F5/debug使用当前worktree的
 `.data/instances/vscode-debug`。Product Store、Workflow Store、Runtime Binding/Key、Trace、
@@ -29,8 +36,8 @@ checkout由LaunchAgent运行；不要在同一个主checkout中一边改源码�
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm run setup
-pnpm dev
+pnpm run setup --memory=off --workbench=off
+pnpm dev --memory=off --workbench=off
 pnpm dev:debug
 pnpm dev:status
 pnpm dev:stop
@@ -49,13 +56,14 @@ pnpm run setup --instance=debug
 
 `pnpm run setup`默认只准备code-server、Workflow Bundle与DSH Bridge/Profile，不准备或启动Memory；
 检测到本仓库已有服务时只失败关闭，不执行preclean或Workflow版本收敛；
-`pnpm dev`属于production实例，会复核同一批证据后启动Pi Executor、Workflow、API、code-server和DSH/Gateway；
-若LaunchAgent已常驻，不要再运行它。`pnpm dev:debug`与VS Code F5属于debug实例，可在production
+`pnpm dev`属于production实例；推荐显式`--memory=off --workbench=off`，启动Pi Executor、
+Workflow、API和DSH/Gateway。显式`--workbench=code-server`才增加Beta Workbench；
+若LaunchAgent已常驻，不要再运行production入口。`pnpm dev:debug`与VS Code F5属于debug实例，可在production
 继续服务PWA时并行启动相同的Pi Executor、Workflow、API和DSH服务图；API与Workflow同样不会实例化Memory Adapter。
 Memory源码与独立测试保留，但统一安装、VS Code F5和开发启动器当前都没有启用入口。
 Workbench当前为Beta，不属于通用CI/CD完成门；debug实例强制`--workbench=off`，避免本机权限工作台
 跨进程边界进入公网或调试实例。
-启用Beta Workbench时，终端SIGINT或
+VS Code F5是Node/Chrome调试合同，不另起占用production端口的GDB服务。启用Beta Workbench时，终端SIGINT或
 `pnpm dev:stop`必须反向停止并释放端口与Terminal子进程。
 
 ## DSH调试

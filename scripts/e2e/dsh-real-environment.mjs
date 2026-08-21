@@ -4,6 +4,34 @@ import { join, resolve } from "node:path";
 import { dshWebEnvironment } from "../dsh/profile-runtime.mjs";
 import { resolveCodeServerTemporaryParent } from "../workbench/fixed-code-server.mjs";
 
+/**
+ * 真实浏览器门拥有独立的45xxx端口族，绝不借用LaunchAgent production的431xx，
+ * 也不与VS Code/CLI debug的441xx竞争。不同E2E Profile再按百位分组，允许失败关闭。
+ */
+export const DSH_PROMPT_STUDIO_E2E_PORTS = Object.freeze({
+  web: 45_110,
+  api: 45_111,
+  workflowPlaceholder: 45_112,
+  webInternal: 45_114,
+});
+
+export const DSH_PROMPT_THREE_GATES_E2E_PORTS = Object.freeze({
+  web: 45_210,
+  api: 45_211,
+  workflow: 45_212,
+  webInternal: 45_214,
+  piExecutor: 45_215,
+});
+
+export const DSH_REAL_E2E_PORTS = Object.freeze({
+  web: 45_310,
+  api: 45_311,
+  workflow: 45_312,
+  webInternal: 45_314,
+  piExecutor: 45_315,
+  workbenchLease: 45_319,
+});
+
 export function resolveDshRealDataRoot(root, environment = process.env) {
   const repoRoot = resolve(root);
   const configured = environment.CHAT_DSH_E2E_DATA_ROOT?.trim();
@@ -79,6 +107,7 @@ export function dshRealWorkbenchEnvironment(root, environment = process.env) {
     CHAT_CODE_WORKBENCH_RUN_ROOT: resolveDshRealWorkbenchRunRoot(root),
     CHAT_FIXED_SOURCE_CACHE_ROOT: resolveDshRealSharedCacheRoot(root),
     CHAT_CODE_WORKBENCH_TEMP_PARENT: resolveDshRealWorkbenchTempParent(environment),
+    CHAT_CODE_WORKBENCH_LEASE_PORT: String(DSH_REAL_E2E_PORTS.workbenchLease),
   };
 }
 
@@ -92,7 +121,12 @@ export function dshRealWebEnvironment(root, environment = process.env) {
   const dshHome = join(dataRoot, "dsh-home");
   const safe = dshWebEnvironment(repoRoot, {
     ...environment,
-    CHAT_API_BASE_URL: environment.CHAT_API_BASE_URL?.trim() || "http://127.0.0.1:43111",
+    CHAT_API_BASE_URL:
+      environment.CHAT_API_BASE_URL?.trim() || `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.api)}`,
+    CHAT_PUBLIC_WEB_PORT:
+      environment.CHAT_PUBLIC_WEB_PORT?.trim() || String(DSH_REAL_E2E_PORTS.web),
+    CHAT_DSH_INTERNAL_WEB_PORT:
+      environment.CHAT_DSH_INTERNAL_WEB_PORT?.trim() || String(DSH_REAL_E2E_PORTS.webInternal),
     CHAT_DSH_STATE_PATH: join(dataRoot, "bridge", "state.json"),
   });
   const hostHome = join(dshHome, "host-home");

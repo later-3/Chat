@@ -61,6 +61,23 @@ const EVIDENCE_SCHEMA = "chat-fixed-code-server-runtime.v1";
 const RELEASE_BASE = `https://github.com/coder/code-server/releases/download/v${FIXED_CODE_SERVER_VERSION}`;
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
 
+/**
+ * 43119只属于production；debug与E2E必须由各自实例显式注入独立租约端口。
+ * 端口只承担进程互斥，不提供HTTP或Workbench内容。
+ */
+export function resolveCodeServerPrepareLeasePort(environment = process.env) {
+  const configured = environment.CHAT_CODE_WORKBENCH_LEASE_PORT?.trim();
+  if (configured === undefined || configured === "") return FIXED_CODE_SERVER_PREPARE_LOCK_PORT;
+  if (!/^\d+$/u.test(configured)) {
+    throw new Error("CHAT_CODE_WORKBENCH_LEASE_PORT必须是有效TCP端口");
+  }
+  const port = Number.parseInt(configured, 10);
+  if (!Number.isInteger(port) || port < 1_024 || port > 65_535) {
+    throw new Error("CHAT_CODE_WORKBENCH_LEASE_PORT必须在1024..65535之间");
+  }
+  return port;
+}
+
 export const FIXED_CODE_SERVER_ASSETS = Object.freeze({
   "darwin-arm64": Object.freeze({
     name: `code-server-${FIXED_CODE_SERVER_VERSION}-macos-arm64.tar.gz`,
@@ -831,7 +848,7 @@ export async function ensureFixedCodeServer(
   const cacheParent = dirname(cacheRoot);
   mkdirSync(cacheParent, { recursive: true });
   const lockPath = `${cacheRoot}.prepare-lock`;
-  const lease = await acquireCodeServerPrepareLease();
+  const lease = await acquireCodeServerPrepareLease(resolveCodeServerPrepareLeasePort(environment));
   let stage;
   let environmentRoot;
   let lockAcquired = false;
