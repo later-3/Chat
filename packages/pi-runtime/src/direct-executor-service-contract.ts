@@ -39,7 +39,7 @@ export const authorizedDirectAgentProfileSchema = z
     runRevision: z.number().int().positive(),
     sourceMessageId: messageIdSchema,
     sourceMessageSha256: sha256Schema,
-    capabilityMode: z.literal("read_only"),
+    capabilityMode: z.enum(["read_only", "project_bootstrap"]),
     limits: directAgentLimitsSchema,
   })
   .strict();

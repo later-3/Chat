@@ -1,6 +1,7 @@
 import {
   createSnapshotStore,
   type ClientContext,
+  type ISessions,
   type SessionId,
 } from "@deepseek-ai/dsh-client-runtime/client";
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
@@ -24,6 +25,11 @@ import { PromptStudioController } from "./prompt-studio-controller.ts";
 import { installPromptStudioStyles } from "./prompt-studio-styles.ts";
 import { PromptComposerController } from "./prompt-composer-controller.ts";
 import { PromptControlBar, type PromptControlBarInjected } from "./PromptControlBar.tsx";
+import {
+  ProjectBootstrapSidebarAction,
+  type ProjectBootstrapSidebarInjected,
+} from "./ProjectBootstrapSidebarAction.tsx";
+import { projectBootstrapPresetSchema } from "../contracts.ts";
 
 export const name = "chat-dsh-lifeos-bridge-client";
 export const inject = ["slots", "conversationEvents"];
@@ -51,6 +57,56 @@ export function apply(ctx: ClientContext): void {
   }, "lifeos bridge: execution trace trajectory");
   const workbench = new WorkbenchSurfaceController();
   const promptStudio = new PromptStudioController();
+  // `@deepseek-ai/dsh-session`与浏览器Runtime都扩展Cordis的`sessions`键；此处运行在
+  // Client插件根，真实对象是公开ISessions face，显式收窄避免服务端类型声明污染。
+  const clientSessions = ctx.sessions as unknown as ISessions;
+  const startProjectBootstrap = async (): Promise<void> => {
+    const presetResponse = await fetch("/lifeos/project-bootstrap/preset", {
+      credentials: "same-origin",
+      headers: { accept: "application/json" },
+    });
+    const presetJson = (await presetResponse.json()) as unknown;
+    if (!presetResponse.ok) throw new Error("项目初始化配置不可用");
+    const preset = projectBootstrapPresetSchema.parse(presetJson);
+    if (!preset.enabled) throw new Error("当前部署未配置Plane CE项目初始化能力");
+    // DSH会复用当前Workspace里的空白Session。若用户已经停在那个空白Session，单纯比较
+    // current前后无法知道`startSession()`已完成。先通过公开Sessions face清除选择，再启动
+    // New Session flow，使新目标必然从undefined变为精确Session ID；这不归档或删除旧会话。
+    clientSessions.clear();
+    ctx.workspaces.startSession();
+    const sessionId = await new Promise<SessionId>((resolve, reject) => {
+      let settled = false;
+      const finish = (value: SessionId): void => {
+        if (settled) return;
+        settled = true;
+        unsubscribe();
+        clearTimeout(timeout);
+        resolve(value);
+      };
+      const inspect = (): void => {
+        const current = clientSessions.list.getSnapshot().current;
+        if (current !== undefined) finish(current);
+      };
+      const unsubscribe = clientSessions.list.subscribe(inspect);
+      const timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        unsubscribe();
+        reject(new Error("DSH未能创建新的项目会话"));
+      }, 8_000);
+      inspect();
+    });
+    const initialized = await fetch(
+      `/lifeos/project-bootstrap/sessions/${encodeURIComponent(String(sessionId))}/initialize`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { accept: "application/json" },
+      },
+    );
+    if (!initialized.ok) throw new Error("项目会话预设初始化失败");
+    clientSessions.open(sessionId);
+  };
   const controllers = new Map<SessionId, LifeosProjectionController>();
   const recordControllers = new Map<SessionId, SessionRecordsController>();
   const promptComposerControllers = new Map<SessionId, PromptComposerController>();
@@ -138,6 +194,18 @@ export function apply(ctx: ClientContext): void {
         },
       },
       SessionRecordsView,
+    ),
+  );
+
+  ctx.slots.inject("sidebar.footer.action", () =>
+    ctx.slots.register(
+      {
+        name: "sidebar.footer.action",
+        id: "lifeos-project-bootstrap",
+        order: 20,
+        inject: (): ProjectBootstrapSidebarInjected => ({ startProjectBootstrap }),
+      },
+      ProjectBootstrapSidebarAction,
     ),
   );
 
@@ -249,6 +317,15 @@ export function apply(ctx: ClientContext): void {
             decide: (request) => controller.decide(request),
             decideNote: (request) => controller.decideNote(request),
             decidePromptReview: (request) => controller.decidePromptReview(request),
+            decideProjectBootstrap: (request) => controller.decideProjectBootstrap(request),
+            openProjectWorkspace: async (cwd) => {
+              const workspace = await ctx.workspaces.create({ path: cwd });
+              const sessionId = await ctx.workspaces.connectWorkspace(workspace.workspaceId);
+              clientSessions.open(sessionId);
+            },
+            openPlaneProject: (url) => {
+              window.open(url, "_blank", "noopener,noreferrer");
+            },
             decideDshSendReview: (request) => controller.decideDshSendReview(request),
             decideBridgeDispatchReview: (request) => controller.decideBridgeDispatchReview(request),
           };

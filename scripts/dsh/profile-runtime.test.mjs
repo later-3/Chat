@@ -134,6 +134,10 @@ test("DSH进程显式接收Chat API与Bridge状态且剥离VS Code自动附加",
     DSH_TELEMETRY_OTLP_URL: "https://collector.example/v1/logs",
     DSH_TELEMETRY_FUTURE_OVERRIDE: "polluted",
     DASHSCOPE_API_KEY: "provider-secret",
+    CHAT_PLANE_CE_API_TOKEN: "plane-provider-secret",
+    CHAT_PLANE_CE_BASE_URL: "https://plane.example",
+    CHAT_PROJECT_CREATION_ROOTS_JSON:
+      '[{"rootId":"root_code","displayName":"Code","canonicalPath":"/workspace/code"}]',
     AWS_SECRET_ACCESS_KEY: "cloud-secret",
     GITHUB_TOKEN: "source-secret",
     HOME: "/Users/example",
@@ -159,6 +163,12 @@ test("DSH进程显式接收Chat API与Bridge状态且剥离VS Code自动附加",
   assert.equal(environment.DSH_TELEMETRY_OTLP_URL, undefined);
   assert.equal(environment.DSH_TELEMETRY_FUTURE_OVERRIDE, undefined);
   assert.equal(environment.DASHSCOPE_API_KEY, undefined);
+  assert.equal(environment.CHAT_PLANE_CE_API_TOKEN, undefined);
+  assert.equal(environment.CHAT_PLANE_CE_BASE_URL, undefined);
+  assert.equal(
+    environment.CHAT_PROJECT_CREATION_ROOTS_JSON,
+    '[{"rootId":"root_code","displayName":"Code","canonicalPath":"/workspace/code"}]',
+  );
   assert.equal(environment.AWS_SECRET_ACCESS_KEY, undefined);
   assert.equal(environment.GITHUB_TOKEN, undefined);
   assert.equal(environment.PATH, "/usr/bin:/bin");

@@ -74,6 +74,8 @@ import {
   commitPromptReviewDispatchOutcomeRuntimeResponseSchema,
   persistDirectAgentCandidateRuntimeRequestSchema,
   persistDirectAgentCandidateRuntimeResponseSchema,
+  prepareProjectBootstrapRuntimeRequestSchema,
+  prepareProjectBootstrapRuntimeResponseSchema,
   commitDirectAgentResultRuntimeRequestSchema,
   commitDirectAgentResultRuntimeResponseSchema,
   type ProblemDetail,
@@ -133,6 +135,7 @@ import {
   consumePromptReviewDecision,
   commitPromptReviewDispatchOutcome,
   persistDirectAgentCandidate,
+  prepareProjectBootstrapCandidateForRuntime,
   commitDirectAgentResult,
   type ApplicationDeps,
 } from "@chat/application";
@@ -391,6 +394,18 @@ export function createInternalRuntimeRouter(
         schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
         productRunId: request.productRunId,
         ...result,
+      });
+    }),
+  );
+
+  router.post(
+    DIRECT_AGENT_RUNTIME_PATHS.prepareProjectBootstrap,
+    handle(201, async (c) => {
+      const request = prepareProjectBootstrapRuntimeRequestSchema.parse(await parseInternalBody(c));
+      const candidate = await prepareProjectBootstrapCandidateForRuntime(options.deps, request);
+      return prepareProjectBootstrapRuntimeResponseSchema.parse({
+        schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+        candidate,
       });
     }),
   );

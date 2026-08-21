@@ -11,6 +11,7 @@ import {
   type LifeosWorkflowOption,
   type NoteDecisionRequest,
   type PromptReviewDecisionRequest,
+  type ProjectBootstrapDecisionRequest,
   type WorkflowSelection,
 } from "../contracts.ts";
 
@@ -261,6 +262,15 @@ export class LifeosProjectionController {
       });
       return false;
     }
+  }
+
+  async decideProjectBootstrap(request: ProjectBootstrapDecisionRequest): Promise<boolean> {
+    return await this.submitProjectionCommand(
+      `/lifeos/sessions/${encodeURIComponent(this.sessionId)}/project-bootstrap-decisions`,
+      "POST",
+      request,
+      "项目初始化决定提交失败",
+    );
   }
 
   /** 打开选择表面时按需拉取一次Workflow列表；失败只影响选择表面，不打扰运行投影。 */

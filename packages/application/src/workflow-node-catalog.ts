@@ -189,7 +189,7 @@ const directCapabilityModeField = (): PublicConfigField => ({
   name: "capabilityMode",
   label: "能力模式",
   defaultValue: "read_only",
-  options: ["read_only"],
+  options: ["read_only", "project_bootstrap"],
 });
 
 const directPromptReviewModeField = (): PublicConfigField => ({
@@ -415,7 +415,7 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
     description: "推进同一个Pi AgentSession；可在每次Provider发送前进入节点内部人工审核",
     category: "agent",
     configSchema: z.strictObject({
-      capabilityMode: z.enum(["read_only"]).default("read_only"),
+      capabilityMode: z.enum(["read_only", "project_bootstrap"]).default("read_only"),
       promptReviewMode: z.enum(["manual", "off"]).default("manual"),
     }),
     defaultConfig: { capabilityMode: "read_only", promptReviewMode: "manual" },

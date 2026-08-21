@@ -42,12 +42,19 @@ import { migrateProductSnapshotV11ToV12 } from "./migrate-v11-to-v12.js";
 import { migrateProductSnapshotV12ToV13 } from "./migrate-v12-to-v13.js";
 import { migrateProductSnapshotV13ToV14 } from "./migrate-v13-to-v14.js";
 import { migrateProductSnapshotV14ToV15 } from "./migrate-v14-to-v15.js";
-import { migrateProductSnapshotV15ToV16 } from "./migrate-v15-to-v16.js";
+import { migrateProductSnapshotV15ToV16 as migrateProductSnapshotV15ToV16Legacy } from "./migrate-v15-to-v16.js";
+import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
 import { productSnapshotV13Schema } from "./legacy-v13.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 import { computePromptFragmentRevisionSha256 } from "@chat/domain";
 
 const NOW = "2026-08-10T12:00:00.000Z";
+
+function migrateProductSnapshotV15ToV16(
+  snapshot: Parameters<typeof migrateProductSnapshotV15ToV16Legacy>[0],
+): ProductSnapshot {
+  return migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(snapshot));
+}
 
 function ids(): IdFactory {
   let sequence = 0;
@@ -100,6 +107,10 @@ function emptyV6() {
     "promptFragments",
     "promptFragmentRevisions",
     "promptAssemblies",
+    "projectBootstrapCandidates",
+    "projectBootstrapDecisions",
+    "projectBootstrapOperations",
+    "projectWorkspaceBindings",
   ]) {
     delete entities[key];
   }
@@ -444,16 +455,15 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     });
     expect(migrated.entities.promptFragmentRevisions).toEqual(v14.entities.promptFragmentRevisions);
     expect(migrated.entities.promptAssemblies).toEqual({});
-    expect(() => assertSnapshotIntegrity(migrateProductSnapshotV15ToV16(migrated))).not.toThrow();
+    const current = migrateProductSnapshotV15ToV16(migrated);
+    expect(() => assertSnapshotIntegrity(current)).not.toThrow();
 
-    const broken = structuredClone(migrated);
+    const broken = structuredClone(current);
     broken.entities.promptFragments["pfg_migrationglobal1"]!.scope = {
       kind: "workspace",
       rootId: "not-a-root",
     } as never;
-    expect(() => assertSnapshotIntegrity(migrateProductSnapshotV15ToV16(broken))).toThrow(
-      /root_|Scope非法/u,
-    );
+    expect(() => assertSnapshotIntegrity(broken)).toThrow(/root_|Scope非法/u);
   });
 
   it.each([

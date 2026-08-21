@@ -10,6 +10,7 @@ import {
   noteDecisionRequestSchema,
   promptSelectionRequestSchema,
   promptReviewDecisionRequestSchema,
+  projectBootstrapDecisionRequestSchema,
   workflowSelectionRequestSchema,
 } from "./contracts.ts";
 import { BridgeRequestError, LifeosBridgeService } from "./bridge-service.ts";
@@ -44,12 +45,17 @@ const BRIDGE_DISPATCH_REVIEW_DECISIONS_PATH =
 const DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/decisions$/;
 const NOTE_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/note-decisions$/;
 const PROMPT_REVIEW_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/prompt-review-decisions$/;
+const PROJECT_BOOTSTRAP_DECISION_PATH =
+  /^\/lifeos\/sessions\/([^/]+)\/project-bootstrap-decisions$/;
 const WORKFLOW_SELECTION_PATH = /^\/lifeos\/sessions\/([^/]+)\/workflow-selection$/;
 const PROMPT_SELECTION_PATH = /^\/lifeos\/sessions\/([^/]+)\/prompt-selection$/;
 const SESSION_RECORDS_PATH = /^\/lifeos\/sessions\/([^/]+)\/records$/;
 const SESSION_RECORDS_CHAT_PATH = /^\/lifeos\/sessions\/([^/]+)\/records\/chat$/;
 const SESSION_RECORDS_DSH_PATH = /^\/lifeos\/sessions\/([^/]+)\/records\/dsh$/;
 const WORKFLOWS_PATH = /^\/lifeos\/workflows$/;
+const PROJECT_BOOTSTRAP_PRESET_PATH = /^\/lifeos\/project-bootstrap\/preset$/;
+const PROJECT_BOOTSTRAP_INITIALIZE_PATH =
+  /^\/lifeos\/project-bootstrap\/sessions\/([^/]+)\/initialize$/;
 const PROMPT_REGIONS_PATH = /^\/lifeos\/prompts\/regions$/;
 const PROMPT_WORKSPACES_PATH = /^\/lifeos\/prompts\/workspaces$/;
 const PROMPT_ASSEMBLY_PREVIEWS_PATH = /^\/lifeos\/prompts\/assembly-previews$/;
@@ -839,9 +845,44 @@ export function createLifeosRouteHandler(
         );
         return;
       }
+      const projectBootstrapDecisionMatch = PROJECT_BOOTSTRAP_DECISION_PATH.exec(url.pathname);
+      if (req.method === "POST" && projectBootstrapDecisionMatch !== null) {
+        const parsed = projectBootstrapDecisionRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_project_bootstrap_decision_invalid",
+            "Project Bootstrap Decision body is invalid",
+          );
+        }
+        sendJson(
+          res,
+          200,
+          await service.decideProjectBootstrap(
+            sessionIdFrom(projectBootstrapDecisionMatch),
+            parsed.data,
+          ),
+        );
+        return;
+      }
       const workflowsMatch = WORKFLOWS_PATH.exec(url.pathname);
       if (req.method === "GET" && workflowsMatch !== null) {
         sendJson(res, 200, await service.workflows());
+        return;
+      }
+      if (req.method === "GET" && PROJECT_BOOTSTRAP_PRESET_PATH.test(url.pathname)) {
+        sendJson(res, 200, await service.projectBootstrapPreset());
+        return;
+      }
+      const projectBootstrapInitializeMatch = PROJECT_BOOTSTRAP_INITIALIZE_PATH.exec(url.pathname);
+      if (req.method === "POST" && projectBootstrapInitializeMatch !== null) {
+        sendJson(
+          res,
+          200,
+          await service.initializeProjectBootstrapSession(
+            sessionIdFrom(projectBootstrapInitializeMatch),
+          ),
+        );
         return;
       }
       const promptSelectionMatch = PROMPT_SELECTION_PATH.exec(url.pathname);

@@ -57,9 +57,11 @@ import {
   migrateProductSnapshotV13ToV14,
   migrateProductSnapshotV14ToV15,
   migrateProductSnapshotV15ToV16,
+  migrateProductSnapshotV16ToV17,
   productSnapshotV1Schema,
   productSnapshotV10Schema,
   type ProductSnapshotV10,
+  type ProductSnapshotV16,
   type ProductSnapshotV1,
 } from "@chat/product-store-json";
 
@@ -92,6 +94,7 @@ type ProductSnapshotV8Fixture = ReturnType<typeof migrateProductSnapshotV7ToV8>;
 type ProductSnapshotV9Fixture = ReturnType<typeof migrateProductSnapshotV8ToV9>;
 type ProductSnapshotV11Fixture = ReturnType<typeof migrateProductSnapshotV10ToV11>;
 type ProductSnapshotV12Fixture = ReturnType<typeof migrateProductSnapshotV11ToV12>;
+type ProductSnapshotV15Fixture = ReturnType<typeof migrateProductSnapshotV14ToV15>;
 export type S7VersionedFixtureSnapshot =
   | ProductSnapshotV1
   | ProductSnapshotV2Fixture
@@ -105,6 +108,8 @@ export type S7VersionedFixtureSnapshot =
   | ProductSnapshotV10
   | ProductSnapshotV11Fixture
   | ProductSnapshotV12Fixture
+  | ProductSnapshotV15Fixture
+  | ProductSnapshotV16
   | ProductSnapshot;
 
 export interface S7VersionedFixtureManifestEntry {
@@ -261,7 +266,7 @@ export async function buildS7VersionedFixture(
 }
 
 export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot): ProductSnapshot {
-  if (snapshot.schemaVersion === "chat-product-store.v16") return structuredClone(snapshot);
+  if (snapshot.schemaVersion === "chat-product-store.v17") return structuredClone(snapshot);
   const v2 =
     snapshot.schemaVersion === "chat-product-store.v1"
       ? migrateProductSnapshotV1ToV2(snapshot)
@@ -286,7 +291,9 @@ export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot):
     v14.schemaVersion === "chat-product-store.v14" ? migrateProductSnapshotV14ToV15(v14) : v14;
   const v16 =
     v15.schemaVersion === "chat-product-store.v15" ? migrateProductSnapshotV15ToV16(v15) : v15;
-  return productSnapshotSchema.parse(v16);
+  return productSnapshotSchema.parse(
+    v16.schemaVersion === "chat-product-store.v16" ? migrateProductSnapshotV16ToV17(v16) : v16,
+  );
 }
 
 function toV10Fixture(snapshot: ProductSnapshot): ProductSnapshotV10 {
@@ -313,6 +320,10 @@ function toV10Fixture(snapshot: ProductSnapshot): ProductSnapshotV10 {
   delete entities["promptFragments"];
   delete entities["promptFragmentRevisions"];
   delete entities["promptAssemblies"];
+  delete entities["projectBootstrapCandidates"];
+  delete entities["projectBootstrapDecisions"];
+  delete entities["projectBootstrapOperations"];
+  delete entities["projectWorkspaceBindings"];
   return productSnapshotV10Schema.parse(downgraded);
 }
 

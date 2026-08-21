@@ -41,6 +41,10 @@ import type {
   PromptReviewRequestId,
   PromptReviewDecisionId,
   DirectAgentCandidateId,
+  ProjectBootstrapCandidateId,
+  ProjectBootstrapDecisionId,
+  ProjectBootstrapOperationId,
+  ProjectWorkspaceBindingId,
   ExecutionTracePage,
 } from "@chat/contracts";
 import type { PromptFragmentId, PromptFragmentRevisionId } from "@chat/contracts";
@@ -57,6 +61,10 @@ import type {
   ProjectResourceRootRegistryPort,
 } from "./project-ports.js";
 import type { ProductRunTraceReaderPort, WorkflowRuntimeTraceReaderPort } from "./runtime-ports.js";
+import type {
+  ProjectManagementBootstrapPort,
+  ProjectWorkspaceProvisionerPort,
+} from "./project-bootstrap-ports.js";
 
 /** Trace发射器：由组合根提供（@chat/realtime Sink）；Application不依赖具体Sink。 */
 export type TraceEmitter = (event: TraceEventInput) => void;
@@ -141,6 +149,13 @@ export interface PromptFragmentIdFactory {
   revision(): PromptFragmentRevisionId;
 }
 
+export interface ProjectBootstrapIdFactory {
+  candidate(): ProjectBootstrapCandidateId;
+  decision(): ProjectBootstrapDecisionId;
+  operation(): ProjectBootstrapOperationId;
+  binding(): ProjectWorkspaceBindingId;
+}
+
 export interface ApplicationDeps {
   readonly store: ProductStorePort;
   readonly now: () => string;
@@ -170,6 +185,10 @@ export interface ApplicationDeps {
   readonly promptCatalog?: PromptCatalogPort;
   readonly promptFiles?: PromptFileLibraryPort;
   readonly promptFragmentIds?: PromptFragmentIdFactory;
+  /** Plane与本地Workspace只通过窄Port进入Application；Token和绝对路径不进产品事实。 */
+  readonly projectManagementBootstrap?: ProjectManagementBootstrapPort;
+  readonly projectWorkspaceProvisioner?: ProjectWorkspaceProvisionerPort;
+  readonly projectBootstrapIds?: ProjectBootstrapIdFactory;
 }
 
 /** 规划修订默认上限（任务书§9.2.7）。 */

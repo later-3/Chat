@@ -34,6 +34,10 @@ import {
   type CommandId,
   type PlanContent,
   type ProductRunId,
+  currentProjectBootstrapResponseSchema,
+  prepareProjectBootstrapRuntimeResponseSchema,
+  projectBootstrapDecisionResponseSchema,
+  projectBootstrapOperationSchema,
 } from "@chat/contracts";
 import {
   beginDirectAgentAttempt,
@@ -48,6 +52,7 @@ import {
   type IdFactory,
   type RuleIdFactory,
   type PromptFragmentIdFactory,
+  type ProjectBootstrapIdFactory,
 } from "@chat/application";
 import {
   SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
@@ -119,6 +124,12 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     string,
     { sourceRelativePath: string; sourceSha256: string; content: never }
   >();
+  const projectBootstrapIds = {
+    candidate: () => gen("pbc"),
+    decision: () => gen("pbd"),
+    operation: () => gen("pbo"),
+    binding: () => gen("pwb"),
+  } as ProjectBootstrapIdFactory;
   const promptCatalog = await createFilePromptCatalog();
   const backend = {
     describe: () => ({
@@ -257,6 +268,7 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     ruleIds,
     directAgentIds,
     promptFragmentIds,
+    projectBootstrapIds,
     promptCatalog,
     promptFiles: {
       publishRevision: async (input) => {
@@ -281,6 +293,41 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
         if (projection === undefined) throw new Error("测试Prompt文件不存在");
         return projection;
       },
+    },
+    projectWorkspaceProvisioner: {
+      listRoots: () => [{ rootId: "root_code" as never, displayName: "Code" }],
+      preflight: async ({ directoryName }) => ({
+        root: { rootId: "root_code" as never, displayName: "Code" },
+        directoryName,
+        workspaceLabel: `Code/${directoryName}`,
+      }),
+      provision: async ({ proposal }) => ({
+        status: "completed" as const,
+        workspaceLabel: `Code/${proposal.directoryName}`,
+      }),
+      reconcile: async ({ proposal }) => ({
+        status: "completed" as const,
+        workspaceLabel: `Code/${proposal.directoryName}`,
+      }),
+    },
+    projectManagementBootstrap: {
+      describe: () => ({
+        providerKind: "plane_ce" as const,
+        providerVersion: "1.4.1",
+        providerWebBaseUrl: "http://127.0.0.1:8088",
+        allowedWorkspaceSlugs: ["learning"],
+      }),
+      preflight: async ({ projectIdentifier }) => ({
+        planeProjectLabel: `learning/${projectIdentifier}`,
+      }),
+      provision: async () => ({
+        status: "completed" as const,
+        planeProjectId: "66cf0460-84e0-4d3d-b1ef-d193b83b7562" as never,
+      }),
+      reconcile: async () => ({
+        status: "completed" as const,
+        planeProjectId: "66cf0460-84e0-4d3d-b1ef-d193b83b7562" as never,
+      }),
     },
     projectRoots: {
       list: () => [
@@ -430,6 +477,147 @@ describe("公开产品API", () => {
     expect(Object.values(snapshot.entities.runs)).toHaveLength(1);
   });
 
+  it("受控建项API从Direct Agent候选经显式确认推进到Plane与Workspace绑定", async () => {
+    const { app, deps } = await testApp();
+    const configuration = await app.request("/api/project-bootstrap/configuration");
+    expect(configuration.status).toBe(200);
+    expect(await configuration.json()).toMatchObject({
+      enabled: true,
+      providerKind: "plane_ce",
+      providerVersion: "1.4.1",
+      planeWorkspaceSlugs: ["learning"],
+      creationRoots: [{ rootId: "root_code", displayName: "Code" }],
+    });
+
+    const created = await postJson(app, "/api/sessions", {
+      commandId: nextCmd(),
+      payload: {},
+    });
+    const session = sessionDtoSchema.parse(
+      ((await created.json()) as { session: unknown }).session,
+    );
+    const { snapshot: seeded } = await deps.store.read({ kind: "committedSnapshot" });
+    const directRevision =
+      seeded.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
+    if (directRevision === undefined) throw new Error("缺少Direct Agent系统Definition");
+    const sent = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
+      commandId: nextCmd(),
+      payload: {
+        text: "创建一个持续学习AI课程、论文和开源项目的项目",
+        workflowSelection: {
+          kind: "published_revision",
+          workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
+          definitionSha256: directRevision.definitionSha256,
+          runConfiguration: {
+            schemaVersion: "workflow-run-configuration.v1",
+            overrides: [
+              {
+                kind: "node_config",
+                definitionNodeId: "direct.agent",
+                field: "capabilityMode",
+                value: "project_bootstrap",
+              },
+            ],
+          },
+        },
+      },
+    });
+    expect(sent.status).toBe(201);
+    const submitted = z
+      .object({ message: messageDtoSchema, run: runDtoSchema })
+      .strict()
+      .parse(await sent.json());
+    const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+    const workflowAttempt = Object.values(snapshot.entities.attempts).find(
+      (attempt) =>
+        attempt.productRunId === submitted.run.productRunId && attempt.kind === "workflow",
+    );
+    if (workflowAttempt === undefined) throw new Error("缺少Direct Workflow Attempt");
+    await beginDirectAgentAttempt(deps, {
+      commandId: nextCmd(),
+      productRunId: submitted.run.productRunId,
+      workflowAttemptId: workflowAttempt.attemptId,
+    });
+
+    const proposal = {
+      name: "AI学习",
+      objective: "学习公开课程、论文和开源项目，并形成自己的实践项目。",
+      planeWorkspaceSlug: "learning",
+      planeProjectIdentifier: "AI2026",
+      workspaceRootId: "root_code",
+      directoryName: "ai-learning",
+      initializerProfile: "ai_learning" as const,
+      initialModules: ["公开课", "论文", "开源项目", "实践项目"],
+    };
+    const prepared = await postInternal(app, "/internal/runtime/v1/prepare-project-bootstrap", {
+      schemaVersion: "chat-internal-runtime.v1",
+      commandId: nextCmd(),
+      productRunId: submitted.run.productRunId,
+      proposal,
+    });
+    expect(prepared.status, await prepared.clone().text()).toBe(201);
+    const candidate = prepareProjectBootstrapRuntimeResponseSchema.parse(
+      await prepared.json(),
+    ).candidate;
+
+    const beforeDecision = currentProjectBootstrapResponseSchema.parse(
+      await (
+        await app.request(`/api/sessions/${session.sessionId}/project-bootstrap/current`)
+      ).json(),
+    );
+    expect(beforeDecision.projectBootstrap).toMatchObject({
+      candidate: { status: "prepared", preview: { gitAction: "initialize" } },
+    });
+
+    const decided = await postJson(
+      app,
+      `/api/project-bootstrap/candidates/${candidate.projectBootstrapCandidateId}/decision`,
+      {
+        commandId: nextCmd(),
+        payload: {
+          projectBootstrapCandidateId: candidate.projectBootstrapCandidateId,
+          candidateRevision: candidate.revision,
+          candidateSha256: candidate.sha256,
+          kind: "confirm",
+        },
+      },
+    );
+    expect(decided.status, await decided.clone().text()).toBe(201);
+    const operation = projectBootstrapDecisionResponseSchema.parse(await decided.json()).operation;
+    if (operation === undefined) throw new Error("确认后缺少建项Operation");
+    const executed = await postJson(
+      app,
+      `/api/project-bootstrap/operations/${operation.projectBootstrapOperationId}/execute`,
+      {
+        commandId: nextCmd(),
+        payload: { projectBootstrapOperationId: operation.projectBootstrapOperationId },
+      },
+    );
+    expect(executed.status, await executed.clone().text()).toBe(200);
+    expect(
+      projectBootstrapOperationSchema.parse(
+        ((await executed.json()) as { operation: unknown }).operation,
+      ),
+    ).toMatchObject({ status: "ready", bindingStep: "completed" });
+
+    const ready = currentProjectBootstrapResponseSchema.parse(
+      await (
+        await app.request(`/api/sessions/${session.sessionId}/project-bootstrap/current`)
+      ).json(),
+    );
+    expect(ready.projectBootstrap).toMatchObject({
+      candidate: { status: "ready" },
+      operation: { status: "ready" },
+      binding: {
+        providerKind: "plane_ce",
+        planeWorkspaceSlug: "learning",
+        planeProjectIdentifier: "AI2026",
+        workspaceRootId: "root_code",
+        directoryName: "ai-learning",
+      },
+    });
+  });
+
   it("普通Planning与Memory Planning作为两个独立选项发布，选择Memory后Run绑定独立轨迹", async () => {
     const { app } = await testApp();
     const definitionsResponse = await app.request("/api/workflow/definitions");
@@ -467,6 +655,13 @@ describe("公开产品API", () => {
         definitionNodeId: "direct.agent",
         displayName: "执行 Agent",
         runConfigFields: [
+          {
+            name: "capabilityMode",
+            type: "enum_select",
+            label: "能力模式",
+            defaultValue: "read_only",
+            options: ["read_only", "project_bootstrap"],
+          },
           {
             name: "promptReviewMode",
             type: "enum_select",
