@@ -300,11 +300,11 @@ test("Bridge原生bundle patch不包含API与私有状态路径", () => {
   }
 });
 
-test("安装的DSH Trajectory包含固定窄扩展且补丁Hash未漂移", () => {
+test("安装的DSH Trajectory直接来自Later Fork维护分支", () => {
   const evidence = assertDshTrajectoryExtension(REPO_ROOT);
-  assert.match(evidence.packageRoot, /dsh-client-ui-trajectory/u);
-  assert.match(evidence.patchPath, /patches\/.*ui-trajectory/u);
-  assert.equal(evidence.patchHash.length, 64);
+  assert.match(evidence.packageRoot, /packages\/client\/ui-trajectory$/u);
+  assert.equal(evidence.branch, "codex/chat-trajectory-location-rc6");
+  assert.match(evidence.origin, /later-3\/deepseek-harness-chat/u);
 });
 
 test("DSH入口只接受精确rc.6并从bin声明解析", () => {

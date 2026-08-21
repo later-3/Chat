@@ -35,7 +35,7 @@ learning/
   agent-context-management/  Later个人学习用的跨Agent源码与实验材料；不参与Chat产品合同
 ```
 
-仓库不包含旧自研Web、Agent Canvas、DeepSeek Harness源码副本或UI原型归档。DSH派生源码由独立Public仓库`later-3/deepseek-harness-chat`维护，本仓库只保存固定补丁与版本证据；删除内容需要时从Git历史读取。
+仓库不包含旧自研Web、Agent Canvas、DeepSeek Harness源码副本或UI原型归档。DSH派生源码由独立Public仓库`later-3/deepseek-harness-chat`维护，本仓库只保存Fork链接声明、分支证据与漂移门；删除内容需要时从Git历史读取。
 
 ## 用户主链定位
 

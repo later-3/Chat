@@ -818,7 +818,7 @@ describe("Direct Prompt Review Gate P1", () => {
     }
   });
 
-  it("等待态可从Checkpoint重建，并通过patched AgentSession完整resume生命周期", async () => {
+  it("等待态可从Checkpoint重建，并通过Later Pi AgentSession完整resume生命周期", async () => {
     const root = await temporaryRoot();
     const provider = new LocalCountingProvider();
     await provider.start();
@@ -1157,7 +1157,7 @@ describe("Direct Prompt Review Gate P1", () => {
     expect(product.dispatchOutcomes).not.toContain("outcome_unknown");
   });
 
-  it("patched AgentSession拒绝从Assistant尾恢复", async () => {
+  it("Later Pi AgentSession拒绝从Assistant尾恢复", async () => {
     const root = await temporaryRoot();
     const provider = new LocalCountingProvider();
     await provider.start();

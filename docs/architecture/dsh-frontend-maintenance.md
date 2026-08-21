@@ -22,7 +22,7 @@ Chat的唯一产品前端是由Chat维护的DeepSeek Harness窄派生，不再�
 - Trajectory实现提交：`708cca1ed78995b986c3400493809ee06d1c3b0e`。
 - 当前公开派生分支头：`bcca246a5e4ab4e002e9caa0e4e20160a8bd06e8`，在实现提交之上记录维护规则，不改变运行代码。
 
-Chat主仓库不复制DSH源码。运行安装仍固定`@deepseek-ai/dsh@0.1.0-rc.6`，并以可审核pnpm补丁消费同一差异；公开DSH派生仓库拥有派生源码与上游汇合历史，Chat仓库拥有固定版本、补丁、Hash、Bridge和运行时漂移门。
+Chat主仓库不复制DSH源码。Host基线仍使用`@deepseek-ai/dsh@0.1.0-rc.6`，Trajectory由`packages/dsh-lifeos-bridge`直接链接公开Fork的`codex/chat-trajectory-location-rc6`源码构建；公开DSH派生仓库拥有派生源码、测试与上游汇合历史，Chat仓库拥有Bridge、链接声明和运行时Fork漂移门，不再保存等价package patch。
 
 ## 3. 上游跟踪与汇合
 
@@ -32,8 +32,8 @@ Chat主仓库不复制DSH源码。运行安装仍固定`@deepseek-ai/dsh@0.1.0-r
 2. 先审阅上游是否已经提供等价公开扩展点；若已经提供，优先删除本地差异并让Bridge改用上游合同。
 3. 若仍需派生，把新的固定上游版本汇合到维护分支，只重放Contribution Location、表现标签和紧凑行预览三项差异；不得顺便换皮、复制页面或加入Chat业务对象。
 4. 在DSH源码仓库运行受影响测试、`pnpm run typecheck`、bundle、lint和`pnpm run doc-sync`。
-5. 从已验证源码重新生成Chat仓库的pnpm补丁，更新版本、补丁SHA-256、lock patch hash、派生提交和运行时漂移标记。
-6. 在Chat仓库通过Bridge合同、根级门和真实浏览器Planning/HITL/Trajectory E2E后，才更新公开派生`main`与Chat固定依赖。
+5. 通过后把功能分支合入`codex/chat-trajectory-location-rc6`，重新构建Trajectory，并更新Chat记录的分支证据与运行时能力标记。
+6. 在Chat仓库通过Bridge合同、根级门和真实浏览器Planning/HITL/Trajectory E2E后，才完成本轮Fork分支集成。
 
 公开派生`main`不直接在共享checkout上开发，不强推覆盖远端历史。任何超出上述三项能力的DSH源码改动都必须重新说明插件为何不能完成、修改面、退出方式和升级成本，并取得用户确认。
 

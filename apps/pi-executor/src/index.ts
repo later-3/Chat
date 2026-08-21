@@ -4,6 +4,7 @@ import {
   createDirectAgentRuntimeApiCallbacks,
   createPiDirectExecutorService,
   createPiExecutorService,
+  assertManagedPiForkCapabilities,
   loadPiExecutorWorkspaceRoots,
   PiDirectExecutorOperationStore,
   PiExecutorOperationStore,
@@ -18,6 +19,7 @@ const HOSTNAME = "127.0.0.1";
 const PORT = Number.parseInt(process.env.CHAT_PI_EXECUTOR_PORT ?? "43115", 10);
 const repoRoot = process.env.CHAT_REPO_ROOT ?? process.cwd();
 const dataRoot = process.env.CHAT_PI_EXECUTOR_DATA_DIR ?? `${repoRoot}/.data/pi-executor`;
+assertManagedPiForkCapabilities();
 const credential = await loadRuntimeCredential(repoRoot);
 const store = await PiExecutorOperationStore.open(`${dataRoot}/operations`);
 const directStore = await PiDirectExecutorOperationStore.open(`${dataRoot}/direct-operations`);

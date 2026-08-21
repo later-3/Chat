@@ -7,7 +7,7 @@
 | 领域 | 当前状态 |
 |---|---|
 | 产品身份 | 独立、完整、持续演进的个人Agent协作产品 |
-| 唯一前端 | Chat公开仓库`later-3/deepseek-harness-chat`维护固定`DeepSeek Harness Web rc.6`窄派生；当前只维护Trajectory Location/标签/紧凑预览扩展，Chat仓库以固定pnpm补丁消费；旧`apps/web`与Agent Canvas均不属于当前架构 |
+| 唯一前端 | Chat公开仓库`later-3/deepseek-harness-chat`维护固定`DeepSeek Harness Web rc.6`窄派生；当前只维护Trajectory Location/标签/紧凑预览扩展，Chat直接链接`codex/chat-trajectory-location-rc6`源码构建；旧`apps/web`与Agent Canvas均不属于当前架构 |
 | 前端桥接 | `@chat/dsh-lifeos-bridge`通过DSH公开Slot把原生会话、Composer行内Workflow选择与服务端描述的发送级配置、Prompt Region选择/语义预览、只读上下文注入、Prompt Studio与人工审核接到Chat公开API；Composer「调试审核」提供独立DSH→Bridge与Bridge→Chat开关，分别审核真实GenerateOptions和实际HTTP Command body，关闭时自动放行；当前Direct Workflow还可按会话配置是否逐次审核Provider提示词；Prompt Studio管理Git内置来源及全局/Workspace用户Revision，Composer按会话和Region选择默认/覆盖/追加；原生侧栏作为唯一会话入口，Bridge首轮只提交Message，Chat Application在同一事务内创建Product Session、标题、Run与Outbox，Bridge仅保存DSH→Chat身份映射；“会话记录”以独立分页完整展示Chat正式Message与DSH原始事件；实时Pi工具调用与完整Workflow执行树继续进入原生Trajectory |
 | 开发工作台 | Beta、可选、当前暂停进入CI/CD；固定`code-server@4.132.0`与DSH全屏Surface实现继续保留，供需要时人工验证Files、Editor、Terminal、Git/Diff与扩展系统 |
 | 后端 | Node.js + TypeScript；Hono协议入口；Application拥有用例事务 |

@@ -1,5 +1,4 @@
-import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { execFileSync, spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
@@ -14,10 +13,8 @@ export const DSH_WEB_HOST = DSH_INTERNAL_WEB_HOST;
 export const DSH_WEB_PORT = DSH_INTERNAL_WEB_PORT;
 export const BRIDGE_PACKAGE_NAME = "@chat/dsh-lifeos-bridge";
 export const BRIDGE_BUNDLE_RELATIVE_PATH = "packages/dsh-lifeos-bridge/dist/dsh-bundle.js";
-export const DSH_TRAJECTORY_PATCH_RELATIVE_PATH =
-  "patches/@deepseek-ai__dsh-client-ui-trajectory@0.1.0-rc.6.patch";
-export const DSH_TRAJECTORY_PATCH_SHA256 =
-  "9e10e608d36dd364b9f972954c2625b8dc795f216c1a54401a740dc9ed42ee08";
+export const DSH_FORK_REPOSITORY = "https://github.com/later-3/deepseek-harness-chat";
+export const DSH_FORK_BRANCH = "codex/chat-trajectory-location-rc6";
 export const DSH_CLI_RUNTIME_IMPORTS = Object.freeze([
   "@deepseek-ai/dsh-app-boot",
   "@deepseek-ai/dsh-cmdline",
@@ -257,8 +254,8 @@ export function resolveDshBin(root) {
 }
 
 /**
- * Chat只维护rc.6 Trajectory的极窄派生补丁：Contribution Location、语义标签与紧凑行预览。
- * 运行包、补丁内容和本地DSH分支证据任一漂移，都在启动前失败关闭。
+ * Chat从Later Fork分支直接链接rc.6 Trajectory源码构建：Contribution Location、
+ * 语义标签与紧凑行预览。解析到官方包、错误Fork或错误分支时启动失败关闭。
  */
 export function assertDshTrajectoryExtension(root) {
   const repoRoot = resolve(root);
@@ -285,12 +282,28 @@ export function assertDshTrajectoryExtension(root) {
   ]) {
     if (!client.includes(marker)) throw new Error(`DSH Trajectory窄扩展缺失：${marker}`);
   }
-  const patchPath = join(repoRoot, DSH_TRAJECTORY_PATCH_RELATIVE_PATH);
-  const patchHash = createHash("sha256").update(readFileSync(patchPath)).digest("hex");
-  if (patchHash !== DSH_TRAJECTORY_PATCH_SHA256) {
-    throw new Error(`DSH Trajectory补丁漂移：${patchHash}，期望${DSH_TRAJECTORY_PATCH_SHA256}`);
+
+  const checkoutRoot = realpathSync(
+    execFileSync("git", ["-C", packageRoot, "rev-parse", "--show-toplevel"], {
+      encoding: "utf8",
+    }).trim(),
+  );
+  const branch = execFileSync("git", ["-C", checkoutRoot, "branch", "--show-current"], {
+    encoding: "utf8",
+  }).trim();
+  if (branch !== DSH_FORK_BRANCH) {
+    throw new Error(`DSH Fork分支必须是${DSH_FORK_BRANCH}，实际为${branch || "detached"}`);
   }
-  return Object.freeze({ packageRoot, clientPath, patchPath, patchHash });
+  const origin = execFileSync("git", ["-C", checkoutRoot, "remote", "get-url", "origin"], {
+    encoding: "utf8",
+  }).trim();
+  if (
+    origin !== "git@github.com:later-3/deepseek-harness-chat.git" &&
+    origin !== `${DSH_FORK_REPOSITORY}.git`
+  ) {
+    throw new Error(`DSH Fork origin不受管：${origin}`);
+  }
+  return Object.freeze({ packageRoot, clientPath, checkoutRoot, branch, origin });
 }
 
 function bareRuntimeImports(source) {

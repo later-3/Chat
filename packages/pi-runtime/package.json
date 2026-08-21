@@ -24,9 +24,9 @@
   "dependencies": {
     "@chat/contracts": "workspace:*",
     "@chat/domain": "workspace:*",
-    "@earendil-works/pi-agent-core": "0.84.2",
-    "@earendil-works/pi-ai": "0.84.2",
-    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-agent-core": "link:../../../opc-os/pi/packages/agent",
+    "@earendil-works/pi-ai": "link:../../../opc-os/pi/packages/ai",
+    "@earendil-works/pi-coding-agent": "link:../../../opc-os/pi/packages/coding-agent",
     "hono": "^4.13.0",
     "zod": "^4.4.3"
   },
