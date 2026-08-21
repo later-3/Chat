@@ -32,7 +32,9 @@ import {
 import { projectBootstrapPresetSchema } from "../contracts.ts";
 
 export const name = "chat-dsh-lifeos-bridge-client";
-export const inject = ["slots", "conversationEvents"];
+// Cordis只允许读取显式注入的Service。项目建项入口同时操作公开Sessions与Workspaces
+// face，因此必须把两者声明为启动依赖；遗漏时静态类型仍可通过，但浏览器会在apply阶段失败。
+export const inject = ["slots", "conversationEvents", "sessions", "workspaces"];
 
 /** Additive Workflow/Plan/HITL/Workbench surfaces; native ChatView and Composer remain owners. */
 export function apply(ctx: ClientContext): void {

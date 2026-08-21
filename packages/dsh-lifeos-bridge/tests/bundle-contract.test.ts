@@ -33,7 +33,10 @@ test("manifest exposes the native DSH bundle patch and client factory contract",
   const host = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");
   const client = await readFile(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(host, /ExecutionTraceRecorder|lifeos\/execution-trace/);
-  assert.match(client, /"conversationEvents"/);
+  assert.match(
+    client,
+    /export const inject = \["slots", "conversationEvents", "sessions", "workspaces"\]/u,
+  );
   assert.match(client, /ExecutionTraceProjection/);
   assert.match(host, /"sessionQuery"/);
   assert.match(client, /ctx\.slots\.inject\("conversation\.view"/);
