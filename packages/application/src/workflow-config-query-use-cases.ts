@@ -20,6 +20,10 @@ import {
   SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
 } from "./workflow-system-definitions.js";
 import {
+  agentNodeBindingDescriptor,
+  isPromptBearingNodeType,
+} from "./prompt-assembly-use-cases.js";
+import {
   listAuthorizedWorkflowResources,
   toWorkflowResourceRefDto,
 } from "./workflow-resource-catalog.js";
@@ -222,6 +226,9 @@ function toPublishedDefinitionDto(
         (rule) => rule.nodeType === node.nodeType,
       );
       const publicConfigFields = descriptor?.publicConfigFields ?? [];
+      const agentBinding = isPromptBearingNodeType(node.nodeType)
+        ? agentNodeBindingDescriptor(node.nodeType, node.config)
+        : undefined;
       return {
         definitionNodeId: node.definitionNodeId,
         nodeType: node.nodeType,
@@ -234,7 +241,13 @@ function toPublishedDefinitionDto(
         ),
         runConfigFields: publicConfigFields
           .filter((field) => (overrideRule?.configFields ?? []).includes(field.name))
-          .map((field) => configuredPublicField(field, node.config[field.name])),
+          .map((field) =>
+            configuredPublicField(
+              field,
+              field.name === "agentKey" ? agentBinding?.agentKey : node.config[field.name],
+            ),
+          ),
+        ...(agentBinding === undefined ? {} : { agentBinding }),
       };
     }),
     publishedAt: revision.publishedAt ?? revision.createdAt,
@@ -269,7 +282,7 @@ function configuredPublicField(
     }
     return { ...field, defaultValue: configuredDefault ?? field.defaultValue };
   }
-  if (field.type === "short_text") {
+  if (field.type === "short_text" || field.type === "long_text") {
     if (configuredDefault !== undefined && typeof configuredDefault !== "string") {
       throw new Error(`Workflow节点配置默认值类型错误:${field.name}`);
     }

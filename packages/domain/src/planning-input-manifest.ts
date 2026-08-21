@@ -50,6 +50,12 @@ export interface PlanningInputManifestInput {
     readonly revision: number;
     readonly sha256: string;
   };
+  readonly promptAssemblyRef?: {
+    readonly promptAssemblyId: string;
+    readonly sha256: string;
+    readonly definitionNodeId: string;
+    readonly nodeAssemblySha256: string;
+  };
   readonly promptTemplateVersion: string;
   readonly modelConfigVersion: string;
 }
@@ -57,23 +63,26 @@ export interface PlanningInputManifestInput {
 /**
  * Planning Input Manifest是模型调用的完整版本证据，不含任何正文。
  * v1仅Message/Plan，v2加入查询Memory，v3加入Project/Rules，v4加入显式Memory选择，
- * v5加入Workflow Memory，v6加入Workspace指令；旧Attempt继续按原Hash域验证。
+ * v5加入Workflow Memory，v6加入Workspace指令，v7绑定节点Prompt Assembly；
+ * 旧Attempt继续按原Hash域验证。
  */
 export function computePlanningInputManifestSha256(input: PlanningInputManifestInput): string {
   const hasVersion3Context =
     input.planningProjectContextRef !== undefined || input.ruleSelectionRef !== undefined;
   const hashDomain =
-    input.workspaceInstructionsRef !== undefined
-      ? "planning-input-manifest.v6"
-      : input.workflowMemoryContextRef !== undefined
-        ? "planning-input-manifest.v5"
-        : input.planningMemorySelectionRef !== undefined
-          ? "planning-input-manifest.v4"
-          : hasVersion3Context
-            ? "planning-input-manifest.v3"
-            : input.contextPackageRef === undefined
-              ? "planning-input-manifest.v1"
-              : "planning-input-manifest.v2";
+    input.promptAssemblyRef !== undefined
+      ? "planning-input-manifest.v7"
+      : input.workspaceInstructionsRef !== undefined
+        ? "planning-input-manifest.v6"
+        : input.workflowMemoryContextRef !== undefined
+          ? "planning-input-manifest.v5"
+          : input.planningMemorySelectionRef !== undefined
+            ? "planning-input-manifest.v4"
+            : hasVersion3Context
+              ? "planning-input-manifest.v3"
+              : input.contextPackageRef === undefined
+                ? "planning-input-manifest.v1"
+                : "planning-input-manifest.v2";
   return hashCanonical(hashDomain, {
     productRunId: input.productRunId,
     planRevision: input.planRevision,
@@ -96,6 +105,9 @@ export function computePlanningInputManifestSha256(input: PlanningInputManifestI
       ? { planningProjectContextRef: input.planningProjectContextRef }
       : {}),
     ...(input.ruleSelectionRef !== undefined ? { ruleSelectionRef: input.ruleSelectionRef } : {}),
+    ...(input.promptAssemblyRef !== undefined
+      ? { promptAssemblyRef: input.promptAssemblyRef }
+      : {}),
     promptTemplateVersion: input.promptTemplateVersion,
     modelConfigVersion: input.modelConfigVersion,
   });

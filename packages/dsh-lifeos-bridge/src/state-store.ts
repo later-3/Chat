@@ -86,7 +86,7 @@ const requestSchema = z
     productRunId: productRunIdSchema.transform(String).optional(),
     /** Chat正式Assistant Message；Run终态读取后补记，旧记录可按Run Query恢复。 */
     productAssistantMessageId: messageIdSchema.transform(String).optional(),
-    /** 已经投影进DSH原生Trajectory的Run内Trace位置；只用于显示幂等。 */
+    /** @deprecated v3-v11的lifeos_trace显示cursor；仅为无损读取旧状态保留。 */
     traceCursor: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
     pendingDecision: pendingDecisionSchema.optional(),
     pendingNoteDecision: pendingNoteDecisionSchema.optional(),
@@ -96,9 +96,9 @@ const requestSchema = z
      * 已创建请求；同一请求的幂等重放始终携带同一选择。
      */
     workflowSelection: workflowSelectionSchema.optional(),
-    /** 请求创建时冻结的Prompt选择；仅Direct Workflow会把它提交给Chat。 */
+    /** 请求创建时冻结的Prompt选择；所有Workflow都透明提交给Chat重新编译。 */
     promptSelection: promptSelectionRequestSchema.shape.promptSelection.optional(),
-    /** Chat确认Product Run前保留的有界重试快照；确认后立即删除。 */
+    /** @deprecated v5-v11旧请求的DSH指令旁路；只为无损迁移保留，新请求不再写入。 */
     workspaceInstructions: workspaceInstructionsInputSchema.optional(),
   })
   .strict()
@@ -581,38 +581,6 @@ export class AtomicBridgeStateStore {
     await this.writeAtomic(migrated);
     this.state = migrated;
     return this.state;
-  }
-
-  /** 校验DSH Session当前请求确实绑定该Product Run，避免展示工具成为越权Query。 */
-  async assertCurrentTraceBinding(dshSessionId: string, productRunId: string): Promise<void> {
-    const binding = await this.readSession(dshSessionId);
-    const request =
-      binding?.currentRequestKey === undefined
-        ? undefined
-        : binding.requests[binding.currentRequestKey];
-    if (request?.productRunId !== productRunId) {
-      throw new Error("lifeos trace tool is not bound to the current Product Run");
-    }
-  }
-
-  /** 单调推进展示cursor；重复执行同一显示工具不会回退或制造第二条事实链。 */
-  async advanceTraceCursor(
-    dshSessionId: string,
-    productRunId: string,
-    sequence: number,
-  ): Promise<void> {
-    const existing = await this.readSession(dshSessionId);
-    if (existing === undefined) throw new Error("lifeos trace session is not bound");
-    await this.mutateSession(dshSessionId, existing.createSessionCommandId, (binding) => {
-      const request =
-        binding.currentRequestKey === undefined
-          ? undefined
-          : binding.requests[binding.currentRequestKey];
-      if (request?.productRunId !== productRunId) {
-        throw new Error("lifeos trace cursor Product Run mismatch");
-      }
-      request.traceCursor = Math.max(request.traceCursor ?? 0, sequence);
-    });
   }
 
   private async writeAtomic(next: BridgeState): Promise<void> {

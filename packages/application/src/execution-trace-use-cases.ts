@@ -1,6 +1,5 @@
 import {
   WORKFLOW_EXECUTION_TRACE_SCHEMA_VERSION,
-  TRACE_EVENT_NAMES,
   WORKFLOW_RUNTIME_TRACE_SCHEMA_VERSION,
   workflowExecutionTraceDtoSchema,
   type ExecutionStepTraceDto,
@@ -12,7 +11,7 @@ import {
   type ProductSnapshot,
   type ProductRunId,
   type RunAttemptId,
-  type TraceEvent,
+  type RunActivityEvent,
   type WorkflowNodeRunSummaryDto,
   type WorkflowNodeTraceDetailDto,
   type WorkflowRuntimeTraceDto,
@@ -34,6 +33,10 @@ interface MutableActivity {
   status: PiTraceActivityDto["status"];
   nodeKind: PiTraceActivityDto["nodeKind"];
   toolName?: string;
+  inputDisplay?: string;
+  inputDisplayTruncated?: boolean;
+  resultDisplay?: string;
+  resultDisplayTruncated?: boolean;
   provider?: string;
   model?: string;
   startedAt: string;
@@ -51,6 +54,7 @@ interface PiAttemptBinding {
 const AGENT_LABELS: Record<PiTraceActivityDto["nodeKind"], string> = {
   planner: "规划 Agent",
   executor: "执行 Agent",
+  direct_agent: "直接 Agent",
   note_capture: "笔记捕获 Agent",
 };
 
@@ -409,9 +413,33 @@ function buildPiAttemptBindings(
         workflowNodeRunId: executeNode.workflowNodeRunId,
         executionStepId: attempt.stepId,
       });
+    } else if (attempt.kind === "direct_agent") {
+      const node = nodes.find((candidate) => candidate.nodeType === "agent.direct");
+      if (node !== undefined) {
+        bindings.set(attempt.attemptId, { workflowNodeRunId: node.workflowNodeRunId });
+      }
     }
   }
   return bindings;
+}
+
+function assertActivityAttemptOwnership(
+  snapshot: ProductSnapshot,
+  productRunId: ProductRunId,
+  events: readonly RunActivityEvent[],
+): void {
+  const ownedAttempts = new Set(
+    Object.values(snapshot.entities.attempts)
+      .filter((attempt) => attempt.productRunId === productRunId)
+      .map((attempt) => attempt.attemptId),
+  );
+  for (const event of events) {
+    if (event.attemptId !== undefined && !ownedAttempts.has(event.attemptId)) {
+      throw new Error(
+        `Run Activity Attempt不属于当前Product Run：${event.attemptId} -> ${productRunId}`,
+      );
+    }
+  }
 }
 
 /**
@@ -419,7 +447,7 @@ function buildPiAttemptBindings(
  * 只复制严格合同白名单字段，不读取参数、结果、Prompt或Provider响应正文。
  */
 export function projectPiActivities(
-  events: readonly TraceEvent[],
+  events: readonly RunActivityEvent[],
   attemptBindings: ReadonlyMap<string, PiAttemptBinding> = new Map(),
 ): PiTraceActivityDto[] {
   const activities: MutableActivity[] = [];
@@ -434,16 +462,9 @@ export function projectPiActivities(
     return `pi-${kind}-${String(counters[kind])}` as PiTraceActivityDto["activityKey"];
   };
   const ensureAgent = (
-    event: Extract<
-      TraceEvent,
-      {
-        eventName:
-          | typeof TRACE_EVENT_NAMES.piNodeStarted
-          | typeof TRACE_EVENT_NAMES.piNodeCompleted
-          | typeof TRACE_EVENT_NAMES.piNodeFailed;
-      }
-    >,
+    event: Extract<RunActivityEvent, { activityType: "agent" }>,
   ): MutableActivity => {
+    if (event.attemptId === undefined) throw new Error("Agent Activity缺少Attempt身份");
     const identity = `${event.attemptId}:${event.nodeKind}`;
     const existing = agents.get(identity);
     if (existing !== undefined) return existing;
@@ -470,29 +491,37 @@ export function projectPiActivities(
   };
 
   for (const event of events) {
-    switch (event.eventName) {
-      case TRACE_EVENT_NAMES.piNodeStarted: {
+    if (event.activityType === "agent") {
+      if (event.phase === "started") {
         ensureAgent(event);
-        break;
-      }
-      case TRACE_EVENT_NAMES.piNodeCompleted:
-      case TRACE_EVENT_NAMES.piNodeFailed: {
+      } else {
         const activity = ensureAgent(event);
         activity.status =
-          event.eventName === TRACE_EVENT_NAMES.piNodeCompleted ? "succeeded" : "failed";
+          event.phase === "completed"
+            ? "succeeded"
+            : event.phase === "cancelled"
+              ? "cancelled"
+              : event.phase === "outcome_unknown"
+                ? "outcome_unknown"
+                : "failed";
         activity.completedAt = event.timestamp;
         const durationMs = roundedDuration(event.durationMs);
         if (durationMs !== undefined) activity.durationMs = durationMs;
-        if (event.eventName === TRACE_EVENT_NAMES.piNodeFailed)
-          activity.errorCode = event.error.code;
-        break;
+        if (event.errorCode !== undefined) activity.errorCode = event.errorCode;
       }
-      case TRACE_EVENT_NAMES.providerRequestStarted: {
+      continue;
+    }
+    if (event.activityType === "model") {
+      if (event.attemptId === undefined) continue;
+      if (event.phase === "started") {
         const parent =
-          agents.get(`${event.attemptId}:planner`) ??
-          agents.get(`${event.attemptId}:executor`) ??
-          agents.get(`${event.attemptId}:note_capture`);
-        // Provider事件理论上位于pi.node.started之后；若旧Trace缺少父事件则不伪造Agent。
+          agents.get(`${event.attemptId}:${event.nodeKind}`) ??
+          ensureAgent({
+            ...event,
+            activityType: "agent",
+            phase: "started",
+            nodeKind: event.nodeKind,
+          });
         if (parent === undefined) break;
         const activity: MutableActivity = {
           activityKey: nextKey("model"),
@@ -517,29 +546,27 @@ export function projectPiActivities(
         list.push(activity);
         openModels.set(event.attemptId, list);
         activities.push(activity);
-        break;
-      }
-      case TRACE_EVENT_NAMES.providerRequestCompleted:
-      case TRACE_EVENT_NAMES.providerRequestFailed: {
+      } else {
         const activity = openModels
           .get(event.attemptId)
           ?.find((candidate) => candidate.status === "running");
-        if (activity === undefined) break;
-        activity.status =
-          event.eventName === TRACE_EVENT_NAMES.providerRequestCompleted ? "succeeded" : "failed";
+        if (activity === undefined) continue;
+        activity.status = event.phase === "completed" ? "succeeded" : "failed";
         activity.completedAt = event.timestamp;
         const durationMs = roundedDuration(event.durationMs);
         if (durationMs !== undefined) activity.durationMs = durationMs;
-        if (event.eventName === TRACE_EVENT_NAMES.providerRequestCompleted)
-          activity.tokenUsage = event.tokenUsage;
-        else activity.errorCode = event.error.code;
-        break;
+        if (event.tokenUsage !== undefined) activity.tokenUsage = event.tokenUsage;
+        if (event.errorCode !== undefined) activity.errorCode = event.errorCode;
       }
-      case TRACE_EVENT_NAMES.piToolIntentPersisted: {
-        const parent = agents.get(`${event.attemptId}:executor`);
-        if (parent === undefined) break;
+      continue;
+    }
+    if (event.activityType === "tool" && event.attemptId !== undefined) {
+      if (event.phase === "started") {
+        const nodeKind = event.nodeKind ?? "executor";
+        const parent = agents.get(`${event.attemptId}:${nodeKind}`);
+        if (parent === undefined) continue;
         const identity = `${event.attemptId}:${event.toolCallId}`;
-        if (tools.has(identity)) break;
+        if (tools.has(identity)) continue;
         const activity: MutableActivity = {
           activityKey: nextKey("tool"),
           parentActivityKey: parent.activityKey,
@@ -556,39 +583,72 @@ export function projectPiActivities(
           status: "running",
           nodeKind: parent.nodeKind,
           toolName: event.toolName,
+          ...(event.inputDisplay === undefined ? {} : { inputDisplay: event.inputDisplay }),
+          ...(event.inputDisplayTruncated === undefined
+            ? {}
+            : { inputDisplayTruncated: event.inputDisplayTruncated }),
           startedAt: event.timestamp,
         };
         tools.set(identity, activity);
         activities.push(activity);
-        break;
-      }
-      case TRACE_EVENT_NAMES.piToolCompleted:
-      case TRACE_EVENT_NAMES.piToolFailed:
-      case TRACE_EVENT_NAMES.piToolBlocked:
-      case TRACE_EVENT_NAMES.piToolOutcomeUnknown: {
+      } else {
         const activity = tools.get(`${event.attemptId}:${event.toolCallId}`);
-        if (activity === undefined) break;
+        if (activity === undefined) continue;
         activity.status =
-          event.eventName === TRACE_EVENT_NAMES.piToolCompleted ? "succeeded" : "failed";
+          event.phase === "completed"
+            ? "succeeded"
+            : event.phase === "blocked"
+              ? "blocked"
+              : event.phase === "outcome_unknown"
+                ? "outcome_unknown"
+                : "failed";
         activity.completedAt = event.timestamp;
         const durationMs = roundedDuration(event.durationMs);
         if (durationMs !== undefined) activity.durationMs = durationMs;
-        if (
-          event.eventName === TRACE_EVENT_NAMES.piToolFailed ||
-          event.eventName === TRACE_EVENT_NAMES.piToolBlocked
-        ) {
-          activity.errorCode = event.error.code;
-        } else if (event.eventName === TRACE_EVENT_NAMES.piToolOutcomeUnknown) {
-          activity.errorCode = "pi.tool_outcome_unknown";
-        }
-        break;
+        if (event.resultDisplay !== undefined) activity.resultDisplay = event.resultDisplay;
+        if (event.resultDisplayTruncated !== undefined)
+          activity.resultDisplayTruncated = event.resultDisplayTruncated;
+        if (event.errorCode !== undefined) activity.errorCode = event.errorCode;
       }
+      continue;
     }
   }
 
   return activities.map((activity) =>
     workflowExecutionTraceDtoSchema.shape.piActivities.element.parse(activity),
   );
+}
+
+/**
+ * DSH当前树只发布最近的完整Agent分组，绝不让500上限把父Agent截掉后留下孤儿Tool。
+ * 完整Run Activity仍在Journal中，可由cursor接口分页读取。
+ */
+export function boundPiActivities(
+  activities: readonly PiTraceActivityDto[],
+  limit = 500,
+): { readonly items: PiTraceActivityDto[]; readonly truncated: boolean } {
+  if (activities.length <= limit) return { items: [...activities], truncated: false };
+  const groups = activities
+    .filter((activity) => activity.kind === "agent")
+    .map((agent) => ({
+      agent,
+      children: activities.filter((activity) => activity.parentActivityKey === agent.activityKey),
+    }));
+  const selected: PiTraceActivityDto[] = [];
+  for (const group of [...groups].reverse()) {
+    const remaining = limit - selected.length;
+    if (remaining <= 0) break;
+    const values = [group.agent, ...group.children];
+    if (values.length <= remaining) {
+      selected.push(...values);
+      continue;
+    }
+    if (selected.length === 0) {
+      selected.push(group.agent, ...group.children.slice(-(limit - 1)));
+    }
+    break;
+  }
+  return { items: selected.sort((left, right) => left.sequence - right.sequence), truncated: true };
 }
 
 function unavailableRuntime(productRunId: ProductRunId): WorkflowRuntimeTraceDto {
@@ -642,20 +702,21 @@ export async function getWorkflowExecutionTrace(
     getProductRun(deps, input),
     getWorkflowRunView(deps, input),
   ]);
-  const [{ snapshot }, runtime, traceEvents] = await Promise.all([
+  const [{ snapshot }, runtime, activityEvents] = await Promise.all([
     deps.store.read({ kind: "committedSnapshot" }),
     deps.workflowRuntimeTrace?.read({ productRunId: input.productRunId }) ??
       Promise.resolve(unavailableRuntime(input.productRunId)),
-    deps.productRunTrace?.read({ productRunId: input.productRunId }) ?? Promise.resolve([]),
+    deps.runActivityReader?.read({ productRunId: input.productRunId }) ?? Promise.resolve([]),
   ]);
   // queued/skipped都没有真正开始，不是执行轨迹。若Memory误被真正执行，它不会被本过滤隐藏。
   const nodeRuns = executedWorkflowNodeRuns(workflowView.value.nodeRuns);
   const nodeDetails = buildNodeDetails(snapshot, nodeRuns);
   const executionSteps = buildExecutionSteps(snapshot, input.productRunId, nodeRuns);
-  const piActivities = projectPiActivities(
-    traceEvents,
-    buildPiAttemptBindings(snapshot, input.productRunId, nodeRuns),
-  );
+  assertActivityAttemptOwnership(snapshot, input.productRunId, activityEvents);
+  const attemptBindings = buildPiAttemptBindings(snapshot, input.productRunId, nodeRuns);
+  const projectedPiActivities = projectPiActivities(activityEvents, attemptBindings);
+  const boundedPiActivities = boundPiActivities(projectedPiActivities);
+  const piActivities = boundedPiActivities.items;
   const revisionValue = {
     run: { status: run.status, phase: run.phase, revision: run.revision, updatedAt: run.updatedAt },
     workflow: {
@@ -697,7 +758,8 @@ export async function getWorkflowExecutionTrace(
     workflow: { title: workflowView.value.title, nodeRuns, nodeDetails, executionSteps },
     runtime,
     piActivities,
-    truncated: runtime.availability === "available" && runtime.truncated,
+    truncated:
+      boundedPiActivities.truncated || (runtime.availability === "available" && runtime.truncated),
   });
   return { value, etag: `"${traceRevision}"` };
 }

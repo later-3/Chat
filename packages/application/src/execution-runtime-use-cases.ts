@@ -20,6 +20,7 @@ import { type ApplicationDeps } from "./deps.js";
 import { notFound, revisionConflict } from "./errors.js";
 import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
 import { requirePlanningRun } from "./product-run-kind.js";
+import { workflowNodePromptFor } from "./prompt-assembly-use-cases.js";
 
 /**
  * Workflow私有Application Command：执行合同、候选、验证与Product Commit。
@@ -336,6 +337,7 @@ export async function beginRunAttempt(
         throw revisionConflict("Execution Step的依赖血缘不完整");
       }
       const resolved = resolveExecutionStepContext(draft, contract, input.stepId);
+      const nodePrompt = workflowNodePromptFor(draft, input.productRunId, "execute.plan");
       const inputManifestSha256 = computeExecutionInputManifestSha256({
         executionContractId: contract.executionContractId,
         approvedPlanSha256: contract.approvedPlanSha256,
@@ -344,6 +346,16 @@ export async function beginRunAttempt(
         dependencyRefs: input.dependencyRefs,
         promptTemplateVersion: input.promptTemplateVersion,
         modelConfigVersion: input.modelConfigVersion,
+        ...(nodePrompt === undefined
+          ? {}
+          : {
+              promptAssemblyRef: {
+                promptAssemblyId: nodePrompt.promptAssemblyId,
+                sha256: nodePrompt.promptAssemblySha256,
+                definitionNodeId: nodePrompt.definitionNodeId,
+                nodeAssemblySha256: nodePrompt.nodeAssemblySha256,
+              },
+            }),
       });
       draft.entities.attempts[attemptId] = {
         schemaVersion: "run-attempt.v1",
@@ -382,6 +394,7 @@ export async function beginRunAttempt(
     throw notFound("Execution Attempt或输入证据不存在");
   }
   const resolved = resolveExecutionStepContext(snapshot, contract, input.stepId);
+  const nodePrompt = workflowNodePromptFor(snapshot, input.productRunId, "execute.plan");
   const expectedManifestSha256 = computeExecutionInputManifestSha256({
     executionContractId: contract.executionContractId,
     approvedPlanSha256: contract.approvedPlanSha256,
@@ -390,6 +403,16 @@ export async function beginRunAttempt(
     dependencyRefs: input.dependencyRefs,
     promptTemplateVersion: input.promptTemplateVersion,
     modelConfigVersion: input.modelConfigVersion,
+    ...(nodePrompt === undefined
+      ? {}
+      : {
+          promptAssemblyRef: {
+            promptAssemblyId: nodePrompt.promptAssemblyId,
+            sha256: nodePrompt.promptAssemblySha256,
+            definitionNodeId: nodePrompt.definitionNodeId,
+            nodeAssemblySha256: nodePrompt.nodeAssemblySha256,
+          },
+        }),
   });
   if (attempt.inputManifestSha256 !== expectedManifestSha256) {
     throw revisionConflict("Execution Attempt的输入Manifest与冻结上下文不一致");
@@ -439,6 +462,7 @@ export async function authorizeExecutorOperation(
     throw revisionConflict("Execution Contract授权证据不一致");
   }
   const resolved = resolveExecutionStepContext(snapshot, contract, input.stepId);
+  const nodePrompt = workflowNodePromptFor(snapshot, attempt.productRunId, "execute.plan");
   return {
     schemaVersion: "chat-internal-runtime.v1",
     productRunId: attempt.productRunId,
@@ -446,6 +470,7 @@ export async function authorizeExecutorOperation(
     contract,
     contextItems: [...resolved.contextItems],
     dependencyRefs: [...(attempt.dependencyRefs ?? [])],
+    ...(nodePrompt === undefined ? {} : { nodePrompt }),
   };
 }
 

@@ -5,13 +5,23 @@ import {
   DIRECT_PROMPT_PROFILE_V2_VERSION,
   DIRECT_PROMPT_TOOL_TOKEN_RESERVE,
   PROMPT_ASSEMBLY_V2_SCHEMA_VERSION,
+  PROMPT_ASSEMBLY_V3_SCHEMA_VERSION,
+  WORKFLOW_PROMPT_COMPILER_VERSION,
+  WORKFLOW_PROMPT_PROFILE_VERSION,
+  promptTurnSelectionInputV2Schema,
   promptConfigurationPreviewDtoSchema,
   promptAssemblyIdSchema,
+  promptFragmentIdSchema,
+  promptFragmentRevisionIdSchema,
   promptAssemblyPreviewDtoSchema,
   promptAssemblySchema,
   type PrincipalId,
+  type AgentKey,
   type PromptAssembly,
   type PromptAssemblyV2,
+  type PromptAssemblyV3,
+  type PiSystemPromptResolution,
+  type PromptBearingNodeType,
   type PromptAssemblyFragment,
   type PromptAssemblyRegion,
   type PromptFragment,
@@ -23,10 +33,15 @@ import {
   type ProductSessionId,
   type MessageId,
   type WorkflowDefinitionRevisionId,
+  type WorkflowNodeResolution,
 } from "@chat/contracts";
 import {
   computePromptAssemblyRegionSha256,
   computePromptAssemblyV2Sha256,
+  computePromptAssemblyV3Sha256,
+  computePromptNodeAssemblySha256,
+  computeWorkflowNodePromptOverrideIdentitySha256,
+  computeWorkflowNodePromptOverrideSha256,
   computeMessageSha256,
   hashCanonical,
   renderPromptAssemblyRegion,
@@ -37,14 +52,7 @@ import type {
   BuiltinPromptFragmentRevision,
   PromptCatalogSnapshot,
 } from "./prompt-catalog-port.js";
-
-/** Direct Profile的默认组件；精确Revision/Hash仍由Catalog在每次编译时解析。 */
-export const DIRECT_PROMPT_PROFILE_DEFAULT_REVISION_IDS = [
-  "pfr_builtinagentidentityv2",
-  "pfr_builtintransparentdeliveryv1",
-  "pfr_builtinevidencefirstv1",
-  "pfr_builtinincrementaldeliveryv1",
-] as const;
+import { getAgentProfile } from "./prompt-studio-use-cases.js";
 
 /**
  * V2先使用保守统一Meter；它用于确定性预算而不是冒充Provider精确Tokenizer。
@@ -53,6 +61,7 @@ export const DIRECT_PROMPT_PROFILE_DEFAULT_REVISION_IDS = [
 interface CompileContext {
   readonly principalId: PrincipalId;
   readonly selection: PromptTurnSelectionInput;
+  readonly definitionNodeId?: string;
 }
 
 interface ResolvedSource {
@@ -188,7 +197,7 @@ function regionDefaults(
   catalog: PromptCatalogSnapshot,
   regionKey: string,
 ): PromptAssemblyFragment[] {
-  const allowed = new Set<string>(DIRECT_PROMPT_PROFILE_DEFAULT_REVISION_IDS);
+  const allowed = new Set<string>(catalog.sharedSelectionProfile.defaultRevisionIds);
   return catalog.builtinFragments
     .filter(
       (fragment) =>
@@ -201,37 +210,47 @@ async function compileRegions(deps: ApplicationDeps, context: CompileContext) {
   assertWorkspace(deps, context.selection);
   const catalog = await requireCatalog(deps).load();
   const sources = await sourcesFor(deps, catalog, context);
-  const requested = new Map(context.selection.regions.map((item) => [item.regionKey, item]));
-  for (const key of requested.keys()) {
+  const requested = context.selection.regions;
+  for (const key of new Set(requested.map((item) => item.regionKey))) {
     const region = catalog.regions.find((item) => item.regionKey === key);
     if (region === undefined) throw notFound(`Prompt Region不存在:${key}`);
-    if (!region.userManageable || region.availability !== "active") {
-      throw forbidden(`Prompt Region不可由用户组装:${key}`);
+    if (
+      !region.userManageable ||
+      region.availability !== "active" ||
+      region.category !== "context"
+    ) {
+      throw forbidden(`该区域不属于会话上下文Prompt:${key}`);
     }
   }
 
   const regions: PromptAssemblyRegion[] = [];
   for (const region of catalog.regions
-    .filter((item) => item.userManageable && item.availability === "active")
+    .filter(
+      (item) =>
+        item.userManageable && item.availability === "active" && item.category === "context",
+    )
     .sort((left, right) => left.stableOrder - right.stableOrder)) {
     if (region.plannedPlacement !== "system" && region.plannedPlacement !== "messages") continue;
-    const input = requested.get(region.regionKey) ?? {
+    const shared = context.selection.regions.find((item) => item.regionKey === region.regionKey);
+    const input = shared ?? {
       regionKey: region.regionKey,
       mode: "default" as const,
       selected: [],
     };
-    const explicit = input.selected.map((ref) => {
-      const resolved = sources.get(ref.promptFragmentRevisionId)?.fragment;
-      if (resolved === undefined) throw notFound("Prompt Revision不存在、已归档或无权访问");
-      if (resolved.sha256 !== ref.sha256) throw revisionConflict("Prompt Revision Hash已变化");
-      if (resolved.regionKey !== region.regionKey) {
-        throw revisionConflict("Prompt Revision与选择的Region不一致");
-      }
-      assertSourceVisible(resolved, context.selection);
-      return resolved;
-    });
+    const resolveExplicit = (refs: typeof input.selected) =>
+      refs.map((ref) => {
+        const resolved = sources.get(ref.promptFragmentRevisionId)?.fragment;
+        if (resolved === undefined) throw notFound("Prompt Revision不存在、已归档或无权访问");
+        if (resolved.sha256 !== ref.sha256) throw revisionConflict("Prompt Revision Hash已变化");
+        if (resolved.regionKey !== region.regionKey) {
+          throw revisionConflict("Prompt Revision与选择的Region不一致");
+        }
+        assertSourceVisible(resolved, context.selection);
+        return resolved;
+      });
+    const explicit = resolveExplicit(input.selected);
     const defaults = regionDefaults(catalog, region.regionKey);
-    const fragments =
+    const sharedFragments =
       input.mode === "default"
         ? defaults
         : input.mode === "replace"
@@ -243,6 +262,7 @@ async function compileRegions(deps: ApplicationDeps, context: CompileContext) {
                     candidate.promptFragmentRevisionId === fragment.promptFragmentRevisionId,
                 ) === index,
             );
+    const fragments = sharedFragments;
     const renderedText = renderPromptAssemblyRegion({
       regionKey: region.regionKey,
       title: region.title,
@@ -266,6 +286,341 @@ async function compileRegions(deps: ApplicationDeps, context: CompileContext) {
     .join("\n\n");
   const messageContext = "";
   return { regions, systemPromptAppend, messageContext };
+}
+
+async function compileAgentRegion(
+  deps: ApplicationDeps,
+  principalId: PrincipalId,
+  binding: {
+    readonly agentKey: AgentKey;
+    readonly definitionNodeId: string;
+    readonly nodeType: PromptBearingNodeType;
+    readonly workflowDefinitionRevisionId: WorkflowDefinitionRevisionId;
+    readonly promptOverrideMarkdown?: string | undefined;
+  },
+): Promise<{
+  readonly agentKey: AgentKey;
+  readonly region: PromptAssemblyRegion;
+  readonly piSystemPrompt?: PiSystemPromptResolution | undefined;
+}> {
+  const profile = await getAgentProfile(deps, { principalId, agentKey: binding.agentKey });
+  const expectedProfileVersion = AGENT_PROFILE_VERSION_BY_KEY[binding.agentKey];
+  if (profile.profileVersion !== expectedProfileVersion) {
+    throw new Error(
+      `Agent Profile版本与编译器不一致:${binding.agentKey}:${profile.profileVersion}`,
+    );
+  }
+  if (!profile.supportedNodeTypes.includes(binding.nodeType)) {
+    throw revisionConflict(`Agent ${binding.agentKey}不支持节点类型${binding.nodeType}`);
+  }
+  const override = binding.promptOverrideMarkdown;
+  const useOverride = override !== undefined && override.trim() !== "";
+  const piBacked = profile.runtimeBaseline?.kind === "pi_coding_agent";
+  const inheritsPiDefault =
+    piBacked && !useOverride && profile.systemPrompt.source === "runtime_default";
+  const overrideIdentity = computeWorkflowNodePromptOverrideIdentitySha256({
+    workflowDefinitionRevisionId: binding.workflowDefinitionRevisionId,
+    definitionNodeId: binding.definitionNodeId,
+  });
+  const overrideSha256 = useOverride
+    ? computeWorkflowNodePromptOverrideSha256({
+        workflowDefinitionRevisionId: binding.workflowDefinitionRevisionId,
+        definitionNodeId: binding.definitionNodeId,
+        nodeType: binding.nodeType,
+        bodyMarkdown: override,
+      })
+    : undefined;
+  const fragment: PromptAssemblyFragment | undefined = inheritsPiDefault
+    ? undefined
+    : useOverride
+      ? {
+          promptFragmentId: promptFragmentIdSchema.parse(`pfg_${overrideIdentity.slice(0, 32)}`),
+          promptFragmentRevisionId: promptFragmentRevisionIdSchema.parse(
+            `pfr_${overrideSha256?.slice(0, 32) ?? ""}`,
+          ),
+          revision: 1,
+          sha256: overrideSha256 ?? "",
+          ownerKind: "workflow_node_override",
+          scope: { kind: "global" },
+          title: `${profile.title} · 节点覆盖`,
+          regionKey: "agent_identity",
+          content: { kind: "markdown", bodyMarkdown: override },
+          selectionKind: "explicit",
+        }
+      : profile.systemPrompt.source === "runtime_default"
+        ? undefined
+        : {
+            promptFragmentId: profile.systemPrompt.promptFragmentId,
+            promptFragmentRevisionId: profile.systemPrompt.promptFragmentRevisionId,
+            revision: profile.systemPrompt.revision,
+            sha256: profile.systemPrompt.sha256,
+            ownerKind: profile.systemPrompt.source === "builtin" ? "system" : "principal",
+            scope: { kind: "global" },
+            title:
+              profile.systemPrompt.source === "builtin"
+                ? profile.title
+                : `${profile.title} · System Prompt`,
+            regionKey: "agent_identity",
+            content: { kind: "markdown", bodyMarkdown: profile.systemPrompt.bodyMarkdown },
+            sourceRelativePath: profile.systemPrompt.sourceRelativePath,
+            selectionKind:
+              profile.systemPrompt.source === "builtin" ? "profile_default" : "explicit",
+          };
+  const fragments = fragment === undefined ? [] : [fragment];
+  const shape = {
+    regionKey: "agent_identity",
+    title: "Agent System Prompt",
+    placement: "system" as const,
+    mode: inheritsPiDefault
+      ? ("default" as const)
+      : !useOverride && profile.systemPrompt.source === "builtin"
+        ? ("default" as const)
+        : ("replace" as const),
+    fragments,
+    renderedText: renderPromptAssemblyRegion({
+      regionKey: "agent_identity",
+      title: "Agent System Prompt",
+      fragments,
+    }),
+  };
+  const replacementBody = useOverride ? override : profile.systemPrompt.bodyMarkdown;
+  const piSystemPrompt: PiSystemPromptResolution | undefined = piBacked
+    ? inheritsPiDefault
+      ? { kind: "pi_coding_agent", mode: "inherit" }
+      : {
+          kind: "pi_coding_agent",
+          mode: "replace",
+          bodyMarkdown: replacementBody,
+          sha256: hashCanonical("pi-system-prompt-override.v1", {
+            bodyMarkdown: replacementBody,
+          }),
+        }
+    : undefined;
+  return {
+    agentKey: binding.agentKey,
+    region: { ...shape, sha256: computePromptAssemblyRegionSha256(shape) },
+    ...(piSystemPrompt === undefined ? {} : { piSystemPrompt }),
+  };
+}
+
+export const AGENT_BINDINGS_BY_NODE_TYPE: Readonly<
+  Record<PromptBearingNodeType, { readonly agentKey: AgentKey; readonly profileVersion: string }>
+> = {
+  "agent.plan": { agentKey: "planner", profileVersion: "planner-prompt.v3" },
+  "agent.direct": { agentKey: "direct", profileVersion: "direct-agent-prompt.v1" },
+  "execute.plan": {
+    agentKey: "coding_executor",
+    profileVersion: "executor-coding-agent-prompt.v1",
+  },
+  "note.extract": { agentKey: "note_extractor", profileVersion: "note-capture.v1" },
+};
+
+const AGENT_PROFILE_VERSION_BY_KEY: Readonly<Record<AgentKey, string>> = {
+  planner: "planner-prompt.v3",
+  direct: "direct-agent-prompt.v1",
+  project_bootstrap: "project-bootstrap-agent.v1",
+  coding_executor: "executor-coding-agent-prompt.v1",
+  note_extractor: "note-capture.v1",
+};
+
+export function agentBindingForNode(
+  nodeType: PromptBearingNodeType,
+  config: Readonly<Record<string, unknown>>,
+): {
+  readonly agentKey: AgentKey;
+  readonly profileVersion: string;
+  readonly promptOverrideMarkdown?: string | undefined;
+} {
+  const configuredAgentKey = config["agentKey"] as AgentKey | undefined;
+  if (configuredAgentKey !== undefined) {
+    return {
+      agentKey: configuredAgentKey,
+      profileVersion: AGENT_PROFILE_VERSION_BY_KEY[configuredAgentKey],
+      ...(typeof config["agentPromptOverride"] === "string" &&
+      config["agentPromptOverride"].trim() !== ""
+        ? { promptOverrideMarkdown: config["agentPromptOverride"] }
+        : {}),
+    };
+  }
+  if (nodeType === "agent.direct" && config["capabilityMode"] === "project_bootstrap") {
+    return {
+      agentKey: "project_bootstrap",
+      profileVersion: "project-bootstrap-agent.v1",
+      ...(typeof config["agentPromptOverride"] === "string" &&
+      config["agentPromptOverride"].trim() !== ""
+        ? { promptOverrideMarkdown: config["agentPromptOverride"] }
+        : {}),
+    };
+  }
+  return {
+    ...AGENT_BINDINGS_BY_NODE_TYPE[nodeType],
+    ...(typeof config["agentPromptOverride"] === "string" &&
+    config["agentPromptOverride"].trim() !== ""
+      ? { promptOverrideMarkdown: config["agentPromptOverride"] }
+      : {}),
+  };
+}
+
+/**
+ * Workflow目录只公开“节点引用哪个Agent”。Agent自己的System Prompt由Agent目录管理，
+ * 会话上下文由Prompt Composer管理；Tool只展示Runtime策略而不接受Prompt授权。
+ */
+export function agentNodeBindingDescriptor(
+  nodeType: PromptBearingNodeType,
+  config: Readonly<Record<string, unknown>>,
+) {
+  const toolPolicy =
+    nodeType === "agent.plan"
+      ? { summary: "只允许提交结构化计划候选", defaultTools: ["submit_plan_candidate"] }
+      : nodeType === "note.extract"
+        ? { summary: "只允许提交结构化笔记候选", defaultTools: ["submit_note_candidate"] }
+        : nodeType === "agent.direct"
+          ? {
+              summary:
+                config["capabilityMode"] === "project_bootstrap"
+                  ? "只读文件工具，并可准备受控项目初始化候选"
+                  : "固定只读文件工具",
+              defaultTools:
+                config["capabilityMode"] === "project_bootstrap"
+                  ? ["read", "grep", "find", "ls", "project_bootstrap_prepare"]
+                  : ["read", "grep", "find", "ls"],
+            }
+          : {
+              summary: "由批准的Execution Contract能力引用在运行时冻结",
+              defaultTools: [],
+            };
+  const binding = agentBindingForNode(nodeType, config);
+  return {
+    agentKey: binding.agentKey,
+    profileVersion: binding.profileVersion,
+    bindingKind: "agent_catalog" as const,
+    promptPolicy: "agent_profile_plus_session_context" as const,
+    promptSource:
+      binding.promptOverrideMarkdown === undefined
+        ? ("agent_default" as const)
+        : ("workflow_override" as const),
+    ...(binding.promptOverrideMarkdown === undefined
+      ? {}
+      : { promptOverrideMarkdown: binding.promptOverrideMarkdown }),
+    toolPolicy: { kind: "runtime_locked" as const, ...toolPolicy },
+  };
+}
+
+const PROMPT_BEARING_NODE_TYPES = new Set<PromptBearingNodeType>(
+  Object.keys(AGENT_BINDINGS_BY_NODE_TYPE) as PromptBearingNodeType[],
+);
+
+export function isPromptBearingNodeType(nodeType: string): nodeType is PromptBearingNodeType {
+  return PROMPT_BEARING_NODE_TYPES.has(nodeType as PromptBearingNodeType);
+}
+
+export function promptBearingNodes(
+  nodes: readonly WorkflowNodeResolution[],
+): readonly (WorkflowNodeResolution & { readonly nodeType: PromptBearingNodeType })[] {
+  return nodes.filter(
+    (node): node is WorkflowNodeResolution & { nodeType: PromptBearingNodeType } =>
+      node.activation === "enabled" && isPromptBearingNodeType(node.nodeType),
+  );
+}
+
+function normalizeWorkflowSelection(input: {
+  readonly selection: PromptTurnSelectionInput;
+  readonly workflowDefinitionRevisionId: WorkflowDefinitionRevisionId;
+  readonly nodes: readonly Pick<WorkflowNodeResolution, "definitionNodeId" | "nodeType">[];
+}) {
+  if (input.selection.schemaVersion === "prompt-turn-selection-input.v2") {
+    if (input.selection.workflowDefinitionRevisionId !== input.workflowDefinitionRevisionId) {
+      throw revisionConflict("Prompt节点选择绑定了其他Workflow Revision，请刷新后重试");
+    }
+    return promptTurnSelectionInputV2Schema.parse({ ...input.selection, nodeSelections: [] });
+  }
+  return promptTurnSelectionInputV2Schema.parse({
+    schemaVersion: "prompt-turn-selection-input.v2",
+    ...(input.selection.workspaceRootId === undefined
+      ? {}
+      : { workspaceRootId: input.selection.workspaceRootId }),
+    workflowDefinitionRevisionId: input.workflowDefinitionRevisionId,
+    regions: input.selection.regions,
+    nodeSelections: [],
+  });
+}
+
+export async function compileWorkflowPromptAssembly(
+  deps: ApplicationDeps,
+  input: {
+    readonly principalId: PrincipalId;
+    readonly text: string;
+    readonly selection: PromptTurnSelectionInput;
+    readonly productSessionId: ProductSessionId;
+    readonly productRunId: ProductRunId;
+    readonly sourceMessageId: MessageId;
+    readonly workflowDefinitionRevisionId: WorkflowDefinitionRevisionId;
+    readonly nodeResolutions: readonly WorkflowNodeResolution[];
+    readonly createdAt: string;
+  },
+): Promise<PromptAssemblyV3> {
+  const nodes = promptBearingNodes(input.nodeResolutions);
+  if (nodes.length === 0) {
+    throw revisionConflict("当前Workflow没有可组装Prompt的模型节点");
+  }
+  const selection = normalizeWorkflowSelection({
+    selection: input.selection,
+    workflowDefinitionRevisionId: input.workflowDefinitionRevisionId,
+    nodes,
+  });
+  const shared = await compileRegions(deps, { principalId: input.principalId, selection });
+  const nodeAssemblies = await Promise.all(
+    nodes.map(async (node) => {
+      const nodeType = node.nodeType as PromptBearingNodeType;
+      const binding = agentBindingForNode(nodeType, node.config);
+      const agent = await compileAgentRegion(deps, input.principalId, {
+        ...binding,
+        definitionNodeId: node.definitionNodeId,
+        nodeType,
+        workflowDefinitionRevisionId: input.workflowDefinitionRevisionId,
+      });
+      const regions = [agent.region, ...shared.regions];
+      const systemPromptAppend = [
+        agent.piSystemPrompt === undefined ? agent.region.renderedText : "",
+        shared.systemPromptAppend,
+      ]
+        .filter((value) => value !== "")
+        .join("\n\n");
+      const body = {
+        definitionNodeId: node.definitionNodeId,
+        nodeType,
+        profileVersion: binding.profileVersion,
+        regions,
+        systemPromptAppend,
+        ...(agent.piSystemPrompt === undefined ? {} : { piSystemPrompt: agent.piSystemPrompt }),
+      } as const;
+      return { ...body, sha256: computePromptNodeAssemblySha256(body) };
+    }),
+  );
+  const promptAssemblyId = promptAssemblyIdSchema.parse(
+    `pma_${hashCanonical("id.prompt-assembly.v1", { productRunId: input.productRunId }).slice(0, 32)}`,
+  );
+  const body = {
+    schemaVersion: PROMPT_ASSEMBLY_V3_SCHEMA_VERSION,
+    promptAssemblyId,
+    productSessionId: input.productSessionId,
+    productRunId: input.productRunId,
+    sourceMessageId: input.sourceMessageId,
+    workflowDefinitionRevisionId: input.workflowDefinitionRevisionId,
+    profileVersion: WORKFLOW_PROMPT_PROFILE_VERSION,
+    compilerVersion: WORKFLOW_PROMPT_COMPILER_VERSION,
+    ...(selection.workspaceRootId === undefined
+      ? {}
+      : { workspaceRootId: selection.workspaceRootId }),
+    selection,
+    sharedRegions: shared.regions,
+    nodes: nodeAssemblies,
+  } as const;
+  return promptAssemblySchema.parse({
+    ...body,
+    sha256: computePromptAssemblyV3Sha256(body),
+    createdAt: input.createdAt,
+  }) as PromptAssemblyV3;
 }
 
 function userPromptFor(messageContext: string, text: string): string {
@@ -362,8 +717,14 @@ export async function previewDirectPromptConfiguration(
   const configuration = await compileRegions(deps, input);
   return promptConfigurationPreviewDtoSchema.parse({
     schemaVersion: "chat-prompt-studio-api.v1",
-    profileVersion: DIRECT_PROMPT_PROFILE_V2_VERSION,
-    compilerVersion: DIRECT_PROMPT_COMPILER_V2_VERSION,
+    profileVersion:
+      input.selection.schemaVersion === "prompt-turn-selection-input.v2"
+        ? WORKFLOW_PROMPT_PROFILE_VERSION
+        : DIRECT_PROMPT_PROFILE_V2_VERSION,
+    compilerVersion:
+      input.selection.schemaVersion === "prompt-turn-selection-input.v2"
+        ? WORKFLOW_PROMPT_COMPILER_VERSION
+        : DIRECT_PROMPT_COMPILER_V2_VERSION,
     ...configuration,
     sha256: hashCanonical("prompt-configuration-preview.v1", {
       selection: input.selection,
@@ -405,15 +766,50 @@ export async function compileDirectPromptAssembly(
     readonly sourceMessageSequence: number;
     readonly sourceMessageSha256: string;
     readonly workflowDefinitionRevisionId: WorkflowDefinitionRevisionId;
+    readonly nodeResolutions?: readonly WorkflowNodeResolution[];
     readonly createdAt: string;
   },
 ): Promise<PromptAssemblyV2> {
-  const configuration = await compileRegions(deps, input);
+  const nodes =
+    input.nodeResolutions === undefined
+      ? [
+          {
+            definitionNodeId: "direct.agent",
+            nodeType: "agent.direct" as const,
+            schemaVersion: 1,
+            config: { capabilityMode: "read_only" },
+            activation: "enabled" as const,
+          },
+        ]
+      : promptBearingNodes(input.nodeResolutions);
+  const directNode = nodes.find((node) => node.nodeType === "agent.direct");
+  if (directNode === undefined) throw revisionConflict("Direct Workflow缺少Agent Prompt节点");
+  const selection = normalizeWorkflowSelection({
+    selection: input.selection,
+    workflowDefinitionRevisionId: input.workflowDefinitionRevisionId,
+    nodes,
+  });
+  const configuration = await compileRegions(deps, {
+    principalId: input.principalId,
+    selection,
+  });
+  const binding = agentBindingForNode("agent.direct", directNode.config);
+  const agent = await compileAgentRegion(deps, input.principalId, {
+    ...binding,
+    definitionNodeId: directNode.definitionNodeId,
+    nodeType: "agent.direct",
+    workflowDefinitionRevisionId: input.workflowDefinitionRevisionId,
+  });
+  const regions = [agent.region, ...configuration.regions];
+  const systemPromptAppend = [
+    agent.piSystemPrompt === undefined ? agent.region.renderedText : "",
+    configuration.systemPromptAppend,
+  ]
+    .filter((value) => value !== "")
+    .join("\n\n");
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
   const instructionsEstimatedTokens =
-    configuration.systemPromptAppend === ""
-      ? 0
-      : estimatePromptTokens(configuration.systemPromptAppend);
+    systemPromptAppend === "" ? 0 : estimatePromptTokens(systemPromptAppend);
   const currentEstimatedTokens = estimatePromptTokens(input.text);
   const mandatoryTokens =
     instructionsEstimatedTokens + currentEstimatedTokens + DIRECT_PROMPT_TOOL_TOKEN_RESERVE;
@@ -442,9 +838,16 @@ export async function compileDirectPromptAssembly(
     (sum, message) => sum + message.estimatedTokens,
     0,
   );
+  const capabilityMode =
+    directNode.config["capabilityMode"] === "project_bootstrap"
+      ? ("project_bootstrap" as const)
+      : ("read_only" as const);
   const tools = {
-    capabilityMode: "read_only" as const,
-    names: ["read", "grep", "find", "ls"] as const,
+    capabilityMode,
+    names:
+      capabilityMode === "project_bootstrap"
+        ? (["read", "grep", "find", "ls", "project_bootstrap_prepare"] as const)
+        : (["read", "grep", "find", "ls"] as const),
     estimatedTokens: DIRECT_PROMPT_TOOL_TOKEN_RESERVE,
   };
   const requestOptions = {
@@ -475,11 +878,12 @@ export async function compileDirectPromptAssembly(
     workflowDefinitionRevisionId: input.workflowDefinitionRevisionId,
     profileVersion: DIRECT_PROMPT_PROFILE_V2_VERSION,
     compilerVersion: DIRECT_PROMPT_COMPILER_V2_VERSION,
-    ...(input.selection.workspaceRootId === undefined
+    ...(selection.workspaceRootId === undefined
       ? {}
-      : { workspaceRootId: input.selection.workspaceRootId }),
-    regions: configuration.regions,
-    systemPromptAppend: configuration.systemPromptAppend,
+      : { workspaceRootId: selection.workspaceRootId }),
+    regions,
+    systemPromptAppend,
+    ...(agent.piSystemPrompt === undefined ? {} : { piSystemPrompt: agent.piSystemPrompt }),
     messages,
     tools,
     requestOptions,
@@ -502,8 +906,17 @@ export function assertPromptAssemblySourcesCurrent(
   assembly: PromptAssembly,
   principalId: PrincipalId,
 ): void {
-  for (const fragment of assembly.regions.flatMap((region) => region.fragments)) {
-    if (fragment.ownerKind === "system") continue;
+  const regions =
+    assembly.schemaVersion === "prompt-assembly.v3"
+      ? [...assembly.sharedRegions, ...assembly.nodes.flatMap((node) => node.regions)]
+      : assembly.regions;
+  for (const fragment of regions.flatMap((region) => region.fragments)) {
+    if (
+      fragment.ownerKind === "system" ||
+      fragment.ownerKind === "workflow_node_override" ||
+      fragment.ownerKind === "runtime"
+    )
+      continue;
     const revision = snapshot.entities.promptFragmentRevisions[fragment.promptFragmentRevisionId];
     const aggregate = snapshot.entities.promptFragments[fragment.promptFragmentId];
     if (
@@ -518,4 +931,35 @@ export function assertPromptAssemblySourcesCurrent(
       throw revisionConflict("Prompt Assembly来源已变化，请重新预览后发送");
     }
   }
+}
+
+/**
+ * Runtime只按Product Run和已发布节点类型取得冻结层；不得从DSH会话或当前文件重编译。
+ * 返回undefined只用于兼容升级前已经存在的Planning/Note Run。
+ */
+export function workflowNodePromptFor(
+  snapshot: ProductSnapshot,
+  productRunId: ProductRunId,
+  nodeType: PromptBearingNodeType,
+) {
+  const assemblies = Object.values(snapshot.entities.promptAssemblies).filter(
+    (assembly): assembly is PromptAssemblyV3 =>
+      assembly.productRunId === productRunId && assembly.schemaVersion === "prompt-assembly.v3",
+  );
+  if (assemblies.length > 1)
+    throw revisionConflict("Product Run绑定了多个Workflow Prompt Assembly");
+  const assembly = assemblies[0];
+  if (assembly === undefined) return undefined;
+  const nodes = assembly.nodes.filter((node) => node.nodeType === nodeType);
+  if (nodes.length !== 1) throw revisionConflict(`Workflow Prompt节点数量无效:${nodeType}`);
+  const node = nodes[0]!;
+  return {
+    promptAssemblyId: assembly.promptAssemblyId,
+    promptAssemblySha256: assembly.sha256,
+    definitionNodeId: node.definitionNodeId,
+    nodeAssemblySha256: node.sha256,
+    profileVersion: node.profileVersion,
+    systemPromptAppend: node.systemPromptAppend,
+    ...(node.piSystemPrompt === undefined ? {} : { piSystemPrompt: node.piSystemPrompt }),
+  };
 }

@@ -14,6 +14,7 @@ import {
   type PromptReviewRequestDto,
   type PromptReviewRequestId,
   type PromptAssembly,
+  type ProductSnapshot,
   type RunAttemptId,
   type SubmitPromptReviewDecisionPayload,
 } from "@chat/contracts";
@@ -119,6 +120,35 @@ function toPromptDecisionRuntimeRef(decision: PromptReviewDecision) {
       commandId: decision.commandId,
     }),
   });
+}
+
+/**
+ * Prompt Review创建后，Workflow仍需把同一Request/Hash投影为耐久节点等待事实。
+ * 只有这一步完成后才允许用户决定，避免Decision抢在Hook认领之前形成恢复竞态。
+ */
+function isPromptReviewActionable(
+  snapshot: ProductSnapshot,
+  productRunId: ProductRunId,
+  review: PromptReviewRequest,
+): boolean {
+  const node = Object.values(snapshot.entities.workflowNodeRuns).find(
+    (candidate) =>
+      candidate.productRunId === productRunId &&
+      candidate.nodeType === "agent.direct" &&
+      candidate.status === "waiting_human",
+  );
+  if (node === undefined) return false;
+  const latestTransition = Object.values(snapshot.entities.nodeRunTransitions)
+    .filter((candidate) => candidate.workflowNodeRunId === node.workflowNodeRunId)
+    .sort((left, right) => right.nodeSequence - left.nodeSequence)[0];
+  const evidence = latestTransition?.relatedProductRef;
+  return (
+    latestTransition?.toStatus === "waiting_human" &&
+    evidence?.kind === "prompt_review_request" &&
+    evidence.id === review.promptReviewRequestId &&
+    evidence.revision === review.requestRevision &&
+    evidence.sha256 === review.reviewSha256
+  );
 }
 
 export interface PublishPromptReviewRequestInput {
@@ -281,6 +311,9 @@ export async function getCurrentPromptReview(
       recoveryAction: "contact_support",
     });
   }
+  if (!isPromptReviewActionable(snapshot, input.productRunId, review)) {
+    return { promptReview: null };
+  }
   const assembly = Object.values(snapshot.entities.promptAssemblies).find(
     (candidate) => candidate.productRunId === input.productRunId,
   );
@@ -338,6 +371,9 @@ export async function submitPromptReviewDecision(
         run.currentPromptReviewRequestId !== review.promptReviewRequestId
       ) {
         throw notFound("当前Prompt Review不存在");
+      }
+      if (!isPromptReviewActionable(draft, input.productRunId, review)) {
+        throw revisionConflict("Prompt Review尚未完成Workflow等待绑定，请稍后重试");
       }
       mapPromptInvariant(() =>
         assertPromptReviewDecisionBinding(review, {

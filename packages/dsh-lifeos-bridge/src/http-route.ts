@@ -12,12 +12,15 @@ import {
   promptReviewDecisionRequestSchema,
   projectBootstrapDecisionRequestSchema,
   workflowSelectionRequestSchema,
+  saveWorkflowAgentNodeConfigurationRequestSchema,
 } from "./contracts.ts";
 import { BridgeRequestError, LifeosBridgeService } from "./bridge-service.ts";
 import { ChatProductApiError } from "./chat-client.ts";
 import { DshSessionHistoryAccessError } from "./dsh-session-history.ts";
 import {
   PromptStudioBridgeService,
+  agentPromptRestoreRequestSchema,
+  agentPromptReviseRequestSchema,
   promptStudioArchiveRequestSchema,
   promptStudioCopyRequestSchema,
   promptStudioConfigurationPreviewRequestSchema,
@@ -53,10 +56,14 @@ const SESSION_RECORDS_PATH = /^\/lifeos\/sessions\/([^/]+)\/records$/;
 const SESSION_RECORDS_CHAT_PATH = /^\/lifeos\/sessions\/([^/]+)\/records\/chat$/;
 const SESSION_RECORDS_DSH_PATH = /^\/lifeos\/sessions\/([^/]+)\/records\/dsh$/;
 const WORKFLOWS_PATH = /^\/lifeos\/workflows$/;
+const WORKFLOW_AGENT_NODE_CONFIGURATIONS_PATH = /^\/lifeos\/workflow\/agent-node-configurations$/;
 const PROJECT_BOOTSTRAP_PRESET_PATH = /^\/lifeos\/project-bootstrap\/preset$/;
 const PROJECT_BOOTSTRAP_INITIALIZE_PATH =
   /^\/lifeos\/project-bootstrap\/sessions\/([^/]+)\/initialize$/;
 const PROMPT_REGIONS_PATH = /^\/lifeos\/prompts\/regions$/;
+const AGENT_PROFILES_PATH = /^\/lifeos\/agents$/;
+const AGENT_PROMPT_REVISIONS_PATH = /^\/lifeos\/agents\/([^/]+)\/prompt-revisions$/;
+const AGENT_RESTORE_DEFAULT_PATH = /^\/lifeos\/agents\/([^/]+)\/restore-default$/;
 const PROMPT_WORKSPACES_PATH = /^\/lifeos\/prompts\/workspaces$/;
 const PROMPT_ASSEMBLY_PREVIEWS_PATH = /^\/lifeos\/prompts\/assembly-previews$/;
 const PROMPT_CONFIGURATION_PREVIEWS_PATH = /^\/lifeos\/prompts\/configuration-previews$/;
@@ -420,6 +427,71 @@ export function createLifeosRouteHandler(
           );
         }
         sendJson(res, 200, await promptStudio.regions());
+        return;
+      }
+      if (
+        promptStudio !== undefined &&
+        req.method === "GET" &&
+        AGENT_PROFILES_PATH.test(url.pathname)
+      ) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        sendJson(res, 200, await promptStudio.agents());
+        return;
+      }
+      const agentReviseMatch = AGENT_PROMPT_REVISIONS_PATH.exec(url.pathname);
+      if (promptStudio !== undefined && req.method === "POST" && agentReviseMatch !== null) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        const parsed = agentPromptReviseRequestSchema.safeParse(
+          await readJson(req, MAX_PROMPT_REQUEST_BODY_BYTES),
+        );
+        if (!parsed.success) {
+          throw new BridgeRequestError(400, "lifeos_agent_prompt_invalid", "Agent Prompt请求非法");
+        }
+        sendJson(
+          res,
+          200,
+          await promptStudio.reviseAgent(
+            decodeURIComponent(agentReviseMatch[1] ?? ""),
+            parsed.data,
+          ),
+        );
+        return;
+      }
+      const agentRestoreMatch = AGENT_RESTORE_DEFAULT_PATH.exec(url.pathname);
+      if (promptStudio !== undefined && req.method === "POST" && agentRestoreMatch !== null) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        const parsed = agentPromptRestoreRequestSchema.safeParse(
+          await readJson(req, MAX_PROMPT_REQUEST_BODY_BYTES),
+        );
+        if (!parsed.success) {
+          throw new BridgeRequestError(400, "lifeos_agent_restore_invalid", "Agent恢复请求非法");
+        }
+        sendJson(
+          res,
+          200,
+          await promptStudio.restoreAgent(
+            decodeURIComponent(agentRestoreMatch[1] ?? ""),
+            parsed.data,
+          ),
+        );
         return;
       }
       if (
@@ -868,6 +940,27 @@ export function createLifeosRouteHandler(
       const workflowsMatch = WORKFLOWS_PATH.exec(url.pathname);
       if (req.method === "GET" && workflowsMatch !== null) {
         sendJson(res, 200, await service.workflows());
+        return;
+      }
+      if (req.method === "POST" && WORKFLOW_AGENT_NODE_CONFIGURATIONS_PATH.test(url.pathname)) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        const parsed = saveWorkflowAgentNodeConfigurationRequestSchema.safeParse(
+          await readJson(req, MAX_PROMPT_REQUEST_BODY_BYTES),
+        );
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_workflow_agent_configuration_invalid",
+            "Workflow Agent配置请求非法",
+          );
+        }
+        sendJson(res, 201, await service.saveWorkflowAgentNodeConfiguration(parsed.data));
         return;
       }
       if (req.method === "GET" && PROJECT_BOOTSTRAP_PRESET_PATH.test(url.pathname)) {

@@ -7,6 +7,7 @@ import {
   type TraceEventInput,
 } from "@chat/contracts";
 import type { PiExecutorEvent } from "@chat/pi-runtime";
+import { runActivityFromTrace } from "@chat/realtime";
 import {
   getWorkflowRuntimeContext,
   workflowRunTraceId,
@@ -294,5 +295,27 @@ export function emitPiExecutorTrace(scope: PiExecutorTraceScope, event: PiExecut
       };
       break;
   }
-  ctx.trace(traceEvent);
+  const activity = runActivityFromTrace(traceEvent, event.timestamp);
+  if (activity !== undefined) ctx.activity?.(activity);
+  ctx.trace(withoutObservableSessionContent(traceEvent));
+}
+
+/** Debug Trace只留身份、Hash、统计与错误；可见会话正文只进入Run Activity。 */
+function withoutObservableSessionContent(event: TraceEventInput): TraceEventInput {
+  switch (event.eventName) {
+    case TRACE_EVENT_NAMES.piMessageCompleted: {
+      return { ...event, visibleText: undefined, visibleTextTruncated: undefined };
+    }
+    case TRACE_EVENT_NAMES.piToolIntentPersisted:
+    case TRACE_EVENT_NAMES.piToolBlocked:
+    case TRACE_EVENT_NAMES.piToolOutcomeUnknown: {
+      return { ...event, inputDisplay: undefined, inputDisplayTruncated: undefined };
+    }
+    case TRACE_EVENT_NAMES.piToolCompleted:
+    case TRACE_EVENT_NAMES.piToolFailed: {
+      return { ...event, resultDisplay: undefined, resultDisplayTruncated: undefined };
+    }
+    default:
+      return event;
+  }
 }

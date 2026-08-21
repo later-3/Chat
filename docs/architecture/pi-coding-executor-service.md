@@ -7,7 +7,7 @@
 
 ## 1. 结论
 
-Chat不再用单轮`pi-agent-core + submit_execution_result`模拟Executor。批准后的每个Execution Step由独立`apps/pi-executor`进程中的真实`AgentSession`执行，具备Pi的多轮Provider/Tool loop、Session JSONL、上下文文件、Skills、Compaction以及`read/grep/find/ls/edit/write/bash`内建工具。
+Chat不再用单轮`pi-agent-core + submit_execution_result`模拟Executor。批准后的每个Execution Step由独立`apps/pi-executor`进程中的真实`AgentSession`执行，具备Pi的多轮Provider/Tool loop、Session JSONL、Compaction能力以及`read/grep/find/ls/edit/write/bash`内建工具。Chat当前显式关闭Pi的Context Files、Skills、Prompt Templates和外部Extensions发现，节点提示词只来自Application授权的冻结Prompt Assembly。
 
 没有使用`pi` CLI做进程协议，也没有采用仍缺少operation幂等、cursor replay和Tool执行前栅栏的实验性`pi-server`。集成面是Chat拥有的窄HTTP Operation协议；Pi由`later-3/pi`受管分支维护通用运行接缝，Chat产品身份和终态仍不写入Pi源码。
 
@@ -59,7 +59,7 @@ Planner只能从以下四种Capability请求能力，用户批准Plan后Applicat
 
 `read/grep/find/ls/edit/write`在awaited `tool_call`栅栏中拒绝`..`、Root外绝对路径与symlink逃逸；被拒绝的调用记录参数Hash、已脱敏显示输入和稳定错误码。`bash`与Pi CLI一样是本机用户权限下的高影响能力，不是文件系统或网络沙箱：它固定以Workspace为`cwd`，但命令本身仍可访问Host。为避免把Provider/Runtime秘密暴露给Shell，Executor只传递PATH、Locale、时区、终端和临时目录等白名单环境，并使用独立HOME；需要SSH、Git Credential或其他外部凭据时必须再引入显式Credential Provider，不能继承父进程秘密。
 
-Pi外部Extension本质是任意本机代码，能绕过Tool白名单并读取进程秘密；当前`noExtensions=true`，只加载Chat内联Journal Extension。Project/Agent Skills和AGENTS上下文仍按Pi规则加载，但只能使用已批准工具。若要开放第三方Extension，必须先交付独立进程凭据隔离、固定来源/Hash和Extension Capability审核；不能把“完整AgentSession”偷换成无条件执行本地插件。
+Pi外部Extension本质是任意本机代码，能绕过Tool白名单并读取进程秘密；当前`noExtensions=true`，只加载Chat内联Journal Extension。同时设置`noContextFiles/noSkills/noPromptTemplates=true`并拒绝外部`SYSTEM.md`替换，Project/Agent Skills与AGENTS不会在执行时自行进入上下文。真实System顺序是`Pi按当前Tools/cwd生成的默认基线 → Chat固定Executor运行约束 → Application冻结的Agent/Workflow/Run追加层`。Application把后两类可管理输入冻结为`execute.plan`节点Assembly并随授权响应交付，其Assembly/Node Hash进入Execution Input Manifest。Pi Executor从真实AgentSession投影第一层和Tool Schema，再通过带Runtime Key的私有只读接口交给API的Agent设置；API与Workflow均不加载完整Pi Coding Agent，也不在Prompt Catalog中手抄上游内容。若要开放第三方Extension或自动发现，必须先交付独立进程凭据隔离、固定来源/Hash和Capability审核；不能把“完整AgentSession”偷换成无条件执行本地插件。
 
 当前一个批准Step对应一个AgentSession。各Step仍按Approved Plan依赖顺序执行；依赖输出以只读输入传给下一Step。AgentSession不能修改Plan、Capability或Product终态。
 
@@ -83,13 +83,15 @@ Operation Journal中已经成功持久化的事件使用从1开始连续递增�
 所以不能依靠序号缺口发现这类缺失事件。终态Snapshot仍只会在客户端取完已持久化事件后返回Candidate；
 正式fail-closed保证必须由独立Provider Gate和适用的执行前意图栅栏提供。
 
-Chat Trace新增Operation、Session、Turn、Message、Tool、Compaction事件，并把多次Provider请求分别投影为既有`provider.request.*`事件。Trace保存原事件`sourceTimestamp`，同时保留Sink写入时间。
+Pi Operation Journal事件会投影到独立Run Activity Journal；Debug Trace可同时保存诊断事件，但公开Session轨迹不再反向读取Trace。
 
 Trace和Operation事件不保存Prompt、Provider Payload、API Key或隐藏推理。为满足Pi CLI/Web同等级执行可观察性，它们保存经过边界脱敏且最多32K的Assistant可见文本、Tool输入和Tool结果；命令、模型可见文件路径、输出、状态与耗时因此可复核。完整Provider正文、Pi隐藏上下文和未裁剪Workspace内容仍分别留在Pi Session、Workspace与Product Store。旧v1 Trace没有显示字段时Reader继续兼容，并明确投影为legacy缺失，而不伪造内容。
 
 ### 4.1 DSH原生轨迹
 
-API公开`GET /api/runs/:productRunId/execution-trace`。Application先用Product Store校验Principal对Run的访问权，再由Realtime Reader把内部Trace裁剪为无Runtime凭据的cursor页。LifeOS Adapter遇到新的Pi `tool_call`时向DSH流式发出确定性的`lifeos_trace`显示调用；该工具不重跑命令，只轮询同一`toolCallId`的真实结果。DSH Agent loop因此原生落下`tool/call`和`tool/result`，固定rc.6 Trajectory可以显示pending/running、输入、输出和耗时。Bridge v4状态只保存单调显示cursor，DSH Session仍不是产品事实或授权身份。
+API的轨迹Query读取Product事实、Run Activity与Workflow Runtime证据。Bridge通过DSH公开Conversation contribution
+把远端Pi活动显示为Workflow树，但不把它伪造成DSH实际执行的工具调用。原生Pi Session/Operation Journal继续拥有
+完整执行与恢复证据，DSH Session只记录DSH真正执行的事件。详见[Session与轨迹架构](./session-architecture.md)。
 
 ## 5. 故障与恢复
 

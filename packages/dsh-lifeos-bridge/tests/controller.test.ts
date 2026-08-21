@@ -105,6 +105,7 @@ test("projection fetch is invoked without the controller as receiver", async () 
 test("loadWorkflows fills the picker list and keeps run polling untouched", async () => {
   const items = [
     {
+      workflowDefinitionId: "wfd_systemsimpleplanning",
       workflowDefinitionRevisionId: "wfr_systemsimpleplanningv1",
       definitionSha256: "a".repeat(64),
       title: "规划执行工作流",
@@ -113,8 +114,10 @@ test("loadWorkflows fills the picker list and keeps run polling untouched", asyn
       ownerKind: "system",
       isDefault: true,
       configurableNodes: [],
+      agentNodes: [],
     },
     {
+      workflowDefinitionId: "wfd_systemplanning",
       workflowDefinitionRevisionId: "wfr_systemplanningv2",
       definitionSha256: "b".repeat(64),
       title: "默认规划工作流",
@@ -123,8 +126,10 @@ test("loadWorkflows fills the picker list and keeps run polling untouched", asyn
       ownerKind: "system",
       isDefault: false,
       configurableNodes: [],
+      agentNodes: [],
     },
     {
+      workflowDefinitionId: "wfd_systemmemoryplanning",
       workflowDefinitionRevisionId: "wfr_systemmemoryplanningv1",
       definitionSha256: "d".repeat(64),
       title: "Memory 增强规划与执行",
@@ -133,8 +138,10 @@ test("loadWorkflows fills the picker list and keeps run polling untouched", asyn
       ownerKind: "system",
       isDefault: false,
       configurableNodes: [],
+      agentNodes: [],
     },
     {
+      workflowDefinitionId: "wfd_systemnote",
       workflowDefinitionRevisionId: "wfr_systemnotev1",
       definitionSha256: "c".repeat(64),
       title: "默认笔记工作流",
@@ -143,6 +150,7 @@ test("loadWorkflows fills the picker list and keeps run polling untouched", asyn
       ownerKind: "system",
       isDefault: false,
       configurableNodes: [],
+      agentNodes: [],
     },
   ];
   const controller = new LifeosProjectionController("dsh-session-1", async () => {
@@ -162,7 +170,7 @@ test("context manager loads its bounded DSH projection from the dedicated on-dem
     dshSessionId: "dsh-session-1",
     status: "ready",
     revision: "f".repeat(64),
-    chatForwarding: "latest_direct_user_message_and_workspace_instructions",
+    chatForwarding: "not_forwarded",
     items: [
       {
         messageId: "context-1",
@@ -204,7 +212,7 @@ test("context manager keeps the last good projection when a refresh fails", asyn
     dshSessionId: "dsh-session-1",
     status: "not_assembled",
     revision: "e".repeat(64),
-    chatForwarding: "latest_direct_user_message_and_workspace_instructions",
+    chatForwarding: "not_forwarded",
     items: [],
     totalItems: 0,
     omittedItems: 0,

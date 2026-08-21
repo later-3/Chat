@@ -69,6 +69,27 @@ describe("跨层依赖与事实所有权架构门", () => {
     ]);
     expect(violations).toEqual([]);
   });
+
+  it("API、Workflow与Pi包根不加载完整Pi Coding Agent运行时", async () => {
+    const apiAndWorkflowFiles = [
+      ...(await productionTypescriptFiles("apps/api/src")),
+      ...(await productionTypescriptFiles("packages/workflows/src")),
+    ];
+    const violations = await findTextViolations(apiAndWorkflowFiles, [
+      /@chat\/pi-runtime\/coding-executor/u,
+      /@earendil-works\/pi-coding-agent/u,
+      /coding-agent-runtime-profile/u,
+    ]);
+    const piRoot = await readFile(
+      resolve(REPOSITORY_ROOT, "packages/pi-runtime/src/index.ts"),
+      "utf8",
+    );
+
+    expect(violations).toEqual([]);
+    expect(piRoot).not.toContain("coding-agent-runtime-profile");
+    expect(piRoot).not.toContain("coding-agent-executor");
+    expect(piRoot).not.toContain("executor-service.js");
+  });
 });
 
 async function productionTypescriptFiles(relativeDirectory: string): Promise<string[]> {

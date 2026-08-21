@@ -320,6 +320,10 @@ function trace(revision = "a".repeat(64)): WorkflowExecutionTraceDto {
         status: "succeeded",
         nodeKind: "executor",
         toolName: "submit_execution_result",
+        inputDisplay: '{"stepId":"step_1"}',
+        inputDisplayTruncated: false,
+        resultDisplay: "执行结果候选已提交",
+        resultDisplayTruncated: false,
         startedAt: "2026-08-17T08:00:03.720Z",
         completedAt: "2026-08-17T08:00:03.750Z",
         durationMs: 30,
@@ -438,6 +442,8 @@ test("execution trace becomes a recursive native trajectory tool tree", () => {
   const serialized = JSON.stringify(root);
   assert.match(serialized, /submit_plan_candidate/u);
   assert.match(serialized, /submit_execution_result/u);
+  assert.match(serialized, /stepId.*step_1/u);
+  assert.match(serialized, /执行结果候选已提交/u);
   assert.match(serialized, /规划 Agent · 模型/u);
   assert.match(serialized, /执行 Agent · 工具/u);
   assert.match(serialized, /120 tokens（输入 100 \/ 输出 20）/u);
@@ -500,8 +506,23 @@ test("execution trace timestamps are a projection-only optional preference", () 
 
 test("definitions bind the user message but publish the trace at the following request Step", () => {
   const current = trace();
+  const currentValue = {
+    dshMessageId: "msg_dsh_trace1",
+    boundaries: {
+      dsh: {
+        dshSessionId: "dsh_session_trace1",
+        dshMessageId: "msg_dsh_trace1",
+        userTextSha256: "a".repeat(64),
+      },
+      bridge: {
+        messageCommandId: "cmd_trace1",
+        productUserMessageId: "msg_product_trace1",
+      },
+    },
+    trace: current,
+  } as const;
   const binding = createExecutionTraceBindingDefinition((messageId) =>
-    messageId === "msg_dsh_trace1" ? current : undefined,
+    messageId === "msg_dsh_trace1" ? currentValue : undefined,
   );
   const userEvent = {
     type: "user/message",
@@ -563,7 +584,7 @@ test("definitions bind the user message but publish the trace at the following r
               kind,
               id: "run_trace1",
               startSeq: 7,
-              state: current,
+              state: currentValue,
               matches: [userMatch],
             }
           : undefined,
@@ -595,7 +616,17 @@ test("definitions bind the user message but publish the trace at the following r
   assert.equal(trajectoryNode.anchorSeq, 11);
   assert.equal(trajectoryNode.location, stepLocation);
   assert.equal(trajectoryNode.data.kind, "tool");
-  assert.equal(trajectoryNode.data.root.callId, "lifeos-workflow-run_trace1");
+  assert.equal(trajectoryNode.data.root.callId, "lifeos-chat-turn-run_trace1");
+  assert.deepEqual(
+    trajectoryNode.data.root.subCalls.map((item) => item.callId),
+    [
+      "lifeos-boundary-dsh-msg_dsh_trace1",
+      "lifeos-boundary-bridge-run_trace1",
+      "lifeos-backend-run_trace1",
+    ],
+  );
+  assert.equal(trajectoryNode.data.callLabels?.get("lifeos-boundary-dsh-msg_dsh_trace1"), "DSH");
+  assert.equal(trajectoryNode.data.callLabels?.get("lifeos-boundary-bridge-run_trace1"), "BRIDGE");
   assert.equal(trajectoryNode.data.callLabels?.get("lifeos-workflow-run_trace1"), "WORKFLOW");
   assert.equal(trajectoryNode.data.callPreviews?.get("lifeos-workflow-run_trace1")?.input, "");
 });

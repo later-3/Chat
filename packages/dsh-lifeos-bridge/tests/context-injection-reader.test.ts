@@ -24,7 +24,7 @@ test("blank DSH session reports that context has not been assembled yet", () => 
   const projection = reader.read("dsh-session-blank");
   assert.ok(projection !== null);
   assert.equal(projection.status, "not_assembled");
-  assert.equal(projection.chatForwarding, "latest_direct_user_message_and_workspace_instructions");
+  assert.equal(projection.chatForwarding, "not_forwarded");
   assert.deepEqual(projection.items, []);
   assert.match(projection.revision, /^[a-f0-9]{64}$/u);
   assert.deepEqual(dshContextInjectionProjectionSchema.parse(projection), projection);

@@ -9,6 +9,7 @@ import { LifeosBridgeService, BridgeRequestError } from "../src/bridge-service.t
 import type { ChatProductClient } from "../src/chat-client.ts";
 import { promptSelectionRequestSchema, workflowSelectionSchema } from "../src/contracts.ts";
 import { AtomicBridgeStateStore } from "../src/state-store.ts";
+import { promptTurnPreviewFixture } from "./prompt-turn-preview-fixture.ts";
 
 test("prompt selection is bound to the Host-resolved workspace and stored per DSH session", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-prompt-selection-"));
@@ -23,6 +24,7 @@ test("prompt selection is bound to the Host-resolved workspace and stored per DS
     assert.deepEqual(await service.promptSelection("dsh-session-1"), {
       schemaVersion: "chat-dsh-prompt-selection.v1",
       workspace: { rootId: "root_chat", title: "Chat" },
+      workflow: null,
       promptSelection: {
         schemaVersion: "prompt-turn-selection-input.v1",
         workspaceRootId: "root_chat",
@@ -55,6 +57,7 @@ test("prompt selection is bound to the Host-resolved workspace and stored per DS
     assert.deepEqual(await service.promptSelection("dsh-session-2"), {
       schemaVersion: "chat-dsh-prompt-selection.v1",
       workspace: null,
+      workflow: null,
       promptSelection: { schemaVersion: "prompt-turn-selection-input.v1", regions: [] },
     });
   } finally {
@@ -72,7 +75,7 @@ test("DSH发送预览按Direct与非Direct政策投影真正的Bridge到Chat pay
       dshSessionId: "dsh-session-1",
       status: "ready" as const,
       revision: "b".repeat(64),
-      chatForwarding: "latest_direct_user_message_and_workspace_instructions" as const,
+      chatForwarding: "not_forwarded" as const,
       items: [
         {
           messageId: "ctx-1",
@@ -102,6 +105,8 @@ test("DSH发送预览按Direct与非Direct政策投影真正的Bridge到Chat pay
     });
     const chat = {
       previewPromptConfiguration: async () => promptConfiguration,
+      previewPromptTurn: async ({ message }: { message: { text: string } }) =>
+        promptTurnPreviewFixture(message.text),
     } as unknown as ChatProductClient;
     const service = new LifeosBridgeService(
       chat,
@@ -109,10 +114,6 @@ test("DSH发送预览按Direct与非Direct政策投影真正的Bridge到Chat pay
       undefined,
       {
         read: () => contextProjection,
-        workspaceInstructions: () => ({
-          schemaVersion: "workspace-instructions-input.v1",
-          items: [{ content: "# Workspace规则" }],
-        }),
       },
       { resolve: () => ({ rootId: "root_chat", title: "Chat" }) },
     );
@@ -165,10 +166,10 @@ test("DSH发送预览按Direct与非Direct政策投影真正的Bridge到Chat pay
         console.info = originalConsoleInfo;
       }
     })();
-    assert.equal(direct.bridgeToChat.policy, "direct_prompt_selection");
+    assert.equal(direct.bridgeToChat.policy, "workflow_prompt_selection");
     assert.deepEqual(direct.promptConfiguration, promptConfiguration);
     assert.deepEqual(direct.bridgeToChat.payload.promptSelection, promptSelection);
-    assert.equal(direct.bridgeToChat.payload.context, undefined);
+    assert.equal("context" in direct.bridgeToChat.payload, false);
     assert.equal(direct.dshToBridge.contextInjections.items[0]?.text, "# Workspace规则");
     assert.equal(traceLogs.length, 1);
     assert.match(JSON.stringify(traceLogs), /lifeos\.dsh_to_chat_payload\.projected/u);
@@ -198,15 +199,10 @@ test("DSH发送预览按Direct与非Direct政策投影真正的Bridge到Chat pay
       }),
     );
     const planning = await service.bridgeSendPreview("dsh-session-1", "规划项目");
-    assert.equal(planning.bridgeToChat.policy, "non_direct_workspace_instructions");
-    assert.equal(planning.promptConfiguration, null);
-    assert.deepEqual(planning.bridgeToChat.payload.context, {
-      workspaceInstructions: {
-        schemaVersion: "workspace-instructions-input.v1",
-        items: [{ content: "# Workspace规则" }],
-      },
-    });
-    assert.equal(planning.bridgeToChat.payload.promptSelection, undefined);
+    assert.equal(planning.bridgeToChat.policy, "workflow_prompt_selection");
+    assert.deepEqual(planning.promptConfiguration, promptConfiguration);
+    assert.equal("context" in planning.bridgeToChat.payload, false);
+    assert.deepEqual(planning.bridgeToChat.payload.promptSelection, promptSelection);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -191,6 +191,12 @@ describe("Direct Agent私有Runtime合同", () => {
         promptAssemblyId: "pma_v2",
         sha256: HASH_B,
         systemPromptAppend: "## 规则\n证据优先",
+        piSystemPrompt: {
+          kind: "pi_coding_agent",
+          mode: "replace",
+          bodyMarkdown: "DIRECT_CUSTOM_SYSTEM_PROMPT",
+          sha256: HASH_A,
+        },
         messages: [
           {
             role: "user",
@@ -239,6 +245,12 @@ describe("Direct Agent私有Runtime合同", () => {
       throw new Error("测试Fixture必须解析为Prompt Assembly V2");
     }
     expect(response.promptAssembly.messages.at(-1)?.source.kind).toBe("current_input");
+    expect(response.promptAssembly.piSystemPrompt).toEqual({
+      kind: "pi_coding_agent",
+      mode: "replace",
+      bodyMarkdown: "DIRECT_CUSTOM_SYSTEM_PROMPT",
+      sha256: HASH_A,
+    });
     expect(response.promptAssembly.tools.names).toEqual(["read", "grep", "find", "ls"]);
     expect(response.promptAssembly.requestOptions.compactionEnabled).toBe(false);
   });

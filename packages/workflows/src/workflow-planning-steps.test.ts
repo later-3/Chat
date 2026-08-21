@@ -362,6 +362,14 @@ describe("Configurable Planning合并生成Step", () => {
       inputManifestSha256: SHA,
       sourceMessageRef: { messageId: "msg_workflow1" as never, sha256: SHA },
       sourceMessageText: "不得进入Workflow checkpoint的正文",
+      nodePrompt: {
+        promptAssemblyId: "pma_workflow1" as never,
+        promptAssemblySha256: SHA,
+        definitionNodeId: "planning.plan",
+        nodeAssemblySha256: "c".repeat(64),
+        profileVersion: "planner-prompt.v3",
+        systemPromptAppend: "PLANNER_USER_LAYER_CANARY：先给出可审核计划。",
+      },
       planRevision: 1,
       limits: { maxTurns: 1, timeoutMs: 10_000, tokenBudget: 1_024 },
       promptTemplateVersion: "planner-prompt.v2",
@@ -466,6 +474,15 @@ describe("Configurable Planning合并生成Step", () => {
       }),
     );
     expect(planner).toHaveBeenCalledTimes(2);
+    expect(planner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        planningInput: expect.objectContaining({
+          nodePrompt: expect.objectContaining({
+            systemPromptAppend: "PLANNER_USER_LAYER_CANARY：先给出可审核计划。",
+          }),
+        }),
+      }),
+    );
     expect(
       (generateAndPublishPlanStep as typeof generateAndPublishPlanStep & { maxRetries: number })
         .maxRetries,

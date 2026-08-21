@@ -4,8 +4,9 @@ import { resolve } from "node:path";
 import { DSH_PROMPT_STUDIO_E2E_PORTS, dshRealWebEnvironment } from "./dsh-real-environment.mjs";
 
 /**
- * Prompt Studio真实门只需要Chat API与DSH。二者由同一个Playwright webServer
- * 根进程监督，避免两个独立pnpm包装器在Playwright收敛时互相丢失生命周期。
+ * Prompt Studio真实门使用Chat API、DSH与Pi Executor的只读Agent配置接口。
+ * 不启动Workflow，也不发起Provider请求；三个进程由同一个Playwright webServer
+ * 根进程监督，避免独立pnpm包装器在Playwright收敛时互相丢失生命周期。
  */
 const repoRoot = resolve(import.meta.dirname, "../..");
 const dataRoot = resolve(repoRoot, ".data/e2e/dsh-real");
@@ -66,6 +67,21 @@ const sharedEnvironment = {
   CHAT_TRACE_DIR: resolve(dataRoot, "traces"),
 };
 start(
+  "piExecutor",
+  process.execPath,
+  [
+    "--import",
+    resolve(repoRoot, "apps/pi-executor/node_modules/tsx/dist/loader.mjs"),
+    "apps/pi-executor/src/index.ts",
+  ],
+  {
+    ...sharedEnvironment,
+    CHAT_PI_EXECUTOR_PORT: String(ports.piExecutor),
+    CHAT_PI_EXECUTOR_DATA_DIR: resolve(dataRoot, "pi-executor-profile"),
+    CHAT_API_INTERNAL_BASE_URL: `http://127.0.0.1:${String(ports.api)}`,
+  },
+);
+start(
   "api",
   process.execPath,
   [
@@ -80,6 +96,7 @@ start(
     CHAT_PRODUCT_STORE_PATH: resolve(dataRoot, "product-store.v1.json"),
     // Prompt Studio没有Workflow动作；保留组合根要求的私有地址，但不启动Runtime。
     CHAT_WORKFLOW_BASE_URL: `http://127.0.0.1:${String(ports.workflowPlaceholder)}`,
+    CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${String(ports.piExecutor)}`,
   },
 );
 start("dsh", process.execPath, ["scripts/e2e/start-dsh-pwa-real.mjs"], {

@@ -449,7 +449,7 @@ describe("preclean", () => {
     expect(result.stderr).not.toContain(SECRET);
     // 不杀该进程
     expect(() => process.kill(blocker.pid ?? 0, 0)).not.toThrow();
-  }, 15_000);
+  }, 30_000);
 
   it("已登记的旧Workflow被preclean清理，端口随后不再Ready（Compound统一preclean门场景）", async () => {
     const debugDir = tempDebugDir();

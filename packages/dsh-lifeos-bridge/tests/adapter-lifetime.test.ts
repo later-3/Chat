@@ -10,6 +10,7 @@ import {
   type GenerateOptions,
   type StreamChunk,
 } from "@deepseek-ai/dsh-llm";
+import { TRACE_SCHEMA_VERSION, traceEventSchema, type TraceEventInput } from "@chat/contracts";
 import { LifeosLlmAdapter, stableCommandId } from "../src/adapter.ts";
 import { ChatProductApiError, type ChatProductClient } from "../src/chat-client.ts";
 import {
@@ -20,6 +21,7 @@ import {
 } from "../src/contracts.ts";
 import { AtomicBridgeStateStore } from "../src/state-store.ts";
 import { DshSendReviewCoordinator } from "../src/dsh-send-review.ts";
+import { promptTurnPreviewFixture } from "./prompt-turn-preview-fixture.ts";
 
 async function waitForReview(
   coordinator: DshSendReviewCoordinator,
@@ -109,6 +111,7 @@ test("enabled DSH send review blocks every Chat write until approve and reject w
           workflowSelection: null,
           promptSelection: { schemaVersion: "prompt-turn-selection-input.v1", regions: [] },
           promptConfiguration: null,
+          promptTurnPreview: promptTurnPreviewFixture(text),
           dshToBridge: {
             adapterRequest,
             userInput: { text, sha256: "a".repeat(64) },
@@ -117,7 +120,7 @@ test("enabled DSH send review blocks every Chat write until approve and reject w
               dshSessionId,
               status: "ready",
               revision: "b".repeat(64),
-              chatForwarding: "latest_direct_user_message_and_workspace_instructions",
+              chatForwarding: "not_forwarded",
               items: [],
               totalItems: 0,
               omittedItems: 0,
@@ -293,7 +296,77 @@ test("rc.6 retry of the same turn reuses command identity and returns the commit
   }
 });
 
-test("unknown submit outcome retries with the originally frozen Workspace instructions", async () => {
+test("DSH与Bridge Trace独立于审核开关且只记录边界摘要", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-trace-boundary-"));
+  const dshEvents: TraceEventInput[] = [];
+  const bridgeEvents: TraceEventInput[] = [];
+  try {
+    const state = new AtomicBridgeStateStore(join(directory, "state.json"));
+    await state.ready();
+    const chat = {
+      submitFirstMessageFromDispatch: async () => ({
+        session: { sessionId: "psn_traceadapter1" },
+        message: { messageId: "msg_traceadapteruser1", sessionId: "psn_traceadapter1" },
+        run: {
+          productRunId: "run_traceadapter1",
+          status: "succeeded",
+          finalMessageId: "msg_traceadapterassistant1",
+        } as ChatRun,
+      }),
+      getMessage: async () => ({
+        messageId: "msg_traceadapterassistant1",
+        role: "assistant",
+        content: { format: "markdown", text: "边界追踪完成" },
+      }),
+    } as unknown as ChatProductClient;
+    const adapter = new LifeosLlmAdapter(
+      chat,
+      state,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (event) => dshEvents.push(event),
+      (event) => bridgeEvents.push(event),
+    );
+    const chunks: StreamChunk[] = [];
+    for await (const chunk of adapter.stream({
+      provider: "lifeos",
+      model: "workflow",
+      sessionId: "dsh-trace-boundary" as never,
+      messages: [
+        createUserMessage({
+          source: { kind: "user" },
+          content: [{ type: "text", text: "这段正文不能写入Trace" }],
+        }),
+      ],
+    })) {
+      chunks.push(chunk);
+    }
+
+    assert.ok(chunks.some((chunk) => chunk.type === "finish"));
+    assert.equal(dshEvents.length, 1);
+    assert.equal(dshEvents[0]?.eventName, "dsh.adapter_request.captured");
+    assert.equal(bridgeEvents.length, 1);
+    assert.equal(bridgeEvents[0]?.eventName, "bridge.dispatch.prepared");
+    [...dshEvents, ...bridgeEvents].forEach((event, index) =>
+      traceEventSchema.parse({
+        schemaVersion: TRACE_SCHEMA_VERSION,
+        eventId: `evt_boundary${String(index + 1)}`,
+        timestamp: "2026-08-21T00:00:00.000Z",
+        ...event,
+      }),
+    );
+    assert.doesNotMatch(
+      JSON.stringify([...dshEvents, ...bridgeEvents]),
+      /这段正文不能写入Trace|边界追踪完成/u,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("unknown submit outcome never reintroduces DSH Workspace instructions outside Prompt selection", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-retry-instructions-"));
   const submittedInstructions: unknown[] = [];
   let submitAttempts = 0;
@@ -360,16 +433,7 @@ test("unknown submit outcome retries with the originally frozen Workspace instru
     }
     assert.ok(replayChunks.some((chunk) => chunk.type === "finish"));
 
-    assert.deepEqual(submittedInstructions, [
-      {
-        schemaVersion: "workspace-instructions-input.v1",
-        items: [{ content: "ORIGINAL_AGENTS_CANARY" }],
-      },
-      {
-        schemaVersion: "workspace-instructions-input.v1",
-        items: [{ content: "ORIGINAL_AGENTS_CANARY" }],
-      },
-    ]);
+    assert.deepEqual(submittedInstructions, [undefined, undefined]);
     const binding = await state.readSession("dsh-retry-instructions");
     const request =
       binding?.currentRequestKey === undefined

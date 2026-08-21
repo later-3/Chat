@@ -265,7 +265,7 @@ test("v2 bridge state migrates atomically to v12 before Note decisions are writt
   }
 });
 
-test("v3 bridge state migrates to v12 and starts trajectory cursor at zero", async () => {
+test("v3 bridge state migrates to v12 without manufacturing a trajectory cursor", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chat-dsh-state-v3-"));
   const path = join(directory, "bridge.json");
   try {
@@ -293,8 +293,6 @@ test("v3 bridge state migrates to v12 and starts trajectory cursor at zero", asy
     await store.ready();
     const binding = await store.readSession("dsh-session-1");
     assert.equal(binding?.requests["request-1"]?.traceCursor, undefined);
-    await store.advanceTraceCursor("dsh-session-1", "run_run1", 3);
-    assert.equal((await store.readSession("dsh-session-1"))?.requests["request-1"]?.traceCursor, 3);
     assert.equal(
       JSON.parse(await readFile(path, "utf8")).schemaVersion,
       "chat-dsh-lifeos-state.v12",

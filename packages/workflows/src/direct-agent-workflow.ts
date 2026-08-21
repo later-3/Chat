@@ -469,6 +469,7 @@ export async function directAgentWorkflow(
           productRunId: input.productRunId,
           workflowAttemptId: input.workflowAttemptId,
           operationId,
+          directAgentAttemptId: prepared.directAgentAttemptId,
           review: waiting.review,
           promptReviewDecisionId: decision.promptReviewDecisionId,
         });
@@ -505,6 +506,7 @@ export async function directAgentWorkflow(
         productRunId: input.productRunId,
         workflowAttemptId: input.workflowAttemptId,
         operationId,
+        directAgentAttemptId: prepared.directAgentAttemptId,
         review: waiting.review,
         promptReviewDecisionId: decision.promptReviewDecisionId,
       });

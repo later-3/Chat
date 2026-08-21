@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import {
@@ -7,7 +7,9 @@ import {
   type TraceEvent,
   type TraceEventInput,
 } from "@chat/contracts";
-import { resolveTraceDir, traceFileName } from "./trace-paths.js";
+import { boundedTraceFileName, resolveTraceDir } from "./trace-paths.js";
+
+const DEFAULT_MAX_DAILY_BYTES = 16 * 1024 * 1024;
 
 /**
  * JSONL Trace Sink（任务书§7.2）。
@@ -23,22 +25,43 @@ import { resolveTraceDir, traceFileName } from "./trace-paths.js";
 export interface TraceSink {
   emit(input: TraceEventInput): TraceEvent;
   readonly dir: string;
+  /** 因容量门而未持久化的诊断事件数；Session Activity不受此门影响。 */
+  readonly droppedEvents: number;
 }
 
 export interface TraceSinkOptions {
   dir?: string;
   now?: () => Date;
   newEventId?: () => string;
+  maxDailyBytes?: number;
+}
+
+function configuredMaxDailyBytes(explicit: number | undefined): number {
+  const raw =
+    explicit ??
+    (process.env.CHAT_TRACE_MAX_DAILY_BYTES === undefined
+      ? DEFAULT_MAX_DAILY_BYTES
+      : Number(process.env.CHAT_TRACE_MAX_DAILY_BYTES));
+  if (!Number.isSafeInteger(raw) || raw <= 0) {
+    throw new Error("CHAT_TRACE_MAX_DAILY_BYTES必须是正整数");
+  }
+  return raw;
 }
 
 export function createTraceSink(options: TraceSinkOptions = {}): TraceSink {
   const dir = resolveTraceDir({ ...(options.dir !== undefined ? { dir: options.dir } : {}) });
   const now = options.now ?? (() => new Date());
   const newEventId = options.newEventId ?? (() => `evt_${randomUUID()}`);
+  const maxDailyBytes = configuredMaxDailyBytes(options.maxDailyBytes);
+  const capacityWarnings = new Set<string>();
+  let droppedEvents = 0;
   mkdirSync(dir, { recursive: true });
 
   return {
     dir,
+    get droppedEvents() {
+      return droppedEvents;
+    },
     emit(input) {
       const event = traceEventSchema.parse({
         schemaVersion: TRACE_SCHEMA_VERSION,
@@ -46,8 +69,21 @@ export function createTraceSink(options: TraceSinkOptions = {}): TraceSink {
         timestamp: now().toISOString(),
         ...input,
       });
-      const file = join(dir, traceFileName(new Date(event.timestamp)));
-      appendFileSync(file, `${JSON.stringify(event)}\n`, "utf8");
+      const file = join(dir, boundedTraceFileName(new Date(event.timestamp)));
+      const line = `${JSON.stringify(event)}\n`;
+      const currentBytes = existsSync(file) ? statSync(file).size : 0;
+      if (currentBytes + Buffer.byteLength(line) > maxDailyBytes) {
+        droppedEvents += 1;
+        if (!capacityWarnings.has(file)) {
+          capacityWarnings.add(file);
+          console.error(
+            `[trace] capacity_reached file=${boundedTraceFileName(new Date(event.timestamp))} ` +
+              `max_bytes=${String(maxDailyBytes)}`,
+          );
+        }
+        return event;
+      }
+      appendFileSync(file, line, "utf8");
       return event;
     },
   };

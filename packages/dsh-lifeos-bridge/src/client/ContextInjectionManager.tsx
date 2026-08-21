@@ -26,13 +26,13 @@ const FORM_LABEL: Record<NonNullable<DshContextInjectionItem["form"]>, string> =
 };
 
 function sourceTitle(item: DshContextInjectionItem): string {
-  if (item.sourceKind === "agent-instructions") return "工作区指令";
-  if (item.sourceKind === "skill-catalog") return "Skill 目录";
+  if (item.sourceKind === "agent-instructions") return "DSH Workspace 指令";
+  if (item.sourceKind === "skill-catalog") return "DSH Skill 目录";
   if (item.sourceKind === "skill-invocation") {
     return item.sourceName === null ? "Skill 指令" : `Skill：${item.sourceName}`;
   }
   if (item.sourceKind === "plugin" && item.sourceName === "@deepseek-ai/dsh-system-prompt") {
-    return "运行时上下文";
+    return "DSH 运行时上下文";
   }
   return item.sourceName ?? item.sourceKind;
 }
@@ -77,7 +77,7 @@ export function ContextInjectionManager({
 
   const countLabel = projection === null ? null : projection.totalItems;
   const buttonLabel =
-    countLabel === null ? "查看上下文注入" : `查看上下文注入，共 ${countLabel} 项`;
+    countLabel === null ? "查看 DSH 宿主上下文" : `查看 DSH 宿主上下文，共 ${countLabel} 项`;
 
   return (
     <>
@@ -90,7 +90,7 @@ export function ContextInjectionManager({
         onClick={() => setOpen(true)}
       >
         <ContextIcon />
-        <span>上下文</span>
+        <span>DSH 上下文</span>
         {countLabel === null ? null : (
           <span className="lifeos-context-count" aria-hidden="true">
             {countLabel}
@@ -100,14 +100,14 @@ export function ContextInjectionManager({
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="上下文注入"
-        closeLabel="关闭上下文注入"
-        description="这里展示 DSH 下一次模型请求仍会携带的生产者上下文；LifeOS Workflow 接收最新用户输入和当前 Workspace 指令。"
+        title="DSH 宿主上下文"
+        closeLabel="关闭 DSH 宿主上下文"
+        description="这里展示 DSH 自己的 Agent Loop 会注入的只读上下文。它不会自动转发到 Chat；Chat Prompt 只采用用户在“本次 Prompt”中确认的内容。"
         className="lifeos-context-modal"
         contentClassName="lifeos-context-modal-content"
         footer={
           <div className="lifeos-context-footer">
-            <span>只读 · 仅 Workspace 指令进入 Chat 规划上下文</span>
+            <span>只读 · 不自动转发到 Chat</span>
             <button
               type="button"
               data-testid="lifeos-context-injections-refresh"

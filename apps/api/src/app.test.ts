@@ -47,9 +47,18 @@ describe("chat api trace", () => {
       );
   }
 
-  it("请求产生received/completed结构化Trace，可按requestId关联", async () => {
+  it("默认不把成功GET轮询写入Debug Trace", async () => {
     const dir = mkdtempSync(join(tmpdir(), "chat-api-trace-"));
     const app = createApiApp({ traceSink: createTraceSink({ dir }) });
+    for (let index = 0; index < 100; index += 1) {
+      expect((await app.request("/api/healthz")).status).toBe(200);
+    }
+    expect(readTraceEventsFromDir(dir)).toEqual([]);
+  });
+
+  it("请求产生received/completed结构化Trace，可按requestId关联", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "chat-api-trace-"));
+    const app = createApiApp({ traceSink: createTraceSink({ dir }), traceSuccessfulReads: true });
     const res = await app.request("/api/healthz", {
       headers: { "x-request-id": "req_trace1" },
     });
@@ -75,7 +84,7 @@ describe("chat api trace", () => {
 
   it("4xx响应记录为rejected并携带稳定错误码，不记录原始路径", async () => {
     const dir = mkdtempSync(join(tmpdir(), "chat-api-trace-"));
-    const app = createApiApp({ traceSink: createTraceSink({ dir }) });
+    const app = createApiApp({ traceSink: createTraceSink({ dir }), traceSuccessfulReads: true });
     const res = await app.request("/api/nope-with-user-content", {
       headers: { "x-request-id": "req_trace2" },
     });
@@ -96,7 +105,7 @@ describe("chat api trace", () => {
 
   it("非法x-request-id不被信任：生成新服务端ID且Trace完整", async () => {
     const dir = mkdtempSync(join(tmpdir(), "chat-api-trace-"));
-    const app = createApiApp({ traceSink: createTraceSink({ dir }) });
+    const app = createApiApp({ traceSink: createTraceSink({ dir }), traceSuccessfulReads: true });
     for (const bad of ["client-uuid-without-prefix", "x".repeat(200), "req_", "REQ_UPPER"]) {
       const res = await app.request("/api/healthz", { headers: { "x-request-id": bad } });
       expect(res.status).toBe(200);
@@ -121,7 +130,7 @@ describe("chat api trace", () => {
 
   it("合法req_前缀的客户端ID被复用并关联Trace", async () => {
     const dir = mkdtempSync(join(tmpdir(), "chat-api-trace-"));
-    const app = createApiApp({ traceSink: createTraceSink({ dir }) });
+    const app = createApiApp({ traceSink: createTraceSink({ dir }), traceSuccessfulReads: true });
     const res = await app.request("/api/healthz", { headers: { "x-request-id": "req_client9" } });
     expect(res.headers.get("x-request-id")).toBe("req_client9");
     const events = readTraceEventsFromDir(dir).filter(
@@ -132,8 +141,10 @@ describe("chat api trace", () => {
 
   it("Trace写入失败不影响响应，但递增故障计数并输出稳定错误日志", async () => {
     const app = createApiApp({
+      traceSuccessfulReads: true,
       traceSink: {
         dir: "unused",
+        droppedEvents: 0,
         emit: () => {
           throw new Error("disk full");
         },

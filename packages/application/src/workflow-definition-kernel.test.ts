@@ -122,6 +122,18 @@ describe("Node Catalog与Blueprint一致性", () => {
         riskPolicy: "generate_candidate",
         publicConfigFields: [
           {
+            name: "agentKey",
+            type: "enum_select",
+            defaultValue: "direct",
+            options: ["direct", "project_bootstrap"],
+          },
+          {
+            name: "agentPromptOverride",
+            type: "long_text",
+            defaultValue: "",
+            maximumLength: 65_536,
+          },
+          {
             name: "capabilityMode",
             defaultValue: "read_only",
             options: ["read_only", "project_bootstrap"],

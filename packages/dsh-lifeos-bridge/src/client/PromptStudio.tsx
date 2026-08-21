@@ -461,14 +461,22 @@ export function PromptStudio({
     body: "",
   });
   const createRegion = state.regions.find((region) => region.regionKey === createDraft.regionKey);
+  const contextRegions = useMemo(
+    () => state.regions.filter((region) => region.category !== "identity"),
+    [state.regions],
+  );
   const filtered = useMemo(
     () =>
-      state.fragments.filter((item) => regionFilter === "all" || item.regionKey === regionFilter),
+      state.fragments.filter(
+        (item) =>
+          item.regionKey !== "agent_identity" &&
+          (regionFilter === "all" || item.regionKey === regionFilter),
+      ),
     [regionFilter, state.fragments],
   );
   const fragmentCountByRegion = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const fragment of state.fragments) {
+    for (const fragment of state.fragments.filter((item) => item.regionKey !== "agent_identity")) {
       counts.set(fragment.regionKey, (counts.get(fragment.regionKey) ?? 0) + 1);
     }
     return counts;
@@ -497,10 +505,7 @@ export function PromptStudio({
       <header className="lifeos-prompt-studio-header">
         <div>
           <h1>提示词</h1>
-          <p>
-            按区域查看来源、创建全局或 Workspace
-            副本并管理不可变版本；本轮采用哪些组件，在会话输入区选择。
-          </p>
+          <p>管理会话与Workspace上下文组件；Agent自己的System Prompt请使用独立“Agent”设置。</p>
         </div>
         <button type="button" disabled={state.status === "loading"} onClick={() => void refresh()}>
           刷新
@@ -529,7 +534,7 @@ export function PromptStudio({
 
       {tab === "regions" ? (
         <div className="lifeos-prompt-region-list">
-          {state.regions.map((region) => (
+          {contextRegions.map((region) => (
             <article key={region.regionKey}>
               <header>
                 <strong>{region.title}</strong>
@@ -575,7 +580,7 @@ export function PromptStudio({
               onChange={(event) => setRegionFilter(event.target.value)}
             >
               <option value="all">全部区域</option>
-              {state.regions
+              {contextRegions
                 .filter((region) => region.userManageable)
                 .map((region) => (
                   <option key={region.regionKey} value={region.regionKey}>
@@ -642,7 +647,7 @@ export function PromptStudio({
                     setCreateDraft({ ...createDraft, regionKey: event.target.value })
                   }
                 >
-                  {state.regions
+                  {contextRegions
                     .filter((region) => region.userManageable && region.contentKind !== "runtime")
                     .map((region) => (
                       <option key={region.regionKey} value={region.regionKey}>

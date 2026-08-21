@@ -20,7 +20,9 @@ import { WorkbenchSurfaceController } from "./workbench-controller.ts";
 import { ExecutionTraceProjection } from "./execution-trace-projection.ts";
 import { SessionRecordsController } from "./session-records-controller.ts";
 import { SessionRecordsView, type SessionRecordsInjected } from "./SessionRecordsView.tsx";
+import { ChatSessionButton } from "./ChatSessionButton.tsx";
 import { PromptStudio, type PromptStudioInjected } from "./PromptStudio.tsx";
+import { AgentProfiles } from "./AgentProfiles.tsx";
 import { PromptStudioController } from "./prompt-studio-controller.ts";
 import { installPromptStudioStyles } from "./prompt-studio-styles.ts";
 import { PromptComposerController } from "./prompt-composer-controller.ts";
@@ -156,6 +158,19 @@ export function apply(ctx: ClientContext): void {
     ctx.slots.register(
       {
         name: "settings.section",
+        id: "lifeos-agents",
+        order: 25,
+        label: "Agent",
+        inject: () => ({}),
+      },
+      AgentProfiles,
+    ),
+  );
+
+  ctx.slots.inject("settings.section", () =>
+    ctx.slots.register(
+      {
+        name: "settings.section",
         id: "lifeos-prompts",
         order: 30,
         label: "提示词",
@@ -239,6 +254,26 @@ export function apply(ctx: ClientContext): void {
     ctx.slots.register(
       {
         name: "conversation.session.header.utilities",
+        id: "lifeos-chat-session",
+        order: 10,
+        inject: (sessionId: SessionId): SessionRecordsInjected => {
+          const controller = recordsFor(sessionId);
+          return {
+            hooks: { sessionRecords: controller },
+            refresh: () => controller.refresh(),
+            loadMoreChat: () => controller.loadMoreChat(),
+            loadMoreDsh: () => controller.loadMoreDsh(),
+          };
+        },
+      },
+      ChatSessionButton,
+    ),
+  );
+
+  ctx.slots.inject("conversation.session.header.utilities", () =>
+    ctx.slots.register(
+      {
+        name: "conversation.session.header.utilities",
         id: "lifeos-trace-timestamps",
         order: 20,
         inject: (): TraceTimestampToggleInjected => ({
@@ -262,7 +297,11 @@ export function apply(ctx: ClientContext): void {
           return {
             hooks: { lifeos, promptComposer: controller, promptStudio },
             loadWorkflows: () => lifeos.loadWorkflows(),
-            selectWorkflow: (selection) => lifeos.selectWorkflow(selection),
+            selectWorkflow: async (selection) => {
+              const selected = await lifeos.selectWorkflow(selection);
+              if (selected) await controller.load();
+              return selected;
+            },
             loadContextInjections: () => lifeos.loadContextInjections(),
             setDshSendReviewEnabled: (enabled) => lifeos.setDshSendReviewEnabled(enabled),
             setBridgeDispatchReviewEnabled: (enabled) =>
@@ -290,8 +329,21 @@ export function apply(ctx: ClientContext): void {
               await controller.load();
             },
             revise: async (payload) => {
+              const previousRevisionId =
+                promptStudio.getSnapshot().selected?.currentRevision.promptFragmentRevisionId;
               await promptStudio.revise(payload);
               await controller.load();
+              const nextRevision = promptStudio.getSnapshot().selected?.currentRevision;
+              if (
+                previousRevisionId !== undefined &&
+                nextRevision !== undefined &&
+                nextRevision.promptFragmentRevisionId !== previousRevisionId
+              ) {
+                controller.upgradeSelectedRevision(previousRevisionId, {
+                  promptFragmentRevisionId: nextRevision.promptFragmentRevisionId,
+                  sha256: nextRevision.sha256,
+                });
+              }
             },
             archive: async (payload) => {
               await promptStudio.archive(payload);

@@ -21,6 +21,14 @@ function prepared() {
       sourceMessageSha256: SHA,
     },
     sourceText: "私密来源正文",
+    nodePrompt: {
+      promptAssemblyId: "pma_notestep1",
+      promptAssemblySha256: SHA,
+      definitionNodeId: "note.extract",
+      nodeAssemblySha256: "c".repeat(64),
+      profileVersion: "note-capture.v1",
+      systemPromptAppend: "NOTE_USER_LAYER_CANARY：只记录可验证事实。",
+    },
     defaultKind: "project_idea",
     suggestedTagLabels: ["项目"],
     priorCandidate: {
@@ -129,6 +137,7 @@ describe("Note Capture耐久Steps", () => {
     expect(capture).toHaveBeenCalledTimes(1);
     expect(capture).toHaveBeenCalledWith(
       expect.objectContaining({
+        systemPromptAppend: "NOTE_USER_LAYER_CANARY：只记录可验证事实。",
         captureInput: expect.objectContaining({
           sourceText: "私密来源正文",
           priorCandidate: expect.objectContaining({ tagLabels: ["旧"] }),

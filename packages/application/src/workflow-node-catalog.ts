@@ -42,6 +42,13 @@ export type PublicConfigField =
       readonly maximumLength: number;
     }
   | {
+      readonly type: "long_text";
+      readonly name: string;
+      readonly label: string;
+      readonly defaultValue: string;
+      readonly maximumLength: number;
+    }
+  | {
       readonly type: "tag_list";
       readonly name: string;
       readonly label: string;
@@ -198,6 +205,22 @@ const directPromptReviewModeField = (): PublicConfigField => ({
   label: "发送前审核提示词",
   defaultValue: "manual",
   options: ["manual", "off"],
+});
+
+const agentKeyField = (defaultValue: string, options: readonly string[]): PublicConfigField => ({
+  type: "enum_select",
+  name: "agentKey",
+  label: "Agent 模板",
+  defaultValue,
+  options,
+});
+
+const agentPromptOverrideField = (): PublicConfigField => ({
+  type: "long_text",
+  name: "agentPromptOverride",
+  label: "节点 System Prompt",
+  defaultValue: "",
+  maximumLength: 65_536,
 });
 
 const slot = (
@@ -397,9 +420,17 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
     displayName: "生成计划",
     description: "根据冻结上下文产生可审核Plan Revision",
     category: "agent",
-    configSchema: z.strictObject({ maxSteps: z.number().int().min(1).max(20).default(8) }),
+    configSchema: z.strictObject({
+      maxSteps: z.number().int().min(1).max(20).default(8),
+      agentKey: z.literal("planner").optional(),
+      agentPromptOverride: z.string().max(65_536).optional(),
+    }),
     defaultConfig: { maxSteps: 8 },
-    publicConfigFields: [integerField("maxSteps", "最多计划步骤", 8, 1, 20)],
+    publicConfigFields: [
+      agentKeyField("planner", ["planner"]),
+      agentPromptOverrideField(),
+      integerField("maxSteps", "最多计划步骤", 8, 1, 20),
+    ],
     inputSlots: [slot("message", "message_ref", true)],
     outputSlots: [slot("plan", "plan_revision_ref", true)],
     outcomes: ["planned", "needs_input"],
@@ -417,9 +448,16 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
     configSchema: z.strictObject({
       capabilityMode: z.enum(["read_only", "project_bootstrap"]).default("read_only"),
       promptReviewMode: z.enum(["manual", "off"]).default("manual"),
+      agentKey: z.enum(["direct", "project_bootstrap"]).optional(),
+      agentPromptOverride: z.string().max(65_536).optional(),
     }),
     defaultConfig: { capabilityMode: "read_only", promptReviewMode: "manual" },
-    publicConfigFields: [directCapabilityModeField(), directPromptReviewModeField()],
+    publicConfigFields: [
+      agentKeyField("direct", ["direct", "project_bootstrap"]),
+      agentPromptOverrideField(),
+      directCapabilityModeField(),
+      directPromptReviewModeField(),
+    ],
     inputSlots: [slot("message", "message_ref", true)],
     outputSlots: [
       slot("promptReview", "prompt_review_ref", false),
@@ -471,9 +509,17 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
     displayName: "执行计划",
     description: "按批准的Execution Contract有界展开Action",
     category: "execution",
-    configSchema: z.strictObject({ maxActions: z.number().int().min(1).max(32).default(16) }),
+    configSchema: z.strictObject({
+      maxActions: z.number().int().min(1).max(32).default(16),
+      agentKey: z.literal("coding_executor").optional(),
+      agentPromptOverride: z.string().max(65_536).optional(),
+    }),
     defaultConfig: { maxActions: 16 },
-    publicConfigFields: [integerField("maxActions", "最多执行动作", 16, 1, 32)],
+    publicConfigFields: [
+      agentKeyField("coding_executor", ["coding_executor"]),
+      agentPromptOverrideField(),
+      integerField("maxActions", "最多执行动作", 16, 1, 32),
+    ],
     inputSlots: [slot("decision", "decision_ref", true)],
     outputSlots: [slot("candidate", "execution_candidate_ref", true)],
     outcomes: ["success", "failed", "outcome_unknown"],
@@ -528,9 +574,13 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
       maxCharacters: z.number().int().min(128).max(20_000).default(4_000),
       defaultKind: z.enum(["idea", "project_idea", "learning", "general"]).default("general"),
       suggestedTagLabels: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
+      agentKey: z.literal("note_extractor").optional(),
+      agentPromptOverride: z.string().max(65_536).optional(),
     }),
     defaultConfig: { maxCharacters: 4_000, defaultKind: "general", suggestedTagLabels: [] },
     publicConfigFields: [
+      agentKeyField("note_extractor", ["note_extractor"]),
+      agentPromptOverrideField(),
       {
         type: "note_source_selector",
         name: "source",

@@ -9,7 +9,7 @@ import type {
   PromptFragmentSummaryDto,
   PromptRegionDefinitionDto,
 } from "@chat/contracts/public";
-import type { PromptComposerState } from "./prompt-composer-controller.ts";
+import { sessionRegions, type PromptComposerState } from "./prompt-composer-controller.ts";
 import { PromptFragmentDetail, type PromptStudioInjected } from "./PromptStudio.tsx";
 import { BridgeSendPreview, PromptConfigurationDetails } from "./DshBridgeSendPreview.tsx";
 
@@ -37,7 +37,7 @@ const MODE_LABEL: Record<PromptCompositionMode, string> = {
 };
 
 const MODE_DESCRIPTION: Record<PromptCompositionMode, string> = {
-  default: "使用当前工作流 Prompt Profile 的默认组件；直接勾选下面的组件会自动切换为追加。",
+  default: "使用当前层的默认来源；直接勾选下面的组件会自动切换为追加。",
   replace: "只使用下面勾选的精确版本，替换这个区域的默认组件。",
   append: "保留默认组件，并在后面按列表顺序追加勾选的精确版本。",
 };
@@ -171,7 +171,9 @@ function RegionCard({
     scopeTitle: string,
   ) => void;
 }) {
-  const composition = state.selection.regions.find((item) => item.regionKey === region.regionKey);
+  const composition = sessionRegions(state.selection).find(
+    (item) => item.regionKey === region.regionKey,
+  );
   const mode = composition?.mode ?? "default";
   const selectedIds = new Set(
     composition?.selected.map((item) => item.promptFragmentRevisionId) ?? [],
@@ -396,11 +398,20 @@ export function PromptComposer({
   const regions = useMemo(
     () =>
       state.regions
-        .filter((region) => region.userManageable && region.availability === "active")
+        .filter(
+          (region) =>
+            region.userManageable &&
+            region.availability === "active" &&
+            region.category === "context",
+        )
         .sort((left, right) => left.stableOrder - right.stableOrder),
     [state.regions],
   );
-  const selectedCount = state.selection.regions.reduce(
+  const selectedCount = sessionRegions(state.selection).reduce(
+    (total, region) => total + region.selected.length,
+    0,
+  );
+  const totalSelectedCount = state.selection.regions.reduce(
     (total, region) => total + region.selected.length,
     0,
   );
@@ -446,22 +457,24 @@ export function PromptComposer({
         type="button"
         className="lifeos-prompt-composer-toggle"
         data-testid="lifeos-prompt-composer-open"
-        aria-label={`配置本轮提示词，已选择 ${selectedCount} 个组件`}
-        title={`配置本轮提示词，已选择 ${selectedCount} 个组件`}
+        aria-label={`配置并预览本次 Prompt，共选择 ${totalSelectedCount} 个组件`}
+        title={`配置并预览本次 Prompt，共选择 ${totalSelectedCount} 个组件`}
         onClick={() => setOpen(true)}
       >
         <PromptIcon />
-        <span>提示词</span>
+        <span>本次 Prompt</span>
         <span className="lifeos-prompt-composer-count" aria-hidden="true">
-          {selectedCount}
+          {totalSelectedCount}
         </span>
       </button>
       <Modal
         open={open}
-        onClose={close}
-        title="本轮提示词"
-        closeLabel="关闭本轮提示词"
-        description="每个区域独立选择默认、覆盖或追加；勾选会冻结当前精确 Revision 与 Hash。"
+        onClose={() => {
+          if (!state.saving) close();
+        }}
+        title="本次 Prompt"
+        closeLabel="关闭本次 Prompt"
+        description="统一配置并预览本轮实际发送内容：会话上下文、Workflow节点Agent、Pi System Prompt与Runtime锁定工具。"
         className="lifeos-prompt-composer-modal"
         contentClassName="lifeos-prompt-composer-content"
         footer={
@@ -475,11 +488,11 @@ export function PromptComposer({
             </span>
             <div>
               <button type="button" disabled={locked || state.saving} onClick={reset}>
-                全部恢复默认
+                当前层恢复默认
               </button>
               <button
                 type="button"
-                disabled={state.previewing || locked}
+                disabled={state.previewing || state.saving || locked}
                 onClick={() => void previewConfiguration()}
               >
                 {state.previewing ? "正在读取…" : "预览提示词配置"}
@@ -490,12 +503,12 @@ export function PromptComposer({
                 title={
                   input.draft.trim() === ""
                     ? "请先关闭面板，在主输入框输入本轮消息"
-                    : "查看DSH→Bridge及Bridge→Chat的发送边界"
+                    : "查看本轮各Workflow节点实际使用的完整Prompt与发送边界"
                 }
-                disabled={state.previewing || locked}
+                disabled={state.previewing || state.saving || locked}
                 onClick={() => void previewBridgeSend(input.draft)}
               >
-                {state.previewing ? "正在读取…" : "预览 DSH 发送"}
+                {state.previewing ? "正在读取…" : "预览完整 Prompt"}
               </button>
             </div>
           </div>
@@ -513,8 +526,10 @@ export function PromptComposer({
             </small>
           </div>
           <p className="lifeos-prompt-composer-scope-note">
-            当前首版只在“执行
-            Agent（逐次提示词审核）”工作流发送时生效；切换到规划类工作流时会保留本会话草稿，但不会把这些选择传入该运行。
+            这些上下文会提供给当前工作流实际调用的Agent。这里不定义Agent身份、不选择Workflow节点，也不授予工具权限。
+          </p>
+          <p className="lifeos-prompt-target-note">
+            当前作用域：会话上下文 · {state.workflow?.title ?? "当前工作流"}
           </p>
           {state.error === null ? null : (
             <p className="lifeos-error" role="alert" data-testid="lifeos-prompt-composer-error">

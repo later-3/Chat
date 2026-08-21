@@ -20,6 +20,8 @@ agent.direct（promptReviewMode：manual / off）
 必须创建新的Review和新的Workflow Hook，不能复用上一轮批准。`off`时不创建Review、Decision或Hook，
 但仍先冻结最终Payload并耐久提交Provider派发栅栏，不能绕开结果未知保护。
 
+三类Prompt审核现在共用DSH右侧全高审查面板：顶部标题/状态和底部决定固定，中间正文单独滚动；Raw JSON、易读Section和Tool Schema不再各自形成纵向滚动容器。Agent设置把本节点准确显示为`Pi Coding Agent · 直接执行`，并从真实Pi AgentSession投影默认System与`read/grep/find/ls` Schema；Chat Direct约束和用户管理Prompt明确作为后续追加层显示。
+
 ## 2. P1边界
 
 P1包含：

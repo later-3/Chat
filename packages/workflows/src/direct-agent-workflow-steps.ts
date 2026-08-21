@@ -8,6 +8,7 @@ import {
 import { getWorkflowRuntimeContext } from "./runtime-context.js";
 import { cmdId, PiStepFailure, runStep, wrapApiError } from "./workflow-step-support.js";
 import { promptReviewHookToken } from "./direct-agent-workflow-input.js";
+import { emitPiDirectExecutorActivity } from "./pi-direct-executor-activity.js";
 
 export interface PreparedDirectAgentOperationRef {
   readonly directAgentAttemptId: string;
@@ -110,6 +111,14 @@ export async function startDirectAgentOperationStep(
         workflowRunSpecId: input.workflowRunSpecId,
         workflowRunSpecSha256: input.workflowRunSpecSha256,
         inputManifestSha256: input.inputManifestSha256,
+        onEvent: (event) =>
+          emitPiDirectExecutorActivity(
+            {
+              productRunId: input.productRunId,
+              directAgentAttemptId: input.directAgentAttemptId,
+            },
+            event,
+          ),
       }),
   );
 }
@@ -186,6 +195,7 @@ export async function loadPromptReviewDecisionStep(
 export async function submitPromptReviewDecisionStep(
   input: DirectWorkflowStepIdentity & {
     readonly operationId: string;
+    readonly directAgentAttemptId: string;
     readonly review: DirectPromptReviewRef;
     readonly promptReviewDecisionId: string;
   },
@@ -200,6 +210,14 @@ export async function submitPromptReviewDecisionStep(
         operationId: input.operationId,
         review: input.review,
         promptReviewDecisionId: input.promptReviewDecisionId,
+        onEvent: (event) =>
+          emitPiDirectExecutorActivity(
+            {
+              productRunId: input.productRunId,
+              directAgentAttemptId: input.directAgentAttemptId,
+            },
+            event,
+          ),
       }),
   );
 }

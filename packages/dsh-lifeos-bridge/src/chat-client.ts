@@ -2,8 +2,7 @@ import type { ZodType } from "zod";
 import {
   workflowExecutionTraceDtoSchema,
   workflowDefinitionsDtoSchema,
-  type ExecutionTracePage,
-  type WorkspaceInstructionsInput,
+  workflowDefinitionCommandResultDtoSchema,
   type WorkflowExecutionTraceDto,
   promptRegionsDtoSchema,
   promptFragmentPageDtoSchema,
@@ -13,6 +12,9 @@ import {
   promptWorkspacesDtoSchema,
   promptAssemblyPreviewDtoSchema,
   promptConfigurationPreviewDtoSchema,
+  promptTurnPreviewDtoSchema,
+  agentProfilesDtoSchema,
+  agentProfileDtoSchema,
   type PromptRegionsDto,
   type PromptFragmentPageDto,
   type PromptFragmentDetailDto,
@@ -21,6 +23,14 @@ import {
   type PromptWorkspacesDto,
   type PromptAssemblyPreviewDto,
   type PromptConfigurationPreviewDto,
+  type PromptTurnPreviewDto,
+  type PreviewPromptTurnPayload,
+  type AgentProfilesDto,
+  type AgentProfileDto,
+  type AgentKey,
+  type ReviseAgentPromptPayload,
+  type RestoreAgentPromptPayload,
+  type SaveWorkflowAgentNodeConfigurationPayload,
   type PreviewPromptConfigurationPayload,
   type PreviewPromptAssemblyPayload,
   type PromptTurnSelectionInput,
@@ -45,7 +55,6 @@ import {
   currentPromptReviewResponseSchema,
   decisionResponseSchema,
   exactMessageResponseSchema,
-  executionTraceResponseSchema,
   lifeosWorkflowOptionSchema,
   messagesPageResponseSchema,
   noteCandidateResponseSchema,
@@ -277,7 +286,6 @@ export class ChatProductClient {
     text: string,
     signal?: AbortSignal,
     workflowSelection?: WorkflowSelection,
-    workspaceInstructions?: WorkspaceInstructionsInput,
     promptSelection?: PromptTurnSelectionInput,
   ): Promise<{ message: ChatMessage; run: ChatRun }> {
     return await this.request(
@@ -299,12 +307,7 @@ export class ChatProductClient {
                   },
                 }
               : {}),
-            ...(workspaceInstructions !== undefined && workflowSelection?.blueprintKey !== "direct"
-              ? { context: { workspaceInstructions } }
-              : {}),
-            ...(promptSelection !== undefined && workflowSelection?.blueprintKey === "direct"
-              ? { promptSelection }
-              : {}),
+            ...(promptSelection === undefined ? {} : { promptSelection }),
           },
         }),
         ...withSignal(signal),
@@ -350,6 +353,7 @@ export class ChatProductClient {
     );
     return value.definitions.definitions.map((definition) =>
       lifeosWorkflowOptionSchema.parse({
+        workflowDefinitionId: definition.workflowDefinitionId,
         workflowDefinitionRevisionId: definition.workflowDefinitionRevisionId,
         definitionSha256: definition.definitionSha256,
         title: definition.title,
@@ -368,7 +372,41 @@ export class ChatProductClient {
                 },
               ],
         ),
+        agentNodes: definition.nodes.flatMap((node) =>
+          node.agentBinding !== undefined
+            ? [
+                {
+                  definitionNodeId: node.definitionNodeId,
+                  nodeType: node.nodeType,
+                  title: node.displayName,
+                  agentKey: node.agentBinding.agentKey,
+                  profileVersion: node.agentBinding.profileVersion,
+                  bindingKind: node.agentBinding.bindingKind,
+                  promptPolicy: node.agentBinding.promptPolicy,
+                  promptSource: node.agentBinding.promptSource,
+                  promptOverrideMarkdown: node.agentBinding.promptOverrideMarkdown,
+                  toolPolicy: node.agentBinding.toolPolicy,
+                },
+              ]
+            : [],
+        ),
       }),
+    );
+  }
+
+  async saveWorkflowAgentNodeConfiguration(
+    commandId: string,
+    payload: SaveWorkflowAgentNodeConfigurationPayload,
+    signal?: AbortSignal,
+  ) {
+    return this.request(
+      "/api/workflow/definitions/agent-node-configurations",
+      workflowDefinitionCommandResultDtoSchema,
+      {
+        method: "POST",
+        body: JSON.stringify({ commandId, payload }),
+        ...withSignal(signal),
+      },
     );
   }
 
@@ -379,18 +417,6 @@ export class ChatProductClient {
       withSignal(signal),
     );
     return value.run;
-  }
-
-  async getExecutionTrace(
-    productRunId: string,
-    afterSequence: number,
-    signal?: AbortSignal,
-  ): Promise<ExecutionTracePage> {
-    return await this.request(
-      `/api/runs/${encodeURIComponent(productRunId)}/execution-trace?afterSequence=${String(afterSequence)}&limit=100`,
-      executionTraceResponseSchema,
-      withSignal(signal),
-    );
   }
 
   async getWorkflowExecutionTrace(
@@ -563,6 +589,44 @@ export class ChatProductClient {
     return this.request("/api/prompt-regions", promptRegionsDtoSchema, withSignal(signal));
   }
 
+  async getAgentProfiles(signal?: AbortSignal): Promise<AgentProfilesDto> {
+    return this.request("/api/agent-profiles", agentProfilesDtoSchema, withSignal(signal));
+  }
+
+  async reviseAgentPrompt(
+    agentKey: AgentKey,
+    commandId: string,
+    payload: ReviseAgentPromptPayload,
+    signal?: AbortSignal,
+  ): Promise<AgentProfileDto> {
+    return this.request(
+      `/api/agent-profiles/${encodeURIComponent(agentKey)}/prompt-revisions`,
+      agentProfileDtoSchema,
+      {
+        method: "POST",
+        body: JSON.stringify({ commandId, payload }),
+        ...withSignal(signal),
+      },
+    );
+  }
+
+  async restoreAgentPrompt(
+    agentKey: AgentKey,
+    commandId: string,
+    payload: RestoreAgentPromptPayload,
+    signal?: AbortSignal,
+  ): Promise<AgentProfileDto> {
+    return this.request(
+      `/api/agent-profiles/${encodeURIComponent(agentKey)}/restore-default`,
+      agentProfileDtoSchema,
+      {
+        method: "POST",
+        body: JSON.stringify({ commandId, payload }),
+        ...withSignal(signal),
+      },
+    );
+  }
+
   async getPromptWorkspaces(signal?: AbortSignal): Promise<PromptWorkspacesDto> {
     return this.request("/api/prompt-workspaces", promptWorkspacesDtoSchema, withSignal(signal));
   }
@@ -583,6 +647,17 @@ export class ChatProductClient {
     signal?: AbortSignal,
   ): Promise<PromptConfigurationPreviewDto> {
     return this.request("/api/prompt-configuration-previews", promptConfigurationPreviewDtoSchema, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      ...withSignal(signal),
+    });
+  }
+
+  async previewPromptTurn(
+    payload: PreviewPromptTurnPayload,
+    signal?: AbortSignal,
+  ): Promise<PromptTurnPreviewDto> {
+    return this.request("/api/prompt-turn-previews", promptTurnPreviewDtoSchema, {
       method: "POST",
       body: JSON.stringify(payload),
       ...withSignal(signal),

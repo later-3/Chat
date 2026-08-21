@@ -13,6 +13,7 @@ export const DSH_PROMPT_STUDIO_E2E_PORTS = Object.freeze({
   api: 45_111,
   workflowPlaceholder: 45_112,
   webInternal: 45_114,
+  piExecutor: 45_115,
 });
 
 export const DSH_PROMPT_THREE_GATES_E2E_PORTS = Object.freeze({

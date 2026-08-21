@@ -32,6 +32,7 @@ import {
   promptEnvelopeMessageSchema,
   promptEnvelopeRequestOptionsSchema,
   promptEnvelopeToolsSchema,
+  piSystemPromptResolutionSchema,
 } from "./prompt-assembly.js";
 import {
   planeCeWorkspaceSlugSchema,
@@ -133,6 +134,7 @@ export const authorizeDirectAgentOperationRuntimeResponseSchema = z
           promptAssemblyId: promptAssemblyIdSchema,
           sha256: sha256Schema,
           systemPromptAppend: z.string().max(512_000),
+          piSystemPrompt: piSystemPromptResolutionSchema.optional(),
           messages: z.array(promptEnvelopeMessageSchema).min(1).max(1_000),
           tools: promptEnvelopeToolsSchema,
           requestOptions: promptEnvelopeRequestOptionsSchema,

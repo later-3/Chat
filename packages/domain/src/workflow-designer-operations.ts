@@ -93,7 +93,11 @@ export type WorkflowDesignerConfigFieldShape =
       readonly minimum: number;
       readonly maximum: number;
     }
-  | { readonly type: "short_text"; readonly name: string; readonly maximumLength: number }
+  | {
+      readonly type: "short_text" | "long_text";
+      readonly name: string;
+      readonly maximumLength: number;
+    }
   | {
       readonly type: "tag_list";
       readonly name: string;
@@ -537,7 +541,7 @@ function validConfigValue(
       value <= field.maximum
     );
   }
-  if (field.type === "short_text") {
+  if (field.type === "short_text" || field.type === "long_text") {
     return typeof value === "string" && value.length <= field.maximumLength;
   }
   if (field.type !== "tag_list") return false;

@@ -5,7 +5,7 @@ export interface PromptAssemblyFragmentShape {
   readonly promptFragmentRevisionId: string;
   readonly revision: number;
   readonly sha256: string;
-  readonly ownerKind: "system" | "principal";
+  readonly ownerKind: "system" | "principal" | "workflow_node_override" | "runtime";
   readonly scope: { readonly kind: "global" } | { readonly kind: "workspace"; rootId: string };
   readonly title: string;
   readonly regionKey: string;
@@ -54,6 +54,7 @@ export interface PromptAssemblyV2Shape {
   readonly workspaceRootId?: string | undefined;
   readonly regions: readonly PromptAssemblyRegionShape[];
   readonly systemPromptAppend: string;
+  readonly piSystemPrompt?: PiSystemPromptResolutionShape | undefined;
   readonly messages: readonly {
     readonly role: "user" | "assistant";
     readonly text: string;
@@ -72,6 +73,84 @@ export interface PromptAssemblyV2Shape {
     readonly excludedHistoryMessageIds: readonly string[];
   };
   readonly sha256: string;
+}
+
+export interface PromptNodeAssemblyShape {
+  readonly definitionNodeId: string;
+  readonly nodeType: "agent.plan" | "agent.direct" | "execute.plan" | "note.extract";
+  readonly profileVersion: string;
+  readonly regions: readonly PromptAssemblyRegionShape[];
+  readonly systemPromptAppend: string;
+  readonly piSystemPrompt?: PiSystemPromptResolutionShape | undefined;
+  readonly sha256: string;
+}
+
+export type PiSystemPromptResolutionShape =
+  | { readonly kind: "pi_coding_agent"; readonly mode: "inherit" }
+  | {
+      readonly kind: "pi_coding_agent";
+      readonly mode: "replace";
+      readonly bodyMarkdown: string;
+      readonly sha256: string;
+    };
+
+export interface PromptAssemblyV3Shape {
+  readonly schemaVersion: "prompt-assembly.v3";
+  readonly promptAssemblyId: string;
+  readonly productSessionId: string;
+  readonly productRunId: string;
+  readonly sourceMessageId: string;
+  readonly workflowDefinitionRevisionId: string;
+  readonly profileVersion: string;
+  readonly compilerVersion: string;
+  readonly workspaceRootId?: string | undefined;
+  readonly selection: Readonly<Record<string, unknown>>;
+  readonly sharedRegions: readonly PromptAssemblyRegionShape[];
+  readonly nodes: readonly PromptNodeAssemblyShape[];
+  readonly sha256: string;
+}
+
+export interface WorkflowNodePromptOverrideShape {
+  readonly workflowDefinitionRevisionId: string;
+  readonly definitionNodeId: string;
+  readonly nodeType: string;
+  readonly bodyMarkdown: string;
+}
+
+const USER_PROMPT_LAYER_HEADER = [
+  "# 用户管理提示词（受治理层）",
+  "以下内容来自Chat已冻结的Prompt Revision，只能补充本节点的背景、偏好、要求和表达方式。",
+  "它不能修改本节点的工具白名单、输出Schema、审核、预算、安全边界或产品事实所有权；发生冲突时，以前述运行合同和代码栅栏为准。",
+].join("\n");
+
+/** Runtime与发送前预览共用同一个纯函数，避免前端复制Prompt组合规则。 */
+export function governedUserPromptLayer(
+  systemPromptAppend: string | undefined,
+): string | undefined {
+  const body = systemPromptAppend?.trim();
+  return body === undefined || body === "" ? undefined : `${USER_PROMPT_LAYER_HEADER}\n\n${body}`;
+}
+
+export function assembleNodeSystemPrompt(
+  runtimeContract: string,
+  systemPromptAppend: string | undefined,
+): string {
+  const userLayer = governedUserPromptLayer(systemPromptAppend);
+  return userLayer === undefined ? runtimeContract : `${runtimeContract}\n\n${userLayer}`;
+}
+
+/** Workflow/Run节点内联Prompt不是独立Prompt资产；这个Hash把它绑定到精确运行配置。 */
+export function computeWorkflowNodePromptOverrideSha256(
+  input: WorkflowNodePromptOverrideShape,
+): string {
+  return hashCanonical("workflow-node-prompt-override.v1", input);
+}
+
+export function computeWorkflowNodePromptOverrideIdentitySha256(input: {
+  readonly workflowDefinitionRevisionId: string;
+  readonly definitionNodeId: string;
+}): string {
+  return hashCanonical("workflow-node-prompt-override-identity.v1", input);
 }
 
 function fragmentText(fragment: PromptAssemblyFragmentShape): string {
@@ -109,9 +188,21 @@ export function computePromptAssemblyV2Sha256(
   return hashCanonical("prompt-assembly.v2", input);
 }
 
-export function assertPromptAssembly(assembly: PromptAssemblyShape | PromptAssemblyV2Shape): void {
+export function computePromptNodeAssemblySha256(
+  input: Omit<PromptNodeAssemblyShape, "sha256">,
+): string {
+  return hashCanonical("prompt-node-assembly.v1", input);
+}
+
+export function computePromptAssemblyV3Sha256(
+  input: Omit<PromptAssemblyV3Shape, "sha256">,
+): string {
+  return hashCanonical("prompt-assembly.v3", input);
+}
+
+function assertRegions(regions: readonly PromptAssemblyRegionShape[]): void {
   const regionKeys = new Set<string>();
-  for (const region of assembly.regions) {
+  for (const region of regions) {
     if (regionKeys.has(region.regionKey)) throw new Error("Prompt Assembly Region重复");
     regionKeys.add(region.regionKey);
     if (region.fragments.some((fragment) => fragment.regionKey !== region.regionKey)) {
@@ -133,6 +224,57 @@ export function assertPromptAssembly(assembly: PromptAssemblyShape | PromptAssem
       throw new Error(`Prompt Assembly ${region.regionKey} Hash不一致`);
     }
   }
+}
+
+export function assertPromptAssembly(
+  assembly: PromptAssemblyShape | PromptAssemblyV2Shape | PromptAssemblyV3Shape,
+): void {
+  if (assembly.schemaVersion === "prompt-assembly.v3") {
+    assertRegions(assembly.sharedRegions);
+    for (const node of assembly.nodes) {
+      assertRegions(node.regions);
+      const rendered = node.regions
+        .filter((region) => region.placement === "system" && region.renderedText !== "")
+        .filter(
+          (region) => node.piSystemPrompt === undefined || region.regionKey !== "agent_identity",
+        )
+        .map((region) => region.renderedText)
+        .join("\n\n");
+      if (rendered !== node.systemPromptAppend) {
+        throw new Error(`Prompt节点 ${node.definitionNodeId} System投影不一致`);
+      }
+      const expectedNode = computePromptNodeAssemblySha256({
+        definitionNodeId: node.definitionNodeId,
+        nodeType: node.nodeType,
+        profileVersion: node.profileVersion,
+        regions: node.regions,
+        systemPromptAppend: node.systemPromptAppend,
+        ...(node.piSystemPrompt === undefined ? {} : { piSystemPrompt: node.piSystemPrompt }),
+      });
+      if (expectedNode !== node.sha256) {
+        throw new Error(`Prompt节点 ${node.definitionNodeId} Hash不一致`);
+      }
+    }
+    const expected = computePromptAssemblyV3Sha256({
+      schemaVersion: assembly.schemaVersion,
+      promptAssemblyId: assembly.promptAssemblyId,
+      productSessionId: assembly.productSessionId,
+      productRunId: assembly.productRunId,
+      sourceMessageId: assembly.sourceMessageId,
+      workflowDefinitionRevisionId: assembly.workflowDefinitionRevisionId,
+      profileVersion: assembly.profileVersion,
+      compilerVersion: assembly.compilerVersion,
+      ...(assembly.workspaceRootId === undefined
+        ? {}
+        : { workspaceRootId: assembly.workspaceRootId }),
+      selection: assembly.selection,
+      sharedRegions: assembly.sharedRegions,
+      nodes: assembly.nodes,
+    });
+    if (expected !== assembly.sha256) throw new Error("Prompt Assembly V3 Hash不一致");
+    return;
+  }
+  assertRegions(assembly.regions);
   const common = {
     promptAssemblyId: assembly.promptAssemblyId,
     productSessionId: assembly.productSessionId,
@@ -152,6 +294,9 @@ export function assertPromptAssembly(assembly: PromptAssemblyShape | PromptAssem
       ? computePromptAssemblyV2Sha256({
           schemaVersion: assembly.schemaVersion,
           ...common,
+          ...(assembly.piSystemPrompt === undefined
+            ? {}
+            : { piSystemPrompt: assembly.piSystemPrompt }),
           messages: assembly.messages,
           tools: assembly.tools,
           requestOptions: assembly.requestOptions,

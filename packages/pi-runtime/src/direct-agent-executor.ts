@@ -26,6 +26,8 @@ import {
   PromptReviewRejectedError,
   PromptReviewWaitInterruptedError,
 } from "./prompt-review-gate.js";
+import { governedUserPromptLayer } from "./prompt-layers.js";
+import { CHAT_DIRECT_AGENT_RUNTIME_PROMPT } from "./coding-agent-runtime-profile.js";
 
 /** P1固定运行配置；审核正文禁止隐藏推理字段，因此生成与默认值都关闭thinking。 */
 export const P1_DIRECT_AGENT_PROFILE = {
@@ -39,12 +41,6 @@ export const P1_DIRECT_AGENT_PROFILE = {
   branchSummarySkipPrompt: true,
   noExtensions: true,
 } as const;
-const DIRECT_AGENT_APPEND_SYSTEM_PROMPT = [
-  "你正在Chat的Direct Agent只读节点中工作。",
-  "每次模型请求发送前都会暂停并等待用户审核最终Provider Payload。",
-  "你只能读取当前Workspace，不能写文件、执行Shell或扩大任务范围。",
-  "完成后给出完整可读结果；不要声称Product Run已经正式提交。",
-].join("\n");
 const PROJECT_BOOTSTRAP_TOOL = "project_bootstrap_prepare";
 
 export class DirectAgentExecutionError extends Error {
@@ -69,6 +65,7 @@ export interface DirectAgentRunInput {
   readonly prompt: string;
   readonly history: readonly { readonly role: "user" | "assistant"; readonly text: string }[];
   readonly systemPromptAppend: string;
+  readonly piSystemPrompt?: PromptAssemblyV2["piSystemPrompt"] | undefined;
   readonly tools: PromptAssemblyV2["tools"];
   readonly requestOptions: PromptAssemblyV2["requestOptions"];
   readonly cwd: string;
@@ -281,12 +278,10 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       defaultThinkingLevel: input.requestOptions.thinkingLevel,
     });
     const sessionId = `pis_${input.request.operationId.slice(4)}`;
-    const allowedTools = [
-      ...new Set([
-        ...input.tools.names,
-        ...(input.capabilityMode === "project_bootstrap" ? [PROJECT_BOOTSTRAP_TOOL] : []),
-      ]),
-    ];
+    if (input.tools.capabilityMode !== input.capabilityMode) {
+      throw new DirectAgentExecutionError("direct_executor.capability_manifest_mismatch");
+    }
+    const allowedTools = [...new Set(input.tools.names)];
     if (
       input.capabilityMode === "project_bootstrap" &&
       (input.projectBootstrapContext === undefined || input.projectBootstrapProduct === undefined)
@@ -319,6 +314,7 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
               .join(", ")}`,
             "project_bootstrap_prepare只预检并保存候选；候选必须由用户确认后，Chat Application才会创建Git Workspace和Plane项目。",
           ].join("\n");
+    const userPromptLayer = governedUserPromptLayer(input.systemPromptAppend);
     const resourceLoader = new DefaultResourceLoader({
       cwd: input.cwd,
       agentDir: input.agentDir,
@@ -339,12 +335,14 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       noSkills: true,
       noPromptTemplates: true,
       noContextFiles: true,
+      systemPromptOverride: () =>
+        input.piSystemPrompt?.mode === "replace" ? input.piSystemPrompt.bodyMarkdown : undefined,
       // 不传systemPrompt，明确复用固定Pi版本的默认基础Prompt；空字符串在Pi中会
       // truthy回退，语义含混。AGENTS/Skill/Template仍由上面的fail-closed开关禁用。
       appendSystemPrompt: [
-        DIRECT_AGENT_APPEND_SYSTEM_PROMPT,
+        CHAT_DIRECT_AGENT_RUNTIME_PROMPT,
         ...(projectBootstrapPrompt === undefined ? [] : [projectBootstrapPrompt]),
-        ...(input.systemPromptAppend === "" ? [] : [input.systemPromptAppend]),
+        ...(userPromptLayer === undefined ? [] : [userPromptLayer]),
       ],
       noThemes: true,
     });

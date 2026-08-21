@@ -61,6 +61,27 @@ const memoryImport = {
 };
 
 export const validTraceFixtures: ReadonlyArray<Record<string, unknown>> = [
+  // DSH / Bridge入口边界
+  {
+    ...base,
+    eventName: TRACE_EVENT_NAMES.dshAdapterRequestCaptured,
+    outcome: "success",
+    dshSessionIdSha256: SHA256_A,
+    requestSha256: SHA256_B,
+    userTextSha256: SHA256_C,
+    sectionCount: 4,
+  },
+  {
+    ...base,
+    eventName: TRACE_EVENT_NAMES.bridgeDispatchPrepared,
+    outcome: "success",
+    dshSessionIdSha256: SHA256_A,
+    commandId: "cmd_fx1",
+    dispatchPlanSha256: SHA256_B,
+    promptSelectionSha256: SHA256_C,
+    workflowDefinitionRevisionId: "wfr_fx1",
+    productSessionId: "psn_fx1",
+  },
   // HTTP
   {
     ...base,

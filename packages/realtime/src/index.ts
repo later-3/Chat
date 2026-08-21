@@ -1,17 +1,19 @@
 /**
  * @chat/realtime
  *
- * Runtime Journal与SSE投影层；当前包含结构化Trace（任务书§7）的
- * Sink、Reader与调试CLI。
+ * Session Activity、未来SSE投影与Debug Trace层。
  *
  * 边界：
- * - Runtime Journal是公开事件顺序的唯一Owner；sequence在单个Product Run中严格递增。
+ * - Run Activity Journal拥有可展示活动顺序；sequence在单个Product Run中严格递增。
  * - 浏览器只有一条Chat Realtime Feed；Workflow原始流与pi原始事件在后端归一化。
- * - Trace只保存可观察事件、对象引用和有界脱敏Pi工具证据，不保存密钥、
- *   完整产品/Provider正文或隐藏推理。
+ * - Debug Trace只用于诊断，绝不作为Session或Trajectory的数据源。
  */
 export * from "./trace-paths.js";
 export * from "./trace-sink.js";
+export * from "./trace-policy.js";
 export * from "./trace-reader.js";
 export * from "./execution-trace-reader.js";
+export * from "./run-activity-journal.js";
+export * from "./run-activity-mapper.js";
+export * from "./legacy-trace-activity-migration.js";
 export * from "./replay.js";

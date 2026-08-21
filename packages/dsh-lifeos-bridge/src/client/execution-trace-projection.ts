@@ -1,4 +1,3 @@
-import type { WorkflowExecutionTraceDto } from "@chat/contracts/public";
 import type { ConversationNodeDefinition } from "@deepseek-ai/dsh-client-runtime/client";
 import type { LifeosExecutionTrace } from "../contracts.ts";
 import {
@@ -30,7 +29,7 @@ function fingerprint(traces: readonly LifeosExecutionTrace[]): string {
 export class ExecutionTraceProjection {
   private readonly tracesBySession = new Map<string, readonly LifeosExecutionTrace[]>();
   private readonly fingerprints = new Map<string, string>();
-  private traceByMessage = new Map<string, WorkflowExecutionTraceDto>();
+  private traceByMessage = new Map<string, LifeosExecutionTrace>();
   private disposeDefinition: () => void;
   private options: ExecutionTraceViewOptions;
   private disposed = false;
@@ -82,9 +81,9 @@ export class ExecutionTraceProjection {
   }
 
   private rebuild(): void {
-    const next = new Map<string, WorkflowExecutionTraceDto>();
+    const next = new Map<string, LifeosExecutionTrace>();
     for (const traces of this.tracesBySession.values()) {
-      for (const { dshMessageId, trace } of traces) next.set(dshMessageId, trace);
+      for (const item of traces) next.set(item.dshMessageId, item);
     }
     this.traceByMessage = next;
     // Definition Registry是DSH为低频规则变化提供的公开重投影边界。替换定义会让

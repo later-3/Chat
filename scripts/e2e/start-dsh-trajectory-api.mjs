@@ -1,7 +1,10 @@
 import { createServer } from "node:http";
 
 const host = "127.0.0.1";
-const port = 43_111;
+const port = Number.parseInt(process.env.PORT ?? "45311", 10);
+if (!Number.isSafeInteger(port) || port < 1024 || port > 65_535) {
+  throw new Error("trajectory fixture PORT必须是有效的非特权TCP端口");
+}
 const timestamp = "2026-08-18T00:00:00.000Z";
 const sessionId = "psn_trajectory1";
 const productRunId = "run_trajectory1";
@@ -35,6 +38,7 @@ function run() {
     productRunId,
     sessionId,
     sourceMessageId: userMessageId,
+    runKind: "planning",
     status: completed ? "succeeded" : "running",
     phase: completed ? "completed" : "executing",
     ...(completed ? { finalMessageId: assistantMessageId } : {}),
@@ -142,9 +146,16 @@ function workflowTrace() {
             status: tracePhase >= 2 ? "succeeded" : "running",
             nodeKind: "executor",
             toolName: "bash",
+            inputDisplay: '{"command":"node --version","path":"."}',
+            inputDisplayTruncated: false,
             startedAt: timestamp,
             ...(tracePhase >= 2
-              ? { completedAt: "2026-08-18T00:00:01.000Z", durationMs: 750 }
+              ? {
+                  resultDisplay: "TRACE_UI_RESULT_OK",
+                  resultDisplayTruncated: false,
+                  completedAt: "2026-08-18T00:00:01.000Z",
+                  durationMs: 750,
+                }
               : {}),
           },
         ];
@@ -339,6 +350,19 @@ const server = createServer((request, response) => {
     }
     if (request.method === "GET" && url.pathname === "/api/workflow/definitions") {
       json(response, 200, { definitions: { schemaVersion, definitions: [] } });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/messages") {
+      const body = await requestBody(request);
+      const text = body?.payload?.text;
+      submittedText = typeof text === "string" ? text : "trajectory";
+      productSessionTitle = submittedText.trim().replaceAll(/\s+/gu, " ").slice(0, 200);
+      submitted = true;
+      json(response, 201, {
+        session: productSession(),
+        message: userMessage(),
+        run: run(),
+      });
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/sessions") {

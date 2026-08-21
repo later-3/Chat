@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { sha256Schema } from "./hash.js";
 import { promptFragmentIdSchema, promptFragmentRevisionIdSchema } from "./ids.js";
+import { workflowDefinitionNodeIdSchema } from "./workflow-definition.js";
 import {
   promptFragmentContentSchema,
   promptFragmentScopeSchema,
@@ -12,6 +13,8 @@ import {
   DIRECT_PROMPT_COMPILER_VERSION,
   DIRECT_PROMPT_PROFILE_V2_VERSION,
   DIRECT_PROMPT_PROFILE_VERSION,
+  WORKFLOW_PROMPT_COMPILER_VERSION,
+  WORKFLOW_PROMPT_PROFILE_VERSION,
   promptAssemblyRegionSchema,
   promptTurnSelectionInputSchema,
 } from "./prompt-assembly.js";
@@ -210,14 +213,25 @@ export const previewPromptAssemblyPayloadSchema = z
 
 /** 只预览Region配置，不要求或伪造本轮用户输入。 */
 export const previewPromptConfigurationPayloadSchema = z
-  .object({ selection: promptTurnSelectionInputSchema })
+  .object({
+    selection: promptTurnSelectionInputSchema,
+    definitionNodeId: workflowDefinitionNodeIdSchema.optional(),
+  })
   .strict();
 
 export const promptConfigurationPreviewDtoSchema = z
   .object({
     schemaVersion: z.literal(PROMPT_STUDIO_API_SCHEMA_VERSION),
-    profileVersion: z.enum([DIRECT_PROMPT_PROFILE_VERSION, DIRECT_PROMPT_PROFILE_V2_VERSION]),
-    compilerVersion: z.enum([DIRECT_PROMPT_COMPILER_VERSION, DIRECT_PROMPT_COMPILER_V2_VERSION]),
+    profileVersion: z.enum([
+      DIRECT_PROMPT_PROFILE_VERSION,
+      DIRECT_PROMPT_PROFILE_V2_VERSION,
+      WORKFLOW_PROMPT_PROFILE_VERSION,
+    ]),
+    compilerVersion: z.enum([
+      DIRECT_PROMPT_COMPILER_VERSION,
+      DIRECT_PROMPT_COMPILER_V2_VERSION,
+      WORKFLOW_PROMPT_COMPILER_VERSION,
+    ]),
     regions: z.array(promptAssemblyRegionSchema).max(32),
     systemPromptAppend: z.string().max(512_000),
     messageContext: z.string().max(512_000),

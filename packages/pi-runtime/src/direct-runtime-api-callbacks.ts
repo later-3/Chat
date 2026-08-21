@@ -112,12 +112,22 @@ export function createDirectAgentRuntimeApiCallbacks(
       }),
       responseSchema: authorizeDirectAgentOperationRuntimeResponseSchema,
     });
+    const promptAssembly =
+      response.promptAssembly.schemaVersion === "prompt-assembly.v1"
+        ? response.promptAssembly
+        : (() => {
+            const { piSystemPrompt, ...assembly } = response.promptAssembly;
+            return {
+              ...assembly,
+              ...(piSystemPrompt === undefined ? {} : { piSystemPrompt }),
+            };
+          })();
     return {
       productRunId: response.productRunId,
       directAgentAttemptId: response.directAgentAttemptId,
       runRevision: response.runRevision,
       sourceMessage: response.sourceMessage,
-      promptAssembly: response.promptAssembly,
+      promptAssembly,
       capabilityMode: response.capabilityMode,
       ...(response.projectBootstrapContext === undefined
         ? {}

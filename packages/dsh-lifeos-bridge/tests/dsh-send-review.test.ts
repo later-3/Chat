@@ -6,6 +6,7 @@ import test from "node:test";
 import { dshBridgeSendPreviewSchema } from "../src/contracts.ts";
 import { DshSendReviewCoordinator } from "../src/dsh-send-review.ts";
 import { AtomicBridgeStateStore } from "../src/state-store.ts";
+import { promptTurnPreviewFixture } from "./prompt-turn-preview-fixture.ts";
 
 const commandId = `cmd_${"a".repeat(48)}`;
 const preview = dshBridgeSendPreviewSchema.parse({
@@ -16,6 +17,7 @@ const preview = dshBridgeSendPreviewSchema.parse({
   workflowSelection: null,
   promptSelection: { schemaVersion: "prompt-turn-selection-input.v1", regions: [] },
   promptConfiguration: null,
+  promptTurnPreview: promptTurnPreviewFixture(),
   dshToBridge: {
     adapterRequest: {
       status: "captured",
@@ -28,7 +30,7 @@ const preview = dshBridgeSendPreviewSchema.parse({
       dshSessionId: "dsh-review",
       status: "ready",
       revision: "c".repeat(64),
-      chatForwarding: "latest_direct_user_message_and_workspace_instructions",
+      chatForwarding: "not_forwarded",
       items: [],
       totalItems: 0,
       omittedItems: 0,

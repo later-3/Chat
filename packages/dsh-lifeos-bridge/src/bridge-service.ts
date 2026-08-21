@@ -28,6 +28,7 @@ import {
   type SessionRecordsChatPage,
   type SessionRecordsDshPage,
   type SessionRecordsOverview,
+  type SaveWorkflowAgentNodeConfigurationRequest,
   sessionRecordsChatPageSchema,
   sessionRecordsDshPageSchema,
   sessionRecordsOverviewSchema,
@@ -50,10 +51,12 @@ import type { DshSendReviewCoordinator } from "./dsh-send-review.ts";
 import type { BridgeDispatchReviewCoordinator } from "./bridge-dispatch-review.ts";
 import {
   promptSelectionForWorkspace,
+  promptSelectionForWorkflow,
   type PromptWorkspaceResolver,
 } from "./prompt-workspace-resolver.ts";
 import { exactSectionsFromJson, lastDshUserInputMapping } from "./dsh-bridge-readable.ts";
 import { bridgeChatSubmitPayload } from "./bridge-chat-dispatch.ts";
+import { productSessionIdSchema } from "@chat/contracts/public";
 
 export class BridgeRequestError extends Error {
   constructor(
@@ -216,10 +219,7 @@ export class LifeosBridgeService {
     private readonly chat: ChatProductClient,
     private readonly state: AtomicBridgeStateStore,
     private readonly dshHistory?: DshSessionHistoryPort,
-    private readonly contextInjectionReader?: Pick<
-      DshContextInjectionReader,
-      "read" | "workspaceInstructions"
-    >,
+    private readonly contextInjectionReader?: Pick<DshContextInjectionReader, "read">,
     private readonly promptWorkspaceResolver?: PromptWorkspaceResolver,
     private readonly dshSendReview?: DshSendReviewCoordinator,
     private readonly bridgeDispatchReview?: BridgeDispatchReviewCoordinator,
@@ -239,10 +239,7 @@ export class LifeosBridgeService {
   async projectBootstrapPreset(signal?: AbortSignal): Promise<ProjectBootstrapPreset> {
     const configuration = await this.loadProjectBootstrapConfiguration();
     if (!configuration.enabled) return { enabled: false };
-    const [workflows, prompt] = await Promise.all([
-      this.chat.listWorkflows(signal),
-      this.chat.getPromptFragment("pfg_builtinprojectbootstrap", signal),
-    ]);
+    const workflows = await this.chat.listWorkflows(signal);
     const workflow = workflows.find(
       (item) => item.blueprintKey === "direct" && item.ownerKind === "system",
     );
@@ -254,17 +251,6 @@ export class LifeosBridgeService {
         409,
         "lifeos_project_bootstrap_workflow_unavailable",
         "系统Direct Agent未发布project_bootstrap配置",
-      );
-    }
-    if (
-      prompt.fragment.ownerKind !== "system" ||
-      prompt.fragment.status !== "builtin" ||
-      prompt.fragment.regionKey !== "agent_identity"
-    ) {
-      throw new BridgeRequestError(
-        409,
-        "lifeos_project_bootstrap_prompt_unavailable",
-        "项目创建Prompt未发布或身份不匹配",
       );
     }
     return projectBootstrapPresetSchema.parse({
@@ -289,18 +275,7 @@ export class LifeosBridgeService {
       },
       promptSelection: {
         schemaVersion: "prompt-turn-selection-input.v1",
-        regions: [
-          {
-            regionKey: "agent_identity",
-            mode: "replace",
-            selected: [
-              {
-                promptFragmentRevisionId: prompt.currentRevision.promptFragmentRevisionId,
-                sha256: prompt.currentRevision.sha256,
-              },
-            ],
-          },
-        ],
+        regions: [],
       },
     });
   }
@@ -496,8 +471,8 @@ export class LifeosBridgeService {
   }
 
   /**
-   * 发送前只读投影。它复用Adapter的Workspace指令提取函数和ChatClient的Workflow
-   * 分流政策，不创建Request Binding，也不提前提交Product Message。
+   * 发送前只读投影。DSH Context只作为边界证据展示；实际Chat payload只采用
+   * 当前User、Workflow选择和Prompt选择，不创建Request Binding或产品事实。
    */
   async bridgeSendPreview(
     dshSessionId: string,
@@ -508,30 +483,27 @@ export class LifeosBridgeService {
     },
   ) {
     const workspace = this.promptWorkspaceResolver?.resolve(dshSessionId) ?? null;
-    const [workflowSelection, storedPromptSelection] = await Promise.all([
+    const [binding, workflowSelection, storedPromptSelection] = await Promise.all([
+      this.state.readSession(dshSessionId),
       this.state.readWorkflowSelection(dshSessionId),
       this.state.readPromptSelection(dshSessionId),
     ]);
     const promptSelection = promptSelectionForWorkspace(storedPromptSelection, workspace);
     const contextInjections = this.contextInjections(dshSessionId);
-    const workspaceInstructions = this.contextInjectionReader?.workspaceInstructions(dshSessionId);
-    if (workspaceInstructions === null) {
-      throw new BridgeRequestError(
-        404,
-        "lifeos_dsh_session_not_found",
-        "当前 DSH 会话不存在或尚未恢复",
-      );
-    }
-    const direct = workflowSelection?.blueprintKey === "direct";
-    const promptConfiguration = direct
-      ? await this.chat.previewPromptConfiguration({ selection: promptSelection })
-      : null;
     const payload = bridgeChatSubmitPayload({
       text,
       ...(workflowSelection === null ? {} : { workflowSelection }),
-      ...(!direct && workspaceInstructions !== undefined ? { workspaceInstructions } : {}),
-      ...(direct ? { promptSelection } : {}),
+      promptSelection,
     });
+    const [promptConfiguration, promptTurnPreview] = await Promise.all([
+      this.chat.previewPromptConfiguration({ selection: promptSelection }),
+      this.chat.previewPromptTurn({
+        ...(binding?.chatSessionId === undefined
+          ? {}
+          : { sessionId: productSessionIdSchema.parse(binding.chatSessionId) }),
+        message: payload,
+      }),
+    ]);
     const payloadJson = JSON.stringify(payload, null, 2);
     const payloadSha256 = sha256(payloadJson);
     if (adapterRequest.status === "captured") {
@@ -574,13 +546,14 @@ export class LifeosBridgeService {
       workflowSelection,
       promptSelection,
       promptConfiguration,
+      promptTurnPreview,
       dshToBridge: {
         adapterRequest,
         userInput: { text, sha256: sha256(text) },
         contextInjections,
       },
       bridgeToChat: {
-        policy: direct ? "direct_prompt_selection" : "non_direct_workspace_instructions",
+        policy: "workflow_prompt_selection",
         payload,
         payloadJson,
         payloadSha256,
@@ -596,7 +569,7 @@ export class LifeosBridgeService {
     const bridgeDispatchReviewEnabled =
       await this.state.readBridgeDispatchReviewEnabled(dshSessionId);
     const bridgeDispatchReview = this.bridgeDispatchReview?.current(dshSessionId) ?? null;
-    const executionTracesPromise = this.executionTraces(binding, signal);
+    const executionTracesPromise = this.executionTraces(dshSessionId, binding, signal);
     const projectBootstrapPromise =
       binding?.chatSessionId === undefined
         ? Promise.resolve(null)
@@ -777,6 +750,7 @@ export class LifeosBridgeService {
    * 不可读时只缺席本轮展示，不能让Plan/HITL投影一起失败；下一次轮询会重试。
    */
   private async executionTraces(
+    dshSessionId: string,
     binding: SessionBinding | undefined,
     signal?: AbortSignal,
   ): Promise<LifeosExecutionTrace[]> {
@@ -802,7 +776,35 @@ export class LifeosBridgeService {
         if (isStableExecutionTrace(trace)) {
           this.stableExecutionTraces.set(request.productRunId, trace);
         }
-        return { dshMessageId: request.dshMessageId, trace };
+        return {
+          dshMessageId: request.dshMessageId,
+          boundaries: {
+            dsh: {
+              dshSessionId,
+              dshMessageId: request.dshMessageId,
+              userTextSha256: request.userTextSha256,
+            },
+            bridge: {
+              messageCommandId: request.messageCommandId,
+              ...(request.productUserMessageId === undefined
+                ? {}
+                : { productUserMessageId: request.productUserMessageId }),
+              ...(request.productAssistantMessageId === undefined
+                ? {}
+                : { productAssistantMessageId: request.productAssistantMessageId }),
+              ...(request.workflowSelection?.workflowDefinitionRevisionId === undefined
+                ? {}
+                : {
+                    workflowDefinitionRevisionId:
+                      request.workflowSelection.workflowDefinitionRevisionId,
+                  }),
+              ...(request.promptSelection === undefined
+                ? {}
+                : { promptSelectionSha256: sha256(JSON.stringify(request.promptSelection)) }),
+            },
+          },
+          trace,
+        };
       }),
     );
     return settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
@@ -811,6 +813,28 @@ export class LifeosBridgeService {
   /** 选择表面可用的已发布Workflow列表；权威过滤（active/published/所有权）在Chat侧完成。 */
   async workflows(signal?: AbortSignal): Promise<{ items: readonly LifeosWorkflowOption[] }> {
     return { items: await this.chat.listWorkflows(signal) };
+  }
+
+  async saveWorkflowAgentNodeConfiguration(
+    request: SaveWorkflowAgentNodeConfigurationRequest,
+    signal?: AbortSignal,
+  ): Promise<{ workflow: LifeosWorkflowOption; items: readonly LifeosWorkflowOption[] }> {
+    const result = await this.chat.saveWorkflowAgentNodeConfiguration(
+      request.commandId,
+      request.payload,
+      signal,
+    );
+    const revisionId = result.affectedRevision?.workflowDefinitionRevisionId;
+    const items = await this.chat.listWorkflows(signal);
+    const workflow = items.find((item) => item.workflowDefinitionRevisionId === revisionId);
+    if (workflow === undefined) {
+      throw new BridgeRequestError(
+        500,
+        "lifeos_workflow_agent_configuration_projection_missing",
+        "保存后的Workflow投影不可用",
+      );
+    }
+    return { workflow, items };
   }
 
   /**
@@ -825,17 +849,68 @@ export class LifeosBridgeService {
   ): Promise<LifeosProjection> {
     const createCommandId = stableCommandId("create-session", dshSessionId);
     await this.state.selectWorkflow(dshSessionId, createCommandId, selection);
+    const storedPrompt = await this.state.readPromptSelection(dshSessionId);
+    if (storedPrompt?.schemaVersion === "prompt-turn-selection-input.v2") {
+      const workspace = this.promptWorkspaceResolver?.resolve(dshSessionId) ?? null;
+      const workspaceSelection = promptSelectionForWorkspace(storedPrompt, workspace);
+      const normalized =
+        selection === null
+          ? {
+              schemaVersion: "prompt-turn-selection-input.v1" as const,
+              ...(workspaceSelection.workspaceRootId === undefined
+                ? {}
+                : { workspaceRootId: workspaceSelection.workspaceRootId }),
+              regions: workspaceSelection.regions,
+            }
+          : promptSelectionForWorkflow(workspaceSelection, {
+              workflowDefinitionRevisionId: selection.workflowDefinitionRevisionId,
+              promptNodeIds: [],
+            });
+      await this.state.selectPrompt(dshSessionId, createCommandId, normalized);
+    }
     return await this.projection(dshSessionId, signal);
+  }
+
+  private async promptWorkflow(dshSessionId: string) {
+    if (typeof this.chat.listWorkflows !== "function") return null;
+    const [selection, workflows] = await Promise.all([
+      this.state.readWorkflowSelection(dshSessionId),
+      this.chat.listWorkflows().catch(() => []),
+    ]);
+    return (
+      workflows.find(
+        (item) => item.workflowDefinitionRevisionId === selection?.workflowDefinitionRevisionId,
+      ) ??
+      workflows.find((item) => item.isDefault) ??
+      null
+    );
   }
 
   /** 会话Prompt草稿的Workspace身份每次都由Host重新解析，Browser不能指定别的项目。 */
   async promptSelection(dshSessionId: string): Promise<PromptSelectionProjection> {
     const workspace = this.promptWorkspaceResolver?.resolve(dshSessionId) ?? null;
-    const stored = await this.state.readPromptSelection(dshSessionId);
-    const promptSelection = promptSelectionForWorkspace(stored, workspace);
+    const [stored, workflow] = await Promise.all([
+      this.state.readPromptSelection(dshSessionId),
+      this.promptWorkflow(dshSessionId),
+    ]);
+    const workspaceSelection = promptSelectionForWorkspace(stored, workspace);
+    const promptSelection =
+      workflow === null
+        ? workspaceSelection
+        : promptSelectionForWorkflow(workspaceSelection, {
+            workflowDefinitionRevisionId: workflow.workflowDefinitionRevisionId,
+            promptNodeIds: [],
+          });
     return promptSelectionProjectionSchema.parse({
       schemaVersion: PROMPT_SELECTION_SCHEMA_VERSION,
       workspace,
+      workflow:
+        workflow === null
+          ? null
+          : {
+              workflowDefinitionRevisionId: workflow.workflowDefinitionRevisionId,
+              title: workflow.title,
+            },
       promptSelection,
     });
   }
@@ -852,7 +927,15 @@ export class LifeosBridgeService {
         "当前会话Workspace已变化，请刷新提示词选择后重试",
       );
     }
-    const normalized = promptSelectionForWorkspace(selection, workspace);
+    const workflow = await this.promptWorkflow(dshSessionId);
+    const workspaceSelection = promptSelectionForWorkspace(selection, workspace);
+    const normalized =
+      workflow === null
+        ? workspaceSelection
+        : promptSelectionForWorkflow(workspaceSelection, {
+            workflowDefinitionRevisionId: workflow.workflowDefinitionRevisionId,
+            promptNodeIds: [],
+          });
     await this.state.selectPrompt(
       dshSessionId,
       stableCommandId("create-session", dshSessionId),
@@ -861,6 +944,13 @@ export class LifeosBridgeService {
     return promptSelectionProjectionSchema.parse({
       schemaVersion: PROMPT_SELECTION_SCHEMA_VERSION,
       workspace,
+      workflow:
+        workflow === null
+          ? null
+          : {
+              workflowDefinitionRevisionId: workflow.workflowDefinitionRevisionId,
+              title: workflow.title,
+            },
       promptSelection: normalized,
     });
   }

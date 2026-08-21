@@ -2,6 +2,7 @@ import {
   computeRunContextRequestSha256,
   computeWorkspaceInstructionItemSha256,
   computeWorkspaceInstructionsSha256,
+  governedUserPromptLayer,
   hashCanonical,
   NOTE_LOW_RISK_AUTO_POLICY_RESOURCE_ID,
   NOTE_LOW_RISK_AUTO_POLICY_REVISION,
@@ -11,7 +12,15 @@ import {
   sha256Hex,
   type WorkflowDiagnostic,
 } from "@chat/domain";
-import { contextRequestIdSchema, noteKindSchema, workflowRunSpecIdSchema } from "@chat/contracts";
+import {
+  contextRequestIdSchema,
+  messageIdSchema,
+  noteKindSchema,
+  productRunIdSchema,
+  productSessionIdSchema,
+  promptTurnPreviewDtoSchema,
+  workflowRunSpecIdSchema,
+} from "@chat/contracts";
 import type {
   NoteCaptureSubmitInput,
   NoteKind,
@@ -24,6 +33,7 @@ import type {
   ProductSession,
   ProductSessionId,
   ProductSnapshot,
+  PreviewPromptTurnPayload,
   SessionDto,
   SubmitMessagePayload,
   WorkflowRunBusinessInput,
@@ -63,9 +73,13 @@ import { assertWorkflowResourceSelectionsAuthorized } from "./workflow-resource-
 import { createPublishedWorkflowView } from "./workflow-view-builder.js";
 import { DEFAULT_NODE_CATALOG } from "./workflow-node-catalog.js";
 import {
+  agentBindingForNode,
   assertPromptAssemblySourcesCurrent,
   compileDirectPromptAssembly,
+  compileWorkflowPromptAssembly,
+  promptBearingNodes,
 } from "./prompt-assembly-use-cases.js";
+import { getAgentProfile } from "./prompt-studio-use-cases.js";
 
 /**
  * CreateProductSession / SubmitUserMessage用例。
@@ -137,6 +151,306 @@ function productSessionTitleFromFirstMessage(text: string): string {
   return characters.length <= 200 ? normalized : `${characters.slice(0, 199).join("")}…`;
 }
 
+interface PreparePromptTurnInput {
+  readonly principalId: PrincipalId;
+  readonly payload: SubmitMessagePayload;
+  readonly now: string;
+  readonly snapshot: ProductSnapshot;
+  readonly targetSessionId: ProductSessionId;
+  readonly messageId: Message["messageId"];
+  readonly productRunId: ProductRun["productRunId"];
+  readonly workflowRunSpecId: ReturnType<typeof workflowRunSpecIdSchema.parse>;
+  readonly sessionSequence: number;
+  readonly sourceMessageSha256: string;
+}
+
+/**
+ * 发送预览和正式提交共用的唯一预编译入口。
+ *
+ * 它只解析已发布Workflow、节点Agent绑定、Run覆盖和Prompt Assembly，不写产品事实、
+ * 不启动Workflow。预览若能通过，提交仍会在事务内复核Session序号与所有Prompt来源，
+ * 因而既不会产生第二套Prompt事实，也不会把只读预览误当作执行授权。
+ */
+async function preparePromptTurn(deps: ApplicationDeps, input: PreparePromptTurnInput) {
+  const selectedRevision = resolvePublishedWorkflowRevision(
+    input.snapshot,
+    input.payload,
+    input.principalId,
+  );
+  if (selectedRevision.blueprintKey === "direct" && input.payload.context !== undefined) {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 422,
+      message: "Direct Agent上下文必须通过Prompt区域选择提交，不能同时提交旧Context字段",
+      recoveryAction: "none",
+    });
+  }
+  if (
+    selectedRevision.blueprintKey !== "direct" &&
+    input.payload.promptSelection !== undefined &&
+    input.payload.context?.workspaceInstructions !== undefined
+  ) {
+    throw new ApplicationError({
+      code: "validation_failed",
+      httpStatus: 422,
+      message: "Workspace指令必须通过Prompt区域选择提交，不能同时提交旧Context字段",
+      recoveryAction: "none",
+    });
+  }
+  const selectedView =
+    selectedRevision.workflowDefinitionRevisionId === SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID
+      ? input.snapshot.entities.workflowViewDefinitions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID]
+      : selectedRevision.workflowDefinitionRevisionId ===
+          SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID
+        ? input.snapshot.entities.workflowViewDefinitions[SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID]
+        : selectedRevision.workflowDefinitionRevisionId === SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID
+          ? input.snapshot.entities.workflowViewDefinitions[SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID]
+          : selectedRevision.workflowDefinitionRevisionId === SYSTEM_PLANNING_WORKFLOW_REVISION_ID
+            ? input.snapshot.entities.workflowViewDefinitions[SYSTEM_PLANNING_WORKFLOW_VIEW_ID]
+            : selectedRevision.workflowDefinitionRevisionId === SYSTEM_NOTE_WORKFLOW_REVISION_ID
+              ? input.snapshot.entities.workflowViewDefinitions[SYSTEM_NOTE_WORKFLOW_VIEW_ID]
+              : createPublishedWorkflowView({ revision: selectedRevision, createdAt: input.now });
+  if (selectedView === undefined) {
+    throw new ApplicationError({
+      code: "store_corrupted",
+      httpStatus: 500,
+      message: "Workflow View快照不存在",
+      recoveryAction: "contact_support",
+    });
+  }
+  const runConfiguration = input.payload.workflowSelection?.runConfiguration ?? {
+    schemaVersion: "workflow-run-configuration.v1" as const,
+    overrides: [],
+  };
+  const business = resolveSubmitBusinessInput({
+    revision: selectedRevision,
+    submitInput: input.payload.workflowSelection?.businessInput,
+    messageId: input.messageId,
+    sessionId: input.targetSessionId,
+    sessionSequence: input.sessionSequence,
+    text: input.payload.text,
+    sourceMessageSha256: input.sourceMessageSha256,
+  });
+  const runner =
+    selectedRevision.blueprintKey === "note"
+      ? {
+          runnerFamily: NOTE_CAPTURE_RUNNER_FAMILY,
+          runnerBundleVersion: NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
+        }
+      : selectedRevision.blueprintKey === "direct"
+        ? {
+            runnerFamily: DIRECT_AGENT_RUNNER_FAMILY,
+            runnerBundleVersion: DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+          }
+        : {
+            runnerFamily: CONFIGURABLE_PLANNING_RUNNER_FAMILY,
+            runnerBundleVersion: CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
+          };
+  assertWorkflowResourceSelectionsAuthorized(input.snapshot, input.principalId, runConfiguration);
+  const authorizedResources = listAuthorizedWorkflowResources(
+    input.snapshot,
+    input.principalId,
+  ).map((resource) => resource.frozen);
+  const noteAutoPolicyEnabled = selectedRevision.blueprintKey === "note";
+  const availableResources = noteAutoPolicyEnabled
+    ? [
+        ...authorizedResources,
+        {
+          resourceKind: "rule" as const,
+          resourceId: NOTE_LOW_RISK_AUTO_POLICY_RESOURCE_ID,
+          revision: NOTE_LOW_RISK_AUTO_POLICY_REVISION,
+          sha256: NOTE_LOW_RISK_AUTO_POLICY_SHA256,
+          status: "active" as const,
+          allowedPrincipalIds: [input.principalId],
+        },
+      ]
+    : authorizedResources;
+  const compiled = compileWorkflowRunSpec({
+    workflowRunSpecId: input.workflowRunSpecId,
+    productRunId: input.productRunId,
+    createdAt: input.now,
+    definition: revisionToCompilerInput(selectedRevision),
+    runConfiguration,
+    principal: {
+      principalId: input.principalId,
+      capabilities: noteAutoPolicyEnabled ? ["workflow.review.auto"] : [],
+    },
+    availableResources,
+    executorManifest: BUILTIN_WORKFLOW_EXECUTOR_MANIFEST,
+    runner,
+    businessInput: business.runSpecBusinessInput,
+    ...(noteAutoPolicyEnabled
+      ? {
+          autoContinuePolicy: {
+            resourceId: NOTE_LOW_RISK_AUTO_POLICY_RESOURCE_ID,
+            expectedRevision: NOTE_LOW_RISK_AUTO_POLICY_REVISION,
+            expectedSha256: NOTE_LOW_RISK_AUTO_POLICY_SHA256,
+          },
+        }
+      : {}),
+  });
+  if (!compiled.success) throw compilerDiagnosticsToError(compiled.diagnostics);
+  const promptSelection = input.payload.promptSelection ?? {
+    schemaVersion: "prompt-turn-selection-input.v1" as const,
+    regions: [],
+  };
+  const promptAssembly =
+    selectedRevision.blueprintKey === "direct"
+      ? await compileDirectPromptAssembly(deps, {
+          principalId: input.principalId,
+          text: input.payload.text,
+          selection: promptSelection,
+          productSessionId: input.targetSessionId,
+          productRunId: input.productRunId,
+          sourceMessageId: input.messageId,
+          sourceMessageSequence: input.sessionSequence,
+          sourceMessageSha256: input.sourceMessageSha256,
+          workflowDefinitionRevisionId: selectedRevision.workflowDefinitionRevisionId,
+          nodeResolutions: compiled.runSpec.nodeResolutions,
+          createdAt: input.now,
+        })
+      : deps.promptCatalog === undefined
+        ? undefined
+        : await compileWorkflowPromptAssembly(deps, {
+            principalId: input.principalId,
+            text: input.payload.text,
+            selection: promptSelection,
+            productSessionId: input.targetSessionId,
+            productRunId: input.productRunId,
+            sourceMessageId: input.messageId,
+            workflowDefinitionRevisionId: selectedRevision.workflowDefinitionRevisionId,
+            nodeResolutions: compiled.runSpec.nodeResolutions,
+            createdAt: input.now,
+          });
+  return {
+    selectedRevision,
+    selectedView,
+    runConfiguration,
+    business,
+    runner,
+    compiled,
+    promptAssembly,
+  };
+}
+
+/**
+ * 返回“此刻点击发送”将使用的完整Prompt读模型；不创建Session、Message或Run。
+ * Preview ID仅用于让正式Prompt合同完成确定性编译，不是浏览器可复用的产品身份。
+ */
+export async function previewPromptTurn(
+  deps: ApplicationDeps,
+  input: { readonly principalId: PrincipalId; readonly payload: PreviewPromptTurnPayload },
+) {
+  const now = deps.now();
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const persistedSession =
+    input.payload.sessionId === undefined
+      ? undefined
+      : snapshot.entities.sessions[input.payload.sessionId];
+  if (input.payload.sessionId !== undefined && persistedSession === undefined) {
+    throw notFound("Session不存在");
+  }
+  if (persistedSession !== undefined && persistedSession.ownerPrincipalId !== input.principalId) {
+    throw forbidden("无权预览该Session的Prompt");
+  }
+  const previewIdentity = hashCanonical("prompt-turn-preview.v1", {
+    principalId: input.principalId,
+    ...(input.payload.sessionId === undefined ? {} : { sessionId: input.payload.sessionId }),
+    message: input.payload.message,
+  });
+  const targetSessionId =
+    input.payload.sessionId ??
+    productSessionIdSchema.parse(`psn_preview${previewIdentity.slice(0, 28)}`);
+  const messageId = messageIdSchema.parse(`msg_preview${previewIdentity.slice(0, 28)}`);
+  const productRunId = productRunIdSchema.parse(`run_preview${previewIdentity.slice(0, 28)}`);
+  const workflowRunSpecId = workflowRunSpecIdSchema.parse(
+    `wrs_preview${previewIdentity.slice(0, 28)}`,
+  );
+  const sessionSequence = (persistedSession?.lastMessageSequence ?? 0) + 1;
+  const sourceMessageSha256 = hashCanonical("message.v1", {
+    messageId,
+    sessionId: targetSessionId,
+    sessionSequence,
+    role: "user",
+    content: { format: "markdown" as const, text: input.payload.message.text },
+  });
+  const prepared = await preparePromptTurn(deps, {
+    principalId: input.principalId,
+    payload: input.payload.message,
+    now,
+    snapshot,
+    targetSessionId,
+    messageId,
+    productRunId,
+    workflowRunSpecId,
+    sessionSequence,
+    sourceMessageSha256,
+  });
+  if (prepared.promptAssembly === undefined) {
+    throw new ApplicationError({
+      code: "internal_error",
+      httpStatus: 503,
+      message: "Prompt Catalog未配置，无法生成发送前预览",
+      retryable: true,
+      recoveryAction: "retry_same_command",
+    });
+  }
+  const nodes = await Promise.all(
+    promptBearingNodes(prepared.compiled.runSpec.nodeResolutions).map(async (node) => {
+      const binding = agentBindingForNode(node.nodeType, node.config);
+      const nodeAssembly =
+        prepared.promptAssembly?.schemaVersion === "prompt-assembly.v2"
+          ? prepared.promptAssembly
+          : prepared.promptAssembly?.schemaVersion === "prompt-assembly.v3"
+            ? prepared.promptAssembly.nodes.find(
+                (candidate) => candidate.definitionNodeId === node.definitionNodeId,
+              )
+            : undefined;
+      if (nodeAssembly === undefined) throw new Error("Prompt节点Assembly不存在");
+      const stage =
+        prepared.promptAssembly?.schemaVersion === "prompt-assembly.v2"
+          ? prepared.promptAssembly.tools.capabilityMode === "project_bootstrap"
+            ? ("direct_pre_send_dynamic_extension" as const)
+            : ("direct_pre_send" as const)
+          : node.nodeType === "execute.plan"
+            ? ("deferred_step_runtime" as const)
+            : ("workflow_node_template" as const);
+      return {
+        definitionNodeId: node.definitionNodeId,
+        nodeType: node.nodeType,
+        agent: await getAgentProfile(deps, {
+          principalId: input.principalId,
+          agentKey: binding.agentKey,
+        }),
+        runtimeResolution: {
+          stage,
+          governedSystemPromptAppend:
+            governedUserPromptLayer(nodeAssembly.systemPromptAppend) ?? "",
+          toolResolution:
+            prepared.promptAssembly?.schemaVersion === "prompt-assembly.v2"
+              ? ("frozen" as const)
+              : ("runtime_deferred" as const),
+          note:
+            stage === "direct_pre_send"
+              ? "Direct节点的能力与Chat层已经冻结；Workspace占位符会在Pi运行时填充，逐字节Provider请求以Prompt Review为准。"
+              : stage === "direct_pre_send_dynamic_extension"
+                ? "项目初始化复用Direct Pi AgentSession；基础能力已冻结，Plane/创建Root等动态合同会在执行授权后追加。"
+                : stage === "deferred_step_runtime"
+                  ? "Coding Executor的实际Pi System与Tools取决于用户批准计划中当前步骤的capabilityRefs，此时只能预览节点模板。"
+                  : "这是Workflow节点发送前冻结的Chat管理层；节点固定Runtime System与最终Provider请求在执行时解析。",
+        },
+      };
+    }),
+  );
+  return promptTurnPreviewDtoSchema.parse({
+    schemaVersion: "chat-product-api.v1",
+    status: "pre_send",
+    currentInput: input.payload.message.text,
+    assembly: prepared.promptAssembly,
+    nodes,
+  });
+}
+
 export async function submitUserMessage(
   deps: ApplicationDeps,
   input: SubmitUserMessageInput,
@@ -188,144 +502,26 @@ export async function submitUserMessage(
     role: "user",
     content: { format: "markdown" as const, text: input.payload.text },
   });
-  const selectedRevision = resolvePublishedWorkflowRevision(
-    preflightSnapshot,
-    input.payload,
-    input.principalId,
-  );
-  if (selectedRevision.blueprintKey === "direct" && input.payload.context !== undefined) {
-    throw new ApplicationError({
-      code: "validation_failed",
-      httpStatus: 422,
-      message: "Direct Agent上下文必须通过Prompt区域选择提交，不能同时提交旧Context字段",
-      recoveryAction: "none",
-    });
-  }
-  if (selectedRevision.blueprintKey !== "direct" && input.payload.promptSelection !== undefined) {
-    throw new ApplicationError({
-      code: "validation_failed",
-      httpStatus: 422,
-      message: "当前仅Direct Agent Workflow支持Prompt区域选择",
-      recoveryAction: "none",
-    });
-  }
-  const selectedView =
-    selectedRevision.workflowDefinitionRevisionId === SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID
-      ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID]
-      : selectedRevision.workflowDefinitionRevisionId ===
-          SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID
-        ? preflightSnapshot.entities.workflowViewDefinitions[
-            SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID
-          ]
-        : selectedRevision.workflowDefinitionRevisionId === SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID
-          ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID]
-          : selectedRevision.workflowDefinitionRevisionId === SYSTEM_PLANNING_WORKFLOW_REVISION_ID
-            ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_PLANNING_WORKFLOW_VIEW_ID]
-            : selectedRevision.workflowDefinitionRevisionId === SYSTEM_NOTE_WORKFLOW_REVISION_ID
-              ? preflightSnapshot.entities.workflowViewDefinitions[SYSTEM_NOTE_WORKFLOW_VIEW_ID]
-              : createPublishedWorkflowView({ revision: selectedRevision, createdAt: now });
-  if (selectedView === undefined) {
-    throw new ApplicationError({
-      code: "store_corrupted",
-      httpStatus: 500,
-      message: "Workflow View快照不存在",
-      recoveryAction: "contact_support",
-    });
-  }
-  const runConfiguration = input.payload.workflowSelection?.runConfiguration ?? {
-    schemaVersion: "workflow-run-configuration.v1" as const,
-    overrides: [],
-  };
-  const business = resolveSubmitBusinessInput({
-    revision: selectedRevision,
-    submitInput: input.payload.workflowSelection?.businessInput,
+  const {
+    selectedRevision,
+    selectedView,
+    runConfiguration,
+    business,
+    runner,
+    compiled,
+    promptAssembly,
+  } = await preparePromptTurn(deps, {
+    principalId: input.principalId,
+    payload: input.payload,
+    now,
+    snapshot: preflightSnapshot,
+    targetSessionId,
     messageId,
-    sessionId: targetSessionId,
+    productRunId,
+    workflowRunSpecId,
     sessionSequence: preflightSessionSequence,
-    text: input.payload.text,
     sourceMessageSha256,
   });
-  const runner =
-    selectedRevision.blueprintKey === "note"
-      ? {
-          runnerFamily: NOTE_CAPTURE_RUNNER_FAMILY,
-          runnerBundleVersion: NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
-        }
-      : selectedRevision.blueprintKey === "direct"
-        ? {
-            runnerFamily: DIRECT_AGENT_RUNNER_FAMILY,
-            runnerBundleVersion: DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
-          }
-        : {
-            runnerFamily: CONFIGURABLE_PLANNING_RUNNER_FAMILY,
-            runnerBundleVersion: CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
-          };
-  assertWorkflowResourceSelectionsAuthorized(
-    preflightSnapshot,
-    input.principalId,
-    runConfiguration,
-  );
-  const authorizedResources = listAuthorizedWorkflowResources(
-    preflightSnapshot,
-    input.principalId,
-  ).map((resource) => resource.frozen);
-  const noteAutoPolicyEnabled = selectedRevision.blueprintKey === "note";
-  const availableResources = noteAutoPolicyEnabled
-    ? [
-        ...authorizedResources,
-        {
-          resourceKind: "rule" as const,
-          resourceId: NOTE_LOW_RISK_AUTO_POLICY_RESOURCE_ID,
-          revision: NOTE_LOW_RISK_AUTO_POLICY_REVISION,
-          sha256: NOTE_LOW_RISK_AUTO_POLICY_SHA256,
-          status: "active" as const,
-          allowedPrincipalIds: [input.principalId],
-        },
-      ]
-    : authorizedResources;
-  const compiled = compileWorkflowRunSpec({
-    workflowRunSpecId,
-    productRunId,
-    createdAt: now,
-    definition: revisionToCompilerInput(selectedRevision),
-    runConfiguration,
-    principal: {
-      principalId: input.principalId,
-      capabilities: noteAutoPolicyEnabled ? ["workflow.review.auto"] : [],
-    },
-    availableResources,
-    executorManifest: BUILTIN_WORKFLOW_EXECUTOR_MANIFEST,
-    runner,
-    businessInput: business.runSpecBusinessInput,
-    ...(noteAutoPolicyEnabled
-      ? {
-          autoContinuePolicy: {
-            resourceId: NOTE_LOW_RISK_AUTO_POLICY_RESOURCE_ID,
-            expectedRevision: NOTE_LOW_RISK_AUTO_POLICY_REVISION,
-            expectedSha256: NOTE_LOW_RISK_AUTO_POLICY_SHA256,
-          },
-        }
-      : {}),
-  });
-  if (!compiled.success) throw compilerDiagnosticsToError(compiled.diagnostics);
-  const promptAssembly =
-    selectedRevision.blueprintKey === "direct"
-      ? await compileDirectPromptAssembly(deps, {
-          principalId: input.principalId,
-          text: input.payload.text,
-          selection: input.payload.promptSelection ?? {
-            schemaVersion: "prompt-turn-selection-input.v1",
-            regions: [],
-          },
-          productSessionId: targetSessionId,
-          productRunId,
-          sourceMessageId: messageId,
-          sourceMessageSequence: preflightSessionSequence,
-          sourceMessageSha256,
-          workflowDefinitionRevisionId: selectedRevision.workflowDefinitionRevisionId,
-          createdAt: now,
-        })
-      : undefined;
   const requestSha256 = hashCanonical(
     creatingProductSession
       ? "command.start-product-session-with-user-message.v1"

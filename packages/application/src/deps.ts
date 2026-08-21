@@ -46,6 +46,9 @@ import type {
   ProjectBootstrapOperationId,
   ProjectWorkspaceBindingId,
   ExecutionTracePage,
+  RunActivityEvent,
+  AgentKey,
+  AgentRuntimeBaselineDto,
 } from "@chat/contracts";
 import type { PromptFragmentId, PromptFragmentRevisionId } from "@chat/contracts";
 import type { PromptCatalogPort } from "./prompt-catalog-port.js";
@@ -60,7 +63,7 @@ import type {
   ProjectAdvancementUnderstandingPort,
   ProjectResourceRootRegistryPort,
 } from "./project-ports.js";
-import type { ProductRunTraceReaderPort, WorkflowRuntimeTraceReaderPort } from "./runtime-ports.js";
+import type { WorkflowRuntimeTraceReaderPort } from "./runtime-ports.js";
 import type {
   ProjectManagementBootstrapPort,
   ProjectWorkspaceProvisionerPort,
@@ -75,7 +78,12 @@ export interface ExecutionTraceReaderPort {
     readonly productRunId: ProductRunId;
     readonly afterSequence: number;
     readonly limit: number;
-  }): ExecutionTracePage;
+  }): Promise<ExecutionTracePage>;
+}
+
+/** Session Activity是Run级有序投影；它与Debug Trace、Product事实分别拥有存储边界。 */
+export interface RunActivityReaderPort {
+  read(input: { readonly productRunId: ProductRunId }): Promise<readonly RunActivityEvent[]>;
 }
 
 /**
@@ -149,6 +157,14 @@ export interface PromptFragmentIdFactory {
   revision(): PromptFragmentRevisionId;
 }
 
+/**
+ * Agent运行时只读说明由真正执行该Agent的Adapter提供。Application负责把它与
+ * Chat拥有的可写Prompt并排投影，但不会复制或重写上游Agent实现。
+ */
+export interface AgentRuntimeProfileReaderPort {
+  read(agentKey: AgentKey): Promise<AgentRuntimeBaselineDto | undefined>;
+}
+
 export interface ProjectBootstrapIdFactory {
   candidate(): ProjectBootstrapCandidateId;
   decision(): ProjectBootstrapDecisionId;
@@ -164,10 +180,9 @@ export interface ApplicationDeps {
   readonly trace?: TraceEmitter;
   /** 可观察执行证据的只读投影；不拥有Product Run或终态。 */
   readonly executionTraceReader?: ExecutionTraceReaderPort;
+  readonly runActivityReader?: RunActivityReaderPort;
   /** Vercel Workflow World的脱敏只读投影；不暴露任何Runtime私有身份。 */
   readonly workflowRuntimeTrace?: WorkflowRuntimeTraceReaderPort;
-  /** 本地严格JSONL Trace的只读投影，用于聚合Pi Agent公开活动。 */
-  readonly productRunTrace?: ProductRunTraceReaderPort;
   /** 配置在服务端组合根；浏览器只能选择公开 backendId。 */
   readonly memoryBackends?: MemoryBackendRegistryPort;
   /** 外部写入能力与Query分离，避免调用方忽略outcome_unknown。 */
@@ -185,6 +200,7 @@ export interface ApplicationDeps {
   readonly promptCatalog?: PromptCatalogPort;
   readonly promptFiles?: PromptFileLibraryPort;
   readonly promptFragmentIds?: PromptFragmentIdFactory;
+  readonly agentRuntimeProfiles?: AgentRuntimeProfileReaderPort;
   /** Plane与本地Workspace只通过窄Port进入Application；Token和绝对路径不进产品事实。 */
   readonly projectManagementBootstrap?: ProjectManagementBootstrapPort;
   readonly projectWorkspaceProvisioner?: ProjectWorkspaceProvisionerPort;

@@ -4,6 +4,7 @@ import {
   runAttemptIdSchema,
   sha256Schema,
   stepResultSchema,
+  workflowNodePromptRuntimeSchema,
 } from "@chat/contracts";
 import { z } from "zod";
 import { executorStepCandidateSchema } from "./executor.js";
@@ -50,6 +51,7 @@ export const startPiExecutorOperationRequestSchema = z
     stepId: z.string().min(1).max(100),
     contextItems: z.array(executionContextItemDtoSchema).max(50),
     dependencyResults: z.array(dependencyResultSchema).max(50),
+    nodePrompt: workflowNodePromptRuntimeSchema.optional(),
   })
   .strict();
 

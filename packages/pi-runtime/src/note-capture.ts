@@ -9,6 +9,7 @@ import {
 import { runAgentWithTool, type AgentRunResult } from "./agent-runner.js";
 import type { BailianConfig } from "./config.js";
 import { BailianNotReadyError } from "./planner.js";
+import { assembleNodeSystemPrompt } from "./prompt-layers.js";
 
 export const NOTE_CAPTURE_PROMPT_TEMPLATE_VERSION = "note-capture.v1";
 export const NOTE_CAPTURE_TOKEN_BUDGET = 2_048;
@@ -77,6 +78,7 @@ export function buildNoteCaptureUserPrompt(input: NoteCaptureModelInput): string
 export async function runPiNoteCapture(input: {
   readonly config: BailianConfig;
   readonly captureInput: NoteCaptureModelInput;
+  readonly systemPromptAppend?: string | undefined;
   /** 确定性测试注入；生产必须缺省。 */
   readonly streamFnOverride?: StreamFn | undefined;
   readonly onProviderRequestStart?: (() => void) | undefined;
@@ -91,7 +93,7 @@ export async function runPiNoteCapture(input: {
   return runAgentWithTool<NoteRevisionInput>({
     apiKey: input.config.apiKey,
     baseUrl: input.config.baseUrl,
-    systemPrompt: NOTE_CAPTURE_SYSTEM_PROMPT,
+    systemPrompt: assembleNodeSystemPrompt(NOTE_CAPTURE_SYSTEM_PROMPT, input.systemPromptAppend),
     userPrompt: buildNoteCaptureUserPrompt(input.captureInput),
     tool: submitNoteCandidateTool,
     parseCandidate: (parameters) => {

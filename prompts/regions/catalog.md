@@ -4,7 +4,6 @@
 
 ## 可编辑语义区域
 
-- `agent_identity`：模型在当前节点扮演的身份。Direct Agent 首版组装到 System。
 - `workspace_instructions`：用户显式选择的Chat基础Workspace或当前目标Workspace指令文件；Chat只读取列出的精确文件，不递归发现。
 - `user_context`：与当前用户有关、完成任务确实需要知道的资料。
 - `background`：任务发生的背景、现状和边界。
@@ -18,6 +17,12 @@
 - `custom_context`：用户临时扩展的命名 Key/Value 上下文。
 
 Direct V2把所有用户显式选择的Prompt组件编译为命名System Section；真实用户输入和正式会话历史只进入Messages。Region表达内容用途、来源、选择和预算，不等同于Provider Role。
+
+## Agent配置区域
+
+- `agent_identity`：独立Agent Profile的身份、长期职责和工作方式。它只在「设置 → Agent」中版本化管理，不属于会话Prompt，也不按Workflow节点名称创建Overlay。
+
+Workflow节点只引用Agent；节点执行时，Application把该Agent的System Prompt与同一份会话上下文组合为冻结Assembly。工具定义由Runtime锁定，Prompt不能扩权。
 
 ## 运行时只读区域
 

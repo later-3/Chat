@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { HostObservable, InjectFace, PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots";
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
 import type {
@@ -30,6 +30,47 @@ export interface LifeosDockInjected {
 
 export type LifeosDockProps = PropsRuntime<"conversation.input.dock"> &
   InjectFace<LifeosDockInjected>;
+
+function PromptAuditSurface({
+  title,
+  status,
+  ariaLabel,
+  testId,
+  className,
+  children,
+  footer,
+}: {
+  readonly title: string;
+  readonly status: ReactNode;
+  readonly ariaLabel: string;
+  readonly testId: string;
+  readonly className: string;
+  readonly children: ReactNode;
+  readonly footer: ReactNode;
+}) {
+  return (
+    <div className="lifeos-prompt-audit-root">
+      <div className="lifeos-prompt-audit-backdrop" aria-hidden="true" />
+      <section
+        className={`lifeos-card lifeos-scroll-review-card lifeos-prompt-audit-surface ${className}`}
+        data-testid={testId}
+        role="dialog"
+        aria-modal="true"
+        aria-label={ariaLabel}
+      >
+        <header className="lifeos-prompt-audit-toolbar">
+          <div>
+            <small>Prompt 审查</small>
+            <strong>{title}</strong>
+          </div>
+          <span className="lifeos-status">{status}</span>
+        </header>
+        <div className="lifeos-prompt-audit-scroll">{children}</div>
+        <footer className="lifeos-prompt-audit-footer">{footer}</footer>
+      </section>
+    </div>
+  );
+}
 
 const PHASE_LABEL: Record<string, string> = {
   plan_review: "等待你审核",
@@ -356,60 +397,100 @@ export function LifeosDock({
 
   if (dshSendReview !== null) {
     return (
-      <section
-        className="lifeos-card lifeos-scroll-review-card lifeos-dsh-send-review-card"
-        data-testid="lifeos-dsh-send-review-card"
-        aria-label="DSH发送前审核"
+      <PromptAuditSurface
+        title="DSH → Bridge 发送前审核"
+        status="等待你确认"
+        ariaLabel="DSH发送前审核"
+        testId="lifeos-dsh-send-review-card"
+        className="lifeos-dsh-send-review-card"
+        footer={
+          <>
+            <div className="lifeos-review" data-testid="lifeos-dsh-send-review-actions">
+              <div className="lifeos-actions">
+                <button
+                  type="button"
+                  disabled={state.submitting}
+                  onClick={() =>
+                    void decideDshSendReview({ reviewId: dshSendReview.reviewId, kind: "reject" })
+                  }
+                >
+                  取消本次发送
+                </button>
+                <button
+                  type="button"
+                  className="lifeos-primary"
+                  disabled={state.submitting}
+                  onClick={() =>
+                    void decideDshSendReview({ reviewId: dshSendReview.reviewId, kind: "approve" })
+                  }
+                >
+                  批准并进入 Bridge
+                </button>
+              </div>
+            </div>
+            {state.error === null ? null : (
+              <p className="lifeos-error" role="alert">
+                {state.error}
+              </p>
+            )}
+          </>
+        }
       >
-        <header className="lifeos-header">
-          <strong>DSH → Bridge 发送前审核</strong>
-          <span className="lifeos-status">等待你确认</span>
-        </header>
         <BridgeSendPreview preview={dshSendReview.preview} />
-        <div className="lifeos-review" data-testid="lifeos-dsh-send-review-actions">
-          <div className="lifeos-actions">
-            <button
-              type="button"
-              disabled={state.submitting}
-              onClick={() =>
-                void decideDshSendReview({ reviewId: dshSendReview.reviewId, kind: "reject" })
-              }
-            >
-              取消本次发送
-            </button>
-            <button
-              type="button"
-              className="lifeos-primary"
-              disabled={state.submitting}
-              onClick={() =>
-                void decideDshSendReview({ reviewId: dshSendReview.reviewId, kind: "approve" })
-              }
-            >
-              批准并进入 Bridge
-            </button>
-          </div>
-        </div>
-        {state.error === null ? null : (
-          <p className="lifeos-error" role="alert">
-            {state.error}
-          </p>
-        )}
-      </section>
+      </PromptAuditSurface>
     );
   }
 
   if (bridgeDispatchReview !== null) {
     const plan = bridgeDispatchReview.plan;
     return (
-      <section
-        className="lifeos-card lifeos-scroll-review-card lifeos-bridge-dispatch-review-card"
-        data-testid="lifeos-bridge-dispatch-review-card"
-        aria-label="Bridge发送到Chat后端前审核"
+      <PromptAuditSurface
+        title="Bridge → Chat后端 发送前审核"
+        status="等待你确认"
+        ariaLabel="Bridge发送到Chat后端前审核"
+        testId="lifeos-bridge-dispatch-review-card"
+        className="lifeos-bridge-dispatch-review-card"
+        footer={
+          <>
+            <div className="lifeos-review" data-testid="lifeos-bridge-dispatch-review-actions">
+              <div className="lifeos-actions">
+                <button
+                  type="button"
+                  disabled={state.submitting}
+                  onClick={() =>
+                    void decideBridgeDispatchReview({
+                      reviewId: bridgeDispatchReview.reviewId,
+                      planSha256: plan.planSha256,
+                      kind: "reject",
+                    })
+                  }
+                >
+                  取消本次发送
+                </button>
+                <button
+                  type="button"
+                  className="lifeos-primary"
+                  disabled={state.submitting}
+                  onClick={() =>
+                    void decideBridgeDispatchReview({
+                      reviewId: bridgeDispatchReview.reviewId,
+                      planSha256: plan.planSha256,
+                      kind: "approve",
+                    })
+                  }
+                >
+                  批准并发送到Chat后端
+                </button>
+              </div>
+            </div>
+            {state.error === null ? null : (
+              <p className="lifeos-error" role="alert">
+                {state.error}
+              </p>
+            )}
+          </>
+        }
       >
-        <header className="lifeos-header">
-          <strong>Bridge → Chat后端 发送前审核</strong>
-          <span className="lifeos-status">等待你确认</span>
-        </header>
         <div className="lifeos-prompt-meta" aria-label="Bridge发送计划摘要">
           <span>请求：{plan.requestKey}</span>
           <span>
@@ -451,60 +532,76 @@ export function LifeosDock({
             <BridgeDispatchReadable plan={plan} />
           )}
         </div>
-        <div className="lifeos-review" data-testid="lifeos-bridge-dispatch-review-actions">
-          <div className="lifeos-actions">
-            <button
-              type="button"
-              disabled={state.submitting}
-              onClick={() =>
-                void decideBridgeDispatchReview({
-                  reviewId: bridgeDispatchReview.reviewId,
-                  planSha256: plan.planSha256,
-                  kind: "reject",
-                })
-              }
-            >
-              取消本次发送
-            </button>
-            <button
-              type="button"
-              className="lifeos-primary"
-              disabled={state.submitting}
-              onClick={() =>
-                void decideBridgeDispatchReview({
-                  reviewId: bridgeDispatchReview.reviewId,
-                  planSha256: plan.planSha256,
-                  kind: "approve",
-                })
-              }
-            >
-              批准并发送到Chat后端
-            </button>
-          </div>
-        </div>
-        {state.error === null ? null : (
-          <p className="lifeos-error" role="alert">
-            {state.error}
-          </p>
-        )}
-      </section>
+      </PromptAuditSurface>
     );
   }
 
   if (promptReview !== null || projection?.pendingPromptReviewDecision != null) {
     return (
-      <section
-        className="lifeos-card lifeos-scroll-review-card lifeos-prompt-review-card"
-        data-testid="lifeos-prompt-review-card"
-        aria-label="执行 Agent 发送前提示词审核"
-      >
-        <header className="lifeos-header">
-          <strong>执行 Agent · 第 {promptReview?.requestIndex ?? "—"} 次发送审核</strong>
-          <span className="lifeos-status" aria-live="polite" data-testid="lifeos-run-status">
+      <PromptAuditSurface
+        title={`Pi Coding Agent · 第 ${promptReview?.requestIndex ?? "—"} 次发送审核`}
+        status={
+          <span aria-live="polite" data-testid="lifeos-run-status">
             {run === null || run === undefined ? "连接失败" : (PHASE_LABEL[run.phase] ?? run.phase)}
           </span>
-        </header>
-
+        }
+        ariaLabel="Pi Coding Agent发送前提示词审核"
+        testId="lifeos-prompt-review-card"
+        className="lifeos-prompt-review-card"
+        footer={
+          <>
+            {projection?.pendingPromptReviewDecision != null ? (
+              <div className="lifeos-warning" data-testid="lifeos-pending-prompt-review-decision">
+                <p>上一提示词决定结果仍未知；只能原样重试。</p>
+                <button
+                  type="button"
+                  disabled={state.submitting}
+                  onClick={() => void decidePromptReview(projection.pendingPromptReviewDecision!)}
+                >
+                  重试上一决定
+                </button>
+              </div>
+            ) : null}
+            {canReviewPrompt &&
+            promptReview !== null &&
+            projection?.pendingPromptReviewDecision === null ? (
+              <div className="lifeos-review" data-testid="lifeos-prompt-review-actions">
+                <textarea
+                  aria-label="拒绝原因"
+                  value={explanation}
+                  maxLength={2_000}
+                  placeholder="拒绝时可填写原因（可选）"
+                  onChange={(event) => setExplanation(event.currentTarget.value)}
+                />
+                <div className="lifeos-actions">
+                  <button
+                    type="button"
+                    data-testid="lifeos-reject-prompt"
+                    disabled={state.submitting || !promptReview.allowedActions.includes("reject")}
+                    onClick={() => void submitPromptReview("reject")}
+                  >
+                    拒绝并停止
+                  </button>
+                  <button
+                    type="button"
+                    className="lifeos-primary"
+                    data-testid="lifeos-approve-prompt"
+                    disabled={state.submitting || !promptReview.allowedActions.includes("approve")}
+                    onClick={() => void submitPromptReview("approve")}
+                  >
+                    批准并发送
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {state.error !== null ? (
+              <p className="lifeos-error" role="alert" data-testid="lifeos-error">
+                {state.error}
+              </p>
+            ) : null}
+          </>
+        }
+      >
         {promptReview !== null ? (
           <>
             <div className="lifeos-prompt-meta" aria-label="模型请求摘要">
@@ -578,59 +675,7 @@ export function LifeosDock({
             </div>
           </>
         ) : null}
-
-        {projection?.pendingPromptReviewDecision != null ? (
-          <div className="lifeos-warning" data-testid="lifeos-pending-prompt-review-decision">
-            <p>上一提示词决定结果仍未知；只能原样重试。</p>
-            <button
-              type="button"
-              disabled={state.submitting}
-              onClick={() => void decidePromptReview(projection.pendingPromptReviewDecision!)}
-            >
-              重试上一决定
-            </button>
-          </div>
-        ) : null}
-
-        {canReviewPrompt &&
-        promptReview !== null &&
-        projection?.pendingPromptReviewDecision === null ? (
-          <div className="lifeos-review" data-testid="lifeos-prompt-review-actions">
-            <textarea
-              aria-label="拒绝原因"
-              value={explanation}
-              maxLength={2_000}
-              placeholder="拒绝时可填写原因（可选）"
-              onChange={(event) => setExplanation(event.currentTarget.value)}
-            />
-            <div className="lifeos-actions">
-              <button
-                type="button"
-                data-testid="lifeos-reject-prompt"
-                disabled={state.submitting || !promptReview.allowedActions.includes("reject")}
-                onClick={() => void submitPromptReview("reject")}
-              >
-                拒绝并停止
-              </button>
-              <button
-                type="button"
-                className="lifeos-primary"
-                data-testid="lifeos-approve-prompt"
-                disabled={state.submitting || !promptReview.allowedActions.includes("approve")}
-                onClick={() => void submitPromptReview("approve")}
-              >
-                批准并发送
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        {state.error !== null ? (
-          <p className="lifeos-error" role="alert" data-testid="lifeos-error">
-            {state.error}
-          </p>
-        ) : null}
-      </section>
+      </PromptAuditSurface>
     );
   }
 

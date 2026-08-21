@@ -184,7 +184,7 @@ async function call<TReq, TRes>(
     }
     throw new ApiClientError({
       code: problem.code,
-      message: `私有命令被拒绝:${path}:${problem.code}`,
+      message: `私有命令被拒绝:${path}:${problem.code}:${problem.title}`,
       httpStatus: response.status,
       retryable: problem.retryable,
     });

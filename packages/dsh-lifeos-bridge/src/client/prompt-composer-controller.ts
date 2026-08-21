@@ -26,6 +26,7 @@ export interface PromptComposerState {
   readonly fragments: readonly PromptFragmentSummaryDto[];
   readonly workspaces: readonly PromptWorkspaceDto[];
   readonly workspace: PromptSelectionProjection["workspace"];
+  readonly workflow: PromptSelectionProjection["workflow"];
   readonly selection: PromptTurnSelectionInput;
   readonly saving: boolean;
   readonly previewing: boolean;
@@ -38,6 +39,13 @@ const EMPTY_SELECTION: PromptTurnSelectionInput = {
   schemaVersion: "prompt-turn-selection-input.v1",
   regions: [],
 };
+
+function sessionContextSelection(selection: PromptTurnSelectionInput): PromptTurnSelectionInput {
+  const regions = selection.regions.filter((region) => region.regionKey !== "agent_identity");
+  return selection.schemaVersion === "prompt-turn-selection-input.v1"
+    ? { ...selection, regions }
+    : { ...selection, regions, nodeSelections: [] };
+}
 
 function storageKey(sessionId: string): string {
   return `chat.prompt-composer.selection.v1.${sessionId}`;
@@ -56,7 +64,7 @@ function readSelection(sessionId: string, storage: Storage | undefined): PromptT
     const raw = storage?.getItem(storageKey(sessionId));
     if (raw === null || raw === undefined) return EMPTY_SELECTION;
     const parsed = promptTurnSelectionInputSchema.safeParse(JSON.parse(raw) as unknown);
-    return parsed.success ? parsed.data : EMPTY_SELECTION;
+    return parsed.success ? sessionContextSelection(parsed.data) : EMPTY_SELECTION;
   } catch {
     return EMPTY_SELECTION;
   }
@@ -88,12 +96,18 @@ function problemMessage(value: unknown, status: number): string {
   return `${code}: ${title}`;
 }
 
+export function sessionRegions(
+  selection: PromptTurnSelectionInput,
+): readonly PromptRegionCompositionInput[] {
+  return selection.regions;
+}
+
 function regionSelection(
   selection: PromptTurnSelectionInput,
   regionKey: string,
 ): PromptRegionCompositionInput {
   return (
-    selection.regions.find((item) => item.regionKey === regionKey) ?? {
+    sessionRegions(selection).find((item) => item.regionKey === regionKey) ?? {
       regionKey,
       mode: "default",
       selected: [],
@@ -105,9 +119,11 @@ function replaceRegion(
   selection: PromptTurnSelectionInput,
   next: PromptRegionCompositionInput,
 ): PromptTurnSelectionInput {
-  const regions = selection.regions.filter((item) => item.regionKey !== next.regionKey);
+  const regions = sessionRegions(selection).filter((item) => item.regionKey !== next.regionKey);
   if (next.mode !== "default") regions.push(next);
-  return { ...selection, regions };
+  return selection.schemaVersion === "prompt-turn-selection-input.v1"
+    ? { ...selection, regions }
+    : { ...selection, regions, nodeSelections: [] };
 }
 
 /**
@@ -138,6 +154,7 @@ export class PromptComposerController {
       fragments: [],
       workspaces: [],
       workspace: null,
+      workflow: null,
       selection: readSelection(sessionId, this.storage),
       saving: false,
       previewing: false,
@@ -184,14 +201,16 @@ export class PromptComposerController {
           abort.signal,
         ),
       ]);
-      persistSelection(this.sessionId, this.storage, projection.promptSelection);
+      const selection = sessionContextSelection(projection.promptSelection);
+      persistSelection(this.sessionId, this.storage, selection);
       this.publish({
         status: "ready",
         regions: regions.items,
         fragments: fragments.items,
         workspaces: workspaces.items,
         workspace: projection.workspace,
-        selection: projection.promptSelection,
+        workflow: projection.workflow,
+        selection,
         saving: false,
         previewing: false,
         configurationPreview: null,
@@ -274,14 +293,27 @@ export class PromptComposerController {
   }
 
   reset(): void {
-    const selection: PromptTurnSelectionInput = {
-      schemaVersion: "prompt-turn-selection-input.v1",
-      ...(this.snapshot.workspace === null
-        ? {}
-        : { workspaceRootId: this.snapshot.workspace.rootId }),
-      regions: [],
-    };
-    this.commit(selection);
+    this.commit({ ...this.snapshot.selection, regions: [] });
+  }
+
+  /** 用户保存新Revision时，把本会话中明确选中的旧Revision升级为刚确认的新版本。 */
+  upgradeSelectedRevision(
+    previousRevisionId: string,
+    next: PromptRegionCompositionInput["selected"][number],
+  ): void {
+    const upgradeRegions = (regions: readonly PromptRegionCompositionInput[]) =>
+      regions.map((region) => ({
+        ...region,
+        selected: region.selected.map((item) =>
+          item.promptFragmentRevisionId === previousRevisionId ? next : item,
+        ),
+      }));
+    const current = this.snapshot.selection;
+    const nextSelection: PromptTurnSelectionInput =
+      current.schemaVersion === "prompt-turn-selection-input.v1"
+        ? { ...current, regions: upgradeRegions(current.regions) }
+        : { ...current, regions: upgradeRegions(current.regions), nodeSelections: [] };
+    if (JSON.stringify(nextSelection) !== JSON.stringify(current)) this.commit(nextSelection);
   }
 
   async previewConfiguration(): Promise<PromptConfigurationPreviewDto | null> {
@@ -298,7 +330,9 @@ export class PromptComposerController {
         promptConfigurationPreviewDtoSchema,
         {
           method: "POST",
-          body: JSON.stringify({ selection: this.snapshot.selection }),
+          body: JSON.stringify({
+            selection: this.snapshot.selection,
+          }),
         },
       );
       this.publish({
@@ -387,7 +421,7 @@ export class PromptComposerController {
   }
 
   private commit(selection: PromptTurnSelectionInput): void {
-    const normalized = promptTurnSelectionInputSchema.parse(selection);
+    const normalized = promptTurnSelectionInputSchema.parse(sessionContextSelection(selection));
     persistSelection(this.sessionId, this.storage, normalized);
     this.pendingSelection = normalized;
     this.publish({
@@ -426,7 +460,8 @@ export class PromptComposerController {
           this.publish({
             ...this.snapshot,
             workspace: projection.workspace,
-            selection: projection.promptSelection,
+            workflow: projection.workflow,
+            selection: sessionContextSelection(projection.promptSelection),
             saving: false,
             error: null,
           });

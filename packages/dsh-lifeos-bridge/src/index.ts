@@ -3,7 +3,6 @@ import type {} from "@deepseek-ai/dsh-host-webserver";
 import type {} from "@deepseek-ai/dsh-llm";
 import type {} from "@deepseek-ai/dsh-session-query";
 import { SessionId } from "@deepseek-ai/dsh-session";
-import type {} from "@deepseek-ai/dsh-tools";
 import type {} from "@deepseek-ai/dsh-workspace";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,7 +13,6 @@ import { ChatProductClient, parseChatApiBaseUrl } from "./chat-client.ts";
 import { assertSameOriginRequest, createLifeosRouteHandler, sendRouteError } from "./http-route.ts";
 import { createPwaAssetHandler, createPwaIndexTap } from "./pwa.ts";
 import { AtomicBridgeStateStore } from "./state-store.ts";
-import { createLifeosTraceTool } from "./trace-tool.ts";
 import { DshSessionQueryHistory } from "./dsh-session-history.ts";
 import { DshContextInjectionReader } from "./context-injection-reader.ts";
 import { PromptStudioBridgeService } from "./prompt-studio-bridge-service.ts";
@@ -22,16 +20,10 @@ import { PromptSourceFileOpener } from "./prompt-source-file-opener.ts";
 import { createPromptWorkspaceResolver } from "./prompt-workspace-resolver.ts";
 import { DshSendReviewCoordinator } from "./dsh-send-review.ts";
 import { BridgeDispatchReviewCoordinator } from "./bridge-dispatch-review.ts";
+import { createDshBridgeTraceEmitter, type DshBridgeTraceEventInput } from "./debug-trace.ts";
 
 export const name = "chat-dsh-lifeos-bridge";
-export const inject = [
-  "llm",
-  "tools",
-  "webServer",
-  "workspaceRegistry",
-  "sessionQuery",
-  "sessions",
-];
+export const inject = ["llm", "webServer", "workspaceRegistry", "sessionQuery", "sessions"];
 
 function requiredStatePath(raw: string | undefined): string {
   if (raw === undefined || raw.trim() === "") {
@@ -103,6 +95,25 @@ export async function apply(ctx: Context): Promise<void> {
     },
   );
   const bridgeDispatchReview = new BridgeDispatchReviewCoordinator(state);
+  const dshTraceEmitter = createDshBridgeTraceEmitter({ scope: "dsh", repoRoot });
+  const bridgeTraceEmitter = createDshBridgeTraceEmitter({ scope: "bridge", repoRoot });
+  let traceFailures = 0;
+  const safeTrace = (
+    owner: "dsh" | "bridge",
+    emit: ((event: DshBridgeTraceEventInput) => void) | undefined,
+  ) =>
+    emit === undefined
+      ? undefined
+      : (event: DshBridgeTraceEventInput) => {
+          try {
+            emit(event);
+          } catch {
+            traceFailures += 1;
+            ctx.logger.warn(`[trace] emit_failed owner=${owner} total=${String(traceFailures)}`);
+          }
+        };
+  const dshTrace = safeTrace("dsh", dshTraceEmitter);
+  const bridgeTrace = safeTrace("bridge", bridgeTraceEmitter);
   const bridge = new LifeosBridgeService(
     chat,
     state,
@@ -139,11 +150,9 @@ export async function apply(ctx: Context): Promise<void> {
       promptWorkspaceResolver,
       dshSendReview,
       bridgeDispatchReview,
+      dshTrace,
+      bridgeTrace,
     ),
-  );
-  ctx.effect(
-    () => ctx.tools.register(createLifeosTraceTool(chat, state)),
-    "lifeos bridge: Pi execution trajectory tool",
   );
   ctx.effect(
     () =>

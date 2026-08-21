@@ -1,15 +1,65 @@
-import { createEmptySnapshot, type PromptFragmentRevision } from "@chat/contracts";
+import {
+  agentRuntimeBaselineDtoSchema,
+  createEmptySnapshot,
+  type AgentKey,
+  type PromptFragmentRevision,
+} from "@chat/contracts";
 import { computePromptFragmentRevisionSha256 } from "@chat/domain";
 import { describe, expect, it } from "vitest";
 import type { ApplicationDeps } from "./deps.js";
 import {
   compileDirectPromptAssembly,
+  compileWorkflowPromptAssembly,
   previewDirectPromptAssembly,
   previewDirectPromptConfiguration,
 } from "./prompt-assembly-use-cases.js";
 
 const NOW = "2026-08-20T00:00:00.000Z";
 const SHA = "a".repeat(64);
+
+function runtimeProfile(agentKey: AgentKey) {
+  if (agentKey !== "direct" && agentKey !== "project_bootstrap" && agentKey !== "coding_executor")
+    return undefined;
+  const direct = agentKey !== "coding_executor";
+  const variantKey = direct ? "read_only" : "workspace_write_shell";
+  const tools = direct
+    ? ["read", "grep", "find", "ls"]
+    : ["read", "grep", "find", "ls", "edit", "write", "bash"];
+  return agentRuntimeBaselineDtoSchema.parse({
+    kind: "pi_coding_agent",
+    title: "Pi Coding Agent",
+    packageName: "@earendil-works/pi-coding-agent",
+    packageVersion: "0.84.2",
+    managedSource: "later-3/pi@codex/later-custom",
+    compositionStrategy: "pi_default_or_custom_then_chat_runtime_then_context",
+    chatRuntimeAppend: {
+      bodyMarkdown: direct ? "Direct Runtime Contract" : "Coding Runtime Contract",
+      sha256: "b".repeat(64),
+      sourceRelativePath: "packages/pi-runtime/src/coding-agent-runtime-profile.ts",
+    },
+    variants: [
+      {
+        variantKey,
+        title: variantKey,
+        description: "测试Pi能力",
+        enabledToolNames: tools,
+        piSystemPrompt: {
+          bodyMarkdown: `Pi System ${variantKey}`,
+          sha256: "c".repeat(64),
+          dynamicPlaceholders: ["WORKSPACE_ROOT"],
+          sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
+        },
+        tools: tools.map((name) => ({
+          name,
+          description: `${name} tool`,
+          parametersJson: "{}",
+          sourceRelativePath: `pi/packages/coding-agent/src/core/tools/${name}.ts`,
+        })),
+      },
+    ],
+    finalReviewNote: "最终内容以发送前审核为准。",
+  });
+}
 
 function region(
   regionKey: string,
@@ -122,6 +172,10 @@ function fixture(): {
     promptCatalog: {
       load: async () => ({
         catalogSha256: SHA,
+        sharedSelectionProfile: {
+          profileId: "test-shared-default.v1",
+          defaultRevisionIds: [],
+        },
         regions: [
           region("agent_identity", "Agent 身份", "system", 10),
           region("background", "背景", "messages", 20),
@@ -140,6 +194,90 @@ function fixture(): {
             sourceRelativePath: "prompts/fragments/agent-identity/general-chat-agent.md",
             createdAt: NOW,
           },
+          ...[
+            ["planner", "规划 Agent", "你是规划 Agent。"],
+            ["direct", "直接执行 Agent", "你是直接执行 Agent。"],
+            ["projectbootstrap", "项目初始化 Agent", "你是项目初始化 Agent。"],
+            ["codingexecutor", "编码执行 Agent", "你是编码执行 Agent。"],
+            ["noteextractor", "笔记提取 Agent", "你是笔记提取 Agent。"],
+          ].map(([key, title, body]) => ({
+            promptFragmentId: `pfg_builtin${key}` as never,
+            promptFragmentRevisionId: `pfr_builtin${key}v1` as never,
+            revision: 1,
+            regionKey: "agent_identity",
+            title: title!,
+            content: { kind: "markdown" as const, bodyMarkdown: body! },
+            scope: { kind: "global" as const },
+            sha256: SHA,
+            sourceRelativePath: `prompts/fragments/agent-identity/${key}.md`,
+            createdAt: NOW,
+          })),
+        ],
+        agents: [
+          {
+            agentKey: "planner" as const,
+            title: "规划 Agent",
+            description: "负责规划",
+            profileVersion: "planner-prompt.v3",
+            supportedNodeTypes: ["agent.plan"],
+            defaultPrompt: {
+              kind: "catalog_fragment",
+              promptFragmentRevisionId: "pfr_builtinplannerv1" as never,
+            },
+            tools: [{ name: "submit_plan_candidate", description: "提交计划候选" }],
+          },
+          {
+            agentKey: "direct" as const,
+            title: "直接执行 Agent",
+            description: "负责直接执行",
+            profileVersion: "direct-agent-prompt.v1",
+            supportedNodeTypes: ["agent.direct"],
+            defaultPrompt: {
+              kind: "pi_coding_agent",
+              defaultVariantKey: "read_only",
+            },
+            tools: [{ name: "read", description: "读取文件" }],
+          },
+          {
+            agentKey: "project_bootstrap" as const,
+            title: "项目初始化 Agent",
+            description: "负责准备项目初始化候选",
+            profileVersion: "project-bootstrap-agent.v1",
+            supportedNodeTypes: ["agent.direct"],
+            defaultPrompt: {
+              kind: "pi_coding_agent",
+              defaultVariantKey: "read_only",
+              promptFragmentRevisionId: "pfr_builtinprojectbootstrapv1" as never,
+            },
+            tools: [
+              { name: "read", description: "读取文件" },
+              { name: "project_bootstrap_prepare", description: "准备项目候选" },
+            ],
+          },
+          {
+            agentKey: "coding_executor" as const,
+            title: "编码执行 Agent",
+            description: "负责编码执行",
+            profileVersion: "executor-coding-agent-prompt.v1",
+            supportedNodeTypes: ["execute.plan"],
+            defaultPrompt: {
+              kind: "pi_coding_agent",
+              defaultVariantKey: "workspace_write_shell",
+            },
+            tools: [{ name: "write", description: "写入文件" }],
+          },
+          {
+            agentKey: "note_extractor" as const,
+            title: "笔记提取 Agent",
+            description: "负责笔记提取",
+            profileVersion: "note-capture.v1",
+            supportedNodeTypes: ["note.extract"],
+            defaultPrompt: {
+              kind: "catalog_fragment",
+              promptFragmentRevisionId: "pfr_builtinnoteextractorv1" as never,
+            },
+            tools: [{ name: "submit_note_candidate", description: "提交笔记候选" }],
+          },
         ],
       }),
     },
@@ -155,11 +293,140 @@ function fixture(): {
         throw new Error("测试不观察Workspace");
       },
     },
+    agentRuntimeProfiles: { read: async (agentKey: AgentKey) => runtimeProfile(agentKey) },
   } as unknown as ApplicationDeps;
   return { deps, snapshot, globalRevision, workspaceRevision };
 }
 
 describe("Direct Prompt Assembly", () => {
+  it("V3为不同Agent注入各自System Prompt并共享同一会话上下文", async () => {
+    const { deps, globalRevision, workspaceRevision } = fixture();
+    const assembly = await compileWorkflowPromptAssembly(deps, {
+      principalId: "usr_promptassembly" as never,
+      text: "规划并执行",
+      selection: {
+        schemaVersion: "prompt-turn-selection-input.v2",
+        workspaceRootId: "root_chat",
+        workflowDefinitionRevisionId: "wfr_promptworkflow1" as never,
+        regions: [
+          {
+            regionKey: "background",
+            mode: "replace",
+            selected: [
+              {
+                promptFragmentRevisionId: globalRevision.promptFragmentRevisionId,
+                sha256: globalRevision.sha256,
+              },
+            ],
+          },
+        ],
+        nodeSelections: [
+          {
+            definitionNodeId: "planning.execute",
+            regions: [
+              {
+                regionKey: "rules",
+                mode: "append",
+                selected: [
+                  {
+                    promptFragmentRevisionId: workspaceRevision.promptFragmentRevisionId,
+                    sha256: workspaceRevision.sha256,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      productSessionId: "psn_promptworkflow1" as never,
+      productRunId: "run_promptworkflow1" as never,
+      sourceMessageId: "msg_promptworkflow1" as never,
+      workflowDefinitionRevisionId: "wfr_promptworkflow1" as never,
+      nodeResolutions: [
+        {
+          definitionNodeId: "planning.plan",
+          nodeType: "agent.plan",
+          schemaVersion: 1,
+          config: {},
+          activation: "enabled",
+        },
+        {
+          definitionNodeId: "planning.execute",
+          nodeType: "execute.plan",
+          schemaVersion: 1,
+          config: {},
+          activation: "enabled",
+        },
+      ],
+      createdAt: NOW,
+    });
+
+    expect(assembly.schemaVersion).toBe("prompt-assembly.v3");
+    expect(assembly.nodes.map((node) => node.definitionNodeId)).toEqual([
+      "planning.plan",
+      "planning.execute",
+    ]);
+    const planner = assembly.nodes[0]!;
+    const executor = assembly.nodes[1]!;
+    expect(planner.systemPromptAppend).toContain("全局背景正文");
+    expect(planner.systemPromptAppend).toContain("你是规划 Agent");
+    expect(planner.systemPromptAppend).not.toContain("工作区规则正文");
+    expect(executor.systemPromptAppend).toContain("全局背景正文");
+    expect(executor.systemPromptAppend).not.toContain("你是编码执行 Agent");
+    expect(executor.piSystemPrompt).toEqual({ kind: "pi_coding_agent", mode: "inherit" });
+    expect(executor.systemPromptAppend).not.toContain("工作区规则正文");
+    expect(executor.sha256).not.toBe(planner.sha256);
+  });
+
+  it("Workflow/Run节点Prompt覆盖替换Agent默认，并保留独立来源身份", async () => {
+    const { deps } = fixture();
+    const assembly = await compileWorkflowPromptAssembly(deps, {
+      principalId: "usr_promptassembly" as never,
+      text: "规划",
+      selection: {
+        schemaVersion: "prompt-turn-selection-input.v2",
+        workflowDefinitionRevisionId: "wfr_promptworkflowoverride1" as never,
+        regions: [],
+        nodeSelections: [],
+      },
+      productSessionId: "psn_promptworkflowoverride1" as never,
+      productRunId: "run_promptworkflowoverride1" as never,
+      sourceMessageId: "msg_promptworkflowoverride1" as never,
+      workflowDefinitionRevisionId: "wfr_promptworkflowoverride1" as never,
+      nodeResolutions: [
+        {
+          definitionNodeId: "planning.plan",
+          nodeType: "agent.plan",
+          schemaVersion: 1,
+          config: {
+            agentKey: "planner",
+            agentPromptOverride: "你是这个Workflow专属的规划Agent。",
+          },
+          activation: "enabled",
+        },
+      ],
+      createdAt: NOW,
+    });
+
+    const identity = assembly.nodes[0]?.regions[0];
+    expect(identity).toMatchObject({
+      regionKey: "agent_identity",
+      mode: "replace",
+      fragments: [
+        {
+          ownerKind: "workflow_node_override",
+          selectionKind: "explicit",
+          content: {
+            kind: "markdown",
+            bodyMarkdown: "你是这个Workflow专属的规划Agent。",
+          },
+        },
+      ],
+    });
+    expect(assembly.nodes[0]?.systemPromptAppend).toContain("Workflow专属的规划Agent");
+    expect(assembly.nodes[0]?.systemPromptAppend).not.toContain("你是规划 Agent");
+  });
+
   it("每个Region独立执行default/replace/append并保留全局与Workspace精确来源", async () => {
     const { deps, globalRevision, workspaceRevision } = fixture();
     const preview = await previewDirectPromptAssembly(deps, {
@@ -194,15 +461,14 @@ describe("Direct Prompt Assembly", () => {
     });
 
     expect(preview.regions.map((item) => [item.regionKey, item.mode])).toEqual([
-      ["agent_identity", "default"],
       ["background", "replace"],
       ["rules", "append"],
     ]);
-    expect(preview.systemPromptAppend).toContain("你是Chat Agent");
+    expect(preview.systemPromptAppend).not.toContain("你是Chat Agent");
     expect(preview.systemPromptAppend).toContain("全局背景正文");
     expect(preview.systemPromptAppend).toContain("工作区规则正文");
     expect(preview.userPrompt).toBe("这是一个什么项目？");
-    expect(preview.regions[2]?.fragments[0]?.scope).toEqual({
+    expect(preview.regions[1]?.fragments[0]?.scope).toEqual({
       kind: "workspace",
       rootId: "root_chat",
     });
@@ -215,7 +481,7 @@ describe("Direct Prompt Assembly", () => {
         regions: [],
       },
     });
-    expect(configuration.systemPromptAppend).toContain("你是Chat Agent");
+    expect(configuration.systemPromptAppend).not.toContain("你是Chat Agent");
     expect(configuration.messageContext).toBe("");
     expect(JSON.stringify(configuration)).not.toContain("当前输入");
   });
@@ -318,9 +584,49 @@ describe("Direct Prompt Assembly", () => {
       { role: "assistant", text: "上一轮正式回答", kind: "product_message" },
       { role: "user", text: "这是本轮原始用户输入", kind: "current_input" },
     ]);
-    expect(assembly.systemPromptAppend).toContain("你是Chat Agent");
+    expect(assembly.systemPromptAppend).not.toContain("你是直接执行 Agent");
+    expect(assembly.piSystemPrompt).toEqual({ kind: "pi_coding_agent", mode: "inherit" });
     expect(assembly.budget.totalEstimatedTokens).toBeLessThanOrEqual(
       assembly.budget.inputTokenLimit,
     );
+  });
+
+  it("Project Bootstrap的Capability Tool清单在V2 Assembly中冻结", async () => {
+    const { deps } = fixture();
+    const assembly = await compileDirectPromptAssembly(deps, {
+      principalId: "usr_promptassembly" as never,
+      text: "创建项目",
+      selection: { schemaVersion: "prompt-turn-selection-input.v1", regions: [] },
+      productSessionId: "psn_promptbootstrap1" as never,
+      productRunId: "run_promptbootstrap1" as never,
+      sourceMessageId: "msg_promptbootstrap1" as never,
+      sourceMessageSequence: 1,
+      sourceMessageSha256: "c".repeat(64),
+      workflowDefinitionRevisionId: "wfr_promptbootstrap1" as never,
+      nodeResolutions: [
+        {
+          definitionNodeId: "direct.agent",
+          nodeType: "agent.direct",
+          schemaVersion: 1,
+          config: {
+            capabilityMode: "project_bootstrap",
+            promptReviewMode: "manual",
+          },
+          activation: "enabled",
+        },
+      ],
+      createdAt: NOW,
+    });
+    expect(assembly.tools).toEqual({
+      capabilityMode: "project_bootstrap",
+      names: ["read", "grep", "find", "ls", "project_bootstrap_prepare"],
+      estimatedTokens: 8_000,
+    });
+    expect(assembly.systemPromptAppend).not.toContain("你是项目初始化 Agent");
+    expect(assembly.piSystemPrompt).toMatchObject({
+      kind: "pi_coding_agent",
+      mode: "replace",
+      bodyMarkdown: expect.stringContaining("你是项目初始化 Agent"),
+    });
   });
 });

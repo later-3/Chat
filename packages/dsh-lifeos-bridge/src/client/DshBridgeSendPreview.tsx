@@ -1,5 +1,10 @@
 import { useState } from "react";
-import type { PromptCompositionMode, PromptConfigurationPreviewDto } from "@chat/contracts/public";
+import type {
+  AgentProfileDto,
+  PromptCompositionMode,
+  PromptConfigurationPreviewDto,
+  PromptTurnPreviewDto,
+} from "@chat/contracts/public";
 import type { DshBridgeSendPreview } from "../contracts.ts";
 import {
   exactSectionsFromJson,
@@ -143,14 +148,6 @@ function bridgeSectionSource(
           : [...common, ...promptSourceFiles(preview.promptConfiguration)],
     };
   }
-  if (section.jsonPointer === "/context") {
-    return {
-      addedBy: "DSH Workspace Instructions提取",
-      explanation:
-        "该值只取自Bridge→Chat原始Payload /context；仅非Direct工作流按真实发送政策携带。",
-      files: ["packages/dsh-lifeos-bridge/src/context-injection-reader.ts", ...common],
-    };
-  }
   return {
     addedBy: "LifeOS Bridge发送策略",
     explanation: `该值只取自Bridge→Chat原始Payload ${section.jsonPointer}；没有从UI投影补写正文。`,
@@ -270,6 +267,201 @@ export function PromptConfigurationDetails({
   );
 }
 
+function runtimeVariantFor(agent: AgentProfileDto) {
+  const baseline = agent.runtimeBaseline;
+  if (baseline === undefined) return undefined;
+  const selectedKey =
+    agent.systemPrompt.source === "runtime_default"
+      ? agent.systemPrompt.runtimeVariantKey
+      : "read_only";
+  return baseline.variants.find((variant) => variant.variantKey === selectedKey);
+}
+
+/**
+ * 这是发送前的统一Prompt真相视图：数据来自Chat Application与正式提交共用的编译器，
+ * UI不再自行拼装Agent身份、Pi默认Prompt或Workflow节点覆盖。
+ */
+function PromptTurnPreviewDetails({ preview }: { preview: PromptTurnPreviewDto }) {
+  const directAssembly =
+    preview.assembly.schemaVersion === "prompt-assembly.v2" ? preview.assembly : undefined;
+  return (
+    <section className="lifeos-prompt-section" data-testid="lifeos-prompt-turn-preview">
+      <header>
+        <strong>本次 Chat Prompt</strong>
+        <code>{shortHash(preview.assembly.sha256)}</code>
+      </header>
+      <p className="lifeos-bridge-preview-note">
+        与正式发送共用Workflow Compiler和Prompt Compiler；这里只读，不创建Session、Run或执行授权。
+      </p>
+      <div className="lifeos-prompt-preview-regions">
+        {preview.nodes.map((node) => {
+          const assembly =
+            preview.assembly.schemaVersion === "prompt-assembly.v2"
+              ? preview.assembly
+              : preview.assembly.nodes.find(
+                  (candidate) => candidate.definitionNodeId === node.definitionNodeId,
+                );
+          if (assembly === undefined) return null;
+          const runtimeVariant =
+            node.runtimeResolution.toolResolution === "frozen"
+              ? runtimeVariantFor(node.agent)
+              : undefined;
+          const piResolution = assembly.piSystemPrompt;
+          const baseSystemPrompt =
+            piResolution?.mode === "replace"
+              ? piResolution.bodyMarkdown
+              : node.agent.systemPrompt.bodyMarkdown;
+          const fixedRuntimeAppend =
+            node.agent.runtimeBaseline?.chatRuntimeAppend.bodyMarkdown ?? "";
+          const knownSystemPrompt =
+            piResolution === undefined
+              ? node.runtimeResolution.governedSystemPromptAppend
+              : [
+                  baseSystemPrompt,
+                  fixedRuntimeAppend,
+                  node.runtimeResolution.governedSystemPromptAppend,
+                ]
+                  .filter((part) => part.trim() !== "")
+                  .join("\n\n");
+          const toolNames =
+            preview.assembly.schemaVersion === "prompt-assembly.v2"
+              ? preview.assembly.tools.names
+              : node.agent.tools.map((tool) => tool.name);
+          const exactDirect =
+            node.runtimeResolution.stage === "direct_pre_send" ||
+            node.runtimeResolution.stage === "direct_pre_send_dynamic_extension";
+          return (
+            <details key={node.definitionNodeId} open>
+              <summary>
+                <span>
+                  <strong>{node.agent.title}</strong>
+                  <code>{node.definitionNodeId}</code>
+                </span>
+                <small>
+                  {node.nodeType} · {exactDirect ? "Direct发送前解析" : "节点模板"}
+                </small>
+              </summary>
+              <div className="lifeos-prompt-preview-sources">
+                <span>
+                  System：
+                  {piResolution?.mode === "replace"
+                    ? "本轮/Workflow/Agent覆盖"
+                    : node.agent.systemPrompt.source === "runtime_default"
+                      ? `Pi Runtime · ${node.agent.systemPrompt.runtimeVariantKey}`
+                      : node.agent.systemPrompt.source}
+                </span>
+                {node.agent.runtimeBaseline === undefined ? null : (
+                  <span>
+                    固定运行时层：{node.agent.runtimeBaseline.packageName}@
+                    {node.agent.runtimeBaseline.packageVersion}
+                  </span>
+                )}
+                <span>
+                  {node.runtimeResolution.toolResolution === "frozen"
+                    ? "本次冻结Tools"
+                    : "Agent可授权工具范围（本次运行时待解析）"}
+                  ：{toolNames.length === 0 ? "无" : toolNames.join("、")}
+                </span>
+              </div>
+              <p className="lifeos-bridge-preview-note">{node.runtimeResolution.note}</p>
+              <div className="lifeos-prompt-real-label">
+                {exactDirect ? "当前已知的 System Prompt 层" : "Chat已冻结的节点 Prompt 模板层"}
+              </div>
+              <pre data-testid={`lifeos-effective-system-${node.definitionNodeId}`}>
+                {knownSystemPrompt === "" ? "（空）" : knownSystemPrompt}
+              </pre>
+              {runtimeVariant?.piSystemPrompt.dynamicPlaceholders.length ? (
+                <p className="lifeos-bridge-preview-note">
+                  运行时占位符：{runtimeVariant.piSystemPrompt.dynamicPlaceholders.join("、")}
+                  ；执行时由Pi填充。
+                </p>
+              ) : null}
+            </details>
+          );
+        })}
+      </div>
+      {directAssembly === undefined ? (
+        <>
+          <div className="lifeos-prompt-real-label">当前 User 输入</div>
+          <pre data-testid="lifeos-prompt-current-input">{preview.currentInput}</pre>
+        </>
+      ) : (
+        <>
+          <details open>
+            <summary>
+              <strong>Messages · 正式会话历史与当前输入</strong>
+              <small>{directAssembly.messages.length} 条</small>
+            </summary>
+            <div className="lifeos-prompt-preview-regions" data-testid="lifeos-prompt-messages">
+              {directAssembly.messages.map((message, index) => {
+                const sourceId =
+                  "messageId" in message.source
+                    ? message.source.messageId
+                    : message.source.producerNodeId;
+                const sequence =
+                  "sessionSequence" in message.source
+                    ? `sequence ${String(message.source.sessionSequence)}`
+                    : "Workflow节点输入";
+                return (
+                  <details
+                    key={`${sourceId}-${String(index)}`}
+                    open={index >= directAssembly.messages.length - 2}
+                  >
+                    <summary>
+                      <span>
+                        <strong>{message.role}</strong>
+                        <code>{message.source.kind}</code>
+                      </span>
+                      <small>{sequence}</small>
+                    </summary>
+                    <pre>{message.text}</pre>
+                  </details>
+                );
+              })}
+            </div>
+          </details>
+          <details>
+            <summary>
+              <strong>Tools · 本次冻结能力</strong>
+              <small>{directAssembly.tools.names.length} 个</small>
+            </summary>
+            <div className="lifeos-prompt-preview-regions" data-testid="lifeos-prompt-tools">
+              {directAssembly.tools.names.map((toolName) => {
+                const runtimeTool = preview.nodes
+                  .flatMap((node) => runtimeVariantFor(node.agent)?.tools ?? [])
+                  .find((tool) => tool.name === toolName);
+                const catalogTool = preview.nodes
+                  .flatMap((node) => node.agent.tools)
+                  .find((tool) => tool.name === toolName);
+                return (
+                  <details key={toolName}>
+                    <summary>
+                      <code>{toolName}</code>
+                      <span>
+                        {runtimeTool?.description ?? catalogTool?.description ?? "Runtime锁定工具"}
+                      </span>
+                    </summary>
+                    {runtimeTool === undefined ? null : <pre>{runtimeTool.parametersJson}</pre>}
+                  </details>
+                );
+              })}
+            </div>
+          </details>
+          <details>
+            <summary>
+              <strong>Request Options</strong>
+              <small>本次冻结</small>
+            </summary>
+            <pre data-testid="lifeos-prompt-request-options">
+              {JSON.stringify(directAssembly.requestOptions, null, 2)}
+            </pre>
+          </details>
+        </>
+      )}
+    </section>
+  );
+}
+
 function FriendlyPreview({ preview }: { preview: DshBridgeSendPreview }) {
   const captured = preview.dshToBridge.adapterRequest;
   const dshSections =
@@ -282,6 +474,7 @@ function FriendlyPreview({ preview }: { preview: DshBridgeSendPreview }) {
   const bridgePayload = JSON.parse(preview.bridgeToChat.payloadJson) as { readonly text?: unknown };
   return (
     <div className="lifeos-prompt-sections" data-testid="lifeos-dsh-bridge-readable">
+      <PromptTurnPreviewDetails preview={preview.promptTurnPreview} />
       <section className="lifeos-prompt-section">
         <header>
           <strong>一一对应证据</strong>
@@ -360,6 +553,15 @@ function RawPreview({ preview }: { preview: DshBridgeSendPreview }) {
     <div className="lifeos-prompt-sections" data-testid="lifeos-dsh-bridge-raw">
       <section className="lifeos-prompt-section">
         <header>
+          <strong>Chat Prompt Assembly 原始事实</strong>
+          <code>{shortHash(preview.promptTurnPreview.assembly.sha256)}</code>
+        </header>
+        <pre data-testid="lifeos-prompt-turn-raw">
+          {JSON.stringify(preview.promptTurnPreview, null, 2)}
+        </pre>
+      </section>
+      <section className="lifeos-prompt-section">
+        <header>
           <strong>DSH → Bridge 原始请求</strong>
           <code>
             {captured.status === "captured" ? shortHash(captured.requestSha256) : "未捕获"}
@@ -413,8 +615,8 @@ export function BridgeSendPreview({ preview }: { preview: DshBridgeSendPreview }
     >
       <header>
         <div>
-          <strong>DSH 前端发送预览</strong>
-          <span>DSH → Bridge 与 Bridge → Chat 两段边界；不是最终Provider HTTP请求。</span>
+          <strong>本次 Prompt 与发送边界</strong>
+          <span>先展示Chat实际编译结果，再展示DSH → Bridge → Chat边界证据。</span>
         </div>
         <code>{shortHash(preview.dshToBridge.userInput.sha256)}</code>
       </header>
@@ -428,9 +630,11 @@ export function BridgeSendPreview({ preview }: { preview: DshBridgeSendPreview }
         <span>
           转发政策：
           <strong>
-            {preview.bridgeToChat.policy === "direct_prompt_selection"
-              ? "Direct · 发送Prompt Selection，不转发DSH Workspace指令"
-              : "非Direct · 转发DSH Workspace指令，不发送Prompt Selection"}
+            {preview.bridgeToChat.policy === "workflow_prompt_selection"
+              ? "所有Workflow · 发送冻结Prompt Selection，不旁路转发DSH Workspace指令"
+              : preview.bridgeToChat.policy === "direct_prompt_selection"
+                ? "旧版Direct预览策略（当前不再采用）"
+                : "旧版Workspace指令预览策略（当前不再采用）"}
           </strong>
         </span>
       </div>

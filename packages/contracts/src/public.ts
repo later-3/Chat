@@ -14,6 +14,7 @@ export * from "./service-status.js";
 export * from "./product-api.js";
 export * from "./prompt-review-api.js";
 export * from "./prompt-studio-api.js";
+export * from "./agent-profile-api.js";
 export {
   promptTurnSelectionInputSchema,
   promptCompositionModeSchema,

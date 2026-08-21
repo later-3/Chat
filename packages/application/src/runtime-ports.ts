@@ -11,7 +11,6 @@ import type {
   ProductRunId,
   RevisionInputId,
   RunAttemptId,
-  TraceEvent,
   WorkflowRuntimeTraceDto,
 } from "@chat/contracts";
 
@@ -49,11 +48,6 @@ export interface WorkflowResumePort {
  */
 export interface WorkflowRuntimeTraceReaderPort {
   read(input: { readonly productRunId: ProductRunId }): Promise<WorkflowRuntimeTraceDto>;
-}
-
-/** 严格Trace事件只读Port；事件合同本身不含Prompt、工具参数或工具结果正文。 */
-export interface ProductRunTraceReaderPort {
-  read(input: { readonly productRunId: ProductRunId }): Promise<readonly TraceEvent[]>;
 }
 
 export interface ResumeCommittedDecisionInput {

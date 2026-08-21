@@ -6,6 +6,7 @@ import {
   workflowDefinitionRevisionIdSchema,
 } from "./ids.js";
 import { PRODUCT_API_SCHEMA_VERSION } from "./product-api.js";
+import { agentKeySchema } from "./agent-profile-api.js";
 import {
   WORKFLOW_DEFINITION_CONTRACT_LIMITS,
   workflowBlueprintKeySchema,
@@ -95,7 +96,7 @@ export const workflowDesignerOperationSchema = z.discriminatedUnion("kind", [
       value: z.union([
         z.boolean(),
         z.number().int(),
-        z.string().max(2_000),
+        z.string().max(65_536),
         z.array(z.string().min(1).max(64)).max(20),
       ]),
     })
@@ -261,6 +262,20 @@ export const createWorkflowDefinitionCopyPayloadSchema = z
   })
   .strict();
 
+/**
+ * 面向普通配置页的窄命令：把一个Agent节点的模板引用与Prompt差异保存成已发布Workflow。
+ * System Workflow会派生个人副本；个人Workflow会原子发布下一Revision。
+ */
+export const saveWorkflowAgentNodeConfigurationPayloadSchema = z
+  .object({
+    sourceWorkflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+    sourceDefinitionSha256: sha256Schema,
+    definitionNodeId: workflowDefinitionNodeIdSchema,
+    agentKey: agentKeySchema,
+    promptOverrideMarkdown: z.string().max(65_536).optional(),
+  })
+  .strict();
+
 export const saveWorkflowDefinitionDraftPayloadSchema = z
   .object({
     baseRevisionId: workflowDefinitionRevisionIdSchema,
@@ -346,6 +361,9 @@ export type WorkflowDefinitionRevisionSummaryDto = z.infer<
 export type WorkflowDefinitionDetailDto = z.infer<typeof workflowDefinitionDetailDtoSchema>;
 export type CreateWorkflowDefinitionCopyPayload = z.infer<
   typeof createWorkflowDefinitionCopyPayloadSchema
+>;
+export type SaveWorkflowAgentNodeConfigurationPayload = z.infer<
+  typeof saveWorkflowAgentNodeConfigurationPayloadSchema
 >;
 export type SaveWorkflowDefinitionDraftPayload = z.infer<
   typeof saveWorkflowDefinitionDraftPayloadSchema

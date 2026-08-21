@@ -1,7 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import { DSH_PROMPT_STUDIO_E2E_PORTS } from "../../../scripts/e2e/dsh-real-environment.mjs";
 
-async function enterPromptStudio(page: Page): Promise<void> {
+async function enterSettingsSection(
+  page: Page,
+  name: "Agent" | "提示词",
+  testId: "lifeos-agent-settings" | "lifeos-prompt-studio",
+): Promise<void> {
   // 首启Notice不是稳定必现状态：等它短暂挂载，出现则关闭，不出现就走正常设置入口。
   const notice = page.locator('[role="dialog"][aria-label="Internal Testing Notice"]').last();
   if (
@@ -22,10 +26,18 @@ async function enterPromptStudio(page: Page): Promise<void> {
   const settings = page.locator('button[aria-haspopup="dialog"]').last();
   await expect(settings).toBeVisible({ timeout: 15_000 });
   await settings.click();
-  const promptEntry = page.getByRole("button", { name: "提示词", exact: true }).last();
-  await expect(promptEntry).toBeVisible({ timeout: 15_000 });
-  await promptEntry.click();
-  await expect(page.getByTestId("lifeos-prompt-studio")).toBeVisible();
+  const entry = page.getByRole("button", { name, exact: true }).last();
+  await expect(entry).toBeVisible({ timeout: 15_000 });
+  await entry.click();
+  await expect(page.getByTestId(testId)).toBeVisible();
+}
+
+async function enterPromptStudio(page: Page): Promise<void> {
+  await enterSettingsSection(page, "提示词", "lifeos-prompt-studio");
+}
+
+async function enterAgentSettings(page: Page): Promise<void> {
+  await enterSettingsSection(page, "Agent", "lifeos-agent-settings");
 }
 
 async function openReadyConversation(page: Page) {
@@ -76,10 +88,16 @@ test("DSH Prompt Studio：查看Git来源、派生副本、保存新Revision并�
   await page.getByRole("button", { name: "区域说明", exact: true }).click();
   await expect(page.getByText("Chat 基础 Workspace", { exact: true })).toBeVisible();
   await expect(page.getByText("工作对象 Workspace", { exact: true })).toBeVisible();
-  await expect(page.getByText("打开配置文件", { exact: true }).first()).toBeVisible();
-  await page.getByRole("button", { name: "查看Agent 身份区域的组件", exact: true }).click();
-  await expect(page.getByLabel("按区域筛选")).toHaveValue("agent_identity");
-  await expect(page.getByRole("button", { name: /通用 Chat Agent 身份/u })).toBeVisible();
+  await expect(
+    page
+      .getByText("打开配置文件", { exact: true })
+      .first()
+      .or(page.getByText("本机打开不可用", { exact: true }).first()),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /Agent 身份/u })).toHaveCount(0);
+  await page.getByRole("button", { name: "查看要求区域的组件", exact: true }).click();
+  await expect(page.getByLabel("按区域筛选")).toHaveValue("requirements");
+  await expect(page.getByRole("button", { name: /透明交付要求/u })).toBeVisible();
   await page.getByLabel("按区域筛选").selectOption("all");
   await page.getByRole("button", { name: "新建组件", exact: true }).click();
   const createForm = page.locator("form.lifeos-prompt-studio-editor");
@@ -96,34 +114,37 @@ test("DSH Prompt Studio：查看Git来源、派生副本、保存新Revision并�
   await expect(page.getByText("target_audience", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "← 返回组件列表", exact: true }).click();
 
-  await page.getByRole("button", { name: /通用 Chat Agent 身份/u }).click();
+  await page.getByRole("button", { name: /透明交付要求/u }).click();
   const sourceBody = page.getByLabel("来源文件原文");
   await expect(sourceBody).toBeVisible();
   await expect(sourceBody.getByText("Git 来源文件", { exact: true })).toBeVisible();
-  await expect(sourceBody.getByText(/你是 Chat 产品中的任务协作 Agent/u)).toBeVisible();
-  await sourceBody.getByText("打开文件", { exact: true }).click();
-  await expect(
-    sourceBody.getByRole("button", { name: "Visual Studio Code", exact: true }),
-  ).toBeVisible();
+  await expect(sourceBody.getByText(/先给出直接可用的结果/u)).toBeVisible();
+  const openSource = sourceBody.getByText("打开文件", { exact: true });
+  if (await openSource.isVisible()) {
+    await openSource.click();
+    await expect(
+      sourceBody.locator(".lifeos-prompt-source-open-menu button").first(),
+    ).toBeVisible();
+  } else {
+    await expect(sourceBody.getByText("本机打开不可用", { exact: true })).toBeVisible();
+  }
 
   await page.getByRole("button", { name: /基于 v\d+ 创建副本/u }).click();
   await expect(page.getByText("我的版本化组件", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "编辑当前版本", exact: true }).click();
-  await page.getByLabel("名称").fill("E2E 任务 Agent");
-  await page
-    .getByLabel("Markdown")
-    .fill("# E2E 任务 Agent\n\n只用于 Prompt Studio 真实浏览器验证。");
+  await page.getByLabel("名称").fill("E2E 交付要求");
+  await page.getByLabel("Markdown").fill("# E2E 交付要求\n\n只用于 Prompt Studio 真实浏览器验证。");
   await page.getByRole("button", { name: "保存为新版本", exact: true }).click();
   await expect(page.getByRole("button", { name: "v2", exact: true })).toBeVisible();
-  await expect(page.getByText("E2E 任务 Agent", { exact: true })).toBeVisible();
+  await expect(page.getByText("E2E 交付要求", { exact: true })).toBeVisible();
 
   await page.reload();
   await enterPromptStudio(page);
-  await expect(page.getByRole("button", { name: /E2E 任务 Agent/u })).toBeVisible();
+  await expect(page.getByRole("button", { name: /E2E 交付要求/u })).toBeVisible();
 
   const body = await request.get("/lifeos/prompts/fragments?limit=100");
   const text = await body.text();
-  expect(text).toContain("E2E 任务 Agent");
+  expect(text).toContain("E2E 交付要求");
   expect(text).not.toContain("只用于 Prompt Studio 真实浏览器验证");
 });
 
@@ -138,7 +159,6 @@ test("Prompt Studio mobile 390×844保持单列且无横向溢出", async ({ pag
   expect(mobileComposerBox).not.toBeNull();
   expect(mobileBarBox!.y + mobileBarBox!.height).toBeLessThan(mobileComposerBox!.y);
   expect(mobileBarBox!.width).toBeLessThanOrEqual(390);
-  await expect(controlBar.getByRole("switch")).toBeVisible();
   await expect(controlBar.getByTestId("lifeos-workflow-current")).toBeVisible();
   await expect(controlBar.getByTestId("lifeos-prompt-composer-open")).toBeVisible();
   await enterPromptStudio(page);
@@ -158,7 +178,9 @@ test("Direct Workflow可配置是否逐次审核提示词并在刷新后恢复",
   await expect(openConfiguration).toBeVisible();
   await openConfiguration.click();
   let dialog = page.getByRole("dialog", { name: /配置 · 执行 Agent/u });
-  await expect(dialog).toContainText("配置只影响后续发送");
+  await expect(dialog).toContainText("Agent默认值属于Chat");
+  await expect(dialog).toContainText("Agent 默认模板");
+  await expect(dialog).toContainText("Workflow 节点实例");
   await dialog.getByRole("button", { name: "恢复默认", exact: true }).click();
   const reviewSwitch = dialog.getByRole("switch", {
     name: "发送前审核提示词，当前开启",
@@ -169,7 +191,7 @@ test("Direct Workflow可配置是否逐次审核提示词并在刷新后恢复",
     "aria-checked",
     "false",
   );
-  await dialog.getByRole("button", { name: "应用", exact: true }).click();
+  await dialog.getByRole("button", { name: "应用到当前会话", exact: true }).click();
 
   await page.reload();
   await expect(page.getByTestId("lifeos-workflow-config-open")).toBeVisible();
@@ -181,7 +203,85 @@ test("Direct Workflow可配置是否逐次审核提示词并在刷新后恢复",
   );
 
   await dialog.getByRole("button", { name: "恢复默认", exact: true }).click();
-  await dialog.getByRole("button", { name: "应用", exact: true }).click();
+  await dialog.getByRole("button", { name: "应用到当前会话", exact: true }).click();
+});
+
+test("Agent默认、Workflow节点实例与本次会话覆盖是三个清晰作用域", async ({ page }) => {
+  await openReadyConversation(page);
+  await page.getByTestId("lifeos-workflow-current").click();
+  await page.getByRole("menuitem", { name: /^规划执行工作流 规划 · 系统$/u }).click();
+  await page.getByTestId("lifeos-workflow-config-open").click();
+  const workflowDialog = page.getByRole("dialog", { name: /配置 · 规划执行工作流/u });
+  await expect(workflowDialog).toContainText("Agent 默认模板");
+  await expect(workflowDialog).toContainText("Workflow 节点实例");
+  await expect(workflowDialog).toContainText("本次会话");
+  await expect(workflowDialog).toContainText("规划 Agent");
+  await expect(workflowDialog).toContainText("Pi Coding Agent · 规划步骤执行");
+  const plannerPrompt = workflowDialog.getByRole("textbox", {
+    name: "生成计划 System Prompt",
+  });
+  await expect(plannerPrompt).toBeVisible();
+  const inherited = await plannerPrompt.inputValue();
+  await plannerPrompt.fill(`${inherited}\n\n<!-- e2e-session-agent-override -->`);
+  await expect(workflowDialog).toContainText("本次会话临时修改");
+  await expect(
+    workflowDialog.getByRole("button", { name: "保存到 Workflow", exact: true }).first(),
+  ).toBeEnabled();
+  await workflowDialog.getByRole("button", { name: "应用到当前会话", exact: true }).click();
+  await page.getByTestId("lifeos-workflow-config-open").click();
+  const transientDialog = page.getByRole("dialog", { name: /配置 · 规划执行工作流/u });
+  await expect(transientDialog).toContainText("本次会话临时修改");
+  await transientDialog
+    .getByRole("button", { name: "保存到 Workflow", exact: true })
+    .first()
+    .click();
+  await expect(page.getByTestId("lifeos-workflow-current")).toContainText("我的配置");
+
+  await page.getByTestId("lifeos-workflow-config-open").click();
+  const persistedDialog = page.getByRole("dialog", { name: /配置 · .*我的配置/u });
+  await expect(persistedDialog).toContainText("工作流已修改");
+  const persistedPrompt = persistedDialog.getByRole("textbox", {
+    name: "生成计划 System Prompt",
+  });
+  await expect(persistedPrompt).toHaveValue(/e2e-session-agent-override/u);
+  await expect(
+    persistedDialog.getByRole("button", { name: "保存到 Workflow", exact: true }).first(),
+  ).toBeDisabled();
+  await persistedPrompt.fill(`${await persistedPrompt.inputValue()}\n<!-- only-this-session -->`);
+  await persistedDialog
+    .getByRole("button", { name: "恢复 Workflow 值", exact: true })
+    .first()
+    .click();
+  await expect(persistedPrompt).not.toHaveValue(/only-this-session/u);
+  await persistedDialog.getByRole("button", { name: "关闭工作流配置", exact: true }).click();
+
+  await page.getByTestId("lifeos-prompt-composer-open").click();
+  const promptDialog = page.getByRole("dialog", { name: "本次 Prompt" });
+  await expect(promptDialog).toContainText("这里不定义Agent身份、不选择Workflow节点");
+  await expect(promptDialog.getByRole("tab")).toHaveCount(0);
+  await expect(promptDialog).not.toContainText("生成计划");
+  await expect(promptDialog).not.toContainText("执行计划");
+  await expect(promptDialog.getByTestId("lifeos-prompt-region-agent_identity")).toHaveCount(0);
+  await promptDialog.getByRole("button", { name: "关闭本次 Prompt", exact: true }).click();
+
+  await enterAgentSettings(page);
+  const agents = page.getByTestId("lifeos-agent-settings");
+  await expect(agents).toContainText("项目初始化 Agent");
+  await agents.getByRole("button", { name: /Pi Coding Agent · 直接执行/u }).click();
+  const piBaseline = agents.getByTestId("lifeos-agent-runtime-baseline");
+  await expect(piBaseline).toContainText("Pi Coding Agent 运行时基线");
+  await expect(piBaseline).toContainText("@earendil-works/pi-coding-agent@0.84.2");
+  await expect(piBaseline).toContainText("You are an expert coding assistant operating inside pi");
+  await expect(piBaseline).toContainText("read");
+  await expect(agents).toContainText("Chat可管理的完整覆盖");
+  await agents.getByRole("button", { name: /规划 Agent/u }).click();
+  const prompt = agents.getByRole("textbox", { name: "Agent System Prompt", exact: true });
+  const original = await prompt.inputValue();
+  await prompt.fill(`${original}\n\n<!-- e2e-agent-revision -->`);
+  await agents.getByRole("button", { name: "保存为新Revision", exact: true }).click();
+  await expect(agents).toContainText(/我的覆盖 v\d+/u);
+  await agents.getByRole("button", { name: "恢复 Chat 内置默认", exact: true }).click();
+  await expect(agents).toContainText("内置默认");
 });
 
 test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边界", async ({ page }) => {
@@ -201,7 +301,7 @@ test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边�
   await page.getByTestId("lifeos-workflow-current").click();
   await page.getByRole("menuitem", { name: /执行 Agent（逐次提示词审核）/u }).click();
   await page.getByTestId("lifeos-prompt-composer-open").click();
-  const blankDialog = page.getByRole("dialog", { name: "本轮提示词" });
+  const blankDialog = page.getByRole("dialog", { name: "本次 Prompt" });
   const configurationPreview = blankDialog.getByRole("button", {
     name: "预览提示词配置",
     exact: true,
@@ -212,46 +312,50 @@ test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边�
   await expect(blankConfiguration).toBeVisible();
   await expect(blankConfiguration).toContainText("不包含用户输入或 DSH 上下文注入");
   const blankBridgePreview = blankDialog.getByRole("button", {
-    name: "预览 DSH 发送",
+    name: "预览完整 Prompt",
     exact: true,
   });
   await expect(blankBridgePreview).toBeEnabled();
   await blankBridgePreview.click();
   await expect(blankDialog.getByRole("alert")).toContainText("请先输入本轮消息");
-  await blankDialog.getByRole("button", { name: "关闭本轮提示词", exact: true }).click();
+  await blankDialog.getByRole("button", { name: "关闭本次 Prompt", exact: true }).click();
 
   const currentInput = "检查Prompt Assembly是否按区域组装";
   await composer.fill(currentInput);
   await page.getByTestId("lifeos-prompt-composer-open").click();
 
-  const dialog = page.getByRole("dialog", { name: "本轮提示词" });
+  const dialog = page.getByRole("dialog", { name: "本次 Prompt" });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("Chat 工作区");
-  await expect(dialog).toContainText("当前首版只在“执行 Agent（逐次提示词审核）”工作流发送时生效");
+  await expect(dialog).toContainText(
+    "这些上下文会提供给当前工作流实际调用的Agent。这里不定义Agent身份、不选择Workflow节点",
+  );
+  await expect(dialog.getByRole("tab")).toHaveCount(0);
 
-  const identity = page.getByTestId("lifeos-prompt-region-agent_identity");
-  await expect(identity).toBeVisible();
-  const builtinIdentity = identity
+  const requirements = page.getByTestId("lifeos-prompt-region-requirements");
+  await expect(requirements).toBeVisible();
+  const builtinRequirement = requirements
     .locator(".lifeos-prompt-choice-row")
-    .filter({ hasText: "通用 Chat Agent 身份" });
-  await expect(builtinIdentity.getByRole("checkbox")).toBeEnabled();
-  await builtinIdentity.getByRole("checkbox").click();
-  await expect(identity.getByRole("button", { name: "追加", exact: true })).toHaveAttribute(
+    .filter({ hasText: "透明交付要求" });
+  const requirementCheckbox = builtinRequirement.getByRole("checkbox");
+  await expect(requirementCheckbox).toBeEnabled();
+  if (!(await requirementCheckbox.isChecked())) await requirementCheckbox.click();
+  await expect(requirements.getByRole("button", { name: "追加", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-  await expect(builtinIdentity.getByRole("checkbox")).toBeChecked();
+  await expect(builtinRequirement.getByRole("checkbox")).toBeChecked();
 
-  await builtinIdentity.getByRole("button", { name: "查看", exact: true }).click();
+  await builtinRequirement.getByRole("button", { name: "查看", exact: true }).click();
   const detail = page.getByRole("dialog", { name: "查看或修改提示词组件" });
-  await expect(detail).toContainText("prompts/fragments/agent-identity/general-chat-agent.md");
-  await expect(detail.getByLabel("来源文件原文")).toContainText("你是 Chat 产品中的任务协作 Agent");
+  await expect(detail).toContainText("prompts/fragments/requirements/transparent-delivery.md");
+  await expect(detail.getByLabel("来源文件原文")).toContainText("先给出直接可用的结果");
   await detail.getByRole("button", { name: "关闭提示词组件管理", exact: true }).click();
 
-  await identity.getByRole("button", { name: "新建", exact: true }).nth(1).click();
+  await requirements.getByRole("button", { name: "新建", exact: true }).nth(1).click();
   const createDialog = page.getByRole("dialog", { name: "新建提示词组件" });
   await expect(createDialog).toContainText("Chat 工作区");
-  await expect(createDialog).toContainText("Agent 身份");
+  await expect(createDialog).toContainText("要求");
   await expect(createDialog.getByRole("textbox", { name: "名称", exact: true })).toBeVisible();
   await createDialog.getByRole("button", { name: "关闭提示词组件管理", exact: true }).click();
 
@@ -259,15 +363,22 @@ test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边�
   const promptPreview = page.getByTestId("lifeos-prompt-configuration-preview");
   await expect(promptPreview).toBeVisible();
   await expect(promptPreview).toContainText("提示词配置预览");
-  await expect(promptPreview).toContainText("agent_identity");
+  await expect(promptPreview).toContainText("requirements");
+  await expect(promptPreview).not.toContainText("agent_identity");
   await expect(promptPreview).not.toContainText(currentInput);
 
-  await page.getByRole("button", { name: "预览 DSH 发送", exact: true }).click();
+  await page.getByRole("button", { name: "预览完整 Prompt", exact: true }).click();
   const bridgePreview = page.getByTestId("lifeos-dsh-bridge-send-preview");
   await expect(bridgePreview).toBeVisible();
-  await expect(bridgePreview).toContainText("DSH 前端发送预览");
-  await expect(bridgePreview).toContainText("不是最终Provider HTTP请求");
-  await expect(bridgePreview).toContainText("Direct · 发送Prompt Selection");
+  await expect(bridgePreview).toContainText("本次 Prompt 与发送边界");
+  await expect(bridgePreview.getByTestId("lifeos-prompt-turn-preview")).toContainText(
+    "You are an expert coding assistant operating inside pi",
+  );
+  await expect(bridgePreview.getByTestId("lifeos-prompt-turn-preview")).toContainText(currentInput);
+  await expect(bridgePreview.getByTestId("lifeos-prompt-turn-preview")).toContainText(
+    "read、grep、find、ls",
+  );
+  await expect(bridgePreview).toContainText("所有Workflow · 发送冻结Prompt Selection");
   await expect(bridgePreview).toContainText("一一对应证据");
   await expect(bridgePreview).toContainText("来源定位 · 仅界面注释，不发送");
   await expect(bridgePreview).toContainText("手动预览尚未进入Agent Loop");
@@ -282,14 +393,17 @@ test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边�
     "promptSelection",
   );
 
-  await dialog.getByRole("button", { name: "关闭本轮提示词", exact: true }).click();
-  const sendReviewSwitch = page.getByRole("switch", { name: "DSH发送前审核，当前关闭" });
+  await dialog.getByRole("button", { name: "关闭本次 Prompt", exact: true }).click();
+  await page.getByTestId("lifeos-debug-review-toggle").click();
+  const debugReviewPanel = page.locator('[aria-label="调试审核设置"]');
+  const sendReviewSwitch = debugReviewPanel.getByRole("switch", {
+    name: "DSH → Bridge，当前关闭",
+  });
   await expect(sendReviewSwitch).toBeVisible();
   await sendReviewSwitch.click();
-  await expect(page.getByRole("switch", { name: "DSH发送前审核，当前开启" })).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
+  await expect(
+    debugReviewPanel.getByRole("switch", { name: "DSH → Bridge，当前开启" }),
+  ).toHaveAttribute("aria-checked", "true");
 
   await page.getByRole("button", { name: "Send message", exact: true }).click();
   const sendReview = page.getByTestId("lifeos-dsh-send-review-card");
@@ -302,6 +416,27 @@ test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边�
   await expect(sendReview).toContainText("→ /text");
   await expect(sendReview).toContainText("逐值比较: 一致");
   await expect(sendReview).toContainText("dsh/packages/core/agent-loop/src/agent.ts");
+  const auditLayout = await sendReview.evaluate((element) => {
+    const scroll = element.querySelector<HTMLElement>(".lifeos-prompt-audit-scroll");
+    if (scroll === null) throw new Error("Prompt审查滚动容器不存在");
+    const nestedVerticalScrollers = [
+      ...scroll.querySelectorAll<HTMLElement>("pre, .lifeos-prompt-body, .lifeos-prompt-sections"),
+    ].filter((candidate) => {
+      const overflowY = getComputedStyle(candidate).overflowY;
+      return (
+        (overflowY === "auto" || overflowY === "scroll") &&
+        candidate.scrollHeight > candidate.clientHeight
+      );
+    }).length;
+    return {
+      width: element.getBoundingClientRect().width,
+      scrollOverflowY: getComputedStyle(scroll).overflowY,
+      nestedVerticalScrollers,
+    };
+  });
+  expect(auditLayout.width).toBeGreaterThan(600);
+  expect(auditLayout.scrollOverflowY).toBe("auto");
+  expect(auditLayout.nestedVerticalScrollers).toBe(0);
   await sendReview.getByRole("tab", { name: "原始请求", exact: true }).click();
   const adapterRaw = sendReview.getByTestId("lifeos-dsh-adapter-request-raw");
   await expect(adapterRaw).toContainText('"provider": "lifeos"');
@@ -314,10 +449,11 @@ test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边�
   await sendReview.getByRole("button", { name: "取消本次发送", exact: true }).click();
   await expect(sendReview).toBeHidden();
 
-  const enabledSwitch = page.getByRole("switch", { name: "DSH发送前审核，当前开启" });
+  const enabledSwitch = debugReviewPanel.getByRole("switch", {
+    name: "DSH → Bridge，当前开启",
+  });
   await enabledSwitch.click();
-  await expect(page.getByRole("switch", { name: "DSH发送前审核，当前关闭" })).toHaveAttribute(
-    "aria-checked",
-    "false",
-  );
+  await expect(
+    debugReviewPanel.getByRole("switch", { name: "DSH → Bridge，当前关闭" }),
+  ).toHaveAttribute("aria-checked", "false");
 });

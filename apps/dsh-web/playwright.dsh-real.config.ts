@@ -14,7 +14,8 @@ const trajectoryOnly = process.env.CHAT_DSH_E2E_MODE === "trajectory-only";
 const promptStudioOnly = process.env.CHAT_DSH_E2E_MODE === "prompt-studio-only";
 const promptThreeGatesOnly = process.env.CHAT_DSH_E2E_MODE === "prompt-three-gates-only";
 const providerEnvironmentModule = "../../scripts/debug/load-provider-env.mjs";
-if (!workbenchOnly && !pwaOnly && !promptStudioOnly) await import(providerEnvironmentModule);
+if (!workbenchOnly && !pwaOnly && !trajectoryOnly && !promptStudioOnly)
+  await import(providerEnvironmentModule);
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const dataRoot = resolve(
@@ -26,6 +27,7 @@ const sharedEnvironment = {
   CHAT_REPO_ROOT: repoRoot,
   CHAT_RUNTIME_KEY: "rtk_dshreale2etestonly0000000000",
   CHAT_TRACE_DIR: resolve(dataRoot, "traces"),
+  CHAT_RUN_ACTIVITY_DIR: resolve(dataRoot, "run-activity"),
 };
 const promptThreeGatesEnvironment = {
   ...sharedEnvironment,
@@ -93,6 +95,7 @@ const api = {
     CHAT_API_HOST: "127.0.0.1",
     CHAT_PRODUCT_STORE_PATH: resolve(dataRoot, "product-store.v1.json"),
     CHAT_WORKFLOW_BASE_URL: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.workflow)}`,
+    CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.piExecutor)}`,
   },
 } as const;
 const dsh = {
@@ -111,13 +114,21 @@ const dshPwa = {
   timeout: 120_000,
   env: dshRealWebEnvironment(repoRoot, process.env),
 } as const;
+const trajectoryDsh = {
+  ...dshPwa,
+  env: dshRealWebEnvironment(repoRoot, {
+    ...sharedEnvironment,
+    CHAT_WEB_AUTH_REQUIRED: "0",
+    CHAT_PUBLIC_WEB_HOSTNAME: undefined,
+  }),
+} as const;
 const trajectoryApi = {
   command: "node scripts/e2e/start-dsh-trajectory-api.mjs",
   cwd: repoRoot,
   url: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.api)}/api/readyz`,
   reuseExistingServer: false,
   timeout: 30_000,
-  env: sharedEnvironment,
+  env: { ...sharedEnvironment, PORT: String(DSH_REAL_E2E_PORTS.api) },
 } as const;
 const promptStudioRuntime = {
   command: "node scripts/e2e/start-dsh-prompt-studio-real.mjs",
@@ -167,6 +178,7 @@ const promptThreeGatesApi = {
     CHAT_API_HOST: "127.0.0.1",
     CHAT_PRODUCT_STORE_PATH: resolve(dataRoot, "product-store.v1.json"),
     CHAT_WORKFLOW_BASE_URL: `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.workflow)}`,
+    CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.piExecutor)}`,
   },
 } as const;
 const promptThreeGatesDsh = {
@@ -240,7 +252,7 @@ export default defineConfig({
               promptThreeGatesDsh,
             ]
           : trajectoryOnly
-            ? [trajectoryApi, dshPwa]
+            ? [trajectoryApi, trajectoryDsh]
             : [codeServer, piExecutor, workflow, api, dsh],
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });

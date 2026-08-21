@@ -7,6 +7,7 @@ import {
   CODING_EXECUTOR_TIMEOUT_MS_PER_STEP,
   CODING_EXECUTOR_TOKEN_BUDGET_PER_STEP,
   EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
+  agentRuntimeBaselineDtoSchema,
   executionContractSchema,
 } from "@chat/contracts";
 import { computeExecutionInputManifestSha256, hashCanonical } from "@chat/domain";
@@ -106,7 +107,27 @@ function request(): StartPiExecutorOperationRequest {
   });
 }
 
-function inputManifest(executionContract: ReturnType<typeof contract>): string {
+function nodePrompt() {
+  return {
+    promptAssemblyId: "pma_executorservice1" as never,
+    promptAssemblySha256: "c".repeat(64),
+    definitionNodeId: "planning.execute",
+    nodeAssemblySha256: "d".repeat(64),
+    profileVersion: "executor-coding-agent-prompt.v1",
+    systemPromptAppend: "EXECUTOR_USER_LAYER_CANARY：保留验证证据。",
+    piSystemPrompt: {
+      kind: "pi_coding_agent",
+      mode: "replace",
+      bodyMarkdown: "CODING_EXECUTOR_CUSTOM_SYSTEM_PROMPT",
+      sha256: "e".repeat(64),
+    },
+  } as const;
+}
+
+function inputManifest(
+  executionContract: ReturnType<typeof contract>,
+  prompt: ReturnType<typeof nodePrompt> | undefined = undefined,
+): string {
   return computeExecutionInputManifestSha256({
     executionContractId: executionContract.executionContractId,
     approvedPlanSha256: executionContract.approvedPlanSha256,
@@ -115,6 +136,16 @@ function inputManifest(executionContract: ReturnType<typeof contract>): string {
     dependencyRefs: [],
     promptTemplateVersion: "executor-coding-agent-prompt.v1",
     modelConfigVersion: "bailian.qwen3.7-plus.v1",
+    ...(prompt === undefined
+      ? {}
+      : {
+          promptAssemblyRef: {
+            promptAssemblyId: prompt.promptAssemblyId as never,
+            sha256: prompt.promptAssemblySha256,
+            definitionNodeId: prompt.definitionNodeId,
+            nodeAssemblySha256: prompt.nodeAssemblySha256,
+          },
+        }),
   });
 }
 
@@ -225,7 +256,10 @@ describe("Executor Workspace与Shell环境边界", () => {
 });
 
 class FakeRunner implements PiCodingAgentRunner {
+  constructor(private readonly capture: (input: PiCodingAgentRunInput) => void = () => undefined) {}
+
   async run(input: PiCodingAgentRunInput) {
+    this.capture(input);
     await input.store.setSession(input.request.operationId, "pis_fake1", []);
     await input.store.append(input.request.operationId, {
       operationId: input.request.operationId,
@@ -269,6 +303,82 @@ class FakeRunner implements PiCodingAgentRunner {
 }
 
 describe("Pi Executor Service + Client", () => {
+  it("Agent运行时配置接口要求私有凭据，并只投影已注册的Pi Agent", async () => {
+    const root = await temporaryRoot();
+    const store = await PiExecutorOperationStore.open(join(root, "operations"));
+    const baseline = agentRuntimeBaselineDtoSchema.parse({
+      kind: "pi_coding_agent",
+      title: "Pi Coding Agent",
+      packageName: "@earendil-works/pi-coding-agent",
+      packageVersion: "0.84.2",
+      managedSource: "later-3/pi@codex/later-custom",
+      compositionStrategy: "pi_default_or_custom_then_chat_runtime_then_context",
+      chatRuntimeAppend: {
+        bodyMarkdown: "Chat runtime append",
+        sha256: "a".repeat(64),
+        sourceRelativePath: "packages/pi-runtime/src/direct-agent-executor.ts",
+      },
+      variants: [
+        {
+          variantKey: "read_only",
+          title: "只读执行",
+          description: "只读能力",
+          enabledToolNames: ["read"],
+          piSystemPrompt: {
+            bodyMarkdown: "Pi runtime system prompt",
+            sha256: "b".repeat(64),
+            dynamicPlaceholders: ["WORKSPACE_ROOT"],
+            sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
+          },
+          tools: [
+            {
+              name: "read",
+              description: "Read a file",
+              parametersJson: "{}",
+              sourceRelativePath: "pi/packages/coding-agent/src/core/tools/read.ts",
+            },
+          ],
+        },
+      ],
+      finalReviewNote: "最终内容以发送前审核为准。",
+    });
+    const runtime = createPiExecutorService({
+      credential: "rtk_1234567890abcdef",
+      store,
+      workspaceRoots: new Map(),
+      emptyWorkspaceRoot: join(root, "empty"),
+      agentDir: join(root, "agent"),
+      sessionsDir: join(root, "sessions"),
+      authorizeOperation: async () => {
+        throw new Error("unused");
+      },
+      runner: new FakeRunner(),
+      agentRuntimeProfiles: {
+        read: async (agentKey) => (agentKey === "direct" ? baseline : undefined),
+      },
+    });
+
+    const unauthorized = await runtime.app.request(
+      "http://executor.test/internal/pi-executor/v1/agent-runtime-profiles/direct",
+    );
+    expect(unauthorized.status).toBe(401);
+
+    const authorized = await runtime.app.request(
+      "http://executor.test/internal/pi-executor/v1/agent-runtime-profiles/direct",
+      { headers: { "x-chat-runtime-key": "rtk_1234567890abcdef" } },
+    );
+    expect(authorized.status).toBe(200);
+    expect(await authorized.json()).toEqual(baseline);
+
+    const missing = await runtime.app.request(
+      "http://executor.test/internal/pi-executor/v1/agent-runtime-profiles/planner",
+      { headers: { "x-chat-runtime-key": "rtk_1234567890abcdef" } },
+    );
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ errorCode: "executor.agent_profile_not_found" });
+    await runtime.close();
+  });
+
   it("Application授权失败时不创建Operation或AgentSession", async () => {
     const root = await temporaryRoot();
     const store = await PiExecutorOperationStore.open(join(root, "operations"));
@@ -307,6 +417,8 @@ describe("Pi Executor Service + Client", () => {
   it("通过202 + cursor轮询取得结果，并按序交付完整安全事件", async () => {
     const root = await temporaryRoot();
     const store = await PiExecutorOperationStore.open(join(root, "operations"));
+    const authorizedNodePrompt = nodePrompt();
+    let runnerRequest: StartPiExecutorOperationRequest | undefined;
     const runtime = createPiExecutorService({
       credential: "rtk_1234567890abcdef",
       store,
@@ -321,8 +433,11 @@ describe("Pi Executor Service + Client", () => {
         contract: contract(),
         contextItems: [],
         dependencyRefs: [],
+        nodePrompt: authorizedNodePrompt,
       }),
-      runner: new FakeRunner(),
+      runner: new FakeRunner((input) => {
+        runnerRequest = input.request;
+      }),
     });
     const events: string[] = [];
     const client = createPiExecutorServiceClient({
@@ -336,12 +451,13 @@ describe("Pi Executor Service + Client", () => {
       contract: executionContract,
       stepId: "step-1",
       executionAttemptId: "att_test1",
-      inputManifestSha256: inputManifest(executionContract),
+      inputManifestSha256: inputManifest(executionContract, authorizedNodePrompt),
       contextItems: [],
       dependencyResults: [],
       onEvent: (event) => events.push(event.type),
     });
     expect(result.output).toBe(CONTENT_MARKER);
+    expect(runnerRequest?.nodePrompt).toEqual(authorizedNodePrompt);
     expect(events).toEqual([
       "operation.accepted",
       "operation.started",

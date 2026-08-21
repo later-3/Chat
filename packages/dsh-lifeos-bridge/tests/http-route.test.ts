@@ -111,6 +111,79 @@ test("public hostname is accepted only in server mode with https Origin", () => 
   );
 });
 
+test("Workflow Agent节点配置同源路由只代理strict Chat命令", async () => {
+  const calls: unknown[] = [];
+  const service = {
+    saveWorkflowAgentNodeConfiguration: async (body: unknown) => {
+      calls.push(body);
+      return { workflow: { saved: true }, items: [] };
+    },
+  } as unknown as LifeosBridgeService;
+  const server = createServer(createLifeosRouteHandler(service, 43_110));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address !== null && typeof address === "object");
+  const call = async (path: string, body: unknown) =>
+    await new Promise<{ status: number | undefined; body: string }>((resolve, reject) => {
+      const outgoing = httpRequest(
+        {
+          hostname: "127.0.0.1",
+          port: address.port,
+          path,
+          method: "POST",
+          headers: {
+            host: "localhost:43110",
+            origin: "http://localhost:43110",
+            "sec-fetch-site": "same-origin",
+            "content-type": "application/json",
+          },
+        },
+        (incoming) => {
+          const chunks: Buffer[] = [];
+          incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+          incoming.on("end", () =>
+            resolve({ status: incoming.statusCode, body: Buffer.concat(chunks).toString() }),
+          );
+        },
+      );
+      outgoing.on("error", reject);
+      outgoing.end(JSON.stringify(body));
+    });
+  const valid = {
+    commandId: "cmd_workflowagentconfig1",
+    payload: {
+      sourceWorkflowDefinitionRevisionId: "wfr_systemplanningv1",
+      sourceDefinitionSha256: "a".repeat(64),
+      definitionNodeId: "planning.plan",
+      agentKey: "planner",
+      promptOverrideMarkdown: "Workflow专属Prompt",
+    },
+  };
+  try {
+    const accepted = await call("/lifeos/workflow/agent-node-configurations", valid);
+    assert.equal(accepted.status, 201);
+    assert.deepEqual(calls, [valid]);
+    assert.equal(
+      (await call("/lifeos/workflow/agent-node-configurations?debug=1", valid)).status,
+      400,
+    );
+    assert.equal(
+      (
+        await call("/lifeos/workflow/agent-node-configurations", {
+          ...valid,
+          payload: { ...valid.payload, executorKey: "arbitrary" },
+        })
+      ).status,
+      400,
+    );
+    assert.equal(calls.length, 1);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error === undefined ? resolve() : reject(error))),
+    );
+  }
+});
+
 test("Prompt来源文件只通过同源白名单打开器路由", async () => {
   const calls: unknown[] = [];
   const sourceFiles = {
@@ -298,7 +371,7 @@ test("same-origin context injection route reads the validated DSH session id", a
     dshSessionId: "dsh-session-1",
     status: "not_assembled",
     revision: "a".repeat(64),
-    chatForwarding: "latest_direct_user_message_and_workspace_instructions",
+    chatForwarding: "not_forwarded",
     items: [],
     totalItems: 0,
     omittedItems: 0,

@@ -34,7 +34,7 @@ import type {
 } from "@chat/contracts";
 import type { WorkflowMemoryWriteReconcileInput } from "@chat/application";
 import { JsonProductStore, assertSnapshotIntegrity } from "@chat/product-store-json";
-import { createExecutionTraceReader, createTraceSink } from "@chat/realtime";
+import { createExecutionTraceReader, createRunActivitySink, createTraceSink } from "@chat/realtime";
 
 const OWNER = "usr_workflowmemory" as PrincipalId;
 const PROVIDER_ID = "mbk_tencentmemorycore" as MemoryBackendId;
@@ -96,6 +96,7 @@ async function fixture() {
     dir: traceDir,
     now: () => new Date(Date.parse("2026-08-18T10:00:00.000Z") + traceTick++ * 100),
   });
+  const activitySink = createRunActivitySink({ dir: traceDir });
   const store = await JsonProductStore.open({
     filePath: join(directory, "product.json"),
     now,
@@ -165,6 +166,7 @@ async function fixture() {
     workflowMemoryProviders: registry,
     trace: (event) => {
       traceSink.emit(event);
+      activitySink.emitTrace(event);
     },
   };
   const command = () => `cmd_workflowmemory${(++commandSequence).toString(36)}` as CommandId;
@@ -270,11 +272,13 @@ describe("Workflow Memory正式纵向", () => {
     expect(persisted).toMatchObject({ status: "completed", snapshotCount: 2 });
     expect(f.calls().queryCalls).toBe(1);
     expect(
-      createExecutionTraceReader({ dir: f.traceDir }).read({
-        productRunId: f.productRunId,
-        afterSequence: 0,
-        limit: 100,
-      }).items,
+      (
+        await createExecutionTraceReader({ dir: f.traceDir }).read({
+          productRunId: f.productRunId,
+          afterSequence: 0,
+          limit: 100,
+        })
+      ).items,
     ).toEqual([
       expect.objectContaining({ type: "tool_call", toolName: "memory_query" }),
       expect.objectContaining({ type: "tool_result", toolName: "memory_query" }),
@@ -427,11 +431,13 @@ describe("Workflow Memory正式纵向", () => {
     ).toEqual([]);
     expect(() => assertSnapshotIntegrity(snapshot)).not.toThrow();
     expect(
-      createExecutionTraceReader({ dir: f.traceDir }).read({
-        productRunId: f.productRunId,
-        afterSequence: 0,
-        limit: 100,
-      }).items,
+      (
+        await createExecutionTraceReader({ dir: f.traceDir }).read({
+          productRunId: f.productRunId,
+          afterSequence: 0,
+          limit: 100,
+        })
+      ).items,
     ).toEqual([
       expect.objectContaining({ type: "tool_call", toolName: "memory_write" }),
       expect.objectContaining({
@@ -454,6 +460,7 @@ describe("Workflow Memory正式纵向", () => {
       dir: traceDir,
       now: () => new Date(Date.parse("2026-08-18T12:00:00.000Z") + traceTick++ * 100),
     });
+    const activitySink = createRunActivitySink({ dir: traceDir });
     const store = await JsonProductStore.open({ filePath: join(directory, "product.json"), now });
     const deps: ApplicationDeps = {
       store,
@@ -461,6 +468,7 @@ describe("Workflow Memory正式纵向", () => {
       ids: ids(),
       trace: (event) => {
         traceSink.emit(event);
+        activitySink.emitTrace(event);
       },
     };
     const command = () => `cmd_simpleplanningtrace${(++commandSequence).toString(36)}` as CommandId;
@@ -485,13 +493,17 @@ describe("Workflow Memory正式纵向", () => {
     expect(nodeTypes).not.toContain("memory.query");
     expect(nodeTypes).not.toContain("memory.write");
     expect(
-      createExecutionTraceReader({ dir: traceDir })
-        .read({ productRunId: submitted.run.productRunId, afterSequence: 0, limit: 100 })
-        .items.filter(
-          (item) =>
-            (item.type === "tool_call" || item.type === "tool_result") &&
-            (item.toolName === "memory_query" || item.toolName === "memory_write"),
-        ),
+      (
+        await createExecutionTraceReader({ dir: traceDir }).read({
+          productRunId: submitted.run.productRunId,
+          afterSequence: 0,
+          limit: 100,
+        })
+      ).items.filter(
+        (item) =>
+          (item.type === "tool_call" || item.type === "tool_result") &&
+          (item.toolName === "memory_query" || item.toolName === "memory_write"),
+      ),
     ).toEqual([]);
   });
 

@@ -1,27 +1,77 @@
 import { describe, expect, it } from "vitest";
-import { traceEventSchema, workflowRuntimeTraceDtoSchema, type TraceEvent } from "@chat/contracts";
+import {
+  runActivityEventSchema,
+  workflowRuntimeTraceDtoSchema,
+  type RunActivityEvent,
+  type RunActivityEventInput,
+} from "@chat/contracts";
 import { hashCanonical } from "@chat/domain";
 import {
   executedWorkflowNodeRuns,
+  boundPiActivities,
   projectPiActivities,
   runtimeRevisionValue,
 } from "./execution-trace-use-cases.js";
 
-const common = {
-  schemaVersion: 1,
-  level: "info",
-  traceId: "trc_pi1",
-  productRunId: "run_pi1",
-  attemptId: "att_pi1",
-  promptTemplateVersion: "planner.v1",
-  modelConfigVersion: "model.v1",
-};
-
-function event(value: Record<string, unknown>): TraceEvent {
-  return traceEventSchema.parse({ ...common, ...value });
+let activitySequence = 0;
+type TestActivityInput = RunActivityEventInput extends infer Event
+  ? Event extends RunActivityEventInput
+    ? Omit<Event, "productRunId" | "attemptId" | "sourceKind" | "sourceKey">
+    : never
+  : never;
+function event(value: TestActivityInput): RunActivityEvent {
+  activitySequence += 1;
+  return runActivityEventSchema.parse({
+    schemaVersion: "chat-run-activity.v1",
+    sequence: activitySequence,
+    productRunId: "run_pi1",
+    attemptId: "att_pi1",
+    sourceKind: "pi_executor",
+    sourceOperationId: "pio_projection1",
+    sourceSequence: activitySequence,
+    sourceKey: `test:${String(activitySequence)}`,
+    ...value,
+  });
 }
 
 describe("Pi execution trace projection", () => {
+  it("bounds long activity history without orphaning model/tool children", () => {
+    const activities = Array.from({ length: 300 }, (_, index) => {
+      const agentSequence = index * 2 + 1;
+      const agent = {
+        activityKey: `pi-agent-${String(index + 1)}`,
+        attemptId: "att_pi1",
+        sequence: agentSequence,
+        kind: "agent",
+        label: "执行 Agent",
+        status: "succeeded",
+        nodeKind: "executor",
+        startedAt: "2026-08-21T00:00:00.000Z",
+      } as const;
+      const model = {
+        activityKey: `pi-model-${String(index + 1)}`,
+        parentActivityKey: agent.activityKey,
+        attemptId: "att_pi1",
+        sequence: agentSequence + 1,
+        kind: "model",
+        label: "模型调用",
+        status: "succeeded",
+        nodeKind: "executor",
+        startedAt: "2026-08-21T00:00:00.000Z",
+      } as const;
+      return [agent, model];
+    }).flat() as never;
+    const bounded = boundPiActivities(activities);
+    expect(bounded.truncated).toBe(true);
+    expect(bounded.items).toHaveLength(500);
+    const keys = new Set(bounded.items.map((activity) => activity.activityKey));
+    for (const activity of bounded.items) {
+      if (activity.parentActivityKey !== undefined) {
+        expect(keys.has(activity.parentActivityKey)).toBe(true);
+      }
+    }
+  });
+
   it("does not turn queued definitions or skipped optional nodes into execution records", () => {
     expect(
       executedWorkflowNodeRuns([
@@ -81,85 +131,58 @@ describe("Pi execution trace projection", () => {
   });
 
   it("projects Agent, model and tool without private payloads", () => {
+    activitySequence = 0;
     const values = projectPiActivities(
       [
         event({
-          eventId: "evt_pi1",
           timestamp: "2026-08-17T08:00:00.000Z",
-          spanId: "span_pi1",
-          eventName: "pi.node.started",
-          outcome: "unknown",
+          activityType: "agent",
+          phase: "started",
           nodeKind: "executor",
         }),
         event({
-          eventId: "evt_pi2",
           timestamp: "2026-08-17T08:00:00.100Z",
-          spanId: "span_pi2",
-          eventName: "provider.request.started",
-          outcome: "unknown",
+          activityType: "model",
+          phase: "started",
+          nodeKind: "executor",
           provider: "bailian",
           model: "qwen3.7-plus",
-          endpointHost: "dashscope.aliyuncs.com",
-          operation: "chat_completion",
-          inputManifestSha256: "a".repeat(64),
         }),
         event({
-          eventId: "evt_pi3",
           timestamp: "2026-08-17T08:00:00.900Z",
-          spanId: "span_pi3",
-          eventName: "provider.request.completed",
-          outcome: "success",
+          activityType: "model",
+          phase: "completed",
+          nodeKind: "executor",
           provider: "bailian",
           model: "qwen3.7-plus",
-          endpointHost: "dashscope.aliyuncs.com",
-          operation: "chat_completion",
-          httpStatus: 200,
-          providerRequestId: "provider-1",
           tokenUsage: { promptTokens: 10, completionTokens: 2, totalTokens: 12 },
-          inputManifestSha256: "a".repeat(64),
           durationMs: 800,
         }),
         event({
-          eventId: "evt_pi4",
           timestamp: "2026-08-17T08:00:01.000Z",
-          spanId: "span_pi4",
-          eventName: "pi.tool.intent_persisted",
-          outcome: "unknown",
-          piOperationId: "pio_op1",
-          operationEventSequence: 4,
-          sourceTimestamp: "2026-08-17T08:00:01.000Z",
-          piRuntimeSessionId: "pis_session-1",
-          turnIndex: 0,
+          activityType: "tool",
+          phase: "started",
+          nodeKind: "executor",
           toolCallId: "call_1",
           toolName: "bash",
-          inputSha256: "b".repeat(64),
           inputDisplay: '{"command":"node --version"}',
           inputDisplayTruncated: false,
         }),
         event({
-          eventId: "evt_pi5",
           timestamp: "2026-08-17T08:00:01.100Z",
-          spanId: "span_pi5",
-          eventName: "pi.tool.completed",
-          outcome: "success",
-          piOperationId: "pio_op1",
-          operationEventSequence: 5,
-          sourceTimestamp: "2026-08-17T08:00:01.100Z",
-          piRuntimeSessionId: "pis_session-1",
-          turnIndex: 0,
+          activityType: "tool",
+          phase: "completed",
+          nodeKind: "executor",
           toolCallId: "call_1",
           toolName: "bash",
-          resultSha256: "c".repeat(64),
           resultDisplay: "v24.0.0",
           resultDisplayTruncated: false,
           durationMs: 100,
         }),
         event({
-          eventId: "evt_pi6",
           timestamp: "2026-08-17T08:00:01.200Z",
-          spanId: "span_pi6",
-          eventName: "pi.node.completed",
-          outcome: "success",
+          activityType: "agent",
+          phase: "completed",
           nodeKind: "executor",
           durationMs: 1_200,
         }),
@@ -177,6 +200,8 @@ describe("Pi execution trace projection", () => {
     expect(values[2]).toMatchObject({
       parentActivityKey: "pi-agent-1",
       toolName: "bash",
+      inputDisplay: '{"command":"node --version"}',
+      resultDisplay: "v24.0.0",
     });
     expect(JSON.stringify(values)).not.toContain("provider-1");
     expect(JSON.stringify(values)).not.toContain("inputManifestSha256");

@@ -9,6 +9,7 @@ import {
   promptFragmentRevisionIdSchema,
   workflowDefinitionRevisionIdSchema,
 } from "./ids.js";
+import { workflowDefinitionNodeIdSchema } from "./workflow-definition.js";
 import {
   promptFragmentScopeSchema,
   promptRegionKeySchema,
@@ -17,6 +18,9 @@ import {
 
 export const PROMPT_ASSEMBLY_SCHEMA_VERSION = "prompt-assembly.v1";
 export const PROMPT_ASSEMBLY_V2_SCHEMA_VERSION = "prompt-assembly.v2";
+export const PROMPT_ASSEMBLY_V3_SCHEMA_VERSION = "prompt-assembly.v3";
+export const WORKFLOW_PROMPT_PROFILE_VERSION = "workflow-agent-prompt-profile.v1";
+export const WORKFLOW_PROMPT_COMPILER_VERSION = "workflow-agent-prompt-compiler.v1";
 export const DIRECT_PROMPT_PROFILE_VERSION = "direct-agent-prompt-profile.v1";
 export const DIRECT_PROMPT_COMPILER_VERSION = "direct-agent-prompt-compiler.v1";
 export const DIRECT_PROMPT_PROFILE_V2_VERSION = "direct-agent-prompt-profile.v2";
@@ -89,7 +93,7 @@ export const promptRegionCompositionInputSchema = z
   });
 
 /** Browser只提交选择意图；服务端重新解析Revision、Scope、正文和默认Profile。 */
-export const promptTurnSelectionInputSchema = z
+export const promptTurnSelectionInputV1Schema = z
   .object({
     schemaVersion: z.literal("prompt-turn-selection-input.v1"),
     workspaceRootId: promptWorkspaceRootIdSchema.optional(),
@@ -103,13 +107,55 @@ export const promptTurnSelectionInputSchema = z
     }
   });
 
+export const promptNodeSelectionInputSchema = z
+  .object({
+    definitionNodeId: workflowDefinitionNodeIdSchema,
+    regions: z.array(promptRegionCompositionInputSchema).max(32),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const keys = new Set(value.regions.map((item) => item.regionKey));
+    if (keys.size !== value.regions.length) {
+      ctx.addIssue({ code: "custom", path: ["regions"], message: "节点Prompt Region选择重复" });
+    }
+  });
+
+/**
+ * V2历史上允许节点级Prompt选择。当前Compiler只接受会话上下文Region并把
+ * `nodeSelections`归一为空数组；保留字段仅用于读取既有草稿，不能再修改Agent身份。
+ */
+export const promptTurnSelectionInputV2Schema = z
+  .object({
+    schemaVersion: z.literal("prompt-turn-selection-input.v2"),
+    workspaceRootId: promptWorkspaceRootIdSchema.optional(),
+    workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+    regions: z.array(promptRegionCompositionInputSchema).max(32),
+    nodeSelections: z.array(promptNodeSelectionInputSchema).max(32),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const regionKeys = new Set(value.regions.map((item) => item.regionKey));
+    if (regionKeys.size !== value.regions.length) {
+      ctx.addIssue({ code: "custom", path: ["regions"], message: "Prompt Region选择重复" });
+    }
+    const nodeIds = new Set(value.nodeSelections.map((item) => item.definitionNodeId));
+    if (nodeIds.size !== value.nodeSelections.length) {
+      ctx.addIssue({ code: "custom", path: ["nodeSelections"], message: "Prompt节点选择重复" });
+    }
+  });
+
+export const promptTurnSelectionInputSchema = z.union([
+  promptTurnSelectionInputV1Schema,
+  promptTurnSelectionInputV2Schema,
+]);
+
 export const promptAssemblyFragmentSchema = z
   .object({
     promptFragmentId: promptFragmentIdSchema,
     promptFragmentRevisionId: promptFragmentRevisionIdSchema,
     revision: z.number().int().positive(),
     sha256: sha256Schema,
-    ownerKind: z.enum(["system", "principal"]),
+    ownerKind: z.enum(["system", "principal", "workflow_node_override", "runtime"]),
     scope: promptFragmentScopeSchema,
     title: z.string().min(1).max(160),
     regionKey: promptRegionKeySchema,
@@ -172,11 +218,27 @@ export const promptEnvelopeMessageSchema = z
 
 export const promptEnvelopeToolsSchema = z
   .object({
-    capabilityMode: z.literal("read_only"),
-    names: z.array(z.enum(["read", "grep", "find", "ls"])).length(4),
+    capabilityMode: z.enum(["read_only", "project_bootstrap"]),
+    names: z
+      .array(z.enum(["read", "grep", "find", "ls", "project_bootstrap_prepare"]))
+      .min(4)
+      .max(5),
     estimatedTokens: z.literal(DIRECT_PROMPT_TOOL_TOKEN_RESERVE),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    const expected =
+      value.capabilityMode === "project_bootstrap"
+        ? ["read", "grep", "find", "ls", "project_bootstrap_prepare"]
+        : ["read", "grep", "find", "ls"];
+    if (JSON.stringify(value.names) !== JSON.stringify(expected)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["names"],
+        message: "Tool清单必须与冻结Capability Mode完全一致",
+      });
+    }
+  });
 
 export const promptEnvelopeRequestOptionsSchema = z
   .object({
@@ -199,6 +261,24 @@ export const promptAssemblyBudgetSchema = z
     excludedHistoryMessageIds: z.array(messageIdSchema).max(1_000),
   })
   .strict();
+
+/** Pi拥有默认System Prompt；Chat只冻结继承或完整覆盖的用户决定。 */
+export const piSystemPromptResolutionSchema = z.discriminatedUnion("mode", [
+  z
+    .object({
+      kind: z.literal("pi_coding_agent"),
+      mode: z.literal("inherit"),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("pi_coding_agent"),
+      mode: z.literal("replace"),
+      bodyMarkdown: z.string().min(1).max(131_072),
+      sha256: sha256Schema,
+    })
+    .strict(),
+]);
 
 /**
  * Product Store中的一次发送快照。它冻结最终采用的精确Revision与编译文本，后续
@@ -227,9 +307,9 @@ export const promptAssemblyV1Schema = z
   .strict();
 
 /**
- * V2把真正交给Pi的四条输入通道冻结为产品事实。Region仍是开放的作者语义分类；
- * History保持原始role，Tools与Options不再散落在Runtime常量里。来源、预算和排除
- * 证据属于Assembly Manifest，不会被额外拼进模型正文。
+ * V2冻结Chat交给Pi的System追加层、Messages、Capability Tool清单与Options。
+ * Pi基础System和部署期锁定的动态Runtime Contract不伪装成用户Prompt；最终Provider
+ * Payload由PromptReviewRequest另行冻结。来源、预算和排除证据属于Assembly Manifest。
  */
 export const promptAssemblyV2Schema = z
   .object({
@@ -244,6 +324,7 @@ export const promptAssemblyV2Schema = z
     workspaceRootId: promptWorkspaceRootIdSchema.optional(),
     regions: z.array(promptAssemblyRegionSchema).max(32),
     systemPromptAppend: z.string().max(512_000),
+    piSystemPrompt: piSystemPromptResolutionSchema.optional(),
     messages: z.array(promptEnvelopeMessageSchema).min(1).max(1_000),
     tools: promptEnvelopeToolsSchema,
     requestOptions: promptEnvelopeRequestOptionsSchema,
@@ -286,11 +367,82 @@ export const promptAssemblyV2Schema = z
     }
   });
 
-export const promptAssemblySchema = z.union([promptAssemblyV1Schema, promptAssemblyV2Schema]);
+export const promptBearingNodeTypeSchema = z.enum([
+  "agent.plan",
+  "agent.direct",
+  "execute.plan",
+  "note.extract",
+]);
+
+/**
+ * 一个Workflow模型节点冻结后的完整Prompt输入：独立Agent Profile的System Prompt
+ * 加同一份会话上下文。Tool/安全合同仍由Runtime强制，不能由Prompt扩权。
+ */
+export const promptNodeAssemblySchema = z
+  .object({
+    definitionNodeId: workflowDefinitionNodeIdSchema,
+    nodeType: promptBearingNodeTypeSchema,
+    profileVersion: z.string().min(1).max(100),
+    regions: z.array(promptAssemblyRegionSchema).max(32),
+    systemPromptAppend: z.string().max(512_000),
+    piSystemPrompt: piSystemPromptResolutionSchema.optional(),
+    sha256: sha256Schema,
+  })
+  .strict();
+
+/**
+ * 非Direct Workflow在Run创建时冻结的Prompt计划。它不是一次Provider Payload：
+ * Planner、Executor和Note会在各自执行时把当前输入/上下文/工具加入Runtime Envelope。
+ */
+export const promptAssemblyV3Schema = z
+  .object({
+    schemaVersion: z.literal(PROMPT_ASSEMBLY_V3_SCHEMA_VERSION),
+    promptAssemblyId: promptAssemblyIdSchema,
+    productSessionId: productSessionIdSchema,
+    productRunId: productRunIdSchema,
+    sourceMessageId: messageIdSchema,
+    workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+    profileVersion: z.literal(WORKFLOW_PROMPT_PROFILE_VERSION),
+    compilerVersion: z.literal(WORKFLOW_PROMPT_COMPILER_VERSION),
+    workspaceRootId: promptWorkspaceRootIdSchema.optional(),
+    selection: promptTurnSelectionInputV2Schema,
+    sharedRegions: z.array(promptAssemblyRegionSchema).max(32),
+    nodes: z.array(promptNodeAssemblySchema).min(1).max(32),
+    sha256: sha256Schema,
+    createdAt: z.iso.datetime(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.selection.workflowDefinitionRevisionId !== value.workflowDefinitionRevisionId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["selection", "workflowDefinitionRevisionId"],
+        message: "Prompt选择与Workflow Revision不一致",
+      });
+    }
+    if (value.selection.workspaceRootId !== value.workspaceRootId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["selection", "workspaceRootId"],
+        message: "Prompt选择与Assembly Workspace不一致",
+      });
+    }
+    const nodeIds = new Set(value.nodes.map((node) => node.definitionNodeId));
+    if (nodeIds.size !== value.nodes.length) {
+      ctx.addIssue({ code: "custom", path: ["nodes"], message: "Prompt节点Assembly重复" });
+    }
+  });
+
+export const promptAssemblySchema = z.union([
+  promptAssemblyV1Schema,
+  promptAssemblyV2Schema,
+  promptAssemblyV3Schema,
+]);
 
 export type PromptCompositionMode = z.infer<typeof promptCompositionModeSchema>;
 export type PromptRevisionSelection = z.infer<typeof promptRevisionSelectionSchema>;
 export type PromptRegionCompositionInput = z.infer<typeof promptRegionCompositionInputSchema>;
+export type PromptNodeSelectionInput = z.infer<typeof promptNodeSelectionInputSchema>;
 export type PromptTurnSelectionInput = z.infer<typeof promptTurnSelectionInputSchema>;
 export type PromptAssemblyFragment = z.infer<typeof promptAssemblyFragmentSchema>;
 export type PromptAssemblyRegion = z.infer<typeof promptAssemblyRegionSchema>;
@@ -299,3 +451,7 @@ export type PromptAssemblyBudget = z.infer<typeof promptAssemblyBudgetSchema>;
 export type PromptAssembly = z.infer<typeof promptAssemblySchema>;
 export type PromptAssemblyV1 = z.infer<typeof promptAssemblyV1Schema>;
 export type PromptAssemblyV2 = z.infer<typeof promptAssemblyV2Schema>;
+export type PromptBearingNodeType = z.infer<typeof promptBearingNodeTypeSchema>;
+export type PromptNodeAssembly = z.infer<typeof promptNodeAssemblySchema>;
+export type PiSystemPromptResolution = z.infer<typeof piSystemPromptResolutionSchema>;
+export type PromptAssemblyV3 = z.infer<typeof promptAssemblyV3Schema>;

@@ -11,6 +11,10 @@
     "./coding-executor": {
       "types": "./src/coding-executor.ts",
       "import": "./src/coding-executor.ts"
+    },
+    "./agent-runtime-profile-client": {
+      "types": "./src/agent-runtime-profile-client.ts",
+      "import": "./src/agent-runtime-profile-client.ts"
     }
   },
   "scripts": {

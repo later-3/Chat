@@ -17,6 +17,12 @@ export interface ExecutionInputManifest {
   }[];
   readonly promptTemplateVersion: string;
   readonly modelConfigVersion: string;
+  readonly promptAssemblyRef?: {
+    readonly promptAssemblyId: string;
+    readonly sha256: string;
+    readonly definitionNodeId: string;
+    readonly nodeAssemblySha256: string;
+  };
 }
 
 /** Execution输入证据的唯一Hash实现，Workflow、Application与Store完整性检查共用。 */
@@ -28,9 +34,14 @@ export function computeExecutionInputManifestSha256(input: ExecutionInputManifes
     dependencyRefs: input.dependencyRefs,
     promptTemplateVersion: input.promptTemplateVersion,
     modelConfigVersion: input.modelConfigVersion,
+    ...(input.promptAssemblyRef === undefined
+      ? {}
+      : { promptAssemblyRef: input.promptAssemblyRef }),
   };
-  // 保留B2无上下文步骤的旧Hash；只有Memory引用时进入v2证据域。
-  return input.inputRefs.length === 0
-    ? hashCanonical("execution-input-manifest.v1", common)
-    : hashCanonical("execution-input-manifest.v2", { ...common, inputRefs: input.inputRefs });
+  // Prompt Assembly进入v3；旧Attempt继续按原v1/v2 Hash域验证。
+  return input.promptAssemblyRef !== undefined
+    ? hashCanonical("execution-input-manifest.v3", { ...common, inputRefs: input.inputRefs })
+    : input.inputRefs.length === 0
+      ? hashCanonical("execution-input-manifest.v1", common)
+      : hashCanonical("execution-input-manifest.v2", { ...common, inputRefs: input.inputRefs });
 }

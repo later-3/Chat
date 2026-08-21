@@ -48,10 +48,42 @@ export function promptSelectionForWorkspace(
 ): PromptTurnSelectionInput {
   const workspaceRootId = workspace?.rootId;
   const sameWorkspace = selection !== undefined && selection.workspaceRootId === workspaceRootId;
+  if (selection?.schemaVersion === "prompt-turn-selection-input.v2") {
+    return {
+      schemaVersion: "prompt-turn-selection-input.v2",
+      ...(workspaceRootId === undefined ? {} : { workspaceRootId }),
+      workflowDefinitionRevisionId: selection.workflowDefinitionRevisionId,
+      regions: sameWorkspace
+        ? selection.regions.filter((region) => region.regionKey !== "agent_identity")
+        : [],
+      nodeSelections: [],
+    };
+  }
   return {
     schemaVersion: "prompt-turn-selection-input.v1",
     ...(workspaceRootId === undefined ? {} : { workspaceRootId }),
-    regions: sameWorkspace ? selection.regions : [],
+    regions: sameWorkspace
+      ? selection.regions.filter((region) => region.regionKey !== "agent_identity")
+      : [],
+  };
+}
+
+/** Workflow切换只保留会话上下文；Agent Prompt由Agent Profile拥有。 */
+export function promptSelectionForWorkflow(
+  selection: PromptTurnSelectionInput,
+  workflow: {
+    readonly workflowDefinitionRevisionId: string;
+    readonly promptNodeIds: readonly string[];
+  },
+): PromptTurnSelectionInput {
+  return {
+    schemaVersion: "prompt-turn-selection-input.v2",
+    ...(selection.workspaceRootId === undefined
+      ? {}
+      : { workspaceRootId: selection.workspaceRootId }),
+    workflowDefinitionRevisionId: workflow.workflowDefinitionRevisionId as never,
+    regions: selection.regions.filter((region) => region.regionKey !== "agent_identity"),
+    nodeSelections: [],
   };
 }
 

@@ -4,7 +4,7 @@ import {
   type BridgeChatDispatchPlan,
   type WorkflowSelection,
 } from "./contracts.ts";
-import type { PromptTurnSelectionInput, WorkspaceInstructionsInput } from "@chat/contracts/public";
+import type { PromptTurnSelectionInput } from "@chat/contracts/public";
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -18,10 +18,8 @@ function httpCommand(path: string, body: unknown) {
 export function bridgeChatSubmitPayload(input: {
   readonly text: string;
   readonly workflowSelection?: WorkflowSelection;
-  readonly workspaceInstructions?: WorkspaceInstructionsInput;
   readonly promptSelection?: PromptTurnSelectionInput;
 }) {
-  const direct = input.workflowSelection?.blueprintKey === "direct";
   return {
     text: input.text,
     ...(input.workflowSelection === undefined
@@ -34,12 +32,9 @@ export function bridgeChatSubmitPayload(input: {
             runConfiguration: input.workflowSelection.runConfiguration,
           },
         }),
-    ...(input.workspaceInstructions !== undefined && !direct
-      ? { context: { workspaceInstructions: input.workspaceInstructions } }
-      : {}),
-    ...(input.promptSelection !== undefined && direct
-      ? { promptSelection: input.promptSelection }
-      : {}),
+    // Prompt Selection是跨Workflow的用户意图。Bridge只冻结并透明转发Revision/Hash；
+    // 具体节点、Profile和安全层由Chat Application按已发布Definition编译。
+    ...(input.promptSelection === undefined ? {} : { promptSelection: input.promptSelection }),
   };
 }
 
@@ -53,7 +48,6 @@ export function prepareBridgeChatDispatch(input: {
   readonly messageCommandId: string;
   readonly text: string;
   readonly workflowSelection?: WorkflowSelection;
-  readonly workspaceInstructions?: WorkspaceInstructionsInput;
   readonly promptSelection?: PromptTurnSelectionInput;
 }): BridgeChatDispatchPlan {
   const payload = bridgeChatSubmitPayload(input);

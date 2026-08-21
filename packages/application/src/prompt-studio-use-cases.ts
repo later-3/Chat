@@ -1,5 +1,8 @@
 import {
+  AGENT_PROFILE_API_SCHEMA_VERSION,
   PROMPT_STUDIO_API_SCHEMA_VERSION,
+  agentProfileDtoSchema,
+  agentProfilesDtoSchema,
   promptFragmentCommandResultDtoSchema,
   promptFragmentDetailDtoSchema,
   promptFragmentIdSchema,
@@ -10,12 +13,15 @@ import {
   promptFragmentSchema,
   promptRegionsDtoSchema,
   promptWorkspacesDtoSchema,
+  type AgentKey,
+  type AgentProfileDto,
   type ChangePromptFragmentArchiveStatusPayload,
   type CommandId,
   type CopyPromptFragmentPayload,
   type CreatePromptFragmentPayload,
   type ListPromptFragmentsQuery,
   type PrincipalId,
+  type ProductSnapshot,
   type PromptFragment,
   type PromptFragmentContent,
   type PromptFragmentDraftPayload,
@@ -23,6 +29,8 @@ import {
   type PromptFragmentRevision,
   type PromptFragmentRevisionId,
   type RevisePromptFragmentPayload,
+  type RestoreAgentPromptPayload,
+  type ReviseAgentPromptPayload,
 } from "@chat/contracts";
 import {
   assertPromptFragmentContent,
@@ -63,6 +71,9 @@ function assertDraftAllowed(
   if (region === undefined) throw notFound("Prompt Region不存在");
   if (!region.userManageable || region.contentKind === "runtime") {
     throw forbidden("该Prompt Region是运行时只读区域");
+  }
+  if (region.category === "identity") {
+    throw forbidden("Agent System Prompt只能在Agent设置中管理");
   }
   if (region.contentKind !== draft.content.kind) {
     throw new ApplicationError({
@@ -880,4 +891,331 @@ export async function changePromptFragmentArchiveStatus(
     },
   });
   return readCommandResult(deps, result, input.principalId);
+}
+
+function agentOverrideFragmentId(principalId: PrincipalId, agentKey: AgentKey): PromptFragmentId {
+  return promptFragmentIdSchema.parse(
+    `pfg_${hashCanonical("id.agent-profile-override.v2", { principalId, agentKey }).slice(0, 32)}`,
+  );
+}
+
+/** v1只按agentKey分配ID；读取保留兼容，任何新写入都迁到Principal隔离的v2身份。 */
+function legacyAgentOverrideFragmentId(agentKey: AgentKey): PromptFragmentId {
+  return promptFragmentIdSchema.parse(`pfg_agentprofile${agentKey.replaceAll("_", "")}`);
+}
+
+function currentAgentOverride(
+  snapshot: ProductSnapshot,
+  principalId: PrincipalId,
+  agentKey: AgentKey,
+): PromptFragment | undefined {
+  const current = snapshot.entities.promptFragments[agentOverrideFragmentId(principalId, agentKey)];
+  if (current !== undefined) return current;
+  const legacy = snapshot.entities.promptFragments[legacyAgentOverrideFragmentId(agentKey)];
+  return legacy?.ownerPrincipalId === principalId ? legacy : undefined;
+}
+
+async function agentProfileProjection(
+  deps: ApplicationDeps,
+  principalId: PrincipalId,
+  agentKey: AgentKey,
+): Promise<AgentProfileDto> {
+  const catalog = await requireCatalog(deps).load();
+  const definition = catalog.agents.find((agent) => agent.agentKey === agentKey);
+  if (definition === undefined) throw notFound("Agent不存在");
+  const runtimeBaseline = await deps.agentRuntimeProfiles?.read(agentKey);
+  const defaultPrompt = definition.defaultPrompt;
+  const builtinRevisionId = defaultPrompt.promptFragmentRevisionId;
+  const builtin =
+    builtinRevisionId !== undefined
+      ? catalog.builtinFragments.find(
+          (fragment) => fragment.promptFragmentRevisionId === builtinRevisionId,
+        )
+      : undefined;
+  if (
+    builtinRevisionId !== undefined &&
+    (builtin === undefined || builtin.content.kind !== "markdown")
+  ) {
+    throw new Error(`Agent ${agentKey} 默认System Prompt不存在`);
+  }
+  const runtimeVariant =
+    defaultPrompt.kind === "pi_coding_agent"
+      ? runtimeBaseline?.variants.find(
+          (variant) => variant.variantKey === defaultPrompt.defaultVariantKey,
+        )
+      : undefined;
+  if (defaultPrompt.kind === "pi_coding_agent" && runtimeVariant === undefined) {
+    throw new Error(`Agent ${agentKey} Pi运行时默认变体不存在`);
+  }
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const aggregate = currentAgentOverride(snapshot, principalId, agentKey);
+  const customRevision =
+    aggregate === undefined
+      ? undefined
+      : snapshot.entities.promptFragmentRevisions[aggregate.currentRevisionId];
+  const customFile =
+    aggregate === undefined || customRevision === undefined
+      ? undefined
+      : await readPromptFileProjection(deps, aggregate, customRevision);
+  const customContent =
+    customFile?.content ??
+    (customRevision?.schemaVersion === "prompt-fragment-revision.v1"
+      ? customRevision.content
+      : undefined);
+  const useCustom =
+    aggregate?.status === "active" &&
+    customRevision !== undefined &&
+    customContent?.kind === "markdown";
+  const builtinBodyMarkdown =
+    builtin?.content.kind === "markdown" ? builtin.content.bodyMarkdown : undefined;
+  return agentProfileDtoSchema.parse({
+    schemaVersion: AGENT_PROFILE_API_SCHEMA_VERSION,
+    agentKey,
+    title: definition.title,
+    description: definition.description,
+    profileVersion: definition.profileVersion,
+    supportedNodeTypes: definition.supportedNodeTypes,
+    systemPrompt: useCustom
+      ? {
+          source: "principal_override",
+          mode: "replace",
+          promptFragmentId: customRevision.promptFragmentId,
+          promptFragmentRevisionId: customRevision.promptFragmentRevisionId,
+          revision: customRevision.revision,
+          aggregateRevision: aggregate.revision,
+          sha256: customRevision.sha256,
+          bodyMarkdown: customContent.bodyMarkdown,
+          sourceRelativePath:
+            customFile?.sourceRelativePath ??
+            (customRevision.schemaVersion === "prompt-fragment-revision.v2"
+              ? customRevision.contentRef.sourceRelativePath
+              : `legacy/${customRevision.promptFragmentRevisionId}.md`),
+        }
+      : builtin !== undefined
+        ? {
+            source: "builtin",
+            mode: "replace",
+            promptFragmentId: builtin!.promptFragmentId,
+            promptFragmentRevisionId: builtin!.promptFragmentRevisionId,
+            revision: builtin!.revision,
+            aggregateRevision: aggregate?.revision ?? 0,
+            sha256: builtin!.sha256,
+            bodyMarkdown: builtinBodyMarkdown!,
+            sourceRelativePath: builtin!.sourceRelativePath,
+          }
+        : {
+            source: "runtime_default",
+            mode: "inherit",
+            aggregateRevision: aggregate?.revision ?? 0,
+            sha256: runtimeVariant!.piSystemPrompt.sha256,
+            bodyMarkdown: runtimeVariant!.piSystemPrompt.bodyMarkdown,
+            runtimeVariantKey: runtimeVariant!.variantKey,
+            sourceRelativePaths: runtimeVariant!.piSystemPrompt.sourceRelativePaths,
+          },
+    ...(runtimeBaseline === undefined ? {} : { runtimeBaseline }),
+    tools: definition.tools.map((tool) => ({ ...tool, policy: "runtime_locked" as const })),
+    allowedActions: useCustom ? ["revise_prompt", "restore_default"] : ["revise_prompt"],
+  });
+}
+
+export async function listAgentProfiles(
+  deps: ApplicationDeps,
+  input: { readonly principalId: PrincipalId },
+) {
+  const catalog = await requireCatalog(deps).load();
+  return agentProfilesDtoSchema.parse({
+    schemaVersion: AGENT_PROFILE_API_SCHEMA_VERSION,
+    items: await Promise.all(
+      catalog.agents.map((agent) =>
+        agentProfileProjection(deps, input.principalId, agent.agentKey),
+      ),
+    ),
+  });
+}
+
+export async function getAgentProfile(
+  deps: ApplicationDeps,
+  input: { readonly principalId: PrincipalId; readonly agentKey: AgentKey },
+) {
+  return agentProfileProjection(deps, input.principalId, input.agentKey);
+}
+
+export async function reviseAgentPrompt(
+  deps: ApplicationDeps,
+  input: {
+    readonly principalId: PrincipalId;
+    readonly commandId: CommandId;
+    readonly agentKey: AgentKey;
+    readonly payload: ReviseAgentPromptPayload;
+  },
+) {
+  const requestSha256 = hashCanonical("command.revise-agent-prompt.v1", {
+    agentKey: input.agentKey,
+    payload: input.payload,
+  });
+  const commandType = "ReviseAgentPrompt";
+  const before = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+  const priorReceipt = before.commandReceipts[input.commandId];
+  if (priorReceipt !== undefined) {
+    if (priorReceipt.commandType !== commandType || priorReceipt.requestSha256 !== requestSha256) {
+      throw new CommandIdReusedError(input.commandId);
+    }
+    return agentProfileProjection(deps, input.principalId, input.agentKey);
+  }
+  const catalog = await requireCatalog(deps).load();
+  const definition = catalog.agents.find((agent) => agent.agentKey === input.agentKey);
+  if (definition === undefined) throw notFound("Agent不存在");
+  const defaultPrompt = definition.defaultPrompt;
+  const builtinRevisionId = defaultPrompt.promptFragmentRevisionId;
+  const builtin =
+    builtinRevisionId !== undefined
+      ? catalog.builtinFragments.find(
+          (fragment) => fragment.promptFragmentRevisionId === builtinRevisionId,
+        )
+      : undefined;
+  if (builtinRevisionId !== undefined && builtin === undefined) {
+    throw new Error("Agent默认System Prompt不存在");
+  }
+  const promptFragmentId = agentOverrideFragmentId(input.principalId, input.agentKey);
+  const existing = before.entities.promptFragments[promptFragmentId];
+  const legacy = before.entities.promptFragments[legacyAgentOverrideFragmentId(input.agentKey)];
+  const effectiveExisting =
+    existing ?? (legacy?.ownerPrincipalId === input.principalId ? legacy : undefined);
+  if ((effectiveExisting?.revision ?? 0) !== input.payload.expectedAggregateRevision) {
+    throw revisionConflict("Agent Prompt已经变化，请刷新后重试");
+  }
+  const previous =
+    existing === undefined
+      ? undefined
+      : before.entities.promptFragmentRevisions[existing.currentRevisionId];
+  const legacyRevision =
+    existing === undefined && effectiveExisting !== undefined
+      ? before.entities.promptFragmentRevisions[effectiveExisting.currentRevisionId]
+      : undefined;
+  const observedRevision = previous ?? legacyRevision;
+  if (
+    observedRevision !== undefined &&
+    (input.payload.currentRevisionId !== undefined ||
+      input.payload.currentRevisionSha256 !== undefined) &&
+    (observedRevision.promptFragmentRevisionId !== input.payload.currentRevisionId ||
+      observedRevision.sha256 !== input.payload.currentRevisionSha256)
+  ) {
+    throw revisionConflict("Agent Prompt Revision已经变化，请刷新后重试");
+  }
+  const now = deps.now();
+  const next = await buildRevision(deps, {
+    promptFragmentId,
+    promptFragmentRevisionId: commandRevisionId(input.commandId, promptFragmentId),
+    revision: (previous?.revision ?? 0) + 1,
+    draft: {
+      regionKey: "agent_identity",
+      title: `${definition.title} · System Prompt`,
+      description: `${definition.title}的用户可管理身份与长期职责；安全运行契约保持锁定。`,
+      content: { kind: "markdown", bodyMarkdown: input.payload.bodyMarkdown },
+    },
+    scope: { kind: "global" },
+    principalId: input.principalId,
+    createdAt: now,
+    ...(previous === undefined ? {} : { supersedes: previous }),
+    ...(previous !== undefined
+      ? {}
+      : legacyRevision !== undefined
+        ? {
+            derivedFrom: {
+              kind: "principal" as const,
+              promptFragmentId: legacyRevision.promptFragmentId,
+              promptFragmentRevisionId: legacyRevision.promptFragmentRevisionId,
+              revision: legacyRevision.revision,
+              sha256: legacyRevision.sha256,
+            },
+          }
+        : builtin !== undefined
+          ? {
+              derivedFrom: {
+                kind: "builtin" as const,
+                promptFragmentId: builtin.promptFragmentId,
+                promptFragmentRevisionId: builtin.promptFragmentRevisionId,
+                revision: builtin.revision,
+                sha256: builtin.sha256,
+                sourceRelativePath: builtin.sourceRelativePath,
+              },
+            }
+          : {}),
+  });
+  await deps.store.transact({
+    commandId: input.commandId,
+    commandType,
+    requestSha256,
+    mutate: (draft) => {
+      const current = draft.entities.promptFragments[promptFragmentId];
+      const currentLegacy =
+        current === undefined
+          ? draft.entities.promptFragments[legacyAgentOverrideFragmentId(input.agentKey)]
+          : undefined;
+      const effectiveCurrent =
+        current ??
+        (currentLegacy?.ownerPrincipalId === input.principalId ? currentLegacy : undefined);
+      if ((effectiveCurrent?.revision ?? 0) !== input.payload.expectedAggregateRevision) {
+        throw revisionConflict("Agent Prompt已经变化，请刷新后重试");
+      }
+      draft.entities.promptFragmentRevisions[next.promptFragmentRevisionId] = next;
+      draft.entities.promptFragments[promptFragmentId] = promptFragmentSchema.parse({
+        schemaVersion: "prompt-fragment.v1",
+        promptFragmentId,
+        ownerPrincipalId: input.principalId,
+        scope: { kind: "global" },
+        status: "active",
+        currentRevisionId: next.promptFragmentRevisionId,
+        currentRevisionNumber: next.revision,
+        currentRevisionSha256: next.sha256,
+        revision: (current?.revision ?? 0) + 1,
+        createdAt: current?.createdAt ?? now,
+        updatedAt: now,
+      });
+      if (current === undefined && currentLegacy?.ownerPrincipalId === input.principalId) {
+        draft.entities.promptFragments[currentLegacy.promptFragmentId] = promptFragmentSchema.parse(
+          {
+            ...currentLegacy,
+            status: "archived",
+            revision: currentLegacy.revision + 1,
+            updatedAt: now,
+          },
+        );
+      }
+      return {
+        resultRefs: {
+          promptFragmentId,
+          promptFragmentRevisionId: next.promptFragmentRevisionId,
+        },
+      };
+    },
+  });
+  return agentProfileProjection(deps, input.principalId, input.agentKey);
+}
+
+export async function restoreAgentPrompt(
+  deps: ApplicationDeps,
+  input: {
+    readonly principalId: PrincipalId;
+    readonly commandId: CommandId;
+    readonly agentKey: AgentKey;
+    readonly payload: RestoreAgentPromptPayload;
+  },
+) {
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const active = currentAgentOverride(snapshot, input.principalId, input.agentKey);
+  if (active === undefined) throw notFound("Agent Prompt Override不存在");
+  const promptFragmentId = active.promptFragmentId;
+  await changePromptFragmentArchiveStatus(deps, {
+    principalId: input.principalId,
+    commandId: input.commandId,
+    promptFragmentId,
+    expectedRevision: input.payload.expectedAggregateRevision,
+    payload: {
+      currentRevisionId: input.payload.currentRevisionId,
+      currentRevisionSha256: input.payload.currentRevisionSha256,
+      targetStatus: "archived",
+    },
+  });
+  return agentProfileProjection(deps, input.principalId, input.agentKey);
 }

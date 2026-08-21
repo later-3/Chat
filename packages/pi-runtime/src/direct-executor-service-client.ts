@@ -96,12 +96,9 @@ export function createPiDirectExecutorServiceClient(options: PiDirectExecutorSer
       );
       if (!statusResponse.ok) throw await remoteProblem(statusResponse);
       const snapshot = piDirectExecutorOperationSnapshotSchema.parse(await statusResponse.json());
-      if (
-        ["succeeded", "cancelled", "failed", "outcome_unknown"].includes(snapshot.status) &&
-        lastEventSequence < snapshot.lastEventSequence
-      ) {
-        continue;
-      }
+      // events与snapshot是两次GET；任一状态返回前都必须把两者之间新增的Journal事件
+      // drain完。否则waiting_prompt_review可能永久漏掉preparing/waiting活动。
+      if (lastEventSequence < snapshot.lastEventSequence) continue;
       if (snapshot.status === "waiting_prompt_review") {
         if (snapshot.activeReview === undefined) {
           throw new PiDirectExecutorRemoteError("direct_executor.prompt_review_ref_missing");

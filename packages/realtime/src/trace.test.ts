@@ -15,7 +15,14 @@ import { describe, expect, it, vi } from "vitest";
 import { runTraceCli } from "./trace-cli.js";
 import { TraceReadError, readTraceEvents } from "./trace-reader.js";
 import { createTraceSink } from "./trace-sink.js";
+import { createConfiguredTraceSink, tracePolicyFromEnvironment } from "./trace-policy.js";
 import { createExecutionTraceReader } from "./execution-trace-reader.js";
+import {
+  createRunActivityReader,
+  createRunActivitySink,
+  readRunActivityEvents,
+} from "./run-activity-journal.js";
+import { migrateLegacyTraceToRunActivity } from "./legacy-trace-activity-migration.js";
 
 /** 合成泄漏标记：证明正文根本无法写入，而不是写入后变成[redacted]。 */
 const CONTENT_MARKER = "TRACE_CONTENT_MUST_NEVER_BE_WRITTEN";
@@ -142,6 +149,77 @@ describe("createTraceSink", () => {
       expect(line).not.toContain(CONTENT_MARKER);
     }
   });
+
+  it("按日bounded文件达到容量上限后停止增长但不影响调用方", () => {
+    const dir = tempDir();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const sink = createTraceSink({ dir, maxDailyBytes: 700 });
+      for (let index = 0; index < 10; index += 1) {
+        expect(() =>
+          sink.emit({ ...httpReceivedInput, traceId: `trace_capacity${index}` }),
+        ).not.toThrow();
+      }
+      expect(sink.droppedEvents).toBeGreaterThan(0);
+      expect(rawLines(dir).length).toBeGreaterThan(0);
+      expect(rawLines(dir).length).toBeLessThan(10);
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("capacity_reached"));
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+});
+
+describe("模块化Trace策略", () => {
+  it("默认完全关闭，且显式full只启用选中的模块", () => {
+    expect(tracePolicyFromEnvironment({}).mode).toBe("off");
+    expect(createConfiguredTraceSink({ scope: "api", env: {} })).toBeUndefined();
+    const dir = tempDir();
+    const sink = createConfiguredTraceSink({
+      scope: "workflow",
+      env: { CHAT_TRACE_MODE: "full", CHAT_TRACE_SCOPES: "workflow,pi" },
+      sinkOptions: { dir },
+    });
+    expect(sink).toBeDefined();
+    sink?.emit(httpReceivedInput);
+    expect(readAllEvents(dir)).toHaveLength(1);
+    expect(
+      createConfiguredTraceSink({
+        scope: "api",
+        env: { CHAT_TRACE_MODE: "full", CHAT_TRACE_SCOPES: "workflow,pi" },
+        sinkOptions: { dir },
+      }),
+    ).toBeUndefined();
+  });
+
+  it("errors模式只持久化失败或拒绝事件", () => {
+    const dir = tempDir();
+    const sink = createConfiguredTraceSink({
+      scope: "api",
+      env: { CHAT_TRACE_MODE: "errors", CHAT_TRACE_SCOPES: "api" },
+      sinkOptions: { dir },
+    });
+    sink?.emit(httpReceivedInput);
+    sink?.emit({
+      level: "warn",
+      eventName: "http.command.rejected",
+      traceId: "trace_policy1",
+      spanId: "span_policy1",
+      requestId: REQ_T1,
+      outcome: "rejected",
+      httpMethod: "POST",
+      statusCode: 422,
+      errorCode: "http_4xx",
+    });
+    expect(readAllEvents(dir).map((event) => event.eventName)).toEqual(["http.command.rejected"]);
+  });
+
+  it("未知模块配置失败关闭", () => {
+    expect(() =>
+      tracePolicyFromEnvironment({ CHAT_TRACE_MODE: "full", CHAT_TRACE_SCOPES: "api,unknown" }),
+    ).toThrow(/未知模块/u);
+  });
 });
 
 describe("readTraceEvents", () => {
@@ -204,9 +282,110 @@ describe("readTraceEvents", () => {
 });
 
 describe("createExecutionTraceReader", () => {
-  it("Memory读写节点投影为浏览器可见tool call/result且不携带记忆正文", () => {
+  it("Run Activity按Run隔离并在Workflow重放时按sourceKey去重", async () => {
     const dir = tempDir();
-    const sink = createTraceSink({ dir });
+    const sink = createRunActivitySink({ dir });
+    const activity = {
+      productRunId: RUN_A,
+      attemptId: ATT_A,
+      timestamp: "2026-08-21T00:00:00.000Z",
+      sourceKey: "workflow:run_abc123:att_abc123:agent:planner:started",
+      sourceKind: "workflow" as const,
+      activityType: "agent" as const,
+      phase: "started" as const,
+      nodeKind: "planner" as const,
+    };
+    expect(sink.emit(activity)?.sequence).toBe(1);
+    expect(sink.emit(activity)).toBeUndefined();
+    sink.emit({ ...activity, productRunId: RUN_B, sourceKey: "workflow:run_other99:agent" });
+    expect(await readRunActivityEvents({ dir, productRunId: RUN_A })).toHaveLength(1);
+    expect(await readRunActivityEvents({ dir, productRunId: RUN_B })).toHaveLength(1);
+
+    // 进程重启后仍从现有Run文件恢复sequence与去重集合。
+    const reopened = createRunActivitySink({ dir });
+    expect(reopened.emit(activity)).toBeUndefined();
+    expect(
+      reopened.emit({
+        ...activity,
+        sourceKey: `${activity.sourceKey}:completed`,
+        phase: "completed",
+      })?.sequence,
+    ).toBe(2);
+  });
+
+  it("两个Sink交错追加时会刷新文件位置且保持唯一sequence", async () => {
+    const dir = tempDir();
+    const first = createRunActivitySink({ dir });
+    const second = createRunActivitySink({ dir });
+    const activity = {
+      productRunId: RUN_A,
+      attemptId: ATT_A,
+      timestamp: "2026-08-21T00:00:00.000Z",
+      sourceKind: "workflow" as const,
+      activityType: "agent" as const,
+      nodeKind: "planner" as const,
+    };
+    first.emit({ ...activity, sourceKey: "workflow:agent:1", phase: "started" });
+    second.emit({ ...activity, sourceKey: "workflow:agent:2", phase: "completed" });
+    first.emit({ ...activity, sourceKey: "workflow:agent:3", phase: "started" });
+    expect(
+      (await readRunActivityEvents({ dir, productRunId: RUN_A })).map((event) => event.sequence),
+    ).toEqual([1, 2, 3]);
+  });
+
+  it("相同sourceKey内容漂移失败关闭，非法来源身份在落盘前被拒绝", async () => {
+    const dir = tempDir();
+    const sink = createRunActivitySink({ dir });
+    const activity = {
+      productRunId: RUN_A,
+      attemptId: ATT_A,
+      timestamp: "2026-08-21T00:00:00.000Z",
+      sourceKey: "workflow:agent:conflict",
+      sourceKind: "workflow" as const,
+      activityType: "agent" as const,
+      phase: "started" as const,
+      nodeKind: "planner" as const,
+    };
+    sink.emit(activity);
+    expect(() => sink.emit({ ...activity, phase: "completed" })).toThrow(/sourceKey冲突/u);
+    expect(() =>
+      sink.emit({ ...activity, sourceKey: "workflow:missing-attempt", attemptId: undefined }),
+    ).toThrow(/Attempt/u);
+    expect(() =>
+      sink.emit({
+        ...activity,
+        sourceKey: "pi:missing-operation",
+        sourceKind: "pi_executor",
+      }),
+    ).toThrow(/Operation/u);
+    expect(await readRunActivityEvents({ dir, productRunId: RUN_A })).toHaveLength(1);
+  });
+
+  it("共享Reader在文件不变时复用缓存，追加后只扩展已发布事件", async () => {
+    const dir = tempDir();
+    const sink = createRunActivitySink({ dir });
+    const reader = createRunActivityReader({ dir });
+    const activity = {
+      productRunId: RUN_A,
+      attemptId: ATT_A,
+      timestamp: "2026-08-21T00:00:00.000Z",
+      sourceKind: "workflow" as const,
+      activityType: "agent" as const,
+      nodeKind: "planner" as const,
+    };
+    sink.emit({ ...activity, sourceKey: "workflow:cached:1", phase: "started" });
+    const first = await reader.read({ productRunId: RUN_A });
+    const unchanged = await reader.read({ productRunId: RUN_A });
+    expect(unchanged).toBe(first);
+    sink.emit({ ...activity, sourceKey: "workflow:cached:2", phase: "completed" });
+    const appended = await reader.read({ productRunId: RUN_A });
+    expect(appended).not.toBe(first);
+    expect(appended.map((event) => event.sequence)).toEqual([1, 2]);
+  });
+
+  it("Memory读写节点投影为浏览器可见tool call/result且不携带记忆正文", async () => {
+    const dir = tempDir();
+    const sink = createRunActivitySink({ dir });
     const common = {
       level: "info" as const,
       traceId: "trace_memorynode1",
@@ -217,13 +396,13 @@ describe("createExecutionTraceReader", () => {
       definitionNodeId: definitionNodeIdSchema.parse("memory-planning.query"),
       nodeType: workflowNodeTypeSchema.parse("memory.query"),
     };
-    sink.emit({
+    sink.emitTrace({
       ...common,
       eventName: "workflow.memory_node.started",
       outcome: "unknown",
       publicSummary: "正在查询Memory",
     });
-    sink.emit({
+    sink.emitTrace({
       ...common,
       eventName: "workflow.memory_node.completed",
       outcome: "success",
@@ -239,13 +418,13 @@ describe("createExecutionTraceReader", () => {
       definitionNodeId: definitionNodeIdSchema.parse("memory-planning.write"),
       nodeType: workflowNodeTypeSchema.parse("memory.write"),
     };
-    sink.emit({
+    sink.emitTrace({
       ...writeCommon,
       eventName: "workflow.memory_node.started",
       outcome: "unknown",
       publicSummary: "正在保存本次输入到Memory Provider",
     });
-    sink.emit({
+    sink.emitTrace({
       ...writeCommon,
       eventName: "workflow.memory_node.completed",
       outcome: "success",
@@ -254,7 +433,7 @@ describe("createExecutionTraceReader", () => {
       durationMs: 20,
     });
 
-    const page = createExecutionTraceReader({ dir }).read({
+    const page = await createExecutionTraceReader({ dir }).read({
       productRunId: RUN_A,
       afterSequence: 0,
       limit: 100,
@@ -299,9 +478,9 @@ describe("createExecutionTraceReader", () => {
     expect(JSON.stringify(page)).not.toContain(CONTENT_MARKER);
   });
 
-  it("公开投影保留Pi工具输入、结果和耗时，并使用单调cursor", () => {
+  it("公开投影保留Pi工具输入、结果和耗时，并使用单调cursor", async () => {
     const dir = tempDir();
-    const sink = createTraceSink({ dir });
+    const sink = createRunActivitySink({ dir });
     const common = {
       level: "info" as const,
       traceId: "trace_pi1",
@@ -314,7 +493,7 @@ describe("createExecutionTraceReader", () => {
       piRuntimeSessionId: "pis_trace1",
       sourceTimestamp: "2026-08-07T00:00:00.000Z",
     };
-    sink.emit({
+    sink.emitTrace({
       ...common,
       eventName: "pi.tool.intent_persisted",
       outcome: "unknown",
@@ -326,7 +505,7 @@ describe("createExecutionTraceReader", () => {
       inputDisplay: '{"path":"src/index.ts"}',
       inputDisplayTruncated: false,
     });
-    sink.emit({
+    sink.emitTrace({
       ...common,
       eventName: "pi.tool.completed",
       outcome: "success",
@@ -340,7 +519,7 @@ describe("createExecutionTraceReader", () => {
       durationMs: 12,
     });
     const reader = createExecutionTraceReader({ dir });
-    const first = reader.read({ productRunId: RUN_A, afterSequence: 0, limit: 1 });
+    const first = await reader.read({ productRunId: RUN_A, afterSequence: 0, limit: 1 });
     expect(first.items).toEqual([
       expect.objectContaining({
         sequence: 1,
@@ -350,7 +529,7 @@ describe("createExecutionTraceReader", () => {
       }),
     ]);
     expect(first.hasMore).toBe(true);
-    const second = reader.read({
+    const second = await reader.read({
       productRunId: RUN_A,
       afterSequence: first.nextCursor,
       limit: 100,
@@ -367,10 +546,10 @@ describe("createExecutionTraceReader", () => {
     expect(second.hasMore).toBe(false);
   });
 
-  it("旧v1 Pi事件缺少显示字段时仍可读取且明确标记缺失", () => {
+  it("Pi事件缺少显示字段时仍可读取且明确标记原生Session边界", async () => {
     const dir = tempDir();
-    const sink = createTraceSink({ dir });
-    sink.emit({
+    const sink = createRunActivitySink({ dir });
+    sink.emitTrace({
       level: "info",
       eventName: "pi.tool.intent_persisted",
       traceId: "trace_legacypi",
@@ -389,7 +568,7 @@ describe("createExecutionTraceReader", () => {
       toolName: "read",
       inputSha256: SHA256_A,
     });
-    const page = createExecutionTraceReader({ dir }).read({
+    const page = await createExecutionTraceReader({ dir }).read({
       productRunId: RUN_A,
       afterSequence: 0,
       limit: 100,
@@ -397,9 +576,49 @@ describe("createExecutionTraceReader", () => {
     expect(page.items).toEqual([
       expect.objectContaining({
         type: "tool_call",
-        input: "Legacy trace did not retain observable tool input.",
+        input: "工具输入只保留在原生 Agent Session 中",
       }),
     ]);
+  });
+});
+
+describe("migrateLegacyTraceToRunActivity", () => {
+  it("只扫描一次历史会话相关Trace，正常HTTP行不进入Activity", async () => {
+    const root = tempDir();
+    const traceDir = join(root, "trace");
+    const activityDir = join(root, "activity");
+    const trace = createTraceSink({
+      dir: traceDir,
+      now: () => new Date("2026-08-20T00:00:00.000Z"),
+    });
+    trace.emit(httpReceivedInput);
+    trace.emit(providerCompletedInput);
+    const activity = createRunActivitySink({ dir: activityDir });
+    const migrated = await migrateLegacyTraceToRunActivity({ traceDir, activitySink: activity });
+    expect(migrated).toMatchObject({
+      status: "completed",
+      traceFiles: 1,
+      scannedLines: 2,
+      candidateLines: 1,
+      migratedEvents: 1,
+    });
+    expect(await readRunActivityEvents({ dir: activityDir, productRunId: RUN_A })).toHaveLength(1);
+    expect(
+      await migrateLegacyTraceToRunActivity({ traceDir, activitySink: activity }),
+    ).toMatchObject({
+      status: "already_completed",
+      migratedEvents: 0,
+    });
+  });
+
+  it("拒绝把Debug Trace与Session Activity配置到同一目录", async () => {
+    const dir = tempDir();
+    await expect(
+      migrateLegacyTraceToRunActivity({
+        traceDir: dir,
+        activitySink: createRunActivitySink({ dir }),
+      }),
+    ).rejects.toThrow(/不得相同/u);
   });
 });
 

@@ -1,16 +1,40 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { DSH_PROMPT_THREE_GATES_E2E_PORTS } from "../../../scripts/e2e/dsh-real-environment.mjs";
 
-const API_READY_URL = `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.api)}/api/readyz`;
+const API_ORIGIN = `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.api)}`;
+const API_READY_URL = `${API_ORIGIN}/api/readyz`;
 const RUN_KEY = `three_gates_${Date.now().toString(36)}`;
-const IDENTITY_TITLE = `三闸门身份 ${RUN_KEY}`;
 const RULES_TITLE = `三闸门规则 ${RUN_KEY}`;
-const IDENTITY_BODY_MARKER = `THREE_GATE_IDENTITY_BODY_${RUN_KEY}`;
 const RULES_BODY_MARKER = `THREE_GATE_RULE_BODY_${RUN_KEY}`;
 const FIRST_USER_MARKER = `THREE_GATE_USER_ONE_${RUN_KEY}`;
 const FIRST_ASSISTANT_MARKER = `THREE_GATE_ASSISTANT_ONE_${RUN_KEY}`;
 const SECOND_USER_MARKER = `THREE_GATE_USER_TWO_${RUN_KEY}`;
 const SECOND_ASSISTANT_MARKER = `THREE_GATE_ASSISTANT_TWO_${RUN_KEY}`;
+const DIRECT_SYSTEM_OVERRIDE = `THREE_GATE_DIRECT_SYSTEM_OVERRIDE_${RUN_KEY}`;
+
+async function overrideDirectAgentPrompt(request: APIRequestContext): Promise<void> {
+  const currentResponse = await request.get(`${API_ORIGIN}/api/agent-profiles/direct`);
+  expect(currentResponse.status(), await currentResponse.text()).toBe(200);
+  const current = (await currentResponse.json()) as {
+    systemPrompt: { aggregateRevision: number };
+  };
+  const response = await request.post(`${API_ORIGIN}/api/agent-profiles/direct/prompt-revisions`, {
+    data: {
+      commandId: `cmd_threegates${Date.now().toString(36)}`,
+      payload: {
+        expectedAggregateRevision: current.systemPrompt.aggregateRevision,
+        bodyMarkdown: [
+          "# Direct Agent E2E Override",
+          "",
+          DIRECT_SYSTEM_OVERRIDE,
+          "",
+          "严格完成当前用户请求，不扩大权限。",
+        ].join("\n"),
+      },
+    },
+  });
+  expect(response.status(), await response.text()).toBe(200);
+}
 
 async function dismissNotice(page: Page): Promise<void> {
   const button = page.getByRole("button", { name: "Continue", exact: true });
@@ -46,48 +70,9 @@ async function chooseDirectWorkflow(page: Page): Promise<void> {
 
 async function configureVersionedPrompts(page: Page): Promise<void> {
   await page.getByTestId("lifeos-prompt-composer-open").click();
-  const promptDialog = page.getByRole("dialog", { name: "本轮提示词" });
+  const promptDialog = page.getByRole("dialog", { name: "本次 Prompt" });
   await expect(promptDialog).toBeVisible();
-
-  const identity = page.getByTestId("lifeos-prompt-region-agent_identity");
-  const builtinIdentity = identity
-    .locator(".lifeos-prompt-choice-row")
-    .filter({ hasText: "通用 Chat Agent 身份" });
-  await expect(builtinIdentity.getByRole("button", { name: "查看", exact: true })).toBeEnabled();
-  await builtinIdentity.getByRole("button", { name: "查看", exact: true }).click();
-
-  const manager = page.getByRole("dialog", { name: "查看或修改提示词组件" });
-  await expect(manager).toContainText("Git 内置组件");
-  await manager.getByRole("button", { name: /基于 v\d+ 创建副本/u }).click();
-  await expect(manager).toContainText("我的版本化组件");
-  await manager.getByRole("button", { name: "编辑当前版本", exact: true }).click();
-  await manager.getByRole("textbox", { name: "名称", exact: true }).fill(IDENTITY_TITLE);
-  await manager
-    .getByRole("textbox", { name: "Markdown", exact: true })
-    .fill(
-      [
-        `# ${IDENTITY_TITLE}`,
-        "",
-        IDENTITY_BODY_MARKER,
-        "",
-        "你是三闸门真实E2E验证Agent。不得调用工具；只输出当前用户在 OUTPUT= 后要求的唯一标记，不添加其他文字。",
-      ].join("\n"),
-    );
-  await manager.getByRole("button", { name: "保存为新版本", exact: true }).click();
-  await expect(manager.getByRole("button", { name: "v2", exact: true })).toBeVisible();
-  await expect(manager).toContainText(IDENTITY_BODY_MARKER);
-  await manager.getByRole("button", { name: "关闭提示词组件管理", exact: true }).click();
-
-  const copiedIdentity = identity.locator(".lifeos-prompt-choice-row").filter({
-    hasText: IDENTITY_TITLE,
-  });
-  await expect(
-    copiedIdentity.getByRole("checkbox", { name: `选择${IDENTITY_TITLE}` }),
-  ).toBeEnabled();
-  await copiedIdentity.getByRole("checkbox", { name: `选择${IDENTITY_TITLE}` }).click();
-  await expect(
-    copiedIdentity.getByRole("checkbox", { name: `选择${IDENTITY_TITLE}` }),
-  ).toBeChecked();
+  await expect(page.getByTestId("lifeos-prompt-region-agent_identity")).toHaveCount(0);
 
   const rules = page.getByTestId("lifeos-prompt-region-rules");
   await rules.getByRole("button", { name: "新建", exact: true }).first().click();
@@ -117,14 +102,12 @@ async function configureVersionedPrompts(page: Page): Promise<void> {
 
   await promptDialog.getByRole("button", { name: "预览提示词配置", exact: true }).click();
   const preview = promptDialog.getByTestId("lifeos-prompt-configuration-preview");
-  await expect(preview).toContainText(IDENTITY_TITLE);
-  await expect(preview).toContainText(IDENTITY_BODY_MARKER);
   await expect(preview).toContainText(RULES_TITLE);
   await expect(preview).toContainText(RULES_BODY_MARKER);
-  await expect(preview).toContainText("agent_identity");
+  await expect(preview).not.toContainText("agent_identity");
   await expect(preview).toContainText("rules");
-  await promptDialog.getByRole("button", { name: "关闭本轮提示词", exact: true }).click();
-  await expect(page.getByTestId("lifeos-prompt-composer-open")).toContainText("2");
+  await promptDialog.getByRole("button", { name: "关闭本次 Prompt", exact: true }).click();
+  await expect(page.getByTestId("lifeos-prompt-composer-open")).toContainText("1");
 }
 
 async function enableBothBridgeGates(page: Page): Promise<void> {
@@ -184,9 +167,8 @@ async function approveDshGate(
   await expect(dshRaw).toContainText(currentInput);
   await expect(bridgeRaw).toContainText(currentInput);
   await expect(bridgeRaw).toContainText('"promptSelection"');
-  await expect(bridgeRaw).toContainText('"agent_identity"');
+  await expect(bridgeRaw).not.toContainText('"agent_identity"');
   await expect(bridgeRaw).toContainText('"rules"');
-  await expect(bridgeRaw).not.toContainText(IDENTITY_BODY_MARKER);
   await expect(bridgeRaw).not.toContainText(RULES_BODY_MARKER);
   await expect(bridgeRaw).not.toContainText('"context"');
   if (history !== undefined) {
@@ -211,9 +193,8 @@ async function approveBridgeGate(
   const friendly = card.getByTestId("lifeos-bridge-dispatch-readable");
   await expect(friendly).toContainText(currentInput);
   await expect(friendly).toContainText("Prompt区域选择");
-  await expect(friendly).toContainText("agent_identity");
+  await expect(friendly).not.toContainText("agent_identity");
   await expect(friendly).toContainText("rules");
-  await expect(friendly).not.toContainText(IDENTITY_BODY_MARKER);
   await expect(friendly).not.toContainText(RULES_BODY_MARKER);
 
   await card.getByRole("tab", { name: "原始请求", exact: true }).click();
@@ -221,9 +202,8 @@ async function approveBridgeGate(
   await expect(raw).toContainText(currentInput);
   await expect(raw).toContainText('"commandId"');
   await expect(raw).toContainText('"promptSelection"');
-  await expect(raw).toContainText('"agent_identity"');
+  await expect(raw).not.toContainText('"agent_identity"');
   await expect(raw).toContainText('"rules"');
-  await expect(raw).not.toContainText(IDENTITY_BODY_MARKER);
   await expect(raw).not.toContainText(RULES_BODY_MARKER);
   if (excludedHistory !== undefined) {
     await expect(raw).not.toContainText(excludedHistory.user);
@@ -251,7 +231,7 @@ async function waitForProviderReviewOrAssistant(
     const card = page.getByTestId("lifeos-prompt-review-card");
     if (await card.isVisible().catch(() => false)) {
       const text = await card
-        .locator(":scope > header > strong")
+        .getByText(/Pi Coding Agent · 第 \d+ 次发送审核/u)
         .textContent()
         .catch(() => null);
       const requestIndex = /第\s+(\d+)\s+次/u.exec(text ?? "")?.[1];
@@ -278,9 +258,9 @@ async function approveProviderUntilAssistant(input: {
   for (;;) {
     const card = input.page.getByTestId("lifeos-prompt-review-card");
     await expect(card).toBeVisible({ timeout: 6 * 60_000 });
-    await expect(card.locator(":scope > header > strong")).toContainText(
-      `第 ${String(nextIndex)} 次发送审核`,
-    );
+    await expect(
+      card.getByText(`Pi Coding Agent · 第 ${String(nextIndex)} 次发送审核`, { exact: true }),
+    ).toBeVisible();
     if (indexes.length === 0) await input.inspectFirstReview(card);
     indexes.push(nextIndex);
     await card.getByTestId("lifeos-approve-prompt").click();
@@ -306,10 +286,14 @@ test.beforeAll(async ({ request }) => {
   }).toPass({ timeout: 60_000, intervals: [500, 1_000, 2_000] });
 });
 
-test("真实DSH两轮会话依次通过三道审核并保持Prompt Revision与正式历史", async ({ page }) => {
+test("真实DSH两轮会话依次通过三道审核并保持Prompt Revision与正式历史", async ({
+  page,
+  request,
+}) => {
   const composer = await test.step("打开真实DSH会话", () => openConversation(page));
   await test.step("选择Direct审核工作流", () => chooseDirectWorkflow(page));
-  await test.step("复制、编辑并选择两个Prompt Region", () => configureVersionedPrompts(page));
+  await test.step("把Direct Agent完整覆盖为本次E2E身份", () => overrideDirectAgentPrompt(request));
+  await test.step("创建并选择会话规则Prompt", () => configureVersionedPrompts(page));
   await test.step("开启DSH与Bridge两道调试审核", () => enableBothBridgeGates(page));
 
   const firstInput = `${FIRST_USER_MARKER}。不要调用工具。OUTPUT=${FIRST_ASSISTANT_MARKER}`;
@@ -323,13 +307,17 @@ test("真实DSH两轮会话依次通过三道审核并保持Prompt Revision与�
     assistantMarker: FIRST_ASSISTANT_MARKER,
     inspectFirstReview: async (card) => {
       const readable = card.getByTestId("lifeos-prompt-readable");
-      await expect(readable).toContainText(IDENTITY_BODY_MARKER);
+      await expect(readable).toContainText(DIRECT_SYSTEM_OVERRIDE);
+      await expect(readable).not.toContainText(
+        "You are an expert coding assistant operating inside pi",
+      );
       await expect(readable).toContainText(RULES_BODY_MARKER);
       await expect(readable).toContainText(firstInput);
       await expect(readable).toContainText("Chat Prompt Assembly · System区域");
       await card.getByRole("tab", { name: "原始请求", exact: true }).click();
       const raw = card.getByTestId("lifeos-prompt-raw");
-      await expect(raw).toContainText(IDENTITY_BODY_MARKER);
+      await expect(raw).toContainText(DIRECT_SYSTEM_OVERRIDE);
+      await expect(raw).not.toContainText("You are an expert coding assistant operating inside pi");
       await expect(raw).toContainText(RULES_BODY_MARKER);
       await expect(raw).toContainText(firstInput);
     },
@@ -341,6 +329,20 @@ test("真实DSH两轮会话依次通过三道审核并保持Prompt Revision与�
   await expect(secondComposer).toBeEnabled({ timeout: 60_000 });
   const secondInput = `${SECOND_USER_MARKER}。沿用本会话已经选择的Prompt，不要调用工具。OUTPUT=${SECOND_ASSISTANT_MARKER}`;
   await secondComposer.fill(secondInput);
+  await page.getByTestId("lifeos-prompt-composer-open").click();
+  const secondPromptDialog = page.getByRole("dialog", { name: "本次 Prompt" });
+  await secondPromptDialog.getByRole("button", { name: "预览完整 Prompt", exact: true }).click();
+  const promptTurnPreview = secondPromptDialog.getByTestId("lifeos-prompt-turn-preview");
+  await expect(promptTurnPreview.getByTestId("lifeos-prompt-messages")).toContainText(firstInput);
+  await expect(promptTurnPreview.getByTestId("lifeos-prompt-messages")).toContainText(
+    FIRST_ASSISTANT_MARKER,
+  );
+  await expect(promptTurnPreview.getByTestId("lifeos-prompt-messages")).toContainText(secondInput);
+  await expect(promptTurnPreview).toContainText(DIRECT_SYSTEM_OVERRIDE);
+  await expect(promptTurnPreview).not.toContainText(
+    "You are an expert coding assistant operating inside pi",
+  );
+  await secondPromptDialog.getByRole("button", { name: "关闭本次 Prompt", exact: true }).click();
   await page.getByRole("button", { name: /发送消息|Send message/u }).click();
 
   const firstHistory = { user: firstInput, assistant: FIRST_ASSISTANT_MARKER } as const;
@@ -353,7 +355,10 @@ test("真实DSH两轮会话依次通过三道审核并保持Prompt Revision与�
     inspectFirstReview: async (card) => {
       await card.getByRole("tab", { name: "易读视图", exact: true }).click();
       const readable = card.getByTestId("lifeos-prompt-readable");
-      await expect(readable).toContainText(IDENTITY_BODY_MARKER);
+      await expect(readable).toContainText(DIRECT_SYSTEM_OVERRIDE);
+      await expect(readable).not.toContainText(
+        "You are an expert coding assistant operating inside pi",
+      );
       await expect(readable).toContainText(RULES_BODY_MARKER);
       await expect(readable).toContainText(firstInput);
       await expect(readable).toContainText(FIRST_ASSISTANT_MARKER);
@@ -362,7 +367,8 @@ test("真实DSH两轮会话依次通过三道审核并保持Prompt Revision与�
       await expect(readable).toContainText("模型历史回复");
       await card.getByRole("tab", { name: "原始请求", exact: true }).click();
       const raw = card.getByTestId("lifeos-prompt-raw");
-      await expect(raw).toContainText(IDENTITY_BODY_MARKER);
+      await expect(raw).toContainText(DIRECT_SYSTEM_OVERRIDE);
+      await expect(raw).not.toContainText("You are an expert coding assistant operating inside pi");
       await expect(raw).toContainText(RULES_BODY_MARKER);
       await expect(raw).toContainText(firstInput);
       await expect(raw).toContainText(FIRST_ASSISTANT_MARKER);

@@ -357,6 +357,7 @@ export function createServiceDefinitions({
     env: {
       ...commonEnvironment(repoRoot, managedEnvironment),
       CHAT_MEMORY_ENABLED: "0",
+      CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${ports.piExecutor}`,
       PORT: String(ports.api),
     },
     readyUrl: `http://127.0.0.1:${ports.api}/api/readyz`,

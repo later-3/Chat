@@ -202,6 +202,7 @@ describe("Direct Agent Workflow Steps", () => {
       productRunId: "run_directstep1",
       workflowAttemptId: "att_directworkflowstep1",
       operationId: started.operationId,
+      directAgentAttemptId: "att_directagentstep1",
       review,
       promptReviewDecisionId: "prd_directstep1",
     });

@@ -84,7 +84,7 @@ VS Code F5是Node/Chrome调试合同，不另起占用production端口的GDB服�
 | Note审核 | `LifeosBridgeService.projection/decideNote`、`LifeosDock` | Candidate ID/revision/Hash、pending原样重试、Confirm/修订/拒绝 |
 | 决定提交 | `ChatProductClient.submitDecision` | 同一pending command、Run CAS、Plan/Approval版本与Hash |
 | 正式回复 | Bridge LLM Adapter | 只从Chat Message Query选择正式Assistant Message |
-| Pi执行轨迹 | `LifeosLlmAdapter.nextTraceTool`、`createLifeosTraceTool` | cursor、toolCallId、input/result、DSH running/completed |
+| Pi执行轨迹 | `createRunActivitySink`、`getWorkflowExecutionTrace`、`ExecutionTraceProjection` | Run内sequence/sourceKey、Agent/Model/Tool、DSH投影；不读取Debug Trace |
 | Workflow轨迹Query | `GET /api/runs/:productRunId/workflow-execution-trace`、`getWorkflowExecutionTrace` | 实际NodeRun、Runtime可用性、Pi活动、稳定`traceRevision` |
 | DSH轨迹绑定 | `LifeosLlmAdapter.ensureRequest`、`LifeosBridgeService.executionTraces` | 真实`user/message ID → Product Run`、Query失败不阻断Plan/HITL |
 | 原生轨迹折叠 | `ExecutionTraceProjection`、`executionTraceDefinition`、`executionTraceRoot` | 原生消息锚点→Workflow→NodeRun→Pi Agent→模型/工具；不写自定义Session事件 |
@@ -120,18 +120,28 @@ F5同时为API、Workflow、Pi Executor和DSH Host启用Node Source Map，并把
 ## Trace
 
 ```bash
+# 默认完全关闭；只诊断Bridge与Workflow的完整严格事件
+CHAT_TRACE_MODE=full CHAT_TRACE_SCOPES=bridge,workflow pnpm dev --memory=off --workbench=off
+
+# 只保留API/Application失败与拒绝事件
+CHAT_TRACE_MODE=errors CHAT_TRACE_SCOPES=api,application pnpm dev --memory=off --workbench=off
+
 pnpm debug:trace -- list-runs
 pnpm debug:trace -- inspect-run <productRunId>
 pnpm debug:replay -- --run <productRunId>
 ```
 
-Trace保存可观察事件、对象引用、版本、耗时、安全错误，以及边界前已脱敏且有32K上限的Pi可见回复、工具输入和结果；不保存模型隐藏推理、密钥或完整Provider Payload。
+未设置`CHAT_TRACE_MODE`时，DSH、Bridge、API、Application、Workflow、Pi、Provider和Tool八个模块均不创建Trace
+Sink。`CHAT_TRACE_MODE`只接受`off/errors/full`；`CHAT_TRACE_SCOPES`只接受上述模块的小写逗号列表，非法配置启动
+失败关闭。Trace只保存可观察事件、对象引用、Hash、版本、耗时、统计与安全错误；Pi可见回复、工具输入和结果只进入
+Run Activity/Pi Session，不再复制到Trace。新写入每日`bounded`文件默认上限16 MiB，可用
+`CHAT_TRACE_MAX_DAILY_BYTES`调整。Trace不保存模型隐藏推理、密钥、用户正文或完整Provider Payload。
 
 真实门：`pnpm test:provider:bailian:coding`验证Pi标准配置链和`read/write/bash`；`pnpm --filter @chat/dsh-web test:e2e:trajectory-real`验证固定rc.6原生Trajectory的running→result投影与双源完整会话记录，不调用付费Provider。
 
 真实页面验证时，在DSH发送一条Planning消息后切换到“轨迹”：
 
-1. 根行应为`Workflow · <当前工作流标题>`，子行必须来自实际`WorkflowNodeRun`，不能把静态Definition画成已执行。
+1. 根行应为`Chat 本轮执行`，展开后按`DSH → Bridge → Chat后端 → Workflow`分区；Workflow子行必须来自实际`WorkflowNodeRun`，不能把静态Definition画成已执行。
 2. `任务规划`或执行节点可展开Pi Agent；其下显示模型、Token与`submit_*`工具生命周期。
 3. Trajectory不得出现`Vercel Workflow Runtime`、Run/Step/Hook/Sleep行；这些脱敏数据只保留为后端证据，后续由独立诊断/证据表面消费。页面不得出现Workflow Run ID、Hook Token、Pi Session ID、Provider Request ID、Prompt或工具参数/结果正文。
 4. 默认Profile选择“规划执行工作流”，该Definition不含Memory节点，因此轨迹不得出现Memory；这不是展示过滤。完整上下文Planning Workflow仍保留，只有显式选择时才会解释其资源节点；当前统一启动器仍不会启动Memory服务或装配Adapter。
@@ -142,6 +152,9 @@ Trace保存可观察事件、对象引用、版本、耗时、安全错误，以
 2. “Chat 正式消息”按`sessionSequence`显示完整用户正文与正式Assistant Message；“DSH 原始日志”展开后显示单条完整JSON事件，两边均可继续分页。
 3. 任一来源Query失败只能在该来源显示错误，不能清空另一来源；刷新会取消前一代请求，Chat cursor不得由Client解析或猜测。
 4. 未归档历史会话从原生侧栏重开后仍绑定同一Product Session并可继续对话；DSH原生归档只隐藏入口并保留两侧记录，当前界面不得声称永久删除成功。
+
+同样内容必须可从对话头部“Chat Session”按钮打开的预览弹窗查看；弹窗和页签必须复用同一Controller，不能因
+浏览器局部状态产生不同的Product/DSH身份或消息内容。
 
 对应同源路由为`/lifeos/sessions/:dshSessionId/records`、`records/chat`与`records/dsh`。它们必须返回
 `Cache-Control: no-store`，拒绝跨站、未知/重复分页参数、跨Workspace Session和超过100条的页大小。

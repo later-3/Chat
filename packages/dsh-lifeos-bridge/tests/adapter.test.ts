@@ -157,7 +157,7 @@ test("compaction summarizes bounded visible text locally with zero Chat access",
   assert.match(summary, /用户可见内容/);
 });
 
-test("only DSH agent-instructions are forwarded as current Workspace instructions", () => {
+test("DSH agent-instructions remain a typed local audit projection", () => {
   const messages = [
     createUserMessage({
       source: { kind: "plugin", plugin: "runtime", form: "snapshot", sections: [] },

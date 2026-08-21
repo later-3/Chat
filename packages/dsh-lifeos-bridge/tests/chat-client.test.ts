@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ChatProductClient } from "../src/chat-client.ts";
+import { productSessionIdSchema } from "@chat/contracts/public";
 import { promptSelectionRequestSchema, workflowSelectionSchema } from "../src/contracts.ts";
+import { promptTurnPreviewFixture } from "./prompt-turn-preview-fixture.ts";
 
 const finalMessage = {
   schemaVersion: "chat-product-api.v1",
@@ -155,7 +157,38 @@ test("Prompt Studio forwards workspace, scope filters, and semantic preview cont
   });
 });
 
-test("submitMessage sends Prompt selection only for the Direct workflow", async () => {
+test("发送前完整Prompt预览使用专用只读Chat Query", async () => {
+  const requests: Array<{ url: URL; method: string; body: unknown }> = [];
+  const responseBody = promptTurnPreviewFixture("检查当前项目");
+  const client = new ChatProductClient(new URL("http://127.0.0.1:1"), async (input, init) => {
+    requests.push({
+      url: new URL(String(input)),
+      method: init?.method ?? "GET",
+      body: JSON.parse(String(init?.body)),
+    });
+    return new Response(JSON.stringify(responseBody), { status: 200 });
+  });
+  const payload = {
+    sessionId: productSessionIdSchema.parse("psn_promptpreview"),
+    message: {
+      text: "检查当前项目",
+      promptSelection: {
+        schemaVersion: "prompt-turn-selection-input.v1" as const,
+        regions: [],
+      },
+    },
+  };
+  assert.deepEqual(await client.previewPromptTurn(payload), responseBody);
+  assert.deepEqual(requests, [
+    {
+      url: new URL("http://127.0.0.1:1/api/prompt-turn-previews"),
+      method: "POST",
+      body: payload,
+    },
+  ]);
+});
+
+test("submitMessage sends the frozen Prompt selection for every workflow", async () => {
   const bodies: unknown[] = [];
   const submittedMessage = {
     schemaVersion: "chat-product-api.v1",
@@ -221,7 +254,6 @@ test("submitMessage sends Prompt selection only for the Direct workflow", async 
     "测试",
     undefined,
     direct,
-    undefined,
     selection,
   );
   await client.submitMessage(
@@ -230,7 +262,6 @@ test("submitMessage sends Prompt selection only for the Direct workflow", async 
     "测试",
     undefined,
     planning,
-    undefined,
     selection,
   );
   assert.deepEqual(
@@ -242,8 +273,8 @@ test("submitMessage sends Prompt selection only for the Direct workflow", async 
       ?.workflowSelection?.runConfiguration,
     direct.runConfiguration,
   );
-  assert.equal(
+  assert.deepEqual(
     (bodies[1] as { payload?: { promptSelection?: unknown } }).payload?.promptSelection,
-    undefined,
+    selection,
   );
 });

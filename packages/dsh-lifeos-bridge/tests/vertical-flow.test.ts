@@ -297,12 +297,7 @@ test("native DSH generation crosses Chat Plan/HITL and returns only the committe
       )?.payload,
       {
         text: userMessage.content.text,
-        context: {
-          workspaceInstructions: {
-            schemaVersion: "workspace-instructions-input.v1",
-            items: [{ content: "# AGENTS.md\n中文回复，并运行相关测试。" }],
-          },
-        },
+        promptSelection: { schemaVersion: "prompt-turn-selection-input.v1", regions: [] },
       },
     );
   } finally {

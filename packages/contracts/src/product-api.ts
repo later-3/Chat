@@ -31,6 +31,7 @@ import {
 } from "./product.js";
 import { NOTE_TAG_LABEL_MAX_CHARACTERS, NOTE_TAG_MAX_COUNT, noteKindSchema } from "./note.js";
 import { sha256Schema } from "./hash.js";
+import { agentKeySchema, agentProfileDtoSchema } from "./agent-profile-api.js";
 import {
   memoryContextSelectionSchema,
   memoryLayerSchema,
@@ -51,7 +52,12 @@ import {
   workflowRunConfigurationSchema,
   workflowRunnerFamilySchema,
 } from "./workflow-definition.js";
-import { promptTurnSelectionInputSchema } from "./prompt-assembly.js";
+import {
+  promptAssemblyV2Schema,
+  promptAssemblyV3Schema,
+  promptBearingNodeTypeSchema,
+  promptTurnSelectionInputSchema,
+} from "./prompt-assembly.js";
 
 /**
  * B2公开Query/Command网络DTO（任务书§12）。
@@ -109,7 +115,7 @@ export const noteCaptureSubmitInputSchema = z
 export const submitMessagePayloadSchema = z
   .object({
     text: z.string().min(1).max(4000),
-    /** Direct Agent首个接入；服务端在Message事务内解析并冻结精确Prompt Assembly。 */
+    /** 可省略表示空用户选择；服务端仍为所有新Run冻结精确Prompt Assembly。 */
     promptSelection: promptTurnSelectionInputSchema.optional(),
     context: z
       .object({
@@ -136,6 +142,48 @@ export const submitMessagePayloadSchema = z
       })
       .strict()
       .optional(),
+  })
+  .strict();
+
+/** 发送前只读解析；与正式提交使用同一个Workflow Compiler和Prompt Compiler。 */
+export const previewPromptTurnPayloadSchema = z
+  .object({
+    sessionId: productSessionIdSchema.optional(),
+    message: submitMessagePayloadSchema,
+  })
+  .strict();
+
+export const promptTurnPreviewDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    status: z.literal("pre_send"),
+    currentInput: z.string().min(1).max(4_000),
+    assembly: z.union([promptAssemblyV2Schema, promptAssemblyV3Schema]),
+    nodes: z
+      .array(
+        z
+          .object({
+            definitionNodeId: workflowDefinitionNodeIdSchema,
+            nodeType: promptBearingNodeTypeSchema,
+            agent: agentProfileDtoSchema,
+            runtimeResolution: z
+              .object({
+                stage: z.enum([
+                  "direct_pre_send",
+                  "direct_pre_send_dynamic_extension",
+                  "workflow_node_template",
+                  "deferred_step_runtime",
+                ]),
+                governedSystemPromptAppend: z.string().max(512_000),
+                toolResolution: z.enum(["frozen", "runtime_deferred"]),
+                note: z.string().min(1).max(1_000),
+              })
+              .strict(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(32),
   })
   .strict();
 
@@ -194,6 +242,8 @@ export const reconcileMemoryImportPayloadSchema = z.object({}).strict();
 export type CreateSessionPayload = z.infer<typeof createSessionPayloadSchema>;
 export type NoteCaptureSubmitInput = z.infer<typeof noteCaptureSubmitInputSchema>;
 export type SubmitMessagePayload = z.infer<typeof submitMessagePayloadSchema>;
+export type PreviewPromptTurnPayload = z.infer<typeof previewPromptTurnPayloadSchema>;
+export type PromptTurnPreviewDto = z.infer<typeof promptTurnPreviewDtoSchema>;
 export type SubmitDecisionPayload = z.infer<typeof submitDecisionPayloadSchema>;
 export type CreateMemoryImportPayload = z.infer<typeof createMemoryImportPayloadSchema>;
 export type ReconcileMemoryImportPayload = z.infer<typeof reconcileMemoryImportPayloadSchema>;
@@ -235,6 +285,15 @@ export const publicConfigFieldSchema = z.discriminatedUnion("type", [
       label: z.string().min(1).max(120),
       defaultValue: z.string().max(200),
       maximumLength: z.number().int().positive().max(2000),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("long_text"),
+      name: z.string().min(1).max(64),
+      label: z.string().min(1).max(120),
+      defaultValue: z.string().max(65_536),
+      maximumLength: z.number().int().positive().max(65_536),
     })
     .strict(),
   z
@@ -382,6 +441,25 @@ export const workflowDefinitionPublishedDtoSchema = z
             publicConfigFields: z.array(publicConfigFieldSchema).max(16),
             /** 当前Workflow真正允许在发送前覆盖的节点config字段。 */
             runConfigFields: z.array(publicConfigFieldSchema).max(16).default([]),
+            /** Workflow节点只引用独立Agent；会话上下文不改变该绑定。 */
+            agentBinding: z
+              .object({
+                agentKey: agentKeySchema,
+                profileVersion: z.string().min(1).max(128),
+                bindingKind: z.literal("agent_catalog"),
+                promptPolicy: z.literal("agent_profile_plus_session_context"),
+                promptSource: z.enum(["agent_default", "workflow_override"]),
+                promptOverrideMarkdown: z.string().max(65_536).optional(),
+                toolPolicy: z
+                  .object({
+                    kind: z.literal("runtime_locked"),
+                    summary: z.string().min(1).max(300),
+                    defaultTools: z.array(z.string().min(1).max(80)).max(16),
+                  })
+                  .strict(),
+              })
+              .strict()
+              .optional(),
           })
           .strict(),
       )

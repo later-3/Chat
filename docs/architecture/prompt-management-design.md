@@ -1,10 +1,10 @@
 # Chat 提示词管理：上游事实与设计草案
 
-> 状态：Prompt 管理三模块架构已获产品确认；Prompt Studio、会话级Region选择、语义预览、Direct Prompt Assembly v2、近期正式跨Run历史和Review来源投影已实现并只接入Direct审核工作流。Runtime Review编辑、摘要/压缩与Planning/Executor迁移仍按本文后续阶段推进。
+> 状态：Prompt管理三模块架构已获产品确认；Prompt Studio、Agent默认—Workflow节点实例—Session/Run临时覆盖三层配置、会话上下文选择、语义预览、Workflow Prompt Assembly v3、Direct Prompt Assembly v2、近期正式跨Run历史和Direct Review来源投影已实现。Runtime Review编辑、摘要/压缩以及非Direct节点的Provider Review仍按本文后续阶段推进。
 >
 > 调研基线：Chat `main@f1315ef`；Pi `later-3/pi@1f2b9ff`（npm 基底 `0.84.2`）；DeepSeek Harness `0.1.0-rc.6@15148dbd9a`。DSH 后续窄派生提交只涉及 Trajectory，不改变本文引用的 Prompt 与 Session 机制。
 >
-> 本文确定提示词的所有权、组成、来源、连续会话和预算方向，并记录已交付的管理与首个Direct运行纵向；Planning与Memory Workflow尚未接入统一Compiler。
+> 本文确定提示词的所有权、组成、来源、连续会话和预算方向，并记录已交付的管理、Direct四通道Chat输入组装与最终Payload Review，以及Planner、Coding Executor、Note Extractor的节点Prompt纵向。
 >
 > 三个真实 Agent 的逐请求实验、宿主预注入与模型 Tool Call 的因果区分，以及真实压缩请求证据已迁入个人学习资料[《Pi、DeepSeek Harness 与 Hermes 的真实上下文组装实验》](../../learning/agent-context-management/real-request-experiments.md)。该资料不是Chat合同；若本文的上游事实概括与固定源码、实验记录冲突，以固定源码和实验记录为准。
 
@@ -27,6 +27,16 @@ Chat 的 Prompt 能力固定拆成 3 个模块，不能再把“保存一段文�
 3. **Workflow Runtime 控制**：每个 Pi Agent 节点可配置 `reviewMode=off|manual`。`manual` 在真实 Provider 请求边界暂停，显示 Raw 与基于 Assembly Manifest 的可读来源，并允许批准、拒绝；以后若允许编辑，编辑结果必须成为新的待审 Revision/Hash。
 
 这三个模块的依赖方向是：管理事实 → 组装选择 → Runtime 冻结/审核。Prompt Studio 不是 Workflow 节点；Prompt Review 是 Agent 节点内部能力，也不需要额外画成人工节点。
+
+### 1.2 Agent配置只用三层，不建立通用继承系统
+
+1. `Agent Profile`是Chat全局模板。Chat自研Agent的默认System Prompt来自Git Catalog；Pi-backed Agent的默认值直接继承Pi运行时，自定义正文则完整替换Pi基础System。它不能复制或冒充上游Agent的默认Prompt与Tool实现。
+2. `Workflow Node Binding`是工作流里的Agent实例。它引用一个支持该节点类型的Agent，并只保存相对默认值的Prompt差异；系统Workflow不能原地修改，保存时派生个人已发布版本。
+3. `WorkflowRunConfiguration`是当前Session发送草稿。它可临时覆盖同一节点的Agent引用或Prompt；创建Run时Application校验、规范化并冻结进RunSpec和Prompt Assembly，之后不再读取浏览器草稿。
+
+优先级固定为`Run临时差异 > Workflow节点差异 > Agent默认`。正文仍是普通Markdown；Workflow差异直接进入不可变Definition JSON，不新增表、规则语言、Mixin或多重继承。Tool授权不参与这条覆盖链。
+
+Pi-backed Agent另有一层不可写的运行时基线，但它不属于上述配置继承链。独立Pi Executor通过真实`pi-coding-agent AgentSession`生成基线，并经带Runtime Key的私有只读接口实现Application的`AgentRuntimeProfileReaderPort`；API进程不会加载完整Pi Coding Agent。基础System在`Pi默认动态System`与`Chat用户完整覆盖`之间二选一，之后始终追加`Chat固定运行约束`与本轮上下文；前端按同样顺序展示，并按Execution Capability切换实际Tool Schema。Chat不复制Pi的默认Prompt或Tool Schema；每个Run中受Workspace路径、工具回合和Provider适配影响的最终逐字节正文，仍只以Provider前Prompt Review为准。
 
 ## 2. 术语
 
@@ -210,12 +220,12 @@ DSH 的冻结规则是“Model-visible ⟺ Logged”：只要内容进入模型�
 
 | 方面 | Pi Coding Agent | DSH rc.6 | 当前 Chat |
 |---|---|---|---|
-| System | 一个 Builder，支持 default/custom/append/context/skills/cwd | 命名、排序、Scoped Override 的 Section Registry | Direct v2已采用Pi默认System + Chat运行约束 + 用户选择的命名Region；其他节点仍各自硬编码 |
+| System | 一个 Builder，支持 default/custom/append/context/skills/cwd | 命名、排序、Scoped Override 的 Section Registry | 所有Prompt-bearing节点采用锁定节点Contract + 冻结有效Agent/会话用户层；Direct另有四通道v2与最终Payload Review |
 | 当前用户输入 | 本轮 User Message | `pre-step` claim 的 User Message | Bridge 只提交最新真实 User Message |
 | 历史 | Pi Session Branch 的 Messages | Session Event Surface 的派生 Messages | Direct v2从Product Store选择近期成功User/Assistant对；其他节点尚未迁移 |
-| 动态上下文 | Context Files、Skills、Extension | Workspace、Runtime Context、Skill 等带来源 User Message | Direct只接受显式Region选择；Pi自动Context/Skill/Template发现关闭 |
-| Tools | System 中有摘要，同时另传 Schema | System 中可有使用说明，同时另传 Schema | Direct v2冻结只读Tool Profile；Planner/Executor仍各自选择 |
-| 来源 | 主要靠 Loader 配置和文件位置解释 | 注册名、Scope、Message Source、Event Seq | Direct Assembly与Review已绑定Revision、MD路径、Scope、Hash和Payload Pointer |
+| 动态上下文 | Context Files、Skills、Extension | Workspace、Runtime Context、Skill 等带来源 User Message | Chat节点只接受显式Prompt选择；Direct/Coding Executor自动Context/Skill/Template发现关闭 |
+| Tools | System 中有摘要，同时另传 Schema | System 中可有使用说明，同时另传 Schema | 工具由节点Runtime Contract决定，用户Prompt层不能增权；Direct v2另冻结Tool Profile |
+| 来源 | 主要靠 Loader 配置和文件位置解释 | 注册名、Scope、Message Source、Event Seq | v3绑定共享/节点Revision、MD路径、Scope与Hash；Direct Review另绑定Payload Pointer |
 | 压缩 | Session Summary + recent tail | Event Surface Replacement + durable provenance | Direct v2关闭；跨 Product Run Summary尚未实现 |
 | 最终原始请求 | Provider Adapter 生成 | LLM Adapter 生成 | Direct Prompt Review 已能在发送前冻结并审核 |
 
@@ -243,10 +253,10 @@ DSH 的冻结规则是“Model-visible ⟺ Logged”：只要内容进入模型�
 - `appendSystemPrompt = Chat Direct运行约束 + Assembly命名System Region`；
 - `noContextFiles/noSkills/noPromptTemplates/noExtensions=true`，Pi不能自行装载`AGENTS.md`或其他宿主上下文；
 - 禁用Compaction和Retry，Thinking固定为off；
-- 只启用冻结的`read/bash/grep/find/ls`只读能力；
+- 只启用冻结的`read/grep/find/ls`只读能力；
 - 每次Provider Request都进入Prompt Review Gate。
 
-当前审核页的Raw始终以真实Payload为准。易读页读取同一Run的Assembly，把System组件、正式历史、当前User、Runtime Tool消息、Tools与Request Options映射到精确JSON Pointer；来源说明不进入模型请求。
+当前审核页的Raw始终以真实Payload为准。易读页读取同一Run的Assembly，把System组件、正式历史、当前User、Runtime Tool消息、Tools与Request Options映射到精确JSON Pointer；来源说明不进入模型请求。DSH→Bridge、Bridge→Chat和Provider三类Prompt审核共用右侧全高审查面板，顶部状态和底部决定固定，中间只有一个纵向滚动容器；正文`pre`只保留必要的横向滚动，不再与页面形成嵌套纵向滚动。
 
 ### 5.2 当前一次 DSH 交互实际有两次组装和三道可选审核
 
@@ -257,15 +267,15 @@ DSH User Input
 → DSH pre-step 组装 DSH System / History / Context / Tools
 → 可选DSH→Bridge审核完整GenerateOptions
 → LifeOS Adapter 收到 DSH GenerateOptions
-→ Adapter提取最新真实User Message；Direct时另携带本会话Prompt Region选择
+→ Adapter提取最新真实User Message，并携带会话共享层与当前Workflow节点Prompt选择
 → 可选Bridge→Chat审核实际将交给fetch的Command Plan/bodyJson
 → Chat原子提交Product Message、Prompt Assembly并启动所选Workflow
-→ Direct节点从冻结Assembly重新组装自己的Pi请求
+→ 每个Prompt-bearing节点只从冻结Assembly读取自己的用户层
 → 可选Provider Review审核Credential注入前最终Payload / Provider
 → Chat正式Assistant Message回投DSH
 ```
 
-`packages/dsh-lifeos-bridge/src/adapter.ts` 的 `lastUserPrompt()` 只认 `source.kind === "user"` 的最后一条真实 User Message；`workspaceInstructionsOf()` 只提取 `source.kind === "agent-instructions"`。DSH 自己的 Persona、完整 History、Runtime Context、Skill Catalog 和 Tool Schema 都不会被透传到 Chat 模型请求。Bridge第二道审核展示的`bodyJson`与实际HTTP请求体来自同一冻结Builder，审核决定绑定Plan Hash；它不是从Friendly视图反向重建Raw。
+`packages/dsh-lifeos-bridge/src/adapter.ts` 的 `lastUserPrompt()` 只认 `source.kind === "user"` 的最后一条真实User Message。DSH自己的Persona、完整History、`agent-instructions`、Runtime Context、Skill Catalog和Tool Schema都不会被透传到Chat模型请求；`agent-instructions`只保留为DSH Session证据与只读上下文面板。Bridge第二道审核展示的`bodyJson`与实际HTTP请求体来自同一冻结Builder，审核决定绑定Plan Hash；它不是从Friendly视图反向重建Raw。
 
 这个隔离本身是正确的：它阻止 DSH 宿主能力偷偷变成 Chat 权限。但它也说明连续会话不能依赖“DSH 已经组装过历史”，Chat 必须从自己的 Product Store 明确选择。
 
@@ -275,13 +285,14 @@ DSH User Input
 
 | 场景 | System/规则 | User/上下文组装 | 当前历史来源 |
 |---|---|---|---|
-| Planner | `packages/pi-runtime/src/planner.ts#PLANNER_SYSTEM_PROMPT` | `buildPlannerUserPrompt()` 拼接 Workspace、当前需求、Memory、Project、Rule、Prior Plan | 只有显式 Prior Plan，不是普通会话历史 |
+| Planner | 独立Planner Agent Profile + v3会话上下文 | `buildPlannerUserPrompt()` 拼接Workspace、当前需求、Memory、Project、Rule、Prior Plan | 只有显式Prior Plan，不是普通会话历史 |
 | 结构化 Executor | `packages/pi-runtime/src/executor.ts#EXECUTOR_SYSTEM_PROMPT` | `buildExecutorUserPrompt()` 拼接 Execution Contract、当前 Step、冻结 Context 和依赖结果 | 只读当前 Execution Contract |
-| 完整 Coding Executor | Pi 默认 System + `packages/pi-runtime/src/coding-agent-executor.ts` 的 Chat Append | `buildExecutorUserPrompt()` 作为 Pi User Prompt | 单个执行 Operation 的 Pi Session |
-| Direct Agent | Pi 默认 System + Runtime Append + Assembly System Regions | Assembly Messages Regions + 当前 Product Message | 单个 Direct Run 的 Pi Session |
+| 完整 Coding Executor | 独立Coding Executor Agent Profile + v3会话上下文 | `buildExecutorUserPrompt()`作为Pi User Prompt | 单个执行Operation的Pi Session |
+| Direct Agent | 独立Direct Agent Profile + Assembly会话上下文 | Assembly Messages Regions + 当前Product Message | 单个Direct Run的Pi Session |
+| Note Extractor | 独立Note Extractor Agent Profile + v3会话上下文 | 正式Session Message候选 | 当前Note运行输入 |
 | 审核可读版 | 不参与请求 | 拆Raw Payload并关联同Run Assembly来源 | Assembly精确来源；其他字段仍按Runtime/Adapter定位 |
 
-Application 已经为Direct冻结首个版本化Compiler与Assembly，并继续能冻结 Workspace、Memory、Project 和 Rule 等产品事实；但后几类尚未统一接入Direct Profile，Planning/Executor也尚未迁移到这套Compiler。Direct Prompt不会自动继承Planning已有的Context。
+Application为Direct冻结Provider-ready v2 Assembly；对多节点Workflow冻结v3 Assembly。每个模型节点的Assembly由“按三层优先级解析出的有效Agent Prompt + 同一份会话上下文”组成。`生成计划`、`执行计划`只是节点显示名，不是Agent类别；页面显示的是该节点引用哪个Agent、是否继承默认以及是否存在Workflow/Run差异。Planning/Execution Input Manifest继续独立冻结Workspace、Memory、Project、Rule等产品事实，并额外绑定对应节点Assembly Hash；Prompt文字不会暗中扩大节点能力。
 
 ## 6. Chat 的推荐设计
 
@@ -302,7 +313,7 @@ Provider最终物理结构固定为`system + messages[] + tools[] + request opti
 
 | Region | 用户可编辑 | 计划位置 | 含义 |
 |---|---:|---|---|
-| `agent_identity` | 是 | system | 模型在当前节点扮演的身份 |
+| `agent_identity` | Agent默认、Workflow节点或Run临时差异 | system | Agent身份、职责与工作方式；不属于会话上下文Prompt |
 | `workspace_instructions` | 是 | system | 用户显式选择的平台或目标Workspace指令，如根`AGENTS.md` |
 | `user_context` | 是 | system | 完成任务确实需要知道的用户资料和偏好 |
 | `background` | 是 | system | 背景、现状和边界 |
@@ -414,6 +425,19 @@ PromptProfile
 
 同一个执行类 Pi Agent 可以因此服务多个 Workflow：普通 Direct 节点把 `reviewMode=off`，审核工作流把它设为 `manual`；两者使用同一个 Agent 类型和 Prompt Compiler，不复制一套 Executor。
 
+当前组装把“可管理内容”和“不可覆盖运行契约”明确分层：
+
+```text
+锁定Runtime Contract
+→ Pi基础Agent/Harness Contract
+→ Agent默认或当前Definition Node差异
+→ 当前Run临时差异
+→ 会话共享Prompt选择
+→ 当前输入/正式历史/节点上下文/Tools/Request Options
+```
+
+会话上下文Region继续使用`default / replace / append`；Agent身份不复用这套多值Region组合，而只按`Run > Workflow Node > Agent Default`选出一个有效System Prompt。任何`replace`都不能删除或重写工具白名单、结构化输出、审批、预算、安全和Product Commit规则。共享默认Revision清单属于Git Catalog并进入Catalog Hash，不属于Bridge代码常量。
+
 ### 6.5 Prompt Assembly Manifest
 
 每次真正 Provider 请求前，Chat 都应生成或补全一份 Manifest：
@@ -433,7 +457,7 @@ Manifest 是来源和选择证据，不重复保存完整 Provider Payload。完
 
 ```text
 DSH
-  提供 UI、当前真实用户输入、用户显式选择的宿主 Context
+  提供 UI、当前真实用户输入、会话共享与Workflow节点Prompt选择
         ↓
 Chat Application / Prompt Compiler
   读取 Product Store 事实 + 当前 Node Prompt Profile
@@ -452,7 +476,7 @@ Provider Adapter + Review Gate
 
 DSH与Bridge两道调试审核属于边界观察/放行能力，不拥有Prompt事实，也不进入Workflow图；Provider Review属于Agent节点内部的真实模型发送闸门。三个开关彼此独立，关闭时自动放行，开启时按数据流顺序等待。
 
-DSH 原生 Workspace Context 可以作为一个来源 Provider，但只有 Chat 明确选择并冻结的内容才进入 Chat Prompt。DSH 的 Skill Catalog、沙箱快照或其他 Context 不会因为它们出现在 DSH Session 中就自动进入 Chat。
+DSH原生Workspace Context保留在DSH Session及只读面板中，不是Chat Prompt旁路。平台或目标Workspace内容若要进入Chat，必须先由Chat Catalog投影为有Revision/Hash的组件，再由用户显式选择并冻结。DSH的Skill Catalog、沙箱快照或其他Context不会因为它们出现在DSH Session中就自动进入Chat。
 
 ## 7. 连续 Product Session 如何迭代
 
@@ -541,8 +565,8 @@ System语义区
 按产品确认后的顺序推进：
 
 1. **Prompt Studio 管理纵向（已实现）**：Git Region/Builtin Catalog、全局/Workspace用户 PromptFragment Revision、公开 Query/Command、DSH 设置页。
-2. **Prompt Assembly v2纵向（Direct已实现）**：每次发送前按Region选择默认/覆盖/追加；用户正文使用可见Markdown；固定Profile/Compiler把System、正式历史Messages、当前User、Tools和Options冻结进Store v16 Assembly；Prompt Review关联真实Region与Message来源。
-3. **后续纵向**：Provider审核页编辑后重新冻结；Conversation Summary Candidate与压缩；最后按独立授权迁移Planner/Executor。
+2. **系统级Prompt Assembly纵向（已实现）**：每次发送前只配置会话上下文；Agent System Prompt在独立Agent目录中版本化。Application按Workflow节点的Agent引用为多节点Run冻结v3，并让Planner、Coding Executor、Note Extractor按Manifest绑定的节点Hash取值。Direct另冻结Provider-ready v2，把Agent System、会话上下文、正式历史Messages、当前User、Tools和Options写入Assembly，Prompt Review关联真实Region与Message来源。
+3. **后续纵向**：Provider审核页编辑后重新冻结；Conversation Summary Candidate与压缩；按独立授权为非Direct节点增加逐请求Provider Review与Payload来源映射。
 
 每一步都是用户可独立验证的小纵向，不为了未来阶段提前建立第二套控制面。
 
@@ -550,9 +574,9 @@ System语义区
 
 1. Prompt Studio 先管理、后组装；第一纵向不进入 Workflow。
 2. 内置Markdown由Git Catalog唯一拥有；用户修改通过“创建副本”进入全局或Workspace Markdown库，Product Store保存版本/权限/Hash/文件引用。
-3. Direct v2把用户管理的语义Region编译为带稳定标题的System段；当前输入和正式历史保持原生Message角色；Tools与Request Options保持独立物理通道。
+3. 用户管理的会话语义Region编译为带稳定标题的System段；多节点v3保存独立Agent Profile与共享会话上下文，Direct v2另外让当前输入和正式历史保持原生Message角色，并让Tools与Request Options保持独立物理通道。
 4. Prompt Review 是 Pi Agent 节点内部开关，不再为它制造第二个图节点。
 5. 历史默认只纳入成功提交的 `User → Assistant` 对；失败证据保留但不自动激活。
 6. 跨 Run 压缩摘要必须先成为可追溯 Candidate 再提交。
 7. DSH当前目录只负责选择目标Workspace身份与Tool Root；Pi自动上下文发现关闭。平台/目标根`AGENTS.md`由Chat Catalog投影为不同Scope的可选组件，只有用户显式选择后才读取并冻结进System。
-8. 当前只把统一Compiler接到“执行 Agent（逐次提示词审核）”；Planning、Planning Executor和Memory Workflow保持原行为，不能因本次改动静默继承Prompt选择。
+8. 统一Compiler已接`agent.plan`、`agent.direct`、`execute.plan`与`note.extract`。每个模型节点只读取自己绑定的Agent Profile和同一份会话上下文，不存在可串读的节点Overlay；非模型节点不接收用户Prompt。Provider逐请求人工审核仍只属于配置为`manual`的Direct节点。

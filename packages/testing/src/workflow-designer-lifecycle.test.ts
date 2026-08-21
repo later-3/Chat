@@ -7,6 +7,7 @@ import {
   createWorkflowDefinitionCopy,
   getWorkflowDefinitionDetail,
   publishWorkflowDefinition,
+  saveWorkflowAgentNodeConfiguration,
   saveWorkflowDefinitionDraft,
   validateWorkflowDefinition,
   type ApplicationDeps,
@@ -73,6 +74,102 @@ async function fixture() {
 const command = (value: string) => value as CommandId;
 
 describe("S6 Workflow Definition生命周期", () => {
+  it("Agent节点配置从系统Workflow派生个人版本，并在个人Workflow上发布下一Revision", async () => {
+    const { deps, store, system } = await fixture();
+    const beforeSystemNoop = (await store.read({ kind: "committedSnapshot" })).snapshot
+      .storeRevision;
+    await expect(
+      saveWorkflowAgentNodeConfiguration(deps, {
+        principalId: OWNER,
+        commandId: command("cmd_designeragentsystemnoop1"),
+        payload: {
+          sourceWorkflowDefinitionRevisionId: system.workflowDefinitionRevisionId,
+          sourceDefinitionSha256: system.definitionSha256,
+          definitionNodeId: "planning.plan",
+          agentKey: "planner",
+        },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    expect((await store.read({ kind: "committedSnapshot" })).snapshot.storeRevision).toBe(
+      beforeSystemNoop,
+    );
+    const first = await saveWorkflowAgentNodeConfiguration(deps, {
+      principalId: OWNER,
+      commandId: command("cmd_designeragentsystem1"),
+      payload: {
+        sourceWorkflowDefinitionRevisionId: system.workflowDefinitionRevisionId,
+        sourceDefinitionSha256: system.definitionSha256,
+        definitionNodeId: "planning.plan",
+        agentKey: "planner",
+        promptOverrideMarkdown: "你是这个Workflow专属的规划Agent。",
+      },
+    });
+    expect(first.definition).toMatchObject({
+      ownerKind: "principal",
+      ownerPrincipalId: OWNER,
+      revision: 1,
+      publishedRevision: { state: "published", definitionRevision: 1 },
+    });
+    if (first.definition.compatibility !== "editable") throw new Error("个人Workflow不可读");
+    expect(findNodeConfig(first.definition.semanticRoot, "planning.plan")).toMatchObject({
+      agentKey: "planner",
+      agentPromptOverride: "你是这个Workflow专属的规划Agent。",
+    });
+
+    const firstPublished = first.definition.publishedRevision!;
+    const second = await saveWorkflowAgentNodeConfiguration(deps, {
+      principalId: OWNER,
+      commandId: command("cmd_designeragentpersonal2"),
+      payload: {
+        sourceWorkflowDefinitionRevisionId: firstPublished.workflowDefinitionRevisionId,
+        sourceDefinitionSha256: firstPublished.definitionSha256,
+        definitionNodeId: "planning.plan",
+        agentKey: "planner",
+        promptOverrideMarkdown: "你是第二版Workflow专属的规划Agent。",
+      },
+    });
+    expect(second.definition.workflowDefinitionId).toBe(first.definition.workflowDefinitionId);
+    expect(second.definition).toMatchObject({
+      revision: 2,
+      publishedRevision: { state: "published", definitionRevision: 2 },
+    });
+    if (second.definition.compatibility !== "editable") throw new Error("第二版Workflow不可读");
+    expect(findNodeConfig(second.definition.semanticRoot, "planning.plan")).toMatchObject({
+      agentKey: "planner",
+      agentPromptOverride: "你是第二版Workflow专属的规划Agent。",
+    });
+
+    const snapshot = (await store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(
+      snapshot.entities.workflowDefinitionRevisions[firstPublished.workflowDefinitionRevisionId],
+    ).toMatchObject({ state: "superseded" });
+    expect(
+      snapshot.entities.workflowDefinitionRevisions[system.workflowDefinitionRevisionId],
+    ).toMatchObject({
+      state: "published",
+      definitionSha256: system.definitionSha256,
+    });
+
+    const beforePersonalNoop = snapshot.storeRevision;
+    await expect(
+      saveWorkflowAgentNodeConfiguration(deps, {
+        principalId: OWNER,
+        commandId: command("cmd_designeragentpersonalnoop1"),
+        payload: {
+          sourceWorkflowDefinitionRevisionId:
+            second.definition.publishedRevision!.workflowDefinitionRevisionId,
+          sourceDefinitionSha256: second.definition.publishedRevision!.definitionSha256,
+          definitionNodeId: "planning.plan",
+          agentKey: "planner",
+          promptOverrideMarkdown: "你是第二版Workflow专属的规划Agent。",
+        },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    expect((await store.read({ kind: "committedSnapshot" })).snapshot.storeRevision).toBe(
+      beforePersonalNoop,
+    );
+  });
+
   it("copy→save→validate→publish→archive/restore保留不可变Revision与Published View", async () => {
     const { deps, store, memorySystem } = await fixture();
     const copied = await createWorkflowDefinitionCopy(deps, {
@@ -560,4 +657,21 @@ function countDefinitionNodes(root: WorkflowDefinitionSequence): number {
     else for (const branch of element.branches) stack.push(...branch.body.elements);
   }
   return count;
+}
+
+function findNodeConfig(
+  root: WorkflowDefinitionSequence,
+  definitionNodeId: string,
+): Readonly<Record<string, unknown>> | undefined {
+  const stack = [...root.elements];
+  while (stack.length > 0) {
+    const element = stack.pop();
+    if (element === undefined) continue;
+    if (element.kind === "task" || element.kind === "composite") {
+      if (element.definitionNodeId === definitionNodeId) return element.config;
+    } else if (element.kind === "sequence") stack.push(...element.elements);
+    else if (element.kind === "bounded_loop") stack.push(...element.body.elements);
+    else for (const branch of element.branches) stack.push(...branch.body.elements);
+  }
+  return undefined;
 }

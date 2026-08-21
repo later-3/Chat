@@ -242,7 +242,7 @@ console.log(
     : pwaOnly
       ? "[e2e-preflight] rc.6 DSH profile与PWA浏览器表面已就绪（未加载Provider/Workflow/Workbench）"
       : promptStudioOnly
-        ? "[e2e-preflight] rc.6 DSH Prompt Studio已就绪（未加载Provider/Pi/Workflow/Workbench）"
+        ? "[e2e-preflight] rc.6 DSH Prompt Studio已就绪（Pi只读配置已加载；未加载Provider/Workflow/Workbench）"
         : promptThreeGatesOnly
           ? "[e2e-preflight] rc.6 DSH三闸门、真实Provider与Workflow Bundle已就绪（未启动Workbench/Memory）"
           : trajectoryOnly

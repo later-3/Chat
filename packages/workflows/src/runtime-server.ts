@@ -7,6 +7,7 @@ import {
   PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION,
   type TraceEventInput,
 } from "@chat/contracts";
+import type { RunActivitySink } from "@chat/realtime";
 import {
   createPiDirectExecutorServiceClient,
   createPiExecutorServiceClient,
@@ -58,6 +59,7 @@ export interface WorkflowRuntimeServerOptions {
   readonly executorBaseUrl?: string;
   readonly credential: string;
   readonly traceSink?: { emit: (event: TraceEventInput) => void };
+  readonly activitySink?: RunActivitySink;
   /**
    * 确定性集成测试只替换付费/外部边界；API Client、Binding Store、bundle、
    * Hook 与Local World仍由本组合根真实装配。覆盖必须在world.start()前生效，
@@ -94,19 +96,27 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
     }
     const buildEvidence = await loadRuntimeBuildEvidence(options.bundleDir);
     let traceEmitFailures = 0;
-    const trace =
-      options.traceSink !== undefined
-        ? (event: TraceEventInput) => {
-            try {
-              options.traceSink?.emit(event);
-            } catch (error) {
-              traceEmitFailures += 1;
-              console.error(
-                `[trace] emit_failed code=trace.emit_failed owner=workflow event=${event.eventName} cause=${traceFailureCause(error)} total=${String(traceEmitFailures)}`,
-              );
-            }
-          }
-        : () => undefined;
+    const trace = (event: TraceEventInput) => {
+      if (options.activitySink !== undefined) {
+        try {
+          options.activitySink.emitTrace(event);
+        } catch (error) {
+          console.error(
+            `[activity] emit_failed code=run_activity.emit_failed event=${event.eventName} cause=${traceFailureCause(error)}`,
+          );
+        }
+      }
+      if (options.traceSink !== undefined) {
+        try {
+          options.traceSink.emit(event);
+        } catch (error) {
+          traceEmitFailures += 1;
+          console.error(
+            `[trace] emit_failed code=trace.emit_failed owner=workflow event=${event.eventName} cause=${traceFailureCause(error)} total=${String(traceEmitFailures)}`,
+          );
+        }
+      }
+    };
 
     // Workflow合同仍需要Registry Port，但当前统一运行图冻结为空，不实例化任何外部Adapter。
     const memoryRegistry = createEmptyMemoryBackendRegistry();
@@ -125,6 +135,15 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       memoryBackends: memoryRegistry,
       workflowMemoryProviders,
       trace,
+      activity: (event) => {
+        try {
+          options.activitySink?.emit(event);
+        } catch (error) {
+          console.error(
+            `[activity] emit_failed code=run_activity.emit_failed source=${event.sourceKind} cause=${traceFailureCause(error)}`,
+          );
+        }
+      },
       now: () => new Date().toISOString(),
       bailian: loadBailianConfig(process.env),
       planner: runPiPlanner,

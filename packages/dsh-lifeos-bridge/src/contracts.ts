@@ -4,6 +4,7 @@ import {
   commandIdSchema,
   decisionDtoSchema,
   workflowExecutionTraceDtoSchema,
+  messageIdSchema,
   messageDtoSchema,
   messageResponseSchema,
   noteCandidateIdSchema,
@@ -13,10 +14,10 @@ import {
   promptReviewRequestDtoSchema,
   promptReviewRequestIdSchema,
   promptConfigurationPreviewDtoSchema,
+  promptTurnPreviewDtoSchema,
   publicConfigFieldSchema,
   promptTurnSelectionInputSchema,
   workflowRunConfigurationSchema,
-  workspaceInstructionsInputSchema,
   planIdSchema,
   planDtoSchema,
   productRunIdSchema,
@@ -27,7 +28,8 @@ import {
   submitMessageResponseSchema,
   sha256Schema,
   workflowDefinitionRevisionIdSchema,
-  executionTracePageSchema,
+  workflowDefinitionIdSchema,
+  saveWorkflowAgentNodeConfigurationPayloadSchema,
   cursorPageSchema,
   projectBootstrapSessionProjectionSchema,
   projectBootstrapCandidateIdSchema,
@@ -86,7 +88,6 @@ export const problemSchema = z
 export const createSessionResponseSchema = z.object({ session: sessionDtoSchema }).strict();
 export { startSessionMessageResponseSchema, submitMessageResponseSchema };
 export const runResponseSchema = z.object({ run: runDtoSchema }).strict();
-export const executionTraceResponseSchema = executionTracePageSchema;
 export const plansResponseSchema = z.object({ items: z.array(planDtoSchema) }).strict();
 export const approvalResponseSchema = z.object({ approval: approvalDtoSchema.nullable() }).strict();
 export const exactMessageResponseSchema = messageResponseSchema;
@@ -202,6 +203,7 @@ export type PromptReviewDecisionRequest = z.infer<typeof promptReviewDecisionReq
  */
 export const lifeosWorkflowOptionSchema = z
   .object({
+    workflowDefinitionId: workflowDefinitionIdSchema,
     workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
     definitionSha256: sha256Schema,
     title: z.string().min(1).max(160),
@@ -221,11 +223,56 @@ export const lifeosWorkflowOptionSchema = z
       )
       .max(64)
       .default([]),
+    agentNodes: z
+      .array(
+        z
+          .object({
+            definitionNodeId: z.string().min(1).max(80),
+            nodeType: z.enum(["agent.plan", "agent.direct", "execute.plan", "note.extract"]),
+            title: z.string().min(1).max(120),
+            agentKey: z.enum([
+              "planner",
+              "direct",
+              "project_bootstrap",
+              "coding_executor",
+              "note_extractor",
+            ]),
+            profileVersion: z.string().min(1).max(128),
+            bindingKind: z.literal("agent_catalog"),
+            promptPolicy: z.literal("agent_profile_plus_session_context"),
+            promptSource: z.enum(["agent_default", "workflow_override"]),
+            promptOverrideMarkdown: z.string().max(65_536).optional(),
+            toolPolicy: z
+              .object({
+                kind: z.literal("runtime_locked"),
+                summary: z.string().min(1).max(300),
+                defaultTools: z.array(z.string().min(1).max(80)).max(16),
+              })
+              .strict(),
+          })
+          .strict(),
+      )
+      .max(32)
+      .default([]),
   })
   .strict();
 
 export const workflowListResponseSchema = z
   .object({ items: z.array(lifeosWorkflowOptionSchema).max(100) })
+  .strict();
+
+export const saveWorkflowAgentNodeConfigurationRequestSchema = z
+  .object({
+    commandId: commandIdSchema,
+    payload: saveWorkflowAgentNodeConfigurationPayloadSchema,
+  })
+  .strict();
+
+export const saveWorkflowAgentNodeConfigurationResponseSchema = z
+  .object({
+    workflow: lifeosWorkflowOptionSchema,
+    items: z.array(lifeosWorkflowOptionSchema).max(100),
+  })
   .strict();
 
 /**
@@ -255,6 +302,9 @@ export const workflowSelectionRequestSchema = z
 
 export type LifeosWorkflowOption = z.infer<typeof lifeosWorkflowOptionSchema>;
 export type WorkflowSelection = z.infer<typeof workflowSelectionSchema>;
+export type SaveWorkflowAgentNodeConfigurationRequest = z.infer<
+  typeof saveWorkflowAgentNodeConfigurationRequestSchema
+>;
 
 export const PROMPT_SELECTION_SCHEMA_VERSION = "chat-dsh-prompt-selection.v1" as const;
 
@@ -276,6 +326,14 @@ export const promptSelectionProjectionSchema = z
       })
       .strict()
       .nullable(),
+    workflow: z
+      .object({
+        workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+        title: z.string().min(1).max(160),
+      })
+      .strict()
+      .nullable()
+      .default(null),
     promptSelection: promptTurnSelectionInputSchema,
   })
   .strict();
@@ -291,6 +349,26 @@ export type PromptSelection = PromptTurnSelectionInput;
 export const lifeosExecutionTraceSchema = z
   .object({
     dshMessageId: dshMessageIdSchema,
+    boundaries: z
+      .object({
+        dsh: z
+          .object({
+            dshSessionId: dshSessionIdSchema,
+            dshMessageId: dshMessageIdSchema,
+            userTextSha256: sha256Schema,
+          })
+          .strict(),
+        bridge: z
+          .object({
+            messageCommandId: commandIdSchema.transform(String),
+            productUserMessageId: messageIdSchema.transform(String).optional(),
+            productAssistantMessageId: messageIdSchema.transform(String).optional(),
+            workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema.optional(),
+            promptSelectionSha256: sha256Schema.optional(),
+          })
+          .strict(),
+      })
+      .strict(),
     trace: workflowExecutionTraceDtoSchema,
   })
   .strict();
@@ -534,7 +612,7 @@ export const dshContextInjectionProjectionSchema = z
     dshSessionId: dshSessionIdSchema,
     status: z.enum(["not_assembled", "ready"]),
     revision: sha256Schema,
-    chatForwarding: z.literal("latest_direct_user_message_and_workspace_instructions"),
+    chatForwarding: z.literal("not_forwarded"),
     items: z.array(dshContextInjectionItemSchema).max(MAX_DSH_CONTEXT_INJECTION_ITEMS),
     totalItems: z.number().int().nonnegative().safe(),
     omittedItems: z.number().int().nonnegative().safe(),
@@ -562,10 +640,6 @@ export const bridgeChatSubmitPayloadSchema = z
   .object({
     text: z.string().min(1).max(4_000),
     workflowSelection: bridgeChatWorkflowSelectionSchema.optional(),
-    context: z
-      .object({ workspaceInstructions: workspaceInstructionsInputSchema })
-      .strict()
-      .optional(),
     promptSelection: promptTurnSelectionInputSchema.optional(),
   })
   .strict();
@@ -651,6 +725,8 @@ export const dshBridgeSendPreviewSchema = z
     workflowSelection: workflowSelectionSchema.nullable(),
     promptSelection: promptTurnSelectionInputSchema,
     promptConfiguration: promptConfigurationPreviewDtoSchema.nullable(),
+    /** Chat Application按正式发送路径解析出的完整Workflow/Agent/Prompt真相。 */
+    promptTurnPreview: promptTurnPreviewDtoSchema,
     dshToBridge: z
       .object({
         adapterRequest: dshAdapterRequestCaptureSchema,
@@ -660,7 +736,11 @@ export const dshBridgeSendPreviewSchema = z
       .strict(),
     bridgeToChat: z
       .object({
-        policy: z.enum(["direct_prompt_selection", "non_direct_workspace_instructions"]),
+        policy: z.enum([
+          "direct_prompt_selection",
+          "non_direct_workspace_instructions",
+          "workflow_prompt_selection",
+        ]),
         payload: bridgeChatSubmitPayloadSchema,
         payloadJson: z.string().min(2).max(1_000_000),
         payloadSha256: sha256Schema,

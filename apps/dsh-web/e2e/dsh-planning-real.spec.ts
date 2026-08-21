@@ -6,7 +6,7 @@ import {
   runDtoSchema,
   workflowExecutionTraceDtoSchema,
 } from "@chat/contracts/public";
-import { createTraceSink } from "@chat/realtime";
+import { createRunActivitySink } from "@chat/realtime";
 import { z } from "zod";
 import { DSH_REAL_E2E_PORTS } from "../../../scripts/e2e/dsh-real-environment.mjs";
 import { exerciseDshWorkbench, observeWorkbenchTraffic } from "./dsh-workbench-real-helper.js";
@@ -43,8 +43,8 @@ const PRIVATE_MARKERS = [
 const TRACE_UI_RESULT = "TRACE_UI_RESULT_OK";
 
 function emitTrajectoryTool(productRunId: string, phase: "intent" | "result"): void {
-  const sink = createTraceSink({
-    dir: resolve(import.meta.dirname, "../../../.data/e2e/dsh-real/traces"),
+  const sink = createRunActivitySink({
+    dir: resolve(import.meta.dirname, "../../../.data/e2e/dsh-real/run-activity"),
   });
   const timestamp = new Date().toISOString();
   const common = {
@@ -62,7 +62,21 @@ function emitTrajectoryTool(productRunId: string, phase: "intent" | "result"): v
     toolCallId: "call_dshtrajectory1",
     toolName: "bash" as const,
   };
-  sink.emit(
+  if (phase === "intent") {
+    sink.emitTrace({
+      level: "info",
+      traceId: "tr_dshtrajectory1",
+      spanId: "sp_dshtrajectoryagent1",
+      productRunId: productRunId as never,
+      attemptId: "att_dshtrajectory1" as never,
+      promptTemplateVersion: "executor-trajectory-e2e",
+      modelConfigVersion: "bailian-qwen-trajectory-e2e",
+      eventName: "pi.node.started",
+      outcome: "unknown",
+      nodeKind: "executor",
+    });
+  }
+  sink.emitTrace(
     phase === "intent"
       ? {
           ...common,
@@ -198,7 +212,7 @@ test("rc.6 DSH：发送 -> Plan等待人工 -> 刷新 -> 批准 -> 正式Assista
   const trajectoryTab = page.getByRole("tab", { name: /轨迹|Trajectory/u });
   await expect(trajectoryTab).toBeVisible();
   await trajectoryTab.click();
-  await expect(page.getByText(/lifeos_trace|node --version/u).first()).toBeVisible();
+  await expect(page.getByText(/工具.*bash|node --version/u).first()).toBeVisible();
   await expect(page.getByText(TRACE_UI_RESULT)).toHaveCount(0);
   emitTrajectoryTool(beforeRefresh.run.productRunId, "result");
   await expect(page.getByText(TRACE_UI_RESULT).first()).toBeVisible();

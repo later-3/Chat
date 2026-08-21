@@ -4,6 +4,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   PROMPT_STUDIO_API_SCHEMA_VERSION,
+  agentKeySchema,
   promptFragmentIdSchema,
   promptFragmentRevisionIdSchema,
   promptRegionDefinitionDtoSchema,
@@ -44,6 +45,51 @@ const manifestSchema = z
     regionSource: z
       .object({ relativePath: relativePathSchema, sourceSha256: sha256Schema })
       .strict(),
+    sharedSelectionProfile: z
+      .object({
+        profileId: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,79}$/u),
+        defaultRevisionIds: z
+          .array(promptFragmentRevisionIdSchema)
+          .max(100)
+          .refine((items) => new Set(items).size === items.length, "默认Prompt Revision不能重复"),
+      })
+      .strict(),
+    agents: z.array(
+      z
+        .object({
+          agentKey: agentKeySchema,
+          title: z.string().min(1).max(160),
+          description: z.string().min(1).max(1_000),
+          profileVersion: z.string().min(1).max(80),
+          supportedNodeTypes: z.array(z.string().min(1).max(80)).min(1).max(16),
+          defaultPrompt: z.discriminatedUnion("kind", [
+            z
+              .object({
+                kind: z.literal("catalog_fragment"),
+                promptFragmentRevisionId: promptFragmentRevisionIdSchema,
+              })
+              .strict(),
+            z
+              .object({
+                kind: z.literal("pi_coding_agent"),
+                defaultVariantKey: z.string().regex(/^[a-z0-9][a-z0-9._-]{1,79}$/u),
+                promptFragmentRevisionId: promptFragmentRevisionIdSchema.optional(),
+              })
+              .strict(),
+          ]),
+          tools: z
+            .array(
+              z
+                .object({
+                  name: z.string().min(1).max(80),
+                  description: z.string().min(1).max(500),
+                })
+                .strict(),
+            )
+            .max(32),
+        })
+        .strict(),
+    ),
     regions: z.array(
       z
         .object({
@@ -144,8 +190,8 @@ export async function createFilePromptCatalog(
     fragmentIds.add(fragment.promptFragmentId);
     revisionIds.add(fragment.promptFragmentRevisionId);
     const region = regions.find((item) => item.regionKey === fragment.regionKey);
-    if (region === undefined || !region.userManageable || region.contentKind !== "markdown") {
-      throw new Error(`Builtin Prompt引用不可管理或非Markdown Region:${fragment.regionKey}`);
+    if (region === undefined || region.contentKind !== "markdown") {
+      throw new Error(`Builtin Prompt引用不存在或非Markdown Region:${fragment.regionKey}`);
     }
     const bodyMarkdown = await readCatalogFile(root, fragment.relativePath);
     if (sha256(bodyMarkdown) !== fragment.sourceSha256) {
@@ -226,14 +272,51 @@ export async function createFilePromptCatalog(
       ? left.title.localeCompare(right.title)
       : left.regionKey.localeCompare(right.regionKey),
   );
+  const builtinRevisionIds = new Set(
+    builtinFragments.map((fragment) => fragment.promptFragmentRevisionId),
+  );
+  for (const revisionId of manifest.sharedSelectionProfile.defaultRevisionIds) {
+    if (!builtinRevisionIds.has(revisionId)) {
+      throw new Error(`默认Prompt Profile引用不存在的Builtin Revision:${revisionId}`);
+    }
+  }
+  const agentKeys = new Set<string>();
+  for (const agent of manifest.agents) {
+    if (agentKeys.has(agent.agentKey)) throw new Error(`Agent定义重复:${agent.agentKey}`);
+    agentKeys.add(agent.agentKey);
+    const promptFragmentRevisionId = agent.defaultPrompt.promptFragmentRevisionId;
+    if (promptFragmentRevisionId !== undefined) {
+      const prompt = builtinFragments.find(
+        (fragment) => fragment.promptFragmentRevisionId === promptFragmentRevisionId,
+      );
+      if (prompt === undefined || prompt.regionKey !== "agent_identity") {
+        throw new Error(`Agent默认Prompt不存在或不属于Agent身份区域:${agent.agentKey}`);
+      }
+    }
+    if (
+      agent.defaultPrompt.kind === "pi_coding_agent" &&
+      agent.agentKey !== "direct" &&
+      agent.agentKey !== "project_bootstrap" &&
+      agent.agentKey !== "coding_executor"
+    ) {
+      throw new Error(`只有Pi-backed Agent可以引用Pi运行时默认Prompt:${agent.agentKey}`);
+    }
+    if (new Set(agent.tools.map((tool) => tool.name)).size !== agent.tools.length) {
+      throw new Error(`Agent工具重复:${agent.agentKey}`);
+    }
+  }
   const snapshot: PromptCatalogSnapshot = {
     catalogSha256: hashCanonical("prompt-catalog.v1", {
       catalogRevision: manifest.catalogRevision,
+      sharedSelectionProfile: manifest.sharedSelectionProfile,
+      agents: manifest.agents,
       regions,
       builtinFragments: builtinFragments.map(({ content: _content, ...item }) => item),
     }),
+    sharedSelectionProfile: manifest.sharedSelectionProfile,
     regions,
     builtinFragments,
+    agents: manifest.agents,
   };
   return { load: async () => structuredClone(snapshot) };
 }

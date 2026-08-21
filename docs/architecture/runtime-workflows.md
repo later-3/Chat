@@ -285,11 +285,11 @@ Replay Assembler按产品对象ID、revision和SHA-256组合：
    Execution Contract/Candidate、Validation与正式Message，未知引用只显示不可变引用，不猜测正文。
 2. Vercel Workflow World的Run/Step/Hook/Sleep事件；Runtime私有路由先把Workflow Run ID、
    correlation ID、Hook Token、原始I/O和错误正文删除。
-3. 严格JSONL Trace中的Pi Agent、模型调用、Token Usage与工具生命周期。
+3. 独立Run Activity Journal中的Pi Agent、模型调用、Token Usage与工具生命周期；Debug Trace不参与。
 
 动态Execution Step由既有Execution Contract、Execution Attempt和Execution Candidate组合；Pi Attempt用
-已有Attempt ID显式绑定所属Workflow NodeRun与Step。该投影没有增加Product Store字段、Provider Prompt快照或
-新的执行日志，因此只能展示当前已经保存的事实；详情中的Planner输入证据会明确标注“不是Provider原始Payload”。
+已有Attempt ID显式绑定所属Workflow NodeRun与Step。Activity是可重建读模型，不拥有产品终态；详情中的Planner
+输入证据会明确标注“不是Provider原始Payload”。完整边界见[Session与轨迹架构](./session-architecture.md)。
 
 Bridge把真实触发消息的`DSH user/message ID → Product Run`绑定保存在私有原子状态中；Client通过
 同源Query恢复各Run的公开轨迹。State-only Definition在原生`user/message`处保存绑定，可见Definition

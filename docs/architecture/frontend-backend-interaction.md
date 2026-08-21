@@ -42,8 +42,9 @@ DSH持久化日志与Bridge映射共同恢复原会话，用户可以继续发�
 1. 用户可在DSH原生Composer工具行的`conversation.input.left`公开Slot选择已发布Workflow；
    选择只是会话草稿，不创建Run，也不把Workflow Runtime身份暴露给浏览器。若Published Definition的节点
    含`runConfigFields`，同一表面提供“配置”入口；浏览器不会渲染Catalog虽公开但Blueprint未放行的字段。
-2. 用户在DSH原生Composer提交消息。Bridge把该次发送冻结到选择的Definition revision与SHA；
-   同时提交完整`WorkflowRunConfiguration`；没有显式选择时使用Chat系统默认Planning Workflow及默认配置。
+2. 用户在DSH原生Composer提交消息。Bridge把该次发送冻结到选择的Definition revision与SHA、
+   完整`WorkflowRunConfiguration`以及本轮会话上下文选择。Workflow节点只引用独立Agent Profile；
+   Agent的System Prompt不由Composer提交，也不因切换Workflow被复制成节点Overlay。没有显式选择时使用Chat系统默认Planning Workflow及默认配置。
 3. DSH用固定`lifeos/workflow`模型调用LifeOS `LlmAdapter`，传入DSH Session和消息历史。
 4. Adapter从本轮请求提取最新用户文本；`session-title`和`compaction`用途绝不写入Chat。
 5. Adapter按`dshSessionId`恢复已有映射。首轮以稳定Message `commandId`只提交
@@ -52,9 +53,11 @@ DSH持久化日志与Bridge映射共同恢复原会话，用户可以继续发�
 6. Chat在Command边界重新校验Workflow仍是已发布、active、当前Principal可用且Hash一致。
    首轮原子提交Product Session、标题、User Message、Product Run、Receipt和Workflow Start
    Outbox；后续轮次不再创建Session。
-7. Adapter轮询公开Run、正式Message和安全Pi执行轨迹；Bridge投影按Run阶段读取Plan/Approval或Current Note Candidate，并读取完整Workflow执行轨迹。所有读模型都不从HTTP超时推断成功。
+7. Adapter只轮询公开Run并在终态读取正式Message；Bridge投影按Run阶段读取Plan/Approval或Current Note Candidate，
+   并从独立Run Activity读模型读取完整Workflow执行轨迹。所有读模型都不从HTTP超时推断成功。
 8. Run需要人工决定时，Client插件展示当前Plan/Approval或Note Candidate；用户的修订、批准、确认或拒绝经Host桥接为版本/Hash绑定的Chat Command。
-9. 执行中出现Pi工具intent时，Adapter先发出`lifeos_trace`显示调用；DSH原生Trajectory立即显示running，显示工具等待同一`toolCallId`的Trace结果后落下输入、输出和耗时，绝不再次执行命令。
+9. 执行中的Workflow/Agent/模型/工具活动由Client Conversation contribution投影到DSH原生Trajectory；Adapter不再
+   发出`lifeos_trace`，因此不会把远端工具伪造成DSH原生Session实际执行的`tool/call`。
 10. Run成功后，Adapter读取Product Store中的正式Assistant Message，并作为DSH文本流返回。DSH将它写入原生会话轨迹。
 
 DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直接输出。Run失败、拒绝或结果未知必须返回明确状态，不能生成假交付。
@@ -125,11 +128,11 @@ Dock立即退出Composer；已批准、确认、修订或拒绝的历史由正�
 每一层继续使用原生`ToolCallBlock.subCalls`。固定rc.6窄扩展保留独立Tool contribution的
 Conversation Location，并允许贡献方提供表现标签和紧凑行预览；原始`argsRaw`与Tool Result仍进入
 DSH原生检查器，底层仍是原生`TOOL/SUBTOOL`种类、颜色、折叠、计时和检查器。Bridge显示
-`WORKFLOW/NODE/STEP/AGENT/MODEL/TOOL`标签，并在自己贡献的Tool名称中增加
+`RUN/DSH/BRIDGE/BACKEND/WORKFLOW/NODE/STEP/AGENT/MODEL/TOOL`标签，并在自己贡献的Tool名称中增加
 `├─/└─/│`树线，恢复`Workflow节点 → Agent → 模型/工具`的可见深度；它不读取、选择或修改DSH DOM，
 也不复制或替换Trajectory组件。Pi行使用角色限定的
 `规划/执行 Agent`标签；终态摘要直接显示模型/工具次数、模型输入/输出/总Token和耗时，不再以空结果呈现。
-节点详情来自Product Store和严格Trace已经保存的事实：真实用户消息、Plan/Approval/Decision、Execution
+节点详情来自Product Store和Run Activity Journal已经保存的事实：真实用户消息、Plan/Approval/Decision、Execution
 Contract/Candidate、Validation与正式结果按Manifest引用解析；动态Execution Step由既有Contract、Attempt和
 Candidate组合。列表只显示摘要，点击原生行后查看完整输入/输出；它不新增Prompt快照，也不声称这些事实是
 Provider原始Payload。Pi Attempt通过既有Attempt ID显式绑定Workflow NodeRun和Execution Step，不按时间猜父子关系。
@@ -141,6 +144,8 @@ Run/Step/Hook/Sleep运行时证据供后续诊断或证据表面使用，但Brid
 原生“轨迹”已经展示该轮Chat Workflow的NodeRun、动态Execution Step及Pi/模型/工具过程；新增“会话记录”
 只做双源完整检查，分别展示Product Store中的正式Message和DSH SessionQuery中的原始事件。记录页显示双方
 身份、标题、状态、计数和时间，不把Workflow再复制成第四套时间线，也不从DSH日志反推Chat事实。
+对话头部还通过公开`conversation.session.header.utilities` Slot提供“Chat Session”按钮；弹窗复用同一双源
+Controller和Query，不复制浏览器状态或建立另一套Session事实。
 
 时间戳默认保持紧凑。Client插件通过公开`conversation.session.header.utilities`加法Slot注册“时间”开关，
 偏好由DSH公开Snapshot Store保存在浏览器本地；开关只让Conversation Definition按同一Trace重新投影，
@@ -162,17 +167,17 @@ DSH仍提供Host、Session、事件日志、Agent loop请求组装与插件运�
 描述为“完全不用DSH后端”。base bundle会在首个模型`pre-step`按当时实际环境记录工作区`AGENTS.md`指令、
 DSH沙箱/审批运行快照，以及有可发现Skill时的Skill Catalog；后续每个`pre-step`重新检查，只有内容变化或
 compaction需要恢复可见快照时才追加更新。它们分别来自`dsh-agent-instructions`、`dsh-system-prompt`与
-`dsh-tool-skill`，不是PWA插件或Chat Workflow节点。LifeOS Adapter仍只把`source.kind === "user"`的最新一条
-非空真实用户消息提交为Chat Message；同时把当前model surface中全部`source.kind === "agent-instructions"`
-正文按DSH顺序作为有界Workspace指令提交。Chat在Run的`ContextRequest v2`中冻结正文与Hash，Planner修订复用
-同一快照。Bridge不读取目录、不建立Project/Workspace映射，也不重新实现`AGENTS.md`发现；Workspace选择与指令
-层级继续完全由DSH原生Workspace和pre-step负责。DSH运行权限快照、Skill Catalog及其他producer Context仍不进入
-Chat Planner/Executor，因而不会把DSH宿主能力误报成Chat执行能力。
+`dsh-tool-skill`，不是PWA插件或Chat Workflow节点。LifeOS Adapter只把`source.kind === "user"`的最新一条
+非空真实用户消息提交为Chat Message；DSH的`agent-instructions`只保留在DSH Session及只读上下文面板中，
+不再作为Bridge到Chat的隐藏旁路。平台/目标Workspace的精确`AGENTS.md`由Chat Prompt Catalog投影为
+`workspace_instructions`组件，只有用户在共享层或节点层显式选择精确Revision后，Application才读取、校验并冻结。
+DSH运行权限快照、Skill Catalog及其他producer Context同样不进入Chat Planner/Executor，因而不会把DSH宿主能力
+误报成Chat执行能力。
 
 Bridge的同源只读`context-injections` Query直接投影`Session.deriveMessages()`；Client通过blank-safe的
 `conversation.input.left`公开Slot提供“上下文”管理面，按需展示当前来源、类型与正文。尚未发生首个Step的会话
 只显示“尚未组装”，不以重复实现上游中间件的方式猜测未来内容；面板也不拥有启停或编辑能力。面板会明确标出
-只有Workspace指令进入Chat规划上下文，其余项目仅保留DSH会话审计价值。
+这些项目都只保留DSH会话审计价值；进入Chat节点上下文的内容以Prompt Selection和冻结Assembly为准。
 精确生命周期、边界和显示上限见
 [DSH前端派生与维护](./dsh-frontend-maintenance.md#5-user之后的三类context)。
 

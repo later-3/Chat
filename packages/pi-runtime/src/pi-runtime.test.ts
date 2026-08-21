@@ -21,6 +21,7 @@ import {
   loadProjectModelProfile,
   ProjectModelProfileError,
 } from "./project-model-profile.js";
+import { createPiAgentRuntimeProfileReader } from "./coding-agent-runtime-profile.js";
 
 /**
  * pi Adapter确定性测试：真实pi Agent loop + faux流。
@@ -33,6 +34,44 @@ const config = {
   baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
   endpointHost: "dashscope.aliyuncs.com",
 };
+
+it("Pi Coding Agent配置投影直接来自真实AgentSession的System Prompt与Tool Schema", async () => {
+  const reader = createPiAgentRuntimeProfileReader();
+  const direct = await reader.read("direct");
+  expect(direct?.title).toBe("Pi Coding Agent");
+  expect(direct?.packageVersion).toBe("0.84.2");
+  expect(direct?.variants).toHaveLength(1);
+  expect(direct?.variants[0]?.piSystemPrompt.bodyMarkdown).toContain(
+    "You are an expert coding assistant operating inside pi",
+  );
+  expect(direct?.variants[0]?.piSystemPrompt.bodyMarkdown).toContain("<WORKSPACE_ROOT>");
+  expect(direct?.variants[0]?.tools.map((tool) => tool.name)).toEqual([
+    "read",
+    "grep",
+    "find",
+    "ls",
+  ]);
+  expect(direct?.variants[0]?.tools[0]?.parametersJson).toContain('"type"');
+  expect(direct?.chatRuntimeAppend.bodyMarkdown).toContain("Direct Agent只读节点");
+
+  const projectBootstrap = await reader.read("project_bootstrap");
+  expect(projectBootstrap).toEqual(direct);
+
+  const coding = await reader.read("coding_executor");
+  const complete = coding?.variants.find(
+    (variant) => variant.variantKey === "workspace_write_shell",
+  );
+  expect(complete?.tools.map((tool) => tool.name)).toEqual([
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "grep",
+    "find",
+    "ls",
+  ]);
+  expect(coding?.chatRuntimeAppend.bodyMarkdown).toContain("Coding Executor节点");
+});
 
 const planningInput: PlanningInputDto = {
   schemaVersion: "chat-internal-runtime.v1",
@@ -269,6 +308,40 @@ describe("runPiPlanner（真实pi Agent loop + faux流）", () => {
       expect(result.providerCallCount).toBe(1);
     }
     expect(providerRequestStarts).toBe(1);
+  });
+
+  it("Planner把冻结节点Prompt放进受治理层且保留不可覆盖运行合同", async () => {
+    const faux = fauxProvider({ provider: "bailian" });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("submit_plan_candidate", validPlanParams)]),
+    ]);
+    let systemPrompt = "";
+    const streamFn: StreamFn = (model, context, options) => {
+      systemPrompt = context.systemPrompt ?? "";
+      return faux.provider.streamSimple(model, context, options);
+    };
+    const result = await runPiPlanner({
+      config,
+      planningInput: {
+        ...planningInput,
+        nodePrompt: {
+          promptAssemblyId: "pma_plannerprompt1" as never,
+          promptAssemblySha256: "1".repeat(64),
+          definitionNodeId: "planning.plan",
+          nodeAssemblySha256: "2".repeat(64),
+          profileVersion: "planner-prompt.v3",
+          systemPromptAppend: "PLANNER_USER_LAYER_CANARY：输出先给结论。",
+        },
+      },
+      streamFnOverride: streamFn,
+    });
+    expect(result.kind).toBe("candidate");
+    expect(systemPrompt).toContain("你是Chat产品的规划节点");
+    expect(systemPrompt).toContain("# 用户管理提示词（受治理层）");
+    expect(systemPrompt).toContain("PLANNER_USER_LAYER_CANARY");
+    expect(systemPrompt.indexOf("你是Chat产品的规划节点")).toBeLessThan(
+      systemPrompt.indexOf("PLANNER_USER_LAYER_CANARY"),
+    );
   });
 
   it("把冻结Memory条目与精确引用写入Planner Prompt", () => {

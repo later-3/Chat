@@ -40,7 +40,14 @@ export const executionStepTraceDtoSchema = z
   })
   .strict();
 
-export const piTraceActivityStatusSchema = z.enum(["running", "succeeded", "failed", "cancelled"]);
+export const piTraceActivityStatusSchema = z.enum([
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "blocked",
+  "outcome_unknown",
+]);
 export const piTraceActivityKindSchema = z.enum(["agent", "model", "tool"]);
 const piTraceActivityKeySchema = z.string().regex(/^pi-(?:agent|model|tool)-[0-9]+$/u);
 const tokenUsageSchema = z
@@ -66,11 +73,15 @@ export const piTraceActivityDtoSchema = z
     kind: piTraceActivityKindSchema,
     label: z.string().min(1).max(160),
     status: piTraceActivityStatusSchema,
-    nodeKind: z.enum(["planner", "executor", "note_capture"]),
+    nodeKind: z.enum(["planner", "executor", "direct_agent", "note_capture"]),
     toolName: z
       .string()
       .regex(/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/u)
       .optional(),
+    inputDisplay: z.string().max(32_000).optional(),
+    inputDisplayTruncated: z.boolean().optional(),
+    resultDisplay: z.string().max(32_000).optional(),
+    resultDisplayTruncated: z.boolean().optional(),
     provider: z
       .string()
       .regex(/^[a-z][a-z0-9_-]{0,63}$/u)

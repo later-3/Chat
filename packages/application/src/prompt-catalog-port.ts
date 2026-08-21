@@ -1,10 +1,32 @@
 import type {
+  AgentKey,
   PromptFragmentContent,
   PromptFragmentId,
   PromptFragmentRevisionId,
   PromptFragmentScope,
   PromptRegionDefinitionDto,
 } from "@chat/contracts";
+
+export interface PromptAgentDefinition {
+  readonly agentKey: AgentKey;
+  readonly title: string;
+  readonly description: string;
+  readonly profileVersion: string;
+  readonly supportedNodeTypes: readonly string[];
+  readonly defaultPrompt:
+    | {
+        readonly kind: "catalog_fragment";
+        readonly promptFragmentRevisionId: PromptFragmentRevisionId;
+      }
+    | {
+        readonly kind: "pi_coding_agent";
+        /** 设置页使用的基准能力；真实Run仍按冻结Capability选择对应变体。 */
+        readonly defaultVariantKey: string;
+        /** 某些Pi能力以Chat内置身份完整替换Pi基础System；Direct缺省时直接继承Pi。 */
+        readonly promptFragmentRevisionId?: PromptFragmentRevisionId | undefined;
+      };
+  readonly tools: readonly { readonly name: string; readonly description: string }[];
+}
 
 export interface BuiltinPromptFragmentRevision {
   readonly promptFragmentId: PromptFragmentId;
@@ -23,8 +45,14 @@ export interface BuiltinPromptFragmentRevision {
 
 export interface PromptCatalogSnapshot {
   readonly catalogSha256: string;
+  /** 用户未显式改写Region时采用的共享层默认组合；身份与Revision均由Git Catalog版本化。 */
+  readonly sharedSelectionProfile: {
+    readonly profileId: string;
+    readonly defaultRevisionIds: readonly PromptFragmentRevisionId[];
+  };
   readonly regions: readonly PromptRegionDefinitionDto[];
   readonly builtinFragments: readonly BuiltinPromptFragmentRevision[];
+  readonly agents: readonly PromptAgentDefinition[];
 }
 
 /** Git Prompt Catalog的只读Port；Product Store不复制Builtin正文。 */

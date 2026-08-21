@@ -13,6 +13,7 @@ import {
   LEGACY_DIRECT_PROMPT_COMPILER_VERSION,
   LEGACY_DIRECT_PROMPT_PROFILE_VERSION,
   promptFragmentScopeSchema,
+  type PromptAssemblyV3,
   type ProductSnapshot,
 } from "@chat/contracts";
 import { computePlanSha256, StoreCorruptedError } from "@chat/application";
@@ -57,6 +58,8 @@ import {
   computeWorkspaceInstructionsSha256,
   estimateMemorySectionTokens,
   hashCanonical,
+  computeWorkflowNodePromptOverrideIdentitySha256,
+  computeWorkflowNodePromptOverrideSha256,
   resolveMemoryImportContent,
   validateExecutionCandidate,
   assertProjectWorkGraph,
@@ -2005,7 +2008,7 @@ function assertPromptFragments(snapshot: ProductSnapshot, fail: Fail): void {
 }
 
 /**
- * Prompt Assembly是Direct Run在发送当下冻结的输入事实。这里不能只验证对象自身Hash：
+ * Prompt Assembly是Run在发送当下冻结的输入事实。这里不能只验证对象自身Hash：
  * 还必须从Run、原始User Message和精确Prompt Revision反向重建投影，防止攻击者同时
  * 篡改正文与Hash，或把其他Session/Workspace的Prompt资产挂到当前Run。
  */
@@ -2029,9 +2032,9 @@ function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
         : entities.workflowRunSpecs[run.workflowRunSpecId];
     const definitionRevision =
       entities.workflowDefinitionRevisions[assembly.workflowDefinitionRevisionId];
+    const isV3 = assembly.schemaVersion === "prompt-assembly.v3";
     if (
       run === undefined ||
-      run.runKind !== "direct_agent" ||
       session === undefined ||
       sourceMessage === undefined ||
       definitionRevision === undefined ||
@@ -2042,7 +2045,8 @@ function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
       runSpec?.productRunId !== assembly.productRunId ||
       runSpec.definitionRef.workflowDefinitionRevisionId !==
         assembly.workflowDefinitionRevisionId ||
-      runSpec.definitionRef.blueprintKey !== "direct"
+      (!isV3 && runSpec.definitionRef.blueprintKey !== "direct") ||
+      (isV3 && runSpec.definitionRef.blueprintKey === "direct")
     ) {
       fail(
         `promptAssembly ${assembly.promptAssemblyId} 与Run/Session/Message/WorkflowRevision绑定不一致`,
@@ -2052,11 +2056,12 @@ function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
     const isLegacy = assembly.compilerVersion === LEGACY_DIRECT_PROMPT_COMPILER_VERSION;
     const isV2 = assembly.schemaVersion === "prompt-assembly.v2";
     if (
-      (isLegacy && assembly.profileVersion !== LEGACY_DIRECT_PROMPT_PROFILE_VERSION) ||
+      (!isV3 && isLegacy && assembly.profileVersion !== LEGACY_DIRECT_PROMPT_PROFILE_VERSION) ||
       (isV2 &&
         (assembly.compilerVersion !== DIRECT_PROMPT_COMPILER_V2_VERSION ||
           assembly.profileVersion !== DIRECT_PROMPT_PROFILE_V2_VERSION)) ||
-      (!isLegacy &&
+      (!isV3 &&
+        !isLegacy &&
         !isV2 &&
         (assembly.compilerVersion !== DIRECT_PROMPT_COMPILER_VERSION ||
           assembly.profileVersion !== DIRECT_PROMPT_PROFILE_VERSION))
@@ -2074,8 +2079,11 @@ function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
       fail(`promptAssembly ${assembly.promptAssemblyId} 历史Direct投影非法`);
     }
 
+    const assemblyRegions = isV3
+      ? [...assembly.sharedRegions, ...assembly.nodes.flatMap((node) => node.regions)]
+      : assembly.regions;
     const seenRevisionIds = new Set<string>();
-    for (const region of assembly.regions) {
+    for (const [regionIndex, region] of assemblyRegions.entries()) {
       if (
         (region.mode === "default" &&
           region.fragments.some((fragment) => fragment.selectionKind !== "profile_default")) ||
@@ -2094,10 +2102,13 @@ function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
         if (!promptFragmentScopeSchema.safeParse(fragment.scope).success) {
           fail(`promptAssembly ${assembly.promptAssemblyId} Fragment Scope非法`);
         }
-        if (seenRevisionIds.has(fragment.promptFragmentRevisionId)) {
+        const seenKey = isV3
+          ? `${String(regionIndex)}:${fragment.promptFragmentRevisionId}`
+          : fragment.promptFragmentRevisionId;
+        if (seenRevisionIds.has(seenKey)) {
           fail(`promptAssembly ${assembly.promptAssemblyId} 重复采用Prompt Revision`);
         }
-        seenRevisionIds.add(fragment.promptFragmentRevisionId);
+        seenRevisionIds.add(seenKey);
         if (
           fragment.scope.kind === "workspace" &&
           fragment.scope.rootId !== assembly.workspaceRootId
@@ -2110,6 +2121,71 @@ function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
           }
           if (fragment.selectionKind === "profile_default" && region.mode === "replace") {
             fail(`promptAssembly ${assembly.promptAssemblyId} Replace Region混入Profile默认来源`);
+          }
+          continue;
+        }
+
+        if (fragment.ownerKind === "workflow_node_override") {
+          const assemblyNode = isV3
+            ? assembly.nodes.find((node) =>
+                node.regions.some((candidateRegion) =>
+                  candidateRegion.fragments.some(
+                    (candidate) =>
+                      candidate.promptFragmentRevisionId === fragment.promptFragmentRevisionId,
+                  ),
+                ),
+              )
+            : undefined;
+          const runNode = isV3
+            ? assemblyNode === undefined
+              ? undefined
+              : runSpec?.nodeResolutions.find(
+                  (node) => node.definitionNodeId === assemblyNode.definitionNodeId,
+                )
+            : isV2
+              ? runSpec?.nodeResolutions.find(
+                  (node) => node.nodeType === "agent.direct" && node.activation === "enabled",
+                )
+              : undefined;
+          const bodyMarkdown = runNode?.config["agentPromptOverride"];
+          const definitionNodeId = assemblyNode?.definitionNodeId ?? runNode?.definitionNodeId;
+          const nodeType = assemblyNode?.nodeType ?? runNode?.nodeType;
+          const expectedIdentity =
+            definitionNodeId === undefined
+              ? undefined
+              : computeWorkflowNodePromptOverrideIdentitySha256({
+                  workflowDefinitionRevisionId: assembly.workflowDefinitionRevisionId,
+                  definitionNodeId,
+                });
+          const expectedSha256 =
+            definitionNodeId === undefined ||
+            nodeType === undefined ||
+            typeof bodyMarkdown !== "string"
+              ? undefined
+              : computeWorkflowNodePromptOverrideSha256({
+                  workflowDefinitionRevisionId: assembly.workflowDefinitionRevisionId,
+                  definitionNodeId,
+                  nodeType,
+                  bodyMarkdown,
+                });
+          if (
+            runNode === undefined ||
+            nodeType === undefined ||
+            runNode.nodeType !== nodeType ||
+            typeof bodyMarkdown !== "string" ||
+            bodyMarkdown.trim() === "" ||
+            fragment.content.kind !== "markdown" ||
+            fragment.content.bodyMarkdown !== bodyMarkdown ||
+            fragment.promptFragmentId !== `pfg_${expectedIdentity?.slice(0, 32) ?? ""}` ||
+            fragment.promptFragmentRevisionId !== `pfr_${expectedSha256?.slice(0, 32) ?? ""}` ||
+            fragment.sha256 !== expectedSha256 ||
+            fragment.revision !== 1 ||
+            fragment.scope.kind !== "global" ||
+            fragment.sourceRelativePath !== undefined ||
+            fragment.selectionKind !== "explicit" ||
+            fragment.regionKey !== "agent_identity"
+          ) {
+            fail(`promptAssembly ${assembly.promptAssemblyId} Workflow节点Prompt来源绑定不一致`);
           }
           continue;
         }
@@ -2144,11 +2220,38 @@ function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
       }
     }
 
-    const systemPromptAppend = assembly.regions
+    const systemPromptAppend = (isV3 ? assembly.sharedRegions : assembly.regions)
       .filter((region) => region.placement === "system" && region.renderedText !== "")
+      .filter(
+        (region) =>
+          assembly.schemaVersion !== "prompt-assembly.v2" ||
+          assembly.piSystemPrompt === undefined ||
+          region.regionKey !== "agent_identity",
+      )
       .map((region) => region.renderedText)
       .join("\n\n");
-    if (assembly.schemaVersion === "prompt-assembly.v2") {
+    if (isV3) {
+      const runNodes = new Map(
+        runSpec?.nodeResolutions
+          .filter((node) => node.activation === "enabled")
+          .map((node) => [node.definitionNodeId, node.nodeType]) ?? [],
+      );
+      for (const node of assembly.nodes) {
+        if (runNodes.get(node.definitionNodeId) !== node.nodeType) {
+          fail(`promptAssembly ${assembly.promptAssemblyId} 节点与RunSpec不一致`);
+        }
+        const rendered = node.regions
+          .filter((region) => region.placement === "system" && region.renderedText !== "")
+          .filter(
+            (region) => node.piSystemPrompt === undefined || region.regionKey !== "agent_identity",
+          )
+          .map((region) => region.renderedText)
+          .join("\n\n");
+        if (rendered !== node.systemPromptAppend) {
+          fail(`promptAssembly ${assembly.promptAssemblyId} 节点System投影非法`);
+        }
+      }
+    } else if (assembly.schemaVersion === "prompt-assembly.v2") {
       const current = assembly.messages.at(-1);
       if (
         assembly.systemPromptAppend !== systemPromptAppend ||
@@ -2266,7 +2369,8 @@ function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
 
   for (const run of Object.values(entities.runs)) {
     const count = assembliesByRun.get(run.productRunId)?.length ?? 0;
-    if (run.runKind === "direct_agent" ? count !== 1 : count !== 0) {
+    // 历史Planning/Note Run允许没有V3；新命令会原子冻结一个。Direct自v1起强制1:1。
+    if (run.runKind === "direct_agent" ? count !== 1 : count > 1) {
       fail(`run ${run.productRunId} 的Prompt Assembly数量无效`);
     }
   }
@@ -3130,6 +3234,17 @@ function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
       if ((attempt.planRevision ?? 1) > 1 && (prior === undefined || revisionInput === undefined)) {
         fail(`planning attempt ${attempt.attemptId} 修订轮缺少上一版Plan或Revision Input`);
       }
+      const workflowPromptAssembly = Object.values(entities.promptAssemblies).find(
+        (assembly): assembly is PromptAssemblyV3 =>
+          assembly.schemaVersion === "prompt-assembly.v3" &&
+          assembly.productRunId === attempt.productRunId,
+      );
+      const plannerPrompt = workflowPromptAssembly?.nodes.find(
+        (node) => node.nodeType === "agent.plan",
+      );
+      if (workflowPromptAssembly !== undefined && plannerPrompt === undefined) {
+        fail(`planning attempt ${attempt.attemptId} 缺少Planner Prompt节点`);
+      }
       const manifest = computePlanningInputManifestSha256({
         productRunId: attempt.productRunId,
         planRevision: attempt.planRevision,
@@ -3201,6 +3316,16 @@ function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
               },
             }
           : {}),
+        ...(workflowPromptAssembly === undefined || plannerPrompt === undefined
+          ? {}
+          : {
+              promptAssemblyRef: {
+                promptAssemblyId: workflowPromptAssembly.promptAssemblyId,
+                sha256: workflowPromptAssembly.sha256,
+                definitionNodeId: plannerPrompt.definitionNodeId,
+                nodeAssemblySha256: plannerPrompt.sha256,
+              },
+            }),
         promptTemplateVersion,
         modelConfigVersion,
       });
@@ -4535,6 +4660,27 @@ function assertExecution(snapshot: ProductSnapshot, fail: Fail): void {
         dependencyRefs: stepResult.dependencyRefs,
         promptTemplateVersion: attempt.promptTemplateVersion,
         modelConfigVersion: attempt.modelConfigVersion,
+        ...(() => {
+          const assembly = Object.values(entities.promptAssemblies).find(
+            (candidate): candidate is PromptAssemblyV3 =>
+              candidate.schemaVersion === "prompt-assembly.v3" &&
+              candidate.productRunId === attempt.productRunId,
+          );
+          const node = assembly?.nodes.find((candidate) => candidate.nodeType === "execute.plan");
+          if (assembly !== undefined && node === undefined) {
+            fail(`execution attempt ${attempt.attemptId} 缺少Executor Prompt节点`);
+          }
+          return assembly === undefined || node === undefined
+            ? {}
+            : {
+                promptAssemblyRef: {
+                  promptAssemblyId: assembly.promptAssemblyId,
+                  sha256: assembly.sha256,
+                  definitionNodeId: node.definitionNodeId,
+                  nodeAssemblySha256: node.sha256,
+                },
+              };
+        })(),
       });
       if (inputManifestSha256 !== stepResult.inputManifestSha256) {
         fail(`candidate ${candidate.executionCandidateId} 步骤输入Manifest不一致`);
@@ -4665,6 +4811,7 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
     CommitRunOutcomeUnknown: ["productRunId"],
     TransitionConfigurablePlanningNode: ["workflowNodeRunId"],
     CopyWorkflowDefinition: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
+    SaveWorkflowAgentNodeConfiguration: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
     SaveWorkflowDefinitionDraft: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
     PublishWorkflowDefinition: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
     ChangeWorkflowDefinitionArchiveStatus: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
@@ -4733,6 +4880,7 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
     CreatePromptFragment: ["promptFragmentId", "promptFragmentRevisionId"],
     CopyPromptFragment: ["promptFragmentId", "promptFragmentRevisionId"],
     RevisePromptFragment: ["promptFragmentId", "promptFragmentRevisionId"],
+    ReviseAgentPrompt: ["promptFragmentId", "promptFragmentRevisionId"],
     ChangePromptFragmentArchiveStatus: ["promptFragmentId", "promptFragmentRevisionId"],
     // 三类Planning Context在none/ready时返回不同的事实引用，见下方动态分支。
   };

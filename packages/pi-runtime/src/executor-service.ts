@@ -6,6 +6,8 @@ import { z } from "zod";
 import {
   EXECUTOR_PROMPT_TEMPLATE_VERSION,
   MODEL_CONFIG_VERSION,
+  agentKeySchema,
+  agentRuntimeBaselineDtoSchema,
   authorizeExecutorOperationResponseSchema,
   type AuthorizeExecutorOperationRequest,
   type AuthorizeExecutorOperationResponse,
@@ -16,6 +18,7 @@ import {
   PiCodingAgentExecutionError,
   type PiCodingAgentRunner,
 } from "./coding-agent-executor.js";
+import { createPiAgentRuntimeProfileReader } from "./coding-agent-runtime-profile.js";
 import {
   PiExecutorOperationConflictError,
   PiExecutorOperationNotFoundError,
@@ -77,6 +80,7 @@ export interface PiExecutorServiceOptions {
     input: Omit<AuthorizeExecutorOperationRequest, "schemaVersion">,
   ) => Promise<AuthorizeExecutorOperationResponse>;
   readonly runner?: PiCodingAgentRunner;
+  readonly agentRuntimeProfiles?: ReturnType<typeof createPiAgentRuntimeProfileReader>;
 }
 
 function authorized(actual: string | undefined, expected: string): boolean {
@@ -117,6 +121,7 @@ function problem(error: unknown): { readonly errorCode: string } {
 export function createPiExecutorService(options: PiExecutorServiceOptions) {
   const app = new Hono();
   const runner = options.runner ?? new AgentSessionPiCodingAgentRunner();
+  const agentRuntimeProfiles = options.agentRuntimeProfiles ?? createPiAgentRuntimeProfileReader();
   const active = new Map<string, AbortController>();
   const tasks = new Set<Promise<void>>();
 
@@ -130,6 +135,19 @@ export function createPiExecutorService(options: PiExecutorServiceOptions) {
   app.get("/healthz", (c) =>
     c.json({ service: "chat-pi-executor", protocolVersion: PI_EXECUTOR_PROTOCOL_VERSION }),
   );
+
+  app.get("/internal/pi-executor/v1/agent-runtime-profiles/:agentKey", async (c) => {
+    try {
+      const profile = await agentRuntimeProfiles.read(
+        agentKeySchema.parse(c.req.param("agentKey")),
+      );
+      if (profile === undefined)
+        return c.json({ errorCode: "executor.agent_profile_not_found" }, 404);
+      return c.json(agentRuntimeBaselineDtoSchema.parse(profile));
+    } catch (error) {
+      return c.json(problem(error), statusForError(error));
+    }
+  });
 
   app.post("/internal/pi-executor/v1/operations", async (c) => {
     try {
@@ -158,6 +176,7 @@ export function createPiExecutorService(options: PiExecutorServiceOptions) {
         ...submitted,
         contract: authorization.contract,
         contextItems: authorization.contextItems,
+        ...(authorization.nodePrompt === undefined ? {} : { nodePrompt: authorization.nodePrompt }),
       });
       validateOperationRequest(request, authorization.dependencyRefs);
       const created = await options.store.createOrGet(request);
@@ -327,6 +346,16 @@ function validateOperationRequest(
     dependencyRefs,
     promptTemplateVersion: EXECUTOR_PROMPT_TEMPLATE_VERSION,
     modelConfigVersion: MODEL_CONFIG_VERSION,
+    ...(request.nodePrompt === undefined
+      ? {}
+      : {
+          promptAssemblyRef: {
+            promptAssemblyId: request.nodePrompt.promptAssemblyId,
+            sha256: request.nodePrompt.promptAssemblySha256,
+            definitionNodeId: request.nodePrompt.definitionNodeId,
+            nodeAssemblySha256: request.nodePrompt.nodeAssemblySha256,
+          },
+        }),
   });
   if (computed !== request.inputManifestSha256) {
     throw new PiCodingAgentExecutionError("execution.input_manifest_mismatch");

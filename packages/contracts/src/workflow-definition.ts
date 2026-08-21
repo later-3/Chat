@@ -385,7 +385,7 @@ const nodeConfigOverrideSchema = z
       .regex(/^[A-Za-z][A-Za-z0-9]*$/),
     value: z.union([
       z.boolean(),
-      z.string().max(2_000),
+      z.string().max(65_536),
       z.number().int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),
     ]),
   })

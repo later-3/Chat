@@ -1,4 +1,4 @@
-import type { TraceEventInput } from "@chat/contracts";
+import type { RunActivityEventInput, TraceEventInput } from "@chat/contracts";
 import type {
   MemoryBackendRegistryPort,
   MemoryImportBackendRegistryPort,
@@ -35,6 +35,8 @@ export interface WorkflowRuntimeContext {
   readonly memoryImportBackends?: MemoryImportBackendRegistryPort;
   readonly workflowMemoryProviders: WorkflowMemoryProviderRegistryPort;
   readonly trace: (event: TraceEventInput) => void;
+  /** Session Activity与Debug Trace分开写入；这里只接收可展示、有界的Run活动。 */
+  readonly activity?: (event: RunActivityEventInput) => void;
   readonly now: () => string;
   readonly bailian: BailianConfig;
   readonly planner: typeof runPiPlanner;

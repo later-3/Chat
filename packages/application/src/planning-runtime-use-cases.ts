@@ -19,6 +19,7 @@ import { notFound, revisionConflict } from "./errors.js";
 import { emitRunEvent } from "./trace-helpers.js";
 import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
 import { requirePlanningRun } from "./product-run-kind.js";
+import { workflowNodePromptFor } from "./prompt-assembly-use-cases.js";
 
 /**
  * Workflow私有Application Command：compilePlanningInput / loadCommittedDecision。
@@ -310,6 +311,7 @@ export async function compilePlanningInput(
       }
 
       const sourceMessageSha256 = messageSha256(message);
+      const nodePrompt = workflowNodePromptFor(draft, input.productRunId, "agent.plan");
       const inputManifestSha256 = computePlanningInputManifestSha256({
         productRunId: input.productRunId,
         planRevision: input.planRevision,
@@ -381,6 +383,16 @@ export async function compilePlanningInput(
               },
             }
           : {}),
+        ...(nodePrompt === undefined
+          ? {}
+          : {
+              promptAssemblyRef: {
+                promptAssemblyId: nodePrompt.promptAssemblyId,
+                sha256: nodePrompt.promptAssemblySha256,
+                definitionNodeId: nodePrompt.definitionNodeId,
+                nodeAssemblySha256: nodePrompt.nodeAssemblySha256,
+              },
+            }),
         promptTemplateVersion: PLANNER_PROMPT_TEMPLATE_VERSION,
         modelConfigVersion: MODEL_CONFIG_VERSION,
       });
@@ -465,6 +477,7 @@ export async function compilePlanningInput(
 
   const message = snapshot.entities.messages[run.sourceMessageId];
   if (message === undefined) throw notFound("源消息不存在");
+  const nodePrompt = workflowNodePromptFor(snapshot, input.productRunId, "agent.plan");
   const contextRequest = Object.values(snapshot.entities.contextRequests).find(
     (candidate) => candidate.productRunId === input.productRunId,
   );
@@ -612,6 +625,7 @@ export async function compilePlanningInput(
       sha256: attempt.sourceMessageSha256,
     },
     sourceMessageText: message.content.text,
+    ...(nodePrompt === undefined ? {} : { nodePrompt }),
     ...(contextRequest.schemaVersion === "run-context-request.v2"
       ? {
           workspaceInstructions: {

@@ -32,4 +32,20 @@ export function traceFileName(date: Date): string {
   return `chat-trace-${date.toISOString().slice(0, 10)}.jsonl`;
 }
 
-export const TRACE_FILE_PATTERN = /^chat-trace-\d{4}-\d{2}-\d{2}\.jsonl$/;
+/** 新写入使用独立bounded文件，避免历史超大文件让当天诊断完全失效。 */
+export function boundedTraceFileName(date: Date): string {
+  return `chat-trace-${date.toISOString().slice(0, 10)}.bounded.jsonl`;
+}
+
+export const TRACE_FILE_PATTERN = /^chat-trace-\d{4}-\d{2}-\d{2}(?:\.bounded)?\.jsonl$/;
+
+/** Session Activity与Debug Trace物理隔离；默认每个Product Run一个文件。 */
+export function resolveRunActivityDir(options?: { dir?: string; cwd?: string }): string {
+  if (options?.dir) return resolve(options.dir);
+  if (process.env.CHAT_RUN_ACTIVITY_DIR) return resolve(process.env.CHAT_RUN_ACTIVITY_DIR);
+  return join(findRepoRoot(options?.cwd ?? process.cwd()), ".data", "run-activity");
+}
+
+export function runActivityFileName(productRunId: string): string {
+  return `${productRunId}.jsonl`;
+}

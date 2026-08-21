@@ -14,6 +14,7 @@ import { prepareBridgeChatDispatch } from "../src/bridge-chat-dispatch.ts";
 import { BridgeDispatchReviewCoordinator } from "../src/bridge-dispatch-review.ts";
 import { LifeosBridgeService } from "../src/bridge-service.ts";
 import type { ChatProductClient } from "../src/chat-client.ts";
+import { promptTurnPreviewFixture } from "./prompt-turn-preview-fixture.ts";
 import {
   dshBridgeSendPreviewSchema,
   type BridgeChatDispatchPlan,
@@ -166,6 +167,7 @@ test("two enabled gates require DSH approval before Bridge approval and reject p
           workflowSelection: null,
           promptSelection: { schemaVersion: "prompt-turn-selection-input.v1", regions: [] },
           promptConfiguration: null,
+          promptTurnPreview: promptTurnPreviewFixture(text),
           dshToBridge: {
             adapterRequest,
             userInput: { text, sha256: sha256(text) },
@@ -174,7 +176,7 @@ test("two enabled gates require DSH approval before Bridge approval and reject p
               dshSessionId,
               status: "ready",
               revision: "f".repeat(64),
-              chatForwarding: "latest_direct_user_message_and_workspace_instructions",
+              chatForwarding: "not_forwarded",
               items: [],
               totalItems: 0,
               omittedItems: 0,

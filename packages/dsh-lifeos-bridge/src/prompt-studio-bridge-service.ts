@@ -1,11 +1,14 @@
 import {
+  agentKeySchema,
   changePromptFragmentArchiveStatusPayloadSchema,
   commandIdSchema,
   copyPromptFragmentPayloadSchema,
   createPromptFragmentPayloadSchema,
   previewPromptAssemblyPayloadSchema,
   previewPromptConfigurationPayloadSchema,
+  reviseAgentPromptPayloadSchema,
   revisePromptFragmentPayloadSchema,
+  restoreAgentPromptPayloadSchema,
 } from "@chat/contracts/public";
 import { z } from "zod";
 import type { ChatProductClient } from "./chat-client.ts";
@@ -33,6 +36,12 @@ export const promptStudioArchiveRequestSchema = z
 export const promptStudioPreviewRequestSchema = previewPromptAssemblyPayloadSchema;
 export const promptStudioConfigurationPreviewRequestSchema =
   previewPromptConfigurationPayloadSchema;
+export const agentPromptReviseRequestSchema = z
+  .object({ commandId: commandIdSchema, payload: reviseAgentPromptPayloadSchema })
+  .strict();
+export const agentPromptRestoreRequestSchema = z
+  .object({ commandId: commandIdSchema, payload: restoreAgentPromptPayloadSchema })
+  .strict();
 
 /** DSH Host只做同源协议转换；Prompt Catalog、Revision和CAS仍由Chat公开API拥有。 */
 export class PromptStudioBridgeService {
@@ -44,6 +53,26 @@ export class PromptStudioBridgeService {
 
   workspaces() {
     return this.chat.getPromptWorkspaces();
+  }
+
+  agents() {
+    return this.chat.getAgentProfiles();
+  }
+
+  reviseAgent(agentKey: string, request: z.infer<typeof agentPromptReviseRequestSchema>) {
+    return this.chat.reviseAgentPrompt(
+      agentKeySchema.parse(agentKey),
+      request.commandId,
+      request.payload,
+    );
+  }
+
+  restoreAgent(agentKey: string, request: z.infer<typeof agentPromptRestoreRequestSchema>) {
+    return this.chat.restoreAgentPrompt(
+      agentKeySchema.parse(agentKey),
+      request.commandId,
+      request.payload,
+    );
   }
 
   preview(request: z.infer<typeof promptStudioPreviewRequestSchema>) {

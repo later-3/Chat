@@ -13,6 +13,10 @@ export interface SessionRecordsInjected {
 
 export type SessionRecordsViewProps = ConvViewProps & InjectFace<SessionRecordsInjected>;
 
+export type SessionRecordsContentProps = InjectFace<SessionRecordsInjected> & {
+  readonly presentation?: "view" | "modal";
+};
+
 type SourceTab = "chat" | "dsh";
 
 function dateTime(value: string | number | null): string {
@@ -76,12 +80,13 @@ function SourceState({
  * DSH原生Conversation View中的双源检查面。Chat页展示正式产品消息，DSH页
  * 展示完整原始事件；普通“对话”页和“轨迹”页仍分别拥有阅读与执行过程体验。
  */
-export function SessionRecordsView({
+export function SessionRecordsContent({
   useSessionRecords,
   refresh,
   loadMoreChat,
   loadMoreDsh,
-}: SessionRecordsViewProps) {
+  presentation = "view",
+}: SessionRecordsContentProps) {
   const state = useSessionRecords((value) => value);
   const [tab, setTab] = useState<SourceTab>("chat");
   const overview = state.overview;
@@ -89,11 +94,16 @@ export function SessionRecordsView({
   const dsh = overview?.dsh;
 
   return (
-    <section className="lifeos-records" aria-label="会话记录" data-testid="lifeos-session-records">
+    <section
+      className="lifeos-records"
+      data-presentation={presentation}
+      aria-label="Chat Session"
+      data-testid="lifeos-session-records"
+    >
       <header className="lifeos-records-toolbar">
         <div>
-          <strong>会话记录</strong>
-          <span>Product Session 与 DSH Session 分开持久化，在这里组合查看</span>
+          <strong>Chat Session</strong>
+          <span>Product Session 是正式会话；DSH Session 是原生交互来源，在这里按身份组合查看</span>
         </div>
         <button
           type="button"
@@ -257,4 +267,9 @@ export function SessionRecordsView({
       )}
     </section>
   );
+}
+
+/** DSH原生Conversation View继续复用同一份友好Session投影。 */
+export function SessionRecordsView(props: SessionRecordsViewProps) {
+  return <SessionRecordsContent {...props} presentation="view" />;
 }

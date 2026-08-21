@@ -30,6 +30,7 @@ import {
   projectIdSchema,
   promptReviewDecisionIdSchema,
   promptReviewRequestIdSchema,
+  promptAssemblyIdSchema,
   ruleSelectionIdSchema,
   ruleIdSchema,
   ruleRevisionIdSchema,
@@ -40,6 +41,7 @@ import {
   memoryWriteIntentIdSchema,
   memoryWriteResultIdSchema,
 } from "./ids.js";
+import { piSystemPromptResolutionSchema } from "./prompt-assembly.js";
 import {
   decisionKindSchema,
   executionCandidateSchema,
@@ -73,6 +75,7 @@ import {
   MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION,
 } from "./versions.js";
 import { workflowRunSpecSchema, workflowRunnerFamilySchema } from "./workflow-definition.js";
+import { workflowDefinitionNodeIdSchema } from "./workflow-definition.js";
 import { workflowExecutionPathSegmentSchema } from "./workflow-run.js";
 import { planningProjectSnapshotSchema } from "./planning-project-context.js";
 import { ruleSelectionSourceSchema } from "./rules.js";
@@ -131,6 +134,19 @@ const internalRuleSelectionRefSchema = z
     sha256: sha256Schema,
   })
   .strict();
+
+/** Application从Run级Assembly授权给一个具体模型节点的不可变用户Prompt层。 */
+export const workflowNodePromptRuntimeSchema = z
+  .object({
+    promptAssemblyId: promptAssemblyIdSchema,
+    promptAssemblySha256: sha256Schema,
+    definitionNodeId: workflowDefinitionNodeIdSchema,
+    nodeAssemblySha256: sha256Schema,
+    profileVersion: z.string().min(1).max(100),
+    systemPromptAppend: z.string().max(512_000),
+    piSystemPrompt: piSystemPromptResolutionSchema.optional(),
+  })
+  .strict();
 export const internalWorkflowMemoryContextRefSchema = z
   .object({
     workflowMemoryContextId: workflowMemoryContextIdSchema,
@@ -165,6 +181,7 @@ export const planningInputDtoSchema = z
     inputManifestSha256: sha256Schema,
     sourceMessageRef: z.object({ messageId: messageIdSchema, sha256: sha256Schema }).strict(),
     sourceMessageText: z.string().min(1),
+    nodePrompt: workflowNodePromptRuntimeSchema.optional(),
     workspaceInstructions: z
       .object({
         ref: internalWorkspaceInstructionsRefSchema,
@@ -899,6 +916,7 @@ export const authorizeExecutorOperationResponseSchema = z
     contract: executionContractSchema,
     contextItems: z.array(executionContextItemDtoSchema).max(50),
     dependencyRefs: z.array(executionDependencyRefSchema).max(50),
+    nodePrompt: workflowNodePromptRuntimeSchema.optional(),
   })
   .strict();
 
@@ -1145,6 +1163,7 @@ export const prepareNoteCaptureInputRuntimeResponseSchema = z
     suggestedTagLabels: z
       .array(z.string().trim().min(1).max(NOTE_TAG_LABEL_MAX_CHARACTERS))
       .max(NOTE_TAG_MAX_COUNT),
+    nodePrompt: workflowNodePromptRuntimeSchema.optional(),
     priorCandidate: noteCandidateReviewDtoSchema.optional(),
     revisionInstruction: z.string().trim().min(1).max(2_000).optional(),
   })

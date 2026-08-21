@@ -51,6 +51,7 @@ import {
   submitNoteDecisionPayloadSchema,
   workflowDefinitionIdSchema,
   createWorkflowDefinitionCopyPayloadSchema,
+  saveWorkflowAgentNodeConfigurationPayloadSchema,
   saveWorkflowDefinitionDraftPayloadSchema,
   validateWorkflowDefinitionPayloadSchema,
   publishWorkflowDefinitionPayloadSchema,
@@ -64,6 +65,7 @@ import {
   createRuleTagPayloadSchema,
   updateRuleTagPayloadSchema,
   archiveRuleTagPayloadSchema,
+  agentKeySchema,
   promptFragmentIdSchema,
   promptFragmentRevisionIdSchema,
   listPromptFragmentsQuerySchema,
@@ -73,6 +75,9 @@ import {
   changePromptFragmentArchiveStatusPayloadSchema,
   previewPromptAssemblyPayloadSchema,
   previewPromptConfigurationPayloadSchema,
+  previewPromptTurnPayloadSchema,
+  reviseAgentPromptPayloadSchema,
+  restoreAgentPromptPayloadSchema,
   projectBootstrapCandidateIdSchema,
   projectBootstrapOperationIdSchema,
   projectBootstrapConfigurationSchema,
@@ -154,6 +159,7 @@ import {
   submitNoteDecision,
   getWorkflowDefinitionDetail,
   createWorkflowDefinitionCopy,
+  saveWorkflowAgentNodeConfiguration,
   saveWorkflowDefinitionDraft,
   validateWorkflowDefinition,
   publishWorkflowDefinition,
@@ -167,6 +173,10 @@ import {
   createRuleTag,
   updateRuleTag,
   archiveRuleTag,
+  listAgentProfiles,
+  getAgentProfile,
+  reviseAgentPrompt,
+  restoreAgentPrompt,
   listPromptRegions,
   listPromptWorkspaces,
   listPromptFragments,
@@ -178,6 +188,7 @@ import {
   changePromptFragmentArchiveStatus,
   previewDirectPromptAssembly,
   previewDirectPromptConfiguration,
+  previewPromptTurn,
   decideProjectBootstrapCandidate,
   executeProjectBootstrapOperation,
   getProjectBootstrapConfiguration,
@@ -263,6 +274,13 @@ function mapError(
       recoveryAction: "none",
     });
   }
+  // 未知异常属于产品API失败边界：只记录错误类别与消息，禁止把请求Payload、
+  // Provider内容或Prompt正文写入常规日志。requestId用于关联按模块开启的Trace。
+  console.error("[chat-api] request_failed", {
+    requestId: c.get("requestId"),
+    errorName: error instanceof Error ? error.name : "UnknownError",
+    errorMessage: error instanceof Error ? error.message : "unknown error",
+  });
   return problem(c, {
     status: 500,
     code: "internal_error",
@@ -535,6 +553,26 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
     }
   });
 
+  router.post("/workflow/definitions/agent-node-configurations", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const result = await saveWorkflowAgentNodeConfiguration(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        payload: saveWorkflowAgentNodeConfigurationPayloadSchema.parse(envelope.payload),
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/workflow/definitions/agent-node-configurations",
+        statusCode: 201,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
   router.post("/workflow/definitions/validate", async (c) => {
     try {
       const payload = validateWorkflowDefinitionPayloadSchema.parse(await parseJsonBody(c));
@@ -690,6 +728,75 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
     }
   });
 
+  router.get("/agent-profiles", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      return privateEtagJson(
+        c,
+        "agent-profiles",
+        await listAgentProfiles(ctx.deps, { principalId: ctx.principalId }),
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/agent-profiles/:agentKey", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      return privateEtagJson(
+        c,
+        "agent-profile",
+        await getAgentProfile(ctx.deps, {
+          principalId: ctx.principalId,
+          agentKey: agentKeySchema.parse(c.req.param("agentKey")),
+        }),
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/agent-profiles/:agentKey/prompt-revisions", async (c) => {
+    try {
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const result = await reviseAgentPrompt(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        agentKey: agentKeySchema.parse(c.req.param("agentKey")),
+        payload: reviseAgentPromptPayloadSchema.parse(envelope.payload),
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/agent-profiles/:agentKey/prompt-revisions",
+        statusCode: 200,
+      });
+      return c.json(result, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/agent-profiles/:agentKey/restore-default", async (c) => {
+    try {
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const result = await restoreAgentPrompt(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        agentKey: agentKeySchema.parse(c.req.param("agentKey")),
+        payload: restoreAgentPromptPayloadSchema.parse(envelope.payload),
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/agent-profiles/:agentKey/restore-default",
+        statusCode: 200,
+      });
+      return c.json(result, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
   router.get("/prompt-workspaces", async (c) => {
     try {
       assertNoQuery(c.req.url);
@@ -716,6 +823,22 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
     }
   });
 
+  router.post("/prompt-turn-previews", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const payload = previewPromptTurnPayloadSchema.parse(await parseJsonBody(c));
+      return c.json(
+        await previewPromptTurn(ctx.deps, {
+          principalId: ctx.principalId,
+          payload,
+        }),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
   router.post("/prompt-configuration-previews", async (c) => {
     try {
       assertNoQuery(c.req.url);
@@ -724,6 +847,9 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
         await previewDirectPromptConfiguration(ctx.deps, {
           principalId: ctx.principalId,
           selection: payload.selection,
+          ...(payload.definitionNodeId === undefined
+            ? {}
+            : { definitionNodeId: payload.definitionNodeId }),
         }),
         200,
       );

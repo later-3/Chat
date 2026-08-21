@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { CommandId, PrincipalId } from "@chat/contracts";
+import { agentRuntimeBaselineDtoSchema, type CommandId, type PrincipalId } from "@chat/contracts";
 import {
   authorizeDirectAgentOperation,
   beginDirectAgentAttempt,
@@ -11,10 +11,12 @@ import {
   commitRunFailure,
   consumePromptReviewDecision,
   createProductSession,
+  getCurrentPromptReview,
   persistDirectAgentCandidate,
   publishPromptReviewRequest,
   submitPromptReviewDecision,
   submitUserMessage,
+  transitionConfigurablePlanningNode,
   type ApplicationDeps,
   type DirectAgentIdFactory,
   type IdFactory,
@@ -79,9 +81,66 @@ async function createHarness() {
     promptCatalog: {
       load: async () => ({
         catalogSha256: "a".repeat(64),
+        sharedSelectionProfile: {
+          profileId: "test-empty-default.v1",
+          defaultRevisionIds: [],
+        },
         regions: [],
         builtinFragments: [],
+        agents: [
+          {
+            agentKey: "direct",
+            title: "直接执行 Agent",
+            description: "负责直接处理当前请求。",
+            profileVersion: "direct-agent-prompt.v1",
+            supportedNodeTypes: ["agent.direct"],
+            defaultPrompt: {
+              kind: "pi_coding_agent",
+              defaultVariantKey: "read_only",
+            },
+            tools: [{ name: "read", description: "读取受权文件。" }],
+          },
+        ],
       }),
+    },
+    agentRuntimeProfiles: {
+      read: async (agentKey) =>
+        agentKey === "direct"
+          ? agentRuntimeBaselineDtoSchema.parse({
+              kind: "pi_coding_agent",
+              title: "Pi Coding Agent",
+              packageName: "@earendil-works/pi-coding-agent",
+              packageVersion: "0.84.2",
+              managedSource: "later-3/pi@codex/later-custom",
+              compositionStrategy: "pi_default_or_custom_then_chat_runtime_then_context",
+              chatRuntimeAppend: {
+                bodyMarkdown: "Direct Runtime Contract",
+                sha256: "c".repeat(64),
+                sourceRelativePath: "packages/pi-runtime/src/coding-agent-runtime-profile.ts",
+              },
+              variants: [
+                {
+                  variantKey: "read_only",
+                  title: "只读执行",
+                  description: "只读检查Workspace。",
+                  enabledToolNames: ["read", "grep", "find", "ls"],
+                  piSystemPrompt: {
+                    bodyMarkdown: "You are an expert coding assistant operating inside pi.",
+                    sha256: "d".repeat(64),
+                    dynamicPlaceholders: ["WORKSPACE_ROOT"],
+                    sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
+                  },
+                  tools: ["read", "grep", "find", "ls"].map((name) => ({
+                    name,
+                    description: `${name} tool`,
+                    parametersJson: "{}",
+                    sourceRelativePath: `pi/packages/coding-agent/src/core/tools/${name}.ts`,
+                  })),
+                },
+              ],
+              finalReviewNote: "最终内容以发送前审核为准。",
+            })
+          : undefined,
     },
   };
   const { session } = await createProductSession(deps, {
@@ -101,13 +160,33 @@ async function createHarness() {
   return { command, deps, session, store, workflowSelection };
 }
 
-async function startDirectAgent(text = "只读检查当前项目并给出结论") {
+async function startDirectAgent(text = "只读检查当前项目并给出结论", agentPromptOverride?: string) {
   const harness = await createHarness();
   const submitted = await submitUserMessage(harness.deps, {
     principalId: PRINCIPAL,
     sessionId: harness.session.sessionId,
     commandId: harness.command(),
-    payload: { text, workflowSelection: harness.workflowSelection },
+    payload: {
+      text,
+      workflowSelection: {
+        ...harness.workflowSelection,
+        ...(agentPromptOverride === undefined
+          ? {}
+          : {
+              runConfiguration: {
+                schemaVersion: "workflow-run-configuration.v1" as const,
+                overrides: [
+                  {
+                    kind: "node_config" as const,
+                    definitionNodeId: "direct.agent",
+                    field: "agentPromptOverride",
+                    value: agentPromptOverride,
+                  },
+                ],
+              },
+            }),
+      },
+    },
   });
   const { snapshot } = await harness.store.read({ kind: "committedSnapshot" });
   const run = snapshot.entities.runs[submitted.run.productRunId];
@@ -127,6 +206,16 @@ async function startDirectAgent(text = "只读检查当前项目并给出结论"
     productRunId: run.productRunId,
     workflowAttemptId: workflowAttempt.attemptId,
   });
+  await transitionConfigurablePlanningNode(harness.deps, {
+    commandId: harness.command(),
+    productRunId: run.productRunId,
+    workflowRunSpecId: runSpec.workflowRunSpecId,
+    definitionNodeId: "direct.agent",
+    executionPath: [],
+    attemptNumber: 1,
+    toStatus: "running",
+    publicSummary: "正在推进直接Agent，等待下一处Provider边界",
+  });
   return { ...harness, begun, run, runSpec, submitted, workflowAttempt };
 }
 
@@ -140,6 +229,7 @@ function providerPayload(text: string): string {
 async function publishReview(
   started: Awaited<ReturnType<typeof startDirectAgent>>,
   text = "只读检查当前项目并给出结论",
+  projectNode = true,
 ) {
   const canonicalPayloadJson = providerPayload(text);
   const published = await publishPromptReviewRequest(started.deps, {
@@ -155,6 +245,18 @@ async function publishReview(
     canonicalPayloadJson,
     payloadSha256: computePromptReviewPayloadSha256(canonicalPayloadJson),
   });
+  if (projectNode) {
+    await transitionConfigurablePlanningNode(started.deps, {
+      commandId: started.command(),
+      productRunId: started.run.productRunId,
+      workflowRunSpecId: started.runSpec.workflowRunSpecId,
+      definitionNodeId: "direct.agent",
+      executionPath: [],
+      attemptNumber: 1,
+      toStatus: "waiting_human",
+      publicSummary: "等待审核第1次Provider完整提示词",
+    });
+  }
   return { canonicalPayloadJson, published };
 }
 
@@ -180,6 +282,16 @@ async function submitApproval(
 async function approveReview(started: Awaited<ReturnType<typeof startDirectAgent>>) {
   const review = await publishReview(started);
   const approved = await submitApproval(started, review);
+  await transitionConfigurablePlanningNode(started.deps, {
+    commandId: started.command(),
+    productRunId: started.run.productRunId,
+    workflowRunSpecId: started.runSpec.workflowRunSpecId,
+    definitionNodeId: "direct.agent",
+    executionPath: [],
+    attemptNumber: 1,
+    toStatus: "running",
+    publicSummary: "用户已批准本次完整提示词",
+  });
   const consumeCommandId = started.command();
   const consumeInput = {
     commandId: consumeCommandId,
@@ -196,6 +308,42 @@ async function approveReview(started: Awaited<ReturnType<typeof startDirectAgent
 }
 
 describe("Direct Agent Application + JsonProductStore最小纵向", () => {
+  it("只在Workflow节点绑定同一Review证据后公开并接受审核", async () => {
+    const started = await startDirectAgent();
+    const review = await publishReview(started, undefined, false);
+
+    await expect(
+      getCurrentPromptReview(started.deps, {
+        principalId: PRINCIPAL,
+        productRunId: started.run.productRunId,
+      }),
+    ).resolves.toEqual({ promptReview: null });
+    await expect(submitApproval(started, review)).rejects.toMatchObject({
+      code: "revision_conflict",
+    });
+
+    await transitionConfigurablePlanningNode(started.deps, {
+      commandId: started.command(),
+      productRunId: started.run.productRunId,
+      workflowRunSpecId: started.runSpec.workflowRunSpecId,
+      definitionNodeId: "direct.agent",
+      executionPath: [],
+      attemptNumber: 1,
+      toStatus: "waiting_human",
+      publicSummary: "等待审核第1次Provider完整提示词",
+    });
+    const actionable = await getCurrentPromptReview(started.deps, {
+      principalId: PRINCIPAL,
+      productRunId: started.run.productRunId,
+    });
+    expect(actionable.promptReview?.promptReviewRequestId).toBe(
+      review.published.promptReview.promptReviewRequestId,
+    );
+    await expect(submitApproval(started, review)).resolves.toMatchObject({
+      decision: { kind: "approve" },
+    });
+  });
+
   it("拒绝Direct上下文，并通过正式Submit→Begin→Authorize冻结只读输入", async () => {
     const harness = await createHarness();
     await expect(
@@ -221,7 +369,8 @@ describe("Direct Agent Application + JsonProductStore最小纵向", () => {
       ]?.lastMessageSequence,
     ).toBe(0);
 
-    const started = await startDirectAgent("请只读检查，不要执行写操作");
+    const runtimePromptOverride = "你是本次Run完整覆盖的Direct Agent。";
+    const started = await startDirectAgent("请只读检查，不要执行写操作", runtimePromptOverride);
     const authorized = await authorizeDirectAgentOperation(started.deps, {
       productRunId: started.run.productRunId,
       directAgentAttemptId: started.begun.directAgentAttemptId,
@@ -236,6 +385,13 @@ describe("Direct Agent Application + JsonProductStore最小纵向", () => {
       directAgentAttemptId: started.begun.directAgentAttemptId,
       sourceMessage: { text: "请只读检查，不要执行写操作" },
       capabilityMode: "read_only",
+      promptAssembly: {
+        piSystemPrompt: {
+          kind: "pi_coding_agent",
+          mode: "replace",
+          bodyMarkdown: runtimePromptOverride,
+        },
+      },
     });
     expect(authorized.limits.maxProviderRequests).toBeGreaterThan(0);
   });
@@ -281,6 +437,16 @@ describe("Direct Agent Application + JsonProductStore最小纵向", () => {
       payloadSha256: computePromptReviewPayloadSha256(canonicalPayloadJson),
     };
     const first = await publishPromptReviewRequest(started.deps, publishInput);
+    await transitionConfigurablePlanningNode(started.deps, {
+      commandId: started.command(),
+      productRunId: started.run.productRunId,
+      workflowRunSpecId: started.runSpec.workflowRunSpecId,
+      definitionNodeId: "direct.agent",
+      executionPath: [],
+      attemptNumber: 1,
+      toStatus: "waiting_human",
+      publicSummary: "等待审核第1次Provider完整提示词",
+    });
     const approved = await submitApproval(started, { canonicalPayloadJson, published: first });
 
     const replayed = await publishPromptReviewRequest(started.deps, publishInput);

@@ -36,5 +36,7 @@ export * from "./note-capture-workflow.js";
 export * from "./direct-agent-workflow-input.js";
 export * from "./direct-agent-workflow-steps.js";
 export * from "./direct-agent-workflow.js";
+export * from "./pi-direct-executor-activity.js";
+export * from "./pi-direct-activity-migration.js";
 // Workflow Adapter边界的底层恢复原语；只能由本Adapter内的分发路径使用
 export { resumeHook, getHookByToken } from "workflow/api";

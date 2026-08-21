@@ -9,6 +9,7 @@ import {
   requestIdSchema,
   runAttemptIdSchema,
   workflowDefinitionIdSchema,
+  workflowDefinitionRevisionIdSchema,
   workflowNodeRunIdSchema,
   contextRequestIdSchema,
   memoryBackendIdSchema,
@@ -66,6 +67,8 @@ export type TraceOutcome = z.infer<typeof traceOutcomeSchema>;
 
 /** 任务书§7.3规定的必须记录的边界事件名。 */
 export const TRACE_EVENT_NAMES = {
+  dshAdapterRequestCaptured: "dsh.adapter_request.captured",
+  bridgeDispatchPrepared: "bridge.dispatch.prepared",
   httpCommandReceived: "http.command.received",
   httpCommandAccepted: "http.command.accepted",
   httpCommandRejected: "http.command.rejected",
@@ -392,6 +395,33 @@ function defineTraceEvent<
 const refs = z.array(traceObjectRefSchema).max(8);
 
 /* ---------- 事件定义 ---------- */
+
+// DSH/Bridge只保存身份Hash和组装证据；用户正文与完整GenerateOptions没有字段通道。
+const dshAdapterRequestCapturedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.dshAdapterRequestCaptured,
+  "success",
+  {
+    dshSessionIdSha256: sha256Schema,
+    requestSha256: sha256Schema,
+    userTextSha256: sha256Schema,
+    sectionCount: z.number().int().nonnegative().max(1_000),
+    ...durationMsOptional,
+  },
+);
+
+const bridgeDispatchPreparedSchema = defineTraceEvent(
+  TRACE_EVENT_NAMES.bridgeDispatchPrepared,
+  "success",
+  {
+    dshSessionIdSha256: sha256Schema,
+    commandId: commandIdSchema,
+    dispatchPlanSha256: sha256Schema,
+    promptSelectionSha256: sha256Schema.optional(),
+    workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema.optional(),
+    productSessionId: productSessionIdSchema.optional(),
+    ...durationMsOptional,
+  },
+);
 
 // HTTP：不记录请求Body、Query正文或可能携带用户内容的原始URL；requestId必填。
 const httpCommandReceivedSchema = defineTraceEvent(
@@ -1697,6 +1727,8 @@ const serviceDebugStoppedSchema = defineTraceEvent(
 
 /** Trace事件严格联合：以eventName判别，未声明字段在根部与嵌套层均失败关闭。 */
 export const traceEventSchema = z.discriminatedUnion("eventName", [
+  dshAdapterRequestCapturedSchema,
+  bridgeDispatchPreparedSchema,
   httpCommandReceivedSchema,
   httpCommandAcceptedSchema,
   httpCommandRejectedSchema,

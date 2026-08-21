@@ -111,6 +111,7 @@ export function resolveRuntimeInstance(root, instance = "production", environmen
           CHAT_RUNTIME_BINDINGS_PATH: join(dataRoot, "runtime", "runtime-bindings.v1.json"),
           CHAT_RUNTIME_CREDENTIAL_PATH: join(dataRoot, "runtime", "runtime-key"),
           CHAT_TRACE_DIR: join(dataRoot, "traces"),
+          CHAT_RUN_ACTIVITY_DIR: join(dataRoot, "run-activity"),
           CHAT_DSH_HOME: dshHome,
           CHAT_DSH_STATE_PATH: join(dataRoot, "dsh-lifeos-bridge", "state.json"),
           CHAT_API_BASE_URL: `http://127.0.0.1:${String(ports.api)}`,

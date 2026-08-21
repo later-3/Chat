@@ -104,7 +104,7 @@ Query读取资源并返回revision/ETag/cursor；Command表达一次用户意图
 - 付费模型失败默认不盲目自动重试；外部副作用必须有幂等、结果未知与对账。
 - 普通系统Planning不含Memory。`memory.query`只存在于独立发布、前端显式选择的Memory Planning或用户自建Definition；每个节点冻结Provider描述、来源Message、预算和结果快照，所有查询终态在第一个Planner前聚合成唯一`WorkflowMemoryContext`。Plan修订只复用该引用，不重新查询。
 - Memory Planning的`memory.write`节点保存本次用户输入，Application先提交`MemoryWriteIntent + Result`，由当前父Workflow唯一执行；不创建竞争的start Outbox。直接Write Command才提交`Intent + Result + Outbox`并启动独立`MemoryWriteWorkflow`。两者的外部write Step都固定`maxRetries=0`，未知结果只允许用同一`mwi_*`派生身份做只读对账。
-- Memory读写Node状态通过严格Trace事件投影到公开Execution Trace，并由DSH Bridge显示为原生`Memory · 查询/写入`Trajectory；不复制Memory正文或Provider Payload。
+- Memory读写Node状态进入Run Activity Journal并投影到公开Execution Trace，由DSH Bridge显示为`Memory · 查询/写入`Trajectory；不复制Memory正文或Provider Payload，Debug Trace不参与。
 - DSH、Pi Extension与Workflow Memory均不直接依赖腾讯L0/L1模型；这些层级、Bearer、service/team/user/agent映射只存在于Adapter进程。未来HTTP、SDK或MCP项目必须实现同一窄Port，不能把Provider对象写回Domain。
 
 完整执行服务、身份、Trace和恢复语义见[Pi Coding Executor Service As-built](./pi-coding-executor-service.md)。

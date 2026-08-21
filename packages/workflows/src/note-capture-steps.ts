@@ -107,6 +107,15 @@ export async function generateAndPublishNoteCandidateStep(
         suggestedTagLabels: captureInput.suggestedTagLabels,
         priorCandidateSha256: prepared.priorCandidate?.sha256 ?? null,
         revisionInstructionPresent: prepared.revisionInstruction !== undefined,
+        promptAssemblyRef:
+          prepared.nodePrompt === undefined
+            ? null
+            : {
+                promptAssemblyId: prepared.nodePrompt.promptAssemblyId,
+                sha256: prepared.nodePrompt.promptAssemblySha256,
+                definitionNodeId: prepared.nodePrompt.definitionNodeId,
+                nodeAssemblySha256: prepared.nodePrompt.nodeAssemblySha256,
+              },
       });
       if (ctx.bailian.apiKey === undefined) {
         const code = "provider.pre_request.no_api_key";
@@ -123,6 +132,9 @@ export async function generateAndPublishNoteCandidateStep(
         const result = await ctx.noteCapture({
           config: ctx.bailian,
           captureInput,
+          ...(prepared.nodePrompt === undefined
+            ? {}
+            : { systemPromptAppend: prepared.nodePrompt.systemPromptAppend }),
           onProviderRequestStart: () =>
             emitProviderTrace(scope, "provider.request.started", { inputManifestSha256 }),
         });

@@ -50,11 +50,19 @@ test("unified session records stay an additive DSH view with two independent sou
     "utf8",
   );
   const history = await readFile(new URL("../src/dsh-session-history.ts", import.meta.url), "utf8");
+  const button = await readFile(
+    new URL("../src/client/ChatSessionButton.tsx", import.meta.url),
+    "utf8",
+  );
   assert.match(client, /name: "conversation\.view"/);
   assert.match(view, /Chat 正式消息/);
   assert.match(view, /DSH 原始日志/);
   assert.match(view, /不会把归档伪装成删除/);
   assert.match(history, /SessionQuery/);
+  assert.match(client, /id: "lifeos-chat-session"/u);
+  assert.match(button, /打开 Chat Session/u);
+  assert.match(button, /<SessionRecordsContent/u);
+  assert.match(button, /conversation\.session\.header\.utilities/u);
   assert.doesNotMatch(`${client}\n${view}`, /conversation\.session["']\s*,/u);
 });
 
@@ -93,7 +101,7 @@ test("LifeOS dock exposes a mobile-safe Note review surface and all product deci
   assert.match(dock, /data-testid="lifeos-request-note-revision"/);
   assert.match(dock, /data-testid="lifeos-reject-note"/);
   assert.match(styles, /@media\(max-width:600px\)[\s\S]*\.lifeos-note-content/);
-  assert.match(dock, /data-testid="lifeos-bridge-dispatch-review-card"/u);
+  assert.match(dock, /testId="lifeos-bridge-dispatch-review-card"/u);
   assert.match(dock, /Bridge → Chat后端 发送前审核/u);
   assert.match(dock, /lifeos-bridge-dispatch-readable/u);
   assert.match(dock, /lifeos-bridge-dispatch-raw/u);
@@ -143,12 +151,12 @@ test("context manager uses public Session and blank-safe composer contracts with
   assert.match(controlBar, /<ContextInjectionManager/u);
   assert.match(manager, /PropsRuntime<"conversation\.input\.dock">/u);
   assert.match(manager, /<Modal/u);
-  assert.match(manager, /最新用户输入和当前 Workspace 指令/u);
-  assert.match(manager, /仅 Workspace 指令进入 Chat 规划上下文/u);
+  assert.match(manager, /DSH 自己的 Agent Loop/u);
+  assert.match(manager, /只读 · 不自动转发到 Chat/u);
   assert.doesNotMatch(`${client}\n${manager}`, /querySelector|MutationObserver/u);
 });
 
-test("prompt composer keeps every Region independent and stages exact revisions before send", async () => {
+test("session Prompt and Agent settings are separate surfaces", async () => {
   const client = await readFile(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const composer = await readFile(
     new URL("../src/client/PromptComposer.tsx", import.meta.url),
@@ -172,6 +180,14 @@ test("prompt composer keeps every Region independent and stages exact revisions 
     new URL("../src/client/PromptControlBar.tsx", import.meta.url),
     "utf8",
   );
+  const agents = await readFile(
+    new URL("../src/client/AgentProfiles.tsx", import.meta.url),
+    "utf8",
+  );
+  const workflowPicker = await readFile(
+    new URL("../src/client/WorkflowPicker.tsx", import.meta.url),
+    "utf8",
+  );
   assert.match(client, /id: "lifeos-prompt-control-bar"/u);
   assert.match(controlBar, /<PromptComposer/u);
   assert.match(composer, /提示词/u);
@@ -180,8 +196,18 @@ test("prompt composer keeps every Region independent and stages exact revisions 
   assert.match(composer, /追加/u);
   assert.match(composer, /当前 Workspace/u);
   assert.match(composer, /提示词配置预览/u);
-  assert.match(sendPreview, /DSH 前端发送预览/u);
-  assert.match(sendPreview, /不是最终Provider HTTP请求/u);
+  assert.match(composer, /统一配置并预览本轮实际发送内容/u);
+  assert.doesNotMatch(composer, /生成计划|执行计划|Workflow Agent 默认绑定/u);
+  assert.match(agents, /Pi Coding Agent 运行时基线/u);
+  assert.match(agents, /真实AgentSession构造结果/u);
+  assert.match(agents, /Chat可管理的完整覆盖/u);
+  assert.match(workflowPicker, /Agent 默认模板/u);
+  assert.match(workflowPicker, /Workflow 节点实例/u);
+  assert.match(workflowPicker, /本次会话临时修改/u);
+  assert.match(workflowPicker, /保存到 Workflow/u);
+  assert.match(sendPreview, /本次 Prompt 与发送边界/u);
+  assert.match(sendPreview, /与正式发送共用Workflow Compiler和Prompt Compiler/u);
+  assert.match(sendPreview, /lifeos-prompt-turn-preview/u);
   assert.match(sendPreview, /易读视图/u);
   assert.match(sendPreview, /原始请求/u);
   assert.match(sendPreview, /来源定位 · 仅界面注释，不发送/u);
@@ -192,7 +218,13 @@ test("prompt composer keeps every Region independent and stages exact revisions 
   assert.match(sendPreview, /lifeos-dsh-tool-item/u);
   assert.match(sendPreview, /默认折叠，展开后可逐个检查/u);
   assert.match(dock, /lifeos-scroll-review-card/u);
-  assert.match(styles, /\.lifeos-scroll-review-card \.lifeos-prompt-sections\{max-height:none/u);
+  assert.match(dock, /PromptAuditSurface/u);
+  assert.match(styles, /\.lifeos-prompt-audit-root\{position:fixed;inset:0/u);
+  assert.match(styles, /\.lifeos-prompt-audit-scroll\{[^}]*overflow-y:auto/u);
+  assert.match(
+    styles,
+    /\.lifeos-prompt-audit-surface \.lifeos-prompt-body pre,[^{]+\{max-height:none;overflow-x:auto;overflow-y:visible/u,
+  );
   assert.match(dock, /首轮只有1个Bridge → Chat命令/u);
   assert.match(controller, /chat\.prompt-composer\.selection\.v1\./u);
   assert.match(controller, /method: "PUT"/u);

@@ -65,7 +65,8 @@ DSH Bridge/Hono/Vercel/pi Adapters
 
 ## 6. 实时事件
 
-以下条款约束目标Runtime Journal/SSE实现。当前仓库的`packages/realtime`只拥有严格Trace和Replay，DSH Bridge仍使用受控Query轮询；在SSE纵向任务完成前不得把本节当作已交付事实。
+当前仓库已经交付单机单写者Run Activity Journal，DSH Bridge仍使用受控Query轮询；SSE只是未来传输层，
+不能改变下列顺序与重放合同。Debug Trace与Activity Journal是两个物理目录和两个语义边界。
 
 1. Runtime Journal是公开事件顺序的唯一Owner。
 2. 每个Product Run的sequence严格递增。

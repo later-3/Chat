@@ -13,12 +13,14 @@ import {
   type ProductSnapshot,
   type PublishWorkflowDefinitionPayload,
   type SaveWorkflowDefinitionDraftPayload,
+  type SaveWorkflowAgentNodeConfigurationPayload,
   type ValidateWorkflowDefinitionPayload,
   type WorkflowDefinition,
   type WorkflowDefinitionCommandResultDto,
   type WorkflowDefinitionDetailDto,
   type WorkflowDefinitionId,
   type WorkflowDefinitionRevision,
+  type WorkflowDefinitionElement,
   type WorkflowDefinitionRevisionSummaryDto,
   type WorkflowDefinitionValidationDto,
 } from "@chat/contracts";
@@ -33,6 +35,7 @@ import {
 import { DEFAULT_NODE_CATALOG } from "./workflow-node-catalog.js";
 import { validateDesignerRoot } from "./workflow-structure-operations.js";
 import { createPublishedWorkflowView } from "./workflow-view-builder.js";
+import { agentNodeBindingDescriptor } from "./prompt-assembly-use-cases.js";
 
 type CommandId = Parameters<ApplicationDeps["store"]["transact"]>[0]["commandId"];
 
@@ -136,6 +139,190 @@ export async function createWorkflowDefinitionCopy(
   });
   return commandResult(deps, input.principalId, transaction.resultRefs);
 }
+
+export async function saveWorkflowAgentNodeConfiguration(
+  deps: ApplicationDeps,
+  input: {
+    readonly principalId: PrincipalId;
+    readonly commandId: CommandId;
+    readonly payload: SaveWorkflowAgentNodeConfigurationPayload;
+  },
+): Promise<WorkflowDefinitionCommandResultDto> {
+  const now = deps.now();
+  const requestSha256 = hashCanonical("command.save-workflow-agent-node-configuration.v1", input);
+  const transaction = await deps.store.transact({
+    commandId: input.commandId,
+    commandType: "SaveWorkflowAgentNodeConfiguration",
+    requestSha256,
+    traceContext: {},
+    mutate: (draft) => {
+      const source = requireReadableRevision(
+        draft,
+        input.principalId,
+        input.payload.sourceWorkflowDefinitionRevisionId,
+        input.payload.sourceDefinitionSha256,
+      );
+      if (source.state !== "published") {
+        throw revisionConflict("只能配置已发布Workflow Definition");
+      }
+      const sourceDefinition = draft.entities.workflowDefinitions[source.workflowDefinitionId];
+      if (sourceDefinition === undefined) throw notFound("Workflow Definition不存在");
+      const semanticRoot = configureAgentNode(source.semanticRoot, input.payload);
+      const validated = validateDesignerRootFor(semanticRoot, source);
+      if (!validated.success) throw invalidDefinition(validated.diagnostics);
+
+      const workflowDefinitionId =
+        sourceDefinition.ownerKind === "system"
+          ? workflowDefinitionIdSchema.parse(
+              `wfd_${hashCanonical("id.workflow-agent-configured-definition.v1", {
+                commandId: input.commandId,
+              }).slice(0, 32)}`,
+            )
+          : source.workflowDefinitionId;
+      const workflowDefinitionRevisionId = derivedRevisionId(input.commandId, workflowDefinitionId);
+      const definitionRevision =
+        sourceDefinition.ownerKind === "system"
+          ? 1
+          : nextDefinitionRevision(draft, workflowDefinitionId);
+      const title =
+        sourceDefinition.ownerKind === "system"
+          ? `${source.title.slice(0, 152)} · 我的配置`
+          : sourceDefinition.title;
+      const revision = workflowDefinitionRevisionSchema.parse({
+        schemaVersion: "workflow-definition-revision.v1",
+        workflowDefinitionRevisionId,
+        workflowDefinitionId,
+        definitionRevision,
+        state: "published",
+        blueprintKey: source.blueprintKey,
+        blueprintVersion: source.blueprintVersion,
+        title,
+        semanticRoot: validated.semanticRoot,
+        definitionSha256: validated.definitionSha256,
+        basedOnRevisionId: source.workflowDefinitionRevisionId,
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+        publishedAt: now,
+      });
+
+      if (sourceDefinition.ownerKind === "system") {
+        draft.entities.workflowDefinitions[workflowDefinitionId] = workflowDefinitionSchema.parse({
+          schemaVersion: "workflow-definition.v1",
+          workflowDefinitionId,
+          ownerKind: "principal",
+          ownerPrincipalId: input.principalId,
+          key: `user.${hashCanonical("workflow-definition-key.v1", {
+            workflowDefinitionId,
+          }).slice(0, 20)}`,
+          title,
+          description: sourceDefinition.description,
+          blueprintKey: source.blueprintKey,
+          blueprintVersion: source.blueprintVersion,
+          status: "active",
+          publishedRevisionId: workflowDefinitionRevisionId,
+          revision: 1,
+          createdAt: now,
+          updatedAt: now,
+        });
+      } else {
+        const owned = requireOwnedDefinition(draft, input.principalId, workflowDefinitionId);
+        if (
+          owned.status !== "active" ||
+          owned.publishedRevisionId !== source.workflowDefinitionRevisionId
+        ) {
+          throw revisionConflict("Workflow已变化，请刷新后重试");
+        }
+        if (owned.currentDraftRevisionId !== undefined) {
+          throw revisionConflict("Workflow存在未发布草稿，请先处理草稿");
+        }
+        draft.entities.workflowDefinitionRevisions[source.workflowDefinitionRevisionId] =
+          workflowDefinitionRevisionSchema.parse({
+            ...source,
+            state: "superseded",
+            supersededAt: now,
+            updatedAt: now,
+          });
+        draft.entities.workflowDefinitions[workflowDefinitionId] = workflowDefinitionSchema.parse({
+          ...owned,
+          publishedRevisionId: workflowDefinitionRevisionId,
+          revision: owned.revision + 1,
+          updatedAt: now,
+        });
+      }
+
+      draft.entities.workflowDefinitionRevisions[workflowDefinitionRevisionId] = revision;
+      const view = createPublishedWorkflowView({ revision, createdAt: now });
+      draft.entities.workflowViewDefinitions[view.workflowViewDefinitionId] = view;
+      return { resultRefs: { workflowDefinitionId, workflowDefinitionRevisionId } };
+    },
+  });
+  return commandResult(deps, input.principalId, transaction.resultRefs);
+}
+
+function configureAgentNode(
+  root: WorkflowDefinitionRevision["semanticRoot"],
+  payload: SaveWorkflowAgentNodeConfigurationPayload,
+): WorkflowDefinitionRevision["semanticRoot"] {
+  let matches = 0;
+  const visit = (element: WorkflowDefinitionElement): WorkflowDefinitionElement => {
+    if (element.kind === "task" || element.kind === "composite") {
+      if (element.definitionNodeId !== payload.definitionNodeId) return element;
+      matches += 1;
+      const supported = AGENT_NODE_SUPPORT[element.nodeType];
+      if (supported === undefined || !supported.includes(payload.agentKey)) {
+        throw revisionConflict(`Agent ${payload.agentKey}不支持节点${element.nodeType}`);
+      }
+      const currentBinding = agentNodeBindingDescriptor(
+        element.nodeType as "agent.plan" | "agent.direct" | "execute.plan" | "note.extract",
+        element.config,
+      );
+      const currentOverride =
+        typeof element.config["agentPromptOverride"] === "string"
+          ? element.config["agentPromptOverride"]
+          : "";
+      const requestedOverride = payload.promptOverrideMarkdown?.trim()
+        ? payload.promptOverrideMarkdown
+        : "";
+      if (currentBinding.agentKey === payload.agentKey && currentOverride === requestedOverride) {
+        throw revisionConflict("Workflow Agent节点配置没有变化");
+      }
+      const config: Record<string, unknown> = { ...element.config, agentKey: payload.agentKey };
+      if (requestedOverride !== "") {
+        config["agentPromptOverride"] = requestedOverride;
+      } else {
+        delete config["agentPromptOverride"];
+      }
+      return { ...element, config };
+    }
+    if (element.kind === "sequence") {
+      return { ...element, elements: element.elements.map(visit) };
+    }
+    if (element.kind === "choice") {
+      return {
+        ...element,
+        branches: element.branches.map((branch) => ({
+          ...branch,
+          body: visit(branch.body) as WorkflowDefinitionRevision["semanticRoot"],
+        })),
+      };
+    }
+    return {
+      ...element,
+      body: visit(element.body) as WorkflowDefinitionRevision["semanticRoot"],
+    };
+  };
+  const semanticRoot = visit(root) as WorkflowDefinitionRevision["semanticRoot"];
+  if (matches !== 1) throw notFound("Workflow Agent节点不存在");
+  return semanticRoot;
+}
+
+const AGENT_NODE_SUPPORT: Readonly<Record<string, readonly string[]>> = {
+  "agent.plan": ["planner"],
+  "agent.direct": ["direct", "project_bootstrap"],
+  "execute.plan": ["coding_executor"],
+  "note.extract": ["note_extractor"],
+};
 
 export async function saveWorkflowDefinitionDraft(
   deps: ApplicationDeps,

@@ -81,17 +81,6 @@ test("专用入口冻结项目Prompt和Direct能力，确认后恢复ready目标
           ],
         },
       ],
-      getPromptFragment: async () => ({
-        fragment: {
-          ownerKind: "system",
-          status: "builtin",
-          regionKey: "agent_identity",
-        },
-        currentRevision: {
-          promptFragmentRevisionId: "pfr_builtinprojectbootstrapv1",
-          sha256: "c".repeat(64),
-        },
-      }),
       getCurrentProjectBootstrap: async () => current,
       decideProjectBootstrap: async () => {
         calls.push("decide");
@@ -182,23 +171,12 @@ test("专用入口冻结项目Prompt和Direct能力，确认后恢复ready目标
         value: "project_bootstrap",
       },
     ]);
-    assert.deepEqual(preset.promptSelection.regions, [
-      {
-        regionKey: "agent_identity",
-        mode: "replace",
-        selected: [
-          {
-            promptFragmentRevisionId: "pfr_builtinprojectbootstrapv1",
-            sha256: "c".repeat(64),
-          },
-        ],
-      },
-    ]);
+    assert.deepEqual(preset.promptSelection.regions, []);
 
     await service.initializeProjectBootstrapSession(dshSessionId);
     const initialized = await state.readSession(dshSessionId);
     assert.equal(initialized?.workflowSelection?.blueprintKey, "direct");
-    assert.equal(initialized?.promptSelection?.regions[0]?.regionKey, "agent_identity");
+    assert.deepEqual(initialized?.promptSelection?.regions, []);
     await state.mutateSession(
       dshSessionId,
       stableCommandId("create-session", dshSessionId),

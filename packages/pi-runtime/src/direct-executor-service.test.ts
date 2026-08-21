@@ -201,6 +201,12 @@ describe("Pi Direct Executor Service + Client", () => {
           promptAssemblyId: "pma_directservicev2",
           sha256: "7".repeat(64),
           systemPromptAppend: "## 规则\n只读检查",
+          piSystemPrompt: {
+            kind: "pi_coding_agent",
+            mode: "replace",
+            bodyMarkdown: "DIRECT_CUSTOM_SYSTEM_PROMPT",
+            sha256: "6".repeat(64),
+          },
           messages: [
             {
               role: "user",
@@ -295,6 +301,12 @@ describe("Pi Direct Executor Service + Client", () => {
       { role: "assistant", text: "上一答" },
     ]);
     expect(received?.systemPromptAppend).toBe("## 规则\n只读检查");
+    expect(received?.piSystemPrompt).toEqual({
+      kind: "pi_coding_agent",
+      mode: "replace",
+      bodyMarkdown: "DIRECT_CUSTOM_SYSTEM_PROMPT",
+      sha256: "6".repeat(64),
+    });
     await runtime.close();
   });
 

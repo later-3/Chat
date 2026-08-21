@@ -137,6 +137,16 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
       },
     ],
     perRunOverrides: [
+      {
+        nodeType: "agent.plan",
+        fields: [],
+        configFields: ["agentKey", "agentPromptOverride"],
+      },
+      {
+        nodeType: "execute.plan",
+        fields: [],
+        configFields: ["agentKey", "agentPromptOverride"],
+      },
       { nodeType: "memory.query", fields: ["enabled"] },
       { nodeType: "context.memory", fields: ["enabled", "selection"] },
       { nodeType: "context.project", fields: ["enabled", "selection"] },
@@ -171,7 +181,14 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
         maxIterations: 2,
       },
     ],
-    perRunOverrides: [{ nodeType: "human.note_review", fields: ["reviewMode"] }],
+    perRunOverrides: [
+      {
+        nodeType: "note.extract",
+        fields: [],
+        configFields: ["agentKey", "agentPromptOverride"],
+      },
+      { nodeType: "human.note_review", fields: ["reviewMode"] },
+    ],
     immutableMinimumRisk: {
       "human.note_review": "human_decision",
       "note.commit": "product_commit",
@@ -193,7 +210,7 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
       {
         nodeType: "agent.direct",
         fields: [],
-        configFields: ["capabilityMode", "promptReviewMode"],
+        configFields: ["agentKey", "agentPromptOverride", "capabilityMode", "promptReviewMode"],
       },
     ],
     immutableMinimumRisk: {

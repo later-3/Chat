@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
-import { CallId, LlmAdapter, LlmError } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter, LlmError } from "@deepseek-ai/dsh-llm";
 import {
+  commandIdSchema,
+  productSessionIdSchema,
+  workflowDefinitionRevisionIdSchema,
   workspaceInstructionsInputSchema,
-  type ExecutionTraceItem,
   type WorkspaceInstructionsInput,
 } from "@chat/contracts/public";
 import type {
@@ -28,7 +30,7 @@ import type { DshSendReviewCoordinator } from "./dsh-send-review.ts";
 import type { BridgeDispatchReviewCoordinator } from "./bridge-dispatch-review.ts";
 import { prepareBridgeChatDispatch } from "./bridge-chat-dispatch.ts";
 import { exactSectionsFromJson, lastDshUserInputMapping } from "./dsh-bridge-readable.ts";
-import { LIFEOS_TRACE_TOOL } from "./trace-tool.ts";
+import { DSH_BRIDGE_TRACE_EVENTS, type DshBridgeTraceEventInput } from "./debug-trace.ts";
 
 export const LIFEOS_PROVIDER = "lifeos";
 export const LIFEOS_MODEL = "workflow";
@@ -133,12 +135,6 @@ export function dshAdapterRequestTraceOf(
   };
 }
 
-function emitDshAdapterRequestTrace(
-  capture: Extract<DshAdapterRequestCapture, { status: "captured" }>,
-): void {
-  console.info("[lifeos-bridge] dsh_adapter_request_captured", dshAdapterRequestTraceOf(capture));
-}
-
 interface UserPrompt {
   messageId: string;
   text: string;
@@ -194,32 +190,6 @@ async function* textStream(text: string): AsyncIterable<StreamChunk> {
   yield { type: "finish", reason: { kind: "stop" } };
 }
 
-async function* traceToolStream(
-  productRunId: string,
-  item: Extract<ExecutionTraceItem, { type: "tool_call" }>,
-): AsyncIterable<StreamChunk> {
-  const id = CallId(`lifeos_${sha256(`${productRunId}\u0000${item.toolCallId}`).slice(0, 48)}`);
-  const args = JSON.stringify({
-    productRunId,
-    sourceSequence: item.sequence,
-    toolCallId: item.toolCallId,
-    toolName: item.toolName,
-    input: item.input,
-    inputTruncated: item.inputTruncated,
-  });
-  const block = { type: "tool-call" as const, id, name: LIFEOS_TRACE_TOOL, arguments: args };
-  yield { type: "block-start", index: 0, blockType: "tool-call" };
-  yield {
-    type: "tool-call-delta",
-    index: 0,
-    id,
-    name: LIFEOS_TRACE_TOOL,
-    argumentsDelta: args,
-  };
-  yield { type: "block-end", index: 0, block };
-  yield { type: "finish", reason: { kind: "tool-calls" } };
-}
-
 export function lastUserPrompt(messages: readonly Message[]): UserPrompt {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -239,8 +209,8 @@ export function lastUserPrompt(messages: readonly Message[]): UserPrompt {
 }
 
 /**
- * DSH已经按原生Workspace语义完成AGENTS.md发现与层级组装；Bridge只转发
- * 仍在本次模型surface中的agent-instructions正文，不再猜目录或读取文件。
+ * 兼容读取器只投影DSH自己组装的agent-instructions，供宿主上下文面板审计。
+ * Bridge当前不会把它自动转发给Chat；用户需要的指令必须经Prompt区域显式选择。
  */
 export interface WorkspaceInstructionMessageLike {
   readonly role: string;
@@ -352,6 +322,8 @@ export class LifeosLlmAdapter extends LlmAdapter {
     private readonly promptWorkspaceResolver?: PromptWorkspaceResolver,
     private readonly dshSendReview?: DshSendReviewCoordinator,
     private readonly bridgeDispatchReview?: BridgeDispatchReviewCoordinator,
+    private readonly dshTrace?: (event: DshBridgeTraceEventInput) => void,
+    private readonly bridgeTrace?: (event: DshBridgeTraceEventInput) => void,
   ) {
     super();
   }
@@ -397,8 +369,8 @@ export class LifeosLlmAdapter extends LlmAdapter {
     try {
       const dshSessionId = requireSessionId(options);
       const prompt = lastUserPrompt(options.messages);
-      const workspaceInstructions = workspaceInstructionsOf(options.messages);
-      const request = await this.ensureRequest(dshSessionId, prompt, workspaceInstructions);
+      const diagnosticTraceId = `trd_${prompt.requestKey}`;
+      const request = await this.ensureRequest(dshSessionId, prompt);
       const binding = await this.state.readSession(dshSessionId);
       const dispatchPlan = prepareBridgeChatDispatch({
         requestKey: prompt.requestKey,
@@ -410,28 +382,67 @@ export class LifeosLlmAdapter extends LlmAdapter {
         ...(request.workflowSelection === undefined
           ? {}
           : { workflowSelection: request.workflowSelection }),
-        ...(request.workspaceInstructions === undefined
-          ? {}
-          : { workspaceInstructions: request.workspaceInstructions }),
         ...(request.promptSelection === undefined
           ? {}
           : { promptSelection: request.promptSelection }),
       });
 
-      if (request.productRunId === undefined && this.dshSendReview !== undefined) {
+      if (
+        request.productRunId === undefined &&
+        (this.dshSendReview !== undefined || this.dshTrace !== undefined)
+      ) {
         const adapterRequest = captureDshAdapterRequest(options);
-        emitDshAdapterRequestTrace(adapterRequest);
-        const decision = await this.dshSendReview.waitForDecision({
-          dshSessionId,
-          requestKey: prompt.requestKey,
-          text: prompt.text,
-          adapterRequest,
-          ...(signal === undefined ? {} : { signal }),
+        this.dshTrace?.({
+          level: "info",
+          eventName: DSH_BRIDGE_TRACE_EVENTS.dshAdapterRequestCaptured,
+          outcome: "success",
+          traceId: diagnosticTraceId,
+          spanId: `spd_${sha256(`dsh\u0000${prompt.requestKey}`).slice(0, 32)}`,
+          dshSessionIdSha256: sha256(dshSessionId),
+          requestSha256: adapterRequest.requestSha256,
+          userTextSha256: prompt.textSha256,
+          sectionCount: exactSectionsFromJson(adapterRequest.requestJson).length,
         });
-        if (decision === "reject") {
-          throw new LlmError("用户取消了本次DSH发送", "LIFEOS_DSH_SEND_REJECTED");
+        if (this.dshSendReview !== undefined) {
+          const decision = await this.dshSendReview.waitForDecision({
+            dshSessionId,
+            requestKey: prompt.requestKey,
+            text: prompt.text,
+            adapterRequest,
+            ...(signal === undefined ? {} : { signal }),
+          });
+          if (decision === "reject") {
+            throw new LlmError("用户取消了本次DSH发送", "LIFEOS_DSH_SEND_REJECTED");
+          }
         }
       }
+
+      this.bridgeTrace?.({
+        level: "info",
+        eventName: DSH_BRIDGE_TRACE_EVENTS.bridgeDispatchPrepared,
+        outcome: "success",
+        traceId: diagnosticTraceId,
+        spanId: `spb_${sha256(`bridge\u0000${prompt.requestKey}`).slice(0, 32)}`,
+        ...(this.dshTrace === undefined
+          ? {}
+          : { parentSpanId: `spd_${sha256(`dsh\u0000${prompt.requestKey}`).slice(0, 32)}` }),
+        dshSessionIdSha256: sha256(dshSessionId),
+        commandId: commandIdSchema.parse(request.messageCommandId),
+        dispatchPlanSha256: dispatchPlan.planSha256,
+        ...(request.promptSelection === undefined
+          ? {}
+          : { promptSelectionSha256: sha256(JSON.stringify(request.promptSelection)) }),
+        ...(request.workflowSelection?.workflowDefinitionRevisionId === undefined
+          ? {}
+          : {
+              workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema.parse(
+                request.workflowSelection.workflowDefinitionRevisionId,
+              ),
+            }),
+        ...(binding?.chatSessionId === undefined
+          ? {}
+          : { productSessionId: productSessionIdSchema.parse(binding.chatSessionId) }),
+      });
 
       if (request.productRunId === undefined && this.bridgeDispatchReview !== undefined) {
         const decision = await this.bridgeDispatchReview.waitForDecision({
@@ -487,21 +498,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
           run.sourceMessageId,
         );
       }
-      const trajectoryEnabled =
-        options.tools?.some((tool) => tool.name === LIFEOS_TRACE_TOOL) === true;
       while (true) {
-        if (trajectoryEnabled) {
-          const traceCall = await this.nextTraceTool(
-            dshSessionId,
-            prompt.requestKey,
-            run.productRunId,
-            signal,
-          );
-          if (traceCall !== undefined) {
-            yield* traceToolStream(run.productRunId, traceCall);
-            return;
-          }
-        }
         if (TERMINAL_STATUSES.has(run.status)) break;
         await delay(signal);
         run = await this.chat.getRun(run.productRunId, signal);
@@ -547,11 +544,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
     });
   }
 
-  private async ensureRequest(
-    dshSessionId: string,
-    prompt: UserPrompt,
-    workspaceInstructions: WorkspaceInstructionsInput | undefined,
-  ): Promise<RequestBinding> {
+  private async ensureRequest(dshSessionId: string, prompt: UserPrompt): Promise<RequestBinding> {
     const workspace = this.promptWorkspaceResolver?.resolve(dshSessionId) ?? null;
     return await this.state.mutateSession(
       dshSessionId,
@@ -568,13 +561,11 @@ export class LifeosLlmAdapter extends LlmAdapter {
             prompt.messageId,
             prompt.textSha256,
           ),
-          traceCursor: 0,
           // 首次创建时冻结会话当前的选择草稿；之后用户再改草稿不影响本请求。
           ...(binding.workflowSelection !== undefined
             ? { workflowSelection: binding.workflowSelection }
             : {}),
           promptSelection,
-          ...(workspaceInstructions !== undefined ? { workspaceInstructions } : {}),
         });
         if (request.userTextSha256 !== prompt.textSha256) {
           throw new Error("lifeos bridge request key collision");
@@ -587,42 +578,6 @@ export class LifeosLlmAdapter extends LlmAdapter {
         return structuredClone(request);
       },
     );
-  }
-
-  /**
-   * 读取下一条尚未镜像的Pi工具intent。非工具事件仍推进cursor；遇到intent时停住，
-   * 由lifeos_trace工具在匹配result到达后越过它，保证DSH显示真实运行态。
-   */
-  private async nextTraceTool(
-    dshSessionId: string,
-    requestKey: string,
-    productRunId: string,
-    signal: AbortSignal | undefined,
-  ): Promise<Extract<ExecutionTraceItem, { type: "tool_call" }> | undefined> {
-    const binding = await this.state.readSession(dshSessionId);
-    const request = binding?.requests[requestKey];
-    if (request?.productRunId !== productRunId) {
-      throw new Error("lifeos trace request is not bound to the Product Run");
-    }
-    let cursor = request.traceCursor ?? 0;
-    while (true) {
-      const page = await this.chat.getExecutionTrace(productRunId, cursor, signal);
-      const next = page.items.find(
-        (item): item is Extract<ExecutionTraceItem, { type: "tool_call" }> =>
-          item.type === "tool_call",
-      );
-      if (next !== undefined) {
-        if (next.sequence > cursor + 1) {
-          await this.state.advanceTraceCursor(dshSessionId, productRunId, next.sequence - 1);
-        }
-        return next;
-      }
-      if (page.nextCursor > cursor) {
-        await this.state.advanceTraceCursor(dshSessionId, productRunId, page.nextCursor);
-      }
-      cursor = page.nextCursor;
-      if (!page.hasMore) return undefined;
-    }
   }
 
   private async rememberRun(
@@ -649,7 +604,7 @@ export class LifeosLlmAdapter extends LlmAdapter {
         }
         request.productRunId = productRunId;
         request.productUserMessageId = productUserMessageId;
-        // Product Store已经冻结正式ContextRequest，Bridge不再长期复制AGENTS正文。
+        // 旧v5-v11状态可能仍带有DSH指令快照；新请求不再创建该旁路。
         delete request.workspaceInstructions;
       },
     );

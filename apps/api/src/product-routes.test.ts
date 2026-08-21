@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   approvalDtoSchema,
+  agentProfileDtoSchema,
+  agentProfilesDtoSchema,
+  agentRuntimeBaselineDtoSchema,
   beginPlanningContextResponseSchema,
   decisionDtoSchema,
   messageResponseSchema,
@@ -29,11 +32,14 @@ import {
   currentPromptReviewResponseSchema,
   promptAssemblyPreviewDtoSchema,
   promptConfigurationPreviewDtoSchema,
+  promptTurnPreviewDtoSchema,
   promptWorkspacesDtoSchema,
   promptReviewDecisionDtoSchema,
   type CommandId,
   type PlanContent,
+  type PrincipalId,
   type ProductRunId,
+  type AgentKey,
   currentProjectBootstrapResponseSchema,
   prepareProjectBootstrapRuntimeResponseSchema,
   projectBootstrapDecisionResponseSchema,
@@ -45,6 +51,7 @@ import {
   normalizeMemoryQueryResult,
   markMemoryWriteDispatching,
   publishPromptReviewRequest,
+  transitionConfigurablePlanningNode,
   updateOutboxStatus,
   publishPlanForReview as publishPlanForReviewUseCase,
   type ApplicationDeps,
@@ -80,6 +87,54 @@ import { createFilePromptCatalog } from "./prompt-catalog.js";
 const idCounter = 0;
 const now = (): string =>
   new Date(Date.parse("2026-08-07T12:00:00.000Z") + idCounter * 1000).toISOString();
+
+function testPiRuntimeBaseline(agentKey: AgentKey) {
+  const direct = agentKey === "direct" || agentKey === "project_bootstrap";
+  const variants = direct
+    ? [{ variantKey: "read_only", tools: ["read", "grep", "find", "ls"] }]
+    : agentKey === "coding_executor"
+      ? [
+          { variantKey: "markdown_text_compose", tools: [] },
+          {
+            variantKey: "workspace_write_shell",
+            tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
+          },
+        ]
+      : [];
+  if (variants.length === 0) return undefined;
+  return agentRuntimeBaselineDtoSchema.parse({
+    kind: "pi_coding_agent",
+    title: "Pi Coding Agent",
+    packageName: "@earendil-works/pi-coding-agent",
+    packageVersion: "0.84.2",
+    managedSource: "later-3/pi@codex/later-custom",
+    compositionStrategy: "pi_default_or_custom_then_chat_runtime_then_context",
+    chatRuntimeAppend: {
+      bodyMarkdown: direct ? "Direct Runtime Contract" : "Coding Runtime Contract",
+      sha256: "a".repeat(64),
+      sourceRelativePath: "packages/pi-runtime/src/coding-agent-runtime-profile.ts",
+    },
+    variants: variants.map((variant) => ({
+      variantKey: variant.variantKey,
+      title: variant.variantKey,
+      description: `测试能力 ${variant.variantKey}`,
+      enabledToolNames: variant.tools,
+      piSystemPrompt: {
+        bodyMarkdown: `You are an expert coding assistant operating inside pi. ${variant.variantKey}`,
+        sha256: hashCanonical("test.pi-system.v1", variant),
+        dynamicPlaceholders: ["WORKSPACE_ROOT"],
+        sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
+      },
+      tools: variant.tools.map((name) => ({
+        name,
+        description: `${name} tool`,
+        parametersJson: "{}",
+        sourceRelativePath: `pi/packages/coding-agent/src/core/tools/${name}.ts`,
+      })),
+    })),
+    finalReviewNote: "最终内容以发送前审核为准。",
+  });
+}
 
 async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
   const filePath = join(mkdtempSync(join(tmpdir(), "chat-api-product-")), "store.json");
@@ -270,6 +325,9 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     promptFragmentIds,
     projectBootstrapIds,
     promptCatalog,
+    agentRuntimeProfiles: {
+      read: async (agentKey) => testPiRuntimeBaseline(agentKey),
+    },
     promptFiles: {
       publishRevision: async (input) => {
         const sourceRelativePath =
@@ -361,7 +419,7 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
         providerId === "mbk_tencentmemorycore" ? tencentBackend : undefined,
     },
     executionTraceReader: {
-      read: ({ productRunId, afterSequence }) => ({
+      read: async ({ productRunId, afterSequence }) => ({
         schemaVersion: "chat-execution-trace.v1",
         productRunId,
         items: [],
@@ -656,6 +714,20 @@ describe("公开产品API", () => {
         displayName: "执行 Agent",
         runConfigFields: [
           {
+            name: "agentKey",
+            type: "enum_select",
+            label: "Agent 模板",
+            defaultValue: "direct",
+            options: ["direct", "project_bootstrap"],
+          },
+          {
+            name: "agentPromptOverride",
+            type: "long_text",
+            label: "节点 System Prompt",
+            defaultValue: "",
+            maximumLength: 65_536,
+          },
+          {
             name: "capabilityMode",
             type: "enum_select",
             label: "能力模式",
@@ -741,15 +813,15 @@ describe("公开产品API", () => {
     const assembly = Object.values(snapshot.entities.promptAssemblies).find(
       (candidate) => candidate.productRunId === submitted.run.productRunId,
     );
-    expect(assembly?.regions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ regionKey: "agent_identity", mode: "default" }),
-      ]),
-    );
     expect(assembly?.schemaVersion).toBe("prompt-assembly.v2");
     if (assembly?.schemaVersion !== "prompt-assembly.v2") {
       throw new Error("Direct新Run必须冻结Prompt Assembly V2");
     }
+    expect(assembly.regions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ regionKey: "agent_identity", mode: "default" }),
+      ]),
+    );
     expect(assembly.messages.at(-1)?.text).toBe("只读检查项目并报告结论");
     const workflowAttempt = Object.values(snapshot.entities.attempts).find(
       (attempt) =>
@@ -760,6 +832,21 @@ describe("公开产品API", () => {
       commandId: nextCmd(),
       productRunId: submitted.run.productRunId,
       workflowAttemptId: workflowAttempt.attemptId,
+    });
+    const directRun = snapshot.entities.runs[submitted.run.productRunId];
+    if (directRun?.workflowRunSpecId === undefined) {
+      throw new Error("Direct Run缺少Workflow RunSpec");
+    }
+    const workflowRunSpecId = directRun.workflowRunSpecId;
+    await transitionConfigurablePlanningNode(deps, {
+      commandId: nextCmd(),
+      productRunId: submitted.run.productRunId,
+      workflowRunSpecId,
+      definitionNodeId: "direct.agent",
+      executionPath: [],
+      attemptNumber: 1,
+      toStatus: "running",
+      publicSummary: "正在推进直接Agent，等待下一处Provider边界",
     });
     const canonicalPayloadJson = canonicalJsonStringify({
       messages: [
@@ -784,6 +871,16 @@ describe("公开产品API", () => {
       endpointHost: "dashscope.aliyuncs.com",
       canonicalPayloadJson,
       payloadSha256: computePromptReviewPayloadSha256(canonicalPayloadJson),
+    });
+    await transitionConfigurablePlanningNode(deps, {
+      commandId: nextCmd(),
+      productRunId: submitted.run.productRunId,
+      workflowRunSpecId,
+      definitionNodeId: "direct.agent",
+      executionPath: [],
+      attemptNumber: 1,
+      toStatus: "waiting_human",
+      publicSummary: "等待审核第1次Provider完整提示词",
     });
 
     const current = await app.request(
@@ -1740,7 +1837,7 @@ describe("公开产品API", () => {
     expect(res.status).toBe(404);
   });
 
-  it("Prompt Studio公开区域和Builtin来源，并以CAS追加用户Revision", async () => {
+  it("会话Prompt与Agent Prompt独立管理，Workflow节点只冻结Agent绑定", async () => {
     const { app, deps } = await testApp();
     const regions = await app.request("/api/prompt-regions");
     expect(regions.status).toBe(200);
@@ -1750,7 +1847,7 @@ describe("公开产品API", () => {
     expect(regionsBody.items).toContainEqual(
       expect.objectContaining({
         regionKey: "agent_identity",
-        userManageable: true,
+        userManageable: false,
         sourceRelativePath: "prompts/regions/catalog.md",
       }),
     );
@@ -1775,11 +1872,7 @@ describe("公开产品API", () => {
     expect(previewResponse.status, await previewResponse.clone().text()).toBe(200);
     const preview = promptAssemblyPreviewDtoSchema.parse(await previewResponse.json());
     expect(preview.userPrompt).toContain("检查Prompt管理纵向");
-    expect(preview.regions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ regionKey: "agent_identity", mode: "default" }),
-      ]),
-    );
+    expect(preview.regions.map((region) => region.regionKey)).not.toContain("agent_identity");
 
     const configurationResponse = await postJson(app, "/api/prompt-configuration-previews", {
       selection: {
@@ -1792,97 +1885,113 @@ describe("公开产品API", () => {
     const configuration = promptConfigurationPreviewDtoSchema.parse(
       await configurationResponse.json(),
     );
-    expect(configuration.regions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ regionKey: "agent_identity", mode: "default" }),
-      ]),
-    );
+    expect(configuration.regions.map((region) => region.regionKey)).not.toContain("agent_identity");
     expect(configuration).not.toHaveProperty("userPrompt");
 
-    const list = await app.request("/api/prompt-fragments?ownerKind=system");
-    expect(list.status).toBe(200);
-    const listBody = (await list.json()) as {
-      items: {
-        promptFragmentId: string;
-        currentRevisionId: string;
-        currentRevisionSha256: string;
-        sourceRelativePath: string;
-      }[];
-    };
-    const builtin = listBody.items.find(
-      (item) => item.promptFragmentId === "pfg_builtinagentidentity",
+    const profilesResponse = await app.request("/api/agent-profiles");
+    expect(profilesResponse.status).toBe(200);
+    const profiles = agentProfilesDtoSchema.parse(await profilesResponse.json());
+    expect(profiles.items.map((item) => item.agentKey)).toEqual([
+      "planner",
+      "direct",
+      "project_bootstrap",
+      "coding_executor",
+      "note_extractor",
+    ]);
+    const directProfile = profiles.items.find((item) => item.agentKey === "direct");
+    if (directProfile === undefined) throw new Error("缺少Direct Agent Profile");
+    expect(directProfile.systemPrompt).toMatchObject({
+      source: "runtime_default",
+      mode: "inherit",
+      runtimeVariantKey: "read_only",
+    });
+    expect(directProfile.tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["read", "grep", "find", "ls"]),
     );
-    expect(builtin?.sourceRelativePath).toBe(
-      "prompts/fragments/agent-identity/general-chat-agent.md",
+    const projectBootstrapProfile = profiles.items.find(
+      (item) => item.agentKey === "project_bootstrap",
     );
+    expect(projectBootstrapProfile).toMatchObject({
+      systemPrompt: { source: "builtin", mode: "replace" },
+      runtimeBaseline: { kind: "pi_coding_agent" },
+    });
 
-    const copy = await postJson(app, "/api/prompt-fragments/copies", {
+    const genericIdentityCreate = await postJson(app, "/api/prompt-fragments", {
       commandId: nextCmd(),
       payload: {
-        sourcePromptFragmentRevisionId: builtin?.currentRevisionId,
-        sourceSha256: builtin?.currentRevisionSha256,
-        title: "我的任务 Agent",
-        destinationScope: { kind: "global" },
-      },
-    });
-    expect(copy.status, await copy.clone().text()).toBe(201);
-    const copied = (await copy.json()) as {
-      promptFragment: {
-        fragment: {
-          promptFragmentId: string;
-          revision: number;
-          currentRevisionId: string;
-          currentRevisionSha256: string;
-        };
-        currentRevision: { content: { kind: "markdown"; bodyMarkdown: string } };
-      };
-    };
-    expect(copied.promptFragment.currentRevision.content.bodyMarkdown).toContain(
-      "通用 Chat Agent 身份",
-    );
-
-    const fragment = copied.promptFragment.fragment;
-    const revised = await postJson(
-      app,
-      `/api/prompt-fragments/${fragment.promptFragmentId}/revisions`,
-      {
-        commandId: nextCmd(),
-        expectedRevision: fragment.revision,
-        payload: {
-          currentRevisionId: fragment.currentRevisionId,
-          currentRevisionSha256: fragment.currentRevisionSha256,
-          revision: {
-            regionKey: "agent_identity",
-            title: "我的任务 Agent v2",
-            content: { kind: "markdown", bodyMarkdown: "# 身份\n\n你是我的任务 Agent。" },
-          },
+        scope: { kind: "global" },
+        revision: {
+          regionKey: "agent_identity",
+          title: "错误的会话身份",
+          content: { kind: "markdown", bodyMarkdown: "不应通过会话Prompt管理。" },
         },
       },
-    );
-    expect(revised.status).toBe(201);
-    const revisedBody = (await revised.json()) as {
-      promptFragment: {
-        fragment: {
-          promptFragmentId: string;
-          currentRevisionId: string;
-          currentRevisionSha256: string;
-          currentRevisionNumber: number;
-        };
-        revisions: unknown[];
-      };
-    };
-    expect(revisedBody.promptFragment.fragment.currentRevisionNumber).toBe(2);
-    expect(revisedBody.promptFragment.revisions).toHaveLength(2);
+    });
+    expect(genericIdentityCreate.status).toBe(400);
+
+    const revisedResponse = await postJson(app, "/api/agent-profiles/direct/prompt-revisions", {
+      commandId: nextCmd(),
+      payload: {
+        expectedAggregateRevision: directProfile.systemPrompt.aggregateRevision,
+        bodyMarkdown: "# Direct Agent\n\n你是独立配置的Direct Agent。",
+      },
+    });
+    expect(revisedResponse.status, await revisedResponse.clone().text()).toBe(200);
+    const revisedAgent = agentProfileDtoSchema.parse(await revisedResponse.json());
+    expect(revisedAgent.systemPrompt).toMatchObject({
+      source: "principal_override",
+      mode: "replace",
+      revision: 1,
+      aggregateRevision: 1,
+    });
+    if (revisedAgent.systemPrompt.source !== "principal_override") {
+      throw new Error("Direct Agent自定义没有形成覆盖Revision");
+    }
+    const revisedPromptFragmentId = revisedAgent.systemPrompt.promptFragmentId;
+    const revisedPromptFragmentRevisionId = revisedAgent.systemPrompt.promptFragmentRevisionId;
     const product = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
     const storedRevisions = Object.values(product.entities.promptFragmentRevisions).filter(
-      (revision) => revision.promptFragmentId === fragment.promptFragmentId,
+      (revision) => revision.promptFragmentId === revisedPromptFragmentId,
     );
-    expect(storedRevisions).toHaveLength(2);
+    expect(storedRevisions).toHaveLength(1);
     expect(
       storedRevisions.every((revision) => revision.schemaVersion === "prompt-fragment-revision.v2"),
     ).toBe(true);
-    expect(JSON.stringify(storedRevisions)).not.toContain("你是我的任务 Agent");
+    expect(JSON.stringify(storedRevisions)).not.toContain("独立配置的Direct Agent");
     expect(JSON.stringify(storedRevisions)).toContain("sourceRelativePath");
+
+    const otherPrincipal = "usr_agentprofileother" as PrincipalId;
+    const otherApp = createApiApp({
+      traceSink: null,
+      product: { deps, principalId: otherPrincipal },
+    });
+    const otherProfiles = agentProfilesDtoSchema.parse(
+      await (await otherApp.request("/api/agent-profiles")).json(),
+    );
+    const otherDirect = otherProfiles.items.find((item) => item.agentKey === "direct");
+    if (otherDirect === undefined) throw new Error("第二用户缺少Direct Agent");
+    expect(otherDirect.systemPrompt.source).toBe("runtime_default");
+    const otherRevisedResponse = await postJson(
+      otherApp,
+      "/api/agent-profiles/direct/prompt-revisions",
+      {
+        commandId: "cmd_agentprofileother1",
+        payload: {
+          expectedAggregateRevision: 0,
+          bodyMarkdown: "# Other Direct Agent\n\n这是另一个用户的默认Agent。",
+        },
+      },
+    );
+    expect(otherRevisedResponse.status, await otherRevisedResponse.clone().text()).toBe(200);
+    const otherRevised = agentProfileDtoSchema.parse(await otherRevisedResponse.json());
+    if (otherRevised.systemPrompt.source !== "principal_override") {
+      throw new Error("第二用户的Direct Agent自定义没有形成覆盖Revision");
+    }
+    expect(otherRevised.systemPrompt.promptFragmentId).not.toBe(revisedPromptFragmentId);
+    const originalAfterOther = agentProfileDtoSchema.parse(
+      await (await app.request("/api/agent-profiles/direct")).json(),
+    );
+    expect(originalAfterOther.systemPrompt.bodyMarkdown).toContain("独立配置的Direct Agent");
 
     const directDefinitions = z
       .object({ definitions: workflowDefinitionsDtoSchema })
@@ -1900,32 +2009,61 @@ describe("公开产品API", () => {
     const session = sessionDtoSchema.parse(
       ((await sessionResponse.json()) as { session: unknown }).session,
     );
+    const directMessagePayload = {
+      text: "检查当前项目",
+      workflowSelection: {
+        kind: "published_revision" as const,
+        workflowDefinitionRevisionId: direct.workflowDefinitionRevisionId,
+        definitionSha256: direct.definitionSha256,
+      },
+      promptSelection: {
+        schemaVersion: "prompt-turn-selection-input.v1" as const,
+        workspaceRootId: "root_chat",
+        regions: [],
+      },
+    };
+    const beforeTurnPreview = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const firstTurnPreviewResponse = await postJson(app, "/api/prompt-turn-previews", {
+      message: directMessagePayload,
+    });
+    expect(firstTurnPreviewResponse.status, await firstTurnPreviewResponse.clone().text()).toBe(
+      200,
+    );
+    const firstTurnPreview = promptTurnPreviewDtoSchema.parse(
+      await firstTurnPreviewResponse.json(),
+    );
+    expect(firstTurnPreview.currentInput).toBe("检查当前项目");
+    expect((await deps.store.read({ kind: "committedSnapshot" })).snapshot).toEqual(
+      beforeTurnPreview,
+    );
+    const turnPreviewResponse = await postJson(app, "/api/prompt-turn-previews", {
+      sessionId: session.sessionId,
+      message: directMessagePayload,
+    });
+    expect(turnPreviewResponse.status, await turnPreviewResponse.clone().text()).toBe(200);
+    const turnPreview = promptTurnPreviewDtoSchema.parse(await turnPreviewResponse.json());
+    expect(turnPreview.currentInput).toBe("检查当前项目");
+    expect(turnPreview.nodes).toEqual([
+      expect.objectContaining({
+        nodeType: "agent.direct",
+        agent: expect.objectContaining({ agentKey: "direct" }),
+      }),
+    ]);
+    expect(turnPreview.assembly.schemaVersion).toBe("prompt-assembly.v2");
+    if (turnPreview.assembly.schemaVersion !== "prompt-assembly.v2") {
+      throw new Error("Direct发送前预览没有形成V2 Assembly");
+    }
+    expect(turnPreview.assembly.piSystemPrompt).toMatchObject({
+      kind: "pi_coding_agent",
+      mode: "replace",
+      bodyMarkdown: expect.stringContaining("你是独立配置的Direct Agent"),
+    });
+    const afterTurnPreview = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(afterTurnPreview).toEqual(beforeTurnPreview);
+
     const sent = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
       commandId: nextCmd(),
-      payload: {
-        text: "检查当前项目",
-        workflowSelection: {
-          kind: "published_revision",
-          workflowDefinitionRevisionId: direct.workflowDefinitionRevisionId,
-          definitionSha256: direct.definitionSha256,
-        },
-        promptSelection: {
-          schemaVersion: "prompt-turn-selection-input.v1",
-          workspaceRootId: "root_chat",
-          regions: [
-            {
-              regionKey: "agent_identity",
-              mode: "replace",
-              selected: [
-                {
-                  promptFragmentRevisionId: revisedBody.promptFragment.fragment.currentRevisionId,
-                  sha256: revisedBody.promptFragment.fragment.currentRevisionSha256,
-                },
-              ],
-            },
-          ],
-        },
-      },
+      payload: directMessagePayload,
     });
     expect(sent.status, await sent.clone().text()).toBe(201);
     const afterSend = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
@@ -1941,28 +2079,163 @@ describe("公开产品API", () => {
       text: "检查当前项目",
       source: { kind: "current_input" },
     });
-    expect(assembly.systemPromptAppend).toContain("你是我的任务 Agent");
+    expect(assembly.systemPromptAppend).not.toContain("你是独立配置的Direct Agent");
+    expect(assembly.piSystemPrompt).toMatchObject({
+      kind: "pi_coding_agent",
+      mode: "replace",
+      bodyMarkdown: expect.stringContaining("你是独立配置的Direct Agent"),
+    });
+    expect(assembly.piSystemPrompt).toEqual(turnPreview.assembly.piSystemPrompt);
+    expect(assembly.systemPromptAppend).toBe(turnPreview.assembly.systemPromptAppend);
+    expect(assembly.regions).toEqual(turnPreview.assembly.regions);
+    expect(assembly.tools).toEqual(turnPreview.assembly.tools);
+    expect(assembly.requestOptions).toEqual(turnPreview.assembly.requestOptions);
     expect(assembly.regions[0]?.fragments[0]?.sourceRelativePath).toContain(
       ".data/prompts/global/agent_identity/",
     );
 
-    const stale = await postJson(
+    const planning = directDefinitions.definitions.definitions.find(
+      (definition) =>
+        definition.workflowDefinitionRevisionId === SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+    );
+    if (planning === undefined) throw new Error("缺少Planning Workflow");
+    const planningNode = planning.nodes.find((node) => node.nodeType === "agent.plan");
+    const executionNode = planning.nodes.find((node) => node.nodeType === "execute.plan");
+    if (planningNode === undefined || executionNode === undefined) {
+      throw new Error("Planning Workflow缺少Prompt节点");
+    }
+    const planningSessionResponse = await postJson(app, "/api/sessions", {
+      commandId: nextCmd(),
+      payload: { title: "Prompt V3 Planning体验" },
+    });
+    const planningSession = sessionDtoSchema.parse(
+      ((await planningSessionResponse.json()) as { session: unknown }).session,
+    );
+    const planningSent = await postJson(
       app,
-      `/api/prompt-fragments/${fragment.promptFragmentId}/revisions`,
+      `/api/sessions/${planningSession.sessionId}/messages`,
       {
         commandId: nextCmd(),
-        expectedRevision: fragment.revision,
         payload: {
-          currentRevisionId: fragment.currentRevisionId,
-          currentRevisionSha256: fragment.currentRevisionSha256,
-          revision: {
-            regionKey: "agent_identity",
-            title: "冲突版本",
-            content: { kind: "markdown", bodyMarkdown: "不会覆盖成功版本" },
+          text: "先规划，再执行",
+          workflowSelection: {
+            kind: "published_revision",
+            workflowDefinitionRevisionId: planning.workflowDefinitionRevisionId,
+            definitionSha256: planning.definitionSha256,
+          },
+          promptSelection: {
+            schemaVersion: "prompt-turn-selection-input.v2",
+            workspaceRootId: "root_chat",
+            workflowDefinitionRevisionId: planning.workflowDefinitionRevisionId,
+            regions: [],
+            nodeSelections: [
+              {
+                definitionNodeId: executionNode.definitionNodeId,
+                regions: [
+                  {
+                    regionKey: "agent_identity",
+                    mode: "replace",
+                    selected: [
+                      {
+                        promptFragmentRevisionId: revisedPromptFragmentRevisionId,
+                        sha256: revisedAgent.systemPrompt.sha256,
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
           },
         },
       },
     );
+    expect(planningSent.status, await planningSent.clone().text()).toBe(201);
+    const afterPlanning = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const workflowAssembly = Object.values(afterPlanning.entities.promptAssemblies).find(
+      (candidate) => candidate.productSessionId === planningSession.sessionId,
+    );
+    expect(workflowAssembly?.schemaVersion).toBe("prompt-assembly.v3");
+    if (workflowAssembly?.schemaVersion !== "prompt-assembly.v3") {
+      throw new Error("Planning提交没有形成V3 Assembly");
+    }
+    expect(workflowAssembly.nodes.map((node) => node.definitionNodeId).sort()).toEqual(
+      [planningNode.definitionNodeId, executionNode.definitionNodeId].sort(),
+    );
+    expect(
+      workflowAssembly.nodes.find(
+        (node) => node.definitionNodeId === executionNode.definitionNodeId,
+      )?.systemPromptAppend,
+    ).not.toContain("你是独立配置的Direct Agent");
+
+    const noSelectionSessionResponse = await postJson(app, "/api/sessions", {
+      commandId: nextCmd(),
+      payload: { title: "无Prompt Selection的V3体验" },
+    });
+    const noSelectionSession = sessionDtoSchema.parse(
+      ((await noSelectionSessionResponse.json()) as { session: unknown }).session,
+    );
+    const runOverridePrompt = "你是这一次Run临时使用的规划Agent。";
+    const noSelectionSent = await postJson(
+      app,
+      `/api/sessions/${noSelectionSession.sessionId}/messages`,
+      {
+        commandId: nextCmd(),
+        payload: {
+          text: "不提交Prompt Selection也必须冻结V3",
+          workflowSelection: {
+            kind: "published_revision",
+            workflowDefinitionRevisionId: planning.workflowDefinitionRevisionId,
+            definitionSha256: planning.definitionSha256,
+            runConfiguration: {
+              schemaVersion: "workflow-run-configuration.v1",
+              overrides: [
+                {
+                  kind: "node_config",
+                  definitionNodeId: planningNode.definitionNodeId,
+                  field: "agentPromptOverride",
+                  value: runOverridePrompt,
+                },
+              ],
+            },
+          },
+        },
+      },
+    );
+    expect(noSelectionSent.status, await noSelectionSent.clone().text()).toBe(201);
+    const afterNoSelection = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const noSelectionAssembly = Object.values(afterNoSelection.entities.promptAssemblies).find(
+      (candidate) => candidate.productSessionId === noSelectionSession.sessionId,
+    );
+    expect(noSelectionAssembly?.schemaVersion).toBe("prompt-assembly.v3");
+    if (noSelectionAssembly?.schemaVersion !== "prompt-assembly.v3") {
+      throw new Error("省略Prompt Selection没有形成V3 Assembly");
+    }
+    expect(
+      noSelectionAssembly.nodes.find(
+        (node) => node.definitionNodeId === planningNode.definitionNodeId,
+      )?.systemPromptAppend,
+    ).toContain(runOverridePrompt);
+
+    const stale = await postJson(app, "/api/agent-profiles/direct/prompt-revisions", {
+      commandId: nextCmd(),
+      payload: {
+        expectedAggregateRevision: 0,
+        bodyMarkdown: "不会覆盖成功版本",
+      },
+    });
     expect(stale.status).toBe(409);
+
+    const restoredResponse = await postJson(app, "/api/agent-profiles/direct/restore-default", {
+      commandId: nextCmd(),
+      payload: {
+        expectedAggregateRevision: revisedAgent.systemPrompt.aggregateRevision,
+        currentRevisionId: revisedAgent.systemPrompt.promptFragmentRevisionId,
+        currentRevisionSha256: revisedAgent.systemPrompt.sha256,
+      },
+    });
+    expect(restoredResponse.status, await restoredResponse.clone().text()).toBe(200);
+    expect(agentProfileDtoSchema.parse(await restoredResponse.json()).systemPrompt.source).toBe(
+      "runtime_default",
+    );
   });
 });

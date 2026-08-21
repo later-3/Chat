@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { promptFragmentSummaryDtoSchema } from "@chat/contracts/public";
 import { PromptComposerController } from "../src/client/prompt-composer-controller.ts";
+import { promptTurnPreviewFixture } from "./prompt-turn-preview-fixture.ts";
 
 const SHA = "a".repeat(64);
 const ROOT_ID = "root_chat";
@@ -90,6 +91,14 @@ const emptySelection = {
   regions: [],
 } as const;
 
+const workflowSelection = {
+  schemaVersion: "prompt-turn-selection-input.v2",
+  workspaceRootId: ROOT_ID,
+  workflowDefinitionRevisionId: "wfr_promptworkflow1",
+  regions: [],
+  nodeSelections: [],
+} as const;
+
 async function untilSaved(controller: PromptComposerController): Promise<void> {
   for (let attempt = 0; attempt < 30; attempt += 1) {
     if (!controller.getSnapshot().saving) return;
@@ -126,7 +135,11 @@ test("每个Region独立选择模式并把精确Revision按顺序PUT到Bridge", 
       return json({
         schemaVersion: "chat-dsh-prompt-selection.v1",
         workspace: { rootId: ROOT_ID, title: "Chat" },
-        promptSelection: emptySelection,
+        workflow: {
+          workflowDefinitionRevisionId: "wfr_promptworkflow1",
+          title: "规划执行工作流",
+        },
+        promptSelection: workflowSelection,
       });
     }
     if (url.endsWith("/prompt-selection") && init?.method === "PUT") {
@@ -135,6 +148,10 @@ test("每个Region独立选择模式并把精确Revision按顺序PUT到Bridge", 
       return json({
         schemaVersion: "chat-dsh-prompt-selection.v1",
         workspace: { rootId: ROOT_ID, title: "Chat" },
+        workflow: {
+          workflowDefinitionRevisionId: "wfr_promptworkflow1",
+          title: "规划执行工作流",
+        },
         promptSelection: body.promptSelection,
       });
     }
@@ -160,10 +177,31 @@ test("每个Region独立选择模式并把精确Revision按顺序PUT到Bridge", 
       .selection.regions[0]?.selected.map((item) => item.promptFragmentRevisionId),
     ["pfr_globalrulesv1", "pfr_workspacerulesv1"],
   );
-  assert.equal(writes.length, 2);
+  controller.setMode("rules", "replace");
+  await untilSaved(controller);
+  controller.toggleRevision(workspaceFragment);
+  await untilSaved(controller);
+  const selected = controller.getSnapshot().selection;
+  assert.equal(selected.schemaVersion, "prompt-turn-selection-input.v2");
+  if (selected.schemaVersion !== "prompt-turn-selection-input.v2") {
+    assert.fail("Workflow绑定的会话Prompt选择应保持V2兼容形状");
+  }
+  assert.deepEqual(
+    selected.regions[0]?.selected.map((item) => item.promptFragmentRevisionId),
+    ["pfr_globalrulesv1"],
+  );
+  assert.deepEqual(selected.nodeSelections, []);
+  assert.equal(writes.length, 4);
 
   const restored = new PromptComposerController(SESSION_ID, fetchImpl, storage);
-  assert.equal(restored.getSnapshot().selection.regions[0]?.selected.length, 2);
+  const restoredSelection = restored.getSnapshot().selection;
+  assert.equal(restoredSelection.regions[0]?.selected.length, 1);
+  assert.equal(
+    restoredSelection.schemaVersion === "prompt-turn-selection-input.v2"
+      ? restoredSelection.nodeSelections.length
+      : -1,
+    0,
+  );
   restored.dispose();
   controller.dispose();
 });
@@ -232,6 +270,7 @@ test("提示词配置预览与DSH Bridge发送预览保持两个独立边界", a
           messageContext: "",
           sha256: SHA,
         },
+        promptTurnPreview: promptTurnPreviewFixture("这是一个什么项目？"),
         dshToBridge: {
           adapterRequest: {
             status: "not_captured",
@@ -243,7 +282,7 @@ test("提示词配置预览与DSH Bridge发送预览保持两个独立边界", a
             dshSessionId: SESSION_ID,
             status: "not_assembled",
             revision: SHA,
-            chatForwarding: "latest_direct_user_message_and_workspace_instructions",
+            chatForwarding: "not_forwarded",
             items: [],
             totalItems: 0,
             omittedItems: 0,

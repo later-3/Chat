@@ -4,6 +4,7 @@ import type {
   WorkflowExecutionTraceValueDto,
   PiTraceActivityDto,
 } from "@chat/contracts/public";
+import type { LifeosExecutionTrace } from "../contracts.ts";
 import type {
   ConversationNodeContext,
   ConversationNodeDefinition,
@@ -41,12 +42,10 @@ export interface ExecutionTraceViewOptions {
   readonly showTimestamps?: boolean;
 }
 
-export type ExecutionTraceForMessage = (
-  dshMessageId: string,
-) => WorkflowExecutionTraceDto | undefined;
+export type ExecutionTraceForMessage = (dshMessageId: string) => LifeosExecutionTrace | undefined;
 
 interface ExecutionTracePlacementState {
-  readonly trace?: WorkflowExecutionTraceDto;
+  readonly value?: LifeosExecutionTrace;
 }
 
 const EXECUTION_TRACE_BINDING_KIND = "lifeos-execution-trace-binding";
@@ -67,11 +66,13 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "失败",
   cancelled: "已取消",
   outcome_unknown: "结果未知",
+  blocked: "已阻止",
 };
 
 const AGENT_ROLE_LABEL: Record<PiTraceActivityDto["nodeKind"], string> = {
   planner: "规划",
   executor: "执行",
+  direct_agent: "直接执行",
   note_capture: "笔记",
 };
 
@@ -94,7 +95,7 @@ function isRunning(status: PublicStatus): boolean {
 }
 
 function isError(status: PublicStatus): boolean {
-  return ["failed", "cancelled", "outcome_unknown"].includes(status);
+  return ["failed", "cancelled", "blocked", "outcome_unknown"].includes(status);
 }
 
 function statusLabel(status: PublicStatus): string {
@@ -317,7 +318,7 @@ function activityBlock(
   seq: number,
   facts: ActivityFactScope,
 ): ToolCallBlock {
-  const visibleInput = activity.kind === "tool" ? facts.output : facts.input;
+  const visibleInput = facts.input;
   const details: Record<string, unknown> = {
     kind: activity.kind,
     status: activity.status,
@@ -333,6 +334,12 @@ function activityBlock(
   if (activity.provider !== undefined) details.provider = activity.provider;
   if (activity.model !== undefined) details.model = activity.model;
   if (activity.toolName !== undefined) details.tool = activity.toolName;
+  if (activity.inputDisplay !== undefined) details.input = activity.inputDisplay;
+  if (activity.inputDisplayTruncated !== undefined)
+    details.inputTruncated = activity.inputDisplayTruncated;
+  if (activity.resultDisplay !== undefined) details.result = activity.resultDisplay;
+  if (activity.resultDisplayTruncated !== undefined)
+    details.resultTruncated = activity.resultDisplayTruncated;
   if (activity.tokenUsage !== undefined) {
     details.promptTokens = activity.tokenUsage.promptTokens;
     details.completionTokens = activity.tokenUsage.completionTokens;
@@ -341,7 +348,12 @@ function activityBlock(
   if (activity.durationMs !== undefined) details.durationMs = activity.durationMs;
   if (activity.errorCode !== undefined) details.errorCode = activity.errorCode;
   const summary = activitySummary(activity, children);
-  const output = activity.kind === "agent" ? factOutput(summary, facts.output) : undefined;
+  const output =
+    activity.kind === "tool"
+      ? activity.resultDisplay
+      : activity.kind === "agent"
+        ? factOutput(summary, facts.output)
+        : undefined;
   return block({
     callId: `lifeos-${activity.activityKey}`,
     name: activityName(activity),
@@ -525,10 +537,11 @@ export function executionTraceRoot(
   trace: WorkflowExecutionTraceDto,
   seq: number,
   options: ExecutionTraceViewOptions = {},
+  boundaries?: LifeosExecutionTrace["boundaries"],
 ): ToolCallBlock {
   const firstInput =
     trace.workflow.nodeDetails.find((detail) => detail.input.length > 0)?.input ?? [];
-  const root = block({
+  const workflow = block({
     callId: `lifeos-workflow-${String(trace.productRunId)}`,
     name: `Workflow · ${trace.workflow.title}`,
     status: trace.run.status,
@@ -552,6 +565,71 @@ export function executionTraceRoot(
     subCalls: ordered(workflowNodeBlocks(trace, seq)),
     seq,
   });
+  if (boundaries === undefined) {
+    return decorateTreeBlock(workflow, [], true, options.showTimestamps === true, true);
+  }
+  const dsh = block({
+    callId: `lifeos-boundary-dsh-${boundaries.dsh.dshMessageId}`,
+    name: "DSH · 用户输入与原生会话",
+    status: "completed",
+    startedAt: trace.run.createdAt,
+    completedAt: trace.run.createdAt,
+    details: {
+      dshSessionId: boundaries.dsh.dshSessionId,
+      dshMessageId: boundaries.dsh.dshMessageId,
+      userTextSha256: boundaries.dsh.userTextSha256,
+      ownership: "DSH保存原生交互；Chat不把它当成Product Session。",
+    },
+    summary: "已接收真实用户消息",
+    seq,
+  });
+  const bridge = block({
+    callId: `lifeos-boundary-bridge-${String(trace.productRunId)}`,
+    name: "Bridge · 选择、审核与身份映射",
+    status: "completed",
+    startedAt: trace.run.createdAt,
+    completedAt: trace.run.createdAt,
+    details: {
+      messageCommandId: boundaries.bridge.messageCommandId,
+      productUserMessageId: boundaries.bridge.productUserMessageId ?? null,
+      productAssistantMessageId: boundaries.bridge.productAssistantMessageId ?? null,
+      workflowDefinitionRevisionId: boundaries.bridge.workflowDefinitionRevisionId ?? null,
+      promptSelectionSha256: boundaries.bridge.promptSelectionSha256 ?? null,
+      ownership: "Bridge只映射并转发，不拥有产品终态。",
+    },
+    summary: joinedSummary([
+      "已绑定Chat命令",
+      boundaries.bridge.promptSelectionSha256 === undefined ? undefined : "已冻结提示词选择",
+    ]),
+    seq,
+  });
+  const backend = block({
+    callId: `lifeos-backend-${String(trace.productRunId)}`,
+    name: "Chat 后端 · Product Run 与 Workflow",
+    status: trace.run.status,
+    startedAt: trace.run.createdAt,
+    ...(isRunning(trace.run.status) ? {} : { completedAt: trace.run.updatedAt }),
+    details: {
+      productRunId: trace.productRunId,
+      status: trace.run.status,
+      phase: trace.run.phase,
+      ownership: "Product Store拥有正式Message/Run；Workflow拥有耐久执行。",
+    },
+    summary: joinedSummary([statusLabel(trace.run.status), "包含Product事实与Workflow层级"]),
+    subCalls: [workflow],
+    seq,
+  });
+  const root = block({
+    callId: `lifeos-chat-turn-${String(trace.productRunId)}`,
+    name: "Chat 本轮执行",
+    status: trace.run.status,
+    startedAt: trace.run.createdAt,
+    ...(isRunning(trace.run.status) ? {} : { completedAt: trace.run.updatedAt }),
+    details: { productRunId: trace.productRunId },
+    summary: joinedSummary([statusLabel(trace.run.status), "DSH → Bridge → Chat后端 → Workflow"]),
+    subCalls: [dsh, bridge, backend],
+    seq,
+  });
   return decorateTreeBlock(root, [], true, options.showTimestamps === true, true);
 }
 
@@ -560,10 +638,17 @@ export function executionTraceRoot(
  */
 export function executionTraceCallLabels(
   trace: WorkflowExecutionTraceDto,
+  boundaries?: LifeosExecutionTrace["boundaries"],
 ): ReadonlyMap<string, string> {
   const labels = new Map<string, string>([
     [`lifeos-workflow-${String(trace.productRunId)}`, "WORKFLOW"],
   ]);
+  if (boundaries !== undefined) {
+    labels.set(`lifeos-chat-turn-${String(trace.productRunId)}`, "RUN");
+    labels.set(`lifeos-boundary-dsh-${boundaries.dsh.dshMessageId}`, "DSH");
+    labels.set(`lifeos-boundary-bridge-${String(trace.productRunId)}`, "BRIDGE");
+    labels.set(`lifeos-backend-${String(trace.productRunId)}`, "BACKEND");
+  }
   for (const node of trace.workflow.nodeRuns) {
     labels.set(`lifeos-node-${String(node.workflowNodeRunId)}`, "NODE");
   }
@@ -621,13 +706,13 @@ function locationTurn(
 /** 保存真实user/message到Product Run的绑定，不产生可见Trajectory节点。 */
 export function createExecutionTraceBindingDefinition(
   traceForMessage: ExecutionTraceForMessage,
-): ConversationNodeDefinition<WorkflowExecutionTraceDto> {
+): ConversationNodeDefinition<LifeosExecutionTrace> {
   return {
     kind: EXECUTION_TRACE_BINDING_KIND,
     match: (event) => {
       if (event.type !== "user/message" || event.data.source.kind !== "user") return null;
       const trace = traceForMessage(String(event.data.id));
-      return trace === undefined ? null : { id: String(trace.productRunId), role: "start" };
+      return trace === undefined ? null : { id: String(trace.trace.productRunId), role: "start" };
     },
     start: (_context, match) => {
       if (match.event.type !== "user/message") {
@@ -656,7 +741,7 @@ export function createExecutionTraceDefinition(
     match: (event) =>
       event.type === "request/header" ? { id: String(event.seq), role: "start" } : null,
     start: (_context, match, reader) => {
-      const binding = reader.previous<WorkflowExecutionTraceDto>(EXECUTION_TRACE_BINDING_KIND);
+      const binding = reader.previous<LifeosExecutionTrace>(EXECUTION_TRACE_BINDING_KIND);
       if (binding === undefined) return {};
       const bindingLocation = binding.matches.at(-1)?.location;
       const bindingTurn = bindingLocation === undefined ? undefined : locationTurn(bindingLocation);
@@ -664,14 +749,14 @@ export function createExecutionTraceDefinition(
       if (bindingTurn !== undefined && requestTurn !== undefined && bindingTurn !== requestTurn) {
         return {};
       }
-      return { trace: binding.state };
+      return { value: binding.state };
     },
     update: (context) => context.state,
     buildViewNode: (context: ConversationNodeContext<ExecutionTracePlacementState>) => {
       const last = context.matches.at(-1);
-      const trace = context.state?.trace;
-      if (last === undefined || trace === undefined) return null;
-      const root = executionTraceRoot(trace, last.event.seq, options);
+      const value = context.state?.value;
+      if (last === undefined || value === undefined) return null;
+      const root = executionTraceRoot(value.trace, last.event.seq, options, value.boundaries);
       return {
         key: context.key,
         kind: context.kind,
@@ -682,7 +767,7 @@ export function createExecutionTraceDefinition(
         data: {
           kind: "tool",
           root,
-          callLabels: executionTraceCallLabels(trace),
+          callLabels: executionTraceCallLabels(value.trace, value.boundaries),
           callPreviews: executionTraceCallPreviews(root),
         },
       };

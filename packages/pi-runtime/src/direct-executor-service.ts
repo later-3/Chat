@@ -61,6 +61,14 @@ export interface AuthorizedDirectAgentInput {
         readonly promptAssemblyId: string;
         readonly sha256: string;
         readonly systemPromptAppend: string;
+        readonly piSystemPrompt?:
+          | { readonly kind: "pi_coding_agent"; readonly mode: "inherit" }
+          | {
+              readonly kind: "pi_coding_agent";
+              readonly mode: "replace";
+              readonly bodyMarkdown: string;
+              readonly sha256: string;
+            };
         readonly messages: readonly {
           readonly role: "user" | "assistant";
           readonly text: string;
@@ -68,8 +76,8 @@ export interface AuthorizedDirectAgentInput {
           readonly estimatedTokens: number;
         }[];
         readonly tools: {
-          readonly capabilityMode: "read_only";
-          readonly names: ("read" | "grep" | "find" | "ls")[];
+          readonly capabilityMode: "read_only" | "project_bootstrap";
+          readonly names: ("read" | "grep" | "find" | "ls" | "project_bootstrap_prepare")[];
           readonly estimatedTokens: 8_000;
         };
         readonly requestOptions: {
@@ -422,6 +430,10 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
         prompt,
         history,
         systemPromptAppend: authorizedInput.promptAssembly.systemPromptAppend,
+        ...(authorizedInput.promptAssembly.schemaVersion === "prompt-assembly.v2" &&
+        authorizedInput.promptAssembly.piSystemPrompt !== undefined
+          ? { piSystemPrompt: authorizedInput.promptAssembly.piSystemPrompt }
+          : {}),
         tools,
         requestOptions,
         cwd,

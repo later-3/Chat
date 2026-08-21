@@ -575,6 +575,7 @@ test("debug实例同时隔离端口、产品事实、Workflow、Runtime、Trace�
   assert.equal(byId.workflow.env.CHAT_PI_EXECUTOR_INTERNAL_BASE_URL, "http://127.0.0.1:44115");
   assert.equal(byId.api.port, 44111);
   assert.equal(byId.api.env.CHAT_WORKFLOW_BASE_URL, "http://127.0.0.1:44112");
+  assert.equal(byId.api.env.CHAT_PI_EXECUTOR_INTERNAL_BASE_URL, "http://127.0.0.1:44115");
   assert.equal(byId.web.port, 44110);
   assert.equal(byId.web.env.DSH_WEB_PORT, "44114");
   assert.equal(byId.web.env.CHAT_PUBLIC_WEB_PORT, "44110");

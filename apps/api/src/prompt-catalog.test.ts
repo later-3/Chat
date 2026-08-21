@@ -37,6 +37,42 @@ describe("File Prompt Catalog workspace instructions", () => {
       ]),
     });
     const snapshot = await catalog.load();
+    expect(snapshot.sharedSelectionProfile.profileId).toBe("chat-shared-default.v1");
+    expect(snapshot.sharedSelectionProfile.defaultRevisionIds).not.toContain(
+      "pfr_builtinagentidentityv2",
+    );
+    expect(snapshot.agents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ agentKey: "planner" }),
+        expect.objectContaining({ agentKey: "direct" }),
+        expect.objectContaining({ agentKey: "project_bootstrap" }),
+        expect.objectContaining({ agentKey: "coding_executor" }),
+        expect.objectContaining({ agentKey: "note_extractor" }),
+      ]),
+    );
+    expect(snapshot.agents.find((agent) => agent.agentKey === "direct")?.defaultPrompt).toEqual({
+      kind: "pi_coding_agent",
+      defaultVariantKey: "read_only",
+    });
+    expect(
+      snapshot.agents.find((agent) => agent.agentKey === "coding_executor")?.defaultPrompt,
+    ).toEqual({
+      kind: "pi_coding_agent",
+      defaultVariantKey: "workspace_write_shell",
+    });
+    expect(
+      snapshot.agents.find((agent) => agent.agentKey === "project_bootstrap")?.defaultPrompt,
+    ).toEqual({
+      kind: "pi_coding_agent",
+      defaultVariantKey: "read_only",
+      promptFragmentRevisionId: "pfr_builtinprojectbootstrapv1",
+    });
+    expect(snapshot.builtinFragments.map((fragment) => fragment.sourceRelativePath)).not.toEqual(
+      expect.arrayContaining([
+        "prompts/fragments/agent-identity/direct-agent.md",
+        "prompts/fragments/agent-identity/coding-executor-agent.md",
+      ]),
+    );
     const workspace = snapshot.builtinFragments.filter(
       (fragment) => fragment.regionKey === "workspace_instructions",
     );

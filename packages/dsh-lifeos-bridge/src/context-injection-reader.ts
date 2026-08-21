@@ -135,7 +135,7 @@ function safeTotal(current: number, addition: number): number {
 export class DshContextInjectionReader {
   constructor(private readonly sessions: DshContextSessionSource) {}
 
-  /** 与真实LifeOS Adapter复用同一个提取函数，供发送预览展示实际转发子集。 */
+  /** DSH Session审计投影；不再代表Bridge会把这些内容提交给Chat。 */
   workspaceInstructions(dshSessionId: string): WorkspaceInstructionsInput | undefined | null {
     const session = this.sessions.get(dshSessionId);
     return session === undefined ? null : workspaceInstructionsOf(session.deriveMessages());
@@ -160,7 +160,7 @@ export class DshContextInjectionReader {
       schemaVersion: DSH_CONTEXT_INJECTION_SCHEMA_VERSION,
       dshSessionId,
       status: assembled ? ("ready" as const) : ("not_assembled" as const),
-      chatForwarding: "latest_direct_user_message_and_workspace_instructions" as const,
+      chatForwarding: "not_forwarded" as const,
       items,
       totalItems: allItems.length,
       omittedItems: allItems.length - items.length,

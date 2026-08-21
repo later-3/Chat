@@ -27,6 +27,7 @@ import type { ApplicationDeps } from "./deps.js";
 import { forbidden, notFound, revisionConflict } from "./errors.js";
 import { deriveNoteCaptureInputFromRunSpec, latestCandidate } from "./note-candidate-policy.js";
 import { requireNoteCaptureRun, type NoteCaptureProductRun } from "./product-run-kind.js";
+import { workflowNodePromptFor } from "./prompt-assembly-use-cases.js";
 
 /**
  * Note公开Query与DTO投影只读取已提交快照，不拥有事务，也不推导新的产品事实。
@@ -261,6 +262,7 @@ export async function prepareNoteCaptureInputForRuntime(
     throw revisionConflict("Note Capture Input加载的RunSpec与Run绑定不一致");
   }
   const prepared = deriveNoteCaptureInputFromRunSpec(snapshot.entities, noteRun);
+  const nodePrompt = workflowNodePromptFor(snapshot, input.productRunId, "note.extract");
   const priorCandidate = latestCandidate(
     snapshot.entities,
     input.productRunId,
@@ -279,6 +281,7 @@ export async function prepareNoteCaptureInputForRuntime(
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
   return {
     ...prepared,
+    ...(nodePrompt === undefined ? {} : { nodePrompt }),
     ...(priorCandidate === undefined ? {} : { priorCandidate: toCandidateReview(priorCandidate) }),
     ...(priorDecision?.kind === "request_revision"
       ? { revisionInstruction: priorDecision.revisionInstruction }

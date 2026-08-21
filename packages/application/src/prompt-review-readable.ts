@@ -25,7 +25,7 @@ function source(
 
 const SYSTEM_SOURCES: readonly PromptReviewReadableSource[] = [
   source(
-    "Pi Agent Core · buildSystemPrompt",
+    "Pi Coding Agent · buildSystemPrompt",
     [PI_SYSTEM_PROMPT],
     "生成Pi基础系统指令、工具摘要、使用准则、文档路径和当前工作目录。",
   ),
@@ -103,6 +103,7 @@ function assemblySource(
   assembly: PromptAssembly | undefined,
   placement: "system" | "messages",
 ): PromptReviewReadableSource | undefined {
+  if (assembly?.schemaVersion === "prompt-assembly.v3") return undefined;
   const fragments =
     assembly?.regions
       .filter((region) => region.placement === placement)

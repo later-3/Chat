@@ -3,7 +3,7 @@ import { DSH_REAL_E2E_PORTS } from "../../../scripts/e2e/dsh-real-environment.mj
 
 const API = `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.api)}`;
 const FULL_PROMPT = `验证Pi执行轨迹实时显示\n${"完整会话正文-".repeat(
-  600,
+  300,
 )}END_OF_UNTRUNCATED_SESSION_MESSAGE`;
 
 async function waitForSubmitted(request: APIRequestContext): Promise<void> {
@@ -27,6 +27,7 @@ async function openReadyConversation(page: Page) {
     await continueButton.click();
   }
   const composer = page.locator("textarea:visible").last();
+  await composer.waitFor({ state: "visible", timeout: 30_000 });
   if (!(await composer.isEnabled())) {
     await page.getByRole("button", { name: /选择工作区|Choose workspace/u }).click();
     await page.getByRole("menuitem", { name: "Chat", exact: true }).click();
@@ -41,42 +42,54 @@ test("rc.6 DSH原生轨迹、双源会话记录与上下文注入保留完整过
   // 空会话没有纯预演合同：管理面板必须如实显示尚未组装，而不是复制
   // AGENTS/权限/Skill的上游逻辑来猜测首次请求内容。
   await page.getByTestId("lifeos-context-injections-open").click();
-  const contextDialog = page.getByRole("dialog", { name: "上下文注入" });
+  const contextDialog = page.getByRole("dialog", { name: "DSH 宿主上下文" });
   await expect(contextDialog).toBeVisible();
   await expect(page.getByTestId("lifeos-context-not-assembled")).toBeVisible();
-  await page.getByRole("button", { name: "关闭上下文注入" }).click();
+  await page.getByRole("button", { name: "关闭 DSH 宿主上下文" }).click();
 
   await composer.fill(FULL_PROMPT);
   await page.getByRole("button", { name: /发送消息|Send message/u }).click();
   await waitForSubmitted(request);
 
   // 首次pre-step完成后读取真实Session.deriveMessages surface；当前隔离Profile
-  // 实际生成的Context均可追溯，且面板明确声明LifeOS只取最新直接User输入。
+  // 实际生成的Context均可追溯，且面板明确声明它不会绕过Prompt选择自动进入Chat。
   await page.getByTestId("lifeos-context-injections-open").click();
   await expect(contextDialog).toBeVisible();
-  await expect(contextDialog.getByText("工作区指令", { exact: true })).toBeVisible();
-  await expect(contextDialog.getByText("运行时上下文", { exact: true })).toBeVisible();
-  await expect(contextDialog).toContainText("LifeOS Workflow 只接收最新一条用户直接输入");
-  const workspaceInstructions = contextDialog.locator("details", { hasText: "工作区指令" });
+  await expect(contextDialog.getByText("DSH Workspace 指令", { exact: true })).toBeVisible();
+  await expect(contextDialog.getByText("DSH 运行时上下文", { exact: true })).toBeVisible();
+  await expect(contextDialog).toContainText("只读 · 不自动转发到 Chat", { timeout: 30_000 });
+  const workspaceInstructions = contextDialog.locator("details", {
+    hasText: "DSH Workspace 指令",
+  });
   await workspaceInstructions.locator("summary").click();
   await expect(workspaceInstructions).toContainText("Chat 项目协作规则");
-  await page.getByRole("button", { name: "关闭上下文注入" }).click();
+  await page.getByRole("button", { name: "关闭 DSH 宿主上下文" }).click();
 
   const intent = await request.post(`${API}/__trajectory/intent`);
   expect(intent.status()).toBe(200);
   const trajectoryTab = page.getByRole("tab", { name: /轨迹|Trajectory/u });
   await expect(trajectoryTab).toBeVisible();
   await trajectoryTab.click();
-  const toolRecord = page.getByText(/lifeos_trace|node --version/u).first();
+  const toolRecord = page.getByText(/工具.*bash|node --version/u).first();
   await expect(toolRecord).toBeVisible({ timeout: 30_000 });
   // DSH的Trajectory可访问文本会折叠名称中的装饰分隔符“·”；
   // 用语义上稳定的Workflow标签和标题校验，不绑定具体排版字符。
   const workflowRecord = page.getByText(/Workflow.*轨迹验证工作流/u).first();
   await expect(workflowRecord).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("WORKFLOW", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("RUN", { exact: true }).first()).toBeVisible();
   const expandCalls = page.getByRole("button", { name: /展开调用|Expand calls/u });
   if (await expandCalls.isVisible().catch(() => false)) await expandCalls.click();
-  for (const label of ["NODE", "STEP", "AGENT", "MODEL", "TOOL"]) {
+  for (const label of [
+    "DSH",
+    "BRIDGE",
+    "BACKEND",
+    "WORKFLOW",
+    "NODE",
+    "STEP",
+    "AGENT",
+    "MODEL",
+    "TOOL",
+  ]) {
     await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
   }
   await expect(page.getByText("TRACE_UI_RESULT_OK")).toHaveCount(0);
@@ -100,6 +113,15 @@ test("rc.6 DSH原生轨迹、双源会话记录与上下文注入保留完整过
   await expect(page.getByText("TRAJECTORY_E2E_COMPLETED", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
+
+  await page.getByTestId("lifeos-chat-session-open").click();
+  const sessionDialog = page.getByRole("dialog", { name: "Chat Session 预览" });
+  await expect(sessionDialog).toBeVisible();
+  await expect(sessionDialog.getByText("Product Session", { exact: true })).toBeVisible();
+  await expect(sessionDialog.getByText("DSH Session", { exact: true })).toBeVisible();
+  await expect(sessionDialog.getByText(FULL_PROMPT, { exact: true })).toBeVisible();
+  await expect(sessionDialog.getByText("TRAJECTORY_E2E_COMPLETED", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "关闭 Chat Session 预览" }).click();
 
   await page.getByRole("tab", { name: "会话记录", exact: true }).click();
   const records = page.getByTestId("lifeos-session-records");

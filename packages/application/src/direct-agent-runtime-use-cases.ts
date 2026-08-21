@@ -224,6 +224,10 @@ export async function authorizeDirectAgentOperation(
     readonly promptAssemblyId: PromptAssembly["promptAssemblyId"];
     readonly sha256: string;
     readonly systemPromptAppend: string;
+    readonly piSystemPrompt?: Extract<
+      PromptAssembly,
+      { schemaVersion: "prompt-assembly.v2" }
+    >["piSystemPrompt"];
     readonly userPrompt?: string | undefined;
     readonly messages?: Extract<
       PromptAssembly,
@@ -265,6 +269,9 @@ export async function authorizeDirectAgentOperation(
   const runSpec = snapshot.entities.workflowRunSpecs[input.workflowRunSpecId];
   const message = snapshot.entities.messages[run.sourceMessageId];
   const promptAssembly = directPromptAssembly(snapshot.entities, input.productRunId);
+  if (promptAssembly.schemaVersion === "prompt-assembly.v3") {
+    throw revisionConflict("Direct Agent不能使用Workflow Prompt计划");
+  }
   if (
     attempt === undefined ||
     attempt.productRunId !== input.productRunId ||
@@ -348,6 +355,9 @@ export async function authorizeDirectAgentOperation(
       ...(promptAssembly.schemaVersion === "prompt-assembly.v1"
         ? { userPrompt: promptAssembly.userPrompt }
         : {
+            ...(promptAssembly.piSystemPrompt === undefined
+              ? {}
+              : { piSystemPrompt: promptAssembly.piSystemPrompt }),
             messages: promptAssembly.messages,
             tools: promptAssembly.tools,
             requestOptions: promptAssembly.requestOptions,

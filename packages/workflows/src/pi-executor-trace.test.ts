@@ -1,15 +1,19 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { piExecutorEventSchema } from "@chat/pi-runtime";
-import type { TraceEventInput } from "@chat/contracts";
+import type { RunActivityEventInput, TraceEventInput } from "@chat/contracts";
 import { emitPiExecutorTrace } from "./pi-executor-trace.js";
 import { setWorkflowRuntimeContext } from "./runtime-context.js";
 
 afterEach(() => setWorkflowRuntimeContext(undefined));
 
 describe("Pi Executor Journal -> Chat Trace", () => {
-  it("逐字保留已脱敏命令、路径和工具结果，并使用Pi实际endpoint", () => {
+  it("会话显示内容只进入Activity，Debug Trace只保留Hash且使用Pi实际endpoint", () => {
     const emitted: TraceEventInput[] = [];
-    setWorkflowRuntimeContext({ trace: (event: TraceEventInput) => emitted.push(event) } as never);
+    const activities: RunActivityEventInput[] = [];
+    setWorkflowRuntimeContext({
+      trace: (event: TraceEventInput) => emitted.push(event),
+      activity: (event: RunActivityEventInput) => activities.push(event),
+    } as never);
     const scope = {
       productRunId: "run_traceprojection1",
       attemptId: "att_traceprojection1",
@@ -70,12 +74,29 @@ describe("Pi Executor Journal -> Chat Trace", () => {
     expect(emitted).toContainEqual(
       expect.objectContaining({
         eventName: "pi.tool.intent_persisted",
-        inputDisplay: '{"command":"pnpm test","path":"src/index.ts"}',
+        inputSha256: "b".repeat(64),
       }),
     );
     expect(emitted).toContainEqual(
       expect.objectContaining({
         eventName: "pi.tool.completed",
+        resultSha256: "c".repeat(64),
+        durationMs: 123,
+      }),
+    );
+    expect(JSON.stringify(emitted)).not.toContain("pnpm test");
+    expect(JSON.stringify(emitted)).not.toContain("42 tests passed");
+    expect(activities).toContainEqual(
+      expect.objectContaining({
+        activityType: "tool",
+        phase: "started",
+        inputDisplay: '{"command":"pnpm test","path":"src/index.ts"}',
+      }),
+    );
+    expect(activities).toContainEqual(
+      expect.objectContaining({
+        activityType: "tool",
+        phase: "completed",
         resultDisplay: "42 tests passed",
         durationMs: 123,
       }),

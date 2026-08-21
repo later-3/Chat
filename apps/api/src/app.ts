@@ -9,7 +9,7 @@ import {
   type TraceEventInput,
 } from "@chat/contracts";
 import type { ApplicationDeps } from "@chat/application";
-import { createExecutionTraceReader, createTraceSink, type TraceSink } from "@chat/realtime";
+import { createConfiguredTraceSink, type TraceSink } from "@chat/realtime";
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import { createProductRouter } from "./product-routes.js";
@@ -22,9 +22,9 @@ import { createInternalRuntimeRouter } from "./internal-runtime-router.js";
  * 产品事务属于Application Coordinator；本路由不得直接修改Product Store、
  * 恢复Workflow Hook或调用pi。
  *
- * Trace（任务书§7.3）：每个请求产生http.command.received与
- * http.command.completed/rejected事件。只记录HTTP方法与路由模板，
- * 不记录请求Body、Query或可能携带用户内容的原始URL。
+ * Debug Trace：写命令记录received与终止事件；正常成功GET/HEAD/OPTIONS不记录，
+ * 仅慢读与失败保留一条终止证据。所有事件只记录HTTP方法与路由模板，
+ * 不记录请求Body、Query或可能携带用户内容的原始URL；Session轨迹另由Activity拥有。
  *
  * Request ID：不信任客户端传入值；只有通过受限Schema（req_前缀）的ID才复用，
  * 否则生成新的服务端ID，响应头始终返回最终生效ID。
@@ -35,7 +35,7 @@ import { createInternalRuntimeRouter } from "./internal-runtime-router.js";
 type ApiVariables = { requestId: RequestId };
 
 export interface ApiAppOptions {
-  /** 默认使用@chat/realtime JSONL Sink（CHAT_TRACE_DIR或仓库.data/traces）；测试可注入临时目录。 */
+  /** 缺省按CHAT_TRACE_MODE/SCOPES装配；默认off。测试可注入显式临时Sink。 */
   traceSink?: TraceSink | null;
   /** 产品路由上下文；缺省时只暴露健康检查（骨架模式）。 */
   product?: {
@@ -48,6 +48,8 @@ export interface ApiAppOptions {
   };
   /** Provider配置状态（readiness只报告布尔，永不泄漏凭据）。 */
   providerReady?: boolean;
+  /** 仅用于短时诊断；默认不记录成功GET轮询，避免Debug Trace被读模型放大。 */
+  traceSuccessfulReads?: boolean;
 }
 
 type HttpMethod = Extract<TraceEventInput, { eventName: "http.command.received" }>["httpMethod"];
@@ -72,7 +74,10 @@ function newRequestId(): RequestId {
 }
 
 export function createApiApp(options: ApiAppOptions = {}) {
-  const traceSink = options.traceSink === undefined ? createTraceSink() : options.traceSink;
+  const traceSink =
+    options.traceSink === undefined
+      ? createConfiguredTraceSink({ scope: "api" })
+      : options.traceSink;
   const app = new Hono<{ Variables: ApiVariables }>();
 
   let traceEmitFailures = 0;
@@ -105,19 +110,26 @@ export function createApiApp(options: ApiAppOptions = {}) {
     const requestId = c.get("requestId");
     const spanId = `span_${randomUUID().replaceAll("-", "")}`;
     const base = { traceId: requestId as string, spanId, requestId };
-    safeEmit(() => ({
-      ...base,
-      level: "info",
-      eventName: TRACE_EVENT_NAMES.httpCommandReceived,
-      outcome: "unknown",
-      httpMethod,
-    }));
+    const isRead = httpMethod === "GET" || httpMethod === "HEAD" || httpMethod === "OPTIONS";
+    const traceRead =
+      options.traceSuccessfulReads === true || process.env.CHAT_TRACE_SUCCESSFUL_READS === "1";
+    if (!isRead || traceRead) {
+      safeEmit(() => ({
+        ...base,
+        level: "info",
+        eventName: TRACE_EVENT_NAMES.httpCommandReceived,
+        outcome: "unknown",
+        httpMethod,
+      }));
+    }
     await next();
     const status = c.res.status;
     const succeeded = status < 400;
     // 404来自未匹配路由，此时routePath可能回退为原始路径（含用户内容），一律省略模板
     const routeTemplate = status === 404 ? undefined : c.req.routePath;
     const durationMs = Math.round(performance.now() - startedAt);
+    // 正常轮询属于读模型，不是Debug事件。错误与显著慢读仍保留单条终止证据。
+    if (isRead && !traceRead && succeeded && durationMs < 2_000) return;
     if (succeeded) {
       safeEmit(() => ({
         ...base,
@@ -165,16 +177,9 @@ export function createApiApp(options: ApiAppOptions = {}) {
   });
 
   if (options.product !== undefined) {
-    const productDeps =
-      traceSink === null
-        ? options.product.deps
-        : {
-            ...options.product.deps,
-            executionTraceReader: createExecutionTraceReader({ dir: traceSink.dir }),
-          };
     app.route(
       "/api",
-      createProductRouter({ deps: productDeps, principalId: options.product.principalId }),
+      createProductRouter({ deps: options.product.deps, principalId: options.product.principalId }),
     );
   }
 

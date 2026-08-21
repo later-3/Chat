@@ -211,7 +211,7 @@ export async function getRunExecutionTrace(
       recoveryAction: "retry_same_command",
     });
   }
-  return deps.executionTraceReader.read({
+  return await deps.executionTraceReader.read({
     productRunId: input.productRunId,
     afterSequence: input.afterSequence ?? 0,
     limit: input.limit ?? 100,

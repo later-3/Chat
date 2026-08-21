@@ -2,7 +2,11 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { TraceEventInput } from "@chat/contracts";
+import {
+  agentRuntimeBaselineDtoSchema,
+  type AgentKey,
+  type TraceEventInput,
+} from "@chat/contracts";
 import type { ApplicationDeps, DirectAgentIdFactory, IdFactory } from "@chat/application";
 import {
   beginDirectAgentAttempt,
@@ -14,6 +18,7 @@ import {
   publishPromptReviewRequest,
   submitPromptReviewDecision,
   submitUserMessage,
+  transitionConfigurablePlanningNode,
   updateOutboxStatus,
 } from "@chat/application";
 import { SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID } from "@chat/application/workflow-system-definitions";
@@ -108,6 +113,53 @@ const workflowMemoryProvider = {
   reconcileMemoryWrite: vi.fn(),
 };
 
+function runtimeProfile(agentKey: AgentKey) {
+  if (agentKey !== "direct" && agentKey !== "project_bootstrap" && agentKey !== "coding_executor")
+    return undefined;
+  const variantKey =
+    agentKey === "direct" || agentKey === "project_bootstrap"
+      ? "read_only"
+      : "workspace_write_shell";
+  const tools =
+    agentKey === "direct" || agentKey === "project_bootstrap"
+      ? ["read", "grep", "find", "ls"]
+      : ["read", "bash", "edit", "write", "grep", "find", "ls"];
+  return agentRuntimeBaselineDtoSchema.parse({
+    kind: "pi_coding_agent",
+    title: "Pi Coding Agent",
+    packageName: "@earendil-works/pi-coding-agent",
+    packageVersion: "0.84.2",
+    managedSource: "later-3/pi@codex/later-custom",
+    compositionStrategy: "pi_default_or_custom_then_chat_runtime_then_context",
+    chatRuntimeAppend: {
+      bodyMarkdown: "Chat Runtime Contract",
+      sha256: "a".repeat(64),
+      sourceRelativePath: "packages/pi-runtime/src/coding-agent-runtime-profile.ts",
+    },
+    variants: [
+      {
+        variantKey,
+        title: variantKey,
+        description: "测试Pi能力",
+        enabledToolNames: tools,
+        piSystemPrompt: {
+          bodyMarkdown: `Pi runtime ${variantKey}`,
+          sha256: "b".repeat(64),
+          dynamicPlaceholders: ["WORKSPACE_ROOT"],
+          sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
+        },
+        tools: tools.map((name) => ({
+          name,
+          description: `${name} tool`,
+          parametersJson: "{}",
+          sourceRelativePath: `pi/packages/coding-agent/src/core/tools/${name}.ts`,
+        })),
+      },
+    ],
+    finalReviewNote: "发送前复核。",
+  });
+}
+
 async function seed(): Promise<{
   deps: ApplicationDeps;
   productRunId: string;
@@ -131,6 +183,7 @@ async function seed(): Promise<{
     ids: ids(),
     directAgentIds: directAgentIds(),
     promptCatalog: await createFilePromptCatalog(),
+    agentRuntimeProfiles: { read: async (agentKey) => runtimeProfile(agentKey) },
     trace: (event) => traces.push(event),
     memoryImportBackends: {
       list: () => [importBackend],
@@ -273,6 +326,17 @@ async function seedPromptReviewResume() {
     productRunId: run.productRunId,
     workflowAttemptId: workflowAttempt.attemptId,
   });
+  if (run.workflowRunSpecId === undefined) throw new Error("Direct Run缺少Workflow RunSpec");
+  await transitionConfigurablePlanningNode(seeded.deps, {
+    commandId: "cmd_promptreviewrunning" as never,
+    productRunId: run.productRunId,
+    workflowRunSpecId: run.workflowRunSpecId,
+    definitionNodeId: "direct.agent",
+    executionPath: [],
+    attemptNumber: 1,
+    toStatus: "running",
+    publicSummary: "正在推进直接Agent，等待下一处Provider边界",
+  });
   const canonicalPayloadJson = canonicalJsonStringify({
     messages: [{ content: "只读检查Prompt Review Resume派发边界", role: "user" }],
     model: "qwen3.7-plus",
@@ -289,6 +353,16 @@ async function seedPromptReviewResume() {
     endpointHost: "dashscope.aliyuncs.com",
     canonicalPayloadJson,
     payloadSha256: computePromptReviewPayloadSha256(canonicalPayloadJson),
+  });
+  await transitionConfigurablePlanningNode(seeded.deps, {
+    commandId: "cmd_promptreviewwaiting" as never,
+    productRunId: run.productRunId,
+    workflowRunSpecId: run.workflowRunSpecId,
+    definitionNodeId: "direct.agent",
+    executionPath: [],
+    attemptNumber: 1,
+    toStatus: "waiting_human",
+    publicSummary: "等待审核第1次Provider完整提示词",
   });
   const approved = await submitPromptReviewDecision(seeded.deps, {
     principalId: "usr_dispatchtest" as never,
