@@ -1,4 +1,9 @@
 import { z } from "zod";
+import { directAgentToolNameSchema } from "./agent-runtime-capabilities.js";
+export {
+  directAgentToolNameSchema,
+  piBuiltinToolNameSchema,
+} from "./agent-runtime-capabilities.js";
 import { sha256Schema } from "./hash.js";
 import {
   messageIdSchema,
@@ -216,26 +221,85 @@ export const promptEnvelopeMessageSchema = z
   })
   .strict();
 
+/**
+ * Direct Agent只在这里冻结“本次Agent实际向模型暴露哪些Tool”。Tool是否需要审批
+ * 属于执行策略，不能再通过删掉Pi默认能力来表达。`pi_cli_default`必须与受管Pi SDK
+ * 的默认激活集合一致；`custom`用于Agent Version、Workflow或会话的显式选择。
+ */
+export const directAgentCapabilityModeSchema = z.enum([
+  "pi_cli_default",
+  "custom",
+  "read_only",
+  "project_bootstrap",
+]);
+
+export const agentRuntimeResourcePolicySchema = z
+  .object({
+    contextFiles: z.enum(["inherit_runtime_default", "disabled"]),
+    skills: z.enum(["inherit_runtime_default", "disabled"]),
+    promptTemplates: z.enum(["inherit_runtime_default", "disabled"]),
+    extensions: z.enum(["inherit_runtime_default", "disabled"]),
+  })
+  .strict();
+
 export const promptEnvelopeToolsSchema = z
   .object({
-    capabilityMode: z.enum(["read_only", "project_bootstrap"]),
-    names: z
-      .array(z.enum(["read", "grep", "find", "ls", "project_bootstrap_prepare"]))
-      .min(4)
-      .max(5),
+    capabilityMode: directAgentCapabilityModeSchema,
+    /** Pi默认值直到真实AgentSession完成Extension绑定后才能解析；受限配置必须显式冻结。 */
+    selectionMode: z.enum(["inherit_runtime_default", "explicit"]).optional(),
+    names: z.array(directAgentToolNameSchema).max(32),
+    /** v2历史Assembly没有该字段；新编译结果必须显式冻结，Runtime兼容旧值。 */
+    resources: agentRuntimeResourcePolicySchema.optional(),
     estimatedTokens: z.literal(DIRECT_PROMPT_TOOL_TOKEN_RESERVE),
   })
   .strict()
   .superRefine((value, ctx) => {
-    const expected =
-      value.capabilityMode === "project_bootstrap"
-        ? ["read", "grep", "find", "ls", "project_bootstrap_prepare"]
-        : ["read", "grep", "find", "ls"];
-    if (JSON.stringify(value.names) !== JSON.stringify(expected)) {
+    if (new Set(value.names).size !== value.names.length) {
       ctx.addIssue({
         code: "custom",
         path: ["names"],
-        message: "Tool清单必须与冻结Capability Mode完全一致",
+        message: "Tool清单不能包含重复项",
+      });
+    }
+    const selectionMode = value.selectionMode ?? "explicit";
+    if (
+      value.capabilityMode === "pi_cli_default" &&
+      (selectionMode !== "inherit_runtime_default" || value.names.length !== 0)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["selectionMode"],
+        message: "Pi默认能力必须由真实Runtime解析，不能手写冻结Tool名字",
+      });
+    }
+    if (value.capabilityMode !== "pi_cli_default" && selectionMode !== "explicit") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["selectionMode"],
+        message: "自定义或受限Agent必须显式冻结Tool清单",
+      });
+    }
+    const expected =
+      value.capabilityMode === "read_only"
+        ? ["read", "grep", "find", "ls"]
+        : value.capabilityMode === "project_bootstrap"
+          ? ["read", "grep", "find", "ls", "project_bootstrap_prepare"]
+          : undefined;
+    if (expected !== undefined && JSON.stringify(value.names) !== JSON.stringify(expected)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["names"],
+        message: "预设Capability Mode的Tool清单必须与其冻结定义完全一致",
+      });
+    }
+    if (
+      value.capabilityMode !== "project_bootstrap" &&
+      value.names.includes("project_bootstrap_prepare")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["names"],
+        message: "项目初始化Tool只能由project_bootstrap模式启用",
       });
     }
   });
@@ -244,9 +308,9 @@ export const promptEnvelopeRequestOptionsSchema = z
   .object({
     providerId: z.literal("dashscope-coding"),
     modelId: z.literal("qwen3.7-plus"),
-    thinkingLevel: z.literal("off"),
-    retryEnabled: z.literal(false),
-    compactionEnabled: z.literal(false),
+    thinkingLevel: z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]),
+    retryEnabled: z.boolean(),
+    compactionEnabled: z.boolean(),
   })
   .strict();
 

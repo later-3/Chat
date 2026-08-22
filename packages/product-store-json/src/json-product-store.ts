@@ -1,6 +1,7 @@
 import { open, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { createEmptySnapshot, productSnapshotSchema, type ProductSnapshot } from "@chat/contracts";
 import {
   ApplicationError,
@@ -52,6 +53,7 @@ import { productSnapshotV13Schema, type ProductSnapshotV13 } from "./legacy-v13.
 import { productSnapshotV14Schema, type ProductSnapshotV14 } from "./legacy-v14.js";
 import { productSnapshotV15Schema, type ProductSnapshotV15 } from "./legacy-v15.js";
 import { productSnapshotV16Schema, type ProductSnapshotV16 } from "./legacy-v16.js";
+import { productSnapshotV17Schema, type ProductSnapshotV17 } from "./legacy-v17.js";
 import { migrateProductSnapshotV4ToV5 } from "./migrate-v4-to-v5.js";
 import { migrateProductSnapshotV5ToV6 } from "./migrate-v5-to-v6.js";
 import { migrateProductSnapshotV6ToV7 } from "./migrate-v6-to-v7.js";
@@ -65,6 +67,7 @@ import { migrateProductSnapshotV13ToV14 } from "./migrate-v13-to-v14.js";
 import { migrateProductSnapshotV14ToV15 } from "./migrate-v14-to-v15.js";
 import { migrateProductSnapshotV15ToV16 } from "./migrate-v15-to-v16.js";
 import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
+import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
 
 /**
  * 版本化JSON Product Store Adapter（任务书§8）。
@@ -205,118 +208,125 @@ export class JsonProductStore implements ProductStorePort {
       return new JsonProductStore(options, current.data);
     }
 
-    const legacyV16 = productSnapshotV16Schema.safeParse(parsedJson);
-    let v16: ProductSnapshotV16;
-    if (legacyV16.success) {
-      v16 = legacyV16.data;
+    const legacyV17 = productSnapshotV17Schema.safeParse(parsedJson);
+    let v17: ProductSnapshotV17;
+    if (legacyV17.success) {
+      v17 = legacyV17.data;
     } else {
-      const legacyV15 = productSnapshotV15Schema.safeParse(parsedJson);
-      let v15: ProductSnapshotV15;
-      if (legacyV15.success) {
-        v15 = legacyV15.data;
+      const legacyV16 = productSnapshotV16Schema.safeParse(parsedJson);
+      let v16: ProductSnapshotV16;
+      if (legacyV16.success) {
+        v16 = legacyV16.data;
       } else {
-        const legacyV14 = productSnapshotV14Schema.safeParse(parsedJson);
-        let v14: ProductSnapshotV14;
-        if (legacyV14.success) {
-          v14 = legacyV14.data;
+        const legacyV15 = productSnapshotV15Schema.safeParse(parsedJson);
+        let v15: ProductSnapshotV15;
+        if (legacyV15.success) {
+          v15 = legacyV15.data;
         } else {
-          const legacyV13 = productSnapshotV13Schema.safeParse(parsedJson);
-          let v13: ProductSnapshotV13;
-          if (legacyV13.success) {
-            v13 = legacyV13.data;
+          const legacyV14 = productSnapshotV14Schema.safeParse(parsedJson);
+          let v14: ProductSnapshotV14;
+          if (legacyV14.success) {
+            v14 = legacyV14.data;
           } else {
-            const legacyV12 = productSnapshotV12Schema.safeParse(parsedJson);
-            let v12: ProductSnapshotV12;
-            if (legacyV12.success) {
-              v12 = legacyV12.data;
+            const legacyV13 = productSnapshotV13Schema.safeParse(parsedJson);
+            let v13: ProductSnapshotV13;
+            if (legacyV13.success) {
+              v13 = legacyV13.data;
             } else {
-              const legacyV11 = productSnapshotV11Schema.safeParse(parsedJson);
-              let v11: ProductSnapshotV11;
-              if (legacyV11.success) {
-                v11 = legacyV11.data;
+              const legacyV12 = productSnapshotV12Schema.safeParse(parsedJson);
+              let v12: ProductSnapshotV12;
+              if (legacyV12.success) {
+                v12 = legacyV12.data;
               } else {
-                const legacyV10 = productSnapshotV10Schema.safeParse(parsedJson);
-                let v10: ProductSnapshotV10;
-                if (legacyV10.success) {
-                  v10 = legacyV10.data;
+                const legacyV11 = productSnapshotV11Schema.safeParse(parsedJson);
+                let v11: ProductSnapshotV11;
+                if (legacyV11.success) {
+                  v11 = legacyV11.data;
                 } else {
-                  const legacyV9 = productSnapshotV9Schema.safeParse(parsedJson);
-                  let v9: ProductSnapshotV9;
-                  if (legacyV9.success) {
-                    v9 = legacyV9.data;
+                  const legacyV10 = productSnapshotV10Schema.safeParse(parsedJson);
+                  let v10: ProductSnapshotV10;
+                  if (legacyV10.success) {
+                    v10 = legacyV10.data;
                   } else {
-                    const legacyV8 = productSnapshotV8Schema.safeParse(parsedJson);
-                    let v8: ProductSnapshotV8;
-                    if (legacyV8.success) {
-                      v8 = legacyV8.data;
+                    const legacyV9 = productSnapshotV9Schema.safeParse(parsedJson);
+                    let v9: ProductSnapshotV9;
+                    if (legacyV9.success) {
+                      v9 = legacyV9.data;
                     } else {
-                      const legacyV7 = productSnapshotV7Schema.safeParse(parsedJson);
-                      let v7: ProductSnapshotV7;
-                      if (legacyV7.success) {
-                        v7 = legacyV7.data;
+                      const legacyV8 = productSnapshotV8Schema.safeParse(parsedJson);
+                      let v8: ProductSnapshotV8;
+                      if (legacyV8.success) {
+                        v8 = legacyV8.data;
                       } else {
-                        const legacyV6 = productSnapshotV6Schema.safeParse(parsedJson);
-                        let v6: ProductSnapshotV6;
-                        if (legacyV6.success) {
-                          v6 = legacyV6.data;
+                        const legacyV7 = productSnapshotV7Schema.safeParse(parsedJson);
+                        let v7: ProductSnapshotV7;
+                        if (legacyV7.success) {
+                          v7 = legacyV7.data;
                         } else {
-                          const legacyV5 = productSnapshotV5Schema.safeParse(parsedJson);
-                          let v5;
-                          if (legacyV5.success) {
-                            v5 = legacyV5.data;
+                          const legacyV6 = productSnapshotV6Schema.safeParse(parsedJson);
+                          let v6: ProductSnapshotV6;
+                          if (legacyV6.success) {
+                            v6 = legacyV6.data;
                           } else {
-                            const legacyV4 = productSnapshotV4Schema.safeParse(parsedJson);
-                            let v4;
-                            if (legacyV4.success) {
-                              v4 = legacyV4.data;
+                            const legacyV5 = productSnapshotV5Schema.safeParse(parsedJson);
+                            let v5;
+                            if (legacyV5.success) {
+                              v5 = legacyV5.data;
                             } else {
-                              const legacyV3 = productSnapshotV3Schema.safeParse(parsedJson);
-                              let v3;
-                              if (legacyV3.success) {
-                                v3 = legacyV3.data;
+                              const legacyV4 = productSnapshotV4Schema.safeParse(parsedJson);
+                              let v4;
+                              if (legacyV4.success) {
+                                v4 = legacyV4.data;
                               } else {
-                                const legacyV2 = productSnapshotV2Schema.safeParse(parsedJson);
-                                let v2;
-                                if (legacyV2.success) {
-                                  v2 = legacyV2.data;
+                                const legacyV3 = productSnapshotV3Schema.safeParse(parsedJson);
+                                let v3;
+                                if (legacyV3.success) {
+                                  v3 = legacyV3.data;
                                 } else {
-                                  const legacyV1 = productSnapshotV1Schema.safeParse(parsedJson);
-                                  if (!legacyV1.success) {
-                                    throw new StoreCorruptedError(
-                                      "Product Store Schema未知或非法，已保留原文件",
-                                    );
+                                  const legacyV2 = productSnapshotV2Schema.safeParse(parsedJson);
+                                  let v2;
+                                  if (legacyV2.success) {
+                                    v2 = legacyV2.data;
+                                  } else {
+                                    const legacyV1 = productSnapshotV1Schema.safeParse(parsedJson);
+                                    if (!legacyV1.success) {
+                                      throw new StoreCorruptedError(
+                                        "Product Store Schema未知或非法，已保留原文件",
+                                      );
+                                    }
+                                    v2 = migrateProductSnapshotV1ToV2(legacyV1.data);
                                   }
-                                  v2 = migrateProductSnapshotV1ToV2(legacyV1.data);
+                                  v3 = migrateProductSnapshotV2ToV3(v2);
                                 }
-                                v3 = migrateProductSnapshotV2ToV3(v2);
+                                v4 = migrateProductSnapshotV3ToV4(v3);
                               }
-                              v4 = migrateProductSnapshotV3ToV4(v3);
+                              v5 = migrateProductSnapshotV4ToV5(v4);
                             }
-                            v5 = migrateProductSnapshotV4ToV5(v4);
+                            v6 = migrateProductSnapshotV5ToV6(v5);
                           }
-                          v6 = migrateProductSnapshotV5ToV6(v5);
+                          v7 = migrateProductSnapshotV6ToV7(v6);
                         }
-                        v7 = migrateProductSnapshotV6ToV7(v6);
+                        v8 = productSnapshotV8Schema.parse(migrateProductSnapshotV7ToV8(v7));
                       }
-                      v8 = productSnapshotV8Schema.parse(migrateProductSnapshotV7ToV8(v7));
+                      v9 = migrateProductSnapshotV8ToV9(v8);
                     }
-                    v9 = migrateProductSnapshotV8ToV9(v8);
+                    v10 = productSnapshotV10Schema.parse(migrateProductSnapshotV9ToV10(v9));
                   }
-                  v10 = productSnapshotV10Schema.parse(migrateProductSnapshotV9ToV10(v9));
+                  v11 = migrateProductSnapshotV10ToV11(v10);
                 }
-                v11 = migrateProductSnapshotV10ToV11(v10);
+                v12 = migrateProductSnapshotV11ToV12(v11);
               }
-              v12 = migrateProductSnapshotV11ToV12(v11);
+              v13 = migrateProductSnapshotV12ToV13(v12);
             }
-            v13 = migrateProductSnapshotV12ToV13(v12);
+            v14 = migrateProductSnapshotV13ToV14(v13);
           }
-          v14 = migrateProductSnapshotV13ToV14(v13);
+          v15 = migrateProductSnapshotV14ToV15(v14);
         }
-        v15 = migrateProductSnapshotV14ToV15(v14);
+        v16 = migrateProductSnapshotV15ToV16(v15);
       }
-      v16 = migrateProductSnapshotV15ToV16(v15);
+      v17 = migrateProductSnapshotV16ToV17(v16);
     }
-    const migrated = migrateProductSnapshotV16ToV17(v16);
+    const migrated = migrateProductSnapshotV17ToV18(v17);
     assertSnapshotIntegrity(migrated);
     const store = new JsonProductStore(options, migrated);
     // 成功迁移使用与普通事务相同的原子替换；rename 前失败时旧文件逐字节不变。
@@ -384,6 +394,16 @@ export class JsonProductStore implements ProductStorePort {
     try {
       const draft = structuredClone(current);
       const mutation = command.mutate(draft);
+      for (const [agentVersionId, existing] of Object.entries(current.entities.agentVersions)) {
+        const next = draft.entities.agentVersions[agentVersionId];
+        if (next === undefined || !isDeepStrictEqual(next, existing)) {
+          throw new ApplicationError({
+            code: "internal_error",
+            httpStatus: 500,
+            message: `Agent Version是不可变事实，不能覆盖或删除（${agentVersionId}）`,
+          });
+        }
+      }
       draft.storeRevision = current.storeRevision + 1;
       draft.committedAt = this.now();
       draft.commandReceipts[command.commandId] = {

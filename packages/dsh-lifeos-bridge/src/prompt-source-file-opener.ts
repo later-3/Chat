@@ -106,6 +106,7 @@ export class PromptSourceFileOpenError extends Error {
 
 export interface PromptSourceFileOpenerOptions {
   readonly repoRoot: string;
+  readonly managedPiRoot?: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly platform?: NodeJS.Platform;
   readonly applicationExists?: (path: string) => Promise<boolean>;
@@ -139,6 +140,7 @@ async function launchOnMac(
 export class PromptSourceFileOpener {
   private constructor(
     private readonly repoRoot: string,
+    private readonly managedPiRoot: string | undefined,
     private readonly allowedRelativePaths: ReadonlySet<string>,
     private readonly workspaceRoots: ReadonlyMap<string, string>,
     private readonly available: readonly PromptSourceOpenerDefinition[],
@@ -153,6 +155,8 @@ export class PromptSourceFileOpener {
       throw new Error("Prompt source opener requires an absolute repo root");
     }
     const repoRoot = await realpath(options.repoRoot);
+    const managedPiCandidate = options.managedPiRoot ?? resolve(repoRoot, "../opc-os/pi");
+    const managedPiRoot = await realpath(managedPiCandidate).catch(() => undefined);
     const manifestPath = resolve(repoRoot, "prompts/catalog.json");
     const parsed = promptCatalogSourcesSchema.safeParse(
       JSON.parse(await readFile(manifestPath, "utf8")) as unknown,
@@ -179,6 +183,7 @@ export class PromptSourceFileOpener {
     }
     return new PromptSourceFileOpener(
       repoRoot,
+      managedPiRoot,
       allowedRelativePaths,
       workspaceRoots,
       available,
@@ -207,6 +212,24 @@ export class PromptSourceFileOpener {
         const managedRoot = resolve(this.repoRoot, ".data/prompts/global");
         return { root: managedRoot, candidate: resolve(this.repoRoot, request.relativePath) };
       }
+      if (
+        request.relativePath.startsWith("packages/pi-runtime/src/") &&
+        request.relativePath.endsWith(".ts")
+      ) {
+        const managedRoot = resolve(this.repoRoot, "packages/pi-runtime/src");
+        return { root: managedRoot, candidate: resolve(this.repoRoot, request.relativePath) };
+      }
+      if (
+        this.managedPiRoot !== undefined &&
+        request.relativePath.startsWith("pi/packages/coding-agent/src/core/") &&
+        request.relativePath.endsWith(".ts")
+      ) {
+        const managedRoot = resolve(this.managedPiRoot, "packages/coding-agent/src/core");
+        return {
+          root: managedRoot,
+          candidate: resolve(this.managedPiRoot, request.relativePath.slice("pi/".length)),
+        };
+      }
       const slash = request.relativePath.indexOf("/");
       if (slash <= 0) return undefined;
       const rootId = request.relativePath.slice(0, slash);
@@ -226,7 +249,7 @@ export class PromptSourceFileOpener {
       throw new PromptSourceFileOpenError(
         404,
         "lifeos_prompt_source_not_found",
-        "该文件不是Prompt Catalog登记的来源文件",
+        "该文件不是Prompt Catalog或Agent Runtime登记的来源文件",
       );
     }
     const opener = this.available.find((item) => item.id === request.openerId);

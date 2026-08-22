@@ -1,6 +1,6 @@
 # Chat 提示词管理：上游事实与设计草案
 
-> 状态：Prompt管理三模块架构已获产品确认；Prompt Studio、Agent默认—Workflow节点实例—Session/Run临时覆盖三层配置、会话上下文选择、语义预览、Workflow Prompt Assembly v3、Direct Prompt Assembly v2、近期正式跨Run历史和Direct Review来源投影已实现。Runtime Review编辑、摘要/压缩以及非Direct节点的Provider Review仍按本文后续阶段推进。
+> 状态：Prompt管理三模块架构已获产品确认；Prompt Studio、不可变AgentVersion—Workflow精确绑定—Session/Run临时覆盖、会话上下文选择、语义预览、Workflow Prompt Assembly v3、Direct Prompt Assembly v2、近期正式跨Run历史和Direct Review来源投影已实现。Agent管理的当前实现以[Chat Agent管理 As-built](./agent-management-as-built.md)为准；Runtime Review编辑、摘要/压缩以及非Direct节点的Provider Review仍按本文后续阶段推进。
 >
 > 调研基线：Chat `main@f1315ef`；Pi `later-3/pi@1f2b9ff`（npm 基底 `0.84.2`）；DeepSeek Harness `0.1.0-rc.6@15148dbd9a`。DSH 后续窄派生提交只涉及 Trajectory，不改变本文引用的 Prompt 与 Session 机制。
 >
@@ -30,13 +30,13 @@ Chat 的 Prompt 能力固定拆成 3 个模块，不能再把“保存一段文�
 
 ### 1.2 Agent配置只用三层，不建立通用继承系统
 
-1. `Agent Profile`是Chat全局模板。Chat自研Agent的默认System Prompt来自Git Catalog；Pi-backed Agent的默认值直接继承Pi运行时，自定义正文则完整替换Pi基础System。它不能复制或冒充上游Agent的默认Prompt与Tool实现。
-2. `Workflow Node Binding`是工作流里的Agent实例。它引用一个支持该节点类型的Agent，并只保存相对默认值的Prompt差异；系统Workflow不能原地修改，保存时派生个人已发布版本。
-3. `WorkflowRunConfiguration`是当前Session发送草稿。它可临时覆盖同一节点的Agent引用或Prompt；创建Run时Application校验、规范化并冻结进RunSpec和Prompt Assembly，之后不再读取浏览器草稿。
+1. `Agent Catalog`是Chat发布的只读内建定义。Pi-backed Agent的默认System、Tools和资源直接投影真实Pi运行时，不复制或冒充上游实现。
+2. `AgentVersion`是Principal创建的全局或Workspace不可变完整配置，冻结System Prompt、Pi Tool子集和Context Files、Skills、Prompt Templates、Extensions策略。`global/workspace`是授权Scope，不会自动合并。
+3. `Workflow Node Binding`精确引用AgentVersion ID/Hash；`WorkflowRunConfiguration`可从当前DSH Session草稿选择Version或提交结构化临时配置。创建Run时Application校验并冻结进RunSpec和Prompt Assembly，之后不再读取浏览器草稿。
 
-优先级固定为`Run临时差异 > Workflow节点差异 > Agent默认`。正文仍是普通Markdown；Workflow差异直接进入不可变Definition JSON，不新增表、规则语言、Mixin或多重继承。Tool授权不参与这条覆盖链。
+优先级固定为`Run冻结的临时配置 > Workflow节点精确Version > Agent Catalog/Runtime默认`。保存长期修改只会创建新AgentVersion或新Workflow Revision，不新增规则语言、Mixin或多重继承。
 
-Pi-backed Agent另有一层不可写的运行时基线，但它不属于上述配置继承链。独立Pi Executor通过真实`pi-coding-agent AgentSession`生成基线，并经带Runtime Key的私有只读接口实现Application的`AgentRuntimeProfileReaderPort`；API进程不会加载完整Pi Coding Agent。基础System在`Pi默认动态System`与`Chat用户完整覆盖`之间二选一，之后始终追加`Chat固定运行约束`与本轮上下文；前端按同样顺序展示，并按Execution Capability切换实际Tool Schema。Chat不复制Pi的默认Prompt或Tool Schema；每个Run中受Workspace路径、工具回合和Provider适配影响的最终逐字节正文，仍只以Provider前Prompt Review为准。
+独立Pi Executor通过真实`pi-coding-agent AgentSession`生成运行时基线，并经带Runtime Key的私有只读接口实现Application的`AgentRuntimeProfileReaderPort`；API进程不会加载完整Pi Coding Agent。默认`pi_cli_default`不传显式Tools、不关闭Pi资源发现，也不追加Chat只读约束；用户派生的受限Version才完整替换System或缩减Tools/资源。每个Run中受Workspace路径、工具回合和Provider适配影响的最终逐字节正文，仍只以Provider前Prompt Review为准。
 
 ## 2. 术语
 
@@ -343,9 +343,9 @@ Region key 是受限稳定字符串，不是封闭 enum。增加新区域只需�
 Workspace同时承担两件不同的事，不能混为一谈：
 
 1. **Prompt Scope**：平台Chat根和目标Workspace根都可以拥有自己的Prompt Markdown。用户在Composer中显式选择某个Revision后，Chat读取正文并把它冻结进Assembly；例如根`AGENTS.md`被投影为`workspace_instructions`组件。
-2. **Agent Tool Root**：DSH当前打开目录经Bridge映射成已登记`rootId`，Direct以该目标根作为只读cwd。它决定Tool可以访问哪里，但不会自动把文件内容加入Prompt。
+2. **Agent Tool Root**：DSH当前打开目录经Bridge映射成已登记`rootId`，Direct以该目标根作为cwd。它决定Tool从哪里开始工作，但写入、Shell和其他高影响动作仍必须经过Chat运行授权，不能由Prompt Scope暗中授予。
 
-Direct v2明确关闭Pi的Context Files、Skills、Prompt Templates与Extension发现。因此“模型自己递归读取AGENTS”不是Chat机制。平台Chat根的`AGENTS.md`只作为全局可选组件，目标根的`AGENTS.md`只作为该Workspace可选组件；两者都必须由用户选择，正文才进入System。
+Direct v2的`pi_cli_default`直接继承Pi的Context Files、Skills、Prompt Templates与Extension发现；用户派生Version可逐项关闭。Chat Prompt Catalog另外把平台或目标根的精确`AGENTS.md`投影成可选会话组件，这条显式选择链与Pi ResourceLoader自动发现链必须在Assembly和最终Review中分别标注，不能互相冒充。
 
 安全边界：
 
@@ -353,7 +353,7 @@ Direct v2明确关闭Pi的Context Files、Skills、Prompt Templates与Extension�
 - Catalog只发现登记根的精确`AGENTS.md`，不递归父级或子目录；
 - 浏览器不能提交绝对路径、正文Hash或owner；Application按Revision ID/Hash重新读取；
 - 文件Adapter拒绝symlink逃逸，并分别限制在Git Catalog、Chat全局Prompt目录与目标Workspace `.chat/prompts`；
-- 当前Agent只有单一目标Tool Root且固定只读；未来双Root或写能力需要独立Capability合同，不能由Prompt选择暗中授予。
+- 当前Agent只有单一目标Tool Root；未来双Root仍需要独立Capability合同，写入或Shell也不能由Prompt选择暗中授予。
 
 ### 6.3 Prompt Fragment
 
@@ -430,13 +430,13 @@ PromptProfile
 ```text
 锁定Runtime Contract
 → Pi基础Agent/Harness Contract
-→ Agent默认或当前Definition Node差异
-→ 当前Run临时差异
+→ Agent Catalog或Workflow精确AgentVersion
+→ 当前Run冻结的Session临时Agent配置
 → 会话共享Prompt选择
 → 当前输入/正式历史/节点上下文/Tools/Request Options
 ```
 
-会话上下文Region继续使用`default / replace / append`；Agent身份不复用这套多值Region组合，而只按`Run > Workflow Node > Agent Default`选出一个有效System Prompt。任何`replace`都不能删除或重写工具白名单、结构化输出、审批、预算、安全和Product Commit规则。共享默认Revision清单属于Git Catalog并进入Catalog Hash，不属于Bridge代码常量。
+会话上下文Region继续使用`default / replace / append`；Agent不复用这套多值Region组合，而按`Run临时配置 > Workflow AgentVersion > Catalog/Runtime默认`选出一套完整配置。AgentVersion可以独立冻结Prompt、Pi Tool子集与资源，但不能删除或重写Workspace授权、结构化输出、审批、预算、安全和Product Commit规则。共享默认Revision清单属于Git Catalog并进入Catalog Hash，不属于Bridge代码常量。
 
 ### 6.5 Prompt Assembly Manifest
 
@@ -578,5 +578,5 @@ System语义区
 4. Prompt Review 是 Pi Agent 节点内部开关，不再为它制造第二个图节点。
 5. 历史默认只纳入成功提交的 `User → Assistant` 对；失败证据保留但不自动激活。
 6. 跨 Run 压缩摘要必须先成为可追溯 Candidate 再提交。
-7. DSH当前目录只负责选择目标Workspace身份与Tool Root；Pi自动上下文发现关闭。平台/目标根`AGENTS.md`由Chat Catalog投影为不同Scope的可选组件，只有用户显式选择后才读取并冻结进System。
+7. DSH当前目录只负责选择目标Workspace身份与Tool Root。Direct的Pi默认版本保留Pi自动资源发现，受限AgentVersion可逐项关闭；平台/目标根`AGENTS.md`同时可以由Chat Catalog投影为不同Scope的显式会话组件，两条来源在Manifest中分别记录。
 8. 统一Compiler已接`agent.plan`、`agent.direct`、`execute.plan`与`note.extract`。每个模型节点只读取自己绑定的Agent Profile和同一份会话上下文，不存在可串读的节点Overlay；非模型节点不接收用户Prompt。Provider逐请求人工审核仍只属于配置为`manual`的Direct节点。

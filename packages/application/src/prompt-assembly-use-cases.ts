@@ -9,14 +9,19 @@ import {
   WORKFLOW_PROMPT_COMPILER_VERSION,
   WORKFLOW_PROMPT_PROFILE_VERSION,
   promptTurnSelectionInputV2Schema,
+  agentTemporaryConfigurationSchema,
   promptConfigurationPreviewDtoSchema,
   promptAssemblyIdSchema,
+  agentVersionIdSchema,
   promptFragmentIdSchema,
   promptFragmentRevisionIdSchema,
   promptAssemblyPreviewDtoSchema,
   promptAssemblySchema,
   type PrincipalId,
   type AgentKey,
+  type AgentProfileDto,
+  type AgentVersion,
+  type AgentVersionId,
   type PromptAssembly,
   type PromptAssemblyV2,
   type PromptAssemblyV3,
@@ -296,14 +301,24 @@ async function compileAgentRegion(
     readonly definitionNodeId: string;
     readonly nodeType: PromptBearingNodeType;
     readonly workflowDefinitionRevisionId: WorkflowDefinitionRevisionId;
+    readonly agentVersionId?: AgentVersionId | undefined;
+    readonly agentVersionSha256?: string | undefined;
+    readonly workspaceRootId?: string | undefined;
+    readonly systemPromptMode?: "inherit_runtime" | "replace" | undefined;
     readonly promptOverrideMarkdown?: string | undefined;
   },
 ): Promise<{
   readonly agentKey: AgentKey;
+  readonly profile: AgentProfileDto;
+  readonly agentVersion?: AgentVersion | undefined;
   readonly region: PromptAssemblyRegion;
   readonly piSystemPrompt?: PiSystemPromptResolution | undefined;
 }> {
-  const profile = await getAgentProfile(deps, { principalId, agentKey: binding.agentKey });
+  const profile = await getAgentProfile(deps, {
+    principalId,
+    agentKey: binding.agentKey,
+    ...(binding.workspaceRootId === undefined ? {} : { workspaceRootId: binding.workspaceRootId }),
+  });
   const expectedProfileVersion = AGENT_PROFILE_VERSION_BY_KEY[binding.agentKey];
   if (profile.profileVersion !== expectedProfileVersion) {
     throw new Error(
@@ -313,11 +328,66 @@ async function compileAgentRegion(
   if (!profile.supportedNodeTypes.includes(binding.nodeType)) {
     throw revisionConflict(`Agent ${binding.agentKey}不支持节点类型${binding.nodeType}`);
   }
+  const agentVersion =
+    binding.agentVersionId === undefined
+      ? undefined
+      : profile.versions.find((version) => version.agentVersionId === binding.agentVersionId);
+  if (
+    binding.agentVersionId !== undefined &&
+    (agentVersion === undefined || agentVersion.sha256 !== binding.agentVersionSha256)
+  ) {
+    throw revisionConflict("Workflow或会话引用的Agent Version不存在或Hash已变化");
+  }
+  if (
+    agentVersion?.scope.kind === "workspace" &&
+    agentVersion.scope.rootId !== binding.workspaceRootId
+  ) {
+    throw forbidden("Workspace Agent Version不能用于其他Workspace或无Workspace的会话");
+  }
+  if (agentVersion !== undefined) {
+    // Workspace Version钉住该Workspace的真实基线；Global Version仍钉住空
+    // Workspace全局基线，但它选择的每个Tool必须仍存在于当前执行Workspace目录。
+    const baselineProfile =
+      agentVersion.scope.kind === "global" && binding.workspaceRootId !== undefined
+        ? await getAgentProfile(deps, { principalId, agentKey: binding.agentKey })
+        : profile;
+    const runtimeBaseline = baselineProfile.runtimeBaseline;
+    const runtimeVariant = runtimeBaseline?.variants.find(
+      (variant) => variant.variantKey === agentVersion.runtime.baseVariantKey,
+    );
+    const currentRuntimeVariant = profile.runtimeBaseline?.variants.find(
+      (variant) => variant.variantKey === agentVersion.runtime.baseVariantKey,
+    );
+    const currentToolNames = new Set(currentRuntimeVariant?.tools.map((tool) => tool.name) ?? []);
+    if (
+      runtimeBaseline === undefined ||
+      runtimeVariant === undefined ||
+      agentVersion.baselineRef.packageName !== runtimeBaseline.packageName ||
+      agentVersion.baselineRef.packageVersion !== runtimeBaseline.packageVersion ||
+      agentVersion.baselineRef.managedSource !== runtimeBaseline.managedSource ||
+      agentVersion.baselineRef.managedSourceRevision !== runtimeBaseline.managedSourceRevision ||
+      agentVersion.baselineRef.variantKey !== runtimeVariant.variantKey ||
+      agentVersion.baselineRef.capabilityCatalogSha256 !== runtimeVariant.capabilityCatalogSha256
+    ) {
+      throw revisionConflict("Agent Version引用的Pi运行基线已经变化，请显式创建新版本");
+    }
+    if (
+      currentRuntimeVariant === undefined ||
+      agentVersion.enabledToolNames.some((toolName) => !currentToolNames.has(toolName))
+    ) {
+      throw revisionConflict("Agent Version的Tool不存在于当前Workspace运行目录");
+    }
+  }
   const override = binding.promptOverrideMarkdown;
   const useOverride = override !== undefined && override.trim() !== "";
   const piBacked = profile.runtimeBaseline?.kind === "pi_coding_agent";
   const inheritsPiDefault =
-    piBacked && !useOverride && profile.systemPrompt.source === "runtime_default";
+    piBacked &&
+    !useOverride &&
+    (binding.systemPromptMode === "inherit_runtime" ||
+      (agentVersion === undefined
+        ? profile.systemPrompt.source === "runtime_default"
+        : agentVersion.systemPrompt.mode === "inherit_runtime"));
   const overrideIdentity = computeWorkflowNodePromptOverrideIdentitySha256({
     workflowDefinitionRevisionId: binding.workflowDefinitionRevisionId,
     definitionNodeId: binding.definitionNodeId,
@@ -330,6 +400,13 @@ async function compileAgentRegion(
         bodyMarkdown: override,
       })
     : undefined;
+  const versionPromptIdentity =
+    agentVersion?.systemPrompt.mode === "replace"
+      ? hashCanonical("id.agent-version-system-prompt.v1", {
+          agentVersionId: agentVersion.agentVersionId,
+          agentVersionSha256: agentVersion.sha256,
+        })
+      : undefined;
   const fragment: PromptAssemblyFragment | undefined = inheritsPiDefault
     ? undefined
     : useOverride
@@ -347,25 +424,45 @@ async function compileAgentRegion(
           content: { kind: "markdown", bodyMarkdown: override },
           selectionKind: "explicit",
         }
-      : profile.systemPrompt.source === "runtime_default"
-        ? undefined
-        : {
-            promptFragmentId: profile.systemPrompt.promptFragmentId,
-            promptFragmentRevisionId: profile.systemPrompt.promptFragmentRevisionId,
-            revision: profile.systemPrompt.revision,
-            sha256: profile.systemPrompt.sha256,
-            ownerKind: profile.systemPrompt.source === "builtin" ? "system" : "principal",
-            scope: { kind: "global" },
-            title:
-              profile.systemPrompt.source === "builtin"
-                ? profile.title
-                : `${profile.title} · System Prompt`,
+      : agentVersion?.systemPrompt.mode === "replace"
+        ? {
+            promptFragmentId: promptFragmentIdSchema.parse(
+              `pfg_${versionPromptIdentity!.slice(0, 32)}`,
+            ),
+            promptFragmentRevisionId: promptFragmentRevisionIdSchema.parse(
+              `pfr_${agentVersion.systemPrompt.sha256.slice(0, 32)}`,
+            ),
+            revision: agentVersion.version,
+            sha256: agentVersion.systemPrompt.sha256,
+            ownerKind: "principal",
+            scope: agentVersion.scope,
+            title: `${agentVersion.title} · System Prompt`,
             regionKey: "agent_identity",
-            content: { kind: "markdown", bodyMarkdown: profile.systemPrompt.bodyMarkdown },
-            sourceRelativePath: profile.systemPrompt.sourceRelativePath,
-            selectionKind:
-              profile.systemPrompt.source === "builtin" ? "profile_default" : "explicit",
-          };
+            content: {
+              kind: "markdown",
+              bodyMarkdown: agentVersion.systemPrompt.bodyMarkdown,
+            },
+            selectionKind: "explicit",
+          }
+        : profile.systemPrompt.source === "runtime_default"
+          ? undefined
+          : {
+              promptFragmentId: profile.systemPrompt.promptFragmentId,
+              promptFragmentRevisionId: profile.systemPrompt.promptFragmentRevisionId,
+              revision: profile.systemPrompt.revision,
+              sha256: profile.systemPrompt.sha256,
+              ownerKind: profile.systemPrompt.source === "builtin" ? "system" : "principal",
+              scope: { kind: "global" },
+              title:
+                profile.systemPrompt.source === "builtin"
+                  ? profile.title
+                  : `${profile.title} · System Prompt`,
+              regionKey: "agent_identity",
+              content: { kind: "markdown", bodyMarkdown: profile.systemPrompt.bodyMarkdown },
+              sourceRelativePath: profile.systemPrompt.sourceRelativePath,
+              selectionKind:
+                profile.systemPrompt.source === "builtin" ? "profile_default" : "explicit",
+            };
   const fragments = fragment === undefined ? [] : [fragment];
   const shape = {
     regionKey: "agent_identity",
@@ -373,7 +470,7 @@ async function compileAgentRegion(
     placement: "system" as const,
     mode: inheritsPiDefault
       ? ("default" as const)
-      : !useOverride && profile.systemPrompt.source === "builtin"
+      : agentVersion === undefined && !useOverride && profile.systemPrompt.source === "builtin"
         ? ("default" as const)
         : ("replace" as const),
     fragments,
@@ -383,7 +480,11 @@ async function compileAgentRegion(
       fragments,
     }),
   };
-  const replacementBody = useOverride ? override : profile.systemPrompt.bodyMarkdown;
+  const replacementBody = useOverride
+    ? override
+    : agentVersion?.systemPrompt.mode === "replace"
+      ? agentVersion.systemPrompt.bodyMarkdown
+      : profile.systemPrompt.bodyMarkdown;
   const piSystemPrompt: PiSystemPromptResolution | undefined = piBacked
     ? inheritsPiDefault
       ? { kind: "pi_coding_agent", mode: "inherit" }
@@ -398,6 +499,8 @@ async function compileAgentRegion(
     : undefined;
   return {
     agentKey: binding.agentKey,
+    profile,
+    ...(agentVersion === undefined ? {} : { agentVersion }),
     region: { ...shape, sha256: computePromptAssemblyRegionSha256(shape) },
     ...(piSystemPrompt === undefined ? {} : { piSystemPrompt }),
   };
@@ -429,35 +532,69 @@ export function agentBindingForNode(
 ): {
   readonly agentKey: AgentKey;
   readonly profileVersion: string;
+  readonly agentVersionId?: AgentVersionId | undefined;
+  readonly agentVersionSha256?: string | undefined;
+  readonly systemPromptMode?: "inherit_runtime" | "replace" | undefined;
   readonly promptOverrideMarkdown?: string | undefined;
 } {
+  const temporaryConfiguration =
+    typeof config["agentTemporaryConfiguration"] === "object" &&
+    config["agentTemporaryConfiguration"] !== null
+      ? (config["agentTemporaryConfiguration"] as Readonly<Record<string, unknown>>)
+      : undefined;
+  const temporarySystemPrompt =
+    typeof temporaryConfiguration?.["systemPrompt"] === "object" &&
+    temporaryConfiguration["systemPrompt"] !== null
+      ? (temporaryConfiguration["systemPrompt"] as Readonly<Record<string, unknown>>)
+      : undefined;
+  const promptOverrideMarkdown =
+    temporarySystemPrompt?.["mode"] === "replace" &&
+    typeof temporarySystemPrompt["bodyMarkdown"] === "string"
+      ? temporarySystemPrompt["bodyMarkdown"]
+      : typeof config["agentPromptOverride"] === "string" &&
+          config["agentPromptOverride"].trim() !== ""
+        ? config["agentPromptOverride"]
+        : undefined;
+  const versionRef =
+    typeof config["agentVersionId"] === "string" && typeof config["agentVersionSha256"] === "string"
+      ? {
+          agentVersionId: agentVersionIdSchema.parse(config["agentVersionId"]),
+          agentVersionSha256: config["agentVersionSha256"],
+        }
+      : {};
   const configuredAgentKey = config["agentKey"] as AgentKey | undefined;
   if (configuredAgentKey !== undefined) {
     return {
       agentKey: configuredAgentKey,
       profileVersion: AGENT_PROFILE_VERSION_BY_KEY[configuredAgentKey],
-      ...(typeof config["agentPromptOverride"] === "string" &&
-      config["agentPromptOverride"].trim() !== ""
-        ? { promptOverrideMarkdown: config["agentPromptOverride"] }
+      ...versionRef,
+      ...(temporarySystemPrompt?.["mode"] === "inherit_runtime" ||
+      temporarySystemPrompt?.["mode"] === "replace"
+        ? { systemPromptMode: temporarySystemPrompt["mode"] }
         : {}),
+      ...(promptOverrideMarkdown === undefined ? {} : { promptOverrideMarkdown }),
     };
   }
   if (nodeType === "agent.direct" && config["capabilityMode"] === "project_bootstrap") {
     return {
       agentKey: "project_bootstrap",
       profileVersion: "project-bootstrap-agent.v1",
-      ...(typeof config["agentPromptOverride"] === "string" &&
-      config["agentPromptOverride"].trim() !== ""
-        ? { promptOverrideMarkdown: config["agentPromptOverride"] }
+      ...versionRef,
+      ...(temporarySystemPrompt?.["mode"] === "inherit_runtime" ||
+      temporarySystemPrompt?.["mode"] === "replace"
+        ? { systemPromptMode: temporarySystemPrompt["mode"] }
         : {}),
+      ...(promptOverrideMarkdown === undefined ? {} : { promptOverrideMarkdown }),
     };
   }
   return {
     ...AGENT_BINDINGS_BY_NODE_TYPE[nodeType],
-    ...(typeof config["agentPromptOverride"] === "string" &&
-    config["agentPromptOverride"].trim() !== ""
-      ? { promptOverrideMarkdown: config["agentPromptOverride"] }
+    ...versionRef,
+    ...(temporarySystemPrompt?.["mode"] === "inherit_runtime" ||
+    temporarySystemPrompt?.["mode"] === "replace"
+      ? { systemPromptMode: temporarySystemPrompt["mode"] }
       : {}),
+    ...(promptOverrideMarkdown === undefined ? {} : { promptOverrideMarkdown }),
   };
 }
 
@@ -477,13 +614,28 @@ export function agentNodeBindingDescriptor(
         : nodeType === "agent.direct"
           ? {
               summary:
-                config["capabilityMode"] === "project_bootstrap"
-                  ? "只读文件工具，并可准备受控项目初始化候选"
-                  : "固定只读文件工具",
+                typeof config["agentVersionId"] === "string"
+                  ? "由绑定的不可变Agent Version决定"
+                  : config["capabilityMode"] === "project_bootstrap"
+                    ? "只读文件工具，并可准备受控项目初始化候选"
+                    : config["capabilityMode"] === "read_only"
+                      ? "显式只读Agent版本"
+                      : config["capabilityMode"] === "custom"
+                        ? "由本次会话的Agent配置决定"
+                        : "继承Pi CLI默认编码能力；调用审批另行治理",
               defaultTools:
-                config["capabilityMode"] === "project_bootstrap"
-                  ? ["read", "grep", "find", "ls", "project_bootstrap_prepare"]
-                  : ["read", "grep", "find", "ls"],
+                typeof config["agentVersionId"] === "string"
+                  ? []
+                  : config["capabilityMode"] === "project_bootstrap"
+                    ? ["read", "grep", "find", "ls", "project_bootstrap_prepare"]
+                    : config["capabilityMode"] === "read_only"
+                      ? ["read", "grep", "find", "ls"]
+                      : config["capabilityMode"] === "custom" &&
+                          Array.isArray(config["enabledToolNames"])
+                        ? config["enabledToolNames"].filter(
+                            (name): name is string => typeof name === "string",
+                          )
+                        : ["read", "bash", "edit", "write"],
             }
           : {
               summary: "由批准的Execution Contract能力引用在运行时冻结",
@@ -493,16 +645,33 @@ export function agentNodeBindingDescriptor(
   return {
     agentKey: binding.agentKey,
     profileVersion: binding.profileVersion,
-    bindingKind: "agent_catalog" as const,
+    bindingKind:
+      binding.agentVersionId === undefined
+        ? ("agent_catalog" as const)
+        : ("agent_version" as const),
+    ...(binding.agentVersionId === undefined
+      ? {}
+      : {
+          agentVersionId: binding.agentVersionId,
+          agentVersionSha256: binding.agentVersionSha256,
+        }),
     promptPolicy: "agent_profile_plus_session_context" as const,
     promptSource:
       binding.promptOverrideMarkdown === undefined
-        ? ("agent_default" as const)
+        ? binding.agentVersionId === undefined
+          ? ("agent_default" as const)
+          : ("agent_version" as const)
         : ("workflow_override" as const),
     ...(binding.promptOverrideMarkdown === undefined
       ? {}
       : { promptOverrideMarkdown: binding.promptOverrideMarkdown }),
-    toolPolicy: { kind: "runtime_locked" as const, ...toolPolicy },
+    toolPolicy: {
+      kind:
+        nodeType === "agent.direct"
+          ? ("agent_configuration" as const)
+          : ("runtime_locked" as const),
+      ...toolPolicy,
+    },
   };
 }
 
@@ -578,6 +747,9 @@ export async function compileWorkflowPromptAssembly(
         definitionNodeId: node.definitionNodeId,
         nodeType,
         workflowDefinitionRevisionId: input.workflowDefinitionRevisionId,
+        ...(selection.workspaceRootId === undefined
+          ? {}
+          : { workspaceRootId: selection.workspaceRootId }),
       });
       const regions = [agent.region, ...shared.regions];
       const systemPromptAppend = [
@@ -777,7 +949,7 @@ export async function compileDirectPromptAssembly(
             definitionNodeId: "direct.agent",
             nodeType: "agent.direct" as const,
             schemaVersion: 1,
-            config: { capabilityMode: "read_only" },
+            config: { capabilityMode: "pi_cli_default" },
             activation: "enabled" as const,
           },
         ]
@@ -799,6 +971,9 @@ export async function compileDirectPromptAssembly(
     definitionNodeId: directNode.definitionNodeId,
     nodeType: "agent.direct",
     workflowDefinitionRevisionId: input.workflowDefinitionRevisionId,
+    ...(selection.workspaceRootId === undefined
+      ? {}
+      : { workspaceRootId: selection.workspaceRootId }),
   });
   const regions = [agent.region, ...configuration.regions];
   const systemPromptAppend = [
@@ -838,24 +1013,112 @@ export async function compileDirectPromptAssembly(
     (sum, message) => sum + message.estimatedTokens,
     0,
   );
+  const rawTemporaryConfiguration = directNode.config["agentTemporaryConfiguration"];
+  const parsedTemporaryConfiguration =
+    rawTemporaryConfiguration === undefined
+      ? undefined
+      : agentTemporaryConfigurationSchema.safeParse(rawTemporaryConfiguration);
+  if (parsedTemporaryConfiguration !== undefined && !parsedTemporaryConfiguration.success) {
+    throw revisionConflict("临时Agent配置已经损坏，请重新配置当前会话");
+  }
+  const temporaryConfiguration = parsedTemporaryConfiguration?.data;
+  const temporaryRuntimeVariant =
+    temporaryConfiguration === undefined
+      ? undefined
+      : agent.profile.runtimeBaseline?.variants.find(
+          (variant) => variant.variantKey === temporaryConfiguration.runtime.baseVariantKey,
+        );
+  if (temporaryConfiguration !== undefined && temporaryRuntimeVariant === undefined) {
+    throw revisionConflict("临时Agent配置引用的Pi运行基线不存在或已经变化");
+  }
+  if (temporaryConfiguration?.basedOnVersionId !== undefined) {
+    const basedOn = agent.profile.versions.find(
+      (version) => version.agentVersionId === temporaryConfiguration.basedOnVersionId,
+    );
+    if (
+      basedOn === undefined ||
+      basedOn.sha256 !== temporaryConfiguration.basedOnVersionSha256 ||
+      (basedOn.scope.kind === "workspace" && basedOn.scope.rootId !== selection.workspaceRootId)
+    ) {
+      throw revisionConflict("临时Agent配置的来源Version不存在、越过Workspace或Hash已变化");
+    }
+  }
+  if (temporaryConfiguration !== undefined && temporaryRuntimeVariant !== undefined) {
+    const selectedNames = new Set(temporaryConfiguration.enabledToolNames);
+    const orderedSelectedNames = temporaryRuntimeVariant.tools
+      .map((tool) => tool.name)
+      .filter((toolName) => selectedNames.has(toolName));
+    if (
+      orderedSelectedNames.length !== temporaryConfiguration.enabledToolNames.length ||
+      JSON.stringify(orderedSelectedNames) !==
+        JSON.stringify(temporaryConfiguration.enabledToolNames)
+    ) {
+      throw revisionConflict("临时Agent配置包含当前Pi目录不存在的Tool，或Tool顺序已经变化");
+    }
+  }
+  const resolvedConfiguration = temporaryConfiguration ?? agent.agentVersion;
   const capabilityMode =
     directNode.config["capabilityMode"] === "project_bootstrap"
       ? ("project_bootstrap" as const)
-      : ("read_only" as const);
+      : resolvedConfiguration !== undefined
+        ? ("custom" as const)
+        : directNode.config["capabilityMode"] === "read_only"
+          ? ("read_only" as const)
+          : directNode.config["capabilityMode"] === "custom"
+            ? ("custom" as const)
+            : ("pi_cli_default" as const);
+  const configuredToolNames =
+    resolvedConfiguration?.enabledToolNames ??
+    (Array.isArray(directNode.config["enabledToolNames"])
+      ? directNode.config["enabledToolNames"]
+      : undefined);
+  if (capabilityMode === "custom" && configuredToolNames === undefined) {
+    throw revisionConflict("自定义Agent能力缺少明确Tool清单");
+  }
+  const inheritedResources = {
+    contextFiles: "inherit_runtime_default" as const,
+    skills: "inherit_runtime_default" as const,
+    promptTemplates: "inherit_runtime_default" as const,
+    extensions: "inherit_runtime_default" as const,
+  };
+  const isolatedResources = {
+    contextFiles: "disabled" as const,
+    skills: "disabled" as const,
+    promptTemplates: "disabled" as const,
+    extensions: "disabled" as const,
+  };
   const tools = {
     capabilityMode,
+    selectionMode:
+      capabilityMode === "pi_cli_default"
+        ? ("inherit_runtime_default" as const)
+        : ("explicit" as const),
     names:
       capabilityMode === "project_bootstrap"
         ? (["read", "grep", "find", "ls", "project_bootstrap_prepare"] as const)
-        : (["read", "grep", "find", "ls"] as const),
+        : capabilityMode === "read_only"
+          ? (["read", "grep", "find", "ls"] as const)
+          : capabilityMode === "pi_cli_default"
+            ? ([] as const)
+            : configuredToolNames!,
+    resources:
+      resolvedConfiguration?.resources ??
+      (directNode.config["resourcePolicy"] === undefined
+        ? capabilityMode === "pi_cli_default"
+          ? inheritedResources
+          : isolatedResources
+        : directNode.config["resourcePolicy"]),
     estimatedTokens: DIRECT_PROMPT_TOOL_TOKEN_RESERVE,
   };
+  const usesPiRuntimeDefaults =
+    resolvedConfiguration?.runtime.baseVariantKey === "pi_cli_default" ||
+    (resolvedConfiguration === undefined && capabilityMode === "pi_cli_default");
   const requestOptions = {
     providerId: "dashscope-coding" as const,
     modelId: "qwen3.7-plus" as const,
-    thinkingLevel: "off" as const,
-    retryEnabled: false as const,
-    compactionEnabled: false as const,
+    thinkingLevel: usesPiRuntimeDefaults ? ("medium" as const) : ("off" as const),
+    retryEnabled: usesPiRuntimeDefaults,
+    compactionEnabled: usesPiRuntimeDefaults,
   };
   const budget = {
     meterVersion: DIRECT_PROMPT_METER_VERSION,

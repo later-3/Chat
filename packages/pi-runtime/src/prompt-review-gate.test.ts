@@ -397,6 +397,7 @@ async function createHarness(input: {
     operationId: input.operationId,
     sessionId: session.sessionId,
     enabledTools: [],
+    resolvedRuntimeManifestSha256: "f".repeat(64),
     ...(input.sessionManager !== undefined && snapshot.activeReview !== undefined
       ? {
           resumedFromCheckpointSha256: input.store.getActivePromptReview(input.operationId)!
@@ -1022,6 +1023,7 @@ describe("Direct Prompt Review Gate P1", () => {
       operationId: "pio_directtest1",
       sessionId: "pis_directtest1",
       enabledTools: ["read"],
+      resolvedRuntimeManifestSha256: "f".repeat(64),
     });
     const checkpoint = {
       fileName: "checkpoint.jsonl",

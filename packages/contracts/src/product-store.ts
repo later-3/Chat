@@ -79,6 +79,7 @@ import {
   projectBootstrapOperationSchema,
   projectWorkspaceBindingSchema,
 } from "./project-bootstrap.js";
+import { agentVersionSchema } from "./agent-configuration.js";
 
 /**
  * Product Snapshot顶层合同（任务书§8.3）。
@@ -90,7 +91,7 @@ import {
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v17";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v18";
 
 const idKeySchema = z.string().min(1).max(200);
 
@@ -114,6 +115,7 @@ const productEntitiesSchema = z
     promptFragments: z.record(idKeySchema, promptFragmentSchema),
     promptFragmentRevisions: z.record(idKeySchema, promptFragmentRevisionSchema),
     promptAssemblies: z.record(idKeySchema, promptAssemblySchema),
+    agentVersions: z.record(idKeySchema, agentVersionSchema),
     contextRequests: z.record(idKeySchema, runContextRequestSchema),
     memoryQueries: z.record(idKeySchema, memoryQuerySchema),
     memoryResultSnapshots: z.record(idKeySchema, memoryResultSnapshotSchema),
@@ -208,6 +210,7 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       promptFragments: {},
       promptFragmentRevisions: {},
       promptAssemblies: {},
+      agentVersions: {},
       contextRequests: {},
       memoryQueries: {},
       memoryResultSnapshots: {},

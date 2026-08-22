@@ -176,11 +176,28 @@ test("Direct Workflow可配置是否逐次审核提示词并在刷新后恢复",
 
   const openConfiguration = page.getByTestId("lifeos-workflow-config-open");
   await expect(openConfiguration).toBeVisible();
+  const scopedAgentProfiles = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname === "/lifeos/agents" &&
+      url.searchParams.get("workspaceRootId") === "root_chat" &&
+      response.status() === 200
+    );
+  });
   await openConfiguration.click();
+  await scopedAgentProfiles;
   let dialog = page.getByRole("dialog", { name: /配置 · 执行 Agent/u });
-  await expect(dialog).toContainText("Agent默认值属于Chat");
-  await expect(dialog).toContainText("Agent 默认模板");
-  await expect(dialog).toContainText("Workflow 节点实例");
+  await expect(dialog.getByTestId("lifeos-workflow-agent-scope")).toContainText("root_chat");
+  const workflowResources = dialog.getByTestId("lifeos-agent-resource-inventory");
+  await expect(workflowResources).toContainText("本版按类别启停，逐项选择尚未接入");
+  await expect(workflowResources).toContainText("Extensions");
+  await expect(workflowResources).toContainText("Skills");
+  await expect(workflowResources).toContainText("Prompt Templates");
+  await expect(workflowResources).toContainText("Context Files");
+  await expect(workflowResources).toContainText("<WORKSPACE_ROOT>/AGENTS.md");
+  await expect(dialog).toContainText("选择不可变Agent Version");
+  await expect(dialog).toContainText("Pi默认基线");
+  await expect(dialog).toContainText("Agent Version / Workflow节点");
   await dialog.getByRole("button", { name: "恢复默认", exact: true }).click();
   const reviewSwitch = dialog.getByRole("switch", {
     name: "发送前审核提示词，当前开启",
@@ -212,8 +229,8 @@ test("Agent默认、Workflow节点实例与本次会话覆盖是三个清晰作�
   await page.getByRole("menuitem", { name: /^规划执行工作流 规划 · 系统$/u }).click();
   await page.getByTestId("lifeos-workflow-config-open").click();
   const workflowDialog = page.getByRole("dialog", { name: /配置 · 规划执行工作流/u });
-  await expect(workflowDialog).toContainText("Agent 默认模板");
-  await expect(workflowDialog).toContainText("Workflow 节点实例");
+  await expect(workflowDialog).toContainText("Pi默认基线");
+  await expect(workflowDialog).toContainText("Agent Version / Workflow节点");
   await expect(workflowDialog).toContainText("本次会话");
   await expect(workflowDialog).toContainText("规划 Agent");
   await expect(workflowDialog).toContainText("Pi Coding Agent · 规划步骤执行");
@@ -239,7 +256,7 @@ test("Agent默认、Workflow节点实例与本次会话覆盖是三个清晰作�
 
   await page.getByTestId("lifeos-workflow-config-open").click();
   const persistedDialog = page.getByRole("dialog", { name: /配置 · .*我的配置/u });
-  await expect(persistedDialog).toContainText("工作流已修改");
+  await expect(persistedDialog).toContainText("Workflow已修改");
   const persistedPrompt = persistedDialog.getByRole("textbox", {
     name: "生成计划 System Prompt",
   });
@@ -267,18 +284,78 @@ test("Agent默认、Workflow节点实例与本次会话覆盖是三个清晰作�
   await enterAgentSettings(page);
   const agents = page.getByTestId("lifeos-agent-settings");
   await expect(agents).toContainText("项目初始化 Agent");
+  const scopedSettingsProfiles = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname === "/lifeos/agents" &&
+      url.searchParams.get("workspaceRootId") === "root_chat" &&
+      response.status() === 200
+    );
+  });
+  await agents
+    .getByRole("combobox", { name: "Agent Runtime Profile作用域", exact: true })
+    .selectOption("root_chat");
+  await scopedSettingsProfiles;
+  await expect(agents.getByTestId("lifeos-agent-profile-scope")).toContainText("root_chat");
   await agents.getByRole("button", { name: /Pi Coding Agent · 直接执行/u }).click();
   const piBaseline = agents.getByTestId("lifeos-agent-runtime-baseline");
   await expect(piBaseline).toContainText("Pi Coding Agent 运行时基线");
   await expect(piBaseline).toContainText("@earendil-works/pi-coding-agent@0.84.2");
   await expect(piBaseline).toContainText("You are an expert coding assistant operating inside pi");
+  await expect(piBaseline).toContainText("当前Pi默认Variant不追加Chat只读约束");
   await expect(piBaseline).toContainText("read");
+  const sourceFiles = piBaseline.getByLabel("真实来源文件").first();
+  await expect(sourceFiles).toContainText("pi/packages/coding-agent/src/core/system-prompt.ts");
+  await expect(sourceFiles).toContainText("pi/packages/coding-agent/src/core/agent-session.ts");
+  await expect(
+    sourceFiles.getByRole("button", {
+      name: /用 Visual Studio Code 打开 .*system-prompt\.ts/u,
+    }),
+  ).toBeVisible();
+  const settingsLayout = agents.locator(".lifeos-agent-settings-layout");
+  const agentDetail = settingsLayout.locator(":scope > article");
+  await expect(agentDetail).toBeVisible();
+  const layoutBox = await settingsLayout.boundingBox();
+  const detailBox = await agentDetail.boundingBox();
+  expect(detailBox?.width ?? 0).toBeGreaterThanOrEqual((layoutBox?.width ?? 0) - 2);
+  expect(
+    await agentDetail.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+  ).toBe(true);
   await expect(agents).toContainText("Chat可管理的完整覆盖");
+  const versionManager = agents.getByTestId("lifeos-agent-versions");
+  await expect(versionManager).toContainText("Agent Version");
+  await expect(versionManager).toContainText("Pi 默认基线");
+  const toolCatalog = versionManager.getByRole("group", { name: "可选工具目录", exact: true });
+  await expect(toolCatalog.getByRole("checkbox").first()).toBeVisible();
+  for (const toolName of ["read", "bash", "edit", "write"]) {
+    await expect(toolCatalog.getByRole("checkbox", { name: toolName, exact: true })).toBeChecked();
+  }
+  await expect(
+    versionManager.getByRole("group", { name: "运行时资源", exact: true }).getByRole("checkbox"),
+  ).toHaveCount(4);
+  const versionResources = versionManager.getByTestId("lifeos-agent-resource-inventory");
+  await expect(versionResources).toContainText("portable ID / 路径");
+  await expect(versionResources).toContainText("<WORKSPACE_ROOT>/AGENTS.md");
+  await versionManager
+    .getByRole("textbox", { name: "Agent Version名称", exact: true })
+    .fill("E2E Direct Version");
+  await versionManager.getByRole("button", { name: "保存为新 Agent Version", exact: true }).click();
+  await expect(versionManager.getByRole("button", { name: /E2E Direct Version/u })).toBeVisible();
+  await agents.getByRole("button", { name: /Pi Coding Agent · 规划步骤执行/u }).click();
+  await expect(agents.getByTestId("lifeos-agent-runtime-baseline")).toBeVisible();
+  await expect(agents.getByTestId("lifeos-agent-version-readonly")).toContainText(
+    "只读展示真实Runtime基线",
+  );
+  await expect(agents.getByTestId("lifeos-agent-versions")).toHaveCount(0);
   await agents.getByRole("button", { name: /规划 Agent/u }).click();
-  const prompt = agents.getByRole("textbox", { name: "Agent System Prompt", exact: true });
+  await agents.getByText("旧默认 Prompt Revision（兼容入口）", { exact: true }).click();
+  const prompt = agents.getByRole("textbox", {
+    name: "旧默认 Agent System Prompt",
+    exact: true,
+  });
   const original = await prompt.inputValue();
   await prompt.fill(`${original}\n\n<!-- e2e-agent-revision -->`);
-  await agents.getByRole("button", { name: "保存为新Revision", exact: true }).click();
+  await agents.getByRole("button", { name: "保存旧Prompt Revision", exact: true }).click();
   await expect(agents).toContainText(/我的覆盖 v\d+/u);
   await agents.getByRole("button", { name: "恢复 Chat 内置默认", exact: true }).click();
   await expect(agents).toContainText("内置默认");
@@ -376,7 +453,10 @@ test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边�
   );
   await expect(bridgePreview.getByTestId("lifeos-prompt-turn-preview")).toContainText(currentInput);
   await expect(bridgePreview.getByTestId("lifeos-prompt-turn-preview")).toContainText(
-    "read、grep、find、ls",
+    "- bash: Execute bash commands",
+  );
+  await expect(bridgePreview.getByTestId("lifeos-prompt-turn-preview")).toContainText(
+    "本次冻结Tools：无",
   );
   await expect(bridgePreview).toContainText("所有Workflow · 发送冻结Prompt Selection");
   await expect(bridgePreview).toContainText("一一对应证据");

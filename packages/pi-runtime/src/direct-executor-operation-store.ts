@@ -74,13 +74,42 @@ const operationRecordSchema = z
     activePromptReview: activePromptReviewSchema.optional(),
     providerRequestCount: z.number().int().nonnegative().max(DIRECT_AGENT_MAX_PROVIDER_REQUESTS),
     completionTokens: z.number().int().nonnegative().max(100_000_000),
+    /**
+     * 首次真实bind后的运行清单。optional仅兼容P0修复前文件；首次恢复会补钉，
+     * 后续恢复不得改变。
+     */
+    resolvedRuntimeManifestSha256: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/u)
+      .optional(),
     events: z.array(piDirectExecutorEventSchema).max(100_000),
     result: directAgentResultRefSchema.optional(),
     errorCode: stableErrorCodeSchema.optional(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
-  .strict();
+  .strict()
+  .superRefine((record, ctx) => {
+    const eventHashes = record.events.flatMap((event) =>
+      (event.type === "session.started" || event.type === "session.resumed") &&
+      event.resolvedRuntimeManifestSha256 !== undefined
+        ? [event.resolvedRuntimeManifestSha256]
+        : [],
+    );
+    const hashes = new Set([
+      ...(record.resolvedRuntimeManifestSha256 === undefined
+        ? []
+        : [record.resolvedRuntimeManifestSha256]),
+      ...eventHashes,
+    ]);
+    if (hashes.size > 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["resolvedRuntimeManifestSha256"],
+        message: "Direct Operation的resolved runtime manifest发生漂移",
+      });
+    }
+  });
 
 type OperationRecord = z.infer<typeof operationRecordSchema>;
 export type PiDirectExecutorEventPayload = PiDirectExecutorEvent extends infer Event
@@ -104,6 +133,15 @@ export class PiDirectExecutorOperationNotFoundError extends Error {
   constructor() {
     super("Direct Agent Operation不存在");
     this.name = "PiDirectExecutorOperationNotFoundError";
+  }
+}
+
+export class PiDirectExecutorRuntimeManifestMismatchError extends Error {
+  readonly code = "direct_executor.runtime_manifest_mismatch";
+
+  constructor() {
+    super("Direct Agent恢复后的运行清单与首次绑定不一致");
+    this.name = "PiDirectExecutorRuntimeManifestMismatchError";
   }
 }
 
@@ -274,6 +312,7 @@ export class PiDirectExecutorOperationStore {
     readonly operationId: string;
     readonly sessionId: string;
     readonly enabledTools: readonly string[];
+    readonly resolvedRuntimeManifestSha256: string;
     readonly resumedFromCheckpointSha256?: string;
   }): Promise<void> {
     await this.mutate(input.operationId, async (loaded) => {
@@ -286,6 +325,24 @@ export class PiDirectExecutorOperationStore {
         throw new PiDirectExecutorOperationConflictError("当前状态不能绑定Pi Session");
       }
       const sessionId = piRuntimeSessionIdSchema.parse(input.sessionId);
+      const pinnedSessionEvent = current.events.find(
+        (
+          event,
+        ): event is Extract<
+          PiDirectExecutorEvent,
+          { type: "session.started" | "session.resumed" }
+        > =>
+          (event.type === "session.started" || event.type === "session.resumed") &&
+          event.resolvedRuntimeManifestSha256 !== undefined,
+      );
+      const pinnedRuntimeManifestSha256 =
+        current.resolvedRuntimeManifestSha256 ?? pinnedSessionEvent?.resolvedRuntimeManifestSha256;
+      if (
+        pinnedRuntimeManifestSha256 !== undefined &&
+        pinnedRuntimeManifestSha256 !== input.resolvedRuntimeManifestSha256
+      ) {
+        throw new PiDirectExecutorRuntimeManifestMismatchError();
+      }
       const next = this.appendToRecord(
         current,
         input.resumedFromCheckpointSha256 === undefined
@@ -294,15 +351,26 @@ export class PiDirectExecutorOperationStore {
               type: "session.started",
               sessionId,
               enabledTools: input.enabledTools as never,
+              resolvedRuntimeManifestSha256: input.resolvedRuntimeManifestSha256,
             }
           : {
               operationId: input.operationId,
               type: "session.resumed",
               sessionId,
               checkpointSha256: input.resumedFromCheckpointSha256,
+              enabledTools: input.enabledTools as never,
+              resolvedRuntimeManifestSha256: input.resolvedRuntimeManifestSha256,
             },
       );
-      return { record: { ...next, sessionId }, value: undefined };
+      return {
+        record: {
+          ...next,
+          sessionId,
+          resolvedRuntimeManifestSha256:
+            pinnedRuntimeManifestSha256 ?? input.resolvedRuntimeManifestSha256,
+        },
+        value: undefined,
+      };
     });
   }
 

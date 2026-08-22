@@ -38,7 +38,7 @@ function directNodeConfig(
     ReturnType<ApplicationDeps["store"]["read"]>
   >["snapshot"]["entities"]["workflowRunSpecs"][string],
 ): {
-  readonly capabilityMode: "read_only" | "project_bootstrap";
+  readonly capabilityMode: "pi_cli_default" | "custom" | "read_only" | "project_bootstrap";
   readonly promptReviewMode: "manual" | "off";
 } {
   const node = runSpec.nodeResolutions.find(
@@ -46,14 +46,16 @@ function directNodeConfig(
   );
   if (
     node === undefined ||
-    (node.config["capabilityMode"] !== "read_only" &&
+    (node.config["capabilityMode"] !== "pi_cli_default" &&
+      node.config["capabilityMode"] !== "custom" &&
+      node.config["capabilityMode"] !== "read_only" &&
       node.config["capabilityMode"] !== "project_bootstrap") ||
     (node.config["promptReviewMode"] !== "manual" && node.config["promptReviewMode"] !== "off")
   ) {
     throw new ApplicationError({
       code: "revision_conflict",
       httpStatus: 409,
-      message: "Direct Agent RunSpec缺少受支持的只读能力或Prompt Gate配置",
+      message: "Direct Agent RunSpec缺少受支持的Agent能力或Prompt Gate配置",
       recoveryAction: "contact_support",
     });
   }
@@ -241,7 +243,7 @@ export async function authorizeDirectAgentOperation(
     readonly budget?: Extract<PromptAssembly, { schemaVersion: "prompt-assembly.v2" }>["budget"];
     readonly workspaceRootId?: string | undefined;
   };
-  readonly capabilityMode: "read_only" | "project_bootstrap";
+  readonly capabilityMode: "pi_cli_default" | "custom" | "read_only" | "project_bootstrap";
   readonly projectBootstrapContext?: {
     readonly providerKind: "plane_ce";
     readonly providerVersion: string;

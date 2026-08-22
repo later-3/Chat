@@ -39,6 +39,7 @@ import { productSnapshotV14Schema } from "./legacy-v14.js";
 import { migrateProductSnapshotV14ToV15 } from "./migrate-v14-to-v15.js";
 import { migrateProductSnapshotV15ToV16 } from "./migrate-v15-to-v16.js";
 import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
+import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-19T12:00:00.000Z";
@@ -136,7 +137,7 @@ async function validDirectReviewSnapshot(): Promise<{
     sourceMessageId: "msg_promptreview1",
     sourceMessageSha256,
     promptAssemblySha256: promptAssembly.sha256,
-    capabilityMode: "read_only",
+    capabilityMode: "pi_cli_default",
     promptTemplateVersion: DIRECT_AGENT_PROMPT_TEMPLATE_VERSION,
     modelConfigVersion: MODEL_CONFIG_VERSION,
     limits: {
@@ -298,6 +299,7 @@ describe("Prompt Review Product Snapshot完整性", () => {
         unknown
       >;
       delete legacyEntities["promptAssemblies"];
+      delete legacyEntities["agentVersions"];
       delete legacyEntities["projectBootstrapCandidates"];
       delete legacyEntities["projectBootstrapDecisions"];
       delete legacyEntities["projectBootstrapOperations"];
@@ -328,7 +330,9 @@ describe("Prompt Review Product Snapshot完整性", () => {
       );
       expect(() =>
         assertSnapshotIntegrity(
-          migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16(migrated)),
+          migrateProductSnapshotV17ToV18(
+            migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16(migrated)),
+          ),
         ),
       ).not.toThrow();
     },
@@ -338,6 +342,7 @@ describe("Prompt Review Product Snapshot完整性", () => {
     const { snapshot } = await validDirectReviewSnapshot();
     const legacyEntities = structuredClone(snapshot.entities) as unknown as Record<string, unknown>;
     delete legacyEntities["promptAssemblies"];
+    delete legacyEntities["agentVersions"];
     delete legacyEntities["projectBootstrapCandidates"];
     delete legacyEntities["projectBootstrapDecisions"];
     delete legacyEntities["projectBootstrapOperations"];

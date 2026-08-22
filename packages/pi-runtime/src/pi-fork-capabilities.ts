@@ -16,6 +16,7 @@ export function assertManagedPiForkCapabilities(): Readonly<{
   checkoutRoot: string;
   branch: string;
   origin: string;
+  revision: string;
 }> {
   if (
     CODING_AGENT_SDK_CAPABILITIES.providerRequestGate !== 1 ||
@@ -44,5 +45,11 @@ export function assertManagedPiForkCapabilities(): Readonly<{
   if (origin !== "git@github.com:later-3/pi.git" && origin !== `${PI_FORK_REPOSITORY}.git`) {
     throw new Error(`Pi Fork origin不受管：${origin}`);
   }
-  return Object.freeze({ checkoutRoot, branch, origin });
+  const revision = execFileSync("git", ["-C", checkoutRoot, "rev-parse", "HEAD"], {
+    encoding: "utf8",
+  }).trim();
+  if (!/^[0-9a-f]{40}$/u.test(revision)) {
+    throw new Error("Pi Fork revision不是完整Git commit SHA");
+  }
+  return Object.freeze({ checkoutRoot, branch, origin, revision });
 }

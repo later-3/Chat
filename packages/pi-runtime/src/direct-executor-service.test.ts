@@ -1,7 +1,8 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type { DirectAgentRunInput, DirectAgentRunner } from "./direct-agent-executor.js";
 import {
   applyDirectAgentRuntimeApiKey,
@@ -67,12 +68,15 @@ class WaitingThenCompleteRunner implements DirectAgentRunner {
     reviewSha256: "4".repeat(64),
   };
 
+  constructor(private readonly resumedRuntimeManifestSha256 = "f".repeat(64)) {}
+
   async run(input: Parameters<DirectAgentRunner["run"]>[0]): Promise<string> {
     if (!input.resume) {
       await input.store.setSession({
         operationId: input.request.operationId,
         sessionId: "pis_directservice",
         enabledTools: ["read", "grep", "find", "ls"],
+        resolvedRuntimeManifestSha256: "f".repeat(64),
       });
       await input.store.beginPromptReview({
         operationId: input.request.operationId,
@@ -97,6 +101,15 @@ class WaitingThenCompleteRunner implements DirectAgentRunner {
       await input.store.markPromptReviewWaiting(input.request.operationId, this.review, 2);
       throw new DirectAgentSuspendedError();
     }
+    const active = input.store.getActivePromptReview(input.request.operationId);
+    if (active === undefined) throw new Error("恢复缺少Prompt Review checkpoint");
+    await input.store.setSession({
+      operationId: input.request.operationId,
+      sessionId: active.checkpoint.sessionId,
+      enabledTools: ["read", "grep", "find", "ls"],
+      resolvedRuntimeManifestSha256: this.resumedRuntimeManifestSha256,
+      resumedFromCheckpointSha256: active.checkpoint.fileSha256,
+    });
     await input.store.markProviderDispatching(input.request.operationId);
     await input.promptReview.markProviderSettled({
       operationId: input.request.operationId,
@@ -108,6 +121,187 @@ class WaitingThenCompleteRunner implements DirectAgentRunner {
 }
 
 describe("Pi Direct Executor Service + Client", () => {
+  it("Session恢复拒绝覆盖首次resolved runtime manifest SHA", async () => {
+    const root = await temporaryRoot();
+    const store = await PiDirectExecutorOperationStore.open(join(root, "operations"));
+    const operationId = operationIdForDirectAgentAttempt("att_directservice");
+    await store.createOrGet(
+      { ...startIdentity(), operationId },
+      {
+        runRevision: 1,
+        sourceMessageId: "msg_directservice" as never,
+        sourceMessageSha256: "3".repeat(64),
+        capabilityMode: "pi_cli_default",
+        limits: {
+          maxProviderRequests: 16,
+          activeTimeoutMs: 1_200_000,
+          tokenBudget: 64_000,
+        },
+      },
+    );
+    await store.markRunning(operationId);
+    await store.setSession({
+      operationId,
+      sessionId: "pis_directservice",
+      enabledTools: ["grep", "runtime_probe"],
+      resolvedRuntimeManifestSha256: "a".repeat(64),
+    });
+    await expect(
+      store.setSession({
+        operationId,
+        sessionId: "pis_directservice",
+        enabledTools: ["grep", "runtime_probe"],
+        resolvedRuntimeManifestSha256: "b".repeat(64),
+        resumedFromCheckpointSha256: "c".repeat(64),
+      }),
+    ).rejects.toMatchObject({ code: "direct_executor.runtime_manifest_mismatch" });
+
+    expect(
+      store
+        .getEvents(operationId)
+        .filter((event) => event.type === "session.started" || event.type === "session.resumed"),
+    ).toEqual([
+      expect.objectContaining({
+        type: "session.started",
+        enabledTools: ["grep", "runtime_probe"],
+        resolvedRuntimeManifestSha256: "a".repeat(64),
+      }),
+    ]);
+  });
+
+  it("Session恢复允许与首次完全一致的resolved runtime manifest SHA", async () => {
+    const root = await temporaryRoot();
+    const store = await PiDirectExecutorOperationStore.open(join(root, "operations"));
+    const operationId = operationIdForDirectAgentAttempt("att_directservice");
+    await store.createOrGet(
+      { ...startIdentity(), operationId },
+      {
+        runRevision: 1,
+        sourceMessageId: "msg_directservice" as never,
+        sourceMessageSha256: "3".repeat(64),
+        capabilityMode: "pi_cli_default",
+        limits: {
+          maxProviderRequests: 16,
+          activeTimeoutMs: 1_200_000,
+          tokenBudget: 64_000,
+        },
+      },
+    );
+    await store.markRunning(operationId);
+    for (const resumedFromCheckpointSha256 of [undefined, "c".repeat(64)]) {
+      await store.setSession({
+        operationId,
+        sessionId: "pis_directservice",
+        enabledTools: ["grep", "runtime_probe"],
+        resolvedRuntimeManifestSha256: "a".repeat(64),
+        ...(resumedFromCheckpointSha256 === undefined ? {} : { resumedFromCheckpointSha256 }),
+      });
+    }
+
+    expect(
+      store
+        .getEvents(operationId)
+        .filter((event) => event.type === "session.started" || event.type === "session.resumed"),
+    ).toEqual([
+      expect.objectContaining({
+        type: "session.started",
+        resolvedRuntimeManifestSha256: "a".repeat(64),
+      }),
+      expect.objectContaining({
+        type: "session.resumed",
+        resolvedRuntimeManifestSha256: "a".repeat(64),
+      }),
+    ]);
+  });
+
+  it("旧Operation无首次Hash时在首次恢复钉住，后续漂移仍失败关闭", async () => {
+    const root = await temporaryRoot();
+    const directory = join(root, "operations");
+    const operationId = operationIdForDirectAgentAttempt("att_directservice");
+    const store = await PiDirectExecutorOperationStore.open(directory);
+    const runner = new WaitingThenCompleteRunner();
+    await store.createOrGet(
+      { ...startIdentity(), operationId },
+      {
+        runRevision: 1,
+        sourceMessageId: "msg_directservice" as never,
+        sourceMessageSha256: "3".repeat(64),
+        capabilityMode: "pi_cli_default",
+        limits: {
+          maxProviderRequests: 16,
+          activeTimeoutMs: 1_200_000,
+          tokenBudget: 64_000,
+        },
+      },
+    );
+    await store.markRunning(operationId);
+    await store.setSession({
+      operationId,
+      sessionId: "pis_directservice",
+      enabledTools: ["grep"],
+      resolvedRuntimeManifestSha256: "a".repeat(64),
+    });
+    await store.beginPromptReview({
+      operationId,
+      publishCommandId: "cmd_directservicelegacypublish",
+      payloadSha256: runner.review.payloadSha256,
+      payloadEnvelopeSha256: hashPromptReviewEnvelope({
+        providerId: "openai",
+        modelId: "direct-test-model",
+        endpointHost: "provider.example",
+        payload: providerPayload,
+      }),
+      providerId: "openai",
+      modelId: "direct-test-model",
+      endpointHost: "provider.example",
+      checkpoint: {
+        fileName: "legacy-direct-service.jsonl",
+        fileSha256: "c".repeat(64),
+        sessionId: "pis_directservice",
+        leafId: "leaf-legacy-direct-service",
+      },
+    });
+    await store.markPromptReviewWaiting(operationId, runner.review, 2);
+
+    const filePath = join(directory, `${operationId}.json`);
+    const legacyRecord = z
+      .object({
+        resolvedRuntimeManifestSha256: z.string().optional(),
+        events: z.array(z.record(z.string(), z.unknown())),
+      })
+      .passthrough()
+      .parse(JSON.parse(await readFile(filePath, "utf8")));
+    delete legacyRecord.resolvedRuntimeManifestSha256;
+    for (const event of legacyRecord.events) {
+      delete event["resolvedRuntimeManifestSha256"];
+    }
+    await writeFile(filePath, JSON.stringify(legacyRecord), { mode: 0o600 });
+
+    const recovered = await PiDirectExecutorOperationStore.open(directory);
+    await recovered.setSession({
+      operationId,
+      sessionId: "pis_directservice",
+      enabledTools: ["grep"],
+      resolvedRuntimeManifestSha256: "d".repeat(64),
+      resumedFromCheckpointSha256: "c".repeat(64),
+    });
+    await expect(
+      recovered.setSession({
+        operationId,
+        sessionId: "pis_directservice",
+        enabledTools: ["grep"],
+        resolvedRuntimeManifestSha256: "e".repeat(64),
+        resumedFromCheckpointSha256: "c".repeat(64),
+      }),
+    ).rejects.toMatchObject({ code: "direct_executor.runtime_manifest_mismatch" });
+    expect(
+      recovered
+        .getEvents(operationId)
+        .filter((event) => event.type === "session.resumed")
+        .map((event) => event.resolvedRuntimeManifestSha256),
+    ).toEqual(["d".repeat(64)]);
+  });
+
   it("Chat显式百炼Key只注册为Pi进程内runtime override", async () => {
     const setRuntimeApiKey = vi.fn(async () => undefined);
     const signal = new AbortController().signal;
@@ -412,6 +606,95 @@ describe("Pi Direct Executor Service + Client", () => {
     );
     expect(operationFile).not.toContain(PRIVATE_SOURCE);
     expect(operationFile).not.toContain("已审核的Direct Agent结果");
+    await runtime.close();
+  });
+
+  it("resume运行清单漂移在Provider前形成稳定failed终态", async () => {
+    const root = await temporaryRoot();
+    const store = await PiDirectExecutorOperationStore.open(join(root, "operations"));
+    const runner = new WaitingThenCompleteRunner("e".repeat(64));
+    let providerDispatchCommitted = false;
+    const runtime = createPiDirectExecutorService({
+      credential: "rtk_directservice123",
+      store,
+      workspaceRoots: new Map(),
+      emptyWorkspaceRoot: join(root, "empty"),
+      agentDir: join(root, "agent"),
+      sessionsDir: join(root, "sessions"),
+      checkpointsDir: join(root, "checkpoints"),
+      authorizeOperation: async (input) => ({
+        productRunId: input.productRunId,
+        directAgentAttemptId: input.directAgentAttemptId,
+        runRevision: 1,
+        sourceMessage: {
+          messageId: "msg_directservice",
+          text: PRIVATE_SOURCE,
+          sha256: "3".repeat(64),
+        },
+        promptAssembly: {
+          schemaVersion: "prompt-assembly.v1",
+          promptAssemblyId: "pma_directservice",
+          sha256: "7".repeat(64),
+          systemPromptAppend: "",
+          userPrompt: PRIVATE_SOURCE,
+        },
+        capabilityMode: "read_only",
+        promptReviewMode: "manual",
+        limits: {
+          maxProviderRequests: 16,
+          activeTimeoutMs: 1_200_000,
+          tokenBudget: 64_000,
+        },
+      }),
+      promptReviewProduct: {
+        publish: async () => {
+          throw new Error("Fake runner不调用publish");
+        },
+        consumeDecision: async (input) => ({
+          status: "authorized",
+          review: input.review,
+          decision: {
+            promptReviewDecisionId: input.promptReviewDecisionId as never,
+            revision: 1,
+            decisionSha256: "6".repeat(64),
+            kind: "approve",
+          },
+          productRunRevision: 3,
+          frozenPayload: providerPayload,
+        }),
+        commitDispatchOutcome: async () => {
+          providerDispatchCommitted = true;
+        },
+      },
+      publishResult: async () => {
+        throw new Error("运行清单漂移后不能发布Candidate");
+      },
+      runner,
+    });
+    const client = createPiDirectExecutorServiceClient({
+      baseUrl: "http://pi-direct.test",
+      credential: "rtk_directservice123",
+      pollIntervalMs: 1,
+      fetchFn: async (url, init) => runtime.app.request(url, init),
+    });
+
+    const waiting = await client.start(startIdentity());
+    if (waiting.kind !== "waiting_prompt_review") throw new Error("测试缺少审核等待态");
+    const failed = await client.submitDecision({
+      operationId: waiting.operationId,
+      review: waiting.review,
+      promptReviewDecisionId: "prd_directservicedrift",
+    });
+
+    expect(failed).toEqual({
+      kind: "failed",
+      operationId: waiting.operationId,
+      errorCode: "direct_executor.runtime_manifest_mismatch",
+    });
+    expect(providerDispatchCommitted).toBe(false);
+    expect(
+      store.getEvents(waiting.operationId).some((event) => event.type === "provider.started"),
+    ).toBe(false);
     await runtime.close();
   });
 

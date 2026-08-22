@@ -13,6 +13,7 @@ import {
   LEGACY_DIRECT_PROMPT_COMPILER_VERSION,
   LEGACY_DIRECT_PROMPT_PROFILE_VERSION,
   promptFragmentScopeSchema,
+  toAgentVersionHashInput,
   type PromptAssemblyV3,
   type ProductSnapshot,
 } from "@chat/contracts";
@@ -126,6 +127,7 @@ export function assertSnapshotIntegrity(snapshot: ProductSnapshot): void {
   };
 
   assertMapKeys(snapshot, fail);
+  assertAgentVersions(snapshot, fail);
   assertSessionsAndMessages(snapshot, fail);
   assertPromptAssemblies(snapshot, fail);
   assertAttempts(snapshot, fail);
@@ -266,6 +268,7 @@ function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
       "promptFragmentRevisionId",
     ],
     ["promptAssembly", snapshot.entities.promptAssemblies, "promptAssemblyId"],
+    ["agentVersion", snapshot.entities.agentVersions, "agentVersionId"],
     [
       "planningProjectContext",
       snapshot.entities.planningProjectContexts,
@@ -298,6 +301,45 @@ function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
       if ((entity as unknown as Record<string, string>)[idField] !== key) {
         fail(`${label} Map键${key}与${idField}不一致`);
       }
+    }
+  }
+}
+
+function assertAgentVersions(snapshot: ProductSnapshot, fail: Fail): void {
+  const { agentVersions } = snapshot.entities;
+  const versionSlots = new Map<string, string>();
+  for (const version of Object.values(agentVersions)) {
+    const versionSlot = `${version.ownerPrincipalId}\u0000${version.agentKey}\u0000${String(version.version)}`;
+    const occupiedBy = versionSlots.get(versionSlot);
+    if (occupiedBy !== undefined) {
+      fail(`agentVersion ${version.agentVersionId}与${occupiedBy}重复占用Principal/Agent版本号`);
+    }
+    versionSlots.set(versionSlot, version.agentVersionId);
+    if (
+      version.systemPrompt.mode === "replace" &&
+      version.systemPrompt.sha256 !==
+        hashCanonical("agent-system-prompt.v1", {
+          bodyMarkdown: version.systemPrompt.bodyMarkdown,
+        })
+    ) {
+      fail(`agentVersion ${version.agentVersionId} System Prompt Hash不一致`);
+    }
+    if (version.sha256 !== hashCanonical("agent-version.v1", toAgentVersionHashInput(version))) {
+      fail(`agentVersion ${version.agentVersionId} Hash不一致`);
+    }
+    const basedOn =
+      version.basedOnVersionId === undefined ? undefined : agentVersions[version.basedOnVersionId];
+    if (version.basedOnVersionId !== undefined && basedOn === undefined) {
+      fail(`agentVersion ${version.agentVersionId}派生来源不存在`);
+    }
+    if (
+      basedOn !== undefined &&
+      (basedOn.agentKey !== version.agentKey ||
+        basedOn.ownerPrincipalId !== version.ownerPrincipalId ||
+        JSON.stringify(basedOn.scope) !== JSON.stringify(version.scope) ||
+        version.version <= basedOn.version)
+    ) {
+      fail(`agentVersion ${version.agentVersionId}派生关系无效`);
     }
   }
 }
@@ -3413,7 +3455,12 @@ function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
         (node) => node.nodeType === "agent.direct" && node.activation === "enabled",
       );
       const capabilityMode = directNode?.config["capabilityMode"];
-      if (capabilityMode !== "read_only" && capabilityMode !== "project_bootstrap") {
+      if (
+        capabilityMode !== "pi_cli_default" &&
+        capabilityMode !== "custom" &&
+        capabilityMode !== "read_only" &&
+        capabilityMode !== "project_bootstrap"
+      ) {
         fail(`direct_agent attempt ${attempt.attemptId} capabilityMode无效`);
       }
       const inputManifestSha256 = computeDirectAgentInputManifestSha256({
@@ -4882,6 +4929,7 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
     RevisePromptFragment: ["promptFragmentId", "promptFragmentRevisionId"],
     ReviseAgentPrompt: ["promptFragmentId", "promptFragmentRevisionId"],
     ChangePromptFragmentArchiveStatus: ["promptFragmentId", "promptFragmentRevisionId"],
+    CreateAgentVersion: ["agentVersionId"],
     // 三类Planning Context在none/ready时返回不同的事实引用，见下方动态分支。
   };
   for (const receipt of receipts) {
@@ -5157,55 +5205,62 @@ function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): void {
                                                                                                               ] !==
                                                                                                               undefined
                                                                                                             : key ===
-                                                                                                                "ruleSelectionId"
+                                                                                                                "agentVersionId"
                                                                                                               ? entities
-                                                                                                                  .ruleSelections[
+                                                                                                                  .agentVersions[
                                                                                                                   value
                                                                                                                 ] !==
                                                                                                                 undefined
                                                                                                               : key ===
-                                                                                                                  "planningProjectContextId"
+                                                                                                                  "ruleSelectionId"
                                                                                                                 ? entities
-                                                                                                                    .planningProjectContexts[
+                                                                                                                    .ruleSelections[
                                                                                                                     value
                                                                                                                   ] !==
                                                                                                                   undefined
                                                                                                                 : key ===
-                                                                                                                    "planningMemorySelectionId"
+                                                                                                                    "planningProjectContextId"
                                                                                                                   ? entities
-                                                                                                                      .planningMemorySelections[
+                                                                                                                      .planningProjectContexts[
                                                                                                                       value
                                                                                                                     ] !==
                                                                                                                     undefined
                                                                                                                   : key ===
-                                                                                                                      "workflowPolicyResolutionId"
+                                                                                                                      "planningMemorySelectionId"
                                                                                                                     ? entities
-                                                                                                                        .workflowPolicyResolutions[
+                                                                                                                        .planningMemorySelections[
                                                                                                                         value
                                                                                                                       ] !==
                                                                                                                       undefined
                                                                                                                     : key ===
-                                                                                                                        "contextStatus"
-                                                                                                                      ? value ===
-                                                                                                                          "none" ||
-                                                                                                                        value ===
-                                                                                                                          "ready"
+                                                                                                                        "workflowPolicyResolutionId"
+                                                                                                                      ? entities
+                                                                                                                          .workflowPolicyResolutions[
+                                                                                                                          value
+                                                                                                                        ] !==
+                                                                                                                        undefined
                                                                                                                       : key ===
-                                                                                                                          "messageSha256"
-                                                                                                                        ? /^[a-f0-9]{64}$/.test(
-                                                                                                                            value,
-                                                                                                                          )
+                                                                                                                          "contextStatus"
+                                                                                                                        ? value ===
+                                                                                                                            "none" ||
+                                                                                                                          value ===
+                                                                                                                            "ready"
                                                                                                                         : key ===
-                                                                                                                            "approvalExpired"
-                                                                                                                          ? value ===
-                                                                                                                            "true"
+                                                                                                                            "messageSha256"
+                                                                                                                          ? /^[a-f0-9]{64}$/.test(
+                                                                                                                              value,
+                                                                                                                            )
                                                                                                                           : key ===
-                                                                                                                              "status"
+                                                                                                                              "approvalExpired"
                                                                                                                             ? value ===
-                                                                                                                                "expired" ||
-                                                                                                                              value ===
-                                                                                                                                "already_decided"
-                                                                                                                            : false;
+                                                                                                                              "true"
+                                                                                                                            : key ===
+                                                                                                                                "status"
+                                                                                                                              ? value ===
+                                                                                                                                  "expired" ||
+                                                                                                                                value ===
+                                                                                                                                  "already_decided"
+                                                                                                                              : false;
       if (!exists) fail(`receipt ${receipt.commandId} 的${key}引用无效`);
     }
     const receiptDefinitionId = receipt.resultRefs["workflowDefinitionId"];

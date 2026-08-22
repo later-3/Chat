@@ -1,6 +1,7 @@
 import {
   approvalDtoSchema,
   approvalRequestIdSchema,
+  agentVersionIdSchema,
   commandIdSchema,
   decisionDtoSchema,
   workflowExecutionTraceDtoSchema,
@@ -238,13 +239,15 @@ export const lifeosWorkflowOptionSchema = z
               "note_extractor",
             ]),
             profileVersion: z.string().min(1).max(128),
-            bindingKind: z.literal("agent_catalog"),
+            bindingKind: z.enum(["agent_catalog", "agent_version"]),
+            agentVersionId: agentVersionIdSchema.optional(),
+            agentVersionSha256: sha256Schema.optional(),
             promptPolicy: z.literal("agent_profile_plus_session_context"),
-            promptSource: z.enum(["agent_default", "workflow_override"]),
+            promptSource: z.enum(["agent_default", "agent_version", "workflow_override"]),
             promptOverrideMarkdown: z.string().max(65_536).optional(),
             toolPolicy: z
               .object({
-                kind: z.literal("runtime_locked"),
+                kind: z.enum(["runtime_locked", "agent_configuration"]),
                 summary: z.string().min(1).max(300),
                 defaultTools: z.array(z.string().min(1).max(80)).max(16),
               })

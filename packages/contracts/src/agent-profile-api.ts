@@ -1,22 +1,28 @@
 import { z } from "zod";
+import { agentKeySchema } from "./agent-key.js";
+import {
+  agentEnabledToolNamesSchema,
+  agentResourcesSchema,
+  agentRuntimeSchema,
+  agentVersionSchema,
+} from "./agent-configuration.js";
 import { sha256Schema } from "./hash.js";
-import { promptFragmentIdSchema, promptFragmentRevisionIdSchema } from "./ids.js";
+import {
+  agentVersionIdSchema,
+  promptFragmentIdSchema,
+  promptFragmentRevisionIdSchema,
+} from "./ids.js";
+import { promptFragmentScopeSchema } from "./prompt-fragment.js";
 
-export const AGENT_PROFILE_API_SCHEMA_VERSION = "chat-agent-profile-api.v1";
+export const AGENT_PROFILE_API_SCHEMA_VERSION = "chat-agent-profile-api.v2";
 
-export const agentKeySchema = z.enum([
-  "planner",
-  "direct",
-  "project_bootstrap",
-  "coding_executor",
-  "note_extractor",
-]);
+export { agentKeySchema, type AgentKey } from "./agent-key.js";
 
 export const agentToolDefinitionDtoSchema = z
   .object({
     name: z.string().min(1).max(80),
     description: z.string().min(1).max(500),
-    policy: z.literal("runtime_locked"),
+    policy: z.enum(["runtime_default", "runtime_locked"]),
   })
   .strict();
 
@@ -34,6 +40,7 @@ export const agentRuntimeVariantDtoSchema = z
     variantKey: z.string().regex(/^[a-z0-9][a-z0-9._-]{1,79}$/u),
     title: z.string().min(1).max(160),
     description: z.string().min(1).max(1_000),
+    capabilityCatalogSha256: sha256Schema,
     enabledToolNames: z.array(z.string().min(1).max(80)).max(32),
     piSystemPrompt: z
       .object({
@@ -44,6 +51,15 @@ export const agentRuntimeVariantDtoSchema = z
       })
       .strict(),
     tools: z.array(agentRuntimeToolDtoSchema).max(32),
+    resourceInventory: z
+      .object({
+        extensions: z.array(z.string().min(1).max(1_000)).max(128),
+        skills: z.array(z.string().min(1).max(1_000)).max(256),
+        promptTemplates: z.array(z.string().min(1).max(1_000)).max(256),
+        contextFiles: z.array(z.string().min(1).max(1_000)).max(128),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -55,12 +71,17 @@ export const agentRuntimeBaselineDtoSchema = z
     packageName: z.literal("@earendil-works/pi-coding-agent"),
     packageVersion: z.string().min(1).max(80),
     managedSource: z.literal("later-3/pi@codex/later-custom"),
-    compositionStrategy: z.literal("pi_default_or_custom_then_chat_runtime_then_context"),
+    managedSourceRevision: z.string().regex(/^[0-9a-f]{40}$/u),
+    compositionStrategy: z.enum([
+      "pi_runtime_then_agent_version_then_workflow_session_run_then_chat_context",
+      "pi_default_or_custom_then_chat_runtime_then_context",
+    ]),
     chatRuntimeAppend: z
       .object({
         bodyMarkdown: z.string().min(1).max(65_536),
         sha256: sha256Schema,
         sourceRelativePath: z.string().min(1).max(500),
+        appliesToVariantKeys: z.array(z.string().min(1).max(80)).max(16).default([]),
       })
       .strict(),
     variants: z.array(agentRuntimeVariantDtoSchema).min(1).max(16),
@@ -110,7 +131,9 @@ export const agentProfileDtoSchema = z
     systemPrompt: agentSystemPromptDtoSchema,
     runtimeBaseline: agentRuntimeBaselineDtoSchema.optional(),
     tools: z.array(agentToolDefinitionDtoSchema).max(32),
-    allowedActions: z.array(z.enum(["revise_prompt", "restore_default"])).max(2),
+    /** Principal创建的不可变完整Agent版本；内置默认继续由真实Runtime投影。 */
+    versions: z.array(agentVersionSchema).max(256),
+    allowedActions: z.array(z.enum(["revise_prompt", "restore_default", "create_version"])).max(3),
   })
   .strict();
 
@@ -138,9 +161,38 @@ export const restoreAgentPromptPayloadSchema = z
   })
   .strict();
 
-export type AgentKey = z.infer<typeof agentKeySchema>;
+/** 保存永远创建新的不可变Agent Version，不在原版本上就地修改。 */
+export const createAgentVersionPayloadSchema = z
+  .object({
+    title: z.string().trim().min(1).max(160),
+    description: z.string().trim().min(1).max(1_000),
+    scope: promptFragmentScopeSchema,
+    runtime: agentRuntimeSchema,
+    systemPrompt: z.discriminatedUnion("mode", [
+      z.object({ mode: z.literal("inherit_runtime") }).strict(),
+      z
+        .object({ mode: z.literal("replace"), bodyMarkdown: z.string().min(1).max(131_072) })
+        .strict(),
+    ]),
+    enabledToolNames: agentEnabledToolNamesSchema,
+    resources: agentResourcesSchema,
+    basedOnVersionId: agentVersionIdSchema.optional(),
+    basedOnVersionSha256: sha256Schema.optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if ((value.basedOnVersionId === undefined) !== (value.basedOnVersionSha256 === undefined)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["basedOnVersionId"],
+        message: "派生版本必须同时绑定Version ID与Hash",
+      });
+    }
+  });
+
 export type AgentRuntimeBaselineDto = z.infer<typeof agentRuntimeBaselineDtoSchema>;
 export type AgentProfileDto = z.infer<typeof agentProfileDtoSchema>;
 export type AgentProfilesDto = z.infer<typeof agentProfilesDtoSchema>;
 export type ReviseAgentPromptPayload = z.infer<typeof reviseAgentPromptPayloadSchema>;
 export type RestoreAgentPromptPayload = z.infer<typeof restoreAgentPromptPayloadSchema>;
+export type CreateAgentVersionPayload = z.infer<typeof createAgentVersionPayloadSchema>;

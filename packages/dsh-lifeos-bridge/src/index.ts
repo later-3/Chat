@@ -125,13 +125,13 @@ export async function apply(ctx: Context): Promise<void> {
   );
   bridgeRef.current = bridge;
   const promptStudio = new PromptStudioBridgeService(chat);
-  // 公网部署绝不能让远端浏览器启动服务器本机应用；只在无公开主机名的本地模式装配。
-  // Prompt来源属于Chat代码Catalog，不跟随未来可切换的工作对象Workspace。
+  // 来源文件属于Chat代码Catalog，不跟随未来可切换的工作对象Workspace。能力可以与
+  // 公开服务同进程装配，但HTTP边界只向loopback请求投影，公网浏览器永远不可调用。
   const promptSourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-  const promptSourceFiles =
-    publicHostname === undefined
-      ? await PromptSourceFileOpener.create({ repoRoot: promptSourceRoot, env: process.env })
-      : undefined;
+  const promptSourceFiles = await PromptSourceFileOpener.create({
+    repoRoot: promptSourceRoot,
+    env: process.env,
+  });
   const lifetime = new AbortController();
   ctx.effect(
     () => () => {

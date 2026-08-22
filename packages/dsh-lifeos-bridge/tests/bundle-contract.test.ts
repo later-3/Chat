@@ -188,6 +188,10 @@ test("session Prompt and Agent settings are separate surfaces", async () => {
     new URL("../src/client/WorkflowPicker.tsx", import.meta.url),
     "utf8",
   );
+  const resourceInventory = await readFile(
+    new URL("../src/client/RuntimeResourceInventory.tsx", import.meta.url),
+    "utf8",
+  );
   assert.match(client, /id: "lifeos-prompt-control-bar"/u);
   assert.match(controlBar, /<PromptComposer/u);
   assert.match(composer, /提示词/u);
@@ -201,10 +205,47 @@ test("session Prompt and Agent settings are separate surfaces", async () => {
   assert.match(agents, /Pi Coding Agent 运行时基线/u);
   assert.match(agents, /真实AgentSession构造结果/u);
   assert.match(agents, /Chat可管理的完整覆盖/u);
-  assert.match(workflowPicker, /Agent 默认模板/u);
-  assert.match(workflowPicker, /Workflow 节点实例/u);
+  assert.match(agents, /Agent Version/u);
+  assert.match(agents, /lifeos-agent-version-readonly/u);
+  assert.match(
+    agents,
+    /\{selected\.runtimeBaseline === undefined \|\| runtimeVariant === null \? null : \(\s*<section[\s\S]*?data-testid="lifeos-agent-runtime-baseline"/u,
+    "真实Runtime基线不能被create_version权限隐藏",
+  );
+  assert.match(
+    agents,
+    /\{selected\.runtimeBaseline !== undefined && !canManageVersions \? \([\s\S]*?data-testid="lifeos-agent-version-readonly"/u,
+    "无create_version权限的Agent必须明确显示只读说明",
+  );
+  assert.match(
+    agents,
+    /\{selected\.runtimeBaseline === undefined \|\|\s*runtimeVariant === null \|\|\s*!canManageVersions \? null : \(\s*<section className="lifeos-agent-version-manager"/u,
+    "只有拥有create_version权限的Runtime Agent才能显示Version管理器",
+  );
+  assert.match(
+    agents,
+    /\/lifeos\/agents\/\$\{encodeURIComponent\(selected\.agentKey\)\}\/versions/u,
+  );
+  assert.match(agents, /appliesToVariantKeys/u);
+  assert.match(agents, /Agent Runtime Profile作用域/u);
+  assert.match(agents, /agentProfilesPath\(workspaceRootId\)/u);
+  assert.match(agents, /runtimeVariant\.resourceInventory/u);
+  assert.match(agents, /用 VS Code 打开/u);
+  assert.match(client, /hooks: \{ promptStudio \}/u);
+  assert.match(workflowPicker, /Workflow Agent 节点/u);
+  assert.match(workflowPicker, /Agent Version \/ Workflow节点/u);
   assert.match(workflowPicker, /本次会话临时修改/u);
   assert.match(workflowPicker, /保存到 Workflow/u);
+  assert.match(workflowPicker, /resolvePromptWorkspace\(\)/u);
+  assert.match(workflowPicker, /workspaceRootId=\$\{encodeURIComponent\(workspaceRootId\)\}/u);
+  assert.match(workflowPicker, /来自当前DSH Session/u);
+  assert.match(workflowPicker, /runtimeVariant\.resourceInventory/u);
+  assert.match(resourceInventory, /Runtime 资源清单/u);
+  assert.match(resourceInventory, /portable ID \/ 路径/u);
+  assert.match(resourceInventory, /本版按类别启停，逐项选择尚未接入/u);
+  for (const resource of ["Extensions", "Skills", "Prompt Templates", "Context Files"]) {
+    assert.match(resourceInventory, new RegExp(resource, "u"));
+  }
   assert.match(sendPreview, /本次 Prompt 与发送边界/u);
   assert.match(sendPreview, /与正式发送共用Workflow Compiler和Prompt Compiler/u);
   assert.match(sendPreview, /lifeos-prompt-turn-preview/u);

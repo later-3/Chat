@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { createServer, request as httpRequest, type IncomingMessage } from "node:http";
 import test from "node:test";
+import { agentProfileDtoSchema, agentVersionSchema } from "@chat/contracts/public";
 import { BridgeRequestError } from "../src/bridge-service.ts";
 import { ChatProductApiError } from "../src/chat-client.ts";
 import { DshSessionHistoryAccessError } from "../src/dsh-session-history.ts";
 import {
   assertSameOriginRequest,
   createLifeosRouteHandler,
+  parseAgentProfilesQuery,
   parseSessionRecordsChatQuery,
   parseSessionRecordsDshQuery,
 } from "../src/http-route.ts";
@@ -156,6 +158,8 @@ test("Workflow Agent节点配置同源路由只代理strict Chat命令", async (
       sourceDefinitionSha256: "a".repeat(64),
       definitionNodeId: "planning.plan",
       agentKey: "planner",
+      agentVersionId: "avn_workflowconfig1",
+      agentVersionSha256: "b".repeat(64),
       promptOverrideMarkdown: "Workflow专属Prompt",
     },
   };
@@ -172,6 +176,15 @@ test("Workflow Agent节点配置同源路由只代理strict Chat命令", async (
         await call("/lifeos/workflow/agent-node-configurations", {
           ...valid,
           payload: { ...valid.payload, executorKey: "arbitrary" },
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await call("/lifeos/workflow/agent-node-configurations", {
+          ...valid,
+          payload: { ...valid.payload, agentVersionSha256: undefined },
         })
       ).status,
       400,
@@ -203,12 +216,24 @@ test("Prompt来源文件只通过同源白名单打开器路由", async () => {
   } as unknown as PromptSourceFileOpener;
   const service = {} as LifeosBridgeService;
   const server = createServer(
-    createLifeosRouteHandler(service, 43_110, () => undefined, undefined, undefined, sourceFiles),
+    createLifeosRouteHandler(
+      service,
+      43_110,
+      () => undefined,
+      "chat.example.com",
+      undefined,
+      sourceFiles,
+    ),
   );
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   assert.ok(address !== null && typeof address === "object");
-  const call = async (method: "GET" | "POST", path: string, body?: unknown) =>
+  const call = async (
+    method: "GET" | "POST",
+    path: string,
+    body?: unknown,
+    authority: "loopback" | "public" = "loopback",
+  ) =>
     await new Promise<{ status: number | undefined; body: string }>((resolve, reject) => {
       const outgoing = httpRequest(
         {
@@ -217,8 +242,9 @@ test("Prompt来源文件只通过同源白名单打开器路由", async () => {
           path,
           method,
           headers: {
-            host: "localhost:43110",
-            origin: "http://localhost:43110",
+            host: authority === "loopback" ? "localhost:43110" : "chat.example.com",
+            origin:
+              authority === "loopback" ? "http://localhost:43110" : "https://chat.example.com",
             "sec-fetch-site": "same-origin",
             ...(body === undefined ? {} : { "content-type": "application/json" }),
           },
@@ -253,6 +279,216 @@ test("Prompt来源文件只通过同源白名单打开器路由", async () => {
       ).status,
       400,
     );
+    const publicOpeners = await call("GET", "/lifeos/prompts/source-openers", undefined, "public");
+    assert.equal(publicOpeners.status, 200);
+    assert.deepEqual(JSON.parse(publicOpeners.body), {
+      schemaVersion: "chat-prompt-source-openers.v1",
+      items: [],
+    });
+    const publicOpen = await call(
+      "POST",
+      "/lifeos/prompts/source-files/open",
+      { relativePath: "prompts/regions/catalog.md", openerId: "vscode" },
+      "public",
+    );
+    assert.equal(publicOpen.status, 409);
+    assert.equal(calls.length, 1);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error === undefined ? resolve() : reject(error))),
+    );
+  }
+});
+
+test("same-origin Agent Version routes forward typed create requests and immutable profile payloads", async () => {
+  const calls: unknown[] = [];
+  const version = agentVersionSchema.parse({
+    schemaVersion: "agent-version.v1",
+    agentVersionId: "avn_httproutev1",
+    agentKey: "direct",
+    ownerPrincipalId: "usr_debug",
+    scope: { kind: "global" },
+    version: 1,
+    title: "执行 Agent · 版本 1",
+    description: "HTTP路由合同测试版本。",
+    sha256: "c".repeat(64),
+    runtime: { kind: "pi_coding_agent", baseVariantKey: "read_only" },
+    baselineRef: {
+      packageName: "@earendil-works/pi-coding-agent",
+      packageVersion: "0.84.2",
+      managedSource: "later-3/pi@codex/later-custom",
+      managedSourceRevision: "a".repeat(40),
+      variantKey: "read_only",
+      capabilityCatalogSha256: "e".repeat(64),
+    },
+    systemPrompt: {
+      mode: "replace",
+      bodyMarkdown: "你是执行 Agent。",
+      sha256: "c".repeat(64),
+    },
+    enabledToolNames: ["read"],
+    resources: {
+      contextFiles: "inherit_runtime_default",
+      skills: "inherit_runtime_default",
+      promptTemplates: "inherit_runtime_default",
+      extensions: "inherit_runtime_default",
+    },
+    createdAt: "2026-08-22T00:00:00.000Z",
+  });
+  const profile = agentProfileDtoSchema.parse({
+    schemaVersion: "chat-agent-profile-api.v2",
+    agentKey: "direct",
+    title: "执行 Agent",
+    description: "HTTP路由合同测试。",
+    profileVersion: "direct-agent-prompt-profile.v1",
+    supportedNodeTypes: ["agent.direct"],
+    systemPrompt: {
+      source: "builtin",
+      mode: "replace",
+      promptFragmentId: "pfg_httproute",
+      promptFragmentRevisionId: "pfr_httproute",
+      revision: 1,
+      aggregateRevision: 0,
+      sha256: "b".repeat(64),
+      bodyMarkdown: "你是执行 Agent。",
+      sourceRelativePath: "prompts/fragments/agent-identity/direct-agent.md",
+    },
+    runtimeBaseline: {
+      kind: "pi_coding_agent",
+      title: "Pi Coding Agent",
+      packageName: "@earendil-works/pi-coding-agent",
+      packageVersion: "0.84.2",
+      managedSource: "later-3/pi@codex/later-custom",
+      managedSourceRevision: "a".repeat(40),
+      compositionStrategy: "pi_default_or_custom_then_chat_runtime_then_context",
+      chatRuntimeAppend: {
+        bodyMarkdown: "Chat runtime append",
+        sha256: "d".repeat(64),
+        sourceRelativePath: "packages/pi-runtime/src/coding-agent-runtime-profile.ts",
+      },
+      variants: [
+        {
+          variantKey: "read_only",
+          capabilityCatalogSha256: "e".repeat(64),
+          title: "Read only",
+          description: "只读",
+          enabledToolNames: ["read"],
+          piSystemPrompt: {
+            bodyMarkdown: "You are an expert coding assistant operating inside pi.",
+            sha256: "e".repeat(64),
+            dynamicPlaceholders: ["WORKSPACE_ROOT"],
+            sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
+          },
+          tools: [
+            {
+              name: "read",
+              description: "读取文件",
+              parametersJson: "{}",
+              sourceRelativePath: "pi/packages/coding-agent/src/core/tools/read.ts",
+            },
+          ],
+        },
+      ],
+      finalReviewNote: "最终内容以发送前审核为准。",
+    },
+    tools: [
+      {
+        name: "read",
+        description: "读取文件",
+        policy: "runtime_locked",
+      },
+    ],
+    versions: [version],
+    allowedActions: ["revise_prompt", "create_version"],
+  });
+  const created = agentProfileDtoSchema.parse({
+    ...profile,
+    versions: [
+      version,
+      {
+        ...version,
+        agentVersionId: "avn_httproutev2",
+        version: 2,
+        title: "执行 Agent · 版本 2",
+        description: "创建后的最新版本。",
+        sha256: "d".repeat(64),
+        basedOnVersionId: version.agentVersionId,
+      },
+    ],
+  });
+  const requestBody = {
+    commandId: "cmd_httproutev1",
+    payload: {
+      title: "执行 Agent · 版本 2",
+      description: "创建后的最新版本。",
+      scope: { kind: "global" },
+      runtime: { kind: "pi_coding_agent", baseVariantKey: "read_only" },
+      systemPrompt: { mode: "replace", bodyMarkdown: "你是执行 Agent。" },
+      enabledToolNames: ["read"],
+      resources: {
+        contextFiles: "inherit_runtime_default",
+        skills: "inherit_runtime_default",
+        promptTemplates: "inherit_runtime_default",
+        extensions: "inherit_runtime_default",
+      },
+      basedOnVersionId: version.agentVersionId,
+      basedOnVersionSha256: version.sha256,
+    },
+  };
+  const service = {
+    createAgentVersion: async (agentKey: string, request: unknown) => {
+      calls.push({ kind: "createAgentVersion", agentKey, request });
+      return created;
+    },
+  } as unknown as PromptStudioBridgeService;
+  const server = createServer(
+    createLifeosRouteHandler(
+      {} as LifeosBridgeService,
+      43_110,
+      () => undefined,
+      undefined,
+      service,
+    ),
+  );
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address !== null && typeof address === "object");
+  try {
+    const response = await new Promise<{ status: number | undefined; body: unknown }>(
+      (resolve, reject) => {
+        const request = httpRequest(
+          {
+            hostname: "127.0.0.1",
+            port: address.port,
+            path: "/lifeos/agents/direct/versions",
+            method: "POST",
+            headers: {
+              host: "localhost:43110",
+              origin: "http://localhost:43110",
+              "sec-fetch-site": "same-origin",
+              "content-type": "application/json",
+            },
+          },
+          (incoming) => {
+            const chunks: Buffer[] = [];
+            incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+            incoming.on("end", () =>
+              resolve({
+                status: incoming.statusCode,
+                body: JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown,
+              }),
+            );
+          },
+        );
+        request.on("error", reject);
+        request.end(JSON.stringify(requestBody));
+      },
+    );
+    assert.equal(response.status, 201);
+    assert.deepEqual(response.body, created);
+    assert.deepEqual(calls, [
+      { kind: "createAgentVersion", agentKey: "direct", request: requestBody },
+    ]);
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error === undefined ? resolve() : reject(error))),
@@ -293,6 +529,77 @@ test("session-record queries accept only bounded, non-repeated source cursors", 
     assert.throws(() => parseSessionRecordsDshQuery(new URL(url)), {
       code: "lifeos_session_records_query_invalid",
     });
+  }
+});
+
+test("Agent Profile query accepts only one optional Chat Workspace Root", () => {
+  assert.deepEqual(parseAgentProfilesQuery(new URL("http://localhost/lifeos/agents")), {});
+  assert.deepEqual(
+    parseAgentProfilesQuery(new URL("http://localhost/lifeos/agents?workspaceRootId=root_chat")),
+    { workspaceRootId: "root_chat" },
+  );
+  for (const url of [
+    "http://localhost/lifeos/agents?unexpected=1",
+    "http://localhost/lifeos/agents?workspaceRootId=root_chat&workspaceRootId=root_other",
+    "http://localhost/lifeos/agents?workspaceRootId=workspace_chat",
+    "http://localhost/lifeos/agents?workspaceRootId=root_",
+  ]) {
+    assert.throws(() => parseAgentProfilesQuery(new URL(url)), {
+      code: "lifeos_agent_profiles_query_invalid",
+    });
+  }
+});
+
+test("same-origin Agent Profile route forwards only validated workspace scopes", async () => {
+  const calls: unknown[] = [];
+  const studio = {
+    agents: async (query: unknown) => {
+      calls.push(query);
+      return { schemaVersion: "chat-agent-profile-api.v2", items: [] };
+    },
+  } as unknown as PromptStudioBridgeService;
+  const server = createServer(
+    createLifeosRouteHandler({} as LifeosBridgeService, 43_110, () => undefined, undefined, studio),
+  );
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address !== null && typeof address === "object");
+  const call = async (path: string) =>
+    await new Promise<{ status: number | undefined }>((resolve, reject) => {
+      const outgoing = httpRequest(
+        {
+          hostname: "127.0.0.1",
+          port: address.port,
+          path,
+          method: "GET",
+          headers: {
+            host: "localhost:43110",
+            origin: "http://localhost:43110",
+            "sec-fetch-site": "same-origin",
+          },
+        },
+        (incoming) => {
+          incoming.resume();
+          incoming.on("end", () => resolve({ status: incoming.statusCode }));
+        },
+      );
+      outgoing.on("error", reject);
+      outgoing.end();
+    });
+  try {
+    assert.equal((await call("/lifeos/agents")).status, 200);
+    assert.equal((await call("/lifeos/agents?workspaceRootId=root_chat")).status, 200);
+    assert.equal((await call("/lifeos/agents?unexpected=1")).status, 400);
+    assert.equal(
+      (await call("/lifeos/agents?workspaceRootId=root_chat&workspaceRootId=root_other")).status,
+      400,
+    );
+    assert.equal((await call("/lifeos/agents?workspaceRootId=workspace_chat")).status, 400);
+    assert.deepEqual(calls, [{}, { workspaceRootId: "root_chat" }]);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error === undefined ? resolve() : reject(error))),
+    );
   }
 });
 

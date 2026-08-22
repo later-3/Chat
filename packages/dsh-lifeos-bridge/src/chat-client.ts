@@ -28,6 +28,7 @@ import {
   type AgentProfilesDto,
   type AgentProfileDto,
   type AgentKey,
+  type CreateAgentVersionPayload,
   type ReviseAgentPromptPayload,
   type RestoreAgentPromptPayload,
   type SaveWorkflowAgentNodeConfigurationPayload,
@@ -382,6 +383,8 @@ export class ChatProductClient {
                   agentKey: node.agentBinding.agentKey,
                   profileVersion: node.agentBinding.profileVersion,
                   bindingKind: node.agentBinding.bindingKind,
+                  agentVersionId: node.agentBinding.agentVersionId,
+                  agentVersionSha256: node.agentBinding.agentVersionSha256,
                   promptPolicy: node.agentBinding.promptPolicy,
                   promptSource: node.agentBinding.promptSource,
                   promptOverrideMarkdown: node.agentBinding.promptOverrideMarkdown,
@@ -589,8 +592,15 @@ export class ChatProductClient {
     return this.request("/api/prompt-regions", promptRegionsDtoSchema, withSignal(signal));
   }
 
-  async getAgentProfiles(signal?: AbortSignal): Promise<AgentProfilesDto> {
-    return this.request("/api/agent-profiles", agentProfilesDtoSchema, withSignal(signal));
+  async getAgentProfiles(
+    workspaceRootId?: string,
+    signal?: AbortSignal,
+  ): Promise<AgentProfilesDto> {
+    const suffix =
+      workspaceRootId === undefined
+        ? ""
+        : `?workspaceRootId=${encodeURIComponent(workspaceRootId)}`;
+    return this.request(`/api/agent-profiles${suffix}`, agentProfilesDtoSchema, withSignal(signal));
   }
 
   async reviseAgentPrompt(
@@ -601,6 +611,23 @@ export class ChatProductClient {
   ): Promise<AgentProfileDto> {
     return this.request(
       `/api/agent-profiles/${encodeURIComponent(agentKey)}/prompt-revisions`,
+      agentProfileDtoSchema,
+      {
+        method: "POST",
+        body: JSON.stringify({ commandId, payload }),
+        ...withSignal(signal),
+      },
+    );
+  }
+
+  async createAgentVersion(
+    agentKey: AgentKey,
+    commandId: string,
+    payload: CreateAgentVersionPayload,
+    signal?: AbortSignal,
+  ): Promise<AgentProfileDto> {
+    return this.request(
+      `/api/agent-profiles/${encodeURIComponent(agentKey)}/versions`,
       agentProfileDtoSchema,
       {
         method: "POST",

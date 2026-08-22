@@ -7,6 +7,7 @@ import {
   agentProfileDtoSchema,
   agentProfilesDtoSchema,
   agentRuntimeBaselineDtoSchema,
+  toAgentVersionHashInput,
   beginPlanningContextResponseSchema,
   decisionDtoSchema,
   messageResponseSchema,
@@ -29,6 +30,7 @@ import {
   workflowRunViewDtoSchema,
   workflowNodeDetailDtoSchema,
   workflowDefinitionsDtoSchema,
+  workflowDefinitionCommandResultDtoSchema,
   currentPromptReviewResponseSchema,
   promptAssemblyPreviewDtoSchema,
   promptConfigurationPreviewDtoSchema,
@@ -88,36 +90,48 @@ const idCounter = 0;
 const now = (): string =>
   new Date(Date.parse("2026-08-07T12:00:00.000Z") + idCounter * 1000).toISOString();
 
-function testPiRuntimeBaseline(agentKey: AgentKey) {
-  const direct = agentKey === "direct" || agentKey === "project_bootstrap";
+function testPiRuntimeBaseline(agentKey: AgentKey, workspaceRootId?: string) {
+  const direct = agentKey === "direct";
+  const bootstrap = agentKey === "project_bootstrap";
   const variants = direct
-    ? [{ variantKey: "read_only", tools: ["read", "grep", "find", "ls"] }]
-    : agentKey === "coding_executor"
-      ? [
-          { variantKey: "markdown_text_compose", tools: [] },
-          {
-            variantKey: "workspace_write_shell",
-            tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
-          },
-        ]
-      : [];
+    ? [
+        {
+          variantKey: "pi_cli_default",
+          tools: ["read", "bash", "edit", "write"],
+        },
+      ]
+    : bootstrap
+      ? [{ variantKey: "read_only", tools: ["read", "grep", "find", "ls"] }]
+      : agentKey === "coding_executor"
+        ? [
+            { variantKey: "markdown_text_compose", tools: [] },
+            {
+              variantKey: "workspace_write_shell",
+              tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
+            },
+          ]
+        : [];
   if (variants.length === 0) return undefined;
-  return agentRuntimeBaselineDtoSchema.parse({
+  const baseline = agentRuntimeBaselineDtoSchema.parse({
     kind: "pi_coding_agent",
     title: "Pi Coding Agent",
     packageName: "@earendil-works/pi-coding-agent",
     packageVersion: "0.84.2",
     managedSource: "later-3/pi@codex/later-custom",
-    compositionStrategy: "pi_default_or_custom_then_chat_runtime_then_context",
+    managedSourceRevision: "1".repeat(40),
+    compositionStrategy:
+      "pi_runtime_then_agent_version_then_workflow_session_run_then_chat_context",
     chatRuntimeAppend: {
-      bodyMarkdown: direct ? "Direct Runtime Contract" : "Coding Runtime Contract",
+      bodyMarkdown: direct || bootstrap ? "Direct Runtime Contract" : "Coding Runtime Contract",
       sha256: "a".repeat(64),
       sourceRelativePath: "packages/pi-runtime/src/coding-agent-runtime-profile.ts",
+      appliesToVariantKeys: variants.map((variant) => variant.variantKey),
     },
     variants: variants.map((variant) => ({
       variantKey: variant.variantKey,
       title: variant.variantKey,
       description: `测试能力 ${variant.variantKey}`,
+      capabilityCatalogSha256: "2".repeat(64),
       enabledToolNames: variant.tools,
       piSystemPrompt: {
         bodyMarkdown: `You are an expert coding assistant operating inside pi. ${variant.variantKey}`,
@@ -133,6 +147,24 @@ function testPiRuntimeBaseline(agentKey: AgentKey) {
       })),
     })),
     finalReviewNote: "最终内容以发送前审核为准。",
+  });
+  if (agentKey !== "direct" || workspaceRootId !== "root_chat") return baseline;
+  return agentRuntimeBaselineDtoSchema.parse({
+    ...baseline,
+    variants: baseline.variants.map((variant) => ({
+      ...variant,
+      capabilityCatalogSha256: "3".repeat(64),
+      enabledToolNames: [...variant.enabledToolNames, "runtime_probe"],
+      tools: [
+        ...variant.tools,
+        {
+          name: "runtime_probe",
+          description: "Workspace extension tool",
+          parametersJson: "{}",
+          sourceRelativePath: "<WORKSPACE_ROOT>/.pi/extensions/runtime-probe.ts",
+        },
+      ],
+    })),
   });
 }
 
@@ -326,7 +358,7 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     projectBootstrapIds,
     promptCatalog,
     agentRuntimeProfiles: {
-      read: async (agentKey) => testPiRuntimeBaseline(agentKey),
+      read: async (agentKey, workspaceRootId) => testPiRuntimeBaseline(agentKey, workspaceRootId),
     },
     promptFiles: {
       publishRevision: async (input) => {
@@ -731,8 +763,8 @@ describe("公开产品API", () => {
             name: "capabilityMode",
             type: "enum_select",
             label: "能力模式",
-            defaultValue: "read_only",
-            options: ["read_only", "project_bootstrap"],
+            defaultValue: "pi_cli_default",
+            options: ["pi_cli_default", "read_only", "project_bootstrap"],
           },
           {
             name: "promptReviewMode",
@@ -1837,6 +1869,287 @@ describe("公开产品API", () => {
     expect(res.status).toBe(404);
   });
 
+  it("Agent Version API创建全局/Workspace不可变版本并把精确版本发布为新Workflow Revision", async () => {
+    const { app, deps } = await testApp();
+    const inheritedResources = {
+      contextFiles: "inherit_runtime_default",
+      skills: "inherit_runtime_default",
+      promptTemplates: "inherit_runtime_default",
+      extensions: "inherit_runtime_default",
+    } as const;
+    const firstCommandId = nextCmd();
+    const firstPayload = {
+      title: "Pi CLI 默认版本",
+      description: "继承Pi CLI默认System Prompt与编码能力。",
+      scope: { kind: "global" as const },
+      runtime: { kind: "pi_coding_agent" as const, baseVariantKey: "pi_cli_default" },
+      systemPrompt: { mode: "inherit_runtime" as const },
+      enabledToolNames: ["read", "bash", "edit", "write"] as const,
+      resources: inheritedResources,
+    };
+    const firstResponse = await postJson(app, "/api/agent-profiles/direct/versions", {
+      commandId: firstCommandId,
+      payload: firstPayload,
+    });
+    expect(firstResponse.status, await firstResponse.clone().text()).toBe(201);
+    const firstProfile = agentProfileDtoSchema.parse(await firstResponse.json());
+    expect(firstProfile.versions).toHaveLength(1);
+    const first = firstProfile.versions[0]!;
+    expect(first).toMatchObject({
+      agentKey: "direct",
+      ownerPrincipalId: DEBUG_PRINCIPAL_ID,
+      scope: { kind: "global" },
+      version: 1,
+      runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
+      systemPrompt: { mode: "inherit_runtime" },
+      enabledToolNames: ["read", "bash", "edit", "write"],
+      resources: inheritedResources,
+    });
+    expect(first.sha256).toBe(hashCanonical("agent-version.v1", toAgentVersionHashInput(first)));
+
+    const replayResponse = await postJson(app, "/api/agent-profiles/direct/versions", {
+      commandId: firstCommandId,
+      payload: firstPayload,
+    });
+    expect(replayResponse.status).toBe(201);
+    const replayed = agentProfileDtoSchema.parse(await replayResponse.json());
+    expect(replayed.versions.map((version) => version.agentVersionId)).toEqual([
+      first.agentVersionId,
+    ]);
+
+    const workspaceBody = "你是Chat工作区专用的编码Agent。";
+    const workspaceResponse = await postJson(app, "/api/agent-profiles/direct/versions", {
+      commandId: nextCmd(),
+      payload: {
+        title: "Chat Workspace版本",
+        description: "只允许在root_chat工作区使用。",
+        scope: { kind: "workspace", rootId: "root_chat" },
+        runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
+        systemPrompt: { mode: "replace", bodyMarkdown: workspaceBody },
+        enabledToolNames: ["read"],
+        resources: {
+          contextFiles: "disabled",
+          skills: "disabled",
+          promptTemplates: "disabled",
+          extensions: "disabled",
+        },
+      },
+    });
+    expect(workspaceResponse.status, await workspaceResponse.clone().text()).toBe(201);
+    const workspaceProfile = agentProfileDtoSchema.parse(await workspaceResponse.json());
+    const workspace = workspaceProfile.versions.find((version) => version.version === 2);
+    if (workspace === undefined || workspace.systemPrompt.mode !== "replace") {
+      throw new Error("缺少Workspace Agent Version");
+    }
+    expect(workspace.scope).toEqual({ kind: "workspace", rootId: "root_chat" });
+    expect(workspace.systemPrompt.sha256).toBe(
+      hashCanonical("agent-system-prompt.v1", { bodyMarkdown: workspaceBody }),
+    );
+    expect(workspace.sha256).toBe(
+      hashCanonical("agent-version.v1", toAgentVersionHashInput(workspace)),
+    );
+    expect(
+      workspaceProfile.runtimeBaseline?.variants
+        .find((variant) => variant.variantKey === "pi_cli_default")
+        ?.tools.map((tool) => tool.name),
+    ).toContain("runtime_probe");
+
+    const globalOnlyProfile = agentProfileDtoSchema.parse(
+      await (await app.request("/api/agent-profiles/direct")).json(),
+    );
+    expect(globalOnlyProfile.versions.map((version) => version.scope.kind)).toEqual(["global"]);
+    expect(
+      globalOnlyProfile.runtimeBaseline?.variants
+        .find((variant) => variant.variantKey === "pi_cli_default")
+        ?.tools.map((tool) => tool.name),
+    ).not.toContain("runtime_probe");
+    const scopedReadResponse = await app.request(
+      "/api/agent-profiles/direct?workspaceRootId=root_chat",
+    );
+    expect(scopedReadResponse.status).toBe(200);
+    const scopedReadProfile = agentProfileDtoSchema.parse(await scopedReadResponse.json());
+    expect(scopedReadProfile.versions.map((version) => version.scope.kind).sort()).toEqual([
+      "global",
+      "workspace",
+    ]);
+
+    const unknownRootProfile = await app.request(
+      "/api/agent-profiles/direct?workspaceRootId=root_missing",
+    );
+    expect(unknownRootProfile.status).toBe(403);
+    const unknownQuery = await app.request("/api/agent-profiles?unknown=1");
+    expect(unknownQuery.status).toBe(400);
+    const repeatedQuery = await app.request(
+      "/api/agent-profiles?workspaceRootId=root_chat&workspaceRootId=root_chat",
+    );
+    expect(repeatedQuery.status).toBe(400);
+
+    const derivedBody = "你是从全局默认版本派生的发布Agent。";
+    const derivedResponse = await postJson(app, "/api/agent-profiles/direct/versions", {
+      commandId: nextCmd(),
+      payload: {
+        title: "全局派生版本",
+        description: "用于Workflow精确绑定。",
+        scope: { kind: "global" },
+        runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
+        systemPrompt: { mode: "replace", bodyMarkdown: derivedBody },
+        enabledToolNames: ["read", "bash"],
+        resources: inheritedResources,
+        basedOnVersionId: first.agentVersionId,
+        basedOnVersionSha256: first.sha256,
+      },
+    });
+    expect(derivedResponse.status, await derivedResponse.clone().text()).toBe(201);
+    const derivedProfile = agentProfileDtoSchema.parse(await derivedResponse.json());
+    const derived = derivedProfile.versions.find((version) => version.version === 3);
+    if (derived === undefined) throw new Error("缺少全局派生Agent Version");
+    expect(derived).toMatchObject({
+      basedOnVersionId: first.agentVersionId,
+      scope: { kind: "global" },
+      enabledToolNames: ["read", "bash"],
+    });
+    expect(derived.sha256).toBe(
+      hashCanonical("agent-version.v1", toAgentVersionHashInput(derived)),
+    );
+
+    const beforeBinding = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const source = structuredClone(
+      beforeBinding.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID],
+    );
+    if (source === undefined) throw new Error("缺少Direct系统Workflow Revision");
+    const bindResponse = await postJson(
+      app,
+      "/api/workflow/definitions/agent-node-configurations",
+      {
+        commandId: nextCmd(),
+        payload: {
+          sourceWorkflowDefinitionRevisionId: source.workflowDefinitionRevisionId,
+          sourceDefinitionSha256: source.definitionSha256,
+          definitionNodeId: "direct.agent",
+          agentKey: "direct",
+          agentVersionId: derived.agentVersionId,
+          agentVersionSha256: derived.sha256,
+        },
+      },
+    );
+    expect(bindResponse.status, await bindResponse.clone().text()).toBe(201);
+    const bound = workflowDefinitionCommandResultDtoSchema.parse(await bindResponse.json());
+    expect(bound.affectedRevision?.state).toBe("published");
+    expect(bound.affectedRevision?.definitionRevision).toBe(1);
+    expect(bound.definition.ownerKind).toBe("principal");
+    expect(bound.definition.publishedRevision?.workflowDefinitionRevisionId).toBe(
+      bound.affectedRevision?.workflowDefinitionRevisionId,
+    );
+
+    const afterBinding = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(
+      afterBinding.entities.workflowDefinitionRevisions[source.workflowDefinitionRevisionId],
+    ).toEqual(source);
+    const published =
+      afterBinding.entities.workflowDefinitionRevisions[
+        bound.affectedRevision!.workflowDefinitionRevisionId
+      ];
+    if (published === undefined) throw new Error("缺少新发布Workflow Revision");
+    const directNode = published.semanticRoot.elements[0];
+    if (directNode?.kind !== "composite") throw new Error("新Workflow缺少Direct节点");
+    expect(directNode.config).toMatchObject({
+      capabilityMode: "pi_cli_default",
+      promptReviewMode: "manual",
+      agentKey: "direct",
+      agentVersionId: derived.agentVersionId,
+      agentVersionSha256: derived.sha256,
+    });
+    expect(published.basedOnRevisionId).toBe(source.workflowDefinitionRevisionId);
+    expect(published.definitionSha256).not.toBe(source.definitionSha256);
+
+    const codingProfileResponse = await app.request("/api/agent-profiles/coding_executor");
+    expect(codingProfileResponse.status).toBe(200);
+    const codingProfile = agentProfileDtoSchema.parse(await codingProfileResponse.json());
+    expect(codingProfile.allowedActions).not.toContain("create_version");
+    const unsupportedVersion = await postJson(app, "/api/agent-profiles/coding_executor/versions", {
+      commandId: nextCmd(),
+      payload: firstPayload,
+    });
+    expect(unsupportedVersion.status).toBe(403);
+
+    const bootstrapProfileResponse = await app.request("/api/agent-profiles/project_bootstrap");
+    expect(bootstrapProfileResponse.status).toBe(200);
+    const bootstrapProfile = agentProfileDtoSchema.parse(await bootstrapProfileResponse.json());
+    expect(bootstrapProfile.allowedActions).not.toContain("create_version");
+    const unsupportedBootstrapVersion = await postJson(
+      app,
+      "/api/agent-profiles/project_bootstrap/versions",
+      { commandId: nextCmd(), payload: firstPayload },
+    );
+    expect(unsupportedBootstrapVersion.status).toBe(403);
+  });
+
+  it("Agent Version拒绝跨Principal、未知Workspace及跨Scope派生", async () => {
+    const { app, deps } = await testApp();
+    const resources = {
+      contextFiles: "inherit_runtime_default",
+      skills: "inherit_runtime_default",
+      promptTemplates: "inherit_runtime_default",
+      extensions: "inherit_runtime_default",
+    } as const;
+    const baseResponse = await postJson(app, "/api/agent-profiles/direct/versions", {
+      commandId: nextCmd(),
+      payload: {
+        title: "全局基线",
+        description: "用于拒绝越权派生。",
+        scope: { kind: "global" },
+        runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
+        systemPrompt: { mode: "inherit_runtime" },
+        enabledToolNames: ["read", "bash", "edit", "write"],
+        resources,
+      },
+    });
+    const base = agentProfileDtoSchema.parse(await baseResponse.json()).versions[0]!;
+    const derivedPayload = {
+      title: "越权派生",
+      description: "该请求必须失败。",
+      scope: { kind: "global" as const },
+      runtime: { kind: "pi_coding_agent" as const, baseVariantKey: "pi_cli_default" },
+      systemPrompt: { mode: "inherit_runtime" as const },
+      enabledToolNames: ["read", "bash", "edit", "write"] as const,
+      resources,
+      basedOnVersionId: base.agentVersionId,
+      basedOnVersionSha256: base.sha256,
+    };
+    const otherApp = createApiApp({
+      traceSink: null,
+      product: { deps, principalId: "usr_agentversionother" as never },
+    });
+    const foreign = await postJson(otherApp, "/api/agent-profiles/direct/versions", {
+      commandId: "cmd_agentversionforeign1",
+      payload: derivedPayload,
+    });
+    expect(foreign.status).toBe(409);
+    expect(problemDetailSchema.parse(await foreign.json()).code).toBe("revision_conflict");
+
+    const unknownWorkspace = await postJson(app, "/api/agent-profiles/direct/versions", {
+      commandId: nextCmd(),
+      payload: {
+        ...derivedPayload,
+        scope: { kind: "workspace", rootId: "root_missing" },
+        basedOnVersionId: undefined,
+        basedOnVersionSha256: undefined,
+      },
+    });
+    expect(unknownWorkspace.status).toBe(403);
+    expect(problemDetailSchema.parse(await unknownWorkspace.json()).code).toBe("forbidden");
+
+    const crossScope = await postJson(app, "/api/agent-profiles/direct/versions", {
+      commandId: nextCmd(),
+      payload: {
+        ...derivedPayload,
+        scope: { kind: "workspace", rootId: "root_chat" },
+      },
+    });
+    expect(crossScope.status).toBe(409);
+    expect(problemDetailSchema.parse(await crossScope.json()).code).toBe("revision_conflict");
+  });
+
   it("会话Prompt与Agent Prompt独立管理，Workflow节点只冻结Agent绑定", async () => {
     const { app, deps } = await testApp();
     const regions = await app.request("/api/prompt-regions");
@@ -1903,11 +2216,9 @@ describe("公开产品API", () => {
     expect(directProfile.systemPrompt).toMatchObject({
       source: "runtime_default",
       mode: "inherit",
-      runtimeVariantKey: "read_only",
+      runtimeVariantKey: "pi_cli_default",
     });
-    expect(directProfile.tools.map((tool) => tool.name)).toEqual(
-      expect.arrayContaining(["read", "grep", "find", "ls"]),
-    );
+    expect(directProfile.tools.map((tool) => tool.name)).toEqual(["read", "bash", "edit", "write"]);
     const projectBootstrapProfile = profiles.items.find(
       (item) => item.agentKey === "project_bootstrap",
     );

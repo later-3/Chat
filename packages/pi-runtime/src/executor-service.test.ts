@@ -312,6 +312,7 @@ describe("Pi Executor Service + Client", () => {
       packageName: "@earendil-works/pi-coding-agent",
       packageVersion: "0.84.2",
       managedSource: "later-3/pi@codex/later-custom",
+      managedSourceRevision: "1".repeat(40),
       compositionStrategy: "pi_default_or_custom_then_chat_runtime_then_context",
       chatRuntimeAppend: {
         bodyMarkdown: "Chat runtime append",
@@ -323,6 +324,7 @@ describe("Pi Executor Service + Client", () => {
           variantKey: "read_only",
           title: "只读执行",
           description: "只读能力",
+          capabilityCatalogSha256: "c".repeat(64),
           enabledToolNames: ["read"],
           piSystemPrompt: {
             bodyMarkdown: "Pi runtime system prompt",
@@ -342,10 +344,11 @@ describe("Pi Executor Service + Client", () => {
       ],
       finalReviewNote: "最终内容以发送前审核为准。",
     });
+    const observedReads: [string, string | undefined][] = [];
     const runtime = createPiExecutorService({
       credential: "rtk_1234567890abcdef",
       store,
-      workspaceRoots: new Map(),
+      workspaceRoots: new Map([["root_chat", { rootId: "root_chat", canonicalPath: root }]]),
       emptyWorkspaceRoot: join(root, "empty"),
       agentDir: join(root, "agent"),
       sessionsDir: join(root, "sessions"),
@@ -354,7 +357,10 @@ describe("Pi Executor Service + Client", () => {
       },
       runner: new FakeRunner(),
       agentRuntimeProfiles: {
-        read: async (agentKey) => (agentKey === "direct" ? baseline : undefined),
+        read: async (agentKey, workspaceRootId) => {
+          observedReads.push([agentKey, workspaceRootId]);
+          return agentKey === "direct" ? baseline : undefined;
+        },
       },
     });
 
@@ -369,6 +375,26 @@ describe("Pi Executor Service + Client", () => {
     );
     expect(authorized.status).toBe(200);
     expect(await authorized.json()).toEqual(baseline);
+
+    const scoped = await runtime.app.request(
+      "http://executor.test/internal/pi-executor/v1/agent-runtime-profiles/direct?workspaceRootId=root_chat",
+      { headers: { "x-chat-runtime-key": "rtk_1234567890abcdef" } },
+    );
+    expect(scoped.status).toBe(200);
+    expect(observedReads).toContainEqual(["direct", "root_chat"]);
+
+    const unknownRoot = await runtime.app.request(
+      "http://executor.test/internal/pi-executor/v1/agent-runtime-profiles/direct?workspaceRootId=root_missing",
+      { headers: { "x-chat-runtime-key": "rtk_1234567890abcdef" } },
+    );
+    expect(unknownRoot.status).toBe(400);
+    expect(await unknownRoot.json()).toEqual({ errorCode: "executor.workspace_root_not_allowed" });
+
+    const invalidQuery = await runtime.app.request(
+      "http://executor.test/internal/pi-executor/v1/agent-runtime-profiles/direct?unknown=1",
+      { headers: { "x-chat-runtime-key": "rtk_1234567890abcdef" } },
+    );
+    expect(invalidQuery.status).toBe(400);
 
     const missing = await runtime.app.request(
       "http://executor.test/internal/pi-executor/v1/agent-runtime-profiles/planner",

@@ -1,7 +1,11 @@
 import { productSnapshotSchema } from "@chat/contracts";
 import { z } from "zod";
 
-const productSnapshotV16MainEntitiesSchema = productSnapshotSchema.shape.entities
+const productSnapshotV16PlaneEntitiesSchema = productSnapshotSchema.shape.entities
+  .omit({ agentVersions: true })
+  .strict();
+
+const productSnapshotV16MainEntitiesSchema = productSnapshotV16PlaneEntitiesSchema
   .omit({
     projectBootstrapCandidates: true,
     projectBootstrapDecisions: true,
@@ -20,7 +24,10 @@ export const productSnapshotV16MainSchema = productSnapshotSchema
 
 /** Plane开发分支曾发布的v16：四组初始化事实已经存在，迁移时必须完整保留。 */
 export const productSnapshotV16PlaneSchema = productSnapshotSchema
-  .extend({ schemaVersion: z.literal("chat-product-store.v16") })
+  .extend({
+    schemaVersion: z.literal("chat-product-store.v16"),
+    entities: productSnapshotV16PlaneEntitiesSchema,
+  })
   .strict();
 
 export const productSnapshotV16Schema = z.union([

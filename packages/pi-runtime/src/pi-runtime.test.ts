@@ -40,18 +40,27 @@ it("Pi Coding Agent配置投影直接来自真实AgentSession的System Prompt与
   const direct = await reader.read("direct");
   expect(direct?.title).toBe("Pi Coding Agent");
   expect(direct?.packageVersion).toBe("0.84.2");
-  expect(direct?.variants).toHaveLength(1);
-  expect(direct?.variants[0]?.piSystemPrompt.bodyMarkdown).toContain(
+  expect(direct?.variants).toHaveLength(2);
+  const piDefault = direct?.variants.find((variant) => variant.variantKey === "pi_cli_default");
+  expect(piDefault?.piSystemPrompt.bodyMarkdown).toContain(
     "You are an expert coding assistant operating inside pi",
   );
-  expect(direct?.variants[0]?.piSystemPrompt.bodyMarkdown).toContain("<WORKSPACE_ROOT>");
-  expect(direct?.variants[0]?.tools.map((tool) => tool.name)).toEqual([
+  expect(piDefault?.piSystemPrompt.bodyMarkdown).toContain("<WORKSPACE_ROOT>");
+  expect(piDefault?.tools.map((tool) => tool.name)).toEqual([
     "read",
+    "bash",
+    "edit",
+    "write",
     "grep",
     "find",
     "ls",
   ]);
-  expect(direct?.variants[0]?.tools[0]?.parametersJson).toContain('"type"');
+  expect(piDefault?.enabledToolNames).toEqual(["read", "bash", "edit", "write"]);
+  expect(piDefault?.piSystemPrompt.bodyMarkdown).not.toContain("Direct Agent只读节点");
+
+  const readOnly = direct?.variants.find((variant) => variant.variantKey === "read_only");
+  expect(readOnly?.tools.map((tool) => tool.name)).toEqual(["read", "grep", "find", "ls"]);
+  expect(readOnly?.tools[0]?.parametersJson).toContain('"type"');
   expect(direct?.chatRuntimeAppend.bodyMarkdown).toContain("Direct Agent只读节点");
 
   const projectBootstrap = await reader.read("project_bootstrap");
@@ -71,7 +80,7 @@ it("Pi Coding Agent配置投影直接来自真实AgentSession的System Prompt与
     "ls",
   ]);
   expect(coding?.chatRuntimeAppend.bodyMarkdown).toContain("Coding Executor节点");
-});
+}, 20_000);
 
 const planningInput: PlanningInputDto = {
   schemaVersion: "chat-internal-runtime.v1",

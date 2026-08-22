@@ -167,6 +167,17 @@ export async function saveWorkflowAgentNodeConfiguration(
       }
       const sourceDefinition = draft.entities.workflowDefinitions[source.workflowDefinitionId];
       if (sourceDefinition === undefined) throw notFound("Workflow Definition不存在");
+      if (input.payload.agentVersionId !== undefined) {
+        const agentVersion = draft.entities.agentVersions[input.payload.agentVersionId];
+        if (
+          agentVersion === undefined ||
+          agentVersion.ownerPrincipalId !== input.principalId ||
+          agentVersion.agentKey !== input.payload.agentKey ||
+          agentVersion.sha256 !== input.payload.agentVersionSha256
+        ) {
+          throw revisionConflict("Workflow引用的Agent Version不存在、无权访问或Hash已变化");
+        }
+      }
       const semanticRoot = configureAgentNode(source.semanticRoot, input.payload);
       const validated = validateDesignerRootFor(semanticRoot, source);
       if (!validated.success) throw invalidDefinition(validated.diagnostics);
@@ -281,13 +292,33 @@ function configureAgentNode(
         typeof element.config["agentPromptOverride"] === "string"
           ? element.config["agentPromptOverride"]
           : "";
+      const currentVersionId =
+        typeof element.config["agentVersionId"] === "string"
+          ? element.config["agentVersionId"]
+          : undefined;
+      const currentVersionSha256 =
+        typeof element.config["agentVersionSha256"] === "string"
+          ? element.config["agentVersionSha256"]
+          : undefined;
       const requestedOverride = payload.promptOverrideMarkdown?.trim()
         ? payload.promptOverrideMarkdown
         : "";
-      if (currentBinding.agentKey === payload.agentKey && currentOverride === requestedOverride) {
+      if (
+        currentBinding.agentKey === payload.agentKey &&
+        currentOverride === requestedOverride &&
+        currentVersionId === payload.agentVersionId &&
+        currentVersionSha256 === payload.agentVersionSha256
+      ) {
         throw revisionConflict("Workflow Agent节点配置没有变化");
       }
       const config: Record<string, unknown> = { ...element.config, agentKey: payload.agentKey };
+      if (payload.agentVersionId === undefined) {
+        delete config["agentVersionId"];
+        delete config["agentVersionSha256"];
+      } else {
+        config["agentVersionId"] = payload.agentVersionId;
+        config["agentVersionSha256"] = payload.agentVersionSha256;
+      }
       if (requestedOverride !== "") {
         config["agentPromptOverride"] = requestedOverride;
       } else {

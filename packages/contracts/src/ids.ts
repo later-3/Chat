@@ -53,6 +53,8 @@ export const promptFragmentIdSchema = prefixedId("pfg");
 export const promptFragmentRevisionIdSchema = prefixedId("pfr");
 /** 一次消息发送时冻结的Prompt组装事实；不是Workflow或Pi Runtime身份。 */
 export const promptAssemblyIdSchema = prefixedId("pma");
+/** Chat拥有的不可变Agent配置版本；不能复用Pi Runtime Session或Workflow身份。 */
+export const agentVersionIdSchema = prefixedId("avn");
 
 /* C1 长期上下文新增身份。均由服务端根据已提交产品身份确定性派生。 */
 export const contextRequestIdSchema = prefixedId("ctxr");
@@ -155,6 +157,7 @@ export type DirectAgentCandidateId = z.infer<typeof directAgentCandidateIdSchema
 export type PromptFragmentId = z.infer<typeof promptFragmentIdSchema>;
 export type PromptFragmentRevisionId = z.infer<typeof promptFragmentRevisionIdSchema>;
 export type PromptAssemblyId = z.infer<typeof promptAssemblyIdSchema>;
+export type AgentVersionId = z.infer<typeof agentVersionIdSchema>;
 export type ContextRequestId = z.infer<typeof contextRequestIdSchema>;
 export type MemoryQueryId = z.infer<typeof memoryQueryIdSchema>;
 export type MemoryResultSnapshotId = z.infer<typeof memoryResultSnapshotIdSchema>;

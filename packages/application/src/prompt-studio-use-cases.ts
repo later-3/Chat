@@ -1,6 +1,10 @@
 import {
   AGENT_PROFILE_API_SCHEMA_VERSION,
+  AGENT_VERSION_SCHEMA_VERSION,
   PROMPT_STUDIO_API_SCHEMA_VERSION,
+  agentVersionIdSchema,
+  agentVersionHashInputSchema,
+  agentVersionSchema,
   agentProfileDtoSchema,
   agentProfilesDtoSchema,
   promptFragmentCommandResultDtoSchema,
@@ -15,6 +19,7 @@ import {
   promptWorkspacesDtoSchema,
   type AgentKey,
   type AgentProfileDto,
+  type CreateAgentVersionPayload,
   type ChangePromptFragmentArchiveStatusPayload,
   type CommandId,
   type CopyPromptFragmentPayload,
@@ -919,11 +924,12 @@ async function agentProfileProjection(
   deps: ApplicationDeps,
   principalId: PrincipalId,
   agentKey: AgentKey,
+  workspaceRootId?: string,
 ): Promise<AgentProfileDto> {
   const catalog = await requireCatalog(deps).load();
   const definition = catalog.agents.find((agent) => agent.agentKey === agentKey);
   if (definition === undefined) throw notFound("Agent不存在");
-  const runtimeBaseline = await deps.agentRuntimeProfiles?.read(agentKey);
+  const runtimeBaseline = await deps.agentRuntimeProfiles?.read(agentKey, workspaceRootId);
   const defaultPrompt = definition.defaultPrompt;
   const builtinRevisionId = defaultPrompt.promptFragmentRevisionId;
   const builtin =
@@ -948,6 +954,17 @@ async function agentProfileProjection(
     throw new Error(`Agent ${agentKey} Pi运行时默认变体不存在`);
   }
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const versions = Object.values(snapshot.entities.agentVersions)
+    .filter(
+      (version) =>
+        version.ownerPrincipalId === principalId &&
+        version.agentKey === agentKey &&
+        (version.scope.kind === "global" || version.scope.rootId === workspaceRootId),
+    )
+    .sort(
+      (left, right) =>
+        right.createdAt.localeCompare(left.createdAt) || right.version - left.version,
+    );
   const aggregate = currentAgentOverride(snapshot, principalId, agentKey);
   const customRevision =
     aggregate === undefined
@@ -968,6 +985,18 @@ async function agentProfileProjection(
     customContent?.kind === "markdown";
   const builtinBodyMarkdown =
     builtin?.content.kind === "markdown" ? builtin.content.bodyMarkdown : undefined;
+  // Pi-backed Agent的默认Tool描述必须来自构造System Prompt时使用的同一个真实
+  // AgentSession投影，不能让Catalog里的一份手写摘要再次成为第二事实源。Catalog
+  // 只补充Pi基线之外、由Chat显式注册的产品Tool（例如项目初始化候选Tool）。
+  const runtimeTools = runtimeVariant?.tools.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+  }));
+  const runtimeToolNames = new Set(runtimeTools?.map((tool) => tool.name) ?? []);
+  const projectedTools = [
+    ...(runtimeTools ?? []),
+    ...definition.tools.filter((tool) => !runtimeToolNames.has(tool.name)),
+  ];
   return agentProfileDtoSchema.parse({
     schemaVersion: AGENT_PROFILE_API_SCHEMA_VERSION,
     agentKey,
@@ -1013,21 +1042,181 @@ async function agentProfileProjection(
             sourceRelativePaths: runtimeVariant!.piSystemPrompt.sourceRelativePaths,
           },
     ...(runtimeBaseline === undefined ? {} : { runtimeBaseline }),
-    tools: definition.tools.map((tool) => ({ ...tool, policy: "runtime_locked" as const })),
-    allowedActions: useCustom ? ["revise_prompt", "restore_default"] : ["revise_prompt"],
+    tools: projectedTools.map((tool) => ({
+      ...tool,
+      policy:
+        runtimeBaseline === undefined ? ("runtime_locked" as const) : ("runtime_default" as const),
+    })),
+    versions,
+    allowedActions: [
+      "revise_prompt",
+      ...(useCustom ? (["restore_default"] as const) : []),
+      ...(runtimeBaseline !== undefined && agentKey === "direct"
+        ? (["create_version"] as const)
+        : []),
+    ],
   });
+}
+
+/**
+ * 保存完整Agent配置时始终新增不可变Version；内置Agent Catalog和已有Version都不被覆盖。
+ * Workflow/Session/Run只引用Version ID+Hash，实际执行前仍会重新校验Runtime基线。
+ */
+export async function createAgentVersion(
+  deps: ApplicationDeps,
+  input: {
+    readonly principalId: PrincipalId;
+    readonly commandId: CommandId;
+    readonly agentKey: AgentKey;
+    readonly payload: CreateAgentVersionPayload;
+  },
+) {
+  assertScopeAllowed(deps, input.payload.scope);
+  const workspaceRootId =
+    input.payload.scope.kind === "workspace" ? input.payload.scope.rootId : undefined;
+  const profile = await agentProfileProjection(
+    deps,
+    input.principalId,
+    input.agentKey,
+    workspaceRootId,
+  );
+  if (input.agentKey !== "direct") {
+    throw forbidden("当前Agent节点尚未接入可执行的Agent Version消费链");
+  }
+  const runtimeBaseline = profile.runtimeBaseline;
+  if (runtimeBaseline === undefined || runtimeBaseline.kind !== "pi_coding_agent") {
+    throw forbidden("当前Agent Runtime尚不支持完整版本管理");
+  }
+  const runtimeVariant = runtimeBaseline.variants.find(
+    (variant) => variant.variantKey === input.payload.runtime.baseVariantKey,
+  );
+  if (runtimeVariant === undefined) {
+    throw revisionConflict("Agent Version引用的Pi运行基线不存在或已经变化");
+  }
+  const selectedToolNames = new Set(input.payload.enabledToolNames);
+  const orderedSelectedTools = runtimeVariant.tools
+    .map((tool) => tool.name)
+    .filter((toolName) => selectedToolNames.has(toolName));
+  if (
+    orderedSelectedTools.length !== input.payload.enabledToolNames.length ||
+    JSON.stringify(orderedSelectedTools) !== JSON.stringify(input.payload.enabledToolNames)
+  ) {
+    throw revisionConflict("Agent Version包含当前Pi目录不存在的Tool，或Tool顺序已经变化");
+  }
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const base =
+    input.payload.basedOnVersionId === undefined
+      ? undefined
+      : snapshot.entities.agentVersions[input.payload.basedOnVersionId];
+  if (
+    base !== undefined &&
+    (base.ownerPrincipalId !== input.principalId ||
+      base.agentKey !== input.agentKey ||
+      base.sha256 !== input.payload.basedOnVersionSha256 ||
+      JSON.stringify(base.scope) !== JSON.stringify(input.payload.scope))
+  ) {
+    throw revisionConflict("派生的Agent Version身份、所有者、Scope或Hash不匹配");
+  }
+  if (input.payload.basedOnVersionId !== undefined && base === undefined) {
+    throw notFound("派生的Agent Version不存在");
+  }
+  const now = deps.now();
+  const agentVersionId = agentVersionIdSchema.parse(
+    `avn_${hashCanonical("id.agent-version.v1", {
+      commandId: input.commandId,
+      agentKey: input.agentKey,
+    }).slice(0, 32)}`,
+  );
+  const versionNumber =
+    Math.max(
+      0,
+      ...Object.values(snapshot.entities.agentVersions)
+        .filter(
+          (version) =>
+            version.ownerPrincipalId === input.principalId && version.agentKey === input.agentKey,
+        )
+        .map((version) => version.version),
+    ) + 1;
+  const systemPrompt =
+    input.payload.systemPrompt.mode === "inherit_runtime"
+      ? ({ mode: "inherit_runtime" } as const)
+      : ({
+          mode: "replace" as const,
+          bodyMarkdown: input.payload.systemPrompt.bodyMarkdown,
+          sha256: hashCanonical("agent-system-prompt.v1", {
+            bodyMarkdown: input.payload.systemPrompt.bodyMarkdown,
+          }),
+        } as const);
+  const hashInput = agentVersionHashInputSchema.parse({
+    schemaVersion: AGENT_VERSION_SCHEMA_VERSION,
+    agentVersionId,
+    agentKey: input.agentKey,
+    ownerPrincipalId: input.principalId,
+    scope: input.payload.scope,
+    version: versionNumber,
+    title: input.payload.title,
+    description: input.payload.description,
+    runtime: input.payload.runtime,
+    baselineRef: {
+      packageName: runtimeBaseline.packageName,
+      packageVersion: runtimeBaseline.packageVersion,
+      managedSource: runtimeBaseline.managedSource,
+      managedSourceRevision: runtimeBaseline.managedSourceRevision,
+      variantKey: runtimeVariant.variantKey,
+      capabilityCatalogSha256: runtimeVariant.capabilityCatalogSha256,
+    },
+    systemPrompt,
+    enabledToolNames: input.payload.enabledToolNames,
+    resources: input.payload.resources,
+    ...(base === undefined ? {} : { basedOnVersionId: base.agentVersionId }),
+    createdAt: now,
+  });
+  const version = agentVersionSchema.parse({
+    ...hashInput,
+    sha256: hashCanonical("agent-version.v1", hashInput),
+  });
+  await deps.store.transact({
+    commandId: input.commandId,
+    commandType: "CreateAgentVersion",
+    requestSha256: hashCanonical("command.create-agent-version.v1", {
+      agentKey: input.agentKey,
+      payload: input.payload,
+    }),
+    mutate: (draft) => {
+      const currentNextVersion =
+        Math.max(
+          0,
+          ...Object.values(draft.entities.agentVersions)
+            .filter(
+              (candidate) =>
+                candidate.ownerPrincipalId === input.principalId &&
+                candidate.agentKey === input.agentKey,
+            )
+            .map((candidate) => candidate.version),
+        ) + 1;
+      if (currentNextVersion !== version.version) {
+        throw revisionConflict("Agent版本序号已经变化，请刷新后重新保存");
+      }
+      draft.entities.agentVersions[version.agentVersionId] = version;
+      return { resultRefs: { agentVersionId: version.agentVersionId } };
+    },
+  });
+  return agentProfileProjection(deps, input.principalId, input.agentKey, workspaceRootId);
 }
 
 export async function listAgentProfiles(
   deps: ApplicationDeps,
-  input: { readonly principalId: PrincipalId },
+  input: { readonly principalId: PrincipalId; readonly workspaceRootId?: string | undefined },
 ) {
+  if (input.workspaceRootId !== undefined) {
+    assertScopeAllowed(deps, { kind: "workspace", rootId: input.workspaceRootId });
+  }
   const catalog = await requireCatalog(deps).load();
   return agentProfilesDtoSchema.parse({
     schemaVersion: AGENT_PROFILE_API_SCHEMA_VERSION,
     items: await Promise.all(
       catalog.agents.map((agent) =>
-        agentProfileProjection(deps, input.principalId, agent.agentKey),
+        agentProfileProjection(deps, input.principalId, agent.agentKey, input.workspaceRootId),
       ),
     ),
   });
@@ -1035,9 +1224,16 @@ export async function listAgentProfiles(
 
 export async function getAgentProfile(
   deps: ApplicationDeps,
-  input: { readonly principalId: PrincipalId; readonly agentKey: AgentKey },
+  input: {
+    readonly principalId: PrincipalId;
+    readonly agentKey: AgentKey;
+    readonly workspaceRootId?: string | undefined;
+  },
 ) {
-  return agentProfileProjection(deps, input.principalId, input.agentKey);
+  if (input.workspaceRootId !== undefined) {
+    assertScopeAllowed(deps, { kind: "workspace", rootId: input.workspaceRootId });
+  }
+  return agentProfileProjection(deps, input.principalId, input.agentKey, input.workspaceRootId);
 }
 
 export async function reviseAgentPrompt(

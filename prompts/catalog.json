@@ -38,16 +38,12 @@
       "description": "复用Pi Coding Agent运行时，在当前会话和受权Workspace范围内直接完成请求。",
       "profileVersion": "direct-agent-prompt.v1",
       "supportedNodeTypes": ["agent.direct"],
-      "defaultPrompt": { "kind": "pi_coding_agent", "defaultVariantKey": "read_only" },
+      "defaultPrompt": { "kind": "pi_coding_agent", "defaultVariantKey": "pi_cli_default" },
       "tools": [
         { "name": "read", "description": "读取受权Workspace中的文件。" },
-        { "name": "grep", "description": "在受权Workspace中搜索文本。" },
-        { "name": "find", "description": "在受权Workspace中查找文件。" },
-        { "name": "ls", "description": "列出受权Workspace目录。" },
-        {
-          "name": "project_bootstrap_prepare",
-          "description": "仅在Workflow明确启用项目初始化能力时准备候选，不直接创建外部事实。"
-        }
+        { "name": "bash", "description": "执行当前Workspace中的Shell命令。" },
+        { "name": "edit", "description": "精确修改当前Workspace文件。" },
+        { "name": "write", "description": "创建或覆盖当前Workspace文件。" }
       ]
     },
     {

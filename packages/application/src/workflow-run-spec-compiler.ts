@@ -468,6 +468,10 @@ function resolvePolicyAndNodes(
   const enabled = new Map<string, boolean>();
   const reviewModes = new Map<string, WorkflowReviewMode>();
   const nodeConfigValues = new Map<string, Map<string, boolean | string | number>>();
+  const agentConfigurations = new Map<
+    string,
+    Extract<WorkflowRunOverride, { kind: "agent_configuration" }>
+  >();
   for (const override of context.configuration.overrides) {
     const key = overrideIdentity(override);
     if (overrideKeys.has(key)) {
@@ -495,6 +499,20 @@ function resolvePolicyAndNodes(
     const overrideRule = context.blueprint.perRunOverrides.find(
       (rule) => rule.nodeType === node.nodeType,
     );
+    if (override.kind === "agent_configuration") {
+      if (node.nodeType !== "agent.direct") {
+        diagnostics.push(
+          policyDiagnostic(
+            "run_configuration.override_not_allowed",
+            `$.overrides.${override.definitionNodeId}`,
+            { field: "agentConfiguration" },
+          ),
+        );
+        continue;
+      }
+      agentConfigurations.set(override.definitionNodeId, override);
+      continue;
+    }
     if (override.kind === "node_config") {
       if (!(overrideRule?.configFields ?? []).includes(override.field)) {
         diagnostics.push(
@@ -543,6 +561,34 @@ function resolvePolicyAndNodes(
     const configCandidate: Record<string, unknown> = { ...node.config };
     for (const [field, value] of nodeConfigValues.get(node.definitionNodeId) ?? []) {
       configCandidate[field] = value;
+    }
+    const agentConfiguration = agentConfigurations.get(node.definitionNodeId);
+    if (agentConfiguration?.configurationMode === "version") {
+      configCandidate["agentVersionId"] = agentConfiguration.agentVersionId;
+      configCandidate["agentVersionSha256"] = agentConfiguration.agentVersionSha256;
+      // 本次会话显式选择完整Agent Version时，历史Workflow的单段Prompt覆盖不能继续
+      // 以更高优先级生效，否则UI显示Version而Provider仍收到旧Prompt。
+      delete configCandidate["agentPromptOverride"];
+      delete configCandidate["agentTemporaryConfiguration"];
+    } else if (agentConfiguration?.configurationMode === "temporary") {
+      delete configCandidate["agentVersionId"];
+      delete configCandidate["agentVersionSha256"];
+      delete configCandidate["agentPromptOverride"];
+      configCandidate["capabilityMode"] = "custom";
+      configCandidate["enabledToolNames"] = agentConfiguration.enabledToolNames;
+      configCandidate["resourcePolicy"] = agentConfiguration.resources;
+      configCandidate["agentTemporaryConfiguration"] = {
+        runtime: agentConfiguration.runtime,
+        systemPrompt: agentConfiguration.systemPrompt,
+        enabledToolNames: agentConfiguration.enabledToolNames,
+        resources: agentConfiguration.resources,
+        ...(agentConfiguration.basedOnVersionId === undefined
+          ? {}
+          : {
+              basedOnVersionId: agentConfiguration.basedOnVersionId,
+              basedOnVersionSha256: agentConfiguration.basedOnVersionSha256,
+            }),
+      };
     }
     const parsedConfig = catalog.parseConfig(node.nodeType, node.schemaVersion, configCandidate);
     if (!parsedConfig.success) {

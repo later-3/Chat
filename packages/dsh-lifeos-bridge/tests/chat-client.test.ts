@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ChatProductClient } from "../src/chat-client.ts";
-import { productSessionIdSchema } from "@chat/contracts/public";
+import {
+  agentProfileDtoSchema,
+  agentProfilesDtoSchema,
+  agentVersionSchema,
+  createAgentVersionPayloadSchema,
+  productSessionIdSchema,
+} from "@chat/contracts/public";
 import { promptSelectionRequestSchema, workflowSelectionSchema } from "../src/contracts.ts";
 import { promptTurnPreviewFixture } from "./prompt-turn-preview-fixture.ts";
 
@@ -16,6 +22,122 @@ const finalMessage = {
   sha256: "a".repeat(64),
   createdAt: "2026-08-16T00:00:00.000Z",
 } as const;
+
+const agentVersion = agentVersionSchema.parse({
+  schemaVersion: "agent-version.v1",
+  agentVersionId: "avn_chatclientv1",
+  agentKey: "direct",
+  ownerPrincipalId: "usr_debug",
+  scope: { kind: "global" },
+  version: 1,
+  title: "执行 Agent · 版本 1",
+  description: "用于客户端版本合同测试。",
+  sha256: "c".repeat(64),
+  runtime: { kind: "pi_coding_agent", baseVariantKey: "read_only" },
+  baselineRef: {
+    packageName: "@earendil-works/pi-coding-agent",
+    packageVersion: "0.84.2",
+    managedSource: "later-3/pi@codex/later-custom",
+    managedSourceRevision: "a".repeat(40),
+    variantKey: "read_only",
+    capabilityCatalogSha256: "e".repeat(64),
+  },
+  systemPrompt: {
+    mode: "replace",
+    bodyMarkdown: "你是执行 Agent。",
+    sha256: "c".repeat(64),
+  },
+  enabledToolNames: ["read"],
+  resources: {
+    contextFiles: "inherit_runtime_default",
+    skills: "inherit_runtime_default",
+    promptTemplates: "inherit_runtime_default",
+    extensions: "inherit_runtime_default",
+  },
+  createdAt: "2026-08-22T00:00:00.000Z",
+});
+
+const agentProfile = agentProfileDtoSchema.parse({
+  schemaVersion: "chat-agent-profile-api.v2",
+  agentKey: "direct",
+  title: "执行 Agent",
+  description: "用于客户端版本合同测试。",
+  profileVersion: "direct-agent-prompt-profile.v1",
+  supportedNodeTypes: ["agent.direct"],
+  systemPrompt: {
+    source: "builtin",
+    mode: "replace",
+    promptFragmentId: "pfg_chatclientv1",
+    promptFragmentRevisionId: "pfr_chatclientv1",
+    revision: 1,
+    aggregateRevision: 3,
+    sha256: "b".repeat(64),
+    bodyMarkdown: "你是执行 Agent。",
+    sourceRelativePath: "prompts/fragments/agent-identity/direct-agent.md",
+  },
+  runtimeBaseline: {
+    kind: "pi_coding_agent",
+    title: "Pi Coding Agent",
+    packageName: "@earendil-works/pi-coding-agent",
+    packageVersion: "0.84.2",
+    managedSource: "later-3/pi@codex/later-custom",
+    managedSourceRevision: "a".repeat(40),
+    compositionStrategy: "pi_default_or_custom_then_chat_runtime_then_context",
+    chatRuntimeAppend: {
+      bodyMarkdown: "Chat runtime append",
+      sha256: "d".repeat(64),
+      sourceRelativePath: "packages/pi-runtime/src/coding-agent-runtime-profile.ts",
+    },
+    variants: [
+      {
+        variantKey: "read_only",
+        capabilityCatalogSha256: "e".repeat(64),
+        title: "Read only",
+        description: "只读",
+        enabledToolNames: ["read"],
+        piSystemPrompt: {
+          bodyMarkdown: "You are an expert coding assistant operating inside pi.",
+          sha256: "e".repeat(64),
+          dynamicPlaceholders: ["WORKSPACE_ROOT"],
+          sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
+        },
+        tools: [
+          {
+            name: "read",
+            description: "读取文件",
+            parametersJson: "{}",
+            sourceRelativePath: "pi/packages/coding-agent/src/core/tools/read.ts",
+          },
+        ],
+      },
+    ],
+    finalReviewNote: "最终内容以发送前审核为准。",
+  },
+  tools: [
+    {
+      name: "read",
+      description: "读取文件",
+      policy: "runtime_locked",
+    },
+  ],
+  versions: [agentVersion],
+  allowedActions: ["revise_prompt", "create_version"],
+});
+
+const createdAgentVersion = agentVersionSchema.parse({
+  ...agentVersion,
+  agentVersionId: "avn_chatclientv2",
+  version: 2,
+  title: "执行 Agent · 版本 2",
+  description: "创建 Agent Version 后返回的最新不可变版本。",
+  sha256: "d".repeat(64),
+  basedOnVersionId: agentVersion.agentVersionId,
+});
+
+const createdAgentProfile = agentProfileDtoSchema.parse({
+  ...agentProfile,
+  versions: [agentVersion, createdAgentVersion],
+});
 
 test("final message lookup uses the public exact query without scanning history", async () => {
   const urls: URL[] = [];
@@ -70,6 +192,66 @@ test("session records consume the public Product Session and opaque Message curs
   assert.equal(urls[1]?.pathname, `/api/sessions/${session.sessionId}/messages`);
   assert.equal(urls[1]?.searchParams.get("cursor"), "opaque-current");
   assert.equal(urls[1]?.searchParams.get("limit"), "50");
+});
+
+test("Agent profile queries and version creation preserve the immutable versions contract", async () => {
+  const requests: Array<{ url: URL; method: string; body?: unknown }> = [];
+  const client = new ChatProductClient(new URL("http://127.0.0.1:1"), async (input, init) => {
+    const url = new URL(String(input));
+    requests.push({
+      url,
+      method: init?.method ?? "GET",
+      ...(init?.body === undefined ? {} : { body: JSON.parse(String(init.body)) }),
+    });
+    if (url.pathname === "/api/agent-profiles") {
+      return new Response(
+        JSON.stringify(
+          agentProfilesDtoSchema.parse({
+            schemaVersion: "chat-agent-profile-api.v2",
+            items: [agentProfile],
+          }),
+        ),
+        { status: 200 },
+      );
+    }
+    if (url.pathname === "/api/agent-profiles/direct/versions") {
+      return new Response(JSON.stringify(createdAgentProfile), { status: 201 });
+    }
+    throw new Error(`unexpected request: ${url.pathname}`);
+  });
+
+  assert.deepEqual((await client.getAgentProfiles("root_chat")).items[0]?.versions, [agentVersion]);
+
+  const payload = createAgentVersionPayloadSchema.parse({
+    title: "执行 Agent · 版本 2",
+    description: "客户端版本化测试。",
+    scope: { kind: "global" },
+    runtime: { kind: "pi_coding_agent", baseVariantKey: "read_only" },
+    systemPrompt: {
+      mode: "replace",
+      bodyMarkdown: "你是执行 Agent。",
+    },
+    enabledToolNames: ["read"],
+    resources: {
+      contextFiles: "inherit_runtime_default",
+      skills: "inherit_runtime_default",
+      promptTemplates: "inherit_runtime_default",
+      extensions: "inherit_runtime_default",
+    },
+    basedOnVersionId: agentVersion.agentVersionId,
+    basedOnVersionSha256: agentVersion.sha256,
+  });
+
+  const created = await client.createAgentVersion("direct", "cmd_chatclientv1", payload);
+  assert.deepEqual(created.versions, [agentVersion, createdAgentVersion]);
+  assert.equal(requests[0]?.url.pathname, "/api/agent-profiles");
+  assert.equal(requests[0]?.url.search, "?workspaceRootId=root_chat");
+  assert.equal(requests[1]?.url.pathname, "/api/agent-profiles/direct/versions");
+  assert.equal(requests[1]?.method, "POST");
+  assert.deepEqual(requests[1]?.body, {
+    commandId: "cmd_chatclientv1",
+    payload,
+  });
 });
 
 test("Prompt Studio forwards workspace, scope filters, and semantic preview contracts", async () => {
@@ -233,6 +415,13 @@ test("submitMessage sends the frozen Prompt selection for every workflow", async
           field: "promptReviewMode",
           value: "off",
         },
+        {
+          kind: "agent_configuration",
+          definitionNodeId: "direct.agent",
+          configurationMode: "version",
+          agentVersionId: "avn_chatclientv1",
+          agentVersionSha256: "f".repeat(64),
+        },
       ],
     },
   });
@@ -241,6 +430,25 @@ test("submitMessage sends the frozen Prompt selection for every workflow", async
     definitionSha256: "d".repeat(64),
     title: "默认规划",
     blueprintKey: "planning",
+    runConfiguration: {
+      schemaVersion: "workflow-run-configuration.v1",
+      overrides: [
+        {
+          kind: "agent_configuration",
+          definitionNodeId: "planning.execute",
+          configurationMode: "temporary",
+          runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
+          systemPrompt: { mode: "inherit_runtime" },
+          enabledToolNames: ["read", "bash", "edit", "write"],
+          resources: {
+            contextFiles: "inherit_runtime_default",
+            skills: "inherit_runtime_default",
+            promptTemplates: "inherit_runtime_default",
+            extensions: "inherit_runtime_default",
+          },
+        },
+      ],
+    },
   });
   const selection = promptSelectionRequestSchema.shape.promptSelection.parse({
     schemaVersion: "prompt-turn-selection-input.v1",
@@ -276,5 +484,10 @@ test("submitMessage sends the frozen Prompt selection for every workflow", async
   assert.deepEqual(
     (bodies[1] as { payload?: { promptSelection?: unknown } }).payload?.promptSelection,
     selection,
+  );
+  assert.deepEqual(
+    (bodies[1] as { payload?: { workflowSelection?: { runConfiguration?: unknown } } }).payload
+      ?.workflowSelection?.runConfiguration,
+    planning.runConfiguration,
   );
 });

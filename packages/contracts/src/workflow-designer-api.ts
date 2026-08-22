@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { sha256Schema } from "./hash.js";
 import {
+  agentVersionIdSchema,
   principalIdSchema,
   workflowDefinitionIdSchema,
   workflowDefinitionRevisionIdSchema,
@@ -272,9 +273,20 @@ export const saveWorkflowAgentNodeConfigurationPayloadSchema = z
     sourceDefinitionSha256: sha256Schema,
     definitionNodeId: workflowDefinitionNodeIdSchema,
     agentKey: agentKeySchema,
+    agentVersionId: agentVersionIdSchema.optional(),
+    agentVersionSha256: sha256Schema.optional(),
     promptOverrideMarkdown: z.string().max(65_536).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if ((value.agentVersionId === undefined) !== (value.agentVersionSha256 === undefined)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["agentVersionId"],
+        message: "Workflow Agent版本必须同时绑定ID与Hash",
+      });
+    }
+  });
 
 export const saveWorkflowDefinitionDraftPayloadSchema = z
   .object({

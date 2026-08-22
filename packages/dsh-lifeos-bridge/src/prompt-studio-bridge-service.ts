@@ -3,6 +3,7 @@ import {
   changePromptFragmentArchiveStatusPayloadSchema,
   commandIdSchema,
   copyPromptFragmentPayloadSchema,
+  createAgentVersionPayloadSchema,
   createPromptFragmentPayloadSchema,
   previewPromptAssemblyPayloadSchema,
   previewPromptConfigurationPayloadSchema,
@@ -42,6 +43,9 @@ export const agentPromptReviseRequestSchema = z
 export const agentPromptRestoreRequestSchema = z
   .object({ commandId: commandIdSchema, payload: restoreAgentPromptPayloadSchema })
   .strict();
+export const agentVersionCreateRequestSchema = z
+  .object({ commandId: commandIdSchema, payload: createAgentVersionPayloadSchema })
+  .strict();
 
 /** DSH Host只做同源协议转换；Prompt Catalog、Revision和CAS仍由Chat公开API拥有。 */
 export class PromptStudioBridgeService {
@@ -55,8 +59,8 @@ export class PromptStudioBridgeService {
     return this.chat.getPromptWorkspaces();
   }
 
-  agents() {
-    return this.chat.getAgentProfiles();
+  agents({ workspaceRootId }: { readonly workspaceRootId?: string } = {}) {
+    return this.chat.getAgentProfiles(workspaceRootId);
   }
 
   reviseAgent(agentKey: string, request: z.infer<typeof agentPromptReviseRequestSchema>) {
@@ -69,6 +73,14 @@ export class PromptStudioBridgeService {
 
   restoreAgent(agentKey: string, request: z.infer<typeof agentPromptRestoreRequestSchema>) {
     return this.chat.restoreAgentPrompt(
+      agentKeySchema.parse(agentKey),
+      request.commandId,
+      request.payload,
+    );
+  }
+
+  createAgentVersion(agentKey: string, request: z.infer<typeof agentVersionCreateRequestSchema>) {
+    return this.chat.createAgentVersion(
       agentKeySchema.parse(agentKey),
       request.commandId,
       request.payload,

@@ -12,11 +12,7 @@ import {
   workflowRunSpecIdSchema,
 } from "@chat/contracts";
 import { z } from "zod";
-import {
-  piOperationIdSchema,
-  piRuntimeSessionIdSchema,
-  piToolNameSchema,
-} from "./executor-service-contract.js";
+import { piOperationIdSchema, piRuntimeSessionIdSchema } from "./executor-service-contract.js";
 
 /** Direct Agent是独立私有协议，不借用已批准Plan的Execution Contract。 */
 export const PI_DIRECT_EXECUTOR_PROTOCOL_VERSION = "pi-direct-executor.v1";
@@ -26,6 +22,12 @@ const stableErrorCodeSchema = z
   .string()
   .regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/u)
   .max(80);
+/** Direct Agent可选择Pi Extension/Chat Adapter注册的Tool，不能把Journal合同锁死为内置7个。 */
+export const directAgentRuntimeToolNameSchema = z
+  .string()
+  .min(1)
+  .max(80)
+  .regex(/^[A-Za-z][A-Za-z0-9_.:-]*$/u);
 export const directAgentLimitsSchema = z
   .object({
     maxProviderRequests: z.literal(DIRECT_AGENT_MAX_PROVIDER_REQUESTS),
@@ -39,7 +41,7 @@ export const authorizedDirectAgentProfileSchema = z
     runRevision: z.number().int().positive(),
     sourceMessageId: messageIdSchema,
     sourceMessageSha256: sha256Schema,
-    capabilityMode: z.enum(["read_only", "project_bootstrap"]),
+    capabilityMode: z.enum(["pi_cli_default", "custom", "read_only", "project_bootstrap"]),
     limits: directAgentLimitsSchema,
   })
   .strict();
@@ -161,7 +163,9 @@ export const piDirectExecutorEventSchema = z.discriminatedUnion("type", [
       ...eventBase,
       type: z.literal("session.started"),
       sessionId: piRuntimeSessionIdSchema,
-      enabledTools: z.array(piToolNameSchema).max(4),
+      enabledTools: z.array(directAgentRuntimeToolNameSchema).max(32),
+      /** optional只用于读取P0修复前的既有Operation文件；新事件始终写入。 */
+      resolvedRuntimeManifestSha256: sha256Schema.optional(),
     })
     .strict(),
   z
@@ -170,6 +174,9 @@ export const piDirectExecutorEventSchema = z.discriminatedUnion("type", [
       type: z.literal("session.resumed"),
       sessionId: piRuntimeSessionIdSchema,
       checkpointSha256: sha256Schema,
+      /** 旧Operation没有这两个字段；恢复后的新事件记录真实绑定结果。 */
+      enabledTools: z.array(directAgentRuntimeToolNameSchema).max(32).optional(),
+      resolvedRuntimeManifestSha256: sha256Schema.optional(),
     })
     .strict(),
   z
@@ -222,7 +229,7 @@ export const piDirectExecutorEventSchema = z.discriminatedUnion("type", [
       type: z.literal("tool.intent_persisted"),
       sessionId: piRuntimeSessionIdSchema,
       toolCallId: z.string().min(1).max(160),
-      toolName: piToolNameSchema,
+      toolName: directAgentRuntimeToolNameSchema,
       inputSha256: sha256Schema,
     })
     .strict(),
@@ -232,7 +239,7 @@ export const piDirectExecutorEventSchema = z.discriminatedUnion("type", [
       type: z.enum(["tool.completed", "tool.failed", "tool.outcome_unknown"]),
       sessionId: piRuntimeSessionIdSchema,
       toolCallId: z.string().min(1).max(160),
-      toolName: piToolNameSchema,
+      toolName: directAgentRuntimeToolNameSchema,
       resultSha256: sha256Schema.optional(),
     })
     .strict(),

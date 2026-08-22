@@ -8,6 +8,7 @@ import {
   MODEL_CONFIG_VERSION,
   agentKeySchema,
   agentRuntimeBaselineDtoSchema,
+  promptWorkspaceRootIdSchema,
   authorizeExecutorOperationResponseSchema,
   type AuthorizeExecutorOperationRequest,
   type AuthorizeExecutorOperationResponse,
@@ -18,7 +19,10 @@ import {
   PiCodingAgentExecutionError,
   type PiCodingAgentRunner,
 } from "./coding-agent-executor.js";
-import { createPiAgentRuntimeProfileReader } from "./coding-agent-runtime-profile.js";
+import {
+  createPiAgentRuntimeProfileReader,
+  PiAgentRuntimeProfileWorkspaceRootNotFoundError,
+} from "./coding-agent-runtime-profile.js";
 import {
   PiExecutorOperationConflictError,
   PiExecutorOperationNotFoundError,
@@ -97,6 +101,7 @@ function stableServiceErrorCode(error: unknown): string {
 }
 
 function statusForError(error: unknown): 400 | 401 | 404 | 409 | 500 {
+  if (error instanceof PiAgentRuntimeProfileWorkspaceRootNotFoundError) return 400;
   if (error instanceof PiExecutorOperationConflictError) return 409;
   if (error instanceof PiExecutorOperationNotFoundError) return 404;
   if (error instanceof PiCodingAgentExecutionError) return 400;
@@ -105,6 +110,9 @@ function statusForError(error: unknown): 400 | 401 | 404 | 409 | 500 {
 }
 
 function problem(error: unknown): { readonly errorCode: string } {
+  if (error instanceof PiAgentRuntimeProfileWorkspaceRootNotFoundError) {
+    return { errorCode: "executor.workspace_root_not_allowed" };
+  }
   if (
     error instanceof PiExecutorOperationConflictError ||
     error instanceof PiExecutorOperationNotFoundError
@@ -121,7 +129,13 @@ function problem(error: unknown): { readonly errorCode: string } {
 export function createPiExecutorService(options: PiExecutorServiceOptions) {
   const app = new Hono();
   const runner = options.runner ?? new AgentSessionPiCodingAgentRunner();
-  const agentRuntimeProfiles = options.agentRuntimeProfiles ?? createPiAgentRuntimeProfileReader();
+  const agentRuntimeProfiles =
+    options.agentRuntimeProfiles ??
+    createPiAgentRuntimeProfileReader({
+      previewCwd: options.emptyWorkspaceRoot,
+      agentDir: options.agentDir,
+      workspaceRoots: options.workspaceRoots,
+    });
   const active = new Map<string, AbortController>();
   const tasks = new Set<Promise<void>>();
 
@@ -138,8 +152,22 @@ export function createPiExecutorService(options: PiExecutorServiceOptions) {
 
   app.get("/internal/pi-executor/v1/agent-runtime-profiles/:agentKey", async (c) => {
     try {
+      const params = new URL(c.req.url).searchParams;
+      if (
+        [...params.keys()].some((key) => key !== "workspaceRootId") ||
+        params.getAll("workspaceRootId").length > 1
+      ) {
+        throw new z.ZodError([]);
+      }
+      const workspaceRootId = promptWorkspaceRootIdSchema
+        .optional()
+        .parse(params.get("workspaceRootId") ?? undefined);
+      if (workspaceRootId !== undefined && !options.workspaceRoots.has(workspaceRootId)) {
+        throw new PiAgentRuntimeProfileWorkspaceRootNotFoundError(workspaceRootId);
+      }
       const profile = await agentRuntimeProfiles.read(
         agentKeySchema.parse(c.req.param("agentKey")),
+        workspaceRootId,
       );
       if (profile === undefined)
         return c.json({ errorCode: "executor.agent_profile_not_found" }, 404);

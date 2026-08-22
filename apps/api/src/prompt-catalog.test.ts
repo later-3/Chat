@@ -52,7 +52,7 @@ describe("File Prompt Catalog workspace instructions", () => {
     );
     expect(snapshot.agents.find((agent) => agent.agentKey === "direct")?.defaultPrompt).toEqual({
       kind: "pi_coding_agent",
-      defaultVariantKey: "read_only",
+      defaultVariantKey: "pi_cli_default",
     });
     expect(
       snapshot.agents.find((agent) => agent.agentKey === "coding_executor")?.defaultPrompt,

@@ -143,7 +143,7 @@ export const authorizeDirectAgentOperationRuntimeResponseSchema = z
         })
         .strict(),
     ]),
-    capabilityMode: z.enum(["read_only", "project_bootstrap"]),
+    capabilityMode: z.enum(["pi_cli_default", "custom", "read_only", "project_bootstrap"]),
     projectBootstrapContext: z
       .object({
         providerKind: z.literal("plane_ce"),

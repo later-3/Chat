@@ -10,6 +10,7 @@ import {
 
 test("Prompt来源只允许Catalog与受管Workspace文件，并把本机已安装编辑器投影给浏览器", async () => {
   const root = await mkdtemp(join(tmpdir(), "chat-prompt-source-open-"));
+  const managedPiRoot = await mkdtemp(join(tmpdir(), "chat-prompt-source-pi-"));
   const outside = await mkdtemp(join(tmpdir(), "chat-prompt-source-outside-"));
   const launched: { id: string; absolutePath: string }[] = [];
   try {
@@ -17,6 +18,10 @@ test("Prompt来源只允许Catalog与受管Workspace文件，并把本机已安�
     await mkdir(resolve(root, "prompts/fragments/rules"), { recursive: true });
     await mkdir(resolve(root, ".data/prompts/global/rules/pfg_one"), { recursive: true });
     await mkdir(resolve(root, ".chat/prompts/rules/pfg_two"), { recursive: true });
+    await mkdir(resolve(root, "packages/pi-runtime/src"), { recursive: true });
+    await mkdir(resolve(managedPiRoot, "packages/coding-agent/src/core/tools"), {
+      recursive: true,
+    });
     await writeFile(resolve(root, "prompts/regions/catalog.md"), "# Regions\n", "utf8");
     await writeFile(resolve(root, "prompts/fragments/rules/evidence.md"), "# Evidence\n", "utf8");
     await writeFile(resolve(root, "AGENTS.md"), "# Workspace\n", "utf8");
@@ -31,6 +36,21 @@ test("Prompt来源只允许Catalog与受管Workspace文件，并把本机已安�
       "utf8",
     );
     await writeFile(resolve(outside, "outside.md"), "outside\n", "utf8");
+    await writeFile(
+      resolve(root, "packages/pi-runtime/src/direct-agent-executor.ts"),
+      "export {};\n",
+      "utf8",
+    );
+    await writeFile(
+      resolve(managedPiRoot, "packages/coding-agent/src/core/system-prompt.ts"),
+      "export {};\n",
+      "utf8",
+    );
+    await writeFile(
+      resolve(managedPiRoot, "packages/coding-agent/src/core/tools/read.ts"),
+      "export {};\n",
+      "utf8",
+    );
     await symlink(resolve(outside, "outside.md"), resolve(root, "prompts/fragments/escape.md"));
     await writeFile(
       resolve(root, "prompts/catalog.json"),
@@ -45,6 +65,7 @@ test("Prompt来源只允许Catalog与受管Workspace文件，并把本机已安�
     );
     const opener = await PromptSourceFileOpener.create({
       repoRoot: root,
+      managedPiRoot,
       env: {
         CHAT_PROJECT_ROOTS_JSON: JSON.stringify([
           {
@@ -73,6 +94,18 @@ test("Prompt来源只允许Catalog与受管Workspace文件，并把本机已安�
     });
     await opener.open({ relativePath: "root_chat/AGENTS.md", openerId: "vscode" });
     await opener.open({
+      relativePath: "packages/pi-runtime/src/direct-agent-executor.ts",
+      openerId: "vscode",
+    });
+    await opener.open({
+      relativePath: "pi/packages/coding-agent/src/core/system-prompt.ts",
+      openerId: "vscode",
+    });
+    await opener.open({
+      relativePath: "pi/packages/coding-agent/src/core/tools/read.ts",
+      openerId: "vscode",
+    });
+    await opener.open({
       relativePath: "root_chat/.chat/prompts/rules/pfg_two/pfr_two.md",
       openerId: "vscode",
     });
@@ -86,6 +119,24 @@ test("Prompt来源只允许Catalog与受管Workspace文件，并把本机已安�
         absolutePath: await realpath(resolve(root, "prompts/fragments/rules/evidence.md")),
       },
       { id: "vscode", absolutePath: await realpath(resolve(root, "AGENTS.md")) },
+      {
+        id: "vscode",
+        absolutePath: await realpath(
+          resolve(root, "packages/pi-runtime/src/direct-agent-executor.ts"),
+        ),
+      },
+      {
+        id: "vscode",
+        absolutePath: await realpath(
+          resolve(managedPiRoot, "packages/coding-agent/src/core/system-prompt.ts"),
+        ),
+      },
+      {
+        id: "vscode",
+        absolutePath: await realpath(
+          resolve(managedPiRoot, "packages/coding-agent/src/core/tools/read.ts"),
+        ),
+      },
       {
         id: "vscode",
         absolutePath: await realpath(resolve(root, ".chat/prompts/rules/pfg_two/pfr_two.md")),
@@ -110,6 +161,18 @@ test("Prompt来源只允许Catalog与受管Workspace文件，并把本机已安�
         error.code === "lifeos_prompt_source_not_found",
     );
     await assert.rejects(
+      opener.open({ relativePath: "packages/application/src/index.ts", openerId: "vscode" }),
+      (error) =>
+        error instanceof PromptSourceFileOpenError &&
+        error.code === "lifeos_prompt_source_not_found",
+    );
+    await assert.rejects(
+      opener.open({ relativePath: "pi/packages/coding-agent/README.md", openerId: "vscode" }),
+      (error) =>
+        error instanceof PromptSourceFileOpenError &&
+        error.code === "lifeos_prompt_source_not_found",
+    );
+    await assert.rejects(
       opener.open({ relativePath: "prompts/fragments/escape.md", openerId: "vscode" }),
       (error) =>
         error instanceof PromptSourceFileOpenError &&
@@ -117,6 +180,7 @@ test("Prompt来源只允许Catalog与受管Workspace文件，并把本机已安�
     );
   } finally {
     await rm(root, { recursive: true, force: true });
+    await rm(managedPiRoot, { recursive: true, force: true });
     await rm(outside, { recursive: true, force: true });
   }
 });

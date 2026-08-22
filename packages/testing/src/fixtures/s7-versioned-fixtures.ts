@@ -58,6 +58,7 @@ import {
   migrateProductSnapshotV14ToV15,
   migrateProductSnapshotV15ToV16,
   migrateProductSnapshotV16ToV17,
+  migrateProductSnapshotV17ToV18,
   productSnapshotV1Schema,
   productSnapshotV10Schema,
   type ProductSnapshotV10,
@@ -266,7 +267,7 @@ export async function buildS7VersionedFixture(
 }
 
 export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot): ProductSnapshot {
-  if (snapshot.schemaVersion === "chat-product-store.v17") return structuredClone(snapshot);
+  if (snapshot.schemaVersion === "chat-product-store.v18") return structuredClone(snapshot);
   const v2 =
     snapshot.schemaVersion === "chat-product-store.v1"
       ? migrateProductSnapshotV1ToV2(snapshot)
@@ -291,8 +292,10 @@ export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot):
     v14.schemaVersion === "chat-product-store.v14" ? migrateProductSnapshotV14ToV15(v14) : v14;
   const v16 =
     v15.schemaVersion === "chat-product-store.v15" ? migrateProductSnapshotV15ToV16(v15) : v15;
+  const v17 =
+    v16.schemaVersion === "chat-product-store.v16" ? migrateProductSnapshotV16ToV17(v16) : v16;
   return productSnapshotSchema.parse(
-    v16.schemaVersion === "chat-product-store.v16" ? migrateProductSnapshotV16ToV17(v16) : v16,
+    v17.schemaVersion === "chat-product-store.v17" ? migrateProductSnapshotV17ToV18(v17) : v17,
   );
 }
 
@@ -324,6 +327,7 @@ function toV10Fixture(snapshot: ProductSnapshot): ProductSnapshotV10 {
   delete entities["projectBootstrapDecisions"];
   delete entities["projectBootstrapOperations"];
   delete entities["projectWorkspaceBindings"];
+  delete entities["agentVersions"];
   return productSnapshotV10Schema.parse(downgraded);
 }
 

@@ -1,8 +1,14 @@
 import { z } from "zod";
+import {
+  agentEnabledToolNamesSchema,
+  agentResourcesSchema,
+  agentRuntimeSchema,
+} from "./agent-configuration.js";
 import { sha256Schema } from "./hash.js";
 import { noteKindSchema, noteSourceRefSchema, noteTagsSchema } from "./note.js";
 import {
   productRunIdSchema,
+  agentVersionIdSchema,
   principalIdSchema,
   workflowDefinitionIdSchema,
   workflowDefinitionRevisionIdSchema,
@@ -391,11 +397,63 @@ const nodeConfigOverrideSchema = z
   })
   .strict();
 
+export const temporaryAgentSystemPromptSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("inherit_runtime") }).strict(),
+  z.object({ mode: z.literal("replace"), bodyMarkdown: z.string().min(1).max(131_072) }).strict(),
+]);
+
+/**
+ * Agent配置是一个有结构、有上限的专用覆盖，不借`node_config`字符串注入任意JSON。
+ * Bridge可把它作为当前DSH会话草稿重复用于后续Run；每个Run仍会在RunSpec中冻结副本。
+ */
+const agentTemporaryConfigurationFields = {
+  runtime: agentRuntimeSchema,
+  systemPrompt: temporaryAgentSystemPromptSchema,
+  enabledToolNames: agentEnabledToolNamesSchema,
+  resources: agentResourcesSchema,
+  basedOnVersionId: agentVersionIdSchema.optional(),
+  basedOnVersionSha256: sha256Schema.optional(),
+} as const;
+
+export const agentTemporaryConfigurationSchema = z
+  .object(agentTemporaryConfigurationFields)
+  .strict()
+  .superRefine((value, ctx) => {
+    if ((value.basedOnVersionId === undefined) !== (value.basedOnVersionSha256 === undefined)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["basedOnVersionId"],
+        message: "临时Agent配置必须同时绑定来源Version ID与Hash",
+      });
+    }
+  });
+
+export const agentConfigurationOverrideSchema = z.discriminatedUnion("configurationMode", [
+  z
+    .object({
+      kind: z.literal("agent_configuration"),
+      definitionNodeId: workflowDefinitionNodeIdSchema,
+      configurationMode: z.literal("version"),
+      agentVersionId: agentVersionIdSchema,
+      agentVersionSha256: sha256Schema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("agent_configuration"),
+      definitionNodeId: workflowDefinitionNodeIdSchema,
+      configurationMode: z.literal("temporary"),
+      ...agentTemporaryConfigurationFields,
+    })
+    .strict(),
+]);
+
 export const workflowRunOverrideSchema = z.discriminatedUnion("kind", [
   nodeEnabledOverrideSchema,
   resourceSelectionOverrideSchema,
   reviewModeOverrideSchema,
   nodeConfigOverrideSchema,
+  agentConfigurationOverrideSchema,
 ]);
 
 export const workflowRunConfigurationSchema = z

@@ -5,13 +5,14 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
+  createAgentSessionServices,
   defineTool,
-  DefaultResourceLoader,
   ModelRuntime,
   SessionManager,
   SettingsManager,
   type AgentSession,
   type ExtensionFactory,
+  type ResourceLoader,
   type ToolCallEvent,
   type ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
@@ -27,9 +28,13 @@ import {
   PromptReviewWaitInterruptedError,
 } from "./prompt-review-gate.js";
 import { governedUserPromptLayer } from "./prompt-layers.js";
-import { CHAT_DIRECT_AGENT_RUNTIME_PROMPT } from "./coding-agent-runtime-profile.js";
+import {
+  CHAT_DIRECT_AGENT_RUNTIME_PROMPT,
+  resolvePiRuntimeManifest,
+  type ResolvedPiRuntimeManifest,
+} from "./coding-agent-runtime-profile.js";
 
-/** P1固定运行配置；审核正文禁止隐藏推理字段，因此生成与默认值都关闭thinking。 */
+/** 仅用于读取历史Prompt Assembly v1；新Run的默认值由Pi CLI基线与Agent配置决定。 */
 export const P1_DIRECT_AGENT_PROFILE = {
   providerId: "dashscope-coding",
   modelId: "qwen3.7-plus",
@@ -42,6 +47,7 @@ export const P1_DIRECT_AGENT_PROFILE = {
   noExtensions: true,
 } as const;
 const PROJECT_BOOTSTRAP_TOOL = "project_bootstrap_prepare";
+const WORKSPACE_PATH_SCOPED_TOOLS = new Set(["read", "grep", "find", "ls", "edit", "write"]);
 
 export class DirectAgentExecutionError extends Error {
   constructor(readonly code: string) {
@@ -72,7 +78,7 @@ export interface DirectAgentRunInput {
   readonly agentDir: string;
   readonly sessionsDir: string;
   readonly store: PiDirectExecutorOperationStore;
-  readonly capabilityMode: "read_only" | "project_bootstrap";
+  readonly capabilityMode: "pi_cli_default" | "custom" | "read_only" | "project_bootstrap";
   readonly projectBootstrapContext?: {
     readonly providerKind: "plane_ce";
     readonly providerVersion: string;
@@ -129,7 +135,7 @@ function createControlledJournalExtension(input: {
       if (!input.allowedTools.includes(event.toolName)) {
         throw new DirectAgentExecutionError("direct_executor.tool_not_allowed");
       }
-      if (P1_DIRECT_AGENT_PROFILE.enabledTools.includes(event.toolName as never)) {
+      if (WORKSPACE_PATH_SCOPED_TOOLS.has(event.toolName)) {
         const path = "path" in event.input ? event.input.path : undefined;
         await assertExecutorWorkspacePath(path ?? ".", input.workspaceRoot);
       }
@@ -157,6 +163,59 @@ function createControlledJournalExtension(input: {
       });
     });
   };
+}
+
+function inheritsPiRuntimeToolDefaults(tools: PromptAssemblyV2["tools"]): boolean {
+  const selectionMode = "selectionMode" in tools ? tools.selectionMode : undefined;
+  return (
+    selectionMode === "inherit_runtime_default" ||
+    (selectionMode === undefined && tools.capabilityMode === "pi_cli_default")
+  );
+}
+
+/**
+ * Direct在Extension完成session_start绑定后才冻结运行清单。显式能力必须与真实active
+ * Tool逐项一致；默认能力则继承Settings与Extension最终结果，并同步更新Journal allow-set。
+ */
+export async function bindAndRecordDirectRuntime(input: {
+  readonly session: AgentSession;
+  readonly resourceLoader: ResourceLoader;
+  readonly cwd: string;
+  readonly agentDir: string;
+  readonly tools: PromptAssemblyV2["tools"];
+  readonly journalAllowedTools: string[];
+  readonly operationId: string;
+  readonly store: Pick<PiDirectExecutorOperationStore, "setSession">;
+  readonly resumedFromCheckpointSha256?: string;
+}): Promise<ResolvedPiRuntimeManifest> {
+  await input.session.bindExtensions({ mode: "print" });
+  const resolved = resolvePiRuntimeManifest({
+    session: input.session,
+    resourceLoader: input.resourceLoader,
+    cwd: input.cwd,
+    agentDir: input.agentDir,
+  });
+  if (
+    !inheritsPiRuntimeToolDefaults(input.tools) &&
+    JSON.stringify(resolved.enabledToolNames) !== JSON.stringify(input.tools.names)
+  ) {
+    throw new DirectAgentExecutionError("direct_executor.active_tool_manifest_mismatch");
+  }
+  input.journalAllowedTools.splice(
+    0,
+    input.journalAllowedTools.length,
+    ...resolved.enabledToolNames,
+  );
+  await input.store.setSession({
+    operationId: input.operationId,
+    sessionId: input.session.sessionId,
+    enabledTools: resolved.enabledToolNames,
+    resolvedRuntimeManifestSha256: resolved.sha256,
+    ...(input.resumedFromCheckpointSha256 === undefined
+      ? {}
+      : { resumedFromCheckpointSha256: input.resumedFromCheckpointSha256 }),
+  });
+  return resolved;
 }
 
 function createProjectBootstrapExtension(input: {
@@ -268,20 +327,31 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
     }
     assertAllowedBailianHost(modelUrl.hostname);
 
-    const settingsManager = SettingsManager.inMemory({
+    // 从Pi自己的global/project Settings读取Package、Extension、Skill与默认资源配置，
+    // 再只覆盖本次已经冻结在Agent配置中的模型循环选项。这样默认Agent不会丢失
+    // Pi CLI的配置能力，限制版也仍由同一个SDK边界执行。
+    const settingsManager = SettingsManager.create(input.cwd, input.agentDir);
+    settingsManager.applyOverrides({
       retry: {
         enabled: input.requestOptions.retryEnabled,
-        provider: { maxRetries: 0 },
+        provider: { maxRetries: input.requestOptions.retryEnabled ? 3 : 0 },
       },
       compaction: { enabled: input.requestOptions.compactionEnabled },
-      branchSummary: { skipPrompt: P1_DIRECT_AGENT_PROFILE.branchSummarySkipPrompt },
+      branchSummary: {
+        skipPrompt:
+          input.tools.capabilityMode === "pi_cli_default"
+            ? false
+            : P1_DIRECT_AGENT_PROFILE.branchSummarySkipPrompt,
+      },
       defaultThinkingLevel: input.requestOptions.thinkingLevel,
     });
     const sessionId = `pis_${input.request.operationId.slice(4)}`;
     if (input.tools.capabilityMode !== input.capabilityMode) {
       throw new DirectAgentExecutionError("direct_executor.capability_manifest_mismatch");
     }
-    const allowedTools = [...new Set(input.tools.names)];
+    const frozenToolNames = [...new Set(input.tools.names)];
+    const inheritRuntimeToolDefaults = inheritsPiRuntimeToolDefaults(input.tools);
+    const journalAllowedTools = inheritRuntimeToolDefaults ? [] : [...frozenToolNames];
     if (
       input.capabilityMode === "project_bootstrap" &&
       (input.projectBootstrapContext === undefined || input.projectBootstrapProduct === undefined)
@@ -293,7 +363,7 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       sessionId,
       workspaceRoot: input.cwd,
       store: input.store,
-      allowedTools,
+      allowedTools: journalAllowedTools,
     });
     const projectBootstrapExtension =
       input.capabilityMode === "project_bootstrap"
@@ -315,38 +385,58 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
             "project_bootstrap_prepare只预检并保存候选；候选必须由用户确认后，Chat Application才会创建Git Workspace和Plane项目。",
           ].join("\n");
     const userPromptLayer = governedUserPromptLayer(input.systemPromptAppend);
-    const resourceLoader = new DefaultResourceLoader({
+    const resourcePolicy =
+      input.tools.resources ??
+      (input.tools.capabilityMode === "pi_cli_default"
+        ? {
+            contextFiles: "inherit_runtime_default" as const,
+            skills: "inherit_runtime_default" as const,
+            promptTemplates: "inherit_runtime_default" as const,
+            extensions: "inherit_runtime_default" as const,
+          }
+        : {
+            contextFiles: "disabled" as const,
+            skills: "disabled" as const,
+            promptTemplates: "disabled" as const,
+            extensions: "disabled" as const,
+          });
+    const restrictedRuntimePrompt =
+      input.tools.capabilityMode === "read_only" ||
+      input.tools.capabilityMode === "project_bootstrap"
+        ? CHAT_DIRECT_AGENT_RUNTIME_PROMPT
+        : undefined;
+    const services = await createAgentSessionServices({
       cwd: input.cwd,
       agentDir: input.agentDir,
+      modelRuntime,
       settingsManager,
-      extensionFactories: [
-        { name: "chat-direct-operation-journal", factory: journalExtension, hidden: true },
-        ...(projectBootstrapExtension === undefined
-          ? []
-          : [
-              {
-                name: "chat-project-bootstrap-tools",
-                factory: projectBootstrapExtension,
-                hidden: true,
-              },
-            ]),
-      ],
-      noExtensions: P1_DIRECT_AGENT_PROFILE.noExtensions,
-      noSkills: true,
-      noPromptTemplates: true,
-      noContextFiles: true,
-      systemPromptOverride: () =>
-        input.piSystemPrompt?.mode === "replace" ? input.piSystemPrompt.bodyMarkdown : undefined,
-      // 不传systemPrompt，明确复用固定Pi版本的默认基础Prompt；空字符串在Pi中会
-      // truthy回退，语义含混。AGENTS/Skill/Template仍由上面的fail-closed开关禁用。
-      appendSystemPrompt: [
-        CHAT_DIRECT_AGENT_RUNTIME_PROMPT,
-        ...(projectBootstrapPrompt === undefined ? [] : [projectBootstrapPrompt]),
-        ...(userPromptLayer === undefined ? [] : [userPromptLayer]),
-      ],
-      noThemes: true,
+      resourceLoaderOptions: {
+        extensionFactories: [
+          { name: "chat-direct-operation-journal", factory: journalExtension, hidden: true },
+          ...(projectBootstrapExtension === undefined
+            ? []
+            : [
+                {
+                  name: "chat-project-bootstrap-tools",
+                  factory: projectBootstrapExtension,
+                  hidden: true,
+                },
+              ]),
+        ],
+        noExtensions: resourcePolicy.extensions === "disabled",
+        noSkills: resourcePolicy.skills === "disabled",
+        noPromptTemplates: resourcePolicy.promptTemplates === "disabled",
+        noContextFiles: resourcePolicy.contextFiles === "disabled",
+        systemPromptOverride: () =>
+          input.piSystemPrompt?.mode === "replace" ? input.piSystemPrompt.bodyMarkdown : undefined,
+        appendSystemPrompt: [
+          ...(restrictedRuntimePrompt === undefined ? [] : [restrictedRuntimePrompt]),
+          ...(projectBootstrapPrompt === undefined ? [] : [projectBootstrapPrompt]),
+          ...(userPromptLayer === undefined ? [] : [userPromptLayer]),
+        ],
+        noThemes: true,
+      },
     });
-    await resourceLoader.reload();
 
     let sessionManager: SessionManager;
     let resumedCheckpointSha256: string | undefined;
@@ -401,8 +491,8 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       modelRuntime,
       model,
       thinkingLevel: input.requestOptions.thinkingLevel,
-      tools: allowedTools,
-      resourceLoader,
+      ...(inheritRuntimeToolDefaults ? {} : { tools: frozenToolNames }),
+      resourceLoader: services.resourceLoader,
       sessionManager,
       settingsManager,
       providerRequestGate: async (payload, payloadModel) => {
@@ -439,10 +529,15 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       },
     });
     sessionForProviderGate.current = session;
-    await input.store.setSession({
+    await bindAndRecordDirectRuntime({
+      session,
+      resourceLoader: services.resourceLoader,
+      cwd: input.cwd,
+      agentDir: input.agentDir,
+      tools: input.tools,
+      journalAllowedTools,
       operationId: input.request.operationId,
-      sessionId: session.sessionId,
-      enabledTools: allowedTools,
+      store: input.store,
       ...(resumedCheckpointSha256 === undefined
         ? {}
         : { resumedFromCheckpointSha256: resumedCheckpointSha256 }),

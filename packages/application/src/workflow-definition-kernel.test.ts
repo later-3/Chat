@@ -135,8 +135,8 @@ describe("Node Catalog与Blueprint一致性", () => {
           },
           {
             name: "capabilityMode",
-            defaultValue: "read_only",
-            options: ["read_only", "project_bootstrap"],
+            defaultValue: "pi_cli_default",
+            options: ["pi_cli_default", "read_only", "project_bootstrap"],
           },
           {
             name: "promptReviewMode",
@@ -193,7 +193,10 @@ describe("Node Catalog与Blueprint一致性", () => {
     if (directNode?.kind !== "composite" || planningLoop?.kind !== "bounded_loop") {
       throw new Error("系统Definition结构缺失");
     }
-    expect(directNode.config).toEqual({ capabilityMode: "read_only", promptReviewMode: "manual" });
+    expect(directNode.config).toEqual({
+      capabilityMode: "pi_cli_default",
+      promptReviewMode: "manual",
+    });
     expect(planningLoop.maxIterations).toBe(5);
 
     const compiled = compileWorkflowRunSpec({
@@ -262,10 +265,123 @@ describe("Node Catalog与Blueprint一致性", () => {
     expect(withoutReview.success).toBe(true);
     if (withoutReview.success) {
       expect(withoutReview.runSpec.nodeResolutions[0]?.config).toMatchObject({
-        capabilityMode: "read_only",
+        capabilityMode: "pi_cli_default",
         promptReviewMode: "off",
       });
     }
+  });
+
+  it("RunSpec把Agent Version与临时配置逐字段冻结，并拒绝非Direct节点覆盖", () => {
+    const createdAt = "2026-08-22T09:00:00.000Z";
+    const direct = createSystemDirectAgentDefinition(createdAt);
+    const compileDirect = (
+      workflowRunSpecId: string,
+      overrides: ReadonlyArray<Readonly<Record<string, unknown>>>,
+    ) =>
+      compileWorkflowRunSpec({
+        workflowRunSpecId,
+        productRunId: `run_${workflowRunSpecId.slice(4)}`,
+        createdAt,
+        definition: {
+          schemaVersion: "workflow-definition-revision-input.v1",
+          workflowDefinitionRevisionId: direct.revision.workflowDefinitionRevisionId,
+          definitionRevision: direct.revision.definitionRevision,
+          blueprintKey: direct.revision.blueprintKey,
+          blueprintVersion: direct.revision.blueprintVersion,
+          semanticRoot: direct.revision.semanticRoot,
+          expectedSha256: direct.revision.definitionSha256,
+        },
+        runConfiguration: {
+          schemaVersion: "workflow-run-configuration.v1",
+          overrides,
+        },
+        principal: { principalId: "usr_agentconfiguration", capabilities: [] },
+        availableResources: [],
+        executorManifest: BUILTIN_WORKFLOW_EXECUTOR_MANIFEST,
+        runner: {
+          runnerFamily: DIRECT_AGENT_RUNNER_FAMILY,
+          runnerBundleVersion: DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+        },
+        businessInput: { kind: "direct_agent_message" },
+      });
+
+    const agentVersionSha256 = "a".repeat(64);
+    const version = compileDirect("wrs_agentversionfreeze1", [
+      {
+        kind: "node_config",
+        definitionNodeId: "direct.agent",
+        field: "agentPromptOverride",
+        value: "历史Workflow遗留Prompt，不得覆盖显式Agent Version。",
+      },
+      {
+        kind: "agent_configuration",
+        definitionNodeId: "direct.agent",
+        configurationMode: "version",
+        agentVersionId: "avn_agentversionfreeze1",
+        agentVersionSha256,
+      },
+    ]);
+    expect(version.success).toBe(true);
+    if (!version.success) return;
+    expect(version.runSpec.nodeResolutions[0]?.config).toEqual({
+      capabilityMode: "pi_cli_default",
+      promptReviewMode: "manual",
+      agentVersionId: "avn_agentversionfreeze1",
+      agentVersionSha256,
+    });
+
+    const temporaryConfiguration = {
+      runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
+      systemPrompt: { mode: "replace", bodyMarkdown: "只对本次Run生效的Agent身份。" },
+      enabledToolNames: ["read", "bash"],
+      resources: {
+        contextFiles: "disabled",
+        skills: "inherit_runtime_default",
+        promptTemplates: "disabled",
+        extensions: "inherit_runtime_default",
+      },
+      basedOnVersionId: "avn_agentversionfreeze1",
+      basedOnVersionSha256: agentVersionSha256,
+    } as const;
+    const temporary = compileDirect("wrs_agenttemporary1", [
+      {
+        kind: "agent_configuration",
+        definitionNodeId: "direct.agent",
+        configurationMode: "temporary",
+        ...temporaryConfiguration,
+      },
+    ]);
+    expect(temporary.success).toBe(true);
+    if (!temporary.success) return;
+    expect(temporary.runSpec.nodeResolutions[0]?.config).toEqual({
+      capabilityMode: "custom",
+      promptReviewMode: "manual",
+      enabledToolNames: temporaryConfiguration.enabledToolNames,
+      resourcePolicy: temporaryConfiguration.resources,
+      agentTemporaryConfiguration: temporaryConfiguration,
+    });
+
+    const invalidTarget = compileWorkflowRunSpec(
+      kernelCompilerInputFixture("composite", {
+        runConfiguration: {
+          schemaVersion: "workflow-run-configuration.v1",
+          overrides: [
+            {
+              kind: "agent_configuration",
+              definitionNodeId: "planning.plan",
+              configurationMode: "version",
+              agentVersionId: "avn_agentversionfreeze1",
+              agentVersionSha256,
+            },
+          ],
+        },
+      }),
+    );
+    expect(invalidTarget.success).toBe(false);
+    if (invalidTarget.success) return;
+    expect(invalidTarget.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "run_configuration.override_not_allowed",
+    );
   });
 
   it("Direct Blueprint拒绝复制固定节点，并允许独立Workflow关闭审核Hook", () => {

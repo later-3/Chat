@@ -22,7 +22,7 @@ import { SessionRecordsController } from "./session-records-controller.ts";
 import { SessionRecordsView, type SessionRecordsInjected } from "./SessionRecordsView.tsx";
 import { ChatSessionButton } from "./ChatSessionButton.tsx";
 import { PromptStudio, type PromptStudioInjected } from "./PromptStudio.tsx";
-import { AgentProfiles } from "./AgentProfiles.tsx";
+import { AgentProfiles, type AgentProfilesInjected } from "./AgentProfiles.tsx";
 import { PromptStudioController } from "./prompt-studio-controller.ts";
 import { installPromptStudioStyles } from "./prompt-studio-styles.ts";
 import { PromptComposerController } from "./prompt-composer-controller.ts";
@@ -161,7 +161,11 @@ export function apply(ctx: ClientContext): void {
         id: "lifeos-agents",
         order: 25,
         label: "Agent",
-        inject: () => ({}),
+        inject: (): AgentProfilesInjected => ({
+          hooks: { promptStudio },
+          openSourceFile: (relativePath, openerId) =>
+            promptStudio.openSourceFile(relativePath, openerId),
+        }),
       },
       AgentProfiles,
     ),
@@ -301,6 +305,10 @@ export function apply(ctx: ClientContext): void {
               const selected = await lifeos.selectWorkflow(selection);
               if (selected) await controller.load();
               return selected;
+            },
+            resolvePromptWorkspace: async () => {
+              await controller.load();
+              return controller.getSnapshot().workspace?.rootId ?? null;
             },
             loadContextInjections: () => lifeos.loadContextInjections(),
             setDshSendReviewEnabled: (enabled) => lifeos.setDshSendReviewEnabled(enabled),

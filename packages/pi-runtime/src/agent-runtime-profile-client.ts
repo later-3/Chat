@@ -19,9 +19,11 @@ export interface PiAgentRuntimeProfileClientOptions {
 export function createPiAgentRuntimeProfileClient(options: PiAgentRuntimeProfileClientOptions) {
   const fetchFn = options.fetchFn ?? fetch;
   const baseUrl = options.baseUrl.replace(/\/$/u, "");
-  const cache = new Map<AgentKey, Promise<AgentRuntimeBaselineDto | undefined>>();
   return {
-    read(agentKey: AgentKey): Promise<AgentRuntimeBaselineDto | undefined> {
+    read(
+      agentKey: AgentKey,
+      workspaceRootId?: string,
+    ): Promise<AgentRuntimeBaselineDto | undefined> {
       const parsedAgentKey = agentKeySchema.parse(agentKey);
       if (
         parsedAgentKey !== "direct" &&
@@ -30,11 +32,12 @@ export function createPiAgentRuntimeProfileClient(options: PiAgentRuntimeProfile
       ) {
         return Promise.resolve(undefined);
       }
-      const existing = cache.get(parsedAgentKey);
-      if (existing !== undefined) return existing;
-      const pending = (async () => {
+      return (async () => {
+        const query = new URLSearchParams();
+        if (workspaceRootId !== undefined) query.set("workspaceRootId", workspaceRootId);
+        const suffix = query.size === 0 ? "" : `?${query.toString()}`;
         const response = await fetchFn(
-          `${baseUrl}/internal/pi-executor/v1/agent-runtime-profiles/${encodeURIComponent(parsedAgentKey)}`,
+          `${baseUrl}/internal/pi-executor/v1/agent-runtime-profiles/${encodeURIComponent(parsedAgentKey)}${suffix}`,
           {
             headers: {
               accept: "application/json",
@@ -47,9 +50,6 @@ export function createPiAgentRuntimeProfileClient(options: PiAgentRuntimeProfile
         }
         return agentRuntimeBaselineDtoSchema.parse(await response.json());
       })();
-      cache.set(parsedAgentKey, pending);
-      void pending.catch(() => cache.delete(parsedAgentKey));
-      return pending;
     },
   };
 }

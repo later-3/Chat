@@ -8,6 +8,11 @@ import {
   type WorkflowSlotDescriptor,
 } from "@chat/domain";
 import {
+  agentRuntimeResourcePolicySchema,
+  agentTemporaryConfigurationSchema,
+  agentVersionIdSchema,
+  directAgentToolNameSchema,
+  sha256Schema,
   workflowMemoryQueryNodeConfigSchema,
   workflowMemoryWriteNodeConfigSchema,
 } from "@chat/contracts";
@@ -195,8 +200,8 @@ const directCapabilityModeField = (): PublicConfigField => ({
   type: "enum_select",
   name: "capabilityMode",
   label: "能力模式",
-  defaultValue: "read_only",
-  options: ["read_only", "project_bootstrap"],
+  defaultValue: "pi_cli_default",
+  options: ["pi_cli_default", "read_only", "project_bootstrap"],
 });
 
 const directPromptReviewModeField = (): PublicConfigField => ({
@@ -445,13 +450,37 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
     displayName: "执行 Agent",
     description: "推进同一个Pi AgentSession；可在每次Provider发送前进入节点内部人工审核",
     category: "agent",
-    configSchema: z.strictObject({
-      capabilityMode: z.enum(["read_only", "project_bootstrap"]).default("read_only"),
-      promptReviewMode: z.enum(["manual", "off"]).default("manual"),
-      agentKey: z.enum(["direct", "project_bootstrap"]).optional(),
-      agentPromptOverride: z.string().max(65_536).optional(),
-    }),
-    defaultConfig: { capabilityMode: "read_only", promptReviewMode: "manual" },
+    configSchema: z
+      .strictObject({
+        capabilityMode: z
+          .enum(["pi_cli_default", "custom", "read_only", "project_bootstrap"])
+          .default("pi_cli_default"),
+        promptReviewMode: z.enum(["manual", "off"]).default("manual"),
+        agentKey: z.enum(["direct", "project_bootstrap"]).optional(),
+        agentVersionId: agentVersionIdSchema.optional(),
+        agentVersionSha256: sha256Schema.optional(),
+        agentPromptOverride: z.string().max(65_536).optional(),
+        enabledToolNames: z.array(directAgentToolNameSchema).max(32).optional(),
+        resourcePolicy: agentRuntimeResourcePolicySchema.optional(),
+        agentTemporaryConfiguration: agentTemporaryConfigurationSchema.optional(),
+      })
+      .superRefine((value, ctx) => {
+        if ((value.agentVersionId === undefined) !== (value.agentVersionSha256 === undefined)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["agentVersionId"],
+            message: "Agent Version必须同时绑定ID与Hash",
+          });
+        }
+        if (value.capabilityMode === "custom" && value.enabledToolNames === undefined) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["enabledToolNames"],
+            message: "Custom Agent能力必须冻结Tool清单",
+          });
+        }
+      }),
+    defaultConfig: { capabilityMode: "pi_cli_default", promptReviewMode: "manual" },
     publicConfigFields: [
       agentKeyField("direct", ["direct", "project_bootstrap"]),
       agentPromptOverrideField(),

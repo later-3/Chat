@@ -13,6 +13,7 @@ import {
 import {
   PiDirectExecutorOperationConflictError,
   PiDirectExecutorOperationNotFoundError,
+  PiDirectExecutorRuntimeManifestMismatchError,
   type PiDirectExecutorOperationStore,
 } from "./direct-executor-operation-store.js";
 import { operationIdForDirectAgentAttempt } from "./direct-executor-identity.js";
@@ -76,21 +77,31 @@ export interface AuthorizedDirectAgentInput {
           readonly estimatedTokens: number;
         }[];
         readonly tools: {
-          readonly capabilityMode: "read_only" | "project_bootstrap";
-          readonly names: ("read" | "grep" | "find" | "ls" | "project_bootstrap_prepare")[];
+          readonly capabilityMode: "pi_cli_default" | "custom" | "read_only" | "project_bootstrap";
+          readonly selectionMode?: "inherit_runtime_default" | "explicit" | undefined;
+          /** Extension Tool也是Pi运行时能力，不能把私有协议收窄为内置枚举。 */
+          readonly names: string[];
+          readonly resources?:
+            | {
+                readonly contextFiles: "inherit_runtime_default" | "disabled";
+                readonly skills: "inherit_runtime_default" | "disabled";
+                readonly promptTemplates: "inherit_runtime_default" | "disabled";
+                readonly extensions: "inherit_runtime_default" | "disabled";
+              }
+            | undefined;
           readonly estimatedTokens: 8_000;
         };
         readonly requestOptions: {
           readonly providerId: "dashscope-coding";
           readonly modelId: "qwen3.7-plus";
-          readonly thinkingLevel: "off";
-          readonly retryEnabled: false;
-          readonly compactionEnabled: false;
+          readonly thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+          readonly retryEnabled: boolean;
+          readonly compactionEnabled: boolean;
         };
         readonly budget: Readonly<Record<string, unknown>>;
         readonly workspaceRootId?: string | undefined;
       };
-  readonly capabilityMode: "read_only" | "project_bootstrap";
+  readonly capabilityMode: "pi_cli_default" | "custom" | "read_only" | "project_bootstrap";
   readonly projectBootstrapContext?: {
     readonly providerKind: "plane_ce";
     readonly providerVersion: string;
@@ -179,6 +190,7 @@ function authorized(actual: string | undefined, expected: string): boolean {
 
 function statusForError(error: unknown): 400 | 401 | 404 | 409 | 500 {
   if (error instanceof PiDirectExecutorOperationConflictError) return 409;
+  if (error instanceof PiDirectExecutorRuntimeManifestMismatchError) return 409;
   if (error instanceof PiDirectExecutorOperationNotFoundError) return 404;
   if (error instanceof DirectAgentExecutionError || error instanceof z.ZodError) return 400;
   return 500;
@@ -187,6 +199,7 @@ function statusForError(error: unknown): 400 | 401 | 404 | 409 | 500 {
 function problem(error: unknown): { readonly errorCode: string } {
   if (
     error instanceof PiDirectExecutorOperationConflictError ||
+    error instanceof PiDirectExecutorRuntimeManifestMismatchError ||
     error instanceof PiDirectExecutorOperationNotFoundError ||
     error instanceof DirectAgentExecutionError
   ) {
@@ -200,6 +213,7 @@ function problem(error: unknown): { readonly errorCode: string } {
 
 function stableExecutionError(error: unknown): string {
   if (error instanceof DirectAgentExecutionError) return error.code;
+  if (error instanceof PiDirectExecutorRuntimeManifestMismatchError) return error.code;
   return "direct_executor.session_failed";
 }
 
@@ -474,6 +488,12 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
       await options.store.complete(operationId, result);
     } catch (error) {
       const snapshot = options.store.getSnapshot(operationId);
+      // resolved manifest在resumePendingTurn/Provider Gate之前校验；它不是已消费permit的
+      // 结果未知。漂移必须稳定失败，不能被通用“批准后失联”分支误判为Provider未知。
+      if (error instanceof PiDirectExecutorRuntimeManifestMismatchError) {
+        await options.store.fail(operationId, error.code);
+        return;
+      }
       if (snapshot.status === "waiting_prompt_review" && snapshot.decision?.kind === "approve") {
         await promptReview.markProviderOutcomeUnknown(
           operationId,

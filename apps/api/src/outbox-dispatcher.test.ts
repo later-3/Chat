@@ -117,30 +117,38 @@ function runtimeProfile(agentKey: AgentKey) {
   if (agentKey !== "direct" && agentKey !== "project_bootstrap" && agentKey !== "coding_executor")
     return undefined;
   const variantKey =
-    agentKey === "direct" || agentKey === "project_bootstrap"
-      ? "read_only"
-      : "workspace_write_shell";
+    agentKey === "direct"
+      ? "pi_cli_default"
+      : agentKey === "project_bootstrap"
+        ? "read_only"
+        : "workspace_write_shell";
   const tools =
-    agentKey === "direct" || agentKey === "project_bootstrap"
-      ? ["read", "grep", "find", "ls"]
-      : ["read", "bash", "edit", "write", "grep", "find", "ls"];
+    agentKey === "direct"
+      ? ["read", "bash", "edit", "write"]
+      : agentKey === "project_bootstrap"
+        ? ["read", "grep", "find", "ls"]
+        : ["read", "bash", "edit", "write", "grep", "find", "ls"];
   return agentRuntimeBaselineDtoSchema.parse({
     kind: "pi_coding_agent",
     title: "Pi Coding Agent",
     packageName: "@earendil-works/pi-coding-agent",
     packageVersion: "0.84.2",
     managedSource: "later-3/pi@codex/later-custom",
-    compositionStrategy: "pi_default_or_custom_then_chat_runtime_then_context",
+    managedSourceRevision: "1".repeat(40),
+    compositionStrategy:
+      "pi_runtime_then_agent_version_then_workflow_session_run_then_chat_context",
     chatRuntimeAppend: {
       bodyMarkdown: "Chat Runtime Contract",
       sha256: "a".repeat(64),
       sourceRelativePath: "packages/pi-runtime/src/coding-agent-runtime-profile.ts",
+      appliesToVariantKeys: [variantKey],
     },
     variants: [
       {
         variantKey,
         title: variantKey,
         description: "测试Pi能力",
+        capabilityCatalogSha256: "2".repeat(64),
         enabledToolNames: tools,
         piSystemPrompt: {
           bodyMarkdown: `Pi runtime ${variantKey}`,

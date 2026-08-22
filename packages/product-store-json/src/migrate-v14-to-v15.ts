@@ -96,6 +96,18 @@ export function migrateProductSnapshotV14ToV15(snapshot: ProductSnapshotV14): Pr
         role: sourceMessage.role,
         content: sourceMessage.content,
       });
+      const directNode = runSpec.nodeResolutions.find(
+        (node) => node.nodeType === "agent.direct" && node.activation === "enabled",
+      );
+      const capabilityMode = directNode?.config["capabilityMode"];
+      if (
+        capabilityMode !== "pi_cli_default" &&
+        capabilityMode !== "custom" &&
+        capabilityMode !== "read_only" &&
+        capabilityMode !== "project_bootstrap"
+      ) {
+        throw new Error(`v15无法升级历史Direct Attempt ${attempt.attemptId}：RunSpec能力模式非法`);
+      }
       return [
         attemptId,
         {
@@ -109,7 +121,7 @@ export function migrateProductSnapshotV14ToV15(snapshot: ProductSnapshotV14): Pr
             sourceMessageId: sourceMessage.messageId,
             sourceMessageSha256,
             promptAssemblySha256: assembly.sha256,
-            capabilityMode: "read_only",
+            capabilityMode,
             promptTemplateVersion: attempt.promptTemplateVersion,
             modelConfigVersion: attempt.modelConfigVersion,
             limits: {

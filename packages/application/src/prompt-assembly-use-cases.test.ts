@@ -1,10 +1,14 @@
 import {
+  AGENT_VERSION_SCHEMA_VERSION,
+  agentVersionHashInputSchema,
+  agentVersionSchema,
   agentRuntimeBaselineDtoSchema,
   createEmptySnapshot,
   type AgentKey,
+  type AgentVersion,
   type PromptFragmentRevision,
 } from "@chat/contracts";
-import { computePromptFragmentRevisionSha256 } from "@chat/domain";
+import { computePromptFragmentRevisionSha256, hashCanonical } from "@chat/domain";
 import { describe, expect, it } from "vitest";
 import type { ApplicationDeps } from "./deps.js";
 import {
@@ -20,28 +24,35 @@ const SHA = "a".repeat(64);
 function runtimeProfile(agentKey: AgentKey) {
   if (agentKey !== "direct" && agentKey !== "project_bootstrap" && agentKey !== "coding_executor")
     return undefined;
-  const direct = agentKey !== "coding_executor";
-  const variantKey = direct ? "read_only" : "workspace_write_shell";
+  const direct = agentKey === "direct";
+  const bootstrap = agentKey === "project_bootstrap";
+  const variantKey = direct ? "pi_cli_default" : bootstrap ? "read_only" : "workspace_write_shell";
   const tools = direct
-    ? ["read", "grep", "find", "ls"]
-    : ["read", "grep", "find", "ls", "edit", "write", "bash"];
+    ? ["read", "bash", "edit", "write"]
+    : bootstrap
+      ? ["read", "grep", "find", "ls"]
+      : ["read", "bash", "edit", "write", "grep", "find", "ls"];
   return agentRuntimeBaselineDtoSchema.parse({
     kind: "pi_coding_agent",
     title: "Pi Coding Agent",
     packageName: "@earendil-works/pi-coding-agent",
     packageVersion: "0.84.2",
     managedSource: "later-3/pi@codex/later-custom",
-    compositionStrategy: "pi_default_or_custom_then_chat_runtime_then_context",
+    managedSourceRevision: "1".repeat(40),
+    compositionStrategy:
+      "pi_runtime_then_agent_version_then_workflow_session_run_then_chat_context",
     chatRuntimeAppend: {
-      bodyMarkdown: direct ? "Direct Runtime Contract" : "Coding Runtime Contract",
+      bodyMarkdown: direct || bootstrap ? "Direct Runtime Contract" : "Coding Runtime Contract",
       sha256: "b".repeat(64),
       sourceRelativePath: "packages/pi-runtime/src/coding-agent-runtime-profile.ts",
+      appliesToVariantKeys: [variantKey],
     },
     variants: [
       {
         variantKey,
         title: variantKey,
         description: "测试Pi能力",
+        capabilityCatalogSha256: "2".repeat(64),
         enabledToolNames: tools,
         piSystemPrompt: {
           bodyMarkdown: `Pi System ${variantKey}`,
@@ -107,6 +118,56 @@ function revision(input: {
     sha256: computePromptFragmentRevisionSha256(body) as never,
     createdAt: NOW,
   };
+}
+
+function directAgentVersion(input: {
+  readonly agentVersionId: string;
+  readonly bodyMarkdown: string;
+  readonly enabledToolNames: readonly string[];
+  readonly scope?:
+    { readonly kind: "global" } | { readonly kind: "workspace"; readonly rootId: string };
+  readonly capabilityCatalogSha256?: string;
+  readonly version?: number;
+  readonly resources: {
+    readonly contextFiles: "inherit_runtime_default" | "disabled";
+    readonly skills: "inherit_runtime_default" | "disabled";
+    readonly promptTemplates: "inherit_runtime_default" | "disabled";
+    readonly extensions: "inherit_runtime_default" | "disabled";
+  };
+}): AgentVersion {
+  const hashInput = agentVersionHashInputSchema.parse({
+    schemaVersion: AGENT_VERSION_SCHEMA_VERSION,
+    agentVersionId: input.agentVersionId,
+    agentKey: "direct",
+    ownerPrincipalId: "usr_promptassembly",
+    scope: input.scope ?? { kind: "global" },
+    version: input.version ?? 1,
+    title: "Direct Agent测试版本",
+    description: "验证Prompt Assembly只采用显式Agent Version。",
+    runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
+    baselineRef: {
+      packageName: "@earendil-works/pi-coding-agent",
+      packageVersion: "0.84.2",
+      managedSource: "later-3/pi@codex/later-custom",
+      managedSourceRevision: "1".repeat(40),
+      variantKey: "pi_cli_default",
+      capabilityCatalogSha256: input.capabilityCatalogSha256 ?? "2".repeat(64),
+    },
+    systemPrompt: {
+      mode: "replace",
+      bodyMarkdown: input.bodyMarkdown,
+      sha256: hashCanonical("agent-system-prompt.v1", {
+        bodyMarkdown: input.bodyMarkdown,
+      }),
+    },
+    enabledToolNames: input.enabledToolNames,
+    resources: input.resources,
+    createdAt: NOW,
+  });
+  return agentVersionSchema.parse({
+    ...hashInput,
+    sha256: hashCanonical("agent-version.v1", hashInput),
+  });
 }
 
 function fixture(): {
@@ -234,7 +295,7 @@ function fixture(): {
             supportedNodeTypes: ["agent.direct"],
             defaultPrompt: {
               kind: "pi_coding_agent",
-              defaultVariantKey: "read_only",
+              defaultVariantKey: "pi_cli_default",
             },
             tools: [{ name: "read", description: "读取文件" }],
           },
@@ -591,6 +652,279 @@ describe("Direct Prompt Assembly", () => {
     );
   });
 
+  it("Agent Version与临时配置精确决定System Prompt、Tools和资源且临时值不落库", async () => {
+    const { deps, snapshot } = fixture();
+    const versionResources = {
+      contextFiles: "inherit_runtime_default",
+      skills: "disabled",
+      promptTemplates: "inherit_runtime_default",
+      extensions: "disabled",
+    } as const;
+    const version = directAgentVersion({
+      agentVersionId: "avn_promptassemblyversion1",
+      bodyMarkdown: "你是持久Agent Version定义的Direct Agent。",
+      enabledToolNames: ["read", "bash"],
+      resources: versionResources,
+    });
+    snapshot.entities.agentVersions[version.agentVersionId] = version;
+    const committedBefore = structuredClone(snapshot);
+    const compile = (suffix: string, config: Readonly<Record<string, unknown>>) =>
+      compileDirectPromptAssembly(deps, {
+        principalId: "usr_promptassembly" as never,
+        text: "检查Agent配置",
+        selection: { schemaVersion: "prompt-turn-selection-input.v1", regions: [] },
+        productSessionId: `psn_prompt${suffix}` as never,
+        productRunId: `run_prompt${suffix}` as never,
+        sourceMessageId: `msg_prompt${suffix}` as never,
+        sourceMessageSequence: 1,
+        sourceMessageSha256: "d".repeat(64),
+        workflowDefinitionRevisionId: `wfr_prompt${suffix}` as never,
+        nodeResolutions: [
+          {
+            definitionNodeId: "direct.agent",
+            nodeType: "agent.direct",
+            schemaVersion: 1,
+            config,
+            activation: "enabled",
+          },
+        ],
+        createdAt: NOW,
+      });
+
+    const versionConfig = {
+      capabilityMode: "pi_cli_default",
+      promptReviewMode: "manual",
+      agentVersionId: version.agentVersionId,
+      agentVersionSha256: version.sha256,
+    } as const;
+    const versionAssembly = await compile("version1", versionConfig);
+    expect(versionAssembly.piSystemPrompt).toMatchObject({
+      kind: "pi_coding_agent",
+      mode: "replace",
+      bodyMarkdown: "你是持久Agent Version定义的Direct Agent。",
+    });
+    expect(versionAssembly.tools).toEqual({
+      capabilityMode: "custom",
+      selectionMode: "explicit",
+      names: ["read", "bash"],
+      resources: versionResources,
+      estimatedTokens: 8_000,
+    });
+    expect(versionAssembly.requestOptions).toMatchObject({
+      thinkingLevel: "medium",
+      retryEnabled: true,
+      compactionEnabled: true,
+    });
+
+    const temporaryResources = {
+      contextFiles: "disabled",
+      skills: "inherit_runtime_default",
+      promptTemplates: "disabled",
+      extensions: "inherit_runtime_default",
+    } as const;
+    const temporaryConfiguration = {
+      runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
+      systemPrompt: { mode: "replace", bodyMarkdown: "你只在当前Run临时生效。" },
+      enabledToolNames: ["read"],
+      resources: temporaryResources,
+      basedOnVersionId: version.agentVersionId,
+      basedOnVersionSha256: version.sha256,
+    } as const;
+    const temporaryAssembly = await compile("temporary1", {
+      capabilityMode: "custom",
+      promptReviewMode: "manual",
+      enabledToolNames: temporaryConfiguration.enabledToolNames,
+      resourcePolicy: temporaryResources,
+      agentTemporaryConfiguration: temporaryConfiguration,
+    });
+    expect(temporaryAssembly.piSystemPrompt).toMatchObject({
+      kind: "pi_coding_agent",
+      mode: "replace",
+      bodyMarkdown: "你只在当前Run临时生效。",
+    });
+    expect(temporaryAssembly.tools).toEqual({
+      capabilityMode: "custom",
+      selectionMode: "explicit",
+      names: ["read"],
+      resources: temporaryResources,
+      estimatedTokens: 8_000,
+    });
+
+    await expect(
+      compile("temporarymissingtool1", {
+        capabilityMode: "custom",
+        promptReviewMode: "manual",
+        enabledToolNames: ["runtime_probe"],
+        resourcePolicy: temporaryResources,
+        agentTemporaryConfiguration: {
+          ...temporaryConfiguration,
+          enabledToolNames: ["runtime_probe"],
+        },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    await expect(
+      compile("temporaryhashdrift1", {
+        capabilityMode: "custom",
+        promptReviewMode: "manual",
+        enabledToolNames: ["read"],
+        resourcePolicy: temporaryResources,
+        agentTemporaryConfiguration: {
+          ...temporaryConfiguration,
+          basedOnVersionSha256: "f".repeat(64),
+        },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+
+    const versionAgain = await compile("version2", versionConfig);
+    expect(versionAgain.piSystemPrompt).toEqual(versionAssembly.piSystemPrompt);
+    expect(versionAgain.tools).toEqual(versionAssembly.tools);
+    expect(snapshot).toEqual(committedBefore);
+
+    const defaults = await compile("default1", {
+      capabilityMode: "pi_cli_default",
+      promptReviewMode: "manual",
+    });
+    expect(defaults.piSystemPrompt).toEqual({ kind: "pi_coding_agent", mode: "inherit" });
+    expect(defaults.tools).toEqual({
+      capabilityMode: "pi_cli_default",
+      selectionMode: "inherit_runtime_default",
+      names: [],
+      resources: {
+        contextFiles: "inherit_runtime_default",
+        skills: "inherit_runtime_default",
+        promptTemplates: "inherit_runtime_default",
+        extensions: "inherit_runtime_default",
+      },
+      estimatedTokens: 8_000,
+    });
+  });
+
+  it("Run按当前Workspace目录验证全局版本Tool，并用scoped基线解析Workspace版本与临时配置", async () => {
+    const { deps, snapshot } = fixture();
+    const globalRuntime = runtimeProfile("direct");
+    if (globalRuntime === undefined) throw new Error("缺少全局Direct Runtime");
+    const scopedRuntime = agentRuntimeBaselineDtoSchema.parse({
+      ...globalRuntime,
+      variants: globalRuntime.variants.map((variant) =>
+        variant.variantKey === "pi_cli_default"
+          ? {
+              ...variant,
+              capabilityCatalogSha256: "3".repeat(64),
+              enabledToolNames: ["read", "runtime_probe"],
+              tools: [
+                variant.tools.find((tool) => tool.name === "read")!,
+                {
+                  name: "runtime_probe",
+                  description: "Workspace extension tool",
+                  parametersJson: "{}",
+                  sourceRelativePath: "<WORKSPACE_ROOT>/.pi/extensions/runtime-probe.ts",
+                },
+              ],
+            }
+          : variant,
+      ),
+    });
+    const scopedDeps: ApplicationDeps = {
+      ...deps,
+      agentRuntimeProfiles: {
+        read: async (agentKey: AgentKey, workspaceRootId?: string) =>
+          agentKey === "direct" && workspaceRootId === "root_chat"
+            ? scopedRuntime
+            : runtimeProfile(agentKey),
+      },
+    };
+    const resources = {
+      contextFiles: "inherit_runtime_default",
+      skills: "inherit_runtime_default",
+      promptTemplates: "inherit_runtime_default",
+      extensions: "inherit_runtime_default",
+    } as const;
+    const globalAllowed = directAgentVersion({
+      agentVersionId: "avn_scopedglobalallowed1",
+      bodyMarkdown: "Global version",
+      enabledToolNames: ["read"],
+      resources,
+    });
+    const globalMissing = directAgentVersion({
+      agentVersionId: "avn_scopedglobalmissing1",
+      bodyMarkdown: "Global version with missing tool",
+      enabledToolNames: ["bash"],
+      resources,
+      version: 2,
+    });
+    const workspaceVersion = directAgentVersion({
+      agentVersionId: "avn_scopedworkspace1",
+      bodyMarkdown: "Workspace version",
+      enabledToolNames: ["runtime_probe"],
+      resources,
+      scope: { kind: "workspace", rootId: "root_chat" },
+      capabilityCatalogSha256: "3".repeat(64),
+      version: 3,
+    });
+    for (const version of [globalAllowed, globalMissing, workspaceVersion]) {
+      snapshot.entities.agentVersions[version.agentVersionId] = version;
+    }
+    const compile = (suffix: string, config: Readonly<Record<string, unknown>>) =>
+      compileDirectPromptAssembly(scopedDeps, {
+        principalId: "usr_promptassembly" as never,
+        text: "验证Workspace Agent目录",
+        selection: {
+          schemaVersion: "prompt-turn-selection-input.v1",
+          workspaceRootId: "root_chat",
+          regions: [],
+        },
+        productSessionId: `psn_scoped${suffix}` as never,
+        productRunId: `run_scoped${suffix}` as never,
+        sourceMessageId: `msg_scoped${suffix}` as never,
+        sourceMessageSequence: 1,
+        sourceMessageSha256: "e".repeat(64),
+        workflowDefinitionRevisionId: `wfr_scoped${suffix}` as never,
+        nodeResolutions: [
+          {
+            definitionNodeId: "direct.agent",
+            nodeType: "agent.direct",
+            schemaVersion: 1,
+            config,
+            activation: "enabled",
+          },
+        ],
+        createdAt: NOW,
+      });
+
+    await expect(
+      compile("globalok1", {
+        capabilityMode: "custom",
+        agentVersionId: globalAllowed.agentVersionId,
+        agentVersionSha256: globalAllowed.sha256,
+      }),
+    ).resolves.toMatchObject({ tools: { names: ["read"] } });
+    await expect(
+      compile("globalmissing1", {
+        capabilityMode: "custom",
+        agentVersionId: globalMissing.agentVersionId,
+        agentVersionSha256: globalMissing.sha256,
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    await expect(
+      compile("workspace1", {
+        capabilityMode: "custom",
+        agentVersionId: workspaceVersion.agentVersionId,
+        agentVersionSha256: workspaceVersion.sha256,
+      }),
+    ).resolves.toMatchObject({ tools: { names: ["runtime_probe"] } });
+    await expect(
+      compile("temporary1", {
+        capabilityMode: "custom",
+        agentTemporaryConfiguration: {
+          runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
+          systemPrompt: { mode: "inherit_runtime" },
+          enabledToolNames: ["runtime_probe"],
+          resources,
+        },
+      }),
+    ).resolves.toMatchObject({ tools: { names: ["runtime_probe"] } });
+  });
+
   it("Project Bootstrap的Capability Tool清单在V2 Assembly中冻结", async () => {
     const { deps } = fixture();
     const assembly = await compileDirectPromptAssembly(deps, {
@@ -619,7 +953,14 @@ describe("Direct Prompt Assembly", () => {
     });
     expect(assembly.tools).toEqual({
       capabilityMode: "project_bootstrap",
+      selectionMode: "explicit",
       names: ["read", "grep", "find", "ls", "project_bootstrap_prepare"],
+      resources: {
+        contextFiles: "disabled",
+        skills: "disabled",
+        promptTemplates: "disabled",
+        extensions: "disabled",
+      },
       estimatedTokens: 8_000,
     });
     expect(assembly.systemPromptAppend).not.toContain("你是项目初始化 Agent");

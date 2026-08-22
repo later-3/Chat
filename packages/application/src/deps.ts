@@ -162,7 +162,7 @@ export interface PromptFragmentIdFactory {
  * Chat拥有的可写Prompt并排投影，但不会复制或重写上游Agent实现。
  */
 export interface AgentRuntimeProfileReaderPort {
-  read(agentKey: AgentKey): Promise<AgentRuntimeBaselineDto | undefined>;
+  read(agentKey: AgentKey, workspaceRootId?: string): Promise<AgentRuntimeBaselineDto | undefined>;
 }
 
 export interface ProjectBootstrapIdFactory {

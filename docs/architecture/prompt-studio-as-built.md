@@ -1,6 +1,6 @@
 # Prompt Studio 与系统级 Prompt Assembly As-built
 
-> 状态：会话Prompt管理、独立Agent Profile、Workflow节点Agent配置与本次Session/Run临时覆盖、全局/Workspace Markdown版本、统一发送前完整Prompt预览、DSH→Bridge与Bridge→Chat调试审核、Workflow Prompt Assembly v3、Direct Prompt Assembly v2、近期正式会话历史和Direct Provider前逐次审核均已打通。当前Agent层已接`agent.plan`、`agent.direct`、`execute.plan`和`note.extract`；Provider逐请求人工审核仍只由Direct节点开放。
+> 状态：会话Prompt管理、独立Agent Profile、Workflow节点Agent配置与本次Session/Run临时覆盖、全局/Workspace Markdown版本、统一发送前完整Prompt预览、DSH→Bridge与Bridge→Chat调试审核、Workflow Prompt Assembly v3、Direct Prompt Assembly v2、近期正式会话历史和Direct Provider前逐次审核均已打通。完整Agent版本管理的唯一事实源见[Chat Agent管理](./agent-management-as-built.md)；Provider逐请求人工审核仍只由Direct节点开放。
 
 ## 1. 用户结果
 
@@ -8,11 +8,11 @@
 2. 每个会话的Composer配置栏有「本次 Prompt」统一入口。发送前在全局与当前Workspace两个Scope中选择会话上下文Revision；同一面板的完整预览同时展示当前Workflow每个Agent节点的有效System Prompt、Runtime固定层、Tools和当前User输入。Workflow配置仍由Workflow入口管理，不把“生成计划/执行计划”伪装成Prompt区域。
 3. 「提示词配置预览」只回答当前会话Region怎样组成；「预览完整 Prompt」调用`POST /api/prompt-turn-previews`，与正式Submit Message共用Application的Workflow预编译和Prompt编译路径，再附加DSH请求与Bridge→Chat命令映射。它是只读预发送模型，不创建Session、Message、Run或执行授权，也不是最终Provider请求。
 4. Composer的「调试审核」面板有两个独立开关：DSH→Bridge审核真实`GenerateOptions`；Bridge→Chat审核筛选后将实际交给`fetch`的完整Command Plan。两项关闭时自动发送；开启时必须依序批准。第二道批准前Chat Session/Message写入数为零。
-5. Message Command在创建Run的同一事务中冻结Prompt Assembly：Pi-backed节点明确冻结`piSystemPrompt=inherit|replace`；`inherit`由Pi使用自己的默认动态System，`replace`把用户/Workflow/Run选出的完整正文作为Pi `customPrompt`，随后仍追加Chat固定Runtime Contract和本轮会话上下文。Direct v2另冻结正式Messages、Capability Tool清单和Request Options；多节点Workflow用v3冻结每个节点的同一解析结果。配置随后被修改、归档或页面刷新，都不能改变该Run。
+5. Message Command在创建Run的同一事务中冻结Prompt Assembly：Pi-backed节点明确冻结`piSystemPrompt=inherit|replace`；`inherit`由Pi使用自己的默认动态System，`replace`把用户/Workflow/Run选出的完整正文作为Pi `customPrompt`。只有显式受限或专用Workflow声明的Chat Runtime Contract才会追加，本轮会话上下文则按Assembly继续进入System。Direct v2另冻结正式Messages、Tool选择模式、资源策略和Request Options；多节点Workflow用v3冻结每个节点的同一解析结果。配置随后被修改、归档或页面刷新，都不能改变该Run。
 6. Planner、Coding Executor与Note Extractor只接收Application从同一冻结v3 Assembly授权出的节点Prompt；节点Hash进入Planning/Execution Input Manifest，不从当前Bridge草稿或文件重新推导。
-7. Pi Agent仍负责单次节点内的Agent/Tool Loop。Direct和Coding Executor均关闭AGENTS、Skills、Prompt Templates、Context Files与外部Extensions自动发现；`AGENTS.md`只有被用户显式选择为Prompt组件时才进入请求。
+7. Pi Agent仍负责单次节点内的Agent/Tool Loop。Direct的`pi_cli_default`直接继承Pi真实Context Files、Skills、Prompt Templates与Extensions发现；用户派生的受限Version可逐项关闭。Planning Coding Executor仍按已批准Execution Contract隔离这些自动来源；显式选择的Chat会话Prompt组件继续由Prompt Assembly进入请求。
 8. Direct Provider Gate在每次真实模型请求前暂停。Raw是Provider Adapter将发送的Canonical Payload；Friendly只增加来源、区域、Revision、Hash、Scope和JSON Pointer，不添加模型可见正文。Planner、Executor与Note当前使用已冻结Prompt，但没有新增Provider人工审核语义。
-9. 前端提供三层Chat配置：DSH「设置 → Agent」管理Chat全局Agent默认/覆盖；Workflow配置页管理节点实例的Agent引用和可选Prompt差异；发送前还可只为当前Session的下一次Run临时覆盖。Pi-backed Agent的无覆盖默认值直接引用Pi真实运行时基线，不复制成Chat Fragment；一旦填写自定义正文就是完整替换Pi基础System，而不是追加。独立Pi Executor投影动态System、Chat固定运行约束和按Capability变化的完整Tool Schema；API不加载完整Pi运行时。系统Workflow保存时派生个人版本，个人Workflow保存时原子发布下一Revision；任何Prompt文字都不能增加Tool授权。
+9. 前端提供三层Chat配置：DSH「设置 → Agent」为已经完成执行消费纵向的Direct Agent管理Principal不可变AgentVersion；Workflow配置页精确绑定Version ID/Hash；发送前还可为当前DSH Session形成结构化临时配置，并在每次Run创建时冻结。选择Workspace Scope或打开会话配置时，页面按受权`workspaceRootId`重新读取Pi Settings、Extension、Tool与资源目录。Pi-backed Agent的无覆盖默认值直接引用Pi真实运行时基线，不复制成Chat Fragment；自定义正文完整替换Pi基础System，Tools精确冻结，四类资源当前按类别继承或关闭。Project Bootstrap、Coding Executor等未完成逐字段Version消费的Agent只读显示真实基线，不提供假保存入口。系统Workflow保存时派生个人版本，个人Workflow保存时原子发布下一Revision；任何Prompt文字都不能增加Tool或Workspace授权。
 10. DSH→Bridge、Bridge→Chat和Direct Provider Prompt Review不再挤在Composer卡片里；三者复用右侧全高审查面板。只有中间正文区域纵向滚动，标题/状态和决定操作固定，Raw与易读正文不再制造第二个纵向滚动区。
 
 ## 2. 事实所有权
@@ -25,10 +25,11 @@ prompts/catalog.json + prompts/**/*.md
 <Workspace>/.chat/prompts/**/*.md
   └── 用户Prompt正文与人可读版本文件
 
-Product Store v17
+Product Store v18
   ├── PromptFragment（owner/scope/status/current/CAS）
   ├── PromptFragmentRevision（不可变元数据、内容Hash、MD路径/文件Hash）
-  ├── Workflow Definition/Revision（节点Agent引用与可选Prompt差异）
+  ├── AgentVersion（完整配置、Scope、来源版本与Hash，不可变）
+  ├── Workflow Definition/Revision（节点精确AgentVersion引用与兼容Prompt差异）
   └── PromptAssembly（一次Run冻结的有效Agent Prompt与会话上下文投影、来源、版本、预算与Hash）
 
 DSH Bridge State v12
@@ -55,7 +56,9 @@ Catalog Adapter从`import.meta.url`推导仓库根，拒绝绝对路径、`..`�
 
 Bridge按`CHAT_PROJECT_ROOTS_JSON`把DSH当前打开目录映射为Chat `rootId`。平台Chat根的精确`AGENTS.md`投影为全局`workspace_instructions`组件；目标Workspace根的精确`AGENTS.md`只在该Scope可见。系统不递归发现父级、子目录或其他Agent文件，也不自动选择这些组件。
 
-本地“打开文件”菜单支持白名单应用，并重新校验文件必须属于以下边界之一：Git Catalog、Chat全局Prompt目录、当前登记Workspace的`AGENTS.md`或`.chat/prompts`。公网部署不装配启动服务器本机应用的能力。
+本机“打开文件”能力支持白名单应用，并重新校验文件必须属于以下边界之一：Git Catalog、Chat全局Prompt目录、当前登记Workspace的`AGENTS.md`或`.chat/prompts`、Chat `pi-runtime/src`，以及受管Pi Fork的`coding-agent/src/core` TypeScript源码。Agent设置按真实构造来源逐文件展示，优先提供“用 VS Code 打开”，不会把由多个文件生成的Pi System Prompt伪装成单一配置文件。
+
+服务器模式可以装配同一Host能力，但HTTP边界只向精确loopback Host/Origin投影可用应用；公开域名请求固定得到空应用列表，打开命令固定拒绝。这样同一台Mac通过`127.0.0.1`使用VS Code时不被公开域名配置误伤，远端浏览器仍不能启动服务器本机应用。
 
 ## 4. Product Store、Markdown版本与并发
 
@@ -63,7 +66,9 @@ Bridge按`CHAT_PROJECT_ROOTS_JSON`把DSH当前打开目录映射为Chat `rootId`
 
 - `v13 → v14`：新增 Prompt Fragment 与 Revision；
 - `v14 → v15`：新增 Scope 与 Direct Prompt Assembly v1；
-- `v15 → v16`：用户新Revision改为Markdown内容引用，Direct Assembly升级为四路输入v2。
+- `v15 → v16`：用户新Revision改为Markdown内容引用，Direct Assembly升级为四路输入v2；
+- `v16 → v17`：补齐项目初始化相关事实集合；
+- `v17 → v18`：新增不可变AgentVersion集合，并发布继承Pi CLI默认能力的Direct Workflow v2；历史只读Workflow Revision/View继续保留。
 
 历史v1用户正文仍可读取；首次读取时会生成一个可见的兼容Markdown文件，之后继续通过同一文件Port访问。历史Direct Run保留原Assembly语义，迁移不会把当时不存在的选择伪造成新上下文。
 
@@ -89,6 +94,8 @@ Revision规则：
 - `GET /api/agent-profiles`
 - `GET /api/agent-profiles/:agentKey`
 
+两个 Agent Query 都只接受可选的`workspaceRootId`；无参数读取全局空 Workspace 基线，带参数则先校验 Root 授权，再由 Pi Executor 读取该 canonical Workspace 的真实目录。未知、重复或未授权 Root 均失败关闭。
+
 公开Commands：
 
 - `POST /api/prompt-fragments`
@@ -100,6 +107,7 @@ Revision规则：
 - `POST /api/prompt-turn-previews`
 - `POST /api/agent-profiles/:agentKey/prompt-revisions`
 - `POST /api/agent-profiles/:agentKey/restore-default`
+- `POST /api/agent-profiles/:agentKey/versions`
 
 Prompt Studio与Composer都通过`packages/dsh-lifeos-bridge`访问Chat公开Query/Command；浏览器不扫描本机目录、不提交权威路径、不直接调用Workflow或Pi。
 
@@ -126,16 +134,24 @@ DSH发送审核使用实际Adapter入口捕获的完整可序列化`GenerateOpti
 
 ## 6. 系统级组装与覆盖规则
 
-一次Workflow运行中的最终节点提示词按以下顺序组成：
+一次Workflow运行中的有效Agent配置先按以下顺序解析：
 
 ```text
-1. Chat不可覆盖的Runtime Contract
+本次Run冻结的Session临时agent_configuration
+  > Workflow Revision精确绑定的AgentVersion ID + Hash
+  > Agent Catalog / Pi Runtime默认
+```
+
+`global/workspace`是Version的授权Scope，不是自动合并层。解析完成后，最终节点提示词按以下顺序组成：
+
+```text
+1. 当前节点若声明专用Chat Runtime Contract，则先加入该不可覆盖层
 2. 节点有效Agent Prompt（Workflow/Run有差异时替换Agent默认，否则继承Agent Profile）
 3. 会话上下文Prompt选择
 4. 当前消息、正式历史、节点输入、Tools与Request Options
 ```
 
-`default / replace / append`只作用于会话上下文中的同一个用户可管理Region。Agent节点使用更简单的单值规则：`Run临时差异 > Workflow节点差异 > Agent默认`。空差异表示继承，不存在通用继承框架；最终有效值在Run创建事务中冻结。它不能替换Runtime Contract、工具白名单、结构化输出Schema、审批、预算、安全和Product事实所有权。
+`default / replace / append`只作用于会话上下文中的同一个用户可管理Region。AgentVersion则是System Prompt、Tools和资源策略的完整不可变配置；空绑定表示继承Catalog/Runtime默认，不存在通用多重继承框架。最终有效值在Run创建事务中冻结。它不能替换Runtime Contract、Workspace授权、结构化输出Schema、审批、预算、安全和Product事实所有权。
 
 默认共享组合不再写死在Bridge或Application代码中，而由`prompts/catalog.json#sharedSelectionProfile`版本化并进入Catalog Hash。前端提交的是精确Revision ID/Hash和层级意图；Bridge只冻结、预览和转发，Application重新鉴权并编译。Workflow v3一次保存全部相关节点的有效结果，运行时只按`definitionNodeId + nodeType`取出对应节点，不允许Pi自行发现另一套Prompt来源。
 
@@ -156,15 +172,17 @@ Direct固定Profile为：
 direct-agent-prompt-profile.v2
 ├── Instructions / System
 │   ├── Pi动态默认基础System，或Chat用户选择的完整替换
-│   ├── Chat Direct运行约束
+│   ├── 只读/项目初始化等专用变体声明的Chat运行约束（默认Pi CLI无此层）
 │   └── 用户按Region选入的命名Markdown段
 ├── Messages
 │   ├── 近期成功Product Run提交的user/assistant对
 │   └── 当前Product Message（原样role:user）
-├── Tools
-│   └── read-only: read / grep / find / ls
+├── Tools / Resources
+│   ├── pi_cli_default：完成Extension绑定后由真实Pi AgentSession决定；当前默认启用read/bash/edit/write，可选内置目录另含grep/find/ls
+│   └── 派生Version：精确Tool子集与四类资源开关
 ├── Request Options
-│   └── 固定provider/model/thinking=off/retry=0/compaction=off
+│   ├── pi_cli_default：沿用当前冻结的Pi默认执行选项
+│   └── 受限变体：按对应运行合同冻结
 └── Manifest（模型不可见）
     └── 来源、Revision、Scope、顺序、采用/排除原因、预算与Hash
 ```
@@ -173,9 +191,11 @@ direct-agent-prompt-profile.v2
 
 历史只选择已形成正式Assistant Message的成功`User → Assistant`对，按最近优先、完整成对地加入；失败、取消、`outcome_unknown`或没有正式Assistant结果的User Message不自动重放。当前输入永远是最后一条原始User Message，不加`<history>`等伪文本包装。
 
-v2使用确定性首版预算：总输入上限64,000估算Token，固定为Tool Schema预留8,000；文本估算器为`ceil(UTF-8 bytes / 3)`。必需System与当前User超限时在Provider前失败；可选历史从旧到新稳定排除并在Manifest记录原因。当前不开启Pi重试和Compaction。
+v2使用确定性首版预算：总输入上限64,000估算Token，固定为Tool Schema预留8,000；文本估算器为`ceil(UTF-8 bytes / 3)`。必需System与当前User超限时在Provider前失败；可选历史从旧到新稳定排除并在Manifest记录原因。Pi默认与显式受限版本的重试/Compaction选择分别冻结在Request Options中。
 
 Direct Run与Assembly强制1:1；Input Manifest绑定Assembly Hash。Executor授权响应只返回冻结内容和证据，不从DSH Session、当前文件或已被修改的Prompt组件重新推导。
+
+Runtime默认继承直到真实AgentSession绑定Extension后才能得到最终清单；该清单Hash在首次Session绑定时进入Operation Store。Prompt Review后恢复如果观察到不同的System、Tool Schema或资源清单，Operation直接失败，不会用新能力继续同一个Run。
 
 ## 7. 三道审核与来源对应
 
@@ -215,7 +235,7 @@ Direct另外拥有v2四通道Chat输入Assembly、正式历史选择、逐请求
 尚未实现：
 
 - 在Provider审核页直接编辑Raw Payload并产生新审核Revision；
-- 用户可命名、版本化的完整Prompt Profile；当前共享默认组合由Catalog版本化，节点Runtime Profile仍由代码版本固定；
+- DSH Tool/Skill/Plugin作为Chat Agent能力的目录与执行Provider；当前AgentVersion只真正执行Pi原生能力；
 - Conversation Summary Candidate与跨Run压缩；
 - Planner、Planning Executor和Note Extractor的Provider前人工审核与四路Payload来源映射；
-- Workspace写入/Shell能力；当前Direct固定`read_only`；
+- 其他非Direct Agent与Direct相同的完整Version/Tools/Resources临时配置纵向；

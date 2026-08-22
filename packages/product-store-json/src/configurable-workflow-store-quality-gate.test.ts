@@ -27,8 +27,8 @@ import {
   SYSTEM_NOTE_WORKFLOW_REVISION_ID,
   SYSTEM_NOTE_WORKFLOW_VIEW_ID,
   SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID,
-  SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
-  SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID,
+  LEGACY_SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+  LEGACY_SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID,
   createSystemDirectAgentDefinition,
 } from "@chat/application/workflow-system-definitions";
 import { JsonProductStore } from "./json-product-store.js";
@@ -44,6 +44,7 @@ import { migrateProductSnapshotV13ToV14 } from "./migrate-v13-to-v14.js";
 import { migrateProductSnapshotV14ToV15 } from "./migrate-v14-to-v15.js";
 import { migrateProductSnapshotV15ToV16 as migrateProductSnapshotV15ToV16Legacy } from "./migrate-v15-to-v16.js";
 import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
+import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
 import { productSnapshotV13Schema } from "./legacy-v13.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 import { computePromptFragmentRevisionSha256 } from "@chat/domain";
@@ -53,7 +54,9 @@ const NOW = "2026-08-10T12:00:00.000Z";
 function migrateProductSnapshotV15ToV16(
   snapshot: Parameters<typeof migrateProductSnapshotV15ToV16Legacy>[0],
 ): ProductSnapshot {
-  return migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(snapshot));
+  return migrateProductSnapshotV17ToV18(
+    migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(snapshot)),
+  );
 }
 
 function ids(): IdFactory {
@@ -107,6 +110,7 @@ function emptyV6() {
     "promptFragments",
     "promptFragmentRevisions",
     "promptAssemblies",
+    "agentVersions",
     "projectBootstrapCandidates",
     "projectBootstrapDecisions",
     "projectBootstrapOperations",
@@ -352,15 +356,15 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     ).toMatchObject({
       key: "system.direct-agent",
       blueprintKey: "direct",
-      publishedRevisionId: SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+      publishedRevisionId: LEGACY_SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
     });
     expect(
-      first.entities.workflowViewDefinitions[SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID]?.nodes.map(
-        (node) => node.nodeType,
-      ),
+      first.entities.workflowViewDefinitions[
+        LEGACY_SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID
+      ]?.nodes.map((node) => node.nodeType),
     ).toEqual(["agent.direct"]);
     const directNode =
-      first.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID]
+      first.entities.workflowDefinitionRevisions[LEGACY_SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID]
         ?.semanticRoot.elements[0];
     expect(directNode).toMatchObject({
       kind: "composite",

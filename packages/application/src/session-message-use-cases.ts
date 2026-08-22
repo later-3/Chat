@@ -395,21 +395,22 @@ export async function previewPromptTurn(
       recoveryAction: "retry_same_command",
     });
   }
+  const promptAssembly = prepared.promptAssembly;
   const nodes = await Promise.all(
     promptBearingNodes(prepared.compiled.runSpec.nodeResolutions).map(async (node) => {
       const binding = agentBindingForNode(node.nodeType, node.config);
       const nodeAssembly =
-        prepared.promptAssembly?.schemaVersion === "prompt-assembly.v2"
-          ? prepared.promptAssembly
-          : prepared.promptAssembly?.schemaVersion === "prompt-assembly.v3"
-            ? prepared.promptAssembly.nodes.find(
+        promptAssembly.schemaVersion === "prompt-assembly.v2"
+          ? promptAssembly
+          : promptAssembly.schemaVersion === "prompt-assembly.v3"
+            ? promptAssembly.nodes.find(
                 (candidate) => candidate.definitionNodeId === node.definitionNodeId,
               )
             : undefined;
       if (nodeAssembly === undefined) throw new Error("Prompt节点Assembly不存在");
       const stage =
-        prepared.promptAssembly?.schemaVersion === "prompt-assembly.v2"
-          ? prepared.promptAssembly.tools.capabilityMode === "project_bootstrap"
+        promptAssembly.schemaVersion === "prompt-assembly.v2"
+          ? promptAssembly.tools.capabilityMode === "project_bootstrap"
             ? ("direct_pre_send_dynamic_extension" as const)
             : ("direct_pre_send" as const)
           : node.nodeType === "execute.plan"
@@ -421,13 +422,16 @@ export async function previewPromptTurn(
         agent: await getAgentProfile(deps, {
           principalId: input.principalId,
           agentKey: binding.agentKey,
+          ...(promptAssembly.workspaceRootId === undefined
+            ? {}
+            : { workspaceRootId: promptAssembly.workspaceRootId }),
         }),
         runtimeResolution: {
           stage,
           governedSystemPromptAppend:
             governedUserPromptLayer(nodeAssembly.systemPromptAppend) ?? "",
           toolResolution:
-            prepared.promptAssembly?.schemaVersion === "prompt-assembly.v2"
+            promptAssembly.schemaVersion === "prompt-assembly.v2"
               ? ("frozen" as const)
               : ("runtime_deferred" as const),
           note:

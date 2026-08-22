@@ -20,7 +20,7 @@ agent.direct（promptReviewMode：manual / off）
 必须创建新的Review和新的Workflow Hook，不能复用上一轮批准。`off`时不创建Review、Decision或Hook，
 但仍先冻结最终Payload并耐久提交Provider派发栅栏，不能绕开结果未知保护。
 
-三类Prompt审核现在共用DSH右侧全高审查面板：顶部标题/状态和底部决定固定，中间正文单独滚动；Raw JSON、易读Section和Tool Schema不再各自形成纵向滚动容器。Agent设置把本节点准确显示为`Pi Coding Agent · 直接执行`，并从真实Pi AgentSession投影默认System与`read/grep/find/ls` Schema；Chat Direct约束和用户管理Prompt明确作为后续追加层显示。
+三类Prompt审核现在共用DSH右侧全高审查面板：顶部标题/状态和底部决定固定，中间正文单独滚动；Raw JSON、易读Section和Tool Schema不再各自形成纵向滚动容器。Agent设置把本节点准确显示为`Pi Coding Agent · 直接执行`，并从真实Pi AgentSession投影默认System、完整可执行Tool目录、当前默认启用集合与资源清单；当前受管AgentDir默认启用`read/bash/edit/write`，可选内置目录另含`grep/find/ls`。用户派生Version才施加Prompt、Tool或资源限制。Agent设置按自身容器宽度重排：窄设置面把Agent列表放到详情上方，避免宿主弹窗宽度与浏览器viewport不一致时挤压详情；Pi System、Chat追加层和Tool Schema都显示真实来源文件，本机可直接用VS Code打开。
 
 ## 2. P1边界
 
@@ -37,7 +37,7 @@ P1不包含：
 
 1. Prompt差异对比与编辑能力；当前已提供原始请求、按区域拆分且带源码来源定位的易读视图、批准/拒绝和刷新恢复。
 2. 真实百炼/付费模型端到端；这些属于P3并需要届时明确授权。
-3. Workspace写入、Shell、第三方Extension、Memory或双Root Workspace。V1固定`read_only`；可使用DSH当前会话映射出的单一目标Root，未映射时使用隔离空Workspace。
+3. DSH宿主Tool/Skill/Plugin、Memory或双Root Workspace。当前默认Direct继承Pi CLI编码能力；Workspace与高影响动作仍受Chat运行授权治理，DSH能力尚未作为Pi Tool伪装接入。
 
 ## 3. 最终请求与可读投影
 
@@ -64,7 +64,7 @@ Direct Prompt Assembly接入后，易读投影还会读取同一Product Run的�
 Message Command
   → 原子提交Message + direct_agent Run + Workflow Attempt + RunSpec + workflow_start Outbox
 Workflow
-  → BeginDirectAgentAttempt（冻结Message/RunSpec/Prompt Assembly/read_only/版本/预算Hash）
+  → BeginDirectAgentAttempt（冻结Message/RunSpec/Prompt Assembly/AgentVersion/Tools/资源/预算Hash）
   → 启动唯一Pi Direct Operation
 Executor AgentSession.providerRequestGate（Pi公开fail-closed接缝）
   → 规范化Payload + 导出0600 Session checkpoint
@@ -119,9 +119,9 @@ Later Pi Fork提供通用`AgentSession.resumePendingTurn()`。它从恢复的Use
 每次审核前使用公开`exportToJsonl()`生成0600 checkpoint并记录文件Hash/Session/leaf身份。
 当前证据覆盖进程退出与重启；Pi导出没有提供显式文件/目录`fsync`合同，因此P1不宣称突然断电后的同等级耐久。
 
-V1显式关闭thinking、Provider自动重试、Compaction、Branch Summary和外部Extension。
-关闭thinking保证后续工具回合不会把`reasoning_content`带入需要持久化的审核正文；其余开关确保
-不存在绕过统一Gate的第二条模型调用路径。
+受限Direct变体继续显式关闭thinking、Provider自动重试、Compaction、Branch Summary和外部Extension；
+`pi_cli_default`则使用冻结的Pi默认Request Options与资源策略。无论变体如何，每一次真实Provider请求都必须经过
+同一个Gate，不存在绕过审核的第二条模型调用路径。
 
 每个Attempt最多允许16个Prompt Review和16次Provider发送。循环是同一个Execution Agent节点的
 内部运行状态，不创建第17个Workflow节点或额外人工节点。
@@ -130,7 +130,7 @@ V1显式关闭thinking、Provider自动重试、Compaction、Branch Summary和�
 因此无需改变历史Manifest合同或增加Product Store迁移；Application授权响应把解析后的模式传给Pi Service，
 浏览器、Workflow Hook和Pi Session都不能自行改写。
 
-V1 Direct Runtime从Application授权响应取得同一Assembly的`systemPromptAppend`、`userPrompt`和可选`workspaceRootId`；Workflow与Journal只保存引用/Hash，不复制正文。当前Workspace是单一只读目标Root，模型可通过read/grep/find/ls自行读取`AGENTS.md`；Chat不把该文件预读后塞进Prompt。
+Direct Runtime从Application授权响应取得同一Assembly的`systemPromptAppend`、`userPrompt`、Agent配置和可选`workspaceRootId`；Workflow与Journal只保存引用/Hash，不复制正文。`pi_cli_default`让Pi按自身ResourceLoader发现Context Files、Skills、Prompt Templates和Extensions；用户派生Version可以逐项关闭。Chat会话Prompt选择仍作为独立Assembly来源，不冒充Pi自动发现内容。
 
 ## 7. 故障政策
 

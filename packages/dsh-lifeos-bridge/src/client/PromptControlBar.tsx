@@ -35,6 +35,7 @@ export function PromptControlBar(props: PromptControlBarProps) {
           useLifeos={props.useLifeos}
           loadWorkflows={props.loadWorkflows}
           selectWorkflow={props.selectWorkflow}
+          resolvePromptWorkspace={props.resolvePromptWorkspace}
         />
         <span className="lifeos-prompt-control-divider" aria-hidden="true" />
         <ContextInjectionManager

@@ -19,6 +19,7 @@ import { ChatProductApiError } from "./chat-client.ts";
 import { DshSessionHistoryAccessError } from "./dsh-session-history.ts";
 import {
   PromptStudioBridgeService,
+  agentVersionCreateRequestSchema,
   agentPromptRestoreRequestSchema,
   agentPromptReviseRequestSchema,
   promptStudioArchiveRequestSchema,
@@ -35,7 +36,9 @@ import {
 } from "./prompt-source-file-opener.ts";
 
 const MAX_REQUEST_BODY_BYTES = 16 * 1024;
-const MAX_PROMPT_REQUEST_BODY_BYTES = 96 * 1024;
+// Agent Version允许131072个UTF-16字符的完整System Prompt；按UTF-8最坏4字节/字符，
+// 再为命令信封、标题与资源合同保留边界开销，避免Bridge拒绝Chat公开合同内的合法正文。
+const MAX_PROMPT_REQUEST_BODY_BYTES = 640 * 1024;
 const SESSION_PATH = /^\/lifeos\/sessions\/([^/]+)$/;
 const CONTEXT_INJECTIONS_PATH = /^\/lifeos\/sessions\/([^/]+)\/context-injections$/;
 const BRIDGE_SEND_PREVIEWS_PATH = /^\/lifeos\/sessions\/([^/]+)\/bridge-send-previews$/;
@@ -62,6 +65,7 @@ const PROJECT_BOOTSTRAP_INITIALIZE_PATH =
   /^\/lifeos\/project-bootstrap\/sessions\/([^/]+)\/initialize$/;
 const PROMPT_REGIONS_PATH = /^\/lifeos\/prompts\/regions$/;
 const AGENT_PROFILES_PATH = /^\/lifeos\/agents$/;
+const AGENT_VERSIONS_PATH = /^\/lifeos\/agents\/([^/]+)\/versions$/;
 const AGENT_PROMPT_REVISIONS_PATH = /^\/lifeos\/agents\/([^/]+)\/prompt-revisions$/;
 const AGENT_RESTORE_DEFAULT_PATH = /^\/lifeos\/agents\/([^/]+)\/restore-default$/;
 const PROMPT_WORKSPACES_PATH = /^\/lifeos\/prompts\/workspaces$/;
@@ -77,6 +81,7 @@ const PROMPT_SOURCE_OPENERS_PATH = /^\/lifeos\/prompts\/source-openers$/;
 const PROMPT_SOURCE_OPEN_PATH = /^\/lifeos\/prompts\/source-files\/open$/;
 const SESSION_RECORDS_DEFAULT_LIMIT = 50;
 const SESSION_RECORDS_MAX_LIMIT = 100;
+const WORKSPACE_ROOT_ID = /^root_[A-Za-z0-9]+$/u;
 
 function headerValue(value: string | string[] | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
@@ -150,6 +155,14 @@ export function assertSameOriginRequest(
     }
   }
   return host;
+}
+
+function isLoopbackAuthority(host: string, expectedPort: number): boolean {
+  const authority = new URL(`http://${host}`);
+  return (
+    authority.port === String(expectedPort) &&
+    ["127.0.0.1", "localhost", "[::1]"].includes(authority.hostname)
+  );
 }
 
 function sessionIdFrom(match: RegExpExecArray): string {
@@ -254,6 +267,32 @@ export function parseSessionRecordsDshQuery(url: URL): {
     ...(afterSeq === undefined ? {} : { afterSeq }),
     limit: recordsLimit(url.searchParams),
   };
+}
+
+/** Agent Profile只允许显式的单一Chat Workspace Root，缺省即全局配置。 */
+export function parseAgentProfilesQuery(url: URL): { workspaceRootId?: string } {
+  for (const key of url.searchParams.keys()) {
+    if (key !== "workspaceRootId") {
+      throw new BridgeRequestError(
+        400,
+        "lifeos_agent_profiles_query_invalid",
+        `未知Query参数：${key}`,
+      );
+    }
+  }
+  const values = url.searchParams.getAll("workspaceRootId");
+  if (values.length > 1) {
+    throw new BridgeRequestError(
+      400,
+      "lifeos_agent_profiles_query_invalid",
+      "workspaceRootId不得重复",
+    );
+  }
+  const workspaceRootId = values[0];
+  if (workspaceRootId !== undefined && !WORKSPACE_ROOT_ID.test(workspaceRootId)) {
+    throw new BridgeRequestError(400, "lifeos_agent_profiles_query_invalid", "workspaceRootId非法");
+  }
+  return workspaceRootId === undefined ? {} : { workspaceRootId };
 }
 
 async function readJson(
@@ -370,6 +409,11 @@ export function createLifeosRouteHandler(
     try {
       const host = assertSameOriginRequest(req, expectedPort, publicHostname);
       const url = new URL(req.url ?? "", `http://${host}`);
+      // 同一生产进程可以同时服务公开域名与本机loopback。编辑器启动能力只投影给
+      // loopback请求；公开域名即使通过产品认证也不能借浏览器启动服务器本机应用。
+      const localPromptSourceFiles = isLoopbackAuthority(host, expectedPort)
+        ? promptSourceFiles
+        : undefined;
       if (req.method === "GET" && PROMPT_SOURCE_OPENERS_PATH.test(url.pathname)) {
         if (url.search !== "") {
           throw new BridgeRequestError(
@@ -381,7 +425,7 @@ export function createLifeosRouteHandler(
         sendJson(
           res,
           200,
-          promptSourceFiles?.openers() ?? {
+          localPromptSourceFiles?.openers() ?? {
             schemaVersion: "chat-prompt-source-openers.v1",
             items: [],
           },
@@ -396,7 +440,7 @@ export function createLifeosRouteHandler(
             "Query parameters are not accepted",
           );
         }
-        if (promptSourceFiles === undefined) {
+        if (localPromptSourceFiles === undefined) {
           throw new BridgeRequestError(
             409,
             "lifeos_prompt_opener_unavailable",
@@ -411,7 +455,7 @@ export function createLifeosRouteHandler(
             "Prompt来源文件打开请求非法",
           );
         }
-        sendJson(res, 202, await promptSourceFiles.open(parsed.data));
+        sendJson(res, 202, await localPromptSourceFiles.open(parsed.data));
         return;
       }
       if (
@@ -434,6 +478,12 @@ export function createLifeosRouteHandler(
         req.method === "GET" &&
         AGENT_PROFILES_PATH.test(url.pathname)
       ) {
+        sendJson(res, 200, await promptStudio.agents(parseAgentProfilesQuery(url)));
+        return;
+      }
+      const agentReviseMatch = AGENT_PROMPT_REVISIONS_PATH.exec(url.pathname);
+      const agentVersionCreateMatch = AGENT_VERSIONS_PATH.exec(url.pathname);
+      if (promptStudio !== undefined && req.method === "POST" && agentVersionCreateMatch !== null) {
         if (url.search !== "") {
           throw new BridgeRequestError(
             400,
@@ -441,10 +491,26 @@ export function createLifeosRouteHandler(
             "Query parameters are not accepted",
           );
         }
-        sendJson(res, 200, await promptStudio.agents());
+        const parsed = agentVersionCreateRequestSchema.safeParse(
+          await readJson(req, MAX_PROMPT_REQUEST_BODY_BYTES),
+        );
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_agent_version_invalid",
+            "Agent Version创建请求非法",
+          );
+        }
+        sendJson(
+          res,
+          201,
+          await promptStudio.createAgentVersion(
+            decodeURIComponent(agentVersionCreateMatch[1] ?? ""),
+            parsed.data,
+          ),
+        );
         return;
       }
-      const agentReviseMatch = AGENT_PROMPT_REVISIONS_PATH.exec(url.pathname);
       if (promptStudio !== undefined && req.method === "POST" && agentReviseMatch !== null) {
         if (url.search !== "") {
           throw new BridgeRequestError(

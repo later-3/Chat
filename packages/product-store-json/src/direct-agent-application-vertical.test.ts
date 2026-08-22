@@ -112,6 +112,7 @@ async function createHarness() {
               packageName: "@earendil-works/pi-coding-agent",
               packageVersion: "0.84.2",
               managedSource: "later-3/pi@codex/later-custom",
+              managedSourceRevision: "1".repeat(40),
               compositionStrategy: "pi_default_or_custom_then_chat_runtime_then_context",
               chatRuntimeAppend: {
                 bodyMarkdown: "Direct Runtime Contract",
@@ -123,6 +124,7 @@ async function createHarness() {
                   variantKey: "read_only",
                   title: "只读执行",
                   description: "只读检查Workspace。",
+                  capabilityCatalogSha256: "2".repeat(64),
                   enabledToolNames: ["read", "grep", "find", "ls"],
                   piSystemPrompt: {
                     bodyMarkdown: "You are an expert coding assistant operating inside pi.",
@@ -384,7 +386,7 @@ describe("Direct Agent Application + JsonProductStore最小纵向", () => {
       productRunId: started.run.productRunId,
       directAgentAttemptId: started.begun.directAgentAttemptId,
       sourceMessage: { text: "请只读检查，不要执行写操作" },
-      capabilityMode: "read_only",
+      capabilityMode: "pi_cli_default",
       promptAssembly: {
         piSystemPrompt: {
           kind: "pi_coding_agent",

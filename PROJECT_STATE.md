@@ -1,6 +1,6 @@
 # Chat 项目状态
 
-> 更新日期：2026-08-21
+> 更新日期：2026-08-22
 
 ## 当前事实
 
@@ -8,12 +8,12 @@
 |---|---|
 | 产品身份 | 独立、完整、持续演进的个人Agent协作产品 |
 | 唯一前端 | Chat公开仓库`later-3/deepseek-harness-chat`维护固定`DeepSeek Harness Web rc.6`窄派生；当前只维护Trajectory Location/标签/紧凑预览扩展，Chat直接链接`codex/chat-trajectory-location-rc6`源码构建；旧`apps/web`与Agent Canvas均不属于当前架构 |
-| 前端桥接 | `@chat/dsh-lifeos-bridge`通过DSH公开Slot把原生会话、Composer行内Workflow选择与服务端描述的发送级配置、会话Prompt Region选择/语义预览、独立Agent设置、只读上下文注入、Prompt Studio与人工审核接到Chat公开API；Prompt Composer只管理会话上下文，Workflow配置页展示并编辑“Agent默认模板→Workflow节点实例→本次Session/Run临时覆盖”三层关系，可保存个人Workflow Revision或提升为Agent默认；Bridge只做同源合同代理，不拥有Agent/Workflow配置事实；Composer「调试审核」提供独立DSH→Bridge与Bridge→Chat开关，当前Direct Workflow还可按会话配置是否逐次审核Provider提示词；原生侧栏作为唯一会话入口，Bridge首轮只提交Message，Chat Application在同一事务内创建Product Session、标题、Run与Outbox，Bridge仅保存DSH→Chat身份映射；“会话记录”页签和对话头部“Chat Session”弹窗复用同一双源Query，完整展示Chat正式Message与DSH原始事件；实时Pi工具调用与完整Workflow执行树继续进入原生Trajectory |
+| 前端桥接 | `@chat/dsh-lifeos-bridge`通过DSH公开Slot把原生会话、Composer行内Workflow选择与服务端描述的发送级配置、会话Prompt Region选择/语义预览、独立Agent设置、只读上下文注入、Prompt Studio与人工审核接到Chat公开API；Prompt Composer只管理会话上下文，Workflow配置页展示并编辑“Pi运行基线→不可变Agent Version/Workflow精确绑定→当前DSH Session临时覆盖”，可保存新的Agent Version或个人Workflow Revision；Bridge只做同源合同代理，不拥有Agent/Workflow配置事实；Composer「调试审核」提供独立DSH→Bridge与Bridge→Chat开关，当前Direct Workflow还可按会话配置是否逐次审核Provider提示词；原生侧栏作为唯一会话入口，Bridge首轮只提交Message，Chat Application在同一事务内创建Product Session、标题、Run与Outbox，Bridge仅保存DSH→Chat身份映射；“会话记录”页签和对话头部“Chat Session”弹窗复用同一双源Query，完整展示Chat正式Message与DSH原始事件；实时Pi工具调用与完整Workflow执行树继续进入原生Trajectory |
 | 开发工作台 | Beta、可选、当前暂停进入CI/CD；固定`code-server@4.132.0`与DSH全屏Surface实现继续保留，供需要时人工验证Files、Editor、Terminal、Git/Diff与扩展系统 |
 | 后端 | Node.js + TypeScript；Hono协议入口；Application拥有用例事务 |
-| Product Store | `chat-product-store.v17`版本化JSON Adapter；用户会话Prompt与Agent Prompt Revision正文位于可见Markdown文件，Store只留版本/Scope/Hash引用；Direct Run冻结Chat交给Pi的System追加层、正式Messages、Capability Tool清单和Options为Prompt Assembly v2，最终Provider Payload由Prompt Review冻结；多节点Run冻结各节点有效Agent Prompt与同一份会话上下文的v3，Planning/Execution Manifest绑定节点Hash；Plane CE纵向只新增项目初始化Candidate、Decision、Operation与Session Binding，不复制Plane项目当前态；Git内置Prompt、Agent定义与共享默认Profile仍由只读Catalog拥有 |
-| Workflow | Vercel Workflow解释不可变RunSpec，承担耐久步骤、暂停、恢复与Checkpoint；发送级节点配置由Node Catalog字段、Blueprint白名单和具体Definition默认值共同描述并由Compiler冻结。Agent节点可持久保存`agentKey`与可选`agentPromptOverride`；系统Definition保存时派生个人已发布版本，个人Definition原子发布下一Revision；Session/Run临时差异只进入Run Configuration。单节点“执行 Agent（逐次提示词审核）”另开放`promptReviewMode` |
-| Agent Runtime | Planner复用`pi-agent-core`；完整Executor由独立Pi Coding Executor Service承载真实`AgentSession`、多轮Tool loop、Session与安全Journal，不拥有产品会话或完成事实；Planner、Direct、Project Bootstrap、Coding Executor和Note Extractor各有独立Agent Profile（System Prompt与Tool说明），Workflow节点只引用Agent，执行时采用“锁定Runtime Contract + Agent Profile + 冻结会话上下文”；其中Direct使用Prompt Assembly v2接收System、近期正式历史、当前User、Tools与Options，其他节点从同一Run的v3按节点取Prompt；Direct与Coding Executor明确关闭Pi的Context/Skill/Template/隐式System自动发现；工具、Schema、审批、安全、预算与产品事实边界不可被用户Prompt替换；Chat显式`DASHSCOPE_API_KEY`只注册为Pi进程内runtime override，不进入Prompt/Session/Store；`project_bootstrap`模式引用项目初始化Agent并只开放准备候选的受控工具，不能越过用户确认直接写Plane或Workspace |
+| Product Store | `chat-product-store.v18`版本化JSON Adapter；Store新增不可变`AgentVersion`，冻结Owner、Scope、Pi基线引用、System Prompt、显式Tools、资源策略与Hash；Workflow只绑定Version ID+Hash，旧Revision与旧Run不随新版本变义。用户会话Prompt与兼容Agent Prompt Revision正文仍位于可见Markdown文件；Direct Run以Prompt Assembly v2冻结System、正式Messages、显式能力或`inherit_runtime_default`解析模式和Options，完成Extension绑定后的真实Provider Payload由Prompt Review冻结，实际Runtime Manifest Hash进入Pi Journal；多节点Run继续用v3冻结各节点有效Prompt与同一份会话上下文 |
+| Workflow | Vercel Workflow解释不可变RunSpec，承担耐久步骤、暂停、恢复与Checkpoint；发送级节点配置由Node Catalog字段、Blueprint白名单和具体Definition默认值共同描述并由Compiler冻结。Pi Direct Agent节点可精确绑定`AgentVersion ID + Hash`；系统Definition保存时派生个人已发布版本，个人Definition原子发布下一Revision；当前DSH Session临时差异只进入结构化`agent_configuration`并在每个Run冻结，不写回Agent或Workflow。单节点“执行 Agent（逐次提示词审核）”另开放`promptReviewMode` |
+| Agent Runtime | Planner复用`pi-agent-core`；完整Executor由独立Pi Coding Executor Service承载真实`AgentSession`、多轮Tool loop、Session与安全Journal，不拥有产品会话或完成事实。Direct默认`pi_cli_default`不追加Chat只读限制、不手写Tools，也不关闭Context/Skill/Prompt Template/Extension；目录投影与真实Run使用同一个受管`agentDir + Settings + ResourceLoader`构造路径，无Root时生成空Workspace全局基线，带受权`workspaceRootId`时由Executor解析真实canonical cwd并读取scoped Settings/Extension/资源。投影不跨请求缓存；Run完成`bindExtensions`后钉住Resolved Manifest Hash，恢复漂移在Provider前失败。只有用户显式派生的Version或专用Workflow才冻结受限Tool/资源策略；Coding Executor仍按已批准Execution Contract隔离能力。Prompt、Tool可见性、调用审批、Workspace授权、预算与产品终态是独立合同，不能互相冒充 |
 | Plane CE项目管理 | 可选Plane Community Edition 1.4.1纵向：侧栏专用入口预选Direct Workflow的`project_bootstrap`运行配置，Application据此引用独立项目初始化Agent；Bridge不再向会话Prompt注入Agent身份。显式确认后创建Plane Project/Modules和本地Git Workspace，双侧对账成功才建立Binding并允许进入Workspace/打开Plane。Plane拥有项目管理事实，Chat只拥有会话、确认、外部操作Journal与绑定 |
 | Session与执行轨迹 | Chat Session按`Product Session → Message → Run → Node/Attempt → Pi Operation/Session/Turn/Tool`分层组合DSH、Product Store、Workflow与Pi原生记录；独立Run Activity Journal只保存按Run有序、幂等、有界的Agent/模型/工具展示活动。DSH Trajectory按`RUN → DSH → BRIDGE → BACKEND → WORKFLOW → NODE → STEP → AGENT → MODEL/TOOL`投影Product事实、边界摘要与Activity；远端Pi工具不再通过`lifeos_trace`伪造成DSH原生工具事件。Debug Trace完全退出Session/轨迹热路径，默认全部关闭，可用`CHAT_TRACE_MODE`与`CHAT_TRACE_SCOPES`按模块显式开启 |
 | Memory | Workflow Memory v1以独立“Memory 增强规划与执行”Definition交付：只有用户显式选择后才执行`memory.query → memory.write →`规划链，普通默认Simple Planning完全没有Memory节点。首个活动Adapter为Tencent MemoryCore；Chat不实现Memory引擎，也不自动启动第三方服务。Query/Write节点及安全结果进入DSH原生Trajectory |
@@ -29,7 +29,7 @@
    双侧记录，不级联修改Product Session；固定rc.6没有永久删除/恢复归档公开能力，当前不伪造这两项语义。
 2. Code Workbench首期纵向已经作为独立Hosted App接入，但当前标记为Beta，不参与通用CI/CD；不复制或拆分code-server UI。
 3. “执行 Agent（逐次提示词审核）”单节点纵向已经实现；DSH可选择并配置该Workflow。Provider审核开启时在Pi真实发送前展示原始请求/易读视图与批准/拒绝，关闭时直接发送但仍保留派发与结果未知安全边界；DSH→Bridge和Bridge→Chat两道调试审核也可独立开关。
-4. 系统级Prompt纵向已经实现：会话上下文正文位于可见的全局/Workspace Markdown，Agent System Prompt通过独立Agent API版本化；Workflow节点实例可继承Agent默认或保存自己的Prompt差异，每次发送还可做Session/Run临时覆盖。Application按`Run > Workflow Node > Agent Default`原子冻结v2/v3 Assembly；共享默认组合与Agent默认定义由Catalog版本化，锁定Runtime Contract不允许Prompt覆盖。Direct的真实两轮付费E2E验证Agent完整覆盖、会话组件Revision/选择、每轮三道审批、正式历史恢复及两次成功Assistant提交；Prompt Review只有在Workflow节点绑定同一Request Revision/Hash后才对Query和Decision开放，消除了决定早于耐久Hook认领的竞态。
+4. 系统级Prompt与首个Agent管理纵向已经实现：会话上下文正文位于可见的全局/Workspace Markdown；Direct可从真实Pi基线创建不可变Agent Version，Workflow精确绑定Version，当前会话还能结构化临时覆盖。Application按`Run临时配置 > Workflow Version > Agent Catalog/Pi Runtime默认`解析并冻结v2/v3 Assembly；默认Pi能力由Executor真实解析，受限版本才冻结显式Tool集合。Project Bootstrap、Coding Executor等尚未逐字段消费完整Version的Agent只读展示真实基线，不提供假保存入口。Prompt Review只有在Workflow节点绑定同一Request Revision/Hash后才对Query和Decision开放。
 5. 下一步仍需用户另行授权Provider审核页编辑、Conversation Summary/压缩、用户可命名完整Profile，以及非Direct节点的Provider逐请求审核与来源映射。
 6. Plane CE项目初始化纵向已经实现：固定CE工件、受控Agent工具、显式确认、本地Git Workspace、Plane Project/Modules、结果未知对账、DSH进入Workspace与打开Plane；后续日常Work Item/状态推进工具仍需逐项授权和交付。
 7. Browser Provider与长期Memory/Rules路线继续保留，但不是本轮自动授权。
@@ -46,7 +46,7 @@
 6. 当前默认选择独立的“规划执行工作流”，其冻结Definition只有规划、审核、执行、验证和提交，根本不声明Memory节点；历史完整上下文Planning Definition继续保留。第三方MemoryCore服务不会被Chat自动启动，未配置Provider时只有显式Memory Workflow安全失败并留下轨迹证据。
 7. 没有把静态Workflow Definition节点、Workflow Run ID、Hook Token或Pi Session ID伪装成公开执行轨迹事实。
 8. 没有继续在产品工作流目录展示旧“默认规划工作流”和“默认笔记工作流”；其稳定ID和运行代码为历史Run、迁移、兼容调用与证据恢复保留。
-9. 没有为本次Plane CE改动运行真实付费模型门；普通Direct Prompt Profile v2固定`read_only`，项目创建Preset只把能力收窄为`project_bootstrap`且只能准备候选，外部创建必须经过产品决定；没有给Agent开放Plane原始REST、任意文件写入或Shell。
+9. 没有为本次Agent管理与Plane CE改动运行真实付费模型门；普通Direct默认继承Pi CLI真实编码能力，项目创建Preset显式收窄为`project_bootstrap`且只能准备候选，外部创建必须经过产品决定；DSH Tool/Skill/Plugin尚未接成Pi可执行能力，页面不得把目录可见性冒充执行能力。
 
 ## 当前仓库基线门
 

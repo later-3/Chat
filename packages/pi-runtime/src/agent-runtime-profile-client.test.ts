@@ -9,6 +9,7 @@ function runtimeBaseline(): AgentRuntimeBaselineDto {
     packageName: "@earendil-works/pi-coding-agent",
     packageVersion: "0.84.2",
     managedSource: "later-3/pi@codex/later-custom",
+    managedSourceRevision: "1".repeat(40),
     compositionStrategy: "pi_default_or_custom_then_chat_runtime_then_context",
     chatRuntimeAppend: {
       bodyMarkdown: "Chat runtime append",
@@ -20,6 +21,7 @@ function runtimeBaseline(): AgentRuntimeBaselineDto {
         variantKey: "read_only",
         title: "只读执行",
         description: "真实Pi只读工具集合",
+        capabilityCatalogSha256: "c".repeat(64),
         enabledToolNames: ["read"],
         piSystemPrompt: {
           bodyMarkdown: "You are an expert coding assistant operating inside pi",
@@ -42,7 +44,7 @@ function runtimeBaseline(): AgentRuntimeBaselineDto {
 }
 
 describe("Pi Agent运行时配置私有客户端", () => {
-  it("只请求Pi-backed Agent，并携带私有凭据且缓存成功投影", async () => {
+  it("只请求Pi-backed Agent，携带Workspace与私有凭据且每次刷新投影", async () => {
     let requestedUrl: string | URL | Request | undefined;
     let requestedInit: RequestInit | undefined;
     const fetchFn = vi.fn<typeof fetch>(async (input, init) => {
@@ -60,14 +62,14 @@ describe("Pi Agent运行时配置私有客户端", () => {
     });
 
     await expect(client.read("planner")).resolves.toBeUndefined();
-    const first = await client.read("project_bootstrap");
-    const second = await client.read("project_bootstrap");
+    const first = await client.read("project_bootstrap", "root_chat");
+    const second = await client.read("project_bootstrap", "root_chat");
 
     expect(first).toEqual(runtimeBaseline());
-    expect(second).toBe(first);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(second).toEqual(first);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
     expect(requestedUrl).toBe(
-      "http://executor.test/internal/pi-executor/v1/agent-runtime-profiles/project_bootstrap",
+      "http://executor.test/internal/pi-executor/v1/agent-runtime-profiles/project_bootstrap?workspaceRootId=root_chat",
     );
     expect(requestedInit?.headers).toMatchObject({
       accept: "application/json",
@@ -75,7 +77,7 @@ describe("Pi Agent运行时配置私有客户端", () => {
     });
   });
 
-  it("失败不进入缓存，Pi Executor恢复后可重新读取", async () => {
+  it("失败后Pi Executor恢复可重新读取", async () => {
     const fetchFn = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(null, { status: 503 }))

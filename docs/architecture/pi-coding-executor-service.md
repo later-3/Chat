@@ -7,7 +7,7 @@
 
 ## 1. 结论
 
-Chat不再用单轮`pi-agent-core + submit_execution_result`模拟Executor。批准后的每个Execution Step由独立`apps/pi-executor`进程中的真实`AgentSession`执行，具备Pi的多轮Provider/Tool loop、Session JSONL、Compaction能力以及`read/grep/find/ls/edit/write/bash`内建工具。Chat当前显式关闭Pi的Context Files、Skills、Prompt Templates和外部Extensions发现，节点提示词只来自Application授权的冻结Prompt Assembly。
+Chat不再用单轮`pi-agent-core + submit_execution_result`模拟Executor。批准后的每个Execution Step由独立`apps/pi-executor`进程中的真实`AgentSession`执行，具备Pi的多轮Provider/Tool loop、Session JSONL、Compaction能力以及`read/grep/find/ls/edit/write/bash`内建工具。Planning Execution Step继续按批准的Execution Contract显式隔离Pi自动资源；Direct的`pi_cli_default`则直接继承真实Pi CLI的System、初始Tools与资源发现。两者都只接收Application授权并冻结的Chat输入。
 
 没有使用`pi` CLI做进程协议，也没有采用仍缺少operation幂等、cursor replay和Tool执行前栅栏的实验性`pi-server`。集成面是Chat拥有的窄HTTP Operation协议；Pi由`later-3/pi`受管分支维护通用运行接缝，Chat产品身份和终态仍不写入Pi源码。
 
@@ -59,7 +59,9 @@ Planner只能从以下四种Capability请求能力，用户批准Plan后Applicat
 
 `read/grep/find/ls/edit/write`在awaited `tool_call`栅栏中拒绝`..`、Root外绝对路径与symlink逃逸；被拒绝的调用记录参数Hash、已脱敏显示输入和稳定错误码。`bash`与Pi CLI一样是本机用户权限下的高影响能力，不是文件系统或网络沙箱：它固定以Workspace为`cwd`，但命令本身仍可访问Host。为避免把Provider/Runtime秘密暴露给Shell，Executor只传递PATH、Locale、时区、终端和临时目录等白名单环境，并使用独立HOME；需要SSH、Git Credential或其他外部凭据时必须再引入显式Credential Provider，不能继承父进程秘密。
 
-Pi外部Extension本质是任意本机代码，能绕过Tool白名单并读取进程秘密；当前`noExtensions=true`，只加载Chat内联Journal Extension。同时设置`noContextFiles/noSkills/noPromptTemplates=true`并拒绝外部`SYSTEM.md`替换，Project/Agent Skills与AGENTS不会在执行时自行进入上下文。真实System顺序是`Pi按当前Tools/cwd生成的默认基线 → Chat固定Executor运行约束 → Application冻结的Agent/Workflow/Run追加层`。Application把后两类可管理输入冻结为`execute.plan`节点Assembly并随授权响应交付，其Assembly/Node Hash进入Execution Input Manifest。Pi Executor从真实AgentSession投影第一层和Tool Schema，再通过带Runtime Key的私有只读接口交给API的Agent设置；API与Workflow均不加载完整Pi Coding Agent，也不在Prompt Catalog中手抄上游内容。若要开放第三方Extension或自动发现，必须先交付独立进程凭据隔离、固定来源/Hash和Capability审核；不能把“完整AgentSession”偷换成无条件执行本地插件。
+Pi外部Extension本质是任意本机代码，能绕过Tool白名单并读取进程秘密。Planning Coding Executor当前设置`noExtensions/noContextFiles/noSkills/noPromptTemplates=true`，只加载Chat内联Journal Extension，避免已批准Contract之外的能力进入执行。Direct的`pi_cli_default`不设置这些`no*`开关，也不传显式Tools；它与真实Pi CLI走同一公共服务构造路径。用户需要限制Direct时，必须选择或创建不可变AgentVersion，由版本精确冻结System、Tool子集和四类资源开关。
+
+两条路径都由Pi Executor从真实AgentSession投影System与Tool Schema，再通过带Runtime Key的私有只读接口交给API的Agent设置；API与Workflow不加载完整Pi Coding Agent，也不在Prompt Catalog中手抄上游内容。Agent Profile Query可携带受权`workspaceRootId`，Executor内部才把它解析为canonical cwd；全局与scoped投影都不跨请求缓存。Planning路径的真实System顺序是`Pi按批准Tools/cwd生成的默认基线 → Chat固定Executor运行约束 → Application冻结的Agent/Workflow/Run追加层`；Direct默认路径保持Pi Runtime默认，再合入Chat正式会话上下文。真正的逐字节结果仍以Provider前Prompt Review为准。若要让Planning Executor开放第三方Extension或自动发现，必须先交付独立进程凭据隔离、固定来源/Hash和Capability审核。
 
 当前一个批准Step对应一个AgentSession。各Step仍按Approved Plan依赖顺序执行；依赖输出以只读输入传给下一Step。AgentSession不能修改Plan、Capability或Product终态。
 
@@ -84,6 +86,8 @@ Operation Journal中已经成功持久化的事件使用从1开始连续递增�
 正式fail-closed保证必须由独立Provider Gate和适用的执行前意图栅栏提供。
 
 Pi Operation Journal事件会投影到独立Run Activity Journal；Debug Trace可同时保存诊断事件，但公开Session轨迹不再反向读取Trace。
+
+Direct Operation还在首次真实`bindExtensions`后钉住Resolved Runtime Manifest SHA，内容覆盖System Hash、活动Tool名称/Schema Hash和资源清单Hash。恢复必须命中同一个SHA；不一致时在Provider前收敛为`direct_executor.runtime_manifest_mismatch`。P0修复前的旧Operation若完全没有该证据，只允许在首次恢复时补钉一次。
 
 Trace和Operation事件不保存Prompt、Provider Payload、API Key或隐藏推理。为满足Pi CLI/Web同等级执行可观察性，它们保存经过边界脱敏且最多32K的Assistant可见文本、Tool输入和Tool结果；命令、模型可见文件路径、输出、状态与耗时因此可复核。完整Provider正文、Pi隐藏上下文和未裁剪Workspace内容仍分别留在Pi Session、Workspace与Product Store。旧v1 Trace没有显示字段时Reader继续兼容，并明确投影为legacy缺失，而不伪造内容。
 

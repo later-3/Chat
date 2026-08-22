@@ -22,7 +22,7 @@ export function computeDirectAgentInputManifestSha256(input: {
   readonly sourceMessageId: string;
   readonly sourceMessageSha256: string;
   readonly promptAssemblySha256: string;
-  readonly capabilityMode: "read_only" | "project_bootstrap";
+  readonly capabilityMode: "pi_cli_default" | "custom" | "read_only" | "project_bootstrap";
   readonly promptTemplateVersion: string;
   readonly modelConfigVersion: string;
   readonly limits: {

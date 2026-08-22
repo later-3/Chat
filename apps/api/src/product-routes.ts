@@ -68,6 +68,7 @@ import {
   agentKeySchema,
   promptFragmentIdSchema,
   promptFragmentRevisionIdSchema,
+  promptWorkspaceRootIdSchema,
   listPromptFragmentsQuerySchema,
   createPromptFragmentPayloadSchema,
   copyPromptFragmentPayloadSchema,
@@ -78,6 +79,7 @@ import {
   previewPromptTurnPayloadSchema,
   reviseAgentPromptPayloadSchema,
   restoreAgentPromptPayloadSchema,
+  createAgentVersionPayloadSchema,
   projectBootstrapCandidateIdSchema,
   projectBootstrapOperationIdSchema,
   projectBootstrapConfigurationSchema,
@@ -177,6 +179,7 @@ import {
   getAgentProfile,
   reviseAgentPrompt,
   restoreAgentPrompt,
+  createAgentVersion,
   listPromptRegions,
   listPromptWorkspaces,
   listPromptFragments,
@@ -349,6 +352,14 @@ function assertNoQuery(url: string): void {
       message: "该查询不接受Query参数",
     });
   }
+}
+
+function parseAgentProfilesQuery(url: string): { workspaceRootId?: string | undefined } {
+  const params = strictQueryParams(url, ["workspaceRootId"], "Agent Profile查询");
+  const workspaceRootId = promptWorkspaceRootIdSchema
+    .optional()
+    .parse(params.get("workspaceRootId") ?? undefined);
+  return workspaceRootId === undefined ? {} : { workspaceRootId };
 }
 
 function parseWorkflowResourcesQuery(url: string): {
@@ -730,11 +741,11 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
 
   router.get("/agent-profiles", async (c) => {
     try {
-      assertNoQuery(c.req.url);
+      const query = parseAgentProfilesQuery(c.req.url);
       return privateEtagJson(
         c,
         "agent-profiles",
-        await listAgentProfiles(ctx.deps, { principalId: ctx.principalId }),
+        await listAgentProfiles(ctx.deps, { principalId: ctx.principalId, ...query }),
       );
     } catch (error) {
       return mapError(c, error);
@@ -743,13 +754,14 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
 
   router.get("/agent-profiles/:agentKey", async (c) => {
     try {
-      assertNoQuery(c.req.url);
+      const query = parseAgentProfilesQuery(c.req.url);
       return privateEtagJson(
         c,
         "agent-profile",
         await getAgentProfile(ctx.deps, {
           principalId: ctx.principalId,
           agentKey: agentKeySchema.parse(c.req.param("agentKey")),
+          ...query,
         }),
       );
     } catch (error) {
@@ -792,6 +804,26 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
         statusCode: 200,
       });
       return c.json(result, 200);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/agent-profiles/:agentKey/versions", async (c) => {
+    try {
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const result = await createAgentVersion(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        agentKey: agentKeySchema.parse(c.req.param("agentKey")),
+        payload: createAgentVersionPayloadSchema.parse(envelope.payload),
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/agent-profiles/:agentKey/versions",
+        statusCode: 201,
+      });
+      return c.json(result, 201);
     } catch (error) {
       return mapError(c, error);
     }
