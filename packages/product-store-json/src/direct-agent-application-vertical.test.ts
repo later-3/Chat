@@ -310,6 +310,45 @@ async function approveReview(started: Awaited<ReturnType<typeof startDirectAgent
 }
 
 describe("Direct Agent Application + JsonProductStore最小纵向", () => {
+  it("prepare阶段失败可在没有Direct Attempt时收敛为failed/queued", async () => {
+    const harness = await createHarness();
+    const submitted = await submitUserMessage(harness.deps, {
+      principalId: PRINCIPAL,
+      sessionId: harness.session.sessionId,
+      commandId: harness.command(),
+      payload: {
+        text: "现在几点了",
+        workflowSelection: harness.workflowSelection,
+      },
+    });
+
+    await commitRunFailure(harness.deps, {
+      commandId: harness.command(),
+      productRunId: submitted.run.productRunId,
+      errorCode: "direct_agent.prepare_failed",
+      summary: "Direct Agent在创建Pi执行前失败",
+    });
+
+    const { snapshot } = await harness.store.read({ kind: "committedSnapshot" });
+    expect(snapshot.entities.runs[submitted.run.productRunId]).toMatchObject({
+      status: "failed",
+      phase: "queued",
+      failure: { code: "direct_agent.prepare_failed" },
+    });
+    expect(
+      Object.values(snapshot.entities.attempts).filter(
+        (attempt) =>
+          attempt.productRunId === submitted.run.productRunId && attempt.kind === "direct_agent",
+      ),
+    ).toHaveLength(0);
+    expect(
+      Object.values(snapshot.entities.attempts).find(
+        (attempt) =>
+          attempt.productRunId === submitted.run.productRunId && attempt.kind === "workflow",
+      ),
+    ).toMatchObject({ outcome: "failure", errorCode: "direct_agent.prepare_failed" });
+  });
+
   it("只在Workflow节点绑定同一Review证据后公开并接受审核", async () => {
     const started = await startDirectAgent();
     const review = await publishReview(started, undefined, false);

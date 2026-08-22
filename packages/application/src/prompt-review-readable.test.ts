@@ -38,6 +38,10 @@ describe("Prompt Review readable source projection", () => {
     expect(sections[2]?.sources[0]?.sourceFiles).toContain(
       "pi/packages/coding-agent/src/core/tools/read.ts",
     );
+    expect(sections[0]?.sources.map((source) => source.explanation).join("\n")).not.toContain(
+      "只读",
+    );
+    expect(sections[2]?.sources[0]?.explanation).toContain("本次实际工具集合");
     expect(JSON.stringify(sections)).not.toContain("模型请求提示词");
   });
 

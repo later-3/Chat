@@ -77,7 +77,7 @@ describe("Direct Agent Workflow Steps", () => {
           {
             nodeType: "agent.direct",
             activation: "enabled",
-            config: { capabilityMode: "read_only", promptReviewMode: "manual" },
+            config: { capabilityMode: "pi_cli_default", promptReviewMode: "manual" },
           },
         ],
       },

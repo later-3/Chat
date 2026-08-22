@@ -1,5 +1,9 @@
 import { FatalError } from "workflow";
-import type { DirectAgentPromptReviewDecisionRef, PromptReviewDecisionId } from "@chat/contracts";
+import {
+  directAgentCapabilityModeSchema,
+  type DirectAgentPromptReviewDecisionRef,
+  type PromptReviewDecisionId,
+} from "@chat/contracts";
 import type { DirectPromptReviewRef, PiDirectExecutorClientOutcome } from "@chat/pi-runtime";
 import {
   DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
@@ -67,7 +71,8 @@ export async function prepareDirectAgentOperationStep(
         );
         if (
           runSpec.nodeResolutions.length !== 1 ||
-          directNode?.config["capabilityMode"] !== "read_only" ||
+          directNode === undefined ||
+          !directAgentCapabilityModeSchema.safeParse(directNode.config["capabilityMode"]).success ||
           (directNode.config["promptReviewMode"] !== "manual" &&
             directNode.config["promptReviewMode"] !== "off")
         ) {

@@ -136,6 +136,8 @@ Agent 配置不是 Session 日志；Trajectory 不是 Agent Version；Debug Trac
 
 ## 8. 失败关闭与当前边界
 
+- Direct Workflow 的 prepare Step 使用共享的`directAgentCapabilityModeSchema`校验能力模式，不能在 Workflow 内再次硬编码旧`read_only`默认；`pi_cli_default`、显式自定义和专用变体必须与 Application 冻结的 RunSpec 保持同一合同。
+- 若 Workflow 在创建 Pi Direct Attempt 前失败，产品事实收敛为`failed/queued`并允许零个 Direct Attempt；不能伪造一次从未开始的 Pi 执行，也不能因终态提交失败而让前端永久显示活动中。
 - Version 不存在、Hash 漂移、Workspace Scope 不匹配或 Runtime 基线已失效时，Run 在 Provider 前失败。
 - 同一 Operation 恢复时 Resolved Runtime Manifest 必须与首次绑定完全一致；旧记录没有该字段时只允许在首次恢复补钉一次。
 - 自定义能力没有冻结 Tool 清单时失败；客户端不能通过任意 JSON 绕过专用`agent_configuration`合同。

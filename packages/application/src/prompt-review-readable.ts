@@ -32,7 +32,7 @@ const SYSTEM_SOURCES: readonly PromptReviewReadableSource[] = [
   source(
     "Chat · Direct Agent执行节点",
     [CHAT_DIRECT_EXECUTOR],
-    "通过appendSystemPrompt追加Direct节点的只读、逐次审核和产品提交边界。",
+    "通过appendSystemPrompt追加Chat冻结的Direct节点运行合同与产品提交边界。",
   ),
   source(
     "Chat维护的Pi分支 · Provider Gate",
@@ -247,7 +247,7 @@ export function projectPromptReviewReadableSections(
         source(
           "Chat Direct Profile + Pi工具实现 + Pi Provider Adapter",
           toolSourceFiles(payload["tools"]),
-          "Chat选择允许的只读工具；Pi提供真实Tool Schema；Pi AI把这些Schema序列化进最终Provider请求。",
+          "Chat冻结本次实际工具集合；Pi提供真实Tool Schema；Pi AI把这些Schema序列化进最终Provider请求。",
         ),
       ],
     });

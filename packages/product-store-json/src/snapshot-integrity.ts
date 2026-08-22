@@ -4193,7 +4193,11 @@ function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
       const directAttempts = Object.values(entities.attempts).filter(
         (attempt) => attempt.productRunId === run.productRunId && attempt.kind === "direct_agent",
       );
-      if (run.status === "pending" ? directAttempts.length > 1 : directAttempts.length !== 1) {
+      // Direct Attempt与pending/queued -> running/executing在同一事务创建。若Workflow在
+      // prepare阶段失败，Run会直接收敛为failed/queued，此时不存在Direct Attempt才是真实
+      // 事实；不能为了满足数量约束伪造一次从未开始的Pi执行。
+      const expectsNoDirectAttempt = run.phase === "queued";
+      if (expectsNoDirectAttempt ? directAttempts.length !== 0 : directAttempts.length !== 1) {
         fail(`run ${run.productRunId} Direct Agent Attempt数量无效`);
       }
       if (run.status === "succeeded" && directAttempts[0]?.outcome !== "success") {
