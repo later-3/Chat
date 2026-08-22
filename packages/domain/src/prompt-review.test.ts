@@ -8,6 +8,8 @@ import {
   computePromptReviewPayloadSha256,
   computePromptReviewSha256,
   parseCanonicalPromptReviewPayload,
+  PROMPT_REVIEW_HIDDEN_REASONING_REDACTION_KIND,
+  redactPromptReviewHiddenReasoning,
   renderPromptReviewReadable,
   transitionPromptReviewStatus,
 } from "./prompt-review.js";
@@ -49,6 +51,39 @@ describe("Prompt Review领域规则", () => {
     expect(readable).toContain("hello");
     expect(readable).not.toContain("模型请求提示词");
     expect(readable).toBe(renderPromptReviewReadable(canonicalPayloadJson, "prompt-readable.v1"));
+  });
+
+  it("隐藏推理只进入带Hash的审核占位，不进入产品正文", () => {
+    const hidden = "PRIVATE_CHAIN_OF_THOUGHT";
+    const raw = {
+      messages: [
+        { content: "", reasoning_content: hidden, role: "assistant" },
+        { content: "tool-result", role: "tool" },
+      ],
+      model: "local-test",
+    };
+    const redacted = redactPromptReviewHiddenReasoning(raw);
+    const canonical = canonicalJsonStringify(redacted);
+
+    expect(parseCanonicalPromptReviewPayload(canonical)).toEqual(redacted);
+    expect(canonical).not.toContain(hidden);
+    expect((redacted as { messages: Array<Record<string, unknown>> }).messages[0]).toMatchObject({
+      reasoning_content: {
+        kind: PROMPT_REVIEW_HIDDEN_REASONING_REDACTION_KIND,
+        sha256: expect.stringMatching(/^[0-9a-f]{64}$/u),
+      },
+    });
+    expect(redactPromptReviewHiddenReasoning(redacted)).toEqual(redacted);
+    expect(computePromptReviewPayloadSha256(canonicalJsonStringify(redacted))).not.toBe(
+      computePromptReviewPayloadSha256(
+        canonicalJsonStringify(
+          redactPromptReviewHiddenReasoning({
+            ...raw,
+            messages: [{ ...raw.messages[0], reasoning_content: `${hidden}-changed` }],
+          }),
+        ),
+      ),
+    );
   });
 
   it("可读版完整保留Tool Call与Tool Result消息字段", () => {

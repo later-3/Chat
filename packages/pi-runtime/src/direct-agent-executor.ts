@@ -590,9 +590,16 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
         );
       }
       if (input.signal.aborted) throw new DirectAgentExecutionError("direct_executor.timeout");
-      const output = assistantText(
-        [...session.messages].reverse().find((message) => message.role === "assistant"),
-      );
+      const finalAssistant = [...session.messages]
+        .reverse()
+        .find((message) => message.role === "assistant");
+      if (
+        finalAssistant?.role === "assistant" &&
+        (finalAssistant.stopReason === "error" || finalAssistant.stopReason === "aborted")
+      ) {
+        throw new DirectAgentExecutionError("direct_executor.agent_turn_failed");
+      }
+      const output = assistantText(finalAssistant);
       if (output === undefined) {
         throw new DirectAgentExecutionError("direct_executor.final_output_missing");
       }

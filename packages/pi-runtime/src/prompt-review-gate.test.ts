@@ -51,6 +51,7 @@ type ResponseScript =
       readonly toolCallId: string;
       readonly toolName: string;
       readonly arguments: Record<string, unknown>;
+      readonly reasoning?: string;
     };
 
 class LocalCountingProvider {
@@ -115,6 +116,7 @@ function responseChunks(script: ResponseScript): readonly unknown[] {
             index: 0,
             delta: {
               role: "assistant",
+              ...(script.reasoning === undefined ? {} : { reasoning_content: script.reasoning }),
               tool_calls: [
                 {
                   index: 0,
@@ -336,6 +338,7 @@ async function createHarness(input: {
   readonly promptReviewMode?: "manual" | "off";
   readonly sessionManager?: SessionManager;
   readonly tool?: ToolDefinition;
+  readonly reasoning?: boolean;
 }): Promise<Harness> {
   const cwd = join(input.root, "workspace");
   const agentDir = join(input.root, "agent");
@@ -373,7 +376,7 @@ async function createHarness(input: {
     api: "openai-completions",
     provider: "openai",
     baseUrl: input.provider.baseUrl,
-    reasoning: false,
+    reasoning: input.reasoning ?? false,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 32_000,
@@ -384,7 +387,7 @@ async function createHarness(input: {
     agentDir,
     modelRuntime,
     model,
-    thinkingLevel: "off",
+    thinkingLevel: input.reasoning === true ? "low" : "off",
     tools: input.tool === undefined ? [] : [input.tool.name],
     ...(input.tool === undefined ? {} : { customTools: [input.tool] }),
     resourceLoader,
@@ -608,12 +611,18 @@ describe("Direct Prompt Review Gate P1", () => {
     }
   });
 
-  it("Tool Result后再次审核，第二次Payload包含真实Tool结果", async () => {
+  it("Tool Result后再次审核：产品只存隐藏推理Hash，Provider保持Pi原始上下文", async () => {
     const root = await temporaryRoot();
     const provider = new LocalCountingProvider();
     await provider.start();
     provider.enqueue(
-      { kind: "tool", toolCallId: "call-direct-1", toolName: "probe", arguments: { value: "x" } },
+      {
+        kind: "tool",
+        toolCallId: "call-direct-1",
+        toolName: "probe",
+        arguments: { value: "x" },
+        reasoning: "PRIVATE_TOOL_REASONING",
+      },
       { kind: "text", text: "tool complete" },
     );
     let toolCount = 0;
@@ -647,6 +656,7 @@ describe("Direct Prompt Review Gate P1", () => {
         store,
         operationId: "pio_directtest1",
         tool,
+        reasoning: true,
       });
       const run = harness.session.prompt("use probe", {
         expandPromptTemplates: false,
@@ -660,14 +670,19 @@ describe("Direct Prompt Review Gate P1", () => {
       expect(provider.requestBodies).toHaveLength(1);
       expect(toolCount).toBe(1);
       const second = store.getSnapshot("pio_directtest1").activeReview!;
-      expect(JSON.stringify(product.payload(second))).toContain("tool-result:x");
+      const secondReviewPayload = JSON.stringify(product.payload(second));
+      expect(secondReviewPayload).toContain("tool-result:x");
+      expect(secondReviewPayload).toContain("chat.prompt_review.hidden_reasoning_redaction.v1");
+      expect(secondReviewPayload).not.toContain("PRIVATE_TOOL_REASONING");
       await approve(product, coordinator, store, "pio_directtest1");
       await run;
 
       expect(provider.requestBodies).toHaveLength(2);
+      expect(JSON.stringify(provider.requestBodies[1])).toContain("PRIVATE_TOOL_REASONING");
       expect(hashFinalProviderPayload(provider.requestBodies[1])).toBe(second.payloadSha256);
       expect(toolCount).toBe(1);
       expect(product.dispatchOutcomes).toEqual(["dispatched", "dispatched"]);
+      expect(harness.session.getLastAssistantText()).toBe("tool complete");
       harness.session.dispose();
     } finally {
       await provider.close();

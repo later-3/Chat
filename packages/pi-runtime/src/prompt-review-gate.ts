@@ -7,6 +7,7 @@ import {
   canonicalJsonStringify,
   hashCanonical,
   parseCanonicalPromptReviewPayload,
+  redactPromptReviewHiddenReasoning,
 } from "@chat/domain";
 import { z } from "zod";
 import {
@@ -131,10 +132,8 @@ export interface PromptReviewGateInterceptInput {
   readonly resumeExecutionTimeout?: () => void;
 }
 
-/** JSON规范化定义了审核与实际发送之间的语义身份；Headers和API Key不进入正文。 */
-export function normalizeFinalProviderPayload(
-  payload: unknown,
-): z.infer<ReturnType<typeof z.json>> {
+/** Provider实际派发正文的JSON规范化；Headers和API Key不属于正文。 */
+function normalizeDispatchProviderPayload(payload: unknown): z.infer<ReturnType<typeof z.json>> {
   const serialized = JSON.stringify(payload);
   if (serialized === undefined) throw new Error("Provider Payload不是JSON值");
   if (Buffer.byteLength(serialized, "utf8") > MAX_PROVIDER_PAYLOAD_BYTES) {
@@ -144,8 +143,19 @@ export function normalizeFinalProviderPayload(
   if (typeof normalized !== "object" || normalized === null || Array.isArray(normalized)) {
     throw new Error("Provider Payload必须是JSON对象");
   }
-  // 与Product Store使用同一canonical/credential/hidden-reasoning校验，边界本地fail closed。
-  return parseCanonicalPromptReviewPayload(canonicalJsonStringify(normalized)) as z.infer<
+  return normalized;
+}
+
+/**
+ * Product审核投影与实际派发正文共享全部可见字段；Pi多轮请求中的隐藏推理仅投影为
+ * 绑定原值的Hash占位，避免Chat持久化隐藏推理，同时保持Pi CLI原生Tool Loop连续性。
+ */
+export function normalizeFinalProviderPayload(
+  payload: unknown,
+): z.infer<ReturnType<typeof z.json>> {
+  const dispatchPayload = normalizeDispatchProviderPayload(payload);
+  const reviewPayload = redactPromptReviewHiddenReasoning(dispatchPayload);
+  return parseCanonicalPromptReviewPayload(canonicalJsonStringify(reviewPayload)) as z.infer<
     ReturnType<typeof z.json>
   >;
 }
@@ -187,7 +197,8 @@ export class DirectPromptReviewCoordinator {
   ) {}
 
   async intercept(input: PromptReviewGateInterceptInput): Promise<unknown> {
-    const payload = normalizeFinalProviderPayload(input.payload);
+    const dispatchPayload = normalizeDispatchProviderPayload(input.payload);
+    const payload = normalizeFinalProviderPayload(dispatchPayload);
     const payloadSha256 = hashFinalProviderPayload(payload);
     const payloadEnvelopeSha256 = hashPromptReviewEnvelope({
       providerId: input.providerId,
@@ -233,7 +244,7 @@ export class DirectPromptReviewCoordinator {
     if (active.review === undefined) {
       if (input.promptReviewMode === "off") {
         await this.store.markProviderDispatchingWithoutReview(input.operationId);
-        return structuredClone(payload);
+        return structuredClone(dispatchPayload);
       }
       const request = this.store.getRequest(input.operationId);
       let published: PublishedDirectPromptReview;
@@ -292,7 +303,9 @@ export class DirectPromptReviewCoordinator {
       }
       await this.store.markProviderDispatching(input.operationId);
       input.resumeExecutionTimeout?.();
-      return structuredClone(normalizeFinalProviderPayload(approvedPayload));
+      // Product冻结的是无隐藏推理的审核投影；当前Pi请求已经在本次intercept入口按同一
+      // Redaction Hash校验无漂移，真正派发仍返回Pi构造的原始正文。
+      return structuredClone(dispatchPayload);
     } catch (error) {
       if (error instanceof PromptReviewRejectedError) throw error;
       if (input.signal.aborted) throw new PromptReviewWaitInterruptedError();

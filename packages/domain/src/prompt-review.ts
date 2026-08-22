@@ -68,6 +68,68 @@ const FORBIDDEN_TOP_LEVEL_KEYS = new Set([
   "credentials",
 ]);
 
+const HIDDEN_REASONING_MESSAGE_KEYS = new Set([
+  "reasoning",
+  "reasoning_content",
+  "reasoning_details",
+  "reasoning_text",
+  "thinking",
+  "thinking_blocks",
+]);
+
+export const PROMPT_REVIEW_HIDDEN_REASONING_REDACTION_KIND =
+  "chat.prompt_review.hidden_reasoning_redaction.v1" as const;
+
+export interface PromptReviewHiddenReasoningRedaction {
+  readonly kind: typeof PROMPT_REVIEW_HIDDEN_REASONING_REDACTION_KIND;
+  readonly sha256: string;
+}
+
+function isPromptReviewHiddenReasoningRedaction(
+  value: unknown,
+): value is PromptReviewHiddenReasoningRedaction {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    Object.keys(record).length === 2 &&
+    record["kind"] === PROMPT_REVIEW_HIDDEN_REASONING_REDACTION_KIND &&
+    typeof record["sha256"] === "string" &&
+    /^[0-9a-f]{64}$/u.test(record["sha256"])
+  );
+}
+
+/**
+ * Provider为延续Tool Loop，可能把上一轮Assistant隐藏推理放回下一次messages。
+ * Chat不拥有也不展示这些内容，只在审核投影中保留绑定原值的确定性Hash；Pi Session和
+ * Provider Adapter仍在各自边界内使用原始值。函数幂等，便于Executor与Application复算。
+ */
+export function redactPromptReviewHiddenReasoning(payload: unknown): unknown {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return payload;
+  const record = payload as Record<string, unknown>;
+  if (!Array.isArray(record["messages"])) return payload;
+  return {
+    ...record,
+    messages: record["messages"].map((message) => {
+      if (typeof message !== "object" || message === null || Array.isArray(message)) {
+        return message;
+      }
+      return Object.fromEntries(
+        Object.entries(message).map(([key, value]) => {
+          if (!HIDDEN_REASONING_MESSAGE_KEYS.has(key.toLowerCase())) return [key, value];
+          if (isPromptReviewHiddenReasoningRedaction(value)) return [key, value];
+          return [
+            key,
+            {
+              kind: PROMPT_REVIEW_HIDDEN_REASONING_REDACTION_KIND,
+              sha256: hashCanonical("prompt-review-hidden-reasoning.v1", value),
+            } satisfies PromptReviewHiddenReasoningRedaction,
+          ];
+        }),
+      );
+    }),
+  };
+}
+
 export function parseCanonicalPromptReviewPayload(canonicalPayloadJson: string): unknown {
   let payload: unknown;
   try {
@@ -101,18 +163,18 @@ export function parseCanonicalPromptReviewPayload(canonicalPayloadJson: string):
   }
   const messages = (payload as { readonly messages?: unknown }).messages;
   if (Array.isArray(messages)) {
-    const hiddenReasoningKey = messages.find((message) => {
+    const rawHiddenReasoning = messages.find((message) => {
       if (typeof message !== "object" || message === null || Array.isArray(message)) return false;
-      return Object.keys(message).some((key) =>
-        ["reasoning", "reasoning_content", "thinking", "thinking_blocks"].includes(
-          key.toLowerCase(),
-        ),
+      return Object.entries(message).some(
+        ([key, value]) =>
+          HIDDEN_REASONING_MESSAGE_KEYS.has(key.toLowerCase()) &&
+          !isPromptReviewHiddenReasoningRedaction(value),
       );
     });
-    if (hiddenReasoningKey !== undefined) {
+    if (rawHiddenReasoning !== undefined) {
       throw new DomainInvariantError(
         "prompt_review_payload_contains_hidden_reasoning",
-        "Prompt Review Payload不得保存或发送隐藏推理字段",
+        "Prompt Review产品事实不得保存隐藏推理原文",
       );
     }
   }

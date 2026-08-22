@@ -42,7 +42,7 @@ Chat 的 Prompt 能力固定拆成 3 个模块，不能再把“保存一段文�
 
 本文把几个容易混用的词拆开：
 
-- **原始 Provider 请求**：Provider Adapter 已序列化、Credential/Header 注入前，真正将要发送的 JSON 请求正文。现有 Prompt Review 审核的就是它。
+- **原始 Provider 请求**：Provider Adapter 已序列化、Credential/Header 注入前，真正将要发送的 JSON 请求正文。Prompt Review审核其可审核投影；Pi为Tool Loop回放的隐藏推理原文只保留SHA-256占位，不进入Chat产品事实。
 - **Prompt Fragment**：Chat 管理的一小段有来源内容，例如 Direct 节点规则、当前用户输入、一条 Workspace 指令或一份会话摘要。
 - **Prompt Region**：给人管理和分配预算的稳定区域，例如系统指令、当前输入、会话上下文、参考上下文、工具和请求参数。
 - **Prompt Assembly**：某次模型请求所采用的 Fragment 清单及其顺序、排除原因、预算和 Hash。
@@ -256,7 +256,7 @@ DSH 的冻结规则是“Model-visible ⟺ Logged”：只要内容进入模型�
 - 只启用冻结的`read/grep/find/ls`只读能力；
 - 每次Provider Request都进入Prompt Review Gate。
 
-当前审核页的Raw始终以真实Payload为准。易读页读取同一Run的Assembly，把System组件、正式历史、当前User、Runtime Tool消息、Tools与Request Options映射到精确JSON Pointer；来源说明不进入模型请求。DSH→Bridge、Bridge→Chat和Provider三类Prompt审核共用右侧全高审查面板，顶部状态和底部决定固定，中间只有一个纵向滚动容器；正文`pre`只保留必要的横向滚动，不再与页面形成嵌套纵向滚动。
+当前审核页的Raw以真实Payload的可审核投影为准。除Pi隐藏推理被替换为绑定原值的Hash占位外，其余字段与待发请求一致；批准Hash同时防止隐藏推理漂移。易读页读取同一Run的Assembly，把System组件、正式历史、当前User、Runtime Tool消息、Tools与Request Options映射到精确JSON Pointer；来源说明不进入模型请求。DSH→Bridge、Bridge→Chat和Provider三类Prompt审核共用右侧全高审查面板，顶部状态和底部决定固定，中间只有一个纵向滚动容器；正文`pre`只保留必要的横向滚动，不再与页面形成嵌套纵向滚动。
 
 ### 5.2 当前一次 DSH 交互实际有两次组装和三道可选审核
 
@@ -528,13 +528,13 @@ Direct v2没有假装已经获得精确Provider Tokenizer，而是冻结一套�
 4. 必需System与当前User优先，二者超限时在Provider前失败，不静默裁剪；
 5. 历史以完整`User → Assistant`对为单位从最近向前选择，超预算时稳定排除更早历史；
 6. Assembly记录每项估算、总计、采用/排除和Reason Code，Product Store使用同一个Domain合同复算；
-7. Prompt Review Raw继续完整展示已经完成预算选择后的实际请求，不能把截断UI冒充完整请求。
+7. Prompt Review Raw完整展示预算选择后的可审核请求；隐藏推理只显示绑定原值的Hash占位，不能把截断UI或隐藏推理原文冒充Chat产品事实。
 
 这不是所有模型永久通用的数值。未来换成Provider-aware Tokenizer或模型Context Window时，必须发布新的Meter/Profile版本，不能让同一版本的Assembly计算结果漂移。
 
 ## 9. Prompt Review 如何与新管理模型结合
 
-Raw 页不变：只展示真正待发的 Canonical Provider Payload。
+Raw页展示真正待发Canonical Provider Payload的可审核投影；普通字段逐字段一致，隐藏推理原文显示为确定性Hash占位。
 
 Readable页已经优先读取Assembly Manifest，并按四个物理通道与语义来源展示：
 

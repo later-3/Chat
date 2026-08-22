@@ -16,7 +16,7 @@ agent.direct（promptReviewMode：manual / off）
 ```
 
 `manual`时，每次Pi即将向Provider发送模型请求，执行层先停止并把最终请求发布为Prompt Review产品事实。
-用户批准后只允许发送这一个冻结版本；拒绝时该次Provider调用数为0。Tool Result产生下一次模型请求时，
+用户批准后只允许发送与冻结审核投影Hash一致的Pi请求；拒绝时该次Provider调用数为0。Tool Result产生下一次模型请求时，
 必须创建新的Review和新的Workflow Hook，不能复用上一轮批准。`off`时不创建Review、Decision或Hook，
 但仍先冻结最终Payload并耐久提交Provider派发栅栏，不能绕开结果未知保护。
 
@@ -42,21 +42,22 @@ P1不包含：
 ## 3. 最终请求与可读投影
 
 `canonicalPayloadJson`定义为Pi Provider Adapter完成模型、messages、system、tools和参数组装后，
-在认证Header/API Key注入前的最终JSON对象。它必须满足：
+在认证Header/API Key注入前生成的Chat可审核投影。普通字段保持最终JSON对象原值；仅隐藏推理按下述规则替换。它必须满足：
 
 - canonical JSON，UTF-8至多1 MiB；不允许截断后声称完整；
-- 不含HTTP Header、Credential或隐藏推理字段；
+- 不含HTTP Header或Credential；Pi为多轮Tool Loop回放的隐藏推理值替换为带原值SHA-256的确定性占位，原文不进入Product Store、公开Query、Trace或审核UI；
 - `payloadSha256`由Application与Executor分别重算；
 - Product Store只保存一份正文，Workflow Checkpoint、Runtime Binding、Trace和Pi Journal只保存ID、revision和Hash。
 
 `prompt-readable.v1`由Domain对同一canonical JSON作确定性投影；公开Query另按消息、消息附加字段
-（包括Tool Call/Tool Result身份）、工具定义和请求参数生成结构化区块。每个区块的`content`只来自原始
+（包括Tool Call/Tool Result身份）、工具定义和请求参数生成结构化区块。每个区块的`content`只来自可审核
 Payload，来源定位独立放在`sources`，明确标记为审核界面注释且不会发送。来源覆盖Pi基础System Prompt、
 Chat Direct追加指令、DSH用户输入链、Pi AgentSession历史、工具Schema和Pi AI Provider Adapter的源码路径。
-投影不调用模型、不概括或省略字段，也不是第二份持久化正文；易读正文不再加入“模型请求提示词”等容易
-被误认为真实发送内容的装饰标题。
+投影不调用模型、不概括可审核字段，也不是第二份持久化正文；易读正文不再加入“模型请求提示词”等容易
+被误认为真实发送内容的装饰标题。除隐藏推理占位外，审核投影与Provider请求逐字段一致；隐藏推理原文只留在
+Pi Session与Provider Adapter边界，批准Hash通过占位中的摘要绑定原值。
 
-Direct Prompt Assembly接入后，易读投影还会读取同一Product Run的冻结Assembly，为System与User区块标注实际采用的Region、Prompt Fragment Revision、Hash、global/workspace Scope和Git来源文件。来源说明仍是UI Metadata，绝不写进`canonicalPayloadJson`。Raw内容、JSON Pointer和Payload Hash仍是判断“模型真正收到什么”的唯一事实。
+Direct Prompt Assembly接入后，易读投影还会读取同一Product Run的冻结Assembly，为System与User区块标注实际采用的Region、Prompt Fragment Revision、Hash、global/workspace Scope和Git来源文件。来源说明仍是UI Metadata，绝不写进`canonicalPayloadJson`。可审核Raw、JSON Pointer和Payload Hash共同描述真实请求；隐藏推理原文只由Pi Session拥有，不作为Chat产品事实。
 
 ## 4. 运行时序
 
