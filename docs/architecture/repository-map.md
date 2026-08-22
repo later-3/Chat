@@ -9,7 +9,7 @@ apps/
   pi-executor/             私有Pi Coding Executor Service进程入口
 packages/
   dsh-lifeos-bridge/      DSH Host/Client插件与Chat适配
-  contracts/              公开/内部网络合同与事件类型
+  contracts/              公开/内部网络合同、事件类型、内部Runtime客户端与实例凭据
   domain/                 产品对象、状态机、Hash与不变量
   application/            用例、事务、权限、幂等与Outbox
   product-store-json/     当前Product Store Adapter与迁移
@@ -33,6 +33,7 @@ docs/
   debug/                  当前调试入口
 learning/
   agent-context-management/  Later个人学习用的跨Agent源码与实验材料；不参与Chat产品合同
+  design/                 设计QA证据（qa/）与架构图示（diagram/）
 ```
 
 仓库不包含旧自研Web、Agent Canvas、DeepSeek Harness源码副本或UI原型归档。DSH派生源码由独立Public仓库`later-3/deepseek-harness-chat`维护，本仓库只保存Fork链接声明、分支证据与漂移门；删除内容需要时从Git历史读取。

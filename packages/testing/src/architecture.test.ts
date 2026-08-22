@@ -140,6 +140,13 @@ const rules: Record<
       /^@chat\/pi-runtime(?:\/|$)/,
     ],
   },
+  // 独立Pi Executor进程只消费稳定运行合同与pi Adapter，
+  // 不得反向依赖Workflow定义包（接缝机械门）。
+  "apps/pi-executor": {
+    external: ["@hono/node-server"],
+    internal: ["@chat/contracts", "@chat/pi-runtime"],
+    forbidden: [/^@chat\/workflows(?:\/|$)/, /^workflow$/, /^@workflow\//],
+  },
   "apps/api": {
     external: ["hono", "@hono/node-server", "zod"],
     internal: [
@@ -245,6 +252,20 @@ describe("架构依赖方向", () => {
       expect(violations).toEqual([]);
     });
   }
+
+  it("contracts内部Runtime保持显式公开面且Client不反向导入根barrel", () => {
+    const runtimeBarrel = readFileSync(
+      resolve(repoRoot, "packages/contracts/src/internal-runtime.ts"),
+      "utf8",
+    );
+    const runtimeClient = readFileSync(
+      resolve(repoRoot, "packages/contracts/src/internal-runtime-client.ts"),
+      "utf8",
+    );
+
+    expect(runtimeBarrel).not.toMatch(/export\s+\*/u);
+    expect(runtimeClient).not.toContain('from "./index.js"');
+  });
 
   it("domain的package.json不声明运行时依赖", () => {
     const pkg = JSON.parse(

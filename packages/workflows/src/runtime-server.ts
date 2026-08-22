@@ -20,7 +20,7 @@ import {
   createWorkflowMemoryProviderRegistry,
 } from "@chat/memory-runtime";
 import { ZodError } from "zod";
-import { createRuntimeApiClient } from "./api-client.js";
+import { createRuntimeApiClient } from "@chat/contracts";
 import { RuntimeBindingStore } from "./runtime-bindings.js";
 import { setWorkflowRuntimeContext, type WorkflowRuntimeContext } from "./runtime-context.js";
 import { setupWorkflowWorld } from "./workflow-world.js";

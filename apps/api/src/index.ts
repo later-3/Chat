@@ -9,7 +9,7 @@ import {
 import type { ApplicationDeps } from "@chat/application";
 import { isBailianReady, loadBailianConfig } from "@chat/pi-runtime";
 import { createPiAgentRuntimeProfileClient } from "@chat/pi-runtime/agent-runtime-profile-client";
-import { loadRuntimeCredential } from "@chat/workflows";
+import { loadRuntimeCredential } from "@chat/contracts/runtime-credential";
 import { createApiApp } from "./app.js";
 import { createApplicationDeps, DEBUG_PRINCIPAL_ID } from "./composition.js";
 import { OutboxDispatcher } from "./outbox-dispatcher.js";

@@ -12,7 +12,7 @@ import {
   workflowSpanId,
 } from "./runtime-context.js";
 import { cmdId, wrapApiError } from "./workflow-step-support.js";
-import type { RuntimeApiClient } from "./api-client.js";
+import type { RuntimeApiClient } from "@chat/contracts";
 
 export type LoadedMemoryImportStepResult = Awaited<
   ReturnType<RuntimeApiClient["loadMemoryImport"]>

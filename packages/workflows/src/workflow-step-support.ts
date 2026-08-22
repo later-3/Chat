@@ -2,7 +2,7 @@ import { FatalError, getStepMetadata } from "workflow";
 import { sha256Hex } from "@chat/domain";
 import { WORKFLOW_DEFINITION_VERSION, type PlanningInputDto } from "@chat/contracts";
 import type { CandidateValidationDiagnostics, ProviderCallMeta } from "@chat/pi-runtime";
-import { ApiClientError } from "./api-client.js";
+import { ApiClientError } from "@chat/contracts";
 import { PiStepFailure } from "./workflow-error.js";
 import {
   getWorkflowRuntimeContext,

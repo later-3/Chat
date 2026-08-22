@@ -103,7 +103,7 @@ import {
   type BeginDirectAgentAttemptRuntimeRequest,
   type LoadPromptReviewDecisionRuntimeRequest,
   type CommitDirectAgentResultRuntimeRequest,
-} from "@chat/contracts";
+} from "./internal-runtime-client-dependencies.js";
 import { z, type ZodType } from "zod";
 
 /**

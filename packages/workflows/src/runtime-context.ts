@@ -13,7 +13,7 @@ import type {
   runPiNoteCapture,
   runPiPlanner,
 } from "@chat/pi-runtime";
-import type { RuntimeApiClient } from "./api-client.js";
+import type { RuntimeApiClient } from "@chat/contracts";
 import type { RuntimeBindingStore } from "./runtime-bindings.js";
 
 /**

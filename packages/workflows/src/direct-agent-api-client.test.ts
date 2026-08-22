@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createRuntimeApiClient } from "./api-client.js";
+import { createRuntimeApiClient } from "@chat/contracts";
 
 const SHA_A = "a".repeat(64);
 const SHA_B = "b".repeat(64);

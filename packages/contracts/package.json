@@ -11,6 +11,10 @@
     "./public": {
       "types": "./src/public.ts",
       "import": "./src/public.ts"
+    },
+    "./runtime-credential": {
+      "types": "./src/runtime-credential.ts",
+      "import": "./src/runtime-credential.ts"
     }
   },
   "scripts": {
@@ -23,6 +27,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/node": "^26.1.2",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }

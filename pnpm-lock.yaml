@@ -119,12 +119,12 @@ importers:
 
   apps/pi-executor:
     dependencies:
+      '@chat/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@chat/pi-runtime':
         specifier: workspace:*
         version: link:../../packages/pi-runtime
-      '@chat/workflows':
-        specifier: workspace:*
-        version: link:../../packages/workflows
       '@hono/node-server':
         specifier: ^2.1.0
         version: 2.1.0(hono@4.13.0)
@@ -173,6 +173,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

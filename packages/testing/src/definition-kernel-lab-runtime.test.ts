@@ -70,7 +70,7 @@ describe("Definition Kernel真实Local World实验室", () => {
     await expect(runFixture(stack, "human_review", ["approved"])).resolves.toMatchObject({
       outcome: "completed",
     });
-  }, 120_000); // 5个真实Local World Run串行执行；全仓并行负载下不能沿用单场景60秒门。
+  }, 240_000); // 5个真实Local World Run串行执行；全仓并行负载下不能沿用单场景60秒门。
 
   it("Composite有界展开3个Action，失败与结果未知都失败关闭", async () => {
     const success = compileFixture("composite", "compositesuccess");
@@ -108,7 +108,7 @@ describe("Definition Kernel真实Local World实验室", () => {
       outcome: "failed",
       reasonCode: "kernel.node_outcome_unknown",
     });
-  }, 60_000);
+  }, 240_000); // 3个真实Run串行，慢机器负载下放宽。
 
   it("循环达到上限时request_human只接受已提交stop决定，重复resume不重复事实", async () => {
     const runSpec = compileFixture("bounded_loop", "looplimit");
@@ -126,7 +126,9 @@ describe("Definition Kernel真实Local World实验室", () => {
     });
     const state = await stack.harness.snapshot();
     expect(Object.values(state.receiptExecutions).every((count) => count === 1)).toBe(true);
-  }, 60_000);
+    // 6轮人机环回在慢机器上单轮约5秒，测试预算需大于driver deadline
+    // （60s + 6×20s = 180s）。
+  }, 300_000);
 
   it("Mixed Fixture执行且同一operation identity重放5次不增加业务Receipt", async () => {
     const runSpec = compileFixture("mixed", "mixedreplay");
@@ -148,7 +150,7 @@ describe("Definition Kernel真实Local World实验室", () => {
     expect(Object.keys(afterReplay.receipts)).toHaveLength(receiptCount + 1);
     expect(afterReplay.receiptExecutions[replayContext.commandId]).toBe(1);
     expect(Object.values(afterReplay.receiptExecutions).every((count) => count === 1)).toBe(true);
-  }, 60_000);
+  }, 180_000); // 5次重放+完整Run，慢机器负载下放宽。
 
   it("Hash、Executor版本和预算篡改在第一个业务节点前失败关闭", async () => {
     const valid = compileFixture("sequence", "tamperbase");
@@ -279,12 +281,17 @@ async function driveCommittedReviews(
 ): Promise<void> {
   let decisionIndex = 0;
   const resumed = new Set<string>();
-  const deadline = Date.now() + 30_000;
+  // 预算随决定数伸缩：每轮人机环回在慢机器上约5秒，固定30s会让6轮循环的
+  // bounded_loop在慢环境必超时；超时留下的未决review会污染后续测试（见下方过滤）。
+  const deadline = Date.now() + 60_000 + decisions.length * 20_000;
   while (Date.now() < deadline) {
     const state = await stack.harness.snapshot();
     if (state.settlements[runSpec.productRunId] !== undefined) return;
+    // 只看当前Run的review：harness状态在同文件测试间共享，其他Run遗留的
+    // 未决review不属于本次驱动，捡到会消耗错误的决定并resume过期Hook。
     const open = Object.values(state.reviews).find(
       (review) =>
+        review.productRunId === runSpec.productRunId &&
         review.hookReady === true &&
         review.decisionRef === undefined &&
         !resumed.has(review.reviewRef),
@@ -298,7 +305,9 @@ async function driveCommittedReviews(
       const token = definitionKernelReviewHookToken(runSpec.workflowRunSpecId, open.executionPath);
       await resumeDefinitionKernelLabReview(token, decisionRef);
     }
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    // 100ms轮询：harness每次snapshot都整文件读取+结构校验，25ms在慢机器上
+    // 自身成为负载源；对每轮约5秒的人机环回延迟可忽略。
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error("Definition Kernel review驱动超时");
 }
@@ -317,7 +326,7 @@ async function waitForReadyReview(
         candidate.decisionRef === undefined,
     );
     if (review !== undefined) return review;
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error("等待Definition Kernel Hook Ready超时");
 }

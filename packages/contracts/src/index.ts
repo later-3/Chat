@@ -45,5 +45,8 @@ export * from "./prompt-assembly.js";
 export * from "./direct-agent.js";
 export * from "./direct-agent-runtime.js";
 export * from "./internal-runtime.js";
+export * from "./internal-runtime-client.js";
+// runtime-credential.ts是node-only（fs/process），不进根barrel：
+// Workflow bundle构建禁止node builtins，服务端经@chat/contracts/runtime-credential子路径引用。
 export * from "./versions.js";
 export * from "./version-evidence.js";

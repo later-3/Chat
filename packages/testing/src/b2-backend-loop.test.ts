@@ -185,7 +185,9 @@ interface TestStack {
   close: () => Promise<void>;
 }
 
-async function waitForCondition(check: () => Promise<boolean>, timeoutMs = 30_000): Promise<void> {
+// 与m1恢复测试同一预算口径：真实Runtime在负载高的机器上单次环回可能超过30s，
+// 被测属性（幂等、原子投影、不双写）与时间无关。
+async function waitForCondition(check: () => Promise<boolean>, timeoutMs = 90_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await check()) return;

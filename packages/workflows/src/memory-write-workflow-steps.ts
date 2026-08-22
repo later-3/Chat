@@ -8,7 +8,7 @@ import { computeMemoryProviderDescriptorSha256 } from "@chat/domain";
 import { getWorkflowRuntimeContext } from "./runtime-context.js";
 import { cmdId, wrapApiError } from "./workflow-step-support.js";
 import { runStep } from "./workflow-step-support.js";
-import type { RuntimeApiClient } from "./api-client.js";
+import type { RuntimeApiClient } from "@chat/contracts";
 import type { WorkflowMemoryNodeIdentity } from "./workflow-memory-steps.js";
 
 export type LoadedMemoryWriteStepResult = Awaited<ReturnType<RuntimeApiClient["loadMemoryWrite"]>>;

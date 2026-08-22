@@ -45,7 +45,9 @@ const RUNTIME_FIXTURE = join(
 const TSX_BIN = join(REPO_ROOT, "packages/testing/node_modules/.bin/tsx");
 const PRINCIPAL_ID = "usr_debug" as const;
 const CREDENTIAL = "rtk_m1recoverytest0000000000";
-const WAIT_TIMEOUT_MS = 30_000;
+// 真实子进程恢复在负载高的机器上启动较慢，30s预算会间歇超时；
+// 被测属性（恢复后不重复事实）与时间无关，只放宽等待预算。
+const WAIT_TIMEOUT_MS = 90_000;
 const exec = promisify(execFile);
 
 type HttpServer = ReturnType<typeof serve>;

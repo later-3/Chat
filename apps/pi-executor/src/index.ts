@@ -9,7 +9,8 @@ import {
   PiDirectExecutorOperationStore,
   PiExecutorOperationStore,
 } from "@chat/pi-runtime/coding-executor";
-import { createRuntimeApiClient, loadRuntimeCredential } from "@chat/workflows";
+import { createRuntimeApiClient } from "@chat/contracts";
+import { loadRuntimeCredential } from "@chat/contracts/runtime-credential";
 
 /**
  * 独立Pi Coding Executor进程。只监听loopback私有端口；Product事实仍由API/Application

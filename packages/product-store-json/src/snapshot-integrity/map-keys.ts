@@ -1,0 +1,133 @@
+import { type ProductSnapshot } from "@chat/contracts";
+import type { Fail } from "./shared.js";
+
+export function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
+  const collections = [
+    ["session", snapshot.entities.sessions, "sessionId"],
+    ["message", snapshot.entities.messages, "messageId"],
+    ["run", snapshot.entities.runs, "productRunId"],
+    ["attempt", snapshot.entities.attempts, "attemptId"],
+    ["plan", snapshot.entities.plans, "planRevisionId"],
+    ["revisionInput", snapshot.entities.revisionInputs, "revisionInputId"],
+    ["approval", snapshot.entities.approvalRequests, "approvalRequestId"],
+    ["decision", snapshot.entities.decisions, "decisionId"],
+    ["contract", snapshot.entities.executionContracts, "executionContractId"],
+    ["candidate", snapshot.entities.executionCandidates, "executionCandidateId"],
+    ["validation", snapshot.entities.validationResults, "validationResultId"],
+    ["artifact", snapshot.entities.artifacts, "artifactId"],
+    ["directAgentCandidate", snapshot.entities.directAgentCandidates, "directAgentCandidateId"],
+    ["promptReviewRequest", snapshot.entities.promptReviewRequests, "promptReviewRequestId"],
+    ["promptReviewDecision", snapshot.entities.promptReviewDecisions, "promptReviewDecisionId"],
+    ["contextRequest", snapshot.entities.contextRequests, "contextRequestId"],
+    ["memoryQuery", snapshot.entities.memoryQueries, "memoryQueryId"],
+    ["memorySnapshot", snapshot.entities.memoryResultSnapshots, "memoryResultSnapshotId"],
+    ["memoryAdoption", snapshot.entities.memoryAdoptions, "memoryAdoptionId"],
+    ["contextPackage", snapshot.entities.contextPackages, "contextPackageId"],
+    ["memoryImportIntent", snapshot.entities.memoryImportIntents, "memoryImportIntentId"],
+    ["memoryImportResult", snapshot.entities.memoryImportResults, "memoryImportResultId"],
+    ["project", snapshot.entities.projects, "projectId"],
+    ["projectMethod", snapshot.entities.projectMethodSnapshots, "projectMethodSnapshotId"],
+    ["projectStage", snapshot.entities.projectStages, "projectStageId"],
+    ["projectMilestone", snapshot.entities.projectMilestones, "projectMilestoneId"],
+    ["projectUpdate", snapshot.entities.projectUpdates, "projectUpdateId"],
+    [
+      "projectStateTransition",
+      snapshot.entities.projectStateTransitions,
+      "projectStateTransitionId",
+    ],
+    ["projectResource", snapshot.entities.projectResources, "projectResourceId"],
+    ["projectParticipant", snapshot.entities.projectParticipants, "projectParticipantId"],
+    ["projectWork", snapshot.entities.projectWorks, "projectWorkId"],
+    ["projectAction", snapshot.entities.projectActions, "projectActionId"],
+    ["projectContribution", snapshot.entities.projectContributions, "projectContributionId"],
+    ["projectEvidence", snapshot.entities.projectEvidence, "projectEvidenceId"],
+    ["projectDecision", snapshot.entities.projectDecisions, "projectDecisionId"],
+    ["projectObservation", snapshot.entities.projectObservations, "projectObservationId"],
+    ["projectCandidate", snapshot.entities.projectCandidates, "projectCandidateId"],
+    [
+      "projectBootstrapCandidate",
+      snapshot.entities.projectBootstrapCandidates,
+      "projectBootstrapCandidateId",
+    ],
+    [
+      "projectBootstrapDecision",
+      snapshot.entities.projectBootstrapDecisions,
+      "projectBootstrapDecisionId",
+    ],
+    [
+      "projectBootstrapOperation",
+      snapshot.entities.projectBootstrapOperations,
+      "projectBootstrapOperationId",
+    ],
+    [
+      "projectWorkspaceBinding",
+      snapshot.entities.projectWorkspaceBindings,
+      "projectWorkspaceBindingId",
+    ],
+    ["workflowDefinition", snapshot.entities.workflowDefinitions, "workflowDefinitionId"],
+    [
+      "workflowDefinitionRevision",
+      snapshot.entities.workflowDefinitionRevisions,
+      "workflowDefinitionRevisionId",
+    ],
+    ["workflowRunSpec", snapshot.entities.workflowRunSpecs, "workflowRunSpecId"],
+    [
+      "workflowViewDefinition",
+      snapshot.entities.workflowViewDefinitions,
+      "workflowViewDefinitionId",
+    ],
+    ["workflowNodeRun", snapshot.entities.workflowNodeRuns, "workflowNodeRunId"],
+    ["nodeRunTransition", snapshot.entities.nodeRunTransitions, "nodeRunTransitionId"],
+    ["nodeValueManifest", snapshot.entities.nodeValueManifests, "nodeValueManifestId"],
+    ["note", snapshot.entities.notes, "noteId"],
+    ["noteRevision", snapshot.entities.noteRevisions, "noteRevisionId"],
+    ["noteCandidate", snapshot.entities.noteCandidates, "noteCandidateId"],
+    ["noteDecision", snapshot.entities.noteDecisions, "noteDecisionId"],
+    ["rule", snapshot.entities.rules, "ruleId"],
+    ["ruleRevision", snapshot.entities.ruleRevisions, "ruleRevisionId"],
+    ["ruleTag", snapshot.entities.ruleTags, "ruleTagId"],
+    ["ruleDecision", snapshot.entities.ruleDecisions, "ruleDecisionId"],
+    ["ruleSelection", snapshot.entities.ruleSelections, "ruleSelectionId"],
+    ["promptFragment", snapshot.entities.promptFragments, "promptFragmentId"],
+    [
+      "promptFragmentRevision",
+      snapshot.entities.promptFragmentRevisions,
+      "promptFragmentRevisionId",
+    ],
+    ["promptAssembly", snapshot.entities.promptAssemblies, "promptAssemblyId"],
+    ["agentVersion", snapshot.entities.agentVersions, "agentVersionId"],
+    [
+      "planningProjectContext",
+      snapshot.entities.planningProjectContexts,
+      "planningProjectContextId",
+    ],
+    [
+      "planningMemorySelection",
+      snapshot.entities.planningMemorySelections,
+      "planningMemorySelectionId",
+    ],
+    [
+      "workflowPolicyResolution",
+      snapshot.entities.workflowPolicyResolutions,
+      "workflowPolicyResolutionId",
+    ],
+    ["workflowMemoryQuery", snapshot.entities.workflowMemoryQueries, "workflowMemoryQueryId"],
+    [
+      "workflowMemorySnapshot",
+      snapshot.entities.workflowMemorySnapshots,
+      "workflowMemorySnapshotId",
+    ],
+    ["workflowMemoryContext", snapshot.entities.workflowMemoryContexts, "workflowMemoryContextId"],
+    ["memoryWriteIntent", snapshot.entities.memoryWriteIntents, "memoryWriteIntentId"],
+    ["memoryWriteResult", snapshot.entities.memoryWriteResults, "memoryWriteResultId"],
+    ["receipt", snapshot.commandReceipts, "commandId"],
+    ["outbox", snapshot.outbox, "outboxId"],
+  ] as const;
+  for (const [label, collection, idField] of collections) {
+    for (const [key, entity] of Object.entries(collection)) {
+      if ((entity as unknown as Record<string, string>)[idField] !== key) {
+        fail(`${label} Map键${key}与${idField}不一致`);
+      }
+    }
+  }
+}

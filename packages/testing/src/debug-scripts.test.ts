@@ -33,7 +33,8 @@ function runScript(script: string, args: string[], env: NodeJS.ProcessEnv) {
   return spawnSync("node", [join(scriptsDir, script), ...args], {
     env,
     encoding: "utf8",
-    timeout: 30_000,
+    // 负载高的机器上spawnSync+脚本启动可能超过30s；被测属性与时间无关。
+    timeout: 90_000,
   });
 }
 
@@ -94,7 +95,7 @@ function runProviderPreload(env: NodeJS.ProcessEnv) {
         'process.stdout.write("PROVIDER_READY\\n");',
       ].join(" "),
     ],
-    { env, encoding: "utf8", timeout: 15_000 },
+    { env, encoding: "utf8", timeout: 90_000 },
   );
 }
 
@@ -112,7 +113,7 @@ function runMemoryCoreDebugPreload(env: NodeJS.ProcessEnv) {
         'process.stdout.write("MEMORYCORE_DEBUG_READY\\n");',
       ].join(" "),
     ],
-    { env, encoding: "utf8", timeout: 15_000 },
+    { env, encoding: "utf8", timeout: 90_000 },
   );
 }
 
@@ -429,7 +430,7 @@ describe("preclean", () => {
     const deadline = Date.now() + 8000;
     for (;;) {
       try {
-        await fetch("http://127.0.0.1:44112/", { signal: AbortSignal.timeout(500) });
+        await fetch("http://127.0.0.1:44112/", { signal: AbortSignal.timeout(2_000) });
         break;
       } catch {
         if (Date.now() >= deadline) throw new Error("占用进程未在8s内开始监听");
@@ -449,7 +450,7 @@ describe("preclean", () => {
     expect(result.stderr).not.toContain(SECRET);
     // 不杀该进程
     expect(() => process.kill(blocker.pid ?? 0, 0)).not.toThrow();
-  }, 30_000);
+  }, 90_000);
 
   it("已登记的旧Workflow被preclean清理，端口随后不再Ready（Compound统一preclean门场景）", async () => {
     const debugDir = tempDebugDir();
@@ -468,7 +469,7 @@ describe("preclean", () => {
     const deadline = Date.now() + 8000;
     for (;;) {
       try {
-        await fetch("http://127.0.0.1:44112/healthz", { signal: AbortSignal.timeout(500) });
+        await fetch("http://127.0.0.1:44112/healthz", { signal: AbortSignal.timeout(2_000) });
         break;
       } catch {
         if (Date.now() >= deadline) throw new Error("旧Workflow未在8s内就绪");
@@ -527,7 +528,7 @@ describe("preclean", () => {
           CHAT_DEBUG_DIR: blocker,
         },
         encoding: "utf8",
-        timeout: 15_000,
+        timeout: 90_000,
       },
     );
     expect(result.status).toBe(1);

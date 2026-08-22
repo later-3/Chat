@@ -324,7 +324,7 @@ NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Quer
 | Project Advancement主编排/Step | `project-advancement-workflow.ts`、`project-advancement-workflow-steps.ts` |
 | Runtime HTTP与Local World | `runtime-server.ts`、`workflow-world.ts` |
 | Runtime Binding | `runtime-bindings.ts` |
-| Workflow→API私有客户端 | `api-client.ts` |
+| Workflow→API私有客户端 | `packages/contracts/src/internal-runtime-client.ts`（稳定运行合同，Workflow Runtime与Pi Executor共用） |
 | API私有Application Router | `apps/api/src/internal-runtime-router.ts` |
 | Outbox分发与监督 | `apps/api/src/outbox-dispatcher.ts` |
 | pi Planner / Executor Client | `packages/pi-runtime/src/planner.ts`、`executor-service-client.ts` |

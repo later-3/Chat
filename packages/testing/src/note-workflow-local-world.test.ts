@@ -237,7 +237,8 @@ async function startStack(): Promise<NoteWorldStack> {
   return stack;
 }
 
-async function waitFor(check: () => Promise<boolean>, timeoutMs = 30_000): Promise<void> {
+// 与b2/m1同一口径：真实Runtime在负载高的机器上单次环回可能超过30s。
+async function waitFor(check: () => Promise<boolean>, timeoutMs = 90_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await check()) return;

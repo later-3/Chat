@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createRuntimeApiClient } from "./api-client.js";
+import { createRuntimeApiClient } from "./internal-runtime-client.js";
 
 describe("RuntimeApiClient M1 Context", () => {
   afterEach(() => {

@@ -6,7 +6,7 @@ import {
   migrateLegacyTraceToRunActivity,
   resolveTraceDir,
 } from "@chat/realtime";
-import { loadRuntimeCredential } from "./runtime-credential.js";
+import { loadRuntimeCredential } from "@chat/contracts/runtime-credential";
 import { createWorkflowRuntimeServer } from "./runtime-server.js";
 import { migratePiDirectJournalToRunActivity } from "./pi-direct-activity-migration.js";
 

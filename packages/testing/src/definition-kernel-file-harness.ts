@@ -358,7 +358,9 @@ export class DefinitionKernelFileHarness implements KernelLabRuntimePort {
   private async readState(): Promise<HarnessState> {
     const raw = JSON.parse(await readFile(this.#path, "utf8")) as unknown;
     if (!isHarnessState(raw)) throw new Error("harness.snapshot_invalid");
-    for (const runSpec of Object.values(raw.runSpecs)) workflowRunSpecSchema.parse(runSpec);
+    // RunSpec只在seed时严格校验一次；读路径不做逐spec zod重校验——
+    // 驱动循环每100ms一次snapshot，随测试推进spec累积会让O(N²)解析
+    // 自身成为负载源。
     return raw;
   }
 
