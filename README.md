@@ -12,7 +12,7 @@ Chat 是一个以对话为入口、以耐久Workflow为执行骨架、由用户�
 - HTTP：Node.js + TypeScript + Hono。
 - 耐久执行：Vercel Workflow。
 - Agent Runtime：`pi-agent-core`与`pi-ai`。
-- Memory：memmy与Tencent MemoryCore Adapter代码保留；当前默认启动与产品装配均关闭。
+- Memory：历史合同、迁移、Adapter与独立Workflow代码保留；统一启动不准备或启动第三方服务，当前不作为产品能力交付。
 - 开发工作台：固定版本code-server，以独立Hosted Workbench接入。
 
 ```text
@@ -124,9 +124,10 @@ Workflow与API是3个职责独立的后端子进程，也不是重复后端。`p
 `DASHSCOPE_API_KEY`时服务仍可启动和浏览，但真实规划/执行会明确显示Provider not ready。
 支持平台、工具链、首次下载、配置与故障处理以[本地安装指南](./docs/getting-started/local-install.md)为唯一入口。
 
-统一启动器始终启动Pi Executor、Workflow、API和DSH/Gateway；不会启动memmy/MemoryCore，
-也不在API或Workflow中注册Memory Adapter。启动器拒绝`--memory=memmy|memorycore|all`，不会
-因为历史环境变量静默恢复Memory。debug实例同时固定关闭Beta Workbench。code-server只监听
+统一启动器始终启动Pi Executor、Workflow、API和DSH/Gateway；不会启动memmy/MemoryCore。
+Memory合同与Adapter仍为历史事实和后续重新接入保留，但当前运行图没有可用Provider；显式触达
+Memory Workflow会安全失败，不会因为历史环境变量静默恢复Memory。启动器拒绝
+`--memory=memmy|memorycore|all`。debug实例同时固定关闭Beta Workbench。code-server只监听
 受管0600 Unix socket，浏览器只能经Gateway访问；扩展市场默认离线，不连接Open VSX或自动
 查询Copilot。
 
@@ -160,11 +161,15 @@ API Token配置，再按[本地安装指南](./docs/getting-started/local-instal
 4. [当前计划](./PROJECT_PLAN.md)
 5. [技术与所有权合同](./docs/architecture/technology-contract.md)
 6. [DSH前端与Chat后端交互](./docs/architecture/frontend-backend-interaction.md)
-7. [仓库地图](./docs/architecture/repository-map.md)
-8. [Workflow运行设计](./docs/architecture/runtime-workflows.md)
-9. [状态与运行时边界](./docs/architecture/system-boundaries.md)
-10. [产品设计准则](./docs/product/design-guidelines.md)
-11. [工程规范](./docs/engineering-standards.md)
-12. [本地安装指南](./docs/getting-started/local-install.md)
+7. [Agent管理](./docs/architecture/agent-management-as-built.md)
+8. [Prompt Studio与组装](./docs/architecture/prompt-studio-as-built.md)
+9. [Session、轨迹与Trace](./docs/architecture/session-architecture.md)
+10. [Workflow运行设计](./docs/architecture/runtime-workflows.md)
+11. [安全边界](./docs/architecture/security-boundaries.md)
+12. [仓库地图](./docs/architecture/repository-map.md)
+13. [状态与运行时边界](./docs/architecture/system-boundaries.md)
+14. [产品设计准则](./docs/product/design-guidelines.md)
+15. [工程规范](./docs/engineering-standards.md)
+16. [本地安装指南](./docs/getting-started/local-install.md)
 
 当前树不保存旧前端、上游源码副本、历史UI原型或归档目录；需要历史时直接使用Git。

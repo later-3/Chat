@@ -13,7 +13,7 @@
 | Product Store | 当前版本化JSON Adapter | 权威产品事实；未来可替换生产Store |
 | Durable Workflow | Vercel Workflow | 耐久步骤、暂停、恢复、重放和Checkpoint |
 | Agent Runtime | `pi-agent-core` + `pi-coding-agent AgentSession` | Planner仍是Workflow内受限节点；完整Executor运行在独立服务中 |
-| Memory | `WorkflowMemoryProviderPort` + Tencent MemoryCore HTTP Adapter | Chat拥有查询/写入意图、快照、采用与终态；腾讯服务拥有L0/L1对象和索引。memmy只保留旧事实兼容，不进入活动Registry |
+| Memory | 暂停；保留`WorkflowMemoryProviderPort`、Adapter与历史合同 | 当前统一启动没有可用Provider；历史事实仍可读取，后续重新接入时复用窄Port而不自研Memory引擎 |
 | Hosted Workbench | code-server（固定版本） | Files、Editor、Terminal、Git、Diff和VS Code扩展 |
 | 验证 | Vitest/Node Test + Playwright | 单元、合同、集成和真实浏览器纵向 |
 

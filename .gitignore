@@ -48,9 +48,13 @@ __pycache__/
 tmp/
 temp/
 
-# 仓库外个人材料（旧自研后端归档、个人学习克隆），不得再进入仓库
+# 仓库外个人材料与过程资产，不得再进入当前事实树
 /backend/
 /workflow-examples/
+/learning/
+/docs/tasks/
+/docs/design/qa/
+/design-qa-*.png
 
 # B2 workflow bundles
 .workflow-bundle/

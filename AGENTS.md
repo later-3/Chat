@@ -10,7 +10,7 @@ Chat 是独立开发、独立运行、独立运营并持续演进的完整产品
 
 Chat的产品后端、Workflow与Agent Runtime基线已经冻结。唯一产品前端是Chat公开派生仓库维护的固定DeepSeek Harness Web窄派生，由本仓库维护的LifeOS桥接插件接入Chat公开Query/Command；仓库不再维护第二套自研Chat页面，也不包含Agent Canvas/OpenHands前端。插件优先但不是绝对限制：公开扩展点无法表达必要的原生宿主语义时，经源码证据和用户确认可以在单独公开DSH派生分支做最小通用扩展，Chat直接链接该受管分支的源码构建并在启动前执行漂移门。
 
-DSH前端切换与Code Workbench已经完成。当前阶段顺序是Browser Provider优先，随后继续长期上下文、Project Solution、规则与Memory纵向；阶段顺序和历史任务书都不是实现授权，Agent只能依据当前对话中用户的明确请求开工。任务书只约束已授权任务的范围和完成门。
+DSH前端切换与Code Workbench已经完成。当前阶段优先处理Browser Provider；Memory及其他长期能力暂停，只有新的用户场景和明确授权出现后才重新启动。阶段顺序和历史任务书都不是实现授权，Agent只能依据当前对话中用户的明确请求开工。任务书只约束已授权任务的范围和完成门。
 
 每个实现任务默认使用独立worktree和`codex/`分支。本地分支是默认交付单元；push、PR、部署和其他外部副作用仅在用户明确授权后执行。验证按风险选择：确定性合同测试是每个任务的基础；用户可见纵向使用真实服务和浏览器E2E；只有Provider/模型接入任务或用户明确要求时才运行显式的真实模型付费门。
 
@@ -91,7 +91,7 @@ Chat的核心是“产品责任”，不是“代码量必须最大”。整个�
 8. `docs/product/design-guidelines.md`
 9. 与任务直接相关的`docs/`
 
-随后读取`docs/project-session-handoff.md`和当前任务书（若存在）。任务书不授予实现、下载、外部调用、push或PR权限。同一Session后续回复不机械重复全文；每次开始新任务或边界变化时，重新读取直接相关的合同、as-built文档和测试。
+随后读取与当前任务直接相关的合同、as-built文档和测试。历史任务书只从Git历史按需读取，不保留在当前树，也不授予实现、下载、外部调用、push或PR权限。同一Session后续回复不机械重复全文。
 
 ## 5. Agent开工与交付闭环
 
@@ -166,7 +166,7 @@ packages/testing   合同、Fixture与测试工具
 
 涉及Pi或DeepSeek Harness能力时，先使用第2.1节登记的Later Fork稳定集成分支及其`AGENTS.md`、类型、测试和示例；Fork checkout是当前本地开发与测试的运行依赖，不得用官方npm包或本地patch替代。官方仓库只作为只读`upstream`和同步来源；维护与汇合规则见`docs/architecture/dsh-frontend-maintenance.md`及`docs/architecture/pi-coding-executor-service.md`。涉及Vercel Workflow、Hono、React和Vite时使用匹配版本官方文档或固定源码，不凭模型记忆猜API。
 
-把开发、调研或复核任务委派给外部Pi Agent时，使用已安装的`pi-delegate` Skill和`/Users/xulater/Code/pi-taskd`共享服务；Pi源码仍只负责能力证据。Pi必须先读取受管worktree内的本文件和任务相关项目合同，不能直接写Chat主checkout，其结果必须由当前Codex按Chat完成门验证后才可采用。
+把开发、调研或复核任务委派给外部Pi Agent时，使用已安装的`pi-delegate` Skill和Chat同级的`../pi-taskd`共享服务；Pi源码仍只负责能力证据。Pi必须先读取受管worktree内的本文件和任务相关项目合同，不能直接写Chat主checkout，其结果必须由当前Codex按Chat完成门验证后才可采用。
 
 参考项目只为真实覆盖范围背书，不决定Chat的产品对象和事实所有权。
 

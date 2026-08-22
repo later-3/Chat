@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -17,6 +17,20 @@ const readme = read("README.md");
 const interaction = read("docs/architecture/frontend-backend-interaction.md");
 const debugging = read("docs/debug/local-debug.md");
 const navigation = `${interaction}\n${debugging}`;
+
+function collectFiles(root: string, predicate: (path: string) => boolean): string[] {
+  if (!existsSync(root)) return [];
+  const files: string[] = [];
+  const walk = (current: string): void => {
+    for (const entry of readdirSync(current)) {
+      const path = join(current, entry);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (predicate(path)) files.push(path);
+    }
+  };
+  walk(root);
+  return files;
+}
 
 const mainChainSymbols = [
   {
@@ -89,6 +103,59 @@ describe("当前实现文档与调试导航", () => {
       expect(read(file), `${file} 应解释关键事实边界`).toMatch(
         /(?:调试导航|Product Store|产品事实)/u,
       );
+    }
+  });
+
+  it("当前事实树不重新收录个人学习、历史任务书或过程截图", () => {
+    for (const path of ["learning", "docs/tasks", "docs/design/qa"]) {
+      expect(
+        collectFiles(resolve(repoRoot, path), () => true),
+        `${path} 应只从Git历史按需恢复`,
+      ).toEqual([]);
+    }
+  });
+
+  it("现行Markdown相对链接有效，docs图片必须被正文引用", () => {
+    const markdownFiles = [
+      ...collectFiles(resolve(repoRoot, "docs"), (path) => extname(path) === ".md"),
+      ...[
+        "AGENTS.md",
+        "PROJECT_CONTEXT.md",
+        "PROJECT_LESSONS.md",
+        "PROJECT_PLAN.md",
+        "PROJECT_STATE.md",
+        "README.md",
+      ].map((path) => resolve(repoRoot, path)),
+    ];
+    const linkedFiles = new Set<string>();
+
+    for (const markdownFile of markdownFiles) {
+      const source = readFileSync(markdownFile, "utf8");
+      expect(source, `${relative(repoRoot, markdownFile)} 不得保存个人绝对路径`).not.toMatch(
+        /\/Users\/[^/]+\//u,
+      );
+      for (const match of source.matchAll(/\]\(([^)]+)\)/gu)) {
+        const target = match[1]?.trim() ?? "";
+        if (target === "" || target.startsWith("#") || /^[a-z]+:/iu.test(target)) continue;
+        const pathPart = target.split("#", 1)[0];
+        if (pathPart === undefined || pathPart === "") continue;
+        const absoluteTarget = resolve(dirname(markdownFile), decodeURIComponent(pathPart));
+        expect(
+          existsSync(absoluteTarget),
+          `${relative(repoRoot, markdownFile)} 引用了不存在的 ${pathPart}`,
+        ).toBe(true);
+        linkedFiles.add(relative(repoRoot, absoluteTarget));
+      }
+    }
+
+    const documentationImages = collectFiles(resolve(repoRoot, "docs"), (path) =>
+      [".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"].includes(extname(path).toLowerCase()),
+    );
+    for (const image of documentationImages) {
+      expect(
+        linkedFiles.has(relative(repoRoot, image)),
+        `${relative(repoRoot, image)} 没有正文引用`,
+      ).toBe(true);
     }
   });
 });

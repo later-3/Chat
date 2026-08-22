@@ -103,10 +103,10 @@ Trajectory窄派生的源码位于Public仓库<https://github.com/later-3/deepse
 3. 两套源码的默认来源都是固定HTTPS URL；本地mirror只有通过显式环境变量选择后才可用，
    但仍必须通过同一commit/tree门。缓存证据记录来源模式、源码清单Hash与运行工件或安装lock
    Hash，漂移时原子重建。
-4. Memory固定证据与准备代码继续保留；普通setup/dev/debug不下载或自动启动第三方服务。
-   API与Workflow当前装配同一Tencent Workflow Memory Adapter合同，无完整配置时只公开
-   `configured=false`。普通Planning不会访问Memory；显式选择Memory Planning时必需Query
-   在Planner前安全失败并持久化Node证据。显式真实门使用
+4. Memory固定证据与准备代码继续保留；普通setup/dev/debug不下载或自动启动第三方服务，
+   当前产品完成门也不包含Memory。API与Workflow保留同一Provider合同以读取历史事实并允许
+   后续重新接入；没有显式专项配置时Provider不可用，触达历史Memory Workflow会在Planner前
+   安全失败。未来重新启用时，显式真实门使用
    `CHAT_FIXED_SOURCE_CACHE_ROOT`复用审核缓存，验证通用Query/Write Port、BM25 L1、L0
    accepted、只读对账、materialized与租户隔离，不改写或Fork上游源码。
 

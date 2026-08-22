@@ -31,9 +31,6 @@ docs/
   architecture/           当前合同与as-built
   product/                稳定产品原则
   debug/                  当前调试入口
-learning/
-  agent-context-management/  Later个人学习用的跨Agent源码与实验材料；不参与Chat产品合同
-  design/                 设计QA证据（qa/）与架构图示（diagram/）
 ```
 
 仓库不包含旧自研Web、Agent Canvas、DeepSeek Harness源码副本或UI原型归档。DSH派生源码由独立Public仓库`later-3/deepseek-harness-chat`维护，本仓库只保存Fork链接声明、分支证据与漂移门；删除内容需要时从Git历史读取。
@@ -71,4 +68,4 @@ domain ───────────────────> TypeScript标�
 4. `PROJECT_PLAN.md`描述阶段顺序，不是开工授权；任务书和研究只解释已审核范围与意图。
 5. 实现事实与冻结规范冲突时必须停止并报告，由用户决定修实现还是修合同。
 
-当前树不保留archive/legacy目录；Git历史是唯一历史档案。`learning/`只承载个人学习资料，不能作为Chat实现状态、架构授权、运行配置或测试完成门；Chat开发事实仍只由源码、`PROJECT_STATE.md`与`docs/`中的当前合同/as-built描述。
+当前树不保留archive/legacy、个人学习资料、历史任务书或过程截图；Git历史是唯一历史档案。Chat开发事实只由源码、`PROJECT_STATE.md`与`docs/`中的当前合同/as-built描述。

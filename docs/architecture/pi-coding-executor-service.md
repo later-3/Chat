@@ -70,9 +70,7 @@ Pi外部Extension本质是任意本机代码，能绕过Tool白名单并读取�
 Chat内联Extension注册在`DefaultResourceLoader`中。执行前的`tool_call` hook失败会传播回Agent loop并阻止真实Tool边界；
 固定Pi `0.84.2`会捕获`before_provider_request`、`tool_result`、`message_end`、Turn与Compaction等其他handler异常并继续。
 因此除Tool Intent外的当前Journal只能作为观察证据，不能作为fail-closed授权栅栏，也不能保证限额或Journal失败时一定阻止请求。
-[Prompt Review P0](./pi-prompt-review-p0.md)用Extension链外的`Agent.onPayload`包装证明了可行方向；
-[Direct Agent Prompt Review P1](./direct-agent-prompt-review-p1.md)已经把该接缝接入独立Direct Operation。
-Planning Executor原有事件仍保持以下观察语义，不能因Direct Gate已经交付而把旧hook描述成安全栅栏：
+受管Pi Fork已经提供Extension链外、异常直接阻断Provider fetch的`providerRequestGate`，Direct Operation用它实现逐请求审核、一次性派发许可和等待态恢复；当前交互与组装事实见[Prompt Studio](./prompt-studio-as-built.md)。Planning Executor原有事件仍保持以下观察语义，不能因Direct Gate已经交付而把旧hook描述成安全栅栏：
 
 - `before_provider_request`：当前先尝试保存请求序号和Payload Hash；该hook异常会被上游吞掉，不能据此宣称请求一定被阻止；
 - `message_end`：保存消息角色、正文Hash、Stop Reason和Token Usage；Assistant可见文本经脱敏和32K上限后保存，隐藏推理不保存；
