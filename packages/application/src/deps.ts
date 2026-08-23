@@ -183,11 +183,11 @@ export interface ApplicationDeps {
   readonly runActivityReader?: RunActivityReaderPort;
   /** Vercel Workflow World的脱敏只读投影；不暴露任何Runtime私有身份。 */
   readonly workflowRuntimeTrace?: WorkflowRuntimeTraceReaderPort;
-  /** 配置在服务端组合根；浏览器只能选择公开 backendId。 */
+  /** 遗留Memory query Port；由服务端组合根按mode与新Provider共用同一Adapter实例。 */
   readonly memoryBackends?: MemoryBackendRegistryPort;
-  /** 外部写入能力与Query分离，避免调用方忽略outcome_unknown。 */
+  /** 遗留import Port；只在Workflow Runtime装配，避免API直接跨越外部写副作用。 */
   readonly memoryImportBackends?: MemoryImportBackendRegistryPort;
-  /** 当前Workflow Memory稳定边界；首期活动Provider只有Tencent MemoryCore。 */
+  /** 当前Workflow query/write稳定边界；Provider集合由CHAT_MEMORY_MODE显式冻结。 */
   readonly workflowMemoryProviders?: WorkflowMemoryProviderRegistryPort;
   readonly projectRoots?: ProjectResourceRootRegistryPort;
   readonly projectIntakeUnderstanding?: ProjectIntakeUnderstandingPort;

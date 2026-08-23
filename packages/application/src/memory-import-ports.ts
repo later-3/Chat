@@ -34,7 +34,7 @@ export type MemoryImportReconcileOutput =
   | {
       readonly status: "materialized";
       readonly accepted: MemoryImportAccepted;
-      readonly verificationKind: "read_by_id_and_search" | "l0_and_session_l1";
+      readonly verificationKind: "read_by_id" | "read_by_id_and_search" | "l0_and_session_l1";
       readonly verificationSha256: string;
     }
   | { readonly status: "failed"; readonly errorCode: string; readonly summary: string }

@@ -33,7 +33,7 @@ const DESCRIPTOR: MemoryProviderDescriptor = {
     query: { maxResults: 20, maxContextCharacters: 32_000 },
     write: {
       maxContentCharacters: 8_192,
-      materialization: "asynchronous",
+      materialization: "accepted_only",
       idempotency: "chat_reconcile",
     },
     reconcile: true,

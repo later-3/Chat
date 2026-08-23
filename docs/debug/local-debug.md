@@ -14,13 +14,15 @@
 | Pi Executor Inspector | `127.0.0.1:43122`（production不启用） | `127.0.0.1:44122` |
 | DSH Host / LifeOS Bridge Inspector | `127.0.0.1:43123`（production不启用） | `127.0.0.1:44123` |
 | Code Workbench | 受管Unix socket；租约`43119`；浏览器入口`localhost:43110` | 固定关闭；`44119`保留给debug实例 |
+| memmy Sidecar（显式） | `127.0.0.1:18960` | `127.0.0.1:19960` |
+| Tencent MemoryCore Sidecar（显式） | `127.0.0.1:18970` | `127.0.0.1:19970` |
 
 端口所有权是失败关闭合同：`431xx`只允许LaunchAgent或显式前台production使用；任何分支、
 worktree、VS Code F5和测试都不能借用。VS Code“Chat：调试应用”与`pnpm dev:debug`只使用
 `441xx`，一个时刻只运行一个交互式debug worktree。Playwright真实门分别使用
 `451xx`（Prompt Studio）、`452xx`（三闸门）和`453xx`（通用DSH/E2E）；端口占用时只报告
-并失败，不运行production `debug:preclean`或终止未知进程。Memory保留位`18960/18970`和
-`19960/19970`当前必须空闲。
+并失败，不运行production `debug:preclean`或终止未知进程。Memory端口只在显式
+`memorycore / memmy / compare`模式进入当前实例端口门；`off`不因未选择的Sidecar端口受阻。
 
 production使用主checkout的`.data`；F5/debug使用当前worktree的
 `.data/instances/vscode-debug`。Product Store、Workflow Store、Runtime Binding/Key、Trace、
@@ -39,6 +41,7 @@ pnpm install --frozen-lockfile
 pnpm run setup --memory=off --workbench=off
 pnpm dev --memory=off --workbench=off
 pnpm dev:debug
+pnpm dev:debug --memory=compare
 pnpm dev:status
 pnpm dev:stop
 pnpm dev:debug:status
@@ -54,13 +57,14 @@ pnpm run setup --instance=debug
 
 该命令只检查debug端口并准备debug Workflow Bundle/DSH Profile，不停止或读取production运行数据。
 
-`pnpm run setup`默认只准备code-server、Workflow Bundle与DSH Bridge/Profile，不准备或启动Memory；
+`pnpm run setup`默认只准备code-server、Workflow Bundle与DSH Bridge/Profile；Memory缺省`off`，
+显式`--memory=memorycore|memmy|compare`才准备所选固定工件，setup始终不启动Sidecar；
 检测到本仓库已有服务时只失败关闭，不执行preclean或Workflow版本收敛；
 `pnpm dev`属于production实例；推荐显式`--memory=off --workbench=off`，启动Pi Executor、
 Workflow、API和DSH/Gateway。显式`--workbench=code-server`才增加Beta Workbench；
 若LaunchAgent已常驻，不要再运行production入口。`pnpm dev:debug`与VS Code F5属于debug实例，可在production
-继续服务PWA时并行启动相同的Pi Executor、Workflow、API和DSH服务图；API与Workflow同样不会实例化Memory Adapter。
-Memory源码与独立测试保留，但统一安装、VS Code F5和开发启动器当前都没有启用入口。
+继续服务PWA时并行启动相同的Pi Executor、Workflow、API和DSH服务图；Memory仍须显式选择，启用时使用
+`19960/19970`和worktree私有数据/身份。API与Workflow在恢复任何Run前冻结同一`CHAT_MEMORY_MODE`，`off`不会因遗留凭据激活Adapter。
 Workbench当前为Beta，不属于通用CI/CD完成门；debug实例强制`--workbench=off`，避免本机权限工作台
 跨进程边界进入公网或调试实例。
 VS Code F5是Node/Chrome调试合同，不另起占用production端口的GDB服务。启用Beta Workbench时，终端SIGINT或
@@ -144,7 +148,7 @@ Run Activity/Pi Session，不再复制到Trace。新写入每日`bounded`文件�
 1. 根行应为`Chat 本轮执行`，展开后按`DSH → Bridge → Chat后端 → Workflow`分区；Workflow子行必须来自实际`WorkflowNodeRun`，不能把静态Definition画成已执行。
 2. `任务规划`或执行节点可展开Pi Agent；其下显示模型、Token与`submit_*`工具生命周期。
 3. Trajectory不得出现`Vercel Workflow Runtime`、Run/Step/Hook/Sleep行；这些脱敏数据只保留为后端证据，后续由独立诊断/证据表面消费。页面不得出现Workflow Run ID、Hook Token、Pi Session ID、Provider Request ID、Prompt或工具参数/结果正文。
-4. 默认Profile选择“规划执行工作流”，该Definition不含Memory节点，因此轨迹不得出现Memory；这不是展示过滤。完整上下文Planning Workflow仍保留，只有显式选择时才会解释其资源节点；当前统一启动器仍不会启动Memory服务或装配Adapter。
+4. 默认Profile选择“规划执行工作流”，该Definition不含Memory节点，因此轨迹不得出现Memory；这不是展示过滤。完整上下文Planning Workflow仍保留，只有同时显式选择Memory运行模式与含Memory节点的Definition时才会触达Provider。运行模式只决定Provider是否存在，不得给普通Workflow伪造Memory节点。
 
 同一会话切换到“会话记录”时再检查：
 

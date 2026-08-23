@@ -10,7 +10,7 @@ Chat 是独立开发、独立运行、独立运营并持续演进的完整产品
 
 Chat的产品后端、Workflow与Agent Runtime基线已经冻结。唯一产品前端是Chat公开派生仓库维护的固定DeepSeek Harness Web窄派生，由本仓库维护的LifeOS桥接插件接入Chat公开Query/Command；仓库不再维护第二套自研Chat页面，也不包含Agent Canvas/OpenHands前端。插件优先但不是绝对限制：公开扩展点无法表达必要的原生宿主语义时，经源码证据和用户确认可以在单独公开DSH派生分支做最小通用扩展，Chat直接链接该受管分支的源码构建并在启动前执行漂移门。
 
-DSH前端切换与Code Workbench已经完成。当前阶段优先处理Browser Provider；Memory及其他长期能力暂停，只有新的用户场景和明确授权出现后才重新启动。阶段顺序和历史任务书都不是实现授权，Agent只能依据当前对话中用户的明确请求开工。任务书只约束已授权任务的范围和完成门。
+DSH前端切换与Code Workbench已经完成。当前阶段已经获得用户对Memory纵向的明确授权：先恢复显式、可隔离的Provider运行基础，再交付Memory增强Direct Workflow、Chat/Codex Session导入、Retrieval/Write Agent和管理表面；Browser Provider顺延为后续候选。Memory默认仍为`off`，普通开发不得被未选择的Sidecar、端口或工件牵绊。阶段顺序和历史任务书都不是实现授权，Agent只能依据当前对话中用户的明确请求开工；旧Memory实现只是可复用证据，不得覆盖当前目标。
 
 每个实现任务默认使用独立worktree和`codex/`分支。本地分支是默认交付单元；push、PR、部署和其他外部副作用仅在用户明确授权后执行。验证按风险选择：确定性合同测试是每个任务的基础；用户可见纵向使用真实服务和浏览器E2E；只有Provider/模型接入任务或用户明确要求时才运行显式的真实模型付费门。
 

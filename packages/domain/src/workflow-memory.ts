@@ -16,7 +16,7 @@ export interface WorkflowMemoryProviderDescriptorShape {
     } | null;
     readonly write: {
       readonly maxContentCharacters: number;
-      readonly materialization: "synchronous" | "asynchronous";
+      readonly materialization: "synchronous" | "asynchronous" | "accepted_only";
       readonly idempotency: "provider_key" | "chat_reconcile";
     } | null;
     readonly reconcile: boolean;

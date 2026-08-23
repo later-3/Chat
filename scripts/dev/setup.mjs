@@ -35,6 +35,7 @@ try {
     );
     await assertLocalSetupIdle(root, {
       instance: options.instance,
+      memory: options.memory,
       environment: process.env,
     });
     await prepareLocalArtifacts({

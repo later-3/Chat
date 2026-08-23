@@ -24,7 +24,7 @@ function provider() {
       query: { maxResults: 20, maxContextCharacters: 50_000 },
       write: {
         maxContentCharacters: 8_192,
-        materialization: "asynchronous" as const,
+        materialization: "accepted_only" as const,
         idempotency: "chat_reconcile" as const,
       },
       reconcile: true,
@@ -38,7 +38,7 @@ describe("Workflow Memory合同", () => {
     expect(memoryProviderDescriptorSchema.parse(provider())).toMatchObject({
       providerKind: "tencent_memorycore",
       transport: "http",
-      capabilities: { query: { maxResults: 20 }, write: { materialization: "asynchronous" } },
+      capabilities: { query: { maxResults: 20 }, write: { materialization: "accepted_only" } },
     });
     expect(
       memoryProviderDescriptorSchema.safeParse({
@@ -46,6 +46,20 @@ describe("Workflow Memory合同", () => {
         endpoint: "http://127.0.0.1:18970",
       }).success,
     ).toBe(false);
+  });
+
+  it("区分同步、异步承诺与仅接收三种写入能力", () => {
+    for (const materialization of ["synchronous", "asynchronous", "accepted_only"] as const) {
+      expect(
+        memoryProviderDescriptorSchema.safeParse({
+          ...provider(),
+          capabilities: {
+            ...provider().capabilities,
+            write: { ...provider().capabilities.write, materialization },
+          },
+        }).success,
+      ).toBe(true);
+    }
   });
 
   it("memory.query节点只保留通用查询预算", () => {

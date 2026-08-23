@@ -27,7 +27,7 @@ export const TEST_WORKFLOW_MEMORY_PROVIDER_DESCRIPTOR: MemoryProviderDescriptor 
       query: { maxResults: 20, maxContextCharacters: 32_000 },
       write: {
         maxContentCharacters: 50_000,
-        materialization: "asynchronous",
+        materialization: "accepted_only",
         idempotency: "chat_reconcile",
       },
       reconcile: true,

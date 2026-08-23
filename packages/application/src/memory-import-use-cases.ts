@@ -580,7 +580,7 @@ export function commitMemoryImportMaterialized(
   deps: ApplicationDeps,
   input: ResultCommandBase & {
     readonly accepted: MemoryImportAccepted;
-    readonly verificationKind: "read_by_id_and_search" | "l0_and_session_l1";
+    readonly verificationKind: "read_by_id" | "read_by_id_and_search" | "l0_and_session_l1";
     readonly verificationSha256: string;
     readonly reconciled?: boolean;
   },

@@ -98,7 +98,7 @@ const workflowMemoryProvider = {
       query: { maxResults: 20, maxContextCharacters: 32_000 },
       write: {
         maxContentCharacters: 8_192,
-        materialization: "asynchronous" as const,
+        materialization: "accepted_only" as const,
         idempotency: "chat_reconcile" as const,
       },
       reconcile: true,

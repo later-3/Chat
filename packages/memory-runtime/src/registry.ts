@@ -9,6 +9,7 @@ import type {
 } from "@chat/application";
 import type { MemoryBackendId, MemoryProviderDescriptor } from "@chat/contracts";
 import { computeMemoryProviderDescriptorSha256 } from "@chat/domain";
+import { z } from "zod";
 import {
   MEMMY_DEFAULT_BASE_URL,
   MemmyMemoryAdapter,
@@ -21,6 +22,9 @@ import {
 } from "./tencent-memorycore-adapter.js";
 
 type RegisteredMemoryBackend = MemoryBackendPort & MemoryImportBackendPort;
+type RegisteredMemoryProvider = RegisteredMemoryBackend &
+  WorkflowMemoryQueryProviderPort &
+  WorkflowMemoryWriteProviderPort;
 
 export class MemoryBackendRegistry
   implements MemoryBackendRegistryPort, MemoryImportBackendRegistryPort
@@ -116,94 +120,70 @@ export function createEmptyWorkflowMemoryProviderRegistry(): WorkflowMemoryProvi
   return new WorkflowMemoryProviderRegistry({});
 }
 
-export function createMemoryBackendRegistry(
+export const memoryRuntimeModeSchema = z.enum(["off", "memorycore", "memmy", "compare"]);
+export type MemoryRuntimeMode = z.infer<typeof memoryRuntimeModeSchema>;
+
+/** 缺省安全关闭；显式空值和未知值不能静默回退，避免两个组合根装配出不同Provider集。 */
+export function parseMemoryMode(env: NodeJS.ProcessEnv): MemoryRuntimeMode {
+  if (env.CHAT_MEMORY_MODE === undefined) return "off";
+  const parsed = memoryRuntimeModeSchema.safeParse(env.CHAT_MEMORY_MODE.trim());
+  if (!parsed.success) {
+    throw new Error("CHAT_MEMORY_MODE必须是off、memorycore、memmy或compare");
+  }
+  return parsed.data;
+}
+
+export interface MemoryRegistrySet {
+  /** 遗留query Port与import Port共享同一个Registry和同一批Adapter实例。 */
+  readonly memoryBackends: MemoryBackendRegistry;
+  readonly memoryImportBackends: MemoryBackendRegistry;
+  /** 新Workflow query/write Port仍指向上面同一批Adapter实例。 */
+  readonly workflowMemoryProviders: WorkflowMemoryProviderRegistry;
+}
+
+interface MemoryAdapterOverrides {
+  readonly memmy?: Partial<MemmyAdapterOptions>;
+  readonly tencentMemoryCore?: Partial<TencentMemoryCoreAdapterOptions>;
+}
+
+function createMemmyAdapter(
   env: NodeJS.ProcessEnv,
-  overrides: {
-    readonly memmy?: Partial<MemmyAdapterOptions>;
-    readonly tencentMemoryCore?: Partial<TencentMemoryCoreAdapterOptions>;
-  } = {},
-): MemoryBackendRegistry {
-  const memmy = new MemmyMemoryAdapter({
-    baseUrl: overrides.memmy?.baseUrl ?? env.CHAT_MEMMY_BASE_URL ?? MEMMY_DEFAULT_BASE_URL,
-    ...(overrides.memmy?.token !== undefined
-      ? { token: overrides.memmy.token }
+  options: Partial<MemmyAdapterOptions> | undefined,
+): MemmyMemoryAdapter {
+  return new MemmyMemoryAdapter({
+    baseUrl: options?.baseUrl ?? env.CHAT_MEMMY_BASE_URL ?? MEMMY_DEFAULT_BASE_URL,
+    ...(options?.token !== undefined
+      ? { token: options.token }
       : env.CHAT_MEMMY_TOKEN !== undefined
         ? { token: env.CHAT_MEMMY_TOKEN }
         : {}),
-    ...(overrides.memmy?.timeoutMs !== undefined ? { timeoutMs: overrides.memmy.timeoutMs } : {}),
-    ...(overrides.memmy?.namespaceSource !== undefined
-      ? { namespaceSource: overrides.memmy.namespaceSource }
-      : {}),
-    ...(overrides.memmy?.profileId !== undefined ? { profileId: overrides.memmy.profileId } : {}),
-    ...(overrides.memmy?.configurationRevision !== undefined
-      ? { configurationRevision: overrides.memmy.configurationRevision }
+    ...(options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    ...(options?.namespaceSource !== undefined ? { namespaceSource: options.namespaceSource } : {}),
+    ...(options?.profileId !== undefined ? { profileId: options.profileId } : {}),
+    ...(options?.expectedPrincipalId !== undefined
+      ? { expectedPrincipalId: options.expectedPrincipalId }
+      : env.CHAT_MEMMY_PRINCIPAL_ID !== undefined
+        ? { expectedPrincipalId: env.CHAT_MEMMY_PRINCIPAL_ID }
+        : {}),
+    ...(options?.configurationRevision !== undefined
+      ? { configurationRevision: options.configurationRevision }
       : env.CHAT_MEMMY_CONFIG_REVISION !== undefined
         ? { configurationRevision: env.CHAT_MEMMY_CONFIG_REVISION }
         : {}),
-    ...(overrides.memmy?.credentialRevision !== undefined
-      ? { credentialRevision: overrides.memmy.credentialRevision }
+    ...(options?.credentialRevision !== undefined
+      ? { credentialRevision: options.credentialRevision }
       : env.CHAT_MEMMY_CREDENTIAL_REVISION !== undefined
         ? { credentialRevision: env.CHAT_MEMMY_CREDENTIAL_REVISION }
         : {}),
-    ...(overrides.memmy?.fetchImpl !== undefined ? { fetchImpl: overrides.memmy.fetchImpl } : {}),
+    ...(options?.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {}),
   });
-  const tencent = new TencentMemoryCoreAdapter({
-    baseUrl:
-      overrides.tencentMemoryCore?.baseUrl ??
-      env.CHAT_TENCENT_MEMORYCORE_BASE_URL ??
-      TENCENT_MEMORYCORE_DEFAULT_BASE_URL,
-    ...(overrides.tencentMemoryCore?.token !== undefined
-      ? { token: overrides.tencentMemoryCore.token }
-      : env.CHAT_TENCENT_MEMORYCORE_TOKEN !== undefined
-        ? { token: env.CHAT_TENCENT_MEMORYCORE_TOKEN }
-        : {}),
-    ...(overrides.tencentMemoryCore?.serviceId !== undefined
-      ? { serviceId: overrides.tencentMemoryCore.serviceId }
-      : env.CHAT_TENCENT_MEMORYCORE_SERVICE_ID !== undefined
-        ? { serviceId: env.CHAT_TENCENT_MEMORYCORE_SERVICE_ID }
-        : {}),
-    ...(overrides.tencentMemoryCore?.teamId !== undefined
-      ? { teamId: overrides.tencentMemoryCore.teamId }
-      : env.CHAT_TENCENT_MEMORYCORE_TEAM_ID !== undefined
-        ? { teamId: env.CHAT_TENCENT_MEMORYCORE_TEAM_ID }
-        : {}),
-    ...(overrides.tencentMemoryCore?.userId !== undefined
-      ? { userId: overrides.tencentMemoryCore.userId }
-      : env.CHAT_TENCENT_MEMORYCORE_USER_ID !== undefined
-        ? { userId: env.CHAT_TENCENT_MEMORYCORE_USER_ID }
-        : {}),
-    ...(overrides.tencentMemoryCore?.agentId !== undefined
-      ? { agentId: overrides.tencentMemoryCore.agentId }
-      : env.CHAT_TENCENT_MEMORYCORE_AGENT_ID !== undefined
-        ? { agentId: env.CHAT_TENCENT_MEMORYCORE_AGENT_ID }
-        : {}),
-    ...(overrides.tencentMemoryCore?.configurationRevision !== undefined
-      ? { configurationRevision: overrides.tencentMemoryCore.configurationRevision }
-      : env.CHAT_TENCENT_MEMORYCORE_CONFIG_REVISION !== undefined
-        ? { configurationRevision: env.CHAT_TENCENT_MEMORYCORE_CONFIG_REVISION }
-        : {}),
-    ...(overrides.tencentMemoryCore?.credentialRevision !== undefined
-      ? { credentialRevision: overrides.tencentMemoryCore.credentialRevision }
-      : env.CHAT_TENCENT_MEMORYCORE_CREDENTIAL_REVISION !== undefined
-        ? { credentialRevision: env.CHAT_TENCENT_MEMORYCORE_CREDENTIAL_REVISION }
-        : {}),
-    ...(overrides.tencentMemoryCore?.timeoutMs !== undefined
-      ? { timeoutMs: overrides.tencentMemoryCore.timeoutMs }
-      : {}),
-    ...(overrides.tencentMemoryCore?.fetchImpl !== undefined
-      ? { fetchImpl: overrides.tencentMemoryCore.fetchImpl }
-      : {}),
-  });
-  return new MemoryBackendRegistry([memmy, tencent]);
 }
 
-/** 新架构首期只装配Tencent；旧memmy Adapter不再进入活动Registry。 */
-export function createWorkflowMemoryProviderRegistry(
+function createTencentMemoryCoreAdapter(
   env: NodeJS.ProcessEnv,
-  overrides: { readonly tencentMemoryCore?: Partial<TencentMemoryCoreAdapterOptions> } = {},
-): WorkflowMemoryProviderRegistry {
-  const options = overrides.tencentMemoryCore;
-  const tencent = new TencentMemoryCoreAdapter({
+  options: Partial<TencentMemoryCoreAdapterOptions> | undefined,
+): TencentMemoryCoreAdapter {
+  return new TencentMemoryCoreAdapter({
     baseUrl:
       options?.baseUrl ??
       env.CHAT_TENCENT_MEMORYCORE_BASE_URL ??
@@ -246,5 +226,75 @@ export function createWorkflowMemoryProviderRegistry(
     ...(options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
     ...(options?.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {}),
   });
-  return new WorkflowMemoryProviderRegistry({ queries: [tencent], writes: [tencent] });
+}
+
+function createSelectedMemoryAdapters(
+  env: NodeJS.ProcessEnv,
+  mode: Exclude<MemoryRuntimeMode, "off">,
+  overrides: MemoryAdapterOverrides,
+): readonly RegisteredMemoryProvider[] {
+  const adapters: RegisteredMemoryProvider[] = [];
+  if (mode === "memmy" || mode === "compare") {
+    adapters.push(createMemmyAdapter(env, overrides.memmy));
+  }
+  if (mode === "memorycore" || mode === "compare") {
+    adapters.push(createTencentMemoryCoreAdapter(env, overrides.tencentMemoryCore));
+  }
+  return adapters;
+}
+
+/**
+ * 一个进程只建立一套Memory Adapter实例，再把它们投影到遗留query/import和新
+ * Workflow query/write Port。调用方必须先解析mode并显式传入，避免组合根二次解析。
+ * `off`在读取任何Provider配置前返回，因此坏的遗留endpoint/凭据不会牵绊基础启动。
+ */
+export function createMemoryRegistrySet(
+  env: NodeJS.ProcessEnv,
+  options: MemoryAdapterOverrides & { readonly mode: MemoryRuntimeMode },
+): MemoryRegistrySet {
+  if (options.mode === "off") {
+    const memoryBackends = createEmptyMemoryBackendRegistry();
+    return {
+      memoryBackends,
+      memoryImportBackends: memoryBackends,
+      workflowMemoryProviders: createEmptyWorkflowMemoryProviderRegistry(),
+    };
+  }
+
+  const adapters = createSelectedMemoryAdapters(env, options.mode, options);
+  const memoryBackends = new MemoryBackendRegistry(adapters);
+  return {
+    memoryBackends,
+    memoryImportBackends: memoryBackends,
+    workflowMemoryProviders: new WorkflowMemoryProviderRegistry({
+      queries: adapters,
+      writes: adapters,
+    }),
+  };
+}
+
+export function createMemoryBackendRegistry(
+  env: NodeJS.ProcessEnv,
+  overrides: MemoryAdapterOverrides & { readonly mode?: MemoryRuntimeMode } = {},
+): MemoryBackendRegistry {
+  const mode =
+    overrides.mode === undefined
+      ? parseMemoryMode(env)
+      : memoryRuntimeModeSchema.parse(overrides.mode);
+  return createMemoryRegistrySet(env, { ...overrides, mode }).memoryBackends;
+}
+
+export function createWorkflowMemoryProviderRegistry(
+  env: NodeJS.ProcessEnv,
+  overrides: {
+    readonly mode?: MemoryRuntimeMode;
+    readonly memmy?: Partial<MemmyAdapterOptions>;
+    readonly tencentMemoryCore?: Partial<TencentMemoryCoreAdapterOptions>;
+  } = {},
+): WorkflowMemoryProviderRegistry {
+  const mode =
+    overrides.mode === undefined
+      ? parseMemoryMode(env)
+      : memoryRuntimeModeSchema.parse(overrides.mode);
+  return createMemoryRegistrySet(env, { ...overrides, mode }).workflowMemoryProviders;
 }

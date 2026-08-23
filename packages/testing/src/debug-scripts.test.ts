@@ -99,21 +99,31 @@ function runProviderPreload(env: NodeJS.ProcessEnv) {
   );
 }
 
-function runMemoryCoreDebugPreload(env: NodeJS.ProcessEnv) {
+function runMemoryCoreRuntimePreload(env: NodeJS.ProcessEnv) {
+  const runtimeInstance = env.CHAT_RUNTIME_INSTANCE?.trim() || "production";
+  const expectedPort = runtimeInstance === "debug" ? "19970" : "18970";
   return spawnSync(
     process.execPath,
     [
       "--import",
-      join(scriptsDir, "load-memorycore-debug-env.mjs"),
+      join(repoRoot, "scripts/memory/load-local-memorycore-env.mjs"),
       "-e",
       [
-        'if (process.env.CHAT_TENCENT_MEMORYCORE_BASE_URL !== "http://127.0.0.1:18970") process.exit(4);',
-        'if (process.env.CHAT_TENCENT_MEMORYCORE_SERVICE_ID !== "chat-local-debug-service") process.exit(5);',
-        'if (!/^chat-debug-[0-9a-f]{32}$/.test(process.env.CHAT_TENCENT_MEMORYCORE_TOKEN ?? "")) process.exit(6);',
-        'process.stdout.write("MEMORYCORE_DEBUG_READY\\n");',
+        "if (process.env.CHAT_TENCENT_MEMORYCORE_BASE_URL !== process.env.EXPECTED_MEMORYCORE_URL) process.exit(4);",
+        "if (process.env.CHAT_TENCENT_MEMORYCORE_SERVICE_ID !== process.env.EXPECTED_MEMORYCORE_SERVICE_ID) process.exit(5);",
+        'if (!/^chat-local-[0-9a-f]{32}$/.test(process.env.CHAT_TENCENT_MEMORYCORE_TOKEN ?? "")) process.exit(6);',
+        'process.stdout.write("MEMORYCORE_RUNTIME_READY\\n");',
       ].join(" "),
     ],
-    { env, encoding: "utf8", timeout: 90_000 },
+    {
+      env: {
+        ...env,
+        EXPECTED_MEMORYCORE_URL: `http://127.0.0.1:${expectedPort}`,
+        EXPECTED_MEMORYCORE_SERVICE_ID: `chat-local-${runtimeInstance}-service`,
+      },
+      encoding: "utf8",
+      timeout: 90_000,
+    },
   );
 }
 
@@ -263,18 +273,21 @@ describe("Chat本地Workflow Provider preload", () => {
 });
 
 describe("VS Code MemoryCore preload", () => {
-  it("强制三个调试进程使用同一loopback身份且不输出配置", () => {
-    const hostileToken = "REMOTE_TOKEN_MUST_NOT_APPEAR_7";
-    const result = runMemoryCoreDebugPreload({
-      ...makeEnv(tempDebugDir()),
-      CHAT_TENCENT_MEMORYCORE_BASE_URL: "https://remote.example.test",
-      CHAT_TENCENT_MEMORYCORE_TOKEN: hostileToken,
-      CHAT_TENCENT_MEMORYCORE_SERVICE_ID: "remote-private-service",
-    });
-    expect(result.status).toBe(0);
-    expect(result.stdout).toBe("MEMORYCORE_DEBUG_READY\n");
-    expect(result.stdout).not.toContain(hostileToken);
-    expect(result.stderr).not.toContain(hostileToken);
+  it("强制各runtime instance使用隔离loopback身份且不输出配置", () => {
+    for (const runtimeInstance of ["production", "debug"]) {
+      const hostileToken = `REMOTE_TOKEN_MUST_NOT_APPEAR_${runtimeInstance}`;
+      const result = runMemoryCoreRuntimePreload({
+        ...makeEnv(tempDebugDir()),
+        CHAT_RUNTIME_INSTANCE: runtimeInstance,
+        CHAT_TENCENT_MEMORYCORE_BASE_URL: "https://remote.example.test",
+        CHAT_TENCENT_MEMORYCORE_TOKEN: hostileToken,
+        CHAT_TENCENT_MEMORYCORE_SERVICE_ID: "remote-private-service",
+      });
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe("MEMORYCORE_RUNTIME_READY\n");
+      expect(result.stdout).not.toContain(hostileToken);
+      expect(result.stderr).not.toContain(hostileToken);
+    }
   });
 });
 

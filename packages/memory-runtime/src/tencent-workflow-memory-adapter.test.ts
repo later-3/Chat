@@ -61,7 +61,7 @@ describe("Tencent Workflow Memory Adapter", () => {
       transport: "http",
       capabilities: {
         query: { maxResults: 20 },
-        write: { materialization: "asynchronous", idempotency: "chat_reconcile" },
+        write: { materialization: "accepted_only", idempotency: "chat_reconcile" },
         reconcile: true,
       },
     });

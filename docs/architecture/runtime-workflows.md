@@ -2,11 +2,11 @@
 
 > 文档类型：当前实现（as-built）
 >
-> 当前公开系统Definition只有“规划执行工作流”和“Memory 增强规划与执行”。旧“默认规划工作流”和“默认笔记工作流”不再进入产品选择器；对应Runner与稳定证据为历史恢复及兼容调用保留。其他内部耐久流程包括`memory-write-workflow.v1`、历史兼容`memory-import-workflow.v1`、`project-intake-workflow.v1`、`project-advancement-workflow.v1`。
+> 当前公开系统Definition包括“规划执行工作流”“Memory 增强规划与执行”和“执行 Agent（逐次提示词审核）”。旧“默认规划工作流”和“默认笔记工作流”不再进入产品选择器；对应Runner与稳定证据为历史恢复及兼容调用保留。其他内部耐久流程包括`memory-write-workflow.v1`、历史兼容`memory-import-workflow.v1`、`project-intake-workflow.v1`、`project-advancement-workflow.v1`。
 >
 > 产品事实源：Product Store；Workflow返回值和Runtime状态不是产品终态。
 >
-> 当前默认产品Profile选择独立的“规划执行工作流”，其Definition只含“规划—审核—执行—验证—提交”，不包含Memory节点。另有用户显式选择的“Memory 增强规划与执行”和历史完整上下文Planning；三者身份、RunSpec和轨迹完全隔离。Chat装配Tencent MemoryCore窄Adapter，但不自动启动第三方服务。
+> 当前默认产品Profile选择独立的“规划执行工作流”，其Definition只含“规划—审核—执行—验证—提交”，不包含Memory节点。另有用户显式选择的“Memory 增强规划与执行”、单节点Direct Agent和历史完整上下文Planning；各自身份、RunSpec和轨迹完全隔离。Provider运行基础默认`off`，显式`memorycore / memmy / compare`才启动固定Sidecar并在API/Workflow装配相同Registry；运行模式不会把Memory节点隐式塞进其他Definition。
 
 ## 1. 为什么有多套Workflow
 
@@ -45,7 +45,7 @@ API Product Command
 | Workflow Store | Step结果、Hook等待、Checkpoint和重放 |
 | pi Runtime | Planner与Pi Adapter；Executor通过私有Client访问独立AgentSession服务 |
 | Pi Executor Service | Operation幂等、AgentSession、Workspace工具、Session与安全Journal |
-| Workflow Memory Registry | API与Workflow装配同一Tencent MemoryCore Adapter合同；无凭据时描述为未配置。memmy不进入新Workflow的活动Registry |
+| Workflow Memory Registry | 由唯一`CHAT_MEMORY_MODE`冻结：`off`为空；`memorycore / memmy / compare`分别装配同一Query/Write/Reconcile Port下的Tencent、memmy或两者；API与Workflow描述Hash必须一致 |
 | Trace/Replay | 记录系统路径并组合Product事实、版本证据进行回放 |
 
 Workflow进程不得打开Product JSON文件；所有产品读写都通过API私有Application Command完成。
@@ -179,9 +179,10 @@ loadMemoryWriteStep
 
 `mode=reconcile`只允许从`dispatching/accepted/outcome_unknown`进入，只调用Adapter的读取/搜索能力，不再次执行外部写入。
 
-- Tencent MemoryCore：用稳定映射读取L0并检查L1；L0存在可以收敛为`accepted`，L1可查后才是`materialized`。
+- memmy：Chat固定写入L2，Provider同步落盘且文字召回不依赖embedding；已知对象只用`GET detail`严格验证。写响应丢失时先以稳定`mwi_*`在只读Panel索引中定位候选，再逐个读取详情并核对正文、标题、Tag与来源Message；不会重发`memory.add`。固定版本没有可信的库内多Principal过滤，因此当前Adapter只允许绑定的单Principal和Chat专属物理数据库。
+- Tencent MemoryCore：固定本地无模型Profile声明`write.materialization=accepted_only`；用稳定映射读取L0并检查L1，L0存在收敛为`accepted`，只有Provider数据面已经真实存在同一写入session的L1才是`materialized`。本地查询门可用独立L1 fixture验证Query Port，但该fixture不能作为Write会自动物化的证据。
 
-`accepted`是合法非失败终态。Dispatcher监督器和页面都不得把它自动降级成未知结果，也不得为了追求`materialized`重复写入。
+`accepted`是合法非失败终态。Dispatcher监督器和页面都不得把它自动降级成未知结果、显示成“物化中”，也不得为了追求`materialized`重复写入。
 
 旧`MemoryImportWorkflow`、`MemoryImportIntent/Result`和对应API只为历史兼容保留；新功能不得继续向旧对象写入。
 
@@ -339,20 +340,23 @@ NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Quer
 已经实现：
 
 1. 同一Planning Workflow内的规划、反复修订、批准/拒绝、执行与正式提交。
-2. Provider中立、可重复的`memory.query`节点和唯一`WorkflowMemoryContext`；首个活动Provider为Tencent MemoryCore。
+2. Provider中立、可重复的`memory.query`节点和唯一`WorkflowMemoryContext`；memmy与Tencent MemoryCore均实现相同Workflow Query/Write/Reconcile Port，运行时按显式mode选择。
 3. `memory.write`节点与独立Memory Write/对账Workflow及结果未知语义；旧Import链只做历史兼容。
-4. 真实百炼`qwen3.7-plus`、真实Memory服务和真实浏览器E2E。
+4. 固定Memory Sidecar的显式准备/启动、双Provider真实HTTP健康与Query/Write/Reconcile基础门；既有Planning真实浏览器证据属于历史纵向，新的Memory Direct浏览器E2E尚未交付。
 5. 固定端口F5调试、严格Trace和多源Replay。
 6. 独立Project Intake耐久链、真实Git/文档/脚本观察、候选确认与Project账本。
 7. 独立Project Advancement耐久链、Stage/Milestone/负责人Update审核、State Transition与Timeline。
 
 尚未实现：
 
-1. Chat公开SSE Cursor Runtime Journal。
-2. Project Context进入Planning Workflow的节点；PS1已实现Project、初始Stage、Work/Action和资源观察，但尚未注入任务规划。
-3. 用户规则选择与规划注入节点。
-4. 生产多实例Store、正式身份、Worker生产接管和后端部署拓扑。
-5. 外部副作用Tool与通用Workflow编辑器。
+1. 独立Memory增强Direct Workflow及其Memory-aware Direct Input Manifest。
+2. Chat/Codex整Session预览、去重、增量导入与双Provider评测。
+3. Retrieval/Write Agent、Memory采用审核与DSH管理表面。
+4. Chat公开SSE Cursor Runtime Journal。
+5. Project Context进入Planning Workflow的节点；PS1已实现Project、初始Stage、Work/Action和资源观察，但尚未注入任务规划。
+6. 用户规则选择与规划注入节点。
+7. 生产多实例Store、正式身份、Worker生产接管和后端部署拓扑。
+8. 外部副作用Tool与通用Workflow编辑器。
 
 未来新增节点前，应先确认它属于现有Workflow的一个步骤，还是拥有独立用户结果和独立恢复生命周期；不能为了“统一”把所有业务塞进一个永久Workflow。
 
