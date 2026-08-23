@@ -21,6 +21,7 @@ import {
   createSystemNoteDefinition,
   createSystemDirectAgentDefinition,
   createSystemMemoryDirectDefinition,
+  createSystemMemoryAgentDirectDefinition,
   SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
   SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_PLANNING_WORKFLOW_VIEW_ID,
@@ -39,6 +40,9 @@ import {
   SYSTEM_MEMORY_DIRECT_WORKFLOW_DEFINITION_ID,
   SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID,
   SYSTEM_MEMORY_DIRECT_WORKFLOW_VIEW_ID,
+  SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_DEFINITION_ID,
+  SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_VIEW_ID,
 } from "@chat/application/workflow-system-definitions";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 import { migrateProductSnapshotV1ToV2, productSnapshotV1Schema } from "./migrate-v1-to-v2.js";
@@ -60,6 +64,7 @@ import { productSnapshotV16Schema } from "./legacy-v16.js";
 import { productSnapshotV17Schema } from "./legacy-v17.js";
 import { productSnapshotV18Schema } from "./legacy-v18.js";
 import { productSnapshotV19Schema } from "./legacy-v19.js";
+import { productSnapshotV20Schema } from "./legacy-v20.js";
 import { migrateProductSnapshotV4ToV5 } from "./migrate-v4-to-v5.js";
 import { migrateProductSnapshotV5ToV6 } from "./migrate-v5-to-v6.js";
 import { migrateProductSnapshotV6ToV7 } from "./migrate-v6-to-v7.js";
@@ -76,6 +81,7 @@ import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
 import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
 import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
 import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
+import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
 
 /**
  * 版本化JSON Product Store Adapter（任务书§8）。
@@ -154,7 +160,7 @@ function requireLegacySnapshot<T>(
  */
 function migrateLegacySnapshot(input: unknown): ProductSnapshot {
   let candidate = input;
-  for (let step = 0; step < 19; step += 1) {
+  for (let step = 0; step < 20; step += 1) {
     switch (declaredSnapshotVersion(candidate)) {
       case "chat-product-store.v1":
         candidate = migrateProductSnapshotV1ToV2(
@@ -251,8 +257,13 @@ function migrateLegacySnapshot(input: unknown): ProductSnapshot {
         );
         break;
       case "chat-product-store.v19":
-        return migrateProductSnapshotV19ToV20(
+        candidate = migrateProductSnapshotV19ToV20(
           requireLegacySnapshot(productSnapshotV19Schema.safeParse(candidate)),
+        );
+        break;
+      case "chat-product-store.v20":
+        return migrateProductSnapshotV20ToV21(
+          requireLegacySnapshot(productSnapshotV20Schema.safeParse(candidate)),
         );
       default:
         throw new StoreCorruptedError("Product Store Schema未知或非法，已保留原文件");
@@ -296,6 +307,7 @@ export class JsonProductStore implements ProductStorePort {
         const noteSeed = createSystemNoteDefinition(genesis.committedAt);
         const directSeed = createSystemDirectAgentDefinition(genesis.committedAt);
         const memoryDirectSeed = createSystemMemoryDirectDefinition(genesis.committedAt);
+        const memoryAgentDirectSeed = createSystemMemoryAgentDirectDefinition(genesis.committedAt);
         genesis.entities.workflowDefinitions[SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID] =
           seed.definition;
         genesis.entities.workflowDefinitions[SYSTEM_NOTE_WORKFLOW_DEFINITION_ID] =
@@ -308,6 +320,8 @@ export class JsonProductStore implements ProductStorePort {
           directSeed.definition;
         genesis.entities.workflowDefinitions[SYSTEM_MEMORY_DIRECT_WORKFLOW_DEFINITION_ID] =
           memoryDirectSeed.definition;
+        genesis.entities.workflowDefinitions[SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_DEFINITION_ID] =
+          memoryAgentDirectSeed.definition;
         genesis.entities.workflowDefinitionRevisions[SYSTEM_PLANNING_WORKFLOW_REVISION_ID] =
           seed.revision;
         genesis.entities.workflowDefinitionRevisions[SYSTEM_NOTE_WORKFLOW_REVISION_ID] =
@@ -320,6 +334,9 @@ export class JsonProductStore implements ProductStorePort {
           directSeed.revision;
         genesis.entities.workflowDefinitionRevisions[SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID] =
           memoryDirectSeed.revision;
+        genesis.entities.workflowDefinitionRevisions[
+          SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_REVISION_ID
+        ] = memoryAgentDirectSeed.revision;
         genesis.entities.workflowViewDefinitions[SYSTEM_PLANNING_WORKFLOW_VIEW_ID] = seed.view;
         genesis.entities.workflowViewDefinitions[SYSTEM_NOTE_WORKFLOW_VIEW_ID] = noteSeed.view;
         genesis.entities.workflowViewDefinitions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID] =
@@ -330,6 +347,8 @@ export class JsonProductStore implements ProductStorePort {
           directSeed.view;
         genesis.entities.workflowViewDefinitions[SYSTEM_MEMORY_DIRECT_WORKFLOW_VIEW_ID] =
           memoryDirectSeed.view;
+        genesis.entities.workflowViewDefinitions[SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_VIEW_ID] =
+          memoryAgentDirectSeed.view;
         const store = new JsonProductStore(options, genesis);
         await store.persist(genesis);
         return store;

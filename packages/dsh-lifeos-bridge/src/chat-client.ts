@@ -48,6 +48,19 @@ import {
   type ProjectBootstrapCandidate,
   type ProjectBootstrapOperation,
   type ProjectBootstrapReviewResponse,
+  listMemoryAgentWriteCandidatesResponseSchema,
+  memoryAgentWriteCandidateResponseSchema,
+  memoryAgentWriteDecisionResponseSchema,
+  listMemoryProvidersResponseSchema,
+  listMemorySessionImportsResponseSchema,
+  listMemorySessionSourcesResponseSchema,
+  previewMemoryProviderComparisonResponseSchema,
+  previewMemorySessionImportPayloadSchema,
+  previewMemorySessionImportResponseSchema,
+  memorySessionImportResponseSchema,
+  type DecideMemoryAgentWriteCandidatePayload,
+  type CreateMemorySessionImportPayload,
+  type PreviewMemoryProviderComparisonPayload,
 } from "@chat/contracts/public";
 import { z } from "zod";
 import {
@@ -798,6 +811,110 @@ export class ChatProductClient {
         body: JSON.stringify({ commandId, expectedRevision, payload }),
         ...withSignal(signal),
       },
+    );
+  }
+
+  async listMemoryAgentWriteCandidates(
+    query: {
+      readonly status?: "pending_review" | "approved" | "rejected" | undefined;
+      readonly limit?: number | undefined;
+    },
+    signal?: AbortSignal,
+  ) {
+    const params = new URLSearchParams();
+    if (query.status !== undefined) params.set("status", query.status);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    const suffix = params.size === 0 ? "" : `?${params.toString()}`;
+    return this.request(
+      `/api/memory/write-candidates${suffix}`,
+      listMemoryAgentWriteCandidatesResponseSchema,
+      withSignal(signal),
+    );
+  }
+
+  async getMemoryAgentWriteCandidate(candidateId: string, signal?: AbortSignal) {
+    return this.request(
+      `/api/memory/write-candidates/${encodeURIComponent(candidateId)}`,
+      memoryAgentWriteCandidateResponseSchema,
+      withSignal(signal),
+    );
+  }
+
+  async decideMemoryAgentWriteCandidate(
+    candidateId: string,
+    commandId: string,
+    payload: DecideMemoryAgentWriteCandidatePayload,
+    signal?: AbortSignal,
+  ) {
+    return this.request(
+      `/api/memory/write-candidates/${encodeURIComponent(candidateId)}/decisions`,
+      memoryAgentWriteDecisionResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify({ commandId, payload }),
+        ...withSignal(signal),
+      },
+    );
+  }
+
+  async listMemoryProviders(signal?: AbortSignal) {
+    return this.request(
+      "/api/memory/providers",
+      listMemoryProvidersResponseSchema,
+      withSignal(signal),
+    );
+  }
+
+  async listMemorySessionSources(kind: "chat" | "codex", limit?: number, signal?: AbortSignal) {
+    const params = new URLSearchParams({ kind });
+    if (limit !== undefined) params.set("limit", String(limit));
+    return this.request(
+      `/api/memory/session-sources?${params.toString()}`,
+      listMemorySessionSourcesResponseSchema,
+      withSignal(signal),
+    );
+  }
+
+  async previewMemorySessionImport(
+    payload: z.infer<typeof previewMemorySessionImportPayloadSchema>,
+    signal?: AbortSignal,
+  ) {
+    return this.request(
+      "/api/memory/session-import-previews",
+      previewMemorySessionImportResponseSchema,
+      { method: "POST", body: JSON.stringify(payload), ...withSignal(signal) },
+    );
+  }
+
+  async createMemorySessionImport(
+    commandId: string,
+    payload: CreateMemorySessionImportPayload,
+    signal?: AbortSignal,
+  ) {
+    return this.request("/api/memory/session-imports", memorySessionImportResponseSchema, {
+      method: "POST",
+      body: JSON.stringify({ commandId, payload }),
+      ...withSignal(signal),
+    });
+  }
+
+  async listMemorySessionImports(limit?: number, signal?: AbortSignal) {
+    const suffix = limit === undefined ? "" : `?limit=${String(limit)}`;
+    return this.request(
+      `/api/memory/session-imports${suffix}`,
+      listMemorySessionImportsResponseSchema,
+      withSignal(signal),
+    );
+  }
+
+  async previewMemoryProviderComparison(
+    payload: PreviewMemoryProviderComparisonPayload,
+    signal?: AbortSignal,
+  ) {
+    return this.request(
+      "/api/memory/provider-comparison-previews",
+      previewMemoryProviderComparisonResponseSchema,
+      { method: "POST", body: JSON.stringify(payload), ...withSignal(signal) },
     );
   }
 

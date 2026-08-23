@@ -20,6 +20,8 @@ import {
   NOTE_CAPTURE_RUNNER_FAMILY,
   MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
   MEMORY_DIRECT_RUNNER_FAMILY,
+  MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
 } from "./definition-kernel-executor-registry.js";
 import { getWorkflowRuntimeContext } from "./runtime-context.js";
 import { wrapApiError } from "./workflow-step-support.js";
@@ -104,6 +106,38 @@ export async function loadMemoryDirectRunSpecStep(input: {
     elements[2].nodeType !== "memory.write"
   ) {
     throw new FatalError("run_spec.memory_direct_sequence_incompatible");
+  }
+  return runSpec;
+}
+
+/** Memory Agent Direct使用独立runner family与direct@3 Blueprint。 */
+export async function loadMemoryAgentDirectRunSpecStep(input: {
+  readonly productRunId: string;
+  readonly workflowRunSpecId: string;
+}): Promise<WorkflowRunSpec> {
+  "use step";
+  const runSpec = await loadRestrictedRunSpec(input, {
+    runnerFamily: MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
+    runnerBundleVersion: MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION,
+    blueprintKey: "direct",
+  });
+  if (
+    runSpec.businessInput?.kind !== "direct_agent_message" ||
+    runSpec.definitionRef.blueprintVersion !== 3
+  ) {
+    throw new FatalError("run_spec.business_input_incompatible");
+  }
+  const elements = runSpec.semanticRoot.elements;
+  if (
+    elements.length !== 3 ||
+    elements[0]?.kind !== "task" ||
+    elements[0].nodeType !== "agent.memory_retrieve" ||
+    elements[1]?.kind !== "composite" ||
+    elements[1].nodeType !== "agent.direct" ||
+    elements[2]?.kind !== "task" ||
+    elements[2].nodeType !== "agent.memory_write"
+  ) {
+    throw new FatalError("run_spec.memory_agent_direct_sequence_incompatible");
   }
   return runSpec;
 }

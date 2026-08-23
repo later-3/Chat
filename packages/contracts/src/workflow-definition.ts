@@ -28,6 +28,8 @@ import {
 export const workflowDefinitionNodeTypeSchema = z.enum([
   "memory.query",
   "memory.write",
+  "agent.memory_retrieve",
+  "agent.memory_write",
   "context.memory",
   "context.project",
   "policy.rules",
@@ -71,6 +73,7 @@ export const workflowRunnerFamilySchema = z.enum([
   "note-capture.v1",
   "direct-agent.v1",
   "memory-direct.v1",
+  "memory-agent-direct.v1",
 ]);
 
 export const workflowRunnerEvidenceSchema = z

@@ -24,6 +24,18 @@ export const DSH_PROMPT_THREE_GATES_E2E_PORTS = Object.freeze({
   piExecutor: 45_215,
 });
 
+/**
+ * Memory 管理页的默认-off门只启动真实 API 与 DSH Host/Gateway。placeholder端口仅满足
+ * API 组合根的私有地址合同，不启动 Workflow 或 Pi Executor。
+ */
+export const DSH_MEMORY_MANAGEMENT_E2E_PORTS = Object.freeze({
+  web: 45_410,
+  api: 45_411,
+  workflowPlaceholder: 45_412,
+  webInternal: 45_414,
+  piExecutorPlaceholder: 45_415,
+});
+
 export const DSH_REAL_E2E_PORTS = Object.freeze({
   web: 45_310,
   api: 45_311,
@@ -40,6 +52,7 @@ export function resolveDshRealDataRoot(root, environment = process.env) {
   const allowed = new Set([
     resolve(repoRoot, ".data/e2e/dsh-real"),
     resolve(repoRoot, ".data/e2e/dsh-prompt-three-gates-real"),
+    resolve(repoRoot, ".data/e2e/dsh-memory-management-real"),
   ]);
   if (!allowed.has(dataRoot)) {
     throw new Error("CHAT_DSH_E2E_DATA_ROOT只能指向受管的DSH E2E数据目录");

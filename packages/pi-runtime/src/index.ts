@@ -12,3 +12,4 @@ export * from "./project-intake-understanding.js";
 export * from "./project-advancement-understanding.js";
 export * from "./project-model-profile.js";
 export * from "./note-capture.js";
+export * from "./memory-agents.js";

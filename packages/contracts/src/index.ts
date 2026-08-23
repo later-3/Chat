@@ -23,6 +23,7 @@ export * from "./workflow-memory.js";
 export * from "./memory-write-api.js";
 export * from "./memory-session-import.js";
 export * from "./memory-provider-comparison.js";
+export * from "./memory-agent.js";
 export * from "./project.js";
 export * from "./project-api.js";
 export * from "./project-internal-runtime.js";

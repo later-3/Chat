@@ -31,11 +31,12 @@ export function requireDirectAgentRun(run: ProductRun): DirectAgentProductRun {
   return run;
 }
 
-/** Memory节点只属于Planning或显式memory-direct；普通Direct不能借此隐式启用Memory。 */
+/** Memory节点只属于Planning或显式Memory Direct；普通Direct不能借此隐式启用Memory。 */
 export function requireWorkflowMemoryRun(run: ProductRun): WorkflowMemoryProductRun {
   if (
     run.runKind === "planning" ||
-    (run.runKind === "direct_agent" && run.runnerFamily === "memory-direct.v1")
+    (run.runKind === "direct_agent" &&
+      (run.runnerFamily === "memory-direct.v1" || run.runnerFamily === "memory-agent-direct.v1"))
   ) {
     return run;
   }

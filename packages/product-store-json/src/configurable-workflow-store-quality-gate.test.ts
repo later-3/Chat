@@ -47,6 +47,7 @@ import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
 import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
 import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
 import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
+import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
 import { productSnapshotV13Schema } from "./legacy-v13.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 import { computePromptFragmentRevisionSha256 } from "@chat/domain";
@@ -56,10 +57,12 @@ const NOW = "2026-08-10T12:00:00.000Z";
 function migrateProductSnapshotV15ToV16(
   snapshot: Parameters<typeof migrateProductSnapshotV15ToV16Legacy>[0],
 ): ProductSnapshot {
-  return migrateProductSnapshotV19ToV20(
-    migrateProductSnapshotV18ToV19(
-      migrateProductSnapshotV17ToV18(
-        migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(snapshot)),
+  return migrateProductSnapshotV20ToV21(
+    migrateProductSnapshotV19ToV20(
+      migrateProductSnapshotV18ToV19(
+        migrateProductSnapshotV17ToV18(
+          migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(snapshot)),
+        ),
       ),
     ),
   );
@@ -122,6 +125,9 @@ function emptyV6() {
     "projectBootstrapOperations",
     "projectWorkspaceBindings",
     "memorySessionImports",
+    "memoryAgentWriteCandidates",
+    "memoryAgentWriteDecisions",
+    "memoryAgentOperations",
   ]) {
     delete entities[key];
   }

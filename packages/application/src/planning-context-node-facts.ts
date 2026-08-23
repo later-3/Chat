@@ -22,7 +22,7 @@ import type { WorkflowMemoryProductRun } from "./product-run-kind.js";
 
 type DraftSnapshot = ProductSnapshot;
 type PlanningContextNodeType =
-  "memory.query" | "context.memory" | "context.project" | "policy.rules";
+  "memory.query" | "agent.memory_retrieve" | "context.memory" | "context.project" | "policy.rules";
 
 const deriveNodeRunId = (input: {
   readonly productRunId: string;

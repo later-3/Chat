@@ -1,5 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
+  listMemoryAgentWriteCandidatesQuerySchema,
+  listMemorySessionImportsQuerySchema,
+  memoryAgentWriteCandidateIdSchema,
+  memorySessionSourceListQuerySchema,
+} from "@chat/contracts/public";
+import {
   decisionRequestSchema,
   dshBridgeSendPreviewRequestSchema,
   dshSendReviewDecisionRequestSchema,
@@ -34,6 +40,13 @@ import {
   PromptSourceFileOpener,
   promptSourceOpenRequestSchema,
 } from "./prompt-source-file-opener.ts";
+import {
+  MemoryManagementBridgeService,
+  memoryCandidateDecisionRequestSchema,
+  memoryProviderComparisonPreviewRequestSchema,
+  memorySessionImportCreateRequestSchema,
+  memorySessionImportPreviewRequestSchema,
+} from "./memory-management-bridge-service.ts";
 
 const MAX_REQUEST_BODY_BYTES = 16 * 1024;
 // Agent Version允许131072个UTF-16字符的完整System Prompt；按UTF-8最坏4字节/字符，
@@ -79,6 +92,15 @@ const PROMPT_FRAGMENT_REVISIONS_PATH = /^\/lifeos\/prompts\/fragments\/([^/]+)\/
 const PROMPT_FRAGMENT_ARCHIVE_PATH = /^\/lifeos\/prompts\/fragments\/([^/]+)\/archive-status$/;
 const PROMPT_SOURCE_OPENERS_PATH = /^\/lifeos\/prompts\/source-openers$/;
 const PROMPT_SOURCE_OPEN_PATH = /^\/lifeos\/prompts\/source-files\/open$/;
+const MEMORY_WRITE_CANDIDATES_PATH = /^\/lifeos\/memory\/write-candidates$/;
+const MEMORY_WRITE_CANDIDATE_PATH = /^\/lifeos\/memory\/write-candidates\/([^/]+)$/;
+const MEMORY_WRITE_CANDIDATE_DECISIONS_PATH =
+  /^\/lifeos\/memory\/write-candidates\/([^/]+)\/decisions$/;
+const MEMORY_PROVIDERS_PATH = /^\/lifeos\/memory\/providers$/;
+const MEMORY_PROVIDER_COMPARISON_PREVIEWS_PATH = /^\/lifeos\/memory\/provider-comparison-previews$/;
+const MEMORY_SESSION_SOURCES_PATH = /^\/lifeos\/memory\/session-sources$/;
+const MEMORY_SESSION_IMPORT_PREVIEWS_PATH = /^\/lifeos\/memory\/session-import-previews$/;
+const MEMORY_SESSION_IMPORTS_PATH = /^\/lifeos\/memory\/session-imports$/;
 const SESSION_RECORDS_DEFAULT_LIMIT = 50;
 const SESSION_RECORDS_MAX_LIMIT = 100;
 const WORKSPACE_ROOT_ID = /^root_[A-Za-z0-9]+$/u;
@@ -220,6 +242,56 @@ function assertOnlyQueryKeys(params: URLSearchParams, allowed: ReadonlySet<strin
         `未知Query参数：${key}`,
       );
     }
+  }
+}
+
+function memoryQueryError(message: string): BridgeRequestError {
+  return new BridgeRequestError(400, "lifeos_memory_query_invalid", message);
+}
+
+function assertOnlyMemoryQueryKeys(params: URLSearchParams, allowed: ReadonlySet<string>): void {
+  for (const key of params.keys()) {
+    if (!allowed.has(key) || params.getAll(key).length !== 1) {
+      throw memoryQueryError("Memory查询参数未知或重复");
+    }
+  }
+}
+
+function parseMemoryCandidatesQuery(url: URL) {
+  assertOnlyMemoryQueryKeys(url.searchParams, new Set(["status", "limit"]));
+  const parsed = listMemoryAgentWriteCandidatesQuerySchema.safeParse({
+    status: singleQueryValue(url.searchParams, "status"),
+    limit: singleQueryValue(url.searchParams, "limit"),
+  });
+  if (!parsed.success) throw memoryQueryError("Memory候选查询参数非法");
+  return parsed.data;
+}
+
+function parseMemorySourcesQuery(url: URL) {
+  assertOnlyMemoryQueryKeys(url.searchParams, new Set(["kind", "limit"]));
+  const parsed = memorySessionSourceListQuerySchema.safeParse({
+    kind: singleQueryValue(url.searchParams, "kind"),
+    limit: singleQueryValue(url.searchParams, "limit"),
+  });
+  if (!parsed.success) throw memoryQueryError("Memory来源查询参数非法");
+  return parsed.data;
+}
+
+function parseMemoryImportsQuery(url: URL) {
+  assertOnlyMemoryQueryKeys(url.searchParams, new Set(["limit"]));
+  const parsed = listMemorySessionImportsQuerySchema.safeParse({
+    limit: singleQueryValue(url.searchParams, "limit"),
+  });
+  if (!parsed.success) throw memoryQueryError("Memory导入批次查询参数非法");
+  return parsed.data;
+}
+
+function memoryPathId(raw: string | undefined): string {
+  try {
+    const decoded = decodeURIComponent(raw ?? "");
+    return memoryAgentWriteCandidateIdSchema.parse(decoded);
+  } catch {
+    throw new BridgeRequestError(400, "lifeos_memory_candidate_invalid", "Memory候选身份非法");
   }
 }
 
@@ -404,6 +476,7 @@ export function createLifeosRouteHandler(
   publicHostname?: string,
   promptStudio?: PromptStudioBridgeService,
   promptSourceFiles?: PromptSourceFileOpener,
+  memoryManagement?: MemoryManagementBridgeService,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return async (req, res) => {
     try {
@@ -414,6 +487,116 @@ export function createLifeosRouteHandler(
       const localPromptSourceFiles = isLoopbackAuthority(host, expectedPort)
         ? promptSourceFiles
         : undefined;
+      if (
+        memoryManagement !== undefined &&
+        req.method === "GET" &&
+        MEMORY_WRITE_CANDIDATES_PATH.test(url.pathname)
+      ) {
+        sendJson(res, 200, await memoryManagement.candidates(parseMemoryCandidatesQuery(url)));
+        return;
+      }
+      const memoryCandidateDecisionMatch = MEMORY_WRITE_CANDIDATE_DECISIONS_PATH.exec(url.pathname);
+      if (
+        memoryManagement !== undefined &&
+        req.method === "POST" &&
+        memoryCandidateDecisionMatch !== null
+      ) {
+        if (url.search !== "") throw memoryQueryError("Memory决定不接受Query参数");
+        const parsed = memoryCandidateDecisionRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_memory_candidate_decision_invalid",
+            "Memory候选决定请求非法",
+          );
+        }
+        sendJson(
+          res,
+          201,
+          await memoryManagement.decide(memoryPathId(memoryCandidateDecisionMatch[1]), parsed.data),
+        );
+        return;
+      }
+      const memoryCandidateMatch = MEMORY_WRITE_CANDIDATE_PATH.exec(url.pathname);
+      if (memoryManagement !== undefined && req.method === "GET" && memoryCandidateMatch !== null) {
+        if (url.search !== "") throw memoryQueryError("Memory候选详情不接受Query参数");
+        sendJson(res, 200, await memoryManagement.candidate(memoryPathId(memoryCandidateMatch[1])));
+        return;
+      }
+      if (
+        memoryManagement !== undefined &&
+        req.method === "GET" &&
+        MEMORY_PROVIDERS_PATH.test(url.pathname)
+      ) {
+        if (url.search !== "") throw memoryQueryError("Memory Provider列表不接受Query参数");
+        sendJson(res, 200, await memoryManagement.providers());
+        return;
+      }
+      if (
+        memoryManagement !== undefined &&
+        req.method === "POST" &&
+        MEMORY_PROVIDER_COMPARISON_PREVIEWS_PATH.test(url.pathname)
+      ) {
+        if (url.search !== "") throw memoryQueryError("Memory比较预览不接受Query参数");
+        const parsed = memoryProviderComparisonPreviewRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_memory_comparison_invalid",
+            "Memory Provider比较请求非法",
+          );
+        }
+        sendJson(res, 200, await memoryManagement.compare(parsed.data));
+        return;
+      }
+      if (
+        memoryManagement !== undefined &&
+        req.method === "GET" &&
+        MEMORY_SESSION_SOURCES_PATH.test(url.pathname)
+      ) {
+        const query = parseMemorySourcesQuery(url);
+        sendJson(res, 200, await memoryManagement.sources(query.kind, query.limit));
+        return;
+      }
+      if (
+        memoryManagement !== undefined &&
+        req.method === "POST" &&
+        MEMORY_SESSION_IMPORT_PREVIEWS_PATH.test(url.pathname)
+      ) {
+        if (url.search !== "") throw memoryQueryError("Memory导入预览不接受Query参数");
+        const parsed = memorySessionImportPreviewRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_memory_import_preview_invalid",
+            "Memory导入预览请求非法",
+          );
+        }
+        sendJson(res, 200, await memoryManagement.previewImport(parsed.data));
+        return;
+      }
+      if (
+        memoryManagement !== undefined &&
+        req.method === "POST" &&
+        MEMORY_SESSION_IMPORTS_PATH.test(url.pathname)
+      ) {
+        if (url.search !== "") throw memoryQueryError("Memory导入不接受Query参数");
+        const parsed = memorySessionImportCreateRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          throw new BridgeRequestError(400, "lifeos_memory_import_invalid", "Memory导入请求非法");
+        }
+        sendJson(res, 201, await memoryManagement.createImport(parsed.data));
+        return;
+      }
+      if (
+        memoryManagement !== undefined &&
+        req.method === "GET" &&
+        MEMORY_SESSION_IMPORTS_PATH.test(url.pathname)
+      ) {
+        const query = parseMemoryImportsQuery(url);
+        sendJson(res, 200, await memoryManagement.imports(query.limit));
+        return;
+      }
       if (req.method === "GET" && PROMPT_SOURCE_OPENERS_PATH.test(url.pathname)) {
         if (url.search !== "") {
           throw new BridgeRequestError(

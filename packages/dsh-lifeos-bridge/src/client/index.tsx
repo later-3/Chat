@@ -27,6 +27,9 @@ import { PromptStudioController } from "./prompt-studio-controller.ts";
 import { installPromptStudioStyles } from "./prompt-studio-styles.ts";
 import { PromptComposerController } from "./prompt-composer-controller.ts";
 import { PromptControlBar, type PromptControlBarInjected } from "./PromptControlBar.tsx";
+import { MemoryManagement, type MemoryManagementInjected } from "./MemoryManagement.tsx";
+import { MemoryManagementController } from "./memory-management-controller.ts";
+import { installMemoryManagementStyles } from "./memory-management-styles.ts";
 import {
   ProjectBootstrapSidebarAction,
   type ProjectBootstrapSidebarInjected,
@@ -42,6 +45,7 @@ export const inject = ["slots", "conversationEvents", "sessions", "workspaces"];
 export function apply(ctx: ClientContext): void {
   installStyles(ctx);
   installPromptStudioStyles(ctx);
+  installMemoryManagementStyles(ctx);
   const traceTimestamps = createSnapshotStore(false, {
     persist: { name: "chat.lifeos.trace-timestamps.v1" },
   });
@@ -61,6 +65,7 @@ export function apply(ctx: ClientContext): void {
   }, "lifeos bridge: execution trace trajectory");
   const workbench = new WorkbenchSurfaceController();
   const promptStudio = new PromptStudioController();
+  const memoryManagement = new MemoryManagementController();
   // `@deepseek-ai/dsh-session`与浏览器Runtime都扩展Cordis的`sessions`键；此处运行在
   // Client插件根，真实对象是公开ISessions face，显式收窄避免服务端类型声明污染。
   const clientSessions = ctx.sessions as unknown as ISessions;
@@ -153,6 +158,7 @@ export function apply(ctx: ClientContext): void {
   );
 
   ctx.effect(() => () => promptStudio.dispose(), "lifeos bridge: prompt studio controller");
+  ctx.effect(() => () => memoryManagement.dispose(), "lifeos bridge: memory management controller");
 
   ctx.slots.inject("settings.section", () =>
     ctx.slots.register(
@@ -168,6 +174,30 @@ export function apply(ctx: ClientContext): void {
         }),
       },
       AgentProfiles,
+    ),
+  );
+
+  ctx.slots.inject("settings.section", () =>
+    ctx.slots.register(
+      {
+        name: "settings.section",
+        id: "lifeos-memory",
+        order: 35,
+        label: "Memory",
+        inject: (): MemoryManagementInjected => ({
+          hooks: { memoryManagement },
+          refresh: () => memoryManagement.refresh(),
+          selectCandidate: (candidateId) => memoryManagement.selectCandidate(candidateId),
+          closeCandidate: () => memoryManagement.closeCandidate(),
+          decideCandidate: (kind, reason) => memoryManagement.decideCandidate(kind, reason),
+          loadSources: (kind) => memoryManagement.loadSources(kind),
+          selectSource: (source) => memoryManagement.selectSource(source),
+          previewImport: (providerId) => memoryManagement.previewImport(providerId),
+          createImport: () => memoryManagement.createImport(),
+          compare: (input) => memoryManagement.compare(input),
+        }),
+      },
+      MemoryManagement,
     ),
   );
 

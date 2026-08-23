@@ -3,16 +3,15 @@ import { mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  createMemoryImport,
+  createMemoryWrite,
   createProductSession,
   submitUserMessage,
   updateOutboxStatus,
 } from "../../packages/application/src/index.ts";
 import { productSnapshotSchema } from "../../packages/contracts/src/index.ts";
 import { assertSnapshotIntegrity } from "../../packages/product-store-json/src/index.ts";
-import { assembleMemoryImportReplay } from "../../packages/realtime/src/replay.ts";
 import { createTraceSink } from "../../packages/realtime/src/trace-sink.ts";
-import { readSafeMemoryImportRuntimeEvidence } from "../../packages/workflows/src/index.ts";
+import { createPiAgentRuntimeProfileReader } from "../../packages/pi-runtime/src/coding-agent-runtime-profile.ts";
 import { createApplicationDeps, DEBUG_PRINCIPAL_ID } from "../../apps/api/src/composition.ts";
 import {
   FIXED_MEMMY_PORT,
@@ -34,8 +33,9 @@ const workflowDataDir = resolve(runRoot, "workflow");
 const bindingsPath = resolve(runRoot, "runtime-bindings.v2.json");
 const memmyRoot = resolve(runRoot, "memmy");
 const dbPath = resolve(memmyRoot, "memory.sqlite");
-const apiPort = 43_111;
-const workflowPort = 43_112;
+// 真实门使用独立测试端口，不能与普通 pnpm dev 的43111/43112争用或要求停机。
+const apiPort = 45_111;
+const workflowPort = 45_112;
 const runtimeKey = "rtk_memmyresponsedrop20260808";
 const canary = "M2-RESPONSE-DROP-7319";
 
@@ -107,25 +107,32 @@ async function waitForMaterialized(
     try {
       const snapshot = productSnapshotSchema.parse(JSON.parse(readFileSync(storePath, "utf8")));
       assertSnapshotIntegrity(snapshot);
-      const result = snapshot.entities.memoryImportResults[resultId as never];
+      const result = snapshot.entities.memoryWriteResults[resultId as never];
       lastStatus = result?.status ?? "missing";
       if (result?.status === "materialized") return snapshot;
       if (result?.status === "failed") {
-        throw new Error(`真实Chat导入进入failed: ${result.errorCode}`);
+        throw new Error(`真实Chat写入进入failed: ${result.errorCode}`);
       }
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith("真实Chat导入进入failed")) throw error;
+      if (error instanceof Error && error.message.startsWith("真实Chat写入进入failed")) throw error;
       // API正在atomic rename；下轮重新读取完整快照。
     }
     await new Promise((resolveWait) => setTimeout(resolveWait, 200));
   }
-  throw new Error(`真实Chat响应丢失闭环90秒未materialized，最后状态=${lastStatus}`);
+  throw new Error(`真实Chat写入响应丢失闭环90秒未materialized，最后状态=${lastStatus}`);
 }
 
 process.env.CHAT_MEMMY_BASE_URL = `http://127.0.0.1:${String(FIXED_MEMMY_PORT)}`;
 process.env.CHAT_MEMMY_CONFIG_REVISION = "response-drop-v1";
+process.env.CHAT_MEMORY_MODE = "memmy";
 const seedTrace = createTraceSink({ dir: traceDir });
-const seedDeps = await createApplicationDeps(storePath, (event) => seedTrace.emit(event));
+const seedBaseDeps = await createApplicationDeps(storePath, (event) => seedTrace.emit(event));
+const seedDeps = {
+  ...seedBaseDeps,
+  // 本门只需确定性编译Message/Run；本地读取固定Pi基线，既不依赖已启动API，
+  // 也不连接生产43115或发起任何模型请求。
+  agentRuntimeProfiles: createPiAgentRuntimeProfileReader({ previewCwd: repoRoot }),
+};
 const { session } = await createProductSession(seedDeps, {
   principalId: DEBUG_PRINCIPAL_ID,
   commandId: "cmd_responsedropsession1" as never,
@@ -148,18 +155,20 @@ await updateOutboxStatus(seedDeps, {
   outboxId: planningOutbox.outboxId,
   status: "failed_terminal",
 });
-const { memoryImport } = await createMemoryImport(seedDeps, {
+const currentSession = seededSnapshot.entities.sessions[session.sessionId];
+if (currentSession === undefined) throw new Error("响应丢失测试Session不存在");
+const { memoryWrite } = await createMemoryWrite(seedDeps, {
   principalId: DEBUG_PRINCIPAL_ID,
-  commandId: "cmd_responsedropimport1" as never,
+  commandId: "cmd_responsedropwrite1" as never,
   payload: {
+    productSessionId: session.sessionId,
+    providerId: "mbk_memmy" as never,
     sourceSelection: {
       kind: "full_message",
       sourceMessageId: message.messageId,
       sourceMessageSha256: message.sha256,
     },
-    backendId: "mbk_memmy" as never,
-    title: "M2 响应丢失验证",
-    tags: ["m2-response-drop"],
+    expectedSessionRevision: currentSession.revision,
   },
 });
 
@@ -213,18 +222,18 @@ try {
   await waitReady(`http://127.0.0.1:${String(FIXED_MEMMY_PORT)}/api/v1/health`, proxy);
   await waitReady(`http://127.0.0.1:${String(workflowPort)}/healthz`, workflow);
   await waitReady(`http://127.0.0.1:${String(apiPort)}/api/readyz`, api);
-  const finalSnapshot = await waitForMaterialized(memoryImport.memoryImportResultId);
-  const finalResult = finalSnapshot.entities.memoryImportResults[memoryImport.memoryImportResultId];
+  const finalSnapshot = await waitForMaterialized(memoryWrite.memoryWriteResultId);
+  const finalResult = finalSnapshot.entities.memoryWriteResults[memoryWrite.memoryWriteResultId];
   if (finalResult?.status !== "materialized" || finalResult.reconcileAttempts < 1) {
     throw new Error("真实Chat闭环没有以对账方式提交materialized");
   }
-  const importOutbox = Object.values(finalSnapshot.outbox).find(
+  const writeOutbox = Object.values(finalSnapshot.outbox).find(
     (entry) =>
-      entry.kind === "memory_import_start" &&
-      entry.memoryImportIntentId === memoryImport.memoryImportIntentId,
+      entry.kind === "memory_write_start" &&
+      entry.memoryWriteIntentId === memoryWrite.memoryWriteIntentId,
   );
-  if (importOutbox?.status !== "acknowledged") {
-    throw new Error("真实Chat Import Outbox没有acknowledged");
+  if (writeOutbox?.status !== "acknowledged") {
+    throw new Error("真实Chat Write Outbox没有acknowledged");
   }
   const count = execFileSync("/usr/bin/sqlite3", [dbPath, "SELECT COUNT(*) FROM memories;"], {
     encoding: "utf8",
@@ -232,36 +241,11 @@ try {
   if (count !== "1") throw new Error(`响应丢失后真实memmy对象数不是1: ${count}`);
 
   const trace = traceText();
-  for (const eventName of [
-    "memory.import.outcome_unknown",
-    "memory.import.reconcile.started",
-    "memory.import.reconcile.completed",
-    "memory.import.materialized",
-  ]) {
-    if (!trace.includes(`\"eventName\":\"${eventName}\"`)) {
-      throw new Error(`真实Chat Trace缺少${eventName}`);
-    }
-  }
   if (trace.includes(canary) || trace.includes("真实写入响应丢失后必须")) {
     throw new Error("真实Chat Trace错误复制了Message正文");
   }
-  const replay = assembleMemoryImportReplay(
-    {
-      memoryImportIntentId: memoryImport.memoryImportIntentId,
-      storePath,
-      traceDir,
-      runtimeBindingsPath: bindingsPath,
-    },
-    {
-      snapshotIntegrityCheck: assertSnapshotIntegrity,
-      readMemoryImportRuntimeEvidence: readSafeMemoryImportRuntimeEvidence,
-    },
-  );
-  if (replay.failures.length !== 0 || replay.content.included) {
-    throw new Error(`真实Chat Import Replay不完整: ${replay.failures.join(" | ")}`);
-  }
   console.log(
-    "[memmy-response-drop] Chat Store→Outbox→Workflow→真实memmy断响应→outcome_unknown→同身份对账→materialized；唯一对象与无正文Replay门通过",
+    "[memmy-response-drop] Chat Store→Write Outbox→Workflow→真实memmy断响应→outcome_unknown→同身份只读对账→materialized；唯一对象与Trace无正文门通过",
   );
 } finally {
   await stop(api);

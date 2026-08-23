@@ -19,6 +19,15 @@ import {
   persistWorkflowMemoryQueryResultResponseSchema,
   freezeWorkflowMemoryContextRequestSchema,
   freezeWorkflowMemoryContextResponseSchema,
+  prepareMemoryWriteAgentInputRequestSchema,
+  prepareMemoryWriteAgentInputResponseSchema,
+  persistMemoryWriteAgentCandidateRequestSchema,
+  persistMemoryWriteAgentCandidateResponseSchema,
+  beginMemoryAgentOperationRequestSchema,
+  beginMemoryAgentOperationResponseSchema,
+  completeMemoryAgentOperationRequestSchema,
+  markMemoryAgentOperationOutcomeUnknownRequestSchema,
+  memoryAgentOperationResponseSchema,
 } from "./planning.js";
 import {
   publishPlanReviewRequestSchema,
@@ -108,6 +117,31 @@ export type FreezeWorkflowMemoryContextRequest = z.infer<
 export type FreezeWorkflowMemoryContextResponse = z.infer<
   typeof freezeWorkflowMemoryContextResponseSchema
 >;
+export type PrepareMemoryWriteAgentInputRequest = z.infer<
+  typeof prepareMemoryWriteAgentInputRequestSchema
+>;
+export type PrepareMemoryWriteAgentInputResponse = z.infer<
+  typeof prepareMemoryWriteAgentInputResponseSchema
+>;
+export type PersistMemoryWriteAgentCandidateRequest = z.infer<
+  typeof persistMemoryWriteAgentCandidateRequestSchema
+>;
+export type PersistMemoryWriteAgentCandidateResponse = z.infer<
+  typeof persistMemoryWriteAgentCandidateResponseSchema
+>;
+export type BeginMemoryAgentOperationRequest = z.infer<
+  typeof beginMemoryAgentOperationRequestSchema
+>;
+export type BeginMemoryAgentOperationResponse = z.infer<
+  typeof beginMemoryAgentOperationResponseSchema
+>;
+export type CompleteMemoryAgentOperationRequest = z.infer<
+  typeof completeMemoryAgentOperationRequestSchema
+>;
+export type MarkMemoryAgentOperationOutcomeUnknownRequest = z.infer<
+  typeof markMemoryAgentOperationOutcomeUnknownRequestSchema
+>;
+export type MemoryAgentOperationResponse = z.infer<typeof memoryAgentOperationResponseSchema>;
 export type PlanningInputDto = z.infer<typeof planningInputDtoSchema>;
 export type PublishPlanReviewRequest = z.infer<typeof publishPlanReviewRequestSchema>;
 export type PublishPlanReviewResponse = z.infer<typeof publishPlanReviewResponseSchema>;

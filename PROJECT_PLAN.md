@@ -24,11 +24,11 @@
 
 把固定memmy与Tencent MemoryCore作为可替换Sidecar，通过同一Provider中立Port接入Chat。普通开发默认`off`且不受Memory端口、工件或服务牵绊；显式启用后，API与Workflow冻结同一Provider集合。
 
-交付顺序：运行基础与真实Provider门 → 独立Memory增强Direct Workflow → Chat/Codex Session预览、去重与导入 → 双Provider对比 → Retrieval/Write Agent与可选人工门 → DSH Memory管理表面。旧Memory Planning只作为实现证据，不能决定当前目标形态。
+交付顺序：运行基础与真实Provider门 → 独立Memory增强Direct Workflow → Chat/Codex Session预览、去重与导入 → 双Provider对比 → Retrieval/Write Agent与人工Candidate Decision → DSH Memory管理表面。旧Memory Planning只作为实现证据，不能决定当前目标形态。
 
-截至2026-08-24，前四项已经完成：Chat/Codex Session共享只读预览、确定性`conversation-turns.v1`转换、条目级去重和增量导入；双Provider比较把同一namespace、查询和预算并行执行，并只报告可验证的精确正文/标签差异，不跨Provider比较score。Codex来源按请求扫描，不新增常驻服务。当前下一交付项是Retrieval/Write Agent与可选人工门。Memory Direct的真实DSH浏览器E2E与本轮采用详情仍计入后续管理表面完成门。
+截至2026-08-24，代码与确定性合同纵向已完成：Chat/Codex Session共享只读Preview、确定性`conversation-turns.v1`转换、条目级去重和增量导入；双Provider比较把同一namespace、查询和预算并行执行，并只报告可验证的精确正文/标签差异，不跨Provider比较score；`direct@3 / memory-agent-direct.v1`以检索Agent筛选Provider原始结果引用、Direct Agent执行、写入Agent生成待审核候选的固定顺序运行。每次Retrieval/Write Agent模型或Provider边界先持久化`MemoryAgentOperation`；Write Agent绝不直接外写，用户以Candidate revision/hash批准后才创建统一Memory Write Intent/Outbox。DSH「Memory」设置页已提供候选列表/详情/批准拒绝、Provider comparison、Session Preview/Import，并只经同源窄代理访问Chat公开Memory API。普通开发继续默认`off`，不准备/启动任何Sidecar；管理页可在该模式启动且不会绕过Provider Registry。已通过memmy与MemoryCore真实HTTP门、真实Codex Session门（50来源、抽样8消息→4条目）、百炼`qwen3.7-plus` Memory Agent真实门3/3（Retrieval选Provider原始index 1、Write生成1候选）、默认-off DSH Memory管理真实Chromium门2/2、真实memmy断响应唯一对象门和Sidecar孤儿恢复门。仍未运行显式启用Provider的完整`direct@3` DSH纵向，不能由上述分层门替代。
 
-完成门：查询结果真实进入Direct Provider输入；同一Session导入重跑零新增；Write响应丢失不会产生第二个外部对象；刷新后可从Product Store重建来源、采用、决定、写入与对账；真实DSH浏览器能配置、查看并管理本轮Memory使用。
+完成门：查询结果真实进入Direct Provider输入；同一Session导入重跑零新增；Write响应丢失不会产生第二个外部对象；刷新后可从Product Store重建来源、Operation、Candidate Decision、写入与对账；在明确授权的启用Provider环境中，真实DSH浏览器能配置、查看并管理完整`direct@3`本轮Memory使用。最后一项尚未执行；默认-off管理页Chromium 2/2、独立Provider真实门与确定性Controller/Host测试均不能替代它。
 
 ### F4 · Browser Provider（候选）
 

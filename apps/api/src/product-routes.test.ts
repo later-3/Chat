@@ -832,6 +832,7 @@ describe("公开产品API", () => {
       "Memory 增强规划与执行",
       "执行 Agent（逐次提示词审核）",
       "Memory 增强执行 Agent",
+      "Memory Agent 增强执行",
     ]);
     expect(ordinary?.nodes.map((node) => node.nodeType)).not.toContain("memory.query");
     expect(ordinary?.nodes.map((node) => node.nodeType)).not.toContain("memory.write");

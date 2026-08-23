@@ -3,6 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 import {
   DSH_PROMPT_STUDIO_E2E_PORTS,
   DSH_PROMPT_THREE_GATES_E2E_PORTS,
+  DSH_MEMORY_MANAGEMENT_E2E_PORTS,
   DSH_REAL_E2E_PORTS,
   dshRealWebEnvironment,
   dshRealWorkbenchEnvironment,
@@ -13,14 +14,19 @@ const pwaOnly = process.env.CHAT_DSH_E2E_MODE === "pwa-only";
 const trajectoryOnly = process.env.CHAT_DSH_E2E_MODE === "trajectory-only";
 const promptStudioOnly = process.env.CHAT_DSH_E2E_MODE === "prompt-studio-only";
 const promptThreeGatesOnly = process.env.CHAT_DSH_E2E_MODE === "prompt-three-gates-only";
+const memoryManagementOnly = process.env.CHAT_DSH_E2E_MODE === "memory-management-only";
 const providerEnvironmentModule = "../../scripts/debug/load-provider-env.mjs";
-if (!workbenchOnly && !pwaOnly && !trajectoryOnly && !promptStudioOnly)
+if (!workbenchOnly && !pwaOnly && !trajectoryOnly && !promptStudioOnly && !memoryManagementOnly)
   await import(providerEnvironmentModule);
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const dataRoot = resolve(
   repoRoot,
-  promptThreeGatesOnly ? ".data/e2e/dsh-prompt-three-gates-real" : ".data/e2e/dsh-real",
+  promptThreeGatesOnly
+    ? ".data/e2e/dsh-prompt-three-gates-real"
+    : memoryManagementOnly
+      ? ".data/e2e/dsh-memory-management-real"
+      : ".data/e2e/dsh-real",
 );
 const sharedEnvironment = {
   ...process.env,
@@ -45,6 +51,11 @@ const promptThreeGatesEnvironment = {
       ],
     },
   ]),
+};
+const memoryManagementEnvironment = {
+  ...sharedEnvironment,
+  CHAT_DSH_E2E_DATA_ROOT: dataRoot,
+  CHAT_MEMORY_MODE: "off",
 };
 
 const codeServer = {
@@ -181,6 +192,38 @@ const promptThreeGatesApi = {
     CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.piExecutor)}`,
   },
 } as const;
+const memoryManagementApi = {
+  command: "pnpm --filter @chat/api start",
+  cwd: repoRoot,
+  url: `http://127.0.0.1:${String(DSH_MEMORY_MANAGEMENT_E2E_PORTS.api)}/api/readyz`,
+  reuseExistingServer: false,
+  timeout: 120_000,
+  env: {
+    ...memoryManagementEnvironment,
+    PORT: String(DSH_MEMORY_MANAGEMENT_E2E_PORTS.api),
+    CHAT_API_HOST: "127.0.0.1",
+    CHAT_PRODUCT_STORE_PATH: resolve(dataRoot, "product-store.v1.json"),
+    CHAT_WORKFLOW_BASE_URL: `http://127.0.0.1:${String(DSH_MEMORY_MANAGEMENT_E2E_PORTS.workflowPlaceholder)}`,
+    CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_MEMORY_MANAGEMENT_E2E_PORTS.piExecutorPlaceholder)}`,
+    // Default-off门不读取本机Codex history；Session来源为空正是本门验证的安全基线。
+    CODEX_HOME: resolve(dataRoot, "codex-home"),
+  },
+} as const;
+const memoryManagementDsh = {
+  command: "node scripts/e2e/start-dsh-pwa-real.mjs",
+  cwd: repoRoot,
+  url: `http://127.0.0.1:${String(DSH_MEMORY_MANAGEMENT_E2E_PORTS.web)}/healthz`,
+  reuseExistingServer: false,
+  timeout: 120_000,
+  env: dshRealWebEnvironment(repoRoot, {
+    ...memoryManagementEnvironment,
+    CHAT_API_BASE_URL: `http://127.0.0.1:${String(DSH_MEMORY_MANAGEMENT_E2E_PORTS.api)}`,
+    CHAT_PUBLIC_WEB_PORT: String(DSH_MEMORY_MANAGEMENT_E2E_PORTS.web),
+    CHAT_DSH_INTERNAL_WEB_PORT: String(DSH_MEMORY_MANAGEMENT_E2E_PORTS.webInternal),
+    CHAT_PUBLIC_WEB_HOSTNAME: undefined,
+    CHAT_WEB_AUTH_REQUIRED: "0",
+  }),
+} as const;
 const promptThreeGatesDsh = {
   command: "node scripts/e2e/start-dsh-pwa-real.mjs",
   cwd: repoRoot,
@@ -213,9 +256,11 @@ export default defineConfig({
         ? "dsh-prompt-studio-real.spec.ts"
         : promptThreeGatesOnly
           ? "dsh-prompt-three-gates-real.spec.ts"
-          : trajectoryOnly
-            ? "dsh-trajectory-real.spec.ts"
-            : "dsh-planning-real.spec.ts",
+          : memoryManagementOnly
+            ? "dsh-memory-management-real.spec.ts"
+            : trajectoryOnly
+              ? "dsh-trajectory-real.spec.ts"
+              : "dsh-planning-real.spec.ts",
   ...(promptThreeGatesOnly
     ? {}
     : { globalTeardown: resolve(repoRoot, "scripts/e2e/dsh-real-workbench-lifecycle.mjs") }),
@@ -231,7 +276,9 @@ export default defineConfig({
         ? DSH_PROMPT_STUDIO_E2E_PORTS.web
         : promptThreeGatesOnly
           ? DSH_PROMPT_THREE_GATES_E2E_PORTS.web
-          : DSH_REAL_E2E_PORTS.web,
+          : memoryManagementOnly
+            ? DSH_MEMORY_MANAGEMENT_E2E_PORTS.web
+            : DSH_REAL_E2E_PORTS.web,
     )}`,
     trace: "off",
     screenshot: "off",
@@ -251,8 +298,10 @@ export default defineConfig({
               promptThreeGatesApi,
               promptThreeGatesDsh,
             ]
-          : trajectoryOnly
-            ? [trajectoryApi, trajectoryDsh]
-            : [codeServer, piExecutor, workflow, api, dsh],
+          : memoryManagementOnly
+            ? [memoryManagementApi, memoryManagementDsh]
+            : trajectoryOnly
+              ? [trajectoryApi, trajectoryDsh]
+              : [codeServer, piExecutor, workflow, api, dsh],
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });

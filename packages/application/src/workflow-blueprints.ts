@@ -38,7 +38,11 @@ export interface WorkflowBlueprint {
   readonly blueprintKey: WorkflowBlueprintKey;
   readonly blueprintVersion: number;
   readonly runnerFamily:
-    "configurable-planning.v1" | "note-capture.v1" | "direct-agent.v1" | "memory-direct.v1";
+    | "configurable-planning.v1"
+    | "note-capture.v1"
+    | "direct-agent.v1"
+    | "memory-direct.v1"
+    | "memory-agent-direct.v1";
   readonly allowedNodeTypes: readonly WorkflowNodeTypeKey[];
   readonly optionalNodeTypes: readonly WorkflowNodeTypeKey[];
   readonly repeatableNodeTypes: readonly {
@@ -111,6 +115,11 @@ const MEMORY_DIRECT_NODE_TYPES: readonly WorkflowNodeTypeKey[] = [
   "memory.query",
   "agent.direct",
   "memory.write",
+];
+const MEMORY_AGENT_DIRECT_NODE_TYPES: readonly WorkflowNodeTypeKey[] = [
+  "agent.memory_retrieve",
+  "agent.direct",
+  "agent.memory_write",
 ];
 
 export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
@@ -265,6 +274,44 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
     mandatoryManualReviewTypes: [],
     // Product Message仍由Direct候选提交；结构终点是随后执行的Memory写回。
     terminalNodeType: "memory.write",
+  },
+  {
+    blueprintKey: "direct",
+    blueprintVersion: 3,
+    runnerFamily: "memory-agent-direct.v1",
+    allowedNodeTypes: MEMORY_AGENT_DIRECT_NODE_TYPES,
+    optionalNodeTypes: [],
+    repeatableNodeTypes: [],
+    requiredRoles: [
+      { role: "memory_retrieval_agent", nodeType: "agent.memory_retrieve", exactlyOnce: true },
+      { role: "direct_agent", nodeType: "agent.direct", exactlyOnce: true },
+      { role: "memory_write_agent", nodeType: "agent.memory_write", exactlyOnce: true },
+    ],
+    loopRules: [],
+    perRunOverrides: [
+      {
+        nodeType: "agent.memory_retrieve",
+        fields: [],
+        configFields: ["providerId", "required", "maxResults", "maxContextCharacters"],
+      },
+      {
+        nodeType: "agent.direct",
+        fields: [],
+        configFields: ["agentKey", "agentPromptOverride", "capabilityMode", "promptReviewMode"],
+      },
+      {
+        nodeType: "agent.memory_write",
+        fields: [],
+        configFields: ["providerId", "required", "maxSourceMessages", "maxItems", "reviewMode"],
+      },
+    ],
+    immutableMinimumRisk: {
+      "agent.memory_retrieve": "generate_candidate",
+      "agent.direct": "generate_candidate",
+      "agent.memory_write": "generate_candidate",
+    },
+    mandatoryManualReviewTypes: ["agent.memory_write"],
+    terminalNodeType: "agent.memory_write",
   },
 ] satisfies readonly WorkflowBlueprint[];
 

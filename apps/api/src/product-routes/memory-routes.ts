@@ -21,6 +21,12 @@ import {
   previewMemorySessionImportResponseSchema,
   previewMemoryProviderComparisonPayloadSchema,
   previewMemoryProviderComparisonResponseSchema,
+  memoryAgentWriteCandidateIdSchema,
+  listMemoryAgentWriteCandidatesQuerySchema,
+  listMemoryAgentWriteCandidatesResponseSchema,
+  memoryAgentWriteCandidateResponseSchema,
+  decideMemoryAgentWriteCandidatePayloadSchema,
+  memoryAgentWriteDecisionResponseSchema,
 } from "@chat/contracts";
 import {
   ApplicationError,
@@ -36,6 +42,9 @@ import {
   listMemorySessionSources,
   previewMemorySessionImport,
   previewMemoryProviderComparison,
+  getMemoryAgentWriteCandidate,
+  listMemoryAgentWriteCandidates,
+  decideMemoryAgentWriteCandidate,
 } from "@chat/application";
 import {
   type ProductRouteContext,
@@ -47,6 +56,68 @@ import {
 } from "./shared.js";
 
 export function registerMemoryRoutes(router: ProductRouter, ctx: ProductRouteContext): void {
+  router.get("/memory/write-candidates", async (c) => {
+    try {
+      const params = strictMemoryQuery(c.req.url, ["status", "limit"]);
+      const query = listMemoryAgentWriteCandidatesQuerySchema.parse({
+        status: params.get("status") ?? undefined,
+        limit: params.get("limit") ?? undefined,
+      });
+      return c.json(
+        listMemoryAgentWriteCandidatesResponseSchema.parse(
+          await listMemoryAgentWriteCandidates(ctx.deps, {
+            principalId: ctx.principalId,
+            status: query.status,
+            limit: query.limit,
+          }),
+        ),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/memory/write-candidates/:candidateId", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const candidateId = memoryAgentWriteCandidateIdSchema.parse(c.req.param("candidateId"));
+      return c.json(
+        memoryAgentWriteCandidateResponseSchema.parse(
+          await getMemoryAgentWriteCandidate(ctx.deps, {
+            principalId: ctx.principalId,
+            candidateId,
+          }),
+        ),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/memory/write-candidates/:candidateId/decisions", async (c) => {
+    try {
+      const candidateId = memoryAgentWriteCandidateIdSchema.parse(c.req.param("candidateId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const payload = decideMemoryAgentWriteCandidatePayloadSchema.parse(envelope.payload);
+      const result = await decideMemoryAgentWriteCandidate(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        candidateId,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/memory/write-candidates/:candidateId/decisions",
+        statusCode: 201,
+      });
+      return c.json(memoryAgentWriteDecisionResponseSchema.parse(result), 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
   router.post("/memory/provider-comparison-previews", async (c) => {
     try {
       const payload = previewMemoryProviderComparisonPayloadSchema.parse(await parseJsonBody(c));

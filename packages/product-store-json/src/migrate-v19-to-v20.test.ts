@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { productSnapshotV19Schema } from "./legacy-v19.js";
 import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
+import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 import { JsonProductStore } from "./json-product-store.js";
 
@@ -17,8 +18,17 @@ describe("Product Store v19到v20 Session Import迁移", () => {
       now: () => NOW,
     });
     const current = (await store.read({ kind: "committedSnapshot" })).snapshot;
-    const { memorySessionImports: _memorySessionImports, ...entities } = current.entities;
+    const {
+      memorySessionImports: _memorySessionImports,
+      memoryAgentWriteCandidates: _memoryAgentWriteCandidates,
+      memoryAgentWriteDecisions: _memoryAgentWriteDecisions,
+      memoryAgentOperations: _memoryAgentOperations,
+      ...entities
+    } = current.entities;
     void _memorySessionImports;
+    void _memoryAgentWriteCandidates;
+    void _memoryAgentWriteDecisions;
+    void _memoryAgentOperations;
     const legacy = productSnapshotV19Schema.parse({
       ...current,
       schemaVersion: "chat-product-store.v19",
@@ -31,6 +41,6 @@ describe("Product Store v19到v20 Session Import迁移", () => {
       schemaVersion: "chat-product-store.v20",
       entities: { ...legacy.entities, memorySessionImports: {} },
     });
-    expect(() => assertSnapshotIntegrity(migrated)).not.toThrow();
+    expect(() => assertSnapshotIntegrity(migrateProductSnapshotV20ToV21(migrated))).not.toThrow();
   });
 });

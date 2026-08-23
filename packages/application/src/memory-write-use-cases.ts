@@ -27,10 +27,12 @@ import {
   computeMemoryWriteRequestSha256,
   computeMemoryWriteSemanticDedupeSha256,
   computeMemoryWriteImportRequestSha256,
+  computeMemoryWriteAgentCandidateRequestSha256,
   computeWorkflowMemoryMessageSha256,
   hashCanonical,
   resolveMemoryWriteContent,
   resolveMemoryWriteImportContent,
+  resolveMemoryWriteAgentCandidateContent,
   sha256Hex,
   WorkflowMemoryInvariantError,
 } from "@chat/domain";
@@ -104,7 +106,13 @@ function toDto(
         productSessionId: intent.productSessionId,
         sourceSelection: intent.sourceSelection,
       }
-    : { ...base, sourceSelection: intent.sourceSelection };
+    : intent.schemaVersion === "memory-write-intent.v2"
+      ? { ...base, sourceSelection: intent.sourceSelection }
+      : {
+          ...base,
+          productSessionId: intent.productSessionId,
+          sourceSelection: intent.sourceSelection,
+        };
 }
 
 /** 创建写入意图、初始Result与Outbox的唯一产品事务；此处绝不调用Provider。 */
@@ -456,13 +464,46 @@ export async function loadMemoryWriteForRuntime(
       productSessionId: intent.productSessionId,
       sourceMessageId: message.messageId,
     };
-  } else {
+  } else if (intent.schemaVersion === "memory-write-intent.v2") {
     content = resolveMemoryWriteImportContent({
       contentSnapshot: intent.contentSnapshot,
       selection: intent.sourceSelection,
       maxContentCharacters: capability.maxContentCharacters,
     });
     requestSha256 = computeMemoryWriteImportRequestSha256({
+      operationId: intent.operationId,
+      providerDescriptorSha256: intent.providerDescriptorSha256,
+      contentType: intent.contentType,
+      sourceSelection: intent.sourceSelection,
+      sourceSessionKey: intent.sourceSessionKey,
+      sourceTurnKey: intent.sourceTurnKey,
+      contentSha256: sha256Hex(content),
+    });
+    adapterSource = { sessionKey: intent.sourceSessionKey, turnKey: intent.sourceTurnKey };
+  } else {
+    const candidate =
+      snapshot.entities.memoryAgentWriteCandidates[
+        intent.sourceSelection.memoryAgentWriteCandidateId
+      ];
+    const item = candidate?.items.find(
+      (candidateItem) => candidateItem.itemKey === intent.sourceSelection.itemKey,
+    );
+    if (
+      candidate === undefined ||
+      candidate.status !== "approved" ||
+      candidate.sha256 !== intent.sourceSelection.candidateSha256 ||
+      item === undefined ||
+      item.sha256 !== intent.sourceSelection.itemSha256 ||
+      !candidate.memoryWriteIntentIds.includes(intent.memoryWriteIntentId)
+    ) {
+      throw revisionConflict("Memory Agent写入候选来源损坏或尚未批准");
+    }
+    content = resolveMemoryWriteAgentCandidateContent({
+      contentSnapshot: intent.contentSnapshot,
+      selection: intent.sourceSelection,
+      maxContentCharacters: capability.maxContentCharacters,
+    });
+    requestSha256 = computeMemoryWriteAgentCandidateRequestSha256({
       operationId: intent.operationId,
       providerDescriptorSha256: intent.providerDescriptorSha256,
       contentType: intent.contentType,

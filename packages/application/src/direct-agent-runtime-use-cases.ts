@@ -86,8 +86,8 @@ function memoryContextForRun(
   return matches[0];
 }
 
-function isMemoryDirectRunner(runnerFamily: string): boolean {
-  return runnerFamily === "memory-direct.v1";
+function usesWorkflowMemoryContext(runnerFamily: string): boolean {
+  return runnerFamily === "memory-direct.v1" || runnerFamily === "memory-agent-direct.v1";
 }
 
 function directPromptAssembly(
@@ -158,7 +158,8 @@ export async function beginDirectAgentAttempt(
       if (
         runSpec.productRunId !== input.productRunId ||
         (runSpec.runner.runnerFamily !== "direct-agent.v1" &&
-          runSpec.runner.runnerFamily !== "memory-direct.v1") ||
+          runSpec.runner.runnerFamily !== "memory-direct.v1" &&
+          runSpec.runner.runnerFamily !== "memory-agent-direct.v1") ||
         runSpec.businessInput?.kind !== "direct_agent_message"
       ) {
         throw revisionConflict("Direct Agent RunSpec身份或业务输入不匹配");
@@ -169,7 +170,10 @@ export async function beginDirectAgentAttempt(
         input.productRunId,
         runSpec.workflowRunSpecId,
       );
-      if (isMemoryDirectRunner(runSpec.runner.runnerFamily) !== (memoryContext !== undefined)) {
+      if (
+        usesWorkflowMemoryContext(runSpec.runner.runnerFamily) !==
+        (memoryContext !== undefined)
+      ) {
         throw revisionConflict("Direct Agent Runner与Workflow Memory Context绑定不一致");
       }
       const sourceMessageSha256 = computeMessageSha256(sourceMessage);
@@ -369,7 +373,7 @@ export async function authorizeDirectAgentOperation(
     attempt.workflowMemoryContextId !== undefined ||
     attempt.workflowMemoryContextSha256 !== undefined;
   if (
-    isMemoryDirectRunner(runSpec.runner.runnerFamily) !== attemptHasMemoryContext ||
+    usesWorkflowMemoryContext(runSpec.runner.runnerFamily) !== attemptHasMemoryContext ||
     (memoryContext === undefined) !== !attemptHasMemoryContext ||
     (memoryContext !== undefined &&
       (attempt.workflowMemoryContextId !== memoryContext.workflowMemoryContextId ||

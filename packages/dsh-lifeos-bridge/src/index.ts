@@ -14,6 +14,7 @@ import { assertSameOriginRequest, createLifeosRouteHandler, sendRouteError } fro
 import { createPwaAssetHandler, createPwaIndexTap } from "./pwa.ts";
 import { AtomicBridgeStateStore } from "./state-store.ts";
 import { DshSessionQueryHistory } from "./dsh-session-history.ts";
+import { MemoryManagementBridgeService } from "./memory-management-bridge-service.ts";
 import { DshContextInjectionReader } from "./context-injection-reader.ts";
 import { PromptStudioBridgeService } from "./prompt-studio-bridge-service.ts";
 import { PromptSourceFileOpener } from "./prompt-source-file-opener.ts";
@@ -125,6 +126,7 @@ export async function apply(ctx: Context): Promise<void> {
   );
   bridgeRef.current = bridge;
   const promptStudio = new PromptStudioBridgeService(chat);
+  const memoryManagement = new MemoryManagementBridgeService(chat);
   // 来源文件属于Chat代码Catalog，不跟随未来可切换的工作对象Workspace。能力可以与
   // 公开服务同进程装配，但HTTP边界只向loopback请求投影，公网浏览器永远不可调用。
   const promptSourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -168,6 +170,7 @@ export async function apply(ctx: Context): Promise<void> {
           publicHostname,
           promptStudio,
           promptSourceFiles,
+          memoryManagement,
         ),
       }),
     "lifeos bridge: same-origin routes",

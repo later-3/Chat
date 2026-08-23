@@ -93,6 +93,12 @@ function workflowBlueprintCopy(
     case "note":
       return { title: "笔记工作流", description: "抽取、分类并提交笔记。" };
     case "direct":
+      if (blueprintVersion === 3) {
+        return {
+          title: "Memory Agent 增强执行",
+          description: "检索Agent筛选相关记忆，执行Agent完成任务，写入Agent产生待审核候选。",
+        };
+      }
       if (blueprintVersion === 2) {
         return {
           title: "Memory 增强执行 Agent",

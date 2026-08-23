@@ -81,6 +81,11 @@ import {
 } from "./project-bootstrap.js";
 import { agentVersionSchema } from "./agent-configuration.js";
 import { memorySessionImportSchema } from "./memory-session-import.js";
+import {
+  memoryAgentWriteCandidateSchema,
+  memoryAgentWriteDecisionSchema,
+  memoryAgentOperationSchema,
+} from "./memory-agent.js";
 
 /**
  * Product Snapshot顶层合同（任务书§8.3）。
@@ -92,7 +97,7 @@ import { memorySessionImportSchema } from "./memory-session-import.js";
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v20";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v21";
 
 const idKeySchema = z.string().min(1).max(200);
 
@@ -164,6 +169,9 @@ const productEntitiesSchema = z
     memoryWriteIntents: z.record(idKeySchema, memoryWriteIntentSchema),
     memoryWriteResults: z.record(idKeySchema, memoryWriteResultSchema),
     memorySessionImports: z.record(idKeySchema, memorySessionImportSchema),
+    memoryAgentWriteCandidates: z.record(idKeySchema, memoryAgentWriteCandidateSchema),
+    memoryAgentWriteDecisions: z.record(idKeySchema, memoryAgentWriteDecisionSchema),
+    memoryAgentOperations: z.record(idKeySchema, memoryAgentOperationSchema),
   })
   .strict();
 
@@ -260,6 +268,9 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       memoryWriteIntents: {},
       memoryWriteResults: {},
       memorySessionImports: {},
+      memoryAgentWriteCandidates: {},
+      memoryAgentWriteDecisions: {},
+      memoryAgentOperations: {},
       projectBootstrapCandidates: {},
       projectBootstrapDecisions: {},
       projectBootstrapOperations: {},

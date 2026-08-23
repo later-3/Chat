@@ -55,6 +55,15 @@ import {
   persistWorkflowMemoryQueryResultResponseSchema,
   freezeWorkflowMemoryContextRequestSchema,
   freezeWorkflowMemoryContextResponseSchema,
+  prepareMemoryWriteAgentInputRequestSchema,
+  prepareMemoryWriteAgentInputResponseSchema,
+  persistMemoryWriteAgentCandidateRequestSchema,
+  persistMemoryWriteAgentCandidateResponseSchema,
+  beginMemoryAgentOperationRequestSchema,
+  beginMemoryAgentOperationResponseSchema,
+  completeMemoryAgentOperationRequestSchema,
+  markMemoryAgentOperationOutcomeUnknownRequestSchema,
+  memoryAgentOperationResponseSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   prepareProjectCandidateRequestSchema,
   prepareProjectAdvancementCandidateRequestSchema,
@@ -128,6 +137,11 @@ import {
   beginWorkflowMemoryQuery,
   persistWorkflowMemoryQueryResult,
   freezeWorkflowMemoryContext,
+  prepareMemoryWriteAgentInput,
+  persistMemoryWriteAgentCandidate,
+  beginMemoryAgentOperation,
+  completeMemoryAgentOperation,
+  markMemoryAgentOperationOutcomeUnknown,
   beginDirectAgentAttempt,
   authorizeDirectAgentOperation,
   publishPromptReviewRequest,
@@ -452,6 +466,60 @@ export function createInternalRuntimeRouter(
       const request = freezeWorkflowMemoryContextRequestSchema.parse(await parseInternalBody(c));
       return freezeWorkflowMemoryContextResponseSchema.parse(
         await freezeWorkflowMemoryContext(options.deps, request),
+      );
+    }),
+  );
+
+  router.post(
+    "/prepare-memory-write-agent-input",
+    handle(200, async (c) => {
+      const request = prepareMemoryWriteAgentInputRequestSchema.parse(await parseInternalBody(c));
+      return prepareMemoryWriteAgentInputResponseSchema.parse(
+        await prepareMemoryWriteAgentInput(options.deps, request),
+      );
+    }),
+  );
+
+  router.post(
+    "/persist-memory-write-agent-candidate",
+    handle(200, async (c) => {
+      const request = persistMemoryWriteAgentCandidateRequestSchema.parse(
+        await parseInternalBody(c),
+      );
+      return persistMemoryWriteAgentCandidateResponseSchema.parse(
+        await persistMemoryWriteAgentCandidate(options.deps, request),
+      );
+    }),
+  );
+
+  router.post(
+    "/begin-memory-agent-operation",
+    handle(200, async (c) => {
+      const request = beginMemoryAgentOperationRequestSchema.parse(await parseInternalBody(c));
+      return beginMemoryAgentOperationResponseSchema.parse(
+        await beginMemoryAgentOperation(options.deps, request),
+      );
+    }),
+  );
+
+  router.post(
+    "/complete-memory-agent-operation",
+    handle(200, async (c) => {
+      const request = completeMemoryAgentOperationRequestSchema.parse(await parseInternalBody(c));
+      return memoryAgentOperationResponseSchema.parse(
+        await completeMemoryAgentOperation(options.deps, request),
+      );
+    }),
+  );
+
+  router.post(
+    "/mark-memory-agent-operation-outcome-unknown",
+    handle(200, async (c) => {
+      const request = markMemoryAgentOperationOutcomeUnknownRequestSchema.parse(
+        await parseInternalBody(c),
+      );
+      return memoryAgentOperationResponseSchema.parse(
+        await markMemoryAgentOperationOutcomeUnknown(options.deps, request),
       );
     }),
   );
