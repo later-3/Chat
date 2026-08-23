@@ -78,6 +78,7 @@ describe("Tencent Workflow Memory Adapter", () => {
         query: "发布前必须完成真实端到端测试",
         limit: 5,
       });
+      expect(new Headers(init?.headers).get("x-tdai-session-id")).toBe("chat-session:psn_tencent1");
       return json({
         code: 0,
         message: "ok",
@@ -102,6 +103,30 @@ describe("Tencent Workflow Memory Adapter", () => {
       externalQueryId: "req-query-1",
       sections: [{ category: "procedure", content: "发布前运行真实测试。" }],
     });
+  });
+
+  it("比较Preview把通用sessionKey映射到Provider session header", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (_url, init) => {
+      expect(new Headers(init?.headers).get("x-tdai-session-id")).toBe(
+        "chat-session:codex-session:019db07f-953c-7fc2-95b6-d38228810e64",
+      );
+      return json({
+        code: 0,
+        message: "ok",
+        request_id: "req-query-compare-1",
+        data: { items: [] },
+      });
+    });
+    await expect(
+      adapter(fetchImpl).queryMemory({
+        operationId: "wmq_tencentcompare1",
+        sessionKey: "codex-session:019db07f-953c-7fc2-95b6-d38228810e64",
+        principalId: "usr_tencent1" as never,
+        query: "发布前必须完成真实端到端测试",
+        maxResults: 5,
+        maxContextCharacters: 8_000,
+      }),
+    ).resolves.toMatchObject({ hitCount: 0 });
   });
 
   it("写入使用mwi稳定session，响应丢失映射为write outcome_unknown", async () => {

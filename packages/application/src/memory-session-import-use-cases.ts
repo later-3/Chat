@@ -49,11 +49,11 @@ interface PreparedSessionImport {
   readonly previewSha256: string;
 }
 
-function sourceId(source: MemorySessionSourceRef): string {
+export function memorySessionSourceId(source: MemorySessionSourceRef): string {
   return source.kind === "chat" ? source.productSessionId : source.codexSessionId;
 }
 
-function sourceSessionKey(source: MemorySessionSourceRef): string {
+export function memorySessionSourceKey(source: MemorySessionSourceRef): string {
   return source.kind === "chat"
     ? source.productSessionId
     : `codex-session:${source.codexSessionId}`;
@@ -92,7 +92,7 @@ function chatSnapshot(
   };
 }
 
-async function loadSourceSnapshot(
+export async function loadMemorySessionSourceSnapshot(
   deps: ApplicationDeps,
   principalId: PrincipalId,
   source: MemorySessionSourceRef,
@@ -150,7 +150,7 @@ async function prepareSessionImport(
       recoveryAction: "rehydrate_and_retry",
     });
   }
-  const snapshot = await loadSourceSnapshot(deps, input.principalId, input.source);
+  const snapshot = await loadMemorySessionSourceSnapshot(deps, input.principalId, input.source);
   const sourceSnapshotSha256 = computeMemorySessionSnapshotSha256(snapshot);
   let items: readonly ConvertedMemorySessionItem[];
   try {
@@ -205,7 +205,7 @@ function itemSemanticDedupe(
     requestedByPrincipalId: principalId,
     providerId,
     sourceKind: prepared.source.kind,
-    sourceSessionId: sourceId(prepared.source),
+    sourceSessionId: memorySessionSourceId(prepared.source),
     sourceItemKey: item.sourceItemKey,
     sourceItemSha256: item.sourceItemSha256,
   });
@@ -423,7 +423,11 @@ export async function createMemorySessionImport(
   }
   // 外部Codex文件在事务外读取；提交前再读一次，防止预览与冻结之间静默漂移。
   if (prepared.source.kind === "codex") {
-    const confirmed = await loadSourceSnapshot(deps, input.principalId, prepared.source);
+    const confirmed = await loadMemorySessionSourceSnapshot(
+      deps,
+      input.principalId,
+      prepared.source,
+    );
     if (computeMemorySessionSnapshotSha256(confirmed) !== prepared.sourceSnapshotSha256) {
       throw revisionConflict("Codex Session在导入前发生变化，请重新预览");
     }
@@ -484,7 +488,7 @@ export async function createMemorySessionImport(
           kind: "session_import_item" as const,
           memorySessionImportId: candidateImportId,
           sourceKind: prepared.source.kind,
-          sourceSessionId: sourceId(prepared.source),
+          sourceSessionId: memorySessionSourceId(prepared.source),
           sourceSnapshotSha256: prepared.sourceSnapshotSha256,
           sourceItemKey: item.sourceItemKey,
           sourceItemSha256: item.sourceItemSha256,
@@ -495,7 +499,7 @@ export async function createMemorySessionImport(
           providerDescriptorSha256: prepared.providerDescriptorSha256,
           contentType: "conversation_turn",
           sourceSelection,
-          sourceSessionKey: sourceSessionKey(prepared.source),
+          sourceSessionKey: memorySessionSourceKey(prepared.source),
           sourceTurnKey: item.sourceTurnKey,
           contentSha256: item.contentSha256,
         });
@@ -505,7 +509,7 @@ export async function createMemorySessionImport(
           operationId: memoryWriteIntentId,
           requestedByPrincipalId: input.principalId,
           sourceSelection,
-          sourceSessionKey: sourceSessionKey(prepared.source),
+          sourceSessionKey: memorySessionSourceKey(prepared.source),
           sourceTurnKey: item.sourceTurnKey,
           contentSnapshot: item.content,
           contentType: "conversation_turn",

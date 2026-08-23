@@ -19,6 +19,8 @@ import {
   memorySessionSourceListQuerySchema,
   previewMemorySessionImportPayloadSchema,
   previewMemorySessionImportResponseSchema,
+  previewMemoryProviderComparisonPayloadSchema,
+  previewMemoryProviderComparisonResponseSchema,
 } from "@chat/contracts";
 import {
   ApplicationError,
@@ -33,6 +35,7 @@ import {
   listMemorySessionImports,
   listMemorySessionSources,
   previewMemorySessionImport,
+  previewMemoryProviderComparison,
 } from "@chat/application";
 import {
   type ProductRouteContext,
@@ -44,6 +47,23 @@ import {
 } from "./shared.js";
 
 export function registerMemoryRoutes(router: ProductRouter, ctx: ProductRouteContext): void {
+  router.post("/memory/provider-comparison-previews", async (c) => {
+    try {
+      const payload = previewMemoryProviderComparisonPayloadSchema.parse(await parseJsonBody(c));
+      return c.json(
+        previewMemoryProviderComparisonResponseSchema.parse(
+          await previewMemoryProviderComparison(ctx.deps, {
+            principalId: ctx.principalId,
+            payload,
+          }),
+        ),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
   router.get("/memory/session-sources", async (c) => {
     try {
       const params = strictMemoryQuery(c.req.url, ["kind", "limit"]);

@@ -28,6 +28,7 @@ import {
   previewMemorySessionImportResponseSchema,
   memorySessionImportResponseSchema,
   listMemorySessionImportsResponseSchema,
+  previewMemoryProviderComparisonResponseSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
   runContextDtoSchema,
@@ -224,6 +225,28 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
   } as ProjectBootstrapIdFactory;
   const promptCatalog = await createFilePromptCatalog();
   const backend = {
+    describeProvider: () => ({
+      schemaVersion: "memory-provider-descriptor.v1" as const,
+      providerId: "mbk_memmy" as never,
+      displayName: "memmy 本地记忆",
+      providerKind: "memmy",
+      transport: "http" as const,
+      adapterContractVersion: "memmy-workflow.v1",
+      configured: true,
+      configurationFingerprint: "f".repeat(64) as never,
+      capabilities: {
+        query: { maxResults: 20, maxContextCharacters: 50_000 },
+        write: {
+          maxContentCharacters: 50_000,
+          materialization: "synchronous" as const,
+          idempotency: "provider_key" as const,
+        },
+        reconcile: true,
+        management: { list: true, get: true, update: false, delete: false, history: false },
+      },
+      authMode: "bearer" as const,
+      credentialRevision: "api-test-key-1",
+    }),
     describe: () => ({
       backendId: "mbk_memmy" as never,
       displayName: "memmy 本地记忆",
@@ -258,6 +281,33 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
           tokenEstimate: 12,
         },
       ],
+    }),
+    queryMemory: async () => ({
+      externalQueryId: "memmy-workflow-query-1",
+      hitCount: 1,
+      sections: [
+        {
+          externalObjectIds: ["memory-test-1"],
+          title: "测试来源",
+          category: "procedure" as const,
+          content: "发布前必须完成真实浏览器测试。",
+          labels: ["release"],
+          score: 0.75,
+        },
+      ],
+    }),
+    writeMemory: async (input: { operationId: string; requestSha256: string }) => ({
+      externalObjectId: `memmy:${input.operationId}`,
+      responseSha256: input.requestSha256,
+    }),
+    reconcileMemoryWrite: async (input: { operationId: string; requestSha256: string }) => ({
+      status: "materialized" as const,
+      accepted: {
+        externalObjectId: `memmy:${input.operationId}`,
+        responseSha256: input.requestSha256,
+      },
+      verificationKind: "read_by_id",
+      verificationSha256: "a".repeat(64),
     }),
     describeImport: () => ({
       descriptor: {
@@ -449,11 +499,17 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
       get: (backendId) => (backendId === "mbk_memmy" ? backend : undefined),
     },
     workflowMemoryProviders: {
-      list: () => [tencentBackend.describeProvider()],
-      getQuery: (providerId) =>
-        providerId === "mbk_tencentmemorycore" ? tencentBackend : undefined,
-      getWrite: (providerId) =>
-        providerId === "mbk_tencentmemorycore" ? tencentBackend : undefined,
+      list: () => [backend.describeProvider(), tencentBackend.describeProvider()],
+      getQuery: (providerId) => {
+        if (providerId === "mbk_memmy") return backend;
+        if (providerId === "mbk_tencentmemorycore") return tencentBackend;
+        return undefined;
+      },
+      getWrite: (providerId) => {
+        if (providerId === "mbk_memmy") return backend;
+        if (providerId === "mbk_tencentmemorycore") return tencentBackend;
+        return undefined;
+      },
     },
     memorySessionSources: {
       get: () => ({
@@ -1552,8 +1608,13 @@ describe("公开产品API", () => {
     const providersResponse = await app.request("/api/memory/providers");
     expect(providersResponse.status).toBe(200);
     const providers = listMemoryProvidersResponseSchema.parse(await providersResponse.json());
-    expect(providers.providers).toHaveLength(1);
+    expect(providers.providers).toHaveLength(2);
     expect(providers.providers[0]).toMatchObject({
+      providerId: "mbk_memmy",
+      providerKind: "memmy",
+      capabilities: { write: { materialization: "synchronous" } },
+    });
+    expect(providers.providers[1]).toMatchObject({
       providerId: "mbk_tencentmemorycore",
       providerKind: "tencent_memorycore",
       transport: "http",
@@ -1800,6 +1861,68 @@ describe("公开产品API", () => {
       sourceSessionKey: session.session.sessionId,
       sourceSelection: { sourceKind: "chat" },
     });
+  });
+
+  it("同一Codex来源并行比较两个Provider且Preview零写入", async () => {
+    const { app, deps } = await testApp();
+    const before = (await deps.store.read({ kind: "committedSnapshot" })).snapshot.storeRevision;
+    const response = await postJson(app, "/api/memory/provider-comparison-previews", {
+      source: {
+        kind: "codex",
+        codexSessionId: "019db07f-953c-7fc2-95b6-d38228810e64",
+      },
+      query: "发布前需要完成什么？",
+      providerIds: ["mbk_tencentmemorycore", "mbk_memmy"],
+      maxResults: 8,
+      maxContextCharacters: 8_000,
+    });
+    expect(response.status, await response.clone().text()).toBe(200);
+    const comparison = previewMemoryProviderComparisonResponseSchema.parse(
+      await response.json(),
+    ).comparison;
+    expect(comparison.providers).toMatchObject([
+      {
+        providerId: "mbk_memmy",
+        status: "completed",
+        hitCount: 1,
+        selectedCount: 1,
+        writeMaterialization: "synchronous",
+      },
+      {
+        providerId: "mbk_tencentmemorycore",
+        status: "completed",
+        hitCount: 0,
+        selectedCount: 0,
+        writeMaterialization: "accepted_only",
+      },
+    ]);
+    expect(comparison.pairwise).toEqual([
+      {
+        leftProviderId: "mbk_memmy",
+        rightProviderId: "mbk_tencentmemorycore",
+        exactContentOverlapCount: 0,
+        leftUniqueContentCount: 1,
+        rightUniqueContentCount: 0,
+        sharedLabels: [],
+        scoreComparisonAllowed: false,
+      },
+    ]);
+    expect(JSON.stringify(comparison)).not.toContain("workflow-query-1");
+    expect(JSON.stringify(comparison)).not.toContain("memory-test-1");
+    expect((await deps.store.read({ kind: "committedSnapshot" })).snapshot.storeRevision).toBe(
+      before,
+    );
+
+    const injected = await postJson(app, "/api/memory/provider-comparison-previews", {
+      source: {
+        kind: "codex",
+        codexSessionId: "019db07f-953c-7fc2-95b6-d38228810e64",
+      },
+      query: "发布前需要完成什么？",
+      providerIds: ["mbk_tencentmemorycore", "mbk_memmy"],
+      endpoint: "https://attacker.invalid",
+    });
+    expect(injected.status).toBe(400);
   });
 
   it("Project推进入口拒绝浏览器指定Provider、模型和Workflow私有身份", async () => {

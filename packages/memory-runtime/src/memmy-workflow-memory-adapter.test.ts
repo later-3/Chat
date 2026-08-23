@@ -32,6 +32,17 @@ function queryInput(): WorkflowMemoryQueryInput {
   };
 }
 
+function comparisonQueryInput(): WorkflowMemoryQueryInput {
+  return {
+    operationId: "wmq_memmycompare1",
+    sessionKey: "codex-session:019db07f-953c-7fc2-95b6-d38228810e64",
+    principalId: "usr_memmy1" as never,
+    query: "发布前需要做什么？",
+    maxResults: 5,
+    maxContextCharacters: 8_000,
+  };
+}
+
 function writeInput(): WorkflowMemoryWriteInput {
   return {
     operationId: "mwi_memmy1" as never,
@@ -210,6 +221,22 @@ describe("memmy Workflow Memory Adapter", () => {
     await expect(memory.queryMemory(queryInput())).rejects.toMatchObject({
       code: "memory.provider.contract_invalid",
       retryable: false,
+    });
+  });
+
+  it("比较Preview使用通用sessionKey查询同一Codex namespace", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (_url, init) => {
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        requestId: "wmq_memmycompare1",
+        namespace: {
+          sessionKey: "codex-session:019db07f-953c-7fc2-95b6-d38228810e64",
+          userId: "usr_memmy1",
+        },
+      });
+      return json(searchBody());
+    });
+    await expect(adapter(fetchImpl).queryMemory(comparisonQueryInput())).resolves.toMatchObject({
+      hitCount: 1,
     });
   });
 

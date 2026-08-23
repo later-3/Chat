@@ -315,8 +315,8 @@ function stableImportSession(operationId: string): string {
   return `chat-import:${operationId}`;
 }
 
-function chatSession(productSessionId: string): string {
-  return `chat-session:${productSessionId}`;
+function chatQuerySession(sessionKey: string): string {
+  return `chat-session:${sessionKey}`;
 }
 
 function mappedKind(type: string): MemoryQuerySection["kind"] {
@@ -501,16 +501,13 @@ export class TencentMemoryCoreAdapter
       });
     }
     try {
-      const output = await this.query({
-        operationId: input.operationId,
-        productRunId: input.productRunId,
-        productSessionId: input.productSessionId,
+      const sessionKey = "sessionKey" in input ? input.sessionKey : input.productSessionId;
+      const output = await this.queryForSession({
         query: input.query,
-        tags: [],
-        layers: ["L1"],
         limit: input.maxResults,
         // 旧Adapter内部仍使用保守token门；新Application会再按字符预算裁剪。
         contextBudget: 8_192,
+        sessionId: chatQuerySession(sessionKey),
       });
       return {
         externalQueryId: output.externalQueryId,
@@ -647,7 +644,6 @@ export class TencentMemoryCoreAdapter
 
   /** 查询只有读取副作用；能力越权必须在发出HTTP前失败。 */
   async query(input: MemoryQueryInput): Promise<MemoryQueryOutput> {
-    const config = this.requireConfiguration("query");
     if (input.tags.length > 0 || input.layers.some((layer) => layer !== "L1")) {
       throw new MemoryBackendError({
         code: "memory.backend.capability_unsupported",
@@ -655,6 +651,21 @@ export class TencentMemoryCoreAdapter
         retryable: false,
       });
     }
+    return this.queryForSession({
+      query: input.query,
+      limit: input.limit,
+      contextBudget: input.contextBudget,
+      sessionId: chatQuerySession(input.productSessionId),
+    });
+  }
+
+  private async queryForSession(input: {
+    readonly query: string;
+    readonly limit: number;
+    readonly contextBudget: number;
+    readonly sessionId: string;
+  }): Promise<MemoryQueryOutput> {
+    const config = this.requireConfiguration("query");
     const body = {
       team_id: config.teamId,
       agent_id: config.agentId,
@@ -666,7 +677,7 @@ export class TencentMemoryCoreAdapter
       "/v3/atomic/search",
       body,
       atomicSearchDataSchema,
-      chatSession(input.productSessionId),
+      input.sessionId,
     );
     const sections: MemoryQuerySection[] = [];
     let tokenEstimate = 0;

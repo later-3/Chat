@@ -372,20 +372,20 @@ NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Quer
 4. 固定Memory Sidecar的显式准备/启动、双Provider真实HTTP健康与Query/Write/Reconcile基础门。
 5. 独立Memory Direct三节点Workflow、Memory-aware Direct Input Manifest、Provider前不可信Context注入、组合Token预算门和候选后Write政策；当前确定性纵向已完成，真实DSH浏览器Memory Direct E2E尚未交付。
 6. Chat/Codex Session零写入Preview、双Hash确认、确定性转换、条目级去重和增量导入；新批次复用统一Memory Write状态机。
-7. 固定端口F5调试、严格Trace和多源Replay。
-8. 独立Project Intake耐久链、真实Git/文档/脚本观察、候选确认与Project账本。
-9. 独立Project Advancement耐久链、Stage/Milestone/负责人Update审核、State Transition与Timeline。
+7. 双Provider只读比较Preview：同一来源namespace、查询和预算并行调用，返回可复核正文/标签差异且禁止跨Provider比较score；不创建第二套Workflow或产品采用事实。
+8. 固定端口F5调试、严格Trace和多源Replay。
+9. 独立Project Intake耐久链、真实Git/文档/脚本观察、候选确认与Project账本。
+10. 独立Project Advancement耐久链、Stage/Milestone/负责人Update审核、State Transition与Timeline。
 
 尚未实现：
 
-1. 同一输入的双Provider评测与差异报告。
-2. Retrieval/Write Agent、Memory采用审核与DSH管理表面。
-3. Memory Direct真实DSH浏览器E2E与用户可见的本轮Memory采用详情。
-4. Chat公开SSE Cursor Runtime Journal。
-5. Project Context进入Planning Workflow的节点；PS1已实现Project、初始Stage、Work/Action和资源观察，但尚未注入任务规划。
-6. 用户规则选择与规划注入节点。
-7. 生产多实例Store、正式身份、Worker生产接管和后端部署拓扑。
-8. 外部副作用Tool与通用Workflow编辑器。
+1. Retrieval/Write Agent、Memory采用审核与DSH管理表面。
+2. Memory Direct真实DSH浏览器E2E与用户可见的本轮Memory采用详情。
+3. Chat公开SSE Cursor Runtime Journal。
+4. Project Context进入Planning Workflow的节点；PS1已实现Project、初始Stage、Work/Action和资源观察，但尚未注入任务规划。
+5. 用户规则选择与规划注入节点。
+6. 生产多实例Store、正式身份、Worker生产接管和后端部署拓扑。
+7. 外部副作用Tool与通用Workflow编辑器。
 
 未来新增节点前，应先确认它属于现有Workflow的一个步骤，还是拥有独立用户结果和独立恢复生命周期；不能为了“统一”把所有业务塞进一个永久Workflow。
 
