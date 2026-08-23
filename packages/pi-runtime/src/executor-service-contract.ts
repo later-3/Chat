@@ -323,7 +323,9 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       ...operationIdentity,
       type: z.literal("operation.outcome_unknown"),
       requestSha256: sha256Schema,
-      errorCode: z.literal("executor.operation_interrupted"),
+      // 重启中断与已执行Tool结果未落盘都属于“无法证明未发生副作用”，
+      // 由稳定错误码区分来源，但统一保持outcome_unknown而非普通failed。
+      errorCode: stableErrorCodeSchema,
       durationMs: z
         .number()
         .nonnegative()

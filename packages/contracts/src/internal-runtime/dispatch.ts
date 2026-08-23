@@ -134,7 +134,27 @@ export const workflowResumeResponseSchema = z
   })
   .strict();
 
-/** 对账查询：只返回绑定存在性与派发状态，不返回任何Runtime私有身份。 */
+export const workflowRuntimeTerminalOutcomeSchema = z.enum([
+  "succeeded",
+  "failed",
+  "cancelled",
+  "outcome_unknown",
+]);
+export type WorkflowRuntimeTerminalOutcome = z.infer<typeof workflowRuntimeTerminalOutcomeSchema>;
+
+export const workflowRuntimeRunEvidenceSchema = z.discriminatedUnion("state", [
+  z.strictObject({ state: z.literal("active") }),
+  z.strictObject({
+    state: z.literal("terminal"),
+    outcome: workflowRuntimeTerminalOutcomeSchema,
+  }),
+  z.strictObject({ state: z.literal("unknown") }),
+]);
+
+/**
+ * 对账查询只返回绑定存在性、派发状态与归一终态证据；Runtime Run ID、返回正文、
+ * 错误Payload和Checkpoint都留在Adapter内，不能成为产品身份或进入监督日志。
+ */
 export const workflowReconcileResponseSchema = z
   .object({
     schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
@@ -143,6 +163,7 @@ export const workflowReconcileResponseSchema = z
     hookResumeState: z
       .enum(["none", "dispatching", "dispatched", "outcome_unknown", "failed_terminal", "missing"])
       .optional(),
+    runtimeRun: workflowRuntimeRunEvidenceSchema.optional(),
   })
   .strict();
 

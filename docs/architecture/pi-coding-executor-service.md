@@ -1,6 +1,6 @@
 # Pi Coding Executor Service As-built
 
-> 日期：2026-08-18
+> 日期：2026-08-23
 >
 > 运行来源：`later-3/pi@codex/later-custom`；包内上游基线为`pi-coding-agent`、`pi-agent-core`、`pi-ai` `0.84.2`
 > 产品事实源：Chat Product Store；Pi Operation、Pi Session和Tool Journal都不是产品终态。
@@ -80,8 +80,15 @@ Chat内联Extension注册在`DefaultResourceLoader`中。执行前的`tool_call`
 
 Operation Journal中已经成功持久化的事件使用从1开始连续递增的`sequence`。Workflow按`afterSequence`轮询；
 发现传输或读取造成的序号缺口会进入`outcome_unknown`。但被Extension Runner吞掉的handler写入失败不会占用sequence，
-所以不能依靠序号缺口发现这类缺失事件。终态Snapshot仍只会在客户端取完已持久化事件后返回Candidate；
-正式fail-closed保证必须由独立Provider Gate和适用的执行前意图栅栏提供。
+所以不能依靠序号缺口发现这类缺失事件。Executor因此在内存与耐久Journal两侧同时保留未闭合Tool：
+`tool_result`只有在`tool.completed/tool.failed`成功追加后才删除内存Intent；即使上游吞掉该handler异常，
+Operation终态提交仍会重新读取耐久Journal。发现任一`tool.intent_persisted`没有闭合事件时，`complete()`先耐久追加
+`tool.outcome_unknown`和`operation.outcome_unknown`，再以稳定`executor.tool_result_persist_failed`拒绝成功；随后普通
+失败处理不能把它降级成`failed`。重启扫描复用同一闭合逻辑，重复启动不会追加第二组未知事件。
+
+只有耐久状态为`succeeded`且Workflow客户端已经连续读取全部事件时才返回Candidate。`outcome_unknown`没有Candidate，
+因而不能进入Validation或Product Commit。正式fail-closed保证由Provider Gate、执行前Tool Intent栅栏以及上述终态耐久
+复核共同构成。
 
 Pi Operation Journal事件会投影到独立Run Activity Journal；Debug Trace可同时保存诊断事件，但公开Session轨迹不再反向读取Trace。
 
@@ -99,10 +106,11 @@ API的轨迹Query读取Product事实、Run Activity与Workflow Runtime证据。B
 
 1. Executor收到Start后先原子提交`operation.accepted`，再异步启动AgentSession；Workflow连接断开不会取消运行。
 2. 每次Tool执行前先原子提交`tool.intent_persisted`。进程重启发现未闭合Tool时，先追加`tool.outcome_unknown`，再把Operation收敛为`operation.outcome_unknown`。
-3. 服务启动时不会自动重放`queued/running` Operation。读工具理论上可安全重跑，但`edit/write/bash`可能已生效；当前统一保守进入人工对账，避免猜测性重复副作用。
-4. Provider自动重试在Executor专用Settings中关闭。Turn数、总Completion Token和总时限由Execution Contract冻结；越界形成稳定失败。
-5. Product Commit仍使用稳定Command ID幂等重试，绝不因为提交失败再次调用Pi。
-6. 正常关闭会停止接受HTTP、Abort活动AgentSession并等待Operation收敛；异常退出由下一次启动执行结果未知收敛。
+3. Tool Result持久化失败时，即使Agent loop继续返回，Operation也不能提交成功；同一进程终态检查与重启恢复都会保守收敛为结果未知，且`fail()`不能覆盖该终态。
+4. 服务启动时不会自动重放`queued/running` Operation。读工具理论上可安全重跑，但`edit/write/bash`可能已生效；当前统一保守进入人工对账，避免猜测性重复副作用。
+5. Provider自动重试在Executor专用Settings中关闭。Turn数、总Completion Token和总时限由Execution Contract冻结；越界形成稳定失败。
+6. Product Commit仍使用稳定Command ID幂等重试，绝不因为提交失败再次调用Pi。
+7. 正常关闭会停止接受HTTP、Abort活动AgentSession并等待Operation收敛；异常退出由下一次启动执行结果未知收敛。
 
 Direct Operation另有一条更窄的恢复政策：`preparing_prompt_review/waiting_prompt_review`尚未越过Provider边界，
 可以从审核前checkpoint恢复同一未完成Turn；`dispatching`重启一律收敛为`outcome_unknown`。批准正文只由Application

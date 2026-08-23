@@ -324,7 +324,7 @@ describe("Node Catalog与Blueprint一致性", () => {
     expect(version.success).toBe(true);
     if (!version.success) return;
     expect(version.runSpec.nodeResolutions[0]?.config).toEqual({
-      capabilityMode: "pi_cli_default",
+      capabilityMode: "custom",
       promptReviewMode: "manual",
       agentVersionId: "avn_agentversionfreeze1",
       agentVersionSha256,

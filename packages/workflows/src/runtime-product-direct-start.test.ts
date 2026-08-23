@@ -27,6 +27,10 @@ describe("Product Workflow Direct Agent start分发", () => {
     mocked.captureRunVersionEvidence.mockResolvedValue(undefined);
     mocked.start.mockResolvedValue({ runId: "wrun_private_direct1" });
     mocked.getHookByToken.mockResolvedValue({});
+    mocked.getRun.mockReturnValue({
+      exists: Promise.resolve(true),
+      status: Promise.resolve("running"),
+    });
     mocked.resumeHook.mockResolvedValue(undefined);
   });
 
@@ -231,6 +235,7 @@ describe("Product Workflow Direct Agent start分发", () => {
     const app = new Hono();
     const bindings = {
       getStartState: vi.fn(() => "exists"),
+      getWorkflowBinding: vi.fn(() => ({ workflowRunId: "wrun_secret_runtime_id" })),
       getPromptReviewHookBinding: vi.fn(() => ({
         hookToken: "prh-secret-runtime-token",
         startWorkflowRunId: "wrun_secret_runtime_id",
@@ -257,9 +262,53 @@ describe("Product Workflow Direct Agent start分发", () => {
       schemaVersion: "chat-workflow-dispatch.v1",
       productRunId: "run_directreconcile1",
       startBinding: "exists",
+      runtimeRun: { state: "active" },
       hookResumeState: "dispatched",
     });
     expect(JSON.stringify(body)).not.toContain("prh-secret-runtime-token");
     expect(JSON.stringify(body)).not.toContain("wrun_secret_runtime_id");
+  });
+
+  it("Runtime completed只投影归一终态，不公开returnValue或私有Run身份", async () => {
+    mocked.getRun.mockReturnValue({
+      exists: Promise.resolve(true),
+      status: Promise.resolve("completed"),
+      returnValue: Promise.resolve({
+        outcome: "failed",
+        productRunId: "run_directterminal1",
+        errorCode: "private.workflow.failure",
+        privatePayload: "DO_NOT_EXPOSE",
+      }),
+    });
+    const app = new Hono();
+    const bindings = {
+      getStartState: vi.fn(() => "exists"),
+      getWorkflowBinding: vi.fn(() => ({ workflowRunId: "wrun_private_terminal1" })),
+      getPromptReviewHookBinding: vi.fn(),
+    };
+    registerProductWorkflowHttpRoutes({
+      app,
+      workflowDataDir: "/tmp/workflow-direct-terminal-reconcile-test",
+      credential: "rtk_direct_terminal_reconcile",
+      bindings,
+      world: {},
+      buildEvidence: {},
+      trace: vi.fn(),
+    } as never);
+
+    const response = await app.request(
+      "http://runtime/internal/workflow/v1/reconcile?productRunId=run_directterminal1",
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({
+      schemaVersion: "chat-workflow-dispatch.v1",
+      productRunId: "run_directterminal1",
+      startBinding: "exists",
+      runtimeRun: { state: "terminal", outcome: "failed" },
+    });
+    expect(JSON.stringify(body)).not.toContain("DO_NOT_EXPOSE");
+    expect(JSON.stringify(body)).not.toContain("wrun_private_terminal1");
+    expect(JSON.stringify(body)).not.toContain("private.workflow.failure");
   });
 });

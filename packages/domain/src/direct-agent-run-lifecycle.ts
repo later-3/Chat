@@ -7,7 +7,10 @@ export type DirectAgentRunLifecycle =
   | { readonly status: "succeeded"; readonly phase: "completed" }
   | { readonly status: "cancelled"; readonly phase: "queued" | "executing" | "rejected" }
   | { readonly status: "failed"; readonly phase: "queued" | "executing" | "prompt_review" }
-  | { readonly status: "outcome_unknown"; readonly phase: "queued" | "executing" };
+  | {
+      readonly status: "outcome_unknown";
+      readonly phase: "queued" | "executing" | "prompt_review";
+    };
 
 const key = (state: DirectAgentRunLifecycle): string => `${state.status}/${state.phase}`;
 
@@ -29,6 +32,7 @@ const allowedTransitions: Readonly<Record<string, readonly string[]>> = {
     "running/executing",
     "cancelled/rejected",
     "failed/prompt_review",
+    "outcome_unknown/prompt_review",
   ],
 };
 

@@ -318,6 +318,9 @@ function configureAgentNode(
       } else {
         config["agentVersionId"] = payload.agentVersionId;
         config["agentVersionSha256"] = payload.agentVersionSha256;
+        // Agent Version冻结精确Tool与资源政策；新Revision不能继续声明继承Pi默认能力。
+        // 旧Revision由RunSpec Compiler在创建新Run时做同样的归一，历史事实保持不变。
+        if (element.nodeType === "agent.direct") config["capabilityMode"] = "custom";
       }
       if (requestedOverride !== "") {
         config["agentPromptOverride"] = requestedOverride;

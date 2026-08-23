@@ -92,7 +92,10 @@ export {
   workflowPromptReviewResumeRequestSchema,
   workflowResumeRequestSchema,
   workflowResumeResponseSchema,
+  workflowRuntimeTerminalOutcomeSchema,
+  workflowRuntimeRunEvidenceSchema,
   workflowReconcileResponseSchema,
+  type WorkflowRuntimeTerminalOutcome,
 } from "./internal-runtime/dispatch.js";
 
 export {

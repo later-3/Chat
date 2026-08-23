@@ -9,11 +9,11 @@ import { notFound } from "./errors.js";
 import { emitRunEvent } from "./trace-helpers.js";
 import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
 
-/** 失败/结果未知的产品事实收敛；跨Runtime派发由Outbox用例负责。 */
+/** 失败、取消或结果未知的产品事实收敛；跨Runtime派发由Outbox用例负责。 */
 export function settleRunWithoutSuccess(
   draft: ProductSnapshot,
   productRunId: ProductRunId,
-  status: "failed" | "outcome_unknown",
+  status: "failed" | "cancelled" | "outcome_unknown",
   errorCode: string,
   summary: string,
   now: string,
@@ -31,13 +31,15 @@ export function settleRunWithoutSuccess(
     return;
   }
   if (run.runKind === "note_capture") {
-    draft.entities.runs[productRunId] = {
+    const settled = {
       ...run,
       status,
-      failure: { code: errorCode, summary },
       revision: run.revision + 1,
       updatedAt: now,
     };
+    if (status === "cancelled") delete settled.failure;
+    else settled.failure = { code: errorCode, summary };
+    draft.entities.runs[productRunId] = settled;
     failRunningAttempts(draft, productRunId, now, errorCode);
     return;
   }
@@ -59,27 +61,24 @@ export function settleRunWithoutSuccess(
             : undefined;
     if (current === undefined) throw new Error("Direct Agent Run生命周期事实损坏");
     const lifecycle =
-      effectiveStatus === "failed"
+      effectiveStatus === "cancelled"
         ? transitionDirectAgentRunLifecycle(current, {
-            status: "failed",
-            phase: current.phase,
+            status: "cancelled",
+            phase: current.phase === "prompt_review" ? "rejected" : current.phase,
           })
-        : current.phase === "prompt_review"
-          ? (() => {
-              throw new Error("Prompt Review尚未越过Provider边界，不能收敛为outcome_unknown");
-            })()
-          : transitionDirectAgentRunLifecycle(current, {
-              status: "outcome_unknown",
-              phase: current.phase,
-            });
+        : transitionDirectAgentRunLifecycle(current, {
+            status: effectiveStatus,
+            phase: current.phase,
+          });
     const settled = {
       ...run,
       status: lifecycle.status,
       phase: lifecycle.phase,
-      failure: { code: errorCode, summary },
       revision: run.revision + 1,
       updatedAt: now,
     };
+    if (effectiveStatus === "cancelled") delete settled.failure;
+    else settled.failure = { code: errorCode, summary };
     delete settled.currentPromptReviewRequestId;
     draft.entities.runs[productRunId] = settled;
     for (const review of promptReviews) {
@@ -102,16 +101,20 @@ export function settleRunWithoutSuccess(
   }
   const lifecycle = transitionRunLifecycle(
     { status: run.status, phase: run.phase },
-    { status, phase: run.phase },
+    {
+      status,
+      phase: status === "cancelled" && run.phase === "plan_review" ? "rejected" : run.phase,
+    },
   );
   const settled = {
     ...run,
     status: lifecycle.status,
     phase: lifecycle.phase,
-    failure: { code: errorCode, summary },
     revision: run.revision + 1,
     updatedAt: now,
   };
+  if (status === "cancelled") delete settled.failure;
+  else settled.failure = { code: errorCode, summary };
   delete settled.currentApprovalRequestId;
   draft.entities.runs[productRunId] = settled;
   for (const approval of Object.values(draft.entities.approvalRequests)) {

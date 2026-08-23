@@ -1,6 +1,6 @@
 # Chat Agent 管理 As-built
 
-> As-built：2026-08-22。本文是当前 Agent Catalog、Agent Version、Workflow 绑定和会话临时配置的唯一事实源。
+> As-built：2026-08-23。本文是当前 Agent Catalog、Agent Version、Workflow 绑定和会话临时配置的唯一事实源。
 > Prompt 的区域与组装见[Prompt Studio 与系统级 Prompt Assembly](./prompt-studio-as-built.md)，Pi 执行边界见[Pi Coding Executor Service](./pi-coding-executor-service.md)，Session/轨迹/Trace 边界见[Session 与轨迹架构](./session-architecture.md)。
 
 ## 1. 产品结论
@@ -81,6 +81,18 @@ Pi-backed Agent 的 Catalog 默认不是一段 Chat 手抄的近似 Prompt。`pa
 当前“会话级”语义是 Bridge 对同一 DSH Session 复用草稿、每次发送都形成新的 Run 冻结副本；它不是 Product Store 中另一份可变 Agent 真相。若以后需要跨前端恢复的耐久 Product Session 默认，应新增明确的 Product Session 配置事实，不能把浏览器/Bridge 状态偷换成产品事实。
 
 旧 Workflow 的单段`agentPromptOverride`仍可读取，但只是迁移兼容。新的 Pi-backed Direct Agent 以完整 AgentVersion 或结构化临时配置为主，不再用散落 Prompt 文本代表完整 Agent。
+
+### 4.1 Version 能力的单一运行语义
+
+只要 Direct 节点绑定了精确`AgentVersion ID + Hash`，Compiler 就把该 Run 的能力模式规范化为`custom`，并从版本事实生成 Tool 与四类资源策略；节点历史字段不能把它降回`inherit_runtime_default`。这一规则同时适用于长期 Workflow Revision 绑定和本次 Run 的 Version 临时覆盖，且不会反向改写旧 Revision。
+
+同一次 Run 的三个消费面必须严格相等：
+
+1. `WorkflowRunSpec`冻结 Version ID/Hash、`custom`能力模式与资源策略；
+2. `PromptAssembly`只接受同一份 RunSpec 绑定的合成 Version Prompt Source，并冻结同一 Tool 名称和资源策略；
+3. Executor Operation 授权重新读取 Product Store，校验 RunSpec、Assembly、Version、Workspace Root 和实际 Runtime Manifest 后，才返回可执行能力。
+
+Version 不存在、Hash/Owner/Scope/Root 漂移、Assembly 来源漂移或 Tool/资源不一致时，均在创建 Operation、解析 Workspace 或触达 Provider 前失败关闭。因此失败证据允许“零 Operation、零 Provider 请求”，而不能为了补日志先启动一次错误能力的 AgentSession。
 
 ## 5. 从前端到 Provider 的唯一通路
 

@@ -31,6 +31,7 @@ export * from "./planning-runtime-use-cases.js";
 export * from "./execution-runtime-use-cases.js";
 export * from "./commit-runtime-use-cases.js";
 export * from "./outbox-runtime-use-cases.js";
+export * from "./runtime-integrity-diagnostics.js";
 export * from "./trace-helpers.js";
 export * from "./project-use-cases.js";
 export * from "./project-advancement-use-cases.js";

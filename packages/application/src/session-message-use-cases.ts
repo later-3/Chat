@@ -699,7 +699,14 @@ export async function submitUserMessage(
       draft.entities.messages[messageId] = message;
       draft.entities.runs[productRunId] = run;
       if (promptAssembly !== undefined) {
-        assertPromptAssemblySourcesCurrent(draft, promptAssembly, input.principalId);
+        // RunSpec与Assembly在同一事务后半段才写入；来源复核必须使用本轮已经完成
+        // Hash校验的编译结果，不能因Store里尚无新RunSpec而把Agent Version误判为漂移。
+        assertPromptAssemblySourcesCurrent(
+          draft,
+          promptAssembly,
+          input.principalId,
+          compiled.runSpec,
+        );
         draft.entities.promptAssemblies[promptAssembly.promptAssemblyId] = promptAssembly;
       }
       const currentRevision = resolvePublishedWorkflowRevision(

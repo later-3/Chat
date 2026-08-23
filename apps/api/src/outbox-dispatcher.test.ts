@@ -5,17 +5,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   agentRuntimeBaselineDtoSchema,
   type AgentKey,
+  type ProductSnapshot,
   type TraceEventInput,
 } from "@chat/contracts";
 import type { ApplicationDeps, DirectAgentIdFactory, IdFactory } from "@chat/application";
 import {
   beginDirectAgentAttempt,
+  compilePlanningInput,
   commitMemoryImportAccepted,
   createMemoryWrite,
   createMemoryImport,
   createProductSession,
   markMemoryImportDispatching,
   publishPromptReviewRequest,
+  publishPlanForReview,
   submitPromptReviewDecision,
   submitUserMessage,
   transitionConfigurablePlanningNode,
@@ -260,6 +263,16 @@ async function seedMemoryWrite() {
     },
   });
   return { ...seeded, memoryWrite };
+}
+
+function workflowStartFor(snapshot: ProductSnapshot, productRunId: string) {
+  const entry = Object.values(snapshot.outbox).find(
+    (candidate) => candidate.kind === "workflow_start" && candidate.productRunId === productRunId,
+  );
+  if (entry === undefined || entry.kind !== "workflow_start") {
+    throw new Error("缺少Workflow Start Outbox");
+  }
+  return entry;
 }
 
 async function seedMemoryImport() {
@@ -805,5 +818,274 @@ describe("Prompt Review Resume Outbox最小披露与对账", () => {
     );
     expect(reconcileUrl.searchParams.has("approvalRequestId")).toBe(false);
     expect(reconcileUrl.searchParams.has("hookNoteCandidateId")).toBe(false);
+  });
+});
+
+describe("通用Product Workflow终态监督", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("Planning Runtime失败只收敛一次，后续Runtime证据不覆盖产品终态", async () => {
+    const seeded = await seed();
+    let snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const start = workflowStartFor(snapshot, seeded.productRunId);
+    await updateOutboxStatus(seeded.deps, {
+      commandId: "cmd_ackplanningterminal" as never,
+      outboxId: start.outboxId,
+      status: "acknowledged",
+    });
+    seeded.advance(2_000);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          schemaVersion: "chat-workflow-dispatch.v1",
+          productRunId: seeded.productRunId,
+          startBinding: "exists",
+          runtimeRun: { state: "terminal", outcome: "failed" },
+        }),
+      )
+      .mockResolvedValue(
+        Response.json({
+          schemaVersion: "chat-workflow-dispatch.v1",
+          productRunId: seeded.productRunId,
+          startBinding: "exists",
+          runtimeRun: { state: "terminal", outcome: "cancelled" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const dispatcher = new OutboxDispatcher({
+      deps: seeded.deps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+
+    await dispatcher.tick();
+    snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const firstTerminal = snapshot.entities.runs[seeded.productRunId];
+    expect(firstTerminal).toMatchObject({
+      status: "failed",
+      failure: { code: "workflow.runtime_failed_without_product_commit" },
+    });
+    await dispatcher.tick();
+    const replayed = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(replayed.entities.runs[seeded.productRunId]).toEqual(firstTerminal);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("Direct Runtime失败使用同一监督命令收敛，且不创建第二个Workflow", async () => {
+    const seeded = await seed();
+    let snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const initialStart = workflowStartFor(snapshot, seeded.productRunId);
+    await updateOutboxStatus(seeded.deps, {
+      commandId: "cmd_disableinitialplanning" as never,
+      outboxId: initialStart.outboxId,
+      status: "failed_terminal",
+    });
+    const directRevision =
+      snapshot.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
+    if (directRevision === undefined) throw new Error("缺少Direct Workflow Revision");
+    const direct = await submitUserMessage(seeded.deps, {
+      principalId: "usr_dispatchtest" as never,
+      sessionId: seeded.sessionId as never,
+      commandId: "cmd_submitdirectterminal" as never,
+      payload: {
+        text: "运行Direct Agent",
+        workflowSelection: {
+          kind: "published_revision",
+          workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
+          definitionSha256: directRevision.definitionSha256,
+        },
+      },
+    });
+    snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const directStart = workflowStartFor(snapshot, direct.run.productRunId);
+    await updateOutboxStatus(seeded.deps, {
+      commandId: "cmd_ackdirectterminal" as never,
+      outboxId: directStart.outboxId,
+      status: "acknowledged",
+    });
+    seeded.advance(2_000);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          schemaVersion: "chat-workflow-dispatch.v1",
+          productRunId: direct.run.productRunId,
+          startBinding: "exists",
+          runtimeRun: { state: "terminal", outcome: "failed" },
+        }),
+      ),
+    );
+    const dispatcher = new OutboxDispatcher({
+      deps: seeded.deps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+
+    await dispatcher.tick();
+    snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.runs[direct.run.productRunId]).toMatchObject({
+      runKind: "direct_agent",
+      status: "failed",
+      failure: { code: "workflow.runtime_failed_without_product_commit" },
+    });
+    expect(
+      Object.values(snapshot.outbox).filter(
+        (entry) =>
+          entry.kind === "workflow_start" && entry.productRunId === direct.run.productRunId,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("Runtime取消映射为Product cancelled，且保留同一Start Binding", async () => {
+    const seeded = await seed();
+    let snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const start = workflowStartFor(snapshot, seeded.productRunId);
+    await updateOutboxStatus(seeded.deps, {
+      commandId: "cmd_ackcancelledterminal" as never,
+      outboxId: start.outboxId,
+      status: "acknowledged",
+    });
+    seeded.advance(2_000);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          schemaVersion: "chat-workflow-dispatch.v1",
+          productRunId: seeded.productRunId,
+          startBinding: "exists",
+          runtimeRun: { state: "terminal", outcome: "cancelled" },
+        }),
+      ),
+    );
+    const dispatcher = new OutboxDispatcher({
+      deps: seeded.deps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+
+    await dispatcher.tick();
+    snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.runs[seeded.productRunId]).toMatchObject({
+      status: "cancelled",
+      phase: "queued",
+    });
+    expect(snapshot.entities.runs[seeded.productRunId]?.failure).toBeUndefined();
+    expect(snapshot.outbox[start.outboxId]).toMatchObject({
+      status: "acknowledged",
+      dispatchAttempts: 0,
+    });
+  });
+
+  it("Runtime active时多次tick不干预waiting_human Product Run", async () => {
+    const seeded = await seed();
+    const planning = await compilePlanningInput(seeded.deps, {
+      commandId: "cmd_compilewaitingsupervision" as never,
+      productRunId: seeded.productRunId as never,
+      planRevision: 1,
+    });
+    const published = await publishPlanForReview(seeded.deps, {
+      commandId: "cmd_publishwaitingsupervision" as never,
+      productRunId: seeded.productRunId as never,
+      attemptId: planning.attemptId,
+      expectedRunRevision: planning.inputRunRevision,
+      inputManifestSha256: planning.inputManifestSha256,
+      content: {
+        objective: "等待用户确认",
+        summary: "验证Runtime active不会被监督器误判",
+        assumptions: [],
+        openQuestions: [],
+        steps: [
+          {
+            stepId: "step-1",
+            title: "等待确认",
+            purpose: "保留人工审核",
+            dependsOn: [],
+            inputRefs: [],
+            expectedOutput: "确认结果",
+            successCriteria: ["用户已确认"],
+            requestedCapabilities: [],
+            risk: "low",
+          },
+        ],
+        completionCriteria: ["用户已确认"],
+        warnings: [],
+      },
+    });
+    let snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const start = workflowStartFor(snapshot, seeded.productRunId);
+    await updateOutboxStatus(seeded.deps, {
+      commandId: "cmd_ackwaitingsupervision" as never,
+      outboxId: start.outboxId,
+      status: "acknowledged",
+    });
+    seeded.advance(2_000);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          schemaVersion: "chat-workflow-dispatch.v1",
+          productRunId: seeded.productRunId,
+          startBinding: "exists",
+          runtimeRun: { state: "active" },
+        }),
+      ),
+    );
+    const dispatcher = new OutboxDispatcher({
+      deps: seeded.deps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+
+    await dispatcher.tick();
+    await dispatcher.tick();
+    snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.runs[seeded.productRunId]).toMatchObject({
+      status: "waiting_human",
+      phase: "plan_review",
+      revision: published.run.revision,
+    });
+  });
+
+  it("Runtime查询长期未知只收敛为outcome_unknown，不重启或新增Binding", async () => {
+    const seeded = await seed();
+    let snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const start = workflowStartFor(snapshot, seeded.productRunId);
+    await updateOutboxStatus(seeded.deps, {
+      commandId: "cmd_ackunknownsupervision" as never,
+      outboxId: start.outboxId,
+      status: "acknowledged",
+    });
+    seeded.advance(31_000);
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        schemaVersion: "chat-workflow-dispatch.v1",
+        productRunId: seeded.productRunId,
+        startBinding: "exists",
+        runtimeRun: { state: "unknown" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const dispatcher = new OutboxDispatcher({
+      deps: seeded.deps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+
+    await dispatcher.tick();
+    await dispatcher.tick();
+    snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.runs[seeded.productRunId]).toMatchObject({
+      status: "outcome_unknown",
+      failure: { code: "workflow.runtime_terminal_outcome_unknown" },
+    });
+    expect(
+      Object.values(snapshot.outbox).filter(
+        (entry) => entry.kind === "workflow_start" && entry.productRunId === seeded.productRunId,
+      ),
+    ).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

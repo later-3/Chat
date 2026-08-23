@@ -53,7 +53,9 @@ DSH持久化日志与Bridge映射共同恢复原会话，用户可以继续发�
 6. Chat在Command边界重新校验Workflow仍是已发布、active、当前Principal可用且Hash一致。
    首轮原子提交Product Session、标题、User Message、Product Run、Receipt和Workflow Start
    Outbox；后续轮次不再创建Session。
-7. Adapter只轮询公开Run并在终态读取正式Message；Bridge投影按Run阶段读取Plan/Approval或Current Note Candidate，
+7. Adapter只轮询公开Run并在终态读取正式Message；后台通用监督器在已确认Workflow终止而Product仍活动时，
+   通过Application把`failed/cancelled/outcome_unknown`提交为唯一产品终态；Runtime“成功”但缺少Product Commit也只能是
+   `outcome_unknown`。Bridge和浏览器不得从HTTP完成、Runtime返回或超时自行推断成功。Bridge投影按Run阶段读取Plan/Approval或Current Note Candidate，
    并从独立Run Activity读模型读取完整Workflow执行轨迹。所有读模型都不从HTTP超时推断成功。
 8. Run需要人工决定时，Client插件展示当前Plan/Approval或Note Candidate；用户的修订、批准、确认或拒绝经Host桥接为版本/Hash绑定的Chat Command。
 9. 执行中的Workflow/Agent/模型/工具活动由Client Conversation contribution投影到DSH原生Trajectory；Adapter不再
@@ -107,6 +109,10 @@ Message、Product Run和Product Assistant Message身份；它不复制任何Mess
 多个pending决定并存，写入使用原子替换，v1-v10读取后立即迁移为v11，并为旧Workflow草稿补空配置。Workflow选择仍按会话冻结；用户最新选择
 同时成为后续新DSH会话的偏好，选择系统默认会原子清除该偏好，避免新会话静默回退到Planning。发生请求已发
 但响应丢失时，只允许相同命令和内容原样重试或Query恢复，不生成新身份。
+
+Workflow Start已确认后，API会用私有、脱敏的Runtime状态监督同一个Start Binding。Runtime仍活动时不触碰
+`waiting_human`等Product状态；Runtime终止或长期无法确认时只提交稳定、幂等的非成功收敛命令，不重启Workflow，
+不向浏览器泄露Workflow Run ID、Runtime错误正文、Prompt或Provider Payload。已经形成Product终态后，任何迟到Runtime证据都不能覆盖它。
 
 ## 6. DSH插件表面边界
 

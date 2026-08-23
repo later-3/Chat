@@ -26,6 +26,7 @@ import {
   emitRunEvent,
   failOutboxAndRun,
   recoverMemoryImportAfterTerminalWorkflow,
+  settleRunAfterTerminalWorkflow,
   updateOutboxStatus,
   type ApplicationDeps,
 } from "@chat/application";
@@ -90,6 +91,7 @@ const projectDispatchResponseSchema = z
   .strict();
 const OUTCOME_UNKNOWN_SETTLE_MS = 30_000;
 const ACKNOWLEDGED_IMPORT_SUPERVISE_MS = 1_000;
+const ACKNOWLEDGED_WORKFLOW_SUPERVISE_MS = 1_000;
 const MAX_AUTOMATIC_IMPORT_RECOVERIES = 3;
 
 function dispatchCommandId(...parts: string[]): CommandId {
@@ -972,13 +974,90 @@ async function reconcileUnknown(
   }
 }
 
+function productRunIsTerminal(
+  snapshot: Snapshot,
+  productRunId: WorkflowStartEntry["productRunId"],
+) {
+  const status = snapshot.entities.runs[productRunId]?.status;
+  return (
+    status === undefined ||
+    status === "succeeded" ||
+    status === "failed" ||
+    status === "cancelled" ||
+    status === "outcome_unknown"
+  );
+}
+
+async function settleTerminalWorkflow(
+  options: OutboxDispatcherOptions,
+  entry: WorkflowStartEntry,
+  runtimeOutcome: "succeeded" | "failed" | "cancelled" | "outcome_unknown",
+): Promise<void> {
+  await settleRunAfterTerminalWorkflow(options.deps, {
+    // outcome故意不参与commandId：同一Runtime终态证据若在重复查询中漂移，Product Store
+    // 会以“同ID不同请求Hash”失败关闭，而不是接受第二种解释。
+    commandId: dispatchCommandId("settle-terminal-workflow", entry.outboxId, entry.productRunId),
+    outboxId: entry.outboxId,
+    productRunId: entry.productRunId,
+    runtimeOutcome,
+  });
+}
+
+/** 已确认Start的通用监督：不读取正文、不重启Workflow，只消费安全终态证据。 */
+async function superviseAcknowledgedWorkflow(
+  options: OutboxDispatcherOptions,
+  snapshot: Snapshot,
+  entry: WorkflowStartEntry,
+): Promise<void> {
+  if (
+    productRunIsTerminal(snapshot, entry.productRunId) ||
+    Date.parse(options.deps.now()) - Date.parse(entry.updatedAt) <
+      ACKNOWLEDGED_WORKFLOW_SUPERVISE_MS
+  ) {
+    return;
+  }
+  let response: Response;
+  try {
+    response = await fetch(
+      `${options.workflowRuntimeBaseUrl}/internal/workflow/v1/reconcile?${new URLSearchParams({ productRunId: entry.productRunId }).toString()}`,
+      {
+        headers: { "x-chat-runtime-key": options.credential },
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+  } catch {
+    if (Date.parse(options.deps.now()) - Date.parse(entry.updatedAt) >= OUTCOME_UNKNOWN_SETTLE_MS) {
+      await settleTerminalWorkflow(options, entry, "outcome_unknown");
+    }
+    return;
+  }
+  const parsed = response.ok
+    ? workflowReconcileResponseSchema.safeParse(await response.json().catch(() => undefined))
+    : undefined;
+  if (
+    parsed === undefined ||
+    !parsed.success ||
+    parsed.data.startBinding !== "exists" ||
+    parsed.data.runtimeRun === undefined ||
+    parsed.data.runtimeRun.state === "unknown"
+  ) {
+    if (Date.parse(options.deps.now()) - Date.parse(entry.updatedAt) >= OUTCOME_UNKNOWN_SETTLE_MS) {
+      await settleTerminalWorkflow(options, entry, "outcome_unknown");
+    }
+    return;
+  }
+  if (parsed.data.runtimeRun.state === "active") return;
+  await settleTerminalWorkflow(options, entry, parsed.data.runtimeRun.outcome);
+}
+
 /**
  * Outbox的进程内轮询执行器，不是产品业务状态机。
  *
  * tick每次只读取一份已提交快照，然后按createdAt串行处理：
  * 1. pending：第一次跨边界派发；
  * 2. outcome_unknown：向Runtime查询实际结果，禁止盲目重放副作用；
- * 3. acknowledged的Memory导入：监督异步Workflow是否已经进入终态。
+ * 3. acknowledged的普通Product Workflow：监督Runtime终态是否已经提交回产品；
+ * 4. acknowledged的Memory导入：监督异步Workflow是否已经进入终态。
  *
  * 不使用Promise.all是有意设计：单进程内串行可避免同一轮重复派发，也让Trace顺序稳定；
  * 跨进程/崩溃场景的最终幂等仍由outboxId、productRunId和Runtime Binding共同保证。
@@ -1053,6 +1132,15 @@ export class OutboxDispatcher {
           // 保留Candidate供用户刷新后重新发起，而不是盲目创建第二个Workflow。
           await markStatus(this.options, entry, "failed_terminal", "dispatch.outcome_unknown");
         }
+      }
+      const acknowledgedWorkflows = Object.values(snapshot.outbox)
+        .filter(
+          (entry): entry is WorkflowStartEntry =>
+            entry.status === "acknowledged" && entry.kind === "workflow_start",
+        )
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      for (const entry of acknowledgedWorkflows) {
+        await superviseAcknowledgedWorkflow(this.options, snapshot, entry);
       }
       const acknowledgedImports = Object.values(snapshot.outbox)
         .filter(

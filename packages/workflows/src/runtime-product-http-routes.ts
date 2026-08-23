@@ -25,6 +25,51 @@ import { captureRunVersionEvidence } from "./runtime-version-evidence.js";
 import { workflowRunTraceId, workflowSpanId } from "./runtime-context.js";
 import type { WorkflowRuntimeHttpRouteContext } from "./runtime-http-route-context.js";
 
+function normalizedTerminalOutcome(value: unknown) {
+  const record =
+    typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  const terminal =
+    typeof record["terminal"] === "object" && record["terminal"] !== null
+      ? (record["terminal"] as Record<string, unknown>)
+      : undefined;
+  const outcome = record["outcome"] ?? terminal?.["outcome"];
+  if (outcome === "failed") return "failed" as const;
+  if (outcome === "cancelled" || outcome === "rejected") return "cancelled" as const;
+  if (outcome === "product_committed" || outcome === "note_committed") {
+    return "succeeded" as const;
+  }
+  return "outcome_unknown" as const;
+}
+
+async function readSafeRuntimeRunEvidence(
+  bindings: WorkflowRuntimeHttpRouteContext["bindings"],
+  productRunId: string,
+) {
+  try {
+    const binding = bindings.getWorkflowBinding(productRunId as never);
+    if (binding === undefined) return { state: "unknown" as const };
+    const run = getRun(binding.workflowRunId);
+    if (!(await run.exists)) return { state: "unknown" as const };
+    const status = String(await run.status);
+    if (status === "pending" || status === "running") return { state: "active" as const };
+    if (status === "failed") {
+      return { state: "terminal" as const, outcome: "failed" as const };
+    }
+    if (status === "cancelled") {
+      return { state: "terminal" as const, outcome: "cancelled" as const };
+    }
+    if (status === "completed") {
+      return {
+        state: "terminal" as const,
+        outcome: normalizedTerminalOutcome(await run.returnValue),
+      };
+    }
+    return { state: "unknown" as const };
+  } catch {
+    return { state: "unknown" as const };
+  }
+}
+
 /** 注册Planning/Note正式Runner的start、resume与只读对账端点。 */
 export function registerProductWorkflowHttpRoutes(context: WorkflowRuntimeHttpRouteContext): void {
   const options = context;
@@ -379,10 +424,15 @@ export function registerProductWorkflowHttpRoutes(context: WorkflowRuntimeHttpRo
           : query.data.promptReviewRequestId !== undefined
             ? bindings.getPromptReviewHookBinding(query.data.promptReviewRequestId as never)
             : undefined;
+    const runtimeRun =
+      startBinding === "exists"
+        ? await readSafeRuntimeRunEvidence(bindings, query.data.productRunId)
+        : undefined;
     return c.json({
       schemaVersion: "chat-workflow-dispatch.v1",
       productRunId: query.data.productRunId,
       startBinding,
+      ...(runtimeRun === undefined ? {} : { runtimeRun }),
       ...(query.data.approvalRequestId !== undefined ||
       query.data.hookNoteCandidateId !== undefined ||
       query.data.promptReviewRequestId !== undefined

@@ -472,11 +472,15 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
             message: "Agent Version必须同时绑定ID与Hash",
           });
         }
-        if (value.capabilityMode === "custom" && value.enabledToolNames === undefined) {
+        if (
+          value.capabilityMode === "custom" &&
+          value.agentVersionId === undefined &&
+          value.enabledToolNames === undefined
+        ) {
           ctx.addIssue({
             code: "custom",
             path: ["enabledToolNames"],
-            message: "Custom Agent能力必须冻结Tool清单",
+            message: "Custom Agent能力必须由Agent Version或显式Tool清单冻结",
           });
         }
       }),

@@ -25,6 +25,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "debug:replay": "pnpm --filter @chat/api exec tsx src/replay-main.ts",
+    "debug:runtime-integrity-scan": "pnpm --filter @chat/api exec tsx ../../scripts/dev/scan-runtime-integrity.ts",
     "test:provider:bailian": "pnpm --filter @chat/pi-runtime test:provider:bailian",
     "test:provider:bailian:coding": "pnpm --filter @chat/pi-runtime test:provider:bailian:coding",
     "test:provider:bailian:note": "pnpm --filter @chat/pi-runtime test:provider:bailian:note",

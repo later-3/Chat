@@ -58,6 +58,7 @@ const allowedTransitions: Readonly<Record<string, readonly string[]>> = {
     // reject：用户拒绝的明确终态
     "cancelled/rejected",
     "failed/plan_review",
+    "outcome_unknown/plan_review",
   ],
   "running/executing": [
     "running/validating",
@@ -65,7 +66,12 @@ const allowedTransitions: Readonly<Record<string, readonly string[]>> = {
     "cancelled/executing",
     "outcome_unknown/executing",
   ],
-  "running/validating": ["succeeded/completed", "failed/validating", "outcome_unknown/validating"],
+  "running/validating": [
+    "succeeded/completed",
+    "failed/validating",
+    "cancelled/validating",
+    "outcome_unknown/validating",
+  ],
 };
 
 export function canTransitionRunLifecycle(from: RunLifecycle, to: RunLifecycle): boolean {

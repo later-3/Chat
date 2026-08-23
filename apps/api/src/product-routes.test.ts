@@ -48,6 +48,7 @@ import {
   projectBootstrapOperationSchema,
 } from "@chat/contracts";
 import {
+  authorizeDirectAgentOperation,
   beginDirectAgentAttempt,
   compilePlanningInput,
   normalizeMemoryQueryResult,
@@ -2053,7 +2054,7 @@ describe("公开产品API", () => {
     const directNode = published.semanticRoot.elements[0];
     if (directNode?.kind !== "composite") throw new Error("新Workflow缺少Direct节点");
     expect(directNode.config).toMatchObject({
-      capabilityMode: "pi_cli_default",
+      capabilityMode: "custom",
       promptReviewMode: "manual",
       agentKey: "direct",
       agentVersionId: derived.agentVersionId,
@@ -2061,6 +2062,175 @@ describe("公开产品API", () => {
     });
     expect(published.basedOnRevisionId).toBe(source.workflowDefinitionRevisionId);
     expect(published.definitionSha256).not.toBe(source.definitionSha256);
+
+    const exerciseVersionRun = async (input: {
+      readonly suffix: string;
+      readonly workflowDefinitionRevisionId: string;
+      readonly definitionSha256: string;
+      readonly runConfiguration?: {
+        readonly schemaVersion: "workflow-run-configuration.v1";
+        readonly overrides: readonly [
+          {
+            readonly kind: "agent_configuration";
+            readonly definitionNodeId: "direct.agent";
+            readonly configurationMode: "version";
+            readonly agentVersionId: typeof derived.agentVersionId;
+            readonly agentVersionSha256: string;
+          },
+        ];
+      };
+    }) => {
+      const created = await postJson(app, "/api/sessions", {
+        commandId: nextCmd(),
+        payload: { title: `Agent Version ${input.suffix}` },
+      });
+      const session = sessionDtoSchema.parse(
+        ((await created.json()) as { session: unknown }).session,
+      );
+      const sent = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
+        commandId: nextCmd(),
+        payload: {
+          text: `验证${input.suffix} Agent Version运行语义`,
+          workflowSelection: {
+            kind: "published_revision",
+            workflowDefinitionRevisionId: input.workflowDefinitionRevisionId,
+            definitionSha256: input.definitionSha256,
+            ...(input.runConfiguration === undefined
+              ? {}
+              : { runConfiguration: input.runConfiguration }),
+          },
+        },
+      });
+      expect(sent.status, await sent.clone().text()).toBe(201);
+      const submitted = z
+        .object({ message: messageDtoSchema, run: runDtoSchema })
+        .strict()
+        .parse(await sent.json());
+      const snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+      const run = snapshot.entities.runs[submitted.run.productRunId];
+      const runSpec =
+        run?.workflowRunSpecId === undefined
+          ? undefined
+          : snapshot.entities.workflowRunSpecs[run.workflowRunSpecId];
+      const assembly = Object.values(snapshot.entities.promptAssemblies).find(
+        (candidate) => candidate.productRunId === submitted.run.productRunId,
+      );
+      const workflowAttempt = Object.values(snapshot.entities.attempts).find(
+        (attempt) =>
+          attempt.productRunId === submitted.run.productRunId && attempt.kind === "workflow",
+      );
+      if (
+        run?.runKind !== "direct_agent" ||
+        runSpec === undefined ||
+        assembly?.schemaVersion !== "prompt-assembly.v2" ||
+        workflowAttempt === undefined
+      ) {
+        throw new Error("Agent Version纵向没有冻结完整Direct运行输入");
+      }
+      expect(runSpec.nodeResolutions[0]?.config).toMatchObject({
+        capabilityMode: "custom",
+        agentVersionId: derived.agentVersionId,
+        agentVersionSha256: derived.sha256,
+      });
+      expect(assembly.tools).toMatchObject({
+        capabilityMode: "custom",
+        selectionMode: "explicit",
+        names: ["read", "bash"],
+        resources: inheritedResources,
+      });
+      const begun = await beginDirectAgentAttempt(deps, {
+        commandId: nextCmd(),
+        productRunId: run.productRunId,
+        workflowAttemptId: workflowAttempt.attemptId,
+      });
+      const authorized = await authorizeDirectAgentOperation(deps, {
+        productRunId: run.productRunId,
+        directAgentAttemptId: begun.directAgentAttemptId,
+        workflowRunSpecId: runSpec.workflowRunSpecId,
+        workflowRunSpecSha256: runSpec.sha256,
+        inputManifestSha256: begun.inputManifestSha256,
+      });
+      expect(authorized.capabilityMode).toBe("custom");
+      expect(authorized.promptAssembly.tools).toEqual(assembly.tools);
+      expect(authorized.promptAssembly.tools?.capabilityMode).toBe(authorized.capabilityMode);
+    };
+
+    await exerciseVersionRun({
+      suffix: "持久Workflow绑定",
+      workflowDefinitionRevisionId: published.workflowDefinitionRevisionId,
+      definitionSha256: published.definitionSha256,
+    });
+    await exerciseVersionRun({
+      suffix: "per-run覆盖",
+      workflowDefinitionRevisionId: source.workflowDefinitionRevisionId,
+      definitionSha256: source.definitionSha256,
+      runConfiguration: {
+        schemaVersion: "workflow-run-configuration.v1",
+        overrides: [
+          {
+            kind: "agent_configuration",
+            definitionNodeId: "direct.agent",
+            configurationMode: "version",
+            agentVersionId: derived.agentVersionId,
+            agentVersionSha256: derived.sha256,
+          },
+        ],
+      },
+    });
+
+    const expectVersionRejectedBeforeRun = async (input: {
+      readonly suffix: string;
+      readonly agentVersionId: string;
+      readonly agentVersionSha256: string;
+    }) => {
+      const created = await postJson(app, "/api/sessions", {
+        commandId: nextCmd(),
+        payload: { title: `拒绝${input.suffix}` },
+      });
+      const session = sessionDtoSchema.parse(
+        ((await created.json()) as { session: unknown }).session,
+      );
+      const before = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+      const rejected = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
+        commandId: nextCmd(),
+        payload: {
+          text: `验证${input.suffix}在Executor与Provider前失败`,
+          workflowSelection: {
+            kind: "published_revision",
+            workflowDefinitionRevisionId: source.workflowDefinitionRevisionId,
+            definitionSha256: source.definitionSha256,
+            runConfiguration: {
+              schemaVersion: "workflow-run-configuration.v1",
+              overrides: [
+                {
+                  kind: "agent_configuration",
+                  definitionNodeId: "direct.agent",
+                  configurationMode: "version",
+                  agentVersionId: input.agentVersionId,
+                  agentVersionSha256: input.agentVersionSha256,
+                },
+              ],
+            },
+          },
+        },
+      });
+      expect(rejected.status).toBe(409);
+      const after = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+      expect(Object.keys(after.entities.runs)).toEqual(Object.keys(before.entities.runs));
+      expect(Object.keys(after.entities.attempts)).toEqual(Object.keys(before.entities.attempts));
+      expect(Object.keys(after.outbox)).toEqual(Object.keys(before.outbox));
+    };
+
+    await expectVersionRejectedBeforeRun({
+      suffix: "Version Hash漂移",
+      agentVersionId: derived.agentVersionId,
+      agentVersionSha256: "0".repeat(64),
+    });
+    await expectVersionRejectedBeforeRun({
+      suffix: "Workspace Scope越权",
+      agentVersionId: workspace.agentVersionId,
+      agentVersionSha256: workspace.sha256,
+    });
 
     const codingProfileResponse = await app.request("/api/agent-profiles/coding_executor");
     expect(codingProfileResponse.status).toBe(200);

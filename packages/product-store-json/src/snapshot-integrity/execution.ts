@@ -285,6 +285,7 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
     PublishWorkflowDefinition: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
     ChangeWorkflowDefinitionArchiveStatus: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
     SettleIncompatibleWorkflowRun: ["productRunId"],
+    SettleRunAfterTerminalWorkflow: ["productRunId"],
     PreparePlanningContextNone: ["contextRequestId", "productRunId"],
     BeginMemoryContextQuery: ["memoryQueryId", "productRunId"],
     CompleteMemoryContextQuery: ["contextPackageId", "productRunId"],

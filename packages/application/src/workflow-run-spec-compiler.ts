@@ -590,6 +590,18 @@ function resolvePolicyAndNodes(
             }),
       };
     }
+    if (
+      node.nodeType === "agent.direct" &&
+      typeof configCandidate["agentVersionId"] === "string" &&
+      typeof configCandidate["agentVersionSha256"] === "string"
+    ) {
+      // 旧个人Workflow Revision可能保存了“Pi默认模式 + Agent Version引用”。
+      // RunSpec不改写历史Revision，却必须把新Run的权威能力语义解析为custom：
+      // 精确Tool顺序与资源政策随后由同一Version在Prompt Assembly阶段冻结。
+      configCandidate["capabilityMode"] = "custom";
+      delete configCandidate["enabledToolNames"];
+      delete configCandidate["resourcePolicy"];
+    }
     const parsedConfig = catalog.parseConfig(node.nodeType, node.schemaVersion, configCandidate);
     if (!parsedConfig.success) {
       diagnostics.push(

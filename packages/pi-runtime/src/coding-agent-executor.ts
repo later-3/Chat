@@ -504,7 +504,6 @@ function createJournalExtension(input: {
     pi.on("tool_result", async (event: ToolResultEvent) => {
       const tool = input.state.tools.get(event.toolCallId);
       if (tool === undefined) throw new PiCodingAgentExecutionError("executor.tool_intent_missing");
-      input.state.tools.delete(event.toolCallId);
       const resultDisplay = toolResultDisplay(event);
       const common = {
         operationId,
@@ -522,6 +521,9 @@ function createJournalExtension(input: {
           ? { ...common, type: "tool.failed", errorCode: "executor.tool_failed" }
           : { ...common, type: "tool.completed" },
       );
+      // 固定Pi会吞掉tool_result handler异常，因此只有持久Journal明确成功后才能
+      // 从运行内存闭合Intent。写失败时保留该项，complete()还会从持久记录二次拒绝成功。
+      input.state.tools.delete(event.toolCallId);
     });
     pi.on("session_before_compact", async (event) => {
       await append({

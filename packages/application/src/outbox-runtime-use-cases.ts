@@ -1,5 +1,10 @@
 import { hashCanonical } from "@chat/domain";
-import type { CommandId, ProductRunId } from "@chat/contracts";
+import type {
+  CommandId,
+  OutboxEntryId,
+  ProductRunId,
+  WorkflowRuntimeTerminalOutcome,
+} from "@chat/contracts";
 import type { ApplicationDeps } from "./deps.js";
 import { notFound, revisionConflict } from "./errors.js";
 import { emitProductRunTransition, settleRunWithoutSuccess } from "./run-settlement.js";
@@ -119,6 +124,81 @@ export interface CommitRunOutcomeUnknownCommand {
   readonly productRunId: ProductRunId;
   readonly errorCode: string;
   readonly summary: string;
+}
+
+export interface SettleRunAfterTerminalWorkflowCommand {
+  readonly commandId: CommandId;
+  readonly outboxId: OutboxEntryId;
+  readonly productRunId: ProductRunId;
+  readonly runtimeOutcome: WorkflowRuntimeTerminalOutcome;
+}
+
+/**
+ * Runtime已经终止但Workflow未能提交产品终态时的唯一Application收敛命令。
+ * Runtime“成功”不能补写Product成功：缺少Product Commit本身就是结果不确定；重复监督、
+ * API重启和终态晚到都由稳定commandId与产品终态检查幂等退出。
+ */
+export async function settleRunAfterTerminalWorkflow(
+  deps: ApplicationDeps,
+  input: SettleRunAfterTerminalWorkflowCommand,
+): Promise<void> {
+  const now = deps.now();
+  const { snapshot: before } = await deps.store.read({ kind: "committedSnapshot" });
+  const priorRun = before.entities.runs[input.productRunId];
+  const result = await deps.store.transact({
+    commandId: input.commandId,
+    commandType: "SettleRunAfterTerminalWorkflow",
+    requestSha256: hashCanonical("command.settle-run-after-terminal-workflow.v1", input),
+    traceContext: { productRunId: input.productRunId },
+    mutate: (draft) => {
+      const entry = draft.outbox[input.outboxId];
+      const run = draft.entities.runs[input.productRunId];
+      if (entry === undefined || run === undefined) throw notFound("Workflow监督引用不存在");
+      if (
+        entry.kind !== "workflow_start" ||
+        entry.productRunId !== input.productRunId ||
+        entry.status !== "acknowledged"
+      ) {
+        throw revisionConflict("Workflow监督引用不是已确认的Start Binding");
+      }
+      if (
+        run.status === "succeeded" ||
+        run.status === "failed" ||
+        run.status === "cancelled" ||
+        run.status === "outcome_unknown"
+      ) {
+        return { resultRefs: { productRunId: input.productRunId } };
+      }
+      const productStatus =
+        input.runtimeOutcome === "failed"
+          ? ("failed" as const)
+          : input.runtimeOutcome === "cancelled"
+            ? ("cancelled" as const)
+            : ("outcome_unknown" as const);
+      const errorCode =
+        input.runtimeOutcome === "failed"
+          ? "workflow.runtime_failed_without_product_commit"
+          : input.runtimeOutcome === "cancelled"
+            ? "workflow.runtime_cancelled_without_product_commit"
+            : input.runtimeOutcome === "succeeded"
+              ? "workflow.runtime_succeeded_without_product_commit"
+              : "workflow.runtime_terminal_outcome_unknown";
+      settleRunWithoutSuccess(
+        draft,
+        input.productRunId,
+        productStatus,
+        errorCode,
+        "后台Runtime已经终止，但产品结果未能确认；系统已停止自动继续",
+        now,
+      );
+      return { resultRefs: { productRunId: input.productRunId } };
+    },
+  });
+  if (!result.replayed && priorRun !== undefined) {
+    const { snapshot: after } = await deps.store.read({ kind: "committedSnapshot" });
+    const settledRun = after.entities.runs[input.productRunId];
+    if (settledRun !== undefined) emitProductRunTransition(deps, priorRun, settledRun, "warn");
+  }
 }
 
 export interface SettleIncompatibleWorkflowRunCommand {

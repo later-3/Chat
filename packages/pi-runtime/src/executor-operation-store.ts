@@ -80,6 +80,20 @@ export class PiExecutorOperationNotFoundError extends Error {
   }
 }
 
+export class PiExecutorOperationOutcomeUnknownError extends Error {
+  readonly code = "executor.tool_result_persist_failed";
+  constructor() {
+    super("Tool已经执行但结果Journal未闭合，Operation结果未知");
+    this.name = "PiExecutorOperationOutcomeUnknownError";
+  }
+}
+
+interface PersistBoundaryEvidence {
+  readonly operationId: string;
+  readonly status: OperationRecord["status"];
+  readonly lastEventType: PiExecutorEvent["type"] | undefined;
+}
+
 /**
  * 每个Operation一个0600 JSON文件。事件与状态在同一次原子rename中提交，因此
  * “tool.intent_persisted”成功返回时，副作用意图一定已耐久化。服务重启不自动重放
@@ -92,13 +106,23 @@ export class PiExecutorOperationStore {
   private constructor(
     private readonly directory: string,
     private readonly now: () => Date,
+    private readonly beforePersist?:
+      ((evidence: PersistBoundaryEvidence) => void | Promise<void>) | undefined,
   ) {}
 
   static async open(
     directory: string,
-    options: { readonly now?: () => Date } = {},
+    options: {
+      readonly now?: () => Date;
+      /** 只用于确定性存储故障测试；回调不接收Prompt、Tool正文或完整Record。 */
+      readonly beforePersist?: (evidence: PersistBoundaryEvidence) => void | Promise<void>;
+    } = {},
   ): Promise<PiExecutorOperationStore> {
-    const store = new PiExecutorOperationStore(directory, options.now ?? (() => new Date()));
+    const store = new PiExecutorOperationStore(
+      directory,
+      options.now ?? (() => new Date()),
+      options.beforePersist,
+    );
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const entries = await readdir(directory, { withFileTypes: true });
     for (const entry of entries) {
@@ -214,8 +238,26 @@ export class PiExecutorOperationStore {
     result: z.infer<typeof executorStepCandidateSchema>,
     durationMs: number,
   ): Promise<void> {
-    await this.mutate(operationId, async (record) => {
-      const current = this.requireMutableRecord(record);
+    const completed = await this.mutate(operationId, async (record) => {
+      let current = this.requireMutableRecord(record);
+      if (this.openToolIntents(current).length > 0) {
+        current = this.closeOpenToolIntentsAsUnknown(current);
+        const unknown = this.appendToRecord(current, {
+          operationId: current.operationId,
+          type: "operation.outcome_unknown",
+          requestSha256: current.requestSha256,
+          errorCode: "executor.tool_result_persist_failed",
+          durationMs,
+        });
+        return {
+          record: {
+            ...unknown,
+            status: "outcome_unknown" as const,
+            errorCode: "executor.tool_result_persist_failed",
+          },
+          value: false,
+        };
+      }
       const parsedResult = executorStepCandidateSchema.parse(result);
       const resultSha256 = hashExecutorValue(parsedResult);
       const next = this.appendToRecord(current, {
@@ -233,16 +275,39 @@ export class PiExecutorOperationStore {
           resultSha256,
           errorCode: undefined,
         },
-        value: undefined,
+        value: true,
       };
     });
+    if (!completed) throw new PiExecutorOperationOutcomeUnknownError();
   }
 
   async fail(operationId: string, errorCode: string, durationMs: number): Promise<void> {
     await this.mutate(operationId, async (record) => {
-      const current = this.requireMutableRecord(record);
-      if (current.status === "succeeded" || current.status === "failed") {
+      let current = this.requireMutableRecord(record);
+      if (
+        current.status === "succeeded" ||
+        current.status === "failed" ||
+        current.status === "outcome_unknown"
+      ) {
         return { record: current, value: undefined };
+      }
+      if (this.openToolIntents(current).length > 0) {
+        current = this.closeOpenToolIntentsAsUnknown(current);
+        const next = this.appendToRecord(current, {
+          operationId: current.operationId,
+          type: "operation.outcome_unknown",
+          requestSha256: current.requestSha256,
+          errorCode: "executor.tool_result_persist_failed",
+          durationMs,
+        });
+        return {
+          record: {
+            ...next,
+            status: "outcome_unknown",
+            errorCode: "executor.tool_result_persist_failed",
+          },
+          value: undefined,
+        };
       }
       const next = this.appendToRecord(current, {
         operationId: current.operationId,
@@ -260,34 +325,7 @@ export class PiExecutorOperationStore {
       if (record.status !== "queued" && record.status !== "running") continue;
       await this.mutate(record.operationId, async (loaded) => {
         let current = this.requireMutableRecord(loaded);
-        const completedToolCalls = new Set(
-          current.events.flatMap((event) =>
-            event.type === "tool.completed" ||
-            event.type === "tool.failed" ||
-            event.type === "tool.outcome_unknown"
-              ? [event.toolCallId]
-              : [],
-          ),
-        );
-        for (const intent of current.events) {
-          if (
-            intent.type !== "tool.intent_persisted" ||
-            completedToolCalls.has(intent.toolCallId)
-          ) {
-            continue;
-          }
-          current = this.appendToRecord(current, {
-            operationId: current.operationId,
-            type: "tool.outcome_unknown",
-            sessionId: intent.sessionId,
-            turnIndex: intent.turnIndex,
-            toolCallId: intent.toolCallId,
-            toolName: intent.toolName,
-            inputSha256: intent.inputSha256,
-            inputDisplay: intent.inputDisplay,
-            inputDisplayTruncated: intent.inputDisplayTruncated,
-          });
-        }
+        current = this.closeOpenToolIntentsAsUnknown(current);
         const startedAt = current.events.find(
           (event) => event.type === "operation.started",
         )?.timestamp;
@@ -329,6 +367,42 @@ export class PiExecutorOperationStore {
     });
   }
 
+  private openToolIntents(
+    record: OperationRecord,
+  ): Array<Extract<PiExecutorEvent, { type: "tool.intent_persisted" }>> {
+    const closed = new Set(
+      record.events.flatMap((event) =>
+        event.type === "tool.completed" ||
+        event.type === "tool.failed" ||
+        event.type === "tool.outcome_unknown"
+          ? [event.toolCallId]
+          : [],
+      ),
+    );
+    return record.events.filter(
+      (event): event is Extract<PiExecutorEvent, { type: "tool.intent_persisted" }> =>
+        event.type === "tool.intent_persisted" && !closed.has(event.toolCallId),
+    );
+  }
+
+  private closeOpenToolIntentsAsUnknown(record: OperationRecord): OperationRecord {
+    let current = record;
+    for (const intent of this.openToolIntents(record)) {
+      current = this.appendToRecord(current, {
+        operationId: current.operationId,
+        type: "tool.outcome_unknown",
+        sessionId: intent.sessionId,
+        turnIndex: intent.turnIndex,
+        toolCallId: intent.toolCallId,
+        toolName: intent.toolName,
+        inputSha256: intent.inputSha256,
+        inputDisplay: intent.inputDisplay,
+        inputDisplayTruncated: intent.inputDisplayTruncated,
+      });
+    }
+    return current;
+  }
+
   private snapshot(record: OperationRecord): PiExecutorOperationSnapshot {
     return piExecutorOperationSnapshotSchema.parse({
       schemaVersion: PI_EXECUTOR_PROTOCOL_VERSION,
@@ -359,6 +433,11 @@ export class PiExecutorOperationStore {
 
   private async persist(record: OperationRecord): Promise<void> {
     const parsed = operationRecordSchema.parse(record);
+    await this.beforePersist?.({
+      operationId: parsed.operationId,
+      status: parsed.status,
+      lastEventType: parsed.events.at(-1)?.type,
+    });
     const target = join(this.directory, `${parsed.operationId}.json`);
     const temporary = join(this.directory, `.${parsed.operationId}.${randomUUID()}.tmp`);
     await writeFile(temporary, `${JSON.stringify(parsed)}\n`, {

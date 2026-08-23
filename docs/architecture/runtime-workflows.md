@@ -75,6 +75,22 @@ Memory纵向新增两种Outbox事件：
 4. 只有可验证响应才标记已确认。
 5. 请求发出后失联进入`outcome_unknown`并查询Binding/Run对账，不能重新猜测性启动。
 
+### 3.1 通用 Workflow 终态监督
+
+`workflow_start`被Runtime确认后仍不代表产品完成。API Dispatcher会周期性监督所有已`acknowledged`的
+Product Workflow Start，不区分Planning、Direct或历史Note：
+
+1. Runtime私有对账只返回`active / terminal(outcome) / unknown`安全证据，不返回Workflow Run ID、返回正文、错误正文、Prompt或Provider数据；
+2. `active`严格不操作Product Run，尤其不得干预`waiting_human`审核态；已经是任一Product终态也直接退出；
+3. Runtime `failed`映射Product `failed`，Runtime `cancelled`映射Product `cancelled`；Runtime报告成功但缺少Product Commit时仍是`outcome_unknown`，不能补写假成功；
+4. Runtime状态缺失、查询失败或响应合同损坏在短暂宽限期内只观察，持续未知后收敛为Product `outcome_unknown`；
+5. 收敛使用由Start Outbox与Product Run派生的稳定Command ID，并要求原Start Binding仍为`acknowledged`。重复tick、API重启和迟到证据都不能创建第二个Workflow、改变既有终态或重放Provider。
+
+上述监督只通过Application的`settleRunAfterTerminalWorkflow`提交产品事实；底层复用统一
+`settleRunWithoutSuccess`生命周期规则。本地启动的版本兼容恢复门也调用同一收敛内核，但只处理已证明旧Bundle不可恢复的活动Run；
+它不会为普通Runtime终态另造一套规则。真实历史诊断使用只读`pnpm debug:runtime-integrity-scan`，扫描器没有Product Store写端口，
+只输出Product Run/Start Outbox和脱敏Runtime状态及建议动作；修复真实`.data`仍需单独人工授权。
+
 ## 4. PlanningExecutionWorkflow
 
 ### 4.1 总体节点
@@ -244,7 +260,7 @@ Runtime Binding保存以下私有关系：
 5. 活动Project Intake/Advancement Run核对各自Definition Version、Candidate身份和Start/Resume状态。
 6. Runtime ID只用于后端诊断，不进入浏览器、公开API和Product Store身份模型。
 
-本地开发每次重建Bundle后会在服务启动前检查活动Planning Run。证据完全一致时继续恢复；若代码版本已经变化且旧Bundle不再可执行，则保留全部历史证据，通过Application把Product Run、Attempt和Workflow Outbox收敛为`workflow.version_incompatible`，并用Workflow SDK取消旧Runtime Run。该路径不删除Store或Runtime文件，也不重启同一产品工作；生产环境应保留旧部署完成原版本恢复。
+本地开发每次重建Bundle后会在服务启动前检查活动Planning Run。证据完全一致时继续恢复；若代码版本已经变化且旧Bundle不再可执行，则保留全部历史证据，通过Application统一的非成功收敛内核把Product Run、Attempt和Workflow Outbox收敛为`workflow.version_incompatible`，并用Workflow SDK取消旧Runtime Run。普通Runtime终止则留给3.1节的通用监督命令处理，不在启动门重复推导。该路径不删除Store或Runtime文件，也不重启同一产品工作；生产环境应保留旧部署完成原版本恢复。
 
 ## 8. 重试与结果未知
 
@@ -327,6 +343,7 @@ NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Quer
 | Workflow→API私有客户端 | `packages/contracts/src/internal-runtime-client.ts`（稳定运行合同，Workflow Runtime与Pi Executor共用） |
 | API私有Application Router | `apps/api/src/internal-runtime-router.ts` |
 | Outbox分发与监督 | `apps/api/src/outbox-dispatcher.ts` |
+| Runtime完整性只读诊断 | `scripts/dev/scan-runtime-integrity.ts`、`packages/application/src/runtime-integrity-diagnostics.ts` |
 | pi Planner / Executor Client | `packages/pi-runtime/src/planner.ts`、`executor-service-client.ts` |
 | Pi AgentSession与Operation Journal | `coding-agent-executor.ts`、`executor-operation-store.ts`、`executor-service.ts` |
 | Pi Executor进程入口 | `apps/pi-executor/src/index.ts` |

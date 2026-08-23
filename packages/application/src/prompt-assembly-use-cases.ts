@@ -39,6 +39,7 @@ import {
   type MessageId,
   type WorkflowDefinitionRevisionId,
   type WorkflowNodeResolution,
+  type WorkflowRunSpec,
 } from "@chat/contracts";
 import {
   computePromptAssemblyRegionSha256,
@@ -1168,7 +1169,24 @@ export function assertPromptAssemblySourcesCurrent(
   snapshot: ProductSnapshot,
   assembly: PromptAssembly,
   principalId: PrincipalId,
+  compiledRunSpec?: WorkflowRunSpec,
 ): void {
+  const runSpec =
+    compiledRunSpec ??
+    Object.values(snapshot.entities.workflowRunSpecs).find(
+      (candidate) => candidate.productRunId === assembly.productRunId,
+    );
+  const boundAgentVersions = (runSpec?.nodeResolutions ?? []).flatMap((node) => {
+    const agentVersionId = node.config["agentVersionId"];
+    const agentVersionSha256 = node.config["agentVersionSha256"];
+    if (typeof agentVersionId !== "string" || typeof agentVersionSha256 !== "string") return [];
+    const version = snapshot.entities.agentVersions[agentVersionId];
+    return version !== undefined &&
+      version.sha256 === agentVersionSha256 &&
+      version.ownerPrincipalId === principalId
+      ? [version]
+      : [];
+  });
   const regions =
     assembly.schemaVersion === "prompt-assembly.v3"
       ? [...assembly.sharedRegions, ...assembly.nodes.flatMap((node) => node.regions)]
@@ -1182,6 +1200,15 @@ export function assertPromptAssemblySourcesCurrent(
       continue;
     const revision = snapshot.entities.promptFragmentRevisions[fragment.promptFragmentRevisionId];
     const aggregate = snapshot.entities.promptFragments[fragment.promptFragmentId];
+    const immutableVersionSource = boundAgentVersions.some(
+      (version) =>
+        fragment.content.kind === "markdown" &&
+        version.systemPrompt.mode === "replace" &&
+        version.systemPrompt.sha256 === fragment.sha256 &&
+        version.systemPrompt.bodyMarkdown === fragment.content.bodyMarkdown &&
+        JSON.stringify(version.scope) === JSON.stringify(fragment.scope),
+    );
+    if (immutableVersionSource) continue;
     if (
       revision === undefined ||
       aggregate === undefined ||

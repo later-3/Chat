@@ -458,6 +458,17 @@ export function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): v
     const assemblyRegions = isV3
       ? [...assembly.sharedRegions, ...assembly.nodes.flatMap((node) => node.regions)]
       : assembly.regions;
+    const boundAgentVersions = (runSpec?.nodeResolutions ?? []).flatMap((node) => {
+      const agentVersionId = node.config["agentVersionId"];
+      const agentVersionSha256 = node.config["agentVersionSha256"];
+      if (typeof agentVersionId !== "string" || typeof agentVersionSha256 !== "string") return [];
+      const version = entities.agentVersions[agentVersionId];
+      return version !== undefined &&
+        version.sha256 === agentVersionSha256 &&
+        version.ownerPrincipalId === session.ownerPrincipalId
+        ? [version]
+        : [];
+    });
     const seenRevisionIds = new Set<string>();
     for (const [regionIndex, region] of assemblyRegions.entries()) {
       if (
@@ -562,6 +573,34 @@ export function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): v
             fragment.regionKey !== "agent_identity"
           ) {
             fail(`promptAssembly ${assembly.promptAssemblyId} Workflow节点Prompt来源绑定不一致`);
+          }
+          continue;
+        }
+
+        const agentVersion = boundAgentVersions.find(
+          (version) =>
+            version.systemPrompt.mode === "replace" &&
+            fragment.content.kind === "markdown" &&
+            version.systemPrompt.sha256 === fragment.sha256 &&
+            version.systemPrompt.bodyMarkdown === fragment.content.bodyMarkdown &&
+            JSON.stringify(version.scope) === JSON.stringify(fragment.scope),
+        );
+        if (agentVersion !== undefined && agentVersion.systemPrompt.mode === "replace") {
+          const identity = hashCanonical("id.agent-version-system-prompt.v1", {
+            agentVersionId: agentVersion.agentVersionId,
+            agentVersionSha256: agentVersion.sha256,
+          });
+          if (
+            fragment.promptFragmentId !== `pfg_${identity.slice(0, 32)}` ||
+            fragment.promptFragmentRevisionId !==
+              `pfr_${agentVersion.systemPrompt.sha256.slice(0, 32)}` ||
+            fragment.revision !== agentVersion.version ||
+            fragment.title !== `${agentVersion.title} · System Prompt` ||
+            fragment.regionKey !== "agent_identity" ||
+            fragment.selectionKind !== "explicit" ||
+            fragment.sourceRelativePath !== undefined
+          ) {
+            fail(`promptAssembly ${assembly.promptAssemblyId} Agent Version Prompt来源绑定不一致`);
           }
           continue;
         }

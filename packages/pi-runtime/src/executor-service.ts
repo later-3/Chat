@@ -26,6 +26,7 @@ import {
 import {
   PiExecutorOperationConflictError,
   PiExecutorOperationNotFoundError,
+  PiExecutorOperationOutcomeUnknownError,
   type PiExecutorOperationStore,
 } from "./executor-operation-store.js";
 import {
@@ -96,6 +97,7 @@ function authorized(actual: string | undefined, expected: string): boolean {
 
 function stableServiceErrorCode(error: unknown): string {
   if (error instanceof PiCodingAgentExecutionError) return error.code;
+  if (error instanceof PiExecutorOperationOutcomeUnknownError) return error.code;
   if (error instanceof z.ZodError) return "executor.contract_invalid";
   return "executor.session_failed";
 }
