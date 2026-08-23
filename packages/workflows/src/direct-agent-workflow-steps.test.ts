@@ -71,10 +71,11 @@ describe("Direct Agent Workflow Steps", () => {
           runnerFamily: "direct-agent.v1",
           runnerBundleVersion: "direct-agent.bundle.v1",
         },
-        definitionRef: { blueprintKey: "direct" },
+        definitionRef: { blueprintKey: "direct", blueprintVersion: 1 },
         businessInput: { kind: "direct_agent_message" },
         nodeResolutions: [
           {
+            definitionNodeId: "direct.agent",
             nodeType: "agent.direct",
             activation: "enabled",
             config: { capabilityMode: "pi_cli_default", promptReviewMode: "manual" },

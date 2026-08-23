@@ -38,6 +38,9 @@ import {
   SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID,
   SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
   SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID,
+  SYSTEM_MEMORY_DIRECT_WORKFLOW_DEFINITION_ID,
+  SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_DIRECT_WORKFLOW_VIEW_ID,
 } from "@chat/application/workflow-system-definitions";
 import { hashCanonical } from "@chat/domain";
 import {
@@ -59,6 +62,7 @@ import {
   migrateProductSnapshotV15ToV16,
   migrateProductSnapshotV16ToV17,
   migrateProductSnapshotV17ToV18,
+  migrateProductSnapshotV18ToV19,
   productSnapshotV1Schema,
   productSnapshotV10Schema,
   type ProductSnapshotV10,
@@ -195,7 +199,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "active",
     compatibility: "current",
     objectCount: 33,
-    contentSha256: "145ef0348dec97042fbba593f20aa0e083ae5e0135044f440900185a02366443",
+    contentSha256: "862442025cbca647a18f1b0293564c681950c4e9b793f067690036e1083facb7",
   },
   {
     fixtureId: "v10-new-planning-waiting",
@@ -206,7 +210,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "waiting",
     compatibility: "resumable",
     objectCount: 45,
-    contentSha256: "4abaa4b1eb0174376a43c3944d0a88506f30c58e48cf1d6879f1b37e3bc9d651",
+    contentSha256: "f76da5d744c0111c565bb5f9fe8d7740483d412bde87b0817bb7e6a1d867dcb7",
   },
   {
     fixtureId: "v10-new-planning-terminal",
@@ -217,7 +221,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "terminal",
     compatibility: "read_only_history",
     objectCount: 51,
-    contentSha256: "290aece7a7d3d7e80e3e23c2130067e4818850a3a91a82b0c66c60a468902064",
+    contentSha256: "7db661bc7a8b6e193fdb671fff98c2d157a502df6565c75edef8005b73374199",
   },
   {
     fixtureId: "v10-note-capture-active",
@@ -228,7 +232,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "active",
     compatibility: "current",
     objectCount: 15,
-    contentSha256: "86f74b404d03e5e97d21e0e2dddf06ef567779a138b8cfe4f03c4c78e677c9c1",
+    contentSha256: "b6c67e3e63879a41b4afe2fd5ee55c7d5d223c8422ad60bbb3e00fac2c5668b8",
   },
   {
     fixtureId: "v10-note-capture-waiting",
@@ -239,7 +243,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "waiting",
     compatibility: "resumable",
     objectCount: 22,
-    contentSha256: "a48fc18afb45a5f022650ce73103371e38dac1b423527873c385301e7dded6c5",
+    contentSha256: "72199313ab8c8f36ef5623fd8c39853c46d730f1607176ab262c934eacabab48",
   },
   {
     fixtureId: "v10-note-capture-terminal",
@@ -250,7 +254,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "terminal",
     compatibility: "read_only_history",
     objectCount: 38,
-    contentSha256: "c8d30c2f5150563a48902f34b032d8abb2db258d1d0b1b3fc0b57db9924d14dc",
+    contentSha256: "73834b0c4746f1609b23997ff23a8d82d22d1f1ed7bd4b7f5c248f4fb7f5166b",
   },
 ];
 
@@ -267,7 +271,7 @@ export async function buildS7VersionedFixture(
 }
 
 export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot): ProductSnapshot {
-  if (snapshot.schemaVersion === "chat-product-store.v18") return structuredClone(snapshot);
+  if (snapshot.schemaVersion === "chat-product-store.v19") return structuredClone(snapshot);
   const v2 =
     snapshot.schemaVersion === "chat-product-store.v1"
       ? migrateProductSnapshotV1ToV2(snapshot)
@@ -294,8 +298,10 @@ export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot):
     v15.schemaVersion === "chat-product-store.v15" ? migrateProductSnapshotV15ToV16(v15) : v15;
   const v17 =
     v16.schemaVersion === "chat-product-store.v16" ? migrateProductSnapshotV16ToV17(v16) : v16;
+  const v18 =
+    v17.schemaVersion === "chat-product-store.v17" ? migrateProductSnapshotV17ToV18(v17) : v17;
   return productSnapshotSchema.parse(
-    v17.schemaVersion === "chat-product-store.v17" ? migrateProductSnapshotV17ToV18(v17) : v17,
+    v18.schemaVersion === "chat-product-store.v18" ? migrateProductSnapshotV18ToV19(v18) : v18,
   );
 }
 
@@ -312,6 +318,9 @@ function toV10Fixture(snapshot: ProductSnapshot): ProductSnapshotV10 {
   delete entities["workflowDefinitions"]?.[SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID];
   delete entities["workflowDefinitionRevisions"]?.[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
   delete entities["workflowViewDefinitions"]?.[SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID];
+  delete entities["workflowDefinitions"]?.[SYSTEM_MEMORY_DIRECT_WORKFLOW_DEFINITION_ID];
+  delete entities["workflowDefinitionRevisions"]?.[SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID];
+  delete entities["workflowViewDefinitions"]?.[SYSTEM_MEMORY_DIRECT_WORKFLOW_VIEW_ID];
   delete entities["workflowMemoryQueries"];
   delete entities["workflowMemorySnapshots"];
   delete entities["workflowMemoryContexts"];

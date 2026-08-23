@@ -24,11 +24,15 @@ import {
 } from "./workflow-run-spec-compiler.js";
 import {
   createSystemDirectAgentDefinition,
+  createSystemMemoryDirectDefinition,
   createSystemMemoryPlanningDefinition,
   createSystemPlanningDefinition,
   DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
   DIRECT_AGENT_RUNNER_FAMILY,
+  MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_DIRECT_RUNNER_FAMILY,
   systemDirectAgentSemanticRoot,
+  systemMemoryDirectSemanticRoot,
   systemSimplePlanningSemanticRoot,
 } from "./workflow-system-definitions.js";
 import { getWorkflowBlueprints, getWorkflowCatalog } from "./workflow-config-query-use-cases.js";
@@ -43,8 +47,8 @@ const fixtureKeys = [
 ] as const;
 
 describe("Node Catalog与Blueprint一致性", () => {
-  it("当前18种能力全部使用strict parser且默认配置/公开默认值一致", () => {
-    expect(DEFAULT_NODE_CATALOG.list()).toHaveLength(18);
+  it("当前19个版本化节点合同全部使用strict parser且默认配置/公开默认值一致", () => {
+    expect(DEFAULT_NODE_CATALOG.list()).toHaveLength(19);
     for (const descriptor of DEFAULT_NODE_CATALOG.list()) {
       expect(
         DEFAULT_NODE_CATALOG.parseConfig(
@@ -107,6 +111,14 @@ describe("Node Catalog与Blueprint一致性", () => {
       repeatableNodeTypes: [],
       mandatoryManualReviewTypes: [],
     });
+    expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("direct", 2)).toMatchObject({
+      runnerFamily: "memory-direct.v1",
+      terminalNodeType: "memory.write",
+      allowedNodeTypes: ["memory.query", "agent.direct", "memory.write"],
+      optionalNodeTypes: [],
+      repeatableNodeTypes: [],
+      mandatoryManualReviewTypes: [],
+    });
     expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("planning", 99)).toBeUndefined();
   });
 
@@ -115,46 +127,58 @@ describe("Node Catalog与Blueprint一致性", () => {
     const { blueprints } = await getWorkflowBlueprints(undefined as never);
     const directNodes = catalog.nodes.filter((node) => node.supportedBlueprints.includes("direct"));
 
-    expect(directNodes).toMatchObject([
+    expect(directNodes.map((node) => node.nodeType)).toEqual([
+      "agent.direct",
+      "memory.query",
+      "memory.write",
+    ]);
+    expect(directNodes.find((node) => node.nodeType === "agent.direct")).toMatchObject({
+      executorKind: "composite",
+      riskPolicy: "generate_candidate",
+      publicConfigFields: [
+        {
+          name: "agentKey",
+          type: "enum_select",
+          defaultValue: "direct",
+          options: ["direct", "project_bootstrap"],
+        },
+        {
+          name: "agentPromptOverride",
+          type: "long_text",
+          defaultValue: "",
+          maximumLength: 65_536,
+        },
+        {
+          name: "capabilityMode",
+          defaultValue: "pi_cli_default",
+          options: ["pi_cli_default", "read_only", "project_bootstrap"],
+        },
+        {
+          name: "promptReviewMode",
+          defaultValue: "manual",
+          options: ["manual", "off"],
+        },
+      ],
+      outcomes: ["completed"],
+    });
+    expect(
+      blueprints.blueprints.filter((blueprint) => blueprint.blueprintKey === "direct"),
+    ).toMatchObject([
       {
-        nodeType: "agent.direct",
-        executorKind: "composite",
-        riskPolicy: "generate_candidate",
-        publicConfigFields: [
-          {
-            name: "agentKey",
-            type: "enum_select",
-            defaultValue: "direct",
-            options: ["direct", "project_bootstrap"],
-          },
-          {
-            name: "agentPromptOverride",
-            type: "long_text",
-            defaultValue: "",
-            maximumLength: 65_536,
-          },
-          {
-            name: "capabilityMode",
-            defaultValue: "pi_cli_default",
-            options: ["pi_cli_default", "read_only", "project_bootstrap"],
-          },
-          {
-            name: "promptReviewMode",
-            defaultValue: "manual",
-            options: ["manual", "off"],
-          },
-        ],
-        outcomes: ["completed"],
+        blueprintVersion: 1,
+        title: "执行 Agent（逐次提示词审核）",
+        runnerFamily: "direct-agent.v1",
+        terminalNodeType: "agent.direct",
+        reviewModes: ["manual", "auto_continue_if_policy_allows"],
+      },
+      {
+        blueprintVersion: 2,
+        title: "Memory 增强执行 Agent",
+        runnerFamily: "memory-direct.v1",
+        terminalNodeType: "memory.write",
+        reviewModes: ["manual", "auto_continue_if_policy_allows"],
       },
     ]);
-    expect(
-      blueprints.blueprints.find((blueprint) => blueprint.blueprintKey === "direct"),
-    ).toMatchObject({
-      title: "执行 Agent（逐次提示词审核）",
-      runnerFamily: "direct-agent.v1",
-      terminalNodeType: "agent.direct",
-      reviewModes: ["manual", "auto_continue_if_policy_allows"],
-    });
     expect(
       BUILTIN_WORKFLOW_EXECUTOR_MANIFEST.filter((entry) => entry.nodeType === "agent.direct"),
     ).toEqual([
@@ -163,6 +187,12 @@ describe("Node Catalog与Blueprint一致性", () => {
         schemaVersion: 1,
         executorVersion: "agent.direct.v1",
       },
+    ]);
+    expect(
+      BUILTIN_WORKFLOW_EXECUTOR_MANIFEST.filter((entry) => entry.nodeType === "memory.write"),
+    ).toEqual([
+      { nodeType: "memory.write", schemaVersion: 1, executorVersion: "memory.write.v1" },
+      { nodeType: "memory.write", schemaVersion: 2, executorVersion: "memory.write.v2" },
     ]);
   });
 
@@ -222,7 +252,7 @@ describe("Node Catalog与Blueprint一致性", () => {
       },
       businessInput: { kind: "direct_agent_message" },
     });
-    expect(compiled.success).toBe(true);
+    expect(compiled.success, JSON.stringify(compiled)).toBe(true);
     if (!compiled.success) return;
     expect(validateWorkflowRunSpecIntegrity(compiled.runSpec)).toEqual({
       success: true,
@@ -269,6 +299,106 @@ describe("Node Catalog与Blueprint一致性", () => {
         promptReviewMode: "off",
       });
     }
+  });
+
+  it("Memory Direct是独立三节点定义，并冻结独立Runner与可覆盖Provider", () => {
+    const createdAt = "2026-08-24T00:00:00.000Z";
+    const memoryDirect = createSystemMemoryDirectDefinition(createdAt);
+    const blueprint = DEFAULT_WORKFLOW_BLUEPRINTS.get("direct", 2);
+    if (blueprint === undefined) throw new Error("Memory Direct Blueprint不存在");
+
+    expect(memoryDirect.definition).toMatchObject({
+      key: "system.memory-direct",
+      title: "Memory 增强执行 Agent",
+      blueprintKey: "direct",
+      blueprintVersion: 2,
+      status: "active",
+    });
+    expect(
+      validateDefinitionAgainstBlueprint(
+        memoryDirect.revision.semanticRoot,
+        blueprint,
+        DEFAULT_NODE_CATALOG,
+      ),
+    ).toEqual([]);
+    expect(memoryDirect.view.nodes.map((node) => node.nodeType)).toEqual([
+      "memory.query",
+      "agent.direct",
+      "memory.write",
+    ]);
+    expect(memoryDirect.view.nodes.at(-1)?.nodeSchemaVersion).toBe("2");
+    expect(
+      systemMemoryDirectSemanticRoot().elements.map((node) =>
+        "nodeType" in node ? node.nodeType : node.kind,
+      ),
+    ).toEqual(["memory.query", "agent.direct", "memory.write"]);
+
+    const compiled = compileWorkflowRunSpec({
+      workflowRunSpecId: "wrs_systemmemorydirectv1",
+      productRunId: "run_systemmemorydirectv1",
+      createdAt,
+      definition: {
+        schemaVersion: "workflow-definition-revision-input.v1",
+        workflowDefinitionRevisionId: memoryDirect.revision.workflowDefinitionRevisionId,
+        definitionRevision: memoryDirect.revision.definitionRevision,
+        blueprintKey: memoryDirect.revision.blueprintKey,
+        blueprintVersion: memoryDirect.revision.blueprintVersion,
+        semanticRoot: memoryDirect.revision.semanticRoot,
+        expectedSha256: memoryDirect.revision.definitionSha256,
+      },
+      runConfiguration: {
+        schemaVersion: "workflow-run-configuration.v1",
+        overrides: [
+          {
+            kind: "node_config",
+            definitionNodeId: "memory-direct.query",
+            field: "providerId",
+            value: "mbk_tencentmemorycore",
+          },
+          {
+            kind: "node_config",
+            definitionNodeId: "memory-direct.write",
+            field: "providerId",
+            value: "mbk_tencentmemorycore",
+          },
+        ],
+      },
+      principal: { principalId: "usr_systemmemorydirect", capabilities: [] },
+      availableResources: [],
+      executorManifest: BUILTIN_WORKFLOW_EXECUTOR_MANIFEST,
+      runner: {
+        runnerFamily: MEMORY_DIRECT_RUNNER_FAMILY,
+        runnerBundleVersion: MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+      },
+      businessInput: { kind: "direct_agent_message" },
+    });
+    expect(compiled.success, JSON.stringify(compiled)).toBe(true);
+    if (!compiled.success) return;
+    expect(
+      compiled.runSpec.semanticRoot.elements.map((node) =>
+        "nodeType" in node ? node.nodeType : node.kind,
+      ),
+    ).toEqual(["memory.query", "agent.direct", "memory.write"]);
+    expect(
+      compiled.runSpec.nodeResolutions.find(
+        (node) => node.definitionNodeId === "memory-direct.query",
+      )?.config,
+    ).toMatchObject({
+      providerId: "mbk_tencentmemorycore",
+      required: true,
+    });
+    expect(
+      compiled.runSpec.nodeResolutions.find(
+        (node) => node.definitionNodeId === "memory-direct.write",
+      ),
+    ).toMatchObject({
+      schemaVersion: 2,
+      config: {
+        providerId: "mbk_tencentmemorycore",
+        required: false,
+      },
+    });
+    expect(compiled.runSpec.resourceResolutions).toEqual([]);
   });
 
   it("RunSpec把Agent Version与临时配置逐字段冻结，并拒绝非Direct节点覆盖", () => {
@@ -477,6 +607,24 @@ describe("Node Catalog与Blueprint一致性", () => {
     expect(taskTypes(memory.revision.semanticRoot)).toEqual(
       expect.arrayContaining(["memory.query", "memory.write"]),
     );
+    const legacyWrite = memory.revision.semanticRoot.elements.find(
+      (node) => node.kind === "task" && node.definitionNodeId === "memory-planning.write",
+    );
+    expect(memory.revision.definitionSha256).toBe(
+      "b03c3f476b9e277f01892703d6d8a0385b2a5d5cb0baaa66a36c36e15cb555a7",
+    );
+    expect(legacyWrite).toEqual({
+      kind: "task",
+      definitionNodeId: "memory-planning.write",
+      nodeType: "memory.write",
+      schemaVersion: 1,
+      defaultActivation: "enabled",
+      config: {
+        providerId: "mbk_tencentmemorycore",
+        source: "source_message",
+        contentType: "conversation_turn",
+      },
+    });
     expect(ordinary.view.nodes.map((node) => node.nodeType)).not.toContain("memory.query");
     expect(memory.view.nodes.map((node) => node.nodeType)).toEqual(
       expect.arrayContaining(["memory.query", "memory.write"]),

@@ -18,6 +18,7 @@ import {
   computeDirectAgentCandidateSha256,
   computeDirectAgentInputManifestSha256,
   computeMessageSha256,
+  evaluateDirectAgentMemoryPromptBudget,
   hashCanonical,
   transitionDirectAgentRunLifecycle,
 } from "@chat/domain";
@@ -63,6 +64,30 @@ function directNodeConfig(
     capabilityMode: node.config["capabilityMode"],
     promptReviewMode: node.config["promptReviewMode"],
   };
+}
+
+function memoryContextForRun(
+  entities: Awaited<ReturnType<ApplicationDeps["store"]["read"]>>["snapshot"]["entities"],
+  productRunId: ProductRunId,
+  workflowRunSpecId: WorkflowRunSpecId,
+) {
+  const matches = Object.values(entities.workflowMemoryContexts).filter(
+    (context) =>
+      context.productRunId === productRunId && context.workflowRunSpecId === workflowRunSpecId,
+  );
+  if (matches.length > 1) {
+    throw new ApplicationError({
+      code: "store_corrupted",
+      httpStatus: 500,
+      message: "Direct Agent存在多个Workflow Memory Context",
+      recoveryAction: "contact_support",
+    });
+  }
+  return matches[0];
+}
+
+function isMemoryDirectRunner(runnerFamily: string): boolean {
+  return runnerFamily === "memory-direct.v1";
 }
 
 function directPromptAssembly(
@@ -132,12 +157,21 @@ export async function beginDirectAgentAttempt(
       }
       if (
         runSpec.productRunId !== input.productRunId ||
-        runSpec.runner.runnerFamily !== "direct-agent.v1" ||
+        (runSpec.runner.runnerFamily !== "direct-agent.v1" &&
+          runSpec.runner.runnerFamily !== "memory-direct.v1") ||
         runSpec.businessInput?.kind !== "direct_agent_message"
       ) {
         throw revisionConflict("Direct Agent RunSpec身份或业务输入不匹配");
       }
       const config = directNodeConfig(runSpec);
+      const memoryContext = memoryContextForRun(
+        draft.entities,
+        input.productRunId,
+        runSpec.workflowRunSpecId,
+      );
+      if (isMemoryDirectRunner(runSpec.runner.runnerFamily) !== (memoryContext !== undefined)) {
+        throw revisionConflict("Direct Agent Runner与Workflow Memory Context绑定不一致");
+      }
       const sourceMessageSha256 = computeMessageSha256(sourceMessage);
       const inputManifestSha256 = computeDirectAgentInputManifestSha256({
         productRunId: input.productRunId,
@@ -145,6 +179,15 @@ export async function beginDirectAgentAttempt(
         sourceMessageId: sourceMessage.messageId,
         sourceMessageSha256,
         promptAssemblySha256: promptAssembly.sha256,
+        ...(memoryContext === undefined
+          ? {}
+          : {
+              workflowMemoryContext: {
+                workflowMemoryContextId: memoryContext.workflowMemoryContextId,
+                revision: memoryContext.revision,
+                sha256: memoryContext.sha256,
+              },
+            }),
         workflowRunSpecId: runSpec.workflowRunSpecId,
         workflowRunSpecSha256: runSpec.sha256,
         capabilityMode: config.capabilityMode,
@@ -164,6 +207,12 @@ export async function beginDirectAgentAttempt(
         inputRunRevision: run.revision,
         sourceMessageSha256,
         inputManifestSha256,
+        ...(memoryContext === undefined
+          ? {}
+          : {
+              workflowMemoryContextId: memoryContext.workflowMemoryContextId,
+              workflowMemoryContextSha256: memoryContext.sha256,
+            }),
         promptTemplateVersion: DIRECT_AGENT_PROMPT_TEMPLATE_VERSION,
         modelConfigVersion: MODEL_CONFIG_VERSION,
         outcome: "running",
@@ -251,6 +300,21 @@ export async function authorizeDirectAgentOperation(
     readonly creationRoots: readonly { readonly rootId: string; readonly displayName: string }[];
   };
   readonly promptReviewMode: "manual" | "off";
+  readonly memoryContext?: {
+    readonly workflowMemoryContextId: string;
+    readonly revision: 1;
+    readonly sha256: string;
+    readonly items: readonly {
+      readonly workflowMemorySnapshotId: string;
+      readonly providerId: string;
+      readonly title: string;
+      readonly category: "episode" | "fact" | "preference" | "procedure" | "skill" | "other";
+      readonly content: string;
+      readonly labels: readonly string[];
+      readonly revision: 1;
+      readonly sha256: string;
+    }[];
+  };
   readonly limits: {
     readonly maxProviderRequests: number;
     readonly activeTimeoutMs: number;
@@ -283,6 +347,8 @@ export async function authorizeDirectAgentOperation(
     attempt.sourceMessageSha256 === undefined ||
     runSpec === undefined ||
     run.workflowRunSpecId !== runSpec.workflowRunSpecId ||
+    run.runnerFamily !== runSpec.runner.runnerFamily ||
+    run.runnerBundleVersion !== runSpec.runner.runnerBundleVersion ||
     message === undefined
   ) {
     throw revisionConflict("Direct Agent授权引用不完整");
@@ -294,6 +360,23 @@ export async function authorizeDirectAgentOperation(
     throw revisionConflict("Direct Agent授权Hash不匹配");
   }
   const config = directNodeConfig(runSpec);
+  const memoryContext = memoryContextForRun(
+    snapshot.entities,
+    input.productRunId,
+    runSpec.workflowRunSpecId,
+  );
+  const attemptHasMemoryContext =
+    attempt.workflowMemoryContextId !== undefined ||
+    attempt.workflowMemoryContextSha256 !== undefined;
+  if (
+    isMemoryDirectRunner(runSpec.runner.runnerFamily) !== attemptHasMemoryContext ||
+    (memoryContext === undefined) !== !attemptHasMemoryContext ||
+    (memoryContext !== undefined &&
+      (attempt.workflowMemoryContextId !== memoryContext.workflowMemoryContextId ||
+        attempt.workflowMemoryContextSha256 !== memoryContext.sha256))
+  ) {
+    throw revisionConflict("Direct Agent Memory Context引用不完整或已漂移");
+  }
   const projectBootstrapContext =
     config.capabilityMode === "project_bootstrap"
       ? (() => {
@@ -326,6 +409,15 @@ export async function authorizeDirectAgentOperation(
     sourceMessageId: message.messageId,
     sourceMessageSha256: computeMessageSha256(message),
     promptAssemblySha256: promptAssembly.sha256,
+    ...(memoryContext === undefined
+      ? {}
+      : {
+          workflowMemoryContext: {
+            workflowMemoryContextId: memoryContext.workflowMemoryContextId,
+            revision: memoryContext.revision,
+            sha256: memoryContext.sha256,
+          },
+        }),
     workflowRunSpecId: runSpec.workflowRunSpecId,
     workflowRunSpecSha256: runSpec.sha256,
     capabilityMode: config.capabilityMode,
@@ -339,6 +431,49 @@ export async function authorizeDirectAgentOperation(
   });
   if (recomputedManifest !== input.inputManifestSha256) {
     throw revisionConflict("Direct Agent Input Manifest已漂移");
+  }
+  const memoryContextDto =
+    memoryContext === undefined
+      ? undefined
+      : {
+          workflowMemoryContextId: memoryContext.workflowMemoryContextId,
+          revision: memoryContext.revision,
+          sha256: memoryContext.sha256,
+          items: memoryContext.items.map((ref) => {
+            const item = snapshot.entities.workflowMemorySnapshots[ref.workflowMemorySnapshotId];
+            if (
+              item === undefined ||
+              item.revision !== ref.revision ||
+              item.sha256 !== ref.sha256
+            ) {
+              throw revisionConflict("Direct Agent Memory Snapshot引用已漂移");
+            }
+            return {
+              workflowMemorySnapshotId: item.workflowMemorySnapshotId,
+              providerId: item.providerId,
+              title: item.title,
+              category: item.category,
+              content: item.content,
+              labels: item.labels,
+              revision: item.revision,
+              sha256: item.sha256,
+            };
+          }),
+        };
+  if (memoryContextDto !== undefined) {
+    if (promptAssembly.schemaVersion !== "prompt-assembly.v2") {
+      throw revisionConflict("Memory Direct只能使用带冻结预算的Prompt Assembly V2");
+    }
+    const budget = evaluateDirectAgentMemoryPromptBudget({
+      baseEstimatedTokens: promptAssembly.budget.totalEstimatedTokens,
+      inputTokenLimit: promptAssembly.budget.inputTokenLimit,
+      memoryContext: memoryContextDto,
+    });
+    if (!budget.withinBudget) {
+      throw revisionConflict(
+        "Memory Context与Direct Prompt合计超过输入Token预算，请降低Memory上下文上限后重试",
+      );
+    }
   }
   return {
     productRunId: input.productRunId,
@@ -370,6 +505,7 @@ export async function authorizeDirectAgentOperation(
         : { workspaceRootId: promptAssembly.workspaceRootId }),
     },
     capabilityMode: config.capabilityMode,
+    ...(memoryContextDto === undefined ? {} : { memoryContext: memoryContextDto }),
     ...(projectBootstrapContext === undefined ? {} : { projectBootstrapContext }),
     promptReviewMode: config.promptReviewMode,
     limits: {

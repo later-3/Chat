@@ -1,8 +1,8 @@
 # Chat 可配置工作流 As-built
 
-> 日期：2026-08-20
+> 日期：2026-08-24
 > 状态：后端产品事实、运行内核与公开API已落地；DSH已接入Workflow选择、发送级配置与人工审核表面
-> 范围：运行投影、受限定义内核、发送级配置、Planning、Note、Direct Agent、Rules、Definition、迁移与验收
+> 范围：运行投影、受限定义内核、发送级配置、Planning、Note、Direct Agent、Memory Direct、Rules、Definition、迁移与验收
 
 ## 1. 用户结果
 
@@ -15,6 +15,7 @@
 
 - 查询真实Run、节点Input/Output/Timeline/Evidence和受控Trace摘要；
 - 为Run选择已发布Planning或Note流程以及Memory、Project、Rules和审核策略；
+- 显式选择独立Memory Direct，并按本轮配置选择Query/Write Provider、失败政策和查询预算；
 - 通过严格Command复制、编辑、校验、发布、归档或恢复受限Definition；
 - 在Planning审核中要求修订、批准或拒绝；在Note审核中确认、编辑后确认、要求修订或拒绝；
 - 刷新、进程重启或重复提交后继续同一产品Run，不重复消费已经提交的决定或副作用；
@@ -30,7 +31,7 @@ DSH桥接面已经交付原生对话、Planning HITL与Note Candidate审核。No
 flowchart LR
   UI["DeepSeek Harness Web\nLifeOS Client插件"] -->|"Bridge Host / REST Query / Command"| API["Hono\n认证、strict校验、ETag"]
   API --> APP["Application\n事务、CAS、权限、投影"]
-  APP --> STORE["Product Store v15\n权威产品事实"]
+  APP --> STORE["Product Store v19\n权威产品事实"]
   STORE --> OUTBOX["Outbox\nstart / resume"]
   OUTBOX --> RUNTIME["Vercel Workflow Runtime\n固定Runner解释RunSpec"]
   RUNTIME -->|"私有strict命令"| APP
@@ -72,7 +73,8 @@ Note Application按变化原因拆分：公开Query/DTO投影、普通Note维护
 | 节点 | 字段 | 权威执行位置 |
 | --- | --- | --- |
 | `memory.query` | `providerId`、`required`、`maxResults`、`maxContextCharacters` | Workflow只读Provider Step + `WorkflowMemoryQuery/Snapshot/Context`原子事实；同类节点最多8个 |
-| `memory.write` | `providerId`、来源Message、`conversation_turn` | Memory Planning父Workflow复用统一写入状态机并唯一执行；直接Write Command才由Outbox启动独立`MemoryWriteWorkflow` |
+| `memory.write@1` | `providerId`、来源Message、`conversation_turn` | 历史Memory Planning合同；保持原规范化结果与Definition Hash不变 |
+| `memory.write@2` | `providerId`、`required`、来源Message、`conversation_turn` | Memory Direct合同；父Workflow按`required`决定写回失败或结果未知时是否阻断Product Commit。两个版本都复用统一写入状态机并唯一执行；直接Write Command才由Outbox启动独立`MemoryWriteWorkflow` |
 | `context.memory` | 历史`required`、`maxItems`、选择的`mrs_*` | 旧完整上下文Planning兼容能力；Compiler + `PlanningMemorySelection`原子事实 |
 | `context.project` | `required`、Project选择 | `PlanningProjectContext`与Node终态/Manifest同事务 |
 | `policy.rules` | `required`、Rule选择 | `RuleSelection`与Node终态/Manifest同事务；正文只经私有Runtime边界 |
@@ -125,6 +127,22 @@ Note流程为`bounded_loop(Extract -> Classify -> Review) -> Commit`。模型只
 
 低风险自动继续只适用于Note，且Policy Resolution绑定RunSpec、Definition Node、Candidate和固定策略版本/Hash。策略不允许时仍创建可审计Resolution，并进入真实`waiting_human`。
 
+### 5.3 Direct与Memory Direct
+
+公开目录包含两个身份与Runner都独立的Direct Definition：
+
+```text
+direct@1 / direct-agent.v1:
+  Agent Direct
+
+direct@2 / memory-direct.v1:
+  Memory Query -> Agent Direct -> Memory Write
+```
+
+`direct@1`的Definition、Runner、Prompt Review与Product Commit路径保持原样，不会因启用Memory Mode而查询或写入。`direct@2`先把Query终态冻结为唯一`WorkflowMemoryContext`，Application再把Context ID/Revision/Hash写入Direct Attempt Manifest；Pi Executor只在授权引用和组合Token预算都通过后，把规范化Context作为当前请求前的一条不可信历史消息加入同一个AgentSession。它不是系统指令，正文不进入Workflow Checkpoint、Operation Journal或Trace；真正的完整Provider Payload仍由现有Prompt Review显示和审核。
+
+Direct Candidate先作为模型候选持久化。Memory Write随后按冻结配置保存来源User Message；`required=true`时`failed/outcome_unknown`阻止Product Commit，`required=false`时保留独立Write终态后仍可提交候选。无论是否必需，外部写入都只发生一次，结果未知只允许同一Intent做只读对账。
+
 ## 6. 前后端合同
 
 公开面提供：
@@ -144,18 +162,20 @@ DSH Workflow选择旁的“配置”入口按服务端描述渲染当前Workflow
 冻结Definition revision、SHA与完整`WorkflowRunConfiguration`，之后切换开关不会改写已创建Run。当前首个字段是
 Direct Agent的“发送前审核提示词”：开启保持逐次审核，关闭后不创建Prompt Review/Decision/Hook，但仍在Pi
 Operation Journal中先提交`provider.started`派发栅栏；派发后结果未知仍禁止自动重发。
+Memory Direct继续复用同一服务端描述表面，并额外公开Query/Write Provider、Query必需性、结果数、Context字符预算和Write必需性；这些都是会话级发送草稿，提交后冻结进RunSpec。
 
 ## 7. Checkpoint、恢复与安全
 
 - Planning生成/发布、Note生成/发布、Execution执行/持久化分别合并在单个耐久Step内；Workflow作用域只保留产品ref、outcome和身份，不跨Step携带Message、Memory、Plan输出或Note正文。
 - Hook先由产品Decision提交，再由Outbox恢复；edited Note同时区分被claim的旧Candidate和Decision绑定的successor。
 - Runtime Binding保存runner family/bundle版本；恢复按当次Run证据分派，不按当前全局默认猜测。
+- `direct-agent.v1/direct@1`与`memory-direct.v1/direct@2`必须一一对应；Store、Runtime分发和Direct授权三处都拒绝交叉组合。
 - Runtime私有命令校验RunSpec、节点类型、合法executionPath、activation、状态、终态和产品引用；持有Runtime Key也不能伪造另一路径或在Run终态后创建节点。
 - 百炼Host采用精确域名/Workspace正则；当前允许用户已配置并授权且真实验收通过的`coding.dashscope.aliyuncs.com`，Token Plan与同形恶意域名仍在启动或付费调用前失败关闭。Project模型Profile在provider为`bailian`时使用同一安全合同。
 
 ## 8. Store与迁移
 
-Product Store当前为`chat-product-store.v14`：
+Product Store当前为`chat-product-store.v19`：
 
 - v6：Workflow View/Node/Transition/Manifest；
 - v7：Definition/Revision/RunSpec；
@@ -167,6 +187,10 @@ Product Store当前为`chat-product-store.v14`：
 - v13：新增独立Direct Agent Run、Prompt Review Request/Decision、Direct Candidate与单个Execution Agent系统Definition；Prompt Review是该节点内部状态，原始Provider请求正文只保存在Product Store一次。
 - v14：新增用户Prompt Fragment/Revision产品事实。
 - v15：新增每个Direct Run唯一Prompt Assembly；本次发送级Workflow配置继续复用既有RunSpec，不增加Store版本。
+- v16：Prompt Revision正文迁入可见Markdown引用，历史v1继续兼容读取。
+- v17：统一两条历史v16分支并补齐Project Bootstrap事实集合。
+- v18：新增不可变Agent Version，并发布继承Pi CLI默认能力的Direct系统Revision。
+- v19：只新增固定Memory Direct Definition/Revision/View；不改写已有Run、历史Direct或其他产品事实。
 
 迁移按版本串行、可重复打开，并对非空历史Fixture执行Zod、生产完整性、只读Auditor和故障注入。v5→v6使用迁移专用冻结投影，不调用会继续演进的当前Application projector。
 

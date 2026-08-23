@@ -38,6 +38,10 @@ import {
 import { hashExecutorValue } from "./executor-operation-store.js";
 import type { PiExecutorWorkspaceRoot } from "./executor-service.js";
 import type { ProjectBootstrapCandidate, ProjectBootstrapProposal } from "@chat/contracts";
+import {
+  DIRECT_AGENT_MEMORY_CONTEXT_SYSTEM_GUIDANCE,
+  renderDirectAgentMemoryContext,
+} from "@chat/domain";
 
 export interface AuthorizedDirectAgentInput {
   readonly productRunId: string;
@@ -102,6 +106,21 @@ export interface AuthorizedDirectAgentInput {
         readonly workspaceRootId?: string | undefined;
       };
   readonly capabilityMode: "pi_cli_default" | "custom" | "read_only" | "project_bootstrap";
+  readonly memoryContext?: {
+    readonly workflowMemoryContextId: string;
+    readonly revision: 1;
+    readonly sha256: string;
+    readonly items: readonly {
+      readonly workflowMemorySnapshotId: string;
+      readonly providerId: string;
+      readonly title: string;
+      readonly category: "episode" | "fact" | "preference" | "procedure" | "skill" | "other";
+      readonly content: string;
+      readonly labels: readonly string[];
+      readonly revision: 1;
+      readonly sha256: string;
+    }[];
+  };
   readonly projectBootstrapContext?: {
     readonly providerKind: "plane_ce";
     readonly providerVersion: string;
@@ -427,6 +446,15 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
             text: message.text,
           }));
         }
+        if (authorizedInput.memoryContext !== undefined) {
+          history = [
+            ...history,
+            {
+              role: "user",
+              text: renderDirectAgentMemoryContext(authorizedInput.memoryContext),
+            },
+          ];
+        }
       }
       const configuredRoot =
         authorizedInput.promptAssembly.workspaceRootId === undefined
@@ -444,6 +472,11 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
         prompt,
         history,
         systemPromptAppend: authorizedInput.promptAssembly.systemPromptAppend,
+        ...(authorizedInput.memoryContext === undefined
+          ? {}
+          : {
+              memoryContextSystemGuidance: DIRECT_AGENT_MEMORY_CONTEXT_SYSTEM_GUIDANCE,
+            }),
         ...(authorizedInput.promptAssembly.schemaVersion === "prompt-assembly.v2" &&
         authorizedInput.promptAssembly.piSystemPrompt !== undefined
           ? { piSystemPrompt: authorizedInput.promptAssembly.piSystemPrompt }

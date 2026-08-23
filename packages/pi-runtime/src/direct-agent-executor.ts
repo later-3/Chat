@@ -71,6 +71,7 @@ export interface DirectAgentRunInput {
   readonly prompt: string;
   readonly history: readonly { readonly role: "user" | "assistant"; readonly text: string }[];
   readonly systemPromptAppend: string;
+  readonly memoryContextSystemGuidance?: string | undefined;
   readonly piSystemPrompt?: PromptAssemblyV2["piSystemPrompt"] | undefined;
   readonly tools: PromptAssemblyV2["tools"];
   readonly requestOptions: PromptAssemblyV2["requestOptions"];
@@ -384,7 +385,11 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
               .join(", ")}`,
             "project_bootstrap_prepare只预检并保存候选；候选必须由用户确认后，Chat Application才会创建Git Workspace和Plane项目。",
           ].join("\n");
-    const userPromptLayer = governedUserPromptLayer(input.systemPromptAppend);
+    const userPromptLayer = governedUserPromptLayer(
+      [input.systemPromptAppend, input.memoryContextSystemGuidance]
+        .filter((value): value is string => value !== undefined && value !== "")
+        .join("\n\n"),
+    );
     const resourcePolicy =
       input.tools.resources ??
       (input.tools.capabilityMode === "pi_cli_default"

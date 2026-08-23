@@ -18,6 +18,8 @@ import {
   DEFINITION_KERNEL_EXECUTORS,
   NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
   NOTE_CAPTURE_RUNNER_FAMILY,
+  MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_DIRECT_RUNNER_FAMILY,
 } from "./definition-kernel-executor-registry.js";
 import { getWorkflowRuntimeContext } from "./runtime-context.js";
 import { wrapApiError } from "./workflow-step-support.js";
@@ -77,12 +79,41 @@ export async function loadNoteCaptureRunSpecStep(input: {
   return runSpec;
 }
 
+/** Memory Direct使用独立runner family与direct@2 Blueprint，且首版只解释固定三节点序列。 */
+export async function loadMemoryDirectRunSpecStep(input: {
+  readonly productRunId: string;
+  readonly workflowRunSpecId: string;
+}): Promise<WorkflowRunSpec> {
+  "use step";
+  const runSpec = await loadRestrictedRunSpec(input, {
+    runnerFamily: MEMORY_DIRECT_RUNNER_FAMILY,
+    runnerBundleVersion: MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+    blueprintKey: "direct",
+  });
+  if (runSpec.businessInput?.kind !== "direct_agent_message") {
+    throw new FatalError("run_spec.business_input_incompatible");
+  }
+  const elements = runSpec.semanticRoot.elements;
+  if (
+    elements.length !== 3 ||
+    elements[0]?.kind !== "task" ||
+    elements[0].nodeType !== "memory.query" ||
+    elements[1]?.kind !== "composite" ||
+    elements[1].nodeType !== "agent.direct" ||
+    elements[2]?.kind !== "task" ||
+    elements[2].nodeType !== "memory.write"
+  ) {
+    throw new FatalError("run_spec.memory_direct_sequence_incompatible");
+  }
+  return runSpec;
+}
+
 async function loadRestrictedRunSpec(
   input: { readonly productRunId: string; readonly workflowRunSpecId: string },
   expected: {
     readonly runnerFamily: string;
     readonly runnerBundleVersion: string;
-    readonly blueprintKey: "planning" | "note";
+    readonly blueprintKey: "planning" | "note" | "direct";
   },
 ): Promise<WorkflowRunSpec> {
   let response: { readonly runSpec: WorkflowRunSpec };

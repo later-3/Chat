@@ -119,6 +119,19 @@ export const workflowMemoryWriteNodeConfigSchema = z
   })
   .strict();
 
+/**
+ * v2只为需要声明写回是否阻断后续Product Commit的Workflow增加required语义。
+ * v1必须保持字节级规范化兼容，避免历史Memory Planning Definition哈希漂移。
+ */
+export const workflowMemoryWriteNodeConfigV2Schema = z
+  .object({
+    providerId: memoryBackendIdSchema,
+    source: z.literal("source_message").default("source_message"),
+    contentType: z.literal("conversation_turn").default("conversation_turn"),
+    required: z.boolean().default(true),
+  })
+  .strict();
+
 const workflowMemoryQueryBase = {
   schemaVersion: z.literal("workflow-memory-query.v1"),
   workflowMemoryQueryId: workflowMemoryQueryIdSchema,
@@ -368,6 +381,7 @@ export type MemoryProviderDescriptor = z.infer<typeof memoryProviderDescriptorSc
 export type MemoryProviderCapabilities = z.infer<typeof memoryProviderCapabilitiesSchema>;
 export type WorkflowMemoryQueryNodeConfig = z.infer<typeof workflowMemoryQueryNodeConfigSchema>;
 export type WorkflowMemoryWriteNodeConfig = z.infer<typeof workflowMemoryWriteNodeConfigSchema>;
+export type WorkflowMemoryWriteNodeConfigV2 = z.infer<typeof workflowMemoryWriteNodeConfigV2Schema>;
 export type WorkflowMemoryQuery = z.infer<typeof workflowMemoryQuerySchema>;
 export type WorkflowMemorySnapshot = z.infer<typeof workflowMemorySnapshotSchema>;
 export type WorkflowMemoryContext = z.infer<typeof workflowMemoryContextSchema>;

@@ -40,6 +40,8 @@ export interface WorkflowWorldHandle {
   readonly noteCaptureWorkflowId: string;
   /** P1 Direct Agent入口；每个Provider请求前以独立Hook暂停。 */
   readonly directAgentWorkflowId: string;
+  /** Memory Direct独立入口；查询/写回不会隐式进入普通Direct。 */
+  readonly memoryDirectAgentWorkflowId: string;
   close(): Promise<void>;
 }
 
@@ -57,6 +59,7 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
   configurablePlanning: string;
   noteCapture: string;
   directAgent: string;
+  memoryDirectAgent: string;
 }> {
   const raw = await readFile(join(bundleDir, "manifest.json"), "utf8");
   const manifest = JSON.parse(raw) as WorkflowManifestFile;
@@ -69,6 +72,7 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
   let configurablePlanning: string | undefined;
   let noteCapture: string | undefined;
   let directAgent: string | undefined;
+  let memoryDirectAgent: string | undefined;
   for (const [filePath, entries] of Object.entries(manifest.workflows)) {
     if (filePath.includes("planning-execution-workflow")) {
       const entry = entries["planningExecutionWorkflow"];
@@ -106,6 +110,10 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
       const entry = entries["directAgentWorkflow"];
       if (entry !== undefined) directAgent = entry.workflowId;
     }
+    if (filePath.includes("memory-direct-agent-workflow")) {
+      const entry = entries["memoryDirectAgentWorkflow"];
+      if (entry !== undefined) memoryDirectAgent = entry.workflowId;
+    }
   }
   if (
     planningExecution === undefined ||
@@ -116,7 +124,8 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
     definitionKernelLab === undefined ||
     configurablePlanning === undefined ||
     noteCapture === undefined ||
-    directAgent === undefined
+    directAgent === undefined ||
+    memoryDirectAgent === undefined
   ) {
     throw new Error("manifest.json缺少活动Workflow或Definition Kernel Lab Workflow");
   }
@@ -130,6 +139,7 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
     configurablePlanning,
     noteCapture,
     directAgent,
+    memoryDirectAgent,
   };
 }
 
@@ -187,6 +197,7 @@ export async function setupWorkflowWorld(
     configurablePlanningWorkflowId: workflowIds.configurablePlanning,
     noteCaptureWorkflowId: workflowIds.noteCapture,
     directAgentWorkflowId: workflowIds.directAgent,
+    memoryDirectAgentWorkflowId: workflowIds.memoryDirectAgent,
     close: async () => {
       setWorld(undefined);
       await world.close?.();

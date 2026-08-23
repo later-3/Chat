@@ -23,10 +23,15 @@ describe("Definition Kernel三方Conformance", () => {
     expect(executorKeys).toEqual(catalogKeys);
     for (const blueprint of DEFAULT_WORKFLOW_BLUEPRINTS.list()) {
       for (const nodeType of blueprint.allowedNodeTypes) {
-        expect(DEFAULT_NODE_CATALOG.get(nodeType, 1)?.supportedBlueprints).toContain(
-          blueprint.blueprintKey,
+        const supportedDescriptors = DEFAULT_NODE_CATALOG.list().filter(
+          (descriptor) =>
+            descriptor.nodeType === nodeType &&
+            descriptor.supportedBlueprints.includes(blueprint.blueprintKey),
         );
-        expect(DEFINITION_KERNEL_EXECUTORS.get(nodeType, 1)).toBeDefined();
+        expect(supportedDescriptors.length).toBeGreaterThan(0);
+        for (const descriptor of supportedDescriptors) {
+          expect(DEFINITION_KERNEL_EXECUTORS.get(nodeType, descriptor.schemaVersion)).toBeDefined();
+        }
       }
     }
   });

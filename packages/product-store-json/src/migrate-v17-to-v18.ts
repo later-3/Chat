@@ -1,4 +1,3 @@
-import { productSnapshotSchema, type ProductSnapshot } from "@chat/contracts";
 import {
   SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID,
   SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
@@ -6,12 +5,13 @@ import {
   createSystemDirectAgentDefinition,
 } from "@chat/application/workflow-system-definitions";
 import type { ProductSnapshotV17 } from "./legacy-v17.js";
+import { productSnapshotV18Schema, type ProductSnapshotV18 } from "./legacy-v18.js";
 
 /**
  * v18增加不可变Agent Version集合，并发布Direct Workflow v2使新会话继承Pi CLI默认。
  * v1只读Revision/View完整保留给历史Run；只移动system Definition的published指针。
  */
-export function migrateProductSnapshotV17ToV18(snapshot: ProductSnapshotV17): ProductSnapshot {
+export function migrateProductSnapshotV17ToV18(snapshot: ProductSnapshotV17): ProductSnapshotV18 {
   const definitions = { ...snapshot.entities.workflowDefinitions };
   const revisions = { ...snapshot.entities.workflowDefinitionRevisions };
   const views = { ...snapshot.entities.workflowViewDefinitions };
@@ -31,7 +31,7 @@ export function migrateProductSnapshotV17ToV18(snapshot: ProductSnapshotV17): Pr
   };
   revisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID] = seed.revision;
   views[SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID] = seed.view;
-  return productSnapshotSchema.parse({
+  return productSnapshotV18Schema.parse({
     ...snapshot,
     schemaVersion: "chat-product-store.v18",
     entities: {

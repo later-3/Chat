@@ -34,6 +34,9 @@ export const LEGACY_SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID = "wfr_systemdirect
 export const LEGACY_SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID = "wvd_systemdirectagentv1" as const;
 export const SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID = "wfr_systemdirectagentv2" as const;
 export const SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID = "wvd_systemdirectagentv2" as const;
+export const SYSTEM_MEMORY_DIRECT_WORKFLOW_DEFINITION_ID = "wfd_systemmemorydirectv1" as const;
+export const SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID = "wfr_systemmemorydirectv1" as const;
+export const SYSTEM_MEMORY_DIRECT_WORKFLOW_VIEW_ID = "wvd_systemmemorydirectv1" as const;
 export const CONFIGURABLE_PLANNING_RUNNER_FAMILY = "configurable-planning.v1" as const;
 export const CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION =
   "configurable-planning.bundle.v1" as const;
@@ -41,6 +44,8 @@ export const NOTE_CAPTURE_RUNNER_FAMILY = "note-capture.v1" as const;
 export const NOTE_CAPTURE_RUNNER_BUNDLE_VERSION = "note-capture.bundle.v1" as const;
 export const DIRECT_AGENT_RUNNER_FAMILY = "direct-agent.v1" as const;
 export const DIRECT_AGENT_RUNNER_BUNDLE_VERSION = "direct-agent.bundle.v1" as const;
+export const MEMORY_DIRECT_RUNNER_FAMILY = "memory-direct.v1" as const;
+export const MEMORY_DIRECT_RUNNER_BUNDLE_VERSION = "memory-direct.bundle.v1" as const;
 export const LEGACY_PLANNING_RUNNER_FAMILY = "legacy-planning.v1" as const;
 export const LEGACY_PLANNING_RUNNER_BUNDLE_VERSION = "legacy-planning.bundle.v1" as const;
 
@@ -207,6 +212,40 @@ export function systemDirectAgentSemanticRoot(): WorkflowSequence {
         schemaVersion: 1,
         config: { capabilityMode: "pi_cli_default", promptReviewMode: "manual" },
       },
+    ],
+  };
+}
+
+/** 独立Memory Direct只增加查询和写回，不修改或包裹现有Direct Definition。 */
+export function systemMemoryDirectSemanticRoot(): WorkflowSequence {
+  return {
+    kind: "sequence",
+    elements: [
+      systemTask("memory-direct.query", "memory.query", {
+        providerId: "mbk_memmy",
+        required: true,
+        querySource: "source_message",
+        maxResults: 8,
+        maxContextCharacters: 8_000,
+      }),
+      {
+        kind: "composite",
+        definitionNodeId: "direct.agent",
+        nodeType: "agent.direct",
+        schemaVersion: 1,
+        config: { capabilityMode: "pi_cli_default", promptReviewMode: "manual" },
+      },
+      systemTask(
+        "memory-direct.write",
+        "memory.write",
+        {
+          providerId: "mbk_memmy",
+          source: "source_message",
+          contentType: "conversation_turn",
+          required: false,
+        },
+        2,
+      ),
     ],
   };
 }
@@ -505,6 +544,63 @@ export function createSystemDirectAgentDefinition(createdAt: string): {
   };
 }
 
+export function createSystemMemoryDirectDefinition(createdAt: string): {
+  readonly definition: WorkflowDefinition;
+  readonly revision: WorkflowDefinitionRevision;
+  readonly view: WorkflowViewDefinition;
+} {
+  const normalized = normalizeWorkflowDefinition(
+    systemMemoryDirectSemanticRoot(),
+    DEFAULT_NODE_CATALOG,
+  );
+  if (!normalized.success) {
+    throw new Error(
+      `system memory direct definition invalid:${normalized.diagnostics
+        .map((item) => item.code)
+        .join(",")}`,
+    );
+  }
+  const definition = workflowDefinitionSchema.parse({
+    schemaVersion: "workflow-definition.v1",
+    workflowDefinitionId: SYSTEM_MEMORY_DIRECT_WORKFLOW_DEFINITION_ID,
+    ownerKind: "system",
+    key: "system.memory-direct",
+    title: "Memory 增强执行 Agent",
+    description: "先查询并冻结相关记忆，再执行Direct Agent，成功后按配置写回本次输入。",
+    blueprintKey: "direct",
+    blueprintVersion: 2,
+    status: "active",
+    publishedRevisionId: SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID,
+    revision: 1,
+    createdAt,
+    updatedAt: createdAt,
+  });
+  const revision = workflowDefinitionRevisionSchema.parse({
+    schemaVersion: "workflow-definition-revision.v1",
+    workflowDefinitionRevisionId: SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID,
+    workflowDefinitionId: SYSTEM_MEMORY_DIRECT_WORKFLOW_DEFINITION_ID,
+    definitionRevision: 1,
+    state: "published",
+    blueprintKey: "direct",
+    blueprintVersion: 2,
+    title: definition.title,
+    semanticRoot: normalized.normalized.semanticRoot,
+    definitionSha256: normalized.normalized.definitionSha256,
+    revision: 1,
+    createdAt,
+    updatedAt: createdAt,
+    publishedAt: createdAt,
+  });
+  return {
+    definition,
+    revision,
+    view: createSystemMemoryDirectWorkflowView({
+      createdAt,
+      definitionSha256: revision.definitionSha256,
+    }),
+  };
+}
+
 export function createLegacySystemDirectAgentDefinition(createdAt: string): {
   readonly definition: WorkflowDefinition;
   readonly revision: WorkflowDefinitionRevision;
@@ -777,14 +873,52 @@ function createSystemDirectAgentWorkflowView(input: {
   });
 }
 
+function createSystemMemoryDirectWorkflowView(input: {
+  readonly createdAt: string;
+  readonly definitionSha256: string;
+}): WorkflowViewDefinition {
+  const nodes: readonly WorkflowViewNodeShape[] = [
+    viewNode("memory-direct.query", "memory.query", "查询并冻结记忆", "task", false),
+    viewNode("direct.agent", "agent.direct", "执行 Agent · 提示词审核", "composite", false),
+    viewNode("memory-direct.write", "memory.write", "写回本次输入", "task", false, "2"),
+  ];
+  const edges: readonly WorkflowViewEdgeShape[] = [
+    edge("memory-direct.query", "direct.agent", "control"),
+    edge("direct.agent", "memory-direct.write", "control"),
+  ];
+  const content = {
+    title: "Memory 增强执行 Agent",
+    source: {
+      kind: "published_definition" as const,
+      workflowDefinitionId: SYSTEM_MEMORY_DIRECT_WORKFLOW_DEFINITION_ID,
+      definitionRevision: 1,
+      definitionSha256: input.definitionSha256,
+      blueprintKey: "direct",
+      blueprintVersion: "2",
+    },
+    nodes,
+    edges,
+  };
+  return workflowViewDefinitionSchema.parse({
+    schemaVersion: "workflow-view-definition.v1",
+    workflowViewDefinitionId: SYSTEM_MEMORY_DIRECT_WORKFLOW_VIEW_ID,
+    ...content,
+    sha256: computeWorkflowViewDefinitionSha256(content),
+    revision: 1,
+    createdAt: input.createdAt,
+    updatedAt: input.createdAt,
+  });
+}
+
 function viewNode(
   definitionNodeId: string,
   nodeType: string,
   title: string,
   kind: WorkflowViewNodeShape["kind"],
   optional: boolean,
+  nodeSchemaVersion = "1",
 ): WorkflowViewNodeShape {
-  return { definitionNodeId, nodeType, nodeSchemaVersion: "1", title, kind, optional };
+  return { definitionNodeId, nodeType, nodeSchemaVersion, title, kind, optional };
 }
 
 function edge(
@@ -816,6 +950,7 @@ function systemTask(
     | "human.note_review"
     | "note.commit",
   config: Record<string, unknown> = {},
+  schemaVersion: 1 | 2 = 1,
 ) {
-  return { kind: "task" as const, definitionNodeId, nodeType, schemaVersion: 1, config };
+  return { kind: "task" as const, definitionNodeId, nodeType, schemaVersion, config };
 }

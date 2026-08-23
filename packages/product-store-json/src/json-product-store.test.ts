@@ -51,6 +51,7 @@ import { migrateProductSnapshotV14ToV15 } from "./migrate-v14-to-v15.js";
 import { migrateProductSnapshotV15ToV16 } from "./migrate-v15-to-v16.js";
 import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
 import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
+import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
 import { productSnapshotV4Schema } from "./legacy-v4.js";
 import { productSnapshotV5Schema } from "./legacy-v5.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
@@ -60,16 +61,18 @@ const NOW = "2026-08-07T12:00:00.000Z";
 function migrateProductSnapshotV7ToCurrent(
   snapshot: ReturnType<typeof migrateProductSnapshotV6ToV7>,
 ): ProductSnapshot {
-  return migrateProductSnapshotV17ToV18(
-    migrateProductSnapshotV16ToV17(
-      migrateProductSnapshotV15ToV16(
-        migrateProductSnapshotV14ToV15(
-          migrateProductSnapshotV13ToV14(
-            migrateProductSnapshotV12ToV13(
-              migrateProductSnapshotV11ToV12(
-                migrateProductSnapshotV10ToV11(
-                  migrateProductSnapshotV9ToV10(
-                    migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(snapshot)),
+  return migrateProductSnapshotV18ToV19(
+    migrateProductSnapshotV17ToV18(
+      migrateProductSnapshotV16ToV17(
+        migrateProductSnapshotV15ToV16(
+          migrateProductSnapshotV14ToV15(
+            migrateProductSnapshotV13ToV14(
+              migrateProductSnapshotV12ToV13(
+                migrateProductSnapshotV11ToV12(
+                  migrateProductSnapshotV10ToV11(
+                    migrateProductSnapshotV9ToV10(
+                      migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(snapshot)),
+                    ),
                   ),
                 ),
               ),
@@ -535,7 +538,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
     expect(snapshot.storeRevision).toBe(0);
 
     const onDisk = productSnapshotSchema.parse(JSON.parse(await readFile(filePath, "utf8")));
-    expect(onDisk.schemaVersion).toBe("chat-product-store.v18");
+    expect(onDisk.schemaVersion).toBe("chat-product-store.v19");
   });
 
   it("非空v1真实快照串行迁移到v4，保留旧事实并合成no-memory ContextRequest，重启幂等", async () => {
@@ -553,7 +556,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
 
     const store = await JsonProductStore.open({ filePath, now });
     const { snapshot } = await store.read({ kind: "committedSnapshot" });
-    expect(snapshot.schemaVersion).toBe("chat-product-store.v18");
+    expect(snapshot.schemaVersion).toBe("chat-product-store.v19");
     expect(snapshot.storeRevision).toBe(legacy.storeRevision);
     expect(snapshot.commandReceipts).toEqual(legacy.commandReceipts);
     expect(legacyOutboxFrom(snapshot)).toEqual(legacy.outbox);
@@ -625,7 +628,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
 
     const opened = await JsonProductStore.open({ filePath, now });
     const { snapshot } = await opened.read({ kind: "committedSnapshot" });
-    expect(snapshot.schemaVersion).toBe("chat-product-store.v18");
+    expect(snapshot.schemaVersion).toBe("chat-product-store.v19");
     expect(snapshot.entities.memoryQueries).toEqual(legacy.entities.memoryQueries);
     expect(snapshot.entities.memoryResultSnapshots).toEqual(legacy.entities.memoryResultSnapshots);
     expect(snapshot.entities.memoryAdoptions).toEqual(legacy.entities.memoryAdoptions);
@@ -737,7 +740,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
 
     const opened = await JsonProductStore.open({ filePath, now });
     const { snapshot } = await opened.read({ kind: "committedSnapshot" });
-    expect(snapshot.schemaVersion).toBe("chat-product-store.v18");
+    expect(snapshot.schemaVersion).toBe("chat-product-store.v19");
     expect(snapshot.entities.projects["prj_migration"]?.schemaVersion).toBe("project.v2");
     expect(snapshot.entities.projectMethodSnapshots["pms_migration"]).toMatchObject({
       schemaVersion: "project-method-snapshot.v2",

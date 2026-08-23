@@ -34,7 +34,7 @@ import {
 import type { ApplicationDeps } from "./deps.js";
 import { ApplicationError, notFound, revisionConflict } from "./errors.js";
 import { commitPlanningContextNodeFact } from "./planning-context-node-facts.js";
-import { requirePlanningRun } from "./product-run-kind.js";
+import { requireWorkflowMemoryRun } from "./product-run-kind.js";
 import { validateWorkflowRunSpecIntegrity } from "./workflow-run-spec-compiler.js";
 import { emitWorkflowMemoryNodeTrace } from "./workflow-memory-trace.js";
 
@@ -126,17 +126,17 @@ export async function beginWorkflowMemoryQuery(
   }
 
   const run = before.entities.runs[input.productRunId];
-  if (run === undefined) throw notFound("Planning Run不存在");
-  const planningRun = requirePlanningRun(run);
-  const session = before.entities.sessions[planningRun.sessionId];
-  const message = before.entities.messages[planningRun.sourceMessageId];
+  if (run === undefined) throw notFound("Product Run不存在");
+  const memoryRun = requireWorkflowMemoryRun(run);
+  const session = before.entities.sessions[memoryRun.sessionId];
+  const message = before.entities.messages[memoryRun.sourceMessageId];
   const rawRunSpec = before.entities.workflowRunSpecs[input.workflowRunSpecId];
   const validated =
     rawRunSpec === undefined ? undefined : validateWorkflowRunSpecIntegrity(rawRunSpec);
   if (
     session === undefined ||
     message === undefined ||
-    planningRun.workflowRunSpecId !== input.workflowRunSpecId ||
+    memoryRun.workflowRunSpecId !== input.workflowRunSpecId ||
     rawRunSpec?.productRunId !== input.productRunId ||
     validated === undefined ||
     !validated.success
@@ -194,7 +194,7 @@ export async function beginWorkflowMemoryQuery(
     workflowMemoryQueryId,
     operationId: workflowMemoryQueryId,
     productRunId: input.productRunId,
-    productSessionId: planningRun.sessionId,
+    productSessionId: memoryRun.sessionId,
     requestedByPrincipalId: session.ownerPrincipalId,
     workflowRunSpecId: input.workflowRunSpecId,
     workflowRunSpecSha256: validated.runSpec.sha256,
@@ -329,8 +329,8 @@ export async function persistWorkflowMemoryQueryResult(
       const current = draft.entities.workflowMemoryQueries[input.workflowMemoryQueryId];
       if (current === undefined) throw notFound("Workflow Memory Query不存在");
       const run = draft.entities.runs[input.productRunId];
-      if (run === undefined) throw notFound("Planning Run不存在");
-      const planningRun = requirePlanningRun(run);
+      if (run === undefined) throw notFound("Product Run不存在");
+      const memoryRun = requireWorkflowMemoryRun(run);
       const rawRunSpec = draft.entities.workflowRunSpecs[input.workflowRunSpecId];
       const validated =
         rawRunSpec === undefined ? undefined : validateWorkflowRunSpecIntegrity(rawRunSpec);
@@ -455,7 +455,7 @@ export async function persistWorkflowMemoryQueryResult(
           : "可选Memory查询失败，继续执行工作流";
       }
       const nodeRun = commitPlanningContextNodeFact(draft, {
-        run: planningRun,
+        run: memoryRun,
         runSpec: validated.runSpec,
         definitionNodeId: input.definitionNodeId,
         nodeType: "memory.query",

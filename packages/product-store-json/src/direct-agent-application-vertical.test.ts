@@ -6,27 +6,61 @@ import { agentRuntimeBaselineDtoSchema, type CommandId, type PrincipalId } from 
 import {
   authorizeDirectAgentOperation,
   beginDirectAgentAttempt,
+  beginWorkflowMemoryQuery,
   commitDirectAgentResult,
   commitPromptReviewDispatchOutcome,
   commitRunFailure,
   consumePromptReviewDecision,
   createProductSession,
+  freezeWorkflowMemoryContext,
   getCurrentPromptReview,
   persistDirectAgentCandidate,
+  persistWorkflowMemoryQueryResult,
   publishPromptReviewRequest,
   submitPromptReviewDecision,
   submitUserMessage,
   transitionConfigurablePlanningNode,
+  normalizeWorkflowMemoryQueryResult,
   type ApplicationDeps,
   type DirectAgentIdFactory,
   type IdFactory,
+  type WorkflowMemoryProviderRegistryPort,
+  type WorkflowMemoryQueryInput,
 } from "@chat/application";
-import { SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID } from "@chat/application/workflow-system-definitions";
+import {
+  SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID,
+} from "@chat/application/workflow-system-definitions";
 import { canonicalJsonStringify, computePromptReviewPayloadSha256 } from "@chat/domain";
+import type { MemoryBackendId, MemoryProviderDescriptor } from "@chat/contracts";
 import { JsonProductStore } from "./json-product-store.js";
+import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const PRINCIPAL = "usr_directvertical" as PrincipalId;
 const BASE_TIME = "2026-08-19T12:00:00.000Z";
+const MEMORY_PROVIDER_ID = "mbk_memmy" as MemoryBackendId;
+const MEMORY_DESCRIPTOR: MemoryProviderDescriptor = {
+  schemaVersion: "memory-provider-descriptor.v1",
+  providerId: MEMORY_PROVIDER_ID,
+  displayName: "Memmy（Memory Direct测试）",
+  providerKind: "memmy",
+  transport: "http",
+  adapterContractVersion: "memmy-workflow.v1",
+  configured: true,
+  configurationFingerprint: "e".repeat(64) as never,
+  capabilities: {
+    query: { maxResults: 20, maxContextCharacters: 50_000 },
+    write: {
+      maxContentCharacters: 50_000,
+      materialization: "synchronous",
+      idempotency: "provider_key",
+    },
+    reconcile: true,
+    management: { list: true, get: true, update: false, delete: false, history: false },
+  },
+  authMode: "none",
+  credentialRevision: "none",
+};
 
 function createIdFactories(): {
   readonly ids: IdFactory;
@@ -66,6 +100,7 @@ async function createHarness() {
   const directory = await mkdtemp(join(tmpdir(), "chat-direct-agent-vertical-"));
   let tick = 0;
   let commandCounter = 0;
+  let memoryQueryCalls = 0;
   const now = (): string => new Date(Date.parse(BASE_TIME) + tick++ * 1_000).toISOString();
   const command = (): CommandId =>
     `cmd_vertical${(++commandCounter).toString(36).padStart(4, "0")}` as CommandId;
@@ -74,10 +109,54 @@ async function createHarness() {
     now,
   });
   const factories = createIdFactories();
+  const memoryProvider = {
+    describeProvider: () => MEMORY_DESCRIPTOR,
+    health: async () => ({ status: "ready" as const }),
+    queryMemory: async (input: WorkflowMemoryQueryInput) => {
+      memoryQueryCalls += 1;
+      return {
+        externalQueryId: `memmy-direct-query-${String(memoryQueryCalls)}`,
+        hitCount: 1,
+        sections: [
+          {
+            externalObjectIds: ["memory-direct-preference-1"],
+            title: "长期执行偏好",
+            category: "preference" as const,
+            content: `与“${input.query}”相关：修改前先读架构合同，并保留现有Direct流程。`,
+            labels: ["architecture", "workflow"],
+            score: 0.97,
+          },
+        ],
+      };
+    },
+    writeMemory: async (input: { readonly operationId: string }) => ({
+      externalObjectId: `memmy-write:${input.operationId}`,
+      externalObjectVersion: "v1",
+      externalStatus: "materialized",
+      responseSha256: "f".repeat(64),
+    }),
+    reconcileMemoryWrite: async (input: { readonly operationId: string }) => ({
+      status: "materialized" as const,
+      accepted: {
+        externalObjectId: `memmy-write:${input.operationId}`,
+        externalObjectVersion: "v1",
+        externalStatus: "materialized",
+        responseSha256: "f".repeat(64),
+      },
+      verificationKind: "provider_query",
+      verificationSha256: "a".repeat(64),
+    }),
+  };
+  const workflowMemoryProviders: WorkflowMemoryProviderRegistryPort = {
+    list: () => [MEMORY_DESCRIPTOR],
+    getQuery: (providerId) => (providerId === MEMORY_PROVIDER_ID ? memoryProvider : undefined),
+    getWrite: (providerId) => (providerId === MEMORY_PROVIDER_ID ? memoryProvider : undefined),
+  };
   const deps: ApplicationDeps = {
     store,
     now,
     ...factories,
+    workflowMemoryProviders,
     promptCatalog: {
       load: async () => ({
         catalogSha256: "a".repeat(64),
@@ -159,7 +238,15 @@ async function createHarness() {
     workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
     definitionSha256: directRevision.definitionSha256,
   };
-  return { command, deps, session, store, workflowSelection };
+  return {
+    command,
+    deps,
+    session,
+    store,
+    workflowSelection,
+    memoryProvider,
+    memoryQueryCalls: () => memoryQueryCalls,
+  };
 }
 
 async function startDirectAgent(text = "只读检查当前项目并给出结论", agentPromptOverride?: string) {
@@ -219,6 +306,120 @@ async function startDirectAgent(text = "只读检查当前项目并给出结论"
     publicSummary: "正在推进直接Agent，等待下一处Provider边界",
   });
   return { ...harness, begun, run, runSpec, submitted, workflowAttempt };
+}
+
+async function startMemoryDirectAgent(text = "结合历史偏好检查当前Memory Direct实现") {
+  const harness = await createHarness();
+  const before = (await harness.store.read({ kind: "committedSnapshot" })).snapshot;
+  const revision =
+    before.entities.workflowDefinitionRevisions[SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID];
+  if (revision === undefined) throw new Error("测试Fixture缺少Memory Direct系统Definition");
+  const submitted = await submitUserMessage(harness.deps, {
+    principalId: PRINCIPAL,
+    sessionId: harness.session.sessionId,
+    commandId: harness.command(),
+    payload: {
+      text,
+      workflowSelection: {
+        kind: "published_revision",
+        workflowDefinitionRevisionId: revision.workflowDefinitionRevisionId,
+        definitionSha256: revision.definitionSha256,
+        runConfiguration: {
+          schemaVersion: "workflow-run-configuration.v1",
+          overrides: [
+            {
+              kind: "node_config",
+              definitionNodeId: "memory-direct.query",
+              field: "providerId",
+              value: MEMORY_PROVIDER_ID,
+            },
+            {
+              kind: "node_config",
+              definitionNodeId: "memory-direct.write",
+              field: "providerId",
+              value: MEMORY_PROVIDER_ID,
+            },
+          ],
+        },
+      },
+    },
+  });
+  const afterSubmit = (await harness.store.read({ kind: "committedSnapshot" })).snapshot;
+  const run = afterSubmit.entities.runs[submitted.run.productRunId];
+  const workflowAttempt = Object.values(afterSubmit.entities.attempts).find(
+    (candidate) =>
+      candidate.productRunId === submitted.run.productRunId && candidate.kind === "workflow",
+  );
+  const runSpec =
+    run?.workflowRunSpecId === undefined
+      ? undefined
+      : afterSubmit.entities.workflowRunSpecs[run.workflowRunSpecId];
+  if (run?.runKind !== "direct_agent" || workflowAttempt === undefined || runSpec === undefined) {
+    throw new Error("测试Fixture没有形成完整Memory Direct Run");
+  }
+  const identity = {
+    productRunId: run.productRunId,
+    workflowRunSpecId: runSpec.workflowRunSpecId,
+    definitionNodeId: "memory-direct.query",
+    executionPath: [],
+    attemptNumber: 1,
+  };
+  await transitionConfigurablePlanningNode(harness.deps, {
+    commandId: harness.command(),
+    ...identity,
+    toStatus: "running",
+    publicSummary: "正在查询Memory Provider",
+  });
+  const begunQuery = await beginWorkflowMemoryQuery(harness.deps, {
+    commandId: harness.command(),
+    ...identity,
+  });
+  if (begunQuery.status !== "dispatch_required") {
+    throw new Error("Memory Direct Query未进入dispatch_required");
+  }
+  const providerOutput = await harness.memoryProvider.queryMemory({
+    operationId: begunQuery.query.operationId,
+    productRunId: begunQuery.query.productRunId,
+    productSessionId: begunQuery.query.productSessionId,
+    principalId: begunQuery.query.principalId,
+    query: begunQuery.query.queryText,
+    maxResults: begunQuery.query.maxResults,
+    maxContextCharacters: begunQuery.query.maxContextCharacters,
+  });
+  await persistWorkflowMemoryQueryResult(harness.deps, {
+    commandId: harness.command(),
+    ...identity,
+    workflowMemoryQueryId: begunQuery.workflowMemoryQueryId,
+    result: normalizeWorkflowMemoryQueryResult(begunQuery.query, providerOutput),
+  });
+  const frozen = await freezeWorkflowMemoryContext(harness.deps, {
+    commandId: harness.command(),
+    productRunId: run.productRunId,
+    workflowRunSpecId: runSpec.workflowRunSpecId,
+  });
+  if (frozen.status !== "ready") throw new Error("Memory Direct Context未冻结");
+  const begun = await beginDirectAgentAttempt(harness.deps, {
+    commandId: harness.command(),
+    productRunId: run.productRunId,
+    workflowAttemptId: workflowAttempt.attemptId,
+  });
+  const authorized = await authorizeDirectAgentOperation(harness.deps, {
+    productRunId: run.productRunId,
+    directAgentAttemptId: begun.directAgentAttemptId,
+    workflowRunSpecId: runSpec.workflowRunSpecId,
+    workflowRunSpecSha256: runSpec.sha256,
+    inputManifestSha256: begun.inputManifestSha256,
+  });
+  return {
+    ...harness,
+    authorized,
+    begun,
+    frozen,
+    run,
+    runSpec,
+    submitted,
+    workflowAttempt,
+  };
 }
 
 function providerPayload(text: string): string {
@@ -310,6 +511,95 @@ async function approveReview(started: Awaited<ReturnType<typeof startDirectAgent
 }
 
 describe("Direct Agent Application + JsonProductStore最小纵向", () => {
+  it("独立Memory Direct冻结三节点RunSpec、查询Context并授权给同一Direct Executor", async () => {
+    const started = await startMemoryDirectAgent();
+
+    expect(started.submitted.run).toMatchObject({
+      runKind: "direct_agent",
+      status: "pending",
+      phase: "queued",
+    });
+    expect(started.run).toMatchObject({
+      runnerFamily: "memory-direct.v1",
+      runnerBundleVersion: "memory-direct.bundle.v1",
+    });
+    expect(started.runSpec.definitionRef).toMatchObject({
+      blueprintKey: "direct",
+      blueprintVersion: 2,
+    });
+    expect(
+      started.runSpec.semanticRoot.elements.map((node) =>
+        "nodeType" in node ? node.nodeType : node.kind,
+      ),
+    ).toEqual(["memory.query", "agent.direct", "memory.write"]);
+    expect(
+      started.runSpec.nodeResolutions.find(
+        (node) => node.definitionNodeId === "memory-direct.query",
+      )?.config,
+    ).toMatchObject({ providerId: MEMORY_PROVIDER_ID, required: true });
+    expect(
+      started.runSpec.nodeResolutions.find(
+        (node) => node.definitionNodeId === "memory-direct.write",
+      )?.config,
+    ).toMatchObject({ providerId: MEMORY_PROVIDER_ID, required: false });
+    expect(started.memoryQueryCalls()).toBe(1);
+    expect(started.authorized.memoryContext).toMatchObject({
+      workflowMemoryContextId: started.frozen.contextRef.workflowMemoryContextId,
+      revision: 1,
+      sha256: started.frozen.contextRef.sha256,
+      items: [
+        expect.objectContaining({
+          providerId: MEMORY_PROVIDER_ID,
+          category: "preference",
+          content: expect.stringContaining("保留现有Direct流程"),
+        }),
+      ],
+    });
+
+    const snapshot = (await started.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.attempts[started.begun.directAgentAttemptId]).toMatchObject({
+      workflowMemoryContextId: started.frozen.contextRef.workflowMemoryContextId,
+      workflowMemoryContextSha256: started.frozen.contextRef.sha256,
+      inputManifestSha256: started.begun.inputManifestSha256,
+    });
+    expect(() => assertSnapshotIntegrity(snapshot)).not.toThrow();
+
+    const mismatchedRunner = structuredClone(snapshot);
+    const mismatchedRun = mismatchedRunner.entities.runs[started.run.productRunId];
+    if (mismatchedRun?.runKind !== "direct_agent") throw new Error("Fixture Run身份损坏");
+    mismatchedRun.runnerFamily = "direct-agent.v1";
+    mismatchedRun.runnerBundleVersion = "direct-agent.bundle.v1";
+    expect(() => assertSnapshotIntegrity(mismatchedRunner)).toThrow();
+
+    const driftedContext = structuredClone(snapshot);
+    driftedContext.entities.workflowMemoryContexts[
+      started.frozen.contextRef.workflowMemoryContextId
+    ]!.sha256 = "0".repeat(64) as never;
+    expect(() => assertSnapshotIntegrity(driftedContext)).toThrow();
+  });
+
+  it("普通direct@1不能调用Memory节点，且授权响应中没有隐式Memory Context", async () => {
+    const started = await startDirectAgent();
+    const authorized = await authorizeDirectAgentOperation(started.deps, {
+      productRunId: started.run.productRunId,
+      directAgentAttemptId: started.begun.directAgentAttemptId,
+      workflowRunSpecId: started.runSpec.workflowRunSpecId,
+      workflowRunSpecSha256: started.runSpec.sha256,
+      inputManifestSha256: started.begun.inputManifestSha256,
+    });
+    expect(authorized.memoryContext).toBeUndefined();
+    await expect(
+      beginWorkflowMemoryQuery(started.deps, {
+        commandId: started.command(),
+        productRunId: started.run.productRunId,
+        workflowRunSpecId: started.runSpec.workflowRunSpecId,
+        definitionNodeId: "memory-direct.query",
+        executionPath: [],
+        attemptNumber: 1,
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+  });
+
   it("prepare阶段失败可在没有Direct Attempt时收敛为failed/queued", async () => {
     const harness = await createHarness();
     const submitted = await submitUserMessage(harness.deps, {
