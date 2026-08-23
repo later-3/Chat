@@ -83,13 +83,13 @@ Product Workflow Start，不区分Planning、Direct或历史Note：
 1. Runtime私有对账只返回`active / terminal(outcome) / unknown`安全证据，不返回Workflow Run ID、返回正文、错误正文、Prompt或Provider数据；
 2. `active`严格不操作Product Run，尤其不得干预`waiting_human`审核态；已经是任一Product终态也直接退出；
 3. Runtime `failed`映射Product `failed`，Runtime `cancelled`映射Product `cancelled`；Runtime报告成功但缺少Product Commit时仍是`outcome_unknown`，不能补写假成功；
-4. Runtime状态缺失、查询失败或响应合同损坏在短暂宽限期内只观察，持续未知后收敛为Product `outcome_unknown`；
+4. Runtime状态缺失、查询失败或响应合同损坏时，首次`unknown`只在原Start Outbox上耐久记录“连续未知开始”标记，不以Start确认时间代替未知时长；后续只有同一标记连续超过宽限期才收敛为Product `outcome_unknown`。期间任一次`active`都会清除标记，所以下一次短暂查询失败会重新计时；
 5. 收敛使用由Start Outbox与Product Run派生的稳定Command ID，并要求原Start Binding仍为`acknowledged`。重复tick、API重启和迟到证据都不能创建第二个Workflow、改变既有终态或重放Provider。
 
 上述监督只通过Application的`settleRunAfterTerminalWorkflow`提交产品事实；底层复用统一
 `settleRunWithoutSuccess`生命周期规则。本地启动的版本兼容恢复门也调用同一收敛内核，但只处理已证明旧Bundle不可恢复的活动Run；
 它不会为普通Runtime终态另造一套规则。真实历史诊断使用只读`pnpm debug:runtime-integrity-scan`，扫描器没有Product Store写端口，
-只输出Product Run/Start Outbox和脱敏Runtime状态及建议动作；修复真实`.data`仍需单独人工授权。
+只输出Product Run/Start Outbox和脱敏Runtime状态及建议动作：单次`unknown`或尚未跨过耐久宽限期只建议检查分发，只有已保存并超期的连续未知才建议收敛；Start Outbox引用缺失Product Run时会生成显式`missing_product_run`发现，不能静默跳过。修复真实`.data`仍需单独人工授权。
 
 ## 4. PlanningExecutionWorkflow
 

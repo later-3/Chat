@@ -10,6 +10,7 @@ import {
 } from "./prompt-fragment.js";
 import {
   DIRECT_PROMPT_COMPILER_V2_VERSION,
+  DIRECT_PROMPT_COMPILER_V3_VERSION,
   DIRECT_PROMPT_COMPILER_VERSION,
   DIRECT_PROMPT_PROFILE_V2_VERSION,
   DIRECT_PROMPT_PROFILE_VERSION,
@@ -230,6 +231,7 @@ export const promptConfigurationPreviewDtoSchema = z
     compilerVersion: z.enum([
       DIRECT_PROMPT_COMPILER_VERSION,
       DIRECT_PROMPT_COMPILER_V2_VERSION,
+      DIRECT_PROMPT_COMPILER_V3_VERSION,
       WORKFLOW_PROMPT_COMPILER_VERSION,
     ]),
     regions: z.array(promptAssemblyRegionSchema).max(32),
@@ -243,7 +245,11 @@ export const promptAssemblyPreviewDtoSchema = z
   .object({
     schemaVersion: z.literal(PROMPT_STUDIO_API_SCHEMA_VERSION),
     profileVersion: z.enum([DIRECT_PROMPT_PROFILE_VERSION, DIRECT_PROMPT_PROFILE_V2_VERSION]),
-    compilerVersion: z.enum([DIRECT_PROMPT_COMPILER_VERSION, DIRECT_PROMPT_COMPILER_V2_VERSION]),
+    compilerVersion: z.enum([
+      DIRECT_PROMPT_COMPILER_VERSION,
+      DIRECT_PROMPT_COMPILER_V2_VERSION,
+      DIRECT_PROMPT_COMPILER_V3_VERSION,
+    ]),
     regions: z.array(promptAssemblyRegionSchema).max(32),
     systemPromptAppend: z.string().max(512_000),
     userPrompt: z.string().min(1).max(1_000_000),

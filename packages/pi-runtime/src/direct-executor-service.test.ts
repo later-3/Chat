@@ -18,11 +18,13 @@ import {
   type StartPiDirectExecutorOperationRequest,
 } from "./direct-executor-service-contract.js";
 import {
+  assertDirectExecutorWorkspaceGrant,
   PausableOperationTimeout,
   createPiDirectExecutorService,
 } from "./direct-executor-service.js";
 import { DirectAgentRuntimeCallbackError } from "./direct-runtime-api-callbacks.js";
 import { hashExecutorValue } from "./executor-operation-store.js";
+import { computeWorkspaceGrantSha256 } from "@chat/domain";
 import {
   hashFinalProviderPayload,
   hashPromptReviewEnvelope,
@@ -121,6 +123,43 @@ class WaitingThenCompleteRunner implements DirectAgentRunner {
 }
 
 describe("Pi Direct Executor Service + Client", () => {
+  it("Executor在runner前拒绝API冻结Grant与实际canonical Root不一致", () => {
+    const assembly = {
+      schemaVersion: "prompt-assembly.v2" as const,
+      promptAssemblyId: "pma_workspacegrant",
+      sha256: "7".repeat(64),
+      systemPromptAppend: "",
+      messages: [],
+      tools: {
+        capabilityMode: "custom" as const,
+        names: ["read"],
+        estimatedTokens: 8_000 as const,
+      },
+      requestOptions: {
+        providerId: "dashscope-coding" as const,
+        modelId: "qwen3.7-plus" as const,
+        thinkingLevel: "off" as const,
+        retryEnabled: false,
+        compactionEnabled: false,
+      },
+      budget: {},
+      workspaceRootId: "root_chat",
+      workspaceGrantSha256: computeWorkspaceGrantSha256("/approved/workspace"),
+    };
+    expect(() =>
+      assertDirectExecutorWorkspaceGrant(assembly, {
+        rootId: "root_chat",
+        canonicalPath: "/remapped/workspace",
+      }),
+    ).toThrowError(expect.objectContaining({ code: "direct_executor.workspace_grant_mismatch" }));
+    expect(() =>
+      assertDirectExecutorWorkspaceGrant(assembly, {
+        rootId: "root_chat",
+        canonicalPath: "/approved/workspace",
+      }),
+    ).not.toThrow();
+  });
+
   it("Session恢复拒绝覆盖首次resolved runtime manifest SHA", async () => {
     const root = await temporaryRoot();
     const store = await PiDirectExecutorOperationStore.open(join(root, "operations"));

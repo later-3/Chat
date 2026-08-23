@@ -140,6 +140,8 @@ export const authorizeDirectAgentOperationRuntimeResponseSchema = z
           requestOptions: promptEnvelopeRequestOptionsSchema,
           budget: promptAssemblyBudgetSchema,
           workspaceRootId: promptWorkspaceRootIdSchema.optional(),
+          runtimeProfileSha256: sha256Schema.optional(),
+          workspaceGrantSha256: sha256Schema.optional(),
         })
         .strict(),
     ]),

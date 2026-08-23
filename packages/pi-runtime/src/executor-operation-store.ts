@@ -88,6 +88,22 @@ export class PiExecutorOperationOutcomeUnknownError extends Error {
   }
 }
 
+export class PiExecutorOperationStateConflictError extends Error {
+  readonly code = "executor.operation_state_conflict";
+  constructor() {
+    super("Pi Operation当前状态不允许该转换");
+    this.name = "PiExecutorOperationStateConflictError";
+  }
+}
+
+export class PiExecutorToolCallConflictError extends Error {
+  readonly code = "executor.tool_call_id_reused";
+  constructor() {
+    super("同一Pi Operation内的Tool Call ID不能重复");
+    this.name = "PiExecutorToolCallConflictError";
+  }
+}
+
 interface PersistBoundaryEvidence {
   readonly operationId: string;
   readonly status: OperationRecord["status"];
@@ -226,6 +242,16 @@ export class PiExecutorOperationStore {
     return this.mutate(operationId, async (record) => {
       const current = this.requireMutableRecord(record);
       if (current.status !== "running") throw new Error("只有running Operation能追加运行事件");
+      if (
+        payload.type === "tool.intent_persisted" &&
+        current.events.some(
+          (event) =>
+            event.type === "tool.intent_persisted" && event.toolCallId === payload.toolCallId,
+        )
+      ) {
+        // Tool Call ID是一次Operation内不可复用的Intent身份；否则旧Result会误闭合新Intent。
+        throw new PiExecutorToolCallConflictError();
+      }
       const next = this.appendToRecord(current, payload);
       const event = next.events.at(-1);
       if (event === undefined) throw new Error("Pi Executor事件追加失败");
@@ -240,6 +266,15 @@ export class PiExecutorOperationStore {
   ): Promise<void> {
     const completed = await this.mutate(operationId, async (record) => {
       let current = this.requireMutableRecord(record);
+      if (current.status === "succeeded") {
+        return { record: current, value: "already_succeeded" as const };
+      }
+      if (current.status === "outcome_unknown") {
+        return { record: current, value: "outcome_unknown" as const };
+      }
+      if (current.status !== "running") {
+        return { record: current, value: "state_conflict" as const };
+      }
       if (this.openToolIntents(current).length > 0) {
         current = this.closeOpenToolIntentsAsUnknown(current);
         const unknown = this.appendToRecord(current, {
@@ -255,7 +290,7 @@ export class PiExecutorOperationStore {
             status: "outcome_unknown" as const,
             errorCode: "executor.tool_result_persist_failed",
           },
-          value: false,
+          value: "outcome_unknown" as const,
         };
       }
       const parsedResult = executorStepCandidateSchema.parse(result);
@@ -275,10 +310,11 @@ export class PiExecutorOperationStore {
           resultSha256,
           errorCode: undefined,
         },
-        value: true,
+        value: "completed" as const,
       };
     });
-    if (!completed) throw new PiExecutorOperationOutcomeUnknownError();
+    if (completed === "outcome_unknown") throw new PiExecutorOperationOutcomeUnknownError();
+    if (completed === "state_conflict") throw new PiExecutorOperationStateConflictError();
   }
 
   async fail(operationId: string, errorCode: string, durationMs: number): Promise<void> {

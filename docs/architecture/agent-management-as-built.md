@@ -75,7 +75,7 @@ Pi-backed Agent 的 Catalog 默认不是一段 Chat 手抄的近似 Prompt。`pa
 
 1. **Workflow 节点**是 Agent 的一个使用实例。保存节点配置时，系统 Workflow 派生个人 Workflow，个人 Workflow 发布下一不可变 Revision；节点只保存精确 AgentVersion ID/Hash。若选择 Pi 默认，则不制造一个伪 Version。
 2. **当前会话配置**由 DSH Bridge 作为未发送草稿保存。用户可以选择既有 Version，也可以临时修改 System Prompt、Tools 和四类资源；页面按当前 DSH Session 的受权 Workspace Root 读取 scoped Runtime Profile。“应用当前会话”不修改 AgentVersion 或 Workflow Revision。
-3. **本次 Run**创建时，Application 重新鉴权和校验 Scope、Runtime、Version ID/Hash，并用同一个`workspaceRootId`重新读取 scoped Profile，把会话草稿编译成结构化`agent_configuration`并冻结到 RunSpec 与 Prompt Assembly。Run 启动后不再读取浏览器草稿。
+3. **本次 Run**创建时，Application 重新鉴权和校验 Scope、Runtime、Version ID/Hash，并用同一个`workspaceRootId`重新读取 scoped Profile，把会话草稿编译成结构化`agent_configuration`并冻结到 RunSpec 与 Prompt Assembly。`direct-agent-prompt-compiler.v3`还在 Assembly 中冻结 scoped Runtime Profile Hash；存在 Workspace 时同时冻结不暴露路径的 Root Grant Hash。Run 启动后不再读取浏览器草稿。
 4. 临时配置可以记录它基于哪个 Version，但它本身不是新版本；要长期复用必须显式“创建版本”或“保存到 Workflow”。
 
 当前“会话级”语义是 Bridge 对同一 DSH Session 复用草稿、每次发送都形成新的 Run 冻结副本；它不是 Product Store 中另一份可变 Agent 真相。若以后需要跨前端恢复的耐久 Product Session 默认，应新增明确的 Product Session 配置事实，不能把浏览器/Bridge 状态偷换成产品事实。
@@ -90,7 +90,9 @@ Pi-backed Agent 的 Catalog 默认不是一段 Chat 手抄的近似 Prompt。`pa
 
 1. `WorkflowRunSpec`冻结 Version ID/Hash、`custom`能力模式与资源策略；
 2. `PromptAssembly`只接受同一份 RunSpec 绑定的合成 Version Prompt Source，并冻结同一 Tool 名称和资源策略；
-3. Executor Operation 授权重新读取 Product Store，校验 RunSpec、Assembly、Version、Workspace Root 和实际 Runtime Manifest 后，才返回可执行能力。
+3. Executor Operation 授权重新读取 Product Store 中的 AgentVersion，并重新读取同一 Principal、Agent 与 Root 作用域的实时 Pi Runtime Profile；Version 的包/Fork/能力目录、所选 Tool、Assembly 中冻结的 Profile Hash 和 Root Grant Hash全部一致后，才返回可执行能力；Executor 在进入 Runner 前再用实际 canonical root 复核 Grant Hash。
+
+这两个 Hash 是 Run 创建与 Operation 授权之间的漂移证据，不取代首次真实 Session 绑定后的 Resolved Runtime Manifest。前者覆盖 Agent Settings、Extension、Tool Schema、资源目录与 Root 授权是否仍等于 Run 创建时的配置基线；后者覆盖本次 Session 最终 System、活动 Tool Schema 与资源清单，并在同一 Operation 的审核恢复时保持不变。绑定 AgentVersion 的历史 Assembly 若缺少新版漂移证据，会在 Provider 前失败关闭；未绑定 Version 的兼容 Run 仍按原合同读取。
 
 Version 不存在、Hash/Owner/Scope/Root 漂移、Assembly 来源漂移或 Tool/资源不一致时，均在创建 Operation、解析 Workspace 或触达 Provider 前失败关闭。因此失败证据允许“零 Operation、零 Provider 请求”，而不能为了补日志先启动一次错误能力的 AgentSession。
 
@@ -150,7 +152,7 @@ Agent 配置不是 Session 日志；Trajectory 不是 Agent Version；Debug Trac
 
 - Direct Workflow 的 prepare Step 使用共享的`directAgentCapabilityModeSchema`校验能力模式，不能在 Workflow 内再次硬编码旧`read_only`默认；`pi_cli_default`、显式自定义和专用变体必须与 Application 冻结的 RunSpec 保持同一合同。
 - 若 Workflow 在创建 Pi Direct Attempt 前失败，产品事实收敛为`failed/queued`并允许零个 Direct Attempt；不能伪造一次从未开始的 Pi 执行，也不能因终态提交失败而让前端永久显示活动中。
-- Version 不存在、Hash 漂移、Workspace Scope 不匹配或 Runtime 基线已失效时，Run 在 Provider 前失败。
+- Version 不存在、Hash 漂移、Workspace Scope/Grant 不匹配或 scoped Runtime Profile 已在 Run 创建后变化时，Operation 在 Provider 前失败；Executor 不信任 API 提供的 Root ID 代替实际 canonical root 复核。
 - 同一 Operation 恢复时 Resolved Runtime Manifest 必须与首次绑定完全一致；旧记录没有该字段时只允许在首次恢复补钉一次。
 - 自定义能力没有冻结 Tool 清单时失败；客户端不能通过任意 JSON 绕过专用`agent_configuration`合同。
 - Prompt 修改不能扩大 Tool/Workspace授权；Shell和写入仍受运行合同与人工审批治理。

@@ -1,5 +1,6 @@
 import {
   DIRECT_PROMPT_COMPILER_V2_VERSION,
+  DIRECT_PROMPT_COMPILER_V3_VERSION,
   DIRECT_PROMPT_INPUT_TOKEN_LIMIT,
   DIRECT_PROMPT_METER_VERSION,
   DIRECT_PROMPT_PROFILE_V2_VERSION,
@@ -58,7 +59,7 @@ import type {
   BuiltinPromptFragmentRevision,
   PromptCatalogSnapshot,
 } from "./prompt-catalog-port.js";
-import { getAgentProfile } from "./prompt-studio-use-cases.js";
+import { resolveCurrentAgentRuntimeBinding } from "./agent-version-runtime-validation.js";
 
 /**
  * V2先使用保守统一Meter；它用于确定性预算而不是冒充Provider精确Tokenizer。
@@ -312,14 +313,23 @@ async function compileAgentRegion(
   readonly agentKey: AgentKey;
   readonly profile: AgentProfileDto;
   readonly agentVersion?: AgentVersion | undefined;
+  readonly runtimeProfileSha256?: string | undefined;
+  readonly workspaceGrantSha256?: string | undefined;
   readonly region: PromptAssemblyRegion;
   readonly piSystemPrompt?: PiSystemPromptResolution | undefined;
 }> {
-  const profile = await getAgentProfile(deps, {
+  const currentRuntime = await resolveCurrentAgentRuntimeBinding(deps, {
     principalId,
     agentKey: binding.agentKey,
+    ...(binding.agentVersionId === undefined
+      ? {}
+      : {
+          agentVersionId: binding.agentVersionId,
+          agentVersionSha256: binding.agentVersionSha256,
+        }),
     ...(binding.workspaceRootId === undefined ? {} : { workspaceRootId: binding.workspaceRootId }),
   });
+  const { profile, agentVersion } = currentRuntime;
   const expectedProfileVersion = AGENT_PROFILE_VERSION_BY_KEY[binding.agentKey];
   if (profile.profileVersion !== expectedProfileVersion) {
     throw new Error(
@@ -328,56 +338,6 @@ async function compileAgentRegion(
   }
   if (!profile.supportedNodeTypes.includes(binding.nodeType)) {
     throw revisionConflict(`Agent ${binding.agentKey}不支持节点类型${binding.nodeType}`);
-  }
-  const agentVersion =
-    binding.agentVersionId === undefined
-      ? undefined
-      : profile.versions.find((version) => version.agentVersionId === binding.agentVersionId);
-  if (
-    binding.agentVersionId !== undefined &&
-    (agentVersion === undefined || agentVersion.sha256 !== binding.agentVersionSha256)
-  ) {
-    throw revisionConflict("Workflow或会话引用的Agent Version不存在或Hash已变化");
-  }
-  if (
-    agentVersion?.scope.kind === "workspace" &&
-    agentVersion.scope.rootId !== binding.workspaceRootId
-  ) {
-    throw forbidden("Workspace Agent Version不能用于其他Workspace或无Workspace的会话");
-  }
-  if (agentVersion !== undefined) {
-    // Workspace Version钉住该Workspace的真实基线；Global Version仍钉住空
-    // Workspace全局基线，但它选择的每个Tool必须仍存在于当前执行Workspace目录。
-    const baselineProfile =
-      agentVersion.scope.kind === "global" && binding.workspaceRootId !== undefined
-        ? await getAgentProfile(deps, { principalId, agentKey: binding.agentKey })
-        : profile;
-    const runtimeBaseline = baselineProfile.runtimeBaseline;
-    const runtimeVariant = runtimeBaseline?.variants.find(
-      (variant) => variant.variantKey === agentVersion.runtime.baseVariantKey,
-    );
-    const currentRuntimeVariant = profile.runtimeBaseline?.variants.find(
-      (variant) => variant.variantKey === agentVersion.runtime.baseVariantKey,
-    );
-    const currentToolNames = new Set(currentRuntimeVariant?.tools.map((tool) => tool.name) ?? []);
-    if (
-      runtimeBaseline === undefined ||
-      runtimeVariant === undefined ||
-      agentVersion.baselineRef.packageName !== runtimeBaseline.packageName ||
-      agentVersion.baselineRef.packageVersion !== runtimeBaseline.packageVersion ||
-      agentVersion.baselineRef.managedSource !== runtimeBaseline.managedSource ||
-      agentVersion.baselineRef.managedSourceRevision !== runtimeBaseline.managedSourceRevision ||
-      agentVersion.baselineRef.variantKey !== runtimeVariant.variantKey ||
-      agentVersion.baselineRef.capabilityCatalogSha256 !== runtimeVariant.capabilityCatalogSha256
-    ) {
-      throw revisionConflict("Agent Version引用的Pi运行基线已经变化，请显式创建新版本");
-    }
-    if (
-      currentRuntimeVariant === undefined ||
-      agentVersion.enabledToolNames.some((toolName) => !currentToolNames.has(toolName))
-    ) {
-      throw revisionConflict("Agent Version的Tool不存在于当前Workspace运行目录");
-    }
   }
   const override = binding.promptOverrideMarkdown;
   const useOverride = override !== undefined && override.trim() !== "";
@@ -502,6 +462,12 @@ async function compileAgentRegion(
     agentKey: binding.agentKey,
     profile,
     ...(agentVersion === undefined ? {} : { agentVersion }),
+    ...(currentRuntime.runtimeProfileSha256 === undefined
+      ? {}
+      : { runtimeProfileSha256: currentRuntime.runtimeProfileSha256 }),
+    ...(currentRuntime.workspaceGrantSha256 === undefined
+      ? {}
+      : { workspaceGrantSha256: currentRuntime.workspaceGrantSha256 }),
     region: { ...shape, sha256: computePromptAssemblyRegionSha256(shape) },
     ...(piSystemPrompt === undefined ? {} : { piSystemPrompt }),
   };
@@ -976,6 +942,9 @@ export async function compileDirectPromptAssembly(
       ? {}
       : { workspaceRootId: selection.workspaceRootId }),
   });
+  if (agent.runtimeProfileSha256 === undefined) {
+    throw revisionConflict("Direct Agent缺少可复核的Runtime Profile");
+  }
   const regions = [agent.region, ...configuration.regions];
   const systemPromptAppend = [
     agent.piSystemPrompt === undefined ? agent.region.renderedText : "",
@@ -1141,10 +1110,14 @@ export async function compileDirectPromptAssembly(
     sourceMessageId: input.sourceMessageId,
     workflowDefinitionRevisionId: input.workflowDefinitionRevisionId,
     profileVersion: DIRECT_PROMPT_PROFILE_V2_VERSION,
-    compilerVersion: DIRECT_PROMPT_COMPILER_V2_VERSION,
+    compilerVersion: DIRECT_PROMPT_COMPILER_V3_VERSION,
     ...(selection.workspaceRootId === undefined
       ? {}
       : { workspaceRootId: selection.workspaceRootId }),
+    runtimeProfileSha256: agent.runtimeProfileSha256,
+    ...(agent.workspaceGrantSha256 === undefined
+      ? {}
+      : { workspaceGrantSha256: agent.workspaceGrantSha256 }),
     regions,
     systemPromptAppend,
     ...(agent.piSystemPrompt === undefined ? {} : { piSystemPrompt: agent.piSystemPrompt }),

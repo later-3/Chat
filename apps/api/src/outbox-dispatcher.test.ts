@@ -8,9 +8,15 @@ import {
   type ProductSnapshot,
   type TraceEventInput,
 } from "@chat/contracts";
-import type { ApplicationDeps, DirectAgentIdFactory, IdFactory } from "@chat/application";
+import type {
+  ApplicationDeps,
+  DirectAgentIdFactory,
+  IdFactory,
+  NoteIdFactory,
+} from "@chat/application";
 import {
   beginDirectAgentAttempt,
+  compileExecutionContract,
   compilePlanningInput,
   commitMemoryImportAccepted,
   createMemoryWrite,
@@ -18,14 +24,23 @@ import {
   createProductSession,
   markMemoryImportDispatching,
   publishPromptReviewRequest,
+  publishNoteCandidate,
   publishPlanForReview,
   submitPromptReviewDecision,
+  submitPlanDecision,
   submitUserMessage,
   transitionConfigurablePlanningNode,
   updateOutboxStatus,
 } from "@chat/application";
-import { SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID } from "@chat/application/workflow-system-definitions";
-import { canonicalJsonStringify, computePromptReviewPayloadSha256 } from "@chat/domain";
+import {
+  SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+  SYSTEM_NOTE_WORKFLOW_REVISION_ID,
+} from "@chat/application/workflow-system-definitions";
+import {
+  canonicalJsonStringify,
+  computePromptReviewPayloadSha256,
+  hashCanonical,
+} from "@chat/domain";
 import { JsonProductStore } from "@chat/product-store-json";
 import { OutboxDispatcher } from "./outbox-dispatcher.js";
 import { createFilePromptCatalog } from "./prompt-catalog.js";
@@ -60,6 +75,17 @@ function directAgentIds(): DirectAgentIdFactory {
     promptReviewDecision: () =>
       next("prd") as ReturnType<DirectAgentIdFactory["promptReviewDecision"]>,
     candidate: () => next("drc") as ReturnType<DirectAgentIdFactory["candidate"]>,
+  };
+}
+
+function noteIds(): NoteIdFactory {
+  let value = 0;
+  const next = (prefix: string) => `${prefix}_dispatch${(++value).toString(36)}`;
+  return {
+    note: () => next("nte") as ReturnType<NoteIdFactory["note"]>,
+    revision: () => next("ntr") as ReturnType<NoteIdFactory["revision"]>,
+    candidate: () => next("ntc") as ReturnType<NoteIdFactory["candidate"]>,
+    decision: () => next("ntd") as ReturnType<NoteIdFactory["decision"]>,
   };
 }
 
@@ -193,6 +219,7 @@ async function seed(): Promise<{
     now,
     ids: ids(),
     directAgentIds: directAgentIds(),
+    noteIds: noteIds(),
     promptCatalog: await createFilePromptCatalog(),
     agentRuntimeProfiles: { read: async (agentKey) => runtimeProfile(agentKey) },
     trace: (event) => traces.push(event),
@@ -231,6 +258,36 @@ async function seed(): Promise<{
       timestamp += milliseconds;
     },
   };
+}
+
+async function forceRunLifecycleForTerminalTest(
+  deps: ApplicationDeps,
+  input: {
+    readonly commandId: string;
+    readonly productRunId: string;
+    readonly status: "running";
+    readonly phase: "validating" | "extracting" | "classifying" | "committing";
+  },
+): Promise<void> {
+  await deps.store.transact({
+    commandId: input.commandId as never,
+    // 仅构造历史中间态；使用Store已知的空引用Receipt形状，避免放宽生产完整性规则。
+    commandType: "UpdateOutboxStatus",
+    requestSha256: hashCanonical("test.prepare-runtime-terminal.v1", input),
+    traceContext: { productRunId: input.productRunId as never },
+    mutate: (draft) => {
+      const run = draft.entities.runs[input.productRunId];
+      if (run === undefined) throw new Error("测试Product Run不存在");
+      draft.entities.runs[input.productRunId] = {
+        ...run,
+        status: input.status,
+        phase: input.phase,
+        revision: run.revision + 1,
+        updatedAt: deps.now(),
+      } as typeof run;
+      return { resultRefs: {} };
+    },
+  });
 }
 
 async function seedMemoryWrite() {
@@ -305,7 +362,7 @@ async function seedMemoryImport() {
 }
 
 /** 只通过正式Application命令形成Prompt Review Decision及其workflow_resume Outbox。 */
-async function seedPromptReviewResume() {
+async function seedPromptReviewWaiting() {
   const seeded = await seed();
   const initial = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
   const directRevision =
@@ -385,37 +442,44 @@ async function seedPromptReviewResume() {
     toStatus: "waiting_human",
     publicSummary: "等待审核第1次Provider完整提示词",
   });
-  const approved = await submitPromptReviewDecision(seeded.deps, {
+  return {
+    ...seeded,
+    begun,
+    canonicalPayloadJson,
+    published,
+    workflowAttemptId: workflowAttempt.attemptId,
+  };
+}
+
+async function seedPromptReviewResume() {
+  const waiting = await seedPromptReviewWaiting();
+  const approved = await submitPromptReviewDecision(waiting.deps, {
     principalId: "usr_dispatchtest" as never,
-    productRunId: run.productRunId,
+    productRunId: waiting.published.promptReview.productRunId,
     commandId: "cmd_promptreviewapprove" as never,
-    expectedRunRevision: published.runRevision,
+    expectedRunRevision: waiting.published.runRevision,
     payload: {
-      promptReviewRequestId: published.promptReview.promptReviewRequestId,
-      requestRevision: published.promptReview.requestRevision,
-      reviewSha256: published.promptReview.reviewSha256,
-      payloadSha256: published.promptReview.payloadSha256,
+      promptReviewRequestId: waiting.published.promptReview.promptReviewRequestId,
+      requestRevision: waiting.published.promptReview.requestRevision,
+      reviewSha256: waiting.published.promptReview.reviewSha256,
+      payloadSha256: waiting.published.promptReview.payloadSha256,
       kind: "approve",
     },
   });
-  const committed = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+  const committed = (await waiting.deps.store.read({ kind: "committedSnapshot" })).snapshot;
   const resumeOutbox = Object.values(committed.outbox).find(
     (entry) =>
       entry.kind === "workflow_resume" &&
-      entry.promptReviewRequestId === published.promptReview.promptReviewRequestId &&
+      entry.promptReviewRequestId === waiting.published.promptReview.promptReviewRequestId &&
       entry.promptReviewDecisionId === approved.decision.promptReviewDecisionId,
   );
   if (resumeOutbox?.kind !== "workflow_resume") {
     throw new Error("Prompt Review Decision没有产生workflow_resume Outbox");
   }
   return {
-    ...seeded,
+    ...waiting,
     approved,
-    begun,
-    canonicalPayloadJson,
-    published,
     resumeOutbox,
-    workflowAttemptId: workflowAttempt.attemptId,
   };
 }
 
@@ -979,6 +1043,109 @@ describe("通用Product Workflow终态监督", () => {
     });
   });
 
+  it("Planning validating可由Runtime取消终态经Application与Json Store收敛", async () => {
+    const seeded = await seed();
+    const planning = await compilePlanningInput(seeded.deps, {
+      commandId: "cmd_compilevalidatingcancel" as never,
+      productRunId: seeded.productRunId as never,
+      planRevision: 1,
+    });
+    const review = await publishPlanForReview(seeded.deps, {
+      commandId: "cmd_publishvalidatingcancel" as never,
+      productRunId: seeded.productRunId as never,
+      attemptId: planning.attemptId,
+      expectedRunRevision: planning.inputRunRevision,
+      inputManifestSha256: planning.inputManifestSha256,
+      content: {
+        objective: "验证取消阶段完整性",
+        summary: "生成Approved Plan后模拟持久化validating中间态",
+        assumptions: [],
+        openQuestions: [],
+        steps: [
+          {
+            stepId: "step-1",
+            title: "验证结果",
+            purpose: "形成可验证的Approved Plan",
+            dependsOn: [],
+            inputRefs: [],
+            expectedOutput: "验证证据",
+            successCriteria: ["验证完成"],
+            requestedCapabilities: [],
+            risk: "low",
+          },
+        ],
+        completionCriteria: ["验证完成"],
+        warnings: [],
+      },
+    });
+    const approved = await submitPlanDecision(seeded.deps, {
+      principalId: "usr_dispatchtest" as never,
+      commandId: "cmd_approvevalidatingcancel" as never,
+      productRunId: seeded.productRunId as never,
+      expectedRunRevision: review.run.revision,
+      payload: {
+        approvalRequestId: review.approval.approvalRequestId,
+        planId: review.plan.planId,
+        planRevision: review.plan.planRevision,
+        planSha256: review.plan.sha256,
+        kind: "approve",
+      },
+    });
+    await compileExecutionContract(seeded.deps, {
+      commandId: "cmd_contractvalidatingcancel" as never,
+      productRunId: seeded.productRunId as never,
+      approvalDecisionId: approved.decision.decisionId,
+    });
+    let snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const resume = Object.values(snapshot.outbox).find(
+      (entry) => entry.kind === "workflow_resume" && entry.productRunId === seeded.productRunId,
+    );
+    if (resume === undefined) throw new Error("Approved Plan缺少Resume Outbox");
+    await updateOutboxStatus(seeded.deps, {
+      commandId: "cmd_disablevalidatingresume" as never,
+      outboxId: resume.outboxId,
+      status: "failed_terminal",
+    });
+    await forceRunLifecycleForTerminalTest(seeded.deps, {
+      commandId: "cmd_forcevalidatingcancel",
+      productRunId: seeded.productRunId,
+      status: "running",
+      phase: "validating",
+    });
+    snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const start = workflowStartFor(snapshot, seeded.productRunId);
+    await updateOutboxStatus(seeded.deps, {
+      commandId: "cmd_ackvalidatingcancel" as never,
+      outboxId: start.outboxId,
+      status: "acknowledged",
+    });
+    seeded.advance(2_000);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          schemaVersion: "chat-workflow-dispatch.v1",
+          productRunId: seeded.productRunId,
+          startBinding: "exists",
+          runtimeRun: { state: "terminal", outcome: "cancelled" },
+        }),
+      ),
+    );
+    const dispatcher = new OutboxDispatcher({
+      deps: seeded.deps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+
+    await dispatcher.tick();
+    snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.runs[seeded.productRunId]).toMatchObject({
+      runKind: "planning",
+      status: "cancelled",
+      phase: "validating",
+    });
+  });
+
   it("Runtime active时多次tick不干预waiting_human Product Run", async () => {
     const seeded = await seed();
     const planning = await compilePlanningInput(seeded.deps, {
@@ -1022,17 +1189,15 @@ describe("通用Product Workflow终态监督", () => {
       status: "acknowledged",
     });
     seeded.advance(2_000);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        Response.json({
-          schemaVersion: "chat-workflow-dispatch.v1",
-          productRunId: seeded.productRunId,
-          startBinding: "exists",
-          runtimeRun: { state: "active" },
-        }),
-      ),
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        schemaVersion: "chat-workflow-dispatch.v1",
+        productRunId: seeded.productRunId,
+        startBinding: "exists",
+        runtimeRun: { state: "active" },
+      }),
     );
+    vi.stubGlobal("fetch", fetchMock);
     const dispatcher = new OutboxDispatcher({
       deps: seeded.deps,
       workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
@@ -1047,6 +1212,242 @@ describe("通用Product Workflow终态监督", () => {
       phase: "plan_review",
       revision: published.run.revision,
     });
+
+    fetchMock.mockResolvedValue(
+      Response.json({
+        schemaVersion: "chat-workflow-dispatch.v1",
+        productRunId: seeded.productRunId,
+        startBinding: "exists",
+        runtimeRun: { state: "terminal", outcome: "outcome_unknown" },
+      }),
+    );
+    await dispatcher.tick();
+    snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.runs[seeded.productRunId]).toMatchObject({
+      status: "outcome_unknown",
+      phase: "plan_review",
+    });
+  });
+
+  it("Direct prompt_review可由Runtime未知终态经Json Store收敛", async () => {
+    const waiting = await seedPromptReviewWaiting();
+    let snapshot = (await waiting.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const start = workflowStartFor(snapshot, waiting.published.promptReview.productRunId);
+    await updateOutboxStatus(waiting.deps, {
+      commandId: "cmd_ackdirectwaitingterminal" as never,
+      outboxId: start.outboxId,
+      status: "acknowledged",
+    });
+    waiting.advance(2_000);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          schemaVersion: "chat-workflow-dispatch.v1",
+          productRunId: waiting.published.promptReview.productRunId,
+          startBinding: "exists",
+          runtimeRun: { state: "terminal", outcome: "outcome_unknown" },
+        }),
+      ),
+    );
+    const dispatcher = new OutboxDispatcher({
+      deps: waiting.deps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+
+    await dispatcher.tick();
+    snapshot = (await waiting.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.runs[waiting.published.promptReview.productRunId]).toMatchObject({
+      status: "outcome_unknown",
+      phase: "prompt_review",
+    });
+  });
+
+  it("Note note_review可由Runtime未知终态经Json Store收敛", async () => {
+    const seeded = await seed();
+    let snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const planningStart = workflowStartFor(snapshot, seeded.productRunId);
+    await updateOutboxStatus(seeded.deps, {
+      commandId: "cmd_disablenoteplanning" as never,
+      outboxId: planningStart.outboxId,
+      status: "failed_terminal",
+    });
+    const noteRevision =
+      snapshot.entities.workflowDefinitionRevisions[SYSTEM_NOTE_WORKFLOW_REVISION_ID];
+    if (noteRevision === undefined) throw new Error("缺少Note Workflow Revision");
+    const note = await submitUserMessage(seeded.deps, {
+      principalId: "usr_dispatchtest" as never,
+      sessionId: seeded.sessionId as never,
+      commandId: "cmd_submitnoteterminal" as never,
+      payload: {
+        text: "把这段内容沉淀为Note",
+        workflowSelection: {
+          kind: "published_revision",
+          workflowDefinitionRevisionId: noteRevision.workflowDefinitionRevisionId,
+          definitionSha256: noteRevision.definitionSha256,
+          businessInput: {
+            kind: "note_capture",
+            defaultKind: "general",
+            suggestedTagLabels: [],
+          },
+        },
+      },
+    });
+    await publishNoteCandidate(seeded.deps, {
+      commandId: "cmd_publishnoteterminal" as never,
+      productRunId: note.run.productRunId as never,
+      proposed: {
+        title: "待审核Note",
+        kind: "general",
+        contentMarkdown: "Runtime终止前形成的待审核Note。",
+        tagLabels: [],
+      },
+    });
+    snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const noteStart = workflowStartFor(snapshot, note.run.productRunId);
+    await updateOutboxStatus(seeded.deps, {
+      commandId: "cmd_acknoteterminal" as never,
+      outboxId: noteStart.outboxId,
+      status: "acknowledged",
+    });
+    seeded.advance(2_000);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          schemaVersion: "chat-workflow-dispatch.v1",
+          productRunId: note.run.productRunId,
+          startBinding: "exists",
+          runtimeRun: { state: "terminal", outcome: "outcome_unknown" },
+        }),
+      ),
+    );
+    const dispatcher = new OutboxDispatcher({
+      deps: seeded.deps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+
+    await dispatcher.tick();
+    snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.runs[note.run.productRunId]).toMatchObject({
+      runKind: "note_capture",
+      status: "outcome_unknown",
+      phase: "note_review",
+    });
+  });
+
+  it.each(["extracting", "classifying", "committing"] as const)(
+    "Note %s可由Runtime取消终态经Application与Json Store收敛",
+    async (phase) => {
+      const seeded = await seed();
+      let snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+      const planningStart = workflowStartFor(snapshot, seeded.productRunId);
+      await updateOutboxStatus(seeded.deps, {
+        commandId: `cmd_disablenotecancel${phase}` as never,
+        outboxId: planningStart.outboxId,
+        status: "failed_terminal",
+      });
+      const noteRevision =
+        snapshot.entities.workflowDefinitionRevisions[SYSTEM_NOTE_WORKFLOW_REVISION_ID];
+      if (noteRevision === undefined) throw new Error("缺少Note Workflow Revision");
+      const note = await submitUserMessage(seeded.deps, {
+        principalId: "usr_dispatchtest" as never,
+        sessionId: seeded.sessionId as never,
+        commandId: `cmd_submitnotecancel${phase}` as never,
+        payload: {
+          text: `把${phase}阶段收敛为取消`,
+          workflowSelection: {
+            kind: "published_revision",
+            workflowDefinitionRevisionId: noteRevision.workflowDefinitionRevisionId,
+            definitionSha256: noteRevision.definitionSha256,
+            businessInput: {
+              kind: "note_capture",
+              defaultKind: "general",
+              suggestedTagLabels: [],
+            },
+          },
+        },
+      });
+      await forceRunLifecycleForTerminalTest(seeded.deps, {
+        commandId: `cmd_forcenotecancel${phase}`,
+        productRunId: note.run.productRunId,
+        status: "running",
+        phase,
+      });
+      snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+      const noteStart = workflowStartFor(snapshot, note.run.productRunId);
+      await updateOutboxStatus(seeded.deps, {
+        commandId: `cmd_acknotecancel${phase}` as never,
+        outboxId: noteStart.outboxId,
+        status: "acknowledged",
+      });
+      seeded.advance(2_000);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          Response.json({
+            schemaVersion: "chat-workflow-dispatch.v1",
+            productRunId: note.run.productRunId,
+            startBinding: "exists",
+            runtimeRun: { state: "terminal", outcome: "cancelled" },
+          }),
+        ),
+      );
+      const dispatcher = new OutboxDispatcher({
+        deps: seeded.deps,
+        workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+        credential: "rtk_test",
+      });
+
+      await dispatcher.tick();
+      snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+      expect(snapshot.entities.runs[note.run.productRunId]).toMatchObject({
+        runKind: "note_capture",
+        status: "cancelled",
+        phase,
+      });
+    },
+  );
+
+  it("长时间active后的单次查询抖动只开始新unknown窗口，恢复active会清除", async () => {
+    const seeded = await seed();
+    let snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const start = workflowStartFor(snapshot, seeded.productRunId);
+    await updateOutboxStatus(seeded.deps, {
+      commandId: "cmd_acktransientunknown" as never,
+      outboxId: start.outboxId,
+      status: "acknowledged",
+    });
+    seeded.advance(3_600_000);
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("transient reconcile failure"))
+      .mockResolvedValue(
+        Response.json({
+          schemaVersion: "chat-workflow-dispatch.v1",
+          productRunId: seeded.productRunId,
+          startBinding: "exists",
+          runtimeRun: { state: "active" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const dispatcher = new OutboxDispatcher({
+      deps: seeded.deps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+
+    await dispatcher.tick();
+    snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.runs[seeded.productRunId]?.status).toBe("pending");
+    expect(snapshot.outbox[start.outboxId]?.lastErrorCode).toBe("workflow.runtime_query_unknown");
+    seeded.advance(2_000);
+    await dispatcher.tick();
+    snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.runs[seeded.productRunId]?.status).toBe("pending");
+    expect(snapshot.outbox[start.outboxId]?.lastErrorCode).toBeUndefined();
   });
 
   it("Runtime查询长期未知只收敛为outcome_unknown，不重启或新增Binding", async () => {
@@ -1075,6 +1476,10 @@ describe("通用Product Workflow终态监督", () => {
     });
 
     await dispatcher.tick();
+    snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.runs[seeded.productRunId]?.status).toBe("pending");
+    expect(snapshot.outbox[start.outboxId]?.lastErrorCode).toBe("workflow.runtime_query_unknown");
+    seeded.advance(31_000);
     await dispatcher.tick();
     snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
     expect(snapshot.entities.runs[seeded.productRunId]).toMatchObject({
@@ -1086,6 +1491,6 @@ describe("通用Product Workflow终态监督", () => {
         (entry) => entry.kind === "workflow_start" && entry.productRunId === seeded.productRunId,
       ),
     ).toHaveLength(1);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

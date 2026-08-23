@@ -36,6 +36,8 @@ export interface PromptAssemblyShape {
   readonly profileVersion: string;
   readonly compilerVersion: string;
   readonly workspaceRootId?: string | undefined;
+  readonly runtimeProfileSha256?: string | undefined;
+  readonly workspaceGrantSha256?: string | undefined;
   readonly regions: readonly PromptAssemblyRegionShape[];
   readonly systemPromptAppend: string;
   readonly userPrompt: string;
@@ -52,6 +54,8 @@ export interface PromptAssemblyV2Shape {
   readonly profileVersion: string;
   readonly compilerVersion: string;
   readonly workspaceRootId?: string | undefined;
+  readonly runtimeProfileSha256?: string | undefined;
+  readonly workspaceGrantSha256?: string | undefined;
   readonly regions: readonly PromptAssemblyRegionShape[];
   readonly systemPromptAppend: string;
   readonly piSystemPrompt?: PiSystemPromptResolutionShape | undefined;
@@ -286,6 +290,12 @@ export function assertPromptAssembly(
     ...(assembly.workspaceRootId === undefined
       ? {}
       : { workspaceRootId: assembly.workspaceRootId }),
+    ...(assembly.runtimeProfileSha256 === undefined
+      ? {}
+      : { runtimeProfileSha256: assembly.runtimeProfileSha256 }),
+    ...(assembly.workspaceGrantSha256 === undefined
+      ? {}
+      : { workspaceGrantSha256: assembly.workspaceGrantSha256 }),
     regions: assembly.regions,
     systemPromptAppend: assembly.systemPromptAppend,
   } as const;

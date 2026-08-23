@@ -27,6 +27,8 @@ import {
   PiExecutorOperationConflictError,
   PiExecutorOperationNotFoundError,
   PiExecutorOperationOutcomeUnknownError,
+  PiExecutorOperationStateConflictError,
+  PiExecutorToolCallConflictError,
   type PiExecutorOperationStore,
 } from "./executor-operation-store.js";
 import {
@@ -98,6 +100,12 @@ function authorized(actual: string | undefined, expected: string): boolean {
 function stableServiceErrorCode(error: unknown): string {
   if (error instanceof PiCodingAgentExecutionError) return error.code;
   if (error instanceof PiExecutorOperationOutcomeUnknownError) return error.code;
+  if (
+    error instanceof PiExecutorOperationStateConflictError ||
+    error instanceof PiExecutorToolCallConflictError
+  ) {
+    return error.code;
+  }
   if (error instanceof z.ZodError) return "executor.contract_invalid";
   return "executor.session_failed";
 }
@@ -105,6 +113,12 @@ function stableServiceErrorCode(error: unknown): string {
 function statusForError(error: unknown): 400 | 401 | 404 | 409 | 500 {
   if (error instanceof PiAgentRuntimeProfileWorkspaceRootNotFoundError) return 400;
   if (error instanceof PiExecutorOperationConflictError) return 409;
+  if (
+    error instanceof PiExecutorOperationStateConflictError ||
+    error instanceof PiExecutorToolCallConflictError
+  ) {
+    return 409;
+  }
   if (error instanceof PiExecutorOperationNotFoundError) return 404;
   if (error instanceof PiCodingAgentExecutionError) return 400;
   if (error instanceof z.ZodError || error instanceof SyntaxError) return 400;
@@ -117,7 +131,9 @@ function problem(error: unknown): { readonly errorCode: string } {
   }
   if (
     error instanceof PiExecutorOperationConflictError ||
-    error instanceof PiExecutorOperationNotFoundError
+    error instanceof PiExecutorOperationNotFoundError ||
+    error instanceof PiExecutorOperationStateConflictError ||
+    error instanceof PiExecutorToolCallConflictError
   ) {
     return { errorCode: error.code };
   }

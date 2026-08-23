@@ -216,8 +216,8 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     workload: "new_planning",
     lifecycle: "terminal",
     compatibility: "read_only_history",
-    objectCount: 51,
-    contentSha256: "290aece7a7d3d7e80e3e23c2130067e4818850a3a91a82b0c66c60a468902064",
+    objectCount: 54,
+    contentSha256: "666f8cf6fa9409775c89b22b27bedf450c36dca00257357084703dae2be8e3a4",
   },
   {
     fixtureId: "v10-note-capture-active",

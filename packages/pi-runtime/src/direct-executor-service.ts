@@ -38,6 +38,7 @@ import {
 import { hashExecutorValue } from "./executor-operation-store.js";
 import type { PiExecutorWorkspaceRoot } from "./executor-service.js";
 import type { ProjectBootstrapCandidate, ProjectBootstrapProposal } from "@chat/contracts";
+import { computeWorkspaceGrantSha256 } from "@chat/domain";
 
 export interface AuthorizedDirectAgentInput {
   readonly productRunId: string;
@@ -100,6 +101,8 @@ export interface AuthorizedDirectAgentInput {
         };
         readonly budget: Readonly<Record<string, unknown>>;
         readonly workspaceRootId?: string | undefined;
+        readonly runtimeProfileSha256?: string | undefined;
+        readonly workspaceGrantSha256?: string | undefined;
       };
   readonly capabilityMode: "pi_cli_default" | "custom" | "read_only" | "project_bootstrap";
   readonly projectBootstrapContext?: {
@@ -110,6 +113,26 @@ export interface AuthorizedDirectAgentInput {
   };
   readonly promptReviewMode: "manual" | "off";
   readonly limits: AuthorizedDirectAgentProfile["limits"];
+}
+
+/** API冻结的Grant SHA必须命中Executor实际canonical root；调用点位于runner/Provider前。 */
+export function assertDirectExecutorWorkspaceGrant(
+  promptAssembly: AuthorizedDirectAgentInput["promptAssembly"],
+  configuredRoot: PiExecutorWorkspaceRoot | undefined,
+): void {
+  if (
+    promptAssembly.schemaVersion !== "prompt-assembly.v2" ||
+    promptAssembly.workspaceGrantSha256 === undefined
+  ) {
+    return;
+  }
+  if (
+    configuredRoot === undefined ||
+    computeWorkspaceGrantSha256(configuredRoot.canonicalPath) !==
+      promptAssembly.workspaceGrantSha256
+  ) {
+    throw new DirectAgentExecutionError("direct_executor.workspace_grant_mismatch");
+  }
 }
 
 export interface PublishDirectAgentResultInput {
@@ -438,6 +461,7 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
       ) {
         throw new DirectAgentExecutionError("direct_executor.workspace_root_not_allowed");
       }
+      assertDirectExecutorWorkspaceGrant(authorizedInput.promptAssembly, configuredRoot);
       const cwd = configuredRoot?.canonicalPath ?? resolve(options.emptyWorkspaceRoot, operationId);
       const output = await runner.run({
         request,

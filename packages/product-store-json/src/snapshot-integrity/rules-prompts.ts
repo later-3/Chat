@@ -1,5 +1,6 @@
 import {
   DIRECT_PROMPT_COMPILER_V2_VERSION,
+  DIRECT_PROMPT_COMPILER_V3_VERSION,
   DIRECT_PROMPT_COMPILER_VERSION,
   DIRECT_PROMPT_INPUT_TOKEN_LIMIT,
   DIRECT_PROMPT_METER_VERSION,
@@ -434,7 +435,8 @@ export function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): v
     if (
       (!isV3 && isLegacy && assembly.profileVersion !== LEGACY_DIRECT_PROMPT_PROFILE_VERSION) ||
       (isV2 &&
-        (assembly.compilerVersion !== DIRECT_PROMPT_COMPILER_V2_VERSION ||
+        ((assembly.compilerVersion !== DIRECT_PROMPT_COMPILER_V2_VERSION &&
+          assembly.compilerVersion !== DIRECT_PROMPT_COMPILER_V3_VERSION) ||
           assembly.profileVersion !== DIRECT_PROMPT_PROFILE_V2_VERSION)) ||
       (!isV3 &&
         !isLegacy &&

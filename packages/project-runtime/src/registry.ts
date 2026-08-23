@@ -13,6 +13,7 @@ import {
   projectResourceAdapterKindSchema,
   type ProjectObservationData,
 } from "@chat/contracts";
+import { computeWorkspaceGrantSha256 } from "@chat/domain";
 
 const execFileAsync = promisify(execFile);
 const MAX_DOCUMENTS = 100;
@@ -92,6 +93,7 @@ export async function createProjectResourceRegistry(
         rootId: item.rootId,
         displayName: item.displayName,
         enabledAdapters: item.enabledAdapters,
+        grantSha256: computeWorkspaceGrantSha256(canonicalPath),
       },
     });
   }

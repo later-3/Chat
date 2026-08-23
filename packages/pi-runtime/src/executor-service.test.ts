@@ -24,6 +24,7 @@ import {
   PiExecutorOperationNotFoundError,
   PiExecutorOperationOutcomeUnknownError,
   PiExecutorOperationStore,
+  PiExecutorToolCallConflictError,
   hashExecutorValue,
 } from "./executor-operation-store.js";
 import { createPiExecutorService } from "./executor-service.js";
@@ -275,6 +276,86 @@ describe("PiExecutorOperationStore", () => {
       .filter((event) => event.type === "tool.outcome_unknown");
     expect(unknownEvents).toHaveLength(1);
     expect(recovered.getSnapshot("pio_test1").status).toBe("outcome_unknown");
+  });
+
+  it("同一Operation跨Turn复用toolCallId会在新Intent落盘前拒绝", async () => {
+    const root = await temporaryRoot();
+    const store = await PiExecutorOperationStore.open(join(root, "operations"));
+    await store.createOrGet(request());
+    await store.markRunning("pio_test1");
+    await store.setSession("pio_test1", "pis_test1", ["read"]);
+    const intent = {
+      operationId: "pio_test1" as const,
+      type: "tool.intent_persisted" as const,
+      sessionId: "pis_test1" as const,
+      turnIndex: 0,
+      toolCallId: "call_reused",
+      toolName: "read" as const,
+      inputSha256: hashExecutorValue({ path: "README.md" }),
+      inputDisplay: JSON.stringify({ path: "README.md" }),
+      inputDisplayTruncated: false,
+    };
+    await store.append("pio_test1", intent);
+    await store.append("pio_test1", {
+      operationId: "pio_test1",
+      type: "tool.completed",
+      sessionId: "pis_test1",
+      turnIndex: 0,
+      toolCallId: "call_reused",
+      toolName: "read",
+      resultSha256: hashExecutorValue({ output: "ok" }),
+      resultDisplay: "ok",
+      resultDisplayTruncated: false,
+      durationMs: 1,
+    });
+
+    await expect(store.append("pio_test1", { ...intent, turnIndex: 1 })).rejects.toBeInstanceOf(
+      PiExecutorToolCallConflictError,
+    );
+    expect(
+      store.getEvents("pio_test1").filter((event) => event.type === "tool.intent_persisted"),
+    ).toHaveLength(1);
+  });
+
+  it("晚到complete不能把已收敛的outcome_unknown反转为成功", async () => {
+    const root = await temporaryRoot();
+    const store = await PiExecutorOperationStore.open(join(root, "operations"));
+    await store.createOrGet(request());
+    await store.markRunning("pio_test1");
+    await store.setSession("pio_test1", "pis_test1", ["bash"]);
+    await store.append("pio_test1", {
+      operationId: "pio_test1",
+      type: "tool.intent_persisted",
+      sessionId: "pis_test1",
+      turnIndex: 0,
+      toolCallId: "call_late",
+      toolName: "bash",
+      inputSha256: hashExecutorValue({ command: "pnpm test" }),
+      inputDisplay: JSON.stringify({ command: "pnpm test" }),
+      inputDisplayTruncated: false,
+    });
+    await store.fail("pio_test1", "executor.session_failed", 10);
+    await expect(
+      store.complete(
+        "pio_test1",
+        {
+          stepId: "step-1",
+          output: "晚到候选",
+          sections: [{ heading: "结果", body: "晚到候选" }],
+          successCriteriaEvidence: ["结果存在｜有输出"],
+          criteriaEvidence: ["完成测试｜有输出"],
+          warnings: [],
+        },
+        20,
+      ),
+    ).rejects.toBeInstanceOf(PiExecutorOperationOutcomeUnknownError);
+    expect(store.getSnapshot("pio_test1")).toMatchObject({
+      status: "outcome_unknown",
+      errorCode: "executor.tool_result_persist_failed",
+    });
+    expect(store.getEvents("pio_test1").some((event) => event.type === "operation.completed")).toBe(
+      false,
+    );
   });
 });
 

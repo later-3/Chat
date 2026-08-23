@@ -84,7 +84,10 @@ Operation Journal中已经成功持久化的事件使用从1开始连续递增�
 `tool_result`只有在`tool.completed/tool.failed`成功追加后才删除内存Intent；即使上游吞掉该handler异常，
 Operation终态提交仍会重新读取耐久Journal。发现任一`tool.intent_persisted`没有闭合事件时，`complete()`先耐久追加
 `tool.outcome_unknown`和`operation.outcome_unknown`，再以稳定`executor.tool_result_persist_failed`拒绝成功；随后普通
-失败处理不能把它降级成`failed`。重启扫描复用同一闭合逻辑，重复启动不会追加第二组未知事件。
+失败处理不能把它降级成`failed`。同一Operation内的`toolCallId`是Intent身份而不是可复用槽位：第二次持久化同一ID会以
+`executor.tool_call_id_reused`在真实Tool前失败，旧Result不能借同名ID闭合另一个Intent。Operation一旦进入
+`succeeded / failed / outcome_unknown`任一终态就保持单调；迟到的`complete()`只能幂等读取既有成功，或以稳定冲突拒绝，
+不能把未知/失败改写为成功。重启扫描复用同一闭合逻辑，重复启动不会追加第二组未知事件。
 
 只有耐久状态为`succeeded`且Workflow客户端已经连续读取全部事件时才返回Candidate。`outcome_unknown`没有Candidate，
 因而不能进入Validation或Product Commit。正式fail-closed保证由Provider Gate、执行前Tool Intent栅栏以及上述终态耐久
@@ -93,6 +96,8 @@ Operation终态提交仍会重新读取耐久Journal。发现任一`tool.intent_
 Pi Operation Journal事件会投影到独立Run Activity Journal；Debug Trace可同时保存诊断事件，但公开Session轨迹不再反向读取Trace。
 
 Direct Operation还在首次真实`bindExtensions`后钉住Resolved Runtime Manifest SHA，内容覆盖System Hash、活动Tool名称/Schema Hash和资源清单Hash。恢复必须命中同一个SHA；不一致时在Provider前收敛为`direct_executor.runtime_manifest_mismatch`。P0修复前的旧Operation若完全没有该证据，只允许在首次恢复时补钉一次。
+
+绑定AgentVersion的新Direct Assembly还冻结Run创建时的scoped Runtime Profile Hash和Workspace Root Grant Hash。API在每次Operation授权时重新读取实时Profile并比较；Executor随后把Root Grant与实际canonical cwd比较，再进入Runner。绝对路径不进入Product Store、Operation或公开API。这一门处理Run创建后、首个AgentSession之前的Settings/Extension/Tool/资源或Root映射漂移；Resolved Runtime Manifest继续处理Session绑定后的实际清单及审核恢复漂移。
 
 Trace和Operation事件不保存Prompt、Provider Payload、API Key或隐藏推理。为满足Pi CLI/Web同等级执行可观察性，它们保存经过边界脱敏且最多32K的Assistant可见文本、Tool输入和Tool结果；命令、模型可见文件路径、输出、状态与耗时因此可复核。完整Provider正文、Pi隐藏上下文和未裁剪Workspace内容仍分别留在Pi Session、Workspace与Product Store。旧v1 Trace没有显示字段时Reader继续兼容，并明确投影为legacy缺失，而不伪造内容。
 
@@ -105,8 +110,8 @@ API的轨迹Query读取Product事实、Run Activity与Workflow Runtime证据。B
 ## 5. 故障与恢复
 
 1. Executor收到Start后先原子提交`operation.accepted`，再异步启动AgentSession；Workflow连接断开不会取消运行。
-2. 每次Tool执行前先原子提交`tool.intent_persisted`。进程重启发现未闭合Tool时，先追加`tool.outcome_unknown`，再把Operation收敛为`operation.outcome_unknown`。
-3. Tool Result持久化失败时，即使Agent loop继续返回，Operation也不能提交成功；同一进程终态检查与重启恢复都会保守收敛为结果未知，且`fail()`不能覆盖该终态。
+2. 每次Tool执行前先原子提交`tool.intent_persisted`；同一Operation重复`toolCallId`在真实Tool前被拒绝。进程重启发现未闭合Tool时，先追加`tool.outcome_unknown`，再把Operation收敛为`operation.outcome_unknown`。
+3. Tool Result持久化失败时，即使Agent loop继续返回，Operation也不能提交成功；同一进程终态检查与重启恢复都会保守收敛为结果未知，且迟到的`fail()`或`complete()`都不能覆盖已有终态。
 4. 服务启动时不会自动重放`queued/running` Operation。读工具理论上可安全重跑，但`edit/write/bash`可能已生效；当前统一保守进入人工对账，避免猜测性重复副作用。
 5. Provider自动重试在Executor专用Settings中关闭。Turn数、总Completion Token和总时限由Execution Contract冻结；越界形成稳定失败。
 6. Product Commit仍使用稳定Command ID幂等重试，绝不因为提交失败再次调用Pi。

@@ -30,6 +30,7 @@ export const DIRECT_PROMPT_PROFILE_VERSION = "direct-agent-prompt-profile.v1";
 export const DIRECT_PROMPT_COMPILER_VERSION = "direct-agent-prompt-compiler.v1";
 export const DIRECT_PROMPT_PROFILE_V2_VERSION = "direct-agent-prompt-profile.v2";
 export const DIRECT_PROMPT_COMPILER_V2_VERSION = "direct-agent-prompt-compiler.v2";
+export const DIRECT_PROMPT_COMPILER_V3_VERSION = "direct-agent-prompt-compiler.v3";
 export const DIRECT_PROMPT_INPUT_TOKEN_LIMIT = 64_000;
 export const DIRECT_PROMPT_TOOL_TOKEN_RESERVE = 8_000;
 export const DIRECT_PROMPT_METER_VERSION = "utf8-bytes-div-3.v1";
@@ -384,8 +385,11 @@ export const promptAssemblyV2Schema = z
     sourceMessageId: messageIdSchema,
     workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
     profileVersion: z.literal(DIRECT_PROMPT_PROFILE_V2_VERSION),
-    compilerVersion: z.literal(DIRECT_PROMPT_COMPILER_V2_VERSION),
+    compilerVersion: z.enum([DIRECT_PROMPT_COMPILER_V2_VERSION, DIRECT_PROMPT_COMPILER_V3_VERSION]),
     workspaceRootId: promptWorkspaceRootIdSchema.optional(),
+    /** 新Run在Provider前复核这两个Hash；旧v2 Compiler记录继续按历史语义读取。 */
+    runtimeProfileSha256: sha256Schema.optional(),
+    workspaceGrantSha256: sha256Schema.optional(),
     regions: z.array(promptAssemblyRegionSchema).max(32),
     systemPromptAppend: z.string().max(512_000),
     piSystemPrompt: piSystemPromptResolutionSchema.optional(),
@@ -398,6 +402,26 @@ export const promptAssemblyV2Schema = z
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (
+      value.compilerVersion === DIRECT_PROMPT_COMPILER_V3_VERSION &&
+      value.runtimeProfileSha256 === undefined
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["runtimeProfileSha256"],
+        message: "Prompt Assembly V2新编译器必须冻结Runtime Profile Hash",
+      });
+    }
+    if (
+      value.compilerVersion === DIRECT_PROMPT_COMPILER_V3_VERSION &&
+      (value.workspaceRootId === undefined) !== (value.workspaceGrantSha256 === undefined)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["workspaceGrantSha256"],
+        message: "Workspace Root与Grant Hash必须成对冻结",
+      });
+    }
     const current = value.messages.at(-1);
     if (
       current?.role !== "user" ||

@@ -348,6 +348,7 @@ function fixture(): {
           rootId: "root_chat",
           displayName: "Chat 工作区",
           enabledAdapters: ["local-git-workspace.v1" as const],
+          grantSha256: "4".repeat(64),
         },
       ],
       observe: async () => {

@@ -25,9 +25,11 @@ export function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
     "cancelled/queued",
     "cancelled/planning",
     "cancelled/executing",
+    "cancelled/validating",
     "cancelled/rejected",
     "outcome_unknown/queued",
     "outcome_unknown/planning",
+    "outcome_unknown/plan_review",
     "outcome_unknown/executing",
     "outcome_unknown/validating",
   ]);
@@ -44,11 +46,15 @@ export function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
     "failed/note_review",
     "failed/committing",
     "cancelled/queued",
+    "cancelled/extracting",
+    "cancelled/classifying",
     "cancelled/note_review",
+    "cancelled/committing",
     "cancelled/rejected",
     "outcome_unknown/queued",
     "outcome_unknown/extracting",
     "outcome_unknown/classifying",
+    "outcome_unknown/note_review",
     "outcome_unknown/committing",
   ]);
   const directAgentLegal = new Set([
@@ -64,6 +70,7 @@ export function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
     "cancelled/rejected",
     "outcome_unknown/queued",
     "outcome_unknown/executing",
+    "outcome_unknown/prompt_review",
   ]);
   for (const run of Object.values(entities.runs)) {
     const legal =

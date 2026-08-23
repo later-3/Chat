@@ -43,12 +43,13 @@ const readRuntimeRun = async (productRunId: string): Promise<SafeRuntimeRunEvide
   }
 };
 
-const findings = await scanRuntimeIntegrity(snapshot, readRuntimeRun);
+const scannedAt = new Date().toISOString();
+const findings = await scanRuntimeIntegrity(snapshot, readRuntimeRun, { observedAt: scannedAt });
 console.log(
   JSON.stringify(
     {
       schemaVersion: "chat-runtime-integrity-diagnostic.v1",
-      scannedAt: new Date().toISOString(),
+      scannedAt,
       productStoreSchemaVersion: snapshot.schemaVersion,
       findingCount: findings.length,
       actionableCount: findings.filter((finding) => finding.recommendation !== "none").length,

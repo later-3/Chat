@@ -219,6 +219,10 @@ function desiredPlanningNodes(
   );
   const rank = phaseRank[run.phase];
   const runFailure = run.failure === undefined ? undefined : { ...run.failure };
+  const terminalNodeStatus: WorkflowNodeRunStatus | undefined =
+    run.status === "failed" || run.status === "cancelled" || run.status === "outcome_unknown"
+      ? run.status
+      : undefined;
   const planningAttempt = Object.values(snapshot.entities.attempts).find(
     (attempt) => attempt.productRunId === runId && attempt.kind === "planning",
   );
@@ -342,9 +346,8 @@ function desiredPlanningNodes(
   let executeStatus: WorkflowNodeRunStatus = "queued";
   if (candidate !== undefined) executeStatus = "succeeded";
   else if (run.phase === "executing" && run.status === "running") executeStatus = "running";
-  else if (run.phase === "executing" && run.status === "outcome_unknown")
-    executeStatus = "outcome_unknown";
-  else if (run.phase === "executing" && run.status === "failed") executeStatus = "failed";
+  else if (terminalNodeStatus !== undefined && rank >= phaseRank.executing)
+    executeStatus = terminalNodeStatus;
   const executeDesired: DesiredNodeProjection = {
     definitionNodeId: nodeId("execute"),
     nodeType: nodeType("execute.plan"),
@@ -462,7 +465,9 @@ function desiredPlanningNodes(
         ? "failed"
         : run.phase === "validating" && run.status === "running"
           ? "running"
-          : "queued";
+          : terminalNodeStatus !== undefined && rank >= phaseRank.validating
+            ? terminalNodeStatus
+            : "queued";
   desired.push({
     definitionNodeId: nodeId("validate"),
     nodeType: nodeType("result.validate"),
@@ -504,7 +509,9 @@ function desiredPlanningNodes(
     ? "succeeded"
     : source === "runtime" && run.phase === "completed" && run.status === "running"
       ? "running"
-      : "queued";
+      : terminalNodeStatus !== undefined && rank >= phaseRank.completed
+        ? terminalNodeStatus
+        : "queued";
   desired.push({
     definitionNodeId: nodeId("commit"),
     nodeType: nodeType("product.commit"),

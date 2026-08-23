@@ -55,7 +55,8 @@ DSH持久化日志与Bridge映射共同恢复原会话，用户可以继续发�
    Outbox；后续轮次不再创建Session。
 7. Adapter只轮询公开Run并在终态读取正式Message；后台通用监督器在已确认Workflow终止而Product仍活动时，
    通过Application把`failed/cancelled/outcome_unknown`提交为唯一产品终态；Runtime“成功”但缺少Product Commit也只能是
-   `outcome_unknown`。Bridge和浏览器不得从HTTP完成、Runtime返回或超时自行推断成功。Bridge投影按Run阶段读取Plan/Approval或Current Note Candidate，
+   `outcome_unknown`。单次Runtime查询失败只开始耐久宽限计时，任一次`active`证据都会清除计时；只有连续未知超期才收敛。
+   Bridge和浏览器不得从HTTP完成、Runtime返回或超时自行推断成功。Bridge投影按Run阶段读取Plan/Approval或Current Note Candidate，
    并从独立Run Activity读模型读取完整Workflow执行轨迹。所有读模型都不从HTTP超时推断成功。
 8. Run需要人工决定时，Client插件展示当前Plan/Approval或Note Candidate；用户的修订、批准、确认或拒绝经Host桥接为版本/Hash绑定的Chat Command。
 9. 执行中的Workflow/Agent/模型/工具活动由Client Conversation contribution投影到DSH原生Trajectory；Adapter不再

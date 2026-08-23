@@ -28,6 +28,8 @@ import {
   recoverMemoryImportAfterTerminalWorkflow,
   settleRunAfterTerminalWorkflow,
   updateOutboxStatus,
+  WORKFLOW_RUNTIME_QUERY_UNKNOWN_ERROR_CODE,
+  WORKFLOW_RUNTIME_UNKNOWN_GRACE_MS,
   type ApplicationDeps,
 } from "@chat/application";
 import { sha256Hex } from "@chat/domain";
@@ -1003,6 +1005,34 @@ async function settleTerminalWorkflow(
   });
 }
 
+/**
+ * Runtime查询未知必须形成连续、耐久的观测窗口。首次unknown只在已确认Start上记录
+ * lastErrorCode+updatedAt；后续unknown沿用该时间，active则明确清除，避免长Run被一次抖动误杀。
+ */
+async function observeWorkflowRuntimeUnknown(
+  options: OutboxDispatcherOptions,
+  entry: WorkflowStartEntry,
+): Promise<void> {
+  if (entry.lastErrorCode !== WORKFLOW_RUNTIME_QUERY_UNKNOWN_ERROR_CODE) {
+    await markStatus(options, entry, "acknowledged", WORKFLOW_RUNTIME_QUERY_UNKNOWN_ERROR_CODE);
+    return;
+  }
+  if (
+    Date.parse(options.deps.now()) - Date.parse(entry.updatedAt) >=
+    WORKFLOW_RUNTIME_UNKNOWN_GRACE_MS
+  ) {
+    await settleTerminalWorkflow(options, entry, "outcome_unknown");
+  }
+}
+
+async function observeWorkflowRuntimeActive(
+  options: OutboxDispatcherOptions,
+  entry: WorkflowStartEntry,
+): Promise<void> {
+  if (entry.lastErrorCode !== WORKFLOW_RUNTIME_QUERY_UNKNOWN_ERROR_CODE) return;
+  await markStatus(options, entry, "acknowledged");
+}
+
 /** 已确认Start的通用监督：不读取正文、不重启Workflow，只消费安全终态证据。 */
 async function superviseAcknowledgedWorkflow(
   options: OutboxDispatcherOptions,
@@ -1026,9 +1056,7 @@ async function superviseAcknowledgedWorkflow(
       },
     );
   } catch {
-    if (Date.parse(options.deps.now()) - Date.parse(entry.updatedAt) >= OUTCOME_UNKNOWN_SETTLE_MS) {
-      await settleTerminalWorkflow(options, entry, "outcome_unknown");
-    }
+    await observeWorkflowRuntimeUnknown(options, entry);
     return;
   }
   const parsed = response.ok
@@ -1041,12 +1069,13 @@ async function superviseAcknowledgedWorkflow(
     parsed.data.runtimeRun === undefined ||
     parsed.data.runtimeRun.state === "unknown"
   ) {
-    if (Date.parse(options.deps.now()) - Date.parse(entry.updatedAt) >= OUTCOME_UNKNOWN_SETTLE_MS) {
-      await settleTerminalWorkflow(options, entry, "outcome_unknown");
-    }
+    await observeWorkflowRuntimeUnknown(options, entry);
     return;
   }
-  if (parsed.data.runtimeRun.state === "active") return;
+  if (parsed.data.runtimeRun.state === "active") {
+    await observeWorkflowRuntimeActive(options, entry);
+    return;
+  }
   await settleTerminalWorkflow(options, entry, parsed.data.runtimeRun.outcome);
 }
 

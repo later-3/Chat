@@ -25,6 +25,8 @@ import type { ApplicationDeps, DirectAgentIdFactory } from "./deps.js";
 import { ApplicationError, notFound, revisionConflict } from "./errors.js";
 import { requireDirectAgentRun } from "./product-run-kind.js";
 import { toMessageDto, toRunDto } from "./dto.js";
+import { agentBindingForNode } from "./prompt-assembly-use-cases.js";
+import { resolveCurrentAgentRuntimeBinding } from "./agent-version-runtime-validation.js";
 
 function requireDirectAgentIds(deps: ApplicationDeps): DirectAgentIdFactory {
   if (deps.directAgentIds === undefined) {
@@ -242,6 +244,8 @@ export async function authorizeDirectAgentOperation(
     >["requestOptions"];
     readonly budget?: Extract<PromptAssembly, { schemaVersion: "prompt-assembly.v2" }>["budget"];
     readonly workspaceRootId?: string | undefined;
+    readonly runtimeProfileSha256?: string | undefined;
+    readonly workspaceGrantSha256?: string | undefined;
   };
   readonly capabilityMode: "pi_cli_default" | "custom" | "read_only" | "project_bootstrap";
   readonly projectBootstrapContext?: {
@@ -270,6 +274,7 @@ export async function authorizeDirectAgentOperation(
   const attempt = snapshot.entities.attempts[input.directAgentAttemptId];
   const runSpec = snapshot.entities.workflowRunSpecs[input.workflowRunSpecId];
   const message = snapshot.entities.messages[run.sourceMessageId];
+  const session = snapshot.entities.sessions[run.sessionId];
   const promptAssembly = directPromptAssembly(snapshot.entities, input.productRunId);
   if (promptAssembly.schemaVersion === "prompt-assembly.v3") {
     throw revisionConflict("Direct Agent不能使用Workflow Prompt计划");
@@ -283,7 +288,8 @@ export async function authorizeDirectAgentOperation(
     attempt.sourceMessageSha256 === undefined ||
     runSpec === undefined ||
     run.workflowRunSpecId !== runSpec.workflowRunSpecId ||
-    message === undefined
+    message === undefined ||
+    session === undefined
   ) {
     throw revisionConflict("Direct Agent授权引用不完整");
   }
@@ -294,6 +300,39 @@ export async function authorizeDirectAgentOperation(
     throw revisionConflict("Direct Agent授权Hash不匹配");
   }
   const config = directNodeConfig(runSpec);
+  const directNode = runSpec.nodeResolutions.find(
+    (candidate) => candidate.nodeType === "agent.direct" && candidate.activation === "enabled",
+  );
+  if (directNode === undefined) throw revisionConflict("Direct Agent RunSpec缺少活动节点");
+  const agentBinding = agentBindingForNode("agent.direct", directNode.config);
+  const currentRuntime = await resolveCurrentAgentRuntimeBinding(deps, {
+    principalId: session.ownerPrincipalId,
+    agentKey: agentBinding.agentKey,
+    ...(agentBinding.agentVersionId === undefined
+      ? {}
+      : {
+          agentVersionId: agentBinding.agentVersionId,
+          agentVersionSha256: agentBinding.agentVersionSha256,
+        }),
+    ...(promptAssembly.workspaceRootId === undefined
+      ? {}
+      : { workspaceRootId: promptAssembly.workspaceRootId }),
+  });
+  const requiresNewRuntimeEvidence = agentBinding.agentVersionId !== undefined;
+  const runtimeEvidence =
+    promptAssembly.schemaVersion === "prompt-assembly.v2" ? promptAssembly : undefined;
+  if (
+    (runtimeEvidence?.runtimeProfileSha256 === undefined && requiresNewRuntimeEvidence) ||
+    (runtimeEvidence?.runtimeProfileSha256 !== undefined &&
+      runtimeEvidence.runtimeProfileSha256 !== currentRuntime.runtimeProfileSha256) ||
+    (runtimeEvidence?.workspaceGrantSha256 === undefined &&
+      promptAssembly.workspaceRootId !== undefined &&
+      requiresNewRuntimeEvidence) ||
+    (runtimeEvidence?.workspaceGrantSha256 !== undefined &&
+      runtimeEvidence.workspaceGrantSha256 !== currentRuntime.workspaceGrantSha256)
+  ) {
+    throw revisionConflict("Agent Version的Workspace或Runtime Profile已在Run创建后漂移");
+  }
   const projectBootstrapContext =
     config.capabilityMode === "project_bootstrap"
       ? (() => {
@@ -364,6 +403,12 @@ export async function authorizeDirectAgentOperation(
             tools: promptAssembly.tools,
             requestOptions: promptAssembly.requestOptions,
             budget: promptAssembly.budget,
+            ...(promptAssembly.runtimeProfileSha256 === undefined
+              ? {}
+              : { runtimeProfileSha256: promptAssembly.runtimeProfileSha256 }),
+            ...(promptAssembly.workspaceGrantSha256 === undefined
+              ? {}
+              : { workspaceGrantSha256: promptAssembly.workspaceGrantSha256 }),
           }),
       ...(promptAssembly.workspaceRootId === undefined
         ? {}

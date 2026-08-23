@@ -169,7 +169,14 @@ function testPiRuntimeBaseline(agentKey: AgentKey, workspaceRootId?: string) {
   });
 }
 
-async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
+async function testApp(): Promise<{
+  app: ApiApp;
+  deps: ApplicationDeps;
+  controls: {
+    setRuntimeProfileDrifted(value: boolean): void;
+    setWorkspaceGrantSha256(value: string): void;
+  };
+}> {
   const filePath = join(mkdtempSync(join(tmpdir(), "chat-api-product-")), "store.json");
   const store = await JsonProductStore.open({ filePath, now });
   // 合法ID工厂：不同前缀分别生成
@@ -349,6 +356,8 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
       },
     }),
   };
+  let runtimeProfileDrifted = false;
+  let workspaceGrantSha256 = "4".repeat(64);
   const deps: ApplicationDeps = {
     store,
     now,
@@ -359,7 +368,18 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     projectBootstrapIds,
     promptCatalog,
     agentRuntimeProfiles: {
-      read: async (agentKey, workspaceRootId) => testPiRuntimeBaseline(agentKey, workspaceRootId),
+      read: async (agentKey, workspaceRootId) => {
+        const profile = testPiRuntimeBaseline(agentKey, workspaceRootId);
+        if (!runtimeProfileDrifted || profile === undefined || agentKey !== "direct")
+          return profile;
+        return agentRuntimeBaselineDtoSchema.parse({
+          ...profile,
+          variants: profile.variants.map((variant) => ({
+            ...variant,
+            capabilityCatalogSha256: "9".repeat(64),
+          })),
+        });
+      },
     },
     promptFiles: {
       publishRevision: async (input) => {
@@ -426,6 +446,7 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
           rootId: "root_chat",
           displayName: "Chat",
           enabledAdapters: [] as const,
+          grantSha256: workspaceGrantSha256,
         },
       ],
       observe: async () => {
@@ -466,7 +487,18 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
     product: { deps, principalId: DEBUG_PRINCIPAL_ID },
     internalRuntime: { credential: "rtk_test" },
   });
-  return { app, deps };
+  return {
+    app,
+    deps,
+    controls: {
+      setRuntimeProfileDrifted: (value) => {
+        runtimeProfileDrifted = value;
+      },
+      setWorkspaceGrantSha256: (value) => {
+        workspaceGrantSha256 = value;
+      },
+    },
+  };
 }
 
 const planContent: PlanContent = {
@@ -1871,7 +1903,7 @@ describe("公开产品API", () => {
   });
 
   it("Agent Version API创建全局/Workspace不可变版本并把精确版本发布为新Workflow Revision", async () => {
-    const { app, deps } = await testApp();
+    const { app, deps, controls } = await testApp();
     const inheritedResources = {
       contextFiles: "inherit_runtime_default",
       skills: "inherit_runtime_default",
@@ -2067,6 +2099,12 @@ describe("公开产品API", () => {
       readonly suffix: string;
       readonly workflowDefinitionRevisionId: string;
       readonly definitionSha256: string;
+      readonly workspaceRootId?: string | undefined;
+      readonly beforeAuthorize?: (() => void) | undefined;
+      readonly expectAuthorizationFailure?: boolean | undefined;
+      readonly expectedAgentVersionId?: typeof derived.agentVersionId | undefined;
+      readonly expectedAgentVersionSha256?: string | undefined;
+      readonly expectedToolNames?: readonly string[] | undefined;
       readonly runConfiguration?: {
         readonly schemaVersion: "workflow-run-configuration.v1";
         readonly overrides: readonly [
@@ -2091,6 +2129,15 @@ describe("公开产品API", () => {
         commandId: nextCmd(),
         payload: {
           text: `验证${input.suffix} Agent Version运行语义`,
+          ...(input.workspaceRootId === undefined
+            ? {}
+            : {
+                promptSelection: {
+                  schemaVersion: "prompt-turn-selection-input.v1",
+                  workspaceRootId: input.workspaceRootId,
+                  regions: [],
+                },
+              }),
           workflowSelection: {
             kind: "published_revision",
             workflowDefinitionRevisionId: input.workflowDefinitionRevisionId,
@@ -2129,27 +2176,32 @@ describe("公开产品API", () => {
       }
       expect(runSpec.nodeResolutions[0]?.config).toMatchObject({
         capabilityMode: "custom",
-        agentVersionId: derived.agentVersionId,
-        agentVersionSha256: derived.sha256,
+        agentVersionId: input.expectedAgentVersionId ?? derived.agentVersionId,
+        agentVersionSha256: input.expectedAgentVersionSha256 ?? derived.sha256,
       });
       expect(assembly.tools).toMatchObject({
         capabilityMode: "custom",
         selectionMode: "explicit",
-        names: ["read", "bash"],
-        resources: inheritedResources,
+        names: input.expectedToolNames ?? ["read", "bash"],
       });
       const begun = await beginDirectAgentAttempt(deps, {
         commandId: nextCmd(),
         productRunId: run.productRunId,
         workflowAttemptId: workflowAttempt.attemptId,
       });
-      const authorized = await authorizeDirectAgentOperation(deps, {
+      input.beforeAuthorize?.();
+      const authorization = authorizeDirectAgentOperation(deps, {
         productRunId: run.productRunId,
         directAgentAttemptId: begun.directAgentAttemptId,
         workflowRunSpecId: runSpec.workflowRunSpecId,
         workflowRunSpecSha256: runSpec.sha256,
         inputManifestSha256: begun.inputManifestSha256,
       });
+      if (input.expectAuthorizationFailure === true) {
+        await expect(authorization).rejects.toMatchObject({ code: "revision_conflict" });
+        return;
+      }
+      const authorized = await authorization;
       expect(authorized.capabilityMode).toBe("custom");
       expect(authorized.promptAssembly.tools).toEqual(assembly.tools);
       expect(authorized.promptAssembly.tools?.capabilityMode).toBe(authorized.capabilityMode);
@@ -2160,6 +2212,51 @@ describe("公开产品API", () => {
       workflowDefinitionRevisionId: published.workflowDefinitionRevisionId,
       definitionSha256: published.definitionSha256,
     });
+
+    await exerciseVersionRun({
+      suffix: "Run创建后的Runtime Profile漂移",
+      workflowDefinitionRevisionId: source.workflowDefinitionRevisionId,
+      definitionSha256: source.definitionSha256,
+      runConfiguration: {
+        schemaVersion: "workflow-run-configuration.v1",
+        overrides: [
+          {
+            kind: "agent_configuration",
+            definitionNodeId: "direct.agent",
+            configurationMode: "version",
+            agentVersionId: derived.agentVersionId,
+            agentVersionSha256: derived.sha256,
+          },
+        ],
+      },
+      beforeAuthorize: () => controls.setRuntimeProfileDrifted(true),
+      expectAuthorizationFailure: true,
+    });
+    controls.setRuntimeProfileDrifted(false);
+    await exerciseVersionRun({
+      suffix: "Run创建后的Workspace Grant漂移",
+      workflowDefinitionRevisionId: source.workflowDefinitionRevisionId,
+      definitionSha256: source.definitionSha256,
+      workspaceRootId: "root_chat",
+      expectedAgentVersionId: workspace.agentVersionId,
+      expectedAgentVersionSha256: workspace.sha256,
+      expectedToolNames: ["read"],
+      runConfiguration: {
+        schemaVersion: "workflow-run-configuration.v1",
+        overrides: [
+          {
+            kind: "agent_configuration",
+            definitionNodeId: "direct.agent",
+            configurationMode: "version",
+            agentVersionId: workspace.agentVersionId,
+            agentVersionSha256: workspace.sha256,
+          },
+        ],
+      },
+      beforeAuthorize: () => controls.setWorkspaceGrantSha256("8".repeat(64)),
+      expectAuthorizationFailure: true,
+    });
+    controls.setWorkspaceGrantSha256("4".repeat(64));
     await exerciseVersionRun({
       suffix: "per-run覆盖",
       workflowDefinitionRevisionId: source.workflowDefinitionRevisionId,
