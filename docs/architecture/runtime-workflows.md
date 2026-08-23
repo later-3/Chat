@@ -37,6 +37,8 @@ API Product Command
 → Product Commit
 ```
 
+`SubmitUserMessage`先读取Product Store Receipt，再读取时间、分配候选ID或解析Workflow、Prompt和Pi Runtime。命令Hash只由已经提交的Principal、Session与规范化用户请求计算；省略系统默认与显式提交同一默认仍等价。精确Receipt命中时直接由其`messageId/productRunId`重建原Session、Message与Run；当前Runtime Profile或Prompt来源即使已经移除，也不能阻断已提交响应的重放。不同Payload复用同一`commandId`仍在任何Runtime读取前返回`command_id_reused`。
+
 | 组件 | 当前责任 |
 |---|---|
 | API进程 | 唯一Product Store Owner、公开Command/Query、Outbox Dispatcher |

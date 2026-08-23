@@ -23,6 +23,7 @@ import {
 } from "@chat/contracts";
 import type {
   NoteCaptureSubmitInput,
+  CommandReceipt,
   NoteKind,
   NoteSourceRef,
   NoteTag,
@@ -41,7 +42,13 @@ import type {
 } from "@chat/contracts";
 import { DEFAULT_MAX_PLAN_REVISIONS, type ApplicationDeps } from "./deps.js";
 import { toMessageDto, toRunDto, toSessionDto } from "./dto.js";
-import { ApplicationError, forbidden, notFound, revisionConflict } from "./errors.js";
+import {
+  ApplicationError,
+  CommandIdReusedError,
+  forbidden,
+  notFound,
+  revisionConflict,
+} from "./errors.js";
 import { emitRunEvent } from "./trace-helpers.js";
 import type { MessageDto, RunDto } from "@chat/contracts";
 import {
@@ -142,6 +149,105 @@ export interface SubmitUserMessageInput {
   readonly sessionId?: ProductSessionId;
   readonly commandId: Parameters<ApplicationDeps["store"]["transact"]>[0]["commandId"];
   readonly payload: SubmitMessagePayload;
+}
+
+/**
+ * Message命令身份只包含调用方请求与不可变Workflow Revision的默认规范化结果，不能包含
+ * 当前Runtime或Prompt编译结果。这样原子提交后的Receipt即使跨进程/配置漂移，也能先于外部依赖重放。
+ */
+function submitUserMessageRequestSha256(
+  input: SubmitUserMessageInput,
+  snapshot: Readonly<ProductSnapshot>,
+): string {
+  const selectedRevisionId =
+    input.payload.workflowSelection?.workflowDefinitionRevisionId ??
+    SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID;
+  const selectedRevision = snapshot.entities.workflowDefinitionRevisions[selectedRevisionId];
+  const runConfiguration = input.payload.workflowSelection?.runConfiguration ?? {
+    schemaVersion: "workflow-run-configuration.v1" as const,
+    overrides: [],
+  };
+  const submittedBusinessInput = input.payload.workflowSelection?.businessInput;
+  const requestBusinessInput =
+    selectedRevision?.blueprintKey === "note"
+      ? (() => {
+          const defaults = noteExtractDefinitionDefaults(selectedRevision);
+          const noteInput = submittedBusinessInput ?? { kind: "note_capture" as const };
+          return {
+            kind: "note_capture" as const,
+            source: noteInput.source ?? { kind: "full_message" as const },
+            defaultKind: noteInput.defaultKind ?? defaults.defaultKind,
+            suggestedTagLabels: normalizeNoteTags(
+              noteInput.suggestedTagLabels ?? defaults.suggestedTagLabels,
+            ).map((tag) => tag.label),
+          };
+        })()
+      : submittedBusinessInput;
+  const normalizedPayload = {
+    ...input.payload,
+    workflowSelection: {
+      kind: "published_revision" as const,
+      workflowDefinitionRevisionId: selectedRevisionId,
+      definitionSha256:
+        selectedRevision?.definitionSha256 ??
+        input.payload.workflowSelection?.definitionSha256 ??
+        "missing",
+      runConfiguration,
+      ...(requestBusinessInput === undefined ? {} : { businessInput: requestBusinessInput }),
+    },
+  };
+  return hashCanonical(
+    input.sessionId === undefined
+      ? "command.start-product-session-with-user-message.v1"
+      : "command.submit-user-message.v1",
+    {
+      principalId: input.principalId,
+      ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
+      payload: normalizedPayload,
+    },
+  );
+}
+
+function submittedMessageResultFromReceipt(
+  snapshot: Readonly<ProductSnapshot>,
+  receipt: Pick<CommandReceipt, "resultRefs">,
+  input: Pick<SubmitUserMessageInput, "principalId" | "sessionId">,
+): { session: SessionDto; message: MessageDto; run: RunDto } {
+  const message = snapshot.entities.messages[receipt.resultRefs["messageId"] ?? ""];
+  const run = snapshot.entities.runs[receipt.resultRefs["productRunId"] ?? ""];
+  const session = run === undefined ? undefined : snapshot.entities.sessions[run.sessionId];
+  if (
+    message === undefined ||
+    run === undefined ||
+    session === undefined ||
+    message.role !== "user" ||
+    run.sourceMessageId !== message.messageId ||
+    message.sessionId !== run.sessionId ||
+    session.sessionId !== run.sessionId
+  ) {
+    throw new ApplicationError({
+      code: "store_corrupted",
+      httpStatus: 500,
+      message: "SubmitUserMessage Receipt引用的产品事实不完整或交叉绑定矛盾",
+      recoveryAction: "contact_support",
+    });
+  }
+  if (session.ownerPrincipalId !== input.principalId) {
+    throw forbidden("无权读取该Message Receipt");
+  }
+  if (input.sessionId !== undefined && input.sessionId !== session.sessionId) {
+    throw new ApplicationError({
+      code: "store_corrupted",
+      httpStatus: 500,
+      message: "SubmitUserMessage Receipt与请求Session身份不一致",
+      recoveryAction: "contact_support",
+    });
+  }
+  return {
+    session: toSessionDto(session),
+    message: toMessageDto(message),
+    run: toRunDto(run, undefined, undefined),
+  };
 }
 
 /** 会话标题是Chat产品策略；只从首条已提交User Message派生。 */
@@ -326,7 +432,6 @@ async function preparePromptTurn(deps: ApplicationDeps, input: PreparePromptTurn
     selectedRevision,
     selectedView,
     runConfiguration,
-    business,
     runner,
     compiled,
     promptAssembly,
@@ -459,9 +564,22 @@ export async function submitUserMessage(
   deps: ApplicationDeps,
   input: SubmitUserMessageInput,
 ): Promise<{ session: SessionDto; message: MessageDto; run: RunDto }> {
+  // 调试导航⑤：Receipt是已提交命令的唯一重放入口，必须先于时间、ID、Runtime与
+  // Prompt编译读取。命中后仅从Receipt引用重建原响应，不再要求当前配置仍可解析。
+  const { snapshot: preflightSnapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const requestSha256 = submitUserMessageRequestSha256(input, preflightSnapshot);
+  const priorReceipt = preflightSnapshot.commandReceipts[input.commandId];
+  if (priorReceipt !== undefined) {
+    if (
+      priorReceipt.commandType !== "SubmitUserMessage" ||
+      priorReceipt.requestSha256 !== requestSha256
+    ) {
+      throw new CommandIdReusedError(input.commandId);
+    }
+    return submittedMessageResultFromReceipt(preflightSnapshot, priorReceipt, input);
+  }
+
   const now = deps.now();
-  // 调试导航⑤：先分配候选ID，再由commandId+requestSha256决定事务是首次提交还是幂等重放。
-  // 重放时Store返回首次提交的resultRefs；本次新分配但未写入的候选ID不会成为产品事实。
   const messageId = deps.ids.message();
   const creatingProductSession = input.sessionId === undefined;
   const targetSessionId = input.sessionId ?? deps.ids.session();
@@ -471,7 +589,6 @@ export async function submitUserMessage(
   const workflowRunSpecId = workflowRunSpecIdSchema.parse(
     `wrs_${hashCanonical("id.workflow-run-spec.v1", { productRunId }).slice(0, 32)}`,
   );
-  const { snapshot: preflightSnapshot } = await deps.store.read({ kind: "committedSnapshot" });
   const persistedPreflightSession = preflightSnapshot.entities.sessions[targetSessionId];
   if (!creatingProductSession && persistedPreflightSession === undefined) {
     throw notFound("Session不存在");
@@ -506,47 +623,19 @@ export async function submitUserMessage(
     role: "user",
     content: { format: "markdown" as const, text: input.payload.text },
   });
-  const {
-    selectedRevision,
-    selectedView,
-    runConfiguration,
-    business,
-    runner,
-    compiled,
-    promptAssembly,
-  } = await preparePromptTurn(deps, {
-    principalId: input.principalId,
-    payload: input.payload,
-    now,
-    snapshot: preflightSnapshot,
-    targetSessionId,
-    messageId,
-    productRunId,
-    workflowRunSpecId,
-    sessionSequence: preflightSessionSequence,
-    sourceMessageSha256,
-  });
-  const requestSha256 = hashCanonical(
-    creatingProductSession
-      ? "command.start-product-session-with-user-message.v1"
-      : "command.submit-user-message.v1",
-    {
+  const { selectedRevision, selectedView, runConfiguration, runner, compiled, promptAssembly } =
+    await preparePromptTurn(deps, {
       principalId: input.principalId,
-      ...(creatingProductSession ? {} : { sessionId: targetSessionId }),
-      payload: {
-        ...input.payload,
-        workflowSelection: {
-          kind: "published_revision",
-          workflowDefinitionRevisionId: selectedRevision.workflowDefinitionRevisionId,
-          definitionSha256: selectedRevision.definitionSha256,
-          runConfiguration,
-          ...(business.requestBusinessInput !== undefined
-            ? { businessInput: business.requestBusinessInput }
-            : {}),
-        },
-      },
-    },
-  );
+      payload: input.payload,
+      now,
+      snapshot: preflightSnapshot,
+      targetSessionId,
+      messageId,
+      productRunId,
+      workflowRunSpecId,
+      sessionSequence: preflightSessionSequence,
+      sourceMessageSha256,
+    });
   const contextRequestId = contextRequestIdSchema.parse(
     `ctxr_${hashCanonical("id.run-context-request.v1", { productRunId }).slice(0, 32)}`,
   );
@@ -820,29 +909,24 @@ export async function submitUserMessage(
   });
 
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
-  const message = snapshot.entities.messages[result.resultRefs["messageId"] ?? ""];
-  const run = snapshot.entities.runs[result.resultRefs["productRunId"] ?? ""];
-  const session = run === undefined ? undefined : snapshot.entities.sessions[run.sessionId];
-  if (message === undefined || run === undefined || session === undefined) {
-    throw notFound("会话、消息或运行不存在");
-  }
+  const response = submittedMessageResultFromReceipt(
+    snapshot,
+    { resultRefs: result.resultRefs },
+    input,
+  );
   if (!result.replayed) {
-    emitRunEvent(deps, run.productRunId, {
+    emitRunEvent(deps, response.run.productRunId, {
       level: "info",
       eventName: "product_run.created",
       outcome: "success",
-      productRunId: run.productRunId,
-      productSessionId: run.sessionId,
-      runStatus: run.status,
-      phase: run.phase,
-      revision: run.revision,
+      productRunId: response.run.productRunId,
+      productSessionId: response.run.sessionId,
+      runStatus: response.run.status,
+      phase: response.run.phase,
+      revision: response.run.revision,
     });
   }
-  return {
-    session: toSessionDto(session),
-    message: toMessageDto(message),
-    run: toRunDto(run, undefined, undefined),
-  };
+  return response;
 }
 
 function resolveSubmitBusinessInput(input: {

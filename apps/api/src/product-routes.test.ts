@@ -175,6 +175,7 @@ async function testApp(): Promise<{
   deps: ApplicationDeps;
   controls: {
     setRuntimeProfileDrifted(value: boolean): void;
+    setRuntimeProfileUnavailable(value: boolean): void;
     setWorkspaceGrantSha256(value: string): void;
   };
 }> {
@@ -358,6 +359,7 @@ async function testApp(): Promise<{
     }),
   };
   let runtimeProfileDrifted = false;
+  let runtimeProfileUnavailable = false;
   let workspaceGrantSha256 = "4".repeat(64);
   const deps: ApplicationDeps = {
     store,
@@ -370,6 +372,7 @@ async function testApp(): Promise<{
     promptCatalog,
     agentRuntimeProfiles: {
       read: async (agentKey, workspaceRootId) => {
+        if (runtimeProfileUnavailable && agentKey === "direct") return undefined;
         const profile = testPiRuntimeBaseline(agentKey, workspaceRootId);
         if (!runtimeProfileDrifted || profile === undefined || agentKey !== "direct")
           return profile;
@@ -494,6 +497,9 @@ async function testApp(): Promise<{
     controls: {
       setRuntimeProfileDrifted: (value) => {
         runtimeProfileDrifted = value;
+      },
+      setRuntimeProfileUnavailable: (value) => {
+        runtimeProfileUnavailable = value;
       },
       setWorkspaceGrantSha256: (value) => {
         workspaceGrantSha256 = value;
@@ -1903,8 +1909,8 @@ describe("公开产品API", () => {
     expect(res.status).toBe(404);
   });
 
-  it("标准submitUserMessage可原子提交Temporary Replace System Prompt", async () => {
-    const { app, deps } = await testApp();
+  it("Temporary Replace提交后先按Receipt重放，不依赖当前Runtime", async () => {
+    const { app, deps, controls } = await testApp();
     const before = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
     const directRevision =
       before.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
@@ -1918,35 +1924,37 @@ describe("公开产品API", () => {
     );
     const temporaryBody = "你是只在本次Run生效的Temporary Direct Agent。";
 
-    const sent = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
-      commandId: nextCmd(),
-      payload: {
-        text: "验证合法Temporary System Prompt可以提交",
-        workflowSelection: {
-          kind: "published_revision",
-          workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
-          definitionSha256: directRevision.definitionSha256,
-          runConfiguration: {
-            schemaVersion: "workflow-run-configuration.v1",
-            overrides: [
-              {
-                kind: "agent_configuration",
-                definitionNodeId: "direct.agent",
-                configurationMode: "temporary",
-                runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
-                systemPrompt: { mode: "replace", bodyMarkdown: temporaryBody },
-                enabledToolNames: ["read"],
-                resources: {
-                  contextFiles: "disabled",
-                  skills: "disabled",
-                  promptTemplates: "disabled",
-                  extensions: "disabled",
-                },
+    const messageCommandId = nextCmd();
+    const messagePayload = {
+      text: "验证合法Temporary System Prompt可以提交",
+      workflowSelection: {
+        kind: "published_revision" as const,
+        workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
+        definitionSha256: directRevision.definitionSha256,
+        runConfiguration: {
+          schemaVersion: "workflow-run-configuration.v1" as const,
+          overrides: [
+            {
+              kind: "agent_configuration" as const,
+              definitionNodeId: "direct.agent" as const,
+              configurationMode: "temporary" as const,
+              runtime: { kind: "pi_coding_agent" as const, baseVariantKey: "pi_cli_default" },
+              systemPrompt: { mode: "replace" as const, bodyMarkdown: temporaryBody },
+              enabledToolNames: ["read"] as const,
+              resources: {
+                contextFiles: "disabled" as const,
+                skills: "disabled" as const,
+                promptTemplates: "disabled" as const,
+                extensions: "disabled" as const,
               },
-            ],
-          },
+            },
+          ],
         },
       },
+    };
+    const sent = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
+      commandId: messageCommandId,
+      payload: messagePayload,
     });
 
     expect(sent.status, await sent.clone().text()).toBe(201);
@@ -1954,15 +1962,44 @@ describe("公开产品API", () => {
       .object({ message: messageDtoSchema, run: runDtoSchema })
       .strict()
       .parse(await sent.json());
-    const after = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    const assembly = Object.values(after.entities.promptAssemblies).find(
+    const committed = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    controls.setRuntimeProfileUnavailable(true);
+    const replayedResponse = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
+      commandId: messageCommandId,
+      payload: messagePayload,
+    });
+    expect(replayedResponse.status, await replayedResponse.clone().text()).toBe(201);
+    const replayed = z
+      .object({ message: messageDtoSchema, run: runDtoSchema })
+      .strict()
+      .parse(await replayedResponse.json());
+    expect(replayed.message.messageId).toBe(submitted.message.messageId);
+    expect(replayed.run.productRunId).toBe(submitted.run.productRunId);
+    const afterReplay = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(afterReplay.storeRevision).toBe(committed.storeRevision);
+    expect(Object.keys(afterReplay.entities.messages)).toEqual(
+      Object.keys(committed.entities.messages),
+    );
+    expect(Object.keys(afterReplay.entities.runs)).toEqual(Object.keys(committed.entities.runs));
+
+    const reused = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
+      commandId: messageCommandId,
+      payload: {
+        ...messagePayload,
+        text: "同一Command不能换成另一条消息",
+      },
+    });
+    expect(reused.status).toBe(409);
+    expect(problemDetailSchema.parse(await reused.json()).code).toBe("command_id_reused");
+
+    const assembly = Object.values(afterReplay.entities.promptAssemblies).find(
       (candidate) => candidate.productRunId === submitted.run.productRunId,
     );
-    const run = after.entities.runs[submitted.run.productRunId];
+    const run = afterReplay.entities.runs[submitted.run.productRunId];
     const runSpec =
       run?.workflowRunSpecId === undefined
         ? undefined
-        : after.entities.workflowRunSpecs[run.workflowRunSpecId];
+        : afterReplay.entities.workflowRunSpecs[run.workflowRunSpecId];
     expect(assembly).toMatchObject({
       schemaVersion: "prompt-assembly.v2",
       piSystemPrompt: { mode: "replace", bodyMarkdown: temporaryBody },
@@ -2123,6 +2160,26 @@ describe("公开产品API", () => {
       beforeBinding.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID],
     );
     if (source === undefined) throw new Error("缺少Direct系统Workflow Revision");
+    const rejectedMixedSave = await postJson(
+      app,
+      "/api/workflow/definitions/agent-node-configurations",
+      {
+        commandId: nextCmd(),
+        payload: {
+          sourceWorkflowDefinitionRevisionId: source.workflowDefinitionRevisionId,
+          sourceDefinitionSha256: source.definitionSha256,
+          definitionNodeId: "direct.agent",
+          agentKey: "direct",
+          agentVersionId: derived.agentVersionId,
+          agentVersionSha256: derived.sha256,
+          promptOverrideMarkdown: "不能与Version共同保存的Prompt Override。",
+        },
+      },
+    );
+    expect(rejectedMixedSave.status).toBe(400);
+    expect((await deps.store.read({ kind: "committedSnapshot" })).snapshot.storeRevision).toBe(
+      beforeBinding.storeRevision,
+    );
     const bindResponse = await postJson(
       app,
       "/api/workflow/definitions/agent-node-configurations",
@@ -2168,6 +2225,46 @@ describe("公开产品API", () => {
     expect(published.basedOnRevisionId).toBe(source.workflowDefinitionRevisionId);
     expect(published.definitionSha256).not.toBe(source.definitionSha256);
 
+    const mixedSessionResponse = await postJson(app, "/api/sessions", {
+      commandId: nextCmd(),
+      payload: { title: "拒绝Version Prompt混合" },
+    });
+    const mixedSession = sessionDtoSchema.parse(
+      ((await mixedSessionResponse.json()) as { session: unknown }).session,
+    );
+    const beforeMixedRun = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const mixedRun = await postJson(app, `/api/sessions/${mixedSession.sessionId}/messages`, {
+      commandId: nextCmd(),
+      payload: {
+        text: "普通node_config不能替换已发布Agent Version的System Prompt",
+        workflowSelection: {
+          kind: "published_revision",
+          workflowDefinitionRevisionId: published.workflowDefinitionRevisionId,
+          definitionSha256: published.definitionSha256,
+          runConfiguration: {
+            schemaVersion: "workflow-run-configuration.v1",
+            overrides: [
+              {
+                kind: "node_config",
+                definitionNodeId: "direct.agent",
+                field: "agentPromptOverride",
+                value: "试图绕过Version的普通Prompt Override。",
+              },
+            ],
+          },
+        },
+      },
+    });
+    expect(mixedRun.status).toBe(422);
+    expect(problemDetailSchema.parse(await mixedRun.json()).code).toBe("policy_denied");
+    const afterMixedRun = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(Object.keys(afterMixedRun.entities.runs)).toEqual(
+      Object.keys(beforeMixedRun.entities.runs),
+    );
+    expect(Object.keys(afterMixedRun.entities.messages)).toEqual(
+      Object.keys(beforeMixedRun.entities.messages),
+    );
+
     const exerciseVersionRun = async (input: {
       readonly suffix: string;
       readonly workflowDefinitionRevisionId: string;
@@ -2175,7 +2272,7 @@ describe("公开产品API", () => {
       readonly workspaceRootId?: string | undefined;
       readonly beforeAuthorize?: (() => void) | undefined;
       readonly assemblyTamper?: "tools" | "piSystemPrompt" | "requestOptions" | undefined;
-      readonly ambiguousOperationAuthorization?: boolean | undefined;
+      readonly ambiguousOperationAuthorization?: "temporary" | "prompt_override" | undefined;
       readonly expectAuthorizationFailure?: boolean | undefined;
       readonly expectedAgentVersionId?: typeof derived.agentVersionId | undefined;
       readonly expectedAgentVersionSha256?: string | undefined;
@@ -2322,7 +2419,7 @@ describe("公开产品API", () => {
       input.beforeAuthorize?.();
       let authorizationDeps = deps;
       let authorizationRunSpecSha256 = runSpec.sha256;
-      if (input.ambiguousOperationAuthorization === true) {
+      if (input.ambiguousOperationAuthorization !== undefined) {
         const current = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
         const tamperedSnapshot = structuredClone(current);
         const tamperedRunSpec =
@@ -2333,20 +2430,26 @@ describe("公开产品API", () => {
         if (tamperedRunSpec === undefined || tamperedNode === undefined) {
           throw new Error("测试缺少Direct RunSpec");
         }
-        tamperedNode.config = {
-          ...tamperedNode.config,
-          agentTemporaryConfiguration: {
-            runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
-            systemPrompt: { mode: "inherit_runtime" },
-            enabledToolNames: ["read", "bash", "edit", "write"],
-            resources: {
-              contextFiles: "inherit_runtime_default",
-              skills: "inherit_runtime_default",
-              promptTemplates: "inherit_runtime_default",
-              extensions: "inherit_runtime_default",
-            },
-          },
-        };
+        tamperedNode.config =
+          input.ambiguousOperationAuthorization === "temporary"
+            ? {
+                ...tamperedNode.config,
+                agentTemporaryConfiguration: {
+                  runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
+                  systemPrompt: { mode: "inherit_runtime" },
+                  enabledToolNames: ["read", "bash", "edit", "write"],
+                  resources: {
+                    contextFiles: "inherit_runtime_default",
+                    skills: "inherit_runtime_default",
+                    promptTemplates: "inherit_runtime_default",
+                    extensions: "inherit_runtime_default",
+                  },
+                },
+              }
+            : {
+                ...tamperedNode.config,
+                agentPromptOverride: "不能在Operation阶段混入Version的Prompt Override。",
+              };
         authorizationRunSpecSha256 = hashCanonical("workflow-run-spec.v1", {
           definitionRef: tamperedRunSpec.definitionRef,
           runner: tamperedRunSpec.runner,
@@ -2406,7 +2509,15 @@ describe("公开产品API", () => {
       suffix: "Operation双重Agent配置",
       workflowDefinitionRevisionId: published.workflowDefinitionRevisionId,
       definitionSha256: published.definitionSha256,
-      ambiguousOperationAuthorization: true,
+      ambiguousOperationAuthorization: "temporary",
+      expectAuthorizationFailure: true,
+    });
+
+    await exerciseVersionRun({
+      suffix: "Operation Version与Prompt Override双重配置",
+      workflowDefinitionRevisionId: published.workflowDefinitionRevisionId,
+      definitionSha256: published.definitionSha256,
+      ambiguousOperationAuthorization: "prompt_override",
       expectAuthorizationFailure: true,
     });
 

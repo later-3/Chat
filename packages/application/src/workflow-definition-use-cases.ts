@@ -148,6 +148,13 @@ export async function saveWorkflowAgentNodeConfiguration(
     readonly payload: SaveWorkflowAgentNodeConfigurationPayload;
   },
 ): Promise<WorkflowDefinitionCommandResultDto> {
+  if (
+    input.payload.agentVersionId !== undefined &&
+    input.payload.promptOverrideMarkdown !== undefined &&
+    input.payload.promptOverrideMarkdown.trim() !== ""
+  ) {
+    throw revisionConflict("Agent Version与Prompt Override不能保存为同一节点配置");
+  }
   const now = deps.now();
   const requestSha256 = hashCanonical("command.save-workflow-agent-node-configuration.v1", input);
   const transaction = await deps.store.transact({
@@ -320,15 +327,16 @@ function configureAgentNode(
         config["agentVersionId"] = payload.agentVersionId;
         config["agentVersionSha256"] = payload.agentVersionSha256;
         delete config["agentTemporaryConfiguration"];
+        delete config["agentPromptOverride"];
         delete config["enabledToolNames"];
         delete config["resourcePolicy"];
         // Agent Version冻结精确Tool与资源政策；新Revision不能继续声明继承Pi默认能力。
         // 旧Revision由RunSpec Compiler在创建新Run时做同样的归一，历史事实保持不变。
         if (element.nodeType === "agent.direct") config["capabilityMode"] = "custom";
       }
-      if (requestedOverride !== "") {
+      if (payload.agentVersionId === undefined && requestedOverride !== "") {
         config["agentPromptOverride"] = requestedOverride;
-      } else {
+      } else if (payload.agentVersionId === undefined) {
         delete config["agentPromptOverride"];
       }
       return { ...element, config };
@@ -362,7 +370,7 @@ const AGENT_NODE_SUPPORT: Readonly<Record<string, readonly string[]>> = {
   "note.extract": ["note_extractor"],
 };
 
-/** Draft/Publish边界不能依赖运行时优先级解释两套Agent能力。 */
+/** Draft/Publish边界不能依赖运行时优先级解释多套Agent配置来源。 */
 function assertNoAmbiguousAgentConfigurations(
   root: WorkflowDefinitionRevision["semanticRoot"],
 ): void {
@@ -372,9 +380,7 @@ function assertNoAmbiguousAgentConfigurations(
     if (element === undefined) break;
     if (element.kind === "task" || element.kind === "composite") {
       if (element.nodeType === "agent.direct" && hasAmbiguousAgentConfiguration(element.config)) {
-        throw revisionConflict(
-          `Workflow节点${element.definitionNodeId}不能同时保存Agent Version与临时配置`,
-        );
+        throw revisionConflict(`Workflow节点${element.definitionNodeId}存在多个Agent配置来源`);
       }
       continue;
     }

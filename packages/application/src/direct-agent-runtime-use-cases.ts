@@ -310,7 +310,7 @@ export async function authorizeDirectAgentOperation(
   );
   if (directNode === undefined) throw revisionConflict("Direct Agent RunSpec缺少活动节点");
   if (hasAmbiguousAgentConfiguration(directNode.config)) {
-    throw revisionConflict("Direct Agent Operation拒绝Version与临时配置并存");
+    throw revisionConflict("Direct Agent Operation拒绝多个配置来源并存");
   }
   const agentBinding = agentBindingForNode("agent.direct", directNode.config);
   const currentRuntime = await resolveCurrentAgentRuntimeBinding(deps, {

@@ -89,7 +89,7 @@ Operation终态提交仍会重新读取耐久Journal。发现任一`tool.intent_
 `succeeded / failed / outcome_unknown`任一终态就保持单调；迟到的`complete()`只能幂等读取既有成功，或以稳定冲突拒绝，
 不能把未知/失败改写为成功。重启扫描复用同一闭合逻辑，重复启动不会追加第二组未知事件。
 
-早期v1已经闭合的Tool Result没有复制`inputSha256`，继续作为只读历史兼容；加载每个Operation文件时仍按事件顺序重放Tool身份状态机，重复Intent、Result先于Intent、跨Session/Turn/Tool闭合、多次闭合或成功记录残留开放/未知Intent都会以`executor.journal_integrity_invalid`拒绝整个Store启动，旧Candidate不能继续作为成功返回。所有新追加Result都必须携带该字段并通过上述精确匹配，兼容读取不能放宽写入门。
+早期v1已经闭合的Tool Result没有复制`inputSha256`，继续作为只读历史兼容；加载每个Operation文件时仍按事件顺序重放Operation与Tool身份状态机。所有Operation事件的Request Hash必须等于Record，请求正文Hash必须自洽，所有Session事件必须绑定Record Session；`succeeded`还必须严格包含唯一且有序的`operation.accepted → operation.started → session.started → operation.completed`，最后一个事件只能是Result Hash与Record Candidate一致的`operation.completed`，期间不能出现`operation.failed/outcome_unknown`。重复Intent、Result先于Intent、跨Session/Turn/Tool闭合、多次闭合或成功记录残留开放/未知Intent同样会以`executor.journal_integrity_invalid`拒绝整个Store启动，旧Candidate不能继续作为成功返回。所有新追加Result都必须携带该字段并通过上述精确匹配，兼容读取不能放宽写入门。
 
 新Result的第五字段来自固定Pi `tool_result`事件携带的真实`input`重新Canonical Hash，而不是复制内存Intent Hash；真实输入与Intent不等时先触发fatal latch，再把Operation耐久收敛为`executor.tool_result_intent_mismatch / outcome_unknown`。
 
@@ -116,7 +116,7 @@ API的轨迹Query读取Product事实、Run Activity与Workflow Runtime证据。B
 1. Executor收到Start后先原子提交`operation.accepted`，再异步启动AgentSession；Workflow连接断开不会取消运行。
 2. 每次Tool执行前先原子提交`tool.intent_persisted`，成功后才更新内存Map；同一Operation重复`toolCallId`在真实Tool前被拒绝，并由fatal latch穿透真实AgentSession的普通Tool Error恢复。进程重启发现未闭合Tool时，先追加`tool.outcome_unknown`，再把Operation收敛为`operation.outcome_unknown`。
 3. Tool Result只有与耐久Intent五字段精确匹配时才能闭合；持久化失败或匹配冲突时，即使Agent loop继续返回，Operation也不能提交成功。同一进程终态检查与重启恢复都会保守收敛为结果未知，且迟到的`fail()`或`complete()`都不能覆盖已有终态。
-4. 服务启动时不会自动重放`queued/running` Operation。读工具理论上可安全重跑，但`edit/write/bash`可能已生效；当前统一保守进入人工对账，避免猜测性重复副作用。
+4. 服务启动时先扫描Operation事件Hash、身份和状态顺序；矛盾的历史`succeeded`记录直接拒绝启动。随后也不会自动重放`queued/running` Operation。读工具理论上可安全重跑，但`edit/write/bash`可能已生效；当前统一保守进入人工对账，避免猜测性重复副作用。
 5. Provider自动重试在Executor专用Settings中关闭。Turn数、总Completion Token和总时限由Execution Contract冻结；越界形成稳定失败。
 6. Product Commit仍使用稳定Command ID幂等重试，绝不因为提交失败再次调用Pi。
 7. 正常关闭会停止接受HTTP、Abort活动AgentSession并等待Operation收敛；异常退出由下一次启动执行结果未知收敛。

@@ -88,6 +88,15 @@ describe("Node Catalog与Blueprint一致性", () => {
         },
       }).success,
     ).toBe(false);
+    expect(
+      DEFAULT_NODE_CATALOG.parseConfig("agent.direct", 1, {
+        capabilityMode: "custom",
+        promptReviewMode: "manual",
+        agentVersionId: "avn_catalogpromptambiguous1",
+        agentVersionSha256: "b".repeat(64),
+        agentPromptOverride: "不能与Agent Version混合的普通Prompt Override。",
+      }).success,
+    ).toBe(false);
   });
 
   it("重复Catalog键和Blueprint降低风险在启动阶段失败关闭", () => {
@@ -348,6 +357,54 @@ describe("Node Catalog与Blueprint一致性", () => {
       agentVersionId: "avn_agentversionfreeze1",
       agentVersionSha256,
     });
+
+    const versionBoundRoot = structuredClone(direct.revision.semanticRoot);
+    const versionBoundNode = versionBoundRoot.elements[0];
+    if (versionBoundNode?.kind !== "composite") throw new Error("Direct fixture缺少Agent节点");
+    versionBoundNode.config = {
+      ...versionBoundNode.config,
+      capabilityMode: "custom",
+      agentVersionId: "avn_agentversionfreeze1",
+      agentVersionSha256,
+    };
+    const versionPromptOverride = compileWorkflowRunSpec({
+      workflowRunSpecId: "wrs_agentversionpromptmix1",
+      productRunId: "run_agentversionpromptmix1",
+      createdAt,
+      definition: {
+        schemaVersion: "workflow-definition-revision-input.v1",
+        workflowDefinitionRevisionId: direct.revision.workflowDefinitionRevisionId,
+        definitionRevision: direct.revision.definitionRevision,
+        blueprintKey: direct.revision.blueprintKey,
+        blueprintVersion: direct.revision.blueprintVersion,
+        semanticRoot: versionBoundRoot,
+      },
+      runConfiguration: {
+        schemaVersion: "workflow-run-configuration.v1",
+        overrides: [
+          {
+            kind: "node_config",
+            definitionNodeId: "direct.agent",
+            field: "agentPromptOverride",
+            value: "不能替换已发布Version的System Prompt。",
+          },
+        ],
+      },
+      principal: { principalId: "usr_agentconfiguration", capabilities: [] },
+      availableResources: [],
+      executorManifest: BUILTIN_WORKFLOW_EXECUTOR_MANIFEST,
+      runner: {
+        runnerFamily: DIRECT_AGENT_RUNNER_FAMILY,
+        runnerBundleVersion: DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+      },
+      businessInput: { kind: "direct_agent_message" },
+    });
+    expect(versionPromptOverride.success).toBe(false);
+    if (!versionPromptOverride.success) {
+      expect(versionPromptOverride.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+        "run_configuration.node_config_invalid",
+      );
+    }
 
     const temporaryConfiguration = {
       runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },

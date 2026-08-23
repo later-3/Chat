@@ -160,7 +160,6 @@ test("Workflow Agent节点配置同源路由只代理strict Chat命令", async (
       agentKey: "planner",
       agentVersionId: "avn_workflowconfig1",
       agentVersionSha256: "b".repeat(64),
-      promptOverrideMarkdown: "Workflow专属Prompt",
     },
   };
   try {
@@ -169,6 +168,15 @@ test("Workflow Agent节点配置同源路由只代理strict Chat命令", async (
     assert.deepEqual(calls, [valid]);
     assert.equal(
       (await call("/lifeos/workflow/agent-node-configurations?debug=1", valid)).status,
+      400,
+    );
+    assert.equal(
+      (
+        await call("/lifeos/workflow/agent-node-configurations", {
+          ...valid,
+          payload: { ...valid.payload, promptOverrideMarkdown: "不能与Version混合" },
+        })
+      ).status,
       400,
     );
     assert.equal(

@@ -93,11 +93,18 @@ export interface NodeCatalogDescriptor {
   readonly supportedBlueprints: readonly ("planning" | "note" | "direct")[];
 }
 
-/** Version与本次Run临时配置是互斥事实；两者并存时不能用优先级静默选一套能力。 */
+/**
+ * Direct Agent只能由一套配置来源决定能力与System Prompt。Version、结构化Temporary
+ * 与历史单段Prompt Override任意两者并存时，都不能用优先级静默拼成混合身份。
+ */
 export function hasAmbiguousAgentConfiguration(config: Readonly<Record<string, unknown>>): boolean {
   const hasVersion =
     config["agentVersionId"] !== undefined || config["agentVersionSha256"] !== undefined;
-  return hasVersion && config["agentTemporaryConfiguration"] !== undefined;
+  const hasTemporary = config["agentTemporaryConfiguration"] !== undefined;
+  const hasPromptOverride =
+    typeof config["agentPromptOverride"] === "string" &&
+    config["agentPromptOverride"].trim() !== "";
+  return [hasVersion, hasTemporary, hasPromptOverride].filter(Boolean).length > 1;
 }
 
 export function nodeExecutorKey(nodeType: WorkflowNodeTypeKey, schemaVersion: number): string {
@@ -494,7 +501,7 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
           ctx.addIssue({
             code: "custom",
             path: ["agentTemporaryConfiguration"],
-            message: "Agent Version与临时Agent配置不能同时存在",
+            message: "Agent Version、临时Agent配置与Prompt Override只能选择一种来源",
           });
         }
       }),

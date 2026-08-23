@@ -89,6 +89,9 @@ export function resolveAgentPiSystemPrompt(input: {
 } {
   const override = input.promptOverrideMarkdown;
   const useOverride = override !== undefined && override.trim() !== "";
+  if (input.agentVersion !== undefined && useOverride) {
+    throw revisionConflict("Agent Version与Prompt Override不能组合为同一次执行身份");
+  }
   const piBacked = input.profile.runtimeBaseline?.kind === "pi_coding_agent";
   const inheritsPiDefault =
     piBacked &&
@@ -535,6 +538,9 @@ export function agentBindingForNode(
   readonly systemPromptMode?: "inherit_runtime" | "replace" | undefined;
   readonly promptOverrideMarkdown?: string | undefined;
 } {
+  if (nodeType === "agent.direct" && hasAmbiguousAgentConfiguration(config)) {
+    throw revisionConflict("Direct Agent存在多个互斥配置来源");
+  }
   const temporaryConfiguration =
     typeof config["agentTemporaryConfiguration"] === "object" &&
     config["agentTemporaryConfiguration"] !== null
@@ -814,7 +820,7 @@ export function resolveDirectAgentExecutionEnvelope(input: {
   readonly piSystemPrompt?: PiSystemPromptResolution | undefined;
 } {
   if (hasAmbiguousAgentConfiguration(input.directNodeConfig)) {
-    throw revisionConflict("Agent Version与临时Agent配置不能同时进入能力解析");
+    throw revisionConflict("Direct Agent的多个配置来源不能同时进入能力解析");
   }
   const rawTemporaryConfiguration = input.directNodeConfig["agentTemporaryConfiguration"];
   const parsedTemporaryConfiguration =

@@ -499,6 +499,83 @@ describe("PiExecutorOperationStore", () => {
     },
   );
 
+  it.each([
+    "accepted_request_hash",
+    "started_request_hash",
+    "completed_request_hash",
+    "completed_result_hash",
+    "session_id",
+    "failed_before_succeeded",
+    "missing_accepted",
+  ] as const)("旧v1 succeeded Journal拒绝Operation生命周期矛盾：%s", async (contradiction) => {
+    const root = await temporaryRoot();
+    const directory = join(root, "operations");
+    const store = await PiExecutorOperationStore.open(directory);
+    await store.createOrGet(request());
+    await store.markRunning("pio_test1");
+    await store.setSession("pio_test1", "pis_test1", ["read"]);
+    await store.complete(
+      "pio_test1",
+      {
+        stepId: "step-1",
+        output: "operation lifecycle",
+        sections: [{ heading: "结果", body: "operation lifecycle" }],
+        successCriteriaEvidence: ["结果存在｜operation lifecycle"],
+        criteriaEvidence: ["完成测试｜operation lifecycle"],
+        warnings: [],
+      },
+      2,
+    );
+    const recordPath = join(directory, "pio_test1.json");
+    const record = JSON.parse(await readFile(recordPath, "utf8")) as {
+      requestSha256: string;
+      events: Array<Record<string, unknown>>;
+    };
+    const eventOfType = (type: string) => {
+      const event = record.events.find((candidate) => candidate["type"] === type);
+      if (event === undefined) throw new Error(`测试Journal缺少${type}`);
+      return event;
+    };
+    if (contradiction === "accepted_request_hash") {
+      eventOfType("operation.accepted")["requestSha256"] = "0".repeat(64);
+    } else if (contradiction === "started_request_hash") {
+      eventOfType("operation.started")["requestSha256"] = "1".repeat(64);
+    } else if (contradiction === "completed_request_hash") {
+      eventOfType("operation.completed")["requestSha256"] = "2".repeat(64);
+    } else if (contradiction === "completed_result_hash") {
+      eventOfType("operation.completed")["resultSha256"] = "3".repeat(64);
+    } else if (contradiction === "session_id") {
+      eventOfType("session.started")["sessionId"] = "pis_other1";
+    } else if (contradiction === "failed_before_succeeded") {
+      const completedIndex = record.events.findIndex(
+        (event) => event["type"] === "operation.completed",
+      );
+      const completed = record.events[completedIndex];
+      if (completedIndex < 0 || completed === undefined) throw new Error("测试缺少完成事件");
+      record.events.splice(completedIndex, 0, {
+        sequence: completedIndex + 1,
+        timestamp: completed["timestamp"],
+        operationId: "pio_test1",
+        type: "operation.failed",
+        requestSha256: record.requestSha256,
+        errorCode: "executor.test_failure",
+        durationMs: 1,
+      });
+    } else {
+      const acceptedIndex = record.events.findIndex(
+        (event) => event["type"] === "operation.accepted",
+      );
+      if (acceptedIndex < 0) throw new Error("测试缺少接受事件");
+      record.events.splice(acceptedIndex, 1);
+    }
+    for (const [index, event] of record.events.entries()) event["sequence"] = index + 1;
+    await writeFile(recordPath, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+
+    await expect(PiExecutorOperationStore.open(directory)).rejects.toBeInstanceOf(
+      PiExecutorJournalIntegrityError,
+    );
+  });
+
   it("晚到complete不能把已收敛的outcome_unknown反转为成功", async () => {
     const root = await temporaryRoot();
     const store = await PiExecutorOperationStore.open(join(root, "operations"));

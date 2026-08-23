@@ -286,6 +286,17 @@ export const saveWorkflowAgentNodeConfigurationPayloadSchema = z
         message: "Workflow Agent版本必须同时绑定ID与Hash",
       });
     }
+    if (
+      value.agentVersionId !== undefined &&
+      value.promptOverrideMarkdown !== undefined &&
+      value.promptOverrideMarkdown.trim() !== ""
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["promptOverrideMarkdown"],
+        message: "Workflow Agent Version与Prompt Override不能同时保存",
+      });
+    }
   });
 
 export const saveWorkflowDefinitionDraftPayloadSchema = z
