@@ -891,10 +891,11 @@ export class MemmyMemoryAdapter
       });
     }
     try {
+      const sessionKey = "sessionKey" in input ? input.sessionKey : input.productSessionId;
       const request = memmySearchRequestSchema.parse({
         requestId: input.operationId,
         adapterId: "chat",
-        namespace: this.namespace(input.principalId, input.productSessionId),
+        namespace: this.namespace(input.principalId, sessionKey),
         query: input.query,
         // Workflow合同不泄漏memmy层级；当前固定Provider在全部可查询层中召回。
         layers: ["L1", "L2", "L3", "Skill"],

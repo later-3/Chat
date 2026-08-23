@@ -10,6 +10,7 @@ export * from "./plan-validation.js";
 export * from "./memory-import.js";
 export * from "./workflow-memory.js";
 export * from "./memory-session-import.js";
+export * from "./memory-provider-comparison.js";
 export * from "./project.js";
 export * from "./workflow-view.js";
 export * from "./workflow-node-run.js";

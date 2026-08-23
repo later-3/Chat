@@ -225,6 +225,11 @@ Chat Session来源直接读取Product Store；Codex Session来源默认按需读
 `CODEX_HOME`；浏览器不能提交文件路径。Preview不写Product Store或Provider，确认导入才创建统一
 Memory Write Outbox，因此必须同时启用支持写入的Memory模式。
 
+同一来源的双Provider只读比较使用`POST /api/memory/provider-comparison-previews`。请求只接受
+Session来源、查询、至少两个Provider ID及共同结果/字符预算；通常以`--memory=compare`启动后使用。
+响应展示各Provider规范化正文和精确差异，但不写Product Store或Memory、不暴露外部Query/Object ID，
+也不允许把不同Provider的score直接排序。`off`或Provider未齐时会在扫描Codex来源前返回失败。
+
 `431xx`只属于production；分支worktree、VS Code F5和测试不得占用。CLI/VS Code debug固定
 使用`441xx`，Playwright真实浏览器门固定使用`451xx/452xx/453xx`。测试专属端口被占用时
 失败关闭，不调用production的`debug:preclean`，也不停止LaunchAgent。

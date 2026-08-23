@@ -5,7 +5,6 @@ import type {
   ProductRunId,
   ProductSessionId,
   WorkflowMemoryCategory,
-  WorkflowMemoryQueryId,
 } from "@chat/contracts";
 
 export interface WorkflowMemoryProviderHealth {
@@ -13,15 +12,25 @@ export interface WorkflowMemoryProviderHealth {
   readonly errorCode?: string;
 }
 
-export interface WorkflowMemoryQueryInput {
-  readonly operationId: WorkflowMemoryQueryId;
-  readonly productRunId: ProductRunId;
-  readonly productSessionId: ProductSessionId;
+interface WorkflowMemoryQueryInputBase {
+  readonly operationId: string;
   readonly principalId: PrincipalId;
   readonly query: string;
   readonly maxResults: number;
   readonly maxContextCharacters: number;
 }
+
+/** Workflow查询保留产品绑定；只读比较使用同一Port但只携带Provider中立namespace key。 */
+export type WorkflowMemoryQueryInput = WorkflowMemoryQueryInputBase &
+  (
+    | {
+        readonly productRunId: ProductRunId;
+        readonly productSessionId: ProductSessionId;
+      }
+    | {
+        readonly sessionKey: string;
+      }
+  );
 
 export interface WorkflowMemoryQuerySection {
   readonly externalObjectIds: readonly string[];
