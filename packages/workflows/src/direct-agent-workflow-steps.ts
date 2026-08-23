@@ -8,6 +8,8 @@ import type { DirectPromptReviewRef, PiDirectExecutorClientOutcome } from "@chat
 import {
   DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
   DIRECT_AGENT_RUNNER_FAMILY,
+  MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_DIRECT_RUNNER_FAMILY,
 } from "./definition-kernel-executor-registry.js";
 import { getWorkflowRuntimeContext } from "./runtime-context.js";
 import { cmdId, PiStepFailure, runStep, wrapApiError } from "./workflow-step-support.js";
@@ -56,12 +58,18 @@ export async function prepareDirectAgentOperationStep(
           productRunId: input.productRunId as never,
           workflowRunSpecId: input.workflowRunSpecId as never,
         });
+        const directRunner = runSpec.runner.runnerFamily === DIRECT_AGENT_RUNNER_FAMILY;
+        const memoryDirectRunner = runSpec.runner.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY;
         if (
           runSpec.productRunId !== input.productRunId ||
           runSpec.workflowRunSpecId !== input.workflowRunSpecId ||
-          runSpec.runner.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY ||
-          runSpec.runner.runnerBundleVersion !== DIRECT_AGENT_RUNNER_BUNDLE_VERSION ||
+          (!directRunner && !memoryDirectRunner) ||
+          (directRunner &&
+            runSpec.runner.runnerBundleVersion !== DIRECT_AGENT_RUNNER_BUNDLE_VERSION) ||
+          (memoryDirectRunner &&
+            runSpec.runner.runnerBundleVersion !== MEMORY_DIRECT_RUNNER_BUNDLE_VERSION) ||
           runSpec.definitionRef.blueprintKey !== "direct" ||
+          runSpec.definitionRef.blueprintVersion !== (memoryDirectRunner ? 2 : 1) ||
           runSpec.businessInput?.kind !== "direct_agent_message"
         ) {
           throw new FatalError("run_spec.direct_agent_binding_incompatible");
@@ -70,8 +78,9 @@ export async function prepareDirectAgentOperationStep(
           (node) => node.nodeType === "agent.direct" && node.activation === "enabled",
         );
         if (
-          runSpec.nodeResolutions.length !== 1 ||
+          runSpec.nodeResolutions.length !== (memoryDirectRunner ? 3 : 1) ||
           directNode === undefined ||
+          directNode.definitionNodeId !== "direct.agent" ||
           !directAgentCapabilityModeSchema.safeParse(directNode.config["capabilityMode"]).success ||
           (directNode.config["promptReviewMode"] !== "manual" &&
             directNode.config["promptReviewMode"] !== "off")
@@ -146,7 +155,8 @@ export async function claimPromptReviewHookStep(
       const workflowBinding = ctx.bindings.getWorkflowBinding(input.productRunId as never);
       if (
         workflowBinding === undefined ||
-        workflowBinding.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY
+        (workflowBinding.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY &&
+          workflowBinding.runnerFamily !== MEMORY_DIRECT_RUNNER_FAMILY)
       ) {
         throw new FatalError("direct_agent.workflow_binding_missing");
       }

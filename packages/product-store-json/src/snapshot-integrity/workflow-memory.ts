@@ -1,6 +1,10 @@
 import { type ProductSnapshot } from "@chat/contracts";
 import { validateWorkflowRunSpecIntegrity } from "@chat/application/workflow-run-spec-compiler";
 import {
+  MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_DIRECT_RUNNER_FAMILY,
+} from "@chat/application/workflow-system-definitions";
+import {
   computeMemoryImportBackendDescriptorSha256,
   computeMemoryImportRequestSha256,
   computeMemoryImportSemanticDedupeSha256,
@@ -17,6 +21,22 @@ import {
   sha256Hex,
 } from "@chat/domain";
 import type { Fail } from "./shared.js";
+
+function isWorkflowMemoryRun(
+  run: ProductSnapshot["entities"]["runs"][string] | undefined,
+  runSpec: ProductSnapshot["entities"]["workflowRunSpecs"][string] | undefined,
+): boolean {
+  if (run?.runKind === "planning") return true;
+  return (
+    run?.runKind === "direct_agent" &&
+    run.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY &&
+    run.runnerBundleVersion === MEMORY_DIRECT_RUNNER_BUNDLE_VERSION &&
+    runSpec?.runner.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY &&
+    runSpec.runner.runnerBundleVersion === MEMORY_DIRECT_RUNNER_BUNDLE_VERSION &&
+    runSpec.definitionRef.blueprintKey === "direct" &&
+    runSpec.definitionRef.blueprintVersion === 2
+  );
+}
 
 export function assertWorkflowMemory(snapshot: ProductSnapshot, fail: Fail): void {
   const { entities } = snapshot;
@@ -71,7 +91,8 @@ export function assertWorkflowMemory(snapshot: ProductSnapshot, fail: Fail): voi
         )
       : undefined;
     if (
-      run?.runKind !== "planning" ||
+      run === undefined ||
+      !isWorkflowMemoryRun(run, runSpec) ||
       session === undefined ||
       message === undefined ||
       message.messageId !== run.sourceMessageId ||
@@ -156,6 +177,7 @@ export function assertWorkflowMemory(snapshot: ProductSnapshot, fail: Fail): voi
     const runSpec = entities.workflowRunSpecs[context.workflowRunSpecId];
     if (
       run === undefined ||
+      !isWorkflowMemoryRun(run, runSpec) ||
       run.workflowRunSpecId !== context.workflowRunSpecId ||
       runSpec?.productRunId !== context.productRunId ||
       runSpec.sha256 !== context.workflowRunSpecSha256 ||

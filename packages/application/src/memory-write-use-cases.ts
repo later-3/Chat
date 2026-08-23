@@ -6,6 +6,7 @@ import {
   memoryWriteResultIdSchema,
   memoryWriteResultSchema,
   workflowMemoryWriteNodeConfigSchema,
+  workflowMemoryWriteNodeConfigV2Schema,
   type BeginWorkflowMemoryWriteRequest,
   type BeginWorkflowMemoryWriteResponse,
   type CommandId,
@@ -31,7 +32,7 @@ import {
 } from "@chat/domain";
 import type { ApplicationDeps } from "./deps.js";
 import { ApplicationError, forbidden, notFound, revisionConflict } from "./errors.js";
-import { requirePlanningRun } from "./product-run-kind.js";
+import { requireWorkflowMemoryRun } from "./product-run-kind.js";
 import { validateWorkflowRunSpecIntegrity } from "./workflow-run-spec-compiler.js";
 import type {
   WorkflowMemoryWriteAccepted,
@@ -260,12 +261,12 @@ export async function beginWorkflowMemoryWrite(
 ): Promise<BeginWorkflowMemoryWriteResponse> {
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
   const run = snapshot.entities.runs[input.productRunId];
-  if (run === undefined) throw notFound("Planning Run不存在");
-  const planningRun = requirePlanningRun(run);
+  if (run === undefined) throw notFound("Product Run不存在");
+  const memoryRun = requireWorkflowMemoryRun(run);
   const runSpec = snapshot.entities.workflowRunSpecs[input.workflowRunSpecId];
   const validated = runSpec === undefined ? undefined : validateWorkflowRunSpecIntegrity(runSpec);
   if (
-    planningRun.workflowRunSpecId !== input.workflowRunSpecId ||
+    memoryRun.workflowRunSpecId !== input.workflowRunSpecId ||
     validated === undefined ||
     !validated.success
   ) {
@@ -281,8 +282,14 @@ export async function beginWorkflowMemoryWrite(
       message: "指定节点不是可执行的memory.write节点",
     });
   }
-  const config = workflowMemoryWriteNodeConfigSchema.safeParse(node.config);
-  if (!config.success) {
+  const configSchema =
+    node.schemaVersion === 1
+      ? workflowMemoryWriteNodeConfigSchema
+      : node.schemaVersion === 2
+        ? workflowMemoryWriteNodeConfigV2Schema
+        : undefined;
+  const config = configSchema?.safeParse(node.config);
+  if (config === undefined || !config.success) {
     throw new ApplicationError({
       code: "store_corrupted",
       httpStatus: 500,
@@ -290,8 +297,8 @@ export async function beginWorkflowMemoryWrite(
       recoveryAction: "contact_support",
     });
   }
-  const session = snapshot.entities.sessions[planningRun.sessionId];
-  const message = snapshot.entities.messages[planningRun.sourceMessageId];
+  const session = snapshot.entities.sessions[memoryRun.sessionId];
+  const message = snapshot.entities.messages[memoryRun.sourceMessageId];
   if (session === undefined || message === undefined) {
     throw revisionConflict("Workflow Memory Write来源消息不存在");
   }

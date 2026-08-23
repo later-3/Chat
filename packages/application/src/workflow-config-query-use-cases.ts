@@ -57,8 +57,9 @@ export async function getWorkflowBlueprints(_deps: ApplicationDeps) {
         schemaVersion: PRODUCT_API_SCHEMA_VERSION,
         blueprintKey: blueprint.blueprintKey,
         blueprintVersion: blueprint.blueprintVersion,
-        title: workflowBlueprintCopy(blueprint.blueprintKey).title,
-        description: workflowBlueprintCopy(blueprint.blueprintKey).description,
+        title: workflowBlueprintCopy(blueprint.blueprintKey, blueprint.blueprintVersion).title,
+        description: workflowBlueprintCopy(blueprint.blueprintKey, blueprint.blueprintVersion)
+          .description,
         runnerFamily: blueprint.runnerFamily,
         terminalNodeType: blueprint.terminalNodeType,
         optionalNodeTypes: blueprint.optionalNodeTypes,
@@ -76,7 +77,10 @@ export async function getWorkflowBlueprints(_deps: ApplicationDeps) {
   };
 }
 
-function workflowBlueprintCopy(blueprintKey: "planning" | "note" | "direct"): {
+function workflowBlueprintCopy(
+  blueprintKey: "planning" | "note" | "direct",
+  blueprintVersion: number,
+): {
   readonly title: string;
   readonly description: string;
 } {
@@ -89,6 +93,12 @@ function workflowBlueprintCopy(blueprintKey: "planning" | "note" | "direct"): {
     case "note":
       return { title: "笔记工作流", description: "抽取、分类并提交笔记。" };
     case "direct":
+      if (blueprintVersion === 2) {
+        return {
+          title: "Memory 增强执行 Agent",
+          description: "查询并冻结相关记忆，执行Agent，再按本次配置写回Memory。",
+        };
+      }
       return {
         title: "执行 Agent（逐次提示词审核）",
         description: "单节点推进Execution Agent，并在每次Provider请求发送前进入人工审核。",

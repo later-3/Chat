@@ -15,6 +15,7 @@ import {
   sha256Schema,
   workflowMemoryQueryNodeConfigSchema,
   workflowMemoryWriteNodeConfigSchema,
+  workflowMemoryWriteNodeConfigV2Schema,
 } from "@chat/contracts";
 
 export type PublicConfigField =
@@ -274,7 +275,7 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
     skipPolicy: { kind: "allowed_with_default_outcome", defaultOutcome: "optional_unavailable" },
     riskPolicy: "read_context",
     executorKind: "step",
-    supportedBlueprints: ["planning"],
+    supportedBlueprints: ["planning", "direct"],
   },
   {
     nodeType: "memory.write",
@@ -305,6 +306,37 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
     executorKind: "step",
     // 只允许显式发布的独立Memory Planning Definition使用；普通Planning种子不包含它。
     supportedBlueprints: ["planning"],
+  },
+  {
+    nodeType: "memory.write",
+    schemaVersion: 2,
+    displayName: "写入记忆",
+    description: "把经过明确选择的Chat内容写入Memory Provider，并声明失败是否阻断提交",
+    category: "commit",
+    configSchema: workflowMemoryWriteNodeConfigV2Schema,
+    defaultConfig: {
+      providerId: "mbk_tencentmemorycore",
+      source: "source_message",
+      contentType: "conversation_turn",
+      required: true,
+    },
+    publicConfigFields: [
+      {
+        type: "memory_provider_selector",
+        name: "providerId",
+        label: "Memory服务",
+        multiple: false,
+        required: true,
+      },
+      booleanField("required", "写入失败时停止工作流", true),
+    ],
+    inputSlots: [slot("message", "message_ref", true)],
+    outputSlots: [slot("write", "memory_write_ref", true)],
+    outcomes: ["accepted", "materialized", "failed", "outcome_unknown"],
+    skipPolicy: { kind: "never" },
+    riskPolicy: "external_effect",
+    executorKind: "step",
+    supportedBlueprints: ["direct"],
   },
   {
     nodeType: "context.memory",

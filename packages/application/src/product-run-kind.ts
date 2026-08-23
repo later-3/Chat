@@ -4,6 +4,7 @@ import { revisionConflict } from "./errors.js";
 export type PlanningProductRun = Extract<ProductRun, { readonly runKind: "planning" }>;
 export type NoteCaptureProductRun = Extract<ProductRun, { readonly runKind: "note_capture" }>;
 export type DirectAgentProductRun = Extract<ProductRun, { readonly runKind: "direct_agent" }>;
+export type WorkflowMemoryProductRun = PlanningProductRun | DirectAgentProductRun;
 
 /**
  * Planning专属Application边界必须先缩窄Run分支。
@@ -28,4 +29,15 @@ export function requireDirectAgentRun(run: ProductRun): DirectAgentProductRun {
     throw revisionConflict("该Product Run不是Direct Agent运行，不能使用Prompt Review命令或查询");
   }
   return run;
+}
+
+/** Memory节点只属于Planning或显式memory-direct；普通Direct不能借此隐式启用Memory。 */
+export function requireWorkflowMemoryRun(run: ProductRun): WorkflowMemoryProductRun {
+  if (
+    run.runKind === "planning" ||
+    (run.runKind === "direct_agent" && run.runnerFamily === "memory-direct.v1")
+  ) {
+    return run;
+  }
+  throw revisionConflict("该Product Run没有冻结Workflow Memory节点能力");
 }

@@ -9,5 +9,5 @@ export const BUILTIN_WORKFLOW_EXECUTOR_MANIFEST: readonly WorkflowExecutorManife
   NODE_CATALOG_DESCRIPTORS.map((descriptor) => ({
     nodeType: descriptor.nodeType,
     schemaVersion: descriptor.schemaVersion,
-    executorVersion: `${descriptor.nodeType}.v1`,
+    executorVersion: `${descriptor.nodeType}.v${String(descriptor.schemaVersion)}`,
   }));

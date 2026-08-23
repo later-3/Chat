@@ -56,10 +56,14 @@ import {
   NOTE_CAPTURE_RUNNER_FAMILY,
   DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
   DIRECT_AGENT_RUNNER_FAMILY,
+  MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_DIRECT_RUNNER_FAMILY,
   SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
   SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID,
   SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID,
+  SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_DIRECT_WORKFLOW_VIEW_ID,
   SYSTEM_NOTE_WORKFLOW_REVISION_ID,
   SYSTEM_NOTE_WORKFLOW_VIEW_ID,
   SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
@@ -205,11 +209,14 @@ async function preparePromptTurn(deps: ApplicationDeps, input: PreparePromptTurn
         ? input.snapshot.entities.workflowViewDefinitions[SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID]
         : selectedRevision.workflowDefinitionRevisionId === SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID
           ? input.snapshot.entities.workflowViewDefinitions[SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID]
-          : selectedRevision.workflowDefinitionRevisionId === SYSTEM_PLANNING_WORKFLOW_REVISION_ID
-            ? input.snapshot.entities.workflowViewDefinitions[SYSTEM_PLANNING_WORKFLOW_VIEW_ID]
-            : selectedRevision.workflowDefinitionRevisionId === SYSTEM_NOTE_WORKFLOW_REVISION_ID
-              ? input.snapshot.entities.workflowViewDefinitions[SYSTEM_NOTE_WORKFLOW_VIEW_ID]
-              : createPublishedWorkflowView({ revision: selectedRevision, createdAt: input.now });
+          : selectedRevision.workflowDefinitionRevisionId ===
+              SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID
+            ? input.snapshot.entities.workflowViewDefinitions[SYSTEM_MEMORY_DIRECT_WORKFLOW_VIEW_ID]
+            : selectedRevision.workflowDefinitionRevisionId === SYSTEM_PLANNING_WORKFLOW_REVISION_ID
+              ? input.snapshot.entities.workflowViewDefinitions[SYSTEM_PLANNING_WORKFLOW_VIEW_ID]
+              : selectedRevision.workflowDefinitionRevisionId === SYSTEM_NOTE_WORKFLOW_REVISION_ID
+                ? input.snapshot.entities.workflowViewDefinitions[SYSTEM_NOTE_WORKFLOW_VIEW_ID]
+                : createPublishedWorkflowView({ revision: selectedRevision, createdAt: input.now });
   if (selectedView === undefined) {
     throw new ApplicationError({
       code: "store_corrupted",
@@ -238,10 +245,15 @@ async function preparePromptTurn(deps: ApplicationDeps, input: PreparePromptTurn
           runnerBundleVersion: NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
         }
       : selectedRevision.blueprintKey === "direct"
-        ? {
-            runnerFamily: DIRECT_AGENT_RUNNER_FAMILY,
-            runnerBundleVersion: DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
-          }
+        ? selectedRevision.blueprintVersion === 2
+          ? {
+              runnerFamily: MEMORY_DIRECT_RUNNER_FAMILY,
+              runnerBundleVersion: MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+            }
+          : {
+              runnerFamily: DIRECT_AGENT_RUNNER_FAMILY,
+              runnerBundleVersion: DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+            }
         : {
             runnerFamily: CONFIGURABLE_PLANNING_RUNNER_FAMILY,
             runnerBundleVersion: CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
@@ -628,8 +640,9 @@ export async function submitUserMessage(
                 sourceMessageId: messageId,
                 workflowViewDefinitionId: selectedView.workflowViewDefinitionId,
                 workflowRunSpecId,
-                runnerFamily: DIRECT_AGENT_RUNNER_FAMILY,
-                runnerBundleVersion: DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+                runnerFamily: runner.runnerFamily as
+                  typeof DIRECT_AGENT_RUNNER_FAMILY | typeof MEMORY_DIRECT_RUNNER_FAMILY,
+                runnerBundleVersion: runner.runnerBundleVersion,
                 status: "pending",
                 phase: "queued",
                 revision: 1,

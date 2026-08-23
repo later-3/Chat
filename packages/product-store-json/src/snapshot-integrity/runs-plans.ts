@@ -1,6 +1,12 @@
 import { type ProductSnapshot } from "@chat/contracts";
 import { computePlanSha256 } from "@chat/application";
 import {
+  DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+  DIRECT_AGENT_RUNNER_FAMILY,
+  MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_DIRECT_RUNNER_FAMILY,
+} from "@chat/application/workflow-system-definitions";
+import {
   assertPromptReviewRequestIndexes,
   computePromptReviewPayloadSha256,
   computePromptReviewSha256,
@@ -86,12 +92,26 @@ export function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
     const view = entities.workflowViewDefinitions[run.workflowViewDefinitionId];
     if (run.runKind === "direct_agent") {
       const runSpec = entities.workflowRunSpecs[run.workflowRunSpecId];
+      const directV1 =
+        run.runnerFamily === DIRECT_AGENT_RUNNER_FAMILY &&
+        run.runnerBundleVersion === DIRECT_AGENT_RUNNER_BUNDLE_VERSION &&
+        runSpec?.runner.runnerFamily === DIRECT_AGENT_RUNNER_FAMILY &&
+        runSpec.runner.runnerBundleVersion === DIRECT_AGENT_RUNNER_BUNDLE_VERSION &&
+        runSpec.definitionRef.blueprintVersion === 1;
+      const memoryDirectV1 =
+        run.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY &&
+        run.runnerBundleVersion === MEMORY_DIRECT_RUNNER_BUNDLE_VERSION &&
+        runSpec?.runner.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY &&
+        runSpec.runner.runnerBundleVersion === MEMORY_DIRECT_RUNNER_BUNDLE_VERSION &&
+        runSpec.definitionRef.blueprintVersion === 2;
       if (
-        run.runnerFamily !== "direct-agent.v1" ||
+        (!directV1 && !memoryDirectV1) ||
         runSpec?.productRunId !== run.productRunId ||
         runSpec.definitionRef.blueprintKey !== "direct" ||
         runSpec.businessInput?.kind !== "direct_agent_message" ||
-        view?.source.kind !== "published_definition"
+        view?.source.kind !== "published_definition" ||
+        view.source.blueprintKey !== "direct" ||
+        view.source.blueprintVersion !== String(runSpec.definitionRef.blueprintVersion)
       ) {
         fail(`run ${run.productRunId} direct_agent runner/RunSpec/View绑定不一致`);
       }

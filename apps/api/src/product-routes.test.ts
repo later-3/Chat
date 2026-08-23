@@ -65,6 +65,7 @@ import {
 } from "@chat/application";
 import {
   SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID,
   SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
 } from "@chat/application/workflow-system-definitions";
@@ -725,11 +726,21 @@ describe("公开产品API", () => {
         definition.workflowDefinitionRevisionId === SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
     );
     const direct = definitionsEnvelope.definitions.definitions.find(
-      (definition) => definition.blueprintKey === "direct",
+      (definition) =>
+        definition.workflowDefinitionRevisionId === SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+    );
+    const memoryDirect = definitionsEnvelope.definitions.definitions.find(
+      (definition) =>
+        definition.workflowDefinitionRevisionId === SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID,
     );
     expect(
       definitionsEnvelope.definitions.definitions.map((definition) => definition.title),
-    ).toEqual(["规划执行工作流", "Memory 增强规划与执行", "执行 Agent（逐次提示词审核）"]);
+    ).toEqual([
+      "规划执行工作流",
+      "Memory 增强规划与执行",
+      "执行 Agent（逐次提示词审核）",
+      "Memory 增强执行 Agent",
+    ]);
     expect(ordinary?.nodes.map((node) => node.nodeType)).not.toContain("memory.query");
     expect(ordinary?.nodes.map((node) => node.nodeType)).not.toContain("memory.write");
     expect(memory).toMatchObject({
@@ -775,6 +786,32 @@ describe("公开产品API", () => {
           },
         ],
       },
+    ]);
+    expect(memoryDirect).toMatchObject({
+      title: "Memory 增强执行 Agent",
+      blueprintKey: "direct",
+      blueprintVersion: 2,
+      ownerKind: "system",
+    });
+    expect(memoryDirect?.nodes.map((node) => node.definitionNodeId)).toEqual([
+      "memory-direct.query",
+      "direct.agent",
+      "memory-direct.write",
+    ]);
+    expect(memoryDirect?.nodes.at(-1)?.schemaVersion).toBe(2);
+    expect(
+      memoryDirect?.nodes
+        .filter((node) => node.nodeType === "memory.query" || node.nodeType === "memory.write")
+        .map((node) => ({
+          nodeType: node.nodeType,
+          fields: node.runConfigFields.map((field) => field.name),
+        })),
+    ).toEqual([
+      {
+        nodeType: "memory.query",
+        fields: ["providerId", "required", "maxResults", "maxContextCharacters"],
+      },
+      { nodeType: "memory.write", fields: ["providerId", "required"] },
     ]);
     if (memory === undefined) throw new Error("缺少独立Memory Workflow公开选项");
 

@@ -351,7 +351,11 @@ function parseCompilerBoundaries(
       definition.blueprintKey === "note"
         ? { inputKind: "note_capture", runnerFamily: "note-capture.v1" }
         : definition.blueprintKey === "direct"
-          ? { inputKind: "direct_agent_message", runnerFamily: "direct-agent.v1" }
+          ? {
+              inputKind: "direct_agent_message",
+              runnerFamily:
+                definition.blueprintVersion === 2 ? "memory-direct.v1" : "direct-agent.v1",
+            }
           : { inputKind: "planning_message", runnerFamily: "configurable-planning.v1" };
     if (
       businessInput.data.kind !== expected.inputKind ||

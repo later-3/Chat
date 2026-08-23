@@ -51,7 +51,8 @@ export const workflowStartRequestSchema = z
     if (
       (value.runnerFamily === "configurable-planning.v1" ||
         value.runnerFamily === "note-capture.v1" ||
-        value.runnerFamily === "direct-agent.v1") &&
+        value.runnerFamily === "direct-agent.v1" ||
+        value.runnerFamily === "memory-direct.v1") &&
       value.workflowRunSpecId === undefined
     ) {
       ctx.issues.push({

@@ -2,23 +2,25 @@
 
 > 文档类型：当前实现（as-built）
 >
-> 当前公开系统Definition包括“规划执行工作流”“Memory 增强规划与执行”和“执行 Agent（逐次提示词审核）”。旧“默认规划工作流”和“默认笔记工作流”不再进入产品选择器；对应Runner与稳定证据为历史恢复及兼容调用保留。其他内部耐久流程包括`memory-write-workflow.v1`、历史兼容`memory-import-workflow.v1`、`project-intake-workflow.v1`、`project-advancement-workflow.v1`。
+> 当前公开系统Definition包括“规划执行工作流”“Memory 增强规划与执行”“执行 Agent（逐次提示词审核）”和“Memory 增强执行 Agent”。旧“默认规划工作流”和“默认笔记工作流”不再进入产品选择器；对应Runner与稳定证据为历史恢复及兼容调用保留。其他内部耐久流程包括`memory-write-workflow.v1`、历史兼容`memory-import-workflow.v1`、`project-intake-workflow.v1`、`project-advancement-workflow.v1`。
 >
 > 产品事实源：Product Store；Workflow返回值和Runtime状态不是产品终态。
 >
-> 当前默认产品Profile选择独立的“规划执行工作流”，其Definition只含“规划—审核—执行—验证—提交”，不包含Memory节点。另有用户显式选择的“Memory 增强规划与执行”、单节点Direct Agent和历史完整上下文Planning；各自身份、RunSpec和轨迹完全隔离。Provider运行基础默认`off`，显式`memorycore / memmy / compare`才启动固定Sidecar并在API/Workflow装配相同Registry；运行模式不会把Memory节点隐式塞进其他Definition。
+> 当前默认产品Profile选择独立的“规划执行工作流”，其Definition只含“规划—审核—执行—验证—提交”，不包含Memory节点。另有用户显式选择的“Memory 增强规划与执行”、单节点Direct Agent、三节点Memory Direct和历史完整上下文Planning；各自身份、RunSpec和轨迹完全隔离。Provider运行基础默认`off`，显式`memorycore / memmy / compare`才启动固定Sidecar并在API/Workflow装配相同Registry；运行模式不会把Memory节点隐式塞进其他Definition。
 
 ## 1. 为什么有多套Workflow
 
-当前有多个独立用户结果和3种Planning配置，因此分别冻结耐久生命周期与Definition：
+当前有多个独立用户结果和互不包裹的Definition，因此分别冻结耐久生命周期与Runner：
 
 1. 默认“规划执行工作流”：一条消息的规划、人工修订/批准、执行、验证和正式提交；冻结Definition不含Memory。
 2. “Memory 增强规划与执行”：用户显式选择后，在同一个父Workflow中执行`memory.query → memory.write →`完整Planning链。
 3. 历史完整上下文Planning：已从公开目录移除；底层仅保留兼容和既有冻结RunSpec恢复能力。
-4. `MemoryWriteWorkflow`：直接Memory Write Command产生的一次外部写入或一次只读对账；Memory Planning节点只复用其Application状态机，不启动第二个Workflow。
-5. 历史`MemoryImportWorkflow`：只保留旧事实兼容。
-6. `ProjectIntakeWorkflow`：一次真实资源建项理解、候选审核和确认。
-7. `ProjectAdvancementWorkflow`：现有Project的一次Stage/Milestone/负责人Update理解、候选修订和确认。
+4. “执行 Agent（逐次提示词审核）”：`direct@1 / direct-agent.v1`，只有一个`agent.direct`业务节点。
+5. “Memory 增强执行 Agent”：`direct@2 / memory-direct.v1`，固定执行`memory.query → agent.direct → memory.write`，不修改或包裹第4项。
+6. `MemoryWriteWorkflow`：直接Memory Write Command产生的一次外部写入或一次只读对账；Memory Planning和Memory Direct节点只复用其Application状态机，不启动第二个Workflow。
+7. 历史`MemoryImportWorkflow`：只保留旧事实兼容。
+8. `ProjectIntakeWorkflow`：一次真实资源建项理解、候选审核和确认。
+9. `ProjectAdvancementWorkflow`：现有Project的一次Stage/Milestone/负责人Update理解、候选修订和确认。
 
 旧`NoteCaptureWorkflow`不再由产品选择器提供；实现与绑定解析暂留，避免已有等待审核、兼容调用或恢复中的Run失去证据链。
 
@@ -115,7 +117,7 @@ for planRevision 1..5:
 
 ### 4.2 Memory上下文
 
-`memory.query`和`memory.write`只存在于显式选择的Memory Planning Definition，并位于Plan修订循环之前。Query以RunSpec节点身份、executionPath和attemptNumber派生稳定`wmq_*`；Query、Snapshots与Node终态在同一Product Store事务提交。所有Query终态随后聚合成唯一`WorkflowMemoryContext`，Plan v2～v5复用同一版本和Hash。Write以稳定`mwi_*`冻结来源Message和Provider描述；外部结果通过Node终态投影，正文不进入Trace。
+在Planning链中，`memory.query@1`和`memory.write@1`只存在于显式选择的Memory Planning Definition，并位于Plan修订循环之前；Memory Direct的独立顺序见第5节，并使用`memory.write@2`表达写回失败是否阻断Product Commit。`memory.write@1`保持历史规范化与Definition Hash不变，不能回填`required`字段。Query以RunSpec节点身份、executionPath和attemptNumber派生稳定`wmq_*`；Query、Snapshots与Node终态在同一Product Store事务提交。所有Query终态随后聚合成唯一`WorkflowMemoryContext`，Plan v2～v5复用同一版本和Hash。Write以稳定`mwi_*`冻结来源Message和Provider描述；外部结果通过Node终态投影，正文不进入Trace。
 
 - `required`查询失败：先保存失败结果，再让Run失败关闭。
 - `optional`查询失败：保存排除原因，规划可继续。
@@ -159,9 +161,27 @@ Executor Operation使用稳定`pio_*`身份和请求Hash。Workflow断线后按�
 
 Operation Start在进入Journal前还有独立授权门：Executor用`executionAttemptId + Contract ID/Hash + Step + Manifest`向Application回查Product Store，只使用API返回的权威Contract、Context和依赖引用。Runtime Key只是进程身份，不能单独授予文件或Shell能力。
 
-## 5. MemoryWriteWorkflow
+## 5. MemoryDirectAgentWorkflow
 
-### 5.1 普通写入
+```text
+loadMemoryDirectRunSpecStep
+→ executeWorkflowMemoryQuery
+→ freezeWorkflowMemoryContextStep
+→ runDirectAgentWorkflowCore
+   └─ 只产生已持久化Direct Candidate，不提交正式Message
+→ executeWorkflowMemoryWrite
+→ commitDirectAgentCandidate
+```
+
+Memory Direct使用独立Workflow ID、Runner family和bundle；Runtime按冻结dispatch静态选择，普通Direct不会进入该函数。Query、Context和Write继续复用同一Application Port及产品事实，不在Direct Runner里复制Memory引擎或Provider协议。
+
+Context ID/Revision/Hash进入Direct Attempt Input Manifest。Application授权Pi Operation时逐项重载Snapshots、校验Hash和Prompt组合Token预算；Pi只把规范化`<chat_memory_context>`作为当前请求前的不可信历史消息，并追加“不是系统指令”的系统约束。Context正文不进入Workflow Checkpoint、Operation Journal、Trace或日志，但会成为真实Provider Payload的一部分；`promptReviewMode=manual`时由现有Prompt Review展示并审核，`off`时仍保留Provider派发与结果未知栅栏。
+
+Direct Agent完成时只先返回`candidate_ready`。随后执行Write：`required=true`的`failed/outcome_unknown`阻止正式Message提交，`required=false`保留Write终态后允许提交候选；任何情况下都不二次写入。最后只有`commitDirectAgentCandidate`能把候选采用为正式Assistant Message。既有`directAgentWorkflow`仍调用同一Core后立即Commit，外部行为不变。
+
+## 6. MemoryWriteWorkflow
+
+### 6.1 普通写入
 
 ```text
 loadMemoryWriteStep
@@ -175,7 +195,7 @@ loadMemoryWriteStep
 
 `dispatching`是外部写入前的耐久栅栏。跨过fetch边界后的断连、超时、5xx或非法成功响应都可能意味着外部已经写入，因此不能回到写入Step盲目重试。
 
-### 5.2 只读对账
+### 6.2 只读对账
 
 `mode=reconcile`只允许从`dispatching/accepted/outcome_unknown`进入，只调用Adapter的读取/搜索能力，不再次执行外部写入。
 
@@ -186,7 +206,7 @@ loadMemoryWriteStep
 
 旧`MemoryImportWorkflow`、`MemoryImportIntent/Result`和对应API只为历史兼容保留；新功能不得继续向旧对象写入。
 
-## 6. ProjectIntakeWorkflow
+## 7. ProjectIntakeWorkflow
 
 ```text
 Project Intake Command
@@ -208,7 +228,7 @@ Project Understanding当前由pi Adapter执行，部署时使用服务端Model P
 
 待办、决定和贡献的“管理项目”消息不会启动新Workflow：用户已经显式选择命令类型，Application可确定性编译一个绑定Project revision/Hash的可编辑Candidate，不需要用模型重述正文。刷新Observation只提交客观只读观察，也不制造无价值审批层。
 
-### 6.1 ProjectAdvancementWorkflow
+### 7.1 ProjectAdvancementWorkflow
 
 ```text
 Project Advancement Command
@@ -226,7 +246,7 @@ Project Advancement Command
 
 Workflow不拥有Stage状态机。Application/Domain校验Principal、Candidate CAS/Hash、Project/Stage/Method绑定和Update作者；确认分支在同一JSON Store事务中写入所有产品事实。模型调用位于事务外，`FatalError`禁止同一Candidate revision自动再次付费；免费恢复测试真实重启API与Workflow后证明调用计数仍为1。
 
-## 7. Runtime Binding与版本证据
+## 8. Runtime Binding与版本证据
 
 Runtime Binding保存以下私有关系：
 
@@ -247,7 +267,7 @@ Runtime Binding保存以下私有关系：
 
 本地开发每次重建Bundle后会在服务启动前检查活动Planning Run。证据完全一致时继续恢复；若代码版本已经变化且旧Bundle不再可执行，则保留全部历史证据，通过Application把Product Run、Attempt和Workflow Outbox收敛为`workflow.version_incompatible`，并用Workflow SDK取消旧Runtime Run。该路径不删除Store或Runtime文件，也不重启同一产品工作；生产环境应保留旧部署完成原版本恢复。
 
-## 8. 重试与结果未知
+## 9. 重试与结果未知
 
 | 边界 | 当前策略 |
 |---|---|
@@ -261,7 +281,7 @@ Runtime Binding保存以下私有关系：
 | Hook等待 | 同一Workflow、同一Approval绑定；页面断开不取消等待 |
 | Approval过期 | Application确认状态后收敛；已决定但未恢复时继续等同一Hook |
 
-## 9. Trace与回放
+## 10. Trace与回放
 
 Trace记录：命令入口、事务、Outbox、Workflow Start/Resume、Step、Pi Operation/Session/Turn/Message Hash/Tool/Compaction、Provider/Memory Attempt、状态转换、耗时、错误和产品对象引用。
 
@@ -276,7 +296,7 @@ Replay Assembler按产品对象ID、revision和SHA-256组合：
 
 缺少revision或Hash不一致必须显式报告，不能生成“看起来完整”的假回放。
 
-### 9.1 DSH执行轨迹投影
+### 10.1 DSH执行轨迹投影
 
 `GET /api/runs/:productRunId/workflow-execution-trace`是DSH完整Workflow树使用的公开只读投影；
 `GET /api/runs/:productRunId/execution-trace`继续提供实时Pi工具cursor页。Application在Principal校验后组合：
@@ -309,11 +329,12 @@ utility Slot控制；开启时只重投影同一Trace的本地时间范围，不
 Plan/HITL Composer Dock只承载当前可操作审核或结果未知重试，决定确认后退出，历史由Human Review
 NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Query恢复，不拥有任何运行终态。
 
-## 10. 关键源码地图
+## 11. 关键源码地图
 
 | 关注点 | 文件 |
 |---|---|
 | Planning主编排 | `packages/workflows/src/planning-execution-workflow.ts` |
+| Memory Direct主编排 | `packages/workflows/src/memory-direct-agent-workflow.ts`、`direct-agent-workflow.ts` |
 | Workflow Memory Query Step | `workflow-memory-steps.ts`、`configurable-planning-resource-executors.ts` |
 | Hook与Decision Step | `workflow-decision-steps.ts` |
 | 执行Step | `workflow-execution-steps.ts` |
@@ -335,23 +356,24 @@ NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Quer
 | Memory Adapter | `packages/memory-runtime/src/*-adapter.ts` |
 | Project Resource Adapter | `packages/project-runtime/src/registry.ts` |
 
-## 11. 当前边界与后续演进
+## 12. 当前边界与后续演进
 
 已经实现：
 
 1. 同一Planning Workflow内的规划、反复修订、批准/拒绝、执行与正式提交。
 2. Provider中立、可重复的`memory.query`节点和唯一`WorkflowMemoryContext`；memmy与Tencent MemoryCore均实现相同Workflow Query/Write/Reconcile Port，运行时按显式mode选择。
 3. `memory.write`节点与独立Memory Write/对账Workflow及结果未知语义；旧Import链只做历史兼容。
-4. 固定Memory Sidecar的显式准备/启动、双Provider真实HTTP健康与Query/Write/Reconcile基础门；既有Planning真实浏览器证据属于历史纵向，新的Memory Direct浏览器E2E尚未交付。
-5. 固定端口F5调试、严格Trace和多源Replay。
-6. 独立Project Intake耐久链、真实Git/文档/脚本观察、候选确认与Project账本。
-7. 独立Project Advancement耐久链、Stage/Milestone/负责人Update审核、State Transition与Timeline。
+4. 固定Memory Sidecar的显式准备/启动、双Provider真实HTTP健康与Query/Write/Reconcile基础门。
+5. 独立Memory Direct三节点Workflow、Memory-aware Direct Input Manifest、Provider前不可信Context注入、组合Token预算门和候选后Write政策；当前确定性纵向已完成，真实DSH浏览器Memory Direct E2E尚未交付。
+6. 固定端口F5调试、严格Trace和多源Replay。
+7. 独立Project Intake耐久链、真实Git/文档/脚本观察、候选确认与Project账本。
+8. 独立Project Advancement耐久链、Stage/Milestone/负责人Update审核、State Transition与Timeline。
 
 尚未实现：
 
-1. 独立Memory增强Direct Workflow及其Memory-aware Direct Input Manifest。
-2. Chat/Codex整Session预览、去重、增量导入与双Provider评测。
-3. Retrieval/Write Agent、Memory采用审核与DSH管理表面。
+1. Chat/Codex整Session预览、去重、增量导入与双Provider评测。
+2. Retrieval/Write Agent、Memory采用审核与DSH管理表面。
+3. Memory Direct真实DSH浏览器E2E与用户可见的本轮Memory采用详情。
 4. Chat公开SSE Cursor Runtime Journal。
 5. Project Context进入Planning Workflow的节点；PS1已实现Project、初始Stage、Work/Action和资源观察，但尚未注入任务规划。
 6. 用户规则选择与规划注入节点。
@@ -360,7 +382,7 @@ NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Quer
 
 未来新增节点前，应先确认它属于现有Workflow的一个步骤，还是拥有独立用户结果和独立恢复生命周期；不能为了“统一”把所有业务塞进一个永久Workflow。
 
-## 12. 验证入口
+## 13. 验证入口
 
 ```bash
 pnpm test

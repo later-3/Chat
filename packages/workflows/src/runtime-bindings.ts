@@ -16,6 +16,7 @@ import {
 } from "@chat/contracts";
 import {
   DIRECT_AGENT_RUNNER_FAMILY,
+  MEMORY_DIRECT_RUNNER_FAMILY,
   NOTE_CAPTURE_RUNNER_FAMILY,
   type ProductWorkflowRunnerFamily,
 } from "./definition-kernel-executor-registry.js";
@@ -840,7 +841,8 @@ export class RuntimeBindingStore {
       const workflow = this.bindings.workflows[input.productRunId];
       if (
         workflow === undefined ||
-        workflow.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY ||
+        (workflow.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY &&
+          workflow.runnerFamily !== MEMORY_DIRECT_RUNNER_FAMILY) ||
         workflow.workflowRunId !== input.startWorkflowRunId
       ) {
         throw new RuntimeBindingError("Prompt Review Hook缺少对应Direct Agent Workflow start映射");
@@ -978,7 +980,8 @@ export class RuntimeBindingStore {
     const workflow = this.bindings.workflows[binding.productRunId];
     if (
       workflow === undefined ||
-      workflow.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY ||
+      (workflow.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY &&
+        workflow.runnerFamily !== MEMORY_DIRECT_RUNNER_FAMILY) ||
       workflow.workflowRunId !== binding.startWorkflowRunId
     ) {
       throw new RuntimeBindingError("Prompt Review Hook对应的Direct Agent Workflow不再有效");

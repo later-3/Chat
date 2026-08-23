@@ -70,6 +70,7 @@ export const workflowRunnerFamilySchema = z.enum([
   "configurable-planning.v1",
   "note-capture.v1",
   "direct-agent.v1",
+  "memory-direct.v1",
 ]);
 
 export const workflowRunnerEvidenceSchema = z

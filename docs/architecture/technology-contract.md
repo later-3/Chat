@@ -102,8 +102,9 @@ Query读取资源并返回revision/ETag/cursor；Command表达一次用户意图
 - Provider与Tool调用先写安全Operation Journal；未闭合副作用在恢复时进入`outcome_unknown`，不自动重放。
 - 模型输出先成为候选；确定性校验与Product Commit之后才是正式结果。
 - 付费模型失败默认不盲目自动重试；外部副作用必须有幂等、结果未知与对账。
-- 普通系统Planning不含Memory。`memory.query`只存在于独立发布、前端显式选择的Memory Planning或用户自建Definition；每个节点冻结Provider描述、来源Message、预算和结果快照，所有查询终态在第一个Planner前聚合成唯一`WorkflowMemoryContext`。Plan修订只复用该引用，不重新查询。
-- Memory Planning的`memory.write`节点保存本次用户输入，Application先提交`MemoryWriteIntent + Result`，由当前父Workflow唯一执行；不创建竞争的start Outbox。直接Write Command才提交`Intent + Result + Outbox`并启动独立`MemoryWriteWorkflow`。两者的外部write Step都固定`maxRetries=0`，未知结果只允许用同一`mwi_*`派生身份做只读对账。
+- 普通系统Planning和既有`direct@1`不含Memory。`memory.query`只存在于独立发布、前端显式选择的Memory Planning、`direct@2 / memory-direct.v1`或用户自建Definition；每个节点冻结Provider描述、来源Message、预算和结果快照，并聚合成唯一`WorkflowMemoryContext`。Plan修订或Direct授权只复用该引用，不重新查询。
+- Memory Planning的`memory.write@1`与Memory Direct的`memory.write@2`都保存本次用户输入；v1保持历史Definition Hash不变，v2才增加`required`提交阻断政策。Application先提交`MemoryWriteIntent + Result`，由当前父Workflow唯一执行；不创建竞争的start Outbox。Memory Direct先得到已持久化Direct Candidate，再执行Write，最后才把Candidate提交为正式Assistant Message。直接Write Command才提交`Intent + Result + Outbox`并启动独立`MemoryWriteWorkflow`。所有外部write Step固定`maxRetries=0`，未知结果只允许用同一`mwi_*`派生身份做只读对账。
+- Memory Direct把Context ID/Revision/Hash纳入Direct Input Manifest；Application授权时逐项复核Snapshot引用和组合Token预算。Pi把规范化`<chat_memory_context>`放在当前请求之前，明确标记为不可信历史数据；`promptReviewMode=manual`时正文进入完整Provider Prompt Review，但无论审核开关如何都不得进入Workflow Checkpoint、Pi Operation Journal、Trace或日志。
 - Memory读写Node状态进入Run Activity Journal并投影到公开Execution Trace，由DSH Bridge显示为`Memory · 查询/写入`Trajectory；不复制Memory正文或Provider Payload，Debug Trace不参与。
 - DSH、Pi Extension与Workflow Memory均不直接依赖腾讯L0/L1模型；这些层级、Bearer、service/team/user/agent映射只存在于Adapter进程。未来HTTP、SDK或MCP项目必须实现同一窄Port，不能把Provider对象写回Domain。
 - Write能力必须诚实声明`materialization`：memmy当前为`synchronous`；固定本地Tencent MemoryCore没有模型/抽取Worker，只能声明`accepted_only`。`accepted_only`是合法成功能力，不表示“物化中”；只有只读对账真实发现同一写入身份的L1对象时，Application才允许提交`materialized`。

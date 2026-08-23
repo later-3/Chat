@@ -45,6 +45,7 @@ import { migrateProductSnapshotV14ToV15 } from "./migrate-v14-to-v15.js";
 import { migrateProductSnapshotV15ToV16 as migrateProductSnapshotV15ToV16Legacy } from "./migrate-v15-to-v16.js";
 import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
 import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
+import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
 import { productSnapshotV13Schema } from "./legacy-v13.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 import { computePromptFragmentRevisionSha256 } from "@chat/domain";
@@ -54,8 +55,10 @@ const NOW = "2026-08-10T12:00:00.000Z";
 function migrateProductSnapshotV15ToV16(
   snapshot: Parameters<typeof migrateProductSnapshotV15ToV16Legacy>[0],
 ): ProductSnapshot {
-  return migrateProductSnapshotV17ToV18(
-    migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(snapshot)),
+  return migrateProductSnapshotV18ToV19(
+    migrateProductSnapshotV17ToV18(
+      migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(snapshot)),
+    ),
   );
 }
 

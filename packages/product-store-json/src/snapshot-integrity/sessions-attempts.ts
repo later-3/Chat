@@ -10,6 +10,10 @@ import {
   computePlanningInputManifestSha256,
   computeDirectAgentInputManifestSha256,
 } from "@chat/domain";
+import {
+  MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_DIRECT_RUNNER_FAMILY,
+} from "@chat/application/workflow-system-definitions";
 import type { Fail } from "./shared.js";
 
 export function assertSessionsAndMessages(snapshot: ProductSnapshot, fail: Fail): void {
@@ -323,6 +327,33 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
       );
       const promptTemplateVersion = attempt.promptTemplateVersion;
       const modelConfigVersion = attempt.modelConfigVersion;
+      const memoryDirect =
+        run?.runKind === "direct_agent" &&
+        run.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY &&
+        run.runnerBundleVersion === MEMORY_DIRECT_RUNNER_BUNDLE_VERSION &&
+        runSpec?.runner.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY &&
+        runSpec.runner.runnerBundleVersion === MEMORY_DIRECT_RUNNER_BUNDLE_VERSION &&
+        runSpec.definitionRef.blueprintKey === "direct" &&
+        runSpec.definitionRef.blueprintVersion === 2;
+      const memoryEvidencePaired =
+        (attempt.workflowMemoryContextId === undefined) ===
+        (attempt.workflowMemoryContextSha256 === undefined);
+      if (!memoryEvidencePaired) {
+        fail(`direct_agent attempt ${attempt.attemptId} Workflow Memory Context证据不成对`);
+      }
+      const workflowMemoryContext =
+        attempt.workflowMemoryContextId === undefined
+          ? undefined
+          : entities.workflowMemoryContexts[attempt.workflowMemoryContextId];
+      if (
+        memoryDirect !== (workflowMemoryContext !== undefined) ||
+        (workflowMemoryContext !== undefined &&
+          (workflowMemoryContext.productRunId !== attempt.productRunId ||
+            workflowMemoryContext.workflowRunSpecId !== runSpec?.workflowRunSpecId ||
+            workflowMemoryContext.sha256 !== attempt.workflowMemoryContextSha256))
+      ) {
+        fail(`direct_agent attempt ${attempt.attemptId} Workflow Memory Context引用不一致`);
+      }
       if (
         run?.runKind !== "direct_agent" ||
         source === undefined ||
@@ -347,8 +378,6 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
         attempt.contextPackageSha256 !== undefined ||
         attempt.planningMemorySelectionId !== undefined ||
         attempt.planningMemorySelectionSha256 !== undefined ||
-        attempt.workflowMemoryContextId !== undefined ||
-        attempt.workflowMemoryContextSha256 !== undefined ||
         attempt.planningProjectContextId !== undefined ||
         attempt.planningProjectContextSha256 !== undefined ||
         attempt.ruleSelectionId !== undefined ||
@@ -386,6 +415,15 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
         sourceMessageId: source.messageId,
         sourceMessageSha256: sourceSha256,
         promptAssemblySha256: promptAssembly.sha256,
+        ...(workflowMemoryContext === undefined
+          ? {}
+          : {
+              workflowMemoryContext: {
+                workflowMemoryContextId: workflowMemoryContext.workflowMemoryContextId,
+                revision: workflowMemoryContext.revision,
+                sha256: workflowMemoryContext.sha256,
+              },
+            }),
         capabilityMode,
         promptTemplateVersion,
         modelConfigVersion,
