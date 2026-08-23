@@ -15,6 +15,7 @@ import { productSnapshotV17Schema } from "./legacy-v17.js";
 import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
 import { productSnapshotV18Schema } from "./legacy-v18.js";
 import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
+import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-22T08:00:00.000Z";
@@ -28,6 +29,7 @@ async function seededV17() {
   const { snapshot } = await store.read({ kind: "committedSnapshot" });
   const entities = structuredClone(snapshot.entities) as Record<string, unknown>;
   delete entities["agentVersions"];
+  delete entities["memorySessionImports"];
   return productSnapshotV17Schema.parse({
     ...snapshot,
     schemaVersion: "chat-product-store.v17",
@@ -200,7 +202,9 @@ describe("Product Store v17到v18 Agent Version迁移", () => {
       version: 1,
       systemPromptBody: "你是可配置的 Pi Coding Agent。",
     });
-    const valid = migrateProductSnapshotV18ToV19(migrateProductSnapshotV17ToV18(await seededV17()));
+    const valid = migrateProductSnapshotV19ToV20(
+      migrateProductSnapshotV18ToV19(migrateProductSnapshotV17ToV18(await seededV17())),
+    );
     valid.entities.agentVersions[version.agentVersionId] = version;
     expect(() => assertSnapshotIntegrity(valid)).not.toThrow();
 

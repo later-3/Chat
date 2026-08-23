@@ -59,6 +59,7 @@ import { productSnapshotV15Schema } from "./legacy-v15.js";
 import { productSnapshotV16Schema } from "./legacy-v16.js";
 import { productSnapshotV17Schema } from "./legacy-v17.js";
 import { productSnapshotV18Schema } from "./legacy-v18.js";
+import { productSnapshotV19Schema } from "./legacy-v19.js";
 import { migrateProductSnapshotV4ToV5 } from "./migrate-v4-to-v5.js";
 import { migrateProductSnapshotV5ToV6 } from "./migrate-v5-to-v6.js";
 import { migrateProductSnapshotV6ToV7 } from "./migrate-v6-to-v7.js";
@@ -74,6 +75,7 @@ import { migrateProductSnapshotV15ToV16 } from "./migrate-v15-to-v16.js";
 import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
 import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
 import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
+import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
 
 /**
  * 版本化JSON Product Store Adapter（任务书§8）。
@@ -152,7 +154,7 @@ function requireLegacySnapshot<T>(
  */
 function migrateLegacySnapshot(input: unknown): ProductSnapshot {
   let candidate = input;
-  for (let step = 0; step < 18; step += 1) {
+  for (let step = 0; step < 19; step += 1) {
     switch (declaredSnapshotVersion(candidate)) {
       case "chat-product-store.v1":
         candidate = migrateProductSnapshotV1ToV2(
@@ -244,8 +246,13 @@ function migrateLegacySnapshot(input: unknown): ProductSnapshot {
         );
         break;
       case "chat-product-store.v18":
-        return migrateProductSnapshotV18ToV19(
+        candidate = migrateProductSnapshotV18ToV19(
           requireLegacySnapshot(productSnapshotV18Schema.safeParse(candidate)),
+        );
+        break;
+      case "chat-product-store.v19":
+        return migrateProductSnapshotV19ToV20(
+          requireLegacySnapshot(productSnapshotV19Schema.safeParse(candidate)),
         );
       default:
         throw new StoreCorruptedError("Product Store Schema未知或非法，已保留原文件");

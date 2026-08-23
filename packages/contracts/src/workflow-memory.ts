@@ -5,6 +5,7 @@ import {
   memoryBackendIdSchema,
   memoryWriteIntentIdSchema,
   memoryWriteResultIdSchema,
+  memorySessionImportIdSchema,
   messageIdSchema,
   principalIdSchema,
   productRunIdSchema,
@@ -292,7 +293,25 @@ export const memoryWriteSourceSelectionSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
-export const memoryWriteIntentSchema = z
+export const memoryWriteSessionImportSourceSelectionSchema = z
+  .object({
+    kind: z.literal("session_import_item"),
+    memorySessionImportId: memorySessionImportIdSchema,
+    sourceKind: z.enum(["chat", "codex"]),
+    sourceSessionId: z.string().min(1).max(100),
+    sourceSnapshotSha256: sha256Schema,
+    sourceItemKey: z.string().min(1).max(200),
+    sourceItemSha256: sha256Schema,
+    contentSha256: sha256Schema,
+  })
+  .strict();
+
+export const memoryWriteIntentSourceSelectionSchema = z.union([
+  memoryWriteSourceSelectionSchema,
+  memoryWriteSessionImportSourceSelectionSchema,
+]);
+
+export const memoryWriteIntentV1Schema = z
   .object({
     schemaVersion: z.literal("memory-write-intent.v1"),
     memoryWriteIntentId: memoryWriteIntentIdSchema,
@@ -311,6 +330,37 @@ export const memoryWriteIntentSchema = z
     updatedAt: isoDateTimeSchema,
   })
   .strict();
+
+/**
+ * v2只用于Session导入冻结的正文快照。外部Session绝不伪装成Product Session；
+ * Provider命名空间和turn身份由Application确定性派生并随Intent冻结。
+ */
+export const memoryWriteIntentV2Schema = z
+  .object({
+    schemaVersion: z.literal("memory-write-intent.v2"),
+    memoryWriteIntentId: memoryWriteIntentIdSchema,
+    operationId: memoryWriteIntentIdSchema,
+    requestedByPrincipalId: principalIdSchema,
+    sourceSelection: memoryWriteSessionImportSourceSelectionSchema,
+    sourceSessionKey: z.string().min(1).max(200),
+    sourceTurnKey: z.string().min(1).max(200),
+    contentSnapshot: z.string().min(1).max(50_000),
+    contentType: z.literal("conversation_turn"),
+    providerId: memoryBackendIdSchema,
+    providerDescriptor: memoryProviderDescriptorSchema,
+    providerDescriptorSha256: sha256Schema,
+    requestSha256: sha256Schema,
+    semanticDedupeSha256: sha256Schema,
+    revision: z.literal(1),
+    createdAt: isoDateTimeSchema,
+    updatedAt: isoDateTimeSchema,
+  })
+  .strict();
+
+export const memoryWriteIntentSchema = z.discriminatedUnion("schemaVersion", [
+  memoryWriteIntentV1Schema,
+  memoryWriteIntentV2Schema,
+]);
 
 const memoryWriteResultBase = {
   schemaVersion: z.literal("memory-write-result.v1"),
@@ -387,5 +437,11 @@ export type WorkflowMemorySnapshot = z.infer<typeof workflowMemorySnapshotSchema
 export type WorkflowMemoryContext = z.infer<typeof workflowMemoryContextSchema>;
 export type WorkflowMemoryCategory = z.infer<typeof workflowMemoryCategorySchema>;
 export type MemoryWriteSourceSelection = z.infer<typeof memoryWriteSourceSelectionSchema>;
+export type MemoryWriteSessionImportSourceSelection = z.infer<
+  typeof memoryWriteSessionImportSourceSelectionSchema
+>;
+export type MemoryWriteIntentSourceSelection = z.infer<
+  typeof memoryWriteIntentSourceSelectionSchema
+>;
 export type MemoryWriteIntent = z.infer<typeof memoryWriteIntentSchema>;
 export type MemoryWriteResult = z.infer<typeof memoryWriteResultSchema>;

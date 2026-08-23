@@ -18,17 +18,30 @@ import { versioned } from "./shared.js";
 import { workflowMemoryNodeIdentityFields } from "./planning.js";
 import { WORKFLOW_DISPATCH_SCHEMA_VERSION } from "./dispatch.js";
 
-export const memoryWriteAdapterInputSchema = z
-  .object({
-    operationId: memoryWriteIntentIdSchema,
-    requestSha256: sha256Schema,
-    content: z.string().min(1).max(200_000),
-    contentType: z.literal("conversation_turn"),
-    productSessionId: productSessionIdSchema,
-    principalId: principalIdSchema,
-    sourceMessageId: messageIdSchema,
-  })
-  .strict();
+const memoryWriteAdapterInputBase = {
+  operationId: memoryWriteIntentIdSchema,
+  requestSha256: sha256Schema,
+  content: z.string().min(1).max(200_000),
+  contentType: z.literal("conversation_turn"),
+  principalId: principalIdSchema,
+};
+
+export const memoryWriteAdapterInputSchema = z.union([
+  z
+    .object({
+      ...memoryWriteAdapterInputBase,
+      productSessionId: productSessionIdSchema,
+      sourceMessageId: messageIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...memoryWriteAdapterInputBase,
+      sessionKey: z.string().min(1).max(200),
+      turnKey: z.string().min(1).max(200),
+    })
+    .strict(),
+]);
 
 export const loadMemoryWriteRequestSchema = z
   .object({

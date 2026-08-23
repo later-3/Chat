@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import {
   approvalRequestIdSchema,
   artifactIdSchema,
@@ -70,7 +71,11 @@ import {
   createProjectResourceRegistry,
   createProjectWorkspaceProvisioner,
 } from "@chat/project-runtime";
-import { createMemoryRegistrySet, parseMemoryMode } from "@chat/memory-runtime";
+import {
+  createCodexSessionSourceRegistry,
+  createMemoryRegistrySet,
+  parseMemoryMode,
+} from "@chat/memory-runtime";
 import {
   loadProjectModelProfile,
   PiProjectAdvancementUnderstandingAdapter,
@@ -219,6 +224,9 @@ export async function createApplicationDeps(
 ): Promise<ApplicationDeps> {
   // 配置错误必须在打开Product Store或装配其他外部边界前失败关闭。
   const { memoryBackends, workflowMemoryProviders } = composeApiMemoryRegistries(process.env);
+  const memorySessionSources = createCodexSessionSourceRegistry(
+    process.env.CODEX_HOME ?? join(homedir(), ".codex"),
+  );
   const store = await openProductStore(filePath, trace);
   const projectRoots = await createProjectResourceRegistry(process.env);
   const projectWorkspaceProvisioner = await createProjectWorkspaceProvisioner(process.env);
@@ -244,6 +252,7 @@ export async function createApplicationDeps(
     ids: createIdFactory(),
     memoryBackends,
     workflowMemoryProviders,
+    memorySessionSources,
     projectRoots,
     projectIntakeUnderstanding: projectUnderstanding,
     projectAdvancementUnderstanding: advancementUnderstanding,

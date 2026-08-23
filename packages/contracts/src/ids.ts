@@ -75,6 +75,8 @@ export const workflowMemorySnapshotIdSchema = prefixedId("wms");
 export const workflowMemoryContextIdSchema = prefixedId("wmc");
 export const memoryWriteIntentIdSchema = prefixedId("mwi");
 export const memoryWriteResultIdSchema = prefixedId("mwr");
+/** Session导入批次是Chat产品事实，不复用外部Codex Thread或Memory对象身份。 */
+export const memorySessionImportIdSchema = prefixedId("msi");
 
 /* PS1 Project Solution新增身份；与Git、Workflow和pi私有身份严格分离。 */
 export const projectMethodSnapshotIdSchema = prefixedId("pms");
@@ -171,6 +173,7 @@ export type WorkflowMemorySnapshotId = z.infer<typeof workflowMemorySnapshotIdSc
 export type WorkflowMemoryContextId = z.infer<typeof workflowMemoryContextIdSchema>;
 export type MemoryWriteIntentId = z.infer<typeof memoryWriteIntentIdSchema>;
 export type MemoryWriteResultId = z.infer<typeof memoryWriteResultIdSchema>;
+export type MemorySessionImportId = z.infer<typeof memorySessionImportIdSchema>;
 export type ProjectMethodSnapshotId = z.infer<typeof projectMethodSnapshotIdSchema>;
 export type ProjectStageId = z.infer<typeof projectStageIdSchema>;
 export type ProjectResourceId = z.infer<typeof projectResourceIdSchema>;

@@ -120,6 +120,7 @@ export function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
     ["workflowMemoryContext", snapshot.entities.workflowMemoryContexts, "workflowMemoryContextId"],
     ["memoryWriteIntent", snapshot.entities.memoryWriteIntents, "memoryWriteIntentId"],
     ["memoryWriteResult", snapshot.entities.memoryWriteResults, "memoryWriteResultId"],
+    ["memorySessionImport", snapshot.entities.memorySessionImports, "memorySessionImportId"],
     ["receipt", snapshot.commandReceipts, "commandId"],
     ["outbox", snapshot.outbox, "outboxId"],
   ] as const;

@@ -175,7 +175,7 @@ Memory Direct继续复用同一服务端描述表面，并额外公开Query/Writ
 
 ## 8. Store与迁移
 
-Product Store当前为`chat-product-store.v19`：
+Product Store当前为`chat-product-store.v20`：
 
 - v6：Workflow View/Node/Transition/Manifest；
 - v7：Definition/Revision/RunSpec；
@@ -191,6 +191,7 @@ Product Store当前为`chat-product-store.v19`：
 - v17：统一两条历史v16分支并补齐Project Bootstrap事实集合。
 - v18：新增不可变Agent Version，并发布继承Pi CLI默认能力的Direct系统Revision。
 - v19：只新增固定Memory Direct Definition/Revision/View；不改写已有Run、历史Direct或其他产品事实。
+- v20：新增Provider中立的Session Import批次；批次冻结来源/Preview Hash并引用统一Memory Write Intent/Result，不复制Provider对象或把Codex Session变成Product Session。
 
 迁移按版本串行、可重复打开，并对非空历史Fixture执行Zod、生产完整性、只读Auditor和故障注入。v5→v6使用迁移专用冻结投影，不调用会继续演进的当前Application projector。
 

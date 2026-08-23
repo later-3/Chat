@@ -38,9 +38,9 @@ function writeInput(): WorkflowMemoryWriteInput {
     requestSha256: "a".repeat(64),
     content: CONTENT,
     contentType: "conversation_turn",
-    productSessionId: "psn_memmy1" as never,
     principalId: "usr_memmy1" as never,
-    sourceMessageId: "msg_memmy1",
+    sessionKey: "psn_memmy1",
+    turnKey: "msg_memmy1",
   };
 }
 

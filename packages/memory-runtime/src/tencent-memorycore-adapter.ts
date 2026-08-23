@@ -329,11 +329,13 @@ function mappedKind(type: string): MemoryQuerySection["kind"] {
 function legacyWriteInput(
   input: WorkflowMemoryWriteInput | WorkflowMemoryWriteReconcileInput,
 ): MemoryImportInput {
+  const sessionKey = "sessionKey" in input ? input.sessionKey : input.productSessionId;
+  const turnKey = "turnKey" in input ? input.turnKey : input.sourceMessageId;
   const shape = {
     kind: "tencent_conversation_capture" as const,
     content: input.content,
     layer: "L0" as const,
-    turnId: input.sourceMessageId,
+    turnId: turnKey,
   };
   return {
     // 旧Port的品牌只约束旧产品ID；网络协议实际接受稳定字符串。新operationId保持原样，
@@ -345,8 +347,9 @@ function legacyWriteInput(
     title: "conversation_turn",
     tags: [],
     source: "chat.explicit_import",
-    sessionId: input.productSessionId,
-    turnId: input.sourceMessageId,
+    // 旧Import Port仍带ProductSession品牌；MemoryCore协议实际接受稳定session字符串。
+    sessionId: sessionKey as never,
+    turnId: turnKey,
   };
 }
 

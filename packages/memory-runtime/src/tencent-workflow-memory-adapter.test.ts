@@ -47,9 +47,9 @@ function writeInput(): WorkflowMemoryWriteInput {
     requestSha256: "a".repeat(64),
     content: "服务器性能较弱，必须在本地编译后再上传。",
     contentType: "conversation_turn",
-    productSessionId: "psn_tencent1" as never,
     principalId: "usr_tencent1" as never,
-    sourceMessageId: "msg_tencent1",
+    sessionKey: "psn_tencent1",
+    turnKey: "msg_tencent1",
   };
 }
 

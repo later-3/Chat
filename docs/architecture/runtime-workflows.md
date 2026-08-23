@@ -206,6 +206,12 @@ loadMemoryWriteStep
 
 旧`MemoryImportWorkflow`、`MemoryImportIntent/Result`和对应API只为历史兼容保留；新功能不得继续向旧对象写入。
 
+### 6.3 Chat/Codex Session增量导入
+
+Session导入不是第二套Workflow。公开Query先列出Chat Product Session或本机Codex Session并生成零写入Preview；用户确认来源快照Hash与Preview Hash后，Application在一个事务中提交`MemorySessionImport`批次、尚未存在的`memory-write-intent.v2 + Result`及对应`memory_write_start` Outbox。每个Outbox继续启动本节同一个`MemoryWriteWorkflow`，因此幂等、`outcome_unknown`和只读对账政策没有分叉。
+
+转换器固定为`conversation-turns.v1`：只采用user/assistant可见正文，按用户轮次组合并在Provider字符上限内确定性分块。条目语义身份绑定Principal、Provider、来源种类、来源Session、条目键和条目Hash；相同快照再次导入零新增，追加或修改的轮次只创建新条目。Codex Adapter只接受服务端配置的`CODEX_HOME`，按需读取`sessions`、`archived_sessions`和`session_index.jsonl`中的普通文件；符号链接、超限文件、未知顶层合同与非法JSONL失败关闭。Codex Session ID只作为外部来源身份，不成为Product Session或授权身份。
+
 ## 7. ProjectIntakeWorkflow
 
 ```text
@@ -365,13 +371,14 @@ NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Quer
 3. `memory.write`节点与独立Memory Write/对账Workflow及结果未知语义；旧Import链只做历史兼容。
 4. 固定Memory Sidecar的显式准备/启动、双Provider真实HTTP健康与Query/Write/Reconcile基础门。
 5. 独立Memory Direct三节点Workflow、Memory-aware Direct Input Manifest、Provider前不可信Context注入、组合Token预算门和候选后Write政策；当前确定性纵向已完成，真实DSH浏览器Memory Direct E2E尚未交付。
-6. 固定端口F5调试、严格Trace和多源Replay。
-7. 独立Project Intake耐久链、真实Git/文档/脚本观察、候选确认与Project账本。
-8. 独立Project Advancement耐久链、Stage/Milestone/负责人Update审核、State Transition与Timeline。
+6. Chat/Codex Session零写入Preview、双Hash确认、确定性转换、条目级去重和增量导入；新批次复用统一Memory Write状态机。
+7. 固定端口F5调试、严格Trace和多源Replay。
+8. 独立Project Intake耐久链、真实Git/文档/脚本观察、候选确认与Project账本。
+9. 独立Project Advancement耐久链、Stage/Milestone/负责人Update审核、State Transition与Timeline。
 
 尚未实现：
 
-1. Chat/Codex整Session预览、去重、增量导入与双Provider评测。
+1. 同一输入的双Provider评测与差异报告。
 2. Retrieval/Write Agent、Memory采用审核与DSH管理表面。
 3. Memory Direct真实DSH浏览器E2E与用户可见的本轮Memory采用详情。
 4. Chat公开SSE Cursor Runtime Journal。

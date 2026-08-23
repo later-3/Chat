@@ -13,11 +13,16 @@ import {
   computeMemoryProviderDescriptorSha256,
   computeMemoryWriteRequestSha256,
   computeMemoryWriteSemanticDedupeSha256,
+  computeMemoryWriteImportRequestSha256,
+  computeMemoryWriteImportSemanticDedupeSha256,
   computeWorkflowMemoryContextSha256,
   computeWorkflowMemoryMessageSha256,
   computeWorkflowMemoryQueryResultSha256,
   computeWorkflowMemorySnapshotSha256,
   resolveMemoryWriteContent,
+  resolveMemoryWriteImportContent,
+  hashCanonical,
+  MEMORY_SESSION_CONVERSION_VERSION,
   sha256Hex,
 } from "@chat/domain";
 import type { Fail } from "./shared.js";
@@ -248,14 +253,8 @@ export function assertWorkflowMemory(snapshot: ProductSnapshot, fail: Fail): voi
   const resultCountByIntent = new Map<string, number>();
   const semanticDedupe = new Set<string>();
   for (const intent of Object.values(entities.memoryWriteIntents)) {
-    const session = entities.sessions[intent.productSessionId];
-    const message = entities.messages[intent.sourceSelection.sourceMessageId];
     const writeCapability = intent.providerDescriptor.capabilities.write;
     if (
-      session === undefined ||
-      message === undefined ||
-      message.sessionId !== session.sessionId ||
-      session.ownerPrincipalId !== intent.requestedByPrincipalId ||
       intent.operationId !== intent.memoryWriteIntentId ||
       intent.providerDescriptor.providerId !== intent.providerId ||
       computeMemoryProviderDescriptorSha256(intent.providerDescriptor) !==
@@ -266,12 +265,70 @@ export function assertWorkflowMemory(snapshot: ProductSnapshot, fail: Fail): voi
       fail(`memoryWriteIntent ${intent.memoryWriteIntentId} 来源或Provider证据无效`);
     }
     let content: string;
+    let requestSha256: string;
+    let semanticSha256: string;
     try {
-      content = resolveMemoryWriteContent({
-        message,
-        selection: intent.sourceSelection,
-        maxContentCharacters: writeCapability.maxContentCharacters,
-      });
+      if (intent.schemaVersion === "memory-write-intent.v1") {
+        const session = entities.sessions[intent.productSessionId];
+        const message = entities.messages[intent.sourceSelection.sourceMessageId];
+        if (
+          session === undefined ||
+          message === undefined ||
+          message.sessionId !== session.sessionId ||
+          session.ownerPrincipalId !== intent.requestedByPrincipalId
+        ) {
+          fail(`memoryWriteIntent ${intent.memoryWriteIntentId} Message来源无效`);
+        }
+        content = resolveMemoryWriteContent({
+          message,
+          selection: intent.sourceSelection,
+          maxContentCharacters: writeCapability.maxContentCharacters,
+        });
+        requestSha256 = computeMemoryWriteRequestSha256({
+          operationId: intent.operationId,
+          providerDescriptorSha256: intent.providerDescriptorSha256,
+          contentType: intent.contentType,
+          sourceSelection: intent.sourceSelection,
+          contentSha256: sha256Hex(content),
+        });
+        semanticSha256 = computeMemoryWriteSemanticDedupeSha256({
+          requestedByPrincipalId: intent.requestedByPrincipalId,
+          productSessionId: intent.productSessionId,
+          providerId: intent.providerId,
+          sourceSelection: intent.sourceSelection,
+        });
+      } else {
+        const ownerImport =
+          entities.memorySessionImports[intent.sourceSelection.memorySessionImportId];
+        if (
+          ownerImport === undefined ||
+          ownerImport.requestedByPrincipalId !== intent.requestedByPrincipalId
+        ) {
+          fail(`memoryWriteIntent ${intent.memoryWriteIntentId} Session Import来源无效`);
+        }
+        content = resolveMemoryWriteImportContent({
+          contentSnapshot: intent.contentSnapshot,
+          selection: intent.sourceSelection,
+          maxContentCharacters: writeCapability.maxContentCharacters,
+        });
+        requestSha256 = computeMemoryWriteImportRequestSha256({
+          operationId: intent.operationId,
+          providerDescriptorSha256: intent.providerDescriptorSha256,
+          contentType: intent.contentType,
+          sourceSelection: intent.sourceSelection,
+          sourceSessionKey: intent.sourceSessionKey,
+          sourceTurnKey: intent.sourceTurnKey,
+          contentSha256: sha256Hex(content),
+        });
+        semanticSha256 = computeMemoryWriteImportSemanticDedupeSha256({
+          requestedByPrincipalId: intent.requestedByPrincipalId,
+          providerId: intent.providerId,
+          sourceKind: intent.sourceSelection.sourceKind,
+          sourceSessionId: intent.sourceSelection.sourceSessionId,
+          sourceItemKey: intent.sourceSelection.sourceItemKey,
+          sourceItemSha256: intent.sourceSelection.sourceItemSha256,
+        });
+      }
     } catch (error) {
       fail(
         `memoryWriteIntent ${intent.memoryWriteIntentId} 来源内容无效:${
@@ -280,19 +337,8 @@ export function assertWorkflowMemory(snapshot: ProductSnapshot, fail: Fail): voi
       );
     }
     if (
-      computeMemoryWriteRequestSha256({
-        operationId: intent.operationId,
-        providerDescriptorSha256: intent.providerDescriptorSha256,
-        contentType: intent.contentType,
-        sourceSelection: intent.sourceSelection,
-        contentSha256: sha256Hex(content),
-      }) !== intent.requestSha256 ||
-      computeMemoryWriteSemanticDedupeSha256({
-        requestedByPrincipalId: intent.requestedByPrincipalId,
-        productSessionId: intent.productSessionId,
-        providerId: intent.providerId,
-        sourceSelection: intent.sourceSelection,
-      }) !== intent.semanticDedupeSha256 ||
+      requestSha256 !== intent.requestSha256 ||
+      semanticSha256 !== intent.semanticDedupeSha256 ||
       semanticDedupe.has(intent.semanticDedupeSha256)
     ) {
       fail(`memoryWriteIntent ${intent.memoryWriteIntentId} 请求Hash或语义幂等无效`);
@@ -355,6 +401,102 @@ export function assertWorkflowMemory(snapshot: ProductSnapshot, fail: Fail): voi
   for (const intent of Object.values(entities.memoryWriteIntents)) {
     if ((resultCountByIntent.get(intent.memoryWriteIntentId) ?? 0) !== 1) {
       fail(`memoryWriteIntent ${intent.memoryWriteIntentId} 必须恰有一个Result`);
+    }
+  }
+
+  const importDedupe = new Set<string>();
+  const createdIntentOwners = new Set<string>();
+  for (const sessionImport of Object.values(entities.memorySessionImports)) {
+    const sourceSessionId =
+      sessionImport.source.kind === "chat"
+        ? sessionImport.source.productSessionId
+        : sessionImport.source.codexSessionId;
+    const chatSession =
+      sessionImport.source.kind === "chat"
+        ? entities.sessions[sessionImport.source.productSessionId]
+        : undefined;
+    if (
+      (sessionImport.source.kind === "chat" &&
+        (chatSession === undefined ||
+          chatSession.ownerPrincipalId !== sessionImport.requestedByPrincipalId)) ||
+      sessionImport.providerDescriptor.providerId !== sessionImport.providerId ||
+      computeMemoryProviderDescriptorSha256(sessionImport.providerDescriptor) !==
+        sessionImport.providerDescriptorSha256 ||
+      sessionImport.providerDescriptor.capabilities.write === null ||
+      sessionImport.conversionVersion !== MEMORY_SESSION_CONVERSION_VERSION ||
+      sessionImport.createdAt !== sessionImport.updatedAt ||
+      sessionImport.createdItemCount + sessionImport.existingItemCount !==
+        sessionImport.items.length ||
+      sessionImport.createdItemCount !==
+        sessionImport.items.filter((item) => item.disposition === "created").length ||
+      new Set(sessionImport.items.map((item) => item.memoryWriteIntentId)).size !==
+        sessionImport.items.length
+    ) {
+      fail(`memorySessionImport ${sessionImport.memorySessionImportId} 冻结合同无效`);
+    }
+    const previewItems = sessionImport.items.map((ref) => {
+      const intent = entities.memoryWriteIntents[ref.memoryWriteIntentId];
+      if (
+        intent?.schemaVersion !== "memory-write-intent.v2" ||
+        intent.requestedByPrincipalId !== sessionImport.requestedByPrincipalId ||
+        intent.providerId !== sessionImport.providerId ||
+        intent.sourceSelection.sourceKind !== sessionImport.source.kind ||
+        intent.sourceSelection.sourceSessionId !== sourceSessionId ||
+        intent.sourceSelection.sourceItemKey !== ref.sourceItemKey ||
+        intent.sourceSelection.sourceItemSha256 !== ref.sourceItemSha256 ||
+        intent.contentSnapshot.length !== ref.contentCharacters ||
+        (ref.disposition === "created" &&
+          (intent.sourceSelection.memorySessionImportId !== sessionImport.memorySessionImportId ||
+            intent.sourceSelection.sourceSnapshotSha256 !== sessionImport.sourceSnapshotSha256))
+      ) {
+        fail(`memorySessionImport ${sessionImport.memorySessionImportId} Item引用无效`);
+      }
+      if (ref.disposition === "created") {
+        if (createdIntentOwners.has(ref.memoryWriteIntentId)) {
+          fail(`memoryWriteIntent ${ref.memoryWriteIntentId} 被多个Import声明为created`);
+        }
+        createdIntentOwners.add(ref.memoryWriteIntentId);
+      }
+      return {
+        sourceItemKey: ref.sourceItemKey,
+        sourceItemSha256: ref.sourceItemSha256,
+        title: ref.title,
+        contentSha256: intent.sourceSelection.contentSha256,
+        contentCharacters: ref.contentCharacters,
+      };
+    });
+    const previewSha256 = hashCanonical("memory-session-import-preview.v1", {
+      source: sessionImport.source,
+      sourceSnapshotSha256: sessionImport.sourceSnapshotSha256,
+      conversionVersion: sessionImport.conversionVersion,
+      providerId: sessionImport.providerId,
+      providerDescriptorSha256: sessionImport.providerDescriptorSha256,
+      items: previewItems,
+    });
+    const semanticDedupeSha256 = hashCanonical("memory-session-import-semantic-dedupe.v1", {
+      principalId: sessionImport.requestedByPrincipalId,
+      source: sessionImport.source,
+      sourceSnapshotSha256: sessionImport.sourceSnapshotSha256,
+      conversionVersion: sessionImport.conversionVersion,
+      providerId: sessionImport.providerId,
+      providerDescriptorSha256: sessionImport.providerDescriptorSha256,
+      previewSha256: sessionImport.previewSha256,
+    });
+    if (
+      previewSha256 !== sessionImport.previewSha256 ||
+      semanticDedupeSha256 !== sessionImport.semanticDedupeSha256 ||
+      importDedupe.has(sessionImport.semanticDedupeSha256)
+    ) {
+      fail(`memorySessionImport ${sessionImport.memorySessionImportId} Hash或幂等身份无效`);
+    }
+    importDedupe.add(sessionImport.semanticDedupeSha256);
+  }
+  for (const intent of Object.values(entities.memoryWriteIntents)) {
+    if (
+      intent.schemaVersion === "memory-write-intent.v2" &&
+      !createdIntentOwners.has(intent.memoryWriteIntentId)
+    ) {
+      fail(`memoryWriteIntent ${intent.memoryWriteIntentId} 缺少创建它的Session Import`);
     }
   }
 }

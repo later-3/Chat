@@ -24,6 +24,10 @@ import {
   listMemoryProvidersResponseSchema,
   listMemoryWritesResponseSchema,
   memoryWriteResponseSchema,
+  listMemorySessionSourcesResponseSchema,
+  previewMemorySessionImportResponseSchema,
+  memorySessionImportResponseSchema,
+  listMemorySessionImportsResponseSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
   runContextDtoSchema,
@@ -450,6 +454,38 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
         providerId === "mbk_tencentmemorycore" ? tencentBackend : undefined,
       getWrite: (providerId) =>
         providerId === "mbk_tencentmemorycore" ? tencentBackend : undefined,
+    },
+    memorySessionSources: {
+      get: () => ({
+        kind: "codex" as const,
+        list: async () => [
+          {
+            sourceSessionId: "019db07f-953c-7fc2-95b6-d38228810e64",
+            title: "API Codex Session",
+            updatedAt: "2026-08-24T09:00:00.000Z",
+          },
+        ],
+        load: async () => ({
+          sourceKind: "codex" as const,
+          sourceSessionId: "019db07f-953c-7fc2-95b6-d38228810e64",
+          title: "API Codex Session",
+          updatedAt: "2026-08-24T09:00:00.000Z",
+          messages: [
+            {
+              sourceMessageKey: "turn-api:user",
+              role: "user" as const,
+              text: "把这轮对话导入Memory。",
+              createdAt: "2026-08-24T08:59:00.000Z",
+            },
+            {
+              sourceMessageKey: "turn-api:assistant",
+              role: "assistant" as const,
+              text: "先预览，确认哈希后再导入。",
+              createdAt: "2026-08-24T09:00:00.000Z",
+            },
+          ],
+        }),
+      }),
     },
     executionTraceReader: {
       read: async ({ productRunId, afterSequence }) => ({
@@ -1630,6 +1666,140 @@ describe("公开产品API", () => {
     });
     expect(response.status).toBe(400);
     expect(problemDetailSchema.parse(await response.json()).code).toBe("validation_failed");
+  });
+
+  it("Codex Session必须先预览，导入后公开批次与统一Memory Write状态", async () => {
+    const { app, deps } = await testApp();
+    const codexSessionId = "019db07f-953c-7fc2-95b6-d38228810e64";
+    const listedSources = listMemorySessionSourcesResponseSchema.parse(
+      await (await app.request("/api/memory/session-sources?kind=codex&limit=10")).json(),
+    );
+    expect(listedSources.sources).toEqual([
+      {
+        source: { kind: "codex", codexSessionId },
+        title: "API Codex Session",
+        updatedAt: "2026-08-24T09:00:00.000Z",
+      },
+    ]);
+    expect((await app.request("/api/memory/session-sources?kind=codex&kind=chat")).status).toBe(
+      400,
+    );
+    expect((await app.request("/api/memory/session-sources?kind=codex&debug=true")).status).toBe(
+      400,
+    );
+
+    const previewResponse = await postJson(app, "/api/memory/session-import-previews", {
+      source: { kind: "codex", codexSessionId },
+      providerId: "mbk_tencentmemorycore",
+    });
+    expect(previewResponse.status).toBe(200);
+    const preview = previewMemorySessionImportResponseSchema.parse(
+      await previewResponse.json(),
+    ).preview;
+    expect(preview).toMatchObject({ newItemCount: 1, existingItemCount: 0 });
+    expect(preview.items[0]?.contentPreview).toContain("把这轮对话导入Memory");
+
+    const importedResponse = await postJson(app, "/api/memory/session-imports", {
+      commandId: nextCmd(),
+      payload: {
+        source: preview.source,
+        providerId: preview.providerId,
+        sourceSnapshotSha256: preview.sourceSnapshotSha256,
+        previewSha256: preview.previewSha256,
+      },
+    });
+    expect(importedResponse.status, await importedResponse.clone().text()).toBe(201);
+    const imported = memorySessionImportResponseSchema.parse(
+      await importedResponse.json(),
+    ).memorySessionImport;
+    expect(imported).toMatchObject({
+      status: "processing",
+      createdItemCount: 1,
+      existingItemCount: 0,
+      resultCounts: { queued: 1 },
+    });
+
+    const afterPreview = previewMemorySessionImportResponseSchema.parse(
+      await (
+        await postJson(app, "/api/memory/session-import-previews", {
+          source: preview.source,
+          providerId: preview.providerId,
+        })
+      ).json(),
+    ).preview;
+    expect(afterPreview).toMatchObject({ newItemCount: 0, existingItemCount: 1 });
+    const exact = memorySessionImportResponseSchema.parse(
+      await (
+        await app.request(`/api/memory/session-imports/${imported.memorySessionImportId}`)
+      ).json(),
+    );
+    expect(exact.memorySessionImport.memorySessionImportId).toBe(imported.memorySessionImportId);
+    const imports = listMemorySessionImportsResponseSchema.parse(
+      await (await app.request("/api/memory/session-imports?limit=10")).json(),
+    );
+    expect(imports.memorySessionImports).toHaveLength(1);
+    const snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(Object.keys(snapshot.entities.memoryWriteIntents)).toHaveLength(1);
+    expect(
+      Object.values(snapshot.outbox).filter((entry) => entry.kind === "memory_write_start"),
+    ).toHaveLength(1);
+  });
+
+  it("Chat Session与Codex共用同一预览和导入合同", async () => {
+    const { app, deps } = await testApp();
+    const created = await postJson(app, "/api/sessions", {
+      commandId: nextCmd(),
+      payload: { title: "Chat Session导入测试" },
+    });
+    expect(created.status).toBe(201);
+    const session = (await created.json()) as { session: { sessionId: string } };
+    const message = await postJson(app, `/api/sessions/${session.session.sessionId}/messages`, {
+      commandId: nextCmd(),
+      payload: { text: "这条Chat消息也应通过统一转换器导入。" },
+    });
+    expect(message.status).toBe(201);
+
+    const listed = listMemorySessionSourcesResponseSchema.parse(
+      await (await app.request("/api/memory/session-sources?kind=chat&limit=10")).json(),
+    );
+    expect(listed.sources).toHaveLength(1);
+    expect(listed.sources[0]).toMatchObject({
+      source: { kind: "chat", productSessionId: session.session.sessionId },
+      title: "Chat Session导入测试",
+    });
+
+    const preview = previewMemorySessionImportResponseSchema.parse(
+      await (
+        await postJson(app, "/api/memory/session-import-previews", {
+          source: listed.sources[0]!.source,
+          providerId: "mbk_tencentmemorycore",
+        })
+      ).json(),
+    ).preview;
+    expect(preview).toMatchObject({ newItemCount: 1, existingItemCount: 0 });
+    expect(preview.items[0]?.contentPreview).toContain("这条Chat消息");
+
+    const imported = await postJson(app, "/api/memory/session-imports", {
+      commandId: nextCmd(),
+      payload: {
+        source: preview.source,
+        providerId: preview.providerId,
+        sourceSnapshotSha256: preview.sourceSnapshotSha256,
+        previewSha256: preview.previewSha256,
+      },
+    });
+    expect(imported.status).toBe(201);
+    expect(
+      memorySessionImportResponseSchema.parse(await imported.json()).memorySessionImport,
+    ).toMatchObject({ createdItemCount: 1, existingItemCount: 0 });
+    const snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const importedIntent = Object.values(snapshot.entities.memoryWriteIntents).find(
+      (intent) => intent.schemaVersion === "memory-write-intent.v2",
+    );
+    expect(importedIntent).toMatchObject({
+      sourceSessionKey: session.session.sessionId,
+      sourceSelection: { sourceKind: "chat" },
+    });
   });
 
   it("Project推进入口拒绝浏览器指定Provider、模型和Workflow私有身份", async () => {

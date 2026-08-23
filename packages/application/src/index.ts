@@ -17,6 +17,8 @@ export * from "./memory-import-ports.js";
 export * from "./workflow-memory-ports.js";
 export * from "./workflow-memory-query-use-cases.js";
 export * from "./memory-write-use-cases.js";
+export * from "./memory-session-source-port.js";
+export * from "./memory-session-import-use-cases.js";
 export * from "./project-ports.js";
 export * from "./project-bootstrap-ports.js";
 export * from "./project-bootstrap-use-cases.js";

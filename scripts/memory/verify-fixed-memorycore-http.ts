@@ -293,9 +293,9 @@ try {
     requestSha256: "d".repeat(64),
     content: WORKFLOW_WRITE_CONTENT,
     contentType: "conversation_turn" as const,
-    productSessionId: productSessionIdSchema.parse("psn_m3memorycoreworkflowwrite"),
     principalId: "usr_m3memorycoreworkflow" as never,
-    sourceMessageId: "msg_m3memorycoreworkflow",
+    sessionKey: productSessionIdSchema.parse("psn_m3memorycoreworkflowwrite"),
+    turnKey: "msg_m3memorycoreworkflow",
   };
   const workflowAccepted = await memory.writeMemory(workflowWriteInput);
   if (

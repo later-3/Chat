@@ -58,6 +58,7 @@ import type { ProductStorePort } from "./product-store-port.js";
 import type { MemoryBackendRegistryPort } from "./memory-ports.js";
 import type { MemoryImportBackendRegistryPort } from "./memory-import-ports.js";
 import type { WorkflowMemoryProviderRegistryPort } from "./workflow-memory-ports.js";
+import type { MemorySessionSourceRegistryPort } from "./memory-session-source-port.js";
 import type {
   ProjectIntakeUnderstandingPort,
   ProjectAdvancementUnderstandingPort,
@@ -189,6 +190,8 @@ export interface ApplicationDeps {
   readonly memoryImportBackends?: MemoryImportBackendRegistryPort;
   /** 当前Workflow query/write稳定边界；Provider集合由CHAT_MEMORY_MODE显式冻结。 */
   readonly workflowMemoryProviders?: WorkflowMemoryProviderRegistryPort;
+  /** Chat Session由Product Store读取；Codex等外部Session只经按需只读Adapter进入。 */
+  readonly memorySessionSources?: MemorySessionSourceRegistryPort;
   readonly projectRoots?: ProjectResourceRootRegistryPort;
   readonly projectIntakeUnderstanding?: ProjectIntakeUnderstandingPort;
   readonly projectAdvancementUnderstanding?: ProjectAdvancementUnderstandingPort;

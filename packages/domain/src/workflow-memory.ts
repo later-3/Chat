@@ -205,7 +205,7 @@ interface MessageForMemoryWrite {
   readonly content: { readonly format: "markdown"; readonly text: string };
 }
 
-type MemoryWriteSourceSelectionShape =
+type MemoryWriteMessageSourceSelectionShape =
   | {
       readonly kind: "full_message";
       readonly sourceMessageId: string;
@@ -220,6 +220,17 @@ type MemoryWriteSourceSelectionShape =
       readonly selectedTextSha256: string;
     };
 
+type MemoryWriteSessionImportSourceSelectionShape = {
+  readonly kind: "session_import_item";
+  readonly memorySessionImportId: string;
+  readonly sourceKind: "chat" | "codex";
+  readonly sourceSessionId: string;
+  readonly sourceSnapshotSha256: string;
+  readonly sourceItemKey: string;
+  readonly sourceItemSha256: string;
+  readonly contentSha256: string;
+};
+
 export function computeWorkflowMemoryMessageSha256(message: MessageForMemoryWrite): string {
   return hashCanonical("message.v1", {
     messageId: message.messageId,
@@ -232,7 +243,7 @@ export function computeWorkflowMemoryMessageSha256(message: MessageForMemoryWrit
 
 export function resolveMemoryWriteContent(input: {
   readonly message: MessageForMemoryWrite;
-  readonly selection: MemoryWriteSourceSelectionShape;
+  readonly selection: MemoryWriteMessageSourceSelectionShape;
   readonly maxContentCharacters: number;
 }): string {
   if (input.selection.sourceMessageId !== input.message.messageId) {
@@ -290,7 +301,7 @@ export function computeMemoryWriteRequestSha256(input: {
   readonly operationId: string;
   readonly providerDescriptorSha256: string;
   readonly contentType: "conversation_turn";
-  readonly sourceSelection: MemoryWriteSourceSelectionShape;
+  readonly sourceSelection: MemoryWriteMessageSourceSelectionShape;
   readonly contentSha256: string;
 }): string {
   return hashCanonical("memory-write-request.v1", input);
@@ -300,9 +311,50 @@ export function computeMemoryWriteSemanticDedupeSha256(input: {
   readonly requestedByPrincipalId: string;
   readonly productSessionId: string;
   readonly providerId: string;
-  readonly sourceSelection: MemoryWriteSourceSelectionShape;
+  readonly sourceSelection: MemoryWriteMessageSourceSelectionShape;
 }): string {
   return hashCanonical("memory-write-semantic-dedupe.v1", input);
+}
+
+export function resolveMemoryWriteImportContent(input: {
+  readonly contentSnapshot: string;
+  readonly selection: MemoryWriteSessionImportSourceSelectionShape;
+  readonly maxContentCharacters: number;
+}): string {
+  if (
+    !/[^\p{C}\s]/u.test(input.contentSnapshot) ||
+    input.contentSnapshot.length > input.maxContentCharacters ||
+    sha256Hex(input.contentSnapshot) !== input.selection.contentSha256
+  ) {
+    throw new WorkflowMemoryInvariantError(
+      "memory.write.import_snapshot_invalid",
+      "Session导入正文快照为空、超限或Hash不一致",
+    );
+  }
+  return input.contentSnapshot;
+}
+
+export function computeMemoryWriteImportRequestSha256(input: {
+  readonly operationId: string;
+  readonly providerDescriptorSha256: string;
+  readonly contentType: "conversation_turn";
+  readonly sourceSelection: MemoryWriteSessionImportSourceSelectionShape;
+  readonly sourceSessionKey: string;
+  readonly sourceTurnKey: string;
+  readonly contentSha256: string;
+}): string {
+  return hashCanonical("memory-write-request.v2", input);
+}
+
+export function computeMemoryWriteImportSemanticDedupeSha256(input: {
+  readonly requestedByPrincipalId: string;
+  readonly providerId: string;
+  readonly sourceKind: "chat" | "codex";
+  readonly sourceSessionId: string;
+  readonly sourceItemKey: string;
+  readonly sourceItemSha256: string;
+}): string {
+  return hashCanonical("memory-write-semantic-dedupe.v2", input);
 }
 
 type MemoryWriteStatus =
