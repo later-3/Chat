@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { executorStepCandidateSchema } from "./executor.js";
+import { executorStepCandidateSchema, projectExecutorStepCandidate } from "./executor.js";
 import {
   PI_EXECUTOR_PROTOCOL_VERSION,
   piExecutorEventSchema,
@@ -25,6 +25,7 @@ const stableErrorCodeSchema = z
 const operationRecordSchema = z
   .object({
     schemaVersion: z.literal(STORE_SCHEMA_VERSION),
+    integrityVersion: z.literal("full-operation.v2").optional(),
     operationId: piOperationIdSchema,
     requestSha256: z.string().regex(/^[0-9a-f]{64}$/u),
     request: startPiExecutorOperationRequestSchema,
@@ -122,36 +123,160 @@ export class PiExecutorJournalIntegrityError extends Error {
 
 type ToolIntentEvent = Extract<PiExecutorEvent, { type: "tool.intent_persisted" }>;
 
+export interface PiExecutorOperationJournalInput {
+  readonly request: StartPiExecutorOperationRequest;
+  readonly snapshot: PiExecutorOperationSnapshot;
+  readonly events: readonly PiExecutorEvent[];
+}
+
 /**
  * v1文件加载时重放Operation与Tool身份状态机。Zod只能证明单个事件结构合法；
  * 跨事件Hash、Session、顺序或终态矛盾的成功记录仍必须在Client可见前失败关闭。
  */
-function scanToolJournal(record: OperationRecord): readonly ToolIntentEvent[] {
+export function validatePiExecutorOperationJournal(
+  input: PiExecutorOperationJournalInput,
+): readonly ToolIntentEvent[] {
+  const request = startPiExecutorOperationRequestSchema.parse(input.request);
+  const snapshot = piExecutorOperationSnapshotSchema.parse(input.snapshot);
+  const events = z.array(piExecutorEventSchema).max(100_000).parse(input.events);
+  const failJournal = (): never => {
+    throw new PiExecutorJournalIntegrityError();
+  };
+  if (
+    request.operationId !== snapshot.operationId ||
+    hashExecutorValue(request) !== snapshot.requestSha256 ||
+    (snapshot.request !== undefined &&
+      hashExecutorValue(snapshot.request) !== snapshot.requestSha256) ||
+    (snapshot.integrityVersion === "full-operation.v2" && snapshot.request === undefined) ||
+    snapshot.lastEventSequence !== events.length
+  ) {
+    failJournal();
+  }
+
   const intents = new Map<string, ToolIntentEvent>();
   const closed = new Set<string>();
   let hasUnknownToolResult = false;
-  for (const [index, event] of record.events.entries()) {
-    if (event.sequence !== index + 1 || event.operationId !== record.operationId) {
-      throw new PiExecutorJournalIntegrityError();
+  let previousTimestamp = snapshot.createdAt;
+  let activeTurn: number | undefined;
+  const startedTurns = new Set<number>();
+  const completedTurns = new Set<number>();
+  let activeProvider: number | undefined;
+  const startedProviders = new Map<
+    number,
+    Extract<PiExecutorEvent, { type: "provider.started" }>
+  >();
+  const completedProviders = new Set<number>();
+  const messageIndexes = new Set<number>();
+  const seenToolCallIds = new Set<string>();
+  let activeCompaction: "manual" | "threshold" | "overflow" | undefined;
+  let settledIndex: number | undefined;
+
+  for (const [index, event] of events.entries()) {
+    if (
+      event.sequence !== index + 1 ||
+      event.operationId !== snapshot.operationId ||
+      event.timestamp < previousTimestamp
+    ) {
+      failJournal();
     }
+    previousTimestamp = event.timestamp;
     if (
       (event.type === "operation.accepted" ||
         event.type === "operation.started" ||
         event.type === "operation.completed" ||
         event.type === "operation.failed" ||
         event.type === "operation.outcome_unknown") &&
-      event.requestSha256 !== record.requestSha256
+      event.requestSha256 !== snapshot.requestSha256
     ) {
-      throw new PiExecutorJournalIntegrityError();
+      failJournal();
     }
-    if ("sessionId" in event && event.sessionId !== record.sessionId) {
-      throw new PiExecutorJournalIntegrityError();
+    if ("sessionId" in event && event.sessionId !== snapshot.sessionId) {
+      failJournal();
     }
+    const isTerminal =
+      event.type === "operation.completed" ||
+      event.type === "operation.failed" ||
+      event.type === "operation.outcome_unknown";
+    if (settledIndex !== undefined && index > settledIndex && !isTerminal) failJournal();
+
+    if (event.type === "turn.started") {
+      if (
+        activeTurn !== undefined ||
+        startedTurns.has(event.turnIndex) ||
+        event.turnIndex !== startedTurns.size
+      )
+        failJournal();
+      activeTurn = event.turnIndex;
+      startedTurns.add(event.turnIndex);
+    } else if (event.type === "turn.completed") {
+      if (
+        activeTurn !== event.turnIndex ||
+        activeProvider !== undefined ||
+        completedTurns.has(event.turnIndex) ||
+        [...intents.values()].some(
+          (intent) => intent.turnIndex === event.turnIndex && !closed.has(intent.toolCallId),
+        )
+      )
+        failJournal();
+      activeTurn = undefined;
+      completedTurns.add(event.turnIndex);
+    } else if (event.type === "provider.started") {
+      if (
+        activeTurn === undefined ||
+        activeProvider !== undefined ||
+        startedProviders.has(event.requestIndex) ||
+        event.requestIndex !== startedProviders.size + 1
+      )
+        failJournal();
+      activeProvider = event.requestIndex;
+      startedProviders.set(event.requestIndex, event);
+    } else if (event.type === "provider.completed" || event.type === "provider.failed") {
+      const providerIntent = startedProviders.get(event.requestIndex);
+      if (
+        activeProvider !== event.requestIndex ||
+        completedProviders.has(event.requestIndex) ||
+        providerIntent === undefined ||
+        providerIntent.endpointHost !== event.endpointHost ||
+        (event.inputSha256 !== undefined && providerIntent.inputSha256 !== event.inputSha256)
+      )
+        failJournal();
+      activeProvider = undefined;
+      completedProviders.add(event.requestIndex);
+    } else if (event.type === "message.completed") {
+      if (messageIndexes.has(event.messageIndex) || event.messageIndex !== messageIndexes.size)
+        failJournal();
+      messageIndexes.add(event.messageIndex);
+    } else if (event.type === "tool.blocked") {
+      if (activeTurn !== event.turnIndex || seenToolCallIds.has(event.toolCallId)) failJournal();
+      seenToolCallIds.add(event.toolCallId);
+    } else if (event.type === "compaction.started") {
+      if (activeCompaction !== undefined) failJournal();
+      activeCompaction = event.reason;
+    } else if (event.type === "compaction.completed") {
+      if (activeCompaction !== event.reason) failJournal();
+      activeCompaction = undefined;
+    } else if (event.type === "session.settled") {
+      if (
+        settledIndex !== undefined ||
+        activeTurn !== undefined ||
+        activeProvider !== undefined ||
+        activeCompaction !== undefined ||
+        event.turnCount !== startedTurns.size ||
+        event.providerRequestCount !== startedProviders.size
+      )
+        failJournal();
+      settledIndex = index;
+    }
+
     if (event.type === "tool.intent_persisted") {
-      if (intents.has(event.toolCallId) || event.sessionId !== record.sessionId) {
-        throw new PiExecutorJournalIntegrityError();
-      }
+      if (
+        activeTurn !== event.turnIndex ||
+        intents.has(event.toolCallId) ||
+        seenToolCallIds.has(event.toolCallId)
+      )
+        failJournal();
       intents.set(event.toolCallId, event);
+      seenToolCallIds.add(event.toolCallId);
       continue;
     }
     if (
@@ -163,6 +288,7 @@ function scanToolJournal(record: OperationRecord): readonly ToolIntentEvent[] {
     }
     const intent = intents.get(event.toolCallId);
     if (
+      activeTurn !== event.turnIndex ||
       intent === undefined ||
       closed.has(event.toolCallId) ||
       intent.sessionId !== event.sessionId ||
@@ -170,59 +296,187 @@ function scanToolJournal(record: OperationRecord): readonly ToolIntentEvent[] {
       intent.toolName !== event.toolName ||
       (event.inputSha256 !== undefined && intent.inputSha256 !== event.inputSha256)
     ) {
-      throw new PiExecutorJournalIntegrityError();
+      failJournal();
     }
     closed.add(event.toolCallId);
     if (event.type === "tool.outcome_unknown") hasUnknownToolResult = true;
   }
   const open = [...intents.values()].filter((intent) => !closed.has(intent.toolCallId));
-  if (record.request.operationId !== record.operationId) {
-    throw new PiExecutorJournalIntegrityError();
-  }
-  if (hashExecutorValue(record.request) !== record.requestSha256) {
-    throw new PiExecutorJournalIntegrityError();
-  }
-  if (record.status === "succeeded") {
-    const accepted = record.events
-      .map((event, index) => ({ event, index }))
-      .filter(({ event }) => event.type === "operation.accepted");
-    const started = record.events
-      .map((event, index) => ({ event, index }))
-      .filter(({ event }) => event.type === "operation.started");
-    const sessions = record.events
-      .map((event, index) => ({ event, index }))
-      .filter(({ event }) => event.type === "session.started");
-    const completed = record.events.filter((event) => event.type === "operation.completed");
-    const terminalFailures = record.events.filter(
-      (event) => event.type === "operation.failed" || event.type === "operation.outcome_unknown",
+
+  const accepted = events
+    .map((event, index) => ({ event, index }))
+    .filter(({ event }) => event.type === "operation.accepted");
+  const started = events
+    .map((event, index) => ({ event, index }))
+    .filter(({ event }) => event.type === "operation.started");
+  const sessions = events
+    .map((event, index) => ({ event, index }))
+    .filter(({ event }) => event.type === "session.started");
+  const terminals = events
+    .map((event, index) => ({ event, index }))
+    .filter(
+      ({ event }) =>
+        event.type === "operation.completed" ||
+        event.type === "operation.failed" ||
+        event.type === "operation.outcome_unknown",
     );
-    const acceptedWorkspaceRootId =
-      accepted[0]?.event.type === "operation.accepted"
-        ? accepted[0].event.workspaceRootId
-        : undefined;
+  const acceptedWorkspaceRootId =
+    accepted[0]?.event.type === "operation.accepted"
+      ? accepted[0].event.workspaceRootId
+      : undefined;
+  if (
+    accepted.length !== 1 ||
+    accepted[0]?.index !== 0 ||
+    acceptedWorkspaceRootId !== request.contract.workspaceRef?.rootId ||
+    started.length > 1 ||
+    (started.length === 1 && started[0]!.index <= accepted[0]!.index) ||
+    sessions.length > 1 ||
+    (sessions.length === 1 && (started.length !== 1 || sessions[0]!.index <= started[0]!.index)) ||
+    snapshot.sessionId !==
+      (sessions[0]?.event.type === "session.started" ? sessions[0].event.sessionId : undefined)
+  )
+    failJournal();
+
+  const sessionStartedIndex = sessions[0]?.index;
+  for (const [index, event] of events.entries()) {
+    if ("sessionId" in event && (sessionStartedIndex === undefined || index < sessionStartedIndex))
+      failJournal();
+  }
+
+  const expectedTerminalType =
+    snapshot.status === "succeeded"
+      ? "operation.completed"
+      : snapshot.status === "failed"
+        ? "operation.failed"
+        : snapshot.status === "outcome_unknown"
+          ? "operation.outcome_unknown"
+          : undefined;
+  if (expectedTerminalType === undefined) {
+    if (terminals.length !== 0) failJournal();
+  } else if (
+    terminals.length !== 1 ||
+    terminals[0]?.index !== events.length - 1 ||
+    terminals[0]?.event.type !== expectedTerminalType
+  )
+    failJournal();
+
+  if (snapshot.status === "queued") {
     if (
-      open.length > 0 ||
-      hasUnknownToolResult ||
-      accepted.length !== 1 ||
-      accepted[0]?.index !== 0 ||
-      acceptedWorkspaceRootId !== record.request.contract.workspaceRef?.rootId ||
+      events.length !== 1 ||
+      started.length !== 0 ||
+      sessions.length !== 0 ||
+      snapshot.result !== undefined ||
+      snapshot.resultSha256 !== undefined ||
+      snapshot.errorCode !== undefined
+    )
+      failJournal();
+  } else if (snapshot.status === "running") {
+    if (
+      started.length !== 1 ||
+      snapshot.result !== undefined ||
+      snapshot.resultSha256 !== undefined ||
+      snapshot.errorCode !== undefined ||
+      hasUnknownToolResult
+    )
+      failJournal();
+  } else if (snapshot.status === "succeeded") {
+    const result = snapshot.result ?? failJournal();
+    const completed = terminals[0]?.event;
+    if (
       started.length !== 1 ||
       sessions.length !== 1 ||
-      started[0]!.index <= accepted[0]!.index ||
-      sessions[0]!.index <= started[0]!.index ||
-      completed.length !== 1 ||
-      terminalFailures.length > 0 ||
-      record.events.at(-1)?.type !== "operation.completed" ||
-      record.sessionId === undefined ||
-      record.result === undefined ||
-      record.resultSha256 !== hashExecutorValue(record.result) ||
-      completed[0]?.resultSha256 !== record.resultSha256 ||
-      record.errorCode !== undefined
-    ) {
-      throw new PiExecutorJournalIntegrityError();
-    }
+      open.length > 0 ||
+      hasUnknownToolResult ||
+      activeTurn !== undefined ||
+      activeProvider !== undefined ||
+      activeCompaction !== undefined ||
+      completed?.type !== "operation.completed" ||
+      snapshot.resultSha256 !== hashExecutorValue(result) ||
+      completed.resultSha256 !== snapshot.resultSha256 ||
+      snapshot.errorCode !== undefined
+    )
+      failJournal();
+    const step =
+      request.contract.steps.find((candidate) => candidate.stepId === request.stepId) ??
+      failJournal();
+    const expectedCandidate = projectExecutorStepCandidate(
+      { stepId: request.stepId, output: result.output },
+      step,
+      request.contract.completionCriteria,
+      request.contract.steps.at(-1)?.stepId === request.stepId,
+    );
+    if (JSON.stringify(expectedCandidate) !== JSON.stringify(result)) failJournal();
+    const assistantEvidence = [...events]
+      .reverse()
+      .find((event) => event.type === "message.completed" && event.role === "assistant");
+    if (
+      snapshot.integrityVersion === "full-operation.v2" &&
+      (settledIndex === undefined ||
+        assistantEvidence?.type !== "message.completed" ||
+        assistantEvidence.visibleTextSha256 !== hashExecutorValue(result.output))
+    )
+      failJournal();
+    if (
+      assistantEvidence?.type === "message.completed" &&
+      assistantEvidence.visibleTextSha256 !== undefined &&
+      assistantEvidence.visibleTextSha256 !== hashExecutorValue(result.output)
+    )
+      failJournal();
+    if (
+      assistantEvidence?.type === "message.completed" &&
+      assistantEvidence.visibleText !== undefined &&
+      assistantEvidence.visibleTextTruncated === false &&
+      assistantEvidence.visibleText !== result.output
+    )
+      failJournal();
+  } else {
+    const terminal = terminals[0]?.event;
+    if (
+      open.length > 0 ||
+      snapshot.result !== undefined ||
+      snapshot.resultSha256 !== undefined ||
+      snapshot.errorCode === undefined ||
+      terminal === undefined ||
+      (terminal.type !== "operation.failed" && terminal.type !== "operation.outcome_unknown") ||
+      terminal.errorCode !== snapshot.errorCode ||
+      (snapshot.status === "failed" && hasUnknownToolResult) ||
+      (snapshot.status === "failed" && started.length !== 1) ||
+      (sessions.length > 0 && started.length !== 1)
+    )
+      failJournal();
   }
+
+  if (
+    events.length === 0 ||
+    snapshot.createdAt > events[0]!.timestamp ||
+    snapshot.updatedAt < events.at(-1)!.timestamp
+  )
+    failJournal();
   return open;
+}
+
+function validateOperationRecord(record: OperationRecord): readonly ToolIntentEvent[] {
+  return validatePiExecutorOperationJournal({
+    request: record.request,
+    snapshot: piExecutorOperationSnapshotSchema.parse({
+      schemaVersion: PI_EXECUTOR_PROTOCOL_VERSION,
+      ...(record.integrityVersion === undefined
+        ? {}
+        : { integrityVersion: record.integrityVersion }),
+      operationId: record.operationId,
+      requestSha256: record.requestSha256,
+      request: record.request,
+      status: record.status,
+      ...(record.sessionId === undefined ? {} : { sessionId: record.sessionId }),
+      lastEventSequence: record.events.at(-1)?.sequence ?? 0,
+      ...(record.result === undefined ? {} : { result: record.result }),
+      ...(record.resultSha256 === undefined ? {} : { resultSha256: record.resultSha256 }),
+      ...(record.errorCode === undefined ? {} : { errorCode: record.errorCode }),
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    }),
+    events: record.events,
+  });
 }
 
 interface PersistBoundaryEvidence {
@@ -267,9 +521,9 @@ export class PiExecutorOperationStore {
       const raw = await readFile(join(directory, entry.name), "utf8");
       const record = operationRecordSchema.parse(JSON.parse(raw));
       if (`${record.operationId}.json` !== entry.name) {
-        throw new Error("Pi Executor Operation文件名与内容身份不一致");
+        throw new PiExecutorJournalIntegrityError();
       }
-      scanToolJournal(record);
+      validateOperationRecord(record);
       store.records.set(record.operationId, record);
     }
     await store.reconcileInterruptedOperations();
@@ -305,6 +559,7 @@ export class PiExecutorOperationStore {
       });
       const record = operationRecordSchema.parse({
         schemaVersion: STORE_SCHEMA_VERSION,
+        integrityVersion: "full-operation.v2",
         operationId: request.operationId,
         requestSha256,
         request,
@@ -491,6 +746,7 @@ export class PiExecutorOperationStore {
       ) {
         return { record: current, value: undefined };
       }
+      if (current.status !== "running") throw new PiExecutorOperationStateConflictError();
       if (this.openToolIntents(current).length > 0) {
         current = this.closeOpenToolIntentsAsUnknown(current);
         const next = this.appendToRecord(current, {
@@ -570,7 +826,7 @@ export class PiExecutorOperationStore {
   private openToolIntents(
     record: OperationRecord,
   ): Array<Extract<PiExecutorEvent, { type: "tool.intent_persisted" }>> {
-    return [...scanToolJournal(record)];
+    return [...validateOperationRecord(record)];
   }
 
   private closeOpenToolIntentsAsUnknown(record: OperationRecord): OperationRecord {
@@ -594,8 +850,14 @@ export class PiExecutorOperationStore {
   private snapshot(record: OperationRecord): PiExecutorOperationSnapshot {
     return piExecutorOperationSnapshotSchema.parse({
       schemaVersion: PI_EXECUTOR_PROTOCOL_VERSION,
+      ...(record.integrityVersion === undefined
+        ? {}
+        : { integrityVersion: record.integrityVersion }),
       operationId: record.operationId,
       requestSha256: record.requestSha256,
+      // 私有Service响应始终携带真实耐久Request，使新Client也能验证旧v1记录的完整Hash；
+      // integrityVersion只控制旧记录缺失新事件证据时的只读兼容，不削弱身份校验。
+      request: record.request,
       status: record.status,
       ...(record.sessionId !== undefined ? { sessionId: record.sessionId } : {}),
       lastEventSequence: record.events.at(-1)?.sequence ?? 0,
@@ -621,6 +883,7 @@ export class PiExecutorOperationStore {
 
   private async persist(record: OperationRecord): Promise<void> {
     const parsed = operationRecordSchema.parse(record);
+    validateOperationRecord(parsed);
     await this.beforePersist?.({
       operationId: parsed.operationId,
       status: parsed.status,

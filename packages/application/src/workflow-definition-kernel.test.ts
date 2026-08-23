@@ -302,8 +302,9 @@ describe("Node Catalog与Blueprint一致性", () => {
   it("RunSpec把Agent Version与临时配置逐字段冻结，并拒绝非Direct节点覆盖", () => {
     const createdAt = "2026-08-22T09:00:00.000Z";
     const direct = createSystemDirectAgentDefinition(createdAt);
-    const compileDirect = (
+    const compileDirectFromRoot = (
       workflowRunSpecId: string,
+      semanticRoot: typeof direct.revision.semanticRoot,
       overrides: ReadonlyArray<Readonly<Record<string, unknown>>>,
     ) =>
       compileWorkflowRunSpec({
@@ -316,8 +317,7 @@ describe("Node Catalog与Blueprint一致性", () => {
           definitionRevision: direct.revision.definitionRevision,
           blueprintKey: direct.revision.blueprintKey,
           blueprintVersion: direct.revision.blueprintVersion,
-          semanticRoot: direct.revision.semanticRoot,
-          expectedSha256: direct.revision.definitionSha256,
+          semanticRoot,
         },
         runConfiguration: {
           schemaVersion: "workflow-run-configuration.v1",
@@ -332,6 +332,10 @@ describe("Node Catalog与Blueprint一致性", () => {
         },
         businessInput: { kind: "direct_agent_message" },
       });
+    const compileDirect = (
+      workflowRunSpecId: string,
+      overrides: ReadonlyArray<Readonly<Record<string, unknown>>>,
+    ) => compileDirectFromRoot(workflowRunSpecId, direct.revision.semanticRoot, overrides);
 
     const agentVersionSha256 = "a".repeat(64);
     const version = compileDirect("wrs_agentversionfreeze1", [
@@ -437,6 +441,79 @@ describe("Node Catalog与Blueprint一致性", () => {
       agentTemporaryConfiguration: temporaryConfiguration,
     });
 
+    const legacyPromptRoot = structuredClone(direct.revision.semanticRoot);
+    const legacyPromptNode = legacyPromptRoot.elements[0];
+    if (legacyPromptNode?.kind !== "composite") throw new Error("Direct fixture缺少Agent节点");
+    legacyPromptNode.config = {
+      ...legacyPromptNode.config,
+      agentPromptOverride: "Definition旧Prompt只能单独兼容读取。",
+    };
+    const legacyToVersion = compileDirectFromRoot("wrs_legacytoversion1", legacyPromptRoot, [
+      {
+        kind: "agent_configuration",
+        definitionNodeId: "direct.agent",
+        configurationMode: "version",
+        agentVersionId: "avn_agentversionfreeze1",
+        agentVersionSha256,
+      },
+    ]);
+    expect(legacyToVersion.success).toBe(true);
+    if (!legacyToVersion.success) return;
+    expect(legacyToVersion.runSpec.nodeResolutions[0]?.config).toMatchObject({
+      agentVersionId: "avn_agentversionfreeze1",
+      agentVersionSha256,
+    });
+    expect(legacyToVersion.runSpec.nodeResolutions[0]?.config).not.toHaveProperty(
+      "agentPromptOverride",
+    );
+
+    const versionToTemporary = compileDirectFromRoot("wrs_versiontotemporary1", versionBoundRoot, [
+      {
+        kind: "agent_configuration",
+        definitionNodeId: "direct.agent",
+        configurationMode: "temporary",
+        ...temporaryConfiguration,
+      },
+    ]);
+    expect(versionToTemporary.success).toBe(true);
+    if (!versionToTemporary.success) return;
+    expect(versionToTemporary.runSpec.nodeResolutions[0]?.config).toHaveProperty(
+      "agentTemporaryConfiguration",
+      temporaryConfiguration,
+    );
+    expect(versionToTemporary.runSpec.nodeResolutions[0]?.config).not.toHaveProperty(
+      "agentVersionId",
+    );
+
+    const temporaryRoot = structuredClone(direct.revision.semanticRoot);
+    const temporaryNode = temporaryRoot.elements[0];
+    if (temporaryNode?.kind !== "composite") throw new Error("Direct fixture缺少Agent节点");
+    temporaryNode.config = {
+      ...temporaryNode.config,
+      capabilityMode: "custom",
+      enabledToolNames: temporaryConfiguration.enabledToolNames,
+      resourcePolicy: temporaryConfiguration.resources,
+      agentTemporaryConfiguration: temporaryConfiguration,
+    };
+    const temporaryToVersion = compileDirectFromRoot("wrs_temporarytoversion1", temporaryRoot, [
+      {
+        kind: "agent_configuration",
+        definitionNodeId: "direct.agent",
+        configurationMode: "version",
+        agentVersionId: "avn_agentversionfreeze1",
+        agentVersionSha256,
+      },
+    ]);
+    expect(temporaryToVersion.success).toBe(true);
+    if (!temporaryToVersion.success) return;
+    expect(temporaryToVersion.runSpec.nodeResolutions[0]?.config).toMatchObject({
+      agentVersionId: "avn_agentversionfreeze1",
+      agentVersionSha256,
+    });
+    expect(temporaryToVersion.runSpec.nodeResolutions[0]?.config).not.toHaveProperty(
+      "agentTemporaryConfiguration",
+    );
+
     const ambiguousRoot = structuredClone(direct.revision.semanticRoot);
     const ambiguousNode = ambiguousRoot.elements[0];
     if (ambiguousNode?.kind !== "composite") throw new Error("Direct fixture缺少Agent节点");
@@ -472,7 +549,7 @@ describe("Node Catalog与Blueprint一致性", () => {
     expect(ambiguous.success).toBe(false);
     if (ambiguous.success) return;
     expect(ambiguous.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
-      "agent.configuration_ambiguous",
+      "agent.configuration.sources_conflict",
     );
 
     const invalidTarget = compileWorkflowRunSpec(

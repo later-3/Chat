@@ -459,6 +459,7 @@ export function createCodingExecutorJournalExtension(input: {
         messageIndex,
         role: eventRole,
         contentSha256: hashExecutorValue(message),
+        ...(visible === undefined ? {} : { visibleTextSha256: hashExecutorValue(visible) }),
         ...(visibleDisplay !== undefined
           ? {
               visibleText: visibleDisplay.text,

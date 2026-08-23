@@ -37,7 +37,9 @@ API Product Command
 → Product Commit
 ```
 
-`SubmitUserMessage`先读取Product Store Receipt，再读取时间、分配候选ID或解析Workflow、Prompt和Pi Runtime。命令Hash只由已经提交的Principal、Session与规范化用户请求计算；省略系统默认与显式提交同一默认仍等价。精确Receipt命中时直接由其`messageId/productRunId`重建原Session、Message与Run；当前Runtime Profile或Prompt来源即使已经移除，也不能阻断已提交响应的重放。不同Payload复用同一`commandId`仍在任何Runtime读取前返回`command_id_reused`。
+`SubmitUserMessage`通过Product Store Port的统一精确Receipt合同只读一次同Revision快照，并在读取时间、分配任一候选ID或解析Workflow、Prompt、Catalog、Workspace与Pi Runtime前完成重放。命中必须同时匹配Command ID、Command Type以及包含Principal、Session与规范化原始请求的Hash；省略系统默认与显式提交同一默认仍等价。精确命中后只按Receipt的`messageId/productRunId`重建原Session、Message与Run，当前Runtime Profile、Prompt来源或Workflow当前发布状态即使已经变化，也不能阻断已提交响应。不同Payload、Workflow、Principal或Command Type复用同一`commandId`会在任何可变依赖前返回`command_id_reused`，不会泄露其他Principal结果。
+
+两个相同Message命令并发时可以各自在未见Receipt的旧快照上完成纯编译，但Product Store单写事务再次使用同一精确合同：唯一胜者原子提交Session/Message/Run/Attempt/Receipt/Outbox，迟到者只返回胜者引用。正式文件在atomic rename前失败时，内存与磁盘都不出现Receipt或半事实；恢复后可用同一命令安全重试。健康Receipt重放不增加Store revision，也不调用时间、ID Factory或任何Adapter。
 
 | 组件 | 当前责任 |
 |---|---|

@@ -11,6 +11,7 @@ import {
   WORKFLOW_PROMPT_PROFILE_VERSION,
   promptTurnSelectionInputV2Schema,
   agentTemporaryConfigurationSchema,
+  inspectDirectAgentConfigurationSource,
   promptConfigurationPreviewDtoSchema,
   promptAssemblyIdSchema,
   agentVersionIdSchema,
@@ -60,7 +61,6 @@ import type {
   PromptCatalogSnapshot,
 } from "./prompt-catalog-port.js";
 import { resolveCurrentAgentRuntimeBinding } from "./agent-version-runtime-validation.js";
-import { hasAmbiguousAgentConfiguration } from "./workflow-node-catalog.js";
 
 /**
  * V2先使用保守统一Meter；它用于确定性预算而不是冒充Provider精确Tokenizer。
@@ -538,8 +538,9 @@ export function agentBindingForNode(
   readonly systemPromptMode?: "inherit_runtime" | "replace" | undefined;
   readonly promptOverrideMarkdown?: string | undefined;
 } {
-  if (nodeType === "agent.direct" && hasAmbiguousAgentConfiguration(config)) {
-    throw revisionConflict("Direct Agent存在多个互斥配置来源");
+  if (nodeType === "agent.direct") {
+    const source = inspectDirectAgentConfigurationSource(config);
+    if (!source.valid) throw revisionConflict(`Direct Agent配置来源非法:${source.reason}`);
   }
   const temporaryConfiguration =
     typeof config["agentTemporaryConfiguration"] === "object" &&
@@ -819,9 +820,8 @@ export function resolveDirectAgentExecutionEnvelope(input: {
   readonly requestOptions: PromptAssemblyV2["requestOptions"];
   readonly piSystemPrompt?: PiSystemPromptResolution | undefined;
 } {
-  if (hasAmbiguousAgentConfiguration(input.directNodeConfig)) {
-    throw revisionConflict("Direct Agent的多个配置来源不能同时进入能力解析");
-  }
+  const source = inspectDirectAgentConfigurationSource(input.directNodeConfig);
+  if (!source.valid) throw revisionConflict(`Direct Agent配置来源非法:${source.reason}`);
   const rawTemporaryConfiguration = input.directNodeConfig["agentTemporaryConfiguration"];
   const parsedTemporaryConfiguration =
     rawTemporaryConfiguration === undefined
@@ -1214,6 +1214,11 @@ export function assertPromptAssemblySourcesCurrent(
     Object.values(snapshot.entities.workflowRunSpecs).find(
       (candidate) => candidate.productRunId === assembly.productRunId,
     );
+  for (const node of runSpec?.nodeResolutions ?? []) {
+    if (node.nodeType !== "agent.direct") continue;
+    const source = inspectDirectAgentConfigurationSource(node.config);
+    if (!source.valid) throw revisionConflict(`Prompt Assembly配置来源非法:${source.reason}`);
+  }
   const boundAgentVersions = (runSpec?.nodeResolutions ?? []).flatMap((node) => {
     const agentVersionId = node.config["agentVersionId"];
     const agentVersionSha256 = node.config["agentVersionSha256"];

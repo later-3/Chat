@@ -89,11 +89,13 @@ Operation终态提交仍会重新读取耐久Journal。发现任一`tool.intent_
 `succeeded / failed / outcome_unknown`任一终态就保持单调；迟到的`complete()`只能幂等读取既有成功，或以稳定冲突拒绝，
 不能把未知/失败改写为成功。重启扫描复用同一闭合逻辑，重复启动不会追加第二组未知事件。
 
-早期v1已经闭合的Tool Result没有复制`inputSha256`，继续作为只读历史兼容；加载每个Operation文件时仍按事件顺序重放Operation与Tool身份状态机。所有Operation事件的Request Hash必须等于Record，请求正文Hash必须自洽，所有Session事件必须绑定Record Session；`succeeded`还必须严格包含唯一且有序的`operation.accepted → operation.started → session.started → operation.completed`，最后一个事件只能是Result Hash与Record Candidate一致的`operation.completed`，期间不能出现`operation.failed/outcome_unknown`。重复Intent、Result先于Intent、跨Session/Turn/Tool闭合、多次闭合或成功记录残留开放/未知Intent同样会以`executor.journal_integrity_invalid`拒绝整个Store启动，旧Candidate不能继续作为成功返回。所有新追加Result都必须携带该字段并通过上述精确匹配，兼容读取不能放宽写入门。
+早期v1已经闭合的Tool Result没有复制`inputSha256`，继续作为只读历史兼容。唯一的`validatePiExecutorOperationJournal`同时供Store每次持久化/启动扫描与Executor Client终态消费使用；它为`queued / running / succeeded / failed / outcome_unknown`定义完整合法矩阵，并验证文件名（Store边界）、Record/Request/全部Event Operation身份、真实Request Hash、连续sequence、非倒退时间、Session/Turn/Provider/Compaction/Tool身份与顺序、唯一terminal及Record字段组合。`succeeded`还要求Result正文按Execution Contract确定性投影，真实Result Hash同时匹配Record与`operation.completed`，新Operation的最终Assistant可见文本Hash必须绑定Candidate正文；攻击者不能通过同步伪造Result和自身Hash绕过耐久执行证据。
+
+新Operation写入`full-operation.v2`完整性标记，必须具有唯一有序的`accepted → started → session → settled → completed`证据；旧v1缺少新显示Hash或`session.settled`时仍可只读兼容，但Request、Operation、Session、terminal、Result与Tool身份从不降级。Store遇到矛盾旧记录会以`executor.journal_integrity_invalid`拒绝启动；Client必须先连续读取全部事件，再用同一Validator验证终态快照，不能仅凭`status=succeeded + result存在`返回Candidate。所有新追加Tool Result仍必须携带真实输入Hash并通过五字段精确匹配，兼容读取不能放宽写入门。
 
 新Result的第五字段来自固定Pi `tool_result`事件携带的真实`input`重新Canonical Hash，而不是复制内存Intent Hash；真实输入与Intent不等时先触发fatal latch，再把Operation耐久收敛为`executor.tool_result_intent_mismatch / outcome_unknown`。
 
-只有耐久状态为`succeeded`且Workflow客户端已经连续读取全部事件时才返回Candidate。`outcome_unknown`没有Candidate，
+只有耐久状态为`succeeded`、Workflow客户端已经连续读取全部事件且共享完整状态机Validator通过时才返回Candidate。`outcome_unknown`没有Candidate，
 因而不能进入Validation或Product Commit。正式fail-closed保证由Provider Gate、执行前Tool Intent栅栏以及上述终态耐久
 复核共同构成。
 

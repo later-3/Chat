@@ -79,6 +79,87 @@ export const agentResourcesSchema = z
   })
   .strict();
 
+export type DirectAgentConfigurationSource =
+  "runtime_default" | "agent_version" | "temporary" | "legacy_prompt_override";
+
+export type DirectAgentConfigurationSourceInspection =
+  | {
+      readonly valid: true;
+      readonly source: DirectAgentConfigurationSource;
+      readonly presentSources: readonly Exclude<
+        DirectAgentConfigurationSource,
+        "runtime_default"
+      >[];
+    }
+  | {
+      readonly valid: false;
+      readonly reason:
+        | "agent.configuration.version_reference_incomplete"
+        | "agent.configuration.source_field_invalid"
+        | "agent.configuration.sources_conflict";
+      readonly presentSources: readonly Exclude<
+        DirectAgentConfigurationSource,
+        "runtime_default"
+      >[];
+    };
+
+/**
+ * Pi-backed Direct Agent配置来源的唯一语义。Contracts、Application与Product Store
+ * 共用此判定；调用方可以显式用一次Run的结构化配置替换Definition来源，但最终对象
+ * 必须只剩Version、Temporary、旧Prompt Override或Runtime默认中的一种。
+ */
+export function inspectDirectAgentConfigurationSource(
+  config: Readonly<Record<string, unknown>>,
+): DirectAgentConfigurationSourceInspection {
+  const versionIdPresent = config["agentVersionId"] !== undefined;
+  const versionShaPresent = config["agentVersionSha256"] !== undefined;
+  const temporaryPresent = config["agentTemporaryConfiguration"] !== undefined;
+  const promptOverride = config["agentPromptOverride"];
+  const promptOverridePresent = typeof promptOverride === "string" && promptOverride.trim() !== "";
+  const presentSources: Exclude<DirectAgentConfigurationSource, "runtime_default">[] = [
+    ...(versionIdPresent || versionShaPresent ? (["agent_version"] as const) : []),
+    ...(temporaryPresent ? (["temporary"] as const) : []),
+    ...(promptOverridePresent ? (["legacy_prompt_override"] as const) : []),
+  ];
+
+  if (
+    versionIdPresent !== versionShaPresent ||
+    (versionIdPresent &&
+      (typeof config["agentVersionId"] !== "string" ||
+        typeof config["agentVersionSha256"] !== "string"))
+  ) {
+    return {
+      valid: false,
+      reason: "agent.configuration.version_reference_incomplete",
+      presentSources,
+    };
+  }
+  if (
+    (temporaryPresent &&
+      (typeof config["agentTemporaryConfiguration"] !== "object" ||
+        config["agentTemporaryConfiguration"] === null)) ||
+    (promptOverride !== undefined && typeof promptOverride !== "string")
+  ) {
+    return {
+      valid: false,
+      reason: "agent.configuration.source_field_invalid",
+      presentSources,
+    };
+  }
+  if (presentSources.length > 1) {
+    return {
+      valid: false,
+      reason: "agent.configuration.sources_conflict",
+      presentSources,
+    };
+  }
+  return {
+    valid: true,
+    source: presentSources[0] ?? "runtime_default",
+    presentSources,
+  };
+}
+
 /** Agent Version绑定创建时真实Pi目录，避免同名Variant在上游升级后静默变义。 */
 export const agentRuntimeBaselineRefSchema = z
   .object({

@@ -70,6 +70,35 @@ async function reopenDeps(filePath: string): Promise<ApplicationDeps> {
   return { store, now, ids: testIds() };
 }
 
+function replayProbeDeps(deps: ApplicationDeps, calls: string[]): ApplicationDeps {
+  const fail = (name: string): never => {
+    calls.push(name);
+    throw new Error(`Receipt重放不应调用${name}`);
+  };
+  return {
+    ...deps,
+    now: () => fail("now"),
+    ids: {
+      session: () => fail("ids.session"),
+      message: () => fail("ids.message"),
+      run: () => fail("ids.run"),
+      attempt: () => fail("ids.attempt"),
+      plan: () => fail("ids.plan"),
+      planRevision: () => fail("ids.planRevision"),
+      revisionInput: () => fail("ids.revisionInput"),
+      approval: () => fail("ids.approval"),
+      decision: () => fail("ids.decision"),
+      executionContract: () => fail("ids.executionContract"),
+      executionCandidate: () => fail("ids.executionCandidate"),
+      validationResult: () => fail("ids.validationResult"),
+      artifact: () => fail("ids.artifact"),
+      outbox: () => fail("ids.outbox"),
+    },
+    promptCatalog: { load: async () => fail("promptCatalog.load") },
+    agentRuntimeProfiles: { read: async () => fail("agentRuntimeProfiles.read") },
+  };
+}
+
 const planContent: PlanContent = {
   objective: "整理项目进展并生成Markdown周报",
   summary: "先归纳输入，再产出周报，包含风险与下一步",
@@ -142,6 +171,166 @@ async function publishPlanForReview(
 }
 
 describe("CreateProductSession + SubmitUserMessage", () => {
+  it.each(["first_message", "existing_session"] as const)(
+    "%s的已提交Receipt在时间、全部ID、Catalog与Runtime前精确重放",
+    async (scenario) => {
+      const { deps } = await testDeps();
+      const session =
+        scenario === "existing_session"
+          ? (
+              await createProductSession(deps, {
+                principalId: PRINCIPAL,
+                commandId: cmd(),
+                payload: {},
+              })
+            ).session
+          : undefined;
+      const commandId = cmd();
+      const input = {
+        principalId: PRINCIPAL,
+        ...(session === undefined ? {} : { sessionId: session.sessionId }),
+        commandId,
+        payload: { text: `Receipt探针-${scenario}` },
+      };
+      const first = await submitUserMessage(deps, input);
+      const before = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+      const calls: string[] = [];
+      const replay = await submitUserMessage(replayProbeDeps(deps, calls), input);
+      const after = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+
+      expect(calls).toEqual([]);
+      expect(replay).toEqual(first);
+      expect(after.storeRevision).toBe(before.storeRevision);
+      expect(Object.keys(after.entities.messages)).toEqual(Object.keys(before.entities.messages));
+      expect(Object.keys(after.entities.runs)).toEqual(Object.keys(before.entities.runs));
+      expect(Object.keys(after.entities.attempts)).toEqual(Object.keys(before.entities.attempts));
+      expect(Object.keys(after.outbox)).toEqual(Object.keys(before.outbox));
+    },
+  );
+
+  it("Receipt的Payload、Workflow、Principal与Command Type不精确匹配时先失败且不泄露结果", async () => {
+    const { deps } = await testDeps();
+    const { session } = await createProductSession(deps, {
+      principalId: PRINCIPAL,
+      commandId: cmd(),
+      payload: {},
+    });
+    const commandId = cmd();
+    const original = {
+      principalId: PRINCIPAL,
+      sessionId: session.sessionId,
+      commandId,
+      payload: { text: "精确Receipt身份" },
+    } as const;
+    await submitUserMessage(deps, original);
+    const before = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const noteRevision =
+      before.entities.workflowDefinitionRevisions[SYSTEM_NOTE_WORKFLOW_REVISION_ID];
+    if (noteRevision === undefined) throw new Error("测试Fixture缺少Note Workflow");
+    const calls: string[] = [];
+    const broken = replayProbeDeps(deps, calls);
+
+    await expect(
+      submitUserMessage(broken, { ...original, payload: { text: "正文已改变" } }),
+    ).rejects.toBeInstanceOf(CommandIdReusedError);
+    await expect(
+      submitUserMessage(broken, {
+        ...original,
+        payload: {
+          text: original.payload.text,
+          workflowSelection: {
+            kind: "published_revision",
+            workflowDefinitionRevisionId: noteRevision.workflowDefinitionRevisionId,
+            definitionSha256: noteRevision.definitionSha256,
+          },
+        },
+      }),
+    ).rejects.toBeInstanceOf(CommandIdReusedError);
+    await expect(
+      submitUserMessage(broken, { ...original, principalId: OTHER }),
+    ).rejects.toBeInstanceOf(CommandIdReusedError);
+
+    const otherTypeCommandId = cmd();
+    await createProductSession(deps, {
+      principalId: PRINCIPAL,
+      commandId: otherTypeCommandId,
+      payload: {},
+    });
+    await expect(
+      submitUserMessage(broken, {
+        ...original,
+        commandId: otherTypeCommandId,
+      }),
+    ).rejects.toBeInstanceOf(CommandIdReusedError);
+    expect(calls).toEqual([]);
+    const after = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(Object.keys(after.entities.messages)).toEqual(Object.keys(before.entities.messages));
+    expect(Object.keys(after.entities.runs)).toEqual(Object.keys(before.entities.runs));
+  });
+
+  it("两个相同Message命令并发只提交一组Session、Message、Run、Attempt与Outbox", async () => {
+    const { deps } = await testDeps();
+    const commandId = cmd();
+    const input = {
+      principalId: PRINCIPAL,
+      commandId,
+      payload: { text: "并发原子Message" },
+    } as const;
+    const [first, second] = await Promise.all([
+      submitUserMessage(deps, input),
+      submitUserMessage(deps, input),
+    ]);
+    expect(second).toEqual(first);
+    const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+    expect(Object.values(snapshot.entities.sessions)).toHaveLength(1);
+    expect(Object.values(snapshot.entities.messages)).toHaveLength(1);
+    expect(Object.values(snapshot.entities.runs)).toHaveLength(1);
+    expect(Object.values(snapshot.entities.attempts)).toHaveLength(1);
+    expect(Object.values(snapshot.outbox)).toHaveLength(1);
+    expect(Object.values(snapshot.commandReceipts)).toHaveLength(1);
+  });
+
+  it("Message正式文件写入失败不留下Receipt或半事实，恢复后可用同一命令重试", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "chat-message-write-failure-"));
+    const filePath = join(directory, "product.json");
+    await JsonProductStore.open({ filePath, now });
+    const failingStore = await JsonProductStore.open({
+      filePath,
+      now,
+      io: {
+        writeTempFile: async () => Promise.reject(new Error("injected message write failure")),
+      },
+    });
+    const commandId = cmd();
+    const input = {
+      principalId: PRINCIPAL,
+      commandId,
+      payload: { text: "写失败后仍可安全重试" },
+    } as const;
+    await expect(
+      submitUserMessage({ store: failingStore, now, ids: testIds() }, input),
+    ).rejects.toMatchObject({ code: "internal_error", retryable: true });
+    const failed = (await failingStore.read({ kind: "committedSnapshot" })).snapshot;
+    expect(failed.storeRevision).toBe(0);
+    expect(Object.values(failed.entities.sessions)).toHaveLength(0);
+    expect(Object.values(failed.entities.messages)).toHaveLength(0);
+    expect(Object.values(failed.entities.runs)).toHaveLength(0);
+    expect(Object.values(failed.entities.attempts)).toHaveLength(0);
+    expect(Object.values(failed.outbox)).toHaveLength(0);
+    expect(failed.commandReceipts[commandId]).toBeUndefined();
+
+    const recoveredStore = await JsonProductStore.open({ filePath, now });
+    const recovered = await submitUserMessage(
+      { store: recoveredStore, now, ids: testIds() },
+      input,
+    );
+    expect(recovered.message.content.text).toBe(input.payload.text);
+    const committed = (await recoveredStore.read({ kind: "committedSnapshot" })).snapshot;
+    expect(committed.commandReceipts[commandId]).toBeDefined();
+    expect(Object.values(committed.entities.messages)).toHaveLength(1);
+    expect(Object.values(committed.entities.runs)).toHaveLength(1);
+  });
+
   it("首轮Message由Application原子创建Session、标题、Run与Outbox，响应丢失重放不重复", async () => {
     const { deps } = await testDeps();
     const commandId = cmd();

@@ -242,6 +242,12 @@ describe("Coding Executor真实Pi AgentSession Tool Journal", () => {
       throw new Error("测试Extension缺少Tool handler");
     }
     try {
+      await value.store.append(value.operationId, {
+        operationId: value.operationId,
+        type: "turn.started",
+        sessionId: value.sessionId,
+        turnIndex: 0,
+      });
       await toolCall({
         type: "tool_call",
         toolName: "read",

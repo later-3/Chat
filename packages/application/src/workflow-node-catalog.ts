@@ -12,6 +12,7 @@ import {
   agentTemporaryConfigurationSchema,
   agentVersionIdSchema,
   directAgentToolNameSchema,
+  inspectDirectAgentConfigurationSource,
   sha256Schema,
   workflowMemoryQueryNodeConfigSchema,
   workflowMemoryWriteNodeConfigSchema,
@@ -91,20 +92,6 @@ export interface NodeCatalogDescriptor {
   readonly riskPolicy: WorkflowRiskLevel;
   readonly executorKind: WorkflowExecutorKind;
   readonly supportedBlueprints: readonly ("planning" | "note" | "direct")[];
-}
-
-/**
- * Direct Agent只能由一套配置来源决定能力与System Prompt。Version、结构化Temporary
- * 与历史单段Prompt Override任意两者并存时，都不能用优先级静默拼成混合身份。
- */
-export function hasAmbiguousAgentConfiguration(config: Readonly<Record<string, unknown>>): boolean {
-  const hasVersion =
-    config["agentVersionId"] !== undefined || config["agentVersionSha256"] !== undefined;
-  const hasTemporary = config["agentTemporaryConfiguration"] !== undefined;
-  const hasPromptOverride =
-    typeof config["agentPromptOverride"] === "string" &&
-    config["agentPromptOverride"].trim() !== "";
-  return [hasVersion, hasTemporary, hasPromptOverride].filter(Boolean).length > 1;
 }
 
 export function nodeExecutorKey(nodeType: WorkflowNodeTypeKey, schemaVersion: number): string {
@@ -479,13 +466,19 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
         agentTemporaryConfiguration: agentTemporaryConfigurationSchema.optional(),
       })
       .superRefine((value, ctx) => {
-        if ((value.agentVersionId === undefined) !== (value.agentVersionSha256 === undefined)) {
+        const source = inspectDirectAgentConfigurationSource(value);
+        if (!source.valid)
           ctx.addIssue({
             code: "custom",
-            path: ["agentVersionId"],
-            message: "Agent Version必须同时绑定ID与Hash",
+            path:
+              source.reason === "agent.configuration.version_reference_incomplete"
+                ? ["agentVersionId"]
+                : ["agentTemporaryConfiguration"],
+            message:
+              source.reason === "agent.configuration.version_reference_incomplete"
+                ? "Agent Version必须同时绑定合法ID与Hash"
+                : "Agent Version、临时Agent配置与Prompt Override只能选择一种来源",
           });
-        }
         if (
           value.capabilityMode === "custom" &&
           value.agentVersionId === undefined &&
@@ -495,13 +488,6 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
             code: "custom",
             path: ["enabledToolNames"],
             message: "Custom Agent能力必须由Agent Version或显式Tool清单冻结",
-          });
-        }
-        if (hasAmbiguousAgentConfiguration(value)) {
-          ctx.addIssue({
-            code: "custom",
-            path: ["agentTemporaryConfiguration"],
-            message: "Agent Version、临时Agent配置与Prompt Override只能选择一种来源",
           });
         }
       }),

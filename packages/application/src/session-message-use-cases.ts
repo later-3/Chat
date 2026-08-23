@@ -42,14 +42,9 @@ import type {
 } from "@chat/contracts";
 import { DEFAULT_MAX_PLAN_REVISIONS, type ApplicationDeps } from "./deps.js";
 import { toMessageDto, toRunDto, toSessionDto } from "./dto.js";
-import {
-  ApplicationError,
-  CommandIdReusedError,
-  forbidden,
-  notFound,
-  revisionConflict,
-} from "./errors.js";
+import { ApplicationError, forbidden, notFound, revisionConflict } from "./errors.js";
 import { emitRunEvent } from "./trace-helpers.js";
+import { readExactCommandReceipt } from "./product-store-port.js";
 import type { MessageDto, RunDto } from "@chat/contracts";
 import {
   compileWorkflowRunSpec,
@@ -566,18 +561,17 @@ export async function submitUserMessage(
 ): Promise<{ session: SessionDto; message: MessageDto; run: RunDto }> {
   // 调试导航⑤：Receipt是已提交命令的唯一重放入口，必须先于时间、ID、Runtime与
   // Prompt编译读取。命中后仅从Receipt引用重建原响应，不再要求当前配置仍可解析。
-  const { snapshot: preflightSnapshot } = await deps.store.read({ kind: "committedSnapshot" });
-  const requestSha256 = submitUserMessageRequestSha256(input, preflightSnapshot);
-  const priorReceipt = preflightSnapshot.commandReceipts[input.commandId];
-  if (priorReceipt !== undefined) {
-    if (
-      priorReceipt.commandType !== "SubmitUserMessage" ||
-      priorReceipt.requestSha256 !== requestSha256
-    ) {
-      throw new CommandIdReusedError(input.commandId);
-    }
+  const {
+    snapshot: preflightSnapshot,
+    identity: { requestSha256 },
+    receipt: priorReceipt,
+  } = await readExactCommandReceipt(deps.store, (snapshot) => ({
+    commandId: input.commandId,
+    commandType: "SubmitUserMessage",
+    requestSha256: submitUserMessageRequestSha256(input, snapshot),
+  }));
+  if (priorReceipt !== undefined)
     return submittedMessageResultFromReceipt(preflightSnapshot, priorReceipt, input);
-  }
 
   const now = deps.now();
   const messageId = deps.ids.message();

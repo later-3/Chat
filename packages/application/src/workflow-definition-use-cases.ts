@@ -7,6 +7,7 @@ import {
   workflowDefinitionRevisionSchema,
   workflowDefinitionSchema,
   workflowDefinitionValidationDtoSchema,
+  inspectDirectAgentConfigurationSource,
   type ChangeWorkflowDefinitionArchiveStatusPayload,
   type CreateWorkflowDefinitionCopyPayload,
   type PrincipalId,
@@ -32,7 +33,7 @@ import {
   deriveWorkflowDesignerPolicy,
   toWorkflowDesignerSlotDto,
 } from "./workflow-designer-policy.js";
-import { DEFAULT_NODE_CATALOG, hasAmbiguousAgentConfiguration } from "./workflow-node-catalog.js";
+import { DEFAULT_NODE_CATALOG } from "./workflow-node-catalog.js";
 import { validateDesignerRoot } from "./workflow-structure-operations.js";
 import { createPublishedWorkflowView } from "./workflow-view-builder.js";
 import { agentNodeBindingDescriptor } from "./prompt-assembly-use-cases.js";
@@ -379,8 +380,13 @@ function assertNoAmbiguousAgentConfigurations(
     const element = stack.pop();
     if (element === undefined) break;
     if (element.kind === "task" || element.kind === "composite") {
-      if (element.nodeType === "agent.direct" && hasAmbiguousAgentConfiguration(element.config)) {
-        throw revisionConflict(`Workflow节点${element.definitionNodeId}存在多个Agent配置来源`);
+      if (element.nodeType === "agent.direct") {
+        const source = inspectDirectAgentConfigurationSource(element.config);
+        if (!source.valid) {
+          throw revisionConflict(
+            `Workflow节点${element.definitionNodeId}的Agent配置来源非法:${source.reason}`,
+          );
+        }
       }
       continue;
     }

@@ -77,12 +77,12 @@ Pi-backed Agent 的 Catalog 默认不是一段 Chat 手抄的近似 Prompt。`pa
 2. **当前会话配置**由 DSH Bridge 作为未发送草稿保存。用户可以选择既有 Version，也可以临时修改 System Prompt、Tools 和四类资源；页面按当前 DSH Session 的受权 Workspace Root 读取 scoped Runtime Profile。“应用当前会话”不修改 AgentVersion 或 Workflow Revision。
 3. **本次 Run**创建时，Application 重新鉴权和校验 Scope、Runtime、Version ID/Hash，并用同一个`workspaceRootId`重新读取 scoped Profile，把会话草稿编译成结构化`agent_configuration`并冻结到 RunSpec 与 Prompt Assembly。`direct-agent-prompt-compiler.v3`还在 Assembly 中冻结 scoped Runtime Profile Hash；存在 Workspace 时同时冻结不暴露路径的 Root Grant Hash。Run 启动后不再读取浏览器草稿。
 
-`AgentVersion ID + Hash`、`agentTemporaryConfiguration`与旧单段`agentPromptOverride`是三种互斥来源，任意两者不能同时保存或在本次Run中用优先级拼接。Catalog、窄保存命令、Draft/Publish、RunSpec Compiler、Prompt Assembly和Operation授权分别独立失败关闭；绑定Version的窄保存命令还会删除旧Temporary/Prompt/Tool/资源字段。合法Temporary `systemPrompt.mode=replace`仍完整冻结在RunSpec中，Product Store从该结构化配置重建Workflow Prompt来源，不要求制造顶层兼容字段。
+`AgentVersion ID + Hash`、`agentTemporaryConfiguration`与旧单段`agentPromptOverride`是三种互斥来源，任意两者不能同时保存或在本次Run中用优先级拼接。Contracts公开的`inspectDirectAgentConfigurationSource`是Catalog、窄保存命令、Draft/Publish、RunSpec Compiler、Prompt Assembly、Product Store Snapshot Integrity和Operation授权共用的唯一来源判定，不允许各层再手写近似优先级。绑定Version的窄保存命令还会删除旧Temporary/Prompt/Tool/资源字段。合法Temporary `systemPrompt.mode=replace`仍完整冻结在RunSpec中，Product Store从该结构化配置重建Workflow Prompt来源，不要求制造顶层兼容字段。
 4. 临时配置可以记录它基于哪个 Version，但它本身不是新版本；要长期复用必须显式“创建版本”或“保存到 Workflow”。
 
 当前“会话级”语义是 Bridge 对同一 DSH Session 复用草稿、每次发送都形成新的 Run 冻结副本；它不是 Product Store 中另一份可变 Agent 真相。若以后需要跨前端恢复的耐久 Product Session 默认，应新增明确的 Product Session 配置事实，不能把浏览器/Bridge 状态偷换成产品事实。
 
-旧 Workflow 的单段`agentPromptOverride`仍可在没有Version或Temporary时读取，但只是迁移兼容；普通`node_config`不能替换已绑定Version的System Prompt。新的 Pi-backed Direct Agent 以完整 AgentVersion 或结构化临时配置为主，不再用散落 Prompt 文本代表完整 Agent。
+旧 Workflow 的单段`agentPromptOverride`仍可在没有Version或Temporary时读取，但只是迁移兼容；普通`node_config`不能替换已绑定Version的System Prompt。显式的本次Run `agent_configuration`是完整来源替换：选择Version会删除Definition中的Temporary和旧Prompt，选择Temporary会删除Definition中的Version和旧Prompt；最终RunSpec只保留所选来源。新的 Pi-backed Direct Agent 以完整 AgentVersion 或结构化临时配置为主，不再用散落 Prompt 文本代表完整 Agent。
 
 ### 4.1 Version 能力的单一运行语义
 

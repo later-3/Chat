@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   workflowExecutorManifestEntrySchema,
+  inspectDirectAgentConfigurationSource,
   workflowRunBusinessInputSchema,
   workflowRunSpecSchema,
   workflowRunnerEvidenceSchema,
@@ -42,7 +43,6 @@ import {
 } from "./workflow-definition-schema.js";
 import {
   DEFAULT_NODE_CATALOG,
-  hasAmbiguousAgentConfiguration,
   nodeExecutorKey,
   type NodeCatalog,
 } from "./workflow-node-catalog.js";
@@ -139,15 +139,19 @@ export function compileWorkflowRunSpec(
     };
   }
 
-  const ambiguousAgentNodes = [...indexNodes(context.definition.semanticRoot).values()].filter(
-    (node) => node.nodeType === "agent.direct" && hasAmbiguousAgentConfiguration(node.config),
+  const invalidAgentNodes = [...indexNodes(context.definition.semanticRoot).values()].flatMap(
+    (node) => {
+      if (node.nodeType !== "agent.direct") return [];
+      const source = inspectDirectAgentConfigurationSource(node.config);
+      return source.valid ? [] : [{ node, source }];
+    },
   );
-  if (ambiguousAgentNodes.length > 0) {
+  if (invalidAgentNodes.length > 0) {
     return {
       success: false,
-      diagnostics: ambiguousAgentNodes.map((node) => ({
+      diagnostics: invalidAgentNodes.map(({ node, source }) => ({
         family: "definition_invalid" as const,
-        code: "agent.configuration_ambiguous",
+        code: source.reason,
         path: `${node.path}.config.agentTemporaryConfiguration`,
         params: { definitionNodeId: node.definitionNodeId },
       })),
@@ -269,17 +273,19 @@ export function validateWorkflowRunSpecIntegrity(
       ],
     };
   }
-  const ambiguous = parsed.data.nodeResolutions.find(
-    (node) => node.nodeType === "agent.direct" && hasAmbiguousAgentConfiguration(node.config),
-  );
-  if (ambiguous !== undefined) {
+  const invalid = parsed.data.nodeResolutions.flatMap((node) => {
+    if (node.nodeType !== "agent.direct") return [];
+    const source = inspectDirectAgentConfigurationSource(node.config);
+    return source.valid ? [] : [{ node, source }];
+  })[0];
+  if (invalid !== undefined) {
     return {
       success: false,
       diagnostics: [
         {
           family: "definition_invalid",
-          code: "agent.configuration_ambiguous",
-          path: `$.nodeResolutions.${ambiguous.definitionNodeId}.config.agentTemporaryConfiguration`,
+          code: invalid.source.reason,
+          path: `$.nodeResolutions.${invalid.node.definitionNodeId}.config.agentTemporaryConfiguration`,
           params: {},
         },
       ],

@@ -364,6 +364,40 @@ describe("Prompt Review Product Snapshot完整性", () => {
     expect(() => assertSnapshotIntegrity(snapshot)).not.toThrow();
   });
 
+  it.each(["Definition", "RunSpec"] as const)(
+    "%s中的Direct Agent多配置来源由Snapshot Integrity统一拒绝",
+    async (target) => {
+      const { snapshot } = await validDirectReviewSnapshot();
+      if (target === "Definition") {
+        const revision =
+          snapshot.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
+        const node = revision?.semanticRoot.elements[0];
+        if (node?.kind !== "composite") throw new Error("测试Fixture缺少Direct Definition节点");
+        node.config = {
+          ...node.config,
+          agentPromptOverride: "旧Prompt",
+          agentTemporaryConfiguration: {},
+        };
+      } else {
+        const runSpec = Object.values(snapshot.entities.workflowRunSpecs).find((candidate) =>
+          candidate.nodeResolutions.some((node) => node.nodeType === "agent.direct"),
+        );
+        const node = runSpec?.nodeResolutions.find(
+          (candidate) => candidate.nodeType === "agent.direct",
+        );
+        if (node === undefined) throw new Error("测试Fixture缺少Direct RunSpec节点");
+        node.config = {
+          ...node.config,
+          agentPromptOverride: "旧Prompt",
+          agentTemporaryConfiguration: {},
+        };
+      }
+      expect(() => assertSnapshotIntegrity(snapshot)).toThrow(
+        /Agent配置来源非法:agent\.configuration\.sources_conflict/u,
+      );
+    },
+  );
+
   it("拒绝Prompt Assembly Hash篡改、悬空关系与Direct Run非唯一Assembly", async () => {
     const { snapshot: hashBroken } = await validDirectReviewSnapshot();
     hashBroken.entities.promptAssemblies["pma_promptreview1"]!.sha256 = "0".repeat(64) as never;

@@ -1,6 +1,10 @@
 import type { ExecutionContextItemDto, ExecutionContract } from "@chat/contracts";
 import type { ExecutorDependencyResult, ExecutorStepCandidate } from "./executor.js";
-import { hashExecutorValue } from "./executor-operation-store.js";
+import {
+  PiExecutorJournalIntegrityError,
+  hashExecutorValue,
+  validatePiExecutorOperationJournal,
+} from "./executor-operation-store.js";
 import {
   PI_EXECUTOR_PROTOCOL_VERSION,
   PI_EXECUTOR_RUNTIME_HEADER,
@@ -63,15 +67,30 @@ export function createPiExecutorServiceClient(options: PiExecutorServiceClientOp
       contextItems: input.contextItems,
       dependencyResults: input.dependencyResults,
     });
+    const requestSha256 = hashExecutorValue(request);
     const startResponse = await fetchFn(`${baseUrl}/internal/pi-executor/v1/operations`, {
       method: "POST",
       headers,
       body: JSON.stringify(request),
     });
     if (!startResponse.ok) throw await remoteProblem(startResponse);
-    piExecutorOperationSnapshotSchema.parse(await startResponse.json());
+    const startSnapshot = piExecutorOperationSnapshotSchema.parse(await startResponse.json());
+    const journalRequest = startSnapshot.request ?? request;
+    const { nodePrompt: _authorizedNodePrompt, ...journalSubmittedRequest } = journalRequest;
+    void _authorizedNodePrompt;
+    if (
+      startSnapshot.operationId !== request.operationId ||
+      (startSnapshot.integrityVersion === "full-operation.v2" &&
+        startSnapshot.request === undefined) ||
+      hashExecutorValue(journalSubmittedRequest) !== requestSha256 ||
+      hashExecutorValue(journalRequest) !== startSnapshot.requestSha256
+    ) {
+      throw new PiExecutorRemoteError("executor.journal_integrity_invalid", true);
+    }
 
     let lastEventSequence = 0;
+    let serverLastEventSequence = startSnapshot.lastEventSequence;
+    const events: PiExecutorEvent[] = [];
     const deadline = Date.now() + input.contract.limits.timeoutMsPerStep + 30_000;
     while (true) {
       const eventsResponse = await fetchFn(
@@ -80,11 +99,19 @@ export function createPiExecutorServiceClient(options: PiExecutorServiceClientOp
       );
       if (!eventsResponse.ok) throw await remoteProblem(eventsResponse);
       const eventPage = piExecutorEventsResponseSchema.parse(await eventsResponse.json());
+      if (
+        eventPage.operationId !== request.operationId ||
+        eventPage.lastEventSequence < lastEventSequence
+      ) {
+        throw new PiExecutorRemoteError("executor.journal_integrity_invalid", true);
+      }
+      serverLastEventSequence = Math.max(serverLastEventSequence, eventPage.lastEventSequence);
       for (const event of eventPage.events) {
         if (event.sequence !== lastEventSequence + 1) {
           throw new PiExecutorRemoteError("executor.event_sequence_gap", true);
         }
         lastEventSequence = event.sequence;
+        events.push(event);
         input.onEvent?.(event);
       }
 
@@ -95,12 +122,36 @@ export function createPiExecutorServiceClient(options: PiExecutorServiceClientOp
       if (!statusResponse.ok) throw await remoteProblem(statusResponse);
       const snapshot = piExecutorOperationSnapshotSchema.parse(await statusResponse.json());
       if (
+        snapshot.operationId !== request.operationId ||
+        snapshot.requestSha256 !== startSnapshot.requestSha256 ||
+        (snapshot.request !== undefined &&
+          hashExecutorValue(snapshot.request) !== startSnapshot.requestSha256) ||
+        snapshot.lastEventSequence < lastEventSequence
+      ) {
+        throw new PiExecutorRemoteError("executor.journal_integrity_invalid", true);
+      }
+      serverLastEventSequence = Math.max(serverLastEventSequence, snapshot.lastEventSequence);
+      if (
         (snapshot.status === "succeeded" ||
           snapshot.status === "failed" ||
           snapshot.status === "outcome_unknown") &&
-        lastEventSequence < snapshot.lastEventSequence
+        lastEventSequence < serverLastEventSequence
       ) {
         continue;
+      }
+      if (
+        snapshot.status === "succeeded" ||
+        snapshot.status === "failed" ||
+        snapshot.status === "outcome_unknown"
+      ) {
+        try {
+          validatePiExecutorOperationJournal({ request: journalRequest, snapshot, events });
+        } catch (error) {
+          if (error instanceof PiExecutorJournalIntegrityError) {
+            throw new PiExecutorRemoteError(error.code, true);
+          }
+          throw error;
+        }
       }
       if (snapshot.status === "succeeded") {
         if (snapshot.result === undefined) {

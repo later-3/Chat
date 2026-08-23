@@ -5,6 +5,7 @@ import {
   agentEnabledToolNamesSchema,
   agentVersionIdSchema,
   agentVersionSchema,
+  inspectDirectAgentConfigurationSource,
   toAgentVersionHashInput,
 } from "./index.js";
 
@@ -43,6 +44,71 @@ function validAgentVersion() {
 }
 
 describe("Agent Version合同", () => {
+  it.each([
+    ["runtime_default", {}, true, "runtime_default"],
+    ["legacy_prompt_override", { agentPromptOverride: "旧Prompt" }, true, "legacy_prompt_override"],
+    ["temporary", { agentTemporaryConfiguration: {} }, true, "temporary"],
+    [
+      "agent_version",
+      { agentVersionId: "avn_source1", agentVersionSha256: "a".repeat(64) },
+      true,
+      "agent_version",
+    ],
+    [
+      "version_temporary",
+      {
+        agentVersionId: "avn_source1",
+        agentVersionSha256: "a".repeat(64),
+        agentTemporaryConfiguration: {},
+      },
+      false,
+      "agent.configuration.sources_conflict",
+    ],
+    [
+      "version_prompt",
+      {
+        agentVersionId: "avn_source1",
+        agentVersionSha256: "a".repeat(64),
+        agentPromptOverride: "旁路Prompt",
+      },
+      false,
+      "agent.configuration.sources_conflict",
+    ],
+    [
+      "temporary_prompt",
+      { agentTemporaryConfiguration: {}, agentPromptOverride: "旁路Prompt" },
+      false,
+      "agent.configuration.sources_conflict",
+    ],
+    [
+      "three_sources",
+      {
+        agentVersionId: "avn_source1",
+        agentVersionSha256: "a".repeat(64),
+        agentTemporaryConfiguration: {},
+        agentPromptOverride: "旁路Prompt",
+      },
+      false,
+      "agent.configuration.sources_conflict",
+    ],
+    [
+      "version_id_only",
+      { agentVersionId: "avn_source1" },
+      false,
+      "agent.configuration.version_reference_incomplete",
+    ],
+    [
+      "version_hash_only",
+      { agentVersionSha256: "a".repeat(64) },
+      false,
+      "agent.configuration.version_reference_incomplete",
+    ],
+  ] as const)("唯一配置来源矩阵：%s", (_case, config, valid, expected) => {
+    const inspected = inspectDirectAgentConfigurationSource(config);
+    expect(inspected.valid).toBe(valid);
+    expect(inspected.valid ? inspected.source : inspected.reason).toBe(expected);
+  });
+
   it("接受Pi有序工具子集并生成不包含自身Hash的唯一输入投影", () => {
     expect(PI_BUILTIN_TOOL_NAMES).toEqual(["read", "bash", "edit", "write", "grep", "find", "ls"]);
     const version = agentVersionSchema.parse(validAgentVersion());

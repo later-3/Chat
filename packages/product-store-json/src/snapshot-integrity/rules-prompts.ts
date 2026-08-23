@@ -10,6 +10,7 @@ import {
   LEGACY_DIRECT_PROMPT_COMPILER_VERSION,
   LEGACY_DIRECT_PROMPT_PROFILE_VERSION,
   promptFragmentScopeSchema,
+  inspectDirectAgentConfigurationSource,
   toAgentVersionHashInput,
   type ProductSnapshot,
 } from "@chat/contracts";
@@ -392,8 +393,10 @@ export function assertPromptFragments(snapshot: ProductSnapshot, fail: Fail): vo
 function workflowNodePromptOverrideBody(
   config: Readonly<Record<string, unknown>> | undefined,
 ): string | undefined {
+  const source = inspectDirectAgentConfigurationSource(config ?? {});
+  if (!source.valid) return undefined;
   const temporary = config?.["agentTemporaryConfiguration"];
-  if (typeof temporary === "object" && temporary !== null) {
+  if (source.source === "temporary" && typeof temporary === "object" && temporary !== null) {
     const systemPrompt = (temporary as Readonly<Record<string, unknown>>)["systemPrompt"];
     if (typeof systemPrompt === "object" && systemPrompt !== null) {
       const prompt = systemPrompt as Readonly<Record<string, unknown>>;
@@ -402,13 +405,51 @@ function workflowNodePromptOverrideBody(
       }
     }
   }
-  return typeof config?.["agentPromptOverride"] === "string"
+  return source.source === "legacy_prompt_override" &&
+    typeof config?.["agentPromptOverride"] === "string"
     ? config["agentPromptOverride"]
     : undefined;
 }
 
+/** Definition、RunSpec与Assembly必须共用Contracts中的同一配置来源判定。 */
+function assertDirectAgentConfigurationSources(snapshot: ProductSnapshot, fail: Fail): void {
+  for (const revision of Object.values(snapshot.entities.workflowDefinitionRevisions)) {
+    const stack = [...revision.semanticRoot.elements];
+    while (stack.length > 0) {
+      const element = stack.pop();
+      if (element === undefined) continue;
+      if (element.kind === "task" || element.kind === "composite") {
+        if (element.nodeType !== "agent.direct") continue;
+        const source = inspectDirectAgentConfigurationSource(element.config);
+        if (!source.valid) {
+          fail(
+            `workflowDefinitionRevision ${revision.workflowDefinitionRevisionId} 节点${element.definitionNodeId} Agent配置来源非法:${source.reason}`,
+          );
+        }
+        continue;
+      }
+      if (element.kind === "sequence") stack.push(...element.elements);
+      else if (element.kind === "choice") {
+        for (const branch of element.branches) stack.push(...branch.body.elements);
+      } else stack.push(...element.body.elements);
+    }
+  }
+  for (const runSpec of Object.values(snapshot.entities.workflowRunSpecs)) {
+    for (const node of runSpec.nodeResolutions) {
+      if (node.nodeType !== "agent.direct") continue;
+      const source = inspectDirectAgentConfigurationSource(node.config);
+      if (!source.valid) {
+        fail(
+          `workflowRunSpec ${runSpec.workflowRunSpecId} 节点${node.definitionNodeId} Agent配置来源非法:${source.reason}`,
+        );
+      }
+    }
+  }
+}
+
 export function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
   const { entities } = snapshot;
+  assertDirectAgentConfigurationSources(snapshot, fail);
   const assembliesByRun = new Map<string, (typeof entities.promptAssemblies)[string][]>();
 
   for (const assembly of Object.values(entities.promptAssemblies)) {

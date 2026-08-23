@@ -13,6 +13,7 @@ import {
   type ProductRunId,
   type RunAttemptId,
   type WorkflowRunSpecId,
+  inspectDirectAgentConfigurationSource,
 } from "@chat/contracts";
 import {
   computeDirectAgentCandidateSha256,
@@ -31,7 +32,6 @@ import {
   resolveDirectAgentExecutionEnvelope,
 } from "./prompt-assembly-use-cases.js";
 import { resolveCurrentAgentRuntimeBinding } from "./agent-version-runtime-validation.js";
-import { hasAmbiguousAgentConfiguration } from "./workflow-node-catalog.js";
 
 function requireDirectAgentIds(deps: ApplicationDeps): DirectAgentIdFactory {
   if (deps.directAgentIds === undefined) {
@@ -309,9 +309,9 @@ export async function authorizeDirectAgentOperation(
     (candidate) => candidate.nodeType === "agent.direct" && candidate.activation === "enabled",
   );
   if (directNode === undefined) throw revisionConflict("Direct Agent RunSpec缺少活动节点");
-  if (hasAmbiguousAgentConfiguration(directNode.config)) {
-    throw revisionConflict("Direct Agent Operation拒绝多个配置来源并存");
-  }
+  const configurationSource = inspectDirectAgentConfigurationSource(directNode.config);
+  if (!configurationSource.valid)
+    throw revisionConflict(`Direct Agent Operation配置来源非法:${configurationSource.reason}`);
   const agentBinding = agentBindingForNode("agent.direct", directNode.config);
   const currentRuntime = await resolveCurrentAgentRuntimeBinding(deps, {
     principalId: session.ownerPrincipalId,

@@ -2012,6 +2012,84 @@ describe("公开产品API", () => {
     });
   });
 
+  it("一个相同Message仍在Prompt编译时，另一请求先提交后前者按Receipt收敛", async () => {
+    const { app, deps } = await testApp();
+    const snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const directRevision =
+      snapshot.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
+    if (directRevision === undefined || deps.promptCatalog === undefined) {
+      throw new Error("缺少Direct Revision或Prompt Catalog");
+    }
+    const created = await postJson(app, "/api/sessions", {
+      commandId: nextCmd(),
+      payload: { title: "Receipt Race" },
+    });
+    const session = sessionDtoSchema.parse(
+      ((await created.json()) as { session: unknown }).session,
+    );
+    const commandId = nextCmd();
+    const payload = {
+      text: "同一命令在Prompt编译竞争中只能提交一次",
+      workflowSelection: {
+        kind: "published_revision" as const,
+        workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
+        definitionSha256: directRevision.definitionSha256,
+      },
+    };
+    let markCompileStarted!: () => void;
+    const compileStarted = new Promise<void>((resolve) => {
+      markCompileStarted = resolve;
+    });
+    let releaseCompile!: () => void;
+    const compileGate = new Promise<void>((resolve) => {
+      releaseCompile = resolve;
+    });
+    const originalCatalog = deps.promptCatalog;
+    const slowDeps: ApplicationDeps = {
+      ...deps,
+      promptCatalog: {
+        load: async () => {
+          markCompileStarted();
+          await compileGate;
+          return originalCatalog.load();
+        },
+      },
+    };
+    const slowApp = createApiApp({
+      traceSink: null,
+      product: { deps: slowDeps, principalId: DEBUG_PRINCIPAL_ID },
+      internalRuntime: { credential: "rtk_test" },
+    });
+    const slowResponsePromise = postJson(slowApp, `/api/sessions/${session.sessionId}/messages`, {
+      commandId,
+      payload,
+    });
+    await compileStarted;
+    const winningResponse = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
+      commandId,
+      payload,
+    });
+    expect(winningResponse.status, await winningResponse.clone().text()).toBe(201);
+    const responseSchema = z.object({ message: messageDtoSchema, run: runDtoSchema }).strict();
+    const winning = responseSchema.parse(await winningResponse.json());
+    releaseCompile();
+    const slowResponse = await slowResponsePromise;
+    expect(slowResponse.status, await slowResponse.clone().text()).toBe(201);
+    const converged = responseSchema.parse(await slowResponse.json());
+    expect(converged).toEqual(winning);
+
+    const after = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(Object.values(after.entities.messages)).toHaveLength(1);
+    expect(Object.values(after.entities.runs)).toHaveLength(1);
+    expect(Object.values(after.entities.attempts)).toHaveLength(1);
+    expect(Object.values(after.outbox)).toHaveLength(1);
+    expect(
+      Object.values(after.commandReceipts).filter(
+        (receipt) => receipt.commandType === "SubmitUserMessage",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("Agent Version API创建全局/Workspace不可变版本并把精确版本发布为新Workflow Revision", async () => {
     const { app, deps, controls } = await testApp();
     const inheritedResources = {

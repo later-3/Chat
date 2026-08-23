@@ -440,26 +440,37 @@ describe("S6 Workflow Definition生命周期", () => {
 
       const copiedDraftRevisionId = copied.definition.baseRevisionId;
       const ambiguousSha256 = hashCanonical("workflow-definition.v1", ambiguousRoot);
-      await store.transact({
-        commandId: command("cmd_designerambiguouslegacydraft1"),
-        commandType: "UpdateOutboxStatus",
-        requestSha256: hashCanonical("test.legacy-ambiguous-draft.v1", {
-          workflowDefinitionRevisionId: copiedDraftRevisionId,
-        }),
-        mutate: (draft) => {
-          const revision = draft.entities.workflowDefinitionRevisions[copiedDraftRevisionId];
-          if (revision === undefined) throw new Error("测试Draft不存在");
-          draft.entities.workflowDefinitionRevisions[revision.workflowDefinitionRevisionId] = {
-            ...revision,
-            semanticRoot: ambiguousRoot,
-            definitionSha256: ambiguousSha256,
-            updatedAt: deps.now(),
-          };
-          return { resultRefs: {} };
+      const legacySnapshot = structuredClone(
+        (await store.read({ kind: "committedSnapshot" })).snapshot,
+      );
+      const legacyRevision =
+        legacySnapshot.entities.workflowDefinitionRevisions[copiedDraftRevisionId];
+      if (legacyRevision === undefined) throw new Error("测试Draft不存在");
+      legacySnapshot.entities.workflowDefinitionRevisions[copiedDraftRevisionId] = {
+        ...legacyRevision,
+        semanticRoot: ambiguousRoot,
+        definitionSha256: ambiguousSha256,
+        updatedAt: deps.now(),
+      };
+      // 新Json Store已不允许写入该反例；这里用只服务于边界测试的旧快照Port证明
+      // Publish自身仍会在生成新Revision前失败关闭，而不是依赖Store兜底。
+      const legacyDeps: ApplicationDeps = {
+        ...deps,
+        store: {
+          read: async () => ({ snapshot: structuredClone(legacySnapshot) }),
+          transact: async (transaction) => {
+            const draft = structuredClone(legacySnapshot);
+            const result = transaction.mutate(draft);
+            return {
+              storeRevision: legacySnapshot.storeRevision,
+              resultRefs: result.resultRefs,
+              replayed: false,
+            };
+          },
         },
-      });
+      };
       await expect(
-        publishWorkflowDefinition(deps, {
+        publishWorkflowDefinition(legacyDeps, {
           principalId: OWNER,
           commandId: command("cmd_designerambiguouspublish1"),
           workflowDefinitionId: copied.definition.workflowDefinitionId,

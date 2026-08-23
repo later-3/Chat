@@ -5,8 +5,8 @@ import { isDeepStrictEqual } from "node:util";
 import { createEmptySnapshot, productSnapshotSchema, type ProductSnapshot } from "@chat/contracts";
 import {
   ApplicationError,
-  CommandIdReusedError,
   StoreCorruptedError,
+  exactCommandReceipt,
   type ProductReadRequest,
   type ProductReadResult,
   type ProductStorePort,
@@ -350,19 +350,13 @@ export class JsonProductStore implements ProductStorePort {
   private async doTransact(command: ProductTransaction): Promise<ProductTransactionResult> {
     this.assertAvailable();
     const current = this.snapshot;
-    const receipt = current.commandReceipts[command.commandId];
+    const receipt = exactCommandReceipt(current, command);
     if (receipt !== undefined) {
-      if (
-        receipt.requestSha256 === command.requestSha256 &&
-        receipt.commandType === command.commandType
-      ) {
-        return {
-          storeRevision: current.storeRevision,
-          resultRefs: receipt.resultRefs,
-          replayed: true,
-        };
-      }
-      throw new CommandIdReusedError(command.commandId);
+      return {
+        storeRevision: current.storeRevision,
+        resultRefs: receipt.resultRefs,
+        replayed: true,
+      };
     }
 
     const startedAt = performance.now();

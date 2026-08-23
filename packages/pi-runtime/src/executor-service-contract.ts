@@ -197,6 +197,8 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       messageIndex: z.number().int().nonnegative().max(100_000),
       role: z.enum(["user", "assistant", "toolResult", "custom"]),
       contentSha256: sha256Schema,
+      /** 新Operation用于把最终Candidate正文绑定到耐久Assistant证据；旧v1可缺省。 */
+      visibleTextSha256: sha256Schema.optional(),
       visibleText: observableDisplaySchema.optional(),
       visibleTextTruncated: z.boolean().optional(),
       stopReason: z.enum(["stop", "length", "toolUse", "error", "aborted", "deferred"]).optional(),
@@ -352,8 +354,12 @@ export type PiExecutorOperationStatus = z.infer<typeof piExecutorOperationStatus
 export const piExecutorOperationSnapshotSchema = z
   .object({
     schemaVersion: z.literal(PI_EXECUTOR_PROTOCOL_VERSION),
+    /** 缺省表示只读兼容旧v1；新Operation必须使用完整状态机证据。 */
+    integrityVersion: z.literal("full-operation.v2").optional(),
     operationId: piOperationIdSchema,
     requestSha256: sha256Schema,
+    /** v2私有响应携带完整耐久请求，Client据此重算Hash；旧v1快照可缺省。 */
+    request: startPiExecutorOperationRequestSchema.optional(),
     status: piExecutorOperationStatusSchema,
     sessionId: piRuntimeSessionIdSchema.optional(),
     lastEventSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
