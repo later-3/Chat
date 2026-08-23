@@ -29,6 +29,7 @@ import {
   PiExecutorOperationOutcomeUnknownError,
   PiExecutorOperationStateConflictError,
   PiExecutorToolCallConflictError,
+  PiExecutorToolResultConflictError,
   type PiExecutorOperationStore,
 } from "./executor-operation-store.js";
 import {
@@ -102,7 +103,8 @@ function stableServiceErrorCode(error: unknown): string {
   if (error instanceof PiExecutorOperationOutcomeUnknownError) return error.code;
   if (
     error instanceof PiExecutorOperationStateConflictError ||
-    error instanceof PiExecutorToolCallConflictError
+    error instanceof PiExecutorToolCallConflictError ||
+    error instanceof PiExecutorToolResultConflictError
   ) {
     return error.code;
   }
@@ -115,7 +117,8 @@ function statusForError(error: unknown): 400 | 401 | 404 | 409 | 500 {
   if (error instanceof PiExecutorOperationConflictError) return 409;
   if (
     error instanceof PiExecutorOperationStateConflictError ||
-    error instanceof PiExecutorToolCallConflictError
+    error instanceof PiExecutorToolCallConflictError ||
+    error instanceof PiExecutorToolResultConflictError
   ) {
     return 409;
   }
@@ -133,7 +136,8 @@ function problem(error: unknown): { readonly errorCode: string } {
     error instanceof PiExecutorOperationConflictError ||
     error instanceof PiExecutorOperationNotFoundError ||
     error instanceof PiExecutorOperationStateConflictError ||
-    error instanceof PiExecutorToolCallConflictError
+    error instanceof PiExecutorToolCallConflictError ||
+    error instanceof PiExecutorToolResultConflictError
   ) {
     return { errorCode: error.code };
   }

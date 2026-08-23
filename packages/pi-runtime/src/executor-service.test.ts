@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -25,6 +25,7 @@ import {
   PiExecutorOperationOutcomeUnknownError,
   PiExecutorOperationStore,
   PiExecutorToolCallConflictError,
+  PiExecutorToolResultConflictError,
   hashExecutorValue,
 } from "./executor-operation-store.js";
 import { createPiExecutorService } from "./executor-service.js";
@@ -239,6 +240,7 @@ describe("PiExecutorOperationStore", () => {
         turnIndex: 0,
         toolCallId: "call_once",
         toolName: "bash",
+        inputSha256: hashExecutorValue({ command: "pnpm test" }),
         resultSha256: hashExecutorValue({ output: "passed" }),
         resultDisplay: "passed",
         resultDisplayTruncated: false,
@@ -303,6 +305,7 @@ describe("PiExecutorOperationStore", () => {
       turnIndex: 0,
       toolCallId: "call_reused",
       toolName: "read",
+      inputSha256: intent.inputSha256,
       resultSha256: hashExecutorValue({ output: "ok" }),
       resultDisplay: "ok",
       resultDisplayTruncated: false,
@@ -315,6 +318,99 @@ describe("PiExecutorOperationStore", () => {
     expect(
       store.getEvents("pio_test1").filter((event) => event.type === "tool.intent_persisted"),
     ).toHaveLength(1);
+  });
+
+  it.each([
+    ["sessionId", { sessionId: "pis_other1" }],
+    ["turnIndex", { turnIndex: 1 }],
+    ["toolName", { toolName: "bash" }],
+    ["inputSha256", { inputSha256: "f".repeat(64) }],
+  ] as const)("Tool Result的%s与耐久Intent不一致时拒绝闭合", async (_field, mismatch) => {
+    const root = await temporaryRoot();
+    const store = await PiExecutorOperationStore.open(join(root, "operations"));
+    await store.createOrGet(request());
+    await store.markRunning("pio_test1");
+    await store.setSession("pio_test1", "pis_test1", ["read", "bash"]);
+    const intent = {
+      operationId: "pio_test1" as const,
+      type: "tool.intent_persisted" as const,
+      sessionId: "pis_test1" as const,
+      turnIndex: 0,
+      toolCallId: "call_exact_match",
+      toolName: "read" as const,
+      inputSha256: hashExecutorValue({ path: "README.md" }),
+      inputDisplay: JSON.stringify({ path: "README.md" }),
+      inputDisplayTruncated: false,
+    };
+    await store.append("pio_test1", intent);
+
+    await expect(
+      store.append("pio_test1", {
+        operationId: "pio_test1",
+        type: "tool.completed",
+        sessionId: "pis_test1",
+        turnIndex: 0,
+        toolCallId: intent.toolCallId,
+        toolName: intent.toolName,
+        inputSha256: intent.inputSha256,
+        resultSha256: hashExecutorValue({ output: "ok" }),
+        resultDisplay: "ok",
+        resultDisplayTruncated: false,
+        durationMs: 1,
+        ...mismatch,
+      }),
+    ).rejects.toBeInstanceOf(PiExecutorToolResultConflictError);
+    expect(store.getEvents("pio_test1").filter((event) => event.type === "tool.completed")).toEqual(
+      [],
+    );
+  });
+
+  it("早期v1 Tool Result缺少复制的Intent Hash时仍可读取", async () => {
+    const root = await temporaryRoot();
+    const directory = join(root, "operations");
+    const store = await PiExecutorOperationStore.open(directory);
+    await store.createOrGet(request());
+    await store.markRunning("pio_test1");
+    await store.setSession("pio_test1", "pis_test1", ["read"]);
+    const inputSha256 = hashExecutorValue({ path: "README.md" });
+    await store.append("pio_test1", {
+      operationId: "pio_test1",
+      type: "tool.intent_persisted",
+      sessionId: "pis_test1",
+      turnIndex: 0,
+      toolCallId: "call_legacy_result",
+      toolName: "read",
+      inputSha256,
+      inputDisplay: JSON.stringify({ path: "README.md" }),
+      inputDisplayTruncated: false,
+    });
+    await store.append("pio_test1", {
+      operationId: "pio_test1",
+      type: "tool.completed",
+      sessionId: "pis_test1",
+      turnIndex: 0,
+      toolCallId: "call_legacy_result",
+      toolName: "read",
+      inputSha256,
+      resultSha256: hashExecutorValue({ output: "ok" }),
+      resultDisplay: "ok",
+      resultDisplayTruncated: false,
+      durationMs: 1,
+    });
+    const recordPath = join(directory, "pio_test1.json");
+    const legacyRecord = JSON.parse(await readFile(recordPath, "utf8")) as {
+      events: Array<Record<string, unknown>>;
+    };
+    const legacyResult = legacyRecord.events.find((event) => event["type"] === "tool.completed");
+    if (legacyResult === undefined) throw new Error("测试缺少Tool Result");
+    delete legacyResult["inputSha256"];
+    await writeFile(recordPath, `${JSON.stringify(legacyRecord)}\n`, { mode: 0o600 });
+
+    const recovered = await PiExecutorOperationStore.open(directory);
+
+    expect(
+      recovered.getEvents("pio_test1").find((event) => event.type === "tool.completed"),
+    ).not.toHaveProperty("inputSha256");
   });
 
   it("晚到complete不能把已收敛的outcome_unknown反转为成功", async () => {

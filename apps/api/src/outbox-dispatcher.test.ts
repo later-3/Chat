@@ -22,6 +22,7 @@ import {
   createMemoryWrite,
   createMemoryImport,
   createProductSession,
+  getCurrentNoteCandidate,
   markMemoryImportDispatching,
   publishPromptReviewRequest,
   publishNoteCandidate,
@@ -1043,6 +1044,74 @@ describe("通用Product Workflow终态监督", () => {
     });
   });
 
+  it("单个Workflow监督事务失败不会阻断同轮后续acknowledged条目", async () => {
+    const seeded = await seed();
+    seeded.advance(100);
+    const second = await submitUserMessage(seeded.deps, {
+      principalId: "usr_dispatchtest" as never,
+      sessionId: seeded.sessionId as never,
+      commandId: "cmd_secondpoisonisolation" as never,
+      payload: { text: "第二个Workflow必须继续被监督" },
+    });
+    let snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const firstStart = workflowStartFor(snapshot, seeded.productRunId);
+    const secondStart = workflowStartFor(snapshot, second.run.productRunId);
+    await updateOutboxStatus(seeded.deps, {
+      commandId: "cmd_ackfirstpoisonisolation" as never,
+      outboxId: firstStart.outboxId,
+      status: "acknowledged",
+    });
+    await updateOutboxStatus(seeded.deps, {
+      commandId: "cmd_acksecondpoisonisolation" as never,
+      outboxId: secondStart.outboxId,
+      status: "acknowledged",
+    });
+    seeded.advance(2_000);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: string | URL | Request) => {
+        const productRunId = new URL(String(request)).searchParams.get("productRunId");
+        return Response.json({
+          schemaVersion: "chat-workflow-dispatch.v1",
+          productRunId,
+          startBinding: "exists",
+          runtimeRun: { state: "terminal", outcome: "cancelled" },
+        });
+      }),
+    );
+    const realStore = seeded.deps.store;
+    let poisonCount = 1;
+    const isolatedDeps: ApplicationDeps = {
+      ...seeded.deps,
+      store: {
+        read: (query) => realStore.read(query),
+        transact: (command) => {
+          if (command.commandType === "SettleRunAfterTerminalWorkflow" && poisonCount > 0) {
+            poisonCount -= 1;
+            throw new Error("test.projection_poison");
+          }
+          return realStore.transact(command);
+        },
+      },
+    };
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const dispatcher = new OutboxDispatcher({
+      deps: isolatedDeps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+    });
+
+    await dispatcher.tick();
+
+    snapshot = (await realStore.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.runs[seeded.productRunId]?.status).not.toBe("cancelled");
+    expect(snapshot.entities.runs[second.run.productRunId]?.status).toBe("cancelled");
+    expect(snapshot.outbox[firstStart.outboxId]?.status).toBe("acknowledged");
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining(`durableId=${firstStart.outboxId}`),
+    );
+  });
+
   it("Planning validating可由Runtime取消终态经Application与Json Store收敛", async () => {
     const seeded = await seed();
     const planning = await compilePlanningInput(seeded.deps, {
@@ -1262,6 +1331,13 @@ describe("通用Product Workflow终态监督", () => {
       status: "outcome_unknown",
       phase: "prompt_review",
     });
+    expect(
+      Object.values(snapshot.entities.workflowNodeRuns).filter(
+        (node) =>
+          node.productRunId === waiting.published.promptReview.productRunId &&
+          (node.status === "running" || node.status === "waiting_human"),
+      ),
+    ).toEqual([]);
   });
 
   it("Note note_review可由Runtime未知终态经Json Store收敛", async () => {
@@ -1336,6 +1412,23 @@ describe("通用Product Workflow终态监督", () => {
       status: "outcome_unknown",
       phase: "note_review",
     });
+    expect(
+      Object.values(snapshot.entities.workflowNodeRuns).filter(
+        (node) =>
+          node.productRunId === note.run.productRunId &&
+          (node.status === "running" || node.status === "waiting_human"),
+      ),
+    ).toEqual([]);
+    expect(
+      Object.values(snapshot.entities.noteCandidates).find(
+        (candidate) => candidate.productRunId === note.run.productRunId,
+      ),
+    ).toMatchObject({ status: "failed" });
+    const current = await getCurrentNoteCandidate(seeded.deps, {
+      principalId: "usr_dispatchtest" as never,
+      productRunId: note.run.productRunId,
+    });
+    expect(current.candidate?.allowedActions).toEqual([]);
   });
 
   it.each(["extracting", "classifying", "committing"] as const)(

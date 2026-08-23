@@ -84,7 +84,9 @@ Product Workflow Start，不区分Planning、Direct或历史Note：
 2. `active`严格不操作Product Run，尤其不得干预`waiting_human`审核态；已经是任一Product终态也直接退出；
 3. Runtime `failed`映射Product `failed`，Runtime `cancelled`映射Product `cancelled`；Runtime报告成功但缺少Product Commit时仍是`outcome_unknown`，不能补写假成功；
 4. Runtime状态缺失、查询失败或响应合同损坏时，首次`unknown`只在原Start Outbox上耐久记录“连续未知开始”标记，不以Start确认时间代替未知时长；后续只有同一标记连续超过宽限期才收敛为Product `outcome_unknown`。期间任一次`active`都会清除标记，所以下一次短暂查询失败会重新计时；
-5. 收敛使用由Start Outbox与Product Run派生的稳定Command ID，并要求原Start Binding仍为`acknowledged`。重复tick、API重启和迟到证据都不能创建第二个Workflow、改变既有终态或重放Provider。
+5. 收敛使用由Start Outbox与Product Run派生的稳定Command ID，并要求原Start Binding仍为`acknowledged`。重复tick、API重启和迟到证据都不能创建第二个Workflow、改变既有终态或重放Provider；
+6. 同一tick内每个已确认Workflow和Memory Import独立监督。单条收敛事务失败会保留原`acknowledged`事实供后续重试并记录脱敏错误类型，但不能阻断后续条目；
+7. Product Run非成功终态与活动Workflow Node在同一产品事务收敛。`outcome_unknown`只允许投影到可能拥有未知外部副作用的`execute.*`或`agent.direct`；Context、Planning、Validation、Product Commit和未提交用户Decision的人工节点形成失败/取消证据，不能伪造未知外部结果或把`running`节点倒退到`queued`。Note终态同时把开放Candidate收敛为`failed`，Query不再公开审核动作。
 
 上述监督只通过Application的`settleRunAfterTerminalWorkflow`提交产品事实；底层复用统一
 `settleRunWithoutSuccess`生命周期规则。本地启动的版本兼容恢复门也调用同一收敛内核，但只处理已证明旧Bundle不可恢复的活动Run；

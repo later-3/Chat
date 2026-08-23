@@ -25,7 +25,11 @@ import type { ApplicationDeps, DirectAgentIdFactory } from "./deps.js";
 import { ApplicationError, notFound, revisionConflict } from "./errors.js";
 import { requireDirectAgentRun } from "./product-run-kind.js";
 import { toMessageDto, toRunDto } from "./dto.js";
-import { agentBindingForNode } from "./prompt-assembly-use-cases.js";
+import {
+  agentBindingForNode,
+  resolveAgentPiSystemPrompt,
+  resolveDirectAgentExecutionEnvelope,
+} from "./prompt-assembly-use-cases.js";
 import { resolveCurrentAgentRuntimeBinding } from "./agent-version-runtime-validation.js";
 
 function requireDirectAgentIds(deps: ApplicationDeps): DirectAgentIdFactory {
@@ -332,6 +336,44 @@ export async function authorizeDirectAgentOperation(
       runtimeEvidence.workspaceGrantSha256 !== currentRuntime.workspaceGrantSha256)
   ) {
     throw revisionConflict("Agent Version的Workspace或Runtime Profile已在Run创建后漂移");
+  }
+  if (runtimeEvidence !== undefined) {
+    const expectedPrompt = resolveAgentPiSystemPrompt({
+      profile: currentRuntime.profile,
+      ...(currentRuntime.agentVersion === undefined
+        ? {}
+        : { agentVersion: currentRuntime.agentVersion }),
+      ...(agentBinding.systemPromptMode === undefined
+        ? {}
+        : { systemPromptMode: agentBinding.systemPromptMode }),
+      ...(agentBinding.promptOverrideMarkdown === undefined
+        ? {}
+        : { promptOverrideMarkdown: agentBinding.promptOverrideMarkdown }),
+    });
+    const expectedEnvelope = resolveDirectAgentExecutionEnvelope({
+      profile: currentRuntime.profile,
+      ...(currentRuntime.agentVersion === undefined
+        ? {}
+        : { agentVersion: currentRuntime.agentVersion }),
+      directNodeConfig: directNode.config,
+      ...(promptAssembly.workspaceRootId === undefined
+        ? {}
+        : { workspaceRootId: promptAssembly.workspaceRootId }),
+      ...(expectedPrompt.piSystemPrompt === undefined
+        ? {}
+        : { piSystemPrompt: expectedPrompt.piSystemPrompt }),
+    });
+    const expectedSha256 = hashCanonical("direct-agent-execution-envelope.v1", expectedEnvelope);
+    const actualSha256 = hashCanonical("direct-agent-execution-envelope.v1", {
+      tools: runtimeEvidence.tools,
+      requestOptions: runtimeEvidence.requestOptions,
+      ...(runtimeEvidence.piSystemPrompt === undefined
+        ? {}
+        : { piSystemPrompt: runtimeEvidence.piSystemPrompt }),
+    });
+    if (actualSha256 !== expectedSha256) {
+      throw revisionConflict("Prompt Assembly能力与冻结Agent配置不一致");
+    }
   }
   const projectBootstrapContext =
     config.capabilityMode === "project_bootstrap"

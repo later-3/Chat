@@ -26,6 +26,7 @@ import {
   emitRunEvent,
   failOutboxAndRun,
   recoverMemoryImportAfterTerminalWorkflow,
+  safeErrorType,
   settleRunAfterTerminalWorkflow,
   updateOutboxStatus,
   WORKFLOW_RUNTIME_QUERY_UNKNOWN_ERROR_CODE,
@@ -95,6 +96,17 @@ const OUTCOME_UNKNOWN_SETTLE_MS = 30_000;
 const ACKNOWLEDGED_IMPORT_SUPERVISE_MS = 1_000;
 const ACKNOWLEDGED_WORKFLOW_SUPERVISE_MS = 1_000;
 const MAX_AUTOMATIC_IMPORT_RECOVERIES = 3;
+
+function reportSupervisionFailure(input: {
+  readonly kind: "workflow" | "memory_import";
+  readonly durableId: string;
+  readonly error: unknown;
+}): void {
+  // 单条损坏不能阻断同轮其他耐久意图；日志只记录产品/Intent身份和错误类型，不含正文。
+  console.error(
+    `[outbox] supervision_failed kind=${input.kind} durableId=${input.durableId} errorType=${safeErrorType(input.error)}`,
+  );
+}
 
 function dispatchCommandId(...parts: string[]): CommandId {
   // Dispatcher会轮询和崩溃恢复；派生出的稳定commandId让同一次状态转换可安全重复提交。
@@ -1169,7 +1181,15 @@ export class OutboxDispatcher {
         )
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       for (const entry of acknowledgedWorkflows) {
-        await superviseAcknowledgedWorkflow(this.options, snapshot, entry);
+        try {
+          await superviseAcknowledgedWorkflow(this.options, snapshot, entry);
+        } catch (error) {
+          reportSupervisionFailure({
+            kind: "workflow",
+            durableId: entry.outboxId,
+            error,
+          });
+        }
       }
       const acknowledgedImports = Object.values(snapshot.outbox)
         .filter(
@@ -1179,7 +1199,15 @@ export class OutboxDispatcher {
         )
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       for (const entry of acknowledgedImports) {
-        await superviseAcknowledgedImport(this.options, snapshot, entry);
+        try {
+          await superviseAcknowledgedImport(this.options, snapshot, entry);
+        } catch (error) {
+          reportSupervisionFailure({
+            kind: "memory_import",
+            durableId: entry.memoryImportIntentId,
+            error,
+          });
+        }
       }
     } finally {
       this.running = false;

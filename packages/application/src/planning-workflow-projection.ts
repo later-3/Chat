@@ -219,10 +219,17 @@ function desiredPlanningNodes(
   );
   const rank = phaseRank[run.phase];
   const runFailure = run.failure === undefined ? undefined : { ...run.failure };
-  const terminalNodeStatus: WorkflowNodeRunStatus | undefined =
-    run.status === "failed" || run.status === "cancelled" || run.status === "outcome_unknown"
-      ? run.status
-      : undefined;
+  /**
+   * Product outcome_unknown只表达外部执行结果不可确认。Context、Planner、Validation和
+   * Product Commit没有未知外部副作用，必须投影为failed，不能扩大Domain允许面。
+   */
+  const terminalStatusFor = (projectedNodeType: string): WorkflowNodeRunStatus | undefined => {
+    if (run.status === "failed" || run.status === "cancelled") return run.status;
+    if (run.status !== "outcome_unknown") return undefined;
+    return projectedNodeType.startsWith("execute.") || projectedNodeType === "agent.direct"
+      ? "outcome_unknown"
+      : "failed";
+  };
   const planningAttempt = Object.values(snapshot.entities.attempts).find(
     (attempt) => attempt.productRunId === runId && attempt.kind === "planning",
   );
@@ -232,7 +239,8 @@ function desiredPlanningNodes(
     contextStatus = "succeeded";
   } else if (run.status === "failed" && /^(memory|context)[._]/u.test(run.failure?.code ?? ""))
     contextStatus = "failed";
-  else if (source === "runtime" && rank >= phaseRank.planning) contextStatus = "running";
+  else if (source === "runtime" && rank >= phaseRank.planning)
+    contextStatus = terminalStatusFor("context.compile") ?? "running";
 
   const desired: DesiredNodeProjection[] = [
     {
@@ -279,8 +287,8 @@ function desiredPlanningNodes(
         ? "succeeded"
         : isCurrentPlanning
           ? "running"
-          : run.status === "failed" && run.phase === "planning"
-            ? "failed"
+          : run.phase === "planning" && terminalStatusFor("agent.plan") !== undefined
+            ? terminalStatusFor("agent.plan")!
             : "queued";
     desired.push({
       definitionNodeId: nodeId("plan"),
@@ -346,8 +354,8 @@ function desiredPlanningNodes(
   let executeStatus: WorkflowNodeRunStatus = "queued";
   if (candidate !== undefined) executeStatus = "succeeded";
   else if (run.phase === "executing" && run.status === "running") executeStatus = "running";
-  else if (terminalNodeStatus !== undefined && rank >= phaseRank.executing)
-    executeStatus = terminalNodeStatus;
+  else if (terminalStatusFor("execute.plan") !== undefined && rank >= phaseRank.executing)
+    executeStatus = terminalStatusFor("execute.plan")!;
   const executeDesired: DesiredNodeProjection = {
     definitionNodeId: nodeId("execute"),
     nodeType: nodeType("execute.plan"),
@@ -465,8 +473,8 @@ function desiredPlanningNodes(
         ? "failed"
         : run.phase === "validating" && run.status === "running"
           ? "running"
-          : terminalNodeStatus !== undefined && rank >= phaseRank.validating
-            ? terminalNodeStatus
+          : terminalStatusFor("result.validate") !== undefined && rank >= phaseRank.validating
+            ? terminalStatusFor("result.validate")!
             : "queued";
   desired.push({
     definitionNodeId: nodeId("validate"),
@@ -509,8 +517,8 @@ function desiredPlanningNodes(
     ? "succeeded"
     : source === "runtime" && run.phase === "completed" && run.status === "running"
       ? "running"
-      : terminalNodeStatus !== undefined && rank >= phaseRank.completed
-        ? terminalNodeStatus
+      : terminalStatusFor("product.commit") !== undefined && rank >= phaseRank.completed
+        ? terminalStatusFor("product.commit")!
         : "queued";
   desired.push({
     definitionNodeId: nodeId("commit"),

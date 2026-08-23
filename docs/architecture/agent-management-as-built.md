@@ -90,11 +90,11 @@ Pi-backed Agent 的 Catalog 默认不是一段 Chat 手抄的近似 Prompt。`pa
 
 1. `WorkflowRunSpec`冻结 Version ID/Hash、`custom`能力模式与资源策略；
 2. `PromptAssembly`只接受同一份 RunSpec 绑定的合成 Version Prompt Source，并冻结同一 Tool 名称和资源策略；
-3. Executor Operation 授权重新读取 Product Store 中的 AgentVersion，并重新读取同一 Principal、Agent 与 Root 作用域的实时 Pi Runtime Profile；Version 的包/Fork/能力目录、所选 Tool、Assembly 中冻结的 Profile Hash 和 Root Grant Hash全部一致后，才返回可执行能力；Executor 在进入 Runner 前再用实际 canonical root 复核 Grant Hash。
+3. Executor Operation 授权重新读取 Product Store 中的 AgentVersion，并重新读取同一 Principal、Agent 与 Root 作用域的实时 Pi Runtime Profile；Application用与Run编译相同的纯函数重新派生`tools.names / tools.resources / piSystemPrompt / requestOptions`完整能力包络，并与自身Hash正确的Assembly逐字段重证。Version 的包/Fork/能力目录、Assembly 中冻结的 Profile Hash和Root Grant Hash也必须全部一致，才返回可执行能力；Executor在进入Runner前再用实际canonical root复核Grant Hash。
 
 这两个 Hash 是 Run 创建与 Operation 授权之间的漂移证据，不取代首次真实 Session 绑定后的 Resolved Runtime Manifest。前者覆盖 Agent Settings、Extension、Tool Schema、资源目录与 Root 授权是否仍等于 Run 创建时的配置基线；后者覆盖本次 Session 最终 System、活动 Tool Schema 与资源清单，并在同一 Operation 的审核恢复时保持不变。绑定 AgentVersion 的历史 Assembly 若缺少新版漂移证据，会在 Provider 前失败关闭；未绑定 Version 的兼容 Run 仍按原合同读取。
 
-Version 不存在、Hash/Owner/Scope/Root 漂移、Assembly 来源漂移或 Tool/资源不一致时，均在创建 Operation、解析 Workspace 或触达 Provider 前失败关闭。因此失败证据允许“零 Operation、零 Provider 请求”，而不能为了补日志先启动一次错误能力的 AgentSession。
+Version 不存在、Hash/Owner/Scope/Root 漂移、Assembly 来源漂移，或Assembly的Tool/资源/System Prompt/Request Options任一项与Version或临时配置不一致时，均在创建Operation、解析Workspace或触达Provider前失败关闭。因此失败证据允许“零Operation、零Provider请求”，而不能为了补日志先启动一次错误能力的AgentSession。
 
 ## 5. 从前端到 Provider 的唯一通路
 

@@ -84,10 +84,12 @@ Operation Journal中已经成功持久化的事件使用从1开始连续递增�
 `tool_result`只有在`tool.completed/tool.failed`成功追加后才删除内存Intent；即使上游吞掉该handler异常，
 Operation终态提交仍会重新读取耐久Journal。发现任一`tool.intent_persisted`没有闭合事件时，`complete()`先耐久追加
 `tool.outcome_unknown`和`operation.outcome_unknown`，再以稳定`executor.tool_result_persist_failed`拒绝成功；随后普通
-失败处理不能把它降级成`failed`。同一Operation内的`toolCallId`是Intent身份而不是可复用槽位：第二次持久化同一ID会以
-`executor.tool_call_id_reused`在真实Tool前失败，旧Result不能借同名ID闭合另一个Intent。Operation一旦进入
+失败处理不能把它降级成`failed`。同一Operation内的`toolCallId`是Intent身份而不是可复用槽位：Tool Intent必须先耐久追加成功，随后才能写入内存Result关联；第二次持久化同一ID会以
+`executor.tool_call_id_reused`在真实Tool前失败，不能覆盖首个Intent的内存元数据。固定Pi会把`beforeToolCall`异常转换为普通Tool Error并继续loop，因此Executor另有不可恢复fatal latch；发送候选前必须把Operation耐久收敛为同一错误码的`outcome_unknown`。Tool Result必须与唯一开放Intent的`sessionId / turnIndex / toolCallId / toolName / inputSha256`全部相等，旧Result不能借同名ID闭合另一个Intent。Operation一旦进入
 `succeeded / failed / outcome_unknown`任一终态就保持单调；迟到的`complete()`只能幂等读取既有成功，或以稳定冲突拒绝，
 不能把未知/失败改写为成功。重启扫描复用同一闭合逻辑，重复启动不会追加第二组未知事件。
+
+早期v1已经闭合的Tool Result没有复制`inputSha256`，继续作为只读历史兼容；所有新追加Result都必须携带该字段并通过上述精确匹配，兼容读取不能放宽写入门。
 
 只有耐久状态为`succeeded`且Workflow客户端已经连续读取全部事件时才返回Candidate。`outcome_unknown`没有Candidate，
 因而不能进入Validation或Product Commit。正式fail-closed保证由Provider Gate、执行前Tool Intent栅栏以及上述终态耐久
@@ -110,8 +112,8 @@ API的轨迹Query读取Product事实、Run Activity与Workflow Runtime证据。B
 ## 5. 故障与恢复
 
 1. Executor收到Start后先原子提交`operation.accepted`，再异步启动AgentSession；Workflow连接断开不会取消运行。
-2. 每次Tool执行前先原子提交`tool.intent_persisted`；同一Operation重复`toolCallId`在真实Tool前被拒绝。进程重启发现未闭合Tool时，先追加`tool.outcome_unknown`，再把Operation收敛为`operation.outcome_unknown`。
-3. Tool Result持久化失败时，即使Agent loop继续返回，Operation也不能提交成功；同一进程终态检查与重启恢复都会保守收敛为结果未知，且迟到的`fail()`或`complete()`都不能覆盖已有终态。
+2. 每次Tool执行前先原子提交`tool.intent_persisted`，成功后才更新内存Map；同一Operation重复`toolCallId`在真实Tool前被拒绝，并由fatal latch穿透真实AgentSession的普通Tool Error恢复。进程重启发现未闭合Tool时，先追加`tool.outcome_unknown`，再把Operation收敛为`operation.outcome_unknown`。
+3. Tool Result只有与耐久Intent五字段精确匹配时才能闭合；持久化失败或匹配冲突时，即使Agent loop继续返回，Operation也不能提交成功。同一进程终态检查与重启恢复都会保守收敛为结果未知，且迟到的`fail()`或`complete()`都不能覆盖已有终态。
 4. 服务启动时不会自动重放`queued/running` Operation。读工具理论上可安全重跑，但`edit/write/bash`可能已生效；当前统一保守进入人工对账，避免猜测性重复副作用。
 5. Provider自动重试在Executor专用Settings中关闭。Turn数、总Completion Token和总时限由Execution Contract冻结；越界形成稳定失败。
 6. Product Commit仍使用稳定Command ID幂等重试，绝不因为提交失败再次调用Pi。

@@ -236,6 +236,59 @@ describe("planning workflow product projection", () => {
     expect(JSON.stringify(snapshot)).toBe(once);
   });
 
+  it.each(["cancelled", "outcome_unknown"] as const)(
+    "planning无Plan收到%s终态时不把running agent.plan倒退为queued",
+    (status) => {
+      const snapshot = baseSnapshot();
+      const pending = snapshot.entities.runs["run_projection"];
+      if (pending?.runKind !== "planning") throw new Error("fixture run must be planning");
+      snapshot.entities.runs["run_projection"] = {
+        ...pending,
+        status: "running",
+        phase: "planning",
+        revision: 2,
+        updatedAt: LATER,
+      };
+      synchronizePlanningWorkflowProjection(snapshot, "run_projection" as never, LATER);
+      expect(findNode(snapshot, "plan").status).toBe("running");
+
+      snapshot.entities.runs["run_projection"] = {
+        ...snapshot.entities.runs["run_projection"]!,
+        status,
+        ...(status === "outcome_unknown"
+          ? { failure: { code: "runtime.outcome_unknown", summary: "Runtime结果未知" } }
+          : {}),
+        revision: 3,
+        updatedAt: LATER,
+      };
+      synchronizePlanningWorkflowProjection(snapshot, "run_projection" as never, LATER);
+
+      expect(findNode(snapshot, "plan").status).toBe(
+        status === "cancelled" ? "cancelled" : "failed",
+      );
+    },
+  );
+
+  it("validating收到outcome_unknown时只把外部执行节点标记未知", () => {
+    const snapshot = baseSnapshot();
+    const run = snapshot.entities.runs["run_projection"];
+    if (run?.runKind !== "planning") throw new Error("fixture run must be planning");
+    snapshot.entities.runs["run_projection"] = {
+      ...run,
+      status: "outcome_unknown",
+      phase: "validating",
+      failure: { code: "runtime.outcome_unknown", summary: "Runtime结果未知" },
+      revision: 2,
+      updatedAt: LATER,
+    };
+
+    synchronizePlanningWorkflowProjection(snapshot, "run_projection" as never, LATER);
+
+    expect(findNode(snapshot, "execute").status).toBe("outcome_unknown");
+    expect(findNode(snapshot, "validate").status).toBe("failed");
+    expect(findNode(snapshot, "validate").nodeType).toBe("result.validate");
+  });
+
   it("多轮修订不覆盖历史，当前Plan只引用上一版而不自引用/引用未来版", () => {
     const snapshot = baseSnapshot();
     synchronizePlanningWorkflowProjection(snapshot, "run_projection" as never, NOW);

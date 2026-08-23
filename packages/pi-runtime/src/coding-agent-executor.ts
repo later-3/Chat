@@ -49,6 +49,18 @@ interface ToolInFlight {
   readonly turnIndex: number;
 }
 
+export interface CodingExecutorJournalState {
+  turnIndex: number;
+  turnStartedAtMs: number;
+  providerRequestCount: number;
+  completionTokens: number;
+  messageIndex: number;
+  provider: ProviderInFlight | undefined;
+  readonly tools: Map<string, ToolInFlight>;
+  fatalError: PiCodingAgentExecutionError | undefined;
+  readonly operationStartedAtMs: number;
+}
+
 const PI_CODING_PROVIDER = "dashscope-coding";
 const PI_CODING_MODEL = "qwen3.7-plus";
 
@@ -70,6 +82,54 @@ export class PiCodingAgentExecutionError extends Error {
     super(code);
     this.name = "PiCodingAgentExecutionError";
   }
+}
+
+export function createCodingExecutorJournalState(): CodingExecutorJournalState {
+  const now = Date.now();
+  return {
+    turnIndex: 0,
+    turnStartedAtMs: now,
+    providerRequestCount: 0,
+    completionTokens: 0,
+    messageIndex: 0,
+    provider: undefined,
+    tools: new Map(),
+    fatalError: undefined,
+    operationStartedAtMs: now,
+  };
+}
+
+function latchFatalJournalError(
+  state: CodingExecutorJournalState,
+  error: unknown,
+  fallbackCode: string,
+): PiCodingAgentExecutionError {
+  const errorCode =
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    /^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/u.test(error.code)
+      ? error.code
+      : fallbackCode;
+  state.fatalError ??= new PiCodingAgentExecutionError(errorCode);
+  return state.fatalError;
+}
+
+/** Pi会把beforeToolCall异常转成普通Tool Error；Runner必须在返回Candidate前耐久熔断Operation。 */
+export async function settleCodingExecutorFatal(input: {
+  readonly operationId: string;
+  readonly store: PiExecutorOperationStore;
+  readonly state: CodingExecutorJournalState;
+}): Promise<void> {
+  const fatal = input.state.fatalError;
+  if (fatal === undefined) return;
+  await input.store.markOutcomeUnknown(
+    input.operationId,
+    fatal.code,
+    Math.max(0, Date.now() - input.state.operationStartedAtMs),
+  );
+  throw fatal;
 }
 
 function enabledToolsForCapabilities(capabilities: readonly string[]): readonly PiToolName[] {
@@ -315,21 +375,13 @@ export function executorShellEnvironment(agentDir: string): NodeJS.ProcessEnv {
  * 等其他handler异常并继续。因此除Tool Intent外的Journal目前只是观察证据，不能冒充
  * fail-closed授权栅栏。Prompt Review P0已证明必须在Extension链外包装Agent.onPayload。
  */
-function createJournalExtension(input: {
+export function createCodingExecutorJournalExtension(input: {
   readonly request: StartPiExecutorOperationRequest;
   readonly sessionId: string;
   readonly workspaceRoot: string;
   readonly endpointHost: string;
   readonly store: PiExecutorOperationStore;
-  readonly state: {
-    turnIndex: number;
-    turnStartedAtMs: number;
-    providerRequestCount: number;
-    completionTokens: number;
-    messageIndex: number;
-    provider: ProviderInFlight | undefined;
-    readonly tools: Map<string, ToolInFlight>;
-  };
+  readonly state: CodingExecutorJournalState;
 }): ExtensionFactory {
   const operationId = input.request.operationId;
   const sessionId = input.sessionId;
@@ -458,6 +510,7 @@ function createJournalExtension(input: {
       });
     });
     pi.on("tool_call", async (event: ToolCallEvent) => {
+      if (input.state.fatalError !== undefined) throw input.state.fatalError;
       const toolName = event.toolName as PiToolName;
       const inputSha256 = hashExecutorValue(event.input);
       const inputDisplay = toObservableTraceDisplay(event.input);
@@ -488,22 +541,33 @@ function createJournalExtension(input: {
         inputDisplayTruncated: inputDisplay.truncated,
         turnIndex: input.state.turnIndex,
       };
+      try {
+        await append({
+          operationId,
+          type: "tool.intent_persisted",
+          sessionId,
+          turnIndex: tool.turnIndex,
+          toolCallId: event.toolCallId,
+          toolName,
+          inputSha256: tool.inputSha256,
+          inputDisplay: tool.inputDisplay,
+          inputDisplayTruncated: tool.inputDisplayTruncated,
+        });
+      } catch (error) {
+        throw latchFatalJournalError(input.state, error, "executor.tool_intent_persist_failed");
+      }
+      // 只有唯一Intent耐久成功后才能建立内存Result关联；重复ID失败不能覆盖旧元数据。
       input.state.tools.set(event.toolCallId, tool);
-      await append({
-        operationId,
-        type: "tool.intent_persisted",
-        sessionId,
-        turnIndex: tool.turnIndex,
-        toolCallId: event.toolCallId,
-        toolName,
-        inputSha256: tool.inputSha256,
-        inputDisplay: tool.inputDisplay,
-        inputDisplayTruncated: tool.inputDisplayTruncated,
-      });
     });
     pi.on("tool_result", async (event: ToolResultEvent) => {
       const tool = input.state.tools.get(event.toolCallId);
-      if (tool === undefined) throw new PiCodingAgentExecutionError("executor.tool_intent_missing");
+      if (tool === undefined || event.toolName !== tool.toolName) {
+        throw latchFatalJournalError(
+          input.state,
+          new PiCodingAgentExecutionError("executor.tool_result_intent_mismatch"),
+          "executor.tool_result_intent_mismatch",
+        );
+      }
       const resultDisplay = toolResultDisplay(event);
       const common = {
         operationId,
@@ -511,16 +575,21 @@ function createJournalExtension(input: {
         turnIndex: tool.turnIndex,
         toolCallId: event.toolCallId,
         toolName: tool.toolName,
+        inputSha256: tool.inputSha256,
         resultSha256: toolResultHash(event),
         resultDisplay: resultDisplay.text,
         resultDisplayTruncated: resultDisplay.truncated,
         durationMs: Math.max(0, Date.now() - tool.startedAtMs),
       } as const;
-      await append(
-        event.isError
-          ? { ...common, type: "tool.failed", errorCode: "executor.tool_failed" }
-          : { ...common, type: "tool.completed" },
-      );
+      try {
+        await append(
+          event.isError
+            ? { ...common, type: "tool.failed", errorCode: "executor.tool_failed" }
+            : { ...common, type: "tool.completed" },
+        );
+      } catch (error) {
+        throw latchFatalJournalError(input.state, error, "executor.tool_result_persist_failed");
+      }
       // 固定Pi会吞掉tool_result handler异常，因此只有持久Journal明确成功后才能
       // 从运行内存闭合Intent。写失败时保留该项，complete()还会从持久记录二次拒绝成功。
       input.state.tools.delete(event.toolCallId);
@@ -580,16 +649,8 @@ export class AgentSessionPiCodingAgentRunner implements PiCodingAgentRunner {
       retry: { enabled: false },
       defaultThinkingLevel: "medium",
     });
-    const state = {
-      turnIndex: 0,
-      turnStartedAtMs: Date.now(),
-      providerRequestCount: 0,
-      completionTokens: 0,
-      messageIndex: 0,
-      provider: undefined as ProviderInFlight | undefined,
-      tools: new Map<string, ToolInFlight>(),
-    };
-    const journalExtension = createJournalExtension({
+    const state = createCodingExecutorJournalState();
+    const journalExtension = createCodingExecutorJournalExtension({
       request: input.request,
       sessionId,
       workspaceRoot: input.cwd,
@@ -665,7 +726,23 @@ export class AgentSessionPiCodingAgentRunner implements PiCodingAgentRunner {
         input.request.contextItems,
         input.request.dependencyResults,
       );
-      await session.prompt(prompt, { expandPromptTemplates: false, source: "extension" });
+      try {
+        await session.prompt(prompt, { expandPromptTemplates: false, source: "extension" });
+      } catch (error) {
+        if (state.fatalError !== undefined) {
+          await settleCodingExecutorFatal({
+            operationId: input.request.operationId,
+            store: input.store,
+            state,
+          });
+        }
+        throw error;
+      }
+      await settleCodingExecutorFatal({
+        operationId: input.request.operationId,
+        store: input.store,
+        state,
+      });
       await input.store.append(input.request.operationId, {
         operationId: input.request.operationId,
         type: "session.settled",

@@ -104,6 +104,14 @@ export class PiExecutorToolCallConflictError extends Error {
   }
 }
 
+export class PiExecutorToolResultConflictError extends Error {
+  readonly code = "executor.tool_result_intent_mismatch";
+  constructor() {
+    super("Pi Tool Result没有精确匹配唯一耐久Intent");
+    this.name = "PiExecutorToolResultConflictError";
+  }
+}
+
 interface PersistBoundaryEvidence {
   readonly operationId: string;
   readonly status: OperationRecord["status"];
@@ -252,6 +260,20 @@ export class PiExecutorOperationStore {
         // Tool Call ID是一次Operation内不可复用的Intent身份；否则旧Result会误闭合新Intent。
         throw new PiExecutorToolCallConflictError();
       }
+      if (payload.type === "tool.completed" || payload.type === "tool.failed") {
+        const intent = this.openToolIntents(current).find(
+          (candidate) => candidate.toolCallId === payload.toolCallId,
+        );
+        if (
+          intent === undefined ||
+          intent.sessionId !== payload.sessionId ||
+          intent.turnIndex !== payload.turnIndex ||
+          intent.toolName !== payload.toolName ||
+          intent.inputSha256 !== payload.inputSha256
+        ) {
+          throw new PiExecutorToolResultConflictError();
+        }
+      }
       const next = this.appendToRecord(current, payload);
       const event = next.events.at(-1);
       if (event === undefined) throw new Error("Pi Executor事件追加失败");
@@ -315,6 +337,34 @@ export class PiExecutorOperationStore {
     });
     if (completed === "outcome_unknown") throw new PiExecutorOperationOutcomeUnknownError();
     if (completed === "state_conflict") throw new PiExecutorOperationStateConflictError();
+  }
+
+  async markOutcomeUnknown(
+    operationId: string,
+    errorCode: string,
+    durationMs: number,
+  ): Promise<void> {
+    await this.mutate(operationId, async (record) => {
+      let current = this.requireMutableRecord(record);
+      if (current.status === "outcome_unknown") return { record: current, value: undefined };
+      if (current.status !== "running") throw new PiExecutorOperationStateConflictError();
+      current = this.closeOpenToolIntentsAsUnknown(current);
+      const next = this.appendToRecord(current, {
+        operationId: current.operationId,
+        type: "operation.outcome_unknown",
+        requestSha256: current.requestSha256,
+        errorCode: stableErrorCodeSchema.parse(errorCode),
+        durationMs,
+      });
+      return {
+        record: {
+          ...next,
+          status: "outcome_unknown" as const,
+          errorCode: stableErrorCodeSchema.parse(errorCode),
+        },
+        value: undefined,
+      };
+    });
   }
 
   async fail(operationId: string, errorCode: string, durationMs: number): Promise<void> {

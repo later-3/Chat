@@ -59,6 +59,7 @@ describe("Pi Executor Journal -> Chat Trace", () => {
         turnIndex: 0,
         toolCallId: "call_bash_1",
         toolName: "bash",
+        inputSha256: "b".repeat(64),
         resultSha256: "c".repeat(64),
         resultDisplay: "42 tests passed",
         resultDisplayTruncated: false,

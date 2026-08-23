@@ -71,6 +71,7 @@ import {
 } from "@chat/application/workflow-system-definitions";
 import {
   canonicalJsonStringify,
+  computePromptAssemblyV2Sha256,
   computePromptReviewPayloadSha256,
   hashCanonical,
 } from "@chat/domain";
@@ -2101,6 +2102,7 @@ describe("公开产品API", () => {
       readonly definitionSha256: string;
       readonly workspaceRootId?: string | undefined;
       readonly beforeAuthorize?: (() => void) | undefined;
+      readonly assemblyTamper?: "tools" | "piSystemPrompt" | "requestOptions" | undefined;
       readonly expectAuthorizationFailure?: boolean | undefined;
       readonly expectedAgentVersionId?: typeof derived.agentVersionId | undefined;
       readonly expectedAgentVersionSha256?: string | undefined;
@@ -2184,6 +2186,61 @@ describe("公开产品API", () => {
         selectionMode: "explicit",
         names: input.expectedToolNames ?? ["read", "bash"],
       });
+      if (input.assemblyTamper !== undefined) {
+        await deps.store.transact({
+          commandId: nextCmd(),
+          commandType: "UpdateOutboxStatus",
+          requestSha256: hashCanonical("test.tamper-prompt-assembly-envelope.v1", {
+            productRunId: run.productRunId,
+            kind: input.assemblyTamper,
+          }),
+          traceContext: { productRunId: run.productRunId },
+          mutate: (draft) => {
+            const stored = draft.entities.promptAssemblies[assembly.promptAssemblyId];
+            if (stored?.schemaVersion !== "prompt-assembly.v2") {
+              throw new Error("测试缺少Prompt Assembly v2");
+            }
+            const tampered =
+              input.assemblyTamper === "tools"
+                ? {
+                    ...stored,
+                    tools: {
+                      ...stored.tools,
+                      resources: {
+                        contextFiles: "disabled" as const,
+                        skills: "disabled" as const,
+                        promptTemplates: "disabled" as const,
+                        extensions: "disabled" as const,
+                      },
+                    },
+                  }
+                : input.assemblyTamper === "piSystemPrompt"
+                  ? {
+                      ...stored,
+                      piSystemPrompt: {
+                        kind: "pi_coding_agent" as const,
+                        mode: "replace" as const,
+                        bodyMarkdown: "一份自身Hash正确但不属于Agent Version的System Prompt。",
+                        sha256: hashCanonical("agent-system-prompt.v1", {
+                          bodyMarkdown: "一份自身Hash正确但不属于Agent Version的System Prompt。",
+                        }),
+                      },
+                    }
+                  : {
+                      ...stored,
+                      requestOptions: { ...stored.requestOptions, retryEnabled: false },
+                    };
+            const { sha256, createdAt, ...hashInput } = tampered;
+            void sha256;
+            void createdAt;
+            draft.entities.promptAssemblies[assembly.promptAssemblyId] = {
+              ...tampered,
+              sha256: computePromptAssemblyV2Sha256(hashInput),
+            };
+            return { resultRefs: {} };
+          },
+        });
+      }
       const begun = await beginDirectAgentAttempt(deps, {
         commandId: nextCmd(),
         productRunId: run.productRunId,
@@ -2212,6 +2269,16 @@ describe("公开产品API", () => {
       workflowDefinitionRevisionId: published.workflowDefinitionRevisionId,
       definitionSha256: published.definitionSha256,
     });
+
+    for (const assemblyTamper of ["tools", "piSystemPrompt", "requestOptions"] as const) {
+      await exerciseVersionRun({
+        suffix: `Assembly ${assemblyTamper}能力漂移`,
+        workflowDefinitionRevisionId: published.workflowDefinitionRevisionId,
+        definitionSha256: published.definitionSha256,
+        assemblyTamper,
+        expectAuthorizationFailure: true,
+      });
+    }
 
     await exerciseVersionRun({
       suffix: "Run创建后的Runtime Profile漂移",

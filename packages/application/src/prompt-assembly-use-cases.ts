@@ -75,6 +75,52 @@ interface ResolvedSource {
   readonly fragment: PromptAssemblyFragment;
 }
 
+export function resolveAgentPiSystemPrompt(input: {
+  readonly profile: AgentProfileDto;
+  readonly agentVersion?: AgentVersion | undefined;
+  readonly systemPromptMode?: "inherit_runtime" | "replace" | undefined;
+  readonly promptOverrideMarkdown?: string | undefined;
+}): {
+  readonly override?: string | undefined;
+  readonly useOverride: boolean;
+  readonly inheritsPiDefault: boolean;
+  readonly piSystemPrompt?: PiSystemPromptResolution | undefined;
+} {
+  const override = input.promptOverrideMarkdown;
+  const useOverride = override !== undefined && override.trim() !== "";
+  const piBacked = input.profile.runtimeBaseline?.kind === "pi_coding_agent";
+  const inheritsPiDefault =
+    piBacked &&
+    !useOverride &&
+    (input.systemPromptMode === "inherit_runtime" ||
+      (input.agentVersion === undefined
+        ? input.profile.systemPrompt.source === "runtime_default"
+        : input.agentVersion.systemPrompt.mode === "inherit_runtime"));
+  const replacementBody = useOverride
+    ? override!
+    : input.agentVersion?.systemPrompt.mode === "replace"
+      ? input.agentVersion.systemPrompt.bodyMarkdown
+      : input.profile.systemPrompt.bodyMarkdown;
+  const piSystemPrompt: PiSystemPromptResolution | undefined = piBacked
+    ? inheritsPiDefault
+      ? { kind: "pi_coding_agent", mode: "inherit" }
+      : {
+          kind: "pi_coding_agent",
+          mode: "replace",
+          bodyMarkdown: replacementBody,
+          sha256: hashCanonical("pi-system-prompt-override.v1", {
+            bodyMarkdown: replacementBody,
+          }),
+        }
+    : undefined;
+  return {
+    ...(override === undefined ? {} : { override }),
+    useOverride,
+    inheritsPiDefault,
+    ...(piSystemPrompt === undefined ? {} : { piSystemPrompt }),
+  };
+}
+
 function requireCatalog(deps: ApplicationDeps) {
   if (deps.promptCatalog === undefined) throw new Error("Prompt Catalog未配置");
   return deps.promptCatalog;
@@ -339,26 +385,27 @@ async function compileAgentRegion(
   if (!profile.supportedNodeTypes.includes(binding.nodeType)) {
     throw revisionConflict(`Agent ${binding.agentKey}不支持节点类型${binding.nodeType}`);
   }
-  const override = binding.promptOverrideMarkdown;
-  const useOverride = override !== undefined && override.trim() !== "";
-  const piBacked = profile.runtimeBaseline?.kind === "pi_coding_agent";
-  const inheritsPiDefault =
-    piBacked &&
-    !useOverride &&
-    (binding.systemPromptMode === "inherit_runtime" ||
-      (agentVersion === undefined
-        ? profile.systemPrompt.source === "runtime_default"
-        : agentVersion.systemPrompt.mode === "inherit_runtime"));
+  const { override, useOverride, inheritsPiDefault, piSystemPrompt } = resolveAgentPiSystemPrompt({
+    profile,
+    ...(agentVersion === undefined ? {} : { agentVersion }),
+    ...(binding.systemPromptMode === undefined
+      ? {}
+      : { systemPromptMode: binding.systemPromptMode }),
+    ...(binding.promptOverrideMarkdown === undefined
+      ? {}
+      : { promptOverrideMarkdown: binding.promptOverrideMarkdown }),
+  });
   const overrideIdentity = computeWorkflowNodePromptOverrideIdentitySha256({
     workflowDefinitionRevisionId: binding.workflowDefinitionRevisionId,
     definitionNodeId: binding.definitionNodeId,
   });
+  const resolvedOverride = useOverride ? override! : undefined;
   const overrideSha256 = useOverride
     ? computeWorkflowNodePromptOverrideSha256({
         workflowDefinitionRevisionId: binding.workflowDefinitionRevisionId,
         definitionNodeId: binding.definitionNodeId,
         nodeType: binding.nodeType,
-        bodyMarkdown: override,
+        bodyMarkdown: resolvedOverride!,
       })
     : undefined;
   const versionPromptIdentity =
@@ -382,7 +429,7 @@ async function compileAgentRegion(
           scope: { kind: "global" },
           title: `${profile.title} · 节点覆盖`,
           regionKey: "agent_identity",
-          content: { kind: "markdown", bodyMarkdown: override },
+          content: { kind: "markdown", bodyMarkdown: resolvedOverride! },
           selectionKind: "explicit",
         }
       : agentVersion?.systemPrompt.mode === "replace"
@@ -441,23 +488,6 @@ async function compileAgentRegion(
       fragments,
     }),
   };
-  const replacementBody = useOverride
-    ? override
-    : agentVersion?.systemPrompt.mode === "replace"
-      ? agentVersion.systemPrompt.bodyMarkdown
-      : profile.systemPrompt.bodyMarkdown;
-  const piSystemPrompt: PiSystemPromptResolution | undefined = piBacked
-    ? inheritsPiDefault
-      ? { kind: "pi_coding_agent", mode: "inherit" }
-      : {
-          kind: "pi_coding_agent",
-          mode: "replace",
-          bodyMarkdown: replacementBody,
-          sha256: hashCanonical("pi-system-prompt-override.v1", {
-            bodyMarkdown: replacementBody,
-          }),
-        }
-    : undefined;
   return {
     agentKey: binding.agentKey,
     profile,
@@ -770,6 +800,129 @@ function estimatePromptTokens(text: string): number {
   return Math.max(1, Math.ceil(Buffer.byteLength(text, "utf8") / 3));
 }
 
+/** Run编译与Operation授权共用，保证Version/临时配置到Pi能力包络只有一套算法。 */
+export function resolveDirectAgentExecutionEnvelope(input: {
+  readonly profile: AgentProfileDto;
+  readonly agentVersion?: AgentVersion | undefined;
+  readonly directNodeConfig: Readonly<Record<string, unknown>>;
+  readonly workspaceRootId?: string | undefined;
+  readonly piSystemPrompt?: PiSystemPromptResolution | undefined;
+}): {
+  readonly tools: PromptAssemblyV2["tools"];
+  readonly requestOptions: PromptAssemblyV2["requestOptions"];
+  readonly piSystemPrompt?: PiSystemPromptResolution | undefined;
+} {
+  const rawTemporaryConfiguration = input.directNodeConfig["agentTemporaryConfiguration"];
+  const parsedTemporaryConfiguration =
+    rawTemporaryConfiguration === undefined
+      ? undefined
+      : agentTemporaryConfigurationSchema.safeParse(rawTemporaryConfiguration);
+  if (parsedTemporaryConfiguration !== undefined && !parsedTemporaryConfiguration.success) {
+    throw revisionConflict("临时Agent配置已经损坏，请重新配置当前会话");
+  }
+  const temporaryConfiguration = parsedTemporaryConfiguration?.data;
+  const temporaryRuntimeVariant =
+    temporaryConfiguration === undefined
+      ? undefined
+      : input.profile.runtimeBaseline?.variants.find(
+          (variant) => variant.variantKey === temporaryConfiguration.runtime.baseVariantKey,
+        );
+  if (temporaryConfiguration !== undefined && temporaryRuntimeVariant === undefined) {
+    throw revisionConflict("临时Agent配置引用的Pi运行基线不存在或已经变化");
+  }
+  if (temporaryConfiguration?.basedOnVersionId !== undefined) {
+    const basedOn = input.profile.versions.find(
+      (version) => version.agentVersionId === temporaryConfiguration.basedOnVersionId,
+    );
+    if (
+      basedOn === undefined ||
+      basedOn.sha256 !== temporaryConfiguration.basedOnVersionSha256 ||
+      (basedOn.scope.kind === "workspace" && basedOn.scope.rootId !== input.workspaceRootId)
+    ) {
+      throw revisionConflict("临时Agent配置的来源Version不存在、越过Workspace或Hash已变化");
+    }
+  }
+  if (temporaryConfiguration !== undefined && temporaryRuntimeVariant !== undefined) {
+    const selectedNames = new Set(temporaryConfiguration.enabledToolNames);
+    const orderedSelectedNames = temporaryRuntimeVariant.tools
+      .map((tool) => tool.name)
+      .filter((toolName) => selectedNames.has(toolName));
+    if (
+      orderedSelectedNames.length !== temporaryConfiguration.enabledToolNames.length ||
+      JSON.stringify(orderedSelectedNames) !==
+        JSON.stringify(temporaryConfiguration.enabledToolNames)
+    ) {
+      throw revisionConflict("临时Agent配置包含当前Pi目录不存在的Tool，或Tool顺序已经变化");
+    }
+  }
+  const resolvedConfiguration = temporaryConfiguration ?? input.agentVersion;
+  const capabilityMode =
+    input.directNodeConfig["capabilityMode"] === "project_bootstrap"
+      ? ("project_bootstrap" as const)
+      : resolvedConfiguration !== undefined
+        ? ("custom" as const)
+        : input.directNodeConfig["capabilityMode"] === "read_only"
+          ? ("read_only" as const)
+          : input.directNodeConfig["capabilityMode"] === "custom"
+            ? ("custom" as const)
+            : ("pi_cli_default" as const);
+  const configuredToolNames =
+    resolvedConfiguration?.enabledToolNames ??
+    (Array.isArray(input.directNodeConfig["enabledToolNames"])
+      ? input.directNodeConfig["enabledToolNames"]
+      : undefined);
+  if (capabilityMode === "custom" && configuredToolNames === undefined) {
+    throw revisionConflict("自定义Agent能力缺少明确Tool清单");
+  }
+  const inheritedResources = {
+    contextFiles: "inherit_runtime_default" as const,
+    skills: "inherit_runtime_default" as const,
+    promptTemplates: "inherit_runtime_default" as const,
+    extensions: "inherit_runtime_default" as const,
+  };
+  const isolatedResources = {
+    contextFiles: "disabled" as const,
+    skills: "disabled" as const,
+    promptTemplates: "disabled" as const,
+    extensions: "disabled" as const,
+  };
+  const tools: PromptAssemblyV2["tools"] = {
+    capabilityMode,
+    selectionMode: capabilityMode === "pi_cli_default" ? "inherit_runtime_default" : "explicit",
+    names:
+      capabilityMode === "project_bootstrap"
+        ? ["read", "grep", "find", "ls", "project_bootstrap_prepare"]
+        : capabilityMode === "read_only"
+          ? ["read", "grep", "find", "ls"]
+          : capabilityMode === "pi_cli_default"
+            ? []
+            : configuredToolNames!,
+    resources:
+      resolvedConfiguration?.resources ??
+      (input.directNodeConfig["resourcePolicy"] === undefined
+        ? capabilityMode === "pi_cli_default"
+          ? inheritedResources
+          : isolatedResources
+        : (input.directNodeConfig["resourcePolicy"] as PromptAssemblyV2["tools"]["resources"])),
+    estimatedTokens: DIRECT_PROMPT_TOOL_TOKEN_RESERVE,
+  };
+  const usesPiRuntimeDefaults =
+    resolvedConfiguration?.runtime.baseVariantKey === "pi_cli_default" ||
+    (resolvedConfiguration === undefined && capabilityMode === "pi_cli_default");
+  const requestOptions: PromptAssemblyV2["requestOptions"] = {
+    providerId: "dashscope-coding",
+    modelId: "qwen3.7-plus",
+    thinkingLevel: usesPiRuntimeDefaults ? "medium" : "off",
+    retryEnabled: usesPiRuntimeDefaults,
+    compactionEnabled: usesPiRuntimeDefaults,
+  };
+  return {
+    tools,
+    requestOptions,
+    ...(input.piSystemPrompt === undefined ? {} : { piSystemPrompt: input.piSystemPrompt }),
+  };
+}
+
 function committedHistory(
   snapshot: ProductSnapshot,
   sessionId: ProductSessionId,
@@ -983,113 +1136,15 @@ export async function compileDirectPromptAssembly(
     (sum, message) => sum + message.estimatedTokens,
     0,
   );
-  const rawTemporaryConfiguration = directNode.config["agentTemporaryConfiguration"];
-  const parsedTemporaryConfiguration =
-    rawTemporaryConfiguration === undefined
-      ? undefined
-      : agentTemporaryConfigurationSchema.safeParse(rawTemporaryConfiguration);
-  if (parsedTemporaryConfiguration !== undefined && !parsedTemporaryConfiguration.success) {
-    throw revisionConflict("临时Agent配置已经损坏，请重新配置当前会话");
-  }
-  const temporaryConfiguration = parsedTemporaryConfiguration?.data;
-  const temporaryRuntimeVariant =
-    temporaryConfiguration === undefined
-      ? undefined
-      : agent.profile.runtimeBaseline?.variants.find(
-          (variant) => variant.variantKey === temporaryConfiguration.runtime.baseVariantKey,
-        );
-  if (temporaryConfiguration !== undefined && temporaryRuntimeVariant === undefined) {
-    throw revisionConflict("临时Agent配置引用的Pi运行基线不存在或已经变化");
-  }
-  if (temporaryConfiguration?.basedOnVersionId !== undefined) {
-    const basedOn = agent.profile.versions.find(
-      (version) => version.agentVersionId === temporaryConfiguration.basedOnVersionId,
-    );
-    if (
-      basedOn === undefined ||
-      basedOn.sha256 !== temporaryConfiguration.basedOnVersionSha256 ||
-      (basedOn.scope.kind === "workspace" && basedOn.scope.rootId !== selection.workspaceRootId)
-    ) {
-      throw revisionConflict("临时Agent配置的来源Version不存在、越过Workspace或Hash已变化");
-    }
-  }
-  if (temporaryConfiguration !== undefined && temporaryRuntimeVariant !== undefined) {
-    const selectedNames = new Set(temporaryConfiguration.enabledToolNames);
-    const orderedSelectedNames = temporaryRuntimeVariant.tools
-      .map((tool) => tool.name)
-      .filter((toolName) => selectedNames.has(toolName));
-    if (
-      orderedSelectedNames.length !== temporaryConfiguration.enabledToolNames.length ||
-      JSON.stringify(orderedSelectedNames) !==
-        JSON.stringify(temporaryConfiguration.enabledToolNames)
-    ) {
-      throw revisionConflict("临时Agent配置包含当前Pi目录不存在的Tool，或Tool顺序已经变化");
-    }
-  }
-  const resolvedConfiguration = temporaryConfiguration ?? agent.agentVersion;
-  const capabilityMode =
-    directNode.config["capabilityMode"] === "project_bootstrap"
-      ? ("project_bootstrap" as const)
-      : resolvedConfiguration !== undefined
-        ? ("custom" as const)
-        : directNode.config["capabilityMode"] === "read_only"
-          ? ("read_only" as const)
-          : directNode.config["capabilityMode"] === "custom"
-            ? ("custom" as const)
-            : ("pi_cli_default" as const);
-  const configuredToolNames =
-    resolvedConfiguration?.enabledToolNames ??
-    (Array.isArray(directNode.config["enabledToolNames"])
-      ? directNode.config["enabledToolNames"]
-      : undefined);
-  if (capabilityMode === "custom" && configuredToolNames === undefined) {
-    throw revisionConflict("自定义Agent能力缺少明确Tool清单");
-  }
-  const inheritedResources = {
-    contextFiles: "inherit_runtime_default" as const,
-    skills: "inherit_runtime_default" as const,
-    promptTemplates: "inherit_runtime_default" as const,
-    extensions: "inherit_runtime_default" as const,
-  };
-  const isolatedResources = {
-    contextFiles: "disabled" as const,
-    skills: "disabled" as const,
-    promptTemplates: "disabled" as const,
-    extensions: "disabled" as const,
-  };
-  const tools = {
-    capabilityMode,
-    selectionMode:
-      capabilityMode === "pi_cli_default"
-        ? ("inherit_runtime_default" as const)
-        : ("explicit" as const),
-    names:
-      capabilityMode === "project_bootstrap"
-        ? (["read", "grep", "find", "ls", "project_bootstrap_prepare"] as const)
-        : capabilityMode === "read_only"
-          ? (["read", "grep", "find", "ls"] as const)
-          : capabilityMode === "pi_cli_default"
-            ? ([] as const)
-            : configuredToolNames!,
-    resources:
-      resolvedConfiguration?.resources ??
-      (directNode.config["resourcePolicy"] === undefined
-        ? capabilityMode === "pi_cli_default"
-          ? inheritedResources
-          : isolatedResources
-        : directNode.config["resourcePolicy"]),
-    estimatedTokens: DIRECT_PROMPT_TOOL_TOKEN_RESERVE,
-  };
-  const usesPiRuntimeDefaults =
-    resolvedConfiguration?.runtime.baseVariantKey === "pi_cli_default" ||
-    (resolvedConfiguration === undefined && capabilityMode === "pi_cli_default");
-  const requestOptions = {
-    providerId: "dashscope-coding" as const,
-    modelId: "qwen3.7-plus" as const,
-    thinkingLevel: usesPiRuntimeDefaults ? ("medium" as const) : ("off" as const),
-    retryEnabled: usesPiRuntimeDefaults,
-    compactionEnabled: usesPiRuntimeDefaults,
-  };
+  const { tools, requestOptions } = resolveDirectAgentExecutionEnvelope({
+    profile: agent.profile,
+    ...(agent.agentVersion === undefined ? {} : { agentVersion: agent.agentVersion }),
+    directNodeConfig: directNode.config,
+    ...(selection.workspaceRootId === undefined
+      ? {}
+      : { workspaceRootId: selection.workspaceRootId }),
+    ...(agent.piSystemPrompt === undefined ? {} : { piSystemPrompt: agent.piSystemPrompt }),
+  });
   const budget = {
     meterVersion: DIRECT_PROMPT_METER_VERSION,
     inputTokenLimit: DIRECT_PROMPT_INPUT_TOKEN_LIMIT,

@@ -1,19 +1,117 @@
 import {
+  assertNoteCandidateTransition,
+  hashCanonical,
   transitionDirectAgentRunLifecycle,
   transitionPromptReviewStatus,
   transitionRunLifecycle,
+  transitionWorkflowNodeRun,
 } from "@chat/domain";
-import type { ProductRun, ProductRunId, ProductSnapshot } from "@chat/contracts";
+import {
+  nodeRunTransitionSchema,
+  workflowNodeRunSchema,
+  type ProductRun,
+  type ProductRunId,
+  type ProductSnapshot,
+  type WorkflowNodeRun,
+  type WorkflowNodeRunStatus,
+} from "@chat/contracts";
 import type { ApplicationDeps } from "./deps.js";
 import { notFound } from "./errors.js";
 import { emitRunEvent } from "./trace-helpers.js";
 import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
 
+type NonSuccessRunStatus = "failed" | "cancelled" | "outcome_unknown";
+
+function transitionCount(draft: ProductSnapshot, workflowNodeRunId: string): number {
+  return Object.values(draft.entities.nodeRunTransitions).filter(
+    (transition) => transition.workflowNodeRunId === workflowNodeRunId,
+  ).length;
+}
+
+function terminalNodeStatus(
+  node: WorkflowNodeRun,
+  runStatus: NonSuccessRunStatus,
+): Extract<WorkflowNodeRunStatus, "failed" | "cancelled" | "outcome_unknown"> {
+  // waiting_human没有用户Decision时不能伪造cancelled；系统终止统一形成failed证据。
+  if (node.status === "waiting_human") return "failed";
+  if (runStatus !== "outcome_unknown") return runStatus;
+  return node.nodeType.startsWith("execute.") || node.nodeType === "agent.direct"
+    ? "outcome_unknown"
+    : "failed";
+}
+
+/** Product Run终态事务内关闭全部活动Node，避免Run与Trajectory事实互相矛盾。 */
+function settleActiveWorkflowNodes(
+  draft: ProductSnapshot,
+  productRunId: ProductRunId,
+  runStatus: NonSuccessRunStatus,
+  errorCode: string,
+  summary: string,
+  now: string,
+): void {
+  const active = Object.values(draft.entities.workflowNodeRuns)
+    .filter(
+      (node) =>
+        node.productRunId === productRunId &&
+        (node.status === "running" || node.status === "waiting_human"),
+    )
+    .sort((left, right) => left.workflowNodeRunId.localeCompare(right.workflowNodeRunId));
+  for (const node of active) {
+    const toStatus = terminalNodeStatus(node, runStatus);
+    const sequence = transitionCount(draft, node.workflowNodeRunId) + 1;
+    const transitioned = transitionWorkflowNodeRun(node, {
+      transitionId: `wnt_${hashCanonical("id.node-terminal-settlement.v1", {
+        workflowNodeRunId: node.workflowNodeRunId,
+        sequence,
+      }).slice(0, 32)}`,
+      nodeSequence: sequence,
+      toStatus,
+      reasonKind:
+        toStatus === "failed"
+          ? "failed"
+          : toStatus === "cancelled"
+            ? "cancelled"
+            : "outcome_unknown",
+      publicSummary: summary,
+      ...(toStatus === "failed" || toStatus === "outcome_unknown"
+        ? { error: { code: errorCode, summary } }
+        : {}),
+      at: now,
+    });
+    draft.entities.nodeRunTransitions[transitioned.transition.nodeRunTransitionId] =
+      nodeRunTransitionSchema.parse(transitioned.transition);
+    draft.entities.workflowNodeRuns[node.workflowNodeRunId] = workflowNodeRunSchema.parse(
+      transitioned.nodeRun,
+    );
+  }
+}
+
+function failOpenNoteCandidates(
+  draft: ProductSnapshot,
+  productRunId: ProductRunId,
+  errorCode: string,
+  summary: string,
+  now: string,
+): void {
+  for (const candidate of Object.values(draft.entities.noteCandidates)) {
+    if (candidate.productRunId !== productRunId || candidate.status !== "under_review") continue;
+    const failed = {
+      ...candidate,
+      status: "failed" as const,
+      failure: { code: errorCode, summary },
+      revision: candidate.revision + 1,
+      updatedAt: now,
+    };
+    assertNoteCandidateTransition({ current: candidate, next: failed });
+    draft.entities.noteCandidates[candidate.noteCandidateId] = failed;
+  }
+}
+
 /** 失败、取消或结果未知的产品事实收敛；跨Runtime派发由Outbox用例负责。 */
 export function settleRunWithoutSuccess(
   draft: ProductSnapshot,
   productRunId: ProductRunId,
-  status: "failed" | "cancelled" | "outcome_unknown",
+  status: NonSuccessRunStatus,
   errorCode: string,
   summary: string,
   now: string,
@@ -28,6 +126,12 @@ export function settleRunWithoutSuccess(
   ) {
     failRunningAttempts(draft, productRunId, now, errorCode);
     synchronizePlanningWorkflowProjection(draft, productRunId, now);
+    if (run.status !== "succeeded") {
+      if (run.runKind === "note_capture") {
+        failOpenNoteCandidates(draft, productRunId, errorCode, summary, now);
+      }
+      settleActiveWorkflowNodes(draft, productRunId, run.status, errorCode, summary, now);
+    }
     return;
   }
   if (run.runKind === "note_capture") {
@@ -40,7 +144,9 @@ export function settleRunWithoutSuccess(
     if (status === "cancelled") delete settled.failure;
     else settled.failure = { code: errorCode, summary };
     draft.entities.runs[productRunId] = settled;
+    failOpenNoteCandidates(draft, productRunId, errorCode, summary, now);
     failRunningAttempts(draft, productRunId, now, errorCode);
+    settleActiveWorkflowNodes(draft, productRunId, status, errorCode, summary, now);
     return;
   }
   if (run.runKind === "direct_agent") {
@@ -97,6 +203,7 @@ export function settleRunWithoutSuccess(
       };
     }
     failRunningAttempts(draft, productRunId, now, errorCode);
+    settleActiveWorkflowNodes(draft, productRunId, effectiveStatus, errorCode, summary, now);
     return;
   }
   const lifecycle = transitionRunLifecycle(
@@ -140,6 +247,7 @@ export function settleRunWithoutSuccess(
   }
   failRunningAttempts(draft, productRunId, now, errorCode);
   synchronizePlanningWorkflowProjection(draft, productRunId, now);
+  settleActiveWorkflowNodes(draft, productRunId, status, errorCode, summary, now);
 }
 
 export function emitProductRunTransition(

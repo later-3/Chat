@@ -104,7 +104,10 @@ function toNoteSummary(note: Note, revision: NoteRevision): NoteSummaryDto {
     : { ...base, status: "archived", allowedActions: ["restore"] };
 }
 
-export function toCandidateReview(candidate: NoteCandidate): NoteCandidateReviewDto {
+export function toCandidateReview(
+  candidate: NoteCandidate,
+  actionsAllowed = candidate.status === "under_review",
+): NoteCandidateReviewDto {
   return noteCandidateReviewDtoSchema.parse({
     schemaVersion: "chat-note-api.v1",
     noteCandidateId: candidate.noteCandidateId,
@@ -127,7 +130,9 @@ export function toCandidateReview(candidate: NoteCandidate): NoteCandidateReview
     createdAt: candidate.createdAt,
     updatedAt: candidate.updatedAt,
     allowedActions:
-      candidate.status === "under_review" ? ["confirm", "request_revision", "reject"] : [],
+      candidate.status === "under_review" && actionsAllowed
+        ? ["confirm", "request_revision", "reject"]
+        : [],
   });
 }
 
@@ -244,7 +249,10 @@ export async function getCurrentNoteCandidate(
   const candidate = Object.values(snapshot.entities.noteCandidates)
     .filter((item) => item.productRunId === input.productRunId)
     .sort((left, right) => right.candidateSequence - left.candidateSequence)[0];
-  return { candidate: candidate === undefined ? null : toCandidateReview(candidate) };
+  const actionsAllowed = noteRun.status === "waiting_human" && noteRun.phase === "note_review";
+  return {
+    candidate: candidate === undefined ? null : toCandidateReview(candidate, actionsAllowed),
+  };
 }
 
 export async function prepareNoteCaptureInputForRuntime(

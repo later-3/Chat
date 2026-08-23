@@ -226,6 +226,8 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       turnIndex: z.number().int().nonnegative().max(1000),
       toolCallId: z.string().min(1).max(160),
       toolName: piToolNameSchema,
+      // v1早期已落盘Result没有复制Intent Hash；读取继续兼容，但Store拒绝新追加缺失/不匹配值。
+      inputSha256: sha256Schema.optional(),
       resultSha256: sha256Schema,
       resultDisplay: observableDisplaySchema,
       resultDisplayTruncated: z.boolean(),
@@ -241,6 +243,8 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       turnIndex: z.number().int().nonnegative().max(1000),
       toolCallId: z.string().min(1).max(160),
       toolName: piToolNameSchema,
+      // v1早期已落盘Result没有复制Intent Hash；读取继续兼容，但Store拒绝新追加缺失/不匹配值。
+      inputSha256: sha256Schema.optional(),
       resultSha256: sha256Schema,
       resultDisplay: observableDisplaySchema,
       resultDisplayTruncated: z.boolean(),
