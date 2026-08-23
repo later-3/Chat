@@ -154,15 +154,16 @@ function submitUserMessageRequestSha256(
   input: SubmitUserMessageInput,
   snapshot: Readonly<ProductSnapshot>,
 ): string {
+  const submittedWorkflowSelection = input.payload.workflowSelection;
   const selectedRevisionId =
-    input.payload.workflowSelection?.workflowDefinitionRevisionId ??
+    submittedWorkflowSelection?.workflowDefinitionRevisionId ??
     SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID;
   const selectedRevision = snapshot.entities.workflowDefinitionRevisions[selectedRevisionId];
-  const runConfiguration = input.payload.workflowSelection?.runConfiguration ?? {
+  const runConfiguration = submittedWorkflowSelection?.runConfiguration ?? {
     schemaVersion: "workflow-run-configuration.v1" as const,
     overrides: [],
   };
-  const submittedBusinessInput = input.payload.workflowSelection?.businessInput;
+  const submittedBusinessInput = submittedWorkflowSelection?.businessInput;
   const requestBusinessInput =
     selectedRevision?.blueprintKey === "note"
       ? (() => {
@@ -183,9 +184,11 @@ function submitUserMessageRequestSha256(
     workflowSelection: {
       kind: "published_revision" as const,
       workflowDefinitionRevisionId: selectedRevisionId,
+      // 显式Workflow选择的Revision/Hash是调用方CAS身份，必须逐字进入Receipt Hash；
+      // 只有整个选择缺省时，才用系统默认Revision的冻结Hash补全旧客户端语义。
       definitionSha256:
+        submittedWorkflowSelection?.definitionSha256 ??
         selectedRevision?.definitionSha256 ??
-        input.payload.workflowSelection?.definitionSha256 ??
         "missing",
       runConfiguration,
       ...(requestBusinessInput === undefined ? {} : { businessInput: requestBusinessInput }),

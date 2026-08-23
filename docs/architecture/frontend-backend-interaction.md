@@ -52,8 +52,8 @@ DSH持久化日志与Bridge映射共同恢复原会话，用户可以继续发�
    `POST /api/sessions/:id/messages`。
 6. Chat在Command边界重新校验Workflow仍是已发布、active、当前Principal可用且Hash一致。
    首轮原子提交Product Session、标题、User Message、Product Run、Receipt和Workflow Start
-   Outbox；后续轮次不再创建Session。相同Message Command重试先用`Command ID + Command Type + Principal + 规范化原始请求Hash`精确读取Receipt并重建原响应，
-   不产生新时间或ID，也不再读取当前Workflow、Prompt Catalog、Workspace Adapter或Pi Runtime；因此提交成功后的配置漂移不能把响应丢失变成第二种结果。不同正文、Workflow、Principal或Command Type复用同一ID会先返回`command_id_reused`。
+   Outbox；后续轮次不再创建Session。相同Message Command重试先用`Command ID + Command Type + Principal + 规范化原始请求Hash`精确读取Receipt并重建原响应。显式选择Workflow时，Revision ID与`definitionSha256`原样属于该身份；只有整个选择缺省时才补系统默认Revision/Hash。因此只修改显式CAS Hash也会在
+   时间、全部ID、Catalog、Runtime、Prompt与Workspace前返回`command_id_reused`；精确重放不产生新时间或ID，也不再读取当前Workflow、Prompt Catalog、Workspace Adapter或Pi Runtime。提交成功后的配置漂移不能把响应丢失变成第二种结果。
 7. Adapter只轮询公开Run并在终态读取正式Message；后台通用监督器在已确认Workflow终止而Product仍活动时，
    通过Application把`failed/cancelled/outcome_unknown`提交为唯一产品终态；Runtime“成功”但缺少Product Commit也只能是
    `outcome_unknown`。单次Runtime查询失败只开始耐久宽限计时，任一次`active`证据都会清除计时；只有连续未知超期才收敛。

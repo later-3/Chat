@@ -75,13 +75,16 @@ export function createPiExecutorServiceClient(options: PiExecutorServiceClientOp
     });
     if (!startResponse.ok) throw await remoteProblem(startResponse);
     const startSnapshot = piExecutorOperationSnapshotSchema.parse(await startResponse.json());
+    // 首次Snapshot声明的Journal代际是本次Client消费的不可降级身份；后续状态不能
+    // 通过删除v2标记或request转入legacy宽松矩阵。
+    const initialIntegrityVersion = startSnapshot.integrityVersion;
+    const requiresFullOperationV2 = initialIntegrityVersion === "full-operation.v2";
     const journalRequest = startSnapshot.request ?? request;
     const { nodePrompt: _authorizedNodePrompt, ...journalSubmittedRequest } = journalRequest;
     void _authorizedNodePrompt;
     if (
       startSnapshot.operationId !== request.operationId ||
-      (startSnapshot.integrityVersion === "full-operation.v2" &&
-        startSnapshot.request === undefined) ||
+      (requiresFullOperationV2 && startSnapshot.request === undefined) ||
       hashExecutorValue(journalSubmittedRequest) !== requestSha256 ||
       hashExecutorValue(journalRequest) !== startSnapshot.requestSha256
     ) {
@@ -124,6 +127,8 @@ export function createPiExecutorServiceClient(options: PiExecutorServiceClientOp
       if (
         snapshot.operationId !== request.operationId ||
         snapshot.requestSha256 !== startSnapshot.requestSha256 ||
+        snapshot.integrityVersion !== initialIntegrityVersion ||
+        (requiresFullOperationV2 && snapshot.request === undefined) ||
         (snapshot.request !== undefined &&
           hashExecutorValue(snapshot.request) !== startSnapshot.requestSha256) ||
         snapshot.lastEventSequence < lastEventSequence

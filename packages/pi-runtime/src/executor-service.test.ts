@@ -129,7 +129,10 @@ function expectedCandidate(output: string) {
 async function settleAndComplete(
   store: PiExecutorOperationStore,
   output: string,
-  options: { readonly turnAlreadyStarted?: boolean } = {},
+  options: {
+    readonly turnAlreadyStarted?: boolean;
+    readonly providerRequestIndex?: number;
+  } = {},
 ): Promise<void> {
   if (options.turnAlreadyStarted !== true) {
     await store.append("pio_test1", {
@@ -139,6 +142,16 @@ async function settleAndComplete(
       turnIndex: 0,
     });
   }
+  const providerRequestIndex = options.providerRequestIndex ?? 1;
+  const providerInputSha256 = hashExecutorValue({ output });
+  await store.append("pio_test1", {
+    operationId: "pio_test1",
+    type: "provider.started",
+    sessionId: "pis_test1",
+    requestIndex: providerRequestIndex,
+    endpointHost: "provider.test",
+    inputSha256: providerInputSha256,
+  });
   await store.append("pio_test1", {
     operationId: "pio_test1",
     type: "message.completed",
@@ -154,6 +167,20 @@ async function settleAndComplete(
   });
   await store.append("pio_test1", {
     operationId: "pio_test1",
+    type: "provider.completed",
+    sessionId: "pis_test1",
+    requestIndex: providerRequestIndex,
+    endpointHost: "provider.test",
+    inputSha256: providerInputSha256,
+    httpStatus: 200,
+    providerRequestId: "req_settle1",
+    usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+    stopReason: "stop",
+    toolCallCount: 0,
+    durationMs: 1,
+  });
+  await store.append("pio_test1", {
+    operationId: "pio_test1",
     type: "turn.completed",
     sessionId: "pis_test1",
     turnIndex: 0,
@@ -164,7 +191,7 @@ async function settleAndComplete(
     type: "session.settled",
     sessionId: "pis_test1",
     turnCount: 1,
-    providerRequestCount: 0,
+    providerRequestCount: providerRequestIndex,
   });
   await store.complete("pio_test1", expectedCandidate(output), 2);
 }
@@ -600,7 +627,163 @@ describe("PiExecutorOperationStore", () => {
     );
   });
 
-  it("早期v1 Tool Result缺少复制的Intent Hash时仍可读取", async () => {
+  it("full-operation.v2 succeeded的Tool Result缺少inputSha256时open失败关闭", async () => {
+    const root = await temporaryRoot();
+    const directory = join(root, "operations");
+    const store = await PiExecutorOperationStore.open(directory);
+    await store.createOrGet(request());
+    await store.markRunning("pio_test1");
+    await store.setSession("pio_test1", "pis_test1", ["read"]);
+    await store.append("pio_test1", {
+      operationId: "pio_test1",
+      type: "turn.started",
+      sessionId: "pis_test1",
+      turnIndex: 0,
+    });
+    const inputSha256 = hashExecutorValue({ path: "README.md" });
+    await store.append("pio_test1", {
+      operationId: "pio_test1",
+      type: "tool.intent_persisted",
+      sessionId: "pis_test1",
+      turnIndex: 0,
+      toolCallId: "call_v2_completed",
+      toolName: "read",
+      inputSha256,
+      inputDisplay: JSON.stringify({ path: "README.md" }),
+      inputDisplayTruncated: false,
+    });
+    await store.append("pio_test1", {
+      operationId: "pio_test1",
+      type: "tool.completed",
+      sessionId: "pis_test1",
+      turnIndex: 0,
+      toolCallId: "call_v2_completed",
+      toolName: "read",
+      inputSha256,
+      resultSha256: hashExecutorValue({ output: "ok" }),
+      resultDisplay: "ok",
+      resultDisplayTruncated: false,
+      durationMs: 1,
+    });
+    await settleAndComplete(store, "v2 completed", { turnAlreadyStarted: true });
+    const recordPath = join(directory, "pio_test1.json");
+    const record = JSON.parse(await readFile(recordPath, "utf8")) as {
+      events: Array<Record<string, unknown>>;
+    };
+    const toolResult = record.events.find((event) => event["type"] === "tool.completed");
+    if (toolResult === undefined) throw new Error("测试缺少Tool Result");
+    delete toolResult["inputSha256"];
+    await writeFile(recordPath, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+
+    await expect(PiExecutorOperationStore.open(directory)).rejects.toBeInstanceOf(
+      PiExecutorJournalIntegrityError,
+    );
+  });
+
+  it("full-operation.v2 tool.failed缺少inputSha256时persist与open均失败关闭", async () => {
+    const root = await temporaryRoot();
+    const directory = join(root, "operations");
+    const store = await PiExecutorOperationStore.open(directory);
+    await store.createOrGet(request());
+    await store.markRunning("pio_test1");
+    await store.setSession("pio_test1", "pis_test1", ["read"]);
+    await store.append("pio_test1", {
+      operationId: "pio_test1",
+      type: "turn.started",
+      sessionId: "pis_test1",
+      turnIndex: 0,
+    });
+    const inputSha256 = hashExecutorValue({ path: "missing.md" });
+    await store.append("pio_test1", {
+      operationId: "pio_test1",
+      type: "tool.intent_persisted",
+      sessionId: "pis_test1",
+      turnIndex: 0,
+      toolCallId: "call_v2_failed",
+      toolName: "read",
+      inputSha256,
+      inputDisplay: JSON.stringify({ path: "missing.md" }),
+      inputDisplayTruncated: false,
+    });
+    const failedWithoutInputSha256 = {
+      operationId: "pio_test1" as const,
+      type: "tool.failed" as const,
+      sessionId: "pis_test1" as const,
+      turnIndex: 0,
+      toolCallId: "call_v2_failed",
+      toolName: "read" as const,
+      resultSha256: hashExecutorValue({ error: "not found" }),
+      resultDisplay: "not found",
+      resultDisplayTruncated: false,
+      errorCode: "executor.tool_failed",
+      durationMs: 1,
+    };
+    await expect(store.append("pio_test1", failedWithoutInputSha256)).rejects.toBeInstanceOf(
+      PiExecutorToolResultConflictError,
+    );
+    expect(store.getEvents("pio_test1").some((event) => event.type === "tool.failed")).toBe(false);
+
+    await store.append("pio_test1", { ...failedWithoutInputSha256, inputSha256 });
+    await settleAndComplete(store, "v2 failed", { turnAlreadyStarted: true });
+    const recordPath = join(directory, "pio_test1.json");
+    const record = JSON.parse(await readFile(recordPath, "utf8")) as {
+      events: Array<Record<string, unknown>>;
+    };
+    const toolResult = record.events.find((event) => event["type"] === "tool.failed");
+    if (toolResult === undefined) throw new Error("测试缺少Tool Failure");
+    delete toolResult["inputSha256"];
+    await writeFile(recordPath, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+
+    await expect(PiExecutorOperationStore.open(directory)).rejects.toBeInstanceOf(
+      PiExecutorJournalIntegrityError,
+    );
+  });
+
+  it.each([
+    ["缺少", undefined],
+    ["不匹配", "0".repeat(64)],
+  ] as const)(
+    "full-operation.v2 provider.failed的inputSha256%s时append持久化失败关闭",
+    async (_case, failedInputSha256) => {
+      const root = await temporaryRoot();
+      const store = await PiExecutorOperationStore.open(join(root, "operations"));
+      await store.createOrGet(request());
+      await store.markRunning("pio_test1");
+      await store.setSession("pio_test1", "pis_test1", []);
+      await store.append("pio_test1", {
+        operationId: "pio_test1",
+        type: "turn.started",
+        sessionId: "pis_test1",
+        turnIndex: 0,
+      });
+      const inputSha256 = hashExecutorValue({ messages: ["provider failure"] });
+      await store.append("pio_test1", {
+        operationId: "pio_test1",
+        type: "provider.started",
+        sessionId: "pis_test1",
+        requestIndex: 1,
+        endpointHost: "provider.test",
+        inputSha256,
+      });
+      await expect(
+        store.append("pio_test1", {
+          operationId: "pio_test1",
+          type: "provider.failed",
+          sessionId: "pis_test1",
+          requestIndex: 1,
+          endpointHost: "provider.test",
+          ...(failedInputSha256 === undefined ? {} : { inputSha256: failedInputSha256 }),
+          errorCode: "executor.provider_failed",
+          durationMs: 1,
+        }),
+      ).rejects.toBeInstanceOf(PiExecutorJournalIntegrityError);
+      expect(store.getEvents("pio_test1").some((event) => event.type === "provider.failed")).toBe(
+        false,
+      );
+    },
+  );
+
+  it("真正旧v1可缺少Result/Provider inputSha256、settled与可见正文Hash", async () => {
     const root = await temporaryRoot();
     const directory = join(root, "operations");
     const store = await PiExecutorOperationStore.open(directory);
@@ -627,7 +810,7 @@ describe("PiExecutorOperationStore", () => {
     });
     await store.append("pio_test1", {
       operationId: "pio_test1",
-      type: "tool.completed",
+      type: "tool.failed",
       sessionId: "pis_test1",
       turnIndex: 0,
       toolCallId: "call_legacy_result",
@@ -636,25 +819,72 @@ describe("PiExecutorOperationStore", () => {
       resultSha256: hashExecutorValue({ output: "ok" }),
       resultDisplay: "ok",
       resultDisplayTruncated: false,
+      errorCode: "executor.tool_failed",
       durationMs: 1,
     });
-    await settleAndComplete(store, "legacy success", { turnAlreadyStarted: true });
+    const providerInputSha256 = hashExecutorValue({ messages: ["legacy retry"] });
+    await store.append("pio_test1", {
+      operationId: "pio_test1",
+      type: "provider.started",
+      sessionId: "pis_test1",
+      requestIndex: 1,
+      endpointHost: "provider.test",
+      inputSha256: providerInputSha256,
+    });
+    await store.append("pio_test1", {
+      operationId: "pio_test1",
+      type: "provider.failed",
+      sessionId: "pis_test1",
+      requestIndex: 1,
+      endpointHost: "provider.test",
+      inputSha256: providerInputSha256,
+      errorCode: "executor.provider_failed",
+      durationMs: 1,
+    });
+    await settleAndComplete(store, "legacy success", {
+      turnAlreadyStarted: true,
+      providerRequestIndex: 2,
+    });
     const recordPath = join(directory, "pio_test1.json");
     const legacyRecord = JSON.parse(await readFile(recordPath, "utf8")) as {
       integrityVersion?: string;
       events: Array<Record<string, unknown>>;
     };
     delete legacyRecord.integrityVersion;
-    const legacyResult = legacyRecord.events.find((event) => event["type"] === "tool.completed");
+    const legacyResult = legacyRecord.events.find((event) => event["type"] === "tool.failed");
     if (legacyResult === undefined) throw new Error("测试缺少Tool Result");
     delete legacyResult["inputSha256"];
+    const legacyProviderFailure = legacyRecord.events.find(
+      (event) => event["type"] === "provider.failed",
+    );
+    if (legacyProviderFailure === undefined) throw new Error("测试缺少Provider Failure");
+    delete legacyProviderFailure["inputSha256"];
+    const settledIndex = legacyRecord.events.findIndex(
+      (event) => event["type"] === "session.settled",
+    );
+    if (settledIndex < 0) throw new Error("测试缺少Session settled");
+    legacyRecord.events.splice(settledIndex, 1);
+    const assistant = legacyRecord.events.find(
+      (event) => event["type"] === "message.completed" && event["role"] === "assistant",
+    );
+    if (assistant === undefined) throw new Error("测试缺少Assistant Evidence");
+    delete assistant["visibleTextSha256"];
+    delete assistant["visibleText"];
+    delete assistant["visibleTextTruncated"];
+    for (const [index, event] of legacyRecord.events.entries()) event["sequence"] = index + 1;
     await writeFile(recordPath, `${JSON.stringify(legacyRecord)}\n`, { mode: 0o600 });
 
     const recovered = await PiExecutorOperationStore.open(directory);
 
     expect(
-      recovered.getEvents("pio_test1").find((event) => event.type === "tool.completed"),
+      recovered.getEvents("pio_test1").find((event) => event.type === "tool.failed"),
     ).not.toHaveProperty("inputSha256");
+    expect(
+      recovered.getEvents("pio_test1").find((event) => event.type === "provider.failed"),
+    ).not.toHaveProperty("inputSha256");
+    expect(recovered.getEvents("pio_test1").some((event) => event.type === "session.settled")).toBe(
+      false,
+    );
     expect(recovered.getSnapshot("pio_test1").status).toBe("succeeded");
   });
 
@@ -892,6 +1122,54 @@ describe("Pi Executor完整Operation Journal状态机", () => {
       },
     ],
     [
+      "assistant_after_provider_completed",
+      (journal) => {
+        const assistantIndex = journal.events.findIndex(
+          (event) => event["type"] === "message.completed" && event["role"] === "assistant",
+        );
+        const [assistant] = journal.events.splice(assistantIndex, 1);
+        if (assistant === undefined) throw new Error("测试Journal缺少Assistant Evidence");
+        const turnCompletedIndex = journal.events.findIndex(
+          (event) => event["type"] === "turn.completed",
+        );
+        assistant["timestamp"] = journal.events[turnCompletedIndex - 1]!["timestamp"];
+        journal.events.splice(turnCompletedIndex, 0, assistant);
+        resequence(journal);
+      },
+    ],
+    [
+      "assistant_after_turn_completed",
+      (journal) => {
+        const assistantIndex = journal.events.findIndex(
+          (event) => event["type"] === "message.completed" && event["role"] === "assistant",
+        );
+        const [assistant] = journal.events.splice(assistantIndex, 1);
+        if (assistant === undefined) throw new Error("测试Journal缺少Assistant Evidence");
+        const settledIndex = journal.events.findIndex(
+          (event) => event["type"] === "session.settled",
+        );
+        assistant["timestamp"] = journal.events[settledIndex - 1]!["timestamp"];
+        journal.events.splice(settledIndex, 0, assistant);
+        resequence(journal);
+      },
+    ],
+    [
+      "assistant_after_session_settled",
+      (journal) => {
+        const assistantIndex = journal.events.findIndex(
+          (event) => event["type"] === "message.completed" && event["role"] === "assistant",
+        );
+        const [assistant] = journal.events.splice(assistantIndex, 1);
+        if (assistant === undefined) throw new Error("测试Journal缺少Assistant Evidence");
+        const completedIndex = journal.events.findIndex(
+          (event) => event["type"] === "operation.completed",
+        );
+        assistant["timestamp"] = journal.events[completedIndex - 1]!["timestamp"];
+        journal.events.splice(completedIndex, 0, assistant);
+        resequence(journal);
+      },
+    ],
+    [
       "missing_accepted",
       (journal) => {
         journal.events.splice(0, 1);
@@ -1067,6 +1345,61 @@ describe("Pi Executor完整Operation Journal状态机", () => {
     });
   });
 
+  it("Client钉住首次v2身份，终态Snapshot删除v2标记不得降级返回Candidate", async () => {
+    let startJournal: MutableJournalFixture | undefined;
+    let terminalJournal: MutableJournalFixture | undefined;
+    const fetchFn: typeof fetch = async (url, init) => {
+      const href = String(url);
+      if (init?.method === "POST") {
+        const submitted = startPiExecutorOperationRequestSchema.parse(
+          JSON.parse(String(init.body)),
+        );
+        startJournal = validJournalForStatus("running", submitted);
+        terminalJournal = validJournalForStatus("succeeded", submitted);
+        delete terminalJournal.snapshot["integrityVersion"];
+        const settledIndex = terminalJournal.events.findIndex(
+          (event) => event["type"] === "session.settled",
+        );
+        terminalJournal.events.splice(settledIndex, 1);
+        delete eventOfType(terminalJournal, "message.completed")["visibleTextSha256"];
+        resequence(terminalJournal);
+        return Response.json(startJournal.snapshot, { status: 202 });
+      }
+      if (startJournal === undefined || terminalJournal === undefined) {
+        throw new Error("测试Client尚未提交Operation");
+      }
+      if (href.includes("/events?")) {
+        return Response.json({
+          schemaVersion: PI_EXECUTOR_PROTOCOL_VERSION,
+          operationId: terminalJournal.request.operationId,
+          events: terminalJournal.events,
+          lastEventSequence: terminalJournal.events.length,
+        });
+      }
+      return Response.json(terminalJournal.snapshot);
+    };
+    const executionContract = contract();
+    const error = await createPiExecutorServiceClient({
+      baseUrl: "http://executor-downgrade.test",
+      credential: "rtk_downgrade_test",
+      pollIntervalMs: 1,
+      fetchFn,
+    })({
+      contract: executionContract,
+      stepId: "step-1",
+      executionAttemptId: "att_test1",
+      inputManifestSha256: inputManifest(executionContract),
+      contextItems: [],
+      dependencyResults: [],
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(PiExecutorRemoteError);
+    expect(error).toMatchObject({
+      code: "executor.journal_integrity_invalid",
+      outcomeUnknown: true,
+    });
+  });
+
   it("新Client只读兼容缺少v2标记、settled与可见正文Hash的合法旧v1 succeeded", async () => {
     let journal: MutableJournalFixture | undefined;
     const fetchFn: typeof fetch = async (url, init) => {
@@ -1193,6 +1526,14 @@ class FakeRunner implements PiCodingAgentRunner {
     });
     await input.store.append(input.request.operationId, {
       operationId: input.request.operationId,
+      type: "provider.started",
+      sessionId: "pis_fake1",
+      requestIndex: 1,
+      endpointHost: "provider.test",
+      inputSha256: hashExecutorValue({ marker: CONTENT_MARKER }),
+    });
+    await input.store.append(input.request.operationId, {
+      operationId: input.request.operationId,
       type: "message.completed",
       sessionId: "pis_fake1",
       messageIndex: 0,
@@ -1201,6 +1542,20 @@ class FakeRunner implements PiCodingAgentRunner {
       visibleTextSha256: hashExecutorValue(CONTENT_MARKER),
       stopReason: "stop",
       usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+    });
+    await input.store.append(input.request.operationId, {
+      operationId: input.request.operationId,
+      type: "provider.completed",
+      sessionId: "pis_fake1",
+      requestIndex: 1,
+      endpointHost: "provider.test",
+      inputSha256: hashExecutorValue({ marker: CONTENT_MARKER }),
+      httpStatus: 200,
+      providerRequestId: "req_fake1",
+      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      stopReason: "stop",
+      toolCallCount: 0,
+      durationMs: 1,
     });
     await input.store.append(input.request.operationId, {
       operationId: input.request.operationId,
@@ -1214,7 +1569,7 @@ class FakeRunner implements PiCodingAgentRunner {
       type: "session.settled",
       sessionId: "pis_fake1",
       turnCount: 1,
-      providerRequestCount: 0,
+      providerRequestCount: 1,
     });
     return expectedCandidate(CONTENT_MARKER);
   }
@@ -1407,7 +1762,9 @@ describe("Pi Executor Service + Client", () => {
       "operation.started",
       "session.started",
       "turn.started",
+      "provider.started",
       "message.completed",
+      "provider.completed",
       "turn.completed",
       "session.settled",
       "operation.completed",

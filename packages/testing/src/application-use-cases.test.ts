@@ -21,7 +21,10 @@ import {
   getRunPlans,
   getSessionMessages,
 } from "@chat/application";
-import { SYSTEM_NOTE_WORKFLOW_REVISION_ID } from "@chat/application/workflow-system-definitions";
+import {
+  SYSTEM_NOTE_WORKFLOW_REVISION_ID,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+} from "@chat/application/workflow-system-definitions";
 
 const PRINCIPAL = "usr_debug" as PrincipalId;
 const OTHER = "usr_other" as PrincipalId;
@@ -95,7 +98,15 @@ function replayProbeDeps(deps: ApplicationDeps, calls: string[]): ApplicationDep
       outbox: () => fail("ids.outbox"),
     },
     promptCatalog: { load: async () => fail("promptCatalog.load") },
+    promptFiles: {
+      publishRevision: async () => fail("promptFiles.publishRevision"),
+      readRevision: async () => fail("promptFiles.readRevision"),
+    },
     agentRuntimeProfiles: { read: async () => fail("agentRuntimeProfiles.read") },
+    projectRoots: {
+      list: () => fail("projectRoots.list"),
+      observe: async () => fail("projectRoots.observe"),
+    },
   };
 }
 
@@ -208,6 +219,104 @@ describe("CreateProductSession + SubmitUserMessage", () => {
     },
   );
 
+  it.each(["first_message", "existing_session"] as const)(
+    "%s显式Workflow CAS原样进入Receipt身份，正确Hash重放且仅改Hash先冲突",
+    async (scenario) => {
+      const { deps } = await testDeps();
+      const session =
+        scenario === "existing_session"
+          ? (
+              await createProductSession(deps, {
+                principalId: PRINCIPAL,
+                commandId: cmd(),
+                payload: {},
+              })
+            ).session
+          : undefined;
+      const snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+      const revision =
+        snapshot.entities.workflowDefinitionRevisions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID];
+      if (revision === undefined) throw new Error("测试Fixture缺少默认Planning Workflow");
+      const commandId = cmd();
+      const input = {
+        principalId: PRINCIPAL,
+        ...(session === undefined ? {} : { sessionId: session.sessionId }),
+        commandId,
+        payload: {
+          text: `显式Workflow CAS-${scenario}`,
+          workflowSelection: {
+            kind: "published_revision" as const,
+            workflowDefinitionRevisionId: revision.workflowDefinitionRevisionId,
+            definitionSha256: revision.definitionSha256,
+          },
+        },
+      };
+      const first = await submitUserMessage(deps, input);
+      const committed = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+      const calls: string[] = [];
+      const broken = replayProbeDeps(deps, calls);
+
+      await expect(submitUserMessage(broken, input)).resolves.toEqual(first);
+      await expect(
+        submitUserMessage(broken, {
+          ...input,
+          payload: {
+            ...input.payload,
+            workflowSelection: {
+              ...input.payload.workflowSelection,
+              definitionSha256: "0".repeat(64),
+            },
+          },
+        }),
+      ).rejects.toBeInstanceOf(CommandIdReusedError);
+      expect(calls).toEqual([]);
+      const after = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+      expect(after.storeRevision).toBe(committed.storeRevision);
+      expect(Object.keys(after.entities.sessions)).toEqual(
+        Object.keys(committed.entities.sessions),
+      );
+      expect(Object.keys(after.entities.messages)).toEqual(
+        Object.keys(committed.entities.messages),
+      );
+      expect(Object.keys(after.entities.runs)).toEqual(Object.keys(committed.entities.runs));
+      expect(Object.keys(after.entities.attempts)).toEqual(
+        Object.keys(committed.entities.attempts),
+      );
+      expect(Object.keys(after.outbox)).toEqual(Object.keys(committed.outbox));
+    },
+  );
+
+  it("无Receipt的首轮显式错误Workflow Hash返回definition_stale且不提交任何事实", async () => {
+    const { deps } = await testDeps();
+    const before = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const revision =
+      before.entities.workflowDefinitionRevisions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID];
+    if (revision === undefined) throw new Error("测试Fixture缺少默认Planning Workflow");
+    const commandId = cmd();
+    await expect(
+      submitUserMessage(deps, {
+        principalId: PRINCIPAL,
+        commandId,
+        payload: {
+          text: "首次错误Workflow CAS",
+          workflowSelection: {
+            kind: "published_revision",
+            workflowDefinitionRevisionId: revision.workflowDefinitionRevisionId,
+            definitionSha256: "0".repeat(64),
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "definition_stale" });
+    const after = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(after.storeRevision).toBe(before.storeRevision);
+    expect(Object.values(after.entities.sessions)).toHaveLength(0);
+    expect(Object.values(after.entities.messages)).toHaveLength(0);
+    expect(Object.values(after.entities.runs)).toHaveLength(0);
+    expect(Object.values(after.entities.attempts)).toHaveLength(0);
+    expect(Object.values(after.outbox)).toHaveLength(0);
+    expect(after.commandReceipts[commandId]).toBeUndefined();
+  });
+
   it("Receipt的Payload、Workflow、Principal与Command Type不精确匹配时先失败且不泄露结果", async () => {
     const { deps } = await testDeps();
     const { session } = await createProductSession(deps, {
@@ -270,11 +379,22 @@ describe("CreateProductSession + SubmitUserMessage", () => {
 
   it("两个相同Message命令并发只提交一组Session、Message、Run、Attempt与Outbox", async () => {
     const { deps } = await testDeps();
+    const before = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const revision =
+      before.entities.workflowDefinitionRevisions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID];
+    if (revision === undefined) throw new Error("测试Fixture缺少默认Planning Workflow");
     const commandId = cmd();
     const input = {
       principalId: PRINCIPAL,
       commandId,
-      payload: { text: "并发原子Message" },
+      payload: {
+        text: "并发原子Message",
+        workflowSelection: {
+          kind: "published_revision" as const,
+          workflowDefinitionRevisionId: revision.workflowDefinitionRevisionId,
+          definitionSha256: revision.definitionSha256,
+        },
+      },
     } as const;
     const [first, second] = await Promise.all([
       submitUserMessage(deps, input),
@@ -301,11 +421,22 @@ describe("CreateProductSession + SubmitUserMessage", () => {
         writeTempFile: async () => Promise.reject(new Error("injected message write failure")),
       },
     });
+    const before = (await failingStore.read({ kind: "committedSnapshot" })).snapshot;
+    const revision =
+      before.entities.workflowDefinitionRevisions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID];
+    if (revision === undefined) throw new Error("测试Fixture缺少默认Planning Workflow");
     const commandId = cmd();
     const input = {
       principalId: PRINCIPAL,
       commandId,
-      payload: { text: "写失败后仍可安全重试" },
+      payload: {
+        text: "写失败后仍可安全重试",
+        workflowSelection: {
+          kind: "published_revision" as const,
+          workflowDefinitionRevisionId: revision.workflowDefinitionRevisionId,
+          definitionSha256: revision.definitionSha256,
+        },
+      },
     } as const;
     await expect(
       submitUserMessage({ store: failingStore, now, ids: testIds() }, input),

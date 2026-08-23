@@ -130,8 +130,8 @@ export interface PiExecutorOperationJournalInput {
 }
 
 /**
- * v1文件加载时重放Operation与Tool身份状态机。Zod只能证明单个事件结构合法；
- * 跨事件Hash、Session、顺序或终态矛盾的成功记录仍必须在Client可见前失败关闭。
+ * Store持久化/open与Client共用的完整状态机。协议optional字段只为真正旧v1读取保留；
+ * 声明full-operation.v2后，任何Result/Provider证据缺失或生命周期降级都失败关闭。
  */
 export function validatePiExecutorOperationJournal(
   input: PiExecutorOperationJournalInput,
@@ -142,6 +142,7 @@ export function validatePiExecutorOperationJournal(
   const failJournal = (): never => {
     throw new PiExecutorJournalIntegrityError();
   };
+  const requiresFullOperationV2 = snapshot.integrityVersion === "full-operation.v2";
   if (
     request.operationId !== snapshot.operationId ||
     hashExecutorValue(request) !== snapshot.requestSha256 ||
@@ -237,13 +238,20 @@ export function validatePiExecutorOperationJournal(
         completedProviders.has(event.requestIndex) ||
         providerIntent === undefined ||
         providerIntent.endpointHost !== event.endpointHost ||
+        (requiresFullOperationV2 &&
+          event.type === "provider.failed" &&
+          event.inputSha256 === undefined) ||
         (event.inputSha256 !== undefined && providerIntent.inputSha256 !== event.inputSha256)
       )
         failJournal();
       activeProvider = undefined;
       completedProviders.add(event.requestIndex);
     } else if (event.type === "message.completed") {
-      if (messageIndexes.has(event.messageIndex) || event.messageIndex !== messageIndexes.size)
+      if (
+        messageIndexes.has(event.messageIndex) ||
+        event.messageIndex !== messageIndexes.size ||
+        (event.role === "assistant" && (activeTurn === undefined || activeProvider === undefined))
+      )
         failJournal();
       messageIndexes.add(event.messageIndex);
     } else if (event.type === "tool.blocked") {
@@ -294,6 +302,9 @@ export function validatePiExecutorOperationJournal(
       intent.sessionId !== event.sessionId ||
       intent.turnIndex !== event.turnIndex ||
       intent.toolName !== event.toolName ||
+      (requiresFullOperationV2 &&
+        (event.type === "tool.completed" || event.type === "tool.failed") &&
+        event.inputSha256 === undefined) ||
       (event.inputSha256 !== undefined && intent.inputSha256 !== event.inputSha256)
     ) {
       failJournal();
@@ -410,7 +421,7 @@ export function validatePiExecutorOperationJournal(
       .reverse()
       .find((event) => event.type === "message.completed" && event.role === "assistant");
     if (
-      snapshot.integrityVersion === "full-operation.v2" &&
+      requiresFullOperationV2 &&
       (settledIndex === undefined ||
         assistantEvidence?.type !== "message.completed" ||
         assistantEvidence.visibleTextSha256 !== hashExecutorValue(result.output))
@@ -616,38 +627,36 @@ export class PiExecutorOperationStore {
   }
 
   async append(operationId: string, payload: PiExecutorEventPayload): Promise<PiExecutorEvent> {
-    return this.mutate(operationId, async (record) => {
-      const current = this.requireMutableRecord(record);
-      if (current.status !== "running") throw new Error("只有running Operation能追加运行事件");
-      if (
-        payload.type === "tool.intent_persisted" &&
-        current.events.some(
-          (event) =>
-            event.type === "tool.intent_persisted" && event.toolCallId === payload.toolCallId,
-        )
-      ) {
-        // Tool Call ID是一次Operation内不可复用的Intent身份；否则旧Result会误闭合新Intent。
-        throw new PiExecutorToolCallConflictError();
-      }
-      if (payload.type === "tool.completed" || payload.type === "tool.failed") {
-        const intent = this.openToolIntents(current).find(
-          (candidate) => candidate.toolCallId === payload.toolCallId,
-        );
+    try {
+      return await this.mutate(operationId, async (record) => {
+        const current = this.requireMutableRecord(record);
+        if (current.status !== "running") throw new Error("只有running Operation能追加运行事件");
         if (
-          intent === undefined ||
-          intent.sessionId !== payload.sessionId ||
-          intent.turnIndex !== payload.turnIndex ||
-          intent.toolName !== payload.toolName ||
-          intent.inputSha256 !== payload.inputSha256
+          payload.type === "tool.intent_persisted" &&
+          current.events.some(
+            (event) =>
+              event.type === "tool.intent_persisted" && event.toolCallId === payload.toolCallId,
+          )
         ) {
-          throw new PiExecutorToolResultConflictError();
+          // Tool Call ID是一次Operation内不可复用的Intent身份；否则旧Result会误闭合新Intent。
+          throw new PiExecutorToolCallConflictError();
         }
+        const next = this.appendToRecord(current, payload);
+        const event = next.events.at(-1);
+        if (event === undefined) throw new Error("Pi Executor事件追加失败");
+        return { record: next, value: structuredClone(event) };
+      });
+    } catch (error) {
+      if (
+        (payload.type === "tool.completed" || payload.type === "tool.failed") &&
+        error instanceof PiExecutorJournalIntegrityError
+      ) {
+        // Tool Result也只由persist/open/Client共用的状态机判定；这里仅把共享Validator
+        // 的失败归一为既有稳定边界错误，不再复制五字段匹配规则。
+        throw new PiExecutorToolResultConflictError();
       }
-      const next = this.appendToRecord(current, payload);
-      const event = next.events.at(-1);
-      if (event === undefined) throw new Error("Pi Executor事件追加失败");
-      return { record: next, value: structuredClone(event) };
-    });
+      throw error;
+    }
   }
 
   async complete(
